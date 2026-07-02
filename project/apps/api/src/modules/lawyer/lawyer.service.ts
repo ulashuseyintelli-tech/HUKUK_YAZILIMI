@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { LawyerRole, LawyerRank } from "@prisma/client";
 import { normalizePersonName } from "@/common/name-match.util";
@@ -472,25 +472,116 @@ export class LawyerService {
 
   /// <remarks>
   /// Çağrıldığı yerler:
-  /// - LawyerController.delete() → DELETE /lawyers/:id (userId req.user.id'den; Task L1A)
+  /// - LawyerController.delete() → DELETE /lawyers/:id (userId req.user.id'den; body.replacementLawyerId
+  ///   opsiyonel — Task L1A + H1 sorumluluk devri)
   ///
   /// Task L1A: bu artık fiziksel silme DEĞİL, isActive=false pasifleştirmedir. Zaten pasif olan
   /// bir kayıt için idempotent şekilde tekrar uygulanır (ClientService.remove() ile birebir);
   /// ayrı bir "already inactive" dalı YOK — no-op görünümü updateMany'nin doğal sonucu.
+  ///
+  /// H1: avukat HERHANGİ bir dosyada CaseLawyer.isResponsible=true ise replacementLawyerId ZORUNLUDUR
+  /// (aynı tenant + aktif + o dosyalara ZATEN atanmış olmalı — otomatik CaseLawyer ataması YAPILMAZ,
+  /// LegalResponsibleLawyerService/WP-1d-5-4 ile AYNI kısıt). Devir + pasifleştirme AYNI transaction'da;
+  /// dosya hiçbir anda sorumlusuz kalmaz. LegalResponsibleLawyerService.changeLegalResponsibleLawyer()
+  /// BİLEREK çağrılmaz: kendi transaction'ını açıyor (nested-tx sorunu), ADMIN-only guard'ı var (bu akış
+  /// PARTNER/delege yetkisiyle çalışır) ve tek-case+reason-zorunlu tasarlanmış (bu akış çoklu-case).
+  /// Yerine AYNI state-transition deseni (clear-before-set, isResponsible⇔role coupling) ve AYNI audit
+  /// şekli (entityType CASE_LAWYER, newValues.isResponsible, metadata.caseId) tekrarlanır —
+  /// responsibility-history.service.ts bu YAPISAL şekle bakar, changeType string'ine değil.
   /// </remarks>
-  async delete(tenantId: string, id: string, actor?: AuditActor) {
+  async delete(tenantId: string, id: string, actor?: AuditActor, replacementLawyerId?: string) {
     const existing = await this.findOne(tenantId, id);
 
     // L1A: pasifleştirme yetkisi — transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz).
     await this.assertCanManageLawyerLifecycle(actor?.userId, tenantId);
 
-    // L1A: soft-deactivate + audit AYNI transaction (old snapshot deactivate ÖNCESİ alındı).
+    // H1: sorumlu olduğu dosyalar — transaction'dan ÖNCE tespit + replacement doğrulaması (eksik/geçersiz
+    // replacement hiçbir yazma yapmadan reddedilir).
+    const responsibleCaseLawyers = await this.prisma.caseLawyer.findMany({
+      where: { lawyerId: id, isResponsible: true },
+      select: { id: true, caseId: true },
+    });
+
+    let transferPlan: { oldCaseLawyerId: string; newCaseLawyerId: string; caseId: string }[] = [];
+    if (responsibleCaseLawyers.length > 0) {
+      if (!replacementLawyerId) {
+        throw new BadRequestException(
+          "Bu avukat bir veya daha fazla dosyada sorumlu; pasifleştirmeden önce yeni sorumlu avukat (replacementLawyerId) seçilmelidir."
+        );
+      }
+      if (replacementLawyerId === id) {
+        throw new BadRequestException("Yeni sorumlu avukat, pasifleştirilen avukatın kendisi olamaz.");
+      }
+      const candidate = await this.prisma.lawyer.findFirst({
+        where: { id: replacementLawyerId, tenantId },
+        select: { id: true, isActive: true },
+      });
+      if (!candidate) {
+        throw new BadRequestException("Yeni sorumlu avukat bulunamadı veya bu tenant'a ait değil.");
+      }
+      if (!candidate.isActive) {
+        throw new BadRequestException("Yeni sorumlu avukat aktif olmalıdır.");
+      }
+
+      const caseIds = responsibleCaseLawyers.map((cl) => cl.caseId);
+      const replacementCaseLawyers = await this.prisma.caseLawyer.findMany({
+        where: { caseId: { in: caseIds }, lawyerId: replacementLawyerId },
+        select: { id: true, caseId: true },
+      });
+      const replacementByCaseId = new Map(replacementCaseLawyers.map((cl) => [cl.caseId, cl.id]));
+      const missingCaseIds = caseIds.filter((caseId) => !replacementByCaseId.has(caseId));
+      if (missingCaseIds.length > 0) {
+        throw new BadRequestException({
+          message: "Yeni sorumlu avukat aşağıdaki dosyalara henüz atanmamış; önce dosyalara ekleyin.",
+          code: "REPLACEMENT_NOT_ASSIGNED_TO_CASES",
+          caseIds: missingCaseIds,
+        });
+      }
+
+      transferPlan = responsibleCaseLawyers.map((cl) => ({
+        oldCaseLawyerId: cl.id,
+        newCaseLawyerId: replacementByCaseId.get(cl.caseId)!,
+        caseId: cl.caseId,
+      }));
+    }
+
+    // L1A: soft-deactivate (+ H1: sorumluluk devri) + audit AYNI transaction (old snapshot deactivate
+    // ÖNCESİ alındı; dosya hiçbir anda sorumlusuz kalmaz — clear-before-set sırası, partial unique
+    // index case_lawyer_one_responsible_per_case ile aynı tx içinde tutarlı).
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.lawyer.updateMany({
         where: { id, tenantId },
         data: { isActive: false },
       });
       if (count === 0) throw new NotFoundException("Avukat bulunamadı");
+
+      for (const t of transferPlan) {
+        await tx.caseLawyer.update({
+          where: { id: t.oldCaseLawyerId },
+          data: { isResponsible: false, role: "ASSIGNED" },
+        });
+        await tx.caseLawyer.update({
+          where: { id: t.newCaseLawyerId },
+          data: { isResponsible: true, role: "RESPONSIBLE" },
+        });
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: "UPDATE",
+          entityType: "CASE_LAWYER",
+          entityId: t.newCaseLawyerId,
+          userId: actor?.userId,
+          oldValues: { isResponsible: false, lawyerId: replacementLawyerId },
+          newValues: { isResponsible: true, role: "RESPONSIBLE", lawyerId: replacementLawyerId },
+          metadata: {
+            caseId: t.caseId,
+            changeType: "LEGAL_RESPONSIBLE_LAWYER_CHANGED",
+            previousLawyerId: id,
+            newLawyerId: replacementLawyerId,
+            source: "LAWYER_DEACTIVATE_TRANSFER",
+          },
+        });
+      }
+
       await this.audit.logInTransaction(tx, {
         tenantId,
         action: "LAWYER_DEACTIVATE",
@@ -506,8 +597,18 @@ export class LawyerService {
             lawyerRank: existing.lawyerRank,
             wasActive: existing.isActive,
           },
+          ...(transferPlan.length > 0
+            ? {
+                responsibilityTransfer: {
+                  replacementLawyerId,
+                  caseCount: transferPlan.length,
+                  caseIds: transferPlan.map((t) => t.caseId),
+                },
+              }
+            : {}),
         },
       });
+
       return { ...existing, isActive: false };
     });
   }
