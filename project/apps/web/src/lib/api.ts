@@ -3088,6 +3088,27 @@ class ApiClient {
   }
 
   /**
+   * A2B — Portal erişimi aç (Task 10-S capability-gate + audit backend'de; davranış değişmedi).
+   * Çağrıldığı yerler:
+   * - ClientPortalTab "Portal erişimini aç" → POST /portal/admin/create-user
+   */
+  async enablePortalAccess(clientId: string, email: string, password: string) {
+    return this.post<{ success: boolean; portalUserId: string; _reactivated?: boolean }>(
+      "/portal/admin/create-user",
+      { clientId, email, password },
+    );
+  }
+
+  /**
+   * A2B — Portal erişimini kapat (Task 10-S capability-gate + audit backend'de; davranış değişmedi).
+   * Çağrıldığı yerler:
+   * - ClientPortalTab "Portal erişimini kaldır" → POST /portal/admin/disable-user
+   */
+  async disablePortalAccess(clientId: string) {
+    return this.post<{ success: boolean }>("/portal/admin/disable-user", { clientId });
+  }
+
+  /**
    * Tahsilat/odeme onizlemesi. DB'ye kayit yazmaz.
    * Cagrildigi yerler:
    * - CollectionModal.handlePreview() -> POST /cases/:caseId/payment-preview (tahsilat formundan non-persistent onizleme)

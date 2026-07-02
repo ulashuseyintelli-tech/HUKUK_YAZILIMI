@@ -183,4 +183,16 @@ describe("ClientService.findOne — Task 4A soft-delete default-exclude (owner k
     const lastWhere = (prisma.client.findFirst as jest.Mock).mock.calls.at(-1)[0].where;
     expect(lastWhere).toEqual({ id: "c1", tenantId: "t1" });
   });
+
+  it("A2B: portalUser projeksiyonu WHITELIST-SELECT — yalnız email/lastLoginAt/loginCount; passwordHash/resetToken/resetTokenExp/twoFactorSecret ASLA select edilmez", async () => {
+    const { svc, prisma } = buildHarness();
+    await svc.findOne("c1", "t1");
+    const include = (prisma.client.findFirst as jest.Mock).mock.calls[0][0].include;
+    expect(include.portalUser).toEqual({ select: { email: true, lastLoginAt: true, loginCount: true } });
+    const selectedKeys = Object.keys(include.portalUser.select);
+    expect(selectedKeys).not.toContain("passwordHash");
+    expect(selectedKeys).not.toContain("resetToken");
+    expect(selectedKeys).not.toContain("resetTokenExp");
+    expect(selectedKeys).not.toContain("twoFactorSecret");
+  });
 });
