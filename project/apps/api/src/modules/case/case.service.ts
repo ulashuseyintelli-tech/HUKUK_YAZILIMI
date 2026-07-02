@@ -2168,8 +2168,41 @@ export class CaseService {
     return updated;
   }
 
+  /**
+   * CBND-4 (H7): dosya silmeden önce finansal artık kontrolü. Collection→Case onDelete:Cascade olduğundan
+   * tahsilat kayıtları sessizce SİLİNİR (kayıp); ClientOffset FK'sız (scalar-ref) olduğundan silinen
+   * case/caseClient'a işaret eden DANGLING kayıt bırakır; ClientPayoutAllocation/ClientPayoutManualReversal
+   * zaten onDelete:Restrict korumalı ama bugün ham Prisma FK-constraint hatası olarak patlıyor (temiz
+   * mesaj yok). Dördü de burada AÇIKÇA kontrol edilip tek, anlaşılır ConflictException'a çevrilir; hiçbiri
+   * yoksa davranış AYNEN korunur (yeni bir silme/temizleme akışı EKLENMEZ, yalnız engelle+bildir).
+   */
+  private async assertNoFinancialActivity(tenantId: string, caseId: string): Promise<void> {
+    const [collectionCount, offsetCount, payoutCount, manualReversalCount] = await Promise.all([
+      this.prisma.collection.count({ where: { tenantId, caseId } }),
+      this.prisma.clientOffset.count({ where: { tenantId, OR: [{ payableCaseId: caseId }, { expenseCaseId: caseId }] } }),
+      this.prisma.clientPayout.count({ where: { tenantId, caseId } }),
+      this.prisma.clientPayoutManualReversal.count({ where: { tenantId, caseId } }),
+    ]);
+
+    const blockers: string[] = [];
+    if (collectionCount > 0) blockers.push(`${collectionCount} tahsilat (Collection)`);
+    if (offsetCount > 0) blockers.push(`${offsetCount} mahsup (ClientOffset)`);
+    if (payoutCount > 0) blockers.push(`${payoutCount} müvekkil ödemesi (ClientPayout)`);
+    if (manualReversalCount > 0) blockers.push(`${manualReversalCount} manuel reversal kaydı (ClientPayoutManualReversal)`);
+
+    if (blockers.length > 0) {
+      throw new ConflictException({
+        code: 'CASE_DELETE_FINANCIAL_ACTIVITY',
+        message: `Dosya silinemez: finansal geçmişi var (${blockers.join(', ')}). Finansal kayıtları olan dosyalar kalıcı silinemez.`,
+      });
+    }
+  }
+
   async delete(tenantId: string, id: string, userId: string) {
     const existing = await this.findOne(tenantId, id);
+
+    // CBND-4 (H7): transaction'dan ÖNCE — finansal artık varsa silme hiç denenmez.
+    await this.assertNoFinancialActivity(tenantId, id);
 
     // Transaction içinde silme ve audit log (veri bütünlüğü için)
     await this.prisma.$transaction(async (tx) => {
