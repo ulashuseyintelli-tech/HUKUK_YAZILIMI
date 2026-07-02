@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { ClientService, type ClientActionKey } from '../client.service';
+import { CLIENT_TEMPLATE_NOTIFICATION_CODES, ClientService, type ClientActionKey } from '../client.service';
 
 const defaultClient = {
   id: 'client-1',
@@ -10,7 +10,7 @@ const defaultClient = {
   powerOfAttorneys: [],
 };
 
-function buildHarness(opts: { client?: any; deliveries?: any[] } = {}) {
+function buildHarness(opts: { client?: any; deliveries?: any[]; dispatcher?: any; templateCount?: number } = {}) {
   const prisma: any = {
     client: {
       findFirst: jest
@@ -43,6 +43,9 @@ function buildHarness(opts: { client?: any; deliveries?: any[] } = {}) {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    messageTemplate: {
+      count: jest.fn().mockResolvedValue(opts.templateCount ?? CLIENT_TEMPLATE_NOTIFICATION_CODES.length),
+    },
     task: {
       findUnique: jest.fn(),
       create: jest.fn(),
@@ -53,7 +56,7 @@ function buildHarness(opts: { client?: any; deliveries?: any[] } = {}) {
     },
   };
   const audit = { logInTransaction: jest.fn(), log: jest.fn() };
-  const svc = new ClientService(prisma, audit as any, {} as any);
+  const svc = new ClientService(prisma, audit as any, {} as any, undefined, opts.dispatcher as any);
   return { svc, prisma, audit };
 }
 
@@ -84,6 +87,11 @@ describe('ClientService.getActionCatalog', () => {
         phone: true,
         email: true,
         contactFollowUpStatus: true,
+        contacts: {
+          where: { type: 'EMAIL' },
+          take: 1,
+          select: { id: true },
+        },
         caseClients: {
           where: { case: { tenantId: 'tenant-1' } },
           orderBy: { createdAt: 'desc' },
@@ -229,6 +237,52 @@ describe('ClientService.getActionCatalog', () => {
     }
   });
 
+  it('enables template notification when dispatcher, recipient, and V1 templates are ready', async () => {
+    const { svc, prisma } = buildHarness({ dispatcher: { dispatch: jest.fn() } });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const action = result.data.find((item) => item.key === 'notification.template.send');
+
+    expect(action).toMatchObject({
+      enabled: true,
+      visibility: 'visible',
+      requiredState: 'TEMPLATE_NOTIFICATION_READY',
+      target: { clientId: 'client-1' },
+    });
+    expect(action?.disabledReason).toBeUndefined();
+    expect(action?.href).toBeUndefined();
+    expect(prisma.messageTemplate.count).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        code: { in: [...CLIENT_TEMPLATE_NOTIFICATION_CODES] },
+        isActive: true,
+        channel: 'EMAIL',
+      },
+    });
+  });
+
+  it('keeps template notification disabled when recipient or active V1 templates are missing', async () => {
+    const noRecipient = buildHarness({
+      dispatcher: { dispatch: jest.fn() },
+      client: { ...defaultClient, email: '', contacts: [] },
+    });
+
+    const noRecipientResult = await noRecipient.svc.getActionCatalog('client-1', 'tenant-1');
+    expect(noRecipientResult.data.find((item) => item.key === 'notification.template.send')).toMatchObject({
+      enabled: false,
+      requiredState: 'CLIENT_EMAIL_MISSING',
+      disabledReason: 'Template notification requires a client email recipient.',
+    });
+    expect(noRecipient.prisma.messageTemplate.count).not.toHaveBeenCalled();
+
+    const missingTemplate = buildHarness({ dispatcher: { dispatch: jest.fn() }, templateCount: 1 });
+    const missingTemplateResult = await missingTemplate.svc.getActionCatalog('client-1', 'tenant-1');
+    expect(missingTemplateResult.data.find((item) => item.key === 'notification.template.send')).toMatchObject({
+      enabled: false,
+      requiredState: 'TEMPLATE_NOTIFICATION_TEMPLATE_MISSING',
+      disabledReason: 'Template notification requires active V1 email templates.',
+    });
+  });
   it('enables POA reminder only when an active limited POA expires within 30 days', async () => {
     const { svc, prisma } = buildHarness({
       client: {

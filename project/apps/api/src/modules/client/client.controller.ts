@@ -1,13 +1,23 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException, ValidationPipe, Headers } from '@nestjs/common';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
 import { CreateClientWorkspaceIntakeLinkDto } from '../client-intake-link/dto/client-intake-link.dto';
-import { ClientService } from './client.service';
+import { CLIENT_TEMPLATE_NOTIFICATION_CODES, ClientService, type ClientTemplateNotificationCode } from './client.service';
 import { CreateClientDto, UpdateClientDto } from './dto/create-client.dto';
 
 /** C0-a: actor compile-time shape â€” req.user JWT validate'ten gelen User; id+tenantId auth context. */
 interface AuthRequest {
   user: { id: string; tenantId: string; role?: string };
+}
+
+class SendClientWorkspaceTemplateNotificationDto {
+  @IsIn(CLIENT_TEMPLATE_NOTIFICATION_CODES)
+  templateCode!: ClientTemplateNotificationCode;
+
+  @IsString()
+  @IsOptional()
+  caseId?: string;
 }
 
 @Controller('clients')
@@ -28,6 +38,12 @@ export class ClientController {
   });
 
   private readonly intakeLinkBodyPipe = new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  });
+
+  private readonly templateNotificationBodyPipe = new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true,
@@ -80,6 +96,25 @@ export class ClientController {
     @Param('clientId') clientId: string,
   ) {
     const result = await this.clientService.sendPoaReminder(clientId, req.user.tenantId);
+    return { data: result };
+  }
+
+  // Client Workspace template notification manual typed command
+  @Post(':clientId/template-notifications/send')
+  async sendTemplateNotification(
+    @Request() req: AuthRequest,
+    @Param('clientId') clientId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: any,
+  ) {
+    const dto = await this.templateNotificationBodyPipe.transform(body, { type: 'body', metatype: SendClientWorkspaceTemplateNotificationDto });
+    const result = await this.clientService.sendTemplateNotification(
+      clientId,
+      req.user.tenantId,
+      req.user.id,
+      idempotencyKey,
+      dto as SendClientWorkspaceTemplateNotificationDto,
+    );
     return { data: result };
   }
 
