@@ -129,6 +129,7 @@ describe('ClientRightPanel', () => {
 
     expect(apiMock.getClientOperatingSnapshot).toHaveBeenCalledWith('client-1');
     expect(apiMock.getClientActionCatalog).toHaveBeenCalledWith('client-1');
+    expect(screen.getByRole('complementary', { name: /Operasyon paneli/i })).toBeTruthy();
     expect(screen.getByText('Dikkat')).toBeTruthy();
     expect(screen.getByText('Orta risk')).toBeTruthy();
     expect(screen.getByText('Contact update')).toBeTruthy();
@@ -136,10 +137,10 @@ describe('ClientRightPanel', () => {
     expect(screen.getByText('Existing-link resend remains disabled.')).toBeTruthy();
     expect(screen.queryByText('Hidden case action')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: /Islemler'de ac/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Document request islemler tabinda ac/i }));
     expect(onNavigateActions).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole('button', { name: /Aktiviteyi ac/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Activity timeline aktivite tabinda ac/i }));
     expect(onNavigateActivity).toHaveBeenCalledTimes(1);
   });
 
@@ -154,6 +155,12 @@ describe('ClientRightPanel', () => {
     expect(apiMock.getClientOperatingSnapshot).toHaveBeenCalledWith('client-1');
     expect(apiMock.getClientActionCatalog).toHaveBeenCalledWith('client-1');
     expect(screen.getByText('Read-only durum ve aksiyon ozeti')).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: /Client workspace sections/i })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /Genel/i }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('tab', { name: /lemler/i }));
+    expect(screen.getByRole('tab', { name: /lemler/i }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tabpanel')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/leti.*im bilgilerini/i)).toBeTruthy());
   });
 
   it('shows a safe empty signal state', async () => {
@@ -171,6 +178,7 @@ describe('ClientRightPanel', () => {
 
     render(<ClientRightPanel clientId="client-1" onNavigateActions={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByText('Operasyon paneli yuklenemedi.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('alert', { name: /Operasyon paneli hatasi/i })).toBeTruthy());
+    expect(screen.getByText('Operasyon paneli yuklenemedi.')).toBeTruthy();
   });
 });

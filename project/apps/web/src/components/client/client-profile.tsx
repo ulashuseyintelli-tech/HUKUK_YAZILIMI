@@ -203,12 +203,13 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     { id: 'actions', label: 'İşlemler' },
     { id: 'activity', label: 'Aktivite' },
   ];
+  const activeTabPanelId = `client-profile-${clientId}-${tab}-panel`;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white rounded-xl border p-6">
-        <div className="flex items-start gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
             <HeadIcon className="h-8 w-8 text-blue-600" />
           </div>
@@ -246,13 +247,19 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
         {/* Tabs */}
-        <div className="min-w-0 bg-white rounded-xl border overflow-hidden">
-          <div className="border-b flex overflow-x-auto">
+        <div className="order-1 min-w-0 overflow-hidden rounded-xl border bg-white">
+          <div className="flex overflow-x-auto border-b" role="tablist" aria-label="Client workspace sections">
           {tabs.map((t) => (
             <button
               key={t.id}
+              id={`client-profile-${clientId}-${t.id}-tab`}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              aria-controls={`client-profile-${clientId}-${t.id}-panel`}
+              tabIndex={tab === t.id ? 0 : -1}
               onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px whitespace-nowrap ${
                 tab === t.id
@@ -268,7 +275,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
           ))}
         </div>
 
-        <div className="p-4">
+        <div id={activeTabPanelId} role="tabpanel" aria-labelledby={`client-profile-${clientId}-${tab}-tab`} className="min-w-0 p-4">
           {/* Genel */}
           {tab === 'overview' && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

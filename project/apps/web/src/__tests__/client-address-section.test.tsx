@@ -64,7 +64,7 @@ async function openIdentityTab() {
   apiMock.getClientOperatingSnapshot.mockResolvedValue({ data: rightPanelSnapshot });
   render(<ClientProfile clientId="client-1" />);
   await waitFor(() => expect(screen.getByText('Ada Müvekkil')).toBeTruthy());
-  fireEvent.click(screen.getByRole('button', { name: 'Kimlik & İletişim' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Kimlik & İletişim' }));
 }
 
 describe('ClientAddressSection — flat fallback (addresses boş)', () => {

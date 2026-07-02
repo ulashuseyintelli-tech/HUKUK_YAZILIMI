@@ -98,7 +98,7 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
 
   if (state === 'loading') {
     return (
-      <aside className="rounded-xl border bg-white p-4 text-sm text-gray-500 xl:sticky xl:top-4 xl:self-start">
+      <aside className="w-full min-w-0 rounded-xl border bg-white p-4 text-sm text-gray-500 xl:sticky xl:top-4 xl:self-start" role="status" aria-label="Operasyon paneli yukleniyor">
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" />
           Operasyon paneli yukleniyor...
@@ -109,7 +109,7 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
 
   if (state === 'error' || !snapshot) {
     return (
-      <aside className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 xl:sticky xl:top-4 xl:self-start">
+      <aside className="w-full min-w-0 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 xl:sticky xl:top-4 xl:self-start" role="alert" aria-label="Operasyon paneli hatasi">
         <div className="flex items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" />
           Operasyon paneli yuklenemedi.
@@ -119,20 +119,20 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
   }
 
   return (
-    <aside className="space-y-4 rounded-xl border bg-white p-4 xl:sticky xl:top-4 xl:self-start" aria-label="Operasyon paneli">
+    <aside className="order-2 w-full min-w-0 space-y-4 overflow-hidden rounded-xl border bg-white p-4 xl:sticky xl:top-4 xl:self-start" aria-label="Operasyon paneli">
       <div>
         <p className="text-sm font-semibold text-gray-900">Operasyon paneli</p>
         <p className="mt-1 text-xs text-gray-500">Read-only durum ve aksiyon ozeti</p>
       </div>
 
-      <div className={`rounded-lg border px-3 py-2 text-sm ${healthClass(snapshot.health)}`}>
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-medium">{HEALTH_LABELS[snapshot.health]}</span>
-          <span className="text-xs">{RISK_LABELS[snapshot.riskLevel]}</span>
+      <div className={`min-w-0 rounded-lg border px-3 py-2 text-sm ${healthClass(snapshot.health)}`}>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="truncate font-medium">{HEALTH_LABELS[snapshot.health]}</span>
+          <span className="shrink-0 text-xs">{RISK_LABELS[snapshot.riskLevel]}</span>
         </div>
       </div>
 
-      <section>
+      <section className="min-w-0">
         <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <ShieldAlert className="h-3.5 w-3.5" />
           Sinyaller
@@ -140,10 +140,10 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
         {importantSignals.length > 0 ? (
           <div className="space-y-2">
             {importantSignals.map((signal) => (
-              <div key={`${signal.key}-${signal.target.caseId ?? 'client'}`} className={`rounded-lg border px-3 py-2 ${severityClass(signal.severity)}`}>
-                <p className="text-sm font-medium">{signal.label}</p>
-                <p className="mt-1 text-xs opacity-80">{signal.description}</p>
-                {signal.actionKey && <p className="mt-1 text-xs opacity-80">Aksiyon: {signal.actionKey}</p>}
+              <div key={`${signal.key}-${signal.target.caseId ?? 'client'}`} className={`min-w-0 rounded-lg border px-3 py-2 ${severityClass(signal.severity)}`}>
+                <p className="break-words text-sm font-medium">{signal.label}</p>
+                <p className="mt-1 break-words text-xs opacity-80">{signal.description}</p>
+                {signal.actionKey && <p className="mt-1 break-all text-xs opacity-80">Aksiyon: {signal.actionKey}</p>}
               </div>
             ))}
           </div>
@@ -155,7 +155,7 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
         )}
       </section>
 
-      <section>
+      <section className="min-w-0">
         <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <CircleDashed className="h-3.5 w-3.5" />
           Hızlı aksiyonlar
@@ -177,7 +177,7 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
       </section>
 
       {disabledActions.length > 0 && (
-        <section>
+        <section className="min-w-0">
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Kapalı aksiyonlar</div>
           <div className="space-y-2">
             {disabledActions.map((item) => (
@@ -206,14 +206,15 @@ function ActionSummary({
   const isCommand = isCommandAction(item);
 
   return (
-    <div className="rounded-lg border px-3 py-2">
-      <p className="text-sm font-medium text-gray-900">{item.label}</p>
-      <p className="mt-1 text-xs text-gray-500">{item.description}</p>
+    <div className="min-w-0 rounded-lg border px-3 py-2">
+      <p className="break-words text-sm font-medium text-gray-900">{item.label}</p>
+      <p className="mt-1 break-words text-xs text-gray-500">{item.description}</p>
       <div className="mt-2">
         {isActivity ? (
           <button
             type="button"
             onClick={onNavigateActivity ?? onNavigateActions}
+            aria-label={`${item.label} aktivite tabinda ac`}
             className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
           >
             Aktiviteyi ac
@@ -222,6 +223,7 @@ function ActionSummary({
         ) : item.href && !isCommand ? (
           <Link
             href={item.href}
+            aria-label={`${item.label} baglantisini ac`}
             className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
           >
             Ac
@@ -231,6 +233,7 @@ function ActionSummary({
           <button
             type="button"
             onClick={onNavigateActions}
+            aria-label={`${item.label} islemler tabinda ac`}
             className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
           >
             Islemler'de ac
