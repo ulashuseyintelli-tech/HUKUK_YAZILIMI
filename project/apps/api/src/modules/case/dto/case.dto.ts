@@ -714,9 +714,11 @@ export class UpdateCaseDto {
   @IsOptional()
   caseStatus?: LegalCaseStatus;
 
-  @IsString()
-  @IsOptional()
-  clientId?: string;
+  // CBND-1 (H1): clientId BİLEREK YOK. Case.clientId finansal otorite değildir — otorite dosyanın
+  // CaseClient alacaklı kümesidir (yalnız create() sırasında yazılır). Meşru create-sonrası müvekkil
+  // değişimi akışı yok; generic update ile clientId değişimi CaseClient'ı senkronlamadan drift
+  // yaratıyordu. forbidNonWhitelisted:true ile bu alan artık PUT /cases/:id gövdesinde reddedilir
+  // (case.service.ts update() içinde de ayrıca runtime guard var — bkz. o metottaki yorum).
 
   @IsString()
   @IsOptional()
