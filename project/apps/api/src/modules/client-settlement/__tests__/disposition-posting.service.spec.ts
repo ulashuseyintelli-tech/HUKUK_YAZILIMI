@@ -32,6 +32,7 @@ function buildApproval(opts: { eligible?: boolean; requestId?: string } = {}) {
 
 function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; lines?: any[]; approval?: any; expenseRequest?: any } = {}) {
   const tx = {
+    $executeRaw: jest.fn().mockResolvedValue(1), // ROLL-001: pg_advisory_xact_lock
     collectionDispositionLine: {
       deleteMany: jest.fn().mockResolvedValue({}),
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: `line-${data.type}` })),
@@ -360,5 +361,30 @@ describe('DispositionPostingService FAZ-1b reimbursement', () => {
   it('post: reimbursement tutarÄ± masraf kalanÄ±nÄ± aÅŸarsa â†’ reject', async () => {
     const { prisma } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: D(100), caseClientId: 'cc-A', expenseRequestId: 'er1' }] });
     await expect(svc(prisma, undefined, buildReadService(D(40))).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/aşamaz|kalanını/);
+  });
+
+  // ROLL-001 — reimbursement APPLY yolu ClientOffsetService ile AYNI advisory-lock key'ini üretmeli.
+  it('post: REIMBURSEMENT → pg_advisory_xact_lock çağrılır, key ClientOffsetService.lockKey ile BİREBİR aynı format', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: D(100), caseClientId: 'cc-A', expenseRequestId: 'er1' }] });
+    await svc(prisma).post('t1', 'd1', { userId: 'u3' });
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    // clientOffsetLockKey('t1', 'client-A', 'TRY') = 'client-offset:t1:client-A:TRY' — tagged-template çağrısının
+    // ilk argümanı strings[], ikincisi interpolated key değeri.
+    const call = (tx.$executeRaw as jest.Mock).mock.calls[0];
+    expect(call[1]).toBe('client-offset:t1:client-A:TRY');
+  });
+
+  it('post: advisory-lock, authoritative expense okuması + computeExpenseRemaining hesabından ÖNCE alınır', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: D(100), caseClientId: 'cc-A', expenseRequestId: 'er1' }] });
+    await svc(prisma).post('t1', 'd1', { userId: 'u3' });
+    const lockOrder = (tx.$executeRaw as jest.Mock).mock.invocationCallOrder[0];
+    const applyOrder = (tx.collectionDispositionExpenseApplication.create as jest.Mock).mock.invocationCallOrder[0];
+    expect(lockOrder).toBeLessThan(applyOrder);
+  });
+
+  it('post: OFFSET_CLIENT_ADVANCE satırında advisory-lock ALINMAZ (yalnız reimbursement path kilitli)', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'OFFSET_CLIENT_ADVANCE', amount: D(100) }] });
+    await svc(prisma).post('t1', 'd1', { userId: 'u3' });
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
 });
