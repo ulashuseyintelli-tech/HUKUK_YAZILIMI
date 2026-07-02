@@ -14,6 +14,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
       createClientWorkspaceIntakeLinkAndDeliver: vi.fn(),
       sendClientWorkspacePoaReminder: vi.fn(),
       sendClientWorkspaceTemplateNotification: vi.fn(),
+      sendClientWorkspaceDocumentRequest: vi.fn(),
     },
   };
 });
@@ -25,6 +26,7 @@ const apiMock = api as unknown as {
   createClientWorkspaceIntakeLinkAndDeliver: ReturnType<typeof vi.fn>;
   sendClientWorkspacePoaReminder: ReturnType<typeof vi.fn>;
   sendClientWorkspaceTemplateNotification: ReturnType<typeof vi.fn>;
+  sendClientWorkspaceDocumentRequest: ReturnType<typeof vi.fn>;
 };
 
 const action = (over: Partial<ClientActionCatalogItem>): ClientActionCatalogItem => ({
@@ -111,6 +113,14 @@ describe('ClientActionsTab', () => {
       caseId: 'case-1',
       templateCode: 'GENEL_BILGILENDIRME',
       status: 'sent',
+      notificationId: 'notification-1',
+    });
+    apiMock.sendClientWorkspaceDocumentRequest.mockResolvedValue({
+      clientId: 'client-1',
+      caseId: 'case-1',
+      documentCodes: ['GENEL_BELGE'],
+      status: 'sent',
+      documentRequestId: 'document-request-1',
       notificationId: 'notification-1',
     });
     mockReady([
@@ -397,6 +407,113 @@ describe('ClientActionsTab', () => {
     await waitFor(() => expect(apiMock.sendClientWorkspaceTemplateNotification).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('Template send failed')).toBeTruthy();
     expect(screen.queryByText(/Sablon bildirimi gonderildi/i)).toBeNull();
+  });
+
+  it('sends an enabled document request with selected allowlist document codes', async () => {
+    mockReady([
+      action({
+        key: 'document.request.send',
+        label: 'Belge talebi gonder',
+        category: 'document',
+        enabled: true,
+        href: undefined,
+        target: { clientId: 'client-1', caseId: 'case-1' },
+        requiredState: 'DOCUMENT_REQUEST_READY',
+        order: 37,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Belge talebi gonder')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Sec/i }));
+    expect(screen.getByText(/Belge talebi tipleri/i)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Dosya evraki'));
+    fireEvent.click(screen.getByRole('button', { name: /^Belge talebi gonder$/i }));
+
+    await waitFor(() => expect(apiMock.sendClientWorkspaceDocumentRequest).toHaveBeenCalledTimes(1));
+    expect(apiMock.sendClientWorkspaceDocumentRequest).toHaveBeenCalledWith('client-1', {
+      documentCodes: ['GENEL_BELGE', 'DOSYA_EVRAKI'],
+      caseId: 'case-1',
+    });
+    expect(await screen.findByText(/Belge talebi gonderildi/i)).toBeTruthy();
+    expect(screen.getByText(/Yanitta alici, govde, token, dedupe/i)).toBeTruthy();
+    expect(screen.queryByText(/@example/i)).toBeNull();
+    expect(screen.queryByText(/dedupe-key/i)).toBeNull();
+    await waitFor(() => expect(apiMock.getClientActionCatalog).toHaveBeenCalledTimes(2));
+    expect(apiMock.getClientOperatingSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps disabled document request unavailable', async () => {
+    mockReady([
+      action({
+        key: 'document.request.send',
+        label: 'Belge talebi gonder',
+        category: 'document',
+        enabled: false,
+        disabledReason: 'Document request requires the active V1 email template.',
+        href: undefined,
+        target: { clientId: 'client-1' },
+        order: 37,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Document request requires the active V1 email template.')).toBeTruthy());
+    expect(screen.getByRole('button', { name: /Kapal/i })).toBeTruthy();
+    expect(apiMock.sendClientWorkspaceDocumentRequest).not.toHaveBeenCalled();
+  });
+
+  it('shows document request failure without optimistic success', async () => {
+    apiMock.sendClientWorkspaceDocumentRequest.mockRejectedValueOnce(new Error('Document request failed'));
+    mockReady([
+      action({
+        key: 'document.request.send',
+        label: 'Belge talebi gonder',
+        category: 'document',
+        enabled: true,
+        href: undefined,
+        target: { clientId: 'client-1', caseId: 'case-1' },
+        requiredState: 'DOCUMENT_REQUEST_READY',
+        order: 37,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Belge talebi gonder')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Sec/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Belge talebi gonder$/i }));
+
+    await waitFor(() => expect(apiMock.sendClientWorkspaceDocumentRequest).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Document request failed')).toBeTruthy();
+    expect(screen.queryByText(/Belge talebi gonderildi/i)).toBeNull();
+  });
+
+  it('validates empty document request selection before calling the command endpoint', async () => {
+    mockReady([
+      action({
+        key: 'document.request.send',
+        label: 'Belge talebi gonder',
+        category: 'document',
+        enabled: true,
+        href: undefined,
+        target: { clientId: 'client-1', caseId: 'case-1' },
+        requiredState: 'DOCUMENT_REQUEST_READY',
+        order: 37,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Belge talebi gonder')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Sec/i }));
+    fireEvent.click(screen.getByLabelText('Genel belge'));
+    fireEvent.click(screen.getByRole('button', { name: /^Belge talebi gonder$/i }));
+
+    await waitFor(() => expect(screen.getByText(/en az bir belge talebi/i)).toBeTruthy());
+    expect(apiMock.sendClientWorkspaceDocumentRequest).not.toHaveBeenCalled();
   });
 
   it('shows failed delivery status without optimistic success', async () => {

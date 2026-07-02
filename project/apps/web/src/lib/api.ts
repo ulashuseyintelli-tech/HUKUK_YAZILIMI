@@ -23,6 +23,7 @@ export type ClientActionKey =
   | 'intake.link.send'
   | 'poa.reminder.send'
   | 'notification.template.send'
+  | 'document.request.send'
   | 'case.open_related'
   | 'activity.view_timeline';
 
@@ -710,6 +711,19 @@ class ApiClient {
       ...(input.caseId ? { caseId: input.caseId } : {}),
     };
     const response = await this.request<{ data: ClientWorkspaceTemplateNotificationResult }>(`/clients/${clientId}/template-notifications/send`, {
+      method: "POST",
+      headers: { "Idempotency-Key": generateClientWorkspaceIdempotencyKey() },
+      body: JSON.stringify(body),
+    });
+    return response.data;
+  }
+
+  async sendClientWorkspaceDocumentRequest(clientId: string, input: ClientWorkspaceDocumentRequestInput) {
+    const body: ClientWorkspaceDocumentRequestInput = {
+      documentCodes: input.documentCodes,
+      ...(input.caseId ? { caseId: input.caseId } : {}),
+    };
+    const response = await this.request<{ data: ClientWorkspaceDocumentRequestResult }>(`/clients/${clientId}/document-requests/send`, {
       method: "POST",
       headers: { "Idempotency-Key": generateClientWorkspaceIdempotencyKey() },
       body: JSON.stringify(body),
@@ -3419,6 +3433,23 @@ export interface ClientWorkspaceTemplateNotificationResult {
   caseId: string | null;
   templateCode: ClientWorkspaceTemplateNotificationCode;
   status: ClientWorkspaceTemplateNotificationStatus;
+  notificationId?: string;
+}
+
+export type ClientWorkspaceDocumentRequestCode = 'GENEL_BELGE' | 'DOSYA_EVRAKI';
+export type ClientWorkspaceDocumentRequestStatus = 'sent' | 'skipped' | 'failed';
+
+export interface ClientWorkspaceDocumentRequestInput {
+  documentCodes: ClientWorkspaceDocumentRequestCode[];
+  caseId?: string;
+}
+
+export interface ClientWorkspaceDocumentRequestResult {
+  clientId: string;
+  caseId: string;
+  documentCodes: ClientWorkspaceDocumentRequestCode[];
+  status: ClientWorkspaceDocumentRequestStatus;
+  documentRequestId: string;
   notificationId?: string;
 }
 // ============================================
