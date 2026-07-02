@@ -14,6 +14,7 @@ import { Capacity } from '../policy-engine/types/effective-permission.types';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { CreateClientOffsetDto, ReverseClientOffsetDto, PreviewClientOffsetDto } from './dto/client-offset.dto';
 import { clientOffsetLockKey } from './expense-remaining-lock';
+import { payoutLockKey } from './payout-lock';
 
 const ZERO = new Prisma.Decimal(0);
 const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
@@ -122,6 +123,12 @@ export interface ClientOffsetDetailProjection {
  * GÜVENİLMEZ; yetki BURADA explicit enforce edilir (canonical capacity = Lawyer.lawyerRank/StaffMember.staffType
  * + isOfficeAdminCapacity). JWT geçerli olsa bile PARTNER/MANAGER değilse 403. approvalRef (confirm-gate) v1'de
  * yetki SAĞLAMAZ → authorizationMode='DIRECT_CAPABILITY'. Confirm-gate entegrasyonu ayrı faz (ertelendi).
+ *
+ * CBND-5 (H2) ÇİFT-KİLİT DİSİPLİNİ: createOffset()/reverseOffset() transaction'ı İKİ advisory-lock
+ * alır, SABİT SIRAYLA — ÖNCE clientOffsetLockKey (expense-remaining kilidi, client-scope; DEĞİŞMEDİ,
+ * DispositionPostingService/CollectionReversalService ile paylaşılır), SONRA payoutLockKey (payable
+ * leg'e özgü, caseClientId-scope; ClientPayoutService.create() ile paylaşılır). Payout servisi
+ * clientOffsetLockKey'i ASLA almaz — bu asimetrik sıra döngüyü (deadlock) imkânsız kılar.
  */
 @Injectable()
 export class ClientOffsetService {
@@ -325,6 +332,10 @@ export class ClientOffsetService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.lockKey(tenantId, dto.clientId, dto.currency)}))`;
+      // CBND-5 (H2): payable leg için AYRICA payout kilidi — ClientPayoutService.create() ile aynı
+      // caseClientId'nin outstanding'ini tüketen eşzamanlı işlemleri serialize eder. Sıra SABİT (bu
+      // kilitten SONRA); payout tarafı üstteki client-offset kilidini asla almaz.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${payoutLockKey(tenantId, dto.payableCaseId, dto.payableCaseClientId, dto.currency)}))`;
 
       const dup = await tx.clientOffset.findUnique({
         where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: dto.idempotencyKey } },
@@ -440,6 +451,9 @@ export class ClientOffsetService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.lockKey(tenantId, original.clientId, original.currency)}))`;
+      // CBND-5 (H2): REVERSAL da payable outstanding'i etkiler (credit +, computeOutstanding'e Σ REVERSAL
+      // terimiyle girer) — createOffset ile AYNI disiplin: client-offset kilidinden SONRA payout kilidi.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${payoutLockKey(tenantId, original.payableCaseId, original.payableCaseClientId, original.currency)}))`;
 
       // double-reversal guard (explicit; ayrıca @@unique[tenantId,reversesOffsetId] DB seviyesinde).
       const already = await tx.clientOffset.findFirst({ where: { tenantId, kind: 'REVERSAL', reversesOffsetId: original.id }, select: { id: true } });
