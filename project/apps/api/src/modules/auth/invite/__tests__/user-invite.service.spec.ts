@@ -1,5 +1,5 @@
 // K1-7: UserInviteService + AdminGuard testleri (mock prisma/audit/email/config).
-import { BadRequestException, ForbiddenException, ExecutionContext } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, ExecutionContext } from "@nestjs/common";
 import { UserInviteService } from "../user-invite.service";
 import { AdminGuard } from "../../guards/admin.guard";
 import { hashInviteToken } from "../user-invite-token.util";
@@ -68,6 +68,29 @@ describe("UserInviteService", () => {
     expect(JSON.stringify(call)).not.toContain(raw);
     expect(call.metadata.emailRedacted).toContain("***");
     expect(JSON.stringify(call)).not.toContain("ali@x.com"); // tam e-posta yok
+  });
+
+  // ---- H3: global email-uniqueness (issue tenant-scoped değil, register ile hizalı) ----
+  it("[H3] issue email'i GLOBAL kontrol eder: findFirst({email}) — tenantId FİLTRESİ YOK", async () => {
+    const { svc, user } = make();
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    expect(user.findFirst).toHaveBeenCalledWith({ where: { email: "a@x.com" } });
+  });
+
+  it("[H3] email BAŞKA tenant'ta zaten var → 409, user/invite create ÇAĞRILMAZ, audit YOK", async () => {
+    const { svc, user, userInvite, audit } = make();
+    user.findFirst.mockResolvedValueOnce({ id: "u-other", email: "a@x.com", tenantId: "t-OTHER" });
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" })).rejects.toThrow(ConflictException);
+    expect(user.create).not.toHaveBeenCalled();
+    expect(userInvite.create).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it("[H3] email AYNI tenant'ta zaten var → 409 (davranış korunur — global kontrol bunu da kapsar)", async () => {
+    const { svc, user } = make();
+    user.findFirst.mockResolvedValueOnce({ id: "u-self", email: "a@x.com", tenantId: "t1" });
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" })).rejects.toThrow(ConflictException);
+    expect(user.create).not.toHaveBeenCalled();
   });
 
   it("[21] feature flag OFF iken issue çalışmaz", async () => {

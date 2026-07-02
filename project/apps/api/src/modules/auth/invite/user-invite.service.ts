@@ -54,10 +54,14 @@ export class UserInviteService {
     const email = dto.email.trim().toLowerCase();
     const role = (dto.role ?? "USER") as UserRole;
 
+    // H3: global email-uniqueness ile hizalama. AuthService.register() (auth.service.ts) email'i
+    // ZATEN tenantId'siz/global kontrol ediyordu; bu kontrol önceden tenant-scopedy — Tenant A'da
+    // register olan bir email, Tenant B'nin davetiyle İKİNCİ bir User olarak oluşabiliyordu. Şema
+    // hâlâ @@unique([tenantId,email]) (migration YOK); bu YALNIZ uygulama-seviyesi sıkılaştırma.
     const existing = await this.prisma.user.findFirst({
-      where: { tenantId: actor.tenantId, email },
+      where: { email },
     });
-    if (existing) throw new ConflictException("Bu e-posta için kullanıcı zaten var");
+    if (existing) throw new ConflictException("Bu e-posta adresi zaten kullanılıyor");
 
     const raw = generateRawInviteToken();
     const tokenHash = hashInviteToken(raw);
