@@ -73,6 +73,16 @@ export class ClientController {
     return this.clientService.getOperatingSnapshot(clientId, req.user.tenantId);
   }
 
+  // Client Workspace POA reminder manual typed command
+  @Post(':clientId/poa-reminders/send')
+  async sendPoaReminder(
+    @Request() req: AuthRequest,
+    @Param('clientId') clientId: string,
+  ) {
+    const result = await this.clientService.sendPoaReminder(clientId, req.user.tenantId);
+    return { data: result };
+  }
+
   // Client Workspace intake link create command (create-only; dispatch yok)
   @Post(':clientId/cases/:caseId/intake-links')
   async createIntakeLink(

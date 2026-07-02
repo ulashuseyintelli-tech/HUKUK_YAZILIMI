@@ -7,11 +7,13 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { ClientIntakeLinkModule } from '../client-intake-link/client-intake-link.module';
 import { OfficeApprovalModule } from '../office-approval/office-approval.module';
+import { EscalationModule } from '../escalation/escalation.module';
+import { PoaExpiryDeliveryService } from '../automation/poa-expiry-delivery.service';
 
 @Module({
-  imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule],
+  imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule, EscalationModule],
   controllers: [ClientController, ClientAddressController],
-  providers: [ClientService, ClientAddressService],
+  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService],
   exports: [ClientService],
 })
 export class ClientModule {}

@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, ConflictException, ForbiddenException,
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { PoaExpiryDeliveryService, type PoaExpiryDeliveryRunResult } from '../automation/poa-expiry-delivery.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
 import { assertCreateIdentityChecksum } from './client-identity-checksum.util';
 
@@ -78,6 +79,13 @@ export interface ClientActionCatalogItem {
 
 export interface ClientActionCatalogResponse {
   data: ClientActionCatalogItem[];
+}
+
+export type ClientPoaReminderSendStatus = 'sent' | 'partial' | 'failed' | 'skipped';
+
+export interface ClientPoaReminderSendResult extends PoaExpiryDeliveryRunResult {
+  clientId: string;
+  status: ClientPoaReminderSendStatus;
 }
 
 export type ClientOperatingHealth = 'healthy' | 'attention' | 'blocked';
@@ -187,6 +195,7 @@ export class ClientService {
     private prisma: PrismaService,
     private audit: AuditService,
     private officeApproval: OfficeApprovalService,
+    private poaExpiryDelivery?: PoaExpiryDeliveryService,
   ) {}
 
   /**
@@ -341,6 +350,12 @@ export class ClientService {
           take: 2,
           select: { caseId: true },
         },
+        powerOfAttorneys: {
+          where: { isActive: true },
+          orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
+          take: 10,
+          select: { status: true, isLimited: true, validUntil: true },
+        },
       },
     });
     if (!client) throw new NotFoundException('Client not found');
@@ -455,6 +470,33 @@ export class ClientService {
       data: buildClientOperatingSnapshot(id, client, poas, latestSubmission, latestLink, latestNotification, latestDeliveryIssue, openTasks),
     };
   }
+  /**
+   * Client Workspace POA reminder typed command V1.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.sendPoaReminder() -> POST /clients/:clientId/poa-reminders/send (manual typed command)
+   * </remarks>
+   */
+  async sendPoaReminder(id: string, tenantId: string): Promise<ClientPoaReminderSendResult> {
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: { id: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    if (!this.poaExpiryDelivery) {
+      throw new Error('POA expiry delivery service is not configured');
+    }
+
+    const result = await this.poaExpiryDelivery.sendExpiringPoaNotificationsForClient(tenantId, client.id);
+    return {
+      clientId: client.id,
+      status: poaReminderCommandStatus(result),
+      ...result,
+    };
+  }
+
 
   private parseTimelineLimit(raw?: string): number {
     if (raw === undefined || raw === '') return CLIENT_TIMELINE_DEFAULT_LIMIT;
@@ -1141,6 +1183,7 @@ interface ClientActionCatalogClientState {
   email?: string | null;
   contactFollowUpStatus?: string | null;
   caseClients?: Array<{ caseId: string | null }> | null;
+  powerOfAttorneys?: Array<{ status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null;
 }
 
 interface ClientActionCatalogContext {
@@ -1175,6 +1218,10 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
       ? 'Select a related case before creating an intake link.'
       : 'No related cases are linked to this client yet.';
   const missingContactFields = computeMissingContactFields(context.client);
+  const poaReminderEnabled = hasPoaReminderEligiblePowerOfAttorney(context.client.powerOfAttorneys);
+  const poaReminderDisabledReason = poaReminderEnabled
+    ? undefined
+    : 'POA reminder is available only for active limited powers of attorney expiring within 30 days.';
   const contactState = context.client.contactFollowUpStatus === 'WAIVED'
     ? 'CONTACT_FOLLOW_UP_WAIVED'
     : missingContactFields.length > 0
@@ -1260,14 +1307,14 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
     {
       key: 'poa.reminder.send',
       label: 'Send POA reminder',
-      description: 'Future typed command; POA delivery motor is outside V1 catalog scope.',
+      description: 'Send a dedupe-aware internal POA expiry reminder for active expiring powers of attorney.',
       category: 'poa',
-      enabled: false,
-      disabledReason: 'POA reminder requires delivery motor, dedupe, and retry contracts.',
+      enabled: poaReminderEnabled,
+      disabledReason: poaReminderDisabledReason,
       visibility: 'visible',
       dangerLevel: 'medium',
       requiredRole: 'USER',
-      requiredState: 'POA_DELIVERY_MOTOR_READY',
+      requiredState: poaReminderEnabled ? 'POA_EXPIRING_ACTIVE' : 'POA_REMINDER_NOT_ELIGIBLE',
       target,
       order: 60,
     },
@@ -1291,6 +1338,28 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
     .map((item) => applyClientActionPolicy(item, context.actorRole))
     .filter((item): item is ClientActionCatalogItem => item !== null)
     .sort((a, b) => a.order - b.order);
+}
+
+function hasPoaReminderEligiblePowerOfAttorney(
+  poas?: Array<{ status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null,
+  now: Date = new Date(),
+): boolean {
+  const until = new Date(now);
+  until.setDate(until.getDate() + 30);
+  return (poas ?? []).some((poa) => {
+    if (String(poa.status ?? '').toUpperCase() !== 'ACTIVE') return false;
+    if (poa.isLimited !== true || !poa.validUntil) return false;
+    const validUntil = new Date(poa.validUntil);
+    if (Number.isNaN(validUntil.getTime())) return false;
+    return validUntil >= now && validUntil <= until;
+  });
+}
+
+function poaReminderCommandStatus(result: PoaExpiryDeliveryRunResult): ClientPoaReminderSendStatus {
+  if (result.sent > 0 && result.failed === 0) return 'sent';
+  if (result.sent > 0 && result.failed > 0) return 'partial';
+  if (result.sent === 0 && result.failed > 0) return 'failed';
+  return 'skipped';
 }
 
 function applyClientActionPolicy(item: ClientActionCatalogItem, actorRole: ClientActionRole): ClientActionCatalogItem | null {

@@ -1,4 +1,4 @@
-﻿import { AutomationService } from "../automation.service";
+import { AutomationService } from "../automation.service";
 import { PoaExpiryDeliveryService } from "../poa-expiry-delivery.service";
 
 const NOW = new Date("2026-06-27T09:00:00.000Z");
@@ -83,6 +83,23 @@ describe("PoaExpiryDeliveryService", () => {
     expect(data.dedupeKey).not.toContain("2026-06-27");
   });
 
+
+  it("manual client-scoped command filters by tenant/client and reuses delivery semantics", async () => {
+    const primary = lawyer({ id: "law-primary", email: "primary@law.test", userId: "user-primary" });
+    const { service, prisma, notifier, delivery } = build({
+      poas: [poa({ lawyers: [link(primary, { isPrimary: true })] })],
+    });
+
+    const result = await service.sendExpiringPoaNotificationsForClient("t1", "client-1", NOW);
+
+    expect(result).toMatchObject({ scanned: 1, recipients: 1, sent: 1, failed: 0 });
+    expect(prisma.clientPowerOfAttorney.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ clientId: "client-1", client: { tenantId: "t1" } }),
+    }));
+    expect(delivery.create.mock.calls[0][0].data).toMatchObject({ tenantId: "t1", clientId: "client-1" });
+    expect(notifier.sendEmail).toHaveBeenCalledTimes(1);
+    expect(notifier.sendEmail.mock.calls[0][1]).toBe("primary@law.test");
+  });
   it("primary yoksa aktif POA attorney'lerini tenant ve email guard ile kullanir", async () => {
     const a = lawyer({ id: "law-a", email: "a@law.test" });
     const b = lawyer({ id: "law-b", email: "b@law.test" });
