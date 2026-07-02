@@ -110,12 +110,12 @@ export class PoaController {
   }
 
   /**
-   * Vekalet sil
+   * Vekalet iptal et (P1A: fiziksel silme değil, status=REVOKED + isActive=false)
    * DELETE /api/poa/:id
    */
   @Delete(":id")
   async delete(@Param("id") id: string, @Request() req: any) {
-    return this.poaService.delete(id, req.user.tenantId);
+    return this.poaService.delete(id, req.user.tenantId, { userId: req.user.id });
   }
 
   /**

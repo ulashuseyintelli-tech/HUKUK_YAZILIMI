@@ -58,7 +58,9 @@ describe("PoaService.create — idempotency", () => {
       },
       poaLawyer: { createMany: jest.fn() },
     };
-    const svc = new PoaService(prisma);
+    // P1A: constructor 2 yeni parametre aldı (AuditService, OfficeApprovalService); idempotency
+    // testleri revoke'a dokunmaz → boş mock yeter.
+    const svc = new PoaService(prisma, {} as any, {} as any);
     return { svc, prisma };
   };
 
@@ -132,7 +134,8 @@ describe("PoaService.create — suppress lawyer reconcile (Fix E)", () => {
       },
       lawyer: { findMany: jest.fn().mockResolvedValue(opts.validLawyers ?? []) },
     };
-    return { svc: new PoaService(prisma), prisma };
+    // P1A: constructor 2 yeni parametre aldı; bu testler revoke'a dokunmaz → boş mock yeter.
+    return { svc: new PoaService(prisma, {} as any, {} as any), prisma };
   };
 
   const dupDto = { clientId: "cli1", notaryName: "BÜLENT ÖVEN", dateIssued: new Date("2026-01-12") };

@@ -1722,12 +1722,12 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
   };
 
   const handleDelete = async (poaId: string) => {
-    if (!confirm("Bu vekaleti silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Bu vekalet silinmez; hukuki geçmiş korunarak iptal edilir. Devam edilsin mi?")) return;
     try {
       await api.delete(`/poa/${poaId}`);
       await loadPoas();
     } catch (e: any) {
-      alert(e.message || "Silinemedi");
+      alert(e.message || "İptal edilemedi");
     }
   };
 
@@ -1877,7 +1877,7 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
                         )}
                       </div>
                     </div>
-                    <button onClick={() => handleDelete(poa.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Sil">
+                    <button onClick={() => handleDelete(poa.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Vekaleti iptal et">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
