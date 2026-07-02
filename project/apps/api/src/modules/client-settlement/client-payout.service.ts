@@ -10,6 +10,7 @@ import {
 } from '../accounting-journal';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
 import { ClientSettlementReadService } from './client-settlement-read.service';
+import { payoutLockKey } from './payout-lock';
 
 export interface CreatePayoutResult {
   created: boolean;
@@ -85,6 +86,11 @@ function compareAllocationSourceLines(a: AllocationSourceLine, b: AllocationSour
  * Güvenlik: caseClientId tenant+case+role (ALACAKLI/ORTAK_ALACAKLI) doğrulanır; idempotencyKey
  * tenant-scoped @@unique; concurrency advisory-lock (pg_advisory_xact_lock, scope=tenant+case+
  * caseClientId+currency) → eşzamanlı over-payout engellenir (outstanding lock altında re-hesaplanır).
+ *
+ * CBND-5 (H2): lock key `payoutLockKey()` (payout-lock.ts) ile üretilir — ClientOffsetService de
+ * (payable leg için, mevcut expense-remaining kilidinden SONRA) AYNI fonksiyonu çağırır; iki servis
+ * artık aynı caseClientId'nin payable outstanding'i için serialize olur. Bu servis client-offset
+ * kilidini ASLA almaz (deadlock'suz sabit sıra: client-offset → payout, yalnız offset tarafında).
  */
 @Injectable()
 export class ClientPayoutService {
@@ -128,7 +134,9 @@ export class ClientPayoutService {
       return await this.prisma.$transaction(async (tx) => {
         // Concurrency guard: advisory xact lock (scope tenant+case+caseClientId+currency) → aynı
         // alacaklı için eşzamanlı payout'lar SERIALIZE olur; outstanding lock altında tekrar hesaplanır.
-        const lockKey = `payout:${tenantId}:${dto.caseId}:${dto.caseClientId}:${currency}`;
+        // CBND-5 (H2): payoutLockKey paylaşılan fonksiyon — ClientOffsetService payable leg için AYNI
+        // key'i üretir, iki servis birbirine karşı da serialize olur.
+        const lockKey = payoutLockKey(tenantId, dto.caseId, dto.caseClientId, currency);
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
         // Idempotent re-check (lock altında, race) — payload-conflict guard ile.
