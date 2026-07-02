@@ -83,7 +83,7 @@ describe('ClientProfile actions tab shell', () => {
     render(<ClientProfile clientId="client-1" />);
 
     await waitFor(() => expect(screen.getByText('Ada Müvekkil')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'İşlemler' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'İşlemler' }));
 
     await waitFor(() => expect(screen.getByText('İletişim bilgilerini düzenle')).toBeTruthy());
     expect(apiMock.getClientActionCatalog).toHaveBeenCalledWith('client-1');

@@ -102,6 +102,8 @@ export interface Client {
   _count?: { cases?: number };
   /** Task 10A: portal erişim durumu (read-only). Açma/kapatma /settings/clients'ta kalır. */
   hasPortalAccess?: boolean;
+  /** A2B: whitelist-select portalUser projeksiyonu (passwordHash/resetToken/2FA ASLA dönmez). */
+  portalUser?: { email: string; lastLoginAt: string | null; loginCount: number } | null;
 }
 
 /**

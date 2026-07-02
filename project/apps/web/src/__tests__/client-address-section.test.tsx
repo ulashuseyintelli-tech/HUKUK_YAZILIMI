@@ -10,6 +10,8 @@ vi.mock('@/lib/api', async (importOriginal) => {
     api: {
       getClient: vi.fn(),
       getCases: vi.fn(),
+      getClientActionCatalog: vi.fn(),
+      getClientOperatingSnapshot: vi.fn(),
       createClientAddress: vi.fn(),
       updateClientAddress: vi.fn(),
       deleteClientAddress: vi.fn(),
@@ -20,9 +22,30 @@ vi.mock('@/lib/api', async (importOriginal) => {
 const apiMock = api as unknown as {
   getClient: ReturnType<typeof vi.fn>;
   getCases: ReturnType<typeof vi.fn>;
+  getClientActionCatalog: ReturnType<typeof vi.fn>;
+  getClientOperatingSnapshot: ReturnType<typeof vi.fn>;
   createClientAddress: ReturnType<typeof vi.fn>;
   updateClientAddress: ReturnType<typeof vi.fn>;
   deleteClientAddress: ReturnType<typeof vi.fn>;
+};
+
+const rightPanelSnapshot = {
+  clientId: 'client-1',
+  health: 'healthy',
+  riskLevel: 'low',
+  contact: {
+    status: 'complete',
+    missingFields: [],
+    followUpStatus: null,
+    openTaskCount: 0,
+    overdueTaskCount: 0,
+    nextFollowUpAt: null,
+    escalationLevel: null,
+  },
+  poa: { status: 'active', activeCount: 0, nearestValidUntil: null },
+  intake: { status: 'none', latestSubmission: null, latestLink: null },
+  notification: { status: 'none', latest: null },
+  signals: [],
 };
 
 const baseClient = {
@@ -37,9 +60,11 @@ const baseClient = {
 };
 
 async function openIdentityTab() {
+  apiMock.getClientActionCatalog.mockResolvedValue({ data: [] });
+  apiMock.getClientOperatingSnapshot.mockResolvedValue({ data: rightPanelSnapshot });
   render(<ClientProfile clientId="client-1" />);
   await waitFor(() => expect(screen.getByText('Ada Müvekkil')).toBeTruthy());
-  fireEvent.click(screen.getByRole('button', { name: 'Kimlik & İletişim' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Kimlik & İletişim' }));
 }
 
 describe('ClientAddressSection — flat fallback (addresses boş)', () => {

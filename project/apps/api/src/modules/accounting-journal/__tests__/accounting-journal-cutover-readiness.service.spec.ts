@@ -168,7 +168,16 @@ describe('AccountingJournalCutoverReadinessService', () => {
     expect(scope(report, 'CLIENT_ACCOUNTING_SUMMARY')).toEqual(expect.objectContaining({
       candidateStatus: 'SHADOW_ONLY',
       fallbackRequired: true,
+      blockerCodes: expect.arrayContaining([
+        'JOURNAL_DERIVED_CLIENT_ACCOUNTING_SUMMARY_READER_MISSING',
+        'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
+        'COLLECTION_JOURNAL_SOURCE_MISSING',
+        'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+        'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
+        'SUMMARY_DERIVED_FROM_BLOCKED_PENDING_DISTRIBUTION',
+      ]),
     }));
+    expect(scope(report, 'CLIENT_ACCOUNTING_SUMMARY')?.blockerCodes).not.toContain('EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING');
   });
 
   it('accepted-exclusion-only evidence stays visible for legal signoff and keeps user-facing reads shadow-only', async () => {

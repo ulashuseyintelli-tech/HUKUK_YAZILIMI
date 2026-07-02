@@ -178,7 +178,11 @@ describe('ClientActionsTab', () => {
     render(<ClientActionsTab clientId="client-1" />);
 
     await waitFor(() => expect(screen.getAllByText(/Intake linki olu/i)[0]).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /Olu/i }));
+    const toggle = screen.getByRole('button', { name: /Olu/i });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-controls')).toBe('client-action-form-intake-link-create');
     expect(screen.getByText(/stenen bilgi kategorileri/i)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /^Link olu.tur$/i }));
 
@@ -323,7 +327,7 @@ describe('ClientActionsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /^G.nder$/i }));
 
     await waitFor(() => expect(apiMock.sendClientWorkspacePoaReminder).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('POA reminder failed')).toBeTruthy();
+    expect(await screen.findByRole('alert')).toHaveTextContent('POA reminder failed');
     expect(screen.queryByText(/Vekalet hat.rlatmas. g.nderildi/i)).toBeNull();
   });
 
@@ -405,7 +409,7 @@ describe('ClientActionsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Sablon bildirimi gonder$/i }));
 
     await waitFor(() => expect(apiMock.sendClientWorkspaceTemplateNotification).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Template send failed')).toBeTruthy();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Template send failed');
     expect(screen.queryByText(/Sablon bildirimi gonderildi/i)).toBeNull();
   });
 
@@ -487,7 +491,7 @@ describe('ClientActionsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Belge talebi gonder$/i }));
 
     await waitFor(() => expect(apiMock.sendClientWorkspaceDocumentRequest).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Document request failed')).toBeTruthy();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Document request failed');
     expect(screen.queryByText(/Belge talebi gonderildi/i)).toBeNull();
   });
 
@@ -571,12 +575,14 @@ describe('ClientActionsTab', () => {
     apiMock.getClientOperatingSnapshot.mockReturnValue(new Promise(() => {}));
 
     const { rerender } = render(<ClientActionsTab clientId="client-1" />);
+    expect(screen.getByRole('status', { name: /Islemler yukleniyor/i })).toBeTruthy();
     expect(screen.getByText(/lemler y.*kleniyor/i)).toBeTruthy();
 
     apiMock.getClientActionCatalog.mockRejectedValue(new Error('failed'));
     apiMock.getClientOperatingSnapshot.mockResolvedValue({ data: snapshot() });
     rerender(<ClientActionsTab clientId="client-2" />);
 
-    await waitFor(() => expect(screen.getByText(/lemler y.*klenemedi/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.getByText(/lemler y.*klenemedi/i)).toBeTruthy();
   });
 });

@@ -19,6 +19,7 @@ import { ClientSettlementReadService } from '../client-settlement-read.service';
 import { ClientOffsetController } from '../client-offset.controller';
 import { CPE_ACTION_CODE_KEY } from '../../policy-engine/decorators/cpe-required.decorator';
 import { ActionCode } from '../../policy-engine/types/action-code.enum';
+import { payoutLockKey } from '../payout-lock';
 
 const D = (n: number) => new Prisma.Decimal(n);
 const PARTNER = { lawyer: { lawyerRank: 'PARTNER' }, staffMember: null };
@@ -465,6 +466,58 @@ describe('ClientOffsetService.reverseOffset', () => {
     expect(db.clientOffset.create).toHaveBeenCalled();
     expect(j.write).toHaveBeenCalled();
     expect(a.logInTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('CBND-5 (H2) createOffset/reverseOffset — payout lock disiplini', () => {
+  it('createOffset: İKİ kilit alınır — önce client-offset (client-scope), sonra payout (caseClientId-scope, payableCaseId ile)', async () => {
+    const db = makeDb();
+    await svc(db).service.createOffset('t1', 'u1', CREATE({ amount: '400' }));
+
+    expect(db.$executeRaw).toHaveBeenCalledTimes(2);
+    const calls = (db.$executeRaw as jest.Mock).mock.calls;
+    // tagged-template çağrısının ilk argümanı strings[], ikincisi interpolated key değeri.
+    expect(calls[0][1]).toBe('client-offset:t1:cl-1:TRY'); // clientOffsetLockKey(tenantId, dto.clientId, currency) — DEĞİŞMEDİ
+    expect(calls[1][1]).toBe(payoutLockKey('t1', 'case-P', 'cc-A', 'TRY')); // payoutLockKey(tenantId, payableCaseId, payableCaseClientId, currency)
+    expect(calls[1][1]).toBe('payout:t1:case-P:cc-A:TRY');
+  });
+
+  it('createOffset: client-offset kilidi payout kilidinden ÖNCE alınır (sabit sıra, invocationCallOrder)', async () => {
+    const db = makeDb();
+    await svc(db).service.createOffset('t1', 'u1', CREATE({ amount: '400' }));
+
+    const calls = (db.$executeRaw as jest.Mock).mock.invocationCallOrder;
+    expect(calls[0]).toBeLessThan(calls[1]);
+  });
+
+  it('reverseOffset: İKİ kilit alınır — client-offset sonra payout (original.payableCaseId/payableCaseClientId ile)', async () => {
+    const db = makeDb();
+    db.clientOffset.findFirst.mockResolvedValueOnce(APPLY_ROW()).mockResolvedValueOnce(null);
+    db.clientOffset.create.mockResolvedValue({ id: 'rev-new', createdAt: REVERSAL_CREATED_AT });
+
+    await svc(db).service.reverseOffset('t1', 'u1', 'off-1', REVERSE());
+
+    expect(db.$executeRaw).toHaveBeenCalledTimes(2);
+    const calls = (db.$executeRaw as jest.Mock).mock.calls;
+    expect(calls[0][1]).toBe('client-offset:t1:cl-1:TRY');
+    expect(calls[1][1]).toBe(payoutLockKey('t1', 'case-P', 'cc-A', 'TRY'));
+  });
+
+  it('reverseOffset: client-offset kilidi payout kilidinden ÖNCE alınır', async () => {
+    const db = makeDb();
+    db.clientOffset.findFirst.mockResolvedValueOnce(APPLY_ROW()).mockResolvedValueOnce(null);
+    db.clientOffset.create.mockResolvedValue({ id: 'rev-new', createdAt: REVERSAL_CREATED_AT });
+
+    await svc(db).service.reverseOffset('t1', 'u1', 'off-1', REVERSE());
+
+    const calls = (db.$executeRaw as jest.Mock).mock.invocationCallOrder;
+    expect(calls[0]).toBeLessThan(calls[1]);
+  });
+
+  it('payoutLockKey aynı (tenant,caseId,caseClientId,currency) için ClientPayoutService ile BİREBİR aynı string üretir', () => {
+    // Cross-service kanıt: iki servis de payout-lock.ts'teki AYNI fonksiyonu import eder — burada
+    // doğrudan çağrılıp createOffset'in ürettiği key ile karşılaştırılır (yukarıdaki testlerle tutarlı).
+    expect(payoutLockKey('t1', 'case-P', 'cc-A', 'TRY')).toBe('payout:t1:case-P:cc-A:TRY');
   });
 });
 

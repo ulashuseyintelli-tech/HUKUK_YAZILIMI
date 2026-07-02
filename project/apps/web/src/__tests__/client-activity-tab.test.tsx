@@ -98,6 +98,8 @@ describe('ClientActivityTab', () => {
     render(<ClientActivityTab clientId="client-1" />);
 
     await waitFor(() => expect(screen.getByText('Dosya bilgilendirmesi')).toBeTruthy());
+    expect(screen.getByRole('list', { name: /Client activity timeline/i })).toBeTruthy();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
     expect(screen.getByText('Email notification: sent')).toBeTruthy();
     expect(screen.getByText('Bilgilendirme')).toBeTruthy();
     expect(screen.getByText('E-posta')).toBeTruthy();
@@ -111,6 +113,7 @@ describe('ClientActivityTab', () => {
     render(<ClientActivityTab clientId="client-1" />);
 
     await waitFor(() => expect(screen.getByText('Intake submission received')).toBeTruthy());
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
     expect(screen.getByText('Client submitted the canonical intake form.')).toBeTruthy();
     expect(screen.getByText('Intake')).toBeTruthy();
     expect(screen.getByText('Yeni gönderim')).toBeTruthy();
@@ -150,6 +153,8 @@ describe('ClientActivityTab', () => {
     render(<ClientActivityTab clientId="client-1" />);
 
     await waitFor(() => expect(screen.getByText('Dosya bilgilendirmesi')).toBeTruthy());
+    expect(screen.getByRole('list', { name: /Client activity timeline/i })).toBeTruthy();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 });

@@ -8,6 +8,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ClientPayoutService } from '../client-payout.service';
 import { ClientSettlementReadService } from '../client-settlement-read.service';
+import { payoutLockKey } from '../payout-lock';
 
 const D = (n: number) => new Prisma.Decimal(n);
 const POSTED_AT = new Date('2026-06-01T00:00:00.000Z');
@@ -440,5 +441,23 @@ describe('CBND-3 (H3) ClientPayoutService.create — office-admin capability gat
     await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(ForbiddenException);
     expect(prisma.caseClient.findFirst).not.toHaveBeenCalled();
     expect(prisma.clientPayout.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe('CBND-5 (H2) ClientPayoutService.create — payoutLockKey paylaşılan fonksiyon', () => {
+  it('advisory-lock key payoutLockKey(tenantId, caseId, caseClientId, currency) ile BİREBİR aynı üretilir (refactor davranışı bozmadı)', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+    await svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR);
+
+    // tagged-template çağrısının ilk argümanı strings[], ikincisi interpolated key değeri.
+    const call = (tx.$executeRaw as jest.Mock).mock.calls[0];
+    expect(call[1]).toBe(payoutLockKey('t1', 'case1', 'cc-A', 'TRY'));
+    expect(call[1]).toBe('payout:t1:case1:cc-A:TRY'); // tarihsel format korunuyor
+  });
+
+  it('yalnız TEK kilit alınır (payout servisi client-offset kilidini asla almaz)', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+    await svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
   });
 });

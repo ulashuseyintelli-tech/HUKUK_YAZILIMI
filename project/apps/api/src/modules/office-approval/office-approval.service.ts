@@ -48,13 +48,32 @@ export class OfficeApprovalService {
     private readonly audit: AuditService,
   ) {}
 
-  /** PENDING_APPROVAL + NOT_RUN kayıt oluşturur. idempotencyKey verildiyse mevcutu döner (çift-talep engeli). */
+  /**
+   * PENDING_APPROVAL + NOT_RUN kayıt oluşturur. idempotencyKey verildiyse VE mevcut kayıt HÂLÂ PENDING_APPROVAL
+   * ise onu döner (çift-talep engeli, davranış DEĞİŞMEDİ). H7: mevcut kayıt TERMİNAL (karara bağlanmış —
+   * APPROVED/APPROVED_WITH_CHANGES/REJECTED/CANCELLED/REVISION_REQUESTED/EXPIRED) ise ARTIK O KAYIT DÖNDÜRÜLMEZ
+   * (önceden: caller'a "PENDING_APPROVAL" yalanı söyletiyordu + aynı niyet bir daha ASLA yeni talep açamıyordu —
+   * kalıcı liveness kilidi). Terminal kaydın idempotencyKey'i CAS ile namespace'lenip boşaltılır (kayıt SİLİNMEZ,
+   * kendi id'siyle denetim izinde kalır), ardından normal create() akışı devam eder → taze, gerçekten
+   * PENDING_APPROVAL bir kayıt oluşur. Eşzamanlı çağrılar: CAS'i kaybeden de create()'e düşer; create P2002 alırsa
+   * MEVCUT catch bloğu (aşağıda) taze kaydı bulup döner — race-safe, ekstra kilit gerekmez.
+   */
   async createPendingRequest(input: CreatePendingRequestInput): Promise<OfficeApprovalRequest> {
     if (input.idempotencyKey) {
       const existing = await this.prisma.officeApprovalRequest.findUnique({
         where: { tenantId_idempotencyKey: { tenantId: input.tenantId, idempotencyKey: input.idempotencyKey } },
       });
-      if (existing) return existing; // idempotent: aynı niyet tekrar gelirse mevcut talep
+      if (existing) {
+        if (existing.status === OfficeApprovalStatus.PENDING_APPROVAL) {
+          return existing; // idempotent: aynı niyet, hâlâ karar bekliyor → mevcut talep
+        }
+        // H7: terminal kayıt bu anahtarı işgal ediyor — canlı bir çakışma DEĞİL. Anahtarı CAS ile boşalt (yalnız
+        // hâlâ bu tam değeri taşıyorsa; eşzamanlı ikinci çağrı no-op görür, aşağıda create()'e düşer).
+        await this.prisma.officeApprovalRequest.updateMany({
+          where: { id: existing.id, idempotencyKey: input.idempotencyKey },
+          data: { idempotencyKey: `${input.idempotencyKey}::superseded:${existing.id}` },
+        });
+      }
     }
     const payloadHash = stableJsonHash(input.savedIntent);
     let created: OfficeApprovalRequest;

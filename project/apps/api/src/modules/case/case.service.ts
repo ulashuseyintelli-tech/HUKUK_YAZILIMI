@@ -779,7 +779,8 @@ export class CaseService {
    *
    * @remarks Çağrıldığı yerler:
    * - CaseService.create() → POST /cases (her creditor.id → clientId + courtId + executionOfficeId, tx öncesi)
-   * - CaseService.update() → PUT /cases/:id (clientId, courtId)
+   * - CaseService.update() → PUT /cases/:id (yalnız courtId; clientId CBND-1 ile generic update'ten
+   *   çıkarıldı — bkz. update() içindeki yan-kapı guard'ı, clientId artık burada doğrulanmaz)
    * - CaseService.patchFlags() → PATCH /cases/:id (executionOfficeId)
    */
   private async validateCaseFkOwnership(
@@ -2132,6 +2133,22 @@ export class CaseService {
     }
     delete data.caseStatus;
 
+    // CBND-1 (H1): MÜVEKKİL DEĞİŞİMİ YAN-KAPISI KAPALI. Case.clientId finansal otorite değildir —
+    // otorite dosyanın CaseClient alacaklı kümesidir (create() sırasında birlikte, tek noktada yazılır;
+    // create-sonrası CaseClient için kontrollü bir rebind akışı yoktur). Generic update() clientId'yi
+    // CaseClient'a dokunmadan persist ediyordu → iki kayıt sessizce ıraksayabiliyordu (tahsilat/payout/
+    // ekstre CaseClient okurken, findAll/hasValidPoa/açılış-masrafı hâlâ bu alanı okuyor). DTO'dan
+    // çıkarıldı (forbidNonWhitelisted çoğu isteği reddeder); burada da runtime guard (aynı-tx başka bir
+    // yoldan `data.clientId` sızarsa yine yakalanır — caseStatus deseniyle aynı). Farklı değer → 409
+    // (kontrollü rebind akışı henüz yok); aynı/eksik → no-op. Asla generic update ile persist edilmez.
+    const currentClientId = (existing as any)?.clientId;
+    if (data.clientId !== undefined && data.clientId !== currentClientId) {
+      throw new ConflictException(
+        "Müvekkil değişimi genel güncelleme ile yapılamaz; dosyanın alacaklı kümesi (CaseClient) ayrı, kontrollü bir işlem gerektirir.",
+      );
+    }
+    delete data.clientId;
+
     // İcra dairesi değiştiyse ve UYAP kodu yoksa, icra dairesinden al
     if (data.executionOfficeId && !data.uyapBirimKodu) {
       const executionOffice = await this.prisma.executionOffice.findUnique({
@@ -2144,10 +2161,11 @@ export class CaseService {
       }
     }
 
-    // CASE-UPDATE-FK-TENANT: clientId/courtId tenant ownership guard (cross-tenant/geçersiz → 400;
-    // null/undefined → atla — "" yukarıda undefined'a çevrildi). executionOfficeId UpdateCaseDto'da
-    // YOK (forbidNonWhitelisted PUT'ta bloklar) → burada doğrulanmaz; o yol patchFlags()'te ele alınır.
-    await this.validateCaseFkOwnership(tenantId, { clientId: data.clientId, courtId: data.courtId });
+    // CASE-UPDATE-FK-TENANT: courtId tenant ownership guard (cross-tenant/geçersiz → 400; null/undefined
+    // → atla — "" yukarıda undefined'a çevrildi). clientId CBND-1 ile yukarıda ele alındı (asla write
+    // edilmediği için FK doğrulaması gereksiz). executionOfficeId UpdateCaseDto'da YOK (forbidNonWhitelisted
+    // PUT'ta bloklar) → burada doğrulanmaz; o yol patchFlags()'te ele alınır.
+    await this.validateCaseFkOwnership(tenantId, { courtId: data.courtId });
 
     const updated = await this.prisma.case.update({
       where: { id },
@@ -2168,8 +2186,41 @@ export class CaseService {
     return updated;
   }
 
+  /**
+   * CBND-4 (H7): dosya silmeden önce finansal artık kontrolü. Collection→Case onDelete:Cascade olduğundan
+   * tahsilat kayıtları sessizce SİLİNİR (kayıp); ClientOffset FK'sız (scalar-ref) olduğundan silinen
+   * case/caseClient'a işaret eden DANGLING kayıt bırakır; ClientPayoutAllocation/ClientPayoutManualReversal
+   * zaten onDelete:Restrict korumalı ama bugün ham Prisma FK-constraint hatası olarak patlıyor (temiz
+   * mesaj yok). Dördü de burada AÇIKÇA kontrol edilip tek, anlaşılır ConflictException'a çevrilir; hiçbiri
+   * yoksa davranış AYNEN korunur (yeni bir silme/temizleme akışı EKLENMEZ, yalnız engelle+bildir).
+   */
+  private async assertNoFinancialActivity(tenantId: string, caseId: string): Promise<void> {
+    const [collectionCount, offsetCount, payoutCount, manualReversalCount] = await Promise.all([
+      this.prisma.collection.count({ where: { tenantId, caseId } }),
+      this.prisma.clientOffset.count({ where: { tenantId, OR: [{ payableCaseId: caseId }, { expenseCaseId: caseId }] } }),
+      this.prisma.clientPayout.count({ where: { tenantId, caseId } }),
+      this.prisma.clientPayoutManualReversal.count({ where: { tenantId, caseId } }),
+    ]);
+
+    const blockers: string[] = [];
+    if (collectionCount > 0) blockers.push(`${collectionCount} tahsilat (Collection)`);
+    if (offsetCount > 0) blockers.push(`${offsetCount} mahsup (ClientOffset)`);
+    if (payoutCount > 0) blockers.push(`${payoutCount} müvekkil ödemesi (ClientPayout)`);
+    if (manualReversalCount > 0) blockers.push(`${manualReversalCount} manuel reversal kaydı (ClientPayoutManualReversal)`);
+
+    if (blockers.length > 0) {
+      throw new ConflictException({
+        code: 'CASE_DELETE_FINANCIAL_ACTIVITY',
+        message: `Dosya silinemez: finansal geçmişi var (${blockers.join(', ')}). Finansal kayıtları olan dosyalar kalıcı silinemez.`,
+      });
+    }
+  }
+
   async delete(tenantId: string, id: string, userId: string) {
     const existing = await this.findOne(tenantId, id);
+
+    // CBND-4 (H7): transaction'dan ÖNCE — finansal artık varsa silme hiç denenmez.
+    await this.assertNoFinancialActivity(tenantId, id);
 
     // Transaction içinde silme ve audit log (veri bütünlüğü için)
     await this.prisma.$transaction(async (tx) => {

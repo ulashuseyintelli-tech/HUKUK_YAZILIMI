@@ -313,8 +313,18 @@ export class PoaService {
 
   /**
    * Vekalete avukat ekle
+   *
+   * @remarks CBND-2 (H6): poaId tenant doğrulaması removeLawyer ile AYNI desende (findOne → Yetki
+   * kontrolü). Önceden yalnız lawyerIds tenant-doğrulanıyordu; poaId doğrulanmadan poaLawyer.createMany
+   * çalıştırılıyordu → cross-tenant poaId (tahmin/sızma ile ele geçirilmiş cuid) ile yabancı tenant'ın
+   * vekaletine yazılabiliyordu (ilk eklenen isPrimary:true → hedef POA'nın mevcut primary'siyle çift-
+   * primary bozulması + findOne include ile yabancı avukat adı/baro no görünürlüğü). İç çağıranlar
+   * (create() satır ~220, update() satır ~252) zaten aynı tenant'a ait id kullanıyor — bu guard onlar
+   * için no-op (fazladan bir tenant-scoped sorgu, davranış değişmez).
    */
   async addLawyers(poaId: string, lawyerIds: string[], tenantId: string) {
+    await this.findOne(poaId, tenantId); // Yetki kontrolü (removeLawyer ile aynı desen)
+
     // Avukatların varlığını kontrol et
     const lawyers = await this.prisma.lawyer.findMany({
       where: { id: { in: lawyerIds }, tenantId },
