@@ -7,7 +7,6 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import * as jwt from 'jsonwebtoken';
 import * as request from 'supertest';
 import { AuthService } from '../../auth/auth.service';
-import { AdminGuard } from '../../auth/guards/admin.guard';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { JwtStrategy } from '../../auth/strategies/jwt.strategy';
 import { AccountingJournalFinancialStatementController } from '../accounting-journal-financial-statement.controller';
@@ -150,7 +149,6 @@ describe('AccountingJournalFinancialStatementController HTTP smoke', () => {
       controllers: [AccountingJournalFinancialStatementController],
       providers: [
         JwtAuthGuard,
-        AdminGuard,
         JwtStrategy,
         {
           provide: ConfigService,
@@ -180,9 +178,9 @@ describe('AccountingJournalFinancialStatementController HTTP smoke', () => {
     service.getClientCaseStatement.mockClear();
   });
 
-  it('guard metadata: class uses JwtAuthGuard and endpoint uses AdminGuard', () => {
+  it('guard metadata: class uses JwtAuthGuard, endpoint AdminGuard tasimaz (ACCT-5A office-wide read)', () => {
     expect(classGuards()).toContain(JwtAuthGuard);
-    expect(methodGuards()).toContain(AdminGuard);
+    expect(methodGuards()).toHaveLength(0);
   });
 
   it('JWT yoksa 401 doner ve projection service cagrilmaz', async () => {
@@ -191,14 +189,17 @@ describe('AccountingJournalFinancialStatementController HTTP smoke', () => {
     expect(service.getClientCaseStatement).not.toHaveBeenCalled();
   });
 
-  it('non-admin JWT ile 403 doner ve projection service cagrilmaz', async () => {
-    await request(app.getHttpServer())
+  it('ACCT-5A: non-admin (role=USER) JWT ile 200 doner, kendi tenant scope\'uyla cagirir (office-wide read, capability gate yok)', async () => {
+    const response = await request(app.getHttpServer())
       .get('/accounting-journal/financial-statements')
       .query(validQuery())
       .set('Authorization', `Bearer ${nonAdminToken}`)
-      .expect(403);
+      .expect(200);
 
-    expect(service.getClientCaseStatement).not.toHaveBeenCalled();
+    expect(service.getClientCaseStatement).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-user' }),
+    );
+    expect(response.body.tenantId).toBe('tenant-user');
   });
 
   it('admin JWT ile 200 doner ve Financial Statement projection contract temel alanlarini tasir', async () => {
