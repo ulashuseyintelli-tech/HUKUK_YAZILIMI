@@ -169,13 +169,15 @@ export class LawyerController {
   }
 
   // Avukat pasifleştir (L1A: fiziksel silme değil, isActive=false)
+  // H1: sorumlu olduğu dosya varsa body.replacementLawyerId ZORUNLU (service'te doğrulanır).
   @Delete(":id")
   delete(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Param("id") id: string
+    @Param("id") id: string,
+    @Body() body?: { replacementLawyerId?: string }
   ) {
-    return this.lawyerService.delete(tenantId, id, { userId });
+    return this.lawyerService.delete(tenantId, id, { userId }, body?.replacementLawyerId);
   }
 
   // Sıralama güncelle
