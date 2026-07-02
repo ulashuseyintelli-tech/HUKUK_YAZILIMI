@@ -205,7 +205,7 @@ export interface ExpenseReimbursementApplicationBackfillEvidenceItem {
     kind: string;
     sourceAction: string;
     caseId: string;
-    clientId: string;
+    clientId: string | null;
     currency: string;
     collectionDispositionId: string;
     collectionDispositionLineId: string;
