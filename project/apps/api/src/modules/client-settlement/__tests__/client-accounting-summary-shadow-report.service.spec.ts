@@ -1,4 +1,4 @@
-﻿import { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import {
   ClientAccountingSummaryShadowComponent,
   ClientAccountingSummaryShadowReport,
@@ -135,6 +135,7 @@ type CollectionMockRow = {
   currency?: string;
   status?: string;
   date?: Date | null;
+  amount?: string;
 };
 
 type CollectionDispositionMockRow = {
@@ -143,6 +144,7 @@ type CollectionDispositionMockRow = {
   currency?: string;
   status?: string;
   updatedAt?: Date | null;
+  totalAmount?: string;
 };
 
 type BalanceLedgerMockRow = {
@@ -154,6 +156,19 @@ type BalanceLedgerMockRow = {
   sourceId?: string | null;
   createdAt?: Date;
   caseId?: string;
+};
+
+type CaseBalanceMockRow = {
+  caseId?: string;
+  balance: string;
+};
+
+type CaseScopedJournalLineMockRow = {
+  sourceType: string;
+  sourceAction?: string;
+  accountCode: string;
+  direction: string;
+  amount: string;
 };
 
 const DEFAULT_REPLAY_DATE = new Date('2026-01-01T00:00:00.000Z');
@@ -351,6 +366,7 @@ function collection(row: CollectionMockRow) {
     status: 'CONFIRMED',
     date: DEFAULT_REPLAY_DATE,
     ...row,
+    amount: new Prisma.Decimal(row.amount ?? '0'),
   };
 }
 
@@ -361,6 +377,7 @@ function collectionDisposition(row: CollectionDispositionMockRow) {
     status: 'HELD_PENDING_DISTRIBUTION',
     updatedAt: DEFAULT_REPLAY_DATE,
     ...row,
+    totalAmount: new Prisma.Decimal(row.totalAmount ?? '0'),
   };
 }
 
@@ -374,6 +391,22 @@ function balanceLedger(row: BalanceLedgerMockRow) {
     sourceId: row.sourceId ?? null,
     createdAt: row.createdAt ?? DEFAULT_REPLAY_DATE,
     caseBalance: { caseId: row.caseId ?? 'case-1' },
+  };
+}
+
+function caseBalance(row: CaseBalanceMockRow) {
+  return {
+    caseId: row.caseId ?? 'case-1',
+    balance: new Prisma.Decimal(row.balance),
+  };
+}
+
+function caseScopedJournalLine(row: CaseScopedJournalLineMockRow) {
+  return {
+    accountCode: row.accountCode,
+    direction: row.direction,
+    amount: new Prisma.Decimal(row.amount),
+    journalEntry: { sourceType: row.sourceType, sourceAction: row.sourceAction ?? 'posted' },
   };
 }
 
@@ -400,6 +433,8 @@ function buildPrismaMock(
     collections?: CollectionMockRow[];
     dispositions?: CollectionDispositionMockRow[];
     balanceLedgers?: BalanceLedgerMockRow[];
+    caseBalances?: CaseBalanceMockRow[];
+    caseScopedJournalLines?: CaseScopedJournalLineMockRow[];
     journalEntries?: ReplayJournalMockRow[];
   },
 ) {
@@ -411,6 +446,16 @@ function buildPrismaMock(
       findMany: jest.fn().mockImplementation((args) => {
         if (args.where?.accountCode === 'CLIENT_EXPENSE_RECEIVABLE') {
           return Promise.resolve((expense?.adjustmentLines ?? []).map(expenseReceivableAdjustmentLine));
+        }
+        if (args.where?.accountCode === 'CLIENT_ADVANCE_BALANCE') {
+          return Promise.resolve((replay?.caseScopedJournalLines ?? [])
+            .filter((line) => line.accountCode === 'CLIENT_ADVANCE_BALANCE')
+            .map(caseScopedJournalLine));
+        }
+        if (args.where?.journalEntry?.sourceType === 'COLLECTION_DISPOSITION_LINE') {
+          return Promise.resolve((replay?.caseScopedJournalLines ?? [])
+            .filter((line) => line.sourceType === 'COLLECTION_DISPOSITION_LINE')
+            .map(caseScopedJournalLine));
         }
         return Promise.resolve(
           lines.map((line) => ({
@@ -451,6 +496,9 @@ function buildPrismaMock(
     },
     balanceLedger: {
       findMany: jest.fn().mockResolvedValue((replay?.balanceLedgers ?? []).map(balanceLedger)),
+    },
+    caseBalance: {
+      findMany: jest.fn().mockResolvedValue((replay?.caseBalances ?? []).map(caseBalance)),
     },
     expensePaymentReversal: {
       findMany: jest.fn().mockResolvedValue((expense?.paymentReversals ?? []).map(expensePaymentReversal)),
@@ -1630,7 +1678,9 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       expect.objectContaining({ legacyValue: '0', journalValue: '0', delta: '0', status: 'MATCH' }),
     );
     expect(component(report, 'debtorCollection').valueComparison).toBeUndefined();
-    expect(component(report, 'advanceBalance').valueComparison).toBeUndefined();
+    expect(component(report, 'advanceBalance').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '0', journalValue: '0', delta: '0', status: 'MATCH' }),
+    );
   });
   it('reports client-scoped primary reader parity evidence while keeping case-scoped blockers', async () => {
     const prisma = buildPrismaMock([
@@ -1701,10 +1751,120 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       expect.objectContaining({ legacyValue: '68', journalValue: '68', delta: '0', status: 'MATCH', blockerCodes: [] }),
     );
     expect(component(report, 'debtorCollection').valueComparison).toBeUndefined();
-    expect(component(report, 'advanceBalance').valueComparison).toBeUndefined();
+    expect(component(report, 'advanceBalance').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '0', journalValue: '0', delta: '0', status: 'MATCH' }),
+    );
     expect(report.blockerCodes).toEqual(expect.arrayContaining(['CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING']));
     expect(report.candidateStatus).toBe('BLOCKED');
     expect(report.safeForPrimaryCutover).toBe(false);
     expect(report.primarySwitchUnchanged).toBe(true);
+  });
+  it('reports case-scoped primary reader evidence while keeping debtorCollection raw Collection blocker', async () => {
+    const prisma = buildPrismaMock([], undefined, {
+      collections: [{ id: 'collection-case', amount: '1000' }],
+      dispositions: [{ id: 'disp-posted', status: 'POSTED', totalAmount: '400' }],
+      caseBalances: [{ balance: '75' }],
+      caseScopedJournalLines: [
+        { sourceType: 'COLLECTION_DISPOSITION_LINE', accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', amount: '300' },
+        { sourceType: 'COLLECTION_DISPOSITION_LINE', accountCode: 'ATTORNEY_FEE_REVENUE', direction: 'CREDIT', amount: '100' },
+        { sourceType: 'BALANCE_LEDGER', accountCode: 'CLIENT_ADVANCE_BALANCE', direction: 'CREDIT', amount: '100' },
+        { sourceType: 'BALANCE_LEDGER', accountCode: 'CLIENT_ADVANCE_BALANCE', direction: 'DEBIT', amount: '25' },
+      ],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.caseScopedPrimaryReaderEvidence).toEqual(
+      expect.objectContaining({
+        sourceVersion: 'acct-cutover-3e4b2f2a-case-scoped-summary-reader-evidence-v1',
+        readerSource: 'ACCOUNTING_JOURNAL_CASE_SCOPED_SHADOW',
+        status: 'BLOCKED',
+        values: expect.objectContaining({
+          debtorCollectionLegacyValue: '1000',
+          postedDispositionLegacyValue: '400',
+          postedDispositionJournalValue: '400',
+          pendingDistributionLegacyValue: '600',
+          pendingDistributionJournalValue: '600',
+          advanceBalanceLegacyValue: '75',
+          advanceBalanceJournalValue: '75',
+        }),
+        unsupportedResponsePaths: ['caseScopedContext.debtorCollection', 'caseBreakdown', 'needsReview'],
+        blockerCodes: expect.arrayContaining([
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+          'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
+        ]),
+      }),
+    );
+    expect(report.caseScopedPrimaryReaderEvidence?.comparisons.pendingDistribution).toEqual(
+      expect.objectContaining({ legacyValue: '600', journalValue: '600', delta: '0', status: 'MATCH', blockerCodes: [] }),
+    );
+    expect(report.caseScopedPrimaryReaderEvidence?.comparisons.advanceBalance).toEqual(
+      expect.objectContaining({ legacyValue: '75', journalValue: '75', delta: '0', status: 'MATCH', blockerCodes: [] }),
+    );
+    expect(component(report, 'pendingDistribution').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '600', journalValue: '600', delta: '0', status: 'MATCH' }),
+    );
+    expect(component(report, 'advanceBalance').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '75', journalValue: '75', delta: '0', status: 'MATCH' }),
+    );
+    expect(component(report, 'debtorCollection').blockerCodes).toContain('CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING');
+    expect(component(report, 'needsReview').blockerCodes).toEqual(
+      expect.arrayContaining(component(report, 'pendingDistribution').blockerCodes),
+    );
+    expect(report.candidateStatus).toBe('BLOCKED');
+    expect(report.safeForPrimaryCutover).toBe(false);
+    expect(report.primarySwitchUnchanged).toBe(true);
+  });
+
+  it('reports case-scoped pendingDistribution and advanceBalance journal mismatches', async () => {
+    const prisma = buildPrismaMock([], undefined, {
+      collections: [{ id: 'collection-case', amount: '1000' }],
+      dispositions: [{ id: 'disp-posted', status: 'POSTED', totalAmount: '400' }],
+      caseBalances: [{ balance: '75' }],
+      caseScopedJournalLines: [
+        { sourceType: 'COLLECTION_DISPOSITION_LINE', accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', amount: '350' },
+        { sourceType: 'BALANCE_LEDGER', accountCode: 'CLIENT_ADVANCE_BALANCE', direction: 'CREDIT', amount: '60' },
+      ],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.caseScopedPrimaryReaderEvidence).toEqual(
+      expect.objectContaining({
+        status: 'MISMATCH',
+        blockerCodes: expect.arrayContaining([
+          'CASE_CONTEXT_PENDING_DISTRIBUTION_JOURNAL_MISMATCH',
+          'CASE_BALANCE_SNAPSHOT_VALUE_MISMATCH',
+        ]),
+      }),
+    );
+    expect(report.caseScopedPrimaryReaderEvidence?.comparisons.pendingDistribution).toEqual(
+      expect.objectContaining({ legacyValue: '600', journalValue: '650', delta: '50', status: 'MISMATCH', blockerCodes: ['CASE_CONTEXT_PENDING_DISTRIBUTION_JOURNAL_MISMATCH'] }),
+    );
+    expect(report.caseScopedPrimaryReaderEvidence?.comparisons.advanceBalance).toEqual(
+      expect.objectContaining({ legacyValue: '75', journalValue: '60', delta: '-15', status: 'MISMATCH', blockerCodes: ['CASE_BALANCE_SNAPSHOT_VALUE_MISMATCH'] }),
+    );
+    expect(component(report, 'pendingDistribution').blockerCodes).toEqual(
+      expect.arrayContaining(['CASE_CONTEXT_PENDING_DISTRIBUTION_JOURNAL_MISMATCH']),
+    );
+    expect(component(report, 'advanceBalance').blockerCodes).toEqual(
+      expect.arrayContaining(['CASE_BALANCE_SNAPSHOT_VALUE_MISMATCH']),
+    );
+    expect(report.blockerCodes).toEqual(
+      expect.arrayContaining([
+        'CASE_CONTEXT_PENDING_DISTRIBUTION_JOURNAL_MISMATCH',
+        'CASE_BALANCE_SNAPSHOT_VALUE_MISMATCH',
+      ]),
+    );
+    expect(report.candidateStatus).toBe('BLOCKED');
+    expect(report.safeForPrimaryCutover).toBe(false);
   });
 });
