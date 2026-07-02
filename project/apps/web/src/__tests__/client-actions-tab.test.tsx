@@ -13,6 +13,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
       createClientWorkspaceIntakeLink: vi.fn(),
       createClientWorkspaceIntakeLinkAndDeliver: vi.fn(),
       sendClientWorkspacePoaReminder: vi.fn(),
+      sendClientWorkspaceTemplateNotification: vi.fn(),
     },
   };
 });
@@ -23,6 +24,7 @@ const apiMock = api as unknown as {
   createClientWorkspaceIntakeLink: ReturnType<typeof vi.fn>;
   createClientWorkspaceIntakeLinkAndDeliver: ReturnType<typeof vi.fn>;
   sendClientWorkspacePoaReminder: ReturnType<typeof vi.fn>;
+  sendClientWorkspaceTemplateNotification: ReturnType<typeof vi.fn>;
 };
 
 const action = (over: Partial<ClientActionCatalogItem>): ClientActionCatalogItem => ({
@@ -103,6 +105,13 @@ describe('ClientActionsTab', () => {
       sent: 1,
       failed: 0,
       skipped: 0,
+    });
+    apiMock.sendClientWorkspaceTemplateNotification.mockResolvedValue({
+      clientId: 'client-1',
+      caseId: 'case-1',
+      templateCode: 'GENEL_BILGILENDIRME',
+      status: 'sent',
+      notificationId: 'notification-1',
     });
     mockReady([
       action({ key: 'contact.update_missing_info', order: 10, href: '/clients/client-1/edit' }),
@@ -306,6 +315,88 @@ describe('ClientActionsTab', () => {
     await waitFor(() => expect(apiMock.sendClientWorkspacePoaReminder).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('POA reminder failed')).toBeTruthy();
     expect(screen.queryByText(/Vekalet hat.rlatmas. g.nderildi/i)).toBeNull();
+  });
+
+
+  it('sends an enabled template notification with selected allowlist template', async () => {
+    mockReady([
+      action({
+        key: 'notification.template.send',
+        label: 'Sablon bildirimi gonder',
+        category: 'notification',
+        enabled: true,
+        href: undefined,
+        target: { clientId: 'client-1', caseId: 'case-1' },
+        requiredState: 'TEMPLATE_NOTIFICATION_READY',
+        order: 36,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText(/ablon bildirim/i)).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Sec/i }));
+    fireEvent.change(screen.getByLabelText(/Sablon/i), { target: { value: 'DOSYA_DURUMU' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Sablon bildirimi gonder$/i }));
+
+    await waitFor(() => expect(apiMock.sendClientWorkspaceTemplateNotification).toHaveBeenCalledTimes(1));
+    expect(apiMock.sendClientWorkspaceTemplateNotification).toHaveBeenCalledWith('client-1', {
+      templateCode: 'DOSYA_DURUMU',
+      caseId: 'case-1',
+    });
+    expect(await screen.findByText(/Sablon bildirimi gonderildi/i)).toBeTruthy();
+    expect(screen.getByText(/Yanitta alici, govde, dedupe/i)).toBeTruthy();
+    expect(screen.queryByText(/@example/i)).toBeNull();
+    expect(screen.queryByText(/dedupe-key/i)).toBeNull();
+    await waitFor(() => expect(apiMock.getClientActionCatalog).toHaveBeenCalledTimes(2));
+    expect(apiMock.getClientOperatingSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps disabled template notification unavailable', async () => {
+    mockReady([
+      action({
+        key: 'notification.template.send',
+        label: 'Sablon bildirimi gonder',
+        category: 'notification',
+        enabled: false,
+        disabledReason: 'Sablon bildirimi icin uygun alici yok.',
+        href: undefined,
+        target: { clientId: 'client-1' },
+        order: 36,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Sablon bildirimi icin uygun alici yok.')).toBeTruthy());
+    expect(screen.getByRole('button', { name: /Kapal/i })).toBeTruthy();
+    expect(apiMock.sendClientWorkspaceTemplateNotification).not.toHaveBeenCalled();
+  });
+
+  it('shows template notification failure without optimistic success', async () => {
+    apiMock.sendClientWorkspaceTemplateNotification.mockRejectedValueOnce(new Error('Template send failed'));
+    mockReady([
+      action({
+        key: 'notification.template.send',
+        label: 'Sablon bildirimi gonder',
+        category: 'notification',
+        enabled: true,
+        href: undefined,
+        target: { clientId: 'client-1' },
+        requiredState: 'TEMPLATE_NOTIFICATION_READY',
+        order: 36,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText(/ablon bildirim/i)).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Sec/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Sablon bildirimi gonder$/i }));
+
+    await waitFor(() => expect(apiMock.sendClientWorkspaceTemplateNotification).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Template send failed')).toBeTruthy();
+    expect(screen.queryByText(/Sablon bildirimi gonderildi/i)).toBeNull();
   });
 
   it('shows failed delivery status without optimistic success', async () => {
