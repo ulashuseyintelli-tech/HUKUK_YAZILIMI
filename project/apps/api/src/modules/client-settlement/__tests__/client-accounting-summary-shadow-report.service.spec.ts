@@ -17,6 +17,7 @@ type ExpenseRequestMockRow = {
   caseId?: string;
   clientId?: string;
   totalAmount: string;
+  paidTotal?: string;
   currency?: string;
   status?: string;
 };
@@ -31,6 +32,51 @@ type ExpenseRequestJournalMockRow = {
   expenseRequestId?: string | null;
 };
 
+type ExpensePaymentMockRow = {
+  id: string;
+  expenseRequestId: string;
+  amount: string;
+  caseId?: string;
+  clientId?: string;
+  currency?: string;
+  status?: string;
+};
+
+type ExpensePaymentJournalMockRow = {
+  id?: string;
+  sourceId: string;
+  sourceAction?: string;
+  amount: string;
+  caseId?: string | null;
+  clientId?: string | null;
+  currency?: string;
+  expenseRequestId?: string | null;
+  expensePaymentId?: string | null;
+};
+
+type ExpensePaymentReversalMockRow = {
+  id?: string;
+  expensePaymentId: string;
+  status?: string;
+  originalJournalEntryId?: string;
+  reversalJournalEntryId?: string | null;
+  reversalAmount?: string;
+  reversalEntryType?: string;
+  reversalSourceType?: string;
+  reversalSourceAction?: string;
+  reversalOfEntryId?: string | null;
+  caseId?: string | null;
+  clientId?: string | null;
+  currency?: string;
+  expenseRequestId?: string | null;
+};
+
+type ExpenseReceivableAdjustmentLineMockRow = {
+  sourceType: string;
+  sourceAction: string;
+  direction: string;
+  amount: string;
+};
 type ReplayJournalMockRow = {
   id?: string;
   sourceType: 'COLLECTION_DISPOSITION_LINE' | 'BALANCE_LEDGER';
@@ -151,6 +197,41 @@ function expensePaymentJournal(row: ExpensePaymentJournalMockRow) {
   };
 }
 
+function expensePaymentReversal(row: ExpensePaymentReversalMockRow) {
+  const originalJournalEntryId = row.originalJournalEntryId ?? `journal-${row.expensePaymentId}`;
+  const reversalJournalEntryId = row.reversalJournalEntryId === undefined
+    ? `reversal-journal-${row.expensePaymentId}`
+    : row.reversalJournalEntryId;
+
+  return {
+    id: row.id ?? `reversal-${row.expensePaymentId}`,
+    expensePaymentId: row.expensePaymentId,
+    status: row.status ?? 'COMPLETED',
+    originalJournalEntryId,
+    reversalJournalEntryId,
+    reversalJournalEntry: reversalJournalEntryId
+      ? {
+          id: reversalJournalEntryId,
+          entryType: row.reversalEntryType ?? 'ACCOUNTING_JOURNAL_REVERSAL',
+          sourceType: row.reversalSourceType ?? 'ACCOUNTING_JOURNAL_ENTRY',
+          sourceAction: row.reversalSourceAction ?? 'reversal',
+          reversalOfEntryId: row.reversalOfEntryId === undefined ? originalJournalEntryId : row.reversalOfEntryId,
+          lines: [
+            {
+              accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
+              direction: 'DEBIT',
+              amount: new Prisma.Decimal(row.reversalAmount ?? '0'),
+              currency: row.currency ?? 'TRY',
+              caseId: row.caseId ?? 'case-1',
+              clientId: row.clientId ?? 'client-1',
+              expenseRequestId: row.expenseRequestId ?? `er-${row.expensePaymentId}`,
+              expensePaymentId: row.expensePaymentId,
+            },
+          ],
+        }
+      : null,
+  };
+}
 function expenseReceivableAdjustmentLine(row: ExpenseReceivableAdjustmentLineMockRow) {
   return {
     amount: new Prisma.Decimal(row.amount),
@@ -224,9 +305,13 @@ function buildPrismaMock(
     active?: ExpenseRequestMockRow[];
     cancelled?: ExpenseRequestMockRow[];
     journals?: ExpenseRequestJournalMockRow[];
+    paymentRows?: ExpensePaymentMockRow[];
+    paymentJournals?: ExpensePaymentJournalMockRow[];
+    adjustmentLines?: ExpenseReceivableAdjustmentLineMockRow[];
     payments?: Array<{ expenseRequestId: string }>;
     offsets?: Array<{ expenseRequestId: string }>;
     applications?: Array<{ expenseRequestId: string }>;
+    paymentReversals?: ExpensePaymentReversalMockRow[];
   },
   replay?: {
     caseClients?: Array<{ id: string; caseId: string }>;
@@ -282,6 +367,9 @@ function buildPrismaMock(
     },
     balanceLedger: {
       findMany: jest.fn().mockResolvedValue((replay?.balanceLedgers ?? []).map(balanceLedger)),
+    },
+    expensePaymentReversal: {
+      findMany: jest.fn().mockResolvedValue((expense?.paymentReversals ?? []).map(expensePaymentReversal)),
     },
     expensePayment: {
       findMany: jest.fn().mockImplementation((args) => {
@@ -747,6 +835,121 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(report.safeForPrimaryCutover).toBe(false);
   });
 
+  it('nets completed ExpensePayment reversal into expensePaid and expenseUnpaid shadow values', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-reversed', totalAmount: '100', paidTotal: '0' }],
+      journals: [{ sourceId: 'er-reversed', amount: '100' }],
+      paymentRows: [{ id: 'ep-reversed', expenseRequestId: 'er-reversed', amount: '30' }],
+      paymentJournals: [{ sourceId: 'ep-reversed', amount: '30', expenseRequestId: 'er-reversed' }],
+      paymentReversals: [{ expensePaymentId: 'ep-reversed', reversalAmount: '30', expenseRequestId: 'er-reversed' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        status: 'MATCHED',
+        legacyValue: '0',
+        journalValue: '0',
+        delta: '0',
+        blockerCodes: [],
+        details: expect.objectContaining({
+          reversalStatus: 'COMPLETED',
+          reversalJournalEntryId: 'reversal-journal-ep-reversed',
+          reversalJournalValue: '30',
+        }),
+      }),
+    );
+    expect(component(report, 'expensePaid').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '0', journalValue: '0', delta: '0', status: 'MATCH', blockerCodes: [] }),
+    );
+    expect(report.expenseUnpaidBreakdown).toEqual(
+      expect.objectContaining({ legacyValue: '100', requestedJournalValue: '100', paidJournalValue: '0', journalValue: '100', delta: '0' }),
+    );
+  });
+
+  it('blocks incomplete ExpensePayment reversal evidence', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-reversal-pending', totalAmount: '100', paidTotal: '30' }],
+      journals: [{ sourceId: 'er-reversal-pending', amount: '100' }],
+      paymentRows: [{ id: 'ep-reversal-pending', expenseRequestId: 'er-reversal-pending', amount: '30' }],
+      paymentJournals: [{ sourceId: 'ep-reversal-pending', amount: '30', expenseRequestId: 'er-reversal-pending' }],
+      paymentReversals: [{ expensePaymentId: 'ep-reversal-pending', status: 'PENDING', reversalAmount: '30', expenseRequestId: 'er-reversal-pending' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        status: 'REVERSAL_INCOMPLETE_BLOCKED',
+        blockerCodes: ['EXPENSE_PAYMENT_REVERSAL_INCOMPLETE'],
+        details: expect.objectContaining({
+          reversalStatus: 'PENDING',
+          policyReason: 'EXPENSE_PAYMENT_REVERSAL_RUNTIME_EVIDENCE_INCOMPLETE',
+        }),
+      }),
+    );
+    expect(report.blockerCodes).toEqual(expect.arrayContaining(['EXPENSE_PAYMENT_REVERSAL_INCOMPLETE']));
+  });
+
+  it('blocks completed ExpensePayment reversal when reversal journal is missing', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-reversal-missing-journal', totalAmount: '100', paidTotal: '0' }],
+      journals: [{ sourceId: 'er-reversal-missing-journal', amount: '100' }],
+      paymentRows: [{ id: 'ep-reversal-missing-journal', expenseRequestId: 'er-reversal-missing-journal', amount: '30' }],
+      paymentJournals: [{ sourceId: 'ep-reversal-missing-journal', amount: '30', expenseRequestId: 'er-reversal-missing-journal' }],
+      paymentReversals: [{ expensePaymentId: 'ep-reversal-missing-journal', reversalJournalEntryId: null, expenseRequestId: 'er-reversal-missing-journal' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        status: 'REVERSAL_INCOMPLETE_BLOCKED',
+        blockerCodes: ['EXPENSE_PAYMENT_REVERSAL_INCOMPLETE'],
+        details: expect.objectContaining({ reversalJournalEntryId: null }),
+      }),
+    );
+  });
+
+  it('blocks ExpensePayment reversal value mismatch evidence', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-reversal-mismatch', totalAmount: '100', paidTotal: '0' }],
+      journals: [{ sourceId: 'er-reversal-mismatch', amount: '100' }],
+      paymentRows: [{ id: 'ep-reversal-mismatch', expenseRequestId: 'er-reversal-mismatch', amount: '30' }],
+      paymentJournals: [{ sourceId: 'ep-reversal-mismatch', amount: '30', expenseRequestId: 'er-reversal-mismatch' }],
+      paymentReversals: [{ expensePaymentId: 'ep-reversal-mismatch', reversalAmount: '25', expenseRequestId: 'er-reversal-mismatch' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        status: 'REVERSAL_VALUE_MISMATCH',
+        journalValue: '5',
+        delta: '5',
+        blockerCodes: ['EXPENSE_PAYMENT_REVERSAL_VALUE_MISMATCH'],
+        details: expect.objectContaining({ reversalJournalValue: '25' }),
+      }),
+    );
+    expect(report.blockerCodes).toEqual(expect.arrayContaining(['EXPENSE_PAYMENT_REVERSAL_VALUE_MISMATCH']));
+  });
   it('reports missing historical ExpensePayment journal as backfill required', async () => {
     const prisma = buildPrismaMock([], {
       active: [{ id: 'er-paid-missing', totalAmount: '80', paidTotal: '20' }],

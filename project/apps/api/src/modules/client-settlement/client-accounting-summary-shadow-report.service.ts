@@ -145,6 +145,9 @@ export type ExpensePaymentBackfillEvidenceStatus =
   | 'VALUE_MISMATCH'
   | 'DIMENSION_MISMATCH'
   | 'REVERSAL_REFUND_POLICY_BLOCKED'
+  | 'REVERSAL_INCOMPLETE_BLOCKED'
+  | 'REVERSAL_VALUE_MISMATCH'
+  | 'REVERSAL_DIMENSION_MISMATCH'
   | 'PARENT_CANCELLED_BLOCKED';
 
 export interface ExpensePaymentBackfillEvidenceItem {
@@ -168,6 +171,9 @@ export interface ExpensePaymentBackfillEvidenceItem {
     journalExpensePaymentId: string | null;
     sourceAction: string | null;
     policyReason: string | null;
+    reversalStatus: string | null;
+    reversalJournalEntryId: string | null;
+    reversalJournalValue: string | null;
   };
 }
 
@@ -371,6 +377,30 @@ interface ExpensePaymentRecordedJournalEntryRow {
   }>;
 }
 
+interface ExpensePaymentReversalEvidenceRow {
+  id: string;
+  expensePaymentId: string;
+  status: string;
+  originalJournalEntryId: string;
+  reversalJournalEntryId: string | null;
+  reversalJournalEntry: {
+    id: string;
+    entryType: string;
+    sourceType: string;
+    sourceAction: string;
+    reversalOfEntryId: string | null;
+    lines: Array<{
+      accountCode: string;
+      direction: string;
+      amount: { toString(): string };
+      currency: string;
+      caseId: string | null;
+      clientId: string | null;
+      expenseRequestId: string | null;
+      expensePaymentId: string | null;
+    }>;
+  } | null;
+}
 interface ExpenseReceivableAdjustmentJournalLine {
   amount: { toString(): string };
   direction: string;
@@ -454,6 +484,9 @@ const EXPENSE_PAYMENT_BACKFILL_MISSING = 'EXPENSE_PAYMENT_BACKFILL_MISSING';
 const EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH = 'EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH';
 const EXPENSE_PAYMENT_DIMENSION_MISMATCH = 'EXPENSE_PAYMENT_DIMENSION_MISMATCH';
 const EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING = 'EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING';
+const EXPENSE_PAYMENT_REVERSAL_INCOMPLETE = 'EXPENSE_PAYMENT_REVERSAL_INCOMPLETE';
+const EXPENSE_PAYMENT_REVERSAL_VALUE_MISMATCH = 'EXPENSE_PAYMENT_REVERSAL_VALUE_MISMATCH';
+const EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH = 'EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH';
 const EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED = 'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED';
 const EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS = 'EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS';
 const COLLECTION_REFUND_POLICY_UNMAPPED = 'COLLECTION_REFUND_POLICY_UNMAPPED';
@@ -490,6 +523,9 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
       'EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH',
       'EXPENSE_PAYMENT_DIMENSION_MISMATCH',
       'EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING',
+      'EXPENSE_PAYMENT_REVERSAL_INCOMPLETE',
+      'EXPENSE_PAYMENT_REVERSAL_VALUE_MISMATCH',
+      'EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH',
       'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED',
     ],
     gapCodes: ['EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY'],
@@ -508,6 +544,9 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
       'EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH',
       'EXPENSE_PAYMENT_DIMENSION_MISMATCH',
       'EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING',
+      'EXPENSE_PAYMENT_REVERSAL_INCOMPLETE',
+      'EXPENSE_PAYMENT_REVERSAL_VALUE_MISMATCH',
+      'EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH',
       'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED',
       'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
       'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
@@ -596,6 +635,9 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
       'EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH',
       'EXPENSE_PAYMENT_DIMENSION_MISMATCH',
       'EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING',
+      'EXPENSE_PAYMENT_REVERSAL_INCOMPLETE',
+      'EXPENSE_PAYMENT_REVERSAL_VALUE_MISMATCH',
+      'EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH',
       'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED',
     ],
     gapCodes: ['EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY'],
@@ -951,6 +993,41 @@ export class ClientAccountingSummaryShadowReportService {
         },
       },
     })) as ExpensePaymentRecordedJournalEntryRow[];
+    const paymentReversals = paymentIds.length === 0 ? [] : (await (this.prisma! as PrismaService & { expensePaymentReversal: { findMany(args: unknown): Promise<unknown[]> } }).expensePaymentReversal.findMany({
+      where: {
+        tenantId: request.tenantId,
+        expensePaymentId: { in: paymentIds },
+        kind: 'REVERSAL',
+      },
+      select: {
+        id: true,
+        expensePaymentId: true,
+        status: true,
+        originalJournalEntryId: true,
+        reversalJournalEntryId: true,
+        reversalJournalEntry: {
+          select: {
+            id: true,
+            entryType: true,
+            sourceType: true,
+            sourceAction: true,
+            reversalOfEntryId: true,
+            lines: {
+              select: {
+                accountCode: true,
+                direction: true,
+                amount: true,
+                currency: true,
+                caseId: true,
+                clientId: true,
+                expenseRequestId: true,
+                expensePaymentId: true,
+              },
+            },
+          },
+        },
+      },
+    })) as ExpensePaymentReversalEvidenceRow[];
     const adjustmentLines = activeIds.length === 0 ? [] : (await this.prisma!.accountingJournalLine.findMany({
       where: {
         tenantId: request.tenantId,
@@ -974,7 +1051,7 @@ export class ClientAccountingSummaryShadowReportService {
 
     const settledCounts = await this.computeExpenseRequestSettledActivityCounts(request.tenantId, allIds);
     const requestEvidence = buildExpenseRequestBackfillEvidence(activeRequests, cancelledRequests, journalEntries, settledCounts);
-    const paymentEvidence = buildExpensePaymentBackfillEvidence(payments, paymentJournalEntries);
+    const paymentEvidence = buildExpensePaymentBackfillEvidence(payments, paymentJournalEntries, paymentReversals);
     const activePaymentIds = new Set(payments
       .filter((payment) => payment.expenseRequest.status !== 'CANCELLED')
       .map((payment) => payment.id));
@@ -1584,6 +1661,7 @@ function emptyExpenseRequestEvidenceStatusCounts(): Record<ExpenseRequestBackfil
 function buildExpensePaymentBackfillEvidence(
   payments: ExpensePaymentLegacyRow[],
   journalEntries: ExpensePaymentRecordedJournalEntryRow[],
+  reversals: ExpensePaymentReversalEvidenceRow[],
 ): ExpensePaymentBackfillEvidenceSummary {
   const entriesBySourceId = new Map<string, ExpensePaymentRecordedJournalEntryRow[]>();
   for (const entry of journalEntries) {
@@ -1591,7 +1669,15 @@ function buildExpensePaymentBackfillEvidence(
     entries.push(entry);
     entriesBySourceId.set(entry.sourceId, entries);
   }
-  const items = payments.map((payment) => buildExpensePaymentEvidenceItem(payment, entriesBySourceId.get(payment.id) ?? []));
+  const reversalsByPaymentId = new Map<string, ExpensePaymentReversalEvidenceRow>();
+  for (const reversal of reversals) {
+    reversalsByPaymentId.set(reversal.expensePaymentId, reversal);
+  }
+  const items = payments.map((payment) => buildExpensePaymentEvidenceItem(
+    payment,
+    entriesBySourceId.get(payment.id) ?? [],
+    reversalsByPaymentId.get(payment.id) ?? null,
+  ));
   const statusCounts = emptyExpensePaymentEvidenceStatusCounts();
 
   for (const item of items) {
@@ -1611,8 +1697,9 @@ function buildExpensePaymentBackfillEvidence(
 function buildExpensePaymentEvidenceItem(
   payment: ExpensePaymentLegacyRow,
   entries: ExpensePaymentRecordedJournalEntryRow[],
+  reversal: ExpensePaymentReversalEvidenceRow | null,
 ): ExpensePaymentBackfillEvidenceItem {
-  const legacyValue = decimalOf(payment.amount);
+  const paymentValue = decimalOf(payment.amount);
   const unsupportedEntry = entries.find((entry) => entry.sourceAction !== 'recorded');
   const recordedEntry = entries.find((entry) => entry.sourceAction === 'recorded');
   const receivableLine = recordedEntry?.lines.find((line) => (
@@ -1620,19 +1707,29 @@ function buildExpensePaymentEvidenceItem(
     line.direction === 'CREDIT' &&
     line.expensePaymentId === payment.id
   ));
-  const journalValue = receivableLine ? decimalOf(receivableLine.amount) : ZERO;
-  const delta = journalValue.minus(legacyValue);
+  const recordedJournalValue = receivableLine ? decimalOf(receivableLine.amount) : ZERO;
+  const reversalLine = reversal?.reversalJournalEntry?.lines.find((line) => (
+    line.accountCode === 'CLIENT_EXPENSE_RECEIVABLE' &&
+    line.direction === 'DEBIT' &&
+    line.expensePaymentId === payment.id
+  )) ?? null;
+  const reversalJournalValue = reversalLine ? decimalOf(reversalLine.amount) : ZERO;
+  const netJournalValue = recordedJournalValue.minus(reversalJournalValue);
+  const expectedLegacyValue = reversal?.status === 'COMPLETED' ? ZERO : paymentValue;
+  const delta = netJournalValue.minus(expectedLegacyValue);
 
   if (unsupportedEntry) {
     return expensePaymentEvidenceItem(
       payment,
       'REVERSAL_REFUND_POLICY_BLOCKED',
-      legacyValue,
-      journalValue,
+      expectedLegacyValue,
+      netJournalValue,
       delta,
       [EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING],
       unsupportedEntry,
       receivableLine ?? null,
+      reversal,
+      reversalLine,
     );
   }
 
@@ -1640,12 +1737,14 @@ function buildExpensePaymentEvidenceItem(
     return expensePaymentEvidenceItem(
       payment,
       'PARENT_CANCELLED_BLOCKED',
-      legacyValue,
-      journalValue,
+      expectedLegacyValue,
+      netJournalValue,
       delta,
       [EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED],
       recordedEntry ?? null,
       receivableLine ?? null,
+      reversal,
+      reversalLine,
     );
   }
 
@@ -1653,47 +1752,114 @@ function buildExpensePaymentEvidenceItem(
     return expensePaymentEvidenceItem(
       payment,
       'BACKFILL_REQUIRED',
-      legacyValue,
-      journalValue,
+      expectedLegacyValue,
+      netJournalValue,
       delta,
       [EXPENSE_PAYMENT_BACKFILL_MISSING],
       recordedEntry ?? null,
       receivableLine ?? null,
+      reversal,
+      reversalLine,
     );
   }
 
-  const dimensionMismatch = receivableLine.caseId !== payment.expenseRequest.caseId ||
+  const recordedDimensionMismatch = receivableLine.caseId !== payment.expenseRequest.caseId ||
     receivableLine.clientId !== payment.expenseRequest.clientId ||
     receivableLine.currency !== payment.expenseRequest.currency ||
     receivableLine.expenseRequestId !== payment.expenseRequestId ||
     receivableLine.expensePaymentId !== payment.id;
-  if (dimensionMismatch) {
+  if (recordedDimensionMismatch) {
     return expensePaymentEvidenceItem(
       payment,
       'DIMENSION_MISMATCH',
-      legacyValue,
-      journalValue,
+      expectedLegacyValue,
+      netJournalValue,
       delta,
       [EXPENSE_PAYMENT_DIMENSION_MISMATCH],
       recordedEntry,
       receivableLine,
+      reversal,
+      reversalLine,
     );
+  }
+
+  if (reversal) {
+    const reversalEntry = reversal.reversalJournalEntry;
+    const reversalIncomplete = reversal.status !== 'COMPLETED' ||
+      !reversal.reversalJournalEntryId ||
+      !reversalEntry ||
+      reversalEntry.entryType !== 'ACCOUNTING_JOURNAL_REVERSAL' ||
+      reversalEntry.sourceType !== 'ACCOUNTING_JOURNAL_ENTRY' ||
+      reversalEntry.sourceAction !== 'reversal' ||
+      reversalEntry.reversalOfEntryId !== recordedEntry.id;
+    if (reversalIncomplete) {
+      return expensePaymentEvidenceItem(
+        payment,
+        'REVERSAL_INCOMPLETE_BLOCKED',
+        expectedLegacyValue,
+        netJournalValue,
+        delta,
+        [EXPENSE_PAYMENT_REVERSAL_INCOMPLETE],
+        recordedEntry,
+        receivableLine,
+        reversal,
+        reversalLine,
+      );
+    }
+
+    const reversalDimensionMismatch = !reversalLine ||
+      reversalLine.caseId !== payment.expenseRequest.caseId ||
+      reversalLine.clientId !== payment.expenseRequest.clientId ||
+      reversalLine.currency !== payment.expenseRequest.currency ||
+      reversalLine.expenseRequestId !== payment.expenseRequestId ||
+      reversalLine.expensePaymentId !== payment.id;
+    if (reversalDimensionMismatch) {
+      return expensePaymentEvidenceItem(
+        payment,
+        'REVERSAL_DIMENSION_MISMATCH',
+        expectedLegacyValue,
+        netJournalValue,
+        delta,
+        [EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH],
+        recordedEntry,
+        receivableLine,
+        reversal,
+        reversalLine,
+      );
+    }
+
+    if (!reversalJournalValue.equals(recordedJournalValue)) {
+      return expensePaymentEvidenceItem(
+        payment,
+        'REVERSAL_VALUE_MISMATCH',
+        expectedLegacyValue,
+        netJournalValue,
+        delta,
+        [EXPENSE_PAYMENT_REVERSAL_VALUE_MISMATCH],
+        recordedEntry,
+        receivableLine,
+        reversal,
+        reversalLine,
+      );
+    }
   }
 
   if (!delta.equals(ZERO)) {
     return expensePaymentEvidenceItem(
       payment,
       'VALUE_MISMATCH',
-      legacyValue,
-      journalValue,
+      expectedLegacyValue,
+      netJournalValue,
       delta,
       [EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH],
       recordedEntry,
       receivableLine,
+      reversal,
+      reversalLine,
     );
   }
 
-  return expensePaymentEvidenceItem(payment, 'MATCHED', legacyValue, journalValue, delta, [], recordedEntry, receivableLine);
+  return expensePaymentEvidenceItem(payment, 'MATCHED', expectedLegacyValue, netJournalValue, delta, [], recordedEntry, receivableLine, reversal, reversalLine);
 }
 
 function expensePaymentEvidenceItem(
@@ -1705,6 +1871,8 @@ function expensePaymentEvidenceItem(
   blockerCodes: string[],
   entry: ExpensePaymentRecordedJournalEntryRow | null,
   line: ExpensePaymentRecordedJournalEntryRow['lines'][number] | null,
+  reversal: ExpensePaymentReversalEvidenceRow | null,
+  reversalLine: NonNullable<ExpensePaymentReversalEvidenceRow['reversalJournalEntry']>['lines'][number] | null,
 ): ExpensePaymentBackfillEvidenceItem {
   return {
     expensePaymentId: payment.id,
@@ -1728,11 +1896,15 @@ function expensePaymentEvidenceItem(
       sourceAction: entry?.sourceAction ?? null,
       policyReason: status === 'REVERSAL_REFUND_POLICY_BLOCKED'
         ? 'EXPENSE_PAYMENT_REVERSAL_REFUND_DOMAIN_POLICY_MISSING'
-        : null,
+        : status === 'REVERSAL_INCOMPLETE_BLOCKED'
+          ? 'EXPENSE_PAYMENT_REVERSAL_RUNTIME_EVIDENCE_INCOMPLETE'
+          : null,
+      reversalStatus: reversal?.status ?? null,
+      reversalJournalEntryId: reversal?.reversalJournalEntryId ?? null,
+      reversalJournalValue: reversalLine ? decimalToString(decimalOf(reversalLine.amount)) : null,
     },
   };
 }
-
 function emptyExpensePaymentEvidenceStatusCounts(): Record<ExpensePaymentBackfillEvidenceStatus, number> {
   return {
     MATCHED: 0,
@@ -1740,6 +1912,9 @@ function emptyExpensePaymentEvidenceStatusCounts(): Record<ExpensePaymentBackfil
     VALUE_MISMATCH: 0,
     DIMENSION_MISMATCH: 0,
     REVERSAL_REFUND_POLICY_BLOCKED: 0,
+    REVERSAL_INCOMPLETE_BLOCKED: 0,
+    REVERSAL_VALUE_MISMATCH: 0,
+    REVERSAL_DIMENSION_MISMATCH: 0,
     PARENT_CANCELLED_BLOCKED: 0,
   };
 }
