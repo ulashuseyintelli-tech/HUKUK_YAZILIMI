@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntelStatus } from '@prisma/client';
 import {
   CreateClientIntelStatementDto,
   SupersedeClientIntelStatementDto,
 } from './dto/client-intel-statement.dto';
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
 
 /**
  * Müvekkil İstihbarat Beyanı servisi (Faz 4.0).
@@ -22,7 +24,30 @@ import {
  */
 @Injectable()
 export class ClientIntelStatementService {
-  constructor(private prisma: PrismaService) {}
+  // I1A: OfficeApprovalService retract/falsePositive/supersede capability-gate için
+  // (LawyerService.assertCanManageLawyerLifecycle ile birebir desen). AuditService @Global.
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
+  ) {}
+
+  /**
+   * I1A (owner-locked 2026-07-02) — beyanı geri alma/yanlış-çıktı/düzeltme yetkiyi değiştiren
+   * otorite-eylemleridir (bu domainin "silme" karşılığı). ClientService/LawyerService/PoaService/
+   * CaseDebtorService ile BİREBİR desen (reuse, yeni altyapı YOK): PARTNER veya
+   * canApproveOfficeActions=true delege avukat. create() BU KAPSAM DIŞI (owner kararı).
+   */
+  private async assertCanManageClientIntelStatementLifecycle(
+    userId: string | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        'İstihbarat beyanının durumunu değiştirme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)',
+      );
+    }
+  }
 
   /**
    * Yeni beyan oluştur (ACTIVE).
@@ -96,6 +121,9 @@ export class ClientIntelStatementService {
       throw new BadRequestException(`Yalnız ACTIVE beyan supersede edilebilir (durum: ${old.status})`);
     }
 
+    // I1A: supersede yetkisi — transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz).
+    await this.assertCanManageClientIntelStatementLifecycle(userId, tenantId);
+
     return this.prisma.$transaction(async (tx) => {
       const fresh = await tx.clientIntelStatement.create({
         data: {
@@ -118,6 +146,17 @@ export class ClientIntelStatementService {
           supersededAt: new Date(),
         },
       });
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_INTEL_STATEMENT_SUPERSEDE',
+        entityType: 'CLIENT_INTEL_STATEMENT',
+        entityId: old.id,
+        userId,
+        oldValues: old,
+        newValues: { status: ClientIntelStatus.SUPERSEDED, supersededById: fresh.id, newStatementId: fresh.id },
+      });
+
       return fresh;
     });
   }
@@ -173,14 +212,37 @@ export class ClientIntelStatementService {
     if (existing.status !== ClientIntelStatus.ACTIVE) {
       throw new BadRequestException(`Yalnız ACTIVE beyan için bu işlem yapılabilir (durum: ${existing.status})`);
     }
-    return this.prisma.clientIntelStatement.update({
-      where: { id },
-      data: {
-        status: to,
-        revokedAt: new Date(),
-        revokedById: userId,
-        lifecycleNote: note ?? null,
-      },
+
+    // I1A: retract/falsePositive ortak yolu — yetki kontrolü transaction'dan ÖNCE.
+    await this.assertCanManageClientIntelStatementLifecycle(userId, tenantId);
+
+    const action =
+      to === ClientIntelStatus.RETRACTED
+        ? 'CLIENT_INTEL_STATEMENT_RETRACT'
+        : 'CLIENT_INTEL_STATEMENT_FALSE_POSITIVE';
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.clientIntelStatement.update({
+        where: { id },
+        data: {
+          status: to,
+          revokedAt: new Date(),
+          revokedById: userId,
+          lifecycleNote: note ?? null,
+        },
+      });
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action,
+        entityType: 'CLIENT_INTEL_STATEMENT',
+        entityId: id,
+        userId,
+        oldValues: existing,
+        newValues: { status: to, revokedById: userId, lifecycleNote: note ?? null },
+      });
+
+      return updated;
     });
   }
 

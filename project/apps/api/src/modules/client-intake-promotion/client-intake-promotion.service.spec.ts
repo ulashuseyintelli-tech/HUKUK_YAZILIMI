@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntakePromotionService } from './client-intake-promotion.service';
 import { findOrCreateDebtorAddress } from '@/common/address-hash.util';
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
 
 jest.mock('@/common/address-hash.util', () => ({ findOrCreateDebtorAddress: jest.fn() }));
 const mockFindOrCreate = findOrCreateDebtorAddress as jest.Mock;
@@ -22,6 +24,10 @@ const mockPrisma: any = {
   $transaction: jest.fn(async (fn: any) => fn(mockPrisma)),
 };
 
+// I1A: promote/promoteAddress/promoteSoft capability-gate — mevcut testler eligible aktör varsayar.
+const mockAudit = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };
+const mockOfficeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+
 describe('ClientIntakePromotionService', () => {
   let service: ClientIntakePromotionService;
 
@@ -32,8 +38,14 @@ describe('ClientIntakePromotionService', () => {
     mockPrisma.caseDebtor.findFirst.mockResolvedValue({ id: 'cd-1' });
     mockPrisma.clientIntelStatement.create.mockResolvedValue({ id: 'cis-1' });
     mockPrisma.clientIntakeSubmission.update.mockResolvedValue({});
+    mockOfficeApproval.isApproverEligible.mockResolvedValue(true);
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ClientIntakePromotionService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        ClientIntakePromotionService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: AuditService, useValue: mockAudit },
+        { provide: OfficeApprovalService, useValue: mockOfficeApproval },
+      ],
     }).compile();
     service = module.get(ClientIntakePromotionService);
   });
@@ -98,6 +110,43 @@ describe('ClientIntakePromotionService', () => {
     await expect(service.promote(TENANT, SUB, USER, DEBTOR)).rejects.toThrow(NotFoundException);
   });
 
+  describe('I1A — capability gate + audit (promote, bulk)', () => {
+    it('yetkisiz kullanıcı (isApproverEligible=false) → 403, create/update ÇAĞRILMAZ, audit YOK', async () => {
+      mockPrisma.clientIntakeField.findMany.mockResolvedValue([{ id: 'f-1', category: 'INCOME_SOURCE', label: 'L', value: 'X' }]);
+      mockOfficeApproval.isApproverEligible.mockResolvedValueOnce(false);
+      await expect(service.promote(TENANT, SUB, USER, DEBTOR)).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+      expect(mockPrisma.clientIntakeField.update).not.toHaveBeenCalled();
+      expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+
+    it('actor YOK (undefined) → 403', async () => {
+      await expect(service.promote(TENANT, SUB, undefined as any, DEBTOR)).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+    });
+
+    it('en az bir alan promote edilirse audit.log ile özet yazılır (CLIENT_INTAKE_PROMOTE)', async () => {
+      mockPrisma.clientIntakeField.findMany.mockResolvedValue([{ id: 'f-1', category: 'INCOME_SOURCE', label: 'L', value: 'Müteahhit' }]);
+      mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+      await service.promote(TENANT, SUB, USER, DEBTOR);
+      expect(mockAudit.log).toHaveBeenCalledTimes(1);
+      expect(mockAudit.log).toHaveBeenCalledWith(expect.objectContaining({
+        tenantId: TENANT,
+        action: 'CLIENT_INTAKE_PROMOTE',
+        entityType: 'CLIENT_INTAKE_SUBMISSION',
+        entityId: SUB,
+        userId: USER,
+      }));
+    });
+
+    it('hiçbir alan promote edilmezse (promoted boş) audit YAZILMAZ', async () => {
+      mockPrisma.clientIntakeField.findMany.mockResolvedValue([]); // idempotent no-op senaryosu
+      mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+      await service.promote(TENANT, SUB, USER, DEBTOR);
+      expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+  });
+
   // ==================== Faz 4.6b — promoteAddress ====================
   describe('promoteAddress (ADDRESS → DebtorAddress)', () => {
     const addrDto = { debtorId: DEBTOR, street: 'X Sok 1', city: 'İstanbul' };
@@ -155,6 +204,34 @@ describe('ClientIntakePromotionService', () => {
       mockPrisma.caseDebtor.findFirst.mockResolvedValue(null);
       await expect(service.promoteAddress(TENANT, 'af-1', USER, addrDto)).rejects.toThrow(BadRequestException);
       expect(mockFindOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('I1A: yetkisiz kullanıcı → 403, findOrCreate ÇAĞRILMAZ, audit YOK', async () => {
+      armAddrField();
+      mockOfficeApproval.isApproverEligible.mockResolvedValueOnce(false);
+      await expect(service.promoteAddress(TENANT, 'af-1', USER, addrDto)).rejects.toThrow(ForbiddenException);
+      expect(mockFindOrCreate).not.toHaveBeenCalled();
+      expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
+    });
+
+    it('I1A: audit AYNI transaction içinde yazılır (CLIENT_INTAKE_PROMOTE_ADDRESS, created:true)', async () => {
+      armAddrField();
+      mockFindOrCreate.mockResolvedValue({ address: { id: 'da-1' }, created: true });
+      mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+      await service.promoteAddress(TENANT, 'af-1', USER, addrDto);
+      expect(mockAudit.logInTransaction).toHaveBeenCalledTimes(1);
+      const [, input] = mockAudit.logInTransaction.mock.calls[0];
+      expect(input).toMatchObject({
+        tenantId: TENANT, action: 'CLIENT_INTAKE_PROMOTE_ADDRESS', entityType: 'CLIENT_INTAKE_FIELD',
+        entityId: 'af-1', userId: USER, newValues: { promotedRefId: 'da-1' },
+      });
+    });
+
+    it('I1A: DUPLICATE (created:false) → audit YAZILMAZ', async () => {
+      armAddrField();
+      mockFindOrCreate.mockResolvedValue({ address: { id: 'da-existing' }, created: false });
+      await service.promoteAddress(TENANT, 'af-1', USER, addrDto);
+      expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
     });
   });
 
@@ -223,6 +300,32 @@ describe('ClientIntakePromotionService', () => {
     it('submission IN_REVIEW/PARTIALLY değilse → 400', async () => {
       armSoftField({ submission: { id: SUB, status: 'COMPLETED', caseId: CASE } });
       await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
+    });
+
+    it('I1A: yetkisiz kullanıcı → 403, create ÇAĞRILMAZ, audit YOK', async () => {
+      armSoftField();
+      mockOfficeApproval.isApproverEligible.mockResolvedValueOnce(false);
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+      expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
+    });
+
+    it('I1A: actor YOK (undefined) → 403', async () => {
+      armSoftField();
+      await expect(service.promoteSoftField(TENANT, 'sf-1', undefined as any, DEBTOR)).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+    });
+
+    it('I1A: audit AYNI transaction içinde actor ile yazılır (CLIENT_INTAKE_PROMOTE_SOFT)', async () => {
+      armSoftField();
+      mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+      await service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR);
+      expect(mockAudit.logInTransaction).toHaveBeenCalledTimes(1);
+      const [, input] = mockAudit.logInTransaction.mock.calls[0];
+      expect(input).toMatchObject({
+        tenantId: TENANT, action: 'CLIENT_INTAKE_PROMOTE_SOFT', entityType: 'CLIENT_INTAKE_FIELD',
+        entityId: 'sf-1', userId: USER, newValues: { promotedRefId: 'cis-1' },
+      });
     });
   });
 });
