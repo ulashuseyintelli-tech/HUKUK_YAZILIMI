@@ -148,18 +148,27 @@ export class ExpenseGateService {
   }
 
   /**
-   * Legacy UYAP block kontrolü
+   * ROLL-002 — UYAP block kontrolü (isUyapBlocked/canPerformUyapAction ortak kaynağı).
+   * Flag OFF: davranış/performans AYNEN korunur (ucuz COUNT — checkGate'in flag-off dalıyla
+   * matematiksel eşdeğer). Flag ON: checkGate(caseId).isBlocked'a delege eder — bu metod artık
+   * checkGate/getGateSummary ile AYNI (true-remaining bazlı) kararı verir; display/enforcement
+   * ayrışması (ROLL-002) kapanır. "Legacy" adı korunuyor (çağıran metodlar değişmedi), ama artık
+   * yalnız flag-off'ta saf legacy'dir.
    */
   private async isUyapBlockedLegacy(caseId: string): Promise<boolean> {
-    const count = await this.prisma.expenseRequest.count({
-      where: {
-        caseId,
-        gateType: 'BLOCKING',
-        status: { in: ['PENDING', 'SENT', 'REMINDED', 'PARTIAL'] },
-      },
-    });
+    if (!isExpenseRemainingGateEnabled()) {
+      const count = await this.prisma.expenseRequest.count({
+        where: {
+          caseId,
+          gateType: 'BLOCKING',
+          status: { in: ['PENDING', 'SENT', 'REMINDED', 'PARTIAL'] },
+        },
+      });
+      return count > 0;
+    }
 
-    return count > 0;
+    const gateCheck = await this.checkGate(caseId);
+    return gateCheck.isBlocked;
   }
 
   /**
