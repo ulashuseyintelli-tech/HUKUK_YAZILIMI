@@ -476,6 +476,11 @@ interface ExpenseReimbursementApplicationJournalEntryRow {
     dispositionLineId: string | null;
   }>;
 }
+interface ExpenseOffsetApplicationRow {
+  expenseRequestId: string;
+  kind: string;
+  amount: { toString(): string };
+}
 interface ExpenseReceivableAdjustmentJournalLine {
   amount: { toString(): string };
   direction: string;
@@ -629,7 +634,10 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
       'EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH',
       'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED',
       'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
-          ],
+      EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING,
+      EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISMATCH,
+      EXPENSE_REIMBURSEMENT_APPLICATION_DIMENSION_MISMATCH,
+    ],
     gapCodes: [],
   },
   {
@@ -650,8 +658,9 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
     ],
     supportedSources: ['COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     blockerCodes: [
-        EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING,
+      EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING,
       EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISMATCH,
+      EXPENSE_REIMBURSEMENT_APPLICATION_DIMENSION_MISMATCH,
     ],
     gapCodes: [],
   },
@@ -729,7 +738,7 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     journalSources: ['EXPENSE_REQUEST', 'EXPENSE_PAYMENT', 'CLIENT_OFFSET', 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     blockerCodes: [
       'EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS',
-          ],
+    ],
     gapCodes: [],
   },
   {
@@ -1153,7 +1162,20 @@ export class ClientAccountingSummaryShadowReportService {
           },
         },
       },
-    })) as ExpenseReimbursementApplicationJournalEntryRow[];    const adjustmentLines = activeIds.length === 0 ? [] : (await this.prisma!.accountingJournalLine.findMany({
+    })) as ExpenseReimbursementApplicationJournalEntryRow[];
+    const offsetApplications = activeIds.length === 0 ? [] : (await this.prisma!.clientOffset.findMany({
+      where: {
+        tenantId: request.tenantId,
+        currency,
+        expenseRequestId: { in: activeIds },
+      },
+      select: {
+        expenseRequestId: true,
+        kind: true,
+        amount: true,
+      },
+    })) as ExpenseOffsetApplicationRow[];
+    const adjustmentLines = activeIds.length === 0 ? [] : (await this.prisma!.accountingJournalLine.findMany({
       where: {
         tenantId: request.tenantId,
         accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
@@ -1203,7 +1225,8 @@ export class ClientAccountingSummaryShadowReportService {
       ...(!paidDelta.equals(ZERO) ? [EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH] : []),
     ]);
 
-    const reimbursementLegacyValue = reimbursementApplications.reduce((sum, row) => row.kind === 'REVERSAL' ? sum.minus(decimalOf(row.amount)) : sum.plus(decimalOf(row.amount)), ZERO);
+    const legacyReimbursementAdjustments = expenseLegacyReimbursementBreakdown(reimbursementApplications);
+    const reimbursementLegacyValue = legacyReimbursementAdjustments.applied.minus(legacyReimbursementAdjustments.reversal);
     const reimbursementJournalValue = reimbursementEvidence.items.reduce((sum, item) => {
       const value = decimalOf(item.journalValue ?? '0');
       return item.details.kind === 'REVERSAL' ? sum.minus(value) : sum.plus(value);
@@ -1223,7 +1246,13 @@ export class ClientAccountingSummaryShadowReportService {
     };
 
     const receivableAdjustments = expenseReceivableAdjustmentBreakdown(adjustmentLines);
-    const unpaidLegacyValue = activeRequests.reduce((sum, row) => sum.plus(decimalOf(row.totalAmount).minus(decimalOf(row.paidTotal))), ZERO);
+    const legacyOffsetAdjustments = expenseLegacyOffsetBreakdown(offsetApplications);
+    const unpaidLegacyValue = requestedLegacyValue
+      .minus(paidLegacyValue)
+      .minus(legacyOffsetAdjustments.applied)
+      .plus(legacyOffsetAdjustments.reversal)
+      .minus(legacyReimbursementAdjustments.applied)
+      .plus(legacyReimbursementAdjustments.reversal);
     const unpaidJournalValue = requestedJournalValue
       .minus(paidJournalValue)
       .minus(receivableAdjustments.offsetApplied)
@@ -1415,7 +1444,10 @@ function applySupportedValueComparisons(
           : shadowValues?.expenseUnpaidComparison;
       if (comparison) {
         component.valueComparison = { ...comparison };
-        component.blockerCodes = uniqueSorted([...component.blockerCodes, ...comparison.blockerCodes]);
+        const staticBlockerCodes = key === 'expenseUnpaid'
+          ? component.blockerCodes.filter((code) => code !== EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS)
+          : component.blockerCodes;
+        component.blockerCodes = uniqueSorted([...staticBlockerCodes, ...comparison.blockerCodes]);
       } else {
         component.valueComparison = {
           legacyValue: null,
@@ -2226,6 +2258,29 @@ function emptyExpensePaymentEvidenceStatusCounts(): Record<ExpensePaymentBackfil
     REVERSAL_DIMENSION_MISMATCH: 0,
     PARENT_CANCELLED_BLOCKED: 0,
   };
+}
+
+function expenseLegacyOffsetBreakdown(rows: ExpenseOffsetApplicationRow[]): { applied: Prisma.Decimal; reversal: Prisma.Decimal } {
+  return expenseLegacyKindBreakdown(rows);
+}
+
+function expenseLegacyReimbursementBreakdown(rows: ExpenseReimbursementApplicationRow[]): { applied: Prisma.Decimal; reversal: Prisma.Decimal } {
+  return expenseLegacyKindBreakdown(rows);
+}
+
+function expenseLegacyKindBreakdown(rows: Array<{ kind: string; amount: { toString(): string } }>): { applied: Prisma.Decimal; reversal: Prisma.Decimal } {
+  let applied = ZERO;
+  let reversal = ZERO;
+
+  for (const row of rows) {
+    if (row.kind === 'REVERSAL') {
+      reversal = reversal.plus(decimalOf(row.amount));
+    } else {
+      applied = applied.plus(decimalOf(row.amount));
+    }
+  }
+
+  return { applied, reversal };
 }
 
 function expenseReceivableAdjustmentBreakdown(lines: ExpenseReceivableAdjustmentJournalLine[]): {
