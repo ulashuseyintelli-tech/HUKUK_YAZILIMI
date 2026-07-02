@@ -5,8 +5,10 @@ import { normalizePersonName } from "@/common/name-match.util";
 import { AuditService } from "../audit/audit.service";
 
 // K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
+// H2: aynı actor, yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/
+// canModifyOtherPermissions) değiştirme yetkisi için de kullanılır.
 //  - userId: truthful @CurrentUser("id").  role: @CurrentUser("role") (ADMIN kısa-yolu).
-//  - Yalnız ADMIN VEYA linkli PARTNER avukat bu flag'i değiştirebilir (assertCanManageOfficeApprovalDelegation).
+//  - Yalnız ADMIN VEYA linkli PARTNER avukat bu alanları değiştirebilir (assertActorIsAdminOrLinkedPartner).
 export interface LawyerUpdateActor {
   userId?: string;
   role?: string;
@@ -250,7 +252,7 @@ export class LawyerService {
       isDefaultForNewCases?: boolean;
       sortOrder?: number;
       isActive?: boolean;
-      // Yeni alanlar
+      // Yeni alanlar — H2: yalnız ADMIN/PARTNER yazabilir (assertCanManagePrivilegedFields).
       lawyerRank?: LawyerRank;
       defaultPermissions?: any;
       permissionsLocked?: boolean;
@@ -311,7 +313,35 @@ export class LawyerService {
 
     // confirmSimilarNameUpdate transient → prisma'ya YAZILMAZ.
     // K1-4b: canApproveOfficeActions'ı generic write'tan AYIR; yalnız DEĞİŞİYORSA yetki kontrolü + audit ile yaz.
-    const { confirmSimilarNameUpdate, canApproveOfficeActions, ...writeData } = data;
+    // H2: yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/canModifyOtherPermissions) da
+    // AYNI ADMIN/PARTNER kapısına al — önceden bu alanlar generic write'a düz geçip herhangi bir JWT sahibi
+    // tarafından değiştirilebiliyordu (yetki yükseltme).
+    const {
+      confirmSimilarNameUpdate,
+      canApproveOfficeActions,
+      lawyerRank,
+      defaultPermissions,
+      permissionsLocked,
+      canModifyOtherPermissions,
+      ...writeData
+    } = data;
+
+    // H2 GUARD: rütbe/yetki alanlarından biri payload'da VARSA, generic write'a girmeden ADMIN/PARTNER doğrula.
+    const wantsPrivilegedFieldChange =
+      lawyerRank !== undefined ||
+      defaultPermissions !== undefined ||
+      permissionsLocked !== undefined ||
+      canModifyOtherPermissions !== undefined;
+
+    if (wantsPrivilegedFieldChange) {
+      await this.assertCanManagePrivilegedFields(actor, tenantId);
+      if (lawyerRank !== undefined) (writeData as { lawyerRank?: LawyerRank }).lawyerRank = lawyerRank;
+      if (defaultPermissions !== undefined) (writeData as { defaultPermissions?: unknown }).defaultPermissions = defaultPermissions;
+      if (permissionsLocked !== undefined) (writeData as { permissionsLocked?: boolean }).permissionsLocked = permissionsLocked;
+      if (canModifyOtherPermissions !== undefined) {
+        (writeData as { canModifyOtherPermissions?: boolean }).canModifyOtherPermissions = canModifyOtherPermissions;
+      }
+    }
 
     let delegationChange: { from: boolean; to: boolean } | null = null;
     if (
@@ -348,22 +378,17 @@ export class LawyerService {
   }
 
   /**
-   * K1-4b — Office Approval delegation (canApproveOfficeActions) DEĞİŞTİRME yetkisi.
-   * YALNIZ: ADMIN (User.role) VEYA aktif + same-tenant + linkli PARTNER avukat. Diğer herkes (staff/non-PARTNER/linksiz) → 403.
-   * NOT: bu YALNIZ flag'i değiştirme yetkisidir; bir avukatın approver GEÇERLİLİĞİ runtime'da
-   *      OfficeApprovalService.assertApproverEligible (aktif+linkli+same-tenant+[PARTNER∨canApprove]) ile ayrıca denetlenir.
-   *
-   * /// <remarks>
-   * /// Çağrıldığı yerler:
-   * ///  - LawyerService.update() → canApproveOfficeActions DEĞİŞTİĞİNDE (PUT/PATCH /lawyers/:id; actor=@CurrentUser).
-   * /// </remarks>
+   * ADMIN VEYA aktif + same-tenant + linkli PARTNER avukat mı? K1-4b (canApproveOfficeActions) ve
+   * H2 (lawyerRank/defaultPermissions/permissionsLocked/canModifyOtherPermissions) yetki-alanı
+   * guard'larının PAYLAŞTIĞI tek otorite kuralı; hata mesajları çağıran tarafından verilir.
    */
-  private async assertCanManageOfficeApprovalDelegation(
+  private async assertActorIsAdminOrLinkedPartner(
     actor: LawyerUpdateActor | undefined,
     tenantId: string,
+    messages: { noActor: string; unauthorized: string },
   ): Promise<void> {
     if (!actor?.userId) {
-      throw new ForbiddenException("Office approval delegation değiştirme yetkisi yok (kimlik çözülemedi).");
+      throw new ForbiddenException(messages.noActor);
     }
     if (actor.role === "ADMIN") return; // ADMIN kısa-yolu (lawyer zaten tenant-scoped findOne ile alındı)
     const actorUser = await this.prisma.user.findUnique({
@@ -378,7 +403,51 @@ export class LawyerService {
     ) {
       return;
     }
-    throw new ForbiddenException("Office approval delegation yalnız PARTNER veya ADMIN tarafından değiştirilebilir.");
+    throw new ForbiddenException(messages.unauthorized);
+  }
+
+  /**
+   * K1-4b — Office Approval delegation (canApproveOfficeActions) DEĞİŞTİRME yetkisi.
+   * YALNIZ: ADMIN (User.role) VEYA aktif + same-tenant + linkli PARTNER avukat. Diğer herkes (staff/non-PARTNER/linksiz) → 403.
+   * NOT: bu YALNIZ flag'i değiştirme yetkisidir; bir avukatın approver GEÇERLİLİĞİ runtime'da
+   *      OfficeApprovalService.assertApproverEligible (aktif+linkli+same-tenant+[PARTNER∨canApprove]) ile ayrıca denetlenir.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerService.update() → canApproveOfficeActions DEĞİŞTİĞİNDE (PUT/PATCH /lawyers/:id; actor=@CurrentUser).
+   * /// </remarks>
+   */
+  private async assertCanManageOfficeApprovalDelegation(
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
+      noActor: "Office approval delegation değiştirme yetkisi yok (kimlik çözülemedi).",
+      unauthorized: "Office approval delegation yalnız PARTNER veya ADMIN tarafından değiştirilebilir.",
+    });
+  }
+
+  /**
+   * H2 — Yetki/rütbe alanları (lawyerRank, defaultPermissions, permissionsLocked,
+   * canModifyOtherPermissions) DEĞİŞTİRME yetkisi. YALNIZ: ADMIN (User.role) VEYA aktif +
+   * same-tenant + linkli PARTNER avukat — canApproveOfficeActions ile AYNI otorite kuralı
+   * (assertActorIsAdminOrLinkedPartner ile paylaşılır).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerService.update() → lawyerRank/defaultPermissions/permissionsLocked/
+   * ///    canModifyOtherPermissions alanlarından biri payload'da VARSA (PUT/PATCH /lawyers/:id;
+   * ///    actor=@CurrentUser). Önceden bu alanlar guard'sız generic write'a geçiyordu (H2).
+   * /// </remarks>
+   */
+  private async assertCanManagePrivilegedFields(
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
+      noActor: "Yetki/rütbe alanlarını değiştirme yetkisi yok (kimlik çözülemedi).",
+      unauthorized: "Yetki/rütbe alanları yalnız PARTNER veya ADMIN tarafından değiştirilebilir.",
+    });
   }
 
   // Avukat sil (kalıcı silme)
