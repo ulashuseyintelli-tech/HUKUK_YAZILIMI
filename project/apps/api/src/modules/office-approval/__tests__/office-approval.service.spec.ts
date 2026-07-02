@@ -84,6 +84,64 @@ describe('P4-1 OfficeApprovalService — createPendingRequest', () => {
     expect(prisma.officeApprovalRequest.create).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
   });
+
+  // ---- H7: terminal kayıt idempotencyKey'i işgal ediyor — PENDING_APPROVAL dönmemeli ----
+  it.each(['REJECTED', 'APPROVED', 'APPROVED_WITH_CHANGES', 'CANCELLED', 'REVISION_REQUESTED'])(
+    'idempotencyKey terminal (%s) kayda denk gelirse: o kayıt DÖNMEZ, anahtarı boşaltılır, YENİ PENDING_APPROVAL kayıt oluşturulur',
+    async (terminalStatus) => {
+      const existing = mkReq({ id: 'oar-old-terminal', idempotencyKey: 'k1', status: terminalStatus });
+      const fresh = mkReq({ id: 'oar-fresh', idempotencyKey: 'k1', status: 'PENDING_APPROVAL' });
+      const { svc, prisma, audit } = make({ reqSeq: [existing], createReturn: fresh });
+
+      const res = await svc.createPendingRequest({
+        tenantId: TENANT, actionCode: 'CHANGE_STATUS', targetType: 'LegalCase', targetRef: 'case-1',
+        requesterUserId: REQUESTER, savedIntent: { status: 'HITAM' }, idempotencyKey: 'k1',
+      });
+
+      // Eski terminal kaydın anahtarı CAS ile namespace'lendi (kayıt SİLİNMEDİ, id korunuyor).
+      expect(prisma.officeApprovalRequest.updateMany).toHaveBeenCalledWith({
+        where: { id: 'oar-old-terminal', idempotencyKey: 'k1' },
+        data: { idempotencyKey: 'k1::superseded:oar-old-terminal' },
+      });
+      // create() ORİJİNAL anahtarla çağrıldı (yeni kayıt bu anahtarı taşır).
+      expect(prisma.officeApprovalRequest.create.mock.calls[0][0].data.idempotencyKey).toBe('k1');
+      expect(prisma.officeApprovalRequest.create.mock.calls[0][0].data.status).toBe('PENDING_APPROVAL');
+      // Dönüş: YENİ (fresh) kayıt — asla eski terminal kayıt DEĞİL.
+      expect(res).toBe(fresh);
+      expect(res).not.toBe(existing);
+      expect(res.status).toBe('PENDING_APPROVAL'); // caller'a artık DOĞRU durum yansır (yalan yok)
+      expect(audit.log).toHaveBeenCalledTimes(1); // yeni kayıt için REQUESTED audit (eski kayıt için YOK)
+      expect(audit.log.mock.calls[0][0].action).toBe('OFFICE_APPROVAL_REQUESTED');
+    },
+  );
+
+  it('H7: terminal-anahtar boşaltma yarışını KAYBEDEN (updateMany count=0) yine de create()e düşer; P2002 ile taze kaydı bulur', async () => {
+    const existingTerminal = mkReq({ id: 'oar-old', idempotencyKey: 'k1', status: 'REJECTED' });
+    const freshFromWinner = mkReq({ id: 'oar-fresh-winner', idempotencyKey: 'k1', status: 'PENDING_APPROVAL' });
+    const findUnique = jest.fn()
+      .mockResolvedValueOnce(existingTerminal) // ön-kontrol: terminal kayıt görülüyor
+      .mockResolvedValueOnce(freshFromWinner); // P2002 sonrası: kazananın taze kaydı
+    const p2002 = new Prisma.PrismaClientKnownRequestError('unique violation', { code: 'P2002', clientVersion: '5.22.0' });
+    const prisma = {
+      officeApprovalRequest: {
+        findUnique,
+        create: jest.fn().mockRejectedValue(p2002), // bu çağıran yarışı kaybetti
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }), // CAS'i KAYBETTİ (başka çağıran zaten boşalttı) — no-op
+      },
+      user: { findUnique: jest.fn() },
+    };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const svc = new OfficeApprovalService(prisma as never, audit as never);
+
+    const res = await svc.createPendingRequest({
+      tenantId: TENANT, actionCode: 'CHANGE_STATUS', targetType: 'LegalCase', targetRef: 'case-1',
+      requesterUserId: REQUESTER, savedIntent: { status: 'HITAM' }, idempotencyKey: 'k1',
+    });
+
+    expect(res).toBe(freshFromWinner); // kaybeden de doğru (taze, PENDING) kaydı elde eder
+    expect(res.status).toBe('PENDING_APPROVAL');
+    expect(audit.log).not.toHaveBeenCalled(); // bu çağıran REQUESTED audit YAZMAZ (kazanan zaten yazdı)
+  });
 });
 
 describe('P4-1 OfficeApprovalService — approve', () => {
