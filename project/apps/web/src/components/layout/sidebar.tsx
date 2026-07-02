@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   FileCode,
   Inbox,
+  ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,8 @@ const navigation: NavItem[] = [
   { name: "Borçlular", href: "/debtors", icon: Users, disabled: false },
   { name: "Müvekkiller", href: "/clients", icon: Building2, disabled: false },
   { name: "Görevler", href: "/tasks", icon: CheckSquare, disabled: false },
+  // P4-4: salt-okuma inbox; backend yetkisiz kullanıcıya boş liste döner (403 değil) — nav'da gizlenmez.
+  { name: "Onay Kutusu", href: "/office-approvals", icon: ClipboardCheck, disabled: false },
   { name: "Bilgi Formları", href: "/client-intake", icon: Inbox, disabled: false },
   { name: "Bildirimler", href: "/notifications", icon: Bell, disabled: true }, // Sayfa yok
   { name: "Mahkemeler", href: "/courts", icon: Gavel, disabled: true }, // Sayfa yok
