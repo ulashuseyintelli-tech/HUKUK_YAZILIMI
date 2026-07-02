@@ -1,5 +1,9 @@
 ﻿import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import {
+  ClientAccountingJournalSummaryReaderService,
+  type ClientAccountingJournalSummaryClientScopedValues,
+} from './client-accounting-journal-summary-reader.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type ClientAccountingSummaryShadowCandidateStatus = 'BLOCKED';
@@ -324,6 +328,19 @@ export interface ClientAccountingSummaryReplayEvidenceReport {
   advanceBalance: BalanceLedgerReplayEvidenceSummary;
   blockerCodes: string[];
 }
+
+export type ClientAccountingJournalSummaryClientScopedParityStatus = 'MATCH' | 'MISMATCH' | 'NOT_COMPUTED' | 'BLOCKED';
+
+export interface ClientAccountingJournalSummaryClientScopedParityEvidence {
+  sourceVersion: 'acct-cutover-3e4b2f1-client-scoped-journal-summary-reader-v1';
+  readerSource: 'ACCOUNTING_JOURNAL_CLIENT_SCOPED';
+  status: ClientAccountingJournalSummaryClientScopedParityStatus;
+  values: ClientAccountingJournalSummaryClientScopedValues | null;
+  comparedComponents: string[];
+  unsupportedResponsePaths: string[];
+  blockerCodes: string[];
+  comparisons: Partial<Record<typeof SUPPORTED_COMPONENT_KEYS[number], ClientAccountingSummaryShadowValueComparison>>;
+}
 export interface ClientAccountingSummaryShadowReport {
   tenantId: string;
   clientId: string;
@@ -343,6 +360,7 @@ export interface ClientAccountingSummaryShadowReport {
   expensePaidComparison?: ClientAccountingSummaryShadowValueComparison;
   expenseReimbursementApplicationComparison?: ClientAccountingSummaryShadowValueComparison;
   expenseUnpaidBreakdown?: ExpenseUnpaidJournalBreakdown;
+  clientScopedPrimaryReaderEvidence?: ClientAccountingJournalSummaryClientScopedParityEvidence;
   replayEvidence?: ClientAccountingSummaryReplayEvidenceReport;
   blockerCodes: string[];
   gapCodes: string[];
@@ -551,6 +569,7 @@ interface ExpenseRequestShadowValues extends ClientAccountingSummaryShadowLegacy
   expensePaymentBackfillEvidence: ExpensePaymentBackfillEvidenceSummary;
   expenseReimbursementApplicationBackfillEvidence: ExpenseReimbursementApplicationBackfillEvidenceSummary;
   expenseReimbursementApplicationComparison: ClientAccountingSummaryShadowValueComparison;
+  clientScopedPrimaryReaderValues: ClientAccountingJournalSummaryClientScopedValues;
   replayEvidence: ClientAccountingSummaryReplayEvidenceReport;
 }
 
@@ -830,6 +849,7 @@ export class ClientAccountingSummaryShadowReportService {
     request: ClientAccountingSummaryShadowReportRequest,
   ): Promise<ExpenseRequestShadowValues> {
     const currency = request.currency || 'TRY';
+    const clientScopedPrimaryReaderValues = await new ClientAccountingJournalSummaryReaderService(this.prisma!).getClientScopedSummary(request.tenantId, request.clientId, currency);
     const caseClients = (await this.prisma!.caseClient.findMany({
       where: { clientId: request.clientId, role: { in: ['ALACAKLI', 'ORTAK_ALACAKLI'] }, client: { tenantId: request.tenantId } },
       select: { id: true, caseId: true },
@@ -840,7 +860,7 @@ export class ClientAccountingSummaryShadowReportService {
     if (caseClientIds.length === 0) {
       const expenseRequestShadow = await this.computeExpenseRequestShadowValues(request, currency);
       const replayEvidence = await this.computeReplayEvidence(request.tenantId, currency, []);
-      return { payableNet: '0', paidToClient: '0', offsetApplied: '0', ...expenseRequestShadow, replayEvidence };
+      return { payableNet: '0', paidToClient: '0', offsetApplied: '0', ...expenseRequestShadow, clientScopedPrimaryReaderValues, replayEvidence };
     }
 
     const lines = (await this.prisma!.accountingJournalLine.findMany({
@@ -898,6 +918,7 @@ export class ClientAccountingSummaryShadowReportService {
       paidToClient: decimalToString(paidToClient),
       offsetApplied: decimalToString(offsetApplied),
       ...expenseRequestShadow,
+      clientScopedPrimaryReaderValues,
       replayEvidence,
     };
   }
@@ -1358,6 +1379,7 @@ export class ClientAccountingSummaryShadowReportService {
     applySupportedValueComparisons(components, request.legacyClientScoped, shadowValues);
     applyReplayEvidenceBreakdowns(components, shadowValues?.replayEvidence ?? null);
     const supportedValueSummary = summarizeSupportedValueComparisons(components);
+    const clientScopedPrimaryReaderEvidence = buildClientScopedPrimaryReaderEvidence(components, shadowValues?.clientScopedPrimaryReaderValues ?? null);
 
     return {
       tenantId: request.tenantId,
@@ -1378,6 +1400,7 @@ export class ClientAccountingSummaryShadowReportService {
       expensePaidComparison: shadowValues?.expensePaidComparison,
       expenseReimbursementApplicationComparison: shadowValues?.expenseReimbursementApplicationComparison,
       expenseUnpaidBreakdown: shadowValues?.expenseUnpaidBreakdown,
+      clientScopedPrimaryReaderEvidence,
       replayEvidence: shadowValues?.replayEvidence,
       blockerCodes: uniqueSorted([
         ...components.flatMap((component) => component.blockerCodes),
@@ -1387,6 +1410,7 @@ export class ClientAccountingSummaryShadowReportService {
         ...(shadowValues?.expensePaymentBackfillEvidence.blockerCodes ?? []),
         ...(shadowValues?.expenseReimbursementApplicationBackfillEvidence.blockerCodes ?? []),
         ...(shadowValues?.expenseReimbursementApplicationComparison.blockerCodes ?? []),
+        ...clientScopedPrimaryReaderEvidence.blockerCodes,
         ...(shadowValues?.replayEvidence.blockerCodes ?? []),
       ]),
       gapCodes: uniqueSorted([
@@ -1508,6 +1532,50 @@ function applyReplayEvidenceBreakdowns(
   }
 }
 
+const CLIENT_SCOPED_PRIMARY_READER_BLOCKER = 'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING';
+const CLIENT_SCOPED_PRIMARY_READER_UNSUPPORTED_RESPONSE_PATHS = [
+  'caseScopedContext.debtorCollection',
+  'caseScopedContext.pendingDistribution',
+  'caseScopedContext.advanceBalance',
+  'caseBreakdown',
+  'needsReview',
+] as const;
+
+function buildClientScopedPrimaryReaderEvidence(
+  components: ClientAccountingSummaryShadowComponent[],
+  values: ClientAccountingJournalSummaryClientScopedValues | null,
+): ClientAccountingJournalSummaryClientScopedParityEvidence {
+  const comparisons: Partial<Record<typeof SUPPORTED_COMPONENT_KEYS[number], ClientAccountingSummaryShadowValueComparison>> = {};
+  for (const key of SUPPORTED_COMPONENT_KEYS) {
+    const comparison = components.find((component) => component.key === key)?.valueComparison;
+    if (comparison) {
+      comparisons[key] = { ...comparison };
+    }
+  }
+
+  const comparisonValues = Object.values(comparisons);
+  const mismatch = comparisonValues.some((comparison) => comparison.status === 'MISMATCH');
+  const notComputed = comparisonValues.length < SUPPORTED_COMPONENT_KEYS.length || comparisonValues.some((comparison) => comparison.status === 'NOT_COMPUTED');
+  const comparisonBlockers = uniqueSorted(comparisonValues.flatMap((comparison) => comparison.blockerCodes));
+  const blockerCodes = uniqueSorted([
+    CLIENT_SCOPED_PRIMARY_READER_BLOCKER,
+    'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+    'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
+    'SUMMARY_DERIVED_FROM_BLOCKED_PENDING_DISTRIBUTION',
+    ...comparisonBlockers,
+  ]);
+
+  return {
+    sourceVersion: 'acct-cutover-3e4b2f1-client-scoped-journal-summary-reader-v1',
+    readerSource: 'ACCOUNTING_JOURNAL_CLIENT_SCOPED',
+    status: values === null || notComputed ? 'NOT_COMPUTED' : mismatch ? 'MISMATCH' : 'BLOCKED',
+    values,
+    comparedComponents: [...SUPPORTED_COMPONENT_KEYS],
+    unsupportedResponsePaths: [...CLIENT_SCOPED_PRIMARY_READER_UNSUPPORTED_RESPONSE_PATHS],
+    blockerCodes,
+    comparisons,
+  };
+}
 function summarizeSupportedValueComparisons(
   components: ClientAccountingSummaryShadowComponent[],
 ): ClientAccountingSummaryShadowSupportedValueSummary {

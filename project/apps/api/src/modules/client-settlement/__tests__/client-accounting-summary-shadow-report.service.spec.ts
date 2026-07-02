@@ -1632,4 +1632,79 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(component(report, 'debtorCollection').valueComparison).toBeUndefined();
     expect(component(report, 'advanceBalance').valueComparison).toBeUndefined();
   });
+  it('reports client-scoped primary reader parity evidence while keeping case-scoped blockers', async () => {
+    const prisma = buildPrismaMock([
+      { sourceType: 'COLLECTION_DISPOSITION_LINE', sourceAction: 'posted', amount: '150' },
+      { sourceType: 'CLIENT_PAYOUT', sourceAction: 'recorded', amount: '20' },
+      { sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', amount: '10' },
+      { sourceType: 'CLIENT_OFFSET', sourceAction: 'reversal', amount: '5' },
+    ], {
+      active: [{ id: 'er-reader', totalAmount: '100', paidTotal: '20' }],
+      journals: [{ sourceId: 'er-reader', amount: '100' }],
+      paymentRows: [{ id: 'ep-reader', expenseRequestId: 'er-reader', amount: '20' }],
+      paymentJournals: [{ sourceId: 'ep-reader', amount: '20', expenseRequestId: 'er-reader' }],
+      offsetApplications: [
+        { expenseRequestId: 'er-reader', kind: 'APPLY', amount: '10' },
+        { expenseRequestId: 'er-reader', kind: 'REVERSAL', amount: '2' },
+      ],
+      reimbursementApplications: [
+        { id: 'app-apply-reader', expenseRequestId: 'er-reader', kind: 'APPLY', amount: '5', collectionDispositionLineId: 'line-apply-reader' },
+        { id: 'app-reversal-reader', expenseRequestId: 'er-reader', kind: 'REVERSAL', amount: '1', collectionDispositionLineId: 'line-reversal-reader', reversesApplicationId: 'app-apply-reader' },
+      ],
+      reimbursementApplicationJournals: [
+        { sourceId: 'app-apply-reader', kind: 'APPLY', amount: '5', expenseRequestId: 'er-reader', dispositionLineId: 'line-apply-reader' },
+        { sourceId: 'app-reversal-reader', kind: 'REVERSAL', sourceAction: 'reversal', amount: '1', expenseRequestId: 'er-reader', dispositionLineId: 'line-reversal-reader' },
+      ],
+      adjustmentLines: [
+        { sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', direction: 'CREDIT', amount: '10' },
+        { sourceType: 'CLIENT_OFFSET', sourceAction: 'reversal', direction: 'DEBIT', amount: '2' },
+        { sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION', sourceAction: 'apply', direction: 'CREDIT', amount: '5' },
+        { sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION', sourceAction: 'reversal', direction: 'DEBIT', amount: '1' },
+      ],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '125', paidToClient: '20', offsetApplied: '5' },
+    });
+
+    expect(report.clientScopedPrimaryReaderEvidence).toEqual(
+      expect.objectContaining({
+        sourceVersion: 'acct-cutover-3e4b2f1-client-scoped-journal-summary-reader-v1',
+        readerSource: 'ACCOUNTING_JOURNAL_CLIENT_SCOPED',
+        status: 'BLOCKED',
+        values: {
+          payableNet: '125',
+          paidToClient: '20',
+          offsetApplied: '5',
+          expenseRequested: '100',
+          expensePaid: '20',
+          expenseUnpaid: '68',
+        },
+        comparedComponents: expect.arrayContaining(['payableNet', 'paidToClient', 'offsetApplied', 'expenseRequested', 'expensePaid', 'expenseUnpaid']),
+        unsupportedResponsePaths: expect.arrayContaining([
+          'caseScopedContext.debtorCollection',
+          'caseScopedContext.pendingDistribution',
+          'caseScopedContext.advanceBalance',
+          'caseBreakdown',
+          'needsReview',
+        ]),
+        blockerCodes: expect.arrayContaining([
+          'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+          'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
+        ]),
+      }),
+    );
+    expect(report.clientScopedPrimaryReaderEvidence?.comparisons.expenseUnpaid).toEqual(
+      expect.objectContaining({ legacyValue: '68', journalValue: '68', delta: '0', status: 'MATCH', blockerCodes: [] }),
+    );
+    expect(component(report, 'debtorCollection').valueComparison).toBeUndefined();
+    expect(component(report, 'advanceBalance').valueComparison).toBeUndefined();
+    expect(report.blockerCodes).toEqual(expect.arrayContaining(['CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING']));
+    expect(report.candidateStatus).toBe('BLOCKED');
+    expect(report.safeForPrimaryCutover).toBe(false);
+    expect(report.primarySwitchUnchanged).toBe(true);
+  });
 });
