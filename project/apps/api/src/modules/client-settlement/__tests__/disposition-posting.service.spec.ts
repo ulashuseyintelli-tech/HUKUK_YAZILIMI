@@ -40,8 +40,23 @@ function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; li
     caseBalance: { findFirst: jest.fn().mockResolvedValue({ id: 'cb-1' }), create: jest.fn().mockResolvedValue({ id: 'cb-new' }) },
     balanceLedger: { create: jest.fn().mockResolvedValue({}) },
     // FAZ-1b reimbursement application + tx-iÃ§i expenseRequest doÄŸrulamasÄ±
-    expenseRequest: { findFirst: jest.fn().mockResolvedValue(opts.expenseRequest ?? { totalAmount: D(50), paidTotal: D(0), currency: 'TRY', status: 'SENT', expenseApprovalStatus: 'APPROVED' }) },
-    collectionDispositionExpenseApplication: { create: jest.fn().mockResolvedValue({ id: 'app-1' }) },
+    expenseRequest: { findFirst: jest.fn().mockResolvedValue(opts.expenseRequest ?? { totalAmount: D(50), paidTotal: D(0), currency: 'TRY', status: 'SENT', expenseApprovalStatus: 'APPROVED', clientId: 'client-A' }) },
+    collectionDispositionExpenseApplication: {
+      create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({
+        id: 'app-1',
+        caseId: data.caseId,
+        expenseRequestId: data.expenseRequestId,
+        collectionDispositionId: data.collectionDispositionId,
+        collectionDispositionLineId: data.collectionDispositionLineId,
+        kind: data.kind,
+        amount: data.amount,
+        currency: data.currency,
+        reimbursementScope: data.reimbursementScope,
+        reversesApplicationId: data.reversesApplicationId ?? null,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        createdById: data.createdById ?? null,
+      })),
+    },
     accountingJournalEntry: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'journal-1', _count: { lines: 2 } }),
@@ -63,7 +78,7 @@ function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; li
 function buildReadService(remaining?: any) {
   return { computeExpenseRemaining: jest.fn().mockResolvedValue(remaining ?? D(1000000)) } as any;
 }
-const svc = (p: any, a?: any, r?: any) => new DispositionPostingService(p, a ?? buildApproval(), r ?? buildReadService());
+const svc = (p: any, a?: any, r?: any, writer?: any) => new DispositionPostingService(p, a ?? buildApproval(), r ?? buildReadService(), undefined, undefined, writer);
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ recommend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('DispositionPostingService.recommend', () => {
@@ -132,13 +147,13 @@ describe('DispositionPostingService.recommend', () => {
   });
   it('sum < total â†’ reject, $transaction aÃ§Ä±lmaz', async () => {
     const { prisma } = buildPrisma();
-    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '70' }] }, { userId: 'u1' })).rejects.toThrow(/eÅŸit olmalÄ±/);
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '70' }] }, { userId: 'u1' })).rejects.toThrow(/eşit olmalı/);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('sum > total â†’ reject', async () => {
     const { prisma } = buildPrisma();
-    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '120' }] }, { userId: 'u1' })).rejects.toThrow(/eÅŸit olmalÄ±/);
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '120' }] }, { userId: 'u1' })).rejects.toThrow(/eşit olmalı/);
   });
 
   it('HELD_PENDING_DISTRIBUTION satÄ±r â†’ reject', async () => {
@@ -168,7 +183,7 @@ describe('DispositionPostingService.recommend', () => {
 
   it('disposition HELD deÄŸilse â†’ reject', async () => {
     const { prisma } = buildPrisma({ disp: DISP_RECOMMENDED });
-    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u1' })).rejects.toThrow(/HELD_PENDING_DISTRIBUTION Ã¶nerilebilir/);
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u1' })).rejects.toThrow(/HELD_PENDING_DISTRIBUTION önerilebilir/);
   });
 
   it('collection CONFIRMED deÄŸilse â†’ reject', async () => {
@@ -246,7 +261,7 @@ describe('DispositionPostingService.post', () => {
 
   it('P4 request APPROVED deÄŸilse â†’ conflict (post yasak)', async () => {
     const { prisma } = buildPrisma({ disp: DISP_APPROVED, approval: { status: 'PENDING_APPROVAL' }, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100), caseClientId: 'cc-A' }] });
-    await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/APPROVED deÄŸil/);
+    await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/APPROVED değil/);
   });
 
   it('manualReversalRequiredAt marker taÅŸÄ±yan disposition post edilmez; manual review olur ve mutation yoktur', async () => {
@@ -269,7 +284,7 @@ describe('DispositionPostingService.post', () => {
 
   it('line toplamÄ± != totalAmount (tamper guard) â†’ reject', async () => {
     const { prisma } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(70) }] });
-    await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/eÅŸit olmalÄ±/);
+    await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/eşit olmalı/);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -302,9 +317,28 @@ describe('DispositionPostingService FAZ-1b reimbursement', () => {
     expect(tx.collectionDispositionExpenseApplication.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ expenseRequestId: 'er1', kind: 'APPLY', amount: D(100), reimbursementScope: 'CLIENT_FRONTED', collectionDispositionLineId: 'l1' }) }),
     );
-    expect((tx.expenseRequest as any).update).toBeUndefined(); // projection-first: paidTotal mutate YOK (update yok)
+    expect(tx.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+          sourceId: 'app-1',
+          sourceAction: 'apply',
+          entryType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_APPLIED',
+          lines: { create: expect.arrayContaining([
+            expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'CREDIT', expenseApplicationId: 'app-1', dispositionLineId: 'l1' }),
+          ]) },
+        }),
+      }),
+    );    expect((tx.expenseRequest as any).update).toBeUndefined(); // projection-first: paidTotal mutate YOK (update yok)
   });
 
+  it('post: reimbursement journal write hatasi transaction post update oncesi fail-closed kalir', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: D(100), caseClientId: 'cc-A', expenseRequestId: 'er1' }] });
+    const writer = { write: jest.fn().mockResolvedValue({ ok: false, errors: [{ code: 'WRITER_DOWN' }] }) };
+    await expect(svc(prisma, undefined, undefined, writer).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/Expense application journal write failed/);
+    expect(tx.collectionDispositionExpenseApplication.create).toHaveBeenCalled();
+    expect(tx.collectionDisposition.updateMany).not.toHaveBeenCalled();
+  });
   it('post: FIRM_EXPENSE_REIMBURSEMENT â†’ reimbursementScope FIRM_FRONTED', async () => {
     const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: D(100), expenseRequestId: 'er1' }] });
     await svc(prisma).post('t1', 'd1', { userId: 'u3' });
@@ -325,6 +359,6 @@ describe('DispositionPostingService FAZ-1b reimbursement', () => {
 
   it('post: reimbursement tutarÄ± masraf kalanÄ±nÄ± aÅŸarsa â†’ reject', async () => {
     const { prisma } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: D(100), caseClientId: 'cc-A', expenseRequestId: 'er1' }] });
-    await expect(svc(prisma, undefined, buildReadService(D(40))).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/aÅŸamaz|kalanÄ±nÄ±/);
+    await expect(svc(prisma, undefined, buildReadService(D(40))).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/aşamaz|kalanını/);
   });
 });

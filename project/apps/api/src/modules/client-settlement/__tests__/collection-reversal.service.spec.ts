@@ -1,14 +1,14 @@
-/**
- * TM3 M1R (+FU1/TM47D-3) — CollectionReversalService testleri.
- * Davranış matrisi (Ulaş contract 2026-06-27, TM47D-3 2026-06-28):
- *  - HELD_PENDING_DISTRIBUTION → REVERSED (success)
- *  - REVERSED / CANCELLED → idempotent skip (success)
- *  - no disposition → handled skip (success)
- *  - POSTED → status POSTED KALIR; kalıcı marker persist; exact prior payout allocation varsa
- *    ClientPayoutManualReversal OPEN + EXACT workflow kaydı idempotent açılır.
- *  - POSTED + exact allocation yok → marker kalır, AGGREGATE_ONLY/UNKNOWN workflow açılmaz.
- *  - missing collectionId → handled no-op (success, throw YOK — poison engeli)
- *  - missing tenantId / tenant mismatch / wrong caseId → fail-closed (throw, mutasyon YOK)
+﻿/**
+ * TM3 M1R (+FU1/TM47D-3) â€” CollectionReversalService testleri.
+ * DavranÄ±ÅŸ matrisi (UlaÅŸ contract 2026-06-27, TM47D-3 2026-06-28):
+ *  - HELD_PENDING_DISTRIBUTION â†’ REVERSED (success)
+ *  - REVERSED / CANCELLED â†’ idempotent skip (success)
+ *  - no disposition â†’ handled skip (success)
+ *  - POSTED â†’ status POSTED KALIR; kalÄ±cÄ± marker persist; exact prior payout allocation varsa
+ *    ClientPayoutManualReversal OPEN + EXACT workflow kaydÄ± idempotent aÃ§Ä±lÄ±r.
+ *  - POSTED + exact allocation yok â†’ marker kalÄ±r, AGGREGATE_ONLY/UNKNOWN workflow aÃ§Ä±lmaz.
+ *  - missing collectionId â†’ handled no-op (success, throw YOK â€” poison engeli)
+ *  - missing tenantId / tenant mismatch / wrong caseId â†’ fail-closed (throw, mutasyon YOK)
  *  - ClientStatement / BalanceLedger / payout YAZILMAZ; clientId VARSAYILMAZ.
  */
 import { CollectionReversalService } from '../collection-reversal.service';
@@ -58,20 +58,41 @@ function buildPrisma(disp: any | null, allocations: any[] = []) {
     clientPayoutManualReversal: {
       upsert: jest.fn().mockResolvedValue({ id: 'manual-reversal-1' }),
     },
-    // M1R/TM47D-3 bu tabloları ASLA yazmamalı — varlıkları yalnız "çağrılmadı" assertion'ı için.
+    // M1R/TM47D-3 bu tablolarÄ± ASLA yazmamalÄ± â€” varlÄ±klarÄ± yalnÄ±z "Ã§aÄŸrÄ±lmadÄ±" assertion'Ä± iÃ§in.
     clientStatementLine: { create: jest.fn(), createMany: jest.fn() },
     balanceLedger: { create: jest.fn() },
     clientPayout: { create: jest.fn() },
-    // FAZ-1b: reimbursement application REVERSAL — POSTED branch findMany(×2)/create çağırır (default: APPLY yok → no-op).
-    collectionDispositionExpenseApplication: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'rev-app-1' }) },
+    // FAZ-1b: reimbursement application REVERSAL â€” POSTED branch findMany(Ã—2)/create Ã§aÄŸÄ±rÄ±r (default: APPLY yok â†’ no-op).
+    collectionDispositionExpenseApplication: {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({
+        id: 'rev-app-1',
+        caseId: data.caseId,
+        expenseRequestId: data.expenseRequestId,
+        collectionDispositionId: data.collectionDispositionId,
+        collectionDispositionLineId: data.collectionDispositionLineId,
+        kind: data.kind,
+        amount: data.amount,
+        currency: data.currency,
+        reimbursementScope: data.reimbursementScope,
+        reversesApplicationId: data.reversesApplicationId ?? null,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        createdById: data.createdById ?? null,
+      })),
+    },
+    expenseRequest: { findFirst: jest.fn().mockResolvedValue({ clientId: 'client-1' }) },
+    accountingJournalEntry: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: 'journal-1', _count: { lines: 2 } }),
+    },
   };
   prisma.$transaction = jest.fn(async (callback: (tx: any) => Promise<unknown>) => callback(prisma));
   return prisma;
 }
 
-const svc = (prisma: any) => new CollectionReversalService(prisma);
+const svc = (prisma: any, writer?: any) => new CollectionReversalService(prisma, writer);
 
-/** Yasak finansal yan-etki yazılmadığını doğrular; TM47D-3 manual workflow bunun dışında ayrı assert edilir. */
+/** Yasak finansal yan-etki yazÄ±lmadÄ±ÄŸÄ±nÄ± doÄŸrular; TM47D-3 manual workflow bunun dÄ±ÅŸÄ±nda ayrÄ± assert edilir. */
 function expectNoForbiddenFinancialMutation(prisma: any) {
   expect(prisma.clientStatementLine.create).not.toHaveBeenCalled();
   expect(prisma.clientStatementLine.createMany).not.toHaveBeenCalled();
@@ -80,7 +101,7 @@ function expectNoForbiddenFinancialMutation(prisma: any) {
 }
 
 describe('CollectionReversalService.reverseFromPaymentReversed', () => {
-  it('HELD_PENDING_DISTRIBUTION → status REVERSED (success), manual workflow ve finansal yan-etki YOK', async () => {
+  it('HELD_PENDING_DISTRIBUTION â†’ status REVERSED (success), manual workflow ve finansal yan-etki YOK', async () => {
     const prisma = buildPrisma(disposition({ status: 'HELD_PENDING_DISTRIBUTION' }));
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
 
@@ -97,7 +118,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('S8-B FAZ-0: DISTRIBUTION_RECOMMENDED → status REVERSED (POSTED öncesi, finansal yan-etki YOK)', async () => {
+  it('S8-B FAZ-0: DISTRIBUTION_RECOMMENDED â†’ status REVERSED (POSTED Ã¶ncesi, finansal yan-etki YOK)', async () => {
     const prisma = buildPrisma(disposition({ status: 'DISTRIBUTION_RECOMMENDED' }));
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
     expect(res.outcome).toBe('reversed');
@@ -106,7 +127,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('S8-B FAZ-0: DISTRIBUTION_APPROVED → status REVERSED (post() çalışmamış, finansal yan-etki YOK)', async () => {
+  it('S8-B FAZ-0: DISTRIBUTION_APPROVED â†’ status REVERSED (post() Ã§alÄ±ÅŸmamÄ±ÅŸ, finansal yan-etki YOK)', async () => {
     const prisma = buildPrisma(disposition({ status: 'DISTRIBUTION_APPROVED' }));
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
     expect(res.outcome).toBe('reversed');
@@ -115,7 +136,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('zaten REVERSED → idempotent skip, update YOK', async () => {
+  it('zaten REVERSED â†’ idempotent skip, update YOK', async () => {
     const prisma = buildPrisma(disposition({ status: 'REVERSED' }));
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
 
@@ -125,7 +146,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('zaten CANCELLED → idempotent skip, update YOK', async () => {
+  it('zaten CANCELLED â†’ idempotent skip, update YOK', async () => {
     const prisma = buildPrisma(disposition({ status: 'CANCELLED' }));
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
 
@@ -135,7 +156,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('disposition yok → handled skip (success), update YOK', async () => {
+  it('disposition yok â†’ handled skip (success), update YOK', async () => {
     const prisma = buildPrisma(null);
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
 
@@ -145,7 +166,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('POSTED + exact allocation → marker kalır/yazılır ve ClientPayoutManualReversal OPEN/EXACT açılır', async () => {
+  it('POSTED + exact allocation â†’ marker kalÄ±r/yazÄ±lÄ±r ve ClientPayoutManualReversal OPEN/EXACT aÃ§Ä±lÄ±r', async () => {
     const exactAllocation = allocation();
     const prisma = buildPrisma(disposition(), [exactAllocation]);
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
@@ -207,7 +228,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
         clientPayoutId: 'payout1',
         clientPayoutAllocationId: 'alloc1',
         openedById: null,
-        note: 'PAYMENT_REVERSED sonrası exact prior payout manual reversal workflow.',
+        note: 'PAYMENT_REVERSED sonrasÄ± exact prior payout manual reversal workflow.',
         metadata: {
           source: 'PAYMENT_REVERSED',
           actionType: 'EVENT_PUBLISHED:PAYMENT_REVERSED',
@@ -217,7 +238,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('POSTED + no allocation → marker yazılır, AGGREGATE_ONLY/UNKNOWN workflow açılmaz', async () => {
+  it('POSTED + no allocation â†’ marker yazÄ±lÄ±r, AGGREGATE_ONLY/UNKNOWN workflow aÃ§Ä±lmaz', async () => {
     const prisma = buildPrisma(disposition(), []);
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
 
@@ -228,7 +249,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('POSTED already marked + missing workflow + exact allocation → marker değişmez, workflow idempotent açılır', async () => {
+  it('POSTED already marked + missing workflow + exact allocation â†’ marker deÄŸiÅŸmez, workflow idempotent aÃ§Ä±lÄ±r', async () => {
     const existingMarker = new Date('2026-06-27T00:00:00Z');
     const prisma = buildPrisma(disposition({ manualReversalRequiredAt: existingMarker }), [allocation()]);
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', { ...CTX, actionId: 'evt-rev-2' });
@@ -245,7 +266,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('POSTED retry/idempotency → aynı exact allocation için aynı dedupeKey kullanılır, duplicate create path yok', async () => {
+  it('POSTED retry/idempotency â†’ aynÄ± exact allocation iÃ§in aynÄ± dedupeKey kullanÄ±lÄ±r, duplicate create path yok', async () => {
     const existingMarker = new Date('2026-06-27T00:00:00Z');
     const prisma = buildPrisma(disposition({ manualReversalRequiredAt: existingMarker }), [allocation()]);
     const service = svc(prisma);
@@ -260,7 +281,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('POSTED allocation lookup → yalnız RECORDED payout source-link kabul edilir', async () => {
+  it('POSTED allocation lookup â†’ yalnÄ±z RECORDED payout source-link kabul edilir', async () => {
     const prisma = buildPrisma(disposition(), []);
     await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
 
@@ -270,7 +291,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('tenant/caseClient/currency scoping → allocation lookup exact tenant/case/client/currency sınırlarıyla yapılır', async () => {
+  it('tenant/caseClient/currency scoping â†’ allocation lookup exact tenant/case/client/currency sÄ±nÄ±rlarÄ±yla yapÄ±lÄ±r', async () => {
     const prisma = buildPrisma(disposition({ caseClientId: 'cc-scope', currency: 'USD' }), []);
     await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
 
@@ -288,7 +309,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('missing collectionId → handled no-op (success, THROW YOK), findUnique çağrılmaz', async () => {
+  it('missing collectionId â†’ handled no-op (success, THROW YOK), findUnique Ã§aÄŸrÄ±lmaz', async () => {
     const prisma = buildPrisma(disposition({ status: 'HELD_PENDING_DISTRIBUTION' }));
     const res = await svc(prisma).reverseFromPaymentReversed({}, 'case1', CTX);
 
@@ -299,17 +320,17 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('missing tenantId (context yok) → fail-closed throw', async () => {
+  it('missing tenantId (context yok) â†’ fail-closed throw', async () => {
     const prisma = buildPrisma(disposition({ status: 'HELD_PENDING_DISTRIBUTION' }));
     await expect(
       svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', undefined),
-    ).rejects.toThrow(/tenant doğrulanmadan/);
+    ).rejects.toThrow(/tenant doÄŸrulanmadan/);
     expect(prisma.collectionDisposition.update).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('tenant mismatch → fail-closed throw, mutasyon YOK', async () => {
+  it('tenant mismatch â†’ fail-closed throw, mutasyon YOK', async () => {
     const prisma = buildPrisma(disposition({ status: 'HELD_PENDING_DISTRIBUTION' }));
     await expect(
       svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', { ...CTX, tenantId: 'tB' }),
@@ -319,7 +340,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('FAZ-1b: POSTED reverse → her APPLY için REVERSAL application (simetri); finansal yan-etki YOK', async () => {
+  it('FAZ-1b: POSTED reverse â†’ her APPLY iÃ§in REVERSAL application (simetri); finansal yan-etki YOK', async () => {
     const prisma = buildPrisma(disposition()); // POSTED
     prisma.collectionDispositionExpenseApplication.findMany = jest
       .fn()
@@ -329,20 +350,42 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expect(prisma.collectionDispositionExpenseApplication.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ kind: 'REVERSAL', reversesApplicationId: 'app1', expenseRequestId: 'er1' }) }),
     );
-    expectNoForbiddenFinancialMutation(prisma); // projection unwind ≠ payout/ledger/statement
+    expect(prisma.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+          sourceId: 'rev-app-1',
+          sourceAction: 'reversal',
+          entryType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_REVERSED',
+          lines: { create: expect.arrayContaining([
+            expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'DEBIT', expenseApplicationId: 'rev-app-1', dispositionLineId: 'line1' }),
+          ]) },
+        }),
+      }),
+    );    expectNoForbiddenFinancialMutation(prisma); // projection unwind â‰  payout/ledger/statement
   });
 
-  it('FAZ-1b: POSTED reverse idempotent — APPLY zaten REVERSAL\'lı ise yeni REVERSAL yazılmaz', async () => {
+  it('FAZ-1b: reimbursement reversal journal write hatasi fail-closed throw eder', async () => {
+    const prisma = buildPrisma(disposition());
+    prisma.collectionDispositionExpenseApplication.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ id: 'app1', expenseRequestId: 'er1', collectionDispositionLineId: 'line1', amount: AMOUNT, currency: 'TRY', reimbursementScope: 'CLIENT_FRONTED' }])
+      .mockResolvedValueOnce([]);
+    const writer = { write: jest.fn().mockResolvedValue({ ok: false, errors: [{ code: 'WRITER_DOWN' }] }) };
+    await expect(svc(prisma, writer).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX)).rejects.toThrow(/Expense application journal write failed/);
+    expect(prisma.collectionDispositionExpenseApplication.create).toHaveBeenCalled();
+  });
+  it('FAZ-1b: POSTED reverse idempotent â€” APPLY zaten REVERSAL\'lÄ± ise yeni REVERSAL yazÄ±lmaz', async () => {
     const prisma = buildPrisma(disposition());
     prisma.collectionDispositionExpenseApplication.findMany = jest
       .fn()
       .mockResolvedValueOnce([{ id: 'app1', expenseRequestId: 'er1', collectionDispositionLineId: 'line1', amount: AMOUNT, currency: 'TRY', reimbursementScope: 'CLIENT_FRONTED' }]) // APPLY
-      .mockResolvedValueOnce([{ reversesApplicationId: 'app1' }]); // zaten reverse edilmiş → skip
+      .mockResolvedValueOnce([{ reversesApplicationId: 'app1' }]); // zaten reverse edilmiÅŸ â†’ skip
     await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
     expect(prisma.collectionDispositionExpenseApplication.create).not.toHaveBeenCalled();
   });
 
-  it('wrong caseId → fail-closed throw, mutasyon YOK', async () => {
+  it('wrong caseId â†’ fail-closed throw, mutasyon YOK', async () => {
     const prisma = buildPrisma(disposition({ status: 'HELD_PENDING_DISTRIBUTION' }));
     await expect(
       svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'BASKA_CASE', CTX),
@@ -352,7 +395,7 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
-  it('bilinmeyen status → handled skip (success), mutasyon YOK', async () => {
+  it('bilinmeyen status â†’ handled skip (success), mutasyon YOK', async () => {
     const prisma = buildPrisma(disposition({ status: 'FUTURE_STATUS' }));
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
 
