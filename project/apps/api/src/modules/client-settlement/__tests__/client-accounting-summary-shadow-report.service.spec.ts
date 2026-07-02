@@ -1759,6 +1759,18 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         safeForPrimaryCutover: false,
         primarySwitchBlockerReason: 'RAW_COLLECTION_AND_CASE_SCOPED_SUMMARY_NOT_JOURNAL_DERIVED',
         clientScopedParity: { status: 'MATCH', blockerCodes: [] },
+        hybridPrimaryBoundary: expect.objectContaining({
+          sourceVersion: 'acct-cutover-3e4b2g1-summary-hybrid-primary-boundary-v1',
+          mode: 'CLIENT_SCOPED_JOURNAL_WITH_CASE_SCOPED_LEGACY_CONTEXT',
+          clientScopedSource: 'ACCOUNTING_JOURNAL_SHADOW',
+          caseScopedContextSource: 'LEGACY_CONTEXT',
+          journalOnlyPrimarySwitch: 'BLOCKED',
+          fallbackResponsePaths: expect.arrayContaining([
+            'caseScopedContext.debtorCollection',
+            'caseScopedContext.pendingDistribution',
+            'caseScopedContext.advanceBalance',
+          ]),
+        }),
         rawCollectionJournalSource: {
           requiredFor: 'caseScopedContext.debtorCollection',
           status: 'MISSING',
@@ -1771,13 +1783,29 @@ describe('ClientAccountingSummaryShadowReportService', () => {
           'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
           'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
           'SUMMARY_DERIVED_FROM_BLOCKED_PENDING_DISTRIBUTION',
+          'SUMMARY_JOURNAL_ONLY_PRIMARY_SWITCH_BLOCKED_BY_LEGACY_CONTEXT',
         ]),
         gapCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING'],
+      }),
+    );
+    expect(report.summaryHybridPrimaryBoundary).toEqual(
+      expect.objectContaining({
+        mode: 'CLIENT_SCOPED_JOURNAL_WITH_CASE_SCOPED_LEGACY_CONTEXT',
+        caseScopedContextSource: 'LEGACY_CONTEXT',
+        journalOnlyPrimarySwitch: 'BLOCKED',
+        primarySwitchUnchanged: true,
+        safeForPrimaryCutover: false,
+        blockerCodes: expect.arrayContaining([
+          'COLLECTION_JOURNAL_SOURCE_MISSING',
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+          'SUMMARY_JOURNAL_ONLY_PRIMARY_SWITCH_BLOCKED_BY_LEGACY_CONTEXT',
+        ]),
       }),
     );
     expect(report.summaryPrimarySwitchReadiness.caseScopedReadiness).toEqual(
       expect.objectContaining({
         status: 'BLOCKED',
+        contextSource: 'LEGACY_CONTEXT',
         unsupportedResponsePaths: expect.arrayContaining([
           'caseScopedContext.debtorCollection',
           'caseScopedContext.pendingDistribution',
@@ -1819,6 +1847,8 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       expect.objectContaining({
         sourceVersion: 'acct-cutover-3e4b2f2a-case-scoped-summary-reader-evidence-v1',
         readerSource: 'ACCOUNTING_JOURNAL_CASE_SCOPED_SHADOW',
+        caseScopedContextSource: 'LEGACY_CONTEXT',
+        journalOnlySourceStatus: 'NOT_JOURNAL_DERIVED',
         status: 'BLOCKED',
         values: expect.objectContaining({
           debtorCollectionLegacyValue: '1000',
@@ -1848,9 +1878,24 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(report.caseScopedPrimaryReaderEvidence?.comparisons.advanceBalance).toEqual(
       expect.objectContaining({ legacyValue: '75', journalValue: '75', delta: '0', status: 'MATCH', blockerCodes: [] }),
     );
+    expect(report.summaryHybridPrimaryBoundary).toEqual(
+      expect.objectContaining({
+        mode: 'CLIENT_SCOPED_JOURNAL_WITH_CASE_SCOPED_LEGACY_CONTEXT',
+        caseScopedContextSource: 'LEGACY_CONTEXT',
+        journalOnlyPrimarySwitch: 'BLOCKED',
+        primarySwitchUnchanged: true,
+        safeForPrimaryCutover: false,
+        blockerCodes: expect.arrayContaining([
+          'COLLECTION_JOURNAL_SOURCE_MISSING',
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+          'SUMMARY_JOURNAL_ONLY_PRIMARY_SWITCH_BLOCKED_BY_LEGACY_CONTEXT',
+        ]),
+      }),
+    );
     expect(report.summaryPrimarySwitchReadiness.caseScopedReadiness).toEqual(
       expect.objectContaining({
         status: 'BLOCKED',
+        contextSource: 'LEGACY_CONTEXT',
         unsupportedResponsePaths: [
           'caseScopedContext.debtorCollection',
           'caseScopedContext.pendingDistribution',

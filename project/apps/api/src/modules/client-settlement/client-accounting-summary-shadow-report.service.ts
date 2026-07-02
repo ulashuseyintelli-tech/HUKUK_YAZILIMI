@@ -355,6 +355,8 @@ export interface ClientAccountingSummaryCaseScopedPrimaryReaderValues {
 export interface ClientAccountingSummaryCaseScopedPrimaryReaderEvidence {
   sourceVersion: 'acct-cutover-3e4b2f2a-case-scoped-summary-reader-evidence-v1';
   readerSource: 'ACCOUNTING_JOURNAL_CASE_SCOPED_SHADOW';
+  caseScopedContextSource: 'LEGACY_CONTEXT';
+  journalOnlySourceStatus: 'NOT_JOURNAL_DERIVED';
   status: 'MATCH' | 'MISMATCH' | 'BLOCKED';
   values: ClientAccountingSummaryCaseScopedPrimaryReaderValues;
   comparedComponents: ['pendingDistribution', 'advanceBalance'];
@@ -364,6 +366,18 @@ export interface ClientAccountingSummaryCaseScopedPrimaryReaderEvidence {
     pendingDistribution: ClientAccountingSummaryShadowValueComparison;
     advanceBalance: ClientAccountingSummaryShadowValueComparison;
   };
+}
+
+export interface ClientAccountingSummaryHybridPrimaryBoundary {
+  sourceVersion: 'acct-cutover-3e4b2g1-summary-hybrid-primary-boundary-v1';
+  mode: 'CLIENT_SCOPED_JOURNAL_WITH_CASE_SCOPED_LEGACY_CONTEXT';
+  clientScopedSource: 'ACCOUNTING_JOURNAL_SHADOW';
+  caseScopedContextSource: 'LEGACY_CONTEXT';
+  journalOnlyPrimarySwitch: 'BLOCKED';
+  primarySwitchUnchanged: true;
+  safeForPrimaryCutover: false;
+  fallbackResponsePaths: string[];
+  blockerCodes: string[];
 }
 
 export interface ClientAccountingSummaryPrimarySwitchReadiness {
@@ -378,9 +392,11 @@ export interface ClientAccountingSummaryPrimarySwitchReadiness {
   };
   caseScopedReadiness: {
     status: 'MATCH' | 'BLOCKED' | 'MISMATCH' | 'NOT_COMPUTED';
+    contextSource: 'LEGACY_CONTEXT';
     unsupportedResponsePaths: string[];
     blockerCodes: string[];
   };
+  hybridPrimaryBoundary: ClientAccountingSummaryHybridPrimaryBoundary;
   rawCollectionJournalSource: {
     requiredFor: 'caseScopedContext.debtorCollection';
     status: 'MISSING';
@@ -410,6 +426,7 @@ export interface ClientAccountingSummaryShadowReport {
   expenseUnpaidBreakdown?: ExpenseUnpaidJournalBreakdown;
   clientScopedPrimaryReaderEvidence?: ClientAccountingJournalSummaryClientScopedParityEvidence;
   caseScopedPrimaryReaderEvidence?: ClientAccountingSummaryCaseScopedPrimaryReaderEvidence;
+  summaryHybridPrimaryBoundary: ClientAccountingSummaryHybridPrimaryBoundary;
   summaryPrimarySwitchReadiness: ClientAccountingSummaryPrimarySwitchReadiness;
   replayEvidence?: ClientAccountingSummaryReplayEvidenceReport;
   blockerCodes: string[];
@@ -897,6 +914,13 @@ const SUMMARY_PRIMARY_SWITCH_UNSUPPORTED_RESPONSE_PATHS = [
   'caseScopedContext.advanceBalance',
   'caseBreakdown',
   'needsReview',
+] as const;
+
+const SUMMARY_HYBRID_BOUNDARY_BLOCKERS = [
+  'COLLECTION_JOURNAL_SOURCE_MISSING',
+  'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+  'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
+  'SUMMARY_JOURNAL_ONLY_PRIMARY_SWITCH_BLOCKED_BY_LEGACY_CONTEXT',
 ] as const;
 
 const SUMMARY_PRIMARY_SWITCH_STATIC_BLOCKERS = [
@@ -1549,9 +1573,11 @@ export class ClientAccountingSummaryShadowReportService {
     applyCaseScopedPrimaryReaderEvidenceBreakdowns(components, shadowValues?.caseScopedPrimaryReaderEvidence ?? null);
     const supportedValueSummary = summarizeSupportedValueComparisons(components);
     const clientScopedPrimaryReaderEvidence = buildClientScopedPrimaryReaderEvidence(components, shadowValues?.clientScopedPrimaryReaderValues ?? null);
+    const summaryHybridPrimaryBoundary = buildSummaryHybridPrimaryBoundary();
     const summaryPrimarySwitchReadiness = buildSummaryPrimarySwitchReadiness(
       clientScopedPrimaryReaderEvidence,
       shadowValues?.caseScopedPrimaryReaderEvidence ?? null,
+      summaryHybridPrimaryBoundary,
     );
 
     return {
@@ -1575,6 +1601,7 @@ export class ClientAccountingSummaryShadowReportService {
       expenseUnpaidBreakdown: shadowValues?.expenseUnpaidBreakdown,
       clientScopedPrimaryReaderEvidence,
       caseScopedPrimaryReaderEvidence: shadowValues?.caseScopedPrimaryReaderEvidence,
+      summaryHybridPrimaryBoundary,
       summaryPrimarySwitchReadiness,
       replayEvidence: shadowValues?.replayEvidence,
       blockerCodes: uniqueSorted([
@@ -1587,6 +1614,7 @@ export class ClientAccountingSummaryShadowReportService {
         ...(shadowValues?.expenseReimbursementApplicationComparison.blockerCodes ?? []),
         ...clientScopedPrimaryReaderEvidence.blockerCodes,
         ...(shadowValues?.caseScopedPrimaryReaderEvidence.blockerCodes ?? []),
+        ...summaryHybridPrimaryBoundary.blockerCodes,
         ...summaryPrimarySwitchReadiness.blockerCodes,
         ...(shadowValues?.replayEvidence.blockerCodes ?? []),
       ]),
@@ -1769,6 +1797,8 @@ function buildCaseScopedPrimaryReaderEvidence(
       advanceBalanceLegacyValue: decimalToString(advanceBalanceLegacyValue),
       advanceBalanceJournalValue: decimalToString(advanceBalanceJournalValue),
     },
+    caseScopedContextSource: 'LEGACY_CONTEXT',
+    journalOnlySourceStatus: 'NOT_JOURNAL_DERIVED',
     comparedComponents: ['pendingDistribution', 'advanceBalance'],
     unsupportedResponsePaths: [...SUMMARY_PRIMARY_SWITCH_UNSUPPORTED_RESPONSE_PATHS],
     blockerCodes,
@@ -1855,6 +1885,7 @@ function buildClientScopedPrimaryReaderEvidence(
 function buildSummaryPrimarySwitchReadiness(
   clientScopedEvidence: ClientAccountingJournalSummaryClientScopedParityEvidence,
   caseScopedEvidence: ClientAccountingSummaryCaseScopedPrimaryReaderEvidence | null,
+  hybridPrimaryBoundary: ClientAccountingSummaryHybridPrimaryBoundary,
 ): ClientAccountingSummaryPrimarySwitchReadiness {
   const clientComparisons = Object.values(clientScopedEvidence.comparisons);
   const clientComparisonBlockers = uniqueSorted(clientComparisons.flatMap((comparison) => comparison.blockerCodes));
@@ -1871,6 +1902,7 @@ function buildSummaryPrimarySwitchReadiness(
   ];
   const blockerCodes = uniqueSorted([
     ...SUMMARY_PRIMARY_SWITCH_STATIC_BLOCKERS,
+    ...hybridPrimaryBoundary.blockerCodes,
     ...clientComparisonBlockers,
     ...caseScopedBlockers,
   ]);
@@ -1887,9 +1919,11 @@ function buildSummaryPrimarySwitchReadiness(
     },
     caseScopedReadiness: {
       status: caseScopedEvidence?.status ?? 'NOT_COMPUTED',
+      contextSource: 'LEGACY_CONTEXT',
       unsupportedResponsePaths: [...SUMMARY_PRIMARY_SWITCH_UNSUPPORTED_RESPONSE_PATHS],
       blockerCodes: uniqueSorted(caseScopedBlockers),
     },
+    hybridPrimaryBoundary,
     rawCollectionJournalSource: {
       requiredFor: 'caseScopedContext.debtorCollection',
       status: 'MISSING',
@@ -1897,6 +1931,20 @@ function buildSummaryPrimarySwitchReadiness(
     },
     blockerCodes,
     gapCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING'],
+  };
+}
+
+function buildSummaryHybridPrimaryBoundary(): ClientAccountingSummaryHybridPrimaryBoundary {
+  return {
+    sourceVersion: 'acct-cutover-3e4b2g1-summary-hybrid-primary-boundary-v1',
+    mode: 'CLIENT_SCOPED_JOURNAL_WITH_CASE_SCOPED_LEGACY_CONTEXT',
+    clientScopedSource: 'ACCOUNTING_JOURNAL_SHADOW',
+    caseScopedContextSource: 'LEGACY_CONTEXT',
+    journalOnlyPrimarySwitch: 'BLOCKED',
+    primarySwitchUnchanged: true,
+    safeForPrimaryCutover: false,
+    fallbackResponsePaths: [...SUMMARY_PRIMARY_SWITCH_UNSUPPORTED_RESPONSE_PATHS],
+    blockerCodes: [...SUMMARY_HYBRID_BOUNDARY_BLOCKERS],
   };
 }
 function summarizeSupportedValueComparisons(

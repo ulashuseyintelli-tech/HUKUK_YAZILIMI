@@ -16,6 +16,17 @@ const CLIENT_ACCOUNTING_SUMMARY_SCOPE: AccountingJournalCutoverCandidateReadScop
 
 export type ClientAccountingSummaryReadSource = 'LEGACY_PROJECTION';
 
+export interface ClientAccountingSummaryHybridReadBoundary {
+  mode: 'HYBRID_PRIMARY_BOUNDARY';
+  clientScopedSource: 'ACCOUNTING_JOURNAL_SHADOW_ELIGIBLE';
+  caseScopedContextSource: 'LEGACY_CONTEXT';
+  journalOnlyPrimarySwitch: 'BLOCKED';
+  blockerCodes: [
+    'COLLECTION_JOURNAL_SOURCE_MISSING',
+    'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+  ];
+}
+
 export type ClientAccountingSummaryFallbackReason =
   | 'READ_MODE_DISABLED'
   | 'CUTOVER_READINESS_SCOPE_MISSING'
@@ -28,6 +39,7 @@ export interface ClientAccountingSummaryReadDecision {
   source: ClientAccountingSummaryReadSource;
   readMode: ClientAccountingMovementsReadMode;
   fallbackReason: ClientAccountingSummaryFallbackReason;
+  hybridReadBoundary: ClientAccountingSummaryHybridReadBoundary;
   primarySwitchUnchanged: true;
 }
 
@@ -100,7 +112,19 @@ export class ClientAccountingSummaryReadService {
       source: 'LEGACY_PROJECTION',
       readMode,
       fallbackReason,
+      hybridReadBoundary: SUMMARY_HYBRID_READ_BOUNDARY,
       primarySwitchUnchanged: true,
     };
   }
 }
+
+const SUMMARY_HYBRID_READ_BOUNDARY: ClientAccountingSummaryHybridReadBoundary = {
+  mode: 'HYBRID_PRIMARY_BOUNDARY',
+  clientScopedSource: 'ACCOUNTING_JOURNAL_SHADOW_ELIGIBLE',
+  caseScopedContextSource: 'LEGACY_CONTEXT',
+  journalOnlyPrimarySwitch: 'BLOCKED',
+  blockerCodes: [
+    'COLLECTION_JOURNAL_SOURCE_MISSING',
+    'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+  ],
+};
