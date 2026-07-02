@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import {
   ClientIntakeSubmissionStatus,
   ClientIntakeFieldReviewStatus,
@@ -60,7 +62,24 @@ export interface PromoteSoftResult {
 export class ClientIntakePromotionService {
   private readonly logger = new Logger(ClientIntakePromotionService.name);
 
-  constructor(private prisma: PrismaService) {}
+  // I1A: OfficeApprovalService promote/promoteAddress/promoteSoft capability-gate için.
+  // AuditService @Global.
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
+  ) {}
+
+  /**
+   * I1A (owner-locked 2026-07-02) — promote, müvekkilin doğrulanmamış beyanını kanonik kayda
+   * (ClientIntelStatement/DebtorAddress) çeviren TEK yol; bu domainin en yüksek-otorite eylemi
+   * (veri-provenance sınırı). ClientIntelStatementService/ClientIntakeLinkService ile birebir desen.
+   */
+  private async assertCanManagePromotion(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException('Bu alanı kanonik kayda promote etme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)');
+    }
+  }
 
   /**
    * Onaylı soft-intel alanları ClientIntelStatement'a promote et (SUBMISSION-LEVEL, toplu).
@@ -81,6 +100,10 @@ export class ClientIntakePromotionService {
       select: { id: true, status: true, caseId: true },
     });
     if (!sub) throw new NotFoundException('Gönderim bulunamadı');
+
+    // I1A: promote yetkisi — herhangi bir yazmadan/detaydan ÖNCE.
+    await this.assertCanManagePromotion(userId, tenantId);
+
     if (
       sub.status !== ClientIntakeSubmissionStatus.IN_REVIEW &&
       sub.status !== ClientIntakeSubmissionStatus.PARTIALLY_PROMOTED
@@ -159,6 +182,22 @@ export class ClientIntakePromotionService {
       this.logger.log(`Promote: ${promoted.length} yazıldı, ${skipped.length} skip (4.6b) — submission ${submissionId} → ${newStatus}`);
     }
 
+    // I1A: her alan zaten kendi ATOMİK transaction'ında yazıldı (create+promotedRef damgası
+    // tek tx — satır 137-157). Bu, o N alanlık PARTİ kararının TEK özet kaydıdır; N-transaction'ı
+    // tek mega-transaction'a saramak (loop'u yeniden tasarlamak) bu görevin kapsamı dışı
+    // ("Do not redesign lifecycle"). Gerçek değişiklik yoksa (promoted boş) audit YAZILMAZ.
+    if (promoted.length > 0) {
+      await this.audit.log({
+        tenantId,
+        action: 'CLIENT_INTAKE_PROMOTE',
+        entityType: 'CLIENT_INTAKE_SUBMISSION',
+        entityId: submissionId,
+        userId,
+        oldValues: { status: sub.status },
+        newValues: { status: newStatus, promoted, skipped },
+      });
+    }
+
     return { submissionStatus: newStatus, promoted, skipped };
   }
 
@@ -182,6 +221,10 @@ export class ClientIntakePromotionService {
       },
     });
     if (!field) throw new NotFoundException('Alan bulunamadı');
+
+    // I1A: promote yetkisi — herhangi bir yazmadan/detaydan ÖNCE.
+    await this.assertCanManagePromotion(userId, tenantId);
+
     if (field.category !== 'ADDRESS') throw new BadRequestException('Yalnız ADDRESS alanı bu uçtan promote edilir');
     if (field.reviewStatus !== ClientIntakeFieldReviewStatus.APPROVED) throw new BadRequestException('Yalnız onaylı (APPROVED) alan promote edilir');
     if (field.promotedRefId) throw new BadRequestException('Alan zaten promote edilmiş'); // idempotent
@@ -219,6 +262,17 @@ export class ClientIntakePromotionService {
           where: { id: fieldId },
           data: { promotedRefType: 'DebtorAddress', promotedRefId: r.address.id, promotedAt: new Date(), promotedById: userId },
         });
+        // I1A: yalnız GERÇEK promote'ta audit — DUPLICATE dalında (r.created=false) kanonik
+        // yazma yok, audit de yok (aşağıdaki !created kontrolü).
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: 'CLIENT_INTAKE_PROMOTE_ADDRESS',
+          entityType: 'CLIENT_INTAKE_FIELD',
+          entityId: fieldId,
+          userId,
+          oldValues: { reviewStatus: field.reviewStatus, promotedRefId: field.promotedRefId },
+          newValues: { promotedRefType: 'DebtorAddress', promotedRefId: r.address.id },
+        });
       }
       return r;
     });
@@ -255,6 +309,9 @@ export class ClientIntakePromotionService {
       },
     });
     if (!field) throw new NotFoundException('Alan bulunamadı');
+
+    // I1A: promote yetkisi — herhangi bir yazmadan/detaydan ÖNCE.
+    await this.assertCanManagePromotion(userId, tenantId);
 
     // Yalnız SOFT-6. ADDRESS/ASSET/CONTACT bu uçtan promote EDİLMEZ.
     const intelCategory = SOFT_TO_INTEL[field.category];
@@ -294,6 +351,17 @@ export class ClientIntakePromotionService {
         where: { id: fieldId },
         data: { promotedRefType: 'ClientIntelStatement', promotedRefId: created.id, promotedAt: new Date(), promotedById: userId },
       });
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_INTAKE_PROMOTE_SOFT',
+        entityType: 'CLIENT_INTAKE_FIELD',
+        entityId: fieldId,
+        userId,
+        oldValues: { reviewStatus: field.reviewStatus, promotedRefId: field.promotedRefId },
+        newValues: { promotedRefType: 'ClientIntelStatement', promotedRefId: created.id },
+      });
+
       return created;
     });
 

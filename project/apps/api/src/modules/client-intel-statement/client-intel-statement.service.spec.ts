@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntelStatementService } from './client-intel-statement.service';
 import { CreateClientIntelStatementDto } from './dto/client-intel-statement.dto';
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
 
 const TENANT = 'tenant-1';
 const CASE = 'case-1';
@@ -21,13 +23,23 @@ const mockPrisma: any = {
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
 };
 
+// I1A: retract/falsePositive/supersede capability-gate — mevcut testler eligible aktör varsayar.
+const mockAudit = { log: jest.fn(), logInTransaction: jest.fn().mockResolvedValue(undefined) };
+const mockOfficeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+
 describe('ClientIntelStatementService', () => {
   let service: ClientIntelStatementService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockOfficeApproval.isApproverEligible.mockResolvedValue(true);
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ClientIntelStatementService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        ClientIntelStatementService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: AuditService, useValue: mockAudit },
+        { provide: OfficeApprovalService, useValue: mockOfficeApproval },
+      ],
     }).compile();
     service = module.get(ClientIntelStatementService);
   });
@@ -123,6 +135,74 @@ describe('ClientIntelStatementService', () => {
     it('cross-tenant kayıt görünmez (NotFound)', async () => {
       mockPrisma.clientIntelStatement.findFirst.mockResolvedValue(null);
       await expect(service.retract(TENANT, 'cis-1', USER)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('I1A — capability gate + audit (retract/falsePositive/supersede)', () => {
+    const armActive = () =>
+      mockPrisma.clientIntelStatement.findFirst.mockResolvedValue({ id: 'cis-1', status: 'ACTIVE', caseId: CASE, debtorId: DEBTOR, category: 'INCOME_SOURCE', label: 'L' });
+
+    it('yetkisiz kullanıcı (isApproverEligible=false) → retract 403, update ÇAĞRILMAZ, audit YOK', async () => {
+      armActive();
+      mockOfficeApproval.isApproverEligible.mockResolvedValueOnce(false);
+      await expect(service.retract(TENANT, 'cis-1', USER)).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.clientIntelStatement.update).not.toHaveBeenCalled();
+      expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
+    });
+
+    it('actor YOK (undefined) → falsePositive 403', async () => {
+      armActive();
+      await expect(service.falsePositive(TENANT, 'cis-1', undefined as any)).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.clientIntelStatement.update).not.toHaveBeenCalled();
+    });
+
+    it('retract: audit AYNI transaction içinde actor + oldValues/newValues ile yazılır', async () => {
+      armActive();
+      mockPrisma.clientIntelStatement.update.mockResolvedValue({ id: 'cis-1', status: 'RETRACTED' });
+      await service.retract(TENANT, 'cis-1', USER, 'not');
+      expect(mockAudit.logInTransaction).toHaveBeenCalledTimes(1);
+      const [, input] = mockAudit.logInTransaction.mock.calls[0];
+      expect(input).toMatchObject({
+        tenantId: TENANT,
+        action: 'CLIENT_INTEL_STATEMENT_RETRACT',
+        entityType: 'CLIENT_INTEL_STATEMENT',
+        entityId: 'cis-1',
+        userId: USER,
+      });
+      expect(input.oldValues.status).toBe('ACTIVE');
+      expect(input.newValues.status).toBe('RETRACTED');
+    });
+
+    it('falsePositive: audit action CLIENT_INTEL_STATEMENT_FALSE_POSITIVE', async () => {
+      armActive();
+      mockPrisma.clientIntelStatement.update.mockResolvedValue({ id: 'cis-1', status: 'FALSE_POSITIVE' });
+      await service.falsePositive(TENANT, 'cis-1', USER);
+      expect(mockAudit.logInTransaction.mock.calls[0][1].action).toBe('CLIENT_INTEL_STATEMENT_FALSE_POSITIVE');
+    });
+
+    it('yetkisiz kullanıcı → supersede 403, create/update ÇAĞRILMAZ', async () => {
+      mockPrisma.clientIntelStatement.findFirst.mockResolvedValue({ id: 'old-1', status: 'ACTIVE', caseId: CASE, debtorId: DEBTOR, category: 'INCOME_SOURCE', label: 'L' });
+      mockOfficeApproval.isApproverEligible.mockResolvedValueOnce(false);
+      await expect(service.supersede(TENANT, 'old-1', USER, { value: 'x' })).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+      expect(mockPrisma.clientIntelStatement.update).not.toHaveBeenCalled();
+    });
+
+    it('supersede: audit AYNI transaction içinde (CLIENT_INTEL_STATEMENT_SUPERSEDE)', async () => {
+      mockPrisma.clientIntelStatement.findFirst.mockResolvedValue({ id: 'old-1', status: 'ACTIVE', caseId: CASE, debtorId: DEBTOR, category: 'INCOME_SOURCE', label: 'L' });
+      mockPrisma.clientIntelStatement.create.mockResolvedValue({ id: 'new-1', status: 'ACTIVE' });
+      await service.supersede(TENANT, 'old-1', USER, { value: 'Nakliyeci' });
+      expect(mockAudit.logInTransaction).toHaveBeenCalledTimes(1);
+      const [, input] = mockAudit.logInTransaction.mock.calls[0];
+      expect(input).toMatchObject({ action: 'CLIENT_INTEL_STATEMENT_SUPERSEDE', entityType: 'CLIENT_INTEL_STATEMENT', entityId: 'old-1', userId: USER });
+    });
+
+    it('create() capability-gate\'e TABİ DEĞİL — isApproverEligible hiç çağrılmaz', async () => {
+      mockPrisma.case.findFirst.mockResolvedValue({ id: CASE });
+      mockPrisma.debtor.findFirst.mockResolvedValue({ id: DEBTOR });
+      mockPrisma.clientIntelStatement.create.mockResolvedValue({ id: 'cis-x', status: 'ACTIVE' });
+      await service.create(TENANT, CASE, USER, dto);
+      expect(mockOfficeApproval.isApproverEligible).not.toHaveBeenCalled();
     });
   });
 
