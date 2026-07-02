@@ -31,6 +31,7 @@ import { PayoutCreateModal } from '@/components/client-accounting/PayoutCreateMo
 import { StatementSection } from '@/components/client-accounting/StatementSection';
 import { ClientCariView } from '@/components/client-accounting/ClientCariView';
 import { AccountingTable } from '@/components/client-accounting/AccountingTable';
+import { FinancialStatementPanel } from '@/components/client-accounting/FinancialStatementPanel';
 
 const PAGE_SIZE = 20;
 
@@ -348,6 +349,17 @@ export default function ClientAccountingPage() {
         <StatementSection
           caseId={caseId}
           clientId={clientId}
+          currency={currency}
+          caseOpenedAt={selected?.caseOpenedAt ?? null}
+        />
+      )}
+
+      {/* ACCT-5B — Muhasebe Defteri: AccountingJournal-kaynaklı, canlı okunan defter (snapshot DEĞİL). */}
+      {caseId && (
+        <FinancialStatementPanel
+          caseId={caseId}
+          clientId={clientId}
+          caseClientId={caseClientId ?? null}
           currency={currency}
           caseOpenedAt={selected?.caseOpenedAt ?? null}
         />
