@@ -10,7 +10,7 @@ const defaultClient = {
   powerOfAttorneys: [],
 };
 
-function buildHarness(opts: { client?: any; deliveries?: any[]; dispatcher?: any; templateCount?: number; documentTemplateCount?: number } = {}) {
+function buildHarness(opts: { client?: any; deliveries?: any[]; dispatcher?: any; templateCount?: number; documentTemplateCount?: number; latestTemplateNotification?: any | null; latestDocumentRequest?: any | null } = {}) {
   const prisma: any = {
     client: {
       findFirst: jest
@@ -22,6 +22,7 @@ function buildHarness(opts: { client?: any; deliveries?: any[]; dispatcher?: any
       deleteMany: jest.fn(),
     },
     clientNotification: {
+      findFirst: jest.fn().mockResolvedValue(Object.prototype.hasOwnProperty.call(opts, 'latestTemplateNotification') ? opts.latestTemplateNotification : null),
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -50,7 +51,7 @@ function buildHarness(opts: { client?: any; deliveries?: any[]; dispatcher?: any
       }),
     },
     clientDocumentRequest: {
-      findFirst: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(Object.prototype.hasOwnProperty.call(opts, 'latestDocumentRequest') ? opts.latestDocumentRequest : null),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -271,6 +272,33 @@ describe('ClientService.getActionCatalog', () => {
     });
   });
 
+  it('keeps template notification disabled while a fresh template notification is pending', async () => {
+    const { svc, prisma } = buildHarness({
+      dispatcher: { dispatch: jest.fn() },
+      latestTemplateNotification: { id: 'notification-pending' },
+    });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const action = result.data.find((item) => item.key === 'notification.template.send');
+
+    expect(action).toMatchObject({
+      enabled: false,
+      requiredState: 'TEMPLATE_NOTIFICATION_DELIVERY_PENDING',
+      disabledReason: 'A template notification delivery is already pending for this client.',
+    });
+    expect(prisma.clientNotification.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        tenantId: 'tenant-1',
+        clientId: 'client-1',
+        channel: 'EMAIL',
+        type: { in: [...CLIENT_TEMPLATE_NOTIFICATION_CODES] },
+        status: 'PENDING',
+        updatedAt: { gte: expect.any(Date) },
+      }),
+      select: { id: true },
+    });
+  });
+
   it('keeps template notification disabled when recipient or active V1 templates are missing', async () => {
     const noRecipient = buildHarness({
       dispatcher: { dispatch: jest.fn() },
@@ -315,6 +343,33 @@ describe('ClientService.getActionCatalog', () => {
         isActive: true,
         channel: 'EMAIL',
       },
+    });
+  });
+
+  it('keeps document request disabled while a fresh document request delivery is pending', async () => {
+    const { svc, prisma } = buildHarness({
+      dispatcher: { dispatch: jest.fn() },
+      latestDocumentRequest: { id: 'document-request-pending' },
+    });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const action = result.data.find((item) => item.key === 'document.request.send');
+
+    expect(action).toMatchObject({
+      enabled: false,
+      requiredState: 'DOCUMENT_REQUEST_DELIVERY_PENDING',
+      disabledReason: 'A document request delivery is already pending for this client and case.',
+      target: { clientId: 'client-1', caseId: 'case-1' },
+    });
+    expect(prisma.clientDocumentRequest.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        tenantId: 'tenant-1',
+        clientId: 'client-1',
+        caseId: 'case-1',
+        status: { in: ['PENDING', 'SENDING'] },
+        updatedAt: { gte: expect.any(Date) },
+      }),
+      select: { id: true },
     });
   });
 

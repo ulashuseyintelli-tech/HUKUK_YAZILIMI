@@ -10,6 +10,8 @@ function buildHarness(opts: {
   latestSubmission?: any | null;
   latestLink?: any | null;
   latestNotification?: any | null;
+  latestTemplateNotification?: any | null;
+  latestDocumentRequest?: any | null;
   latestDeliveryIssue?: any | null;
   poaDeliveries?: any[];
   openTasks?: any[];
@@ -42,13 +44,23 @@ function buildHarness(opts: {
       update: jest.fn(),
     },
     clientNotification: {
-      findFirst: jest.fn().mockResolvedValue(Object.prototype.hasOwnProperty.call(opts, 'latestNotification') ? opts.latestNotification : null),
+      findFirst: jest.fn((args: any) => {
+        if (args?.where?.type) {
+          return Promise.resolve(Object.prototype.hasOwnProperty.call(opts, 'latestTemplateNotification') ? opts.latestTemplateNotification : null);
+        }
+        return Promise.resolve(Object.prototype.hasOwnProperty.call(opts, 'latestNotification') ? opts.latestNotification : null);
+      }),
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
     clientIntakeLinkDelivery: {
       findFirst: jest.fn().mockResolvedValue(Object.prototype.hasOwnProperty.call(opts, 'latestDeliveryIssue') ? opts.latestDeliveryIssue : null),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    clientDocumentRequest: {
+      findFirst: jest.fn().mockResolvedValue(Object.prototype.hasOwnProperty.call(opts, 'latestDocumentRequest') ? opts.latestDocumentRequest : null),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -88,6 +100,14 @@ describe('ClientService.getOperatingSnapshot', () => {
     expect(prisma.clientIntakeSubmission.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
     expect(prisma.clientIntakeLink.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
     expect(prisma.clientNotification.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
+    expect(prisma.clientNotification.findFirst.mock.calls[1][0].where).toMatchObject({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      channel: 'EMAIL',
+      type: { in: ['GENEL_BILGILENDIRME', 'DOSYA_DURUMU'] },
+    });
+    expect(prisma.clientDocumentRequest.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
+    expect(prisma.clientDocumentRequest.findFirst.mock.calls[0][0].select).not.toEqual(expect.objectContaining({ dedupeKey: true, lastError: true }));
     const deliveryWhere = prisma.clientIntakeLinkDelivery.findFirst.mock.calls[0][0].where;
     expect(deliveryWhere).toMatchObject({ tenantId: 'tenant-1', clientId: 'client-1' });
     expect(deliveryWhere.OR).toEqual(expect.arrayContaining([
@@ -118,6 +138,7 @@ describe('ClientService.getOperatingSnapshot', () => {
     expect(prisma.clientIntakeSubmission.findFirst).not.toHaveBeenCalled();
     expect(prisma.clientIntakeLink.findFirst).not.toHaveBeenCalled();
     expect(prisma.clientNotification.findFirst).not.toHaveBeenCalled();
+    expect(prisma.clientDocumentRequest.findFirst).not.toHaveBeenCalled();
     expect(prisma.clientIntakeLinkDelivery.findFirst).not.toHaveBeenCalled();
     expect(prisma.task.findMany).not.toHaveBeenCalled();
   });
@@ -297,6 +318,47 @@ describe('ClientService.getOperatingSnapshot', () => {
     }));
   });
 
+  it.each([
+    ['sent template notification', { latestTemplateNotification: { id: 'notif-template-sent', status: 'SENT', caseId: 'case-1', createdAt: new Date(), updatedAt: new Date(), dedupeKey: 'secret-dedupe', body: 'unsafe body' } }, 'notification.template_sent', 'info'],
+    ['failed template notification', { latestTemplateNotification: { id: 'notif-template-failed', status: 'FAILED', caseId: 'case-1', createdAt: new Date(), updatedAt: new Date(), errorMessage: 'provider raw error', dedupeKey: 'secret-dedupe' } }, 'notification.template_failed', 'warning'],
+    ['sent document request', { latestDocumentRequest: { id: 'doc-request-sent', status: 'SENT', caseId: 'case-1', sentAt: new Date(), createdAt: new Date(), updatedAt: new Date(), dedupeKey: 'secret-dedupe', lastError: 'provider raw error' } }, 'document.request_sent', 'info'],
+    ['failed document request', { latestDocumentRequest: { id: 'doc-request-failed', status: 'FAILED', caseId: 'case-1', createdAt: new Date(), updatedAt: new Date(), dedupeKey: 'secret-dedupe', lastError: 'provider raw error' } }, 'document.request_failed', 'warning'],
+  ])('surfaces safe follow-up signal for %s without leaking raw delivery details', async (_label, opts, expectedKey, expectedSeverity) => {
+    const { svc } = buildHarness(opts as any);
+
+    const result = await svc.getOperatingSnapshot('client-1', 'tenant-1');
+    const serialized = JSON.stringify(result);
+
+    expect(result.data.signals).toContainEqual(expect.objectContaining({
+      key: expectedKey,
+      severity: expectedSeverity,
+      target: { clientId: 'client-1', caseId: 'case-1' },
+    }));
+    expect(serialized).not.toContain('secret-dedupe');
+    expect(serialized).not.toContain('provider raw error');
+    expect(serialized).not.toContain('unsafe body');
+  });
+
+  it.each([
+    ['fresh pending document request', { status: 'PENDING', updatedAt: new Date() }, 'document.request_pending', 'info'],
+    ['stale sending document request', { status: 'SENDING', updatedAt: daysFromNow(-1) }, 'document.request_stuck', 'warning'],
+    ['fresh pending template notification', { status: 'PENDING', updatedAt: new Date() }, 'notification.template_pending', 'info'],
+    ['stale pending template notification', { status: 'PENDING', updatedAt: daysFromNow(-1) }, 'notification.template_pending', 'warning'],
+  ])('classifies %s follow-up without exposing raw status payloads', async (_label, row, expectedKey, expectedSeverity) => {
+    const opts = String(expectedKey).startsWith('document')
+      ? { latestDocumentRequest: { id: 'doc-follow-up', caseId: 'case-1', createdAt: daysFromNow(-1), ...row } }
+      : { latestTemplateNotification: { id: 'template-follow-up', caseId: 'case-1', createdAt: daysFromNow(-1), ...row } };
+    const { svc } = buildHarness(opts);
+
+    const result = await svc.getOperatingSnapshot('client-1', 'tenant-1');
+
+    expect(result.data.signals).toContainEqual(expect.objectContaining({
+      key: expectedKey,
+      severity: expectedSeverity,
+      target: { clientId: 'client-1', caseId: 'case-1' },
+    }));
+  });
+
   it('does not perform mutation, audit, timeline, notification creation, or dispatch side effects', async () => {
     const { svc, prisma, audit } = buildHarness();
 
@@ -310,6 +372,8 @@ describe('ClientService.getOperatingSnapshot', () => {
     expect(prisma.clientNotification.create).not.toHaveBeenCalled();
     expect(prisma.clientNotification.update).not.toHaveBeenCalled();
     expect(prisma.clientNotification.findMany).not.toHaveBeenCalled();
+    expect(prisma.clientDocumentRequest.create).not.toHaveBeenCalled();
+    expect(prisma.clientDocumentRequest.update).not.toHaveBeenCalled();
     expect(prisma.clientIntakeSubmission.findMany).not.toHaveBeenCalled();
     expect(prisma.clientIntakeSubmission.create).not.toHaveBeenCalled();
     expect(prisma.clientIntakeSubmission.update).not.toHaveBeenCalled();

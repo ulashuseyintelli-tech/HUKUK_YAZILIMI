@@ -141,7 +141,14 @@ export type ClientOperatingSignalKey =
   | 'intake.pending_review'
   | 'intake.delivery_failed'
   | 'intake.delivery_stuck'
-  | 'notification.failed';
+  | 'notification.failed'
+  | 'notification.template_sent'
+  | 'notification.template_pending'
+  | 'notification.template_failed'
+  | 'document.request_sent'
+  | 'document.request_pending'
+  | 'document.request_stuck'
+  | 'document.request_failed';
 
 export interface ClientOperatingSignal {
   key: ClientOperatingSignalKey;
@@ -220,6 +227,7 @@ const CLIENT_POA_DELIVERY_MAX_ATTEMPTS = 3;
 const CLIENT_TEMPLATE_NOTIFICATION_DEDUPE_PREFIX = 'CLIENT_WORKSPACE_TEMPLATE_NOTIFICATION';
 const CLIENT_DOCUMENT_REQUEST_TEMPLATE_CODE = 'CLIENT_DOCUMENT_REQUEST_V1';
 const CLIENT_DOCUMENT_REQUEST_DEDUPE_PREFIX = 'CLIENT_WORKSPACE_DOCUMENT_REQUEST';
+const CLIENT_FOLLOW_UP_FRESH_MS = 15 * 60 * 1000;
 
 /** Müvekkil için contact-task dedupe anahtarı (tek aktif görev garantisi). */
 export function contactTaskDedupeKey(clientId: string): string {
@@ -499,7 +507,7 @@ export class ClientService {
     if (!client) throw new NotFoundException('Client not found');
 
     const deliveryStaleBefore = new Date(Date.now() - CLIENT_INTAKE_DELIVERY_STALE_MS);
-    const [poas, latestSubmission, latestLink, latestNotification, latestDeliveryIssue, openTasks] = await Promise.all([
+    const [poas, latestSubmission, latestLink, latestNotification, latestTemplateNotification, latestDocumentRequest, latestDeliveryIssue, openTasks] = await Promise.all([
       this.prisma.clientPowerOfAttorney.findMany({
         where: { clientId: id, isActive: true },
         orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
@@ -536,6 +544,39 @@ export class ClientService {
           deliveredAt: true,
           createdAt: true,
           caseId: true,
+        },
+      }),
+      this.prisma.clientNotification.findFirst({
+        where: {
+          tenantId,
+          clientId: id,
+          channel: 'EMAIL',
+          type: { in: [...CLIENT_TEMPLATE_NOTIFICATION_CODES] },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          type: true,
+          channel: true,
+          status: true,
+          sentAt: true,
+          deliveredAt: true,
+          createdAt: true,
+          updatedAt: true,
+          caseId: true,
+        },
+      }),
+      (this.prisma as any).clientDocumentRequest.findFirst({
+        where: { tenantId, clientId: id },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          status: true,
+          channel: true,
+          caseId: true,
+          sentAt: true,
+          createdAt: true,
+          updatedAt: true,
         },
       }),
       this.prisma.clientIntakeLinkDelivery.findFirst({
@@ -579,7 +620,7 @@ export class ClientService {
     const poaReminderDelivery = await this.getPoaReminderDeliveryState(tenantId, id, poas);
 
     return {
-      data: buildClientOperatingSnapshot(id, client, poas, poaReminderDelivery, latestSubmission, latestLink, latestNotification, latestDeliveryIssue, openTasks),
+      data: buildClientOperatingSnapshot(id, client, poas, poaReminderDelivery, latestSubmission, latestLink, latestNotification, latestTemplateNotification, latestDocumentRequest, latestDeliveryIssue, openTasks),
     };
   }
   /**
@@ -827,7 +868,7 @@ export class ClientService {
 
   private async getDocumentRequestActionAvailability(
     tenantId: string,
-    client: { email?: string | null; contacts?: Array<{ id?: string | null }> | null },
+    client: { id: string; email?: string | null; contacts?: Array<{ id?: string | null }> | null; caseClients?: Array<{ caseId?: string | null }> | null },
   ): Promise<{ enabled: boolean; requiredState: string; disabledReason?: string }> {
     if (!this.notificationDispatcher) {
       return {
@@ -862,11 +903,35 @@ export class ClientService {
       };
     }
 
+    const relatedCaseIds = (client.caseClients ?? [])
+      .map((caseClient) => caseClient.caseId)
+      .filter((caseId): caseId is string => !!caseId);
+    const singleRelatedCaseId = relatedCaseIds.length === 1 ? relatedCaseIds[0] : undefined;
+    if (singleRelatedCaseId) {
+      const freshPending = await (this.prisma as any).clientDocumentRequest.findFirst({
+        where: {
+          tenantId,
+          clientId: client.id,
+          caseId: singleRelatedCaseId,
+          status: { in: ['PENDING', 'SENDING'] },
+          updatedAt: { gte: new Date(Date.now() - CLIENT_FOLLOW_UP_FRESH_MS) },
+        },
+        select: { id: true },
+      });
+      if (freshPending) {
+        return {
+          enabled: false,
+          requiredState: 'DOCUMENT_REQUEST_DELIVERY_PENDING',
+          disabledReason: 'A document request delivery is already pending for this client and case.',
+        };
+      }
+    }
+
     return { enabled: true, requiredState: 'DOCUMENT_REQUEST_READY' };
   }
   private async getTemplateNotificationActionAvailability(
     tenantId: string,
-    client: { email?: string | null; contacts?: Array<{ id?: string | null }> | null },
+    client: { id: string; email?: string | null; contacts?: Array<{ id?: string | null }> | null },
   ): Promise<{ enabled: boolean; requiredState: string; disabledReason?: string }> {
     if (!this.notificationDispatcher) {
       return {
@@ -898,6 +963,25 @@ export class ClientService {
         enabled: false,
         requiredState: 'TEMPLATE_NOTIFICATION_TEMPLATE_MISSING',
         disabledReason: 'Template notification requires active V1 email templates.',
+      };
+    }
+
+    const freshPending = await this.prisma.clientNotification.findFirst({
+      where: {
+        tenantId,
+        clientId: client.id,
+        channel: 'EMAIL',
+        type: { in: [...CLIENT_TEMPLATE_NOTIFICATION_CODES] },
+        status: 'PENDING',
+        updatedAt: { gte: new Date(Date.now() - CLIENT_FOLLOW_UP_FRESH_MS) },
+      },
+      select: { id: true },
+    });
+    if (freshPending) {
+      return {
+        enabled: false,
+        requiredState: 'TEMPLATE_NOTIFICATION_DELIVERY_PENDING',
+        disabledReason: 'A template notification delivery is already pending for this client.',
       };
     }
 
@@ -1622,6 +1706,18 @@ interface ClientPoaReminderDeliveryRow {
   updatedAt?: Date | string | null;
 }
 
+interface ClientTemplateNotificationFollowUpRow {
+  id?: string | null;
+  status?: string | null;
+  caseId?: string | null;
+  updatedAt?: Date | string | null;
+  createdAt?: Date | string | null;
+}
+
+interface ClientDocumentRequestFollowUpRow extends ClientTemplateNotificationFollowUpRow {
+  sentAt?: Date | string | null;
+}
+
 interface ClientActionCatalogContext {
   actorRole: ClientActionRole;
   client: ClientActionCatalogClientState;
@@ -2033,6 +2129,8 @@ function buildClientOperatingSnapshot(
   latestSubmission: any | null,
   latestLink: any | null,
   latestNotification: any | null,
+  latestTemplateNotification: ClientTemplateNotificationFollowUpRow | null,
+  latestDocumentRequest: ClientDocumentRequestFollowUpRow | null,
   latestDeliveryIssue: any | null,
   openTasks: Array<{ dueDate?: Date | string | null; escalationLevel?: string | null; nextFollowUpAt?: Date | string | null }>,
 ): ClientOperatingSnapshot {
@@ -2137,7 +2235,13 @@ function buildClientOperatingSnapshot(
   }
 
   const notificationStatus = computeNotificationStatus(latestNotification);
-  if (notificationStatus === 'failed') {
+  const templateFollowUpSignal = buildTemplateNotificationFollowUpSignal(latestTemplateNotification, target, now);
+  if (templateFollowUpSignal) signals.push(templateFollowUpSignal);
+
+  const documentFollowUpSignal = buildDocumentRequestFollowUpSignal(latestDocumentRequest, target, now);
+  if (documentFollowUpSignal) signals.push(documentFollowUpSignal);
+
+  if (notificationStatus === 'failed' && latestNotification?.id !== latestTemplateNotification?.id) {
     signals.push({
       key: 'notification.failed',
       label: 'Latest notification failed',
@@ -2246,6 +2350,101 @@ function buildPoaReminderFollowUpSignal(
     };
   }
   return null;
+}
+
+function buildTemplateNotificationFollowUpSignal(
+  notification: ClientTemplateNotificationFollowUpRow | null,
+  target: { clientId: string },
+  now: Date,
+): ClientOperatingSignal | null {
+  const status = String(notification?.status ?? '').toUpperCase();
+  if (!notification || !status) return null;
+  const signalTarget = { ...target, caseId: notification.caseId ?? null };
+
+  if (status === 'SENT' || status === 'DELIVERED') {
+    return {
+      key: 'notification.template_sent',
+      label: 'Template notification was sent',
+      description: 'The latest workspace template notification was sent; additional sends still require a fresh request.',
+      severity: 'info',
+      actionKey: 'notification.template.send',
+      target: signalTarget,
+    };
+  }
+  if (status === 'PENDING') {
+    const fresh = isFreshFollowUp(notification, now);
+    return {
+      key: 'notification.template_pending',
+      label: fresh ? 'Template notification delivery is pending' : 'Template notification delivery is not finalized',
+      description: fresh
+        ? 'A template notification delivery is already pending for this client.'
+        : 'The latest template notification delivery is still pending after the safe processing window.',
+      severity: fresh ? 'info' : 'warning',
+      actionKey: 'notification.template.send',
+      target: signalTarget,
+    };
+  }
+  if (status === 'FAILED') {
+    return {
+      key: 'notification.template_failed',
+      label: 'Template notification delivery failed',
+      description: 'The latest template notification delivery failed and can be retried with a fresh request.',
+      severity: 'warning',
+      actionKey: 'notification.template.send',
+      target: signalTarget,
+    };
+  }
+  return null;
+}
+
+function buildDocumentRequestFollowUpSignal(
+  request: ClientDocumentRequestFollowUpRow | null,
+  target: { clientId: string },
+  now: Date,
+): ClientOperatingSignal | null {
+  const status = String(request?.status ?? '').toUpperCase();
+  if (!request || !status) return null;
+  const signalTarget = { ...target, caseId: request.caseId ?? null };
+
+  if (status === 'SENT') {
+    return {
+      key: 'document.request_sent',
+      label: 'Document request was sent',
+      description: 'A document request was sent; document fulfillment may still be needed.',
+      severity: 'info',
+      actionKey: 'document.request.send',
+      target: signalTarget,
+    };
+  }
+  if (status === 'PENDING' || status === 'SENDING') {
+    const fresh = isFreshFollowUp(request, now);
+    return {
+      key: fresh ? 'document.request_pending' : 'document.request_stuck',
+      label: fresh ? 'Document request delivery is pending' : 'Document request delivery is not finalized',
+      description: fresh
+        ? 'A document request delivery is already pending for this client and case.'
+        : 'The latest document request delivery is still pending after the safe processing window.',
+      severity: fresh ? 'info' : 'warning',
+      actionKey: 'document.request.send',
+      target: signalTarget,
+    };
+  }
+  if (status === 'FAILED') {
+    return {
+      key: 'document.request_failed',
+      label: 'Document request delivery failed',
+      description: 'The latest document request delivery failed and can be retried with a fresh request.',
+      severity: 'warning',
+      actionKey: 'document.request.send',
+      target: signalTarget,
+    };
+  }
+  return null;
+}
+
+function isFreshFollowUp(row: { updatedAt?: Date | string | null; createdAt?: Date | string | null }, now: Date): boolean {
+  const updatedAt = toDateOrNull(row.updatedAt ?? row.createdAt);
+  return !!updatedAt && now.getTime() - updatedAt.getTime() <= CLIENT_FOLLOW_UP_FRESH_MS;
 }
 
 function computeIntakeStatus(latestSubmission: any | null, latestLink: any | null): ClientOperatingSnapshot['intake']['status'] {
