@@ -37,6 +37,7 @@ import { ClientIntakeTab } from '@/components/client/client-intake-tab';
 import { ClientInfoRequestsTab } from '@/components/client/client-info-requests-tab';
 import { ClientPortalTab } from '@/components/client/client-portal-tab';
 import { ClientAddressSection } from '@/components/client/client-address-section';
+import { ClientRightPanel } from '@/components/client/client-right-panel';
 import {
   clientDisplayName,
   clientIdentity,
@@ -244,9 +245,10 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <div className="border-b flex overflow-x-auto">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        {/* Tabs */}
+        <div className="min-w-0 bg-white rounded-xl border overflow-hidden">
+          <div className="border-b flex overflow-x-auto">
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -414,7 +416,14 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
 
           {/* Aktivite */}
           {tab === 'activity' && <ClientActivityTab clientId={clientId} />}
+          </div>
         </div>
+
+        <ClientRightPanel
+          clientId={clientId}
+          onNavigateActions={() => setTab('actions')}
+          onNavigateActivity={() => setTab('activity')}
+        />
       </div>
     </div>
   );
