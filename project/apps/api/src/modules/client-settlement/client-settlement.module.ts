@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { V28EngineModule } from '../icrabot/v28-engine/v28-engine.module';
 import { OfficeApprovalModule } from '../office-approval/office-approval.module';
@@ -15,6 +15,7 @@ import { ClientPayoutService } from './client-payout.service';
 import { ClientPayoutController } from './client-payout.controller';
 import { ClientAccountingJournalMovementsReaderService } from './client-accounting-journal-movements-reader.service';
 import { ClientAccountingMovementsReadService } from './client-accounting-movements-read.service';
+import { ClientAccountingSummaryReadService } from './client-accounting-summary-read.service';
 import { ClientAccountingSummaryShadowReportService } from './client-accounting-summary-shadow-report.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { ClientAccountingController } from './client-accounting.controller';
@@ -61,14 +62,15 @@ import { CaseFeeAgreementController } from './case-fee-agreement.controller';
     ClientSettlementReadService,
     ClientAccountingJournalMovementsReaderService,
     ClientAccountingMovementsReadService,
+    ClientAccountingSummaryReadService,
     ClientAccountingSummaryShadowReportService,
     ClientOffsetService,
     ClientPayoutManualReversalService,
     ClientPayoutManualReversalReadService,
     CaseFeeAgreementService,
   ],
-  // FAZ-1b: ClientSettlementReadService export → expense-request modülü (UYAP gate) computeExpenseRemaining'i kullanır.
-  // FAZ-2: CaseFeeAgreementService export → PR-3 distribution-recommendation entegrasyonu tüketecek (şimdilik dormant).
+  // FAZ-1b: ClientSettlementReadService export â†’ expense-request modÃ¼lÃ¼ (UYAP gate) computeExpenseRemaining'i kullanÄ±r.
+  // FAZ-2: CaseFeeAgreementService export â†’ PR-3 distribution-recommendation entegrasyonu tÃ¼ketecek (ÅŸimdilik dormant).
   exports: [
     CollectionDispositionService,
     CollectionReversalService,
