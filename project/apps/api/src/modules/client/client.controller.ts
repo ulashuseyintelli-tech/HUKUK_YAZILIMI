@@ -1,9 +1,9 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException, ValidationPipe, Headers } from '@nestjs/common';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
 import { CreateClientWorkspaceIntakeLinkDto } from '../client-intake-link/dto/client-intake-link.dto';
-import { CLIENT_TEMPLATE_NOTIFICATION_CODES, ClientService, type ClientTemplateNotificationCode } from './client.service';
+import { CLIENT_DOCUMENT_REQUEST_CODES, CLIENT_TEMPLATE_NOTIFICATION_CODES, ClientService, type ClientDocumentRequestCode, type ClientTemplateNotificationCode } from './client.service';
 import { CreateClientDto, UpdateClientDto } from './dto/create-client.dto';
 
 /** C0-a: actor compile-time shape â€” req.user JWT validate'ten gelen User; id+tenantId auth context. */
@@ -14,6 +14,17 @@ interface AuthRequest {
 class SendClientWorkspaceTemplateNotificationDto {
   @IsIn(CLIENT_TEMPLATE_NOTIFICATION_CODES)
   templateCode!: ClientTemplateNotificationCode;
+
+  @IsString()
+  @IsOptional()
+  caseId?: string;
+}
+
+class SendClientWorkspaceDocumentRequestDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsIn(CLIENT_DOCUMENT_REQUEST_CODES, { each: true })
+  documentCodes!: ClientDocumentRequestCode[];
 
   @IsString()
   @IsOptional()
@@ -44,6 +55,12 @@ export class ClientController {
   });
 
   private readonly templateNotificationBodyPipe = new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  });
+
+  private readonly documentRequestBodyPipe = new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true,
@@ -118,6 +135,24 @@ export class ClientController {
     return { data: result };
   }
 
+  // Client Workspace document request manual typed command
+  @Post(':clientId/document-requests/send')
+  async sendDocumentRequest(
+    @Request() req: AuthRequest,
+    @Param('clientId') clientId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: any,
+  ) {
+    const dto = await this.documentRequestBodyPipe.transform(body, { type: 'body', metatype: SendClientWorkspaceDocumentRequestDto });
+    const result = await this.clientService.sendDocumentRequest(
+      clientId,
+      req.user.tenantId,
+      req.user.id,
+      idempotencyKey,
+      dto as SendClientWorkspaceDocumentRequestDto,
+    );
+    return { data: result };
+  }
   // Client Workspace intake link create command (create-only; dispatch yok)
   @Post(':clientId/cases/:caseId/intake-links')
   async createIntakeLink(
