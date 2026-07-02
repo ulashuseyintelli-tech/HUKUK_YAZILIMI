@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -8,6 +8,8 @@ import {
   type ClientPayoutJournalSource,
   type ValidatedJournalEntryDraft,
 } from '../accounting-journal';
+import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
+import { Capacity } from '../policy-engine/types/effective-permission.types';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { payoutLockKey } from './payout-lock';
@@ -87,6 +89,12 @@ function compareAllocationSourceLines(a: AllocationSourceLine, b: AllocationSour
  * tenant-scoped @@unique; concurrency advisory-lock (pg_advisory_xact_lock, scope=tenant+case+
  * caseClientId+currency) → eşzamanlı over-payout engellenir (outstanding lock altında re-hesaplanır).
  *
+ * CBND-3 (H3): create() PARTNER/MANAGER (office-admin) capability gate ile korunur — ClientOffsetService
+ * (assertOfficeAdmin) ve ClientPayoutManualReversalService (assertOfficeAdmin) ile AYNI desen (canonical
+ * capacity = Lawyer.lawyerRank ?? StaffMember.staffType, isOfficeAdminCapacity). Önceden yalnız JwtAuthGuard
+ * vardı; net-sıfır olan mahsup (offset) PARTNER/MANAGER isterken gerçek para çıkışı kaydı (payout) her
+ * authenticated kullanıcıya açıktı — bu asimetri kapatıldı.
+ *
  * CBND-5 (H2): lock key `payoutLockKey()` (payout-lock.ts) ile üretilir — ClientOffsetService de
  * (payable leg için, mevcut expense-remaining kilidinden SONRA) AYNI fonksiyonu çağırır; iki servis
  * artık aynı caseClientId'nin payable outstanding'i için serialize olur. Bu servis client-offset
@@ -103,12 +111,34 @@ export class ClientPayoutService {
   ) {}
 
   /**
+   * CBND-3 (H3) hard gate: actor PARTNER/MANAGER (office-admin) DEĞİLSE 403. ClientOffsetService.
+   * assertOfficeAdmin / ClientPayoutManualReversalService.assertOfficeAdmin ile BİREBİR aynı desen
+   * (canonical capacity okuması; CpeRequiredGuard dormant olduğundan ona güvenilmez, yetki BURADA
+   * explicit enforce edilir).
+   */
+  private async assertOfficeAdmin(actorUserId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: actorUserId },
+      include: { lawyer: { select: { lawyerRank: true } }, staffMember: { select: { staffType: true } } },
+    });
+    const capacity = (user?.lawyer?.lawyerRank ?? user?.staffMember?.staffType ?? 'UNKNOWN') as Capacity;
+    if (!isOfficeAdminCapacity(capacity)) {
+      throw new ForbiddenException({
+        code: 'CLIENT_PAYOUT_FORBIDDEN',
+        message: 'Müvekkile ödeme (payout) kaydı için PARTNER/MANAGER (office-admin) yetkisi gerekir',
+        requiredCapability: 'CLIENT_PAYOUT_CREATE',
+      });
+    }
+  }
+
+  /**
    * Çağrıldığı yerler:
    *  - ClientPayoutController.create() → POST /client-payouts (müvekkile payout kaydı ve allocation source-link yazımı)
    */
   async create(tenantId: string, dto: CreateClientPayoutDto, actor?: { userId?: string }): Promise<CreatePayoutResult> {
     const userId = actor?.userId;
     if (!userId) throw new BadRequestException('actor (req.user.id) yok — payout kaydedilemez');
+    await this.assertOfficeAdmin(userId);
     if (!dto?.idempotencyKey) throw new BadRequestException('idempotencyKey zorunlu');
     let amount: Prisma.Decimal;
     try {

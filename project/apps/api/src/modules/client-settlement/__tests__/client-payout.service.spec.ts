@@ -4,7 +4,7 @@
  * tenant+case+caseClientId+currency scoped; idempotency (pre + in-tx + P2002); concurrency advisory-lock;
  * foreign/wrong-role caseClientId reject; collection CONFIRMED değilse outstanding'e girmez; BalanceLedger YOK.
  */
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ClientPayoutService } from '../client-payout.service';
 import { ClientSettlementReadService } from '../client-settlement-read.service';
@@ -40,6 +40,9 @@ function buildPrisma(opts: {
   confirmedCollections?: any[];
   paid?: Prisma.Decimal | null;
   journalCreateError?: Error;
+  // CBND-3 (H3): actor capacity kaynağı (lawyer.lawyerRank / staffMember.staffType). Varsayılan PARTNER
+  // (mevcut business-logic testleri authorization'ı DEĞİL, payout hesaplama/idempotency'yi kanıtlar).
+  actorUser?: any;
 } = {}) {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
@@ -74,6 +77,9 @@ function buildPrisma(opts: {
   const prisma: any = {
     caseClient: { findFirst: jest.fn().mockResolvedValue(opts.cc === undefined ? { id: 'cc-A' } : opts.cc) },
     clientPayout: { findUnique: jest.fn().mockResolvedValue(opts.existing ?? null) },
+    // CBND-3 (H3): assertOfficeAdmin actor capacity okuması. Varsayılan PARTNER → mevcut testler
+    // (authorization'ı değil, payout iş mantığını kanıtlar) yetkili aktörle çalışmaya devam eder.
+    user: { findUnique: jest.fn().mockResolvedValue(opts.actorUser === undefined ? { lawyer: { lawyerRank: 'PARTNER' }, staffMember: null } : opts.actorUser) },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
   return { prisma, tx };
@@ -391,6 +397,50 @@ describe('ClientPayoutService.create', () => {
   it('actor (req.user.id) yoksa → reject (body actor olamaz)', async () => {
     const { prisma } = buildPrisma(OUT_1000);
     await expect(svc(prisma).create('t1', DTO(), {})).rejects.toThrow(/actor/);
+  });
+});
+
+describe('CBND-3 (H3) ClientPayoutService.create — office-admin capability gate', () => {
+  it('yetkisiz aktör (STAJYER_AVUKAT) → ForbiddenException, transaction hiç açılmaz', async () => {
+    const { prisma, tx } = buildPrisma({ ...OUT_1000, actorUser: { lawyer: { lawyerRank: 'STAJYER_AVUKAT' }, staffMember: null } });
+    await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(ForbiddenException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.clientPayout.create).not.toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('user kaydı yok (UNKNOWN capacity) → ForbiddenException', async () => {
+    const { prisma, tx } = buildPrisma({ ...OUT_1000, actorUser: null });
+    await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(ForbiddenException);
+    expect(tx.clientPayout.create).not.toHaveBeenCalled();
+  });
+
+  it('yetkisiz aktör → hata kodu CLIENT_PAYOUT_FORBIDDEN + requiredCapability CLIENT_PAYOUT_CREATE', async () => {
+    const { prisma } = buildPrisma({ ...OUT_1000, actorUser: { lawyer: null, staffMember: { staffType: 'SEKRETER' } } });
+    await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'CLIENT_PAYOUT_FORBIDDEN', requiredCapability: 'CLIENT_PAYOUT_CREATE' }),
+    });
+  });
+
+  it('yetkili aktör (MANAGER, staffMember üzerinden) → mevcut create davranışı AYNEN çalışır', async () => {
+    const { prisma, tx } = buildPrisma({ ...OUT_1000, actorUser: { lawyer: null, staffMember: { staffType: 'MANAGER' } } });
+    const res = await svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR);
+    expect(res.created).toBe(true);
+    expect(tx.clientPayout.create).toHaveBeenCalled();
+  });
+
+  it('yetkili aktör (PARTNER, lawyer üzerinden) → mevcut create davranışı AYNEN çalışır (varsayılan mock)', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+    const res = await svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR);
+    expect(res.created).toBe(true);
+    expect(tx.clientPayout.create).toHaveBeenCalled();
+  });
+
+  it('yetkisiz aktör: actor userId var ama capability yok → assertEligibleCaseClient/idempotency sorgularına HİÇ ulaşılmaz (authz en önce)', async () => {
+    const { prisma } = buildPrisma({ ...OUT_1000, actorUser: { lawyer: { lawyerRank: 'INTERN' }, staffMember: null } });
+    await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(ForbiddenException);
+    expect(prisma.caseClient.findFirst).not.toHaveBeenCalled();
+    expect(prisma.clientPayout.findUnique).not.toHaveBeenCalled();
   });
 });
 
