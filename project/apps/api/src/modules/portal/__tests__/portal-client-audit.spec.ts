@@ -9,7 +9,7 @@
  *  - 3 path da (reactivate / new-create / disable) AuditLog yazar
  *  - audit mutation ile AYNI $transaction (tx) üzerinden çağrılır (atomik)
  *  - action / entityType / entityId / tenantId doğru
- *  - actor YALNIZ auth context'ten (req.user.sub); actor yoksa userId undefined (body/payload türetme YOK)
+ *  - actor YALNIZ auth context'ten (req.user.id); actor yoksa userId undefined (body/payload türetme YOK)
  *  - ham e-posta / şifre / PII audit payload'una SIZMAZ (KVKK) — diff yalnız operasyonel bayraklar
  *  - audit yazımı THROW ederse service reject eder (audit fail = transaction rollback, C0-a deseni)
  */
