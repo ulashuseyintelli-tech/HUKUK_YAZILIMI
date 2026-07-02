@@ -25,6 +25,25 @@ export interface ClientContact {
   isPrimary?: boolean;
 }
 
+/** Kanonik adres türü (Prisma ClientAddressType). */
+export type ClientAddressType = 'MERNIS' | 'TICARI' | 'TEBLIGAT' | 'FATURA' | 'BEYAN';
+
+/** Çok-adres kaydı (Prisma ClientAddress). findOne() yalnız isCurrent:true satırları döner. */
+export interface ClientAddress {
+  id: string;
+  clientId: string;
+  type: ClientAddressType;
+  street?: string | null;
+  city?: string | null;
+  district?: string | null;
+  region?: string | null;
+  postalCode?: string | null;
+  isPrimary: boolean;
+  isCurrent: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 /**
  * Müvekkil okuma (response) şekli — backend Client modelinin FE'de kullanılan alanları.
  * Prisma nullable scalar'lar `string | null` (backend null döndürebilir).
@@ -76,11 +95,29 @@ export interface Client {
   createdAt?: string;
   updatedAt?: string;
   contacts?: ClientContact[];
+  /** Task 4B: çok-adres listesi (yalnız isCurrent:true, isPrimary desc sıralı). Yoksa flat address alanları kullanılır. */
+  addresses?: ClientAddress[];
   /** Vekalet tipi ayrı modülde; burada opak bırakıldı. */
   powerOfAttorneys?: unknown[];
   _count?: { cases?: number };
   /** Task 10A: portal erişim durumu (read-only). Açma/kapatma /settings/clients'ta kalır. */
   hasPortalAccess?: boolean;
+}
+
+/**
+ * ClientAddress-4: dedicated endpoint payload'ı (POST /clients/:clientId/addresses, PUT /addresses/:addressId).
+ * `ClientAddressInput` ile KARIŞTIRMA — o, legacy settings/clients bulk-create'in flat address'e
+ * çöken alt-girdisidir ve `type` alanı yoktur. Bu tip backend CreateClientAddressDto/UpdateClientAddressDto
+ * ile birebir hizalı (type dahil).
+ */
+export interface ClientAddressWritePayload {
+  type?: ClientAddressType;
+  street?: string;
+  city?: string;
+  district?: string;
+  region?: string;
+  postalCode?: string;
+  isPrimary?: boolean;
 }
 
 /** Yazma payload alt-girdileri (CreateClientDto nested DTO'larıyla hizalı). */

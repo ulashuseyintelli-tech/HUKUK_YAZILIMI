@@ -711,6 +711,27 @@ class ApiClient {
     });
   }
 
+  // ClientAddress-4: çok-adres CRUD (dedicated endpoint, {data} zarfı YOK — servis satırını doğrudan döner).
+  async createClientAddress(clientId: string, data: any) {
+    return this.request<any>(`/clients/${clientId}/addresses`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateClientAddress(addressId: string, data: any) {
+    return this.request<any>(`/addresses/${addressId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteClientAddress(addressId: string) {
+    return this.request<any>(`/addresses/${addressId}`, {
+      method: "DELETE",
+    });
+  }
+
   // Lawyers
   async getLawyers(search?: string) {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
