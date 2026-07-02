@@ -11,6 +11,7 @@ function buildHarness(opts: {
   latestLink?: any | null;
   latestNotification?: any | null;
   latestDeliveryIssue?: any | null;
+  poaDeliveries?: any[];
   openTasks?: any[];
 } = {}) {
   const prisma: any = {
@@ -51,6 +52,12 @@ function buildHarness(opts: {
       create: jest.fn(),
       update: jest.fn(),
     },
+    poaExpiryNotificationDelivery: {
+      findMany: jest.fn().mockResolvedValue(opts.poaDeliveries ?? []),
+      create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
     task: {
       findMany: jest.fn().mockResolvedValue(opts.openTasks ?? []),
       findUnique: jest.fn(),
@@ -77,6 +84,7 @@ describe('ClientService.getOperatingSnapshot', () => {
       select: { id: true, phone: true, email: true, contactFollowUpStatus: true },
     });
     expect(prisma.clientPowerOfAttorney.findMany.mock.calls[0][0].where).toEqual({ clientId: 'client-1', isActive: true });
+    expect(prisma.clientPowerOfAttorney.findMany.mock.calls[0][0].select).toEqual({ id: true, status: true, isLimited: true, validUntil: true });
     expect(prisma.clientIntakeSubmission.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
     expect(prisma.clientIntakeLink.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
     expect(prisma.clientNotification.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
@@ -89,6 +97,7 @@ describe('ClientService.getOperatingSnapshot', () => {
     ]));
     expect(JSON.stringify(deliveryWhere.OR)).not.toContain('SENT');
     expect(prisma.task.findMany.mock.calls[0][0].where).toMatchObject({ tenantId: 'tenant-1', clientId: 'client-1', taskCategory: 'OPERATIONAL_COMPLETENESS' });
+    expect(prisma.poaExpiryNotificationDelivery.findMany).not.toHaveBeenCalled();
     expect(result.data).toMatchObject({
       clientId: 'client-1',
       health: 'healthy',
@@ -214,7 +223,7 @@ describe('ClientService.getOperatingSnapshot', () => {
 
   it('marks active POA as expiring when the nearest validUntil is within 30 days', async () => {
     const { svc } = buildHarness({
-      poas: [{ id: 'poa-expiring', status: 'ACTIVE', validUntil: daysFromNow(5) }],
+      poas: [{ id: 'poa-expiring', status: 'ACTIVE', isLimited: true, validUntil: daysFromNow(5) }],
     });
 
     const result = await svc.getOperatingSnapshot('client-1', 'tenant-1');
@@ -223,6 +232,69 @@ describe('ClientService.getOperatingSnapshot', () => {
     expect(result.data.riskLevel).toBe('medium');
     expect(result.data.poa.status).toBe('expiring');
     expect(result.data.signals.map((signal) => signal.key)).toContain('poa.expiring');
+  });
+
+  it('keeps POA expiring risk while surfacing a safe current-window sent reminder signal', async () => {
+    const { svc, prisma } = buildHarness({
+      poas: [{ id: 'poa-expiring', status: 'ACTIVE', isLimited: true, validUntil: daysFromNow(5) }],
+      poaDeliveries: [{
+        status: 'SENT',
+        attempts: 1,
+        sentAt: new Date(),
+        poaId: 'poa-expiring',
+        dedupeKey: 'secret-dedupe',
+        recipientEmail: 'recipient@example.test',
+        lastError: 'provider secret',
+      }],
+    });
+
+    const result = await svc.getOperatingSnapshot('client-1', 'tenant-1');
+    const serialized = JSON.stringify(result);
+
+    expect(result.data.health).toBe('attention');
+    expect(result.data.riskLevel).toBe('medium');
+    expect(result.data.poa.status).toBe('expiring');
+    expect(result.data.signals).toContainEqual(expect.objectContaining({
+      key: 'poa.expiring',
+      severity: 'warning',
+      actionKey: 'poa.reminder.send',
+      target: { clientId: 'client-1' },
+    }));
+    expect(result.data.signals).toContainEqual(expect.objectContaining({
+      key: 'poa.reminder_sent',
+      severity: 'info',
+      actionKey: 'poa.reminder.send',
+      target: { clientId: 'client-1' },
+    }));
+    expect(prisma.poaExpiryNotificationDelivery.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ tenantId: 'tenant-1', clientId: 'client-1', poaId: { in: ['poa-expiring'] }, windowKey: 'D30' }),
+      select: expect.not.objectContaining({ poaId: true, dedupeKey: true, recipientEmail: true, lastError: true }),
+    }));
+    expect(serialized).not.toContain('poa-expiring');
+    expect(serialized).not.toContain('secret-dedupe');
+    expect(serialized).not.toContain('recipient@example.test');
+    expect(serialized).not.toContain('provider secret');
+  });
+
+  it.each([
+    ['retry waiting', { status: 'FAILED', attempts: 1, nextRetryAt: new Date(Date.now() + 60 * 60 * 1000) }],
+    ['max attempts', { status: 'FAILED', attempts: 3, nextRetryAt: null }],
+  ])('surfaces %s POA reminder delivery as a safe warning signal', async (_label, delivery) => {
+    const { svc } = buildHarness({
+      poas: [{ id: 'poa-expiring', status: 'ACTIVE', isLimited: true, validUntil: daysFromNow(5) }],
+      poaDeliveries: [delivery],
+    });
+
+    const result = await svc.getOperatingSnapshot('client-1', 'tenant-1');
+
+    expect(result.data.health).toBe('attention');
+    expect(result.data.riskLevel).toBe('medium');
+    expect(result.data.signals).toContainEqual(expect.objectContaining({
+      key: 'poa.reminder_delivery_failed',
+      severity: 'warning',
+      actionKey: 'poa.reminder.send',
+      target: { clientId: 'client-1' },
+    }));
   });
 
   it('does not perform mutation, audit, timeline, notification creation, or dispatch side effects', async () => {
@@ -245,6 +317,9 @@ describe('ClientService.getOperatingSnapshot', () => {
     expect(prisma.clientIntakeLink.update).not.toHaveBeenCalled();
     expect(prisma.clientIntakeLinkDelivery.create).not.toHaveBeenCalled();
     expect(prisma.clientIntakeLinkDelivery.update).not.toHaveBeenCalled();
+    expect(prisma.poaExpiryNotificationDelivery.create).not.toHaveBeenCalled();
+    expect(prisma.poaExpiryNotificationDelivery.update).not.toHaveBeenCalled();
+    expect(prisma.poaExpiryNotificationDelivery.updateMany).not.toHaveBeenCalled();
     expect(prisma.task.create).not.toHaveBeenCalled();
     expect(prisma.task.update).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
