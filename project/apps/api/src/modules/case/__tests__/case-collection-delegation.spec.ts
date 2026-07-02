@@ -134,13 +134,13 @@ describe('CaseService collection delegation (G3d)', () => {
     const prisma = buildPrisma({ id: 'col1', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' });
     const svc = buildService(coll, prisma);
 
-    await svc.cancelCollection('t1', 'c1', 'col1', 'iptal nedeni');
+    await svc.cancelCollection('t1', 'c1', 'col1', 'user-1', 'iptal nedeni');
 
     expect(prisma.collection.findFirst).toHaveBeenCalledWith({
       where: { id: 'col1', caseId: 'c1', tenantId: 't1' },
       select: { id: true },
     });
-    expect(coll.cancel).toHaveBeenCalledWith('t1', 'col1', { cancelReason: 'iptal nedeni' }, 'c1');
+    expect(coll.cancel).toHaveBeenCalledWith('t1', 'col1', { cancelReason: 'iptal nedeni' }, 'user-1', 'c1');
   });
 
   it('TM3-S2: cancelCollection wrong route caseId fail-closed olur ve cancel delegasyonu yapmaz', async () => {
@@ -148,7 +148,7 @@ describe('CaseService collection delegation (G3d)', () => {
     const prisma = buildPrisma(null);
     const svc = buildService(coll, prisma);
 
-    await expect(svc.cancelCollection('t1', 'wrong-case', 'col1', 'iptal nedeni')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.cancelCollection('t1', 'wrong-case', 'col1', 'user-1', 'iptal nedeni')).rejects.toBeInstanceOf(NotFoundException);
 
     expect(prisma.collection.findFirst).toHaveBeenCalledWith({
       where: { id: 'col1', caseId: 'wrong-case', tenantId: 't1' },
@@ -161,7 +161,7 @@ describe('CaseService collection delegation (G3d)', () => {
     const prisma = buildPrisma(null);
     const svc = buildService(coll, prisma);
 
-    await expect(svc.cancelCollection('tenant-a', 'case-a', 'collection-b', 'iptal nedeni')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.cancelCollection('tenant-a', 'case-a', 'collection-b', 'user-1', 'iptal nedeni')).rejects.toBeInstanceOf(NotFoundException);
 
     expect(prisma.collection.findFirst).toHaveBeenCalledWith({
       where: { id: 'collection-b', caseId: 'case-a', tenantId: 'tenant-a' },

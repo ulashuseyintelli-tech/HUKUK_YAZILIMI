@@ -134,7 +134,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const tx = buildTx({ originalLedger });
     const { service } = buildService(tx);
 
-    const result = await service.cancel('t1', 'col1', { cancelReason: 'yanlış kayıt' } as any);
+    const result = await service.cancel('t1', 'col1', { cancelReason: 'yanlış kayıt' } as any, 'user-1');
 
     expect(result).toMatchObject({
       id: 'col1',
@@ -233,7 +233,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const tx = buildTx({ originalLedger });
     const { service, domainEvent } = buildService(tx);
 
-    await service.cancel('t1', 'col1', { cancelReason: 'yanlış kayıt' } as any);
+    await service.cancel('t1', 'col1', { cancelReason: 'yanlış kayıt' } as any, 'user-1');
 
     expect(tx.icrabotTimelineEntry.findFirst).toHaveBeenCalledWith({
       where: {
@@ -258,7 +258,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
       occurredAtConfidence: 'SYSTEM_VERIFIED',
       causedBy: 'payment-event-1',
       tenantId: 't1',
-      actor: { type: 'SYSTEM', reason: 'COLLECTION_CANCEL' },
+      actor: { type: 'HUMAN', userId: 'user-1' },
     });
     expect(event.header.eventId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(event.payload).toMatchObject({
@@ -285,7 +285,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const realDomainEvent = new DomainEventIngestService();
     const { service } = buildService(tx, null, realDomainEvent);
 
-    await service.cancel('t1', 'col1', { cancelReason: 'outbox kanıtı' } as any);
+    await service.cancel('t1', 'col1', { cancelReason: 'outbox kanıtı' } as any, 'user-1');
 
     expect(tx.icrabotTimelineEntry.create).toHaveBeenCalledTimes(1);
     expect(tx.icrabotOutboxAction.create).toHaveBeenCalledTimes(1);
@@ -387,7 +387,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
       undefined,
     );
 
-    await expect(service.cancel('t1', 'col1', { cancelReason: 'outbox hata' } as any)).rejects.toThrow('outbox down');
+    await expect(service.cancel('t1', 'col1', { cancelReason: 'outbox hata' } as any, 'user-1')).rejects.toThrow('outbox down');
 
     expect(committed).toEqual({
       collectionStatus: 'CONFIRMED',
@@ -408,8 +408,8 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const first = buildService(tx1);
     const second = buildService(tx2);
 
-    await first.service.cancel('t1', 'col1', { cancelReason: 'a' } as any);
-    await second.service.cancel('t1', 'col1', { cancelReason: 'b' } as any);
+    await first.service.cancel('t1', 'col1', { cancelReason: 'a' } as any, 'user-1');
+    await second.service.cancel('t1', 'col1', { cancelReason: 'b' } as any, 'user-1');
 
     const firstEvent = getAppendCall(first.domainEvent)[1];
     const secondEvent = getAppendCall(second.domainEvent)[1];
@@ -423,7 +423,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     });
     const { service, domainEvent } = buildService(tx);
 
-    await service.cancel('t1', 'col1', { cancelReason: 'dekont düzeltme' } as any);
+    await service.cancel('t1', 'col1', { cancelReason: 'dekont düzeltme' } as any, 'user-1');
 
     const event = getAppendCall(domainEvent)[1];
     expect(event.payload).toMatchObject({
@@ -440,7 +440,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const { service, domainEvent } = buildService(tx);
 
     try {
-      await service.cancel('t1', 'col1', { cancelReason: 'legacy eksik event' } as any);
+      await service.cancel('t1', 'col1', { cancelReason: 'legacy eksik event' } as any, 'user-1');
       throw new Error('cancel should have failed');
     } catch (error: any) {
       expect(error).toBeInstanceOf(ConflictException);
@@ -469,7 +469,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const { service, domainEvent } = buildService(tx);
 
     try {
-      await service.cancel('t1', 'col1', { cancelReason: 'tenant sızıntısı' } as any);
+      await service.cancel('t1', 'col1', { cancelReason: 'tenant sızıntısı' } as any, 'user-1');
       throw new Error('cancel should have failed');
     } catch (error: any) {
       expect(error).toBeInstanceOf(ConflictException);
@@ -496,7 +496,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const { service, domainEvent } = buildService(tx);
 
     try {
-      await service.cancel('t1', 'col1', { cancelReason: 'case sızıntısı' } as any);
+      await service.cancel('t1', 'col1', { cancelReason: 'case sızıntısı' } as any, 'user-1');
       throw new Error('cancel should have failed');
     } catch (error: any) {
       expect(error).toBeInstanceOf(ConflictException);
@@ -526,7 +526,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const tx = buildTx({ originalLedger });
     const { service } = buildService(tx);
 
-    await service.cancel('t1', 'col1', { cancelReason: 'kısmi ödeme iptali' } as any);
+    await service.cancel('t1', 'col1', { cancelReason: 'kısmi ödeme iptali' } as any, 'user-1');
 
     const reversalData = tx.ledgerEntry.create.mock.calls[0][0].data;
     expect(reversalData).toMatchObject({
@@ -575,7 +575,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const tx = buildTx({ originalLedger });
     const { service } = buildService(tx);
 
-    await service.cancel('t1', 'col1', { cancelReason: 'fazla projection clamp' } as any);
+    await service.cancel('t1', 'col1', { cancelReason: 'fazla projection clamp' } as any, 'user-1');
 
     expect(tx.claimItem.updateMany).toHaveBeenCalledWith({
       where: { id: 'ci-principal', tenantId: 't1', caseId: 'case1' },
@@ -596,7 +596,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const tx = buildTx({ originalLedger: null });
     const { service } = buildService(tx);
 
-    await service.cancel('t1', 'col1', { cancelReason: 'ledger yok' } as any);
+    await service.cancel('t1', 'col1', { cancelReason: 'ledger yok' } as any, 'user-1');
 
     expect(tx.collection.update).toHaveBeenCalledTimes(1);
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
@@ -628,7 +628,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const { service, domainEvent } = buildService(tx);
 
     await expect(
-      service.cancel('t1', 'col1', { cancelReason: 'tekrar' } as any),
+      service.cancel('t1', 'col1', { cancelReason: 'tekrar' } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(tx.collection.update).not.toHaveBeenCalled();
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
@@ -642,7 +642,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const { service, domainEvent } = buildService(tx);
 
     await expect(
-      service.cancel('other-tenant', 'col1', { cancelReason: 'x' } as any),
+      service.cancel('other-tenant', 'col1', { cancelReason: 'x' } as any, 'user-1'),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.collection.update).not.toHaveBeenCalled();
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
@@ -656,7 +656,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     const { service } = buildService(tx);
 
     await expect(
-      service.cancel('t1', 'col1', { cancelReason: 'wrong case' } as any, 'case-a'),
+      service.cancel('t1', 'col1', { cancelReason: 'wrong case' } as any, 'user-1', 'case-a'),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.collection.findFirst).toHaveBeenCalledWith({
       where: { id: 'col1', tenantId: 't1', caseId: 'case-a' },
@@ -681,7 +681,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     });
     const { service } = buildService(tx);
 
-    await service.cancel('t1', 'col1', { cancelReason: 'already reversed' } as any);
+    await service.cancel('t1', 'col1', { cancelReason: 'already reversed' } as any, 'user-1');
 
     expect(tx.collection.update).toHaveBeenCalledTimes(1);
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
@@ -709,7 +709,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     });
 
     await expect(
-      service.cancel('t1', 'col1', { cancelReason: 'race' } as any),
+      service.cancel('t1', 'col1', { cancelReason: 'race' } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.collection.findFirst).toHaveBeenCalled();
     expect(tx.claimItem.updateMany).not.toHaveBeenCalled();

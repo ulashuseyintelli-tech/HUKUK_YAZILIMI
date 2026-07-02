@@ -744,7 +744,13 @@ export class CollectionService {
   /// - CollectionController.cancel() → POST /collections/:id/cancel (doğrudan tahsilat iptali)
   /// - CaseService.cancelCollection() → POST /cases/:id/collections/:collectionId/cancel (dosya detayından tahsilat iptali; caseId boundary guard)
   /// </remarks>
-  async cancel(tenantId: string, id: string, dto: CancelCollectionDto, expectedCaseId?: string) {
+  async cancel(
+    tenantId: string,
+    id: string,
+    dto: CancelCollectionDto,
+    actorUserId: string,
+    expectedCaseId?: string,
+  ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const collection = await (tx.collection as any).findFirst({
@@ -882,8 +888,8 @@ export class CollectionService {
             occurredAt: cancelledAt.toISOString(),
             occurredAtConfidence: 'SYSTEM_VERIFIED',
             actor: {
-              type: 'SYSTEM',
-              reason: 'COLLECTION_CANCEL',
+              type: 'HUMAN',
+              userId: actorUserId,
             },
             causedBy: originalPaymentEventId,
             tenantId,

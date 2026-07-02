@@ -155,6 +155,16 @@ function buildHarness() {
       create: jest.fn(),
       update: jest.fn(),
     },
+    collectionDispositionExpenseApplication: {
+      findMany: jest.fn(async () => []),
+      create: jest.fn(),
+    },
+    clientPayoutAllocation: {
+      findMany: jest.fn(async () => []),
+    },
+    clientPayoutManualReversal: {
+      upsert: jest.fn(),
+    },
   };
 
   const outbox = {
@@ -233,6 +243,8 @@ function buildHarness() {
     expect(prisma.balanceLedger.update).not.toHaveBeenCalled();
     expect(prisma.clientPayout.create).not.toHaveBeenCalled();
     expect(prisma.clientPayout.update).not.toHaveBeenCalled();
+    expect(prisma.collectionDispositionExpenseApplication.create).not.toHaveBeenCalled();
+    expect(prisma.clientPayoutManualReversal.upsert).not.toHaveBeenCalled();
   }
 
   return {
@@ -259,7 +271,7 @@ describe('S2 PAYMENT_REVERSED integration', () => {
     await expect(h.actionHandler.dispatch(receivedAction.id)).resolves.toMatchObject({ success: true });
 
     expect(h.disposition()).toMatchObject({ status: 'HELD_PENDING_DISTRIBUTION', collectionId: 'col1' });
-    await h.collectionService.cancel('t1', 'col1', { cancelReason: 'iptal' } as any);
+    await h.collectionService.cancel('t1', 'col1', { cancelReason: 'iptal' } as any, 'user-1');
 
     const reversedAction = h.findAction('EVENT_PUBLISHED:PAYMENT_REVERSED');
     expect(reversedAction.payload).toMatchObject({ tenantId: 't1', caseId: 'case1', collectionId: 'col1' });
@@ -279,7 +291,7 @@ describe('S2 PAYMENT_REVERSED integration', () => {
     await h.actionHandler.dispatch(receivedAction.id);
     Object.assign(h.disposition(), { status: 'POSTED' });
 
-    await h.collectionService.cancel('t1', 'col1', { cancelReason: 'posted iptal' } as any);
+    await h.collectionService.cancel('t1', 'col1', { cancelReason: 'posted iptal' } as any, 'user-1');
     const reversedAction = h.findAction('EVENT_PUBLISHED:PAYMENT_REVERSED');
     await expect(h.actionHandler.dispatch(reversedAction.id)).resolves.toMatchObject({ success: true });
 

@@ -706,11 +706,12 @@ export class CaseController {
   @Post(":id/collections/:collectionId/cancel")
   async cancelCollection(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
     @Param("collectionId") collectionId: string,
     @Body() body: { reason?: string }
   ) {
-    return this.caseService.cancelCollection(tenantId, id, collectionId, body.reason);
+    return this.caseService.cancelCollection(tenantId, id, collectionId, actorUserId, body.reason);
   }
 
   /**
