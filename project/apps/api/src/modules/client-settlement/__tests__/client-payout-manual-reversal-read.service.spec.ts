@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ClientPayoutManualReversalClosureMethod } from '@prisma/client';
 import { ClientPayoutManualReversalReadService } from '../client-payout-manual-reversal-read.service';
 
 const D = (n: number) => new Prisma.Decimal(n);
@@ -12,7 +12,9 @@ const baseRow = {
   amount: D(500),
   currency: 'TRY',
   status: 'OPEN',
-  closureMethod: null,
+  // T1: literal-null tip kilidini kır — CLOSED-senaryolu testler spread ile bu alanları
+  // override ediyor (satır ~215/~275); kanonik Prisma enum'u + genişletilmiş nullable tipler.
+  closureMethod: null as ClientPayoutManualReversalClosureMethod | null,
   confidence: 'EXACT',
   sourceActionId: 'payment-reversed:1',
   collectionId: 'col-1',
@@ -22,13 +24,13 @@ const baseRow = {
   clientPayoutAllocationId: 'alloc-1',
   openedAt: new Date('2026-06-01T00:00:00.000Z'),
   openedById: 'u-open',
-  closedAt: null,
-  closedById: null,
+  closedAt: null as Date | null,
+  closedById: null as string | null,
   cancelledAt: null,
   cancelledById: null,
   note: 'internal note',
-  closureNote: null,
-  evidenceRef: null,
+  closureNote: null as string | null,
+  evidenceRef: null as string | null,
   createdAt: new Date('2026-06-01T00:00:00.000Z'),
   updatedAt: new Date('2026-06-01T00:00:00.000Z'),
   case: {
@@ -213,7 +215,7 @@ describe('ClientPayoutManualReversalReadService', () => {
     const row = {
       ...baseRow,
       status: 'CLOSED',
-      closureMethod: 'REFUND',
+      closureMethod: ClientPayoutManualReversalClosureMethod.REFUND,
       closedAt: new Date('2026-06-05T00:00:00.000Z'),
       closedById: 'u-close',
       closureNote: 'refund handled externally',
@@ -271,7 +273,7 @@ describe('ClientPayoutManualReversalReadService', () => {
     const row = {
       ...baseRow,
       status: 'CLOSED',
-      closureMethod: 'WAIVER',
+      closureMethod: ClientPayoutManualReversalClosureMethod.WAIVER,
       closureNote: 'authorized waiver decision by management',
       evidenceRef: 'ev-waiver',
       closedAt: new Date('2026-06-05T00:00:00.000Z'),
