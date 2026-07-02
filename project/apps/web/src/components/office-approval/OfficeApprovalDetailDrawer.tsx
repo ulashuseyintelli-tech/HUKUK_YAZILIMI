@@ -1,16 +1,21 @@
 "use client";
 
-// Office Approval detay drawer'ı — salt-okuma (P4-4). ErrorLogDetailDrawer ile AYNI desen
-// (sağdan kayan panel + <pre> JSON gösterimi + CopyButton). Onay/red aksiyonu YOK — bu tur salt-okuma.
+// Office Approval detay drawer'ı — okuma + karar (P4 Decision UI). ErrorLogDetailDrawer ile AYNI desen
+// (sağdan kayan panel + <pre> JSON gösterimi + CopyButton). Karar aksiyonları PENDING taleplerde,
+// savedIntent'in ALTINDA (approver gördüğünü onaylar) — OfficeApprovalDecisionActions bileşeni.
 import { useEffect, useState } from "react";
 import { officeApprovalApi, type OfficeApprovalSummary, type OfficeApprovalDetail } from "@/lib/api/office-approval";
 import { relativeTime } from "@/lib/relative-time";
 import { CopyButton } from "@/components/error/CopyButton";
+import { useAuth } from "@/lib/auth-context";
 import { STATUS_LABELS } from "./status-labels";
+import { OfficeApprovalDecisionActions } from "./OfficeApprovalDecisionActions";
 
 interface Props {
   requestId: string | null;
   onClose: () => void;
+  /** Bir karar kaydedildiğinde çağrılır (üst liste yenilemesi için). Drawer içeriği zaten yerinde güncellenir. */
+  onDecided?: () => void;
 }
 
 function fmt(d?: string | null): string {
@@ -42,10 +47,11 @@ function TimeField({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-export function OfficeApprovalDetailDrawer({ requestId, onClose }: Props) {
+export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Props) {
   const [detail, setDetail] = useState<OfficeApprovalDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     if (!requestId) {
@@ -138,6 +144,15 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose }: Props) {
                 <pre className="max-h-96 overflow-auto bg-gray-50 text-xs p-3 rounded border">{replacementJson}</pre>
               </div>
             )}
+
+            <OfficeApprovalDecisionActions
+              detail={detail}
+              currentUserId={user?.id ?? null}
+              onDecided={(updated) => {
+                setDetail(updated);
+                onDecided?.();
+              }}
+            />
           </>
         )}
       </div>

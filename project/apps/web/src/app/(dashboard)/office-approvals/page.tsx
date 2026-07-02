@@ -1,7 +1,8 @@
 "use client";
 
-// P4-4 — Office Approval Inbox (salt-okuma). error-logs sayfasıyla AYNI desen (filtre + liste + drawer).
-// Onay/red aksiyonu, executor, dashboard widget, notification badge — bu turda YOK (kapsam dışı).
+// P4 — Office Approval Inbox. error-logs sayfasıyla AYNI desen (filtre + liste + drawer).
+// Karar aksiyonları (onay/red/revizyon/geri çekme) drawer İÇİNDE (Decision UI); karar sonrası liste
+// onDecided ile yenilenir. Executor, dashboard widget, notification badge — kapsam dışı.
 import { useState, useEffect, useCallback } from "react";
 import { ClipboardCheck } from "lucide-react";
 import { officeApprovalApi, type OfficeApprovalSummary, type OfficeApprovalStatusValue } from "@/lib/api/office-approval";
@@ -106,7 +107,7 @@ export default function OfficeApprovalsPage() {
         )}
       </div>
 
-      <OfficeApprovalDetailDrawer requestId={selectedId} onClose={() => setSelectedId(null)} />
+      <OfficeApprovalDetailDrawer requestId={selectedId} onClose={() => setSelectedId(null)} onDecided={fetchData} />
     </div>
   );
 }

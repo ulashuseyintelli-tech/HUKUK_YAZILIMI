@@ -1,8 +1,11 @@
 /**
- * Office Approval API Client — salt-okuma (P4-4 inbox/detail).
+ * Office Approval API Client — inbox/detail okuma + karar aksiyonları (P4 Decision UI).
  *
- * Backend: office-approval.controller.ts (GET /office-approvals/inbox, GET /office-approvals/:id).
- * onay/red/write action'ları bu istemcide YOK (kapsam dışı — bu tur salt-okuma).
+ * Backend: office-approval.controller.ts
+ *  - GET  /office-approvals/inbox · GET /office-approvals/:id
+ *  - POST /office-approvals/:id/{approve,reject,request-revision,approve-with-changes,cancel}
+ * Karar uçları DECISION-ONLY: yalnız status geçişi yapar, execution TETİKLEMEZ (deferred, P4-5).
+ * Yetki backend'de (self-approval yasağı, approver-eligibility, requester-only cancel) — FE taklit etmez.
  */
 import { apiClient } from "./client";
 
@@ -72,6 +75,58 @@ export const officeApprovalApi = {
   /** GET /office-approvals/:id — tenant-scoped + görünürlük (requester ∨ eligible-approver); aksi 404. */
   getDetail: async (id: string): Promise<OfficeApprovalDetail> => {
     const { data } = await apiClient.get<OfficeApprovalDetailResponse>(`/office-approvals/${encodeURIComponent(id)}`);
+    return data.data;
+  },
+
+  /** POST /office-approvals/:id/approve — status→APPROVED; not opsiyonel. Execution tetiklemez. */
+  approve: async (id: string, note?: string): Promise<OfficeApprovalDetail> => {
+    const { data } = await apiClient.post<OfficeApprovalDetailResponse>(
+      `/office-approvals/${encodeURIComponent(id)}/approve`,
+      note && note.trim() ? { note: note.trim() } : {},
+    );
+    return data.data;
+  },
+
+  /** POST /office-approvals/:id/reject — gerekçe (note) ZORUNLU (backend @MinLength). */
+  reject: async (id: string, note: string): Promise<OfficeApprovalDetail> => {
+    const { data } = await apiClient.post<OfficeApprovalDetailResponse>(
+      `/office-approvals/${encodeURIComponent(id)}/reject`,
+      { note },
+    );
+    return data.data;
+  },
+
+  /** POST /office-approvals/:id/request-revision — revizyon notu ZORUNLU; REVISION_REQUESTED ≠ REJECTED. */
+  requestRevision: async (id: string, note: string): Promise<OfficeApprovalDetail> => {
+    const { data } = await apiClient.post<OfficeApprovalDetailResponse>(
+      `/office-approvals/${encodeURIComponent(id)}/request-revision`,
+      { note },
+    );
+    return data.data;
+  },
+
+  /**
+   * POST /office-approvals/:id/approve-with-changes — replacementSavedIntent ZORUNLU (opaque obje);
+   * orijinal savedIntent backend'de ASLA ezilmez, değişiklik ayrı iz bırakır.
+   */
+  approveWithChanges: async (
+    id: string,
+    replacementSavedIntent: Record<string, unknown>,
+    note?: string,
+  ): Promise<OfficeApprovalDetail> => {
+    const { data } = await apiClient.post<OfficeApprovalDetailResponse>(
+      `/office-approvals/${encodeURIComponent(id)}/approve-with-changes`,
+      note && note.trim() ? { replacementSavedIntent, note: note.trim() } : { replacementSavedIntent },
+    );
+    return data.data;
+  },
+
+  /** POST /office-approvals/:id/cancel — YALNIZ talep sahibi (backend enforce); PENDING dışında 409. */
+  cancel: async (id: string): Promise<OfficeApprovalDetail> => {
+    const { data } = await apiClient.post<OfficeApprovalDetailResponse>(
+      `/office-approvals/${encodeURIComponent(id)}/cancel`,
+      {},
+    );
     return data.data;
   },
 };
