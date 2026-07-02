@@ -12,6 +12,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
       getClientOperatingSnapshot: vi.fn(),
       createClientWorkspaceIntakeLink: vi.fn(),
       createClientWorkspaceIntakeLinkAndDeliver: vi.fn(),
+      sendClientWorkspacePoaReminder: vi.fn(),
     },
   };
 });
@@ -21,6 +22,7 @@ const apiMock = api as unknown as {
   getClientOperatingSnapshot: ReturnType<typeof vi.fn>;
   createClientWorkspaceIntakeLink: ReturnType<typeof vi.fn>;
   createClientWorkspaceIntakeLinkAndDeliver: ReturnType<typeof vi.fn>;
+  sendClientWorkspacePoaReminder: ReturnType<typeof vi.fn>;
 };
 
 const action = (over: Partial<ClientActionCatalogItem>): ClientActionCatalogItem => ({
@@ -92,6 +94,15 @@ describe('ClientActionsTab', () => {
     apiMock.createClientWorkspaceIntakeLinkAndDeliver.mockResolvedValue({
       link: { id: 'link-2', clientId: 'client-1', caseId: 'case-1', scope: ['ADDRESS'] },
       delivery: { id: 'delivery-1', status: 'sent', channel: 'EMAIL', notificationId: 'notification-1', attemptCount: 1 },
+    });
+    apiMock.sendClientWorkspacePoaReminder.mockResolvedValue({
+      clientId: 'client-1',
+      status: 'sent',
+      scanned: 1,
+      recipients: 1,
+      sent: 1,
+      failed: 0,
+      skipped: 0,
     });
     mockReady([
       action({ key: 'contact.update_missing_info', order: 10, href: '/clients/client-1/edit' }),
@@ -226,6 +237,77 @@ describe('ClientActionsTab', () => {
     expect(await screen.findByText(/e-posta g.nderildi/i)).toBeTruthy();
     expect(screen.queryByText('https://form.example.com/intake/raw-token')).toBeNull();
   });
+
+  it('sends an enabled POA reminder action through the workspace command endpoint', async () => {
+    mockReady([
+      action({
+        key: 'poa.reminder.send',
+        category: 'poa',
+        enabled: true,
+        href: undefined,
+        target: { clientId: 'client-1' },
+        requiredState: 'POA_EXPIRING_ACTIVE',
+        order: 35,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText(/Vekalet hat.rlatmas./i)).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /^G.nder$/i }));
+
+    await waitFor(() => expect(apiMock.sendClientWorkspacePoaReminder).toHaveBeenCalledTimes(1));
+    expect(apiMock.sendClientWorkspacePoaReminder).toHaveBeenCalledWith('client-1');
+    expect(await screen.findByText(/Vekalet hat.rlatmas. g.nderildi/i)).toBeTruthy();
+    expect(screen.getByText(/G.nderilen: 1, ba.ar.s.z: 0, atlanan: 0/i)).toBeTruthy();
+    await waitFor(() => expect(apiMock.getClientActionCatalog).toHaveBeenCalledTimes(2));
+    expect(apiMock.getClientOperatingSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps disabled POA reminder unavailable and does not call the command endpoint', async () => {
+    mockReady([
+      action({
+        key: 'poa.reminder.send',
+        category: 'poa',
+        enabled: false,
+        disabledReason: 'Yakinda bitecek aktif vekalet yok.',
+        href: undefined,
+        target: { clientId: 'client-1' },
+        order: 35,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Yakinda bitecek aktif vekalet yok.')).toBeTruthy());
+    expect(screen.getByRole('button', { name: /Kapal/i })).toBeTruthy();
+    expect(apiMock.sendClientWorkspacePoaReminder).not.toHaveBeenCalled();
+  });
+
+  it('shows POA reminder command failure without optimistic success', async () => {
+    apiMock.sendClientWorkspacePoaReminder.mockRejectedValueOnce(new Error('POA reminder failed'));
+    mockReady([
+      action({
+        key: 'poa.reminder.send',
+        category: 'poa',
+        enabled: true,
+        href: undefined,
+        target: { clientId: 'client-1' },
+        requiredState: 'POA_EXPIRING_ACTIVE',
+        order: 35,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText(/Vekalet hat.rlatmas./i)).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /^G.nder$/i }));
+
+    await waitFor(() => expect(apiMock.sendClientWorkspacePoaReminder).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('POA reminder failed')).toBeTruthy();
+    expect(screen.queryByText(/Vekalet hat.rlatmas. g.nderildi/i)).toBeNull();
+  });
+
   it('shows failed delivery status without optimistic success', async () => {
     apiMock.createClientWorkspaceIntakeLinkAndDeliver.mockResolvedValueOnce({
       link: { id: 'link-2', clientId: 'client-1', caseId: 'case-1', scope: ['ADDRESS'] },

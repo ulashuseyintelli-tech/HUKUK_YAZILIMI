@@ -697,6 +697,13 @@ class ApiClient {
     return response.data;
   }
 
+  async sendClientWorkspacePoaReminder(clientId: string) {
+    const response = await this.request<{ data: ClientWorkspacePoaReminderResult }>(`/clients/${clientId}/poa-reminders/send`, {
+      method: "POST",
+    });
+    return response.data;
+  }
+
   async createClient(data: any) {
     return this.request<any>("/clients", {
       method: "POST",
@@ -3352,6 +3359,18 @@ export interface ClientWorkspaceCreateAndDeliverResult {
     attemptCount: number;
     error?: string;
   };
+}
+
+export type ClientWorkspacePoaReminderStatus = 'sent' | 'partial' | 'failed' | 'skipped';
+
+export interface ClientWorkspacePoaReminderResult {
+  clientId: string;
+  status: ClientWorkspacePoaReminderStatus;
+  scanned: number;
+  recipients: number;
+  sent: number;
+  failed: number;
+  skipped: number;
 }
 
 // ============================================
