@@ -7,6 +7,8 @@ import { DistributionRecommendationService } from './distribution-recommendation
 import { PostDispositionDto } from './dto/post-disposition.dto';
 import { ApproveDispositionDto } from './dto/approve-disposition.dto';
 import { GenerateDistributionRecommendationDto } from './dto/distribution-recommendation.dto';
+import { CpeRequired } from '../policy-engine/decorators/cpe-required.decorator';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
 
 /** actor compile-time shape — req.user.id auth context (body'den ASLA). */
 interface AuthRequest {
@@ -81,8 +83,14 @@ export class DispositionController {
     return { data };
   }
 
-  /** Dağıtım kararını POSTED yap — YALNIZ DISTRIBUTION_APPROVED (Partner/Manager onayı sonrası). actor = req.user.id. */
+  /**
+   * Dağıtım kararını POSTED yap — YALNIZ DISTRIBUTION_APPROVED (Partner/Manager onayı sonrası). actor = req.user.id.
+   * R4: @CpeRequired(POST_COLLECTION_DISPOSITION) YALNIZ future-compat metadata (CpeRequiredGuard dormant) —
+   * güvenlik buna bağlı DEĞİL. Asıl gate mevcut statü-makinesi (yalnız DISTRIBUTION_APPROVED → POSTED, approve()
+   * adımı zaten PARTNER/yetkili + P4 4-göz ister); bu decorator eklendiğinde davranış DEĞİŞMEDİ.
+   */
   @Post(':id/post')
+  @CpeRequired(ActionCode.POST_COLLECTION_DISPOSITION)
   async post(@Request() req: AuthRequest, @Param('id') id: string) {
     const data = await this.posting.post(req.user.tenantId, id, { userId: req.user.id });
     return { data };
