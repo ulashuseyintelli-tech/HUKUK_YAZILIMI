@@ -1731,7 +1731,7 @@ function buildCaseScopedPrimaryReaderEvidence(
 }
 
 function sumDecimalValues(values: Array<{ toString(): string }>): Prisma.Decimal {
-  return values.reduce((sum, value) => sum.plus(decimalOf(value)), ZERO);
+  return values.reduce<Prisma.Decimal>((sum, value) => sum.plus(decimalOf(value)), ZERO);
 }
 
 function netJournalLines(lines: CaseScopedJournalLineValueRow[], positiveDirection: 'DEBIT' | 'CREDIT'): Prisma.Decimal {
