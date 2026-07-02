@@ -1,10 +1,16 @@
 import { Test, TestingModule } from "@nestjs/testing";
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { CaseDebtorService } from "./case-debtor.service";
 import { PrismaService } from "@/prisma/prisma.service";
+import { AuditService } from "../audit/audit.service";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
 
 describe("CaseDebtorService.removeCaseDebtor", () => {
   let service: CaseDebtorService;
+  // C1A: passivate capability-gate — testler eligible aktör varsayar (isApproverEligible=true);
+  // yetkisiz/actor-yok senaryosu ayrı describe bloğunda.
+  const mockAudit = { log: jest.fn(), logInTransaction: jest.fn().mockResolvedValue(undefined) };
+  const mockOfficeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
 
   const TENANT = "tenant-1";
   const CASE = "case-1";
@@ -77,12 +83,15 @@ describe("CaseDebtorService.removeCaseDebtor", () => {
       providers: [
         CaseDebtorService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: AuditService, useValue: mockAudit },
+        { provide: OfficeApprovalService, useValue: mockOfficeApproval },
       ],
     }).compile();
 
     service = module.get<CaseDebtorService>(CaseDebtorService);
 
     jest.clearAllMocks();
+    mockOfficeApproval.isApproverEligible.mockResolvedValue(true);
     mockPrisma.$transaction.mockImplementation((cb: any) => cb(txMock));
     txMock.addressTask.updateMany.mockResolvedValue({ count: 0 });
     txMock.caseDebtor.update.mockResolvedValue({
@@ -181,16 +190,57 @@ describe("CaseDebtorService.removeCaseDebtor", () => {
     );
   });
 
-  it("currentUser yoksa passivatedById null bırakılır", async () => {
+  // C1A: eski davranış (actor yoksa yine de passivatedById:null ile sessizce geçerdi) KAPANDI.
+  // Capability-gate actor gerektirir; actor yoksa isApproverEligible'a hiç girmeden 403.
+  it("currentUser yoksa 403 (capability-gate actor gerektirir), mutation yapılmaz", async () => {
     mockExistingCaseDebtor();
 
-    await service.removeCaseDebtor(TENANT, CASE_DEBTOR);
+    await expect(
+      service.removeCaseDebtor(TENANT, CASE_DEBTOR)
+    ).rejects.toBeInstanceOf(ForbiddenException);
 
-    expect(txMock.caseDebtor.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ passivatedById: null }),
-      })
-    );
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(txMock.caseDebtor.update).not.toHaveBeenCalled();
+  });
+
+  it("yetkisiz kullanıcı (isApproverEligible=false) → 403, addressTask iptali dahil hiçbir yazma yapılmaz, audit YOK", async () => {
+    mockExistingCaseDebtor();
+    mockOfficeApproval.isApproverEligible.mockResolvedValueOnce(false);
+
+    await expect(
+      service.removeCaseDebtor(TENANT, CASE_DEBTOR, USER)
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(txMock.addressTask.updateMany).not.toHaveBeenCalled();
+    expect(txMock.caseDebtor.update).not.toHaveBeenCalled();
+    expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
+  });
+
+  it("audit AYNI transaction içinde actor + tam old snapshot ile yazılır (CASE_DEBTOR_PASSIVATE, entityType CASE_DEBTOR)", async () => {
+    mockExistingCaseDebtor();
+
+    await service.removeCaseDebtor(TENANT, CASE_DEBTOR, USER);
+
+    expect(mockAudit.logInTransaction).toHaveBeenCalledTimes(1);
+    const [, input] = mockAudit.logInTransaction.mock.calls[0];
+    expect(input).toMatchObject({
+      tenantId: TENANT,
+      action: "CASE_DEBTOR_PASSIVATE",
+      entityType: "CASE_DEBTOR",
+      entityId: CASE_DEBTOR,
+      userId: USER,
+      oldValues: activeCaseDebtor,
+      newValues: expect.objectContaining({ lifecycleStatus: "PASSIVE", passivatedById: USER }),
+    });
+  });
+
+  it("PASSIVE kayıt için no-op dalında audit YAZILMAZ (gerçek geçiş yok)", async () => {
+    mockExistingCaseDebtor({ lifecycleStatus: "PASSIVE" });
+
+    await service.removeCaseDebtor(TENANT, CASE_DEBTOR, USER);
+
+    expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
   });
 });
 
@@ -218,7 +268,9 @@ describe("CaseDebtorService.updateCaseDebtor", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new CaseDebtorService(mockPrisma as any);
+    // C1A: constructor 2 yeni parametre aldı; bu blok updateCaseDebtor'u test eder,
+    // removeCaseDebtor'a dokunmaz → boş mock yeter.
+    service = new CaseDebtorService(mockPrisma as any, {} as any, {} as any);
   });
 
   it("PASSIVE CaseDebtor üzerinde PUT mutasyonunu engeller", async () => {

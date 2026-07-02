@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import {
@@ -10,10 +11,19 @@ import {
   UpdateCaseDebtorDto,
   NotificationMode,
 } from "./dto/case-debtor.dto";
+import { AuditService } from "../audit/audit.service";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
 
 @Injectable()
 export class CaseDebtorService {
-  constructor(private prisma: PrismaService) {}
+  // C1A: OfficeApprovalService passivate capability-gate için (DebtorService.
+  // assertCanManageDebtorLifecycle / LawyerService.assertCanManageLawyerLifecycle ile birebir
+  // desen). AuditService @Global (AuditModule) — DebtorModule zaten import ediyor (Task D1A).
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
+  ) {}
 
   // ==================== CASE DEBTOR OPERATIONS ====================
 
@@ -200,9 +210,28 @@ export class CaseDebtorService {
     });
   }
 
+  /**
+   * C1A (owner-locked 2026-07-02) — CaseDebtor passivate yetkisi. ClientService.
+   * assertCanManageLifecycle / DebtorService.assertCanManageDebtorLifecycle / LawyerService.
+   * assertCanManageLawyerLifecycle / PoaService.assertCanManagePoaLifecycle ile BİREBİR desen
+   * (reuse, yeni altyapı YOK): PARTNER veya canApproveOfficeActions=true delege avukat.
+   */
+  private async assertCanManageCaseDebtorLifecycle(userId: string | undefined | null, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        "Dosya borçlusunu pasifleştirme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)"
+      );
+    }
+  }
+
   /// <remarks>
   /// Çağrıldığı yerler:
-  /// - CaseDebtorController.removeCaseDebtor() → DELETE /case-debtors/:id (dosya borçlusunu aktif işlem öznesi olmaktan çıkarır)
+  /// - CaseDebtorController.removeCaseDebtor() → DELETE /case-debtors/:id (dosya borçlusunu aktif işlem öznesi olmaktan çıkarır; userId req.user.id'den; Task C1A)
+  ///
+  /// Task C1A: passivate semantiği DEĞİŞMEDİ (lifecycleStatus=PASSIVE, hard delete YOK, zaten
+  /// PASSIVE ise no-op). Eklenen: capability gate (mutasyondan ÖNCE, addressTask iptali dahil hiçbir
+  /// yazma yetkisiz aktörle olmaz) + aynı transaction içinde AuditLog (yalnız GERÇEK geçiş olduğunda
+  /// — no-op dalında audit YOK, çünkü oldValues=newValues anlamsız olurdu).
   /// </remarks>
   async removeCaseDebtor(
     tenantId: string,
@@ -216,6 +245,10 @@ export class CaseDebtorService {
     if (!caseDebtor) {
       throw new NotFoundException("Dosya borçlusu bulunamadı");
     }
+
+    // C1A: passivate yetkisi — transaction'dan ÖNCE (yetkisiz aktör addressTask iptali dahil
+    // hiçbir yazma yapmaz).
+    await this.assertCanManageCaseDebtorLifecycle(currentUserId, tenantId);
 
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
@@ -239,7 +272,7 @@ export class CaseDebtorService {
         return caseDebtor;
       }
 
-      return tx.caseDebtor.update({
+      const updated = await tx.caseDebtor.update({
         where: { id: caseDebtorId },
         data: {
           lifecycleStatus: "PASSIVE",
@@ -250,6 +283,23 @@ export class CaseDebtorService {
           passivationEffectiveAt: null,
         },
       });
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: "CASE_DEBTOR_PASSIVATE",
+        entityType: "CASE_DEBTOR",
+        entityId: caseDebtorId,
+        userId: currentUserId ?? undefined,
+        oldValues: caseDebtor,
+        newValues: {
+          lifecycleStatus: "PASSIVE",
+          passivatedAt: now,
+          passivatedById: currentUserId ?? null,
+          passivationReason: "MANUAL",
+        },
+      });
+
+      return updated;
     });
   }
 
