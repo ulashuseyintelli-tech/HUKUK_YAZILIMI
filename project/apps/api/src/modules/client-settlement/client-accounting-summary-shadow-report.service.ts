@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -186,6 +186,48 @@ export interface ExpensePaymentBackfillEvidenceSummary {
   items: ExpensePaymentBackfillEvidenceItem[];
 }
 
+export type ExpenseReimbursementApplicationBackfillEvidenceStatus =
+  | 'MATCHED'
+  | 'BACKFILL_REQUIRED'
+  | 'VALUE_MISMATCH'
+  | 'DIMENSION_MISMATCH';
+
+export interface ExpenseReimbursementApplicationBackfillEvidenceItem {
+  expenseApplicationId: string;
+  expenseRequestId: string;
+  status: ExpenseReimbursementApplicationBackfillEvidenceStatus;
+  legacyValue: string | null;
+  journalValue: string | null;
+  delta: string | null;
+  blockerCodes: string[];
+  journalEntryId: string | null;
+  details: {
+    kind: string;
+    sourceAction: string;
+    caseId: string;
+    clientId: string | null;
+    currency: string;
+    collectionDispositionId: string;
+    collectionDispositionLineId: string;
+    reimbursementScope: string;
+    reversesApplicationId: string | null;
+    journalCaseId: string | null;
+    journalClientId: string | null;
+    journalCurrency: string | null;
+    journalExpenseRequestId: string | null;
+    journalExpenseApplicationId: string | null;
+    journalDispositionLineId: string | null;
+  };
+}
+
+export interface ExpenseReimbursementApplicationBackfillEvidenceSummary {
+  sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION';
+  sourceActions: ['apply', 'reversal'];
+  sourceVersionEvidence: 'idempotencyKey/sourceHash/sourceTuple';
+  statusCounts: Record<ExpenseReimbursementApplicationBackfillEvidenceStatus, number>;
+  blockerCodes: string[];
+  items: ExpenseReimbursementApplicationBackfillEvidenceItem[];
+}
 export interface ExpenseUnpaidJournalBreakdown {
   legacyValue: string;
   requestedJournalValue: string;
@@ -297,7 +339,9 @@ export interface ClientAccountingSummaryShadowReport {
   supportedValueSummary: ClientAccountingSummaryShadowSupportedValueSummary;
   expenseRequestBackfillEvidence?: ExpenseRequestBackfillEvidenceSummary;
   expensePaymentBackfillEvidence?: ExpensePaymentBackfillEvidenceSummary;
+  expenseReimbursementApplicationBackfillEvidence?: ExpenseReimbursementApplicationBackfillEvidenceSummary;
   expensePaidComparison?: ClientAccountingSummaryShadowValueComparison;
+  expenseReimbursementApplicationComparison?: ClientAccountingSummaryShadowValueComparison;
   expenseUnpaidBreakdown?: ExpenseUnpaidJournalBreakdown;
   replayEvidence?: ClientAccountingSummaryReplayEvidenceReport;
   blockerCodes: string[];
@@ -353,7 +397,7 @@ interface ExpensePaymentLegacyRow {
   expenseRequest: {
     id: string;
     caseId: string;
-    clientId: string;
+    clientId: string | null;
     currency: string;
     status: string;
   };
@@ -400,6 +444,37 @@ interface ExpensePaymentReversalEvidenceRow {
       expensePaymentId: string | null;
     }>;
   } | null;
+}
+interface ExpenseReimbursementApplicationRow {
+  id: string;
+  expenseRequestId: string;
+  caseId: string;
+  kind: string;
+  amount: { toString(): string };
+  currency: string;
+  collectionDispositionId: string;
+  collectionDispositionLineId: string;
+  reimbursementScope: string;
+  reversesApplicationId: string | null;
+}
+
+interface ExpenseReimbursementApplicationJournalEntryRow {
+  id: string;
+  sourceId: string;
+  sourceAction: string;
+  sourceHash: string | null;
+  idempotencyKey: string;
+  lines: Array<{
+    accountCode: string;
+    direction: string;
+    amount: { toString(): string };
+    currency: string;
+    caseId: string | null;
+    clientId: string | null;
+    expenseRequestId: string | null;
+    expenseApplicationId: string | null;
+    dispositionLineId: string | null;
+  }>;
 }
 interface ExpenseReceivableAdjustmentJournalLine {
   amount: { toString(): string };
@@ -469,6 +544,8 @@ interface ExpenseRequestShadowValues extends ClientAccountingSummaryShadowLegacy
   expenseUnpaidBreakdown: ExpenseUnpaidJournalBreakdown;
   expenseRequestBackfillEvidence: ExpenseRequestBackfillEvidenceSummary;
   expensePaymentBackfillEvidence: ExpensePaymentBackfillEvidenceSummary;
+  expenseReimbursementApplicationBackfillEvidence: ExpenseReimbursementApplicationBackfillEvidenceSummary;
+  expenseReimbursementApplicationComparison: ClientAccountingSummaryShadowValueComparison;
   replayEvidence: ClientAccountingSummaryReplayEvidenceReport;
 }
 
@@ -489,6 +566,9 @@ const EXPENSE_PAYMENT_REVERSAL_VALUE_MISMATCH = 'EXPENSE_PAYMENT_REVERSAL_VALUE_
 const EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH = 'EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH';
 const EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED = 'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED';
 const EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS = 'EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS';
+const EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING = 'EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING';
+const EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISMATCH = 'EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISMATCH';
+const EXPENSE_REIMBURSEMENT_APPLICATION_DIMENSION_MISMATCH = 'EXPENSE_REIMBURSEMENT_APPLICATION_DIMENSION_MISMATCH';
 const COLLECTION_REFUND_POLICY_UNMAPPED = 'COLLECTION_REFUND_POLICY_UNMAPPED';
 const COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED = 'COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED';
 const COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED = 'COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED';
@@ -549,8 +629,7 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
       'EXPENSE_PAYMENT_REVERSAL_DIMENSION_MISMATCH',
       'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED',
       'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
-      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
-    ],
+          ],
     gapCodes: [],
   },
   {
@@ -571,9 +650,8 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
     ],
     supportedSources: ['COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     blockerCodes: [
-      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
-      'EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING',
-      'EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISSING',
+        EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING,
+      EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISMATCH,
     ],
     gapCodes: [],
   },
@@ -651,8 +729,7 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     journalSources: ['EXPENSE_REQUEST', 'EXPENSE_PAYMENT', 'CLIENT_OFFSET', 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     blockerCodes: [
       'EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS',
-      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
-    ],
+          ],
     gapCodes: [],
   },
   {
@@ -908,8 +985,10 @@ export class ClientAccountingSummaryShadowReportService {
     | 'expensePaidComparison'
     | 'expenseUnpaidComparison'
     | 'expenseUnpaidBreakdown'
+    | 'expenseReimbursementApplicationComparison'
     | 'expenseRequestBackfillEvidence'
     | 'expensePaymentBackfillEvidence'
+    | 'expenseReimbursementApplicationBackfillEvidence'
   >> {
     const activeRequests = (await this.prisma!.expenseRequest.findMany({
       where: { tenantId: request.tenantId, clientId: request.clientId, currency, status: { not: 'CANCELLED' } },
@@ -1028,7 +1107,53 @@ export class ClientAccountingSummaryShadowReportService {
         },
       },
     })) as ExpensePaymentReversalEvidenceRow[];
-    const adjustmentLines = activeIds.length === 0 ? [] : (await this.prisma!.accountingJournalLine.findMany({
+    const reimbursementApplications = activeIds.length === 0 ? [] : (await this.prisma!.collectionDispositionExpenseApplication.findMany({
+      where: {
+        tenantId: request.tenantId,
+        currency,
+        expenseRequestId: { in: activeIds },
+      },
+      select: {
+        id: true,
+        expenseRequestId: true,
+        caseId: true,
+        kind: true,
+        amount: true,
+        currency: true,
+        collectionDispositionId: true,
+        collectionDispositionLineId: true,
+        reimbursementScope: true,
+        reversesApplicationId: true,
+      },
+    })) as ExpenseReimbursementApplicationRow[];
+    const reimbursementApplicationIds = reimbursementApplications.map((row) => row.id);
+    const reimbursementApplicationJournalEntries = reimbursementApplicationIds.length === 0 ? [] : (await this.prisma!.accountingJournalEntry.findMany({
+      where: {
+        tenantId: request.tenantId,
+        sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+        sourceId: { in: reimbursementApplicationIds },
+      },
+      select: {
+        id: true,
+        sourceId: true,
+        sourceAction: true,
+        sourceHash: true,
+        idempotencyKey: true,
+        lines: {
+          select: {
+            accountCode: true,
+            direction: true,
+            amount: true,
+            currency: true,
+            caseId: true,
+            clientId: true,
+            expenseRequestId: true,
+            expenseApplicationId: true,
+            dispositionLineId: true,
+          },
+        },
+      },
+    })) as ExpenseReimbursementApplicationJournalEntryRow[];    const adjustmentLines = activeIds.length === 0 ? [] : (await this.prisma!.accountingJournalLine.findMany({
       where: {
         tenantId: request.tenantId,
         accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
@@ -1051,6 +1176,8 @@ export class ClientAccountingSummaryShadowReportService {
 
     const settledCounts = await this.computeExpenseRequestSettledActivityCounts(request.tenantId, allIds);
     const requestEvidence = buildExpenseRequestBackfillEvidence(activeRequests, cancelledRequests, journalEntries, settledCounts);
+    const activeRequestById = new Map(activeRequests.map((row) => [row.id, row]));
+    const reimbursementEvidence = buildExpenseReimbursementApplicationBackfillEvidence(reimbursementApplications, reimbursementApplicationJournalEntries, activeRequestById);
     const paymentEvidence = buildExpensePaymentBackfillEvidence(payments, paymentJournalEntries, paymentReversals);
     const activePaymentIds = new Set(payments
       .filter((payment) => payment.expenseRequest.status !== 'CANCELLED')
@@ -1076,6 +1203,25 @@ export class ClientAccountingSummaryShadowReportService {
       ...(!paidDelta.equals(ZERO) ? [EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH] : []),
     ]);
 
+    const reimbursementLegacyValue = reimbursementApplications.reduce((sum, row) => row.kind === 'REVERSAL' ? sum.minus(decimalOf(row.amount)) : sum.plus(decimalOf(row.amount)), ZERO);
+    const reimbursementJournalValue = reimbursementEvidence.items.reduce((sum, item) => {
+      const value = decimalOf(item.journalValue ?? '0');
+      return item.details.kind === 'REVERSAL' ? sum.minus(value) : sum.plus(value);
+    }, ZERO);
+    const reimbursementDelta = reimbursementJournalValue.minus(reimbursementLegacyValue);
+    const reimbursementBlockerCodes = uniqueSorted([
+      ...reimbursementEvidence.blockerCodes,
+      ...(!reimbursementDelta.equals(ZERO) ? [EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISMATCH] : []),
+    ]);
+    const expenseReimbursementApplicationComparison: ClientAccountingSummaryShadowValueComparison = {
+      legacyValue: decimalToString(reimbursementLegacyValue),
+      journalValue: decimalToString(reimbursementJournalValue),
+      delta: decimalToString(reimbursementDelta),
+      status: reimbursementDelta.equals(ZERO) ? 'MATCH' : 'MISMATCH',
+      blockerCodes: reimbursementBlockerCodes,
+      blockerReason: reimbursementBlockerCodes[0] ?? null,
+    };
+
     const receivableAdjustments = expenseReceivableAdjustmentBreakdown(adjustmentLines);
     const unpaidLegacyValue = activeRequests.reduce((sum, row) => sum.plus(decimalOf(row.totalAmount).minus(decimalOf(row.paidTotal))), ZERO);
     const unpaidJournalValue = requestedJournalValue
@@ -1085,10 +1231,14 @@ export class ClientAccountingSummaryShadowReportService {
       .minus(receivableAdjustments.reimbursementApplied)
       .plus(receivableAdjustments.reimbursementReversal);
     const unpaidDelta = unpaidJournalValue.minus(unpaidLegacyValue);
-    const unpaidBlockerCodes = uniqueSorted([
-      EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS,
+    const unpaidComponentBlockerCodes = uniqueSorted([
       ...requestedBlockerCodes,
       ...paidBlockerCodes,
+      ...reimbursementBlockerCodes,
+    ]);
+    const unpaidBlockerCodes = uniqueSorted([
+      ...(unpaidComponentBlockerCodes.length > 0 || !unpaidDelta.equals(ZERO) ? [EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS] : []),
+      ...unpaidComponentBlockerCodes,
     ]);
 
     const expensePaidComparison: ClientAccountingSummaryShadowValueComparison = {
@@ -1135,8 +1285,10 @@ export class ClientAccountingSummaryShadowReportService {
         blockerReason: unpaidBlockerCodes[0] ?? null,
       },
       expenseUnpaidBreakdown,
+      expenseReimbursementApplicationComparison,
       expenseRequestBackfillEvidence: requestEvidence,
       expensePaymentBackfillEvidence: paymentEvidence,
+      expenseReimbursementApplicationBackfillEvidence: reimbursementEvidence,
     };
   }
   private async computeExpenseRequestSettledActivityCounts(
@@ -1193,7 +1345,9 @@ export class ClientAccountingSummaryShadowReportService {
       supportedValueSummary,
       expenseRequestBackfillEvidence: shadowValues?.expenseRequestBackfillEvidence,
       expensePaymentBackfillEvidence: shadowValues?.expensePaymentBackfillEvidence,
+      expenseReimbursementApplicationBackfillEvidence: shadowValues?.expenseReimbursementApplicationBackfillEvidence,
       expensePaidComparison: shadowValues?.expensePaidComparison,
+      expenseReimbursementApplicationComparison: shadowValues?.expenseReimbursementApplicationComparison,
       expenseUnpaidBreakdown: shadowValues?.expenseUnpaidBreakdown,
       replayEvidence: shadowValues?.replayEvidence,
       blockerCodes: uniqueSorted([
@@ -1202,6 +1356,8 @@ export class ClientAccountingSummaryShadowReportService {
         ...supportedValueSummary.blockerCodes,
         ...(shadowValues?.expenseRequestBackfillEvidence.blockerCodes ?? []),
         ...(shadowValues?.expensePaymentBackfillEvidence.blockerCodes ?? []),
+        ...(shadowValues?.expenseReimbursementApplicationBackfillEvidence.blockerCodes ?? []),
+        ...(shadowValues?.expenseReimbursementApplicationComparison.blockerCodes ?? []),
         ...(shadowValues?.replayEvidence.blockerCodes ?? []),
       ]),
       gapCodes: uniqueSorted([
@@ -1658,6 +1814,159 @@ function emptyExpenseRequestEvidenceStatusCounts(): Record<ExpenseRequestBackfil
   };
 }
 
+function buildExpenseReimbursementApplicationBackfillEvidence(
+  applications: ExpenseReimbursementApplicationRow[],
+  journalEntries: ExpenseReimbursementApplicationJournalEntryRow[],
+  activeRequestById: Map<string, ExpenseRequestLegacyRow>,
+): ExpenseReimbursementApplicationBackfillEvidenceSummary {
+  const entriesBySourceId = new Map<string, ExpenseReimbursementApplicationJournalEntryRow[]>();
+  for (const entry of journalEntries) {
+    const entries = entriesBySourceId.get(entry.sourceId) ?? [];
+    entries.push(entry);
+    entriesBySourceId.set(entry.sourceId, entries);
+  }
+  const items = applications.map((application) => buildExpenseReimbursementApplicationEvidenceItem(
+    application,
+    entriesBySourceId.get(application.id) ?? [],
+    activeRequestById.get(application.expenseRequestId) ?? null,
+  ));
+  const statusCounts = emptyExpenseReimbursementApplicationEvidenceStatusCounts();
+
+  for (const item of items) {
+    statusCounts[item.status] += 1;
+  }
+
+  return {
+    sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+    sourceActions: ['apply', 'reversal'],
+    sourceVersionEvidence: 'idempotencyKey/sourceHash/sourceTuple',
+    statusCounts,
+    blockerCodes: uniqueSorted(items.flatMap((item) => item.blockerCodes)),
+    items,
+  };
+}
+
+function buildExpenseReimbursementApplicationEvidenceItem(
+  application: ExpenseReimbursementApplicationRow,
+  entries: ExpenseReimbursementApplicationJournalEntryRow[],
+  request: ExpenseRequestLegacyRow | null,
+): ExpenseReimbursementApplicationBackfillEvidenceItem {
+  const legacyValue = decimalOf(application.amount);
+  const sourceAction = application.kind === 'REVERSAL' ? 'reversal' : 'apply';
+  const expectedDirection = application.kind === 'REVERSAL' ? 'DEBIT' : 'CREDIT';
+  const entry = entries.find((candidate) => candidate.sourceAction === sourceAction) ?? entries[0] ?? null;
+  const receivableLine = entry?.lines.find((line) => (
+    line.accountCode === 'CLIENT_EXPENSE_RECEIVABLE' &&
+    line.direction === expectedDirection &&
+    line.expenseApplicationId === application.id
+  )) ?? null;
+  const journalValue = receivableLine ? decimalOf(receivableLine.amount) : ZERO;
+  const delta = journalValue.minus(legacyValue);
+
+  if (!entry || !receivableLine) {
+    return expenseReimbursementApplicationEvidenceItem(
+      application,
+      request,
+      sourceAction,
+      'BACKFILL_REQUIRED',
+      legacyValue,
+      journalValue,
+      delta,
+      [EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING],
+      entry,
+      receivableLine,
+    );
+  }
+
+  const dimensionMismatch = !request ||
+    receivableLine.caseId !== application.caseId ||
+    receivableLine.clientId !== request.clientId ||
+    receivableLine.currency !== application.currency ||
+    receivableLine.expenseRequestId !== application.expenseRequestId ||
+    receivableLine.expenseApplicationId !== application.id ||
+    receivableLine.dispositionLineId !== application.collectionDispositionLineId;
+  if (dimensionMismatch) {
+    return expenseReimbursementApplicationEvidenceItem(
+      application,
+      request,
+      sourceAction,
+      'DIMENSION_MISMATCH',
+      legacyValue,
+      journalValue,
+      delta,
+      [EXPENSE_REIMBURSEMENT_APPLICATION_DIMENSION_MISMATCH],
+      entry,
+      receivableLine,
+    );
+  }
+
+  if (!delta.equals(ZERO)) {
+    return expenseReimbursementApplicationEvidenceItem(
+      application,
+      request,
+      sourceAction,
+      'VALUE_MISMATCH',
+      legacyValue,
+      journalValue,
+      delta,
+      [EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISMATCH],
+      entry,
+      receivableLine,
+    );
+  }
+
+  return expenseReimbursementApplicationEvidenceItem(application, request, sourceAction, 'MATCHED', legacyValue, journalValue, delta, [], entry, receivableLine);
+}
+
+function expenseReimbursementApplicationEvidenceItem(
+  application: ExpenseReimbursementApplicationRow,
+  request: ExpenseRequestLegacyRow | null,
+  sourceAction: string,
+  status: ExpenseReimbursementApplicationBackfillEvidenceStatus,
+  legacyValue: Prisma.Decimal,
+  journalValue: Prisma.Decimal,
+  delta: Prisma.Decimal,
+  blockerCodes: string[],
+  entry: ExpenseReimbursementApplicationJournalEntryRow | null,
+  line: ExpenseReimbursementApplicationJournalEntryRow['lines'][number] | null,
+): ExpenseReimbursementApplicationBackfillEvidenceItem {
+  return {
+    expenseApplicationId: application.id,
+    expenseRequestId: application.expenseRequestId,
+    status,
+    legacyValue: decimalToString(legacyValue),
+    journalValue: decimalToString(journalValue),
+    delta: decimalToString(delta),
+    blockerCodes,
+    journalEntryId: entry?.id ?? null,
+    details: {
+      kind: application.kind,
+      sourceAction,
+      caseId: application.caseId,
+      clientId: request?.clientId ?? null,
+      currency: application.currency,
+      collectionDispositionId: application.collectionDispositionId,
+      collectionDispositionLineId: application.collectionDispositionLineId,
+      reimbursementScope: application.reimbursementScope,
+      reversesApplicationId: application.reversesApplicationId,
+      journalCaseId: line?.caseId ?? null,
+      journalClientId: line?.clientId ?? null,
+      journalCurrency: line?.currency ?? null,
+      journalExpenseRequestId: line?.expenseRequestId ?? null,
+      journalExpenseApplicationId: line?.expenseApplicationId ?? null,
+      journalDispositionLineId: line?.dispositionLineId ?? null,
+    },
+  };
+}
+
+function emptyExpenseReimbursementApplicationEvidenceStatusCounts(): Record<ExpenseReimbursementApplicationBackfillEvidenceStatus, number> {
+  return {
+    MATCHED: 0,
+    BACKFILL_REQUIRED: 0,
+    VALUE_MISMATCH: 0,
+    DIMENSION_MISMATCH: 0,
+  };
+}
 function buildExpensePaymentBackfillEvidence(
   payments: ExpensePaymentLegacyRow[],
   journalEntries: ExpensePaymentRecordedJournalEntryRow[],
