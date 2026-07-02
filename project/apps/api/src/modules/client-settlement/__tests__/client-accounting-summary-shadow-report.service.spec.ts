@@ -1742,6 +1742,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         ]),
         blockerCodes: expect.arrayContaining([
           'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
+          'COLLECTION_JOURNAL_SOURCE_MISSING',
           'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
           'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
         ]),
@@ -1749,6 +1750,42 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     );
     expect(report.clientScopedPrimaryReaderEvidence?.comparisons.expenseUnpaid).toEqual(
       expect.objectContaining({ legacyValue: '68', journalValue: '68', delta: '0', status: 'MATCH', blockerCodes: [] }),
+    );
+    expect(report.summaryPrimarySwitchReadiness).toEqual(
+      expect.objectContaining({
+        sourceVersion: 'acct-cutover-3e4b2f3a-summary-primary-switch-readiness-v1',
+        status: 'BLOCKED',
+        primarySwitchUnchanged: true,
+        safeForPrimaryCutover: false,
+        primarySwitchBlockerReason: 'RAW_COLLECTION_AND_CASE_SCOPED_SUMMARY_NOT_JOURNAL_DERIVED',
+        clientScopedParity: { status: 'MATCH', blockerCodes: [] },
+        rawCollectionJournalSource: {
+          requiredFor: 'caseScopedContext.debtorCollection',
+          status: 'MISSING',
+          blockerCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING', 'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING'],
+        },
+        blockerCodes: expect.arrayContaining([
+          'JOURNAL_DERIVED_CLIENT_ACCOUNTING_SUMMARY_READER_MISSING',
+          'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
+          'COLLECTION_JOURNAL_SOURCE_MISSING',
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+          'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
+          'SUMMARY_DERIVED_FROM_BLOCKED_PENDING_DISTRIBUTION',
+        ]),
+        gapCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING'],
+      }),
+    );
+    expect(report.summaryPrimarySwitchReadiness.caseScopedReadiness).toEqual(
+      expect.objectContaining({
+        status: 'BLOCKED',
+        unsupportedResponsePaths: expect.arrayContaining([
+          'caseScopedContext.debtorCollection',
+          'caseScopedContext.pendingDistribution',
+          'caseScopedContext.advanceBalance',
+          'caseBreakdown',
+          'needsReview',
+        ]),
+      }),
     );
     expect(component(report, 'debtorCollection').valueComparison).toBeUndefined();
     expect(component(report, 'advanceBalance').valueComparison).toEqual(
@@ -1792,7 +1829,13 @@ describe('ClientAccountingSummaryShadowReportService', () => {
           advanceBalanceLegacyValue: '75',
           advanceBalanceJournalValue: '75',
         }),
-        unsupportedResponsePaths: ['caseScopedContext.debtorCollection', 'caseBreakdown', 'needsReview'],
+        unsupportedResponsePaths: [
+          'caseScopedContext.debtorCollection',
+          'caseScopedContext.pendingDistribution',
+          'caseScopedContext.advanceBalance',
+          'caseBreakdown',
+          'needsReview',
+        ],
         blockerCodes: expect.arrayContaining([
           'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
           'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
@@ -1804,6 +1847,22 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     );
     expect(report.caseScopedPrimaryReaderEvidence?.comparisons.advanceBalance).toEqual(
       expect.objectContaining({ legacyValue: '75', journalValue: '75', delta: '0', status: 'MATCH', blockerCodes: [] }),
+    );
+    expect(report.summaryPrimarySwitchReadiness.caseScopedReadiness).toEqual(
+      expect.objectContaining({
+        status: 'BLOCKED',
+        unsupportedResponsePaths: [
+          'caseScopedContext.debtorCollection',
+          'caseScopedContext.pendingDistribution',
+          'caseScopedContext.advanceBalance',
+          'caseBreakdown',
+          'needsReview',
+        ],
+        blockerCodes: expect.arrayContaining([
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+          'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
+        ]),
+      }),
     );
     expect(component(report, 'pendingDistribution').valueComparison).toEqual(
       expect.objectContaining({ legacyValue: '600', journalValue: '600', delta: '0', status: 'MATCH' }),
