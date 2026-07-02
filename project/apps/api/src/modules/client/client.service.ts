@@ -247,6 +247,11 @@ export class ClientService {
         contacts: true,
         bankAccounts: true,
         powerOfAttorneys: true,
+        // ClientAddress-4: yalnız güncel adresler, birincil önce (Workspace UI listesi bu sırayı bekler).
+        addresses: {
+          where: { isCurrent: true },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        },
       },
     });
   }

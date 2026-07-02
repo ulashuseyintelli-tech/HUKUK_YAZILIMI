@@ -14,7 +14,7 @@
  * Muhasebe/Banka ayrı kapsamdır.
  * Mock fallback YOK; hata/boş durumları açıkça gösterilir.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
   User,
@@ -36,6 +36,7 @@ import { ClientIntelligenceTab } from '@/components/client/client-intelligence-t
 import { ClientIntakeTab } from '@/components/client/client-intake-tab';
 import { ClientInfoRequestsTab } from '@/components/client/client-info-requests-tab';
 import { ClientPortalTab } from '@/components/client/client-portal-tab';
+import { ClientAddressSection } from '@/components/client/client-address-section';
 import {
   clientDisplayName,
   clientIdentity,
@@ -112,14 +113,29 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>('overview');
 
+  const loadClient = useCallback(async () => {
+    const res = await api.getClient(clientId);
+    return (res?.data ?? null) as Client | null;
+  }, [clientId]);
+
+  // ClientAddress-4: adres CRUD sonrası hafif yenileme — tam sayfa loading/error state'ini
+  // tetiklemez, mevcut tab konumu ve diğer alanlar korunur.
+  const refreshClient = async () => {
+    try {
+      const c = await loadClient();
+      setClient(c);
+    } catch {
+      // sessiz — mevcut client state korunur
+    }
+  };
+
   useEffect(() => {
     let active = true;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await api.getClient(clientId);
-        const c = (res?.data ?? null) as Client | null;
+        const c = await loadClient();
         if (active) setClient(c);
         // Dosyalar ayrı endpoint (GET /cases?clientId; findOne cases döndürmez).
         try {
@@ -138,7 +154,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     return () => {
       active = false;
     };
-  }, [clientId]);
+  }, [clientId, loadClient]);
 
   if (loading) {
     return (
@@ -293,7 +309,12 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
               </Section>
 
               <Section title="Adres">
-                <p className="col-span-full text-sm text-gray-700">{address || 'Adres kayıtlı değil.'}</p>
+                <ClientAddressSection
+                  clientId={clientId}
+                  addresses={client.addresses ?? []}
+                  fallbackAddress={address}
+                  onChanged={refreshClient}
+                />
               </Section>
             </div>
           )}
