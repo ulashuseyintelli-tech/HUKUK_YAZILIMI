@@ -15,6 +15,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { AuditService } from '../audit/audit.service';
 import {
   CreateCaseFeeAgreementInput,
   UpdateCaseFeeAgreementInput,
@@ -45,6 +46,7 @@ export class CaseFeeAgreementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly officeApproval: OfficeApprovalService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -66,6 +68,8 @@ export class CaseFeeAgreementService {
     const norm = this.validateFeeShape(input);
     await this.assertCaseClientInTenant(tenantId, input.caseClientId);
 
+    const caseId = await this.resolveCaseId(input.caseClientId);
+
     const created = await this.prisma.$transaction(async (tx) => {
       const existingActive = await tx.caseFeeAgreement.findFirst({
         where: { tenantId, caseClientId: input.caseClientId, status: FeeAgreementStatus.ACTIVE },
@@ -76,7 +80,7 @@ export class CaseFeeAgreementService {
           'Bu müvekkil için zaten ACTIVE ücret sözleşmesi var; güncelleyin (edit = yeni versiyon)',
         );
       }
-      return tx.caseFeeAgreement.create({
+      const row = await tx.caseFeeAgreement.create({
         data: {
           tenantId,
           caseClientId: input.caseClientId,
@@ -90,6 +94,26 @@ export class CaseFeeAgreementService {
           createdById: actor.userId,
         },
       });
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CASE_FEE_AGREEMENT_CREATE',
+        entityType: 'CASE_FEE_AGREEMENT',
+        entityId: row.id,
+        userId: actor.userId,
+        newValues: {
+          caseId,
+          caseClientId: row.caseClientId,
+          feeType: row.feeType,
+          flatAmount: row.flatAmount,
+          percentageBps: row.percentageBps,
+          feeBase: row.feeBase,
+          status: row.status,
+          effectiveFrom: row.effectiveFrom,
+        },
+      });
+
+      return row;
     });
 
     this.logger.log(`CaseFeeAgreement created: ${created.id} (caseClient=${input.caseClientId}, ${input.feeType})`);
@@ -118,7 +142,10 @@ export class CaseFeeAgreementService {
     const created = await this.prisma.$transaction(async (tx) => {
       const current = await tx.caseFeeAgreement.findFirst({
         where: { id: agreementId, tenantId },
-        select: { id: true, caseClientId: true, status: true },
+        select: {
+          id: true, caseClientId: true, status: true, feeType: true,
+          flatAmount: true, percentageBps: true, feeBase: true, effectiveFrom: true, note: true,
+        },
       });
       if (!current) throw new NotFoundException('Ücret sözleşmesi bulunamadı');
       if (current.status !== FeeAgreementStatus.ACTIVE) {
@@ -132,7 +159,7 @@ export class CaseFeeAgreementService {
       if (fenced.count === 0) {
         throw new ConflictException('Sözleşme eşzamanlı değişti (ACTIVE değil); güncelleme uygulanmadı');
       }
-      return tx.caseFeeAgreement.create({
+      const fresh = await tx.caseFeeAgreement.create({
         data: {
           tenantId,
           caseClientId: current.caseClientId, // değiştirilemez (mevcut sözleşmeden devralınır)
@@ -147,6 +174,38 @@ export class CaseFeeAgreementService {
           createdById: actor.userId,
         },
       });
+
+      const caseId = await this.resolveCaseId(current.caseClientId);
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CASE_FEE_AGREEMENT_UPDATE',
+        entityType: 'CASE_FEE_AGREEMENT',
+        entityId: agreementId,
+        userId: actor.userId,
+        oldValues: {
+          caseId,
+          status: current.status,
+          feeType: current.feeType,
+          flatAmount: current.flatAmount,
+          percentageBps: current.percentageBps,
+          feeBase: current.feeBase,
+          effectiveFrom: current.effectiveFrom,
+          note: current.note,
+        },
+        newValues: {
+          caseId,
+          status: FeeAgreementStatus.SUPERSEDED,
+          newAgreementId: fresh.id,
+          feeType: fresh.feeType,
+          flatAmount: fresh.flatAmount,
+          percentageBps: fresh.percentageBps,
+          feeBase: fresh.feeBase,
+          effectiveFrom: fresh.effectiveFrom,
+          note: fresh.note,
+        },
+      });
+
+      return fresh;
     });
 
     this.logger.log(`CaseFeeAgreement updated (new version): ${created.id} supersedes ${agreementId}`);
@@ -168,13 +227,50 @@ export class CaseFeeAgreementService {
   ): Promise<CaseFeeAgreement> {
     if (!actor?.userId) throw new BadRequestException('terminate için actor (userId) gerekir');
     await this.assertCanManage(actor.userId, tenantId);
-    const upd = await this.prisma.caseFeeAgreement.updateMany({
-      where: { id: agreementId, tenantId, status: FeeAgreementStatus.ACTIVE },
-      data: { status: FeeAgreementStatus.TERMINATED },
+
+    await this.prisma.$transaction(async (tx) => {
+      // A1A: oldValues snapshot — tx üzerinden (transaction-tutarlı okuma). updateMany'nin
+      // count-tabanlı ACTIVE/yok-ayrımına DOKUNMAZ (aynı where + aynı Conflict davranışı korunur;
+      // bu yalnız audit zenginleştirmesi, bulunamazsa oldValues eksik kalır ama akış değişmez).
+      const before = await tx.caseFeeAgreement.findFirst({
+        where: { id: agreementId, tenantId },
+        select: {
+          id: true, caseClientId: true, status: true, feeType: true,
+          flatAmount: true, percentageBps: true, feeBase: true, effectiveFrom: true, note: true,
+        },
+      });
+
+      const upd = await tx.caseFeeAgreement.updateMany({
+        where: { id: agreementId, tenantId, status: FeeAgreementStatus.ACTIVE },
+        data: { status: FeeAgreementStatus.TERMINATED },
+      });
+      if (upd.count === 0) {
+        throw new ConflictException('Sonlandırılacak ACTIVE sözleşme bulunamadı (durum ACTIVE değil veya kayıt yok)');
+      }
+
+      const caseId = before ? await this.resolveCaseId(before.caseClientId) : null;
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CASE_FEE_AGREEMENT_TERMINATE',
+        entityType: 'CASE_FEE_AGREEMENT',
+        entityId: agreementId,
+        userId: actor.userId,
+        oldValues: before
+          ? {
+              caseId,
+              status: before.status,
+              feeType: before.feeType,
+              flatAmount: before.flatAmount,
+              percentageBps: before.percentageBps,
+              feeBase: before.feeBase,
+              effectiveFrom: before.effectiveFrom,
+              note: before.note,
+            }
+          : undefined,
+        newValues: { caseId, status: FeeAgreementStatus.TERMINATED },
+      });
     });
-    if (upd.count === 0) {
-      throw new ConflictException('Sonlandırılacak ACTIVE sözleşme bulunamadı (durum ACTIVE değil veya kayıt yok)');
-    }
+
     this.logger.log(`CaseFeeAgreement terminated: ${agreementId}`);
     return this.getById(tenantId, agreementId);
   }
@@ -282,5 +378,15 @@ export class CaseFeeAgreementService {
       select: { id: true },
     });
     if (!cc) throw new BadRequestException('caseClientId geçersiz/yabancı (tenant dışı veya yok)');
+  }
+
+  /**
+   * A1A: caseClientId → caseId (audit metadata zenginleştirme; salt-okuma, lifecycle'a etkisi yok).
+   * Kasıtlı olarak DIŞ `this.prisma` kullanır (tx değil) — CaseClient→Case ilişkisi sabittir,
+   * transaction'ın atomiklik garantisine ihtiyaç duymaz.
+   */
+  private async resolveCaseId(caseClientId: string): Promise<string | null> {
+    const cc = await this.prisma.caseClient.findFirst({ where: { id: caseClientId }, select: { caseId: true } });
+    return cc?.caseId ?? null;
   }
 }

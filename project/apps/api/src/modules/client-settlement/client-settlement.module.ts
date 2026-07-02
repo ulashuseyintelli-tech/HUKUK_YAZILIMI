@@ -2,6 +2,7 @@
 import { PrismaModule } from '../../prisma/prisma.module';
 import { V28EngineModule } from '../icrabot/v28-engine/v28-engine.module';
 import { OfficeApprovalModule } from '../office-approval/office-approval.module';
+import { AuditModule } from '../audit/audit.module';
 import { AccountingJournalWriterService } from '../accounting-journal';
 import { AccountingJournalTrialBalanceModule } from '../accounting-journal/accounting-journal-trial-balance.module';
 import { CollectionDispositionService } from './collection-disposition.service';
@@ -39,7 +40,7 @@ import { CaseFeeAgreementController } from './case-fee-agreement.controller';
  *      manuel-reversal-required olarak consume eder (ayri exact key; M1 handler'ina dokunmaz).
  */
 @Module({
-  imports: [PrismaModule, V28EngineModule, OfficeApprovalModule, AccountingJournalTrialBalanceModule],
+  imports: [PrismaModule, V28EngineModule, OfficeApprovalModule, AuditModule, AccountingJournalTrialBalanceModule],
   controllers: [
     DispositionController,
     ClientPayoutController,
