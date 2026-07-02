@@ -218,6 +218,7 @@ model Tenant {
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
+  clientDocumentRequests ClientDocumentRequest[]
   uyapQueries        UyapQuery[]
   institutionLetters InstitutionLetter[]
   addressResearches  AddressResearch[]
@@ -476,6 +477,7 @@ model Client {
   clientStatements        ClientStatement[] // Müvekkil ekstresi (PR-3)
   clientIntakeLinks       ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
   clientIntakeLinkDeliveries ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
+  clientDocumentRequests ClientDocumentRequest[] // Workspace document request artifact kayitlari
   clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
   portalUser              ClientPortalUser?
 
@@ -1167,6 +1169,7 @@ model Case {
   clientIntelStatements   ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
   clientIntakeLinks       ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
   clientIntakeLinkDeliveries ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
+  clientDocumentRequests ClientDocumentRequest[] // Workspace document request artifact kayitlari
   clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
 
   // Address Discovery
@@ -3367,6 +3370,7 @@ model ClientNotification {
   dedupeKey String?
 
   intakeLinkDeliveries ClientIntakeLinkDelivery[]
+  documentRequests     ClientDocumentRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4308,6 +4312,46 @@ model ClientIntakeLinkDelivery {
   @@index([status])
 }
 
+// Client Workspace document request typed command artifact.
+// Security: raw recipient/body/token/provider payload is not persisted; notification body is rendered later.
+model ClientDocumentRequest {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  requestedDocumentCodes String[]
+  templateCode           String
+
+  idempotencyKey String
+  dedupeKey      String
+  channel        String                      @default("EMAIL")
+  status         ClientDocumentRequestStatus @default(PENDING)
+
+  notificationId String?
+  notification   ClientNotification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+
+  attemptCount Int       @default(0)
+  lastError    String?   @db.Text
+  sentAt       DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, dedupeKey])
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([caseId])
+  @@index([notificationId])
+  @@index([status])
+  @@index([tenantId, clientId, status, createdAt])
+}
 model ClientIntakeSubmission {
   id       String @id @default(cuid())
   tenantId String
@@ -4379,6 +4423,12 @@ enum ClientIntakeLinkDeliveryStatus {
   FAILED
 }
 
+enum ClientDocumentRequestStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+}
 enum ClientIntakeSubmissionStatus {
   CLIENT_SUBMITTED // Müvekkil gönderdi — henüz incelenmedi (kanonik DEĞİL)
   IN_REVIEW
