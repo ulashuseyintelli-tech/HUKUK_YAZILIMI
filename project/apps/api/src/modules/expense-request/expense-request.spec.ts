@@ -666,9 +666,15 @@ describe('ExpenseRequestService - Property Tests', () => {
 
 describe('ExpenseGateService - Property Tests', () => {
   let gateService: ExpenseGateService;
+  // ROLL-002: Prisma @prisma/client import aninda .env'i process.env'e yukler (bkz test/test-db-env.ts) -
+  // gercek .env'de EXPENSE_REMAINING_GATE_ENABLED=true olabilir (owner activation rollout). beforeEach her
+  // testi deterministik/temiz baslatir (flag-off, mevcut count-bazli testlerin varsaydigi durum); flag-ON
+  // gereken testler kendi ihtiyaclarini beforeEach'ten SONRA set eder.
+  const ORIGINAL_GATE_FLAG = process.env.EXPENSE_REMAINING_GATE_ENABLED;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    delete process.env.EXPENSE_REMAINING_GATE_ENABLED;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -679,6 +685,11 @@ describe('ExpenseGateService - Property Tests', () => {
     }).compile();
 
     gateService = module.get<ExpenseGateService>(ExpenseGateService);
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_GATE_FLAG === undefined) delete process.env.EXPENSE_REMAINING_GATE_ENABLED;
+    else process.env.EXPENSE_REMAINING_GATE_ENABLED = ORIGINAL_GATE_FLAG;
   });
 
   describe('Property 5: Gate Mechanism Consistency', () => {
@@ -787,6 +798,64 @@ describe('ExpenseGateService - Property Tests', () => {
       const result = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
 
       expect(result).toBe(true);
+    });
+  });
+
+  describe('ROLL-002: isUyapBlockedLegacy flag reconcile (canPerformUyapAction/isUyapBlocked <-> checkGate)', () => {
+    it('flag OFF (default): count-bazli path korunur, computeExpenseRemaining HIC cagrilmaz', async () => {
+      mockPrismaService.expenseRequest.count.mockResolvedValue(1);
+
+      const blocked = await gateService.isUyapBlocked('case-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+
+      expect(blocked).toBe(true);
+      expect(canPerform).toBe(false);
+      expect(mockPrismaService.expenseRequest.findMany).not.toHaveBeenCalled();
+      expect(mockClientSettlementReadService.computeExpenseRemaining).not.toHaveBeenCalled();
+    });
+
+    it('flag ON: status PENDING ama computeExpenseRemaining=0 (offset/reimbursement ile kapanmis) -> isUyapBlocked=false (ONCEDEN her zaman true olurdu)', async () => {
+      process.env.EXPENSE_REMAINING_GATE_ENABLED = 'true';
+      mockPrismaService.expenseRequest.findMany.mockResolvedValue([
+        { id: 'exp-1', tenantId: 't1', stageCode: 'OPENING', totalAmount: new Decimal(1000), paidTotal: new Decimal(0), status: 'PENDING' },
+      ]);
+      mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValue(new Decimal(0));
+
+      const blocked = await gateService.isUyapBlocked('case-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+
+      expect(blocked).toBe(false);
+      expect(canPerform).toBe(true);
+      expect(mockPrismaService.expenseRequest.count).not.toHaveBeenCalled();
+    });
+
+    it('flag ON: computeExpenseRemaining>0 (gercek borc) -> isUyapBlocked=true (regresyon yok)', async () => {
+      process.env.EXPENSE_REMAINING_GATE_ENABLED = 'true';
+      mockPrismaService.expenseRequest.findMany.mockResolvedValue([
+        { id: 'exp-1', tenantId: 't1', stageCode: 'OPENING', totalAmount: new Decimal(1000), paidTotal: new Decimal(0), status: 'PENDING' },
+      ]);
+      mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValue(new Decimal(1000));
+
+      const blocked = await gateService.isUyapBlocked('case-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+
+      expect(blocked).toBe(true);
+      expect(canPerform).toBe(false);
+    });
+
+    it('flag ON: canPerformUyapAction SUBMIT ile checkGate/getGateSummary AYNI karari verir (tutarlilik)', async () => {
+      process.env.EXPENSE_REMAINING_GATE_ENABLED = 'true';
+      mockPrismaService.expenseRequest.findMany.mockResolvedValue([
+        { id: 'exp-1', tenantId: 't1', stageCode: 'OPENING', totalAmount: new Decimal(500), paidTotal: new Decimal(0), status: 'PENDING' },
+      ]);
+      mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValue(new Decimal(0));
+
+      const summary = await gateService.getGateSummary('case-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+
+      expect(summary.canSubmitToUyap).toBe(true);
+      expect(canPerform).toBe(true);
+      expect(canPerform).toBe(summary.canSubmitToUyap);
     });
   });
 });
