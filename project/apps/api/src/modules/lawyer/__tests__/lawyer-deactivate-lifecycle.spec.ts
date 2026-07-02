@@ -109,3 +109,40 @@ describe("L1A LawyerService.delete() — deactivate lifecycle", () => {
     await expect(svc.delete(TENANT, LAWYER_ID, { userId: "u1" })).rejects.toThrow(NotFoundException);
   });
 });
+
+/**
+ * H1 (characterization) — sorumlu avukat (CaseLawyer.isResponsible) invariant.
+ * Bu bir DÜZELTME değildir: delete()/deactivate akışının CaseLawyer tablosuna HİÇ
+ * dokunmadığı (L1A'nın kasıtlı tasarımı) mevcut davranışını kilitler. Sonuç: bir dosyada
+ * "sorumlu" işaretli avukat pasifleştirildiğinde CaseLawyer.isResponsible satırı DEĞİŞMEDEN
+ * kalır — dosya, artık pasif bir avukatı sorumlu göstermeye devam eder. Bu invariant'ı
+ * düzeltmek (devir/uyarı vb.) bilinçli olarak bu görevin KAPSAMI DIŞINDADIR.
+ */
+describe("H1 (characterization) — sorumlu avukat (CaseLawyer.isResponsible) invariant", () => {
+  it("dosyada SORUMLU avukat pasifleştirilir → CaseLawyer/isResponsible ilişkisine HİÇ dokunulmaz", async () => {
+    const { svc, prisma } = build();
+    // Sahne: LAWYER_ID, c1 dosyasında isResponsible:true. delete() bu satırı HİÇ okumaz/yazmaz.
+    const responsibleRow = { id: "cl1", caseId: "c1", lawyerId: LAWYER_ID, isResponsible: true };
+    prisma.caseLawyer.findFirst = jest.fn().mockResolvedValue(responsibleRow);
+    prisma.caseLawyer.findMany = jest.fn().mockResolvedValue([responsibleRow]);
+    prisma.caseLawyer.updateMany = jest.fn();
+
+    await svc.delete(TENANT, LAWYER_ID, { userId: "u1" });
+
+    expect(prisma.caseLawyer.findFirst).not.toHaveBeenCalled();
+    expect(prisma.caseLawyer.findMany).not.toHaveBeenCalled();
+    expect(prisma.caseLawyer.updateMany).not.toHaveBeenCalled();
+    expect(prisma.caseLawyer.deleteMany).not.toHaveBeenCalled();
+    // Fixture satırına hiç dokunulmadığı için değişmeden kalır (isResponsible hâlâ true) —
+    // dosya c1, artık isActive:false olan bu avukatı sorumlu göstermeye devam eder.
+    expect(responsibleRow.isResponsible).toBe(true);
+  });
+
+  it("audit metadata'sında CaseLawyer/sorumluluk-sayısı alanı YOKTUR (mevcut davranış — L1A tasarımı gereği CaseLawyer'a hiç erişilmez)", async () => {
+    const { svc, audit } = build();
+    await svc.delete(TENANT, LAWYER_ID, { userId: "u1" });
+    const metadata = audit.logInTransaction.mock.calls[0][1].metadata;
+    expect(metadata).not.toHaveProperty("affectedCaseLawyerCount");
+    expect(metadata).not.toHaveProperty("responsibleCases");
+  });
+});
