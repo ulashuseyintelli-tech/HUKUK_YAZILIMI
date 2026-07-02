@@ -51,6 +51,7 @@ export type ClientActionKey =
   | 'intake.link.send'
   | 'poa.reminder.send'
   | 'notification.template.send'
+  | 'document.request.send'
   | 'case.open_related'
   | 'activity.view_timeline';
 
@@ -98,6 +99,25 @@ export interface ClientTemplateNotificationSendInput {
 }
 
 export type ClientTemplateNotificationSendStatus = 'sent' | 'skipped' | 'failed';
+
+export const CLIENT_DOCUMENT_REQUEST_CODES = ['GENEL_BELGE', 'DOSYA_EVRAKI'] as const;
+export type ClientDocumentRequestCode = typeof CLIENT_DOCUMENT_REQUEST_CODES[number];
+
+export interface ClientDocumentRequestSendInput {
+  documentCodes: ClientDocumentRequestCode[];
+  caseId?: string;
+}
+
+export type ClientDocumentRequestSendStatus = 'sent' | 'skipped' | 'failed';
+
+export interface ClientDocumentRequestSendResult {
+  clientId: string;
+  caseId: string;
+  documentCodes: ClientDocumentRequestCode[];
+  status: ClientDocumentRequestSendStatus;
+  documentRequestId: string;
+  notificationId?: string;
+}
 
 export interface ClientTemplateNotificationSendResult {
   clientId: string;
@@ -198,6 +218,8 @@ const CLIENT_POA_REMINDER_WINDOW_KEY = 'D30';
 const CLIENT_POA_DELIVERY_LOCK_TIMEOUT_MS = 15 * 60 * 1000;
 const CLIENT_POA_DELIVERY_MAX_ATTEMPTS = 3;
 const CLIENT_TEMPLATE_NOTIFICATION_DEDUPE_PREFIX = 'CLIENT_WORKSPACE_TEMPLATE_NOTIFICATION';
+const CLIENT_DOCUMENT_REQUEST_TEMPLATE_CODE = 'CLIENT_DOCUMENT_REQUEST_V1';
+const CLIENT_DOCUMENT_REQUEST_DEDUPE_PREFIX = 'CLIENT_WORKSPACE_DOCUMENT_REQUEST';
 
 /** Müvekkil için contact-task dedupe anahtarı (tek aktif görev garantisi). */
 export function contactTaskDedupeKey(clientId: string): string {
@@ -428,9 +450,10 @@ export class ClientService {
     });
     if (!client) throw new NotFoundException('Client not found');
 
-    const [poaReminderDelivery, templateNotificationAction] = await Promise.all([
+    const [poaReminderDelivery, templateNotificationAction, documentRequestAction] = await Promise.all([
       this.getPoaReminderDeliveryState(tenantId, client.id, client.powerOfAttorneys),
       this.getTemplateNotificationActionAvailability(tenantId, client),
+      this.getDocumentRequestActionAvailability(tenantId, client),
     ]);
 
     return {
@@ -439,6 +462,7 @@ export class ClientService {
         client,
         poaReminderDelivery,
         templateNotificationAction,
+        documentRequestAction,
       }),
     };
   }
@@ -634,6 +658,143 @@ export class ClientService {
     return buildTemplateNotificationCommandResult(client.id, relatedCase?.id ?? null, input.templateCode, dispatch);
   }
 
+
+  /**
+   * Client Workspace document request typed command V1.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.sendDocumentRequest() -> POST /clients/:clientId/document-requests/send (manual typed command)
+   * </remarks>
+   */
+  async sendDocumentRequest(
+    id: string,
+    tenantId: string,
+    userId: string,
+    idempotencyKey: string | undefined,
+    input: ClientDocumentRequestSendInput,
+  ): Promise<ClientDocumentRequestSendResult> {
+    const normalizedKey = String(idempotencyKey ?? '').trim();
+    if (!normalizedKey) throw new BadRequestException('Idempotency-Key header is required');
+    if (!this.notificationDispatcher) throw new Error('Notification dispatcher is not configured');
+
+    const documentCodes = normalizeDocumentRequestCodes(input.documentCodes);
+
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        contacts: {
+          where: { type: 'EMAIL' },
+          take: 1,
+          select: { id: true },
+        },
+        caseClients: {
+          where: { case: { tenantId } },
+          orderBy: { createdAt: 'desc' },
+          take: 2,
+          select: { caseId: true },
+        },
+      },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const relatedCaseIds = (client.caseClients ?? [])
+      .map((caseClient) => caseClient.caseId)
+      .filter((caseId): caseId is string => !!caseId);
+    const selectedCaseId = input.caseId ?? (relatedCaseIds.length === 1 ? relatedCaseIds[0] : undefined);
+    if (!selectedCaseId) {
+      throw new BadRequestException(
+        relatedCaseIds.length > 0
+          ? 'Select a related case before sending a document request.'
+          : 'No related cases are linked to this client yet.',
+      );
+    }
+
+    const relatedCase = selectedCaseId
+      ? await this.prisma.case.findFirst({
+          where: {
+            id: selectedCaseId,
+            tenantId,
+            caseClients: { some: { clientId: client.id } },
+          },
+          select: {
+            id: true,
+            fileNumber: true,
+            executionFileNumber: true,
+            executionOffice: { select: { name: true } },
+          },
+        })
+      : null;
+    if (!relatedCase) throw new NotFoundException('Case not found');
+
+    const dedupeKey = this.buildDocumentRequestDedupeKey(client.id, relatedCase.id, documentCodes, normalizedKey);
+    const existing = await (this.prisma as any).clientDocumentRequest.findFirst({
+      where: { tenantId, idempotencyKey: normalizedKey },
+      select: { id: true, clientId: true, caseId: true, requestedDocumentCodes: true, status: true, notificationId: true, dedupeKey: true },
+    });
+    if (existing) {
+      const samePayload = existing.clientId === client.id
+        && existing.caseId === relatedCase.id
+        && sameDocumentRequestCodes(existing.requestedDocumentCodes, documentCodes)
+        && existing.dedupeKey === dedupeKey;
+      if (!samePayload) throw new ConflictException('Idempotency-Key conflicts with an existing document request.');
+      return buildDocumentRequestCommandResult(existing.clientId, existing.caseId, documentCodes, existing.status, existing.id, existing.notificationId ?? undefined);
+    }
+
+    const readiness = await this.getDocumentRequestActionAvailability(tenantId, client);
+    if (!readiness.enabled) throw new BadRequestException(readiness.disabledReason ?? 'Document request is not ready.');
+
+    const artifact = await (this.prisma as any).clientDocumentRequest.create({
+      data: {
+        tenantId,
+        clientId: client.id,
+        caseId: relatedCase.id,
+        requestedDocumentCodes: documentCodes,
+        templateCode: CLIENT_DOCUMENT_REQUEST_TEMPLATE_CODE,
+        idempotencyKey: normalizedKey,
+        dedupeKey,
+        channel: 'EMAIL',
+        status: 'PENDING',
+        createdById: userId,
+      },
+      select: { id: true },
+    });
+
+    await (this.prisma as any).clientDocumentRequest.update({
+      where: { id: artifact.id },
+      data: { status: 'SENDING', attemptCount: { increment: 1 } },
+    });
+
+    const tokens = buildDocumentRequestTokens(client, relatedCase, documentCodes);
+    const dispatch = await this.notificationDispatcher.dispatch(tenantId, userId, {
+      clientId: client.id,
+      caseId: relatedCase.id,
+      templateCode: CLIENT_DOCUMENT_REQUEST_TEMPLATE_CODE,
+      type: 'DOCUMENT_REQUEST',
+      tokens,
+      persistedTokens: tokens,
+      refType: 'ClientWorkspaceDocumentRequest',
+      refId: artifact.id,
+      dedupeKey,
+    });
+
+    const finalStatus = dispatch.status === 'failed' ? 'FAILED' : 'SENT';
+    await (this.prisma as any).clientDocumentRequest.update({
+      where: { id: artifact.id },
+      data: {
+        status: finalStatus,
+        ...(dispatch.notificationId ? { notificationId: dispatch.notificationId } : {}),
+        ...(finalStatus === 'SENT' ? { sentAt: new Date(), lastError: null } : { lastError: 'Document request delivery failed.' }),
+      },
+    });
+
+    return buildDocumentRequestCommandResult(client.id, relatedCase.id, documentCodes, finalStatus, artifact.id, dispatch.notificationId, dispatch.status);
+  }
   private buildTemplateNotificationDedupeKey(
     clientId: string,
     templateCode: ClientTemplateNotificationCode,
@@ -643,6 +804,55 @@ export class ClientService {
     return [CLIENT_TEMPLATE_NOTIFICATION_DEDUPE_PREFIX, clientId, templateCode, caseId ?? 'client', idempotencyKey].join(':');
   }
 
+
+  private buildDocumentRequestDedupeKey(
+    clientId: string,
+    caseId: string | null,
+    documentCodes: ClientDocumentRequestCode[],
+    idempotencyKey: string,
+  ): string {
+    return [CLIENT_DOCUMENT_REQUEST_DEDUPE_PREFIX, clientId, caseId ?? 'client', documentCodes.join(','), idempotencyKey].join(':');
+  }
+
+  private async getDocumentRequestActionAvailability(
+    tenantId: string,
+    client: { email?: string | null; contacts?: Array<{ id?: string | null }> | null },
+  ): Promise<{ enabled: boolean; requiredState: string; disabledReason?: string }> {
+    if (!this.notificationDispatcher) {
+      return {
+        enabled: false,
+        requiredState: 'DOCUMENT_REQUEST_DISPATCH_CONTRACT_READY',
+        disabledReason: 'Document request requires a notification dispatch contract.',
+      };
+    }
+
+    const hasRecipient = !!String(client.email ?? '').trim() || (client.contacts?.length ?? 0) > 0;
+    if (!hasRecipient) {
+      return {
+        enabled: false,
+        requiredState: 'CLIENT_EMAIL_MISSING',
+        disabledReason: 'Document request requires a client email recipient.',
+      };
+    }
+
+    const activeTemplateCount = await (this.prisma as any).messageTemplate.count({
+      where: {
+        tenantId,
+        code: CLIENT_DOCUMENT_REQUEST_TEMPLATE_CODE,
+        isActive: true,
+        channel: 'EMAIL',
+      },
+    });
+    if (activeTemplateCount < 1) {
+      return {
+        enabled: false,
+        requiredState: 'DOCUMENT_REQUEST_TEMPLATE_MISSING',
+        disabledReason: 'Document request requires the active V1 email template.',
+      };
+    }
+
+    return { enabled: true, requiredState: 'DOCUMENT_REQUEST_READY' };
+  }
   private async getTemplateNotificationActionAvailability(
     tenantId: string,
     client: { email?: string | null; contacts?: Array<{ id?: string | null }> | null },
@@ -1398,6 +1608,7 @@ interface ClientActionCatalogContext {
   client: ClientActionCatalogClientState;
   poaReminderDelivery: ClientPoaReminderDeliveryState;
   templateNotificationAction: { enabled: boolean; requiredState: string; disabledReason?: string };
+  documentRequestAction: { enabled: boolean; requiredState: string; disabledReason?: string };
 }
 
 const CLIENT_ACTION_ROLE_RANK: Record<ClientActionRole, number> = {
@@ -1430,6 +1641,16 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
   const poaReminderBaseEnabled = hasPoaReminderEligiblePowerOfAttorney(context.client.powerOfAttorneys);
   const poaReminderAction = buildPoaReminderActionAvailability(poaReminderBaseEnabled, context.poaReminderDelivery);
   const templateNotificationAction = context.templateNotificationAction;
+  const documentCaseReady = !!singleRelatedCaseId;
+  const documentRequestAction = documentCaseReady
+    ? context.documentRequestAction
+    : {
+        enabled: false,
+        requiredState: hasRelatedCase ? 'DOCUMENT_REQUEST_CASE_SELECTION_REQUIRED' : 'RELATED_CASE_EMPTY',
+        disabledReason: hasRelatedCase
+          ? 'Select a related case before sending a document request.'
+          : 'No related cases are linked to this client yet.',
+      };
   const contactState = context.client.contactFollowUpStatus === 'WAIVED'
     ? 'CONTACT_FOLLOW_UP_WAIVED'
     : missingContactFields.length > 0
@@ -1539,6 +1760,20 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
       requiredState: templateNotificationAction.requiredState,
       target,
       order: 70,
+    },
+    {
+      key: 'document.request.send',
+      label: 'Send document request',
+      description: 'Send an idempotent client document request using the V1 allowlist.',
+      category: 'document',
+      enabled: documentRequestAction.enabled,
+      disabledReason: documentRequestAction.disabledReason,
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: documentRequestAction.requiredState,
+      target: singleRelatedCaseId ? { ...target, caseId: singleRelatedCaseId } : target,
+      order: 80,
     },
   ];
 
@@ -1660,11 +1895,70 @@ function poaReminderCommandStatus(result: PoaExpiryDeliveryRunResult): ClientPoa
   return 'skipped';
 }
 
+
+const CLIENT_DOCUMENT_REQUEST_LABELS: Record<ClientDocumentRequestCode, string> = {
+  GENEL_BELGE: 'Genel belge',
+  DOSYA_EVRAKI: 'Dosya evraki',
+};
+
+function normalizeDocumentRequestCodes(rawCodes: readonly ClientDocumentRequestCode[] | undefined): ClientDocumentRequestCode[] {
+  if (!Array.isArray(rawCodes) || rawCodes.length === 0) throw new BadRequestException('documentCodes must contain at least one V1 document request code.');
+  const codes: ClientDocumentRequestCode[] = [];
+  for (const raw of rawCodes) {
+    if (!CLIENT_DOCUMENT_REQUEST_CODES.includes(raw as ClientDocumentRequestCode)) throw new BadRequestException('Unsupported document request code.');
+    if (!codes.includes(raw as ClientDocumentRequestCode)) codes.push(raw as ClientDocumentRequestCode);
+  }
+  return codes;
+}
+
+function sameDocumentRequestCodes(left: readonly string[] | null | undefined, right: readonly ClientDocumentRequestCode[]): boolean {
+  return JSON.stringify([...(left ?? [])].sort()) === JSON.stringify([...right].sort());
+}
+
+function buildDocumentRequestTokens(
+  client: { name?: string | null; firstName?: string | null; lastName?: string | null },
+  relatedCase: { fileNumber?: string | null; executionFileNumber?: string | null; executionOffice?: { name?: string | null } | null } | null,
+  documentCodes: ClientDocumentRequestCode[],
+): Record<string, string> {
+  const clientName = client.name || [client.firstName, client.lastName].filter(Boolean).join(' ') || 'M\u00fcvekkil';
+  return {
+    clientName,
+    caseFileNumber: relatedCase?.fileNumber ?? '',
+    executionFileNumber: relatedCase?.executionFileNumber ?? '',
+    executionOfficeName: relatedCase?.executionOffice?.name ?? '',
+    requestedDocumentCodes: documentCodes.join(','),
+    requestedDocumentLabels: documentCodes.map((code) => CLIENT_DOCUMENT_REQUEST_LABELS[code]).join(', '),
+  };
+}
+
+function documentRequestResultStatus(artifactStatus: string, dispatchStatus?: DispatchResult['status']): ClientDocumentRequestSendStatus {
+  if (dispatchStatus === 'skipped') return 'skipped';
+  return artifactStatus === 'FAILED' ? 'failed' : 'sent';
+}
+
+function buildDocumentRequestCommandResult(
+  clientId: string,
+  caseId: string,
+  documentCodes: ClientDocumentRequestCode[],
+  artifactStatus: string,
+  documentRequestId: string,
+  notificationId?: string,
+  dispatchStatus?: DispatchResult['status'],
+): ClientDocumentRequestSendResult {
+  return {
+    clientId,
+    caseId,
+    documentCodes,
+    status: documentRequestResultStatus(artifactStatus, dispatchStatus),
+    documentRequestId,
+    ...(notificationId ? { notificationId } : {}),
+  };
+}
 function buildTemplateNotificationTokens(
   client: { name?: string | null; firstName?: string | null; lastName?: string | null; email?: string | null },
   relatedCase: { fileNumber?: string | null; executionFileNumber?: string | null; executionOffice?: { name?: string | null } | null } | null,
 ): Record<string, string> {
-  const clientName = client.name || [client.firstName, client.lastName].filter(Boolean).join(' ') || 'M�vekkil';
+  const clientName = client.name || [client.firstName, client.lastName].filter(Boolean).join(' ') || 'M\u00fcvekkil';
   return {
     clientName,
     caseFileNumber: relatedCase?.fileNumber ?? '',

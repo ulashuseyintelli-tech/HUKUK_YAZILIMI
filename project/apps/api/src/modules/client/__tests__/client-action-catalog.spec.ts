@@ -10,7 +10,7 @@ const defaultClient = {
   powerOfAttorneys: [],
 };
 
-function buildHarness(opts: { client?: any; deliveries?: any[]; dispatcher?: any; templateCount?: number } = {}) {
+function buildHarness(opts: { client?: any; deliveries?: any[]; dispatcher?: any; templateCount?: number; documentTemplateCount?: number } = {}) {
   const prisma: any = {
     client: {
       findFirst: jest
@@ -44,7 +44,15 @@ function buildHarness(opts: { client?: any; deliveries?: any[]; dispatcher?: any
       updateMany: jest.fn(),
     },
     messageTemplate: {
-      count: jest.fn().mockResolvedValue(opts.templateCount ?? CLIENT_TEMPLATE_NOTIFICATION_CODES.length),
+      count: jest.fn((args: any) => {
+        if (args?.where?.code === 'CLIENT_DOCUMENT_REQUEST_V1') return Promise.resolve(opts.documentTemplateCount ?? 1);
+        return Promise.resolve(opts.templateCount ?? CLIENT_TEMPLATE_NOTIFICATION_CODES.length);
+      }),
+    },
+    clientDocumentRequest: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
     },
     task: {
       findUnique: jest.fn(),
@@ -64,6 +72,7 @@ const futureWriteKeys: ClientActionKey[] = [
   'intake.link.send',
   'poa.reminder.send',
   'notification.template.send',
+  'document.request.send',
 ];
 
 const navigationKeys: ClientActionKey[] = [
@@ -114,6 +123,7 @@ describe('ClientService.getActionCatalog', () => {
       'intake.link.send',
       'poa.reminder.send',
       'notification.template.send',
+      'document.request.send',
     ]);
     expect(result.data.every((item) => item.visibility === 'visible')).toBe(true);
     expect(result.data.every((item) => item.target?.clientId === 'client-1')).toBe(true);
@@ -283,6 +293,82 @@ describe('ClientService.getActionCatalog', () => {
       disabledReason: 'Template notification requires active V1 email templates.',
     });
   });
+
+  it('enables document request when dispatcher, recipient, V1 template, and a single related case are ready', async () => {
+    const { svc, prisma } = buildHarness({ dispatcher: { dispatch: jest.fn() } });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const action = result.data.find((item) => item.key === 'document.request.send');
+
+    expect(action).toMatchObject({
+      enabled: true,
+      visibility: 'visible',
+      requiredState: 'DOCUMENT_REQUEST_READY',
+      target: { clientId: 'client-1', caseId: 'case-1' },
+    });
+    expect(action?.disabledReason).toBeUndefined();
+    expect(action?.href).toBeUndefined();
+    expect(prisma.messageTemplate.count).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        code: 'CLIENT_DOCUMENT_REQUEST_V1',
+        isActive: true,
+        channel: 'EMAIL',
+      },
+    });
+  });
+
+  it('keeps document request disabled when recipient or active V1 template is missing', async () => {
+    const noRecipient = buildHarness({
+      dispatcher: { dispatch: jest.fn() },
+      client: { ...defaultClient, email: '', contacts: [] },
+    });
+
+    const noRecipientResult = await noRecipient.svc.getActionCatalog('client-1', 'tenant-1');
+    expect(noRecipientResult.data.find((item) => item.key === 'document.request.send')).toMatchObject({
+      enabled: false,
+      requiredState: 'CLIENT_EMAIL_MISSING',
+      disabledReason: 'Document request requires a client email recipient.',
+      target: { clientId: 'client-1', caseId: 'case-1' },
+    });
+
+    const missingTemplate = buildHarness({ dispatcher: { dispatch: jest.fn() }, documentTemplateCount: 0 });
+    const missingTemplateResult = await missingTemplate.svc.getActionCatalog('client-1', 'tenant-1');
+    expect(missingTemplateResult.data.find((item) => item.key === 'document.request.send')).toMatchObject({
+      enabled: false,
+      requiredState: 'DOCUMENT_REQUEST_TEMPLATE_MISSING',
+      disabledReason: 'Document request requires the active V1 email template.',
+      target: { clientId: 'client-1', caseId: 'case-1' },
+    });
+  });
+
+  it('keeps document request disabled without leaking case ids when related case selection is unavailable or ambiguous', async () => {
+    const noCase = buildHarness({ dispatcher: { dispatch: jest.fn() }, client: { ...defaultClient, caseClients: [] } });
+    const noCaseResult = await noCase.svc.getActionCatalog('client-1', 'tenant-1');
+    expect(noCaseResult.data.find((item) => item.key === 'document.request.send')).toMatchObject({
+      enabled: false,
+      requiredState: 'RELATED_CASE_EMPTY',
+      disabledReason: 'No related cases are linked to this client yet.',
+      target: { clientId: 'client-1' },
+    });
+
+    const ambiguous = buildHarness({
+      dispatcher: { dispatch: jest.fn() },
+      client: { ...defaultClient, caseClients: [{ caseId: 'case-1' }, { caseId: 'case-2' }] },
+    });
+    const ambiguousResult = await ambiguous.svc.getActionCatalog('client-1', 'tenant-1');
+    const action = ambiguousResult.data.find((item) => item.key === 'document.request.send');
+    const serialized = JSON.stringify(action);
+
+    expect(action).toMatchObject({
+      enabled: false,
+      requiredState: 'DOCUMENT_REQUEST_CASE_SELECTION_REQUIRED',
+      disabledReason: 'Select a related case before sending a document request.',
+      target: { clientId: 'client-1' },
+    });
+    expect(serialized).not.toContain('case-1');
+    expect(serialized).not.toContain('case-2');
+  });
   it('enables POA reminder only when an active limited POA expires within 30 days', async () => {
     const { svc, prisma } = buildHarness({
       client: {
@@ -433,6 +519,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(serialized).not.toContain('forbidden');
     expect(serialized).not.toContain('Create intake link');
     expect(serialized).not.toContain('Template notification requires');
+    expect(serialized).not.toContain('Document request requires');
   });
 
   it('does not perform mutation, audit, timeline, notification creation, or dispatch side effects', async () => {
@@ -452,6 +539,9 @@ describe('ClientService.getActionCatalog', () => {
     expect(prisma.poaExpiryNotificationDelivery.create).not.toHaveBeenCalled();
     expect(prisma.poaExpiryNotificationDelivery.update).not.toHaveBeenCalled();
     expect(prisma.poaExpiryNotificationDelivery.updateMany).not.toHaveBeenCalled();
+    expect(prisma.clientDocumentRequest.findFirst).not.toHaveBeenCalled();
+    expect(prisma.clientDocumentRequest.create).not.toHaveBeenCalled();
+    expect(prisma.clientDocumentRequest.update).not.toHaveBeenCalled();
     expect(prisma.task.create).not.toHaveBeenCalled();
     expect(prisma.task.update).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
