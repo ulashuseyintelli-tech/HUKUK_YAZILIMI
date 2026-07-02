@@ -75,6 +75,11 @@ describe('ClientAccountingSummaryReadService', () => {
       source: 'LEGACY_PROJECTION',
       readMode: 'disabled',
       fallbackReason: 'READ_MODE_DISABLED',
+      hybridReadBoundary: expect.objectContaining({
+        mode: 'HYBRID_PRIMARY_BOUNDARY',
+        caseScopedContextSource: 'LEGACY_CONTEXT',
+        journalOnlyPrimarySwitch: 'BLOCKED',
+      }),
       primarySwitchUnchanged: true,
     }));
     expect(legacy.getClientAccountingSummary).toHaveBeenCalledWith('tenant-1', 'client-1', 'TRY');
@@ -100,6 +105,14 @@ describe('ClientAccountingSummaryReadService', () => {
       source: 'LEGACY_PROJECTION',
       readMode: mode,
       fallbackReason,
+      hybridReadBoundary: expect.objectContaining({
+        clientScopedSource: 'ACCOUNTING_JOURNAL_SHADOW_ELIGIBLE',
+        caseScopedContextSource: 'LEGACY_CONTEXT',
+        blockerCodes: [
+          'COLLECTION_JOURNAL_SOURCE_MISSING',
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+        ],
+      }),
       primarySwitchUnchanged: true,
     }));
     expect(cutoverReadiness.getCutoverReadiness).toHaveBeenCalledWith({ tenantId: 'tenant-1', currency: 'USD' });
@@ -116,6 +129,10 @@ describe('ClientAccountingSummaryReadService', () => {
       source: 'LEGACY_PROJECTION',
       readMode: 'enforce',
       fallbackReason: 'JOURNAL_SUMMARY_READER_MISSING',
+      hybridReadBoundary: expect.objectContaining({
+        mode: 'HYBRID_PRIMARY_BOUNDARY',
+        journalOnlyPrimarySwitch: 'BLOCKED',
+      }),
       primarySwitchUnchanged: true,
     }));
     expect(legacy.getClientAccountingSummary).toHaveBeenCalledWith('tenant-1', 'client-1', 'TRY');
