@@ -45,7 +45,7 @@ export class PortalService {
    * /// <remarks>
    * /// Çağrıldığı yerler:
    * /// - PortalController.createPortalUser() → POST /api/portal/admin/create-user (JwtAuthGuard; büro/admin portal hesabı aç/yeniden-aktifle)
-   * /// actor: YALNIZ auth context (req.user.sub). body/payload'dan ASLA türetilmez.
+   * /// actor: YALNIZ auth context (req.user.id). body/payload'dan ASLA türetilmez.
    * /// C0: client.update (hasPortalAccess/portalUserId) ClientService DIŞI bypass → audit AYNI tx içinde.
    * /// </remarks>
    */
@@ -390,7 +390,7 @@ export class PortalService {
    * /// <remarks>
    * /// Çağrıldığı yerler:
    * /// - PortalController.disablePortalUser() → POST /api/portal/admin/disable-user (JwtAuthGuard; büro/admin portal erişimini kapat)
-   * /// actor: YALNIZ auth context (req.user.sub). body/payload'dan ASLA türetilmez.
+   * /// actor: YALNIZ auth context (req.user.id). body/payload'dan ASLA türetilmez.
    * /// C0: client.update (hasPortalAccess=false) ClientService DIŞI bypass → audit AYNI tx içinde.
    * /// </remarks>
    */
