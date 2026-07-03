@@ -43,10 +43,11 @@ const make = (opts: {
   approverUser?: any; // user.findUnique (approver eligibility)
   createReturn?: any;
   idempotentExisting?: any; // createPendingRequest idempotency findUnique
+  domainSync?: any;
 }) => {
   const findUnique = jest.fn();
   (opts.reqSeq || []).forEach((r) => findUnique.mockResolvedValueOnce(r));
-  const prisma = {
+  const prisma: any = {
     officeApprovalRequest: {
       findUnique: findUnique,
       create: jest.fn().mockResolvedValue(opts.createReturn ?? mkReq()),
@@ -54,8 +55,9 @@ const make = (opts: {
     },
     user: { findUnique: jest.fn().mockResolvedValue(opts.approverUser ?? null) },
   };
+  (prisma as any).$transaction = jest.fn().mockImplementation(async (cb: any) => cb(prisma));
   const audit = { log: jest.fn().mockResolvedValue(undefined) };
-  const svc = new OfficeApprovalService(prisma as never, audit as never);
+  const svc = new OfficeApprovalService(prisma as never, audit as never, opts.domainSync);
   return { svc, prisma, audit };
 };
 
@@ -114,6 +116,24 @@ describe('P4-1 OfficeApprovalService — createPendingRequest', () => {
       expect(audit.log.mock.calls[0][0].action).toBe('OFFICE_APPROVAL_REQUESTED');
     },
   );
+
+  it('DBIND-P1: disposition terminal idempotencyKey re-recommend icin supersede edilir ve taze request acilir', async () => {
+    const key = 'collection-disposition-recommend:d1';
+    const existing = mkReq({ id: 'oar-old-terminal', actionCode: 'COLLECTION_DISPOSITION_POST', targetType: 'COLLECTION_DISPOSITION', targetRef: 'd1', idempotencyKey: key, status: 'REJECTED' });
+    const fresh = mkReq({ id: 'oar-fresh', actionCode: 'COLLECTION_DISPOSITION_POST', targetType: 'COLLECTION_DISPOSITION', targetRef: 'd1', idempotencyKey: key, status: 'PENDING_APPROVAL' });
+    const { svc, prisma } = make({ reqSeq: [existing], createReturn: fresh });
+
+    const res = await svc.createPendingRequest({
+      tenantId: TENANT, actionCode: 'COLLECTION_DISPOSITION_POST', targetType: 'COLLECTION_DISPOSITION', targetRef: 'd1',
+      requesterUserId: REQUESTER, savedIntent: { dispositionId: 'd1' }, idempotencyKey: key,
+    });
+
+    expect(prisma.officeApprovalRequest.updateMany).toHaveBeenCalledWith({
+      where: { id: 'oar-old-terminal', idempotencyKey: key },
+      data: { idempotencyKey: key + '::superseded:oar-old-terminal' },
+    });
+    expect(res).toBe(fresh);
+  });
 
   it('H7: terminal-anahtar boşaltma yarışını KAYBEDEN (updateMany count=0) yine de create()e düşer; P2002 ile taze kaydı bulur', async () => {
     const existingTerminal = mkReq({ id: 'oar-old', idempotencyKey: 'k1', status: 'REJECTED' });
@@ -196,6 +216,50 @@ describe('P4-1 OfficeApprovalService — approve', () => {
   it('eşzamanlı geçiş (updateMany count=0) → Conflict', async () => {
     const { svc } = make({ reqSeq: [mkReq()], approverUser: partner(), updateCount: 0 });
     await expect(svc.approve('oar-1', APPROVER)).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe('DBIND-P1 OfficeApprovalService - disposition domain sync transaction', () => {
+  const dispositionApproval = (over: Record<string, unknown> = {}) => mkReq({
+    actionCode: 'COLLECTION_DISPOSITION_POST',
+    targetType: 'COLLECTION_DISPOSITION',
+    targetRef: 'd1',
+    ...over,
+  });
+
+  it('generic approve terminal update sonrasi ayni transaction icinde domain sync cagirir; audit sonra yazilir', async () => {
+    const updated = dispositionApproval({ status: 'APPROVED', approverUserId: APPROVER });
+    const domainSync = { syncAfterDecision: jest.fn().mockResolvedValue(undefined) };
+    const { svc, prisma, audit } = make({
+      reqSeq: [dispositionApproval(), updated],
+      approverUser: partner(),
+      domainSync,
+    });
+
+    const res = await svc.approve('oar-1', APPROVER, 'ok');
+
+    expect(res).toBe(updated);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(domainSync.syncAfterDecision).toHaveBeenCalledWith(prisma, updated);
+    const decisionOrder = prisma.officeApprovalRequest.updateMany.mock.invocationCallOrder[0];
+    const syncOrder = domainSync.syncAfterDecision.mock.invocationCallOrder[0];
+    const auditOrder = audit.log.mock.invocationCallOrder[0];
+    expect(decisionOrder).toBeLessThan(syncOrder);
+    expect(syncOrder).toBeLessThan(auditOrder);
+  });
+
+  it('sync hata verirse audit yazmaz ve karar cagrisi fail olur', async () => {
+    const domainSync = { syncAfterDecision: jest.fn().mockRejectedValue(new ConflictException('sync fail')) };
+    const { svc, audit } = make({ reqSeq: [dispositionApproval(), dispositionApproval({ status: 'APPROVED', approverUserId: APPROVER })], approverUser: partner(), domainSync });
+    await expect(svc.approve('oar-1', APPROVER, 'ok')).rejects.toThrow(/sync fail/);
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('double decision yarisi update count=0 ise sync ikinci kez calismaz', async () => {
+    const domainSync = { syncAfterDecision: jest.fn().mockResolvedValue(undefined) };
+    const { svc } = make({ reqSeq: [dispositionApproval()], approverUser: partner(), updateCount: 0, domainSync });
+    await expect(svc.approve('oar-1', APPROVER, 'ok')).rejects.toBeInstanceOf(ConflictException);
+    expect(domainSync.syncAfterDecision).not.toHaveBeenCalled();
   });
 });
 
@@ -352,9 +416,10 @@ describe('P4-1A OfficeApprovalService — approveWithChanges / requestRevision',
   });
 
   it('requestRevision: PENDING→REVISION_REQUESTED + audit (REJECTED DEĞİL)', async () => {
-    const { svc, audit } = make({ reqSeq: [mkReq(), mkReq({ status: 'REVISION_REQUESTED', approverUserId: APPROVER, decisionNote: 'açıklamayı düzelt' })], approverUser: partner() });
+    const { svc, prisma, audit } = make({ reqSeq: [mkReq(), mkReq({ status: 'REVISION_REQUESTED', approverUserId: APPROVER, decisionNote: 'açıklamayı düzelt' })], approverUser: partner() });
     const res = await svc.requestRevision('oar-1', APPROVER, 'açıklamayı düzelt');
     expect(res.status).toBe('REVISION_REQUESTED');
+    expect(prisma.officeApprovalRequest.updateMany.mock.calls[0][0].data.decisionNote).toBe('açıklamayı düzelt');
     expect(audit.log.mock.calls[0][0].action).toBe('OFFICE_APPROVAL_REVISION_REQUESTED');
   });
 
