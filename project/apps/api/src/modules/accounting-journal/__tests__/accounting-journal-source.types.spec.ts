@@ -93,6 +93,11 @@ describe('Accounting journal source adapter contracts', () => {
   });
 
 
+  it('source identity contract: accepts Collection recorded and cancel skeleton actions', () => {
+    expect(validateJournalSourceIdentity(sourceIdentity({ sourceType: 'COLLECTION', sourceAction: 'recorded' })).ok).toBe(true);
+    expect(validateJournalSourceIdentity(sourceIdentity({ sourceType: 'COLLECTION', sourceAction: 'cancel' })).ok).toBe(true);
+  });
+
   it('source identity contract: accepts ExpenseRequest recorded and cancel skeleton actions', () => {
     expect(validateJournalSourceIdentity(sourceIdentity({ sourceType: 'EXPENSE_REQUEST', sourceAction: 'recorded' })).ok).toBe(true);
     expect(validateJournalSourceIdentity(sourceIdentity({ sourceType: 'EXPENSE_REQUEST', sourceAction: 'cancel' })).ok).toBe(true);

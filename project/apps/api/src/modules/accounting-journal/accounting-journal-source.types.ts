@@ -88,6 +88,7 @@ export type JournalSourceAdapterFn<
 > = (snapshot: TSnapshot) => JournalSourceAdapterResult<TSource>;
 
 const SUPPORTED_SOURCE_TYPES: ReadonlyArray<AccountingJournalSourceType> = [
+  'COLLECTION',
   'COLLECTION_DISPOSITION_LINE',
   'CLIENT_PAYOUT',
   'CLIENT_OFFSET',

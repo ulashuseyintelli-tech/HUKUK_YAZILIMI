@@ -7,6 +7,7 @@ import type {
   BalanceLedgerJournalSource,
   ClientPayoutJournalSource,
   ClientOffsetJournalSource,
+  CollectionJournalSource,
   CollectionDispositionExpenseApplicationJournalSource,
   CollectionDispositionLineJournalSource,
   ExpensePaymentJournalSource,
@@ -45,6 +46,8 @@ export function buildJournalIdempotencyKey(material: JournalIdempotencyMaterial)
 
 export function buildAccountingJournal(source: JournalSource): JournalBuildResult {
   switch (source.sourceType) {
+    case 'COLLECTION':
+      return buildCollectionJournal(source);
     case 'CLIENT_OFFSET':
       return buildClientOffsetJournal(source);
     case 'COLLECTION_DISPOSITION_LINE':
@@ -64,6 +67,135 @@ export function buildAccountingJournal(source: JournalSource): JournalBuildResul
   }
 }
 
+function buildCollectionJournal(source: CollectionJournalSource): JournalBuildResult {
+  const isRecorded = source.payload.kind === 'RECORDED';
+  const expectedAction = isRecorded ? 'recorded' : 'cancel';
+  if (source.sourceAction !== expectedAction) {
+    return buildError('UNSUPPORTED_SOURCE_ACTION', 'Collection sourceAction must match payload kind.', 'sourceAction', {
+      expectedAction,
+      actualAction: source.sourceAction,
+      kind: source.payload.kind,
+    });
+  }
+
+  if (source.payload.collectionId !== source.sourceId) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'Collection payload collectionId must match sourceId.', 'payload.collectionId', {
+      sourceId: source.sourceId,
+      collectionId: source.payload.collectionId,
+    });
+  }
+
+  if (source.payload.collectionStatus === 'REFUNDED') {
+    return buildError('UNMAPPED_SOURCE', 'Collection REFUNDED policy is not mapped for cash journal posting.', 'payload.collectionStatus', {
+      collectionStatus: source.payload.collectionStatus,
+    });
+  }
+
+  const expectedStatus = isRecorded ? 'CONFIRMED' : 'CANCELLED';
+  if (source.payload.collectionStatus !== expectedStatus) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'Collection cash journal status must match sourceAction.', 'payload.collectionStatus', {
+      expectedStatus,
+      collectionStatus: source.payload.collectionStatus,
+      sourceAction: source.sourceAction,
+    });
+  }
+
+  if (isRecorded && source.payload.originalRecordedSourceVersion) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'Collection recorded source must not carry originalRecordedSourceVersion.', 'payload.originalRecordedSourceVersion', {
+      originalRecordedSourceVersion: source.payload.originalRecordedSourceVersion,
+    });
+  }
+
+  if (!isRecorded && !source.payload.originalRecordedSourceVersion) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'Collection cancel source requires originalRecordedSourceVersion.', 'payload.originalRecordedSourceVersion', {
+      sourceId: source.sourceId,
+    });
+  }
+
+  const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
+  const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
+  if (!source.tenantId || !source.sourceId || !source.sourceAction || !source.sourceVersion) {
+    return buildError('INVALID_IDEMPOTENCY_MATERIAL', 'Journal source is missing idempotency material.', null, {
+      idempotencyKey,
+    });
+  }
+
+  const metadata: JournalMetadata = {
+    ...source.metadata,
+    description: isRecorded ? 'Collection cash receipt recorded' : 'Collection cash receipt reversed',
+    collectionId: source.payload.collectionId,
+    collectionKind: source.payload.kind,
+    collectionStatus: source.payload.collectionStatus,
+    debtorId: source.payload.debtorId,
+    originalRecordedSourceVersion: source.payload.originalRecordedSourceVersion,
+  };
+
+  const draft: JournalEntryDraft = {
+    tenantId: source.tenantId,
+    caseId: source.payload.caseId,
+    currency: source.currency,
+    entryType: isRecorded ? 'COLLECTION_CASH_RECEIPT_RECORDED' : 'COLLECTION_CASH_RECEIPT_REVERSED',
+    sourceType: source.sourceType,
+    sourceId: source.sourceId,
+    sourceAction: source.sourceAction,
+    sourceVersion: source.sourceVersion,
+    idempotencyKey,
+    idempotencyMaterial,
+    sourceHash: source.sourceHash,
+    sourceOccurredAt: source.occurredAt,
+    effectiveDate: source.effectiveDate,
+    postedById: source.actorId,
+    description: null,
+    metadata,
+    reversalOf: isRecorded
+      ? null
+      : {
+          sourceType: 'COLLECTION',
+          sourceId: source.sourceId,
+          sourceAction: 'recorded',
+          sourceVersion: source.payload.originalRecordedSourceVersion,
+          journalEntryId: null,
+        },
+    lines: isRecorded
+      ? [
+          collectionLine(source, 1, 'CASH_CLEARING', 'DEBIT'),
+          collectionLine(source, 2, 'CASE_COLLECTION_CLEARING', 'CREDIT'),
+        ]
+      : [
+          collectionLine(source, 1, 'CASE_COLLECTION_CLEARING', 'DEBIT'),
+          collectionLine(source, 2, 'CASH_CLEARING', 'CREDIT'),
+        ],
+  };
+
+  return { ok: true, draft };
+}
+
+function collectionLine(
+  source: CollectionJournalSource,
+  lineNo: number,
+  accountCode: JournalLineDraft['accountCode'],
+  direction: JournalLineDraft['direction'],
+): JournalLineDraft {
+  return {
+    lineNo,
+    tenantId: source.tenantId,
+    accountCode,
+    direction,
+    amount: source.payload.amount,
+    currency: source.currency,
+    caseId: source.payload.caseId,
+    clientId: null,
+    caseClientId: null,
+    collectionId: source.payload.collectionId,
+    dispositionLineId: null,
+    payoutId: null,
+    offsetId: null,
+    expenseRequestId: null,
+    expensePaymentId: null,
+    expenseApplicationId: null,
+    balanceLedgerId: null,
+  };
+}
 function buildCollectionDispositionLineJournal(source: CollectionDispositionLineJournalSource): JournalBuildResult {
   if (source.sourceAction !== 'posted') {
     return buildError('UNSUPPORTED_SOURCE_ACTION', 'CollectionDispositionLine sourceAction must be posted.', 'sourceAction', {

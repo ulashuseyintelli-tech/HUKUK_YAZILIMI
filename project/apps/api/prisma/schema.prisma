@@ -4043,6 +4043,8 @@ enum ClientOffsetKind {
 // Source references are scalar dimensions to avoid changing owner tables.
 // ============================================================
 enum AccountingJournalEntryType {
+  COLLECTION_CASH_RECEIPT_RECORDED
+  COLLECTION_CASH_RECEIPT_REVERSED
   COLLECTION_DISTRIBUTION_POSTED
   CLIENT_PAYOUT_RECORDED
   CLIENT_OFFSET_APPLIED
@@ -4058,6 +4060,7 @@ enum AccountingJournalEntryType {
 }
 
 enum AccountingJournalSourceType {
+  COLLECTION
   COLLECTION_DISPOSITION_LINE
   CLIENT_PAYOUT
   CLIENT_OFFSET
@@ -4070,6 +4073,7 @@ enum AccountingJournalSourceType {
 
 enum AccountingAccountCode {
   CASH_CLEARING
+  CASE_COLLECTION_CLEARING
   CLIENT_PAYABLE
   CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE
   CLIENT_EXPENSE_RECEIVABLE
