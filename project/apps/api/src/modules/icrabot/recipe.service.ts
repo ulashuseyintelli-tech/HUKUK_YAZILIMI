@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { 
   Recipe, 
@@ -46,9 +46,9 @@ export class RecipeService {
   /**
    * Dosya için dijital ikiz oluştur
    */
-  async buildDigitalTwin(caseId: string): Promise<CaseDigitalTwin> {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+  async buildDigitalTwin(caseId: string, tenantId: string): Promise<CaseDigitalTwin> {
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         tebligatlar: {
           where: { status: { in: ['GONDERILDI', 'TESLIM_EDILDI'] } },
@@ -71,7 +71,7 @@ export class RecipeService {
     });
 
     if (!caseData) {
-      throw new Error(`Case not found: ${caseId}`);
+      throw new NotFoundException(`Dosya bulunamadi: ${caseId}`);
     }
 
     // Aşama mapping
@@ -123,8 +123,8 @@ export class RecipeService {
   /**
    * Dosya için Next Best Actions hesapla
    */
-  async calculateNextBestActions(caseId: string): Promise<NextBestAction[]> {
-    const twin = await this.buildDigitalTwin(caseId);
+  async calculateNextBestActions(caseId: string, tenantId: string): Promise<NextBestAction[]> {
+    const twin = await this.buildDigitalTwin(caseId, tenantId);
     const actions: NextBestAction[] = [];
 
     // Aktif recipe'leri değerlendir
