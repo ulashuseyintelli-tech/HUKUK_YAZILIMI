@@ -1,30 +1,42 @@
 /**
- * DBND-B1 / DBND-B1B — icrabot Digital Twin + state-machine ailesi tenant isolation guard.
+ * DBND-B1 / DBND-B1B / DBND-B1C — icrabot Digital Twin + state-machine + task
+ * ailesi tenant isolation guard.
  *
  * Önce (bug): getDigitalTwin/getNextBestActions/getPendingTasks/getEvidenceReport
- * (DBND-B1) ve processEvent/getAvailableTransitions (DBND-B1B) caseId'yi hiçbir
- * tenant filtresi olmadan kabul ediyordu → cross-tenant IDOR (başka tenant'ın
+ * (DBND-B1), processEvent/getAvailableTransitions (DBND-B1B) ve
+ * stopAutomation/cancelTask/approveTask (DBND-B1C) caseId/taskId'yi hiçbir tenant
+ * filtresi olmadan kabul ediyordu → cross-tenant IDOR (başka tenant'ın
  * borçlu/varlık/tebligat/tahsilat/kanıt verisi görüntülenebiliyordu; processEvent
- * ayrıca bir yazma yolu olduğundan dosya aşamasını/lifecycle geçmişini de
- * cross-tenant değiştirebiliyordu).
+ * ve stopAutomation/cancelTask/approveTask ayrıca birer yazma yolu olduğundan
+ * dosya aşaması/lifecycle geçmişi/bot görev durumu cross-tenant değiştirilebiliyordu).
  *
- * Şimdi: her metod, alt servise delege etmeden önce assertCaseTenant() ile
- * caseId'nin çağıran tenant'a ait olduğunu doğruluyor; aksi halde NotFoundException.
+ * Şimdi: her metod, alt servise delege etmeden önce assertCaseTenant() (caseId
+ * bazlı) veya assertTaskTenant() (taskId bazlı) ile ilgili kaynağın çağıran
+ * tenant'a ait olduğunu doğruluyor; aksi halde NotFoundException.
  */
 import { NotFoundException } from '@nestjs/common';
 import { IcrabotService } from '../icrabot.service';
 
-describe('DBND-B1 / DBND-B1B — IcrabotService Digital Twin + state-machine tenant guard', () => {
+describe('DBND-B1 / DBND-B1B / DBND-B1C — IcrabotService tenant guard', () => {
   const TENANT = 't1';
   const CASE_ID = 'case-1';
+  const TASK_ID = 'task-1';
 
-  const build = (caseFound: boolean) => {
+  // `sameTenant=false` hem case.findFirst hem botTask.findFirst için "başka
+  // tenant'a ait/bulunamadı" senaryosunu simüle eder (assertCaseTenant ve
+  // assertTaskTenant aynı deseni paylaşıyor).
+  const build = (sameTenant: boolean) => {
     const prisma = {
       case: {
-        findFirst: jest.fn().mockResolvedValue(caseFound ? { id: CASE_ID } : null),
+        findFirst: jest.fn().mockResolvedValue(sameTenant ? { id: CASE_ID } : null),
+        update: jest.fn().mockResolvedValue({}),
       },
       caseLifecycle: {
         create: jest.fn().mockResolvedValue({}),
+      },
+      botTask: {
+        findFirst: jest.fn().mockResolvedValue(sameTenant ? { id: TASK_ID } : null),
+        updateMany: jest.fn().mockResolvedValue({ count: sameTenant ? 1 : 0 }),
       },
     };
     const recipeService = {
@@ -39,6 +51,8 @@ describe('DBND-B1 / DBND-B1B — IcrabotService Digital Twin + state-machine ten
     const taskOrchestrator = {
       getPendingTasks: jest.fn().mockResolvedValue([{ id: 'task-1' }]),
       enqueueTasks: jest.fn().mockResolvedValue([]),
+      approveTask: jest.fn().mockResolvedValue({ id: TASK_ID, status: 'QUEUED' }),
+      cancelTask: jest.fn().mockResolvedValue({ id: TASK_ID, status: 'CANCELLED' }),
     };
     const evidenceService = {
       generateEvidenceReport: jest.fn().mockResolvedValue({ totalEvidence: 0 }),
@@ -156,6 +170,66 @@ describe('DBND-B1 / DBND-B1B — IcrabotService Digital Twin + state-machine ten
       const { svc, recipeService } = build(false);
       await expect(svc.getAvailableTransitions(CASE_ID, TENANT)).rejects.toBeInstanceOf(NotFoundException);
       expect(recipeService.buildDigitalTwin).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('stopAutomation (DBND-B1C — yazma yolu, caseId+tenantId guard)', () => {
+    it('aynı tenant → guard geçer, botTask.updateMany ve case.update çağrılır', async () => {
+      const { svc, prisma } = build(true);
+      await svc.stopAutomation(CASE_ID, TENANT);
+      expect(prisma.case.findFirst).toHaveBeenCalledWith({
+        where: { id: CASE_ID, tenantId: TENANT },
+        select: { id: true },
+      });
+      expect(prisma.botTask.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ caseId: CASE_ID }) }),
+      );
+      expect(prisma.case.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: CASE_ID } }),
+      );
+    });
+
+    it('başka tenant → NotFoundException, botTask.updateMany ve case.update HİÇ çağrılmaz', async () => {
+      const { svc, prisma } = build(false);
+      await expect(svc.stopAutomation(CASE_ID, TENANT)).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.botTask.updateMany).not.toHaveBeenCalled();
+      expect(prisma.case.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancelTask (DBND-B1C — yazma yolu, taskId+tenantId guard)', () => {
+    it('aynı tenant → guard geçer, taskOrchestrator.cancelTask çağrılır', async () => {
+      const { svc, prisma, taskOrchestrator } = build(true);
+      await svc.cancelTask(TASK_ID, TENANT, 'test reason');
+      expect(prisma.botTask.findFirst).toHaveBeenCalledWith({
+        where: { id: TASK_ID, tenantId: TENANT },
+        select: { id: true },
+      });
+      expect(taskOrchestrator.cancelTask).toHaveBeenCalledWith(TASK_ID, 'test reason');
+    });
+
+    it('başka tenant → NotFoundException, taskOrchestrator.cancelTask çağrılmaz', async () => {
+      const { svc, taskOrchestrator } = build(false);
+      await expect(svc.cancelTask(TASK_ID, TENANT)).rejects.toBeInstanceOf(NotFoundException);
+      expect(taskOrchestrator.cancelTask).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('approveTask (DBND-B1C — yazma yolu, taskId+tenantId guard)', () => {
+    it('aynı tenant → guard geçer, taskOrchestrator.approveTask çağrılır', async () => {
+      const { svc, prisma, taskOrchestrator } = build(true);
+      await svc.approveTask(TASK_ID, TENANT, 'user-1');
+      expect(prisma.botTask.findFirst).toHaveBeenCalledWith({
+        where: { id: TASK_ID, tenantId: TENANT },
+        select: { id: true },
+      });
+      expect(taskOrchestrator.approveTask).toHaveBeenCalledWith(TASK_ID, 'user-1');
+    });
+
+    it('başka tenant → NotFoundException, taskOrchestrator.approveTask çağrılmaz', async () => {
+      const { svc, taskOrchestrator } = build(false);
+      await expect(svc.approveTask(TASK_ID, TENANT, 'user-1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(taskOrchestrator.approveTask).not.toHaveBeenCalled();
     });
   });
 });

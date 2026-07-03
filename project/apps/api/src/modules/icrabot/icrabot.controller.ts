@@ -101,8 +101,8 @@ export class IcrabotController {
    * POST /api/icrabot/cases/:caseId/stop
    */
   @Post('cases/:caseId/stop')
-  async stopAutomation(@Param('caseId') caseId: string) {
-    await this.icrabotService.stopAutomation(caseId);
+  async stopAutomation(@Param('caseId') caseId: string, @Request() req: any) {
+    await this.icrabotService.stopAutomation(caseId, req.user.tenantId);
     return { success: true };
   }
 
@@ -133,7 +133,7 @@ export class IcrabotController {
     @Param('taskId') taskId: string,
     @Request() req: any
   ) {
-    await this.icrabotService.approveTask(taskId, req.user.id);
+    await this.icrabotService.approveTask(taskId, req.user.tenantId, req.user.id);
     return { success: true };
   }
 
@@ -144,9 +144,10 @@ export class IcrabotController {
   @Post('tasks/:taskId/cancel')
   async cancelTask(
     @Param('taskId') taskId: string,
-    @Body() body: { reason?: string }
+    @Body() body: { reason?: string },
+    @Request() req: any
   ) {
-    await this.icrabotService.cancelTask(taskId, body.reason);
+    await this.icrabotService.cancelTask(taskId, req.user.tenantId, body.reason);
     return { success: true };
   }
 
