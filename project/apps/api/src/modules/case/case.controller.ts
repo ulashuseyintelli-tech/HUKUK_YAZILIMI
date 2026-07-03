@@ -657,6 +657,7 @@ export class CaseController {
     @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() body: {
+      idempotencyKey: string; // P0-1: zorunlu — çift tahsilat engeli
       caseDebtorId?: string;
       amount: number;
       currency?: string;

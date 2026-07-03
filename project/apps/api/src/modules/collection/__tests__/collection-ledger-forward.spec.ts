@@ -11,18 +11,29 @@ import { CollectionService } from '../collection.service';
 import { CollectionChannel, CollectionSource, CollectionType } from '../dto/collection.dto';
 import { BadRequestException } from '@nestjs/common';
 
-function setup(opts: { summaryEngine?: any; caseRecord?: any } = {}) {
+function setup(opts: { summaryEngine?: any; caseRecord?: any; lockedDup?: any; preExisting?: any } = {}) {
   const tx: any = {
     case: {
       findFirst: jest.fn(async () => opts.caseRecord ?? ({ id: 'c1', caseStatus: 'DERDEST', currency: 'TRY' })),
     },
-    collection: { create: jest.fn(async () => ({ id: 'col1' })), findFirst: jest.fn() },
+    // P0-1: idempotency race re-check (lock altında) → varsayılan null (mevcut kayıt yok).
+    collection: {
+      create: jest.fn(async () => ({ id: 'col1' })),
+      findFirst: jest.fn(),
+      findUnique: jest.fn(async () => opts.lockedDup ?? null),
+    },
     collectionAllocation: { create: jest.fn() },
     collectionOverpayment: { create: jest.fn() },
+    // P0-1: advisory xact lock — mock no-op.
+    $executeRaw: jest.fn(async () => 0),
   };
   const prisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(tx)),
-    collection: { findFirst: jest.fn(async () => ({ id: 'col1', allocations: [] })) },
+    // P0-1: idempotent fast-path (tx öncesi) → varsayılan null (pre-existing yok).
+    collection: {
+      findFirst: jest.fn(async () => ({ id: 'col1', allocations: [] })),
+      findUnique: jest.fn(async () => opts.preExisting ?? null),
+    },
   };
   const domainEvent: any = { appendInTransaction: jest.fn(async () => ({})) };
   const caseDebtorLifecycleGuard: any = { assertActiveByCaseDebtorId: jest.fn() };
@@ -34,7 +45,7 @@ function setup(opts: { summaryEngine?: any; caseRecord?: any } = {}) {
   return { svc, prisma, tx, domainEvent, autoSpy, warnSpy, caseDebtorLifecycleGuard };
 }
 
-const dto = { caseId: 'c1', amount: 1000, date: '2026-01-01', type: CollectionType.CASH } as any;
+const dto = { caseId: 'c1', idempotencyKey: 'idem-fixed-1', amount: 1000, date: '2026-01-01', type: CollectionType.CASH } as any;
 
 describe('CollectionService.create — G3a ledger forward write', () => {
   it('caseDebtorId varsa active guard ile create devam eder', async () => {

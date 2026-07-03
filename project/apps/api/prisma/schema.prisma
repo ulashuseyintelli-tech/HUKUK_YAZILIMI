@@ -2195,6 +2195,13 @@ model Collection {
   sourceType CollectionSource? // Nereden geldi
   sourceId   String? // Kaynak ID (ExternalCase, ThirdParty vs.)
 
+  // İdempotency (P0-1 / S9) — aynı gerçek tahsilatın çift kaydını engeller
+  //   (double-click / network retry / duplicate webhook). Her create path zorunlu
+  //   client-üretimli key sağlar; legacy satırlar migration'da 'legacy:'||id backfill'i aldı.
+  //   External dedup + ledger-posting tekliği migration'daki partial-unique index'lerle
+  //   kurulur (Prisma partial/filtered unique'i deklaratif desteklemez → raw SQL).
+  idempotencyKey String
+
   // Mahsup Bilgileri
   allocations   CollectionAllocation[]
   ledgerEntries LedgerEntry[]
@@ -2218,6 +2225,7 @@ model Collection {
   updatedAt   DateTime @updatedAt
   createdById String?
 
+  @@unique([tenantId, idempotencyKey])
   @@index([tenantId])
   @@index([caseId])
   @@index([caseDebtorId])

@@ -251,6 +251,8 @@ export async function seedTm47dHappyPathFixture(
       id: ids.collectionId,
       tenantId: ids.tenantId,
       caseId: ids.payableCaseId,
+      // P0-1: idempotencyKey NOT NULL — seed deterministik key kullanır (re-run güvenli).
+      idempotencyKey: `seed:tm47d:${ids.collectionId}`,
       amount: PAYABLE_AMOUNT,
       currency: CURRENCY,
       type: 'TAHSILAT',

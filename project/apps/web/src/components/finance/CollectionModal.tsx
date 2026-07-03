@@ -39,6 +39,19 @@ function labelPreviewMessage(code: string, labels: Record<string, string>) {
   return labels[code] || code;
 }
 
+// P0-1 (S9): tahsilat işlemi başına stabil idempotency key. Aynı modal oturumunda
+//   double-click/retry aynı key'i taşır → backend tek tahsilat yazar.
+function newIdempotencyKey(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* secure-context değilse fallback */
+  }
+  return `col-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 interface CollectionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -53,6 +66,8 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState<PaymentPreviewResponseDTO | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  // P0-1: create için stabil idempotency key (modal her açıldığında yenilenir).
+  const [idempotencyKey, setIdempotencyKey] = useState<string>("");
   const [form, setForm] = useState({
     type: "TAHSILAT",
     channel: "BANKA",
@@ -90,6 +105,14 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
     setPreviewResult(null);
     setPreviewError(null);
   }, [caseId, collection?.id, form.amount, form.date, form.currency, form.channel, isOpen]);
+
+  // P0-1: yeni tahsilat (create) modal açılışında taze idempotency key üret.
+  //   Edit modunda (collection?.id var) key üretilmez — update idempotency kapsamında değil.
+  useEffect(() => {
+    if (isOpen && !collection?.id) {
+      setIdempotencyKey(newIdempotencyKey());
+    }
+  }, [isOpen, collection?.id]);
 
   const collectionStatus = String(collection?.status || "").toUpperCase();
   const dispositionStatus = String(
@@ -152,7 +175,11 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
       if (collection?.id) {
         await api.updateCollection(caseId, collection.id, data);
       } else {
-        await api.createCollection(caseId, data);
+        // P0-1: create'te stabil idempotencyKey gönder (yoksa taze üret — güvenlik ağı).
+        await api.createCollection(caseId, {
+          ...data,
+          idempotencyKey: idempotencyKey || newIdempotencyKey(),
+        });
       }
       onSuccess();
       onClose();
