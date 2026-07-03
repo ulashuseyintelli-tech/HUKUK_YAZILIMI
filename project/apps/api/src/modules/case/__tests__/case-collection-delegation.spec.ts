@@ -177,6 +177,64 @@ describe('CaseService collection delegation (G3d)', () => {
     expect(result[1]).toEqual(collections[1]);
   });
 
+  it('DBIND-P2 contract smoke: null/orphan debtor binding additive kalir ve legacy collection shape bozulmaz', async () => {
+    const collections = [
+      { id: 'col-bound', tenantId: 't1', caseId: 'c1', caseDebtorId: 'cd-1', amount: 100, status: 'CONFIRMED' },
+      { id: 'col-null', tenantId: 't1', caseId: 'c1', caseDebtorId: null, amount: 50, status: 'CONFIRMED' },
+      { id: 'col-orphan', tenantId: 't1', caseId: 'c1', caseDebtorId: 'cd-foreign', amount: 25, status: 'CONFIRMED' },
+    ];
+    const prisma = {
+      case: { findFirst: jest.fn(async () => ({ id: 'c1' })) },
+      collection: { findMany: jest.fn(async () => collections) },
+      caseDebtor: {
+        findMany: jest.fn(async () => [
+          {
+            id: 'cd-1',
+            lifecycleStatus: 'ACTIVE',
+            role: 'ASIL_BORCLU',
+            debtor: {
+              id: 'debtor-1',
+              name: 'Ali Borclu',
+              identityNo: '12345678901',
+              type: 'INDIVIDUAL',
+            },
+          },
+        ]),
+      },
+      collectionDisposition: { findMany: jest.fn(async () => []) },
+    };
+    const svc = buildService({}, prisma);
+
+    const result = await svc.getCaseCollections('t1', 'c1') as any[];
+
+    expect(prisma.caseDebtor.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        id: { in: ['cd-1', 'cd-foreign'] },
+        caseId: 'c1',
+        case: { tenantId: 't1' },
+      },
+    }));
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'col-bound',
+      caseDebtorId: 'cd-1',
+      amount: 100,
+      debtorFinancialBinding: {
+        caseDebtorId: 'cd-1',
+        lifecycleStatus: 'ACTIVE',
+        role: 'ASIL_BORCLU',
+        debtor: {
+          id: 'debtor-1',
+          displayName: 'Ali Borclu',
+          identityNo: '12345678901',
+          type: 'INDIVIDUAL',
+        },
+      },
+    }));
+    expect(result[1]).toEqual(collections[1]);
+    expect(result[1]).not.toHaveProperty('debtorFinancialBinding');
+    expect(result[2]).toEqual(collections[2]);
+    expect(result[2]).not.toHaveProperty('debtorFinancialBinding');
+  });
   it('T4: cancelCollection route caseId + tenant guard sonrası collectionService.cancel delegasyonu yapar', async () => {
     const coll = { create: jest.fn(), cancel: jest.fn(async () => ({ id: 'col1' })) };
     const prisma = buildPrisma({ id: 'col1', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' });

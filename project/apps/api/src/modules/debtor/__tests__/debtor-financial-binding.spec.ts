@@ -110,6 +110,26 @@ describe("DBIND-P2 DebtorService financial binding", () => {
     ]);
   });
 
+  it("returns an additive zero financialSummary when the case debtor has no collections", async () => {
+    const { service } = makeService(makeCaseDebtor(), []);
+
+    const result = await service.getCaseDebtorDetail("tenant-1", "case-1", "cd-1");
+
+    expect(result).toEqual(expect.objectContaining({
+      id: "debtor-1",
+      caseDebtorId: "cd-1",
+      displayName: "Ali Borclu",
+      financialSummary: {
+        totalConfirmedCollected: 0,
+        totalPendingAmount: 0,
+        totalCancelledAmount: 0,
+        totalRefundedAmount: 0,
+        collectionCount: 0,
+        currencyBreakdown: [],
+      },
+    }));
+    expect(result.financialSummary).not.toHaveProperty("lastCollectionDate");
+  });
   it("does not read collections when case debtor ownership guard fails", async () => {
     const { prisma, service } = makeService(null);
 
