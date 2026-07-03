@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as crypto from 'crypto';
 
@@ -23,6 +23,17 @@ export class EvidenceService {
   // Prisma client'a erişim (generate sonrası düzelecek)
   private get db(): any {
     return this.prisma;
+  }
+
+  private async assertCaseTenant(caseId: string, tenantId: string): Promise<void> {
+    const exists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true },
+    });
+
+    if (!exists) {
+      throw new NotFoundException(`Dosya bulunamadi: ${caseId}`);
+    }
   }
 
   /**
@@ -189,7 +200,7 @@ export class EvidenceService {
   /**
    * Mahkeme raporu için kanıt özeti oluştur
    */
-  async generateEvidenceReport(caseId: string): Promise<{
+  async generateEvidenceReport(caseId: string, tenantId: string): Promise<{
     caseId: string;
     generatedAt: Date;
     totalEvidence: number;
@@ -206,6 +217,8 @@ export class EvidenceService {
       hash: string;
     }>;
   }> {
+    await this.assertCaseTenant(caseId, tenantId);
+
     const evidence = await this.db.botEvidence.findMany({
       where: { caseId },
       orderBy: { timestamp: 'asc' },

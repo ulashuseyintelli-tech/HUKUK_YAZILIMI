@@ -79,10 +79,10 @@ export class IcrabotService {
   async getDigitalTwin(caseId: string, tenantId: string): Promise<CaseDigitalTwin> {
     await this.assertCaseTenant(caseId, tenantId);
 
-    const twin = await this.recipeService.buildDigitalTwin(caseId);
+    const twin = await this.recipeService.buildDigitalTwin(caseId, tenantId);
 
     // Next actions hesapla
-    twin.nextActions = await this.recipeService.calculateNextBestActions(caseId);
+    twin.nextActions = await this.recipeService.calculateNextBestActions(caseId, tenantId);
 
     return twin;
   }
@@ -92,7 +92,7 @@ export class IcrabotService {
    */
   async getNextBestActions(caseId: string, tenantId: string): Promise<NextBestAction[]> {
     await this.assertCaseTenant(caseId, tenantId);
-    return this.recipeService.calculateNextBestActions(caseId);
+    return this.recipeService.calculateNextBestActions(caseId, tenantId);
   }
 
   /**
@@ -196,7 +196,7 @@ export class IcrabotService {
    */
   async getPendingTasks(caseId: string, tenantId: string): Promise<any[]> {
     await this.assertCaseTenant(caseId, tenantId);
-    return this.taskOrchestrator.getPendingTasks(caseId);
+    return this.taskOrchestrator.getPendingTasks(caseId, tenantId);
   }
 
   /**
@@ -220,7 +220,7 @@ export class IcrabotService {
    */
   async getEvidenceReport(caseId: string, tenantId: string): Promise<any> {
     await this.assertCaseTenant(caseId, tenantId);
-    return this.evidenceService.generateEvidenceReport(caseId);
+    return this.evidenceService.generateEvidenceReport(caseId, tenantId);
   }
 
   /**
@@ -336,7 +336,7 @@ export class IcrabotService {
   }> {
     await this.assertCaseTenant(caseId, tenantId);
 
-    const twin = await this.recipeService.buildDigitalTwin(caseId);
+    const twin = await this.recipeService.buildDigitalTwin(caseId, tenantId);
     const currentStage = twin.stage;
     const icraType = twin.icraType;
 
@@ -424,7 +424,7 @@ export class IcrabotService {
   }> {
     await this.assertCaseTenant(caseId, tenantId);
 
-    const twin = await this.recipeService.buildDigitalTwin(caseId);
+    const twin = await this.recipeService.buildDigitalTwin(caseId, tenantId);
     const currentStage = twin.stage;
     const icraType = twin.icraType;
 
