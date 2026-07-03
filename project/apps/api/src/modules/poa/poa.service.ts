@@ -7,6 +7,31 @@ import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import type { AuditActor } from "@/modules/client/client.service";
 
+export const POA_UPLOAD_ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/jpg"] as const;
+export const POA_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
+export interface ClientWorkspacePoaUploadResult {
+  clientId: string;
+  poaId: string;
+  hasFile: true;
+  fileSize: number | null;
+  mimeType: string | null;
+}
+
+export function validatePoaUploadFile(file: Express.Multer.File | undefined): asserts file is Express.Multer.File {
+  if (!file) {
+    throw new BadRequestException("Dosya yuklenmedi");
+  }
+
+  if (!POA_UPLOAD_ALLOWED_MIME_TYPES.includes(file.mimetype as any)) {
+    throw new BadRequestException("Sadece PDF ve goruntu dosyalari (JPG, PNG) yuklenebilir");
+  }
+
+  if (file.size > POA_UPLOAD_MAX_BYTES) {
+    throw new BadRequestException("Dosya boyutu 10MB'dan buyuk olamaz");
+  }
+}
+
 // ── PR-2: POA semantik idempotency saf yardımcıları ──
 // Dedupe anahtarı: clientId + normalizedNotaryName + dateIssued (aktif). poaNumber/yevmiyeNo
 // OCR-gürültülü → anahtar DEĞİL. documentHash bu PR dışında.
@@ -639,6 +664,43 @@ export class PoaService {
       filePath: updated.filePath,
       fileSize: updated.fileSize,
       mimeType: updated.mimeType,
+    };
+  }
+
+  /**
+   * Client Workspace POA upload V1 safe wrapper.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.uploadPoaFile() -> POST /clients/:clientId/poas/:poaId/file
+   * </remarks>
+   */
+  async uploadFileForClientWorkspace(
+    clientId: string,
+    poaId: string,
+    file: Express.Multer.File,
+    tenantId: string,
+  ): Promise<ClientWorkspacePoaUploadResult> {
+    const poa = await this.prisma.clientPowerOfAttorney.findFirst({
+      where: {
+        id: poaId,
+        clientId,
+        client: { id: clientId, tenantId, isActive: true },
+      },
+      select: { id: true, clientId: true },
+    });
+    if (!poa) {
+      throw new NotFoundException("Vekalet bulunamadi");
+    }
+
+    const uploaded = await this.uploadFile(poaId, file, tenantId);
+
+    return {
+      clientId: poa.clientId,
+      poaId: poa.id,
+      hasFile: true,
+      fileSize: uploaded.fileSize ?? null,
+      mimeType: uploaded.mimeType ?? null,
     };
   }
 

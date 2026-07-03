@@ -10,9 +10,10 @@ import { OfficeApprovalModule } from '../office-approval/office-approval.module'
 import { EscalationModule } from '../escalation/escalation.module';
 import { PoaExpiryDeliveryService } from '../automation/poa-expiry-delivery.service';
 import { ClientNotificationModule } from '../client-notification/client-notification.module';
+import { PoaModule } from '../poa/poa.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule, EscalationModule, ClientNotificationModule],
+  imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule, EscalationModule, ClientNotificationModule, PoaModule],
   controllers: [ClientController, ClientAddressController],
   providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService],
   exports: [ClientService],
