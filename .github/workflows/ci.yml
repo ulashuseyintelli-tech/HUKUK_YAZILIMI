@@ -183,3 +183,130 @@ jobs:
       - name: Web build (next build)
         run: pnpm --filter @hukuk/web build
         working-directory: project
+  client-workspace-live-smoke:
+    name: Client Workspace Live Smoke
+    runs-on: ubuntu-latest
+    needs: [test-suite, web-tests]
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+      JWT_SECRET: client-workspace-live-smoke-ci-secret
+      JWT_EXPIRES_IN: 7d
+      NODE_ENV: test
+      PORT: 8080
+      CORS_ORIGIN: http://localhost:3002
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      CLIENT_WORKSPACE_LIVE_SMOKE: "1"
+      CLIENT_WORKSPACE_WEB_BASE_URL: http://localhost:3002
+      CLIENT_WORKSPACE_API_BASE_URL: http://localhost:8080
+      CLIENT_WORKSPACE_SMOKE_CLIENT_ID: client-workspace-live-smoke-v1-client
+      CLIENT_WORKSPACE_SMOKE_EMAIL: admin@hukuk.com
+      CLIENT_WORKSPACE_SMOKE_PASSWORD: admin123
+      ALLOW_CLIENT_WORKSPACE_LIVE_SMOKE_SEED: "1"
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hukuk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: project/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        working-directory: project
+      - name: Disable optional pdf-poppler for Client Workspace smoke runtime
+        run: |
+          pnpm --filter @hukuk/api exec node -e "const fs = require('fs'); const p = require.resolve('pdf-poppler'); fs.writeFileSync(p, 'module.exports = { convert: async () => { throw new Error(\"pdf-poppler disabled in Client Workspace live smoke CI\"); } };\n'); console.log('Stubbed optional pdf-poppler at ' + p);"
+        working-directory: project
+      - name: Prisma generate
+        run: pnpm --filter @hukuk/api exec prisma generate
+        working-directory: project
+      - name: Prisma migrate deploy
+        run: pnpm --filter @hukuk/api exec prisma migrate deploy
+        working-directory: project
+      - name: Seed base data
+        run: pnpm --filter @hukuk/api db:seed
+        working-directory: project
+      - name: Seed Client Workspace live smoke fixture
+        id: seed-client-workspace-fixture
+        run: pnpm --filter @hukuk/api seed:client-workspace-live-smoke -- --reset
+        working-directory: project
+      - name: Build API
+        run: pnpm --filter @hukuk/api build
+        working-directory: project
+      - name: Build Web
+        run: pnpm --filter @hukuk/web build
+        working-directory: project
+      - name: Install Playwright Chromium
+        run: pnpm --filter @hukuk/web exec playwright install --with-deps chromium
+        working-directory: project
+      - name: Start API
+        run: |
+          pnpm --filter @hukuk/api start > api-live-smoke.log 2>&1 &
+          echo $! > api-live-smoke.pid
+        working-directory: project
+      - name: Start Web
+        run: |
+          PORT=3002 pnpm --filter @hukuk/web start > web-live-smoke.log 2>&1 &
+          echo $! > web-live-smoke.pid
+        working-directory: project
+      - name: Wait for API and Web
+        run: |
+          for i in {1..60}; do
+            if curl --silent http://localhost:8080/api/auth/me >/dev/null 2>&1; then
+              api_ready=1
+            fi
+            if curl --fail --silent http://localhost:3002 >/dev/null 2>&1; then
+              web_ready=1
+            fi
+            if [ "${api_ready:-0}" = "1" ] && [ "${web_ready:-0}" = "1" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API/Web readiness timeout"
+          echo "--- API log ---"
+          cat api-live-smoke.log || true
+          echo "--- Web log ---"
+          cat web-live-smoke.log || true
+          exit 1
+        working-directory: project
+      - name: Client Workspace Playwright live smoke
+        run: pnpm --filter @hukuk/web smoke:client-workspace
+        working-directory: project
+      - name: Cleanup Client Workspace live smoke fixture
+        if: always() && steps.seed-client-workspace-fixture.outcome == 'success'
+        run: pnpm --filter @hukuk/api seed:client-workspace-live-smoke -- --cleanup
+        working-directory: project
+      - name: Stop API and Web
+        if: always()
+        run: |
+          if [ -f api-live-smoke.pid ]; then kill "$(cat api-live-smoke.pid)" 2>/dev/null || true; fi
+          if [ -f web-live-smoke.pid ]; then kill "$(cat web-live-smoke.pid)" 2>/dev/null || true; fi
+        working-directory: project
+      - name: Upload Client Workspace live smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-workspace-live-smoke-diagnostics
+          path: |
+            project/api-live-smoke.log
+            project/web-live-smoke.log
+            project/apps/web/playwright-report/client-workspace
+            project/apps/web/test-results
