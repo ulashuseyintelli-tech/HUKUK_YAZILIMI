@@ -108,6 +108,8 @@ export function validateJournalStructure(draft: JournalEntryDraft): JournalValid
 
 export function validateJournalBusiness(draft: JournalEntryDraft): JournalValidationResult {
   switch (draft.sourceType) {
+    case 'COLLECTION':
+      return validateCollectionBusiness(draft);
     case 'CLIENT_OFFSET':
       return validateClientOffsetBusiness(draft);
     case 'COLLECTION_DISPOSITION_LINE':
@@ -148,6 +150,136 @@ export function validateJournalDraft(draft: JournalEntryDraft): JournalValidatio
   };
 }
 
+function validateCollectionBusiness(draft: JournalEntryDraft): JournalValidationResult {
+  const errors: JournalValidationError[] = [];
+  const isRecorded = draft.sourceAction === 'recorded';
+  const isCancel = draft.sourceAction === 'cancel';
+
+  if (!isRecorded && !isCancel) {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'Collection journal sourceAction must be recorded or cancel.', 'sourceAction', {
+      sourceAction: draft.sourceAction,
+    }));
+  }
+
+  const expectedEntryType = isRecorded ? 'COLLECTION_CASH_RECEIPT_RECORDED' : 'COLLECTION_CASH_RECEIPT_REVERSED';
+  if ((isRecorded || isCancel) && draft.entryType !== expectedEntryType) {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'Collection entryType must match sourceAction.', 'entryType', {
+      expectedEntryType,
+      entryType: draft.entryType,
+    }));
+  }
+
+  const collectionStatus = draft.metadata.collectionStatus;
+  if (collectionStatus === 'REFUNDED') {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Collection REFUNDED policy is not mapped for cash journal posting.', 'metadata.collectionStatus', {
+      collectionStatus,
+    }));
+  }
+
+  const expectedStatus = isRecorded ? 'CONFIRMED' : isCancel ? 'CANCELLED' : null;
+  if (expectedStatus && collectionStatus !== expectedStatus) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Collection journal status must match sourceAction.', 'metadata.collectionStatus', {
+      expectedStatus,
+      collectionStatus,
+      sourceAction: draft.sourceAction,
+    }));
+  }
+
+  if (isRecorded && draft.reversalOf) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Collection recorded journal must not carry reversal reference.', 'reversalOf', {
+      reversalSourceType: draft.reversalOf.sourceType,
+      reversalSourceId: draft.reversalOf.sourceId,
+      reversalSourceAction: draft.reversalOf.sourceAction,
+    }));
+  }
+
+  if (isCancel) {
+    const invalidReversalReference =
+      !draft.reversalOf ||
+      draft.reversalOf.sourceType !== 'COLLECTION' ||
+      draft.reversalOf.sourceId !== draft.sourceId ||
+      draft.reversalOf.sourceAction !== 'recorded';
+
+    if (invalidReversalReference) {
+      errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Collection cancel journal must reference the original recorded source.', 'reversalOf', {
+        reversalSourceType: draft.reversalOf?.sourceType ?? null,
+        reversalSourceId: draft.reversalOf?.sourceId ?? null,
+        reversalSourceAction: draft.reversalOf?.sourceAction ?? null,
+        sourceId: draft.sourceId,
+      }));
+    }
+  }
+
+  if (draft.lines.length !== 2) {
+    errors.push(validationError('INVALID_LINE_SHAPE', 'Collection cash journal must contain exactly cash and case collection clearing legs.', 'lines', {
+      lineCount: draft.lines.length,
+    }));
+  }
+
+  const cashLine = findSingleLine(errors, draft.lines, 'CASH_CLEARING', 'Collection cash leg');
+  const clearingLine = findSingleLine(errors, draft.lines, 'CASE_COLLECTION_CLEARING', 'Collection case clearing leg');
+
+  if (cashLine) validateCollectionLine(errors, draft, cashLine, isRecorded ? 'DEBIT' : 'CREDIT');
+  if (clearingLine) validateCollectionLine(errors, draft, clearingLine, isRecorded ? 'CREDIT' : 'DEBIT');
+
+  return errors.length === 0 ? { ok: true, draft } : { ok: false, errors };
+}
+
+function validateCollectionLine(
+  errors: JournalValidationError[],
+  draft: JournalEntryDraft,
+  line: JournalLineDraft,
+  expectedDirection: 'DEBIT' | 'CREDIT',
+) {
+  if (line.direction !== expectedDirection) {
+    errors.push(validationError('INVALID_ACCOUNT_DIRECTION', 'Collection cash journal leg has invalid direction.', `lines[${line.lineNo}].direction`, {
+      expectedDirection,
+      direction: line.direction,
+    }));
+  }
+
+  if (!line.caseId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Collection cash journal line requires caseId.', `lines[${line.lineNo}].caseId`));
+  }
+
+  if (draft.caseId && line.caseId && line.caseId !== draft.caseId) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Collection cash journal line caseId must match entry caseId.', `lines[${line.lineNo}].caseId`, {
+      entryCaseId: draft.caseId,
+      lineCaseId: line.caseId,
+    }));
+  }
+
+  if (line.collectionId !== draft.sourceId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Collection cash journal line must carry collectionId from sourceId.', `lines[${line.lineNo}].collectionId`, {
+      expectedCollectionId: draft.sourceId,
+      collectionId: line.collectionId,
+    }));
+  }
+
+  if (
+    line.clientId ||
+    line.caseClientId ||
+    line.dispositionLineId ||
+    line.payoutId ||
+    line.offsetId ||
+    line.expenseRequestId ||
+    line.expensePaymentId ||
+    line.expenseApplicationId ||
+    line.balanceLedgerId
+  ) {
+    errors.push(validationError('FORBIDDEN_SYNTHETIC_DIMENSION', 'Collection cash journal line must not carry client or unrelated source dimensions.', `lines[${line.lineNo}]`, {
+      clientId: line.clientId,
+      caseClientId: line.caseClientId,
+      dispositionLineId: line.dispositionLineId,
+      payoutId: line.payoutId,
+      offsetId: line.offsetId,
+      expenseRequestId: line.expenseRequestId,
+      expensePaymentId: line.expensePaymentId,
+      expenseApplicationId: line.expenseApplicationId,
+      balanceLedgerId: line.balanceLedgerId,
+    }));
+  }
+}
 function validateCollectionDispositionLineBusiness(draft: JournalEntryDraft): JournalValidationResult {
   const errors: JournalValidationError[] = [];
 

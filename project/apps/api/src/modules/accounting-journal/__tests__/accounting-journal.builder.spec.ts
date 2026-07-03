@@ -16,8 +16,10 @@ import type {
   ClientPayoutRecordedPayload,
   CollectionDispositionExpenseApplicationJournalSource,
   CollectionDispositionExpenseApplicationPayload,
+  CollectionCashJournalSourcePayload,
   CollectionDispositionLineJournalSource,
   CollectionDispositionLinePostedPayload,
+  CollectionJournalSource,
   ExpensePaymentJournalSource,
   ExpensePaymentRecordedPayload,
   ExpenseRequestJournalSource,
@@ -256,7 +258,152 @@ function buildManualAdjustmentDraft(source: ManualAdjustmentJournalSource = manu
   return result.draft;
 }
 
+interface CollectionSourceOverrides extends Partial<Omit<CollectionJournalSource, 'sourceType' | 'payload'>> {
+  payload?: Partial<CollectionCashJournalSourcePayload>;
+}
+
+function collectionSource(overrides: CollectionSourceOverrides = {}): CollectionJournalSource {
+  const sourceId = overrides.sourceId ?? 'collection-1';
+  const kind = overrides.payload?.kind ?? 'RECORDED';
+  const isRecorded = kind === 'RECORDED';
+  const originalRecordedSourceVersion = isRecorded
+    ? null
+    : overrides.payload?.originalRecordedSourceVersion ?? `2026-07-03T09:00:00.000Z:${sourceId}:RECORDED`;
+
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'COLLECTION',
+    sourceId,
+    sourceVersion: overrides.sourceVersion ?? (isRecorded
+      ? `2026-07-03T09:00:00.000Z:${sourceId}:RECORDED`
+      : `2026-07-03T10:00:00.000Z:${sourceId}:CANCEL`),
+    sourceAction: overrides.sourceAction ?? (isRecorded ? 'recorded' : 'cancel'),
+    occurredAt: overrides.occurredAt ?? (isRecorded ? '2026-07-03T09:00:00.000Z' : '2026-07-03T10:00:00.000Z'),
+    effectiveDate: overrides.effectiveDate ?? (isRecorded ? '2026-07-03' : '2026-07-03'),
+    actorId: overrides.actorId ?? 'user-collection-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? 'collection-source-hash-1',
+    metadata: overrides.metadata ?? { sourceName: 'collection-cash-test' },
+    payload: {
+      kind,
+      amount: overrides.payload?.amount ?? '500.00',
+      caseId: overrides.payload?.caseId ?? 'case-collection-1',
+      collectionId: overrides.payload?.collectionId ?? sourceId,
+      collectionStatus: overrides.payload?.collectionStatus ?? (isRecorded ? 'CONFIRMED' : 'CANCELLED'),
+      debtorId: overrides.payload?.debtorId ?? 'debtor-1',
+      originalRecordedSourceVersion,
+    },
+  };
+}
+
+function buildCollectionDraft(source: CollectionJournalSource = collectionSource()): JournalEntryDraft {
+  const result = buildAccountingJournal(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.draft;
+}
 describe('AccountingJournalBuilder contract skeleton', () => {
+  it('COLLECTION RECORDED accounting rule: cash DEBIT and case collection clearing CREDIT without client attribution', () => {
+    const source = collectionSource({ sourceId: 'collection-recorded-1' });
+    const draft = buildCollectionDraft(source);
+
+    const cash = lineByAccount(draft, 'CASH_CLEARING');
+    const clearing = lineByAccount(draft, 'CASE_COLLECTION_CLEARING');
+
+    expect(draft.entryType).toBe('COLLECTION_CASH_RECEIPT_RECORDED');
+    expect(draft.sourceType).toBe('COLLECTION');
+    expect(draft.sourceAction).toBe('recorded');
+    expect(draft.caseId).toBe('case-collection-1');
+    expect(draft.reversalOf).toBeNull();
+    expect(draft.idempotencyKey).toBe(buildJournalIdempotencyKey(journalIdempotencyMaterialFromSource(source)));
+    expect(draft.metadata).toEqual(expect.objectContaining({
+      description: 'Collection cash receipt recorded',
+      collectionId: 'collection-recorded-1',
+      collectionKind: 'RECORDED',
+      collectionStatus: 'CONFIRMED',
+      debtorId: 'debtor-1',
+      originalRecordedSourceVersion: null,
+    }));
+    expect(cash).toEqual(expect.objectContaining({
+      lineNo: 1,
+      direction: 'DEBIT',
+      amount: '500.00',
+      caseId: 'case-collection-1',
+      clientId: null,
+      caseClientId: null,
+      collectionId: 'collection-recorded-1',
+      dispositionLineId: null,
+      payoutId: null,
+      offsetId: null,
+      expenseRequestId: null,
+      expensePaymentId: null,
+      expenseApplicationId: null,
+      balanceLedgerId: null,
+    }));
+    expect(clearing).toEqual(expect.objectContaining({
+      lineNo: 2,
+      direction: 'CREDIT',
+      amount: '500.00',
+      caseId: 'case-collection-1',
+      clientId: null,
+      caseClientId: null,
+      collectionId: 'collection-recorded-1',
+    }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('COLLECTION CANCEL accounting rule: reverses recorded cash receipt with inverse lines and original source reference', () => {
+    const source = collectionSource({
+      sourceId: 'collection-cancel-1',
+      payload: {
+        kind: 'CANCEL',
+        amount: '275.25',
+        originalRecordedSourceVersion: '2026-07-03T09:00:00.000Z:collection-cancel-1:RECORDED',
+      },
+    });
+    const draft = buildCollectionDraft(source);
+
+    const clearing = lineByAccount(draft, 'CASE_COLLECTION_CLEARING');
+    const cash = lineByAccount(draft, 'CASH_CLEARING');
+
+    expect(draft.entryType).toBe('COLLECTION_CASH_RECEIPT_REVERSED');
+    expect(draft.sourceAction).toBe('cancel');
+    expect(draft.reversalOf).toEqual({
+      sourceType: 'COLLECTION',
+      sourceId: 'collection-cancel-1',
+      sourceAction: 'recorded',
+      sourceVersion: '2026-07-03T09:00:00.000Z:collection-cancel-1:RECORDED',
+      journalEntryId: null,
+    });
+    expect(clearing).toEqual(expect.objectContaining({ direction: 'DEBIT', amount: '275.25', collectionId: 'collection-cancel-1' }));
+    expect(cash).toEqual(expect.objectContaining({ direction: 'CREDIT', amount: '275.25', collectionId: 'collection-cancel-1' }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('COLLECTION REFUNDED remains an unmapped policy blocker', () => {
+    const result = buildAccountingJournal(collectionSource({
+      payload: { collectionStatus: 'REFUNDED' },
+    }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected REFUNDED collection to be unmapped.');
+    expect(result.errors).toContainEqual(expect.objectContaining({
+      code: 'UNMAPPED_SOURCE',
+      path: 'payload.collectionStatus',
+    }));
+  });
+
+  it('COLLECTION business validator rejects client attribution and unrelated dimensions', () => {
+    const draft = buildCollectionDraft();
+    lineByAccount(draft, 'CASH_CLEARING').clientId = 'client-forbidden';
+    lineByAccount(draft, 'CASE_COLLECTION_CLEARING').caseClientId = 'case-client-forbidden';
+
+    const result = validateJournalBusiness(draft);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected collection synthetic dimensions to fail.');
+    expect(result.errors.map((error) => error.code)).toContain('FORBIDDEN_SYNTHETIC_DIMENSION');
+  });
   it('builder purity rule: CLIENT_OFFSET draft is deterministic and source object is not mutated', () => {
     const source = clientOffsetSource();
     const sourceBefore = clone(source);

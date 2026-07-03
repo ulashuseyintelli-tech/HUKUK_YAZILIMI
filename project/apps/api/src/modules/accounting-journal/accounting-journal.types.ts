@@ -1,4 +1,6 @@
 export type AccountingJournalEntryType =
+  | 'COLLECTION_CASH_RECEIPT_RECORDED'
+  | 'COLLECTION_CASH_RECEIPT_REVERSED'
   | 'COLLECTION_DISTRIBUTION_POSTED'
   | 'CLIENT_PAYOUT_RECORDED'
   | 'CLIENT_OFFSET_APPLIED'
@@ -13,6 +15,7 @@ export type AccountingJournalEntryType =
   | 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT';
 
 export type AccountingJournalSourceType =
+  | 'COLLECTION'
   | 'COLLECTION_DISPOSITION_LINE'
   | 'CLIENT_PAYOUT'
   | 'CLIENT_OFFSET'
@@ -24,6 +27,7 @@ export type AccountingJournalSourceType =
 
 export type AccountingAccountCode =
   | 'CASH_CLEARING'
+  | 'CASE_COLLECTION_CLEARING'
   | 'CLIENT_PAYABLE'
   | 'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE'
   | 'CLIENT_EXPENSE_RECEIVABLE'
@@ -92,6 +96,27 @@ export type ClientOffsetJournalSource = JournalSourceBase<
   ClientOffsetJournalSourcePayload
 >;
 
+export type CollectionJournalSourceAction = 'recorded' | 'cancel';
+
+export type CollectionCashJournalKind = 'RECORDED' | 'CANCEL';
+
+export type CollectionCashJournalStatus = 'CONFIRMED' | 'CANCELLED' | 'REFUNDED';
+
+export interface CollectionCashJournalSourcePayload {
+  kind: CollectionCashJournalKind;
+  amount: MoneyAmount;
+  caseId: string;
+  collectionId: string;
+  collectionStatus: CollectionCashJournalStatus;
+  debtorId: string | null;
+  originalRecordedSourceVersion: string | null;
+}
+
+export type CollectionJournalSource = JournalSourceBase<
+  'COLLECTION',
+  CollectionJournalSourceAction,
+  CollectionCashJournalSourcePayload
+>;
 export interface CollectionDispositionLinePostedPayload {
   lineType:
     | 'CLIENT_PAYABLE'
@@ -265,6 +290,7 @@ export type ManualAdjustmentJournalSource = JournalSourceBase<
 export type AccountingJournalEntrySource = AccountingJournalReversalSource | ManualAdjustmentJournalSource;
 
 export type JournalSource =
+  | CollectionJournalSource
   | ClientOffsetJournalSource
   | CollectionDispositionLineJournalSource
   | ClientPayoutJournalSource
