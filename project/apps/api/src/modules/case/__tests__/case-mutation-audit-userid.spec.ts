@@ -39,6 +39,12 @@ describe('WP-1c-2 — CASE update/delete/batchUpdate audit actor userId', () => 
   it('delete → CASE DELETE audit userId = actor', async () => {
     const { service, auditLog } = makeSvc();
     (service as any).prisma = {
+      // CBND-4/H7: delete() transaction'dan ÖNCE assertNoFinancialActivity çağırır (4 model count).
+      // Bu test finansal aktivite YOK senaryosunu kanıtlar (0 → guard geçer, mevcut audit-userId akışı sürer).
+      collection: { count: jest.fn().mockResolvedValue(0) },
+      clientOffset: { count: jest.fn().mockResolvedValue(0) },
+      clientPayout: { count: jest.fn().mockResolvedValue(0) },
+      clientPayoutManualReversal: { count: jest.fn().mockResolvedValue(0) },
       $transaction: jest.fn(async (cb: any) => cb({ case: { delete: jest.fn(async () => ({})) } })),
     };
 
