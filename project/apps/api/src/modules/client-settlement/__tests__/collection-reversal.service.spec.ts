@@ -14,7 +14,7 @@
 import { CollectionReversalService } from '../collection-reversal.service';
 
 const CTX = { actionId: 'evt-rev-1', tenantId: 't1', actionType: 'EVENT_PUBLISHED:PAYMENT_REVERSED' };
-const AMOUNT = { toString: () => '125.50' };
+const AMOUNT = { toString: () => '125.50', toFixed: () => '125.50' };
 
 function disposition(overrides: Record<string, any> = {}) {
   return {
@@ -45,13 +45,92 @@ function allocation(overrides: Record<string, any> = {}) {
     ...overrides,
   };
 }
+function postedLineJournal(lineId = 'line1', overrides: Record<string, any> = {}) {
+  return {
+    id: `journal-${lineId}`,
+    sourceId: lineId,
+    reversedByEntry: null,
+    ...overrides,
+  };
+}
 
-function buildPrisma(disp: any | null, allocations: any[] = []) {
+function originalPostedJournal(id = 'journal-line1', lineId = 'line1', overrides: Record<string, any> = {}) {
+  return {
+    id,
+    tenantId: 't1',
+    caseId: 'case1',
+    currency: 'TRY',
+    entryType: 'COLLECTION_DISTRIBUTION_POSTED',
+    sourceType: 'COLLECTION_DISPOSITION_LINE',
+    sourceId: lineId,
+    sourceAction: 'posted',
+    sourceOccurredAt: new Date('2026-01-01T00:00:00.000Z'),
+    postedAt: new Date('2026-01-01T00:00:00.000Z'),
+    postedById: 'poster-1',
+    reversalOfEntryId: null,
+    metadata: { sourceVersion: `2026-01-01T00:00:00.000Z:${lineId}` },
+    reversedByEntry: null,
+    lines: [
+      {
+        lineNo: 1,
+        accountCode: 'CASH_CLEARING',
+        direction: 'DEBIT',
+        amount: AMOUNT,
+        currency: 'TRY',
+        caseId: 'case1',
+        clientId: 'client-1',
+        caseClientId: 'cc1',
+        collectionId: 'col1',
+        dispositionLineId: lineId,
+        payoutId: null,
+        offsetId: null,
+        expenseRequestId: null,
+        expensePaymentId: null,
+        expenseApplicationId: null,
+        balanceLedgerId: null,
+      },
+      {
+        lineNo: 2,
+        accountCode: 'CLIENT_PAYABLE',
+        direction: 'CREDIT',
+        amount: AMOUNT,
+        currency: 'TRY',
+        caseId: 'case1',
+        clientId: 'client-1',
+        caseClientId: 'cc1',
+        collectionId: 'col1',
+        dispositionLineId: lineId,
+        payoutId: null,
+        offsetId: null,
+        expenseRequestId: null,
+        expensePaymentId: null,
+        expenseApplicationId: null,
+        balanceLedgerId: null,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+
+function buildPrisma(
+  disp: any | null,
+  allocations: any[] = [],
+  options: { lineIds?: string[]; postedJournals?: any[]; originalJournals?: Record<string, any> } = {},
+) {
+  const lineIds = options.lineIds ?? ['line1'];
+  const postedJournals = options.postedJournals ?? lineIds.map((lineId) => postedLineJournal(lineId));
+  const originalJournals = options.originalJournals ?? Object.fromEntries(
+    postedJournals.map((journal) => [journal.id, originalPostedJournal(journal.id, journal.sourceId)]),
+  );
   const prisma: any = {
     $executeRaw: jest.fn().mockResolvedValue(1), // ROLL-001b: pg_advisory_xact_lock
     collectionDisposition: {
       findUnique: jest.fn().mockResolvedValue(disp),
       update: jest.fn().mockResolvedValue({ id: disp?.id ?? 'disp1', status: 'REVERSED' }),
+    },
+    collectionDispositionLine: {
+      findMany: jest.fn().mockResolvedValue(lineIds.map((id) => ({ id }))),
     },
     clientPayoutAllocation: {
       findMany: jest.fn().mockResolvedValue(allocations),
@@ -83,7 +162,15 @@ function buildPrisma(disp: any | null, allocations: any[] = []) {
     },
     expenseRequest: { findFirst: jest.fn().mockResolvedValue({ clientId: 'client-1' }) },
     accountingJournalEntry: {
-      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockImplementation((args: any) => {
+        if (args?.where?.sourceType === 'COLLECTION_DISPOSITION_LINE') return Promise.resolve(postedJournals);
+        return Promise.resolve([]);
+      }),
+      findFirst: jest.fn().mockImplementation((args: any) => {
+        if (args?.where?.id) return Promise.resolve(originalJournals[args.where.id] ?? null);
+        return Promise.resolve(null);
+      }),
+      findUnique: jest.fn().mockImplementation((args: any) => Promise.resolve(originalJournals[args?.where?.id] ?? null)),
       create: jest.fn().mockResolvedValue({ id: 'journal-1', _count: { lines: 2 } }),
     },
   };
@@ -248,6 +335,84 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expect(prisma.clientPayoutAllocation.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.clientPayoutManualReversal.upsert).not.toHaveBeenCalled();
     expectNoForbiddenFinancialMutation(prisma);
+  });
+  it('P0-2A: POSTED disposition reverse -> original posted line journal generic storno yazar', async () => {
+    const prisma = buildPrisma(disposition(), []);
+
+    await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+
+    expect(prisma.collectionDispositionLine.findMany).toHaveBeenCalledWith({
+      where: {
+        dispositionId: 'disp1',
+        disposition: { tenantId: 't1', caseId: 'case1', collectionId: 'col1', status: 'POSTED' },
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    expect(prisma.accountingJournalEntry.findMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 't1',
+        caseId: 'case1',
+        sourceType: 'COLLECTION_DISPOSITION_LINE',
+        sourceAction: 'posted',
+        sourceId: { in: ['line1'] },
+      },
+      select: { id: true, sourceId: true, reversedByEntry: { select: { id: true } } },
+      orderBy: { sourceId: 'asc' },
+    });
+    expect(prisma.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceType: 'ACCOUNTING_JOURNAL_ENTRY',
+          sourceId: 'journal-line1',
+          sourceAction: 'reversal',
+          entryType: 'ACCOUNTING_JOURNAL_REVERSAL',
+          reversalOfEntryId: 'journal-line1',
+          lines: { create: expect.arrayContaining([
+            expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', dispositionLineId: 'line1' }),
+            expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', dispositionLineId: 'line1' }),
+          ]) },
+        }),
+      }),
+    );
+  });
+
+  it('P0-2A: POSTED replay -> existing journal reversal varsa ikinci finansal etki uretmez', async () => {
+    const prisma = buildPrisma(disposition({ manualReversalRequiredAt: new Date('2026-06-27T00:00:00Z') }), [allocation()], {
+      postedJournals: [postedLineJournal('line1', { reversedByEntry: { id: 'journal-line1-reversal' } })],
+    });
+
+    await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+
+    expect(prisma.accountingJournalEntry.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ sourceType: 'ACCOUNTING_JOURNAL_ENTRY' }) }),
+    );
+    expect(prisma.clientPayoutManualReversal.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.collectionDisposition.update).not.toHaveBeenCalled();
+  });
+
+  it('P0-2A: POSTED missing original posted journal -> fail-visible blocker ve marker yazilmaz', async () => {
+    const prisma = buildPrisma(disposition(), [], { postedJournals: [] });
+
+    await expect(svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        errorCode: 'COLLECTION_DISPOSITION_LINE_POSTED_JOURNAL_MISSING',
+        missingDispositionLineIds: ['line1'],
+      }),
+    });
+    expect(prisma.collectionDisposition.update).not.toHaveBeenCalled();
+    expect(prisma.clientPayoutManualReversal.upsert).not.toHaveBeenCalled();
+  });
+
+  it('P0-2A: journal reversal writer failure -> transaction fail-visible, marker/workflow yazilmaz', async () => {
+    const prisma = buildPrisma(disposition(), [allocation()]);
+    const writer = { write: jest.fn().mockResolvedValue({ ok: false, errors: [{ code: 'WRITER_DOWN', message: 'writer unavailable' }] }) };
+
+    await expect(svc(prisma, writer).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'WRITER_DOWN' }),
+    });
+    expect(prisma.collectionDisposition.update).not.toHaveBeenCalled();
+    expect(prisma.clientPayoutManualReversal.upsert).not.toHaveBeenCalled();
   });
 
   it('POSTED already marked + missing workflow + exact allocation â†’ marker deÄŸiÅŸmez, workflow idempotent aÃ§Ä±lÄ±r', async () => {
@@ -419,7 +584,9 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
       .fn()
       .mockResolvedValueOnce([{ id: 'app1', expenseRequestId: 'er1', collectionDispositionLineId: 'line1', amount: AMOUNT, currency: 'TRY', reimbursementScope: 'CLIENT_FRONTED' }])
       .mockResolvedValueOnce([]);
-    const writer = { write: jest.fn().mockResolvedValue({ ok: false, errors: [{ code: 'WRITER_DOWN' }] }) };
+    const writer = { write: jest.fn()
+      .mockResolvedValueOnce({ ok: true, output: { status: 'CREATED', journalEntryId: 'journal-line1-reversal', idempotencyKey: 'k1', sourceVersion: 'sv1', lineCount: 2 } })
+      .mockResolvedValueOnce({ ok: false, errors: [{ code: 'WRITER_DOWN' }] }) };
     await expect(svc(prisma, writer).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX)).rejects.toThrow(/Expense application journal write failed/);
     expect(prisma.collectionDispositionExpenseApplication.create).toHaveBeenCalled();
   });

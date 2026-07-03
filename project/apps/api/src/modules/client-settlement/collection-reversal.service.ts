@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   AccountingJournalWriterService,
   buildAccountingJournal,
+  reverseAccountingJournalEntryInTransaction,
   validateJournalDraft,
   type CollectionDispositionExpenseApplicationJournalSource,
 } from '../accounting-journal';
@@ -46,6 +47,12 @@ interface PostedDispositionForReversal {
   status: string;
   currency: string;
   manualReversalRequiredAt: Date | null;
+}
+
+interface PostedDispositionLineJournalEvidence {
+  id: string;
+  sourceId: string;
+  reversedByEntry: { id: string } | null;
 }
 
 interface ManualReversalTransaction {
@@ -98,7 +105,8 @@ export interface ReverseResult {
  * KÄ°LÄ°TLÄ° KARAR (UlaÅŸ, 2026-06-27): POSTED disposition KÃ–R ÅEKÄ°LDE `REVERSED` YAPILMAZ ve status
  * DEÄÄ°ÅMEZ (POSTED kalÄ±r). POSTED, M2'nin proceeds satÄ±rlarÄ±nÄ± (ve ClientStatement okumasÄ±nÄ±) Ã¼rettiÄŸi
  * anlamÄ±na gelebilir; yalnÄ±z status deÄŸiÅŸtirmek finansal hakikati dÃ¼zeltmez (ekstre hÃ¢lÃ¢ satÄ±rÄ± gÃ¶sterir).
- * Bu yÃ¼zden POSTED â†’ handled consume + "manual-reversal-required" sinyali; finansal reversal YOK.
+ * Bu yuzden POSTED -> journal storno + handled consume + "manual-reversal-required" sinyali;
+ * ClientStatement/BalanceLedger/payout/legal allocation boundary manuel kalir.
  * FU1 (2026-06-27): bu sinyal artÄ±k KALICI kolona persist edilir (manualReversalRequiredAt/Reason/
  * SourceActionId) â†’ operasyonel gÃ¶rÃ¼nÃ¼rlÃ¼k (takip kaÃ§aÄŸÄ± Ã¶nlenir); idempotent (bir kez iÅŸaretlenir).
  *
@@ -224,15 +232,17 @@ export class CollectionReversalService {
       case 'POSTED': {
         // KÄ°LÄ°TLÄ°: POSTED kÃ¶r REVERSED YAPILMAZ ve status DEÄÄ°ÅMEZ (POSTED kalÄ±r). M2
         // ClientStatementLine Ã¼retmiÅŸ olabilir; status deÄŸiÅŸtirmek finansal hakikati dÃ¼zeltmez.
-        // M1R/FU1 finansal reversal (ClientStatement/BalanceLedger/payout) YAZMAZ. FU1: manuel
+        // P0-2A: posted disposition line journal etkisi generic storno ile terslenir;
+        // ClientStatement/BalanceLedger/payout taraflari otomatik yazilmaz. FU1: manuel
         // reversal sinyali artÄ±k KALICI kolona persist edilir (operasyonel gÃ¶rÃ¼nÃ¼rlÃ¼k â€” takip kaÃ§aÄŸÄ± Ã¶nlenir).
         const alreadyMarked = Boolean(disp.manualReversalRequiredAt);
         const workflowCount = await this.prisma.$transaction(async (tx) => {
+          await this.reversePostedDispositionLineJournals(tx, { ...disp, collectionId }, collectionId, context);
+
           if (!disp.manualReversalRequiredAt) {
             const reason =
-              'PAYMENT_REVERSED POSTED disposition\'a geldi â€” finansal reversal (ClientStatement/' +
-              'BalanceLedger/payout) manuel gerekir; M1R/FU1 otomatik yazmaz, status POSTED kalÄ±r.';
-            // status ALANI data'da YOK â†’ POSTED korunur; yalnÄ±z marker alanlarÄ± set edilir.
+              'PAYMENT_REVERSED POSTED disposition\'a geldi - posted journal storno yazildi; ClientStatement/' +
+              'BalanceLedger/payout manual boundary; status POSTED kalir.';
             await (tx as ManualReversalTransaction).collectionDisposition.update({
               where: { id: disp.id },
               data: {
@@ -277,7 +287,7 @@ export class CollectionReversalService {
         this.logger.warn(
           `MANUAL_REVERSAL_REQUIRED: POSTED disposition ${disp.id} (collection=${collectionId}, ` +
             `srcEvent=${context?.actionId}) â€” PAYMENT_REVERSED consume edildi; status POSTED korundu, ` +
-            `kalÄ±cÄ± marker yazÄ±ldÄ±, exactWorkflows=${workflowCount}. Finansal reversal manuel.`,
+            `kalici marker yazildi, exactWorkflows=${workflowCount}; statement/balance/payout manuel boundary.`,
         );
         return {
           outcome: 'posted-manual-reversal-required',
@@ -301,6 +311,90 @@ export class CollectionReversalService {
   /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
   /// - CollectionReversalService.reverseFromPaymentReversed() â†’ PAYMENT_REVERSED POSTED disposition exact prior payout workflow creation
   /// </remarks>
+
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - CollectionReversalService.reverseFromPaymentReversed() -> PAYMENT_REVERSED POSTED disposition journal storno
+  /// </remarks>
+  private async reversePostedDispositionLineJournals(
+    tx: Prisma.TransactionClient,
+    disp: PostedDispositionForReversal,
+    collectionId: string,
+    context?: ActionHandlerContext,
+  ): Promise<number> {
+    const lines = await tx.collectionDispositionLine.findMany({
+      where: {
+        dispositionId: disp.id,
+        disposition: {
+          tenantId: disp.tenantId,
+          caseId: disp.caseId,
+          collectionId,
+          status: 'POSTED',
+        },
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+
+    const lineIds = lines.map((line) => line.id);
+    if (lineIds.length === 0) {
+      throw new ConflictException({
+        errorCode: 'COLLECTION_DISPOSITION_LINE_POSTED_JOURNAL_MISSING',
+        message: 'POSTED collection disposition reversal requires posted disposition line journal evidence.',
+        collectionId,
+        collectionDispositionId: disp.id,
+      });
+    }
+
+    const journals = await tx.accountingJournalEntry.findMany({
+      where: {
+        tenantId: disp.tenantId,
+        caseId: disp.caseId,
+        sourceType: 'COLLECTION_DISPOSITION_LINE',
+        sourceAction: 'posted',
+        sourceId: { in: lineIds },
+      },
+      select: {
+        id: true,
+        sourceId: true,
+        reversedByEntry: { select: { id: true } },
+      },
+      orderBy: { sourceId: 'asc' },
+    }) as PostedDispositionLineJournalEvidence[];
+
+    const journalByLineId = new Map(journals.map((journal) => [journal.sourceId, journal]));
+    const missingLineIds = lineIds.filter((lineId) => !journalByLineId.has(lineId));
+    if (missingLineIds.length > 0) {
+      throw new ConflictException({
+        errorCode: 'COLLECTION_DISPOSITION_LINE_POSTED_JOURNAL_MISSING',
+        message: 'POSTED collection disposition reversal requires original posted journal entries for every disposition line.',
+        collectionId,
+        collectionDispositionId: disp.id,
+        missingDispositionLineIds: missingLineIds,
+      });
+    }
+
+    let reversalCount = 0;
+    for (const lineId of lineIds) {
+      const journal = journalByLineId.get(lineId)!;
+      if (journal.reversedByEntry) continue;
+
+      await reverseAccountingJournalEntryInTransaction(
+        tx,
+        this.journalWriter,
+        disp.tenantId,
+        context?.actionId ?? 'PAYMENT_REVERSED',
+        journal.id,
+        {
+          reason: 'PAYMENT_REVERSED POSTED collection disposition journal storno.',
+          evidenceRef: `PAYMENT_REVERSED:${context?.actionId ?? 'unknown'}:collection:${collectionId}:disposition:${disp.id}:line:${lineId}`,
+        },
+      );
+      reversalCount++;
+    }
+
+    return reversalCount;
+  }
   private async createExactPriorPayoutManualReversals(
     tx: ManualReversalTransaction,
     disp: PostedDispositionForReversal,
