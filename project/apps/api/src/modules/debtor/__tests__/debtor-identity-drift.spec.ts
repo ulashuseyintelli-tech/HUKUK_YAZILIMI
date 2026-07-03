@@ -27,10 +27,11 @@ describe("DebtorService.update — identity/name drift fix", () => {
     const prisma = buildPrisma(existing) as any;
     const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
-    await svc.update("t1", "d1", { tckn: "22222222222" } as any);
+    // T2B: payload TCKN checksum-GEÇERLİ olmalı (Gate-4 update-path validasyonu duplicate-check'ten önce çalışır).
+    await svc.update("t1", "d1", { tckn: "20000000046" } as any);
 
     const data = prisma.debtor.update.mock.calls[0][0].data;
-    expect(data.identityNo).toBe("22222222222"); // DRIFT FIX: artık güncellenir
+    expect(data.identityNo).toBe("20000000046"); // DRIFT FIX: artık güncellenir
     expect(data.name).toBe("Ali Veli"); // ad değişmedi → korunur
   });
 
@@ -45,10 +46,11 @@ describe("DebtorService.update — identity/name drift fix", () => {
     const prisma = buildPrisma(existing) as any;
     const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
-    await svc.update("t1", "d2", { vkn: "2222222222" } as any);
+    // T2B: payload VKN checksum-GEÇERLİ olmalı (Gate-4).
+    await svc.update("t1", "d2", { vkn: "2000000002" } as any);
 
     const data = prisma.debtor.update.mock.calls[0][0].data;
-    expect(data.identityNo).toBe("2222222222");
+    expect(data.identityNo).toBe("2000000002");
     expect(data.name).toBe("X A.Ş.");
   });
 
