@@ -17,12 +17,31 @@ const makeSvc = () => {
   const stub = {} as any;
   const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
   const auditLog = jest.fn(async () => undefined);
-  (service as any).auditService = { log: auditLog };
+  // CS2: delete() audit'i artık logInTransaction ile tx-bağlı yazılır (update/batchUpdate log() kalır).
+  const auditLogInTx = jest.fn(async () => undefined);
+  (service as any).auditService = { log: auditLog, logInTransaction: auditLogInTx };
   (service as any).findOne = jest.fn(async (_t: string, id: string) => ({ id, fileNumber: 'F1' }));
   (service as any).validateCaseFkOwnership = jest.fn(async () => {});
   (service as any).validateLookupIds = jest.fn(async () => {});
-  return { service, auditLog };
+  return { service, auditLog, auditLogInTx };
 };
+
+// CS2: assertNoCaseFootprint 13 sayaç sorgular — hepsi 0 dönen mock seti (footprint-yok senaryosu).
+const zeroFootprintCounts = () => ({
+  collection: { count: jest.fn().mockResolvedValue(0) },
+  clientOffset: { count: jest.fn().mockResolvedValue(0) },
+  clientPayout: { count: jest.fn().mockResolvedValue(0) },
+  clientPayoutManualReversal: { count: jest.fn().mockResolvedValue(0) },
+  ledgerEntry: { count: jest.fn().mockResolvedValue(0) },
+  claimItem: { count: jest.fn().mockResolvedValue(0) },
+  due: { count: jest.fn().mockResolvedValue(0) },
+  tebligat: { count: jest.fn().mockResolvedValue(0) },
+  expenseRequest: { count: jest.fn().mockResolvedValue(0) },
+  task: { count: jest.fn().mockResolvedValue(0) },
+  decisionLog: { count: jest.fn().mockResolvedValue(0) },
+  icrabotTimelineEntry: { count: jest.fn().mockResolvedValue(0) },
+  caseDocument: { count: jest.fn().mockResolvedValue(0) },
+});
 
 describe('WP-1c-2 — CASE update/delete/batchUpdate audit actor userId', () => {
   it('update → CASE UPDATE audit userId = actor', async () => {
@@ -36,21 +55,19 @@ describe('WP-1c-2 — CASE update/delete/batchUpdate audit actor userId', () => 
     );
   });
 
-  it('delete → CASE DELETE audit userId = actor', async () => {
-    const { service, auditLog } = makeSvc();
+  it('delete → CASE DELETE audit userId = actor (CS2: logInTransaction ile tx içinde)', async () => {
+    const { service, auditLogInTx } = makeSvc();
     (service as any).prisma = {
-      // CBND-4/H7: delete() transaction'dan ÖNCE assertNoFinancialActivity çağırır (4 model count).
-      // Bu test finansal aktivite YOK senaryosunu kanıtlar (0 → guard geçer, mevcut audit-userId akışı sürer).
-      collection: { count: jest.fn().mockResolvedValue(0) },
-      clientOffset: { count: jest.fn().mockResolvedValue(0) },
-      clientPayout: { count: jest.fn().mockResolvedValue(0) },
-      clientPayoutManualReversal: { count: jest.fn().mockResolvedValue(0) },
+      // CS2: delete() transaction'dan ÖNCE assertNoCaseFootprint çağırır (13 sayaç).
+      // Bu test footprint YOK senaryosunu kanıtlar (0 → guard geçer, audit-userId akışı sürer).
+      ...zeroFootprintCounts(),
       $transaction: jest.fn(async (cb: any) => cb({ case: { delete: jest.fn(async () => ({})) } })),
     };
 
     await (service as any).delete('t1', 'case-1', ACTOR);
 
-    expect(auditLog).toHaveBeenCalledWith(
+    expect(auditLogInTx).toHaveBeenCalledWith(
+      expect.anything(), // tx client
       expect.objectContaining({ action: 'DELETE', entityType: 'CASE', entityId: 'case-1', userId: ACTOR }),
     );
   });
