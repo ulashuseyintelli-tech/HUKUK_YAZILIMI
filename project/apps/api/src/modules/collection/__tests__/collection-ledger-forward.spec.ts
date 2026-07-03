@@ -11,12 +11,26 @@ import { CollectionService } from '../collection.service';
 import { CollectionChannel, CollectionSource, CollectionType } from '../dto/collection.dto';
 import { BadRequestException } from '@nestjs/common';
 
-function setup(opts: { summaryEngine?: any; caseRecord?: any } = {}) {
+function setup(opts: { summaryEngine?: any; caseRecord?: any; journalWriter?: any } = {}) {
   const tx: any = {
     case: {
       findFirst: jest.fn(async () => opts.caseRecord ?? ({ id: 'c1', caseStatus: 'DERDEST', currency: 'TRY' })),
     },
-    collection: { create: jest.fn(async () => ({ id: 'col1' })), findFirst: jest.fn() },
+    collection: {
+      create: jest.fn(async () => ({
+        id: 'col1',
+        tenantId: 't1',
+        caseId: 'c1',
+        caseDebtorId: null,
+        amount: 1000,
+        currency: 'TRY',
+        date: new Date('2026-01-01T00:00:00.000Z'),
+        valueDate: null,
+        status: 'CONFIRMED',
+        createdAt: new Date('2026-01-01T00:00:01.000Z'),
+      })),
+      findFirst: jest.fn(),
+    },
     collectionAllocation: { create: jest.fn() },
     collectionOverpayment: { create: jest.fn() },
   };
@@ -27,11 +41,12 @@ function setup(opts: { summaryEngine?: any; caseRecord?: any } = {}) {
   const domainEvent: any = { appendInTransaction: jest.fn(async () => ({})) };
   const caseDebtorLifecycleGuard: any = { assertActiveByCaseDebtorId: jest.fn() };
 
-  const svc = new CollectionService(prisma, domainEvent, caseDebtorLifecycleGuard, opts.summaryEngine);
+  const journalWriter = opts.journalWriter ?? { write: jest.fn(async () => ({ ok: true, output: { status: 'CREATED', journalEntryId: 'journal-collection-recorded' } })) };
+  const svc = new CollectionService(prisma, domainEvent, caseDebtorLifecycleGuard, opts.summaryEngine, journalWriter);
   // CollectionAllocation iç detayını bypass et; çağrıldığını assert edeceğiz (S2 compat).
   const autoSpy = jest.spyOn(svc as any, 'autoAllocateInTx').mockResolvedValue(undefined);
   const warnSpy = jest.spyOn((svc as any).logger, 'warn').mockImplementation(() => undefined);
-  return { svc, prisma, tx, domainEvent, autoSpy, warnSpy, caseDebtorLifecycleGuard };
+  return { svc, prisma, tx, domainEvent, autoSpy, warnSpy, caseDebtorLifecycleGuard, journalWriter };
 }
 
 const dto = { caseId: 'c1', amount: 1000, date: '2026-01-01', type: CollectionType.CASH } as any;
@@ -73,6 +88,51 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     expect(tx.collection.create).toHaveBeenCalled();
   });
 
+  it('recorded journal write aynı transaction içinde Collection create sonrası çalışır', async () => {
+    const { svc, journalWriter, domainEvent } = setup();
+
+    await svc.create('t1', dto, 'u1');
+
+    expect(journalWriter.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.objectContaining({
+          entryType: 'COLLECTION_CASH_RECEIPT_RECORDED',
+          sourceType: 'COLLECTION',
+          sourceId: 'col1',
+          sourceAction: 'recorded',
+          caseId: 'c1',
+          currency: 'TRY',
+          lines: expect.arrayContaining([
+            expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'DEBIT', collectionId: 'col1' }),
+            expect.objectContaining({ accountCode: 'CASE_COLLECTION_CLEARING', direction: 'CREDIT', collectionId: 'col1' }),
+          ]),
+        }),
+      }),
+      expect.objectContaining({ collection: expect.any(Object) }),
+    );
+    expect(domainEvent.appendInTransaction).toHaveBeenCalled();
+  });
+
+  it('recorded journal writer failure create akışını fail-closed durdurur', async () => {
+    const journalWriter = { write: jest.fn(async () => ({ ok: false, errors: [{ code: 'DB_WRITE_FAILED' }] })) };
+    const { svc, tx, domainEvent, autoSpy } = setup({ journalWriter });
+
+    await expect(svc.create('t1', dto, 'u1')).rejects.toThrow('Collection recorded journal write failed');
+
+    expect(tx.collection.create).toHaveBeenCalled();
+    expect(domainEvent.appendInTransaction).not.toHaveBeenCalled();
+    expect(autoSpy).not.toHaveBeenCalled();
+  });
+
+  it('recorded journal writer replay sonucu duplicate/idempotent davranışı bozmaz', async () => {
+    const journalWriter = { write: jest.fn(async () => ({ ok: true, output: { status: 'REPLAYED', journalEntryId: 'journal-existing' } })) };
+    const { svc, domainEvent } = setup({ journalWriter });
+
+    await svc.create('t1', dto, 'u1');
+
+    expect(journalWriter.write).toHaveBeenCalledTimes(1);
+    expect(domainEvent.appendInTransaction).toHaveBeenCalled();
+  });
   it('ClaimItem varsa: ledger çağrılır + Collection/event korunur + CollectionAllocation compat', async () => {
     const summaryEngine = {
       allocatePaymentToLedgerInTx: jest.fn(async () => ({

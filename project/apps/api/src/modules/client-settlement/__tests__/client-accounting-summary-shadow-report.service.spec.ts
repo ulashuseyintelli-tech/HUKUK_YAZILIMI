@@ -109,11 +109,23 @@ type ExpenseReceivableAdjustmentLineMockRow = {
   direction: string;
   amount: string;
 };
+type ReplayJournalMockLine = {
+  accountCode: string;
+  direction: string;
+  amount: string;
+  currency?: string;
+  caseId?: string | null;
+  collectionId?: string | null;
+};
+
 type ReplayJournalMockRow = {
   id?: string;
-  sourceType: 'COLLECTION_DISPOSITION_LINE' | 'BALANCE_LEDGER';
-  sourceAction?: 'posted';
+  sourceType: 'COLLECTION_DISPOSITION_LINE' | 'BALANCE_LEDGER' | 'COLLECTION';
+  sourceAction?: 'posted' | 'recorded' | 'cancel';
   sourceId: string;
+  entryType?: string;
+  metadata?: Record<string, unknown> | null;
+  lines?: ReplayJournalMockLine[];
 };
 
 type CollectionDispositionLineMockRow = {
@@ -136,6 +148,8 @@ type CollectionMockRow = {
   status?: string;
   date?: Date | null;
   amount?: string;
+  cancelledAt?: Date | null;
+  createdAt?: Date | null;
 };
 
 type CollectionDispositionMockRow = {
@@ -334,14 +348,65 @@ function expenseReceivableAdjustmentLine(row: ExpenseReceivableAdjustmentLineMoc
 }
 
 function replayJournal(row: ReplayJournalMockRow) {
+  const sourceAction = row.sourceAction ?? 'posted';
   return {
-    id: row.id ?? `journal-${row.sourceId}`,
+    id: row.id ?? `journal-${row.sourceId}-${sourceAction}`,
     sourceType: row.sourceType,
-    sourceAction: row.sourceAction ?? 'posted',
+    sourceAction,
     sourceId: row.sourceId,
+    entryType: row.entryType,
+    metadata: row.metadata ?? null,
+    lines: (row.lines ?? []).map((line) => ({
+      accountCode: line.accountCode,
+      direction: line.direction,
+      amount: new Prisma.Decimal(line.amount),
+      currency: line.currency ?? 'TRY',
+      caseId: line.caseId === undefined ? 'case-1' : line.caseId,
+      collectionId: line.collectionId === undefined ? row.sourceId : line.collectionId,
+    })),
   };
 }
 
+function collectionCashJournal(row: {
+  sourceId: string;
+  action: 'recorded' | 'cancel';
+  amount: string;
+  caseId?: string;
+  currency?: string;
+  cashAmount?: string;
+  clearingAmount?: string;
+  cashCaseId?: string | null;
+  clearingCaseId?: string | null;
+}) {
+  const isCancel = row.action === 'cancel';
+  const currency = row.currency ?? 'TRY';
+  const caseId = row.caseId ?? 'case-1';
+  return {
+    sourceType: 'COLLECTION' as const,
+    sourceAction: row.action,
+    sourceId: row.sourceId,
+    entryType: isCancel ? 'COLLECTION_CASH_RECEIPT_REVERSED' : 'COLLECTION_CASH_RECEIPT_RECORDED',
+    metadata: { sourceVersion: `2026-01-01T00:00:00.000Z:${row.sourceId}:${isCancel ? 'CANCEL' : 'RECORDED'}` },
+    lines: [
+      {
+        accountCode: 'CASH_CLEARING',
+        direction: isCancel ? 'CREDIT' : 'DEBIT',
+        amount: row.cashAmount ?? row.amount,
+        currency,
+        caseId: row.cashCaseId === undefined ? caseId : row.cashCaseId,
+        collectionId: row.sourceId,
+      },
+      {
+        accountCode: 'CASE_COLLECTION_CLEARING',
+        direction: isCancel ? 'DEBIT' : 'CREDIT',
+        amount: row.clearingAmount ?? row.amount,
+        currency,
+        caseId: row.clearingCaseId === undefined ? caseId : row.clearingCaseId,
+        collectionId: row.sourceId,
+      },
+    ],
+  } satisfies ReplayJournalMockRow;
+}
 function collectionDispositionLine(row: CollectionDispositionLineMockRow) {
   return {
     id: row.id,
@@ -1497,7 +1562,9 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         }),
       ]),
     );
+    expect(report.collectionCashReceiptBackfillEvidence?.blockerCodes).toEqual(['COLLECTION_CASH_RECEIPT_BACKFILL_MISSING']);
     expect(component(report, 'pendingDistribution').blockerCodes).toContain('CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING');
+    expect(component(report, 'pendingDistribution').blockerCodes).toContain('COLLECTION_CASH_RECEIPT_BACKFILL_MISSING');
     expect(component(report, 'pendingDistribution').blockerCodes).not.toEqual(
       expect.arrayContaining([
         'COLLECTION_RAW_SOURCE_BLOCKED',
@@ -1509,6 +1576,102 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(report.safeForPrimaryCutover).toBe(false);
   });
 
+  it('reports Collection cash receipt historical missing original and reversal evidence blockers', async () => {
+    const prisma = buildPrismaMock([], undefined, {
+      collections: [
+        { id: 'collection-missing', amount: '100' },
+        { id: 'collection-cancelled', status: 'CANCELLED', amount: '75', cancelledAt: DEFAULT_REPLAY_DATE },
+      ],
+      journalEntries: [
+        collectionCashJournal({ sourceId: 'collection-cancelled', action: 'recorded', amount: '75' }),
+      ],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.collectionCashReceiptBackfillEvidence).toEqual(
+      expect.objectContaining({
+        sourceType: 'COLLECTION',
+        statusCounts: expect.objectContaining({ BACKFILL_REQUIRED: 1, REVERSAL_BACKFILL_REQUIRED: 1 }),
+        blockerCodes: expect.arrayContaining([
+          'COLLECTION_CASH_RECEIPT_BACKFILL_MISSING',
+          'COLLECTION_CASH_RECEIPT_REVERSAL_BACKFILL_MISSING',
+        ]),
+      }),
+    );
+    expect(report.collectionCashReceiptBackfillEvidence?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          collectionId: 'collection-missing',
+          status: 'BACKFILL_REQUIRED',
+          blockerCodes: ['COLLECTION_CASH_RECEIPT_BACKFILL_MISSING'],
+        }),
+        expect.objectContaining({
+          collectionId: 'collection-cancelled',
+          status: 'REVERSAL_BACKFILL_REQUIRED',
+          recordedJournalEntryId: 'journal-collection-cancelled-recorded',
+          reversalJournalEntryId: null,
+          blockerCodes: ['COLLECTION_CASH_RECEIPT_REVERSAL_BACKFILL_MISSING'],
+        }),
+      ]),
+    );
+    expect(report.replayEvidence?.blockerCodes).toEqual(
+      expect.arrayContaining([
+        'COLLECTION_CASH_RECEIPT_BACKFILL_MISSING',
+        'COLLECTION_CASH_RECEIPT_REVERSAL_BACKFILL_MISSING',
+      ]),
+    );
+    expect(report.blockerCodes).toEqual(
+      expect.arrayContaining([
+        'COLLECTION_CASH_RECEIPT_BACKFILL_MISSING',
+        'COLLECTION_CASH_RECEIPT_REVERSAL_BACKFILL_MISSING',
+      ]),
+    );
+  });
+
+  it('reports Collection cash receipt value and dimension mismatch evidence blockers', async () => {
+    const prisma = buildPrismaMock([], undefined, {
+      collections: [
+        { id: 'collection-value-mismatch', amount: '100' },
+        { id: 'collection-dimension-mismatch', amount: '40' },
+      ],
+      journalEntries: [
+        collectionCashJournal({ sourceId: 'collection-value-mismatch', action: 'recorded', amount: '100', cashAmount: '99' }),
+        collectionCashJournal({ sourceId: 'collection-dimension-mismatch', action: 'recorded', amount: '40', clearingCaseId: 'other-case' }),
+      ],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.collectionCashReceiptBackfillEvidence?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          collectionId: 'collection-value-mismatch',
+          status: 'VALUE_MISMATCH',
+          blockerCodes: ['COLLECTION_CASH_RECEIPT_VALUE_MISMATCH'],
+        }),
+        expect.objectContaining({
+          collectionId: 'collection-dimension-mismatch',
+          status: 'DIMENSION_MISMATCH',
+          blockerCodes: ['COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH'],
+        }),
+      ]),
+    );
+    expect(report.collectionCashReceiptBackfillEvidence?.blockerCodes).toEqual(
+      expect.arrayContaining([
+        'COLLECTION_CASH_RECEIPT_VALUE_MISMATCH',
+        'COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH',
+      ]),
+    );
+  });
   it('blocks refunded Collection lifecycle as unmapped refund policy evidence', async () => {
     const prisma = buildPrismaMock([], undefined, {
       collections: [{ id: 'collection-refund', status: 'REFUNDED' }],
@@ -1520,6 +1683,12 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
     });
 
+    expect(report.collectionCashReceiptBackfillEvidence).toEqual(
+      expect.objectContaining({
+        statusCounts: expect.objectContaining({ REFUND_POLICY_BLOCKED: 1 }),
+        blockerCodes: ['COLLECTION_REFUND_POLICY_UNMAPPED'],
+      }),
+    );
     expect(report.replayEvidence?.pendingDistribution.blockerCodes).toEqual(['COLLECTION_REFUND_POLICY_UNMAPPED']);
     expect(report.replayEvidence?.pendingDistribution.contextItems).toEqual(
       expect.arrayContaining([

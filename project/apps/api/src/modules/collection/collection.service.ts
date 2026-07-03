@@ -34,6 +34,14 @@ import {
   mapClaimItemTypeToAllocationType,
 } from "./allocation-read.helper";
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
+import {
+  AccountingJournalWriterService,
+  buildAccountingJournal,
+  createCanonicalSourceHash,
+  type CollectionJournalSource,
+  type ValidatedJournalEntryDraft,
+  validateJournalDraft,
+} from "../accounting-journal";
 
 // ─── Source → Header Mapping ─────────────────────────────────────────────────
 
@@ -87,6 +95,20 @@ function getTimelineEventBody(event: any): { header?: Record<string, unknown>; p
 function getTimelineEventId(event: any): string | undefined {
   const eventId = getTimelineEventBody(event).header?.eventId;
   return typeof eventId === 'string' && eventId.trim() ? eventId : undefined;
+}
+
+function readJournalSourceVersion(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const sourceVersion = (metadata as { sourceVersion?: unknown }).sourceVersion;
+  return typeof sourceVersion === 'string' && sourceVersion.trim() ? sourceVersion : null;
+}
+
+function coerceDate(value: unknown, fallback: unknown): Date {
+  const candidate = value instanceof Date ? value : value ? new Date(String(value)) : null;
+  if (candidate && !Number.isNaN(candidate.getTime())) return candidate;
+  const fallbackDate = fallback instanceof Date ? fallback : fallback ? new Date(String(fallback)) : null;
+  if (fallbackDate && !Number.isNaN(fallbackDate.getTime())) return fallbackDate;
+  return new Date();
 }
 
 function toFiniteAmount(value: unknown): number {
@@ -162,6 +184,7 @@ export class CollectionService {
     // G3a: kanonik ledger forward write. @Optional → enjekte edilmezse ledger
     // atlanır + diagnostic (akış kırılmaz; test/araç bağlamları için).
     @Optional() private readonly summaryEngine?: SummaryEngineService,
+    @Optional() private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
   ) {}
 
   /// <remarks>
@@ -464,6 +487,8 @@ export class CollectionService {
           createdById: userId,
         },
       });
+
+      await this.writeCollectionRecordedJournal(tx, tenantId, userId, collection);
 
       // ── 4. PAYMENT_RECEIVED event append (HR-39: same-tx) ───────────────
       const confidence = mapSourceToConfidence(dto.sourceType as CollectionSource);
@@ -782,6 +807,26 @@ export class CollectionService {
           throw paymentReceivedEventNotFound();
         }
 
+        const originalRecordedJournal = await (tx.accountingJournalEntry as any).findFirst({
+          where: {
+            tenantId,
+            sourceType: 'COLLECTION',
+            sourceId: collection.id,
+            sourceAction: 'recorded',
+            entryType: 'COLLECTION_CASH_RECEIPT_RECORDED',
+          },
+          select: { id: true, metadata: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        const originalRecordedSourceVersion = readJournalSourceVersion(originalRecordedJournal?.metadata);
+        if (!originalRecordedJournal || !originalRecordedSourceVersion) {
+          throw new ConflictException({
+            errorCode: 'COLLECTION_CASH_RECEIPT_RECORDED_JOURNAL_MISSING',
+            message: 'Collection cancel requires original recorded accounting journal evidence.',
+            collectionId: collection.id,
+          });
+        }
+
         const originalLedger = await (tx.ledgerEntry as any).findFirst({
           where: {
             tenantId,
@@ -879,6 +924,8 @@ export class CollectionService {
           },
         });
 
+        await this.writeCollectionCancelJournal(tx, tenantId, actorUserId, cancelledCollection, cancelledAt, originalRecordedSourceVersion);
+
         await this.domainEventIngestService.appendInTransaction(tx, {
           header: {
             eventId: paymentReversedEventId(tenantId, collection.id),
@@ -914,6 +961,119 @@ export class CollectionService {
       }
       throw error;
     }
+  }
+
+  private async writeCollectionRecordedJournal(tx: any, tenantId: string, actorUserId: string | undefined, collection: any): Promise<void> {
+    const draft = this.buildCollectionCashJournalDraft({
+      tenantId,
+      actorUserId,
+      collection,
+      kind: 'RECORDED',
+      sourceAction: 'recorded',
+      sourceVersionSuffix: 'RECORDED',
+      originalRecordedSourceVersion: null,
+    });
+    const write = await this.journalWriter.write({ draft }, tx);
+    if (!write.ok) {
+      throw new ConflictException('Collection recorded journal write failed: ' + write.errors.map((error) => error.code).join(', '));
+    }
+  }
+
+  private async writeCollectionCancelJournal(
+    tx: any,
+    tenantId: string,
+    actorUserId: string,
+    collection: any,
+    cancelledAt: Date,
+    originalRecordedSourceVersion: string,
+  ): Promise<void> {
+    const draft = this.buildCollectionCashJournalDraft({
+      tenantId,
+      actorUserId,
+      collection: { ...collection, cancelledAt },
+      kind: 'CANCEL',
+      sourceAction: 'cancel',
+      sourceVersionSuffix: 'CANCEL',
+      originalRecordedSourceVersion,
+    });
+    const write = await this.journalWriter.write({ draft }, tx);
+    if (!write.ok) {
+      throw new ConflictException('Collection cancel journal write failed: ' + write.errors.map((error) => error.code).join(', '));
+    }
+  }
+
+  private buildCollectionCashJournalDraft(params: {
+    tenantId: string;
+    actorUserId: string | undefined;
+    collection: any;
+    kind: 'RECORDED' | 'CANCEL';
+    sourceAction: 'recorded' | 'cancel';
+    sourceVersionSuffix: 'RECORDED' | 'CANCEL';
+    originalRecordedSourceVersion: string | null;
+  }): ValidatedJournalEntryDraft {
+    const { tenantId, actorUserId, collection, kind, sourceAction, sourceVersionSuffix, originalRecordedSourceVersion } = params;
+    const occurredAt = kind === 'RECORDED'
+      ? coerceDate(collection.date, collection.createdAt)
+      : coerceDate(collection.cancelledAt, collection.updatedAt);
+    const sourceVersionDate = kind === 'RECORDED'
+      ? coerceDate(collection.createdAt, occurredAt)
+      : coerceDate(collection.cancelledAt, occurredAt);
+    const occurredAtIso = occurredAt.toISOString();
+    const sourceVersion = `${sourceVersionDate.toISOString()}:${collection.id}:${sourceVersionSuffix}`;
+    const effectiveDate = coerceDate(kind === 'RECORDED' ? (collection.valueDate ?? collection.date) : (collection.cancelledAt ?? occurredAt), occurredAt)
+      .toISOString()
+      .slice(0, 10);
+    const amount = collection.amount?.toString?.() ?? String(collection.amount);
+    const currency = collection.currency || 'TRY';
+    const payload: CollectionJournalSource['payload'] = {
+      kind,
+      amount,
+      caseId: collection.caseId,
+      collectionId: collection.id,
+      collectionStatus: kind === 'RECORDED' ? 'CONFIRMED' : 'CANCELLED',
+      debtorId: collection.caseDebtorId ?? null,
+      originalRecordedSourceVersion,
+    };
+    const source: CollectionJournalSource = {
+      tenantId,
+      sourceType: 'COLLECTION',
+      sourceId: collection.id,
+      sourceVersion,
+      sourceAction,
+      occurredAt: occurredAtIso,
+      effectiveDate,
+      actorId: actorUserId ?? null,
+      currency,
+      sourceHash: createCanonicalSourceHash({
+        tenantId,
+        sourceType: 'COLLECTION',
+        sourceId: collection.id,
+        sourceAction,
+        sourceVersion,
+        occurredAt: occurredAtIso,
+        effectiveDate,
+        actorId: actorUserId ?? null,
+        currency,
+        payload,
+      }),
+      metadata: {
+        sourceName: 'collection',
+        status: kind,
+      },
+      payload,
+    };
+
+    const built = buildAccountingJournal(source);
+    if (!built.ok) {
+      throw new ConflictException(`Collection journal mapping failed: ${built.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const validated = validateJournalDraft(built.draft);
+    if (!validated.ok) {
+      throw new ConflictException(`Collection journal validation failed: ${validated.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    return validated.draft;
   }
 
   // ==================== OTOMATİK MAHSUP ====================
