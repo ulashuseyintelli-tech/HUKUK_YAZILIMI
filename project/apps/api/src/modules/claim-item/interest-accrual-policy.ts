@@ -13,10 +13,10 @@
 
 import { BadRequestException } from '@nestjs/common';
 
-// ClaimItemType gerçek enum üyeleri (schema.prisma:5026-5041). 'COMMISSION' claim-item-classifier.ts'in
-// ancillary-mapping sözlüğünde var ama Prisma ClaimItemType enum'unda YOK (önceden var olan
-// tutarsızlık — disposable-DB migration denemesinde bulundu, bu turda dokunulmadı); bu liste yalnız
-// GERÇEK enum üyelerini içerir.
+// ClaimItemType gerçek enum üyeleri (schema.prisma:5026-5041). Bu liste yalnız GERÇEK enum
+// üyelerini içerir — 'COMMISSION' burada YOK: kural motorunun (claim-engine-rules.yaml) iç
+// etiketi, ClaimItemService.mapItemType() tarafından yaratma ÖNCESİ 'EXPENSE'e çevrilir
+// (claim-item.service.ts:732-744); ClaimItem hiçbir zaman itemType='COMMISSION' ile saklanmaz.
 const NO_INTEREST_DEFAULT_ITEM_TYPES: ReadonlySet<string> = new Set([
   'EXPENSE',
   'FEE',
