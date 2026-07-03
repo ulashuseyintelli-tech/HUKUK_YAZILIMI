@@ -230,6 +230,10 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
         working-directory: project
+      - name: Disable optional pdf-poppler for Client Workspace smoke runtime
+        run: |
+          node -e "const fs = require('fs'); const p = require.resolve('pdf-poppler'); fs.writeFileSync(p, 'module.exports = { convert: async () => { throw new Error(\"pdf-poppler disabled in Client Workspace live smoke CI\"); } };\n'); console.log('Stubbed optional pdf-poppler at ' + p);"
+        working-directory: project
       - name: Prisma generate
         run: pnpm --filter @hukuk/api exec prisma generate
         working-directory: project
