@@ -1389,18 +1389,29 @@ export default function CasesPage() {
 
   const handleBulkDelete = async () => {
     if (selectedCases.length === 0) return;
-    try {
-      setProcessingIds(selectedCases);
-      for (const caseId of selectedCases) {
+    setProcessingIds(selectedCases);
+    // CS4: önceden ilk hata TÜM döngüyü durduruyordu — zaten silinmiş dosyalar listede kalıyordu
+    // (stale UI) ve tek bir generic mesaj gösteriliyordu. Artık her dosya bağımsız denenir; başarılı
+    // olanlar listeden düşer, engellenenler (ör. CS2 footprint 409'u) kendi mesajıyla raporlanır.
+    const failures: string[] = [];
+    const deletedIds: string[] = [];
+    for (const caseId of selectedCases) {
+      try {
         await api.delete(`/cases/${caseId}`);
+        deletedIds.push(caseId);
+      } catch (error: any) {
+        const caseLabel = cases.find(c => c.id === caseId)?.fileNumber || caseId;
+        failures.push(`${caseLabel}: ${error.message || 'Silme işlemi başarısız'}`);
       }
-      setCases(prev => prev.filter(c => !selectedCases.includes(c.id)));
-      setSelectedCases([]);
-      setShowBulkActionConfirm(null);
-    } catch (error: any) {
-      alert(error.message || 'Toplu silme başarısız');
-    } finally {
-      setProcessingIds([]);
+    }
+    if (deletedIds.length > 0) {
+      setCases(prev => prev.filter(c => !deletedIds.includes(c.id)));
+    }
+    setSelectedCases(prev => prev.filter(id => !deletedIds.includes(id)));
+    setShowBulkActionConfirm(null);
+    setProcessingIds([]);
+    if (failures.length > 0) {
+      alert(`${deletedIds.length} dosya silindi, ${failures.length} dosya silinemedi:\n\n${failures.join('\n')}`);
     }
   };
 
@@ -1920,7 +1931,8 @@ export default function CasesPage() {
             { value: "DERDEST", label: "Derdest" },
             { value: "KAPALI", label: "Kapalı" },
             { value: "ASKIDA", label: "Askıda" },
-            { value: "ARSIV", label: "Arşiv" },
+            // CS4: "ARSIV" seçeneği kaldırıldı — bu backend'de caseStatus/status alanlarının hiçbirinde
+            // gerçek bir değer değildi (no-op/olası hata); arşivleme "Arşiv dahil" checkbox'ının işi.
           ]}
           selected={filters.status}
           onChange={(selected) => setFilters(prev => ({ ...prev, status: selected }))}

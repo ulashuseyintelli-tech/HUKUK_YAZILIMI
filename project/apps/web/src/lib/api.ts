@@ -313,7 +313,7 @@ class ApiClient {
   }
 
   // Cases
-  async getCases(params?: { status?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
+  async getCases(params?: { status?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; includeArchived?: boolean; page?: number; limit?: number }) {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.clientId) query.set("clientId", params.clientId);
@@ -322,6 +322,9 @@ class ApiClient {
     // M2-G5d-1b: gerçek kişi owner filtresi (server-side; backend G5a hazır). K1 bridge yok → cross-map yok.
     if (params?.responsibleLawyerId) query.set("responsibleLawyerId", params.responsibleLawyerId);
     if (params?.responsibleStaffId) query.set("responsibleStaffId", params.responsibleStaffId);
+    // CS4: önceden burada hiç okunmuyordu — çağıran (cases/page.tsx) params.includeArchived set etse
+    // bile query string'e hiç girmiyordu (uçtan uca no-op).
+    if (params?.includeArchived) query.set("includeArchived", "1");
     if (params?.page) query.set("page", params.page.toString());
     if (params?.limit) query.set("limit", params.limit.toString());
     return this.request<any>(`/cases?${query}`);
