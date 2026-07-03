@@ -39,6 +39,10 @@ describe('WP-1c-2 — CASE update/delete/batchUpdate audit actor userId', () => 
   it('delete → CASE DELETE audit userId = actor', async () => {
     const { service, auditLog } = makeSvc();
     (service as any).prisma = {
+      collection: { count: jest.fn(async () => 0) },
+      clientOffset: { count: jest.fn(async () => 0) },
+      clientPayout: { count: jest.fn(async () => 0) },
+      clientPayoutManualReversal: { count: jest.fn(async () => 0) },
       $transaction: jest.fn(async (cb: any) => cb({ case: { delete: jest.fn(async () => ({})) } })),
     };
 
