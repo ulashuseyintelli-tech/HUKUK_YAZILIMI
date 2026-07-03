@@ -207,9 +207,11 @@ export class CaseBalanceService {
     };
 
     // 1. Case (tenant-scoped) — faiz fallback kaynağı + varlık kontrolü
+    // TBK100 Interest Accrual Contract v1: caseDate (takip tarihi) YALNIZ item'ın kendi
+    // interestStartDateProvenance='ENFORCEMENT_PROCEEDING_DATE' ise kullanılır (assembler'da gate'li).
     const caseRow = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
-      select: { interestType: true, interestStartDate: true },
+      select: { interestType: true, interestStartDate: true, caseDate: true },
     });
     if (!caseRow) {
       empty.diagnostics.fatal.push({ code: 'CASE_NOT_FOUND', caseId });
@@ -237,12 +239,15 @@ export class CaseBalanceService {
       interestType: ci.interestType ?? null,
       interestRate: toNum(ci.interestRate),
       interestStartDate: toISO(ci.interestStartDate),
+      interestAccrualStatus: ci.interestAccrualStatus ?? null,
+      interestStartDateProvenance: ci.interestStartDateProvenance ?? null,
       status: ci.status,
       metadata: (ci.metadata as Record<string, unknown> | null) ?? null,
     }));
     const asm = assembleClaimBuckets(itemInputs, {
       interestType: caseRow.interestType ?? null,
       interestStartDate: toISO(caseRow.interestStartDate),
+      enforcementProceedingDate: toISO(caseRow.caseDate),
     });
 
     // 4. Payments (G4b-1)

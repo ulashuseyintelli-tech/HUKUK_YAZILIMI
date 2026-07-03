@@ -37,6 +37,14 @@ export interface ClaimItemInput {
   interestRate?: number | null;
   /** ISO date (YYYY-MM-DD). */
   interestStartDate?: string | null;
+  /**
+   * TBK100 Interest Accrual Contract v1: ACCRUES/NO_INTEREST/UNKNOWN (Prisma InterestAccrualStatus,
+   * string yüzeyi). undefined/null → eski kayıt/backfill-öncesi; UNKNOWN gibi ele alınır (davranış
+   * değişmez — bkz. resolveInterestConfig, bu alan bugün resolution zincirini GATE ETMEZ).
+   */
+  interestAccrualStatus?: string | null;
+  /** Yalnız ACCRUES ise anlamlı; ENFORCEMENT_PROCEEDING_DATE ise Case.caseDate mekanik fallback'i tetikler. */
+  interestStartDateProvenance?: string | null;
   status: string;
   metadata?: Record<string, unknown> | null;
 }
@@ -45,6 +53,12 @@ export interface ClaimItemInput {
 export interface CaseInterestFallback {
   interestType?: string | null;
   interestStartDate?: string | null;
+  /**
+   * TBK100 Interest Accrual Contract v1: Case.caseDate (takip tarihi). YALNIZ item'ın kendi
+   * interestStartDateProvenance='ENFORCEMENT_PROCEEDING_DATE' ise kullanılır — sessiz dueDate/issueDate
+   * fallback'inden AYRI: kaynak zaten açıkça seçilmiş provenance, yorum gerektirmez.
+   */
+  enforcementProceedingDate?: string | null;
 }
 
 export type AssemblerDiagnosticCode =
@@ -56,7 +70,15 @@ export type AssemblerDiagnosticCode =
   | 'UNMAPPED_ITEM_TYPE'
   | 'TAX_WITHOUT_PARENT'
   | 'TAX_TIER_DEFERRED'
-  | 'ZERO_OR_NEGATIVE_AMOUNT';
+  | 'ZERO_OR_NEGATIVE_AMOUNT'
+  /** TBK100 Interest Accrual Contract v1: COST/ANCILLARY/TAX kalemi ACCRUES işaretli ama motor bu
+   *  kategori için henüz faiz hesaplayamıyor — kalem yine sabit-tutar projeksiyonuna eklenir (davranış
+   *  DEĞİŞMEZ), yalnız bu eksiklik sessiz kalmasın diye diagnostic üretilir. */
+  | 'ACCRUAL_ENGINE_UNSUPPORTED'
+  /** TBK100 Interest Accrual Contract v1: provenance=ENFORCEMENT_PROCEEDING_DATE ama Case.caseDate de
+   *  yok — kaynak değeri hiç mevcut değil (genel MISSING_START_DATE'ten ayrı: burada AÇIK bir kaynak
+   *  seçilmiş, yalnız o kaynağın kendisi boş). */
+  | 'MISSING_START_DATE_SOURCE_VALUE';
 
 export interface AssemblerDiagnostic {
   code: AssemblerDiagnosticCode;
@@ -140,15 +162,18 @@ export function assembleClaimBuckets(
     }
 
     if (cls.category === 'COST' && cls.ancillaryType) {
+      warnIfAccrualEngineUnsupported(item, diagnostics);
       addAncillaryBucketAmount(costs, cls.ancillaryType, base);
       continue;
     }
     if (cls.category === 'ANCILLARY' && cls.ancillaryType) {
+      warnIfAccrualEngineUnsupported(item, diagnostics);
       addAncillaryBucketAmount(ancillaries, cls.ancillaryType, base);
       continue;
     }
 
     if (cls.category === 'TAX') {
+      warnIfAccrualEngineUnsupported(item, diagnostics);
       handleTax(item, base, costs, ancillaries, diagnostics, addAncillaryBucketAmount);
       continue;
     }
@@ -169,6 +194,13 @@ export function assembleClaimBuckets(
   }
 
   return { buckets, costs, ancillaries, excluded: { interestItemIds: excludedInterestIds }, diagnostics };
+}
+
+/** TBK100 Interest Accrual Contract v1: COST/ANCILLARY/TAX + ACCRUES → motor desteği yok, sessiz kalma. */
+function warnIfAccrualEngineUnsupported(item: ClaimItemInput, diagnostics: AssemblerDiagnostic[]): void {
+  if (item.interestAccrualStatus === 'ACCRUES') {
+    diagnostics.push({ code: 'ACCRUAL_ENGINE_UNSUPPORTED', claimItemId: item.id, detail: item.itemType });
+  }
 }
 
 function handleTax(
@@ -202,6 +234,10 @@ function buildPrincipalBucket(
   },
   diagnostics: AssemblerDiagnostic[],
 ): ClaimBucket | null {
+  // TBK100 Interest Accrual Contract v1: NO_INTEREST = bilinçli faizsiz, HATA DEĞİL — diagnostic
+  // üretmeden sessizce bucket üretilmez (MISSING_*'ten kategorik olarak farklı, "eksik veri" değil).
+  if (item.interestAccrualStatus === 'NO_INTEREST') return null;
+
   // Q2 FAİZ ÇÖZÜM ZİNCİRİ
   const resolved = resolveInterestConfig(item, ctx, diagnostics);
   if (!resolved) return null; // diagnostic resolveInterestConfig içinde üretildi
@@ -218,8 +254,18 @@ function buildPrincipalBucket(
     throw e;
   }
 
-  // startDate (Gb: yoksa diagnostic, tahmin yok)
-  if (!resolved.interestStartDate) {
+  // startDate (Gb: yoksa diagnostic, tahmin yok — issueDate/dueDate fallback KESİNLİKLE YOK).
+  // TBK100 Interest Accrual Contract v1: TEK istisna — provenance açıkça ENFORCEMENT_PROCEEDING_DATE
+  // seçilmişse Case.caseDate'ten mekanik çözülür (sessiz tahmin DEĞİL: kaynak zaten açıkça seçilmiş).
+  let resolvedStartDate = resolved.interestStartDate;
+  if (!resolvedStartDate && item.interestStartDateProvenance === 'ENFORCEMENT_PROCEEDING_DATE') {
+    resolvedStartDate = ctx.caseInterest?.enforcementProceedingDate ?? null;
+    if (!resolvedStartDate) {
+      diagnostics.push({ code: 'MISSING_START_DATE_SOURCE_VALUE', claimItemId: item.id, detail: 'ENFORCEMENT_PROCEEDING_DATE' });
+      return null;
+    }
+  }
+  if (!resolvedStartDate) {
     diagnostics.push({ code: 'MISSING_START_DATE', claimItemId: item.id });
     return null;
   }
@@ -228,7 +274,7 @@ function buildPrincipalBucket(
     id: item.id,
     amount: base,
     currency: item.currency as ClaimBucket['currency'],
-    startDate: resolved.interestStartDate,
+    startDate: resolvedStartDate,
     interestType: code,
     dayCountBasis: 365,
   };

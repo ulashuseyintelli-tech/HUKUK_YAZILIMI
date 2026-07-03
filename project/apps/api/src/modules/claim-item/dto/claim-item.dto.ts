@@ -56,6 +56,26 @@ export enum ClaimItemStatus {
   CANCELLED = 'CANCELLED',
 }
 
+// TBK100 Interest Accrual Contract v1 — "faiz bilgisi eksik" (UNKNOWN) ile "bilinçli faizsiz"
+// (NO_INTEREST) hukuken aynı şey değildir.
+export enum InterestAccrualStatus {
+  ACCRUES = 'ACCRUES',
+  NO_INTEREST = 'NO_INTEREST',
+  UNKNOWN = 'UNKNOWN',
+}
+
+// TBK100 Interest Accrual Contract v1 — yalnız ACCRUES ise zorunlu. ENFORCEMENT_PROCEEDING_DATE
+// istisnası: interestStartDate motor tarafında Case.caseDate'ten mekanik çözülür.
+export enum InterestStartDateProvenance {
+  DOCUMENT_DUE_DATE = 'DOCUMENT_DUE_DATE',
+  CONTRACTUAL_DUE_DATE = 'CONTRACTUAL_DUE_DATE',
+  DEFAULT_NOTICE_DATE = 'DEFAULT_NOTICE_DATE',
+  JUDGMENT_DATE = 'JUDGMENT_DATE',
+  JUDGMENT_FINALIZATION_DATE = 'JUDGMENT_FINALIZATION_DATE',
+  ENFORCEMENT_PROCEEDING_DATE = 'ENFORCEMENT_PROCEEDING_DATE',
+  MANUAL_LAWYER_CONFIRMED = 'MANUAL_LAWYER_CONFIRMED',
+}
+
 
 // Alacak Kalemi Oluşturma DTO
 export class CreateClaimItemDto {
@@ -103,6 +123,22 @@ export class CreateClaimItemDto {
   @IsOptional()
   @IsDateString()
   issueDate?: string;
+
+  @IsOptional()
+  @IsEnum(InterestAccrualStatus)
+  interestAccrualStatus?: InterestAccrualStatus;
+
+  @IsOptional()
+  @IsEnum(InterestStartDateProvenance)
+  interestStartDateProvenance?: InterestStartDateProvenance;
+
+  @IsOptional()
+  @IsString()
+  noInterestReason?: string;
+
+  @IsOptional()
+  @IsString()
+  noInterestConfirmedById?: string;
 
   @IsOptional()
   @IsString()
@@ -159,6 +195,22 @@ export class UpdateClaimItemDto {
   @IsOptional()
   @IsDateString()
   dueDate?: string;
+
+  @IsOptional()
+  @IsEnum(InterestAccrualStatus)
+  interestAccrualStatus?: InterestAccrualStatus;
+
+  @IsOptional()
+  @IsEnum(InterestStartDateProvenance)
+  interestStartDateProvenance?: InterestStartDateProvenance;
+
+  @IsOptional()
+  @IsString()
+  noInterestReason?: string;
+
+  @IsOptional()
+  @IsString()
+  noInterestConfirmedById?: string;
 
   @IsOptional()
   @IsString()
