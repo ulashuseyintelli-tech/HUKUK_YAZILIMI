@@ -84,10 +84,9 @@ export class DispositionController {
   }
 
   /**
-   * Dağıtım kararını POSTED yap — YALNIZ DISTRIBUTION_APPROVED (Partner/Manager onayı sonrası). actor = req.user.id.
+   * Dağıtım kararını POSTED yap — yalnız PARTNER/yetkilendirilmiş avukat + DISTRIBUTION_APPROVED. actor = req.user.id.
    * R4: @CpeRequired(POST_COLLECTION_DISPOSITION) YALNIZ future-compat metadata (CpeRequiredGuard dormant) —
-   * güvenlik buna bağlı DEĞİL. Asıl gate mevcut statü-makinesi (yalnız DISTRIBUTION_APPROVED → POSTED, approve()
-   * adımı zaten PARTNER/yetkili + P4 4-göz ister); bu decorator eklendiğinde davranış DEĞİŞMEDİ.
+   * güvenlik buna bağlı DEĞİL. Asıl gate servis içindeki capability + statü + P4 approval-record kontrolleridir.
    */
   @Post(':id/post')
   @CpeRequired(ActionCode.POST_COLLECTION_DISPOSITION)
