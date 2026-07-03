@@ -7,9 +7,11 @@ import { apiClient } from './client';
  *    personel onayıyla promote edilen YUMUŞAK istihbarat beyanı (soft-6 kategori). Accounting
  *    statement / ClientStatement / cari ile İLGİSİ YOKTUR; karıştırılmaz.
  *
- * Bu sprint (4.7d-1 + debtor-surface) YALNIZ read-only: listByCase/listByDebtor + get. Mutation'lar
- * BİLİNÇLİ DIŞARIDA (4.7d-2): retract / falsePositive / supersede / create EKLENMEDİ. lib/api.ts
- * monolitine DOKUNULMAZ — domain-local modüler client (client-offset/client-statement deseni).
+ * Read: listByCase/listByDebtor + get. Mutation (4.7D-2): create / retract / markFalsePositive /
+ * supersede — capability kontrolü TAMAMEN backend'de (OfficeApprovalService.isApproverEligible);
+ * bu client hiçbir yetki ön-kontrolü YAPMAZ, yalnız backend'in 403/400 mesajını olduğu gibi taşır
+ * (apiClient.request() zaten Error.message = backend body.message). lib/api.ts monolitine
+ * DOKUNULMAZ — domain-local modüler client (client-offset/client-statement deseni).
  *
  * Envelope: apiClient.get/post payload'u {data: body} olarak BİR KEZ sarar; controller
  * payload'u DOĞRUDAN döner (tek-zarf) → doğru unwrap = resp.data (resp.data.data DEĞİL).
@@ -48,6 +50,27 @@ export interface ClientIntelStatement {
   createdById: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** POST /client-intel-statements/case/:caseId gövdesi (backend CreateClientIntelStatementDto ile birebir). */
+export interface CreateClientIntelStatementPayload {
+  debtorId: string;
+  category: ClientIntelCategory;
+  label?: string;
+  value: string;
+  note?: string;
+}
+
+/** retract/false-positive gövdesi — yalnız opsiyonel gerekçe (backend TransitionClientIntelStatementDto). */
+export interface TransitionClientIntelStatementPayload {
+  note?: string;
+}
+
+/** supersede gövdesi — yeni içerik (backend SupersedeClientIntelStatementDto ile birebir). */
+export interface SupersedeClientIntelStatementPayload {
+  value: string;
+  label?: string;
+  note?: string;
 }
 
 export const clientIntelStatementApi = {
@@ -100,5 +123,42 @@ export const clientIntelStatementApi = {
     const statuses: ClientIntelStatus[] = ['ACTIVE', 'RETRACTED', 'FALSE_POSITIVE', 'SUPERSEDED'];
     const groups = await Promise.all(statuses.map((s) => clientIntelStatementApi.listByDebtor(debtorId, s)));
     return groups.flat();
+  },
+
+  /**
+   * Yeni beyan oluştur (ACTIVE). create() capability-gate'e tabi DEĞİLDİR (backend owner kararı,
+   * yalnız retract/false-positive/supersede gate'li).
+   * <remarks>POST /client-intel-statements/case/:caseId</remarks>
+   */
+  async create(caseId: string, payload: CreateClientIntelStatementPayload): Promise<ClientIntelStatement> {
+    const resp = await apiClient.post<ClientIntelStatement>(`/client-intel-statements/case/${caseId}`, payload);
+    return resp.data;
+  },
+
+  /**
+   * Beyanı geri al (ACTIVE → RETRACTED). Backend capability-gate'li (403 → Error.message).
+   * <remarks>POST /client-intel-statements/:id/retract</remarks>
+   */
+  async retract(id: string, payload?: TransitionClientIntelStatementPayload): Promise<ClientIntelStatement> {
+    const resp = await apiClient.post<ClientIntelStatement>(`/client-intel-statements/${id}/retract`, payload ?? {});
+    return resp.data;
+  },
+
+  /**
+   * Beyanı yanlış-pozitif işaretle (ACTIVE → FALSE_POSITIVE). Backend capability-gate'li.
+   * <remarks>POST /client-intel-statements/:id/false-positive</remarks>
+   */
+  async markFalsePositive(id: string, payload?: TransitionClientIntelStatementPayload): Promise<ClientIntelStatement> {
+    const resp = await apiClient.post<ClientIntelStatement>(`/client-intel-statements/${id}/false-positive`, payload ?? {});
+    return resp.data;
+  },
+
+  /**
+   * Düzeltme: eskisi SUPERSEDED olur, yeni ACTIVE kayıt döner. Backend capability-gate'li.
+   * <remarks>POST /client-intel-statements/:id/supersede</remarks>
+   */
+  async supersede(id: string, payload: SupersedeClientIntelStatementPayload): Promise<ClientIntelStatement> {
+    const resp = await apiClient.post<ClientIntelStatement>(`/client-intel-statements/${id}/supersede`, payload);
+    return resp.data;
   },
 };
