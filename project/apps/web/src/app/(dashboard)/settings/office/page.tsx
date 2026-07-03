@@ -1183,6 +1183,8 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
     lawyerRank: lawyer?.lawyerRank || "LAWYER",
     permissionsLocked: lawyer?.permissionsLocked || false,
     canModifyOtherPermissions: lawyer?.canModifyOtherPermissions || false,
+    // K1-4b: Office Approval delegation flag (yalniz duzenleme modunda anlamli; create DTO'su kabul etmiyor)
+    canApproveOfficeActions: lawyer?.canApproveOfficeActions || false,
     // Varsayılan yetkiler
     defaultPermissions: lawyer?.defaultPermissions || {
       canEditCase: true,
@@ -1377,6 +1379,9 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canAppearInUyap} onChange={e => setForm({...form, canAppearInUyap: e.target.checked})} />UYAP</label>
               {(form.lawyerRank === 'PARTNER' || form.lawyerRank === 'MANAGER') && (
                 <label className="flex items-center gap-1"><input type="checkbox" checked={form.canModifyOtherPermissions} onChange={e => setForm({...form, canModifyOtherPermissions: e.target.checked})} />Başkalarının yetkilerini değiştirebilir</label>
+              )}
+              {lawyer?.id && form.lawyerRank !== 'PARTNER' && (
+                <label className="flex items-center gap-1" title="PARTNER olmasa da ofis onay taleplerini (OfficeApproval) onaylayabilir"><input type="checkbox" checked={form.canApproveOfficeActions} onChange={e => setForm({...form, canApproveOfficeActions: e.target.checked})} />Ofis onay yetkisi (delege)</label>
               )}
             </div>
             <div className="p-2 bg-amber-50 border border-amber-200 rounded">
