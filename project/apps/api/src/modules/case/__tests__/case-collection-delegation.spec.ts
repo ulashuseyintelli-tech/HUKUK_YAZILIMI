@@ -87,12 +87,27 @@ describe('CaseService collection delegation (G3d)', () => {
     const postedAt = new Date('2026-06-27T10:00:00Z');
     const manualReversalRequiredAt = new Date('2026-06-27T11:00:00Z');
     const collections = [
-      { id: 'col-posted', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' },
-      { id: 'col-plain', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' },
+      { id: 'col-posted', tenantId: 't1', caseId: 'c1', caseDebtorId: 'cd-1', status: 'CONFIRMED' },
+      { id: 'col-plain', tenantId: 't1', caseId: 'c1', caseDebtorId: null, status: 'CONFIRMED' },
     ];
     const prisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'c1' })) },
       collection: { findMany: jest.fn(async () => collections) },
+      caseDebtor: {
+        findMany: jest.fn(async () => [
+          {
+            id: 'cd-1',
+            lifecycleStatus: 'ACTIVE',
+            role: 'ASIL_BORCLU',
+            debtor: {
+              id: 'debtor-1',
+              name: 'Ali Borclu',
+              identityNo: '12345678901',
+              type: 'INDIVIDUAL',
+            },
+          },
+        ]),
+      },
       collectionDisposition: {
         findMany: jest.fn(async () => [
           {
@@ -111,6 +126,26 @@ describe('CaseService collection delegation (G3d)', () => {
 
     expect(prisma.case.findFirst).toHaveBeenCalledWith({ where: { id: 'c1', tenantId: 't1' } });
     expect(prisma.collection.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { caseId: 'c1', tenantId: 't1' } }));
+    expect(prisma.caseDebtor.findMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['cd-1'] },
+        caseId: 'c1',
+        case: { tenantId: 't1' },
+      },
+      select: {
+        id: true,
+        lifecycleStatus: true,
+        role: true,
+        debtor: {
+          select: {
+            id: true,
+            name: true,
+            identityNo: true,
+            type: true,
+          },
+        },
+      },
+    });
     expect(prisma.collectionDisposition.findMany).toHaveBeenCalledWith({
       where: { tenantId: 't1', caseId: 'c1', collectionId: { in: ['col-posted', 'col-plain'] } },
       select: {
@@ -123,6 +158,17 @@ describe('CaseService collection delegation (G3d)', () => {
     });
     expect(result[0]).toMatchObject({
       id: 'col-posted',
+      debtorFinancialBinding: {
+        caseDebtorId: 'cd-1',
+        lifecycleStatus: 'ACTIVE',
+        role: 'ASIL_BORCLU',
+        debtor: {
+          id: 'debtor-1',
+          displayName: 'Ali Borclu',
+          identityNo: '12345678901',
+          type: 'INDIVIDUAL',
+        },
+      },
       accountingDispositionStatus: 'POSTED',
       accountingPostedAt: postedAt,
       manualReversalRequiredAt,
