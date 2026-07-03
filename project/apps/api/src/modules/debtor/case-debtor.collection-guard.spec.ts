@@ -111,6 +111,8 @@ describeDb(
           tenantId,
           caseId,
           caseDebtorId: cd.id,
+          // P0-1: idempotencyKey NOT NULL — fixture benzersiz key üretir.
+          idempotencyKey: `spec:cd-guard:${suffix}`,
           amount: 1500.5,
           type: CollectionType.TAHSILAT,
           date: new Date(),

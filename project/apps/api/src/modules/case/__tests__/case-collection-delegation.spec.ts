@@ -56,6 +56,7 @@ describe('CaseService collection delegation (G3d)', () => {
       't1',
       'c1',
       {
+        idempotencyKey: 'idem-del-1',
         caseDebtorId: 'd1',
         amount: 1000,
         currency: 'TRY',
@@ -71,6 +72,7 @@ describe('CaseService collection delegation (G3d)', () => {
       't1',
       expect.objectContaining({
         caseId: 'c1',
+        idempotencyKey: 'idem-del-1', // P0-1: key delegasyon boyunca taşınır
         caseDebtorId: 'd1',
         amount: 1000,
         type: 'CASH',

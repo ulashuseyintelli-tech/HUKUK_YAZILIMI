@@ -7,6 +7,7 @@ import {
   Optional,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { Prisma } from "@prisma/client";
 import { createHash, randomUUID } from "crypto";
 import {
   CreateCollectionDto,
@@ -56,6 +57,18 @@ const EXTERNAL_SOURCES = new Set<string>([
   ...EXTERNAL_SIGNED_SOURCES,
   CollectionSource.THIRD_PARTY,
 ]);
+
+// P0-1: idempotent replay/conflict için mevcut tahsilatın payload alanları.
+const IDEMPOTENCY_PAYLOAD_SELECT = {
+  id: true,
+  caseId: true,
+  amount: true,
+  currency: true,
+  date: true,
+  sourceType: true,
+  sourceId: true,
+  caseDebtorId: true,
+} as const;
 
 const PAYMENT_REVERSED_EVENT_NAMESPACE = 'PAYMENT_REVERSED:v1';
 const PAYMENT_RECEIVED_EVENT_NOT_FOUND = 'PAYMENT_RECEIVED_EVENT_NOT_FOUND';
@@ -426,7 +439,36 @@ export class CollectionService {
       );
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    // ── P0-1 (S9): idempotencyKey zorunlu — eksik/boş key ile tahsilat kaydedilemez ──
+    if (!dto.idempotencyKey) {
+      throw new BadRequestException(
+        "idempotencyKey zorunlu — tahsilat kaydı için gerekli",
+      );
+    }
+
+    // ── P0-1: idempotent fast-path (tx öncesi hızlı yol) ────────────────────
+    //  Aynı (tenant, idempotencyKey) → aynı payload ise mevcut tahsilat döner (replay);
+    //  farklı payload ise IDEMPOTENCY_KEY_CONFLICT. Double-click/retry en yaygın vaka.
+    const preExisting = await this.findByIdempotencyKey(tenantId, dto.idempotencyKey);
+    if (preExisting) {
+      this.assertSameCollectionPayload(preExisting, dto);
+      return this.findById(tenantId, preExisting.id);
+    }
+
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+      // ── P0-1: advisory xact lock (tenant+key) → aynı-key eşzamanlı create'ler ──
+      //  SERIALIZE olur; farklı-key (meşru ikinci ödeme) contend ETMEZ. Lock altında
+      //  re-check + payload-conflict guard: race'te ikinci istek P2002 yerine replay döner.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${
+        `collection:idem:${tenantId}:${dto.idempotencyKey}`
+      }))`;
+      const lockedDup = await this.findByIdempotencyKeyTx(tx, tenantId, dto.idempotencyKey);
+      if (lockedDup) {
+        this.assertSameCollectionPayload(lockedDup, dto);
+        return lockedDup;
+      }
+
       // ── 1. Case status check (closed-case reject) ───────────────────────
       const caseData = await tx.case.findFirst({
         where: { id: dto.caseId, tenantId },
@@ -484,6 +526,7 @@ export class CollectionService {
           accountNo: dto.accountNo,
           notes: dto.notes,
           status: CollectionStatus.CONFIRMED,
+          idempotencyKey: dto.idempotencyKey,
           createdById: userId,
         },
       });
@@ -695,9 +738,96 @@ export class CollectionService {
       }
 
       return collection;
-    });
+      });
+      return this.findById(tenantId, result.id);
+    } catch (e: unknown) {
+      // ── P0-1: idempotencyKey race → P2002 → idempotent replay ──────────────
+      //  Lock'a rağmen kalan yarış (veya external dedup index) P2002 üretirse:
+      //  key ile mevcut satır bulunursa replay; yoksa external dup → conflict.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        const row = await this.findByIdempotencyKey(tenantId, dto.idempotencyKey);
+        if (row) {
+          this.assertSameCollectionPayload(row, dto);
+          return this.findById(tenantId, row.id);
+        }
+        // meta.target ile ayrıştır: yalnız external-dedup index'i (source_dedupe)
+        // DUPLICATE_EXTERNAL_PAYMENT'a çevrilir; ilgisiz P2002 aynen fırlatılır
+        // (yanlış etiketleme yok — truthful-audit ilkesi).
+        const target = String((e.meta as { target?: unknown } | undefined)?.target ?? "");
+        if (target.includes("source_dedupe") || target.includes("sourceId")) {
+          throw new ConflictException({
+            code: "DUPLICATE_EXTERNAL_PAYMENT",
+            message:
+              "Aynı dış-kaynak tahsilatı (sourceType/sourceId) bu dosyada zaten kayıtlı",
+          });
+        }
+      }
+      throw e;
+    }
+  }
 
-    return this.findById(tenantId, result.id);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionService.create() → idempotent fast-path (tx öncesi) + P2002 replay
+  /// </remarks>
+  private async findByIdempotencyKey(tenantId: string, idempotencyKey: string) {
+    return (this.prisma.collection as any).findUnique({
+      where: { tenantId_idempotencyKey: { tenantId, idempotencyKey } },
+      select: IDEMPOTENCY_PAYLOAD_SELECT,
+    });
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionService.create() → advisory-lock altında race re-check
+  /// </remarks>
+  private async findByIdempotencyKeyTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    idempotencyKey: string,
+  ) {
+    return (tx as any).collection.findUnique({
+      where: { tenantId_idempotencyKey: { tenantId, idempotencyKey } },
+      select: IDEMPOTENCY_PAYLOAD_SELECT,
+    });
+  }
+
+  /**
+   * P0-1: idempotent replay guard (ClientPayout.replayOrConflict deseni). Aynı
+   * idempotencyKey FARKLI payload ile gelirse IDEMPOTENCY_KEY_CONFLICT fırlatır;
+   * sessiz eski-kayıt dönme YOK — replay yalnız payload birebir eşleşince.
+   */
+  private assertSameCollectionPayload(
+    existing: {
+      caseId: string;
+      amount: Prisma.Decimal | number | string;
+      currency: string;
+      date: Date;
+      sourceType: string | null;
+      sourceId: string | null;
+      caseDebtorId: string | null;
+    },
+    dto: CreateCollectionDto,
+  ): void {
+    const sameAmount =
+      Number(existing.amount).toFixed(2) === Number(dto.amount).toFixed(2);
+    const sameDate =
+      new Date(existing.date).getTime() === new Date(dto.date).getTime();
+    const same =
+      existing.caseId === dto.caseId &&
+      sameAmount &&
+      sameDate &&
+      String(existing.currency) === String(dto.currency || "TRY") &&
+      (existing.sourceType ?? null) === (dto.sourceType ?? null) &&
+      (existing.sourceId ?? null) === (dto.sourceId ?? null) &&
+      (existing.caseDebtorId ?? null) === (dto.caseDebtorId ?? null);
+    if (!same) {
+      throw new ConflictException({
+        code: "IDEMPOTENCY_KEY_CONFLICT",
+        message:
+          "Aynı idempotencyKey farklı payload ile kullanıldı (amount/caseId/date/source/caseDebtorId/currency)",
+      });
+    }
   }
 
   /**

@@ -3576,6 +3576,8 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     data: {
+      // P0-1: idempotencyKey zorunlu — client (FE) form/işlem başına stabil key üretir.
+      idempotencyKey: string;
       caseDebtorId?: string;
       amount: number;
       currency?: string;
@@ -3597,6 +3599,7 @@ export class CaseService {
       tenantId,
       {
         caseId,
+        idempotencyKey: data.idempotencyKey,
         caseDebtorId: data.caseDebtorId,
         amount: data.amount,
         currency: data.currency,

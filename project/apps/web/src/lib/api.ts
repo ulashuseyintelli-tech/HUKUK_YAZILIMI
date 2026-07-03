@@ -5603,6 +5603,9 @@ export interface PaymentPreviewResponseDTO {
 }
 
 export interface CreateCollectionDTO {
+  // P0-1 (S9): ZORUNLU idempotency key. Client, tahsilat işlemi başına STABİL bir
+  //   değer üretir (crypto.randomUUID); double-click/retry aynı key'i taşır → tek tahsilat.
+  idempotencyKey: string;
   caseDebtorId?: string;
   amount: number;
   currency?: string;
