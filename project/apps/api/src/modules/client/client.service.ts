@@ -16,7 +16,12 @@ export interface AuditActor {
 
 export const CONTACT_TASK_DEDUPE_PREFIX = 'OPCOMP:CONTACT:';
 
-export type ClientTimelineSource = 'client_notification' | 'intake_submission';
+export type ClientTimelineSource =
+  | 'client_notification'
+  | 'intake_submission'
+  | 'client_intake_link_delivery'
+  | 'client_document_request'
+  | 'poa_expiry_notification_delivery';
 
 export interface ClientTimelineQuery {
   limit?: string;
@@ -219,7 +224,12 @@ interface ClientTimelineCursor {
 const CLIENT_TIMELINE_DEFAULT_LIMIT = 25;
 const CLIENT_TIMELINE_MAX_LIMIT = 100;
 const CLIENT_TIMELINE_DEFAULT_SOURCES: ClientTimelineSource[] = ['client_notification', 'intake_submission'];
-const CLIENT_TIMELINE_ALLOWED_SOURCES = new Set<ClientTimelineSource>(CLIENT_TIMELINE_DEFAULT_SOURCES);
+const CLIENT_TIMELINE_V2_SOURCES: ClientTimelineSource[] = [
+  'client_intake_link_delivery',
+  'client_document_request',
+  'poa_expiry_notification_delivery',
+];
+const CLIENT_TIMELINE_ALLOWED_SOURCES = new Set<ClientTimelineSource>([...CLIENT_TIMELINE_DEFAULT_SOURCES, ...CLIENT_TIMELINE_V2_SOURCES]);
 const CLIENT_INTAKE_DELIVERY_STALE_MS = 15 * 60 * 1000;
 const CLIENT_POA_REMINDER_WINDOW_KEY = 'D30';
 const CLIENT_POA_DELIVERY_LOCK_TIMEOUT_MS = 15 * 60 * 1000;
@@ -410,11 +420,68 @@ export class ClientService {
             },
           })
         : Promise.resolve([]),
+      sources.includes('client_intake_link_delivery')
+        ? this.prisma.clientIntakeLinkDelivery.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              channel: true,
+              status: true,
+              caseId: true,
+              notificationId: true,
+              attemptCount: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          })
+        : Promise.resolve([]),
+      sources.includes('client_document_request')
+        ? (this.prisma as any).clientDocumentRequest.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              requestedDocumentCodes: true,
+              templateCode: true,
+              channel: true,
+              status: true,
+              caseId: true,
+              notificationId: true,
+              attemptCount: true,
+              sentAt: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          })
+        : Promise.resolve([]),
+      sources.includes('poa_expiry_notification_delivery')
+        ? (this.prisma as any).poaExpiryNotificationDelivery.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              status: true,
+              windowKey: true,
+              attempts: true,
+              sentAt: true,
+              lastAttemptAt: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          })
+        : Promise.resolve([]),
     ]);
 
     const items = [
       ...groups[0].map((row: any) => this.notificationTimelineItem(row)),
       ...groups[1].map((row: any) => this.intakeSubmissionTimelineItem(row)),
+      ...groups[2].map((row: any) => this.intakeLinkDeliveryTimelineItem(row)),
+      ...groups[3].map((row: any) => this.documentRequestTimelineItem(row)),
+      ...groups[4].map((row: any) => this.poaExpiryDeliveryTimelineItem(id, row)),
     ]
       .sort(compareTimelineItems)
       .filter((item) => !cursor || isAfterCursor(item, cursor));
@@ -1069,6 +1136,68 @@ export class ClientService {
       caseId: row.caseId ?? null,
     };
   }
+
+  private intakeLinkDeliveryTimelineItem(row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'PENDING').toUpperCase();
+    const occurredAt = row.updatedAt ?? row.createdAt;
+    return {
+      id: row.id,
+      source: 'client_intake_link_delivery',
+      eventType: `INTAKE_LINK_DELIVERY_${status}`,
+      occurredAt: toIso(occurredAt),
+      title: 'Intake link delivery',
+      summary: `${notificationChannelLabel(row.channel)} intake link delivery: ${deliveryStatusLabel(status)}`,
+      status,
+      caseId: row.caseId ?? null,
+      metadataSafe: {
+        channel: row.channel ?? null,
+        notificationId: row.notificationId ?? null,
+        attemptCount: safeCount(row.attemptCount),
+      },
+    };
+  }
+
+  private documentRequestTimelineItem(row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'PENDING').toUpperCase();
+    const occurredAt = row.sentAt ?? row.updatedAt ?? row.createdAt;
+    return {
+      id: row.id,
+      source: 'client_document_request',
+      eventType: `DOCUMENT_REQUEST_${status}`,
+      occurredAt: toIso(occurredAt),
+      title: 'Document request',
+      summary: `${notificationChannelLabel(row.channel)} document request: ${deliveryStatusLabel(status)}`,
+      status,
+      caseId: row.caseId ?? null,
+      metadataSafe: {
+        channel: row.channel ?? null,
+        templateCode: row.templateCode ?? null,
+        documentCodes: safeStringList(row.requestedDocumentCodes),
+        notificationId: row.notificationId ?? null,
+        attemptCount: safeCount(row.attemptCount),
+      },
+    };
+  }
+
+  private poaExpiryDeliveryTimelineItem(clientId: string, row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'PENDING').toUpperCase();
+    const occurredAt = row.sentAt ?? row.lastAttemptAt ?? row.updatedAt ?? row.createdAt;
+    return {
+      id: row.id,
+      source: 'poa_expiry_notification_delivery',
+      eventType: `POA_EXPIRY_NOTIFICATION_${status}`,
+      occurredAt: toIso(occurredAt),
+      title: 'POA reminder delivery',
+      summary: `POA reminder delivery: ${deliveryStatusLabel(status)}`,
+      status,
+      caseId: null,
+      metadataSafe: {
+        clientId,
+        windowKey: row.windowKey ?? null,
+        attempts: safeCount(row.attempts),
+      },
+    };
+  }
   // Create client
   async create(tenantId: string, data: any, actor?: AuditActor) {
     // TCKN veya VKN ile duplicate kontrolü
@@ -1641,6 +1770,21 @@ function notificationStatusLabel(status: string): string {
     FAILED: 'failed',
   };
   return labels[status] ?? status;
+}
+
+function deliveryStatusLabel(status: string): string {
+  if (status === 'SENDING') return 'sending';
+  if (status === 'SENT') return 'sent';
+  if (status === 'FAILED') return 'failed';
+  return 'pending';
+}
+
+function safeCount(value: unknown): string | null {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : null;
+}
+
+function safeStringList(value: unknown): string | null {
+  return Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item.trim()).join(',') || null : null;
 }
 
 function intakeEventType(status: string): string {
