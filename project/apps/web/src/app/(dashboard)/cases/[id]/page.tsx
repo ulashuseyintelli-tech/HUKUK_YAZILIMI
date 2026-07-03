@@ -2560,10 +2560,16 @@ export default function CaseDetailPage() {
           />
         </div>
 
-        {/* Müvekkil İstihbaratı (Client Intake 4.7d-1) — promote edilen ClientIntelStatement read-only görünürlüğü.
-            Additive; muhasebe/approval akışlarına dokunmaz. Mutation YOK (4.7d-2). */}
+        {/* Müvekkil İstihbaratı (Client Intake 4.7d-1) — promote edilen ClientIntelStatement +
+            lifecycle mutasyonları (4.7d-2). CLIENT-INTEL-4.7D-2B: create hedefi yalnız dosyada
+            TEK borçlu varsa çözülür (createDebtorId) — birden fazla borçluda hangisi belirsiz
+            olduğundan create butonu bilinçli olarak GİZLİ kalır (yanlış borçluya kayıt açma riski). */}
         <div className="px-3 pt-3">
-          <IntelStatementSection caseId={caseData.id} />
+          <IntelStatementSection
+            caseId={caseData.id}
+            createCaseId={caseData.id}
+            createDebtorId={caseDebtorLinks.length === 1 ? caseDebtorLinks[0].debtor.id : undefined}
+          />
         </div>
 
         {/* ALT İÇERİK - 2 Panel */}

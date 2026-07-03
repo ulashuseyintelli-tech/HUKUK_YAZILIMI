@@ -578,7 +578,10 @@ export function DebtorDetailDrawer({
               {/* Intel Tab Content */}
               {activeTab === 'intel' && (
                 <div className="p-2.5">
-                  <IntelStatementSection debtorId={debtor.id} />
+                  {/* CLIENT-INTEL-4.7D-2B: Drawer HER ZAMAN bir case içinden açılır (caseId zorunlu
+                      prop, iki çağıran da her zaman gerçek değer geçer) → create hedefi hiçbir zaman
+                      belirsiz değil, createCaseId her zaman güvenle geçirilebilir. */}
+                  <IntelStatementSection debtorId={debtor.id} createCaseId={caseId} createDebtorId={debtor.id} />
                 </div>
               )}
             </>
