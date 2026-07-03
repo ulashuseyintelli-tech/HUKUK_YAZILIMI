@@ -90,7 +90,7 @@ export class CaseDebtorController {
       { actorUserId: userId, tenantId, actionCode: ActionCode.EDIT_PARTIES },
       { targetRef: id },
     );
-    return this.caseDebtorService.updateCaseDebtor(tenantId, id, dto);
+    return this.caseDebtorService.updateCaseDebtor(tenantId, id, dto, { userId });
   }
 
   /// <remarks>

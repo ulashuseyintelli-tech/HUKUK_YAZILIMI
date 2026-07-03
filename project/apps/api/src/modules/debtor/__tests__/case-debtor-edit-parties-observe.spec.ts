@@ -57,7 +57,7 @@ describe("P2b-2b-1 EDIT_PARTIES observe — CaseDebtorController", () => {
     expect(input).toEqual({ actorUserId: "u1", tenantId: "t1", actionCode: ActionCode.EDIT_PARTIES });
     expect(input.caseId).toBeUndefined();
     expect(opts).toEqual({ targetRef: "cd-9" });
-    expect(service.updateCaseDebtor).toHaveBeenCalledWith("t1", "cd-9", { note: "x" });
+    expect(service.updateCaseDebtor).toHaveBeenCalledWith("t1", "cd-9", { note: "x" }, { userId: "u1" });
     expect(res).toEqual({ ok: "update" });
   });
 
