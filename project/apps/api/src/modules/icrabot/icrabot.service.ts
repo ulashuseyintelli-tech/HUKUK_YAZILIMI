@@ -38,9 +38,12 @@ export class IcrabotService {
   /// - IcrabotService.getNextBestActions() -> GET /icrabot/cases/:caseId/next-actions
   /// - IcrabotService.getPendingTasks() -> GET /icrabot/cases/:caseId/tasks
   /// - IcrabotService.getEvidenceReport() -> GET /icrabot/cases/:caseId/evidence
-  /// DBND-B1: caseId'nin çağıran tenant'a ait olduğunu doğrular; aksi halde bu 4
-  /// endpoint tenant filtresi olmadan başka tenant'ın borçlu/varlık/tebligat/tahsilat/
-  /// kanıt verisini döndürüyordu (cross-tenant IDOR).
+  /// - IcrabotService.processEvent() -> POST /icrabot/cases/:caseId/transition (DBND-B1B)
+  /// - IcrabotService.getAvailableTransitions() -> GET /icrabot/cases/:caseId/transitions (DBND-B1B)
+  /// DBND-B1/B1B: caseId'nin çağıran tenant'a ait olduğunu doğrular; aksi halde bu
+  /// endpointler tenant filtresi olmadan başka tenant'ın borçlu/varlık/tebligat/tahsilat/
+  /// kanıt verisini döndürüyor, processEvent ise dosya aşamasını (workflowStage) ve
+  /// lifecycle geçmişini cross-tenant değiştirebiliyordu (yazma yolu, IDOR).
   /// </remarks>
   private async assertCaseTenant(caseId: string, tenantId: string): Promise<void> {
     const exists = await this.prisma.case.findFirst({
@@ -300,6 +303,7 @@ export class IcrabotService {
   async processEvent(
     caseId: string,
     event: CaseEvent,
+    tenantId: string,
     context?: Record<string, any>
   ): Promise<{
     success: boolean;
@@ -308,6 +312,8 @@ export class IcrabotService {
     actionsTriggered?: string[];
     message: string;
   }> {
+    await this.assertCaseTenant(caseId, tenantId);
+
     const twin = await this.recipeService.buildDigitalTwin(caseId);
     const currentStage = twin.stage;
     const icraType = twin.icraType;
@@ -385,7 +391,7 @@ export class IcrabotService {
    * Mevcut aşamadan yapılabilecek geçişleri getir
    * v3: İcra türüne göre filtreleme
    */
-  async getAvailableTransitions(caseId: string): Promise<{
+  async getAvailableTransitions(caseId: string, tenantId: string): Promise<{
     currentStage: StageTag;
     icraType: IcraType;
     transitions: Array<{
@@ -394,6 +400,8 @@ export class IcrabotService {
       description: string;
     }>;
   }> {
+    await this.assertCaseTenant(caseId, tenantId);
+
     const twin = await this.recipeService.buildDigitalTwin(caseId);
     const currentStage = twin.stage;
     const icraType = twin.icraType;
