@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException, ValidationPipe, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException, ValidationPipe, Headers, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString } from 'class-validator';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
+import { PoaService, validatePoaUploadFile } from '../poa/poa.service';
 import { CreateClientWorkspaceIntakeLinkDto } from '../client-intake-link/dto/client-intake-link.dto';
 import { CLIENT_DOCUMENT_REQUEST_CODES, CLIENT_TEMPLATE_NOTIFICATION_CODES, ClientService, type ClientDocumentRequestCode, type ClientTemplateNotificationCode } from './client.service';
 import { CreateClientDto, UpdateClientDto } from './dto/create-client.dto';
@@ -34,7 +36,11 @@ class SendClientWorkspaceDocumentRequestDto {
 @Controller('clients')
 @UseGuards(JwtAuthGuard)
 export class ClientController {
-  constructor(private clientService: ClientService, private clientIntakeLinkService: ClientIntakeLinkService) {}
+  constructor(
+    private clientService: ClientService,
+    private clientIntakeLinkService: ClientIntakeLinkService,
+    private poaService?: PoaService,
+  ) {}
 
   // Task 2 (owner-locked 2026-06-30): client gÃ¶vde doÄŸrulamasÄ± GÃœVENLÄ°/KADEMELÄ°.
   // app.main.ts global ValidationPipe forbidNonWhitelisted:true â†’ route-level pipe onu OVERRIDE EDEMEZ
@@ -190,6 +196,21 @@ export class ClientController {
       idempotencyKey,
       dto as CreateClientWorkspaceIntakeLinkDto,
     );
+    return { data: result };
+  }
+
+
+  // Client Workspace POA file upload safe endpoint (client-scoped response; raw filePath yok)
+  @Post(':clientId/poas/:poaId/file')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadPoaFile(
+    @Request() req: AuthRequest,
+    @Param('clientId') clientId: string,
+    @Param('poaId') poaId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    validatePoaUploadFile(file);
+    const result = await this.poaService!.uploadFileForClientWorkspace(clientId, poaId, file, req.user.tenantId);
     return { data: result };
   }
 

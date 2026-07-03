@@ -11,13 +11,12 @@ import {
   Request,
   UseInterceptors,
   UploadedFile,
-  BadRequestException,
   Res,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { PoaService, CreatePoaDto, UpdatePoaDto } from "./poa.service";
+import { PoaService, CreatePoaDto, UpdatePoaDto, validatePoaUploadFile } from "./poa.service";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -155,21 +154,7 @@ export class PoaController {
     @UploadedFile() file: Express.Multer.File,
     @Request() req: any
   ) {
-    if (!file) {
-      throw new BadRequestException("Dosya yüklenmedi");
-    }
-
-    // Dosya türü kontrolü
-    const allowedMimes = ["application/pdf", "image/jpeg", "image/png", "image/jpg"];
-    if (!allowedMimes.includes(file.mimetype)) {
-      throw new BadRequestException("Sadece PDF ve görüntü dosyaları (JPG, PNG) yüklenebilir");
-    }
-
-    // Dosya boyutu kontrolü (10MB)
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) {
-      throw new BadRequestException("Dosya boyutu 10MB'dan büyük olamaz");
-    }
+    validatePoaUploadFile(file);
 
     return this.poaService.uploadFile(id, file, req.user.tenantId);
   }
