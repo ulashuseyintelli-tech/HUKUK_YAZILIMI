@@ -1,17 +1,20 @@
 /**
- * DBND-B1 — icrabot Digital Twin ailesi tenant isolation guard.
+ * DBND-B1 / DBND-B1B — icrabot Digital Twin + state-machine ailesi tenant isolation guard.
  *
  * Önce (bug): getDigitalTwin/getNextBestActions/getPendingTasks/getEvidenceReport
- * caseId'yi hiçbir tenant filtresi olmadan kabul ediyordu → cross-tenant IDOR
- * (başka tenant'ın borçlu/varlık/tebligat/tahsilat/kanıt verisi görüntülenebiliyordu).
+ * (DBND-B1) ve processEvent/getAvailableTransitions (DBND-B1B) caseId'yi hiçbir
+ * tenant filtresi olmadan kabul ediyordu → cross-tenant IDOR (başka tenant'ın
+ * borçlu/varlık/tebligat/tahsilat/kanıt verisi görüntülenebiliyordu; processEvent
+ * ayrıca bir yazma yolu olduğundan dosya aşamasını/lifecycle geçmişini de
+ * cross-tenant değiştirebiliyordu).
  *
- * Şimdi: her 4 metod, alt servise delege etmeden önce assertCaseTenant() ile
+ * Şimdi: her metod, alt servise delege etmeden önce assertCaseTenant() ile
  * caseId'nin çağıran tenant'a ait olduğunu doğruluyor; aksi halde NotFoundException.
  */
 import { NotFoundException } from '@nestjs/common';
 import { IcrabotService } from '../icrabot.service';
 
-describe('DBND-B1 — IcrabotService Digital Twin tenant guard', () => {
+describe('DBND-B1 / DBND-B1B — IcrabotService Digital Twin + state-machine tenant guard', () => {
   const TENANT = 't1';
   const CASE_ID = 'case-1';
 
@@ -20,13 +23,22 @@ describe('DBND-B1 — IcrabotService Digital Twin tenant guard', () => {
       case: {
         findFirst: jest.fn().mockResolvedValue(caseFound ? { id: CASE_ID } : null),
       },
+      caseLifecycle: {
+        create: jest.fn().mockResolvedValue({}),
+      },
     };
     const recipeService = {
-      buildDigitalTwin: jest.fn().mockResolvedValue({ caseId: CASE_ID, nextActions: [] }),
+      buildDigitalTwin: jest.fn().mockResolvedValue({
+        caseId: CASE_ID,
+        nextActions: [],
+        stage: 'ACILIS',
+        icraType: 'ILAMSIZ',
+      }),
       calculateNextBestActions: jest.fn().mockResolvedValue([{ recipeId: 'r1' }]),
     };
     const taskOrchestrator = {
       getPendingTasks: jest.fn().mockResolvedValue([{ id: 'task-1' }]),
+      enqueueTasks: jest.fn().mockResolvedValue([]),
     };
     const evidenceService = {
       generateEvidenceReport: jest.fn().mockResolvedValue({ totalEvidence: 0 }),
@@ -108,6 +120,42 @@ describe('DBND-B1 — IcrabotService Digital Twin tenant guard', () => {
       const { svc, evidenceService } = build(false);
       await expect(svc.getEvidenceReport(CASE_ID, TENANT)).rejects.toBeInstanceOf(NotFoundException);
       expect(evidenceService.generateEvidenceReport).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('processEvent (DBND-B1B — yazma yolu)', () => {
+    it('aynı tenant → guard geçer, buildDigitalTwin çağrılır', async () => {
+      const { svc, recipeService, prisma } = build(true);
+      // Geçersiz bir event: StateMachine.transition null döner → yalnızca guard+twin
+      // davranışını izole test eder, state-machine iş kuralını tekrar test etmez.
+      const result = await svc.processEvent(CASE_ID, 'BOGUS_EVENT_XYZ' as any, TENANT);
+      expect(recipeService.buildDigitalTwin).toHaveBeenCalledWith(CASE_ID);
+      expect(result.success).toBe(false);
+      expect(prisma.caseLifecycle.create).not.toHaveBeenCalled();
+    });
+
+    it('başka tenant → NotFoundException, buildDigitalTwin ve case.update HİÇ çağrılmaz', async () => {
+      const { svc, recipeService, prisma } = build(false);
+      await expect(
+        svc.processEvent(CASE_ID, 'BOGUS_EVENT_XYZ' as any, TENANT),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(recipeService.buildDigitalTwin).not.toHaveBeenCalled();
+      expect(prisma.caseLifecycle.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getAvailableTransitions (DBND-B1B)', () => {
+    it('aynı tenant → guard geçer, geçişler döner', async () => {
+      const { svc, recipeService } = build(true);
+      const result = await svc.getAvailableTransitions(CASE_ID, TENANT);
+      expect(recipeService.buildDigitalTwin).toHaveBeenCalledWith(CASE_ID);
+      expect(result.currentStage).toBe('ACILIS');
+    });
+
+    it('başka tenant → NotFoundException, buildDigitalTwin çağrılmaz', async () => {
+      const { svc, recipeService } = build(false);
+      await expect(svc.getAvailableTransitions(CASE_ID, TENANT)).rejects.toBeInstanceOf(NotFoundException);
+      expect(recipeService.buildDigitalTwin).not.toHaveBeenCalled();
     });
   });
 });

@@ -209,9 +209,10 @@ export class IcrabotController {
   @Post('cases/:caseId/transition')
   async processEvent(
     @Param('caseId') caseId: string,
-    @Body() body: { event: string; context?: Record<string, any> }
+    @Body() body: { event: string; context?: Record<string, any> },
+    @Request() req: any
   ) {
-    return this.icrabotService.processEvent(caseId, body.event as any, body.context);
+    return this.icrabotService.processEvent(caseId, body.event as any, req.user.tenantId, body.context);
   }
 
   /**
@@ -219,8 +220,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/transitions
    */
   @Get('cases/:caseId/transitions')
-  async getAvailableTransitions(@Param('caseId') caseId: string) {
-    return this.icrabotService.getAvailableTransitions(caseId);
+  async getAvailableTransitions(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getAvailableTransitions(caseId, req.user.tenantId);
   }
 
   /**
