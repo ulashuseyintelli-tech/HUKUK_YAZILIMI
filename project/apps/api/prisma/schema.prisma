@@ -4885,6 +4885,20 @@ model ClaimItem {
   interestStartDate DateTime?
   interestEndDate   DateTime?
 
+  // TBK100 Interest Accrual Contract v1 (owner-locked, 2026-07-03):
+  // interestStartDate SESSİZCE dueDate/issueDate'ten türetilmez (hukuki karar, ihtar/temerrüt/ilam
+  // tarihi vade tarihinden farklı olabilir). ACCRUES/NO_INTEREST/UNKNOWN üçlüsü "faiz bilgisi eksik"
+  // ile "bilinçli faizsiz"i ayırır — bunlar hukuken aynı şey değildir.
+  interestAccrualStatus       InterestAccrualStatus        @default(UNKNOWN)
+  interestStartDateProvenance InterestStartDateProvenance?
+
+  // NO_INTEREST manuel onayı için audit (yalnız PRINCIPAL kalem elle NO_INTEREST'e çevrilirse zorunlu;
+  // itemType-bazlı otomatik NO_INTEREST varsayımında — COST/ANCILLARY/TAX/ATTORNEY_FEE — boş kalır,
+  // çünkü bu yeni bir karar değil, mevcut davranışın (sabit tutar) açık hale getirilmesidir).
+  noInterestReason        String?
+  noInterestConfirmedById String?
+  noInterestConfirmedAt   DateTime?
+
   // Vade/Tarih Bilgileri
   dueDate   DateTime? // Vade tarihi
   issueDate DateTime? // Düzenleme tarihi
@@ -5038,6 +5052,32 @@ enum ClaimItemType {
 enum ClaimSourceProcess {
   MAIN_ENFORCEMENT // Ana icra takibi
   PRECAUTIONARY // İhtiyati haciz
+}
+
+// TBK100 Interest Accrual Contract v1 (owner-locked, 2026-07-03) — ClaimItem.interestAccrualStatus.
+// "Faiz bilgisi eksik" (UNKNOWN) ile "bilinçli faizsiz" (NO_INTEREST) hukuken aynı şey değildir;
+// sessizce karıştırılmaz. Varsayım matrisi (backfill/servis katmanında, DB default seviyesinde DEĞİL,
+// çünkü Postgres default itemType'a koşullu olamaz): PRINCIPAL yeni kayıtta UNKNOWN kalır;
+// COST/ANCILLARY/TAX/ATTORNEY_FEE itemType'ları mekanik olarak NO_INTEREST'e sınıflanır (bu bir hukuki
+// tahmin değil, zaten bilinen itemType'ın yansımasıdır).
+enum InterestAccrualStatus {
+  ACCRUES
+  NO_INTEREST
+  UNKNOWN
+}
+
+// TBK100 Interest Accrual Contract v1 — ClaimItem.interestStartDateProvenance. Yalnız
+// interestAccrualStatus=ACCRUES ise zorunlu. ENFORCEMENT_PROCEEDING_DATE İSTİSNAİ: bu değer açıkça
+// seçildiğinde interestStartDate Case.caseDate'ten mekanik çözülür (sessiz dueDate/issueDate fallback
+// DEĞİL — kaynak zaten kayıtlı ve tartışmasız, "hangi tarih faiz başlangıcı" yorumu gerektirmez).
+enum InterestStartDateProvenance {
+  DOCUMENT_DUE_DATE
+  CONTRACTUAL_DUE_DATE
+  DEFAULT_NOTICE_DATE
+  JUDGMENT_DATE
+  JUDGMENT_FINALIZATION_DATE
+  ENFORCEMENT_PROCEEDING_DATE
+  MANUAL_LAWYER_CONFIRMED
 }
 
 // Kaynak Belge Türü

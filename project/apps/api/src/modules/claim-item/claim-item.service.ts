@@ -12,6 +12,7 @@ import {
   InterestCalculationResult,
 } from './dto/claim-item.dto';
 import { ClaimEngineService } from '../claim-engine/claim-engine.service';
+import { defaultInterestAccrualStatusForItemType, validateInterestAccrualState } from './interest-accrual-policy';
 
 @Injectable()
 export class ClaimItemService {
@@ -32,6 +33,24 @@ export class ClaimItemService {
       throw new NotFoundException('Dosya bulunamadı');
     }
 
+    // TBK100 Interest Accrual Contract v1: caller hiç değer göndermediyse itemType-bazlı mekanik
+    // varsayım (hukuki tahmin DEĞİL — bkz. interest-accrual-policy.ts); caller açıkça NO_INTEREST
+    // yazdıysa audit zorunlu.
+    const interestAccrualStatus =
+      dto.interestAccrualStatus ?? defaultInterestAccrualStatusForItemType(dto.itemType);
+    const noInterestExplicitlyRequested = dto.interestAccrualStatus === ('NO_INTEREST' as any);
+    validateInterestAccrualState(
+      {
+        interestAccrualStatus,
+        interestType: dto.interestType,
+        interestStartDate: dto.interestStartDate,
+        interestStartDateProvenance: dto.interestStartDateProvenance,
+        noInterestReason: dto.noInterestReason,
+        noInterestConfirmedById: dto.noInterestConfirmedById,
+      },
+      noInterestExplicitlyRequested,
+    );
+
     return (this.prisma as any).claimItem.create({
       data: {
         tenantId,
@@ -47,6 +66,11 @@ export class ClaimItemService {
         interestEndDate: dto.interestEndDate ? new Date(dto.interestEndDate) : null,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         issueDate: dto.issueDate ? new Date(dto.issueDate) : null,
+        interestAccrualStatus,
+        interestStartDateProvenance: dto.interestStartDateProvenance ?? null,
+        noInterestReason: noInterestExplicitlyRequested ? dto.noInterestReason : null,
+        noInterestConfirmedById: noInterestExplicitlyRequested ? dto.noInterestConfirmedById : null,
+        noInterestConfirmedAt: noInterestExplicitlyRequested ? new Date() : null,
         description: dto.description,
         referenceNo: dto.referenceNo,
         isAllDebtorsLiable: dto.isAllDebtorsLiable ?? true,
@@ -91,6 +115,24 @@ export class ClaimItemService {
       throw new BadRequestException('Tahsilat yapılmış kalemde kalem tipi (itemType) değiştirilemez.');
     }
 
+    // TBK100 Interest Accrual Contract v1: mevcut kayıt + dto override'larının BİRLEŞİK (effective)
+    // durumu doğrulanır — yalnız bu isteğin gönderdiği alanlar değil.
+    if (dto.interestAccrualStatus !== undefined || dto.interestStartDateProvenance !== undefined) {
+      const effectiveStatus = dto.interestAccrualStatus ?? existing.interestAccrualStatus ?? 'UNKNOWN';
+      const noInterestExplicitlyRequested = dto.interestAccrualStatus === ('NO_INTEREST' as any);
+      validateInterestAccrualState(
+        {
+          interestAccrualStatus: effectiveStatus,
+          interestType: dto.interestType ?? existing.interestType,
+          interestStartDate: dto.interestStartDate ?? existing.interestStartDate,
+          interestStartDateProvenance: dto.interestStartDateProvenance ?? existing.interestStartDateProvenance,
+          noInterestReason: dto.noInterestReason ?? existing.noInterestReason,
+          noInterestConfirmedById: dto.noInterestConfirmedById ?? existing.noInterestConfirmedById,
+        },
+        noInterestExplicitlyRequested,
+      );
+    }
+
     const updateData: any = {};
     if (dto.itemType) updateData.itemType = dto.itemType;
     if (dto.amount !== undefined) updateData.amount = dto.amount;
@@ -100,6 +142,13 @@ export class ClaimItemService {
     if (dto.interestStartDate) updateData.interestStartDate = new Date(dto.interestStartDate);
     if (dto.interestEndDate) updateData.interestEndDate = new Date(dto.interestEndDate);
     if (dto.dueDate) updateData.dueDate = new Date(dto.dueDate);
+    if (dto.interestAccrualStatus) updateData.interestAccrualStatus = dto.interestAccrualStatus;
+    if (dto.interestStartDateProvenance) updateData.interestStartDateProvenance = dto.interestStartDateProvenance;
+    if (dto.interestAccrualStatus === ('NO_INTEREST' as any)) {
+      updateData.noInterestReason = dto.noInterestReason;
+      updateData.noInterestConfirmedById = dto.noInterestConfirmedById;
+      updateData.noInterestConfirmedAt = new Date();
+    }
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.referenceNo !== undefined) updateData.referenceNo = dto.referenceNo;
     if (dto.isAllDebtorsLiable !== undefined) updateData.isAllDebtorsLiable = dto.isAllDebtorsLiable;
