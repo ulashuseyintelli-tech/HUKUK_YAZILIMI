@@ -7,9 +7,9 @@ import { apiClient } from './client';
  *    personel onayıyla promote edilen YUMUŞAK istihbarat beyanı (soft-6 kategori). Accounting
  *    statement / ClientStatement / cari ile İLGİSİ YOKTUR; karıştırılmaz.
  *
- * Bu sprint (4.7d-1) YALNIZ read-only: listByCase + get. Mutation'lar BİLİNÇLİ DIŞARIDA
- * (4.7d-2): retract / falsePositive / supersede / create EKLENMEDİ. lib/api.ts monolitine
- * DOKUNULMAZ — domain-local modüler client (client-offset/client-statement deseni).
+ * Bu sprint (4.7d-1 + debtor-surface) YALNIZ read-only: listByCase/listByDebtor + get. Mutation'lar
+ * BİLİNÇLİ DIŞARIDA (4.7d-2): retract / falsePositive / supersede / create EKLENMEDİ. lib/api.ts
+ * monolitine DOKUNULMAZ — domain-local modüler client (client-offset/client-statement deseni).
  *
  * Envelope: apiClient.get/post payload'u {data: body} olarak BİR KEZ sarar; controller
  * payload'u DOĞRUDAN döner (tek-zarf) → doğru unwrap = resp.data (resp.data.data DEĞİL).
@@ -79,6 +79,26 @@ export const clientIntelStatementApi = {
   async listByCaseAllStatuses(caseId: string): Promise<ClientIntelStatement[]> {
     const statuses: ClientIntelStatus[] = ['ACTIVE', 'RETRACTED', 'FALSE_POSITIVE', 'SUPERSEDED'];
     const groups = await Promise.all(statuses.map((s) => clientIntelStatementApi.listByCase(caseId, s)));
+    return groups.flat();
+  },
+
+  /**
+   * Borçlu bazlı istihbarat listesi (status verilmezse backend default ACTIVE).
+   * <remarks>GET /client-intel-statements/debtor/:debtorId?status=</remarks>
+   */
+  async listByDebtor(debtorId: string, status?: ClientIntelStatus): Promise<ClientIntelStatement[]> {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    const resp = await apiClient.get<ClientIntelStatement[]>(`/client-intel-statements/debtor/${debtorId}${qs}`);
+    return resp.data;
+  },
+
+  /**
+   * Borçlu için TÜM statülerdeki kayıtlar (READ-ONLY) — listByCaseAllStatuses ile birebir aynı desen.
+   * <remarks>N× GET /client-intel-statements/debtor/:debtorId?status=</remarks>
+   */
+  async listByDebtorAllStatuses(debtorId: string): Promise<ClientIntelStatement[]> {
+    const statuses: ClientIntelStatus[] = ['ACTIVE', 'RETRACTED', 'FALSE_POSITIVE', 'SUPERSEDED'];
+    const groups = await Promise.all(statuses.map((s) => clientIntelStatementApi.listByDebtor(debtorId, s)));
     return groups.flat();
   },
 };

@@ -46,6 +46,12 @@ vi.mock("../components/address-discovery", () => ({
   ),
 }));
 
+vi.mock("../components/case/IntelStatementSection", () => ({
+  IntelStatementSection: ({ debtorId, caseId }: { debtorId?: string; caseId?: string }) => (
+    <div data-testid="intel-statement-section" data-debtor-id={debtorId} data-case-id={caseId ?? ""} />
+  ),
+}));
+
 vi.mock("../components/debtor/modals/ServiceUpdateModal", () => ({
   ServiceUpdateModal: ({ isOpen }: { isOpen: boolean }) =>
     isOpen ? <div data-testid="service-update-modal" /> : null,
@@ -138,6 +144,29 @@ describe("PR-L7b passive CaseDebtor UI safety", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Adres Ara/i }));
     expect(await screen.findByTestId("address-research-widget")).toHaveAttribute("data-readonly", "true");
+  });
+
+  it("İstihbarat tab renders IntelStatementSection with debtor.id (CLIENT-INTEL-DEBTOR-SURFACE-BUILD)", async () => {
+    apiMock.getCaseDebtorDetail.mockResolvedValue({
+      ...baseDebtor,
+      lifecycleStatus: "ACTIVE",
+    });
+
+    render(
+      <DebtorDetailDrawer
+        isOpen
+        onClose={vi.fn()}
+        caseId="case-1"
+        caseDebtorId="case-debtor-1"
+      />
+    );
+
+    await waitFor(() => expect(apiMock.getCaseDebtorDetail).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: /İstihbarat/i }));
+    const section = await screen.findByTestId("intel-statement-section");
+    expect(section).toHaveAttribute("data-debtor-id", "debtor-1");
+    expect(section).toHaveAttribute("data-case-id", "");
   });
 
   it("active drawer keeps operational controls enabled", async () => {

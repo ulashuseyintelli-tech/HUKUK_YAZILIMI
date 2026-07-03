@@ -3,6 +3,7 @@
  * Doğrulanan: başlık her zaman; loading / empty / error; ACTIVE kategori-gruplu + "Geçerli" badge;
  * inactive (RETRACTED/FALSE_POSITIVE/SUPERSEDED) "Geçmiş / Pasif Kayıtlar" alanında badge'li;
  * supersede→"Yeni kayıtla güncellendi" + lifecycleNote→"Gerekçe:"; AKSIYON/MUTATION butonu YOK.
+ * CLIENT-INTEL-DEBTOR-SURFACE-BUILD: debtor-scope (listByDebtorAllStatuses) + case/debtor XOR guard.
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -12,16 +13,25 @@ import { clientIntelStatementApi } from '@/lib/api/client-intel-statement';
 
 vi.mock('@/lib/api/client-intel-statement', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api/client-intel-statement')>();
-  return { ...actual, clientIntelStatementApi: { listByCase: vi.fn(), get: vi.fn(), listByCaseAllStatuses: vi.fn() } };
+  return {
+    ...actual,
+    clientIntelStatementApi: {
+      listByCase: vi.fn(),
+      listByDebtor: vi.fn(),
+      get: vi.fn(),
+      listByCaseAllStatuses: vi.fn(),
+      listByDebtorAllStatuses: vi.fn(),
+    },
+  };
 });
 
 const api = clientIntelStatementApi as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
-function renderSection() {
+function renderSection(props: { caseId?: string; debtorId?: string } = { caseId: 'case-1' }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <IntelStatementSection caseId="case-1" />
+      <IntelStatementSection {...props} />
     </QueryClientProvider>,
   );
 }
@@ -110,5 +120,39 @@ describe('IntelStatementSection — read-only görünürlük (4.7d-2a)', () => {
     await waitFor(() => expect(screen.getByText(/Geçerli \(aktif\) müvekkil istihbaratı yok/)).toBeTruthy());
     expect(screen.getByText('Geri alınan')).toBeTruthy();
     expect(screen.getByText(/Geçmiş \/ Pasif Kayıtlar/)).toBeTruthy();
+  });
+});
+
+describe('IntelStatementSection — debtor-scope (CLIENT-INTEL-DEBTOR-SURFACE-BUILD)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('debtorId verilince listByDebtorAllStatuses çağrılır, listByCaseAllStatuses ÇAĞRILMAZ', async () => {
+    api.listByDebtorAllStatuses.mockResolvedValue([
+      ROW({ id: 'd1', category: 'STRATEGY', value: 'Borçlu ile ilgili strateji notu' }),
+    ]);
+    renderSection({ debtorId: 'debtor-1' });
+    await waitFor(() => expect(screen.getByText('Borçlu ile ilgili strateji notu')).toBeTruthy());
+    expect(api.listByDebtorAllStatuses).toHaveBeenCalledWith('debtor-1');
+    expect(api.listByCaseAllStatuses).not.toHaveBeenCalled();
+  });
+
+  it('debtor-scope boş liste → "Bu borçlu için" boş-state metni (case-scope\'tan farklı)', async () => {
+    api.listByDebtorAllStatuses.mockResolvedValue([]);
+    renderSection({ debtorId: 'debtor-1' });
+    await waitFor(() => expect(screen.getByText(/Bu borçlu için henüz doğrulanmış müvekkil istihbaratı yok/)).toBeTruthy());
+  });
+
+  it('hem caseId hem debtorId verilirse → kullanım-hatası guard\'ı, HİÇBİR sorgu atılmaz', () => {
+    renderSection({ caseId: 'case-1', debtorId: 'debtor-1' });
+    expect(screen.getByText(/Kullanım hatası/)).toBeTruthy();
+    expect(api.listByCaseAllStatuses).not.toHaveBeenCalled();
+    expect(api.listByDebtorAllStatuses).not.toHaveBeenCalled();
+  });
+
+  it('ne caseId ne debtorId verilirse → kullanım-hatası guard\'ı, HİÇBİR sorgu atılmaz', () => {
+    renderSection({});
+    expect(screen.getByText(/Kullanım hatası/)).toBeTruthy();
+    expect(api.listByCaseAllStatuses).not.toHaveBeenCalled();
+    expect(api.listByDebtorAllStatuses).not.toHaveBeenCalled();
   });
 });

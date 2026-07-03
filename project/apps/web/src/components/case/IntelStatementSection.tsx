@@ -15,6 +15,8 @@ import {
  * 4.7d-1: promote edilen ClientIntelStatement'ları case detayında salt-okuma gösterir.
  * 4.7d-2a: ACTIVE kayıtların yanında inactive kayıtları (RETRACTED/FALSE_POSITIVE/SUPERSEDED)
  *          ayrı "Geçmiş / Pasif Kayıtlar" alanında, soluk + status badge ile gösterir.
+ * CLIENT-INTEL-DEBTOR-SURFACE-BUILD: case VEYA debtor scope (mutually exclusive) — gruplama/render
+ *          mantığı scope-agnostik olduğundan yeni component YAZILMADI, prop imzası genellendi.
  *
  * ⛔ SINIRLAR (KORUNUR):
  *  - READ-ONLY: hiçbir mutation/aksiyon/menü YOK (retract/false-positive/supersede UI = 4.7d-2b/c,
@@ -89,12 +91,26 @@ function StatusBadge({ status }: { status: ClientIntelStatus }) {
   );
 }
 
-export function IntelStatementSection({ caseId }: { caseId: string }) {
-  // 4.7d-2a: TÜM statüler (read-only). listByCaseAllStatuses backend default-ACTIVE'i aşar; mutation YOK.
+export interface IntelStatementSectionProps {
+  caseId?: string;
+  debtorId?: string;
+}
+
+export function IntelStatementSection({ caseId, debtorId }: IntelStatementSectionProps) {
+  const hasCase = !!caseId;
+  const hasDebtor = !!debtorId;
+  // Tam olarak biri (XOR) verilmeli — ikisi birden veya hiçbiri gelirse sorgu ATILMAZ, guard gösterilir.
+  const isValidScope = hasCase !== hasDebtor;
+
+  // 4.7d-2a: TÜM statüler (read-only). listByCaseAllStatuses/listByDebtorAllStatuses backend
+  // default-ACTIVE'i aşar; mutation YOK.
   const q = useQuery({
-    queryKey: ['client-intel-statements', caseId],
-    queryFn: () => clientIntelStatementApi.listByCaseAllStatuses(caseId),
-    enabled: !!caseId,
+    queryKey: ['client-intel-statements', hasCase ? 'case' : 'debtor', caseId ?? debtorId ?? null],
+    queryFn: () =>
+      hasCase
+        ? clientIntelStatementApi.listByCaseAllStatuses(caseId!)
+        : clientIntelStatementApi.listByDebtorAllStatuses(debtorId!),
+    enabled: isValidScope,
   });
 
   const items = q.data ?? [];
@@ -120,7 +136,11 @@ export function IntelStatementSection({ caseId }: { caseId: string }) {
         müvekkil tarafından bildirilmiştir; doğrulanmış kesin bilgi değildir.
       </p>
 
-      {q.isLoading ? (
+      {!isValidScope ? (
+        <div className="flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-2 text-[11px] text-amber-700">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" /> Kullanım hatası: caseId veya debtorId'den tam olarak biri verilmelidir.
+        </div>
+      ) : q.isLoading ? (
         <p className="text-[11px] text-gray-400 py-3 text-center">Yükleniyor…</p>
       ) : q.isError ? (
         <div className="flex items-center gap-1.5 rounded-md bg-red-50 px-2 py-2 text-[11px] text-red-700">
@@ -128,7 +148,7 @@ export function IntelStatementSection({ caseId }: { caseId: string }) {
         </div>
       ) : active.length === 0 && inactive.length === 0 ? (
         <p className="text-[11px] text-gray-400 py-3 text-center">
-          Bu dosya için henüz doğrulanmış müvekkil istihbaratı yok.
+          {hasCase ? 'Bu dosya için' : 'Bu borçlu için'} henüz doğrulanmış müvekkil istihbaratı yok.
         </p>
       ) : (
         <div className="space-y-3">
