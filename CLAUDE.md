@@ -81,6 +81,16 @@ Test seviyesi riskle orantili secilir. Docs-only degisikliklerde diff, kapsam ve
 
 `GO-IMPLEMENT` sonunda validation sonucu raporlanir; merge yapilmaz. `GO-COMPLETE` icin CI takip edilir: `IN_PROGRESS` ise yaklasik 60 saniyede bir, en fazla 20 dakika kontrol et; `SUCCESS` olursa merge ve cleanup zinciri devam eder; `FAIL` veya timeout olursa dur. CI bitmeden gelen `mergeStateStatus: BLOCKED` tek basina stop condition degildir; CI bitince yeniden kontrol edilir. CI sonrasi `mergeStateStatus` `CLEAN` degilse dur.
 
+DB-gated integration test gerektiren gorevlerde production veya local development veritabanina karsi test kosulmaz. Guvenli sira:
+
+```text
+disposable Docker PostgreSQL container ayaga kaldir
+migration bu container uzerinde calistir
+integration test bu container uzerinde kos
+PASS olmadan PR acma
+test tamamlaninca container istege bagli silinebilir
+```
+
 ## 7. Reporting
 
 Raporlar kisa, karar odakli ve kapsama uygun olsun. Docs-only islerde tekrarlayan "schema yok/migration yok/runtime yok" boilerplate'i yazma.
