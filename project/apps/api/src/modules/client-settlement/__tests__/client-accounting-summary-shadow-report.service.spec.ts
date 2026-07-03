@@ -1563,6 +1563,18 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       ]),
     );
     expect(report.collectionCashReceiptBackfillEvidence?.blockerCodes).toEqual(['COLLECTION_CASH_RECEIPT_BACKFILL_MISSING']);
+    expect(report.summaryPrimarySwitchReadiness.collectionCashReceiptEvidenceStatus).toBe('BLOCKED');
+    expect(report.summaryPrimarySwitchReadiness.rawCollectionJournalSource).toEqual(
+      expect.objectContaining({
+        status: 'EVIDENCE_BLOCKED',
+        blockerCodes: expect.arrayContaining([
+          'COLLECTION_CASH_RECEIPT_BACKFILL_MISSING',
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+        ]),
+      }),
+    );
+    expect(report.summaryPrimarySwitchReadiness.blockerCodes).toContain('COLLECTION_CASH_RECEIPT_BACKFILL_MISSING');
+    expect(report.summaryPrimarySwitchReadiness.blockerCodes).not.toContain('COLLECTION_JOURNAL_SOURCE_MISSING');
     expect(component(report, 'pendingDistribution').blockerCodes).toContain('CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING');
     expect(component(report, 'pendingDistribution').blockerCodes).toContain('COLLECTION_CASH_RECEIPT_BACKFILL_MISSING');
     expect(component(report, 'pendingDistribution').blockerCodes).not.toEqual(
@@ -1631,6 +1643,18 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         'COLLECTION_CASH_RECEIPT_REVERSAL_BACKFILL_MISSING',
       ]),
     );
+    expect(report.summaryPrimarySwitchReadiness.collectionCashReceiptEvidenceStatus).toBe('BLOCKED');
+    expect(report.summaryPrimarySwitchReadiness.rawCollectionJournalSource).toEqual(
+      expect.objectContaining({
+        status: 'EVIDENCE_BLOCKED',
+        blockerCodes: expect.arrayContaining([
+          'COLLECTION_CASH_RECEIPT_BACKFILL_MISSING',
+          'COLLECTION_CASH_RECEIPT_REVERSAL_BACKFILL_MISSING',
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+        ]),
+      }),
+    );
+    expect(report.summaryPrimarySwitchReadiness.blockerCodes).not.toContain('COLLECTION_JOURNAL_SOURCE_MISSING');
   });
 
   it('reports Collection cash receipt value and dimension mismatch evidence blockers', async () => {
@@ -1671,6 +1695,18 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         'COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH',
       ]),
     );
+    expect(report.summaryPrimarySwitchReadiness.collectionCashReceiptEvidenceStatus).toBe('BLOCKED');
+    expect(report.summaryPrimarySwitchReadiness.rawCollectionJournalSource).toEqual(
+      expect.objectContaining({
+        status: 'EVIDENCE_BLOCKED',
+        blockerCodes: expect.arrayContaining([
+          'COLLECTION_CASH_RECEIPT_VALUE_MISMATCH',
+          'COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH',
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+        ]),
+      }),
+    );
+    expect(report.summaryPrimarySwitchReadiness.blockerCodes).not.toContain('COLLECTION_JOURNAL_SOURCE_MISSING');
   });
   it('blocks refunded Collection lifecycle as unmapped refund policy evidence', async () => {
     const prisma = buildPrismaMock([], undefined, {
@@ -1708,6 +1744,17 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       ]),
     );
     expect(report.blockerCodes).toEqual(expect.arrayContaining(['COLLECTION_REFUND_POLICY_UNMAPPED']));
+    expect(report.summaryPrimarySwitchReadiness.collectionCashReceiptEvidenceStatus).toBe('BLOCKED');
+    expect(report.summaryPrimarySwitchReadiness.rawCollectionJournalSource).toEqual(
+      expect.objectContaining({
+        status: 'EVIDENCE_BLOCKED',
+        blockerCodes: expect.arrayContaining([
+          'COLLECTION_REFUND_POLICY_UNMAPPED',
+          'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+        ]),
+      }),
+    );
+    expect(report.summaryPrimarySwitchReadiness.blockerCodes).not.toContain('COLLECTION_JOURNAL_SOURCE_MISSING');
     expect(report.candidateStatus).toBe('BLOCKED');
     expect(report.safeForPrimaryCutover).toBe(false);
   });
@@ -1911,7 +1958,6 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         ]),
         blockerCodes: expect.arrayContaining([
           'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
-          'COLLECTION_JOURNAL_SOURCE_MISSING',
           'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
           'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
         ]),
@@ -1940,21 +1986,21 @@ describe('ClientAccountingSummaryShadowReportService', () => {
             'caseScopedContext.advanceBalance',
           ]),
         }),
+        collectionCashReceiptEvidenceStatus: 'CLEAN',
         rawCollectionJournalSource: {
           requiredFor: 'caseScopedContext.debtorCollection',
-          status: 'MISSING',
-          blockerCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING', 'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING'],
+          status: 'EVIDENCE_CLEAN',
+          blockerCodes: ['CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING'],
         },
         blockerCodes: expect.arrayContaining([
           'JOURNAL_DERIVED_CLIENT_ACCOUNTING_SUMMARY_READER_MISSING',
           'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
-          'COLLECTION_JOURNAL_SOURCE_MISSING',
           'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
           'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
           'SUMMARY_DERIVED_FROM_BLOCKED_PENDING_DISTRIBUTION',
           'SUMMARY_JOURNAL_ONLY_PRIMARY_SWITCH_BLOCKED_BY_LEGACY_CONTEXT',
         ]),
-        gapCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING'],
+        gapCodes: [],
       }),
     );
     expect(report.summaryHybridPrimaryBoundary).toEqual(
@@ -1965,12 +2011,20 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         primarySwitchUnchanged: true,
         safeForPrimaryCutover: false,
         blockerCodes: expect.arrayContaining([
-          'COLLECTION_JOURNAL_SOURCE_MISSING',
           'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
           'SUMMARY_JOURNAL_ONLY_PRIMARY_SWITCH_BLOCKED_BY_LEGACY_CONTEXT',
         ]),
       }),
     );
+    expect(report.summaryHybridPrimaryBoundary.blockerCodes).not.toContain('COLLECTION_JOURNAL_SOURCE_MISSING');
+    expect(report.summaryPrimarySwitchReadiness.collectionCashReceiptEvidenceStatus).toBe('CLEAN');
+    expect(report.summaryPrimarySwitchReadiness.rawCollectionJournalSource).toEqual(
+      expect.objectContaining({
+        status: 'EVIDENCE_CLEAN',
+        blockerCodes: ['CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING'],
+      }),
+    );
+    expect(report.summaryPrimarySwitchReadiness.blockerCodes).not.toContain('COLLECTION_JOURNAL_SOURCE_MISSING');
     expect(report.summaryPrimarySwitchReadiness.caseScopedReadiness).toEqual(
       expect.objectContaining({
         status: 'BLOCKED',
@@ -1993,10 +2047,11 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(report.safeForPrimaryCutover).toBe(false);
     expect(report.primarySwitchUnchanged).toBe(true);
   });
-  it('reports case-scoped primary reader evidence while keeping debtorCollection raw Collection blocker', async () => {
+  it('reports case-scoped primary reader evidence while narrowing clean Collection cash source blockers', async () => {
     const prisma = buildPrismaMock([], undefined, {
       collections: [{ id: 'collection-case', amount: '1000' }],
       dispositions: [{ id: 'disp-posted', status: 'POSTED', totalAmount: '400' }],
+      journalEntries: [collectionCashJournal({ sourceId: 'collection-case', action: 'recorded', amount: '1000' })],
       caseBalances: [{ balance: '75' }],
       caseScopedJournalLines: [
         { sourceType: 'COLLECTION_DISPOSITION_LINE', accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', amount: '300' },
@@ -2055,12 +2110,20 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         primarySwitchUnchanged: true,
         safeForPrimaryCutover: false,
         blockerCodes: expect.arrayContaining([
-          'COLLECTION_JOURNAL_SOURCE_MISSING',
           'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
           'SUMMARY_JOURNAL_ONLY_PRIMARY_SWITCH_BLOCKED_BY_LEGACY_CONTEXT',
         ]),
       }),
     );
+    expect(report.summaryHybridPrimaryBoundary.blockerCodes).not.toContain('COLLECTION_JOURNAL_SOURCE_MISSING');
+    expect(report.summaryPrimarySwitchReadiness.collectionCashReceiptEvidenceStatus).toBe('CLEAN');
+    expect(report.summaryPrimarySwitchReadiness.rawCollectionJournalSource).toEqual(
+      expect.objectContaining({
+        status: 'EVIDENCE_CLEAN',
+        blockerCodes: ['CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING'],
+      }),
+    );
+    expect(report.summaryPrimarySwitchReadiness.blockerCodes).not.toContain('COLLECTION_JOURNAL_SOURCE_MISSING');
     expect(report.summaryPrimarySwitchReadiness.caseScopedReadiness).toEqual(
       expect.objectContaining({
         status: 'BLOCKED',
@@ -2097,6 +2160,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     const prisma = buildPrismaMock([], undefined, {
       collections: [{ id: 'collection-case', amount: '1000' }],
       dispositions: [{ id: 'disp-posted', status: 'POSTED', totalAmount: '400' }],
+      journalEntries: [collectionCashJournal({ sourceId: 'collection-case', action: 'recorded', amount: '1000' })],
       caseBalances: [{ balance: '75' }],
       caseScopedJournalLines: [
         { sourceType: 'COLLECTION_DISPOSITION_LINE', accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', amount: '350' },
