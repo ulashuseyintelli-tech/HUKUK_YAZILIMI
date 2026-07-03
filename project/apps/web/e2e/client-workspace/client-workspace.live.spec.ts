@@ -32,7 +32,7 @@ test.describe('Client Workspace live smoke', () => {
 
     await page.goto(`/clients/${config.clientId}`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByRole('link', { name: clientsLinkName })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: clientsLinkName }).first()).toBeVisible();
     await expect(page.getByRole('tab', { name: actionsTabName })).toBeVisible();
     await expect(page.getByRole('tab', { name: activityTabName })).toBeVisible();
     await expect(page.getByRole('tab', { name: poaTabName })).toBeVisible();
