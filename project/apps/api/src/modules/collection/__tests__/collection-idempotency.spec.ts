@@ -18,7 +18,21 @@ import { Prisma } from '@prisma/client';
 function setup(
   opts: { preExisting?: any; lockedDup?: any; createThrows?: unknown } = {},
 ) {
-  const created = { id: 'col-new' };
+  // ACCT-CUTOVER-3E4B2H2A: create() sonrası writeCollectionRecordedJournal
+  // çalışır ve collection'ın amount/currency/date alanlarını okur — minimal
+  // {id} mock'u normalizeSourceHashAmount'ta "undefined" hash hatası verir.
+  const created = {
+    id: 'col-new',
+    tenantId: 't1',
+    caseId: 'c1',
+    caseDebtorId: null,
+    amount: 5000,
+    currency: 'TRY',
+    date: new Date('2026-07-03T00:00:00.000Z'),
+    valueDate: null,
+    status: 'CONFIRMED',
+    createdAt: new Date('2026-07-03T00:00:01.000Z'),
+  };
   const tx: any = {
     // P0-1: advisory xact lock — mock no-op.
     $executeRaw: jest.fn(async () => 0),
@@ -49,7 +63,11 @@ function setup(
   };
   const domainEvent: any = { appendInTransaction: jest.fn(async () => ({})) };
   const guard: any = { assertActiveByCaseDebtorId: jest.fn() };
-  const svc = new CollectionService(prisma, domainEvent, guard, undefined);
+  // ACCT-CUTOVER-3E4B2H2A: 5. ctor arg (journalWriter) — mock write() ile gerçek
+  // AccountingJournalWriterService/DB'ye düşmeyi engeller (P0-1 testleri journal
+  // davranışını değil idempotency'i hedefler).
+  const journalWriter: any = { write: jest.fn(async () => ({ ok: true, output: { status: 'CREATED', journalEntryId: 'journal-mock' } })) };
+  const svc = new CollectionService(prisma, domainEvent, guard, undefined, journalWriter);
   jest.spyOn(svc as any, 'autoAllocateInTx').mockResolvedValue(undefined);
   jest.spyOn((svc as any).logger, 'warn').mockImplementation(() => undefined);
   return { svc, prisma, tx, domainEvent };
