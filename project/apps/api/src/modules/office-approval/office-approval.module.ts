@@ -3,6 +3,7 @@
 // P4-4: OfficeApprovalController eklendi → Inbox/Approve API route'ları (decision-only; execution P4-5).
 import { Module } from '@nestjs/common';
 import { OfficeApprovalService } from './office-approval.service';
+import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.service';
 import { OfficeApprovalShadowService } from './office-approval-shadow.service';
 import { OfficeApprovalController } from './office-approval.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
@@ -11,7 +12,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
   // P4-2: OfficeApprovalShadowService (CHANGE_STATUS shadow; ConfigService global, PrismaModule import, AuditService @Global).
   imports: [PrismaModule],
   controllers: [OfficeApprovalController],
-  providers: [OfficeApprovalService, OfficeApprovalShadowService],
-  exports: [OfficeApprovalService, OfficeApprovalShadowService],
+  providers: [OfficeApprovalService, OfficeApprovalShadowService, OfficeApprovalDomainSyncService],
+  exports: [OfficeApprovalService, OfficeApprovalShadowService, OfficeApprovalDomainSyncService],
 })
 export class OfficeApprovalModule {}

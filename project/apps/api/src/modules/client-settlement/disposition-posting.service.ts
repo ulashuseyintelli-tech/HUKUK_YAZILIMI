@@ -182,11 +182,7 @@ export class DispositionPostingService {
     // K2: P4 approval = business karar kaydı (4-göz: requester onaylayamaz → SELF_APPROVAL_FORBIDDEN). Dış-etki YÜRÜTÜLMEZ.
     await this.officeApproval.approve(disp.approvalRequestId, actor.userId, note);
 
-    const upd = await this.prisma.collectionDisposition.updateMany({
-      where: { id: dispositionId, tenantId, status: 'DISTRIBUTION_RECOMMENDED' },
-      data: { status: 'DISTRIBUTION_APPROVED', approvedAt: new Date(), approvedById: actor.userId },
-    });
-    if (upd.count === 0) throw new ConflictException('Disposition eşzamanlı değişti (RECOMMENDED değil); onay uygulanmadı');
+    // CollectionDisposition state sync OfficeApprovalService transaction'i icindeki domain sync handler tarafindan yapilir.
 
     this.logger.log(`CollectionDisposition APPROVED: ${dispositionId} (approver=${actor.userId})`);
     return { approved: true, dispositionId, approvalRequestId: disp.approvalRequestId };
