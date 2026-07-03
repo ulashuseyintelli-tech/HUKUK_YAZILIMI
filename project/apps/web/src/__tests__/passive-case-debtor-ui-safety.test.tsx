@@ -47,8 +47,24 @@ vi.mock("../components/address-discovery", () => ({
 }));
 
 vi.mock("../components/case/IntelStatementSection", () => ({
-  IntelStatementSection: ({ debtorId, caseId }: { debtorId?: string; caseId?: string }) => (
-    <div data-testid="intel-statement-section" data-debtor-id={debtorId} data-case-id={caseId ?? ""} />
+  IntelStatementSection: ({
+    debtorId,
+    caseId,
+    createCaseId,
+    createDebtorId,
+  }: {
+    debtorId?: string;
+    caseId?: string;
+    createCaseId?: string;
+    createDebtorId?: string;
+  }) => (
+    <div
+      data-testid="intel-statement-section"
+      data-debtor-id={debtorId}
+      data-case-id={caseId ?? ""}
+      data-create-case-id={createCaseId ?? ""}
+      data-create-debtor-id={createDebtorId ?? ""}
+    />
   ),
 }));
 
@@ -167,6 +183,30 @@ describe("PR-L7b passive CaseDebtor UI safety", () => {
     const section = await screen.findByTestId("intel-statement-section");
     expect(section).toHaveAttribute("data-debtor-id", "debtor-1");
     expect(section).toHaveAttribute("data-case-id", "");
+  });
+
+  it("İstihbarat tab: createCaseId + createDebtorId Drawer'ın kendi caseId/debtor.id'sinden geçirilir (CLIENT-INTEL-4.7D-2B)", async () => {
+    apiMock.getCaseDebtorDetail.mockResolvedValue({
+      ...baseDebtor,
+      lifecycleStatus: "ACTIVE",
+    });
+
+    render(
+      <DebtorDetailDrawer
+        isOpen
+        onClose={vi.fn()}
+        caseId="case-77"
+        caseDebtorId="case-debtor-1"
+      />
+    );
+
+    await waitFor(() => expect(apiMock.getCaseDebtorDetail).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: /İstihbarat/i }));
+    const section = await screen.findByTestId("intel-statement-section");
+    // Drawer HER ZAMAN bir case içinden açılır (caseId zorunlu prop) → create hedefi hiç belirsiz değil.
+    expect(section).toHaveAttribute("data-create-case-id", "case-77");
+    expect(section).toHaveAttribute("data-create-debtor-id", "debtor-1");
   });
 
   it("renders debtor financial summary from backend financialSummary", async () => {
