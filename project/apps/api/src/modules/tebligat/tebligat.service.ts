@@ -4,6 +4,7 @@ import {
   BadRequestException,
   Logger,
 } from "@nestjs/common";
+import { DebtorType } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { DebtorService } from "../debtor/debtor.service";
 import { UetsService } from "./uets.service"; // PR-S1: UETS/KEP teslim durumu sorgulama
@@ -225,6 +226,11 @@ export class TebligatService {
         }
         throw error;
       }
+
+      // DBND-D3A: Tereke (ESTATE) borçlu için tebligat mirasçı/temsilci bazlı
+      // olmalı; bu model henüz yok (bkz. EstateHeir). Hukukî-domain karar
+      // gelene kadar tebligat oluşturma geçici olarak reddedilir.
+      await this.assertNotEstateDebtor(caseDebtor.debtorId);
     }
 
     if (!hasAddressId) {
@@ -249,6 +255,23 @@ export class TebligatService {
 
     if (debtorAddress.debtorId !== caseDebtor?.debtorId) {
       throw new BadRequestException("Tebligat adres bağlantısı bu borçluya ait değil");
+    }
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TebligatService.validateCreateCaseDebtorAddress() → tebligat oluşturma öncesi ESTATE (tereke) borçlu kontrolü (DBND-D3A)
+  /// </remarks>
+  private async assertNotEstateDebtor(debtorId: string): Promise<void> {
+    const debtor = await this.prisma.debtor.findUnique({
+      where: { id: debtorId },
+      select: { type: true },
+    });
+
+    if (debtor?.type === DebtorType.ESTATE) {
+      throw new BadRequestException(
+        "Tereke borçlu için tebligat üretimi henüz desteklenmiyor. Mirasçı/temsilci bazlı tebligat modeli için hukukî-domain karar bekleniyor."
+      );
     }
   }
 
