@@ -29,7 +29,10 @@ const REPRESENTATIVE_MATRIX: ReadinessScenario[] = [
     id: 'normal-single-currency-principal',
     label: 'Normal single-currency principal claim',
     classification: 'CANONICAL_BLOCKER',
-    evidence: 'FINAL_DEBT_STATES_MISSING blocks standalone principal authority.',
+    evidence:
+      "Fallback fixture (finalDebtStates supplied-absent) blocks standalone principal authority. " +
+      "NOT representative of live computeBalance() output, which populates finalDebtStates for any " +
+      "case with active claims (see CB-01).",
   },
   {
     id: 'interest-bearing-file',
@@ -313,7 +316,12 @@ describe('BalanceDisplayShadowDiff readiness audit matrix', () => {
     expect(REPRESENTATIVE_MATRIX.some((scenario) => scenario.classification === 'READY_FOR_CUTOVER')).toBe(false);
   });
 
-  it('mevcut normal shadow evidence finalDebtStates eksigi nedeniyle primary cutover icin no-go kalir', async () => {
+  // NOT (evidence-refresh düzeltmesi): bu senaryo makeService()'in varsayılan canonicalBalance()
+  // fixture'ını kullanır — o fixture bilinçli olarak result.finalDebtStates İÇERMEZ (satır ~172-179).
+  // Bu, "üretimde finalDebtStates her zaman eksik" anlamına GELMEZ: computeBalance() (interest-engine.service.ts)
+  // aktif claim'i olan her case için bu alanı zaten dolduruyor (bkz. CB-01 testi aşağıda). Bu test yalnız
+  // fallback/absent-evidence yolunun doğru blokladığını doğrular — canlı "normal" durumu TEMSİL ETMEZ.
+  it('finalDebtStates fixture\'da hiç sağlanmazsa (fallback) primary cutover icin no-go kalir', async () => {
     const { service } = makeService();
 
     const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
