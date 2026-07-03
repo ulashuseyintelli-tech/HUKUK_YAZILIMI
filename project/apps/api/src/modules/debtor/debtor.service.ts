@@ -297,6 +297,17 @@ const DebtorIssueLabelMap: Record<DebtorIssueCode, string> = {
   NO_ASSET_QUERY: "Malvarlığı sorgusu yapılmadı",
 };
 
+// DBND-D1: her DebtorType'ın KENDİNE ÖZEL scalar alanları (estateHeirs relation'ı hariç —
+// o zaten update()'te ayrı ele alınır). update() bunu iki amaçla kullanır: (1) dto'da
+// newType'a AİT OLMAYAN bir alan gelirse reddet (cross-type field kirliliği), (2) tip
+// GERÇEKTEN değişiyorsa eski tipin alanlarını açıkça null'a çeker (Frankenstein kayıt önlenir).
+const DEBTOR_TYPE_FIELDS: Record<DebtorType, string[]> = {
+  [DebtorType.INDIVIDUAL]: ["firstName", "lastName", "tckn", "gender", "birthDate", "fatherName", "motherName", "birthPlace"],
+  [DebtorType.COMPANY]: ["companyName", "vkn", "taxOffice", "mersisNo", "tradeRegisterNo"],
+  [DebtorType.PUBLIC_INSTITUTION]: ["institutionName", "detsisNo", "institutionType", "parentInstitution", "authorizedPerson"],
+  [DebtorType.ESTATE]: ["deceasedName", "deceasedTckn", "deathDate", "inheritanceDocPath"],
+};
+
 @Injectable()
 export class DebtorService {
   constructor(
@@ -588,6 +599,20 @@ export class DebtorService {
 
     // If type is changing, validate new type requirements
     const newType = dto.type || existing.type;
+
+    // DBND-D1: newType'a AİT OLMAYAN tip-özel bir alan dto'da (non-null) gelirse reddet.
+    // Tip değişse de değişmese de geçerli — örn. INDIVIDUAL bir kayda companyName yazılamaz,
+    // COMPANY'ye type değişmeden firstName yazılamaz.
+    const foreignFields = (Object.keys(DEBTOR_TYPE_FIELDS) as DebtorType[])
+      .filter((t) => t !== newType)
+      .flatMap((t) => DEBTOR_TYPE_FIELDS[t])
+      .filter((field) => (dto as any)[field] !== undefined && (dto as any)[field] !== null);
+    if (foreignFields.length > 0) {
+      throw new BadRequestException(
+        `Bu alan(lar) seçili borçlu tipiyle (${newType}) uyumsuz: ${foreignFields.join(", ")}`
+      );
+    }
+
     if (dto.type) {
       this.validateDebtorByType({ ...dto, type: newType } as CreateDebtorDto);
     } else if (dto.tckn || dto.vkn) {
@@ -619,6 +644,20 @@ export class DebtorService {
     // PR-D2b: estateHeirs bir RELATION → scalar update'e karışmasın diye dto'dan ayrıştırılır.
     const { estateHeirs, confirmSimilarNameUpdate, ...debtorDto } = dto as any;
     const updateData: any = { ...debtorDto };
+
+    // DBND-D1: tip GERÇEKTEN değişiyorsa (existing.type !== newType), eski tipin yeni tipe ait
+    // OLMAYAN alanlarını açıkça null'a çek. foreignFields kontrolü dto'nun yeni değer taşımasını
+    // zaten engelledi; burada eksik olan tek şey DB'deki ESKİ satırın temizlenmesi.
+    if (dto.type && dto.type !== existing.type) {
+      const oldTypeFields = DEBTOR_TYPE_FIELDS[existing.type as DebtorType] || [];
+      const newTypeFields = new Set(DEBTOR_TYPE_FIELDS[newType as DebtorType] || []);
+      for (const field of oldTypeFields) {
+        if (!newTypeFields.has(field)) {
+          updateData[field] = null;
+        }
+      }
+    }
+
     const merged = {
       type: dto.type ?? existing.type,
       firstName: dto.firstName ?? existing.firstName,
