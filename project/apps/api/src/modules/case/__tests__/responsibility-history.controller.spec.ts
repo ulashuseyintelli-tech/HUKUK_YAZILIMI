@@ -7,8 +7,12 @@ import { CaseController } from "../case.controller";
 
 function mk() {
   const history = { getResponsibilityHistory: jest.fn().mockResolvedValue({ caseId: "c1", events: [] }) };
-  // ctor: caseService, ocr, responsibleCandidates, temporal, warnOnly, hardGuard, responsibilityHistory
-  const controller = new CaseController({} as any, {} as any, {} as any, {} as any, {} as any, {} as any, history as any);
+  // ctor: caseService, ocr, responsibleCandidates, temporal, warnOnly, hardGuard, responsibilityHistory,
+  // legalResponsibleLawyerService, guidedOpenObserve (son ikisi getResponsibilityHistory'yi etkilemez)
+  const controller = new CaseController(
+    {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, history as any,
+    {} as any, {} as any,
+  );
   return { controller, history };
 }
 
