@@ -14,6 +14,9 @@ const buildEstatePrisma = (existing: any) => {
     _tx: tx,
     debtor: {
       findFirst: jest.fn().mockResolvedValueOnce(existing).mockResolvedValueOnce(null),
+      // T2B: PR-U2 similar-name review deceasedName değişince debtor.findMany çağırır
+      // (aday araması); mock'ta eksikti → TypeError. Boş liste = benzer isim yok, akış sürer.
+      findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockImplementation((a: any) => Promise.resolve({ ...existing, ...a.data })),
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),

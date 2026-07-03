@@ -64,7 +64,9 @@ describe("DebtorService.update — duplicate guard (PR-U2)", () => {
     const { svc, prisma } = build([], { id: "o1", name: "X", type: DebtorType.INDIVIDUAL });
     expect.assertions(2);
     try {
-      await svc.update("t1", "self", { tckn: "99999999999", confirmSimilarNameUpdate: true });
+      // T2B: TCKN checksum-GEÇERLİ olmalı — Gate-4 format validasyonu duplicate-check'ten ÖNCE
+      // çalışır; geçersiz TCKN BadRequest'e düşer ve DUPLICATE_IDENTITY'ye hiç ulaşılamazdı.
+      await svc.update("t1", "self", { tckn: "10000000146", confirmSimilarNameUpdate: true });
     } catch (e: any) {
       expect(e.getResponse().code).toBe("DUPLICATE_IDENTITY");
     }
