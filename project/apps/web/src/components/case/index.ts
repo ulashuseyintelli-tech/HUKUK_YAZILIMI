@@ -1,6 +1,5 @@
 export { StatusCards } from "./StatusCards";
 export { CaseSummaryCard } from "./CaseSummaryCard";
-export { CaseFlagsPanel } from "./CaseFlagsPanel";
 export { AutomationPanel } from "./AutomationPanel";
 export { CaseTimeline } from "./CaseTimeline";
 export { DocumentGenerator } from "./DocumentGenerator";
@@ -18,7 +17,6 @@ export { CaseCompareModal } from "./case-compare-modal";
 export { CaseTemplates } from "./case-templates";
 export { CaseTags } from "./case-tags";
 export { BulkDocumentGenerator } from "./bulk-document-generator";
-export { CaseArchiveModal, CaseArchiveList } from "./case-archive-modal";
 export { CaseMergeModal } from "./case-merge-modal";
 export { CaseCopyModal } from "./case-copy-modal";
 export { CaseExpenses } from "./case-expenses";

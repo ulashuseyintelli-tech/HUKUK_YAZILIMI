@@ -53,6 +53,8 @@ export class CaseController {
     @Query("legalResponsibleMissing") legalResponsibleMissing?: string,
     @Query("responsibleLawyerId") responsibleLawyerId?: string,
     @Query("responsibleStaffId") responsibleStaffId?: string,
+    // CS4: "Arşiv dahil" checkbox'ı bu parametre olmadığı için hiç okunmuyordu (no-op).
+    @Query("includeArchived") includeArchived?: string,
     @Query("page") page?: string,
     @Query("limit") limit?: string
   ) {
@@ -65,6 +67,7 @@ export class CaseController {
       legalResponsibleMissing: legalResponsibleMissing === "1" || legalResponsibleMissing === "true",
       responsibleLawyerId,
       responsibleStaffId,
+      includeArchived: includeArchived === "1" || includeArchived === "true",
       page: page ? parseInt(page) : undefined,
       limit: limit ? parseInt(limit) : undefined,
     });

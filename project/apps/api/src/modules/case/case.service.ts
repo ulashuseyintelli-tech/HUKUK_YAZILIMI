@@ -816,10 +816,14 @@ export class CaseService {
     }
   }
 
-  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
-    const { status, expenseRequestStatus, clientId, noOwner, legalResponsibleMissing, responsibleLawyerId, responsibleStaffId, page = 1, limit = 20 } = params || {};
+  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; includeArchived?: boolean; page?: number; limit?: number }) {
+    const { status, expenseRequestStatus, clientId, noOwner, legalResponsibleMissing, responsibleLawyerId, responsibleStaffId, includeArchived, page = 1, limit = 20 } = params || {};
 
     const where: any = { tenantId };
+    // CS4: "Arşiv dahil" checkbox'ı önceden uçtan uca no-op'tu (FE api.ts hiç göndermiyordu, controller
+    // hiç almıyordu, burada hiç filtrelenmiyordu — isArchived=true dosyalar HER ZAMAN listede kalıyordu).
+    // Varsayılan davranış: arşivli dosyalar gizlenir; includeArchived=true iken hepsi gösterilir.
+    if (!includeArchived) where.isArchived = false;
     if (status) where.status = status;
     if (clientId) where.clientId = clientId;
     // M2-G5c: Sahipsiz/noOwner = gerçek-kişi owner YOKLUĞU (responsibleLawyer/Staff İKİSİ de null).
