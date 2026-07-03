@@ -43,7 +43,9 @@ import { requiresFixedRate, percentToRate } from '@shared/types';
 export interface CalculateRequestDto {
   request: CalculationRequest;
   rates: RateEntry[];
-  tenantId: string;
+  /** @deprecated H6: sunucu tarafında OKUNMAZ; tenantId yalnız JWT auth context'inden alınır. */
+  tenantId?: string;
+  /** @deprecated H6: sunucu tarafında OKUNMAZ; userId yalnız JWT auth context'inden alınır. */
   userId?: string;
 }
 
@@ -158,12 +160,19 @@ export class InterestEngineController {
 
   /**
    * POST /interest-engine/calculate
-   * 
-   * Main calculation endpoint
+   *
+   * Main calculation endpoint.
+   * H6: tenantId/userId YALNIZ auth context'ten (@CurrentUser); dto.tenantId/dto.userId ARTIK OKUNMAZ
+   * (geriye uyumluluk için body'de bulunmaları reddedilmez, sessizce yok sayılır).
    */
   @Post('calculate')
   @HttpCode(HttpStatus.OK)
-  async calculate(@Body() dto: CalculateRequestDto): Promise<CalculateResponseDto> {
+  @UseGuards(JwtAuthGuard)
+  async calculate(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: CalculateRequestDto,
+  ): Promise<CalculateResponseDto> {
     const startTime = Date.now();
 
     try {
@@ -174,16 +183,13 @@ export class InterestEngineController {
       if (!dto.rates || dto.rates.length === 0) {
         throw new BadRequestException('rates are required');
       }
-      if (!dto.tenantId) {
-        throw new BadRequestException('tenantId is required');
-      }
 
       // Execute calculation
       const result = await this.interestEngine.calculate(
         dto.request,
         dto.rates,
-        dto.tenantId,
-        dto.userId,
+        tenantId,
+        userId,
       );
 
       const durationMs = Date.now() - startTime;
@@ -194,7 +200,7 @@ export class InterestEngineController {
         durationMs,
         result.segments.length,
         true,
-        dto.tenantId,
+        tenantId,
       );
 
       return {
@@ -215,11 +221,11 @@ export class InterestEngineController {
         durationMs,
         0,
         false,
-        dto.tenantId || 'unknown',
+        tenantId,
       );
 
       if (err.code) {
-        this.metrics.recordPolicyBlock(err.code, dto.request?.mode || CalculationMode.PREVIEW, dto.tenantId || 'unknown');
+        this.metrics.recordPolicyBlock(err.code, dto.request?.mode || CalculationMode.PREVIEW, tenantId);
       }
 
       return {
@@ -239,14 +245,17 @@ export class InterestEngineController {
 
   /**
    * POST /interest-engine/preview
-   * 
+   *
    * Lightweight preview endpoint - NO audit log, cached
    * Frontend form preview için kullanılır
-   * 
+   * H6: stateless hesap makinesi (tenant-scoped veri okuma/yazma YOK) — guard yalnız
+   * "kimliksiz kullanılamaz" kuralı için; dto.tenantId zaten okunmuyordu (vestigial).
+   *
    * @see docs/single-source-of-truth-architecture.md
    */
   @Post('preview')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
   async preview(@Body() dto: PreviewRequestDto): Promise<PreviewResponseDto> {
     try {
       // Validate input
@@ -375,14 +384,17 @@ export class InterestEngineController {
 
   /**
    * GET /interest-engine/records/:id
-   * 
-   * Get calculation record by ID
+   *
+   * Get calculation record by ID.
+   * H6: tenant-ownership doğrulanır; başka tenant'a ait kayıt aynı 404 ile döner
+   * (existence-oracle yok — office-approval controller'daki çapraz-tenant deseniyle aynı).
    */
   @Get('records/:id')
-  async getRecord(@Param('id') id: string): Promise<unknown> {
+  @UseGuards(JwtAuthGuard)
+  async getRecord(@CurrentUser('tenantId') tenantId: string, @Param('id') id: string): Promise<unknown> {
     const record = await this.auditWriter.getRecord(id);
-    
-    if (!record) {
+
+    if (!record || record.tenantId !== tenantId) {
       throw new NotFoundException(`Record ${id} not found`);
     }
 
@@ -391,13 +403,19 @@ export class InterestEngineController {
 
   /**
    * GET /interest-engine/records
-   * 
-   * Query calculation records
+   *
+   * Query calculation records.
+   * H6: tenantId YALNIZ auth context'ten; önceki hardcoded 'default' kaldırıldı
+   * (o haliyle her tenant'ın kaydı ortak 'default' havuzunda görünür/karışabilirdi).
    */
   @Get('records')
-  async queryRecords(@Query() query: RecordQueryDto): Promise<unknown[]> {
+  @UseGuards(JwtAuthGuard)
+  async queryRecords(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query() query: RecordQueryDto,
+  ): Promise<unknown[]> {
     if (query.caseId) {
-      return this.auditWriter.getRecordsForCase(query.caseId, 'default');
+      return this.auditWriter.getRecordsForCase(query.caseId, tenantId);
     }
 
     // Return empty for now - would need full query implementation
@@ -406,13 +424,21 @@ export class InterestEngineController {
 
   /**
    * GET /interest-engine/trace/:recordId
-   * 
-   * Get calculation trace for a record
+   *
+   * Get calculation trace for a record.
+   * H6: tenant-ownership kaydın kendisinden doğrulanır (aynı 404, existence-oracle yok);
+   * traceExporter'a/auditWriter'a dokunulmadı — kontrol yalnız burada.
    */
   @Get('trace/:recordId')
-  async getTrace(@Param('recordId') recordId: string): Promise<unknown> {
+  @UseGuards(JwtAuthGuard)
+  async getTrace(@CurrentUser('tenantId') tenantId: string, @Param('recordId') recordId: string): Promise<unknown> {
+    const record = await this.auditWriter.getRecord(recordId);
+    if (!record || record.tenantId !== tenantId) {
+      throw new NotFoundException(`Trace for record ${recordId} not found`);
+    }
+
     const trace = await this.traceExporter.exportTrace(recordId);
-    
+
     if (!trace) {
       throw new NotFoundException(`Trace for record ${recordId} not found`);
     }
@@ -422,22 +448,21 @@ export class InterestEngineController {
 
   /**
    * GET /interest-engine/metrics
-   * 
-   * Get engine metrics
+   *
+   * Get engine metrics.
+   * H6: tenantId YALNIZ auth context'ten; query'den alınan (spoofable) değer kaldırıldı.
    */
   @Get('metrics')
-  async getMetrics(@Query('tenantId') tenantId: string): Promise<unknown> {
-    if (!tenantId) {
-      throw new BadRequestException('tenantId is required');
-    }
-
+  @UseGuards(JwtAuthGuard)
+  async getMetrics(@CurrentUser('tenantId') tenantId: string): Promise<unknown> {
     return this.metrics.getDashboardMetrics(tenantId);
   }
 
   /**
    * GET /interest-engine/health
-   * 
-   * Health check endpoint
+   *
+   * Health check endpoint. H6: bilinçli olarak GUARD'SIZ kalır (monitoring/orchestration
+   * erişimi; business veri döndürmez — yalnız sabit {status, timestamp}).
    */
   @Get('health')
   async healthCheck(): Promise<{ status: string; timestamp: string }> {
