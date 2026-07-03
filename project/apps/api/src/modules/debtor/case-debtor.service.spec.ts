@@ -4,6 +4,7 @@ import { CaseDebtorService } from "./case-debtor.service";
 import { PrismaService } from "@/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 
 describe("CaseDebtorService.removeCaseDebtor", () => {
   let service: CaseDebtorService;
@@ -85,6 +86,9 @@ describe("CaseDebtorService.removeCaseDebtor", () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditService, useValue: mockAudit },
         { provide: OfficeApprovalService, useValue: mockOfficeApproval },
+        // DBND-D2: constructor 4. parametre aldı; bu blok removeCaseDebtor'u test eder,
+        // updateCaseDebtor'a (dolayısıyla guard'a) dokunmaz → boş stub yeter.
+        { provide: CaseDebtorLifecycleGuardService, useValue: {} },
       ],
     }).compile();
 
@@ -255,11 +259,17 @@ describe("CaseDebtorService.updateCaseDebtor", () => {
     debtorAddress: { findFirst: jest.fn() },
   };
 
+  // DBND-D2: updateCaseDebtor() artık merkezi CaseDebtorLifecycleGuardService kullanıyor
+  // (eski kopya "if (lifecycleStatus === PASSIVE) throw" yerine) + değişen alanları audit'e yazıyor.
+  const mockLifecycleGuard = { assertActiveByCaseDebtorId: jest.fn() };
+  const mockAudit = { log: jest.fn().mockResolvedValue(undefined) };
+
   const existingCaseDebtor = {
     id: "case-debtor-1",
     caseId: "case-1",
     debtorId: "debtor-1",
     role: "ASIL_BORCLU",
+    liabilityAmount: 1000,
     lifecycleStatus: "ACTIVE",
     ilanenJustification: null,
     case: { tenantId: "tenant-1" },
@@ -268,16 +278,25 @@ describe("CaseDebtorService.updateCaseDebtor", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // C1A: constructor 2 yeni parametre aldı; bu blok updateCaseDebtor'u test eder,
-    // removeCaseDebtor'a dokunmaz → boş mock yeter.
-    service = new CaseDebtorService(mockPrisma as any, {} as any, {} as any);
+    mockLifecycleGuard.assertActiveByCaseDebtorId.mockResolvedValue({
+      id: "case-debtor-1",
+      caseId: "case-1",
+      debtorId: "debtor-1",
+      lifecycleStatus: "ACTIVE",
+    });
+    // C1A: constructor 2 yeni parametre aldı; DBND-D2: 4. parametre (lifecycle guard) +
+    // audit artık gerçek mock (removeCaseDebtor'a dokunmaz, boş officeApproval mock yeter).
+    service = new CaseDebtorService(mockPrisma as any, mockAudit as any, {} as any, mockLifecycleGuard as any);
   });
 
-  it("PASSIVE CaseDebtor üzerinde PUT mutasyonunu engeller", async () => {
+  it("PASSIVE CaseDebtor üzerinde PUT mutasyonunu merkezi guard reddeder", async () => {
     mockPrisma.caseDebtor.findFirst.mockResolvedValue({
       ...existingCaseDebtor,
       lifecycleStatus: "PASSIVE",
     });
+    mockLifecycleGuard.assertActiveByCaseDebtorId.mockRejectedValue(
+      new BadRequestException("Pasif dosya borçlusu yeni operasyon hedefi olamaz.")
+    );
 
     await expect(
       service.updateCaseDebtor("tenant-1", "case-debtor-1", {
@@ -285,13 +304,15 @@ describe("CaseDebtorService.updateCaseDebtor", () => {
       } as any)
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(mockPrisma.caseDebtor.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "case-debtor-1", case: { tenantId: "tenant-1" } },
-      })
+    // Merkezi guard GERÇEKTEN çağrıldı (eski kopya kontrol değil).
+    expect(mockLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(
+      "tenant-1",
+      "case-debtor-1",
+      { expectedCaseId: "case-1" },
     );
     expect(mockPrisma.debtorAddress.findFirst).not.toHaveBeenCalled();
     expect(mockPrisma.caseDebtor.update).not.toHaveBeenCalled();
+    expect(mockAudit.log).not.toHaveBeenCalled();
   });
 
   it("ACTIVE CaseDebtor üzerinde mevcut update davranışını korur", async () => {
@@ -314,5 +335,88 @@ describe("CaseDebtorService.updateCaseDebtor", () => {
       },
     });
     expect(result.caseNote).toBe("aktif kayıt güncellemesi");
+  });
+
+  it("role değişikliği CASE_DEBTOR_UPDATE audit'e eski/yeni değeri yazar", async () => {
+    mockPrisma.caseDebtor.findFirst
+      .mockResolvedValueOnce(existingCaseDebtor) // ilk fetch
+      .mockResolvedValueOnce(null); // role-uniqueness check: çakışma yok
+    mockPrisma.caseDebtor.update.mockResolvedValue({
+      ...existingCaseDebtor,
+      role: "MUTESELSIL_KEFIL",
+    });
+
+    await service.updateCaseDebtor(
+      "tenant-1",
+      "case-debtor-1",
+      { role: "MUTESELSIL_KEFIL" } as any,
+      { userId: "user-1" },
+    );
+
+    expect(mockAudit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "tenant-1",
+        action: "CASE_DEBTOR_UPDATE",
+        entityType: "CASE_DEBTOR",
+        entityId: "case-debtor-1",
+        userId: "user-1",
+        metadata: {
+          fieldDiff: expect.arrayContaining([
+            expect.objectContaining({ field: "role", old: "ASIL_BORCLU", new: "MUTESELSIL_KEFIL" }),
+          ]),
+        },
+      }),
+    );
+  });
+
+  it("liabilityAmount değişikliği audit'e eski/yeni değeri yazar", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue(existingCaseDebtor);
+    mockPrisma.caseDebtor.update.mockResolvedValue({
+      ...existingCaseDebtor,
+      liabilityAmount: 2500,
+    });
+
+    await service.updateCaseDebtor(
+      "tenant-1",
+      "case-debtor-1",
+      { liabilityAmount: 2500 } as any,
+      { userId: "user-1" },
+    );
+
+    expect(mockAudit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "CASE_DEBTOR_UPDATE",
+        metadata: {
+          fieldDiff: expect.arrayContaining([
+            expect.objectContaining({ field: "liabilityAmount", old: 1000, new: 2500 }),
+          ]),
+        },
+      }),
+    );
+  });
+
+  it("aktör bilgisi yoksa güvenli davranır — audit userId=undefined ile yazılır, mutasyon engellenmez", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue(existingCaseDebtor);
+    mockPrisma.caseDebtor.update.mockResolvedValue({
+      ...existingCaseDebtor,
+      liabilityAmount: 3000,
+    });
+
+    const result = await service.updateCaseDebtor("tenant-1", "case-debtor-1", { liabilityAmount: 3000 } as any);
+
+    expect(result.liabilityAmount).toBe(3000);
+    expect(mockAudit.log).toHaveBeenCalledWith(expect.objectContaining({ userId: undefined }));
+  });
+
+  it("değişiklik yoksa (aynı role/liabilityAmount) gereksiz audit üretilmez", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue(existingCaseDebtor);
+    mockPrisma.caseDebtor.update.mockResolvedValue({ ...existingCaseDebtor });
+
+    await service.updateCaseDebtor("tenant-1", "case-debtor-1", {
+      role: existingCaseDebtor.role,
+      liabilityAmount: existingCaseDebtor.liabilityAmount,
+    } as any);
+
+    expect(mockAudit.log).not.toHaveBeenCalled();
   });
 });
