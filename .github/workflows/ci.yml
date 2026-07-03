@@ -232,7 +232,7 @@ jobs:
         working-directory: project
       - name: Disable optional pdf-poppler for Client Workspace smoke runtime
         run: |
-          node -e "const fs = require('fs'); const p = require.resolve('pdf-poppler'); fs.writeFileSync(p, 'module.exports = { convert: async () => { throw new Error(\"pdf-poppler disabled in Client Workspace live smoke CI\"); } };\n'); console.log('Stubbed optional pdf-poppler at ' + p);"
+          pnpm --filter @hukuk/api exec node -e "const fs = require('fs'); const p = require.resolve('pdf-poppler'); fs.writeFileSync(p, 'module.exports = { convert: async () => { throw new Error(\"pdf-poppler disabled in Client Workspace live smoke CI\"); } };\n'); console.log('Stubbed optional pdf-poppler at ' + p);"
         working-directory: project
       - name: Prisma generate
         run: pnpm --filter @hukuk/api exec prisma generate
@@ -244,6 +244,7 @@ jobs:
         run: pnpm --filter @hukuk/api db:seed
         working-directory: project
       - name: Seed Client Workspace live smoke fixture
+        id: seed-client-workspace-fixture
         run: pnpm --filter @hukuk/api seed:client-workspace-live-smoke -- --reset
         working-directory: project
       - name: Build API
@@ -290,7 +291,7 @@ jobs:
         run: pnpm --filter @hukuk/web smoke:client-workspace
         working-directory: project
       - name: Cleanup Client Workspace live smoke fixture
-        if: always()
+        if: always() && steps.seed-client-workspace-fixture.outcome == 'success'
         run: pnpm --filter @hukuk/api seed:client-workspace-live-smoke -- --cleanup
         working-directory: project
       - name: Stop API and Web
