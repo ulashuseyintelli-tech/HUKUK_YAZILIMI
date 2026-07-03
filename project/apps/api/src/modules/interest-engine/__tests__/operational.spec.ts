@@ -173,11 +173,9 @@ describe('Task 17.4-17.5: Controller and API Tests', () => {
       const dto: CalculateRequestDto = {
         request,
         rates,
-        tenantId: 'tenant-1',
-        userId: 'user-1',
       };
 
-      const response = await controller.calculate(dto);
+      const response = await controller.calculate('tenant-1', 'user-1', dto);
 
       expect(response.success).toBe(true);
       expect(response.result).toBeDefined();
@@ -190,10 +188,9 @@ describe('Task 17.4-17.5: Controller and API Tests', () => {
       const dto: CalculateRequestDto = {
         request: null as unknown as CalculationRequest,
         rates,
-        tenantId: 'tenant-1',
       };
 
-      const response = await controller.calculate(dto);
+      const response = await controller.calculate('tenant-1', 'user-1', dto);
       expect(response.success).toBe(false);
       expect(response.error?.message).toContain('request is required');
     });
@@ -226,10 +223,9 @@ describe('Task 17.4-17.5: Controller and API Tests', () => {
       const dto: CalculateRequestDto = {
         request,
         rates: [],
-        tenantId: 'tenant-1',
       };
 
-      const response = await controller.calculate(dto);
+      const response = await controller.calculate('tenant-1', 'user-1', dto);
       expect(response.success).toBe(false);
       expect(response.error?.message).toContain('rates are required');
     });
@@ -267,10 +263,9 @@ describe('Task 17.4-17.5: Controller and API Tests', () => {
       const dto: CalculateRequestDto = {
         request,
         rates: ratesWithGap,
-        tenantId: 'tenant-1',
       };
 
-      const response = await controller.calculate(dto);
+      const response = await controller.calculate('tenant-1', 'user-1', dto);
 
       expect(response.success).toBe(false);
       expect(response.error).toBeDefined();
@@ -308,18 +303,46 @@ describe('Task 17.4-17.5: Controller and API Tests', () => {
       const dto: CalculateRequestDto = {
         request,
         rates,
-        tenantId: 'tenant-1',
       };
 
-      const calcResponse = await controller.calculate(dto);
+      const calcResponse = await controller.calculate('tenant-1', 'user-1', dto);
       const recordId = calcResponse.result!.auditLogId;
 
-      const record = await controller.getRecord(recordId);
+      const record = await controller.getRecord('tenant-1', recordId);
       expect(record).toBeDefined();
     });
 
     it('should throw 404 for non-existent record', async () => {
-      await expect(controller.getRecord('non-existent-id')).rejects.toThrow('not found');
+      await expect(controller.getRecord('tenant-1', 'non-existent-id')).rejects.toThrow('not found');
+    });
+
+    it('H6: başka tenant\'ın kaydı aynı 404 ile döner (existence-oracle yok)', async () => {
+      const claim: ClaimBucket = {
+        id: 'c1',
+        amount: 100000,
+        currency: 'TRY',
+        startDate: '2025-01-15',
+        interestType: InterestTypeCode.LEGAL_3095,
+        dayCountBasis: 365,
+      };
+      const request: CalculationRequest = {
+        caseId: '2025/TEST/003X',
+        claimBuckets: [claim],
+        asOfDate: '2025-03-15',
+        mode: CalculationMode.PREVIEW,
+        options: {
+          dayCountBasis: 365,
+          sameDayPaymentRule: SameDayPaymentRule.END_OF_DAY,
+          roundingMode: RoundingMode.HALF_UP,
+          roundingScope: RoundingScope.PER_SEGMENT,
+          gapPolicy: GapPolicy.BLOCK,
+          claimPriorityRule: ClaimPriorityRule.OLDEST_DUE_FIRST,
+        },
+      };
+      const calcResponse = await controller.calculate('tenant-A', 'user-1', { request, rates });
+      const recordId = calcResponse.result!.auditLogId;
+
+      await expect(controller.getRecord('tenant-B', recordId)).rejects.toThrow('not found');
     });
   });
 
@@ -338,13 +361,124 @@ describe('Task 17.4-17.5: Controller and API Tests', () => {
       metrics.recordCalculation(CalculationMode.PREVIEW, 100, 2, true, 'tenant-1');
 
       const dashboardMetrics = await controller.getMetrics('tenant-1');
-      
+
       expect(dashboardMetrics).toBeDefined();
       expect((dashboardMetrics as { calculationsToday: number }).calculationsToday).toBeGreaterThanOrEqual(0);
     });
+  });
 
-    it('should throw error without tenantId', async () => {
-      await expect(controller.getMetrics('')).rejects.toThrow('tenantId is required');
+  describe('H6: runtime context hardening', () => {
+    it('calculate: body.tenantId/body.userId yok sayılır, gerçek aktör @CurrentUser değerleridir', async () => {
+      const claim: ClaimBucket = {
+        id: 'c1',
+        amount: 100000,
+        currency: 'TRY',
+        startDate: '2025-01-15',
+        interestType: InterestTypeCode.LEGAL_3095,
+        dayCountBasis: 365,
+      };
+      const request: CalculationRequest = {
+        caseId: '2025/TEST/H6',
+        claimBuckets: [claim],
+        asOfDate: '2025-03-15',
+        mode: CalculationMode.PREVIEW,
+        options: {
+          dayCountBasis: 365,
+          sameDayPaymentRule: SameDayPaymentRule.END_OF_DAY,
+          roundingMode: RoundingMode.HALF_UP,
+          roundingScope: RoundingScope.PER_SEGMENT,
+          gapPolicy: GapPolicy.BLOCK,
+          claimPriorityRule: ClaimPriorityRule.OLDEST_DUE_FIRST,
+        },
+      };
+      // dto'da spoofed bir tenant/user beyanı — sunucu bunu OKUMAMALI
+      const spoofedDto = {
+        request,
+        rates,
+        tenantId: 'attacker-tenant',
+        userId: 'attacker-user',
+      } as CalculateRequestDto;
+
+      const response = await controller.calculate('real-tenant', 'real-user', spoofedDto);
+      expect(response.success).toBe(true);
+      const recordId = response.result!.auditLogId;
+
+      // Kayıt gerçek (CurrentUser) tenant'a yazılmış olmalı — spoofed 'attacker-tenant'a DEĞİL.
+      const record = await controller.getRecord('real-tenant', recordId);
+      expect(record).toBeDefined();
+      await expect(controller.getRecord('attacker-tenant', recordId)).rejects.toThrow('not found');
+    });
+
+    it('records: caseId sorgusu YALNIZ CurrentUser tenantId ile filtreler (önceki hardcoded \'default\' KALDIRILDI)', async () => {
+      const claim: ClaimBucket = {
+        id: 'c1',
+        amount: 100000,
+        currency: 'TRY',
+        startDate: '2025-01-15',
+        interestType: InterestTypeCode.LEGAL_3095,
+        dayCountBasis: 365,
+      };
+      const request: CalculationRequest = {
+        caseId: '2025/TEST/H6B',
+        claimBuckets: [claim],
+        asOfDate: '2025-03-15',
+        mode: CalculationMode.PREVIEW,
+        options: {
+          dayCountBasis: 365,
+          sameDayPaymentRule: SameDayPaymentRule.END_OF_DAY,
+          roundingMode: RoundingMode.HALF_UP,
+          roundingScope: RoundingScope.PER_SEGMENT,
+          gapPolicy: GapPolicy.BLOCK,
+          claimPriorityRule: ClaimPriorityRule.OLDEST_DUE_FIRST,
+        },
+      };
+      await controller.calculate('tenant-X', 'user-1', { request, rates });
+      await controller.calculate('tenant-Y', 'user-1', { request, rates });
+
+      const forX = await controller.queryRecords('tenant-X', { caseId: '2025/TEST/H6B' });
+      const forY = await controller.queryRecords('tenant-Y', { caseId: '2025/TEST/H6B' });
+      const forDefault = await controller.queryRecords('default', { caseId: '2025/TEST/H6B' });
+
+      expect(forX.length).toBe(1);
+      expect(forY.length).toBe(1);
+      expect(forDefault.length).toBe(0); // eski hardcoded havuzda artık hiçbir şey yok
+    });
+
+    it('trace: başka tenant\'ın trace\'i aynı 404 ile döner', async () => {
+      const claim: ClaimBucket = {
+        id: 'c1',
+        amount: 100000,
+        currency: 'TRY',
+        startDate: '2025-01-15',
+        interestType: InterestTypeCode.LEGAL_3095,
+        dayCountBasis: 365,
+      };
+      const request: CalculationRequest = {
+        caseId: '2025/TEST/H6C',
+        claimBuckets: [claim],
+        asOfDate: '2025-03-15',
+        mode: CalculationMode.PREVIEW,
+        options: {
+          dayCountBasis: 365,
+          sameDayPaymentRule: SameDayPaymentRule.END_OF_DAY,
+          roundingMode: RoundingMode.HALF_UP,
+          roundingScope: RoundingScope.PER_SEGMENT,
+          gapPolicy: GapPolicy.BLOCK,
+          claimPriorityRule: ClaimPriorityRule.OLDEST_DUE_FIRST,
+        },
+      };
+      const calcResponse = await controller.calculate('tenant-X', 'user-1', { request, rates });
+      const recordId = calcResponse.result!.auditLogId;
+
+      const ownTrace = await controller.getTrace('tenant-X', recordId);
+      expect(ownTrace).toBeDefined();
+      await expect(controller.getTrace('tenant-Y', recordId)).rejects.toThrow('not found');
+    });
+
+    it('metrics: yalnız CurrentUser tenantId kullanılır (query param yok, guard zaten kimliksiz erişimi engeller)', async () => {
+      metrics.recordCalculation(CalculationMode.PREVIEW, 100, 2, true, 'tenant-metrics-1');
+      const dashboardMetrics = await controller.getMetrics('tenant-metrics-1');
+      expect((dashboardMetrics as { calculationsToday: number }).calculationsToday).toBeGreaterThanOrEqual(1);
     });
   });
 });
@@ -429,16 +563,14 @@ describe('Integration: Full Calculation Flow', () => {
     const dto: CalculateRequestDto = {
       request,
       rates,
-      tenantId: 'tenant-1',
-      userId: 'user-1',
     };
 
-    const calcResponse = await controller.calculate(dto);
+    const calcResponse = await controller.calculate('tenant-1', 'user-1', dto);
     expect(calcResponse.success).toBe(true);
 
     // 2. Verify audit record
     const recordId = calcResponse.result!.auditLogId;
-    const record = await controller.getRecord(recordId);
+    const record = await controller.getRecord('tenant-1', recordId);
     expect(record).toBeDefined();
 
     // 3. Verify metrics
@@ -478,7 +610,7 @@ describe('Integration: Full Calculation Flow', () => {
       },
     };
 
-    await controller.calculate({ request: request1, rates, tenantId: 'tenant-1' });
+    await controller.calculate('tenant-1', 'user-1', { request: request1, rates });
 
     // Second calculation with different asOfDate
     const request2: CalculationRequest = {
@@ -486,13 +618,13 @@ describe('Integration: Full Calculation Flow', () => {
       asOfDate: '2025-04-15',
     };
 
-    const response2 = await controller.calculate({ request: request2, rates, tenantId: 'tenant-1' });
+    const response2 = await controller.calculate('tenant-1', 'user-1', { request: request2, rates });
 
     // Second calculation should have more interest
     expect(response2.result!.totalInterest).toBeGreaterThan(0);
 
     // Both should be recorded
-    const records = await controller.queryRecords({ caseId: '2025/MULTI/001' });
+    const records = await controller.queryRecords('tenant-1', { caseId: '2025/MULTI/001' });
     expect(records.length).toBeGreaterThanOrEqual(0); // Records may or may not be persisted depending on implementation
   });
 });
