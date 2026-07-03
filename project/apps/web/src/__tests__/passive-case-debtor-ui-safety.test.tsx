@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { DebtorRow } from "../components/debtor/DebtorRow";
 import { DebtorDetailDrawer } from "../components/debtor/DebtorDetailDrawer";
 
@@ -169,6 +169,85 @@ describe("PR-L7b passive CaseDebtor UI safety", () => {
     expect(section).toHaveAttribute("data-case-id", "");
   });
 
+  it("renders debtor financial summary from backend financialSummary", async () => {
+    apiMock.getCaseDebtorDetail.mockResolvedValue({
+      ...baseDebtor,
+      financialSummary: {
+        totalConfirmedCollected: 125.5,
+        totalPendingAmount: 10,
+        totalCancelledAmount: 7,
+        totalRefundedAmount: 2,
+        collectionCount: 5,
+        lastCollectionDate: "2026-07-05T10:00:00.000Z",
+        currencyBreakdown: [
+          {
+            currency: "TRY",
+            confirmedCollected: 125.5,
+            pendingAmount: 10,
+            cancelledAmount: 0,
+            refundedAmount: 0,
+            collectionCount: 3,
+            lastCollectionDate: "2026-07-03T10:00:00.000Z",
+          },
+          {
+            currency: "USD",
+            confirmedCollected: 0,
+            pendingAmount: 0,
+            cancelledAmount: 7,
+            refundedAmount: 2,
+            collectionCount: 2,
+            lastCollectionDate: "2026-07-05T10:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    render(
+      <DebtorDetailDrawer
+        isOpen
+        onClose={vi.fn()}
+        caseId="case-1"
+        caseDebtorId="case-debtor-1"
+      />
+    );
+
+    const section = await screen.findByLabelText("Borclu finans ozeti");
+
+    expect(within(section).getByText("Tahsilat Ozeti")).toBeInTheDocument();
+    expect(within(section).getByText("5 kayit")).toBeInTheDocument();
+    expect(within(section).getByText("Onayli tahsilat")).toBeInTheDocument();
+    expect(within(section).getByText("125,50 TRY")).toBeInTheDocument();
+    expect(within(section).getByText("Bekleyen")).toBeInTheDocument();
+    expect(within(section).getByText("10,00 TRY")).toBeInTheDocument();
+    expect(within(section).getByText("Iptal")).toBeInTheDocument();
+    expect(within(section).getByText("7,00 TRY")).toBeInTheDocument();
+    expect(within(section).getByText("Iade")).toBeInTheDocument();
+    expect(within(section).getByText("2,00 TRY")).toBeInTheDocument();
+    expect(within(section).getByText("05.07.2026")).toBeInTheDocument();
+    expect(within(section).getByText("TRY")).toBeInTheDocument();
+    expect(within(section).getByText("USD")).toBeInTheDocument();
+  });
+
+  it("renders a safe empty financial summary state when financialSummary is missing", async () => {
+    apiMock.getCaseDebtorDetail.mockResolvedValue({
+      ...baseDebtor,
+      financialSummary: undefined,
+    });
+
+    render(
+      <DebtorDetailDrawer
+        isOpen
+        onClose={vi.fn()}
+        caseId="case-1"
+        caseDebtorId="case-debtor-1"
+      />
+    );
+
+    const section = await screen.findByLabelText("Borclu finans ozeti");
+
+    expect(within(section).getByText("0 kayit")).toBeInTheDocument();
+    expect(within(section).getByText("Bu borcluya bagli tahsilat kaydi yok.")).toBeInTheDocument();
+  });
   it("active drawer keeps operational controls enabled", async () => {
     apiMock.getCaseDebtorDetail.mockResolvedValue({
       ...baseDebtor,
