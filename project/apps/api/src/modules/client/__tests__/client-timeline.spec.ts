@@ -1,9 +1,18 @@
-﻿import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ClientService } from '../client.service';
 
 const d = (value: string) => new Date(value);
 
-function buildHarness(opts: { client?: any; notifications?: any[]; submissions?: any[] } = {}) {
+function buildHarness(
+  opts: {
+    client?: any;
+    notifications?: any[];
+    submissions?: any[];
+    intakeDeliveries?: any[];
+    documentRequests?: any[];
+    poaDeliveries?: any[];
+  } = {},
+) {
   const prisma: any = {
     client: {
       findFirst: jest.fn().mockResolvedValue(Object.prototype.hasOwnProperty.call(opts, 'client') ? opts.client : { id: 'client-1' }),
@@ -13,6 +22,15 @@ function buildHarness(opts: { client?: any; notifications?: any[]; submissions?:
     },
     clientIntakeSubmission: {
       findMany: jest.fn().mockResolvedValue(opts.submissions ?? []),
+    },
+    clientIntakeLinkDelivery: {
+      findMany: jest.fn().mockResolvedValue(opts.intakeDeliveries ?? []),
+    },
+    clientDocumentRequest: {
+      findMany: jest.fn().mockResolvedValue(opts.documentRequests ?? []),
+    },
+    poaExpiryNotificationDelivery: {
+      findMany: jest.fn().mockResolvedValue(opts.poaDeliveries ?? []),
     },
   };
   const audit = { logInTransaction: jest.fn(), log: jest.fn() };
@@ -48,6 +66,60 @@ const submission = (overrides: Record<string, any> = {}) => ({
   ...overrides,
 });
 
+const intakeDelivery = (overrides: Record<string, any> = {}) => ({
+  id: 'ild-1',
+  channel: 'EMAIL',
+  status: 'FAILED',
+  caseId: 'case-1',
+  notificationId: 'n-delivery',
+  attemptCount: 2,
+  createdAt: d('2026-01-04T09:00:00.000Z'),
+  updatedAt: d('2026-01-04T09:10:00.000Z'),
+  idempotencyKey: 'unsafe-idempotency-key',
+  dedupeKey: 'unsafe-delivery-dedupe',
+  lastError: 'unsafe provider delivery error',
+  rawToken: 'unsafe-raw-token',
+  intakeUrl: 'https://unsafe.example.test/intake',
+  ...overrides,
+});
+
+const documentRequest = (overrides: Record<string, any> = {}) => ({
+  id: 'doc-1',
+  requestedDocumentCodes: ['KIMLIK', 'VEKALETNAME'],
+  templateCode: 'CLIENT_DOCUMENT_REQUEST_V1',
+  channel: 'EMAIL',
+  status: 'SENT',
+  caseId: 'case-1',
+  notificationId: 'n-doc',
+  attemptCount: 1,
+  sentAt: d('2026-01-05T10:00:00.000Z'),
+  createdAt: d('2026-01-05T09:55:00.000Z'),
+  updatedAt: d('2026-01-05T10:00:00.000Z'),
+  idempotencyKey: 'unsafe-doc-idempotency-key',
+  dedupeKey: 'unsafe-doc-dedupe',
+  lastError: 'unsafe provider document error',
+  recipientEmail: 'client@example.test',
+  body: 'unsafe rendered document body',
+  providerPayload: { messageId: 'unsafe-provider-message' },
+  ...overrides,
+});
+
+const poaDelivery = (overrides: Record<string, any> = {}) => ({
+  id: 'poa-del-1',
+  status: 'FAILED',
+  windowKey: 'D30',
+  attempts: 3,
+  sentAt: null,
+  lastAttemptAt: d('2026-01-06T10:00:00.000Z'),
+  createdAt: d('2026-01-06T09:50:00.000Z'),
+  updatedAt: d('2026-01-06T10:00:00.000Z'),
+  poaId: 'poa-1',
+  recipientEmail: 'lawyer@example.test',
+  dedupeKey: 'unsafe-poa-dedupe',
+  lastError: 'unsafe provider poa error',
+  ...overrides,
+});
+
 describe('ClientService.getTimeline', () => {
   it('validates client inside tenant before reading source rows', async () => {
     const { svc, prisma } = buildHarness();
@@ -66,6 +138,9 @@ describe('ClientService.getTimeline', () => {
       tenantId: 'tenant-1',
       clientId: 'client-1',
     });
+    expect(prisma.clientIntakeLinkDelivery.findMany).not.toHaveBeenCalled();
+    expect(prisma.clientDocumentRequest.findMany).not.toHaveBeenCalled();
+    expect(prisma.poaExpiryNotificationDelivery.findMany).not.toHaveBeenCalled();
   });
 
   it('returns 404 when client is not owned by tenant or inactive', async () => {
@@ -74,6 +149,9 @@ describe('ClientService.getTimeline', () => {
     await expect(svc.getTimeline('missing', 'tenant-1')).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.clientNotification.findMany).not.toHaveBeenCalled();
     expect(prisma.clientIntakeSubmission.findMany).not.toHaveBeenCalled();
+    expect(prisma.clientIntakeLinkDelivery.findMany).not.toHaveBeenCalled();
+    expect(prisma.clientDocumentRequest.findMany).not.toHaveBeenCalled();
+    expect(prisma.poaExpiryNotificationDelivery.findMany).not.toHaveBeenCalled();
   });
 
   it('filters requested sources', async () => {
@@ -85,6 +163,9 @@ describe('ClientService.getTimeline', () => {
     expect(result.data[0].source).toBe('client_notification');
     expect(prisma.clientNotification.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.clientIntakeSubmission.findMany).not.toHaveBeenCalled();
+    expect(prisma.clientIntakeLinkDelivery.findMany).not.toHaveBeenCalled();
+    expect(prisma.clientDocumentRequest.findMany).not.toHaveBeenCalled();
+    expect(prisma.poaExpiryNotificationDelivery.findMany).not.toHaveBeenCalled();
   });
 
   it('sorts by occurredAt desc with deterministic tie-breakers', async () => {
@@ -127,11 +208,122 @@ describe('ClientService.getTimeline', () => {
     await expect(svc.getTimeline('client-1', 'tenant-1', { limit: '0' })).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('returns safe V2 source items only when requested', async () => {
+    const { svc, prisma } = buildHarness({
+      intakeDeliveries: [intakeDelivery()],
+      documentRequests: [documentRequest()],
+      poaDeliveries: [poaDelivery()],
+    });
+
+    const result = await svc.getTimeline('client-1', 'tenant-1', {
+      sources: 'client_intake_link_delivery,client_document_request,poa_expiry_notification_delivery',
+    });
+
+    expect(result.data.map((item) => item.source)).toEqual([
+      'poa_expiry_notification_delivery',
+      'client_document_request',
+      'client_intake_link_delivery',
+    ]);
+    expect(prisma.clientNotification.findMany).not.toHaveBeenCalled();
+    expect(prisma.clientIntakeSubmission.findMany).not.toHaveBeenCalled();
+    expect(prisma.clientIntakeLinkDelivery.findMany.mock.calls[0][0].where).toEqual({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+    });
+    expect(prisma.clientDocumentRequest.findMany.mock.calls[0][0].where).toEqual({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+    });
+    expect(prisma.poaExpiryNotificationDelivery.findMany.mock.calls[0][0].where).toEqual({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+    });
+    expect(result.data[0]).toMatchObject({
+      id: 'poa-del-1',
+      eventType: 'POA_EXPIRY_NOTIFICATION_FAILED',
+      status: 'FAILED',
+      caseId: null,
+      metadataSafe: { clientId: 'client-1', windowKey: 'D30', attempts: '3' },
+    });
+    expect(result.data[1]).toMatchObject({
+      id: 'doc-1',
+      eventType: 'DOCUMENT_REQUEST_SENT',
+      status: 'SENT',
+      caseId: 'case-1',
+      metadataSafe: {
+        channel: 'EMAIL',
+        templateCode: 'CLIENT_DOCUMENT_REQUEST_V1',
+        documentCodes: 'KIMLIK,VEKALETNAME',
+        notificationId: 'n-doc',
+        attemptCount: '1',
+      },
+    });
+    expect(result.data[2]).toMatchObject({
+      id: 'ild-1',
+      eventType: 'INTAKE_LINK_DELIVERY_FAILED',
+      status: 'FAILED',
+      caseId: 'case-1',
+      metadataSafe: { channel: 'EMAIL', notificationId: 'n-delivery', attemptCount: '2' },
+    });
+  });
+
+  it('paginates V2 sources with the existing opaque cursor contract', async () => {
+    const { svc } = buildHarness({
+      documentRequests: [
+        documentRequest({ id: 'doc-new', sentAt: d('2026-01-06T10:00:00.000Z') }),
+        documentRequest({ id: 'doc-old', sentAt: d('2026-01-05T10:00:00.000Z') }),
+      ],
+    });
+
+    const first = await svc.getTimeline('client-1', 'tenant-1', {
+      limit: '1',
+      sources: 'client_document_request',
+    });
+    expect(first.data.map((item) => item.id)).toEqual(['doc-new']);
+    expect(first.pageInfo.hasNextPage).toBe(true);
+
+    const second = await svc.getTimeline('client-1', 'tenant-1', {
+      limit: '1',
+      sources: 'client_document_request',
+      cursor: first.pageInfo.nextCursor!,
+    });
+    expect(second.data.map((item) => item.id)).toEqual(['doc-old']);
+    expect(second.pageInfo.hasNextPage).toBe(false);
+  });
+
   it('rejects unknown source and invalid cursor with 400', async () => {
     const { svc } = buildHarness();
 
     await expect(svc.getTimeline('client-1', 'tenant-1', { sources: 'raw_audit' })).rejects.toBeInstanceOf(BadRequestException);
     await expect(svc.getTimeline('client-1', 'tenant-1', { cursor: 'not-a-cursor' })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('does not leak unsafe V2 raw body, token, URL, recipient, provider payload, or dedupe fields', async () => {
+    const { svc } = buildHarness({
+      intakeDeliveries: [intakeDelivery()],
+      documentRequests: [documentRequest()],
+      poaDeliveries: [poaDelivery()],
+    });
+
+    const result = await svc.getTimeline('client-1', 'tenant-1', {
+      sources: 'client_intake_link_delivery,client_document_request,poa_expiry_notification_delivery',
+    });
+    const serialized = JSON.stringify(result);
+
+    expect(serialized).not.toContain('unsafe-idempotency-key');
+    expect(serialized).not.toContain('unsafe-delivery-dedupe');
+    expect(serialized).not.toContain('unsafe provider delivery error');
+    expect(serialized).not.toContain('unsafe-raw-token');
+    expect(serialized).not.toContain('https://unsafe.example.test/intake');
+    expect(serialized).not.toContain('unsafe-doc-idempotency-key');
+    expect(serialized).not.toContain('unsafe-doc-dedupe');
+    expect(serialized).not.toContain('unsafe provider document error');
+    expect(serialized).not.toContain('client@example.test');
+    expect(serialized).not.toContain('unsafe rendered document body');
+    expect(serialized).not.toContain('unsafe-provider-message');
+    expect(serialized).not.toContain('lawyer@example.test');
+    expect(serialized).not.toContain('unsafe-poa-dedupe');
+    expect(serialized).not.toContain('unsafe provider poa error');
   });
 
   it('does not leak unsafe notification body, raw metadata, token fields, or intake sourceMeta', async () => {
