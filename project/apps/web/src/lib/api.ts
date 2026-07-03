@@ -5093,6 +5093,24 @@ export const LegalPriorityLabels: Record<LegalPriority, string> = {
   LOW: "Düşük Öncelik",
 };
 
+export interface DebtorFinancialSummaryDTO {
+  totalConfirmedCollected: number;
+  totalPendingAmount: number;
+  totalCancelledAmount: number;
+  totalRefundedAmount: number;
+  collectionCount: number;
+  lastCollectionDate?: string;
+  currencyBreakdown: Array<{
+    currency: string;
+    confirmedCollected: number;
+    pendingAmount: number;
+    cancelledAmount: number;
+    refundedAmount: number;
+    collectionCount: number;
+    lastCollectionDate?: string;
+  }>;
+}
+
 export interface DebtorDetailDTO extends DebtorListItemDTO {
   emailMasked?: string;
   // Full contact info (unmasked) for detail view
@@ -5105,6 +5123,7 @@ export interface DebtorDetailDTO extends DebtorListItemDTO {
   service: ServiceDTO;
   assets: AssetsDTO;
   riskFlags: string[];
+  financialSummary?: DebtorFinancialSummaryDTO;
   staleDays?: number;
   quickNote?: string;
   issues: DebtorIssue[];

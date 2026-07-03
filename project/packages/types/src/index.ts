@@ -340,12 +340,31 @@ export interface DebtorListItemDTO {
   alertLevel: AlertLevel;
 }
 
+export interface DebtorFinancialSummaryDTO {
+  totalConfirmedCollected: number;
+  totalPendingAmount: number;
+  totalCancelledAmount: number;
+  totalRefundedAmount: number;
+  collectionCount: number;
+  lastCollectionDate?: string;
+  currencyBreakdown: Array<{
+    currency: string;
+    confirmedCollected: number;
+    pendingAmount: number;
+    cancelledAmount: number;
+    refundedAmount: number;
+    collectionCount: number;
+    lastCollectionDate?: string;
+  }>;
+}
+
 // Borçlu Detay DTO (tam - drawer için)
 export interface DebtorDetailDTO extends DebtorListItemDTO {
   emailMasked?: string;
   service: ServiceDTO;
   assets: AssetsDTO;
   riskFlags: string[];
+  financialSummary?: DebtorFinancialSummaryDTO;
   staleDays?: number;
   quickNote?: string;
   issues: DebtorIssue[];

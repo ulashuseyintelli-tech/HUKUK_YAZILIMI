@@ -18,6 +18,7 @@ import {
   Pencil,
   Search,
   Lightbulb,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@hukuk/ui";
 import { api, DebtorDetailDTO, ServiceHistoryItem, DebtorRoleLabels, UpdateServiceStatusDTO } from "@/lib/api";
@@ -365,6 +366,8 @@ export function DebtorDetailDrawer({
                 </div>
               </div>
 
+              <DebtorFinancialSummaryCard summary={debtor.financialSummary} />
+
               {/* Service Status Section */}
               <div className="bg-gray-50 rounded-lg p-2 space-y-1">
                 <h3 className="font-medium text-[11px]">Tebligat Durumu</h3>
@@ -614,6 +617,79 @@ export function DebtorDetailDrawer({
   );
 }
 
+function DebtorFinancialSummaryCard({
+  summary,
+}: {
+  summary?: DebtorDetailDTO["financialSummary"];
+}) {
+  const currencyBreakdown = summary?.currencyBreakdown ?? [];
+  const hasCollections = Boolean(summary && summary.collectionCount > 0);
+
+  return (
+    <section aria-label="Borclu finans ozeti" className="bg-blue-50 border border-blue-100 rounded-lg p-2 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-medium text-[11px] flex items-center gap-1 text-blue-900">
+          <CreditCard className="w-3.5 h-3.5" /> Tahsilat Ozeti
+        </h3>
+        <span className="text-[10px] text-blue-700">{summary?.collectionCount ?? 0} kayit</span>
+      </div>
+
+      {!hasCollections ? (
+        <p className="text-xs text-blue-700">Bu borcluya bagli tahsilat kaydi yok.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-1.5">
+            <FinancialMetric label="Onayli tahsilat" value={formatFinancialAmount(summary?.totalConfirmedCollected)} />
+            <FinancialMetric label="Bekleyen" value={formatFinancialAmount(summary?.totalPendingAmount)} />
+            <FinancialMetric label="Iptal" value={formatFinancialAmount(summary?.totalCancelledAmount)} />
+            <FinancialMetric label="Iade" value={formatFinancialAmount(summary?.totalRefundedAmount)} />
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-blue-800">
+            <span>Son tahsilat</span>
+            <span className="font-medium">{formatFinancialDate(summary?.lastCollectionDate)}</span>
+          </div>
+          {currencyBreakdown.length > 0 && (
+            <div className="space-y-1 border-t border-blue-100 pt-1.5">
+              {currencyBreakdown.map((bucket) => (
+                <div key={bucket.currency} className="text-[11px] text-blue-900">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{bucket.currency}</span>
+                    <span>{bucket.collectionCount} kayit</span>
+                  </div>
+                  <div className="text-blue-700">
+                    Onayli {formatFinancialAmount(bucket.confirmedCollected, bucket.currency)} / Bekleyen {formatFinancialAmount(bucket.pendingAmount, bucket.currency)} / Iptal {formatFinancialAmount(bucket.cancelledAmount, bucket.currency)} / Iade {formatFinancialAmount(bucket.refundedAmount, bucket.currency)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function FinancialMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-white/70 rounded border border-blue-100 px-2 py-1">
+      <div className="text-[10px] text-blue-700">{label}</div>
+      <div className="text-xs font-semibold text-blue-950">{value}</div>
+    </div>
+  );
+}
+
+function formatFinancialAmount(value: unknown, currency = "TRY"): string {
+  const amount = Number(value ?? 0);
+  const safeAmount = Number.isFinite(amount) ? amount : 0;
+  return `${safeAmount.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || "TRY"}`;
+}
+
+function formatFinancialDate(value?: string): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
 // Asset Badge Component
 function AssetBadge({
   label,
