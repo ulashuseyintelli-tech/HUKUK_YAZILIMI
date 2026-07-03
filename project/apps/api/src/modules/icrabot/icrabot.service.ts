@@ -55,6 +55,24 @@ export class IcrabotService {
     }
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - IcrabotService.cancelTask() -> POST /icrabot/tasks/:taskId/cancel
+  /// - IcrabotService.approveTask() -> POST /icrabot/tasks/:taskId/approve
+  /// DBND-B1C: taskId'nin çağıran tenant'a ait olduğunu doğrular; aksi halde bu 2
+  /// endpoint tenant filtresi olmadan başka tenant'ın bot görevini onaylayabiliyor/
+  /// iptal edebiliyordu (yazma yolu, IDOR).
+  /// </remarks>
+  private async assertTaskTenant(taskId: string, tenantId: string): Promise<void> {
+    const exists = await this.prisma.botTask.findFirst({
+      where: { id: taskId, tenantId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException(`Görev bulunamadı: ${taskId}`);
+    }
+  }
+
   /**
    * Dosya için dijital ikiz getir
    */
@@ -116,7 +134,9 @@ export class IcrabotService {
   /**
    * Dosya için otomasyonu durdur
    */
-  async stopAutomation(caseId: string): Promise<void> {
+  async stopAutomation(caseId: string, tenantId: string): Promise<void> {
+    await this.assertCaseTenant(caseId, tenantId);
+
     // Bekleyen görevleri iptal et
     await this.db.botTask.updateMany({
       where: {
@@ -182,14 +202,16 @@ export class IcrabotService {
   /**
    * Görevi onayla
    */
-  async approveTask(taskId: string, userId: string): Promise<void> {
+  async approveTask(taskId: string, tenantId: string, userId: string): Promise<void> {
+    await this.assertTaskTenant(taskId, tenantId);
     await this.taskOrchestrator.approveTask(taskId, userId);
   }
 
   /**
    * Görevi iptal et
    */
-  async cancelTask(taskId: string, reason?: string): Promise<void> {
+  async cancelTask(taskId: string, tenantId: string, reason?: string): Promise<void> {
+    await this.assertTaskTenant(taskId, tenantId);
     await this.taskOrchestrator.cancelTask(taskId, reason);
   }
 
