@@ -3536,6 +3536,33 @@ export class CaseService {
 
     if (collections.length === 0) return collections;
 
+    const caseDebtorIds = Array.from(
+      new Set(collections.map((collection) => collection.caseDebtorId).filter(Boolean) as string[]),
+    );
+    const caseDebtors = caseDebtorIds.length === 0
+      ? []
+      : await this.prisma.caseDebtor.findMany({
+          where: {
+            id: { in: caseDebtorIds },
+            caseId,
+            case: { tenantId },
+          },
+          select: {
+            id: true,
+            lifecycleStatus: true,
+            role: true,
+            debtor: {
+              select: {
+                id: true,
+                name: true,
+                identityNo: true,
+                type: true,
+              },
+            },
+          },
+        });
+    const caseDebtorById = new Map(caseDebtors.map((caseDebtor) => [caseDebtor.id, caseDebtor]));
+
     const dispositions = await this.prisma.collectionDisposition.findMany({
       where: {
         tenantId,
@@ -3557,10 +3584,30 @@ export class CaseService {
 
     return collections.map((collection) => {
       const disposition = dispositionByCollectionId.get(collection.id);
-      if (!disposition) return collection;
+      const caseDebtor = collection.caseDebtorId
+        ? caseDebtorById.get(collection.caseDebtorId)
+        : undefined;
+      const debtorFinancialBinding = caseDebtor
+        ? {
+            caseDebtorId: caseDebtor.id,
+            lifecycleStatus: caseDebtor.lifecycleStatus,
+            role: caseDebtor.role,
+            debtor: {
+              id: caseDebtor.debtor.id,
+              displayName: caseDebtor.debtor.name,
+              identityNo: caseDebtor.debtor.identityNo,
+              type: caseDebtor.debtor.type,
+            },
+          }
+        : undefined;
+      const base = debtorFinancialBinding
+        ? { ...collection, debtorFinancialBinding }
+        : collection;
+
+      if (!disposition) return base;
 
       return {
-        ...collection,
+        ...base,
         accountingDispositionStatus: disposition.status,
         accountingPostedAt: disposition.postedAt,
         manualReversalRequiredAt: disposition.manualReversalRequiredAt,

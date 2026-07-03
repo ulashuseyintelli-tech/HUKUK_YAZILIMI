@@ -247,11 +247,29 @@ export interface DebtorDetailDTO extends DebtorListItemDTO {
   service: ServiceDTO;
   assets: AssetsDTO;
   riskFlags: string[];
+  financialSummary?: DebtorFinancialSummaryDTO;
   staleDays?: number;
   quickNote?: string;
   issues: DebtorIssue[];
 }
 
+export interface DebtorFinancialSummaryDTO {
+  totalConfirmedCollected: number;
+  totalPendingAmount: number;
+  totalCancelledAmount: number;
+  totalRefundedAmount: number;
+  collectionCount: number;
+  lastCollectionDate?: string;
+  currencyBreakdown: Array<{
+    currency: string;
+    confirmedCollected: number;
+    pendingAmount: number;
+    cancelledAmount: number;
+    refundedAmount: number;
+    collectionCount: number;
+    lastCollectionDate?: string;
+  }>;
+}
 // Address DTO for frontend
 export interface AddressDTO {
   id: string;
@@ -1665,6 +1683,7 @@ export class DebtorService {
     const issues = this.calculateDebtorIssues(caseDebtor, debtor, address);
     const alertLevel = this.getMaxAlertLevel(issues);
     const serviceStatus = (caseDebtor.serviceStatus as ServiceStatus) || "NOT_STARTED";
+    const financialSummary = await this.buildCaseDebtorFinancialSummary(tenantId, caseId, caseDebtor.id);
 
     return {
       id: debtor.id,
@@ -1723,12 +1742,98 @@ export class DebtorService {
         lastQueryAt: caseDebtor.assetLastQueryAt?.toISOString(),
       },
       riskFlags: this.extractRiskFlags(debtor, debtor.debtorAddresses, caseDebtor.selectedAddressId || undefined),
+      financialSummary,
       staleDays: this.calculateStaleDays(caseDebtor.updatedAt),
       quickNote: caseDebtor.quickNote || undefined,
       issues,
     };
   }
 
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - DebtorService.getCaseDebtorDetail() -> GET /debtors/case/:caseId/:caseDebtorId (borclu finansal read-model)
+  /// </remarks>
+  private async buildCaseDebtorFinancialSummary(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId: string,
+  ): Promise<DebtorFinancialSummaryDTO> {
+    const collections = await this.prisma.collection.findMany({
+      where: {
+        tenantId,
+        caseId,
+        caseDebtorId,
+      },
+      select: {
+        amount: true,
+        currency: true,
+        status: true,
+        date: true,
+      },
+    });
+
+    const byCurrency = new Map<string, DebtorFinancialSummaryDTO["currencyBreakdown"][number]>();
+    const summary: DebtorFinancialSummaryDTO = {
+      totalConfirmedCollected: 0,
+      totalPendingAmount: 0,
+      totalCancelledAmount: 0,
+      totalRefundedAmount: 0,
+      collectionCount: collections.length,
+      currencyBreakdown: [],
+    };
+
+    const addByStatus = (bucket: DebtorFinancialSummaryDTO["currencyBreakdown"][number], status: string, amount: number) => {
+      switch (status) {
+        case "CONFIRMED":
+          bucket.confirmedCollected += amount;
+          summary.totalConfirmedCollected += amount;
+          break;
+        case "PENDING":
+          bucket.pendingAmount += amount;
+          summary.totalPendingAmount += amount;
+          break;
+        case "CANCELLED":
+          bucket.cancelledAmount += amount;
+          summary.totalCancelledAmount += amount;
+          break;
+        case "REFUNDED":
+          bucket.refundedAmount += amount;
+          summary.totalRefundedAmount += amount;
+          break;
+      }
+    };
+
+    for (const collection of collections) {
+      const currency = collection.currency || "TRY";
+      const amount = Number(collection.amount) || 0;
+      let bucket = byCurrency.get(currency);
+      if (!bucket) {
+        bucket = {
+          currency,
+          confirmedCollected: 0,
+          pendingAmount: 0,
+          cancelledAmount: 0,
+          refundedAmount: 0,
+          collectionCount: 0,
+        };
+        byCurrency.set(currency, bucket);
+      }
+
+      bucket.collectionCount += 1;
+      addByStatus(bucket, String(collection.status), amount);
+
+      const dateIso = collection.date?.toISOString?.();
+      if (dateIso && (!bucket.lastCollectionDate || dateIso > bucket.lastCollectionDate)) {
+        bucket.lastCollectionDate = dateIso;
+      }
+      if (dateIso && (!summary.lastCollectionDate || dateIso > summary.lastCollectionDate)) {
+        summary.lastCollectionDate = dateIso;
+      }
+    }
+
+    summary.currencyBreakdown = Array.from(byCurrency.values()).sort((a, b) => a.currency.localeCompare(b.currency));
+    return summary;
+  }
   /**
    * Update quick note for a case debtor
    */
