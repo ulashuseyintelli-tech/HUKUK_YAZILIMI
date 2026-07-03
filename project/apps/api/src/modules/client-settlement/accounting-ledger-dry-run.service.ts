@@ -27,6 +27,7 @@ export type AccountingDryRunSourceType =
 
 export type AccountingDryRunAccountCode =
   | 'CASH_CLEARING'
+  | 'CASE_COLLECTION_CLEARING'
   | 'CLIENT_PAYABLE'
   | 'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE'
   | 'CLIENT_EXPENSE_RECEIVABLE'
