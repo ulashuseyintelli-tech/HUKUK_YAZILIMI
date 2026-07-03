@@ -13,7 +13,7 @@ describe('TBK100 Interest Accrual Contract v1 — defaultInterestAccrualStatusFo
     expect(defaultInterestAccrualStatusForItemType(itemType)).toBe('UNKNOWN');
   });
 
-  it('COMMISSION gerçek ClaimItemType enum üyesi DEĞİL — listede yok (bilinçli, disposable-DB migration ile doğrulandı)', () => {
+  it('COMMISSION gerçek ClaimItemType enum üyesi DEĞİL — ClaimItem hiç bu değerle saklanmaz (mapItemType EXPENSE\'e çevirir), listede yok', () => {
     expect(defaultInterestAccrualStatusForItemType('COMMISSION')).toBe('UNKNOWN');
   });
 });

@@ -12,7 +12,7 @@ import { AncillaryType } from '../types/domain.types';
 /**
  * itemType → AncillaryType eşlemesi (doc-27 / PR-AO-3). Eşlenmeyen → null.
  * PENALTY/CONTRACTUAL_PENALTY/OTHER → DIGER (yalnız CHECK_PENALTY → CEK_TAZMINATI).
- * COMMISSION → KOMISYON (masraf). TAX_* bilinçli HARİÇ (açık hukuki D; field-based, ayrı ele alınır).
+ * TAX_* bilinçli HARİÇ (açık hukuki D; field-based, ayrı ele alınır).
  *
  * <remarks>Çağrıldığı yerler:
  * - summary-engine.service mapItemTypeToAncillary() (delege) + resolveResultCategory().
@@ -27,14 +27,13 @@ export function mapItemTypeToAncillary(itemType: string): AncillaryType | null {
     CHECK_PENALTY: AncillaryType.CEK_TAZMINATI,
     PENALTY: AncillaryType.DIGER,
     CONTRACTUAL_PENALTY: AncillaryType.DIGER,
-    COMMISSION: AncillaryType.KOMISYON,
     OTHER: AncillaryType.DIGER,
   };
   return mapping[itemType] || null;
 }
 
-/** Masraf (cost) kalemi mi? (doc-27: FEE/EXPENSE/COMMISSION = masraf; gerisi fer'i.) */
-const COST_ITEM_TYPES: ReadonlySet<string> = new Set(['FEE', 'EXPENSE', 'COMMISSION']);
+/** Masraf (cost) kalemi mi? (doc-27: FEE/EXPENSE = masraf; gerisi fer'i.) */
+const COST_ITEM_TYPES: ReadonlySet<string> = new Set(['FEE', 'EXPENSE']);
 export function isCostItemType(itemType: string): boolean {
   return COST_ITEM_TYPES.has(itemType);
 }

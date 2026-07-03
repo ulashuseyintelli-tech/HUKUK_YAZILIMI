@@ -40,11 +40,15 @@ export enum DocumentSourceType {
   DIGER = 'DIGER',
 }
 
-// Faiz Türü
+// Faiz Türü — Prisma InterestType enum'uyla (schema.prisma) birebir eşleşir (6 değer);
+// OZEL Prisma üyesi değildir, yalnız interest-type-bridge.ts'nin STRING_ONLY_ALIASES
+// köprüsüyle (OZEL→CONTRACTUAL) desteklenir.
 export enum InterestType {
   YASAL = 'YASAL',
-  TICARI = 'TICARI',
+  SABIT = 'SABIT',
   AVANS = 'AVANS',
+  TEMERRUT = 'TEMERRUT',
+  TICARI = 'TICARI',
   OZEL = 'OZEL',
 }
 
