@@ -53,8 +53,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/twin
    */
   @Get('cases/:caseId/twin')
-  async getDigitalTwin(@Param('caseId') caseId: string) {
-    return this.icrabotService.getDigitalTwin(caseId);
+  async getDigitalTwin(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getDigitalTwin(caseId, req.user.tenantId);
   }
 
   /**
@@ -62,8 +62,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/next-actions
    */
   @Get('cases/:caseId/next-actions')
-  async getNextBestActions(@Param('caseId') caseId: string) {
-    return this.icrabotService.getNextBestActions(caseId);
+  async getNextBestActions(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getNextBestActions(caseId, req.user.tenantId);
   }
 
   /**
@@ -71,8 +71,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/tasks
    */
   @Get('cases/:caseId/tasks')
-  async getPendingTasks(@Param('caseId') caseId: string) {
-    return this.icrabotService.getPendingTasks(caseId);
+  async getPendingTasks(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getPendingTasks(caseId, req.user.tenantId);
   }
 
   /**
@@ -80,8 +80,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/evidence
    */
   @Get('cases/:caseId/evidence')
-  async getEvidenceReport(@Param('caseId') caseId: string) {
-    return this.icrabotService.getEvidenceReport(caseId);
+  async getEvidenceReport(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getEvidenceReport(caseId, req.user.tenantId);
   }
 
   /**

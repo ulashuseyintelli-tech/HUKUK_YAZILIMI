@@ -32,22 +32,45 @@ export class IcrabotService {
     return this.prisma;
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - IcrabotService.getDigitalTwin() -> GET /icrabot/cases/:caseId/twin
+  /// - IcrabotService.getNextBestActions() -> GET /icrabot/cases/:caseId/next-actions
+  /// - IcrabotService.getPendingTasks() -> GET /icrabot/cases/:caseId/tasks
+  /// - IcrabotService.getEvidenceReport() -> GET /icrabot/cases/:caseId/evidence
+  /// DBND-B1: caseId'nin çağıran tenant'a ait olduğunu doğrular; aksi halde bu 4
+  /// endpoint tenant filtresi olmadan başka tenant'ın borçlu/varlık/tebligat/tahsilat/
+  /// kanıt verisini döndürüyordu (cross-tenant IDOR).
+  /// </remarks>
+  private async assertCaseTenant(caseId: string, tenantId: string): Promise<void> {
+    const exists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException(`Dosya bulunamadı: ${caseId}`);
+    }
+  }
+
   /**
    * Dosya için dijital ikiz getir
    */
-  async getDigitalTwin(caseId: string): Promise<CaseDigitalTwin> {
+  async getDigitalTwin(caseId: string, tenantId: string): Promise<CaseDigitalTwin> {
+    await this.assertCaseTenant(caseId, tenantId);
+
     const twin = await this.recipeService.buildDigitalTwin(caseId);
-    
+
     // Next actions hesapla
     twin.nextActions = await this.recipeService.calculateNextBestActions(caseId);
-    
+
     return twin;
   }
 
   /**
    * Dosya için Next Best Actions getir
    */
-  async getNextBestActions(caseId: string): Promise<NextBestAction[]> {
+  async getNextBestActions(caseId: string, tenantId: string): Promise<NextBestAction[]> {
+    await this.assertCaseTenant(caseId, tenantId);
     return this.recipeService.calculateNextBestActions(caseId);
   }
 
@@ -59,7 +82,7 @@ export class IcrabotService {
     tasks: string[];
   }> {
     // Next best actions hesapla
-    const actions = await this.getNextBestActions(caseId);
+    const actions = await this.getNextBestActions(caseId, tenantId);
     
     // Otomatik çalıştırılabilir olanları kuyruğa ekle
     const autoActions = actions.filter(a => a.canAutoExecute);
@@ -148,7 +171,8 @@ export class IcrabotService {
   /**
    * Dosya için bekleyen görevleri getir
    */
-  async getPendingTasks(caseId: string): Promise<any[]> {
+  async getPendingTasks(caseId: string, tenantId: string): Promise<any[]> {
+    await this.assertCaseTenant(caseId, tenantId);
     return this.taskOrchestrator.getPendingTasks(caseId);
   }
 
@@ -169,7 +193,8 @@ export class IcrabotService {
   /**
    * Dosya için kanıt raporu getir
    */
-  async getEvidenceReport(caseId: string): Promise<any> {
+  async getEvidenceReport(caseId: string, tenantId: string): Promise<any> {
+    await this.assertCaseTenant(caseId, tenantId);
     return this.evidenceService.generateEvidenceReport(caseId);
   }
 

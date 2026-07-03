@@ -2187,19 +2187,34 @@ export class CaseService {
   }
 
   /**
-   * CBND-4 (H7): dosya silmeden önce finansal artık kontrolü. Collection→Case onDelete:Cascade olduğundan
-   * tahsilat kayıtları sessizce SİLİNİR (kayıp); ClientOffset FK'sız (scalar-ref) olduğundan silinen
-   * case/caseClient'a işaret eden DANGLING kayıt bırakır; ClientPayoutAllocation/ClientPayoutManualReversal
-   * zaten onDelete:Restrict korumalı ama bugün ham Prisma FK-constraint hatası olarak patlıyor (temiz
-   * mesaj yok). Dördü de burada AÇIKÇA kontrol edilip tek, anlaşılır ConflictException'a çevrilir; hiçbiri
-   * yoksa davranış AYNEN korunur (yeni bir silme/temizleme akışı EKLENMEZ, yalnız engelle+bildir).
+   * CS2 (CS1 owner-karar 2026-07-03) — CBND-4'ün (H7) FOOTPRINT'e genişletilmiş hali: Case artık
+   * kalıcı-kimlik hibrit modelinde (Debtor D1A deseni) — YALNIZ footprint'siz (taslak/yanlışlıkla
+   * açılmış) dosya fiziksel silinebilir; hukuki/finansal/operasyonel iz taşıyan dosya SİLİNEMEZ
+   * (kapatılır/arşivlenir). Yapısal bağlar (CaseDebtor/CaseClient/CaseLawyer/CaseStaff) footprint
+   * SAYILMAZ (her dosyada açılışta var; cascade yalnız bağ satırını siler, kimliği değil).
+   * Mevcut 4 finansal sayaç (CBND-4) AYNEN korunur; hata kodu geriye-uyumluluk için değişmedi.
    */
-  private async assertNoFinancialActivity(tenantId: string, caseId: string): Promise<void> {
-    const [collectionCount, offsetCount, payoutCount, manualReversalCount] = await Promise.all([
+  private async assertNoCaseFootprint(tenantId: string, caseId: string): Promise<void> {
+    const [
+      collectionCount, offsetCount, payoutCount, manualReversalCount,
+      ledgerEntryCount, claimItemCount, dueCount, tebligatCount, expenseRequestCount,
+      taskCount, decisionLogCount, timelineEntryCount, documentCount,
+    ] = await Promise.all([
       this.prisma.collection.count({ where: { tenantId, caseId } }),
       this.prisma.clientOffset.count({ where: { tenantId, OR: [{ payableCaseId: caseId }, { expenseCaseId: caseId }] } }),
       this.prisma.clientPayout.count({ where: { tenantId, caseId } }),
       this.prisma.clientPayoutManualReversal.count({ where: { tenantId, caseId } }),
+      // CS2 footprint sayaçları — Case zaten tenant-scoped findOne ile doğrulandı; tenantId alanı
+      // OLAN modellerde defense-in-depth için tenantId de eklenir, olmayanlarda yalnız caseId.
+      this.prisma.ledgerEntry.count({ where: { tenantId, caseId } }),
+      this.prisma.claimItem.count({ where: { tenantId, caseId } }),
+      this.prisma.due.count({ where: { caseId } }),
+      this.prisma.tebligat.count({ where: { tenantId, caseId } }),
+      this.prisma.expenseRequest.count({ where: { tenantId, caseId } }),
+      this.prisma.task.count({ where: { tenantId, caseId } }),
+      this.prisma.decisionLog.count({ where: { caseId } }),
+      this.prisma.icrabotTimelineEntry.count({ where: { caseId } }),
+      this.prisma.caseDocument.count({ where: { caseId } }),
     ]);
 
     const blockers: string[] = [];
@@ -2207,11 +2222,20 @@ export class CaseService {
     if (offsetCount > 0) blockers.push(`${offsetCount} mahsup (ClientOffset)`);
     if (payoutCount > 0) blockers.push(`${payoutCount} müvekkil ödemesi (ClientPayout)`);
     if (manualReversalCount > 0) blockers.push(`${manualReversalCount} manuel reversal kaydı (ClientPayoutManualReversal)`);
+    if (ledgerEntryCount > 0) blockers.push(`${ledgerEntryCount} defter kaydı (LedgerEntry)`);
+    if (claimItemCount > 0) blockers.push(`${claimItemCount} alacak kalemi (ClaimItem)`);
+    if (dueCount > 0) blockers.push(`${dueCount} vade kaydı (Due)`);
+    if (tebligatCount > 0) blockers.push(`${tebligatCount} tebligat (Tebligat)`);
+    if (expenseRequestCount > 0) blockers.push(`${expenseRequestCount} masraf talebi (ExpenseRequest)`);
+    if (taskCount > 0) blockers.push(`${taskCount} görev (Task)`);
+    if (decisionLogCount > 0) blockers.push(`${decisionLogCount} karar kaydı (DecisionLog)`);
+    if (timelineEntryCount > 0) blockers.push(`${timelineEntryCount} olay kaydı (IcrabotTimelineEntry)`);
+    if (documentCount > 0) blockers.push(`${documentCount} belge (CaseDocument)`);
 
     if (blockers.length > 0) {
       throw new ConflictException({
         code: 'CASE_DELETE_FINANCIAL_ACTIVITY',
-        message: `Dosya silinemez: finansal geçmişi var (${blockers.join(', ')}). Finansal kayıtları olan dosyalar kalıcı silinemez.`,
+        message: `Dosya silinemez: hukuki/finansal geçmişi var (${blockers.join(', ')}). İz taşıyan dosyalar kalıcı silinemez; kapatma veya arşivleme kullanın.`,
       });
     }
   }
@@ -2219,26 +2243,41 @@ export class CaseService {
   async delete(tenantId: string, id: string, userId: string) {
     const existing = await this.findOne(tenantId, id);
 
-    // CBND-4 (H7): transaction'dan ÖNCE — finansal artık varsa silme hiç denenmez.
-    await this.assertNoFinancialActivity(tenantId, id);
+    // CS2: transaction'dan ÖNCE — footprint (hukuki/finansal/operasyonel iz) varsa silme hiç denenmez.
+    await this.assertNoCaseFootprint(tenantId, id);
 
     // Transaction içinde silme ve audit log (veri bütünlüğü için)
-    await this.prisma.$transaction(async (tx) => {
-      await tx.case.delete({
-        where: { id },
-      });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.case.delete({
+          where: { id },
+        });
 
-      // Audit log - transaction içinde
-      await this.auditService.log({
-        tenantId,
-        action: 'DELETE',
-        entityType: 'CASE',
-        entityId: id,
-        userId, // WP-1c-2: user-driven CASE delete → actor zorunlu
-        oldValues: { fileNumber: existing.fileNumber },
-        description: `Takip silindi: ${existing.fileNumber}`,
+        // CS2: audit artık GERÇEKTEN aynı transaction'da (logInTransaction; eski log() tx-bağsızdı
+        // — audit yazılamazsa silme de rollback olur, audit'siz silme kalmaz).
+        await this.auditService.logInTransaction(tx, {
+          tenantId,
+          action: 'DELETE',
+          entityType: 'CASE',
+          entityId: id,
+          userId, // WP-1c-2: user-driven CASE delete → actor zorunlu
+          oldValues: { fileNumber: existing.fileNumber },
+          description: `Takip silindi: ${existing.fileNumber}`,
+        });
       });
-    });
+    } catch (error: any) {
+      // CS2: footprint sayaçlarında olmayan onDelete:Restrict ilişkiler (ClientStatement,
+      // ClientApprovalRequest, intake modelleri vb.) ham Prisma P2003 olarak patlıyordu —
+      // kontrollü 409'a çevrilir (davranış yalnız güvenli yönde daralır, silme zaten olmuyordu).
+      if (error?.code === 'P2003') {
+        throw new ConflictException({
+          code: 'CASE_DELETE_RESTRICTED_RELATION',
+          message:
+            'Dosya silinemez: dosyaya bağlı korumalı kayıtlar var (ör. müvekkil ekstresi/onay talebi/intake kaydı). İz taşıyan dosyalar kalıcı silinemez; kapatma veya arşivleme kullanın.',
+        });
+      }
+      throw error;
+    }
 
     return { success: true };
   }
@@ -2306,8 +2345,10 @@ export class CaseService {
   }
 
   // Dosya flag'lerini güncelle (K.47-50)
-  async patchFlags(tenantId: string, id: string, dto: Partial<UpdateCaseDto>) {
-    await this.findOne(tenantId, id);
+  // CS2: actor + audit eklendi — isArchived dahil flag değişimleri artık İZLİ (önceden ne userId
+  // alıyordu ne audit yazıyordu; arşivleme anonim/izsizdi). Semantik DEĞİŞMEDİ (allowedFlags aynı).
+  async patchFlags(tenantId: string, id: string, dto: Partial<UpdateCaseDto>, actor?: { userId?: string }) {
+    const existing = await this.findOne(tenantId, id);
 
     // P3-2B-3: caseStatus yan-kapısı KAPALI. Statü değişimi YALNIZCA POST /case-status/:caseId/change'ten
     // (allowedFlags'ten çıkarıldı; gelirse sessizce yutmak yerine açıkça reddedilir).
@@ -2352,10 +2393,28 @@ export class CaseService {
     // tenant koruması yalnız bu service-level guard'dan gelir (allowedFlags'teki tek tenant-scoped FK).
     await this.validateCaseFkOwnership(tenantId, { executionOfficeId: data.executionOfficeId });
 
-    return this.prisma.case.update({
+    const updated = await this.prisma.case.update({
       where: { id },
       data,
     });
+
+    // CS2: flag değişimi audit'i — standalone log() (update() ile aynı desen; tek update, tx yok).
+    // oldValues/newValues yalnız gerçekten yazılan alanlar (ham dto değil, filtrelenmiş data).
+    const oldValues: Record<string, unknown> = {};
+    for (const key of Object.keys(data)) {
+      oldValues[key] = (existing as any)[key] ?? null;
+    }
+    await this.auditService.log({
+      tenantId,
+      action: 'CASE_FLAGS_UPDATE',
+      entityType: 'CASE',
+      entityId: id,
+      userId: actor?.userId,
+      oldValues,
+      newValues: data,
+    });
+
+    return updated;
   }
 
   /**

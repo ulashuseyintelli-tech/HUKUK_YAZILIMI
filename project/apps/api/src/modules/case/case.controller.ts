@@ -257,10 +257,12 @@ export class CaseController {
   @Patch(":id")
   patchFlags(
     @CurrentUser("tenantId") tenantId: string,
+    // CS2: actor — flag değişimleri (isArchived dahil) artık audit'li; userId truthful @CurrentUser.
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() dto: Partial<UpdateCaseDto>
   ) {
-    return this.caseService.patchFlags(tenantId, id, dto);
+    return this.caseService.patchFlags(tenantId, id, dto, { userId });
   }
 
   /**

@@ -15,7 +15,7 @@
  * Muhasebe/Banka ayrı kapsamdır.
  * Mock fallback YOK; hata/boş durumları açıkça gösterilir.
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
   User,
@@ -28,6 +28,9 @@ import {
   FileCheck,
   Loader2,
   ExternalLink,
+  Upload,
+  CheckCircle,
+  AlertCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Client } from '@/lib/api/client.types';
@@ -67,6 +70,8 @@ interface ClientPoaRow {
   isLimited?: boolean | null;
   validUntil?: string | null;
   status?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
 }
 
 type TabId =
@@ -94,6 +99,16 @@ const fmtDate = (d?: string | null) => {
   return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('tr-TR');
 };
 
+
+const fmtFileSize = (n?: number | null) => {
+  if (!n || n <= 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const poaFileMeta = (fileSize?: number | null, mimeType?: string | null) =>
+  [fmtFileSize(fileSize), mimeType || ''].filter(Boolean).join(' · ');
 const statusColor = (s?: string | null) => {
   const up = (s || '').toUpperCase();
   const map: Record<string, string> = {
@@ -374,34 +389,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
                 <p className="text-center py-6 text-gray-500">Vekalet bulunamadı</p>
               ) : (
                 poas.map((poa) => (
-                  <div key={poa.id} className="p-4 border rounded-lg hover:bg-gray-50">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-medium">
-                          {[poa.notaryName, poa.notaryCity].filter(Boolean).join(' - ') || 'Vekalet'}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          Yevmiye No: {poa.journalNo || poa.poaNumber || '—'}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {poa.isLimited && (
-                          <span className="px-2 py-0.5 rounded text-xs bg-orange-100 text-orange-700">
-                            Süreli
-                          </span>
-                        )}
-                        {poa.status && (
-                          <span className={`px-2 py-0.5 rounded text-xs ${statusColor(poa.status)}`}>
-                            {poa.status}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-center gap-4 text-sm text-gray-500 flex-wrap">
-                      <span>Düzenleme: {fmtDate(poa.dateIssued)}</span>
-                      {poa.isLimited && poa.validUntil && <span>Bitiş: {fmtDate(poa.validUntil)}</span>}
-                    </div>
-                  </div>
+                  <PoaUploadCard key={poa.id} clientId={clientId} poa={poa} onUploaded={refreshClient} />
                 ))
               )}
             </div>
@@ -444,6 +432,92 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
   );
 }
 
+function PoaUploadCard({ clientId, poa, onUploaded }: { clientId: string; poa: ClientPoaRow; onUploaded: () => Promise<void> }) {
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const inputId = `poa-upload-${poa.id}`;
+  const safeMeta = poaFileMeta(poa.fileSize, poa.mimeType);
+
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+    if (!file) return;
+
+    setUploading(true);
+    setMessage(null);
+    try {
+      const result = await api.uploadClientWorkspacePoaFile(clientId, poa.id, file);
+      const uploadedMeta = poaFileMeta(result.fileSize, result.mimeType);
+      setMessage({
+        kind: 'success',
+        text: uploadedMeta ? `Dosya yüklendi: ${uploadedMeta}` : 'Dosya yüklendi.',
+      });
+      await onUploaded();
+    } catch {
+      setMessage({ kind: 'error', text: 'Dosya yüklenemedi. Lutfen dosya turu ve boyutunu kontrol edin.' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="p-4 border rounded-lg hover:bg-gray-50">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-medium">
+            {[poa.notaryName, poa.notaryCity].filter(Boolean).join(' - ') || 'Vekalet'}
+          </p>
+          <p className="text-sm text-gray-500">
+            Yevmiye No: {poa.journalNo || poa.poaNumber || '—'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {poa.isLimited && (
+            <span className="px-2 py-0.5 rounded text-xs bg-orange-100 text-orange-700">
+              Süreli
+            </span>
+          )}
+          {poa.status && (
+            <span className={`px-2 py-0.5 rounded text-xs ${statusColor(poa.status)}`}>
+              {poa.status}
+            </span>
+          )}
+          <input
+            id={inputId}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+            className="sr-only"
+            onChange={handleUpload}
+            disabled={uploading}
+            aria-label="Vekalet dosyası yükle"
+          />
+          <label
+            htmlFor={inputId}
+            className={`inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium ${
+              uploading
+                ? 'pointer-events-none border-gray-200 bg-gray-100 text-gray-400'
+                : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+            }`}
+          >
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {uploading ? 'Yükleniyor' : 'Dosya yükle'}
+          </label>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
+        <span>Düzenleme: {fmtDate(poa.dateIssued)}</span>
+        {poa.isLimited && poa.validUntil && <span>Bitiş: {fmtDate(poa.validUntil)}</span>}
+        <span>{safeMeta ? `Dosya: ${safeMeta}` : 'Dosya kayıtlı değil'}</span>
+      </div>
+      {message && (
+        <div className={`mt-3 flex items-center gap-2 text-sm ${message.kind === 'success' ? 'text-green-700' : 'text-red-700'}`} role="status">
+          {message.kind === 'success' ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+          <span>{message.text}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 function OverviewCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="bg-gray-50 rounded-xl border p-4">

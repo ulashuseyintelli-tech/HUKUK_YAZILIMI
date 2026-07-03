@@ -85,6 +85,40 @@ describe("intake link api (staff, AUTH VAR)", () => {
   });
 
 
+
+  it("uploadClientWorkspacePoaFile -> POST workspace POA file URL + multipart file + safe response", async () => {
+    const fn = mockFetch(true, {
+      data: {
+        clientId: "cl1",
+        poaId: "poa1",
+        hasFile: true,
+        fileSize: 2048,
+        mimeType: "application/pdf",
+        filePath: "C:/secret/storage/tenant/poa.pdf",
+      },
+    });
+    const file = new File(["poa"], "poa.pdf", { type: "application/pdf" });
+
+    const result = await api.uploadClientWorkspacePoaFile("cl1", "poa1", file);
+
+    const [url, opts] = fn.mock.calls[0];
+    expect(String(url)).toContain("/api/clients/cl1/poas/poa1/file");
+    expect(opts.method).toBe("POST");
+    expect((opts.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+    expect((opts.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+    expect(opts.body).toBeInstanceOf(FormData);
+    expect((opts.body as FormData).get("file")).toBe(file);
+    expect(result).toEqual({
+      clientId: "cl1",
+      poaId: "poa1",
+      hasFile: true,
+      fileSize: 2048,
+      mimeType: "application/pdf",
+    });
+    expect(JSON.stringify(result)).not.toContain("filePath");
+    expect(JSON.stringify(result)).not.toContain("secret");
+    expect(JSON.stringify(result)).not.toContain("storage");
+  });
   it("sendClientWorkspaceTemplateNotification -> POST workspace template URL + Idempotency-Key + safe allowlist body", async () => {
     const fn = mockFetch(true, {
       data: { clientId: "cl1", caseId: "case-1", templateCode: "DOSYA_DURUMU", status: "sent", notificationId: "n1" },

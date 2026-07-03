@@ -95,6 +95,7 @@ describe('DispositionPostingService.recommend', () => {
     );
     const pendingArg = approval.createPendingRequest.mock.calls[0][0];
     expect(pendingArg.reason).toContain('Dagitim kesinlesmeden once yetkili onayi gerekir.');
+    expect(pendingArg.idempotencyKey).toBe('collection-disposition-recommend:d1');
     expect(pendingArg.savedIntent).toEqual(expect.objectContaining({
       version: 'S9H_COLLECTION_DISPOSITION_POST_INTENT_V1',
       risk: expect.objectContaining({ decision: 'REQUIRE_APPROVAL' }),
@@ -206,10 +207,8 @@ describe('DispositionPostingService.approve', () => {
     const res = await svc(prisma, approval).approve('t1', 'd1', { userId: 'u2' }, 'onaylandÄ±');
     expect(res.approved).toBe(true);
     expect(approval.approve).toHaveBeenCalledWith('appr-1', 'u2', 'onaylandÄ±');
-    expect(prisma.collectionDisposition.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'DISTRIBUTION_APPROVED', approvedById: 'u2' }) }),
-    );
-    expect(prisma.$transaction).not.toHaveBeenCalled(); // finansal etki YOK
+    expect(prisma.collectionDisposition.updateMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled(); // finansal etki YOK; state sync P4 transaction'inda
   });
 
   it('capability olmayan kullanÄ±cÄ± â†’ Forbidden, P4.approve Ã§aÄŸrÄ±lmaz', async () => {

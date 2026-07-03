@@ -29,6 +29,7 @@ function buildTx(opts: {
   ledgerCreateError?: any;
   paymentEvent?: any;
   currentMaxVersion?: bigint | null;
+  originalRecordedJournal?: any;
 }) {
   const collection = Object.prototype.hasOwnProperty.call(opts, 'collection')
     ? opts.collection
@@ -45,6 +46,11 @@ function buildTx(opts: {
     : buildPaymentReceivedEvent();
 
   return {
+    accountingJournalEntry: {
+      findFirst: jest.fn(async () => opts.originalRecordedJournal === undefined
+        ? { id: 'journal-recorded', metadata: { sourceVersion: '2026-01-01T00:00:01.000Z:col1:RECORDED' } }
+        : opts.originalRecordedJournal),
+    },
     collection: {
       findFirst: jest.fn(async () => collection),
       update: jest.fn(async ({ data }: any) => ({
@@ -94,7 +100,7 @@ function buildTx(opts: {
   };
 }
 
-function buildService(tx: any, outsideCollection: any = null, domainEventOverride?: any) {
+function buildService(tx: any, outsideCollection: any = null, domainEventOverride?: any, journalWriterOverride?: any) {
   const prisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(tx)),
     collection: {
@@ -104,13 +110,15 @@ function buildService(tx: any, outsideCollection: any = null, domainEventOverrid
   const domainEvent = domainEventOverride ?? {
     appendInTransaction: jest.fn(async () => ({ aggregateVersion: BigInt(2) })),
   };
+  const journalWriter = journalWriterOverride ?? { write: jest.fn(async () => ({ ok: true, output: { status: 'CREATED', journalEntryId: 'journal-cancel' } })) };
   const service = new CollectionService(
     prisma,
     domainEvent as any,
     {} as any,
     undefined,
+    journalWriter,
   );
-  return { service, prisma, domainEvent };
+  return { service, prisma, domainEvent, journalWriter };
 }
 
 function getAppendCall(domainEvent: any, index = 0): [any, any] {
@@ -132,7 +140,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
       ],
     };
     const tx = buildTx({ originalLedger });
-    const { service } = buildService(tx);
+    const { service, journalWriter } = buildService(tx);
 
     const result = await service.cancel('t1', 'col1', { cancelReason: 'yanlış kayıt' } as any, 'user-1');
 
@@ -144,6 +152,34 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     expect(tx.collection.findFirst).toHaveBeenCalledWith({
       where: { id: 'col1', tenantId: 't1' },
     });
+    expect(tx.accountingJournalEntry.findFirst).toHaveBeenCalledWith({
+      where: {
+        tenantId: 't1',
+        sourceType: 'COLLECTION',
+        sourceId: 'col1',
+        sourceAction: 'recorded',
+        entryType: 'COLLECTION_CASH_RECEIPT_RECORDED',
+      },
+      select: { id: true, metadata: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(journalWriter.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.objectContaining({
+          entryType: 'COLLECTION_CASH_RECEIPT_REVERSED',
+          sourceType: 'COLLECTION',
+          sourceId: 'col1',
+          sourceAction: 'cancel',
+          caseId: 'case1',
+          currency: 'TRY',
+          lines: expect.arrayContaining([
+            expect.objectContaining({ accountCode: 'CASE_COLLECTION_CLEARING', direction: 'DEBIT', collectionId: 'col1' }),
+            expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', collectionId: 'col1' }),
+          ]),
+        }),
+      }),
+      tx,
+    );
     expect(tx.ledgerEntry.findFirst).toHaveBeenCalledWith({
       where: {
         tenantId: 't1',
@@ -380,11 +416,13 @@ describe('CollectionService.cancel — reversal ledger write', () => {
       }),
       collection: { findFirst: jest.fn() },
     };
+    const journalWriter = { write: jest.fn(async () => ({ ok: true, output: { status: 'CREATED', journalEntryId: 'journal-cancel' } })) };
     const service = new CollectionService(
       prisma,
       new DomainEventIngestService(),
       {} as any,
       undefined,
+      journalWriter as any,
     );
 
     await expect(service.cancel('t1', 'col1', { cancelReason: 'outbox hata' } as any, 'user-1')).rejects.toThrow('outbox down');
@@ -433,6 +471,26 @@ describe('CollectionService.cancel — reversal ledger write', () => {
       cancelReason: 'dekont düzeltme',
     });
     expect(event.payload.amount).toBeUndefined();
+  });
+
+
+  it('original recorded journal yoksa cancel live path fail-closed durur', async () => {
+    const tx = buildTx({ originalLedger: null, originalRecordedJournal: null });
+    const { service, domainEvent, journalWriter } = buildService(tx);
+
+    await expect(
+      service.cancel('t1', 'col1', { cancelReason: 'legacy eksik journal' } as any, 'user-1'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        errorCode: 'COLLECTION_CASH_RECEIPT_RECORDED_JOURNAL_MISSING',
+      }),
+    });
+
+    expect(tx.collection.update).not.toHaveBeenCalled();
+    expect(tx.ledgerEntry.findFirst).not.toHaveBeenCalled();
+    expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
+    expect(journalWriter.write).not.toHaveBeenCalled();
+    expect(domainEvent.appendInTransaction).not.toHaveBeenCalled();
   });
 
   it('original PAYMENT_RECEIVED yoksa 409 ile fail-close olur ve mutasyon yapmaz', async () => {

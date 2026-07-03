@@ -31,6 +31,7 @@ export type ClientAccountingSummaryShadowLegacySource =
   | 'CaseBalance';
 
 export type ClientAccountingSummaryShadowJournalSource =
+  | 'COLLECTION'
   | 'COLLECTION_DISPOSITION_LINE'
   | 'CLIENT_PAYOUT'
   | 'CLIENT_OFFSET'
@@ -282,6 +283,40 @@ export interface CollectionCaseContextEvidenceItem {
   };
 }
 
+export type CollectionCashReceiptBackfillEvidenceStatus =
+  | 'MATCHED'
+  | 'BACKFILL_REQUIRED'
+  | 'REVERSAL_BACKFILL_REQUIRED'
+  | 'VALUE_MISMATCH'
+  | 'DIMENSION_MISMATCH'
+  | 'REFUND_POLICY_BLOCKED';
+
+export interface CollectionCashReceiptBackfillEvidenceItem {
+  collectionId: string;
+  status: CollectionCashReceiptBackfillEvidenceStatus;
+  blockerCodes: string[];
+  recordedJournalEntryId: string | null;
+  reversalJournalEntryId: string | null;
+  details: {
+    caseId: string;
+    sourceStatus: string;
+    amount: string;
+    currency: string;
+    occurredAt: string | null;
+    cancelledAt: string | null;
+    recordedSourceVersion: string | null;
+    reversalSourceVersion: string | null;
+  };
+}
+
+export interface CollectionCashReceiptBackfillEvidenceSummary {
+  sourceType: 'COLLECTION';
+  sourceVersionEvidence: 'createdAt/sourceId/status';
+  statusCounts: Record<CollectionCashReceiptBackfillEvidenceStatus, number>;
+  blockerCodes: string[];
+  items: CollectionCashReceiptBackfillEvidenceItem[];
+}
+
 export interface CollectionDispositionReplayEvidenceSummary {
   sourceType: 'COLLECTION_DISPOSITION_LINE';
   sourceAction: 'posted';
@@ -324,6 +359,7 @@ export interface BalanceLedgerReplayEvidenceSummary {
 
 export interface ClientAccountingSummaryReplayEvidenceReport {
   sourceVersion: 'acct-cutover-3d1-replay-evidence-v1';
+  collectionCashReceiptBackfillEvidence: CollectionCashReceiptBackfillEvidenceSummary;
   pendingDistribution: CollectionDispositionReplayEvidenceSummary;
   advanceBalance: BalanceLedgerReplayEvidenceSummary;
   blockerCodes: string[];
@@ -397,10 +433,11 @@ export interface ClientAccountingSummaryPrimarySwitchReadiness {
     blockerCodes: string[];
   };
   hybridPrimaryBoundary: ClientAccountingSummaryHybridPrimaryBoundary;
+  collectionCashReceiptEvidenceStatus: 'NOT_COMPUTED' | 'CLEAN' | 'BLOCKED';
   rawCollectionJournalSource: {
     requiredFor: 'caseScopedContext.debtorCollection';
-    status: 'MISSING';
-    blockerCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING', 'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING'];
+    status: 'NOT_COMPUTED' | 'EVIDENCE_CLEAN' | 'EVIDENCE_BLOCKED';
+    blockerCodes: string[];
   };
   blockerCodes: string[];
   gapCodes: string[];
@@ -421,6 +458,7 @@ export interface ClientAccountingSummaryShadowReport {
   expenseRequestBackfillEvidence?: ExpenseRequestBackfillEvidenceSummary;
   expensePaymentBackfillEvidence?: ExpensePaymentBackfillEvidenceSummary;
   expenseReimbursementApplicationBackfillEvidence?: ExpenseReimbursementApplicationBackfillEvidenceSummary;
+  collectionCashReceiptBackfillEvidence?: CollectionCashReceiptBackfillEvidenceSummary;
   expensePaidComparison?: ClientAccountingSummaryShadowValueComparison;
   expenseReimbursementApplicationComparison?: ClientAccountingSummaryShadowValueComparison;
   expenseUnpaidBreakdown?: ExpenseUnpaidJournalBreakdown;
@@ -596,6 +634,9 @@ interface CollectionReplayRow {
   currency: string;
   status: string;
   date: Date | null;
+  cancelledAt: Date | null;
+  createdAt: Date | null;
+  amount: { toString(): string };
 }
 
 interface CollectionDispositionLifecycleReplayRow {
@@ -622,6 +663,16 @@ interface ReplayJournalEntryRow {
   sourceType: string;
   sourceId: string;
   sourceAction: string;
+  entryType?: string;
+  metadata?: unknown;
+  lines?: Array<{
+    accountCode: string;
+    direction: string;
+    amount: { toString(): string };
+    currency: string;
+    caseId: string | null;
+    collectionId: string | null;
+  }>;
 }
 
 interface CaseScopedCollectionValueRow {
@@ -683,6 +734,10 @@ const EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS = 'EXPENSE_UNPAID_D
 const EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING = 'EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING';
 const EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISMATCH = 'EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISMATCH';
 const EXPENSE_REIMBURSEMENT_APPLICATION_DIMENSION_MISMATCH = 'EXPENSE_REIMBURSEMENT_APPLICATION_DIMENSION_MISMATCH';
+const COLLECTION_CASH_RECEIPT_BACKFILL_MISSING = 'COLLECTION_CASH_RECEIPT_BACKFILL_MISSING';
+const COLLECTION_CASH_RECEIPT_REVERSAL_BACKFILL_MISSING = 'COLLECTION_CASH_RECEIPT_REVERSAL_BACKFILL_MISSING';
+const COLLECTION_CASH_RECEIPT_VALUE_MISMATCH = 'COLLECTION_CASH_RECEIPT_VALUE_MISMATCH';
+const COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH = 'COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH';
 const COLLECTION_REFUND_POLICY_UNMAPPED = 'COLLECTION_REFUND_POLICY_UNMAPPED';
 const COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED = 'COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED';
 const COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED = 'COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED';
@@ -868,7 +923,7 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     group: 'CASE_SCOPED_CONTEXT',
     coverage: 'GAP',
     legacySources: ['Collection'],
-    journalSources: [],
+    journalSources: ['COLLECTION'],
     blockerCodes: ['CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING'],
     gapCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING'],
   },
@@ -878,7 +933,7 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     group: 'CASE_SCOPED_CONTEXT',
     coverage: 'BLOCKER',
     legacySources: ['Collection', 'CollectionDisposition'],
-    journalSources: ['COLLECTION_DISPOSITION_LINE'],
+    journalSources: ['COLLECTION', 'COLLECTION_DISPOSITION_LINE'],
     blockerCodes: ['CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING'],
     gapCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING'],
   },
@@ -898,7 +953,7 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     group: 'DERIVED',
     coverage: 'BLOCKER',
     legacySources: ['Collection', 'CollectionDisposition'],
-    journalSources: ['COLLECTION_DISPOSITION_LINE'],
+    journalSources: ['COLLECTION', 'COLLECTION_DISPOSITION_LINE'],
     blockerCodes: ['SUMMARY_DERIVED_FROM_BLOCKED_PENDING_DISTRIBUTION'],
     gapCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING'],
   },
@@ -917,7 +972,6 @@ const SUMMARY_PRIMARY_SWITCH_UNSUPPORTED_RESPONSE_PATHS = [
 ] as const;
 
 const SUMMARY_HYBRID_BOUNDARY_BLOCKERS = [
-  'COLLECTION_JOURNAL_SOURCE_MISSING',
   'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
   'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
   'SUMMARY_JOURNAL_ONLY_PRIMARY_SWITCH_BLOCKED_BY_LEGACY_CONTEXT',
@@ -926,7 +980,6 @@ const SUMMARY_HYBRID_BOUNDARY_BLOCKERS = [
 const SUMMARY_PRIMARY_SWITCH_STATIC_BLOCKERS = [
   'JOURNAL_DERIVED_CLIENT_ACCOUNTING_SUMMARY_READER_MISSING',
   'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
-  'COLLECTION_JOURNAL_SOURCE_MISSING',
   'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
   'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
   'SUMMARY_DERIVED_FROM_BLOCKED_PENDING_DISTRIBUTION',
@@ -1146,7 +1199,7 @@ export class ClientAccountingSummaryShadowReportService {
       }),
       this.prisma!.collection.findMany({
         where: { tenantId, caseId: { in: caseIds }, currency, status: { in: ['CONFIRMED', 'CANCELLED', 'REFUNDED'] } },
-        select: { id: true, caseId: true, currency: true, status: true, date: true },
+        select: { id: true, caseId: true, currency: true, status: true, date: true, cancelledAt: true, createdAt: true, amount: true },
       }),
       this.prisma!.collectionDisposition.findMany({
         where: { tenantId, caseId: { in: caseIds }, currency, status: { not: 'POSTED' } },
@@ -1174,12 +1227,19 @@ export class ClientAccountingSummaryShadowReportService {
 
     const lineIds = dispositionLines.map((line) => line.id);
     const ledgerIds = balanceLedgers.map((ledger) => ledger.id);
+    const collectionIds = collections.map((collection) => collection.id);
     const replayJournalSources: Prisma.AccountingJournalEntryWhereInput[] = [
       ...(lineIds.length > 0
         ? [{ sourceType: 'COLLECTION_DISPOSITION_LINE' as const, sourceAction: 'posted', sourceId: { in: lineIds } }]
         : []),
       ...(ledgerIds.length > 0
         ? [{ sourceType: 'BALANCE_LEDGER' as const, sourceAction: 'posted', sourceId: { in: ledgerIds } }]
+        : []),
+      ...(collectionIds.length > 0
+        ? [
+            { sourceType: 'COLLECTION' as const, sourceAction: 'recorded', sourceId: { in: collectionIds } },
+            { sourceType: 'COLLECTION' as const, sourceAction: 'cancel', sourceId: { in: collectionIds } },
+          ]
         : []),
     ];
     const journalEntries = replayJournalSources.length === 0
@@ -1189,7 +1249,24 @@ export class ClientAccountingSummaryShadowReportService {
             tenantId,
             OR: replayJournalSources,
           },
-          select: { id: true, sourceType: true, sourceId: true, sourceAction: true },
+          select: {
+            id: true,
+            sourceType: true,
+            sourceId: true,
+            sourceAction: true,
+            entryType: true,
+            metadata: true,
+            lines: {
+              select: {
+                accountCode: true,
+                direction: true,
+                amount: true,
+                currency: true,
+                caseId: true,
+                collectionId: true,
+              },
+            },
+          },
         })) as ReplayJournalEntryRow[];
 
     return buildReplayEvidence(dispositionLines, collections, lifecycleDispositions, balanceLedgers, journalEntries);
@@ -1569,15 +1646,21 @@ export class ClientAccountingSummaryShadowReportService {
     const components = SUMMARY_COMPONENTS.map((component) => cloneComponent(component));
     const expenseCoveragePolicy = buildExpenseCoveragePolicy();
     applySupportedValueComparisons(components, request.legacyClientScoped, shadowValues);
+    const collectionCashReceiptBackfillEvidence = shadowValues?.replayEvidence.collectionCashReceiptBackfillEvidence ?? null;
     applyReplayEvidenceBreakdowns(components, shadowValues?.replayEvidence ?? null);
     applyCaseScopedPrimaryReaderEvidenceBreakdowns(components, shadowValues?.caseScopedPrimaryReaderEvidence ?? null);
     const supportedValueSummary = summarizeSupportedValueComparisons(components);
-    const clientScopedPrimaryReaderEvidence = buildClientScopedPrimaryReaderEvidence(components, shadowValues?.clientScopedPrimaryReaderValues ?? null);
-    const summaryHybridPrimaryBoundary = buildSummaryHybridPrimaryBoundary();
+    const clientScopedPrimaryReaderEvidence = buildClientScopedPrimaryReaderEvidence(
+      components,
+      shadowValues?.clientScopedPrimaryReaderValues ?? null,
+      collectionCashReceiptBackfillEvidence,
+    );
+    const summaryHybridPrimaryBoundary = buildSummaryHybridPrimaryBoundary(collectionCashReceiptBackfillEvidence);
     const summaryPrimarySwitchReadiness = buildSummaryPrimarySwitchReadiness(
       clientScopedPrimaryReaderEvidence,
       shadowValues?.caseScopedPrimaryReaderEvidence ?? null,
       summaryHybridPrimaryBoundary,
+      collectionCashReceiptBackfillEvidence,
     );
 
     return {
@@ -1604,6 +1687,7 @@ export class ClientAccountingSummaryShadowReportService {
       summaryHybridPrimaryBoundary,
       summaryPrimarySwitchReadiness,
       replayEvidence: shadowValues?.replayEvidence,
+      collectionCashReceiptBackfillEvidence: collectionCashReceiptBackfillEvidence ?? undefined,
       blockerCodes: uniqueSorted([
         ...components.flatMap((component) => component.blockerCodes),
         ...expenseCoveragePolicy.blockerCodes,
@@ -1617,6 +1701,7 @@ export class ClientAccountingSummaryShadowReportService {
         ...summaryHybridPrimaryBoundary.blockerCodes,
         ...summaryPrimarySwitchReadiness.blockerCodes,
         ...(shadowValues?.replayEvidence.blockerCodes ?? []),
+        ...(shadowValues?.replayEvidence.collectionCashReceiptBackfillEvidence.blockerCodes ?? []),
       ]),
       gapCodes: uniqueSorted([
         ...components.flatMap((component) => component.gapCodes),
@@ -1730,6 +1815,7 @@ function applyCaseScopedPrimaryReaderEvidenceBreakdowns(
     ]);
   }
 
+
   const advanceBalance = components.find((component) => component.key === 'advanceBalance');
   if (advanceBalance) {
     advanceBalance.valueComparison = { ...evidence.comparisons.advanceBalance };
@@ -1824,13 +1910,30 @@ function applyReplayEvidenceBreakdowns(
   replayEvidence: ClientAccountingSummaryReplayEvidenceReport | null,
 ): void {
   if (!replayEvidence) return;
+  const collectionCashReceiptBlockers = replayEvidence.collectionCashReceiptBackfillEvidence.blockerCodes;
 
   const pendingDistribution = components.find((component) => component.key === 'pendingDistribution');
   if (pendingDistribution) {
+    pendingDistribution.gapCodes = pendingDistribution.gapCodes.filter((code) => code !== 'COLLECTION_JOURNAL_SOURCE_MISSING');
     pendingDistribution.blockerCodes = uniqueSorted([
       ...pendingDistribution.blockerCodes,
       ...replayEvidence.pendingDistribution.blockerCodes,
+      ...collectionCashReceiptBlockers,
     ]);
+  }
+
+  const debtorCollection = components.find((component) => component.key === 'debtorCollection');
+  if (debtorCollection) {
+    debtorCollection.gapCodes = debtorCollection.gapCodes.filter((code) => code !== 'COLLECTION_JOURNAL_SOURCE_MISSING');
+    debtorCollection.blockerCodes = uniqueSorted([
+      ...debtorCollection.blockerCodes,
+      ...collectionCashReceiptBlockers,
+    ]);
+  }
+
+  const needsReview = components.find((component) => component.key === 'needsReview');
+  if (needsReview) {
+    needsReview.gapCodes = needsReview.gapCodes.filter((code) => code !== 'COLLECTION_JOURNAL_SOURCE_MISSING');
   }
 
   const advanceBalance = components.find((component) => component.key === 'advanceBalance');
@@ -1848,6 +1951,7 @@ const CLIENT_SCOPED_PRIMARY_READER_UNSUPPORTED_RESPONSE_PATHS = SUMMARY_PRIMARY_
 function buildClientScopedPrimaryReaderEvidence(
   components: ClientAccountingSummaryShadowComponent[],
   values: ClientAccountingJournalSummaryClientScopedValues | null,
+  collectionCashReceiptBackfillEvidence: CollectionCashReceiptBackfillEvidenceSummary | null,
 ): ClientAccountingJournalSummaryClientScopedParityEvidence {
   const comparisons: Partial<Record<typeof SUPPORTED_COMPONENT_KEYS[number], ClientAccountingSummaryShadowValueComparison>> = {};
   for (const key of SUPPORTED_COMPONENT_KEYS) {
@@ -1861,12 +1965,15 @@ function buildClientScopedPrimaryReaderEvidence(
   const mismatch = comparisonValues.some((comparison) => comparison.status === 'MISMATCH');
   const notComputed = comparisonValues.length < SUPPORTED_COMPONENT_KEYS.length || comparisonValues.some((comparison) => comparison.status === 'NOT_COMPUTED');
   const comparisonBlockers = uniqueSorted(comparisonValues.flatMap((comparison) => comparison.blockerCodes));
+  const collectionCashReceiptBlockers = collectionCashReceiptBackfillEvidence
+    ? collectionCashReceiptBackfillEvidence.blockerCodes
+    : ['COLLECTION_JOURNAL_SOURCE_MISSING'];
   const blockerCodes = uniqueSorted([
     CLIENT_SCOPED_PRIMARY_READER_BLOCKER,
-    'COLLECTION_JOURNAL_SOURCE_MISSING',
     'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
     'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
     'SUMMARY_DERIVED_FROM_BLOCKED_PENDING_DISTRIBUTION',
+    ...collectionCashReceiptBlockers,
     ...comparisonBlockers,
   ]);
 
@@ -1886,6 +1993,7 @@ function buildSummaryPrimarySwitchReadiness(
   clientScopedEvidence: ClientAccountingJournalSummaryClientScopedParityEvidence,
   caseScopedEvidence: ClientAccountingSummaryCaseScopedPrimaryReaderEvidence | null,
   hybridPrimaryBoundary: ClientAccountingSummaryHybridPrimaryBoundary,
+  collectionCashReceiptBackfillEvidence: CollectionCashReceiptBackfillEvidenceSummary | null,
 ): ClientAccountingSummaryPrimarySwitchReadiness {
   const clientComparisons = Object.values(clientScopedEvidence.comparisons);
   const clientComparisonBlockers = uniqueSorted(clientComparisons.flatMap((comparison) => comparison.blockerCodes));
@@ -1897,14 +2005,25 @@ function buildSummaryPrimarySwitchReadiness(
         : 'MATCH';
   const caseScopedBlockers = caseScopedEvidence?.blockerCodes ?? [
     'CLIENT_ACCOUNTING_SUMMARY_CASE_SCOPED_PRIMARY_READER_MISSING',
-    'COLLECTION_JOURNAL_SOURCE_MISSING',
     'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
   ];
+  const collectionCashReceiptBlockers = collectionCashReceiptBackfillEvidence
+    ? collectionCashReceiptBackfillEvidence.blockerCodes
+    : ['COLLECTION_JOURNAL_SOURCE_MISSING'];
+  const collectionCashReceiptEvidenceStatus = collectionCashReceiptBackfillEvidence
+    ? collectionCashReceiptBlockers.length > 0 ? 'BLOCKED' : 'CLEAN'
+    : 'NOT_COMPUTED';
+  const rawCollectionJournalSourceStatus = collectionCashReceiptEvidenceStatus === 'NOT_COMPUTED'
+    ? 'NOT_COMPUTED'
+    : collectionCashReceiptEvidenceStatus === 'CLEAN'
+      ? 'EVIDENCE_CLEAN'
+      : 'EVIDENCE_BLOCKED';
   const blockerCodes = uniqueSorted([
     ...SUMMARY_PRIMARY_SWITCH_STATIC_BLOCKERS,
     ...hybridPrimaryBoundary.blockerCodes,
     ...clientComparisonBlockers,
     ...caseScopedBlockers,
+    ...collectionCashReceiptBlockers,
   ]);
 
   return {
@@ -1924,17 +2043,27 @@ function buildSummaryPrimarySwitchReadiness(
       blockerCodes: uniqueSorted(caseScopedBlockers),
     },
     hybridPrimaryBoundary,
+    collectionCashReceiptEvidenceStatus,
     rawCollectionJournalSource: {
       requiredFor: 'caseScopedContext.debtorCollection',
-      status: 'MISSING',
-      blockerCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING', 'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING'],
+      status: rawCollectionJournalSourceStatus,
+      blockerCodes: uniqueSorted([
+        ...collectionCashReceiptBlockers,
+        'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+      ]),
     },
     blockerCodes,
-    gapCodes: ['COLLECTION_JOURNAL_SOURCE_MISSING'],
+    gapCodes: collectionCashReceiptBackfillEvidence ? [] : ['COLLECTION_JOURNAL_SOURCE_MISSING'],
   };
 }
 
-function buildSummaryHybridPrimaryBoundary(): ClientAccountingSummaryHybridPrimaryBoundary {
+function buildSummaryHybridPrimaryBoundary(
+  collectionCashReceiptBackfillEvidence: CollectionCashReceiptBackfillEvidenceSummary | null = null,
+): ClientAccountingSummaryHybridPrimaryBoundary {
+  const collectionCashReceiptBlockers = collectionCashReceiptBackfillEvidence
+    ? collectionCashReceiptBackfillEvidence.blockerCodes
+    : ['COLLECTION_JOURNAL_SOURCE_MISSING'];
+
   return {
     sourceVersion: 'acct-cutover-3e4b2g1-summary-hybrid-primary-boundary-v1',
     mode: 'CLIENT_SCOPED_JOURNAL_WITH_CASE_SCOPED_LEGACY_CONTEXT',
@@ -1944,7 +2073,10 @@ function buildSummaryHybridPrimaryBoundary(): ClientAccountingSummaryHybridPrima
     primarySwitchUnchanged: true,
     safeForPrimaryCutover: false,
     fallbackResponsePaths: [...SUMMARY_PRIMARY_SWITCH_UNSUPPORTED_RESPONSE_PATHS],
-    blockerCodes: [...SUMMARY_HYBRID_BOUNDARY_BLOCKERS],
+    blockerCodes: uniqueSorted([
+      ...SUMMARY_HYBRID_BOUNDARY_BLOCKERS,
+      ...collectionCashReceiptBlockers,
+    ]),
   };
 }
 function summarizeSupportedValueComparisons(
@@ -1976,17 +2108,134 @@ function buildReplayEvidence(
   journalEntries: ReplayJournalEntryRow[],
 ): ClientAccountingSummaryReplayEvidenceReport {
   const journalBySource = new Map(journalEntries.map((entry) => [`${entry.sourceType}:${entry.sourceAction}:${entry.sourceId}`, entry]));
+  const collectionCashReceiptBackfillEvidence = buildCollectionCashReceiptBackfillEvidence(collections, journalBySource);
   const pendingDistribution = buildCollectionDispositionReplayEvidence(dispositionLines, collections, lifecycleDispositions, journalBySource);
   const advanceBalance = buildBalanceLedgerReplayEvidence(balanceLedgers, journalBySource);
 
   return {
     sourceVersion: 'acct-cutover-3d1-replay-evidence-v1',
+    collectionCashReceiptBackfillEvidence,
     pendingDistribution,
     advanceBalance,
-    blockerCodes: uniqueSorted([...pendingDistribution.blockerCodes, ...advanceBalance.blockerCodes]),
+    blockerCodes: uniqueSorted([
+      ...collectionCashReceiptBackfillEvidence.blockerCodes,
+      ...pendingDistribution.blockerCodes,
+      ...advanceBalance.blockerCodes,
+    ]),
   };
 }
 
+function buildCollectionCashReceiptBackfillEvidence(
+  collections: CollectionReplayRow[],
+  journalBySource: Map<string, ReplayJournalEntryRow>,
+): CollectionCashReceiptBackfillEvidenceSummary {
+  const items = collections.map((collection) => collectionCashReceiptBackfillEvidenceItem(
+    collection,
+    journalBySource.get(`COLLECTION:recorded:${collection.id}`) ?? null,
+    journalBySource.get(`COLLECTION:cancel:${collection.id}`) ?? null,
+  ));
+  const statusCounts = emptyCollectionCashReceiptBackfillStatusCounts();
+  for (const item of items) statusCounts[item.status] += 1;
+
+  return {
+    sourceType: 'COLLECTION',
+    sourceVersionEvidence: 'createdAt/sourceId/status',
+    statusCounts,
+    blockerCodes: uniqueSorted(items.flatMap((item) => item.blockerCodes)),
+    items,
+  };
+}
+
+function collectionCashReceiptBackfillEvidenceItem(
+  collection: CollectionReplayRow,
+  recordedJournal: ReplayJournalEntryRow | null,
+  reversalJournal: ReplayJournalEntryRow | null,
+): CollectionCashReceiptBackfillEvidenceItem {
+  const blockerCodes: string[] = [];
+  let status: CollectionCashReceiptBackfillEvidenceStatus = 'MATCHED';
+
+  if (collection.status === 'REFUNDED') {
+    blockerCodes.push(COLLECTION_REFUND_POLICY_UNMAPPED);
+    status = 'REFUND_POLICY_BLOCKED';
+  } else {
+    if (!recordedJournal) {
+      blockerCodes.push(COLLECTION_CASH_RECEIPT_BACKFILL_MISSING);
+      status = 'BACKFILL_REQUIRED';
+    } else {
+      blockerCodes.push(...collectionJournalMismatchBlockers(collection, recordedJournal, 'recorded'));
+    }
+
+    if (collection.status === 'CANCELLED') {
+      if (!reversalJournal) {
+        blockerCodes.push(COLLECTION_CASH_RECEIPT_REVERSAL_BACKFILL_MISSING);
+        status = status === 'MATCHED' ? 'REVERSAL_BACKFILL_REQUIRED' : status;
+      } else {
+        blockerCodes.push(...collectionJournalMismatchBlockers(collection, reversalJournal, 'cancel'));
+      }
+    }
+  }
+
+  const uniqueBlockers = uniqueSorted(blockerCodes);
+  if (uniqueBlockers.includes(COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH)) {
+    status = 'DIMENSION_MISMATCH';
+  } else if (uniqueBlockers.includes(COLLECTION_CASH_RECEIPT_VALUE_MISMATCH)) {
+    status = 'VALUE_MISMATCH';
+  }
+
+  return {
+    collectionId: collection.id,
+    status,
+    blockerCodes: uniqueBlockers,
+    recordedJournalEntryId: recordedJournal?.id ?? null,
+    reversalJournalEntryId: reversalJournal?.id ?? null,
+    details: {
+      caseId: collection.caseId,
+      sourceStatus: collection.status,
+      amount: decimalToString(decimalOf(collection.amount)),
+      currency: collection.currency,
+      occurredAt: collection.date?.toISOString() ?? null,
+      cancelledAt: collection.cancelledAt?.toISOString() ?? null,
+      recordedSourceVersion: readSourceVersion(recordedJournal?.metadata),
+      reversalSourceVersion: readSourceVersion(reversalJournal?.metadata),
+    },
+  };
+}
+
+function collectionJournalMismatchBlockers(
+  collection: CollectionReplayRow,
+  journal: ReplayJournalEntryRow,
+  action: 'recorded' | 'cancel',
+): string[] {
+  const blockers: string[] = [];
+  const expectedEntryType = action === 'recorded' ? 'COLLECTION_CASH_RECEIPT_RECORDED' : 'COLLECTION_CASH_RECEIPT_REVERSED';
+  const expectedCashDirection = action === 'recorded' ? 'DEBIT' : 'CREDIT';
+  const expectedClearingDirection = action === 'recorded' ? 'CREDIT' : 'DEBIT';
+  const cashLine = journal.lines?.find((line) => line.accountCode === 'CASH_CLEARING') ?? null;
+  const clearingLine = journal.lines?.find((line) => line.accountCode === 'CASE_COLLECTION_CLEARING') ?? null;
+  const expectedAmount = decimalOf(collection.amount);
+
+  if (journal.entryType && journal.entryType !== expectedEntryType) blockers.push(COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH);
+  for (const line of [cashLine, clearingLine]) {
+    if (!line) {
+      blockers.push(COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH);
+      continue;
+    }
+    if (line.currency !== collection.currency || line.caseId !== collection.caseId || line.collectionId !== collection.id) {
+      blockers.push(COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH);
+    }
+    if (!decimalOf(line.amount).equals(expectedAmount)) blockers.push(COLLECTION_CASH_RECEIPT_VALUE_MISMATCH);
+  }
+  if (cashLine && cashLine.direction !== expectedCashDirection) blockers.push(COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH);
+  if (clearingLine && clearingLine.direction !== expectedClearingDirection) blockers.push(COLLECTION_CASH_RECEIPT_DIMENSION_MISMATCH);
+
+  return blockers;
+}
+
+function readSourceVersion(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const sourceVersion = (metadata as { sourceVersion?: unknown }).sourceVersion;
+  return typeof sourceVersion === 'string' && sourceVersion.trim() ? sourceVersion : null;
+}
 function buildCollectionDispositionReplayEvidence(
   dispositionLines: CollectionDispositionLineReplayRow[],
   collections: CollectionReplayRow[],
@@ -2146,6 +2395,17 @@ function balanceLedgerReplayItem(
 
 function isDispositionLineSource(value: string | null | undefined): boolean {
   return Boolean(value?.startsWith('disposition_line:'));
+}
+
+function emptyCollectionCashReceiptBackfillStatusCounts(): Record<CollectionCashReceiptBackfillEvidenceStatus, number> {
+  return {
+    MATCHED: 0,
+    BACKFILL_REQUIRED: 0,
+    REVERSAL_BACKFILL_REQUIRED: 0,
+    VALUE_MISMATCH: 0,
+    DIMENSION_MISMATCH: 0,
+    REFUND_POLICY_BLOCKED: 0,
+  };
 }
 
 function emptyCollectionDispositionLineReplayStatusCounts(): Record<CollectionDispositionLineReplayEvidenceStatus, number> {

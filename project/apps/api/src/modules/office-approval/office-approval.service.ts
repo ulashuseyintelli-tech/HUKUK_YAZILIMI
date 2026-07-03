@@ -28,6 +28,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
+import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.service';
 
 export interface CreatePendingRequestInput {
   tenantId: string;
@@ -46,6 +47,7 @@ export class OfficeApprovalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly domainSync?: OfficeApprovalDomainSyncService,
   ) {}
 
   /**
@@ -180,12 +182,17 @@ export class OfficeApprovalService {
     if (byUserId !== req.requesterUserId) {
       throw new ForbiddenException('Yalnız talep sahibi iptal edebilir.');
     }
-    const res = await this.prisma.officeApprovalRequest.updateMany({
-      where: { id, status: OfficeApprovalStatus.PENDING_APPROVAL },
-      data: { status: OfficeApprovalStatus.CANCELLED, decidedAt: new Date() },
+    let updated: OfficeApprovalRequest | null = null;
+    await this.prisma.$transaction(async (tx) => {
+      const res = await tx.officeApprovalRequest.updateMany({
+        where: { id, status: OfficeApprovalStatus.PENDING_APPROVAL },
+        data: { status: OfficeApprovalStatus.CANCELLED, decidedAt: new Date() },
+      });
+      if (res.count === 0) throw new ConflictException('Talep eszamanli degistirildi.');
+      updated = await this.requireRequestInTransaction(tx, id);
+      await this.domainSync?.syncAfterDecision(tx, updated);
     });
-    if (res.count === 0) throw new ConflictException('Talep eşzamanlı değiştirildi.');
-    const updated = await this.requireRequest(id);
+    if (!updated) throw new ConflictException('Talep eszamanli degistirildi.');
     await this.auditLog('OFFICE_APPROVAL_CANCELLED', updated, byUserId);
     return updated;
   }
@@ -329,6 +336,12 @@ export class OfficeApprovalService {
     return req;
   }
 
+  private async requireRequestInTransaction(tx: Prisma.TransactionClient, id: string): Promise<OfficeApprovalRequest> {
+    const req = await tx.officeApprovalRequest.findUnique({ where: { id } });
+    if (!req) throw new NotFoundException('Onay talebi bulunamadi.');
+    return req;
+  }
+
   private assertStatus(req: OfficeApprovalRequest, expected: OfficeApprovalStatus): void {
     if (req.status !== expected) {
       throw new ConflictException(`Onay talebi '${req.status}' durumunda; '${expected}' bekleniyordu.`);
@@ -376,13 +389,18 @@ export class OfficeApprovalService {
     auditAction: string,
     extra: Record<string, unknown> = {},
   ): Promise<OfficeApprovalRequest> {
-    const res = await this.prisma.officeApprovalRequest.updateMany({
-      where: { id, status: OfficeApprovalStatus.PENDING_APPROVAL },
-      // NOT: savedIntent (orijinal niyet) burada ASLA güncellenmez; approver değişikliği yalnız extra (replacement*) ile gelir.
-      data: { status: next, approverUserId, decidedAt: new Date(), decisionNote: note, ...extra },
+    let updated: OfficeApprovalRequest | null = null;
+    await this.prisma.$transaction(async (tx) => {
+      const res = await tx.officeApprovalRequest.updateMany({
+        where: { id, status: OfficeApprovalStatus.PENDING_APPROVAL },
+        // NOT: savedIntent (orijinal niyet) burada ASLA guncellenmez; approver degisikligi yalniz extra (replacement*) ile gelir.
+        data: { status: next, approverUserId, decidedAt: new Date(), decisionNote: note, ...extra },
+      });
+      if (res.count === 0) throw new ConflictException('Talep eszamanli degistirildi; karar uygulanmadi.');
+      updated = await this.requireRequestInTransaction(tx, id);
+      await this.domainSync?.syncAfterDecision(tx, updated);
     });
-    if (res.count === 0) throw new ConflictException('Talep eşzamanlı değiştirildi; karar uygulanmadı.');
-    const updated = await this.requireRequest(id);
+    if (!updated) throw new ConflictException('Talep eszamanli degistirildi; karar uygulanmadi.');
     await this.auditLog(auditAction, updated, approverUserId);
     return updated;
   }

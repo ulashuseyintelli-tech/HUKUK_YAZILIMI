@@ -705,6 +705,20 @@ class ApiClient {
     return response.data;
   }
 
+
+  async uploadClientWorkspacePoaFile(clientId: string, poaId: string, file: File) {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await this.post<{ data: ClientWorkspacePoaUploadResult }>(`/clients/${clientId}/poas/${poaId}/file`, body);
+    const data = response.data.data;
+    return {
+      clientId: data.clientId,
+      poaId: data.poaId,
+      hasFile: data.hasFile,
+      fileSize: data.fileSize ?? null,
+      mimeType: data.mimeType ?? null,
+    };
+  }
   async sendClientWorkspaceTemplateNotification(clientId: string, input: ClientWorkspaceTemplateNotificationInput) {
     const body: ClientWorkspaceTemplateNotificationInput = {
       templateCode: input.templateCode,
@@ -3441,6 +3455,13 @@ export interface ClientWorkspacePoaReminderResult {
   skipped: number;
 }
 
+export interface ClientWorkspacePoaUploadResult {
+  clientId: string;
+  poaId: string;
+  hasFile: boolean;
+  fileSize: number | null;
+  mimeType: string | null;
+}
 export type ClientWorkspaceTemplateNotificationCode = 'GENEL_BILGILENDIRME' | 'DOSYA_DURUMU';
 export type ClientWorkspaceTemplateNotificationStatus = 'sent' | 'skipped' | 'failed';
 

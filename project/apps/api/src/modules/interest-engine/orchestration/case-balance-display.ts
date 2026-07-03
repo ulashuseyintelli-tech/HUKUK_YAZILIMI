@@ -8,8 +8,10 @@
  *  - `claimRemaining`  = CalculationResult.totalDue        → ödeme TAHSİSİ sonrası NET kalan alacak (anapara+faiz, claim-only).
  *  - `costs`/`ancillaries` = Σ CaseBalanceResult.projections.costs / .ancillaries (CASE-level; currency-split DEĞİL).
  *  - `collected`       = best-effort: ödeme-bazında dedup Σ allocations.paymentAmount (ödeme yoksa 0).
- *  Standalone "kalan anapara" satırı EXPOSE EDİLMEZ: engine CalculationResult finalDebtStates taşımaz
- *  (totalDue = anapara+faiz). `totalDue − totalInterest` GÜVENSİZ (farklı baz: net totalDue vs brüt faiz) → yapılmaz.
+ *  Standalone "kalan anapara" (PRICIPAL bucket) satırı yalnız CalculationResult.finalDebtStates VARSA
+ *  üretilir (computeBalance() bunu claim/allocation state'inden zaten dolduruyor — bkz. finalDebtStatesPresent
+ *  aşağıda); alan boşsa (örn. 0-bucket currency grubu) uydurma principal ÜRETİLMEZ. `totalDue − totalInterest`
+ *  hâlâ GÜVENSİZ (farklı baz: net totalDue vs brüt faiz) → o yol hiç kullanılmaz.
  */
 
 import { AncillaryType } from '../types/domain.types';
