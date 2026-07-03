@@ -12,6 +12,8 @@ function mk() {
   const caseService = { delete: jest.fn().mockResolvedValue({ success: true, deleted: true }) };
   const audit = { log: jest.fn().mockResolvedValue(undefined) };
   const hardGuard = new PermissionHardGuardService(audit as any);
+  // P2b-1: guidedOpenObserve.observe() delete()'te ADMIN guard'dan SONRA çağrılır (best-effort) — çalışan mock gerekir.
+  const guidedOpenObserve = { observe: jest.fn().mockResolvedValue(undefined) };
   const controller = new CaseController(
     caseService as any,
     {} as any, // ocrService
@@ -19,8 +21,11 @@ function mk() {
     {} as any, // temporalResponsibilityService
     {} as any, // warnOnlyAudit (delete'te kullanılmaz)
     hardGuard,
+    {} as any, // responsibilityHistoryService (delete'te kullanılmaz)
+    {} as any, // legalResponsibleLawyerService (delete'te kullanılmaz)
+    guidedOpenObserve as any,
   );
-  return { controller, caseService, audit };
+  return { controller, caseService, audit, guidedOpenObserve };
 }
 
 describe("WP-4e-1 CaseController.delete hard guard", () => {
@@ -50,7 +55,11 @@ describe("WP-4e-1 CaseController.delete hard guard", () => {
     const caseService = { delete: jest.fn() };
     const audit = { log: jest.fn().mockRejectedValue(new Error("db down")) };
     const hardGuard = new PermissionHardGuardService(audit as any);
-    const controller = new CaseController(caseService as any, {} as any, {} as any, {} as any, {} as any, hardGuard);
+    const guidedOpenObserve = { observe: jest.fn().mockResolvedValue(undefined) };
+    const controller = new CaseController(
+      caseService as any, {} as any, {} as any, {} as any, {} as any, hardGuard,
+      {} as any, {} as any, guidedOpenObserve as any,
+    );
     await expect(controller.delete("t1", "u1", "USER", "c1")).rejects.toBeInstanceOf(ForbiddenException);
     expect(caseService.delete).not.toHaveBeenCalled();
   });

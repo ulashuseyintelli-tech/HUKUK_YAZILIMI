@@ -66,13 +66,19 @@ describe("WP-1d-3 TemporalResponsibilityService.getResponsibilityAt", () => {
 
 // ---- Controller: asOf parse + delegation ----
 // NOT: WP-4d-1 getResponsibilityAt'e userId (2. param) + warnOnlyAudit ctor arg'ı, WP-4e-1 ise
-// permissionHardGuard ctor arg'ı ekledi. Bu yardımcılar getResponsibilityAt'i etkilemez (yalnız delete +
+// permissionHardGuard, sonrasında responsibilityHistoryService + legalResponsibleLawyerService +
+// guidedOpenObserve ctor arg'ı ekledi. Bu yardımcılar getResponsibilityAt'i etkilemez (yalnız delete +
 // warn-only emit) ama ctor/çağrı imzaları güncel tutulmalı (aksi halde bu spec kırılır).
 function makeController(getResp = jest.fn(async () => ({ ok: true }))) {
   const temporal = { getResponsibilityAt: getResp } as any;
   const warnOnly = { recordWouldDeny: jest.fn().mockResolvedValue(undefined) } as any;
   const hardGuard = { assertBridgeAdmin: jest.fn().mockResolvedValue(undefined) } as any;
-  const controller = new CaseController({} as any, {} as any, {} as any, temporal, warnOnly, hardGuard);
+  const controller = new CaseController(
+    {} as any, {} as any, {} as any, temporal, warnOnly, hardGuard,
+    {} as any, // responsibilityHistoryService (kullanılmaz)
+    {} as any, // legalResponsibleLawyerService (kullanılmaz)
+    {} as any, // guidedOpenObserve (kullanılmaz)
+  );
   return { controller, getResp };
 }
 

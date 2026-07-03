@@ -17,6 +17,10 @@ function mkController() {
     {} as any, // responsibleCandidatesService
     temporal as any,
     warn as any,
+    {} as any, // permissionHardGuard (getResponsibilityAt'te kullanılmaz)
+    {} as any, // responsibilityHistoryService (kullanılmaz)
+    {} as any, // legalResponsibleLawyerService (kullanılmaz)
+    {} as any, // guidedOpenObserve (kullanılmaz)
   );
   return { controller, temporal, warn };
 }
