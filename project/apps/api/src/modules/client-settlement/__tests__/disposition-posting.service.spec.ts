@@ -4,8 +4,8 @@
  * BaÅŸarÄ± kriteri (UlaÅŸ):
  *  - recommend: line validasyonu (sum==total, HELD yasak, CLUSTER caseClientId, foreign reddi) + finansal etki YOK + P4 talebi.
  *  - approve: yalnÄ±z PARTNER/yetkili (isApproverEligible) + P4.approve (4-gÃ¶z); finansal etki YOK.
- *  - post: YALNIZ DISTRIBUTION_APPROVED + APPROVED P4; OFFSETâ†’BalanceLedger CREDIT korelasyonlu (finansal etki burada).
- *  - non-APPROVED post reddedilir; capability'siz approve reddedilir.
+ *  - post: yalnÄ±z PARTNER/yetkili + DISTRIBUTION_APPROVED + APPROVED P4; OFFSETâ†’BalanceLedger CREDIT korelasyonlu (finansal etki burada).
+ *  - non-APPROVED post reddedilir; capability'siz approve/post reddedilir.
  */
 import { NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -238,6 +238,7 @@ describe('DispositionPostingService.post', () => {
     const approval = buildApproval();
     const res = await svc(prisma, approval).post('t1', 'd1', { userId: 'u3' });
     expect(res).toEqual({ posted: true, dispositionId: 'd1', lineCount: 1 });
+    expect(approval.isApproverEligible).toHaveBeenCalledWith('u3', 't1');
     expect(tx.collectionDisposition.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ status: 'DISTRIBUTION_APPROVED' }), data: expect.objectContaining({ status: 'POSTED', postedById: 'u3' }) }),
     );
@@ -252,6 +253,21 @@ describe('DispositionPostingService.post', () => {
       }),
     );
     expect(approval.markExecutionSucceeded).toHaveBeenCalledWith('appr-1', 'u3');
+  });
+
+  it('capability olmayan kullanıcı DISTRIBUTION_APPROVED disposition post edemez -> 403, ledger/journal yazılmaz', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100), caseClientId: 'cc-A' }] });
+    const approval = buildApproval({ eligible: false });
+
+    await expect(svc(prisma, approval).post('t1', 'd1', { userId: 'u-ordinary' })).rejects.toThrow(ForbiddenException);
+
+    expect(approval.isApproverEligible).toHaveBeenCalledWith('u-ordinary', 't1');
+    expect(prisma.officeApprovalRequest.findFirst).not.toHaveBeenCalled();
+    expect(prisma.collectionDispositionLine.findMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.balanceLedger.create).not.toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).not.toHaveBeenCalled();
+    expect(approval.markExecutionSucceeded).not.toHaveBeenCalled();
   });
 
   it('disposition APPROVED deÄŸilse â†’ reject (Partner/Manager onayÄ± gerekir)', async () => {

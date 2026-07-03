@@ -67,7 +67,7 @@ interface ResolvedLine {
  *   P4 OfficeApprovalRequest (PENDING) açılır (4-göz: requester onaylayamaz).
  * - approve(): yalnız PARTNER/yetkilendirilmiş avukat (isApproverEligible) + P4.approve (requester≠approver);
  *   line'lar bu noktadan sonra DONDU; finansal etki YOK.
- * - post(): yalnız DISTRIBUTION_APPROVED + APPROVED P4 request; OFFSET_CLIENT_ADVANCE→BalanceLedger CREDIT
+ * - post(): yalnız PARTNER/yetkilendirilmiş avukat + DISTRIBUTION_APPROVED + APPROVED P4 request; OFFSET_CLIENT_ADVANCE→BalanceLedger CREDIT
  *   ve status→POSTED bu tek $transaction'da. İnvariantlar: sum==totalAmount; collection CONFIRMED; çift-sayım yok.
  */
 @Injectable()
@@ -189,7 +189,7 @@ export class DispositionPostingService {
   }
 
   /**
-   * TM3 M2 + S8-B FAZ-0 — Finansal post: YALNIZ DISTRIBUTION_APPROVED + APPROVED P4 request. DISTRIBUTION_APPROVED → POSTED.
+   * TM3 M2 + S8-B FAZ-0 — Finansal post: yalnız PARTNER/yetkilendirilmiş avukat + DISTRIBUTION_APPROVED + APPROVED P4 request. DISTRIBUTION_APPROVED → POSTED.
    * Finansal etki (OFFSET_CLIENT_ADVANCE→BalanceLedger CREDIT, proceeds line'ları) BU adımda doğar.
    *
    * /// <remarks>
@@ -202,11 +202,17 @@ export class DispositionPostingService {
     dispositionId: string,
     actor?: { userId?: string },
   ): Promise<{ posted: boolean; dispositionId: string; lineCount: number }> {
+    if (!actor?.userId) throw new BadRequestException('post için actor (approver) gerekir');
     const disp = await this.requireDisposition(tenantId, dispositionId);
     if (disp.status !== 'DISTRIBUTION_APPROVED') {
       throw new BadRequestException(`Yalnız DISTRIBUTION_APPROVED post edilebilir — Partner/Manager onayı gerekir (durum: ${disp.status})`);
     }
     if (!disp.approvalRequestId) throw new ConflictException('Onay talebi bulunamadı (approvalRequestId yok)');
+
+    // K2: post da approve() ile aynı capability guard'a tabidir; approved kaydı sıradan kullanıcı finalize edemez.
+    if (!(await this.officeApproval.isApproverEligible(actor.userId, tenantId))) {
+      throw new ForbiddenException('Onay yetkisi yok (PARTNER veya yetkilendirilmiş avukat gerekir)');
+    }
 
     // P4 approval kaydını TÜKET: gerçekten APPROVED mı (disp.status ile P4 arasında drift guard).
     const approval = await this.prisma.officeApprovalRequest.findFirst({
