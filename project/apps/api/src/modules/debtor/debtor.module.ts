@@ -10,6 +10,7 @@ import { CommunicationController } from "./communication.controller";
 import { AddressService } from "./address.service";
 import { AddressController } from "./address.controller";
 import { DebtorCrossCaseNotificationService } from "./debtor-cross-case-notification.service";
+import { DebtorCrossCaseNotificationTaskLinkService } from "./debtor-cross-case-notification-task-link.service";
 import { CollectionModule } from "../collection/collection.module";
 import { CaseDebtorLifecycleGuardModule } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module";
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
@@ -41,6 +42,7 @@ import { OfficeApprovalModule } from "../office-approval/office-approval.module"
     DebtorCommunicationService,
     AddressService,
     DebtorCrossCaseNotificationService,
+    DebtorCrossCaseNotificationTaskLinkService,
   ],
   exports: [
     DebtorService,

@@ -22,6 +22,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { DebtorCrossCaseNotificationService } from "./debtor-cross-case-notification.service";
 import { CaseDebtorService } from "./case-debtor.service";
+import { DebtorCrossCaseNotificationTaskLinkService } from "./debtor-cross-case-notification-task-link.service";
 
 @Controller("debtors")
 @UseGuards(JwtAuthGuard)
@@ -29,7 +30,8 @@ export class DebtorController {
   constructor(
     private debtorService: DebtorService,
     private crossCaseNotification: DebtorCrossCaseNotificationService,
-    private caseDebtorService: CaseDebtorService
+    private caseDebtorService: CaseDebtorService,
+    private taskLink: DebtorCrossCaseNotificationTaskLinkService
   ) {}
 
   // ==================== CASE DEBTORS (FAZ 1) ====================
@@ -202,6 +204,21 @@ export class DebtorController {
     @Param("caseDebtorId") caseDebtorId: string
   ) {
     return this.caseDebtorService.getActiveProcessSummary(tenantId, caseDebtorId);
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - (ileride) "Görev oluştur" aksiyonu → POST /debtors/cross-case-notifications/:id/create-task
+  ///   (DBND-D6-TASK-LINK; kullanıcı-tetikli, idempotent — D6A-2 çekirdeğine YAZMA yapmaz,
+  ///   D6A-2-SURFACE DTO'suna dokunmaz). tenantId/recipientUserId YALNIZ JWT'den türetilir.
+  /// </remarks>
+  @Post("cross-case-notifications/:id/create-task")
+  createTaskForCrossCaseNotification(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") recipientUserId: string,
+    @Param("id") notificationId: string
+  ) {
+    return this.taskLink.createTaskForNotification(tenantId, notificationId, recipientUserId);
   }
 
   @Get(":id")
