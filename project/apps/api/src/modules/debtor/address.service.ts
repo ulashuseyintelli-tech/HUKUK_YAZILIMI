@@ -17,6 +17,8 @@ import {
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import { AuditService } from "@/modules/audit/audit.service";
 import type { AuditActor } from "@/modules/client/client.service";
+// DBND-D6A-2: paylaşılan Debtor cross-case bildirimi (backend-only, best-effort).
+import { DebtorCrossCaseNotificationService } from "./debtor-cross-case-notification.service";
 
 // Re-export for controller
 export type AddressRiskFlagType = AddressRiskFlag;
@@ -118,7 +120,8 @@ export class AddressService {
   constructor(
     private prisma: PrismaService,
     private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly crossCaseNotification: DebtorCrossCaseNotificationService
   ) {}
 
   // ==================== CRUD OPERATIONS ====================
@@ -184,7 +187,10 @@ export class AddressService {
   /// <remarks>
   /// Çağrıldığı yerler:
   /// - AddressController.updateAddress() → PUT /addresses/:addressId (drawer + adres formu düzenleme —
-  ///   canlı yol; DebtorService.updateAddress()/PUT /debtors/:id/addresses/:addressId AYRI, ikincil yol)
+  ///   canlı/BİRİNCİL yol; DebtorService.updateAddress()/PUT /debtors/:id/addresses/:addressId AYRI,
+  ///   ikincil yol). DBND-D6A-2 (persistent cross-case bildirim) BU yoldan da tetiklenir — iki yol
+  ///   da aynı DebtorCrossCaseNotificationService.notifyFieldGroupChanges()'i çağırır, dedupe
+  ///   (dedupeKey) her iki yoldan gelen çağrıları da aynı anahtar alanlarıyla korur.
   /// </remarks>
   async update(
     tenantId: string,
@@ -195,7 +201,8 @@ export class AddressService {
     const address = await this.findAddressWithTenantCheck(tenantId, addressId);
 
     // DBND-D6A-1: sourceCaseId DebtorAddress kolonu DEĞİL — Prisma'ya yazılmadan ayrıştırılır,
-    // yalnız aşağıdaki audit metadata'sına gider.
+    // yalnız aşağıdaki audit metadata'sına gider. DBND-D6A-2 de aynı alanı bağımsız olarak
+    // kendi fan-out'unda tüketir (kod bağı yok).
     const { sourceCaseId, ...addressDto } = dto;
 
     // Recalculate derived fields if type or source changed
@@ -241,7 +248,32 @@ export class AddressService {
       metadata: { addressId, sourceCaseId: sourceCaseId ?? null },
     });
 
+    // DBND-D6A-2: mevcut adresin içeriği değişti (best-effort, DBND-D6A-1'in yukarıdaki audit
+    // yazımından BAĞIMSIZ — ayrı bir kalıcı bildirim üretir, aynı sourceCaseId'yi kendi amacı
+    // için tüketir). changeGeneration = güncelleme-ÖNCESİ updatedAt (aynı önceki duruma karşı
+    // yarışan çağrılar dedupe edilsin diye — DebtorService.updateAddress() ile AYNI desen).
+    await this.notifyCrossCaseAddressChangeSafe(tenantId, address.debtorId, address.updatedAt, sourceCaseId);
+
     return this.toDTO(updated);
+  }
+
+  private async notifyCrossCaseAddressChangeSafe(
+    tenantId: string,
+    debtorId: string,
+    changeGeneration: Date,
+    sourceCaseId?: string
+  ): Promise<void> {
+    try {
+      await this.crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId,
+        fieldGroups: ["ADDRESS"],
+        sourceCaseId,
+        changeGeneration,
+      });
+    } catch (e: any) {
+      // Yutulur — cross-case bildirim asıl adres mutasyonunu ASLA bloklamaz.
+    }
   }
 
   /**
