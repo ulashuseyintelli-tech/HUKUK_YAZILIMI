@@ -26,7 +26,7 @@ import { AuditService } from "@/modules/audit/audit.service";
 import { OfficeApprovalService } from "@/modules/office-approval/office-approval.service";
 import type { AuditActor } from "@/modules/client/client.service";
 import { buildDebtorFieldDiff, buildDebtorRemoveSnapshot } from "./debtor-audit.util";
-// D6: paylaşılan Debtor cross-case bildirimi (backend-only, best-effort — bkz. Safe çağrı deseni).
+// DBND-D6A-2: paylaşılan Debtor cross-case bildirimi (backend-only, best-effort — bkz. Safe çağrı deseni).
 import {
   DebtorCrossCaseNotificationService,
   DebtorNotificationFieldGroupKey,
@@ -359,7 +359,7 @@ export class DebtorService {
     private audit: AuditService,
     private officeApproval: OfficeApprovalService,
     private readonly caseDebtorLifecycleGuard?: CaseDebtorLifecycleGuardService,
-    // D6: opsiyonel — mevcut testler (yalnız 4 arg ile constructor çağıran) kırılmasın diye
+    // DBND-D6A-2: opsiyonel — mevcut testler (yalnız 4 arg ile constructor çağıran) kırılmasın diye
     // caseDebtorLifecycleGuard ile AYNI opsiyonel-DI deseni. Sağlanmazsa fan-out sessizce atlanır.
     private readonly crossCaseNotification?: DebtorCrossCaseNotificationService
   ) {}
@@ -811,7 +811,7 @@ export class DebtorService {
     // PR-D4c: completeness görevini senkronla (best-effort).
     await this.syncDebtorTaskByIdSafe(tenantId, id);
 
-    // D6: paylaşılan Debtor alan değişikliği → diğer case'lerdeki sorumlu ekibe cross-case
+    // DBND-D6A-2: paylaşılan Debtor alan değişikliği → diğer case'lerdeki sorumlu ekibe cross-case
     // bildirim (best-effort, syncDebtorTaskByIdSafe ile AYNI "Safe" felsefesi — asıl update'i
     // ASLA bloklamaz/geri almaz). sourceCaseId çağıran tarafından verilirse (dto.sourceCaseId)
     // o case fan-out'tan hariç tutulur; verilmezse (bugünkü çoğu çağrı) hariç tutma uygulanmaz.
@@ -1352,7 +1352,7 @@ export class DebtorService {
     // ARTIK YAZILMAZ (bağımlılık kesildi). Kanonik type/source asıl kaynak.
     const canonical = mapAddressTypeToCanonical(dto.addressType, dto.isMernis);
     // RFA-006: isPrimary'i find-or-create'ten AYIR → find-or-create sonrası tutarlı uygula.
-    // D6: sourceCaseId DebtorAddress'in bir alanı DEĞİL — Prisma write'ına ASLA karışmamalı.
+    // DBND-D6A-2: sourceCaseId DebtorAddress'in bir alanı DEĞİL — Prisma write'ına ASLA karışmamalı.
     const { addressType: _at, isMernis: _im, isPrimary: _ip, sourceCaseId, ...rest } = dto as any;
     const { address: createdRaw, created: isNew } = await findOrCreateDebtorAddress(this.prisma, {
       debtorId, ...rest, type: canonical.type as any, source: canonical.source as any,
@@ -1379,7 +1379,7 @@ export class DebtorService {
       if (!created.verified) {
         await this.syncIntelligenceTaskSafe(tenantId, debtorId, created.id);
       }
-      // D6: yeni adres = adres değişikliği (idempotent eşleşmede tetiklenmez, best-effort).
+      // DBND-D6A-2: yeni adres = adres değişikliği (idempotent eşleşmede tetiklenmez, best-effort).
       await this.notifyCrossCaseAddressChangeSafe(tenantId, debtorId, created.createdAt, sourceCaseId);
     }
     return created;

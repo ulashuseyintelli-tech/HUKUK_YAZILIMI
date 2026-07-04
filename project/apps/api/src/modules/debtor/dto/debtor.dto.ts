@@ -80,7 +80,7 @@ export class CreateDebtorAddressDto {
   @IsOptional()
   isMernis?: boolean;
 
-  // D6: mutasyonun yapıldığı case bağlamı (varsa) — cross-case bildirim fan-out'unda bu case'i
+  // DBND-D6A-2: mutasyonun yapıldığı case bağlamı (varsa) — cross-case bildirim fan-out'unda bu case'i
   // hariç tutmak için. Route bugün caseId taşımadığından çoğu çağrıda gönderilmez (opsiyonel).
   @IsString()
   @IsOptional()

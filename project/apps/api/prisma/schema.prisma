@@ -835,7 +835,7 @@ model Debtor {
   // PR-D4e-1: saha istihbaratı kayıtları (sonuç+kanıt)
   intelligence DebtorIntelligence[]
 
-  // D6: paylaşılan Debtor değişikliği cross-case bildirimleri
+  // DBND-D6A-2: paylaşılan Debtor değişikliği cross-case bildirimleri
   crossCaseNotifications DebtorCrossCaseNotification[]
 
   @@index([tenantId])
@@ -1143,7 +1143,7 @@ model Case {
   debtors                       CaseDebtor[]
   lawyers                       CaseLawyer[]
   staff                         CaseStaff[]
-  // D6: bu case'de yapılan Debtor değişikliğinin ürettiği bildirimler (source) +
+  // DBND-D6A-2: bu case'de yapılan Debtor değişikliğinin ürettiği bildirimler (source) +
   // bu case'in başka bir case'teki paylaşılan Debtor değişikliğinden etkilendiği bildirimler (affected)
   debtorNotificationsAsSource   DebtorCrossCaseNotification[] @relation("DebtorCrossCaseNotificationSource")
   debtorNotificationsAsAffected DebtorCrossCaseNotification[] @relation("DebtorCrossCaseNotificationAffected")
@@ -1370,7 +1370,7 @@ model CaseDebtor {
 
   // DBND-D5B: Collection.caseDebtorId FK karsi iliskisi
   collections Collection[]
-  // D6: bu CaseDebtor'ın (affected tarafı) aldığı cross-case bildirimler
+  // DBND-D6A-2: bu CaseDebtor'ın (affected tarafı) aldığı cross-case bildirimler
   crossCaseNotifications DebtorCrossCaseNotification[]
 
   @@unique([caseId, debtorId, role])
@@ -1380,9 +1380,10 @@ model CaseDebtor {
   @@index([serviceStatus])
 }
 
-// D6: Paylaşılan Debtor'un (birden fazla Case'e bağlı) izlenen alanları değiştiğinde,
-// diğer case'lerdeki sorumlu ekibe üretilen iç (in-app), backend-only bildirim.
+// DBND-D6A-2: Paylaşılan Debtor'un (birden fazla Case'e bağlı) izlenen alanları değiştiğinde,
+// diğer case'lerdeki sorumlu ekibe üretilen iç (in-app), backend-only, KALICI bildirim.
 // Event-bus YOK — DebtorService.update()/addAddress()/updateAddress() içinden senkron üretilir.
+// DBND-D6A-1 (pull/computed drawer banner'ı) ile kod bağı YOK — aynı domain probleminin ayrı çözümü.
 model DebtorCrossCaseNotification {
   id       String @id @default(cuid())
   tenantId String

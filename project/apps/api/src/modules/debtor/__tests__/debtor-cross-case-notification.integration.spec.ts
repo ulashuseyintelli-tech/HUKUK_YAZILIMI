@@ -1,5 +1,7 @@
 /**
- * D6 — Shared Debtor Cross-Case Notification — Integration Tests
+ * DBND-D6A-2 — Shared Debtor Cross-Case Persistent Notification — Integration Tests
+ *
+ * DBND-D6A-1 (pull/computed drawer banner, ayrı ve bağımsız) ile kod bağı yok.
  *
  * Requires: DATABASE_URL pointing to a disposable test database with migrations applied
  * (bkz. test/test-db-env.ts — TEST_DATABASE_URL güvenli bir ad taşımalı, dev DB'ye asla bağlanmaz).
@@ -35,7 +37,7 @@ const describeIf = DATABASE_URL ? describe : describe.skip;
 const VALID_TCKN_1 = "10000000146";
 const VALID_TCKN_2 = "12345678028";
 
-describeIf("D6 — DebtorCrossCaseNotification Integration", () => {
+describeIf("DBND-D6A-2 — DebtorCrossCaseNotification Integration", () => {
   let prisma: PrismaClient;
   let audit: AuditService;
   let crossCaseNotification: DebtorCrossCaseNotificationService;

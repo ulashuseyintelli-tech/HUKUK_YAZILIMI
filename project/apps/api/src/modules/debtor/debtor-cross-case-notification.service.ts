@@ -4,12 +4,19 @@ import { PrismaService } from "@/prisma/prisma.service";
 import { AuditService } from "@/modules/audit/audit.service";
 
 /**
- * D6 — Shared Debtor Cross-Case Notification.
+ * DBND-D6A-2 — Shared Debtor Cross-Case Persistent Notification.
  *
  * Paylaşılan Debtor'un (birden fazla Case'e CaseDebtor üzerinden bağlı) izlenen alanları
  * (adres/KEP/kimlik/ad-unvan) değiştiğinde, diğer case'lerdeki sorumlu ekibe backend-only,
- * senkron bir bildirim üretir. Event-bus/pub-sub YOK — çağıran servis (DebtorService) bu
- * metodu doğrudan, kendi mutasyonunun ardından çağırır.
+ * senkron, KALICI (recipientUserId bazlı, PENDING/ACKNOWLEDGED/EXPIRED lifecycle'lı) bir
+ * bildirim üretir. Event-bus/pub-sub YOK — çağıran servis (DebtorService) bu metodu
+ * doğrudan, kendi mutasyonunun ardından çağırır.
+ *
+ * DBND-D6A-1 (pull/computed, AuditLog+CaseDebtor üzerinden anlık hesaplanan drawer banner'ı,
+ * bkz. DebtorService.getCrossFileDebtorAlerts()) ile KOD BAĞI YOK — aynı domain probleminin
+ * (paylaşılan Debtor değişikliği) iki ayrı, bağımsız çözümü. Bu servis DBND-D6A-1'in
+ * hesaplama/okuma yollarını import etmez, çağırmaz; yalnız aynı DTO alanını (sourceCaseId)
+ * bağımsız olarak kendi amacı için tüketir.
  *
  * Kapsam dışı (owner-locked, bkz. D6 owner karar matrisi): UI, badge/status framework,
  * RESOLVED/DISMISSED lifecycle ayrımı, phone/email/riskLevel/riskNotes/notes tetikleyicileri.
