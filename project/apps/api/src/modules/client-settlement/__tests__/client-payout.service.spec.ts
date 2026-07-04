@@ -8,6 +8,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ClientPayoutService } from '../client-payout.service';
 import { ClientSettlementReadService } from '../client-settlement-read.service';
+import { AuditService } from '../../audit/audit.service';
 import { payoutLockKey } from '../payout-lock';
 
 const D = (n: number) => new Prisma.Decimal(n);
@@ -43,6 +44,8 @@ function buildPrisma(opts: {
   // CBND-3 (H3): actor capacity kaynağı (lawyer.lawyerRank / staffMember.staffType). Varsayılan PARTNER
   // (mevcut business-logic testleri authorization'ı DEĞİL, payout hesaplama/idempotency'yi kanıtlar).
   actorUser?: any;
+  // PAYOUT-APPROVAL-1 (audit hardening): auditLog.create başarısız olursa fail-closed davranışı sınamak için.
+  auditLogCreateError?: Error;
 } = {}) {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
@@ -50,6 +53,12 @@ function buildPrisma(opts: {
       findUnique: jest.fn().mockResolvedValue(opts.dupInTx ?? null),
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: opts.paid ?? null } }),
       create: jest.fn().mockResolvedValue({ id: 'payout-1', paidAt: new Date('2026-06-30T08:00:00.000Z') }),
+    },
+    auditLog: {
+      create: jest.fn().mockImplementation(() => {
+        if (opts.auditLogCreateError) return Promise.reject(opts.auditLogCreateError);
+        return Promise.resolve({ id: 'audit-1' });
+      }),
     },
     clientPayoutAllocation: {
       createMany: jest.fn().mockImplementation((args: any) => Promise.resolve({ count: args.data.length })),
@@ -84,7 +93,7 @@ function buildPrisma(opts: {
   };
   return { prisma, tx };
 }
-const svc = (p: any) => new ClientPayoutService(p, new ClientSettlementReadService(p));
+const svc = (p: any) => new ClientPayoutService(p, new ClientSettlementReadService(p), new AuditService(p));
 
 function firstJournalCreateData(tx: any) {
   expect(tx.accountingJournalEntry.create).toHaveBeenCalledTimes(1);
@@ -459,5 +468,77 @@ describe('CBND-5 (H2) ClientPayoutService.create — payoutLockKey paylaşılan 
     const { prisma, tx } = buildPrisma(OUT_1000);
     await svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR);
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PAYOUT-APPROVAL-1 (audit hardening, ilk PR) ClientPayoutService.create — AuditLog', () => {
+  it('happy path → CLIENT_PAYOUT_CREATED audit kaydı aynı tx içinde, journal yazımından SONRA yazılır', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+    const res = await svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR);
+
+    expect(res.created).toBe(true);
+    expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tenantId: 't1',
+        action: 'CLIENT_PAYOUT_CREATED',
+        entityType: 'ClientPayout',
+        entityId: 'payout-1',
+        userId: 'u1',
+        metadata: expect.objectContaining({
+          authorizationMode: 'DIRECT_OFFICE_ADMIN_CAPABILITY',
+          authorizedCapacity: 'PARTNER',
+          caseId: 'case1',
+          caseClientId: 'cc-A',
+          amount: '400',
+          currency: 'TRY',
+          idempotencyKey: 'k1',
+          allocationCount: 1,
+        }),
+      }),
+    });
+    expect(tx.accountingJournalEntry.create.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.auditLog.create.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('MANAGER capacity ile yetkilendirilmiş payout → audit metadata authorizedCapacity=MANAGER kaydeder', async () => {
+    const { prisma, tx } = buildPrisma({ ...OUT_1000, actorUser: { lawyer: { lawyerRank: 'MANAGER' }, staffMember: null } });
+    const res = await svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR);
+
+    expect(res.created).toBe(true);
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        metadata: expect.objectContaining({ authorizedCapacity: 'MANAGER' }),
+      }),
+    });
+  });
+
+  it('idempotent replay (pre-check veya in-tx) → yeni CLIENT_PAYOUT_CREATED audit kaydı YAZILMAZ', async () => {
+    const { prisma: preCheckPrisma, tx: preCheckTx } = buildPrisma({
+      existing: { id: 'old-payout', caseId: 'case1', caseClientId: 'cc-A', amount: D(400), currency: 'TRY' },
+    });
+    await svc(preCheckPrisma).create('t1', DTO(), ACTOR);
+    expect(preCheckTx.auditLog.create).not.toHaveBeenCalled();
+
+    const { prisma: raceCheckPrisma, tx: raceCheckTx } = buildPrisma({
+      ...OUT_1000,
+      dupInTx: { id: 'race-payout', caseId: 'case1', caseClientId: 'cc-A', amount: D(400), currency: 'TRY' },
+    });
+    await svc(raceCheckPrisma).create('t1', DTO(), ACTOR);
+    expect(raceCheckTx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('fail-closed: auditLog.create başarısız olursa TÜM payout transaction rollback anlamında reject eder', async () => {
+    const { prisma, tx } = buildPrisma({ ...OUT_1000, auditLogCreateError: new Error('audit db down') });
+
+    await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(/audit db down/);
+
+    // Mock-tx seviyesinde önceki adımlar (create/allocation/journal) çağrılmış GÖRÜNÜR (gerçek Postgres'te
+    // $transaction callback exception fırlatınca hepsi rollback olur — bu test yalnız audit hatasının
+    // yutulmadığını/yukarı fırlatıldığını kanıtlar, mock bir gerçek DB rollback simüle etmez).
+    expect(tx.clientPayout.create).toHaveBeenCalledTimes(1);
+    expect(tx.accountingJournalEntry.create).toHaveBeenCalledTimes(1);
+    expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
   });
 });

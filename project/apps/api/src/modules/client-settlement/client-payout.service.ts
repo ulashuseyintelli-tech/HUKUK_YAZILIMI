@@ -10,6 +10,7 @@ import {
 } from '../accounting-journal';
 import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
 import { Capacity } from '../policy-engine/types/effective-permission.types';
+import { AuditService } from '../audit/audit.service';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { payoutLockKey } from './payout-lock';
@@ -99,6 +100,12 @@ function compareAllocationSourceLines(a: AllocationSourceLine, b: AllocationSour
  * (payable leg için, mevcut expense-remaining kilidinden SONRA) AYNI fonksiyonu çağırır; iki servis
  * artık aynı caseClientId'nin payable outstanding'i için serialize olur. Bu servis client-offset
  * kilidini ASLA almaz (deadlock'suz sabit sıra: client-offset → payout, yalnız offset tarafında).
+ *
+ * PAYOUT-APPROVAL-1 (audit hardening, ilk PR — 2026-07-04): create() artık ClientOffsetService
+ * (CLIENT_OFFSET_CREATED) ve ClientPayoutManualReversalService (CLIENT_PAYOUT_MANUAL_REVERSAL_CLOSED)
+ * ile AYNI desende, aynı $transaction içinde AuditService.logInTransaction ile CLIENT_PAYOUT_CREATED
+ * yazar (fail-closed: audit yazılamazsa payout de rollback olur). Bu değişiklik yalnız audit izidir —
+ * approval binding / self-approval engeli / yeni ActionCode DEĞİLDİR (owner kararı ikinci faza bırakıldı).
  */
 @Injectable()
 export class ClientPayoutService {
@@ -107,6 +114,7 @@ export class ClientPayoutService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly readService: ClientSettlementReadService,
+    private readonly audit: AuditService,
     private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
   ) {}
 
@@ -114,9 +122,10 @@ export class ClientPayoutService {
    * CBND-3 (H3) hard gate: actor PARTNER/MANAGER (office-admin) DEĞİLSE 403. ClientOffsetService.
    * assertOfficeAdmin / ClientPayoutManualReversalService.assertOfficeAdmin ile BİREBİR aynı desen
    * (canonical capacity okuması; CpeRequiredGuard dormant olduğundan ona güvenilmez, yetki BURADA
-   * explicit enforce edilir).
+   * explicit enforce edilir). PAYOUT-APPROVAL-1: yetkilendirmeyi sağlayan capacity, audit izinde
+   * görünür olsun diye çağırana döndürülür (davranış değişmez, yalnız dönüş tipi void → Capacity).
    */
-  private async assertOfficeAdmin(actorUserId: string): Promise<void> {
+  private async assertOfficeAdmin(actorUserId: string): Promise<Capacity> {
     const user = await this.prisma.user.findUnique({
       where: { id: actorUserId },
       include: { lawyer: { select: { lawyerRank: true } }, staffMember: { select: { staffType: true } } },
@@ -129,6 +138,7 @@ export class ClientPayoutService {
         requiredCapability: 'CLIENT_PAYOUT_CREATE',
       });
     }
+    return capacity;
   }
 
   /**
@@ -138,7 +148,7 @@ export class ClientPayoutService {
   async create(tenantId: string, dto: CreateClientPayoutDto, actor?: { userId?: string }): Promise<CreatePayoutResult> {
     const userId = actor?.userId;
     if (!userId) throw new BadRequestException('actor (req.user.id) yok — payout kaydedilemez');
-    await this.assertOfficeAdmin(userId);
+    const authorizedCapacity = await this.assertOfficeAdmin(userId);
     if (!dto?.idempotencyKey) throw new BadRequestException('idempotencyKey zorunlu');
     let amount: Prisma.Decimal;
     try {
@@ -232,6 +242,30 @@ export class ClientPayoutService {
         if (!journalWrite.ok) {
           throw new ConflictException('Accounting journal write failed: ' + journalWrite.errors.map((error) => error.code).join(', '));
         }
+
+        // PAYOUT-APPROVAL-1 (audit hardening, ilk-PR): ClientOffsetService/ClientPayoutManualReversalService
+        // ile AYNI desen — aynı $transaction içinde, fail-closed (logInTransaction hata yutmaz, throw ederse
+        // payout kaydı da rollback olur). authorizedCapacity: assertOfficeAdmin'in hangi capacity ile
+        // (PARTNER/MANAGER) geçtiğini audit izinde görünür kılar — bu PR approval-binding YAPMAZ, yalnız
+        // "kim/hangi yetkiyle/ne zaman" izini bırakır.
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: 'CLIENT_PAYOUT_CREATED',
+          entityType: 'ClientPayout',
+          entityId: payout.id,
+          userId,
+          description: `Müvekkile ödeme kaydedildi (${amount.toString()} ${currency})`,
+          metadata: {
+            authorizationMode: 'DIRECT_OFFICE_ADMIN_CAPABILITY',
+            authorizedCapacity,
+            caseId: dto.caseId,
+            caseClientId: dto.caseClientId,
+            amount: amount.toString(),
+            currency,
+            idempotencyKey: dto.idempotencyKey,
+            allocationCount: allocationPlan.length,
+          },
+        });
 
         this.logger.log(`ClientPayout RECORDED: ${payout.id} (caseClient=${dto.caseClientId}, amount=${amount.toString()})`);
         return { created: true, payoutId: payout.id };

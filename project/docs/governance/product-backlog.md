@@ -75,6 +75,7 @@ BACKLOG
 |---|---|---|---|
 | MPB-005 | Accounting | Trial Balance query/API/read model expansion | PR #885 squash merged, final SHA `4c8756c911542d579f16672a9ceb8bf696881cbb` |
 | MPB-006 | Accounting | Dry-run vs journal reconciliation and real-data reconciliation | PR #892 squash merged, canonical HEAD `05260c781420be5262c142e310299b9f9cc90e4d` |
+| MPB-008 | Accounting | Offset audit detail projection | C-2D closeout: PR #644/#646 merged; read-only `GET /client-offsets/:offsetId/detail` projection verified |
 
 ## Items
 
