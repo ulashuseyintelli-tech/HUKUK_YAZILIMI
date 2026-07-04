@@ -37,6 +37,7 @@ export class DispositionController {
     @Param('id') id: string,
     @Body() body: GenerateDistributionRecommendationDto,
   ) {
+    await this.posting.assertCanPrepareDisposition(req.user.id, req.user.tenantId);
     const data = await this.distribution.generate(req.user.tenantId, id, body ?? {}, { userId: req.user.id });
     return { data };
   }

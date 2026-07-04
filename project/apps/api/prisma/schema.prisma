@@ -3282,6 +3282,7 @@ model StaffMember {
   canApproveDocuments  Boolean @default(false) // Belge onaylayabilir
   canSeeFinance        Boolean @default(false) // Muhasebe modülünü görebilir
   canApproveFinance    Boolean @default(false) // Muhasebe işlemi onaylayabilir
+  canPrepareCollectionDisposition Boolean @default(false) // Tahsilat dağıtımı hazırlayabilir (recommend/preview); final approval DEĞİL
   canSendNotifications Boolean @default(false) // Tebligat gönderebilir
   isDefaultForNewCases Boolean @default(false) // Yeni dosyalarda otomatik seç
 

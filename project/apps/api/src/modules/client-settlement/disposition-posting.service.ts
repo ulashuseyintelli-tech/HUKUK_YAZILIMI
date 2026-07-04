@@ -98,6 +98,7 @@ export class DispositionPostingService {
     actor: { userId: string },
   ): Promise<{ recommended: boolean; dispositionId: string; lineCount: number; approvalRequestId: string }> {
     if (!actor?.userId) throw new BadRequestException('recommend için actor (requester) gerekir');
+    await this.assertCanPrepareDisposition(actor.userId, tenantId);
     const disp = await this.requireDisposition(tenantId, dispositionId);
     if (disp.status !== 'HELD_PENDING_DISTRIBUTION') {
       throw new BadRequestException(`Yalnız HELD_PENDING_DISTRIBUTION önerilebilir (durum: ${disp.status})`);
@@ -360,6 +361,31 @@ export class DispositionPostingService {
 
     this.logger.log(`CollectionDisposition POSTED: ${dispositionId} (${lines.length} satır)`);
     return { posted: true, dispositionId, lineCount: lines.length };
+  }
+
+  /**
+   * S8-B — Dağıtım HAZIRLAMA (recommend/preview) yetkisi predikatı. OfficeApprovalService.isApproverEligible'dan
+   * TAMAMEN AYRI bir predikattir; final-onay (approve/post) yetkisini hiçbir şekilde ETKİLEMEZ (Staff hâlâ
+   * final-approver OLAMAZ — bu kural burada dokunulmadan kalır).
+   */
+  async isPrepareEligible(userId: string, tenantId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        lawyer: { select: { id: true } },
+        staffMember: { select: { staffType: true, canPrepareCollectionDisposition: true } },
+      },
+    });
+    if (!user || !user.isActive || user.tenantId !== tenantId) return false;
+    if (user.lawyer) return true;
+    return !!user.staffMember && user.staffMember.staffType === 'MUHASEBE' && user.staffMember.canPrepareCollectionDisposition === true;
+  }
+
+  /** isPrepareEligible false ise 403 — dağıtım hazırlama (recommend/preview) yetkisi yok. */
+  async assertCanPrepareDisposition(userId: string, tenantId: string): Promise<void> {
+    if (!(await this.isPrepareEligible(userId, tenantId))) {
+      throw new ForbiddenException('Dağıtım hazırlama yetkisi yok (avukat veya yetkilendirilmiş muhasebe personeli gerekir)');
+    }
   }
 
   // ───────────────────────── internals ─────────────────────────

@@ -93,6 +93,7 @@ export class StaffService {
         canApproveDocuments: data.canApproveDocuments || false,
         canSeeFinance: data.canSeeFinance || false,
         canApproveFinance: data.canApproveFinance || false,
+        canPrepareCollectionDisposition: data.canPrepareCollectionDisposition || false,
         canSendNotifications: data.canSendNotifications || false,
         isDefaultForNewCases: data.isDefaultForNewCases || false,
         sortOrder: data.sortOrder || 0,
@@ -162,6 +163,7 @@ export class StaffService {
     if (data.canApproveDocuments !== undefined) updateData.canApproveDocuments = data.canApproveDocuments;
     if (data.canSeeFinance !== undefined) updateData.canSeeFinance = data.canSeeFinance;
     if (data.canApproveFinance !== undefined) updateData.canApproveFinance = data.canApproveFinance;
+    if (data.canPrepareCollectionDisposition !== undefined) updateData.canPrepareCollectionDisposition = data.canPrepareCollectionDisposition;
     if (data.canSendNotifications !== undefined) updateData.canSendNotifications = data.canSendNotifications;
     if (data.isDefaultForNewCases !== undefined) updateData.isDefaultForNewCases = data.isDefaultForNewCases;
     if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
