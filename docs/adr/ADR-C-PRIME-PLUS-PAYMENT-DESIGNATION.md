@@ -188,6 +188,39 @@ one enforcement case = implicit single group
 
 No physical `ClaimGroup` table is introduced in the current phase.
 
+**Açıklayıcı not (2026-07-04, Master Triage ARC-01 yeniden-doğrulaması, owner düzeltmesiyle):**
+`ClaimGroup`, ödeme alıcısı veya dağıtım hak sahipliği için değil; yalnız bağımsız mahsup/tahsil
+havuzu için değerlendirilir. Farklı faiz tarihi ve tahsilat sonrası dağıtım `ClaimItem`/`Payout`
+katmanında çözülür.
+
+Aşağıdakiler `ClaimGroup` tetikleyicisi **DEĞİLDİR** — "kime ödenecek" sorusu `ClaimGroup`'un
+konusu değildir, payout/entitlement-distribution/creditor-cluster/tahsilat-sonrası-dağıtım
+katmanında çözülür:
+
+- Farklı faiz başlangıcı (asıl alacak dava tarihinden, vekalet ücreti karar tarihinden,
+  yargılama gideri karar/kesinleşme tarihinden faiz taşıyabilir — `ClaimItem`-level
+  `interestStartDate`/`interestType`/provenance ile çözülür).
+- Asıl alacak + vekalet ücreti + yargılama gideri kompozisyonu.
+- Birden fazla alacaklıya sonradan paylaştırılacak ortak tahsilat.
+- Avukatın icra dosyasına tahsil edip alacaklılara/masrafa/vekalet ücretine dağıtması.
+- Aynı ilamda birden fazla `ClaimItem` türü bulunması.
+
+`ClaimGroup` yalnız şu durumda yeniden değerlendirilir: aynı Case/ilam/icra süreci içinde,
+gelen bir tahsilat hukuken bütün alacak kalemlerine serbestçe mahsup edilemiyorsa — yani ödeme
+belirli bir bağımsız borç/alacak havuzunu azaltıyor, diğerlerini azaltamıyorsa. Adayı olabilecek
+somut örnekler:
+
+- Müteselsil olmayan borçlu setleri nedeniyle bir borçlunun ödemesinin diğer borçlunun borcunu
+  azaltamaması.
+- Belirli satış bedelinin yalnız teminatlı/rehinli alacak havuzuna özgülenmesi.
+- Aynı dosyada birbirine hukuken karıştırılamayan teminat/satış/borçlu sorumluluk kapsamları.
+- Ortak tahsilat değil, ayrı hukuki mahsup havuzu doğuran gerçek dosya verisi.
+
+Karar testi: **"Bu tahsilat aynı Case içindeki bütün alacaklara hukuken ortak mahsup edilebilir
+mi?"** Evetse `ClaimGroup` yok — zımni tekil grup devam eder, ayrım `ClaimItem`/allocation/
+creditor-entitlement/payout seviyesinde çözülür. Hayırsa `ClaimGroup`/`LegalPool` yeniden
+değerlendirilir.
+
 ### Q2: BalanceComponent Source Role
 
 `BalanceComponent` is projection/display only.
