@@ -465,6 +465,43 @@ describe('BalanceDisplayShadowDiffService', () => {
     expect(readiness.safeForPrimaryDisplay).toBe(false);
   });
 
+  // ALC-AUTH-1A: B1 guarded primary gate principal + interest + payment ile sinirlandi.
+  // Cost/vekalet (icraMasraflari/vekaletUcreti <-> canonical costs/ATTORNEY_FEE) buyuk delta
+  // vermesi BEKLENIR (farkli otorite/kaynak) -- artik readiness'i bloklamamali, yalniz
+  // diagnostic olarak (totalDiffs/bucketDiffs icinde) raporlanmaya devam eder.
+  it('ALC-AUTH-1A: RED severity COSTS_DELTA/ATTORNEY_FEE_DELTA/EXPENSE_BUCKET_DELTA/ATTORNEY_FEE_BUCKET_DELTA readiness bloklamaz', () => {
+    const readiness = cutoverReadiness({
+      display: { diagnostics: [], provenance: {} } as any,
+      blockers: [],
+      totalDiffs: [
+        { code: 'COSTS_DELTA', severity: 'RED' } as any,
+        { code: 'ATTORNEY_FEE_DELTA', severity: 'RED' } as any,
+      ],
+      bucketDiffs: [
+        { code: 'EXPENSE_BUCKET_DELTA', severity: 'RED' } as any,
+        { code: 'ATTORNEY_FEE_BUCKET_DELTA', severity: 'RED' } as any,
+      ],
+    });
+
+    expect(readiness.blockers).toEqual([]);
+    expect(readiness.safeForPrimaryDisplay).toBe(true);
+  });
+
+  it('ALC-AUTH-1A: scope-exempt olmayan RED diff (orn. OUTSTANDING_DELTA) readiness bloklamaya devam eder', () => {
+    const readiness = cutoverReadiness({
+      display: { diagnostics: [], provenance: {} } as any,
+      blockers: [],
+      totalDiffs: [
+        { code: 'OUTSTANDING_DELTA', severity: 'RED' } as any,
+        { code: 'COSTS_DELTA', severity: 'RED' } as any,
+      ],
+      bucketDiffs: [],
+    });
+
+    expect(readiness.blockers).toEqual(['OUTSTANDING_DELTA']);
+    expect(readiness.safeForPrimaryDisplay).toBe(false);
+  });
+
   it('CB-04: ClaimItem informational diagnostic temiz amount match varken primary-ready engellemez', async () => {
     const canonical = canonicalBalance({
       currencyResults: [

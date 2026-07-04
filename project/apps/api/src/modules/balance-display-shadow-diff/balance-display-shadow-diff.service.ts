@@ -688,6 +688,18 @@ function allDiagnostics(input: {
   return diagnostics;
 }
 
+// ALC-AUTH-1A: B1 guarded primary gate ilk asamada principal + interest + payment ile
+// sinirlandi. Cost/vekalet (icraMasraflari/vekaletUcreti <-> canonical costs/ATTORNEY_FEE)
+// farkli otorite/kaynaklardan geldigi icin (legacy tarife formulu vs canonical ClaimItem-
+// materialization, ki henuz yok) buyuk delta VERMESI BEKLENIR -- bu, cutover readiness'i
+// bloklamamali; yalniz diagnostic olarak (totalDiffs/bucketDiffs icinde) raporlanmaya devam eder.
+const B1_SCOPE_EXEMPT_DIFF_CODES = new Set([
+  'COSTS_DELTA',
+  'ATTORNEY_FEE_DELTA',
+  'EXPENSE_BUCKET_DELTA',
+  'ATTORNEY_FEE_BUCKET_DELTA',
+]);
+
 export function cutoverReadiness(input: {
   display?: CaseBalanceDisplay;
   blockers: ShadowDiffBlocker[];
@@ -695,7 +707,7 @@ export function cutoverReadiness(input: {
   bucketDiffs: ShadowBucketDiff[];
 }): BalanceDisplayShadowDiffReport['cutoverReadiness'] {
   const diffBlockers = [...input.totalDiffs, ...input.bucketDiffs]
-    .filter((diff) => diff.severity === 'RED')
+    .filter((diff) => diff.severity === 'RED' && !B1_SCOPE_EXEMPT_DIFF_CODES.has(diff.code))
     .map((diff) => diff.code);
   const blockerCodes = [...input.blockers.map((blocker) => blocker.code), ...diffBlockers];
   if (input.display?.diagnostics.some((diagnostic) => diagnostic.code === 'FINAL_DEBT_STATES_MISSING')) {

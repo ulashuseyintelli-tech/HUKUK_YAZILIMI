@@ -24,27 +24,24 @@ export interface GuardedPrimaryDisplayDecision {
   reasonCodes: string[];
 }
 
+// ALC-AUTH-1A: B1 guarded primary gate ilk asamada principal + interest + payment ile
+// sinirlandi. costs/attorneyFee kasitli olarak bu tipten cikarildi -- artik B1'i bloklamazlar,
+// legacy (icraMasraflari/vekaletUcreti) degerleri korunur (bkz. BACKEND_CONTRACT_REQUIRED_ROW_IDS).
 interface CanonicalPrimaryAmounts {
   principalAmount: number;
   totalDebtAmount: number;
   outstandingAmount: number;
   totalPaidAmount: number;
   interestAmount: number;
-  costsAmount: number;
-  attorneyFeeAmount: number;
 }
 
 type CanonicalDisplayedAmountField =
   | 'totalPaidAmount'
-  | 'interestAmount'
-  | 'costsAmount'
-  | 'attorneyFeeAmount';
+  | 'interestAmount';
 
 const CANONICAL_DISPLAYED_AMOUNT_FIELDS: readonly CanonicalDisplayedAmountField[] = [
   'totalPaidAmount',
   'interestAmount',
-  'costsAmount',
-  'attorneyFeeAmount',
 ];
 
 export type GuardedSummaryRuntimeBoundarySource =
@@ -118,8 +115,6 @@ const GUARDED_SUMMARY_CANONICAL_PRIMARY_OVERRIDE_ROW_IDS: readonly GuardedSummar
   'asilAlacak',
   'takipTutari',
   'takipSonrasiFaiz',
-  'icraMasraflari',
-  'vekaletUcreti',
   'toplamBorc',
   'sonBorc',
   'toplamTahsilat',
@@ -127,10 +122,14 @@ const GUARDED_SUMMARY_CANONICAL_PRIMARY_OVERRIDE_ROW_IDS: readonly GuardedSummar
   'kalanAnapara',
 ];
 
+// ALC-AUTH-1A: icraMasraflari/vekaletUcreti B1 kapsaminda daraltildi -- canonical cost/attorneyFee
+// ClaimItem-materialization hatti henuz yok; tazminat/komisyon/takipOncesiFaiz ile ayni desen.
 const GUARDED_SUMMARY_BACKEND_CONTRACT_REQUIRED_ROW_IDS: readonly GuardedSummaryRuntimeBoundaryRowId[] = [
   'tazminat',
   'komisyon',
   'takipOncesiFaiz',
+  'icraMasraflari',
+  'vekaletUcreti',
 ];
 
 const GUARDED_SUMMARY_LEGACY_DIAGNOSTIC_RETAINED_ROW_IDS: readonly GuardedSummaryRuntimeBoundaryRowId[] = [
@@ -292,16 +291,12 @@ export function canonicalPrimaryAmounts(
   const outstandingAmount = canonical.outstandingAmount;
   const totalPaidAmount = canonical.totalPaidAmount;
   const interestAmount = canonical.interestAmount;
-  const costsAmount = canonical.costsAmount;
-  const attorneyFeeAmount = canonical.attorneyFeeAmount;
 
   if (!isFiniteNumber(principal.canonicalAmount)) return null;
   if (!isFiniteNumber(totalDebtAmount)) return null;
   if (!isFiniteNumber(outstandingAmount)) return null;
   if (!isFiniteNumber(totalPaidAmount)) return null;
   if (!isFiniteNumber(interestAmount)) return null;
-  if (!isFiniteNumber(costsAmount)) return null;
-  if (!isFiniteNumber(attorneyFeeAmount)) return null;
 
   return {
     principalAmount: principal.canonicalAmount,
@@ -309,8 +304,6 @@ export function canonicalPrimaryAmounts(
     outstandingAmount,
     totalPaidAmount,
     interestAmount,
-    costsAmount,
-    attorneyFeeAmount,
   };
 }
 
@@ -384,8 +377,8 @@ export function buildGuardedPrimaryCalculationResult(
     asilAlacak: amounts.principalAmount,
     takipTutari: amounts.principalAmount,
     takipSonrasiFaiz: amounts.interestAmount,
-    icraMasraflari: amounts.costsAmount,
-    vekaletUcreti: amounts.attorneyFeeAmount,
+    // ALC-AUTH-1A: icraMasraflari/vekaletUcreti KASITLI OLARAK override edilmiyor -- legacy
+    // (formul-bazli) degerleri korunur (bkz. GUARDED_SUMMARY_BACKEND_CONTRACT_REQUIRED_ROW_IDS).
     toplamBorc: amounts.totalDebtAmount,
     sonBorc: amounts.outstandingAmount,
     toplamTahsilat: amounts.totalPaidAmount,
