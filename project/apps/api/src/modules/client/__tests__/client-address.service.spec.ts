@@ -95,7 +95,7 @@ describe('ClientAddressService', () => {
       address: { id: 'addr-2', clientId: 'client-1', isPrimary: false, isCurrent: true, type: 'BEYAN', street: null, city: null, district: null, region: null, postalCode: null },
     });
 
-    await svc.update('tenant-1', 'addr-2', { isPrimary: true });
+    await svc.update('tenant-1', 'client-1', 'addr-2', { isPrimary: true });
 
     expect(tx.clientAddress.updateMany).toHaveBeenCalledWith({
       where: { clientId: 'client-1', isPrimary: true },
@@ -111,7 +111,7 @@ describe('ClientAddressService', () => {
       address: { id: 'addr-1', clientId: 'client-1', isPrimary: true, isCurrent: true, type: 'BEYAN', street: null, city: null, district: null, region: null, postalCode: null },
     });
 
-    await svc.update('tenant-1', 'addr-1', { isPrimary: true, city: 'Ankara' });
+    await svc.update('tenant-1', 'client-1', 'addr-1', { isPrimary: true, city: 'Ankara' });
 
     expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
     expect(tx.clientAddress.update).toHaveBeenCalledWith(
@@ -122,7 +122,7 @@ describe('ClientAddressService', () => {
   it('update isPrimary belirtilmezse mevcut isPrimary alanına dokunulmaz (undefined -> Prisma no-op)', async () => {
     const { svc, tx } = buildHarness();
 
-    await svc.update('tenant-1', 'addr-1', { city: 'İzmir' });
+    await svc.update('tenant-1', 'client-1', 'addr-1', { city: 'İzmir' });
 
     expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
     expect(tx.clientAddress.update).toHaveBeenCalledWith(
@@ -134,7 +134,7 @@ describe('ClientAddressService', () => {
     const { svc, tx } = buildHarness({ addressCount: 2 });
 
     await svc.create('tenant-1', 'client-1', CREATE_INPUT);
-    await svc.update('tenant-1', 'addr-1', { city: 'Bursa' });
+    await svc.update('tenant-1', 'client-1', 'addr-1', { city: 'Bursa' });
 
     expect(tx.clientAddress.delete).not.toHaveBeenCalled();
     expect((tx.clientAddress as any).deleteMany).toBeUndefined();
@@ -145,7 +145,7 @@ describe('ClientAddressService', () => {
       address: { id: 'addr-1', clientId: 'client-1', isPrimary: true, isCurrent: true, type: 'BEYAN', street: null, city: null, district: null, region: null, postalCode: null },
     });
 
-    await expect(svc.remove('tenant-1', 'addr-1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.remove('tenant-1', 'client-1', 'addr-1')).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.clientAddress.delete).toBeUndefined();
   });
 
@@ -155,7 +155,7 @@ describe('ClientAddressService', () => {
     });
     prisma.clientAddress.delete = jest.fn().mockResolvedValue({ id: 'addr-1' });
 
-    await svc.remove('tenant-1', 'addr-1');
+    await svc.remove('tenant-1', 'client-1', 'addr-1');
 
     expect(prisma.clientAddress.delete).toHaveBeenCalledWith({ where: { id: 'addr-1' } });
   });
@@ -165,8 +165,8 @@ describe('ClientAddressService', () => {
     prisma.clientAddress.delete = jest.fn().mockResolvedValue({});
 
     await svc.create('tenant-1', 'client-1', CREATE_INPUT);
-    await svc.update('tenant-1', 'addr-1', { city: 'Antalya' });
-    await svc.remove('tenant-1', 'addr-1');
+    await svc.update('tenant-1', 'client-1', 'addr-1', { city: 'Antalya' });
+    await svc.remove('tenant-1', 'client-1', 'addr-1');
 
     expect(tx.client.update).not.toHaveBeenCalled();
     expect(tx.client.updateMany).not.toHaveBeenCalled();
@@ -179,7 +179,19 @@ describe('ClientAddressService', () => {
 
   it('tenant dışı/olmayan adres için update/remove 404 döner', async () => {
     const { svc } = buildHarness({ address: null });
-    await expect(svc.update('tenant-1', 'addr-x', { city: 'X' })).rejects.toBeInstanceOf(NotFoundException);
-    await expect(svc.remove('tenant-1', 'addr-x')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.update('tenant-1', 'client-1', 'addr-x', { city: 'X' })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.remove('tenant-1', 'client-1', 'addr-x')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('update/remove sorgusu addressId ile birlikte clientId ve tenantId filtresi de ekler (DBND-D6A-1: cross-client erişim + route collision fix)', async () => {
+    const { svc, prisma } = buildHarness();
+
+    await svc.update('tenant-1', 'client-1', 'addr-1', { city: 'X' });
+
+    expect(prisma.clientAddress.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'addr-1', clientId: 'client-1', client: { tenantId: 'tenant-1' } },
+      }),
+    );
   });
 });

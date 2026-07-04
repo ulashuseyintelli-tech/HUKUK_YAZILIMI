@@ -142,7 +142,7 @@ describe('ClientAddressSection — çok-adres listesi', () => {
     fireEvent.click(screen.getByText('Birincil Yap'));
 
     await waitFor(() =>
-      expect(apiMock.updateClientAddress).toHaveBeenCalledWith('addr-2', { isPrimary: true }),
+      expect(apiMock.updateClientAddress).toHaveBeenCalledWith('client-1', 'addr-2', { isPrimary: true }),
     );
     // Refresh sonrası client tekrar çekilir.
     await waitFor(() => expect(apiMock.getClient).toHaveBeenCalledTimes(2));
