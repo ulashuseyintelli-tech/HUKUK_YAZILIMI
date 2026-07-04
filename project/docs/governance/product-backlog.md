@@ -69,6 +69,13 @@ Status:
 BACKLOG
 ```
 
+## Closed Register
+
+| ID | Domain | İş | Kapanış Kanıtı |
+|---|---|---|---|
+| MPB-005 | Accounting | Trial Balance query/API/read model expansion | PR #885 squash merged, final SHA `4c8756c911542d579f16672a9ceb8bf696881cbb` |
+| MPB-006 | Accounting | Dry-run vs journal reconciliation and real-data reconciliation | PR #892 squash merged, canonical HEAD `05260c781420be5262c142e310299b9f9cc90e4d` |
+
 ## Items
 
 Legacy `strategic-backlog.md` içerik migration'ı ayrı onaylı governance işi olarak yapılacaktır (aşağıdaki maddeler bu migration'dan bağımsız, ADR-009 kararından doğan yeni maddelerdir).
@@ -336,3 +343,317 @@ Unlock Condition: Gerçek approval hacmi (mutation/accounting yüzeyleri canlı)
 Estimated Size: M (Claude FE-only)
 Related Modules: web components/office-approval, lib/api/office-approval, guarded-edge
 Status: BACKLOG
+
+---
+
+## Alacak Kalemi Domain — Round-3 Backlog (2026-07-03 GO-ANALYZE, NO-GO koşullu)
+
+2026-07-03 tarihli Alacak Kalemi (Claim Item) full-stack GO-ANALYZE denetimi (36-ajanlı workflow, 23 CONFIRMED bulgu: B1 canlı bakiye faiz=0+TBK100 mahsupsuz, B2 interest-engine auth bypass, B3 CASCADE-delete FK boşluğu, B4 ClaimItem mutasyonu audit'siz, B5 ledger idempotency yok, B6 kanonik motorda 3 matematik hatası) + Round-2 senaryo analizi (20-ajanlı, S1-S10) + owner'ın harici hukuki kaynak eleştirisi (Harçlar K. tahsil harcı, AYM 22.07.2025 3095 iptali, TCMB/TTK1530, 12. Yargı Paketi) sonucu üretilen 21 maddelik backlog. **Karar: production tahsilat NO-GO** (P0 maddeleri kapanırsa CONDITIONAL GO). Bu eksen POST-P4 Accounting Engine ekseninden (ADR-010) BAĞIMSIZDIR — ancak 2026-07-04 itibarıyla paralel bir oturumun aynı dosyalara (interest-engine/claim-item, collection-reversal.service.ts) ALC-P0-1'den habersiz şekilde dokunduğu doğrulanmıştır (bkz decision-log.md 2026-07-04 satırı); implementasyon öncesi güncel git durumu kontrol edilmelidir.
+
+---
+
+ID: ALC-P0-1
+Title: Collection idempotency
+Problem: MANUAL tahsilat girişinde idempotency guard yoktu; aynı ödeme iki kez kaydedilebiliyordu (S9/RC2).
+Business Value: Borç/payable tutarlarının çift-sayım riski olmadan doğru kalması.
+Technical Value: Mevcut `@@unique([tenantId, idempotencyKey])` deseni (ClientOffset/AccountingJournalEntry'de kanıtlı) Collection.create'e taşındı; advisory-lock + P2002 disambiguation.
+Priority: CRITICAL
+Depends On: —
+Unlock Condition: — (bağımsız, ilk uygulanan madde)
+Estimated Size: M
+Related Modules: collection.service.ts, Collection (schema), CollectionModal (FE)
+Status: DONE (PR #851, merge `d65950f8`, 2026-07-03; DB-gated integration test disposable Docker Postgres'te PASS)
+
+ID: ALC-P0-2
+Title: POSTED collection disposition reversal/storno zinciri
+Problem: PAYMENT_REVERSED bir POSTED disposition'a geldiğinde journal/BalanceLedger/payout etkileri atomik geri alınmıyordu (S7/RC7).
+Business Value: Ödeme iptal edildiğinde mizanın/muhasebe defterinin askıda para bırakmaması.
+Technical Value: `collection-reversal.service.ts` genişletmesi; POSTED disposition kör REVERSED yapılmadan (2026-06-27 kilitli karar korunarak) journal/BalanceLedger/payout tarafını kapsayan storno.
+Priority: CRITICAL
+Depends On: —
+Unlock Condition: P0-2B/C için BalanceLedger/payout/ClientStatement reversal tasarım kararı (owner)
+Estimated Size: M-L
+Related Modules: collection-reversal.service.ts, AccountingJournalEntry, BalanceLedger, ClientPayout, ClientStatement
+Status: IN-PROGRESS — **P0-2A** (accounting journal-entry storno, idempotent, `reverseAccountingJournalEntryInTransaction`) DONE, commit `bc1b9c4b` (2026-07-04, paralel oturum). **P0-2B/C** (BalanceLedger + payout + ClientStatement etkileri) HÂLÂ AÇIK — kasıtlı manuel boundary (2026-06-27 kilitli karar: "yalnız status değiştirmek finansal hakikati düzeltmez"). P0-2A'yı P0-2'nin tamamı sanma.
+
+ID: ALC-P0-3
+Title: Canonical balance source decision + cutover tasarımı
+Problem: Üç ayrı "bakiye gerçekliği" var (case.service.ts getCalculationSummary/dues-tabanlı gösterim, ClaimItem/summary-engine, interest-engine computeBalance) — hiçbiri diğerini SoT olarak geçersiz kılmıyor (S1/S2/S5 kökeni/RC1).
+Business Value: Gösterilen borç/kalan-borç tutarının tek, doğru, denetlenebilir kaynağa dayanması.
+Technical Value: Authoritative motor seçimi + cutover sırası (shadow→prove→legal-signoff) kararı; bu madde tasarım/karar kaydıdır, kod değil.
+Priority: CRITICAL
+Depends On: P0-4, P0-5, P0-7 (karşılıklı — cutover tasarımı üçünü birden kapsar)
+Unlock Condition: Av. sign-off (gösterilen borç tutarı değişecek)
+Estimated Size: L (tasarım) + ayrı L (implementasyon, sonraki gate)
+Related Modules: case.service.ts (getCalculationSummary), interest-engine (CaseBalanceService), summary-engine, balance-shadow-compare
+Status: BACKLOG — **B1 blocker'ının kapanış yoludur.** #857/#861 (2026-07-03/04, commit `de4e49c7`/`dc22c6f9`) yalnız ClaimItem'a `interestAccrualStatus`(ACCRUES/NO_INTEREST/UNKNOWN)/`interestStartDateProvenance` sözleşmesini ekledi; cutover'ın kendisi başlamadı. `case.service.ts:3860-61` hâlâ `takipOncesiFaiz=0`/`takipSonrasiFaiz=0` hardcoded (2026-07-04 itibarıyla koddan doğrulandı). #857 ile B1'i kapanmış SAYMA.
+
+ID: ALC-P0-4
+Title: Legacy `Due` freeze/decommission
+Problem: `Due` modeli tenant'sız/audit'siz/mutable; gösterilen bakiye hâlâ bunu okuyor; ClaimItem ile çifte kaynak.
+Business Value: Tek kanonik alacak kaynağı; veri bütünlüğü.
+Technical Value: Tutar-bazlı (yalnız adet değil) reconciliation raporu + freeze/decommission planı.
+Priority: HIGH
+Depends On: P0-3
+Unlock Condition: P0-3 cutover yönü kararlaştıktan sonra
+Estimated Size: L
+Related Modules: Due (schema), case.service.ts, due-to-claim-item.mapper.ts
+Status: BACKLOG
+
+ID: ALC-P0-5
+Title: Interest/expense materialization + TBK100 allocation (canlı write-path)
+Problem: `addInterestItem` throw ediyor; faiz/masraf ClaimItem'a hiç dönüşmüyor; write-path anapara-only'ye çöküyor (S2/RC3).
+Business Value: Kısmi ödemede faiz/masraf kaybolmadan doğru mahsup.
+Technical Value: TBK100 allocator'ı canlı write-path'e bağlamak; kanonik motoru SHADOW_ONLY'den çıkarmak.
+Priority: CRITICAL
+Depends On: P0-3
+Unlock Condition: P0-3 cutover kararı + Av. doğrulaması (TBK100 fer'i-faizden-önce yorumu)
+Estimated Size: L
+Related Modules: interest-engine, tbk100-allocator.service.ts, claim-item.service.ts
+Status: BACKLOG
+
+ID: ALC-P0-6
+Title: Tahsil harcı 2D matris + state-liability modeli
+Problem: Tahsil harcı hiçbir katmanda tahakkuk etmiyor; oran hem aşamaya (haciz-öncesi/sonrası/satış) hem tahsil yöntemine (müdürlük/haricen) göre değişiyor, kodda tek hardcoded oran var (S6/RC6; owner harici kaynak: Harçlar K. m.23).
+Business Value: Devlete ödenecek harcın doğru + zamanında tahakkuku; mükerrer/eksik tahsilat riskinin kapanması.
+Technical Value: `enforcementStage`/`collectionMethod` alanları (şemada yok) + 2D oran matrisi + `CollectionDispositionLineType`'a devlet-harcı satırı.
+Priority: HIGH
+Depends On: P0-2 (storno modeliyle tutarlı state-fee reversal), P1-5
+Unlock Condition: P1-5 (enforcementStage/collectionMethod şeması)
+Estimated Size: L
+Related Modules: case.service.ts, CollectionDispositionLineType (schema), AccountingAccountCode
+Status: BACKLOG
+
+ID: ALC-P0-7
+Title: Shadow compare + migration reconciliation
+Problem: `BalanceShadowCompareService` kısmen mevcut ama persist edilmiş "old=new" raporu yok; cutover kanıtı üretilemiyor.
+Business Value: Cutover'ın gösterilen bakiyeyi bozmadığının denetlenebilir kanıtı.
+Technical Value: Shadow-compare sonuçlarının persist edilmesi + reconciliation raporu.
+Priority: HIGH
+Depends On: P0-3, P0-4, P0-5
+Unlock Condition: P0-3/4/5 tamamlandıktan sonra
+Estimated Size: M
+Related Modules: balance-shadow-compare
+Status: BACKLOG
+
+ID: ALC-P1-1
+Title: PaymentDesignation / TBK 101 (borçlu mahsup iradesi)
+Problem: Şemada tamamen yok; `collection.service.ts:565` "not implemented" itirafı; borçlunun "şu borca mahsuben" iradesi sessizce eziliyor (S3).
+Business Value: TBK 101 gereği borçlunun tahsis hakkının korunması; yanlış borca mahsup riskinin kapanması.
+Technical Value: `PaymentDesignation`/`PaymentApplication` katmanı (bkz claim-model-7q-decisions.md Cross-cutting #1).
+Priority: HIGH
+Depends On: P0-5
+Unlock Condition: P0-5 (materialization) sonrası
+Estimated Size: L
+Related Modules: collection.service.ts, yeni PaymentDesignation (schema)
+Status: BACKLOG
+
+ID: ALC-P1-2
+Title: Receipt allocation semantics
+Problem: Alacaklı makbuz yönlendirmesi (hangi ödeme hangi borca yazılsın beyanı) tutulamıyor.
+Business Value: Makbuz bazlı tahsis hukuki geçerliliğinin korunması.
+Technical Value: UNKNOWN — mevcut altyapı belirsiz, ayrı forensic gerekebilir.
+Priority: MEDIUM
+Depends On: P1-1
+Unlock Condition: P1-1 sonrası
+Estimated Size: M (UNKNOWN — forensic sonrası netleşir)
+Related Modules: collection.service.ts
+Status: BACKLOG
+
+ID: ALC-P1-3
+Title: TBK102AllocationPolicy ("ilk takip edilen borç" önceliği)
+Problem: Write-path `sortOrder asc` kullanıyor, `dueDate` okumuyor; owner düzeltmesi (R2): icra platformunda dominant kriter "ilk takip edilen borç", `dueDate` değil (S4).
+Business Value: Çoklu borçta doğru borç-kimliği ataması; zamanaşımı hesaplarının yanlış borca kaymaması.
+Technical Value: Sıra: açıklama→makbuz→muaccel→**ilk takip edilen**→vade→orantılı→güvence-en-az.
+Priority: HIGH
+Depends On: P1-1; pursuit-tarihi alanının var olup olmadığı (UNKNOWN, migration gerekebilir)
+Unlock Condition: P1-1 + pursuit-field forensic
+Estimated Size: M-L
+Related Modules: collection.service.ts, yeni pursuit-date alanı (muhtemel migration)
+Status: BACKLOG
+
+ID: ALC-P1-4
+Title: `LegalRateRule` fixed + derived (formül-yetenekli oran motoru)
+Problem: Rate engine yalnız statik effectiveDate+ratePercent taşıyor; 12. Yargı Paketi'nin reeskont×%80 formülü statik tabloyla temsil edilemez (S5; owner'ın R3 düzeltmesi).
+Business Value: Kanuni faiz oranı mevzuat değiştiğinde (12. Yargı Paketi yasalaşırsa) sisteme formülle, elle güncellemeden yansıması.
+Technical Value: `LegalRateRule` hem `FIXED_RATE` hem `DERIVED_FROM_REFERENCE_RATE` tiplerini taşır; `status`(DRAFT/PROPOSED_RULE/ENACTED_NOT_EFFECTIVE/EFFECTIVE) ile henüz yasalaşmamış kural canlı hesaba karışmaz.
+Priority: MEDIUM
+Depends On: P0-3
+Unlock Condition: P0-3 sonrası; 12. Yargı Paketi'nin fiili yasalaşma durumu (owner tespiti 2026-07-03: esas no 2/3737, Adalet Komisyonu'nda kabul, henüz kanunlaşmadı — GÜNDEMDE)
+Estimated Size: M
+Related Modules: interest-engine rate provider
+Status: BACKLOG
+
+ID: ALC-P1-5
+Title: enforcementStage/collectionMethod modeli
+Problem: Tahsil harcı matrisinin (P0-6) önkoşulu olan aşama/yöntem alanları şemada yok (teyit edildi).
+Business Value: P0-6'nın önkoşulu; ayrıca dosya-aşaması raporlamasında genel fayda.
+Technical Value: Yeni alan(lar) + migration.
+Priority: HIGH
+Depends On: —
+Unlock Condition: —
+Estimated Size: S-M (migration + backfill)
+Related Modules: Case/CaseDisposition (schema)
+Status: BACKLOG
+
+ID: ALC-P1-6
+Title: State payable / government liability hesap kodu
+Problem: `AccountingAccountCode`'da devlet-harcı hesabı yok (teyit edildi).
+Business Value: Tahsil harcının muhasebe defterinde doğru hesaba düşmesi.
+Technical Value: Yeni account code + posting branch.
+Priority: MEDIUM
+Depends On: P1-5
+Unlock Condition: P1-5 sonrası
+Estimated Size: S
+Related Modules: AccountingAccountCode, accounting journal
+Status: BACKLOG
+
+ID: ALC-P1-7
+Title: Attorney fee / client payable ayrımı doğrulaması
+Problem: Mevcut ayrım var ama state-fee (P0-6) eklenince matrah değişecek; doğrulama gerekiyor.
+Business Value: Vekalet ücreti ile müvekkile-borç ayrımının harç eklenince bozulmaması.
+Technical Value: Migration gerekmiyor; yalnız doğrulama/test.
+Priority: MEDIUM
+Depends On: P0-6
+Unlock Condition: P0-6 sonrası
+Estimated Size: S
+Related Modules: disposition-posting.service.ts
+Status: BACKLOG
+
+ID: ALC-P2-1
+Title: Due→ClaimItem/Ledger migration mapping (tutar-mutabakatı)
+Problem: Backfill sınıflandırması exhaustive ama tutar-bazlı mutabakat raporu yok.
+Business Value: Migration'da veri kaybı olmadığının kanıtı.
+Technical Value: Reconciliation script.
+Priority: MEDIUM
+Depends On: P0-4
+Unlock Condition: P0-4 sonrası
+Estimated Size: M
+Related Modules: due-to-claim-item.mapper.ts, backfill scripts
+Status: BACKLOG
+
+ID: ALC-P2-2
+Title: old vs new computed balance reconciliation
+Problem: Persist edilmiş kanıt yok.
+Business Value: Cutover kararının denetlenebilir kanıtı.
+Technical Value: P0-7'nin raporlama tarafı.
+Priority: MEDIUM
+Depends On: P0-7
+Unlock Condition: P0-7 sonrası
+Estimated Size: S
+Related Modules: balance-shadow-compare
+Status: BACKLOG
+
+ID: ALC-P2-3
+Title: Shadow-compare threshold + gate
+Problem: `finalDebtStates` dolu + `safeForPrimaryDisplay=true` fixture/threshold tanımlı değil.
+Business Value: Cutover'ın ne zaman "güvenli" sayılacağına dair nesnel eşik.
+Technical Value: Threshold config + gate mantığı.
+Priority: MEDIUM
+Depends On: P0-7
+Unlock Condition: P0-7 sonrası
+Estimated Size: S
+Related Modules: balance-shadow-compare
+Status: BACKLOG
+
+ID: ALC-P2-4
+Title: Tenant/case-scoped cutover flag
+Problem: Cutover'ın kademeli (tenant/case bazlı) açılabilmesi için flag yok.
+Business Value: Riskin kademeli kontrolü; tam-veya-hiç cutover'dan kaçınma.
+Technical Value: Guarded-primary çift-kilit flag deseni (mevcut flag desenleriyle tutarlı).
+Priority: LOW
+Depends On: P0-3
+Unlock Condition: P0-3 sonrası
+Estimated Size: S
+Related Modules: feature-flags
+Status: BACKLOG
+
+ID: ALC-P2-5
+Title: Immutable audit snapshot + capability (ClaimItem mutasyonu)
+Problem: ClaimItem mutasyonu audit'siz + capability-siz (B4/S10/RC9).
+Business Value: Kim-ne-zaman-neyi-değiştirdi denetlenebilirliği; ADR-009 tutarlılığı.
+Technical Value: ADR-009 office-approval akışına bağlanma + audit alanları.
+Priority: HIGH
+Depends On: ADR-009 (Universal Office Approval, LOCKED ama POST-P4 sonrasına ertelendi — bkz UA-1)
+Unlock Condition: UA-1 sıraya girene kadar bloklu
+Estimated Size: M
+Related Modules: claim-item.service.ts, office-approval
+Status: BACKLOG (UA-1 ile aynı blok zincirine bağımlı)
+
+ID: ALC-P2-6
+Title: Rollback plan (finansal migration)
+Problem: 64 migration'da down-path yok.
+Business Value: Migration hatası durumunda geri dönüş imkânı.
+Technical Value: Rollback script seti.
+Priority: LOW
+Depends On: —
+Unlock Condition: —
+Estimated Size: M
+Related Modules: prisma/migrations
+Status: BACKLOG
+
+ID: ALC-P2-7
+Title: Golden master legal fixtures
+Problem: Hukuki hesap karakterizasyonu (TBK100/101/102+faiz-segment+tahsil-harcı-matris+storno) dağınık, tek golden-set yok.
+Business Value: Regresyon güvenliği + hukuki doğrulamanın tek yerde sabitlenmesi.
+Technical Value: Golden fixture seti + karakterizasyon testleri.
+Priority: MEDIUM
+Depends On: P0-5, P0-6, P1-3, P1-4
+Unlock Condition: Bağımlı maddeler tamamlanınca
+Estimated Size: M
+Related Modules: interest-engine test fixtures
+Status: BACKLOG
+
+---
+
+## ALC-P0-3A — Canonical Bucket Availability (2026-07-04, ALC-P0-3'ün alt-hattı)
+
+Kaynak: gerçek `GET /api/interest-engine/case/:caseId/balance` çağrısı `result:null, skippedReason:NO_BUCKETS, diagnostics:CURRENCY_MISMATCH` döndürdü (diagnostic script'in DI hatası değil — owner'ın gerçek dev server + gerçek case ID ile doğrulaması). Kök neden koddan izlendi: `assembleClaimBuckets([])` (0 ClaimItem) + `groupByCurrency` payment'i "bucket'sız" TRY grubuna düşürüyor. `case-balance.service.ts`/`currency-grouper.ts`/`case.service.ts`/`collection.service.ts`/`case.dto.ts`/`cases/[id]/page.tsx` satır satır okunarak 4 alt-madde çıkarıldı.
+
+ID: ALC-P0-3A1
+Title: Orphan collection detection (CONFIRMED collection + 0 ClaimItem) — salt-okuma DB taraması
+Problem: Sistemin ClaimItem'sız CONFIRMED collection üretebildiği koddan doğrulandı (bkz ALC-P0-3A4); mevcut DB'de kaç dosyayı etkilediği bilinmiyordu.
+Business Value: Varsayım değil, ölçülmüş gerçek etki.
+Technical Value: Salt-okuma script (`scripts/diagnostic-orphan-collections.ts`, untracked, commit edilmedi) — `Collection.groupBy(status=CONFIRMED)` + her caseId için ClaimItem/Due count.
+Priority: —
+Depends On: —
+Unlock Condition: —
+Estimated Size: XS
+Related Modules: collection, claim-item, due
+Status: DONE (2026-07-04). **KRİTİK BULGU:** dev DB'de 4 CONFIRMED-collection'lı dosyadan yalnız 1'i ClaimItem=0 (VE Due=0). **O TEK dosya (`cmqpl7tb300021zfni38hq9j8`, dosya no 2026/9501) — collection ID'si (`cmqz0dt9o...`) ve tutarı (₺5.000) `collection-clientpayable-flow-audit.md` hafızasındaki "ABC Lojistik" QA-referans verisiyle BİREBİR eşleşiyor** — bu, 2026-06-29'da owner tarafından zaten "QA-REFERENCE-DATA, SİLİNMEZ/RESET EDİLMEZ" olarak KİLİTLENMİŞ, bilinçli/sentetik bir test seed'i ('[TM47D6-QA-SEED]' işaretli, gerçek aktör yok). **Organik (gerçek kullanım kaynaklı) sıfır orphan-collection dosyası bulunmadı.** Mekanizma (A4) koddan kesin doğrulandı; ama mevcut dev DB'de yalnız bilinçli sentetik fixture var, gerçek örnek yok. Prod henüz yok (`owner-environment-risk-model.md`) — "gerçek kullanımda yaygınlık" sorusu şu an test edilemez. A2-A4'ün aciliyeti bu ışıkta değerlendirilmeli: mekanizma gerçek ama yaygınlık kanıtı yok.
+
+ID: ALC-P0-3A2
+Title: Canlı UI'da post-hoc ClaimItem ekleme yolu (UX/API Repair Path)
+Problem: `POST /claim-items` API'si var ama case detay sayfasındaki `ClaimItemPanel` HER ZAMAN `readOnly metadataEdit` render ediliyor (`cases/[id]/page.tsx:2806-2809`, koddan doğrulandı) — "yeni kalem ekle" UI'ı hiçbir zaman gösterilmiyor. Mevcut bir dosyaya (örn. A1'in bulduğu orphan senaryo) sonradan alacak kalemi eklemenin canlı UI yolu yok.
+Business Value: Veri-eksikliği durumlarının normal kullanıcı akışıyla düzeltilebilmesi.
+Technical Value: `ClaimItemPanel`'e koşullu "ekle" modu; ADR-009 (Universal Office Approval) kapsamına girip girmeyeceği ayrı karar.
+Priority: MEDIUM
+Depends On: ADR-009 authz deseniyle tutarlılık kararı
+Unlock Condition: Tasarım kararı — bu akış approval-backed mi, mevcut capability-guard yeterli mi?
+Estimated Size: M
+Related Modules: components/claim-item/ClaimItemPanel, AddClaimItemModal, claim-item.controller.ts
+Status: BACKLOG — kod değişikliği YAPILMADI, yalnız backlog kaydı. A4 ile birlikte düşünülmeli (A4 dosyaları kilitlerse, açan yol muhtemelen budur).
+
+ID: ALC-P0-3A3
+Title: Dosya açılışında minimum ClaimItem/Due validasyonu veya "zero-claim draft" statüsü (Intake Guard)
+Problem: `CreateCaseDto.dues` opsiyonel, minimum-uzunluk kısıtı yok (`@IsOptional()`, `@ArrayMinSize` YOK — `case.dto.ts:596-600` koddan doğrulandı) — sıfır-dues'lu dosya açmak backend'de tamamen izinli.
+Business Value: Yeni dosyaların, alacak kalemi girilmeden "tam açılmış" sayılmasının önüne geçmek.
+Technical Value: İki seçenek (tasarım kararı gerekir): (a) sert `@ArrayMinSize(1)` validasyonu, (b) yumuşak "zero-claim draft" durumu/etiketi (muhtemelen schema alanı) + UI'da görünür kılma.
+Priority: MEDIUM
+Depends On: —
+Unlock Condition: Owner kararı — sert validasyon (mevcut iş akışlarını kırma riski?) mi, yumuşak etiket mi?
+Estimated Size: S (sert validasyon) / M (yumuşak + schema)
+Related Modules: case.dto.ts, case.service.ts (create)
+Status: BACKLOG — kod değişikliği YAPILMADI, yalnız backlog kaydı.
+
+ID: ALC-P0-3A4
+Title: ClaimItem'sız CONFIRMED collection'ı BLOCKED/UNALLOCATED state'e düşür (Collection Guard)
+Problem: `collection.service.ts:706-711` — ClaimItem yoksa yalnız `logger.warn("case has no claimItems; payment not ledger-allocated")` yazılıyor; Collection yine de CONFIRMED oluyor. Sessiz sunucu-log'u hiçbir kullanıcı arayüzünde/audit'te görünmüyor.
+Business Value: Alacaksız tahsilatın sessizce "normal" görünmesi yerine açıkça işaretlenmesi — mali doğruluk + denetlenebilirlik.
+Technical Value: Muhtemelen `Collection`/`LedgerEntry`'ye yeni bir state (`BLOCKED`/`UNALLOCATED` benzeri) eklemek — **BU BİR SCHEMA/DAVRANIŞ DEĞİŞİKLİĞİ**, mevcut collection-confirmation akışını etkiler (S9/idempotency ile aynı hassasiyet sınıfı, Ultra-tier).
+Priority: HIGH (A1 bulgusuyla — organik örnek yok, prod yok — aciliyet düşük-orta olarak yeniden değerlendirilebilir; mekanizma yine de gerçek ve kapatılmalı)
+Depends On: ALC-P0-3A2 (repair path olmadan BLOCKED yapmak, düzeltme imkânı olmayan bir dosyayı kilitler)
+Unlock Condition: Owner + Av. sign-off (finansal davranış değişikliği)
+Estimated Size: L (schema + servis + test + geriye-dönük veri etkisi)
+Related Modules: collection.service.ts, Collection (schema), LedgerEntry
+Status: BACKLOG — kod değişikliği YAPILMADI, yalnız backlog kaydı. Ayrı, dikkatli bir GO-IMPLEMENT gerektirir.
