@@ -4,6 +4,7 @@ import { PrismaService } from "@/prisma/prisma.service";
 import { CaseDebtorService } from "./case-debtor.service";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import {
   AddressTaskType,
   AddressTaskStatus,
@@ -30,6 +31,7 @@ describeDb("CaseDebtorService.removeCaseDebtor - AddressTask cleanup with passiv
         PrismaService,
         AuditService,
         { provide: OfficeApprovalService, useValue: officeApproval },
+        CaseDebtorLifecycleGuardService,
       ],
     }).compile();
 
