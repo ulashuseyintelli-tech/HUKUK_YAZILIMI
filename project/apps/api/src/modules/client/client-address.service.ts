@@ -59,10 +59,10 @@ export class ClientAddressService {
 
   /// <remarks>
   /// Cagrildigi yerler:
-  /// - ClientAddressController.update() -> PUT /addresses/:addressId (JWT-only, tenant-scoped)
+  /// - ClientAddressController.update() -> PUT /clients/:clientId/addresses/:addressId (JWT-only, tenant+client-scoped)
   /// </remarks>
-  async update(tenantId: string, addressId: string, dto: UpdateClientAddressDto): Promise<ClientAddressRow> {
-    const address = await this.findAddressInTenant(tenantId, addressId);
+  async update(tenantId: string, clientId: string, addressId: string, dto: UpdateClientAddressDto): Promise<ClientAddressRow> {
+    const address = await this.findAddressInClient(tenantId, clientId, addressId);
 
     return this.prisma.$transaction(async (tx) => {
       // isPrimary yalnız true geldiğinde ele alınır (promote + sibling'leri unset). false/undefined
@@ -92,10 +92,10 @@ export class ClientAddressService {
 
   /// <remarks>
   /// Cagrildigi yerler:
-  /// - ClientAddressController.remove() -> DELETE /addresses/:addressId (JWT-only, tenant-scoped)
+  /// - ClientAddressController.remove() -> DELETE /clients/:clientId/addresses/:addressId (JWT-only, tenant+client-scoped)
   /// </remarks>
-  async remove(tenantId: string, addressId: string): Promise<void> {
-    const address = await this.findAddressInTenant(tenantId, addressId);
+  async remove(tenantId: string, clientId: string, addressId: string): Promise<void> {
+    const address = await this.findAddressInClient(tenantId, clientId, addressId);
 
     if (address.isPrimary) {
       throw new BadRequestException({
@@ -107,9 +107,9 @@ export class ClientAddressService {
     await this.prisma.clientAddress.delete({ where: { id: addressId } });
   }
 
-  private async findAddressInTenant(tenantId: string, addressId: string): Promise<ClientAddressRow> {
+  private async findAddressInClient(tenantId: string, clientId: string, addressId: string): Promise<ClientAddressRow> {
     const address = await this.prisma.clientAddress.findFirst({
-      where: { id: addressId, client: { tenantId } },
+      where: { id: addressId, clientId, client: { tenantId } },
       select: {
         id: true,
         clientId: true,

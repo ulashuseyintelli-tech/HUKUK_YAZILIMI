@@ -762,15 +762,15 @@ class ApiClient {
     });
   }
 
-  async updateClientAddress(addressId: string, data: any) {
-    return this.request<any>(`/addresses/${addressId}`, {
+  async updateClientAddress(clientId: string, addressId: string, data: any) {
+    return this.request<any>(`/clients/${clientId}/addresses/${addressId}`, {
       method: "PUT",
       body: JSON.stringify(data),
     });
   }
 
-  async deleteClientAddress(addressId: string) {
-    return this.request<any>(`/addresses/${addressId}`, {
+  async deleteClientAddress(clientId: string, addressId: string) {
+    return this.request<any>(`/clients/${clientId}/addresses/${addressId}`, {
       method: "DELETE",
     });
   }

@@ -6,7 +6,8 @@
  * "İletişim Kanalları" satır deseni mirror edilir (tip + ★ primary + değer + aksiyonlar).
  * addresses.length===0 → flat clientPrimaryAddress() fallback'i (backfill YOK, eski kayıt olduğu gibi
  * gösterilir). isCurrent/arşiv UI'a açılmaz; DebtorAddress'in hukuki/tebligat/risk alanları buraya
- * taşınmaz — yalnız dedicated endpoint'lerle (POST/PUT/DELETE /addresses) id-bazlı CRUD.
+ * taşınmaz — yalnız dedicated endpoint'lerle (POST /clients/:clientId/addresses,
+ * PUT/DELETE /clients/:clientId/addresses/:addressId) id-bazlı CRUD.
  */
 import { useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
@@ -65,7 +66,7 @@ export function ClientAddressSection({ clientId, addresses, fallbackAddress, onC
     setBusyId(addr.id);
     setActionError('');
     try {
-      await api.updateClientAddress(addr.id, { isPrimary: true });
+      await api.updateClientAddress(clientId, addr.id, { isPrimary: true });
       onChanged();
     } catch (error) {
       setActionError(addressErrorMessage(error, 'Birincil adres güncellenemedi.'));
@@ -80,7 +81,7 @@ export function ClientAddressSection({ clientId, addresses, fallbackAddress, onC
     setBusyId(addr.id);
     setActionError('');
     try {
-      await api.deleteClientAddress(addr.id);
+      await api.deleteClientAddress(clientId, addr.id);
       onChanged();
     } catch (error) {
       setActionError(addressErrorMessage(error, 'Adres silinemedi.'));
@@ -196,7 +197,7 @@ function ClientAddressModal({
       if (mode === 'create') {
         await api.createClientAddress(clientId, payload);
       } else if (address) {
-        await api.updateClientAddress(address.id, payload);
+        await api.updateClientAddress(clientId, address.id, payload);
       }
       onSaved();
     } catch (err) {
