@@ -20,11 +20,15 @@ import {
 } from "./dto/debtor.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { DebtorCrossCaseNotificationService } from "./debtor-cross-case-notification.service";
 
 @Controller("debtors")
 @UseGuards(JwtAuthGuard)
 export class DebtorController {
-  constructor(private debtorService: DebtorService) {}
+  constructor(
+    private debtorService: DebtorService,
+    private crossCaseNotification: DebtorCrossCaseNotificationService
+  ) {}
 
   // ==================== CASE DEBTORS (FAZ 1) ====================
 
@@ -149,6 +153,38 @@ export class DebtorController {
   @Get("statistics")
   getStatistics(@CurrentUser("tenantId") tenantId: string) {
     return this.debtorService.getStatistics(tenantId);
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - (ileride) Ofis-içi "görülmemiş bildirimlerim" listesi → GET /debtors/cross-case-notifications
+  ///   (DBND-D6A-2-SURFACE). tenantId/recipientUserId YALNIZ JWT'den (@CurrentUser) türetilir —
+  ///   client bu ikisini query/body ile ASLA veremez. Statik route, :id route'undan ÖNCE
+  ///   tanımlanmalı (aksi halde Nest bunu debtor id'si sanır).
+  /// </remarks>
+  @Get("cross-case-notifications")
+  listCrossCaseNotifications(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") recipientUserId: string,
+    @Query("status") status?: "PENDING" | "ACKNOWLEDGED" | "EXPIRED"
+  ) {
+    return this.crossCaseNotification.listForRecipient(tenantId, recipientUserId, status);
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - (ileride) "Gördüm" aksiyonu → POST /debtors/cross-case-notifications/:id/acknowledge
+  ///   (DBND-D6A-2-SURFACE). Yalnız görüldü bilgisi — hukuki kabul/önlem/dosya işlemi anlamına
+  ///   GELMEZ. tenantId/recipientUserId YALNIZ JWT'den türetilir; compare-and-set kendi
+  ///   recipientUserId + tenantId + status=PENDING dışındaki kayıtları etkilemez.
+  /// </remarks>
+  @Post("cross-case-notifications/:id/acknowledge")
+  acknowledgeCrossCaseNotification(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") recipientUserId: string,
+    @Param("id") notificationId: string
+  ) {
+    return this.crossCaseNotification.acknowledge(tenantId, notificationId, recipientUserId);
   }
 
   @Get(":id")

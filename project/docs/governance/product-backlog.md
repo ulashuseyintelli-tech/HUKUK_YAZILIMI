@@ -80,6 +80,8 @@ BACKLOG
 | MPB-014 | Authorization | Policy Engine expense/kambiyo/UYAP blockers | PR #42/#43/#44 merged; P3 UYAP outage merge `b222adc31143ae348aa0968302ab1138fd3d08a0`; focused Policy Engine tests PASS |
 | MPB-015 | Authorization | OfficeApproval platform hardening and finance bridges | PR #592/#618/#633/#639/#654/#658/#830/#846/#875 merged; focused OfficeApproval/client-settlement tests PASS |
 | MPB-016 | Alacak Kalemi | Mixed-source interest resolution (Kademe 1.5, resolveInterestConfig) | PR #898 squash merged, SHA `a8e71a91`; 2026/9502 canonical balance artık üretiliyor; 2026/9604 ve 2026/9605 DATA/PIPELINE blocker olarak açık kalıyor (engine bug değil) |
+| MPB-017 | Debtor | CaseDebtor lifecycle, passivation, passive guards and UI visibility | PR #255/#257/#261/#798 merged; repo verification confirmed passivation, passive writer guards, ACTIVE/includePassive readers and passive UI safety; focused backend tests PASS (5 suites, 42 tests); web passive tests present, local Vitest blocked by toolchain startup error |
+| MPB-018 | Debtor | Debtor identity / Party Registry / duplicate hardening | Repo verification confirmed duplicate identity guards, similar-name review, identity format/checksum validation and identity drift fixes; Party Registry remains design-only/HOLD by decision; focused backend tests PASS (3 suites, 19 tests) |
 | MPB-027 | Security | AddressTask auth, tenant isolation and data-integrity hardening | PR #202/#207/#261 merged; repo verification confirmed AddressTask auth/tenant/data-integrity hardening; focused AddressTask tests PASS (3 suites, 67 tests) |
 
 ## Items
@@ -681,6 +683,43 @@ Unlock Condition: —
 Estimated Size: S
 Related Modules: claim-bucket-assembler.ts
 Status: DONE — **MERGED**. PR #898, squash SHA `a8e71a91`. **2026/9502 artık canonical balance üretiyor** (hasResult=true, finalDebtStatesCount=1, assemblerDiagnostics=[]). **2026/9604 ve 2026/9605 hâlâ blocked — ama artık canonical engine bug'ı DEĞİL, eksik veri/pipeline örneği** (ne item ne case seviyesinde faiz türü var; bu PR'ın kapsamı dışında, ayrı owner kararı gerektirir). QA-seed (2026/9501) dokunulmadı, davranışı değişmedi.
+---
+
+## ALC-AUTH-1 — Canonical Principal/Cost/Fee/Payment Authority Gap (2026-07-04, ALC-P0-3'ün alt-hattı, GO-ANALYZE)
+
+Kaynak: ALC-P0-3B3 sonrası 2026/9502 için ALC-P0-3C1 guarded primary display smoke'u **FAIL** verdi (`safeForPrimaryDisplay=false`, `primarySource=LEGACY_CALCULATION_SUMMARY`) — `comparability.comparable=true` ve `finalDebtStatesAvailable=true` olmasına rağmen. ALC-AUTH-1 bu smoke'un kök nedenini, B3'ün faiz düzeltmesine dokunmadan, salt-okuma (dev-DB canlı `ClaimItem`/`Collection`/`LedgerEntry`/`LedgerAllocation`/`CollectionOverpayment` sorgusu + kod izleme) araştırdı. Kod değişikliği YAPILMADI.
+
+**Tek cümlelik kök bulgu:** Canonical `case-balance-display.ts` yalnız ödeme-SONRASI NET büyüklükler üretiyor (`outstandingAmount`, `finalDebtStates.principal`=kalan anapara); legacy `case.service.ts:getCalculationSummary` ise GROSS/ödeme-öncesi statik değerler üretiyor (`asilAlacak`, `icraMasraflari`, `vekaletUcreti` — tarife formülü, ClaimItem'dan bağımsız). Aynı isimli alanlar iki farklı semantiği taşıyor.
+
+**Sistemik blocker (case'e özgü değil):** `totals.totalDebtAmount` `case-balance-display.ts:475`'te **koşulsuz `null`** — finalDebtStates var olsa bile hiç hesaplanmıyor (INTENTIONAL_GUARD, "gross toplam borç bu contract'ta henüz authority değil"). FE `guarded-primary-display.ts:canonicalPrimaryAmounts()` bu alanın finite olmasını zorunlu kıldığı için `CANONICAL_PRINCIPAL_UNAVAILABLE` HER case için üretilir — B1 primary-display kapısı case verisinden bağımsız olarak yapısal biçimde kapalıdır.
+
+**7 blocker kök-neden sınıflandırması (2026/9502 canlı verisiyle doğrulandı):**
+
+| Blocker | Sınıf | Kök neden |
+|---|---|---|
+| `OUTSTANDING_DELTA` | AUTHORITY_CONFLICT | Legacy gross toplamBorc−toplamTahsilat; canonical net outstanding (TBK100 tam ödeme sonrası 0) — aynı semantik değil. |
+| `PAID_DELTA` | AUTHORITY_CONFLICT | Üç bağımsız tahsilat otoritesi birbirini reconcile etmiyor: legacy=`Collection` (1 kayıt, 100.000), canonical read-path=raw `LedgerEntry` (4 kayıt, 320.000, `LedgerAllocation` bilerek yok sayılıyor — G4b-1 kararı), write-path=`LedgerAllocation`+`CollectionOverpayment` (200.000 mahsup + 100.000 HELD, zaten doğru). Alt neden: 3/4 `LedgerEntry` kaydında `collectionId=null` (Collection'a hiç bağlı değil; iz "PR475 manual refresh validation" test/QA fixture'ına işaret ediyor). |
+| `COSTS_DELTA` | DATA_GAP | Legacy sabit 2026 tarife formülü (ClaimItem'dan bağımsız); canonical Σ EXPENSE/FEE-tipi ClaimItem bekliyor — bu case'te (muhtemelen genelde) hiç yok, case'te tek ClaimItem var (PRINCIPAL). |
+| `ATTORNEY_FEE_DELTA` | DATA_GAP | Aynı — legacy `calculateAttorneyFee()` tarife formülü; canonical ATTORNEY_FEE/ancillary ClaimItem yok. |
+| `PRINCIPAL_BUCKET_DELTA` | AUTHORITY_CONFLICT | Legacy `asilAlacak`=gross orijinal talep (200.000, hiç değişmez); canonical PRINCIPAL bucket=`finalDebtStates.principal`=kalan anapara (TBK100 tam mahsup sonrası 0). |
+| `EXPENSE_BUCKET_DELTA` | DATA_GAP | COSTS_DELTA ile aynı kök, bucket seviyesinde tekrarı. |
+| `ATTORNEY_FEE_BUCKET_DELTA` | DATA_GAP | ATTORNEY_FEE_DELTA ile aynı kök, bucket seviyesinde tekrarı. |
+
+**B1 için minimum implement önerisi (implementasyon yetkisi VERMEZ, ayrı GO-IMPLEMENT gerekir):** (1) `totalDebtAmount` contract kararı + üretimi — gross principal (assembler `asm.buckets[].amount`) + gross interest (`totalInterest`) + costs + ancillaries, authority'si açık şekilde; (2) PRINCIPAL bucket'ta gross/net ayrımı (`originalAmount`/`demandedAmount` vs `remainingAmount` — tek `amount` alanına iki semantik yüklemek cutover'ı sürekli bozar); (3) `Collection`/`LedgerEntry`/`LedgerAllocation` arasında açık hiyerarşi + reconciliation/parity testi (collectionId linkage kontrolü, cancelled/reversed exclusion, QA-fixture ayrımı); (4) cost/vekâlet için ya canonical ClaimItem-materialization hattı eklenir ya da B1 kapsamı bilinçli olarak principal+interest+payment ile sınırlandırılır (masraf/vekâlet legacy diagnostic olarak kalır — `guarded-primary-display.ts`'deki `BACKEND_CONTRACT_REQUIRED`/`LEGACY_DIAGNOSTIC_RETAINED` ayrımı buna kısmen hazır).
+
+**Yetkilendirilmeyenler:** feature flag açma, display cutover, tenant rollout, schema/migration, QA-seed değişikliği, veri düzeltme — hiçbiri bu kayıtla yetkilendirilmez.
+
+ID: ALC-AUTH-1
+Title: Canonical Principal/Cost/Fee/Payment Authority Gap — root-cause analysis
+Problem: 2026/9502 için ALC-P0-3C1 guarded primary display smoke FAIL veriyor; 7 blocker'ın kök nedeni yukarıdaki tabloda sınıflandırıldı (4 AUTHORITY_CONFLICT, 4 DATA_GAP — ikisi aynı kökten türer) + sistemik `totalDebtAmount:null` INTENTIONAL_GUARD bulgusu.
+Business Value: B1 cutover kararının varsayıma değil, ölçülmüş kök nedene dayanması; hangi implement adımının gerçekten kapıyı açacağının netleşmesi.
+Technical Value: Kod değişikliği yok — yalnız salt-okuma dev-DB sorgusu + kod izleme. Bulgular canlı veriyle (`ClaimItem`/`Collection`/`LedgerEntry`/`LedgerAllocation`/`CollectionOverpayment`) çapraz doğrulandı.
+Priority: —
+Depends On: ALC-P0-3B3 (DONE, PR #898 — bu analizde DEĞİŞMEDİ, PASS kalıyor), ALC-P0-3C1 (guarded primary display smoke, bu analizin tetikleyicisi)
+Unlock Condition: Owner, yukarıdaki 4 implement adımından hangisinin/hangilerinin B1 için öncelikli olduğuna karar vermeli; her biri ayrı GO-IMPLEMENT gerektirir.
+Estimated Size: — (bu kayıt yalnız analiz; implement boyutu adım seçimine göre değişir)
+Related Modules: case-balance-display.ts, guarded-primary-display.ts, balance-display-shadow-diff.service.ts, claim-bucket-assembler.ts, calc-prep/payment-mapper.ts, case.service.ts (getCalculationSummary)
+Status: DONE (analiz) — GO-ANALYZE tamamlandı, kod değişikliği yok. **B1 guarded primary display hâlâ FAIL/OPEN.** ALC-P0-3B3 governance kaydı değiştirilmedi.
 ---
 
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)

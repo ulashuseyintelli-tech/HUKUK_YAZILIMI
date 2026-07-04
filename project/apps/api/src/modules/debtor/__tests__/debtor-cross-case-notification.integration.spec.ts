@@ -29,6 +29,7 @@
  * 19. sourceCaseId exclusion works via the primary AddressService path
  */
 import { PrismaClient } from "@prisma/client";
+import { Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { DebtorService } from "../debtor.service";
 import { AddressService } from "../address.service";
@@ -748,6 +749,181 @@ describeIf("DBND-D6A-2 — DebtorCrossCaseNotification Integration", () => {
       const notifications = await notificationsFor(tenantId, debtor.id);
       expect(notifications.some((n) => n.affectedCaseId === caseA.id)).toBe(false);
       expect(notifications.some((n) => n.affectedCaseId === caseB.id)).toBe(true);
+    });
+  });
+
+  // ── Test 20: listForRecipient scoping (tenant + recipient) — DBND-D6A-2-SURFACE ────
+  describe("Test 20: listForRecipient scoping (tenant + recipient)", () => {
+    it("returns only the queried recipient's own notifications, not a sibling recipient's", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      const caseB = await createCase(tenantId, clientId);
+      const caseC = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      await prisma.caseDebtor.create({ data: { caseId: caseB.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      await prisma.caseDebtor.create({ data: { caseId: caseC.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer: lawyerB, userId: userIdB } = await createLawyerWithUser(tenantId);
+      const { lawyer: lawyerC, userId: userIdC } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseB.id, lawyerB.id, { isResponsible: true });
+      await attachLawyer(caseC.id, lawyerC.id, { isResponsible: true });
+
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId: debtor.id,
+        fieldGroups: ["ADDRESS"],
+        sourceCaseId: caseA.id,
+        changeGeneration: new Date(),
+      });
+
+      const listForB = await crossCaseNotification.listForRecipient(tenantId, userIdB as string);
+      const listForC = await crossCaseNotification.listForRecipient(tenantId, userIdC as string);
+
+      expect(listForB).toHaveLength(1);
+      expect(listForB[0].affectedCaseId).toBe(caseB.id);
+      expect(listForC).toHaveLength(1);
+      expect(listForC[0].affectedCaseId).toBe(caseC.id);
+      expect(listForB.some((n) => n.affectedCaseId === caseC.id)).toBe(false);
+    });
+
+    it("does not leak another tenant's notification even for a matching recipientUserId", async () => {
+      const tenantA = await setupTenant();
+      const tenantB = await setupTenant();
+      const debtorA = await createDebtor(tenantA.tenantId);
+      const caseA1 = await createCase(tenantA.tenantId, tenantA.clientId);
+      const caseA2 = await createCase(tenantA.tenantId, tenantA.clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA1.id, debtorId: debtorA.id, role: "ASIL_BORCLU" } });
+      await prisma.caseDebtor.create({ data: { caseId: caseA2.id, debtorId: debtorA.id, role: "ASIL_BORCLU" } });
+      const { lawyer, userId } = await createLawyerWithUser(tenantA.tenantId);
+      await attachLawyer(caseA2.id, lawyer.id, { isResponsible: true });
+
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId: tenantA.tenantId,
+        debtorId: debtorA.id,
+        fieldGroups: ["ADDRESS"],
+        sourceCaseId: caseA1.id,
+        changeGeneration: new Date(),
+      });
+
+      const crossTenantList = await crossCaseNotification.listForRecipient(tenantB.tenantId, userId as string);
+      expect(crossTenantList).toHaveLength(0);
+    });
+  });
+
+  // ── Test 21: acknowledge does not cross tenant boundary — DBND-D6A-2-SURFACE ───────
+  describe("Test 21: acknowledge does not cross tenant boundary", () => {
+    it("returns acknowledged:false when called with a different tenantId", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer, userId } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseA.id, lawyer.id, { isResponsible: true });
+
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId: debtor.id,
+        fieldGroups: ["ADDRESS"],
+        changeGeneration: new Date(),
+      });
+      const [notif] = await notificationsFor(tenantId, debtor.id);
+
+      const result = await crossCaseNotification.acknowledge("some-other-tenant-id", notif.id, userId as string);
+      expect(result.acknowledged).toBe(false);
+
+      const updated = await prisma.debtorCrossCaseNotification.findUnique({ where: { id: notif.id } });
+      expect(updated?.status).toBe("PENDING");
+    });
+  });
+
+  // ── Test 22: expired/already-acknowledged is not re-acknowledged — DBND-D6A-2-SURFACE ──
+  describe("Test 22: expired or already-acknowledged notification is not re-acknowledged", () => {
+    it("does not transition an already-ACKNOWLEDGED notification again", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer, userId } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseA.id, lawyer.id, { isResponsible: true });
+
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId: debtor.id,
+        fieldGroups: ["ADDRESS"],
+        changeGeneration: new Date(),
+      });
+      const [notif] = await notificationsFor(tenantId, debtor.id);
+      const first = await crossCaseNotification.acknowledge(tenantId, notif.id, userId as string);
+      expect(first.acknowledged).toBe(true);
+
+      const second = await crossCaseNotification.acknowledge(tenantId, notif.id, userId as string);
+      expect(second.acknowledged).toBe(false);
+    });
+
+    it("does not transition an EXPIRED notification", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer, userId } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseA.id, lawyer.id, { isResponsible: true });
+
+      const longAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId: debtor.id,
+        fieldGroups: ["ADDRESS"],
+        changeGeneration: longAgo,
+      });
+      await crossCaseNotification.expireStaleNotifications(tenantId);
+      const [notif] = await notificationsFor(tenantId, debtor.id);
+      expect(notif.status).toBe("EXPIRED");
+
+      const result = await crossCaseNotification.acknowledge(tenantId, notif.id, userId as string);
+      expect(result.acknowledged).toBe(false);
+    });
+  });
+
+  // ── Test 23: no-recipient case logs+continues — DBND-D6A-2-SURFACE (owner Q1) ───────
+  describe("Test 23: no-recipient affected case logs a warning and generation continues for other cases", () => {
+    it("logs a warning for the recipientless case but still notifies the other affected case", async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined as any);
+      try {
+        const { tenantId, clientId } = await setupTenant();
+        const debtor = await createDebtor(tenantId);
+        const caseNoRecipient = await createCase(tenantId, clientId);
+        const caseWithRecipient = await createCase(tenantId, clientId);
+        await prisma.caseDebtor.create({
+          data: { caseId: caseNoRecipient.id, debtorId: debtor.id, role: "ASIL_BORCLU" },
+        });
+        await prisma.caseDebtor.create({
+          data: { caseId: caseWithRecipient.id, debtorId: debtor.id, role: "ASIL_BORCLU" },
+        });
+        const { lawyer, userId } = await createLawyerWithUser(tenantId);
+        await attachLawyer(caseWithRecipient.id, lawyer.id, { isResponsible: true });
+        // caseNoRecipient'a kasten hiçbir CaseLawyer/CaseStaff bağlanmadı → resolveRecipients() boş döner.
+
+        await crossCaseNotification.notifyFieldGroupChanges({
+          tenantId,
+          debtorId: debtor.id,
+          fieldGroups: ["ADDRESS"],
+          changeGeneration: new Date(),
+        });
+
+        const notifications = await notificationsFor(tenantId, debtor.id);
+        expect(notifications).toHaveLength(1);
+        expect(notifications[0].affectedCaseId).toBe(caseWithRecipient.id);
+        expect(notifications[0].recipientUserId).toBe(userId);
+
+        const warnedNoRecipient = warnSpy.mock.calls.some(
+          (call) =>
+            String(call[0]).includes("no recipient resolved") &&
+            String(call[0]).includes(caseNoRecipient.id)
+        );
+        expect(warnedNoRecipient).toBe(true);
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 });
