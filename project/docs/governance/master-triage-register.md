@@ -36,8 +36,12 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **ACT-24** | UI | Approval Inbox'a CLIENT_PAYOUT_POST summary projector eklenmesi | Low | 3. batch (PAYOUT-CPB-01), henüz ele alınmadı |
 | **ACT-25** | Accounting | ClientPayoutService.create() dead-code kararı + test suite finalize()'a taşıma | Low | 3. batch (PAYOUT-CPB-02), henüz ele alınmadı |
 | **ACT-26** | Accounting | Cross-case creditor cluster (DBIND-1 P3) implementasyonu | **High** | 3. batch (PAYOUT-CPB-04) — ⚠️ YENİ DEĞİL: `dbind1-financial-identity` memory'sinin zaten bekleyen "P3 cluster" adımı. Politika kilitli (DBIND §2), yalnız implementasyon eksik. **GO-IMPLEMENT'e hazır olabilir, owner talimatı bekliyor.** |
+| **ACT-27** | Alacak Kalemi | Principal gross/net semantic split (asilAlacak vs PRINCIPAL bucket) | Yüksek | 4. batch (CPB-1) — GO-ANALYZE onaylandı: hiçbir ALC-AUTH-3* kaydı bu ayrımı ele almadı (ALC-AUTH-3B farklı alan `totalDebtAmount.grossPrincipal`'ı düzeltti, ALC-AUTH-3E yalnız cost/vekalet'i suppress etti). ⚠️ Bu, `product-backlog.md`'nin ayrı ALC-AUTH-* isim-alanına ait — gerçek iş muhtemelen ALC-AUTH-4/5 olarak orada devam eder, burada yalnız cross-reference. **Sıradaki adım: GO-ANALYZE (owner talimatı bekliyor).** |
+| **ACT-28** | Alacak Kalemi | Collection/LedgerEntry/LedgerAllocation üç-otorite reconciliation (PAID_DELTA kök nedeni) | Orta-Yüksek | 4. batch (CPB-2) — GO-ANALYZE onaylandı: ALC-AUTH-3D yalnız guard-seviyesi otoriteyi (frontend hangi listeyi dinliyor) birleştirdi, PAID_DELTA'ya yol açan alttaki veri-kaynağı çakışmasına hiç dokunmadı. ⚠️ ALC-AUTH-* isim-alanına ait, cross-reference. **Sıradaki adım: (VR-2 zaten bu turda cevaplandı) GO-ANALYZE (owner talimatı bekliyor).** |
 
 **KAPANMIŞ/MERGED (ACTIVE'den çıkarıldı, bkz. Bölüm D — Closed Register):** ACT-01 (CLOSED/INVALID/Zombie), ACT-02, ACT-03, ACT-04, ACT-05, ACT-06 (CLOSED/Zombie-Active — bkz. altta), ACT-07 (MERGED — bkz. altta).
+
+**Not (ACT-27/28 bağlamı — ALC-AUTH-* isim-alanı):** `product-backlog.md`'de paralel bir oturum tarafından yürütülen ayrı bir ALC-AUTH-* zinciri var (bu kanonik dosyanın izlemediği bir namespace, `decision-log.md`'nin kendi 2026-07-05 kaydında açıkça belirtildiği gibi). Kısa özet: ALC-AUTH-3B (`totalDebtAmount.grossPrincipal` plumbing, PR #917 MERGED) → ALC-AUTH-3D (guard authority alignment — frontend artık kendi `HARD_NO_GO_CODES`'unu değil backend `cutoverReadiness`'ini dinliyor, PR #922+#925 MERGED, FINAL) → ALC-AUTH-3E (cost/attorney-fee understatement suppress, PR #929 MERGED, "B1/guarded-primary-pilot ekseninde bilinen son blocker kapandı"). Guarded primary pilot flag hâlâ varsayılan KAPALI (rollout ayrı owner kararı). ACT-27 (principal gross/net) ve ACT-28 (üç-otorite reconciliation) bu zincirin HİÇBİRİNDE ele alınmadı — gerçek GO-IMPLEMENT'leri muhtemelen ALC-AUTH-4/5 olarak `product-backlog.md`'de devam edecek.
 
 ---
 
@@ -97,7 +101,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | ACCT-5B canlı tarayıcı smoke-test | — |
 | Vekalet drawer canlı UX doğrulaması | — |
 | Disposition→payout→offset canlı E2E smoke | ROLL-001/002 öncesi |
-| **Worktree orphan-dizin temizliği (toplu, owner-manuel)**: `fervent-rosalind-363133` (sharp-lalande-021067 başka oturumca halledildi, listeden düşürüldü), `HUKUK_client_workspace`, `HUKUK_debtor_lifecycle_hardening`, `HUKUK_faz1b_backfill_apply`, `HUKUK_acct5b_financial_statement_panel`, `HUKUK_client_address_ui`, `HUKUK_lawyer_office_approval_ui` (2. batch), `HUKUK_staff_prepare_disposition` (2. batch), `HUKUK_d6-debtor-notification` (2. batch, VER-33 önce gerekli) | Junction-audit önce |
+| **Worktree orphan-dizin temizliği (toplu, owner-manuel)**: `fervent-rosalind-363133` (sharp-lalande-021067 başka oturumca halledildi, listeden düşürüldü), `HUKUK_client_workspace`, `HUKUK_debtor_lifecycle_hardening`, `HUKUK_faz1b_backfill_apply`, `HUKUK_acct5b_financial_statement_panel`, `HUKUK_client_address_ui`, `HUKUK_lawyer_office_approval_ui` (2. batch), `HUKUK_staff_prepare_disposition` (2. batch), `HUKUK_d6-debtor-notification` (2. batch, VER-33 önce gerekli), `HUKUK_alc-auth-total-debt-contract` (4. batch, WQ-1) | Junction-audit önce |
 | Rutin `git fetch` + `main==origin/main` taze kontrolü (her yeni sayfa öncesi) | — |
 | **[Ultra-tier, owner GO gerekir]** `canPrepareCollectionDisposition` → `prisma migrate deploy` (paylaşımlı `hukuk_db`) | 2. batch (eski WQ-02) |
 | **Canonical main fast-forward** — başka oturumun local commit'leri (`89e119cd`/`7d338bf0`, "Merge origin/main into main"/"MPB-027 closure") nedeniyle `git merge --ff-only` diverged hatası veriyor; dosya-WIP değil, gerçek git-tarihçesi ayrışması. Diğer oturum kendi işini reconcile/push edince kendiliğinden çözülür, o zamana kadar dokunulmaz. | 3. batch (PAYOUT-WQ-02) ile AYNI kayıt — dedupe edildi |
@@ -260,7 +264,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 | Kategori | Sayı |
 |---|---|
-| Master Product Backlog (ACTIVE) | 20 (ACT-08..26, ACT-01..07 Closed'a taşındı) |
+| Master Product Backlog (ACTIVE) | 22 (ACT-08..28, ACT-01..07 Closed'a taşındı; ACT-27/28=ALC-AUTH-* cross-reference) |
 | Master Verification Required | 33 (VER-02..18 + VER-20..36, VER-01/19/32 kapandı/taşındı) |
 | Master Workflow Queue — PENDING | 13 grup |
 | Master Workflow Queue — DONE | 5 zincir (PR #408 eklendi) |
