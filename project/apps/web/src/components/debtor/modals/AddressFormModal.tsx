@@ -23,6 +23,9 @@ interface AddressFormModalProps {
   debtorId: string;
   address?: AddressDTO | null;
   debtorType?: DebtorPersonType; // NATURAL = gerçek kişi, LEGAL = tüzel kişi
+  // DBND-D6A-1: düzenleme hangi dosyadan tetiklendi (paylaşılan Debtor.id'de cross-file
+  // alert'te kendi dosyanı hariç tutmak için). Yalnız update payload'ına geçer.
+  sourceCaseId?: string;
 }
 
 // Gerçek kişi için adres türleri (Tebligat Kanunu m.10)
@@ -73,6 +76,7 @@ export function AddressFormModal({
   debtorId,
   address,
   debtorType,
+  sourceCaseId,
 }: AddressFormModalProps) {
   const isEdit = !!address;
   
@@ -137,6 +141,7 @@ export function AddressFormModal({
           city: formData.city,
           district: formData.district || undefined,
           postalCode: formData.postalCode || undefined,
+          sourceCaseId, // DBND-D6A-1: paylaşılan Debtor.id cross-file alert'i için (audit metadata)
         };
         await api.updateAddress(address.id, updateData);
       } else {

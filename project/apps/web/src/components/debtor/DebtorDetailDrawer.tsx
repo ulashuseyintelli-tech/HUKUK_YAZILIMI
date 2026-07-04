@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import {
   X,
   User,
+  Users,
   Building2,
   MapPin,
   Phone,
@@ -21,7 +22,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { Button } from "@hukuk/ui";
-import { api, DebtorDetailDTO, ServiceHistoryItem, DebtorRoleLabels, UpdateServiceStatusDTO } from "@/lib/api";
+import { api, DebtorDetailDTO, ServiceHistoryItem, DebtorRoleLabels, UpdateServiceStatusDTO, CrossFileDebtorAlertDTO } from "@/lib/api";
 import { AlertBadge } from "./AlertBadge";
 import { ServiceUpdateModal } from "./modals/ServiceUpdateModal";
 import { ServiceHistoryTimeline } from "./ServiceHistoryTimeline";
@@ -66,6 +67,7 @@ export function DebtorDetailDrawer({
   const [quickNote, setQuickNote] = useState("");
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [activeTab, setActiveTab] = useState<DrawerTab>('info');
+  const [crossFileAlert, setCrossFileAlert] = useState<CrossFileDebtorAlertDTO | null>(null);
 
   // Fetch debtor detail
   useEffect(() => {
@@ -80,10 +82,23 @@ export function DebtorDetailDrawer({
       const data = await api.getCaseDebtorDetail(caseId, caseDebtorId);
       setDebtor(data);
       setQuickNote(data.quickNote || "");
+      fetchCrossFileAlert(data.id);
     } catch (err) {
       console.error("Borçlu detayı yüklenemedi:", err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // DBND-D6A-1: pull/MVP — push bildirim değil; drawer her açıldığında güncel durumu sorgular.
+  // Hata durumunda sessizce yok say (banner göstermez) — bu tamamlayıcı bir bilgi, akışı bloklamamalı.
+  const fetchCrossFileAlert = async (debtorId: string) => {
+    try {
+      const alert = await api.getCrossFileDebtorAlerts(debtorId, caseId);
+      setCrossFileAlert(alert.hasAlert ? alert : null);
+    } catch (err) {
+      console.error("Cross-file borçlu uyarısı yüklenemedi:", err);
+      setCrossFileAlert(null);
     }
   };
 
@@ -201,6 +216,26 @@ export function DebtorDetailDrawer({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* DBND-D6A-1: paylaşılan Debtor.id cross-file uyarısı (pull/MVP, push bildirim değil) */}
+        {crossFileAlert && (
+          <div className="flex items-start gap-2 px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-amber-800">
+            <Users className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <p className="text-xs leading-snug">
+              Bu borçlu başka aktif dosya(lar)da da takip ediliyor ve yakın zamanda güncellendi
+              {crossFileAlert.otherActiveCases.length > 0 && (
+                <>
+                  {" "}(
+                  {crossFileAlert.otherActiveCases
+                    .map((c) => c.fileNumber || c.caseId)
+                    .join(", ")}
+                  )
+                </>
+              )}
+              . Güncel bilgiyi teyit etmeden işlem yapmayın.
+            </p>
+          </div>
+        )}
 
         {/* Tab Navigation */}
         <div className="flex border-b border-gray-200 px-4">
@@ -345,6 +380,7 @@ export function DebtorDetailDrawer({
                     identityNo={debtor.identityNo}
                     readOnly={isPassive}
                     onUpdate={fetchDebtor}
+                    sourceCaseId={caseId}
                   />
                 </div>
 
@@ -609,6 +645,7 @@ export function DebtorDetailDrawer({
         <NewDebtorModal
           initialType={editDebtorData.type as DebtorType}
           editDebtor={editDebtorData}
+          sourceCaseId={caseId}
           onSave={handleDebtorSaved}
           onClose={() => {
             setIsEditModalOpen(false);
