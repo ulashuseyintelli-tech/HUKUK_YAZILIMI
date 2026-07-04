@@ -109,6 +109,45 @@ describe('AccountingJournalTrialBalanceController', () => {
       entryType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_REVERSED',
     });
   });
+
+  it('accepts raw collection cash journal filters for trial balance diagnostics', async () => {
+    const service = serviceMock();
+    const controller = new AccountingJournalTrialBalanceController(service);
+
+    await controller.getTrialBalance('tenant-auth', {
+      accountCode: 'CASE_COLLECTION_CLEARING',
+      sourceType: 'COLLECTION',
+      sourceAction: 'recorded',
+      entryType: 'COLLECTION_CASH_RECEIPT_RECORDED',
+    });
+
+    expect(service.getTrialBalance).toHaveBeenCalledWith({
+      tenantId: 'tenant-auth',
+      accountCode: 'CASE_COLLECTION_CLEARING',
+      sourceType: 'COLLECTION',
+      sourceAction: 'recorded',
+      entryType: 'COLLECTION_CASH_RECEIPT_RECORDED',
+    });
+  });
+
+  it('accepts manual adjustment journal filters for trial balance diagnostics', async () => {
+    const service = serviceMock();
+    const controller = new AccountingJournalTrialBalanceController(service);
+
+    await controller.getTrialBalance('tenant-auth', {
+      sourceType: 'ACCOUNTING_JOURNAL_ENTRY',
+      sourceAction: 'manual-adjustment',
+      entryType: 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT',
+    });
+
+    expect(service.getTrialBalance).toHaveBeenCalledWith({
+      tenantId: 'tenant-auth',
+      sourceType: 'ACCOUNTING_JOURNAL_ENTRY',
+      sourceAction: 'manual-adjustment',
+      entryType: 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT',
+    });
+  });
+
   it('query tenant ignore: query tenantId cannot override the auth tenant', async () => {
     const service = serviceMock();
     const controller = new AccountingJournalTrialBalanceController(service);
