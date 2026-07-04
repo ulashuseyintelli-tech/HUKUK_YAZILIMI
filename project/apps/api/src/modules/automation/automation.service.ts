@@ -173,6 +173,17 @@ export class AutomationService {
     }
   }
 
+  // DBND-D6-INACTIVE-RECIPIENT-SWEEP: Her saat başı, alıcısı artık deaktive olmuş (User.isActive=
+  // false) PENDING çapraz-dosya bildirimlerini erken EXPIRED'a çevirir. İş mantığı
+  // DebtorCrossCaseNotificationService'te kalır; migration/yeni model YOK.
+  @Cron(CronExpression.EVERY_HOUR)
+  async expireInactiveRecipientCrossCaseNotifications(): Promise<void> {
+    const count = await this.debtorCrossCaseNotificationService.expireStaleNotificationsForInactiveRecipients();
+    if (count > 0) {
+      this.logger.log(`Expired ${count} debtor cross-case notification(s) for inactive recipients`);
+    }
+  }
+
   // Her gün saat 2'de süresi dolan vekaletleri EXPIRED olarak işaretle
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async updateExpiredPoas(): Promise<void> {

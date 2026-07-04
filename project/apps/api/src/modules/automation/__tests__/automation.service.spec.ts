@@ -98,3 +98,35 @@ describe('AutomationService.expireCrossCaseNotifications — DBND-D6A-2-SURFACE 
     await expect(service.expireCrossCaseNotifications()).resolves.toBeUndefined();
   });
 });
+
+describe('AutomationService.expireInactiveRecipientCrossCaseNotifications — DBND-D6-INACTIVE-RECIPIENT-SWEEP cron wiring', () => {
+  function buildServiceWithInactiveSweep(debtorCrossCaseNotificationService: { expireStaleNotificationsForInactiveRecipients: jest.Mock }) {
+    return new AutomationService(
+      {} as any,
+      {} as any,
+      { sendExpiringPoaNotifications: jest.fn() } as any,
+      debtorCrossCaseNotificationService as any
+    );
+  }
+
+  it('calls DebtorCrossCaseNotificationService.expireStaleNotificationsForInactiveRecipients() with no args (tenant-wide sweep)', async () => {
+    const debtorCrossCaseNotificationService = {
+      expireStaleNotificationsForInactiveRecipients: jest.fn().mockResolvedValue(2),
+    };
+    const service = buildServiceWithInactiveSweep(debtorCrossCaseNotificationService);
+
+    await service.expireInactiveRecipientCrossCaseNotifications();
+
+    expect(debtorCrossCaseNotificationService.expireStaleNotificationsForInactiveRecipients).toHaveBeenCalledTimes(1);
+    expect(debtorCrossCaseNotificationService.expireStaleNotificationsForInactiveRecipients).toHaveBeenCalledWith();
+  });
+
+  it('does not throw when zero inactive-recipient notifications expire', async () => {
+    const debtorCrossCaseNotificationService = {
+      expireStaleNotificationsForInactiveRecipients: jest.fn().mockResolvedValue(0),
+    };
+    const service = buildServiceWithInactiveSweep(debtorCrossCaseNotificationService);
+
+    await expect(service.expireInactiveRecipientCrossCaseNotifications()).resolves.toBeUndefined();
+  });
+});
