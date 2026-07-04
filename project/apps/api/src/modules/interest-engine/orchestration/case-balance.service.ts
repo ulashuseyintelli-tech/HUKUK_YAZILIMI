@@ -61,6 +61,17 @@ export interface CaseBalanceCurrencyResult {
   currency: string;
   result: CalculationResult | null;
   skippedReason?: CaseBalanceSkipReason;
+  /**
+   * GO-IMPLEMENT-1 (totalDebtAmount contract): gross/ödeme-öncesi anapara — Σ assembleClaimBuckets()
+   * PRINCIPAL bucket'larının `amount`'ı (demandedAmount??amount), bu currency grubu için. computeBalance
+   * başarısız/atlanmış olsa bile (`skippedReason` set) hesaplanır — bucket'lar zaten currency-grouper'dan
+   * gelir, engine'e bağımlı değil. `NO_BUCKETS` durumunda gerçek anlamda 0 (bu currency'de principal
+   * ClaimItem yok); `ENGINE_ERROR` durumunda buckets var olsa da display katmanı bunu authority-eksik
+   * sayar (bkz. case-balance-display.ts). ZORUNLU alan — "0 = authority gerçekten sıfır diyor,
+   * eksik/undefined = authority yok" ayrımını korumak için `?? 0` fallback KASITLI OLARAK YOK;
+   * her çağıran (servis + test mock) bunu açıkça set etmek zorunda.
+   */
+  grossPrincipal: number;
 }
 
 export interface CaseBalancePerCurrencyDiagnostic {
@@ -127,6 +138,10 @@ function toNum(v: unknown): number | null {
 function toISO(d: Date | null | undefined): string | null {
   if (!d) return null;
   return (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
+}
+
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -287,9 +302,13 @@ export class CaseBalanceService {
     const perCurrency: CaseBalancePerCurrencyDiagnostic[] = [];
 
     for (const group of grouped.groups) {
+      // GO-IMPLEMENT-1: gross/ödeme-öncesi anapara — bucket'lar currency-grouper'dan geldiği için
+      // computeBalance'ın başarılı/atlanmış/hatalı olmasından bağımsız her zaman hesaplanabilir.
+      const grossPrincipal = round2(group.buckets.reduce((sum, b) => sum + b.amount, 0));
+
       // Q4: bucket'sız grup (yalnız payment) → computeBalance atla
       if (group.buckets.length === 0) {
-        currencyResults.push({ currency: group.currency, result: null, skippedReason: 'NO_BUCKETS' });
+        currencyResults.push({ currency: group.currency, result: null, skippedReason: 'NO_BUCKETS', grossPrincipal });
         continue;
       }
 
@@ -304,11 +323,11 @@ export class CaseBalanceService {
           options: DEFAULT_OPTIONS,
         };
         const result = this.engine.computeBalance(request, rates, now, DEFAULT_INTERPRETATION_PROFILE_ID);
-        currencyResults.push({ currency: group.currency, result });
+        currencyResults.push({ currency: group.currency, result, grossPrincipal });
       } catch (e) {
         if (e instanceof InterestEngineError) {
           perCurrency.push({ currency: group.currency, code: e.code, message: e.message });
-          currencyResults.push({ currency: group.currency, result: null, skippedReason: 'ENGINE_ERROR' });
+          currencyResults.push({ currency: group.currency, result: null, skippedReason: 'ENGINE_ERROR', grossPrincipal });
         } else {
           throw e;
         }

@@ -68,6 +68,7 @@ function canonicalBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalan
     currencyResults: [
       {
         currency: 'TRY',
+        grossPrincipal: 750,
         result: {
           engineVersion: 'engine-v1',
           totalDue: 775,
@@ -102,6 +103,7 @@ function canonicalWithoutFinalDebtStates(overrides: Partial<CaseBalanceResult> =
     currencyResults: [
       {
         currency: 'TRY',
+        grossPrincipal: 750,
         result: {
           engineVersion: 'engine-v1',
           totalDue: 775,
@@ -120,6 +122,7 @@ function canonicalWithFinalDebtCurrencyMismatch(): CaseBalanceResult {
     currencyResults: [
       {
         currency: 'TRY',
+        grossPrincipal: 750,
         result: {
           engineVersion: 'engine-v1',
           totalDue: 775,

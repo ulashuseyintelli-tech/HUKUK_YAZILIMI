@@ -172,6 +172,7 @@ function canonicalBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalan
     currencyResults: [
       {
         currency: 'TRY',
+        grossPrincipal: 1000,
         result: {
           engineVersion: 'engine-v1',
           totalDue: 900,
@@ -339,6 +340,7 @@ describe('BalanceDisplayShadowDiff readiness audit matrix', () => {
         currencyResults: [
           {
             currency: 'TRY',
+            grossPrincipal: 750,
             result: {
               engineVersion: 'engine-v1',
               totalDue: 775,
@@ -439,6 +441,7 @@ describe('BalanceDisplayShadowDiff readiness audit matrix', () => {
         currencyResults: [
           {
             currency: 'TRY',
+            grossPrincipal: 1000,
             result: {
               engineVersion: 'engine-v1',
               totalDue: 900,
@@ -449,6 +452,7 @@ describe('BalanceDisplayShadowDiff readiness audit matrix', () => {
           },
           {
             currency: 'USD',
+            grossPrincipal: 50,
             result: {
               engineVersion: 'engine-v1',
               totalDue: 50,

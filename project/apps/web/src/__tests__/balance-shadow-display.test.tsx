@@ -404,8 +404,11 @@ describe("guarded primary display pilot gate", () => {
   });
 
   it("flag on ve eligible evidence varsa canonical primary candidate secer", () => {
+    // GO-IMPLEMENT-1: bu test B1'in TÜM blocker'ları (principal split/payment authority/cost-fee gap)
+    // çözüldüğü varsayımsal uç-durumu test eder — b1RemainingBlockersResolved açıkça true geçirilir.
     const decision = evaluateGuardedPrimaryDisplayPilot(makeEligibleGuardedPrimaryReport(), {
       featureFlagEnabled: true,
+      b1RemainingBlockersResolved: true,
     });
 
     expect(decision).toEqual({
@@ -427,7 +430,7 @@ describe("guarded primary display pilot gate", () => {
     report.bucketDiffs[0].legacyAmount = 0;
     report.bucketDiffs[0].canonicalAmount = 0;
 
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacyCalculationSummary, report, decision);
 
     expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
@@ -454,7 +457,7 @@ describe("guarded primary display pilot gate", () => {
     report.bucketDiffs[0].legacyAmount = -50;
     report.bucketDiffs[0].canonicalAmount = -50;
 
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
 
     expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
     expect(decision.reasonCodes).toEqual([]);
@@ -464,7 +467,7 @@ describe("guarded primary display pilot gate", () => {
   it("guarded primary calculation result canonical alanlari override eder ama legacy-only satirlari korur", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
 
     expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
@@ -524,7 +527,7 @@ describe("guarded primary display pilot gate", () => {
       const report = makeEligibleGuardedPrimaryReport();
       report.totals.canonical![field] = value as unknown as number;
 
-      const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+      const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
       const guardedResult = buildGuardedPrimaryCalculationResult(legacyCalculationSummary, report, decision);
 
       expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
@@ -537,7 +540,7 @@ describe("guarded primary display pilot gate", () => {
     const report = makeEligibleGuardedPrimaryReport();
     report.bucketDiffs[0].canonicalDisplayable = false;
 
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
 
     expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
     expect(decision.reasonCodes).toContain("CANONICAL_PRINCIPAL_UNAVAILABLE");
@@ -553,7 +556,7 @@ describe("guarded primary display pilot gate", () => {
     const report = makeEligibleGuardedPrimaryReport();
     report.totals.canonical!.totalDebtAmount = totalDebtAmount as unknown as number;
 
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
 
     expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
     expect(decision.reasonCodes).toContain("CANONICAL_PRINCIPAL_UNAVAILABLE");
@@ -581,7 +584,7 @@ describe("guarded primary display pilot gate", () => {
           finalDebtStatesAvailable: false,
         },
       }),
-      { featureFlagEnabled: true },
+      { featureFlagEnabled: true, b1RemainingBlockersResolved: true },
     );
 
     expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
@@ -610,7 +613,7 @@ describe("guarded primary display pilot gate", () => {
           warnings: [],
         },
       }),
-      { featureFlagEnabled: true },
+      { featureFlagEnabled: true, b1RemainingBlockersResolved: true },
     );
     const contextDecision = evaluateGuardedPrimaryDisplayPilot(
       makeReport({
@@ -629,7 +632,7 @@ describe("guarded primary display pilot gate", () => {
           warnings: [],
         },
       }),
-      { featureFlagEnabled: true },
+      { featureFlagEnabled: true, b1RemainingBlockersResolved: true },
     );
 
     expect(currencyDecision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
@@ -878,7 +881,7 @@ describe("guarded summary runtime boundary plan", () => {
   it("boundary plan buildGuardedPrimaryCalculationResult runtime overwrite siniri ile uyumludur", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
     const plan = buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: Boolean(guardedResult) });
 
@@ -903,7 +906,7 @@ describe("guarded summary runtime boundary plan", () => {
   it("guarded calculation result boundary metadata alanlari eklemez", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
 
     expect(guardedResult).not.toBeNull();
@@ -915,7 +918,7 @@ describe("guarded summary runtime boundary plan", () => {
   it("runtime overwrite alani TM14 boundary plan ile birebir anlasir", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
     const plan = buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: Boolean(guardedResult) });
 
@@ -940,7 +943,7 @@ describe("guarded summary runtime boundary plan", () => {
   it("runtime boundary wrapper guarded calculation result ile boundary plan'i birlikte tasir", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
     const wrapper = buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision);
 
@@ -954,7 +957,7 @@ describe("guarded summary runtime boundary plan", () => {
   it("runtime boundary wrapper inputlari mutate etmez", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
     const legacyBefore = JSON.parse(JSON.stringify(legacy));
     const reportBefore = JSON.parse(JSON.stringify(report));
     const decisionBefore = JSON.parse(JSON.stringify(decision));
@@ -969,7 +972,7 @@ describe("guarded summary runtime boundary plan", () => {
   it("runtime boundary wrapper ayni input icin deterministic kalir", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
 
     expect(buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision)).toEqual(
       buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision),
@@ -999,7 +1002,7 @@ describe("guarded summary runtime boundary plan", () => {
   it("runtime boundary wrapper guarded selected modda TM15 row setlerini korur", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
     const wrapper = buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision);
 
     expect(wrapper.guardedPrimaryHesap).not.toBeNull();
@@ -1014,7 +1017,7 @@ describe("guarded summary runtime boundary plan", () => {
   it("runtime boundary wrapper guarded result shape'ine boundary metadata eklemez", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
-    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true, b1RemainingBlockersResolved: true });
     const wrapper = buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision);
 
     expect(wrapper.guardedPrimaryHesap).not.toBeNull();
@@ -1185,7 +1188,10 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
   });
 
-  it("guarded primary pilot flag on ve eligible evidence varsa canonical candidate degerlerini gosterir", async () => {
+  it("GO-IMPLEMENT-1: flag on + eligible evidence olsa BILE HesapOzetiPanel B1 kalan blocker'lari nedeniyle legacy fallback gosterir", async () => {
+    // HesapOzetiPanel.tsx prod cagrisi (bilerek DEGISTIRILMEDI, bkz. guarded-primary-display.ts)
+    // b1RemainingBlockersResolved gecirmiyor -> totalDebtAmount finite olsa bile primary CANONICAL
+    // olamaz. Bu test tam da bu guvenlik ozelligini gercek component uzerinden dogrular.
     apiGet.mockResolvedValue({ data: makeEligibleGuardedPrimaryReport() });
 
     render(
@@ -1201,13 +1207,17 @@ describe("BalanceShadowDiffPanel", () => {
         "/interest-engine/case/case-1/balance/display/shadow-diff?asOfDate=2026-06-24",
       ),
     );
-    expect(await screen.findByText("Guarded canonical primary candidate")).toBeInTheDocument();
-    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
-    expect(screen.getAllByText("980,00 TL").length).toBeGreaterThan(0);
-    expect(screen.queryByText("1.234,00 TL")).not.toBeInTheDocument();
+    expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent(
+        "B1_REMAINING_BLOCKERS_UNRESOLVED",
+      ),
+    );
+    expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
+    expect(screen.queryByText("980,00 TL")).not.toBeInTheDocument();
   });
 
-  it("canonicalSummaryRows shadow metadata guarded primary render output'una sizmaz", async () => {
+  it("canonicalSummaryRows shadow metadata legacy fallback render output'una sizmaz", async () => {
     apiGet.mockResolvedValue({
       data: {
         ...makeEligibleGuardedPrimaryReport(),
@@ -1223,10 +1233,14 @@ describe("BalanceShadowDiffPanel", () => {
       />,
     );
 
-    expect(await screen.findByText("Guarded canonical primary candidate")).toBeInTheDocument();
-    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
-    expect(screen.getAllByText("980,00 TL").length).toBeGreaterThan(0);
-    expect(screen.queryByText("1.234,00 TL")).not.toBeInTheDocument();
+    expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent(
+        "B1_REMAINING_BLOCKERS_UNRESOLVED",
+      ),
+    );
+    expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
+    expect(screen.queryByText("980,00 TL")).not.toBeInTheDocument();
 
     const renderedText = document.body.textContent ?? "";
     expect(renderedText).not.toContain("canonical-summary-rows.shadow-status.v1");
@@ -1237,7 +1251,7 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.queryByText("Komisyon")).not.toBeInTheDocument();
   });
 
-  it("guarded primary pilot mixed authority satirlarini current behavior olarak karakterize eder", async () => {
+  it("GO-IMPLEMENT-1: mixed-authority-shaped eligible report bile legacy fallback'a duser (canonical override tetiklenmez)", async () => {
     useCaseCalculationMock.mockReturnValue({
       data: makeMixedAuthorityLegacySummary(),
       loading: false,
@@ -1254,22 +1268,30 @@ describe("BalanceShadowDiffPanel", () => {
       />,
     );
 
-    expect(await screen.findByText("Guarded canonical primary candidate")).toBeInTheDocument();
-    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
+    // GO-IMPLEMENT-1: HesapOzetiPanel prod policy'si b1RemainingBlockersResolved gecirmiyor —
+    // mixed-authority "eligible" gorunumlu bir rapor bile canonical override'i tetiklemez; TUM
+    // satirlar (eskiden "override" olanlar dahil) legacy'den gelir. Mixing/boundary-plan MANTIGI
+    // zaten "guarded summary runtime boundary plan" describe bloğunda (satır ~686+) pure-function
+    // seviyesinde b1RemainingBlockersResolved:true ile ayrica test ediliyor.
+    expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent(
+        "B1_REMAINING_BLOCKERS_UNRESOLVED",
+      ),
+    );
 
-    expect(screen.getAllByText("10.001,00 TL").length).toBeGreaterThan(0);
-    expect(screen.getByText("20.002,00 TL")).toBeInTheDocument();
-    expect(screen.getAllByText("30.003,00 TL").length).toBeGreaterThan(0);
-    expect(screen.getByText("- 4.004,00 TL")).toBeInTheDocument();
-    expect(screen.getByText("505,00 TL")).toBeInTheDocument();
-    expect(screen.getByText("606,00 TL")).toBeInTheDocument();
-    expect(screen.getByText("707,00 TL")).toBeInTheDocument();
+    // Eskiden canonical override olan satirlar simdi LEGACY degerini gosterir.
+    // (90.007 "Tahsilat Düşümü" satirinda "- 90.007,00 TL" olarak render edilir; regex bunu tolere eder.)
+    expect(screen.getAllByText(/90\.001,00 TL/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/90\.005,00 TL/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/90\.006,00 TL/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/90\.007,00 TL/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/90\.008,00 TL/).length).toBeGreaterThan(0);
 
-    expect(screen.queryByText("90.001,00 TL")).not.toBeInTheDocument();
-    expect(screen.queryByText("90.005,00 TL")).not.toBeInTheDocument();
-    expect(screen.queryByText("90.006,00 TL")).not.toBeInTheDocument();
-    expect(screen.queryByText("90.007,00 TL")).not.toBeInTheDocument();
-    expect(screen.queryByText("90.008,00 TL")).not.toBeInTheDocument();
+    // Canonical-only degerler hic gorunmemeli.
+    for (const canonicalOnlyValue of ["10.001,00 TL", "20.002,00 TL", "30.003,00 TL", "- 4.004,00 TL", "505,00 TL", "606,00 TL", "707,00 TL"]) {
+      expect(screen.queryByText(canonicalOnlyValue)).not.toBeInTheDocument();
+    }
 
     expect(screen.getByText("111,00 TL")).toBeInTheDocument();
     expect(screen.getByText("222,00 TL")).toBeInTheDocument();
@@ -1297,7 +1319,7 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.getByText("1.004,00 TL")).toBeInTheDocument();
     expect(screen.getByText("1.005,00 TL")).toBeInTheDocument();
   });
-  it("guarded primary selected yuzeyde canonical ana satirlar ile legacy diagnostic satirlar birlikte kalir", async () => {
+  it("GO-IMPLEMENT-1: legacy fallback yuzeyinde legacy diagnostic satirlar oldugu gibi kalir (canonical satirlar sizmaz)", async () => {
     useCaseCalculationMock.mockReturnValue({
       data: makeMixedAuthorityLegacySummary(),
       loading: false,
@@ -1314,13 +1336,18 @@ describe("BalanceShadowDiffPanel", () => {
       />,
     );
 
-    expect(await screen.findByText("Guarded canonical primary candidate")).toBeInTheDocument();
-    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
+    expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent(
+        "B1_REMAINING_BLOCKERS_UNRESOLVED",
+      ),
+    );
 
     expect(screen.getByText(/2026-06-01.*2026-06-24/)).toBeInTheDocument();
     expect(screen.getByText("Asıl Alacak")).toBeInTheDocument();
 
-    for (const canonicalValue of [
+    // Canonical-only degerler hic gorunmemeli.
+    for (const canonicalOnlyValue of [
       "10.001,00 TL",
       "20.002,00 TL",
       "30.003,00 TL",
@@ -1329,21 +1356,19 @@ describe("BalanceShadowDiffPanel", () => {
       "606,00 TL",
       "707,00 TL",
     ]) {
-      expect(screen.getAllByText(canonicalValue).length).toBeGreaterThan(0);
+      expect(screen.queryByText(canonicalOnlyValue)).not.toBeInTheDocument();
     }
 
-    for (const replacedLegacyValue of [
-      "90.001,00 TL",
-      "90.002,00 TL",
-      "90.003,00 TL",
-      "90.004,00 TL",
-      "90.005,00 TL",
-      "90.006,00 TL",
-      "90.007,00 TL",
-      "90.008,00 TL",
-      "90.009,00 TL",
+    // Eskiden canonical'a "replaced" olan satirlar simdi legacy'nin KENDI degeri olarak gorunur.
+    // (90.007 "Tahsilat Düşümü" satirinda "- 90.007,00 TL" olarak render edilir; regex bunu tolere eder.)
+    for (const legacyOverrideEligibleValue of [
+      /90\.001,00 TL/,
+      /90\.005,00 TL/,
+      /90\.006,00 TL/,
+      /90\.007,00 TL/,
+      /90\.008,00 TL/,
     ]) {
-      expect(screen.queryByText(replacedLegacyValue)).not.toBeInTheDocument();
+      expect(screen.getAllByText(legacyOverrideEligibleValue).length).toBeGreaterThan(0);
     }
 
     for (const legacyOnlyValue of [

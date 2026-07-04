@@ -96,6 +96,36 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(res.currencyResults[0].result).not.toBeNull();
     expect(res.currencyResults[0].result!.totalInterest).toBeGreaterThanOrEqual(0);
     expect(rateProvider.getRatesForPeriod).toHaveBeenCalledTimes(1);
+    // GO-IMPLEMENT-1: grossPrincipal = Σ PRINCIPAL bucket amount (demandedAmount), collection'dan bağımsız.
+    expect(res.currencyResults[0].grossPrincipal).toBe(10000);
+  });
+
+  it('GO-IMPLEMENT-1: grossPrincipal ödemeden etkilenmez — 2026/9502 benzeri (borç payment ile fazlasıyla kapansa da gross sabit kalır)', async () => {
+    const { service } = setup({
+      claimItems: [principal({ demandedAmount: 200000, amount: 200000 })],
+      ledger: [
+        { id: 'L1', entryType: 'PAYMENT', status: 'CONFIRMED', amount: 320000, currency: 'TRY', entryDate: new Date('2025-03-10'), effectiveDate: null, sourceType: 'BANKA' },
+      ],
+      collections: [],
+      rates: legalRate(),
+    });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    // Borç (200.000 anapara + faiz) ödemeyle tamamen/fazlasıyla kapanmış olsa da gross principal DEĞİŞMEZ.
+    expect(res.currencyResults[0].grossPrincipal).toBe(200000);
+  });
+
+  it('GO-IMPLEMENT-1: NO_BUCKETS skip edilen currency grubunda grossPrincipal gercek 0 (o currency icin principal ClaimItem yok)', async () => {
+    const { service } = setup({
+      claimItems: [principal()],
+      collections: [collection(), collection({ id: 'c2', currency: 'USD', amount: 100 })],
+      rates: legalRate(),
+    });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    const usd = res.currencyResults.find((r) => r.currency === 'USD')!;
+    expect(usd.skippedReason).toBe('NO_BUCKETS');
+    expect(usd.grossPrincipal).toBe(0);
+    const tryResult = res.currencyResults.find((r) => r.currency === 'TRY')!;
+    expect(tryResult.grossPrincipal).toBe(10000);
   });
 
   it('ledger-first: confirmed PAYMENT ledger varsa source LEDGER', async () => {

@@ -17,8 +17,13 @@ function makeBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalanceRes
   } as unknown as CaseBalanceResult;
 }
 
-function currencyResult(currency: string, result: any, skippedReason: string | null = null) {
-  return { currency, result, skippedReason: skippedReason ?? undefined };
+function currencyResult(
+  currency: string,
+  result: any,
+  skippedReason: string | null = null,
+  grossPrincipal = 0,
+) {
+  return { currency, result, skippedReason: skippedReason ?? undefined, grossPrincipal };
 }
 
 describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
@@ -101,7 +106,8 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
       diagnosticCodes: ['FINAL_DEBT_STATES_MISSING'],
     });
     expect(d.totals).toMatchObject({
-      totalDebtAmount: null,
+      // GO-IMPLEMENT-1: grossPrincipal(0, bu mock'ta set edilmedi) + interest(150) + costs(100) + ancillaries(240).
+      totalDebtAmount: 490,
       totalPaidAmount: 300,
       outstandingAmount: 1540,
       heldOverpaymentAmount: 80,
@@ -392,6 +398,8 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     expect(d.costs).toBe(300); // case-level, tek
     expect(d.currency).toBe('MULTI');
     expect(d.totals.outstandingAmount).toBeNull();
+    // GO-IMPLEMENT-1: mixed currency → uydurma toplam yok, totalDebtAmount de null.
+    expect(d.totals.totalDebtAmount).toBeNull();
     expect(d.diagnostics.map((diag) => diag.code)).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
     expect(d.unsafeSources?.map((source) => source.code)).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
   });
@@ -443,5 +451,91 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
       amount: null,
       displayable: false,
     });
+  });
+});
+
+describe('GO-IMPLEMENT-1: totalDebtAmount contract (canonical, gross, as-of-date, ödeme-öncesi)', () => {
+  it('totalDebtAmount artık hardcoded null DEĞİL — gross bileşenler mevcutken gerçek değer üretir', () => {
+    const balance = makeBalance({
+      currencyResults: [currencyResult('TRY', { totalInterest: 10, totalDue: 90, allocations: [] }, null, 100)] as any,
+      projections: { costs: { HARC: 5 }, ancillaries: { DIGER: 5 } } as any,
+    });
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+    // 100 (gross principal) + 10 (interest) + 5 (costs) + 5 (ancillaries) = 120
+    expect(d.totals.totalDebtAmount).toBe(120);
+  });
+
+  it('2026/9502 senaryosu: gross principal=200.000, remaining principal (finalDebtStates)=0 — totalDebtAmount 200.000 içerir, 0 değil', () => {
+    const balance = makeBalance({
+      currencyResults: [
+        currencyResult(
+          'TRY',
+          {
+            totalInterest: 0,
+            totalDue: 0,
+            allocations: [{ paymentId: 'p1', paymentAmount: 220000 }],
+            finalDebtStates: [
+              { claimId: 'p1', currency: 'TRY', principal: 0, accruedInterest: 0, costs: {}, ancillaries: {} },
+            ],
+          },
+          null,
+          200000, // grossPrincipal — assembler'ın demandedAmount'ı, ödemeden bağımsız
+        ),
+      ] as any,
+    });
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+
+    // Kalan (net) anapara — TBK100 tam mahsup sonrası 0. Bu, gross'tan AYRI bir alan/kavramdır.
+    expect(d.buckets.find((bucket) => bucket.code === 'PRINCIPAL')).toMatchObject({ amount: 0, displayable: true });
+    // Gross toplam borç — ödeme tahsisinden ETKİLENMEZ, 200.000 anaparayı İÇERİR (0 değil).
+    expect(d.totals.totalDebtAmount).toBe(200000);
+  });
+
+  it('ödemeler totalDebtAmount\'ı KÜÇÜLTMEZ — aynı gross principal, farklı allocation/totalDue', () => {
+    const partiallyPaid = makeBalance({
+      currencyResults: [currencyResult('TRY', { totalInterest: 0, totalDue: 150000, allocations: [] }, null, 200000)] as any,
+    });
+    const fullyPaid = makeBalance({
+      currencyResults: [currencyResult('TRY', { totalInterest: 0, totalDue: 0, allocations: [] }, null, 200000)] as any,
+    });
+    const dPartial = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance: partiallyPaid, generatedAt: GENERATED_AT });
+    const dFull = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance: fullyPaid, generatedAt: GENERATED_AT });
+
+    expect(dPartial.totals.totalDebtAmount).toBe(200000);
+    expect(dFull.totals.totalDebtAmount).toBe(200000);
+    // outstandingAmount ise (beklendiği gibi) ödemeyle değişir — totalDebtAmount'tan bağımsız davranış.
+    expect(dPartial.totals.outstandingAmount).toBe(150000);
+    expect(dFull.totals.outstandingAmount).toBe(0);
+  });
+
+  it('costs/ancillaries yalnız canonical projections\'tan gelir; legacy fallback yok (fonksiyon imzasında legacy parametresi yok)', () => {
+    const balance = makeBalance({
+      currencyResults: [currencyResult('TRY', { totalInterest: 0, totalDue: 0, allocations: [] }, null, 1000)] as any,
+      projections: { costs: { HARC: 300, TEBLIGAT_MASRAFI: 200 }, ancillaries: { VEKALET_UCRETI: 400 } } as any,
+    });
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+    // 1000 + 0 + 500(costs) + 400(ancillaries) = 1900 — yalnız projections'tan, başka kaynak yok.
+    expect(d.totals.totalDebtAmount).toBe(1900);
+  });
+
+  it('mixed currency → totalDebtAmount null (uydurma toplam üretilmez)', () => {
+    const balance = makeBalance({
+      currencyResults: [
+        currencyResult('TRY', { totalInterest: 0, totalDue: 0, allocations: [] }, null, 1000),
+        currencyResult('USD', { totalInterest: 0, totalDue: 0, allocations: [] }, null, 50),
+      ] as any,
+    });
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+    expect(d.currency).toBe('MULTI');
+    expect(d.totals.totalDebtAmount).toBeNull();
+  });
+
+  it('ENGINE_ERROR ile atlanan currency grubu → totalDebtAmount null + GROSS_DEBT_COMPONENT_UNAVAILABLE diagnostic', () => {
+    const balance = makeBalance({
+      currencyResults: [currencyResult('TRY', null, 'ENGINE_ERROR', 200000)] as any,
+    });
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+    expect(d.totals.totalDebtAmount).toBeNull();
+    expect(d.diagnostics.map((diag) => diag.code)).toContain('GROSS_DEBT_COMPONENT_UNAVAILABLE');
   });
 });

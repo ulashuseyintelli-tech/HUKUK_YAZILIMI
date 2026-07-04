@@ -62,7 +62,8 @@ export type BalanceDisplayDiagnosticCode =
   | 'OVERPAYMENT_BLOCKED'
   | 'RESTRICTED_PAYMENT_DISPLAY_UNSAFE'
   | 'NAFAKA_PRINCIPAL_DISPLAY_RISK'
-  | 'MULTI_CURRENCY_DISPLAY_UNSAFE';
+  | 'MULTI_CURRENCY_DISPLAY_UNSAFE'
+  | 'GROSS_DEBT_COMPONENT_UNAVAILABLE';
 
 export interface BalanceDisplayBucket {
   code: BalanceDisplayBucketCode;
@@ -79,8 +80,14 @@ export interface BalanceDisplayBucket {
 
 export interface BalanceDisplayTotals {
   /**
-   * Pre-payment/gross toplam borc bu contract'ta henuz authority degil.
-   * totalDue net kalan claim oldugu icin burada uydurma toplam uretilmez.
+   * GO-IMPLEMENT-1 (ALC-AUTH-1 takibi, 2026-07-04): canonical, GROSS / ödeme-öncesi, asOfDate
+   * itibarıyla toplam borç — Σ grossPrincipal (assembler PRINCIPAL bucket'ların demandedAmount??amount
+   * toplamı, ödeme allocation'ından ETKİLENMEZ) + interest (brüt totalInterest) + costs + ancillaries.
+   * `outstandingAmount`/`claimRemaining`'in aksine ödeme geldikçe KÜÇÜLMEZ — yalnız asOfDate/faiz
+   * segmentleri değiştikçe değişir. Legacy `toplamBorc`/`sonBorc` ile aynı semantik rolü oynar, AMA
+   * legacy'den fallback YAPILMAZ (yalnız canonical kaynaklardan). singleCurrency değilse VEYA display
+   * currency için computeBalance ENGINE_ERROR ile atlandıysa (gross bileşen üretilemedi) null döner
+   * (bkz. GROSS_DEBT_COMPONENT_UNAVAILABLE diagnostic) — uydurma toplam yok.
    */
   totalDebtAmount: number | null;
   /**
@@ -494,11 +501,34 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     present: finalDebtStatesPresent,
     currencyMismatch: finalDebtStatesCurrencyMismatch,
   });
+
+  // GO-IMPLEMENT-1: gross principal, yalnız display currency'ye ait currencyResult'lardan (bir
+  // currency'nin >1 grubu olmaz; güvenlik için filter+reduce). ENGINE_ERROR ile atlanan bir grup
+  // gross bileşenin üretilemediği anlamına gelir (bkz. hasEngineErrorForDisplayCurrency).
+  const grossPrincipal = round2(
+    (balance.currencyResults ?? [])
+      .filter((cr) => cr.currency === displayCurrency)
+      .reduce((sum, cr) => sum + cr.grossPrincipal, 0),
+  );
+  const hasEngineErrorForDisplayCurrency = (balance.currencyResults ?? []).some(
+    (cr) => cr.currency === displayCurrency && cr.skippedReason === 'ENGINE_ERROR',
+  );
+  if (singleCurrency && hasEngineErrorForDisplayCurrency) {
+    diagnostics.push({
+      code: 'GROSS_DEBT_COMPONENT_UNAVAILABLE',
+      severity: 'WARNING',
+      message: 'totalDebtAmount uretilemedi: display currency icin computeBalance ENGINE_ERROR ile atlandi, gross bilesenler guvenilir degil.',
+    });
+  }
   const unsafeSources = buildUnsafeSources(diagnostics);
 
   const outstandingAmount = singleCurrency ? round2(claimRemaining + costs + ancillaries) : null;
+  const totalDebtAmount =
+    singleCurrency && !hasEngineErrorForDisplayCurrency
+      ? round2(grossPrincipal + interest + costs + ancillaries)
+      : null;
   const totals: BalanceDisplayTotals = {
-    totalDebtAmount: null,
+    totalDebtAmount,
     totalPaidAmount: singleCurrency ? collected : null,
     outstandingAmount,
     heldOverpaymentAmount: singleCurrency ? heldOverpayment : null,

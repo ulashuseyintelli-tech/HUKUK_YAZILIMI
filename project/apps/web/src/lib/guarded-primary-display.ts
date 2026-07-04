@@ -17,6 +17,15 @@ export interface GuardedPrimaryDisplayPolicy {
   paymentDesignationRequired?: boolean;
   unsupportedPeriodicObligation?: boolean;
   claimItemAuthorityContaminated?: boolean;
+  /**
+   * GO-IMPLEMENT-1 (totalDebtAmount contract, ALC-AUTH-1 takibi, 2026-07-04): B1'in kalan blocker'ları
+   * (principal gross/net split — GO-IMPLEMENT-2, payment authority reconciliation — GO-IMPLEMENT-3,
+   * cost/attorney-fee canonical data gap — GO-IMPLEMENT-4, UI/Av. sign-off) HENÜZ çözülmedi. Bu alan
+   * `true` OLMADIKÇA (varsayılan: false/undefined) `primarySource` asla `CANONICAL_PRIMARY_CANDIDATE`
+   * olamaz — `totalDebtAmount` finite olması TEK BAŞINA yeterli değildir. Caller (bugün: hiçbiri) bu
+   * diğer üç iş tamamlanıp owner primary-display rollout'una GO verdiğinde `true` geçirir.
+   */
+  b1RemainingBlockersResolved?: boolean;
 }
 
 export interface GuardedPrimaryDisplayDecision {
@@ -327,6 +336,7 @@ export function evaluateGuardedPrimaryDisplayPilot(
   if (policy.paymentDesignationRequired) reasonCodes.push('PAYMENT_DESIGNATION_REQUIRED');
   if (policy.unsupportedPeriodicObligation) reasonCodes.push('UNSUPPORTED_PERIODIC_OBLIGATION');
   if (policy.claimItemAuthorityContaminated) reasonCodes.push('CLAIM_ITEM_AUTHORITY_CONTAMINATION');
+  if (!policy.b1RemainingBlockersResolved) reasonCodes.push('B1_REMAINING_BLOCKERS_UNRESOLVED');
 
   if (!report) {
     reasonCodes.push('SHADOW_OR_CANONICAL_SOURCE_PENDING');
