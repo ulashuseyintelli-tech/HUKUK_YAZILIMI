@@ -28,6 +28,7 @@ import {
   type ClientAccountingCase,
 } from '@/lib/api/client-accounting';
 import { PayoutCreateModal } from '@/components/client-accounting/PayoutCreateModal';
+import { PendingPayoutRequests } from '@/components/client-accounting/PendingPayoutRequests';
 import { StatementSection } from '@/components/client-accounting/StatementSection';
 import { ClientCariView } from '@/components/client-accounting/ClientCariView';
 import { AccountingTable } from '@/components/client-accounting/AccountingTable';
@@ -210,7 +211,7 @@ export default function ClientAccountingPage() {
           }
           action={
             <Button size="sm" onClick={() => setShowPayoutModal(true)} disabled={!caseId || !caseClientId}>
-              <Plus className="w-4 h-4 mr-1" /> Ödeme Kaydet
+              <Plus className="w-4 h-4 mr-1" /> Ödeme Talebi Oluştur
             </Button>
           }
         />
@@ -268,6 +269,9 @@ export default function ClientAccountingPage() {
           note="Borçludan dosyaya gelen tahsilatlar. Otomatik olarak müvekkile borç anlamına gelmez."
         />
       </div>
+
+      {/* PAYOUT-APPROVAL-2 PR-2b — onay bekleyen/onaylanmış ödeme talepleri (boşsa gizli). */}
+      <PendingPayoutRequests caseId={caseId} caseClientId={caseClientId} />
 
       {/* Ödeme geçmişi */}
       <Card className="p-4">
@@ -373,16 +377,14 @@ export default function ClientAccountingPage() {
           outstanding={outstandingQ.data?.outstanding ?? null}
           caseLabel={`${selected.caseNumber}${selected.executionFileNumber ? ` — İcra: ${selected.executionFileNumber}` : ''}`}
           onClose={() => setShowPayoutModal(false)}
-          onSuccess={(result) => {
+          onSuccess={() => {
             setShowPayoutModal(false);
-            setPage(1);
-            // Outstanding + ödeme listesi + (varsa) ekstre query'lerini tazele → drift yok.
-            queryClient.invalidateQueries({ queryKey: ['client-accounting-outstanding'] });
-            queryClient.invalidateQueries({ queryKey: ['client-accounting-payouts'] });
-            queryClient.invalidateQueries({ queryKey: ['client-statement'] });
-            if (result.idempotentReplay) {
-              alert('Bu ödeme zaten kayıtlıydı; tekrar oluşturulmadı (idempotent).');
-            }
+            // PAYOUT-APPROVAL-2 PR-2b: artık payout HENÜZ RECORDED değil — yalnız onay talebi
+            // oluştu. "Onay Bekleyen Ödeme Talepleri" listesini tazele (yeni talep hemen görünsün);
+            // outstanding/payouts/statement finalize'da GERÇEKTEN değiştiği için o tazeleme finalize
+            // başarısında yapılır (bkz. PendingPayoutRequests.tsx).
+            queryClient.invalidateQueries({ queryKey: ['client-payout-approval-requests'] });
+            alert('Ödeme onay talebi oluşturuldu. Onaylandıktan sonra "Onay Bekleyen Ödeme Talepleri" listesinden kesinleştirebilirsiniz.');
           }}
         />
       )}

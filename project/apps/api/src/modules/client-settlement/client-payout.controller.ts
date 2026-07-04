@@ -42,13 +42,18 @@ export class ClientPayoutController {
   }
 
   /**
-   * Müvekkile ödeme kaydet (CLIENT_PAYABLE settlement). actor = req.user.id; D1: BalanceLedger DEĞİL.
-   * PAYOUT-APPROVAL-2 PR-2a: BİLİNÇLİ OLARAK dokunulmadı — approval-gated DEĞİL (geçici governance-gap,
-   * PR-2b'de kapanacak). Onay-gated akış için POST /client-payouts/request + /:id/finalize kullanın.
+   * PAYOUT-APPROVAL-2 PR-2b: eski route KAPATILDI (bypass kapandı) — artık doğrudan ClientPayout
+   * YARATMAZ, güvenli şekilde requestPayout()'a yönlendirir (aynı davranış: POST /client-payouts/request).
+   * Geriye dönük URL uyumluluğu korunur (varsa bilinmeyen harici çağıran 4xx yerine onay-talebi akışına
+   * düşer); response şekli artık RequestPayoutResult ({requested, approvalRequestId, status}) — tek
+   * canlı FE tüketicisi (PayoutCreateModal) bu PR'da zaten /request'e taşındı.
+   * ClientPayoutService.create() (doğrudan RECORDED yazan eski metot) BİLİNÇLİ OLARAK silinmedi —
+   * paylaşılan runPayoutCreationTransaction'ın kendi başına test edilen regresyon güvencesi olarak kalır,
+   * yalnızca artık hiçbir route'tan ULAŞILMAZ.
    */
   @Post()
   async create(@Request() req: AuthRequest, @Body() body: CreateClientPayoutDto) {
-    const data = await this.service.create(req.user.tenantId, body, { userId: req.user.id });
+    const data = await this.service.requestPayout(req.user.tenantId, body, { userId: req.user.id });
     return { data };
   }
 
