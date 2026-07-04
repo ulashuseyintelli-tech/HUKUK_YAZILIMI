@@ -81,6 +81,7 @@ BACKLOG
 | MPB-015 | Authorization | OfficeApproval platform hardening and finance bridges | PR #592/#618/#633/#639/#654/#658/#830/#846/#875 merged; focused OfficeApproval/client-settlement tests PASS |
 | MPB-016 | Alacak Kalemi | Mixed-source interest resolution (Kademe 1.5, resolveInterestConfig) | PR #898 squash merged, SHA `a8e71a91`; 2026/9502 canonical balance artık üretiliyor; 2026/9604 ve 2026/9605 DATA/PIPELINE blocker olarak açık kalıyor (engine bug değil) |
 | MPB-017 | Debtor | CaseDebtor lifecycle, passivation, passive guards and UI visibility | PR #255/#257/#261/#798 merged; repo verification confirmed passivation, passive writer guards, ACTIVE/includePassive readers and passive UI safety; focused backend tests PASS (5 suites, 42 tests); web passive tests present, local Vitest blocked by toolchain startup error |
+| MPB-018 | Debtor | Debtor identity / Party Registry / duplicate hardening | Repo verification confirmed duplicate identity guards, similar-name review, identity format/checksum validation and identity drift fixes; Party Registry remains design-only/HOLD by decision; focused backend tests PASS (3 suites, 19 tests) |
 
 ## Items
 
