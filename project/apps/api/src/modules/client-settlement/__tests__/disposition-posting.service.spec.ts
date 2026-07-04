@@ -30,7 +30,9 @@ function buildApproval(opts: { eligible?: boolean; requestId?: string } = {}) {
   } as any;
 }
 
-function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; lines?: any[]; approval?: any; expenseRequest?: any } = {}) {
+const DEFAULT_ELIGIBLE_USER = { isActive: true, tenantId: 't1', lawyer: { id: 'lw-1' }, staffMember: null };
+
+function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; lines?: any[]; approval?: any; expenseRequest?: any; user?: any } = {}) {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1), // ROLL-001: pg_advisory_xact_lock
     collectionDispositionLine: {
@@ -72,6 +74,7 @@ function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; li
     caseClient: { findMany: jest.fn().mockResolvedValue(opts.validCaseClients ?? [{ id: 'cc-A', clientId: 'client-A' }]) },
     collectionDispositionLine: { findMany: jest.fn().mockResolvedValue(opts.lines ?? []) },
     officeApprovalRequest: { findFirst: jest.fn().mockResolvedValue(opts.approval === undefined ? { status: 'APPROVED' } : opts.approval) },
+    user: { findUnique: jest.fn().mockResolvedValue(opts.user === undefined ? DEFAULT_ELIGIBLE_USER : opts.user) },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
   return { prisma, tx };
@@ -196,6 +199,70 @@ describe('DispositionPostingService.recommend', () => {
   it('disposition bulunamazsa â†’ NotFound', async () => {
     const { prisma } = buildPrisma({ disp: null });
     await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u1' })).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('DispositionPostingService prepare-eligibility guard (MUHASEBE staff)', () => {
+  it('MUHASEBE + canPrepareCollectionDisposition=true -> recommend() basarili', async () => {
+    const { prisma } = buildPrisma({
+      user: { isActive: true, tenantId: 't1', lawyer: null, staffMember: { staffType: 'MUHASEBE', canPrepareCollectionDisposition: true } },
+    });
+    const res = await svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u-muhasebe' });
+    expect(res.recommended).toBe(true);
+  });
+
+  it('SEKRETER staffType (canPrepareCollectionDisposition=true olsa dahi) -> ForbiddenException', async () => {
+    const { prisma } = buildPrisma({
+      user: { isActive: true, tenantId: 't1', lawyer: null, staffMember: { staffType: 'SEKRETER', canPrepareCollectionDisposition: true } },
+    });
+    await expect(
+      svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u-sekreter' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('ARSIV staffType -> ForbiddenException', async () => {
+    const { prisma } = buildPrisma({
+      user: { isActive: true, tenantId: 't1', lawyer: null, staffMember: { staffType: 'ARSIV', canPrepareCollectionDisposition: true } },
+    });
+    await expect(
+      svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u-arsiv' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('MUHASEBE + canPrepareCollectionDisposition=false -> ForbiddenException', async () => {
+    const { prisma } = buildPrisma({
+      user: { isActive: true, tenantId: 't1', lawyer: null, staffMember: { staffType: 'MUHASEBE', canPrepareCollectionDisposition: false } },
+    });
+    await expect(
+      svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u-muhasebe-2' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('avukat (lawyer) -> recommend() degismeden basarili (regresyon-dogrulayan test)', async () => {
+    const { prisma } = buildPrisma({
+      user: { isActive: true, tenantId: 't1', lawyer: { id: 'lw-2' }, staffMember: null },
+    });
+    const res = await svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u-lawyer' });
+    expect(res.recommended).toBe(true);
+  });
+
+  it('MUHASEBE + canPrepareCollectionDisposition=true olsa dahi final-onay (approve/post) yetkisi VERILMEZ', async () => {
+    // Bu yeni prepare-yetkisi, final-approval eligibility'sinden (OfficeApprovalService.isApproverEligible) tamamen
+    // bagimsizdir. approve()/post() yalniz officeApproval.isApproverEligible'a bakar; buildApproval({ eligible: false })
+    // ile mock'lanir -- user/staffMember guard'indan habersizdir.
+    const { prisma: prismaApprove } = buildPrisma({ disp: DISP_RECOMMENDED });
+    const approvalIneligible = buildApproval({ eligible: false });
+    await expect(
+      svc(prismaApprove, approvalIneligible).approve('t1', 'd1', { userId: 'u-muhasebe' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(approvalIneligible.approve).not.toHaveBeenCalled();
+
+    const { prisma: prismaPost } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100), caseClientId: 'cc-A' }] });
+    const approvalIneligible2 = buildApproval({ eligible: false });
+    await expect(
+      svc(prismaPost, approvalIneligible2).post('t1', 'd1', { userId: 'u-muhasebe' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(approvalIneligible2.markExecutionSucceeded).not.toHaveBeenCalled();
   });
 });
 
