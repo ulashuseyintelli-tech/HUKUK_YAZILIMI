@@ -229,30 +229,8 @@ export function buildGuardedSummaryRuntimeBoundaryPlan({
     },
   };
 }
-const HARD_NO_GO_CODES = [
-  'FINAL_DEBT_STATES_MISSING',
-  'FINAL_DEBT_STATES_CURRENCY_MISMATCH',
-  'CURRENCY_MISMATCH',
-  'CONTEXT_MISMATCH',
-  'CANONICAL_CURRENCY_UNSAFE',
-  'MULTI_CURRENCY_DISPLAY_UNSAFE',
-  'OVERPAYMENT_BLOCKED',
-  'RESTRICTED_PAYMENT_DISPLAY_UNSAFE',
-  'NAFAKA_PRINCIPAL_DISPLAY_RISK',
-] as const;
-
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
-}
-
-function issueCodes(report: BalanceDisplayShadowDiffReport): Set<string> {
-  return new Set([
-    ...report.diagnostics.map((diagnostic) => diagnostic.code),
-    ...report.comparability.blockers.map((blocker) => blocker.code),
-    ...report.comparability.warnings.map((warning) => warning.code),
-    ...report.sources.canonicalBalanceDisplay.unsafeSources,
-    ...report.cutoverReadiness.blockers,
-  ]);
 }
 
 function principalBucket(report: BalanceDisplayShadowDiffReport): ShadowBucketDiff | undefined {
@@ -329,13 +307,10 @@ export function evaluateGuardedPrimaryDisplayPilot(
     };
   }
 
-  const codes = issueCodes(report);
-
   if (!report.sources.legacyCalculationSummary.available || !report.sources.canonicalBalanceDisplay.available) {
     reasonCodes.push('SHADOW_OR_CANONICAL_SOURCE_FAILURE');
   }
   if (!report.provenance.finalDebtStatesAvailable) reasonCodes.push('FINAL_DEBT_STATES_REQUIRED');
-  if (!report.comparability.comparable) reasonCodes.push('NOT_COMPARABLE');
   if (report.currency === 'MULTI' || report.currency === 'UNKNOWN' || report.currency == null) {
     reasonCodes.push('DISPLAY_CURRENCY_UNSAFE');
   }
@@ -350,8 +325,11 @@ export function evaluateGuardedPrimaryDisplayPilot(
     }
   }
 
-  for (const code of HARD_NO_GO_CODES) {
-    if (codes.has(code)) reasonCodes.push(code);
+  // ALC-AUTH-3D: domain-safety otoritesi tek kaynak -- backend'in zaten hesapladigi
+  // cutoverReadiness.safeForPrimaryDisplay/blockers dogrudan tuketilir (eskiden ayri,
+  // koptugu kanitlanan bir HARD_NO_GO_CODES/NOT_COMPARABLE listesi tutuluyordu).
+  if (!report.cutoverReadiness.safeForPrimaryDisplay) {
+    reasonCodes.push(...report.cutoverReadiness.blockers);
   }
 
   return {

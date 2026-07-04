@@ -612,6 +612,9 @@ describe("guarded primary display pilot gate", () => {
   });
 
   it("currency veya context mismatch varsa amount comparison primary yapilmaz", () => {
+    // ALC-AUTH-3D: domain-safety tek otorite backend cutoverReadiness'tir -- gercek backend'de
+    // compare.blockers (CURRENCY_MISMATCH/CONTEXT_MISMATCH) zaten cutoverReadiness.blockers'a
+    // akar (bkz. balance-display-shadow-diff.service.ts cutoverReadiness()), fixture bunu yansitir.
     const currencyDecision = evaluateGuardedPrimaryDisplayPilot(
       makeReport({
         currency: null,
@@ -628,6 +631,12 @@ describe("guarded primary display pilot gate", () => {
             },
           ],
           warnings: [],
+        },
+        cutoverReadiness: {
+          safeForPrimaryDisplay: false,
+          safeForOptInShadow: false,
+          blockers: ["CURRENCY_MISMATCH"],
+          nextRequiredEvidence: [],
         },
       }),
       { featureFlagEnabled: true },
@@ -648,14 +657,20 @@ describe("guarded primary display pilot gate", () => {
           ],
           warnings: [],
         },
+        cutoverReadiness: {
+          safeForPrimaryDisplay: false,
+          safeForOptInShadow: false,
+          blockers: ["CONTEXT_MISMATCH"],
+          nextRequiredEvidence: [],
+        },
       }),
       { featureFlagEnabled: true },
     );
 
     expect(currencyDecision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
-    expect(currencyDecision.reasonCodes).toEqual(expect.arrayContaining(["CURRENCY_MISMATCH", "NOT_COMPARABLE"]));
+    expect(currencyDecision.reasonCodes).toEqual(expect.arrayContaining(["CURRENCY_MISMATCH"]));
     expect(contextDecision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
-    expect(contextDecision.reasonCodes).toEqual(expect.arrayContaining(["CONTEXT_MISMATCH", "NOT_COMPARABLE"]));
+    expect(contextDecision.reasonCodes).toEqual(expect.arrayContaining(["CONTEXT_MISMATCH"]));
   });
 
   it("ClaimItem contamination, blocked overpayment, restricted payment ve periodic unsupported hallerinde legacy fallback secer", () => {
@@ -679,6 +694,13 @@ describe("guarded primary display pilot gate", () => {
             message: "Restricted payment scope is unresolved.",
           },
         ],
+        // ALC-AUTH-3D: domain-safety artik dogrudan cutoverReadiness'ten okunuyor.
+        cutoverReadiness: {
+          safeForPrimaryDisplay: false,
+          safeForOptInShadow: false,
+          blockers: ["OVERPAYMENT_BLOCKED", "RESTRICTED_PAYMENT_DISPLAY_UNSAFE"],
+          nextRequiredEvidence: [],
+        },
       }),
       { featureFlagEnabled: true, paymentDesignationRequired: true },
     );
