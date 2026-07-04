@@ -69,7 +69,7 @@ describe("OfficeApprovalDetailDrawer (P4-4 read-only)", () => {
     await waitFor(() => expect(screen.getByText("Talep bulunamadı")).toBeInTheDocument());
   });
 
-  it("savedIntent JSON okunabilir şekilde <pre> içinde render edilir", async () => {
+  it("savedIntent özetlenebiliyorsa (CHANGE_STATUS) özet gösterilir; ham JSON 'Advanced' altında erişilebilir kalır", async () => {
     (officeApprovalApi.getDetail as any).mockResolvedValue({
       id: "req1",
       actionCode: "CHANGE_STATUS",
@@ -93,6 +93,11 @@ describe("OfficeApprovalDetailDrawer (P4-4 read-only)", () => {
     });
     render(<OfficeApprovalDetailDrawer requestId="req1" onClose={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("Kayıtlı Niyet (savedIntent)")).toBeInTheDocument());
+    // Özet render edilir (payload'dan): Yeni Durum = HITAM.
+    expect(screen.getByText("HITAM")).toBeInTheDocument();
+    // Ham JSON varsayılan olarak KAPALI (özet mevcutken) — kaldırılmadı, "Advanced" ile erişilebilir.
+    expect(screen.queryByText(/"status": "HITAM"/)).toBeNull();
+    fireEvent.click(screen.getByText("Advanced / Ham JSON"));
     expect(screen.getByText(/"status": "HITAM"/)).toBeInTheDocument();
   });
 
