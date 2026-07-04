@@ -77,6 +77,7 @@ BACKLOG
 | MPB-006 | Accounting | Dry-run vs journal reconciliation and real-data reconciliation | PR #892 squash merged, canonical HEAD `05260c781420be5262c142e310299b9f9cc90e4d` |
 | MPB-008 | Accounting | Offset audit detail projection | C-2D closeout: PR #644/#646 merged; read-only `GET /client-offsets/:offsetId/detail` projection verified |
 | MPB-014 | Authorization | Policy Engine expense/kambiyo/UYAP blockers | PR #42/#43/#44 merged; P3 UYAP outage merge `b222adc31143ae348aa0968302ab1138fd3d08a0`; focused Policy Engine tests PASS |
+| MPB-015 | Authorization | OfficeApproval platform hardening and finance bridges | PR #592/#618/#633/#639/#654/#658/#830/#846/#875 merged; focused OfficeApproval/client-settlement tests PASS |
 
 ## Items
 
