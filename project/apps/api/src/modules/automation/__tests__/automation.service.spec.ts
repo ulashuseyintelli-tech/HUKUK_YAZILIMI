@@ -8,8 +8,16 @@ describe('AutomationService.sendExpiringPoaNotifications — POA_EXPIRY_NOTIFICA
     else process.env.POA_EXPIRY_NOTIFICATION_ENABLED = originalEnv;
   });
 
-  function buildService(poaExpiryDeliveryService: { sendExpiringPoaNotifications: jest.Mock }) {
-    return new AutomationService({} as any, {} as any, poaExpiryDeliveryService as any);
+  function buildService(
+    poaExpiryDeliveryService: { sendExpiringPoaNotifications: jest.Mock },
+    debtorCrossCaseNotificationService: { expireStaleNotifications: jest.Mock } = { expireStaleNotifications: jest.fn() }
+  ) {
+    return new AutomationService(
+      {} as any,
+      {} as any,
+      poaExpiryDeliveryService as any,
+      debtorCrossCaseNotificationService as any
+    );
   }
 
   it('flag tanımsızken (default-OFF) cron no-op döner, delivery service çağrılmaz', async () => {
@@ -60,5 +68,33 @@ describe('AutomationService.sendExpiringPoaNotifications — POA_EXPIRY_NOTIFICA
     await service.sendExpiringPoaNotifications();
 
     expect(poaExpiryDeliveryService.sendExpiringPoaNotifications).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AutomationService.expireCrossCaseNotifications — DBND-D6A-2-SURFACE cron wiring', () => {
+  function buildServiceWithCrossCase(debtorCrossCaseNotificationService: { expireStaleNotifications: jest.Mock }) {
+    return new AutomationService(
+      {} as any,
+      {} as any,
+      { sendExpiringPoaNotifications: jest.fn() } as any,
+      debtorCrossCaseNotificationService as any
+    );
+  }
+
+  it('calls DebtorCrossCaseNotificationService.expireStaleNotifications() with no args (tenant-wide sweep)', async () => {
+    const debtorCrossCaseNotificationService = { expireStaleNotifications: jest.fn().mockResolvedValue(3) };
+    const service = buildServiceWithCrossCase(debtorCrossCaseNotificationService);
+
+    await service.expireCrossCaseNotifications();
+
+    expect(debtorCrossCaseNotificationService.expireStaleNotifications).toHaveBeenCalledTimes(1);
+    expect(debtorCrossCaseNotificationService.expireStaleNotifications).toHaveBeenCalledWith();
+  });
+
+  it('does not throw when zero notifications expire', async () => {
+    const debtorCrossCaseNotificationService = { expireStaleNotifications: jest.fn().mockResolvedValue(0) };
+    const service = buildServiceWithCrossCase(debtorCrossCaseNotificationService);
+
+    await expect(service.expireCrossCaseNotifications()).resolves.toBeUndefined();
   });
 });
