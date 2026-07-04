@@ -61,6 +61,15 @@ export interface CaseBalanceCurrencyResult {
   currency: string;
   result: CalculationResult | null;
   skippedReason?: CaseBalanceSkipReason;
+  /**
+   * ALC-AUTH-3B (2026-07-04): bu currency grubundaki PRINCIPAL bucket'ların GROSS
+   * (allocation-öncesi, ödemeden bağımsız) toplam tutarı — `assembleClaimBuckets()`'ın
+   * ürettiği `ClaimBucket.amount` (Q3: demandedAmount ?? amount) değerlerinin toplamı.
+   * ClaimItem verisine dayalıdır: masraf/vekalet ClaimItem'ı olmayan case'lerde bu alan
+   * yalnız PRINCIPAL bucket'ları kapsar (COST/ANCILLARY zaten `projections`'ta ayrı taşınır).
+   * `finalDebtStates.principal` (KALAN/net anapara) ile KARIŞTIRILMAMALI.
+   */
+  grossPrincipal: number;
 }
 
 export interface CaseBalancePerCurrencyDiagnostic {
@@ -287,9 +296,13 @@ export class CaseBalanceService {
     const perCurrency: CaseBalancePerCurrencyDiagnostic[] = [];
 
     for (const group of grouped.groups) {
+      // ALC-AUTH-3B: gross (allocation-öncesi) PRINCIPAL toplamı — computeBalance sonucundan bağımsız,
+      // bucket'lar zaten mevcutsa her zaman hesaplanabilir.
+      const grossPrincipal = group.buckets.reduce((sum, b) => sum + b.amount, 0);
+
       // Q4: bucket'sız grup (yalnız payment) → computeBalance atla
       if (group.buckets.length === 0) {
-        currencyResults.push({ currency: group.currency, result: null, skippedReason: 'NO_BUCKETS' });
+        currencyResults.push({ currency: group.currency, result: null, skippedReason: 'NO_BUCKETS', grossPrincipal: 0 });
         continue;
       }
 
@@ -304,11 +317,11 @@ export class CaseBalanceService {
           options: DEFAULT_OPTIONS,
         };
         const result = this.engine.computeBalance(request, rates, now, DEFAULT_INTERPRETATION_PROFILE_ID);
-        currencyResults.push({ currency: group.currency, result });
+        currencyResults.push({ currency: group.currency, result, grossPrincipal });
       } catch (e) {
         if (e instanceof InterestEngineError) {
           perCurrency.push({ currency: group.currency, code: e.code, message: e.message });
-          currencyResults.push({ currency: group.currency, result: null, skippedReason: 'ENGINE_ERROR' });
+          currencyResults.push({ currency: group.currency, result: null, skippedReason: 'ENGINE_ERROR', grossPrincipal });
         } else {
           throw e;
         }

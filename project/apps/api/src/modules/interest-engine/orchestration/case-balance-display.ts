@@ -79,8 +79,15 @@ export interface BalanceDisplayBucket {
 
 export interface BalanceDisplayTotals {
   /**
-   * Pre-payment/gross toplam borc bu contract'ta henuz authority degil.
-   * totalDue net kalan claim oldugu icin burada uydurma toplam uretilmez.
+   * ALC-AUTH-3B (2026-07-04): pre-payment/gross toplam borç = grossPrincipal (assembler'ın
+   * ALLOCATION-ÖNCESİ `ClaimBucket.amount` toplamı, `CaseBalanceCurrencyResult.grossPrincipal`)
+   * + gross accrued interest (ödeme tahsisinden bağımsız) + costs + ancillaries. singleCurrency
+   * değilse (MULTI/UNKNOWN) veya bileşenlerden biri hesaplanamıyorsa null (uydurma toplam yok).
+   *
+   * ⚠️ ClaimItem VERİSİNE BAĞIMLIDIR: costs/ancillaries yalnız case'te GERÇEK COST/ANCILLARY-
+   * tipi ClaimItem varsa dolar (bkz. ALC-P0-3D DATA_GAP). Masraf/vekalet ClaimItem'ı olmayan
+   * case'lerde bu toplam yalnız anapara+faizi doğru yansıtır, masraf/vekalet EKSİK kalır —
+   * bu contract'ın bilinen, ayrı bir sınırıdır (DATA_GAP'i ÇÖZMEZ, yalnız plumbing'i tamamlar).
    */
   totalDebtAmount: number | null;
   /**
@@ -480,6 +487,10 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   const interest = round2(currencies.reduce((sum, c) => sum + c.interest, 0));
   const claimRemaining = round2(currencies.reduce((sum, c) => sum + c.claimRemaining, 0));
   const collected = round2(currencies.reduce((sum, c) => sum + c.collected, 0));
+  // ALC-AUTH-3B: gross (allocation-öncesi) PRINCIPAL toplamı — ClaimItem verisine bağımlı (bkz. tip yorumu).
+  const grossPrincipal = round2(
+    (balance.currencyResults ?? []).reduce((sum, cr) => sum + (cr.grossPrincipal ?? 0), 0),
+  );
   const finalDebtStatesPresent = finalDebtStates(balance).length > 0;
   const finalDebtStatesCurrencyMismatch = hasFinalDebtStateCurrencyMismatch(balance, displayCurrency);
   const principalAuthorityAvailable = finalDebtStatesPresent && !finalDebtStatesCurrencyMismatch;
@@ -497,8 +508,10 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   const unsafeSources = buildUnsafeSources(diagnostics);
 
   const outstandingAmount = singleCurrency ? round2(claimRemaining + costs + ancillaries) : null;
+  // ALC-AUTH-3B: gross toplam borç = gross anapara + gross faiz + masraf + fer'i (hepsi ödeme-öncesi/bağımsız).
+  const totalDebtAmount = singleCurrency ? round2(grossPrincipal + interest + costs + ancillaries) : null;
   const totals: BalanceDisplayTotals = {
-    totalDebtAmount: null,
+    totalDebtAmount,
     totalPaidAmount: singleCurrency ? collected : null,
     outstandingAmount,
     heldOverpaymentAmount: singleCurrency ? heldOverpayment : null,
