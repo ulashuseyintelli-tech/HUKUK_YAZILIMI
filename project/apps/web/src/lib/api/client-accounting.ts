@@ -69,6 +69,7 @@ export interface ListPayoutsParams {
   limit?: number;
 }
 
+/** PAYOUT-APPROVAL-2 — request() ve finalize() AYNI şekli kullanır (finalize payload-drift guard bunu karşılaştırır). */
 export interface CreatePayoutInput {
   caseId: string;
   caseClientId: string;
@@ -80,10 +81,18 @@ export interface CreatePayoutInput {
   idempotencyKey: string;
 }
 
+/** finalize() sonucu — payout gerçekten RECORDED olduğunda döner. */
 export interface CreatePayoutResult {
   created: boolean;
   payoutId: string;
   idempotentReplay?: boolean;
+}
+
+/** request() sonucu — HENÜZ payout YOK, yalnız onay talebi. */
+export interface RequestPayoutResult {
+  requested: true;
+  approvalRequestId: string;
+  status: string;
 }
 
 /** ExpenseRequest dosya/müvekkil masraf özeti. Tutarlar number (backend toplar; UI hesaplamaz). */
@@ -234,12 +243,26 @@ export const clientAccountingApi = {
   },
 
   /**
-   * Müvekkile ödeme kaydı (POST /client-payouts). D1: ClientPayout + CLIENT_PAYOUT_SENT;
-   * masraf-avansı defterine YAZILMAZ. Over-payout / idempotency-conflict / scope hatalarını
-   * backend döner (UI yalnız iletir, hesap yapmaz).
+   * PAYOUT-APPROVAL-2 PR-2b — müvekkile ödeme ONAY TALEBİ oluşturur (POST /client-payouts/request).
+   * ClientPayout HENÜZ YOK; onaylandıktan sonra finalizePayout() ile kesinleşir. D1: ClientPayout +
+   * CLIENT_PAYOUT_SENT (finalize anında); masraf-avansı defterine YAZILMAZ. idempotency-conflict/scope
+   * hatalarını backend döner (UI yalnız iletir, hesap yapmaz).
    */
-  async createPayout(input: CreatePayoutInput): Promise<CreatePayoutResult> {
-    const resp = await apiClient.post<{ data: CreatePayoutResult }>('/client-payouts', input);
+  async requestPayout(input: CreatePayoutInput): Promise<RequestPayoutResult> {
+    const resp = await apiClient.post<{ data: RequestPayoutResult }>('/client-payouts/request', input);
+    return resp.data.data;
+  },
+
+  /**
+   * PAYOUT-APPROVAL-2 PR-2b — onaylanmış payout talebini kesinleştirir (POST /client-payouts/:id/finalize).
+   * `input` onay anındaki savedIntent ile BİREBİR aynı olmalı (backend payload-drift guard'ı reddeder).
+   * Over-payout / idempotency-conflict / durum hatalarını backend döner.
+   */
+  async finalizePayout(approvalRequestId: string, input: CreatePayoutInput): Promise<CreatePayoutResult> {
+    const resp = await apiClient.post<{ data: CreatePayoutResult }>(
+      `/client-payouts/${encodeURIComponent(approvalRequestId)}/finalize`,
+      input,
+    );
     return resp.data.data;
   },
 

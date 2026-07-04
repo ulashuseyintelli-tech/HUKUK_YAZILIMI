@@ -1,21 +1,26 @@
 'use client';
 
 /**
- * TM3 Faz 7 — Müvekkile ödeme kaydı modalı (POST /client-payouts).
+ * TM3 Faz 7 / PAYOUT-APPROVAL-2 PR-2b — Müvekkile ödeme ONAY TALEBİ modalı (POST /client-payouts/request).
  *
  * D1 (KIRMIZI ÇİZGİ): Payout = ClientPayout + CLIENT_PAYOUT_SENT. Proceeds/dağıtım tarafında
  * kapanır; masraf-avansı defterine YAZILMAZ. Bu UI'da defter adı geçmez.
  *
+ * PR-2b: Bu modal artık DOĞRUDAN payout KAYDETMEZ — yalnız bir OfficeApprovalRequest (onay talebi)
+ * oluşturur (Tasarım B). ClientPayout satırı, talep onaylandıktan SONRA, ayrı bir "Kesinleştir"
+ * aksiyonuyla (bkz. PendingPayoutRequests.tsx) yaratılır. Bu, PARTNER/MANAGER onayı olmadan hiçbir
+ * müvekkile-ödeme kaydının kesinleşmemesini garanti eder (self-approval yasağı — DBIND governance).
+ *
  * UI outstanding HESAPLAMAZ: gösterilen/ön-kontrolde kullanılan tutar backend'den gelir
- * (prop). amount<=outstanding yalnız erken uyarı; KESİN otorite backend (over-payout,
- * idempotency-conflict, scope doğrulaması backend'de).
+ * (prop). amount<=outstanding yalnız erken uyarı; KESİN otorite backend (finalize anında,
+ * idempotency-conflict, scope doğrulaması da backend'de).
  */
 
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Button, Spinner } from '@hukuk/ui';
 import { X, AlertCircle, Wallet } from 'lucide-react';
-import { clientAccountingApi, formatMoneyString, type CreatePayoutResult } from '@/lib/api/client-accounting';
+import { clientAccountingApi, formatMoneyString, type RequestPayoutResult } from '@/lib/api/client-accounting';
 
 interface PayoutCreateModalProps {
   caseId: string;
@@ -25,7 +30,7 @@ interface PayoutCreateModalProps {
   outstanding: string | null;
   caseLabel: string;
   onClose: () => void;
-  onSuccess: (result: CreatePayoutResult) => void;
+  onSuccess: (result: RequestPayoutResult) => void;
 }
 
 function genIdempotencyKey(): string {
@@ -41,7 +46,7 @@ function friendlyError(message: string): string {
     return 'Bu ödeme anahtarı farklı bir tutarla zaten kullanılmış (idempotency çakışması). Sayfayı yenileyip tekrar deneyin.';
   }
   if (/geçersiz|yabancı|uygun rolde/i.test(m)) return `Dosya/alacaklı doğrulaması başarısız: ${m}`;
-  return m || 'Ödeme kaydedilemedi.';
+  return m || 'Onay talebi oluşturulamadı.';
 }
 
 export function PayoutCreateModal({
@@ -57,7 +62,7 @@ export function PayoutCreateModal({
   //  - Lazy initializer (genIdempotencyKey FONKSİYON referansı) → MOUNT başına BİR KEZ üretilir
   //    (her render'da değil). Aynı submit/retry boyunca SABİT kalır → aynı payload retry idempotent.
   //  - Bu modal page'de KOŞULLU render edilir ({showPayoutModal && ...}); başarı/iptal sonrası
-  //    setShowPayoutModal(false) → UNMOUNT. Bir sonraki "Ödeme Kaydet" → fresh MOUNT → YENİ key.
+  //    setShowPayoutModal(false) → UNMOUNT. Bir sonraki "Ödeme Talebi Oluştur" → fresh MOUNT → YENİ key.
   //  - Sonuç: aynı sayfa oturumunda ikinci ödeme ESKİ key'i KULLANMAZ → hatalı
   //    IDEMPOTENCY_KEY_CONFLICT ile yanlışlıkla bloke OLMAZ. (kanıt: payout-create-modal-idempotency.test.tsx)
   const [idempotencyKey] = useState<string>(genIdempotencyKey);
@@ -71,7 +76,7 @@ export function PayoutCreateModal({
 
   const mutation = useMutation({
     mutationFn: () =>
-      clientAccountingApi.createPayout({
+      clientAccountingApi.requestPayout({
         caseId,
         caseClientId,
         amount: amount.replace(',', '.'),
@@ -109,7 +114,7 @@ export function PayoutCreateModal({
         <div className="flex justify-between items-center p-4 border-b">
           <div className="flex items-center gap-2">
             <Wallet className="w-5 h-5 text-emerald-600" />
-            <h3 className="font-semibold">Müvekkile Ödeme Kaydet</h3>
+            <h3 className="font-semibold">Müvekkile Ödeme Talebi Oluştur</h3>
           </div>
           <button onClick={onClose} aria-label="Kapat">
             <X className="h-5 w-5" />
@@ -190,7 +195,8 @@ export function PayoutCreateModal({
                 )}
               </div>
               <p className="text-xs text-gray-600">
-                Bu tutarda müvekkile ödeme kaydı oluşturulacak. Onaylıyor musunuz?
+                Bu tutarda payout <strong>onay talebi</strong> oluşturulacak; PARTNER/MANAGER onayı
+                sonrası kesinleşecektir. Devam edilsin mi?
               </p>
               {submitError && (
                 <div className="flex items-start gap-2 text-red-600 text-xs">
@@ -203,7 +209,7 @@ export function PayoutCreateModal({
                   Geri
                 </Button>
                 <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-                  {mutation.isPending ? <Spinner className="w-4 h-4" /> : 'Onayla ve Kaydet'}
+                  {mutation.isPending ? <Spinner className="w-4 h-4" /> : 'Onay Talebi Oluştur'}
                 </Button>
               </div>
             </>
