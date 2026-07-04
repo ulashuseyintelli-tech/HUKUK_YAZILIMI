@@ -672,6 +672,7 @@ enum PoaExpiryRecipientSource {
   POA_ATTORNEY
   ESCALATION_MANAGER
   ADMIN_FALLBACK
+  OFFICE_OVERRIDE
 }
 
 model PoaExpiryNotificationDelivery {
@@ -1967,6 +1968,12 @@ model Office {
   caseTaskOwnerDays           Int      @default(2) // L0 Dosya Sorumlusu → L1 eşiği (gün)
   caseTaskTeamLeadDays        Int      @default(2) // L1 Takım Lideri → L2 Yönetici eşiği (gün)
   caseTaskManagerDays         Int      @default(3) // L2 Yönetici → L3 Kurucu eşiği (gün)
+
+  // ACT-07: Vekalet Süresi Uyarısı büro-geneli ayarları (E-POSTA-ONLY kapsam; SMS/kanal
+  // genişletmesi OWN-20'nin ayrı owner kararı — burada YOK). Motor poa-expiry-delivery.service.ts okur.
+  poaExpiryNotificationEnabled Boolean  @default(true) // Bu büro için vekalet süresi uyarısı açık mı (global POA_EXPIRY_NOTIFICATION_ENABLED env flag'ine EK, onu geçersiz kılmaz)
+  poaExpiryThresholdDays       Int      @default(30) // Uyarı penceresi (gün) - vekalet bitiş tarihinden kaç gün önce
+  poaExpiryRecipientLawyerIds  String[] @default([]) // Explicit alıcı override (avukat id'leri); boşsa mevcut waterfall (primary→poa-attorney→escalation-manager→admin) değişmeden çalışır
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

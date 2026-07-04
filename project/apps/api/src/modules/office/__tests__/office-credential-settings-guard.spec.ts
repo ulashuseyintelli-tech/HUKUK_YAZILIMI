@@ -28,6 +28,7 @@ function makeController() {
     updateGreetingSettings: jest.fn().mockResolvedValue({ ok: true }),
     updateIik78Settings: jest.fn().mockResolvedValue({ ok: true }),
     updateEscalationSettings: jest.fn().mockResolvedValue({ ok: true }),
+    updatePoaExpirySettings: jest.fn().mockResolvedValue({ ok: true }),
     getSmtpSettings: jest.fn().mockReturnValue({ smtpPass: "********" }),
     getSmsSettings: jest.fn().mockReturnValue({ smsApiSecret: "********" }),
   };
@@ -105,5 +106,12 @@ describe("OfficeController credential guard + secret maskeleme + audit userId", 
     expect(service.updateGreetingSettings).toHaveBeenCalledWith("t1", { autoGreetingEnabled: false }, UID);
     expect(service.updateIik78Settings).toHaveBeenCalledWith("t1", { inactivityThresholdDays: 100 }, UID);
     expect(service.updateEscalationSettings).toHaveBeenCalledWith("t1", { opReminderDays: 3 }, UID);
+  });
+
+  // ACT-07: PUT poa-expiry-settings de aynı desende userId'yi servise geçirir, admin-guard yok
+  it("(10) PUT poa-expiry-settings userId'yi servise geçirir (audit için), admin-guard yok", () => {
+    const { service, controller } = makeController();
+    controller.updatePoaExpirySettings("t1", UID, { poaExpiryThresholdDays: 45 });
+    expect(service.updatePoaExpirySettings).toHaveBeenCalledWith("t1", { poaExpiryThresholdDays: 45 }, UID);
   });
 });

@@ -409,6 +409,37 @@ export class OfficeService {
     return updated;
   }
 
+  // ACT-07: Vekalet Süresi Uyarısı büro-geneli ayarlarını getir (E-POSTA-ONLY kapsam; SMS/kanal
+  // genişletmesi OWN-20'nin ayrı owner kararı — burada YOK). Motor poa-expiry-delivery.service.ts okur.
+  async getPoaExpirySettings(tenantId: string) {
+    const office = await this.getOrCreate(tenantId);
+    return {
+      poaExpiryNotificationEnabled: office.poaExpiryNotificationEnabled ?? true,
+      poaExpiryThresholdDays: office.poaExpiryThresholdDays ?? 30,
+      poaExpiryRecipientLawyerIds: office.poaExpiryRecipientLawyerIds ?? [],
+    };
+  }
+
+  // ACT-07: Vekalet Süresi Uyarısı büro-geneli ayarlarını güncelle
+  async updatePoaExpirySettings(
+    tenantId: string,
+    data: {
+      poaExpiryNotificationEnabled?: boolean;
+      poaExpiryThresholdDays?: number;
+      poaExpiryRecipientLawyerIds?: string[];
+    },
+    userId?: string
+  ) {
+    const office = await this.getOrCreate(tenantId);
+
+    const updated = await this.prisma.office.update({
+      where: { id: office.id },
+      data,
+    });
+    await this.logSettingsChange(tenantId, userId, "POA_EXPIRY", office, data);
+    return updated;
+  }
+
   // Görev & Eskalasyon ayarlarını getir (büro-geneli politika; motor PR-3b okur)
   async getEscalationSettings(tenantId: string) {
     const office = await this.getOrCreate(tenantId);
