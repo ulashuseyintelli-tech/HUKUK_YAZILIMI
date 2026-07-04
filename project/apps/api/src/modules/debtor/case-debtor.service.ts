@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { TebligatStatus } from "@prisma/client";
 import {
   AddDebtorToCaseDto,
   UpdateCaseDebtorDto,
@@ -416,6 +417,52 @@ export class CaseDebtorService {
       byNotificationMode,
       totalLiability,
       pendingNotifications: caseDebtors.filter((cd) => cd.prepareNotification).length,
+    };
+  }
+
+  /**
+   * DBND-D6-TEBLIGAT-BRIDGE (owner-locked, bkz `docs/design/d6-legal-semantics-triage.md` Q5):
+   * Salt-okuma sinyal — bu CaseDebtor'a bağlı AKTİF/BEKLEYEN Tebligat sayısını döner.
+   * Otomatik hukukî hüküm ÜRETMEZ (tebligatı geçersiz kılmaz, icra/tahsilatı durdurmaz),
+   * Collection/Tebligat kaydına hiçbir YAZMA yapmaz. Yalnız "manuel hukukî inceleme
+   * önerilir" seviyesinde bir gözlemdir. Collection bu bridge'in KAPSAMI DIŞINDA (owner
+   * kararı: Collection bir "aktif süreç" değil, mali işlem kaydıdır — ayrı bir backlog
+   * adayı, D6-Collection attribution signal, ileride ayrıca değerlendirilebilir).
+   * NULL caseDebtorId'li Tebligat kayıtları (bu CaseDebtor'a hiç bağlanmamış olanlar) bu
+   * sorgunun kapsamı dışındadır — "aktif süreç yok" ile "veri bağlanmamış" birbirine
+   * KARIŞTIRILMAMALI.
+   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.getCaseDebtorActiveProcessSummary() → GET /debtors/case-debtors/:caseDebtorId/active-process-summary
+  /// </remarks>
+  async getActiveProcessSummary(tenantId: string, caseDebtorId: string) {
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: caseDebtorId, case: { tenantId } },
+      select: { id: true },
+    });
+    if (!caseDebtor) {
+      throw new NotFoundException("Dosya borçlusu bulunamadı");
+    }
+
+    const activeTebligatCount = await this.prisma.tebligat.count({
+      where: {
+        caseDebtorId,
+        status: {
+          in: [
+            TebligatStatus.HAZIRLANDI,
+            TebligatStatus.GONDERILDI,
+            TebligatStatus.MUHTARLIGA_BIRAKILDI,
+            TebligatStatus.IADE_GELDI,
+          ],
+        },
+      },
+    });
+
+    return {
+      caseDebtorId,
+      activeTebligatCount,
+      manualReviewRecommended: activeTebligatCount > 0,
     };
   }
 }
