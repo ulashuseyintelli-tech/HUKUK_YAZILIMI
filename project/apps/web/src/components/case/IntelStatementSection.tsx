@@ -29,7 +29,8 @@ import {
  *  - MUHASEBE DEĞİL: accounting/statement/cari terimi kullanılmaz; finansal görünüm verilmez.
  *  - APPROVAL/PATRON ONAY copy'si kullanılmaz.
  *  - Bu beyanlar müvekkil DECLARED; doğrulanmış kesin bilgi/onay defteri DEĞİL.
- *  - ASSET/CONTACT kategori YOK (4.6c kapsam dışı); DebtorIntelligence/DebtorCommunication kullanılmaz.
+ *  - CLIENT-INTEL-4.6C: ASSET_DECLARATION/CONTACT_DECLARATION eklendi — serbest-metin beyan, diğer 6
+ *    kategoriyle BİREBİR aynı davranır; canonical Asset/DebtorCommunication'a YAZMAZ.
  */
 
 const CATEGORY_LABELS: Record<ClientIntelCategory, string> = {
@@ -39,6 +40,8 @@ const CATEGORY_LABELS: Record<ClientIntelCategory, string> = {
   DIGITAL_FOOTPRINT: 'Dijital İz',
   PAYMENT_HISTORY: 'Tahsilat Geçmişi',
   STRATEGY: 'Dosya Stratejisi',
+  ASSET_DECLARATION: 'Varlık Beyanı',
+  CONTACT_DECLARATION: 'İletişim Beyanı',
 };
 
 const CATEGORY_ORDER: ClientIntelCategory[] = [
@@ -48,6 +51,8 @@ const CATEGORY_ORDER: ClientIntelCategory[] = [
   'DIGITAL_FOOTPRINT',
   'PAYMENT_HISTORY',
   'STRATEGY',
+  'ASSET_DECLARATION',
+  'CONTACT_DECLARATION',
 ];
 
 const STATUS_LABEL: Record<ClientIntelStatus, string> = {

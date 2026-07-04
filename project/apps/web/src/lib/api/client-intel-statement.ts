@@ -23,7 +23,9 @@ export type ClientIntelCategory =
   | 'FAMILY_CIRCLE'
   | 'DIGITAL_FOOTPRINT'
   | 'PAYMENT_HISTORY'
-  | 'STRATEGY';
+  | 'STRATEGY'
+  | 'ASSET_DECLARATION' // CLIENT-INTEL-4.6C: serbest-metin varlık beyanı (canonical Asset DEĞİL)
+  | 'CONTACT_DECLARATION'; // CLIENT-INTEL-4.6C: serbest-metin iletişim beyanı (DebtorCommunication DEĞİL)
 
 export type ClientIntelStatus = 'ACTIVE' | 'RETRACTED' | 'SUPERSEDED' | 'FALSE_POSITIVE';
 export type ClientIntelSource = 'CLIENT_DECLARATION';
