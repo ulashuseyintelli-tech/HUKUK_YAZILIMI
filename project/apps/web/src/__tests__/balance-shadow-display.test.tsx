@@ -472,14 +472,14 @@ describe("guarded primary display pilot gate", () => {
       asilAlacak: 10001,
       takipTutari: 10001,
       takipSonrasiFaiz: 505,
-      icraMasraflari: 606,
-      vekaletUcreti: 707,
       toplamBorc: 20002,
       sonBorc: 30003,
       toplamTahsilat: 4004,
       kalanBorc: 30003,
       kalanAnapara: 10001,
     }));
+    // ALC-AUTH-1A: icraMasraflari/vekaletUcreti B1 kapsami disinda -- legacy (tarife formulu)
+    // degerleri korunur, canonical (606/707) DEGIL.
     expect(guardedResult).toEqual(expect.objectContaining({
       tazminat: 111,
       komisyon: 222,
@@ -490,8 +490,10 @@ describe("guarded primary display pilot gate", () => {
       dosyaGideri: 777,
       tebligatGideri: 888,
       vekaletPulu: 999,
+      icraMasraflari: 90002,
       pesinHarcDahilTahsilHarci: 1001,
       pesinHarcHaricTahsilHarci: 1002,
+      vekaletUcreti: 90003,
       tahsilOranlari: legacy.tahsilOranlari,
       mahsupDetaylari: legacy.mahsupDetaylari,
       faizSegmentleri: legacy.faizSegmentleri,
@@ -508,16 +510,6 @@ describe("guarded primary display pilot gate", () => {
     ["interestAmount", "0"],
     ["interestAmount", Number.NaN],
     ["interestAmount", Number.POSITIVE_INFINITY],
-    ["costsAmount", undefined],
-    ["costsAmount", null],
-    ["costsAmount", "0"],
-    ["costsAmount", Number.NaN],
-    ["costsAmount", Number.POSITIVE_INFINITY],
-    ["attorneyFeeAmount", undefined],
-    ["attorneyFeeAmount", null],
-    ["attorneyFeeAmount", "0"],
-    ["attorneyFeeAmount", Number.NaN],
-    ["attorneyFeeAmount", Number.POSITIVE_INFINITY],
   ] as const)(
     "%s malformed oldugunda guarded primary fallback secer",
     (field, value) => {
@@ -530,6 +522,34 @@ describe("guarded primary display pilot gate", () => {
       expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
       expect(decision.reasonCodes).toContain("CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE");
       expect(guardedResult).toBeNull();
+    },
+  );
+
+  // ALC-AUTH-1A: B1 kapsami principal + interest + payment ile sinirlandi -- cost/vekalet
+  // (costsAmount/attorneyFeeAmount) artik canonical primary gate'i BLOKLAMAZ.
+  it.each([
+    ["costsAmount", undefined],
+    ["costsAmount", null],
+    ["costsAmount", "0"],
+    ["costsAmount", Number.NaN],
+    ["costsAmount", Number.POSITIVE_INFINITY],
+    ["attorneyFeeAmount", undefined],
+    ["attorneyFeeAmount", null],
+    ["attorneyFeeAmount", "0"],
+    ["attorneyFeeAmount", Number.NaN],
+    ["attorneyFeeAmount", Number.POSITIVE_INFINITY],
+  ] as const)(
+    "%s malformed olsa da B1 (principal+interest+payment) kapsami disinda oldugundan guarded primary'yi bloklamaz",
+    (field, value) => {
+      const report = makeEligibleGuardedPrimaryReport();
+      report.totals.canonical![field] = value as unknown as number;
+
+      const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+      const guardedResult = buildGuardedPrimaryCalculationResult(legacyCalculationSummary, report, decision);
+
+      expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
+      expect(decision.reasonCodes).toEqual([]);
+      expect(guardedResult).not.toBeNull();
     },
   );
 
@@ -685,8 +705,6 @@ describe("guarded summary runtime boundary plan", () => {
     "asilAlacak",
     "takipTutari",
     "takipSonrasiFaiz",
-    "icraMasraflari",
-    "vekaletUcreti",
     "toplamBorc",
     "sonBorc",
     "toplamTahsilat",
@@ -694,10 +712,14 @@ describe("guarded summary runtime boundary plan", () => {
     "kalanAnapara",
   ];
 
+  // ALC-AUTH-1A: icraMasraflari/vekaletUcreti B1 kapsami disinda -- backend contract required
+  // (legacy retained) satirlara tasindi.
   const backendContractRequiredRowIds = [
     "tazminat",
     "komisyon",
     "takipOncesiFaiz",
+    "icraMasraflari",
+    "vekaletUcreti",
   ];
 
   const legacyDiagnosticRetainedRowIds = [
@@ -1262,8 +1284,12 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.getAllByText("30.003,00 TL").length).toBeGreaterThan(0);
     expect(screen.getByText("- 4.004,00 TL")).toBeInTheDocument();
     expect(screen.getByText("505,00 TL")).toBeInTheDocument();
-    expect(screen.getByText("606,00 TL")).toBeInTheDocument();
-    expect(screen.getByText("707,00 TL")).toBeInTheDocument();
+    // ALC-AUTH-1A: icraMasraflari/vekaletUcreti B1 kapsami disinda -- legacy (90.002/90.003)
+    // gorunur kalir, canonical (606/707) DEGIL.
+    expect(screen.queryByText("606,00 TL")).not.toBeInTheDocument();
+    expect(screen.queryByText("707,00 TL")).not.toBeInTheDocument();
+    expect(screen.getByText("90.002,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("90.003,00 TL")).toBeInTheDocument();
 
     expect(screen.queryByText("90.001,00 TL")).not.toBeInTheDocument();
     expect(screen.queryByText("90.005,00 TL")).not.toBeInTheDocument();
@@ -1326,16 +1352,19 @@ describe("BalanceShadowDiffPanel", () => {
       "30.003,00 TL",
       "- 4.004,00 TL",
       "505,00 TL",
-      "606,00 TL",
-      "707,00 TL",
     ]) {
       expect(screen.getAllByText(canonicalValue).length).toBeGreaterThan(0);
     }
 
+    // ALC-AUTH-1A: icraMasraflari/vekaletUcreti B1 kapsami disinda -- canonical (606/707) artik
+    // gorunmez, legacy (90.002/90.003) korunur.
+    expect(screen.queryByText("606,00 TL")).not.toBeInTheDocument();
+    expect(screen.queryByText("707,00 TL")).not.toBeInTheDocument();
+    expect(screen.getAllByText("90.002,00 TL").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("90.003,00 TL").length).toBeGreaterThan(0);
+
     for (const replacedLegacyValue of [
       "90.001,00 TL",
-      "90.002,00 TL",
-      "90.003,00 TL",
       "90.004,00 TL",
       "90.005,00 TL",
       "90.006,00 TL",
