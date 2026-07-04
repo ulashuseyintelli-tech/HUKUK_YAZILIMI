@@ -691,10 +691,11 @@ describe("guarded primary display pilot gate", () => {
       { featureFlagEnabled: true },
     );
 
+    // ALC-AUTH-3D: FINAL_DEBT_STATES_REQUIRED artik frontend'de uretilmiyor (ikinci authority
+    // kaldirildi) - FINAL_DEBT_STATES_MISSING tek kaynaktan (backend cutoverReadiness.blockers) gelir.
     expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
     expect(decision.reasonCodes).toEqual(expect.arrayContaining([
       "FINAL_DEBT_STATES_MISSING",
-      "FINAL_DEBT_STATES_REQUIRED",
     ]));
   });
 
@@ -702,6 +703,8 @@ describe("guarded primary display pilot gate", () => {
     // ALC-AUTH-3D: domain-safety tek otorite backend cutoverReadiness'tir -- gercek backend'de
     // compare.blockers (CURRENCY_MISMATCH/CONTEXT_MISMATCH) zaten cutoverReadiness.blockers'a
     // akar (bkz. balance-display-shadow-diff.service.ts cutoverReadiness()), fixture bunu yansitir.
+    // safeForOptInShadow=false: CURRENCY_MISMATCH/CONTEXT_MISMATCH backend'in kendi
+    // optInShadowBlockers setinde -- shadow paneli de guvenli degil (gercek davranisla eslesir).
     const currencyDecision = evaluateGuardedPrimaryDisplayPilot(
       makeReport({
         currency: null,
@@ -781,10 +784,13 @@ describe("guarded primary display pilot gate", () => {
             message: "Restricted payment scope is unresolved.",
           },
         ],
-        // ALC-AUTH-3D: domain-safety artik dogrudan cutoverReadiness'ten okunuyor.
+        // ALC-AUTH-3D: bu iki kod artık frontend'in kendi HARD_NO_GO_CODES'undan değil,
+        // backend cutoverReadiness.blockers'tan geliyor (tek otorite). safeForOptInShadow=true:
+        // OVERPAYMENT_BLOCKED backend'in optInShadowBlockers setinde DEĞİL (yalnız
+        // primary-display'i bloklar, shadow panelini değil) — gerçek davranışla eşleşir.
         cutoverReadiness: {
           safeForPrimaryDisplay: false,
-          safeForOptInShadow: false,
+          safeForOptInShadow: true,
           blockers: ["OVERPAYMENT_BLOCKED", "RESTRICTED_PAYMENT_DISPLAY_UNSAFE"],
           nextRequiredEvidence: [],
         },
@@ -806,6 +812,40 @@ describe("guarded primary display pilot gate", () => {
     ]));
     expect(periodicDecision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
     expect(periodicDecision.reasonCodes).toContain("UNSUPPORTED_PERIODIC_OBLIGATION");
+  });
+
+  it("ALC-AUTH-3D: frontend ikinci authority uretmez - backend cutoverReadiness.safeForPrimaryDisplay TEK otoritedir", () => {
+    // Eski HARD_NO_GO_CODES listesinde HIC olmayan bir backend blocker (PRINCIPAL_BUCKET_DELTA,
+    // OUTSTANDING_DELTA, PAID_DELTA) - ALC-AUTH-3C'nin kanitladigi tam senaryo: bu kodlar eskiden
+    // frontend'in kendi listesinde olmadigi icin sessizce eleniyordu, guard yanlislikla geciyordu.
+    const decision = evaluateGuardedPrimaryDisplayPilot(
+      makeReport({
+        cutoverReadiness: {
+          safeForPrimaryDisplay: false,
+          safeForOptInShadow: true,
+          blockers: ["OUTSTANDING_DELTA", "PAID_DELTA", "PRINCIPAL_BUCKET_DELTA"],
+          nextRequiredEvidence: [],
+        },
+      }),
+      { featureFlagEnabled: true },
+    );
+
+    expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(decision.reasonCodes).toEqual(expect.arrayContaining([
+      "OUTSTANDING_DELTA",
+      "PAID_DELTA",
+      "PRINCIPAL_BUCKET_DELTA",
+    ]));
+  });
+
+  it("ALC-AUTH-3D: backend safeForPrimaryDisplay=true ve render-verisi mevcutsa canonical primary candidate secilir", () => {
+    const decision = evaluateGuardedPrimaryDisplayPilot(
+      makeEligibleGuardedPrimaryReport(),
+      { featureFlagEnabled: true },
+    );
+
+    expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
+    expect(decision.reasonCodes).toEqual([]);
   });
 });
 

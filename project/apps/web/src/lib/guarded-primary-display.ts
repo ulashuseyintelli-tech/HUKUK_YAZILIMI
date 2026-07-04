@@ -307,29 +307,26 @@ export function evaluateGuardedPrimaryDisplayPilot(
     };
   }
 
-  if (!report.sources.legacyCalculationSummary.available || !report.sources.canonicalBalanceDisplay.available) {
-    reasonCodes.push('SHADOW_OR_CANONICAL_SOURCE_FAILURE');
+  // ALC-AUTH-3D (strict cleanup, 2026-07-05): domain-safety otoritesi artık TEK YERDE
+  // (backend cutoverReadiness) hesaplanır. Frontend ikinci bir authority üretmez — yalnız
+  // backend'in kararını render eder. Önceki ayrı kontroller (HARD_NO_GO_CODES, NOT_COMPARABLE,
+  // SHADOW_OR_CANONICAL_SOURCE_FAILURE, FINAL_DEBT_STATES_REQUIRED, DISPLAY_CURRENCY_UNSAFE,
+  // report-provenance tabanlı CLAIM_ITEM_AUTHORITY_CONTAMINATION) backend'in
+  // `cutoverReadiness.blockers`'ını besleyen AYNI `comparability.blockers`/`diagnostics`
+  // kaynağından türüyordu — tamamen kapsanıyor, kaldırıldı. Backend yeni bir blocker
+  // eklediğinde frontend otomatik hizalı kalır.
+  if (!report.cutoverReadiness.safeForPrimaryDisplay) {
+    reasonCodes.push(...report.cutoverReadiness.blockers);
   }
-  if (!report.provenance.finalDebtStatesAvailable) reasonCodes.push('FINAL_DEBT_STATES_REQUIRED');
-  if (report.currency === 'MULTI' || report.currency === 'UNKNOWN' || report.currency == null) {
-    reasonCodes.push('DISPLAY_CURRENCY_UNSAFE');
-  }
-  if (report.provenance.claimItemCollectedAmountUsedAsAuthority) {
-    reasonCodes.push('CLAIM_ITEM_AUTHORITY_CONTAMINATION');
-  }
+
+  // Render-veri-mevcudiyeti kontrolü — "güvenli mi" değil "gösterecek veri var mı" sorusu,
+  // domain-safety'den ayrı, frontend'de kalması gereken bir kaygı.
   const displayedAmountFailures = invalidDisplayedCanonicalAmountFields(report);
   if (!canonicalPrimaryAmounts(report)) {
     reasonCodes.push('CANONICAL_PRINCIPAL_UNAVAILABLE');
     if (displayedAmountFailures.length > 0) {
       reasonCodes.push('CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE');
     }
-  }
-
-  // ALC-AUTH-3D: domain-safety otoritesi tek kaynak -- backend'in zaten hesapladigi
-  // cutoverReadiness.safeForPrimaryDisplay/blockers dogrudan tuketilir (eskiden ayri,
-  // koptugu kanitlanan bir HARD_NO_GO_CODES/NOT_COMPARABLE listesi tutuluyordu).
-  if (!report.cutoverReadiness.safeForPrimaryDisplay) {
-    reasonCodes.push(...report.cutoverReadiness.blockers);
   }
 
   return {
