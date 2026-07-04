@@ -86,6 +86,7 @@ BACKLOG
 | MPB-020 | Security | Borçlu forensic tenant/passive/attribution/API drift fixes | Repo verification confirmed debtor tenant boundary, passive writer/lifecycle guards, actor/audit attribution, type/API drift hardening and cross-case notification compatibility; PR #396/#398/#402/#779/#798/#860/#865/#878/#880 merged; focused backend tests PASS (8 suites, 38 tests) |
 | MPB-027 | Security | AddressTask auth, tenant isolation and data-integrity hardening | PR #202/#207/#261 merged; repo verification confirmed AddressTask auth/tenant/data-integrity hardening; focused AddressTask tests PASS (3 suites, 67 tests) |
 | ALC-AUTH-1B | Alacak Kalemi | Overpayment display semantics contract (allocatedPaidAmount/grossReceivedAmount) | PR #909 squash merged, SHA `f144f550`; PAID_DELTA reclassified OVERPAYMENT_CLASSIFICATION_EFFECT (not a bug); totalPaidAmount unchanged, additive fields only; 575/575 interest-engine tests PASS |
+| ALC-AUTH-3B | Alacak Kalemi | totalDebtAmount projection plumbing (grossPrincipal) | PR #917 squash merged, SHA `8c0cad8f`; guard's CANONICAL_PRINCIPAL_UNAVAILABLE closed for 2026/9502; 35/35 orchestration tests PASS; guarded pilot remains NO-GO pending ALC-AUTH-3D |
 
 ## Items
 
@@ -753,6 +754,58 @@ Unlock Condition: Owner GO-IMPLEMENT onayı (ALC-AUTH-1C-IMPL) — kod değişik
 Estimated Size: S (tek alan hesaplama + ilgili test güncellemeleri: case-balance-display.spec.ts, balance-shadow-display.test.tsx, balance-display-shadow-diff.service.spec.ts)
 Related Modules: case-balance-display.ts, guarded-primary-display.ts, balance-display-shadow-diff.service.ts
 Status: DONE (analiz) — GO-ANALYZE tamamlandı, kod değişikliği YAPILMADI. Sonraki adım: ALC-AUTH-1C-IMPL (ayrı GO-IMPLEMENT gerekir).
+
+**⚠️ AKTİF ÇAKIŞMA UYARISI (2026-07-04, ALC-AUTH-3B ile eş-zamanlı keşfedildi):** `totalDebtAmount`
+ZATEN, BAĞIMSIZ bir oturumda, FARKLI bir formülle implement edilip **MERGED edildi** — bkz.
+ALC-AUTH-3B (PR #917, SHA `8c0cad8f`, aşağıda ayrı bölümde), formül: `grossPrincipal
+(assembler'ın gross ClaimBucket toplamı) + gross faiz + costs + ancillaries`. Bu, buradaki
+`outstandingAmount + totalPaidAmount` formülünden **FARKLI bir sayı üretir** (2026/9502 için:
+200.000 vs 220.000 — 20.000 TL fark). Kök neden: `totalPaidAmount`, ALC-AUTH-1A'da tespit
+edilen bir kuirklik yüzünden (borç tam kapandıktan sonra gelen kısmi-tahsis edilen ödemenin
+TAM yüz değeriyle allocation step'e girmesi) 2026/9502'de 20.000 TL şişkin — gerçek gross
+borcu YANSITMIYOR. **`ALC-AUTH-1C-IMPL`'e OWNER GO-IMPLEMENT verilmemeli** — `totalDebtAmount`
+zaten dolu (PR #917); bu kayıt ile çakışan bir ikinci implementasyon yapılırsa PR #917'nin
+sonucu sessizce üzerine yazılır/çelişir. Reconciliation (hangi formül kalacak, veya bu kayıt
+tamamen retire mi edilecek) ayrı bir owner kararı gerektirir.
+---
+
+## ALC-AUTH-3B/3C/3D — totalDebtAmount Plumbing & Guard Alignment (2026-07-04)
+
+ID: ALC-AUTH-3B
+Title: totalDebtAmount Projection Plumbing (grossPrincipal)
+Problem: ALC-AUTH-3'te tespit edildi — totalDebtAmount koşulsuz null idi çünkü assembler'ın zaten ürettiği gross (allocation-öncesi) ClaimBucket tutarları CaseBalanceResult'a hiç taşınmıyordu (yeni iş mantığı gerekmeyen saf plumbing boşluğu).
+Business Value: Guard'ın case-verisinden bağımsız yapısal CANONICAL_PRINCIPAL_UNAVAILABLE blocker'ı kapandı.
+Technical Value: CaseBalanceCurrencyResult.grossPrincipal eklendi (case-balance.service.ts); totalDebtAmount = grossPrincipal + gross faiz + costs + ancillaries (case-balance-display.ts). ClaimItem verisine bağımlı (cost/vekalet ClaimItem'ı yoksa eksik kalır - DATA_GAP, ayrı konu).
+Priority: —
+Depends On: ALC-AUTH-3 (kök neden analizi)
+Unlock Condition: —
+Estimated Size: S
+Related Modules: case-balance.service.ts, case-balance-display.ts
+Status: DONE — MERGED. PR #917, squash SHA 8c0cad8f. 35/35 orchestration testi PASS. 2026/9502 icin totalDebtAmount artik 200.000 (onceden null). ALC-AUTH-1C ile cakisma - yukariya bakin, reconciliation gerekiyor.
+
+ID: ALC-AUTH-3C
+Title: Guard Hard-No-Go Alignment - kanit
+Problem: ALC-AUTH-3B sonrasi, frontend evaluateGuardedPrimaryDisplayPilot()'in kendi HARD_NO_GO_CODES listesi ile backend cutoverReadiness.blockers listesinin tamamen kopuk oldugu kanitlandi - 2026/9502 icin backend 3 blocker bildiriyor (OUTSTANDING_DELTA, PAID_DELTA, PRINCIPAL_BUCKET_DELTA) ama hicbiri frontend'in 9 kodluk listesinde yok; guard GECER, cutoverReadiness.safeForPrimaryDisplay ise hala false.
+Business Value: Pilot flag acilmadan once somut, olculmus bir risk tespit edildi: cost/vekalet DATA_GAP + tum-alan override kombinasyonu, avukata gercek borcun altinda bir "TOPLAM BORC/SON BORC" gosterir (2026/9502'de ~34.311 TL eksik).
+Technical Value: Kod degisikligi yok, yalniz kanit + 2 cozum alternatifi ((1) backend blocker'larini HARD_NO_GO_CODES'a ekle - hizli, guard'i yeniden tam kilitler; (2) gercek partial-cutover - buildGuardedPrimaryCalculationResult()'i yalniz principal/interest/payment alanlarini override edecek sekilde yeniden yaz, altyapi [buildGuardedSummaryRuntimeBoundaryPlan()] kismen zaten var ama fiili override'a baglanmamis).
+Priority: —
+Depends On: ALC-AUTH-3B
+Unlock Condition: —
+Estimated Size: — (analiz)
+Related Modules: guarded-primary-display.ts, balance-display-shadow-diff.service.ts
+Status: DONE (analiz) — GO-ANALYZE tamamlandi, kod degisikligi YAPILMADI.
+
+ID: ALC-AUTH-3D
+Title: Guard Alignment - implement (henuz yapilmadi)
+Problem: ALC-AUTH-3C'nin kanitladigi guard/backend kopuklugunun kapatilmasi.
+Business Value: Guarded primary pilot flag guvenle acilabilir hale gelir (bugun NO-GO).
+Technical Value: (1) veya (2) - owner karari gerekir, ikisi birbirini dislamaz ((1) hemen guvenlik agi olarak uygulanip (2) sonra kalici cozum olarak insa edilebilir).
+Priority: —
+Depends On: ALC-AUTH-3C
+Unlock Condition: Owner karari - (1) HARD_NO_GO_CODES genisletme mi, (2) partial-cutover mi, yoksa ikisi birden mi?
+Estimated Size: (1) XS, (2) M-L
+Related Modules: guarded-primary-display.ts
+Status: BACKLOG — kod degisikligi YAPILMADI. Guarded primary pilot flag bu madde kapanmadan ACILMAMALI.
 ---
 
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
