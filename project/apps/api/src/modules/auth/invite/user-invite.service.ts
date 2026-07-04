@@ -48,11 +48,20 @@ export class UserInviteService {
     return `${base}/auth/accept-invite?token=${encodeURIComponent(rawToken)}`;
   }
 
-  /** Admin: gerçek kişi için pending User + invite oluşturur, e-posta gönderir. */
+  /**
+   * Admin: gerçek kişi için pending User + invite oluşturur, e-posta gönderir.
+   * OWN-01: `dto.lawyerId` veya `dto.staffMemberId` verilirse (karşılıklı dışlayıcı), yeni User
+   * AYNI transaction içinde o profile deterministik bağlanır (Lawyer.userId/StaffMember.userId).
+   * Fuzzy/email-eşleştirme YOK — bağlam admin'in hangi kişi kartından davet açtığından gelir.
+   */
   async issue(actor: InviteActor, dto: CreateInviteDto) {
     if (!this.enabled()) throw new ForbiddenException("Login invite provisioning devre dışı");
     const email = dto.email.trim().toLowerCase();
     const role = (dto.role ?? "USER") as UserRole;
+
+    if (dto.lawyerId && dto.staffMemberId) {
+      throw new BadRequestException("lawyerId ve staffMemberId aynı anda verilemez");
+    }
 
     // H3: global email-uniqueness ile hizalama. AuthService.register() (auth.service.ts) email'i
     // ZATEN tenantId'siz/global kontrol ediyordu; bu kontrol önceden tenant-scopedy — Tenant A'da
@@ -68,6 +77,25 @@ export class UserInviteService {
     const expiresAt = new Date(Date.now() + this.ttlHours() * 3600_000);
 
     const created = await this.prisma.$transaction(async (tx) => {
+      // Deterministik ön-kontrol: hedef profil var mı, aynı tenant'ta mı, zaten bağlı mı.
+      // Gerçek race-guard aşağıdaki updateMany(...userId:null) koşuludur (bu yalnız erken/dost hata).
+      if (dto.lawyerId) {
+        const lawyer = await tx.lawyer.findFirst({
+          where: { id: dto.lawyerId, tenantId: actor.tenantId },
+          select: { id: true, userId: true },
+        });
+        if (!lawyer) throw new BadRequestException("Avukat bulunamadı veya tenant dışı");
+        if (lawyer.userId) throw new ConflictException("Bu avukat zaten bir kullanıcıya bağlı");
+      }
+      if (dto.staffMemberId) {
+        const staff = await tx.staffMember.findFirst({
+          where: { id: dto.staffMemberId, tenantId: actor.tenantId },
+          select: { id: true, userId: true },
+        });
+        if (!staff) throw new BadRequestException("Personel bulunamadı veya tenant dışı");
+        if (staff.userId) throw new ConflictException("Bu personel zaten bir kullanıcıya bağlı");
+      }
+
       const user = await tx.user.create({
         data: {
           tenantId: actor.tenantId,
@@ -79,6 +107,24 @@ export class UserInviteService {
           isActive: false, // pending: login() + validate() bunu reddeder
         },
       });
+
+      // Race-safe bağlama: WHERE userId:null koşulu, eşzamanlı iki davetin aynı profile
+      // yarışmasını engeller (disposition-posting.service.ts'teki updateMany deseniyle aynı).
+      if (dto.lawyerId) {
+        const linked = await tx.lawyer.updateMany({
+          where: { id: dto.lawyerId, tenantId: actor.tenantId, userId: null },
+          data: { userId: user.id },
+        });
+        if (linked.count === 0) throw new ConflictException("Avukat eşzamanlı olarak başka bir kullanıcıya bağlandı");
+      }
+      if (dto.staffMemberId) {
+        const linked = await tx.staffMember.updateMany({
+          where: { id: dto.staffMemberId, tenantId: actor.tenantId, userId: null },
+          data: { userId: user.id },
+        });
+        if (linked.count === 0) throw new ConflictException("Personel eşzamanlı olarak başka bir kullanıcıya bağlandı");
+      }
+
       const invite = await tx.userInvite.create({
         data: { tenantId: actor.tenantId, userId: user.id, email, tokenHash, expiresAt, invitedById: actor.id },
       });
@@ -89,6 +135,8 @@ export class UserInviteService {
     await this.writeAudit("USER_INVITE_ISSUED", actor.tenantId, actor.id, {
       inviteId: created.invite.id, userId: created.user.id,
       emailRedacted: redactEmail(email), expiresAt: expiresAt.toISOString(), result: "ISSUED",
+      ...(dto.lawyerId ? { linkedLawyerId: dto.lawyerId } : {}),
+      ...(dto.staffMemberId ? { linkedStaffMemberId: dto.staffMemberId } : {}),
     });
     return { inviteId: created.invite.id, userId: created.user.id, email: redactEmail(email), expiresAt: expiresAt.toISOString() };
   }
@@ -120,16 +168,32 @@ export class UserInviteService {
     return { inviteId: invite.id, expiresAt: expiresAt.toISOString() };
   }
 
-  /** Admin: daveti iptal et (token kullanılamaz olur). User pending kalır (silinmez). */
+  /**
+   * Admin: daveti iptal et (token kullanılamaz olur). User pending kalır (silinmez).
+   * OWN-01: bu invite'ın hedef User'ına issue() sırasında bağlanmış bir Lawyer/StaffMember varsa
+   * (userId eşleşmesiyle, deterministik), bağlantı da AYNI transaction'da çözülür — aksi halde
+   * profil kalıcı biçimde ölü bir pending kullanıcıya kilitli kalır ve yeni davet açılamaz.
+   */
   async revoke(actor: InviteActor, inviteId: string) {
     if (!this.enabled()) throw new ForbiddenException("Login invite provisioning devre dışı");
     const invite = await this.prisma.userInvite.findFirst({
       where: { id: inviteId, tenantId: actor.tenantId },
     });
     if (!invite) throw new NotFoundException("Davet bulunamadı");
-    await this.prisma.userInvite.update({ where: { id: invite.id }, data: { revokedAt: new Date() } });
+
+    const unlinked = await this.prisma.$transaction(async (tx) => {
+      await tx.userInvite.update({ where: { id: invite.id }, data: { revokedAt: new Date() } });
+      const [lawyerUnlink, staffUnlink] = await Promise.all([
+        tx.lawyer.updateMany({ where: { userId: invite.userId, tenantId: actor.tenantId }, data: { userId: null } }),
+        tx.staffMember.updateMany({ where: { userId: invite.userId, tenantId: actor.tenantId }, data: { userId: null } }),
+      ]);
+      return { lawyer: lawyerUnlink.count > 0, staffMember: staffUnlink.count > 0 };
+    });
+
     await this.writeAudit("USER_INVITE_REVOKED", actor.tenantId, actor.id, {
       inviteId: invite.id, userId: invite.userId, result: "REVOKED",
+      ...(unlinked.lawyer ? { unlinkedLawyer: true } : {}),
+      ...(unlinked.staffMember ? { unlinkedStaffMember: true } : {}),
     });
     return { inviteId: invite.id, revoked: true };
   }
