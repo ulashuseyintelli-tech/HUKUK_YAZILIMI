@@ -12,7 +12,7 @@
  * @see .kiro/specs/phase-9c-object-storage-migration/PHASE-9C-IMPLEMENTATION-CHECKLIST.md
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 // AWS SDK v3 - install with: pnpm add @aws-sdk/client-s3
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import type {
@@ -23,7 +23,7 @@ import type {
   DeleteObjectsCommandOutput,
 } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
-import { ObjectStoreConfig } from './object-store.config';
+import type { ObjectStoreConfig } from './object-store.config';
 import {
   IObjectStoreClient,
   PutObjectInput,
@@ -58,7 +58,6 @@ async function getS3Module(): Promise<typeof import('@aws-sdk/client-s3')> {
 // Implementation
 // ============================================================================
 
-@Injectable()
 export class MinioObjectStoreClient implements IObjectStoreClient {
   private readonly logger = new Logger(MinioObjectStoreClient.name);
   private s3: S3ClientType | null = null;
