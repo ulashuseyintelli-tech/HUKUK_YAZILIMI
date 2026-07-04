@@ -12,6 +12,8 @@ Global primary cutover remains **NO-GO**.
 
 The purpose of this checklist is to define how the guarded primary display pilot may be enabled in a controlled staging/internal environment, how smoke evidence must be collected, and when rollback is required.
 
+**Implementation reference (2026-07-05):** this checklist reflects the guard authority model as of ALC-AUTH-3D (PR #922 `8a340c23`, PR #925 `6c1304a3`) and ALC-AUTH-3E (PR #929 `d23003e8`). The frontend no longer maintains its own fixed no-go code list — see §7.4 below for the current mechanism. If a future change alters `evaluateGuardedPrimaryDisplayPilot()` or `buildGuardedPrimaryCalculationResult()` in `guarded-primary-display.ts`, this document must be re-synchronized (governance drift otherwise).
+
 ## 2. Decision State
 
 Current decision state:
@@ -163,18 +165,17 @@ Expected result:
 - Legacy fallback remains primary.
 - Canonical display must not become primary.
 
-At least the following diagnostics or equivalent unsafe states must be covered:
+**Authority model (post ALC-AUTH-3D, PR #922/#925):** the frontend no longer holds its own fixed no-go code list. `evaluateGuardedPrimaryDisplayPilot()` treats `report.cutoverReadiness.safeForPrimaryDisplay` as the single domain-safety authority: whenever it is `false`, every code in `report.cutoverReadiness.blockers` is surfaced and legacy fallback applies. The smoke must therefore assert the *authority relationship* (frontend defers to backend `safeForPrimaryDisplay`), not a fixed code list. As of this writing, backend `cutoverReadiness` produces at least the following blocker codes — this list documents current backend behavior for smoke convenience, it is not itself the enforcement mechanism:
 
 - `FINAL_DEBT_STATES_MISSING`
-- `FINAL_DEBT_STATES_CURRENCY_MISMATCH`
 - `CURRENCY_MISMATCH`
 - `CONTEXT_MISMATCH`
 - `CANONICAL_CURRENCY_UNSAFE`
-- `MULTI_CURRENCY_DISPLAY_UNSAFE`
-- `CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY`
-- `OVERPAYMENT_BLOCKED`
-- `RESTRICTED_PAYMENT_DISPLAY_UNSAFE`
-- `NAFAKA_PRINCIPAL_DISPLAY_RISK`
+- `OUTSTANDING_DELTA`, `PAID_DELTA`, `PRINCIPAL_BUCKET_DELTA` (RED-severity amount/bucket diffs)
+
+`OVERPAYMENT_BLOCKED`, `RESTRICTED_PAYMENT_DISPLAY_UNSAFE`, and `NAFAKA_PRINCIPAL_DISPLAY_RISK` are asserted separately in §7.6/§7.5 as frontend policy/diagnostic checks, not as backend `cutoverReadiness` blockers.
+
+`COSTS_DELTA`, `ATTORNEY_FEE_DELTA`, `EXPENSE_BUCKET_DELTA`, and `ATTORNEY_FEE_BUCKET_DELTA` are intentionally exempt from `cutoverReadiness.safeForPrimaryDisplay` (`B1_SCOPE_EXEMPT_DIFF_CODES`, ALC-AUTH-1A). These do not block the guard — see §7.8 for the separate cost/attorney-fee understatement smoke that covers this case.
 
 ### 7.5 Unsupported Scenario Smoke
 
@@ -211,6 +212,20 @@ Expected result:
 - Legacy fallback remains primary.
 - Source failure must not become canonical primary.
 - Failure must be visible as diagnostic/evidence, not hidden as success.
+
+### 7.8 Cost/Attorney-Fee Understatement Smoke (ALC-AUTH-3E)
+
+Expected result:
+
+- A case with a RED-severity `COSTS_DELTA` and/or `ATTORNEY_FEE_DELTA` (legacy nonzero, canonical zero — typically a case without cost/attorney-fee `ClaimItem` records) must show `toplamBorc`/`sonBorc`/`kalanBorc` from legacy, not canonical.
+- The other 5 canonical-override fields (`asilAlacak`/`takipTutari`/`takipSonrasiFaiz`/`toplamTahsilat`/`kalanAnapara`) are unaffected and remain canonical.
+- A case with no RED `COSTS_DELTA`/`ATTORNEY_FEE_DELTA` (cost/attorney-fee data present and consistent, or genuinely zero on both sides) must show all 8 canonical-override fields, including `toplamBorc`/`sonBorc`/`kalanBorc`, from canonical.
+
+Minimum checks:
+
+- Case with legacy `icraMasraflari` or `vekaletUcreti` nonzero and canonical `costsAmount`/`attorneyFeeAmount` reporting 0 → `toplamBorc`/`sonBorc`/`kalanBorc` render legacy values.
+- Case with cost/attorney-fee `ClaimItem` coverage present and consistent with legacy → `toplamBorc`/`sonBorc`/`kalanBorc` render canonical values.
+- Displayed total must never be lower than the true legacy-formula total for this reason.
 
 ## 8. Evidence to Capture
 
@@ -252,6 +267,7 @@ Rollback is required if any of the following occurs:
 - Restricted/earmarked payment is shown as free overpayment without `PaymentDesignation`.
 - Unsupported nafaka/periodic scenario becomes primary.
 - Shadow/canonical source failure becomes primary.
+- `toplamBorc`/`sonBorc`/`kalanBorc` render a canonical total lower than the true legacy-formula total on a case with a RED `COSTS_DELTA`/`ATTORNEY_FEE_DELTA` (ALC-AUTH-3E regression).
 - Legacy fallback is unavailable.
 - Production display error occurs.
 - Diagnostic spike or mismatch spike exceeds accepted tolerance.

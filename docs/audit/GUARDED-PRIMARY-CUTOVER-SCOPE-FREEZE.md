@@ -8,6 +8,8 @@ Primary cutover remains **NO-GO** until this scope is approved and the minimal e
 
 This document freezes the scope for a guarded primary display pilot. It does not approve global primary cutover.
 
+**Implementation reference (2026-07-05):** this document reflects the guard authority model as of ALC-AUTH-3D (PR #922 `8a340c23`, PR #925 `6c1304a3`) and ALC-AUTH-3E (PR #929 `d23003e8`). See §4 for the current authority mechanism; a future change to `guarded-primary-display.ts` requires re-synchronizing this document.
+
 ## 2. Core Decision
 
 Primary cutover is not global.
@@ -35,22 +37,17 @@ Eligibility is explicit. Absence of a blocker is not enough to imply eligibility
 
 ## 4. Hard No-Go Diagnostics
 
-Any of the following diagnostics blocks canonical primary display and forces legacy fallback:
+**Authority model (post ALC-AUTH-3D, PR #922/#925):** the frontend no longer maintains its own fixed no-go diagnostic list. `evaluateGuardedPrimaryDisplayPilot()` defers to backend `report.cutoverReadiness.safeForPrimaryDisplay` as the single domain-safety authority — when `false`, every code in `report.cutoverReadiness.blockers` forces legacy fallback. Backend blocker codes currently observed include `FINAL_DEBT_STATES_MISSING`, `CURRENCY_MISMATCH`, `CONTEXT_MISMATCH`, `CANONICAL_CURRENCY_UNSAFE`, and RED-severity amount/bucket diffs (`OUTSTANDING_DELTA`, `PAID_DELTA`, `PRINCIPAL_BUCKET_DELTA`). This is documentation of current backend behavior, not the enforcement mechanism itself — the mechanism is the authority relationship (frontend trusts backend), not a fixed code list, so it stays correct as backend evolves.
 
-- `FINAL_DEBT_STATES_MISSING`
-- `FINAL_DEBT_STATES_CURRENCY_MISMATCH`
-- `CURRENCY_MISMATCH`
-- `CONTEXT_MISMATCH`
-- `CANONICAL_CURRENCY_UNSAFE`
-- `MULTI_CURRENCY_DISPLAY_UNSAFE`
-- `CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY` when authority contamination is present
-- `OVERPAYMENT_BLOCKED`
-- `RESTRICTED_PAYMENT_DISPLAY_UNSAFE`
-- `NAFAKA_PRINCIPAL_DISPLAY_RISK`
-- missing or unsupported `PaymentDesignation` scope
-- unsupported periodic obligation / `periodKey` requirement
-- shadow/canonical source failure
-- any unsafe provenance or unsafe source marker that prevents display authority
+In addition to backend-authority blockers, the frontend independently forces legacy fallback for:
+
+- Missing or unsupported `PaymentDesignation` scope.
+- Unsupported periodic obligation / `periodKey` requirement.
+- ClaimItem-derived collected/remaining amount used as canonical display authority (`CLAIM_ITEM_AUTHORITY_CONTAMINATION`).
+- `OVERPAYMENT_BLOCKED` / `RESTRICTED_PAYMENT_DISPLAY_UNSAFE` diagnostics present.
+- `NAFAKA_PRINCIPAL_DISPLAY_RISK` diagnostic present.
+
+**Cost/attorney-fee understatement (ALC-AUTH-3E, PR #929):** `COSTS_DELTA` and `ATTORNEY_FEE_DELTA` (and their bucket-level equivalents) are intentionally exempt from `cutoverReadiness.safeForPrimaryDisplay` (`B1_SCOPE_EXEMPT_DIFF_CODES`, ALC-AUTH-1A) — a case missing cost/attorney-fee `ClaimItem` data still passes the guard. This is handled separately: `toplamBorc`/`sonBorc`/`kalanBorc` fall back to legacy per-case when either diff is RED-severity, while the other 5 canonical-override fields are unaffected. This is not a hard no-go for the whole case — it is a narrower, field-level fallback.
 
 A blocker being fixed does not automatically approve primary cutover. The complete eligible-scope gate must pass.
 
@@ -106,6 +103,7 @@ It must assert:
 - Held overpayment is not shown as reducing debt.
 - Blocked overpayment is not worded as created/collectible overpayment.
 - Unsupported nafaka/periodic obligation scenario remains outside primary.
+- A case with RED `COSTS_DELTA`/`ATTORNEY_FEE_DELTA` shows `toplamBorc`/`sonBorc`/`kalanBorc` from legacy while the other 5 canonical-override fields remain canonical (ALC-AUTH-3E).
 
 The evidence pack is not a full model-completion project.
 
@@ -156,6 +154,7 @@ Pilot cannot proceed until all items are checked:
 - [ ] Currency/context mismatch is non-comparable or fallback.
 - [ ] Overpayment wording/sign-off constraints are preserved.
 - [ ] Nafaka/periodic unsupported cases remain outside pilot.
+- [ ] Cost/attorney-fee understatement case falls back to legacy for `toplamBorc`/`sonBorc`/`kalanBorc` only, other 5 canonical-override fields unaffected (ALC-AUTH-3E).
 - [ ] Legacy fallback remains intact.
 - [ ] No global `calculation-summary` removal.
 
