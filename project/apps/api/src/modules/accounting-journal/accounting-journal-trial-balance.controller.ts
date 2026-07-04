@@ -31,6 +31,7 @@ interface AccountingJournalTrialBalanceQuery {
 
 const ACCOUNT_CODES: readonly AccountingAccountCode[] = [
   'CASH_CLEARING',
+  'CASE_COLLECTION_CLEARING',
   'CLIENT_PAYABLE',
   'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE',
   'CLIENT_EXPENSE_RECEIVABLE',
@@ -40,6 +41,7 @@ const ACCOUNT_CODES: readonly AccountingAccountCode[] = [
 ];
 
 const SOURCE_TYPES: readonly AccountingJournalSourceType[] = [
+  'COLLECTION',
   'COLLECTION_DISPOSITION_LINE',
   'CLIENT_PAYOUT',
   'CLIENT_OFFSET',
@@ -51,6 +53,8 @@ const SOURCE_TYPES: readonly AccountingJournalSourceType[] = [
 ];
 
 const ENTRY_TYPES: readonly AccountingJournalEntryType[] = [
+  'COLLECTION_CASH_RECEIPT_RECORDED',
+  'COLLECTION_CASH_RECEIPT_REVERSED',
   'COLLECTION_DISTRIBUTION_POSTED',
   'CLIENT_PAYOUT_RECORDED',
   'CLIENT_OFFSET_APPLIED',
@@ -62,6 +66,7 @@ const ENTRY_TYPES: readonly AccountingJournalEntryType[] = [
   'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_APPLIED',
   'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_REVERSED',
   'ACCOUNTING_JOURNAL_REVERSAL',
+  'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT',
 ];
 
 @Controller('accounting-journal')
