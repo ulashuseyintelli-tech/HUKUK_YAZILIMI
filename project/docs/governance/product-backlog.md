@@ -781,3 +781,51 @@ Unlock Condition: (a) üçüncü bağımsız kalıcı-bildirim ihtiyacı doğmas
 Estimated Size: L (yeni domain-bağımsız modül)
 Related Modules: NotificationQueue, PoaExpiryNotificationDelivery, DebtorCrossCaseNotification, components/notifications/ (ölü kod, reuse/temizlik ayrıca değerlendirilmeli)
 Status: DEFERRED — owner-gated, tetik koşulları (a)+(b) gerçekleşmeden açılmaz.
+
+ID: D6-RETENTION
+Title: D6A-2 retention/anonymize politikası (Q2 çerçeve kararının implementasyonu)
+Problem: `DebtorCrossCaseNotification` kayıtları (PENDING/ACKNOWLEDGED/EXPIRED) süresiz saklanıyor; ne purge ne anonymize mekanizması var — KVKK veri-minimizasyonu açısından bir risk yüzeyi.
+Business Value: KVKK m.4/m.7 uyumluluğu; aynı zamanda özen-borcu audit izini erken silmeden dengeli bir saklama rejimi.
+Technical Value: `docs/design/d6-legal-semantics-triage.md` Q2'de LOCKED çerçeveye göre (case-lifecycle-anchored floor + calendar ceiling, hangisi uzunsa; önce anonymize) bir retention cron'u + muhtemelen yeni `purgedAt`/`anonymizedAt` alanı. Emsal: `calc-preview/break-glass` modülünün `retentionPolicy` (STANDARD/LEGAL_HOLD/PROMOTED) deseni.
+Priority: MEDIUM
+Depends On: Kesin retention sürelerinin owner + hukuk danışmanı tarafından teyidi (Q2 çerçevesi LOCKED ama sayılar değil)
+Unlock Condition: Owner + hukuk danışmanı kesin süre teyidi + ayrı GO-IMPLEMENT onayı
+Estimated Size: M (BE — cron + küçük migration)
+Related Modules: debtor-cross-case-notification.service.ts, automation.service.ts, schema.prisma (DebtorCrossCaseNotification)
+Status: BACKLOG — kod/migration YAPILMADI, yalnız çerçeve kararı kilitlendi (bkz decision-log.md 2026-07-04, FAZ 2).
+
+ID: D6-INACTIVE-RECIPIENT-SWEEP
+Title: Deaktif alıcının PENDING D6 bildirimlerini erken-expire eden sweep (Q3)
+Problem: `resolveRecipients()` yalnız ÜRETİM anında `user.isActive` kontrol ediyor; üretimden sonra deaktive olan bir personelin var olan PENDING kayıtları hiç ek işlem görmeden kalıcı olarak "kimse görmeyecek" halde PENDING kalabilir.
+Business Value: Sessiz/asla-görülmeyecek PENDING birikimini önler; gözlem/raporlama netliği.
+Technical Value: `expireCrossCaseNotifications()` (automation.service.ts) cron'una veya ayrı bir sweep'e "recipient artık isActive=false ise erken-EXPIRE et" kontrolü eklenmesi. Migration GEREKMEZ (mevcut User.isActive alanı zaten var).
+Priority: LOW
+Depends On: —
+Unlock Condition: Owner GO-IMPLEMENT onayı
+Estimated Size: S (BE — küçük kod değişikliği, migration yok)
+Related Modules: debtor-cross-case-notification.service.ts, automation.service.ts
+Status: BACKLOG — kod YAPILMADI, yalnız aday olarak kaydedildi (bkz decision-log.md 2026-07-04, FAZ 2).
+
+ID: D6-TEBLIGAT-BRIDGE
+Title: CaseDebtor bazında aktif Tebligat/Collection sinyali — salt-okuma bridge (Q5)
+Problem: Borçlu adres/kimlik değişikliği aktif bir tebligat/tahsilat sürecini etkileyebilir ama D6A-2 bugün bu etkiyi hiç sinyallemez — avukat "borçlu değişti" bilgisini alır ama "bu değişiklik aktif bir tebligat/tahsilat sürecini etkiliyor olabilir" bilgisini almaz.
+Business Value: Görünürlük artışı — avukat manuel incelemeye yönlendirilir; D6'nın hukukî sınırı (otomatik hüküm üretmeme) korunarak.
+Technical Value: `Collection.caseDebtorId`/`Tebligat.caseDebtorId` artık gerçek Prisma `@relation` (D5B/D5C) — CaseDebtor bazında aktif/pending Tebligat+Collection sayısını dönen SALT-OKUMA bir sorgu/endpoint. D6A-2'nin çekirdek modeline hiçbir YAZMA yapmaz. Migration muhtemelen GEREKMEZ (FK'ler zaten var) — bir sonraki GO-ANALYZE'da teyit edilmeli. Emsal: repo'daki mevcut "manual review" idiomu (`needsReview`, `manualReviewCaseIds`, `OTHER_SUSPENSE_MANUAL_REVIEW`).
+Priority: MEDIUM
+Depends On: —
+Unlock Condition: Owner GO-ANALYZE (migration gerekip gerekmediğinin teyidi) + GO-IMPLEMENT onayı
+Estimated Size: M (BE — salt-okuma sorgu/endpoint)
+Related Modules: debtor-cross-case-notification.service.ts, Collection, Tebligat, CaseDebtor
+Status: BACKLOG — kod YAPILMADI. D6 otomatik hukukî hüküm ÜRETMEYECEK ilkesi NO-GO boundary olarak kilitlendi (bkz d6-legal-semantics-triage.md Bölüm 7).
+
+ID: D6-TASK-LINK
+Title: acknowledge sonrası opsiyonel Task/workflow linki (Q6)
+Problem: D6A-2 modelinde "gördüm" (acknowledgedAt) dışında hiçbir "önlem alındı" izi yok; ileride UI'da bu ayrımın net kalması ve isteğe bağlı iş-takibi gerekebilir.
+Business Value: "Gördüm" ile "işlem yaptım" hukukî/operasyonel ayrımını net tutarken, isteyen ekiplere iş-takibi imkânı sağlar.
+Technical Value: D6A-2 modeline action/resolution alanı EKLENMEZ (kapsam-şişmesi riski) — bunun yerine mevcut Task/workflow domaine opsiyonel `linkedTaskId` (nullable FK) ile bağlanır. Küçük migration gerektirir.
+Priority: LOW
+Depends On: D6A-2-SURFACE UI fazı (henüz yapılmadı) + owner'ın action-tracking'i gerçekten isteyip istemediği kararı
+Unlock Condition: Owner GO-IMPLEMENT onayı
+Estimated Size: M (BE küçük migration + FE entegrasyonu)
+Related Modules: debtor-cross-case-notification.service.ts, Task domain, schema.prisma
+Status: BACKLOG — kod/migration YAPILMADI, yalnız aday olarak kaydedildi (bkz decision-log.md 2026-07-04, FAZ 2).
