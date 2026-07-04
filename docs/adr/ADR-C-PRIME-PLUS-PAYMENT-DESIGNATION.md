@@ -188,29 +188,38 @@ one enforcement case = implicit single group
 
 No physical `ClaimGroup` table is introduced in the current phase.
 
-**Clarification (2026-07-04, Master Triage ARC-01 re-verification):** the Q1 trigger is the
-existence of an independent collection/offset pool, not a difference in interest start dates,
-claim composition (principal + vekalet + yargilama gideri), or having multiple `ClaimItem` types
-under the same judgment. Those are resolved at `ClaimItem`-level interest/provenance/allocation
-and never justify `ClaimGroup`.
+**Açıklayıcı not (2026-07-04, Master Triage ARC-01 yeniden-doğrulaması, owner düzeltmesiyle):**
+`ClaimGroup`, ödeme alıcısı veya dağıtım hak sahipliği için değil; yalnız bağımsız mahsup/tahsil
+havuzu için değerlendirilir. Farklı faiz tarihi ve tahsilat sonrası dağıtım `ClaimItem`/`Payout`
+katmanında çözülür.
 
-`ClaimGroup` is reconsidered only when, within the same Case/judgment/enforcement process, a
-collection cannot be freely allocated across all claim items because independent legal pools
-exist. Concrete triggers:
+Aşağıdakiler `ClaimGroup` tetikleyicisi **DEĞİLDİR** — "kime ödenecek" sorusu `ClaimGroup`'un
+konusu değildir, payout/entitlement-distribution/creditor-cluster/tahsilat-sonrası-dağıtım
+katmanında çözülür:
 
-- A single judgment with permissive joinder (ihtiyari dava arkadasligi) awarding separate,
-  independent monetary claims to each claimant.
-- Multiple creditors in the same enforcement file with separate entitlement/judgment pools.
-- Non-joint (non-solidary) debtor sets.
-- Secured versus unsecured pools.
-- Sale proceeds earmarked for one specific claim/pool only.
-- Precautionary versus main enforcement, or differing collateral/sale-proceeds scopes, that
-  split the payment-allocation regime.
+- Farklı faiz başlangıcı (asıl alacak dava tarihinden, vekalet ücreti karar tarihinden,
+  yargılama gideri karar/kesinleşme tarihinden faiz taşıyabilir — `ClaimItem`-level
+  `interestStartDate`/`interestType`/provenance ile çözülür).
+- Asıl alacak + vekalet ücreti + yargılama gideri kompozisyonu.
+- Birden fazla alacaklıya sonradan paylaştırılacak ortak tahsilat.
+- Avukatın icra dosyasına tahsil edip alacaklılara/masrafa/vekalet ücretine dağıtması.
+- Aynı ilamda birden fazla `ClaimItem` türü bulunması.
 
-Decisive test: "Can an incoming payment be freely allocated, as a matter of law, across all
-claims in the Case?" If yes, `ClaimGroup` does not apply — the implicit single group continues
-and any distinction is resolved at `ClaimItem`/allocation/payout level. If no, `ClaimGroup`/
-`LegalPool` is reconsidered.
+`ClaimGroup` yalnız şu durumda yeniden değerlendirilir: aynı Case/ilam/icra süreci içinde,
+gelen bir tahsilat hukuken bütün alacak kalemlerine serbestçe mahsup edilemiyorsa — yani ödeme
+belirli bir bağımsız borç/alacak havuzunu azaltıyor, diğerlerini azaltamıyorsa. Adayı olabilecek
+somut örnekler:
+
+- Müteselsil olmayan borçlu setleri nedeniyle bir borçlunun ödemesinin diğer borçlunun borcunu
+  azaltamaması.
+- Belirli satış bedelinin yalnız teminatlı/rehinli alacak havuzuna özgülenmesi.
+- Aynı dosyada birbirine hukuken karıştırılamayan teminat/satış/borçlu sorumluluk kapsamları.
+- Ortak tahsilat değil, ayrı hukuki mahsup havuzu doğuran gerçek dosya verisi.
+
+Karar testi: **"Bu tahsilat aynı Case içindeki bütün alacaklara hukuken ortak mahsup edilebilir
+mi?"** Evetse `ClaimGroup` yok — zımni tekil grup devam eder, ayrım `ClaimItem`/allocation/
+creditor-entitlement/payout seviyesinde çözülür. Hayırsa `ClaimGroup`/`LegalPool` yeniden
+değerlendirilir.
 
 ### Q2: BalanceComponent Source Role
 
