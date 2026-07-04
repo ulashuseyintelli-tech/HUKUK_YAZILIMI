@@ -84,6 +84,7 @@ BACKLOG
 | MPB-018 | Debtor | Debtor identity / Party Registry / duplicate hardening | Repo verification confirmed duplicate identity guards, similar-name review, identity format/checksum validation and identity drift fixes; Party Registry remains design-only/HOLD by decision; focused backend tests PASS (3 suites, 19 tests) |
 | MPB-019 | Debtor | Tebligat `caseDebtorId/addressId` integrity | Repo verification confirmed `Tebligat.caseDebtorId` FK, active CaseDebtor create guard, debtor-owned `addressId` guard and tebligat-to-CaseDebtor sync; PR #243/#889 plus focused backend tests PASS (3 suites, 33 tests) |
 | MPB-027 | Security | AddressTask auth, tenant isolation and data-integrity hardening | PR #202/#207/#261 merged; repo verification confirmed AddressTask auth/tenant/data-integrity hardening; focused AddressTask tests PASS (3 suites, 67 tests) |
+| MPB-020 | Alacak Kalemi | Overpayment display semantics contract (allocatedPaidAmount/grossReceivedAmount) | PR #909 squash merged, SHA `f144f550`; PAID_DELTA reclassified OVERPAYMENT_CLASSIFICATION_EFFECT (not a bug); totalPaidAmount unchanged, additive fields only; 575/575 interest-engine tests PASS |
 
 ## Items
 
@@ -703,7 +704,7 @@ Kaynak: ALC-P0-3B3 sonrası 2026/9502 için ALC-P0-3C1 guarded primary display s
 | Blocker | Sınıf | Kök neden |
 |---|---|---|
 | `OUTSTANDING_DELTA` | AUTHORITY_CONFLICT | Legacy gross toplamBorc−toplamTahsilat; canonical net outstanding (TBK100 tam ödeme sonrası 0) — aynı semantik değil. |
-| `PAID_DELTA` | AUTHORITY_CONFLICT | Üç bağımsız tahsilat otoritesi birbirini reconcile etmiyor: legacy=`Collection` (1 kayıt, 100.000), canonical read-path=raw `LedgerEntry` (4 kayıt, 320.000, `LedgerAllocation` bilerek yok sayılıyor — G4b-1 kararı), write-path=`LedgerAllocation`+`CollectionOverpayment` (200.000 mahsup + 100.000 HELD, zaten doğru). Alt neden: 3/4 `LedgerEntry` kaydında `collectionId=null` (Collection'a hiç bağlı değil; iz "PR475 manual refresh validation" test/QA fixture'ına işaret ediyor). |
+| `PAID_DELTA` | OVERPAYMENT_CLASSIFICATION_EFFECT + DISPLAY_SEMANTICS_BLOCKER (ALC-AUTH-1A/1B'de yeniden sınıflandırıldı — bkz. aşağıdaki ALC-AUTH-1B kaydı, **MERGED**) | Üç bağımsız tahsilat otoritesi birbirini reconcile etmiyor: legacy=`Collection` (1 kayıt, 100.000), canonical read-path=raw `LedgerEntry` (4 kayıt, 320.000, `LedgerAllocation` bilerek yok sayılıyor — G4b-1 kararı), write-path=`LedgerAllocation`+`CollectionOverpayment` (200.000 mahsup + 100.000 HELD, zaten doğru). Alt neden: 3/4 `LedgerEntry` kaydında `collectionId=null` (Collection'a hiç bağlı değil; iz "PR475 manual refresh validation" test/QA fixture'ına işaret ediyor). Kesin mekanizma (ALC-AUTH-1A): borç 3. ödemeyle (220.000 kümülatif) kapandığı için 4. ödeme (100.000, collectionId'li) hiç allocation step üretmedi — para kaybolmuyor, `heldOverpaymentAmount`'ta ayrıca doğru görünüyor. CANONICAL_BUG DEĞİL. |
 | `COSTS_DELTA` | DATA_GAP | Legacy sabit 2026 tarife formülü (ClaimItem'dan bağımsız); canonical Σ EXPENSE/FEE-tipi ClaimItem bekliyor — bu case'te (muhtemelen genelde) hiç yok, case'te tek ClaimItem var (PRINCIPAL). |
 | `ATTORNEY_FEE_DELTA` | DATA_GAP | Aynı — legacy `calculateAttorneyFee()` tarife formülü; canonical ATTORNEY_FEE/ancillary ClaimItem yok. |
 | `PRINCIPAL_BUCKET_DELTA` | AUTHORITY_CONFLICT | Legacy `asilAlacak`=gross orijinal talep (200.000, hiç değişmez); canonical PRINCIPAL bucket=`finalDebtStates.principal`=kalan anapara (TBK100 tam mahsup sonrası 0). |
@@ -725,6 +726,18 @@ Unlock Condition: Owner, yukarıdaki 4 implement adımından hangisinin/hangiler
 Estimated Size: — (bu kayıt yalnız analiz; implement boyutu adım seçimine göre değişir)
 Related Modules: case-balance-display.ts, guarded-primary-display.ts, balance-display-shadow-diff.service.ts, claim-bucket-assembler.ts, calc-prep/payment-mapper.ts, case.service.ts (getCalculationSummary)
 Status: DONE (analiz) — GO-ANALYZE tamamlandı, kod değişikliği yok. **B1 guarded primary display hâlâ FAIL/OPEN.** ALC-P0-3B3 governance kaydı değiştirilmedi.
+
+ID: ALC-AUTH-1B
+Title: Overpayment Display Semantics Contract — PAID_DELTA'yı DTO seviyesinde adresle
+Problem: PAID_DELTA (220.000 vs 100.000), sınıflandırıldığı gibi, motor hatası değil ama `totalPaidAmount` alan adı "borca tahsis edilen" ile "dosyaya gelen toplam para" arasındaki farkı netleştirmiyordu — cutover'da avukata yanlış güven kırıcı algı riski.
+Business Value: Kullanıcıya (avukat) gösterilecek rakamların hangi anlama geldiği net; "dosyaya 320.000 geldi" ile "220.000 tahsilat" çelişkisi DTO seviyesinde çözüldü.
+Technical Value: `BalanceDisplayTotals`/`ShadowTotals`'a 2 additive alan: `allocatedPaidAmount` (totalPaidAmount'ın açık isimli eşleniği), `grossReceivedAmount` (allocated+held). `totalPaidAmount` değeri/davranışı DEĞİŞMEDİ. Allocation engine, Q5 kuralı, schema, feature flag, case.service.ts legacy display, ALC-P0-3B3 — hiçbirine dokunulmadı.
+Priority: —
+Depends On: ALC-AUTH-1 (kök neden analizi)
+Unlock Condition: —
+Estimated Size: S
+Related Modules: case-balance-display.ts, balance-display-shadow-diff.types.ts, balance-display-shadow-diff.service.ts
+Status: DONE — **MERGED**. PR #909, squash SHA `f144f550`. Regresyon testi: 220.000 allocated + 100.000 held = 320.000 gross (case-balance-display.spec.ts). 575/575 interest-engine testi PASS (bir önceki 574'ten +1). Kalan B1 blocker'ları (principal authority conflict, cost/attorney-fee ClaimItem veri boşluğu, totalDebtAmount gross-debt projection boşluğu, guarded primary rollout öncesi UI/Av. sign-off) AÇIK — bu PR yalnız PAID_DELTA'yı adresledi.
 ---
 
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
