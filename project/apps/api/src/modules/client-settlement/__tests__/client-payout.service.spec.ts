@@ -4,11 +4,13 @@
  * tenant+case+caseClientId+currency scoped; idempotency (pre + in-tx + P2002); concurrency advisory-lock;
  * foreign/wrong-role caseClientId reject; collection CONFIRMED değilse outstanding'e girmez; BalanceLedger YOK.
  */
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ClientPayoutService } from '../client-payout.service';
 import { ClientSettlementReadService } from '../client-settlement-read.service';
 import { AuditService } from '../../audit/audit.service';
+import { PayoutApprovalPolicy } from '../../office-approval/client-payout-approval.policy';
+import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import { payoutLockKey } from '../payout-lock';
 
 const D = (n: number) => new Prisma.Decimal(n);
@@ -88,12 +90,35 @@ function buildPrisma(opts: {
     clientPayout: { findUnique: jest.fn().mockResolvedValue(opts.existing ?? null) },
     // CBND-3 (H3): assertOfficeAdmin actor capacity okuması. Varsayılan PARTNER → mevcut testler
     // (authorization'ı değil, payout iş mantığını kanıtlar) yetkili aktörle çalışmaya devam eder.
-    user: { findUnique: jest.fn().mockResolvedValue(opts.actorUser === undefined ? { lawyer: { lawyerRank: 'PARTNER' }, staffMember: null } : opts.actorUser) },
+    // PAYOUT-APPROVAL-2: isActive/tenantId alanları PayoutApprovalPolicy.assertEligible (finalize testleri) için eklendi.
+    user: {
+      findUnique: jest.fn().mockResolvedValue(
+        opts.actorUser === undefined
+          ? { isActive: true, tenantId: 't1', lawyer: { lawyerRank: 'PARTNER', canApproveOfficeActions: false }, staffMember: null }
+          : opts.actorUser,
+      ),
+    },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
   return { prisma, tx };
 }
-const svc = (p: any) => new ClientPayoutService(p, new ClientSettlementReadService(p), new AuditService(p));
+// PAYOUT-APPROVAL-2: create()/planPayoutAllocations testleri officeApproval'a hiç dokunmaz — hafif stub yeter.
+function buildOfficeApprovalStub(overrides: any = {}) {
+  return {
+    createPendingRequest: jest.fn().mockResolvedValue({ id: 'oar-1', status: 'PENDING_APPROVAL' }),
+    getByIdForTenant: jest.fn(),
+    markExecutionSucceeded: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+const svc = (p: any, officeApproval?: any) =>
+  new ClientPayoutService(
+    p,
+    new ClientSettlementReadService(p),
+    new AuditService(p),
+    officeApproval ?? buildOfficeApprovalStub(),
+    new PayoutApprovalPolicy(p),
+  );
 
 function firstJournalCreateData(tx: any) {
   expect(tx.accountingJournalEntry.create).toHaveBeenCalledTimes(1);
@@ -540,5 +565,179 @@ describe('PAYOUT-APPROVAL-1 (audit hardening, ilk PR) ClientPayoutService.create
     expect(tx.clientPayout.create).toHaveBeenCalledTimes(1);
     expect(tx.accountingJournalEntry.create).toHaveBeenCalledTimes(1);
     expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PAYOUT-APPROVAL-2 (Tasarım B) ClientPayoutService.requestPayout', () => {
+  it('happy path: OfficeApprovalRequest oluşturur, ClientPayout satırı HENÜZ YARATILMAZ', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+    const officeApproval = buildOfficeApprovalStub({
+      createPendingRequest: jest.fn().mockResolvedValue({ id: 'oar-1', status: 'PENDING_APPROVAL' }),
+    });
+    const res = await svc(prisma, officeApproval).requestPayout('t1', DTO({ amount: '400' }), ACTOR);
+
+    expect(res).toEqual({ requested: true, approvalRequestId: 'oar-1', status: 'PENDING_APPROVAL' });
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 't1',
+        actionCode: 'CLIENT_PAYOUT_POST',
+        targetType: 'CLIENT_PAYOUT_REQUEST',
+        targetRef: 'k1',
+        requesterUserId: 'u1',
+        savedIntent: { caseId: 'case1', caseClientId: 'cc-A', amount: '400', currency: 'TRY', note: null, idempotencyKey: 'k1' },
+        idempotencyKey: 'client-payout-request:k1',
+      }),
+    );
+    expect(tx.clientPayout.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('actor (req.user.id) yoksa → reject', async () => {
+    const { prisma } = buildPrisma(OUT_1000);
+    await expect(svc(prisma).requestPayout('t1', DTO(), {})).rejects.toThrow(/actor/);
+  });
+
+  it('idempotencyKey yoksa → reject', async () => {
+    const { prisma } = buildPrisma(OUT_1000);
+    await expect(svc(prisma).requestPayout('t1', DTO({ idempotencyKey: '' }), ACTOR)).rejects.toThrow(/idempotencyKey/);
+  });
+
+  it('amount <= 0 → reject', async () => {
+    const { prisma } = buildPrisma(OUT_1000);
+    await expect(svc(prisma).requestPayout('t1', DTO({ amount: '0' }), ACTOR)).rejects.toThrow(/pozitif/);
+  });
+
+  it('foreign/wrong-role caseClientId → reject (create() ile AYNI guard)', async () => {
+    const { prisma } = buildPrisma({ cc: null });
+    await expect(svc(prisma).requestPayout('t1', DTO(), ACTOR)).rejects.toThrow(/geçersiz\/yabancı|uygun rolde/);
+  });
+});
+
+describe('PAYOUT-APPROVAL-2 (Tasarım B) ClientPayoutService.finalize', () => {
+  const buildIntent = (over: any = {}) => ({
+    caseId: 'case1',
+    caseClientId: 'cc-A',
+    amount: '400',
+    currency: 'TRY',
+    note: null,
+    idempotencyKey: 'k1',
+    ...over,
+  });
+  const approvedRequest = (over: any = {}) => ({
+    id: 'oar-1',
+    actionCode: 'CLIENT_PAYOUT_POST',
+    targetType: 'CLIENT_PAYOUT_REQUEST',
+    status: 'APPROVED',
+    payloadHash: stableJsonHash(buildIntent()),
+    ...over,
+  });
+
+  it('happy path: APPROVED talep → create() ile AYNI transaction mantığı çalışır, audit OFFICE_APPROVAL_BINDING mode ile yazılır', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+    const officeApproval = buildOfficeApprovalStub({ getByIdForTenant: jest.fn().mockResolvedValue(approvedRequest()) });
+
+    const res = await svc(prisma, officeApproval).finalize('t1', 'oar-1', DTO({ amount: '400' }), ACTOR);
+
+    expect(res).toEqual({ created: true, payoutId: 'payout-1' });
+    expect(tx.clientPayout.create).toHaveBeenCalledTimes(1);
+    expect(tx.$executeRaw).toHaveBeenCalled(); // advisory lock finalize'da da alınır (create() ile AYNI)
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'CLIENT_PAYOUT_CREATED',
+        metadata: expect.objectContaining({
+          authorizationMode: 'OFFICE_APPROVAL_BINDING',
+          authorizedCapacity: 'PARTNER',
+          approvalRequestId: 'oar-1',
+        }),
+      }),
+    });
+    expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('oar-1', 'u1');
+  });
+
+  it.each(['PENDING_APPROVAL', 'REJECTED', 'CANCELLED', 'REVISION_REQUESTED'])(
+    '%s durumundaki talep finalize EDİLEMEZ',
+    async (status) => {
+      const { prisma, tx } = buildPrisma(OUT_1000);
+      const officeApproval = buildOfficeApprovalStub({ getByIdForTenant: jest.fn().mockResolvedValue(approvedRequest({ status })) });
+      await expect(svc(prisma, officeApproval).finalize('t1', 'oar-1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(BadRequestException);
+      expect(tx.clientPayout.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('actionCode/targetType bu payout finalize akışına ait değilse → Conflict', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+    const officeApproval = buildOfficeApprovalStub({
+      getByIdForTenant: jest.fn().mockResolvedValue(approvedRequest({ actionCode: 'COLLECTION_DISPOSITION_POST' })),
+    });
+    await expect(svc(prisma, officeApproval).finalize('t1', 'oar-1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(ConflictException);
+    expect(tx.clientPayout.create).not.toHaveBeenCalled();
+  });
+
+  it('payload drift: onaylanan tutar ≠ finalize tutarı → PAYOUT_FINALIZE_PAYLOAD_DRIFT ile reddedilir', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+    // payloadHash amount=400 için hesaplı (approvedRequest default), finalize amount=999 ile çağrılıyor.
+    const officeApproval = buildOfficeApprovalStub({ getByIdForTenant: jest.fn().mockResolvedValue(approvedRequest()) });
+    await expect(svc(prisma, officeApproval).finalize('t1', 'oar-1', DTO({ amount: '999' }), ACTOR)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PAYOUT_FINALIZE_PAYLOAD_DRIFT' }),
+    });
+    expect(tx.clientPayout.create).not.toHaveBeenCalled();
+  });
+
+  it('MANAGER capacity finalize edebilir (PayoutApprovalPolicy — isApproverEligible DEĞİL)', async () => {
+    const { prisma, tx } = buildPrisma({
+      ...OUT_1000,
+      actorUser: { isActive: true, tenantId: 't1', lawyer: { lawyerRank: 'MANAGER', canApproveOfficeActions: false }, staffMember: null },
+    });
+    const officeApproval = buildOfficeApprovalStub({ getByIdForTenant: jest.fn().mockResolvedValue(approvedRequest()) });
+    const res = await svc(prisma, officeApproval).finalize('t1', 'oar-1', DTO({ amount: '400' }), ACTOR);
+    expect(res.created).toBe(true);
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ metadata: expect.objectContaining({ authorizedCapacity: 'MANAGER' }) }),
+    });
+  });
+
+  it('Staff (Lawyer linki yok) finalize edemez → Forbidden, transaction hiç açılmaz', async () => {
+    const { prisma, tx } = buildPrisma({
+      ...OUT_1000,
+      actorUser: { isActive: true, tenantId: 't1', lawyer: null, staffMember: { staffType: 'MUHASEBE' } },
+    });
+    const officeApproval = buildOfficeApprovalStub({ getByIdForTenant: jest.fn().mockResolvedValue(approvedRequest()) });
+    await expect(svc(prisma, officeApproval).finalize('t1', 'oar-1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(ForbiddenException);
+    expect(tx.clientPayout.create).not.toHaveBeenCalled();
+  });
+
+  it('outstanding aşan onaylı tutar finalize aşamasında taze recompute ile reddedilir (advisory lock altında)', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000); // outstanding=1000
+    const officeApproval = buildOfficeApprovalStub({
+      getByIdForTenant: jest.fn().mockResolvedValue(approvedRequest({ payloadHash: stableJsonHash(buildIntent({ amount: '1500' })) })),
+    });
+    await expect(svc(prisma, officeApproval).finalize('t1', 'oar-1', DTO({ amount: '1500' }), ACTOR)).rejects.toThrow(/aşamaz/);
+    expect(tx.clientPayout.create).not.toHaveBeenCalled();
+    expect(tx.$executeRaw).toHaveBeenCalled(); // lock alındı, SONRA reddedildi (recompute lock altında oldu)
+  });
+
+  it('concurrent-finalize simülasyonu: ilk finalize outstanding tüketir, ikincisi taze recompute ile double-spend engellenir', async () => {
+    // İki bağımsız APPROVED talep (approve anında ikisi de outstanding=1000'e göre "yeterli" görünüyordu),
+    // ama finalize SIRAYLA çalışır ve HER çağrı kendi transaction'ında taze computeOutstanding okur.
+    const first = buildPrisma({ ...OUT_1000, paid: null });
+    const officeApproval1 = buildOfficeApprovalStub({
+      getByIdForTenant: jest.fn().mockResolvedValue(
+        approvedRequest({ id: 'oar-1', payloadHash: stableJsonHash(buildIntent({ amount: '700', idempotencyKey: 'k1' })) }),
+      ),
+    });
+    const res1 = await svc(first.prisma, officeApproval1).finalize('t1', 'oar-1', DTO({ amount: '700', idempotencyKey: 'k1' }), ACTOR);
+    expect(res1.created).toBe(true);
+
+    // İkinci finalize: mock DB'de artık ilk payout'un 700'ü RECORDED olarak "önceden var" — outstanding=300 kaldı.
+    const second = buildPrisma({ ...OUT_1000, paid: D(700) });
+    const officeApproval2 = buildOfficeApprovalStub({
+      getByIdForTenant: jest.fn().mockResolvedValue(
+        approvedRequest({ id: 'oar-2', payloadHash: stableJsonHash(buildIntent({ amount: '700', idempotencyKey: 'k2' })) }),
+      ),
+    });
+    await expect(
+      svc(second.prisma, officeApproval2).finalize('t1', 'oar-2', DTO({ amount: '700', idempotencyKey: 'k2' }), ACTOR),
+    ).rejects.toThrow(/aşamaz/);
+    expect(second.tx.clientPayout.create).not.toHaveBeenCalled();
   });
 });

@@ -63,6 +63,7 @@ const make = (opts: {
 
 const partner = (over = {}) => ({ id: APPROVER, isActive: true, tenantId: TENANT, lawyer: { lawyerRank: 'PARTNER', canApproveOfficeActions: false }, ...over });
 const delegated = () => ({ id: APPROVER, isActive: true, tenantId: TENANT, lawyer: { lawyerRank: 'LAWYER', canApproveOfficeActions: true } });
+const manager = (over = {}) => ({ id: APPROVER, isActive: true, tenantId: TENANT, lawyer: { lawyerRank: 'MANAGER', canApproveOfficeActions: false }, ...over });
 
 describe('P4-1 OfficeApprovalService — createPendingRequest', () => {
   it('PENDING_APPROVAL + NOT_RUN oluşturur, payloadHash hesaplar, REQUESTED audit yazar', async () => {
@@ -260,6 +261,47 @@ describe('DBIND-P1 OfficeApprovalService - disposition domain sync transaction',
     const { svc } = make({ reqSeq: [dispositionApproval()], approverUser: partner(), updateCount: 0, domainSync });
     await expect(svc.approve('oar-1', APPROVER, 'ok')).rejects.toBeInstanceOf(ConflictException);
     expect(domainSync.syncAfterDecision).not.toHaveBeenCalled();
+  });
+});
+
+describe('PAYOUT-APPROVAL-2 OfficeApprovalService — actionCode dispatcher (CLIENT_PAYOUT_POST)', () => {
+  const payoutReq = (over: Record<string, unknown> = {}) =>
+    mkReq({ actionCode: 'CLIENT_PAYOUT_POST', targetType: 'CLIENT_PAYOUT_REQUEST', targetRef: 'idem-1', ...over });
+
+  it('MANAGER, CLIENT_PAYOUT_POST talebini onaylayabilir (izole PayoutApprovalPolicy — isApproverEligible DEĞİL)', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [payoutReq(), payoutReq({ status: 'APPROVED', approverUserId: APPROVER })],
+      approverUser: manager(),
+    });
+    const res = await svc.approve('oar-1', APPROVER, 'ok');
+    expect(res.status).toBe('APPROVED');
+    expect(prisma.officeApprovalRequest.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('Staff (Lawyer linki yok), CLIENT_PAYOUT_POST talebini onaylayamaz → Forbidden', async () => {
+    const { svc } = make({
+      reqSeq: [payoutReq()],
+      approverUser: { id: APPROVER, isActive: true, tenantId: TENANT, lawyer: null },
+    });
+    await expect(svc.approve('oar-1', APPROVER)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('REGRESYON: MANAGER, CHANGE_STATUS (generic/disposition-tipi actionCode) talebini HÂLÂ onaylayamaz — dispatcher disposition davranışını DEĞİŞTİRMEDİ', async () => {
+    const { svc, prisma } = make({ reqSeq: [mkReq()], approverUser: manager() });
+    await expect(svc.approve('oar-1', APPROVER)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('REGRESYON: MANAGER, COLLECTION_DISPOSITION_POST talebini HÂLÂ onaylayamaz (disposition = isApproverEligible, PARTNER-only)', async () => {
+    const dispositionReq = () => mkReq({ actionCode: 'COLLECTION_DISPOSITION_POST', targetType: 'COLLECTION_DISPOSITION', targetRef: 'd1' });
+    const { svc } = make({ reqSeq: [dispositionReq()], approverUser: manager() });
+    await expect(svc.approve('oar-1', APPROVER)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('self-approval guard, CLIENT_PAYOUT_POST için de AYNEN geçerli (dispatcher self-approval kontrolünü atlamaz)', async () => {
+    const { svc, prisma } = make({ reqSeq: [payoutReq()] });
+    await expect(svc.approve('oar-1', REQUESTER)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 });
 
