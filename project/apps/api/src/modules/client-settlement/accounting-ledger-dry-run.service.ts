@@ -36,6 +36,7 @@ export type AccountingDryRunAccountCode =
   | 'CLIENT_ADVANCE_BALANCE';
 
 export type AccountingDryRunDirection = 'DEBIT' | 'CREDIT';
+export type AccountingDryRunSourceAction = 'posted' | 'recorded' | 'apply' | 'reversal';
 
 export interface AccountingLedgerDryRunOptions {
   caseId?: string;
@@ -147,6 +148,35 @@ export interface AccountingDryRunOutstandingComparison {
   difference: string;
 }
 
+export interface AccountingDryRunJournalComparisonMismatch {
+  idempotencyKey: string;
+  reasons: string[];
+  expectedSource: {
+    sourceType: AccountingDryRunSourceType;
+    sourceId: string;
+    sourceAction: AccountingDryRunSourceAction;
+  } | null;
+  actualSource: {
+    sourceType: string;
+    sourceId: string;
+    sourceAction: string;
+  } | null;
+  expectedLineCount: number;
+  actualLineCount: number;
+}
+
+export interface AccountingDryRunJournalComparison {
+  compared: boolean;
+  autoFix: false;
+  reason: string;
+  expectedEntryCount: number;
+  persistedEntryCount: number;
+  matchedEntryCount: number;
+  missingExpectedIdempotencyKeys: string[];
+  unexpectedPersistedIdempotencyKeys: string[];
+  mismatchedIdempotencyKeys: string[];
+  mismatches: AccountingDryRunJournalComparisonMismatch[];
+}
 export interface AccountingLedgerDryRunReport {
   tenantId: string;
   filters: AccountingLedgerDryRunOptions;
@@ -170,6 +200,7 @@ export interface AccountingLedgerDryRunReport {
     coverageRatio: string;
   };
   outstandingComparison: AccountingDryRunOutstandingComparison[];
+  journalComparison: AccountingDryRunJournalComparison;
   clientStatementComparison: {
     compared: false;
     autoFix: false;
@@ -232,6 +263,34 @@ interface BalanceLedgerSource {
   };
 }
 
+interface PersistedAccountingJournalLine {
+  lineNo: number;
+  accountCode: string;
+  direction: string;
+  amount: Prisma.Decimal | string | number;
+  tenantId: string;
+  caseId: string | null;
+  currency: string;
+  clientId: string | null;
+  caseClientId: string | null;
+  collectionId: string | null;
+  dispositionLineId: string | null;
+  payoutId: string | null;
+  offsetId: string | null;
+  balanceLedgerId: string | null;
+}
+
+interface PersistedAccountingJournalEntry {
+  id: string;
+  idempotencyKey: string;
+  sourceType: string;
+  sourceId: string;
+  sourceAction: string;
+  tenantId: string;
+  caseId: string | null;
+  currency: string;
+  lines: PersistedAccountingJournalLine[];
+}
 export interface AccountingLedgerDryRunSources {
   tenantId: string;
   filters?: AccountingLedgerDryRunOptions;
@@ -239,6 +298,7 @@ export interface AccountingLedgerDryRunSources {
   clientPayouts: ClientPayoutSource[];
   clientOffsets: ClientOffsetSource[];
   balanceLedgerRows: BalanceLedgerSource[];
+  persistedJournalEntries?: PersistedAccountingJournalEntry[];
 }
 
 @Injectable()
@@ -246,8 +306,8 @@ export class AccountingLedgerDryRunService {
   constructor(private readonly prisma: PrismaService) {}
 
   /// <remarks>
-  /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
-  /// - AccountingLedgerDryRunService.buildReport() â†’ S9B/S9D dry-run utility; runtime HTTP endpoint yok, test/future admin job tarafÄ±ndan Ã§aÄŸrÄ±lacak.
+  /// Cagrildigi yerler:
+  /// - AccountingLedgerDryRunService.buildReport() -> S9B/S9D dry-run utility; runtime HTTP endpoint yok, test/future admin job tarafindan cagrilacak.
   /// </remarks>
   async buildReport(tenantId: string, options: AccountingLedgerDryRunOptions = {}): Promise<AccountingLedgerDryRunReport> {
     const dispositionWhere: Prisma.CollectionDispositionLineWhereInput = {
@@ -274,8 +334,9 @@ export class AccountingLedgerDryRunService {
       ...(options.currency ? { currency: options.currency } : {}),
       ...(options.caseId ? { caseBalance: { caseId: options.caseId } } : {}),
     };
+    const journalWhere = accountingJournalComparisonWhere(tenantId, options);
 
-    const [dispositionLines, clientPayouts, clientOffsets, balanceLedgerRows] = await Promise.all([
+    const [dispositionLines, clientPayouts, clientOffsets, balanceLedgerRows, persistedJournalEntries] = await Promise.all([
       this.prisma.collectionDispositionLine.findMany({
         where: dispositionWhere,
         select: {
@@ -332,6 +393,39 @@ export class AccountingLedgerDryRunService {
           caseBalance: { select: { caseId: true } },
         },
       }),
+      this.prisma.accountingJournalEntry.findMany({
+        where: journalWhere,
+        select: {
+          id: true,
+          idempotencyKey: true,
+          sourceType: true,
+          sourceId: true,
+          sourceAction: true,
+          tenantId: true,
+          caseId: true,
+          currency: true,
+          lines: {
+            orderBy: { lineNo: 'asc' },
+            select: {
+              lineNo: true,
+              accountCode: true,
+              direction: true,
+              amount: true,
+              tenantId: true,
+              caseId: true,
+              currency: true,
+              clientId: true,
+              caseClientId: true,
+              collectionId: true,
+              dispositionLineId: true,
+              payoutId: true,
+              offsetId: true,
+              balanceLedgerId: true,
+            },
+          },
+        },
+        orderBy: [{ sourceType: 'asc' }, { sourceId: 'asc' }, { sourceAction: 'asc' }],
+      }),
     ]);
 
     return buildAccountingLedgerDryRunReport({
@@ -341,8 +435,34 @@ export class AccountingLedgerDryRunService {
       clientPayouts,
       clientOffsets,
       balanceLedgerRows,
+      persistedJournalEntries,
     });
   }
+}
+
+function accountingJournalComparisonWhere(tenantId: string, options: AccountingLedgerDryRunOptions): Prisma.AccountingJournalEntryWhereInput {
+  const and: Prisma.AccountingJournalEntryWhereInput[] = [
+    {
+      OR: [
+        { sourceType: 'COLLECTION_DISPOSITION_LINE', sourceAction: 'posted' },
+        { sourceType: 'CLIENT_PAYOUT', sourceAction: 'recorded' },
+        { sourceType: 'CLIENT_OFFSET', sourceAction: { in: ['apply', 'reversal'] } },
+        { sourceType: 'BALANCE_LEDGER', sourceAction: 'posted' },
+      ],
+    },
+  ];
+
+  if (options.currency) and.push({ currency: options.currency });
+  if (options.caseId) {
+    and.push({
+      OR: [
+        { caseId: options.caseId },
+        { lines: { some: { caseId: options.caseId } } },
+      ],
+    });
+  }
+
+  return { tenantId, AND: and };
 }
 
 export function accountingDryRunSourceVersion(sourceId: string, occurredAt?: Date | null): string {
@@ -617,6 +737,7 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
       coverageRatio: totalSourceRows === 0 ? '1' : new Prisma.Decimal(projectedSourceRows + reportedOnlySourceRows).div(totalSourceRows).toString(),
     },
     outstandingComparison: buildOutstandingComparison(entries, clientAccountingExpected),
+    journalComparison: buildJournalComparison(entries, sources.persistedJournalEntries),
     clientStatementComparison: {
       compared: false,
       autoFix: false,
@@ -945,6 +1066,120 @@ function addOutstanding(
 
 function outstandingKey(tenantId: string, caseId: string, caseClientId: string, currency: string): string {
   return `${tenantId}|${caseId}|${caseClientId}|${currency}`;
+}
+
+function buildJournalComparison(
+  expectedEntries: AccountingDryRunJournalEntry[],
+  persistedEntries?: PersistedAccountingJournalEntry[],
+): AccountingDryRunJournalComparison {
+  const expectedByKey = new Map(expectedEntries.map((entry) => [entry.idempotencyKey, entry]));
+  const persistedByKey = new Map((persistedEntries ?? []).map((entry) => [entry.idempotencyKey, entry]));
+  const missingExpectedIdempotencyKeys = [...expectedByKey.keys()].filter((key) => !persistedByKey.has(key)).sort();
+  const unexpectedPersistedIdempotencyKeys = [...persistedByKey.keys()].filter((key) => !expectedByKey.has(key)).sort();
+  const mismatches: AccountingDryRunJournalComparisonMismatch[] = [];
+  const matchedKeys = [...expectedByKey.keys()].filter((key) => persistedByKey.has(key)).sort();
+
+  for (const key of matchedKeys) {
+    const expected = expectedByKey.get(key)!;
+    const actual = persistedByKey.get(key)!;
+    const reasons = journalEntryMismatchReasons(expected, actual);
+    if (reasons.length === 0) continue;
+    mismatches.push({
+      idempotencyKey: key,
+      reasons,
+      expectedSource: {
+        sourceType: expected.sourceType,
+        sourceId: expected.sourceId,
+        sourceAction: expectedSourceAction(expected),
+      },
+      actualSource: {
+        sourceType: actual.sourceType,
+        sourceId: actual.sourceId,
+        sourceAction: actual.sourceAction,
+      },
+      expectedLineCount: expected.lines.length,
+      actualLineCount: actual.lines.length,
+    });
+  }
+
+  const compared = persistedEntries !== undefined;
+  return {
+    compared,
+    autoFix: false,
+    reason: compared
+      ? 'Persisted AccountingJournalEntry rows compared by idempotency key and normalized line shape; report is evidence-only.'
+      : 'Persisted AccountingJournalEntry rows were not provided to the dry-run report builder.',
+    expectedEntryCount: expectedEntries.length,
+    persistedEntryCount: persistedEntries?.length ?? 0,
+    matchedEntryCount: matchedKeys.length - mismatches.length,
+    missingExpectedIdempotencyKeys,
+    unexpectedPersistedIdempotencyKeys,
+    mismatchedIdempotencyKeys: mismatches.map((item) => item.idempotencyKey).sort(),
+    mismatches,
+  };
+}
+
+function journalEntryMismatchReasons(expected: AccountingDryRunJournalEntry, actual: PersistedAccountingJournalEntry): string[] {
+  const reasons: string[] = [];
+  if (actual.sourceType !== expected.sourceType) reasons.push('SOURCE_TYPE_MISMATCH');
+  if (actual.sourceId !== expected.sourceId) reasons.push('SOURCE_ID_MISMATCH');
+  if (actual.sourceAction !== expectedSourceAction(expected)) reasons.push('SOURCE_ACTION_MISMATCH');
+  if (actual.tenantId !== expected.tenantId) reasons.push('TENANT_MISMATCH');
+  if (actual.caseId !== expected.caseId) reasons.push('ENTRY_CASE_MISMATCH');
+  if (actual.currency !== expected.currency) reasons.push('CURRENCY_MISMATCH');
+  if (JSON.stringify(normalizeExpectedLines(expected.lines)) !== JSON.stringify(normalizePersistedLines(actual.lines))) {
+    reasons.push('LINE_SHAPE_MISMATCH');
+  }
+  return reasons;
+}
+
+function expectedSourceAction(entry: AccountingDryRunJournalEntry): AccountingDryRunSourceAction {
+  if (entry.sourceType === 'CLIENT_PAYOUT') return 'recorded';
+  if (entry.sourceType === 'CLIENT_OFFSET') {
+    const payableLine = entry.lines.find((line) => line.accountCode === 'CLIENT_PAYABLE');
+    return payableLine?.direction === 'CREDIT' ? 'reversal' : 'apply';
+  }
+  return 'posted';
+}
+
+function normalizeExpectedLines(lines: AccountingDryRunJournalLine[]) {
+  return lines.map((line, index) => ({
+    lineNo: index + 1,
+    accountCode: line.accountCode,
+    direction: line.direction,
+    amount: new Prisma.Decimal(line.amount).toString(),
+    tenantId: line.tenantId,
+    caseId: line.caseId,
+    currency: line.currency,
+    clientId: line.clientId,
+    caseClientId: line.caseClientId,
+    collectionId: line.collectionId,
+    dispositionLineId: line.dispositionLineId,
+    payoutId: line.payoutId,
+    offsetId: line.offsetId,
+    balanceLedgerId: line.balanceLedgerId,
+  }));
+}
+
+function normalizePersistedLines(lines: PersistedAccountingJournalLine[]) {
+  return [...lines]
+    .sort((a, b) => a.lineNo - b.lineNo)
+    .map((line) => ({
+      lineNo: line.lineNo,
+      accountCode: line.accountCode,
+      direction: line.direction,
+      amount: new Prisma.Decimal(line.amount).toString(),
+      tenantId: line.tenantId,
+      caseId: line.caseId,
+      currency: line.currency,
+      clientId: line.clientId,
+      caseClientId: line.caseClientId,
+      collectionId: line.collectionId,
+      dispositionLineId: line.dispositionLineId,
+      payoutId: line.payoutId,
+      offsetId: line.offsetId,
+      balanceLedgerId: line.balanceLedgerId,
+    }));
 }
 
 function buildOutstandingComparison(
