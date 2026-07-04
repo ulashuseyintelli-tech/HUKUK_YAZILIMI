@@ -1360,6 +1360,9 @@ model CaseDebtor {
   // Asset Queries (FAZ 4)
   assetQueries AssetQuery[]
 
+  // DBND-D5B: Collection.caseDebtorId FK karsi iliskisi
+  collections Collection[]
+
   @@unique([caseId, debtorId, role])
   @@index([caseId])
   @@index([caseId, lifecycleStatus])
@@ -2178,6 +2181,10 @@ model Collection {
   caseId       String
   case         Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
   caseDebtorId String? // Hangi borçludan tahsil edildi
+  // DBND-D5B: gercek FK (bkz. D5/D5A analiz+trial). onDelete=Restrict BILINCLI (SetNull/Cascade
+  // DEGIL) — finansal kayit sessizce bag koparmasin/silinmesin; CaseDebtor bugun zaten hard-delete
+  // edilmiyor (yalniz lifecycleStatus soft-delete), Restrict bunu DB seviyesinde de garanti eder.
+  caseDebtor   CaseDebtor? @relation(fields: [caseDebtorId], references: [id], onDelete: Restrict)
 
   // Tutar Bilgileri
   amount   Decimal @db.Decimal(15, 2)
