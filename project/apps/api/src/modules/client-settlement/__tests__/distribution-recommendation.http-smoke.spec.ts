@@ -99,7 +99,7 @@ describe('DistributionRecommendationController HTTP smoke', () => {
     caseClient: { findFirst: jest.Mock };
   };
   let offset: { getEligibility: jest.Mock };
-  let posting: { recommend: jest.Mock; approve: jest.Mock; post: jest.Mock };
+  let posting: { recommend: jest.Mock; approve: jest.Mock; post: jest.Mock; assertCanPrepareDisposition: jest.Mock };
   let feeAgreements: { getActiveForCaseClient: jest.Mock };
 
   const adminToken = signToken(users.admin);
@@ -136,6 +136,7 @@ describe('DistributionRecommendationController HTTP smoke', () => {
       recommend: jest.fn(),
       approve: jest.fn(),
       post: jest.fn(),
+      assertCanPrepareDisposition: jest.fn().mockResolvedValue(undefined),
     };
     // FAZ-2: DistributionRecommendationService'in 3. dep'i. Bu smoke suite manuel-fee/auth/tenant/400
     // kontratını kapsar; agreement=null legacy davranışı (fee=0) korur, hiçbir assertion etkilenmez.
@@ -184,6 +185,7 @@ describe('DistributionRecommendationController HTTP smoke', () => {
     prisma.caseClient.findFirst.mockResolvedValue({ client: { id: 'client-1' } });
     offset.getEligibility.mockResolvedValue({ eligibleExpenseRequests: [] });
     feeAgreements.getActiveForCaseClient.mockResolvedValue(null);
+    posting.assertCanPrepareDisposition.mockResolvedValue(undefined);
   });
 
   function expectNoWriteOrPostingDelegation() {

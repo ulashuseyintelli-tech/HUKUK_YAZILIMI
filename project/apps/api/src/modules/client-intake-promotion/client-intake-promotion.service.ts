@@ -23,7 +23,11 @@ export interface PromoteAddressResult {
   submissionStatus: ClientIntakeSubmissionStatus;
 }
 
-// Yalnız YUMUŞAK istihbarat → ClientIntelStatement (F46-K2). Diğerleri (ADDRESS/ASSET/CONTACT) 4.6b/c.
+// Yumuşak istihbarat (soft-6) + CLIENT-INTEL-4.6C ile ASSET/CONTACT → ClientIntelStatement (F46-K2).
+// ADDRESS hâlâ AYRI (promote-address, DebtorAddress hedefi — HYBRID akış, burada DEĞİL).
+// ASSET/CONTACT BİLİNÇLİ olarak serbest-metin beyan kalır (CLIENT-INTEL-FORM-TYPE-DESIGN kararı,
+// 2026-07-04): canonical Asset/DebtorCommunication'a YAZILMAZ, yalnız 2 yeni ClientIntelCategory
+// değeriyle (ASSET_DECLARATION/CONTACT_DECLARATION) diğer 6 kategoriyle BİREBİR aynı davranır.
 const SOFT_TO_INTEL: Record<string, ClientIntelCategory> = {
   INCOME_SOURCE: ClientIntelCategory.INCOME_SOURCE,
   COMMERCIAL_RELATION: ClientIntelCategory.COMMERCIAL_RELATION,
@@ -31,6 +35,8 @@ const SOFT_TO_INTEL: Record<string, ClientIntelCategory> = {
   DIGITAL_FOOTPRINT: ClientIntelCategory.DIGITAL_FOOTPRINT,
   PAYMENT_HISTORY: ClientIntelCategory.PAYMENT_HISTORY,
   STRATEGY: ClientIntelCategory.STRATEGY,
+  ASSET: ClientIntelCategory.ASSET_DECLARATION,
+  CONTACT: ClientIntelCategory.CONTACT_DECLARATION,
 };
 
 export interface PromoteResult {
@@ -48,8 +54,9 @@ export interface PromoteSoftResult {
 /**
  * Client Intake PROMOTE servisi (Faz 4.6) — dış-form verisinin İLK KEZ kanoniğe yazıldığı KÖPRÜ.
  *
- * KAPSAM (dar): YALNIZ onaylı (APPROVED) SOFT-INTEL alanları → ClientIntelStatement.
- * ADDRESS/ASSET/CONTACT bu PR'da promote EDİLMEZ (skip + rapor; 4.6b/c).
+ * KAPSAM: onaylı (APPROVED) SOFT-INTEL alanları → ClientIntelStatement (soft-6 + CLIENT-INTEL-4.6C
+ * ile ASSET/CONTACT dahil, serbest-metin beyan olarak — 8 kategori). ADDRESS AYRI kalır (promote-address,
+ * DebtorAddress hedefi — HYBRID akış farklı); bu uçtan skip edilir (skip + rapor; 4.6b).
  *
  * KURALLAR (kilitli):
  * - IDEMPOTENT: aday = reviewStatus=APPROVED & promotedRefId=null. promotedRef dolu alan tekrar yazılmaz.
@@ -129,7 +136,7 @@ export class ClientIntakePromotionService {
     for (const f of fields) {
       const intelCategory = SOFT_TO_INTEL[f.category];
       if (!intelCategory) {
-        // ADDRESS/ASSET/CONTACT → bu fazda promote yok (sessizce kaybolmaz).
+        // Yalnız ADDRESS bu yoldan promote edilmez (promote-address ayrı uç); sessizce kaybolmaz.
         skipped.push({ fieldId: f.id, category: f.category, reason: 'NON_SOFT_INTEL_4_6B' });
         continue;
       }
@@ -291,7 +298,8 @@ export class ClientIntakePromotionService {
    * TEK soft-intel alanını ClientIntelStatement'a promote et (Faz 4.7 PR-C2a — FIELD-LEVEL).
    *
    * Bulk YOK: tam olarak BİR alan yazılır (C2b promote yolu yalnız budur).
-   * Yalnız 6 SOFT kategori (SOFT_TO_INTEL). ADDRESS → promote-address; ASSET/CONTACT → 400 (4.6c yok).
+   * SOFT_TO_INTEL kapsamındaki 8 kategori (soft-6 + CLIENT-INTEL-4.6C ile ASSET/CONTACT).
+   * ADDRESS AYRI kalır → promote-address ucu kullanılır (HYBRID, DebtorAddress hedefi farklı).
    * Submission-level promote() ve promoteAddress() davranışına DOKUNMAZ; SOFT_TO_INTEL +
    * recomputeSubmissionStatus REUSE edilir (kod tekrarı yok).
    *
@@ -313,10 +321,10 @@ export class ClientIntakePromotionService {
     // I1A: promote yetkisi — herhangi bir yazmadan/detaydan ÖNCE.
     await this.assertCanManagePromotion(userId, tenantId);
 
-    // Yalnız SOFT-6. ADDRESS/ASSET/CONTACT bu uçtan promote EDİLMEZ.
+    // SOFT_TO_INTEL kapsamındaki 8 kategori (soft-6 + ASSET/CONTACT). ADDRESS bu uçtan promote EDİLMEZ.
     const intelCategory = SOFT_TO_INTEL[field.category];
     if (!intelCategory) {
-      throw new BadRequestException('Bu uç yalnız yumuşak istihbarat alanlarını promote eder (ADDRESS için promote-address; ASSET/CONTACT henüz yok)');
+      throw new BadRequestException('Bu uç yumuşak istihbarat + varlık/iletişim beyanını promote eder (ADDRESS için promote-address kullanın)');
     }
     if (field.reviewStatus !== ClientIntakeFieldReviewStatus.APPROVED) throw new BadRequestException('Yalnız onaylı (APPROVED) alan promote edilir');
     if (field.promotedRefId) throw new BadRequestException('Alan zaten promote edilmiş'); // idempotent

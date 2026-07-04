@@ -15,6 +15,8 @@ import {
   ServiceReturnReason,
 } from "@prisma/client";
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
+import { AuditService } from "@/modules/audit/audit.service";
+import type { AuditActor } from "@/modules/client/client.service";
 
 // Re-export for controller
 export type AddressRiskFlagType = AddressRiskFlag;
@@ -55,6 +57,9 @@ export interface UpdateAddressDto {
   notes?: string;
   verified?: boolean;
   riskFlags?: AddressRiskFlag[];
+  // DBND-D6A-1: bu güncellemenin hangi dosyadan tetiklendiği (cross-file alert'te kendi
+  // dosyanı hariç tutmak için) — DebtorAddress kolonu DEĞİL, yalnız audit metadata'ya yazılır.
+  sourceCaseId?: string;
 }
 
 export interface TK21_2RecordDto {
@@ -112,7 +117,8 @@ export interface VerificationResultDto {
 export class AddressService {
   constructor(
     private prisma: PrismaService,
-    private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService
+    private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
+    private readonly audit: AuditService
   ) {}
 
   // ==================== CRUD OPERATIONS ====================
@@ -175,31 +181,45 @@ export class AddressService {
   /**
    * Update an existing address
    */
-  async update(tenantId: string, addressId: string, dto: UpdateAddressDto): Promise<AddressDTO> {
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressController.updateAddress() → PUT /addresses/:addressId (drawer + adres formu düzenleme —
+  ///   canlı yol; DebtorService.updateAddress()/PUT /debtors/:id/addresses/:addressId AYRI, ikincil yol)
+  /// </remarks>
+  async update(
+    tenantId: string,
+    addressId: string,
+    dto: UpdateAddressDto,
+    actor?: AuditActor
+  ): Promise<AddressDTO> {
     const address = await this.findAddressWithTenantCheck(tenantId, addressId);
 
-    // Recalculate derived fields if type or source changed
-    const type = dto.type || address.type;
-    const source = dto.source || address.source;
+    // DBND-D6A-1: sourceCaseId DebtorAddress kolonu DEĞİL — Prisma'ya yazılmadan ayrıştırılır,
+    // yalnız aşağıdaki audit metadata'sına gider.
+    const { sourceCaseId, ...addressDto } = dto;
 
-    const canApply21_2 = dto.type ? this.calculateCanApply21_2(type) : address.canApply21_2;
-    const legalPriority = dto.type ? this.calculateLegalPriority(type) : address.legalPriority;
-    const verified = dto.verified !== undefined ? dto.verified : 
-                     dto.source ? this.calculateVerified(source) : address.verified;
+    // Recalculate derived fields if type or source changed
+    const type = addressDto.type || address.type;
+    const source = addressDto.source || address.source;
+
+    const canApply21_2 = addressDto.type ? this.calculateCanApply21_2(type) : address.canApply21_2;
+    const legalPriority = addressDto.type ? this.calculateLegalPriority(type) : address.legalPriority;
+    const verified = addressDto.verified !== undefined ? addressDto.verified :
+                     addressDto.source ? this.calculateVerified(source) : address.verified;
 
     // Rebuild full text if address fields changed
-    const fullText = (dto.street || dto.city || dto.district) 
+    const fullText = (addressDto.street || addressDto.city || addressDto.district)
       ? this.buildFullText({
-          street: dto.street || address.street,
-          city: dto.city || address.city,
-          district: dto.district ?? address.district ?? undefined,
+          street: addressDto.street || address.street,
+          city: addressDto.city || address.city,
+          district: addressDto.district ?? address.district ?? undefined,
         })
       : address.fullText;
 
     const updated = await this.prisma.debtorAddress.update({
       where: { id: addressId },
       data: {
-        ...dto,
+        ...addressDto,
         fullText,
         canApply21_2,
         legalPriority,
@@ -207,6 +227,18 @@ export class AddressService {
         verifiedAt: verified && !address.verified ? new Date() : address.verifiedAt,
         confidenceScore: this.calculateConfidenceScore(source, verified),
       },
+    });
+
+    // DBND-D6A-1: DEBTOR_ADDRESS_UPDATE audit — entityId BİLEREK address.debtorId (addressId DEĞİL),
+    // çünkü DebtorService.getCrossFileDebtorAlerts() Debtor bazında sorgular. Ham adres metni
+    // YAZILMAZ (KVKK); yalnız "adres değişti" kategorisi + tetikleyici dosya (sourceCaseId) tutulur.
+    await this.audit.log({
+      tenantId,
+      action: "DEBTOR_ADDRESS_UPDATE",
+      entityType: "DEBTOR",
+      entityId: address.debtorId,
+      userId: actor?.userId,
+      metadata: { addressId, sourceCaseId: sourceCaseId ?? null },
     });
 
     return this.toDTO(updated);

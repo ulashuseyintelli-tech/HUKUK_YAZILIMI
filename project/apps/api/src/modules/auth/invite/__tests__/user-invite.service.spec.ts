@@ -20,8 +20,18 @@ function make(opts?: { enabled?: boolean }) {
     update: jest.fn().mockResolvedValue({}),
     findMany: jest.fn().mockResolvedValue([]),
   };
-  const tx = { user, userInvite };
-  const prisma = { user, userInvite, $transaction: jest.fn(async (cb: any) => cb(tx)) } as any;
+  // OWN-01: varsayılan olarak hiçbir profil bulunamaz/bağlanmaz (updateMany count:0) — lawyerId/
+  // staffMemberId vermeyen mevcut testler davranışsal olarak etkilenmez (regression-safe default).
+  const lawyer = {
+    findFirst: jest.fn().mockResolvedValue(null),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+  };
+  const staffMember = {
+    findFirst: jest.fn().mockResolvedValue(null),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+  };
+  const tx = { user, userInvite, lawyer, staffMember };
+  const prisma = { user, userInvite, lawyer, staffMember, $transaction: jest.fn(async (cb: any) => cb(tx)) } as any;
   const audit = { log: jest.fn().mockResolvedValue(undefined) } as any;
   const email = { send: jest.fn().mockResolvedValue({ success: true }) } as any;
   const config = {
@@ -29,7 +39,10 @@ function make(opts?: { enabled?: boolean }) {
       k === "LOGIN_INVITE_PROVISIONING_ENABLED" ? (enabled ? "true" : "false") : undefined,
     ),
   } as any;
-  return { svc: new UserInviteService(prisma, audit, email, config), prisma, audit, email, user, userInvite };
+  return {
+    svc: new UserInviteService(prisma, audit, email, config),
+    prisma, audit, email, user, userInvite, lawyer, staffMember,
+  };
 }
 
 const rawFromEmail = (email: any): string => {
@@ -105,6 +118,78 @@ describe("UserInviteService", () => {
     expect(user.create.mock.calls[0][0].data.passwordHash).toBeNull();
     const sent = email.send.mock.calls[0][0];
     expect(sent.text.toLowerCase()).not.toMatch(/parola\s*[:=]\s*\S/); // maile parola konmaz (yalnız link)
+  });
+
+  // ---- OWN-01: invite → Lawyer/StaffMember deterministik bağlama ----
+  it("[OWN-01] issue lawyerId ile verilirse Lawyer.userId race-safe updateMany ile bağlanır + audit'e işlenir", async () => {
+    const { svc, lawyer, audit } = make();
+    lawyer.findFirst.mockResolvedValueOnce({ id: "law1", userId: null });
+    lawyer.updateMany.mockResolvedValueOnce({ count: 1 });
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad", lawyerId: "law1" });
+    expect(lawyer.updateMany).toHaveBeenCalledWith({
+      where: { id: "law1", tenantId: "t1", userId: null },
+      data: { userId: "u9" },
+    });
+    const call = audit.log.mock.calls.find((c: any) => c[0].action === "USER_INVITE_ISSUED")![0];
+    expect(call.metadata.linkedLawyerId).toBe("law1");
+  });
+
+  it("[OWN-01] issue staffMemberId ile verilirse StaffMember.userId bağlanır", async () => {
+    const { svc, staffMember, audit } = make();
+    staffMember.findFirst.mockResolvedValueOnce({ id: "staff1", userId: null });
+    staffMember.updateMany.mockResolvedValueOnce({ count: 1 });
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad", staffMemberId: "staff1" });
+    expect(staffMember.updateMany).toHaveBeenCalledWith({
+      where: { id: "staff1", tenantId: "t1", userId: null },
+      data: { userId: "u9" },
+    });
+    const call = audit.log.mock.calls.find((c: any) => c[0].action === "USER_INVITE_ISSUED")![0];
+    expect(call.metadata.linkedStaffMemberId).toBe("staff1");
+  });
+
+  it("[OWN-01] issue lawyerId VE staffMemberId birlikte verilirse BadRequest, transaction hiç başlamaz", async () => {
+    const { svc, prisma } = make();
+    await expect(
+      svc.issue(ACTOR, { email: "a@x.com", name: "Ad", lawyerId: "law1", staffMemberId: "staff1" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("[OWN-01] issue lawyerId bulunamazsa/tenant dışıysa BadRequest, user oluşturulmaz", async () => {
+    const { svc, user, lawyer } = make();
+    lawyer.findFirst.mockResolvedValueOnce(null);
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad", lawyerId: "law-yok" })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(user.create).not.toHaveBeenCalled();
+  });
+
+  it("[OWN-01] issue lawyerId zaten bağlıysa Conflict, user oluşturulmaz (dual-ownership guard)", async () => {
+    const { svc, user, lawyer } = make();
+    lawyer.findFirst.mockResolvedValueOnce({ id: "law1", userId: "already-linked-user" });
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad", lawyerId: "law1" })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(user.create).not.toHaveBeenCalled();
+  });
+
+  it("[OWN-01] issue eşzamanlı yarış kaybederse (findFirst null gördü, updateMany count 0) Conflict", async () => {
+    const { svc, lawyer } = make();
+    lawyer.findFirst.mockResolvedValueOnce({ id: "law1", userId: null });
+    lawyer.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad", lawyerId: "law1" })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it("[OWN-01] issue lawyerId/staffMemberId hiç verilmezse davranış değişmez (regression)", async () => {
+    const { svc, lawyer, staffMember, user } = make();
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    expect(lawyer.findFirst).not.toHaveBeenCalled();
+    expect(lawyer.updateMany).not.toHaveBeenCalled();
+    expect(staffMember.findFirst).not.toHaveBeenCalled();
+    expect(staffMember.updateMany).not.toHaveBeenCalled();
+    expect(user.create).toHaveBeenCalled();
   });
 
   // ---- accept ----
@@ -191,6 +276,34 @@ describe("UserInviteService", () => {
     await svc.revoke(ACTOR, "inv1");
     expect(userInvite.update.mock.calls[0][0].data.revokedAt).toBeInstanceOf(Date);
     expect(audit.log.mock.calls.some((c: any) => c[0].action === "USER_INVITE_REVOKED")).toBe(true);
+  });
+
+  it("[OWN-01] revoke bağlı Lawyer'ı unlink eder (userId→null) + audit'e unlinkedLawyer eklenir", async () => {
+    const { svc, prisma, lawyer, audit } = make();
+    prisma.userInvite.findFirst.mockResolvedValue({ id: "inv1", tenantId: "t1", userId: "u9", email: "a@x.com" });
+    lawyer.updateMany.mockResolvedValueOnce({ count: 1 });
+    await svc.revoke(ACTOR, "inv1");
+    expect(lawyer.updateMany).toHaveBeenCalledWith({ where: { userId: "u9", tenantId: "t1" }, data: { userId: null } });
+    const call = audit.log.mock.calls.find((c: any) => c[0].action === "USER_INVITE_REVOKED")![0];
+    expect(call.metadata.unlinkedLawyer).toBe(true);
+  });
+
+  it("[OWN-01] revoke bağlı StaffMember'ı unlink eder + audit'e unlinkedStaffMember eklenir", async () => {
+    const { svc, prisma, staffMember, audit } = make();
+    prisma.userInvite.findFirst.mockResolvedValue({ id: "inv1", tenantId: "t1", userId: "u9", email: "a@x.com" });
+    staffMember.updateMany.mockResolvedValueOnce({ count: 1 });
+    await svc.revoke(ACTOR, "inv1");
+    const call = audit.log.mock.calls.find((c: any) => c[0].action === "USER_INVITE_REVOKED")![0];
+    expect(call.metadata.unlinkedStaffMember).toBe(true);
+  });
+
+  it("[OWN-01] revoke hiçbir profile bağlı değilse unlink metadata YOK (regression)", async () => {
+    const { svc, prisma, audit } = make();
+    prisma.userInvite.findFirst.mockResolvedValue({ id: "inv1", tenantId: "t1", userId: "u9", email: "a@x.com" });
+    await svc.revoke(ACTOR, "inv1");
+    const call = audit.log.mock.calls.find((c: any) => c[0].action === "USER_INVITE_REVOKED")![0];
+    expect(call.metadata.unlinkedLawyer).toBeUndefined();
+    expect(call.metadata.unlinkedStaffMember).toBeUndefined();
   });
 
   it("[21b] flag OFF iken resend çalışmaz", async () => {

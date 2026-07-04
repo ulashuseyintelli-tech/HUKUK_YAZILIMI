@@ -43,7 +43,7 @@ interface Lawyer {
   isActive: boolean; 
 }
 interface Office { id: string; name: string; address?: string; city?: string; district?: string; phone?: string; fax?: string; email?: string; barAssociation?: string; bankAccounts: BankAccount[]; lawyers: Lawyer[]; smtpHost?: string; smtpPort?: number; smtpUser?: string; smtpPass?: string; smtpSecure?: boolean; smtpFromName?: string; smtpFromEmail?: string; }
-interface StaffMember { id: string; firstName: string; lastName: string; tckn?: string; email?: string; phone?: string; staffType: string; canCreateCase: boolean; canEditCase: boolean; canGenerateDocuments: boolean; canApproveDocuments: boolean; canSeeFinance: boolean; canApproveFinance: boolean; isActive: boolean; isDefaultForNewCases?: boolean; }
+interface StaffMember { id: string; firstName: string; lastName: string; tckn?: string; email?: string; phone?: string; staffType: string; canCreateCase: boolean; canEditCase: boolean; canGenerateDocuments: boolean; canApproveDocuments: boolean; canSeeFinance: boolean; canApproveFinance: boolean; canPrepareCollectionDisposition: boolean; isActive: boolean; isDefaultForNewCases?: boolean; }
 interface SmtpSettings { smtpHost?: string; smtpPort?: number; smtpUser?: string; smtpPass?: string; smtpSecure?: boolean; smtpFromName?: string; smtpFromEmail?: string; }
 
 const STAFF_TYPES = [
@@ -1463,6 +1463,7 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
     canCreateCase: staff?.canCreateCase || false, canEditCase: staff?.canEditCase || false,
     canGenerateDocuments: staff?.canGenerateDocuments || false, canApproveDocuments: staff?.canApproveDocuments || false,
     canSeeFinance: staff?.canSeeFinance || false, canApproveFinance: staff?.canApproveFinance || false,
+    canPrepareCollectionDisposition: staff?.canPrepareCollectionDisposition || false,
     isDefaultForNewCases: staff?.isDefaultForNewCases || false,
   });
 
@@ -1513,6 +1514,7 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canApproveDocuments} onChange={e => setForm({...form, canApproveDocuments: e.target.checked})} />Belge onaylayabilir</label>
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canSeeFinance} onChange={e => setForm({...form, canSeeFinance: e.target.checked})} />Muhasebe görebilir</label>
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canApproveFinance} onChange={e => setForm({...form, canApproveFinance: e.target.checked})} />Muhasebe onaylayabilir</label>
+              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canPrepareCollectionDisposition} onChange={e => setForm({...form, canPrepareCollectionDisposition: e.target.checked})} />Tahsilat dağıtımı hazırlayabilir</label>
             </div>
           </div>
           {/* Varsayılan Seçeneği */}

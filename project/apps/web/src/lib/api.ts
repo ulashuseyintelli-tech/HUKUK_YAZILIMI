@@ -276,7 +276,16 @@ class ApiClient {
   // K1-7-4: admin login-davet yönetimi (self-service). Tümü ADMIN + JWT gerektirir
   // (backend: JwtAuthGuard + AdminGuard + LOGIN_INVITE_PROVISIONING_ENABLED). Ham token
   // asla bu yanıtlarda dönmez; e-posta backend tarafından otomatik gönderilir.
-  async createInvite(data: { email: string; name: string; surname?: string; role?: string }) {
+  // OWN-01: lawyerId/staffMemberId verilirse (karşılıklı dışlayıcı), backend oluşan User'ı o
+  // profile deterministik bağlar (Lawyer.userId/StaffMember.userId).
+  async createInvite(data: {
+    email: string;
+    name: string;
+    surname?: string;
+    role?: string;
+    lawyerId?: string;
+    staffMemberId?: string;
+  }) {
     return this.request<{ inviteId: string; userId: string; email: string; expiresAt: string }>(
       "/auth/invites",
       { method: "POST", body: JSON.stringify(data) }
@@ -479,6 +488,12 @@ class ApiClient {
 
   async getCaseDebtorDetail(caseId: string, caseDebtorId: string) {
     return this.request<DebtorDetailDTO>(`/debtors/case/${caseId}/${caseDebtorId}`);
+  }
+
+  // DBND-D6A-1: pull/MVP — push bildirim DEĞİL, drawer açılışında çağrılır.
+  async getCrossFileDebtorAlerts(debtorId: string, excludeCaseId?: string) {
+    const qs = excludeCaseId ? `?excludeCaseId=${encodeURIComponent(excludeCaseId)}` : "";
+    return this.request<CrossFileDebtorAlertDTO>(`/debtors/${debtorId}/cross-file-alerts${qs}`);
   }
 
   async updateDebtorQuickNote(caseId: string, caseDebtorId: string, text: string) {
@@ -5043,6 +5058,9 @@ export interface UpdateAddressDTO {
   notes?: string;
   verified?: boolean;
   riskFlags?: AddressRiskFlag[];
+  // DBND-D6A-1: bu güncellemenin hangi dosyadan tetiklendiği (cross-file alert'te kendi
+  // dosyanı hariç tutmak için) — yalnız audit metadata'ya gider, adres kolonuna yazılmaz.
+  sourceCaseId?: string;
 }
 
 export interface TK21_2RecordDTO {
@@ -5109,6 +5127,15 @@ export interface DebtorFinancialSummaryDTO {
     collectionCount: number;
     lastCollectionDate?: string;
   }>;
+}
+
+// DBND-D6A-1: paylaşılan Debtor.id başka aktif dosyada yakın zamanda güncellendiyse pull/MVP uyarısı.
+export interface CrossFileDebtorAlertDTO {
+  hasAlert: boolean;
+  lastChangedAt: string | null;
+  categories: string[]; // "address" | "identity" | "contact" | "name"
+  sourceCaseId: string | null;
+  otherActiveCases: { caseId: string; fileNumber: string | null; responsibleName: string | null }[];
 }
 
 export interface DebtorDetailDTO extends DebtorListItemDTO {

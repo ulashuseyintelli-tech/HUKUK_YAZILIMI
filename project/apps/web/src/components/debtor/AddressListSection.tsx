@@ -19,6 +19,9 @@ interface AddressListSectionProps {
   identityNo?: string; // TCKN or VKN
   readOnly?: boolean;
   onUpdate: () => void;
+  // DBND-D6A-1: düzenleme hangi dosyadan tetiklendi (paylaşılan Debtor.id'de cross-file
+  // alert'te kendi dosyanı hariç tutmak için). Yalnız update payload'ına geçer.
+  sourceCaseId?: string;
 }
 
 export function AddressListSection({
@@ -30,6 +33,7 @@ export function AddressListSection({
   identityNo,
   readOnly = false,
   onUpdate,
+  sourceCaseId,
 }: AddressListSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -356,6 +360,7 @@ export function AddressListSection({
           debtorId={debtorId}
           address={editingAddress}
           debtorType={debtorType}
+          sourceCaseId={sourceCaseId}
         />
       )}
 
