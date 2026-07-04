@@ -21,13 +21,15 @@ import {
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { DebtorCrossCaseNotificationService } from "./debtor-cross-case-notification.service";
+import { CaseDebtorService } from "./case-debtor.service";
 
 @Controller("debtors")
 @UseGuards(JwtAuthGuard)
 export class DebtorController {
   constructor(
     private debtorService: DebtorService,
-    private crossCaseNotification: DebtorCrossCaseNotificationService
+    private crossCaseNotification: DebtorCrossCaseNotificationService,
+    private caseDebtorService: CaseDebtorService
   ) {}
 
   // ==================== CASE DEBTORS (FAZ 1) ====================
@@ -185,6 +187,21 @@ export class DebtorController {
     @Param("id") notificationId: string
   ) {
     return this.crossCaseNotification.acknowledge(tenantId, notificationId, recipientUserId);
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - (ileride) D6 bildirim ekranı / dosya-borçlu detay → GET /debtors/case-debtors/:caseDebtorId/active-process-summary
+  ///   (DBND-D6-TEBLIGAT-BRIDGE; salt-okuma sinyal — D6A-2'ye YAZMA yapmaz, otomatik hukukî
+  ///   hüküm ÜRETMEZ; yalnız "manuel hukukî inceleme önerilir" gözlemi). Statik route,
+  ///   :id route'undan ÖNCE tanımlı (aksi halde Nest bunu debtor id'si sanır).
+  /// </remarks>
+  @Get("case-debtors/:caseDebtorId/active-process-summary")
+  getCaseDebtorActiveProcessSummary(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("caseDebtorId") caseDebtorId: string
+  ) {
+    return this.caseDebtorService.getActiveProcessSummary(tenantId, caseDebtorId);
   }
 
   @Get(":id")

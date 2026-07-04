@@ -420,3 +420,92 @@ describe("CaseDebtorService.updateCaseDebtor", () => {
     expect(mockAudit.log).not.toHaveBeenCalled();
   });
 });
+
+// DBND-D6-TEBLIGAT-BRIDGE (owner-locked, bkz `docs/design/d6-legal-semantics-triage.md` Q5)
+describe("CaseDebtorService.getActiveProcessSummary", () => {
+  let service: CaseDebtorService;
+
+  const mockPrisma = {
+    caseDebtor: { findFirst: jest.fn() },
+    tebligat: { count: jest.fn() },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new CaseDebtorService(mockPrisma as any, {} as any, {} as any, {} as any);
+  });
+
+  it("throws NotFoundException when the caseDebtor does not belong to the tenant", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue(null);
+
+    await expect(service.getActiveProcessSummary("tenant-1", "case-debtor-1")).rejects.toBeInstanceOf(
+      NotFoundException
+    );
+    expect(mockPrisma.tebligat.count).not.toHaveBeenCalled();
+  });
+
+  it("scopes the caseDebtor lookup to the tenant (tenant boundary)", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue({ id: "case-debtor-1" });
+    mockPrisma.tebligat.count.mockResolvedValue(0);
+
+    await service.getActiveProcessSummary("tenant-1", "case-debtor-1");
+
+    expect(mockPrisma.caseDebtor.findFirst).toHaveBeenCalledWith({
+      where: { id: "case-debtor-1", case: { tenantId: "tenant-1" } },
+      select: { id: true },
+    });
+  });
+
+  it("counts only the owner-locked active/pending Tebligat status set (Q-A)", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue({ id: "case-debtor-1" });
+    mockPrisma.tebligat.count.mockResolvedValue(2);
+
+    const result = await service.getActiveProcessSummary("tenant-1", "case-debtor-1");
+
+    expect(mockPrisma.tebligat.count).toHaveBeenCalledWith({
+      where: {
+        caseDebtorId: "case-debtor-1",
+        status: { in: ["HAZIRLANDI", "GONDERILDI", "MUHTARLIGA_BIRAKILDI", "IADE_GELDI"] },
+      },
+    });
+    expect(result).toEqual({
+      caseDebtorId: "case-debtor-1",
+      activeTebligatCount: 2,
+      manualReviewRecommended: true,
+    });
+  });
+
+  it("does NOT include TESLIM_EDILDI, TEBLIG_EDILMIS_SAYILDI or IPTAL in the active-status filter", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue({ id: "case-debtor-1" });
+    mockPrisma.tebligat.count.mockResolvedValue(0);
+
+    await service.getActiveProcessSummary("tenant-1", "case-debtor-1");
+
+    const calledWith = mockPrisma.tebligat.count.mock.calls[0][0];
+    const statusesQueried: string[] = calledWith.where.status.in;
+    expect(statusesQueried).not.toContain("TESLIM_EDILDI");
+    expect(statusesQueried).not.toContain("TEBLIG_EDILMIS_SAYILDI");
+    expect(statusesQueried).not.toContain("IPTAL");
+  });
+
+  it("returns manualReviewRecommended:false when there are zero active Tebligat records", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue({ id: "case-debtor-1" });
+    mockPrisma.tebligat.count.mockResolvedValue(0);
+
+    const result = await service.getActiveProcessSummary("tenant-1", "case-debtor-1");
+
+    expect(result.activeTebligatCount).toBe(0);
+    expect(result.manualReviewRecommended).toBe(false);
+  });
+
+  it("response shape has no Collection-related field (Q-B: Collection out of scope for this bridge)", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue({ id: "case-debtor-1" });
+    mockPrisma.tebligat.count.mockResolvedValue(1);
+
+    const result = await service.getActiveProcessSummary("tenant-1", "case-debtor-1");
+
+    expect(Object.keys(result).sort()).toEqual(
+      ["activeTebligatCount", "caseDebtorId", "manualReviewRecommended"].sort()
+    );
+  });
+});
