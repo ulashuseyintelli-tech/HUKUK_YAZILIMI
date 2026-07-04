@@ -41,12 +41,21 @@ export type ShadowDiffDiagnostic = ShadowDiffIssue;
 export interface ShadowTotals {
   currency: string | null;
   totalDebtAmount: number | null;
+  /**
+   * ALC-AUTH-1A/1B (2026-07-04): canonical tarafında bu, yalnız BORCA FİİLEN TAHSİS
+   * EDİLMİŞ tutardır — "dosyaya gelen toplam para" değildir. Bkz. `allocatedPaidAmount`
+   * (aynı değer, açık isim) ve `grossReceivedAmount` (allocated + heldOverpaymentAmount).
+   */
   totalPaidAmount: number | null;
   outstandingAmount: number | null;
   interestAmount: number | null;
   costsAmount: number | null;
   attorneyFeeAmount: number | null;
   heldOverpaymentAmount?: number | null;
+  /** ALC-AUTH-1B: totalPaidAmount ile aynı değer, açık isimle tekrarlanır (yalnız canonical). */
+  allocatedPaidAmount?: number | null;
+  /** ALC-AUTH-1B: allocatedPaidAmount + heldOverpaymentAmount (yalnız canonical). */
+  grossReceivedAmount?: number | null;
   raw: Record<string, number | null>;
 }
 
