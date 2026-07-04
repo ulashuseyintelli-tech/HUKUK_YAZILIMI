@@ -739,6 +739,20 @@ Unlock Condition: —
 Estimated Size: S
 Related Modules: case-balance-display.ts, balance-display-shadow-diff.types.ts, balance-display-shadow-diff.service.ts
 Status: DONE — **MERGED**. PR #909, squash SHA `f144f550`. Regresyon testi: 220.000 allocated + 100.000 held = 320.000 gross (case-balance-display.spec.ts). 575/575 interest-engine testi PASS (bir önceki 574'ten +1). Kalan B1 blocker'ları (principal authority conflict, cost/attorney-fee ClaimItem veri boşluğu, totalDebtAmount gross-debt projection boşluğu, guarded primary rollout öncesi UI/Av. sign-off) AÇIK — bu PR yalnız PAID_DELTA'yı adresledi.
+
+**Disambiguation notu (2026-07-04):** Ayrı bir paralel oturumda "ALC-AUTH-1B" etiketiyle `totalDebtAmount:null` contract'ı üzerine bağımsız bir GO-ANALYZE yapıldı — bu, yukarıdaki (PR #909, PAID_DELTA/allocatedPaidAmount-grossReceivedAmount) işiyle KARIŞTIRILMAMALI. İsim çakışması netleştirilerek o analiz **ALC-AUTH-1C** olarak yeniden adlandırıldı (bkz. aşağıdaki kayıt). `ALC-AUTH-1B` kanonik referansı yalnız bu sayfadaki PR #909 kaydına aittir.
+
+ID: ALC-AUTH-1C
+Title: totalDebtAmount Contract — gross-debt projection analizi
+Problem: `case-balance-display.ts:475`'te `totalDebtAmount` koşulsuz `null` (INTENTIONAL_GUARD) — B1 primary-display kapısı bu yüzden case verisinden bağımsız yapısal biçimde kapalı (bkz. ALC-AUTH-1, sistemik blocker). Bu analiz salt-okuma; hangi formülün mevcut alanlarla (yeni ClaimItem/migration gerekmeden) contract'ı doldurabileceğini araştırdı.
+Business Value: B1 kapısını açacak en küçük, en az varsayımlı adımın netleşmesi — cost/vekalet ClaimItem-materialization (#4, ayrı/daha büyük iş) veya principal gross/net split (#2) veya payment-authority hierarchy (#3) beklenmeden ilerlenebilir.
+Technical Value: Legacy `toplamBorc = takipTutari + icraMasraflari + vekaletUcreti + takipSonrasiFaiz` ödeme-bağımsız (gross, tahsilattan önce sabit) bir büyüklük. Canonical tarafta zaten finite olması ZORUNLU tutulan iki alan — `outstandingAmount` (net kalan) ve `totalPaidAmount` (allocated tahsilat) — toplanarak ödeme-bağımsız bir gross büyüklük yeniden inşa edilebilir: **`totalDebtAmount = outstandingAmount + totalPaidAmount`**. Bu formül (a) yeni alan/migration gerektirmez, (b) #2 (principal gross/net split) ve #3 (payment-authority hierarchy) kararlarından BAĞIMSIZDIR — ikisi de ayrı, daha büyük kararlar olarak açık kalabilir, (c) ALC-AUTH-1A'nın kapsam daraltmasıyla (cost/vekalet legacy-retained) tutarlıdır, onlara dokunmaz.
+Priority: —
+Depends On: ALC-AUTH-1 (kök neden analizi, sistemik `totalDebtAmount:null` bulgusu), ALC-AUTH-1A (MERGED, PR #914 — cost/vekalet kapsam daraltması, bu formülün ön koşulu değil ama tutarlılık referansı)
+Unlock Condition: Owner GO-IMPLEMENT onayı (ALC-AUTH-1C-IMPL) — kod değişikliği bu kayıtla yetkilendirilmez.
+Estimated Size: S (tek alan hesaplama + ilgili test güncellemeleri: case-balance-display.spec.ts, balance-shadow-display.test.tsx, balance-display-shadow-diff.service.spec.ts)
+Related Modules: case-balance-display.ts, guarded-primary-display.ts, balance-display-shadow-diff.service.ts
+Status: DONE (analiz) — GO-ANALYZE tamamlandı, kod değişikliği YAPILMADI. Sonraki adım: ALC-AUTH-1C-IMPL (ayrı GO-IMPLEMENT gerekir).
 ---
 
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
