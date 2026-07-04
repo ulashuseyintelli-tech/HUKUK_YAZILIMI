@@ -278,6 +278,54 @@ export class DebtorCrossCaseNotificationService {
     return result.count;
   }
 
+  /**
+   * DBND-D6-INACTIVE-RECIPIENT-SWEEP (Q3 çerçevesi, bkz `docs/design/d6-legal-semantics-triage.md`):
+   * Alıcısı artık `User.isActive=false` olan PENDING kayıtları erken EXPIRED'a çevirir — üretim
+   * anında yapılan `isActive` kontrolü, üretimden SONRA deaktive olan personeli kapsamıyordu; bu
+   * sweep o boşluğu kapatır. Yalnız PENDING etkilenir (ACKNOWLEDGED/EXPIRED dokunulmaz). Her satır
+   * için ayrı audit kaydı yazılır (mevcut per-entity audit deseniyle tutarlı).
+   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AutomationService.expireInactiveRecipientCrossCaseNotifications() → @Cron EVERY_HOUR
+  /// </remarks>
+  async expireStaleNotificationsForInactiveRecipients(tenantId?: string, now: Date = new Date()): Promise<number> {
+    const inactiveUsers = await this.prisma.user.findMany({
+      where: { isActive: false, ...(tenantId ? { tenantId } : {}) },
+      select: { id: true },
+    });
+    if (inactiveUsers.length === 0) return 0;
+    const inactiveUserIds = inactiveUsers.map((u) => u.id);
+
+    const pending = await this.prisma.debtorCrossCaseNotification.findMany({
+      where: {
+        status: "PENDING",
+        recipientUserId: { in: inactiveUserIds },
+        ...(tenantId ? { tenantId } : {}),
+      },
+      select: { id: true, tenantId: true, recipientUserId: true },
+    });
+    if (pending.length === 0) return 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.debtorCrossCaseNotification.updateMany({
+        where: { id: { in: pending.map((p) => p.id) }, status: "PENDING" },
+        data: { status: "EXPIRED", expiredAt: now },
+      });
+      for (const notif of pending) {
+        await this.audit.logInTransaction(tx, {
+          tenantId: notif.tenantId,
+          action: "DEBTOR_CROSS_CASE_NOTIFICATION_EXPIRED_INACTIVE_RECIPIENT",
+          entityType: "DEBTOR_CROSS_CASE_NOTIFICATION",
+          entityId: notif.id,
+          metadata: { recipientUserId: notif.recipientUserId },
+        });
+      }
+    });
+
+    return pending.length;
+  }
+
   private async resolveRecipients(
     tx: Prisma.TransactionClient,
     caseId: string

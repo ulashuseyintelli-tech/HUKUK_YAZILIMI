@@ -926,4 +926,133 @@ describeIf("DBND-D6A-2 — DebtorCrossCaseNotification Integration", () => {
       }
     });
   });
+
+  // ── Test 24: inactive-recipient sweep — DBND-D6-INACTIVE-RECIPIENT-SWEEP (Q3) ──────
+  describe("Test 24: expireStaleNotificationsForInactiveRecipients", () => {
+    it("expires PENDING notifications whose recipient has since become inactive, leaves active-recipient PENDING notifications untouched", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseInactive = await createCase(tenantId, clientId);
+      const caseActive = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseInactive.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      await prisma.caseDebtor.create({ data: { caseId: caseActive.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer: lawyerInactive, userId: userIdInactive } = await createLawyerWithUser(tenantId);
+      const { lawyer: lawyerActive, userId: userIdActive } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseInactive.id, lawyerInactive.id, { isResponsible: true });
+      await attachLawyer(caseActive.id, lawyerActive.id, { isResponsible: true });
+
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId: debtor.id,
+        fieldGroups: ["ADDRESS"],
+        changeGeneration: new Date(),
+      });
+
+      // Bildirimler üretildikten SONRA bir alıcı deaktive olur (üretim-anı isActive kontrolü
+      // bu senaryoyu kapsamaz — sweep'in kapatması gereken tam olarak bu boşluk).
+      await prisma.user.update({ where: { id: userIdInactive as string }, data: { isActive: false } });
+
+      const expiredCount = await crossCaseNotification.expireStaleNotificationsForInactiveRecipients(tenantId);
+      expect(expiredCount).toBe(1);
+
+      const notifications = await notificationsFor(tenantId, debtor.id);
+      const inactiveNotif = notifications.find((n) => n.recipientUserId === userIdInactive);
+      const activeNotif = notifications.find((n) => n.recipientUserId === userIdActive);
+      expect(inactiveNotif?.status).toBe("EXPIRED");
+      expect(inactiveNotif?.expiredAt).not.toBeNull();
+      expect(activeNotif?.status).toBe("PENDING");
+    });
+
+    it("does not touch an already-ACKNOWLEDGED notification even if the recipient becomes inactive", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer, userId } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseA.id, lawyer.id, { isResponsible: true });
+
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId: debtor.id,
+        fieldGroups: ["ADDRESS"],
+        changeGeneration: new Date(),
+      });
+      const [notif] = await notificationsFor(tenantId, debtor.id);
+      await crossCaseNotification.acknowledge(tenantId, notif.id, userId as string);
+      await prisma.user.update({ where: { id: userId as string }, data: { isActive: false } });
+
+      const expiredCount = await crossCaseNotification.expireStaleNotificationsForInactiveRecipients(tenantId);
+      expect(expiredCount).toBe(0);
+
+      const updated = await prisma.debtorCrossCaseNotification.findUnique({ where: { id: notif.id } });
+      expect(updated?.status).toBe("ACKNOWLEDGED");
+    });
+
+    it("respects tenant boundary — a tenant-scoped sweep does not expire another tenant's inactive-recipient notification", async () => {
+      const tenantA = await setupTenant();
+      const tenantB = await setupTenant();
+      const debtorA = await createDebtor(tenantA.tenantId);
+      const debtorB = await createDebtor(tenantB.tenantId);
+      const caseA = await createCase(tenantA.tenantId, tenantA.clientId);
+      const caseB = await createCase(tenantB.tenantId, tenantB.clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtorA.id, role: "ASIL_BORCLU" } });
+      await prisma.caseDebtor.create({ data: { caseId: caseB.id, debtorId: debtorB.id, role: "ASIL_BORCLU" } });
+      const { lawyer: lawyerA, userId: userIdA } = await createLawyerWithUser(tenantA.tenantId);
+      const { lawyer: lawyerB, userId: userIdB } = await createLawyerWithUser(tenantB.tenantId);
+      await attachLawyer(caseA.id, lawyerA.id, { isResponsible: true });
+      await attachLawyer(caseB.id, lawyerB.id, { isResponsible: true });
+
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId: tenantA.tenantId,
+        debtorId: debtorA.id,
+        fieldGroups: ["ADDRESS"],
+        changeGeneration: new Date(),
+      });
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId: tenantB.tenantId,
+        debtorId: debtorB.id,
+        fieldGroups: ["ADDRESS"],
+        changeGeneration: new Date(),
+      });
+      await prisma.user.update({ where: { id: userIdA as string }, data: { isActive: false } });
+      await prisma.user.update({ where: { id: userIdB as string }, data: { isActive: false } });
+
+      const expiredCount = await crossCaseNotification.expireStaleNotificationsForInactiveRecipients(tenantA.tenantId);
+      expect(expiredCount).toBe(1);
+
+      const notifA = (await notificationsFor(tenantA.tenantId, debtorA.id))[0];
+      const notifB = (await notificationsFor(tenantB.tenantId, debtorB.id))[0];
+      expect(notifA.status).toBe("EXPIRED");
+      expect(notifB.status).toBe("PENDING");
+    });
+
+    it("writes an audit entry for each early-expired notification", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer, userId } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseA.id, lawyer.id, { isResponsible: true });
+
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId: debtor.id,
+        fieldGroups: ["ADDRESS"],
+        changeGeneration: new Date(),
+      });
+      const [notif] = await notificationsFor(tenantId, debtor.id);
+      await prisma.user.update({ where: { id: userId as string }, data: { isActive: false } });
+
+      await crossCaseNotification.expireStaleNotificationsForInactiveRecipients(tenantId);
+
+      const auditRows = await prisma.auditLog.findMany({
+        where: {
+          tenantId,
+          action: "DEBTOR_CROSS_CASE_NOTIFICATION_EXPIRED_INACTIVE_RECIPIENT",
+          entityId: notif.id,
+        },
+      });
+      expect(auditRows).toHaveLength(1);
+    });
+  });
 });
