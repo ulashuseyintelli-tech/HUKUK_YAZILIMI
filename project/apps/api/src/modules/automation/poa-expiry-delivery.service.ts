@@ -4,8 +4,15 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { maskEmail } from "../../common/pii-mask.util";
 import { DispatchResult, TenantNotifier } from "../escalation/tenant-notifier.service";
 
-type RecipientSource = "PRIMARY_ATTORNEY" | "POA_ATTORNEY" | "ESCALATION_MANAGER" | "ADMIN_FALLBACK";
+type RecipientSource = "PRIMARY_ATTORNEY" | "POA_ATTORNEY" | "ESCALATION_MANAGER" | "ADMIN_FALLBACK" | "OFFICE_OVERRIDE";
 type DeliveryStatus = "PENDING" | "SENT" | "FAILED";
+
+/** ACT-07: büro-geneli POA expiry ayarı (Office tablosundan okunur; kayıt yoksa DEFAULT_* uygulanır). */
+interface OfficePoaExpirySettings {
+  enabled: boolean;
+  thresholdDays: number;
+  recipientLawyerIds: string[];
+}
 
 interface PoaRecipient {
   userId: string | null;
@@ -54,8 +61,10 @@ interface PoaExpiryDeliveryScope {
   clientId?: string;
 }
 
-const POA_EXPIRY_WINDOW_KEY = "D30";
-const POA_EXPIRY_LOOKAHEAD_DAYS = 30;
+// ACT-07: eşik artık Office.poaExpiryThresholdDays'ten okunur (büro-geneli ayar); bu değer yalnız
+// Office kaydı bulunamazsa (teorik olarak olmamalı, getOrCreate her yerde office garantiler) DEFAULT
+// olarak kullanılır — schema default'uyla (30) birebir aynı.
+const DEFAULT_POA_EXPIRY_THRESHOLD_DAYS = 30;
 const POA_DELIVERY_LOCK_TIMEOUT_MINUTES = 15;
 const POA_DELIVERY_MAX_ATTEMPTS = 3;
 const POA_DELIVERY_RETRY_MINUTES = 60;
@@ -93,8 +102,14 @@ export class PoaExpiryDeliveryService {
     now: Date = new Date(),
     scope: PoaExpiryDeliveryScope = {},
   ): Promise<PoaExpiryDeliveryRunResult> {
+    const officeSettingsByTenant = await this.loadOfficeSettings(scope.tenantId);
+    const maxThresholdDays = this.resolveMaxThresholdDays(officeSettingsByTenant);
+
+    // ACT-07: sorgu penceresi tüm büroların EN GENİŞ eşiğini kapsayacak şekilde genişletilir
+    // (over-fetch güvenli, davranış etkisi yok); asıl per-büro eşik filtresi aşağıda kayıt
+    // bazında uygulanır — böylece her büro kendi poaExpiryThresholdDays'ine göre değerlendirilir.
     const until = new Date(now);
-    until.setDate(until.getDate() + POA_EXPIRY_LOOKAHEAD_DAYS);
+    until.setDate(until.getDate() + maxThresholdDays);
 
     const poas = await (this.prisma as any).clientPowerOfAttorney.findMany({
       where: {
@@ -143,11 +158,25 @@ export class PoaExpiryDeliveryService {
         continue;
       }
 
-      const recipients = await this.resolveRecipientsForPoa(poa, tenantId);
+      const settings = officeSettingsByTenant.get(tenantId) ?? (await this.loadOfficeSettingsForTenant(tenantId));
+      if (!settings.enabled) {
+        result.skipped += 1;
+        continue;
+      }
+
+      const officeUntil = new Date(now);
+      officeUntil.setDate(officeUntil.getDate() + settings.thresholdDays);
+      if (new Date(poa.validUntil) > officeUntil) {
+        result.skipped += 1;
+        continue;
+      }
+
+      const windowKey = this.buildWindowKey(settings.thresholdDays);
+      const recipients = await this.resolveRecipientsForPoa(poa, tenantId, settings.recipientLawyerIds);
       result.recipients += recipients.length;
 
       for (const recipient of recipients) {
-        const claim = await this.claimDeliveryReservation(poa, recipient, now);
+        const claim = await this.claimDeliveryReservation(poa, recipient, now, windowKey);
         if (claim.action !== "CLAIMED") {
           result.skipped += 1;
           continue;
@@ -167,7 +196,67 @@ export class PoaExpiryDeliveryService {
     return result;
   }
 
-  private async resolveRecipientsForPoa(poa: any, tenantId: string): Promise<PoaRecipient[]> {
+  /**
+   * ACT-07: tek sorguda ilgili büro/büroların POA-expiry ayarlarını yükler (tenant → settings map).
+   * scope.tenantId verilmişse yalnız o büro, verilmemişse (global cron) TÜM bürolar okunur —
+   * büro sayısı küçük (onlarca), tek sorguluk maliyet düşük.
+   */
+  private async loadOfficeSettings(scopeTenantId?: string): Promise<Map<string, OfficePoaExpirySettings>> {
+    const offices = await (this.prisma as any).office.findMany({
+      where: scopeTenantId ? { tenantId: scopeTenantId } : {},
+      select: {
+        tenantId: true,
+        poaExpiryNotificationEnabled: true,
+        poaExpiryThresholdDays: true,
+        poaExpiryRecipientLawyerIds: true,
+      },
+    });
+
+    const map = new Map<string, OfficePoaExpirySettings>();
+    for (const office of offices) {
+      map.set(office.tenantId, {
+        enabled: office.poaExpiryNotificationEnabled ?? true,
+        thresholdDays: office.poaExpiryThresholdDays ?? DEFAULT_POA_EXPIRY_THRESHOLD_DAYS,
+        recipientLawyerIds: office.poaExpiryRecipientLawyerIds || [],
+      });
+    }
+    return map;
+  }
+
+  /** loadOfficeSettings'te bulunamayan (silinmiş/gecikmeli-oluşturulmuş) bir tenant için tek-kayıt fallback. */
+  private async loadOfficeSettingsForTenant(tenantId: string): Promise<OfficePoaExpirySettings> {
+    const map = await this.loadOfficeSettings(tenantId);
+    return map.get(tenantId) ?? {
+      enabled: true,
+      thresholdDays: DEFAULT_POA_EXPIRY_THRESHOLD_DAYS,
+      recipientLawyerIds: [],
+    };
+  }
+
+  private resolveMaxThresholdDays(settingsByTenant: Map<string, OfficePoaExpirySettings>): number {
+    let max = DEFAULT_POA_EXPIRY_THRESHOLD_DAYS;
+    for (const settings of settingsByTenant.values()) {
+      if (settings.thresholdDays > max) max = settings.thresholdDays;
+    }
+    return max;
+  }
+
+  private buildWindowKey(thresholdDays: number): string {
+    return `D${thresholdDays}`;
+  }
+
+  private async resolveRecipientsForPoa(
+    poa: any,
+    tenantId: string,
+    recipientOverrideLawyerIds: string[] = [],
+  ): Promise<PoaRecipient[]> {
+    if (recipientOverrideLawyerIds.length > 0) {
+      const override = await this.resolveOfficeOverrideRecipients(tenantId, recipientOverrideLawyerIds);
+      if (override.length > 0) return this.uniqueRecipients(override);
+      // Override tanımlı ama hiçbiri geçerli değilse (silinmiş/pasif avukat), sessizce mevcut
+      // waterfall'a düşülür — alıcısız kalmak yerine mevcut davranış (primary→...→admin) korunur.
+    }
+
     const primary = this.validPoaLawyerRecipients(poa, tenantId, "PRIMARY_ATTORNEY", true);
     if (primary.length > 0) return this.uniqueRecipients([primary[0]]);
 
@@ -178,6 +267,35 @@ export class PoaExpiryDeliveryService {
     if (managers.length > 0) return this.uniqueRecipients(managers);
 
     return this.uniqueRecipients(await this.resolveAdminFallback(tenantId));
+  }
+
+  /** ACT-07: Office.poaExpiryRecipientLawyerIds override — escalation-manager deseninin AYNISI. */
+  private async resolveOfficeOverrideRecipients(tenantId: string, lawyerIds: string[]): Promise<PoaRecipient[]> {
+    const lawyers: LawyerRecipientRow[] = await (this.prisma as any).lawyer.findMany({
+      where: { tenantId, id: { in: lawyerIds }, isActive: true },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        surname: true,
+        email: true,
+        isActive: true,
+        userId: true,
+        user: { select: { id: true, tenantId: true, isActive: true, email: true } },
+      },
+    });
+    const byId = new Map<string, LawyerRecipientRow>(lawyers.map((l): [string, LawyerRecipientRow] => [l.id, l]));
+
+    return lawyerIds
+      .map((id) => byId.get(id))
+      .filter((lawyer) => this.isValidLawyerRecipient(lawyer, tenantId))
+      .map((lawyer) => this.toRecipient({
+        id: lawyer.userId || null,
+        email: lawyer.email,
+        source: "OFFICE_OVERRIDE",
+        displayName: [lawyer.name, lawyer.surname].filter(Boolean).join(" ").trim() || "Yetkili avukat",
+      }))
+      .filter((r): r is PoaRecipient => !!r);
   }
 
   private validPoaLawyerRecipients(
@@ -289,8 +407,8 @@ export class PoaExpiryDeliveryService {
     return out;
   }
 
-  private async claimDeliveryReservation(poa: any, recipient: PoaRecipient, now: Date): Promise<ClaimResult> {
-    const dedupeKey = this.buildDedupeKey(poa, recipient);
+  private async claimDeliveryReservation(poa: any, recipient: PoaRecipient, now: Date, windowKey: string): Promise<ClaimResult> {
+    const dedupeKey = this.buildDedupeKey(poa, recipient, windowKey);
     const data = {
       tenantId: poa.client.tenantId,
       poaId: poa.id,
@@ -299,7 +417,7 @@ export class PoaExpiryDeliveryService {
       recipientEmail: recipient.email,
       recipientSource: recipient.source,
       dedupeKey,
-      windowKey: POA_EXPIRY_WINDOW_KEY,
+      windowKey,
       status: "PENDING" as DeliveryStatus,
       attempts: 1,
       reservedAt: now,
@@ -416,9 +534,9 @@ export class PoaExpiryDeliveryService {
     });
   }
 
-  private buildDedupeKey(poa: any, recipient: PoaRecipient): string {
+  private buildDedupeKey(poa: any, recipient: PoaRecipient, windowKey: string): string {
     const expiry = this.dateKey(new Date(poa.validUntil));
-    return ["poa-expiry", poa.client.tenantId, poa.id, recipient.dedupeIdentity, expiry, POA_EXPIRY_WINDOW_KEY].join(":");
+    return ["poa-expiry", poa.client.tenantId, poa.id, recipient.dedupeIdentity, expiry, windowKey].join(":");
   }
 
   private buildSubject(poa: any): string {

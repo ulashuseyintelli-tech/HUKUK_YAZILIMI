@@ -49,9 +49,18 @@ function build(overrides: any = {}) {
     findMany: jest.fn(),
     findFirst: jest.fn(),
   };
+  const defaultOfficeSettings = [{
+    tenantId: "t1",
+    poaExpiryNotificationEnabled: true,
+    poaExpiryThresholdDays: 30,
+    poaExpiryRecipientLawyerIds: [],
+  }];
   const prisma: any = {
     clientPowerOfAttorney: { findMany: jest.fn().mockResolvedValue(overrides.poas || []) },
-    office: { findUnique: jest.fn().mockResolvedValue(overrides.office || { escalationManagerLawyerIds: [] }) },
+    office: {
+      findUnique: jest.fn().mockResolvedValue(overrides.office || { escalationManagerLawyerIds: [] }),
+      findMany: jest.fn().mockResolvedValue(overrides.officeSettings || defaultOfficeSettings),
+    },
     lawyer: { findMany: jest.fn().mockResolvedValue(overrides.managers || []) },
     user: { findMany: jest.fn().mockResolvedValue(overrides.admins || []) },
     notificationQueue: { create: jest.fn() },
@@ -231,6 +240,92 @@ describe("PoaExpiryDeliveryService", () => {
     }));
     expect(delivery.update.mock.calls[0][0].data.lastError.length).toBeLessThanOrEqual(500);
   });
+
+  // ACT-07: büro-geneli POA expiry ayarları (eşik/enable/alıcı-override)
+  it("büro poaExpiryNotificationEnabled=false ise o büronun POA'ları atlanır, mail gitmez", async () => {
+    const { service, notifier } = build({
+      poas: [poa({ lawyers: [link(lawyer())] })],
+      officeSettings: [{ tenantId: "t1", poaExpiryNotificationEnabled: false, poaExpiryThresholdDays: 30, poaExpiryRecipientLawyerIds: [] }],
+    });
+
+    const result = await service.sendExpiringPoaNotifications(NOW);
+
+    expect(result.skipped).toBe(1);
+    expect(result.sent).toBe(0);
+    expect(notifier.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("büronun özel eşiği (thresholdDays) mevcut vadeyi kapsamıyorsa POA atlanır", async () => {
+    // EXPIRY = 2026-07-20, NOW = 2026-06-27 → ~23 gün kaldı; eşik 10 gün olursa dışarıda kalır.
+    const { service, notifier } = build({
+      poas: [poa({ lawyers: [link(lawyer())] })],
+      officeSettings: [{ tenantId: "t1", poaExpiryNotificationEnabled: true, poaExpiryThresholdDays: 10, poaExpiryRecipientLawyerIds: [] }],
+    });
+
+    const result = await service.sendExpiringPoaNotifications(NOW);
+
+    expect(result.skipped).toBe(1);
+    expect(notifier.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("büronun özel eşiği genişse (60 gün) 23 gün kalan POA dahil edilir ve windowKey eşiği yansıtır", async () => {
+    const { service, notifier, delivery } = build({
+      poas: [poa({ lawyers: [link(lawyer())] })],
+      officeSettings: [{ tenantId: "t1", poaExpiryNotificationEnabled: true, poaExpiryThresholdDays: 60, poaExpiryRecipientLawyerIds: [] }],
+    });
+
+    const result = await service.sendExpiringPoaNotifications(NOW);
+
+    expect(result.sent).toBe(1);
+    expect(notifier.sendEmail).toHaveBeenCalledTimes(1);
+    expect(delivery.create.mock.calls[0][0].data.windowKey).toBe("D60");
+    expect(delivery.create.mock.calls[0][0].data.dedupeKey).toContain(":D60");
+  });
+
+  it("büronun poaExpiryRecipientLawyerIds override'ı geçerliyse waterfall'ı atlar, OFFICE_OVERRIDE kullanılır", async () => {
+    const overrideLawyer = lawyer({ id: "override-1", email: "override@law.test" });
+    const primary = lawyer({ id: "law-primary", email: "primary@law.test", userId: "user-primary" });
+    const { service, prisma, notifier, delivery } = build({
+      poas: [poa({ lawyers: [link(primary, { isPrimary: true })] })],
+      officeSettings: [{ tenantId: "t1", poaExpiryNotificationEnabled: true, poaExpiryThresholdDays: 30, poaExpiryRecipientLawyerIds: ["override-1"] }],
+      managers: [overrideLawyer],
+    });
+
+    await service.sendExpiringPoaNotifications(NOW);
+
+    expect(prisma.lawyer.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ tenantId: "t1", id: { in: ["override-1"] }, isActive: true }),
+    }));
+    expect(notifier.sendEmail.mock.calls[0][1]).toBe("override@law.test");
+    expect(delivery.create.mock.calls[0][0].data.recipientSource).toBe("OFFICE_OVERRIDE");
+  });
+
+  it("override tanımlı ama geçerli avukat bulunamazsa mevcut waterfall'a (primary) düşer", async () => {
+    const primary = lawyer({ id: "law-primary", email: "primary@law.test", userId: "user-primary" });
+    const { service, notifier, delivery } = build({
+      poas: [poa({ lawyers: [link(primary, { isPrimary: true })] })],
+      officeSettings: [{ tenantId: "t1", poaExpiryNotificationEnabled: true, poaExpiryThresholdDays: 30, poaExpiryRecipientLawyerIds: ["missing-1"] }],
+      managers: [], // override id çözülemez (silinmiş/pasif)
+    });
+
+    await service.sendExpiringPoaNotifications(NOW);
+
+    expect(notifier.sendEmail.mock.calls[0][1]).toBe("primary@law.test");
+    expect(delivery.create.mock.calls[0][0].data.recipientSource).toBe("PRIMARY_ATTORNEY");
+  });
+
+  it("office kaydı hiç yoksa (findMany boş) DEFAULT (enabled, 30 gün) davranış korunur", async () => {
+    const { service, notifier, delivery } = build({
+      poas: [poa({ lawyers: [link(lawyer())] })],
+      officeSettings: [],
+    });
+
+    const result = await service.sendExpiringPoaNotifications(NOW);
+
+    expect(result.sent).toBe(1);
+    expect(notifier.sendEmail).toHaveBeenCalledTimes(1);
+    expect(delivery.create.mock.calls[0][0].data.windowKey).toBe("D30");
+  });
 });
 
 describe("AutomationService POA queue bypass", () => {
@@ -247,7 +342,7 @@ describe("AutomationService POA queue bypass", () => {
     const poaDelivery: any = {
       sendExpiringPoaNotifications: jest.fn().mockResolvedValue({ scanned: 1, recipients: 1, sent: 1, failed: 0, skipped: 0 }),
     };
-    const service = new AutomationService(prisma, {} as any, poaDelivery);
+    const service = new AutomationService(prisma, {} as any, poaDelivery, {} as any);
 
     await service.sendExpiringPoaNotifications();
 

@@ -210,6 +210,27 @@ export class OfficeController {
     return this.officeService.updateIik78Settings(tenantId, data, userId);
   }
 
+  // ACT-07: Vekalet Süresi Uyarısı ayarlarını getir
+  @Get("poa-expiry-settings")
+  getPoaExpirySettings(@CurrentUser("tenantId") tenantId: string) {
+    return this.officeService.getPoaExpirySettings(tenantId);
+  }
+
+  // ACT-07: Vekalet Süresi Uyarısı ayarlarını güncelle
+  @Put("poa-expiry-settings")
+  updatePoaExpirySettings(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Body()
+    data: {
+      poaExpiryNotificationEnabled?: boolean;
+      poaExpiryThresholdDays?: number;
+      poaExpiryRecipientLawyerIds?: string[];
+    }
+  ) {
+    return this.officeService.updatePoaExpirySettings(tenantId, data, userId);
+  }
+
   // Görev & Eskalasyon ayarlarını getir
   @Get("escalation-settings")
   getEscalationSettings(@CurrentUser("tenantId") tenantId: string) {
