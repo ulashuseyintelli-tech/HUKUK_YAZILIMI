@@ -6,10 +6,10 @@
 import { useEffect, useState } from "react";
 import { officeApprovalApi, type OfficeApprovalSummary, type OfficeApprovalDetail } from "@/lib/api/office-approval";
 import { relativeTime } from "@/lib/relative-time";
-import { CopyButton } from "@/components/error/CopyButton";
 import { useAuth } from "@/lib/auth-context";
 import { STATUS_LABELS } from "./status-labels";
 import { OfficeApprovalDecisionActions } from "./OfficeApprovalDecisionActions";
+import { ApprovalIntentSummary } from "./ApprovalIntentSummary";
 
 interface Props {
   requestId: string | null;
@@ -79,9 +79,6 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
 
   if (!requestId) return null;
 
-  const savedIntentJson = detail ? JSON.stringify(detail.savedIntent, null, 2) : "";
-  const replacementJson =
-    detail?.replacementSavedIntent != null ? JSON.stringify(detail.replacementSavedIntent, null, 2) : "";
   const statusLabel = detail ? STATUS_LABELS[detail.status] ?? detail.status : "";
 
   return (
@@ -128,21 +125,23 @@ export function OfficeApprovalDetailDrawer({ requestId, onClose, onDecided }: Pr
             )}
 
             <div className="border-t pt-4 mt-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-500">Kayıtlı Niyet (savedIntent)</span>
-                <CopyButton value={savedIntentJson} ariaLabel="savedIntent kopyala" />
-              </div>
-              <pre className="max-h-96 overflow-auto bg-gray-50 text-xs p-3 rounded border">{savedIntentJson}</pre>
+              <ApprovalIntentSummary
+                title="Kayıtlı Niyet (savedIntent)"
+                actionCode={detail.actionCode}
+                savedIntent={detail.savedIntent}
+                context={{ financeVisibility: detail.financeVisibility }}
+                copyAriaLabel="savedIntent kopyala"
+              />
             </div>
 
             {detail.replacementSavedIntent != null && (
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-gray-500">Değiştirilmiş Niyet (replacementSavedIntent)</span>
-                  <CopyButton value={replacementJson} ariaLabel="replacementSavedIntent kopyala" />
-                </div>
-                <pre className="max-h-96 overflow-auto bg-gray-50 text-xs p-3 rounded border">{replacementJson}</pre>
-              </div>
+              <ApprovalIntentSummary
+                title="Değiştirilmiş Niyet (replacementSavedIntent)"
+                actionCode={detail.actionCode}
+                savedIntent={detail.replacementSavedIntent}
+                context={{ financeVisibility: detail.financeVisibility }}
+                copyAriaLabel="replacementSavedIntent kopyala"
+              />
             )}
 
             <OfficeApprovalDecisionActions
