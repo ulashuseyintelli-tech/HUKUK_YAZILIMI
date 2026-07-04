@@ -82,6 +82,7 @@ BACKLOG
 | MPB-016 | Alacak Kalemi | Mixed-source interest resolution (Kademe 1.5, resolveInterestConfig) | PR #898 squash merged, SHA `a8e71a91`; 2026/9502 canonical balance artık üretiliyor; 2026/9604 ve 2026/9605 DATA/PIPELINE blocker olarak açık kalıyor (engine bug değil) |
 | MPB-017 | Debtor | CaseDebtor lifecycle, passivation, passive guards and UI visibility | PR #255/#257/#261/#798 merged; repo verification confirmed passivation, passive writer guards, ACTIVE/includePassive readers and passive UI safety; focused backend tests PASS (5 suites, 42 tests); web passive tests present, local Vitest blocked by toolchain startup error |
 | MPB-018 | Debtor | Debtor identity / Party Registry / duplicate hardening | Repo verification confirmed duplicate identity guards, similar-name review, identity format/checksum validation and identity drift fixes; Party Registry remains design-only/HOLD by decision; focused backend tests PASS (3 suites, 19 tests) |
+| MPB-019 | Debtor | Tebligat `caseDebtorId/addressId` integrity | Repo verification confirmed `Tebligat.caseDebtorId` FK, active CaseDebtor create guard, debtor-owned `addressId` guard and tebligat-to-CaseDebtor sync; PR #243/#889 plus focused backend tests PASS (3 suites, 33 tests) |
 | MPB-027 | Security | AddressTask auth, tenant isolation and data-integrity hardening | PR #202/#207/#261 merged; repo verification confirmed AddressTask auth/tenant/data-integrity hardening; focused AddressTask tests PASS (3 suites, 67 tests) |
 
 ## Items
@@ -350,7 +351,11 @@ Depends On: —
 Unlock Condition: Gerçek approval hacmi (mutation/accounting yüzeyleri canlı)
 Estimated Size: M (Claude FE-only)
 Related Modules: web components/office-approval, lib/api/office-approval, guarded-edge
-Status: BACKLOG
+Status: DONE (governance bookkeeping correction, 2026-07-04 — Master Triage ARC-05 split-verdict
+re-verification: bu iş fiilen teslim edilmiş, BACKLOG kalması repository ile çelişiyordu; yeni
+geliştirme/reimplementasyon YOK, yalnız statü düzeltmesi)
+Delivered by: PR #823 (P4-4 Office Approval Inbox read-only UI), PR #832 (P4 Office Approval
+Decision UI — drawer içi karar aksiyonları)
 
 ---
 

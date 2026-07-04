@@ -72,6 +72,17 @@ export const officeApprovalApi = {
     return data.data;
   },
 
+  /**
+   * GET /office-approvals/mine — çağıranın KENDİ oluşturduğu talepler (tüm statüler, requester=self).
+   * PAYOUT-APPROVAL-2 PR-2b: payout talebi sahibinin "onay bekliyor/onaylandı, kesinleştir" akışı
+   * bunu kullanır — inbox() bunun tersini yapar (kendi talebini HARİÇ tutar), mine() tam tersi.
+   */
+  getMine: async (status?: OfficeApprovalStatusValue | ""): Promise<OfficeApprovalSummary[]> => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+    const { data } = await apiClient.get<OfficeApprovalListResponse>(`/office-approvals/mine${qs}`);
+    return data.data;
+  },
+
   /** GET /office-approvals/:id — tenant-scoped + görünürlük (requester ∨ eligible-approver); aksi 404. */
   getDetail: async (id: string): Promise<OfficeApprovalDetail> => {
     const { data } = await apiClient.get<OfficeApprovalDetailResponse>(`/office-approvals/${encodeURIComponent(id)}`);
