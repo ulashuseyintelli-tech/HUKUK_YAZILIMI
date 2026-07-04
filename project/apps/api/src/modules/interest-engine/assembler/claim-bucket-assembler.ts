@@ -6,7 +6,8 @@
  *  - Q3: bucket.amount = demandedAmount ?? amount; collectedAmount DÜŞÜLMEZ (tahsilat = G4b Payment).
  *  - Q4: costs/ancillaries AYRI projeksiyon olarak toplanır; bucket'lara DAĞITILMAZ.
  *  - Q6: INTEREST/PRE_INTEREST/POST_INTEREST DIŞLANIR (motor faizi yeniden hesaplar; sabit-tutar=E-G3).
- *  - Q2: faiz konfig çözüm zinciri (principal → tek-belirsiz-değil case INTEREST config → Case-level →
+ *  - Q2: faiz konfig çözüm zinciri (principal → [1.5: item-tarih+case-tür mixed-source, ALC-P0-3B3
+ *        owner-locked 2026-07-04] → tek-belirsiz-değil case INTEREST config → Case-level →
  *        diagnostic). Otomatik tahmin YOK; silent default YOK.
  *  - Gb: startDate çözülemezse diagnostic (issueDate/dueDate fallback YOK).
  *  - Gc: faiz konfig çözülemeyen principal → diagnostic + bucket ÜRETME (faizsiz bucket yok).
@@ -294,8 +295,9 @@ function buildPrincipalBucket(
 }
 
 /**
- * Q2 zinciri: 1) principal kendi konfig → 2) tek-belirsiz-değil case INTEREST config →
- * 3) Case-level (yalnız tür+başlangıç) → 4) MISSING_INTEREST_CONFIG (Gc: bucket üretme).
+ * Q2 zinciri: 1) principal kendi konfig → 1.5) item başlangıç tarihi + case faiz türü
+ * (ALC-P0-3B3, mixed-source, owner-locked 2026-07-04) → 2) tek-belirsiz-değil case INTEREST
+ * config → 3) Case-level (yalnız tür+başlangıç) → 4) MISSING_INTEREST_CONFIG (Gc: bucket üretme).
  */
 function resolveInterestConfig(
   item: ClaimItemInput,
@@ -312,6 +314,20 @@ function resolveInterestConfig(
       interestType: item.interestType as string,
       interestRate: item.interestRate ?? null,
       interestStartDate: item.interestStartDate ?? null,
+    };
+  }
+
+  // 1.5) MIXED-SOURCE (ALC-P0-3B3, owner-locked 2026-07-04): faiz TÜRÜ dosya/takip seviyesinde
+  // tektir (Case.interestType), faiz BAŞLANGIÇ TARİHİ ise kalem seviyesinde farklılaşabilir
+  // (ClaimItem.interestStartDate). item kendi türünü taşımıyor ama kendi tarihini taşıyorsa ve
+  // case bir tür sağlıyorsa, bu kombinasyon hukuken meçhul/tahmin DEĞİL — açık, meşru bir konfig
+  // kaynağıdır. Kademe 3'ün case-tarihini SESSİZCE item-tarihinin üzerine yazmasını önlemek için
+  // ayrı, adlandırılmış bir kademe olarak eklendi (mevcut atomik-kaynak modeli bozulmadı).
+  if (item.interestStartDate != null && ctx.caseInterest?.interestType) {
+    return {
+      interestType: ctx.caseInterest.interestType,
+      interestRate: item.interestRate ?? null,
+      interestStartDate: item.interestStartDate,
     };
   }
 

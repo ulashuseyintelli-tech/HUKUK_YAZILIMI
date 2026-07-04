@@ -221,6 +221,71 @@ describe('claim-bucket-assembler (G4a)', () => {
     });
   });
 
+  describe('Kademe 1.5 mixed-source (ALC-P0-3B3, owner-locked 2026-07-04)', () => {
+    it('item kendi başlangıç tarihini taşıyor + item.interestType YOK + case.interestType VAR (2026/9502 senaryosu) → bucket üretilir, case türü + item tarihi kullanılır', () => {
+      const res = assembleClaimBuckets(
+        [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 200000, interestStartDate: '2026-06-24' })],
+        { interestType: 'AVANS' },
+      );
+      expect(res.buckets).toHaveLength(1);
+      expect(res.buckets[0]).toMatchObject({ startDate: '2026-06-24' });
+      expect(res.diagnostics).toHaveLength(0);
+    });
+
+    it('item hem kendi tarihini hem case kendi tarihini taşıyor → item tarihi öncelikli (case tarihi sessizce üzerine yazmaz)', () => {
+      const res = assembleClaimBuckets(
+        [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000, interestStartDate: '2026-06-24' })],
+        { interestType: 'YASAL', interestStartDate: '2025-01-01' },
+      );
+      expect(res.buckets).toHaveLength(1);
+      expect(res.buckets[0]).toMatchObject({ interestType: InterestTypeCode.LEGAL_3095, startDate: '2026-06-24' });
+    });
+
+    it('item kendi TAM konfigini taşıyorsa (kademe 1) mixed-source devreye girmez — item türü case türünü ezmez', () => {
+      const res = assembleClaimBuckets(
+        [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000, interestType: 'YASAL', interestStartDate: '2026-06-24' })],
+        { interestType: 'AVANS', interestStartDate: '2025-01-01' },
+      );
+      expect(res.buckets).toHaveLength(1);
+      expect(res.buckets[0]).toMatchObject({ interestType: InterestTypeCode.LEGAL_3095, startDate: '2026-06-24' });
+    });
+
+    it('mixed-source + fixed tür + item.interestRate mevcut → fixedRate item oranından set edilir', () => {
+      const res = assembleClaimBuckets(
+        [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000, interestStartDate: '2026-06-24', interestRate: 48 })],
+        { interestType: 'SABIT' },
+      );
+      expect(res.buckets).toHaveLength(1);
+      expect(res.buckets[0]).toMatchObject({ fixedRate: 0.48, startDate: '2026-06-24' });
+    });
+
+    it('mixed-source + fixed tür + item.interestRate YOK → FIXED_RATE_REQUIRED (rate hâlâ hiçbir yerden gelmiyor)', () => {
+      const res = assembleClaimBuckets(
+        [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000, interestStartDate: '2026-06-24' })],
+        { interestType: 'SABIT' },
+      );
+      expect(res.buckets).toHaveLength(0);
+      expect(res.diagnostics[0]).toMatchObject({ code: 'FIXED_RATE_REQUIRED', claimItemId: 'p1' });
+    });
+
+    it('item.interestStartDate YOK, yalnız case.interestType var → mixed-source tetiklenmez, kademe 3 (case tam fallback) çalışmaya devam eder', () => {
+      const res = assembleClaimBuckets(
+        [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000 })],
+        { interestType: 'YASAL', interestStartDate: '2025-03-01' },
+      );
+      expect(res.buckets).toHaveLength(1);
+      expect(res.buckets[0]).toMatchObject({ startDate: '2025-03-01' });
+    });
+
+    it('item.interestStartDate var ama case.interestType YOK (2026/9604 ve 9605 senaryosu) → mixed-source tetiklenmez, MISSING_INTEREST_CONFIG ile biter', () => {
+      const res = assembleClaimBuckets(
+        [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000 })],
+      );
+      expect(res.buckets).toHaveLength(0);
+      expect(res.diagnostics).toEqual([{ code: 'MISSING_INTEREST_CONFIG', claimItemId: 'p1' }]);
+    });
+  });
+
   describe('Gb start date / E-G1 tür', () => {
     it('startDate çözülemez → MISSING_START_DATE (issueDate fallback yok)', () => {
       const res = assembleClaimBuckets([
