@@ -1,14 +1,20 @@
 /**
  * Faz-B güvenlik (service seviyesi): GET /office secret maskeleme + ayar değişikliği audit.
+ * ACT-02: at-rest AES-256-GCM şifreleme (updateSmtpSettings/updateSmsSettings encrypt,
+ * getFullSmtpSettings/getFullSmsSettings decrypt; legacy düz-metin geriye-uyumlu okunur).
  *
  * Kapatılan açıklar:
  *  1) GET /office HAM Office satırını döndürüp düz-metin smtpPass/smsApiKey/smsApiSecret
  *     sızdırıyordu → getPublicOffice secret'ları maskeler; internal getFull* HAM kalır.
  *  2) Ayar değişiklikleri AuditLog'a yazılmıyordu → update* artık audit.log çağırır.
  *     Secret'lar oldValues/newValues içinde maskeli (AuditLog ikinci sızıntı kanalı OLMASIN).
+ *  3) (ACT-02) Şema "şifrelenmiş" diyordu ama DB'de düz-metin saklanıyordu → artık gerçekten
+ *     at-rest şifreli; ROW fixture'daki "TOP-SECRET"/"KEY-123"/"SECRET-XYZ" bilinçli olarak
+ *     LEGACY düz-metin formatında (enc:v1: öneki yok) — geriye-uyumluluk testi için.
  */
 
 import { OfficeService } from "../office.service";
+import { isEncryptedCredential } from "../office-credential-encryption.util";
 
 const ROW = {
   id: "o1",
@@ -23,6 +29,8 @@ const ROW = {
   bankAccounts: [],
   lawyers: [],
 };
+
+const ORIGINAL_ENCRYPTION_KEY = process.env.CREDENTIAL_ENCRYPTION_KEY;
 
 function makeService(officeRow: any) {
   const prisma = {
@@ -41,6 +49,14 @@ function makeService(officeRow: any) {
 }
 
 describe("OfficeService Faz-B security: GET maskeleme + audit", () => {
+  beforeEach(() => {
+    process.env.CREDENTIAL_ENCRYPTION_KEY = "test-encryption-key-office-spec";
+  });
+  afterEach(() => {
+    if (ORIGINAL_ENCRYPTION_KEY === undefined) delete process.env.CREDENTIAL_ENCRYPTION_KEY;
+    else process.env.CREDENTIAL_ENCRYPTION_KEY = ORIGINAL_ENCRYPTION_KEY;
+  });
+
   it("getPublicOffice → secret alanlar maskeli, secret-olmayanlar aynen", async () => {
     const { service } = makeService(ROW);
     const out: any = await service.getPublicOffice("t1");
@@ -63,6 +79,62 @@ describe("OfficeService Faz-B security: GET maskeleme + audit", () => {
     const { service } = makeService(ROW);
     const full = await service.getFullSmtpSettings("t1");
     expect(full.smtpPass).toBe("TOP-SECRET");
+  });
+
+  it("[ACT-02] getFullSmtpSettings → LEGACY düz-metin (enc:v1: öneki yok) geriye-uyumlu okunur (backfill gerekmez)", async () => {
+    const { service } = makeService(ROW); // ROW.smtpPass = "TOP-SECRET", şifrelenmemiş
+    expect(isEncryptedCredential(ROW.smtpPass)).toBe(false);
+    const full = await service.getFullSmtpSettings("t1");
+    expect(full.smtpPass).toBe("TOP-SECRET");
+  });
+
+  it("[ACT-02] updateSmtpSettings → smtpPass DB'ye ŞİFRELİ yazılır (düz-metin persist edilmez)", async () => {
+    const { service, prisma } = makeService(ROW);
+    await service.updateSmtpSettings("t1", { smtpPass: "BRAND-NEW-PASS" }, "user-1");
+    const persisted = prisma.office.update.mock.calls[0][0].data.smtpPass;
+    expect(persisted).not.toBe("BRAND-NEW-PASS");
+    expect(isEncryptedCredential(persisted)).toBe(true);
+  });
+
+  it("[ACT-02] updateSmtpSettings→getFullSmtpSettings round-trip: yeni parola şifrelenir, sonra doğru çözülür", async () => {
+    const { service, prisma } = makeService(ROW);
+    await service.updateSmtpSettings("t1", { smtpPass: "ROUND-TRIP-PASS" }, "user-1");
+    const persistedRow = { ...ROW, ...prisma.office.update.mock.calls[0][0].data };
+    const { service: service2 } = makeService(persistedRow);
+    const full = await service2.getFullSmtpSettings("t1");
+    expect(full.smtpPass).toBe("ROUND-TRIP-PASS");
+  });
+
+  it("[ACT-02] updateSmsSettings → smsApiKey/smsApiSecret DB'ye ŞİFRELİ yazılır", async () => {
+    const { service, prisma } = makeService(ROW);
+    await service.updateSmsSettings("t1", { smsApiKey: "NEW-KEY", smsApiSecret: "NEW-SECRET" }, "user-1");
+    const persisted = prisma.office.update.mock.calls[0][0].data;
+    expect(persisted.smsApiKey).not.toBe("NEW-KEY");
+    expect(persisted.smsApiSecret).not.toBe("NEW-SECRET");
+    expect(isEncryptedCredential(persisted.smsApiKey)).toBe(true);
+    expect(isEncryptedCredential(persisted.smsApiSecret)).toBe(true);
+  });
+
+  it("[ACT-02] CREDENTIAL_ENCRYPTION_KEY yokken updateSmtpSettings(smtpPass) → THROW, prisma.update ÇAĞRILMAZ (fail-closed)", async () => {
+    delete process.env.CREDENTIAL_ENCRYPTION_KEY;
+    const { service, prisma } = makeService(ROW);
+    await expect(service.updateSmtpSettings("t1", { smtpPass: "X" }, "user-1")).rejects.toThrow();
+    expect(prisma.office.update).not.toHaveBeenCalled();
+  });
+
+  it("[ACT-02] CREDENTIAL_ENCRYPTION_KEY yokken updateSmsSettings(smsApiKey) → THROW, prisma.update ÇAĞRILMAZ (fail-closed)", async () => {
+    delete process.env.CREDENTIAL_ENCRYPTION_KEY;
+    const { service, prisma } = makeService(ROW);
+    await expect(service.updateSmsSettings("t1", { smsApiKey: "X" }, "user-1")).rejects.toThrow();
+    expect(prisma.office.update).not.toHaveBeenCalled();
+  });
+
+  it("[ACT-02] CREDENTIAL_ENCRYPTION_KEY yokken yalnız smtpHost güncellenirse (smtpPass YOK) → anahtar GEREKMEZ, başarılı", async () => {
+    delete process.env.CREDENTIAL_ENCRYPTION_KEY;
+    const { service, prisma } = makeService(ROW);
+    await expect(service.updateSmtpSettings("t1", { smtpHost: "smtp.new.com" }, "user-1")).resolves.toBeDefined();
+    expect(prisma.office.update).toHaveBeenCalledTimes(1);
+    expect(prisma.office.update.mock.calls[0][0].data.smtpHost).toBe("smtp.new.com");
   });
 
   it("update() → audit.log OFFICE_SETTINGS + userId + sadece gönderilen alanın diff'i", async () => {

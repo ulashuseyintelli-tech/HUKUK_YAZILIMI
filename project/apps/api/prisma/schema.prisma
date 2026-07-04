@@ -1842,15 +1842,15 @@ model Office {
   smtpHost      String? // smtp.gmail.com, smtp.yandex.com, vb.
   smtpPort      Int? // 587, 465, vb.
   smtpUser      String? // E-posta adresi
-  smtpPass      String? // Uygulama şifresi (şifrelenmiş)
+  smtpPass      String? // Uygulama şifresi — at-rest AES-256-GCM şifreli (ACT-02, office-credential-encryption.util.ts); legacy düz-metin satırlar geriye-uyumlu okunur
   smtpSecure    Boolean @default(false) // TLS/SSL
   smtpFromName  String? // Gönderen adı
   smtpFromEmail String? // Gönderen e-posta
 
   // SMS Ayarları (Opsiyonel)
   smsProvider  String? // NETGSM, ILETI_MERKEZI, vb.
-  smsApiKey    String?
-  smsApiSecret String?
+  smsApiKey    String? // at-rest AES-256-GCM şifreli (ACT-02); legacy düz-metin geriye-uyumlu
+  smsApiSecret String? // at-rest AES-256-GCM şifreli (ACT-02); legacy düz-metin geriye-uyumlu
   smsSender    String? // Gönderen adı
 
   // Otomatik Tebrik Ayarları
