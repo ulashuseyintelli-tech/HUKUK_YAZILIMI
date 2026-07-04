@@ -658,3 +658,46 @@ Unlock Condition: Owner + Av. sign-off (finansal davranış değişikliği)
 Estimated Size: L (schema + servis + test + geriye-dönük veri etkisi)
 Related Modules: collection.service.ts, Collection (schema), LedgerEntry
 Status: BACKLOG — kod değişikliği YAPILMADI, yalnız backlog kaydı. Ayrı, dikkatli bir GO-IMPLEMENT gerektirir.
+---
+
+## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
+
+2026-07-04 tarihli D6 GO-ANALYZE (14 ajanlı workflow: repo forensics + bağımsız hukuki/mimari analiz + adversarial kritik + sentez) sonucu owner tarafından ratifiye edilen nihai mimari: bkz `docs/design/d6-final-architecture.md` (kanonik karar kaydı) ve `decision-log.md` 2026-07-04 satırları. **D6A-1** (PR #878) ve **D6A-2 çekirdek** (PR #880, `DebtorCrossCaseNotification`) KAPALI/DOKUNULMAZ — aşağıdaki maddeler yalnız bunların eksik dışa-açılan yüzünü (D6A-2-SURFACE) ve ayrı-epic frameworkleri (ESF, IAF) kapsar. "D6B" etiketi emekli edilmiştir, kullanılmaz.
+
+---
+
+ID: D6A-2-SURFACE-1
+Title: D6A-2 dışa açılan yüzü — list/acknowledge endpoint + expiry cron + gözlem
+Problem: `DebtorCrossCaseNotification` (D6A-2, PR #880) çekirdek üretimi canlı ama backend-only — hiçbir HTTP endpoint listelemiyor/acknowledge etmiyor (5 controller'da sıfır referans, grep-doğrulandı); `expireStaleNotifications()` hiçbir cron'a bağlı değil (30 günlük PENDING kayıtlar sınırsız birikiyor); `resolveRecipients()` boş dönerse hiçbir iz/log kalmıyor.
+Business Value: Üretilen bildirimler gerçekten sorumlu avukat/personel tarafından görülüp kapatılabilir hale gelir; sessiz-veri-kaybı riski gözlemlenebilir olur.
+Technical Value: Mevcut şema/servis üzerine ince bir yüzey — EK MİGRASYON GEREKMEZ (recipientUserId/status/dedupeKey/fieldGroup/severity/changeSummary/expiresAt hepsi mevcut). Kapsam: (1) yeni `listForRecipient()` servis metodu + `GET /debtors/cross-case-notifications?status=PENDING` (tenantId+recipientUserId JWT'den zorunlu türetilir, client veremez), (2) `POST /debtors/cross-case-notifications/:id/acknowledge` (mevcut `acknowledge()` sarmalanır), (3) expiry cron — `automation.service.ts` içine yeni `@Cron(EVERY_HOUR)` metodu olarak (domain servisine gömülmez, mevcut `checkNotificationExpiries`/`sendExpiringPoaNotifications` idiom'u), (4) `resolveRecipients()` boş dönüşünde `logger.warn` (owner Q1 kararı gereği — DB constraint YOK, teknik olarak mümkün/anomaly kabul edilir), (5) create()/transaction hata yolu için mevcut Hata Logları observability'e event hook, (6) raporlama sorguları (Unacknowledged/byFieldGroup/bySeverity) — hepsi tek `groupBy()` ailesi, ayrı efor değil.
+Priority: HIGH
+Depends On: — (D6A-2 çekirdek zaten canlı)
+Unlock Condition: Owner GO-IMPLEMENT onayı (bu backlog kaydı implementasyon yetkisi VERMEZ; Q2-Q6 — retention/purge, FK onDelete, i18n, Tebligat-köprü, action-note ayrımı — implementasyon önce/sırasında triage edilmeli)
+Estimated Size: M (BE — dar CRUD-benzeri, migration yok)
+Related Modules: debtor-cross-case-notification.service.ts, debtor.controller.ts (veya yeni küçük controller), automation.service.ts
+Status: READY — Q1 owner tarafından cevaplandı (bkz decision-log.md 2026-07-04), governance zinciri FAZ 0 ile tamamlandı; ayrı GO-IMPLEMENT teklifi ile başlatılabilir.
+
+ID: ESF-1
+Title: Entity Status Framework — design-gate (paylaşılan durum/rozet katmanı)
+Problem: "Dikkat gerekiyor" göstergesi aynı problem için bağımsız olarak en az 3 kez çözülmüş (DebtorIssue/AlertBadge, POA sayfa-lokal Pill, Case Badge+statusColors); 11+ bağımsız `statusColors`/`STATUS_COLORS` tanımı var, paylaşılan tip yok.
+Business Value: Tutarlı, tek-yerden-yönetilen risk/durum göstergesi; yeni domainlerin tekrar aynı tekerleği icat etmesini önler.
+Technical Value: Yeni Prisma modeli DEĞİL — paylaşılan `EntityStatusIndicator` TypeScript arayüzü + her domainin salt-okuma provider fonksiyonu (adapter pattern). D6A-2 buna yalnız READ-ONLY provider ile besler (yazma yetkisi D6A-2'de kalır). MALİYET UYARISI: bugün BE/FE arasında paylaşılan tip paketi yok — muhtemelen yeni workspace paketi + build/export/tsconfig-path zinciri gerekir, "sadece bir interface" kadar ucuz değil.
+Priority: MEDIUM
+Depends On: — (D6A-2-SURFACE'ı beklemez, bağımsız)
+Unlock Condition: Paylaşılan tip paketi maliyeti netleşmeli; owner design-gate onayı
+Estimated Size: L (cross-cutting, BE+FE)
+Related Modules: debtor.service.ts (DebtorIssue), settings/notifications (POA Pill), cases/page.tsx (Badge/statusColors), OfficeApprovalRequest (idiom emsali)
+Status: BACKLOG — GO-ANALYZE seviyesinde kalır, implementasyon başlamaz.
+
+ID: IAF-1
+Title: Internal Alert Feed — genel cross-domain in-app bildirim/bell-feed (Option C Hybrid)
+Problem: 3 bağımsız kalıcı-bildirim tablosu var (NotificationQueue, PoaExpiryNotificationDelivery, DebtorCrossCaseNotification); `components/notifications/` (6 dosya) tamamen ölü kod (mock-data, hiç import edilmiyor). Gerçek per-user bell/feed altyapısı yok.
+Business Value: İleride üçüncü bağımsız kalıcı-bildirim ihtiyacı doğarsa tekrar dar tablo icat etmek yerine tek feed'e yazılabilir.
+Technical Value: Yeni ve BAĞIMSIZ `InternalAlert` modeli — mevcut 3 tabloyu geriye dönük birleştirmeye ÇALIŞILMAZ (referans bütünlüğünü bozar, nullable-enflasyonu yaratır). Option C Hybrid: mevcut tablolar DOKUNULMAZ, yeni model yalnız BUNDAN SONRAKİ ihtiyaçlar için açılır.
+Priority: LOW
+Depends On: —
+Unlock Condition: (a) üçüncü bağımsız kalıcı-bildirim ihtiyacı doğması VE (b) gerçek bir merkezi UI yüzeyi (bell/feed) kararlaştırılması — ikisi de bugün gerçekleşmedi.
+Estimated Size: L (yeni domain-bağımsız modül)
+Related Modules: NotificationQueue, PoaExpiryNotificationDelivery, DebtorCrossCaseNotification, components/notifications/ (ölü kod, reuse/temizlik ayrıca değerlendirilmeli)
+Status: DEFERRED — owner-gated, tetik koşulları (a)+(b) gerçekleşmeden açılmaz.
