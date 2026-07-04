@@ -199,29 +199,30 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                    User[]
-  cases                    Case[]
-  debtors                  Debtor[]
-  clients                  Client[]
-  tasks                    Task[]
-  escalationEvents         EscalationEvent[]
-  caseTaskEscalationEvents CaseTaskEscalationEvent[]
-  poaExpiryDeliveries      PoaExpiryNotificationDelivery[]
-  debtorIntelligence       DebtorIntelligence[]
-  courts                   Court[]
-  collections              Collection[]
-  collectionOverpayments   CollectionOverpayment[]
-  lawyers                  Lawyer[]
-  workflowTemplates        WorkflowTemplate[]
-  executionOffices         ExecutionOffice[]
-  office                   Office? // Her tenant'ın tek bir ofisi var
+  users                        User[]
+  cases                        Case[]
+  debtors                      Debtor[]
+  clients                      Client[]
+  tasks                        Task[]
+  escalationEvents             EscalationEvent[]
+  caseTaskEscalationEvents     CaseTaskEscalationEvent[]
+  poaExpiryDeliveries          PoaExpiryNotificationDelivery[]
+  debtorIntelligence           DebtorIntelligence[]
+  debtorCrossCaseNotifications DebtorCrossCaseNotification[] // D6A-2: persisted targeted push
+  courts                       Court[]
+  collections                  Collection[]
+  collectionOverpayments       CollectionOverpayment[]
+  lawyers                      Lawyer[]
+  workflowTemplates            WorkflowTemplate[]
+  executionOffices             ExecutionOffice[]
+  office                       Office? // Her tenant'ın tek bir ofisi var
 
   // Address Discovery
-  clientInfoRequests ClientInfoRequest[]
+  clientInfoRequests     ClientInfoRequest[]
   clientDocumentRequests ClientDocumentRequest[]
-  uyapQueries        UyapQuery[]
-  institutionLetters InstitutionLetter[]
-  addressResearches  AddressResearch[]
+  uyapQueries            UyapQuery[]
+  institutionLetters     InstitutionLetter[]
+  addressResearches      AddressResearch[]
 
   // Asset Queries (FAZ 4)
   assetQueries AssetQuery[]
@@ -463,23 +464,23 @@ model Client {
   updatedAt DateTime @updatedAt
 
   // İLİŞKİLER
-  cases                   Case[]
-  tasks                   Task[]
-  contacts                ClientContact[]
-  addresses               ClientAddress[]
-  bankAccounts            ClientBankAccount[]
-  powerOfAttorneys        ClientPowerOfAttorney[]
-  poaExpiryDeliveries     PoaExpiryNotificationDelivery[]
-  caseClients             CaseClient[]
-  notifications           ClientNotification[]
-  expenseRequests         ExpenseRequest[]
-  clientApprovalRequests  ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
-  clientStatements        ClientStatement[] // Müvekkil ekstresi (PR-3)
-  clientIntakeLinks       ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
+  cases                      Case[]
+  tasks                      Task[]
+  contacts                   ClientContact[]
+  addresses                  ClientAddress[]
+  bankAccounts               ClientBankAccount[]
+  powerOfAttorneys           ClientPowerOfAttorney[]
+  poaExpiryDeliveries        PoaExpiryNotificationDelivery[]
+  caseClients                CaseClient[]
+  notifications              ClientNotification[]
+  expenseRequests            ExpenseRequest[]
+  clientApprovalRequests     ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
+  clientStatements           ClientStatement[] // Müvekkil ekstresi (PR-3)
+  clientIntakeLinks          ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
   clientIntakeLinkDeliveries ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
-  clientDocumentRequests ClientDocumentRequest[] // Workspace document request artifact kayitlari
-  clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
-  portalUser              ClientPortalUser?
+  clientDocumentRequests     ClientDocumentRequest[] // Workspace document request artifact kayitlari
+  clientIntakeSubmissions    ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
+  portalUser                 ClientPortalUser?
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -834,6 +835,9 @@ model Debtor {
   // PR-D4e-1: saha istihbaratı kayıtları (sonuç+kanıt)
   intelligence DebtorIntelligence[]
 
+  // D6A-2: paylaşılan Debtor değişikliği cross-case bildirimleri (persisted, targeted push)
+  crossCaseNotifications DebtorCrossCaseNotification[]
+
   @@index([tenantId])
   @@index([tenantId, identityNo])
   @@index([tenantId, tckn])
@@ -1136,41 +1140,45 @@ model Case {
   updatedAt DateTime @updatedAt
 
   // İlişkiler
-  debtors                 CaseDebtor[]
-  lawyers                 CaseLawyer[]
-  staff                   CaseStaff[]
-  tasks                   Task[]
-  debtorIntelligence      DebtorIntelligence[]
-  collections             Collection[]
-  collectionOverpayments  CollectionOverpayment[]
-  dues                    Due[]
-  caseInstruments         CaseInstrument[]
-  lifecycleEvents         CaseLifecycle[]
-  enforcementActions      EnforcementAction[]
-  decisionLogs            DecisionLog[]
-  notifications           NotificationQueue[]
-  riskReports             RiskReport[]
-  statusHistory           CaseStatusHistory[]
-  documents               CaseDocument[]
-  groups                  CaseGroup[]
-  stageHistory            CaseStageHistory[]       @relation("CaseStageHistory")
-  caseClients             CaseClient[]
-  tebligatlar             Tebligat[]
-  claimItems              ClaimItem[]
-  ledgerEntries           LedgerEntry[] // Tahsilat/düzeltme kayıtları
-  precautionaryOrders     PrecautionaryOrder[] // İhtiyati haciz kararları
-  expenseRequests         ExpenseRequest[] // Masraf talepleri
-  caseBalance             CaseBalance? // Masraf bakiyesi (1:1)
-  expenseBlockReasons     ExpenseBlockReason[] // "Ödeme/onay yok → işlem yapılmadı" savunma kayıtları (PR-1)
-  clientApprovalRequests  ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
-  clientStatements        ClientStatement[] // Müvekkil ekstresi (PR-3)
-  clientPayoutAllocations     ClientPayoutAllocation[]
-  clientPayoutManualReversals ClientPayoutManualReversal[]
-  clientIntelStatements   ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
-  clientIntakeLinks       ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
-  clientIntakeLinkDeliveries ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
-  clientDocumentRequests ClientDocumentRequest[] // Workspace document request artifact kayitlari
-  clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
+  debtors                       CaseDebtor[]
+  lawyers                       CaseLawyer[]
+  staff                         CaseStaff[]
+  // D6A-2: bu case'de yapılan Debtor değişikliğinin ürettiği bildirimler (source) +
+  // bu case'in başka bir case'teki paylaşılan Debtor değişikliğinden etkilendiği bildirimler (affected)
+  debtorNotificationsAsSource   DebtorCrossCaseNotification[] @relation("DebtorCrossCaseNotificationSource")
+  debtorNotificationsAsAffected DebtorCrossCaseNotification[] @relation("DebtorCrossCaseNotificationAffected")
+  tasks                         Task[]
+  debtorIntelligence            DebtorIntelligence[]
+  collections                   Collection[]
+  collectionOverpayments        CollectionOverpayment[]
+  dues                          Due[]
+  caseInstruments               CaseInstrument[]
+  lifecycleEvents               CaseLifecycle[]
+  enforcementActions            EnforcementAction[]
+  decisionLogs                  DecisionLog[]
+  notifications                 NotificationQueue[]
+  riskReports                   RiskReport[]
+  statusHistory                 CaseStatusHistory[]
+  documents                     CaseDocument[]
+  groups                        CaseGroup[]
+  stageHistory                  CaseStageHistory[]            @relation("CaseStageHistory")
+  caseClients                   CaseClient[]
+  tebligatlar                   Tebligat[]
+  claimItems                    ClaimItem[]
+  ledgerEntries                 LedgerEntry[] // Tahsilat/düzeltme kayıtları
+  precautionaryOrders           PrecautionaryOrder[] // İhtiyati haciz kararları
+  expenseRequests               ExpenseRequest[] // Masraf talepleri
+  caseBalance                   CaseBalance? // Masraf bakiyesi (1:1)
+  expenseBlockReasons           ExpenseBlockReason[] // "Ödeme/onay yok → işlem yapılmadı" savunma kayıtları (PR-1)
+  clientApprovalRequests        ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
+  clientStatements              ClientStatement[] // Müvekkil ekstresi (PR-3)
+  clientPayoutAllocations       ClientPayoutAllocation[]
+  clientPayoutManualReversals   ClientPayoutManualReversal[]
+  clientIntelStatements         ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
+  clientIntakeLinks             ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
+  clientIntakeLinkDeliveries    ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
+  clientDocumentRequests        ClientDocumentRequest[] // Workspace document request artifact kayitlari
+  clientIntakeSubmissions       ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -1363,11 +1371,84 @@ model CaseDebtor {
   // DBND-D5B: Collection.caseDebtorId FK karsi iliskisi
   collections Collection[]
 
+  // D6A-2: bu CaseDebtor'ın (affected tarafı) aldığı cross-case bildirimler
+  crossCaseNotifications DebtorCrossCaseNotification[]
+
   @@unique([caseId, debtorId, role])
   @@index([caseId])
   @@index([caseId, lifecycleStatus])
   @@index([debtorId])
   @@index([serviceStatus])
+}
+
+// D6A-2: Paylaşılan Debtor'un (birden fazla Case'e bağlı) izlenen alanları değiştiğinde,
+// diğer case'lerdeki sorumlu ekibe üretilen iç (in-app), backend-only, persisted, targeted bildirim.
+// Event-bus YOK — DebtorService.update()/addAddress()/updateAddress() içinden senkron üretilir.
+// D6A-1 (debtor-cross-file-alerts, AuditLog-tabanlı pull/computed banner) ile BİRLİKTE yaşar —
+// bu AYRI, ek bir sistemdir; D6A-1 kaldırılmadı/değiştirilmedi.
+model DebtorCrossCaseNotification {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  debtorId String
+  debtor   Debtor @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+
+  // Değişikliğin yapıldığı case (varsa — bugünkü DebtorService.update()/addAddress()/updateAddress()
+  // route'ları caseId taşımaz; bu alan opsiyonel kalır ve bilinmiyorsa hariç tutma uygulanmaz).
+  sourceCaseId String?
+  sourceCase   Case?   @relation("DebtorCrossCaseNotificationSource", fields: [sourceCaseId], references: [id], onDelete: SetNull)
+
+  affectedCaseId       String
+  affectedCase         Case       @relation("DebtorCrossCaseNotificationAffected", fields: [affectedCaseId], references: [id], onDelete: Cascade)
+  affectedCaseDebtorId String
+  affectedCaseDebtor   CaseDebtor @relation(fields: [affectedCaseDebtorId], references: [id], onDelete: Cascade)
+
+  fieldGroup    DebtorNotificationFieldGroup
+  severity      DebtorNotificationSeverity
+  changeSummary String // sabit, PII-sızdırmaz sistem etiketi (ADR-011 uyumlu) — ham eski/yeni değer YOK
+
+  recipientUserId String
+  recipientSource DebtorNotificationRecipientSource
+
+  status         DebtorCrossCaseNotificationStatus @default(PENDING)
+  dedupeKey      String                            @unique
+  acknowledgedAt DateTime?
+  expiresAt      DateTime
+  expiredAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, recipientUserId, status])
+  @@index([tenantId, debtorId])
+  @@index([affectedCaseId])
+  @@index([expiresAt])
+}
+
+enum DebtorNotificationFieldGroup {
+  ADDRESS
+  KEP_ADDRESS
+  IDENTITY
+  NAME
+}
+
+enum DebtorNotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum DebtorNotificationRecipientSource {
+  RESPONSIBLE_LAWYER
+  FALLBACK_LAWYER
+  TEBLIGAT_STAFF
+}
+
+enum DebtorCrossCaseNotificationStatus {
+  PENDING
+  ACKNOWLEDGED
+  EXPIRED
 }
 
 // Tebligat Geçmişi - Audit Trail
@@ -2175,11 +2256,11 @@ enum PowerOfAttorneyType {
 }
 
 model Collection {
-  id           String  @id @default(cuid())
+  id           String      @id @default(cuid())
   tenantId     String
-  tenant       Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   caseId       String
-  case         Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case         Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
   caseDebtorId String? // Hangi borçludan tahsil edildi
   // DBND-D5B: gercek FK (bkz. D5/D5A analiz+trial). onDelete=Restrict BILINCLI (SetNull/Cascade
   // DEGIL) — finansal kayit sessizce bag koparmasin/silinmesin; CaseDebtor bugun zaten hard-delete
@@ -2210,11 +2291,11 @@ model Collection {
   idempotencyKey String
 
   // Mahsup Bilgileri
-  allocations   CollectionAllocation[]
-  ledgerEntries LedgerEntry[]
+  allocations                 CollectionAllocation[]
+  ledgerEntries               LedgerEntry[]
   clientPayoutAllocations     ClientPayoutAllocation[]
   clientPayoutManualReversals ClientPayoutManualReversal[]
-  overpayment   CollectionOverpayment?
+  overpayment                 CollectionOverpayment?
 
   // Açıklama ve Notlar
   description String?
@@ -3283,15 +3364,15 @@ model StaffMember {
   staffType StaffType
 
   // Genel Yetkiler (büro genelinde varsayılan)
-  canCreateCase        Boolean @default(false) // Dosya oluşturabilir
-  canEditCase          Boolean @default(false) // Dosya düzenleyebilir
-  canGenerateDocuments Boolean @default(false) // Belge taslağı hazırlayabilir
-  canApproveDocuments  Boolean @default(false) // Belge onaylayabilir
-  canSeeFinance        Boolean @default(false) // Muhasebe modülünü görebilir
-  canApproveFinance    Boolean @default(false) // Muhasebe işlemi onaylayabilir
+  canCreateCase                   Boolean @default(false) // Dosya oluşturabilir
+  canEditCase                     Boolean @default(false) // Dosya düzenleyebilir
+  canGenerateDocuments            Boolean @default(false) // Belge taslağı hazırlayabilir
+  canApproveDocuments             Boolean @default(false) // Belge onaylayabilir
+  canSeeFinance                   Boolean @default(false) // Muhasebe modülünü görebilir
+  canApproveFinance               Boolean @default(false) // Muhasebe işlemi onaylayabilir
   canPrepareCollectionDisposition Boolean @default(false) // Tahsilat dağıtımı hazırlayabilir (recommend/preview); final approval DEĞİL
-  canSendNotifications Boolean @default(false) // Tebligat gönderebilir
-  isDefaultForNewCases Boolean @default(false) // Yeni dosyalarda otomatik seç
+  canSendNotifications            Boolean @default(false) // Tebligat gönderebilir
+  isDefaultForNewCases            Boolean @default(false) // Yeni dosyalarda otomatik seç
 
   isActive  Boolean @default(true)
   sortOrder Int     @default(0)
@@ -3526,7 +3607,7 @@ model ExpenseRequest {
   requestItems ExpenseRequestItem[]
 
   // YENİ: Ödeme kayıtları
-  payments ExpensePayment[]
+  payments         ExpensePayment[]
   paymentReversals ExpensePaymentReversal[]
 
   // YENİ: Audit log
@@ -3638,9 +3719,9 @@ model ExpenseRequestItem {
 
 // Masraf Ödeme Kayıtları
 model ExpensePayment {
-  id               String         @id @default(cuid())
+  id               String                   @id @default(cuid())
   expenseRequestId String
-  expenseRequest   ExpenseRequest @relation(fields: [expenseRequestId], references: [id], onDelete: Cascade)
+  expenseRequest   ExpenseRequest           @relation(fields: [expenseRequestId], references: [id], onDelete: Cascade)
   reversals        ExpensePaymentReversal[]
 
   // Ödeme Bilgileri
@@ -3688,9 +3769,9 @@ model ExpensePaymentReversal {
   amount   Decimal @db.Decimal(15, 2)
   currency String  @default("TRY")
 
-  originalJournalEntryId String                 @unique
-  originalJournalEntry   AccountingJournalEntry @relation("ExpensePaymentReversalOriginalJournalEntry", fields: [originalJournalEntryId], references: [id], onDelete: Restrict)
-  reversalJournalEntryId String?                @unique
+  originalJournalEntryId String                  @unique
+  originalJournalEntry   AccountingJournalEntry  @relation("ExpensePaymentReversalOriginalJournalEntry", fields: [originalJournalEntryId], references: [id], onDelete: Restrict)
+  reversalJournalEntryId String?                 @unique
   reversalJournalEntry   AccountingJournalEntry? @relation("ExpensePaymentReversalReversalJournalEntry", fields: [reversalJournalEntryId], references: [id], onDelete: Restrict)
 
   originalBalanceLedgerId String?        @unique
@@ -3699,9 +3780,9 @@ model ExpensePaymentReversal {
   reversalBalanceLedger   BalanceLedger? @relation("ExpensePaymentReversalReversalBalanceLedger", fields: [reversalBalanceLedgerId], references: [id], onDelete: Restrict)
 
   idempotencyKey String
-  reason         String   @db.Text
+  reason         String    @db.Text
   requestedById  String
-  requestedAt    DateTime @default(now())
+  requestedAt    DateTime  @default(now())
   completedAt    DateTime?
   failureCode    String?
   metadata       Json?
@@ -4014,7 +4095,7 @@ enum ClientStatementLineType {
 // ADR: docs/finance/adr-client-offset-cross-ledger-settlement.md
 // ============================================================
 model ClientOffset {
-  id       String           @id @default(cuid())
+  id       String @id @default(cuid())
   tenantId String
   clientId String
 
@@ -4122,7 +4203,7 @@ model AccountingJournalEntry {
   metadata       Json?
 
   sourceOccurredAt DateTime?
-  postedAt         DateTime @default(now())
+  postedAt         DateTime  @default(now())
   postedById       String?
 
   reversalOfEntryId String?                 @unique
@@ -4131,7 +4212,7 @@ model AccountingJournalEntry {
 
   createdAt DateTime @default(now())
 
-  lines AccountingJournalLine[]
+  lines                           AccountingJournalLine[]
   expensePaymentReversalOriginals ExpensePaymentReversal[] @relation("ExpensePaymentReversalOriginalJournalEntry")
   expensePaymentReversalResults   ExpensePaymentReversal[] @relation("ExpensePaymentReversalReversalJournalEntry")
 
@@ -4157,12 +4238,12 @@ model AccountingJournalLine {
   amount   Decimal @db.Decimal(15, 2)
   currency String  @default("TRY")
 
-  caseId            String?
-  clientId          String?
-  caseClientId      String?
-  collectionId      String?
-  dispositionLineId String?
-  payoutId          String?
+  caseId               String?
+  clientId             String?
+  caseClientId         String?
+  collectionId         String?
+  dispositionLineId    String?
+  payoutId             String?
   offsetId             String?
   expenseRequestId     String?
   expensePaymentId     String?
@@ -4317,8 +4398,8 @@ model ClientIntakeLinkDelivery {
   notificationId String?
   notification   ClientNotification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
 
-  attemptCount Int     @default(0)
-  lastError    String? @db.Text
+  attemptCount Int      @default(0)
+  lastError    String?  @db.Text
   createdById  String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -4374,6 +4455,7 @@ model ClientDocumentRequest {
   @@index([status])
   @@index([tenantId, clientId, status, createdAt])
 }
+
 model ClientIntakeSubmission {
   id       String @id @default(cuid())
   tenantId String
@@ -4451,6 +4533,7 @@ enum ClientDocumentRequestStatus {
   SENT
   FAILED
 }
+
 enum ClientIntakeSubmissionStatus {
   CLIENT_SUBMITTED // Müvekkil gönderdi — henüz incelenmedi (kanonik DEĞİL)
   IN_REVIEW
@@ -5953,7 +6036,7 @@ model BalanceLedger {
   // Oluşturan
   createdById String?
 
-  createdAt DateTime @default(now())
+  createdAt                       DateTime                 @default(now())
   expensePaymentReversalOriginals ExpensePaymentReversal[] @relation("ExpensePaymentReversalOriginalBalanceLedger")
   expensePaymentReversalResults   ExpensePaymentReversal[] @relation("ExpensePaymentReversalReversalBalanceLedger")
 
@@ -8150,7 +8233,7 @@ model CollectionDisposition {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lines CollectionDispositionLine[]
+  lines                       CollectionDispositionLine[]
   clientPayoutAllocations     ClientPayoutAllocation[]
   clientPayoutManualReversals ClientPayoutManualReversal[]
   expenseApplications         CollectionDispositionExpenseApplication[]
@@ -8331,6 +8414,7 @@ model ClientPayout {
 enum ClientPayoutStatus {
   RECORDED // Müvekkile ödeme kaydedildi (banka transfer lifecycle YOK)
 }
+
 enum ClientPayoutManualReversalStatus {
   OPEN
   CLOSED
@@ -8366,12 +8450,12 @@ model ClientPayoutAllocation {
   allocatedById String?
   createdAt     DateTime @default(now())
 
-  case                      Case                      @relation(fields: [caseId], references: [id], onDelete: Restrict)
-  caseClient                CaseClient                @relation(fields: [caseClientId], references: [id], onDelete: Restrict)
-  clientPayout              ClientPayout              @relation(fields: [clientPayoutId], references: [id], onDelete: Restrict)
-  collection                Collection                @relation(fields: [collectionId], references: [id], onDelete: Restrict)
-  collectionDisposition     CollectionDisposition     @relation(fields: [collectionDispositionId], references: [id], onDelete: Restrict)
-  collectionDispositionLine CollectionDispositionLine @relation(fields: [collectionDispositionLineId], references: [id], onDelete: Restrict)
+  case                      Case                         @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  caseClient                CaseClient                   @relation(fields: [caseClientId], references: [id], onDelete: Restrict)
+  clientPayout              ClientPayout                 @relation(fields: [clientPayoutId], references: [id], onDelete: Restrict)
+  collection                Collection                   @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+  collectionDisposition     CollectionDisposition        @relation(fields: [collectionDispositionId], references: [id], onDelete: Restrict)
+  collectionDispositionLine CollectionDispositionLine    @relation(fields: [collectionDispositionLineId], references: [id], onDelete: Restrict)
   manualReversals           ClientPayoutManualReversal[]
 
   @@unique([clientPayoutId, collectionDispositionLineId], map: "client_payout_allocation_source_unique")
@@ -8404,7 +8488,7 @@ model ClientPayoutManualReversal {
   clientPayoutId              String?
   clientPayoutAllocationId    String?
 
-  openedAt      DateTime @default(now())
+  openedAt      DateTime  @default(now())
   openedById    String?
   closedAt      DateTime?
   closedById    String?
