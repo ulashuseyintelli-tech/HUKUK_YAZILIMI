@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AddressService, AddressDTO } from './address.service';
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
+import { AuditService } from '@/modules/audit/audit.service';
 import * as fc from 'fast-check';
 import {
   AddressType,
@@ -40,6 +41,11 @@ describeDb('AddressService Property Tests', () => {
         {
           provide: CaseDebtorLifecycleGuardService,
           useValue: { assertActiveByCaseDebtorId: jest.fn() },
+        },
+        {
+          // DBND-D6A-1: AddressService.update() artık DEBTOR_ADDRESS_UPDATE audit'i yazıyor.
+          provide: AuditService,
+          useValue: { log: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();

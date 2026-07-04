@@ -50,7 +50,7 @@ export class AddressController {
     @Param("addressId") addressId: string,
     @Body() dto: UpdateAddressDto
   ) {
-    return this.addressService.update(req.user.tenantId, addressId, dto);
+    return this.addressService.update(req.user.tenantId, addressId, dto, { userId: req.user.id });
   }
 
   /**

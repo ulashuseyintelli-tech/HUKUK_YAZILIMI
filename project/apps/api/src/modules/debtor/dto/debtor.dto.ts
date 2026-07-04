@@ -113,6 +113,12 @@ export class UpdateDebtorAddressDto {
   @IsBoolean()
   @IsOptional()
   isMernis?: boolean;
+
+  // DBND-D6A-1: bu güncellemenin hangi dosyadan tetiklendiği (cross-file alert'te kendi
+  // dosyanı hariç tutmak için) — DebtorAddress kolonu DEĞİL, yalnız audit metadata'ya yazılır.
+  @IsString()
+  @IsOptional()
+  sourceCaseId?: string;
 }
 
 // ==================== ESTATE HEIR DTO ====================
@@ -448,6 +454,12 @@ export class UpdateDebtorDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  // DBND-D6A-1: bu güncellemenin hangi dosyadan tetiklendiği (cross-file alert'te kendi
+  // dosyanı hariç tutmak için) — Debtor kolonu DEĞİL, yalnız audit metadata'ya yazılır.
+  @IsString()
+  @IsOptional()
+  sourceCaseId?: string;
 }
 
 // ==================== SEARCH & FILTER DTO ====================

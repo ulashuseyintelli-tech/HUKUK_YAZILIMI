@@ -31,6 +31,9 @@ interface NewDebtorModalProps {
   // Bağlama akışı (DebtorStep) bunu geçer → seçilen mevcut borçlu dosyaya eklenir.
   // Verilmezse (standalone Borçlular sayfası / detay drawer) buton yalnız modalı kapatır.
   onUseExisting?: (candidate: { id: string; name: string }) => void;
+  // DBND-D6A-1: düzenleme hangi dosyadan tetiklendi (paylaşılan Debtor.id'de cross-file alert'te
+  // kendi dosyanı hariç tutmak için). Yalnız update payload'ına geçer, formda gösterilmez.
+  sourceCaseId?: string;
 }
 
 const CITIES = [
@@ -46,7 +49,7 @@ const CITIES = [
   "Bartın", "Ardahan", "Iğdır", "Yalova", "Karabük", "Kilis", "Osmaniye", "Düzce"
 ];
 
-export function NewDebtorModal({ initialType, editDebtor, onSave, onClose, onUseExisting }: NewDebtorModalProps) {
+export function NewDebtorModal({ initialType, editDebtor, onSave, onClose, onUseExisting, sourceCaseId }: NewDebtorModalProps) {
   const isEditMode = !!editDebtor;
   const [type, setType] = useState<DebtorType>(editDebtor?.type || initialType);
   const [saving, setSaving] = useState(false);
@@ -230,7 +233,11 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose, onUse
       let res;
       if (isEditMode && editDebtor?.id) {
         // PR-U2: @Put(":id") rotası (eski api.patch → PATCH rotası yoktu, 404 oluyordu).
-        res = await api.put(`/debtors/${editDebtor.id}`, { ...payload, confirmSimilarNameUpdate: opts.confirmSimilarNameUpdate });
+        res = await api.put(`/debtors/${editDebtor.id}`, {
+          ...payload,
+          confirmSimilarNameUpdate: opts.confirmSimilarNameUpdate,
+          sourceCaseId, // DBND-D6A-1: paylaşılan Debtor.id cross-file alert'i için (audit metadata)
+        });
       } else {
         res = await api.post("/debtors", { ...payload, forceCreate: opts.forceCreate });
       }
