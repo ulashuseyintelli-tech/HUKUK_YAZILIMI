@@ -22,10 +22,16 @@
  * 13. dedupe prevents duplicates
  * 14. ACKNOWLEDGED transition works
  * 15. EXPIRED transition/query behavior works
+ * 16. primary AddressService.update() path (PUT /addresses/:addressId, drawer'ın gerçek yolu)
+ *     creates a notification for other cases
+ * 17. secondary DebtorService.updateAddress() path still creates a notification
+ * 18. dedupe prevents a duplicate when both paths compute the same dedupe key
+ * 19. sourceCaseId exclusion works via the primary AddressService path
  */
 import { PrismaClient } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { DebtorService } from "../debtor.service";
+import { AddressService } from "../address.service";
 import { AuditService } from "../../audit/audit.service";
 import { DebtorCrossCaseNotificationService } from "../debtor-cross-case-notification.service";
 
@@ -42,6 +48,7 @@ describeIf("DBND-D6A-2 — DebtorCrossCaseNotification Integration", () => {
   let audit: AuditService;
   let crossCaseNotification: DebtorCrossCaseNotificationService;
   let debtorService: DebtorService;
+  let addressService: AddressService;
   const createdTenantIds = new Set<string>();
 
   beforeAll(async () => {
@@ -54,6 +61,12 @@ describeIf("DBND-D6A-2 — DebtorCrossCaseNotification Integration", () => {
       audit,
       {} as any, // officeApproval — update()/addAddress()/updateAddress() yolunda kullanılmıyor
       undefined, // caseDebtorLifecycleGuard — bu yollarda kullanılmıyor
+      crossCaseNotification
+    );
+    addressService = new AddressService(
+      prisma as any,
+      {} as any, // caseDebtorLifecycleGuard — update() yolunda kullanılmıyor (yalnız setActiveAddress'te)
+      audit,
       crossCaseNotification
     );
   });
@@ -629,6 +642,112 @@ describeIf("DBND-D6A-2 — DebtorCrossCaseNotification Integration", () => {
       expect(addressNotif?.status).toBe("EXPIRED");
       expect(addressNotif?.expiredAt).not.toBeNull();
       expect(kepNotif?.status).toBe("PENDING");
+    });
+  });
+
+  // ── Test 16: primary AddressService path creates notification ─────────
+  describe("Test 16: primary AddressService.update() path creates notification for other cases", () => {
+    it("PUT /addresses/:addressId (drawer'ın gerçek yolu) notifies sibling case's responsible lawyer", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      const caseB = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      await prisma.caseDebtor.create({ data: { caseId: caseB.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer, userId } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseB.id, lawyer.id, { isResponsible: true });
+      const address = await prisma.debtorAddress.create({
+        data: { debtorId: debtor.id, street: "Eski Sokak No:1", city: "Ankara" },
+      });
+
+      await addressService.update(tenantId, address.id, { street: "Yeni Sokak No:2" } as any);
+
+      const notifications = await notificationsFor(tenantId, debtor.id);
+      expect(notifications.some((n) => n.affectedCaseId === caseB.id && n.fieldGroup === "ADDRESS")).toBe(true);
+      expect(notifications.find((n) => n.affectedCaseId === caseB.id)?.recipientUserId).toBe(userId);
+    });
+  });
+
+  // ── Test 17: secondary DebtorService.updateAddress path still works ───
+  describe("Test 17: secondary DebtorService.updateAddress() path still creates notification", () => {
+    it("PUT /debtors/:id/addresses/:addressId (ikincil yol) notifies sibling case", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      const caseB = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      await prisma.caseDebtor.create({ data: { caseId: caseB.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer, userId } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseB.id, lawyer.id, { isResponsible: true });
+      const address = await prisma.debtorAddress.create({
+        data: { debtorId: debtor.id, street: "Eski Sokak No:3", city: "İzmir" },
+      });
+
+      await debtorService.updateAddress(tenantId, debtor.id, address.id, { street: "Yeni Sokak No:4" } as any);
+
+      const notifications = await notificationsFor(tenantId, debtor.id);
+      expect(notifications.some((n) => n.affectedCaseId === caseB.id && n.fieldGroup === "ADDRESS")).toBe(true);
+      expect(notifications.find((n) => n.affectedCaseId === caseB.id)?.recipientUserId).toBe(userId);
+    });
+  });
+
+  // ── Test 18: dedupe across both address paths ──────────────────────────
+  describe("Test 18: dedupe prevents a duplicate when both paths compute the same dedupe key", () => {
+    it("same changeGeneration from primary + secondary path → only one notification", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseA.id, lawyer.id, { isResponsible: true });
+      const address = await prisma.debtorAddress.create({
+        data: { debtorId: debtor.id, street: "Ortak Sokak No:5", city: "Bursa" },
+      });
+
+      // Birincil (AddressService) yolun ürettiği bildirim.
+      await addressService.update(tenantId, address.id, { street: "Değişen Sokak No:6" } as any);
+
+      // İkincil yolun (DebtorService.updateAddress) AYNI değişim-anı (address.updatedAt, henüz
+      // hiç ikinci bir mutasyon olmadan) için ürettiği çağrıyı simüle eder — iki yolun da PAYLAŞTIĞI
+      // notifyFieldGroupChanges dedupe mekanizmasının, hangi path'ten geldiğine bakmaksızın aynı
+      // (debtor, case, alıcı, alan-grubu, değişim-anı) tekrarını engellediğini kanıtlar.
+      await crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId: debtor.id,
+        fieldGroups: ["ADDRESS"],
+        changeGeneration: address.updatedAt, // AddressService.update()'in kullandığı ÖNCEKİ updatedAt
+      });
+
+      const notifications = await notificationsFor(tenantId, debtor.id);
+      expect(notifications.filter((n) => n.fieldGroup === "ADDRESS")).toHaveLength(1);
+    });
+  });
+
+  // ── Test 19: sourceCaseId exclusion via primary path ───────────────────
+  describe("Test 19: sourceCaseId exclusion works via the primary AddressService path", () => {
+    it("addressService.update() with dto.sourceCaseId excludes that case from the fan-out", async () => {
+      const { tenantId, clientId } = await setupTenant();
+      const debtor = await createDebtor(tenantId);
+      const caseA = await createCase(tenantId, clientId);
+      const caseB = await createCase(tenantId, clientId);
+      await prisma.caseDebtor.create({ data: { caseId: caseA.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      await prisma.caseDebtor.create({ data: { caseId: caseB.id, debtorId: debtor.id, role: "ASIL_BORCLU" } });
+      const { lawyer: lawyerA } = await createLawyerWithUser(tenantId);
+      const { lawyer: lawyerB } = await createLawyerWithUser(tenantId);
+      await attachLawyer(caseA.id, lawyerA.id, { isResponsible: true });
+      await attachLawyer(caseB.id, lawyerB.id, { isResponsible: true });
+      const address = await prisma.debtorAddress.create({
+        data: { debtorId: debtor.id, street: "Hariç Sokak No:7", city: "Antalya" },
+      });
+
+      await addressService.update(tenantId, address.id, {
+        street: "Dahil Sokak No:8",
+        sourceCaseId: caseA.id,
+      } as any);
+
+      const notifications = await notificationsFor(tenantId, debtor.id);
+      expect(notifications.some((n) => n.affectedCaseId === caseA.id)).toBe(false);
+      expect(notifications.some((n) => n.affectedCaseId === caseB.id)).toBe(true);
     });
   });
 });
