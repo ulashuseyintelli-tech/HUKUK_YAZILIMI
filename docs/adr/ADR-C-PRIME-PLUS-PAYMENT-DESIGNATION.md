@@ -188,6 +188,30 @@ one enforcement case = implicit single group
 
 No physical `ClaimGroup` table is introduced in the current phase.
 
+**Clarification (2026-07-04, Master Triage ARC-01 re-verification):** the Q1 trigger is the
+existence of an independent collection/offset pool, not a difference in interest start dates,
+claim composition (principal + vekalet + yargilama gideri), or having multiple `ClaimItem` types
+under the same judgment. Those are resolved at `ClaimItem`-level interest/provenance/allocation
+and never justify `ClaimGroup`.
+
+`ClaimGroup` is reconsidered only when, within the same Case/judgment/enforcement process, a
+collection cannot be freely allocated across all claim items because independent legal pools
+exist. Concrete triggers:
+
+- A single judgment with permissive joinder (ihtiyari dava arkadasligi) awarding separate,
+  independent monetary claims to each claimant.
+- Multiple creditors in the same enforcement file with separate entitlement/judgment pools.
+- Non-joint (non-solidary) debtor sets.
+- Secured versus unsecured pools.
+- Sale proceeds earmarked for one specific claim/pool only.
+- Precautionary versus main enforcement, or differing collateral/sale-proceeds scopes, that
+  split the payment-allocation regime.
+
+Decisive test: "Can an incoming payment be freely allocated, as a matter of law, across all
+claims in the Case?" If yes, `ClaimGroup` does not apply — the implicit single group continues
+and any distinction is resolved at `ClaimItem`/allocation/payout level. If no, `ClaimGroup`/
+`LegalPool` is reconsidered.
+
 ### Q2: BalanceComponent Source Role
 
 `BalanceComponent` is projection/display only.
