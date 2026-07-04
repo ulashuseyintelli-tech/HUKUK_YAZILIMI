@@ -340,6 +340,20 @@ export function evaluateGuardedPrimaryDisplayPilot(
   };
 }
 
+const COST_FEE_UNDERSTATEMENT_RISK_CODES = new Set(['COSTS_DELTA', 'ATTORNEY_FEE_DELTA']);
+
+// ALC-AUTH-3E: toplamBorc/sonBorc/kalanBorc canonical totalDebtAmount/outstandingAmount'tan
+// gelir, ikisi de costs/ancillaries icerir -- cost/attorney-fee ClaimItem'i olmayan case'lerde
+// bu sessizce 0 sayilip aggregate'i olduğundan dusuk gosterebilir (COSTS_DELTA/ATTORNEY_FEE_DELTA
+// B1_SCOPE_EXEMPT_DIFF_CODES oldugu icin guard'i bloklamaz). Zaten mevcut report.totals.diffs'teki
+// RED/MAJOR_DELTA sinyali (legacy nonzero, canonical veri-bosluğu yuzunden 0) case-bazli tespit icin
+// kullanilir -- yeni backend contract gerekmez.
+function hasCostOrAttorneyFeeUnderstatementRisk(report: BalanceDisplayShadowDiffReport): boolean {
+  return report.totals.diffs.some(
+    (diff) => COST_FEE_UNDERSTATEMENT_RISK_CODES.has(diff.code) && diff.severity === 'RED',
+  );
+}
+
 export function buildGuardedPrimaryCalculationResult(
   legacy: CaseCalculationResult,
   report: BalanceDisplayShadowDiffReport,
@@ -350,6 +364,10 @@ export function buildGuardedPrimaryCalculationResult(
   const amounts = canonicalPrimaryAmounts(report);
   if (!amounts) return null;
 
+  // ALC-AUTH-3E: risk varsa yalniz bu 3 aggregate alan legacy'de kalir; digger 5 canonical
+  // override alan (asilAlacak/takipTutari/takipSonrasiFaiz/toplamTahsilat/kalanAnapara) etkilenmez.
+  const suppressAggregateOverride = hasCostOrAttorneyFeeUnderstatementRisk(report);
+
   return {
     ...legacy,
     asilAlacak: amounts.principalAmount,
@@ -357,10 +375,14 @@ export function buildGuardedPrimaryCalculationResult(
     takipSonrasiFaiz: amounts.interestAmount,
     // ALC-AUTH-1A: icraMasraflari/vekaletUcreti KASITLI OLARAK override edilmiyor -- legacy
     // (formul-bazli) degerleri korunur (bkz. GUARDED_SUMMARY_BACKEND_CONTRACT_REQUIRED_ROW_IDS).
-    toplamBorc: amounts.totalDebtAmount,
-    sonBorc: amounts.outstandingAmount,
+    ...(suppressAggregateOverride
+      ? {}
+      : {
+          toplamBorc: amounts.totalDebtAmount,
+          sonBorc: amounts.outstandingAmount,
+          kalanBorc: amounts.outstandingAmount,
+        }),
     toplamTahsilat: amounts.totalPaidAmount,
-    kalanBorc: amounts.outstandingAmount,
     kalanAnapara: amounts.principalAmount,
   };
 }
