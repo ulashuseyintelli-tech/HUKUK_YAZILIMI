@@ -26,6 +26,11 @@ import { AuditService } from "@/modules/audit/audit.service";
 import { OfficeApprovalService } from "@/modules/office-approval/office-approval.service";
 import type { AuditActor } from "@/modules/client/client.service";
 import { buildDebtorFieldDiff, buildDebtorRemoveSnapshot } from "./debtor-audit.util";
+// D6: paylaşılan Debtor cross-case bildirimi (backend-only, best-effort — bkz. Safe çağrı deseni).
+import {
+  DebtorCrossCaseNotificationService,
+  DebtorNotificationFieldGroupKey,
+} from "./debtor-cross-case-notification.service";
 
 // ==================== PR-D5-a: DEPRECATED addressType/isMernis → KANONİK type/source ====================
 // Frontend hâlâ DTO addressType (EV/IS/TEBLIGAT/MERNIS/KEP) + isMernis gönderir; backend KANONİK
@@ -353,7 +358,10 @@ export class DebtorService {
     private prisma: PrismaService,
     private audit: AuditService,
     private officeApproval: OfficeApprovalService,
-    private readonly caseDebtorLifecycleGuard?: CaseDebtorLifecycleGuardService
+    private readonly caseDebtorLifecycleGuard?: CaseDebtorLifecycleGuardService,
+    // D6: opsiyonel — mevcut testler (yalnız 4 arg ile constructor çağıran) kırılmasın diye
+    // caseDebtorLifecycleGuard ile AYNI opsiyonel-DI deseni. Sağlanmazsa fan-out sessizce atlanır.
+    private readonly crossCaseNotification?: DebtorCrossCaseNotificationService
   ) {}
 
   private requireCaseDebtorLifecycleGuard(): CaseDebtorLifecycleGuardService {
@@ -681,6 +689,9 @@ export class DebtorService {
     // Computed `name` ve `identityNo` TEK KAYNAK türevidir → her update'te mevcut+dto birleşiminden
     // YENİDEN hesaplanır (PR-D1). `??` ile yalnız dto'da gelmeyen alan mevcuttan alınır.
     // PR-D2b: estateHeirs bir RELATION → scalar update'e karışmasın diye dto'dan ayrıştırılır.
+    // sourceCaseId Debtor'un scalar bir alanı DEĞİL — updateData'ya (Prisma write'ına) ASLA
+    // karışmamalı. İki bağımsız tüketicisi var: DBND-D6A-1 (audit metadata) ve DBND-D6A-2
+    // (cross-case bildirim fan-out parametresi) — aralarında kod bağı yok.
     const { estateHeirs, confirmSimilarNameUpdate, sourceCaseId, ...debtorDto } = dto as any;
     const updateData: any = { ...debtorDto };
 
@@ -800,7 +811,46 @@ export class DebtorService {
     // PR-D4c: completeness görevini senkronla (best-effort).
     await this.syncDebtorTaskByIdSafe(tenantId, id);
 
+    // D6: paylaşılan Debtor alan değişikliği → diğer case'lerdeki sorumlu ekibe cross-case
+    // bildirim (best-effort, syncDebtorTaskByIdSafe ile AYNI "Safe" felsefesi — asıl update'i
+    // ASLA bloklamaz/geri almaz). sourceCaseId çağıran tarafından verilirse (dto.sourceCaseId)
+    // o case fan-out'tan hariç tutulur; verilmezse (bugünkü çoğu çağrı) hariç tutma uygulanmaz.
+    await this.notifyCrossCaseFieldGroupChangesSafe(tenantId, id, existing, result, sourceCaseId, actor);
+
     return result;
+  }
+
+  private async notifyCrossCaseFieldGroupChangesSafe(
+    tenantId: string,
+    debtorId: string,
+    existing: { name: string; identityNo: string | null; kepAddress: string | null; updatedAt: Date },
+    result: { name: string; identityNo: string | null; kepAddress: string | null },
+    sourceCaseId: string | undefined,
+    actor?: AuditActor
+  ): Promise<void> {
+    if (!this.crossCaseNotification) return;
+    try {
+      const fieldGroups: DebtorNotificationFieldGroupKey[] = [];
+      if (existing.name !== result.name) fieldGroups.push("NAME");
+      if (existing.identityNo !== result.identityNo) fieldGroups.push("IDENTITY");
+      if (existing.kepAddress !== result.kepAddress) fieldGroups.push("KEP_ADDRESS");
+      if (fieldGroups.length === 0) return;
+
+      await this.crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId,
+        fieldGroups,
+        sourceCaseId,
+        actorUserId: actor?.userId,
+        // Değişim-anı çapası: bu update'ten ÖNCEKİ (existing) updatedAt. Aynı önceki duruma karşı
+        // yarışan/eşzamanlı çağrılar AYNI existing.updatedAt'i okur → aynı dedupeKey → ikincisi
+        // P2002 ile atlanır. Sonraki gerçek bir update farklı bir existing.updatedAt görür →
+        // farklı anahtar → yeniden bildirim üretilebilir.
+        changeGeneration: existing.updatedAt,
+      });
+    } catch (e: any) {
+      // Yutulur — cross-case bildirim asıl Debtor mutasyonunu ASLA bloklamaz.
+    }
   }
 
   /// <remarks>
@@ -1302,7 +1352,8 @@ export class DebtorService {
     // ARTIK YAZILMAZ (bağımlılık kesildi). Kanonik type/source asıl kaynak.
     const canonical = mapAddressTypeToCanonical(dto.addressType, dto.isMernis);
     // RFA-006: isPrimary'i find-or-create'ten AYIR → find-or-create sonrası tutarlı uygula.
-    const { addressType: _at, isMernis: _im, isPrimary: _ip, ...rest } = dto as any;
+    // D6: sourceCaseId DebtorAddress'in bir alanı DEĞİL — Prisma write'ına ASLA karışmamalı.
+    const { addressType: _at, isMernis: _im, isPrimary: _ip, sourceCaseId, ...rest } = dto as any;
     const { address: createdRaw, created: isNew } = await findOrCreateDebtorAddress(this.prisma, {
       debtorId, ...rest, type: canonical.type as any, source: canonical.source as any,
     });
@@ -1328,8 +1379,30 @@ export class DebtorService {
       if (!created.verified) {
         await this.syncIntelligenceTaskSafe(tenantId, debtorId, created.id);
       }
+      // D6: yeni adres = adres değişikliği (idempotent eşleşmede tetiklenmez, best-effort).
+      await this.notifyCrossCaseAddressChangeSafe(tenantId, debtorId, created.createdAt, sourceCaseId);
     }
     return created;
+  }
+
+  private async notifyCrossCaseAddressChangeSafe(
+    tenantId: string,
+    debtorId: string,
+    changeGeneration: Date,
+    sourceCaseId?: string
+  ): Promise<void> {
+    if (!this.crossCaseNotification) return;
+    try {
+      await this.crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId,
+        fieldGroups: ["ADDRESS"],
+        sourceCaseId,
+        changeGeneration,
+      });
+    } catch (e: any) {
+      // Yutulur — cross-case bildirim asıl adres mutasyonunu ASLA bloklamaz.
+    }
   }
 
   /// <remarks>
@@ -1337,6 +1410,9 @@ export class DebtorService {
   /// - DebtorController.updateAddress() → PUT /debtors/:id/addresses/:addressId (debtors/page.tsx
   ///   bağımsız borçlu listesi adres düzenleme — AYRI ve İKİNCİL yol; drawer içindeki
   ///   AddressFormModal AddressService.update() → PUT /addresses/:addressId'yi kullanır, BUNU DEĞİL)
+  /// DBND-D6A-2 NOT: notifyCrossCaseAddressChangeSafe yalnız BU (ikincil) yoldan + addAddress()'ten
+  /// tetiklenir; AddressService.update() (PRIMARY/drawer yolu) kapsam DIŞI kalır — bilinen boşluk,
+  /// bu PR'de GENİŞLETİLMEDİ.
   /// </remarks>
   async updateAddress(
     tenantId: string,
@@ -1374,7 +1450,7 @@ export class DebtorService {
           )
         : null;
     const { addressType: _at, isMernis: _im, sourceCaseId, ...restDto } = dto as any;
-    const result = await this.prisma.debtorAddress.update({
+    const updated = await this.prisma.debtorAddress.update({
       where: { id: addressId },
       data: { ...restDto, ...(canonicalUpd ? { type: canonicalUpd.type as any, source: canonicalUpd.source as any } : {}) },
     });
@@ -1391,7 +1467,12 @@ export class DebtorService {
       metadata: { addressId, sourceCaseId: sourceCaseId ?? null },
     });
 
-    return result;
+    // DBND-D6A-2: mevcut adresin içeriği değişti (best-effort, DBND-D6A-1'in yukarıdaki audit
+    // yazımından BAĞIMSIZ — ayrı bir kalıcı bildirim üretir, aynı sourceCaseId'yi kendi amacı
+    // için tüketir). changeGeneration = güncelleme-ÖNCESİ updatedAt.
+    await this.notifyCrossCaseAddressChangeSafe(tenantId, debtorId, address.updatedAt, sourceCaseId);
+
+    return updated;
   }
 
   /**
