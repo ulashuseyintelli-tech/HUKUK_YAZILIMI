@@ -806,15 +806,15 @@ Status: DONE (analiz) — GO-ANALYZE tamamlandi, kod degisikligi YAPILMADI.
 
 ID: ALC-AUTH-3D
 Title: Guard Alignment - implement (henuz yapilmadi)
-Problem: ALC-AUTH-3C'nin kanitladigi guard/backend kopuklugunun kapatilmasi.
-Business Value: Guarded primary pilot flag guvenle acilabilir hale gelir (bugun NO-GO).
-Technical Value: (1) veya (2) - owner karari gerekir, ikisi birbirini dislamaz ((1) hemen guvenlik agi olarak uygulanip (2) sonra kalici cozum olarak insa edilebilir).
+Problem: ALC-AUTH-3C'nin kanitladigi guard/backend kopuklugunun kapatilmasi. Mimari soru: frontend'in primary-display kararı için tek otorite backend cutoverReadiness mi olacak, yoksa frontend kendi HARD_NO_GO_CODES listesini taşımaya devam mı edecek?
+Business Value: Guarded primary pilot flag guvenle acilabilir hale gelir (bugun NO-GO). Ayrica ileride ayni guard mantiginin iki yerde yasamasi (drift riski) yapisal olarak kapanir.
+Technical Value: Kod okumasiyla dogrulandi (2026-07-05): `guarded-primary-display.ts:254` zaten `report.cutoverReadiness.blockers`'i `codes` set'ine katiyor, ama backend'in kendi `safeForPrimaryDisplay` boolean'ini HIC okumuyor — onun yerine sabit 9 elemanli `HARD_NO_GO_CODES` ile kesisim testi yapiyor, bu yuzden `OUTSTANDING_DELTA`/`PAID_DELTA`/`PRINCIPAL_BUCKET_DELTA` (backend blockers'ta var, HARD_NO_GO_CODES'ta yok) sessizce elenip hic kontrol edilmiyor. **Onerilen 3. secenek** (1 ve 2'den farkli, ideal mimariye - "Backend cutoverReadiness -> Frontend sadece render eder" - en yakin, en dar degisiklik): `HARD_NO_GO_CODES` + `NOT_COMPARABLE` kontrolu tamamen KALDIRILIR; yerine `if (!report.cutoverReadiness.safeForPrimaryDisplay) reasonCodes.push(...report.cutoverReadiness.blockers)`. Boylece domain-safety verdict'i backend'de TEK yerde hesaplanir, backend yeni blocker ekledikce frontend otomatik hizali kalir (kalici, XS-S buyuklukte, (1)'in guvenlik-agi hizini + (2)'nin kalicilik faydasini birlikte verir, (2)'nin buyuk `buildGuardedPrimaryCalculationResult()` alan-bazli override yeniden yazimi kadar riskli degil). Frontend'de KALMASI GEREKENLER (domain-safety duplikasyonu degil, gercek frontend kaygisi): `FEATURE_FLAG_OFF`/`UNSUPPORTED_SCENARIO`/`PAYMENT_DESIGNATION_REQUIRED`/`UNSUPPORTED_PERIODIC_OBLIGATION`/`CLAIM_ITEM_AUTHORITY_CONTAMINATION` (rollout/policy, backend'in bilmesi gerekmez) ve `canonicalPrimaryAmounts()` finite-check (render-veri-mevcudiyeti, "guvenli mi" degil "gosterecek veri var mi").
 Priority: —
 Depends On: ALC-AUTH-3C
-Unlock Condition: Owner karari - (1) HARD_NO_GO_CODES genisletme mi, (2) partial-cutover mi, yoksa ikisi birden mi?
-Estimated Size: (1) XS, (2) M-L
-Related Modules: guarded-primary-display.ts
-Status: BACKLOG — kod degisikligi YAPILMADI. Guarded primary pilot flag bu madde kapanmadan ACILMAMALI.
+Unlock Condition: Owner karari — (1) HARD_NO_GO_CODES genisletme, (2) buildGuardedPrimaryCalculationResult() alan-bazli partial-cutover, (3) [ONERILEN] HARD_NO_GO_CODES'i kaldirip dogrudan cutoverReadiness.safeForPrimaryDisplay'e devret. (3), (1)'in yerini alir (ikisi birlikte anlamsizdir); (2) ayri/daha sonraki bir konu (hangi alanlarin override edilecegi), (3) ile catismaz.
+Estimated Size: (1) XS, (2) M-L, (3) XS-S
+Related Modules: guarded-primary-display.ts, balance-display-shadow-diff.service.ts
+Status: READY — guard otoritesi mimari sorusu GO-ANALYZE ile netlesti (2026-07-05, owner + ajan ortak degerlendirmesi), (3) onerildi. Kod degisikligi HENUZ YAPILMADI, ayri GO-IMPLEMENT gerekir. Guarded primary pilot flag bu madde kapanmadan ACILMAMALI.
 ---
 
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
