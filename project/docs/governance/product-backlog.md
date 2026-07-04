@@ -349,7 +349,11 @@ Depends On: —
 Unlock Condition: Gerçek approval hacmi (mutation/accounting yüzeyleri canlı)
 Estimated Size: M (Claude FE-only)
 Related Modules: web components/office-approval, lib/api/office-approval, guarded-edge
-Status: BACKLOG
+Status: DONE (governance bookkeeping correction, 2026-07-04 — Master Triage ARC-05 split-verdict
+re-verification: bu iş fiilen teslim edilmiş, BACKLOG kalması repository ile çelişiyordu; yeni
+geliştirme/reimplementasyon YOK, yalnız statü düzeltmesi)
+Delivered by: PR #823 (P4-4 Office Approval Inbox read-only UI), PR #832 (P4 Office Approval
+Decision UI — drawer içi karar aksiyonları)
 
 ---
 
