@@ -83,10 +83,36 @@ export interface BalanceDisplayTotals {
    * totalDue net kalan claim oldugu icin burada uydurma toplam uretilmez.
    */
   totalDebtAmount: number | null;
+  /**
+   * ALC-AUTH-1A/1B (2026-07-04): bu alan yalnız BORCA FİİLEN TAHSİS EDİLMİŞ tutardır
+   * (allocation-engine'in `allocations` step'lerinde göründüğü kadarıyla), "dosyaya
+   * gelen toplam para" DEĞİLDİR. Borç tamamen kapandıktan sonra gelen bir ödeme hiçbir
+   * kategoriye tahsis edilemediği için burada GÖRÜNMEZ — o tutar `heldOverpaymentAmount`'ta
+   * ayrıca yer alır (bkz. `allocatedPaidAmount`/`grossReceivedAmount`, aynı anlam açık
+   * isimle tekrarlanır). Geriye dönük uyumluluk için DEĞERİ değişmedi, yalnız isim/anlam
+   * belirsizliği bu yorum + yeni alanlarla giderildi.
+   */
   totalPaidAmount: number | null;
   outstandingAmount: number | null;
+  /**
+   * ALC-AUTH-1A/1B: borç kapandıktan sonra gelen, hiçbir kategoriye tahsis edilemeyen
+   * (allocation step üretmeyen) ödeme tutarı — ayrı, bağımsız `CollectionOverpayment`
+   * kaydından okunur (allocation-engine çıktısından TÜRETİLMEZ).
+   */
   heldOverpaymentAmount: number | null;
   blockedOverpaymentAmount?: number | null;
+  /**
+   * ALC-AUTH-1B: `totalPaidAmount` ile AYNI değer, yalnız isim belirsizliğini gidermek
+   * için eklendi — "borca fiilen tahsis edilen tutar." `totalPaidAmount` geriye dönük
+   * uyumluluk için korunuyor; yeni tüketiciler bu alanı tercih etmeli.
+   */
+  allocatedPaidAmount: number | null;
+  /**
+   * ALC-AUTH-1B: allocatedPaidAmount + heldOverpaymentAmount — dosyaya GERÇEKTEN gelen
+   * toplam para (avukatın "dosyaya X TL geldi" dediği rakam). Currency güvenli değilse
+   * (MULTI/UNKNOWN) veya bileşenlerden biri null'sa null döner (uydurma toplam yok).
+   */
+  grossReceivedAmount: number | null;
 }
 
 export interface BalanceDisplayDiagnostic {
@@ -477,6 +503,10 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     outstandingAmount,
     heldOverpaymentAmount: singleCurrency ? heldOverpayment : null,
     ...(blockedOverpayment > 0 ? { blockedOverpaymentAmount: singleCurrency ? blockedOverpayment : null } : {}),
+    // ALC-AUTH-1B: totalPaidAmount ile aynı değer, açık isimle tekrarlanır (bkz. tip yorumu).
+    allocatedPaidAmount: singleCurrency ? collected : null,
+    // ALC-AUTH-1B: dosyaya gerçekten gelen toplam para = allocated + held overpayment.
+    grossReceivedAmount: singleCurrency ? round2(collected + heldOverpayment) : null,
   };
 
   const display: CaseBalanceDisplay = {

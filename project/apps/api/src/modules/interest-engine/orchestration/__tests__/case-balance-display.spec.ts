@@ -396,6 +396,41 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     expect(d.unsafeSources?.map((source) => source.code)).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
   });
 
+  it('ALC-AUTH-1B: allocatedPaidAmount + heldOverpaymentAmount = grossReceivedAmount (220.000 + 100.000 = 320.000); totalPaidAmount geriye dönük DEĞİŞMEZ', () => {
+    // 2026/9502 senaryosu (ALC-AUTH-1A forensiği): 4 ödemeden 3'ü (20k+100k+100k=220k)
+    // borca tahsis edildi (allocation step üretti); 4. ödeme (100k) borç zaten kapandığı
+    // için hiçbir kategoriye tahsis edilemedi (allocation step YOK) — ayrı, bağımsız
+    // CollectionOverpayment kaydından heldOverpayment olarak 100k okunuyor.
+    const balance = makeBalance({
+      currencyResults: [
+        currencyResult('TRY', {
+          totalInterest: 0,
+          totalDue: 0,
+          allocations: [
+            { paymentId: 'p1', paymentAmount: 20000 },
+            { paymentId: 'p2', paymentAmount: 100000 },
+            { paymentId: 'p3', paymentAmount: 100000 },
+            // p4 (100.000) BİLEREK yok — borç kapandıktan sonra geldiği için hiç
+            // allocation step üretmedi (ALC-AUTH-1A'da koddan doğrulandı).
+          ],
+        }),
+      ] as any,
+      overpayments: {
+        held: [
+          { id: 'op1', collectionId: 'col-p4', currency: 'TRY', amount: 100000, remainingAmount: 100000, status: 'HELD' },
+        ],
+        blocked: [],
+      } as any,
+    });
+
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+
+    expect(d.totals.totalPaidAmount).toBe(220000); // geriye dönük uyumluluk: değer değişmedi
+    expect(d.totals.allocatedPaidAmount).toBe(220000); // aynı değer, açık isim
+    expect(d.totals.heldOverpaymentAmount).toBe(100000);
+    expect(d.totals.grossReceivedAmount).toBe(320000); // 220.000 + 100.000 — dosyaya gerçekten gelen toplam
+  });
+
   it('boş: currencyResults yoksa OK + currencies []', () => {
     const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance: makeBalance({ source: 'NONE' } as any), generatedAt: GENERATED_AT });
     expect(d.status).toBe('OK');
