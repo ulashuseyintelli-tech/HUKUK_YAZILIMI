@@ -9,6 +9,7 @@ import { ExpenseRequestModule } from "../expense-request/expense-request.module"
 import { PolicyEngineModule } from "../policy-engine/policy-engine.module";
 import { EscalationModule } from "../escalation/escalation.module";
 import { PoaExpiryDeliveryService } from "./poa-expiry-delivery.service";
+import { DebtorModule } from "../debtor/debtor.module";
 
 /**
  * Automation Module
@@ -29,6 +30,7 @@ import { PoaExpiryDeliveryService } from "./poa-expiry-delivery.service";
     forwardRef(() => ExpenseRequestModule),
     forwardRef(() => PolicyEngineModule), // CPE entegrasyonu iÃ§in
     EscalationModule,
+    DebtorModule,
   ],
   controllers: [AutomationController],
   providers: [AutomationService, WorkflowEngine, RuleEngine, PoaExpiryDeliveryService],

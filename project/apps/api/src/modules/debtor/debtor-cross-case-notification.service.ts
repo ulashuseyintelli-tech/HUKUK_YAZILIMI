@@ -106,7 +106,14 @@ export class DebtorCrossCaseNotificationService {
       await this.prisma.$transaction(async (tx) => {
         for (const [affectedCaseId, caseDebtor] of byCase) {
           const recipients = await this.resolveRecipients(tx, affectedCaseId);
-          if (recipients.length === 0) continue;
+          if (recipients.length === 0) {
+            // DBND-D6A-2-SURFACE (owner Q1): teknik olarak mümkün kabul edilir ama anomaly —
+            // DB-level invariant EKLENMEZ, yalnız gözlem. Diğer affected case'ler için üretim devam eder.
+            this.logger.warn(
+              `D6 cross-case notification: no recipient resolved for affected case (tenantId=${tenantId}, debtorId=${debtorId}, affectedCaseId=${affectedCaseId}, affectedCaseDebtorId=${caseDebtor.id})`
+            );
+            continue;
+          }
 
           for (const fieldGroup of fieldGroups) {
             const severity = FIELD_GROUP_SEVERITY[fieldGroup];
@@ -170,6 +177,64 @@ export class DebtorCrossCaseNotificationService {
     } catch (e: any) {
       this.logger.warn(`D6 cross-case notification fan-out failed (debtorId=${debtorId}): ${e?.message ?? e}`);
     }
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.listCrossCaseNotifications() → GET /debtors/cross-case-notifications
+  ///   (DBND-D6A-2-SURFACE; ofis-içi "görülmemiş bildirimlerim" listesi — self-scoped, tenantId/
+  ///   recipientUserId çağıran controller tarafından yalnız JWT/req.user'dan türetilir)
+  /// </remarks>
+  async listForRecipient(
+    tenantId: string,
+    recipientUserId: string,
+    status: "PENDING" | "ACKNOWLEDGED" | "EXPIRED" = "PENDING"
+  ): Promise<
+    Array<{
+      id: string;
+      debtorId: string;
+      affectedCaseId: string;
+      affectedCaseFileNumber: string | null;
+      fieldGroup: DebtorNotificationFieldGroupKey;
+      severity: Severity;
+      changeSummary: string;
+      status: string;
+      createdAt: Date;
+      expiresAt: Date;
+      acknowledgedAt: Date | null;
+    }>
+  > {
+    const rows = await this.prisma.debtorCrossCaseNotification.findMany({
+      where: { tenantId, recipientUserId, status },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        debtorId: true,
+        affectedCaseId: true,
+        affectedCase: { select: { fileNumber: true } },
+        fieldGroup: true,
+        severity: true,
+        changeSummary: true,
+        status: true,
+        createdAt: true,
+        expiresAt: true,
+        acknowledgedAt: true,
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      debtorId: row.debtorId,
+      affectedCaseId: row.affectedCaseId,
+      affectedCaseFileNumber: row.affectedCase?.fileNumber ?? null,
+      fieldGroup: row.fieldGroup as DebtorNotificationFieldGroupKey,
+      severity: row.severity as Severity,
+      changeSummary: row.changeSummary,
+      status: row.status,
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt,
+      acknowledgedAt: row.acknowledgedAt,
+    }));
   }
 
   /** PENDING → ACKNOWLEDGED. Yalnız hedef alıcı + hâlâ PENDING ise geçiş yapar (compare-and-set). */

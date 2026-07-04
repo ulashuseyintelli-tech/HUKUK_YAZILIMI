@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../../prisma/prisma.service";
 import { WorkflowEngine } from "./workflow-engine.service";
 import { PoaExpiryDeliveryService } from "./poa-expiry-delivery.service";
+import { DebtorCrossCaseNotificationService } from "../debtor/debtor-cross-case-notification.service";
 import { CaseStatus, WorkflowStage, NotificationStatus, LegalCaseStatus, PoaStatus } from "@prisma/client";
 
 // Otomasyon açık olan statüler (C.19)
@@ -25,7 +26,8 @@ export class AutomationService {
   constructor(
     private prisma: PrismaService,
     private workflowEngine: WorkflowEngine,
-    private poaExpiryDeliveryService: PoaExpiryDeliveryService
+    private poaExpiryDeliveryService: PoaExpiryDeliveryService,
+    private debtorCrossCaseNotificationService: DebtorCrossCaseNotificationService
   ) {}
 
   // Her 5 dakikada bir çalışan ana kontrol döngüsü (C.20)
@@ -157,6 +159,18 @@ export class AutomationService {
     this.logger.log(
       `Processed ${expiredNotifications.length} expired notifications`
     );
+  }
+
+  // DBND-D6A-2-SURFACE: Her saat başı süresi dolan (PENDING, expiresAt geçmiş) paylaşılan-borçlu
+  // çapraz-dosya bildirimlerini EXPIRED'a çevir. İş mantığı DebtorCrossCaseNotificationService'te
+  // kalır (bu metod yalnız orkestrasyon) — PoaExpiryDeliveryService ile aynı idiom, migration/yeni
+  // model YOK.
+  @Cron(CronExpression.EVERY_HOUR)
+  async expireCrossCaseNotifications(): Promise<void> {
+    const count = await this.debtorCrossCaseNotificationService.expireStaleNotifications();
+    if (count > 0) {
+      this.logger.log(`Expired ${count} debtor cross-case notification(s)`);
+    }
   }
 
   // Her gün saat 2'de süresi dolan vekaletleri EXPIRED olarak işaretle
