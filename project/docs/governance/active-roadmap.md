@@ -30,3 +30,16 @@ Owner kilidi = 7 faz. Accounting backend = Codex domain; Claude payı = her back
 | PHASE 5 | Financial Statements | Cari/ekstre/finansal tablolar journal-türevi | Codex (BE) → Claude (FE) | CLOSED | Owner decision closed ACCT-5: `READY FOR OWNER CLOSURE` -> `CLOSED`; closure gate merged: `project/docs/finance/acct-5-financial-statements-closure-gate.md`; design gate + ACCT-5A read contract + ACCT-5B projection service + ACCT-5C HTTP boundary complete; no schema/migration/UI/posting/writer/legal-ledger/TBK100 change. → ACCT-5 |
 | PHASE 6 | Reporting | Firma-geneli raporlama | Codex (BE) → Claude (FE) | PLANNED | → ACCT-6 |
 | PHASE 7 | Approval UI | Office-approval Inbox/approve FE (P4-6) | Claude (FE-only) | PLANNED · demand-gated | Generic `/office-approvals` controller HAZIR; gerçek approval hacmi oluşunca (eksenin SONU). → P4-6 |
+
+## İkincil İz — Alacak Kalemi Domain (2026-07-03 GO-ANALYZE, owner faz kararı bekliyor)
+
+POST-P4 Accounting Engine ekseninden BAĞIMSIZ, ayrı bir hukuki-hesaplama izi (bkz `decision-log.md` 2026-07-03/07-04 satırları). Tam 21 maddelik backlog `product-backlog.md`'de ("Alacak Kalemi Domain — Round-3 Backlog"). Bu tablo implementasyon yetkisi VERMEZ; yalnız zaten gerçekleşmiş işi kayda geçirir — ALC-P0-2B/C veya ALC-P0-3/P0-4'e geçiş için ayrı owner GO gerekir.
+
+| Item | Status | Notes |
+|---|---|---|
+| ALC-P0-1 Collection idempotency | DONE | PR #851, `d65950f8` |
+| ALC-P0-2 POSTED disposition storno | IN-PROGRESS | P0-2A (accounting journal-entry reversal) DONE `bc1b9c4b`; P0-2B/C (BalanceLedger/payout/ClientStatement) AÇIK — kasıtlı manuel boundary, kısayol değil |
+| ALC-P0-3 Canonical balance source + cutover tasarımı (B1'in kapanış yolu) | BACKLOG | #857/#861 yalnız `interestAccrualStatus`/provenance sözleşmesini ekledi; display/cutover'ın kendisi başlamadı — B1'i kapanmış SAYMA |
+| ALC-P0-4..7, P1-1..7, P2-1..7 | BACKLOG | Detay `product-backlog.md`'de |
+
+**Production tahsilat geliştirmesi: NO-GO** (yukarıdaki P0 maddeleri kapanana kadar). **Owner karar noktası (2026-07-04 itibarıyla açık):** (1) ALC-P0-2B/C tamamlansın mı, yoksa (2) ALC-P0-3/P0-4 (canonical balance / Due cutover) tasarımına mı geçilsin?
