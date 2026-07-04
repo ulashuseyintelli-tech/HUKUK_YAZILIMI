@@ -276,7 +276,16 @@ class ApiClient {
   // K1-7-4: admin login-davet yönetimi (self-service). Tümü ADMIN + JWT gerektirir
   // (backend: JwtAuthGuard + AdminGuard + LOGIN_INVITE_PROVISIONING_ENABLED). Ham token
   // asla bu yanıtlarda dönmez; e-posta backend tarafından otomatik gönderilir.
-  async createInvite(data: { email: string; name: string; surname?: string; role?: string }) {
+  // OWN-01: lawyerId/staffMemberId verilirse (karşılıklı dışlayıcı), backend oluşan User'ı o
+  // profile deterministik bağlar (Lawyer.userId/StaffMember.userId).
+  async createInvite(data: {
+    email: string;
+    name: string;
+    surname?: string;
+    role?: string;
+    lawyerId?: string;
+    staffMemberId?: string;
+  }) {
     return this.request<{ inviteId: string; userId: string; email: string; expiresAt: string }>(
       "/auth/invites",
       { method: "POST", body: JSON.stringify(data) }

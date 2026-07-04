@@ -3,7 +3,9 @@
 // K1-7-4B: Kişi kartı içinde "Giriş Erişimi" bloğu — AVUKAT ve PERSONEL için ORTAK davet componenti.
 // Davet aksiyonu YALNIZ kaydedilmiş kişi bilgisinden üretilir (form dirty ise buton disabled).
 // Sadece ADMIN görür. Backend /auth/invites (createInvite/listInvites/resendInvite/revokeInvite)
-// kullanılır — yeni endpoint/migration/şema YOK. Profil link (Lawyer.userId/StaffMember.userId) burada YAZILMAZ.
+// kullanılır — yeni endpoint/migration/şema YOK.
+// OWN-01: davet bu kartın personType/personId'sinden (lawyerId/staffMemberId) açıldığı için,
+// backend oluşan User'ı AYNI istekte o profile deterministik bağlar (Lawyer.userId/StaffMember.userId).
 //
 // Eşleştirme notu: backend list() e-postayı MASKELİ döndürür (redactEmail). Bu yüzden eşleştirme,
 // aynı redaction client tarafında uygulanıp `redactEmail(normalize(email)) === invite.email` ile yapılır.
@@ -157,6 +159,7 @@ export function PersonAccessInviteCard({
         name: (firstName ?? "").trim(),
         surname: (lastName ?? "").trim() || undefined,
         role: "USER",
+        ...(personType === "lawyer" ? { lawyerId: personId } : { staffMemberId: personId }),
       });
       flash("Giriş daveti gönderildi — parola belirleme e-postası yollandı.");
       await load();
