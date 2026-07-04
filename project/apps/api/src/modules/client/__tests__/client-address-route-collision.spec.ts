@@ -62,21 +62,29 @@ describe('Client/Debtor address route collision regression (DBND-D6A-1)', () => 
     jest.clearAllMocks();
   });
 
+  // Yalnız ilk N pozisyonel argümanı kontrol eder (tam arity DEĞİL) — debtor/client servislerinin
+  // kendi çağrı imzasına eklediği ek argümanlar (ör. actor/audit metadata) bu route-dispatch testini
+  // kırmasın; bu dosyanın işi HANGİ servisin tetiklendiğini doğrulamak, çağrı imzasını pinlemek değil.
+  function firstCallArgs(mockFn: jest.Mock) {
+    return mockFn.mock.calls[0];
+  }
+
   it('PUT /addresses/:addressId (debtor, bare route) hâlâ AddressService.update çağırır', async () => {
     await request(app.getHttpServer()).put('/addresses/addr-debtor-1').send({ street: 'X' }).expect(200);
 
-    expect(addressServiceMock.update).toHaveBeenCalledWith(
-      'tenant-1',
-      'addr-debtor-1',
-      expect.objectContaining({ street: 'X' }),
-    );
+    const [tenantId, addressId, dto] = firstCallArgs(addressServiceMock.update);
+    expect(tenantId).toBe('tenant-1');
+    expect(addressId).toBe('addr-debtor-1');
+    expect(dto).toEqual(expect.objectContaining({ street: 'X' }));
     expect(clientAddressServiceMock.update).not.toHaveBeenCalled();
   });
 
   it('DELETE /addresses/:addressId (debtor, bare route) hâlâ AddressService.delete çağırır', async () => {
     await request(app.getHttpServer()).delete('/addresses/addr-debtor-1').expect(200);
 
-    expect(addressServiceMock.delete).toHaveBeenCalledWith('tenant-1', 'addr-debtor-1');
+    const [tenantId, addressId] = firstCallArgs(addressServiceMock.delete);
+    expect(tenantId).toBe('tenant-1');
+    expect(addressId).toBe('addr-debtor-1');
     expect(clientAddressServiceMock.remove).not.toHaveBeenCalled();
   });
 
@@ -86,19 +94,21 @@ describe('Client/Debtor address route collision regression (DBND-D6A-1)', () => 
       .send({ city: 'İstanbul' })
       .expect(200);
 
-    expect(clientAddressServiceMock.update).toHaveBeenCalledWith(
-      'tenant-1',
-      'client-1',
-      'addr-client-1',
-      expect.objectContaining({ city: 'İstanbul' }),
-    );
+    const [tenantId, clientId, addressId, dto] = firstCallArgs(clientAddressServiceMock.update);
+    expect(tenantId).toBe('tenant-1');
+    expect(clientId).toBe('client-1');
+    expect(addressId).toBe('addr-client-1');
+    expect(dto).toEqual(expect.objectContaining({ city: 'İstanbul' }));
     expect(addressServiceMock.update).not.toHaveBeenCalled();
   });
 
   it('DELETE /clients/:clientId/addresses/:addressId ClientAddressService.remove çağırır, debtor AddressService çağrılmaz', async () => {
     await request(app.getHttpServer()).delete('/clients/client-1/addresses/addr-client-1').expect(200);
 
-    expect(clientAddressServiceMock.remove).toHaveBeenCalledWith('tenant-1', 'client-1', 'addr-client-1');
+    const [tenantId, clientId, addressId] = firstCallArgs(clientAddressServiceMock.remove);
+    expect(tenantId).toBe('tenant-1');
+    expect(clientId).toBe('client-1');
+    expect(addressId).toBe('addr-client-1');
     expect(addressServiceMock.delete).not.toHaveBeenCalled();
   });
 });
