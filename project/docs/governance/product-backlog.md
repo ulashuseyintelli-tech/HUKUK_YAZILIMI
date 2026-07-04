@@ -753,7 +753,7 @@ Depends On: ALC-AUTH-1 (kök neden analizi, sistemik `totalDebtAmount:null` bulg
 Unlock Condition: Owner GO-IMPLEMENT onayı (ALC-AUTH-1C-IMPL) — kod değişikliği bu kayıtla yetkilendirilmez.
 Estimated Size: S (tek alan hesaplama + ilgili test güncellemeleri: case-balance-display.spec.ts, balance-shadow-display.test.tsx, balance-display-shadow-diff.service.spec.ts)
 Related Modules: case-balance-display.ts, guarded-primary-display.ts, balance-display-shadow-diff.service.ts
-Status: DONE (analiz) — GO-ANALYZE tamamlandı, kod değişikliği YAPILMADI. Sonraki adım: ALC-AUTH-1C-IMPL (ayrı GO-IMPLEMENT gerekir).
+Status: **SUPERSEDED BY PR #917 (ALC-AUTH-3B)** — bkz. aşağıdaki reconciliation kararı. `ALC-AUTH-1C-IMPL` implement EDİLMEYECEK.
 
 **⚠️ AKTİF ÇAKIŞMA UYARISI (2026-07-04, ALC-AUTH-3B ile eş-zamanlı keşfedildi):** `totalDebtAmount`
 ZATEN, BAĞIMSIZ bir oturumda, FARKLI bir formülle implement edilip **MERGED edildi** — bkz.
@@ -767,6 +767,14 @@ borcu YANSITMIYOR. **`ALC-AUTH-1C-IMPL`'e OWNER GO-IMPLEMENT verilmemeli** — `
 zaten dolu (PR #917); bu kayıt ile çakışan bir ikinci implementasyon yapılırsa PR #917'nin
 sonucu sessizce üzerine yazılır/çelişir. Reconciliation (hangi formül kalacak, veya bu kayıt
 tamamen retire mi edilecek) ayrı bir owner kararı gerektirir.
+
+**Reconciliation kararı (2026-07-05, owner):** ALC-AUTH-1C-IMPL uygulanmayacak. `totalDebtAmount`'ın
+kanonik tanımı PR #917'nin `grossPrincipal + gross faiz + costs + ancillaries` formülüdür (zaten
+merge edilmiş, canlı) — `outstandingAmount + totalPaidAmount` formülü retire edildi (ALC-AUTH-1A'da
+tespit edilen `totalPaidAmount` şişkinlik kuirkliği nedeniyle daha az güvenilir kabul edildi).
+ALC-AUTH-1C **SUPERSEDED BY PR #917 (ALC-AUTH-3B)** olarak kapatıldı, ikinci bir implementasyon
+YAPILMAYACAK. Sıradaki aktif iş **ALC-AUTH-3D** (guard alignment — bkz. aşağıdaki bölüm, Status: BACKLOG)
+owner GO-IMPLEMENT'ini bekliyor.
 ---
 
 ## ALC-AUTH-3B/3C/3D — totalDebtAmount Plumbing & Guard Alignment (2026-07-04)
