@@ -229,6 +229,20 @@ export enum ActionCode {
    * gate'i korunur.
    */
   POST_COLLECTION_DISPOSITION = 'POST_COLLECTION_DISPOSITION',
+
+  // ============================================
+  // Client Payout Actions (PAYOUT-APPROVAL-2)
+  // ============================================
+
+  /**
+   * Müvekkile ödeme (ClientPayout) talebini kesinleştir - HIGH risk, geri alınamaz para çıkışı.
+   * Tasarım B (deferred-gated-finalize) v1: yetki finalize() içinde explicit enforce (PayoutApprovalPolicy
+   * — izole, disposition'ın PARTNER/canApproveOfficeActions kuralından AYRI: MANAGER'ı da kabul eder,
+   * yalnız bu actionCode için — owner kararı 2026-07-04). NOUN_VERB isimlendirme deseni CLIENT_OFFSET_APPLY/
+   * REVERSE ile tutarlı (disposition'ın kendi POST_COLLECTION_DISPOSITION/'COLLECTION_DISPOSITION_POST'
+   * string-uyuşmazlığı BURADA tekrarlanmadı — enum-tip referans kullanılır, düz string literal DEĞİL).
+   */
+  CLIENT_PAYOUT_POST = 'CLIENT_PAYOUT_POST',
 }
 
 /**
@@ -312,6 +326,9 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
 
   // R4 - Dağıtım kararını kesinleştir (CollectionDisposition POST)
   [ActionCode.POST_COLLECTION_DISPOSITION]: RiskLevel.HIGH,
+
+  // PAYOUT-APPROVAL-2 - Müvekkile ödeme talebini kesinleştir (ClientPayout finalize)
+  [ActionCode.CLIENT_PAYOUT_POST]: RiskLevel.HIGH,
 };
 
 /**

@@ -11,6 +11,9 @@
 //  - Approver yeterliliği: aktif + aynı tenant + linkli Lawyer + (lawyerRank=PARTNER VEYA canApproveOfficeActions=true). Staff ASLA.
 //  - Deferred execution P4-3'te; burada yalnız execution durum işaretleyicileri (status=APPROVED ön-koşullu).
 //  - Geçişler koşullu-update (updateMany where status=...) ile yarış-güvenli + idempotent.
+//  - PAYOUT-APPROVAL-2 (2026-07-04): eligibility artık actionCode'a göre dispatch edilir
+//    (resolveApproverEligible). CLIENT_PAYOUT_POST izole PayoutApprovalPolicy'ye gider (MANAGER dahil);
+//    her başka actionCode (disposition dahil) yukarıdaki kuralı AYNEN kullanır — sıfır regresyon.
 
 import {
   Injectable,
@@ -28,7 +31,9 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.service';
+import { PayoutApprovalPolicy } from './client-payout-approval.policy';
 
 export interface CreatePendingRequestInput {
   tenantId: string;
@@ -48,6 +53,9 @@ export class OfficeApprovalService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly domainSync?: OfficeApprovalDomainSyncService,
+    // PAYOUT-APPROVAL-2: mevcut 2/3-argümanlı çağıranlar (testler dahil) etkilenmez — prisma'dan
+    // kendi kendine kurulur (ClientPayoutService.journalWriter ile AYNI desen).
+    private readonly payoutApprovalPolicy: PayoutApprovalPolicy = new PayoutApprovalPolicy(prisma),
   ) {}
 
   /**
@@ -119,7 +127,7 @@ export class OfficeApprovalService {
     const req = await this.requireRequest(id);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     this.assertNotSelfApproval(req, approverUserId);
-    await this.assertApproverEligible(approverUserId, req.tenantId);
+    await this.assertApproverEligibleForRequest(req, approverUserId);
     return this.commitDecision(id, OfficeApprovalStatus.APPROVED, approverUserId, note ?? null, 'OFFICE_APPROVAL_APPROVED');
   }
 
@@ -129,7 +137,7 @@ export class OfficeApprovalService {
     const req = await this.requireRequest(id);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     this.assertNotSelfApproval(req, approverUserId);
-    await this.assertApproverEligible(approverUserId, req.tenantId);
+    await this.assertApproverEligibleForRequest(req, approverUserId);
     return this.commitDecision(id, OfficeApprovalStatus.REJECTED, approverUserId, note, 'OFFICE_APPROVAL_REJECTED');
   }
 
@@ -150,7 +158,7 @@ export class OfficeApprovalService {
     const req = await this.requireRequest(id);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     this.assertNotSelfApproval(req, approverUserId);
-    await this.assertApproverEligible(approverUserId, req.tenantId);
+    await this.assertApproverEligibleForRequest(req, approverUserId);
     const replacementPayloadHash = stableJsonHash(replacementSavedIntent);
     return this.commitDecision(
       id,
@@ -171,7 +179,7 @@ export class OfficeApprovalService {
     const req = await this.requireRequest(id);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     this.assertNotSelfApproval(req, approverUserId);
-    await this.assertApproverEligible(approverUserId, req.tenantId);
+    await this.assertApproverEligibleForRequest(req, approverUserId);
     return this.commitDecision(id, OfficeApprovalStatus.REVISION_REQUESTED, approverUserId, note, 'OFFICE_APPROVAL_REVISION_REQUESTED');
   }
 
@@ -374,9 +382,24 @@ export class OfficeApprovalService {
     return !!lw && (lw.lawyerRank === 'PARTNER' || lw.canApproveOfficeActions === true);
   }
 
-  /** Approver yeterliliği — değilse 403. (Predikat isApproverEligible'da; karar metodları bunu çağırır.) */
-  private async assertApproverEligible(approverUserId: string, tenantId: string): Promise<void> {
-    if (!(await this.isApproverEligible(approverUserId, tenantId))) {
+  /**
+   * PAYOUT-APPROVAL-2 (2026-07-04, owner kararı) — eligibility'yi actionCode'a göre dispatch eder.
+   * isApproverEligible() KASITLI OLARAK DEĞİŞTİRİLMEDİ: disposition ve her başka actionCode bu
+   * metodun eski davranışını AYNEN kullanmaya devam eder (sıfır regresyon). Yalnız CLIENT_PAYOUT_POST
+   * izole PayoutApprovalPolicy'ye yönlendirilir (money-out için MANAGER'ı da kabul eder; bu genişleme
+   * disposition'a veya başka bir actionCode'a SIZMAZ). Üçüncü bir action-özel policy gerekirse buraya
+   * yeni bir dal eklenir — registry ŞİMDİLİK kurulmuyor (YAGNI, tek dal yeterli).
+   */
+  private async resolveApproverEligible(req: OfficeApprovalRequest, approverUserId: string): Promise<boolean> {
+    if (req.actionCode === ActionCode.CLIENT_PAYOUT_POST) {
+      return this.payoutApprovalPolicy.isEligible(approverUserId, req.tenantId);
+    }
+    return this.isApproverEligible(approverUserId, req.tenantId);
+  }
+
+  /** Approver yeterliliği — değilse 403. (Predikat resolveApproverEligible'da; karar metodları bunu çağırır.) */
+  private async assertApproverEligibleForRequest(req: OfficeApprovalRequest, approverUserId: string): Promise<void> {
+    if (!(await this.resolveApproverEligible(req, approverUserId))) {
       throw new ForbiddenException('Onay yetkisi yok (aktif, aynı tenant, PARTNER veya yetkilendirilmiş avukat gerekir).');
     }
   }

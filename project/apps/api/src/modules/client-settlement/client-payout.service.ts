@@ -10,7 +10,11 @@ import {
 } from '../accounting-journal';
 import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
 import { Capacity } from '../policy-engine/types/effective-permission.types';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { PayoutApprovalPolicy } from '../office-approval/client-payout-approval.policy';
+import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { payoutLockKey } from './payout-lock';
@@ -20,6 +24,25 @@ export interface CreatePayoutResult {
   payoutId: string;
   idempotentReplay?: boolean;
 }
+
+export interface RequestPayoutResult {
+  requested: true;
+  approvalRequestId: string;
+  status: string;
+}
+
+/** PAYOUT-APPROVAL-2 (Tasarım B): OfficeApprovalRequest.savedIntent/payloadHash şekli — request/finalize arasında BİREBİR aynı üretilmeli. */
+interface PayoutSavedIntent {
+  caseId: string;
+  caseClientId: string;
+  amount: string;
+  currency: string;
+  note: string | null;
+  idempotencyKey: string;
+}
+
+/** OfficeApprovalRequest.targetType — payout'un henüz ClientPayout satırı yokken referans aldığı sabit değer. */
+const PAYOUT_REQUEST_TARGET_TYPE = 'CLIENT_PAYOUT_REQUEST';
 
 interface AllocationSourceLine {
   id: string;
@@ -106,6 +129,16 @@ function compareAllocationSourceLines(a: AllocationSourceLine, b: AllocationSour
  * ile AYNI desende, aynı $transaction içinde AuditService.logInTransaction ile CLIENT_PAYOUT_CREATED
  * yazar (fail-closed: audit yazılamazsa payout de rollback olur). Bu değişiklik yalnız audit izidir —
  * approval binding / self-approval engeli / yeni ActionCode DEĞİLDİR (owner kararı ikinci faza bırakıldı).
+ *
+ * PAYOUT-APPROVAL-2 PR-2a (Tasarım B: deferred-gated-finalize — 2026-07-04): requestPayout()/finalize()
+ * eklendi. `create()` (POST /client-payouts) BİREBİR AYNI davranışıyla DOKUNULMADI — bilinçli, GEÇİCİ
+ * governance-gap: eski route hâlâ self-approval'a gated DEĞİL, PR-2b (FE cutover + eski route kapatma)
+ * ile kapanacak. requestPayout(): yalnız OfficeApprovalRequest oluşturur (actionCode=CLIENT_PAYOUT_POST,
+ * targetType=CLIENT_PAYOUT_REQUEST), ClientPayout satırı YARATMAZ. finalize(): yalnız APPROVED talep +
+ * payload-hash eşleşmesi (drift guard) + PayoutApprovalPolicy re-check sonrası, create()'in AYNI
+ * transaction gövdesini (artık runPayoutCreationTransaction'da paylaşılan) çalıştırır — advisory lock +
+ * taze outstanding recheck finalize'da da AYNEN geçerli (iki payout arasında double-spend engeli korunur).
+ * ClientPayoutStatus/migration DOKUNULMADI (Tasarım B'nin kazancı — bkz. design-gate notu).
  */
 @Injectable()
 export class ClientPayoutService {
@@ -115,6 +148,8 @@ export class ClientPayoutService {
     private readonly prisma: PrismaService,
     private readonly readService: ClientSettlementReadService,
     private readonly audit: AuditService,
+    private readonly officeApproval: OfficeApprovalService,
+    private readonly payoutApprovalPolicy: PayoutApprovalPolicy,
     private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
   ) {}
 
@@ -150,18 +185,149 @@ export class ClientPayoutService {
     if (!userId) throw new BadRequestException('actor (req.user.id) yok — payout kaydedilemez');
     const authorizedCapacity = await this.assertOfficeAdmin(userId);
     if (!dto?.idempotencyKey) throw new BadRequestException('idempotencyKey zorunlu');
-    let amount: Prisma.Decimal;
-    try {
-      amount = new Prisma.Decimal(dto.amount as Prisma.Decimal.Value);
-    } catch {
-      throw new BadRequestException('geçersiz tutar');
-    }
-    if (amount.lte(0)) throw new BadRequestException('tutar pozitif olmalı');
+    const amount = this.parseAmount(dto.amount);
     const currency = dto.currency || 'TRY';
 
     // caseClientId doğrulama (ortak read-service): tenant+case+role. clientId ile authz YOK.
     await this.readService.assertEligibleCaseClient(tenantId, dto.caseId, dto.caseClientId);
 
+    return this.runPayoutCreationTransaction(tenantId, dto, amount, currency, userId, authorizedCapacity, 'DIRECT_OFFICE_ADMIN_CAPABILITY');
+  }
+
+  /**
+   * PAYOUT-APPROVAL-2 PR-2a (Tasarım B, adım 1/2): yalnız OfficeApprovalRequest oluşturur.
+   * ClientPayout satırı HENÜZ YARATILMAZ — finansal etki tamamen finalize()'a ertelenir.
+   *
+   * Çağrıldığı yerler:
+   *  - ClientPayoutController.request() → POST /client-payouts/request
+   */
+  async requestPayout(tenantId: string, dto: CreateClientPayoutDto, actor?: { userId?: string }): Promise<RequestPayoutResult> {
+    const userId = actor?.userId;
+    if (!userId) throw new BadRequestException('actor (req.user.id) yok — payout talebi oluşturulamaz');
+    if (!dto?.idempotencyKey) throw new BadRequestException('idempotencyKey zorunlu');
+    const amount = this.parseAmount(dto.amount);
+    const currency = dto.currency || 'TRY';
+
+    // caseClientId doğrulama create() ile AYNI (ortak read-service): tenant+case+role.
+    await this.readService.assertEligibleCaseClient(tenantId, dto.caseId, dto.caseClientId);
+
+    const savedIntent = this.buildPayoutIntent(dto, amount, currency);
+    const approval = await this.officeApproval.createPendingRequest({
+      tenantId,
+      actionCode: ActionCode.CLIENT_PAYOUT_POST,
+      targetType: PAYOUT_REQUEST_TARGET_TYPE,
+      targetRef: dto.idempotencyKey,
+      requesterUserId: userId,
+      savedIntent,
+      idempotencyKey: `client-payout-request:${dto.idempotencyKey}`,
+    });
+    return { requested: true, approvalRequestId: approval.id, status: approval.status };
+  }
+
+  /**
+   * PAYOUT-APPROVAL-2 PR-2a (Tasarım B, adım 2/2): yalnız APPROVED + payload-hash eşleşen bir
+   * CLIENT_PAYOUT_POST talebi için create()'in AYNI transaction mantığını (runPayoutCreationTransaction)
+   * çalıştırır. Payload-drift guard: onaylanan savedIntent ile buradaki dto FARKLIYSA reddedilir
+   * (onaylanan tutar ile kesinleştirilen tutar asla ayrışmaz). Advisory lock + taze outstanding recheck
+   * runPayoutCreationTransaction içinde, create() ile BİREBİR aynı — double-spend engeli korunur.
+   *
+   * Çağrıldığı yerler:
+   *  - ClientPayoutController.finalize() → POST /client-payouts/:approvalRequestId/finalize
+   */
+  async finalize(
+    tenantId: string,
+    approvalRequestId: string,
+    dto: CreateClientPayoutDto,
+    actor?: { userId?: string },
+  ): Promise<CreatePayoutResult> {
+    const userId = actor?.userId;
+    if (!userId) throw new BadRequestException('actor (req.user.id) yok — payout kesinleştirilemez');
+    if (!dto?.idempotencyKey) throw new BadRequestException('idempotencyKey zorunlu');
+
+    const approval = await this.officeApproval.getByIdForTenant(approvalRequestId, tenantId);
+    if (approval.actionCode !== ActionCode.CLIENT_PAYOUT_POST || approval.targetType !== PAYOUT_REQUEST_TARGET_TYPE) {
+      throw new ConflictException('Onay talebi bu payout finalize akışına ait değil');
+    }
+    if (approval.status !== 'APPROVED') {
+      throw new BadRequestException(`Yalnız APPROVED payout talebi kesinleştirilebilir (durum: ${approval.status})`);
+    }
+
+    const amount = this.parseAmount(dto.amount);
+    const currency = dto.currency || 'TRY';
+
+    // Payload-drift guard: onaylanan savedIntent ile finalize'a gelen dto AYNI hash'i üretmeli.
+    const expectedIntent = this.buildPayoutIntent(dto, amount, currency);
+    if (stableJsonHash(expectedIntent) !== approval.payloadHash) {
+      throw new ConflictException({
+        code: 'PAYOUT_FINALIZE_PAYLOAD_DRIFT',
+        message: 'Finalize payload, onaylanan talep ile eşleşmiyor',
+      });
+    }
+
+    // Defense-in-depth: generic approve() zaten PayoutApprovalPolicy ile geçmiş olmalı; finalize
+    // AYRICA re-check eder (disposition'ın post()'ta isApproverEligible'ı yeniden çağırmasıyla AYNI desen).
+    const authorizedCapacity = await this.payoutApprovalPolicy.assertEligible(userId, tenantId);
+    await this.readService.assertEligibleCaseClient(tenantId, dto.caseId, dto.caseClientId);
+
+    const result = await this.runPayoutCreationTransaction(
+      tenantId,
+      dto,
+      amount,
+      currency,
+      userId,
+      authorizedCapacity,
+      'OFFICE_APPROVAL_BINDING',
+      approval.id,
+    );
+
+    // Best-effort execution marker (disposition-posting.service.ts'nin post()'u ile AYNI desen):
+    // finansal truth zaten commit edildi, marker hatası finalize sonucunu ETKİLEMEZ.
+    try {
+      await this.officeApproval.markExecutionSucceeded(approval.id, userId);
+    } catch (e) {
+      this.logger.warn(`markExecutionSucceeded başarısız (finalize commit edildi): ${approval.id} — ${(e as Error).message}`);
+    }
+
+    return result;
+  }
+
+  private parseAmount(raw: string | number): Prisma.Decimal {
+    let amount: Prisma.Decimal;
+    try {
+      amount = new Prisma.Decimal(raw as Prisma.Decimal.Value);
+    } catch {
+      throw new BadRequestException('geçersiz tutar');
+    }
+    if (amount.lte(0)) throw new BadRequestException('tutar pozitif olmalı');
+    return amount;
+  }
+
+  /** request() ve finalize() BİREBİR aynı şekli üretmeli — payload-hash karşılaştırması buna dayanır. */
+  private buildPayoutIntent(dto: CreateClientPayoutDto, amount: Prisma.Decimal, currency: string): PayoutSavedIntent {
+    return {
+      caseId: dto.caseId,
+      caseClientId: dto.caseClientId,
+      amount: amount.toString(),
+      currency,
+      note: dto.note ?? null,
+      idempotencyKey: dto.idempotencyKey,
+    };
+  }
+
+  /**
+   * create() ve finalize() arasında PAYLAŞILAN, davranışı DEĞİŞMEYEN transaction gövdesi (PAYOUT-APPROVAL-1'deki
+   * create() ile birebir aynı mantık — yalnız authorizationMode/approvalRequestId çağırana göre parametrize).
+   */
+  private async runPayoutCreationTransaction(
+    tenantId: string,
+    dto: CreateClientPayoutDto,
+    amount: Prisma.Decimal,
+    currency: string,
+    userId: string,
+    authorizedCapacity: Capacity,
+    authorizationMode: string,
+    approvalRequestId?: string,
+  ): Promise<CreatePayoutResult> {
     // Idempotent replay (lock öncesi hızlı yol): aynı (tenant, idempotencyKey).
     // AYNI payload → replay; FARKLI payload → ConflictException (sessiz eski-payout dönme YOK).
     const existing = await this.prisma.clientPayout.findUnique({
@@ -245,9 +411,10 @@ export class ClientPayoutService {
 
         // PAYOUT-APPROVAL-1 (audit hardening, ilk-PR): ClientOffsetService/ClientPayoutManualReversalService
         // ile AYNI desen — aynı $transaction içinde, fail-closed (logInTransaction hata yutmaz, throw ederse
-        // payout kaydı da rollback olur). authorizedCapacity: assertOfficeAdmin'in hangi capacity ile
-        // (PARTNER/MANAGER) geçtiğini audit izinde görünür kılar — bu PR approval-binding YAPMAZ, yalnız
-        // "kim/hangi yetkiyle/ne zaman" izini bırakır.
+        // payout kaydı da rollback olur). authorizedCapacity: hangi capacity ile (PARTNER/MANAGER) geçtiğini
+        // audit izinde görünür kılar. authorizationMode: create() (DIRECT_OFFICE_ADMIN_CAPABILITY) mi yoksa
+        // finalize() (OFFICE_APPROVAL_BINDING) üzerinden mi geldiğini ayırt eder — PR-2a geçiş döneminde
+        // iki yol da canlı kalırken audit izinde hangisinin kullanıldığı görünür olsun diye.
         await this.audit.logInTransaction(tx, {
           tenantId,
           action: 'CLIENT_PAYOUT_CREATED',
@@ -256,8 +423,9 @@ export class ClientPayoutService {
           userId,
           description: `Müvekkile ödeme kaydedildi (${amount.toString()} ${currency})`,
           metadata: {
-            authorizationMode: 'DIRECT_OFFICE_ADMIN_CAPABILITY',
+            authorizationMode,
             authorizedCapacity,
+            ...(approvalRequestId ? { approvalRequestId } : {}),
             caseId: dto.caseId,
             caseClientId: dto.caseClientId,
             amount: amount.toString(),
