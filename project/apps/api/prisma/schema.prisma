@@ -4230,6 +4230,8 @@ enum ClientIntelCategory {
   DIGITAL_FOOTPRINT // Dijital iz (sosyal medya/online mağaza)
   PAYMENT_HISTORY // Tahsilat geçmişi beyanı
   STRATEGY // Dosya stratejisi soruları
+  ASSET_DECLARATION // CLIENT-INTEL-4.6C: müvekkilin beyan ettiği varlık (araç/gayrimenkul vb.) — serbest metin, doğrulanmış Asset kaydı DEĞİL
+  CONTACT_DECLARATION // CLIENT-INTEL-4.6C: müvekkilin beyan ettiği iletişim bilgisi (telefon/e-posta vb.) — serbest metin, DebtorCommunication DEĞİL
 }
 
 enum ClientIntelSource {

@@ -65,7 +65,7 @@ describe('ClientIntakePromotionService', () => {
     expect(res.submissionStatus).toBe('COMPLETED');
   });
 
-  it('ADDRESS/ASSET/CONTACT SKIP (4.6b) → PARTIALLY_PROMOTED, skipped raporlanır', async () => {
+  it('ADDRESS SKIP (yalnız ADDRESS artık atlanır — CLIENT-INTEL-4.6C ile ASSET/CONTACT da promote olur) → PARTIALLY_PROMOTED', async () => {
     mockPrisma.clientIntakeField.findMany.mockResolvedValue([
       { id: 'f-1', category: 'INCOME_SOURCE', label: null, value: 'X' },
       { id: 'f-2', category: 'ADDRESS', label: null, value: 'Y' },
@@ -74,10 +74,30 @@ describe('ClientIntakePromotionService', () => {
 
     const res = await service.promote(TENANT, SUB, USER, DEBTOR);
 
-    expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledTimes(1); // yalnız soft
+    expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledTimes(1); // yalnız soft (ADDRESS hariç)
     expect(res.promoted).toHaveLength(1);
     expect(res.skipped).toEqual([{ fieldId: 'f-2', category: 'ADDRESS', reason: 'NON_SOFT_INTEL_4_6B' }]);
     expect(res.submissionStatus).toBe('PARTIALLY_PROMOTED');
+  });
+
+  it('CLIENT-INTEL-4.6C: ASSET + CONTACT alanları da promote() ile ClientIntelStatement üretir (submission-level)', async () => {
+    mockPrisma.clientIntakeField.findMany.mockResolvedValue([
+      { id: 'f-asset', category: 'ASSET', label: null, value: 'Gri bir aracı var, plakasını bilmiyorum' },
+      { id: 'f-contact', category: 'CONTACT', label: null, value: 'Kız kardeşinin telefonu: 05551234567' },
+    ]);
+    mockPrisma.clientIntakeField.count.mockResolvedValueOnce(2).mockResolvedValueOnce(2); // approved=2, promoted=2
+
+    const res = await service.promote(TENANT, SUB, USER, DEBTOR);
+
+    expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ category: 'ASSET_DECLARATION', value: 'Gri bir aracı var, plakasını bilmiyorum' }),
+    }));
+    expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ category: 'CONTACT_DECLARATION', value: 'Kız kardeşinin telefonu: 05551234567' }),
+    }));
+    expect(res.skipped).toEqual([]);
+    expect(res.submissionStatus).toBe('COMPLETED');
   });
 
   it('IDEMPOTENT: promote edilecek alan yoksa create YOK', async () => {
@@ -259,18 +279,30 @@ describe('ClientIntakePromotionService', () => {
       expect(res).toEqual({ result: 'PROMOTED', clientIntelStatementId: 'cis-1', submissionStatus: 'COMPLETED' });
     });
 
-    it('ADDRESS → 400 (promote-soft yalnız soft-6); create YOK', async () => {
+    it('ADDRESS → 400 (promote-soft artık soft-8 kapsıyor — ADDRESS hâlâ ayrı promote-address ister); create YOK', async () => {
       armSoftField({ category: 'ADDRESS' });
       await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
       expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
     });
 
-    it('ASSET → 400 ve CONTACT → 400 (4.6c yok); create YOK', async () => {
-      armSoftField({ category: 'ASSET' });
-      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
-      armSoftField({ category: 'CONTACT' });
-      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
-      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+    it('CLIENT-INTEL-4.6C: ASSET APPROVED → ClientIntelStatement(category=ASSET_DECLARATION) + promotedRef; PROMOTED', async () => {
+      armSoftField({ category: 'ASSET', value: 'Bir aracı ve İstanbul’da bir dairesi olduğunu söyledi' });
+      mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+      const res = await service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR);
+      expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ category: 'ASSET_DECLARATION', value: 'Bir aracı ve İstanbul’da bir dairesi olduğunu söyledi' }),
+      }));
+      expect(res).toEqual({ result: 'PROMOTED', clientIntelStatementId: 'cis-1', submissionStatus: 'COMPLETED' });
+    });
+
+    it('CLIENT-INTEL-4.6C: CONTACT APPROVED → ClientIntelStatement(category=CONTACT_DECLARATION) + promotedRef; PROMOTED', async () => {
+      armSoftField({ category: 'CONTACT', value: 'İş yeri telefonu: 0212 555 00 00' });
+      mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+      const res = await service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR);
+      expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ category: 'CONTACT_DECLARATION', value: 'İş yeri telefonu: 0212 555 00 00' }),
+      }));
+      expect(res).toEqual({ result: 'PROMOTED', clientIntelStatementId: 'cis-1', submissionStatus: 'COMPLETED' });
     });
 
     it('APPROVED olmayan alan → 400; create YOK', async () => {

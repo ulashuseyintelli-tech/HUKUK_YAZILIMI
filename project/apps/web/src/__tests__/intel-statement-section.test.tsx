@@ -297,3 +297,52 @@ describe('IntelStatementSection — lifecycle mutations (CLIENT-INTEL-4.7D-2)', 
     expect(screen.getByRole('button', { name: 'Ekle' })).toBeDisabled();
   });
 });
+
+describe('IntelStatementSection — CLIENT-INTEL-4.6C: ASSET_DECLARATION/CONTACT_DECLARATION görünürlüğü', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('debtor-scope: ASSET_DECLARATION + CONTACT_DECLARATION doğru Türkçe etiketle, kategori-gruplu gösterilir', async () => {
+    api.listByDebtorAllStatuses.mockResolvedValue([
+      ROW({ id: 'a1', category: 'ASSET_DECLARATION', value: 'Gri bir aracı var, plakasını bilmiyoruz' }),
+      ROW({ id: 'c1', category: 'CONTACT_DECLARATION', value: 'Kız kardeşinin telefonu: 05551234567' }),
+    ]);
+    renderSection({ debtorId: 'debtor-1' });
+
+    await waitFor(() => expect(screen.getByText('Gri bir aracı var, plakasını bilmiyoruz')).toBeTruthy());
+    expect(screen.getByText('Kız kardeşinin telefonu: 05551234567')).toBeTruthy();
+    // kategori başlıkları — yeni etiketler (raw enum key DEĞİL)
+    expect(screen.getByText('Varlık Beyanı')).toBeTruthy();
+    expect(screen.getByText('İletişim Beyanı')).toBeTruthy();
+    expect(screen.queryByText('ASSET_DECLARATION')).not.toBeInTheDocument();
+    expect(screen.queryByText('CONTACT_DECLARATION')).not.toBeInTheDocument();
+  });
+
+  it('case-scope: aynı iki kategori aynı şekilde görünür (scope-agnostik render)', async () => {
+    api.listByCaseAllStatuses.mockResolvedValue([
+      ROW({ id: 'a1', category: 'ASSET_DECLARATION', value: 'Bir dairesi olduğunu söyledi' }),
+    ]);
+    renderSection({ caseId: 'case-1' });
+    await waitFor(() => expect(screen.getByText('Bir dairesi olduğunu söyledi')).toBeTruthy());
+    expect(screen.getByText('Varlık Beyanı')).toBeTruthy();
+  });
+
+  it('"Yeni İstihbarat Ekle" formunun kategori seçiminde ASSET_DECLARATION/CONTACT_DECLARATION seçilebilir', async () => {
+    api.listByCaseAllStatuses.mockResolvedValue([]);
+    renderSection({ caseId: 'case-1', createDebtorId: 'debtor-9' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Yeni İstihbarat Ekle/i })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Yeni İstihbarat Ekle/i }));
+
+    const select = screen.getByDisplayValue('Dosya Stratejisi') as HTMLSelectElement; // varsayılan seçim
+    const optionValues = Array.from(select.options).map((o) => o.value);
+    expect(optionValues).toContain('ASSET_DECLARATION');
+    expect(optionValues).toContain('CONTACT_DECLARATION');
+
+    fireEvent.change(select, { target: { value: 'ASSET_DECLARATION' } });
+    fireEvent.change(screen.getByPlaceholderText('İstihbarat bilgisi (zorunlu)'), { target: { value: 'Araç beyanı' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+
+    await waitFor(() =>
+      expect(api.create).toHaveBeenCalledWith('case-1', expect.objectContaining({ category: 'ASSET_DECLARATION', value: 'Araç beyanı' })),
+    );
+  });
+});
