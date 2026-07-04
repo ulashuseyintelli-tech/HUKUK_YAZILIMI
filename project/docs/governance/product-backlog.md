@@ -78,6 +78,7 @@ BACKLOG
 | MPB-008 | Accounting | Offset audit detail projection | C-2D closeout: PR #644/#646 merged; read-only `GET /client-offsets/:offsetId/detail` projection verified |
 | MPB-010 | UI | Confirmed/POSTED collection cancel UX and audit visibility | PR #576 merged, merge commit `90a451b85b3c2b2dfdcc779a373afef45c1cd8e0`; Web Tests, Test Suite and Architectural Guardrails PASS |
 | MPB-014 | Authorization | Policy Engine expense/kambiyo/UYAP blockers | PR #42/#43/#44 merged; P3 UYAP outage merge `b222adc31143ae348aa0968302ab1138fd3d08a0`; focused Policy Engine tests PASS |
+| MPB-015 | Alacak Kalemi | Mixed-source interest resolution (Kademe 1.5, resolveInterestConfig) | PR #898 squash merged, SHA `a8e71a91`; 2026/9502 canonical balance artık üretiliyor; 2026/9604 ve 2026/9605 DATA/PIPELINE blocker olarak açık kalıyor (engine bug değil) |
 
 ## Items
 
@@ -660,6 +661,24 @@ Unlock Condition: Owner + Av. sign-off (finansal davranış değişikliği)
 Estimated Size: L (schema + servis + test + geriye-dönük veri etkisi)
 Related Modules: collection.service.ts, Collection (schema), LedgerEntry
 Status: BACKLOG — kod değişikliği YAPILMADI, yalnız backlog kaydı. Ayrı, dikkatli bir GO-IMPLEMENT gerektirir.
+
+## ALC-P0-3B/3B1/3B2/3B3 — Canonical Balance Display Cutover Re-focus + Mixed-Source Interest Resolution (2026-07-04, ALC-P0-3'ün alt-hattı)
+
+Kaynak: ALC-P0-3A1'in QA-seed hariç bulgusu sonrası, DI-free harness (`scripts/diagnostic-cutover-readiness.ts`, untracked) ile 3 organik CONFIRMED-collection'lı dosyanın (2026/9502, 9604, 9605) HİÇBİRİNİN canonical balance üretmediği ölçüldü — hepsi `MISSING_START_DATE`. Kök neden `resolveInterestConfig` (`claim-bucket-assembler.ts:300-344`) zincirine kadar izlendi: 3 organik ClaimItem'ın tamamında `interestType=null`; biri (2026/9502) ayrıca kendi `interestStartDate`'ini taşıyordu ama zincir "atomik-kaynak" kuralı (tip+oran+tarih tek kaynaktan) yüzünden bu tarihi yine de reddediyordu. Kod/test/doc arşeolojisiyle doğrulandı: mixed-source (item-tarih + case-tür) hiçbir yerde (ADR/test/yorum) bilinçli şekilde yasaklanmamıştı — tasarlanırken hiç gündeme gelmemiş bir kombinasyondu.
+
+**Owner kararı (2026-07-04)**: mixed-source hukuken meşru — faiz TÜRÜ dosya/takip seviyesinde tektir (Case.interestType), faiz BAŞLANGIÇ TARİHİ kalem seviyesinde farklılaşabilir (ClaimItem.interestStartDate). Bu kombinasyon "sessiz hack" değil, açık adlandırılmış bir kademe olarak eklenmeli.
+
+ID: ALC-P0-3B3
+Title: Mixed-source interest resolution (Kademe 1.5)
+Problem: `resolveInterestConfig`'e item.interestStartDate + case.interestType kombinasyonunu tanıyan, mevcut atomik kademe 1/2/3/4 sırasını bozmayan, açık adlandırılmış bir Kademe 1.5 eklendi.
+Business Value: Hukuken yeterli olan ama önceden kullanılamayan veri artık canonical balance'a dönüşüyor.
+Technical Value: 2 dosya değişti (`claim-bucket-assembler.ts` + spec), 84 satır ekleme/3 çıkarma; `claim-bucket-assembler.spec.ts` 34/34 PASS (27 eski + 7 yeni), tüm `interest-engine` modülü (35 test suite) 574/574 PASS — regresyon yok.
+Priority: —
+Depends On: ALC-P0-3B1/3B2 (contract-mi-pipeline-mi ayrımı, GO-ANALYZE)
+Unlock Condition: —
+Estimated Size: S
+Related Modules: claim-bucket-assembler.ts
+Status: DONE — **MERGED**. PR #898, squash SHA `a8e71a91`. **2026/9502 artık canonical balance üretiyor** (hasResult=true, finalDebtStatesCount=1, assemblerDiagnostics=[]). **2026/9604 ve 2026/9605 hâlâ blocked — ama artık canonical engine bug'ı DEĞİL, eksik veri/pipeline örneği** (ne item ne case seviyesinde faiz türü var; bu PR'ın kapsamı dışında, ayrı owner kararı gerektirir). QA-seed (2026/9501) dokunulmadı, davranışı değişmedi.
 ---
 
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)

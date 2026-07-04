@@ -39,7 +39,7 @@ POST-P4 Accounting Engine ekseninden BAĞIMSIZ, ayrı bir hukuki-hesaplama izi (
 |---|---|---|
 | ALC-P0-1 Collection idempotency | DONE | PR #851, `d65950f8` |
 | ALC-P0-2 POSTED disposition storno | IN-PROGRESS | P0-2A (accounting journal-entry reversal) DONE `bc1b9c4b`; P0-2B/C (BalanceLedger/payout/ClientStatement) AÇIK — kasıtlı manuel boundary, kısayol değil |
-| ALC-P0-3 Canonical balance source + cutover tasarımı (B1'in kapanış yolu) | BACKLOG | #857/#861 yalnız `interestAccrualStatus`/provenance sözleşmesini ekledi; display/cutover'ın kendisi başlamadı — B1'i kapanmış SAYMA |
+| ALC-P0-3 Canonical balance source + cutover tasarımı (B1'in kapanış yolu) | IN-PROGRESS | #857/#861 `interestAccrualStatus`/provenance sözleşmesini ekledi. ALC-P0-3B3 (PR #898, `a8e71a91`) `resolveInterestConfig`'e mixed-source Kademe 1.5 ekledi — 2026/9502 artık canonical (shadow) motor içinde bucket üretiyor. **B1 kapanmış SAYMA**: bu yalnız assembler/orchestration katmanında (`CaseBalanceService`) doğrulandı; canlı UI'nin gösterdiği `case.service.ts` hesabı hâlâ `takipOncesiFaiz=0`/`takipSonrasiFaiz=0` hardcoded olabilir — cutover (canonical'ı PRIMARY display yapmak) ayrı, doğrulanmamış bir adım. 2026/9604-9605 hâlâ eksik veri/pipeline blocker (engine bug değil). |
 | ALC-P0-4..7, P1-1..7, P2-1..7 | BACKLOG | Detay `product-backlog.md`'de |
 
 **Production tahsilat geliştirmesi: NO-GO** (yukarıdaki P0 maddeleri kapanana kadar). **Owner karar noktası (2026-07-04 itibarıyla açık):** (1) ALC-P0-2B/C tamamlansın mı, yoksa (2) ALC-P0-3/P0-4 (canonical balance / Due cutover) tasarımına mı geçilsin?
