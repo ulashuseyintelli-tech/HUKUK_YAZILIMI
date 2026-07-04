@@ -1,7 +1,12 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { StaffType } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
+import {
+  encryptCredential,
+  decryptCredential,
+  isCredentialEncryptionConfigured,
+} from "./office-credential-encryption.util";
 
 @Injectable()
 export class OfficeService {
@@ -16,6 +21,16 @@ export class OfficeService {
     private prisma: PrismaService,
     private audit: AuditService
   ) {}
+
+  // ACT-02: yazma anında fail-closed — anahtar yoksa "şifreli" iddiası yalan olur, sessizce
+  // düz-metin kaydetmeyiz. Yalnız secret alanı GERÇEKTEN gönderildiğinde (dokunulan alan) çağrılır.
+  private assertEncryptionConfigured(): void {
+    if (!isCredentialEncryptionConfigured()) {
+      throw new ServiceUnavailableException(
+        "Kimlik bilgisi şifreleme anahtarı yapılandırılmamış (CREDENTIAL_ENCRYPTION_KEY)"
+      );
+    }
+  }
 
   // Secret alanları maskele (düz-metin sızıntısını önler). Internal gönderim
   // yolları (getFullSmtpSettings/getFullSmsSettings) ham değeri okumaya devam eder.
@@ -244,9 +259,16 @@ export class OfficeService {
   ) {
     const office = await this.getOrCreate(tenantId);
 
+    // ACT-02: yeni parola gönderildiyse at-rest şifrele (boş string/undefined dokunulmaz sayılır).
+    const toPersist = { ...data };
+    if (toPersist.smtpPass) {
+      this.assertEncryptionConfigured();
+      toPersist.smtpPass = encryptCredential(toPersist.smtpPass);
+    }
+
     const updated = await this.prisma.office.update({
       where: { id: office.id },
-      data,
+      data: toPersist,
     });
     await this.logSettingsChange(tenantId, userId, "SMTP", office, data);
     return updated;
@@ -279,9 +301,17 @@ export class OfficeService {
   ) {
     const office = await this.getOrCreate(tenantId);
 
+    // ACT-02: yeni API key/secret gönderildiyse at-rest şifrele.
+    const toPersist = { ...data };
+    if (toPersist.smsApiKey || toPersist.smsApiSecret) {
+      this.assertEncryptionConfigured();
+      if (toPersist.smsApiKey) toPersist.smsApiKey = encryptCredential(toPersist.smsApiKey);
+      if (toPersist.smsApiSecret) toPersist.smsApiSecret = encryptCredential(toPersist.smsApiSecret);
+    }
+
     const updated = await this.prisma.office.update({
       where: { id: office.id },
-      data,
+      data: toPersist,
     });
     await this.logSettingsChange(tenantId, userId, "SMS", office, data);
     return updated;
@@ -294,7 +324,7 @@ export class OfficeService {
       smtpHost: office.smtpHost,
       smtpPort: office.smtpPort,
       smtpUser: office.smtpUser,
-      smtpPass: office.smtpPass,
+      smtpPass: office.smtpPass ? decryptCredential(office.smtpPass) : office.smtpPass,
       smtpSecure: office.smtpSecure,
       smtpFromName: office.smtpFromName,
       smtpFromEmail: office.smtpFromEmail,
@@ -317,8 +347,8 @@ export class OfficeService {
     const office = await this.getOrCreate(tenantId);
     return {
       smsProvider: office.smsProvider,
-      smsApiKey: office.smsApiKey,
-      smsApiSecret: office.smsApiSecret,
+      smsApiKey: office.smsApiKey ? decryptCredential(office.smsApiKey) : office.smsApiKey,
+      smsApiSecret: office.smsApiSecret ? decryptCredential(office.smsApiSecret) : office.smsApiSecret,
       smsSender: office.smsSender,
     };
   }
