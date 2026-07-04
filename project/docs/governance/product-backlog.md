@@ -69,6 +69,12 @@ Status:
 BACKLOG
 ```
 
+## Closed Register
+
+| ID | Domain | İş | Kapanış Kanıtı |
+|---|---|---|---|
+| MPB-008 | Accounting | Offset audit detail projection | C-2D closeout: PR #644/#646 merged; read-only `GET /client-offsets/:offsetId/detail` projection verified |
+
 ## Items
 
 Legacy `strategic-backlog.md` içerik migration'ı ayrı onaylı governance işi olarak yapılacaktır (aşağıdaki maddeler bu migration'dan bağımsız, ADR-009 kararından doğan yeni maddelerdir).
