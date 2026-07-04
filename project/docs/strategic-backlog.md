@@ -1,6 +1,7 @@
 # Strategic Backlog
 
-> **Bu dosya = gelecekteki BÜYÜK işler + bekleme nedenleri (tek giriş noktası).**
+> **MPB-026 NOTU (2026-07-05):** Bu dosya artık authoritative backlog kaynağı değildir. İçerik `project/docs/governance/product-backlog.md` içine `Migrated Strategic Backlog (MPB-026)` bölümü olarak taşındı. Bu dosya yalnız tarihsel snapshot olarak korunur; yeni kayıt/güncelleme governance Product Backlog üzerinden yapılır.
+> **TARİHSEL SNAPSHOT:** Eski strategic backlog kaydı; yeni tek giriş noktası `project/docs/governance/product-backlog.md` içindedir.
 > Üç katman ayrı tutulur:
 > - **Ledger** (`reliability-ledger.md`) → geçmiş audit bulguları / teknik borç (RFA-*).
 > - **Design Review** (`party-registry-design.md`, `party-registry-design-review.md`, `debtor-identity-resolution-ir0.md`) → "neden böyle karar verdik".

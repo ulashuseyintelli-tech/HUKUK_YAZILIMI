@@ -4,11 +4,11 @@ Bu klasör HUKUK_YAZILIMI için kalıcı governance kayıt alanıdır.
 
 Tek kaynak modeli:
 
-- `AGENTS.md` ana ve bağlayıcı ajan standardıdır.
+- `CLAUDE.md` bu repo için kanonik ve bağlayıcı ajan standardıdır; `AGENTS.md` yalnız uyumluluk stub'ıdır.
 - `project/docs/governance/` roadmap, backlog, decision ve süreç kayıtlarını tutar.
-- `CLAUDE.md` ve `.claude/CLAUDE.md` yalnız AGENTS.md ve bu governance alanına pointer/stub olarak kalır.
+- `AGENTS.md` ve varsa diğer ajan stub'ları `CLAUDE.md` ve bu governance alanına pointer olarak kalır.
 
-Bu klasör AGENTS.md yerine geçmez ve ikinci bir kural seti oluşturmaz. Bir kural AGENTS.md ile çelişirse AGENTS.md uygulanır; governance dosyası düzeltilmek üzere raporlanır.
+Bu klasör `CLAUDE.md` yerine geçmez ve ikinci bir kural seti oluşturmaz. Bir kural `CLAUDE.md` ile çelişirse `CLAUDE.md` uygulanır; governance dosyası düzeltilmek üzere raporlanır.
 
 Dosyalar:
 
