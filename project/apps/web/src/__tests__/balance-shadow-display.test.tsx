@@ -553,6 +553,93 @@ describe("guarded primary display pilot gate", () => {
     },
   );
 
+  // ALC-AUTH-3E: COSTS_DELTA/ATTORNEY_FEE_DELTA RED ise (legacy nonzero, canonical
+  // cost/vekalet ClaimItem-boslugu yuzunden 0) toplamBorc/sonBorc/kalanBorc case-bazli
+  // legacy'de kalir; guard'in kendisi bloklanmaz (B1_SCOPE_EXEMPT_DIFF_CODES ile tutarli),
+  // diger 5 canonical override alan etkilenmez.
+  it("COSTS_DELTA RED ise toplamBorc/sonBorc/kalanBorc legacy'de kalir, diger 5 alan canonical kalir", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    report.totals.diffs = [
+      ...report.totals.diffs,
+      {
+        code: "COSTS_DELTA",
+        label: "Legacy icraMasraflari vs canonical costs",
+        classification: "EXPECTED_CANONICAL_DIVERGENCE",
+        legacyField: "legacy.icraMasraflari",
+        canonicalField: "canonical.costs",
+        legacyAmount: legacy.icraMasraflari,
+        canonicalAmount: 0,
+        delta: -legacy.icraMasraflari,
+        deltaPercent: -100,
+        status: "MAJOR_DELTA",
+        severity: "RED",
+        explanation: "Legacy masraf hesaplari ile canonical case-level cost projection ayni otorite degildir.",
+      },
+    ];
+
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
+
+    expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
+    expect(guardedResult).not.toBeNull();
+    // Suppress edilen 3 aggregate alan: legacy degeri korunur.
+    expect(guardedResult!.toplamBorc).toBe(legacy.toplamBorc);
+    expect(guardedResult!.sonBorc).toBe(legacy.sonBorc);
+    expect(guardedResult!.kalanBorc).toBe(legacy.kalanBorc);
+    // Diger 5 canonical-override alan etkilenmez, hala canonical.
+    expect(guardedResult!.asilAlacak).toBe(report.bucketDiffs[0].canonicalAmount);
+    expect(guardedResult!.takipTutari).toBe(report.bucketDiffs[0].canonicalAmount);
+    expect(guardedResult!.takipSonrasiFaiz).toBe(report.totals.canonical!.interestAmount);
+    expect(guardedResult!.toplamTahsilat).toBe(report.totals.canonical!.totalPaidAmount);
+    expect(guardedResult!.kalanAnapara).toBe(report.bucketDiffs[0].canonicalAmount);
+  });
+
+  it("ATTORNEY_FEE_DELTA RED ise de toplamBorc/sonBorc/kalanBorc legacy'de kalir", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    report.totals.diffs = [
+      ...report.totals.diffs,
+      {
+        code: "ATTORNEY_FEE_DELTA",
+        label: "Legacy vekaletUcreti vs canonical attorney fee",
+        classification: "EXPECTED_CANONICAL_DIVERGENCE",
+        legacyField: "legacy.vekaletUcreti",
+        canonicalField: "canonical.bucket.ATTORNEY_FEE",
+        legacyAmount: legacy.vekaletUcreti,
+        canonicalAmount: 0,
+        delta: -legacy.vekaletUcreti,
+        deltaPercent: -100,
+        status: "MAJOR_DELTA",
+        severity: "RED",
+        explanation: "Vekalet ucreti projection farki cutover blocker adayidir.",
+      },
+    ];
+
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
+
+    expect(guardedResult).not.toBeNull();
+    expect(guardedResult!.toplamBorc).toBe(legacy.toplamBorc);
+    expect(guardedResult!.sonBorc).toBe(legacy.sonBorc);
+    expect(guardedResult!.kalanBorc).toBe(legacy.kalanBorc);
+  });
+
+  it("COSTS_DELTA/ATTORNEY_FEE_DELTA RED degilse toplamBorc/sonBorc/kalanBorc mevcut gibi canonical override edilir", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    // report.totals.diffs bos (makeReport base) -- RED cost/fee sinyali yok.
+    expect(report.totals.diffs.some((d) => d.code === "COSTS_DELTA" || d.code === "ATTORNEY_FEE_DELTA")).toBe(false);
+
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
+
+    expect(guardedResult).not.toBeNull();
+    expect(guardedResult!.toplamBorc).toBe(report.totals.canonical!.totalDebtAmount);
+    expect(guardedResult!.sonBorc).toBe(report.totals.canonical!.outstandingAmount);
+    expect(guardedResult!.kalanBorc).toBe(report.totals.canonical!.outstandingAmount);
+  });
+
   it("principal bucket displayable degilse guarded primary fallback secer", () => {
     const report = makeEligibleGuardedPrimaryReport();
     report.bucketDiffs[0].canonicalDisplayable = false;
