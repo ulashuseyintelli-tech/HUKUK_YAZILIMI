@@ -235,6 +235,9 @@ export class FactStoreService {
         principalAmount: true,
         createdAt: true,
         nextActionAt: true,
+        // CS5: CASE_ARCHIVED gate'i (gates.compiled.ts) 'case.is_archived' fact'ini okuyordu ama
+        // isArchived hiç select edilmediği/mapping'lenmediği için gate hiçbir zaman tetiklenemiyordu.
+        isArchived: true,
       },
     });
 
@@ -259,6 +262,8 @@ export class FactStoreService {
     // Computed: is case closed?
     const closingStatuses = ['HITAM', 'INFAZ', 'MUVEKKILE_IADE', 'ACIZ', 'BATAK', 'MAHSUP', 'TEMLIK', 'AZIL', 'FERAGAT', 'SULH'];
     factMap.set('case.is_closed', closingStatuses.includes(caseData.caseStatus as string));
+    // CS5: CASE_ARCHIVED gate'ini aktive eder (fact.get('case.is_archived') === true → HARD block).
+    factMap.set('case.is_archived', caseData.isArchived);
   }
 
   /**

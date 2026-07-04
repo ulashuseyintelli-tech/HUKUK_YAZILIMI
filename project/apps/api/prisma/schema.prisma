@@ -199,27 +199,30 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users             User[]
-  cases             Case[]
-  debtors           Debtor[]
-  clients           Client[]
-  tasks             Task[]
-  escalationEvents  EscalationEvent[]
-  caseTaskEscalationEvents CaseTaskEscalationEvent[]
-  debtorIntelligence DebtorIntelligence[]
-  courts            Court[]
-  collections       Collection[]
-  collectionOverpayments CollectionOverpayment[]
-  lawyers           Lawyer[]
-  workflowTemplates WorkflowTemplate[]
-  executionOffices  ExecutionOffice[]
-  office            Office? // Her tenant'ın tek bir ofisi var
+  users                        User[]
+  cases                        Case[]
+  debtors                      Debtor[]
+  clients                      Client[]
+  tasks                        Task[]
+  escalationEvents             EscalationEvent[]
+  caseTaskEscalationEvents     CaseTaskEscalationEvent[]
+  poaExpiryDeliveries          PoaExpiryNotificationDelivery[]
+  debtorIntelligence           DebtorIntelligence[]
+  debtorCrossCaseNotifications DebtorCrossCaseNotification[]
+  courts                       Court[]
+  collections                  Collection[]
+  collectionOverpayments       CollectionOverpayment[]
+  lawyers                      Lawyer[]
+  workflowTemplates            WorkflowTemplate[]
+  executionOffices             ExecutionOffice[]
+  office                       Office? // Her tenant'ın tek bir ofisi var
 
   // Address Discovery
-  clientInfoRequests ClientInfoRequest[]
-  uyapQueries        UyapQuery[]
-  institutionLetters InstitutionLetter[]
-  addressResearches  AddressResearch[]
+  clientInfoRequests     ClientInfoRequest[]
+  clientDocumentRequests ClientDocumentRequest[]
+  uyapQueries            UyapQuery[]
+  institutionLetters     InstitutionLetter[]
+  addressResearches      AddressResearch[]
 
   // Asset Queries (FAZ 4)
   assetQueries AssetQuery[]
@@ -251,8 +254,8 @@ model Tenant {
   icrabotApprovalRequests IcrabotApprovalRequest[]
 
   // Address Task System
-  addressTasks       AddressTask[]
-  addressAuditLogs   AddressAuditLog[]
+  addressTasks        AddressTask[]
+  addressAuditLogs    AddressAuditLog[]
   addressOutboxEvents AddressOutboxEvent[]
 
   @@index([slug])
@@ -289,7 +292,9 @@ model User {
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   email        String
-  passwordHash String
+  // K1-7: güvenli login provisioning — pending/davetli kullanıcı parolasız var olabilir.
+  // null = henüz parola belirlenmemiş (davet kabul edilmemiş). login null-guard ile reddeder.
+  passwordHash String?
   name         String
   surname      String
   role         UserRole @default(USER)
@@ -297,9 +302,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  assignedTasks Task[]              @relation("AssignedTasks")
-  createdTasks  Task[]              @relation("CreatedTasks")
-  completedTasks Task[]             @relation("CompletedTasks")
+  assignedTasks  Task[] @relation("AssignedTasks")
+  createdTasks   Task[] @relation("CreatedTasks")
+  completedTasks Task[] @relation("CompletedTasks")
 
   // K1 kimlik köprüsü (one-to-one, opsiyonel): bir login hesabı en fazla bir kişi profiline bağlanır.
   staffMember StaffMember? @relation("StaffMemberUser")
@@ -307,8 +312,9 @@ model User {
 
   // PR-D4e-1: oluşturulan saha istihbaratı kayıtları
   createdIntelligence DebtorIntelligence[] @relation("IntelligenceCreator")
-  statusChanges CaseStatusHistory[] @relation("StatusChangedBy")
-  sorumluCases  Case[]              @relation("SorumluPersonel")
+  statusChanges       CaseStatusHistory[]  @relation("StatusChangedBy")
+  sorumluCases        Case[]               @relation("SorumluPersonel")
+  createdCases        Case[]               @relation("CaseCreatedBy") // WP-1b: oluşturduğu dosyalar (creator)
 
   // Address Discovery
   uyapQueriesRequested      UyapQuery[]         @relation("UyapQueryRequester")
@@ -320,8 +326,34 @@ model User {
   // Icrabot
   botTasksApproved BotTask[] @relation("BotTaskApprover")
 
+  // K1-7: güvenli login provisioning davetleri
+  userInvites UserInvite[] @relation("UserInviteTarget")
+  invitesSent UserInvite[] @relation("UserInviteIssuer")
+
   @@unique([tenantId, email])
   @@index([tenantId])
+}
+
+/// K1-7: Güvenli login provisioning daveti. Pending User + tek-kullanımlık SHA256-hashed token.
+/// Ham token YALNIZ bir kez e-posta linkinde görünür; DB'de yalnız tokenHash saklanır.
+model UserInvite {
+  id          String    @id @default(cuid())
+  tenantId    String
+  userId      String
+  user        User      @relation("UserInviteTarget", fields: [userId], references: [id], onDelete: Cascade)
+  email       String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  revokedAt   DateTime?
+  invitedById String?
+  invitedBy   User?     @relation("UserInviteIssuer", fields: [invitedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([tenantId, userId])
+  @@index([tenantId, email])
+  @@index([expiresAt])
 }
 
 // ==================== İCRA DAİRESİ ====================
@@ -432,19 +464,23 @@ model Client {
   updatedAt DateTime @updatedAt
 
   // İLİŞKİLER
-  cases            Case[]
-  tasks            Task[]
-  contacts         ClientContact[]
-  bankAccounts     ClientBankAccount[]
-  powerOfAttorneys ClientPowerOfAttorney[]
-  caseClients      CaseClient[]
-  notifications    ClientNotification[]
-  expenseRequests  ExpenseRequest[]
-  clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
-  clientStatements ClientStatement[] // Müvekkil ekstresi (PR-3)
-  clientIntakeLinks ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
-  clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
-  portalUser       ClientPortalUser?
+  cases                      Case[]
+  tasks                      Task[]
+  contacts                   ClientContact[]
+  addresses                  ClientAddress[]
+  bankAccounts               ClientBankAccount[]
+  powerOfAttorneys           ClientPowerOfAttorney[]
+  poaExpiryDeliveries        PoaExpiryNotificationDelivery[]
+  caseClients                CaseClient[]
+  notifications              ClientNotification[]
+  expenseRequests            ExpenseRequest[]
+  clientApprovalRequests     ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
+  clientStatements           ClientStatement[] // Müvekkil ekstresi (PR-3)
+  clientIntakeLinks          ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
+  clientIntakeLinkDeliveries ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
+  clientDocumentRequests     ClientDocumentRequest[] // Workspace document request artifact kayitlari
+  clientIntakeSubmissions    ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
+  portalUser                 ClientPortalUser?
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -497,6 +533,47 @@ model ClientContact {
 
   @@index([clientId])
   @@index([type])
+}
+
+// Müvekkil Adres Türü. ClientAddress'e özgü — DebtorAddress'in AddressType enum'u tebligat-hukuku
+// (TK m.10/m.21, KEP, BUSINESS_HQ/LEGAL_CENTER) odaklı, Client'ın ihtiyacıyla örtüşmüyor; bilerek
+// ayrı tutulur (owner Task4-0 kararı: MERNİS/ticari/tebligat/fatura/beyan ayrışımı).
+enum ClientAddressType {
+  MERNIS // MERNİS yerleşim adresi
+  TICARI // İşyeri/ticari adres
+  TEBLIGAT // Tebligata esas adres
+  FATURA // Fatura/muhasebe adresi
+  BEYAN // Müvekkil beyanı (varsayılan/bilinmeyen kaynak)
+}
+
+// Müvekkil Adresleri (Çoklu). DebtorAddress'ten YAPISAL İSKELET alınır (ayrı tablo + type +
+// isPrimary + isCurrent); hukuki/risk/doğrulama/güven-skoru alanları BİLEREK KOPYALANMAZ — Client
+// adresleri tebligat-hukuku değil, yazışma/fatura amaçlıdır. Client.address/city/district/
+// postalCode/region flat kolonları bu tablo yazılana dek KORUNUR (additive migration).
+model ClientAddress {
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  type ClientAddressType @default(BEYAN)
+
+  street     String?
+  city       String?
+  district   String?
+  region     String?
+  postalCode String?
+
+  isPrimary Boolean @default(false)
+  // "Eski adres" bir TİP değil bir DURUMDUR (DebtorAddress.isCurrent pattern'iyle tutarlı):
+  // false = artık geçerli değil ama kayıt korunur (arşiv), silinmez.
+  isCurrent Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([type])
+  @@index([isCurrent])
 }
 
 // Müvekkil Banka Hesabı
@@ -575,12 +652,60 @@ model ClientPowerOfAttorney {
   scope   String? // @deprecated - scopeDescription kullan
 
   // İlişkiler
-  lawyers PoaLawyer[]
+  lawyers          PoaLawyer[]
+  expiryDeliveries PoaExpiryNotificationDelivery[]
 
   @@index([clientId])
   @@index([isActive])
   @@index([status])
   @@index([validUntil])
+}
+
+enum PoaExpiryDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum PoaExpiryRecipientSource {
+  PRIMARY_ATTORNEY
+  POA_ATTORNEY
+  ESCALATION_MANAGER
+  ADMIN_FALLBACK
+}
+
+model PoaExpiryNotificationDelivery {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  poaId String
+  poa   ClientPowerOfAttorney @relation(fields: [poaId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  recipientUserId String?
+  recipientEmail  String
+  recipientSource PoaExpiryRecipientSource
+
+  dedupeKey String                  @unique
+  windowKey String
+  status    PoaExpiryDeliveryStatus @default(PENDING)
+
+  attempts      Int       @default(0)
+  reservedAt    DateTime?
+  lastAttemptAt DateTime?
+  nextRetryAt   DateTime?
+  sentAt        DateTime?
+  lastError     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, poaId])
+  @@index([tenantId, clientId])
 }
 
 // Vekalet-Avukat İlişkisi (Bir vekalette birden fazla avukat olabilir)
@@ -617,6 +742,9 @@ model CaseClient {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  clientPayoutAllocations     ClientPayoutAllocation[]
+  clientPayoutManualReversals ClientPayoutManualReversal[]
 
   @@unique([caseId, clientId])
   @@index([caseId])
@@ -687,13 +815,13 @@ model Debtor {
   updatedAt DateTime @updatedAt
 
   // Relations
-  debtorAddresses DebtorAddress[]
-  caseDebtors     CaseDebtor[]
-  assets          Asset[]
-  communications  DebtorCommunication[]
+  debtorAddresses       DebtorAddress[]
+  caseDebtors           CaseDebtor[]
+  assets                Asset[]
+  communications        DebtorCommunication[]
   clientIntelStatements ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
-  estateHeirs     EstateHeir[] // Tereke mirasçıları
-  icrabotJobs     IcrabotJobRun[] // v30: Debtor-scoped jobs
+  estateHeirs           EstateHeir[] // Tereke mirasçıları
+  icrabotJobs           IcrabotJobRun[] // v30: Debtor-scoped jobs
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -706,6 +834,9 @@ model Debtor {
 
   // PR-D4e-1: saha istihbaratı kayıtları (sonuç+kanıt)
   intelligence DebtorIntelligence[]
+
+  // DBND-D6A-2: paylaşılan Debtor değişikliği cross-case bildirimleri
+  crossCaseNotifications DebtorCrossCaseNotification[]
 
   @@index([tenantId])
   @@index([tenantId, identityNo])
@@ -791,29 +922,29 @@ model DebtorAddress {
   // ==================== ADDRESS TASK SYSTEM FIELDS ====================
   // Adres Kategorisi (Genişletilmiş)
   addressCategory AddressCategory? // DECLARED_DOCUMENT, DECLARED_CLIENT, MERNIS_RESIDENCE, etc.
-  
+
   // Kaynak Detayı
   sourceDetail AddressSourceDetail? // DOCUMENT_SCAN, CLIENT_REPLY_EMAIL, etc.
-  
+
   // Kanıt Referansı
-  evidenceId String? // Kaynak evrak/mesaj/sorgu ID
+  evidenceId   String? // Kaynak evrak/mesaj/sorgu ID
   evidenceType EvidenceType? // DOCUMENT, COMMUNICATION, UYAP_QUERY
-  
+
   // Güven Seviyesi
   confidenceLevel ConfidenceLevel? @default(MEDIUM) // LOW, MEDIUM, HIGH
-  
+
   // Adres Hash (Tekrar kontrolü için)
   addressHash String? // SHA-256 hash of normalized address
-  
+
   // Öncelik Skoru (0-100)
   priorityScore Int? // Hesaplanmış öncelik skoru
-  
+
   // Tebligata Yarar Adres
   isCurrentCandidate Boolean @default(false) // En yüksek öncelikli adres
-  
+
   // Aktiflik Durumu
   isCurrent Boolean @default(true) // false = arşivlenmiş/pasif
-  
+
   // Alınma Tarihi
   retrievedAt DateTime? // Adresin alındığı tarih
 
@@ -965,6 +1096,12 @@ model Case {
   responsibleStaffId  String?
   responsibleStaff    StaffMember? @relation("CaseResponsibleStaff", fields: [responsibleStaffId], references: [id])
 
+  // WP-1b: dosyayı OLUŞTURAN kullanıcı (creator attribution). Additive nullable; yeni create'lerde
+  // userId'ye set edilir (create userId-zorunlu). Eski kayıtlar NULL = "bilinmiyor" — backfill YOK,
+  // audit/legacy'den tahmin ÜRETİLMEZ. Temporal sorumluluk sorgusu (WP-1d) için creation-anı sinyali.
+  createdById String?
+  createdBy   User?   @relation("CaseCreatedBy", fields: [createdById], references: [id])
+
   // Ek Bilgi Alanları
   dahiliNot              String? // Müvekkile gitmez
   muvekkilNotu           String? // Raporlarda görünür
@@ -1003,37 +1140,45 @@ model Case {
   updatedAt DateTime @updatedAt
 
   // İlişkiler
-  debtors             CaseDebtor[]
-  lawyers             CaseLawyer[]
-  staff               CaseStaff[]
-  tasks               Task[]
-  debtorIntelligence  DebtorIntelligence[]
-  collections         Collection[]
-  collectionOverpayments CollectionOverpayment[]
-  dues                Due[]
-  caseInstruments     CaseInstrument[]
-  lifecycleEvents     CaseLifecycle[]
-  enforcementActions  EnforcementAction[]
-  decisionLogs        DecisionLog[]
-  notifications       NotificationQueue[]
-  riskReports         RiskReport[]
-  statusHistory       CaseStatusHistory[]
-  documents           CaseDocument[]
-  groups              CaseGroup[]
-  stageHistory        CaseStageHistory[]   @relation("CaseStageHistory")
-  caseClients         CaseClient[]
-  tebligatlar         Tebligat[]
-  claimItems          ClaimItem[]
-  ledgerEntries       LedgerEntry[] // Tahsilat/düzeltme kayıtları
-  precautionaryOrders PrecautionaryOrder[] // İhtiyati haciz kararları
-  expenseRequests     ExpenseRequest[] // Masraf talepleri
-  caseBalance         CaseBalance? // Masraf bakiyesi (1:1)
-  expenseBlockReasons ExpenseBlockReason[] // "Ödeme/onay yok → işlem yapılmadı" savunma kayıtları (PR-1)
-  clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
-  clientStatements ClientStatement[] // Müvekkil ekstresi (PR-3)
-  clientIntelStatements ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
-  clientIntakeLinks ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
-  clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
+  debtors                       CaseDebtor[]
+  lawyers                       CaseLawyer[]
+  staff                         CaseStaff[]
+  // DBND-D6A-2: bu case'de yapılan Debtor değişikliğinin ürettiği bildirimler (source) +
+  // bu case'in başka bir case'teki paylaşılan Debtor değişikliğinden etkilendiği bildirimler (affected)
+  debtorNotificationsAsSource   DebtorCrossCaseNotification[] @relation("DebtorCrossCaseNotificationSource")
+  debtorNotificationsAsAffected DebtorCrossCaseNotification[] @relation("DebtorCrossCaseNotificationAffected")
+  tasks                         Task[]
+  debtorIntelligence            DebtorIntelligence[]
+  collections                   Collection[]
+  collectionOverpayments        CollectionOverpayment[]
+  dues                          Due[]
+  caseInstruments               CaseInstrument[]
+  lifecycleEvents               CaseLifecycle[]
+  enforcementActions            EnforcementAction[]
+  decisionLogs                  DecisionLog[]
+  notifications                 NotificationQueue[]
+  riskReports                   RiskReport[]
+  statusHistory                 CaseStatusHistory[]
+  documents                     CaseDocument[]
+  groups                        CaseGroup[]
+  stageHistory                  CaseStageHistory[]            @relation("CaseStageHistory")
+  caseClients                   CaseClient[]
+  tebligatlar                   Tebligat[]
+  claimItems                    ClaimItem[]
+  ledgerEntries                 LedgerEntry[] // Tahsilat/düzeltme kayıtları
+  precautionaryOrders           PrecautionaryOrder[] // İhtiyati haciz kararları
+  expenseRequests               ExpenseRequest[] // Masraf talepleri
+  caseBalance                   CaseBalance? // Masraf bakiyesi (1:1)
+  expenseBlockReasons           ExpenseBlockReason[] // "Ödeme/onay yok → işlem yapılmadı" savunma kayıtları (PR-1)
+  clientApprovalRequests        ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
+  clientStatements              ClientStatement[] // Müvekkil ekstresi (PR-3)
+  clientPayoutAllocations       ClientPayoutAllocation[]
+  clientPayoutManualReversals   ClientPayoutManualReversal[]
+  clientIntelStatements         ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
+  clientIntakeLinks             ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
+  clientIntakeLinkDeliveries    ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
+  clientDocumentRequests        ClientDocumentRequest[] // Workspace document request artifact kayitlari
+  clientIntakeSubmissions       ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -1067,7 +1212,7 @@ model Case {
   documentArtifacts DocumentArtifact[]
 
   // CPE (Case Policy Engine)
-  cpeDecisionLogs    CpeDecisionLog[]    @relation("CpeDecisionLogs")
+  cpeDecisionLogs     CpeDecisionLog[]     @relation("CpeDecisionLogs")
   cpeExecutionRecords CpeExecutionRecord[] @relation("CpeExecutionRecords")
 
   // D-G3a: dosya görevi eskalasyon izleri (case düzeyi gözlemlenebilirlik)
@@ -1091,6 +1236,7 @@ model Case {
   @@index([responsibleLawyerId])
   @@index([responsibleStaffId])
   @@index([clientId])
+  @@index([createdById])
 }
 
 // Statü Değişim Geçmişi (B.18)
@@ -1222,11 +1368,88 @@ model CaseDebtor {
   // Asset Queries (FAZ 4)
   assetQueries AssetQuery[]
 
+  // DBND-D5B: Collection.caseDebtorId FK karsi iliskisi
+  collections Collection[]
+  // DBND-D6A-2: bu CaseDebtor'ın (affected tarafı) aldığı cross-case bildirimler
+  crossCaseNotifications DebtorCrossCaseNotification[]
+
+  // DBND-D5C: Tebligat.caseDebtorId FK karsi iliskisi
+  tebligatlar Tebligat[]
+
   @@unique([caseId, debtorId, role])
   @@index([caseId])
   @@index([caseId, lifecycleStatus])
   @@index([debtorId])
   @@index([serviceStatus])
+}
+
+// DBND-D6A-2: Paylaşılan Debtor'un (birden fazla Case'e bağlı) izlenen alanları değiştiğinde,
+// diğer case'lerdeki sorumlu ekibe üretilen iç (in-app), backend-only, KALICI bildirim.
+// Event-bus YOK — DebtorService.update()/addAddress()/updateAddress() içinden senkron üretilir.
+// DBND-D6A-1 (pull/computed drawer banner'ı) ile kod bağı YOK — aynı domain probleminin ayrı çözümü.
+model DebtorCrossCaseNotification {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  debtorId String
+  debtor   Debtor @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+
+  // Değişikliğin yapıldığı case (varsa — bugünkü DebtorService.update()/addAddress()/updateAddress()
+  // route'ları caseId taşımaz; bu alan opsiyonel kalır ve bilinmiyorsa hariç tutma uygulanmaz).
+  sourceCaseId String?
+  sourceCase   Case?   @relation("DebtorCrossCaseNotificationSource", fields: [sourceCaseId], references: [id], onDelete: SetNull)
+
+  affectedCaseId       String
+  affectedCase         Case       @relation("DebtorCrossCaseNotificationAffected", fields: [affectedCaseId], references: [id], onDelete: Cascade)
+  affectedCaseDebtorId String
+  affectedCaseDebtor   CaseDebtor @relation(fields: [affectedCaseDebtorId], references: [id], onDelete: Cascade)
+
+  fieldGroup    DebtorNotificationFieldGroup
+  severity      DebtorNotificationSeverity
+  changeSummary String // sabit, PII-sızdırmaz sistem etiketi (ADR-011 uyumlu) — ham eski/yeni değer YOK
+
+  recipientUserId String
+  recipientSource DebtorNotificationRecipientSource
+
+  status         DebtorCrossCaseNotificationStatus @default(PENDING)
+  dedupeKey      String                            @unique
+  acknowledgedAt DateTime?
+  expiresAt      DateTime
+  expiredAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, recipientUserId, status])
+  @@index([tenantId, debtorId])
+  @@index([affectedCaseId])
+  @@index([expiresAt])
+}
+
+enum DebtorNotificationFieldGroup {
+  ADDRESS
+  KEP_ADDRESS
+  IDENTITY
+  NAME
+}
+
+enum DebtorNotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum DebtorNotificationRecipientSource {
+  RESPONSIBLE_LAWYER
+  FALLBACK_LAWYER
+  TEBLIGAT_STAFF
+}
+
+enum DebtorCrossCaseNotificationStatus {
+  PENDING
+  ACKNOWLEDGED
+  EXPIRED
 }
 
 // Tebligat Geçmişi - Audit Trail
@@ -1279,9 +1502,9 @@ model Due {
   interestStartDate DateTime? // Faiz başlangıç tarihi
   interestEndDate   DateTime? // Faiz bitiş tarihi
   interestDays      Int? // Faiz gün sayısı
-  
+
   // Faiz İşletme Kontrolü (Interest Engine)
-  accruesInterest   Boolean   @default(true) // Bu kalem üzerinde faiz işler mi?
+  accruesInterest Boolean @default(true) // Bu kalem üzerinde faiz işler mi?
   // Masraflar için false, anapara için true varsayılan
 
   // Kaynak Belge Referansı
@@ -1449,68 +1672,68 @@ model DebtorCommunication {
 }
 
 model Task {
-  id          String     @id @default(cuid())
-  tenantId    String
-  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  caseId      String?
-  case        Case?      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  id                    String              @id @default(cuid())
+  tenantId              String
+  tenant                Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caseId                String?
+  case                  Case?               @relation(fields: [caseId], references: [id], onDelete: Cascade)
   // Müvekkil bağlama: operasyonel görevler (ör. iletişim eksiği) dosya açılmadan, müvekkil
   // seviyesinde doğabilir. clientId nullable; case zorunlu değil.
-  clientId    String?
-  client      Client?    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId              String?
+  client                Client?             @relation(fields: [clientId], references: [id], onDelete: Cascade)
   // PR-D4b: Borçlu bağlama (debtor-seviyesi operasyonel/istihbarat görevleri). clientId ile
   // simetrik. onDelete Cascade: borçlu silinirse görev anlamsız → birlikte silinir.
-  debtorId    String?
-  debtor      Debtor?    @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  debtorId              String?
+  debtor                Debtor?             @relation(fields: [debtorId], references: [id], onDelete: Cascade)
   // PR-D4e-1: istihbarat görevi hangi adres için açıldı (saha teyidi). Adres silinirse görev
   // KALIR (SetNull) — iş emri borçluya bağlı, adres referansı opsiyonel.
-  addressId   String?
-  address     DebtorAddress? @relation("TaskAddress", fields: [addressId], references: [id], onDelete: SetNull)
-  title       String
-  description String?
-  status      TaskStatus @default(PENDING)
-  priority    Priority   @default(MEDIUM)
-  dueDate     DateTime?
+  addressId             String?
+  address               DebtorAddress?      @relation("TaskAddress", fields: [addressId], references: [id], onDelete: SetNull)
+  title                 String
+  description           String?
+  status                TaskStatus          @default(PENDING)
+  priority              Priority            @default(MEDIUM)
+  dueDate               DateTime?
   // Görev sınıflandırması: enflasyonu önlemek için icra/operasyon ayrımı. Mevcut üreticiler
   // alanı set etmediğinden default LEGAL_WORKFLOW (bugünkü davranış korunur).
-  taskCategory TaskCategory @default(LEGAL_WORKFLOW)
+  taskCategory          TaskCategory        @default(LEGAL_WORKFLOW)
   // PR-D4b: alt-tür. taskCategory=OPERATIONAL_COMPLETENESS içinde client/borçlu/istihbarat ayrımı.
   // Tek motor (eskalasyon) farklı içerik/deep-link için subtype'a bakar. Nullable (mevcut tasklar).
-  taskSubType TaskSubType?
+  taskSubType           TaskSubType?
   // Mükerrer engeli: aynı müvekkil için 2. contact-task oluşmaz. AddressTask deseni.
   // Format ör. "OPCOMP:CONTACT:{clientId}". Nullable; Postgres çoklu-null'a izin verir.
-  dedupeKey   String?    @unique
+  dedupeKey             String?             @unique
   // Operasyonel görevde eksik alan kodları (ör. ["phone","email"]). Generic → IBAN/kimlik vb. ileride.
-  missingFields Json?
+  missingFields         Json?
   // Zaman-temelli eskalasyon (STAFF→MANAGER→FOUNDER) — PR-3b scheduler işler.
-  escalationLevel EscalationTier?
-  nextFollowUpAt  DateTime?
+  escalationLevel       EscalationTier?
+  nextFollowUpAt        DateTime?
   // PR-3b çift-gönderim guard'ı: bir tier'a bildirim atıldıktan sonra bu set edilir;
   // scheduler her saat çalışsa da aynı tier'a tekrar göndermez (lastNotifiedLevel == escalationLevel).
-  lastNotifiedLevel EscalationTier?
+  lastNotifiedLevel     EscalationTier?
   // D-G0 (Gate D / D-i): DOSYA GÖREVİ owner-first eskalasyonu — operasyonel motordan AYRI alanlar
   // (K-D1: paylaşım YOK). RESPONSIBLE→TEAM_LEAD→MANAGER→FOUNDER. CaseTaskEscalationService (D-G3) okur.
   // Şu an hiçbir kod yazmaz/okumaz; additive.
   caseEscalationLevel   CaseTaskTier?
   caseNextFollowUpAt    DateTime?
   caseLastNotifiedLevel CaseTaskTier?
-  assigneeId  String?
-  assignee    User?      @relation("AssignedTasks", fields: [assigneeId], references: [id])
-  createdById String?
-  createdBy   User?      @relation("CreatedTasks", fields: [createdById], references: [id])
-  completedAt DateTime?
+  assigneeId            String?
+  assignee              User?               @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  createdById           String?
+  createdBy             User?               @relation("CreatedTasks", fields: [createdById], references: [id])
+  completedAt           DateTime?
   // PR-PERF-1: kapanış atfı. completedByUserId = görevi kapatan User (manuel kapanışta dolu,
   // sistem otomatik kapanışında null). resolutionType = MANUAL (insan, PUT /tasks) /
   // AUTO_SYSTEM (sistem: contact-followup auto-close, masraf PAID tetikli). Performans
   // raporu sistem kapanışlarını insan kapanışından AYIRT edebilsin diye (drift'i önler).
-  completedByUserId String?
-  completedBy       User?               @relation("CompletedTasks", fields: [completedByUserId], references: [id])
-  resolutionType    TaskResolutionType?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  completedByUserId     String?
+  completedBy           User?               @relation("CompletedTasks", fields: [completedByUserId], references: [id])
+  resolutionType        TaskResolutionType?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 
   // K2: eskalasyon geçmişi (append-only). Task = canlı durum; EscalationEvent = iz.
-  escalationEvents EscalationEvent[]
+  escalationEvents         EscalationEvent[]
   // D-G3a: dosya görevi eskalasyon izleri (operasyonel EscalationEvent'ten AYRI, K-D1)
   caseTaskEscalationEvents CaseTaskEscalationEvent[]
 
@@ -1627,19 +1850,19 @@ model DebtorIntelligence {
 // PR-D4e-1: istihbarat türü (ne teyit ediliyor).
 enum DebtorIntelType {
   LOCATION_VERIFICATION // Borçlu/adres fiili teyidi
-  ACTIVITY_CHECK        // Adreste faaliyet var mı
-  ASSET_SIGHTING        // Araç/depo/mal görüldü mü
-  NEIGHBOR_CONFIRM      // Komşu/çevre teyidi
+  ACTIVITY_CHECK // Adreste faaliyet var mı
+  ASSET_SIGHTING // Araç/depo/mal görüldü mü
+  NEIGHBOR_CONFIRM // Komşu/çevre teyidi
 }
 
 // PR-D4e-1: istihbarat sonucu (görev TODO durumundan AYRI eksen).
 enum DebtorIntelResult {
   PENDING_VERIFICATION // teyit bekliyor
-  IN_FIELD             // sahada
-  VERIFIED_PRESENT     // borçlu/mal/faaliyet VAR
-  VERIFIED_ABSENT      // taşınmış/boş/yok
-  INCONCLUSIVE         // sonuçsuz
-  NOT_FOUND            // bulunamadı
+  IN_FIELD // sahada
+  VERIFIED_PRESENT // borçlu/mal/faaliyet VAR
+  VERIFIED_ABSENT // taşınmış/boş/yok
+  INCONCLUSIVE // sonuçsuz
+  NOT_FOUND // bulunamadı
 }
 
 model Court {
@@ -1691,6 +1914,12 @@ model Office {
   // Baro Bilgisi
   barAssociation String? // Bağlı olduğu baro
 
+  // Yasal / Resmi Kimlik (Faz-B) — büro tüzel/ticari kimliği (fatura, resmi yazışma)
+  vergiNo      String? // Vergi numarası (serbest meslek makbuzu / fatura)
+  vergiDairesi String? // Bağlı vergi dairesi
+  mersisNo     String? // MERSİS no (şirket / avukatlık ortaklığı ise)
+  kepAddress   String? // KEP adresi (resmi e-yazışma / UYAP)
+
   // Varsayılan İcra Dairesi
   defaultExecutionOfficeId String?
 
@@ -1698,15 +1927,15 @@ model Office {
   smtpHost      String? // smtp.gmail.com, smtp.yandex.com, vb.
   smtpPort      Int? // 587, 465, vb.
   smtpUser      String? // E-posta adresi
-  smtpPass      String? // Uygulama şifresi (şifrelenmiş)
+  smtpPass      String? // Uygulama şifresi — at-rest AES-256-GCM şifreli (ACT-02, office-credential-encryption.util.ts); legacy düz-metin satırlar geriye-uyumlu okunur
   smtpSecure    Boolean @default(false) // TLS/SSL
   smtpFromName  String? // Gönderen adı
   smtpFromEmail String? // Gönderen e-posta
 
   // SMS Ayarları (Opsiyonel)
   smsProvider  String? // NETGSM, ILETI_MERKEZI, vb.
-  smsApiKey    String?
-  smsApiSecret String?
+  smsApiKey    String? // at-rest AES-256-GCM şifreli (ACT-02); legacy düz-metin geriye-uyumlu
+  smsApiSecret String? // at-rest AES-256-GCM şifreli (ACT-02); legacy düz-metin geriye-uyumlu
   smsSender    String? // Gönderen adı
 
   // Otomatik Tebrik Ayarları
@@ -1721,23 +1950,23 @@ model Office {
   // Görev & Eskalasyon Ayarları (büro-geneli politika) — PR-3a config; motor PR-3b okur.
   // manager/founder = Lawyer id DİZİSİ (düz alan; FK relation değil; motor id ile çözer, yoksa skip+log).
   // Birden fazla yönetici/kurucu olabilir → hepsine bildirim gider.
-  escalationManagerLawyerIds String[] @default([]) // Yönetici avukat(lar) (3g aşımında bildirim)
-  escalationFounderLawyerIds String[] @default([]) // Kurucu/ortak avukat(lar) (6g aşımında bildirim)
-  opReminderDays Int     @default(3)  // İlk hatırlatma / yöneticiye eskalasyon (gün)
-  opFounderDays  Int     @default(6)  // Kurucu/ortağa eskalasyon (gün)
-  opRepeatMonths Int     @default(3)  // Periyodik tekrar (ay)
-  opEmailEnabled Boolean @default(true) // E-posta bildirimi açık mı
-  opSmsEnabled   Boolean @default(true) // SMS bildirimi açık mı (yalnız kurucu/6g kademesi)
+  escalationManagerLawyerIds String[]    @default([]) // Yönetici avukat(lar) (3g aşımında bildirim)
+  escalationFounderLawyerIds String[]    @default([]) // Kurucu/ortak avukat(lar) (6g aşımında bildirim)
+  opReminderDays             Int         @default(3) // İlk hatırlatma / yöneticiye eskalasyon (gün)
+  opFounderDays              Int         @default(6) // Kurucu/ortağa eskalasyon (gün)
+  opRepeatMonths             Int         @default(3) // Periyodik tekrar (ay)
+  opEmailEnabled             Boolean     @default(true) // E-posta bildirimi açık mı
+  opSmsEnabled               Boolean     @default(true) // SMS bildirimi açık mı (yalnız kurucu/6g kademesi)
   // Operasyonel görevin İLK SAHİBİ (L1): bu personel türleri görür/bildirim alır. Yeni StaffRole
   // enum'u YOK — mevcut StaffType kullanılır.
-  opStaffTypes StaffType[] @default([MUHASEBE, ADLI_KATIP, SEKRETER])
+  opStaffTypes               StaffType[] @default([MUHASEBE, ADLI_KATIP, SEKRETER])
 
   // D-G0 (Gate D / D-i): DOSYA GÖREVİ eskalasyon ayarları (operasyonel op* alanlarından AYRI).
   // Takım Lideri = Lawyer id dizisi (boşsa L1 atlanır → doğrudan Yönetici). SLA günleri owner/lider/yönetici.
   escalationTeamLeadLawyerIds String[] @default([]) // Takım Lideri avukat(lar) (L1; boşsa kademe atlanır)
-  caseTaskOwnerDays    Int @default(2) // L0 Dosya Sorumlusu → L1 eşiği (gün)
-  caseTaskTeamLeadDays Int @default(2) // L1 Takım Lideri → L2 Yönetici eşiği (gün)
-  caseTaskManagerDays  Int @default(3) // L2 Yönetici → L3 Kurucu eşiği (gün)
+  caseTaskOwnerDays           Int      @default(2) // L0 Dosya Sorumlusu → L1 eşiği (gün)
+  caseTaskTeamLeadDays        Int      @default(2) // L1 Takım Lideri → L2 Yönetici eşiği (gün)
+  caseTaskManagerDays         Int      @default(3) // L2 Yönetici → L3 Kurucu eşiği (gün)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1800,14 +2029,14 @@ model Lawyer {
   vergiNo      String? // Vergi No (zorunlu)
 
   // İletişim
-  email    String?
-  phone    String? // Ofis telefonu (UI: "Ofis Telefonu")
+  email         String?
+  phone         String? // Ofis telefonu (UI: "Ofis Telefonu")
   mobilePhone   String? // Cep telefonu — SMS eskalasyonu bu alana gider (PR-3b)
   whatsappPhone String? // WhatsApp numarası — gönderim ileride (entegrasyon yok)
-  fax      String? // Faks numarası
-  address  String?
-  city     String?
-  district String?
+  fax           String? // Faks numarası
+  address       String?
+  city          String?
+  district      String?
 
   // Banka Bilgileri
   bankName   String?
@@ -1821,6 +2050,11 @@ model Lawyer {
   // ==================== AVUKAT TİPİ VE YETKİ SİSTEMİ ====================
   // Avukat Tipi (Hiyerarşi)
   lawyerRank LawyerRank @default(LAWYER) // PARTNER, MANAGER, AUTHORIZED, LAWYER
+
+  // P4 Approval Engine (K-2): kurumsal onay yetkisi. PARTNER doğal approver'dır; bu bayrak
+  // PARTNER-dışı bir avukata patron tarafından AÇIK olarak verilmiş delege onay yetkisidir.
+  // RBAC/PermissionCatalog DEĞİL; tekil kurumsal onay bayrağı. Henüz hiçbir akışa bağlı DEĞİL (P4-1 substrate).
+  canApproveOfficeActions Boolean @default(false)
 
   // Varsayılan Yetkiler (Büro genelinde - yeni dosyalara otomatik uygulanır)
   defaultPermissions Json? // { canEditCase, canGenerateDocs, canSyncUYAP, ... }
@@ -1865,10 +2099,10 @@ model Lawyer {
   userId String?
   user   User?   @relation("LawyerUser", fields: [userId], references: [id], onDelete: SetNull)
 
-  caseLawyers      CaseLawyer[]
-  poaLawyers       PoaLawyer[] // Avukatın dahil olduğu vekaletler
-  powerOfAttorneys PowerOfAttorney[] // Eski vekalet modeli ilişkisi
-  responsibleForCases Case[] @relation("CaseResponsibleLawyer") // M2-G1: Dosya Sorumlusu olduğu davalar
+  caseLawyers         CaseLawyer[]
+  poaLawyers          PoaLawyer[] // Avukatın dahil olduğu vekaletler
+  powerOfAttorneys    PowerOfAttorney[] // Eski vekalet modeli ilişkisi
+  responsibleForCases Case[]            @relation("CaseResponsibleLawyer") // M2-G1: Dosya Sorumlusu olduğu davalar
 
   @@unique([userId])
   @@index([tenantId])
@@ -2029,6 +2263,10 @@ model Collection {
   caseId       String
   case         Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
   caseDebtorId String? // Hangi borçludan tahsil edildi
+  // DBND-D5B: gercek FK (bkz. D5/D5A analiz+trial). onDelete=Restrict BILINCLI (SetNull/Cascade
+  // DEGIL) — finansal kayit sessizce bag koparmasin/silinmesin; CaseDebtor bugun zaten hard-delete
+  // edilmiyor (yalniz lifecycleStatus soft-delete), Restrict bunu DB seviyesinde de garanti eder.
+  caseDebtor   CaseDebtor? @relation(fields: [caseDebtorId], references: [id], onDelete: Restrict)
 
   // Tutar Bilgileri
   amount   Decimal @db.Decimal(15, 2)
@@ -2046,10 +2284,19 @@ model Collection {
   sourceType CollectionSource? // Nereden geldi
   sourceId   String? // Kaynak ID (ExternalCase, ThirdParty vs.)
 
+  // İdempotency (P0-1 / S9) — aynı gerçek tahsilatın çift kaydını engeller
+  //   (double-click / network retry / duplicate webhook). Her create path zorunlu
+  //   client-üretimli key sağlar; legacy satırlar migration'da 'legacy:'||id backfill'i aldı.
+  //   External dedup + ledger-posting tekliği migration'daki partial-unique index'lerle
+  //   kurulur (Prisma partial/filtered unique'i deklaratif desteklemez → raw SQL).
+  idempotencyKey String
+
   // Mahsup Bilgileri
-  allocations   CollectionAllocation[]
-  ledgerEntries LedgerEntry[]
-  overpayment   CollectionOverpayment?
+  allocations                 CollectionAllocation[]
+  ledgerEntries               LedgerEntry[]
+  clientPayoutAllocations     ClientPayoutAllocation[]
+  clientPayoutManualReversals ClientPayoutManualReversal[]
+  overpayment                 CollectionOverpayment?
 
   // Açıklama ve Notlar
   description String?
@@ -2067,6 +2314,7 @@ model Collection {
   updatedAt   DateTime @updatedAt
   createdById String?
 
+  @@unique([tenantId, idempotencyKey])
   @@index([tenantId])
   @@index([caseId])
   @@index([caseDebtorId])
@@ -2105,9 +2353,9 @@ model CollectionOverpayment {
   sourceLedgerEntryId String?
   sourceLedgerEntry   LedgerEntry? @relation(fields: [sourceLedgerEntryId], references: [id], onDelete: SetNull)
 
-  amount          Decimal @db.Decimal(15, 2)
-  remainingAmount Decimal @db.Decimal(15, 2)
-  currency        String  @default("TRY")
+  amount          Decimal           @db.Decimal(15, 2)
+  remainingAmount Decimal           @db.Decimal(15, 2)
+  currency        String            @default("TRY")
   status          OverpaymentStatus @default(HELD)
 
   reversedAt DateTime?
@@ -2308,6 +2556,10 @@ model Tebligat {
   caseId       String
   case         Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
   caseDebtorId String? // Hangi borçluya
+  // DBND-D5C: gercek FK (bkz. D5/D5A/D5B analiz+trial). onDelete=Restrict BILINCLI (SetNull/Cascade
+  // DEGIL) — tebligat usul kaydi sessizce bag koparmasin/silinmesin; CaseDebtor bugun zaten hard-delete
+  // edilmiyor (yalniz lifecycleStatus soft-delete), Restrict bunu DB seviyesinde de garanti eder.
+  caseDebtor   CaseDebtor? @relation(fields: [caseDebtorId], references: [id], onDelete: Restrict)
 
   // Tebligat Türü
   tebligatType TebligatType // ODEME_EMRI, ICRA_EMRI, HACIZ_IHBARNAMESI, vs.
@@ -2910,28 +3162,28 @@ enum Priority {
 // PR-PERF-1: görev kapanış türü. Performans ölçümü sistem kapanışını insan kapanışından
 // ayırt edebilsin diye (ör. "Fatma 500 görev kapattı"nın 450'si AUTO_SYSTEM olabilir).
 enum TaskResolutionType {
-  MANUAL      // İnsan kapattı (PUT /tasks/:id status=COMPLETED) → completedByUserId dolu
+  MANUAL // İnsan kapattı (PUT /tasks/:id status=COMPLETED) → completedByUserId dolu
   AUTO_SYSTEM // Sistem kapattı (contact-followup auto-close, masraf PAID tetikli) → completedByUserId null
 }
 
 // Görev sınıflandırması (3 katman). DATA_QUALITY burada YOK: o, görev değil computed badge/signal
 // olarak ele alınır (ürün kararı) — Task tablosu yalnız eyleme-geçilir işler için.
 enum TaskCategory {
-  LEGAL_WORKFLOW          // İcra/dosya yürütme görevleri (tebligat, kesinleşme, haciz, satış, yenileme)
+  LEGAL_WORKFLOW // İcra/dosya yürütme görevleri (tebligat, kesinleşme, haciz, satış, yenileme)
   OPERATIONAL_COMPLETENESS // Operasyonel eksikler (iletişim, IBAN, vergi levhası, kimlik)
 }
 
 // PR-D4b: OPERATIONAL_COMPLETENESS alt-türü. Tek motor (eskalasyon) farklı içerik/deep-link/
 // rule-engine için subtype'a bakar. Completeness ("veri eksik mi?") ≠ Intelligence ("sahada ne var?").
 enum TaskSubType {
-  CLIENT_CONTACT       // Müvekkil iletişim eksiği (mevcut #86-#95 sistemi)
-  DEBTOR_INFO          // Borçlu completeness (kimlik/adres/iletişim/tereke) — D4c
-  DEBTOR_INTELLIGENCE  // Borçlu saha istihbaratı (teyit/lokasyon/faaliyet) — D4e, ayrı rule-engine
+  CLIENT_CONTACT // Müvekkil iletişim eksiği (mevcut #86-#95 sistemi)
+  DEBTOR_INFO // Borçlu completeness (kimlik/adres/iletişim/tereke) — D4c
+  DEBTOR_INTELLIGENCE // Borçlu saha istihbaratı (teyit/lokasyon/faaliyet) — D4e, ayrı rule-engine
 }
 
 // Operasyonel görev eskalasyon kademesi (zaman-temelli; PR-3 scheduler işler).
 enum EscalationTier {
-  STAFF   // görevli muhasebe / adli katip / sorumlu icra avukatı (rol-kuyruğu)
+  STAFF // görevli muhasebe / adli katip / sorumlu icra avukatı (rol-kuyruğu)
   MANAGER // yönetici avukat (lawyerRank=MANAGER)
   FOUNDER // kurucu/ortak avukat (role=OWNER/PARTNER)
 }
@@ -2940,25 +3192,25 @@ enum EscalationTier {
 // Operasyonel EscalationTier'dan AYRI (K-D1: paylaşım YOK). CaseTaskEscalationService (D-G3) işler.
 enum CaseTaskTier {
   RESPONSIBLE // L0: Dosya Sorumlusu (Task.assignee → User) — owner-first
-  TEAM_LEAD   // L1: Office.escalationTeamLeadLawyerIds (boşsa atlanır → L2)
-  MANAGER     // L2: Yönetici avukat (escalationManagerLawyerIds | rank=MANAGER)
-  FOUNDER     // L3: Kurucu/ortak (escalationFounderLawyerIds | role OWNER/PARTNER) (+SMS)
+  TEAM_LEAD // L1: Office.escalationTeamLeadLawyerIds (boşsa atlanır → L2)
+  MANAGER // L2: Yönetici avukat (escalationManagerLawyerIds | rank=MANAGER)
+  FOUNDER // L3: Kurucu/ortak (escalationFounderLawyerIds | role OWNER/PARTNER) (+SMS)
 }
 
 // Müvekkil-seviyesi iletişim takibi durumu. WAIVED kalıcı karardır (görev tekrar üretilmez).
 enum ClientContactFollowUpStatus {
-  ACTIVE    // açık eksik var, takipte
-  WAIVED    // bu müvekkil için takipten vazgeçildi
+  ACTIVE // açık eksik var, takipte
+  WAIVED // bu müvekkil için takipten vazgeçildi
   COMPLETED // eksik tamamlandı
 }
 
 enum CollectionType {
   // Tahsilat türleri
-  TAHSILAT      // Normal tahsilat
-  FERAGAT       // Alacaklı vazgeçti
-  MAHSUP        // Karşılıklı alacak mahsubu
-  SULH          // Taraflar anlaştı
-  IADE          // İade edilen tutar
+  TAHSILAT // Normal tahsilat
+  FERAGAT // Alacaklı vazgeçti
+  MAHSUP // Karşılıklı alacak mahsubu
+  SULH // Taraflar anlaştı
+  IADE // İade edilen tutar
   // Eski değerler (geriye uyumluluk)
   CASH
   BANK_TRANSFER
@@ -3105,11 +3357,11 @@ model StaffMember {
   officeId String?
 
   // Kişisel Bilgiler
-  firstName String
-  lastName  String
-  tckn      String? // TC Kimlik No
-  email     String?
-  phone     String? // Ofis telefonu (UI: "Ofis Telefonu")
+  firstName     String
+  lastName      String
+  tckn          String? // TC Kimlik No
+  email         String?
+  phone         String? // Ofis telefonu (UI: "Ofis Telefonu")
   mobilePhone   String? // Cep telefonu — SMS eskalasyonu bu alana gider (PR-3b)
   whatsappPhone String? // WhatsApp numarası — gönderim ileride (entegrasyon yok)
 
@@ -3123,6 +3375,7 @@ model StaffMember {
   canApproveDocuments  Boolean @default(false) // Belge onaylayabilir
   canSeeFinance        Boolean @default(false) // Muhasebe modülünü görebilir
   canApproveFinance    Boolean @default(false) // Muhasebe işlemi onaylayabilir
+  canPrepareCollectionDisposition Boolean @default(false) // Tahsilat dağıtımı hazırlayabilir (recommend/preview); final approval DEĞİL
   canSendNotifications Boolean @default(false) // Tebligat gönderebilir
   isDefaultForNewCases Boolean @default(false) // Yeni dosyalarda otomatik seç
 
@@ -3139,8 +3392,8 @@ model StaffMember {
   userId String?
   user   User?   @relation("StaffMemberUser", fields: [userId], references: [id], onDelete: SetNull)
 
-  caseAssignments CaseStaff[]
-  responsibleForCases Case[] @relation("CaseResponsibleStaff") // M2-G1: Dosya Sorumlusu olduğu davalar
+  caseAssignments     CaseStaff[]
+  responsibleForCases Case[]      @relation("CaseResponsibleStaff") // M2-G1: Dosya Sorumlusu olduğu davalar
 
   @@unique([userId])
   @@index([tenantId])
@@ -3217,6 +3470,9 @@ model ClientNotification {
   // Idempotency anahtarı (Faz 3): "{templateCode}:{refType}:{refId}:{bucket}"
   // Aynı mailin iki kez gitmesini güvenilir engellemek için ayrı indexli kolon (JSON'a gömülmez).
   dedupeKey String?
+
+  intakeLinkDeliveries ClientIntakeLinkDelivery[]
+  documentRequests     ClientDocumentRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3319,6 +3575,13 @@ model PortalMessage {
 }
 
 // Masraf Talepleri
+// S8-B FAZ-1b — Masraf dağıtım-uygunluğu onay ekseni (collection-lifecycle status'tan AYRI).
+enum ExpenseApprovalStatus {
+  PENDING_APPROVAL // dağıtıma uygun değil (varsayılan)
+  APPROVED // yetkili onayladı → otomatik dağıtıma (reimbursement) uygun
+  REJECTED // reddedildi
+}
+
 model ExpenseRequest {
   id       String @id @default(cuid())
   tenantId String
@@ -3349,7 +3612,8 @@ model ExpenseRequest {
   requestItems ExpenseRequestItem[]
 
   // YENİ: Ödeme kayıtları
-  payments ExpensePayment[]
+  payments         ExpensePayment[]
+  paymentReversals ExpensePaymentReversal[]
 
   // YENİ: Audit log
   auditLogs ExpenseAuditLog[]
@@ -3367,6 +3631,12 @@ model ExpenseRequest {
 
   // Durum Makinesi
   status ExpenseRequestStatus @default(PENDING)
+
+  // S8-B FAZ-1b — Dağıtım-uygunluğu onay ekseni (status=tahsilat lifecycle'dan AYRI).
+  // Yalnız APPROVED masraf otomatik dağıtıma (CollectionDisposition reimbursement) girer. Proxy YOK.
+  expenseApprovalStatus ExpenseApprovalStatus @default(PENDING_APPROVAL)
+  approvedAt            DateTime?
+  approvedById          String? // scalar, FK YOK (boundary)
 
   // Gönderim Bilgileri
   sentAt            DateTime?
@@ -3413,6 +3683,7 @@ model ExpenseRequest {
   @@index([packageCode])
   @@index([createdAt])
   @@index([dueDate])
+  @@index([tenantId, expenseApprovalStatus, approvedAt]) // FAZ-1b: onay filtresi + "en eski ONAYLI önce" FIFO
 }
 
 // Masraf Talebi Kalemleri
@@ -3453,9 +3724,10 @@ model ExpenseRequestItem {
 
 // Masraf Ödeme Kayıtları
 model ExpensePayment {
-  id               String         @id @default(cuid())
+  id               String                   @id @default(cuid())
   expenseRequestId String
-  expenseRequest   ExpenseRequest @relation(fields: [expenseRequestId], references: [id], onDelete: Cascade)
+  expenseRequest   ExpenseRequest           @relation(fields: [expenseRequestId], references: [id], onDelete: Cascade)
+  reversals        ExpensePaymentReversal[]
 
   // Ödeme Bilgileri
   amount      Decimal  @db.Decimal(15, 2)
@@ -3472,6 +3744,64 @@ model ExpensePayment {
 
   @@index([expenseRequestId])
   @@index([paymentDate])
+}
+
+enum ExpensePaymentReversalKind {
+  REVERSAL
+}
+
+enum ExpensePaymentReversalStatus {
+  PENDING
+  JOURNAL_REVERSED
+  BALANCE_REVERSED
+  COMPLETED
+  FAILED
+}
+
+model ExpensePaymentReversal {
+  id       String @id @default(cuid())
+  tenantId String
+
+  expensePaymentId String
+  expensePayment   ExpensePayment @relation(fields: [expensePaymentId], references: [id], onDelete: Restrict)
+
+  expenseRequestId String
+  expenseRequest   ExpenseRequest @relation(fields: [expenseRequestId], references: [id], onDelete: Restrict)
+
+  kind   ExpensePaymentReversalKind   @default(REVERSAL)
+  status ExpensePaymentReversalStatus @default(PENDING)
+
+  amount   Decimal @db.Decimal(15, 2)
+  currency String  @default("TRY")
+
+  originalJournalEntryId String                  @unique
+  originalJournalEntry   AccountingJournalEntry  @relation("ExpensePaymentReversalOriginalJournalEntry", fields: [originalJournalEntryId], references: [id], onDelete: Restrict)
+  reversalJournalEntryId String?                 @unique
+  reversalJournalEntry   AccountingJournalEntry? @relation("ExpensePaymentReversalReversalJournalEntry", fields: [reversalJournalEntryId], references: [id], onDelete: Restrict)
+
+  originalBalanceLedgerId String?        @unique
+  originalBalanceLedger   BalanceLedger? @relation("ExpensePaymentReversalOriginalBalanceLedger", fields: [originalBalanceLedgerId], references: [id], onDelete: Restrict)
+  reversalBalanceLedgerId String?        @unique
+  reversalBalanceLedger   BalanceLedger? @relation("ExpensePaymentReversalReversalBalanceLedger", fields: [reversalBalanceLedgerId], references: [id], onDelete: Restrict)
+
+  idempotencyKey String
+  reason         String    @db.Text
+  requestedById  String
+  requestedAt    DateTime  @default(now())
+  completedAt    DateTime?
+  failureCode    String?
+  metadata       Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, expensePaymentId, kind])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId])
+  @@index([expensePaymentId])
+  @@index([expenseRequestId])
+  @@index([tenantId, status])
+  @@index([requestedAt])
 }
 
 // Masraf Audit Log
@@ -3516,13 +3846,13 @@ model ExpenseBlockReason {
   note              String?
 
   // LIFECYCLE (yalnız bu alanlar değişebilir)
-  status        ExpenseBlockStatus @default(OPEN)
-  createdById   String
-  createdAt     DateTime           @default(now())
-  resolvedAt    DateTime?
-  resolvedById  String?
-  cancelledAt   DateTime?
-  cancelledById String?
+  status         ExpenseBlockStatus @default(OPEN)
+  createdById    String
+  createdAt      DateTime           @default(now())
+  resolvedAt     DateTime?
+  resolvedById   String?
+  cancelledAt    DateTime?
+  cancelledById  String?
   resolutionNote String?
 
   @@index([tenantId])
@@ -3567,8 +3897,8 @@ model ClientApprovalRequest {
   subjectId    String? // EXPENSE_REQUEST/OPERATION id'si (doğrulama soft)
   subjectLabel String? // İnsan-okur etiket: "Haciz masrafı onayı"
 
-  status      ClientApprovalStatus    @default(DRAFT)
-  channel     ClientApprovalChannel   @default(EMAIL)
+  status      ClientApprovalStatus  @default(DRAFT)
+  channel     ClientApprovalChannel @default(EMAIL)
   title       String?
   description String?
 
@@ -3659,8 +3989,10 @@ model ClientStatement {
   id       String @id @default(cuid())
   tenantId String
 
-  caseId String
-  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  // Faz B-0: client-level ekstre için NULLABLE. caseId=null → client-level (müvekkilin tüm dosyaları);
+  // dolu → case-level (MEVCUT davranış, değişmez). FK KORUNUR (yalnız non-null satırlarda uygulanır).
+  caseId String?
+  case   Case?   @relation(fields: [caseId], references: [id], onDelete: Restrict)
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
@@ -3704,8 +4036,17 @@ model ClientStatementLine {
   lineDate DateTime
   lineType ClientStatementLineType
 
-  refType String? // 'BalanceLedger' | 'ExpenseRequest' | 'ExpensePayment'
+  refType String? // 'BalanceLedger' | 'ExpenseRequest' | 'ExpensePayment' | 'CollectionDispositionLine'
   refId   String? // kaynak kayıt id (snapshot anındaki)
+
+  // M2: proceeds satırının atfedildiği alacaklı (CaseClient.id) — client-level okuma + çoklu-alacaklı scope.
+  caseClientId String?
+
+  // Faz B-0: satırın geldiği dosya. parent.caseId=null (client-level ekstre) olduğunda satır hangi
+  // dosyadan üretildiğini taşır. Şema NULLABLE (case-level satırlarda null kalır; parent zaten dosyayı verir).
+  // DAVRANIŞ KURALI (B-1 + test ile kilitlenecek): client-level satır üretilirken ZORUNLU doldurulur.
+  // Scalar (FK YOK — refType/refId/caseClientId gibi gevşek tarihsel ref; index YOK).
+  caseId String?
 
   debit          Decimal @default(0) @db.Decimal(15, 2)
   credit         Decimal @default(0) @db.Decimal(15, 2)
@@ -3717,6 +4058,7 @@ model ClientStatementLine {
   @@index([statementId])
   @@index([lineType])
   @@index([lineDate])
+  @@index([caseClientId])
 }
 
 enum ClientStatementStatus {
@@ -3732,6 +4074,202 @@ enum ClientStatementLineType {
   EXPENSE_REQUESTED // Masraf talebi (ExpenseRequest) — BİLGİ, bakiyeyi oynatmaz
   REFUND // İade (BalanceLedger REFUND)
   ADJUST // Manuel düzeltme (BalanceLedger ADJUST)
+
+  // M2 — Tahsilat dağıtımı proceeds satırları (CollectionDispositionLine kaynaklı).
+  CASE_COLLECTION_PAYABLE // CLIENT_PAYABLE → müvekkile aktarılacak (credit +)
+  CONTRACTUAL_FEE_WITHHELD // ofis sözleşmesel ücreti (BİLGİ, 0)
+  FIRM_EXPENSE_REIMBURSEMENT // ofis masraf iadesi (BİLGİ, 0)
+  CLIENT_EXPENSE_REIMBURSEMENT // müvekkile masraf iadesi (credit +)
+  COLLECTION_OFFSET_ADVANCE // avans mahsubu (BİLGİ; bakiye etkisi BalanceLedger'dan, çift-sayım yok)
+  CLIENT_PAYOUT_SENT // M3 payout: müvekkile fiili ödeme (debit −; ClientPayout kaynaklı, BalanceLedger DEĞİL)
+
+  // Faz C — Cross-ledger offset (mahsup) satırları (ClientOffset kaynaklı; APPLY+REVERSAL toplam delta 0).
+  // ADR: docs/finance/adr-client-offset-cross-ledger-settlement.md. C-0=yalnız enum; üretim/etki LOGIC'i C-1.
+  CLIENT_OFFSET_PAYABLE_APPLIED // mahsup: müvekkile borç azaldı (debit −)
+  CLIENT_OFFSET_EXPENSE_APPLIED // mahsup: müvekkilin masraf borcu azaldı (credit +)
+  CLIENT_OFFSET_PAYABLE_REVERSED // mahsup iptali: müvekkile borç geri yüklendi (credit +)
+  CLIENT_OFFSET_EXPENSE_REVERSED // mahsup iptali: masraf borcu geri yüklendi (debit −)
+}
+
+// ============================================================
+// TM3 Faz C — Müvekkil Mahsubu (ClientOffset). IMMUTABLE event: müvekkile-özgü İKİ KARŞIT brüt bakiyeyi
+// (payable proceeds + masraf borcu) AYNI tutarda, nakit-hareketsiz kapatır; net pozisyon DEĞİŞMEZ.
+// kind=APPLY|REVERSAL — orijinal APPLY ASLA update edilmez; reversal AYRI immutable kayıt (reversesOffsetId).
+// Scalar alanlar (ClientPayout/CollectionDisposition deseni; @relation YOK). Cross-tenant/client/currency YASAK
+// (C-1 service enforce). C-0 = YALNIZ persistence: apply/reverse/outstanding/statement/audit/approval LOGIC YOK.
+// ADR: docs/finance/adr-client-offset-cross-ledger-settlement.md
+// ============================================================
+model ClientOffset {
+  id       String @id @default(cuid())
+  tenantId String
+  clientId String
+
+  amount   Decimal          @db.Decimal(15, 2)
+  currency String           @default("TRY")
+  kind     ClientOffsetKind
+
+  // payable leg — proceeds payable (kanonik bağ caseClientId; çoklu-alacaklıda doğru kişi)
+  payableCaseId       String
+  payableCaseClientId String
+
+  // expense leg — masraf borcu (ExpenseRequest clientId+caseId-scoped → satır pinlenir; caseClientId YOK)
+  expenseCaseId    String
+  expenseRequestId String
+
+  idempotencyKey   String
+  approvalRef      String? // confirm-token / approval kayıt id (ham token DEĞİL)
+  createdById      String
+  approvedById     String?
+  reason           String? // REVERSAL'da ZORUNLU (min 10 char) — C-1 service enforce; şema nullable
+  reversesOffsetId String? // APPLY→null; REVERSAL→orijinal APPLY id (self-ref scalar, FK gevşek)
+
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, reversesOffsetId]) // double-reversal guard (Postgres: NULL'lar distinct → APPLY'lar çakışmaz)
+  @@index([tenantId, clientId, currency, kind])
+  @@index([payableCaseClientId])
+  @@index([expenseRequestId])
+  @@index([createdAt])
+}
+
+enum ClientOffsetKind {
+  APPLY // mahsup uygulandı
+  REVERSAL // mahsup iptali (orijinali update ETMEZ; ayrı immutable kayıt)
+}
+
+// ============================================================
+// S9F - Accounting journal contract. Additive persistence only:
+// no live posting service, no controller, no endpoint, no backfill.
+// Existing LedgerEntry/LedgerAllocation remain the TBK100/legal ledger.
+// Source references are scalar dimensions to avoid changing owner tables.
+// ============================================================
+enum AccountingJournalEntryType {
+  COLLECTION_CASH_RECEIPT_RECORDED
+  COLLECTION_CASH_RECEIPT_REVERSED
+  COLLECTION_DISTRIBUTION_POSTED
+  CLIENT_PAYOUT_RECORDED
+  CLIENT_OFFSET_APPLIED
+  CLIENT_OFFSET_REVERSED
+  CLIENT_ADVANCE_LEDGER_RECORDED
+  EXPENSE_REQUEST_RECORDED
+  EXPENSE_REQUEST_CANCELLED
+  EXPENSE_PAYMENT_RECORDED
+  COLLECTION_DISPOSITION_EXPENSE_APPLICATION_APPLIED
+  COLLECTION_DISPOSITION_EXPENSE_APPLICATION_REVERSED
+  ACCOUNTING_JOURNAL_REVERSAL
+  ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT
+}
+
+enum AccountingJournalSourceType {
+  COLLECTION
+  COLLECTION_DISPOSITION_LINE
+  CLIENT_PAYOUT
+  CLIENT_OFFSET
+  BALANCE_LEDGER
+  EXPENSE_REQUEST
+  EXPENSE_PAYMENT
+  COLLECTION_DISPOSITION_EXPENSE_APPLICATION
+  ACCOUNTING_JOURNAL_ENTRY
+}
+
+enum AccountingAccountCode {
+  CASH_CLEARING
+  CASE_COLLECTION_CLEARING
+  CLIENT_PAYABLE
+  CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE
+  CLIENT_EXPENSE_RECEIVABLE
+  ATTORNEY_FEE_REVENUE
+  FIRM_EXPENSE_REIMBURSEMENT
+  CLIENT_ADVANCE_BALANCE
+}
+
+enum AccountingJournalDirection {
+  DEBIT
+  CREDIT
+}
+
+model AccountingJournalEntry {
+  id       String @id @default(cuid())
+  tenantId String
+
+  // Header dimension. Some source events, such as ClientOffset, can carry
+  // multi-case lines; line-level dimensions remain canonical for reporting.
+  caseId   String?
+  currency String  @default("TRY")
+
+  entryType    AccountingJournalEntryType
+  sourceType   AccountingJournalSourceType
+  sourceId     String
+  sourceAction String
+
+  idempotencyKey String
+  sourceHash     String?
+  metadata       Json?
+
+  sourceOccurredAt DateTime?
+  postedAt         DateTime  @default(now())
+  postedById       String?
+
+  reversalOfEntryId String?                 @unique
+  reversalOfEntry   AccountingJournalEntry? @relation("AccountingJournalEntryReversal", fields: [reversalOfEntryId], references: [id], onDelete: Restrict)
+  reversedByEntry   AccountingJournalEntry? @relation("AccountingJournalEntryReversal")
+
+  createdAt DateTime @default(now())
+
+  lines                           AccountingJournalLine[]
+  expensePaymentReversalOriginals ExpensePaymentReversal[] @relation("ExpensePaymentReversalOriginalJournalEntry")
+  expensePaymentReversalResults   ExpensePaymentReversal[] @relation("ExpensePaymentReversalReversalJournalEntry")
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, sourceType, sourceId, sourceAction], map: "accounting_journal_entry_source_unique")
+  @@index([tenantId, caseId, currency])
+  @@index([tenantId, entryType])
+  @@index([tenantId, sourceType, sourceId])
+  @@index([tenantId, postedAt])
+  @@index([reversalOfEntryId])
+}
+
+model AccountingJournalLine {
+  id             String                 @id @default(cuid())
+  tenantId       String
+  journalEntryId String
+  journalEntry   AccountingJournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  lineNo      Int
+  accountCode AccountingAccountCode
+  direction   AccountingJournalDirection
+
+  amount   Decimal @db.Decimal(15, 2)
+  currency String  @default("TRY")
+
+  caseId               String?
+  clientId             String?
+  caseClientId         String?
+  collectionId         String?
+  dispositionLineId    String?
+  payoutId             String?
+  offsetId             String?
+  expenseRequestId     String?
+  expensePaymentId     String?
+  expenseApplicationId String?
+  balanceLedgerId      String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([journalEntryId, lineNo])
+  @@index([tenantId, caseId, currency])
+  @@index([tenantId, accountCode])
+  @@index([tenantId, caseClientId])
+  @@index([tenantId, clientId])
+  @@index([collectionId])
+  @@index([dispositionLineId])
+  @@index([payoutId])
+  @@index([offsetId])
+  @@index([expenseRequestId])
+  @@index([expensePaymentId])
+  @@index([expenseApplicationId])
+  @@index([balanceLedgerId])
 }
 
 // ============================================================
@@ -3785,6 +4323,8 @@ enum ClientIntelCategory {
   DIGITAL_FOOTPRINT // Dijital iz (sosyal medya/online mağaza)
   PAYMENT_HISTORY // Tahsilat geçmişi beyanı
   STRATEGY // Dosya stratejisi soruları
+  ASSET_DECLARATION // CLIENT-INTEL-4.6C: müvekkilin beyan ettiği varlık (araç/gayrimenkul vb.) — serbest metin, doğrulanmış Asset kaydı DEĞİL
+  CONTACT_DECLARATION // CLIENT-INTEL-4.6C: müvekkilin beyan ettiği iletişim bilgisi (telefon/e-posta vb.) — serbest metin, DebtorCommunication DEĞİL
 }
 
 enum ClientIntelSource {
@@ -3820,23 +4360,105 @@ model ClientIntakeLink {
   client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
   tokenHash String // opak token'ın HASH'i (ham token DB'de YOK)
-  status    ClientIntakeLinkStatus @default(ACTIVE)
+  status    ClientIntakeLinkStatus      @default(ACTIVE)
   scope     ClientIntakeFieldCategory[] // istenen kategoriler
 
   expiresAt DateTime?
-  maxUses   Int @default(1)
-  useCount  Int @default(0)
+  maxUses   Int       @default(1)
+  useCount  Int       @default(0)
 
   createdById String
   createdAt   DateTime @default(now())
 
   submissions ClientIntakeSubmission[]
+  deliveries  ClientIntakeLinkDelivery[]
 
   @@index([tenantId])
   @@index([caseId])
   @@index([clientId])
   @@index([tokenHash])
   @@index([status])
+}
+
+// Intake link create-and-deliver typed command artifact.
+// Güvenlik: bearer secret saklanmaz; public form URL yalnız dispatch render aşamasında kullanılır.
+model ClientIntakeLinkDelivery {
+  id       String @id @default(cuid())
+  tenantId String
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  intakeLinkId String
+  intakeLink   ClientIntakeLink @relation(fields: [intakeLinkId], references: [id], onDelete: Restrict)
+
+  idempotencyKey String
+  dedupeKey      String
+  channel        String                         @default("EMAIL")
+  status         ClientIntakeLinkDeliveryStatus @default(PENDING)
+
+  notificationId String?
+  notification   ClientNotification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+
+  attemptCount Int      @default(0)
+  lastError    String?  @db.Text
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, dedupeKey])
+  @@unique([intakeLinkId, channel])
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([caseId])
+  @@index([intakeLinkId])
+  @@index([notificationId])
+  @@index([status])
+}
+
+// Client Workspace document request typed command artifact.
+// Security: raw recipient/body/token/provider payload is not persisted; notification body is rendered later.
+model ClientDocumentRequest {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  requestedDocumentCodes String[]
+  templateCode           String
+
+  idempotencyKey String
+  dedupeKey      String
+  channel        String                      @default("EMAIL")
+  status         ClientDocumentRequestStatus @default(PENDING)
+
+  notificationId String?
+  notification   ClientNotification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+
+  attemptCount Int       @default(0)
+  lastError    String?   @db.Text
+  sentAt       DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, dedupeKey])
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([caseId])
+  @@index([notificationId])
+  @@index([status])
+  @@index([tenantId, clientId, status, createdAt])
 }
 
 model ClientIntakeSubmission {
@@ -3852,10 +4474,10 @@ model ClientIntakeSubmission {
   clientId String
   client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
-  status      ClientIntakeSubmissionStatus @default(CLIENT_SUBMITTED)
-  submittedAt DateTime  @default(now())
-  claimedById String? // inceleyen personel (claim; review için zorunlu — Faz 4.5)
-  claimedAt   DateTime?
+  status       ClientIntakeSubmissionStatus @default(CLIENT_SUBMITTED)
+  submittedAt  DateTime                     @default(now())
+  claimedById  String? // inceleyen personel (claim; review için zorunlu — Faz 4.5)
+  claimedAt    DateTime?
   reviewedById String? // son karar veren (reviewedAt ile)
   reviewedAt   DateTime?
   sourceMeta   Json? // PII-min: ip hash / ua özeti (ham IP YOK)
@@ -3901,6 +4523,20 @@ enum ClientIntakeLinkStatus {
   USED
   EXPIRED
   REVOKED
+}
+
+enum ClientIntakeLinkDeliveryStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+}
+
+enum ClientDocumentRequestStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
 }
 
 enum ClientIntakeSubmissionStatus {
@@ -4139,11 +4775,24 @@ model ErrorLog {
 
   createdAt DateTime @default(now())
 
+  // PR-2b: kalıcı dedupe. fingerprint = hata kimliği (analitik/gruplama, endpoint-bağımsız).
+  // activeDedupeKey = AKTİF olay kimliği; YALNIZ unresolved kayıtta dolu, resolve'da NULL yapılır.
+  // PostgreSQL nullable-unique (NULLS DISTINCT) → çözülmüş N kayıt null key ile yan yana durur;
+  // aynı hata çözülüp tekrar patlarsa eski resolved'a gömülmez, YENİ aktif kayıt açılır.
+  fingerprint     String?
+  activeDedupeKey String?   @unique
+  occurrenceCount Int       @default(1)
+  firstSeenAt     DateTime?
+  lastSeenAt      DateTime?
+
   @@index([tenantId])
   @@index([level])
   @@index([source])
   @@index([createdAt])
   @@index([isResolved])
+  @@index([tenantId, source, isResolved, lastSeenAt])
+  @@index([source, fingerprint, lastSeenAt])
+  @@index([lastSeenAt])
 }
 
 // ==================== DENETİM KAYITLARI (AUDIT LOG) ====================
@@ -4334,6 +4983,20 @@ model ClaimItem {
   interestStartDate DateTime?
   interestEndDate   DateTime?
 
+  // TBK100 Interest Accrual Contract v1 (owner-locked, 2026-07-03):
+  // interestStartDate SESSİZCE dueDate/issueDate'ten türetilmez (hukuki karar, ihtar/temerrüt/ilam
+  // tarihi vade tarihinden farklı olabilir). ACCRUES/NO_INTEREST/UNKNOWN üçlüsü "faiz bilgisi eksik"
+  // ile "bilinçli faizsiz"i ayırır — bunlar hukuken aynı şey değildir.
+  interestAccrualStatus       InterestAccrualStatus        @default(UNKNOWN)
+  interestStartDateProvenance InterestStartDateProvenance?
+
+  // NO_INTEREST manuel onayı için audit (yalnız PRINCIPAL kalem elle NO_INTEREST'e çevrilirse zorunlu;
+  // itemType-bazlı otomatik NO_INTEREST varsayımında — COST/ANCILLARY/TAX/ATTORNEY_FEE — boş kalır,
+  // çünkü bu yeni bir karar değil, mevcut davranışın (sabit tutar) açık hale getirilmesidir).
+  noInterestReason        String?
+  noInterestConfirmedById String?
+  noInterestConfirmedAt   DateTime?
+
   // Vade/Tarih Bilgileri
   dueDate   DateTime? // Vade tarihi
   issueDate DateTime? // Düzenleme tarihi
@@ -4378,10 +5041,10 @@ model ClaimItem {
 
 // ⭐ TAKİP DEFTERİ - Tahsilat ve Düzeltme Kayıtları (TBK 100 / BK 84)
 model LedgerEntry {
-  id       String @id @default(cuid())
-  tenantId String
-  caseId   String
-  case     Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  id                    String       @id @default(cuid())
+  tenantId              String
+  caseId                String
+  case                  Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
   collectionId          String?
   collection            Collection?  @relation(fields: [collectionId], references: [id], onDelete: SetNull)
   reversesLedgerEntryId String?      @unique
@@ -4408,7 +5071,7 @@ model LedgerEntry {
   sourceId   String? // Banka işlem ID'si vb.
 
   // Dağıtım (TBK 100 sırasına göre)
-  allocations LedgerAllocation[]
+  allocations        LedgerAllocation[]
   sourceOverpayments CollectionOverpayment[]
 
   // Durum
@@ -4487,6 +5150,32 @@ enum ClaimItemType {
 enum ClaimSourceProcess {
   MAIN_ENFORCEMENT // Ana icra takibi
   PRECAUTIONARY // İhtiyati haciz
+}
+
+// TBK100 Interest Accrual Contract v1 (owner-locked, 2026-07-03) — ClaimItem.interestAccrualStatus.
+// "Faiz bilgisi eksik" (UNKNOWN) ile "bilinçli faizsiz" (NO_INTEREST) hukuken aynı şey değildir;
+// sessizce karıştırılmaz. Varsayım matrisi (backfill/servis katmanında, DB default seviyesinde DEĞİL,
+// çünkü Postgres default itemType'a koşullu olamaz): PRINCIPAL yeni kayıtta UNKNOWN kalır;
+// COST/ANCILLARY/TAX/ATTORNEY_FEE itemType'ları mekanik olarak NO_INTEREST'e sınıflanır (bu bir hukuki
+// tahmin değil, zaten bilinen itemType'ın yansımasıdır).
+enum InterestAccrualStatus {
+  ACCRUES
+  NO_INTEREST
+  UNKNOWN
+}
+
+// TBK100 Interest Accrual Contract v1 — ClaimItem.interestStartDateProvenance. Yalnız
+// interestAccrualStatus=ACCRUES ise zorunlu. ENFORCEMENT_PROCEEDING_DATE İSTİSNAİ: bu değer açıkça
+// seçildiğinde interestStartDate Case.caseDate'ten mekanik çözülür (sessiz dueDate/issueDate fallback
+// DEĞİL — kaynak zaten kayıtlı ve tartışmasız, "hangi tarih faiz başlangıcı" yorumu gerektirmez).
+enum InterestStartDateProvenance {
+  DOCUMENT_DUE_DATE
+  CONTRACTUAL_DUE_DATE
+  DEFAULT_NOTICE_DATE
+  JUDGMENT_DATE
+  JUDGMENT_FINALIZATION_DATE
+  ENFORCEMENT_PROCEEDING_DATE
+  MANUAL_LAWYER_CONFIRMED
 }
 
 // Kaynak Belge Türü
@@ -5352,7 +6041,9 @@ model BalanceLedger {
   // Oluşturan
   createdById String?
 
-  createdAt DateTime @default(now())
+  createdAt                       DateTime                 @default(now())
+  expensePaymentReversalOriginals ExpensePaymentReversal[] @relation("ExpensePaymentReversalOriginalBalanceLedger")
+  expensePaymentReversalResults   ExpensePaymentReversal[] @relation("ExpensePaymentReversalReversalBalanceLedger")
 
   @@index([tenantId])
   @@index([caseBalanceId])
@@ -6356,11 +7047,11 @@ model IcrabotEngineRun {
 
 // Timeline Entry - Olay kaydı
 model IcrabotTimelineEntry {
-  id     String  @id @default(cuid())
-  caseId String
+  id       String  @id @default(cuid())
+  caseId   String
   /// Faz 1: nullable (backfill bekliyor). Faz 4'te NOT NULL — bkz legal-kernel/15-timeline-tenant-isolation-migration.md
   tenantId String?
-  runId  String?
+  runId    String?
 
   type     String // UYAP_EVENT, FACT_WRITE, COMPUTE, DECISION, ACTION, OUTCOME, NOTE
   severity String @default("info") // info, warn, critical
@@ -6386,8 +7077,8 @@ model IcrabotTimelineEntry {
 
 // Outbox Action - Action queue
 model IcrabotOutboxAction {
-  id     String  @id @default(cuid())
-  caseId String
+  id       String  @id @default(cuid())
+  caseId   String
   /// outbox-tenancy: write-time tenant capture. Adım A tip+runtime guard, Adım B DB NOT NULL.
   /// Üreticiler enqueue anında tenantId yazmak zorunda; tüketiciler satırdan thread eder.
   /// External callback path'i (processCallback) caseId→tenant boundary lookup yapar.
@@ -6669,7 +7360,6 @@ model InterestSegmentLog {
   @@map("interest_segment_log")
 }
 
-
 // ==================== ADDRESS TASK SYSTEM ====================
 // Borçlu adres yönetimi görev sistemi
 
@@ -6769,33 +7459,33 @@ model AddressTask {
   debtorId String
 
   // Task Type & Dedupe
-  taskType AddressTaskType
-  scopeKey String? // Scope identifier for dedupe (e.g., "annual_2024")
+  taskType  AddressTaskType
+  scopeKey  String? // Scope identifier for dedupe (e.g., "annual_2024")
   dedupeKey String? // Computed: {taskType}:{caseId}:{debtorId}:{scopeKey}
 
   // Status & SLA
-  status AddressTaskStatus @default(PENDING)
-  dueAt DateTime?
-  attemptCount Int @default(0)
-  maxAttempts Int @default(3)
+  status       AddressTaskStatus @default(PENDING)
+  dueAt        DateTime?
+  attemptCount Int               @default(0)
+  maxAttempts  Int               @default(3)
 
   // Assignment
   assignedToId String?
 
   // Communication
-  channelUsed String? // EMAIL, WHATSAPP, BOTH
+  channelUsed   String? // EMAIL, WHATSAPP, BOTH
   correlationId String? // Message correlation ID
-  messageIds Json? // Array of sent message IDs
+  messageIds    Json? // Array of sent message IDs
 
   // Result
-  resultType AddressTaskResultType?
-  resultData Json? // Gelen adresler vb.
-  failureReason AddressTaskFailureReason?
-  failureDetails String?
+  resultType         AddressTaskResultType?
+  resultData         Json? // Gelen adresler vb.
+  failureReason      AddressTaskFailureReason?
+  failureDetails     String?
   cancellationReason AddressTaskCancellationReason?
 
   // Manual Task Resolution
-  resolution ManualTaskResolution?
+  resolution      ManualTaskResolution?
   resolutionNotes String?
 
   // Scheduling (Annual refresh için)
@@ -6803,12 +7493,12 @@ model AddressTask {
   lastRunAt DateTime?
 
   // Meta
-  title String?
+  title       String?
   description String?
-  notes String?
+  notes       String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   completedAt DateTime?
 
   // Relations
@@ -6829,20 +7519,20 @@ model AddressTask {
 
 // Adres Kanıt Referansı (Evidence Reference)
 model AddressEvidenceRef {
-  id String @id @default(cuid())
+  id              String @id @default(cuid())
   debtorAddressId String
-  
+
   // Evidence Type
   evidenceType EvidenceType
-  
+
   // Reference IDs (exactly one should be set)
-  documentId String? // CaseDocument reference
+  documentId      String? // CaseDocument reference
   communicationId String? // ClientNotification or email/whatsapp message ID
-  uyapQueryId String? // UyapQuery reference
-  
+  uyapQueryId     String? // UyapQuery reference
+
   // Meta
   createdAt DateTime @default(now())
-  
+
   @@index([debtorAddressId])
   @@index([documentId])
   @@index([communicationId])
@@ -6851,32 +7541,32 @@ model AddressEvidenceRef {
 
 // Adres Audit Log (Address-specific actions)
 model AddressAuditLog {
-  id String @id @default(cuid())
-  tenantId String
-  caseId String
-  debtorId String?
-  addressTaskId String?
+  id              String  @id @default(cuid())
+  tenantId        String
+  caseId          String
+  debtorId        String?
+  addressTaskId   String?
   debtorAddressId String?
-  
+
   // Action
   action String // ADDRESS_EXTRACTED, REQUEST_SENT, REMINDER_SENT, RESPONSE_RECEIVED, etc.
-  
+
   // Details
   details Json?
-  
+
   // Display
   showInNotes Boolean @default(false) // Notlar panelinde göster
-  noteText String? // Notlar paneli için metin
-  
+  noteText    String? // Notlar paneli için metin
+
   // User
   userId String?
-  
+
   createdAt DateTime @default(now())
-  
+
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  
+
   @@index([tenantId])
   @@index([caseId])
   @@index([debtorId])
@@ -6888,25 +7578,25 @@ model AddressAuditLog {
 
 // Outbox Event (Event güvenilirliği için)
 model AddressOutboxEvent {
-  id String @id @default(cuid())
+  id       String @id @default(cuid())
   tenantId String
-  
+
   // Event
   eventType String // EVIDENCE_UPLOADED, DEBTOR_CREATED, CASE_STATUS_CHANGED, etc.
-  payload Json
-  
+  payload   Json
+
   // Status
-  status String @default("PENDING") // PENDING, PROCESSING, PROCESSED, FAILED
-  attemptCount Int @default(0)
-  lastError String?
-  
+  status       String  @default("PENDING") // PENDING, PROCESSING, PROCESSED, FAILED
+  attemptCount Int     @default(0)
+  lastError    String?
+
   // Timestamps
-  createdAt DateTime @default(now())
+  createdAt   DateTime  @default(now())
   processedAt DateTime?
-  
+
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  
+
   @@index([tenantId])
   @@index([eventType])
   @@index([status])
@@ -6980,29 +7670,29 @@ enum DocumentArtifactStatus {
 
 // CPE Decision Log - Her karar için detaylı log
 model CpeDecisionLog {
-  id              String   @id @default(cuid())
-  caseId          String
-  actionCode      String   // ActionCode enum value
-  scope           String   // Scope enum value (CASE, DEBTOR, ASSET, EXPENSE)
-  contextJson     Json?    // { debtorId?, assetId?, expenseId?, metadata? }
-  
-  allowed         Boolean
-  code            String   // DecisionCode enum value
-  reason          String   // Türkçe açıklama
-  
-  factsUsedKeys   String[] // Kullanılan fact key'leri (değerler değil, KVKK)
+  id          String @id @default(cuid())
+  caseId      String
+  actionCode  String // ActionCode enum value
+  scope       String // Scope enum value (CASE, DEBTOR, ASSET, EXPENSE)
+  contextJson Json? // { debtorId?, assetId?, expenseId?, metadata? }
+
+  allowed Boolean
+  code    String // DecisionCode enum value
+  reason  String // Türkçe açıklama
+
+  factsUsedKeys     String[] // Kullanılan fact key'leri (değerler değil, KVKK)
   factsSnapshotHash String? // Fact snapshot hash (debugging için)
-  stateSnapshot   Json?    // { scope, currentState, contextId, version }
-  
-  gateCode        String?  // Bloklayan gate kodu (varsa)
-  gateSeverity    String?  // HARD veya SOFT
-  
-  warnings        Json?    // Soft gate uyarıları
-  
-  traceId         String?  // Distributed tracing ID
-  ruleVersion     String?  // Compiled rules version hash
-  
-  createdAt       DateTime @default(now())
+  stateSnapshot     Json? // { scope, currentState, contextId, version }
+
+  gateCode     String? // Bloklayan gate kodu (varsa)
+  gateSeverity String? // HARD veya SOFT
+
+  warnings Json? // Soft gate uyarıları
+
+  traceId     String? // Distributed tracing ID
+  ruleVersion String? // Compiled rules version hash
+
+  createdAt DateTime @default(now())
 
   case Case @relation("CpeDecisionLogs", fields: [caseId], references: [id], onDelete: Cascade)
 
@@ -7016,26 +7706,26 @@ model CpeDecisionLog {
 
 // CPE Execution Record - Aksiyon yürütme kaydı (idempotency için)
 model CpeExecutionRecord {
-  id              String   @id @default(cuid())
-  executionId     String   @unique // UUID - idempotency key
-  caseId          String
-  actionCode      String
-  contextJson     Json?
-  
-  startedAt       DateTime @default(now())
-  finishedAt      DateTime?
-  
-  status          CpeExecutionStatus @default(PENDING)
-  errorCode       String?
-  errorMessage    String?
-  
-  stateBeforeHash String?  // State hash before execution
-  stateAfterHash  String?  // State hash after execution
-  
-  ruleVersion     String?
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id          String @id @default(cuid())
+  executionId String @unique // UUID - idempotency key
+  caseId      String
+  actionCode  String
+  contextJson Json?
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  status       CpeExecutionStatus @default(PENDING)
+  errorCode    String?
+  errorMessage String?
+
+  stateBeforeHash String? // State hash before execution
+  stateAfterHash  String? // State hash after execution
+
+  ruleVersion String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   case Case @relation("CpeExecutionRecords", fields: [caseId], references: [id], onDelete: Cascade)
 
@@ -7047,12 +7737,11 @@ model CpeExecutionRecord {
 }
 
 enum CpeExecutionStatus {
-  PENDING   // Başlatıldı
-  SUCCESS   // Başarılı
-  FAILED    // Hata
-  NOOP      // Duplicate executionId - no operation
+  PENDING // Başlatıldı
+  SUCCESS // Başarılı
+  FAILED // Hata
+  NOOP // Duplicate executionId - no operation
 }
-
 
 // ==================== PHASE 9B: TRUTH LAYER ====================
 // Simulation runs and snapshots for diagnostics system
@@ -7078,30 +7767,30 @@ enum SimulationSnapshotKind {
 // Immutable fields: runId, tenantId, incidentId, scenarioId, seed, simulationVersion, engineVersion, startedAt
 // Mutable fields: status, finishedAt, currentSnapshotId, baselineSnapshotId, errorCode, errorMessage
 model SimulationRun {
-  runId              String              @id @map("run_id")
-  tenantId           String              @map("tenant_id")
-  incidentId         String              @map("incident_id") // No FK - Incident not in Prisma yet
+  runId      String @id @map("run_id")
+  tenantId   String @map("tenant_id")
+  incidentId String @map("incident_id") // No FK - Incident not in Prisma yet
 
-  scenarioId         String              @map("scenario_id")
-  seed               Int                 @map("seed")
-  simulationVersion  String              @map("simulation_version")
-  engineVersion      String?             @map("engine_version")
+  scenarioId        String  @map("scenario_id")
+  seed              Int     @map("seed")
+  simulationVersion String  @map("simulation_version")
+  engineVersion     String? @map("engine_version")
 
-  status             SimulationRunStatus @default(PENDING) @map("status")
+  status SimulationRunStatus @default(PENDING) @map("status")
 
-  startedAt          DateTime            @default(now()) @map("started_at") @db.Timestamptz(6)
-  finishedAt         DateTime?           @map("finished_at") @db.Timestamptz(6)
+  startedAt  DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
 
   // Snapshot links (no FK constraint for now - avoid circular migration issues)
-  currentSnapshotId  String?             @map("current_snapshot_id")
-  baselineSnapshotId String?             @map("baseline_snapshot_id")
+  currentSnapshotId  String? @map("current_snapshot_id")
+  baselineSnapshotId String? @map("baseline_snapshot_id")
 
   // Error info (for FAILED status)
-  errorCode          String?             @map("error_code")
-  errorMessage       String?             @map("error_message")
+  errorCode    String? @map("error_code")
+  errorMessage String? @map("error_message")
 
   // Reverse relation for snapshots
-  snapshots          SimulationSnapshot[]
+  snapshots SimulationSnapshot[]
 
   @@index([tenantId, incidentId], map: "ix_sim_runs_tenant_incident")
   @@index([tenantId, status], map: "ix_sim_runs_tenant_status")
@@ -7112,36 +7801,36 @@ model SimulationRun {
 // Simulation Snapshot - calculation result (INSERT-ONLY)
 // All fields immutable except: isBaseline (upgrade only), retentionPolicy (upgrade only), expiresAt, archived*
 model SimulationSnapshot {
-  snapshotId      String                  @id @map("snapshot_id")
-  tenantId        String                  @map("tenant_id")
-  incidentId      String                  @map("incident_id") // No FK - Incident not in Prisma yet
+  snapshotId String @id @map("snapshot_id")
+  tenantId   String @map("tenant_id")
+  incidentId String @map("incident_id") // No FK - Incident not in Prisma yet
 
   // Run link (optional FK)
-  runId           String?                 @map("run_id")
-  run             SimulationRun?          @relation(fields: [runId], references: [runId], onDelete: SetNull)
+  runId String?        @map("run_id")
+  run   SimulationRun? @relation(fields: [runId], references: [runId], onDelete: SetNull)
 
-  snapshotKind    SimulationSnapshotKind  @map("snapshot_kind")
-  isBaseline      Boolean                 @default(false) @map("is_baseline")
+  snapshotKind SimulationSnapshotKind @map("snapshot_kind")
+  isBaseline   Boolean                @default(false) @map("is_baseline")
 
-  verdict         String                  @map("verdict") // PROCEED, BLOCK_DRIFT, BLOCK_EVIDENCE, BLOCK_POLICY
-  driftScore      Decimal                 @map("drift_score") @db.Decimal(10, 6)
+  verdict    String  @map("verdict") // PROCEED, BLOCK_DRIFT, BLOCK_EVIDENCE, BLOCK_POLICY
+  driftScore Decimal @map("drift_score") @db.Decimal(10, 6)
 
   // Calculation results
-  calcResult      Json                    @map("calc_result") // Raw result (debug/audit)
-  calcResultNorm  Json                    @map("calc_result_norm") // Normalized for hash
-  calcHash        String                  @map("calc_hash") // SHA256(canonicalStringify(calcResultNorm))
+  calcResult     Json   @map("calc_result") // Raw result (debug/audit)
+  calcResultNorm Json   @map("calc_result_norm") // Normalized for hash
+  calcHash       String @map("calc_hash") // SHA256(canonicalStringify(calcResultNorm))
 
   // Retention (upgrade-only)
-  retentionPolicy String?                 @default("STANDARD") @map("retention_policy") // STANDARD, PROMOTED, LEGAL_HOLD
-  expiresAt       DateTime?               @map("expires_at") @db.Timestamptz(6)
+  retentionPolicy String?   @default("STANDARD") @map("retention_policy") // STANDARD, PROMOTED, LEGAL_HOLD
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
 
   // Archive state (Phase 10 - soft-hide, does NOT change retentionPolicy)
   // Archive = visibility flag only, legal hold status preserved
-  archivedAt      DateTime?               @map("archived_at") @db.Timestamptz(6)
-  archivedBy      String?                 @map("archived_by") // opsUserId or actor
-  archivedReason  String?                 @map("archived_reason") // Optional reason
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
+  archivedBy     String?   @map("archived_by") // opsUserId or actor
+  archivedReason String?   @map("archived_reason") // Optional reason
 
-  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([tenantId, incidentId, createdAt(sort: Desc)], map: "ix_sim_snap_tenant_incident_created")
   @@index([tenantId, runId], map: "ix_sim_snap_tenant_run")
@@ -7150,7 +7839,6 @@ model SimulationSnapshot {
   @@index([tenantId, retentionPolicy, archivedAt], map: "ix_sim_snap_tenant_policy_archived") // Phase 10: legal hold list query
   @@map("simulation_snapshots")
 }
-
 
 // ==================== CLEANUP ORCHESTRATION ====================
 
@@ -7170,16 +7858,15 @@ model CleanupFailureState {
   @@map("cleanup_failure_state")
 }
 
-
 // ==================== EVIDENCE BUNDLE STORAGE (Phase 9C) ====================
 
 // Bundle State Machine
 // CRITICAL INVARIANT: SEALED is TERMINAL - no transitions out of SEALED
 enum BundleState {
-  DRAFT     // Items being uploaded, manifest not yet written
-  SEALED    // Manifest written, bundle is immutable (TERMINAL STATE)
-  FAILED    // Seal failed after retries, needs investigation
-  ORPHANED  // S3 objects exist but DB pointer missing (reconciliation detected)
+  DRAFT // Items being uploaded, manifest not yet written
+  SEALED // Manifest written, bundle is immutable (TERMINAL STATE)
+  FAILED // Seal failed after retries, needs investigation
+  ORPHANED // S3 objects exist but DB pointer missing (reconciliation detected)
 }
 
 // Evidence Bundle Pointer - links snapshot to S3 bundle
@@ -7191,44 +7878,44 @@ enum BundleState {
 // 3. FAILED → DRAFT only via retry policy with sealAttemptCount++
 // 4. manifestKey is write-once (same key = same content)
 model EvidenceBundlePointer {
-  id                  String      @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   // Foreign key to snapshot (1:1)
-  snapshotId          String      @unique @map("snapshot_id")
-  
+  snapshotId String @unique @map("snapshot_id")
+
   // Tenant isolation
-  tenantId            String      @map("tenant_id")
-  incidentId          String      @map("incident_id")
-  
+  tenantId   String @map("tenant_id")
+  incidentId String @map("incident_id")
+
   // S3 location
-  bucket              String
-  manifestKey         String      @map("manifest_key")
-  
+  bucket      String
+  manifestKey String @map("manifest_key")
+
   // Integrity - hash chain
-  manifestSha256      String      @map("manifest_sha256")
-  bundleContentHash   String      @map("bundle_content_hash") // SHA256(concat all item sha256s)
-  
+  manifestSha256    String @map("manifest_sha256")
+  bundleContentHash String @map("bundle_content_hash") // SHA256(concat all item sha256s)
+
   // S3 metadata (write-once verification)
-  etag                String?
-  versionId           String?     @map("version_id")
-  
+  etag      String?
+  versionId String? @map("version_id")
+
   // Size tracking
-  totalSizeBytes      BigInt      @map("total_size_bytes")
-  itemCount           Int         @map("item_count")
-  
+  totalSizeBytes BigInt @map("total_size_bytes")
+  itemCount      Int    @map("item_count")
+
   // State machine
-  state               BundleState @default(DRAFT)
-  
+  state BundleState @default(DRAFT)
+
   // Forensic/debug fields (REQUIRED for production debugging)
-  sealAttemptCount    Int         @default(0) @map("seal_attempt_count")
-  lastSealAttemptAt   DateTime?   @map("last_seal_attempt_at") @db.Timestamptz(6)
-  lastErrorCode       String?     @map("last_error_code")
-  lastErrorDetail     String?     @map("last_error_detail")
-  
+  sealAttemptCount  Int       @default(0) @map("seal_attempt_count")
+  lastSealAttemptAt DateTime? @map("last_seal_attempt_at") @db.Timestamptz(6)
+  lastErrorCode     String?   @map("last_error_code")
+  lastErrorDetail   String?   @map("last_error_detail")
+
   // Timestamps
-  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  sealedAt            DateTime?   @map("sealed_at") @db.Timestamptz(6)
-  
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  sealedAt  DateTime? @map("sealed_at") @db.Timestamptz(6)
+
   // Indexes for common queries
   @@index([tenantId], map: "ix_bundle_ptr_tenant")
   @@index([manifestSha256], map: "ix_bundle_ptr_manifest_hash")
@@ -7236,7 +7923,6 @@ model EvidenceBundlePointer {
   @@index([tenantId, incidentId], map: "ix_bundle_ptr_tenant_incident")
   @@map("evidence_bundle_pointers")
 }
-
 
 // ==================== EVIDENCE BUNDLE SYSTEM (Phase 9C Task 2) ====================
 // Legal-grade evidence bundle for incident audit trail
@@ -7260,19 +7946,19 @@ model EvidenceBundlePointer {
 
 // Bundle State (OPEN -> SEALED is one-way, no rollback)
 enum EvidenceBundleState {
-  OPEN    // Accepting new objects
-  SEALED  // Immutable, no new objects allowed (TERMINAL)
+  OPEN // Accepting new objects
+  SEALED // Immutable, no new objects allowed (TERMINAL)
 }
 
 // Evidence Bundle - Logical container for evidence objects
 model EvidenceBundle {
-  id          String              @id @default(dbgenerated("gen_random_uuid()")) @map("bundle_id") @db.Uuid
-  tenantId    String              @map("tenant_id") @db.VarChar(64)
-  incidentId  String              @map("incident_id") @db.VarChar(128)
-  state       EvidenceBundleState @default(OPEN)
-  sealedHash  String?             @map("sealed_hash") @db.VarChar(128)
-  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  sealedAt    DateTime?           @map("sealed_at") @db.Timestamptz(6)
+  id         String              @id @default(dbgenerated("gen_random_uuid()")) @map("bundle_id") @db.Uuid
+  tenantId   String              @map("tenant_id") @db.VarChar(64)
+  incidentId String              @map("incident_id") @db.VarChar(128)
+  state      EvidenceBundleState @default(OPEN)
+  sealedHash String?             @map("sealed_hash") @db.VarChar(128)
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  sealedAt   DateTime?           @map("sealed_at") @db.Timestamptz(6)
 
   // Relations
   objects    EvidenceObject[]
@@ -7328,7 +8014,6 @@ model BundleSealEvent {
   @@map("bundle_seal_events")
 }
 
-
 // ==================== PHASE 10.2: MANIFEST ADMIN AUDIT LOG ====================
 // Audit trail for manifest retry admin operations
 // Retention: 90 days hot (PostgreSQL), then archive to S3
@@ -7352,31 +8037,31 @@ enum ManifestAdminAuditResourceType {
 
 // Manifest Admin Audit Log - Immutable audit trail for admin operations
 model ManifestAdminAuditLog {
-  id              String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
   // Event identification
-  eventType       ManifestAdminAuditEventType     @map("event_type")
-  
+  eventType ManifestAdminAuditEventType @map("event_type")
+
   // Actor information
-  actor           String                          @db.VarChar(256)
-  requestId       String                          @unique @map("request_id") @db.VarChar(256) // Idempotency key
-  ipHash          String                          @map("ip_hash") @db.VarChar(64) // SHA-256 hash of IP
-  userAgent       String                          @map("user_agent") @db.Text
-  
+  actor     String @db.VarChar(256)
+  requestId String @unique @map("request_id") @db.VarChar(256) // Idempotency key
+  ipHash    String @map("ip_hash") @db.VarChar(64) // SHA-256 hash of IP
+  userAgent String @map("user_agent") @db.Text
+
   // Resource information
-  resourceType    ManifestAdminAuditResourceType  @map("resource_type")
-  resourceId      String                          @map("resource_id") @db.VarChar(256)
-  targetBundleId  String                          @map("target_bundle_id") @db.VarChar(256)
-  
+  resourceType   ManifestAdminAuditResourceType @map("resource_type")
+  resourceId     String                         @map("resource_id") @db.VarChar(256)
+  targetBundleId String                         @map("target_bundle_id") @db.VarChar(256)
+
   // State tracking
-  beforeState     Json?                           @map("before_state")
-  afterState      Json?                           @map("after_state")
-  
+  beforeState Json? @map("before_state")
+  afterState  Json? @map("after_state")
+
   // Reason/notes
-  reason          String?                         @db.Text
-  
+  reason String? @db.Text
+
   // Timestamp
-  createdAt       DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   // Indexes for common queries
   @@index([createdAt(sort: Desc)], map: "idx_audit_log_created_at")
@@ -7394,40 +8079,39 @@ model ManifestAdminAuditLog {
 
 // Pause Reason Enum - Forward-compatible with UNKNOWN
 enum ManifestWorkerPauseReason {
-  CONSECUTIVE_ERRORS  // Auto-resume after cooloff (default 5 min)
-  MANUAL_PAUSE        // Never auto-resume, requires manual resume
-  UNKNOWN             // Forward-compatible placeholder
+  CONSECUTIVE_ERRORS // Auto-resume after cooloff (default 5 min)
+  MANUAL_PAUSE // Never auto-resume, requires manual resume
+  UNKNOWN // Forward-compatible placeholder
 }
 
 // Manifest Worker State - Singleton table (id='singleton')
 model ManifestWorkerState {
   // Singleton constraint: only 'singleton' allowed
-  id                  String                        @id @default("singleton")
-  
+  id String @id @default("singleton")
+
   // Pause state
-  isPaused            Boolean                       @default(false) @map("is_paused")
-  pauseReason         ManifestWorkerPauseReason?    @map("pause_reason")
-  pausedAt            DateTime?                     @map("paused_at") @db.Timestamptz(6)
-  pausedBy            String?                       @map("paused_by")  // Actor for MANUAL_PAUSE
-  
+  isPaused    Boolean                    @default(false) @map("is_paused")
+  pauseReason ManifestWorkerPauseReason? @map("pause_reason")
+  pausedAt    DateTime?                  @map("paused_at") @db.Timestamptz(6)
+  pausedBy    String?                    @map("paused_by") // Actor for MANUAL_PAUSE
+
   // Error tracking
-  consecutiveErrors   Int                           @default(0) @map("consecutive_errors")
-  lastErrorCode       String?                       @map("last_error_code")
-  lastErrorAt         DateTime?                     @map("last_error_at") @db.Timestamptz(6)
-  
+  consecutiveErrors Int       @default(0) @map("consecutive_errors")
+  lastErrorCode     String?   @map("last_error_code")
+  lastErrorAt       DateTime? @map("last_error_at") @db.Timestamptz(6)
+
   // Leader election (multi-instance safety)
-  ownerInstanceId     String?                       @map("owner_instance_id")
-  leaseExpiresAt      DateTime?                     @map("lease_expires_at") @db.Timestamptz(6)
-  
+  ownerInstanceId String?   @map("owner_instance_id")
+  leaseExpiresAt  DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+
   // Timestamps
-  createdAt           DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Indexes
   @@index([ownerInstanceId, leaseExpiresAt], map: "idx_worker_state_lease")
   @@map("manifest_worker_state")
 }
-
 
 // ==================== SPRINT 3: PROMOTE & ESCALATION STATE ====================
 
@@ -7442,15 +8126,15 @@ enum PromoteRequestStatus {
 // UNIQUE(incident_id, run_id) — DB-level race condition prevention
 // Pattern: INSERT → catch unique violation → SELECT (not TOCTOU)
 model PromoteRequest {
-  id              String                @id @default(cuid())
-  incidentId      String                @map("incident_id")
-  runId           String                @map("run_id")
-  requestId       String                @map("request_id")
-  status          PromoteRequestStatus  @default(IN_PROGRESS) @map("status")
-  resultRef       String?               @map("result_ref")
+  id         String               @id @default(cuid())
+  incidentId String               @map("incident_id")
+  runId      String               @map("run_id")
+  requestId  String               @map("request_id")
+  status     PromoteRequestStatus @default(IN_PROGRESS) @map("status")
+  resultRef  String?              @map("result_ref")
 
-  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([incidentId, runId], map: "promote_request_incident_run_unique")
   @@index([createdAt], map: "promote_request_created_at_idx")
@@ -7477,8 +8161,437 @@ model EscalationStateRecord {
   stableWindowStartedAt DateTime?           @map("stable_window_started_at") @db.Timestamptz(6)
   version               Int                 @default(1) @map("version")
 
-  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("escalation_state")
+}
+
+// ============================================================
+// TM3 M1 — Tahsilat Dağıtımı (Müvekkil Settlement Bridge)
+// CollectionDisposition: borçlu tahsilatının (Collection) müvekkile/ofise/masrafa/emanete
+// dağıtım TASLAĞI. PAYMENT_RECEIVED outbox event'i tüketilince HELD_PENDING_DISTRIBUTION
+// draft'ı açılır (OTOMATİK DAĞITIM YOK — kullanıcı onayı M2). clientId YOK → caseClientId
+// (CaseClient) veya çoklu-alacaklıda CASE_CREDITOR_CLUSTER. Scalar FK (back-relation YOK):
+// Collection/Case/CaseClient (CODEX/shared) modelleri DOKUNULMAZ. Tutar Decimal(15,2)
+// (Collection.amount ile aynı; bigint dönüşümü YOK). collectionId @unique = idempotency.
+// ============================================================
+enum CollectionDispositionStatus {
+  HELD_PENDING_DISTRIBUTION // Dağıtım bekliyor (default draft)
+  DISTRIBUTION_RECOMMENDED // S8-B FAZ-0: dağıtım önerisi yazıldı (line'lar var) — finansal etki YOK
+  DISTRIBUTION_APPROVED // S8-B FAZ-0: Partner/Manager onayladı (P4) — line'lar dondu, finansal etki YOK
+  POSTED // Dağıtım onaylandı (M2)
+  CANCELLED
+  REVERSED // Bağlı collection reversed (sonraki faz)
+}
+
+enum CollectionDispositionBeneficiaryScope {
+  SINGLE_CASE_CLIENT // Tek alacaklı → caseClientId dolu
+  CASE_CREDITOR_CLUSTER // Çoklu alacaklı → caseClientId null (implicit havuz)
+}
+
+enum CollectionDispositionLineType {
+  CLIENT_PAYABLE
+  CONTRACTUAL_FEE_WITHHELD
+  FIRM_EXPENSE_REIMBURSEMENT
+  CLIENT_EXPENSE_REIMBURSEMENT
+  OFFSET_CLIENT_ADVANCE
+  HELD_PENDING_DISTRIBUTION
+  OTHER
+}
+
+model CollectionDisposition {
+  id           String @id @default(cuid())
+  tenantId     String
+  caseId       String
+  collectionId String @unique // idempotency: 1 collection = 1 disposition
+
+  beneficiaryScope CollectionDispositionBeneficiaryScope
+  caseClientId     String? // SINGLE ise dolu (CaseClient.id); CLUSTER ise null
+
+  status      CollectionDispositionStatus @default(HELD_PENDING_DISTRIBUTION)
+  totalAmount Decimal                     @db.Decimal(15, 2)
+  currency    String                      @default("TRY")
+
+  sourcePaymentEventId String? // PAYMENT_RECEIVED eventId (scalar, FK YOK)
+  createdById          String?
+
+  // S8-B FAZ-0 — Dağıtım onay yaşam döngüsü: HELD → DISTRIBUTION_RECOMMENDED → DISTRIBUTION_APPROVED → POSTED.
+  // recommend: line'lar yazıldı (finansal etki yok) · approve: Partner/Manager (P4) onayı (line'lar dondu) · post: finansal etki.
+  recommendedAt     DateTime?
+  recommendedById   String?
+  approvedAt        DateTime?
+  approvedById      String?
+  approvalRequestId String? // P4 OfficeApprovalRequest.id (scalar, FK YOK — boundary: cross-module FK kurmaz)
+
+  // M2 posting (kullanıcı onayı): DISTRIBUTION_APPROVED → POSTED damgası + actor.
+  postedAt   DateTime?
+  postedById String?
+
+  // M1R-FU1: POSTED disposition'a PAYMENT_REVERSED geldiğinde marker. status POSTED KALIR;
+  // finansal reversal (ClientStatement/BalanceLedger/payout) YAZILMAZ — yalnız operasyonel
+  // görünürlük için manuel-reversal-gerekli işareti persist edilir. İdempotent: bir kez set.
+  manualReversalRequiredAt     DateTime?
+  manualReversalReason         String?
+  manualReversalSourceActionId String? // tetikleyen PAYMENT_REVERSED outbox action id (scalar, FK YOK)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines                       CollectionDispositionLine[]
+  clientPayoutAllocations     ClientPayoutAllocation[]
+  clientPayoutManualReversals ClientPayoutManualReversal[]
+  expenseApplications         CollectionDispositionExpenseApplication[]
+
+  @@index([tenantId, caseId])
+  @@index([tenantId, status])
+  @@index([caseClientId])
+  // Açık marker takibi: manuel reversal bekleyen POSTED disposition'ları listelemek için.
+  @@index([tenantId, manualReversalRequiredAt])
+}
+
+model CollectionDispositionLine {
+  id            String                @id @default(cuid())
+  dispositionId String
+  disposition   CollectionDisposition @relation(fields: [dispositionId], references: [id], onDelete: Cascade)
+
+  type         CollectionDispositionLineType
+  amount       Decimal                       @db.Decimal(15, 2)
+  caseClientId String? // CLUSTER'da satır-bazlı alacaklı (M2); M1 default null
+
+  // S8-B FAZ-1b — REIMBURSEMENT satırının kapattığı ExpenseRequest (1:1; scalar, FK YOK).
+  // resolveLines: CLIENT_/FIRM_EXPENSE_REIMBURSEMENT tiplerinde ZORUNLU (service-validate, DB nullable).
+  expenseRequestId String?
+
+  // S8-B FAZ-2 — provenance: bu fee line'ı türeten CaseFeeAgreement (scalar ref, FK YOK).
+  // Nullable: manuel/agreement-suz line'larda null. caseClientId=null fee kuralını (Q3) DEĞİŞTİRMEZ.
+  feeAgreementId String?
+
+  note      String?
+  createdAt DateTime @default(now())
+
+  clientPayoutAllocations     ClientPayoutAllocation[]
+  clientPayoutManualReversals ClientPayoutManualReversal[]
+  expenseApplications         CollectionDispositionExpenseApplication[]
+
+  @@index([dispositionId])
+  @@index([type])
+  @@index([expenseRequestId])
+  @@index([feeAgreementId])
+}
+
+// S8-B FAZ-1b — Dağıtım reimbursement satırının ExpenseRequest kapatma PROJECTION'ı (ClientOffset aynası).
+enum ExpenseApplicationKind {
+  APPLY // reimbursement uygulandı (remaining düşer)
+  REVERSAL // reimbursement iptali (orijinali update ETMEZ; ayrı immutable kayıt)
+}
+
+enum ExpenseReimbursementScope {
+  CLIENT_FRONTED // müvekkilin avansladığı masraf (CLIENT_EXPENSE_REIMBURSEMENT)
+  FIRM_FRONTED // büronun fronted ettiği masraf (FIRM_EXPENSE_REIMBURSEMENT)
+}
+
+// Kapanış DERİVE edilir (Σ APPLY − Σ REVERSAL); ExpenseRequest.paidTotal ASLA mutate edilmez (projection-first).
+model CollectionDispositionExpenseApplication {
+  id       String @id @default(cuid())
+  tenantId String
+  caseId   String // denormalize: tenant-scoped aggregate sorguları
+
+  // expense leg — kapatılan masraf (scalar ref, FK YOK; ClientOffset.expenseRequestId gibi)
+  expenseRequestId String
+
+  // reimbursement leg — aynı-aggregate sahipleri (FK @relation, onDelete Restrict → projection audit korunur)
+  collectionDispositionId     String
+  collectionDisposition       CollectionDisposition     @relation(fields: [collectionDispositionId], references: [id], onDelete: Restrict, map: "CDEApp_disposition_fkey")
+  collectionDispositionLineId String
+  collectionDispositionLine   CollectionDispositionLine @relation(fields: [collectionDispositionLineId], references: [id], onDelete: Restrict, map: "CDEApp_line_fkey")
+
+  kind               ExpenseApplicationKind
+  amount             Decimal                   @db.Decimal(15, 2)
+  currency           String                    @default("TRY")
+  reimbursementScope ExpenseReimbursementScope
+
+  reversesApplicationId String? // APPLY→null; REVERSAL→orijinal APPLY id (self-ref scalar, FK gevşek)
+  reason                String? // REVERSAL'da zorunlu (service enforce; şema nullable)
+  createdById           String? // actor; post()/reversal actoru opsiyonel olabilir (BalanceLedger gibi)
+  createdAt             DateTime @default(now())
+
+  @@unique([tenantId, collectionDispositionLineId, kind], map: "CDEApp_line_kind_key") // 1:1 line→expense + APPLY/REVERSAL idempotent
+  @@unique([tenantId, reversesApplicationId], map: "CDEApp_reverses_key") // double-reversal guard (Postgres NULL-distinct)
+  @@index([tenantId, expenseRequestId], map: "CDEApp_tenant_expense_idx") // Σ-aggregate hot path (computeExpenseRemaining)
+  @@index([collectionDispositionId], map: "CDEApp_disposition_idx")
+  @@index([collectionDispositionLineId], map: "CDEApp_line_idx")
+  @@index([createdAt], map: "CDEApp_createdAt_idx")
+}
+
+// ============================================================
+// S8-B FAZ-2 — CaseFeeAgreement (Akdi Ücret Sözleşmesi). caseClient-scoped ücret KAYDI.
+// SÖZLEŞME KAYDIDIR: distribution-recommendation'a ücret AMOUNT'unu türeten kaynak olur;
+// KENDİSİ para hareketi YAPMAZ, yevmiye YAZMAZ. Journal mapping DEĞİŞMEZ — fee line yine
+// CONTRACTUAL_FEE_WITHHELD → ATTORNEY_FEE_REVENUE; caseClientId=null büro geliri (Q3 KORUNUR).
+// fee-engine (AAÜT statutory tarife) ile KARIŞTIRILMAZ — bu akdi büro↔müvekkil ücretidir.
+// SINIR (bu dilim = schema contract): YALNIZ model + enum + provenance kolonu. Dağıtım
+// entegrasyonu YOK · service YOK · flag YOK. Migration ADDITIVE; apply AYRI owner talimatı bekler.
+// caseClientId/createdById: scalar ref (CaseClient/User DOKUNULMAZ; FK YOK — modül sınır deseni).
+// Self-supersession relation MODEL-İÇİ (additive; shared model'e dokunmaz).
+// v1 ürün kuralı (service'te enforce — PR-2/PR-3): tek ACTIVE/(tenant,caseClient); GROSS-only
+// (NET_OF_EXPENSE enum'da TANIMLI ama FAZ-1b canlı olana dek service REDDEDER); FLAT|PERCENTAGE.
+// ============================================================
+enum FeeAgreementType {
+  FLAT_AMOUNT // maktu ücret → flatAmount (Decimal 15,2)
+  PERCENTAGE_OF_COLLECTION // oran → percentageBps (basis-points; float YOK)
+}
+
+enum FeeAgreementBase {
+  GROSS // v1 varsayılan: ücret brüt tahsilattan
+  NET_OF_EXPENSE // masraf sonrası taban — FAZ-1b expense auto-apply canlı olana dek service REDDEDER
+}
+
+enum FeeAgreementStatus {
+  DRAFT // taslak (henüz uygulanmaz)
+  ACTIVE // yürürlükte (tek ACTIVE/(tenant,caseClient) — service invariant)
+  SUPERSEDED // yeni sürümle değiştirildi (düzenleme = yeni satır + eski SUPERSEDED)
+  TERMINATED // feshedildi
+}
+
+model CaseFeeAgreement {
+  id           String @id @default(cuid())
+  tenantId     String
+  caseClientId String // scope = caseClient (scalar ref, FK YOK; CaseClient DOKUNULMAZ)
+
+  feeType       FeeAgreementType
+  flatAmount    Decimal?           @db.Decimal(15, 2) // FLAT_AMOUNT'ta dolu (service enforce; DB nullable)
+  percentageBps Int? // PERCENTAGE_OF_COLLECTION'da dolu; 0..10000 service-validate (float YOK)
+  feeBase       FeeAgreementBase   @default(GROSS)
+  status        FeeAgreementStatus @default(DRAFT)
+  effectiveFrom DateTime           @default(now())
+
+  note String?
+
+  // Versiyonlama: düzenleme = yeni satır; eski SUPERSEDED. Self-relation MODEL-İÇİ (shared'a dokunmaz).
+  supersedesId String?
+  supersedes   CaseFeeAgreement?  @relation("CaseFeeAgreementSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy CaseFeeAgreement[] @relation("CaseFeeAgreementSupersession")
+
+  createdById String? // actor (scalar ref, FK YOK; User DOKUNULMAZ)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, caseClientId, status])
+  @@index([tenantId, caseClientId, effectiveFrom])
+  @@index([supersedesId])
+}
+
+// ============================================================
+// TM3 M3 — Müvekkile Ödeme (ClientPayout). DAR model: "müvekkile ödeme yapıldı/kaydedildi".
+// Banka talimatı/dekont/IBAN/onay-workflow/iptal-reversal YOK (lifecycle büyürse genişler).
+// LEDGER DEĞİLDİR — proceeds (CollectionDisposition CLIENT_PAYABLE) settlement KAYDIdır.
+// D1: payout = ClientPayout + ClientStatementLineType.CLIENT_PAYOUT_SENT; BalanceLedger'a YAZILMAZ.
+// Outstanding (per caseClientId) = Σ POSTED CLIENT_PAYABLE (collection CONFIRMED) − Σ RECORDED ClientPayout.
+// Idempotency tenant-scoped (@@unique [tenantId, idempotencyKey]); concurrency advisory-lock (servis).
+// ============================================================
+model ClientPayout {
+  id           String @id @default(cuid())
+  tenantId     String
+  caseId       String
+  caseClientId String
+
+  amount   Decimal            @db.Decimal(15, 2)
+  currency String             @default("TRY")
+  status   ClientPayoutStatus @default(RECORDED)
+
+  idempotencyKey String
+  paidAt         DateTime @default(now())
+  paidById       String
+  note           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  allocations     ClientPayoutAllocation[]
+  manualReversals ClientPayoutManualReversal[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, caseId, caseClientId])
+  @@index([tenantId, caseId, paidAt])
+}
+
+enum ClientPayoutStatus {
+  RECORDED // Müvekkile ödeme kaydedildi (banka transfer lifecycle YOK)
+}
+
+enum ClientPayoutManualReversalStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum ClientPayoutManualReversalClosureMethod {
+  REFUND
+  OFFSET
+  WAIVER
+}
+
+enum ClientPayoutManualReversalSourceConfidence {
+  EXACT
+  AGGREGATE_ONLY
+  UNKNOWN
+}
+
+model ClientPayoutAllocation {
+  id                          String @id @default(cuid())
+  tenantId                    String
+  caseId                      String
+  caseClientId                String
+  clientPayoutId              String
+  collectionId                String
+  collectionDispositionId     String
+  collectionDispositionLineId String
+
+  amount   Decimal @db.Decimal(15, 2)
+  currency String  @default("TRY")
+
+  allocatedAt   DateTime @default(now())
+  allocatedById String?
+  createdAt     DateTime @default(now())
+
+  case                      Case                         @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  caseClient                CaseClient                   @relation(fields: [caseClientId], references: [id], onDelete: Restrict)
+  clientPayout              ClientPayout                 @relation(fields: [clientPayoutId], references: [id], onDelete: Restrict)
+  collection                Collection                   @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+  collectionDisposition     CollectionDisposition        @relation(fields: [collectionDispositionId], references: [id], onDelete: Restrict)
+  collectionDispositionLine CollectionDispositionLine    @relation(fields: [collectionDispositionLineId], references: [id], onDelete: Restrict)
+  manualReversals           ClientPayoutManualReversal[]
+
+  @@unique([clientPayoutId, collectionDispositionLineId], map: "client_payout_allocation_source_unique")
+  @@index([tenantId, caseId, caseClientId, currency], map: "client_payout_allocation_scope_idx")
+  @@index([clientPayoutId])
+  @@index([collectionDispositionId])
+  @@index([collectionDispositionLineId])
+  @@index([allocatedAt])
+}
+
+model ClientPayoutManualReversal {
+  id           String @id @default(cuid())
+  tenantId     String
+  caseId       String
+  caseClientId String
+
+  amount   Decimal @db.Decimal(15, 2)
+  currency String  @default("TRY")
+
+  status        ClientPayoutManualReversalStatus           @default(OPEN)
+  closureMethod ClientPayoutManualReversalClosureMethod?
+  confidence    ClientPayoutManualReversalSourceConfidence @default(UNKNOWN)
+
+  dedupeKey      String  @unique
+  sourceActionId String?
+
+  collectionId                String?
+  collectionDispositionId     String?
+  collectionDispositionLineId String?
+  clientPayoutId              String?
+  clientPayoutAllocationId    String?
+
+  openedAt      DateTime  @default(now())
+  openedById    String?
+  closedAt      DateTime?
+  closedById    String?
+  cancelledAt   DateTime?
+  cancelledById String?
+
+  note        String?
+  closureNote String?
+  evidenceRef String?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case                      Case                       @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  caseClient                CaseClient                 @relation(fields: [caseClientId], references: [id], onDelete: Restrict)
+  collection                Collection?                @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+  collectionDisposition     CollectionDisposition?     @relation(fields: [collectionDispositionId], references: [id], onDelete: Restrict)
+  collectionDispositionLine CollectionDispositionLine? @relation(fields: [collectionDispositionLineId], references: [id], onDelete: Restrict)
+  clientPayout              ClientPayout?              @relation(fields: [clientPayoutId], references: [id], onDelete: Restrict)
+  clientPayoutAllocation    ClientPayoutAllocation?    @relation(fields: [clientPayoutAllocationId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, caseId, caseClientId, currency, status], map: "client_payout_manual_reversal_scope_status_idx")
+  @@index([tenantId, status, openedAt])
+  @@index([tenantId, closureMethod, status])
+  @@index([collectionDispositionId])
+  @@index([collectionDispositionLineId])
+  @@index([clientPayoutId])
+  @@index([clientPayoutAllocationId])
+  @@index([openedAt])
+  @@index([closedAt])
+}
+
+/// P4-1 — Office (kurumsal) Approval Engine substrate (salt-veri omurgası; henüz HİÇBİR akışa bağlı DEĞİL).
+/// İÇ kurumsal onay kaydı: requester (işlemi başlatan) ≠ approver (PARTNER veya canApproveOfficeActions delege avukat).
+/// ClientApprovalRequest (müvekkil/DIŞ onayı) ile AYRI domain — KARIŞTIRILMAZ. savedIntent = onaylanınca requester
+/// adına idempotent yürütülecek niyet (deferred execution P4-3); payloadHash bütünlük + idempotency. EventStore YOK
+/// → olgusal kayıt AuditLog'da (OFFICE_APPROVAL_*). FK relation YOK (String-ref, substrate; davranış değişmez).
+model OfficeApprovalRequest {
+  id       String @id @default(cuid())
+  tenantId String
+
+  actionCode String // ActionCode enum değeri (string olarak; substrate tek modüle bağımlı kalmasın)
+  targetType String // ör. "LegalCase"
+  targetRef  String // hedef kaydın id'si (ör. caseId)
+
+  requesterUserId String // işlemi başlatan (User.id)
+  approverUserId  String? // kararı veren (User.id); PENDING iken null
+
+  status          OfficeApprovalStatus          @default(PENDING_APPROVAL)
+  executionStatus OfficeApprovalExecutionStatus @default(NOT_RUN)
+
+  savedIntent Json // requester'ın ORİJİNAL niyeti (ASLA ezilmez; kod/closure değil, ham girdi)
+  payloadHash String // stableJsonHash(savedIntent) — bütünlük + idempotency
+
+  // P4-1A — "değiştirerek onayla" (APPROVED_WITH_CHANGES): approver'ın DEĞİŞTİRİLMİŞ niyeti AYRI iz olarak tutulur.
+  // Orijinal savedIntent korunur (audit çizgisi bozulmaz); execution (P4-3) varsa replacement'ı, yoksa orijinali kullanır.
+  replacementSavedIntent Json? // approver'ın değiştirilmiş kararı (yalnız APPROVED_WITH_CHANGES'te)
+  replacementPayloadHash String? // stableJsonHash(replacementSavedIntent)
+
+  reason       String? // requester gerekçesi
+  decisionNote String? // approver karar notu (reject/revision'da zorunlu, approve'da opsiyonel)
+
+  idempotencyKey String? // aynı niyetin çift-talebini engeller (verilirse unique)
+
+  createdAt  DateTime  @default(now())
+  decidedAt  DateTime? // approve/reject anı
+  executedAt DateTime? // deferred execution tamamlanma anı
+  expiresAt  DateTime?
+
+  // P4-5C-1 — yürütme retry/stuck metadata (kolonlar EKLENDİ; runtime DORMANT). Tüketim:
+  //  runningStartedAt → precise stuck-RUNNING timeout (P4-5C-1) · retryCount/lastRetryAt → bounded FAILED-retry + backoff (P4-5C-2).
+  runningStartedAt DateTime? // NOT_RUN→RUNNING claim anı (markExecutionRunning/Retrying yazar); precise stuck-age
+  retryCount       Int       @default(0) // FAILED deneme sayacı (markExecutionFailed artırır); bounded-retry sınırı (5C-2)
+  lastRetryAt      DateTime? // son FAILED anı (markExecutionFailed yazar); backoff saati (5C-2)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, status])
+  @@index([tenantId, approverUserId, status])
+  @@index([tenantId, requesterUserId])
+  @@index([targetType, targetRef])
+  @@index([expiresAt])
+}
+
+enum OfficeApprovalStatus {
+  PENDING_APPROVAL
+  APPROVED
+  APPROVED_WITH_CHANGES // approver işlemi DEĞİŞTİREREK kesinleştirir (ör. ACIZ→BATAK); replacementSavedIntent dolar
+  REVISION_REQUESTED // approver "düzelt ve tekrar gönder" der (≠ REJECTED); decisionNote zorunlu
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum OfficeApprovalExecutionStatus {
+  NOT_RUN
+  RUNNING
+  SUCCEEDED
+  FAILED
+  STALE
 }

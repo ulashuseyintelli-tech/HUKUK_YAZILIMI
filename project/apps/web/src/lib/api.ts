@@ -1,10 +1,136 @@
 import type { InstrumentChain, ChainAnalysis } from "./instrument-chain";
+import { buildResponsibilityAtPath, type CombinedResponsibilityResult } from "./responsibility-at";
+import { buildResponsibilityHistoryPath, type ResponsibilityHistoryResult, type ResponsibilityHistoryParams } from "./responsibility-history";
+import { reportClientError, shouldReportNetworkError } from "./error-reporter"; // PR-4: yalnız network-failure
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+function generateClientWorkspaceIdempotencyKey() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `cw-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 // Debug: Log API URL on client side
 if (typeof window !== "undefined") {
   console.log("[API] Base URL:", API_URL);
+}
+
+// PR-5: ErrorLog UI tipleri (backend ErrorLog modeliyle hizalı; metadata backend-redacted gelir).
+
+export type ClientActionKey =
+  | 'contact.update_missing_info'
+  | 'intake.link.create'
+  | 'intake.link.send'
+  | 'poa.reminder.send'
+  | 'notification.template.send'
+  | 'document.request.send'
+  | 'case.open_related'
+  | 'activity.view_timeline';
+
+export interface ClientActionCatalogItem {
+  key: ClientActionKey;
+  label: string;
+  description: string;
+  category: 'intake' | 'poa' | 'notification' | 'document' | 'contact' | 'case' | 'activity';
+  enabled: boolean;
+  disabledReason?: string;
+  visibility: 'visible' | 'hidden' | 'forbidden';
+  dangerLevel: 'low' | 'medium' | 'high';
+  requiredRole?: string;
+  requiredState?: string;
+  target?: { clientId: string; caseId?: string | null };
+  href?: string;
+  order: number;
+}
+
+export interface ClientActionCatalogResponse {
+  data: ClientActionCatalogItem[];
+}
+
+export interface ClientOperatingSignal {
+  key: string;
+  label: string;
+  description: string;
+  severity: 'info' | 'warning' | 'critical';
+  actionKey?: ClientActionKey;
+  target: { clientId: string; caseId?: string | null };
+}
+
+export interface ClientOperatingSnapshot {
+  clientId: string;
+  health: 'healthy' | 'attention' | 'blocked';
+  riskLevel: 'low' | 'medium' | 'high';
+  contact: {
+    status: 'complete' | 'missing' | 'waived';
+    missingFields: string[];
+    followUpStatus: string | null;
+    openTaskCount: number;
+    overdueTaskCount: number;
+    nextFollowUpAt: string | null;
+    escalationLevel: string | null;
+  };
+  poa: {
+    status: 'active' | 'missing' | 'expiring' | 'expired_or_inactive';
+    activeCount: number;
+    nearestValidUntil: string | null;
+  };
+  intake: {
+    status: 'none' | 'link_active' | 'submitted' | 'in_review' | 'completed' | 'rejected';
+    latestSubmission: { id: string; status: string; caseId: string | null; occurredAt: string } | null;
+    latestLink: { id: string; status: string; caseId: string | null; expiresAt: string | null } | null;
+  };
+  notification: {
+    status: 'none' | 'healthy' | 'pending' | 'failed';
+    latest: { id: string; status: string; type: string | null; channel: string | null; caseId: string | null; occurredAt: string } | null;
+  };
+  signals: ClientOperatingSignal[];
+}
+
+export interface ClientOperatingSnapshotResponse {
+  data: ClientOperatingSnapshot;
+}
+export interface ErrorLogRecord {
+  id: string;
+  tenantId?: string | null;
+  level: string;
+  source: string;
+  message: string;
+  stack?: string | null;
+  endpoint?: string | null;
+  method?: string | null;
+  statusCode?: number | null;
+  userId?: string | null;
+  userIp?: string | null;
+  userAgent?: string | null;
+  metadata?: Record<string, unknown> | null;
+  isResolved: boolean;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  resolution?: string | null;
+  createdAt: string;
+  fingerprint?: string | null;
+  occurrenceCount?: number | null;
+  firstSeenAt?: string | null;
+  lastSeenAt?: string | null;
+}
+export interface ErrorLogListResponse {
+  logs: ErrorLogRecord[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+export interface ErrorLogStats {
+  total: number;
+  errors: number;
+  warnings: number;
+  unresolved: number;
+}
+export interface ErrorLogQuery {
+  level?: string;
+  source?: string;
+  page?: number;
+  limit?: number;
 }
 
 class ApiClient {
@@ -60,6 +186,17 @@ class ApiClient {
 
       return response.json();
     } catch (err: any) {
+      // PR-4: YALNIZ gerçek ağ hatası ErrorLog'a (HTTP response hatası DEĞİL → backend zaten loglar;
+      // /error-logs/log self-skip). best-effort, davranış değişmez (aşağıdaki rethrow korunur).
+      if (shouldReportNetworkError(err, endpoint)) {
+        reportClientError({
+          level: 'ERROR',
+          message: `Network error: ${err?.message ?? 'fetch failed'}`,
+          stack: err?.stack,
+          endpoint: `web:api ${endpoint}`,
+          metadata: { safeErrorCode: 'NETWORK_ERROR' },
+        });
+      }
       // Network hatası - API'ye bağlanılamıyor
       if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
         throw new Error('API sunucusuna bağlanılamıyor. Lütfen API\'nin çalıştığından emin olun (http://localhost:8080). Terminalde "pnpm run dev" komutunu çalıştırın.');
@@ -106,15 +243,97 @@ class ApiClient {
     return this.request<{ user: any }>("/auth/me");
   }
 
+  // ErrorLog (PR-5). Backend AdminGuard; non-admin → request() .status=403 fırlatır.
+  async getErrorLogs(params: ErrorLogQuery = {}): Promise<ErrorLogListResponse> {
+    const q = new URLSearchParams();
+    if (params.level) q.set("level", params.level);
+    if (params.source) q.set("source", params.source);
+    if (params.page) q.set("page", String(params.page));
+    if (params.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return this.request<ErrorLogListResponse>(`/error-logs${qs ? `?${qs}` : ""}`);
+  }
+
+  async getErrorLogStats(): Promise<ErrorLogStats> {
+    return this.request<ErrorLogStats>("/error-logs/stats");
+  }
+
+  async resolveErrorLog(id: string, resolution: string): Promise<ErrorLogRecord> {
+    return this.request<ErrorLogRecord>(`/error-logs/${id}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ resolution }),
+    });
+  }
+
+  // K1-7: davet kabul — ham token + kullanıcının belirlediği parola. Auth gerekmez.
+  async acceptInvite(token: string, password: string) {
+    return this.request<{ ok: boolean; userId: string }>("/auth/accept-invite", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    });
+  }
+
+  // K1-7-4: admin login-davet yönetimi (self-service). Tümü ADMIN + JWT gerektirir
+  // (backend: JwtAuthGuard + AdminGuard + LOGIN_INVITE_PROVISIONING_ENABLED). Ham token
+  // asla bu yanıtlarda dönmez; e-posta backend tarafından otomatik gönderilir.
+  // OWN-01: lawyerId/staffMemberId verilirse (karşılıklı dışlayıcı), backend oluşan User'ı o
+  // profile deterministik bağlar (Lawyer.userId/StaffMember.userId).
+  async createInvite(data: {
+    email: string;
+    name: string;
+    surname?: string;
+    role?: string;
+    lawyerId?: string;
+    staffMemberId?: string;
+  }) {
+    return this.request<{ inviteId: string; userId: string; email: string; expiresAt: string }>(
+      "/auth/invites",
+      { method: "POST", body: JSON.stringify(data) }
+    );
+  }
+
+  async listInvites(status?: string) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    return this.request<
+      Array<{
+        inviteId: string;
+        userId: string;
+        email: string;
+        expiresAt: string;
+        createdAt: string;
+        consumed: boolean;
+        revoked: boolean;
+      }>
+    >(`/auth/invites${query}`);
+  }
+
+  async resendInvite(inviteId: string) {
+    return this.request<{ inviteId: string; expiresAt: string }>(
+      `/auth/invites/${inviteId}/resend`,
+      { method: "POST" }
+    );
+  }
+
+  async revokeInvite(inviteId: string) {
+    return this.request<{ inviteId: string; revoked: boolean }>(
+      `/auth/invites/${inviteId}/revoke`,
+      { method: "POST" }
+    );
+  }
+
   // Cases
-  async getCases(params?: { status?: string; clientId?: string; noOwner?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
+  async getCases(params?: { status?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; includeArchived?: boolean; page?: number; limit?: number }) {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.clientId) query.set("clientId", params.clientId);
     if (params?.noOwner) query.set("noOwner", "1"); // SAHIPSIZ-DOSYALAR-G1
+    if (params?.legalResponsibleMissing) query.set("legalResponsibleMissing", "1"); // WP-3a
     // M2-G5d-1b: gerçek kişi owner filtresi (server-side; backend G5a hazır). K1 bridge yok → cross-map yok.
     if (params?.responsibleLawyerId) query.set("responsibleLawyerId", params.responsibleLawyerId);
     if (params?.responsibleStaffId) query.set("responsibleStaffId", params.responsibleStaffId);
+    // CS4: önceden burada hiç okunmuyordu — çağıran (cases/page.tsx) params.includeArchived set etse
+    // bile query string'e hiç girmiyordu (uçtan uca no-op).
+    if (params?.includeArchived) query.set("includeArchived", "1");
     if (params?.page) query.set("page", params.page.toString());
     if (params?.limit) query.set("limit", params.limit.toString());
     return this.request<any>(`/cases?${query}`);
@@ -218,6 +437,29 @@ class ApiClient {
     });
   }
 
+  // WP-1d-4a: read-only temporal sorumluluk (asOf tarihinde owner + hukuki sorumlu avukat).
+  async getCaseResponsibilityAt(caseId: string, asOf?: string) {
+    return this.request<CombinedResponsibilityResult>(buildResponsibilityAtPath(caseId, asOf));
+  }
+
+  // WP-1d-4c-2: read-only sorumluluk değişim geçmişi (timeline).
+  async getCaseResponsibilityHistory(caseId: string, params: ResponsibilityHistoryParams = {}) {
+    return this.request<ResponsibilityHistoryResult>(buildResponsibilityHistoryPath(caseId, params));
+  }
+
+  // WP-1d-5-5: Hukuki Sorumlu Avukat KONTROLLÜ değişikliği. Mevcut #474 backend endpoint'ini tüketir
+  // (ADMIN-only hard guard + validasyon + audit + tek-tx BACKEND'de). Frontend yalnız çağırır.
+  // "Devir" DEĞİL — hukuki sorumlu avukat kaydı kurallı şekilde değiştirilir.
+  async changeLegalResponsibleLawyer(
+    caseId: string,
+    payload: { lawyerId: string; reason: string; note?: string }
+  ) {
+    return this.request(`/cases/${caseId}/legal-responsible-lawyer`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
+
   // Debtors
   async getDebtors(params?: { page?: number; limit?: number; search?: string }) {
     const query = new URLSearchParams();
@@ -246,6 +488,12 @@ class ApiClient {
 
   async getCaseDebtorDetail(caseId: string, caseDebtorId: string) {
     return this.request<DebtorDetailDTO>(`/debtors/case/${caseId}/${caseDebtorId}`);
+  }
+
+  // DBND-D6A-1: pull/MVP — push bildirim DEĞİL, drawer açılışında çağrılır.
+  async getCrossFileDebtorAlerts(debtorId: string, excludeCaseId?: string) {
+    const qs = excludeCaseId ? `?excludeCaseId=${encodeURIComponent(excludeCaseId)}` : "";
+    return this.request<CrossFileDebtorAlertDTO>(`/debtors/${debtorId}/cross-file-alerts${qs}`);
   }
 
   async updateDebtorQuickNote(caseId: string, caseDebtorId: string, text: string) {
@@ -425,10 +673,120 @@ class ApiClient {
     return this.request<any>(`/clients${query}`);
   }
 
+  // Task 4A: tekil müvekkil (GET /clients/:id → { data: client }). Backend findOne soft-deleted'i
+  // hariç tutar (arşivlenmiş müvekkil 404). contacts + bankAccounts + powerOfAttorneys dahil;
+  // cases bu yanıtta YOK → ayrıca getCases({ clientId }) ile çekilir.
+  async getClient(id: string) {
+    return this.request<{ data: any }>(`/clients/${id}`);
+  }
+
+
+  async getClientActionCatalog(id: string) {
+    return this.request<ClientActionCatalogResponse>(`/clients/${id}/action-catalog`);
+  }
+
+  async getClientOperatingSnapshot(id: string) {
+    return this.request<ClientOperatingSnapshotResponse>(`/clients/${id}/operating-snapshot`);
+  }
+
+  async createClientWorkspaceIntakeLink(clientId: string, caseId: string, input: CreateClientWorkspaceIntakeLinkInput) {
+    const body: CreateClientWorkspaceIntakeLinkInput = {
+      scope: input.scope,
+      expiresAt: input.expiresAt,
+      maxUses: input.maxUses,
+    };
+    const response = await this.request<{ data: CreateIntakeLinkResult }>(`/clients/${clientId}/cases/${caseId}/intake-links`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return response.data;
+  }
+
+  async createClientWorkspaceIntakeLinkAndDeliver(clientId: string, caseId: string, input: CreateClientWorkspaceIntakeLinkInput) {
+    const body: CreateClientWorkspaceIntakeLinkInput = {
+      scope: input.scope,
+      expiresAt: input.expiresAt,
+      maxUses: input.maxUses,
+    };
+    const response = await this.request<{ data: ClientWorkspaceCreateAndDeliverResult }>(`/clients/${clientId}/cases/${caseId}/intake-links/create-and-deliver`, {
+      method: "POST",
+      headers: { "Idempotency-Key": generateClientWorkspaceIdempotencyKey() },
+      body: JSON.stringify(body),
+    });
+    return response.data;
+  }
+
+  async sendClientWorkspacePoaReminder(clientId: string) {
+    const response = await this.request<{ data: ClientWorkspacePoaReminderResult }>(`/clients/${clientId}/poa-reminders/send`, {
+      method: "POST",
+    });
+    return response.data;
+  }
+
+
+  async uploadClientWorkspacePoaFile(clientId: string, poaId: string, file: File) {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await this.post<{ data: ClientWorkspacePoaUploadResult }>(`/clients/${clientId}/poas/${poaId}/file`, body);
+    const data = response.data.data;
+    return {
+      clientId: data.clientId,
+      poaId: data.poaId,
+      hasFile: data.hasFile,
+      fileSize: data.fileSize ?? null,
+      mimeType: data.mimeType ?? null,
+    };
+  }
+  async sendClientWorkspaceTemplateNotification(clientId: string, input: ClientWorkspaceTemplateNotificationInput) {
+    const body: ClientWorkspaceTemplateNotificationInput = {
+      templateCode: input.templateCode,
+      ...(input.caseId ? { caseId: input.caseId } : {}),
+    };
+    const response = await this.request<{ data: ClientWorkspaceTemplateNotificationResult }>(`/clients/${clientId}/template-notifications/send`, {
+      method: "POST",
+      headers: { "Idempotency-Key": generateClientWorkspaceIdempotencyKey() },
+      body: JSON.stringify(body),
+    });
+    return response.data;
+  }
+
+  async sendClientWorkspaceDocumentRequest(clientId: string, input: ClientWorkspaceDocumentRequestInput) {
+    const body: ClientWorkspaceDocumentRequestInput = {
+      documentCodes: input.documentCodes,
+      ...(input.caseId ? { caseId: input.caseId } : {}),
+    };
+    const response = await this.request<{ data: ClientWorkspaceDocumentRequestResult }>(`/clients/${clientId}/document-requests/send`, {
+      method: "POST",
+      headers: { "Idempotency-Key": generateClientWorkspaceIdempotencyKey() },
+      body: JSON.stringify(body),
+    });
+    return response.data;
+  }
   async createClient(data: any) {
     return this.request<any>("/clients", {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  // ClientAddress-4: çok-adres CRUD (dedicated endpoint, {data} zarfı YOK — servis satırını doğrudan döner).
+  async createClientAddress(clientId: string, data: any) {
+    return this.request<any>(`/clients/${clientId}/addresses`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateClientAddress(clientId: string, addressId: string, data: any) {
+    return this.request<any>(`/clients/${clientId}/addresses/${addressId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteClientAddress(clientId: string, addressId: string) {
+    return this.request<any>(`/clients/${clientId}/addresses/${addressId}`, {
+      method: "DELETE",
     });
   }
 
@@ -591,10 +949,12 @@ class ApiClient {
     return this.request<any>("/case-status/list");
   }
 
-  async changeCaseStatus(caseId: string, status: string, reason?: string) {
+  // P3-2C-FE: confirmationToken OPSİYONEL — guarded-edge CONFIRM_REQUIRED retry'ında envelope.confirmation.token
+  // body'ye eklenir (backend P3-2C consume eder). Verilmezse mevcut davranış AYNEN (backend default OFF → zarf dönmez).
+  async changeCaseStatus(caseId: string, status: string, reason?: string, confirmationToken?: string) {
     return this.request<any>(`/case-status/${caseId}/change`, {
       method: "POST",
-      body: JSON.stringify({ status, reason }),
+      body: JSON.stringify({ status, reason, ...(confirmationToken ? { confirmationToken } : {}) }),
     });
   }
 
@@ -2628,6 +2988,171 @@ class ApiClient {
   }
 
   /**
+   * Dosyanın muhasebe/dağıtım kayıtlarını getir.
+   * Çağrıldığı yerler:
+   * - CaseDetailPage.fetchFinanceData() → GET /collection-dispositions/case/:caseId (OperationDeck muhasebe paneli)
+   */
+  async getCollectionDispositionsByCase(caseId: string, status?: CollectionDispositionStatus) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    const response = await this.request<{ data: CollectionDispositionDTO[] }>(
+      `/collection-dispositions/case/${caseId}${query}`,
+    );
+    return response.data || [];
+  }
+
+  /**
+   * S8-B FAZ-0 — Dağıtım önerisi (line'lar yazılır, finansal etki YOK; P4 onay talebi açılır). HELD → DISTRIBUTION_RECOMMENDED.
+   * Çağrıldığı yerler:
+   * - CaseDetailPage.handleRecommendCollectionDisposition() → POST /collection-dispositions/:id/recommend (OperationDeck)
+   */
+  async recommendCollectionDisposition(dispositionId: string, payload: PostCollectionDispositionDTO) {
+    const response = await this.request<{ data: { recommended: boolean; dispositionId: string; lineCount: number; approvalRequestId: string } }>(
+      `/collection-dispositions/${dispositionId}/recommend`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-0 — Dağıtım onayı (yalnız Partner/Manager + P4 4-göz). DISTRIBUTION_RECOMMENDED → DISTRIBUTION_APPROVED.
+   * Çağrıldığı yerler:
+   * - CaseDetailPage.handleApproveCollectionDisposition() → POST /collection-dispositions/:id/approve (OperationDeck)
+   */
+  async approveCollectionDisposition(dispositionId: string, payload: { note?: string } = {}) {
+    const response = await this.request<{ data: { approved: boolean; dispositionId: string } }>(
+      `/collection-dispositions/${dispositionId}/approve`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-0 — Dağıtımı muhasebeleştir (YALNIZ DISTRIBUTION_APPROVED; finansal etki burada). DISTRIBUTION_APPROVED → POSTED.
+   * Çağrıldığı yerler:
+   * - CaseDetailPage.handlePostCollectionDisposition() → POST /collection-dispositions/:id/post (OperationDeck dağıtım aksiyonu)
+   */
+  async postCollectionDisposition(dispositionId: string) {
+    const response = await this.request<{ data: PostCollectionDispositionResultDTO }>(
+      `/collection-dispositions/${dispositionId}/post`,
+      { method: "POST" },
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-1a — Dağıtım önerisi üreteci (PREVIEW; persist YOK, P4 YOK, finansal etki YOK).
+   * Üretilen suggestedLines FE'de pre-fill edilir → kullanıcı düzenler → recommendCollectionDisposition persist eder.
+   * Çağrıldığı yerler:
+   * - OperationDeck "Dağıtım Önerisi Hazırla" → POST \collection-dispositions:id/distribution-recommendation
+   */
+  async getDistributionRecommendation(
+    dispositionId: string,
+    payload: GenerateDistributionRecommendationDTO = {},
+  ) {
+    const response = await this.request<{ data: DistributionRecommendationDTO }>(
+      `/collection-dispositions/${dispositionId}/distribution-recommendation`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-2 — caseClient için ACTIVE ücret sözleşmesi (yoksa null). Read-only; FE HESAPLAMAZ.
+   * Çağrıldığı yerler:
+   * - OperationDeck "Ücret Sözleşmesi" kartı → GET /case-fee-agreements/case-client/:caseClientId/active
+   */
+  async getActiveCaseFeeAgreement(caseClientId: string) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO | null }>(
+      `/case-fee-agreements/case-client/${caseClientId}/active`,
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-2 — caseClient sözleşme geçmişi (yeni → eski). Read-only.
+   * Çağrıldığı yerler:
+   * - (henüz YOK) geçmiş görünümü ayrı bir FE ihtiyacı olursa kullanılacak.
+   */
+  async listCaseFeeAgreements(caseClientId: string) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO[] }>(
+      `/case-fee-agreements/case-client/${caseClientId}`,
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-2 — yeni ücret sözleşmesi (ACTIVE). Aynı caseClient için zaten ACTIVE varsa 409.
+   * Çağrıldığı yerler:
+   * - OperationDeck "Yeni Sözleşme" → POST /case-fee-agreements
+   */
+  async createCaseFeeAgreement(input: CreateCaseFeeAgreementDTO) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO }>(`/case-fee-agreements`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-2 — düzenleme = yeni versiyon (eski SUPERSEDED + yeni ACTIVE). Yalnız ACTIVE sözleşme düzenlenebilir (aksi 409).
+   * Çağrıldığı yerler:
+   * - OperationDeck "Düzenle" (yalnız ACTIVE satır) → POST /case-fee-agreements/:agreementId
+   */
+  async updateCaseFeeAgreement(agreementId: string, input: UpdateCaseFeeAgreementDTO) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO }>(
+      `/case-fee-agreements/${agreementId}`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-2 — sözleşmeyi sonlandır: ACTIVE → TERMINATED. Yeni satır yazılmaz.
+   * Çağrıldığı yerler:
+   * - OperationDeck "Sonlandır" → POST /case-fee-agreements/:agreementId/terminate
+   */
+  async terminateCaseFeeAgreement(agreementId: string) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO }>(
+      `/case-fee-agreements/${agreementId}/terminate`,
+      { method: "POST" },
+    );
+    return response.data;
+  }
+
+  /**
+   * A2B — Portal erişimi aç (Task 10-S capability-gate + audit backend'de; davranış değişmedi).
+   * Çağrıldığı yerler:
+   * - ClientPortalTab "Portal erişimini aç" → POST /portal/admin/create-user
+   */
+  async enablePortalAccess(clientId: string, email: string, password: string) {
+    return this.post<{ success: boolean; portalUserId: string; _reactivated?: boolean }>(
+      "/portal/admin/create-user",
+      { clientId, email, password },
+    );
+  }
+
+  /**
+   * A2B — Portal erişimini kapat (Task 10-S capability-gate + audit backend'de; davranış değişmedi).
+   * Çağrıldığı yerler:
+   * - ClientPortalTab "Portal erişimini kaldır" → POST /portal/admin/disable-user
+   */
+  async disablePortalAccess(clientId: string) {
+    return this.post<{ success: boolean }>("/portal/admin/disable-user", { clientId });
+  }
+
+  /**
+   * Tahsilat/odeme onizlemesi. DB'ye kayit yazmaz.
+   * Cagrildigi yerler:
+   * - CollectionModal.handlePreview() -> POST /cases/:caseId/payment-preview (tahsilat formundan non-persistent onizleme)
+   */
+  async previewCasePayment(caseId: string, payload: PaymentPreviewRequestDTO) {
+    return this.request<PaymentPreviewResponseDTO>(`/cases/${caseId}/payment-preview`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
    * Tahsilat ekle
    */
   async createCollection(caseId: string, data: CreateCollectionDTO) {
@@ -2910,12 +3435,83 @@ export interface CreateIntakeLinkInput {
   maxUses?: number;
 }
 
+export interface CreateClientWorkspaceIntakeLinkInput {
+  scope: IntakeFieldCategory[];
+  expiresAt?: string;
+  maxUses?: number;
+}
+
 export interface CreateIntakeLinkResult {
   link: IntakeLink;
   rawToken: string;
   intakeUrl: string;
 }
 
+export type ClientWorkspaceDeliveryStatus = 'pending' | 'sending' | 'sent' | 'failed';
+
+export interface ClientWorkspaceCreateAndDeliverResult {
+  link: IntakeLink;
+  delivery: {
+    id: string;
+    status: ClientWorkspaceDeliveryStatus;
+    channel: string;
+    notificationId?: string;
+    attemptCount: number;
+    error?: string;
+  };
+}
+
+export type ClientWorkspacePoaReminderStatus = 'sent' | 'partial' | 'failed' | 'skipped';
+
+export interface ClientWorkspacePoaReminderResult {
+  clientId: string;
+  status: ClientWorkspacePoaReminderStatus;
+  scanned: number;
+  recipients: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface ClientWorkspacePoaUploadResult {
+  clientId: string;
+  poaId: string;
+  hasFile: boolean;
+  fileSize: number | null;
+  mimeType: string | null;
+}
+export type ClientWorkspaceTemplateNotificationCode = 'GENEL_BILGILENDIRME' | 'DOSYA_DURUMU';
+export type ClientWorkspaceTemplateNotificationStatus = 'sent' | 'skipped' | 'failed';
+
+export interface ClientWorkspaceTemplateNotificationInput {
+  templateCode: ClientWorkspaceTemplateNotificationCode;
+  caseId?: string;
+}
+
+export interface ClientWorkspaceTemplateNotificationResult {
+  clientId: string;
+  caseId: string | null;
+  templateCode: ClientWorkspaceTemplateNotificationCode;
+  status: ClientWorkspaceTemplateNotificationStatus;
+  notificationId?: string;
+}
+
+export type ClientWorkspaceDocumentRequestCode = 'GENEL_BELGE' | 'DOSYA_EVRAKI';
+export type ClientWorkspaceDocumentRequestStatus = 'sent' | 'skipped' | 'failed';
+
+export interface ClientWorkspaceDocumentRequestInput {
+  documentCodes: ClientWorkspaceDocumentRequestCode[];
+  caseId?: string;
+}
+
+export interface ClientWorkspaceDocumentRequestResult {
+  clientId: string;
+  caseId: string;
+  documentCodes: ClientWorkspaceDocumentRequestCode[];
+  status: ClientWorkspaceDocumentRequestStatus;
+  documentRequestId: string;
+  notificationId?: string;
+}
 // ============================================
 // Client Intake Review Types (Faz 4.7 PR-C1) — review-only (promote tipleri YOK)
 // ============================================
@@ -2992,7 +3588,26 @@ export interface PromoteAddressResult {
 // PR-D4e-4: haciz öncesi risk seviyesi (read-model; blok değil, karar destek).
 export type PreHacizRiskLevel = "YOK" | "DUSUK" | "ORTA" | "YUKSEK";
 
-// PR-D4e-7: haciz gönderim karar-anı audit snapshot'ı (AuditLog.metadata şekli).
+// PR-D4e-7/C2D-PD-1E-1: haciz gönderim karar-anı audit safe projection.
+export interface HacizAuditSafeProjection {
+  action: "HACIZ_REQUEST_SUBMITTED";
+  targetType: { code: string; label: string };
+  overallLevel: { code: PreHacizRiskLevel; label: string };
+  createdAt?: string | null;
+  actor: { id: string | null; displayName: string | null };
+  uyapRequestId: string | null;
+  cpeTraceId: string | null;
+  cpeWarningsPresent: boolean;
+  cpeWarningsCount: number;
+  debtors: Array<{
+    debtorReference: string | null;
+    displayLabel: string;
+    level: { code: PreHacizRiskLevel; label: string };
+    reasonIds: string[];
+    reasons: Array<{ id: string; label: string }>;
+  }>;
+}
+
 export interface HacizAuditLog {
   id: string;
   action: string;
@@ -3002,6 +3617,7 @@ export interface HacizAuditLog {
   userName?: string | null;
   description?: string | null;
   createdAt: string;
+  hacizSafeProjection?: HacizAuditSafeProjection | null;
   metadata?: {
     targetType?: string;
     amount?: number;
@@ -3012,7 +3628,6 @@ export interface HacizAuditLog {
     cpeWarnings?: any[];
   } | null;
 }
-
 export interface ValidationError {
   code: string;
   message: string;
@@ -4443,6 +5058,9 @@ export interface UpdateAddressDTO {
   notes?: string;
   verified?: boolean;
   riskFlags?: AddressRiskFlag[];
+  // DBND-D6A-1: bu güncellemenin hangi dosyadan tetiklendiği (cross-file alert'te kendi
+  // dosyanı hariç tutmak için) — yalnız audit metadata'ya gider, adres kolonuna yazılmaz.
+  sourceCaseId?: string;
 }
 
 export interface TK21_2RecordDTO {
@@ -4493,6 +5111,33 @@ export const LegalPriorityLabels: Record<LegalPriority, string> = {
   LOW: "Düşük Öncelik",
 };
 
+export interface DebtorFinancialSummaryDTO {
+  totalConfirmedCollected: number;
+  totalPendingAmount: number;
+  totalCancelledAmount: number;
+  totalRefundedAmount: number;
+  collectionCount: number;
+  lastCollectionDate?: string;
+  currencyBreakdown: Array<{
+    currency: string;
+    confirmedCollected: number;
+    pendingAmount: number;
+    cancelledAmount: number;
+    refundedAmount: number;
+    collectionCount: number;
+    lastCollectionDate?: string;
+  }>;
+}
+
+// DBND-D6A-1: paylaşılan Debtor.id başka aktif dosyada yakın zamanda güncellendiyse pull/MVP uyarısı.
+export interface CrossFileDebtorAlertDTO {
+  hasAlert: boolean;
+  lastChangedAt: string | null;
+  categories: string[]; // "address" | "identity" | "contact" | "name"
+  sourceCaseId: string | null;
+  otherActiveCases: { caseId: string; fileNumber: string | null; responsibleName: string | null }[];
+}
+
 export interface DebtorDetailDTO extends DebtorListItemDTO {
   emailMasked?: string;
   // Full contact info (unmasked) for detail view
@@ -4505,6 +5150,7 @@ export interface DebtorDetailDTO extends DebtorListItemDTO {
   service: ServiceDTO;
   assets: AssetsDTO;
   riskFlags: string[];
+  financialSummary?: DebtorFinancialSummaryDTO;
   staleDays?: number;
   quickNote?: string;
   issues: DebtorIssue[];
@@ -4787,6 +5433,7 @@ export const DueTypeLabels: Record<DueType, string> = {
 export type CollectionType = 'PRINCIPAL' | 'INTEREST' | 'EXPENSE' | 'FEE' | 'PARTIAL' | 'FULL' | 'OTHER';
 export type CollectionChannel = 'NAKIT' | 'BANKA' | 'CEK' | 'SENET' | 'KREDI_KARTI' | 'ICRA_DAIRESI' | 'HACIZ' | 'DIGER';
 export type CollectionStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED';
+export type CollectionDispositionStatus = 'HELD_PENDING_DISTRIBUTION' | 'POSTED' | 'CANCELLED' | 'REVERSED';
 
 export interface CollectionDTO {
   id: string;
@@ -4807,12 +5454,204 @@ export interface CollectionDTO {
   status: CollectionStatus;
   cancelledAt?: string;
   cancelReason?: string;
+  accountingDispositionStatus?: CollectionDispositionStatus;
+  accountingPostedAt?: string;
+  manualReversalRequiredAt?: string;
+  manualReversalReason?: string;
   createdAt: string;
   updatedAt: string;
   debtor?: { id: string; name: string };
 }
 
+export type CollectionDispositionLineType =
+  | 'CLIENT_PAYABLE'
+  | 'CONTRACTUAL_FEE_WITHHELD'
+  | 'FIRM_EXPENSE_REIMBURSEMENT'
+  | 'CLIENT_EXPENSE_REIMBURSEMENT'
+  | 'OFFSET_CLIENT_ADVANCE'
+  | 'HELD_PENDING_DISTRIBUTION'
+  | 'OTHER';
+
+export interface CollectionDispositionLineDTO {
+  id: string;
+  dispositionId: string;
+  type: CollectionDispositionLineType | string;
+  amount: string | number;
+  caseClientId?: string | null;
+  note?: string | null;
+  createdAt: string;
+}
+
+export interface CollectionDispositionDTO {
+  id: string;
+  tenantId: string;
+  caseId: string;
+  collectionId: string;
+  beneficiaryScope: string;
+  caseClientId?: string | null;
+  status: CollectionDispositionStatus;
+  totalAmount: string | number;
+  currency: string;
+  sourcePaymentEventId?: string | null;
+  createdById?: string | null;
+  postedAt?: string | null;
+  postedById?: string | null;
+  manualReversalRequiredAt?: string | null;
+  manualReversalReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lines?: CollectionDispositionLineDTO[];
+}
+
+export interface PostCollectionDispositionLineDTO {
+  type: Exclude<CollectionDispositionLineType, "HELD_PENDING_DISTRIBUTION">;
+  amount: string | number;
+  caseClientId?: string | null;
+  note?: string;
+}
+
+export interface PostCollectionDispositionDTO {
+  lines: PostCollectionDispositionLineDTO[];
+}
+
+export interface PostCollectionDispositionResultDTO {
+  posted: boolean;
+  dispositionId: string;
+  lineCount: number;
+}
+
+// ── S8-B FAZ-1a — Distribution Recommendation (advisory-only preview) ──
+export interface AttorneyFeeInputDTO {
+  mode: "AMOUNT"; // FAZ-1a yalnız AMOUNT; oran modeli FAZ-2
+  amount: string; // faithful decimal-string
+  note?: string;
+}
+export interface GenerateDistributionRecommendationDTO {
+  attorneyFee?: AttorneyFeeInputDTO;
+}
+export interface SuggestedDistributionLineDTO {
+  type: CollectionDispositionLineType;
+  amount: string;
+  caseClientId: string | null;
+  // FAZ-2: 'FEE_AGREEMENT' — CaseFeeAgreement'tan hesaplanan ücret (flag-gated; manuel override yoksa).
+  origin: "FEE_MANUAL" | "FEE_AGREEMENT" | "CLIENT_PAYABLE_RESIDUAL";
+  editable: true;
+  note?: string;
+  /** FAZ-2 provenance: origin='FEE_AGREEMENT' ise kaynak CaseFeeAgreement id'si. */
+  feeAgreementId?: string;
+}
+export interface DistributionExpenseCandidateDTO {
+  expenseRequestId: string;
+  caseId: string;
+  status: string;
+  remaining: string;
+  applied: false;
+  note: string;
+}
+export interface DistributionRecommendationDTO {
+  dispositionId: string;
+  status: "HELD_PENDING_DISTRIBUTION";
+  currency: string;
+  gross: string;
+  beneficiaryScope: string;
+  recommendOnly: true;
+  financialEffect: false;
+  suggestedLines: SuggestedDistributionLineDTO[];
+  sumCheck: { sum: string; equalsGross: boolean };
+  expenseModule: {
+    autoApplyEnabled: false;
+    disabledReason: "EXPENSE_APPROVAL_FIELD_MISSING";
+    candidates: DistributionExpenseCandidateDTO[];
+  };
+  warnings: string[];
+}
+
+// ── S8-B FAZ-2 — CaseFeeAgreement (akdi ücret sözleşmesi) ──
+export interface CaseFeeAgreementDTO {
+  id: string;
+  caseClientId: string;
+  feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION";
+  flatAmount: string | null;
+  percentageBps: number | null;
+  feeBase: "GROSS" | "NET_OF_EXPENSE";
+  status: "DRAFT" | "ACTIVE" | "SUPERSEDED" | "TERMINATED";
+  effectiveFrom: string;
+  note?: string | null;
+}
+export interface CreateCaseFeeAgreementDTO {
+  caseClientId: string;
+  feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION";
+  /** FLAT_AMOUNT'ta ZORUNLU — faithful decimal-string (>0, ≤2 ondalık). */
+  flatAmount?: string;
+  /** PERCENTAGE_OF_COLLECTION'da ZORUNLU — basis-points int (1..10000). */
+  percentageBps?: number;
+  note?: string;
+}
+export interface UpdateCaseFeeAgreementDTO {
+  feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION";
+  flatAmount?: string;
+  percentageBps?: number;
+  note?: string;
+}
+
+export interface PaymentPreviewRequestDTO {
+  amount: number;
+  paymentDate?: string;
+  currency?: string;
+  paymentMethod?: string;
+  caseDebtorId?: string;
+}
+
+export type PaymentPreviewDistributionSource =
+  | "SINGLE_CASE_CLIENT"
+  | "CASE_CREDITOR_CLUSTER"
+  | "UNKNOWN";
+
+export type PaymentPreviewDistributionStatus =
+  | "HELD_PENDING_DISTRIBUTION"
+  | "MANUAL_REQUIRED"
+  | "BLOCKED";
+
+export interface PaymentPreviewResponseDTO {
+  nonPersistent: true;
+  caseId: string;
+  input: {
+    amount: number;
+    paymentDate?: string;
+    currency?: string;
+    paymentMethod?: string;
+    caseDebtorId?: string | null;
+  };
+  acceptance: {
+    wouldAccept: boolean;
+    blockingReasons: string[];
+    warnings: string[];
+  };
+  balanceImpact: {
+    currentOutstandingAmount: number;
+    paymentAmount: number;
+    appliedAmount: number;
+    overpaymentAmount: number;
+    projectedOutstandingAmount: number;
+  };
+  distributionPreview: {
+    source: PaymentPreviewDistributionSource;
+    status: PaymentPreviewDistributionStatus;
+    totalAmount: number;
+    requiresClientSelection: boolean;
+    lines: Array<{
+      type: "CLIENT_PAYABLE";
+      amount: number;
+      caseClientId?: string;
+      clientName?: string;
+    }>;
+  };
+}
+
 export interface CreateCollectionDTO {
+  // P0-1 (S9): ZORUNLU idempotency key. Client, tahsilat işlemi başına STABİL bir
+  //   değer üretir (crypto.randomUUID); double-click/retry aynı key'i taşır → tek tahsilat.
+  idempotencyKey: string;
   caseDebtorId?: string;
   amount: number;
   currency?: string;

@@ -1,6 +1,16 @@
 // Action Code
 export { ActionCode, RiskLevel, ACTION_RISK_LEVELS, getActionsByRiskLevel } from './action-code.enum';
 
+// Effective Permission (Guided-Open per-user resolver — P2a)
+export {
+  GuidedOpenDecision,
+  DecisionSource,
+  ActionClass,
+  Capacity,
+  EffectivePermissionInput,
+  EffectivePermissionDecision,
+} from './effective-permission.types';
+
 // Scope
 export { Scope, SCOPE_HIERARCHY, getParentScopes, getScopeChain } from './scope.enum';
 

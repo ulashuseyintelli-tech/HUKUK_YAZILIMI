@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import {
   ClientIntakeSubmissionStatus,
   ClientIntakeFieldReviewStatus,
@@ -21,7 +23,11 @@ export interface PromoteAddressResult {
   submissionStatus: ClientIntakeSubmissionStatus;
 }
 
-// Yalnız YUMUŞAK istihbarat → ClientIntelStatement (F46-K2). Diğerleri (ADDRESS/ASSET/CONTACT) 4.6b/c.
+// Yumuşak istihbarat (soft-6) + CLIENT-INTEL-4.6C ile ASSET/CONTACT → ClientIntelStatement (F46-K2).
+// ADDRESS hâlâ AYRI (promote-address, DebtorAddress hedefi — HYBRID akış, burada DEĞİL).
+// ASSET/CONTACT BİLİNÇLİ olarak serbest-metin beyan kalır (CLIENT-INTEL-FORM-TYPE-DESIGN kararı,
+// 2026-07-04): canonical Asset/DebtorCommunication'a YAZILMAZ, yalnız 2 yeni ClientIntelCategory
+// değeriyle (ASSET_DECLARATION/CONTACT_DECLARATION) diğer 6 kategoriyle BİREBİR aynı davranır.
 const SOFT_TO_INTEL: Record<string, ClientIntelCategory> = {
   INCOME_SOURCE: ClientIntelCategory.INCOME_SOURCE,
   COMMERCIAL_RELATION: ClientIntelCategory.COMMERCIAL_RELATION,
@@ -29,6 +35,8 @@ const SOFT_TO_INTEL: Record<string, ClientIntelCategory> = {
   DIGITAL_FOOTPRINT: ClientIntelCategory.DIGITAL_FOOTPRINT,
   PAYMENT_HISTORY: ClientIntelCategory.PAYMENT_HISTORY,
   STRATEGY: ClientIntelCategory.STRATEGY,
+  ASSET: ClientIntelCategory.ASSET_DECLARATION,
+  CONTACT: ClientIntelCategory.CONTACT_DECLARATION,
 };
 
 export interface PromoteResult {
@@ -46,8 +54,9 @@ export interface PromoteSoftResult {
 /**
  * Client Intake PROMOTE servisi (Faz 4.6) — dış-form verisinin İLK KEZ kanoniğe yazıldığı KÖPRÜ.
  *
- * KAPSAM (dar): YALNIZ onaylı (APPROVED) SOFT-INTEL alanları → ClientIntelStatement.
- * ADDRESS/ASSET/CONTACT bu PR'da promote EDİLMEZ (skip + rapor; 4.6b/c).
+ * KAPSAM: onaylı (APPROVED) SOFT-INTEL alanları → ClientIntelStatement (soft-6 + CLIENT-INTEL-4.6C
+ * ile ASSET/CONTACT dahil, serbest-metin beyan olarak — 8 kategori). ADDRESS AYRI kalır (promote-address,
+ * DebtorAddress hedefi — HYBRID akış farklı); bu uçtan skip edilir (skip + rapor; 4.6b).
  *
  * KURALLAR (kilitli):
  * - IDEMPOTENT: aday = reviewStatus=APPROVED & promotedRefId=null. promotedRef dolu alan tekrar yazılmaz.
@@ -60,7 +69,24 @@ export interface PromoteSoftResult {
 export class ClientIntakePromotionService {
   private readonly logger = new Logger(ClientIntakePromotionService.name);
 
-  constructor(private prisma: PrismaService) {}
+  // I1A: OfficeApprovalService promote/promoteAddress/promoteSoft capability-gate için.
+  // AuditService @Global.
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
+  ) {}
+
+  /**
+   * I1A (owner-locked 2026-07-02) — promote, müvekkilin doğrulanmamış beyanını kanonik kayda
+   * (ClientIntelStatement/DebtorAddress) çeviren TEK yol; bu domainin en yüksek-otorite eylemi
+   * (veri-provenance sınırı). ClientIntelStatementService/ClientIntakeLinkService ile birebir desen.
+   */
+  private async assertCanManagePromotion(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException('Bu alanı kanonik kayda promote etme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)');
+    }
+  }
 
   /**
    * Onaylı soft-intel alanları ClientIntelStatement'a promote et (SUBMISSION-LEVEL, toplu).
@@ -81,6 +107,10 @@ export class ClientIntakePromotionService {
       select: { id: true, status: true, caseId: true },
     });
     if (!sub) throw new NotFoundException('Gönderim bulunamadı');
+
+    // I1A: promote yetkisi — herhangi bir yazmadan/detaydan ÖNCE.
+    await this.assertCanManagePromotion(userId, tenantId);
+
     if (
       sub.status !== ClientIntakeSubmissionStatus.IN_REVIEW &&
       sub.status !== ClientIntakeSubmissionStatus.PARTIALLY_PROMOTED
@@ -106,7 +136,7 @@ export class ClientIntakePromotionService {
     for (const f of fields) {
       const intelCategory = SOFT_TO_INTEL[f.category];
       if (!intelCategory) {
-        // ADDRESS/ASSET/CONTACT → bu fazda promote yok (sessizce kaybolmaz).
+        // Yalnız ADDRESS bu yoldan promote edilmez (promote-address ayrı uç); sessizce kaybolmaz.
         skipped.push({ fieldId: f.id, category: f.category, reason: 'NON_SOFT_INTEL_4_6B' });
         continue;
       }
@@ -159,6 +189,22 @@ export class ClientIntakePromotionService {
       this.logger.log(`Promote: ${promoted.length} yazıldı, ${skipped.length} skip (4.6b) — submission ${submissionId} → ${newStatus}`);
     }
 
+    // I1A: her alan zaten kendi ATOMİK transaction'ında yazıldı (create+promotedRef damgası
+    // tek tx — satır 137-157). Bu, o N alanlık PARTİ kararının TEK özet kaydıdır; N-transaction'ı
+    // tek mega-transaction'a saramak (loop'u yeniden tasarlamak) bu görevin kapsamı dışı
+    // ("Do not redesign lifecycle"). Gerçek değişiklik yoksa (promoted boş) audit YAZILMAZ.
+    if (promoted.length > 0) {
+      await this.audit.log({
+        tenantId,
+        action: 'CLIENT_INTAKE_PROMOTE',
+        entityType: 'CLIENT_INTAKE_SUBMISSION',
+        entityId: submissionId,
+        userId,
+        oldValues: { status: sub.status },
+        newValues: { status: newStatus, promoted, skipped },
+      });
+    }
+
     return { submissionStatus: newStatus, promoted, skipped };
   }
 
@@ -182,6 +228,10 @@ export class ClientIntakePromotionService {
       },
     });
     if (!field) throw new NotFoundException('Alan bulunamadı');
+
+    // I1A: promote yetkisi — herhangi bir yazmadan/detaydan ÖNCE.
+    await this.assertCanManagePromotion(userId, tenantId);
+
     if (field.category !== 'ADDRESS') throw new BadRequestException('Yalnız ADDRESS alanı bu uçtan promote edilir');
     if (field.reviewStatus !== ClientIntakeFieldReviewStatus.APPROVED) throw new BadRequestException('Yalnız onaylı (APPROVED) alan promote edilir');
     if (field.promotedRefId) throw new BadRequestException('Alan zaten promote edilmiş'); // idempotent
@@ -219,6 +269,17 @@ export class ClientIntakePromotionService {
           where: { id: fieldId },
           data: { promotedRefType: 'DebtorAddress', promotedRefId: r.address.id, promotedAt: new Date(), promotedById: userId },
         });
+        // I1A: yalnız GERÇEK promote'ta audit — DUPLICATE dalında (r.created=false) kanonik
+        // yazma yok, audit de yok (aşağıdaki !created kontrolü).
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: 'CLIENT_INTAKE_PROMOTE_ADDRESS',
+          entityType: 'CLIENT_INTAKE_FIELD',
+          entityId: fieldId,
+          userId,
+          oldValues: { reviewStatus: field.reviewStatus, promotedRefId: field.promotedRefId },
+          newValues: { promotedRefType: 'DebtorAddress', promotedRefId: r.address.id },
+        });
       }
       return r;
     });
@@ -237,7 +298,8 @@ export class ClientIntakePromotionService {
    * TEK soft-intel alanını ClientIntelStatement'a promote et (Faz 4.7 PR-C2a — FIELD-LEVEL).
    *
    * Bulk YOK: tam olarak BİR alan yazılır (C2b promote yolu yalnız budur).
-   * Yalnız 6 SOFT kategori (SOFT_TO_INTEL). ADDRESS → promote-address; ASSET/CONTACT → 400 (4.6c yok).
+   * SOFT_TO_INTEL kapsamındaki 8 kategori (soft-6 + CLIENT-INTEL-4.6C ile ASSET/CONTACT).
+   * ADDRESS AYRI kalır → promote-address ucu kullanılır (HYBRID, DebtorAddress hedefi farklı).
    * Submission-level promote() ve promoteAddress() davranışına DOKUNMAZ; SOFT_TO_INTEL +
    * recomputeSubmissionStatus REUSE edilir (kod tekrarı yok).
    *
@@ -256,10 +318,13 @@ export class ClientIntakePromotionService {
     });
     if (!field) throw new NotFoundException('Alan bulunamadı');
 
-    // Yalnız SOFT-6. ADDRESS/ASSET/CONTACT bu uçtan promote EDİLMEZ.
+    // I1A: promote yetkisi — herhangi bir yazmadan/detaydan ÖNCE.
+    await this.assertCanManagePromotion(userId, tenantId);
+
+    // SOFT_TO_INTEL kapsamındaki 8 kategori (soft-6 + ASSET/CONTACT). ADDRESS bu uçtan promote EDİLMEZ.
     const intelCategory = SOFT_TO_INTEL[field.category];
     if (!intelCategory) {
-      throw new BadRequestException('Bu uç yalnız yumuşak istihbarat alanlarını promote eder (ADDRESS için promote-address; ASSET/CONTACT henüz yok)');
+      throw new BadRequestException('Bu uç yumuşak istihbarat + varlık/iletişim beyanını promote eder (ADDRESS için promote-address kullanın)');
     }
     if (field.reviewStatus !== ClientIntakeFieldReviewStatus.APPROVED) throw new BadRequestException('Yalnız onaylı (APPROVED) alan promote edilir');
     if (field.promotedRefId) throw new BadRequestException('Alan zaten promote edilmiş'); // idempotent
@@ -294,6 +359,17 @@ export class ClientIntakePromotionService {
         where: { id: fieldId },
         data: { promotedRefType: 'ClientIntelStatement', promotedRefId: created.id, promotedAt: new Date(), promotedById: userId },
       });
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_INTAKE_PROMOTE_SOFT',
+        entityType: 'CLIENT_INTAKE_FIELD',
+        entityId: fieldId,
+        userId,
+        oldValues: { reviewStatus: field.reviewStatus, promotedRefId: field.promotedRefId },
+        newValues: { promotedRefType: 'ClientIntelStatement', promotedRefId: created.id },
+      });
+
       return created;
     });
 

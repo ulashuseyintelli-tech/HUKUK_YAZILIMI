@@ -9,6 +9,7 @@ interface QuickFilterChipProps {
   onClick: () => void;
   onRemove?: () => void;
   color?: "default" | "warning" | "danger" | "success" | "info" | "purple";
+  title?: string; // opsiyonel tooltip (hover açıklaması)
 }
 
 const colorClasses = {
@@ -45,12 +46,14 @@ export function QuickFilterChip({
   onClick,
   onRemove,
   color = "default",
+  title,
 }: QuickFilterChipProps) {
   const classes = colorClasses[color];
 
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       className={`
         inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium

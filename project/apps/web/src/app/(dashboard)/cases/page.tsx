@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -10,6 +11,7 @@ import {
   Calendar, DollarSign, Star, MoreHorizontal, UserCheck,
   ChevronsUpDown, Users
 } from "lucide-react";
+import { CASE_STATUS_OPTIONS } from "@/lib/case-statuses";
 import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
 import { bulkAssignResponsible, type BulkAssignResult } from "@/lib/bulk-assign-responsible";
@@ -80,6 +82,7 @@ interface FilterState {
   includeArchived: boolean;
   expenseRequestStatus: string;
   noOwner: boolean; // SAHIPSIZ-DOSYALAR-G1b: sahipsiz (Dosya Sorumlusu yok) server-side filtre
+  legalResponsibleMissing: boolean; // WP-3a: aktif dosyada staff-owner ama hukuki sorumlu avukat yok
 }
 
 // Hızlı filtre sayaçları için interface
@@ -187,6 +190,7 @@ const defaultFilters: FilterState = {
   includeArchived: false,
   expenseRequestStatus: "all",
   noOwner: false,
+  legalResponsibleMissing: false,
 };
 
 // Hızlı filtre kategorileri ve tanımları
@@ -796,11 +800,14 @@ export default function CasesPage() {
   const [showBulkStatusModal, setShowBulkStatusModal] = useState(false);
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
+  // P3-2C-FE: toplu statü değişimini guarded-edge consumer ile sar (flag OFF → modal hiç açılmaz, davranış değişmez).
+  const { run: runGuardedStatus, modal: guardedStatusModal } = useGuardedAction();
   // M2-G5d-2: toplu gerçek-kişi Dosya Sorumlusu atama (multi-PATCH). Seçilen owner + sonuç.
   const [bulkOwner, setBulkOwner] = useState<ResponsibleSelection | null>(null);
   const [bulkResult, setBulkResult] = useState<BulkAssignResult | null>(null);
   const [exportingCases, setExportingCases] = useState(false);
   const [ownerlessCount, setOwnerlessCount] = useState(0); // SAHIPSIZ-DOSYALAR-G1b: getStats.ownerless
+  const [legalResponsibleMissingCount, setLegalResponsibleMissingCount] = useState(0); // WP-3a: getStats.legalResponsibleMissing
 
   useEffect(() => {
     loadLookupData();
@@ -1056,6 +1063,7 @@ export default function CasesPage() {
       if (filters.caseType.length > 0) params.type = filters.caseType.join(',');
       if (filters.includeArchived) params.includeArchived = true;
       if (filters.noOwner) params.noOwner = true; // SAHIPSIZ-DOSYALAR-G1b: server-side sahipsiz filtre
+      if (filters.legalResponsibleMissing) params.legalResponsibleMissing = true; // WP-3a: server-side warn/report filtre
       // M2-G5d-1b: gerçek kişi owner filtresi (server-side; G5a). Tipine göre KENDİ kolonu.
       if (ownerFilter?.type === "LAWYER") params.responsibleLawyerId = ownerFilter.id;
       else if (ownerFilter?.type === "STAFF") params.responsibleStaffId = ownerFilter.id;
@@ -1065,7 +1073,10 @@ export default function CasesPage() {
       const response = await api.getCases(params);
       setCases(response.data || []);
       // SAHIPSIZ-DOSYALAR-G1b: doğru sahipsiz toplamı (server-side; chip rozeti). Best-effort.
-      api.get('/cases/stats').then((r: any) => setOwnerlessCount(r?.data?.ownerless ?? 0)).catch(() => {});
+      api.get('/cases/stats').then((r: any) => {
+        setOwnerlessCount(r?.data?.ownerless ?? 0);
+        setLegalResponsibleMissingCount(r?.data?.legalResponsibleMissing ?? 0); // WP-3a
+      }).catch(() => {});
     } catch (error) {
       console.error("Takipler yüklenemedi:", error);
     } finally {
@@ -1098,7 +1109,7 @@ export default function CasesPage() {
 
   useEffect(() => {
     fetchCases();
-  }, [filters.status, filters.caseType, filters.includeArchived, filters.noOwner, ownerFilter, urlClientId]);
+  }, [filters.status, filters.caseType, filters.includeArchived, filters.noOwner, filters.legalResponsibleMissing, ownerFilter, urlClientId]);
 
   const filteredCases = cases.filter((c) => {
     if (filters.search) {
@@ -1378,18 +1389,29 @@ export default function CasesPage() {
 
   const handleBulkDelete = async () => {
     if (selectedCases.length === 0) return;
-    try {
-      setProcessingIds(selectedCases);
-      for (const caseId of selectedCases) {
+    setProcessingIds(selectedCases);
+    // CS4: önceden ilk hata TÜM döngüyü durduruyordu — zaten silinmiş dosyalar listede kalıyordu
+    // (stale UI) ve tek bir generic mesaj gösteriliyordu. Artık her dosya bağımsız denenir; başarılı
+    // olanlar listeden düşer, engellenenler (ör. CS2 footprint 409'u) kendi mesajıyla raporlanır.
+    const failures: string[] = [];
+    const deletedIds: string[] = [];
+    for (const caseId of selectedCases) {
+      try {
         await api.delete(`/cases/${caseId}`);
+        deletedIds.push(caseId);
+      } catch (error: any) {
+        const caseLabel = cases.find(c => c.id === caseId)?.fileNumber || caseId;
+        failures.push(`${caseLabel}: ${error.message || 'Silme işlemi başarısız'}`);
       }
-      setCases(prev => prev.filter(c => !selectedCases.includes(c.id)));
-      setSelectedCases([]);
-      setShowBulkActionConfirm(null);
-    } catch (error: any) {
-      alert(error.message || 'Toplu silme başarısız');
-    } finally {
-      setProcessingIds([]);
+    }
+    if (deletedIds.length > 0) {
+      setCases(prev => prev.filter(c => !deletedIds.includes(c.id)));
+    }
+    setSelectedCases(prev => prev.filter(id => !deletedIds.includes(id)));
+    setShowBulkActionConfirm(null);
+    setProcessingIds([]);
+    if (failures.length > 0) {
+      alert(`${deletedIds.length} dosya silindi, ${failures.length} dosya silinemedi:\n\n${failures.join('\n')}`);
     }
   };
 
@@ -1397,8 +1419,16 @@ export default function CasesPage() {
     if (selectedCases.length === 0 || !bulkStatus) return;
     try {
       setProcessingIds(selectedCases);
+      // P3-2B-2: her case için kanonik route (generic PATCH /cases yerine). Atomik değil: ilk hatada durur (mevcut davranış korundu).
+      // P3-2C-FE: her çağrı guarded-edge consumer ile sarıldı. Flag OFF → run normal {ok}, modal açılmaz (davranış aynen).
+      // Hata (exception) hâlâ döngüyü durdurur → catch (ilk-hata-durur korundu). CONFIRM_REQUIRED'da kullanıcı vazgeçerse döngü durur.
       for (const caseId of selectedCases) {
-        await api.patch(`/cases/${caseId}`, { caseStatus: bulkStatus });
+        const result = await runGuardedStatus((confirmation) =>
+          api.changeCaseStatus(caseId, bulkStatus, "Toplu statü güncelleme", confirmation?.token),
+        );
+        if (result.status === "cancelled") {
+          break; // kullanıcı bu case için vazgeçti → kalan case'ler işlenmez (graceful stop)
+        }
       }
       fetchCases();
       setSelectedCases([]);
@@ -1653,6 +1683,16 @@ export default function CasesPage() {
           onClick={() => setFilters(prev => ({ ...prev, noOwner: !prev.noOwner }))}
           color="warning"
         />
+        {/* WP-3a: izole "Hukuki Sorumlu Eksik" chip — aktif dosyada operasyon owner personel ama
+            hukuki sorumlu avukat yok. sayı=getStats.legalResponsibleMissing; tık→server-side filtre. Warn/report. */}
+        <QuickFilterChip
+          label="Hukuki Sorumlu Avukat Eksik"
+          count={legalResponsibleMissingCount}
+          isActive={filters.legalResponsibleMissing}
+          onClick={() => setFilters(prev => ({ ...prev, legalResponsibleMissing: !prev.legalResponsibleMissing }))}
+          color="warning"
+          title="Operasyon sorumlusu personel olan, ancak Hukuki Sorumlu Avukat atanmamış aktif dosyalar."
+        />
         {visibleFilterIds.map((filterId) => {
           const qf = allQuickFilters.find(f => f.id === filterId);
           if (!qf) return null;
@@ -1891,7 +1931,8 @@ export default function CasesPage() {
             { value: "DERDEST", label: "Derdest" },
             { value: "KAPALI", label: "Kapalı" },
             { value: "ASKIDA", label: "Askıda" },
-            { value: "ARSIV", label: "Arşiv" },
+            // CS4: "ARSIV" seçeneği kaldırıldı — bu backend'de caseStatus/status alanlarının hiçbirinde
+            // gerçek bir değer değildi (no-op/olası hata); arşivleme "Arşiv dahil" checkbox'ının işi.
           ]}
           selected={filters.status}
           onChange={(selected) => setFilters(prev => ({ ...prev, status: selected }))}
@@ -2034,7 +2075,7 @@ export default function CasesPage() {
 
             {/* M2-G5d-1b: "Dosya Sorumlusu" filtresi = gerçek kişi (server-side responsibleLawyerId/StaffId). */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Dosya Sorumlusu</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Dosya Operasyon Sorumlusu</label>
               <ResponsibleCandidateSelect
                 value={ownerFilter}
                 onChange={setOwnerFilter}
@@ -2182,7 +2223,7 @@ export default function CasesPage() {
               className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-white border rounded-lg hover:bg-muted"
             >
               <UserCheck className="h-4 w-4" />
-              Dosya Sorumlusu Ata
+              Dosya Operasyon Sorumlusu Ata
             </button>
 
             {/* SMS Gönder */}
@@ -2714,10 +2755,9 @@ export default function CasesPage() {
               className="w-full px-3 py-2 border rounded-lg mb-4"
             >
               <option value="">Statü Seçin</option>
-              <option value="DERDEST">Derdest</option>
-              <option value="KAPALI">Kapalı</option>
-              <option value="ASKIDA">Askıda</option>
-              <option value="ARSIV">Arşiv</option>
+              {CASE_STATUS_OPTIONS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
             </select>
             <div className="flex justify-end gap-2">
               <button
@@ -2742,14 +2782,14 @@ export default function CasesPage() {
       {showBulkAssignModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Toplu Dosya Sorumlusu Atama</h3>
+            <h3 className="text-lg font-semibold mb-4">Toplu Dosya Operasyon Sorumlusu Atama</h3>
             <p className="text-muted-foreground mb-4">
-              <strong>{selectedCases.length}</strong> dosyaya Dosya Sorumlusu atayın:
+              <strong>{selectedCases.length}</strong> dosyaya Dosya Operasyon Sorumlusu atayın:
             </p>
             <div className="space-y-3 mb-4">
               {/* M2-G5d-2: gerçek kişi (avukat/personel) seçici — responsible-candidates. */}
               <div>
-                <label className="text-sm text-muted-foreground mb-1 block">Dosya Sorumlusu (gerçek kişi)</label>
+                <label className="text-sm text-muted-foreground mb-1 block">Dosya Operasyon Sorumlusu (gerçek kişi)</label>
                 <ResponsibleCandidateSelect
                   value={bulkOwner}
                   onChange={(v) => { setBulkOwner(v); setBulkResult(null); }}
@@ -2839,10 +2879,13 @@ export default function CasesPage() {
       {/* Click outside to close action menu */}
       {actionMenuOpen && (
         <div 
-          className="fixed inset-0 z-0" 
+          className="fixed inset-0 z-0"
           onClick={() => setActionMenuOpen(null)}
         />
       )}
+
+      {/* P3-2C-FE: guarded-edge confirm modalı (yalnız backend CONFIRM_REQUIRED dönerse görünür; flag OFF → null) */}
+      {guardedStatusModal}
     </div>
   );
 }

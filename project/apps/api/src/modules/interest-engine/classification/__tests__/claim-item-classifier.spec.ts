@@ -19,7 +19,6 @@ describe('claim-item-classifier (G4a)', () => {
       expect(mapItemTypeToAncillary('CHECK_PENALTY')).toBe(AncillaryType.CEK_TAZMINATI);
       expect(mapItemTypeToAncillary('PENALTY')).toBe(AncillaryType.DIGER);
       expect(mapItemTypeToAncillary('CONTRACTUAL_PENALTY')).toBe(AncillaryType.DIGER);
-      expect(mapItemTypeToAncillary('COMMISSION')).toBe(AncillaryType.KOMISYON);
       expect(mapItemTypeToAncillary('OTHER')).toBe(AncillaryType.DIGER);
     });
 
@@ -29,18 +28,23 @@ describe('claim-item-classifier (G4a)', () => {
       expect(mapItemTypeToAncillary('TAX_KDV')).toBeNull();
       expect(mapItemTypeToAncillary('NONEXISTENT')).toBeNull();
     });
+
+    it('COMMISSION → null: gerçek ClaimItemType enum üyesi DEĞİL (kural motorunun iç etiketi; ' +
+      'ClaimItemService.mapItemType() yaratma ÖNCESİ EXPENSE\'e çevirir, ClaimItem hiç bu değerle saklanmaz)', () => {
+      expect(mapItemTypeToAncillary('COMMISSION')).toBeNull();
+    });
   });
 
-  describe('isCostItemType (FEE/EXPENSE/COMMISSION = masraf)', () => {
+  describe('isCostItemType (FEE/EXPENSE = masraf)', () => {
     it('masraf türleri → true', () => {
       expect(isCostItemType('FEE')).toBe(true);
       expect(isCostItemType('EXPENSE')).toBe(true);
-      expect(isCostItemType('COMMISSION')).toBe(true);
     });
     it('fer\'i/diğer → false', () => {
       expect(isCostItemType('ATTORNEY_FEE')).toBe(false);
       expect(isCostItemType('PENALTY')).toBe(false);
       expect(isCostItemType('OTHER')).toBe(false);
+      expect(isCostItemType('COMMISSION')).toBe(false); // gerçek enum üyesi değil, bkz. yukarı
     });
   });
 
@@ -64,7 +68,6 @@ describe('claim-item-classifier (G4a)', () => {
     it('masraf türleri → COST + doğru ancillaryType', () => {
       expect(classifyClaimItemType('FEE')).toEqual({ category: 'COST', ancillaryType: AncillaryType.HARC });
       expect(classifyClaimItemType('EXPENSE')).toEqual({ category: 'COST', ancillaryType: AncillaryType.TEBLIGAT_MASRAFI });
-      expect(classifyClaimItemType('COMMISSION')).toEqual({ category: 'COST', ancillaryType: AncillaryType.KOMISYON });
     });
 
     it('fer\'i türleri → ANCILLARY + doğru ancillaryType', () => {
@@ -77,6 +80,10 @@ describe('claim-item-classifier (G4a)', () => {
 
     it('bilinmeyen → category UNKNOWN', () => {
       expect(classifyClaimItemType('NONEXISTENT')).toEqual({ category: 'UNKNOWN' });
+    });
+
+    it('COMMISSION → category UNKNOWN (gerçek enum üyesi değil, bkz. mapItemTypeToAncillary testi)', () => {
+      expect(classifyClaimItemType('COMMISSION')).toEqual({ category: 'UNKNOWN' });
     });
   });
 });

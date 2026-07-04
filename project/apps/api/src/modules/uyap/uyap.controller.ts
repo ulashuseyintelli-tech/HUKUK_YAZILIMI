@@ -7,6 +7,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 // CPE Integration - Phase 3
 import { CpeRequired, ScopeResolvers } from '@/modules/policy-engine';
 import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
+import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
 
 @Controller('uyap')
 @UseGuards(JwtAuthGuard)
@@ -14,6 +15,8 @@ export class UyapController {
   constructor(
     private uyapService: UyapService,
     private uyapXmlService: UyapXmlService,
+    // P2b-2: Guided-Open observe adapter (diagnostic only; engelleme yok)
+    private guidedOpenObserve: GuidedOpenObserveService,
   ) {}
 
   /**
@@ -320,7 +323,7 @@ export class UyapController {
     @Req() req: any,
   ) {
     const tenantId = req.user?.tenantId;
-    
+
     // Önce vekalet kontrolü
     const poaCheck = await this.uyapService.validateCasePoaForUyap(caseId, tenantId);
     if (!poaCheck.isValid) {
@@ -331,6 +334,16 @@ export class UyapController {
         errors: poaCheck.errors,
       };
     }
+
+    // P2b-2 observe (PRE-action; POA gate'ten SONRA, business gönderimden ÖNCE; engelleme YOK).
+    // UYAP_SEND = HARDWARE → diagnostic yalnız wouldRequireHardware=true yazar.
+    // GÜVENLİK: e-imza/UYAP credential observe'a ASLA geçmez (yalnız actionCode + caseId).
+    await this.guidedOpenObserve.observe({
+      actorUserId: req.user?.id,
+      tenantId,
+      caseId,
+      actionCode: ActionCode.UYAP_SEND,
+    });
 
     // XML oluştur
     const xml = await this.uyapXmlService.generateFromCase(caseId, tenantId);

@@ -32,23 +32,67 @@ export class IcrabotService {
     return this.prisma;
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - IcrabotService.getDigitalTwin() -> GET /icrabot/cases/:caseId/twin
+  /// - IcrabotService.getNextBestActions() -> GET /icrabot/cases/:caseId/next-actions
+  /// - IcrabotService.getPendingTasks() -> GET /icrabot/cases/:caseId/tasks
+  /// - IcrabotService.getEvidenceReport() -> GET /icrabot/cases/:caseId/evidence
+  /// - IcrabotService.processEvent() -> POST /icrabot/cases/:caseId/transition (DBND-B1B)
+  /// - IcrabotService.getAvailableTransitions() -> GET /icrabot/cases/:caseId/transitions (DBND-B1B)
+  /// DBND-B1/B1B: caseId'nin çağıran tenant'a ait olduğunu doğrular; aksi halde bu
+  /// endpointler tenant filtresi olmadan başka tenant'ın borçlu/varlık/tebligat/tahsilat/
+  /// kanıt verisini döndürüyor, processEvent ise dosya aşamasını (workflowStage) ve
+  /// lifecycle geçmişini cross-tenant değiştirebiliyordu (yazma yolu, IDOR).
+  /// </remarks>
+  private async assertCaseTenant(caseId: string, tenantId: string): Promise<void> {
+    const exists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException(`Dosya bulunamadı: ${caseId}`);
+    }
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - IcrabotService.cancelTask() -> POST /icrabot/tasks/:taskId/cancel
+  /// - IcrabotService.approveTask() -> POST /icrabot/tasks/:taskId/approve
+  /// DBND-B1C: taskId'nin çağıran tenant'a ait olduğunu doğrular; aksi halde bu 2
+  /// endpoint tenant filtresi olmadan başka tenant'ın bot görevini onaylayabiliyor/
+  /// iptal edebiliyordu (yazma yolu, IDOR).
+  /// </remarks>
+  private async assertTaskTenant(taskId: string, tenantId: string): Promise<void> {
+    const exists = await this.prisma.botTask.findFirst({
+      where: { id: taskId, tenantId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException(`Görev bulunamadı: ${taskId}`);
+    }
+  }
+
   /**
    * Dosya için dijital ikiz getir
    */
-  async getDigitalTwin(caseId: string): Promise<CaseDigitalTwin> {
-    const twin = await this.recipeService.buildDigitalTwin(caseId);
-    
+  async getDigitalTwin(caseId: string, tenantId: string): Promise<CaseDigitalTwin> {
+    await this.assertCaseTenant(caseId, tenantId);
+
+    const twin = await this.recipeService.buildDigitalTwin(caseId, tenantId);
+
     // Next actions hesapla
-    twin.nextActions = await this.recipeService.calculateNextBestActions(caseId);
-    
+    twin.nextActions = await this.recipeService.calculateNextBestActions(caseId, tenantId);
+
     return twin;
   }
 
   /**
    * Dosya için Next Best Actions getir
    */
-  async getNextBestActions(caseId: string): Promise<NextBestAction[]> {
-    return this.recipeService.calculateNextBestActions(caseId);
+  async getNextBestActions(caseId: string, tenantId: string): Promise<NextBestAction[]> {
+    await this.assertCaseTenant(caseId, tenantId);
+    return this.recipeService.calculateNextBestActions(caseId, tenantId);
   }
 
   /**
@@ -59,7 +103,7 @@ export class IcrabotService {
     tasks: string[];
   }> {
     // Next best actions hesapla
-    const actions = await this.getNextBestActions(caseId);
+    const actions = await this.getNextBestActions(caseId, tenantId);
     
     // Otomatik çalıştırılabilir olanları kuyruğa ekle
     const autoActions = actions.filter(a => a.canAutoExecute);
@@ -90,7 +134,9 @@ export class IcrabotService {
   /**
    * Dosya için otomasyonu durdur
    */
-  async stopAutomation(caseId: string): Promise<void> {
+  async stopAutomation(caseId: string, tenantId: string): Promise<void> {
+    await this.assertCaseTenant(caseId, tenantId);
+
     // Bekleyen görevleri iptal et
     await this.db.botTask.updateMany({
       where: {
@@ -148,29 +194,33 @@ export class IcrabotService {
   /**
    * Dosya için bekleyen görevleri getir
    */
-  async getPendingTasks(caseId: string): Promise<any[]> {
-    return this.taskOrchestrator.getPendingTasks(caseId);
+  async getPendingTasks(caseId: string, tenantId: string): Promise<any[]> {
+    await this.assertCaseTenant(caseId, tenantId);
+    return this.taskOrchestrator.getPendingTasks(caseId, tenantId);
   }
 
   /**
    * Görevi onayla
    */
-  async approveTask(taskId: string, userId: string): Promise<void> {
+  async approveTask(taskId: string, tenantId: string, userId: string): Promise<void> {
+    await this.assertTaskTenant(taskId, tenantId);
     await this.taskOrchestrator.approveTask(taskId, userId);
   }
 
   /**
    * Görevi iptal et
    */
-  async cancelTask(taskId: string, reason?: string): Promise<void> {
+  async cancelTask(taskId: string, tenantId: string, reason?: string): Promise<void> {
+    await this.assertTaskTenant(taskId, tenantId);
     await this.taskOrchestrator.cancelTask(taskId, reason);
   }
 
   /**
    * Dosya için kanıt raporu getir
    */
-  async getEvidenceReport(caseId: string): Promise<any> {
-    return this.evidenceService.generateEvidenceReport(caseId);
+  async getEvidenceReport(caseId: string, tenantId: string): Promise<any> {
+    await this.assertCaseTenant(caseId, tenantId);
+    return this.evidenceService.generateEvidenceReport(caseId, tenantId);
   }
 
   /**
@@ -275,6 +325,7 @@ export class IcrabotService {
   async processEvent(
     caseId: string,
     event: CaseEvent,
+    tenantId: string,
     context?: Record<string, any>
   ): Promise<{
     success: boolean;
@@ -283,7 +334,9 @@ export class IcrabotService {
     actionsTriggered?: string[];
     message: string;
   }> {
-    const twin = await this.recipeService.buildDigitalTwin(caseId);
+    await this.assertCaseTenant(caseId, tenantId);
+
+    const twin = await this.recipeService.buildDigitalTwin(caseId, tenantId);
     const currentStage = twin.stage;
     const icraType = twin.icraType;
 
@@ -360,7 +413,7 @@ export class IcrabotService {
    * Mevcut aşamadan yapılabilecek geçişleri getir
    * v3: İcra türüne göre filtreleme
    */
-  async getAvailableTransitions(caseId: string): Promise<{
+  async getAvailableTransitions(caseId: string, tenantId: string): Promise<{
     currentStage: StageTag;
     icraType: IcraType;
     transitions: Array<{
@@ -369,7 +422,9 @@ export class IcrabotService {
       description: string;
     }>;
   }> {
-    const twin = await this.recipeService.buildDigitalTwin(caseId);
+    await this.assertCaseTenant(caseId, tenantId);
+
+    const twin = await this.recipeService.buildDigitalTwin(caseId, tenantId);
     const currentStage = twin.stage;
     const icraType = twin.icraType;
 

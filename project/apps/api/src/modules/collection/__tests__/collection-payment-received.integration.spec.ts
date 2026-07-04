@@ -69,9 +69,13 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
     await (prisma as any).icrabotOutboxAction.deleteMany({
       where: { tenantId },
     });
-    await (prisma as any).icrabotTimelineEntry.deleteMany({
-      where: { tenantId },
-    });
+    // IcrabotTimelineEntry BİLEREK silinmiyor: DB trigger'ı (prevent_timeline_delete,
+    // 00000000000001_legal_kernel_triggers migration.sql:169-172) her DELETE'i errcode 45010
+    // ("immutable_violation: Legal facts are immutable") ile reddediyor — legal-fact append-only
+    // ilkesi test cleanup'ında da geçerli. Güvenli: bu tablo Case'e FK'siz (bare scalar caseId,
+    // schema.prisma model IcrabotTimelineEntry — tek @relation runId→IcrabotEngineRun SetNull),
+    // ve her test beforeEach'te taze randomUUID tenantId/caseId ürettiği için (satır ~87,~111)
+    // kalan satırlar hiçbir sonraki testin scoped assertion'ıyla çakışmaz — yetim ama zararsız.
     await prisma.collection.deleteMany({ where: { tenantId } });
     await prisma.caseDebtor.deleteMany({ where: { case: { tenantId } } });
     await prisma.case.deleteMany({ where: { tenantId } });
@@ -133,6 +137,7 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
   function buildDto(overrides: Partial<CreateCollectionDto> = {}): CreateCollectionDto {
     return {
       caseId: testCaseId,
+      idempotencyKey: randomUUID(), // P0-1: her buildDto() taze key → varsayılan farklı tahsilat
       amount: 5000,
       type: CollectionType.BANK_TRANSFER,
       date: new Date().toISOString(),
@@ -343,18 +348,19 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
   // ── Test 3: External duplicate → ConflictException ────────────────────
 
   describe('Test 3: External duplicate sourceId → ConflictException', () => {
-    it('rejects duplicate BANK_SEIZURE with same sourceId', async () => {
-      const dto = buildDto({
+    it('rejects duplicate BANK_SEIZURE with same sourceId (FARKLI idempotencyKey)', async () => {
+      // İki AYRI istek (farklı idempotencyKey) ama AYNI dış-kaynak sourceId → external dedup.
+      const base = {
         sourceType: CollectionSource.BANK_SEIZURE,
         sourceId: 'BANK-TX-12345',
-      });
+      };
 
       // First payment succeeds
-      await service.create(testTenantId, dto, 'test-user-1');
+      await service.create(testTenantId, buildDto(base), 'test-user-1');
 
-      // Second payment with same sourceId fails
+      // Second payment, different key but same external sourceId → external dedup fires
       await expect(
-        service.create(testTenantId, dto, 'test-user-1'),
+        service.create(testTenantId, buildDto(base), 'test-user-1'),
       ).rejects.toThrow(/Duplicate payment/);
 
       // Only one event exists
@@ -363,20 +369,69 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       });
       expect(events).toHaveLength(1);
     });
+  });
 
-    it('MANUAL source allows same amount without conflict', async () => {
+  // ── Test 3b: İdempotency (P0-1 / S9) ──────────────────────────────────
+  describe('Test 3b: idempotencyKey davranışı', () => {
+    it('AYNI idempotencyKey → replay: ikinci create yeni tahsilat/olay yaratmaz', async () => {
       const dto = buildDto({ sourceType: CollectionSource.MANUAL });
 
-      await service.create(testTenantId, dto, 'test-user-1');
-      const result2 = await service.create(testTenantId, dto, 'test-user-1');
+      const first = await service.create(testTenantId, dto, 'test-user-1');
+      const second = await service.create(testTenantId, dto, 'test-user-1'); // aynı key → replay
 
-      expect(result2).toBeDefined();
+      expect(second.id).toBe(first.id); // aynı tahsilat döner
 
-      // Two events exist
       const events = await (prisma as any).icrabotTimelineEntry.findMany({
         where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
       });
-      expect(events).toHaveLength(2);
+      expect(events).toHaveLength(1); // tek olay
+    });
+
+    it('FARKLI idempotencyKey, aynı tutar/tarih → meşru ikinci ödeme: iki tahsilat', async () => {
+      await service.create(testTenantId, buildDto({ sourceType: CollectionSource.MANUAL }), 'test-user-1');
+      await service.create(testTenantId, buildDto({ sourceType: CollectionSource.MANUAL }), 'test-user-1');
+
+      const events = await (prisma as any).icrabotTimelineEntry.findMany({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+      expect(events).toHaveLength(2); // kaba (case,amount,date) unique OLSAYDI bu bloklanırdı
+    });
+
+    it('AYNI idempotencyKey + FARKLI payload → IDEMPOTENCY_KEY_CONFLICT (sessiz eski-kayıt dönmez)', async () => {
+      const key = randomUUID();
+      await service.create(testTenantId, buildDto({ idempotencyKey: key, amount: 5000 }), 'test-user-1');
+
+      await expect(
+        service.create(testTenantId, buildDto({ idempotencyKey: key, amount: 9999 }), 'test-user-1'),
+      ).rejects.toThrow(/IDEMPOTENCY_KEY_CONFLICT|farklı payload/);
+    });
+
+    it('eksik idempotencyKey → BadRequestException (nullable key ile create edilemez)', async () => {
+      const dto = buildDto();
+      delete (dto as any).idempotencyKey;
+
+      await expect(
+        service.create(testTenantId, dto, 'test-user-1'),
+      ).rejects.toThrow(/idempotencyKey/);
+    });
+
+    it('paralel AYNI idempotencyKey (race) → tek tahsilat', async () => {
+      const dto = buildDto({ sourceType: CollectionSource.MANUAL });
+
+      const results = await Promise.allSettled([
+        service.create(testTenantId, dto, 'test-user-1'),
+        service.create(testTenantId, dto, 'test-user-1'),
+      ]);
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      // İkisi de replay/başarı dönebilir ama tek tahsilat/olay olmalı.
+      expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+
+      const collections = await prisma.collection.findMany({ where: { tenantId: testTenantId } });
+      expect(collections).toHaveLength(1);
+      const events = await (prisma as any).icrabotTimelineEntry.findMany({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+      expect(events).toHaveLength(1);
     });
   });
 

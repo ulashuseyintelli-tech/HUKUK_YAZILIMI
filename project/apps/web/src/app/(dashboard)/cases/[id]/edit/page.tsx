@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Loader2, AlertCircle, Check } from "lucide-react";
 import { api } from "@/lib/api";
+import { CASE_STATUS_OPTIONS } from "@/lib/case-statuses";
 
 interface CaseData {
   id: string;
@@ -39,13 +41,6 @@ const caseTypes = [
   { value: "OTHER", label: "Diğer" },
 ];
 
-const caseStatuses = [
-  { value: "DERDEST", label: "Derdest (Devam Ediyor)" },
-  { value: "KAPALI", label: "Kapalı" },
-  { value: "ASKIDA", label: "Askıda" },
-  { value: "ARSIV", label: "Arşiv" },
-];
-
 const executionPaths = [
   { value: "HACIZ", label: "Haciz Yolu" },
   { value: "IFLAS", label: "İflas Yolu" },
@@ -63,6 +58,9 @@ export default function EditCasePage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [caseData, setCaseData] = useState<CaseData | null>(null);
+  const [originalStatus, setOriginalStatus] = useState<string | undefined>(undefined);
+  // P3-2C-FE: edit-form statü değişimini guarded-edge consumer ile sar (flag OFF → modal hiç açılmaz, davranış değişmez).
+  const { run: runGuardedStatus, modal: guardedStatusModal } = useGuardedAction();
   const [executionOffices, setExecutionOffices] = useState<ExecutionOffice[]>([]);
   const [selectedCity, setSelectedCity] = useState("");
 
@@ -80,6 +78,7 @@ export default function EditCasePage() {
       
       const data = caseRes.data?.data || caseRes.data;
       setCaseData(data);
+      setOriginalStatus(data?.caseStatus); // P3-2B-2: split için yüklenen statü referansı
       setExecutionOffices(officesRes.data?.data || []);
       
       // İcra dairesinin ilini bul
@@ -102,6 +101,9 @@ export default function EditCasePage() {
       setSaving(true);
       setError(null);
       
+      // P3-2B-2: statü DEĞİŞMİŞSE kör PUT'tan çıkar, kanonik /case-status route'una gönder (önce edit, sonra statü).
+      const statusChanged = (caseData.caseStatus || undefined) !== (originalStatus || undefined);
+
       await api.put(`/cases/${caseId}`, {
         fileNumber: caseData.fileNumber,
         executionFileNumber: caseData.executionFileNumber,
@@ -110,9 +112,21 @@ export default function EditCasePage() {
         executionOfficeId: caseData.executionOfficeId,
         startDate: caseData.startDate,
         notes: caseData.notes,
-        caseStatus: caseData.caseStatus,
+        ...(statusChanged ? {} : { caseStatus: caseData.caseStatus }),
       });
-      
+
+      if (statusChanged && caseData.caseStatus) {
+        // P3-2C-FE: kanonik statü değişimi guarded-edge consumer ile sarıldı. Flag OFF → run normal {ok}, modal açılmaz.
+        // CONFIRM_REQUIRED'da vazgeçilirse: edit (PUT) zaten yazıldı ama statü DEĞİŞMEZ → başarı ekranına geçme, formda kal.
+        const statusToSet = caseData.caseStatus;
+        const result = await runGuardedStatus((confirmation) =>
+          api.changeCaseStatus(caseId, statusToSet, "Dosya düzenleme formundan statü güncellendi", confirmation?.token),
+        );
+        if (result.status === "cancelled") {
+          return; // finally setSaving(false) çalışır; formda kalır
+        }
+      }
+
       setSuccess(true);
       setTimeout(() => {
         router.push(`/cases/${caseId}`);
@@ -294,7 +308,7 @@ export default function EditCasePage() {
                 onChange={(e) => updateField('caseStatus', e.target.value)}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
               >
-                {caseStatuses.map(s => (
+                {CASE_STATUS_OPTIONS.map(s => (
                   <option key={s.value} value={s.value}>{s.label}</option>
                 ))}
               </select>
@@ -350,6 +364,9 @@ export default function EditCasePage() {
           </button>
         </div>
       </form>
+
+      {/* P3-2C-FE: guarded-edge confirm modalı (yalnız backend CONFIRM_REQUIRED dönerse görünür; flag OFF → null) */}
+      {guardedStatusModal}
     </div>
   );
 }

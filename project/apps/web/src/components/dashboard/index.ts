@@ -8,7 +8,6 @@ export { AdvancedStats } from "./advanced-stats";
 export { ChartWidget, CaseStatusChart, MonthlyCollectionChart, CaseTrendChart } from "./chart-widget";
 export { DraggableDashboard, DraggableGrid } from "./draggable-dashboard";
 export { LawyerPerformanceDashboard } from "./lawyer-performance";
-export { ClientDashboard } from "./client-dashboard";
 export { StickyNotes } from "./sticky-notes";
 export { ThemeCustomizer } from "./theme-customizer";
 export { CollectionTargetWidget } from "./collection-target";

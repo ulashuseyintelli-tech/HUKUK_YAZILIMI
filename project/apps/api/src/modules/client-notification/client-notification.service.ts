@@ -1,9 +1,17 @@
-import { Injectable, Logger, BadRequestException } from "@nestjs/common";
+import { Injectable, Logger, BadRequestException, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { OfficeService } from "../office/office.service";
 import { fetchWithTimeout } from "../../common/fetch-with-timeout.util";
 import { maskEmail, maskPhone } from "../../common/pii-mask.util";
 import * as nodemailer from "nodemailer";
+
+interface PoaRecentDeliveryOverviewRow {
+  id: string;
+  createdAt: Date;
+  status: string;
+  recipientEmail: string | null;
+  lastError: string | null;
+}
 
 export interface SendEmailDto {
   clientId: string;
@@ -11,6 +19,8 @@ export interface SendEmailDto {
   type: string; // MASRAF_ISTEK, GENEL_BILGILENDIRME, RAPOR, HATIRLATMA
   subject: string;
   body: string;
+  persistedSubject?: string; // Gonderilen subject farkli olabilir; DBde saklanacak safe subject.
+  persistedBody?: string; // Gonderilen body farkli olabilir; DBde saklanacak safe body.
   templateId?: string;
   dedupeKey?: string; // Faz 3 idempotency anahtarı (opsiyonel; ClientNotification.dedupeKey'e yazılır)
 }
@@ -101,6 +111,371 @@ export class ClientNotificationService {
     private officeService: OfficeService
   ) {}
 
+  /**
+   * Bildirim Kontrol Merkezi — büro bildirim altyapısının CANLI sağlık/teşhis özeti.
+   *
+   * Yalnızca GERÇEKTEN gönderim yapan kaynaklardan beslenir:
+   *  - ClientNotification: tebrik motoru + manuel müvekkil e-posta/SMS (son 24s sayaç, son gönderimler, hata grupları)
+   *  - EscalationEvent: geciken görev eskalasyonu bildirim sonuçları (AYRI sayaç — ClientNotification yazmaz, çift sayım yok)
+   *  - Office ayarları: SMTP/SMS/tebrik/eskalasyon "hazır mı" bilgisi (sırlar OKUNMAZ)
+   *
+   * Hukuki e-tebligat NotificationQueue (simüle statü + teslimatsız) BİLİNÇLİ olarak DIŞARIDA bırakılır;
+   * dahil edilse sahte metrik üretirdi. Sırlar (smtpPass/smsApiKey/smsApiSecret) response'a KONMAZ —
+   * burada yalnız host/gönderen/sağlayıcı/başlık okunur.
+   *
+   * /// <remarks>
+   * Çağrıldığı yerler:
+   * - ClientNotificationController.getOverview() → GET /client-notifications/overview (ADMIN-gate) — Bildirim Kontrol Merkezi sayfası
+   * </remarks>
+   */
+  async getNotificationOverview(tenantId: string) {
+    const now = new Date();
+    const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const since7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // Kanal/motor hazır-mı bilgisi (office getter'ları sırları zaten redakte eder)
+    const [smtp, sms, greeting, escalation] = await Promise.all([
+      this.officeService.getSmtpSettings(tenantId),
+      this.officeService.getSmsSettings(tenantId),
+      this.officeService.getGreetingSettings(tenantId),
+      this.officeService.getEscalationSettings(tenantId),
+    ]);
+
+    const [cnStatusGroups, escDeliveryGroups, recentRows, failedRows] = await Promise.all([
+      // Son 24 saat: gerçek müvekkil/tebrik gönderimleri, status bazında
+      this.prisma.clientNotification.groupBy({
+        by: ["status"],
+        where: { tenantId, createdAt: { gte: since24h } },
+        _count: { _all: true },
+      }),
+      // Son 24 saat: eskalasyon bildirim sonuçları (ClientNotification'dan AYRI kaynak)
+      this.prisma.escalationEvent.groupBy({
+        by: ["deliveryStatus"],
+        where: {
+          tenantId,
+          createdAt: { gte: since24h },
+          eventType: { in: ["NOTIFICATION_SENT", "NOTIFICATION_FAILED"] },
+        },
+        _count: { _all: true },
+      }),
+      // Son gönderimler (en yeni 20) — "gitti mi?" sorusu
+      this.prisma.clientNotification.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          createdAt: true,
+          channel: true,
+          type: true,
+          status: true,
+          subject: true,
+          errorMessage: true,
+          client: {
+            select: { displayName: true, firstName: true, lastName: true, companyName: true },
+          },
+        },
+      }),
+      // "Neden gitmedi?" — son 7 günün başarısızları (hata mesajına göre gruplanır)
+      this.prisma.clientNotification.findMany({
+        where: { tenantId, status: "FAILED", createdAt: { gte: since7d } },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        select: { errorMessage: true, channel: true, createdAt: true },
+      }),
+    ]);
+
+    const [poaStatusGroups, poaRecentRows, poaFailedRows, poaLastSent, poaLastFailed] = await Promise.all([
+      (this.prisma as any).poaExpiryNotificationDelivery.groupBy({
+        by: ["status"],
+        where: { tenantId },
+        _count: { _all: true },
+      }),
+      (this.prisma as any).poaExpiryNotificationDelivery.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          createdAt: true,
+          status: true,
+          recipientEmail: true,
+          recipientSource: true,
+          lastError: true,
+          client: { select: { displayName: true, firstName: true, lastName: true, companyName: true } },
+        },
+      }),
+      (this.prisma as any).poaExpiryNotificationDelivery.findMany({
+        where: { tenantId, status: "FAILED", updatedAt: { gte: since7d } },
+        orderBy: { updatedAt: "desc" },
+        take: 200,
+        select: { lastError: true, updatedAt: true },
+      }),
+      (this.prisma as any).poaExpiryNotificationDelivery.findFirst({
+        where: { tenantId, status: "SENT" },
+        orderBy: { sentAt: "desc" },
+        select: { sentAt: true, updatedAt: true },
+      }),
+      (this.prisma as any).poaExpiryNotificationDelivery.findFirst({
+        where: { tenantId, status: "FAILED" },
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true },
+      }),
+    ]);
+    const sumGroup = (
+      groups: Array<Record<string, any>>,
+      key: string,
+      value: string
+    ) => groups.filter((g) => g[key] === value).reduce((s, g) => s + (g._count?._all ?? 0), 0);
+
+    const last24hSent = sumGroup(cnStatusGroups as any, "status", "SENT");
+    const last24hFailed = sumGroup(cnStatusGroups as any, "status", "FAILED");
+    const last24hPending = sumGroup(cnStatusGroups as any, "status", "PENDING");
+    const last24hEscalationSent = sumGroup(escDeliveryGroups as any, "deliveryStatus", "SENT");
+    const last24hEscalationFailed = sumGroup(escDeliveryGroups as any, "deliveryStatus", "FAILED");
+
+    const poaExpiry = {
+      pending: sumGroup(poaStatusGroups as any, "status", "PENDING"),
+      sent: sumGroup(poaStatusGroups as any, "status", "SENT"),
+      failed: sumGroup(poaStatusGroups as any, "status", "FAILED"),
+      lastSentAt: poaLastSent?.sentAt ? poaLastSent.sentAt.toISOString() : null,
+      lastFailureAt: poaLastFailed?.updatedAt ? poaLastFailed.updatedAt.toISOString() : null,
+    };
+
+    // Hata teşhisi: aynı hata mesajını grupla (neden gitmedi?)
+    const failureMap = new Map<
+      string,
+      { reason: string; count: number; channel: string | null; lastSeenAt: Date }
+    >();
+    for (const r of failedRows) {
+      const reason = (r.errorMessage || "Bilinmeyen hata").trim();
+      const existing = failureMap.get(reason);
+      if (existing) {
+        existing.count += 1;
+        if (r.createdAt > existing.lastSeenAt) existing.lastSeenAt = r.createdAt;
+      } else {
+        failureMap.set(reason, { reason, count: 1, channel: r.channel ?? null, lastSeenAt: r.createdAt });
+      }
+    }
+    for (const r of poaFailedRows) {
+      const reason = (r.lastError || "POA teslimat hatasi").trim();
+      const existing = failureMap.get(reason);
+      if (existing) {
+        existing.count += 1;
+        if (r.updatedAt > existing.lastSeenAt) existing.lastSeenAt = r.updatedAt;
+      } else {
+        failureMap.set(reason, { reason, count: 1, channel: "EMAIL", lastSeenAt: r.updatedAt });
+      }
+    }
+    const failureGroups = Array.from(failureMap.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+      .map((f) => ({
+        reason: f.reason,
+        count: f.count,
+        channel: f.channel,
+        lastSeenAt: f.lastSeenAt.toISOString(),
+      }));
+
+    const displayNameOf = (c: any): string | null =>
+      c?.displayName ||
+      [c?.firstName, c?.lastName].filter(Boolean).join(" ").trim() ||
+      c?.companyName ||
+      null;
+
+    const clientRecentDeliveries = recentRows.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt.toISOString(),
+      channel: r.channel,
+      type: r.type,
+      status: r.status,
+      subject: r.subject,
+      recipientName: displayNameOf((r as any).client),
+      errorMessage: r.errorMessage,
+    }));
+
+    const poaRecentDeliveries = (poaRecentRows as PoaRecentDeliveryOverviewRow[]).map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt.toISOString(),
+      channel: "EMAIL",
+      type: "POA_EXPIRY",
+      status: r.status,
+      subject: "Vekalet süresi uyarısı",
+      recipientName: maskEmail(r.recipientEmail),
+      errorMessage: r.lastError,
+    }));
+
+    const recentDeliveries = [...clientRecentDeliveries, ...poaRecentDeliveries]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 20);
+
+    // Motor durumları — gerçeğe sadık (POA artık gerçek delivery tablosundan beslenir)
+    const escChannels = [
+      escalation.opEmailEnabled && "EMAIL",
+      escalation.opSmsEnabled && "SMS",
+    ].filter(Boolean) as string[];
+    const escAssignees =
+      (escalation.escalationManagerLawyerIds?.length || 0) +
+      (escalation.escalationFounderLawyerIds?.length || 0);
+
+    const engines = {
+      greeting: {
+        key: "greeting",
+        status: greeting.autoGreetingEnabled ? "ACTIVE" : "OFF",
+        time: greeting.autoGreetingTime || null,
+      },
+      escalation: {
+        key: "escalation",
+        status: "ACTIVE", // operasyonel eskalasyon cron'u koşulsuz çalışır
+        reminderDays: escalation.opReminderDays ?? null,
+        founderDays: escalation.opFounderDays ?? null,
+        channels: escChannels,
+        assignees: escAssignees,
+        last24hSent: last24hEscalationSent,
+        last24hFailed: last24hEscalationFailed,
+      },
+      poa: {
+        key: "poa",
+        status: "ACTIVE",
+        reason: "DELIVERY_WIRED",
+        poaExpiry,
+      },
+    };
+
+    const channels = {
+      email: {
+        configured: !!smtp.smtpHost,
+        host: smtp.smtpHost || null,
+        sender: smtp.smtpFromEmail || smtp.smtpUser || null,
+      },
+      sms: {
+        configured: !!sms.smsProvider,
+        provider: sms.smsProvider || null,
+        title: sms.smsSender || null,
+      },
+    };
+
+    const activeEngines = [engines.greeting, engines.escalation, engines.poa].filter(
+      (e) => e.status === "ACTIVE"
+    ).length;
+    const attentionEngines = 0;
+    // Planlandı listesi statiktir (motoru olmayan, sahte aktiflik gösterilmeyen özellikler)
+    const plannedEngines = 5;
+
+    return {
+      generatedAt: now.toISOString(),
+      channels,
+      engines,
+      stats: {
+        last24hSent,
+        last24hFailed,
+        last24hPending,
+        last24hEscalationSent,
+        last24hEscalationFailed,
+        activeEngines,
+        attentionEngines,
+        plannedEngines,
+      },
+      recentDeliveries,
+      failureGroups,
+    };
+  }
+
+  /**
+   * Bildirim Kontrol Merkezi — seçili GERÇEK müvekkile GERÇEK [TEST] bildirimi (PR-N3).
+   *
+   * Mevcut sendEmail/sendSms yolunu type:"TEST" + NÖTR içerikle yeniden kullanır:
+   * gerçek gönderim yapılır ve sonuç ClientNotification'a (SENT/FAILED) loglanır.
+   * Yeni model / migration / transport YOK; rastgele alıcı YOK (clientId zorunlu, tenant-scoped).
+   * Alıcı yanıtta maskelenir; sağlayıcı hata mesajı sır/uzunluk açısından sanitize edilir.
+   *
+   * /// <remarks>
+   * Çağrıldığı yerler:
+   * - ClientNotificationController.testSend() → POST /client-notifications/test-send (ADMIN) — Kontrol Merkezi "Gerçek Test Gönderimi"
+   * </remarks>
+   */
+  async testSend(
+    tenantId: string,
+    userId: string,
+    params: { clientId: string; channel: "EMAIL" | "SMS" }
+  ): Promise<{
+    success: boolean;
+    channel: "EMAIL" | "SMS";
+    status: "SENT" | "FAILED";
+    recipient?: string;
+    notificationId?: string;
+    errorMessage?: string;
+  }> {
+    const { clientId, channel } = params;
+
+    // Müvekkil bu tenant'ta gerçekten var mı? Yoksa 404 — gönderim DENENMEZ
+    // (cross-tenant / geçersiz id engellenir, hiçbir gerçek mesaj çıkmaz).
+    const exists = await this.prisma.client.findFirst({
+      where: { id: clientId, tenantId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException("Müvekkil bulunamadı");
+    }
+
+    // Nötr, [TEST] etiketli içerik — dosya/borç/vekalet/müvekkil verisi İÇERMEZ.
+    const TEST_SUBJECT = "[TEST] Hukuk Platform Bildirim Testi";
+    const TEST_EMAIL_HTML =
+      "<p>Bu bir <strong>test bildirimidir</strong>.</p>" +
+      "<p>Bu mesaj, hukuk platformundaki e-posta bildirim kanalının çalıştığını doğrulamak " +
+      "amacıyla gönderilmiştir. Herhangi bir dosya, borç, vekalet veya hukuki işlem bildirimi değildir.</p>";
+    const TEST_SMS_TEXT =
+      "[TEST] Hukuk Platform test mesajıdır. Herhangi bir hukuki işlem bildirimi değildir.";
+
+    try {
+      if (channel === "EMAIL") {
+        const r = await this.sendEmail(tenantId, userId, {
+          clientId,
+          type: "TEST",
+          subject: TEST_SUBJECT,
+          body: TEST_EMAIL_HTML,
+        });
+        return {
+          success: true,
+          channel,
+          status: "SENT",
+          recipient: maskEmail(r.recipient),
+          notificationId: r.notificationId,
+        };
+      }
+      const r = await this.sendSms(tenantId, userId, {
+        clientId,
+        type: "TEST",
+        body: TEST_SMS_TEXT,
+      });
+      return {
+        success: true,
+        channel,
+        status: "SENT",
+        recipient: maskPhone(r.recipient),
+        notificationId: r.notificationId,
+      };
+    } catch (error: any) {
+      // sendEmail/sendSms başarısızlıkta BadRequestException FIRLATIR (ve gönderim-hatasında
+      // FAILED satırını zaten yazar). Burada dürüst bir FAILED sonucuna çeviriyoruz ki UI anında
+      // gösterebilsin; sağlayıcı ham mesajındaki olası sırları redakte ediyoruz.
+      return {
+        success: false,
+        channel,
+        status: "FAILED",
+        errorMessage: this.sanitizeTestError(error?.message),
+      };
+    }
+  }
+
+  /** Test gönderim hata mesajını UI'a vermeden önce sır/uzunluk açısından temizler. */
+  private sanitizeTestError(message?: string): string {
+    const raw = (message || "Gönderim başarısız").toString();
+    return raw
+      .replace(/\b(pass(?:word)?|secret|api[_-]?key|api[_-]?secret|token)\b\s*[:=]?\s*\S+/gi, "$1=***")
+      .slice(0, 300);
+  }
+
   // E-posta gönder
   async sendEmail(tenantId: string, userId: string, dto: SendEmailDto) {
     // Müvekkil bilgilerini al
@@ -152,8 +527,8 @@ export class ClientNotificationService {
         caseId: dto.caseId,
         channel: "EMAIL",
         type: dto.type,
-        subject: dto.subject,
-        body: dto.body,
+        subject: dto.persistedSubject ?? dto.subject,
+        body: dto.persistedBody ?? dto.body,
         status: "PENDING",
         sentById: userId,
         metadata: dto.templateId ? { templateId: dto.templateId } : undefined,

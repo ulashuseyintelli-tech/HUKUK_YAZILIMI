@@ -1,8 +1,36 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PoaStatus, PoaScopeType } from "@prisma/client";
 import * as fs from "fs";
 import * as path from "path";
+import { AuditService } from "../audit/audit.service";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import type { AuditActor } from "@/modules/client/client.service";
+
+export const POA_UPLOAD_ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/jpg"] as const;
+export const POA_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
+export interface ClientWorkspacePoaUploadResult {
+  clientId: string;
+  poaId: string;
+  hasFile: true;
+  fileSize: number | null;
+  mimeType: string | null;
+}
+
+export function validatePoaUploadFile(file: Express.Multer.File | undefined): asserts file is Express.Multer.File {
+  if (!file) {
+    throw new BadRequestException("Dosya yuklenmedi");
+  }
+
+  if (!POA_UPLOAD_ALLOWED_MIME_TYPES.includes(file.mimetype as any)) {
+    throw new BadRequestException("Sadece PDF ve goruntu dosyalari (JPG, PNG) yuklenebilir");
+  }
+
+  if (file.size > POA_UPLOAD_MAX_BYTES) {
+    throw new BadRequestException("Dosya boyutu 10MB'dan buyuk olamaz");
+  }
+}
 
 // ── PR-2: POA semantik idempotency saf yardımcıları ──
 // Dedupe anahtarı: clientId + normalizedNotaryName + dateIssued (aktif). poaNumber/yevmiyeNo
@@ -82,7 +110,13 @@ export interface PoaValidationResult {
 export class PoaService {
   private readonly logger = new Logger(PoaService.name);
 
-  constructor(private prisma: PrismaService) {}
+  // P1A: OfficeApprovalService revoke capability-gate için (ClientService.assertCanManageLifecycle /
+  // LawyerService.assertCanManageLawyerLifecycle ile birebir desen). AuditService @Global (AuditModule).
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
+  ) {}
 
   /**
    * Müvekkilin tüm vekaletlerini getir
@@ -250,22 +284,72 @@ export class PoaService {
   }
 
   /**
-   * Vekalet sil
+   * P1A (owner-locked 2026-07-02) — Vekaletname kalıcı hukuki yetki kaydı: fiziksel silme YOK.
+   * ClientService.remove() / LawyerService.delete() ile BİREBİR desen (reuse, yeni altyapı YOK):
+   * PARTNER veya canApproveOfficeActions=true delege avukat. PoaLawyer/PoaExpiryNotificationDelivery
+   * ilişkilerine DOKUNULMAZ — status=REVOKED + isActive=false, checkValidPoa()'nın zaten okuduğu
+   * aynı iki alan (böylece revoke aynı anda avukatın yetkisini de geçersiz kılar).
    */
-  async delete(id: string, tenantId: string) {
-    await this.findOne(id, tenantId); // Yetki kontrolü
+  private async assertCanManagePoaLifecycle(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        "Vekaleti iptal etme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)"
+      );
+    }
+  }
 
-    await this.prisma.clientPowerOfAttorney.delete({ where: { id } });
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - PoaController.delete() → DELETE /poa/:id (userId req.user.id'den; Task P1A)
+  ///
+  /// Task P1A: bu artık fiziksel silme DEĞİL, status=REVOKED + isActive=false iptalidir. Zaten
+  /// iptal edilmiş bir kayıt için idempotent şekilde tekrar uygulanır (ClientService.remove() /
+  /// LawyerService.delete() ile birebir); ayrı bir "already revoked" dalı YOK.
+  /// </remarks>
+  async delete(id: string, tenantId: string, actor?: AuditActor) {
+    const existing = await this.findOne(id, tenantId); // Yetki kontrolü + old snapshot
 
-    this.logger.log(`Vekalet silindi: ${id}`);
+    // P1A: iptal yetkisi — transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz).
+    await this.assertCanManagePoaLifecycle(actor?.userId, tenantId);
 
-    return { success: true };
+    // P1A: revoke + audit AYNI transaction (old snapshot revoke ÖNCESİ alındı).
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.clientPowerOfAttorney.updateMany({
+        where: { id, client: { tenantId } },
+        data: { status: PoaStatus.REVOKED, isActive: false },
+      });
+      if (count === 0) throw new NotFoundException("Vekalet bulunamadı");
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: "POA_REVOKE",
+        entityType: "POA",
+        entityId: id,
+        userId: actor?.userId,
+        oldValues: existing,
+        newValues: { status: PoaStatus.REVOKED, isActive: false },
+      });
+
+      this.logger.log(`Vekalet iptal edildi: ${id}`);
+
+      return { success: true };
+    });
   }
 
   /**
    * Vekalete avukat ekle
+   *
+   * @remarks CBND-2 (H6): poaId tenant doğrulaması removeLawyer ile AYNI desende (findOne → Yetki
+   * kontrolü). Önceden yalnız lawyerIds tenant-doğrulanıyordu; poaId doğrulanmadan poaLawyer.createMany
+   * çalıştırılıyordu → cross-tenant poaId (tahmin/sızma ile ele geçirilmiş cuid) ile yabancı tenant'ın
+   * vekaletine yazılabiliyordu (ilk eklenen isPrimary:true → hedef POA'nın mevcut primary'siyle çift-
+   * primary bozulması + findOne include ile yabancı avukat adı/baro no görünürlüğü). İç çağıranlar
+   * (create() satır ~220, update() satır ~252) zaten aynı tenant'a ait id kullanıyor — bu guard onlar
+   * için no-op (fazladan bir tenant-scoped sorgu, davranış değişmez).
    */
   async addLawyers(poaId: string, lawyerIds: string[], tenantId: string) {
+    await this.findOne(poaId, tenantId); // Yetki kontrolü (removeLawyer ile aynı desen)
+
     // Avukatların varlığını kontrol et
     const lawyers = await this.prisma.lawyer.findMany({
       where: { id: { in: lawyerIds }, tenantId },
@@ -580,6 +664,43 @@ export class PoaService {
       filePath: updated.filePath,
       fileSize: updated.fileSize,
       mimeType: updated.mimeType,
+    };
+  }
+
+  /**
+   * Client Workspace POA upload V1 safe wrapper.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.uploadPoaFile() -> POST /clients/:clientId/poas/:poaId/file
+   * </remarks>
+   */
+  async uploadFileForClientWorkspace(
+    clientId: string,
+    poaId: string,
+    file: Express.Multer.File,
+    tenantId: string,
+  ): Promise<ClientWorkspacePoaUploadResult> {
+    const poa = await this.prisma.clientPowerOfAttorney.findFirst({
+      where: {
+        id: poaId,
+        clientId,
+        client: { id: clientId, tenantId, isActive: true },
+      },
+      select: { id: true, clientId: true },
+    });
+    if (!poa) {
+      throw new NotFoundException("Vekalet bulunamadi");
+    }
+
+    const uploaded = await this.uploadFile(poaId, file, tenantId);
+
+    return {
+      clientId: poa.clientId,
+      poaId: poa.id,
+      hasFile: true,
+      fileSize: uploaded.fileSize ?? null,
+      mimeType: uploaded.mimeType ?? null,
     };
   }
 

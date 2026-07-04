@@ -1,19 +1,24 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   Prisma,
   BalanceLedgerType,
   ClientStatementStatus,
   ClientStatementLineType,
+  CollectionDispositionLineType,
 } from '@prisma/client';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
+import { AuditService } from '@/modules/audit/audit.service';
 import {
   CreateClientStatementDto,
+  CreateClientLevelStatementDto,
   SupersedeClientStatementDto,
 } from './dto/client-statement.dto';
 
 const ZERO = new Prisma.Decimal(0);
+/** Faz B: client-level ekstre kapsamı (müvekkilin alacaklı olduğu dosyalar). */
+const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
 
 /** Hesaplanmış tek satır (DB'ye yazılmadan önce). */
 interface LineDraft {
@@ -21,6 +26,10 @@ interface LineDraft {
   lineType: ClientStatementLineType;
   refType: string;
   refId: string;
+  // Faz B-0: satırın geldiği dosya. case-level ekstrede null (parent caseId verir); client-level
+  // ekstrede ZORUNLU doldurulur (parent caseId=null → satır hangi dosyadan geldiğini taşımalı).
+  caseId: string | null;
+  caseClientId: string | null; // M2: proceeds satırının alacaklı atfı (BalanceLedger/ExpenseRequest'te null)
   debit: Prisma.Decimal;
   credit: Prisma.Decimal;
   runningBalance: Prisma.Decimal;
@@ -49,6 +58,7 @@ export class ClientStatementService {
     private prisma: PrismaService,
     private dispatcher: NotificationDispatcherService,
     private office: OfficeService,
+    private audit: AuditService,
   ) {}
 
   /**
@@ -63,10 +73,31 @@ export class ClientStatementService {
     const { periodStart, periodEnd } = this.parsePeriod(dto.periodStart, dto.periodEnd);
     await this.assertCaseAndClient(tenantId, caseId, dto.clientId);
 
-    const snap = await this.collect(tenantId, caseId, periodStart, periodEnd, dto.includeRequests ?? true);
+    const caseClientId = await this.resolveCaseClientId(tenantId, caseId, dto.clientId);
+    const snap = await this.collect(tenantId, caseId, periodStart, periodEnd, dto.includeRequests ?? true, caseClientId);
 
-    const created = await this.prisma.$transaction((tx) =>
-      this.persist(tx, {
+    const created = await this.prisma.$transaction(async (tx) => {
+      // Q7: PERIOD-scoped tek-ACTIVE guard (tenant+case+client+periodStart+periodEnd). Global tek-ACTIVE
+      // DEĞİL → farklı dönemler aynı anda ACTIVE olabilir. @@unique YOK (migration istenmedi); bu yüzden
+      // CONCURRENCY için advisory xact lock (ClientPayout deseni): count+create aynı tx'te SERIALIZE olur →
+      // iki eşzamanlı istek ikisi de count=0 görüp çift ACTIVE üretemez. Aynı dönem ACTIVE varsa → supersede.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.activeLockKey(tenantId, caseId, dto.clientId, periodStart, periodEnd)}))`;
+
+      const activeCount = await tx.clientStatement.count({
+        where: {
+          tenantId,
+          caseId,
+          clientId: dto.clientId,
+          periodStart,
+          periodEnd,
+          status: ClientStatementStatus.ACTIVE,
+        },
+      });
+      if (activeCount > 0) {
+        throw new ConflictException('Bu dönem için aktif ekstre zaten var. Yenilemek için Supersede kullanın.');
+      }
+
+      const fresh = await this.persist(tx, {
         tenantId,
         caseId,
         clientId: dto.clientId,
@@ -76,13 +107,105 @@ export class ClientStatementService {
         closing: snap.closing,
         note: dto.note ?? null,
         userId,
-      }, snap.lines),
-    );
+      }, snap.lines);
+
+      // Q5: mutation audit (aynı tx; logInTransaction hata yutmaz → audit yazılamazsa create rollback).
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_STATEMENT_GENERATED',
+        entityType: 'ClientStatement',
+        entityId: fresh.id,
+        userId,
+        description: `Müvekkil ekstresi oluşturuldu (${periodStart.toISOString().slice(0, 10)} – ${periodEnd.toISOString().slice(0, 10)})`,
+        metadata: {
+          caseId,
+          clientId: dto.clientId,
+          periodStart: periodStart.toISOString(),
+          periodEnd: periodEnd.toISOString(),
+          closingBalance: snap.closing.toString(),
+          lineCount: snap.lines.length,
+        },
+      });
+
+      return fresh;
+    });
 
     const result = await this.findOne(tenantId, created.id);
     // State commit edildi → "ekstre hazır" maili BEST-EFFORT (yalnız create — m34-1; supersede/void mail YOK)
     await this.notifyStatementReady(tenantId, userId, result);
     return result;
+  }
+
+  /**
+   * Faz B — CLIENT-LEVEL (genel) ekstre üret (caseId=null). Müvekkilin TÜM eligible dosyalarındaki
+   * YALNIZ CLIENT_SPECIFIC hareketlerinden snapshot. CASE_CONTEXT (borçlu tahsilatı/dosya-avans) GİRMEZ
+   * (dosya geneli, müvekkile atfedilmez). runningBalance = "Ekstre Net Bakiyesi" (müvekkile özgü net).
+   *
+   * Mail YOK (caseId=null → case-bazlı "ekstre hazır" tetiklenmez). case-level create() AYNEN korunur.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientStatementController.createClientLevel() → POST /client-statements/client/:clientId
+   * </remarks>
+   */
+  async createClientLevel(tenantId: string, clientId: string, userId: string, dto: CreateClientLevelStatementDto) {
+    const { periodStart, periodEnd } = this.parsePeriod(dto.periodStart, dto.periodEnd);
+    await this.assertClient(tenantId, clientId);
+    const snap = await this.collectClientLevel(tenantId, clientId, periodStart, periodEnd);
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      // Period-scoped tek-ACTIVE guard — CLIENT-LEVEL scope (caseId=null). Advisory lock AYRI namespace
+      // (activeLockKey null→'__CLIENT__') → case-level kilitle çakışmaz. count where caseId:null → Prisma IS NULL.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.activeLockKey(tenantId, null, clientId, periodStart, periodEnd)}))`;
+
+      const activeCount = await tx.clientStatement.count({
+        where: {
+          tenantId,
+          clientId,
+          caseId: null,
+          periodStart,
+          periodEnd,
+          status: ClientStatementStatus.ACTIVE,
+        },
+      });
+      if (activeCount > 0) {
+        throw new ConflictException('Bu dönem için aktif genel (client-level) ekstre zaten var. Yenilemek için Supersede kullanın.');
+      }
+
+      const fresh = await this.persist(tx, {
+        tenantId,
+        caseId: null,
+        clientId,
+        periodStart,
+        periodEnd,
+        opening: snap.opening,
+        closing: snap.closing,
+        note: dto.note ?? null,
+        userId,
+      }, snap.lines);
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_STATEMENT_GENERATED',
+        entityType: 'ClientStatement',
+        entityId: fresh.id,
+        userId,
+        description: `Müvekkil GENEL ekstresi oluşturuldu (client-level; ${periodStart.toISOString().slice(0, 10)} – ${periodEnd.toISOString().slice(0, 10)})`,
+        metadata: {
+          scope: 'CLIENT_LEVEL',
+          clientId,
+          caseId: null,
+          periodStart: periodStart.toISOString(),
+          periodEnd: periodEnd.toISOString(),
+          closingBalance: snap.closing.toString(),
+          lineCount: snap.lines.length,
+        },
+      });
+
+      return fresh;
+    });
+
+    return this.findOne(tenantId, created.id);
   }
 
   /**
@@ -100,9 +223,41 @@ export class ClientStatementService {
       throw new BadRequestException(`Yalnız ACTIVE ekstre supersede edilebilir (durum: ${old.status})`);
     }
     const { periodStart, periodEnd } = this.parsePeriod(dto.periodStart, dto.periodEnd);
-    const snap = await this.collect(tenantId, old.caseId, periodStart, periodEnd, dto.includeRequests ?? true);
+    // Faz B: old.caseId=null → client-level yenileme (collectClientLevel); aksi halde case-level (mevcut).
+    const snap =
+      old.caseId === null
+        ? await this.collectClientLevel(tenantId, old.clientId, periodStart, periodEnd)
+        : await this.collect(
+            tenantId,
+            old.caseId,
+            periodStart,
+            periodEnd,
+            dto.includeRequests ?? true,
+            await this.resolveCaseClientId(tenantId, old.caseId, old.clientId),
+          );
 
     const created = await this.prisma.$transaction(async (tx) => {
+      // Q7: yeni dönem, supersede edilen DIŞINDA bir ACTIVE ile çakışmamalı (period-scoped tek-ACTIVE).
+      // Concurrency: create() ile AYNI advisory lock anahtarı (tenant+case+client+period) → eşzamanlı
+      // create/supersede serialize olur (count+yazma aynı tx). Dönem korunuyorsa tek ACTIVE = old →
+      // id:{not:old.id} ile elenir, çakışma yok.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.activeLockKey(tenantId, old.caseId, old.clientId, periodStart, periodEnd)}))`;
+
+      const activeCount = await tx.clientStatement.count({
+        where: {
+          tenantId,
+          caseId: old.caseId,
+          clientId: old.clientId,
+          periodStart,
+          periodEnd,
+          status: ClientStatementStatus.ACTIVE,
+          id: { not: old.id },
+        },
+      });
+      if (activeCount > 0) {
+        throw new ConflictException('Bu dönem için başka bir aktif ekstre var; önce onu yenileyin/void edin.');
+      }
+
       const fresh = await this.persist(tx, {
         tenantId,
         caseId: old.caseId,
@@ -123,6 +278,24 @@ export class ClientStatementService {
           supersededAt: new Date(),
         },
       });
+
+      // Q5: supersede audit (aynı tx). Yalnız verilen old.id SUPERSEDED olur; entityId=old.id.
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_STATEMENT_SUPERSEDED',
+        entityType: 'ClientStatement',
+        entityId: old.id,
+        userId,
+        description: `Müvekkil ekstresi yenilendi (eski: ${old.id} → yeni: ${fresh.id})`,
+        metadata: {
+          oldStatementId: old.id,
+          newStatementId: fresh.id,
+          supersededById: fresh.id, // geriye-uyum (eski alan adı)
+          periodStart: periodStart.toISOString(),
+          periodEnd: periodEnd.toISOString(),
+        },
+      });
+
       return fresh;
     });
 
@@ -142,14 +315,26 @@ export class ClientStatementService {
     if (existing.status !== ClientStatementStatus.ACTIVE) {
       throw new BadRequestException(`Yalnız ACTIVE ekstre void edilebilir (durum: ${existing.status})`);
     }
-    await this.prisma.clientStatement.update({
-      where: { id },
-      data: {
-        status: ClientStatementStatus.VOID,
-        voidedAt: new Date(),
-        voidedById: userId,
-        voidNote: note ?? null,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.clientStatement.update({
+        where: { id },
+        data: {
+          status: ClientStatementStatus.VOID,
+          voidedAt: new Date(),
+          voidedById: userId,
+          voidNote: note ?? null,
+        },
+      });
+      // Q5: void audit (aynı tx; hata yutmaz).
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_STATEMENT_VOIDED',
+        entityType: 'ClientStatement',
+        entityId: id,
+        userId,
+        description: 'Müvekkil ekstresi geçersiz kılındı (VOID)',
+        metadata: { note: note ?? null },
+      });
     });
     return this.findOne(tenantId, id);
   }
@@ -165,6 +350,22 @@ export class ClientStatementService {
   async listByCase(tenantId: string, caseId: string, status?: ClientStatementStatus) {
     return this.prisma.clientStatement.findMany({
       where: { tenantId, caseId, status: status ?? ClientStatementStatus.ACTIVE },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Faz B — CLIENT-LEVEL (genel) ekstre listesi (caseId=null; default ACTIVE). case-level ekstreleri
+   * DÖNDÜRMEZ (caseId:null filtresi). listByCase ile karşılıklı dışlayıcı.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientStatementController.listByClient() → GET /client-statements/client/:clientId?status=
+   * </remarks>
+   */
+  async listByClient(tenantId: string, clientId: string, status?: ClientStatementStatus) {
+    return this.prisma.clientStatement.findMany({
+      where: { tenantId, clientId, caseId: null, status: status ?? ClientStatementStatus.ACTIVE },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -197,8 +398,11 @@ export class ClientStatementService {
   private async notifyStatementReady(
     tenantId: string,
     userId: string,
-    st: { id: string; clientId: string; caseId: string; periodStart: Date; periodEnd: Date; closingBalance: Prisma.Decimal },
+    st: { id: string; clientId: string; caseId: string | null; periodStart: Date; periodEnd: Date; closingBalance: Prisma.Decimal },
   ): Promise<void> {
+    // Faz B: client-level ekstre (caseId=null) case-bazlı "ekstre hazır" maili tetiklemez.
+    if (!st.caseId) return;
+    const caseId = st.caseId;
     try {
       const [client, kase, office] = await Promise.all([
         this.prisma.client.findFirst({
@@ -206,7 +410,7 @@ export class ClientStatementService {
           select: { displayName: true, name: true, firstName: true, lastName: true },
         }),
         this.prisma.case.findFirst({
-          where: { id: st.caseId, tenantId },
+          where: { id: caseId, tenantId },
           select: { fileNumber: true, executionFileNumber: true },
         }),
         this.office.getOrCreate(tenantId),
@@ -224,7 +428,7 @@ export class ClientStatementService {
 
       await this.dispatcher.dispatch(tenantId, userId, {
         clientId: st.clientId,
-        caseId: st.caseId,
+        caseId,
         templateCode: 'STATEMENT_READY',
         type: 'STATEMENT_READY',
         tokens,
@@ -247,6 +451,16 @@ export class ClientStatementService {
     return { periodStart, periodEnd };
   }
 
+  /**
+   * Period-scoped tek-ACTIVE advisory-lock anahtarı. create() ve supersede() AYNI anahtarı kullanır →
+   * aynı tenant+case+client+dönem için eşzamanlı istekler tx süresince serialize olur (çift ACTIVE engellenir).
+   */
+  private activeLockKey(tenantId: string, caseId: string | null, clientId: string, periodStart: Date, periodEnd: Date): string {
+    // Faz B: client-level (caseId=null) için AYRI namespace ('__CLIENT__') → case-level kilitle çakışmaz,
+    // ama aynı client+dönem için eşzamanlı client-level istekler YİNE serialize olur. Sentinel cuid ile çakışmaz.
+    return `client-statement:${tenantId}:${caseId ?? '__CLIENT__'}:${clientId}:${periodStart.toISOString()}:${periodEnd.toISOString()}`;
+  }
+
   private async assertCaseAndClient(tenantId: string, caseId: string, clientId: string) {
     const caseItem = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
     if (!caseItem) throw new NotFoundException('Takip bulunamadı');
@@ -254,11 +468,239 @@ export class ClientStatementService {
     if (!client) throw new NotFoundException('Müvekkil bulunamadı');
   }
 
+  /** Faz B — client-level ekstre: yalnız müvekkil var mı (tenant içi). caseId yok. */
+  private async assertClient(tenantId: string, clientId: string) {
+    const client = await this.prisma.client.findFirst({ where: { id: clientId, tenantId }, select: { id: true } });
+    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
+  }
+
+  /**
+   * Faz B — CLIENT-LEVEL snapshot: müvekkilin TÜM eligible (ALACAKLI/ORTAK_ALACAKLI) dosyalarındaki
+   * YALNIZ CLIENT_SPECIFIC hareketleri. CASE_CONTEXT (Collection/BalanceLedger/dosya-geneli) DAHİL DEĞİL.
+   * Her satır caseId ZORUNLU (parent.caseId=null). runningBalance = müvekkile özgü NET pozisyon
+   * (= Faz A offsettableNetPosition'ın immutable hali). Sign: müvekkile-borç + ; masraf-borcu − .
+   *
+   * Kaynak/etki (KİLİTLİ — Ulaş):
+   *   CLIENT_PAYABLE disposition (POSTED, manualReversalRequiredAt null) → credit + (CASE_COLLECTION_PAYABLE)
+   *   ClientPayout (RECORDED)                                            → debit −  (CLIENT_PAYOUT_SENT)
+   *   ExpenseRequest (≠CANCELLED)                                        → debit −  (EXPENSE_REQUESTED*)
+   *   ExpensePayment                                                     → credit + (CLIENT_PAYMENT*)
+   *   (*) lineType kategorisi mevcut enum'dan; client-level'da debit/credit ile bakiyeyi OYNATIR
+   *       (case-level "0-etki" notu yalnız case-level içindir — yeni enum/migration EKLENMEDİ).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientStatementService.createClientLevel() / supersede() (old.caseId=null dalı)
+   * </remarks>
+   */
+  private async collectClientLevel(
+    tenantId: string,
+    clientId: string,
+    periodStart: Date,
+    periodEnd: Date,
+  ): Promise<{ opening: Prisma.Decimal; closing: Prisma.Decimal; lines: LineDraft[] }> {
+    // Müvekkilin eligible CaseClient bağları (proceeds/payout scope) + caseId map.
+    const ccRows = await this.prisma.caseClient.findMany({
+      where: { clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId } },
+      select: { id: true, caseId: true },
+    });
+    const ccIds = ccRows.map((r) => r.id);
+
+    // ── opening = dönem ÖNCESİ net CLIENT_SPECIFIC pozisyon (devir) ──
+    let opening = ZERO;
+    if (ccIds.length) {
+      const payableBefore = await this.prisma.collectionDispositionLine.aggregate({
+        _sum: { amount: true },
+        where: {
+          type: CollectionDispositionLineType.CLIENT_PAYABLE,
+          caseClientId: { in: ccIds },
+          disposition: { tenantId, status: 'POSTED', manualReversalRequiredAt: null, postedAt: { lt: periodStart } },
+        },
+      });
+      opening = opening.plus(payableBefore._sum.amount ?? ZERO);
+      const payoutBefore = await this.prisma.clientPayout.aggregate({
+        _sum: { amount: true },
+        where: { tenantId, caseClientId: { in: ccIds }, status: 'RECORDED', paidAt: { lt: periodStart } },
+      });
+      opening = opening.minus(payoutBefore._sum.amount ?? ZERO);
+    }
+    const erBefore = await this.prisma.expenseRequest.aggregate({
+      _sum: { totalAmount: true },
+      where: { tenantId, clientId, status: { not: 'CANCELLED' }, createdAt: { lt: periodStart } },
+    });
+    opening = opening.minus(erBefore._sum.totalAmount ?? ZERO);
+    const epBefore = await this.prisma.expensePayment.aggregate({
+      _sum: { amount: true },
+      where: { expenseRequest: { tenantId, clientId }, paymentDate: { lt: periodStart } },
+    });
+    opening = opening.plus(epBefore._sum.amount ?? ZERO);
+
+    // ── dönem-içi hareketler (yön = effect: net pozisyona katkı) ──
+    const items: { date: Date; effect: Prisma.Decimal; draft: Omit<LineDraft, 'runningBalance'> }[] = [];
+
+    if (ccIds.length) {
+      const payableLines = await this.prisma.collectionDispositionLine.findMany({
+        where: {
+          type: CollectionDispositionLineType.CLIENT_PAYABLE,
+          caseClientId: { in: ccIds },
+          disposition: { tenantId, status: 'POSTED', manualReversalRequiredAt: null, postedAt: { gte: periodStart, lte: periodEnd } },
+        },
+        select: { id: true, amount: true, caseClientId: true, disposition: { select: { caseId: true, postedAt: true } } },
+      });
+      for (const l of payableLines) {
+        if (!l.disposition.postedAt) continue;
+        items.push({
+          date: l.disposition.postedAt,
+          effect: l.amount, // müvekkile borç artar → +
+          draft: {
+            lineDate: l.disposition.postedAt,
+            lineType: ClientStatementLineType.CASE_COLLECTION_PAYABLE,
+            refType: 'CollectionDispositionLine',
+            refId: l.id,
+            caseId: l.disposition.caseId, // ZORUNLU (client-level)
+            caseClientId: l.caseClientId,
+            debit: ZERO,
+            credit: l.amount,
+            note: 'Tahsilattan müvekkile ayrılan',
+          },
+        });
+      }
+
+      const payouts = await this.prisma.clientPayout.findMany({
+        where: { tenantId, caseClientId: { in: ccIds }, status: 'RECORDED', paidAt: { gte: periodStart, lte: periodEnd } },
+        select: { id: true, amount: true, paidAt: true, caseId: true, caseClientId: true },
+      });
+      for (const p of payouts) {
+        items.push({
+          date: p.paidAt,
+          effect: p.amount.negated(), // müvekkile ödeme → borç azalır −
+          draft: {
+            lineDate: p.paidAt,
+            lineType: ClientStatementLineType.CLIENT_PAYOUT_SENT,
+            refType: 'ClientPayout',
+            refId: p.id,
+            caseId: p.caseId,
+            caseClientId: p.caseClientId,
+            debit: p.amount,
+            credit: ZERO,
+            note: 'Müvekkile ödeme',
+          },
+        });
+      }
+    }
+
+    // ExpenseRequest — müvekkilin masraf borcu artar → net pozisyon DÜŞER (debit −).
+    const ers = await this.prisma.expenseRequest.findMany({
+      where: { tenantId, clientId, status: { not: 'CANCELLED' }, createdAt: { gte: periodStart, lte: periodEnd } },
+      select: { id: true, caseId: true, totalAmount: true, currency: true, status: true, createdAt: true },
+    });
+    for (const e of ers) {
+      items.push({
+        date: e.createdAt,
+        effect: e.totalAmount.negated(),
+        draft: {
+          lineDate: e.createdAt,
+          lineType: ClientStatementLineType.EXPENSE_REQUESTED,
+          refType: 'ExpenseRequest',
+          refId: e.id,
+          caseId: e.caseId,
+          caseClientId: null,
+          debit: e.totalAmount,
+          credit: ZERO,
+          note: `Masraf talebi: ${e.totalAmount} ${e.currency} (${e.status})`,
+        },
+      });
+    }
+
+    // ExpensePayment — müvekkilin masraf borcu azalır → net pozisyon ARTAR (credit +).
+    const eps = await this.prisma.expensePayment.findMany({
+      where: { expenseRequest: { tenantId, clientId }, paymentDate: { gte: periodStart, lte: periodEnd } },
+      select: { id: true, amount: true, paymentDate: true, expenseRequest: { select: { caseId: true } } },
+    });
+    for (const p of eps) {
+      items.push({
+        date: p.paymentDate,
+        effect: p.amount,
+        draft: {
+          lineDate: p.paymentDate,
+          lineType: ClientStatementLineType.CLIENT_PAYMENT,
+          refType: 'ExpensePayment',
+          refId: p.id,
+          caseId: p.expenseRequest.caseId,
+          caseClientId: null,
+          debit: ZERO,
+          credit: p.amount,
+          note: 'Müvekkilden masraf tahsilatı',
+        },
+      });
+    }
+
+    // TM3 Faz C C-1 — ClientOffset (Müvekkil Mahsubu). Her offset İKİ satır (payable + expense bacağı):
+    //   APPLY  → payable bacağı debit (net −X) + expense bacağı credit (net +X)  → net delta 0
+    //   REVERSAL→ payable bacağı credit (net +X) + expense bacağı debit (net −X)  → net delta 0
+    // opening/closing offset'e DUYARSIZ (iki bacak sıfırlanır; dönem öncesi offset de net 0 → opening doğru).
+    // Satırlar yalnız GÖRÜNÜRLÜK. Period dahil = ClientOffset.createdAt. Mevcut statement MUTATE EDİLMEZ (yeni snapshot).
+    const offsets = await this.prisma.clientOffset.findMany({
+      where: { tenantId, clientId, createdAt: { gte: periodStart, lte: periodEnd } },
+      select: { id: true, amount: true, kind: true, payableCaseId: true, payableCaseClientId: true, expenseCaseId: true, createdAt: true },
+    });
+    for (const o of offsets) {
+      const isApply = o.kind === 'APPLY';
+      // payable bacağı
+      items.push({
+        date: o.createdAt,
+        effect: isApply ? o.amount.negated() : o.amount,
+        draft: {
+          lineDate: o.createdAt,
+          lineType: isApply ? ClientStatementLineType.CLIENT_OFFSET_PAYABLE_APPLIED : ClientStatementLineType.CLIENT_OFFSET_PAYABLE_REVERSED,
+          refType: 'ClientOffset',
+          refId: o.id,
+          caseId: o.payableCaseId,
+          caseClientId: o.payableCaseClientId,
+          debit: isApply ? o.amount : ZERO,
+          credit: isApply ? ZERO : o.amount,
+          note: isApply ? 'Mahsup — alacak bacağı' : 'Mahsup iptali — alacak bacağı',
+        },
+      });
+      // expense bacağı
+      items.push({
+        date: o.createdAt,
+        effect: isApply ? o.amount : o.amount.negated(),
+        draft: {
+          lineDate: o.createdAt,
+          lineType: isApply ? ClientStatementLineType.CLIENT_OFFSET_EXPENSE_APPLIED : ClientStatementLineType.CLIENT_OFFSET_EXPENSE_REVERSED,
+          refType: 'ClientOffset',
+          refId: o.id,
+          caseId: o.expenseCaseId,
+          caseClientId: null,
+          debit: isApply ? ZERO : o.amount,
+          credit: isApply ? o.amount : ZERO,
+          note: isApply ? 'Mahsup — masraf bacağı' : 'Mahsup iptali — masraf bacağı',
+        },
+      });
+    }
+
+    items.sort((a, b) => a.date.getTime() - b.date.getTime());
+    let running = opening;
+    const lines: LineDraft[] = [];
+    for (const it of items) {
+      running = running.plus(it.effect);
+      lines.push({ ...it.draft, runningBalance: running });
+    }
+    return { opening, closing: running, lines };
+  }
+
   /**
    * Snapshot verisini topla: opening (dönem öncesi BalanceLedger toplamı),
    * dönem-içi para hareketleri (BalanceLedger) + bilgi satırları (ExpenseRequest),
    * tarihe göre sıralı runningBalance. Para hareketi işaretli amount ile yürür;
    * bilgi satırı bakiyeyi oynatmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientStatementService.create() → Yeni ACTIVE statement snapshot üretimi
+   * - ClientStatementService.supersede() → Eski ACTIVE statement yerine yeni snapshot üretimi
+   * </remarks>
    */
   private async collect(
     tenantId: string,
@@ -266,6 +708,7 @@ export class ClientStatementService {
     periodStart: Date,
     periodEnd: Date,
     includeRequests: boolean,
+    statementCaseClientId: string | null,
   ): Promise<{ opening: Prisma.Decimal; closing: Prisma.Decimal; lines: LineDraft[] }> {
     let opening = ZERO;
     let ledgerRows: { id: string; amount: Prisma.Decimal; type: BalanceLedgerType; description: string | null; createdAt: Date }[] = [];
@@ -296,9 +739,65 @@ export class ClientStatementService {
       });
     }
 
+    // M2 (model A): POSTED CollectionDisposition proceeds satırları — YALNIZ bu ekstrenin
+    // alacaklısına (caseClientId) ait satırlar. Office-share (fee/firm) BİLGİ(0);
+    // OFFSET_CLIENT_ADVANCE BİLGİ(0) → bakiye etkisi korelasyonlu BalanceLedger'dan (çift-sayım yok).
+    let dispositionRows: {
+      id: string; type: CollectionDispositionLineType; amount: Prisma.Decimal; caseClientId: string | null; postedAt: Date;
+    }[] = [];
+    if (statementCaseClientId) {
+      const posted = await this.prisma.collectionDisposition.findMany({
+        where: { tenantId, caseId, status: 'POSTED', manualReversalRequiredAt: null, postedAt: { gte: periodStart, lte: periodEnd } },
+        select: { postedAt: true, lines: { select: { id: true, type: true, amount: true, caseClientId: true } } },
+      });
+      for (const d of posted) {
+        if (!d.postedAt) continue;
+        for (const ln of d.lines) {
+          if (ln.caseClientId === statementCaseClientId) {
+            dispositionRows.push({ id: ln.id, type: ln.type, amount: ln.amount, caseClientId: ln.caseClientId, postedAt: d.postedAt });
+          }
+        }
+      }
+    }
+
+    // M3: müvekkile ödemeler (ClientPayout RECORDED) — CLIENT_PAYOUT_SENT (debit −). YALNIZ bu alacaklı.
+    let payoutRows: { id: string; amount: Prisma.Decimal; paidAt: Date }[] = [];
+    if (statementCaseClientId) {
+      const payouts = await this.prisma.clientPayout.findMany({
+        where: { tenantId, caseId, caseClientId: statementCaseClientId, status: 'RECORDED', paidAt: { gte: periodStart, lte: periodEnd } },
+        select: { id: true, amount: true, paidAt: true },
+      });
+      payoutRows = payouts.map((p) => ({ id: p.id, amount: p.amount, paidAt: p.paidAt }));
+    }
+
+    // TM3 Faz C C-1 — ClientOffset bacakları (yalnız bu dosyaya ait). payable bacağı (payableCaseId==caseId &&
+    // payableCaseClientId==statementCaseClientId) proceeds gibi case-level bakiyeyi OYNATIR; expense bacağı
+    // (expenseCaseId==caseId) case-level'da BİLGİ(0) — EXPENSE_REQUESTED ile aynı (masraf case-level bakiyeye girmez).
+    const offsetRows = await this.prisma.clientOffset.findMany({
+      where: {
+        tenantId,
+        createdAt: { gte: periodStart, lte: periodEnd },
+        OR: [
+          ...(statementCaseClientId ? [{ payableCaseId: caseId, payableCaseClientId: statementCaseClientId }] : []),
+          { expenseCaseId: caseId },
+        ],
+      },
+      select: { id: true, amount: true, kind: true, payableCaseId: true, payableCaseClientId: true, expenseCaseId: true, createdAt: true },
+    });
+    const offsetPayableItems = offsetRows
+      .filter((o) => !!statementCaseClientId && o.payableCaseId === caseId && o.payableCaseClientId === statementCaseClientId)
+      .map((o) => ({ kind: 'offsetPayable' as const, date: o.createdAt, o }));
+    const offsetExpenseItems = offsetRows
+      .filter((o) => o.expenseCaseId === caseId)
+      .map((o) => ({ kind: 'offsetExpense' as const, date: o.createdAt, o }));
+
     const items = [
       ...ledgerRows.map((l) => ({ kind: 'money' as const, date: l.createdAt, l })),
       ...requestRows.map((r) => ({ kind: 'info' as const, date: r.createdAt, r })),
+      ...dispositionRows.map((d) => ({ kind: 'proceeds' as const, date: d.postedAt, d })),
+      ...payoutRows.map((p) => ({ kind: 'payout' as const, date: p.paidAt, p })),
+      ...offsetPayableItems,
+      ...offsetExpenseItems,
     ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
     let running = opening;
@@ -312,21 +811,91 @@ export class ClientStatementService {
           lineType: this.mapLedgerType(it.l.type),
           refType: 'BalanceLedger',
           refId: it.l.id,
+          caseId: null, // case-level ekstre satırı (parent.caseId dosyayı verir)
+          caseClientId: null, // BalanceLedger case-level (avans defteri)
           debit: amt.lt(ZERO) ? amt.abs() : ZERO,
           credit: amt.gt(ZERO) ? amt : ZERO,
           runningBalance: running,
           note: it.l.description ?? null,
         });
-      } else {
+      } else if (it.kind === 'info') {
         lines.push({
           lineDate: it.r.createdAt,
           lineType: ClientStatementLineType.EXPENSE_REQUESTED,
           refType: 'ExpenseRequest',
           refId: it.r.id,
+          caseId: null, // case-level ekstre satırı
+          caseClientId: null,
           debit: ZERO,
           credit: ZERO,
           runningBalance: running, // BİLGİ satırı — bakiyeyi oynatmaz
           note: `Talep: ${it.r.totalAmount} ${it.r.currency} (${it.r.status})`,
+        });
+      } else if (it.kind === 'proceeds') {
+        // proceeds — POSTED CollectionDispositionLine (model A). Sign convention mapDispositionLine'da.
+        const m = this.mapDispositionLine(it.d.type, it.d.amount);
+        running = running.plus(m.credit); // payable/clientReimb → +amount; ofis-payı/OFFSET → 0
+        lines.push({
+          lineDate: it.d.postedAt,
+          lineType: m.lineType,
+          refType: 'CollectionDispositionLine',
+          refId: it.d.id,
+          caseId: null, // case-level ekstre satırı
+          caseClientId: it.d.caseClientId,
+          debit: ZERO,
+          credit: m.credit,
+          runningBalance: running,
+          note: m.note,
+        });
+      } else if (it.kind === 'payout') {
+        // M3 payout — ClientPayout RECORDED → CLIENT_PAYOUT_SENT (debit −). BalanceLedger DEĞİL (D1).
+        running = running.minus(it.p.amount);
+        lines.push({
+          lineDate: it.p.paidAt,
+          lineType: ClientStatementLineType.CLIENT_PAYOUT_SENT,
+          refType: 'ClientPayout',
+          refId: it.p.id,
+          caseId: null, // case-level ekstre satırı
+          caseClientId: statementCaseClientId,
+          debit: it.p.amount,
+          credit: ZERO,
+          runningBalance: running,
+          note: 'Müvekkile ödeme',
+        });
+      } else if (it.kind === 'offsetPayable') {
+        // Mahsup payable bacağı — proceeds payable azalır. APPLY → debit (running −X); REVERSAL → credit (running +X).
+        const isApply = it.o.kind === 'APPLY';
+        running = isApply ? running.minus(it.o.amount) : running.plus(it.o.amount);
+        lines.push({
+          lineDate: it.o.createdAt,
+          lineType: isApply
+            ? ClientStatementLineType.CLIENT_OFFSET_PAYABLE_APPLIED
+            : ClientStatementLineType.CLIENT_OFFSET_PAYABLE_REVERSED,
+          refType: 'ClientOffset',
+          refId: it.o.id,
+          caseId: null, // case-level ekstre satırı
+          caseClientId: it.o.payableCaseClientId,
+          debit: isApply ? it.o.amount : ZERO,
+          credit: isApply ? ZERO : it.o.amount,
+          runningBalance: running,
+          note: isApply ? 'Mahsup — alacak bacağı (proceeds azaltıldı)' : 'Mahsup iptali — alacak bacağı',
+        });
+      } else {
+        // Mahsup masraf bacağı (offsetExpense) — case-level masraf bakiyeye girmez → BİLGİ(0), EXPENSE_REQUESTED gibi.
+        const isApply = it.o.kind === 'APPLY';
+        lines.push({
+          lineDate: it.o.createdAt,
+          lineType: isApply
+            ? ClientStatementLineType.CLIENT_OFFSET_EXPENSE_APPLIED
+            : ClientStatementLineType.CLIENT_OFFSET_EXPENSE_REVERSED,
+          refType: 'ClientOffset',
+          refId: it.o.id,
+          caseId: null,
+          caseClientId: null,
+          debit: ZERO,
+          credit: ZERO,
+          runningBalance: running, // BİLGİ satırı — bakiyeyi oynatmaz (masraf case-level'da info)
+          note: isApply ? 'Mahsup — masraf bacağı (bilgi)' : 'Mahsup iptali — masraf bacağı (bilgi)',
         });
       }
     }
@@ -348,11 +917,47 @@ export class ClientStatementService {
     }
   }
 
+  /**
+   * M2 proceeds satırı → ClientStatementLineType + bakiye etkisi (credit). Sign convention (KİLİTLİ):
+   * CLIENT_PAYABLE/CLIENT_EXPENSE_REIMBURSEMENT → credit + (müvekkil lehine);
+   * CONTRACTUAL_FEE_WITHHELD/FIRM_EXPENSE_REIMBURSEMENT/OTHER → BİLGİ (0, ofis payı/diğer);
+   * OFFSET_CLIENT_ADVANCE → BİLGİ (0): bakiye etkisi YALNIZ korelasyonlu BalanceLedger'dan (çift-sayım yok).
+   */
+  private mapDispositionLine(
+    t: CollectionDispositionLineType,
+    amount: Prisma.Decimal,
+  ): { lineType: ClientStatementLineType; credit: Prisma.Decimal; note: string | null } {
+    switch (t) {
+      case CollectionDispositionLineType.CLIENT_PAYABLE:
+        return { lineType: ClientStatementLineType.CASE_COLLECTION_PAYABLE, credit: amount, note: 'Tahsilattan müvekkile ayrılan' };
+      case CollectionDispositionLineType.CLIENT_EXPENSE_REIMBURSEMENT:
+        return { lineType: ClientStatementLineType.CLIENT_EXPENSE_REIMBURSEMENT, credit: amount, note: 'Müvekkile masraf iadesi' };
+      case CollectionDispositionLineType.CONTRACTUAL_FEE_WITHHELD:
+        return { lineType: ClientStatementLineType.CONTRACTUAL_FEE_WITHHELD, credit: ZERO, note: 'Avukatlık/ücret kesintisi (ofis payı)' };
+      case CollectionDispositionLineType.FIRM_EXPENSE_REIMBURSEMENT:
+        return { lineType: ClientStatementLineType.FIRM_EXPENSE_REIMBURSEMENT, credit: ZERO, note: 'Ofis masraf iadesi' };
+      case CollectionDispositionLineType.OFFSET_CLIENT_ADVANCE:
+        return { lineType: ClientStatementLineType.COLLECTION_OFFSET_ADVANCE, credit: ZERO, note: 'Avans mahsubu (bakiye avans defterinden)' };
+      case CollectionDispositionLineType.OTHER:
+      default:
+        return { lineType: ClientStatementLineType.ADJUST, credit: ZERO, note: 'Tahsilat dağıtımı (diğer)' };
+    }
+  }
+
+  /** Statement'ın alacaklısı (CaseClient.id) — proceeds filtre + atıf için (yoksa null = aggregate/yok). */
+  private async resolveCaseClientId(tenantId: string, caseId: string, clientId: string): Promise<string | null> {
+    const cc = await this.prisma.caseClient.findFirst({
+      where: { caseId, clientId, client: { tenantId } },
+      select: { id: true },
+    });
+    return cc?.id ?? null;
+  }
+
   private async persist(
     tx: Prisma.TransactionClient,
     header: {
       tenantId: string;
-      caseId: string;
+      caseId: string | null; // Faz B: client-level ekstrede null
       clientId: string;
       periodStart: Date;
       periodEnd: Date;

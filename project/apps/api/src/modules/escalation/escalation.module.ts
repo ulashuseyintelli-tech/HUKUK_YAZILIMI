@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+﻿import { Module } from "@nestjs/common";
 import { PrismaModule } from "@/prisma/prisma.module";
 import { OfficeModule } from "../office/office.module";
 import { OperationalEscalationService } from "./operational-escalation.service";
@@ -10,5 +10,6 @@ import { EscalationController } from "./escalation.controller";
   imports: [PrismaModule, OfficeModule],
   controllers: [EscalationController],
   providers: [OperationalEscalationService, CaseTaskEscalationService, TenantNotifier],
+  exports: [TenantNotifier],
 })
 export class EscalationModule {}

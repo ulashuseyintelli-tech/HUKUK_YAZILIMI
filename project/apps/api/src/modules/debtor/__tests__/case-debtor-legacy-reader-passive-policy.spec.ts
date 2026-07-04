@@ -6,7 +6,8 @@ describe("PR-RE2 legacy CaseDebtor reader passive policy", () => {
       case: { findFirst: jest.fn().mockResolvedValue({ id: "case-1" }) },
       caseDebtor: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const service = new CaseDebtorService(prisma);
+    // C1A: constructor 2 yeni parametre aldı; bu testler removeCaseDebtor'a dokunmaz → boş mock yeter.
+    const service = new CaseDebtorService(prisma, {} as any, {} as any);
 
     await service.getCaseDebtors("tenant-1", "case-1");
 
@@ -21,7 +22,8 @@ describe("PR-RE2 legacy CaseDebtor reader passive policy", () => {
     const prisma: any = {
       caseDebtor: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const service = new CaseDebtorService(prisma);
+    // C1A: constructor 2 yeni parametre aldı; bu testler removeCaseDebtor'a dokunmaz → boş mock yeter.
+    const service = new CaseDebtorService(prisma, {} as any, {} as any);
 
     await service.getCaseDebtorStatistics("tenant-1", "case-1");
 

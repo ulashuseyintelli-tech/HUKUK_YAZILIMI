@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import Link from "next/link";
+import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown, Wallet } from "lucide-react";
 import { api } from "@/lib/api";
-import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE } from "@/lib/poa-ux";
+import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields } from "@/lib/poa-ux";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { BulkEmailModal } from "@/components/bulk-email-modal";
 
@@ -20,7 +21,8 @@ type SortDirection = "asc" | "desc" | null;
 export default function ClientsSettingsPage() {
   const searchParams = useSearchParams();
   const editClientId = searchParams.get("edit");
-  
+  const newParam = searchParams.get("new");
+
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -76,17 +78,32 @@ export default function ClientsSettingsPage() {
     })();
   }, [editClientId, clients]);
 
+  // Task 4A: /clients/new → /settings/clients?new=1 redirect'i create modalini OTOMATİK açar
+  // (native create formu v1'de YOK; ClientModal burada inline). Bir kez işlenir (ref guard).
+  const newClientHandledRef = useRef(false);
+  useEffect(() => {
+    if (newClientHandledRef.current || newParam !== "1") return;
+    newClientHandledRef.current = true;
+    setEditingClient(null);
+    setScannedData(null);
+    setShowModal(true);
+  }, [newParam]);
+
   const handleSave = async (data: any) => {
     setSaving(true);
     try {
       let clientId: string;
-      
+
+      // Vekaletname alanları ClientPowerOfAttorney'e aittir; /clients gövdesine
+      // gönderilmez (ClientService okumaz, lenient ValidationPipe düşürür). Vekalet
+      // kaydı aşağıda kanonik POST /poa ile oluşturulur.
+      const clientPayload = stripPoaFields(data);
       let clientExisting = false;
       if (editingClient) {
-        await api.put(`/clients/${editingClient.id}`, data);
+        await api.put(`/clients/${editingClient.id}`, clientPayload);
         clientId = editingClient.id;
       } else {
-        const res = await api.post("/clients", data);
+        const res = await api.post("/clients", clientPayload);
         clientId = res.data?.id || res.data?.data?.id;
         // PR-AUDIT-1: mevcut TCKN/VKN ile manuel ekleme → backend yeni açmaz, mevcut kartı döndürür.
         // Sessiz kalmasın, kullanıcıya bildir (silinmişse "geri getirildi", aktifse "zaten kayıtlı").
@@ -149,11 +166,14 @@ export default function ClientsSettingsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Bu müvekkili silmek istediğinize emin misiniz?")) return;
+    // Canonical karar (2026-07-02): Client kalıcı kimlik kaydıdır, sistemden silinmez — yalnız
+    // pasifleştirilir (isActive=false). Endpoint/davranış AYNI (DELETE /clients/:id = soft-delete);
+    // yalnız kullanıcıya doğru dili yansıtır.
+    if (!confirm("Bu müvekkili pasifleştirmek istediğinize emin misiniz? Bu müvekkil sistemden silinmez, yalnızca pasifleştirilir.")) return;
     try {
       await api.delete(`/clients/${id}`);
       await loadClients();
-    } catch (e: any) { alert(e.message || "Silinemedi"); }
+    } catch (e: any) { alert(e.message || "Pasifleştirilemedi"); }
   };
 
   const handleExport = async (format: "excel" | "pdf") => {
@@ -475,6 +495,9 @@ export default function ClientsSettingsPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
+                        <Link href={`/clients/${client.id}/accounting`} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded" title="Müvekkil Muhasebesi">
+                          <Wallet className="h-4 w-4" />
+                        </Link>
                         <button onClick={() => { setPoaClient(client); setShowPoaModal(true); }} className="p-1.5 text-amber-500 hover:bg-amber-50 rounded" title="Vekaletler">
                           <FileCheck className="h-4 w-4" />
                         </button>
@@ -500,7 +523,7 @@ export default function ClientsSettingsPage() {
                         }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Düzenle">
                           <Edit2 className="h-4 w-4" />
                         </button>
-                        <button onClick={() => handleDelete(client.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Sil">
+                        <button onClick={() => handleDelete(client.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Pasifleştir">
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
@@ -583,6 +606,46 @@ export default function ClientsSettingsPage() {
 }
 
 // Müvekkil Modal - Çoklu telefon/email/adres destekli + Vekaletname tarama
+// Faz-B (PR-5): forma girilen özel-gün tarihleri + tebrik tercihlerinden "sıradaki tebrik"i
+// salt-okuma hesaplar (backend yok). Büro otomatik tebriği (global) açıksa gönderilir; bu
+// yalnız per-client planı gösterir. Doğum günü / kuruluş / vekalet yıldönümü yinelenir;
+// bayram tebriği tarih-tabanlı olduğundan ayrı not olarak belirtilir.
+function computeNextGreeting(form: any, isPerson: boolean): { label: string; dateLabel: string; daysUntil: number } | null {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const TR_MONTHS = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+  const nextOccurrence = (iso: string): Date | null => {
+    if (!iso || typeof iso !== "string") return null;
+    const parts = iso.split("-");
+    if (parts.length < 3) return null;
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (isNaN(m) || isNaN(d)) return null;
+    let occ = new Date(today.getFullYear(), m, d);
+    occ.setHours(0, 0, 0, 0);
+    if (occ.getTime() < today.getTime()) occ = new Date(today.getFullYear() + 1, m, d);
+    return occ;
+  };
+  const candidates: { label: string; date: Date }[] = [];
+  if (isPerson && form.sendBirthdayGreeting) {
+    const dt = nextOccurrence(form.birthDate);
+    if (dt) candidates.push({ label: "Doğum günü", date: dt });
+  }
+  if (!isPerson && form.sendAnniversaryGreeting) {
+    const dt = nextOccurrence(form.foundingDate);
+    if (dt) candidates.push({ label: "Kuruluş yıldönümü", date: dt });
+  }
+  if (form.sendAnniversaryGreeting) {
+    const dt = nextOccurrence(form.poaStartDate);
+    if (dt) candidates.push({ label: "Vekalet yıldönümü", date: dt });
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.date.getTime() - b.date.getTime());
+  const next = candidates[0];
+  const daysUntil = Math.round((next.date.getTime() - today.getTime()) / 86400000);
+  return { label: next.label, dateLabel: `${next.date.getDate()} ${TR_MONTHS[next.date.getMonth()]}`, daysUntil };
+}
+
 function ClientModal({ client, scannedData, onSave, onClose, saving }: { client: any; scannedData?: any; onSave: (data: any) => void; onClose: () => void; saving: boolean }) {
   const [form, setForm] = useState({
     type: scannedData?.clientType || client?.type || "PERSON",
@@ -623,8 +686,8 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
   // Eksik iletişim (telefon/e-posta) modalı: kaydı engellemez, ama görev üretimi öncesi sorar.
   const [missingContact, setMissingContact] = useState<string[] | null>(null);
   const firstPhoneRef = useRef<HTMLInputElement>(null);
-  const [addresses, setAddresses] = useState<{street: string; city: string; district: string; region: string; label: string; isPrimary: boolean}[]>([
-    { street: "", city: "", district: "", region: "", label: "", isPrimary: true }
+  const [addresses, setAddresses] = useState<{street: string; city: string; district: string; region: string; isPrimary: boolean}[]>([
+    { street: "", city: "", district: "", region: "", isPrimary: true }
   ]);
 
   useEffect(() => {
@@ -655,7 +718,6 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
           city: scannedData.city || "",
           district: scannedData.district || "",
           region: "",
-          label: "",
           isPrimary: true
         }]);
       }
@@ -712,12 +774,11 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
         : [{ value: client.email || "", label: "", isPrimary: true }]
       );
       setAddresses([{ 
-        street: client.address || "", 
-        city: client.city || "", 
-        district: client.district || "", 
-        region: client.region || "", 
-        label: "", 
-        isPrimary: true 
+        street: client.address || "",
+        city: client.city || "",
+        district: client.district || "",
+        region: client.region || "",
+        isPrimary: true
       }]);
     }
   }, [client]);
@@ -738,11 +799,9 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
       city: validAddresses.find(a => a.isPrimary)?.city || validAddresses[0]?.city,
       district: validAddresses.find(a => a.isPrimary)?.district || validAddresses[0]?.district,
       region: validAddresses.find(a => a.isPrimary)?.region || validAddresses[0]?.region,
-      // Vekaletname bilgileri
-      poaNumber: form.poaNumber,
-      poaDate: form.poaDate,
-      notaryName: form.notaryName,
-      notaryCity: form.notaryCity,
+      // NOT: Vekaletname alanları (poaNumber/poaDate/notaryName/notaryCity) form'dan
+      // (...form) gelir ama /clients gövdesine GİTMEZ; handleSave bunları stripPoaFields
+      // ile ayıklar ve yalnız yeni müvekkilde kanonik POST /poa ile kaydeder.
     };
   };
 
@@ -804,11 +863,11 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
   };
   
   // Adres ekleme/silme
-  const addAddress = () => setAddresses([...addresses, { street: "", city: "", district: "", region: "", label: "", isPrimary: false }]);
+  const addAddress = () => setAddresses([...addresses, { street: "", city: "", district: "", region: "", isPrimary: false }]);
   const removeAddress = (idx: number) => {
     const updated = addresses.filter((_, i) => i !== idx);
     if (updated.length > 0 && !updated.some(a => a.isPrimary)) updated[0].isPrimary = true;
-    setAddresses(updated.length > 0 ? updated : [{ street: "", city: "", district: "", region: "", label: "", isPrimary: true }]);
+    setAddresses(updated.length > 0 ? updated : [{ street: "", city: "", district: "", region: "", isPrimary: true }]);
   };
   const updateAddress = (idx: number, field: string, value: any) => {
     const updated = [...addresses];
@@ -949,7 +1008,6 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
                 <div key={idx} className={`p-2 rounded border ${addr.isPrimary ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <input value={addr.label} onChange={e => updateAddress(idx, 'label', e.target.value)} placeholder="Etiket (Ev, İş...)" className="w-28 border rounded px-2 py-0.5 text-xs" />
                       <label className="flex items-center gap-1 cursor-pointer text-xs">
                         <input type="radio" name="primaryAddress" checked={addr.isPrimary} onChange={() => updateAddress(idx, 'isPrimary', true)} className="w-3 h-3" />
                         Birincil
@@ -968,7 +1026,11 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
             </div>
           </div>
 
-          {/* Vekaletname Bilgileri */}
+          {/* Vekaletname Bilgileri — YALNIZ yeni müvekkilde gösterilir.
+              Düzenlemede vekalet, ayrı "Vekaletler" bölümünden (POST/PUT /poa) yönetilir;
+              bu modalda düzenlenebilir POA alanı göstermek "giriliyor ama kaydedilmiyor"
+              tuzağı yaratırdı (PUT /clients bu alanları düşürür). */}
+          {!client ? (
           <div className="border rounded-lg p-3 bg-blue-50">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-medium text-blue-800">Vekaletname Bilgileri</p>
@@ -1002,6 +1064,15 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
               </div>
             )}
           </div>
+          ) : (
+          <div className="border rounded-lg p-3 bg-blue-50">
+            <p className="text-xs font-medium text-blue-800 mb-1">Vekaletname Bilgileri</p>
+            <p className="text-xs text-blue-700">
+              Bu müvekkilin vekaletnameleri ayrı <span className="font-medium">&quot;Vekaletler&quot;</span> bölümünden yönetilir
+              (ekle / güncelle / dosya yükle). Vekalet bilgisi müvekkil düzenleme formundan değiştirilmez.
+            </p>
+          </div>
+          )}
 
           {/* Yetkiler */}
           <div className="p-3 bg-amber-50 rounded border border-amber-200">
@@ -1076,6 +1147,29 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
                 <span className="text-sm">Bayram tebriği</span>
               </label>
             </div>
+            {(() => {
+              const ng = computeNextGreeting(form, isPerson);
+              const channelLabel = form.greetingChannel === "SMS" ? "SMS" : form.greetingChannel === "BOTH" ? "E-posta + SMS" : "E-posta";
+              return (
+                <div className="mt-3 pt-2 border-t border-green-200 text-xs text-green-900">
+                  {ng ? (
+                    <span>
+                      <span className="font-semibold">Sıradaki tebrik:</span> {ng.label} — {ng.dateLabel}{" "}
+                      <span className="text-green-700">({ng.daysUntil === 0 ? "bugün" : `${ng.daysUntil} gün sonra`})</span>
+                      {" · "}{channelLabel}
+                      {form.sendHolidayGreeting && <span className="text-green-700"> · bayramlarda</span>}
+                    </span>
+                  ) : (
+                    <span className="text-green-700">
+                      {form.sendHolidayGreeting
+                        ? "Yalnız bayram tebriği planlı (özel gün tarihi/tercihi yok)."
+                        : "Tebrik planlanmadı — tarih veya tercih eksik."}
+                    </span>
+                  )}
+                  <span className="block text-[10px] text-green-600 mt-0.5">Büro otomatik tebriği açıksa gönderilir (Büro Ayarları).</span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Notlar */}
@@ -1628,12 +1722,12 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
   };
 
   const handleDelete = async (poaId: string) => {
-    if (!confirm("Bu vekaleti silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Bu vekalet silinmez; hukuki geçmiş korunarak iptal edilir. Devam edilsin mi?")) return;
     try {
       await api.delete(`/poa/${poaId}`);
       await loadPoas();
     } catch (e: any) {
-      alert(e.message || "Silinemedi");
+      alert(e.message || "İptal edilemedi");
     }
   };
 
@@ -1783,7 +1877,7 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
                         )}
                       </div>
                     </div>
-                    <button onClick={() => handleDelete(poa.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Sil">
+                    <button onClick={() => handleDelete(poa.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Vekaleti iptal et">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>

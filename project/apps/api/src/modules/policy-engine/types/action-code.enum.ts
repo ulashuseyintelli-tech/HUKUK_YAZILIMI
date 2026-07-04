@@ -114,6 +114,121 @@ export enum ActionCode {
   
   /** Döviz kuru güncelleme - LOW risk */
   UPDATE_EXCHANGE_RATE = 'UPDATE_EXCHANGE_RATE',
+
+  // ============================================
+  // Guided-Open v1 Permission Leaves (P2a)
+  // casePermissions → ActionCode (yetki-agaci-guided-open-final.md §10).
+  // ADDITIVE: mevcut yapraklar TEKRAR EKLENMEDİ (UYAP_SEND/UYAP_QUERY/TRIGGER_HACIZ/
+  // SEND_NOTIFICATION/CLOSE_CASE/ARCHIVE_CASE/APPROVE_EXPENSE/RECORD_COLLECTION/QUERY_* zaten var).
+  // ============================================
+
+  /** Dosya içeriği düzenleme - MEDIUM risk (canEditCase) */
+  EDIT_CASE = 'EDIT_CASE',
+
+  /** Evrak/belge oluşturma - MEDIUM risk (canGenerateDocs). NOT: resmî gönderim ≠ bu (UYAP_SEND/SEND_*). */
+  GENERATE_DOC = 'GENERATE_DOC',
+
+  /** UYAP senkronizasyonu/çekme - LOW risk (canSyncUYAP). ≠ UYAP_SEND (resmî gönderim) · ≠ UYAP_QUERY (tek-sorgu). */
+  SYNC_UYAP = 'SYNC_UYAP',
+
+  /** Finans/hesap özeti görüntüleme - LOW risk (canViewFinance) */
+  VIEW_FINANCE = 'VIEW_FINANCE',
+
+  /** Finans/masraf/harç düzenleme - MEDIUM risk (canEditFinance) */
+  EDIT_FINANCE = 'EDIT_FINANCE',
+
+  /** Dosya statüsü değiştirme - HIGH risk, hukuki sonuç (canChangeStatus) */
+  CHANGE_STATUS = 'CHANGE_STATUS',
+
+  /** Taraf/müvekkil/borçlu bilgisi düzenleme - MEDIUM risk, KVKK (canEditParties) */
+  EDIT_PARTIES = 'EDIT_PARTIES',
+
+  /** İmza yetkisi - HIGH risk, hukuki geçerlilik (hasSignatureAuthority → validity-route) */
+  SIGN = 'SIGN',
+
+  // ============================================
+  // Guided-Open P2b-1 pilot leaves (observe hook; ADDITIVE)
+  // ============================================
+
+  /** Dosya (hard) silme - HIGH risk, geri-alınamaz (cases.delete) */
+  DELETE_CASE = 'DELETE_CASE',
+
+  /** Hukuki sorumlu avukat atama/değiştirme - HIGH risk, kanonik+ADMIN (legal-responsible) */
+  ASSIGN_LEGAL_RESPONSIBLE = 'ASSIGN_LEGAL_RESPONSIBLE',
+
+  /** Ofis kimlik bilgisi (SMTP/SMS) yönetimi - HIGH risk, güvenlik (credential) */
+  MANAGE_OFFICE_CREDENTIALS = 'MANAGE_OFFICE_CREDENTIALS',
+
+  // ============================================
+  // Guided-Open P2b-2 pilot leaves (observe hook; ADDITIVE)
+  // ============================================
+
+  /**
+   * Banka EFT/Havale (para hareketi) gönderimi - HIGH risk, geri-alınamaz para çıkışı.
+   * NOT: SEND_PAYMENT_ORDER (UYAP ödeme emri TEBLİGATI) ile KARIŞTIRILMAZ; bu gerçek banka transferidir.
+   * Guarded-edge APPROVAL (para hareketi confirm'den güçlü iç onay ister). Codex finans domeni — observe-only.
+   */
+  BANK_TRANSFER = 'BANK_TRANSFER',
+
+  // ============================================
+  // Client Offset Actions (TM3 Faz C C-1)
+  // ============================================
+
+  /**
+   * Müvekkil mahsubu uygula (ClientOffset kind=APPLY) - HIGH risk, müvekkil bakiyesi etkiler.
+   * C-1 v1: yetki ClientOffsetService'te explicit enforce (PARTNER/MANAGER-only). @CpeRequired YALNIZ
+   * future-compat metadata; CpeRequiredGuard dormant olduğundan güvenlik buna bağlı DEĞİL.
+   */
+  CLIENT_OFFSET_APPLY = 'CLIENT_OFFSET_APPLY',
+
+  /**
+   * Müvekkil mahsubu iptali (ClientOffset kind=REVERSAL) - HIGH risk. Aynı explicit PARTNER/MANAGER gate + reason.
+   */
+  CLIENT_OFFSET_REVERSE = 'CLIENT_OFFSET_REVERSE',
+
+  // ============================================
+  // Accounting Journal Actions (ACCT-1R / ACCT-1M)
+  // ============================================
+
+  /**
+   * Generic AccountingJournalEntry reversal - HIGH risk accounting mutation.
+   * ACCT-1R v1: authorization is enforced explicitly inside AccountingJournalReversalService (PARTNER/MANAGER-only).
+   * @CpeRequired is future-compat metadata only; dormant CPE guard is not the security boundary.
+   */
+  ACCOUNTING_JOURNAL_REVERSE = 'ACCOUNTING_JOURNAL_REVERSE',
+
+  /**
+   * Manual accounting journal adjustment - HIGH risk accounting mutation.
+   * ACCT-1M-2 v1: authorization is enforced explicitly inside AccountingJournalManualAdjustmentService (PARTNER/MANAGER-only).
+   * @CpeRequired is future-compat metadata only; dormant CPE guard is not the security boundary.
+   */
+  ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT = 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT',
+
+  // ============================================
+  // Case Fee Agreement Actions (S8-B FAZ-2)
+  // ============================================
+
+  /**
+   * Akdi ücret sözleşmesi yönetimi (CaseFeeAgreement create/update/terminate) - HIGH risk, dağıtım ücretini belirler.
+   * FAZ-2 v1: yetki CaseFeeAgreementService içinde explicit enforce (assertCanManage → isApproverEligible:
+   * PARTNER/canApproveOfficeActions-only; aksi 403). @CpeRequired YALNIZ future-compat metadata;
+   * CpeRequiredGuard dormant olduğundan güvenlik buna bağlı DEĞİL.
+   */
+  MANAGE_FEE_AGREEMENT = 'MANAGE_FEE_AGREEMENT',
+
+  // ============================================
+  // Collection Disposition Actions (R4 — Low-Risk Rollout Cleanup Pack)
+  // ============================================
+
+  /**
+   * Dağıtım kararını kesinleştir (CollectionDisposition → POSTED) - HIGH risk, finansal etki bu adımda doğar
+   * (OFFSET_CLIENT_ADVANCE→BalanceLedger CREDIT, proceeds satırları, reimbursement application). R4 v1: yetki
+   * DispositionPostingService.post() içinde explicit enforce (yalnız DISTRIBUTION_APPROVED statüsünden POSTED'e
+   * geçer; approve() adımı zaten PARTNER/yetkilendirilmiş avukat + P4 4-göz ister). @CpeRequired YALNIZ
+   * future-compat metadata; CpeRequiredGuard dormant olduğundan güvenlik buna bağlı DEĞİL, mevcut statü-makinesi
+   * gate'i korunur.
+   */
+  POST_COLLECTION_DISPOSITION = 'POST_COLLECTION_DISPOSITION',
 }
 
 /**
@@ -163,6 +278,40 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
   [ActionCode.ADD_NAFAKA_PERIOD]: RiskLevel.LOW,
   [ActionCode.UPDATE_EXCHANGE_RATE]: RiskLevel.LOW,
   [ActionCode.RECORD_PAYMENT]: RiskLevel.LOW,
+
+  // Guided-Open v1 (P2a) — Record exhaustive olduğu için zorunlu
+  [ActionCode.SIGN]: RiskLevel.HIGH,
+  [ActionCode.CHANGE_STATUS]: RiskLevel.HIGH,
+  [ActionCode.EDIT_CASE]: RiskLevel.MEDIUM,
+  [ActionCode.GENERATE_DOC]: RiskLevel.MEDIUM,
+  [ActionCode.EDIT_FINANCE]: RiskLevel.MEDIUM,
+  [ActionCode.EDIT_PARTIES]: RiskLevel.MEDIUM,
+  [ActionCode.SYNC_UYAP]: RiskLevel.LOW,
+  [ActionCode.VIEW_FINANCE]: RiskLevel.LOW,
+
+  // Guided-Open P2b-1 pilot (Record exhaustive zorunlu)
+  [ActionCode.DELETE_CASE]: RiskLevel.HIGH,
+  [ActionCode.ASSIGN_LEGAL_RESPONSIBLE]: RiskLevel.HIGH,
+  [ActionCode.MANAGE_OFFICE_CREDENTIALS]: RiskLevel.HIGH,
+
+  // Guided-Open P2b-2 pilot (Record exhaustive zorunlu)
+  [ActionCode.BANK_TRANSFER]: RiskLevel.HIGH,
+
+  // TM3 Faz C C-1 — Müvekkil Mahsubu (Record exhaustive zorunlu)
+  [ActionCode.CLIENT_OFFSET_APPLY]: RiskLevel.HIGH,
+  [ActionCode.CLIENT_OFFSET_REVERSE]: RiskLevel.HIGH,
+
+  // ACCT-1R - Generic AccountingJournalEntry reversal
+  [ActionCode.ACCOUNTING_JOURNAL_REVERSE]: RiskLevel.HIGH,
+
+  // ACCT-1M - Manual accounting journal adjustment
+  [ActionCode.ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT]: RiskLevel.HIGH,
+
+  // S8-B FAZ-2 - Akdi ücret sözleşmesi yönetimi
+  [ActionCode.MANAGE_FEE_AGREEMENT]: RiskLevel.HIGH,
+
+  // R4 - Dağıtım kararını kesinleştir (CollectionDisposition POST)
+  [ActionCode.POST_COLLECTION_DISPOSITION]: RiskLevel.HIGH,
 };
 
 /**

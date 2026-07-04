@@ -322,7 +322,7 @@ export class ExportImportService {
     return Buffer.from(buffer);
   }
 
-  async importClientsFromExcel(tenantId: string, fileBuffer: Buffer): Promise<{ success: number; errors: { row: number; message: string }[] }> {
+  async importClientsFromExcel(tenantId: string, fileBuffer: Buffer, actorUserId?: string): Promise<{ success: number; errors: { row: number; message: string }[] }> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(fileBuffer as unknown as ArrayBuffer);
     const sheet = workbook.worksheets[0];
@@ -413,7 +413,8 @@ export class ExportImportService {
         // RFA-017: düz prisma.client.create YERİNE guard'lı ClientService.create.
         // tckn/vkn eşleşmesi → mevcut kullan (soft-deleted ise reactivate) → re-import duplicate üretmez.
         // displayName/name/identityNo'yu ClientService kendi hesaplar; tenant izolasyonu korunur.
-        await this.clientService.create(tenantId, data);
+        // P0.6: import actor — audit attribution (AuditLog.userId null kalmasın).
+        await this.clientService.create(tenantId, data, actorUserId ? { userId: actorUserId } : undefined);
         success++;
       } catch (e: any) {
         errors.push({ row: i, message: e.message || "Hata" });

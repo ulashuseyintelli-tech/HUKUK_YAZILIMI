@@ -27,6 +27,9 @@ import { LookupModule } from "./modules/lookup/lookup.module";
 import { GroupModule } from "./modules/group/group.module";
 import { ReportModule } from "./modules/report/report.module";
 import { OfficeModule } from "./modules/office/office.module";
+import { PermissionDiagnosticsModule } from "./modules/permission-diagnostics/permission-diagnostics.module";
+import { OfficeApprovalModule } from "./modules/office-approval/office-approval.module";
+import { OfficeApprovalExecutorModule } from "./modules/office-approval/office-approval-executor.module";
 import { StaffModule } from "./modules/staff/staff.module";
 import { ClientNotificationModule } from "./modules/client-notification/client-notification.module";
 import { GreetingModule } from "./modules/greeting/greeting.module";
@@ -60,6 +63,8 @@ import { BankModule } from "./modules/bank/bank.module";
 import { SummaryEngineModule } from "./modules/summary-engine/summary-engine.module";
 // G4c-3: read-only bakiye gözlem (summary-engine vs computeBalance)
 import { BalanceShadowCompareModule } from "./modules/balance-shadow-compare/balance-shadow-compare.module";
+import { BalanceDisplayShadowDiffModule } from "./modules/balance-display-shadow-diff/balance-display-shadow-diff.module";
+import { AccountingJournalTrialBalanceModule } from "./modules/accounting-journal/accounting-journal-trial-balance.module";
 import { PrecautionaryOrderModule } from "./modules/precautionary-order/precautionary-order.module";
 import { LimitationEngineModule } from "./modules/limitation-engine/limitation-engine.module";
 import { RelatedLawsuitsModule } from "./modules/related-lawsuits/related-lawsuits.module";
@@ -81,6 +86,7 @@ import { AddressDiscoveryModule } from "./modules/address-discovery/address-disc
 import { AssetQueryModule } from "./modules/asset-query/asset-query.module";
 import { UyapExportModule } from "./modules/uyap-export/uyap-export.module";
 import { V28EngineModule } from "./modules/icrabot/v28-engine/v28-engine.module";
+import { ClientSettlementModule } from "./modules/client-settlement/client-settlement.module";
 import { InterestEngineModule } from "./modules/interest-engine/interest-engine.module";
 import { AddressTaskModule } from "./modules/address-task/address-task.module";
 import { PolicyEngineModule } from "./modules/policy-engine/policy-engine.module";
@@ -88,6 +94,7 @@ import { CalcPreviewModule } from "./modules/calc-preview/calc-preview.module";
 import { MetricsAggregatorModule } from "./modules/metrics-aggregator/metrics-aggregator.module";
 import { MetricsRegistryModule } from "./modules/metrics-registry/metrics-registry.module";
 import { HttpMetricsMiddleware } from "./modules/metrics-registry/http-metrics.middleware";
+import { RequestIdMiddleware } from "./common/request-id.middleware";
 // TODO: IcrabotModule geçici olarak devre dışı - Prisma client regenerate gerekli
 // import { IcrabotModule } from "./modules/icrabot/icrabot.module";
 
@@ -161,6 +168,9 @@ function getConditionalImports(): Type<unknown>[] {
     GroupModule,
     ReportModule,
     OfficeModule,
+    PermissionDiagnosticsModule,
+    OfficeApprovalModule,
+    OfficeApprovalExecutorModule, // P4-5A: CHANGE_STATUS deferred executor (internal callable; route/cron YOK)
     StaffModule,
     ClientNotificationModule,
     GreetingModule,
@@ -191,6 +201,8 @@ function getConditionalImports(): Type<unknown>[] {
     BankModule,
     SummaryEngineModule,
     BalanceShadowCompareModule,
+    BalanceDisplayShadowDiffModule,
+    AccountingJournalTrialBalanceModule,
     PrecautionaryOrderModule,
     LimitationEngineModule,
     RelatedLawsuitsModule,
@@ -212,6 +224,7 @@ function getConditionalImports(): Type<unknown>[] {
     AssetQueryModule,
     UyapExportModule,
     V28EngineModule,
+    ClientSettlementModule,
     InterestEngineModule,
     AddressTaskModule,
     PolicyEngineModule,
@@ -225,6 +238,8 @@ function getConditionalImports(): Type<unknown>[] {
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(HttpMetricsMiddleware).forRoutes('*');
+    // PR-2a: RequestIdMiddleware ÖNCE çalışır → x-request-id tüm downstream (metrics + ExceptionFilter)
+    // tarafından görülür.
+    consumer.apply(RequestIdMiddleware, HttpMetricsMiddleware).forRoutes('*');
   }
 }

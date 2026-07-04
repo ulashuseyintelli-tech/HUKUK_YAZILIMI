@@ -249,4 +249,70 @@ describe('claim-bucket-assembler (G4a)', () => {
       expect(res.buckets.map((b) => b.id)).toEqual(['p1']);
     });
   });
+
+  describe('TBK100 Interest Accrual Contract v1 — interestAccrualStatus', () => {
+    it('NO_INTEREST PRINCIPAL → bucket üretilmez, diagnostic YOK (bilinçli faizsiz, hata değil)', () => {
+      const res = assembleClaimBuckets([
+        item({
+          id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'NO_INTEREST',
+          // interestType/interestStartDate boş olsa BİLE case-level fallback'e düşmemeli.
+        }),
+      ], { interestType: 'YASAL', interestStartDate: '2025-01-01' });
+      expect(res.buckets).toHaveLength(0);
+      expect(res.diagnostics).toHaveLength(0);
+    });
+
+    it('UNKNOWN (veya alan hiç yoksa) mevcut davranış AYNEN devam eder — regresyon yok', () => {
+      const res = assembleClaimBuckets([
+        item({ id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'UNKNOWN', interestType: 'YASAL', interestStartDate: '2025-01-01' }),
+      ]);
+      expect(res.buckets).toHaveLength(1);
+      expect(res.diagnostics).toHaveLength(0);
+    });
+
+    it('COST kalemi ACCRUES işaretli ama motor desteği yok → ACCRUAL_ENGINE_UNSUPPORTED, kalem yine costs projeksiyonuna eklenir (davranış değişmez)', () => {
+      const res = assembleClaimBuckets([
+        item({ id: 'e1', itemType: 'EXPENSE', amount: 500, interestAccrualStatus: 'ACCRUES' }),
+      ]);
+      expect(res.diagnostics).toEqual([{ code: 'ACCRUAL_ENGINE_UNSUPPORTED', claimItemId: 'e1', detail: 'EXPENSE' }]);
+      expect(res.costs[AncillaryType.TEBLIGAT_MASRAFI]).toBe(500);
+    });
+
+    it('ANCILLARY (ATTORNEY_FEE) NO_INTEREST işaretli → diagnostic YOK, mevcut davranış (sabit tutar) değişmez', () => {
+      const res = assembleClaimBuckets([
+        item({ id: 'a1', itemType: 'ATTORNEY_FEE', amount: 300, interestAccrualStatus: 'NO_INTEREST' }),
+      ]);
+      expect(res.diagnostics).toHaveLength(0);
+      expect(res.ancillaries[AncillaryType.VEKALET_UCRETI]).toBe(300);
+    });
+
+    it('provenance=ENFORCEMENT_PROCEEDING_DATE + Case.caseDate mevcut → mekanik çözülür, bucket üretilir', () => {
+      const res = assembleClaimBuckets(
+        [item({ id: 'p1', itemType: 'PRINCIPAL', interestType: 'YASAL', interestStartDateProvenance: 'ENFORCEMENT_PROCEEDING_DATE' })],
+        { enforcementProceedingDate: '2025-03-15' },
+      );
+      expect(res.buckets).toHaveLength(1);
+      expect(res.buckets[0].startDate).toBe('2025-03-15');
+      expect(res.diagnostics).toHaveLength(0);
+    });
+
+    it('provenance=ENFORCEMENT_PROCEEDING_DATE ama Case.caseDate de yok → MISSING_START_DATE_SOURCE_VALUE (genel MISSING_START_DATE DEĞİL)', () => {
+      const res = assembleClaimBuckets(
+        [item({ id: 'p1', itemType: 'PRINCIPAL', interestType: 'YASAL', interestStartDateProvenance: 'ENFORCEMENT_PROCEEDING_DATE' })],
+        {},
+      );
+      expect(res.buckets).toHaveLength(0);
+      expect(res.diagnostics).toEqual([
+        { code: 'MISSING_START_DATE_SOURCE_VALUE', claimItemId: 'p1', detail: 'ENFORCEMENT_PROCEEDING_DATE' },
+      ]);
+    });
+
+    it('sessiz dueDate/issueDate fallback KESİNLİKLE yok — provenance farklı olsa da interestStartDate hâlâ çözülmezse MISSING_START_DATE', () => {
+      const res = assembleClaimBuckets([
+        item({ id: 'p1', itemType: 'PRINCIPAL', interestType: 'YASAL', interestStartDateProvenance: 'DOCUMENT_DUE_DATE' }),
+      ]);
+      expect(res.buckets).toHaveLength(0);
+      expect(res.diagnostics).toEqual([{ code: 'MISSING_START_DATE', claimItemId: 'p1' }]);
+    });
+  });
 });

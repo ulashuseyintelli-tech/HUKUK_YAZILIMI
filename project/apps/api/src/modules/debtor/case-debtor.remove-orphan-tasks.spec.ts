@@ -2,6 +2,9 @@ import { describeDb } from "../../../test/describe-db";
 import { Test, TestingModule } from "@nestjs/testing";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CaseDebtorService } from "./case-debtor.service";
+import { AuditService } from "../audit/audit.service";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import {
   AddressTaskType,
   AddressTaskStatus,
@@ -16,10 +19,20 @@ describeDb("CaseDebtorService.removeCaseDebtor - AddressTask cleanup with passiv
   let service: CaseDebtorService;
 
   const tenantId = "test-tenant-casedebtor-orphan";
+  // C1A: capability-gate + audit — bu dosya AddressTask temizliğini test eder, gate/audit'i DEĞİL
+  // → OfficeApprovalService/AuditService mock olarak override edilir (gerçek PARTNER seed gereksiz).
+  const actorId = "test-actor-orphan";
+  const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
 
   beforeAll(async () => {
     module = await Test.createTestingModule({
-      providers: [CaseDebtorService, PrismaService],
+      providers: [
+        CaseDebtorService,
+        PrismaService,
+        AuditService,
+        { provide: OfficeApprovalService, useValue: officeApproval },
+        CaseDebtorLifecycleGuardService,
+      ],
     }).compile();
 
     prisma = module.get<PrismaService>(PrismaService);
@@ -36,6 +49,7 @@ describeDb("CaseDebtorService.removeCaseDebtor - AddressTask cleanup with passiv
   });
 
   async function cleanup() {
+    await prisma.auditLog.deleteMany({ where: { tenantId } });
     await prisma.addressTask.deleteMany({ where: { tenantId } });
     await prisma.caseDebtor.deleteMany({ where: { case: { tenantId } } });
     await prisma.case.deleteMany({ where: { tenantId } });
@@ -111,7 +125,7 @@ describeDb("CaseDebtorService.removeCaseDebtor - AddressTask cleanup with passiv
     const a2Pending = await mkTask(caseA.id, debtor2.id, "CLIENT_REQUEST_DEBTOR_ADDRESSES", "PENDING");
     const b1Pending = await mkTask(caseB.id, debtor1.id, "CLIENT_REQUEST_DEBTOR_ADDRESSES", "PENDING");
 
-    const passivated = await service.removeCaseDebtor(tenantId, cdA1.id);
+    const passivated = await service.removeCaseDebtor(tenantId, cdA1.id, actorId);
     expect(passivated.id).toBe(cdA1.id);
     expect(passivated.lifecycleStatus).toBe("PASSIVE");
 

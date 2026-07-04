@@ -7,6 +7,8 @@ import {
   Param,
   Query,
   UseGuards,
+  ForbiddenException,
+  BadRequestException,
 } from "@nestjs/common";
 import { ClientNotificationService } from "./client-notification.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -16,6 +18,22 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 @UseGuards(JwtAuthGuard)
 export class ClientNotificationController {
   constructor(private service: ClientNotificationService) {}
+
+  // Bildirim Kontrol Merkezi — sağlık/özet/teşhis. ADMIN gate: teslimat istatistiği ve hata
+  // mesajları operasyonel/hassas veridir, salt-JWT yetmez (office.controller / reports ile aynı çizgi).
+  @Get("overview")
+  async getOverview(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("role") role: string
+  ) {
+    if (role !== "ADMIN") {
+      throw new ForbiddenException(
+        "Bildirim Kontrol Merkezi'ne yalnız yönetici (ADMIN) erişebilir"
+      );
+    }
+    const data = await this.service.getNotificationOverview(tenantId);
+    return { success: true, data };
+  }
 
   // E-posta gönder
   @Post("send-email")
@@ -128,6 +146,39 @@ export class ClientNotificationController {
   @Post("test-sms")
   testSmsConnection(@CurrentUser("tenantId") tenantId: string) {
     return this.service.testSmsConnection(tenantId);
+  }
+
+  // Gerçek Test Gönderimi — seçili müvekkile GERÇEK [TEST] bildirimi (bağlantı testinden AYRI).
+  // ADMIN gate + confirm zorunlu (yanlışlıkla gerçek gönderimi engeller). Mevcut send yolu kullanılır;
+  // sonuç ClientNotification'a loglanır ve "Son Gönderimler"de Test etiketiyle görünür.
+  @Post("test-send")
+  async testSend(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentUser("role") role: string,
+    @Body() body: { clientId?: string; channel?: "EMAIL" | "SMS"; confirm?: boolean }
+  ) {
+    if (role !== "ADMIN") {
+      throw new ForbiddenException(
+        "Gerçek test gönderimi yalnız yönetici (ADMIN) tarafından yapılabilir"
+      );
+    }
+    if (body?.confirm !== true) {
+      throw new BadRequestException(
+        "Onay gerekli: bu işlem seçili müvekkilin gerçek adresine GERÇEK bildirim gönderir"
+      );
+    }
+    if (!body?.clientId) {
+      throw new BadRequestException("Müvekkil seçilmedi");
+    }
+    if (body?.channel !== "EMAIL" && body?.channel !== "SMS") {
+      throw new BadRequestException("Geçersiz kanal (EMAIL veya SMS olmalı)");
+    }
+    const data = await this.service.testSend(tenantId, userId, {
+      clientId: body.clientId,
+      channel: body.channel,
+    });
+    return { success: data.success, data };
   }
 
   // Toplu e-posta gönder

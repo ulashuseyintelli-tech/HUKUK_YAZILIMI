@@ -4,8 +4,15 @@ import { CaseDebtorService } from "./case-debtor.service";
 describe("CaseDebtorService selectedAddress ownership guard", () => {
   let prisma: any;
   let service: CaseDebtorService;
+  // DBND-D2: updateCaseDebtor() artık merkezi CaseDebtorLifecycleGuardService kullanıyor;
+  // bu testler PASSIVE senaryosunu değil address-ownership'i hedefliyor → guard hep ACTIVE döner.
+  const mockLifecycleGuard = {
+    assertActiveByCaseDebtorId: jest.fn().mockResolvedValue({ lifecycleStatus: "ACTIVE" }),
+  };
 
   beforeEach(() => {
+    jest.clearAllMocks();
+    mockLifecycleGuard.assertActiveByCaseDebtorId.mockResolvedValue({ lifecycleStatus: "ACTIVE" });
     prisma = {
       case: { findFirst: jest.fn() },
       debtor: { findFirst: jest.fn() },
@@ -16,7 +23,9 @@ describe("CaseDebtorService selectedAddress ownership guard", () => {
         update: jest.fn(),
       },
     };
-    service = new CaseDebtorService(prisma);
+    // C1A: constructor 2 yeni parametre aldı (AuditService, OfficeApprovalService); bu testler
+    // removeCaseDebtor'a dokunmaz → boş mock yeter. DBND-D2: 4. parametre (lifecycle guard).
+    service = new CaseDebtorService(prisma, {} as any, {} as any, mockLifecycleGuard as any);
   });
 
   it("addDebtorToCase foreign selectedAddressId değerini reddeder", async () => {

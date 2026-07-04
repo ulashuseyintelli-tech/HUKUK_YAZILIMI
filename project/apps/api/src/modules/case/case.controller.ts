@@ -9,6 +9,7 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
 import { CreateCaseDto, UpdateCaseDto } from "./dto/case.dto";
@@ -16,7 +17,15 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { OcrService } from "../ocr/ocr.service";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
+import { TemporalResponsibilityService } from "./temporal-responsibility.service";
+import { ResponsibilityHistoryService, type HistoryEventType } from "./responsibility-history.service";
 import { AssignResponsiblePersonDto } from "./dto/responsible-person.dto";
+import { WarnOnlyAuditService } from "../permission-diagnostics/warn-only-audit.service";
+import { PermissionHardGuardService } from "../permission-diagnostics/permission-hard-guard.service";
+import { LegalResponsibleLawyerService } from "./legal-responsible-lawyer.service";
+import { ChangeLegalResponsibleLawyerDto } from "./dto/legal-responsible-lawyer.dto";
+import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
+import { ActionCode } from "../policy-engine/types/action-code.enum";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
@@ -24,7 +33,14 @@ export class CaseController {
   constructor(
     private caseService: CaseService,
     private ocrService: OcrService,
-    private responsibleCandidatesService: ResponsibleCandidatesService
+    private responsibleCandidatesService: ResponsibleCandidatesService,
+    private temporalResponsibilityService: TemporalResponsibilityService,
+    private warnOnlyAudit: WarnOnlyAuditService,
+    private permissionHardGuard: PermissionHardGuardService,
+    private responsibilityHistoryService: ResponsibilityHistoryService,
+    private legalResponsibleLawyerService: LegalResponsibleLawyerService,
+    // P2b-1: Guided-Open observe adapter (diagnostic only; engelleme yok)
+    private guidedOpenObserve: GuidedOpenObserveService
   ) {}
 
   @Get()
@@ -34,8 +50,11 @@ export class CaseController {
     @Query("expenseRequestStatus") expenseRequestStatus?: string,
     @Query("clientId") clientId?: string,
     @Query("noOwner") noOwner?: string,
+    @Query("legalResponsibleMissing") legalResponsibleMissing?: string,
     @Query("responsibleLawyerId") responsibleLawyerId?: string,
     @Query("responsibleStaffId") responsibleStaffId?: string,
+    // CS4: "Arşiv dahil" checkbox'ı bu parametre olmadığı için hiç okunmuyordu (no-op).
+    @Query("includeArchived") includeArchived?: string,
     @Query("page") page?: string,
     @Query("limit") limit?: string
   ) {
@@ -44,8 +63,11 @@ export class CaseController {
       expenseRequestStatus,
       clientId,
       noOwner: noOwner === "1" || noOwner === "true",
+      // WP-3a: LEGAL_RESPONSIBLE_MISSING warn/report filtresi (staff-owner + hukuki sorumlu yok).
+      legalResponsibleMissing: legalResponsibleMissing === "1" || legalResponsibleMissing === "true",
       responsibleLawyerId,
       responsibleStaffId,
+      includeArchived: includeArchived === "1" || includeArchived === "true",
       page: page ? parseInt(page) : undefined,
       limit: limit ? parseInt(limit) : undefined,
     });
@@ -76,18 +98,111 @@ export class CaseController {
     );
   }
 
+  // WP-1d-3: read-only combined temporal sorumluluk. "asOf tarihinde Dosya Operasyon Sorumlusu ve
+  // Hukuki Sorumlu Avukat kimdi?" İki mevcut temporal service'i birleştirir; yeni reconstruction/mutation YOK.
+  @Get(":id/responsibility-at")
+  async getResponsibilityAt(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("id") id: string,
+    @Query("asOf") asOf?: string
+  ) {
+    let asOfDate: Date;
+    if (asOf === undefined || asOf === "") {
+      asOfDate = new Date();
+    } else {
+      asOfDate = new Date(asOf);
+      if (Number.isNaN(asOfDate.getTime())) {
+        // Geçersiz asOf → mevcut error path korunur; warn-only event YAZILMAZ.
+        throw new BadRequestException("Geçersiz asOf tarihi (ISO 8601 bekleniyor).");
+      }
+    }
+    const result = await this.temporalResponsibilityService.getResponsibilityAt(tenantId, id, asOfDate);
+    // WP-4d-1: Phase 2 warn-only — response AYNEN döner; ek olarak diagnostic audit (best-effort, block YOK).
+    await this.warnOnlyAudit.recordWouldDeny("cases.responsibilityAt", {
+      tenantId,
+      actorUserId: userId,
+      entityId: id,
+      requestPath: "/cases/:id/responsibility-at",
+    });
+    return result;
+  }
+
+  // WP-1d-4c-1: Sorumluluk DEĞİŞİM geçmişi (timeline) — READ-ONLY. Mevcut responsibility-at (point-in-time) DEĞİŞMEZ.
+  @Get(":id/responsibility-history")
+  async getResponsibilityHistory(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("includeInferred") includeInferred?: string,
+    @Query("type") type?: string
+  ) {
+    const fromDate = this.parseHistoryDate(from, "from");
+    const toDate = this.parseHistoryDate(to, "to");
+    const typeOpt: HistoryEventType | "all" =
+      type === "operationOwner" || type === "legalResponsibleLawyer" ? type : "all";
+    return this.responsibilityHistoryService.getResponsibilityHistory(tenantId, id, {
+      from: fromDate,
+      to: toDate,
+      includeInferred: includeInferred === undefined ? true : includeInferred !== "false",
+      type: typeOpt,
+    });
+  }
+
+  private parseHistoryDate(value: string | undefined, label: string): Date | undefined {
+    if (value === undefined || value === "") return undefined;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) {
+      throw new BadRequestException(`Geçersiz ${label} tarihi (ISO 8601 bekleniyor).`);
+    }
+    return d;
+  }
+
   // M2-G3a: Dosya Sorumlusu (gerçek kişi) atama. İzole servise delege; case.service.ts'e dokunmadan.
+  // WP-1a: userId (actor) servise geçer → owner-change audit "kim değiştirdi" alanını doldurur.
   @Patch(":id/responsible-person")
   assignResponsiblePerson(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() dto: AssignResponsiblePersonDto
   ) {
     return this.responsibleCandidatesService.assignResponsiblePerson(
       tenantId,
       id,
-      dto
+      dto,
+      userId
     );
+  }
+
+  // WP-1d-5-4: Hukuki Sorumlu Avukat KONTROLLÜ değişikliği (devir DEĞİL — kayıt kurallı değiştirilir).
+  // ADMIN-only hard guard servis İÇİNDE; izole servise delege. CaseLawyer.isResponsible⇔role coupling +
+  // tek CASE_LAWYER audit (changeType=LEGAL_RESPONSIBLE_LAWYER_CHANGED) → history EVENT_CONFIRMED. Sözleşme #473.
+  // Operation owner / sorumluPersonelId / CaseStaff.roleOnCase / Task alanlarına DOKUNMAZ.
+  @Patch(":id/legal-responsible-lawyer")
+  async changeLegalResponsibleLawyer(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentUser("role") role: string,
+    @Param("id") id: string,
+    @Body() dto: ChangeLegalResponsibleLawyerDto
+  ) {
+    // P2b-1 observe (PRE-action; best-effort; engelleme YOK, response/akış değişmez)
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      caseId: id,
+      actionCode: ActionCode.ASSIGN_LEGAL_RESPONSIBLE,
+    });
+    const data = await this.legalResponsibleLawyerService.changeLegalResponsibleLawyer(
+      tenantId,
+      id,
+      dto,
+      userId,
+      role
+    );
+    return { data };
   }
 
   @Get("next-file-number")
@@ -109,24 +224,48 @@ export class CaseController {
   @Put(":id")
   update(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() dto: UpdateCaseDto
   ) {
-    return this.caseService.update(tenantId, id, dto);
+    return this.caseService.update(tenantId, id, dto, userId);
   }
 
   @Delete(":id")
-  delete(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
-    return this.caseService.delete(tenantId, id);
+  async delete(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentUser("role") role: string,
+    @Param("id") id: string
+  ) {
+    // WP-4e-1: Phase 3 İLK hard guard (geçici ADMIN-only bridge). Non-ADMIN → 403 + PERMISSION_DENIED.
+    // ADMIN ise success path mevcut silme davranışıyla AYNEN devam eder.
+    await this.permissionHardGuard.assertBridgeAdmin("cases.delete", {
+      tenantId,
+      actorUserId: userId,
+      role,
+      entityId: id,
+      requestPath: "/cases/:id",
+    });
+    // P2b-1 observe (best-effort; ADMIN guard'dan SONRA; engelleme YOK, response değişmez)
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      caseId: id,
+      actionCode: ActionCode.DELETE_CASE,
+    });
+    return this.caseService.delete(tenantId, id, userId);
   }
 
   @Patch(":id")
   patchFlags(
     @CurrentUser("tenantId") tenantId: string,
+    // CS2: actor — flag değişimleri (isArchived dahil) artık audit'li; userId truthful @CurrentUser.
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() dto: Partial<UpdateCaseDto>
   ) {
-    return this.caseService.patchFlags(tenantId, id, dto);
+    return this.caseService.patchFlags(tenantId, id, dto, { userId });
   }
 
   /**
@@ -156,6 +295,7 @@ export class CaseController {
   @Post("batch-update")
   async batchUpdate(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     body: {
       caseIds: string[];
@@ -171,7 +311,8 @@ export class CaseController {
     const result = await this.caseService.batchUpdate(
       tenantId,
       body.caseIds,
-      body.updates
+      body.updates,
+      userId
     );
     return { success: true, data: result };
   }
@@ -288,6 +429,7 @@ export class CaseController {
   @Post(":id/lawyers")
   async addCaseLawyer(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() body: {
       lawyerId: string;
@@ -295,7 +437,7 @@ export class CaseController {
       canSign?: boolean;
     }
   ) {
-    return this.caseService.addCaseLawyer(tenantId, id, body);
+    return this.caseService.addCaseLawyer(tenantId, id, body, userId);
   }
 
   /**
@@ -305,10 +447,11 @@ export class CaseController {
   @Delete(":id/lawyers/:caseLawyerId")
   async removeCaseLawyer(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Param("caseLawyerId") caseLawyerId: string
   ) {
-    return this.caseService.removeCaseLawyer(tenantId, id, caseLawyerId);
+    return this.caseService.removeCaseLawyer(tenantId, id, caseLawyerId, userId);
   }
 
   /**
@@ -318,6 +461,7 @@ export class CaseController {
   @Patch(":id/lawyers/:caseLawyerId")
   async updateCaseLawyer(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Param("caseLawyerId") caseLawyerId: string,
     @Body() body: {
@@ -337,7 +481,7 @@ export class CaseController {
       receiveNotifications?: boolean;
     }
   ) {
-    return this.caseService.updateCaseLawyer(tenantId, id, caseLawyerId, body);
+    return this.caseService.updateCaseLawyer(tenantId, id, caseLawyerId, body, userId);
   }
 
   /**
@@ -393,6 +537,7 @@ export class CaseController {
   @Patch(":id/staff/:caseStaffId")
   async updateCaseStaff(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Param("caseStaffId") caseStaffId: string,
     @Body() body: {
@@ -404,7 +549,7 @@ export class CaseController {
       notes?: string;
     }
   ) {
-    return this.caseService.updateCaseStaff(tenantId, id, caseStaffId, body);
+    return this.caseService.updateCaseStaff(tenantId, id, caseStaffId, body, userId);
   }
 
   // ==================== ALACAK KALEMLERİ (DUES) ====================
@@ -517,6 +662,7 @@ export class CaseController {
     @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() body: {
+      idempotencyKey: string; // P0-1: zorunlu — çift tahsilat engeli
       caseDebtorId?: string;
       amount: number;
       currency?: string;
@@ -566,11 +712,12 @@ export class CaseController {
   @Post(":id/collections/:collectionId/cancel")
   async cancelCollection(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
     @Param("collectionId") collectionId: string,
     @Body() body: { reason?: string }
   ) {
-    return this.caseService.cancelCollection(tenantId, id, collectionId, body.reason);
+    return this.caseService.cancelCollection(tenantId, id, collectionId, actorUserId, body.reason);
   }
 
   /**

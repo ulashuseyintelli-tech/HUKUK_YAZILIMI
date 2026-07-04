@@ -376,3 +376,9 @@ export interface UyapStatus {
   mode: 'STUB' | 'LIVE';
   message: string;
 }
+
+// ============================================
+// Client (Müvekkil) — kanonik tip kaynağı (Task 3)
+// ============================================
+// Tek-kaynak: lib/api/client.types.ts. Umbrella re-export → consumer'lar @/lib/api/types'tan da erişir.
+export * from './client.types';

@@ -79,6 +79,12 @@ export class CreateDebtorAddressDto {
   @IsBoolean()
   @IsOptional()
   isMernis?: boolean;
+
+  // DBND-D6A-2: mutasyonun yapıldığı case bağlamı (varsa) — cross-case bildirim fan-out'unda bu case'i
+  // hariç tutmak için. Route bugün caseId taşımadığından çoğu çağrıda gönderilmez (opsiyonel).
+  @IsString()
+  @IsOptional()
+  sourceCaseId?: string;
 }
 
 export class UpdateDebtorAddressDto {
@@ -113,6 +119,14 @@ export class UpdateDebtorAddressDto {
   @IsBoolean()
   @IsOptional()
   isMernis?: boolean;
+
+  // Bu güncellemenin hangi dosyadan tetiklendiği — DebtorAddress kolonu DEĞİL. İki bağımsız
+  // tüketici var: DBND-D6A-1 (audit metadata'ya yazar, pull/computed alert'te kendi dosyanı
+  // hariç tutmak için) ve DBND-D6A-2 (persistent cross-case notification fan-out'unda case
+  // hariç tutmak için, bkz CreateDebtorAddressDto.sourceCaseId). Aralarında kod bağı yok.
+  @IsString()
+  @IsOptional()
+  sourceCaseId?: string;
 }
 
 // ==================== ESTATE HEIR DTO ====================
@@ -448,6 +462,15 @@ export class UpdateDebtorDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  // Bu güncellemenin hangi dosyadan tetiklendiği — Debtor kolonu DEĞİL. İki bağımsız tüketici
+  // var: DBND-D6A-1 (audit metadata'ya yazar, pull/computed alert'te kendi dosyanı hariç
+  // tutmak için) ve DBND-D6A-2 (persistent cross-case notification fan-out'unda case hariç
+  // tutmak için). Route bugün caseId taşımadığından çoğu çağrıda gönderilmez. Aralarında kod
+  // bağı yok.
+  @IsString()
+  @IsOptional()
+  sourceCaseId?: string;
 }
 
 // ==================== SEARCH & FILTER DTO ====================

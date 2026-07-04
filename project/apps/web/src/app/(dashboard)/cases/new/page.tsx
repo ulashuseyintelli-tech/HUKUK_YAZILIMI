@@ -7,9 +7,10 @@ import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculat
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws } from "@/lib/case-due-payload";
-import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
+import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
+import { CASE_STAFF_ROLE_OPTIONS, CASE_STAFF_ROLE_GROUP_LABEL, CASE_STAFF_ROLE_HELP_TEXT, normalizeCaseStaffRole } from "@/lib/case-staff-role";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
 import { WizardAnswers } from "@/types/wizard";
 import { formMetadata, filterFormsByCategory } from "@/config/form-metadata";
@@ -1049,7 +1050,7 @@ export default function NewCasePage() {
     if (currentStep === 1 && !caseData.takipTuruId) { setError("Takip türü zorunludur"); return; }
     // M2-G3c: Dosya Sorumlusu (gerçek kişi) zorunlu — adım-1 İleri'de de enforce (eskiden yalnız
     // final-submit validateCaseCreation/MISSING_RESPONSIBLE bloklıyordu; * işaretiyle tutarsızdı).
-    if (currentStep === 1 && !responsiblePerson) { setError("Dosya Sorumlusu seçilmelidir"); return; }
+    if (currentStep === 1 && !responsiblePerson) { setError("Dosya Operasyon Sorumlusu seçilmelidir"); return; }
     setError(""); setCurrentStep(prev => Math.min(prev + 1, steps.length - 1));
   };
 
@@ -1614,7 +1615,7 @@ export default function NewCasePage() {
                 <div><label className="block text-xs font-medium mb-0.5">Takip Türü <span className="text-red-500">*</span></label><select name="takipTuruId" value={caseData.takipTuruId} onChange={(e) => handleTakipTuruChange(e.target.value)} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.takipTuru.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 {/* A4 (Dosya Sorumlusu): dropdown yalnız aktif + VIEWER olmayan kullanıcıları gösterir; zaten atanmış değer korunur */}
                 {/* M2-G3c: Dosya Sorumlusu = gerçek kişi (Lawyer/StaffMember) picker. User dropdown'unun yerine; zorunlu. */}
-                <div><label className="block text-xs font-medium mb-0.5">Dosya Sorumlusu <span className="text-red-500">*</span></label><ResponsibleCandidateSelect value={responsiblePerson} onChange={setResponsiblePerson} disabled={loading} /></div>
+                <div><label className="block text-xs font-medium mb-0.5">Dosya Operasyon Sorumlusu <span className="text-red-500">*</span></label><ResponsibleCandidateSelect value={responsiblePerson} onChange={setResponsiblePerson} disabled={loading} /><p className="text-[10px] text-muted-foreground mt-0.5">Dosyanın günlük takibini yürütecek gerçek kişi (avukat veya personel). Hukuki Sorumlu Avukat ile aynı kavram değildir.</p></div>
                 <div><label className="block text-xs font-medium mb-0.5">Aşama</label><select name="asamaId" value={caseData.asamaId} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.asama.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 <div><label className="block text-xs font-medium mb-0.5">Mahiyet Tipi</label><select name="mahiyetTipiId" value={caseData.mahiyetTipiId} onChange={(e) => { const selectedId = e.target.value; const selectedItem = lookups.mahiyetTipi.find(m => m.id === selectedId); setCaseData(prev => ({ ...prev, mahiyetTipiId: selectedId, mahiyetKodu: selectedItem?.code || '' })); }} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.mahiyetTipi.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 <div><label className="block text-xs font-medium mb-0.5">Mahiyet Kodu</label><input type="text" name="mahiyetKodu" value={caseData.mahiyetKodu} onChange={handleCaseDataChange} placeholder="KIRA, AIDAT" className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary" /></div>
@@ -1779,6 +1780,9 @@ export default function NewCasePage() {
                   asButton={true}
                   onScanComplete={async (result) => {
                     try {
+                      // Vekaletname alanları /clients gövdesine konmaz (ClientService
+                      // okumaz, ValidationPipe düşürür); vekalet müvekkil oluşturulduktan
+                      // sonra kanonik POST /poa ile kaydedilir.
                       const clientData = {
                         type: result.clientType,
                         firstName: result.firstName,
@@ -1796,16 +1800,24 @@ export default function NewCasePage() {
                         canWaive: result.canWaive,
                         canSettle: result.canSettle,
                         canRelease: result.canRelease,
-                        poaNumber: result.poaNumber,
-                        poaDate: result.poaDate,
-                        notaryName: result.notaryName,
-                        notaryCity: result.notaryCity,
                       };
                       const response = await api.post("/clients", clientData);
-                      const saved = response.data || response;
+                      const savedClient = response.data?.data || response.data || response;
+                      // Taranan vekaletname bilgisi varsa kanonik /poa ile kaydet
+                      // (avukat eşleştirmesi tarama akışındaki #1 ile aynı).
+                      if (savedClient?.id && hasPoaInput(result)) {
+                        try {
+                          await api.post("/poa", {
+                            ...buildPoaCreatePayload(savedClient.id, result),
+                            lawyerIds: resolveLawyerIdsFromScan(result, existingLawyers),
+                          });
+                        } catch (poaErr) {
+                          console.warn("Vekalet oluşturulamadı:", poaErr);
+                        }
+                      }
                       const clientsRes = await api.get("/clients");
                       setExistingClients(clientsRes.data?.data || []);
-                      addExistingCreditor(saved);
+                      addExistingCreditor(savedClient);
                     } catch (err: any) {
                       alert(err.message || "Müvekkil kaydedilemedi");
                     }
@@ -2096,13 +2108,22 @@ export default function NewCasePage() {
           onSave={async (data) => {
             setSavingClient(true);
             try {
-              const response = await api.post("/clients", data);
-              const saved = response.data || response;
+              // Vekaletname alanları /clients gövdesine konmaz; vekalet ayrı
+              // kanonik POST /poa ile kaydedilir (giriliyor ama düşüyor tuzağını kapatır).
+              const response = await api.post("/clients", stripPoaFields(data));
+              const savedClient = response.data?.data || response.data || response;
+              if (savedClient?.id && hasPoaInput(data)) {
+                try {
+                  await api.post("/poa", buildPoaCreatePayload(savedClient.id, data));
+                } catch (poaErr) {
+                  console.warn("Vekalet oluşturulamadı:", poaErr);
+                }
+              }
               // Listeyi yenile
               const clientsRes = await api.get("/clients");
               setExistingClients(clientsRes.data?.data || []);
               // Yeni müvekkili seçili olarak ekle
-              addExistingCreditor(saved);
+              addExistingCreditor(savedClient);
               setShowNewClientModal(false);
             } catch (err: any) {
               alert(err.message || "Müvekkil kaydedilemedi");
@@ -2536,14 +2557,6 @@ function StaffSelectionStep({
     ARSIV: "Arşiv",
   };
 
-  const roleOnCaseOptions = [
-    { value: "STAJYER", label: "Stajyer" },
-    { value: "KONTROL", label: "Kontrol" },
-    { value: "YAZI_ISLERI", label: "Yazı İşleri" },
-    { value: "MUHASEBE", label: "Muhasebe" },
-    { value: "TEBLIGAT_SORUMLUSU", label: "Tebligat Sorumlusu" },
-  ];
-
   const filteredStaff = existingStaff.filter(s =>
     s.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     s.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -2669,17 +2682,19 @@ function StaffSelectionStep({
                   {/* Rol ve Yetkiler */}
                   <div className="space-y-2">
                     <div>
-                      <label className="block text-xs font-medium mb-1">Dosyadaki Rolü</label>
+                      {/* WP-2c-1: CaseStaff.roleOnCase = "Dosya Ekibi Rolü" (shared option-list); owner DEĞİL. */}
+                      <label className="block text-xs font-medium mb-1">{CASE_STAFF_ROLE_GROUP_LABEL}</label>
                       <select
-                        value={staff.roleOnCase || ""}
+                        value={normalizeCaseStaffRole(staff.roleOnCase)}
                         onChange={(e) => onUpdateStaff(index, "roleOnCase", e.target.value)}
                         className="w-full rounded border px-2 py-1 text-xs"
                       >
                         <option value="">Seçiniz</option>
-                        {roleOnCaseOptions.map(opt => (
+                        {CASE_STAFF_ROLE_OPTIONS.map(opt => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>
+                      <p className="mt-1 text-[10px] text-gray-400">{CASE_STAFF_ROLE_HELP_TEXT}</p>
                     </div>
                     
                     <div className="flex flex-wrap gap-3">
@@ -2939,7 +2954,7 @@ function SelectedLawyerCard({
               onChange={() => onUpdate("isResponsible", true)} 
               className="w-3.5 h-3.5 text-indigo-600" 
             />
-            <span className={lawyer.isResponsible ? "font-medium text-indigo-700" : ""}>Sorumlu Avukat</span>
+            <span className={lawyer.isResponsible ? "font-medium text-indigo-700" : ""}>Hukuki Sorumlu Avukat</span>
           </label>
           <label className="flex items-center gap-1.5 cursor-pointer text-xs">
             <input 

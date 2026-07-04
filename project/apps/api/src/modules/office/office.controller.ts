@@ -7,27 +7,48 @@ import {
   Body,
   Param,
   UseGuards,
+  ForbiddenException,
 } from "@nestjs/common";
 import { OfficeService } from "./office.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { StaffType } from "@prisma/client";
+import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
+import { ActionCode } from "../policy-engine/types/action-code.enum";
 
 @Controller("office")
 @UseGuards(JwtAuthGuard)
 export class OfficeController {
-  constructor(private officeService: OfficeService) {}
+  constructor(
+    private officeService: OfficeService,
+    // P2b-1: Guided-Open observe adapter (credential pilot; engelleme yok)
+    private guidedOpenObserve: GuidedOpenObserveService
+  ) {}
+
+  // WP-4c-hotfix-1: ofis kimlik bilgisi (SMTP/SMS) GÜNCELLEME yalnız ADMIN.
+  // WP-4c-0 envanteri bu uçları TENANT_ONLY (tenant içi herkes değiştirebilir) olarak işaretledi.
+  // Minimal hard guard; mevcut report.controller ADMIN-gate deseniyle aynı. Genel RBAC framework DEĞİL.
+  private assertCredentialAdmin(role: string) {
+    if (role !== "ADMIN") {
+      throw new ForbiddenException(
+        "Ofis kimlik bilgisi (SMTP/SMS) ayarlarını yalnız yönetici (ADMIN) güncelleyebilir"
+      );
+    }
+  }
 
   // Büro bilgilerini getir
   @Get()
   getOffice(@CurrentUser("tenantId") tenantId: string) {
-    return this.officeService.getOrCreate(tenantId);
+    // Güvenlik: GENEL büro yanıtında SMTP/SMS secret'ları maskeli döner
+    // (düz-metin sızıntısı kapatıldı). Internal gönderim yolları ham değeri okur.
+    return this.officeService.getPublicOffice(tenantId);
   }
 
   // Büro bilgilerini güncelle
   @Put()
   updateOffice(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       name?: string;
@@ -40,10 +61,14 @@ export class OfficeController {
       email?: string;
       website?: string;
       barAssociation?: string;
+      vergiNo?: string;
+      vergiDairesi?: string;
+      mersisNo?: string;
+      kepAddress?: string;
       defaultExecutionOfficeId?: string;
     }
   ) {
-    return this.officeService.update(tenantId, data);
+    return this.officeService.update(tenantId, data, userId);
   }
 
   // Banka hesabı ekle
@@ -96,8 +121,10 @@ export class OfficeController {
 
   // SMTP ayarlarını güncelle
   @Put("smtp-settings")
-  updateSmtpSettings(
+  async updateSmtpSettings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("role") role: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       smtpHost?: string;
@@ -109,7 +136,14 @@ export class OfficeController {
       smtpFromEmail?: string;
     }
   ) {
-    return this.officeService.updateSmtpSettings(tenantId, data);
+    this.assertCredentialAdmin(role);
+    // P2b-1 observe (best-effort; ADMIN guard'dan SONRA; engelleme YOK, response değişmez)
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      actionCode: ActionCode.MANAGE_OFFICE_CREDENTIALS,
+    });
+    return this.officeService.updateSmtpSettings(tenantId, data, userId);
   }
 
   // SMS ayarlarını getir
@@ -122,6 +156,8 @@ export class OfficeController {
   @Put("sms-settings")
   updateSmsSettings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("role") role: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       smsProvider?: string;
@@ -130,7 +166,8 @@ export class OfficeController {
       smsSender?: string;
     }
   ) {
-    return this.officeService.updateSmsSettings(tenantId, data);
+    this.assertCredentialAdmin(role);
+    return this.officeService.updateSmsSettings(tenantId, data, userId);
   }
 
   // Otomatik tebrik ayarlarını getir
@@ -143,13 +180,14 @@ export class OfficeController {
   @Put("greeting-settings")
   updateGreetingSettings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       autoGreetingEnabled?: boolean;
       autoGreetingTime?: string;
     }
   ) {
-    return this.officeService.updateGreetingSettings(tenantId, data);
+    return this.officeService.updateGreetingSettings(tenantId, data, userId);
   }
 
   // İİK 78 ayarlarını getir (pasifleşme süresi)
@@ -162,13 +200,14 @@ export class OfficeController {
   @Put("iik78-settings")
   updateIik78Settings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       inactivityThresholdDays?: number;
       inactivityWarningDays?: number;
     }
   ) {
-    return this.officeService.updateIik78Settings(tenantId, data);
+    return this.officeService.updateIik78Settings(tenantId, data, userId);
   }
 
   // Görev & Eskalasyon ayarlarını getir
@@ -181,6 +220,7 @@ export class OfficeController {
   @Put("escalation-settings")
   updateEscalationSettings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       escalationManagerLawyerIds?: string[];
@@ -198,6 +238,6 @@ export class OfficeController {
       caseTaskManagerDays?: number;
     }
   ) {
-    return this.officeService.updateEscalationSettings(tenantId, data);
+    return this.officeService.updateEscalationSettings(tenantId, data, userId);
   }
 }

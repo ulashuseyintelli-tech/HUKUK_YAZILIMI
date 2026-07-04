@@ -84,4 +84,21 @@ describe('RFA-017 importClientsFromExcel — guard delegasyonu', () => {
     expect(result.errors.length).toBe(1);
     expect(clientService.create).not.toHaveBeenCalled();
   });
+
+  // P0.6 — import actor attribution: AuditLog.userId null kalmasın diye actor create'e threadlenir.
+  it('P0.6: actorUserId verilince clientService.create 3. argümanda {userId} ile çağrılır', async () => {
+    const clientService = { create: jest.fn(async () => ({ id: 'c1' })) } as any;
+    const svc = new ExportImportService({} as any, clientService);
+    const buf = await buildExcelBuffer([['PERSON', 'Ahmet', 'Yılmaz', '11111111111']]);
+    await svc.importClientsFromExcel('tenant-1', buf, 'user-42');
+    expect(clientService.create.mock.calls[0][2]).toEqual({ userId: 'user-42' });
+  });
+
+  it('P0.6: actorUserId yoksa create 3. argüman undefined (regresyon yok)', async () => {
+    const clientService = { create: jest.fn(async () => ({ id: 'c1' })) } as any;
+    const svc = new ExportImportService({} as any, clientService);
+    const buf = await buildExcelBuffer([['PERSON', 'Ahmet', 'Yılmaz', '11111111111']]);
+    await svc.importClientsFromExcel('tenant-1', buf);
+    expect(clientService.create.mock.calls[0][2]).toBeUndefined();
+  });
 });

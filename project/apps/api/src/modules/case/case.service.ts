@@ -21,6 +21,15 @@ import { validateResponsibleSelection } from "./responsible-candidates.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { CollectionService } from "../collection/collection.service";
+import {
+  assertCollectionPublicUpdateAllowed,
+  collectionDeleteDisabled,
+  collectionRequiresReversal,
+  COLLECTION_METADATA_UPDATE_FIELDS,
+  COLLECTION_REQUIRES_REVERSAL_DELETE_MESSAGE,
+  COLLECTION_STATUS_PENDING,
+  pickDefinedCollectionUpdateData,
+} from "../collection/collection-safety.helper";
 // RFA-016: case.create içindeki inline taraf oluşturma artık bu guard'lı servislere devredilir
 // (tx.client/lawyer/debtor.create duplicate guard'ı atlıyordu → Şükrü-deseninin dış-kapı hali).
 import { ClientService } from "../client/client.service";
@@ -770,7 +779,8 @@ export class CaseService {
    *
    * @remarks Çağrıldığı yerler:
    * - CaseService.create() → POST /cases (her creditor.id → clientId + courtId + executionOfficeId, tx öncesi)
-   * - CaseService.update() → PUT /cases/:id (clientId, courtId)
+   * - CaseService.update() → PUT /cases/:id (yalnız courtId; clientId CBND-1 ile generic update'ten
+   *   çıkarıldı — bkz. update() içindeki yan-kapı guard'ı, clientId artık burada doğrulanmaz)
    * - CaseService.patchFlags() → PATCH /cases/:id (executionOfficeId)
    */
   private async validateCaseFkOwnership(
@@ -806,10 +816,14 @@ export class CaseService {
     }
   }
 
-  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
-    const { status, expenseRequestStatus, clientId, noOwner, responsibleLawyerId, responsibleStaffId, page = 1, limit = 20 } = params || {};
+  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; includeArchived?: boolean; page?: number; limit?: number }) {
+    const { status, expenseRequestStatus, clientId, noOwner, legalResponsibleMissing, responsibleLawyerId, responsibleStaffId, includeArchived, page = 1, limit = 20 } = params || {};
 
     const where: any = { tenantId };
+    // CS4: "Arşiv dahil" checkbox'ı önceden uçtan uca no-op'tu (FE api.ts hiç göndermiyordu, controller
+    // hiç almıyordu, burada hiç filtrelenmiyordu — isArchived=true dosyalar HER ZAMAN listede kalıyordu).
+    // Varsayılan davranış: arşivli dosyalar gizlenir; includeArchived=true iken hepsi gösterilir.
+    if (!includeArchived) where.isArchived = false;
     if (status) where.status = status;
     if (clientId) where.clientId = clientId;
     // M2-G5c: Sahipsiz/noOwner = gerçek-kişi owner YOKLUĞU (responsibleLawyer/Staff İKİSİ de null).
@@ -821,6 +835,13 @@ export class CaseService {
     // G5a: açık person owner filtreleri — her param KENDİ kolonuna (K1 bridge yok → cross-fallback yok).
     if (responsibleLawyerId) where.responsibleLawyerId = responsibleLawyerId;
     if (responsibleStaffId) where.responsibleStaffId = responsibleStaffId;
+    // WP-3a: LEGAL_RESPONSIBLE_MISSING filtresi — aktif hukuki dosyada operasyon owner personel ama
+    // hukuki sorumlu avukat yok. getStats sayacıyla AYNI koşul. Warn/report; status'u ACTIVE'e sabitler.
+    if (legalResponsibleMissing) {
+      where.status = "ACTIVE";
+      where.responsibleStaffId = { not: null };
+      where.lawyers = { none: { isResponsible: true } };
+    }
     
     // Masraf talebi durumuna göre filtreleme
     if (expenseRequestStatus) {
@@ -1432,6 +1453,7 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     assigned: { staffMemberId: string; roleOnCase: string }[],
+    userId: string, // WP-1c-1: user-driven create-path → actor zorunlu
   ): Promise<void> {
     if (assigned.length === 0) return;
     await this.auditService.log({
@@ -1439,6 +1461,7 @@ export class CaseService {
       action: 'CREATE',
       entityType: 'CASE_STAFF',
       entityId: caseId,
+      userId, // WP-1c-1
       newValues: { staff: assigned },
       description: `Dosyaya ${assigned.length} personel atandı`,
     });
@@ -1627,6 +1650,9 @@ export class CaseService {
             // none → ikisi de null (sahipsiz, meşru); DB CHECK both-set'i ayrıca engeller.
             responsibleLawyerId: resolvedResponsible.responsibleLawyerId,
             responsibleStaffId: resolvedResponsible.responsibleStaffId,
+            // WP-1b: dosyayı oluşturan kullanıcı (creator attribution). userId yukarıda zorunlu;
+            // eski null kayıtlar için backfill YOK (ayrı/yok). Operasyon owner'dan AYRI kavram.
+            createdById: userId,
           },
         });
 
@@ -1947,7 +1973,7 @@ export class CaseService {
       // ASSIGN-2a: seçimle atanan personel için audit (yalnız dto.staff verildiğinde; default
       // yol mevcut davranışı AYNEN korur → ek audit üretmez). Tx commit sonrası.
       if (result.staffResult.selectionProvided) {
-        await this.auditStaffAssignment(tenantId, result.case?.id ?? '', result.staffResult.assigned);
+        await this.auditStaffAssignment(tenantId, result.case?.id ?? '', result.staffResult.assigned, userId);
       }
 
       // 7. Vekalet kontrolü (transaction dışında)
@@ -1982,9 +2008,36 @@ export class CaseService {
           action: 'CREATE',
           entityType: 'CASE',
           entityId: result.case.id,
+          userId, // WP-1c-1: create user-driven → actor zorunlu
           newValues: { fileNumber: result.case.fileNumber, type: result.case.type },
           description: `Yeni takip oluşturuldu: ${result.case.fileNumber}`,
         });
+
+        // WP-1d-pre: creation-anı canonical operasyon owner audit (sorumluluk yaşam-döngüsünün
+        // BAŞLANGIÇ event'i; WP-1a değişim + WP-1b createdById ile temporal sorgunun ön-koşulu).
+        // YALNIZ create payload'ında gerçek-kişi owner (responsibleLawyer/Staff) SET edildiyse yazılır;
+        // legacy sorumluPersonelId BAŞKA kavram, buraya GİRMEZ (karıştırma yasağı). tx commit SONRASI →
+        // create başarısızsa yazılmaz. AuditLog tek otorite (yeni tablo/migration YOK).
+        if (resolvedResponsible.responsibleLawyerId || resolvedResponsible.responsibleStaffId) {
+          await this.auditService.log({
+            tenantId,
+            action: 'CREATE',
+            entityType: 'CASE',
+            entityId: result.case.id,
+            userId,
+            oldValues: { responsibleLawyerId: null, responsibleStaffId: null },
+            newValues: {
+              responsibleLawyerId: resolvedResponsible.responsibleLawyerId,
+              responsibleStaffId: resolvedResponsible.responsibleStaffId,
+            },
+            metadata: {
+              changeType: 'OPERATION_OWNER_INITIALIZED',
+              source: 'CaseService.create',
+              createdById: userId,
+              temporalOrigin: true,
+            },
+          });
+        }
 
         // ASSIGN-4b: create dedupe fazla sorumlu düşürdüyse CASE_LAWYER UPDATE olarak audit'le
         // (avukat CREATE/DELETE audit'i 4c kapsamında; burada YALNIZ otomatik demote loglanır).
@@ -1994,6 +2047,8 @@ export class CaseService {
             action: 'UPDATE',
             entityType: 'CASE_LAWYER',
             entityId: result.responsibleKeptId,
+            userId, // WP-1c-1: create içi oto-dedupe yine user-driven create → actor zorunlu
+            metadata: { caseId: result.case.id }, // WP-1d-2-pre: legal-responsible temporal için caseId
             newValues: { isResponsible: true, role: 'RESPONSIBLE', demotedCaseLawyerIds: result.responsibleDemotedIds, reason: 'CREATE_DEDUPE' },
             description: `Takip oluşturulurken fazla sorumlu avukat düşürüldü (${result.responsibleDemotedIds.length})`,
           });
@@ -2046,8 +2101,8 @@ export class CaseService {
     }
   }
 
-  async update(tenantId: string, id: string, dto: UpdateCaseDto) {
-    await this.findOne(tenantId, id);
+  async update(tenantId: string, id: string, dto: UpdateCaseDto, userId: string) {
+    const existing = await this.findOne(tenantId, id);
 
     // Boş string'leri undefined'a çevir
     const data: any = { ...dto };
@@ -2071,6 +2126,33 @@ export class CaseService {
       }
     });
 
+    // P3-2B-3: STATÜ YAN-KAPISI KAPALI. Statü değişimi YALNIZCA kanonik POST /case-status/:caseId/change'ten
+    // yapılır (history/decisionLog/observe orada yazılır). Farklı statü → 400; aynı statü (FE'nin "değişmeyen
+    // statü" PUT'u) → no-op (write'tan çıkar, hata yok). Statü generic update ile HİÇBİR ZAMAN yazılmaz.
+    const currentStatus = (existing as any)?.caseStatus;
+    if (data.caseStatus !== undefined && data.caseStatus !== currentStatus) {
+      throw new BadRequestException(
+        "Statü değişimi generic güncelleme ile yapılamaz; POST /case-status/:caseId/change kullanın.",
+      );
+    }
+    delete data.caseStatus;
+
+    // CBND-1 (H1): MÜVEKKİL DEĞİŞİMİ YAN-KAPISI KAPALI. Case.clientId finansal otorite değildir —
+    // otorite dosyanın CaseClient alacaklı kümesidir (create() sırasında birlikte, tek noktada yazılır;
+    // create-sonrası CaseClient için kontrollü bir rebind akışı yoktur). Generic update() clientId'yi
+    // CaseClient'a dokunmadan persist ediyordu → iki kayıt sessizce ıraksayabiliyordu (tahsilat/payout/
+    // ekstre CaseClient okurken, findAll/hasValidPoa/açılış-masrafı hâlâ bu alanı okuyor). DTO'dan
+    // çıkarıldı (forbidNonWhitelisted çoğu isteği reddeder); burada da runtime guard (aynı-tx başka bir
+    // yoldan `data.clientId` sızarsa yine yakalanır — caseStatus deseniyle aynı). Farklı değer → 409
+    // (kontrollü rebind akışı henüz yok); aynı/eksik → no-op. Asla generic update ile persist edilmez.
+    const currentClientId = (existing as any)?.clientId;
+    if (data.clientId !== undefined && data.clientId !== currentClientId) {
+      throw new ConflictException(
+        "Müvekkil değişimi genel güncelleme ile yapılamaz; dosyanın alacaklı kümesi (CaseClient) ayrı, kontrollü bir işlem gerektirir.",
+      );
+    }
+    delete data.clientId;
+
     // İcra dairesi değiştiyse ve UYAP kodu yoksa, icra dairesinden al
     if (data.executionOfficeId && !data.uyapBirimKodu) {
       const executionOffice = await this.prisma.executionOffice.findUnique({
@@ -2083,10 +2165,11 @@ export class CaseService {
       }
     }
 
-    // CASE-UPDATE-FK-TENANT: clientId/courtId tenant ownership guard (cross-tenant/geçersiz → 400;
-    // null/undefined → atla — "" yukarıda undefined'a çevrildi). executionOfficeId UpdateCaseDto'da
-    // YOK (forbidNonWhitelisted PUT'ta bloklar) → burada doğrulanmaz; o yol patchFlags()'te ele alınır.
-    await this.validateCaseFkOwnership(tenantId, { clientId: data.clientId, courtId: data.courtId });
+    // CASE-UPDATE-FK-TENANT: courtId tenant ownership guard (cross-tenant/geçersiz → 400; null/undefined
+    // → atla — "" yukarıda undefined'a çevrildi). clientId CBND-1 ile yukarıda ele alındı (asla write
+    // edilmediği için FK doğrulaması gereksiz). executionOfficeId UpdateCaseDto'da YOK (forbidNonWhitelisted
+    // PUT'ta bloklar) → burada doğrulanmaz; o yol patchFlags()'te ele alınır.
+    await this.validateCaseFkOwnership(tenantId, { courtId: data.courtId });
 
     const updated = await this.prisma.case.update({
       where: { id },
@@ -2099,6 +2182,7 @@ export class CaseService {
       action: 'UPDATE',
       entityType: 'CASE',
       entityId: id,
+      userId, // WP-1c-2: user-driven CASE update → actor zorunlu
       newValues: data,
       description: `Takip güncellendi: ${updated.fileNumber}`,
     });
@@ -2106,31 +2190,104 @@ export class CaseService {
     return updated;
   }
 
-  async delete(tenantId: string, id: string) {
+  /**
+   * CS2 (CS1 owner-karar 2026-07-03) — CBND-4'ün (H7) FOOTPRINT'e genişletilmiş hali: Case artık
+   * kalıcı-kimlik hibrit modelinde (Debtor D1A deseni) — YALNIZ footprint'siz (taslak/yanlışlıkla
+   * açılmış) dosya fiziksel silinebilir; hukuki/finansal/operasyonel iz taşıyan dosya SİLİNEMEZ
+   * (kapatılır/arşivlenir). Yapısal bağlar (CaseDebtor/CaseClient/CaseLawyer/CaseStaff) footprint
+   * SAYILMAZ (her dosyada açılışta var; cascade yalnız bağ satırını siler, kimliği değil).
+   * Mevcut 4 finansal sayaç (CBND-4) AYNEN korunur; hata kodu geriye-uyumluluk için değişmedi.
+   */
+  private async assertNoCaseFootprint(tenantId: string, caseId: string): Promise<void> {
+    const [
+      collectionCount, offsetCount, payoutCount, manualReversalCount,
+      ledgerEntryCount, claimItemCount, dueCount, tebligatCount, expenseRequestCount,
+      taskCount, decisionLogCount, timelineEntryCount, documentCount,
+    ] = await Promise.all([
+      this.prisma.collection.count({ where: { tenantId, caseId } }),
+      this.prisma.clientOffset.count({ where: { tenantId, OR: [{ payableCaseId: caseId }, { expenseCaseId: caseId }] } }),
+      this.prisma.clientPayout.count({ where: { tenantId, caseId } }),
+      this.prisma.clientPayoutManualReversal.count({ where: { tenantId, caseId } }),
+      // CS2 footprint sayaçları — Case zaten tenant-scoped findOne ile doğrulandı; tenantId alanı
+      // OLAN modellerde defense-in-depth için tenantId de eklenir, olmayanlarda yalnız caseId.
+      this.prisma.ledgerEntry.count({ where: { tenantId, caseId } }),
+      this.prisma.claimItem.count({ where: { tenantId, caseId } }),
+      this.prisma.due.count({ where: { caseId } }),
+      this.prisma.tebligat.count({ where: { tenantId, caseId } }),
+      this.prisma.expenseRequest.count({ where: { tenantId, caseId } }),
+      this.prisma.task.count({ where: { tenantId, caseId } }),
+      this.prisma.decisionLog.count({ where: { caseId } }),
+      this.prisma.icrabotTimelineEntry.count({ where: { caseId } }),
+      this.prisma.caseDocument.count({ where: { caseId } }),
+    ]);
+
+    const blockers: string[] = [];
+    if (collectionCount > 0) blockers.push(`${collectionCount} tahsilat (Collection)`);
+    if (offsetCount > 0) blockers.push(`${offsetCount} mahsup (ClientOffset)`);
+    if (payoutCount > 0) blockers.push(`${payoutCount} müvekkil ödemesi (ClientPayout)`);
+    if (manualReversalCount > 0) blockers.push(`${manualReversalCount} manuel reversal kaydı (ClientPayoutManualReversal)`);
+    if (ledgerEntryCount > 0) blockers.push(`${ledgerEntryCount} defter kaydı (LedgerEntry)`);
+    if (claimItemCount > 0) blockers.push(`${claimItemCount} alacak kalemi (ClaimItem)`);
+    if (dueCount > 0) blockers.push(`${dueCount} vade kaydı (Due)`);
+    if (tebligatCount > 0) blockers.push(`${tebligatCount} tebligat (Tebligat)`);
+    if (expenseRequestCount > 0) blockers.push(`${expenseRequestCount} masraf talebi (ExpenseRequest)`);
+    if (taskCount > 0) blockers.push(`${taskCount} görev (Task)`);
+    if (decisionLogCount > 0) blockers.push(`${decisionLogCount} karar kaydı (DecisionLog)`);
+    if (timelineEntryCount > 0) blockers.push(`${timelineEntryCount} olay kaydı (IcrabotTimelineEntry)`);
+    if (documentCount > 0) blockers.push(`${documentCount} belge (CaseDocument)`);
+
+    if (blockers.length > 0) {
+      throw new ConflictException({
+        code: 'CASE_DELETE_FINANCIAL_ACTIVITY',
+        message: `Dosya silinemez: hukuki/finansal geçmişi var (${blockers.join(', ')}). İz taşıyan dosyalar kalıcı silinemez; kapatma veya arşivleme kullanın.`,
+      });
+    }
+  }
+
+  async delete(tenantId: string, id: string, userId: string) {
     const existing = await this.findOne(tenantId, id);
 
-    // Transaction içinde silme ve audit log (veri bütünlüğü için)
-    await this.prisma.$transaction(async (tx) => {
-      await tx.case.delete({
-        where: { id },
-      });
+    // CS2: transaction'dan ÖNCE — footprint (hukuki/finansal/operasyonel iz) varsa silme hiç denenmez.
+    await this.assertNoCaseFootprint(tenantId, id);
 
-      // Audit log - transaction içinde
-      await this.auditService.log({
-        tenantId,
-        action: 'DELETE',
-        entityType: 'CASE',
-        entityId: id,
-        oldValues: { fileNumber: existing.fileNumber },
-        description: `Takip silindi: ${existing.fileNumber}`,
+    // Transaction içinde silme ve audit log (veri bütünlüğü için)
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.case.delete({
+          where: { id },
+        });
+
+        // CS2: audit artık GERÇEKTEN aynı transaction'da (logInTransaction; eski log() tx-bağsızdı
+        // — audit yazılamazsa silme de rollback olur, audit'siz silme kalmaz).
+        await this.auditService.logInTransaction(tx, {
+          tenantId,
+          action: 'DELETE',
+          entityType: 'CASE',
+          entityId: id,
+          userId, // WP-1c-2: user-driven CASE delete → actor zorunlu
+          oldValues: { fileNumber: existing.fileNumber },
+          description: `Takip silindi: ${existing.fileNumber}`,
+        });
       });
-    });
+    } catch (error: any) {
+      // CS2: footprint sayaçlarında olmayan onDelete:Restrict ilişkiler (ClientStatement,
+      // ClientApprovalRequest, intake modelleri vb.) ham Prisma P2003 olarak patlıyordu —
+      // kontrollü 409'a çevrilir (davranış yalnız güvenli yönde daralır, silme zaten olmuyordu).
+      if (error?.code === 'P2003') {
+        throw new ConflictException({
+          code: 'CASE_DELETE_RESTRICTED_RELATION',
+          message:
+            'Dosya silinemez: dosyaya bağlı korumalı kayıtlar var (ör. müvekkil ekstresi/onay talebi/intake kaydı). İz taşıyan dosyalar kalıcı silinemez; kapatma veya arşivleme kullanın.',
+        });
+      }
+      throw error;
+    }
 
     return { success: true };
   }
 
   async getStats(tenantId: string) {
-    const [total, active, closed, thisMonth, ownerless] = await Promise.all([
+    const [total, active, closed, thisMonth, ownerless, legalResponsibleMissing] = await Promise.all([
       this.prisma.case.count({ where: { tenantId } }),
       this.prisma.case.count({ where: { tenantId, status: "ACTIVE" } }),
       this.prisma.case.count({ where: { tenantId, status: "CLOSED" } }),
@@ -2144,9 +2301,20 @@ export class CaseService {
       }),
       // M2-G5c: Sahipsiz = gerçek-kişi owner yok (responsibleLawyer/Staff ikisi de null); legacy sorumluPersonelId sayılmaz.
       this.prisma.case.count({ where: { tenantId, responsibleLawyerId: null, responsibleStaffId: null } }),
+      // WP-3a: LEGAL_RESPONSIBLE_MISSING — aktif (status=ACTIVE) hukuki dosyada operasyon owner PERSONEL
+      // (responsibleStaffId dolu) AMA hukuki sorumlu avukat YOK (CaseLawyer.isResponsible=true hiç yok).
+      // Warn/report sinyali (kırmızı bayrak); BLOCK YOK. Legacy sorumluPersonelId bu sayıma girmez.
+      this.prisma.case.count({
+        where: {
+          tenantId,
+          status: "ACTIVE",
+          responsibleStaffId: { not: null },
+          lawyers: { none: { isResponsible: true } },
+        },
+      }),
     ]);
 
-    return { total, active, closed, thisMonth, ownerless };
+    return { total, active, closed, thisMonth, ownerless, legalResponsibleMissing };
   }
 
   // Sıradaki dosya numarasını al
@@ -2181,8 +2349,18 @@ export class CaseService {
   }
 
   // Dosya flag'lerini güncelle (K.47-50)
-  async patchFlags(tenantId: string, id: string, dto: Partial<UpdateCaseDto>) {
-    await this.findOne(tenantId, id);
+  // CS2: actor + audit eklendi — isArchived dahil flag değişimleri artık İZLİ (önceden ne userId
+  // alıyordu ne audit yazıyordu; arşivleme anonim/izsizdi). Semantik DEĞİŞMEDİ (allowedFlags aynı).
+  async patchFlags(tenantId: string, id: string, dto: Partial<UpdateCaseDto>, actor?: { userId?: string }) {
+    const existing = await this.findOne(tenantId, id);
+
+    // P3-2B-3: caseStatus yan-kapısı KAPALI. Statü değişimi YALNIZCA POST /case-status/:caseId/change'ten
+    // (allowedFlags'ten çıkarıldı; gelirse sessizce yutmak yerine açıkça reddedilir).
+    if ((dto as any).caseStatus) {
+      throw new BadRequestException(
+        "Statü değişimi PATCH ile yapılamaz; POST /case-status/:caseId/change kullanın.",
+      );
+    }
 
     // Sadece izin verilen flag'leri güncelle
     const allowedFlags = [
@@ -2194,7 +2372,6 @@ export class CaseService {
       'automationConfig',
       // Düzenlenebilir alanlar
       'executionFileNumber',
-      'caseStatus',
       'executionPath',
       'subCategory',
       'notes',
@@ -2220,10 +2397,28 @@ export class CaseService {
     // tenant koruması yalnız bu service-level guard'dan gelir (allowedFlags'teki tek tenant-scoped FK).
     await this.validateCaseFkOwnership(tenantId, { executionOfficeId: data.executionOfficeId });
 
-    return this.prisma.case.update({
+    const updated = await this.prisma.case.update({
       where: { id },
       data,
     });
+
+    // CS2: flag değişimi audit'i — standalone log() (update() ile aynı desen; tek update, tx yok).
+    // oldValues/newValues yalnız gerçekten yazılan alanlar (ham dto değil, filtrelenmiş data).
+    const oldValues: Record<string, unknown> = {};
+    for (const key of Object.keys(data)) {
+      oldValues[key] = (existing as any)[key] ?? null;
+    }
+    await this.auditService.log({
+      tenantId,
+      action: 'CASE_FLAGS_UPDATE',
+      entityType: 'CASE',
+      entityId: id,
+      userId: actor?.userId,
+      oldValues,
+      newValues: data,
+    });
+
+    return updated;
   }
 
   /**
@@ -2246,6 +2441,7 @@ export class CaseService {
       takipTuruId?: string | null;
       mahiyetTipiId?: string | null;
     },
+    userId: string, // WP-1c-2: user-driven toplu güncelleme → actor zorunlu
   ) {
     // Lookup ID'lerinin bu tenant'a ait olduğunu kontrol et
     await this.validateLookupIds(tenantId, {
@@ -2287,6 +2483,7 @@ export class CaseService {
       action: 'UPDATE',
       entityType: 'CASE',
       entityId: caseIds[0] ?? 'BATCH',
+      userId, // WP-1c-2: user-driven toplu güncelleme → actor zorunlu
       newValues: { caseIds, updates, updatedCount: result.count },
       description: 'Toplu dosya güncellemesi',
     });
@@ -2584,9 +2781,9 @@ export class CaseService {
    *
    * Saf/yan-etkisiz çevirici: Hata NESNESİ döndürür (atmaz); çağıran `throw`'lar.
    *
-   * @remarks Çağrıldığı yerler:
-   * - CaseService.updateCaseLawyer() → PATCH /cases/:id/lawyers/:caseLawyerId ($transaction .catch)
-   * - CaseService.addCaseLawyer() → POST /cases/:id/lawyers ($transaction .catch)
+   * @remarks Çağrıldığı yerler (WP-1d-5-7/9 sonrası: doğrudan update/create .catch; $transaction YOK):
+   * - CaseService.updateCaseLawyer() → PATCH /cases/:id/lawyers/:caseLawyerId (caseLawyer.update .catch)
+   * - CaseService.addCaseLawyer() → POST /cases/:id/lawyers (caseLawyer.create .catch)
    */
   private toCaseLawyerConflict(error: unknown): Error {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -2641,7 +2838,8 @@ export class CaseService {
         canEditParties?: boolean;
       };
       receiveNotifications?: boolean;
-    }
+    },
+    userId: string,
   ) {
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
@@ -2656,13 +2854,26 @@ export class CaseService {
     });
     if (!caseLawyer) throw new NotFoundException("Avukat kaydı bulunamadı");
 
+    // WP-1d-5-7: Hukuki Sorumlu Avukat (isResponsible / role==='RESPONSIBLE') ekseni YALNIZ kanonik uçtan
+    // değiştirilir: PATCH /cases/:id/legal-responsible-lawyer (ADMIN + reason zorunlu + changeType audit).
+    // Bu generic uç o ekseni DEĞİŞTİREMEZ: ne promote (RESPONSIBLE/isResponsible yükseltme) ne de mevcut
+    // sorumlunun rolünü değiştirme (demote). Yalnız sorumlu-DIŞI rol + yetki/imza/bildirim güncellenir.
+    const touchesResponsibleAxis =
+      data.isResponsible !== undefined ||
+      data.role === "RESPONSIBLE" ||
+      (data.role !== undefined && caseLawyer.isResponsible === true);
+    if (touchesResponsibleAxis) {
+      throw new BadRequestException(
+        'Hukuki sorumlu avukat kaydı bu uçtan değiştirilemez; "Hukuki Sorumlu Avukat Kaydını Değiştir" akışını kullanın. [LEGAL_RESPONSIBLE_CHANGE_VIA_CANONICAL_ENDPOINT_ONLY]',
+      );
+    }
+
     // Güncelleme verisi hazırla
     const updateData: any = {};
     
     if (data.role !== undefined) {
+      // WP-1d-5-7: guard üstte RESPONSIBLE'ı + mevcut sorumlunun rol değişimini eledi → isResponsible bu uçtan DEĞİŞMEZ.
       updateData.role = data.role;
-      // RESPONSIBLE rolü seçilirse isResponsible'ı da güncelle
-      updateData.isResponsible = data.role === 'RESPONSIBLE';
     }
     
     if (data.canSign !== undefined) {
@@ -2675,13 +2886,8 @@ export class CaseService {
       updateData.canSign = data.hasSignatureAuthority;
     }
     
-    if (data.isResponsible !== undefined) {
-      updateData.isResponsible = data.isResponsible;
-      if (data.isResponsible) {
-        updateData.role = 'RESPONSIBLE';
-      }
-    }
-    
+    // WP-1d-5-7: isResponsible alanı bu uçtan kabul edilmez (guard üstte reddeder) → eski handler kaldırıldı.
+
     if (data.casePermissions !== undefined) {
       updateData.casePermissions = data.casePermissions;
       updateData.permissionSource = 'CUSTOM';
@@ -2691,77 +2897,38 @@ export class CaseService {
       updateData.receiveNotifications = data.receiveNotifications;
     }
 
-    // ASSIGN-4b: "tam 1 sorumlu" invariant'ı. Yalnız sorumluluğu DEĞİŞTİREN güncellemelerde
-    // çalışır (salt yetki/canSign güncellemesi ekstra sorgu/yazım üretmez).
-    const willBeResponsible = data.isResponsible === true || data.role === 'RESPONSIBLE';
-    const willDropResponsible =
-      data.isResponsible === false || (data.role !== undefined && data.role !== 'RESPONSIBLE');
-
-    let demoteIds: string[] = [];
-    if (willBeResponsible || willDropResponsible) {
-      // Dosyadaki mevcut sorumlular (block-last + demote için).
-      const caseLawyersForInvariant = await this.prisma.caseLawyer.findMany({
-        where: { caseId },
-        select: { id: true, isResponsible: true },
-      });
-      const responsibleIds = caseLawyersForInvariant
-        .filter((cl) => cl.isResponsible)
-        .map((cl) => cl.id);
-      const isCurrentlyResponsible = responsibleIds.includes(caseLawyerId);
-
-      // Son sorumluyu (başka biri yükseltilmeden) düşürme girişimi → engelle.
-      if (isCurrentlyResponsible && willDropResponsible && !willBeResponsible) {
-        const otherResponsibles = responsibleIds.filter((id) => id !== caseLawyerId);
-        if (otherResponsibles.length === 0) {
-          throw new BadRequestException(
-            'Dosyada en az bir sorumlu avukat olmalı; önce başka bir avukatı sorumlu yapın.',
-          );
-        }
-      }
-
-      // Bu avukat sorumlu yapılıyorsa diğer tüm sorumluları düşür (tam 1).
-      demoteIds = willBeResponsible ? responsibleIds.filter((id) => id !== caseLawyerId) : [];
-    }
-
-    // Güncelle — atomik tek transaction. ASSIGN-4b/index-safety: ÖNCE diğer sorumluları düşür,
-    // SONRA hedefi güncelle → tx içinde hiçbir an >1 isResponsible=true olmaz (PR-C kısmi tekil
-    // index ile uyumlu). Final durum sıradan bağımsız aynı; yalnız ara-adım sırası değişti.
-    const updated = await this.prisma
-      .$transaction(async (tx) => {
-        for (const demoteId of demoteIds) {
-          await tx.caseLawyer.update({
-            where: { id: demoteId },
-            data: { isResponsible: false, role: 'ASSIGNED' },
-          });
-        }
-        const u = await tx.caseLawyer.update({
-          where: { id: caseLawyerId },
-          data: updateData,
-          include: {
-            lawyer: {
-              select: {
-                id: true,
-                name: true,
-                surname: true,
-                barNumber: true,
-                lawyerRank: true,
-              },
+    // WP-1d-5-7: bu uç artık sorumluluk eksenine DOKUNMAZ (guard üstte) → eski ASSIGN-4b tam-1
+    // demote/promote mantığı GEREKMEZ. Sorumlu değişikliği yalnız kanonik LegalResponsibleLawyerService'tedir
+    // (clear-before-set + changeType audit). Burada tek kayıt güncellemesi; P2002 → 409 defansif korunur.
+    const updated = await this.prisma.caseLawyer
+      .update({
+        where: { id: caseLawyerId },
+        data: updateData,
+        include: {
+          lawyer: {
+            select: {
+              id: true,
+              name: true,
+              surname: true,
+              barNumber: true,
+              lawyerRank: true,
             },
           },
-        });
-        return u;
+        },
       })
       .catch((e) => {
         throw this.toCaseLawyerConflict(e);
       });
 
-    // Audit log (ASSIGN-4b: otomatik demote edilenler de newValues'a yazılır)
+    // Audit log
     await this.auditService.log({
       tenantId,
       action: 'UPDATE',
       entityType: 'CASE_LAWYER',
       entityId: caseLawyerId,
-      newValues: demoteIds.length > 0 ? { ...updateData, demotedCaseLawyerIds: demoteIds } : updateData,
+      userId, // WP-1c-3
+      metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
+      newValues: updateData,
       description: `Avukat yetkileri güncellendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
     });
 
@@ -2821,8 +2988,10 @@ export class CaseService {
   /**
    * Dosyaya avukat ekle.
    *
-   * ASSIGN-4b: yeni eklenen avukat RESPONSIBLE ise eski sorumlular düşürülür (tam 1);
-   * ekleme + demote tek $transaction'da atomik.
+   * WP-1d-5-9 (L2/L3/L4): Hukuki Sorumlu Avukat ekseni lifecycle ekleme yoluyla DEĞİŞTİRİLEMEZ.
+   * - Mevcut sorumlu YOKSA: ilk responsible initialization korunur (rank-default/explicit RESPONSIBLE olabilir).
+   * - Mevcut sorumlu VARSA: explicit RESPONSIBLE reddedilir (kanonik uç); rank-default RESPONSIBLE ASSIGNED'a indirilir.
+   *   Eski sorumlu KORUNUR; ekleme yoluyla demote YOK.
    *
    * @remarks Çağrıldığı yerler:
    * - CaseController.addCaseLawyer() → POST /cases/:id/lawyers
@@ -2831,7 +3000,7 @@ export class CaseService {
     lawyerId: string;
     role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
     canSign?: boolean;
-  }) {
+  }, userId: string) {
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
@@ -2849,6 +3018,20 @@ export class CaseService {
       where: { caseId, lawyerId: data.lawyerId },
     });
     if (existing) throw new BadRequestException("Bu avukat zaten dosyaya ekli");
+
+    // WP-1d-5-9 (L3/L4): mevcut Hukuki Sorumlu Avukat varsa lifecycle ekleme onu DEĞİŞTİREMEZ.
+    // (at-most-one DB partial unique index → mevcut sorumlu sayısı 0 ya da 1.)
+    const existingResponsibleCount = await this.prisma.caseLawyer.count({
+      where: { caseId, isResponsible: true },
+    });
+    const hasResponsible = existingResponsibleCount > 0;
+
+    // L3: mevcut sorumlu varken EXPLICIT RESPONSIBLE ekleme → reddet (kanonik uç).
+    if (hasResponsible && data.role === 'RESPONSIBLE') {
+      throw new BadRequestException(
+        'Dosyada zaten hukuki sorumlu avukat var; yeni avukat ekleme yoluyla hukuki sorumlu yapılamaz. "Hukuki Sorumlu Avukat Kaydını Değiştir" akışını kullanın. [LEGAL_RESPONSIBLE_CHANGE_REQUIRES_CANONICAL_ENDPOINT]',
+      );
+    }
 
     // LawyerRank'e göre varsayılan rol belirle
     let role = data.role;
@@ -2869,51 +3052,38 @@ export class CaseService {
       }
     }
 
+    // L4: mevcut sorumlu varken rank-default (PARTNER/MANAGER) yeni avukatı SESSİZCE sorumlu yapamaz →
+    // ASSIGNED'a indir (örtük replacement engellenir; eski sorumlu KORUNUR).
+    if (hasResponsible && role === 'RESPONSIBLE') {
+      role = 'ASSIGNED';
+    }
+
+    // L2: hiç sorumlu yokken ilk responsible initialization KORUNUR → willBeResponsible yalnız burada true.
     const willBeResponsible = role === 'RESPONSIBLE';
 
-    // Ekle — atomik tek transaction. ASSIGN-4b/index-safety: yeni satır sorumluysa ÖNCE mevcut
-    // sorumluları düşür, SONRA oluştur → tx içinde hiçbir an >1 isResponsible=true olmaz (PR-C
-    // kısmi tekil index ile uyumlu).
-    const { caseLawyer, demotedIds } = await this.prisma
-      .$transaction(async (tx) => {
-        // ASSIGN-4b: yeni eklenen sorumluysa mevcut sorumluları düşür (tam 1). create ÖNCESİ
-        // çalışır → yeni satır henüz yok, NOT filtresine gerek yok.
-        let demotedIds: string[] = [];
-        if (willBeResponsible) {
-          const others = await tx.caseLawyer.findMany({
-            where: { caseId, isResponsible: true },
-            select: { id: true },
-          });
-          demotedIds = others.map((o) => o.id);
-          for (const demoteId of demotedIds) {
-            await tx.caseLawyer.update({
-              where: { id: demoteId },
-              data: { isResponsible: false, role: 'ASSIGNED' },
-            });
-          }
-        }
-
-        const created = await tx.caseLawyer.create({
-          data: {
-            caseId,
-            lawyerId: data.lawyerId,
-            role,
-            canSign: data.canSign ?? (lawyer.lawyerRank !== 'INTERN'),
-            isResponsible: willBeResponsible,
-          },
-          include: {
-            lawyer: {
-              select: {
-                id: true,
-                name: true,
-                surname: true,
-                barNumber: true,
-                lawyerRank: true,
-              },
+    // Ekle. WP-1d-5-9: lifecycle ekleme artık mevcut sorumluyu DEMOTE ETMEZ (willBeResponsible yalnız
+    // hasResponsible=false iken → demote edilecek kimse yok) → demote/$transaction gerekmez.
+    // P2002 → 409 dönüşümü defansif korunur.
+    const caseLawyer = await this.prisma.caseLawyer
+      .create({
+        data: {
+          caseId,
+          lawyerId: data.lawyerId,
+          role,
+          canSign: data.canSign ?? (lawyer.lawyerRank !== 'INTERN'),
+          isResponsible: willBeResponsible,
+        },
+        include: {
+          lawyer: {
+            select: {
+              id: true,
+              name: true,
+              surname: true,
+              barNumber: true,
+              lawyerRank: true,
             },
           },
-        });
-        return { caseLawyer: created, demotedIds };
+        },
       })
       .catch((e) => {
         throw this.toCaseLawyerConflict(e);
@@ -2925,21 +3095,11 @@ export class CaseService {
       action: 'CREATE',
       entityType: 'CASE_LAWYER',
       entityId: caseLawyer.id,
+      userId, // WP-1c-3
+      metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
       newValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
       description: `Dosyaya avukat eklendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
     });
-
-    // ASSIGN-4b: otomatik demote'u CASE_LAWYER UPDATE olarak audit'le (ekleme=CREATE audit'i 4c).
-    if (demotedIds.length > 0) {
-      await this.auditService.log({
-        tenantId,
-        action: 'UPDATE',
-        entityType: 'CASE_LAWYER',
-        entityId: caseLawyer.id,
-        newValues: { isResponsible: true, role: 'RESPONSIBLE', demotedCaseLawyerIds: demotedIds },
-        description: `Yeni sorumlu avukat atandı; ${demotedIds.length} eski sorumlu düşürüldü`,
-      });
-    }
 
     return caseLawyer;
   }
@@ -2947,14 +3107,14 @@ export class CaseService {
   /**
    * Dosyadan avukat çıkar.
    *
-   * ASSIGN-4b: silinen avukat sorumluysa ve başka avukat varsa, kalanlar arasından
-   * önceliğe göre yeni sorumlu yükseltilir (tam 1); son avukatsa dosya avukatsız kalabilir.
-   * Silme + yeniden-yükseltme tek $transaction'da atomik.
+   * WP-1d-5-9 (L5/L6): Mevcut Hukuki Sorumlu Avukat lifecycle silme yoluyla ÇIKARILAMAZ
+   * (otomatik promote ile sessiz sorumlu değişimi engellenir) → 400. Önce kanonik uçtan başka avukat
+   * hukuki sorumlu yapılmalı (reason+audit), SONRA bu avukat silinebilir. Sorumlu-OLMAYAN avukat silme serbest.
    *
    * @remarks Çağrıldığı yerler:
    * - CaseController.removeCaseLawyer() → DELETE /cases/:id/lawyers/:caseLawyerId
    */
-  async removeCaseLawyer(tenantId: string, caseId: string, caseLawyerId: string) {
+  async removeCaseLawyer(tenantId: string, caseId: string, caseLawyerId: string, userId: string) {
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
@@ -2967,33 +3127,18 @@ export class CaseService {
     });
     if (!caseLawyer) throw new NotFoundException("Avukat ataması bulunamadı");
 
-    // ASSIGN-4b: sorumlu silinirse ve başka avukat varsa yeni sorumlu seç (tam 1).
-    const wasResponsible = caseLawyer.isResponsible;
-    const { promotedId } = await this.prisma.$transaction(async (tx) => {
-      await tx.caseLawyer.delete({ where: { id: caseLawyerId } });
-      let promotedId: string | null = null;
-      if (wasResponsible) {
-        const remaining = await tx.caseLawyer.findMany({
-          where: { caseId },
-          select: { id: true, isResponsible: true, lawyer: { select: { lawyerRank: true } } },
-        });
-        const promote = resolveResponsiblePromotion(
-          remaining.map((r) => ({
-            id: r.id,
-            lawyerRank: r.lawyer.lawyerRank,
-            isResponsible: r.isResponsible,
-          })),
-        );
-        if (promote) {
-          await tx.caseLawyer.update({
-            where: { id: promote },
-            data: { isResponsible: true, role: 'RESPONSIBLE' },
-          });
-          promotedId = promote;
-        }
-      }
-      return { promotedId };
-    });
+    // WP-1d-5-9 (L5): Mevcut Hukuki Sorumlu Avukat lifecycle silme yoluyla ÇIKARILAMAZ (otomatik
+    // promote ile sessiz sorumlu değişimi engellenir). Önce kanonik uçtan başka avukat hukuki sorumlu
+    // yapılmalı, SONRA bu avukat silinebilir.
+    if (caseLawyer.isResponsible) {
+      throw new BadRequestException(
+        'Hukuki sorumlu avukat dosyadan çıkarılmadan önce başka bir avukat hukuki sorumlu yapılmalıdır. "Hukuki Sorumlu Avukat Kaydını Değiştir" akışını kullanın. [LEGAL_RESPONSIBLE_REMOVAL_REQUIRES_CANONICAL_REPLACEMENT]',
+      );
+    }
+
+    // L6: sorumlu-OLMAYAN avukat silme — mevcut akış. WP-1d-5-9: otomatik promote YOK (responsible
+    // silinmiyor) → demote/$transaction gerekmez; tek delete.
+    await this.prisma.caseLawyer.delete({ where: { id: caseLawyerId } });
 
     // ASSIGN-4c: avukat çıkarması CASE_LAWYER DELETE olarak audit'lenir (oldValues silinen kayıttan).
     await this.auditService.log({
@@ -3001,21 +3146,11 @@ export class CaseService {
       action: 'DELETE',
       entityType: 'CASE_LAWYER',
       entityId: caseLawyerId,
+      userId, // WP-1c-3
+      metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
       oldValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
       description: 'Dosyadan avukat çıkarıldı',
     });
-
-    // ASSIGN-4b: otomatik yeni sorumlu atandıysa CASE_LAWYER UPDATE audit'i (silme=DELETE audit'i 4c).
-    if (promotedId) {
-      await this.auditService.log({
-        tenantId,
-        action: 'UPDATE',
-        entityType: 'CASE_LAWYER',
-        entityId: promotedId,
-        newValues: { isResponsible: true, role: 'RESPONSIBLE', reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' },
-        description: 'Sorumlu avukat silindi; otomatik yeni sorumlu avukat atandı',
-      });
-    }
 
     return { success: true };
   }
@@ -3139,6 +3274,7 @@ export class CaseService {
       receiveNotifications?: boolean;
       notes?: string;
     },
+    userId: string,
   ) {
     // Dosya bu tenant'a ait mi?
     const caseExists = await this.prisma.case.findFirst({
@@ -3177,6 +3313,7 @@ export class CaseService {
       action: "UPDATE",
       entityType: "CASE_STAFF",
       entityId: caseStaffId,
+      userId, // WP-1c-3
       newValues: updateData,
       description: `Dosya personeli güncellendi: ${updated.staffMember.firstName} ${updated.staffMember.lastName}`,
     });
@@ -3377,20 +3514,105 @@ export class CaseService {
   // ==================== TAHSİLATLAR (COLLECTIONS) ====================
 
   /**
-   * Dosyanın tahsilatlarını getir
+   * Dosyanın tahsilatlarını getir.
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.getCaseCollections() → GET /cases/:id/collections (dosya detayından tahsilat listesi ve muhasebe/disposition görünürlüğü)
+  /// </remarks>
   async getCaseCollections(tenantId: string, caseId: string) {
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
     });
     if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
 
-    return this.prisma.collection.findMany({
+    const collections = await this.prisma.collection.findMany({
       where: { caseId, tenantId },
       orderBy: { date: "desc" },
       include: {
         case: { select: { id: true, fileNumber: true } },
       },
+    });
+
+    if (collections.length === 0) return collections;
+
+    const caseDebtorIds = Array.from(
+      new Set(collections.map((collection) => collection.caseDebtorId).filter(Boolean) as string[]),
+    );
+    const caseDebtors = caseDebtorIds.length === 0
+      ? []
+      : await this.prisma.caseDebtor.findMany({
+          where: {
+            id: { in: caseDebtorIds },
+            caseId,
+            case: { tenantId },
+          },
+          select: {
+            id: true,
+            lifecycleStatus: true,
+            role: true,
+            debtor: {
+              select: {
+                id: true,
+                name: true,
+                identityNo: true,
+                type: true,
+              },
+            },
+          },
+        });
+    const caseDebtorById = new Map(caseDebtors.map((caseDebtor) => [caseDebtor.id, caseDebtor]));
+
+    const dispositions = await this.prisma.collectionDisposition.findMany({
+      where: {
+        tenantId,
+        caseId,
+        collectionId: { in: collections.map((collection) => collection.id) },
+      },
+      select: {
+        collectionId: true,
+        status: true,
+        postedAt: true,
+        manualReversalRequiredAt: true,
+        manualReversalReason: true,
+      },
+    });
+
+    const dispositionByCollectionId = new Map(
+      dispositions.map((disposition) => [disposition.collectionId, disposition]),
+    );
+
+    return collections.map((collection) => {
+      const disposition = dispositionByCollectionId.get(collection.id);
+      const caseDebtor = collection.caseDebtorId
+        ? caseDebtorById.get(collection.caseDebtorId)
+        : undefined;
+      const debtorFinancialBinding = caseDebtor
+        ? {
+            caseDebtorId: caseDebtor.id,
+            lifecycleStatus: caseDebtor.lifecycleStatus,
+            role: caseDebtor.role,
+            debtor: {
+              id: caseDebtor.debtor.id,
+              displayName: caseDebtor.debtor.name,
+              identityNo: caseDebtor.debtor.identityNo,
+              type: caseDebtor.debtor.type,
+            },
+          }
+        : undefined;
+      const base = debtorFinancialBinding
+        ? { ...collection, debtorFinancialBinding }
+        : collection;
+
+      if (!disposition) return base;
+
+      return {
+        ...base,
+        accountingDispositionStatus: disposition.status,
+        accountingPostedAt: disposition.postedAt,
+        manualReversalRequiredAt: disposition.manualReversalRequiredAt,
+        manualReversalReason: disposition.manualReversalReason,
+      };
     });
   }
 
@@ -3401,6 +3623,8 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     data: {
+      // P0-1: idempotencyKey zorunlu — client (FE) form/işlem başına stabil key üretir.
+      idempotencyKey: string;
       caseDebtorId?: string;
       amount: number;
       currency?: string;
@@ -3422,6 +3646,7 @@ export class CaseService {
       tenantId,
       {
         caseId,
+        idempotencyKey: data.idempotencyKey,
         caseDebtorId: data.caseDebtorId,
         amount: data.amount,
         currency: data.currency,
@@ -3439,9 +3664,10 @@ export class CaseService {
     );
   }
 
-  /**
-   * Tahsilat güncelle
-   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.updateCollection() → PATCH /cases/:id/collections/:collectionId (dosya detayından tahsilat metadata güncelleme)
+  /// </remarks>
   async updateCollection(
     tenantId: string,
     caseId: string,
@@ -3457,6 +3683,9 @@ export class CaseService {
       bankName?: string;
       notes?: string;
       status?: string;
+      currency?: string;
+      paymentDate?: string;
+      collectionDate?: string;
     }
   ) {
     const collection = await this.prisma.collection.findFirst({
@@ -3464,67 +3693,64 @@ export class CaseService {
     });
     if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
 
-    const updated = await this.prisma.collection.update({
+    assertCollectionPublicUpdateAllowed(String(collection.status), data as Record<string, unknown>);
+
+    const updateData = pickDefinedCollectionUpdateData(
+      data as Record<string, unknown>,
+      collection.status === COLLECTION_STATUS_PENDING
+        ? ["amount", "type", "channel", "date", "valueDate", "description", "receiptNo", "bankName", "notes"]
+        : COLLECTION_METADATA_UPDATE_FIELDS,
+      ["date", "valueDate"],
+    );
+
+    if (Object.keys(updateData).length === 0) {
+      return collection;
+    }
+
+    return this.prisma.collection.update({
       where: { id: collectionId },
-      data: {
-        amount: data.amount,
-        type: data.type as any,
-        channel: data.channel as any,
-        date: data.date ? new Date(data.date) : undefined,
-        valueDate: data.valueDate ? new Date(data.valueDate) : undefined,
-        description: data.description,
-        receiptNo: data.receiptNo,
-        bankName: data.bankName,
-        notes: data.notes,
-        status: data.status as any,
-      },
+      data: updateData,
     });
-
-    // Tahsilat güncellendikten sonra faiz hesaplamasını yeniden tetikle
-    // TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek
-    // try {
-    //   const today = new Date().toISOString().split('T')[0];
-    //   await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
-    //   this.logger.debug(`Interest recalculated after collection update for case ${caseId}`);
-    // } catch (error) {
-    //   this.logger.warn(`Failed to recalculate interest after collection update: ${error.message}`);
-    // }
-
-    return updated;
   }
 
-  /**
-   * Tahsilat iptal et
-   */
-  async cancelCollection(tenantId: string, caseId: string, collectionId: string, reason?: string) {
-    // G3d: kanonik cancel'a delege (tenant doğrulaması collection.service.cancel içinde).
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.cancelCollection() → POST /cases/:id/collections/:collectionId/cancel (dosya detayından tahsilat iptali; route caseId + tenant guard)
+  /// </remarks>
+  async cancelCollection(
+    tenantId: string,
+    caseId: string,
+    collectionId: string,
+    actorUserId: string,
+    reason?: string,
+  ) {
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, caseId, tenantId },
+      select: { id: true },
+    });
+    if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
+
+    // G3d: kanonik cancel'a delege; route caseId + tenant guard bu katmanda fail-closed uygulanır.
     return this.collectionService.cancel(tenantId, collectionId, {
       cancelReason: reason || "",
-    });
+    }, actorUserId, caseId);
   }
 
-  /**
-   * Tahsilat sil
-   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.deleteCollection() → DELETE /cases/:id/collections/:collectionId (dosya detayından fiziksel tahsilat silme isteği; TM3-S1 hard-delete kapalı)
+  /// </remarks>
   async deleteCollection(tenantId: string, caseId: string, collectionId: string) {
     const collection = await this.prisma.collection.findFirst({
       where: { id: collectionId, caseId, tenantId },
     });
     if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
 
-    await this.prisma.collection.delete({ where: { id: collectionId } });
+    if (collection.status !== COLLECTION_STATUS_PENDING) {
+      throw collectionRequiresReversal(COLLECTION_REQUIRES_REVERSAL_DELETE_MESSAGE);
+    }
 
-    // Tahsilat silindikten sonra faiz hesaplamasını yeniden tetikle
-    // TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek
-    // try {
-    //   const today = new Date().toISOString().split('T')[0];
-    //   await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
-    //   this.logger.debug(`Interest recalculated after collection delete for case ${caseId}`);
-    // } catch (error) {
-    //   this.logger.warn(`Failed to recalculate interest after collection delete: ${error.message}`);
-    // }
-
-    return { success: true };
+    throw collectionDeleteDisabled();
   }
 
   /**

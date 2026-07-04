@@ -53,8 +53,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/twin
    */
   @Get('cases/:caseId/twin')
-  async getDigitalTwin(@Param('caseId') caseId: string) {
-    return this.icrabotService.getDigitalTwin(caseId);
+  async getDigitalTwin(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getDigitalTwin(caseId, req.user.tenantId);
   }
 
   /**
@@ -62,8 +62,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/next-actions
    */
   @Get('cases/:caseId/next-actions')
-  async getNextBestActions(@Param('caseId') caseId: string) {
-    return this.icrabotService.getNextBestActions(caseId);
+  async getNextBestActions(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getNextBestActions(caseId, req.user.tenantId);
   }
 
   /**
@@ -71,8 +71,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/tasks
    */
   @Get('cases/:caseId/tasks')
-  async getPendingTasks(@Param('caseId') caseId: string) {
-    return this.icrabotService.getPendingTasks(caseId);
+  async getPendingTasks(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getPendingTasks(caseId, req.user.tenantId);
   }
 
   /**
@@ -80,8 +80,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/evidence
    */
   @Get('cases/:caseId/evidence')
-  async getEvidenceReport(@Param('caseId') caseId: string) {
-    return this.icrabotService.getEvidenceReport(caseId);
+  async getEvidenceReport(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getEvidenceReport(caseId, req.user.tenantId);
   }
 
   /**
@@ -101,8 +101,8 @@ export class IcrabotController {
    * POST /api/icrabot/cases/:caseId/stop
    */
   @Post('cases/:caseId/stop')
-  async stopAutomation(@Param('caseId') caseId: string) {
-    await this.icrabotService.stopAutomation(caseId);
+  async stopAutomation(@Param('caseId') caseId: string, @Request() req: any) {
+    await this.icrabotService.stopAutomation(caseId, req.user.tenantId);
     return { success: true };
   }
 
@@ -133,7 +133,7 @@ export class IcrabotController {
     @Param('taskId') taskId: string,
     @Request() req: any
   ) {
-    await this.icrabotService.approveTask(taskId, req.user.id);
+    await this.icrabotService.approveTask(taskId, req.user.tenantId, req.user.id);
     return { success: true };
   }
 
@@ -144,9 +144,10 @@ export class IcrabotController {
   @Post('tasks/:taskId/cancel')
   async cancelTask(
     @Param('taskId') taskId: string,
-    @Body() body: { reason?: string }
+    @Body() body: { reason?: string },
+    @Request() req: any
   ) {
-    await this.icrabotService.cancelTask(taskId, body.reason);
+    await this.icrabotService.cancelTask(taskId, req.user.tenantId, body.reason);
     return { success: true };
   }
 
@@ -209,9 +210,10 @@ export class IcrabotController {
   @Post('cases/:caseId/transition')
   async processEvent(
     @Param('caseId') caseId: string,
-    @Body() body: { event: string; context?: Record<string, any> }
+    @Body() body: { event: string; context?: Record<string, any> },
+    @Request() req: any
   ) {
-    return this.icrabotService.processEvent(caseId, body.event as any, body.context);
+    return this.icrabotService.processEvent(caseId, body.event as any, req.user.tenantId, body.context);
   }
 
   /**
@@ -219,8 +221,8 @@ export class IcrabotController {
    * GET /api/icrabot/cases/:caseId/transitions
    */
   @Get('cases/:caseId/transitions')
-  async getAvailableTransitions(@Param('caseId') caseId: string) {
-    return this.icrabotService.getAvailableTransitions(caseId);
+  async getAvailableTransitions(@Param('caseId') caseId: string, @Request() req: any) {
+    return this.icrabotService.getAvailableTransitions(caseId, req.user.tenantId);
   }
 
   /**

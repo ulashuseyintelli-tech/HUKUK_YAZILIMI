@@ -83,7 +83,7 @@ export function ResponsiblePersonPicker({
     <div className="px-2 py-1.5 bg-indigo-50/60">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[9px] font-semibold text-indigo-600 uppercase">
-          Dosya Sorumlusu
+          Dosya Operasyon Sorumlusu
         </span>
         {current ? (
           <span
@@ -100,7 +100,7 @@ export function ResponsiblePersonPicker({
         )}
       </div>
       <select
-        aria-label="Dosya Sorumlusu seç"
+        aria-label="Dosya Operasyon Sorumlusu seç"
         aria-invalid={!!error}
         className={`mt-1 w-full rounded border bg-white px-1.5 py-1 text-[10px] outline-none disabled:opacity-60 ${
           error

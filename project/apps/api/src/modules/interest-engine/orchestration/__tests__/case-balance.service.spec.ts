@@ -37,6 +37,9 @@ interface MockPrisma {
   claimItem: { findMany: jest.Mock };
   ledgerEntry: { findMany: jest.Mock };
   collection: { findMany: jest.Mock };
+  collectionOverpayment: { findMany: jest.Mock };
+  icrabotTimelineEntry: { findMany: jest.Mock };
+  due: { findMany: jest.Mock };
 }
 
 function setup(opts: {
@@ -44,6 +47,9 @@ function setup(opts: {
   claimItems?: unknown[];
   ledger?: unknown[];
   collections?: unknown[];
+  overpayments?: unknown[];
+  blockedOverpaymentEvents?: unknown[];
+  dues?: unknown[];
   rates?: unknown[];
 }) {
   const claimItems = opts.claimItems ?? [];
@@ -59,6 +65,9 @@ function setup(opts: {
     },
     ledgerEntry: { findMany: jest.fn().mockResolvedValue(opts.ledger ?? []) },
     collection: { findMany: jest.fn().mockResolvedValue(opts.collections ?? []) },
+    collectionOverpayment: { findMany: jest.fn().mockResolvedValue(opts.overpayments ?? []) },
+    icrabotTimelineEntry: { findMany: jest.fn().mockResolvedValue(opts.blockedOverpaymentEvents ?? []) },
+    due: { findMany: jest.fn().mockResolvedValue(opts.dues ?? []) },
   };
   const rateProvider = { getRatesForPeriod: jest.fn().mockResolvedValue(opts.rates ?? []) };
   const engine = realEngine();
@@ -199,5 +208,102 @@ describe('CaseBalanceService (G4c-1)', () => {
       where: { caseId: 'caseY', tenantId: 'tenantX', status: { not: ClaimItemStatus.CANCELLED } },
     });
     expect(prisma.ledgerEntry.findMany).toHaveBeenCalledWith({ where: { caseId: 'caseY', tenantId: 'tenantX', entryType: 'PAYMENT' } });
+  });
+
+  it('NAFAKA Due satırlarını display balance için kör PRINCIPAL bucket kaynağı olarak okumaz', async () => {
+    const { service, prisma, rateProvider } = setup({
+      claimItems: [],
+      dues: [{ id: 'due-nafaka', type: 'NAFAKA', amount: 1500, currency: 'TRY' }],
+      collections: [],
+    });
+
+    const res = await service.computeCaseBalance('tenantX', 'caseY', '2025-06-01');
+
+    expect(prisma.due.findMany).not.toHaveBeenCalled();
+    expect(res.currencyResults).toEqual([]);
+    expect(rateProvider.getRatesForPeriod).not.toHaveBeenCalled();
+  });
+
+  it('overpayment display metadata tenant/case scoped okunur; HELD ve BLOCKED borca gomulmeden tasinir', async () => {
+    const { service, prisma } = setup({
+      overpayments: [
+        {
+          id: 'op1',
+          collectionId: 'col1',
+          sourceLedgerEntryId: 'le1',
+          amount: 250,
+          remainingAmount: 200,
+          currency: 'TRY',
+          status: 'HELD',
+        },
+        {
+          id: 'op-zero',
+          collectionId: 'col2',
+          sourceLedgerEntryId: null,
+          amount: 50,
+          remainingAmount: 0,
+          currency: 'TRY',
+          status: 'HELD',
+        },
+      ],
+      blockedOverpaymentEvents: [
+        {
+          id: 'evt1',
+          createdAt: new Date('2026-06-20T10:00:00.000Z'),
+          body: {
+            payload: {
+              collectionId: 'col3',
+              sourceLedgerEntryId: 'le3',
+              attemptedOverpaymentAmount: 75,
+              currency: 'TRY',
+              blockedReasons: [{ reason: 'RESTRICTED_PAYMENT_UNSUPPORTED', message: 'restricted' }],
+            },
+          },
+        },
+      ],
+    });
+
+    const res = await service.computeCaseBalance('tenantX', 'caseY', '2025-06-01');
+
+    expect(prisma.collectionOverpayment.findMany).toHaveBeenCalledWith({
+      where: { tenantId: 'tenantX', caseId: 'caseY', status: 'HELD' },
+      select: {
+        id: true,
+        collectionId: true,
+        sourceLedgerEntryId: true,
+        amount: true,
+        remainingAmount: true,
+        currency: true,
+        status: true,
+      },
+    });
+    expect(prisma.icrabotTimelineEntry.findMany).toHaveBeenCalledWith({
+      where: { tenantId: 'tenantX', caseId: 'caseY', type: 'OVERPAYMENT_BLOCKED' },
+      select: { id: true, body: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    expect(res.overpayments.held).toEqual([
+      {
+        id: 'op1',
+        collectionId: 'col1',
+        sourceLedgerEntryId: 'le1',
+        amount: 250,
+        remainingAmount: 200,
+        currency: 'TRY',
+        status: 'HELD',
+      },
+    ]);
+    expect(res.overpayments.blocked).toEqual([
+      {
+        id: 'evt1',
+        collectionId: 'col3',
+        sourceLedgerEntryId: 'le3',
+        attemptedOverpaymentAmount: 75,
+        currency: 'TRY',
+        blockedReasons: [{ reason: 'RESTRICTED_PAYMENT_UNSUPPORTED', message: 'restricted' }],
+        createdAt: '2026-06-20T10:00:00.000Z',
+      },
+    ]);
   });
 });

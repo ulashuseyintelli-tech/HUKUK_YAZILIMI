@@ -23,11 +23,24 @@ import {
   AlertTriangle,
   FileCode,
   Inbox,
+  ClipboardCheck,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserSettings } from "@/lib/user-settings";
+import { useAuth } from "@/lib/auth-context";
 
-const navigation = [
+type NavItem = {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+  disabled: boolean;
+  // adminOnly: yalnız backend'de AdminGuard'lı sayfalar (şu an sadece Hata Logları)
+  // non-admin/null user'dan gizlenir. Backend güvenliği ayrı (AdminGuard + 403 page state).
+  adminOnly?: boolean;
+};
+
+const navigation: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, disabled: false },
   { name: "Yeni Takip Oluştur", href: "/cases/new", icon: PlusCircle, disabled: false },
   { name: "Eski Takipler", href: "/cases", icon: FolderOpen, disabled: false },
@@ -36,8 +49,10 @@ const navigation = [
   { name: "Takvim", href: "/calendar", icon: Calendar, disabled: false },
   { name: "AI Tools", href: "/ai-tools", icon: Sparkles, disabled: false },
   { name: "Borçlular", href: "/debtors", icon: Users, disabled: false },
-  { name: "Müvekkiller", href: "/clients", icon: Building2, disabled: true }, // Sayfa yok
+  { name: "Müvekkiller", href: "/clients", icon: Building2, disabled: false },
   { name: "Görevler", href: "/tasks", icon: CheckSquare, disabled: false },
+  // P4-4: salt-okuma inbox; backend yetkisiz kullanıcıya boş liste döner (403 değil) — nav'da gizlenmez.
+  { name: "Onay Kutusu", href: "/office-approvals", icon: ClipboardCheck, disabled: false },
   { name: "Bilgi Formları", href: "/client-intake", icon: Inbox, disabled: false },
   { name: "Bildirimler", href: "/notifications", icon: Bell, disabled: true }, // Sayfa yok
   { name: "Mahkemeler", href: "/courts", icon: Gavel, disabled: true }, // Sayfa yok
@@ -46,8 +61,8 @@ const navigation = [
   { name: "Müvekkiller (Ayarlar)", href: "/settings/clients", icon: Users, disabled: false },
   { name: "Portal Yönetimi", href: "/settings/portal", icon: Globe, disabled: false },
   { name: "Audit Log", href: "/settings/audit", icon: Shield, disabled: false },
-  { name: "Hata Logları", href: "/settings/error-logs", icon: AlertTriangle, disabled: false },
-  { name: "Bildirim Ayarları", href: "/settings/notifications", icon: Bell, disabled: false },
+  { name: "Hata Logları", href: "/settings/error-logs", icon: AlertTriangle, disabled: false, adminOnly: true },
+  { name: "Bildirim Merkezi", href: "/settings/notifications", icon: Bell, disabled: false },
   { name: "Büro Ayarları", href: "/settings/office", icon: Settings, disabled: false },
 ];
 
@@ -55,6 +70,12 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { settings, updateSettings, loaded } = useUserSettings();
+  const { user } = useAuth();
+
+  // adminOnly menüler (Hata Logları) yalnız ADMIN'e görünür. Backend admin.guard.ts ile birebir
+  // (role === "ADMIN"); başka admin-eşdeğer rol YOK. non-admin/null user → gizle (güvenli varsayılan).
+  const isAdmin = user?.role === "ADMIN";
+  const visibleNavigation = navigation.filter((item) => !item.adminOnly || isAdmin);
 
   const handleWizardToggle = () => {
     updateSettings({ showWizardOnNewCase: !settings.showWizardOnNewCase });
@@ -75,7 +96,7 @@ export function Sidebar() {
     const path = href.split("?")[0];
     return pathname === path || pathname.startsWith(path + "/") ? path.length : -1;
   };
-  const bestMatchLength = Math.max(...navigation.map((n) => matchLength(n.href)));
+  const bestMatchLength = Math.max(...visibleNavigation.map((n) => matchLength(n.href)));
 
   return (
     <aside className="fixed inset-y-0 left-0 z-50 hidden sm:flex w-56 md:w-60 lg:w-64 flex-col border-r bg-white">
@@ -87,7 +108,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-2 lg:p-4 overflow-y-auto">
-        {navigation.map((item) => {
+        {visibleNavigation.map((item) => {
           const len = matchLength(item.href);
           const isActive = len > 0 && len === bestMatchLength;
 

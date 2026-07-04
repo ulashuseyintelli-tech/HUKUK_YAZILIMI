@@ -1,7 +1,20 @@
-import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { LawyerRole, LawyerRank } from "@prisma/client";
 import { normalizePersonName } from "@/common/name-match.util";
+import { AuditService } from "../audit/audit.service";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import type { AuditActor } from "@/modules/client/client.service";
+
+// K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
+// H2: aynı actor, yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/
+// canModifyOtherPermissions) değiştirme yetkisi için de kullanılır.
+//  - userId: truthful @CurrentUser("id").  role: @CurrentUser("role") (ADMIN kısa-yolu).
+//  - Yalnız ADMIN VEYA linkli PARTNER avukat bu alanları değiştirebilir (assertActorIsAdminOrLinkedPartner).
+export interface LawyerUpdateActor {
+  userId?: string;
+  role?: string;
+}
 
 // Rol'e göre varsayılan unvan/sıfat
 const DEFAULT_TITLES: Record<string, string> = {
@@ -55,7 +68,13 @@ export function withDisplayNames<T extends { name: string; surname: string; titl
 
 @Injectable()
 export class LawyerService {
-  constructor(private prisma: PrismaService) {}
+  // K1-4b: AuditService @Global (AuditModule) — ek import gerekmez; office-approval delegation değişimini loglar.
+  // L1A: OfficeApprovalService deactivate capability-gate için (ClientService.assertCanManageLifecycle ile birebir desen).
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
+  ) {}
 
   // Tüm avukatları getir (displayName ile birlikte)
   async findAll(tenantId: string, search?: string, includeInactive = false) {
@@ -237,14 +256,18 @@ export class LawyerService {
       isDefaultForNewCases?: boolean;
       sortOrder?: number;
       isActive?: boolean;
-      // Yeni alanlar
+      // Yeni alanlar — H2: yalnız ADMIN/PARTNER yazabilir (assertCanManagePrivilegedFields).
       lawyerRank?: LawyerRank;
       defaultPermissions?: any;
       permissionsLocked?: boolean;
       canModifyOtherPermissions?: boolean;
       // PR-U1: isim benzerliği review'ını bilinçli geç ("Benzerliğe rağmen güncelle").
       confirmSimilarNameUpdate?: boolean;
-    }
+      // K1-4b: Office Approval delegation flag. YALNIZ ADMIN/PARTNER yazabilir (assertCanManageOfficeApprovalDelegation);
+      // değer DEĞİŞİRSE AuditLog yazılır. Approver eligibility runtime'da ayrıca kontrol edilir (aktif+linkli+same-tenant).
+      canApproveOfficeActions?: boolean;
+    },
+    actor?: LawyerUpdateActor,
   ) {
     // Avukatın bu tenant'a ait olduğunu kontrol et
     const existing = await this.findOne(tenantId, id);
@@ -293,27 +316,300 @@ export class LawyerService {
     }
 
     // confirmSimilarNameUpdate transient → prisma'ya YAZILMAZ.
-    const { confirmSimilarNameUpdate, ...writeData } = data;
+    // K1-4b: canApproveOfficeActions'ı generic write'tan AYIR; yalnız DEĞİŞİYORSA yetki kontrolü + audit ile yaz.
+    // H2: yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/canModifyOtherPermissions) da
+    // AYNI ADMIN/PARTNER kapısına al — önceden bu alanlar generic write'a düz geçip herhangi bir JWT sahibi
+    // tarafından değiştirilebiliyordu (yetki yükseltme).
+    const {
+      confirmSimilarNameUpdate,
+      canApproveOfficeActions,
+      lawyerRank,
+      defaultPermissions,
+      permissionsLocked,
+      canModifyOtherPermissions,
+      ...writeData
+    } = data;
+
+    // H2 GUARD: rütbe/yetki alanlarından biri payload'da VARSA, generic write'a girmeden ADMIN/PARTNER doğrula.
+    const wantsPrivilegedFieldChange =
+      lawyerRank !== undefined ||
+      defaultPermissions !== undefined ||
+      permissionsLocked !== undefined ||
+      canModifyOtherPermissions !== undefined;
+
+    if (wantsPrivilegedFieldChange) {
+      await this.assertCanManagePrivilegedFields(actor, tenantId);
+      if (lawyerRank !== undefined) (writeData as { lawyerRank?: LawyerRank }).lawyerRank = lawyerRank;
+      if (defaultPermissions !== undefined) (writeData as { defaultPermissions?: unknown }).defaultPermissions = defaultPermissions;
+      if (permissionsLocked !== undefined) (writeData as { permissionsLocked?: boolean }).permissionsLocked = permissionsLocked;
+      if (canModifyOtherPermissions !== undefined) {
+        (writeData as { canModifyOtherPermissions?: boolean }).canModifyOtherPermissions = canModifyOtherPermissions;
+      }
+    }
+
+    let delegationChange: { from: boolean; to: boolean } | null = null;
+    if (
+      canApproveOfficeActions !== undefined &&
+      canApproveOfficeActions !== (existing as { canApproveOfficeActions?: boolean }).canApproveOfficeActions
+    ) {
+      // K1-4b GUARD: office-approval delegation'ı yalnız ADMIN veya linkli PARTNER avukat değiştirebilir.
+      await this.assertCanManageOfficeApprovalDelegation(actor, tenantId);
+      (writeData as { canApproveOfficeActions?: boolean }).canApproveOfficeActions = canApproveOfficeActions;
+      delegationChange = {
+        from: !!(existing as { canApproveOfficeActions?: boolean }).canApproveOfficeActions,
+        to: canApproveOfficeActions,
+      };
+    }
+
     const lawyer = await this.prisma.lawyer.update({
       where: { id },
       data: writeData,
     });
 
+    // K1-4b: delegation GERÇEKTEN değiştiyse olgusal AuditLog (entityType LAWYER; ham PII yok, yalnız from/to bool).
+    if (delegationChange) {
+      await this.audit.log({
+        tenantId,
+        action: "LAWYER_OFFICE_APPROVAL_DELEGATION_CHANGED",
+        entityType: "LAWYER",
+        entityId: id,
+        userId: actor?.userId, // truthful actor
+        metadata: { lawyerId: id, canApproveOfficeActions: delegationChange },
+      });
+    }
+
     return withDisplayName(lawyer);
   }
 
-  // Avukat sil (kalıcı silme)
-  async delete(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
+  /**
+   * ADMIN VEYA aktif + same-tenant + linkli PARTNER avukat mı? K1-4b (canApproveOfficeActions) ve
+   * H2 (lawyerRank/defaultPermissions/permissionsLocked/canModifyOtherPermissions) yetki-alanı
+   * guard'larının PAYLAŞTIĞI tek otorite kuralı; hata mesajları çağıran tarafından verilir.
+   */
+  private async assertActorIsAdminOrLinkedPartner(
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+    messages: { noActor: string; unauthorized: string },
+  ): Promise<void> {
+    if (!actor?.userId) {
+      throw new ForbiddenException(messages.noActor);
+    }
+    if (actor.role === "ADMIN") return; // ADMIN kısa-yolu (lawyer zaten tenant-scoped findOne ile alındı)
+    const actorUser = await this.prisma.user.findUnique({
+      where: { id: actor.userId },
+      select: { tenantId: true, isActive: true, lawyer: { select: { lawyerRank: true } } },
+    });
+    if (
+      actorUser &&
+      actorUser.isActive &&
+      actorUser.tenantId === tenantId &&
+      actorUser.lawyer?.lawyerRank === "PARTNER"
+    ) {
+      return;
+    }
+    throw new ForbiddenException(messages.unauthorized);
+  }
 
-    // Önce CaseLawyer ilişkilerini sil
-    await this.prisma.caseLawyer.deleteMany({
-      where: { lawyerId: id },
+  /**
+   * K1-4b — Office Approval delegation (canApproveOfficeActions) DEĞİŞTİRME yetkisi.
+   * YALNIZ: ADMIN (User.role) VEYA aktif + same-tenant + linkli PARTNER avukat. Diğer herkes (staff/non-PARTNER/linksiz) → 403.
+   * NOT: bu YALNIZ flag'i değiştirme yetkisidir; bir avukatın approver GEÇERLİLİĞİ runtime'da
+   *      OfficeApprovalService.assertApproverEligible (aktif+linkli+same-tenant+[PARTNER∨canApprove]) ile ayrıca denetlenir.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerService.update() → canApproveOfficeActions DEĞİŞTİĞİNDE (PUT/PATCH /lawyers/:id; actor=@CurrentUser).
+   * /// </remarks>
+   */
+  private async assertCanManageOfficeApprovalDelegation(
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
+      noActor: "Office approval delegation değiştirme yetkisi yok (kimlik çözülemedi).",
+      unauthorized: "Office approval delegation yalnız PARTNER veya ADMIN tarafından değiştirilebilir.",
+    });
+  }
+
+  /**
+   * H2 — Yetki/rütbe alanları (lawyerRank, defaultPermissions, permissionsLocked,
+   * canModifyOtherPermissions) DEĞİŞTİRME yetkisi. YALNIZ: ADMIN (User.role) VEYA aktif +
+   * same-tenant + linkli PARTNER avukat — canApproveOfficeActions ile AYNI otorite kuralı
+   * (assertActorIsAdminOrLinkedPartner ile paylaşılır).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerService.update() → lawyerRank/defaultPermissions/permissionsLocked/
+   * ///    canModifyOtherPermissions alanlarından biri payload'da VARSA (PUT/PATCH /lawyers/:id;
+   * ///    actor=@CurrentUser). Önceden bu alanlar guard'sız generic write'a geçiyordu (H2).
+   * /// </remarks>
+   */
+  private async assertCanManagePrivilegedFields(
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
+      noActor: "Yetki/rütbe alanlarını değiştirme yetkisi yok (kimlik çözülemedi).",
+      unauthorized: "Yetki/rütbe alanları yalnız PARTNER veya ADMIN tarafından değiştirilebilir.",
+    });
+  }
+
+  /**
+   * L1A (owner-locked 2026-07-02) — Lawyer artık kalıcı kimlik: fiziksel silme YOK.
+   * ClientService.remove() / DebtorService.assertCanManageDebtorLifecycle ile BİREBİR desen
+   * (reuse, yeni altyapı YOK): PARTNER veya canApproveOfficeActions=true delege avukat.
+   * CaseLawyer/PowerOfAttorney/Case.responsibleLawyer ilişkilerine DOKUNULMAZ — bu da
+   * önceden var olan (geçmişli avukatlarda hard-delete'i FK hatasıyla çökerten) latent
+   * hatayı yan etki olarak kapatır.
+   */
+  private async assertCanManageLawyerLifecycle(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        "Avukat kaydını pasifleştirme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)"
+      );
+    }
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - LawyerController.delete() → DELETE /lawyers/:id (userId req.user.id'den; body.replacementLawyerId
+  ///   opsiyonel — Task L1A + H1 sorumluluk devri)
+  ///
+  /// Task L1A: bu artık fiziksel silme DEĞİL, isActive=false pasifleştirmedir. Zaten pasif olan
+  /// bir kayıt için idempotent şekilde tekrar uygulanır (ClientService.remove() ile birebir);
+  /// ayrı bir "already inactive" dalı YOK — no-op görünümü updateMany'nin doğal sonucu.
+  ///
+  /// H1: avukat HERHANGİ bir dosyada CaseLawyer.isResponsible=true ise replacementLawyerId ZORUNLUDUR
+  /// (aynı tenant + aktif + o dosyalara ZATEN atanmış olmalı — otomatik CaseLawyer ataması YAPILMAZ,
+  /// LegalResponsibleLawyerService/WP-1d-5-4 ile AYNI kısıt). Devir + pasifleştirme AYNI transaction'da;
+  /// dosya hiçbir anda sorumlusuz kalmaz. LegalResponsibleLawyerService.changeLegalResponsibleLawyer()
+  /// BİLEREK çağrılmaz: kendi transaction'ını açıyor (nested-tx sorunu), ADMIN-only guard'ı var (bu akış
+  /// PARTNER/delege yetkisiyle çalışır) ve tek-case+reason-zorunlu tasarlanmış (bu akış çoklu-case).
+  /// Yerine AYNI state-transition deseni (clear-before-set, isResponsible⇔role coupling) ve AYNI audit
+  /// şekli (entityType CASE_LAWYER, newValues.isResponsible, metadata.caseId) tekrarlanır —
+  /// responsibility-history.service.ts bu YAPISAL şekle bakar, changeType string'ine değil.
+  /// </remarks>
+  async delete(tenantId: string, id: string, actor?: AuditActor, replacementLawyerId?: string) {
+    const existing = await this.findOne(tenantId, id);
+
+    // L1A: pasifleştirme yetkisi — transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz).
+    await this.assertCanManageLawyerLifecycle(actor?.userId, tenantId);
+
+    // H1: sorumlu olduğu dosyalar — transaction'dan ÖNCE tespit + replacement doğrulaması (eksik/geçersiz
+    // replacement hiçbir yazma yapmadan reddedilir).
+    const responsibleCaseLawyers = await this.prisma.caseLawyer.findMany({
+      where: { lawyerId: id, isResponsible: true },
+      select: { id: true, caseId: true },
     });
 
-    // Sonra avukatı kalıcı olarak sil
-    return this.prisma.lawyer.delete({
-      where: { id },
+    let transferPlan: { oldCaseLawyerId: string; newCaseLawyerId: string; caseId: string }[] = [];
+    if (responsibleCaseLawyers.length > 0) {
+      if (!replacementLawyerId) {
+        throw new BadRequestException(
+          "Bu avukat bir veya daha fazla dosyada sorumlu; pasifleştirmeden önce yeni sorumlu avukat (replacementLawyerId) seçilmelidir."
+        );
+      }
+      if (replacementLawyerId === id) {
+        throw new BadRequestException("Yeni sorumlu avukat, pasifleştirilen avukatın kendisi olamaz.");
+      }
+      const candidate = await this.prisma.lawyer.findFirst({
+        where: { id: replacementLawyerId, tenantId },
+        select: { id: true, isActive: true },
+      });
+      if (!candidate) {
+        throw new BadRequestException("Yeni sorumlu avukat bulunamadı veya bu tenant'a ait değil.");
+      }
+      if (!candidate.isActive) {
+        throw new BadRequestException("Yeni sorumlu avukat aktif olmalıdır.");
+      }
+
+      const caseIds = responsibleCaseLawyers.map((cl) => cl.caseId);
+      const replacementCaseLawyers = await this.prisma.caseLawyer.findMany({
+        where: { caseId: { in: caseIds }, lawyerId: replacementLawyerId },
+        select: { id: true, caseId: true },
+      });
+      const replacementByCaseId = new Map(replacementCaseLawyers.map((cl) => [cl.caseId, cl.id]));
+      const missingCaseIds = caseIds.filter((caseId) => !replacementByCaseId.has(caseId));
+      if (missingCaseIds.length > 0) {
+        throw new BadRequestException({
+          message: "Yeni sorumlu avukat aşağıdaki dosyalara henüz atanmamış; önce dosyalara ekleyin.",
+          code: "REPLACEMENT_NOT_ASSIGNED_TO_CASES",
+          caseIds: missingCaseIds,
+        });
+      }
+
+      transferPlan = responsibleCaseLawyers.map((cl) => ({
+        oldCaseLawyerId: cl.id,
+        newCaseLawyerId: replacementByCaseId.get(cl.caseId)!,
+        caseId: cl.caseId,
+      }));
+    }
+
+    // L1A: soft-deactivate (+ H1: sorumluluk devri) + audit AYNI transaction (old snapshot deactivate
+    // ÖNCESİ alındı; dosya hiçbir anda sorumlusuz kalmaz — clear-before-set sırası, partial unique
+    // index case_lawyer_one_responsible_per_case ile aynı tx içinde tutarlı).
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.lawyer.updateMany({
+        where: { id, tenantId },
+        data: { isActive: false },
+      });
+      if (count === 0) throw new NotFoundException("Avukat bulunamadı");
+
+      for (const t of transferPlan) {
+        await tx.caseLawyer.update({
+          where: { id: t.oldCaseLawyerId },
+          data: { isResponsible: false, role: "ASSIGNED" },
+        });
+        await tx.caseLawyer.update({
+          where: { id: t.newCaseLawyerId },
+          data: { isResponsible: true, role: "RESPONSIBLE" },
+        });
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: "UPDATE",
+          entityType: "CASE_LAWYER",
+          entityId: t.newCaseLawyerId,
+          userId: actor?.userId,
+          oldValues: { isResponsible: false, lawyerId: replacementLawyerId },
+          newValues: { isResponsible: true, role: "RESPONSIBLE", lawyerId: replacementLawyerId },
+          metadata: {
+            caseId: t.caseId,
+            changeType: "LEGAL_RESPONSIBLE_LAWYER_CHANGED",
+            previousLawyerId: id,
+            newLawyerId: replacementLawyerId,
+            source: "LAWYER_DEACTIVATE_TRANSFER",
+          },
+        });
+      }
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: "LAWYER_DEACTIVATE",
+        entityType: "LAWYER",
+        entityId: id,
+        userId: actor?.userId,
+        metadata: {
+          softDelete: true,
+          oldSnapshot: {
+            name: existing.name,
+            surname: existing.surname,
+            barNumberMasked: existing.barNumber ? `****${String(existing.barNumber).slice(-4)}` : null,
+            lawyerRank: existing.lawyerRank,
+            wasActive: existing.isActive,
+          },
+          ...(transferPlan.length > 0
+            ? {
+                responsibilityTransfer: {
+                  replacementLawyerId,
+                  caseCount: transferPlan.length,
+                  caseIds: transferPlan.map((t) => t.caseId),
+                },
+              }
+            : {}),
+        },
+      });
+
+      return { ...existing, isActive: false };
     });
   }
 

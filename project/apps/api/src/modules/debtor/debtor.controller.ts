@@ -157,22 +157,31 @@ export class DebtorController {
   }
 
   @Post()
-  create(@CurrentUser("tenantId") tenantId: string, @Body() dto: CreateDebtorDto) {
-    return this.debtorService.create(tenantId, dto);
+  create(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Body() dto: CreateDebtorDto
+  ) {
+    return this.debtorService.create(tenantId, dto, { userId });
   }
 
   @Put(":id")
   update(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() dto: UpdateDebtorDto
   ) {
-    return this.debtorService.update(tenantId, id, dto);
+    return this.debtorService.update(tenantId, id, dto, { userId });
   }
 
   @Delete(":id")
-  delete(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
-    return this.debtorService.delete(tenantId, id);
+  delete(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("id") id: string
+  ) {
+    return this.debtorService.delete(tenantId, id, { userId });
   }
 
   // ==================== DUPLICATE CHECK ====================
@@ -211,11 +220,27 @@ export class DebtorController {
   @Put(":id/addresses/:addressId")
   updateAddress(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") debtorId: string,
     @Param("addressId") addressId: string,
     @Body() dto: UpdateDebtorAddressDto
   ) {
-    return this.debtorService.updateAddress(tenantId, debtorId, addressId, dto);
+    return this.debtorService.updateAddress(tenantId, debtorId, addressId, dto, { userId });
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorDetailDrawer (frontend) → GET /debtors/:id/cross-file-alerts (drawer açılışında
+  ///   paylaşılan Debtor.id'nin başka aktif dosyada yakın zamanda güncellenip güncellenmediğini
+  ///   kontrol eder; DBND-D6A-1 pull/MVP, push bildirim DEĞİL)
+  /// </remarks>
+  @Get(":id/cross-file-alerts")
+  getCrossFileAlerts(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") debtorId: string,
+    @Query("excludeCaseId") excludeCaseId?: string
+  ) {
+    return this.debtorService.getCrossFileDebtorAlerts(tenantId, debtorId, excludeCaseId);
   }
 
   @Delete(":id/addresses/:addressId")

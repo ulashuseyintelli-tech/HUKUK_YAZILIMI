@@ -2,6 +2,9 @@ import { describeDb } from "../../../test/describe-db";
 import { Test, TestingModule } from "@nestjs/testing";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CaseDebtorService } from "./case-debtor.service";
+import { AuditService } from "../audit/audit.service";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import {
   CaseType,
   CaseStatus,
@@ -17,10 +20,20 @@ describeDb(
     let service: CaseDebtorService;
 
     const tenantId = "test-tenant-casedebtor-collection-guard";
+    // C1A: bu dosya Collection/Tebligat/ServiceHistory korunumunu test eder, gate/audit'i DEĞİL
+    // → OfficeApprovalService mock override (gerçek PARTNER seed gereksiz).
+    const actorId = "test-actor-collection-guard";
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
 
     beforeAll(async () => {
       module = await Test.createTestingModule({
-        providers: [CaseDebtorService, PrismaService],
+        providers: [
+          CaseDebtorService,
+          PrismaService,
+          AuditService,
+          { provide: OfficeApprovalService, useValue: officeApproval },
+          CaseDebtorLifecycleGuardService,
+        ],
       }).compile();
 
       prisma = module.get<PrismaService>(PrismaService);
@@ -37,6 +50,7 @@ describeDb(
     });
 
     async function cleanup() {
+      await prisma.auditLog.deleteMany({ where: { tenantId } });
       await prisma.collection.deleteMany({ where: { tenantId } });
       await prisma.tebligat.deleteMany({ where: { tenantId } });
       await prisma.serviceHistory.deleteMany({
@@ -99,6 +113,8 @@ describeDb(
           tenantId,
           caseId,
           caseDebtorId: cd.id,
+          // P0-1: idempotencyKey NOT NULL — fixture benzersiz key üretir.
+          idempotencyKey: `spec:cd-guard:${suffix}`,
           amount: 1500.5,
           type: CollectionType.TAHSILAT,
           date: new Date(),
@@ -127,7 +143,7 @@ describeDb(
         },
       });
 
-      const passivated = await service.removeCaseDebtor(tenantId, cd.id);
+      const passivated = await service.removeCaseDebtor(tenantId, cd.id, actorId);
 
       expect(passivated.id).toBe(cd.id);
       expect(passivated.lifecycleStatus).toBe("PASSIVE");
@@ -156,7 +172,7 @@ describeDb(
       const suffix = Date.now() + 1;
       const { cd } = await seedCaseDebtor(suffix);
 
-      const passivated = await service.removeCaseDebtor(tenantId, cd.id);
+      const passivated = await service.removeCaseDebtor(tenantId, cd.id, actorId);
 
       expect(passivated.id).toBe(cd.id);
       expect(passivated.lifecycleStatus).toBe("PASSIVE");

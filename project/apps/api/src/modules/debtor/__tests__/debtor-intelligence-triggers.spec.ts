@@ -25,7 +25,7 @@ describe("DebtorService.syncIntelligenceTaskSafe (PR-D4e-2)", () => {
 
   it("görev yok → DEBTOR_INTELLIGENCE/LOCATION görevi create (debtorId+addressId+dedupe)", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await callIntel(svc, "t1", "d1", "a1");
 
@@ -44,7 +44,7 @@ describe("DebtorService.syncIntelligenceTaskSafe (PR-D4e-2)", () => {
 
   it("aktif görev (PENDING) → mükerrer AÇMAZ (create/update yok)", async () => {
     const prisma = buildPrisma({ existingTask: { id: "tk", status: "PENDING" } }) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await callIntel(svc, "t1", "d1", "a1");
 
@@ -54,7 +54,7 @@ describe("DebtorService.syncIntelligenceTaskSafe (PR-D4e-2)", () => {
 
   it("kapalı görev (COMPLETED) + yeni tetik → yeniden açar (PENDING+STAFF, kapanış izi temizlenir)", async () => {
     const prisma = buildPrisma({ existingTask: { id: "tk", status: "COMPLETED" } }) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await callIntel(svc, "t1", "d1", "a1");
 
@@ -68,7 +68,7 @@ describe("DebtorService.syncIntelligenceTaskSafe (PR-D4e-2)", () => {
 
   it("[B] checkRecentVerified + son 90g VERIFIED_PRESENT → görev AÇMAZ", async () => {
     const prisma = buildPrisma({ recent: { id: "intel1" } }) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await callIntel(svc, "t1", "d1", "a1", true);
 

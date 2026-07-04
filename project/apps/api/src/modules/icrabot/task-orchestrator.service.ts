@@ -104,10 +104,11 @@ export class TaskOrchestratorService {
   /**
    * Dosya için bekleyen görevleri getir
    */
-  async getPendingTasks(caseId: string): Promise<BotTask[]> {
+  async getPendingTasks(caseId: string, tenantId: string): Promise<BotTask[]> {
     const tasks = await this.prisma.botTask.findMany({
       where: {
         caseId,
+        tenantId,
         status: { in: ['PENDING', 'QUEUED', 'NEEDS_APPROVAL'] },
       },
       orderBy: [
@@ -245,7 +246,7 @@ export class TaskOrchestratorService {
     task: any
   ): Promise<Record<string, any>> {
     // Dosya bilgilerini al
-    const twin = await this.recipeService.buildDigitalTwin(task.caseId);
+    const twin = await this.recipeService.buildDigitalTwin(task.caseId, task.tenantId);
 
     // Karar kurallarını değerlendir
     const decisions = await this.recipeService.evaluateDecisions(recipe, {

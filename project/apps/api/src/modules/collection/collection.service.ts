@@ -7,17 +7,25 @@ import {
   Optional,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { randomUUID } from "crypto";
+import { Prisma } from "@prisma/client";
+import { createHash, randomUUID } from "crypto";
 import {
   CreateCollectionDto,
   UpdateCollectionDto,
   CancelCollectionDto,
   CollectionStatus,
   CollectionSource,
+  CollectionChannel,
   AllocationType,
   CoverCalculation,
   CollectionSummary,
 } from "./dto/collection.dto";
+import {
+  assertCollectionPublicUpdateAllowed,
+  COLLECTION_METADATA_UPDATE_FIELDS,
+  COLLECTION_STATUS_PENDING,
+  pickDefinedCollectionUpdateData,
+} from "./collection-safety.helper";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { OccurredAtConfidence, ActorType } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
 import { SummaryEngineService } from "../summary-engine/summary-engine.service";
@@ -27,6 +35,14 @@ import {
   mapClaimItemTypeToAllocationType,
 } from "./allocation-read.helper";
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
+import {
+  AccountingJournalWriterService,
+  buildAccountingJournal,
+  createCanonicalSourceHash,
+  type CollectionJournalSource,
+  type ValidatedJournalEntryDraft,
+  validateJournalDraft,
+} from "../accounting-journal";
 
 // ─── Source → Header Mapping ─────────────────────────────────────────────────
 
@@ -41,6 +57,116 @@ const EXTERNAL_SOURCES = new Set<string>([
   ...EXTERNAL_SIGNED_SOURCES,
   CollectionSource.THIRD_PARTY,
 ]);
+
+// P0-1: idempotent replay/conflict için mevcut tahsilatın payload alanları.
+const IDEMPOTENCY_PAYLOAD_SELECT = {
+  id: true,
+  caseId: true,
+  amount: true,
+  currency: true,
+  date: true,
+  sourceType: true,
+  sourceId: true,
+  caseDebtorId: true,
+} as const;
+
+const PAYMENT_REVERSED_EVENT_NAMESPACE = 'PAYMENT_REVERSED:v1';
+const PAYMENT_RECEIVED_EVENT_NOT_FOUND = 'PAYMENT_RECEIVED_EVENT_NOT_FOUND';
+const PAYMENT_RECEIVED_EVENT_NOT_FOUND_MESSAGE =
+  'Original PAYMENT_RECEIVED event not found for collection reversal.';
+
+function deterministicUuid(...parts: string[]): string {
+  const bytes = createHash('sha256').update(parts.join('\u001f')).digest();
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.subarray(0, 16).toString('hex');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-');
+}
+
+function paymentReversedEventId(tenantId: string, collectionId: string): string {
+  return deterministicUuid(PAYMENT_REVERSED_EVENT_NAMESPACE, tenantId, collectionId);
+}
+
+function paymentReceivedEventNotFound(): ConflictException {
+  return new ConflictException({
+    errorCode: PAYMENT_RECEIVED_EVENT_NOT_FOUND,
+    message: PAYMENT_RECEIVED_EVENT_NOT_FOUND_MESSAGE,
+  });
+}
+
+function getTimelineEventBody(event: any): { header?: Record<string, unknown>; payload?: Record<string, unknown> } {
+  if (!event?.body || typeof event.body !== 'object') return {};
+  return event.body as { header?: Record<string, unknown>; payload?: Record<string, unknown> };
+}
+
+function getTimelineEventId(event: any): string | undefined {
+  const eventId = getTimelineEventBody(event).header?.eventId;
+  return typeof eventId === 'string' && eventId.trim() ? eventId : undefined;
+}
+
+function readJournalSourceVersion(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const sourceVersion = (metadata as { sourceVersion?: unknown }).sourceVersion;
+  return typeof sourceVersion === 'string' && sourceVersion.trim() ? sourceVersion : null;
+}
+
+function coerceDate(value: unknown, fallback: unknown): Date {
+  const candidate = value instanceof Date ? value : value ? new Date(String(value)) : null;
+  if (candidate && !Number.isNaN(candidate.getTime())) return candidate;
+  const fallbackDate = fallback instanceof Date ? fallback : fallback ? new Date(String(fallback)) : null;
+  if (fallbackDate && !Number.isNaN(fallbackDate.getTime())) return fallbackDate;
+  return new Date();
+}
+
+function toFiniteAmount(value: unknown): number {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function sumAmounts(rows: Array<{ amount: unknown }>): number {
+  return roundMoney(rows.reduce((sum, row) => sum + toFiniteAmount(row.amount), 0));
+}
+
+type OverpaymentBlockReason =
+  | 'EXCLUDED_OUTSTANDING'
+  | 'CURRENCY_MISMATCH'
+  | 'RESTRICTED_PAYMENT_UNSUPPORTED'
+  | 'LEDGER_CONTEXT_MISMATCH';
+
+interface OverpaymentBlock {
+  reason: OverpaymentBlockReason;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+const RESTRICTED_OVERPAYMENT_SOURCES = new Set<string>([
+  CollectionSource.BANK_SEIZURE,
+  CollectionSource.SALARY_SEIZURE,
+  CollectionSource.AUCTION,
+]);
+
+const RESTRICTED_OVERPAYMENT_CHANNELS = new Set<string>([
+  CollectionChannel.HACIZ,
+  CollectionChannel.ICRA_DAIRESI,
+]);
+
+function hasUnsupportedRestrictedPaymentSignal(dto: CreateCollectionDto): boolean {
+  return Boolean(
+    dto.caseDebtorId ||
+    (dto.sourceType && RESTRICTED_OVERPAYMENT_SOURCES.has(dto.sourceType)) ||
+    (dto.channel && RESTRICTED_OVERPAYMENT_CHANNELS.has(dto.channel)),
+  );
+}
 
 function mapSourceToActor(sourceType: CollectionSource | undefined, userId?: string): { type: ActorType; userId?: string; externalSystem?: string } {
   if (!sourceType || sourceType === CollectionSource.MANUAL || sourceType === CollectionSource.SETTLEMENT) {
@@ -71,7 +197,55 @@ export class CollectionService {
     // G3a: kanonik ledger forward write. @Optional → enjekte edilmezse ledger
     // atlanır + diagnostic (akış kırılmaz; test/araç bağlamları için).
     @Optional() private readonly summaryEngine?: SummaryEngineService,
+    @Optional() private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
   ) {}
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionService.create() → POST /collections (overpayment guard diagnostic event)
+  /// </remarks>
+  private async appendOverpaymentBlockedDiagnosticInTx(
+    tx: any,
+    input: {
+      tenantId: string;
+      caseId: string;
+      collectionId: string;
+      paymentEventId: string;
+      sourceLedgerEntryId?: string;
+      collectionAmount: number;
+      allocatedAmount: number;
+      attemptedOverpaymentAmount: number;
+      currency: string;
+      blocks: OverpaymentBlock[];
+    },
+  ) {
+    await this.domainEventIngestService.appendInTransaction(tx, {
+      header: {
+        eventId: randomUUID(),
+        aggregateType: 'Case',
+        aggregateId: input.caseId,
+        eventType: 'OVERPAYMENT_BLOCKED',
+        occurredAt: new Date().toISOString(),
+        occurredAtConfidence: 'SYSTEM_VERIFIED',
+        actor: {
+          type: 'SYSTEM',
+          reason: 'COLLECTION_OVERPAYMENT_GUARD',
+        },
+        causedBy: input.paymentEventId,
+        tenantId: input.tenantId,
+      },
+      payload: {
+        collectionId: input.collectionId,
+        sourceLedgerEntryId: input.sourceLedgerEntryId,
+        collectionAmount: input.collectionAmount,
+        allocatedAmount: input.allocatedAmount,
+        attemptedOverpaymentAmount: input.attemptedOverpaymentAmount,
+        currency: input.currency,
+        unsafeForOverpayment: true,
+        blockedReasons: input.blocks,
+      },
+    });
+  }
 
   /**
    * Otomatik mahsup - Yasal sıraya göre (transaction-aware)
@@ -265,11 +439,40 @@ export class CollectionService {
       );
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    // ── P0-1 (S9): idempotencyKey zorunlu — eksik/boş key ile tahsilat kaydedilemez ──
+    if (!dto.idempotencyKey) {
+      throw new BadRequestException(
+        "idempotencyKey zorunlu — tahsilat kaydı için gerekli",
+      );
+    }
+
+    // ── P0-1: idempotent fast-path (tx öncesi hızlı yol) ────────────────────
+    //  Aynı (tenant, idempotencyKey) → aynı payload ise mevcut tahsilat döner (replay);
+    //  farklı payload ise IDEMPOTENCY_KEY_CONFLICT. Double-click/retry en yaygın vaka.
+    const preExisting = await this.findByIdempotencyKey(tenantId, dto.idempotencyKey);
+    if (preExisting) {
+      this.assertSameCollectionPayload(preExisting, dto);
+      return this.findById(tenantId, preExisting.id);
+    }
+
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+      // ── P0-1: advisory xact lock (tenant+key) → aynı-key eşzamanlı create'ler ──
+      //  SERIALIZE olur; farklı-key (meşru ikinci ödeme) contend ETMEZ. Lock altında
+      //  re-check + payload-conflict guard: race'te ikinci istek P2002 yerine replay döner.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${
+        `collection:idem:${tenantId}:${dto.idempotencyKey}`
+      }))`;
+      const lockedDup = await this.findByIdempotencyKeyTx(tx, tenantId, dto.idempotencyKey);
+      if (lockedDup) {
+        this.assertSameCollectionPayload(lockedDup, dto);
+        return lockedDup;
+      }
+
       // ── 1. Case status check (closed-case reject) ───────────────────────
       const caseData = await tx.case.findFirst({
         where: { id: dto.caseId, tenantId },
-        select: { id: true, caseStatus: true },
+        select: { id: true, caseStatus: true, currency: true },
       });
 
       if (!caseData) {
@@ -323,17 +526,21 @@ export class CollectionService {
           accountNo: dto.accountNo,
           notes: dto.notes,
           status: CollectionStatus.CONFIRMED,
+          idempotencyKey: dto.idempotencyKey,
           createdById: userId,
         },
       });
 
+      await this.writeCollectionRecordedJournal(tx, tenantId, userId, collection);
+
       // ── 4. PAYMENT_RECEIVED event append (HR-39: same-tx) ───────────────
       const confidence = mapSourceToConfidence(dto.sourceType as CollectionSource);
       const actor = mapSourceToActor(dto.sourceType as CollectionSource, userId);
+      const paymentEventId = randomUUID();
 
       await this.domainEventIngestService.appendInTransaction(tx, {
         header: {
-          eventId: randomUUID(),
+          eventId: paymentEventId,
           aggregateType: 'Case',
           aggregateId: dto.caseId,
           eventType: 'PAYMENT_RECEIVED',
@@ -376,6 +583,126 @@ export class CollectionService {
             collectionId: collection.id,
           },
         );
+        if (ledger.allocated && ledger.ledgerEntry) {
+          const allocatedAmount = sumAmounts(ledger.allocations || []);
+          const overpaymentAmount = roundMoney(toFiniteAmount(dto.amount) - allocatedAmount);
+
+          if (overpaymentAmount > 0) {
+            const blocks: OverpaymentBlock[] = [];
+            const excludedOutstanding = toFiniteAmount((ledger as any).excludedOutstanding);
+            if ((ledger as any).unsafeForOverpayment || excludedOutstanding > 0) {
+              blocks.push({
+                reason: 'EXCLUDED_OUTSTANDING',
+                message: 'Allocator excluded legitimate outstanding debt; overpayment cannot be trusted.',
+                details: {
+                  excludedOutstanding,
+                  diagnostics: (ledger as any).diagnostics || [],
+                },
+              });
+            }
+
+            const caseCurrency = String(caseData.currency || 'TRY');
+            const ledgerCurrency = ledger.ledgerEntry.currency ? String(ledger.ledgerEntry.currency) : currency;
+            if (currency !== caseCurrency || ledgerCurrency !== caseCurrency || ledgerCurrency !== currency) {
+              blocks.push({
+                reason: 'CURRENCY_MISMATCH',
+                message: 'Collection, case, and ledger currencies are not aligned.',
+                details: { collectionCurrency: currency, caseCurrency, ledgerCurrency },
+              });
+            }
+
+            if (
+              (ledger.ledgerEntry.tenantId && ledger.ledgerEntry.tenantId !== tenantId) ||
+              (ledger.ledgerEntry.caseId && ledger.ledgerEntry.caseId !== dto.caseId)
+            ) {
+              blocks.push({
+                reason: 'LEDGER_CONTEXT_MISMATCH',
+                message: 'Ledger entry tenant/case context does not match the collection.',
+                details: {
+                  collectionTenantId: tenantId,
+                  collectionCaseId: dto.caseId,
+                  ledgerTenantId: ledger.ledgerEntry.tenantId,
+                  ledgerCaseId: ledger.ledgerEntry.caseId,
+                },
+              });
+            }
+
+            if (hasUnsupportedRestrictedPaymentSignal(dto)) {
+              blocks.push({
+                reason: 'RESTRICTED_PAYMENT_UNSUPPORTED',
+                message: 'Payment may be restricted/earmarked, but PaymentDesignation is not implemented yet.',
+                details: {
+                  caseDebtorId: dto.caseDebtorId,
+                  sourceType: dto.sourceType,
+                  channel: dto.channel,
+                },
+              });
+            }
+
+            if (blocks.length > 0) {
+              this.logger.warn(
+                `overpayment blocked; allocation unsafe ` +
+                  `(case=${dto.caseId}, collection=${collection.id}, reasons=${blocks.map((b) => b.reason).join(',')})`,
+              );
+              await this.appendOverpaymentBlockedDiagnosticInTx(tx, {
+                tenantId,
+                caseId: dto.caseId,
+                collectionId: collection.id,
+                paymentEventId,
+                sourceLedgerEntryId: ledger.ledgerEntry.id,
+                collectionAmount: toFiniteAmount(dto.amount),
+                allocatedAmount,
+                attemptedOverpaymentAmount: overpaymentAmount,
+                currency,
+                blocks,
+              });
+            } else {
+              await (tx as any).collectionOverpayment.create({
+                data: {
+                  tenantId,
+                  caseId: dto.caseId,
+                  collectionId: collection.id,
+                  sourceLedgerEntryId: ledger.ledgerEntry.id,
+                  amount: overpaymentAmount,
+                  remainingAmount: overpaymentAmount,
+                  currency,
+                  status: 'HELD',
+                  createdById: userId,
+                  metadata: {
+                    collectionAmount: toFiniteAmount(dto.amount),
+                    allocatedAmount,
+                  },
+                },
+              });
+
+              await this.domainEventIngestService.appendInTransaction(tx, {
+                header: {
+                  eventId: randomUUID(),
+                  aggregateType: 'Case',
+                  aggregateId: dto.caseId,
+                  eventType: 'OVERPAYMENT_RECORDED',
+                  occurredAt: new Date().toISOString(),
+                  occurredAtConfidence: 'SYSTEM_VERIFIED',
+                  actor: {
+                    type: 'SYSTEM',
+                    reason: 'COLLECTION_OVERPAYMENT_PROJECTION',
+                  },
+                  causedBy: paymentEventId,
+                  tenantId,
+                },
+                payload: {
+                  collectionId: collection.id,
+                  sourceLedgerEntryId: ledger.ledgerEntry.id,
+                  amount: overpaymentAmount,
+                  remainingAmount: overpaymentAmount,
+                  currency,
+                  collectionAmount: toFiniteAmount(dto.amount),
+                  allocatedAmount,
+                },
+              });
+            }
+          }
+        }
         if (!ledger.allocated) {
           this.logger.warn(
             `case has no claimItems; payment not ledger-allocated ` +
@@ -411,9 +738,96 @@ export class CollectionService {
       }
 
       return collection;
-    });
+      });
+      return this.findById(tenantId, result.id);
+    } catch (e: unknown) {
+      // ── P0-1: idempotencyKey race → P2002 → idempotent replay ──────────────
+      //  Lock'a rağmen kalan yarış (veya external dedup index) P2002 üretirse:
+      //  key ile mevcut satır bulunursa replay; yoksa external dup → conflict.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        const row = await this.findByIdempotencyKey(tenantId, dto.idempotencyKey);
+        if (row) {
+          this.assertSameCollectionPayload(row, dto);
+          return this.findById(tenantId, row.id);
+        }
+        // meta.target ile ayrıştır: yalnız external-dedup index'i (source_dedupe)
+        // DUPLICATE_EXTERNAL_PAYMENT'a çevrilir; ilgisiz P2002 aynen fırlatılır
+        // (yanlış etiketleme yok — truthful-audit ilkesi).
+        const target = String((e.meta as { target?: unknown } | undefined)?.target ?? "");
+        if (target.includes("source_dedupe") || target.includes("sourceId")) {
+          throw new ConflictException({
+            code: "DUPLICATE_EXTERNAL_PAYMENT",
+            message:
+              "Aynı dış-kaynak tahsilatı (sourceType/sourceId) bu dosyada zaten kayıtlı",
+          });
+        }
+      }
+      throw e;
+    }
+  }
 
-    return this.findById(tenantId, result.id);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionService.create() → idempotent fast-path (tx öncesi) + P2002 replay
+  /// </remarks>
+  private async findByIdempotencyKey(tenantId: string, idempotencyKey: string) {
+    return (this.prisma.collection as any).findUnique({
+      where: { tenantId_idempotencyKey: { tenantId, idempotencyKey } },
+      select: IDEMPOTENCY_PAYLOAD_SELECT,
+    });
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionService.create() → advisory-lock altında race re-check
+  /// </remarks>
+  private async findByIdempotencyKeyTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    idempotencyKey: string,
+  ) {
+    return (tx as any).collection.findUnique({
+      where: { tenantId_idempotencyKey: { tenantId, idempotencyKey } },
+      select: IDEMPOTENCY_PAYLOAD_SELECT,
+    });
+  }
+
+  /**
+   * P0-1: idempotent replay guard (ClientPayout.replayOrConflict deseni). Aynı
+   * idempotencyKey FARKLI payload ile gelirse IDEMPOTENCY_KEY_CONFLICT fırlatır;
+   * sessiz eski-kayıt dönme YOK — replay yalnız payload birebir eşleşince.
+   */
+  private assertSameCollectionPayload(
+    existing: {
+      caseId: string;
+      amount: Prisma.Decimal | number | string;
+      currency: string;
+      date: Date;
+      sourceType: string | null;
+      sourceId: string | null;
+      caseDebtorId: string | null;
+    },
+    dto: CreateCollectionDto,
+  ): void {
+    const sameAmount =
+      Number(existing.amount).toFixed(2) === Number(dto.amount).toFixed(2);
+    const sameDate =
+      new Date(existing.date).getTime() === new Date(dto.date).getTime();
+    const same =
+      existing.caseId === dto.caseId &&
+      sameAmount &&
+      sameDate &&
+      String(existing.currency) === String(dto.currency || "TRY") &&
+      (existing.sourceType ?? null) === (dto.sourceType ?? null) &&
+      (existing.sourceId ?? null) === (dto.sourceId ?? null) &&
+      (existing.caseDebtorId ?? null) === (dto.caseDebtorId ?? null);
+    if (!same) {
+      throw new ConflictException({
+        code: "IDEMPOTENCY_KEY_CONFLICT",
+        message:
+          "Aynı idempotencyKey farklı payload ile kullanıldı (amount/caseId/date/source/caseDebtorId/currency)",
+      });
+    }
   }
 
   /**
@@ -450,25 +864,30 @@ export class CollectionService {
     });
   }
 
-  /**
-   * Tahsilat güncelle
-   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionController.update() → PUT /collections/:id (doğrudan tahsilat metadata güncelleme)
+  /// </remarks>
   async update(tenantId: string, id: string, dto: UpdateCollectionDto) {
     const collection = await this.findById(tenantId, id);
 
-    if (collection.status === CollectionStatus.CANCELLED) {
-      throw new BadRequestException("İptal edilmiş tahsilat güncellenemez");
+    assertCollectionPublicUpdateAllowed(String(collection.status), dto as Record<string, unknown>);
+
+    const updateData = pickDefinedCollectionUpdateData(
+      dto as Record<string, unknown>,
+      collection.status === COLLECTION_STATUS_PENDING
+        ? ["amount", "date", ...COLLECTION_METADATA_UPDATE_FIELDS]
+        : COLLECTION_METADATA_UPDATE_FIELDS,
+      ["date"],
+    );
+
+    if (Object.keys(updateData).length === 0) {
+      return collection;
     }
 
     return (this.prisma.collection as any).update({
       where: { id },
-      data: {
-        amount: dto.amount,
-        date: dto.date ? new Date(dto.date) : undefined,
-        description: dto.description,
-        receiptNo: dto.receiptNo,
-        notes: dto.notes,
-      },
+      data: updateData,
       include: {
         allocations: true,
       },
@@ -478,13 +897,19 @@ export class CollectionService {
   /// <remarks>
   /// Çağrıldığı yerler:
   /// - CollectionController.cancel() → POST /collections/:id/cancel (doğrudan tahsilat iptali)
-  /// - CaseService.cancelCollection() → POST /cases/:id/collections/:collectionId/cancel (dosya detayından tahsilat iptali)
+  /// - CaseService.cancelCollection() → POST /cases/:id/collections/:collectionId/cancel (dosya detayından tahsilat iptali; caseId boundary guard)
   /// </remarks>
-  async cancel(tenantId: string, id: string, dto: CancelCollectionDto) {
+  async cancel(
+    tenantId: string,
+    id: string,
+    dto: CancelCollectionDto,
+    actorUserId: string,
+    expectedCaseId?: string,
+  ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const collection = await (tx.collection as any).findFirst({
-          where: { id, tenantId },
+          where: { id, tenantId, ...(expectedCaseId ? { caseId: expectedCaseId } : {}) },
         });
 
         if (!collection) {
@@ -493,6 +918,43 @@ export class CollectionService {
 
         if (collection.status === CollectionStatus.CANCELLED) {
           throw new BadRequestException("Tahsilat zaten iptal edilmiş");
+        }
+
+        const originalPaymentEvent = await (tx.icrabotTimelineEntry as any).findFirst({
+          where: {
+            tenantId,
+            caseId: collection.caseId,
+            type: 'PAYMENT_RECEIVED',
+            body: {
+              path: ['payload', 'collectionId'],
+              equals: collection.id,
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+        const originalPaymentEventId = getTimelineEventId(originalPaymentEvent);
+        if (!originalPaymentEventId) {
+          throw paymentReceivedEventNotFound();
+        }
+
+        const originalRecordedJournal = await (tx.accountingJournalEntry as any).findFirst({
+          where: {
+            tenantId,
+            sourceType: 'COLLECTION',
+            sourceId: collection.id,
+            sourceAction: 'recorded',
+            entryType: 'COLLECTION_CASH_RECEIPT_RECORDED',
+          },
+          select: { id: true, metadata: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        const originalRecordedSourceVersion = readJournalSourceVersion(originalRecordedJournal?.metadata);
+        if (!originalRecordedJournal || !originalRecordedSourceVersion) {
+          throw new ConflictException({
+            errorCode: 'COLLECTION_CASH_RECEIPT_RECORDED_JOURNAL_MISSING',
+            message: 'Collection cancel requires original recorded accounting journal evidence.',
+            collectionId: collection.id,
+          });
         }
 
         const originalLedger = await (tx.ledgerEntry as any).findFirst({
@@ -510,11 +972,12 @@ export class CollectionService {
           orderBy: { createdAt: 'asc' },
         });
 
+        const cancelledAt = new Date();
         const cancelledCollection = await (tx.collection as any).update({
           where: { id },
           data: {
             status: CollectionStatus.CANCELLED,
-            cancelledAt: new Date(),
+            cancelledAt,
             cancelReason: dto.cancelReason,
           },
         });
@@ -577,6 +1040,46 @@ export class CollectionService {
           }
         }
 
+        await (tx as any).collectionOverpayment.updateMany({
+          where: {
+            tenantId,
+            caseId: collection.caseId,
+            collectionId: collection.id,
+            status: 'HELD',
+          },
+          data: {
+            status: 'REVERSED',
+            remainingAmount: 0,
+            reversedAt: cancelledAt,
+          },
+        });
+
+        await this.writeCollectionCancelJournal(tx, tenantId, actorUserId, cancelledCollection, cancelledAt, originalRecordedSourceVersion);
+
+        await this.domainEventIngestService.appendInTransaction(tx, {
+          header: {
+            eventId: paymentReversedEventId(tenantId, collection.id),
+            aggregateType: 'Case',
+            aggregateId: collection.caseId,
+            eventType: 'PAYMENT_REVERSED',
+            occurredAt: cancelledAt.toISOString(),
+            occurredAtConfidence: 'SYSTEM_VERIFIED',
+            actor: {
+              type: 'HUMAN',
+              userId: actorUserId,
+            },
+            causedBy: originalPaymentEventId,
+            tenantId,
+          },
+          payload: {
+            tenantId,
+            caseId: collection.caseId,
+            collectionId: collection.id,
+            reversedAt: cancelledAt.toISOString(),
+            cancelReason: dto.cancelReason,
+          },
+        });
+
         return cancelledCollection;
       });
     } catch (error: any) {
@@ -588,6 +1091,119 @@ export class CollectionService {
       }
       throw error;
     }
+  }
+
+  private async writeCollectionRecordedJournal(tx: any, tenantId: string, actorUserId: string | undefined, collection: any): Promise<void> {
+    const draft = this.buildCollectionCashJournalDraft({
+      tenantId,
+      actorUserId,
+      collection,
+      kind: 'RECORDED',
+      sourceAction: 'recorded',
+      sourceVersionSuffix: 'RECORDED',
+      originalRecordedSourceVersion: null,
+    });
+    const write = await this.journalWriter.write({ draft }, tx);
+    if (!write.ok) {
+      throw new ConflictException('Collection recorded journal write failed: ' + write.errors.map((error) => error.code).join(', '));
+    }
+  }
+
+  private async writeCollectionCancelJournal(
+    tx: any,
+    tenantId: string,
+    actorUserId: string,
+    collection: any,
+    cancelledAt: Date,
+    originalRecordedSourceVersion: string,
+  ): Promise<void> {
+    const draft = this.buildCollectionCashJournalDraft({
+      tenantId,
+      actorUserId,
+      collection: { ...collection, cancelledAt },
+      kind: 'CANCEL',
+      sourceAction: 'cancel',
+      sourceVersionSuffix: 'CANCEL',
+      originalRecordedSourceVersion,
+    });
+    const write = await this.journalWriter.write({ draft }, tx);
+    if (!write.ok) {
+      throw new ConflictException('Collection cancel journal write failed: ' + write.errors.map((error) => error.code).join(', '));
+    }
+  }
+
+  private buildCollectionCashJournalDraft(params: {
+    tenantId: string;
+    actorUserId: string | undefined;
+    collection: any;
+    kind: 'RECORDED' | 'CANCEL';
+    sourceAction: 'recorded' | 'cancel';
+    sourceVersionSuffix: 'RECORDED' | 'CANCEL';
+    originalRecordedSourceVersion: string | null;
+  }): ValidatedJournalEntryDraft {
+    const { tenantId, actorUserId, collection, kind, sourceAction, sourceVersionSuffix, originalRecordedSourceVersion } = params;
+    const occurredAt = kind === 'RECORDED'
+      ? coerceDate(collection.date, collection.createdAt)
+      : coerceDate(collection.cancelledAt, collection.updatedAt);
+    const sourceVersionDate = kind === 'RECORDED'
+      ? coerceDate(collection.createdAt, occurredAt)
+      : coerceDate(collection.cancelledAt, occurredAt);
+    const occurredAtIso = occurredAt.toISOString();
+    const sourceVersion = `${sourceVersionDate.toISOString()}:${collection.id}:${sourceVersionSuffix}`;
+    const effectiveDate = coerceDate(kind === 'RECORDED' ? (collection.valueDate ?? collection.date) : (collection.cancelledAt ?? occurredAt), occurredAt)
+      .toISOString()
+      .slice(0, 10);
+    const amount = collection.amount?.toString?.() ?? String(collection.amount);
+    const currency = collection.currency || 'TRY';
+    const payload: CollectionJournalSource['payload'] = {
+      kind,
+      amount,
+      caseId: collection.caseId,
+      collectionId: collection.id,
+      collectionStatus: kind === 'RECORDED' ? 'CONFIRMED' : 'CANCELLED',
+      debtorId: collection.caseDebtorId ?? null,
+      originalRecordedSourceVersion,
+    };
+    const source: CollectionJournalSource = {
+      tenantId,
+      sourceType: 'COLLECTION',
+      sourceId: collection.id,
+      sourceVersion,
+      sourceAction,
+      occurredAt: occurredAtIso,
+      effectiveDate,
+      actorId: actorUserId ?? null,
+      currency,
+      sourceHash: createCanonicalSourceHash({
+        tenantId,
+        sourceType: 'COLLECTION',
+        sourceId: collection.id,
+        sourceAction,
+        sourceVersion,
+        occurredAt: occurredAtIso,
+        effectiveDate,
+        actorId: actorUserId ?? null,
+        currency,
+        payload,
+      }),
+      metadata: {
+        sourceName: 'collection',
+        status: kind,
+      },
+      payload,
+    };
+
+    const built = buildAccountingJournal(source);
+    if (!built.ok) {
+      throw new ConflictException(`Collection journal mapping failed: ${built.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const validated = validateJournalDraft(built.draft);
+    if (!validated.ok) {
+      throw new ConflictException(`Collection journal validation failed: ${validated.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    return validated.draft;
   }
 
   // ==================== OTOMATİK MAHSUP ====================

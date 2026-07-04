@@ -1,11 +1,22 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Inject, forwardRef, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { ExpenseRequestStatus, ExpenseGateType, Prisma } from '@prisma/client';
+import { ExpenseRequestStatus, ExpenseGateType, Prisma, BalanceLedgerType } from '@prisma/client';
 import { CaseBalanceService } from '@/modules/case-balance/case-balance.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
 import { ExpenseCalculatorService, CaseData, EXPENSE_SET_TEMPLATES } from './expense-calculator.service';
 import { ExpenseNotificationService } from './expense-notification.service';
+import { ExpensePaymentReversalContractService, ExpensePaymentReversalRequestKind } from './expense-payment-reversal-contract.service';
+import {
+  AccountingJournalWriterService,
+  buildAccountingJournal,
+  createCanonicalSourceHash,
+  ExpensePaymentJournalSource,
+  ExpenseRequestJournalSource,
+  ValidatedJournalEntryDraft,
+  validateJournalDraft,
+  reverseAccountingJournalEntryInTransaction,
+} from '@/modules/accounting-journal';
 
 export interface ExpenseItem {
   type: string;        // TEBLIGAT, HACIZ, SATIS_AVANSI, BILIRKISI, DIGER
@@ -38,6 +49,43 @@ export interface PaymentInput {
   matchedBy?: string; // AUTO, MANUAL
 }
 
+export interface ReversePaymentInput {
+  reason: string;
+  evidenceRef?: string | null;
+  kind?: ExpensePaymentReversalRequestKind;
+}
+
+export interface ReversePaymentResult {
+  status: 'CREATED' | 'REPLAYED';
+  expensePaymentReversalId: string;
+  expensePaymentId: string;
+  expenseRequestId: string;
+  originalJournalEntryId: string;
+  reversalJournalEntryId: string | null;
+  originalBalanceLedgerId: string | null;
+  reversalBalanceLedgerId: string | null;
+  paidTotal: string | null;
+  expenseRequestStatus: ExpenseRequestStatus | null;
+}
+type JournalableExpenseRequestRow = {
+  id: string;
+  caseId: string;
+  clientId: string;
+  totalAmount: Prisma.Decimal | Prisma.Decimal.Value;
+  currency: string;
+  createdAt: Date | string;
+};
+
+type JournalableExpensePaymentRow = {
+  id: string;
+  expenseRequestId: string;
+  amount: Prisma.Decimal | Prisma.Decimal.Value;
+  paymentDate: Date | string;
+  method: string | null;
+  reference: string | null;
+  createdAt: Date | string;
+};
+
 export interface ExpenseSummary {
   totalRequested: number;
   totalPaid: number;
@@ -61,6 +109,10 @@ export class ExpenseRequestService {
     private expenseNotification: ExpenseNotificationService,
     private dispatcher: NotificationDispatcherService,
     private office: OfficeService,
+    @Optional()
+    private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
+    @Optional()
+    private readonly paymentReversalContract: ExpensePaymentReversalContractService = new ExpensePaymentReversalContractService(),
   ) {}
 
   async findAll(tenantId: string, params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }) {
@@ -141,22 +193,27 @@ export class ExpenseRequestService {
     // Calculate total
     const totalAmount = dto.items.reduce((sum, item) => sum + item.amount, 0);
 
-    const expenseRequest = await this.prisma.expenseRequest.create({
-      data: {
-        tenantId,
-        caseId: dto.caseId,
-        clientId: dto.clientId,
-        items: dto.items as any,
-        totalAmount,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-        notes: dto.notes,
-        status: dto.paidByLawyer ? 'LAWYER_PAID' : 'PENDING', // Avukat karşıladıysa farklı status
-        createdById: userId,
-      },
-      include: {
-        case: { select: { id: true, fileNumber: true, executionFileNumber: true } },
-        client: { select: { id: true, name: true, displayName: true } },
-      },
+    const expenseRequest = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.expenseRequest.create({
+        data: {
+          tenantId,
+          caseId: dto.caseId,
+          clientId: dto.clientId,
+          items: dto.items as any,
+          totalAmount,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+          notes: dto.notes,
+          status: dto.paidByLawyer ? 'LAWYER_PAID' : 'PENDING', // Avukat karşıladıysa farklı status
+          createdById: userId,
+        },
+        include: {
+          case: { select: { id: true, fileNumber: true, executionFileNumber: true } },
+          client: { select: { id: true, name: true, displayName: true } },
+        },
+      });
+
+      await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, created as JournalableExpenseRequestRow);
+      return created;
     });
 
     // Avukat karşıladıysa bakiyeye kredi ekle (UYAP'a gönderim açılsın)
@@ -230,28 +287,33 @@ export class ExpenseRequestService {
       amount: item.finalAmount,
     }));
 
-    const expenseRequest = await this.prisma.expenseRequest.create({
-      data: {
-        tenantId,
-        caseId: dto.caseId,
-        clientId: dto.clientId,
-        // Yeni alanlar (migration sonrası aktif olacak)
-        // packageCode: dto.packageCode,
-        // totalSuggested,
-        // sendEmail: dto.sendEmail || false,
-        // sendSms: dto.sendSms || false,
-        // sendWhatsapp: dto.sendWhatsapp || false,
-        items: legacyItems as any,
-        totalAmount,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-        notes: dto.notes,
-        status: dto.paidByLawyer ? 'LAWYER_PAID' : 'PENDING', // Avukat karşıladıysa farklı status
-        createdById: userId,
-      },
-      include: {
-        case: { select: { id: true, fileNumber: true, executionFileNumber: true } },
-        client: { select: { id: true, name: true, displayName: true } },
-      },
+    const expenseRequest = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.expenseRequest.create({
+        data: {
+          tenantId,
+          caseId: dto.caseId,
+          clientId: dto.clientId,
+          // Yeni alanlar (migration sonrası aktif olacak)
+          // packageCode: dto.packageCode,
+          // totalSuggested,
+          // sendEmail: dto.sendEmail || false,
+          // sendSms: dto.sendSms || false,
+          // sendWhatsapp: dto.sendWhatsapp || false,
+          items: legacyItems as any,
+          totalAmount,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+          notes: dto.notes,
+          status: dto.paidByLawyer ? 'LAWYER_PAID' : 'PENDING', // Avukat karşıladıysa farklı status
+          createdById: userId,
+        },
+        include: {
+          case: { select: { id: true, fileNumber: true, executionFileNumber: true } },
+          client: { select: { id: true, name: true, displayName: true } },
+        },
+      });
+
+      await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, created as JournalableExpenseRequestRow);
+      return created;
     });
 
     // Avukat karşıladıysa bakiyeye kredi ekle (UYAP'a gönderim açılsın)
@@ -382,13 +444,13 @@ export class ExpenseRequestService {
             amount: paidAmount,
             source: `expense_request:${id}`,
             sourceId: id,
-            description: `Masraf talebi ödemesi (${(existing as any).packageCode || 'manuel'})`,
+            description: `Masraf talebi �demesi (${(existing as any).packageCode || 'manuel'})`,
           },
           userId,
         );
       } catch (error) {
         console.error('Bakiye kredisi eklenemedi:', error);
-        // Hata olsa bile masraf talebi güncellendi, devam et
+        // Hata olsa bile masraf talebi g�ncellendi, devam et
       }
     }
 
@@ -408,6 +470,50 @@ export class ExpenseRequestService {
         status: 'CANCELLED',
         responseNotes: reason,
       },
+    });
+  }
+
+  /**
+   * S8-B FAZ-1b — Masraf DAĞITIM-UYGUNLUĞU onayı (collection-lifecycle status'tan AYRI eksen). PENDING_APPROVAL → APPROVED.
+   * Yalnız APPROVED masraf otomatik dağıtıma (CollectionDisposition reimbursement) girer. finalizeAndSend (müvekkile
+   * gönder) ile KARIŞTIRILMAZ — bu iç dağıtım-onayı. İdempotent (zaten APPROVED → no-op).
+   */
+  async approveForDistribution(tenantId: string, id: string, userId: string) {
+    const existing = await this.findOne(tenantId, id);
+    if (existing.expenseApprovalStatus === 'APPROVED') return existing; // idempotent
+    if (existing.expenseApprovalStatus !== 'PENDING_APPROVAL') {
+      throw new BadRequestException(`Yalnız PENDING_APPROVAL masraf onaylanabilir (durum: ${existing.expenseApprovalStatus})`);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.expenseRequest.update({
+        where: { id },
+        data: { expenseApprovalStatus: 'APPROVED', approvedAt: new Date(), approvedById: userId },
+      });
+      await tx.expenseAuditLog.create({
+        data: { expenseRequestId: id, action: 'APPROVAL_GRANTED', details: { scope: 'DISTRIBUTION' }, userId },
+      });
+      return updated;
+    });
+  }
+
+  /**
+   * S8-B FAZ-1b — Masraf dağıtım-onayını reddet. PENDING_APPROVAL → REJECTED. İdempotent (zaten REJECTED → no-op). Gerekçe opsiyonel.
+   */
+  async rejectForDistribution(tenantId: string, id: string, userId: string, note?: string) {
+    const existing = await this.findOne(tenantId, id);
+    if (existing.expenseApprovalStatus === 'REJECTED') return existing; // idempotent
+    if (existing.expenseApprovalStatus !== 'PENDING_APPROVAL') {
+      throw new BadRequestException(`Yalnız PENDING_APPROVAL masraf reddedilebilir (durum: ${existing.expenseApprovalStatus})`);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.expenseRequest.update({
+        where: { id },
+        data: { expenseApprovalStatus: 'REJECTED', approvedAt: new Date(), approvedById: userId },
+      });
+      await tx.expenseAuditLog.create({
+        data: { expenseRequestId: id, action: 'APPROVAL_REJECTED', details: { scope: 'DISTRIBUTION', note: note ?? null }, userId },
+      });
+      return updated;
     });
   }
 
@@ -602,6 +708,7 @@ export class ExpenseRequestService {
         },
       });
 
+      await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, expenseRequest as JournalableExpenseRequestRow);
       return expenseRequest;
     });
 
@@ -693,13 +800,172 @@ export class ExpenseRequestService {
         },
       });
 
+      await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, expenseRequest as JournalableExpenseRequestRow);
       return expenseRequest;
     });
 
     this.logger.log(`Stage expense set created for case ${caseId}, stage ${stageCode}: ${result.id}`);
     return result;
   }
+  private async writeExpenseRequestRecordedJournal(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    actorUserId: string,
+    expenseRequest: JournalableExpenseRequestRow,
+  ): Promise<void> {
+    const draft = this.buildExpenseRequestRecordedJournalDraft(tenantId, actorUserId, expenseRequest);
 
+    try {
+      const write = await this.journalWriter.write({ draft }, tx);
+      if (!write.ok) {
+        throw new ConflictException(`ExpenseRequest journal write failed: ${write.errors.map((error) => error.code).join(', ')}`);
+      }
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      const message = error instanceof Error ? error.message : 'unknown error';
+      throw new ConflictException(`ExpenseRequest journal write failed: WRITER_EXCEPTION (${message})`);
+    }
+  }
+  private buildExpenseRequestRecordedJournalDraft(
+    tenantId: string,
+    actorUserId: string,
+    expenseRequest: JournalableExpenseRequestRow,
+  ): ValidatedJournalEntryDraft {
+    const createdAt = expenseRequest.createdAt instanceof Date ? expenseRequest.createdAt : new Date(expenseRequest.createdAt);
+    const createdAtIso = createdAt.toISOString();
+    const sourceVersion = `${createdAtIso}:${expenseRequest.id}:RECORDED`;
+    const payload: ExpenseRequestJournalSource['payload'] = {
+      kind: 'RECORDED',
+      amount: new Prisma.Decimal(expenseRequest.totalAmount as Prisma.Decimal.Value).toString(),
+      caseId: expenseRequest.caseId,
+      clientId: expenseRequest.clientId,
+      expenseRequestId: expenseRequest.id,
+      cancelGuard: null,
+    };
+    const source: ExpenseRequestJournalSource = {
+      tenantId,
+      sourceType: 'EXPENSE_REQUEST',
+      sourceId: expenseRequest.id,
+      sourceVersion,
+      sourceAction: 'recorded',
+      occurredAt: createdAtIso,
+      effectiveDate: createdAtIso.slice(0, 10),
+      actorId: actorUserId,
+      currency: expenseRequest.currency,
+      sourceHash: createCanonicalSourceHash({
+        tenantId,
+        sourceType: 'EXPENSE_REQUEST',
+        sourceId: expenseRequest.id,
+        sourceAction: 'recorded',
+        sourceVersion,
+        occurredAt: createdAtIso,
+        effectiveDate: createdAtIso.slice(0, 10),
+        actorId: actorUserId,
+        currency: expenseRequest.currency,
+        payload,
+      }),
+      metadata: {
+        sourceName: 'expense-request',
+        status: 'RECORDED',
+      },
+      payload,
+    };
+
+    const built = buildAccountingJournal(source);
+    if (!built.ok) {
+      throw new ConflictException(`ExpenseRequest journal mapping failed: ${built.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const validated = validateJournalDraft(built.draft);
+    if (!validated.ok) {
+      throw new ConflictException(`ExpenseRequest journal validation failed: ${validated.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    return validated.draft;
+  }
+  private async writeExpensePaymentRecordedJournal(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    actorUserId: string,
+    expenseRequest: { id: string; caseId: string; clientId: string; currency: string },
+    expensePayment: JournalableExpensePaymentRow,
+  ): Promise<void> {
+    const draft = this.buildExpensePaymentRecordedJournalDraft(tenantId, actorUserId, expenseRequest, expensePayment);
+
+    try {
+      const write = await this.journalWriter.write({ draft }, tx);
+      if (!write.ok) {
+        throw new ConflictException(`ExpensePayment journal write failed: ${write.errors.map((error) => error.code).join(', ')}`);
+      }
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      const message = error instanceof Error ? error.message : 'unknown error';
+      throw new ConflictException(`ExpensePayment journal write failed: WRITER_EXCEPTION (${message})`);
+    }
+  }
+
+  private buildExpensePaymentRecordedJournalDraft(
+    tenantId: string,
+    actorUserId: string,
+    expenseRequest: { id: string; caseId: string; clientId: string; currency: string },
+    expensePayment: JournalableExpensePaymentRow,
+  ): ValidatedJournalEntryDraft {
+    const createdAt = expensePayment.createdAt instanceof Date ? expensePayment.createdAt : new Date(expensePayment.createdAt);
+    const paymentDate = expensePayment.paymentDate instanceof Date ? expensePayment.paymentDate : new Date(expensePayment.paymentDate);
+    const createdAtIso = createdAt.toISOString();
+    const paymentDateIso = paymentDate.toISOString();
+    const effectiveDate = paymentDateIso.slice(0, 10);
+    const sourceVersion = `${createdAtIso}:${expensePayment.id}:RECORDED`;
+    const payload: ExpensePaymentJournalSource['payload'] = {
+      amount: new Prisma.Decimal(expensePayment.amount as Prisma.Decimal.Value).toString(),
+      caseId: expenseRequest.caseId,
+      clientId: expenseRequest.clientId,
+      expenseRequestId: expenseRequest.id,
+      expensePaymentId: expensePayment.id,
+      paymentMethod: expensePayment.method,
+      reference: expensePayment.reference,
+    };
+    const source: ExpensePaymentJournalSource = {
+      tenantId,
+      sourceType: 'EXPENSE_PAYMENT',
+      sourceId: expensePayment.id,
+      sourceVersion,
+      sourceAction: 'recorded',
+      occurredAt: paymentDateIso,
+      effectiveDate,
+      actorId: actorUserId,
+      currency: expenseRequest.currency,
+      sourceHash: createCanonicalSourceHash({
+        tenantId,
+        sourceType: 'EXPENSE_PAYMENT',
+        sourceId: expensePayment.id,
+        sourceAction: 'recorded',
+        sourceVersion,
+        occurredAt: paymentDateIso,
+        effectiveDate,
+        actorId: actorUserId,
+        currency: expenseRequest.currency,
+        payload,
+      }),
+      metadata: {
+        sourceName: 'expense-payment',
+        status: 'RECORDED',
+      },
+      payload,
+    };
+
+    const built = buildAccountingJournal(source);
+    if (!built.ok) {
+      throw new ConflictException(`ExpensePayment journal mapping failed: ${built.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const validated = validateJournalDraft(built.draft);
+    if (!validated.ok) {
+      throw new ConflictException(`ExpensePayment journal validation failed: ${validated.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    return validated.draft;
+  }
   /**
    * Ödeme kaydet ve durum güncelle
    */
@@ -749,6 +1015,15 @@ export class ExpenseRequestService {
         },
       });
       paymentId = createdPayment?.id ?? null;
+      await this.writeExpensePaymentRecordedJournal(tx, tenantId, userId, request, {
+        id: createdPayment.id,
+        expenseRequestId: requestId,
+        amount: createdPayment.amount ?? payment.amount,
+        paymentDate: createdPayment.paymentDate ?? payment.paymentDate,
+        method: createdPayment.method ?? payment.method,
+        reference: createdPayment.reference ?? payment.reference ?? null,
+        createdAt: createdPayment.createdAt ?? payment.paymentDate,
+      });
 
       // ExpenseRequest güncelle
       const updated = await tx.expenseRequest.update({
@@ -803,14 +1078,15 @@ export class ExpenseRequestService {
     });
 
     // Bakiyeye kredi ekle
+    const balancePaymentSourceId = paymentId ?? requestId;
     try {
       await this.caseBalanceService.credit(
         tenantId,
         request.caseId,
         {
           amount: payment.amount,
-          source: `expense_payment:${requestId}`,
-          sourceId: requestId,
+          source: `expense_payment:${balancePaymentSourceId}`,
+          sourceId: balancePaymentSourceId,
           description: `Masraf ödemesi - ${payment.reference || 'Manuel'}`,
         },
         userId,
@@ -827,6 +1103,208 @@ export class ExpenseRequestService {
     return result;
   }
 
+  async reversePayment(
+    tenantId: string,
+    expensePaymentId: string,
+    input: ReversePaymentInput,
+    userId: string,
+  ): Promise<ReversePaymentResult> {
+    if ((input.kind ?? 'REVERSAL') === 'REFUND') {
+      throw new ConflictException({
+        code: 'EXPENSE_PAYMENT_REFUND_POLICY_MISSING',
+        message: 'ExpensePayment refund policy is not mapped by the reversal runtime.',
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const existingReversal = await tx.expensePaymentReversal.findFirst({
+        where: { tenantId, expensePaymentId, kind: 'REVERSAL' },
+      });
+      if (existingReversal) {
+        return toExpensePaymentReversalResult(existingReversal, 'REPLAYED');
+      }
+
+      const payment = await tx.expensePayment.findFirst({
+        where: { id: expensePaymentId, expenseRequest: { is: { tenantId } } },
+        include: { expenseRequest: true },
+      });
+      if (!payment) {
+        throw new NotFoundException({
+          code: 'EXPENSE_PAYMENT_REVERSAL_PAYMENT_NOT_FOUND',
+          message: 'ExpensePayment not found for tenant.',
+        });
+      }
+
+      const parent = payment.expenseRequest;
+      if (parent.status === 'CANCELLED') {
+        throw new ConflictException({
+          code: 'EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED',
+          message: 'ExpensePayment reversal for a CANCELLED parent ExpenseRequest is not mapped.',
+          expensePaymentId: payment.id,
+          expenseRequestId: parent.id,
+        });
+      }
+
+      const originalJournal = await tx.accountingJournalEntry.findFirst({
+        where: {
+          tenantId,
+          sourceType: 'EXPENSE_PAYMENT',
+          sourceId: payment.id,
+          sourceAction: 'recorded',
+          entryType: 'EXPENSE_PAYMENT_RECORDED',
+        },
+        select: { id: true },
+      });
+      if (!originalJournal) {
+        throw new ConflictException({
+          code: 'EXPENSE_PAYMENT_REVERSAL_ORIGINAL_JOURNAL_MISSING',
+          message: 'ExpensePayment recorded journal entry is required before reversal.',
+          expensePaymentId: payment.id,
+          expenseRequestId: parent.id,
+        });
+      }
+
+      const originalBalanceLedger = await tx.balanceLedger.findFirst({
+        where: {
+          tenantId,
+          source: `expense_payment:${payment.id}`,
+          sourceId: payment.id,
+          type: BalanceLedgerType.CREDIT,
+        },
+        select: { id: true, caseBalanceId: true, amount: true, currency: true },
+      });
+
+      const contract = this.paymentReversalContract.buildContract({
+        tenantId,
+        expensePaymentId: payment.id,
+        expenseRequestId: parent.id,
+        originalJournalEntryId: originalJournal.id,
+        originalBalanceLedgerId: originalBalanceLedger?.id ?? null,
+        amount: payment.amount.toString(),
+        currency: parent.currency,
+        parentPaidTotal: parent.paidTotal.toString(),
+        reason: input.reason,
+        requestedById: userId,
+        requestKind: 'REVERSAL',
+      });
+      const paidAfter = new Prisma.Decimal(contract.parentAfterReversal.paidTotal);
+      const nextStatus = recomputeExpenseRequestStatusAfterPaymentReversal(parent, paidAfter);
+
+      const pendingReversal = await tx.expensePaymentReversal.create({
+        data: {
+          tenantId: contract.tenantId,
+          expensePaymentId: contract.expensePaymentId,
+          expenseRequestId: contract.expenseRequestId,
+          kind: contract.kind,
+          status: contract.initialStatus,
+          amount: contract.amount,
+          currency: contract.currency,
+          originalJournalEntryId: contract.originalJournalEntryId,
+          originalBalanceLedgerId: contract.originalBalanceLedgerId,
+          idempotencyKey: contract.idempotencyKey,
+          reason: contract.reason,
+          requestedById: contract.requestedById,
+          requestedAt: new Date(contract.requestedAtIso),
+          metadata: {
+            sourceName: 'expense-payment-reversal-runtime',
+            parentPaidTotalBefore: parent.paidTotal.toString(),
+            parentPaidTotalAfter: contract.parentAfterReversal.paidTotal,
+            expenseRequestStatusBefore: parent.status,
+            expenseRequestStatusAfter: nextStatus,
+          },
+        },
+      });
+
+      const journalReversal = await reverseAccountingJournalEntryInTransaction(
+        tx,
+        this.journalWriter,
+        tenantId,
+        userId,
+        originalJournal.id,
+        { reason: contract.reason, evidenceRef: input.evidenceRef ?? null },
+      );
+
+      const ledgerReversal = originalBalanceLedger
+        ? await this.caseBalanceService.reverseExpensePaymentCreditInTransaction(
+            tx,
+            tenantId,
+            parent.caseId,
+            {
+              expensePaymentId: payment.id,
+              originalBalanceLedgerId: originalBalanceLedger.id,
+              caseBalanceId: originalBalanceLedger.caseBalanceId,
+              amount: contract.amount,
+              currency: originalBalanceLedger.currency ?? contract.currency,
+              description: `Masraf odeme reversal - ${payment.reference ?? 'Manuel'}`,
+            },
+            userId,
+          )
+        : null;
+
+      const updateData: Prisma.ExpenseRequestUpdateInput = {
+        paidTotal: paidAfter,
+        status: nextStatus,
+      };
+      if (nextStatus !== 'PAID') {
+        updateData.paidAt = null;
+        updateData.paidAmount = null;
+      }
+
+      await tx.expenseRequest.update({
+        where: { id: parent.id },
+        data: updateData,
+      });
+
+      const completedReversal = await tx.expensePaymentReversal.update({
+        where: { id: pendingReversal.id },
+        data: {
+          status: 'COMPLETED',
+          reversalJournalEntryId: journalReversal.reversalJournalEntryId,
+          reversalBalanceLedgerId: ledgerReversal?.ledgerId ?? null,
+          completedAt: new Date(),
+          metadata: {
+            sourceName: 'expense-payment-reversal-runtime',
+            originalJournalEntryId: originalJournal.id,
+            reversalJournalEntryId: journalReversal.reversalJournalEntryId,
+            originalBalanceLedgerId: originalBalanceLedger?.id ?? null,
+            reversalBalanceLedgerId: ledgerReversal?.ledgerId ?? null,
+            parentPaidTotalBefore: parent.paidTotal.toString(),
+            parentPaidTotalAfter: contract.parentAfterReversal.paidTotal,
+            expenseRequestStatusBefore: parent.status,
+            expenseRequestStatusAfter: nextStatus,
+            journalStatus: journalReversal.status,
+          },
+        },
+      });
+
+      await tx.expenseAuditLog.create({
+        data: {
+          expenseRequestId: parent.id,
+          action: 'PAYMENT_REVERSED',
+          details: {
+            expensePaymentId: payment.id,
+            expensePaymentReversalId: completedReversal.id,
+            originalJournalEntryId: originalJournal.id,
+            reversalJournalEntryId: journalReversal.reversalJournalEntryId,
+            originalBalanceLedgerId: originalBalanceLedger?.id ?? null,
+            reversalBalanceLedgerId: ledgerReversal?.ledgerId ?? null,
+            paidTotalBefore: parent.paidTotal.toString(),
+            paidTotalAfter: contract.parentAfterReversal.paidTotal,
+            statusBefore: parent.status,
+            statusAfter: nextStatus,
+          },
+          userId,
+        },
+      });
+
+      return toExpensePaymentReversalResult(
+        completedReversal,
+        'CREATED',
+        contract.parentAfterReversal.paidTotal,
+        nextStatus,
+      );
+    });
+  }
   /**
    * Ödeme bildirimi maili — BEST-EFFORT. Token derleme + dispatch tamamen try/catch içinde:
    * mail (veya okuma) başarısız olsa bile commit'li ödeme DEĞİŞMEZ, throw etmez.
@@ -934,9 +1412,12 @@ export class ExpenseRequestService {
   /**
    * Dosya için masraf özeti getir
    */
-  async getExpenseSummaryForCase(tenantId: string, caseId: string): Promise<ExpenseSummary> {
+  async getExpenseSummaryForCase(tenantId: string, caseId: string, clientId?: string): Promise<ExpenseSummary> {
+    // TM3 Faz7-V: opsiyonel clientId → seçili müvekkile filtreli özet (çoklu-alacaklı dosyada
+    // dosya-geneli yerine müvekkil-bazlı "talep/tahsil edilen masraf"). Salt-okuma; varsayılan
+    // davranış (clientId yok) dosya-geneli kalır → mevcut çağıranlar etkilenmez.
     const requests = await this.prisma.expenseRequest.findMany({
-      where: { tenantId, caseId, status: { not: 'CANCELLED' } },
+      where: { tenantId, caseId, status: { not: 'CANCELLED' }, ...(clientId ? { clientId } : {}) },
     });
 
     const summary: ExpenseSummary = {
@@ -984,4 +1465,57 @@ export class ExpenseRequestService {
       orderBy: { createdAt: 'desc' },
     });
   }
+}
+
+function recomputeExpenseRequestStatusAfterPaymentReversal(
+  request: { totalAmount: Prisma.Decimal | Prisma.Decimal.Value; reminderCount?: number | null; lastReminderAt?: Date | null; sentAt?: Date | null },
+  paidAfter: Prisma.Decimal,
+): ExpenseRequestStatus {
+  const totalAmount = new Prisma.Decimal(request.totalAmount as Prisma.Decimal.Value);
+  if (paidAfter.gte(totalAmount)) return 'PAID';
+  if (paidAfter.gt(0)) return 'PARTIAL';
+  if ((request.reminderCount ?? 0) > 0 || request.lastReminderAt) return 'REMINDED';
+  if (request.sentAt) return 'SENT';
+  return 'PENDING';
+}
+
+function toExpensePaymentReversalResult(
+  row: {
+    id: string;
+    expensePaymentId: string;
+    expenseRequestId: string;
+    originalJournalEntryId: string;
+    reversalJournalEntryId: string | null;
+    originalBalanceLedgerId: string | null;
+    reversalBalanceLedgerId: string | null;
+    metadata?: Prisma.JsonValue | null;
+  },
+  status: 'CREATED' | 'REPLAYED',
+  paidTotal?: string | null,
+  expenseRequestStatus?: ExpenseRequestStatus | null,
+): ReversePaymentResult {
+  const metadata = isJsonObject(row.metadata) ? (row.metadata as Record<string, unknown>) : {};
+  const metadataPaidTotal = typeof metadata.parentPaidTotalAfter === 'string' ? metadata.parentPaidTotalAfter : null;
+  const metadataStatus = isExpenseRequestStatus(metadata.expenseRequestStatusAfter) ? metadata.expenseRequestStatusAfter : null;
+
+  return {
+    status,
+    expensePaymentReversalId: row.id,
+    expensePaymentId: row.expensePaymentId,
+    expenseRequestId: row.expenseRequestId,
+    originalJournalEntryId: row.originalJournalEntryId,
+    reversalJournalEntryId: row.reversalJournalEntryId ?? null,
+    originalBalanceLedgerId: row.originalBalanceLedgerId ?? null,
+    reversalBalanceLedgerId: row.reversalBalanceLedgerId ?? null,
+    paidTotal: paidTotal ?? metadataPaidTotal,
+    expenseRequestStatus: expenseRequestStatus ?? metadataStatus,
+  };
+}
+
+function isJsonObject(value: Prisma.JsonValue | null | undefined): boolean {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isExpenseRequestStatus(value: unknown): value is ExpenseRequestStatus {
+  return typeof value === 'string' && ['PENDING', 'SENT', 'REMINDED', 'PARTIAL', 'RECEIVED', 'PAID', 'LAWYER_PAID', 'OVERDUE', 'CANCELLED'].includes(value);
 }

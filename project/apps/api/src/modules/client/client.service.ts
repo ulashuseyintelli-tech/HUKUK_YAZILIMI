@@ -1,9 +1,243 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { PoaExpiryDeliveryService, type PoaExpiryDeliveryRunResult } from '../automation/poa-expiry-delivery.service';
+import { NotificationDispatcherService, type DispatchResult } from '../client-notification/notification-dispatcher.service';
+import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
+import { assertCreateIdentityChecksum } from './client-identity-checksum.util';
+
+/** C0-a: audit actor — YALNIZ auth context'ten (req.user.id); body/data'dan ASLA türetilmez. */
+export interface AuditActor {
+  userId?: string;
+}
 
 // ── Operasyonel iletişim eksiği takibi (PR-1, saf yardımcılar) ──
 
 export const CONTACT_TASK_DEDUPE_PREFIX = 'OPCOMP:CONTACT:';
+
+export type ClientTimelineSource =
+  | 'client_notification'
+  | 'intake_submission'
+  | 'client_intake_link_delivery'
+  | 'client_document_request'
+  | 'poa_expiry_notification_delivery';
+
+export interface ClientTimelineQuery {
+  limit?: string;
+  cursor?: string;
+  sources?: string;
+}
+
+export interface ClientTimelineItem {
+  id: string;
+  source: ClientTimelineSource;
+  eventType: string;
+  occurredAt: string;
+  title: string;
+  summary: string;
+  status: string;
+  caseId?: string | null;
+  metadataSafe?: Record<string, string | null>;
+}
+
+export interface ClientTimelineResponse {
+  data: ClientTimelineItem[];
+  pageInfo: {
+    nextCursor: string | null;
+    hasNextPage: boolean;
+    limit: number;
+  };
+}
+
+export type ClientActionKey =
+  | 'contact.update_missing_info'
+  | 'intake.link.create'
+  | 'intake.link.send'
+  | 'poa.reminder.send'
+  | 'notification.template.send'
+  | 'document.request.send'
+  | 'case.open_related'
+  | 'activity.view_timeline';
+
+export type ClientActionCategory = 'intake' | 'poa' | 'notification' | 'document' | 'contact' | 'case' | 'activity';
+export type ClientActionVisibility = 'visible' | 'hidden' | 'forbidden';
+export type ClientActionDangerLevel = 'low' | 'medium' | 'high';
+export type ClientActionRole = 'ADMIN' | 'USER' | 'VIEWER';
+
+export interface ClientActionCatalogItem {
+  key: ClientActionKey;
+  label: string;
+  description: string;
+  category: ClientActionCategory;
+  enabled: boolean;
+  disabledReason?: string;
+  visibility: ClientActionVisibility;
+  dangerLevel: ClientActionDangerLevel;
+  requiredRole?: string;
+  requiredState?: string;
+  target?: {
+    clientId: string;
+    caseId?: string;
+  };
+  href?: string;
+  order: number;
+}
+
+export interface ClientActionCatalogResponse {
+  data: ClientActionCatalogItem[];
+}
+
+export type ClientPoaReminderSendStatus = 'sent' | 'partial' | 'failed' | 'skipped';
+
+export interface ClientPoaReminderSendResult extends PoaExpiryDeliveryRunResult {
+  clientId: string;
+  status: ClientPoaReminderSendStatus;
+}
+
+export const CLIENT_TEMPLATE_NOTIFICATION_CODES = ['GENEL_BILGILENDIRME', 'DOSYA_DURUMU'] as const;
+export type ClientTemplateNotificationCode = typeof CLIENT_TEMPLATE_NOTIFICATION_CODES[number];
+
+export interface ClientTemplateNotificationSendInput {
+  templateCode: ClientTemplateNotificationCode;
+  caseId?: string;
+}
+
+export type ClientTemplateNotificationSendStatus = 'sent' | 'skipped' | 'failed';
+
+export const CLIENT_DOCUMENT_REQUEST_CODES = ['GENEL_BELGE', 'DOSYA_EVRAKI'] as const;
+export type ClientDocumentRequestCode = typeof CLIENT_DOCUMENT_REQUEST_CODES[number];
+
+export interface ClientDocumentRequestSendInput {
+  documentCodes: ClientDocumentRequestCode[];
+  caseId?: string;
+}
+
+export type ClientDocumentRequestSendStatus = 'sent' | 'skipped' | 'failed';
+
+export interface ClientDocumentRequestSendResult {
+  clientId: string;
+  caseId: string;
+  documentCodes: ClientDocumentRequestCode[];
+  status: ClientDocumentRequestSendStatus;
+  documentRequestId: string;
+  notificationId?: string;
+}
+
+export interface ClientTemplateNotificationSendResult {
+  clientId: string;
+  caseId: string | null;
+  templateCode: ClientTemplateNotificationCode;
+  status: ClientTemplateNotificationSendStatus;
+  notificationId?: string;
+}
+
+export type ClientOperatingHealth = 'healthy' | 'attention' | 'blocked';
+export type ClientOperatingRiskLevel = 'low' | 'medium' | 'high';
+export type ClientOperatingSignalSeverity = 'info' | 'warning' | 'critical';
+export type ClientOperatingSignalKey =
+  | 'contact.missing_info'
+  | 'contact.follow_up_overdue'
+  | 'poa.missing_or_inactive'
+  | 'poa.expiring'
+  | 'poa.reminder_sent'
+  | 'poa.reminder_delivery_pending'
+  | 'poa.reminder_delivery_failed'
+  | 'intake.pending_review'
+  | 'intake.delivery_failed'
+  | 'intake.delivery_stuck'
+  | 'notification.failed'
+  | 'notification.template_sent'
+  | 'notification.template_pending'
+  | 'notification.template_failed'
+  | 'document.request_sent'
+  | 'document.request_pending'
+  | 'document.request_stuck'
+  | 'document.request_failed';
+
+export interface ClientOperatingSignal {
+  key: ClientOperatingSignalKey;
+  label: string;
+  description: string;
+  severity: ClientOperatingSignalSeverity;
+  actionKey?: ClientActionKey;
+  target: { clientId: string; caseId?: string | null };
+}
+
+export interface ClientOperatingSnapshot {
+  clientId: string;
+  health: ClientOperatingHealth;
+  riskLevel: ClientOperatingRiskLevel;
+  contact: {
+    status: 'complete' | 'missing' | 'waived';
+    missingFields: string[];
+    followUpStatus: string | null;
+    openTaskCount: number;
+    overdueTaskCount: number;
+    nextFollowUpAt: string | null;
+    escalationLevel: string | null;
+  };
+  poa: {
+    status: 'active' | 'missing' | 'expiring' | 'expired_or_inactive';
+    activeCount: number;
+    nearestValidUntil: string | null;
+  };
+  intake: {
+    status: 'none' | 'link_active' | 'submitted' | 'in_review' | 'completed' | 'rejected';
+    latestSubmission: {
+      id: string;
+      status: string;
+      caseId: string | null;
+      occurredAt: string;
+    } | null;
+    latestLink: {
+      id: string;
+      status: string;
+      caseId: string | null;
+      expiresAt: string | null;
+    } | null;
+  };
+  notification: {
+    status: 'none' | 'healthy' | 'pending' | 'failed';
+    latest: {
+      id: string;
+      status: string;
+      type: string | null;
+      channel: string | null;
+      caseId: string | null;
+      occurredAt: string;
+    } | null;
+  };
+  signals: ClientOperatingSignal[];
+}
+
+export interface ClientOperatingSnapshotResponse {
+  data: ClientOperatingSnapshot;
+}
+
+interface ClientTimelineCursor {
+  occurredAt: string;
+  source: ClientTimelineSource;
+  id: string;
+}
+
+const CLIENT_TIMELINE_DEFAULT_LIMIT = 25;
+const CLIENT_TIMELINE_MAX_LIMIT = 100;
+const CLIENT_TIMELINE_DEFAULT_SOURCES: ClientTimelineSource[] = ['client_notification', 'intake_submission'];
+const CLIENT_TIMELINE_V2_SOURCES: ClientTimelineSource[] = [
+  'client_intake_link_delivery',
+  'client_document_request',
+  'poa_expiry_notification_delivery',
+];
+const CLIENT_TIMELINE_ALLOWED_SOURCES = new Set<ClientTimelineSource>([...CLIENT_TIMELINE_DEFAULT_SOURCES, ...CLIENT_TIMELINE_V2_SOURCES]);
+const CLIENT_INTAKE_DELIVERY_STALE_MS = 15 * 60 * 1000;
+const CLIENT_POA_REMINDER_WINDOW_KEY = 'D30';
+const CLIENT_POA_DELIVERY_LOCK_TIMEOUT_MS = 15 * 60 * 1000;
+const CLIENT_POA_DELIVERY_MAX_ATTEMPTS = 3;
+const CLIENT_TEMPLATE_NOTIFICATION_DEDUPE_PREFIX = 'CLIENT_WORKSPACE_TEMPLATE_NOTIFICATION';
+const CLIENT_DOCUMENT_REQUEST_TEMPLATE_CODE = 'CLIENT_DOCUMENT_REQUEST_V1';
+const CLIENT_DOCUMENT_REQUEST_DEDUPE_PREFIX = 'CLIENT_WORKSPACE_DOCUMENT_REQUEST';
+const CLIENT_FOLLOW_UP_FRESH_MS = 15 * 60 * 1000;
 
 /** Müvekkil için contact-task dedupe anahtarı (tek aktif görev garantisi). */
 export function contactTaskDedupeKey(clientId: string): string {
@@ -23,7 +257,63 @@ export function computeMissingContactFields(client: { phone?: string | null; ema
 
 @Injectable()
 export class ClientService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
+    private poaExpiryDelivery?: PoaExpiryDeliveryService,
+    private notificationDispatcher?: NotificationDispatcherService,
+  ) {}
+
+  private async getPoaReminderDeliveryState(
+    tenantId: string,
+    clientId: string,
+    poas?: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null,
+  ): Promise<ClientPoaReminderDeliveryState> {
+    const poaIds = currentPoaReminderCandidateIds(poas);
+    if (poaIds.length === 0) return { status: 'none' };
+
+    const rows = await (this.prisma as any).poaExpiryNotificationDelivery.findMany({
+      where: {
+        tenantId,
+        clientId,
+        poaId: { in: poaIds },
+        windowKey: CLIENT_POA_REMINDER_WINDOW_KEY,
+        status: { in: ['PENDING', 'SENT', 'FAILED'] },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: 20,
+      select: {
+        status: true,
+        attempts: true,
+        reservedAt: true,
+        nextRetryAt: true,
+        sentAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return buildPoaReminderDeliveryState(rows);
+  }
+
+  /**
+   * Task 8A (owner-locked 2026-07-02) — müvekkil lifecycle (archive/delete) mutasyon yetkisi.
+   * case-fee-agreement.service.ts:assertCanManage ile BİREBİR desen (reuse, yeni altyapı YOK):
+   * PARTNER veya canApproveOfficeActions=true delege avukat. Staff/normal kullanıcı 403.
+   * Reactivate-via-create (dedup yan-etkisi) BU KAPSAM DIŞI — kasıtlı olarak dokunulmadı.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - ClientService.remove() → DELETE /clients/:id (soft-delete, isActive:false)
+   * - ClientService.update() → PUT /clients/:id, YALNIZ data.isActive mevcut değerden FARKLIYSA
+   *   (CBND-6/H5 — deaktivasyon VE reaktivasyon, generic update yan-kapısı kapatıldı)
+   */
+  private async assertCanManageLifecycle(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        'Müvekkil arşivleme/silme için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir)',
+      );
+    }
+  }
 
   // Tüm müvekkilleri listele
   async findAll(tenantId: string, type?: string) {
@@ -49,19 +339,867 @@ export class ClientService {
   }
 
   // Tek müvekkil getir
-  async findOne(id: string, tenantId: string) {
+  // Task 4A (owner-locked karar #2): findOne VARSAYILAN olarak soft-deleted (isActive:false)
+  // DÖNDÜRMEZ → GET /clients/:id arşivlenmiş müvekkili göstermez (findAll ile tutarlı). İç çağıranlar
+  // (create reactivate dönüşü, update dönüşü) mutasyon sonrası kaydı her durumda almak için
+  // includeInactive:true geçer → mevcut davranış korunur. Tek dış çağıran = ClientController GET (default).
+  async findOne(id: string, tenantId: string, opts: { includeInactive?: boolean } = {}) {
     return this.prisma.client.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, ...(opts.includeInactive ? {} : { isActive: true }) },
       include: {
         contacts: true,
         bankAccounts: true,
         powerOfAttorneys: true,
+        // ClientAddress-4: yalnız güncel adresler, birincil önce (Workspace UI listesi bu sırayı bekler).
+        addresses: {
+          where: { isCurrent: true },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        },
+        // A2B: Portal Option B — whitelist-select. passwordHash/resetToken/resetTokenExp/
+        // twoFactorSecret KESİNLİKLE dönmez (sızıntı riski); yalnız FE'nin görüntülemesi
+        // gereken 3 alan.
+        portalUser: {
+          select: { email: true, lastLoginAt: true, loginCount: true },
+        },
       },
     });
   }
 
-  // Yeni müvekkil oluştur
-  async create(tenantId: string, data: any) {
+  /**
+   * Client Workspace unified timeline V1 (read-only).
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.timeline() -> GET /clients/:clientId/timeline (Client Workspace read model)
+   * </remarks>
+   */
+  async getTimeline(id: string, tenantId: string, query: ClientTimelineQuery = {}): Promise<ClientTimelineResponse> {
+    const limit = this.parseTimelineLimit(query.limit);
+    const sources = this.parseTimelineSources(query.sources);
+    const cursor = this.parseTimelineCursor(query.cursor);
+
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: { id: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const scanTake = Math.min(Math.max(limit * 4, limit + 1), CLIENT_TIMELINE_MAX_LIMIT * 4);
+    const groups = await Promise.all([
+      sources.includes('client_notification')
+        ? this.prisma.clientNotification.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              type: true,
+              channel: true,
+              subject: true,
+              status: true,
+              sentAt: true,
+              deliveredAt: true,
+              createdAt: true,
+              caseId: true,
+            },
+          })
+        : Promise.resolve([]),
+      sources.includes('intake_submission')
+        ? this.prisma.clientIntakeSubmission.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              status: true,
+              submittedAt: true,
+              claimedAt: true,
+              reviewedAt: true,
+              createdAt: true,
+              caseId: true,
+            },
+          })
+        : Promise.resolve([]),
+      sources.includes('client_intake_link_delivery')
+        ? this.prisma.clientIntakeLinkDelivery.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              channel: true,
+              status: true,
+              caseId: true,
+              notificationId: true,
+              attemptCount: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          })
+        : Promise.resolve([]),
+      sources.includes('client_document_request')
+        ? (this.prisma as any).clientDocumentRequest.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              requestedDocumentCodes: true,
+              templateCode: true,
+              channel: true,
+              status: true,
+              caseId: true,
+              notificationId: true,
+              attemptCount: true,
+              sentAt: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          })
+        : Promise.resolve([]),
+      sources.includes('poa_expiry_notification_delivery')
+        ? (this.prisma as any).poaExpiryNotificationDelivery.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              status: true,
+              windowKey: true,
+              attempts: true,
+              sentAt: true,
+              lastAttemptAt: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const items = [
+      ...groups[0].map((row: any) => this.notificationTimelineItem(row)),
+      ...groups[1].map((row: any) => this.intakeSubmissionTimelineItem(row)),
+      ...groups[2].map((row: any) => this.intakeLinkDeliveryTimelineItem(row)),
+      ...groups[3].map((row: any) => this.documentRequestTimelineItem(row)),
+      ...groups[4].map((row: any) => this.poaExpiryDeliveryTimelineItem(id, row)),
+    ]
+      .sort(compareTimelineItems)
+      .filter((item) => !cursor || isAfterCursor(item, cursor));
+
+    const page = items.slice(0, limit);
+    const hasNextPage = items.length > limit;
+
+    return {
+      data: page,
+      pageInfo: {
+        nextCursor: hasNextPage ? this.encodeTimelineCursor(page[page.length - 1]) : null,
+        hasNextPage,
+        limit,
+      },
+    };
+  }
+
+  /**
+   * Client Workspace Action Catalog V1 (read-only).
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.actionCatalog() -> GET /clients/:clientId/action-catalog (Client Workspace read model)
+   * </remarks>
+   */
+  async getActionCatalog(id: string, tenantId: string, actorRole?: string | null): Promise<ClientActionCatalogResponse> {
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        contactFollowUpStatus: true,
+        contacts: {
+          where: { type: 'EMAIL' },
+          take: 1,
+          select: { id: true },
+        },
+        caseClients: {
+          where: { case: { tenantId } },
+          orderBy: { createdAt: 'desc' },
+          take: 2,
+          select: { caseId: true },
+        },
+        powerOfAttorneys: {
+          where: { isActive: true },
+          orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
+          take: 10,
+          select: { id: true, status: true, isLimited: true, validUntil: true },
+        },
+      },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const [poaReminderDelivery, templateNotificationAction, documentRequestAction] = await Promise.all([
+      this.getPoaReminderDeliveryState(tenantId, client.id, client.powerOfAttorneys),
+      this.getTemplateNotificationActionAvailability(tenantId, client),
+      this.getDocumentRequestActionAvailability(tenantId, client),
+    ]);
+
+    return {
+      data: buildClientActionCatalog({
+        actorRole: normalizeClientActionRole(actorRole),
+        client,
+        poaReminderDelivery,
+        templateNotificationAction,
+        documentRequestAction,
+      }),
+    };
+  }
+
+  /**
+   * Client Workspace Operating Snapshot V1 (read-only).
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.operatingSnapshot() -> GET /clients/:clientId/operating-snapshot (Client Workspace health read model)
+   * </remarks>
+   */
+  async getOperatingSnapshot(id: string, tenantId: string): Promise<ClientOperatingSnapshotResponse> {
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        contactFollowUpStatus: true,
+      },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const deliveryStaleBefore = new Date(Date.now() - CLIENT_INTAKE_DELIVERY_STALE_MS);
+    const [poas, latestSubmission, latestLink, latestNotification, latestTemplateNotification, latestDocumentRequest, latestDeliveryIssue, openTasks] = await Promise.all([
+      this.prisma.clientPowerOfAttorney.findMany({
+        where: { clientId: id, isActive: true },
+        orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
+        take: 10,
+        select: { id: true, status: true, isLimited: true, validUntil: true },
+      }),
+      this.prisma.clientIntakeSubmission.findFirst({
+        where: { tenantId, clientId: id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          status: true,
+          submittedAt: true,
+          claimedAt: true,
+          reviewedAt: true,
+          createdAt: true,
+          caseId: true,
+        },
+      }),
+      this.prisma.clientIntakeLink.findFirst({
+        where: { tenantId, clientId: id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { id: true, status: true, expiresAt: true, caseId: true },
+      }),
+      this.prisma.clientNotification.findFirst({
+        where: { tenantId, clientId: id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          type: true,
+          channel: true,
+          status: true,
+          sentAt: true,
+          deliveredAt: true,
+          createdAt: true,
+          caseId: true,
+        },
+      }),
+      this.prisma.clientNotification.findFirst({
+        where: {
+          tenantId,
+          clientId: id,
+          channel: 'EMAIL',
+          type: { in: [...CLIENT_TEMPLATE_NOTIFICATION_CODES] },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          type: true,
+          channel: true,
+          status: true,
+          sentAt: true,
+          deliveredAt: true,
+          createdAt: true,
+          updatedAt: true,
+          caseId: true,
+        },
+      }),
+      (this.prisma as any).clientDocumentRequest.findFirst({
+        where: { tenantId, clientId: id },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          status: true,
+          channel: true,
+          caseId: true,
+          sentAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      this.prisma.clientIntakeLinkDelivery.findFirst({
+        where: {
+          tenantId,
+          clientId: id,
+          OR: [
+            { status: 'FAILED' },
+            { status: 'PENDING', updatedAt: { lt: deliveryStaleBefore } },
+            { status: 'SENDING', updatedAt: { lt: deliveryStaleBefore } },
+          ],
+        },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          status: true,
+          channel: true,
+          caseId: true,
+          updatedAt: true,
+        },
+      }),
+      this.prisma.task.findMany({
+        where: {
+          tenantId,
+          clientId: id,
+          taskCategory: 'OPERATIONAL_COMPLETENESS',
+          status: { in: ['PENDING', 'IN_PROGRESS'] },
+        },
+        orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          status: true,
+          dueDate: true,
+          missingFields: true,
+          escalationLevel: true,
+          nextFollowUpAt: true,
+        },
+      }),
+    ]);
+
+    const poaReminderDelivery = await this.getPoaReminderDeliveryState(tenantId, id, poas);
+
+    return {
+      data: buildClientOperatingSnapshot(id, client, poas, poaReminderDelivery, latestSubmission, latestLink, latestNotification, latestTemplateNotification, latestDocumentRequest, latestDeliveryIssue, openTasks),
+    };
+  }
+  /**
+   * Client Workspace POA reminder typed command V1.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.sendPoaReminder() -> POST /clients/:clientId/poa-reminders/send (manual typed command)
+   * </remarks>
+   */
+  async sendPoaReminder(id: string, tenantId: string): Promise<ClientPoaReminderSendResult> {
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: { id: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    if (!this.poaExpiryDelivery) {
+      throw new Error('POA expiry delivery service is not configured');
+    }
+
+    const result = await this.poaExpiryDelivery.sendExpiringPoaNotificationsForClient(tenantId, client.id);
+    return {
+      clientId: client.id,
+      status: poaReminderCommandStatus(result),
+      ...result,
+    };
+  }
+
+  /**
+   * Client Workspace template notification typed command V1.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.sendTemplateNotification() -> POST /clients/:clientId/template-notifications/send (manual typed command)
+   * </remarks>
+   */
+  async sendTemplateNotification(
+    id: string,
+    tenantId: string,
+    userId: string,
+    idempotencyKey: string | undefined,
+    input: ClientTemplateNotificationSendInput,
+  ): Promise<ClientTemplateNotificationSendResult> {
+    const normalizedKey = String(idempotencyKey ?? '').trim();
+    if (!normalizedKey) throw new BadRequestException('Idempotency-Key header is required');
+    if (!CLIENT_TEMPLATE_NOTIFICATION_CODES.includes(input.templateCode)) throw new BadRequestException('Unsupported templateCode');
+    if (!this.notificationDispatcher) throw new Error('Notification dispatcher is not configured');
+
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: { id: true, name: true, firstName: true, lastName: true, email: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const relatedCase = input.caseId
+      ? await this.prisma.case.findFirst({
+          where: {
+            id: input.caseId,
+            tenantId,
+            caseClients: { some: { clientId: client.id } },
+          },
+          select: {
+            id: true,
+            fileNumber: true,
+            executionFileNumber: true,
+            executionOffice: { select: { name: true } },
+          },
+        })
+      : null;
+    if (input.caseId && !relatedCase) throw new NotFoundException('Case not found');
+
+    const tokens = buildTemplateNotificationTokens(client, relatedCase);
+    const dedupeKey = this.buildTemplateNotificationDedupeKey(client.id, input.templateCode, relatedCase?.id ?? null, normalizedKey);
+    const dispatch = await this.notificationDispatcher.dispatch(tenantId, userId, {
+      clientId: client.id,
+      caseId: relatedCase?.id,
+      templateCode: input.templateCode,
+      type: templateNotificationType(input.templateCode),
+      tokens,
+      persistedTokens: tokens,
+      refType: 'ClientWorkspaceTemplateNotification',
+      refId: [client.id, relatedCase?.id ?? 'client', normalizedKey].join(':'),
+      dedupeKey,
+    });
+
+    return buildTemplateNotificationCommandResult(client.id, relatedCase?.id ?? null, input.templateCode, dispatch);
+  }
+
+
+  /**
+   * Client Workspace document request typed command V1.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.sendDocumentRequest() -> POST /clients/:clientId/document-requests/send (manual typed command)
+   * </remarks>
+   */
+  async sendDocumentRequest(
+    id: string,
+    tenantId: string,
+    userId: string,
+    idempotencyKey: string | undefined,
+    input: ClientDocumentRequestSendInput,
+  ): Promise<ClientDocumentRequestSendResult> {
+    const normalizedKey = String(idempotencyKey ?? '').trim();
+    if (!normalizedKey) throw new BadRequestException('Idempotency-Key header is required');
+    if (!this.notificationDispatcher) throw new Error('Notification dispatcher is not configured');
+
+    const documentCodes = normalizeDocumentRequestCodes(input.documentCodes);
+
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        contacts: {
+          where: { type: 'EMAIL' },
+          take: 1,
+          select: { id: true },
+        },
+        caseClients: {
+          where: { case: { tenantId } },
+          orderBy: { createdAt: 'desc' },
+          take: 2,
+          select: { caseId: true },
+        },
+      },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const relatedCaseIds = (client.caseClients ?? [])
+      .map((caseClient) => caseClient.caseId)
+      .filter((caseId): caseId is string => !!caseId);
+    const selectedCaseId = input.caseId ?? (relatedCaseIds.length === 1 ? relatedCaseIds[0] : undefined);
+    if (!selectedCaseId) {
+      throw new BadRequestException(
+        relatedCaseIds.length > 0
+          ? 'Select a related case before sending a document request.'
+          : 'No related cases are linked to this client yet.',
+      );
+    }
+
+    const relatedCase = selectedCaseId
+      ? await this.prisma.case.findFirst({
+          where: {
+            id: selectedCaseId,
+            tenantId,
+            caseClients: { some: { clientId: client.id } },
+          },
+          select: {
+            id: true,
+            fileNumber: true,
+            executionFileNumber: true,
+            executionOffice: { select: { name: true } },
+          },
+        })
+      : null;
+    if (!relatedCase) throw new NotFoundException('Case not found');
+
+    const dedupeKey = this.buildDocumentRequestDedupeKey(client.id, relatedCase.id, documentCodes, normalizedKey);
+    const existing = await (this.prisma as any).clientDocumentRequest.findFirst({
+      where: { tenantId, idempotencyKey: normalizedKey },
+      select: { id: true, clientId: true, caseId: true, requestedDocumentCodes: true, status: true, notificationId: true, dedupeKey: true },
+    });
+    if (existing) {
+      const samePayload = existing.clientId === client.id
+        && existing.caseId === relatedCase.id
+        && sameDocumentRequestCodes(existing.requestedDocumentCodes, documentCodes)
+        && existing.dedupeKey === dedupeKey;
+      if (!samePayload) throw new ConflictException('Idempotency-Key conflicts with an existing document request.');
+      return buildDocumentRequestCommandResult(existing.clientId, existing.caseId, documentCodes, existing.status, existing.id, existing.notificationId ?? undefined);
+    }
+
+    const readiness = await this.getDocumentRequestActionAvailability(tenantId, client);
+    if (!readiness.enabled) throw new BadRequestException(readiness.disabledReason ?? 'Document request is not ready.');
+
+    const artifact = await (this.prisma as any).clientDocumentRequest.create({
+      data: {
+        tenantId,
+        clientId: client.id,
+        caseId: relatedCase.id,
+        requestedDocumentCodes: documentCodes,
+        templateCode: CLIENT_DOCUMENT_REQUEST_TEMPLATE_CODE,
+        idempotencyKey: normalizedKey,
+        dedupeKey,
+        channel: 'EMAIL',
+        status: 'PENDING',
+        createdById: userId,
+      },
+      select: { id: true },
+    });
+
+    await (this.prisma as any).clientDocumentRequest.update({
+      where: { id: artifact.id },
+      data: { status: 'SENDING', attemptCount: { increment: 1 } },
+    });
+
+    const tokens = buildDocumentRequestTokens(client, relatedCase, documentCodes);
+    const dispatch = await this.notificationDispatcher.dispatch(tenantId, userId, {
+      clientId: client.id,
+      caseId: relatedCase.id,
+      templateCode: CLIENT_DOCUMENT_REQUEST_TEMPLATE_CODE,
+      type: 'DOCUMENT_REQUEST',
+      tokens,
+      persistedTokens: tokens,
+      refType: 'ClientWorkspaceDocumentRequest',
+      refId: artifact.id,
+      dedupeKey,
+    });
+
+    const finalStatus = dispatch.status === 'failed' ? 'FAILED' : 'SENT';
+    await (this.prisma as any).clientDocumentRequest.update({
+      where: { id: artifact.id },
+      data: {
+        status: finalStatus,
+        ...(dispatch.notificationId ? { notificationId: dispatch.notificationId } : {}),
+        ...(finalStatus === 'SENT' ? { sentAt: new Date(), lastError: null } : { lastError: 'Document request delivery failed.' }),
+      },
+    });
+
+    return buildDocumentRequestCommandResult(client.id, relatedCase.id, documentCodes, finalStatus, artifact.id, dispatch.notificationId, dispatch.status);
+  }
+  private buildTemplateNotificationDedupeKey(
+    clientId: string,
+    templateCode: ClientTemplateNotificationCode,
+    caseId: string | null,
+    idempotencyKey: string,
+  ): string {
+    return [CLIENT_TEMPLATE_NOTIFICATION_DEDUPE_PREFIX, clientId, templateCode, caseId ?? 'client', idempotencyKey].join(':');
+  }
+
+
+  private buildDocumentRequestDedupeKey(
+    clientId: string,
+    caseId: string | null,
+    documentCodes: ClientDocumentRequestCode[],
+    idempotencyKey: string,
+  ): string {
+    return [CLIENT_DOCUMENT_REQUEST_DEDUPE_PREFIX, clientId, caseId ?? 'client', documentCodes.join(','), idempotencyKey].join(':');
+  }
+
+  private async getDocumentRequestActionAvailability(
+    tenantId: string,
+    client: { id: string; email?: string | null; contacts?: Array<{ id?: string | null }> | null; caseClients?: Array<{ caseId?: string | null }> | null },
+  ): Promise<{ enabled: boolean; requiredState: string; disabledReason?: string }> {
+    if (!this.notificationDispatcher) {
+      return {
+        enabled: false,
+        requiredState: 'DOCUMENT_REQUEST_DISPATCH_CONTRACT_READY',
+        disabledReason: 'Document request requires a notification dispatch contract.',
+      };
+    }
+
+    const hasRecipient = !!String(client.email ?? '').trim() || (client.contacts?.length ?? 0) > 0;
+    if (!hasRecipient) {
+      return {
+        enabled: false,
+        requiredState: 'CLIENT_EMAIL_MISSING',
+        disabledReason: 'Document request requires a client email recipient.',
+      };
+    }
+
+    const activeTemplateCount = await (this.prisma as any).messageTemplate.count({
+      where: {
+        tenantId,
+        code: CLIENT_DOCUMENT_REQUEST_TEMPLATE_CODE,
+        isActive: true,
+        channel: 'EMAIL',
+      },
+    });
+    if (activeTemplateCount < 1) {
+      return {
+        enabled: false,
+        requiredState: 'DOCUMENT_REQUEST_TEMPLATE_MISSING',
+        disabledReason: 'Document request requires the active V1 email template.',
+      };
+    }
+
+    const relatedCaseIds = (client.caseClients ?? [])
+      .map((caseClient) => caseClient.caseId)
+      .filter((caseId): caseId is string => !!caseId);
+    const singleRelatedCaseId = relatedCaseIds.length === 1 ? relatedCaseIds[0] : undefined;
+    if (singleRelatedCaseId) {
+      const freshPending = await (this.prisma as any).clientDocumentRequest.findFirst({
+        where: {
+          tenantId,
+          clientId: client.id,
+          caseId: singleRelatedCaseId,
+          status: { in: ['PENDING', 'SENDING'] },
+          updatedAt: { gte: new Date(Date.now() - CLIENT_FOLLOW_UP_FRESH_MS) },
+        },
+        select: { id: true },
+      });
+      if (freshPending) {
+        return {
+          enabled: false,
+          requiredState: 'DOCUMENT_REQUEST_DELIVERY_PENDING',
+          disabledReason: 'A document request delivery is already pending for this client and case.',
+        };
+      }
+    }
+
+    return { enabled: true, requiredState: 'DOCUMENT_REQUEST_READY' };
+  }
+  private async getTemplateNotificationActionAvailability(
+    tenantId: string,
+    client: { id: string; email?: string | null; contacts?: Array<{ id?: string | null }> | null },
+  ): Promise<{ enabled: boolean; requiredState: string; disabledReason?: string }> {
+    if (!this.notificationDispatcher) {
+      return {
+        enabled: false,
+        requiredState: 'NOTIFICATION_DISPATCH_CONTRACT_READY',
+        disabledReason: 'Template notification requires a notification dispatch contract.',
+      };
+    }
+
+    const hasRecipient = !!String(client.email ?? '').trim() || (client.contacts?.length ?? 0) > 0;
+    if (!hasRecipient) {
+      return {
+        enabled: false,
+        requiredState: 'CLIENT_EMAIL_MISSING',
+        disabledReason: 'Template notification requires a client email recipient.',
+      };
+    }
+
+    const activeTemplateCount = await (this.prisma as any).messageTemplate.count({
+      where: {
+        tenantId,
+        code: { in: [...CLIENT_TEMPLATE_NOTIFICATION_CODES] },
+        isActive: true,
+        channel: 'EMAIL',
+      },
+    });
+    if (activeTemplateCount < CLIENT_TEMPLATE_NOTIFICATION_CODES.length) {
+      return {
+        enabled: false,
+        requiredState: 'TEMPLATE_NOTIFICATION_TEMPLATE_MISSING',
+        disabledReason: 'Template notification requires active V1 email templates.',
+      };
+    }
+
+    const freshPending = await this.prisma.clientNotification.findFirst({
+      where: {
+        tenantId,
+        clientId: client.id,
+        channel: 'EMAIL',
+        type: { in: [...CLIENT_TEMPLATE_NOTIFICATION_CODES] },
+        status: 'PENDING',
+        updatedAt: { gte: new Date(Date.now() - CLIENT_FOLLOW_UP_FRESH_MS) },
+      },
+      select: { id: true },
+    });
+    if (freshPending) {
+      return {
+        enabled: false,
+        requiredState: 'TEMPLATE_NOTIFICATION_DELIVERY_PENDING',
+        disabledReason: 'A template notification delivery is already pending for this client.',
+      };
+    }
+
+    return { enabled: true, requiredState: 'TEMPLATE_NOTIFICATION_READY' };
+  }
+
+
+  private parseTimelineLimit(raw?: string): number {
+    if (raw === undefined || raw === '') return CLIENT_TIMELINE_DEFAULT_LIMIT;
+    if (!/^\d+$/.test(raw)) throw new BadRequestException('Invalid limit');
+    const limit = Number(raw);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > CLIENT_TIMELINE_MAX_LIMIT) {
+      throw new BadRequestException('Invalid limit');
+    }
+    return limit;
+  }
+
+  private parseTimelineSources(raw?: string): ClientTimelineSource[] {
+    if (!raw || !raw.trim()) return CLIENT_TIMELINE_DEFAULT_SOURCES;
+    const values = raw.split(',').map((item) => item.trim()).filter(Boolean);
+    if (values.length === 0) return CLIENT_TIMELINE_DEFAULT_SOURCES;
+    for (const source of values) {
+      if (!CLIENT_TIMELINE_ALLOWED_SOURCES.has(source as ClientTimelineSource)) {
+        throw new BadRequestException(`Unknown timeline source: ${source}`);
+      }
+    }
+    return Array.from(new Set(values as ClientTimelineSource[]));
+  }
+
+  private parseTimelineCursor(raw?: string): ClientTimelineCursor | null {
+    if (!raw) return null;
+    try {
+      const decoded = Buffer.from(raw, 'base64url').toString('utf8');
+      const parsed = JSON.parse(decoded) as Partial<ClientTimelineCursor>;
+      if (
+        typeof parsed.occurredAt !== 'string' ||
+        typeof parsed.id !== 'string' ||
+        !CLIENT_TIMELINE_ALLOWED_SOURCES.has(parsed.source as ClientTimelineSource) ||
+        Number.isNaN(new Date(parsed.occurredAt).getTime())
+      ) {
+        throw new Error('invalid cursor');
+      }
+      return parsed as ClientTimelineCursor;
+    } catch {
+      throw new BadRequestException('Invalid cursor');
+    }
+  }
+
+  private encodeTimelineCursor(item: ClientTimelineItem): string {
+    return Buffer.from(JSON.stringify({ occurredAt: item.occurredAt, source: item.source, id: item.id })).toString('base64url');
+  }
+
+  private notificationTimelineItem(row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'PENDING').toUpperCase();
+    const occurredAt = row.deliveredAt ?? row.sentAt ?? row.createdAt;
+    const eventType = `NOTIFICATION_${status}`;
+    const title = row.subject || notificationTypeLabel(row.type) || 'Client notification';
+    return {
+      id: row.id,
+      source: 'client_notification',
+      eventType,
+      occurredAt: toIso(occurredAt),
+      title,
+      summary: `${notificationChannelLabel(row.channel)} notification: ${notificationStatusLabel(status)}`,
+      status,
+      caseId: row.caseId ?? null,
+      metadataSafe: {
+        channel: row.channel ?? null,
+        notificationType: row.type ?? null,
+      },
+    };
+  }
+
+  private intakeSubmissionTimelineItem(row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'CLIENT_SUBMITTED').toUpperCase();
+    const occurredAt = row.reviewedAt ?? row.claimedAt ?? row.submittedAt ?? row.createdAt;
+    return {
+      id: row.id,
+      source: 'intake_submission',
+      eventType: intakeEventType(status),
+      occurredAt: toIso(occurredAt),
+      title: intakeTitle(status),
+      summary: intakeSummary(status),
+      status,
+      caseId: row.caseId ?? null,
+    };
+  }
+
+  private intakeLinkDeliveryTimelineItem(row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'PENDING').toUpperCase();
+    const occurredAt = row.updatedAt ?? row.createdAt;
+    return {
+      id: row.id,
+      source: 'client_intake_link_delivery',
+      eventType: `INTAKE_LINK_DELIVERY_${status}`,
+      occurredAt: toIso(occurredAt),
+      title: 'Intake link delivery',
+      summary: `${notificationChannelLabel(row.channel)} intake link delivery: ${deliveryStatusLabel(status)}`,
+      status,
+      caseId: row.caseId ?? null,
+      metadataSafe: {
+        channel: row.channel ?? null,
+        notificationId: row.notificationId ?? null,
+        attemptCount: safeCount(row.attemptCount),
+      },
+    };
+  }
+
+  private documentRequestTimelineItem(row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'PENDING').toUpperCase();
+    const occurredAt = row.sentAt ?? row.updatedAt ?? row.createdAt;
+    return {
+      id: row.id,
+      source: 'client_document_request',
+      eventType: `DOCUMENT_REQUEST_${status}`,
+      occurredAt: toIso(occurredAt),
+      title: 'Document request',
+      summary: `${notificationChannelLabel(row.channel)} document request: ${deliveryStatusLabel(status)}`,
+      status,
+      caseId: row.caseId ?? null,
+      metadataSafe: {
+        channel: row.channel ?? null,
+        templateCode: row.templateCode ?? null,
+        documentCodes: safeStringList(row.requestedDocumentCodes),
+        notificationId: row.notificationId ?? null,
+        attemptCount: safeCount(row.attemptCount),
+      },
+    };
+  }
+
+  private poaExpiryDeliveryTimelineItem(clientId: string, row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'PENDING').toUpperCase();
+    const occurredAt = row.sentAt ?? row.lastAttemptAt ?? row.updatedAt ?? row.createdAt;
+    return {
+      id: row.id,
+      source: 'poa_expiry_notification_delivery',
+      eventType: `POA_EXPIRY_NOTIFICATION_${status}`,
+      occurredAt: toIso(occurredAt),
+      title: 'POA reminder delivery',
+      summary: `POA reminder delivery: ${deliveryStatusLabel(status)}`,
+      status,
+      caseId: null,
+      metadataSafe: {
+        clientId,
+        windowKey: row.windowKey ?? null,
+        attempts: safeCount(row.attempts),
+      },
+    };
+  }
+  // Create client
+  async create(tenantId: string, data: any, actor?: AuditActor) {
     // TCKN veya VKN ile duplicate kontrolü
     const identityNo = data.tckn || data.vkn;
     if (identityNo) {
@@ -82,17 +1220,36 @@ export class ClientService {
         // eskiden kaydı isActive=false bırakıyordu → findAll (isActive=true) gizliyordu (vekaletleri olsa da).
         const wasReactivated = existing.isActive === false;
         if (wasReactivated) {
-          await this.prisma.client.update({ where: { id: existing.id }, data: { isActive: true } });
+          // C0-a: reaktivasyon mutation + audit AYNI transaction; CLIENT_CREATE'ten ayrı action.
+          await this.prisma.$transaction(async (tx) => {
+            await tx.client.update({ where: { id: existing.id }, data: { isActive: true } });
+            await this.audit.logInTransaction(tx, {
+              tenantId,
+              action: 'CLIENT_REACTIVATE',
+              entityType: 'CLIENT',
+              entityId: existing.id,
+              userId: actor?.userId,
+              metadata: { reactivatedFromDedupe: true },
+            });
+          });
           console.log(`[ClientService] Soft-deleted müvekkil reaktive edildi: ${existing.id} (${existing.displayName})`);
         } else {
           console.log(`[ClientService] Duplicate müvekkil bulundu: ${existing.id} (${existing.displayName})`);
         }
         // PR-AUDIT-1: duplicate'te SESSİZ döndürme yerine UX sinyali (POA deseni). Transient alanlar
         // (persist EDİLMEZ, kontrat bozulmaz) → frontend "zaten kayıtlı / geri getirildi" bildirir.
-        const result = await this.findOne(existing.id, tenantId);
+        // includeInactive: dedup hedefi (reactivate edilmemiş duplicate) soft-deleted olabilir;
+        // mutasyon-sonrası dönüş davranışı korunur (Task 4A findOne default-exclude'dan etkilenmez).
+        const result = await this.findOne(existing.id, tenantId, { includeInactive: true });
         return { ...(result as any), _existingReturned: true, _reactivated: wasReactivated };
       }
     }
+
+    // Task A/Faz 1 (owner-locked 2026-06-30): GERÇEKTEN YENİ kayıt için TCKN/VKN mod-10/11 checksum zorunlu.
+    // Dedup/reactivate'TEN SONRA → legacy (geçersiz-checksum) müvekkilin yeniden-eklenmesi/reactivate'i
+    // KİLİTLENMEZ (eski veri dokunulmaz). Domain katmanı → tüm create yolları (modal·cases/new·Excel·seed)
+    // tutarlı. update() ETKİLENMEZ (Faz 4). Boş kimlik serbest; identityNo doğrulanmaz (util'e bkz).
+    assertCreateIdentityChecksum(data);
 
     const displayName = data.type === 'COMPANY' || data.type === 'PUBLIC'
       ? data.companyName
@@ -108,7 +1265,9 @@ export class ClientService {
       ? [primaryAddress.street, primaryAddress.district, primaryAddress.city].filter(Boolean).join(', ')
       : [data.address, data.district, data.city].filter(Boolean).join(', ') || undefined;
 
-    const client = await this.prisma.client.create({
+    // C0-a: client + contact yazımı + audit AYNI transaction (audit yazılamazsa create rollback).
+    const client = await this.prisma.$transaction(async (tx) => {
+      const createdClient = await tx.client.create({
       data: {
         tenantId,
         type: data.type || 'PERSON',
@@ -135,6 +1294,9 @@ export class ClientService {
         companyType: data.companyType,
         mersisNo: data.mersisNo,
         ticaretSicilNo: data.ticaretSicilNo,
+        // P0.7: gender (Excel import row 5 gönderiyor) + detsisNo create'te map'lenmiyordu → sessiz veri kaybı.
+        gender: data.gender,
+        detsisNo: data.detsisNo,
         canCollect: data.canCollect ?? true,
         canWaive: data.canWaive ?? false,
         canSettle: data.canSettle ?? false,
@@ -153,9 +1315,9 @@ export class ClientService {
 
     // Çoklu telefon kaydet
     if (data.phones?.length > 0) {
-      await this.prisma.clientContact.createMany({
+      await tx.clientContact.createMany({
         data: data.phones.map((p: any, idx: number) => ({
-          clientId: client.id,
+          clientId: createdClient.id,
           type: p.type || 'MOBILE',
           value: p.value,
           label: p.label,
@@ -166,9 +1328,9 @@ export class ClientService {
 
     // Çoklu email kaydet
     if (data.emails?.length > 0) {
-      await this.prisma.clientContact.createMany({
+      await tx.clientContact.createMany({
         data: data.emails.map((e: any, idx: number) => ({
-          clientId: client.id,
+          clientId: createdClient.id,
           type: 'EMAIL',
           value: e.value,
           label: e.label,
@@ -177,7 +1339,22 @@ export class ClientService {
       });
     }
 
-    // PR-1: operasyonel iletişim eksiği görevini senkronla (yeni müvekkil → henüz WAIVED olamaz)
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_CREATE',
+        entityType: 'CLIENT',
+        entityId: createdClient.id,
+        userId: actor?.userId,
+        metadata: {
+          fieldDiff: buildClientFieldDiff(null, createdClient),
+          contactsDiff: buildContactsDiff([], data.phones, data.emails),
+        },
+      });
+
+      return createdClient;
+    });
+
+    // PR-1: operasyonel iletişim eksiği görevini senkronla (YAN ETKİ → transaction DIŞINDA)
     await this.syncContactFollowUpTaskSafe(tenantId, {
       id: client.id,
       phone: primaryPhone,
@@ -185,13 +1362,25 @@ export class ClientService {
       contactFollowUpStatus: null,
     });
 
-    return this.findOne(client.id, tenantId);
+    return this.findOne(client.id, tenantId, { includeInactive: true });
   }
 
   // Müvekkil güncelle
-  async update(id: string, tenantId: string, data: any) {
-    const existing = await this.prisma.client.findFirst({ where: { id, tenantId } });
-    if (!existing) throw new Error('Müvekkil bulunamadı');
+  async update(id: string, tenantId: string, data: any, actor?: AuditActor) {
+    // C0-a (acceptance #2): contacts diff için old snapshot CONTACTS ile alınır.
+    const existing = await this.prisma.client.findFirst({
+      where: { id, tenantId },
+      include: { contacts: true },
+    });
+    if (!existing) throw new NotFoundException('Müvekkil bulunamadı');
+
+    // CBND-6 (H5): isActive değişimi generic update ile yan-kapıdan geçemez. remove() ile AYNI
+    // lifecycle capability gate (assertCanManageLifecycle) — hem deaktivasyon (true→false) hem
+    // reaktivasyon (false→true) buraya tabi; aynı değer/eksik alan → no-op, gate çalışmaz.
+    // Transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz), remove()'daki desenle birebir.
+    if (data.isActive !== undefined && data.isActive !== existing.isActive) {
+      await this.assertCanManageLifecycle(actor?.userId, tenantId);
+    }
 
     // PR-U4: UPDATE-PATH kimlik-block (önce guard YOKTU). Müvekkilde TCKN zorunlu/kesin ayrıştırıcı →
     // isim-review YOK (false-positive riski); yalnız kesin kimlik (TCKN/VKN) collision block.
@@ -230,8 +1419,11 @@ export class ClientService {
       ? [primaryAddress.street, primaryAddress.district, primaryAddress.city].filter(Boolean).join(', ')
       : [data.address, data.district, data.city].filter(Boolean).join(', ') || undefined;
 
-    await this.prisma.client.update({
-      where: { id },
+    // C0-a: client + contact yazımı + audit AYNI transaction.
+    await this.prisma.$transaction(async (tx) => {
+      // P0.5: tenant-scoped write — update() whereUnique tenantId taşıyamaz; updateMany {id,tenantId} guard.
+      const { count } = await tx.client.updateMany({
+      where: { id, tenantId },
       data: {
         type: data.type,
         displayName: displayName,
@@ -255,6 +1447,15 @@ export class ClientService {
         canRelease: data.canRelease,
         notes: data.notes,
         isActive: data.isActive,
+        // P0.7: create paritesi — create'te map'lenip update'te DÜŞEN alanlar (sessiz veri kaybı önlenir).
+        postalCode: data.postalCode,
+        isForeigner: data.isForeigner ?? undefined,
+        nationality: data.nationality,
+        companyType: data.companyType,
+        mersisNo: data.mersisNo,
+        ticaretSicilNo: data.ticaretSicilNo,
+        gender: data.gender,
+        detsisNo: data.detsisNo,
         // Tebrik alanları
         birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
         foundingDate: data.foundingDate ? new Date(data.foundingDate) : undefined,
@@ -265,10 +1466,13 @@ export class ClientService {
         greetingChannel: data.greetingChannel,
       },
     });
+      if (count === 0) throw new NotFoundException('Müvekkil bulunamadı');
+      const updated = await tx.client.findFirst({ where: { id, tenantId } });
+      if (!updated) throw new NotFoundException('Müvekkil bulunamadı');
 
     // Contacts güncelle (sil ve yeniden oluştur)
     if (data.phones || data.emails) {
-      await this.prisma.clientContact.deleteMany({ where: { clientId: id } });
+      await tx.clientContact.deleteMany({ where: { clientId: id } });
       
       const contacts: any[] = [];
       if (data.phones?.length > 0) {
@@ -294,9 +1498,24 @@ export class ClientService {
         });
       }
       if (contacts.length > 0) {
-        await this.prisma.clientContact.createMany({ data: contacts });
+        await tx.clientContact.createMany({ data: contacts });
       }
     }
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_UPDATE',
+        entityType: 'CLIENT',
+        entityId: id,
+        userId: actor?.userId,
+        metadata: {
+          fieldDiff: buildClientFieldDiff(existing, updated),
+          contactsDiff: (data.phones || data.emails)
+            ? buildContactsDiff((existing as any).contacts, data.phones, data.emails)
+            : { changed: false },
+        },
+      });
+    });
 
     // PR-1: operasyonel iletişim eksiği görevini senkronla (WAIVED kararı 'existing'ten gelir)
     await this.syncContactFollowUpTaskSafe(tenantId, {
@@ -306,7 +1525,8 @@ export class ClientService {
       contactFollowUpStatus: (existing as any).contactFollowUpStatus ?? null,
     });
 
-    return this.findOne(id, tenantId);
+    // includeInactive: update isActive:false yapmış olabilir (arşivleme); güncellenen kaydı yine döndür.
+    return this.findOne(id, tenantId, { includeInactive: true });
   }
 
   /**
@@ -458,10 +1678,26 @@ export class ClientService {
   }
 
   // Müvekkil sil (soft delete)
-  async remove(id: string, tenantId: string) {
+  async remove(id: string, tenantId: string, actor?: AuditActor) {
     const existing = await this.prisma.client.findFirst({ where: { id, tenantId } });
-    if (!existing) throw new Error('Müvekkil bulunamadı');
-    return this.prisma.client.update({ where: { id }, data: { isActive: false } });
+    if (!existing) throw new NotFoundException('Müvekkil bulunamadı');
+    // Task 8A: lifecycle capability gate — transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz).
+    await this.assertCanManageLifecycle(actor?.userId, tenantId);
+    // C0-a: soft-delete + audit AYNI transaction (old snapshot delete ÖNCESİ alındı).
+    return this.prisma.$transaction(async (tx) => {
+      // P0.5: tenant-scoped soft-delete (updateMany {id,tenantId}).
+      const { count } = await tx.client.updateMany({ where: { id, tenantId }, data: { isActive: false } });
+      if (count === 0) throw new NotFoundException('Müvekkil bulunamadı');
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_DELETE',
+        entityType: 'CLIENT',
+        entityId: id,
+        userId: actor?.userId,
+        metadata: { softDelete: true, oldSnapshot: buildClientRemoveSnapshot(existing) },
+      });
+      return { ...existing, isActive: false };
+    });
   }
 
   // Arama
@@ -480,4 +1716,922 @@ export class ClientService {
       take: 20,
     });
   }
+}
+
+function compareTimelineItems(a: ClientTimelineItem, b: ClientTimelineItem): number {
+  const byDate = new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime();
+  if (byDate !== 0) return byDate;
+  const bySource = a.source.localeCompare(b.source);
+  if (bySource !== 0) return bySource;
+  return b.id.localeCompare(a.id);
+}
+
+function isAfterCursor(item: ClientTimelineItem, cursor: ClientTimelineCursor): boolean {
+  return compareTimelineItems(item, {
+    id: cursor.id,
+    source: cursor.source,
+    occurredAt: cursor.occurredAt,
+    eventType: '',
+    title: '',
+    summary: '',
+    status: '',
+  }) > 0;
+}
+
+function toIso(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toISOString();
+}
+
+function notificationTypeLabel(type?: string | null): string | null {
+  const labels: Record<string, string> = {
+    CLIENT_INFO: 'Client information',
+    INTAKE_LINK: 'Intake link notification',
+    MASRAF_ISTEK: 'Expense request',
+    GENEL_BILGILENDIRME: 'Information',
+    RAPOR: 'Report',
+    HATIRLATMA: 'Reminder',
+    TEST: 'Test notification',
+    DIGER: 'Notification',
+  };
+  return type ? labels[type] ?? type : null;
+}
+
+function notificationChannelLabel(channel?: string | null): string {
+  const labels: Record<string, string> = { EMAIL: 'Email', SMS: 'SMS', WHATSAPP: 'WhatsApp' };
+  return channel ? labels[channel] ?? channel : 'Notification';
+}
+
+function notificationStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    PENDING: 'pending',
+    SENT: 'sent',
+    DELIVERED: 'delivered',
+    FAILED: 'failed',
+  };
+  return labels[status] ?? status;
+}
+
+function deliveryStatusLabel(status: string): string {
+  if (status === 'SENDING') return 'sending';
+  if (status === 'SENT') return 'sent';
+  if (status === 'FAILED') return 'failed';
+  return 'pending';
+}
+
+function safeCount(value: unknown): string | null {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : null;
+}
+
+function safeStringList(value: unknown): string | null {
+  return Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item.trim()).join(',') || null : null;
+}
+
+function intakeEventType(status: string): string {
+  const map: Record<string, string> = {
+    CLIENT_SUBMITTED: 'INTAKE_SUBMITTED',
+    IN_REVIEW: 'INTAKE_CLAIMED',
+    PARTIALLY_PROMOTED: 'INTAKE_PARTIALLY_PROMOTED',
+    COMPLETED: 'INTAKE_COMPLETED',
+    REJECTED: 'INTAKE_REJECTED',
+  };
+  return map[status] ?? 'INTAKE_UPDATED';
+}
+
+function intakeTitle(status: string): string {
+  const map: Record<string, string> = {
+    CLIENT_SUBMITTED: 'Intake submission received',
+    IN_REVIEW: 'Intake review started',
+    PARTIALLY_PROMOTED: 'Intake partially processed',
+    COMPLETED: 'Intake completed',
+    REJECTED: 'Intake rejected',
+  };
+  return map[status] ?? 'Intake updated';
+}
+
+function intakeSummary(status: string): string {
+  const map: Record<string, string> = {
+    CLIENT_SUBMITTED: 'Client submitted the canonical intake form.',
+    IN_REVIEW: 'Intake submission entered review.',
+    PARTIALLY_PROMOTED: 'Some intake fields were promoted to canonical records.',
+    COMPLETED: 'Intake review completed.',
+    REJECTED: 'Intake submission rejected.',
+  };
+  return map[status] ?? 'Intake lifecycle status changed.';
+}
+
+interface ClientActionCatalogClientState {
+  id: string;
+  phone?: string | null;
+  email?: string | null;
+  contactFollowUpStatus?: string | null;
+  caseClients?: Array<{ caseId: string | null }> | null;
+  powerOfAttorneys?: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null;
+}
+
+type ClientPoaReminderDeliveryStatus =
+  | 'none'
+  | 'sent'
+  | 'pending_fresh'
+  | 'retry_available'
+  | 'retry_waiting'
+  | 'max_attempts';
+
+interface ClientPoaReminderDeliveryState {
+  status: ClientPoaReminderDeliveryStatus;
+}
+
+interface ClientPoaReminderDeliveryRow {
+  status?: string | null;
+  attempts?: number | null;
+  reservedAt?: Date | string | null;
+  nextRetryAt?: Date | string | null;
+  sentAt?: Date | string | null;
+  updatedAt?: Date | string | null;
+}
+
+interface ClientTemplateNotificationFollowUpRow {
+  id?: string | null;
+  status?: string | null;
+  caseId?: string | null;
+  updatedAt?: Date | string | null;
+  createdAt?: Date | string | null;
+}
+
+interface ClientDocumentRequestFollowUpRow extends ClientTemplateNotificationFollowUpRow {
+  sentAt?: Date | string | null;
+}
+
+interface ClientActionCatalogContext {
+  actorRole: ClientActionRole;
+  client: ClientActionCatalogClientState;
+  poaReminderDelivery: ClientPoaReminderDeliveryState;
+  templateNotificationAction: { enabled: boolean; requiredState: string; disabledReason?: string };
+  documentRequestAction: { enabled: boolean; requiredState: string; disabledReason?: string };
+}
+
+const CLIENT_ACTION_ROLE_RANK: Record<ClientActionRole, number> = {
+  VIEWER: 0,
+  USER: 1,
+  ADMIN: 2,
+};
+
+function normalizeClientActionRole(rawRole?: string | null): ClientActionRole {
+  const role = String(rawRole ?? 'USER').toUpperCase();
+  if (role === 'ADMIN' || role === 'USER' || role === 'VIEWER') return role;
+  return 'USER';
+}
+
+function buildClientActionCatalog(context: ClientActionCatalogContext): ClientActionCatalogItem[] {
+  const clientId = context.client.id;
+  const target = { clientId };
+  const relatedCaseIds = (context.client.caseClients ?? [])
+    .map((caseClient) => caseClient.caseId)
+    .filter((caseId): caseId is string => !!caseId);
+  const hasRelatedCase = relatedCaseIds.length > 0;
+  const singleRelatedCaseId = relatedCaseIds.length === 1 ? relatedCaseIds[0] : undefined;
+  const intakeCreateEnabled = !!singleRelatedCaseId;
+  const intakeCreateDisabledReason = intakeCreateEnabled
+    ? undefined
+    : hasRelatedCase
+      ? 'Select a related case before creating an intake link.'
+      : 'No related cases are linked to this client yet.';
+  const missingContactFields = computeMissingContactFields(context.client);
+  const poaReminderBaseEnabled = hasPoaReminderEligiblePowerOfAttorney(context.client.powerOfAttorneys);
+  const poaReminderAction = buildPoaReminderActionAvailability(poaReminderBaseEnabled, context.poaReminderDelivery);
+  const templateNotificationAction = context.templateNotificationAction;
+  const documentCaseReady = !!singleRelatedCaseId;
+  const documentRequestAction = documentCaseReady
+    ? context.documentRequestAction
+    : {
+        enabled: false,
+        requiredState: hasRelatedCase ? 'DOCUMENT_REQUEST_CASE_SELECTION_REQUIRED' : 'RELATED_CASE_EMPTY',
+        disabledReason: hasRelatedCase
+          ? 'Select a related case before sending a document request.'
+          : 'No related cases are linked to this client yet.',
+      };
+  const contactState = context.client.contactFollowUpStatus === 'WAIVED'
+    ? 'CONTACT_FOLLOW_UP_WAIVED'
+    : missingContactFields.length > 0
+      ? 'CONTACT_INFO_MISSING'
+      : 'CONTACT_INFO_COMPLETE';
+
+  const candidates: ClientActionCatalogItem[] = [
+    {
+      key: 'contact.update_missing_info',
+      label: 'Update contact information',
+      description: 'Open the client identity and contact information screen.',
+      category: 'contact',
+      enabled: true,
+      visibility: 'visible',
+      dangerLevel: 'low',
+      requiredRole: 'USER',
+      requiredState: contactState,
+      target,
+      href: `/clients/${clientId}`,
+      order: 10,
+    },
+    {
+      key: 'case.open_related',
+      label: 'Open related cases',
+      description: 'Open the cases tab for this client.',
+      category: 'case',
+      enabled: hasRelatedCase,
+      disabledReason: hasRelatedCase ? undefined : 'No related cases are linked to this client yet.',
+      visibility: 'visible',
+      dangerLevel: 'low',
+      requiredRole: 'VIEWER',
+      requiredState: hasRelatedCase ? 'RELATED_CASE_AVAILABLE' : 'RELATED_CASE_EMPTY',
+      target,
+      href: hasRelatedCase ? `/clients/${clientId}` : undefined,
+      order: 20,
+    },
+    {
+      key: 'activity.view_timeline',
+      label: 'View activity timeline',
+      description: 'Open the safe client activity timeline.',
+      category: 'activity',
+      enabled: true,
+      visibility: 'visible',
+      dangerLevel: 'low',
+      requiredRole: 'VIEWER',
+      requiredState: 'TIMELINE_READ_AVAILABLE',
+      target,
+      href: `/clients/${clientId}`,
+      order: 30,
+    },
+    {
+      key: 'intake.link.create',
+      label: 'Create intake link',
+      description: 'Create a client intake link for the selected related case.',
+      category: 'intake',
+      enabled: intakeCreateEnabled,
+      disabledReason: intakeCreateDisabledReason,
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: intakeCreateEnabled
+        ? 'INTAKE_CREATE_AVAILABLE'
+        : hasRelatedCase
+          ? 'INTAKE_CASE_SELECTION_REQUIRED'
+          : 'RELATED_CASE_EMPTY',
+      target: singleRelatedCaseId ? { ...target, caseId: singleRelatedCaseId } : target,
+      order: 40,
+    },
+    {
+      key: 'intake.link.send',
+      label: 'Send intake link',
+      description: 'Future typed command; real dispatch is outside V1 catalog scope.',
+      category: 'intake',
+      enabled: false,
+      disabledReason: 'Intake link sending requires dispatch and idempotency contracts.',
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: 'INTAKE_DISPATCH_CONTRACT_READY',
+      target,
+      order: 50,
+    },
+    {
+      key: 'poa.reminder.send',
+      label: 'Send POA reminder',
+      description: 'Send a dedupe-aware internal POA expiry reminder for active expiring powers of attorney.',
+      category: 'poa',
+      enabled: poaReminderAction.enabled,
+      disabledReason: poaReminderAction.disabledReason,
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: poaReminderAction.requiredState,
+      target,
+      order: 60,
+    },
+    {
+      key: 'notification.template.send',
+      label: 'Send template notification',
+      description: 'Future typed command; V1 catalog does not create or send notifications.',
+      category: 'notification',
+      enabled: templateNotificationAction.enabled,
+      disabledReason: templateNotificationAction.disabledReason,
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: templateNotificationAction.requiredState,
+      target,
+      order: 70,
+    },
+    {
+      key: 'document.request.send',
+      label: 'Send document request',
+      description: 'Send an idempotent client document request using the V1 allowlist.',
+      category: 'document',
+      enabled: documentRequestAction.enabled,
+      disabledReason: documentRequestAction.disabledReason,
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: documentRequestAction.requiredState,
+      target: singleRelatedCaseId ? { ...target, caseId: singleRelatedCaseId } : target,
+      order: 80,
+    },
+  ];
+
+  return candidates
+    .map((item) => applyClientActionPolicy(item, context.actorRole))
+    .filter((item): item is ClientActionCatalogItem => item !== null)
+    .sort((a, b) => a.order - b.order);
+}
+
+function currentPoaReminderCandidateIds(
+  poas?: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null,
+  now: Date = new Date(),
+): string[] {
+  const until = new Date(now);
+  until.setDate(until.getDate() + 30);
+  return (poas ?? [])
+    .filter((poa) => {
+      if (!poa.id || String(poa.status ?? '').toUpperCase() !== 'ACTIVE') return false;
+      if (poa.isLimited !== true || !poa.validUntil) return false;
+      const validUntil = new Date(poa.validUntil);
+      if (Number.isNaN(validUntil.getTime())) return false;
+      return validUntil >= now && validUntil <= until;
+    })
+    .map((poa) => poa.id!);
+}
+
+function hasPoaReminderEligiblePowerOfAttorney(
+  poas?: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null,
+  now: Date = new Date(),
+): boolean {
+  return currentPoaReminderCandidateIds(poas, now).length > 0;
+}
+
+function buildPoaReminderDeliveryState(
+  rows: ClientPoaReminderDeliveryRow[],
+  now: Date = new Date(),
+): ClientPoaReminderDeliveryState {
+  const staleCutoff = new Date(now.getTime() - CLIENT_POA_DELIVERY_LOCK_TIMEOUT_MS);
+  const normalized = rows.map((row) => ({
+    ...row,
+    status: String(row.status ?? '').toUpperCase(),
+    attempts: Number(row.attempts ?? 0),
+    reservedAt: toDateOrNull(row.reservedAt),
+    nextRetryAt: toDateOrNull(row.nextRetryAt),
+  }));
+
+  if (normalized.some((row) => row.status === 'PENDING' && !!row.reservedAt && row.reservedAt >= staleCutoff)) {
+    return { status: 'pending_fresh' };
+  }
+  if (normalized.some((row) => row.status === 'PENDING' && (!row.reservedAt || row.reservedAt < staleCutoff))) {
+    return { status: 'retry_available' };
+  }
+  if (normalized.some((row) => row.status === 'FAILED' && row.attempts < CLIENT_POA_DELIVERY_MAX_ATTEMPTS && (!row.nextRetryAt || row.nextRetryAt <= now))) {
+    return { status: 'retry_available' };
+  }
+  if (normalized.some((row) => row.status === 'FAILED' && row.attempts >= CLIENT_POA_DELIVERY_MAX_ATTEMPTS)) {
+    return { status: 'max_attempts' };
+  }
+  if (normalized.some((row) => row.status === 'FAILED')) {
+    return { status: 'retry_waiting' };
+  }
+  if (normalized.some((row) => row.status === 'SENT')) {
+    return { status: 'sent' };
+  }
+  return { status: 'none' };
+}
+
+function buildPoaReminderActionAvailability(
+  hasEligiblePoa: boolean,
+  delivery: ClientPoaReminderDeliveryState,
+): { enabled: boolean; requiredState: string; disabledReason?: string } {
+  if (!hasEligiblePoa) {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_NOT_ELIGIBLE',
+      disabledReason: 'POA reminder is available only for active limited powers of attorney expiring within 30 days.',
+    };
+  }
+
+  if (delivery.status === 'pending_fresh') {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_DELIVERY_PENDING',
+      disabledReason: 'POA reminder delivery is already pending for the current expiry window.',
+    };
+  }
+  if (delivery.status === 'sent') {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_SENT_CURRENT_WINDOW',
+      disabledReason: 'POA reminder was already sent for the current expiry window; renewal is still needed.',
+    };
+  }
+  if (delivery.status === 'retry_waiting') {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_RETRY_WAITING',
+      disabledReason: 'POA reminder delivery failed and retry is not due yet.',
+    };
+  }
+  if (delivery.status === 'max_attempts') {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_MAX_ATTEMPTS_REACHED',
+      disabledReason: 'POA reminder delivery reached the retry limit and needs operational attention.',
+    };
+  }
+  if (delivery.status === 'retry_available') {
+    return { enabled: true, requiredState: 'POA_REMINDER_RETRY_AVAILABLE' };
+  }
+
+  return { enabled: true, requiredState: 'POA_EXPIRING_ACTIVE' };
+}
+
+function poaReminderCommandStatus(result: PoaExpiryDeliveryRunResult): ClientPoaReminderSendStatus {
+  if (result.sent > 0 && result.failed === 0) return 'sent';
+  if (result.sent > 0 && result.failed > 0) return 'partial';
+  if (result.sent === 0 && result.failed > 0) return 'failed';
+  return 'skipped';
+}
+
+
+const CLIENT_DOCUMENT_REQUEST_LABELS: Record<ClientDocumentRequestCode, string> = {
+  GENEL_BELGE: 'Genel belge',
+  DOSYA_EVRAKI: 'Dosya evraki',
+};
+
+function normalizeDocumentRequestCodes(rawCodes: readonly ClientDocumentRequestCode[] | undefined): ClientDocumentRequestCode[] {
+  if (!Array.isArray(rawCodes) || rawCodes.length === 0) throw new BadRequestException('documentCodes must contain at least one V1 document request code.');
+  const codes: ClientDocumentRequestCode[] = [];
+  for (const raw of rawCodes) {
+    if (!CLIENT_DOCUMENT_REQUEST_CODES.includes(raw as ClientDocumentRequestCode)) throw new BadRequestException('Unsupported document request code.');
+    if (!codes.includes(raw as ClientDocumentRequestCode)) codes.push(raw as ClientDocumentRequestCode);
+  }
+  return codes;
+}
+
+function sameDocumentRequestCodes(left: readonly string[] | null | undefined, right: readonly ClientDocumentRequestCode[]): boolean {
+  return JSON.stringify([...(left ?? [])].sort()) === JSON.stringify([...right].sort());
+}
+
+function buildDocumentRequestTokens(
+  client: { name?: string | null; firstName?: string | null; lastName?: string | null },
+  relatedCase: { fileNumber?: string | null; executionFileNumber?: string | null; executionOffice?: { name?: string | null } | null } | null,
+  documentCodes: ClientDocumentRequestCode[],
+): Record<string, string> {
+  const clientName = client.name || [client.firstName, client.lastName].filter(Boolean).join(' ') || 'M\u00fcvekkil';
+  return {
+    clientName,
+    caseFileNumber: relatedCase?.fileNumber ?? '',
+    executionFileNumber: relatedCase?.executionFileNumber ?? '',
+    executionOfficeName: relatedCase?.executionOffice?.name ?? '',
+    requestedDocumentCodes: documentCodes.join(','),
+    requestedDocumentLabels: documentCodes.map((code) => CLIENT_DOCUMENT_REQUEST_LABELS[code]).join(', '),
+  };
+}
+
+function documentRequestResultStatus(artifactStatus: string, dispatchStatus?: DispatchResult['status']): ClientDocumentRequestSendStatus {
+  if (dispatchStatus === 'skipped') return 'skipped';
+  return artifactStatus === 'FAILED' ? 'failed' : 'sent';
+}
+
+function buildDocumentRequestCommandResult(
+  clientId: string,
+  caseId: string,
+  documentCodes: ClientDocumentRequestCode[],
+  artifactStatus: string,
+  documentRequestId: string,
+  notificationId?: string,
+  dispatchStatus?: DispatchResult['status'],
+): ClientDocumentRequestSendResult {
+  return {
+    clientId,
+    caseId,
+    documentCodes,
+    status: documentRequestResultStatus(artifactStatus, dispatchStatus),
+    documentRequestId,
+    ...(notificationId ? { notificationId } : {}),
+  };
+}
+function buildTemplateNotificationTokens(
+  client: { name?: string | null; firstName?: string | null; lastName?: string | null; email?: string | null },
+  relatedCase: { fileNumber?: string | null; executionFileNumber?: string | null; executionOffice?: { name?: string | null } | null } | null,
+): Record<string, string> {
+  const clientName = client.name || [client.firstName, client.lastName].filter(Boolean).join(' ') || 'M\u00fcvekkil';
+  return {
+    clientName,
+    caseFileNumber: relatedCase?.fileNumber ?? '',
+    executionFileNumber: relatedCase?.executionFileNumber ?? '',
+    executionOfficeName: relatedCase?.executionOffice?.name ?? '',
+    lawyerName: '',
+    officeName: '',
+    officePhone: '',
+    officeEmail: '',
+  };
+}
+
+function templateNotificationType(templateCode: ClientTemplateNotificationCode): string {
+  if (templateCode === 'DOSYA_DURUMU') return 'DOSYA_DURUMU';
+  return 'GENEL_BILGILENDIRME';
+}
+
+function buildTemplateNotificationCommandResult(
+  clientId: string,
+  caseId: string | null,
+  templateCode: ClientTemplateNotificationCode,
+  dispatch: DispatchResult,
+): ClientTemplateNotificationSendResult {
+  return {
+    clientId,
+    caseId,
+    templateCode,
+    status: dispatch.status,
+    ...(dispatch.notificationId ? { notificationId: dispatch.notificationId } : {}),
+  };
+}
+function applyClientActionPolicy(item: ClientActionCatalogItem, actorRole: ClientActionRole): ClientActionCatalogItem | null {
+  if (item.visibility !== 'visible') return null;
+  const requiredRole = normalizeClientActionRole(item.requiredRole);
+  if (CLIENT_ACTION_ROLE_RANK[actorRole] < CLIENT_ACTION_ROLE_RANK[requiredRole]) return null;
+
+  if (item.enabled) {
+    const { disabledReason, ...enabledItem } = item;
+    return enabledItem;
+  }
+
+  return {
+    ...item,
+    disabledReason: item.disabledReason?.trim() || 'Action is disabled by current client workspace policy.',
+    href: undefined,
+  };
+}
+function buildClientOperatingSnapshot(
+  clientId: string,
+  client: { phone?: string | null; email?: string | null; contactFollowUpStatus?: string | null },
+  poas: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }>,
+  poaReminderDelivery: ClientPoaReminderDeliveryState,
+  latestSubmission: any | null,
+  latestLink: any | null,
+  latestNotification: any | null,
+  latestTemplateNotification: ClientTemplateNotificationFollowUpRow | null,
+  latestDocumentRequest: ClientDocumentRequestFollowUpRow | null,
+  latestDeliveryIssue: any | null,
+  openTasks: Array<{ dueDate?: Date | string | null; escalationLevel?: string | null; nextFollowUpAt?: Date | string | null }>,
+): ClientOperatingSnapshot {
+  const now = new Date();
+  const target = { clientId };
+  const signals: ClientOperatingSignal[] = [];
+  const missingContactFields = computeMissingContactFields(client);
+  const overdueTasks = openTasks.filter((task) => isPastDate(task.dueDate, now));
+  const nextFollowUpAt = earliestDate(openTasks.map((task) => task.nextFollowUpAt ?? task.dueDate));
+  const escalationLevel = openTasks.find((task) => task.escalationLevel)?.escalationLevel ?? null;
+  const contactStatus = client.contactFollowUpStatus === 'WAIVED'
+    ? 'waived'
+    : missingContactFields.length > 0
+      ? 'missing'
+      : 'complete';
+
+  if (contactStatus === 'missing') {
+    signals.push({
+      key: 'contact.missing_info',
+      label: 'Contact information is incomplete',
+      description: `Missing contact fields: ${missingContactFields.join(', ')}`,
+      severity: 'warning',
+      actionKey: 'contact.update_missing_info',
+      target,
+    });
+  }
+  if (overdueTasks.length > 0) {
+    signals.push({
+      key: 'contact.follow_up_overdue',
+      label: 'Contact follow-up is overdue',
+      description: 'At least one operational completeness task is past due.',
+      severity: 'critical',
+      actionKey: 'contact.update_missing_info',
+      target,
+    });
+  }
+
+  const activePoas = poas.filter((poa) => String(poa.status ?? '').toUpperCase() === 'ACTIVE' && !isPastDate(poa.validUntil, now));
+  const nearestValidUntil = earliestDate(activePoas.map((poa) => poa.validUntil));
+  const poaExpiring = !!nearestValidUntil && new Date(nearestValidUntil).getTime() <= now.getTime() + 30 * 24 * 60 * 60 * 1000;
+  const poaStatus = activePoas.length === 0
+    ? poas.length > 0
+      ? 'expired_or_inactive'
+      : 'missing'
+    : poaExpiring
+      ? 'expiring'
+      : 'active';
+
+  if (poaStatus === 'missing' || poaStatus === 'expired_or_inactive') {
+    signals.push({
+      key: 'poa.missing_or_inactive',
+      label: 'Active POA is missing',
+      description: 'No active power of attorney is available for this client.',
+      severity: 'warning',
+      actionKey: 'poa.reminder.send',
+      target,
+    });
+  } else if (poaStatus === 'expiring') {
+    signals.push({
+      key: 'poa.expiring',
+      label: 'POA is expiring soon',
+      description: 'The nearest active power of attorney expires within 30 days.',
+      severity: 'warning',
+      actionKey: 'poa.reminder.send',
+      target,
+    });
+
+    const followUpSignal = buildPoaReminderFollowUpSignal(poaReminderDelivery, target);
+    if (followUpSignal) signals.push(followUpSignal);
+  }
+
+  const intakeStatus = computeIntakeStatus(latestSubmission, latestLink);
+  if (intakeStatus === 'submitted' || intakeStatus === 'in_review') {
+    signals.push({
+      key: 'intake.pending_review',
+      label: 'Intake needs review',
+      description: 'Latest intake submission is not completed yet.',
+      severity: 'warning',
+      target: { clientId, caseId: latestSubmission?.caseId ?? null },
+    });
+  }
+
+  const deliveryIssueStatus = String(latestDeliveryIssue?.status ?? '').toUpperCase();
+  if (deliveryIssueStatus === 'FAILED') {
+    signals.push({
+      key: 'intake.delivery_failed',
+      label: 'Intake link delivery failed',
+      description: 'Latest intake link delivery failed and needs manual attention.',
+      severity: 'warning',
+      actionKey: 'intake.link.create',
+      target: { clientId, caseId: latestDeliveryIssue?.caseId ?? null },
+    });
+  } else if (deliveryIssueStatus === 'PENDING' || deliveryIssueStatus === 'SENDING') {
+    signals.push({
+      key: 'intake.delivery_stuck',
+      label: 'Intake link delivery is stuck',
+      description: 'Latest intake link delivery is not finalized after the safe processing window.',
+      severity: 'warning',
+      actionKey: 'intake.link.create',
+      target: { clientId, caseId: latestDeliveryIssue?.caseId ?? null },
+    });
+  }
+
+  const notificationStatus = computeNotificationStatus(latestNotification);
+  const templateFollowUpSignal = buildTemplateNotificationFollowUpSignal(latestTemplateNotification, target, now);
+  if (templateFollowUpSignal) signals.push(templateFollowUpSignal);
+
+  const documentFollowUpSignal = buildDocumentRequestFollowUpSignal(latestDocumentRequest, target, now);
+  if (documentFollowUpSignal) signals.push(documentFollowUpSignal);
+
+  if (notificationStatus === 'failed' && latestNotification?.id !== latestTemplateNotification?.id) {
+    signals.push({
+      key: 'notification.failed',
+      label: 'Latest notification failed',
+      description: 'The latest client notification has failed status.',
+      severity: 'warning',
+      actionKey: 'notification.template.send',
+      target: { clientId, caseId: latestNotification?.caseId ?? null },
+    });
+  }
+
+  const riskLevel = signals.some((signal) => signal.severity === 'critical')
+    ? 'high'
+    : signals.some((signal) => signal.severity === 'warning')
+      ? 'medium'
+      : 'low';
+  const health = riskLevel === 'high' ? 'blocked' : riskLevel === 'medium' ? 'attention' : 'healthy';
+
+  return {
+    clientId,
+    health,
+    riskLevel,
+    contact: {
+      status: contactStatus,
+      missingFields: contactStatus === 'missing' ? missingContactFields : [],
+      followUpStatus: client.contactFollowUpStatus ?? null,
+      openTaskCount: openTasks.length,
+      overdueTaskCount: overdueTasks.length,
+      nextFollowUpAt,
+      escalationLevel,
+    },
+    poa: {
+      status: poaStatus,
+      activeCount: activePoas.length,
+      nearestValidUntil,
+    },
+    intake: {
+      status: intakeStatus,
+      latestSubmission: latestSubmission
+        ? {
+            id: latestSubmission.id,
+            status: latestSubmission.status,
+            caseId: latestSubmission.caseId ?? null,
+            occurredAt: toIso(latestSubmission.reviewedAt ?? latestSubmission.claimedAt ?? latestSubmission.submittedAt ?? latestSubmission.createdAt),
+          }
+        : null,
+      latestLink: latestLink
+        ? {
+            id: latestLink.id,
+            status: latestLink.status,
+            caseId: latestLink.caseId ?? null,
+            expiresAt: toIsoOrNull(latestLink.expiresAt),
+          }
+        : null,
+    },
+    notification: {
+      status: notificationStatus,
+      latest: latestNotification
+        ? {
+            id: latestNotification.id,
+            status: latestNotification.status,
+            type: latestNotification.type ?? null,
+            channel: latestNotification.channel ?? null,
+            caseId: latestNotification.caseId ?? null,
+            occurredAt: toIso(latestNotification.deliveredAt ?? latestNotification.sentAt ?? latestNotification.createdAt),
+          }
+        : null,
+    },
+    signals,
+  };
+}
+
+function buildPoaReminderFollowUpSignal(
+  delivery: ClientPoaReminderDeliveryState,
+  target: { clientId: string },
+): ClientOperatingSignal | null {
+  if (delivery.status === 'sent') {
+    return {
+      key: 'poa.reminder_sent',
+      label: 'POA reminder was sent',
+      description: 'A POA reminder was sent for the current expiry window; renewal is still needed.',
+      severity: 'info',
+      actionKey: 'poa.reminder.send',
+      target,
+    };
+  }
+  if (delivery.status === 'pending_fresh') {
+    return {
+      key: 'poa.reminder_delivery_pending',
+      label: 'POA reminder delivery is pending',
+      description: 'A POA reminder delivery is already pending for the current expiry window.',
+      severity: 'info',
+      actionKey: 'poa.reminder.send',
+      target,
+    };
+  }
+  if (delivery.status === 'retry_waiting' || delivery.status === 'max_attempts') {
+    return {
+      key: 'poa.reminder_delivery_failed',
+      label: 'POA reminder delivery needs attention',
+      description: delivery.status === 'max_attempts'
+        ? 'POA reminder delivery reached the retry limit and needs operational attention.'
+        : 'POA reminder delivery failed and retry is not due yet.',
+      severity: 'warning',
+      actionKey: 'poa.reminder.send',
+      target,
+    };
+  }
+  return null;
+}
+
+function buildTemplateNotificationFollowUpSignal(
+  notification: ClientTemplateNotificationFollowUpRow | null,
+  target: { clientId: string },
+  now: Date,
+): ClientOperatingSignal | null {
+  const status = String(notification?.status ?? '').toUpperCase();
+  if (!notification || !status) return null;
+  const signalTarget = { ...target, caseId: notification.caseId ?? null };
+
+  if (status === 'SENT' || status === 'DELIVERED') {
+    return {
+      key: 'notification.template_sent',
+      label: 'Template notification was sent',
+      description: 'The latest workspace template notification was sent; additional sends still require a fresh request.',
+      severity: 'info',
+      actionKey: 'notification.template.send',
+      target: signalTarget,
+    };
+  }
+  if (status === 'PENDING') {
+    const fresh = isFreshFollowUp(notification, now);
+    return {
+      key: 'notification.template_pending',
+      label: fresh ? 'Template notification delivery is pending' : 'Template notification delivery is not finalized',
+      description: fresh
+        ? 'A template notification delivery is already pending for this client.'
+        : 'The latest template notification delivery is still pending after the safe processing window.',
+      severity: fresh ? 'info' : 'warning',
+      actionKey: 'notification.template.send',
+      target: signalTarget,
+    };
+  }
+  if (status === 'FAILED') {
+    return {
+      key: 'notification.template_failed',
+      label: 'Template notification delivery failed',
+      description: 'The latest template notification delivery failed and can be retried with a fresh request.',
+      severity: 'warning',
+      actionKey: 'notification.template.send',
+      target: signalTarget,
+    };
+  }
+  return null;
+}
+
+function buildDocumentRequestFollowUpSignal(
+  request: ClientDocumentRequestFollowUpRow | null,
+  target: { clientId: string },
+  now: Date,
+): ClientOperatingSignal | null {
+  const status = String(request?.status ?? '').toUpperCase();
+  if (!request || !status) return null;
+  const signalTarget = { ...target, caseId: request.caseId ?? null };
+
+  if (status === 'SENT') {
+    return {
+      key: 'document.request_sent',
+      label: 'Document request was sent',
+      description: 'A document request was sent; document fulfillment may still be needed.',
+      severity: 'info',
+      actionKey: 'document.request.send',
+      target: signalTarget,
+    };
+  }
+  if (status === 'PENDING' || status === 'SENDING') {
+    const fresh = isFreshFollowUp(request, now);
+    return {
+      key: fresh ? 'document.request_pending' : 'document.request_stuck',
+      label: fresh ? 'Document request delivery is pending' : 'Document request delivery is not finalized',
+      description: fresh
+        ? 'A document request delivery is already pending for this client and case.'
+        : 'The latest document request delivery is still pending after the safe processing window.',
+      severity: fresh ? 'info' : 'warning',
+      actionKey: 'document.request.send',
+      target: signalTarget,
+    };
+  }
+  if (status === 'FAILED') {
+    return {
+      key: 'document.request_failed',
+      label: 'Document request delivery failed',
+      description: 'The latest document request delivery failed and can be retried with a fresh request.',
+      severity: 'warning',
+      actionKey: 'document.request.send',
+      target: signalTarget,
+    };
+  }
+  return null;
+}
+
+function isFreshFollowUp(row: { updatedAt?: Date | string | null; createdAt?: Date | string | null }, now: Date): boolean {
+  const updatedAt = toDateOrNull(row.updatedAt ?? row.createdAt);
+  return !!updatedAt && now.getTime() - updatedAt.getTime() <= CLIENT_FOLLOW_UP_FRESH_MS;
+}
+
+function computeIntakeStatus(latestSubmission: any | null, latestLink: any | null): ClientOperatingSnapshot['intake']['status'] {
+  if (latestSubmission) {
+    const status = String(latestSubmission.status ?? '').toUpperCase();
+    if (status === 'CLIENT_SUBMITTED') return 'submitted';
+    if (status === 'IN_REVIEW' || status === 'PARTIALLY_PROMOTED') return 'in_review';
+    if (status === 'COMPLETED') return 'completed';
+    if (status === 'REJECTED') return 'rejected';
+  }
+  if (String(latestLink?.status ?? '').toUpperCase() === 'ACTIVE') return 'link_active';
+  return 'none';
+}
+
+function computeNotificationStatus(latestNotification: any | null): ClientOperatingSnapshot['notification']['status'] {
+  if (!latestNotification) return 'none';
+  const status = String(latestNotification.status ?? '').toUpperCase();
+  if (status === 'FAILED') return 'failed';
+  if (status === 'PENDING') return 'pending';
+  return 'healthy';
+}
+
+function earliestDate(values: Array<Date | string | null | undefined>): string | null {
+  const dates = values
+    .filter((value): value is Date | string => !!value)
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+  return dates[0] ? dates[0].toISOString() : null;
+}
+
+function toDateOrNull(value: Date | string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isPastDate(value: Date | string | null | undefined, now: Date): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() < now.getTime();
+}
+
+function toIsoOrNull(value: Date | string | null | undefined): string | null {
+  return value ? toIso(value) : null;
 }

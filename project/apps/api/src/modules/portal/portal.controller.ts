@@ -132,7 +132,8 @@ export class PortalController {
       body.clientId,
       body.email,
       body.password,
-      req.user.tenantId
+      req.user.tenantId,
+      { userId: req.user.id }
     );
   }
 
@@ -146,7 +147,7 @@ export class PortalController {
     @Request() req: any,
     @Body() body: { clientId: string }
   ) {
-    return this.portalService.disablePortalUser(body.clientId, req.user.tenantId);
+    return this.portalService.disablePortalUser(body.clientId, req.user.tenantId, { userId: req.user.id });
   }
 
   // ==================== BİLDİRİM ENDPOINTS ====================
@@ -303,7 +304,7 @@ export class PortalController {
     @Request() req: any,
     @Body() body: { note?: string }
   ) {
-    return this.portalService.reviewDocument(id, req.user.tenantId, req.user.sub, true, body.note);
+    return this.portalService.reviewDocument(id, req.user.tenantId, req.user.id, true, body.note);
   }
 
   /**
@@ -317,7 +318,7 @@ export class PortalController {
     @Request() req: any,
     @Body() body: { note?: string }
   ) {
-    return this.portalService.reviewDocument(id, req.user.tenantId, req.user.sub, false, body.note);
+    return this.portalService.reviewDocument(id, req.user.tenantId, req.user.id, false, body.note);
   }
 
   // ==================== MESAJLAŞMA ENDPOINTS ====================
@@ -407,7 +408,7 @@ export class PortalController {
       clientId,
       req.user.tenantId,
       body.content,
-      req.user.sub,
+      req.user.id,
       req.user.name || "Büro",
       body.caseId
     );

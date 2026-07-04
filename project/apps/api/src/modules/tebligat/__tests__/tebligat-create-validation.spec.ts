@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { CaseDebtorLifecycleStatus } from "@prisma/client";
+import { CaseDebtorLifecycleStatus, DebtorType } from "@prisma/client";
 import { TebligatService } from "../tebligat.service";
 import { CaseDebtorLifecycleGuardService } from "../../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import {
@@ -35,10 +35,17 @@ describe("PR-2b TebligatService.create() create validation", () => {
       ...overrides,
     }) as any;
 
-  const build = (opts: { caseDebtor?: any; debtorAddress?: any; tebligat?: any } = {}) => {
+  const build = (
+    opts: { caseDebtor?: any; debtorAddress?: any; tebligat?: any; debtor?: any } = {}
+  ) => {
     const prisma: any = {
       case: {
         findFirst: jest.fn().mockResolvedValue({ id: "case-1", tenantId: "tenant-1" }),
+      },
+      debtor: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(opts.debtor ?? { type: DebtorType.INDIVIDUAL }),
       },
       caseDebtor: {
         findFirst: jest.fn().mockImplementation(async ({ where }: any) => {
@@ -228,6 +235,54 @@ describe("PR-2b TebligatService.create() create validation", () => {
 
     expect(prisma.debtorAddress.findUnique).not.toHaveBeenCalled();
     expect(prisma.tebligat.create).not.toHaveBeenCalled();
+  });
+
+  it("DBND-D3A: ESTATE (tereke) borçlu için tebligat reddedilir", async () => {
+    const { svc, prisma } = build({
+      caseDebtor: validCaseDebtor,
+      debtor: { type: DebtorType.ESTATE },
+    });
+
+    await expect(
+      svc.create("tenant-1", buildDto({ caseDebtorId: "case-debtor-1" }))
+    ).rejects.toThrow(
+      "Tereke borçlu için tebligat üretimi henüz desteklenmiyor. Mirasçı/temsilci bazlı tebligat modeli için hukukî-domain karar bekleniyor."
+    );
+
+    expect(prisma.tebligat.create).not.toHaveBeenCalled();
+  });
+
+  it("DBND-D3A: ESTATE borçlu adresli tebligatta da reddedilir (adres lookup'tan önce)", async () => {
+    const { svc, prisma } = build({
+      caseDebtor: validCaseDebtor,
+      debtor: { type: DebtorType.ESTATE },
+      debtorAddress: validAddress,
+    });
+
+    await expect(
+      svc.create(
+        "tenant-1",
+        buildDto({ caseDebtorId: "case-debtor-1", addressId: "address-1" })
+      )
+    ).rejects.toThrow(BadRequestException);
+
+    expect(prisma.debtorAddress.findUnique).not.toHaveBeenCalled();
+    expect(prisma.tebligat.create).not.toHaveBeenCalled();
+  });
+
+  it("DBND-D3A: INDIVIDUAL/COMPANY borçlu mevcut davranış korunur", async () => {
+    const { svc, prisma } = build({
+      caseDebtor: validCaseDebtor,
+      debtor: { type: DebtorType.COMPANY },
+    });
+
+    const result = await svc.create(
+      "tenant-1",
+      buildDto({ caseDebtorId: "case-debtor-1" })
+    );
+
+    expect(prisma.tebligat.create).toHaveBeenCalled();
+    expect(result.caseDebtorId).toBe("case-debtor-1");
   });
 
   it("undefined caseDebtorId/addressId still accepted", async () => {

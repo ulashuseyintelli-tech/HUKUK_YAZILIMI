@@ -3,11 +3,14 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util";
 // RFA-006: adres dedup (normalize + hash); tüm write yolları ortak helper kullanır.
 import { computeAddressHash, findOrCreateDebtorAddress } from "@/common/address-hash.util";
+// Gate-4: TCKN/VKN format+checksum (tek-kaynak; OCR/import/Party Registry ile ortak helper).
+import { isValidTckn, isValidVkn } from "@/common/identity-validation.util";
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import {
   CreateDebtorDto,
@@ -18,6 +21,16 @@ import {
   UpdateDebtorAddressDto,
   DebtorType,
 } from "./dto/debtor.dto";
+// Task D1A: lifecycle audit + actor + capability (owner-locked 2026-07-02 Option B — bkz. delete()).
+import { AuditService } from "@/modules/audit/audit.service";
+import { OfficeApprovalService } from "@/modules/office-approval/office-approval.service";
+import type { AuditActor } from "@/modules/client/client.service";
+import { buildDebtorFieldDiff, buildDebtorRemoveSnapshot } from "./debtor-audit.util";
+// DBND-D6A-2: paylaşılan Debtor cross-case bildirimi (backend-only, best-effort — bkz. Safe çağrı deseni).
+import {
+  DebtorCrossCaseNotificationService,
+  DebtorNotificationFieldGroupKey,
+} from "./debtor-cross-case-notification.service";
 
 // ==================== PR-D5-a: DEPRECATED addressType/isMernis → KANONİK type/source ====================
 // Frontend hâlâ DTO addressType (EV/IS/TEBLIGAT/MERNIS/KEP) + isMernis gönderir; backend KANONİK
@@ -239,11 +252,29 @@ export interface DebtorDetailDTO extends DebtorListItemDTO {
   service: ServiceDTO;
   assets: AssetsDTO;
   riskFlags: string[];
+  financialSummary?: DebtorFinancialSummaryDTO;
   staleDays?: number;
   quickNote?: string;
   issues: DebtorIssue[];
 }
 
+export interface DebtorFinancialSummaryDTO {
+  totalConfirmedCollected: number;
+  totalPendingAmount: number;
+  totalCancelledAmount: number;
+  totalRefundedAmount: number;
+  collectionCount: number;
+  lastCollectionDate?: string;
+  currencyBreakdown: Array<{
+    currency: string;
+    confirmedCollected: number;
+    pendingAmount: number;
+    cancelledAmount: number;
+    refundedAmount: number;
+    collectionCount: number;
+    lastCollectionDate?: string;
+  }>;
+}
 // Address DTO for frontend
 export interface AddressDTO {
   id: string;
@@ -289,11 +320,48 @@ const DebtorIssueLabelMap: Record<DebtorIssueCode, string> = {
   NO_ASSET_QUERY: "Malvarlığı sorgusu yapılmadı",
 };
 
+// DBND-D1: her DebtorType'ın KENDİNE ÖZEL scalar alanları (estateHeirs relation'ı hariç —
+// o zaten update()'te ayrı ele alınır). update() bunu iki amaçla kullanır: (1) dto'da
+// newType'a AİT OLMAYAN bir alan gelirse reddet (cross-type field kirliliği), (2) tip
+// GERÇEKTEN değişiyorsa eski tipin alanlarını açıkça null'a çeker (Frankenstein kayıt önlenir).
+const DEBTOR_TYPE_FIELDS: Record<DebtorType, string[]> = {
+  [DebtorType.INDIVIDUAL]: ["firstName", "lastName", "tckn", "gender", "birthDate", "fatherName", "motherName", "birthPlace"],
+  [DebtorType.COMPANY]: ["companyName", "vkn", "taxOffice", "mersisNo", "tradeRegisterNo"],
+  [DebtorType.PUBLIC_INSTITUTION]: ["institutionName", "detsisNo", "institutionType", "parentInstitution", "authorizedPerson"],
+  [DebtorType.ESTATE]: ["deceasedName", "deceasedTckn", "deathDate", "inheritanceDocPath"],
+};
+
+// DBND-D6A-1: paylaşılan Debtor.id'de hangi alan değişikliklerinin diğer aktif dosyalara
+// cross-file alert üretmesi gerektiği (kategori bazlı — KVKK: ham değer taşınmaz, yalnız
+// kategori adı). Adres kategori "address" ayrıca updateAddress()'te sabitlenir.
+const NOTIFY_FIELD_CATEGORIES: Record<string, "identity" | "contact" | "name"> = {
+  tckn: "identity",
+  vkn: "identity",
+  detsisNo: "identity",
+  deceasedTckn: "identity",
+  phone: "contact",
+  email: "contact",
+  kepAddress: "contact",
+  firstName: "name",
+  lastName: "name",
+  companyName: "name",
+  institutionName: "name",
+  deceasedName: "name",
+};
+
+// Cross-file alert'in dikkate aldığı audit action'ları (bkz. getCrossFileDebtorAlerts).
+const CROSS_FILE_ALERT_ACTIONS = ["DEBTOR_UPDATE", "DEBTOR_ADDRESS_UPDATE"] as const;
+
 @Injectable()
 export class DebtorService {
   constructor(
     private prisma: PrismaService,
-    private readonly caseDebtorLifecycleGuard?: CaseDebtorLifecycleGuardService
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
+    private readonly caseDebtorLifecycleGuard?: CaseDebtorLifecycleGuardService,
+    // DBND-D6A-2: opsiyonel — mevcut testler (yalnız 4 arg ile constructor çağıran) kırılmasın diye
+    // caseDebtorLifecycleGuard ile AYNI opsiyonel-DI deseni. Sağlanmazsa fan-out sessizce atlanır.
+    private readonly crossCaseNotification?: DebtorCrossCaseNotificationService
   ) {}
 
   private requireCaseDebtorLifecycleGuard(): CaseDebtorLifecycleGuardService {
@@ -301,6 +369,21 @@ export class DebtorService {
       throw new Error("CaseDebtorLifecycleGuardService is required for CaseDebtor lifecycle writes.");
     }
     return this.caseDebtorLifecycleGuard;
+  }
+
+  /**
+   * Task D1A (owner-locked 2026-07-02, Option B) — borçlu FİZİKSEL SİLME yetkisi.
+   * ClientService.assertCanManageLifecycle / PortalService.assertCanManagePortalAccess ile BİREBİR
+   * desen (reuse, yeni altyapı YOK): PARTNER veya canApproveOfficeActions=true delege avukat.
+   * Staff/normal kullanıcı 403. YALNIZ delete() çağırır — create()/update() capability-gate'e
+   * TABİ DEĞİL (owner kararı: yalnız fiziksel silme kısıtlanır).
+   */
+  private async assertCanManageDebtorLifecycle(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        "Borçlu kaydını silme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)"
+      );
+    }
   }
 
   // ==================== CRUD OPERATIONS ====================
@@ -418,7 +501,13 @@ export class DebtorService {
   }
 
 
-  async create(tenantId: string, dto: CreateDebtorDto) {
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.create() → POST /debtors (userId req.user.id'den; Task D1A)
+  /// - CaseService.create() → dosya-içi inline borçlu taraması (actor GEÇİLMEZ; case-flow henüz
+  ///   actor taşımıyor — audit userId=undefined kalır, mevcut davranış, bu tur kapsamı DIŞI)
+  /// </remarks>
+  async create(tenantId: string, dto: CreateDebtorDto, actor?: AuditActor) {
     // Validate required fields based on type
     this.validateDebtorByType(dto);
 
@@ -531,19 +620,52 @@ export class DebtorService {
       },
     });
 
+    // Task D1A: DEBTOR_CREATE audit (aktör YALNIZ auth context'ten; body/dto'dan türetilmez).
+    // create() transaction'a sarılı DEĞİL (mevcut davranış korunur) → standalone log().
+    await this.audit.log({
+      tenantId,
+      action: 'DEBTOR_CREATE',
+      entityType: 'DEBTOR',
+      entityId: debtor.id,
+      userId: actor?.userId,
+      metadata: { fieldDiff: buildDebtorFieldDiff(null, debtor) },
+    });
+
     // PR-D4c: completeness görevini senkronla (best-effort).
     await this.syncDebtorTaskByIdSafe(tenantId, debtor.id);
 
     return debtor;
   }
 
-  async update(tenantId: string, id: string, dto: UpdateDebtorDto) {
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.update() → PUT /debtors/:id (userId req.user.id'den; Task D1A)
+  /// </remarks>
+  async update(tenantId: string, id: string, dto: UpdateDebtorDto, actor?: AuditActor) {
     const existing = await this.findOne(tenantId, id);
 
     // If type is changing, validate new type requirements
     const newType = dto.type || existing.type;
+
+    // DBND-D1: newType'a AİT OLMAYAN tip-özel bir alan dto'da (non-null) gelirse reddet.
+    // Tip değişse de değişmese de geçerli — örn. INDIVIDUAL bir kayda companyName yazılamaz,
+    // COMPANY'ye type değişmeden firstName yazılamaz.
+    const foreignFields = (Object.keys(DEBTOR_TYPE_FIELDS) as DebtorType[])
+      .filter((t) => t !== newType)
+      .flatMap((t) => DEBTOR_TYPE_FIELDS[t])
+      .filter((field) => (dto as any)[field] !== undefined && (dto as any)[field] !== null);
+    if (foreignFields.length > 0) {
+      throw new BadRequestException(
+        `Bu alan(lar) seçili borçlu tipiyle (${newType}) uyumsuz: ${foreignFields.join(", ")}`
+      );
+    }
+
     if (dto.type) {
       this.validateDebtorByType({ ...dto, type: newType } as CreateDebtorDto);
+    } else if (dto.tckn || dto.vkn) {
+      // Gate-4: tip değişmese de payload'daki kimlik formatı doğrulanır (yalnız payload alanı;
+      // eski bozuk veri için alakasız güncelleme bloklanmaz).
+      this.validateIdentityFormat(newType as DebtorType, { tckn: dto.tckn, vkn: dto.vkn });
     }
 
     // Check for duplicates if identity number is changing
@@ -567,8 +689,25 @@ export class DebtorService {
     // Computed `name` ve `identityNo` TEK KAYNAK türevidir → her update'te mevcut+dto birleşiminden
     // YENİDEN hesaplanır (PR-D1). `??` ile yalnız dto'da gelmeyen alan mevcuttan alınır.
     // PR-D2b: estateHeirs bir RELATION → scalar update'e karışmasın diye dto'dan ayrıştırılır.
-    const { estateHeirs, confirmSimilarNameUpdate, ...debtorDto } = dto as any;
+    // sourceCaseId Debtor'un scalar bir alanı DEĞİL — updateData'ya (Prisma write'ına) ASLA
+    // karışmamalı. İki bağımsız tüketicisi var: DBND-D6A-1 (audit metadata) ve DBND-D6A-2
+    // (cross-case bildirim fan-out parametresi) — aralarında kod bağı yok.
+    const { estateHeirs, confirmSimilarNameUpdate, sourceCaseId, ...debtorDto } = dto as any;
     const updateData: any = { ...debtorDto };
+
+    // DBND-D1: tip GERÇEKTEN değişiyorsa (existing.type !== newType), eski tipin yeni tipe ait
+    // OLMAYAN alanlarını açıkça null'a çek. foreignFields kontrolü dto'nun yeni değer taşımasını
+    // zaten engelledi; burada eksik olan tek şey DB'deki ESKİ satırın temizlenmesi.
+    if (dto.type && dto.type !== existing.type) {
+      const oldTypeFields = DEBTOR_TYPE_FIELDS[existing.type as DebtorType] || [];
+      const newTypeFields = new Set(DEBTOR_TYPE_FIELDS[newType as DebtorType] || []);
+      for (const field of oldTypeFields) {
+        if (!newTypeFields.has(field)) {
+          updateData[field] = null;
+        }
+      }
+    }
+
     const merged = {
       type: dto.type ?? existing.type,
       firstName: dto.firstName ?? existing.firstName,
@@ -643,18 +782,92 @@ export class DebtorService {
       });
     }
 
+    // Task D1A: DEBTOR_UPDATE audit (aktör YALNIZ auth context'ten; body/dto'dan türetilmez).
+    // update() transaction'a sarılı DEĞİL (estateHeirs dalı hariç, o zaten kendi tx'inde) →
+    // standalone log() (sanitized field diff, ham PII yok).
+    // DBND-D6A-1: fieldDiff'ten türetilen notifyCategories + sourceCaseId, getCrossFileDebtorAlerts()
+    // tarafından okunur (paylaşılan Debtor.id diğer aktif dosyalara pull-based uyarı üretir).
+    const fieldDiff = buildDebtorFieldDiff(existing, result);
+    const notifyCategories = Array.from(
+      new Set(
+        fieldDiff
+          .map((entry) => NOTIFY_FIELD_CATEGORIES[entry.field])
+          .filter((category): category is "identity" | "contact" | "name" => !!category)
+      )
+    );
+    await this.audit.log({
+      tenantId,
+      action: 'DEBTOR_UPDATE',
+      entityType: 'DEBTOR',
+      entityId: id,
+      userId: actor?.userId,
+      metadata: {
+        fieldDiff,
+        sourceCaseId: sourceCaseId ?? null,
+        ...(notifyCategories.length ? { notifyCategories } : {}),
+      },
+    });
+
     // PR-D4c: completeness görevini senkronla (best-effort).
     await this.syncDebtorTaskByIdSafe(tenantId, id);
+
+    // DBND-D6A-2: paylaşılan Debtor alan değişikliği → diğer case'lerdeki sorumlu ekibe cross-case
+    // bildirim (best-effort, syncDebtorTaskByIdSafe ile AYNI "Safe" felsefesi — asıl update'i
+    // ASLA bloklamaz/geri almaz). sourceCaseId çağıran tarafından verilirse (dto.sourceCaseId)
+    // o case fan-out'tan hariç tutulur; verilmezse (bugünkü çoğu çağrı) hariç tutma uygulanmaz.
+    await this.notifyCrossCaseFieldGroupChangesSafe(tenantId, id, existing, result, sourceCaseId, actor);
 
     return result;
   }
 
+  private async notifyCrossCaseFieldGroupChangesSafe(
+    tenantId: string,
+    debtorId: string,
+    existing: { name: string; identityNo: string | null; kepAddress: string | null; updatedAt: Date },
+    result: { name: string; identityNo: string | null; kepAddress: string | null },
+    sourceCaseId: string | undefined,
+    actor?: AuditActor
+  ): Promise<void> {
+    if (!this.crossCaseNotification) return;
+    try {
+      const fieldGroups: DebtorNotificationFieldGroupKey[] = [];
+      if (existing.name !== result.name) fieldGroups.push("NAME");
+      if (existing.identityNo !== result.identityNo) fieldGroups.push("IDENTITY");
+      if (existing.kepAddress !== result.kepAddress) fieldGroups.push("KEP_ADDRESS");
+      if (fieldGroups.length === 0) return;
+
+      await this.crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId,
+        fieldGroups,
+        sourceCaseId,
+        actorUserId: actor?.userId,
+        // Değişim-anı çapası: bu update'ten ÖNCEKİ (existing) updatedAt. Aynı önceki duruma karşı
+        // yarışan/eşzamanlı çağrılar AYNI existing.updatedAt'i okur → aynı dedupeKey → ikincisi
+        // P2002 ile atlanır. Sonraki gerçek bir update farklı bir existing.updatedAt görür →
+        // farklı anahtar → yeniden bildirim üretilebilir.
+        changeGeneration: existing.updatedAt,
+      });
+    } catch (e: any) {
+      // Yutulur — cross-case bildirim asıl Debtor mutasyonunu ASLA bloklamaz.
+    }
+  }
+
   /// <remarks>
   /// Çağrıldığı yerler:
-  /// - DebtorController.delete() → DELETE /debtors/:id (borçlu hard-delete preflight)
+  /// - DebtorController.delete() → DELETE /debtors/:id (userId req.user.id'den; Task D1A)
+  ///
+  /// Task D1A (owner-locked 2026-07-02, Option B): borçlu KULLANILMIŞSA (dosya/tarihçe/adres/
+  /// görev/istihbarat/vb. bağımlılık) bu metod ZATEN 400 ile bloklar — DEĞİŞMEDİ (13-katmanlı
+  /// guard aynen korunur). YALNIZ hiç kullanılmamış (footprint'siz) taslak kayıt fiziksel
+  /// silinebilir; O YOL ARTIK capability-gate'li (PARTNER/delege avukat) + audit-snapshot'lı.
   /// </remarks>
-  async delete(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
+  async delete(tenantId: string, id: string, actor?: AuditActor) {
+    const existing = await this.findOne(tenantId, id);
+
+    // Task D1A: fiziksel silme yetkisi — bağımlılık kontrollerinden ÖNCE (yetkisiz aktöre
+    // borçlunun bağımlılık durumu bile sızdırılmaz; fail-fast).
+    await this.assertCanManageDebtorLifecycle(actor?.userId, tenantId);
 
     const caseDebtorCount = await this.prisma.caseDebtor.count({
       where: {
@@ -730,7 +943,21 @@ export class DebtorService {
       );
     }
 
-    return this.prisma.debtor.delete({ where: { id } });
+    // Task D1A: snapshot-audit + fiziksel silme AYNI transaction (ClientService.remove() C0-a
+    // deseniyle birebir — audit yazılamazsa silme de rollback olur; geri-dönüşsüz eylem için
+    // atomiklik şart).
+    return this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.debtor.delete({ where: { id } });
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'DEBTOR_DELETE',
+        entityType: 'DEBTOR',
+        entityId: id,
+        userId: actor?.userId,
+        metadata: { hardDelete: true, oldSnapshot: buildDebtorRemoveSnapshot(existing) },
+      });
+      return deleted;
+    });
   }
 
   // ==================== PR-D4c: COMPLETENESS TASK SYNC ====================
@@ -1125,7 +1352,8 @@ export class DebtorService {
     // ARTIK YAZILMAZ (bağımlılık kesildi). Kanonik type/source asıl kaynak.
     const canonical = mapAddressTypeToCanonical(dto.addressType, dto.isMernis);
     // RFA-006: isPrimary'i find-or-create'ten AYIR → find-or-create sonrası tutarlı uygula.
-    const { addressType: _at, isMernis: _im, isPrimary: _ip, ...rest } = dto as any;
+    // DBND-D6A-2: sourceCaseId DebtorAddress'in bir alanı DEĞİL — Prisma write'ına ASLA karışmamalı.
+    const { addressType: _at, isMernis: _im, isPrimary: _ip, sourceCaseId, ...rest } = dto as any;
     const { address: createdRaw, created: isNew } = await findOrCreateDebtorAddress(this.prisma, {
       debtorId, ...rest, type: canonical.type as any, source: canonical.source as any,
     });
@@ -1151,15 +1379,47 @@ export class DebtorService {
       if (!created.verified) {
         await this.syncIntelligenceTaskSafe(tenantId, debtorId, created.id);
       }
+      // DBND-D6A-2: yeni adres = adres değişikliği (idempotent eşleşmede tetiklenmez, best-effort).
+      await this.notifyCrossCaseAddressChangeSafe(tenantId, debtorId, created.createdAt, sourceCaseId);
     }
     return created;
   }
 
+  private async notifyCrossCaseAddressChangeSafe(
+    tenantId: string,
+    debtorId: string,
+    changeGeneration: Date,
+    sourceCaseId?: string
+  ): Promise<void> {
+    if (!this.crossCaseNotification) return;
+    try {
+      await this.crossCaseNotification.notifyFieldGroupChanges({
+        tenantId,
+        debtorId,
+        fieldGroups: ["ADDRESS"],
+        sourceCaseId,
+        changeGeneration,
+      });
+    } catch (e: any) {
+      // Yutulur — cross-case bildirim asıl adres mutasyonunu ASLA bloklamaz.
+    }
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.updateAddress() → PUT /debtors/:id/addresses/:addressId (debtors/page.tsx
+  ///   bağımsız borçlu listesi adres düzenleme — AYRI ve İKİNCİL yol; drawer içindeki
+  ///   AddressFormModal AddressService.update() → PUT /addresses/:addressId'yi kullanır, BUNU DEĞİL)
+  /// DBND-D6A-2 NOT: notifyCrossCaseAddressChangeSafe yalnız BU (ikincil) yoldan + addAddress()'ten
+  /// tetiklenir; AddressService.update() (PRIMARY/drawer yolu) kapsam DIŞI kalır — bilinen boşluk,
+  /// bu PR'de GENİŞLETİLMEDİ.
+  /// </remarks>
   async updateAddress(
     tenantId: string,
     debtorId: string,
     addressId: string,
-    dto: UpdateDebtorAddressDto
+    dto: UpdateDebtorAddressDto,
+    actor?: AuditActor
   ) {
     await this.findOne(tenantId, debtorId);
 
@@ -1189,11 +1449,139 @@ export class DebtorService {
             dto.isMernis ?? address.type === 'MERNIS'
           )
         : null;
-    const { addressType: _at, isMernis: _im, ...restDto } = dto as any;
-    return this.prisma.debtorAddress.update({
+    const { addressType: _at, isMernis: _im, sourceCaseId, ...restDto } = dto as any;
+    const updated = await this.prisma.debtorAddress.update({
       where: { id: addressId },
       data: { ...restDto, ...(canonicalUpd ? { type: canonicalUpd.type as any, source: canonicalUpd.source as any } : {}) },
     });
+
+    // DBND-D6A-1: DEBTOR_ADDRESS_UPDATE audit — entityId BİLEREK debtorId (addressId DEĞİL), çünkü
+    // getCrossFileDebtorAlerts() Debtor bazında sorgular. Ham adres metni YAZILMAZ (KVKK); yalnız
+    // "adres değişti" kategorisi + hangi dosyadan tetiklendiği (sourceCaseId) tutulur.
+    await this.audit.log({
+      tenantId,
+      action: 'DEBTOR_ADDRESS_UPDATE',
+      entityType: 'DEBTOR',
+      entityId: debtorId,
+      userId: actor?.userId,
+      metadata: { addressId, sourceCaseId: sourceCaseId ?? null },
+    });
+
+    // DBND-D6A-2: mevcut adresin içeriği değişti (best-effort, DBND-D6A-1'in yukarıdaki audit
+    // yazımından BAĞIMSIZ — ayrı bir kalıcı bildirim üretir, aynı sourceCaseId'yi kendi amacı
+    // için tüketir). changeGeneration = güncelleme-ÖNCESİ updatedAt.
+    await this.notifyCrossCaseAddressChangeSafe(tenantId, debtorId, address.updatedAt, sourceCaseId);
+
+    return updated;
+  }
+
+  /**
+   * DBND-D6A-1: Paylaşılan Debtor.id (aynı borçlu birden fazla aktif dosyada) yakın zamanda
+   * adres/kimlik/iletişim/unvan değişikliğine uğradıysa, çağıran dosya (excludeCaseId) DIŞINDAKİ
+   * diğer aktif dosyalar için basit bir "bu borçlu güncellendi" uyarısı üretir. PUSH bildirim
+   * DEĞİLDİR — pull/MVP: yalnız drawer açıldığında hesaplanır, kalıcı bildirim kaydı YAZILMAZ,
+   * migration gerekmez (mevcut AuditLog + CaseDebtor okunur). Ham PII döndürmez (yalnız kategori
+   * adları + tarih + hedef dosya/sorumlu bilgisi).
+   *
+   * excludeCaseId verilmezse (güvenli fallback) hiçbir dosya/kayıt hariç tutulmaz — eksik bilgi
+   * göstermektense fazla bilgi göstermek tercih edilir.
+   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.getCrossFileAlerts() → GET /debtors/:id/cross-file-alerts (DebtorDetailDrawer açılışı)
+  /// </remarks>
+  async getCrossFileDebtorAlerts(
+    tenantId: string,
+    debtorId: string,
+    excludeCaseId?: string
+  ): Promise<{
+    hasAlert: boolean;
+    lastChangedAt: string | null;
+    categories: string[];
+    sourceCaseId: string | null;
+    otherActiveCases: { caseId: string; fileNumber: string | null; responsibleName: string | null }[];
+  }> {
+    const empty = {
+      hasAlert: false,
+      lastChangedAt: null,
+      categories: [] as string[],
+      sourceCaseId: null,
+      otherActiveCases: [] as { caseId: string; fileNumber: string | null; responsibleName: string | null }[],
+    };
+
+    // Yalnız GERÇEK Debtor.id paylaşımı (aynı satır, CaseDebtor junction'ı üzerinden N dosya).
+    // identityNo/VKN eşleşen AYRI Debtor kayıtları bu sorgunun kapsamı DIŞINDA (ayrı bir dedup
+    // konusu — bkz. DBND-D6 GO-ANALYZE raporu, bilinçli olarak karıştırılmadı).
+    const activeCaseDebtors = await this.prisma.caseDebtor.findMany({
+      where: {
+        debtorId,
+        lifecycleStatus: "ACTIVE",
+        case: { tenantId },
+        ...(excludeCaseId ? { caseId: { not: excludeCaseId } } : {}),
+      },
+      select: {
+        caseId: true,
+        case: {
+          select: {
+            fileNumber: true,
+            responsibleLawyer: { select: { name: true, surname: true } },
+            responsibleStaff: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+
+    if (activeCaseDebtors.length === 0) {
+      return empty; // borçlu paylaşılmıyor veya başka aktif dosyası yok → alert yok
+    }
+
+    const recentLogs = await this.prisma.auditLog.findMany({
+      where: {
+        tenantId,
+        entityType: "DEBTOR",
+        entityId: debtorId,
+        action: { in: [...CROSS_FILE_ALERT_ACTIONS] },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: { action: true, createdAt: true, metadata: true },
+    });
+
+    const relevant = recentLogs.find((log) => {
+      if (log.action === "DEBTOR_ADDRESS_UPDATE") return true;
+      const meta = log.metadata as any;
+      return Array.isArray(meta?.notifyCategories) && meta.notifyCategories.length > 0;
+    });
+
+    if (!relevant) {
+      return empty; // paylaşılıyor ama bildirim-tetikleyici bir alan hiç değişmemiş
+    }
+
+    const meta = relevant.metadata as any;
+    const relevantSourceCaseId: string | null = meta?.sourceCaseId ?? null;
+
+    // Kendi dosyandan yaptığın değişiklik → kendine uyarı gösterme. excludeCaseId YOKSA
+    // (güvenli fallback) bu kontrol atlanır, alert her zaman gösterilir.
+    if (excludeCaseId && relevantSourceCaseId === excludeCaseId) {
+      return empty;
+    }
+
+    return {
+      hasAlert: true,
+      lastChangedAt: relevant.createdAt.toISOString(),
+      categories:
+        relevant.action === "DEBTOR_ADDRESS_UPDATE" ? ["address"] : (meta?.notifyCategories ?? []),
+      sourceCaseId: relevantSourceCaseId,
+      otherActiveCases: activeCaseDebtors.map((cd) => ({
+        caseId: cd.caseId,
+        fileNumber: cd.case?.fileNumber ?? null,
+        responsibleName: cd.case?.responsibleLawyer
+          ? `${cd.case.responsibleLawyer.name} ${cd.case.responsibleLawyer.surname}`.trim()
+          : cd.case?.responsibleStaff
+            ? `${cd.case.responsibleStaff.firstName} ${cd.case.responsibleStaff.lastName}`.trim()
+            : null,
+      })),
+    };
   }
 
   async deleteAddress(tenantId: string, debtorId: string, addressId: string) {
@@ -1277,6 +1665,44 @@ export class DebtorService {
           throw new BadRequestException("Tereke için en az bir mirasçı girilmelidir");
         }
         break;
+    }
+
+    // Gate-4: kimlik FORMAT + tip-katı doğrulama (payload'da bulunan tckn/vkn için).
+    this.validateIdentityFormat(dto.type, { tckn: dto.tckn, vkn: dto.vkn });
+  }
+
+  /**
+   * Gate-4: kimlik FORMAT + tip-katı doğrulama. Yalnız payload'da BULUNAN alanlar denetlenir
+   * (update'te eski bozuk veri için alakasız güncelleme bloklanmaz). Checksum: common/
+   * identity-validation.util (isValidTckn/isValidVkn) reuse — OCR/import/HTTP tek-kaynak.
+   *
+   * Kurallar (ürün): TCKN yalnız INDIVIDUAL; VKN INDIVIDUAL'a yasak (COMPANY/kamu/tüzel serbest).
+   * DETSIS/MERSIS/deceasedTckn KAPSAM DIŞI (format belirsiz / ayrı alan → ayrı ele alınacak).
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - DebtorService.validateDebtorByType() → create + update(tip değişimi) kimlik formatı
+   * - DebtorService.update() → tip değişmeden kimlik güncellemesinde format
+   * </remarks>
+   */
+  private validateIdentityFormat(
+    type: DebtorType | undefined,
+    ids: { tckn?: string | null; vkn?: string | null }
+  ): void {
+    if (ids.tckn) {
+      if (type !== DebtorType.INDIVIDUAL) {
+        throw new BadRequestException("TCKN yalnızca gerçek kişi (INDIVIDUAL) için girilebilir");
+      }
+      if (!isValidTckn(ids.tckn)) {
+        throw new BadRequestException("Geçersiz TCKN (11 hane + doğrulama hanesi)");
+      }
+    }
+    if (ids.vkn) {
+      if (type === DebtorType.INDIVIDUAL) {
+        throw new BadRequestException("Gerçek kişiye (INDIVIDUAL) VKN girilemez");
+      }
+      if (!isValidVkn(ids.vkn)) {
+        throw new BadRequestException("Geçersiz VKN (10 hane + doğrulama hanesi)");
+      }
     }
   }
 
@@ -1503,6 +1929,7 @@ export class DebtorService {
     const issues = this.calculateDebtorIssues(caseDebtor, debtor, address);
     const alertLevel = this.getMaxAlertLevel(issues);
     const serviceStatus = (caseDebtor.serviceStatus as ServiceStatus) || "NOT_STARTED";
+    const financialSummary = await this.buildCaseDebtorFinancialSummary(tenantId, caseId, caseDebtor.id);
 
     return {
       id: debtor.id,
@@ -1561,12 +1988,98 @@ export class DebtorService {
         lastQueryAt: caseDebtor.assetLastQueryAt?.toISOString(),
       },
       riskFlags: this.extractRiskFlags(debtor, debtor.debtorAddresses, caseDebtor.selectedAddressId || undefined),
+      financialSummary,
       staleDays: this.calculateStaleDays(caseDebtor.updatedAt),
       quickNote: caseDebtor.quickNote || undefined,
       issues,
     };
   }
 
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - DebtorService.getCaseDebtorDetail() -> GET /debtors/case/:caseId/:caseDebtorId (borclu finansal read-model)
+  /// </remarks>
+  private async buildCaseDebtorFinancialSummary(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId: string,
+  ): Promise<DebtorFinancialSummaryDTO> {
+    const collections = await this.prisma.collection.findMany({
+      where: {
+        tenantId,
+        caseId,
+        caseDebtorId,
+      },
+      select: {
+        amount: true,
+        currency: true,
+        status: true,
+        date: true,
+      },
+    });
+
+    const byCurrency = new Map<string, DebtorFinancialSummaryDTO["currencyBreakdown"][number]>();
+    const summary: DebtorFinancialSummaryDTO = {
+      totalConfirmedCollected: 0,
+      totalPendingAmount: 0,
+      totalCancelledAmount: 0,
+      totalRefundedAmount: 0,
+      collectionCount: collections.length,
+      currencyBreakdown: [],
+    };
+
+    const addByStatus = (bucket: DebtorFinancialSummaryDTO["currencyBreakdown"][number], status: string, amount: number) => {
+      switch (status) {
+        case "CONFIRMED":
+          bucket.confirmedCollected += amount;
+          summary.totalConfirmedCollected += amount;
+          break;
+        case "PENDING":
+          bucket.pendingAmount += amount;
+          summary.totalPendingAmount += amount;
+          break;
+        case "CANCELLED":
+          bucket.cancelledAmount += amount;
+          summary.totalCancelledAmount += amount;
+          break;
+        case "REFUNDED":
+          bucket.refundedAmount += amount;
+          summary.totalRefundedAmount += amount;
+          break;
+      }
+    };
+
+    for (const collection of collections) {
+      const currency = collection.currency || "TRY";
+      const amount = Number(collection.amount) || 0;
+      let bucket = byCurrency.get(currency);
+      if (!bucket) {
+        bucket = {
+          currency,
+          confirmedCollected: 0,
+          pendingAmount: 0,
+          cancelledAmount: 0,
+          refundedAmount: 0,
+          collectionCount: 0,
+        };
+        byCurrency.set(currency, bucket);
+      }
+
+      bucket.collectionCount += 1;
+      addByStatus(bucket, String(collection.status), amount);
+
+      const dateIso = collection.date?.toISOString?.();
+      if (dateIso && (!bucket.lastCollectionDate || dateIso > bucket.lastCollectionDate)) {
+        bucket.lastCollectionDate = dateIso;
+      }
+      if (dateIso && (!summary.lastCollectionDate || dateIso > summary.lastCollectionDate)) {
+        summary.lastCollectionDate = dateIso;
+      }
+    }
+
+    summary.currencyBreakdown = Array.from(byCurrency.values()).sort((a, b) => a.currency.localeCompare(b.currency));
+    return summary;
+  }
   /**
    * Update quick note for a case debtor
    */

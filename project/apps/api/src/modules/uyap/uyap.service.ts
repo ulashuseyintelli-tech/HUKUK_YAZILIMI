@@ -5,6 +5,7 @@ import { CasePolicyEngine } from '../policy-engine/case-policy-engine.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { maskIdentity } from '../../common/pii-mask.util';
 import { ValidationGateService } from '../validation-gate/validation-gate.service'; // PR-D4e-6: karar-anı risk snapshot
+import { IntegrationErrorReporter } from '../error-log/integration-error-reporter'; // PR-3: UYAP hataları → ErrorLog
 
 /**
  * UYAP Entegrasyon Servisi
@@ -91,6 +92,7 @@ export class UyapService {
     @Inject(forwardRef(() => PoaService))
     private poaService: PoaService,
     private validationGate: ValidationGateService, // PR-D4e-6: haciz karar-anı risk snapshot audit
+    private readonly errorReporter: IntegrationErrorReporter, // PR-3: UYAP hataları → ErrorLog (source=UYAP)
     @Optional() @Inject(forwardRef(() => CasePolicyEngine))
     private casePolicyEngine?: CasePolicyEngine,
   ) {}
@@ -779,7 +781,7 @@ export class UyapService {
     response: UyapResponse,
     errorMessage?: string,
   ): Promise<void> {
-    await this.prisma.uyapRequestLog.update({
+    const updated = await this.prisma.uyapRequestLog.update({
       where: { id: requestId },
       data: {
         responseData: response as any,
@@ -791,6 +793,20 @@ export class UyapService {
     });
 
     this.logger.debug(`UYAP Response logged: ${requestId} - ${response.success ? 'SUCCESS' : 'FAILED'}`);
+
+    // PR-3: TÜM UYAP operasyon başarısızlıkları bu ortak yoldan geçer → ErrorLog (source=UYAP).
+    // report() fire-and-forget + swallow + PII-redacted; ham UYAP payload/taraf verisi/TCKN YAZILMAZ.
+    if (!response.success) {
+      void this.errorReporter.report({
+        source: 'UYAP',
+        operation: `uyap.${updated.requestType ?? 'request'}`,
+        error: {
+          name: response.errorCode ?? 'UyapError',
+          message: errorMessage ?? response.errorMessage ?? 'UYAP işlemi başarısız',
+        },
+        metadata: { safeErrorCode: response.errorCode, retryCount: updated.retryCount },
+      });
+    }
   }
 
   /**

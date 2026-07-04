@@ -160,6 +160,27 @@ export class ExpenseRequestController {
   }
 
   /**
+   * S8-B FAZ-1b — Masraf DAĞITIM-UYGUNLUĞU onayı (PENDING_APPROVAL → APPROVED). Yalnız APPROVED masraf
+   * otomatik dağıtıma (reimbursement) girer. finalize (müvekkile gönder) AYRI; bu iç dağıtım-onayı.
+   * POST /expense-requests/:id/approve
+   */
+  @Post(':id/approve')
+  @CpeRequired(ActionCode.APPROVE_EXPENSE, { caseIdFromExpenseParam: true })
+  async approveForDistribution(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.service.approveForDistribution(req.user.tenantId, id, req.user.id);
+  }
+
+  /**
+   * S8-B FAZ-1b — Masraf dağıtım-onayını reddet (PENDING_APPROVAL → REJECTED). Gerekçe (note) opsiyonel.
+   * POST /expense-requests/:id/reject
+   */
+  @Post(':id/reject')
+  @CpeRequired(ActionCode.APPROVE_EXPENSE, { caseIdFromExpenseParam: true })
+  async rejectForDistribution(@Req() req: AuthRequest, @Param('id') id: string, @Body() body: { note?: string }) {
+    return this.service.rejectForDistribution(req.user.tenantId, id, req.user.id, body?.note);
+  }
+
+  /**
    * Ödeme kaydet
    * POST /expense-requests/:id/payment
    * 
@@ -187,8 +208,13 @@ export class ExpenseRequestController {
    * GET /expense-requests/case/:caseId/summary
    */
   @Get('case/:caseId/summary')
-  async getExpenseSummary(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
-    return this.service.getExpenseSummaryForCase(req.user.tenantId, caseId);
+  async getExpenseSummary(
+    @Req() req: AuthRequest,
+    @Param('caseId') caseId: string,
+    @Query('clientId') clientId?: string,
+  ) {
+    // clientId opsiyonel → seçili müvekkile filtreli masraf özeti (TM3 Faz7-V). Salt-okuma.
+    return this.service.getExpenseSummaryForCase(req.user.tenantId, caseId, clientId);
   }
 
   /**

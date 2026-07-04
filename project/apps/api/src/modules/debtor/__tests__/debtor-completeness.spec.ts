@@ -60,7 +60,7 @@ const callSync = (svc: any, tenantId: string, debtor: any) => (svc as any).syncD
 describe("DebtorService.syncDebtorTask (client deseni ikizi)", () => {
   it("eksik var + görev yok → DEBTOR_INFO görevi create (debtorId + dedupe + subtype)", async () => {
     const prisma = buildPrisma(null) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await callSync(svc, "t1", { id: "d1", type: "INDIVIDUAL" }); // her şey eksik
 
@@ -79,7 +79,7 @@ describe("DebtorService.syncDebtorTask (client deseni ikizi)", () => {
 
   it("eksik yok + açık görev → AUTO_SYSTEM COMPLETED", async () => {
     const prisma = buildPrisma({ id: "tk", status: "PENDING" }) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await callSync(svc, "t1", { id: "d1", type: "COMPANY", vkn: "1234567890", phone: "0212", debtorAddresses: [{ id: "a1" }] });
 
@@ -90,7 +90,7 @@ describe("DebtorService.syncDebtorTask (client deseni ikizi)", () => {
 
   it("eksik var + kapalı görev → yeniden açılır (PENDING + STAFF, kapanış izi temizlenir)", async () => {
     const prisma = buildPrisma({ id: "tk", status: "COMPLETED" }) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await callSync(svc, "t1", { id: "d1", type: "INDIVIDUAL" });
 
@@ -114,7 +114,7 @@ describe("DebtorService.findAll — PR-D4d completeness sinyali", () => {
         count: jest.fn().mockResolvedValue(2),
       },
     } as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     const res = await svc.findAll("t1", {});
 
@@ -129,7 +129,7 @@ describe("DebtorService.findAll — PR-D4d completeness sinyali", () => {
     const prisma = {
       debtor: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
     } as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.findAll("t1", { sortBy: "name", sortOrder: "asc" });
     expect(prisma.debtor.findMany.mock.calls[0][0].orderBy).toEqual({ name: "asc" });

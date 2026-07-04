@@ -15,7 +15,11 @@ describe("LawyerService.update — duplicate guard (PR-U1)", () => {
         update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...selfRecord, ...data })),
       },
     };
-    return { svc: new LawyerService(prisma), prisma };
+    // K1-4b: LawyerService artık AuditService de alıyor; duplicate-guard testleri delegation'a dokunmaz → audit mock yeter.
+    const audit: any = { log: jest.fn().mockResolvedValue(undefined) };
+    // L1A: constructor 3. parametre (OfficeApprovalService) aldı; bu testler deactivate'e dokunmaz → boş mock yeter.
+    const officeApproval: any = { isApproverEligible: jest.fn() };
+    return { svc: new LawyerService(prisma, audit, officeApproval), prisma, audit };
   };
   const self = { id: "self", name: "Ali", surname: "Veli", tckn: null, barNumber: null, isActive: true };
 

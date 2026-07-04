@@ -41,8 +41,14 @@ describe("DebtorService.updateQuickNote — Gate-3 passive writer hardening", ()
   }
 
   function makeSvc(prisma: any, guard: any) {
-    // DebtorService(prisma, caseDebtorLifecycleGuard?) — updateQuickNote yalnız bu ikisini kullanır.
-    return new DebtorService(prisma, guard);
+    // DebtorService(prisma, audit, officeApproval, caseDebtorLifecycleGuard?) — updateQuickNote
+    // yalnız prisma+guard kullanır; audit/officeApproval Task D1A ile eklenen placeholder.
+    return new DebtorService(
+      prisma,
+      { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any,
+      guard,
+    );
   }
 
   it("NEGATIF: PASSIVE → reddedilir + caseDebtor.update ÇAĞRILMAZ + guard doğru (caseDebtorId, expectedCaseId)", async () => {

@@ -10,6 +10,10 @@
       {
         "include": "config/**/*.yaml",
         "outDir": "dist"
+      },
+      {
+        "include": "config/**/*.yaml",
+        "outDir": "dist/apps/api/src"
       }
     ],
     "watchAssets": true

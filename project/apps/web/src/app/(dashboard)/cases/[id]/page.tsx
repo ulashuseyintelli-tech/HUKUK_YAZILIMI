@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -40,23 +41,43 @@ import {
   PauseCircle,
   Search,
 } from "lucide-react";
-import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO } from "@/lib/api";
+import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO, GenerateDistributionRecommendationDTO } from "@/lib/api";
 import { caseStaffEditFields, buildCaseStaffPatch } from "@/lib/case-staff-edit";
+import {
+  CASE_STAFF_ROLE_OPTIONS,
+  CASE_STAFF_ROLE_GROUP_LABEL,
+  CASE_STAFF_ROLE_HELP_TEXT,
+  caseStaffRoleLabel,
+  normalizeCaseStaffRole,
+} from "@/lib/case-staff-role";
+import { ResponsibilityAtPanel } from "@/components/case/responsibility-at-panel";
+import { ResponsibilityHistoryPanel } from "@/components/case/responsibility-history-panel";
+import { LegalResponsibleLawyerModal } from "@/components/case/LegalResponsibleLawyerModal";
+import { LegalResponsibleDrawerAction } from "@/components/case/legal-responsible-drawer-action";
 import { useAuth } from "@/lib/auth-context";
 import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
 import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
 import { SendMessageModal } from "@/components/message/SendMessageModal";
 import { DebtorsSummaryBar, DebtorRow, ServiceStatusBadge, AlertBadge, DebtorDetailDrawer } from "@/components/debtor";
 import { UyapExportButton } from "@/components/uyap-export/UyapExportButton";
-import { DueModal, CollectionModal, HesapOzetiPanel } from "@/components/finance";
+import { DueModal, CollectionModal, HesapOzetiPanel, BalanceShadowDiffPanel } from "@/components/finance";
 import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
 import IntakeLinksCard from "@/components/case/IntakeLinksCard";
+import { IntelStatementSection } from "@/components/case/IntelStatementSection";
 import { ClaimItemPanel } from "@/components/claim-item";
 import { HacizHistoryCard } from "@/components/case/HacizHistoryCard";
 import { TebligatCard } from "@/components/case/TebligatCard";
 import { PreHacizRiskCard } from "@/components/case/PreHacizRiskCard";
 import { ResponsiblePersonPicker } from "@/components/case/responsible-person-picker";
+import {
+  getBalanceShadowDisplayDate,
+  shouldShowBalanceShadowDisplay,
+} from "@/lib/balance-shadow-display";
+import {
+  getGuardedPrimaryDisplayDate,
+  shouldEnableGuardedPrimaryDisplayPilot,
+} from "@/lib/guarded-primary-display";
 
 // ============================================
 // TİPLER
@@ -664,6 +685,10 @@ export default function CaseDetailPage() {
   const { user } = useAuth();
   const fixParam = searchParams.get('fix');
   const fromFilter = searchParams.get('fromFilter');
+  const showBalanceShadowDisplay = shouldShowBalanceShadowDisplay(searchParams);
+  const balanceShadowDisplayDate = getBalanceShadowDisplayDate(searchParams);
+  const guardedPrimaryPilotEnabled = shouldEnableGuardedPrimaryDisplayPilot(searchParams);
+  const guardedPrimaryDisplayDate = getGuardedPrimaryDisplayDate(searchParams);
   
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -800,11 +825,16 @@ export default function CaseDetailPage() {
   const [editingCaseStatus, setEditingCaseStatus] = useState(false);
   const [caseStatusValue, setCaseStatusValue] = useState('');
   const [savingCaseStatus, setSavingCaseStatus] = useState(false);
+  // P3-2C-FE: kanonik statü değişimini guarded-edge consumer ile sar (flag OFF → modal hiç açılmaz, davranış değişmez).
+  const { run: runGuardedStatus, modal: guardedStatusModal } = useGuardedAction();
   
   // Alacak Kalemleri ve Tahsilatlar State
   const [dues, setDues] = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
+  const [collectionDispositions, setCollectionDispositions] = useState<CollectionDispositionDTO[]>([]);
+  const [postingDispositionId, setPostingDispositionId] = useState<string | null>(null);
   const [loadingFinance, setLoadingFinance] = useState(false);
+  const [financialSummaryRefreshKey, setFinancialSummaryRefreshKey] = useState(0);
   
   // Due Modal State
   const [dueModalOpen, setDueModalOpen] = useState(false);
@@ -821,6 +851,12 @@ export default function CaseDetailPage() {
   // Collection Modal State
   const [collectionModalOpen, setCollectionModalOpen] = useState(false);
   const [editingCollection, setEditingCollection] = useState<any>(null);
+  // WP-1d-5-5: Hukuki Sorumlu Avukat kaydı değişikliği modalı + sorumluluk panellerini yenileme sinyali.
+  const [legalResponsibleModalOpen, setLegalResponsibleModalOpen] = useState(false);
+  const [responsibilityReloadToken, setResponsibilityReloadToken] = useState(0);
+  // WP-1d-5-6: mutasyon sonrası point-in-time panelini "şimdi"ye çekme sinyali + modal'ı ön-seçili açacak avukat.
+  const [responsibilityAsOfNowToken, setResponsibilityAsOfNowToken] = useState(0);
+  const [legalResponsibleInitialLawyerId, setLegalResponsibleInitialLawyerId] = useState<string | undefined>(undefined);
   
   // Address Task State (Yapılacaklar ve Notlar için)
   const [addressTasks, setAddressTasks] = useState<any[]>([]);
@@ -902,6 +938,7 @@ export default function CaseDetailPage() {
       await api.updateCase(params.id as string, { caseDate: caseDateValue });
       // Veriyi yenile
       await fetchCase();
+      setFinancialSummaryRefreshKey((key) => key + 1);
       setEditingCaseDate(false);
     } catch (error) {
       console.error("Takip tarihi güncellenemedi:", error);
@@ -916,7 +953,15 @@ export default function CaseDetailPage() {
     if (!caseStatusValue || !params.id) return;
     try {
       setSavingCaseStatus(true);
-      await api.updateCase(params.id as string, { caseStatus: caseStatusValue });
+      // P3-2B-2: statü değişimi kanonik route'tan (generic /cases PUT yerine) — history/decisionLog/observe yazar.
+      // P3-2C-FE: guarded-edge consumer ile sarıldı. Flag OFF → backend zarf dönmez → run normal {ok} verir,
+      // modal açılmaz (mevcut davranış aynen). CONFIRM_REQUIRED → modal; vazgeç → retry yok/UI eski; onayla → confirmationToken ile tek retry.
+      const result = await runGuardedStatus((confirmation) =>
+        api.changeCaseStatus(params.id as string, caseStatusValue, "Statü güncellendi", confirmation?.token),
+      );
+      if (result.status === "cancelled") {
+        return; // kullanıcı vazgeçti: başarı işleme yok, UI eski durumda kalır (finally setSavingCaseStatus(false))
+      }
       // Veriyi yenile
       await fetchCase();
       setEditingCaseStatus(false);
@@ -926,7 +971,7 @@ export default function CaseDetailPage() {
     } finally {
       setSavingCaseStatus(false);
     }
-  }, [caseStatusValue, params.id, fetchCase]);
+  }, [caseStatusValue, params.id, fetchCase, runGuardedStatus]);
 
   // Fetch case debtors with summary (FAZ 1)
   const fetchCaseDebtors = useCallback(async () => {
@@ -948,18 +993,236 @@ export default function CaseDetailPage() {
     if (!params.id) return;
     try {
       setLoadingFinance(true);
-      const [duesRes, collectionsRes] = await Promise.all([
+      const [duesRes, collectionsRes, dispositionsRes] = await Promise.all([
         api.getCaseDues(params.id as string),
         api.getCaseCollections(params.id as string),
+        api.getCollectionDispositionsByCase(params.id as string).catch((error) => {
+          console.warn("Dağıtım ve mutabakat kayıtları yüklenemedi:", error);
+          return [];
+        }),
       ]);
       setDues(duesRes || []);
       setCollections(collectionsRes || []);
+      setCollectionDispositions(dispositionsRes || []);
     } catch (error) {
       console.error("Finans verileri yüklenemedi:", error);
     } finally {
       setLoadingFinance(false);
     }
   }, [params.id]);
+
+  const refreshCollectionDependentViews = useCallback(() => {
+    setFinancialSummaryRefreshKey((key) => key + 1);
+    void fetchFinanceData();
+    void fetchCase();
+  }, [fetchCase, fetchFinanceData]);
+
+  const eligibleDispositionClients = useMemo(() => {
+    const eligibleRoles = new Set(["ALACAKLI", "ORTAK_ALACAKLI"]);
+    return (caseData?.caseClients || [])
+      .filter((caseClient) => !caseClient.role || eligibleRoles.has(String(caseClient.role).toUpperCase()))
+      .map((caseClient) => ({
+        id: caseClient.id,
+        name: caseClient.client.displayName || caseClient.client.name || "Müvekkil",
+        role: caseClient.role,
+      }));
+  }, [caseData?.caseClients]);
+
+  // S8-B FAZ-0 — Dağıtım önerisi (HELD → RECOMMENDED; finansal etki yok, P4 onay talebi açılır).
+  const handleRecommendCollectionDisposition = useCallback(async (
+    disposition: Pick<CollectionDispositionDTO, "id">,
+    lines: PostCollectionDispositionLineDTO[],
+  ) => {
+    if (!disposition?.id) return;
+    setPostingDispositionId(disposition.id);
+    try {
+      await api.recommendCollectionDisposition(disposition.id, { lines });
+      refreshCollectionDependentViews();
+    } catch (error: any) {
+      alert(error?.message || "Dağıtım önerisi kaydedilemedi.");
+      throw error;
+    } finally {
+      setPostingDispositionId(null);
+    }
+  }, [refreshCollectionDependentViews]);
+
+  // S8-B FAZ-1a — Dağıtım önerisi üreteci (preview; persist YOK, finansal etki YOK). Üretilen satırlar OperationDeck'te pre-fill edilir.
+  const handlePrepareDistributionRecommendation = useCallback(
+    (dispositionId: string, input: GenerateDistributionRecommendationDTO) =>
+      api.getDistributionRecommendation(dispositionId, input),
+    [],
+  );
+
+  // S8-B FAZ-2 — CaseFeeAgreement CRUD (ince delegate; try/catch OperationDeck içinde — hata burada yutulmaz, fırlatılır).
+  const handleFetchActiveFeeAgreement = useCallback(
+    (caseClientId: string) => api.getActiveCaseFeeAgreement(caseClientId),
+    [],
+  );
+  const handleCreateFeeAgreement = useCallback(
+    (
+      caseClientId: string,
+      input: { feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION"; flatAmount?: string; percentageBps?: number; note?: string },
+    ) => api.createCaseFeeAgreement({ caseClientId, ...input }),
+    [],
+  );
+  const handleUpdateFeeAgreement = useCallback(
+    (
+      agreementId: string,
+      input: { feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION"; flatAmount?: string; percentageBps?: number; note?: string },
+    ) => api.updateCaseFeeAgreement(agreementId, input),
+    [],
+  );
+  const handleTerminateFeeAgreement = useCallback(
+    (agreementId: string) => api.terminateCaseFeeAgreement(agreementId),
+    [],
+  );
+
+  // S8-B FAZ-0 — Dağıtım onayı (RECOMMENDED → APPROVED; yalnız Partner/Manager + P4 4-göz).
+  const handleApproveCollectionDisposition = useCallback(async (
+    disposition: Pick<CollectionDispositionDTO, "id">,
+  ) => {
+    if (!disposition?.id) return;
+    setPostingDispositionId(disposition.id);
+    try {
+      await api.approveCollectionDisposition(disposition.id);
+      refreshCollectionDependentViews();
+    } catch (error: any) {
+      alert(error?.message || "Dağıtım onaylanamadı.");
+      throw error;
+    } finally {
+      setPostingDispositionId(null);
+    }
+  }, [refreshCollectionDependentViews]);
+
+  // S8-B FAZ-0 — Dağıtımı muhasebeleştir (YALNIZ APPROVED → POSTED; finansal etki burada).
+  const handlePostCollectionDisposition = useCallback(async (
+    disposition: Pick<CollectionDispositionDTO, "id">,
+  ) => {
+    if (!disposition?.id) return;
+    setPostingDispositionId(disposition.id);
+    try {
+      await api.postCollectionDisposition(disposition.id);
+      refreshCollectionDependentViews();
+    } catch (error: any) {
+      alert(error?.message || "Dağıtım kesinleştirilemedi.");
+      throw error;
+    } finally {
+      setPostingDispositionId(null);
+    }
+  }, [refreshCollectionDependentViews]);
+
+  const getCollectionStatus = (collection: any) =>
+    String(collection?.status || "").toUpperCase();
+
+  const getCollectionDispositionStatus = (collection: any) =>
+    String(
+      collection?.accountingDispositionStatus ||
+      collection?.dispositionStatus ||
+      "",
+    ).toUpperCase();
+
+  const isDraftCollection = (collection: any) =>
+    ["PENDING", "DRAFT"].includes(getCollectionStatus(collection));
+
+  const isCancelledCollection = (collection: any) =>
+    getCollectionStatus(collection) === "CANCELLED";
+
+  const isPostedCollection = (collection: any) =>
+    getCollectionDispositionStatus(collection) === "POSTED";
+
+  const operationAccountingRecords = useMemo<any[]>(() => {
+    const collectionById = new Map(collections.map((collection: any) => [collection.id, collection]));
+    const statusLabels: Record<string, string> = {
+      POSTED: "Dağıtım Kesinleşti",
+      HELD_PENDING_DISTRIBUTION: "Dağıtım bekliyor",
+      CANCELLED: "İptal edildi",
+      REVERSED: "Reversed",
+    };
+
+    return collectionDispositions.map((disposition: any) => {
+      const sourceCollection = collectionById.get(disposition.collectionId);
+      const status = String(disposition.status || "").toUpperCase();
+      const hasManualReversal = Boolean(disposition.manualReversalRequiredAt);
+      let recordType = "DAGITIM_BEKLIYOR";
+
+      if (status === "POSTED") {
+        recordType = hasManualReversal ? "MANUEL_REVERSAL_GEREKLI" : "ODEME_ALINDI";
+      } else if (["CANCELLED", "REVERSED"].includes(status)) {
+        recordType = "IADE";
+      }
+
+      const lineTypes = Array.from(new Set(
+        (disposition.lines || []).map((line: any) => line.type).filter(Boolean),
+      ));
+      const statusLabel = hasManualReversal
+        ? "Manuel takip gerekli"
+        : statusLabels[status] || status || "Dağıtım/mutabakat kaydı";
+      const description = [
+        sourceCollection?.description || "Tahsilat",
+        `Durum: ${statusLabel}`,
+        lineTypes.length > 0 ? `Satırlar: ${lineTypes.join(", ")}` : null,
+      ].filter(Boolean).join(" - ");
+
+      return {
+        id: disposition.id,
+        type: recordType,
+        description,
+        amount: Number(disposition.totalAmount ?? sourceCollection?.amount ?? 0),
+        createdAt: disposition.postedAt || disposition.updatedAt || disposition.createdAt || sourceCollection?.createdAt || "",
+        relatedRequestId: disposition.collectionId,
+        disposition: {
+          id: disposition.id,
+          collectionId: disposition.collectionId,
+          status,
+          totalAmount: disposition.totalAmount ?? sourceCollection?.amount ?? 0,
+          currency: disposition.currency || sourceCollection?.currency || "TRY",
+          beneficiaryScope: disposition.beneficiaryScope || "",
+          caseClientId: disposition.caseClientId ?? null,
+          manualReversalRequiredAt: disposition.manualReversalRequiredAt ?? null,
+        },
+      };
+    });
+  }, [collectionDispositions, collections]);
+
+  const operationAccountingEmptyMessage = useMemo(() => {
+    const activeCollectionCount = collections.filter((collection: any) =>
+      String(collection?.status || "").toUpperCase() !== "CANCELLED",
+    ).length;
+
+    return activeCollectionCount > 0
+      ? "Tahsilat finans özetinde görünüyor; dağıtım/mutabakat kaydı henüz oluşturulmamış."
+      : "Bu dosyada henüz dağıtım/mutabakat kaydı yok.";
+  }, [collections]);
+
+  const handleCancelCollection = async (collection: any) => {
+    if (!caseData?.id || !collection?.id) return;
+
+    const reason = window.prompt("Tahsilatı iptal etme sebebini yazın:");
+    if (reason === null) return;
+
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      alert("İptal sebebi girilmeden tahsilat iptal edilemez.");
+      return;
+    }
+
+    const confirmMessage = isPostedCollection(collection)
+      ? "Bu tahsilat muhasebe/posting etkisi içeriyor; iptal sonrası manuel muhasebe takibi gerekebilir. Devam edilsin mi?"
+      : "Bu tahsilatı iptal etmek istediğinize emin misiniz?";
+
+    if (!confirm(confirmMessage)) return;
+
+    try {
+      await api.cancelCollection(caseData.id, collection.id, trimmedReason);
+      refreshCollectionDependentViews();
+    } catch (err: any) {
+      alert(`İptal hatası: ${err?.message || "Bilinmeyen hata"}`);
+    }
+  };
+
+  const refreshClaimItemMetadataDependentViews = useCallback(() => {
+    setFinancialSummaryRefreshKey((key) => key + 1);
+  }, []);
 
   // Fetch address tasks and notes for OperationDeck
   const fetchAddressTasksAndNotes = useCallback(async () => {
@@ -1465,8 +1728,12 @@ export default function CaseDetailPage() {
   const handleSaveCasePermissions = async () => {
     if (!selectedLawyer || !caseData) return;
     try {
+      // WP-1d-5-6: Hukuki sorumlu avukat kaydı YALNIZ kanonik uçtan (reason zorunlu) değişir.
+      // Mevcut hukuki sorumlu için generic update'te `role: 'RESPONSIBLE'` GÖNDERİLMEZ — aksi halde
+      // bu yol reason'sız/audit'siz bir RESPONSIBLE yazımı (ve no-op timeline kirliliği) üretirdi.
+      const isCurrentResponsible = selectedLawyer.caseRole === 'RESPONSIBLE';
       await api.updateCaseLawyer(caseData.id, selectedLawyer.caseLawyerId, {
-        role: selectedLawyer.caseRole,
+        ...(isCurrentResponsible ? {} : { role: selectedLawyer.caseRole }),
         canSign: selectedLawyer.canSign,
         casePermissions: lawyerPermissions,
         receiveNotifications: lawyerPermissions.receivesNotifications,
@@ -1477,6 +1744,14 @@ export default function CaseDetailPage() {
       console.error('Yetki kaydetme hatası:', error);
       alert('Yetki kaydetme başarısız');
     }
+  };
+
+  // WP-1d-5-6: sorumluluk yazımı (hukuki sorumlu / operasyon sorumlusu) sonrası panelleri yenile +
+  // point-in-time panelini "şimdi"ye çek. Tek ortak helper; büyük state refactor yok.
+  const refreshResponsibilityPanels = () => {
+    fetchCase();
+    setResponsibilityReloadToken((t) => t + 1);
+    setResponsibilityAsOfNowToken((t) => t + 1);
   };
 
   // Avukat profili kaydet (global)
@@ -2010,7 +2285,7 @@ export default function CaseDetailPage() {
               </div>
               <div className="divide-y max-h-48 overflow-y-auto">
                 {/* M2-G3b: Dosya Sorumlusu = gerçek kişi seçici (aday GET + mevcut GET + PATCH). A3 statik satırının yerine. */}
-                <ResponsiblePersonPicker caseId={caseData.id} />
+                <ResponsiblePersonPicker caseId={caseData.id} onChanged={refreshResponsibilityPanels} />
                 {/* Yetkili Avukatlar Başlık */}
                 {(caseData.lawyers?.filter(le => le.lawyer.lawyerRank !== 'INTERN' && !le.lawyer.barNumber?.startsWith('STJ'))?.length || 0) > 0 && (
                   <div className="px-2 py-1 bg-blue-50/50">
@@ -2090,7 +2365,7 @@ export default function CaseDetailPage() {
                         <p className="font-medium text-[11px] truncate group-hover:text-purple-700">{se.staffMember.firstName} {se.staffMember.lastName}{se.staffMember.isActive === false && <span className="ml-1 px-1 rounded bg-gray-200 text-gray-600 text-[9px] font-normal align-middle">Pasif</span>}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className="text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-medium">{se.roleOnCase || se.staffMember.staffType || 'Personel'}</span>
+                        <span className="text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-medium">{caseStaffRoleLabel(se.roleOnCase) || se.staffMember.staffType || 'Personel'}</span>
                         <ChevronRight className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
                       </div>
                     </div>
@@ -2100,7 +2375,16 @@ export default function CaseDetailPage() {
                   <p className="text-[10px] text-gray-400 text-center py-2">—</p>
                 )}
               </div>
+              {/* WP-1d-5-6: standalone "Hukuki Sorumlu Avukat Kaydını Değiştir" butonu KALDIRILDI.
+                  Kanonik aksiyon artık ilgili avukatın drawer'ı içinde (LegalResponsibleDrawerAction);
+                  drawer'dan reason zorunlu modal açılır. Ayrı full-width buton ana UX değildir. */}
             </div>
+
+            {/* WP-1d-4a: Sorumluluk Geçmişi (read-only temporal panel; mevcut responsibility-at endpoint). */}
+            <ResponsibilityAtPanel caseId={caseData.id} reloadToken={responsibilityReloadToken} asOfResetToken={responsibilityAsOfNowToken} />
+
+            {/* WP-1d-4c-2: Sorumluluk Değişim Geçmişi (read-only timeline; responsibility-history endpoint). */}
+            <ResponsibilityHistoryPanel caseId={caseData.id} reloadToken={responsibilityReloadToken} />
 
             {/* Müvekkiller */}
             <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
@@ -2276,6 +2560,18 @@ export default function CaseDetailPage() {
           />
         </div>
 
+        {/* Müvekkil İstihbaratı (Client Intake 4.7d-1) — promote edilen ClientIntelStatement +
+            lifecycle mutasyonları (4.7d-2). CLIENT-INTEL-4.7D-2B: create hedefi yalnız dosyada
+            TEK borçlu varsa çözülür (createDebtorId) — birden fazla borçluda hangisi belirsiz
+            olduğundan create butonu bilinçli olarak GİZLİ kalır (yanlış borçluya kayıt açma riski). */}
+        <div className="px-3 pt-3">
+          <IntelStatementSection
+            caseId={caseData.id}
+            createCaseId={caseData.id}
+            createDebtorId={caseDebtorLinks.length === 1 ? caseDebtorLinks[0].debtor.id : undefined}
+          />
+        </div>
+
         {/* ALT İÇERİK - 2 Panel */}
         <div className="flex gap-3 p-3 min-h-[900px]">
           {/* SOL - Finans + Notlar */}
@@ -2354,7 +2650,7 @@ export default function CaseDetailPage() {
                                   if (confirm('Bu alacak kalemini silmek istediğinize emin misiniz?')) {
                                     try {
                                       await api.deleteDue(caseData.id, due.id);
-                                      fetchFinanceData();
+                                      refreshCollectionDependentViews();
                                     } catch (err) {
                                       console.error('Silme hatası:', err);
                                       alert('Silme işlemi başarısız oldu');
@@ -2396,16 +2692,15 @@ export default function CaseDetailPage() {
                       className="text-[9px] text-green-600 hover:text-green-800 hover:underline"
                       onClick={() => { setEditingCollection(null); setCollectionModalOpen(true); }}
                     >
-                      + Düzenle
+                      + Yeni Ödeme
                     </button>
                   </div>
                   <div className="bg-[#FAFAFB] border border-[#E5E7EB] rounded-lg p-2 min-h-[80px] max-h-[150px] overflow-y-auto">
                     {loadingFinance ? (
                       <p className="text-[9px] text-gray-400 text-center py-2">Yükleniyor...</p>
-                    ) : collections.filter((c: any) => c.status !== 'CANCELLED').length > 0 ? (
+                    ) : collections.length > 0 ? (
                       <div className="space-y-1">
-                        {collections
-                          .filter((c: any) => c.status !== 'CANCELLED')
+                        {[...collections]
                           .sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime())
                           .map((col: any) => {
                           const typeLabels: Record<string, string> = {
@@ -2419,10 +2714,24 @@ export default function CaseDetailPage() {
                             CHECK: 'Çek',
                           };
                           const colDate = col.date ? new Date(col.date).toLocaleDateString('tr-TR') : '';
+                          const status = getCollectionStatus(col);
+                          const cancelled = isCancelledCollection(col);
+                          const draft = isDraftCollection(col);
+                          const posted = isPostedCollection(col);
+                          const statusLabel = cancelled
+                            ? 'İptal edildi'
+                            : posted
+                              ? 'Dağıtım kesinleşti'
+                              : status === 'CONFIRMED'
+                                ? 'Onaylandı'
+                                : status === 'PENDING'
+                                  ? 'Hazırlık'
+                                  : status;
+                          const cancelledDate = col.cancelledAt ? new Date(col.cancelledAt).toLocaleString('tr-TR') : '';
                           return (
                           <div 
                             key={col.id} 
-                            className="flex justify-between items-center text-[10px] group hover:bg-green-50 rounded px-1 -mx-1 py-0.5"
+                            className={`flex justify-between items-center text-[10px] group hover:bg-green-50 rounded px-1 -mx-1 py-0.5 ${cancelled ? "opacity-70 bg-red-50/60" : ""}`}
                           >
                             <div 
                               className="flex flex-col min-w-0 flex-1 cursor-pointer"
@@ -2432,26 +2741,40 @@ export default function CaseDetailPage() {
                                 {typeLabels[col.type] || col.type}
                               </span>
                               <span className="text-[9px] text-gray-400">{colDate}</span>
+                              <span className={`text-[9px] ${cancelled ? "text-red-500" : posted ? "text-amber-600" : "text-gray-400"}`}>
+                                {statusLabel}
+                              </span>
+                              {cancelled && (cancelledDate || col.cancelReason) && (
+                                <span className="text-[9px] text-red-500 truncate">
+                                  {cancelledDate ? `İptal: ${cancelledDate}` : "İptal edildi"}
+                                  {col.cancelReason ? ` - ${col.cancelReason}` : ""}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="font-medium text-green-700 flex-shrink-0">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
-                              <button
-                                onClick={async (e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  if (!confirm('Bu tahsilatı silmek istediğinize emin misiniz?')) return;
-                                  try {
-                                    await api.deleteCollection(caseData.id, col.id);
-                                    fetchFinanceData();
-                                  } catch (err: any) {
-                                    alert(`Silme hatası: ${err?.message || 'Bilinmeyen hata'}`);
-                                  }
-                                }}
-                                className="opacity-0 group-hover:opacity-100 p-0.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-opacity"
-                                title="Sil"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
+                              {draft ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 cursor-not-allowed rounded transition-opacity"
+                                  title="Taslak tahsilat silme bu sürümde devre dışı; ayrı void/discard akışı gerekiyor."
+                                >
+                                  <Info className="h-3 w-3" />
+                                </button>
+                              ) : !cancelled ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    void handleCancelCollection(col);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded transition-opacity"
+                                  title={posted ? "Tahsilatı İptal Et / Reversal" : "Tahsilatı İptal Et"}
+                                >
+                                  <XCircle className="h-3 w-3" />
+                                </button>
+                              ) : null}
                             </div>
                           </div>
                         );
@@ -2480,7 +2803,12 @@ export default function CaseDetailPage() {
               </button>
               {showCanonicalClaims && (
                 <div className="mt-2">
-                  <ClaimItemPanel caseId={caseData.id} readOnly metadataEdit />
+                  <ClaimItemPanel
+                    caseId={caseData.id}
+                    readOnly
+                    metadataEdit
+                    onMetadataEditSuccess={refreshClaimItemMetadataDependentViews}
+                  />
                 </div>
               )}
             </div>
@@ -2498,6 +2826,18 @@ export default function CaseDetailPage() {
             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
               <OperationDeck
                 caseId={caseData.id}
+                muhasebeKayitlari={operationAccountingRecords}
+                accountingEmptyMessage={operationAccountingEmptyMessage}
+                eligibleDispositionClients={eligibleDispositionClients}
+                postingDispositionId={postingDispositionId}
+                onRecommendDisposition={handleRecommendCollectionDisposition}
+                onApproveDisposition={handleApproveCollectionDisposition}
+                onPostDisposition={handlePostCollectionDisposition}
+                onPrepareDistributionRecommendation={handlePrepareDistributionRecommendation}
+                onFetchActiveFeeAgreement={handleFetchActiveFeeAgreement}
+                onCreateFeeAgreement={handleCreateFeeAgreement}
+                onUpdateFeeAgreement={handleUpdateFeeAgreement}
+                onTerminateFeeAgreement={handleTerminateFeeAgreement}
                 // Müvekkil Talepleri - AddressAuditLog + Expense Requests
                 muvekkilTalepleri={[
                   // Adres talepleri
@@ -2658,10 +2998,19 @@ export default function CaseDetailPage() {
           </div>
 
           {/* SAĞ - Hesap Özeti */}
-          <div className="w-80 flex-shrink-0 sticky top-4">
+          <div className="w-80 flex-shrink-0 sticky top-4 space-y-3">
             <HesapOzetiPanel
               caseId={caseData.id}
               debtorCount={caseData.debtors?.length || 1}
+              guardedPrimaryPilotEnabled={guardedPrimaryPilotEnabled}
+              guardedPrimaryPilotAsOfDate={guardedPrimaryDisplayDate ?? balanceShadowDisplayDate}
+              refreshKey={financialSummaryRefreshKey}
+            />
+            <BalanceShadowDiffPanel
+              caseId={caseData.id}
+              asOfDate={balanceShadowDisplayDate}
+              enabled={showBalanceShadowDisplay}
+              refreshKey={financialSummaryRefreshKey}
             />
           </div>
         </div>
@@ -2731,35 +3080,24 @@ export default function CaseDetailPage() {
                   </div>
                 )}
 
-                {/* Rol Seçimi */}
+                {/* Rol Seçimi — WP-1d-5-6: generic dropdown'dan RESPONSIBLE'a GEÇİŞ kaldırıldı.
+                    Mevcut hukuki sorumlu avukat salt-okunur (disabled) gösterilir; kayıt yalnız aşağıdaki kanonik aksiyonla değişir. */}
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Bu Dosyadaki Rol</label>
-                  <select 
-                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-600"
                     value={selectedLawyer.caseRole || 'ASSIGNED'}
+                    disabled={selectedLawyer.caseRole === 'RESPONSIBLE'}
                     onChange={(e) => {
-                      const newRole = e.target.value as 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+                      const newRole = e.target.value as 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
                       setSelectedLawyer({...selectedLawyer, caseRole: newRole});
-                      
+
                       // Rol değiştiğinde varsayılan yetkileri ayarla
                       // Önce büro ayarlarındaki defaultPermissions'ı kontrol et
                       const lawyerDefaults = selectedLawyer.permissions;
-                      
+
                       let newPermissions = { ...lawyerPermissions };
                       switch (newRole) {
-                        case 'RESPONSIBLE':
-                          // Sorumlu avukat - tüm yetkiler açık
-                          newPermissions = {
-                            canEditCase: true,
-                            canGenerateDocs: true,
-                            canSyncUYAP: true,
-                            canViewFinance: true,
-                            canEditFinance: true,
-                            canChangeStatus: true,
-                            canEditParties: true,
-                            receivesNotifications: true,
-                          };
-                          break;
                         case 'ASSIGNED':
                           // Yetkili avukat - büro ayarlarından veya geniş yetkiler
                           newPermissions = lawyerDefaults ? {
@@ -2812,15 +3150,32 @@ export default function CaseDetailPage() {
                       setLawyerPermissions(newPermissions);
                     }}
                   >
-                    <option value="RESPONSIBLE">Sorumlu Avukat</option>
+                    {selectedLawyer.caseRole === 'RESPONSIBLE' && (
+                      <option value="RESPONSIBLE" disabled>Hukuki Sorumlu Avukat</option>
+                    )}
                     <option value="ASSIGNED">Yetkili Avukat</option>
                     <option value="ASSISTANT">Yardımcı Avukat</option>
                     <option value="INTERN">Stajyer Avukat</option>
                   </select>
                   <p className="text-[10px] text-gray-500 mt-1">
-                    Rol değiştiğinde yetkiler otomatik ayarlanır. Manuel olarak da değiştirebilirsiniz.
+                    {selectedLawyer.caseRole === 'RESPONSIBLE'
+                      ? 'Hukuki sorumlu avukat kaydı bu menüden değiştirilmez; aşağıdaki kurallı aksiyonla değiştirilir.'
+                      : 'Rol değiştiğinde yetkiler otomatik ayarlanır. Manuel olarak da değiştirebilirsiniz.'}
                   </p>
                 </div>
+
+                {/* WP-1d-5-6 (F3): Hukuki Sorumlu Avukat kaydı KANONİK aksiyonu (ADMIN-only; reason zorunlu modal).
+                    Generic "Bu dosya için kaydet" ile RESPONSIBLE yazılmaz; değişiklik yalnız buradan tetiklenir. */}
+                {user?.role === 'ADMIN' && (
+                  <LegalResponsibleDrawerAction
+                    isCurrentResponsible={selectedLawyer.caseRole === 'RESPONSIBLE'}
+                    onChangeRequest={() => {
+                      setLegalResponsibleInitialLawyerId(selectedLawyer.lawyerId);
+                      setLawyerDrawerOpen(false);
+                      setLegalResponsibleModalOpen(true);
+                    }}
+                  />
+                )}
 
                 {/* Yetkiler */}
                 <div>
@@ -3026,17 +3381,19 @@ export default function CaseDetailPage() {
               <h4 className="text-xs font-semibold text-gray-600 uppercase">Bu Dosyadaki Bilgiler</h4>
               <div className="bg-gray-50 rounded-lg p-3 space-y-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Dosyadaki Rol</label>
+                  {/* WP-2c-1: CaseStaff.roleOnCase = "Dosya Ekibi Rolü" (shared option-list); owner DEĞİL. */}
+                  <label className="block text-xs text-gray-500 mb-1">{CASE_STAFF_ROLE_GROUP_LABEL}</label>
                   <select
                     className="w-full border rounded-lg px-3 py-2 text-sm"
-                    value={selectedStaff.roleOnCase || ''}
+                    value={normalizeCaseStaffRole(selectedStaff.roleOnCase)}
                     onChange={(e) => setSelectedStaff({...selectedStaff, roleOnCase: e.target.value})}
                   >
                     <option value="">Belirtilmemiş</option>
-                    <option value="SORUMLU">Sorumlu Personel</option>
-                    <option value="YARDIMCI">Yardımcı Personel</option>
-                    <option value="TAKIPCI">Takipçi</option>
+                    {CASE_STAFF_ROLE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </select>
+                  <p className="mt-1 text-[10px] text-gray-400">{CASE_STAFF_ROLE_HELP_TEXT}</p>
                 </div>
                 {/* PR-ASSIGN-3b: "İmza Yetkisi" (canSign) toggle KALDIRILDI — personel imzacı değil
                     (avukat kavramı; CaseStaff modelinde alan yok). */}
@@ -3619,7 +3976,7 @@ export default function CaseDetailPage() {
           onClose={() => { setDueModalOpen(false); setEditingDue(null); }}
           caseId={caseData.id}
           due={editingDue}
-          onSuccess={fetchFinanceData}
+          onSuccess={refreshCollectionDependentViews}
         />
       )}
 
@@ -3630,7 +3987,19 @@ export default function CaseDetailPage() {
           onClose={() => { setCollectionModalOpen(false); setEditingCollection(null); }}
           caseId={caseData.id}
           collection={editingCollection}
-          onSuccess={fetchFinanceData}
+          onSuccess={refreshCollectionDependentViews}
+        />
+      )}
+
+      {/* WP-1d-5-5: Hukuki Sorumlu Avukat kaydı değişikliği modalı (ADMIN-only; mevcut backend endpoint). */}
+      {caseData && (
+        <LegalResponsibleLawyerModal
+          isOpen={legalResponsibleModalOpen}
+          onClose={() => setLegalResponsibleModalOpen(false)}
+          caseId={caseData.id}
+          lawyers={caseData.lawyers || []}
+          initialLawyerId={legalResponsibleInitialLawyerId}
+          onSuccess={refreshResponsibilityPanels}
         />
       )}
 
@@ -3808,6 +4177,8 @@ export default function CaseDetailPage() {
         />
       )}
 
+      {/* P3-2C-FE: guarded-edge confirm modalı (yalnız backend CONFIRM_REQUIRED dönerse görünür; flag OFF → null) */}
+      {guardedStatusModal}
     </div>
   );
 }

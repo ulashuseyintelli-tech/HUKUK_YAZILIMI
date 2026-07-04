@@ -27,6 +27,13 @@ function collectSourceFiles(dir: string): string[] {
 }
 
 describe("PR-R1 includePassive confinement", () => {
+  // CI-1 (reliability): Bu, app/ + components/ altındaki tüm .ts/.tsx (~313 dosya / ~4.4MB)
+  // içeriğini tarayan bir guard testidir. Tarama algoritmik olarak HIZLI (izolede ~400ms);
+  // darboğaz değil. Sorun yalnız TIMEOUT HEADROOM: yüklü makinede (paralel vitest worker'ları +
+  // disk/CPU contention) worker descheduled olup senkron tarama default 5000ms'i aşabiliyor
+  // (gözlenen: yük altında ~14.6s; CI temiz runner'da sorunsuz geçer = ürün bug'ı değil).
+  // Fix: kapsamı daraltmadan (guard'ı zayıflatmadan) ölçüme dayalı açık timeout = 20000ms,
+  // gözlenen worst-case'in (~14.6s) güvenli üstü ve SINIRLI (test bounded; hang edemez).
   it("allows includePassive=true only on case detail/history surfaces", () => {
     const files = [
       ...collectSourceFiles(path.join(srcDir, "app")),
@@ -43,7 +50,7 @@ describe("PR-R1 includePassive confinement", () => {
       "app/(dashboard)/cases/[id]/page.tsx",
       "app/(dashboard)/cases/[id]/v2/page.tsx",
     ]);
-  });
+  }, 20000);
 
   it("keeps intake promote debtor lookup ACTIVE-only", () => {
     const source = readSource("app/(dashboard)/client-intake/[id]/promote/page.tsx");

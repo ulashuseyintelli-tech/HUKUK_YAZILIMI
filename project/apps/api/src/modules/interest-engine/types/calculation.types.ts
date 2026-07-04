@@ -159,6 +159,17 @@ export const VersionPinningSchema = z.object({
 
 export type VersionPinning = z.infer<typeof VersionPinningSchema>;
 
+export const FinalDebtStateSchema = z.object({
+  claimId: z.string().min(1),
+  currency: z.enum(['TRY', 'USD', 'EUR', 'GBP', 'CHF']),
+  principal: z.number().nonnegative(),
+  accruedInterest: z.number().nonnegative(),
+  costs: z.record(z.nativeEnum(AncillaryType), z.number().nonnegative()),
+  ancillaries: z.record(z.nativeEnum(AncillaryType), z.number().nonnegative()),
+});
+
+export type FinalDebtState = z.infer<typeof FinalDebtStateSchema>;
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CALCULATION RESULT SCHEMA
@@ -178,6 +189,7 @@ export const CalculationResultSchema = z.object({
   // Details
   segments: z.array(SegmentSchema),
   allocations: z.array(AllocationStepSchema).optional(),
+  finalDebtStates: z.array(FinalDebtStateSchema).optional(),
   
   // Warnings
   policyWarnings: z.array(PolicyWarningSchema),

@@ -99,17 +99,59 @@ jobs:
       # TEST-INFRA-1: Gate-1 (tenant-boundary) + Gate-2 (passive-writer) güvenlik spec'leri yukarıdaki
       # dar pattern'lerin dışında kalıyordu → CI'da koşmuyordu. Ayrı/açık step ile koşturulur.
       # passWithNoTests YOK + önce dosya-varlığı pre-check: rename/silme veya 0-eşleşme → CI RED.
-      - name: Security boundary tests (Gate-1 tenant + Gate-2/Gate-3 passive-writer)
+      - name: Security boundary tests (Gate-1 tenant + Gate-2/3 passive-writer + Gate-4 identity)
         run: |
           cd apps/api
           for f in src/modules/address-discovery/confidence-score.tenant-boundary.spec.ts \
                    src/modules/debtor/ihbarname-summary.tenant-boundary.spec.ts \
                    src/modules/debtor/third-party-passive-writer.spec.ts \
-                   src/modules/debtor/quick-note-passive-writer.spec.ts; do
+                   src/modules/debtor/quick-note-passive-writer.spec.ts \
+                   src/modules/debtor/debtor-identity-format.spec.ts; do
             test -f "$f" || { echo "MISSING security spec: $f"; exit 1; }
           done
           npx jest --ci --forceExit \
-            --testPathPattern="(confidence-score\.tenant-boundary|ihbarname-summary\.tenant-boundary|third-party-passive-writer|quick-note-passive-writer)\.spec\.ts$" \
+            --testPathPattern="(confidence-score\.tenant-boundary|ihbarname-summary\.tenant-boundary|third-party-passive-writer|quick-note-passive-writer|debtor-identity-format)\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # PR-1 (güvenlik): RBAC + metadata redaction + source/tenant/level spoof engeli.
+      # PR-2a (observability): global ExceptionFilter + requestId + fingerprint + flood-guard
+      # + server-log builder (≥500 logging, 4xx noise exclusion, logging isolation).
+      # Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
+      - name: Error-log security & observability tests (PR-1/2a/2b/3)
+        run: |
+          cd apps/api
+          for f in src/modules/error-log/__tests__/error-log.sanitize.spec.ts \
+                   src/modules/error-log/__tests__/error-log.controller.spec.ts \
+                   src/modules/error-log/__tests__/error-fingerprint.spec.ts \
+                   src/modules/error-log/__tests__/error-flood-guard.spec.ts \
+                   src/modules/error-log/__tests__/server-log.builder.spec.ts \
+                   src/modules/error-log/__tests__/all-exceptions.filter.spec.ts \
+                   src/modules/error-log/__tests__/error-dedupe-key.spec.ts \
+                   src/modules/error-log/__tests__/error-log.dedupe.service.spec.ts \
+                   src/modules/error-log/__tests__/error-reporter.spec.ts; do
+            test -f "$f" || { echo "MISSING error-log spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="error-log/__tests__/.*\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # CLIENT-LANE-1: client modülü saf unit spec'leri (mock prisma, DB GEREKMEZ) yukarıdaki dar
+      # pattern'lerin dışında kalıyordu → CI'da koşmuyordu (#656 client-update-duplicate-guard false-green
+      # ile merge oldu; #661 harness'i düzeltti). Ayrı/açık step ile koşturulur.
+      # Dosya-varlığı pre-check (rename/silme veya 0-eşleşme → CI RED) + passWithNoTests YOK.
+      - name: Client module tests (client-lane false-green guard)
+        run: |
+          cd apps/api
+          for f in src/modules/client/__tests__/client-core-p0.spec.ts \
+                   src/modules/client/__tests__/client-update-duplicate-guard.spec.ts \
+                   src/modules/client/__tests__/client-audit.spec.ts \
+                   src/modules/client/__tests__/client-reactivate.spec.ts \
+                   src/modules/client/__tests__/contact-followup.spec.ts \
+                   src/modules/client/__tests__/client-controller-validation.spec.ts; do
+            test -f "$f" || { echo "MISSING client spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="src/modules/client/__tests__/.*\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
 
@@ -134,3 +176,137 @@ jobs:
       - name: Web vitest (jsdom)
         run: pnpm --filter @hukuk/web test
         working-directory: project
+      # SB-013: next build gate — vitest geçse de route/slug/tip build kırıklarını yakalar (#185 dersi:
+      # /intake/[token] vs (dashboard)/intake/[id] slug conflict CI yeşilken web BOOT olmamıştı).
+      # DB/prisma/API/env GEREKMEZ (next build = statik derleme + type-check + lint + route-collect;
+      # lokal doğrulandı: BUILD_EXIT=0). package.json değişmedi; mevcut build script'i (next build) kullanılır.
+      - name: Web build (next build)
+        run: pnpm --filter @hukuk/web build
+        working-directory: project
+  client-workspace-live-smoke:
+    name: Client Workspace Live Smoke
+    runs-on: ubuntu-latest
+    needs: [test-suite, web-tests]
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+      JWT_SECRET: client-workspace-live-smoke-ci-secret
+      JWT_EXPIRES_IN: 7d
+      NODE_ENV: test
+      PORT: 8080
+      CORS_ORIGIN: http://localhost:3002
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      CLIENT_WORKSPACE_LIVE_SMOKE: "1"
+      CLIENT_WORKSPACE_WEB_BASE_URL: http://localhost:3002
+      CLIENT_WORKSPACE_API_BASE_URL: http://localhost:8080
+      CLIENT_WORKSPACE_SMOKE_CLIENT_ID: client-workspace-live-smoke-v1-client
+      CLIENT_WORKSPACE_SMOKE_EMAIL: admin@hukuk.com
+      CLIENT_WORKSPACE_SMOKE_PASSWORD: admin123
+      ALLOW_CLIENT_WORKSPACE_LIVE_SMOKE_SEED: "1"
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hukuk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: project/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        working-directory: project
+      - name: Disable optional pdf-poppler for Client Workspace smoke runtime
+        run: |
+          pnpm --filter @hukuk/api exec node -e "const fs = require('fs'); const p = require.resolve('pdf-poppler'); fs.writeFileSync(p, 'module.exports = { convert: async () => { throw new Error(\"pdf-poppler disabled in Client Workspace live smoke CI\"); } };\n'); console.log('Stubbed optional pdf-poppler at ' + p);"
+        working-directory: project
+      - name: Prisma generate
+        run: pnpm --filter @hukuk/api exec prisma generate
+        working-directory: project
+      - name: Prisma migrate deploy
+        run: pnpm --filter @hukuk/api exec prisma migrate deploy
+        working-directory: project
+      - name: Seed base data
+        run: pnpm --filter @hukuk/api db:seed
+        working-directory: project
+      - name: Seed Client Workspace live smoke fixture
+        id: seed-client-workspace-fixture
+        run: pnpm --filter @hukuk/api seed:client-workspace-live-smoke -- --reset
+        working-directory: project
+      - name: Build API
+        run: pnpm --filter @hukuk/api build
+        working-directory: project
+      - name: Build Web
+        run: pnpm --filter @hukuk/web build
+        working-directory: project
+      - name: Install Playwright Chromium
+        run: pnpm --filter @hukuk/web exec playwright install --with-deps chromium
+        working-directory: project
+      - name: Start API
+        run: |
+          pnpm --filter @hukuk/api start > api-live-smoke.log 2>&1 &
+          echo $! > api-live-smoke.pid
+        working-directory: project
+      - name: Start Web
+        run: |
+          PORT=3002 pnpm --filter @hukuk/web start > web-live-smoke.log 2>&1 &
+          echo $! > web-live-smoke.pid
+        working-directory: project
+      - name: Wait for API and Web
+        run: |
+          for i in {1..60}; do
+            if curl --silent http://localhost:8080/api/auth/me >/dev/null 2>&1; then
+              api_ready=1
+            fi
+            if curl --fail --silent http://localhost:3002 >/dev/null 2>&1; then
+              web_ready=1
+            fi
+            if [ "${api_ready:-0}" = "1" ] && [ "${web_ready:-0}" = "1" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API/Web readiness timeout"
+          echo "--- API log ---"
+          cat api-live-smoke.log || true
+          echo "--- Web log ---"
+          cat web-live-smoke.log || true
+          exit 1
+        working-directory: project
+      - name: Client Workspace Playwright live smoke
+        run: pnpm --filter @hukuk/web smoke:client-workspace
+        working-directory: project
+      - name: Cleanup Client Workspace live smoke fixture
+        if: always() && steps.seed-client-workspace-fixture.outcome == 'success'
+        run: pnpm --filter @hukuk/api seed:client-workspace-live-smoke -- --cleanup
+        working-directory: project
+      - name: Stop API and Web
+        if: always()
+        run: |
+          if [ -f api-live-smoke.pid ]; then kill "$(cat api-live-smoke.pid)" 2>/dev/null || true; fi
+          if [ -f web-live-smoke.pid ]; then kill "$(cat web-live-smoke.pid)" 2>/dev/null || true; fi
+        working-directory: project
+      - name: Upload Client Workspace live smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-workspace-live-smoke-diagnostics
+          path: |
+            project/api-live-smoke.log
+            project/web-live-smoke.log
+            project/apps/web/playwright-report/client-workspace
+            project/apps/web/test-results

@@ -88,4 +88,18 @@ describe('PR-1 (F1) CaseService.create() — sorumluPersonelId persist + tenant 
     const data = caseCreate.mock.calls[0][0].data;
     expect(data.sorumluPersonelId).toBe('user-1'); // A2 fallback: dto.sorumluPersonelId || userId
   });
+
+  // WP-1b: Case.createdById — dosyayı oluşturan kullanıcı (creator attribution). userId create'te
+  // zorunlu; data bloğuna createdById=userId yazılır. Operasyon owner'dan (sorumluPersonelId/
+  // responsibleLawyerId) AYRI kavram; bağımsız yazılır.
+  it('WP-1b: create → case.create data.createdById = userId (creator)', async () => {
+    const { service, caseCreate } = setup({ userFound: { id: 'u1' } });
+
+    await expect(
+      service.create('tenant-1', { sorumluPersonelId: 'u1' } as any, 'user-1'),
+    ).rejects.toThrow(STOP);
+
+    const data = caseCreate.mock.calls[0][0].data;
+    expect(data.createdById).toBe('user-1'); // oluşturan kullanıcı (operasyon owner'dan bağımsız)
+  });
 });
