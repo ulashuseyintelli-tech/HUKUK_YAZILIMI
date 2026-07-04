@@ -18,7 +18,11 @@
  * - (G1-wire, sonraki gate) endorsement-extractor / ocr.service arka-yüz pass (flag-gated)
  */
 
-export type EndorsementRegionType = "CIRO" | "BANKA_SERHI" | "IPTAL" | "KONKORDATO";
+// ACT-04 (§3.3) ile hizalı: yalnız 3 kilitli kategori. "KONKORDATO" kaldırıldı — bu dosyada hiç
+// üretilmiyor/tüketilmiyordu (yalnız type-union'da tanımlıydı, Debtor-domain kontaminasyonuydu,
+// bkz. endorsement-region-classifier.ts). Bu dosyada bir UNKNOWN fallback'e ihtiyaç yok: değerler
+// yalnız enjekte edilen extractAtAngle çağıranı tarafından üretilir, serbest AI-JSON normalize edilmiyor.
+export type EndorsementRegionType = "CIRO" | "BANKA_SERHI" | "IPTAL";
 export type OrientationAngle = 0 | 90 | 180 | 270;
 
 /** Tek çıkarılan bölge (aday). */
@@ -176,6 +180,19 @@ export function isStrongZero(zero: OrientationCandidate, frontPayeeNames: string
   return true;
 }
 
+// Repo guardrail'i (.eslintrc.js no-restricted-syntax) toFixed() yasaklar — yalnız PARA yuvarlaması
+// için (Money.round() zorunlu). Buradaki skorlar (total/frontPayeeMatch/genericPenalty/repetitionPenalty)
+// PARA DEĞİL — orientation-seçim güven skorları (bkz. dosya başı). Money.round() semantik olarak
+// UYGUNSUZ olurdu; toFixed(2) ile BİREBİR aynı 2-ondalık okunur çıktıyı üreten, parasal olmayan
+// minimal yerel biçimlendirici.
+const scoreDisplayFormatter = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+function formatScoreForDisplay(n: number): string {
+  return scoreDisplayFormatter.format(n);
+}
+
 /** Adaylardan en yüksek toplam skorluyu seç (audit'te hepsini tut). */
 export function selectOrientation(
   candidates: OrientationCandidate[],
@@ -192,7 +209,7 @@ export function selectOrientation(
     items: best.cand.items,
     score: best.score,
     audit: scored.map((s) => ({ angle: s.cand.angle, score: s.score })),
-    reason: `Seçilen açı=${best.cand.angle} (skor=${best.score.total.toFixed(2)}; front-payee=${best.score.frontPayeeMatch.toFixed(2)}, generic=${best.score.genericPenalty.toFixed(2)}, tekrar=${best.score.repetitionPenalty.toFixed(2)}).`,
+    reason: `Seçilen açı=${best.cand.angle} (skor=${formatScoreForDisplay(best.score.total)}; front-payee=${formatScoreForDisplay(best.score.frontPayeeMatch)}, generic=${formatScoreForDisplay(best.score.genericPenalty)}, tekrar=${formatScoreForDisplay(best.score.repetitionPenalty)}).`,
   };
 }
 
