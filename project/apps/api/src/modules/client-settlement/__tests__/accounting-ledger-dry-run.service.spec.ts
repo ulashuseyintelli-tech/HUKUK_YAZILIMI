@@ -1,4 +1,4 @@
-﻿import { readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Prisma } from '@prisma/client';
 import {
@@ -80,6 +80,46 @@ function offsetJournalEntry(report: ReturnType<typeof buildAccountingLedgerDryRu
   expect(entry).toBeDefined();
   return entry!;
 }
+type DryRunEntryForTest = ReturnType<typeof buildAccountingLedgerDryRunReport>['entries'][number];
+
+function persistedJournalEntryFromDryRun(entry: DryRunEntryForTest, overrides: any = {}) {
+  return {
+    id: overrides.id ?? `journal-${entry.sourceId}`,
+    idempotencyKey: overrides.idempotencyKey ?? entry.idempotencyKey,
+    sourceType: overrides.sourceType ?? entry.sourceType,
+    sourceId: overrides.sourceId ?? entry.sourceId,
+    sourceAction: overrides.sourceAction ?? dryRunSourceActionForTest(entry),
+    tenantId: overrides.tenantId ?? entry.tenantId,
+    caseId: overrides.caseId ?? entry.caseId,
+    currency: overrides.currency ?? entry.currency,
+    lines:
+      overrides.lines ??
+      entry.lines.map((line, index) => ({
+        lineNo: index + 1,
+        accountCode: line.accountCode,
+        direction: line.direction,
+        amount: new Prisma.Decimal(line.amount),
+        tenantId: line.tenantId,
+        caseId: line.caseId,
+        currency: line.currency,
+        clientId: line.clientId,
+        caseClientId: line.caseClientId,
+        collectionId: line.collectionId,
+        dispositionLineId: line.dispositionLineId,
+        payoutId: line.payoutId,
+        offsetId: line.offsetId,
+        balanceLedgerId: line.balanceLedgerId,
+      })),
+  };
+}
+
+function dryRunSourceActionForTest(entry: DryRunEntryForTest): 'posted' | 'recorded' | 'apply' | 'reversal' {
+  if (entry.sourceType === 'CLIENT_PAYOUT') return 'recorded';
+  if (entry.sourceType === 'CLIENT_OFFSET') {
+    return entry.idempotencyKey.includes(':reversal:') ? 'reversal' : 'apply';
+  }
+  return 'posted';
+}
 
 interface ExpectedClientOffsetDryRunSeam {
   id: string;
@@ -158,6 +198,7 @@ describe('AccountingLedgerDryRunService', () => {
       clientPayout: { findMany: jest.fn().mockResolvedValue([]) },
       clientOffset: { findMany: jest.fn().mockResolvedValue([]) },
       balanceLedger: { findMany: jest.fn().mockResolvedValue([]) },
+      accountingJournalEntry: { findMany: jest.fn().mockResolvedValue([]) },
       collection: { findMany: forbiddenRead },
       ledgerEntry: { findMany: forbiddenRead },
       ledgerAllocation: { findMany: forbiddenRead },
@@ -199,8 +240,25 @@ describe('AccountingLedgerDryRunService', () => {
       }),
     );
     expect(prisma.balanceLedger.findMany).toHaveBeenCalled();
+    expect(prisma.accountingJournalEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: 'tenant-1' }),
+        select: expect.objectContaining({ lines: expect.any(Object) }),
+      }),
+    );
     expect(forbiddenRead).not.toHaveBeenCalled();
     expect(report.entries).toHaveLength(1);
+    expect(report.journalComparison).toEqual(
+      expect.objectContaining({
+        compared: true,
+        autoFix: false,
+        expectedEntryCount: 1,
+        persistedEntryCount: 0,
+        missingExpectedIdempotencyKeys: [
+          'acct-journal:v1:tenant-1:COLLECTION_DISPOSITION_LINE:dl-1:posted:2026-06-29T10:00:00.000Z:dl-1',
+        ],
+      }),
+    );
     expect(report.clientStatementComparison.compared).toBe(false);
   });
 });
@@ -444,6 +502,77 @@ describe('buildAccountingLedgerDryRunReport', () => {
     ]);
   });
 
+  it('persisted journal comparison: dry-run projection ile mevcut AccountingJournalEntry birebir eslesirse clean evidence uretir', () => {
+    const sources = {
+      tenantId: 'tenant-1',
+      dispositionLines: [dispositionLine({ id: 'dl-compare', amount: D(100) })],
+      clientPayouts: [payout({ id: 'pay-compare', amount: D(40) })],
+      clientOffsets: [],
+      balanceLedgerRows: [],
+    };
+    const expectedOnly = buildAccountingLedgerDryRunReport(sources);
+    const report = buildAccountingLedgerDryRunReport({
+      ...sources,
+      persistedJournalEntries: expectedOnly.entries.map((entry) => persistedJournalEntryFromDryRun(entry)),
+    });
+
+    expect(report.journalComparison).toEqual({
+      compared: true,
+      autoFix: false,
+      reason: expect.stringContaining('evidence-only'),
+      expectedEntryCount: 2,
+      persistedEntryCount: 2,
+      matchedEntryCount: 2,
+      missingExpectedIdempotencyKeys: [],
+      unexpectedPersistedIdempotencyKeys: [],
+      mismatchedIdempotencyKeys: [],
+      mismatches: [],
+    });
+  });
+
+  it('persisted journal comparison: eksik, fazla ve line-shape farklarini auto-fix yapmadan raporlar', () => {
+    const sources = {
+      tenantId: 'tenant-1',
+      dispositionLines: [dispositionLine({ id: 'dl-mismatch', amount: D(100) })],
+      clientPayouts: [payout({ id: 'pay-missing', amount: D(40) })],
+      clientOffsets: [],
+      balanceLedgerRows: [],
+    };
+    const expectedOnly = buildAccountingLedgerDryRunReport(sources);
+    const mismatched = persistedJournalEntryFromDryRun(expectedOnly.entries[0], {
+      lines: expectedOnly.entries[0].lines.map((line, index) => ({
+        ...line,
+        lineNo: index + 1,
+        amount: index === 0 ? D(99) : new Prisma.Decimal(line.amount),
+      })),
+    });
+    const unexpected = persistedJournalEntryFromDryRun(expectedOnly.entries[0], {
+      id: 'journal-unexpected',
+      idempotencyKey: 'acct-journal:v1:tenant-1:CLIENT_PAYOUT:pay-extra:recorded:2026-06-29T11:00:00.000Z:pay-extra',
+      sourceType: 'CLIENT_PAYOUT',
+      sourceId: 'pay-extra',
+      sourceAction: 'recorded',
+    });
+
+    const report = buildAccountingLedgerDryRunReport({
+      ...sources,
+      persistedJournalEntries: [mismatched, unexpected],
+    });
+
+    expect(report.journalComparison.autoFix).toBe(false);
+    expect(report.journalComparison.missingExpectedIdempotencyKeys).toEqual([
+      'acct-journal:v1:tenant-1:CLIENT_PAYOUT:pay-missing:recorded:2026-06-29T11:00:00.000Z:pay-missing',
+    ]);
+    expect(report.journalComparison.unexpectedPersistedIdempotencyKeys).toEqual([
+      'acct-journal:v1:tenant-1:CLIENT_PAYOUT:pay-extra:recorded:2026-06-29T11:00:00.000Z:pay-extra',
+    ]);
+    expect(report.journalComparison.mismatchedIdempotencyKeys).toEqual([
+      'acct-journal:v1:tenant-1:COLLECTION_DISPOSITION_LINE:dl-mismatch:posted:2026-06-29T10:00:00.000Z:dl-mismatch',
+    ]);
+    expect(report.journalComparison.mismatches).toEqual([
+      expect.objectContaining({ reasons: ['LINE_SHAPE_MISMATCH'], expectedLineCount: 2, actualLineCount: 2 }),
+    ]);
+  });
   it('CLIENT_OFFSET APPLY same-case accounting rule: payable DEBIT keeps caseClientId, expense CREDIT has null caseClientId', () => {
     const report = buildAccountingLedgerDryRunReport({
       tenantId: 'tenant-1',
