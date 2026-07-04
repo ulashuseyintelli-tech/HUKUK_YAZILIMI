@@ -98,6 +98,22 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(rateProvider.getRatesForPeriod).toHaveBeenCalledTimes(1);
   });
 
+  it('ALC-AUTH-3B: grossPrincipal = ClaimBucket amount toplamı (demandedAmount??amount), ödemeden/allocation-den bağımsız', async () => {
+    const { service } = setup({
+      claimItems: [principal({ demandedAmount: 200000, amount: 200000 })],
+      ledger: [
+        { id: 'L1', entryType: 'PAYMENT', status: 'CONFIRMED', amount: 220000, currency: 'TRY', entryDate: new Date('2025-06-01'), effectiveDate: null, sourceType: 'BANKA' },
+      ],
+      collections: [],
+      rates: legalRate(),
+    });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    expect(res.currencyResults).toHaveLength(1);
+    // Ödeme (220.000) anaparayı (200.000) aşsa/tam kapatsa bile grossPrincipal HİÇ değişmez —
+    // bu, allocation-sonrası kalan anaparadan (finalDebtStates.principal) tamamen bağımsızdır.
+    expect(res.currencyResults[0].grossPrincipal).toBe(200000);
+  });
+
   it('ledger-first: confirmed PAYMENT ledger varsa source LEDGER', async () => {
     const { service } = setup({
       claimItems: [principal()],

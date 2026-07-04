@@ -53,13 +53,17 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
   it('contract hardening: authority, buckets, totals, provenance ve diagnostics açık taşınır', () => {
     const balance = makeBalance({
       currencyResults: [
-        currencyResult('TRY', {
-          totalInterest: 150,
-          totalDue: 1200,
-          allocations: [{ paymentId: 'p1', paymentAmount: 300 }],
-          engineVersion: 'engine-v1',
-          segments: [{ id: 's1' }],
-        }),
+        {
+          currency: 'TRY',
+          grossPrincipal: 1000,
+          result: {
+            totalInterest: 150,
+            totalDue: 1200,
+            allocations: [{ paymentId: 'p1', paymentAmount: 300 }],
+            engineVersion: 'engine-v1',
+            segments: [{ id: 's1' }],
+          },
+        },
       ] as any,
       projections: {
         costs: { HARC: 75, TEBLIGAT_MASRAFI: 25 },
@@ -101,7 +105,7 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
       diagnosticCodes: ['FINAL_DEBT_STATES_MISSING'],
     });
     expect(d.totals).toMatchObject({
-      totalDebtAmount: null,
+      totalDebtAmount: 1490, // ALC-AUTH-3B: grossPrincipal(1000) + interest(150) + costs(100) + ancillaries(240)
       totalPaidAmount: 300,
       outstandingAmount: 1540,
       heldOverpaymentAmount: 80,
