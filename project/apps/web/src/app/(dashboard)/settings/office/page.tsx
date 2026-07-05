@@ -1583,8 +1583,19 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canGenerateDocuments} onChange={e => setForm({...form, canGenerateDocuments: e.target.checked})} />Belge hazırlayabilir</label>
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canApproveDocuments} onChange={e => setForm({...form, canApproveDocuments: e.target.checked})} />Belge onaylayabilir</label>
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canSeeFinance} onChange={e => setForm({...form, canSeeFinance: e.target.checked})} />Muhasebe görebilir</label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canApproveFinance} onChange={e => setForm({...form, canApproveFinance: e.target.checked})} />Muhasebe onaylayabilir</label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canPrepareCollectionDisposition} onChange={e => setForm({...form, canPrepareCollectionDisposition: e.target.checked})} />Tahsilat dağıtımı hazırlayabilir</label>
+              {/* ACT-21 (2026-07-05): canApproveFinance backend'de hiçbir yerde enforce edilmiyor (yalnız
+                  persist ediliyor, staff.service.ts) — Staff hiçbir zaman final approver olamaz (kilitli
+                  politika). Etiket bunu netleştiriyor, davranış DEĞİŞMEDİ. */}
+              <label className="flex items-center gap-1" title="Şu an backend'de kontrol edilmiyor (ayrılmış alan) — Staff nihai onaylayıcı olamaz">
+                <input type="checkbox" checked={form.canApproveFinance} onChange={e => setForm({...form, canApproveFinance: e.target.checked})} />
+                Muhasebe onaylayabilir <span className="text-gray-400">(şu an uygulanmıyor)</span>
+              </label>
+              {/* ACT-21: canPrepareCollectionDisposition gerçek bir yetki kapısıdır (disposition-posting.service.ts)
+                  AMA yalnız hazırlık/öneri — nihai onay değil (schema.prisma yorumuyla tutarlı). */}
+              <label className="flex items-center gap-1" title="Yalnız hazırlık/öneri yetkisi — nihai onay değil">
+                <input type="checkbox" checked={form.canPrepareCollectionDisposition} onChange={e => setForm({...form, canPrepareCollectionDisposition: e.target.checked})} />
+                Tahsilat dağıtımı hazırlayabilir <span className="text-gray-400">(nihai onay değil)</span>
+              </label>
             </div>
           </div>
           {/* Varsayılan Seçeneği */}
