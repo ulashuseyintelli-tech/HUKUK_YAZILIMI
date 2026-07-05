@@ -101,6 +101,11 @@ export function ThirdPartyPanel({ caseDebtorId, debtorName, caseId }: ThirdParty
   const [editingExternalCase, setEditingExternalCase] = useState<ExternalCase | null>(null);
   const [showCollectionModal, setShowCollectionModal] = useState(false);
   const [collectionExternalCase, setCollectionExternalCase] = useState<ExternalCase | null>(null);
+  // ACT-09: üçüncü şahıs düzenle/sil UI cilası — backend PUT/DELETE third-parties/:id zaten
+  // vardı, "Dış Dosya" sekmesinin aksine bu sekmede hiç wire edilmemişti.
+  const [showEditThirdPartyModal, setShowEditThirdPartyModal] = useState(false);
+  const [editingThirdParty, setEditingThirdParty] = useState<ThirdParty | null>(null);
+  const [deletingThirdPartyId, setDeletingThirdPartyId] = useState<string | null>(null);
 
 // OCR tarama sonucu tipi
 interface OcrExternalCaseResult {
@@ -157,6 +162,22 @@ interface OcrExternalCaseResult {
       alert(err.message || "İhbarname gönderilemedi");
     } finally {
       setSendingIhbarname(null);
+    }
+  };
+
+  // ACT-09: üçüncü şahıs sil (backend zaten guard'lı — tenant+pasif-CaseDebtor kontrolü)
+  const handleDeleteThirdParty = async (tp: ThirdParty) => {
+    if (!confirm(`"${tp.name}" üçüncü şahsını silmek istediğinize emin misiniz?`)) {
+      return;
+    }
+    try {
+      setDeletingThirdPartyId(tp.id);
+      await api.delete(`/third-parties/${tp.id}`);
+      await loadThirdParties();
+    } catch (err: any) {
+      alert(err.response?.data?.message || err.message || "Üçüncü şahıs silinemedi");
+    } finally {
+      setDeletingThirdPartyId(null);
     }
   };
 
@@ -412,12 +433,38 @@ interface OcrExternalCaseResult {
                     </div>
                   </div>
                   
-                  {/* Durum Badge */}
-                  {status && (
-                    <span className={`px-2 py-1 rounded-lg text-xs font-medium ${getStageColor(status.currentStage)}`}>
-                      {getStageLabel(status.currentStage)}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {/* Durum Badge */}
+                    {status && (
+                      <span className={`px-2 py-1 rounded-lg text-xs font-medium ${getStageColor(status.currentStage)}`}>
+                        {getStageLabel(status.currentStage)}
+                      </span>
+                    )}
+                    {/* ACT-09: Düzenle/Sil — henüz ihbarname gönderilmemişse (sil resmi tebligat izini bozmasın) */}
+                    <button
+                      type="button"
+                      onClick={() => { setEditingThirdParty(tp); setShowEditThirdPartyModal(true); }}
+                      className="p-1 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded"
+                      title="Düzenle"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+                    {(!status || status.currentStage === "NONE") && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteThirdParty(tp)}
+                        disabled={deletingThirdPartyId === tp.id}
+                        className="p-1 text-red-500 hover:text-red-800 hover:bg-red-50 rounded disabled:opacity-50"
+                        title="Sil"
+                      >
+                        {deletingThirdPartyId === tp.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <X className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* 89 İhbarname Timeline */}
@@ -698,6 +745,22 @@ interface OcrExternalCaseResult {
         />
       )}
 
+      {/* ACT-09: Üçüncü Şahıs Düzenleme Modal */}
+      {showEditThirdPartyModal && editingThirdParty && (
+        <EditThirdPartyModal
+          thirdParty={editingThirdParty}
+          onClose={() => {
+            setShowEditThirdPartyModal(false);
+            setEditingThirdParty(null);
+          }}
+          onSaved={() => {
+            setShowEditThirdPartyModal(false);
+            setEditingThirdParty(null);
+            loadThirdParties();
+          }}
+        />
+      )}
+
       {/* Yeni Dış Dosya Modal */}
       {showAddExternalCaseModal && (
         <AddExternalCaseModal
@@ -948,6 +1011,193 @@ function AddThirdPartyModal({ caseDebtorId, onClose, onSaved }: AddThirdPartyMod
                   <Plus className="h-4 w-4" />
                   Ekle
                 </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              İptal
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+// ACT-09: Üçüncü Şahıs Düzenleme Modal (AddThirdPartyModal ile aynı alanlar, PUT /third-parties/:id)
+interface EditThirdPartyModalProps {
+  thirdParty: ThirdParty;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function EditThirdPartyModal({ thirdParty, onClose, onSaved }: EditThirdPartyModalProps) {
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState({
+    type: thirdParty.type,
+    name: thirdParty.name,
+    identityNo: thirdParty.identityNo || "",
+    address: thirdParty.address || "",
+    city: thirdParty.city || "",
+    phone: thirdParty.phone || "",
+    email: thirdParty.email || "",
+    kepAddress: thirdParty.kepAddress || "",
+    relationDesc: thirdParty.relationDesc || "",
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.name.trim()) {
+      alert("Lütfen üçüncü şahıs adını girin");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await api.put(`/third-parties/${thirdParty.id}`, formData);
+      onSaved();
+    } catch (err: any) {
+      alert(err.response?.data?.message || err.message || "Üçüncü şahıs güncellenemedi");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="font-semibold text-lg">Üçüncü Şahsı Düzenle</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Üçüncü Şahıs Türü</label>
+            <div className="grid grid-cols-5 gap-2">
+              {Object.entries(ThirdPartyTypeLabels).map(([type, label]) => {
+                const Icon = ThirdPartyTypeIcons[type as ThirdPartyType];
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, type: type as ThirdPartyType })}
+                    className={`p-3 rounded-lg border text-center transition-all ${
+                      formData.type === type
+                        ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 mx-auto mb-1" />
+                    <span className="text-xs">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Ad/Ünvan *</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">VKN / TCKN</label>
+            <input
+              type="text"
+              value={formData.identityNo}
+              onChange={(e) => setFormData({ ...formData, identityNo: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Adres</label>
+            <textarea
+              value={formData.address}
+              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+              rows={2}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">İl</label>
+            <input
+              type="text"
+              value={formData.city}
+              onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Telefon</label>
+              <input
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">E-posta</label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">KEP Adresi</label>
+            <input
+              type="text"
+              value={formData.kepAddress}
+              onChange={(e) => setFormData({ ...formData, kepAddress: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">İlişki Açıklaması</label>
+            <input
+              type="text"
+              value={formData.relationDesc}
+              onChange={(e) => setFormData({ ...formData, relationDesc: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 px-4 py-2.5 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Kaydediliyor...
+                </>
+              ) : (
+                "Kaydet"
               )}
             </button>
             <button
