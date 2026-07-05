@@ -1013,6 +1013,73 @@ Related Modules: guarded-primary-display.ts, case-balance-display.ts, case-balan
 Status: **MERGED/CLOSED** — Seçenek (c) implement edildi ve merge edildi (2026-07-05). PR #929, commit SHA `dd5901e9` (asıl implementasyon) → güncel branch SHA `991c118c` (origin/main merge sonrası, PR #925 ile çakışma yok doğrulandı), squash merge SHA `d23003e8`. `guarded-primary-display.ts`'e `hasCostOrAttorneyFeeUnderstatementRisk(report)` eklendi — `report.totals.diffs`'te COSTS_DELTA/ATTORNEY_FEE_DELTA `severity==='RED'` ise `buildGuardedPrimaryCalculationResult()` `toplamBorc`/`sonBorc`/`kalanBorc`'u override etmiyor (`...legacy` korunuyor); diğer 5 canonical-override alan (asilAlacak/takipTutari/takipSonrasiFaiz/toplamTahsilat/kalanAnapara) etkilenmedi. Yeni backend alanı/migration/allocation-engine değişikliği YOK. 3 yeni test (COSTS_DELTA RED→suppress+diğer-5-etkilenmez, ATTORNEY_FEE_DELTA RED→aynı suppress, RED yok→mevcut tam-override korunur/regresyon yok). CI 4/4 PASS; `balance-shadow-display.test.tsx` 81/81 PASS (76 mevcut+3 yeni ALC-AUTH-3E+2 PR #925'ten); `tsc --noEmit` temiz. **Bilinen, kapsam-dışı kozmetik boşluk**: `buildGuardedSummaryRuntimeBoundaryPlan()` (statik/audit görünümü, `report` almıyor) hâlâ bu 3 alanı koşulsuz `CANONICAL_PRIMARY_OVERRIDE` olarak listeliyor — gerçek override davranışı doğru, yalnız diagnostic-plan görünümü case-bazlı inceliği yakalamıyor; güvenlik sorunu değil, ayrı bir kozmetik iyileştirme adayı. **B1/guarded-primary-pilot ekseninde owner'ın bildiği başka açık blocker kalmıyor** — flag rollout kararı (ayrı, ürün/Av. sign-off gerektiren bir konu) sıradaki gerçek karar noktası.
 ---
 
+## ALC-AUTH-4A/4B/4C — Guarded Primary Pilot Sign-off, Rollout & Kill-Switch Governance (2026-07-05)
+
+Owner kararı: B1 technical blocker zinciri (ALC-AUTH-3B/3C/3D/3E) kapandı, `NEXT_PUBLIC_GUARDED_PRIMARY_DISPLAY_PILOT` hâlâ varsayılan KAPALI. Flag'e dokunmadan önce üç ayrı governance/rollout maddesi açıldı: **ALC-AUTH-4A = FIRST/GO-ANALYZE**, **ALC-AUTH-4B = BACKLOG (depends on 4A)**, **ALC-AUTH-4C = BACKLOG (depends on 4A+4B)**. ⚠️ **İsim-alanı notu:** `master-triage-register.md` ACT-27/ACT-28 (principal gross/net split, Collection/LedgerEntry/LedgerAllocation üç-otorite reconciliation) daha önce "gerçek iş muhtemelen ALC-AUTH-4/5 olarak devam eder" diye tahmin etmişti — bu tahmin YANLIŞ ÇIKTI, "ALC-AUTH-4" numarası burada FARKLI bir konuya (sign-off/rollout/kill-switch) verildi. ACT-27/28'in kendi konusu hâlâ AÇIK ve numarasız; ileride ALC-AUTH-5 veya ayrı bir alt-numara alacak. Cross-reference notu ACT-27/28'e eklendi (bkz `master-triage-register.md`).
+
+⚠️ **RECONCILE TAMAMLANDI (2026-07-05):** ALC-AUTH-4A'nın GO-ANALYZE bulguları, repo kökündeki (`project/` dışı) 8 dosyalık bağımsız `docs/audit/` guarded-primary rollout denetim setiyle (ayrı, issue#/CB-# numaralandırmalı, ALC-AUTH-* isim-alanından habersiz bir governance hattı) `docs/design/alc-auth-4a-display-authority-reconcile.md` belgesinde reconcile edildi. Sonuç: alt-satır (bottom-line) governance kararında çelişki YOK (her iki hat da NO-GO/CONDITIONAL-GO'da hemfikir); ALC-AUTH-4A'nın stop condition bulgusu (partial-canonical/partial-legacy misleading-display) 8 dosyanın HİÇBİRİNDE ele alınmamış, gerçek ve doldurulmamış bir boşluk olarak doğrulandı. Reconcile ayrıca 2 yeni, ALC-AUTH-4A-IMPL scope'u DIŞINDA tutulan madde açtı: **ALC-AUTH-3E-B-NEXT** (backend/display-adapter sınıflandırma sorusu) ve **ALC-AUTH-DOC-REFRESH** (docs/audit/ içinde 2 dosyanın artık stale olan "HesapOzetiPanel=saf legacy" önermesi, canlı risk yok).
+
+ID: ALC-AUTH-4A
+Title: UI / Avukat Sign-off Contract — guarded primary pilot enablement öncesi
+Problem: Avukatın canonical primary display açılmadan önce ekranda neyi gördüğü, neyi kabul ettiği ve hangi durumda legacy fallback oluştuğu netleşmemişti. GO-ANALYZE (docs-only, kod değişikliği yok) repo kanıtıyla tamamlandı.
+Business Value: Guarded primary pilot flag'in (4B/4C'den önce) avukata ne göstereceğinin, hangi rakamların hangi otoriteden geldiğinin ve sign-off'un hukuken neyi kapsayıp kapsamadığının net olması — yanlış-güven/yanlış-anlama riskinin flag açılmadan önce kapanması.
+Technical Value: Repo kanıtı — birincil dosyalar `apps/web/src/lib/guarded-primary-display.ts` (karar/override mantığı), `apps/web/src/components/finance/HesapOzetiPanel.tsx:166-228,278-310` (fiili gösterim + tek banner), `apps/web/src/components/finance/BalanceShadowDiffPanel.tsx` (bağımsız audit-only shadow paneli), `apps/web/src/lib/config/feature-flags.ts:157-173` (iki bağımsız flag). Üç madde doğrulandı: (1) bugünkü fallback bildirimi YALNIZ ham kod (`"OUTSTANDING_DELTA, PAID_DELTA"`, `"ELIGIBLE"` vb.) — Türkçe/insan-okur çevirisi YOK, 81 test bu ham stringlere kilitli (`balance-shadow-display.test.tsx`). (2) `HesapOzetiPanel` (guarded banner) ve `BalanceShadowDiffPanel` (audit-only shadow) BAĞIMSIZ iki URL-param + flag çiftiyle açılıyor (`guardedPrimary=1` / `balanceShadow=1`) — biri açıkken diğeri kapalı olabilir. (3) **STOP CONDITION TESPİT EDİLDİ (misleading-display):** ALC-AUTH-3E'nin `hasCostOrAttorneyFeeUnderstatementRisk()` suppress'i tetiklendiğinde (`guarded-primary-display.ts:348-352,364-381`) `toplamBorc`/`sonBorc`/`kalanBorc` sessizce legacy'de kalıyor AMA `decision.reasonCodes` boş kalıyor ve banner "Guarded canonical primary candidate"/"ELIGIBLE" göstermeye devam ediyor (`evaluateGuardedPrimaryDisplayPilot`'ta suppress kontrolü hiç yok — yalnız `buildGuardedPrimaryCalculationResult`'ta) — panelin en öndeki 3 rakamı (`HesapOzetiPanel.tsx:278-310`, TOPLAM BORÇ/SON BORÇ/KALAN BORÇ) sessizce legacy iken banner "sorun yok" diyor. Bu senaryo `balance-shadow-display.test.tsx:556-635`'te DEĞER seviyesinde test edilmiş ama banner/UI metni hiç doğrulanmamış (grep-doğrulandı, sıfır assertion). Tam bulgu seti + UI copy taslağı + sign-off checklist + pilot kabul kriterleri bu oturumun GO-ANALYZE raporunda (chat, 2026-07-05).
+Priority: HIGH
+Depends On: ALC-AUTH-3D (MERGED, PR #922/#925), ALC-AUTH-3E (MERGED, PR #929)
+Unlock Condition: —
+Estimated Size: — (analiz tamamlandı; UI-copy/partial-state-fix implementasyonu ayrı, küçük bir GO-IMPLEMENT gerektirir)
+Related Modules: guarded-primary-display.ts, HesapOzetiPanel.tsx, BalanceShadowDiffPanel.tsx, balance-shadow-display.ts, feature-flags.ts, balance-display-shadow-diff.types.ts
+Status: DONE (analiz + reconcile) — GO-ANALYZE ve ardından `docs/audit/` seti ile reconciliation tamamlandı (bkz `docs/design/alc-auth-4a-display-authority-reconcile.md`), kod değişikliği YAPILMADI. **STOP CONDITION owner tarafından ONAYLANDI/LOCKED** (2026-07-05): partial-canonical/partial-legacy misleading-display riski UI'da açıkça görünür kılınmadan (ALC-AUTH-4A-IMPL veya eşdeğeri) ALC-AUTH-4B'ye geçilmez. Sıradaki adım: `ALC-AUTH-4A-IMPL` — GO-ANALYZE (henüz başlamadı, scope Bölüm 12'de [reconcile belgesi] önceden kilitlendi).
+
+ID: ALC-AUTH-4B
+Title: Guarded Primary Pilot Rollout Plan
+Problem: `NEXT_PUBLIC_GUARDED_PRIMARY_DISPLAY_PILOT` için kademeli rollout tanımı henüz yok — bugün flag ya tamamen kapalı ya da (env+URL-param ile) tek-case opt-in; tenant/kullanıcı bazlı kademeli açılış mekanizması yok.
+Business Value: Flag güvenle, ölçülü ve geri-alınabilir şekilde genişletilebilir hale gelir.
+Technical Value: Prior-art AYNI dosyada zaten var — `feature-flags.ts:21-82`'deki `UnifiedPreviewRolloutConfig` (killSwitch/rolloutPercent/tenantWhitelist/fallbackRateThreshold + `trackLegacyFallback()`/`getFallbackRate()`) ilgisiz bir özellik (Unified Preview) için zaten bu deseni uyguluyor. `guarded-primary-display.ts` bu makineye BAĞLI DEĞİL (grep doğrulandı) — 4B muhtemelen bu deseni adapte eder, sıfırdan icat etmez.
+Priority: —
+Depends On: ALC-AUTH-4A
+Unlock Condition: Owner GO-IMPLEMENT onayı; ALC-AUTH-4A'nın stop-condition bulgusunun (partial-canonical misleading-display) kapanması
+Estimated Size: —
+Related Modules: feature-flags.ts, guarded-primary-display.ts
+Status: BACKLOG — ALC-AUTH-4A kapanmadan başlamaz.
+
+ID: ALC-AUTH-4C
+Title: Controlled Enablement / Kill-Switch Governance
+Problem: Runtime enablement, kill-switch, telemetry, rollback ve decision-log kuralları tanımlı değil.
+Business Value: Pilot genişledikçe hızlı ve güvenli geri-dönüş garantisi.
+Technical Value: `guarded-primary-display.ts` bugün `trackLegacyFallback()`/`trackUnifiedSuccess()`'a (yalnız `usePreviewCoordinator.ts`'te kullanılan, ilgisiz Unified Preview telemetrisi) HİÇ bağlı değil (grep doğrulandı) — guarded-primary için telemetri sıfırdan bağlanmalı. Flag bugün yalnız env-var (redeploy gerektirir) + URL-param; DB-backed/runtime instant kill-switch yok.
+Priority: —
+Depends On: ALC-AUTH-4A, ALC-AUTH-4B
+Unlock Condition: ALC-AUTH-4B tamamlanması
+Estimated Size: —
+Related Modules: feature-flags.ts
+Status: BACKLOG — ALC-AUTH-4A+4B kapanmadan başlamaz.
+
+ID: ALC-AUTH-3E-B-NEXT
+Title: Primary Eligible Fixture Preconditions — Contamination vs Guardrail Classification
+Problem: `docs/audit/PRIMARY-ELIGIBLE-FIXTURE-DESIGN.md` (§3/§4/§11 Risk 1) bulgusu — display adapter `CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY` diagnostic'ini HER ZAMAN genel bir bilgi/guardrail sinyali olarak üretiyor ve mevcut shadow-readiness bunu blocker listesine taşıyor. Bu, gerçek veriyle `safeForPrimaryDisplay=true` elde etmeyi YAPISAL olarak imkânsız kılabilir — sorun veri eksikliği değil, sinyalin "gerçek contamination" ile "genel bilgilendirici uyarı" arasında ayrılmamış olması.
+Business Value: Guarded pilot'un gerçek dev/prod verisiyle hiç `safeForPrimaryDisplay=true` üretemediği bir kör noktanın önceden tespit edilip kapatılması.
+Technical Value: Kod değişikliği bu kayıtla YAPILMAZ — yalnız sınıflandırma kararı (gerçek contamination ile genel guardrail'i ayıran bir kural/alan gerekip gerekmediği) owner GO-ANALYZE'ı bekliyor. `ALC-AUTH-4A-IMPL`'in (UI copy/authority visibility) scope'undan KASITLI olarak AYRIDIR — biri backend/display-adapter sınıflandırması, diğeri frontend UI transparency'sidir.
+Priority: —
+Depends On: — (ALC-AUTH-4A-IMPL'i beklemez, bağımsız)
+Unlock Condition: Owner GO-ANALYZE onayı
+Estimated Size: — (analiz)
+Related Modules: case-balance-display.ts (toCaseBalanceDisplay), balance-display-shadow-diff.service.ts
+Status: BACKLOG — `alc-auth-4a-display-authority-reconcile.md` Bölüm 9'da retroaktif kayda geçirildi, henüz GO-ANALYZE verilmedi.
+
+ID: ALC-AUTH-DOC-REFRESH
+Title: docs/audit/ governance drift düzeltmesi — "HesapOzetiPanel = saf legacy" önermesi stale
+Problem: `docs/audit/DISPLAY-AUTHORITY-AUDIT.md` ve `docs/audit/OVERPAYMENT-DISPLAY-WORDING-SIGNOFF.md`, "`HesapOzetiPanel` legacy `calculation-summary`'de kalıyor, değiştirilmedi" önermesini taşıyor — ALC-AUTH-3B/3D/3E (bağımsız hat) `guarded-primary-display.ts`'i `HesapOzetiPanel.tsx:166-172`'ye fiilen bağladığından beri bu önerme artık doğru değil.
+Business Value: Doğrulama artefaktı gerçek implementasyonun gerisinde kalırsa yanlış sistem doğrulanmış olur (aynı ders, `decision-log.md`'nin 2026-07-05 "Guarded primary rollout dokümanları governance-drift'ten arındırıldı" kaydında zaten bir kez uygulanmıştı — bu kez sıra bu 2 dosyada).
+Technical Value: Docs-only, dar kapsamlı düzeltme — yalnız "HesapOzetiPanel artık guarded-primary aktifken canonical/kısmi-canonical de gösterebiliyor" notu eklenir. Canlı risk YOK (overpayment senaryoları zaten guarded-eligible kapsamı dışında tutuluyor, `GUARDED-PRIMARY-CUTOVER-SCOPE-FREEZE.md` §6 — CB-05/CB-06 wording kurallarının pratik geçerliliği bozulmuyor).
+Priority: LOW
+Depends On: —
+Unlock Condition: Owner GO-IMPLEMENT onayı (docs-only, düşük risk)
+Estimated Size: XS
+Related Modules: docs/audit/DISPLAY-AUTHORITY-AUDIT.md, docs/audit/OVERPAYMENT-DISPLAY-WORDING-SIGNOFF.md
+Status: BACKLOG — düşük öncelik, canlı risk yok.
+---
+
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
 
 2026-07-04 tarihli D6 GO-ANALYZE (14 ajanlı workflow: repo forensics + bağımsız hukuki/mimari analiz + adversarial kritik + sentez) sonucu owner tarafından ratifiye edilen nihai mimari: bkz `docs/design/d6-final-architecture.md` (kanonik karar kaydı) ve `decision-log.md` 2026-07-04 satırları. **D6A-1** (PR #878) ve **D6A-2 çekirdek** (PR #880, `DebtorCrossCaseNotification`) KAPALI/DOKUNULMAZ — aşağıdaki maddeler yalnız bunların eksik dışa-açılan yüzünü (D6A-2-SURFACE) ve ayrı-epic frameworkleri (ESF, IAF) kapsar. "D6B" etiketi emekli edilmiştir, kullanılmaz.
