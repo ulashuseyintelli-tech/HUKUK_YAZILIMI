@@ -225,6 +225,10 @@ describe("A1-c clientRoleSignal (güvenli mod — otomatik rol YOK; konum+durum)
   it("FRONT_PAYEE + IDENTITY → 'kesin değil' notu YOK", () => {
     expect(sig("FRONT_PAYEE", "IDENTITY")!.message).not.toContain("kesin değil");
   });
+  it("ACT-19: FRONT_PAYEE mesajı da (ANOMALY/REVIEW gibi) 'otomatik rol atanmaz' netliğini içerir", () => {
+    const s = sig("FRONT_PAYEE", "EXACT")!;
+    expect(s.message).toContain("otomatik rol atanmaz");
+  });
   it("SUFFIX (zayıf) → reliable=false + mesajda 'zayıf'", () => {
     const s = sig("ENDORSEMENT", "SUFFIX")!;
     expect(s.reliable).toBe(false);

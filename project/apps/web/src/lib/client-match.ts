@@ -250,11 +250,14 @@ export function clientRoleSignal(result: ClientMatchResult | null): ClientRoleSi
     };
   }
   // FRONT_PAYEE
+  // ACT-19 (2026-07-05): mesaj ANOMALY/REVIEW ile tutarlı hale getirildi — "otomatik rol atanmaz"
+  // ifadesi eksikti. Extraction/prompt'a DOKUNULMADI (kilitli karar, bkz. a1-client-anchoring-design.md
+  // "Per-page ön-yüz extraction prompt'una dokunulmaz"); yalnız insan-doğrulaması gerekliliği netleştirildi.
   const certainty = m.matchType === "IDENTITY" ? "" : " — kimlik no yok, kesin değil";
   return {
     ...base,
     status: "VERIFY",
     label: "Olası lehtar",
-    message: `Olası lehtar; payee OCR güvenilmez, DOĞRULAYIN${certainty}.${weak}`,
+    message: `Olası lehtar; payee OCR güvenilmez, otomatik rol atanmaz — DOĞRULAYIN${certainty}.${weak}`,
   };
 }
