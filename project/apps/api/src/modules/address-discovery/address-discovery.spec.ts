@@ -457,6 +457,29 @@ describeDb('AddressDiscoveryModule Integration Tests', () => {
       expect(updated?.confidenceScore).toBe(score);
     });
 
+    it('ACT-10: computeAddressScore aynı skoru döner ama VERİTABANINA YAZMAZ (GET-güvenli)', async () => {
+      const address = await prisma.debtorAddress.create({
+        data: {
+          debtorId: testDebtor.id,
+          street: 'Test Sokak 2',
+          city: 'Ankara',
+          type: 'DECLARED',
+          source: 'MERNIS',
+          verified: true,
+          confidenceScore: null,
+        },
+      });
+
+      const computed = await confidenceScoreService.computeAddressScore(address.id);
+      expect(computed).toBeGreaterThan(0);
+
+      // Veritabanında HİÇBİR şey değişmemeli (confidenceScore hâlâ null)
+      const unchanged = await prisma.debtorAddress.findUnique({
+        where: { id: address.id },
+      });
+      expect(unchanged?.confidenceScore).toBeNull();
+    });
+
     it('should update all scores for debtor', async () => {
       // Create multiple addresses
       await prisma.debtorAddress.createMany({

@@ -170,7 +170,14 @@ export class AddressDiscoveryController {
   // ==================== CONFIDENCE SCORE ====================
 
   /**
-   * Adres güven skorunu getir
+   * Adres güven skorunu getir.
+   *
+   * ACT-10 (2026-07-05): GET-içi-yazma anti-pattern'i düzeltildi — önceden `updateAddressScore()`
+   * (hesapla+persist) çağrılıyordu, artık `computeAddressScore()` (yalnız hesapla, YAZMAZ) çağrılıyor.
+   * Persist eden yol yalnız POST confidence/debtor/:debtorId/update-all'da kalır.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - (yeni FE entegrasyonu olursa) GET /address-discovery/confidence/:addressId
    */
   @Get('confidence/:addressId')
   async getConfidenceScore(
@@ -179,7 +186,7 @@ export class AddressDiscoveryController {
   ) {
     // Tenant boundary: ham addressId başka tenant'ın adresine erişemesin (cross-tenant okuma+yazma engeli).
     await this.confidenceScoreService.assertAddressBelongsToTenant(req.user.tenantId, addressId);
-    const score = await this.confidenceScoreService.updateAddressScore(addressId);
+    const score = await this.confidenceScoreService.computeAddressScore(addressId);
     return { score };
   }
 
