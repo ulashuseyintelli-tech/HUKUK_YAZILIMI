@@ -1410,9 +1410,12 @@ export class DebtorService {
   /// - DebtorController.updateAddress() → PUT /debtors/:id/addresses/:addressId (debtors/page.tsx
   ///   bağımsız borçlu listesi adres düzenleme — AYRI ve İKİNCİL yol; drawer içindeki
   ///   AddressFormModal AddressService.update() → PUT /addresses/:addressId'yi kullanır, BUNU DEĞİL)
-  /// DBND-D6A-2 NOT: notifyCrossCaseAddressChangeSafe yalnız BU (ikincil) yoldan + addAddress()'ten
-  /// tetiklenir; AddressService.update() (PRIMARY/drawer yolu) kapsam DIŞI kalır — bilinen boşluk,
-  /// bu PR'de GENİŞLETİLMEDİ.
+  /// ACT-22 (2026-07-05) DÜZELTME: bu yorum önceden "AddressService.update() (PRIMARY/drawer yolu)
+  /// kapsam DIŞI kalır — bilinen boşluk" diyordu; bu artık YANLIŞ/BAYAT. AddressService.update()
+  /// kendi notifyCrossCaseAddressChangeSafe() private wrapper'ıyla AYNI
+  /// DebtorCrossCaseNotificationService.notifyFieldGroupChanges()'i çağırıyor (address.service.ts:255,267 —
+  /// DBND-D6A-2 kapsamına o da dahil edilmiş, önceki yorum yalnız güncellenmemiş). İki yol da
+  /// (PRIMARY/drawer + İKİNCİL/bağımsız borçlu listesi) bildirim kapsamındadır; boşluk YOK.
   /// </remarks>
   async updateAddress(
     tenantId: string,
