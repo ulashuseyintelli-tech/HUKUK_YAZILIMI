@@ -41,6 +41,24 @@ Kaynak kanitlari:
 
 Sonuc: Sistem bug arama fazindan fixture tasarim fazina gecmeye hazir, fakat primary cutover icin hazir degil.
 
+### 1.1 Ek (2026-07-05, ALC-AUTH-4B) — Option C artik "ilk pilot icin erken" DEGIL
+
+ALC-AUTH-4A-IMPL (PR #948, `guarded-primary-display.ts`) `GuardedPrimaryDisplaySource`'a ucuncu
+bir deger ekledi: `PARTIAL_CANONICAL_LEGACY_TOTALS`. Bu, tam olarak asagidaki §7 tablosunda
+**"C. Principal + cost/expense"** secenegi icin yazilmis "Ilk pilot icin erken" hukmunun konusu
+olan senaryodur — cost/vekalet ClaimItem'i olmayan bir case, artik guard'i "gecen ama uydurma"
+degil, ACIKCA TURKCE etiketli bir kismi-canonical durum uretiyor (5/8 canonical + 3/8 legacy,
+`(mevcut hesaplama)` satir etiketleri).
+
+**Sonuc: bu senaryo ALC-AUTH-4B'nin Locked Pilot Case Set'inde (bkz.
+`docs/audit/GUARDED-PRIMARY-PILOT-ROLLOUT-CHECKLIST.md` §7A) 2. madde olarak ZORUNLU pilot
+senaryosudur — artik haric tutulan degil, ozellikle test edilmesi gereken bir durumdur.** §7
+tablosundaki "Ilk pilot icin erken" hukmu bu ozel senaryo (Option C) icin gecerliligini
+yitirmistir; tablo metni tarihsel kayit olarak asagida degistirilmeden birakilmistir.
+
+Bu ek, dosyanin geri kalanini (finalDebtStates modeli, blocker taxonomy, Fixture P1 onerisi,
+Risk 1-6) DEGISTIRMEZ — hepsi hala gecerlidir.
+
 ## 2. Current Data Flow
 
 Bugunku varsayilan kullanici akisi hala legacy hesap ozeti uzerindedir.

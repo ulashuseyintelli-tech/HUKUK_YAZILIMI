@@ -12,7 +12,7 @@ Global primary cutover remains **NO-GO**.
 
 The purpose of this checklist is to define how the guarded primary display pilot may be enabled in a controlled staging/internal environment, how smoke evidence must be collected, and when rollback is required.
 
-**Implementation reference (2026-07-05):** this checklist reflects the guard authority model as of ALC-AUTH-3D (PR #922 `8a340c23`, PR #925 `6c1304a3`) and ALC-AUTH-3E (PR #929 `d23003e8`). The frontend no longer maintains its own fixed no-go code list — see §7.4 below for the current mechanism. If a future change alters `evaluateGuardedPrimaryDisplayPilot()` or `buildGuardedPrimaryCalculationResult()` in `guarded-primary-display.ts`, this document must be re-synchronized (governance drift otherwise).
+**Implementation reference (2026-07-05):** this checklist reflects the guard authority model as of ALC-AUTH-3D (PR #922 `8a340c23`, PR #925 `6c1304a3`), ALC-AUTH-3E (PR #929 `d23003e8`), and **ALC-AUTH-4A-IMPL (PR #948, squash `6c01b90e`)**. The frontend no longer maintains its own fixed no-go code list — see §7.4 below for the current mechanism. As of ALC-AUTH-4A-IMPL, `GuardedPrimaryDisplaySource` has a third value, `PARTIAL_CANONICAL_LEGACY_TOTALS` — see §7.8 (updated) and §7A. If a future change alters `evaluateGuardedPrimaryDisplayPilot()` or `buildGuardedPrimaryCalculationResult()` in `guarded-primary-display.ts`, this document must be re-synchronized (governance drift otherwise — this is the second such refresh; see `decision-log.md` 2026-07-05 entries for the first).
 
 ## 2. Decision State
 
@@ -213,19 +213,72 @@ Expected result:
 - Source failure must not become canonical primary.
 - Failure must be visible as diagnostic/evidence, not hidden as success.
 
-### 7.8 Cost/Attorney-Fee Understatement Smoke (ALC-AUTH-3E)
+### 7.8 Cost/Attorney-Fee Understatement Smoke (ALC-AUTH-3E / ALC-AUTH-4A-IMPL)
+
+**Updated 2026-07-05 (ALC-AUTH-4A-IMPL, PR #948) — supersedes the original wording of this
+section.** The ALC-AUTH-3E value-suppression mechanism is no longer a silent value-only effect.
+It is now visible at the decision layer as a distinct `primarySource` value,
+`PARTIAL_CANONICAL_LEGACY_TOTALS`, with dedicated Turkish lawyer-facing authority copy and
+per-row `(mevcut hesaplama)` labels. The original text below described a case with the suppress
+signal as *always* falling back to legacy for the three aggregate fields with no distinct
+decision state — that was accurate for PR #942 but is superseded by PR #948 for the
+suppress-only sub-case.
 
 Expected result:
 
-- A case with a RED-severity `COSTS_DELTA` and/or `ATTORNEY_FEE_DELTA` (legacy nonzero, canonical zero — typically a case without cost/attorney-fee `ClaimItem` records) must show `toplamBorc`/`sonBorc`/`kalanBorc` from legacy, not canonical.
-- The other 5 canonical-override fields (`asilAlacak`/`takipTutari`/`takipSonrasiFaiz`/`toplamTahsilat`/`kalanAnapara`) are unaffected and remain canonical.
-- A case with no RED `COSTS_DELTA`/`ATTORNEY_FEE_DELTA` (cost/attorney-fee data present and consistent, or genuinely zero on both sides) must show all 8 canonical-override fields, including `toplamBorc`/`sonBorc`/`kalanBorc`, from canonical.
+- A case with a RED-severity `COSTS_DELTA` and/or `ATTORNEY_FEE_DELTA` (legacy nonzero, canonical
+  zero — typically a case without cost/attorney-fee `ClaimItem` records), **and no other
+  disqualifying reasonCode**, produces `primarySource = PARTIAL_CANONICAL_LEGACY_TOTALS`:
+  - `toplamBorc`/`sonBorc`/`kalanBorc` render from legacy, not canonical.
+  - The other 5 canonical-override fields (`asilAlacak`/`takipTutari`/`takipSonrasiFaiz`/
+    `toplamTahsilat`/`kalanAnapara`) are unaffected and remain canonical.
+  - `guarded-primary-display-authority-copy` shows the partial-state Turkish headline — not the
+    raw "ELIGIBLE" text and not the full-canonical headline.
+  - `TOPLAM BORÇ`/`SON BORÇ`/`KALAN BORÇ` each render a `(mevcut hesaplama)` label next to the
+    row heading.
+- If `COST_ATTORNEY_FEE_SUPPRESSED` fires **alongside any other reasonCode** (feature flag off, a
+  genuine backend blocker, an unsupported scenario, etc.), PR #942's safe default is unchanged:
+  `primarySource = LEGACY_CALCULATION_SUMMARY`, no partial state, no per-row labels.
+- A case with no RED `COSTS_DELTA`/`ATTORNEY_FEE_DELTA` (cost/attorney-fee data present and
+  consistent, or genuinely zero on both sides) must show all 8 canonical-override fields,
+  including `toplamBorc`/`sonBorc`/`kalanBorc`, from canonical, with no partial label.
 
 Minimum checks:
 
-- Case with legacy `icraMasraflari` or `vekaletUcreti` nonzero and canonical `costsAmount`/`attorneyFeeAmount` reporting 0 → `toplamBorc`/`sonBorc`/`kalanBorc` render legacy values.
-- Case with cost/attorney-fee `ClaimItem` coverage present and consistent with legacy → `toplamBorc`/`sonBorc`/`kalanBorc` render canonical values.
+- Case with legacy `icraMasraflari` or `vekaletUcreti` nonzero, canonical
+  `costsAmount`/`attorneyFeeAmount` reporting 0, and no other disqualifying reasonCode → partial
+  state, partial labels, partial-state authority copy present.
+- The same data-gap case combined with a genuine backend blocker (e.g. `CURRENCY_MISMATCH`) →
+  full legacy fallback, no partial labels (safe default preserved — this is Locked Pilot Case #4,
+  see §7A).
+- Case with cost/attorney-fee `ClaimItem` coverage present and consistent with legacy →
+  `toplamBorc`/`sonBorc`/`kalanBorc` render canonical values, full-canonical authority copy.
 - Displayed total must never be lower than the true legacy-formula total for this reason.
+- The raw diagnostic element (`guarded-primary-display-reasons`) still shows
+  `COST_ATTORNEY_FEE_SUPPRESSED` in both the partial and full-legacy outcomes — additive, not
+  removed by ALC-AUTH-4A-IMPL.
+
+## 7A. Locked Pilot Case Set (ALC-AUTH-4B, 2026-07-05)
+
+Before any tenant is added to the guarded primary pilot whitelist (ALC-AUTH-4B-IMPL or later),
+the following four scenarios are the locked minimum smoke set. This is a named subset of the
+fuller matrix above, called out explicitly because it maps to the pilot-relevant states of
+`GuardedPrimaryDisplaySource` plus the safe-default guarantee.
+
+1. **Full canonical eligible case** — `primarySource = CANONICAL_PRIMARY_CANDIDATE`. See §7.1.
+2. **`PARTIAL_CANONICAL_LEGACY_TOTALS` case** — cost/attorney-fee data gap only, no other
+   disqualifying reasonCode. See §7.8 (updated). *(Previously deferred as "too early for the
+   first pilot" in `PRIMARY-ELIGIBLE-FIXTURE-DESIGN.md` Option C — that deferral is lifted for
+   this specific case as of ALC-AUTH-4B; it is now a required, not excluded, pilot scenario.)*
+3. **Full legacy fallback case** — any genuine hard no-go diagnostic, e.g.
+   `FINAL_DEBT_STATES_MISSING` or `CURRENCY_MISMATCH`. See §7.4.
+4. **Cost/attorney-fee risk combined with another blocker** — verifies PR #942's safe default is
+   preserved (full legacy, no partial state, no partial labels) when the suppress signal is not
+   the sole reason. See §7.8 (updated).
+
+No tenant may be added to the pilot whitelist until evidence for all four is captured per the
+format in §8. This list does not itself authorize enabling any tenant — that is
+ALC-AUTH-4B-IMPL's scope.
 
 ## 8. Evidence to Capture
 
@@ -267,7 +320,13 @@ Rollback is required if any of the following occurs:
 - Restricted/earmarked payment is shown as free overpayment without `PaymentDesignation`.
 - Unsupported nafaka/periodic scenario becomes primary.
 - Shadow/canonical source failure becomes primary.
-- `toplamBorc`/`sonBorc`/`kalanBorc` render a canonical total lower than the true legacy-formula total on a case with a RED `COSTS_DELTA`/`ATTORNEY_FEE_DELTA` (ALC-AUTH-3E regression).
+- **(Updated 2026-07-05, ALC-AUTH-4B — supersedes the "ALC-AUTH-3E regression" wording below.)**
+  In the `PARTIAL_CANONICAL_LEGACY_TOTALS` state: the `guarded-primary-display-authority-copy`
+  element does not render, OR `toplamBorc`/`sonBorc`/`kalanBorc` do not show the
+  `(mevcut hesaplama)` label, OR a user cannot otherwise distinguish the 5/8-canonical +
+  3/8-legacy split from a fully-canonical result. This split is intentional design as of
+  ALC-AUTH-4A-IMPL (PR #948), not a regression — the trigger is the split becoming INVISIBLE,
+  not the split existing.
 - Legacy fallback is unavailable.
 - Production display error occurs.
 - Diagnostic spike or mismatch spike exceeds accepted tolerance.
