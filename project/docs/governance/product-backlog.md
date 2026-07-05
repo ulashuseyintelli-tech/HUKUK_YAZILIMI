@@ -1039,11 +1039,35 @@ Problem: `NEXT_PUBLIC_GUARDED_PRIMARY_DISPLAY_PILOT` için kademeli rollout tan�
 Business Value: Flag güvenle, ölçülü ve geri-alınabilir şekilde genişletilebilir hale gelir.
 Technical Value: Prior-art AYNI dosyada zaten var — `feature-flags.ts:21-82`'deki `UnifiedPreviewRolloutConfig` (killSwitch/rolloutPercent/tenantWhitelist/fallbackRateThreshold + `trackLegacyFallback()`/`getFallbackRate()`) ilgisiz bir özellik (Unified Preview) için zaten bu deseni uyguluyor. `guarded-primary-display.ts` bu makineye BAĞLI DEĞİL (grep doğrulandı) — 4B muhtemelen bu deseni adapte eder, sıfırdan icat etmez.
 Priority: —
-Depends On: ALC-AUTH-4A
-Unlock Condition: Owner GO-IMPLEMENT onayı. (ALC-AUTH-4A'nın stop-condition bulgusu — partial-canonical/partial-legacy misleading-display — PR #942 ile KAPANDI, bu ön-koşul artık sağlanmış durumda; ⚠️ ancak bkz ALC-AUTH-6 — B1 flag'in ön-koşulu artık yalnız bu değil, aşağıya bakın.)
+Depends On: ALC-AUTH-4A-IMPL (MERGED, PR #948), ALC-AUTH-4B-0 (DONE)
+Unlock Condition: Owner GO-ANALYZE/GO-IMPLEMENT onayı sırayla ALC-AUTH-4B-IMPL için. (⚠️ Bu satır daha önce yalnız PR #942'yi referans veriyordu — DÜZELTİLDİ: ALC-AUTH-4A'nın stop-condition bulgusu partial-canonical/partial-legacy misleading-display, PR #942'nin ÜZERİNE PR #948 [ALC-AUTH-4A-IMPL] ile TAM kapandı, bkz yukarı. **Ayrıca bkz ALC-AUTH-6** — B1/guarded-primary flag'in genel rollout'u için ayrı, DAHA DERİN bir ön-koşul: legacy `getCalculationSummary()`'nin kendisi bazı alanlarda [faiz stub, harç hardcoded sabit] authority değil, bu yüzden "legacy==canonical eşleşti" tek başına cutover kanıtı sayılamaz. ALC-AUTH-4B/4B-IMPL bu satırda tanımlanan DAR kapsamı (URL-opt-in + tenant whitelist + locked pilot case set) aşmaz — ALC-AUTH-6'nın component-coverage/ground-truth harness'ı AYRI, bu kayıtların hiçbiriyle yetkilendirilmeyen bir iştir.)
 Estimated Size: —
 Related Modules: feature-flags.ts, guarded-primary-display.ts
-Status: BACKLOG — ALC-AUTH-4A'nın kendi stop condition'ı kapandı (PR #942), ancak owner GO-IMPLEMENT onayı henüz verilmedi ve ALC-AUTH-6'nın component-coverage/ground-truth bulgusu B1 rollout'u için ayrı, ek bir ön-koşul olarak kayda girdi.
+Status: BACKLOG — ALC-AUTH-4A ekseni (GO-ANALYZE→RECONCILE[#938]→IMPL[#948]) TAM kapandı. ALC-AUTH-4B-0 (docs sync) DONE — bkz altta. ALC-AUTH-4B-IMPL (tenant whitelist + hibrit rollout) henüz GO-IMPLEMENT almadı. **ALC-AUTH-6 (ayrı, paralel oturum bulgusu) hâlâ açık ve B1'in genel rollout'u için owner'ın ayrıca değerlendirmesi gereken bir bulgu — bu docs-only turla ne çözüldü ne kapsandı.**
+
+ID: ALC-AUTH-4B-0
+Title: docs/audit rollout checklist + fixture design — ALC-AUTH-4A-IMPL (#948) senkronu + locked pilot case set
+Problem: `docs/audit/GUARDED-PRIMARY-PILOT-ROLLOUT-CHECKLIST.md` §7.8/§9, PR #948'den (ALC-AUTH-4A-IMPL, `PARTIAL_CANONICAL_LEGACY_TOTALS`) ÖNCEki davranışı ("suppress → her zaman tam legacy") tarif ediyordu — artık yanlış. `PRIMARY-ELIGIBLE-FIXTURE-DESIGN.md`'nin "Option C ilk pilot için erken" hükmü de PR #948 sonrası geçersizleşti.
+Business Value: Rollout checklist gerçek implementasyonun gerisinde kalırsa yanlış sistem doğrulanmış olur (aynı ders, `decision-log.md` 2026-07-05 "governance-drift'ten arındırıldı" kaydının tekrarı — bu kez #948 nedeniyle).
+Technical Value: Docs-only. (1) §7.8 PR #948 davranışına göre yeniden yazıldı (partial-state + safe-default-preserved iki alt-senaryo). (2) Yeni §7A "Locked Pilot Case Set" eklendi (4 senaryo, owner-onaylı). (3) §9 rollback tetikleyicisi "ALC-AUTH-3E regression" → "authority-copy/etiket görünmezse rollback" olarak düzeltildi. (4) `PRIMARY-ELIGIBLE-FIXTURE-DESIGN.md`'ye §1.1 eki: Option C artık zorunlu pilot senaryosu.
+Priority: HIGH
+Depends On: ALC-AUTH-4A-IMPL (MERGED, PR #948)
+Unlock Condition: —
+Estimated Size: — (docs-only)
+Related Modules: docs/audit/GUARDED-PRIMARY-PILOT-ROLLOUT-CHECKLIST.md, docs/audit/PRIMARY-ELIGIBLE-FIXTURE-DESIGN.md
+Status: DONE — bu commit ile tamamlandı. Owner-onaylı 4 senaryo: (1) tam canonical eligible, (2) PARTIAL_CANONICAL_LEGACY_TOTALS, (3) tam legacy fallback, (4) cost/attorney risk + başka blocker birlikte.
+
+ID: ALC-AUTH-4B-IMPL
+Title: Hibrit rollout modeli — tenant whitelist + URL opt-in (percent rollout altyapısı, başlangıçta kapalı)
+Problem: Kademeli, tenant-bazlı bir rollout mekanizması yok — bugün flag ya tüm tenant'lar için kapalı ya da (env+URL-param ile) herkese açık tek-case opt-in.
+Business Value: Flag güvenle, ölçülü ve geri-alınabilir şekilde genişletilebilir hale gelir.
+Technical Value: Owner-kilitli IN/OUT: IN = `shouldEnableGuardedPrimaryDisplayPilot(..., tenantId)` imza genişlemesi, tenant whitelist, URL opt-in KORUNUR (kaldırılmaz), percent-rollout altyapısı varsa default 0/disabled, testler. OUT = production default-on, percent rollout'u aktif başlatma, runtime kill-switch (ALC-AUTH-4C), telemetry (ALC-AUTH-4C), backend authority logic, `CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY` (ALC-AUTH-3E-B-NEXT). Prior-art: `feature-flags.ts:21-82`'deki `UnifiedPreviewRolloutConfig` deseni adapte edilebilir.
+Priority: —
+Depends On: ALC-AUTH-4B-0 (DONE)
+Unlock Condition: Owner GO-ANALYZE, sonra ayrı GO-IMPLEMENT onayı
+Estimated Size: — (analiz henüz yapılmadı)
+Related Modules: feature-flags.ts, guarded-primary-display.ts, cases/[id]/page.tsx
+Status: BACKLOG — ALC-AUTH-4B-0 tamamlanmadan başlamaz (artık tamamlandı, başlayabilir; owner GO-ANALYZE bekliyor).
 
 ID: ALC-AUTH-4C
 Title: Controlled Enablement / Kill-Switch Governance
