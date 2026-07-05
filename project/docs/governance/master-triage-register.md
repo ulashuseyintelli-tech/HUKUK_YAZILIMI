@@ -34,11 +34,10 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **ACT-23** | Debtor | `setPrimaryAddress()`/`deleteAddress()` genişletme adayı | Low | ⚠️ 2. batch (eski PB-09) — **ARC-07 ile çakışma riski** (ClientAddress backfill owner bilinçli kapsam-dışı bırakmıştı); implement öncesi owner teyidi şart |
 | **ACT-24** | UI | Approval Inbox'a CLIENT_PAYOUT_POST summary projector eklenmesi | Low | 3. batch (PAYOUT-CPB-01), henüz ele alınmadı |
 | **ACT-25** | Accounting | ClientPayoutService.create() dead-code kararı + test suite finalize()'a taşıma | Low | 3. batch (PAYOUT-CPB-02), henüz ele alınmadı |
-| **ACT-26** | Accounting | Cross-case creditor cluster (DBIND-1 P3) implementasyonu | **High** | 3. batch (PAYOUT-CPB-04) — ⚠️ YENİ DEĞİL: `dbind1-financial-identity` memory'sinin zaten bekleyen "P3 cluster" adımı. Politika kilitli (DBIND §2), yalnız implementasyon eksik. **GO-IMPLEMENT'e hazır olabilir, owner talimatı bekliyor.** |
 | **ACT-27** | Alacak Kalemi | Principal gross/net semantic split (asilAlacak vs PRINCIPAL bucket) | Yüksek | 4. batch (CPB-1) — GO-ANALYZE onaylandı: hiçbir ALC-AUTH-3* kaydı bu ayrımı ele almadı (ALC-AUTH-3B farklı alan `totalDebtAmount.grossPrincipal`'ı düzeltti, ALC-AUTH-3E yalnız cost/vekalet'i suppress etti). ⚠️ Bu, `product-backlog.md`'nin ayrı ALC-AUTH-* isim-alanına ait — gerçek iş muhtemelen ALC-AUTH-4/5 olarak orada devam eder, burada yalnız cross-reference. **Sıradaki adım: GO-ANALYZE (owner talimatı bekliyor).** |
 | **ACT-28** | Alacak Kalemi | Collection/LedgerEntry/LedgerAllocation üç-otorite reconciliation (PAID_DELTA kök nedeni) | Orta-Yüksek | 4. batch (CPB-2) — GO-ANALYZE onaylandı: ALC-AUTH-3D yalnız guard-seviyesi otoriteyi (frontend hangi listeyi dinliyor) birleştirdi, PAID_DELTA'ya yol açan alttaki veri-kaynağı çakışmasına hiç dokunmadı. ⚠️ ALC-AUTH-* isim-alanına ait, cross-reference. **Sıradaki adım: (VR-2 zaten bu turda cevaplandı) GO-ANALYZE (owner talimatı bekliyor).** |
 
-**KAPANMIŞ/MERGED (ACTIVE'den çıkarıldı, bkz. Bölüm D — Closed Register):** ACT-01 (CLOSED/INVALID/Zombie), ACT-02, ACT-03, ACT-04, ACT-05, ACT-06 (CLOSED/Zombie-Active — bkz. altta), ACT-07 (MERGED — bkz. altta), ACT-16 (MERGED — bkz. altta).
+**KAPANMIŞ/MERGED (ACTIVE'den çıkarıldı, bkz. Bölüm D — Closed Register):** ACT-01 (CLOSED/INVALID/Zombie), ACT-02, ACT-03, ACT-04, ACT-05, ACT-06 (CLOSED/Zombie-Active — bkz. altta), ACT-07 (MERGED — bkz. altta), ACT-16 (MERGED — bkz. altta), ACT-26 (CLOSED/Zombie-Active — bkz. altta).
 
 **Not (ACT-27/28 bağlamı — ALC-AUTH-* isim-alanı):** `product-backlog.md`'de paralel bir oturum tarafından yürütülen ayrı bir ALC-AUTH-* zinciri var (bu kanonik dosyanın izlemediği bir namespace, `decision-log.md`'nin kendi 2026-07-05 kaydında açıkça belirtildiği gibi). Kısa özet: ALC-AUTH-3B (`totalDebtAmount.grossPrincipal` plumbing, PR #917 MERGED) → ALC-AUTH-3D (guard authority alignment — frontend artık kendi `HARD_NO_GO_CODES`'unu değil backend `cutoverReadiness`'ini dinliyor, PR #922+#925 MERGED, FINAL) → ALC-AUTH-3E (cost/attorney-fee understatement suppress, PR #929 MERGED, "B1/guarded-primary-pilot ekseninde bilinen son blocker kapandı"). Guarded primary pilot flag hâlâ varsayılan KAPALI (rollout ayrı owner kararı). ACT-27 (principal gross/net) ve ACT-28 (üç-otorite reconciliation) bu zincirin HİÇBİRİNDE ele alınmadı — gerçek GO-IMPLEMENT'leri muhtemelen ALC-AUTH-4/5 olarak `product-backlog.md`'de devam edecek.
 
@@ -137,6 +136,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **ACT-06 (ROLL-001 Expense Advisory Lock + ROLL-002 UYAP Gate reconciliation)** | ⚠️ **ZOMBIE-ACTIVE olarak tespit edildi (GO-ANALYZE, 2026-07-04)**: kayıt ACTIVE/"dormant" görünüyordu ama repo'da her iki alt-kalem de zaten MERGED bulundu. ROLL-001 → PR #799 (`abcaf5dc`, disposition APPLY lock) + PR #804 (`136c36fd`, collection-reversal REVERSAL lock), her ikisi 2026-07-02. ROLL-002 → PR #811 (`8f2a55d1`, isUyapBlockedLegacy↔checkGate reconciliation), 2026-07-02. Üç PR de bağımsız (aynı flag'e değiniyor ama farklı dosya/kaygı, sıralı bağımlı değil, S8-B FAZ-1b rollout'unun parçası). Kod: `clientOffsetLockKey()` 3 call-site'ta wire edilmiş (client-offset/disposition-posting/collection-reversal.service.ts), `expense-gate.service.ts` satır 151-158'de "ROLL-002 kapanır" yorumu. |
 | **ACT-16 (strategic-backlog.md → product-backlog.md içerik migration)** | MPB-026 kapsamında kapatıldı: legacy `strategic-backlog.md` SB-001..SB-013 kayıtları `product-backlog.md` içine `Migrated Strategic Backlog (MPB-026)` olarak taşındı; legacy dosya tarihsel/superseded olarak işaretlendi; governance README kanonik talimat drift'i düzeltildi. |
 | **ACT-07 (Vekalet Süresi Uyarısı office-level ayar)** | PR #931 → `666faaf4` MERGED. Owner-onaylı Kapsam A (E-POSTA-ONLY): `Office.poaExpiryNotificationEnabled`/`poaExpiryThresholdDays`/`poaExpiryRecipientLawyerIds` (additive migration, owner-onaylı local-dev-DB apply) + `PoaExpiryRecipientSource.OFFICE_OVERRIDE`. SMS/kanal genişletmesi kapsam DIŞI — OWN-20 ayrı owner kararı olarak kalmaya devam ediyor. GET/PUT `poa-expiry-settings` (iik78/escalation ile aynı desen). 28/28 test PASS. |
+| **ACT-26 (Cross-case creditor cluster, DBIND-1 P3)** | ⚠️ **ZOMBIE-ACTIVE olarak tespit edildi (GO-ANALYZE, 2026-07-05)**: DBIND §2 v1-scope (`CASE_CREDITOR_CLUSTER` computed/projection, stored entity/shareRatio YOK, cluster-dışı otomatik mahsup YOK) zaten mevcut ve wire edilmiş — `collection-disposition.service.ts`(beneficiaryScope), `case-payment-preview.service.ts`, `payment-preview.dto.ts`, `distribution-recommendation.service.ts`. Kaynak PR #545+#551 (2026-06-26/27), DBIND §2'nin kendisinden (2026-07-04) 9 gün ÖNCE merge edilmiş — §2 yeni iş açmadı, mevcut TM3/M1/M2 davranışını kanonikleştirdi. |
 | **OWN-01 (Invite↔Lawyer/Staff linkage)** | PR #879 → `a01f5ed2` MERGED |
 | **ARC-01 (ClaimGroup tablosu)** | ARCHIVED_CONFIRMED + ADR §Q1 clarification PR #902 → `aebe38e8` MERGED |
 | **ARC-05-A (Office-Approval Inbox FE, P4-6)** | ⚠️ **ARCHIVED → CLOSED yeniden sınıflandırıldı** (owner kararı, 2026-07-04): PR #823+#832 (2026-07-02) ile fiilen teslim edildi, `/office-approvals` canlı. Governance bookkeeping düzeltmesi PR #908 → `49cde917` MERGED (`product-backlog.md` P4-6 Status BACKLOG→DONE). |
@@ -236,7 +236,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 - **BLK-04 (Faz2 Display Cutover)** zincirin kilit noktası: BLK-05/06/07/08 buna bağlı.
 - **BLK-01/02/03 (Codex hattı):** Accounting'in büyük kısmı Claude'un kontrolü dışında.
 - **ACT-23 (setPrimaryAddress/deleteAddress genişletme)** ARC-07'nin (owner bilinçli kapsam-dışı) kapsamıyla çakışabilir — implement öncesi owner teyidi şart.
-- **ACT-26 (cross-case creditor cluster)** zaten bilinen bekleyen DBIND-1 P3 adımı — GO-IMPLEMENT'e hazır olabilir.
+- ~~ACT-26 (cross-case creditor cluster)~~ — GO-ANALYZE'de zombie-active bulunup Closed Register'a taşındı (v1-scope zaten mevcut, bkz. Bölüm D).
 
 ### Hukuki Riskler
 - BLK-04 (Faz2 Display Cutover — FAİZ=0 stub müvekkil-görünür)
@@ -264,11 +264,11 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 | Kategori | Sayı |
 |---|---|
-| Master Product Backlog (ACTIVE) | 21 (ACT-08..15, ACT-17..28; ACT-01..07 ve ACT-16 Closed'a taşındı; ACT-27/28=ALC-AUTH-* cross-reference) |
+| Master Product Backlog (ACTIVE) | 20 (ACT-08..15, ACT-17..25, ACT-27..28; ACT-01..07/16/26 Closed'a taşındı; ACT-27/28=ALC-AUTH-* cross-reference) |
 | Master Verification Required | 33 (VER-02..18 + VER-20..36, VER-01/19/32 kapandı/taşındı) |
 | Master Workflow Queue — PENDING | 13 grup |
 | Master Workflow Queue — DONE | 5 zincir (PR #408 eklendi) |
-| Closed Register | 16 |
+| Closed Register | 17 |
 | Archived Register | 7 (ARC-05 split sonrası tek satır, A parçası Closed'a gitti) |
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |
