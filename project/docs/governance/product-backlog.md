@@ -1305,18 +1305,84 @@ Estimated Size: S (BE — tek dosya + tek yeni test dosyası, migration yok)
 Related Modules: action-handler.service.ts, action-handler-notification-truth.spec.ts
 Status: **CLOSED/MERGED** — PR #981 squash merged, SHA `2646e0f3e6e57b1ff97f3ec26a412d948133f807`; CI 4/4 PASS (Architectural Guardrails, Client Workspace Live Smoke, Test Suite, Web Tests (vitest)); mergeStateStatus CLEAN; diff yalnız 2 dosya (`action-handler.service.ts` + yeni `action-handler-notification-truth.spec.ts`); hedeflenen test 5/5 PASS (`--forceExit` olmadan, asılı kalma yok), modül regresyonu `icrabot/v28-engine` 33 passed/2 skipped (pre-existing)/1 suite skipped (pre-existing) — regresyon yok. Migration/schema/package/lock değişikliği YOK. `send_notification`, `webhook`/`IcrabotWebhookLog`, `CaseService`, `workflowStage`, `Due/ClaimItem`, `validation-gate`, `policy-engine`, `DebtorAddress` dokunulmadı.
 
-## CAN-P0-002 — Canonicalization P0 Remediation (kalan: icrabot→Case bypass + workflowStage single-owner, 2026-07-06'da CAN-P0-001'den ayrıldı)
+## CAN-P0-002 — Icrabot Case direct-write bypass (NO_SAFE_PATCH / VERIFICATION_REQUIRED, 2026-07-06 patch-generation denemesi sonucu yeniden sınıflandırıldı)
+
+**Governance düzeltmesi (2026-07-06, 2. tur):** CAN-P0-002 ilk açıldığında (2026-07-06, 1. tur) "NEXT/PENDING" olarak kaydedilmişti ve CAN-DRIFT-02/03'ü tek kapsam olarak topluyordu. Owner talimatıyla patch-generation denemesi yapıldı (base HEAD `e65dc08564c09bfbe6db09a680606ac3d4b1f828`, working tree temiz) ve **güvenli/dar bir patch üretilemedi** — sonuç `NO_SAFE_PATCH / VERIFICATION_REQUIRED` olarak kaydedildi (kod/commit/PR/branch YOK, yalnız bu bulgu). Denemede 6 direct-write noktası tespit edildi (önceki bir taslak metinde yanlışlıkla "5" denmişti — bu düzeltildi). Owner kararıyla madde 3 alt-parçaya bölündü (CAN-P0-002-A/B/C) + `workflowStage`/`nextActionAt`/`riskScore` karışan noktalar ayrı `CAN-P0-003`'e taşındı.
 
 ID: CAN-P0-002
-Title: ARCHITECTURAL_DRIFT P0 kalan kapsam — icrabot→Case bypass, workflowStage single-owner
-Problem: (1) CAN-DRIFT-02 — `job-monitor.service.ts`/`icrabot.service.ts`/`task-orchestrator.service.ts`/`action-handler.service.ts` `CaseService`'i bypass edip doğrudan `prisma.case.update` çağırıyor, (2) CAN-DRIFT-03 — `workflowStage` alanına tek owner servis olmadan 5 farklı yerden (`workflow-engine.service.ts`, `icrabot.service.ts`, `task-orchestrator.service.ts`, `scheduler.service.ts`, `case.service.ts`) yazılıyor.
-Business Value: Planlanmamış çoklu-yazıcı riskini kapatır; Case/workflowStage veri bütünlüğü sağlar.
-Technical Value: `canonicalization-policy.md` §7 kuralına göre canonical owner dışında hiçbir servis ilgili alana doğrudan yazamaz; her iki madde için önce characterization test, sonra tek-owner servis konsolidasyonu (CAN-DRIFT-03 için henüz var olmayan `CaseWorkflowStageService` dahil).
+Title: Icrabot → Case direct-write bypass — 6 tespit edilen nokta, güvenli dar patch üretilemedi
+Problem: icrabot modülünde `Case` core aggregate'ine `CaseService`'i bypass eden 6 direct-write noktası tespit edildi:
+```text
+1. job-monitor.service.ts:136 — Case.metadata quarantine flag — patch yok (CaseService.patchFlags metadata allowlist içermiyor; DI genişlemesi + audit/side-effect riski)
+2. job-monitor.service.ts:174 — Case.metadata unquarantine — patch yok (#1 ile aynı gerekçe)
+3. icrabot.service.ts:118,153 — isAutomationEnabled + isAutoMode — patch yok (isAutomationEnabled patchFlags allowlist'te olabilir, isAutoMode değil; CaseService injection + audit davranış değişikliği ayrı GO-FIX gerektirir)
+4. icrabot.service.ts:358 — workflowStage — CAN-P0-003'e taşındı, patch yok
+5. task-orchestrator.service.ts:307 applyUpdates — workflowStage/nextActionAt/riskScore — CAN-P0-003'e taşındı, patch yok (workflowStage aynı update payload içinde karışık, dar patch ile güvenli ayrılamıyor)
+6. action-handler.service.ts:571 update_case_status — legacy Case.status — patch yok (en kritik bulgu: CaseStatusService.changeStatus() yanlış canonical target olur — o servis caseStatus/LegalCaseStatus semantiğini yönetiyor, legacy status/CaseStatus alanını DEĞİL; dar canonical write owner yok)
+```
+Business Value: Planlanmamış çoklu-yazıcı riskinin körlemesine (yanlış owner'a bağlanarak) "çözülmüş" gibi görünüp aslında sessiz semantik bozulma yaratmasını önler.
+Technical Value: `canonicalization-policy.md` §7 kuralı ihlali doğrulandı, ama düzeltme dar bir patch değil, üç ayrı owner kararı + bir ayrı orchestration refactor'u gerektiriyor — bu yüzden tek patch olarak zorlanmadı.
+Priority: HIGH (register'da P0 = "önce temizlenir") — ama **VERIFICATION_REQUIRED** olduğu için implementasyon başlamıyor.
+Depends On: CAN-REG-001 (MERGED, PR #977). CAN-P0-001 (MERGED, PR #981) — kardeş madde, teknik bağımlılık yok.
+Unlock Condition: Bu madde artık tek bir GO-IMPLEMENT ile açılamaz. Alt-parçalara bölündü — her biri kendi owner kararını ve ayrı GO-ANALYZE/GO-FIX'ini gerektirir (aşağıya bakın).
+Estimated Size: — (parent kayıt artık implementasyon birimi değil, yalnız sınıflandırma/yönlendirme kaydı)
+Related Modules: job-monitor.service.ts, icrabot.service.ts, task-orchestrator.service.ts, action-handler.service.ts, case.service.ts
+Status: **NO_SAFE_PATCH / VERIFICATION_REQUIRED** — main'de implemente EDİLMEDİ, implemente EDİLEMEDİ (dar/güvenli patch üretilemedi). Kod/commit/PR/branch YOK.
+
+## CAN-P0-002-A — Icrabot automation flags canonicalization
+
+ID: CAN-P0-002-A
+Title: isAutomationEnabled / isAutoMode direct-write bypass canonicalization
+Problem: `icrabot.service.ts:118,153` `isAutomationEnabled` + `isAutoMode` alanlarına `CaseService`'i bypass ederek doğrudan yazıyor.
+Business Value: Otomasyon durumu yazımının tek, denetlenebilir bir yoldan geçmesini sağlar.
+Technical Value: `isAutomationEnabled`'ın `CaseService.patchFlags` allowlist'ine eklenip eklenemeyeceği, `isAutoMode`'un ayrı ele alınması gerektiği, `IcrabotService`'e `CaseService` injection'ının audit/duplication etkisi — hepsi ayrı GO-FIX kapsamında değerlendirilecek.
+Priority: HIGH
+Depends On: CAN-P0-002 (parent, VERIFICATION_REQUIRED)
+Unlock Condition: Owner GO-ANALYZE + ayrı GO-FIX onayı — audit davranış değişikliği açıkça değerlendirilmeden implementasyon başlamaz.
+Estimated Size: M (BE — DI + allowlist kararı + audit doğrulama)
+Related Modules: icrabot.service.ts, case.service.ts
+Status: NEXT / PENDING — implemente EDİLMEDİ.
+
+## CAN-P0-002-B — Legacy Case.status write owner decision
+
+ID: CAN-P0-002-B
+Title: action-handler.service.ts update_case_status — legacy Case.status için doğru canonical write owner kararı
+Problem: `action-handler.service.ts:571` `update_case_status` action'ı legacy `Case.status` alanına doğrudan yazıyor. `CaseStatusService.changeStatus()` yanlış hedef — o servis `caseStatus`/`LegalCaseStatus` semantiğini yönetiyor, legacy `status`/`CaseStatus` alanını DEĞİL. Legacy alan hâlâ okunuyorsa "ölü legacy" değil, aktif bir semantik alan.
+Business Value: Yanlış canonical servise körlemesine bağlanarak sessiz semantik bozulma (status'un iki farklı anlamının karışması) riskini önler — en kritik bulgu.
+Technical Value: Önce legacy `Case.status`'un hâlâ okunup okunmadığı ve hangi action type'ların tetiklediği doğrulanmalı; gerekirse dar, explicit bir `CaseService.setLegacyStatus()` benzeri owner tasarlanacak — implementasyon ayrı GO-FIX ile yapılacak, bu kayıtla yetkilendirilmez.
+Priority: **CRITICAL** — owner'ın "en önce bu yapılmalı" değerlendirmesi: legacy alan aktifse yanlış owner'a bağlanmak sessiz semantik bozulma yaratır.
+Depends On: CAN-P0-002 (parent, VERIFICATION_REQUIRED)
+Unlock Condition: Owner GO-ANALYZE (legacy Case.status okuma noktalarının tam envanteri) + ayrı owner kararı (doğru canonical owner tasarımı) + GO-FIX onayı.
+Estimated Size: M (BE — okuma-noktası envanteri + yeni dar servis metodu tasarımı; migration muhtemelen gerekmez, teyit gerekir)
+Related Modules: action-handler.service.ts, case.service.ts, case-status.service.ts (mevcut, yanlış hedef olarak doğrulandı)
+Status: NEXT / PENDING — implemente EDİLMEDİ. **Öncelik sırasında CAN-P0-002-A/C'den önce ele alınması önerilir** (owner değerlendirmesi).
+
+## CAN-P0-002-C — Quarantine metadata direct-write classification
+
+ID: CAN-P0-002-C
+Title: job-monitor.service.ts quarantine/unquarantine metadata write — bounded-context exception mi, canonical patch owner mı gerekiyor?
+Problem: `job-monitor.service.ts:136,174` `Case.metadata` üzerindeki quarantine/unquarantine flag'lerini `CaseService`'i bypass ederek doğrudan yazıyor. `CaseService.patchFlags` bugün metadata alanı için allowlist içermiyor.
+Business Value: Bu write'ın kasıtlı bir bounded-context istisnası mı yoksa gerçek bir ARCHITECTURAL_DRIFT mi olduğunun netleşmesi — yanlış sınıflandırma ya gereksiz refactor'a ya da gerçek bir driftin gözden kaçmasına yol açar.
+Technical Value: Metadata allowlist genişletilecekse audit/DI etkisi ayrıca değerlendirilmeli; genişletilmeyecekse bu write deseni `canonicalization-policy.md`'nin INTENTIONAL_BOUNDED_CONTEXT kategorisine mi yoksa ARCHITECTURAL_DRIFT'e mi girdiği açıkça karara bağlanmalı.
+Priority: MEDIUM
+Depends On: CAN-P0-002 (parent, VERIFICATION_REQUIRED)
+Unlock Condition: Owner GO-ANALYZE (sınıflandırma kararı) — implementasyon bu karardan sonra, ayrı GO-FIX ile.
+Estimated Size: S (BE — sınıflandırma kararı + gerekirse küçük allowlist genişletmesi)
+Related Modules: job-monitor.service.ts, case.service.ts
+Status: NEXT / PENDING — implemente EDİLMEDİ.
+
+## CAN-P0-003 — workflowStage / nextActionAt / riskScore single-owner orchestration refactor (CAN-P0-002'den carry-forward, 2026-07-06)
+
+ID: CAN-P0-003
+Title: workflowStage tek-owner konsolidasyonu (CAN-DRIFT-03) + nextActionAt/riskScore ayrıştırması
+Problem: `workflowStage` alanına tek owner servis olmadan birden fazla yerden yazılıyor (`icrabot.service.ts:358`, `task-orchestrator.service.ts:307` `applyUpdates` içinde `nextActionAt`/`riskScore` ile karışık, ayrıca `workflow-engine.service.ts`/`scheduler.service.ts`/`case.service.ts` — CAN-REG-001/CAN-DRIFT-03'te tespit edilen 5 yazıcı). `task-orchestrator.service.ts`'teki `applyUpdates` özellikle `workflowStage`'i `nextActionAt`/`riskScore` ile aynı update payload'ında karıştırıyor — dar bir patch ile güvenle ayrılamıyor, orchestration-seviyeli bir refactor gerektiriyor.
+Business Value: Case orchestration alanlarının (workflowStage/nextActionAt/riskScore) tutarlı, tek-kaynaklı yazılmasını sağlar.
+Technical Value: Henüz var olmayan `CaseWorkflowStageService` (veya benzeri) tasarımı + `applyUpdates`'in workflowStage'i diğer orchestration alanlarından ayrıştıracak şekilde refactor edilmesi.
 Priority: HIGH (register'da P0 = "önce temizlenir")
-Depends On: CAN-REG-001 (MERGED, PR #977) — register/policy zaten kanonik kaynak. CAN-P0-001 (MERGED, PR #981) — aynı registerdan doğan kardeş madde, teknik bağımlılık yok.
-Unlock Condition: Owner GO-ANALYZE onayı — her iki alt-madde ayrı GO-IMPLEMENT yetkisi gerektirir (`canonicalization-register.md` §"Bu register'daki hiçbir madde otomatik olarak implementasyona alınmaz" ilkesi gereği). Bu kayıt implementasyonu YETKİLENDİRMEZ, yalnız NEXT/PENDING olarak işaretler.
-Estimated Size: L (BE — 2 ayrı servis/write-path konsolidasyonu + characterization testleri; migration muhtemelen gerekmez, teyit GO-ANALYZE'da yapılmalı)
-Related Modules: job-monitor.service.ts, icrabot.service.ts, task-orchestrator.service.ts, workflow-engine.service.ts, scheduler.service.ts, case.service.ts
+Depends On: CAN-REG-001 (MERGED, PR #977). CAN-P0-002 (VERIFICATION_REQUIRED) — kardeş madde, aynı patch-generation denemesinden carry-forward edildi.
+Unlock Condition: Owner GO-ANALYZE (5 yazıcının tam envanteri + `applyUpdates` orchestration-refactor tasarımı) + ayrı GO-IMPLEMENT onayı. Bu kayıt implementasyonu YETKİLENDİRMEZ.
+Estimated Size: L (BE — orchestration refactor + yeni servis + characterization testleri; migration muhtemelen gerekmez, teyit GO-ANALYZE'da yapılmalı)
+Related Modules: icrabot.service.ts, task-orchestrator.service.ts, workflow-engine.service.ts, scheduler.service.ts, case.service.ts
 Status: NEXT / PENDING — main'de implemente EDİLMEDİ.
 
 ## CAN-P0-008 — IcrabotWebhookLog ghost model / webhook fake-sent pattern (CAN-P0-001 kapanışında tespit edilen follow-up, 2026-07-06)
