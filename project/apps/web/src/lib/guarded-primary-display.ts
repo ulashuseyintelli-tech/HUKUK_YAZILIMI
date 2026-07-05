@@ -9,6 +9,7 @@ type SearchParamsLike = Pick<URLSearchParams, 'get'>;
 
 export type GuardedPrimaryDisplaySource =
   | 'CANONICAL_PRIMARY_CANDIDATE'
+  | 'PARTIAL_CANONICAL_LEGACY_TOTALS'
   | 'LEGACY_CALCULATION_SUMMARY';
 
 export interface GuardedPrimaryDisplayPolicy {
@@ -343,24 +344,108 @@ export function evaluateGuardedPrimaryDisplayPilot(
     }
   }
 
-  // ALC-AUTH-4A (misleading-eligibility fix, 2026-07-05): ALC-AUTH-3E'nin suppress'i
+  // ALC-AUTH-4A (misleading-eligibility fix, 2026-07-05, PR #942): ALC-AUTH-3E'nin suppress'i
   // (toplamBorc/sonBorc/kalanBorc legacy'de kalir) daha once yalniz buildGuardedPrimaryCalculationResult
   // icinde uygulaniyordu -- decision/banner katmani bunu hic gormuyordu, yani suppress calisirken
   // banner "CANONICAL_PRIMARY_CANDIDATE"/"ELIGIBLE" demeye devam edebiliyordu (reasonCodes bos).
-  // Bu, guard'in en gorunur 3 alaninin (TOPLAM BORC/SON BORC/KALAN BORC) sessizce legacy'de kalirken
-  // ekranin "hazir" sinyali vermesi anlamina gelir. Artik ayni risk sinyali karar katmaninda da
-  // kontrol ediliyor: risk varsa primarySource LEGACY_CALCULATION_SUMMARY olur (Hesap Ozeti kismi/
-  // hibrit degil, tek-parca tutarli bir kaynaktan gosterilir).
-  if (hasCostOrAttorneyFeeUnderstatementRisk(report)) {
+  const hasCostFeeSuppression = hasCostOrAttorneyFeeUnderstatementRisk(report);
+  if (hasCostFeeSuppression) {
     reasonCodes.push('COST_ATTORNEY_FEE_SUPPRESSED');
   }
 
+  const uniqueReasonCodes = [...new Set(reasonCodes)].sort();
+
+  // ALC-AUTH-4A-IMPL (2026-07-05): PR #942 bu noktada her zaman tam LEGACY_CALCULATION_SUMMARY'e
+  // duserdu (kismi/hibrit sonuc hic uretilmezdi). Owner karari: bu "safe default" TUM DIGER
+  // reasonCode'lar icin AYNEN korunur -- yalniz COST_ATTORNEY_FEE_SUPPRESSED TEK BASINA (baska
+  // hicbir engelleyici sebep yokken) varsa, tam legacy yerine PARTIAL_CANONICAL_LEGACY_TOTALS
+  // donulur: 5 canonical-override alan (asilAlacak/takipTutari/takipSonrasiFaiz/toplamTahsilat/
+  // kalanAnapara) korunur, yalniz toplamBorc/sonBorc/kalanBorc legacy'de kalir (bkz.
+  // buildGuardedPrimaryCalculationResult). Baska herhangi bir reasonCode (flag kapali, backend
+  // blocker, veri yok, vb.) hala kosulsuz tam LEGACY'e duser -- bu davranis DEGISMEDI.
+  const onlyCostFeeSuppressed = hasCostFeeSuppression
+    && uniqueReasonCodes.length === 1
+    && uniqueReasonCodes[0] === 'COST_ATTORNEY_FEE_SUPPRESSED';
+
+  let primarySource: GuardedPrimaryDisplaySource;
+  if (uniqueReasonCodes.length === 0) {
+    primarySource = 'CANONICAL_PRIMARY_CANDIDATE';
+  } else if (onlyCostFeeSuppressed) {
+    primarySource = 'PARTIAL_CANONICAL_LEGACY_TOTALS';
+  } else {
+    primarySource = 'LEGACY_CALCULATION_SUMMARY';
+  }
+
   return {
-    primarySource: reasonCodes.length === 0
-      ? 'CANONICAL_PRIMARY_CANDIDATE'
-      : 'LEGACY_CALCULATION_SUMMARY',
-    reasonCodes: [...new Set(reasonCodes)].sort(),
+    primarySource,
+    reasonCodes: uniqueReasonCodes,
   };
+}
+
+export type GuardedPrimaryAuthorityCopyCategory =
+  | 'CANONICAL'
+  | 'PARTIAL_CANONICAL'
+  | 'FEATURE_FLAG_OFF'
+  | 'UNSUPPORTED_SCENARIO'
+  | 'DATA_UNAVAILABLE'
+  | 'BACKEND_BLOCKED';
+
+export interface GuardedPrimaryAuthorityCopy {
+  category: GuardedPrimaryAuthorityCopyCategory;
+  headline: string;
+}
+
+// ALC-AUTH-4A-IMPL: avukat-facing Turkce authority copy. Ham reasonCodes (`guarded-primary-
+// display-reasons` testid) DOKUNULMADI -- bu, ayri bir ek katmandir (additive, Fork 2).
+// Kategorize edilmemis/bilinmeyen gelecekteki backend reasonCode'lari BACKEND_BLOCKED
+// varsayilanina duser -- avukat hicbir zaman ham kod GORMEZ, en kotu ihtimalle jenerik ama
+// dogru bir "guvenli gosterim kriterlerini karsilamiyor" cumlesi gorur.
+const GUARDED_PRIMARY_AUTHORITY_HEADLINES: Record<GuardedPrimaryAuthorityCopyCategory, string> = {
+  CANONICAL: 'Bu dosyada yeni hesaplama sonucu ana gösterim olarak kullanılmaktadır.',
+  PARTIAL_CANONICAL: 'Bu dosyada bazı ana kalemler yeni hesaplama motorundan gösterilir. Masraf/vekalet verisi tamamlanmadığı için Toplam Borç, Son Borç ve Kalan Borç mevcut hesaplama ile gösterilmektedir.',
+  FEATURE_FLAG_OFF: 'Bu dosyada güncel hesaplama pilot kapsamında değildir, mevcut hesaplama gösterilmektedir.',
+  UNSUPPORTED_SCENARIO: 'Bu dosyada yeni hesaplama şu an desteklenmiyor; mevcut hesaplama gösterilmektedir.',
+  DATA_UNAVAILABLE: 'Bu dosya için yeni hesaplama sonucu henüz üretilemedi; mevcut hesaplama gösterilmektedir.',
+  BACKEND_BLOCKED: 'Bu dosyada yeni hesaplama sonucu, güvenli gösterim kriterlerini şu an karşılamadığı için ana gösterim olarak kullanılmamaktadır.',
+};
+
+const UNSUPPORTED_SCENARIO_REASON_CODES = new Set([
+  'UNSUPPORTED_SCENARIO',
+  'PAYMENT_DESIGNATION_REQUIRED',
+  'UNSUPPORTED_PERIODIC_OBLIGATION',
+  'CLAIM_ITEM_AUTHORITY_CONTAMINATION',
+]);
+
+const DATA_UNAVAILABLE_REASON_CODES = new Set([
+  'CANONICAL_PRINCIPAL_UNAVAILABLE',
+  'CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE',
+  'FINAL_DEBT_STATES_MISSING',
+  // HesapOzetiPanel bu ikisini normalde loading/error kisa-devresiyle ayrica ele alir; burada
+  // yalniz getGuardedPrimaryAuthorityCopy()'yi o kisa-devreyi atlayarak dogrudan cagiran olasi
+  // gelecekteki cagiranlar icin savunma amacli.
+  'SHADOW_OR_CANONICAL_SOURCE_PENDING',
+  'SHADOW_OR_CANONICAL_SOURCE_FAILURE',
+]);
+
+export function getGuardedPrimaryAuthorityCopy(
+  decision: GuardedPrimaryDisplayDecision,
+): GuardedPrimaryAuthorityCopy {
+  if (decision.primarySource === 'CANONICAL_PRIMARY_CANDIDATE') {
+    return { category: 'CANONICAL', headline: GUARDED_PRIMARY_AUTHORITY_HEADLINES.CANONICAL };
+  }
+  if (decision.primarySource === 'PARTIAL_CANONICAL_LEGACY_TOTALS') {
+    return { category: 'PARTIAL_CANONICAL', headline: GUARDED_PRIMARY_AUTHORITY_HEADLINES.PARTIAL_CANONICAL };
+  }
+  if (decision.reasonCodes.includes('FEATURE_FLAG_OFF')) {
+    return { category: 'FEATURE_FLAG_OFF', headline: GUARDED_PRIMARY_AUTHORITY_HEADLINES.FEATURE_FLAG_OFF };
+  }
+  if (decision.reasonCodes.some((code) => UNSUPPORTED_SCENARIO_REASON_CODES.has(code))) {
+    return { category: 'UNSUPPORTED_SCENARIO', headline: GUARDED_PRIMARY_AUTHORITY_HEADLINES.UNSUPPORTED_SCENARIO };
+  }
+  if (decision.reasonCodes.some((code) => DATA_UNAVAILABLE_REASON_CODES.has(code))) {
+    return { category: 'DATA_UNAVAILABLE', headline: GUARDED_PRIMARY_AUTHORITY_HEADLINES.DATA_UNAVAILABLE };
+  }
+  return { category: 'BACKEND_BLOCKED', headline: GUARDED_PRIMARY_AUTHORITY_HEADLINES.BACKEND_BLOCKED };
 }
 
 export function buildGuardedPrimaryCalculationResult(
@@ -368,13 +453,18 @@ export function buildGuardedPrimaryCalculationResult(
   report: BalanceDisplayShadowDiffReport,
   decision: GuardedPrimaryDisplayDecision,
 ): CaseCalculationResult | null {
-  if (decision.primarySource !== 'CANONICAL_PRIMARY_CANDIDATE') return null;
+  // ALC-AUTH-4A-IMPL: PARTIAL_CANONICAL_LEGACY_TOTALS de (CANONICAL_PRIMARY_CANDIDATE gibi)
+  // bir sonuc uretir -- yalniz LEGACY_CALCULATION_SUMMARY icin null donulur.
+  if (decision.primarySource === 'LEGACY_CALCULATION_SUMMARY') return null;
 
   const amounts = canonicalPrimaryAmounts(report);
   if (!amounts) return null;
 
   // ALC-AUTH-3E: risk varsa yalniz bu 3 aggregate alan legacy'de kalir; digger 5 canonical
   // override alan (asilAlacak/takipTutari/takipSonrasiFaiz/toplamTahsilat/kalanAnapara) etkilenmez.
+  // Normal akista bu artik decision.primarySource === 'PARTIAL_CANONICAL_LEGACY_TOTALS' ile
+  // ortusur; fonksiyon evaluate()'i atlayip decision'i elle kurgulayan cagiranlar icin de (defense-
+  // in-depth, ALC-AUTH-3E'den kalan test) dogru davranmaya devam eder.
   const suppressAggregateOverride = hasCostOrAttorneyFeeUnderstatementRisk(report);
 
   return {

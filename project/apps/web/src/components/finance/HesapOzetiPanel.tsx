@@ -29,6 +29,7 @@ import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import {
   buildGuardedPrimaryCalculationResult,
   evaluateGuardedPrimaryDisplayPilot,
+  getGuardedPrimaryAuthorityCopy,
 } from "@/lib/guarded-primary-display";
 
 // ============================================================================
@@ -171,7 +172,15 @@ export function HesapOzetiPanel({
     : null;
   const displayHesap = guardedPrimaryHesap ?? hesap;
   const guardedPrimarySelected = Boolean(guardedPrimaryHesap);
-  
+  // ALC-AUTH-4A-IMPL: primarySource -- guardedPrimarySelected (yukarida) hem CANONICAL hem
+  // PARTIAL_CANONICAL_LEGACY_TOTALS icin true'dur (ikisi de bir sonuc uretir); asagidaki banner
+  // ve satir-bazli etiketler bu ikisini ayirt etmek icin primarySource'un kendisini kullanir.
+  const guardedPrimarySource = guardedPrimaryDecision?.primarySource;
+  const guardedPrimaryPartial = guardedPrimarySource === "PARTIAL_CANONICAL_LEGACY_TOTALS";
+  const guardedPrimaryAuthorityCopy = guardedPrimaryDecision
+    ? getGuardedPrimaryAuthorityCopy(guardedPrimaryDecision)
+    : null;
+
   const kalemLabel = displayHesap.kalemTuru === 'CEK' ? 'Çek' :
                      displayHesap.kalemTuru === 'SENET' ? 'Senet' :
                      displayHesap.kalemTuru === 'FATURA' ? 'Fatura' : 'Asıl Alacak';
@@ -207,9 +216,11 @@ export function HesapOzetiPanel({
         <div
           data-testid="guarded-primary-display-pilot"
           className={`border-b px-3 py-1.5 text-[10px] ${
-            guardedPrimarySelected
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : "border-slate-200 bg-slate-50 text-slate-600"
+            guardedPrimaryPartial
+              ? "border-amber-200 bg-amber-50 text-amber-700"
+              : guardedPrimarySelected
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-slate-200 bg-slate-50 text-slate-600"
           }`}
         >
           <div className="font-semibold">
@@ -217,12 +228,21 @@ export function HesapOzetiPanel({
               ? "Guarded canonical primary candidate"
               : "Legacy calculation-summary fallback"}
           </div>
+          {/* Ham diagnostic kod satırı -- QA/dev icin korunur, DEGISTIRILMEDI (Fork 2, additive). */}
           <div data-testid="guarded-primary-display-reasons" className="mt-0.5">
             {guardedPrimaryLoading
               ? "SHADOW_OR_CANONICAL_SOURCE_PENDING"
               : guardedPrimaryError
                 ? "SHADOW_OR_CANONICAL_SOURCE_FAILURE"
                 : guardedPrimaryDecision?.reasonCodes.join(", ") || "ELIGIBLE"}
+          </div>
+          {/* ALC-AUTH-4A-IMPL: avukat-facing Turkce authority copy -- YENI, ayri element (additive). */}
+          <div data-testid="guarded-primary-display-authority-copy" className="mt-1 font-medium not-italic">
+            {guardedPrimaryLoading
+              ? "Yeni hesaplama kontrol ediliyor; mevcut hesaplama gösterilmektedir."
+              : guardedPrimaryError
+                ? "Yeni hesaplama bilgisi şu an alınamıyor; mevcut hesaplama gösterilmektedir."
+                : guardedPrimaryAuthorityCopy?.headline}
           </div>
         </div>
       )}
@@ -277,13 +297,27 @@ export function HesapOzetiPanel({
         
         {/* TOPLAM BORÇ */}
         <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1.5 border-t-2 border-blue-400 bg-blue-100 rounded">
-          <span className="font-bold text-blue-900">TOPLAM BORÇ</span>
+          <span className="font-bold text-blue-900">
+            TOPLAM BORÇ
+            {guardedPrimaryPartial && (
+              <span data-testid="guarded-primary-partial-label-toplam-borc" className="ml-1 font-normal text-[9px] text-blue-700">
+                (mevcut hesaplama)
+              </span>
+            )}
+          </span>
           <span className="font-bold text-blue-800">{formatTL(displayHesap.toplamBorc)}</span>
         </div>
-        
+
         {/* SON BORÇ */}
         <div className="flex justify-between py-2.5 px-2 -mx-2 mt-1.5 border-t-2 border-green-400 bg-green-100 rounded">
-          <span className="font-bold text-green-900">SON BORÇ</span>
+          <span className="font-bold text-green-900">
+            SON BORÇ
+            {guardedPrimaryPartial && (
+              <span data-testid="guarded-primary-partial-label-son-borc" className="ml-1 font-normal text-[9px] text-green-700">
+                (mevcut hesaplama)
+              </span>
+            )}
+          </span>
           <span className="font-bold text-xl text-green-700">{formatTL(displayHesap.sonBorc)}</span>
         </div>
         
@@ -305,7 +339,14 @@ export function HesapOzetiPanel({
             )}
             
             <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1 border-t border-orange-300 bg-orange-50 rounded">
-              <span className="font-bold text-orange-900">KALAN BORÇ</span>
+              <span className="font-bold text-orange-900">
+                KALAN BORÇ
+                {guardedPrimaryPartial && (
+                  <span data-testid="guarded-primary-partial-label-kalan-borc" className="ml-1 font-normal text-[9px] text-orange-700">
+                    (mevcut hesaplama)
+                  </span>
+                )}
+              </span>
               <span className="font-bold text-orange-700">{formatTL(displayHesap.kalanBorc)}</span>
             </div>
           </div>
