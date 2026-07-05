@@ -1055,17 +1055,77 @@ Estimated Size: L (yeni domain-bağımsız modül)
 Related Modules: NotificationQueue, PoaExpiryNotificationDelivery, DebtorCrossCaseNotification, components/notifications/ (ölü kod, reuse/temizlik ayrıca değerlendirilmeli)
 Status: DEFERRED — owner-gated, tetik koşulları (a)+(b) gerçekleşmeden açılmaz.
 
-ID: D6-RETENTION
+ID: D6-RETENTION (ŞEMSİYE — bkz alt-maddeler, bu ID artık doğrudan implement edilmez)
 Title: D6A-2 retention/anonymize politikası (Q2 çerçeve kararının implementasyonu)
 Problem: `DebtorCrossCaseNotification` kayıtları (PENDING/ACKNOWLEDGED/EXPIRED) süresiz saklanıyor; ne purge ne anonymize mekanizması var — KVKK veri-minimizasyonu açısından bir risk yüzeyi.
 Business Value: KVKK m.4/m.7 uyumluluğu; aynı zamanda özen-borcu audit izini erken silmeden dengeli bir saklama rejimi.
-Technical Value: `docs/design/d6-legal-semantics-triage.md` Q2'de LOCKED çerçeveye göre (case-lifecycle-anchored floor + calendar ceiling, hangisi uzunsa; önce anonymize) bir retention cron'u + muhtemelen yeni `purgedAt`/`anonymizedAt` alanı. Emsal: `calc-preview/break-glass` modülünün `retentionPolicy` (STANDARD/LEGAL_HOLD/PROMOTED) deseni.
+Technical Value: Bu şemsiye madde, aşağıdaki 5 alt-maddeye BÖLÜNMÜŞTÜR (2026-07-05, owner kararı — bkz `docs/design/d6-kvkk-retention-policy.md`).
 Priority: MEDIUM
-Depends On: Kesin retention sürelerinin owner + hukuk danışmanı tarafından teyidi (Q2 çerçevesi LOCKED ama sayılar değil)
-Unlock Condition: Owner + hukuk danışmanı kesin süre teyidi + ayrı GO-IMPLEMENT onayı
-Estimated Size: M (BE — cron + küçük migration)
-Related Modules: debtor-cross-case-notification.service.ts, automation.service.ts, schema.prisma (DebtorCrossCaseNotification)
-Status: BACKLOG — kod/migration YAPILMADI, yalnız çerçeve kararı kilitlendi (bkz decision-log.md 2026-07-04, FAZ 2).
+Depends On: —
+Unlock Condition: —
+Estimated Size: — (alt-maddelere bakın)
+Related Modules: d6-retention-decision.provider.ts, schema.prisma (DebtorCrossCaseNotification, SystemConfig)
+Status: SPLIT — bu governance kaydı, gerçekte zaten MERGED olan PR #935'i (D6-RETENTION-POLICY-INFRA) yansıtmıyordu; bu commit ile düzeltildi. Aşağıdaki 5 alt-madde bu şemsiyenin yerini alır.
+
+ID: D6-RETENTION-POLICY-INFRA
+Title: Policy-driven retention eligibility karar katmanı (hardcoded süre yok)
+Problem: Retention kararının kod içinde sabit gün sayısıyla değil, tenant-scoped `SystemConfig` kaydından okunan bir politikayla verilmesi gerekiyordu.
+Business Value: Büroda resmi KVKK politikası girilmeden hiçbir kayıt "silinebilir" sayılmaz (fail-closed) garantisi.
+Technical Value: `D6RetentionDecisionProvider.getPolicy()`/`isEligibleForDeletion()` — `SystemConfig` key=`d6_retention_policy`'den okur, `enabled!==true` ise NULL (fail-closed). `hardCeilingDays` bağımsız üst sınır; `caseClosureBufferDays` case açıkken bloke eder; "hangisi uzunsa" ilkesi uygulanır. Gerçek silme/cron/wiring YOK — yalnız karar katmanı. 19 yeni test + tam modül regresyonu 30 suite/272 test PASS.
+Priority: —
+Depends On: `docs/design/d6-legal-semantics-triage.md` Q2 (çerçeve kararı)
+Unlock Condition: —
+Estimated Size: S
+Related Modules: d6-retention-decision.provider.ts
+Status: DONE — **MERGED**. PR #935, commit `c3e7d1e7`. Bu governance kaydı daha önce hiç yazılmamıştı (drift); bu commit ile retroaktif olarak kayda geçirildi.
+
+ID: D6-RETENTION-POLICY-DOC
+Title: Resmi KVKK saklama/imha politika iskeleti (docs-only scaffold)
+Problem: D6-RETENTION-DELETE'e geçmeden önce veri envanteri, hukuki dayanak taslağı, yetki matrisi, SystemConfig sözleşmesi ve açık karar noktalarının resmi bir belgede toplanması gerekiyordu.
+Business Value: Yazılımın hukukî karar üreten değil, resmen kabul edilmiş kurumsal politikayı uygulayan bir sistem olması.
+Technical Value: `docs/design/d6-kvkk-retention-policy.md` — 11 başlık (Scope/Evidence/Data Inventory/Legal Basis Draft/Retention Decision Model/SystemConfig Contract/Authorization Matrix/Deletion Method/Open Decisions/Delete Phase Blockers/References). Kod/migration YOK.
+Priority: HIGH
+Depends On: D6-RETENTION-POLICY-INFRA (DONE)
+Unlock Condition: —
+Estimated Size: — (docs-only)
+Related Modules: docs/design/d6-kvkk-retention-policy.md
+Status: DONE — bu commit ile eklendi. Owner kararları (hukuki dayanak taslağı KVKK m.5/2-e+f, gün sayıları TBD, yetki=PARTNER/ADMIN, policyReference=YES ayrı scope, SystemConfig yazma=ops-script/seed ilk faz) belgeye işlendi.
+
+ID: D6-RETENTION-POLICY-REF
+Title: `policyReference` alanı — interface + provider validation
+Problem: `enabled=true` yapıldığında hangi resmi politika belgesine dayandığının izlenebilir olması gerekiyor; bugün `D6RetentionPolicy`'de böyle bir alan yok.
+Business Value: Her aktif retention konfigürasyonunun hangi resmi belgeye/versiyona dayandığı denetlenebilir olur.
+Technical Value: `D6RetentionPolicy.policyReference?: string | null` eklenir; `enabled=true` iken `policyReference` boş/null ise provider reddeder (validation). Format: `KVKK-D6-RETENTION-vYYYY-MM-DD`. `deleteMany`/cron YOK.
+Priority: —
+Depends On: D6-RETENTION-POLICY-DOC (DONE)
+Unlock Condition: Owner GO-IMPLEMENT onayı
+Estimated Size: S
+Related Modules: d6-retention-decision.provider.ts, d6-retention-decision.provider.spec.ts
+Status: BACKLOG — henüz GO-IMPLEMENT verilmedi.
+
+ID: D6-RETENTION-CONFIG-ADMIN
+Title: SystemConfig `d6_retention_policy` için admin endpoint/UI (ikinci faz)
+Problem: Bugün `SystemConfig` kaydını yazan hiçbir HTTP endpoint/UI yok; ilk faz kasıtlı olarak yalnız audited ops-script/seed üzerinden yazılacak.
+Business Value: Politika nadiren değiştiği ve hukuki onay gerektirdiği için ilk fazda UI açmamak gereksiz risk/scope büyütmeyi önler; ikinci fazda gerçek ihtiyaç doğarsa PARTNER/ADMIN-gated bir yüzey açılabilir.
+Technical Value: —
+Priority: LOW
+Depends On: resmi retention politikası netleşmesi, D6-RETENTION-POLICY-REF (policyReference desteği), PARTNER/ADMIN yetki kararının uygulanması
+Unlock Condition: Owner GO-IMPLEMENT onayı — üç bağımlılık da kapanmadan açılmaz
+Estimated Size: —
+Related Modules: —
+Status: BACKLOG — owner-gated, ilk faz (ops-script/seed) yeterli kabul edildi.
+
+ID: D6-RETENTION-DELETE
+Title: Gerçek `deleteMany` + cron + module wiring (hard-delete)
+Problem: `D6RetentionDecisionProvider` yalnız karar veriyor; hiçbir yerde gerçek silme/cron/wiring yok.
+Business Value: KVKK m.4/m.7 veri-minimizasyonu yükümlülüğünün fiilen yerine getirilmesi.
+Technical Value: Hard-delete öngörülen imha yöntemidir (şema non-nullable FK'ler nedeniyle anonymize migration gerektirirdi — owner 2026-07-05'te bu revizyonu onayladı, bkz `docs/design/d6-kvkk-retention-policy.md` Bölüm 8). `NotificationRetentionService.deleteEligibleNotifications()` + cron (muhtemelen `automation.service.ts` idiomu) + `DebtorModule`'e provider wiring.
+Priority: —
+Depends On: D6-RETENTION-POLICY-DOC (DONE), D6-RETENTION-POLICY-REF, D6-RETENTION-CONFIG-ADMIN (veya bilinçli ops-script-only karar)
+Unlock Condition: 4 blocker owner tarafından tek tek kapanmalı — (1) resmi KVKK Saklama/İmha politikası onayı, (2) kesin resolvedRetentionDays/caseClosureBufferDays/hardCeilingDays, (3) policyReference implementasyon kararı, (4) SystemConfig yazma yolu kararının fiilen uygulanması. Dördü kapanmadan bu madde için GO-ANALYZE bile önerilmez.
+Estimated Size: M (BE — cron + gerçek silme + wiring, migration muhtemelen gerekmez)
+Related Modules: d6-retention-decision.provider.ts, automation.service.ts (muhtemel), schema.prisma (DebtorCrossCaseNotification)
+Status: BLOCKED — owner-gated, yukarıdaki 4 blocker kapanmadan başlamaz.
 
 ID: D6-INACTIVE-RECIPIENT-SWEEP
 Title: Deaktif alıcının PENDING D6 bildirimlerini erken-expire eden sweep (Q3)
