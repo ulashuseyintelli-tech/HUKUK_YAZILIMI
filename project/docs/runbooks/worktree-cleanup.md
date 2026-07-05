@@ -1,6 +1,6 @@
 # Runbook: Worktree Cleanup & Git Safety (Windows + pnpm + çoklu oturum)
 
-**Status:** Active · **Owner:** Platform · **Son güncelleme:** 2026-06-29
+**Status:** Active · **Owner:** Platform · **Son güncelleme:** 2026-07-05 (ACT-17)
 
 Bu runbook HUKUK_YAZILIMI repo'sunda biriken git worktree'lerinin ve merged branch'lerin GÜVENLİ temizliği için bağlayıcı operasyon prosedürüdür. Windows junction + pnpm hardlink/store yapısı ve çoklu Claude/Codex oturumu nedeniyle naif recursive silme canonical repoyu sessizce bozabilir. Normatif özet `process-rules.md`'dedir; bağlayıcı kaynak AGENTS.md.
 
@@ -9,6 +9,7 @@ Bu runbook HUKUK_YAZILIMI repo'sunda biriken git worktree'lerinin ve merged bran
 - **2026-06-27/28:** worktree cleanup'ta `cmd /c rmdir /s /q` worktree node_modules'ı silerken canonical `apps/api/node_modules/.bin`'i 30→0 yaptı (`nest`/`tsc`/`prisma` shim'leri gitti → `nest build` "'nest' is not recognized"). Reparse audit "0 dış-hedef" gösterse BİLE oldu; mekanizma reparse-follow değil pnpm **store/hardlink** paylaşımı. Onarım `pnpm install --force` (+ ağır durumda store prune + reinstall).
 - **2026-06-29:** aynı `cmd rd /s /q` 4 worktree'de canonical'ı bozMADI (apps/api .bin=30 korundu) — AMA bu kuralı çürütmez: **bozulma deterministik değil.** Bu yüzden `cmd rd` ve tüm recursive fiziksel silme YASAK.
 - **`.git/config` torn-write:** iki oturum aynı anda branch/worktree/config yazınca "bad config line N" → tüm yerel git bloke. 2× gözlendi; paralel oturumun sonraki temiz yazımıyla kendiliğinden onarıldı.
+- **2026-07-04/05 (ACT-17):** canonical main'de başka bir oturumun **committed** local commit'leri nedeniyle `git merge --ff-only origin/main` "diverging branches" hatası verdi (dosya-bazlı uncommitted WIP değil, gerçek git-tarihçesi ayrışması) — bkz. `maintenance-register.md` MR-004. Aynı oturumda ayrıca bir `git worktree add` çağrısı araç-zaman-aşımına uğradı ama arka planda kısmen devam etmiş; sonuçta bir alt-dizin (`project/docs/governance/`) eksik kalmış ve git bir dosyayı "deleted" olarak staged göstermişti — bu iki olay runbook'a §5/§6 olarak eklendi.
 
 ## Yasak komutlar (KESİN — istisna yok)
 
@@ -88,6 +89,42 @@ Bozulma → `pnpm install --force` (relink). Store dosyaları eksikse → owner-
 - **Teşhis (read-only):** `.git/config`'i OKU (Read), bozuk satırı tespit et (genelde boşluk çöpü / yarım section).
 - **Onarım:** ÖNCE bekle + tekrar oku — paralel oturumun sonraki temiz yazımı çoğu kez kendiliğinden onarır. Onarılmazsa → **OWNER manuel** (ajan `.git/config` rewrite ETMEZ; güvenlik sınıflandırıcısı da bunu bloke eder).
 
+### 5. Canonical `main` fast-forward diverged (MR-004 kalıbı)
+- **Belirti:** `git merge --ff-only origin/main` → `fatal: Not possible to fast-forward` /
+  "Diverging branches can't be fast-forwarded".
+- **Önce ayrım yap:** bu **uncommitted WIP** (MR-001, dosya-bazlı, `git status` kirli gösterir)
+  ile KARIŞTIRILMAMALI — burada `git status` genelde TEMİZDİR, sorun `git log HEAD..origin/main`
+  ve `git log origin/main..HEAD`'in HER İKİSİNİN de commit göstermesidir (gerçek git-tarihçe
+  ayrışması, başka bir oturumun canonical'a doğrudan committed local commit'i var).
+- **YAPMA:** `rebase`, `merge --no-ff`, `reset --hard`, `push --force`. Bunların hiçbiri
+  tek-taraflı güvenli değildir — diğer oturumun commit'lerini bozabilir/çakışma yaratabilir.
+- **YAP:** durumu raporla (`git log HEAD..origin/main --oneline` + `git log origin/main..HEAD --oneline`
+  çıktısıyla), bekle. Diğer oturum kendi işini reconcile/push edince (kendi PR/merge akışıyla)
+  `ff-only` normal şekilde başarılı olur — bu, gözlemlenmiş ve doğrulanmış bir davranıştır
+  (2026-07-04, PR #910 sırasında kendiliğinden çözüldü).
+- **Referans:** `maintenance-register.md` → **MR-004**.
+
+### 6. `git worktree add` zaman aşımı → olası kısmi (bozuk) checkout
+- **Belirti:** `git worktree add` çağrısı araç zaman aşımına uğrar (ör. büyük repo/yavaş disk
+  nedeniyle checkout 60sn'yi aşar), ama arka planda işlem bir süre daha devam etmiş olabilir.
+  Sonraki adımda beklenen bir dosya/dizin `Read`/`ls` ile "No such file" verir, veya
+  `git status` içinde beklenmedik bir "deleted" satırı görünür (aslında hiç yazılmamış bir
+  dosya, index'te silinmiş gibi görünür) — bu, checkout'un yarıda kesildiğinin işaretidir.
+- **YAPMA:** kısmi checkout'u "onarmaya" çalışma (`git checkout -- <path>`, `git restore`,
+  manuel dosya kopyalama vb.) — index/working-tree tutarsızlığının tam kapsamı bilinmez.
+- **YAP:**
+  1. Zaman aşımına uğrayan HER `git worktree add` sonrası, düzenlemeye başlamadan ÖNCE
+     bütünlüğü doğrula: `git -C <path> status --porcelain` (temiz olmalı, "deleted" göstermemeli)
+     + değiştirilecek dosyanın gerçekten var olduğunu `ls`/`Read` ile teyit et.
+  2. Bozuksa: bu worktree'yi GÜVENİLMEZ SAY, `git worktree remove --force <path>` ile kaldır
+     (bkz. §2 — "Directory not empty" olursa yine `prune`, orphan bırak).
+  3. Aynı branch adını YENİDEN KULLANMA konusunda dikkatli ol (branch zaten oluşturulmuş
+     olabilir) — gerekirse önce `git branch -D <branch>` ile temizle, sonra **yeni/aynı** branch
+     adıyla worktree'yi TEKRAR aç (fresh checkout).
+  4. Yeniden denerken timeout payını artır (ör. 180000ms) — büyük repo checkout'u rutin
+     olarak 60sn'yi geçebilir, bu tek başına bir hata değildir; yalnız checkout bütünlüğü
+     bozulduğunda gerçek bir sorundur.
+
 ## Final report format (cleanup yapan ajan HER ZAMAN raporlar)
 ```text
 - Silinen remote branch'ler
@@ -101,4 +138,4 @@ Bozulma → `pnpm install --force` (relink). Store dosyaları eksikse → owner-
 ```
 
 ## Referanslar
-- `process-rules.md` (normatif özet) · `decision-log.md` · `architecture-index.md` · AGENTS.md (Repository discipline / Worktree Isolation Protocol).
+- `process-rules.md` (normatif özet) · `decision-log.md` · `architecture-index.md` · AGENTS.md (Repository discipline / Worktree Isolation Protocol) · `maintenance-register.md` (MR-001 uncommitted WIP, MR-004 committed divergence).
