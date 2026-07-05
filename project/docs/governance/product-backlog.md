@@ -29,17 +29,20 @@ Kurallar:
 
 ## Legacy / Strategic Backlog Source
 
-Mevcut legacy/strategic backlog kaynağı:
+Legacy strategic backlog kaynağı:
 
 ```text
 project/docs/strategic-backlog.md
 ```
 
-Bu dosya yeni governance Product Backlog formatının hedef kaydıdır.
+MPB-026 kapsamında bu içerik `product-backlog.md` içine taşınmıştır. `project/docs/strategic-backlog.md` artık yeni karar veya backlog girişi için authoritative kaynak değildir; yalnız tarihsel snapshot olarak korunur.
 
-İçerik migration ayrı onaylı iş olarak yapılacaktır.
+Yeni governance akışı için kanonik kaynaklar:
 
-Çift kaynak oluşmaması için migration tamamlanana kadar `project/docs/strategic-backlog.md` authoritative historical source olarak kalır.
+- Product Backlog: `project/docs/governance/product-backlog.md`
+- Decision Log: `project/docs/governance/decision-log.md`
+- Active Roadmap: `project/docs/governance/active-roadmap.md`
+- Master Triage/Register: `project/docs/governance/master-triage-register.md`
 
 ## Product Backlog Format
 
@@ -89,6 +92,7 @@ BACKLOG
 | MPB-023 | Client | Client Workspace operating layer and safe actions | Repo verification confirmed Client Workspace shell, action catalog, operating snapshot, safe typed commands, backend policy-driven action visibility/enablement, UI/API alignment and safe response projection; PR #686/#740/#742/#745/#755/#758/#774/#775/#789/#792/#797/#809/#813/#818/#822/#826/#833/#842/#894 merged; focused backend tests PASS (7 suites, 89 tests); local focused Vitest blocked by vitest/vite startup mismatch |
 | MPB-024 | UI | Timeline V2 and DBIND frontend/read-model follow-ups | Repo verification confirmed Timeline V2 backend read model + Client Activity UI, V2 sources, cursor pagination, safe projection and empty/error states, plus DBIND disposition UI read-model, approval-gated payout request/finalize follow-ups and web/API parity; PR #867/#894/#906 merged; focused backend Timeline/DBIND tests PASS (4 suites, 102 tests); local focused Vitest blocked by vitest/vite startup mismatch |
 | MPB-025 | Migration | Platform / migration / runtime-lab technical debt | Repo verification confirmed Phase 9B/9C Truth Layer/object-store migration support, fail-closed DB test env, runtime smoke/rollback risk matrix gates and migration/runtime-lab safeguards; MPB-025 remediation removed runtime decorator metadata drift from MinioObjectStoreClient; focused migration/runtime-lab tests PASS (11 suites, 242 tests) |
+| MPB-026 | Migration | Governance documentation migration | Repo verification confirmed legacy strategic backlog records were not yet migrated into the new governance Product Backlog; MPB-026 migrated SB-001..SB-013 into product-backlog format, marked strategic-backlog as historical/superseded, reconciled Master Triage ACT-16 and fixed governance README canonical-instruction drift; focused governance checks and git diff --check PASS |
 | MPB-027 | Security | AddressTask auth, tenant isolation and data-integrity hardening | PR #202/#207/#261 merged; repo verification confirmed AddressTask auth/tenant/data-integrity hardening; focused AddressTask tests PASS (3 suites, 67 tests) |
 | ALC-AUTH-1B | Alacak Kalemi | Overpayment display semantics contract (allocatedPaidAmount/grossReceivedAmount) | PR #909 squash merged, SHA `f144f550`; PAID_DELTA reclassified OVERPAYMENT_CLASSIFICATION_EFFECT (not a bug); totalPaidAmount unchanged, additive fields only; 575/575 interest-engine tests PASS |
 | ALC-AUTH-3B | Alacak Kalemi | totalDebtAmount projection plumbing (grossPrincipal) | PR #917 squash merged, SHA `8c0cad8f`; guard's CANONICAL_PRINCIPAL_UNAVAILABLE closed for 2026/9502; 35/35 orchestration tests PASS; guarded pilot remains NO-GO pending ALC-AUTH-3D |
@@ -98,6 +102,170 @@ BACKLOG
 ## Items
 
 Legacy `strategic-backlog.md` içerik migration'ı ayrı onaylı governance işi olarak yapılacaktır (aşağıdaki maddeler bu migration'dan bağımsız, ADR-009 kararından doğan yeni maddelerdir).
+
+---
+
+## Migrated Strategic Backlog (MPB-026)
+
+Bu bölüm `project/docs/strategic-backlog.md` içindeki SB-* kayıtlarının yeni Product Backlog formatına taşınmış kanonik kopyasıdır. Legacy dosya tarihsel snapshot olarak korunur; yeni güncellemeler burada yapılır.
+
+---
+
+ID: SB-001
+Title: Party Registry — dış taraf kimliği konsolidasyonu + CaseParty + cross-case istihbarat
+Problem: Müvekkil/borçlu/üçüncü kişi/mirasçı gibi dış taraf kimlikleri ayrı yapılarda yaşadıkça duplicate, cross-case istihbarat ve lifecycle kararları dağınık kalır.
+Business Value: Gerçek veri hacmi oluştuğunda kişi/kurum kimliği tekilleşir, dosyalar arası istihbarat ve hukuki ilişki görünürlüğü artar.
+Technical Value: Party/CaseParty ekseniyle Debtor/Client/third-party kimliklerini ileride tek mimari altında toplar.
+Priority: HIGH
+Depends On: Gerçek veri girişi; debtor intelligence yüzeyinin stabilize olması; SB-005 dahil açık ürün/hukuk kararları; Av. sign-off
+Unlock Condition: Party Faz 0 owner kararı ve hukuk/mimari sign-off
+Estimated Size: XL
+Related Modules: party-registry-design.md, party-registry-design-review.md, debtor-identity-resolution-ir0.md
+Status: HOLD
+
+ID: SB-002
+Title: IR-0 → PartyMatch kimlik çözümleme motoru
+Problem: Update akışlarında “mevcut kayda birleştir” UX’i yok; standalone kimlik çözümleme Party mimarisinden koparsa ikinci bir çözümleme hattı doğar.
+Business Value: Aynı kişi/kurum kayıtları owner onayıyla güvenli şekilde birleştirilebilir.
+Technical Value: DebtorIdentityCandidate gelecekte PartyMatchCandidate altında modellenir; standalone IR motoru yapılmaz.
+Priority: HIGH
+Depends On: SB-001 Party Registry
+Unlock Condition: Party Faz 5 içinde PartyMatch tasarımının owner tarafından açılması
+Estimated Size: L
+Related Modules: debtor-identity-resolution-ir0.md, PartyMatchCandidate
+Status: HOLD
+
+ID: SB-003
+Title: Debtor soft-delete modelinin Party lifecycle ile çözülmesi
+Problem: Debtor soft-delete tek başına yapılırsa Party lifecycle ile aynı problemi ikinci kez çözer.
+Business Value: Borçlu görünürlüğü ve dosya ilişkileri hukuki/lifecycle bağlamıyla tutarlı kalır.
+Technical Value: Party.isActive + CaseParty role-detach yaklaşımıyla standalone debtor soft-delete tekrarından kaçınılır.
+Priority: MEDIUM
+Depends On: SB-001 Party Registry
+Unlock Condition: Party lifecycle tasarımı netleşir
+Estimated Size: M
+Related Modules: reliability-ledger RFA-009, Debtor, Party, CaseParty
+Status: HOLD
+
+ID: SB-004
+Title: Asset → PartyAsset + CaseAssetAttachment
+Problem: Varlık bilgisi kişi istihbaratı mı yoksa dosyadaki haciz/işlem kaydı mı ayrımı net değil.
+Business Value: Varlık istihbaratı ve dosya bazlı haciz işlemleri ayrışır.
+Technical Value: PartyAsset kişinin bilinen varlığını, CaseAssetAttachment dosya bağlamındaki işlemi temsil eder.
+Priority: MEDIUM
+Depends On: SB-001 Party Registry
+Unlock Condition: Party Faz 2 açılır
+Estimated Size: L
+Related Modules: reliability-ledger DEAD-2, PartyAsset, CaseAssetAttachment
+Status: HOLD
+
+ID: SB-005
+Title: EstateHeir modeli
+Problem: Mirasçı ilişkisinin PartyRelation(HEIR_OF) mı yoksa alt-Party modeliyle mi temsil edileceği hukuki/mimari olarak açık.
+Business Value: Mirasçı ilişkileri ileride doğru hukuki temsil ile izlenir.
+Technical Value: Estate/heir modellemesi Party Faz 2’ye bağlanır; erken yanlış şema engellenir.
+Priority: MEDIUM
+Depends On: SB-001 Party Registry
+Unlock Condition: Owner + hukuk kararı: PartyRelation(HEIR_OF) veya alt-Party
+Estimated Size: M
+Related Modules: party-registry-design-review.md §11
+Status: HOLD
+
+ID: SB-006
+Title: PublicInstitution kapsamı (DETSİS)
+Problem: Kamu kurumu kaydının tam Party mi yoksa hafif referans mı olacağı ürün kararı gerektirir.
+Business Value: Kamu kurumlarıyla ilişki tutarlı ve gereksiz karmaşa yaratmadan izlenir.
+Technical Value: DETSİS/kurum modellemesi Party mimarisi içinde doğru ağırlıkta konumlanır.
+Priority: MEDIUM
+Depends On: SB-001 Party Registry
+Unlock Condition: Owner ürün kararı: tam Party veya hafif referans
+Estimated Size: M
+Related Modules: party-registry-design-review.md §11
+Status: HOLD
+
+ID: SB-007
+Title: Cross-case istihbarat besleme
+Problem: Aynı borçluya ait farklı dosyalardaki son adres, telefon, haciz ve temas bilgisinin güvenli ortak görünümü yok.
+Business Value: Operasyon ekibi dosyalar arası değerli istihbaratı görebilir.
+Technical Value: Party alt-ağaçları ve okuyucuları taşındıktan sonra cross-case read model kurulabilir.
+Priority: HIGH
+Depends On: SB-001 Party Registry
+Unlock Condition: Party Faz 2 alt-ağaçlar + Faz 4 okuyucular tamamlanır
+Estimated Size: L
+Related Modules: party-registry-design.md §5
+Status: HOLD
+
+ID: SB-008
+Title: Saha istihbaratı idempotency
+Problem: DebtorIntelligence çift-submit riski Party ailesine taşınmadan önce açık kalabilir.
+Business Value: Saha istihbaratında tekrar kayıt ve yanlış sinyal riski azalır.
+Technical Value: Asıl çözüm PartyIntelligence Faz 2’dedir; gerçek saha girişi Party’den önce başlarsa küçük guard yapılabilir.
+Priority: MEDIUM
+Depends On: SB-001 Party Registry
+Unlock Condition: PartyIntelligence Faz 2 veya Party öncesi gerçek saha-istihbarat kullanımı başlar
+Estimated Size: S/M
+Related Modules: reliability-ledger RFA-015, DebtorIntelligence, PartyIntelligence
+Status: HOLD
+
+ID: SB-009
+Title: Junk/test verisi cleanup
+Problem: 9 junk adres `street="."`, Ayşe Yılmaz test borçluları ve benzer QA kayıtları canonical veride kalıyor.
+Business Value: Demo/QA/operasyon verisi daha güvenilir görünür.
+Technical Value: Party’den bağımsız dry-run’lı operasyonel cleanup olarak yapılabilir.
+Priority: LOW
+Depends On: —
+Unlock Condition: Owner dry-run/apply cleanup GO verir
+Estimated Size: S
+Related Modules: audit junk notu, data cleanup scripts
+Status: READY
+
+ID: SB-010
+Title: Bağımsız küçük temizlikler
+Problem: RFA-011 legacy debtor bypass, RFA-012 `_count`, RFA-014 GroupDefinition reactivate gibi küçük bağımsız borçlar dağınık duruyor.
+Business Value: Düşük riskli temizliklerle bakım maliyeti azalır.
+Technical Value: Party’den bağımsız küçük PR’larla kapatılabilir.
+Priority: LOW
+Depends On: —
+Unlock Condition: Owner ilgili küçük cleanup dilimini seçer
+Estimated Size: S/M
+Related Modules: reliability-ledger RFA-011/RFA-012/RFA-014
+Status: READY
+
+ID: SB-011
+Title: Calc / Faiz / TBK100 reliability audit turu
+Problem: Para/faiz hesapları ayrı uzman alan; önceki reliability audit kapsamına girmedi.
+Business Value: Hukuki hesaplamalarda güven artar, yanlış faiz/mahsup riski azalır.
+Technical Value: Reliability Audit deseniyle ledger + canlı doğrulama ayrı turda yürütülür.
+Priority: HIGH
+Depends On: Owner audit GO
+Unlock Condition: Calc/Faiz/TBK100 reliability audit için ayrı uzman tur açılır
+Estimated Size: L
+Related Modules: reliability-ledger, interest-engine, TBK100 hesaplama yüzeyleri
+Status: HOLD
+
+ID: SB-012
+Title: Soft-delete model tam sweep
+Problem: Audit yüksek trafikli modelleri taradı ama soft-delete yapan tüm modeller eksiksiz enumerate edilmedi.
+Business Value: Lifecycle ve görünürlük politikaları daha tutarlı hale gelir.
+Technical Value: Kalan soft-delete modeller için düşük öncelikli kapsam tamamlama sağlar.
+Priority: LOW
+Depends On: —
+Unlock Condition: Owner düşük öncelikli tam sweep çalışması açar
+Estimated Size: M
+Related Modules: Client, Debtor, Lawyer, Staff, Lookup, Group, Portal ve kalan soft-delete modeller
+Status: READY
+
+ID: SB-013
+Title: Web CI `next build` gate
+Problem: Vitest geçerken Next route/build hatası main’e girebiliyordu; test yeşili uygulama boot garantisi değildi.
+Business Value: Frontend boot kırıkları main’e daha zor girer.
+Technical Value: Web Tests job artık vitest + build gate içerir.
+Priority: MEDIUM
+Depends On: —
+Unlock Condition: —
+Estimated Size: S
+Related Modules: Web CI, Next build, PR #491
+Status: DONE (shipped #491 → cb2203c; web-tests artık vitest + build çalıştırır)
 
 ---
 
