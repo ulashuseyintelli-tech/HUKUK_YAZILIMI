@@ -20,6 +20,7 @@ import {
   Search,
   Lightbulb,
   CreditCard,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@hukuk/ui";
 import { api, DebtorDetailDTO, ServiceHistoryItem, DebtorRoleLabels, UpdateServiceStatusDTO, CrossFileDebtorAlertDTO } from "@/lib/api";
@@ -66,6 +67,7 @@ export function DebtorDetailDrawer({
   const [isUpdating, setIsUpdating] = useState(false);
   const [quickNote, setQuickNote] = useState("");
   const [isEditingNote, setIsEditingNote] = useState(false);
+  const [savingNote, setSavingNote] = useState(false); // ACT-09: kaydetme-durumu göstergesi (UI cilası)
   const [activeTab, setActiveTab] = useState<DrawerTab>('info');
   const [crossFileAlert, setCrossFileAlert] = useState<CrossFileDebtorAlertDTO | null>(null);
 
@@ -152,12 +154,15 @@ export function DebtorDetailDrawer({
 
   const handleSaveNote = async () => {
     if (debtor?.lifecycleStatus === "PASSIVE") return;
+    setSavingNote(true);
     try {
       await api.updateDebtorQuickNote(caseId, caseDebtorId, quickNote);
       setIsEditingNote(false);
       onUpdate?.();
     } catch (err: any) {
       alert(err.message || "Not kaydedilemedi");
+    } finally {
+      setSavingNote(false);
     }
   };
 
@@ -530,14 +535,14 @@ export function DebtorDetailDrawer({
                     <div className="flex justify-between items-center">
                       <span className="text-xs text-gray-400">{quickNote.length}/240</span>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => {
+                        <Button size="sm" variant="outline" disabled={savingNote} onClick={() => {
                           setQuickNote(debtor.quickNote || "");
                           setIsEditingNote(false);
                         }}>
                           İptal
                         </Button>
-                        <Button size="sm" onClick={handleSaveNote}>
-                          Kaydet
+                        <Button size="sm" onClick={handleSaveNote} disabled={savingNote}>
+                          {savingNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Kaydet"}
                         </Button>
                       </div>
                     </div>
