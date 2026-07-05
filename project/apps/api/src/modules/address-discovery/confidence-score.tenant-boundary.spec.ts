@@ -93,10 +93,10 @@ describe('ConfidenceScoreService — tenant boundary (Gate-1)', () => {
       );
     }
 
-    it('NEGATIF: GET /confidence/:addressId başka tenant → reddedilir, updateAddressScore ÇAĞRILMAZ', async () => {
+    it('NEGATIF: GET /confidence/:addressId başka tenant → reddedilir, computeAddressScore ÇAĞRILMAZ', async () => {
       const confidence = {
         assertAddressBelongsToTenant: jest.fn().mockRejectedValue(new NotFoundException()),
-        updateAddressScore: jest.fn(),
+        computeAddressScore: jest.fn(),
       };
       const ctrl = makeController(confidence);
 
@@ -105,13 +105,13 @@ describe('ConfidenceScoreService — tenant boundary (Gate-1)', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
 
       expect(confidence.assertAddressBelongsToTenant).toHaveBeenCalledWith('tenant-B', 'addr-A');
-      expect(confidence.updateAddressScore).not.toHaveBeenCalled();
+      expect(confidence.computeAddressScore).not.toHaveBeenCalled();
     });
 
     it('POZİTİF: GET /confidence/:addressId aynı tenant → { score } döner (contract korunur)', async () => {
       const confidence = {
         assertAddressBelongsToTenant: jest.fn().mockResolvedValue(undefined),
-        updateAddressScore: jest.fn().mockResolvedValue(87),
+        computeAddressScore: jest.fn().mockResolvedValue(87),
       };
       const ctrl = makeController(confidence);
 
@@ -120,7 +120,20 @@ describe('ConfidenceScoreService — tenant boundary (Gate-1)', () => {
       ).resolves.toEqual({ score: 87 });
 
       expect(confidence.assertAddressBelongsToTenant).toHaveBeenCalledWith('tenant-A', 'addr-A');
-      expect(confidence.updateAddressScore).toHaveBeenCalledWith('addr-A');
+      expect(confidence.computeAddressScore).toHaveBeenCalledWith('addr-A');
+    });
+
+    it('ACT-10: GET /confidence/:addressId artık updateAddressScore (yazan) ÇAĞIRMAZ — GET-içi-yazma anti-pattern kapandı', async () => {
+      const confidence = {
+        assertAddressBelongsToTenant: jest.fn().mockResolvedValue(undefined),
+        computeAddressScore: jest.fn().mockResolvedValue(50),
+        updateAddressScore: jest.fn(),
+      };
+      const ctrl = makeController(confidence);
+
+      await ctrl.getConfidenceScore({ user: { tenantId: 'tenant-A' } }, 'addr-A');
+
+      expect(confidence.updateAddressScore).not.toHaveBeenCalled();
     });
 
     it('NEGATIF: GET /confidence/:addressId/breakdown başka tenant → reddedilir, prisma okunmaz', async () => {

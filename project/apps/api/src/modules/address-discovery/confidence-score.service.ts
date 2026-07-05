@@ -196,9 +196,15 @@ export class ConfidenceScoreService {
   }
 
   /**
-   * Adres ID'si ile güven skoru hesapla ve güncelle
+   * ACT-10 (2026-07-05): Adres ID'si ile güven skorunu hesaplar, YAZMAZ (saf okuma).
+   * `updateAddressScore()`'un GET-güvenli varyantı — HTTP GET semantiğinin (yan etki yok)
+   * korunması için ayrıldı.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - AddressDiscoveryController.getConfidenceScore() -> GET confidence/:addressId (yalnız oku, persist etmez)
+   * - ConfidenceScoreService.updateAddressScore() -> hesapla+persist eden asıl metot
    */
-  async updateAddressScore(addressId: string): Promise<number> {
+  async computeAddressScore(addressId: string): Promise<number> {
     const address = await this.prisma.debtorAddress.findUnique({
       where: { id: addressId },
       include: {
@@ -218,7 +224,7 @@ export class ConfidenceScoreService {
       h => h.toStatus === 'DELIVERED'
     ).length;
 
-    const score = this.calculateScore({
+    return this.calculateScore({
       source: address.source,
       verified: address.verified,
       verifiedAt: address.verifiedAt,
@@ -226,6 +232,17 @@ export class ConfidenceScoreService {
       totalNotifications,
       successfulNotifications,
     });
+  }
+
+  /**
+   * Adres ID'si ile güven skoru hesapla ve güncelle.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - ConfidenceScoreService.updateAllScoresForDebtor() -> her adres için tek tek çağırır (persist gerekir)
+   * - AddressDiscoveryController.updateAllScoresForDebtor() -> POST confidence/debtor/:debtorId/update-all
+   */
+  async updateAddressScore(addressId: string): Promise<number> {
+    const score = await this.computeAddressScore(addressId);
 
     // Skoru güncelle
     await this.prisma.debtorAddress.update({
