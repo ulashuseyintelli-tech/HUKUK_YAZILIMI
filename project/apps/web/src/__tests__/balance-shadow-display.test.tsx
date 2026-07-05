@@ -557,7 +557,7 @@ describe("guarded primary display pilot gate", () => {
   // cost/vekalet ClaimItem-boslugu yuzunden 0) toplamBorc/sonBorc/kalanBorc case-bazli
   // legacy'de kalir; guard'in kendisi bloklanmaz (B1_SCOPE_EXEMPT_DIFF_CODES ile tutarli),
   // diger 5 canonical override alan etkilenmez.
-  it("COSTS_DELTA RED ise toplamBorc/sonBorc/kalanBorc legacy'de kalir, diger 5 alan canonical kalir", () => {
+  it("COSTS_DELTA RED ise decision LEGACY'e duser (ALC-AUTH-4A: suppress banner/reasonCodes'a yansir)", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
     report.totals.diffs = [
@@ -581,21 +581,16 @@ describe("guarded primary display pilot gate", () => {
     const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
 
-    expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
-    expect(guardedResult).not.toBeNull();
-    // Suppress edilen 3 aggregate alan: legacy degeri korunur.
-    expect(guardedResult!.toplamBorc).toBe(legacy.toplamBorc);
-    expect(guardedResult!.sonBorc).toBe(legacy.sonBorc);
-    expect(guardedResult!.kalanBorc).toBe(legacy.kalanBorc);
-    // Diger 5 canonical-override alan etkilenmez, hala canonical.
-    expect(guardedResult!.asilAlacak).toBe(report.bucketDiffs[0].canonicalAmount);
-    expect(guardedResult!.takipTutari).toBe(report.bucketDiffs[0].canonicalAmount);
-    expect(guardedResult!.takipSonrasiFaiz).toBe(report.totals.canonical!.interestAmount);
-    expect(guardedResult!.toplamTahsilat).toBe(report.totals.canonical!.totalPaidAmount);
-    expect(guardedResult!.kalanAnapara).toBe(report.bucketDiffs[0].canonicalAmount);
+    // ALC-AUTH-4A: suppress artik decision/banner katmaninda gorunur -- daha once burada
+    // primarySource yanlislikla CANONICAL_PRIMARY_CANDIDATE kalirdi, banner "eligible" derken
+    // toplamBorc/sonBorc/kalanBorc sessizce legacy'de kaliyordu (misleading-display).
+    expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(decision.reasonCodes).toContain("COST_ATTORNEY_FEE_SUPPRESSED");
+    // decision LEGACY oldugu icin guarded primary hic secilmez -- kismi/hibrit sonuc uretilmez.
+    expect(guardedResult).toBeNull();
   });
 
-  it("ATTORNEY_FEE_DELTA RED ise de toplamBorc/sonBorc/kalanBorc legacy'de kalir", () => {
+  it("ATTORNEY_FEE_DELTA RED ise de decision LEGACY'e duser (ALC-AUTH-4A)", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
     report.totals.diffs = [
@@ -619,10 +614,44 @@ describe("guarded primary display pilot gate", () => {
     const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
 
+    expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(decision.reasonCodes).toContain("COST_ATTORNEY_FEE_SUPPRESSED");
+    expect(guardedResult).toBeNull();
+  });
+
+  it("ALC-AUTH-3E defense-in-depth: decision manuel CANONICAL kurgulanirsa (evaluate() bypass) buildGuardedPrimaryCalculationResult yine de 3 aggregate alani suppress eder", () => {
+    // Bu test evaluateGuardedPrimaryDisplayPilot()'u ATLAYIP decision'i elle CANONICAL kurguluyor --
+    // buildGuardedPrimaryCalculationResult'un KENDI suppress kontrolunun (defense-in-depth,
+    // ALC-AUTH-3E'den kalan) hala calistigini dogrular; normal akista (evaluate() ile) bu artik
+    // hic tetiklenmez cunku decision zaten LEGACY olur (bkz. yukaridaki iki test).
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    report.totals.diffs = [
+      ...report.totals.diffs,
+      {
+        code: "COSTS_DELTA",
+        label: "Legacy icraMasraflari vs canonical costs",
+        classification: "EXPECTED_CANONICAL_DIVERGENCE",
+        legacyField: "legacy.icraMasraflari",
+        canonicalField: "canonical.costs",
+        legacyAmount: legacy.icraMasraflari,
+        canonicalAmount: 0,
+        delta: -legacy.icraMasraflari,
+        deltaPercent: -100,
+        status: "MAJOR_DELTA",
+        severity: "RED",
+        explanation: "Legacy masraf hesaplari ile canonical case-level cost projection ayni otorite degildir.",
+      },
+    ];
+    const manualDecision = { primarySource: "CANONICAL_PRIMARY_CANDIDATE" as const, reasonCodes: [] };
+
+    const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, manualDecision);
+
     expect(guardedResult).not.toBeNull();
     expect(guardedResult!.toplamBorc).toBe(legacy.toplamBorc);
     expect(guardedResult!.sonBorc).toBe(legacy.sonBorc);
     expect(guardedResult!.kalanBorc).toBe(legacy.kalanBorc);
+    expect(guardedResult!.asilAlacak).toBe(report.bucketDiffs[0].canonicalAmount);
   });
 
   it("COSTS_DELTA/ATTORNEY_FEE_DELTA RED degilse toplamBorc/sonBorc/kalanBorc mevcut gibi canonical override edilir", () => {
