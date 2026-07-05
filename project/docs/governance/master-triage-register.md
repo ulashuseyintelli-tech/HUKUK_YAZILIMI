@@ -142,6 +142,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **ARC-05-A (Office-Approval Inbox FE, P4-6)** | ⚠️ **ARCHIVED → CLOSED yeniden sınıflandırıldı** (owner kararı, 2026-07-04): PR #823+#832 (2026-07-02) ile fiilen teslim edildi, `/office-approvals` canlı. Governance bookkeeping düzeltmesi PR #908 → `49cde917` MERGED (`product-backlog.md` P4-6 Status BACKLOG→DONE). |
 | **VER-32 (eski VR-13, PR #890'ı kapatan süreç)** | 2. batch doğrulaması + `act04-ocr-region-classifier` memory: diff-audit sonrası CLOSED, benzersiz iyileştirme yok |
 | **PB-03 (SummaryEngineService.allocateWithTBK100 3. allocator)** | 2. batch — sahiplik "alacak kalemleri" sayfasına devredildi. ⚠️ VER-28 yalnız transfer doğrulaması; geniş claim-item-domain-audit NO-GO'sunu kapatmaz. |
+| **ALC-AUTH-4A (misleading-eligibility fix, kod)** | PR #942 → `50aa2e33` MERGED. ALC-AUTH-3E'nin cost/attorney-fee suppress'i (`hasCostOrAttorneyFeeUnderstatementRisk`) yalnız `buildGuardedPrimaryCalculationResult()` içindeydi; `evaluateGuardedPrimaryDisplayPilot()` riski hiç görmüyordu, bu yüzden suppress tetiklenirken bile `decision.reasonCodes` boş kalıp banner "eligible" diyordu (toplamBorc/sonBorc/kalanBorc sessizce legacy'ye düşerken). Fix: aynı risk kontrolü artık `evaluateGuardedPrimaryDisplayPilot()` içinde de çalışıyor, yeni `COST_ATTORNEY_FEE_SUPPRESSED` reasonCode tetiklendiğinde `primarySource` otomatik `LEGACY_CALCULATION_SUMMARY`'ye düşüyor. Kapsam dar tutuldu (yalnız `guarded-primary-display.ts` + `balance-shadow-display.test.tsx`); ComponentCoverageReport/rollout/flag-açma kapsam DIŞI kaldı, B1 flag hâlâ OFF. 82/82 test PASS, tsc temiz. Not: PR #938 (ayrı oturum, ALC-AUTH-4A/4B/4C governance-only kaydı) bu fix'i İÇERMİYORDU — hâlâ OPEN, bu PR'dan bağımsız. |
 
 ---
 
@@ -268,7 +269,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | Master Verification Required | 33 (VER-02..18 + VER-20..36, VER-01/19/32 kapandı/taşındı) |
 | Master Workflow Queue — PENDING | 13 grup |
 | Master Workflow Queue — DONE | 5 zincir (PR #408 eklendi) |
-| Closed Register | 18 |
+| Closed Register | 19 (ALC-AUTH-4A eklendi) |
 | Archived Register | 7 (ARC-05 split sonrası tek satır, A parçası Closed'a gitti) |
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |
