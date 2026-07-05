@@ -214,6 +214,22 @@ export class ClientController {
     return { data: result };
   }
 
+  /**
+   * ACT-11 (2026-07-05) — FE'nin "Pasifleştir" butonunu gizlemesi için salt-okunur
+   * eligibility sinyali. GERÇEK yetki uygulaması hâlâ ClientService.remove()/update()
+   * içindeki assertCanManageLifecycle()'da (DEĞİŞMEDİ) — FE bu sonuca güvenip
+   * authorization'ı kendi başına uygulamıyor (defense-in-depth korunuyor).
+   * `:id` route'undan ÖNCE tanımlı olmalı (aksi halde Nest bunu id parametresi sanır).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - (yeni) Client Ayarlar sayfası → GET /clients/lifecycle-eligibility (Pasifleştir buton gate)
+   */
+  @Get('lifecycle-eligibility')
+  async lifecycleEligibility(@Request() req: AuthRequest) {
+    const eligible = await this.clientService.canManageLifecycle(req.user.id, req.user.tenantId);
+    return { data: { eligible } };
+  }
+
   // Fetch one client
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {
