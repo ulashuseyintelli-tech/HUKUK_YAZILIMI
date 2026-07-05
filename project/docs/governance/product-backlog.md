@@ -76,6 +76,7 @@ BACKLOG
 
 | ID | Domain | İş | Kapanış Kanıtı |
 |---|---|---|---|
+| MPB-003 | Accounting | ClientPayout / prior payout lifecycle / posting-mode runtime policy | Owner decision accepted current repo v1 scope as CLOSED: approval-gated ClientPayout request/finalize is sufficient, `CLIENT_PAYOUT_RECORDED` journal writer is sufficient, prior payout reversal will not perform automatic financial mutation, `ClientPayoutManualReversal` remains workflow-only/metadata closure, and `REFUND`/`OFFSET`/`WAIVER` do not mutate journal/ledger/statement/payout in v1. Posting-mode/cutover and refund-offset-waiver economic semantics remain outside MPB-003 as future owner/architecture decision scope. |
 | MPB-005 | Accounting | Trial Balance query/API/read model expansion | PR #885 squash merged, final SHA `4c8756c911542d579f16672a9ceb8bf696881cbb` |
 | MPB-006 | Accounting | Dry-run vs journal reconciliation and real-data reconciliation | PR #892 squash merged, canonical HEAD `05260c781420be5262c142e310299b9f9cc90e4d` |
 | MPB-008 | Accounting | Offset audit detail projection | C-2D closeout: PR #644/#646 merged; read-only `GET /client-offsets/:offsetId/detail` projection verified |
