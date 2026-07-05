@@ -164,18 +164,18 @@ Claude (consumer):
 | Dosya / modül | Sahip | Eylem |
 |---|---|---|
 | `src/modules/collection/collection.service.ts` | **CODEX** | create/cancel engine |
-| `src/modules/case/case.service.ts` `updateCollection`/`deleteCollection` (3441/3505) | **CODEX** | TM3-S1 fix |
-| `src/modules/case/case.controller.ts` collection route (682/721) | **CODEX** | TM3-S1 |
+| `src/modules/case/case.service.ts` `updateCollection`/`deleteCollection` (3671/3743) | **CODEX** | TM3-S1 fix |
+| `src/modules/case/case.controller.ts` collection route (687/727) | **CODEX** | TM3-S1 |
 | `src/modules/icrabot/domain-event-ingest/*` | **CODEX** | PAYMENT_REVERSED append (S2) |
-| `src/modules/icrabot/v28-engine/action-handler.service.ts` (handler registry + cron) | **ORTAK — koordine** | consumer wiring (AÇIK: sahip kim) |
+| `src/modules/icrabot/v28-engine/action-handler.service.ts` (handler registry + cron) | **ORTAK — koordine** | consumer wiring (AÇIK: sahip kim — 2026-07-05 itibarıyla hâlâ çözülmedi, ayrı owner kararı gerekir) |
 | `src/modules/icrabot/v28-engine/outbox.service.ts` | **CODEX/icrabot** | retry config doğrulama |
 | `src/modules/expense-request/expense-request.controller.ts` (@CpeRequired) | **Claude (forensic)** | enforce kararı Ulaş |
 | `src/modules/policy-engine/*` (CpeRequiredGuard) | **policy/authz** | C0 forensic OKUMA; aktivasyon YOK |
-| `src/modules/client/client.service.ts` (64/192/464) | **Claude** | C0 audit |
+| `src/modules/client/client.service.ts` (C0-a audit: create/reactivate/update/soft-delete call siteleri) | **Claude** | C0 audit |
 | `src/modules/audit/audit.service.ts` | **Claude (tüketir)** | `.log()` |
 | `src/modules/client-statement/*` | **Claude** | proceeds/disposition ekstre (`ClientStatementLine`) yazımı |
 | `BalanceLedger` (yazım) | **Claude** | YALNIZ masraf-avansı / `OFFSET_CLIENT_ADVANCE` / expense-advance etkili satırlar (proceeds/payout YAZILMAZ) |
-| **NEW** `src/modules/client-settlement/` (disposition + consumer handler) | **Claude** | M1/M2 |
+| `src/modules/client-settlement/` (disposition + offset + payout + accounting-ledger + consumer handler) | **Claude** | M1/M2 TESLİM EDİLDİ (2026-07-05 itibarıyla): `disposition-posting.service.ts`, `client-offset.service.ts`, `client-payout.service.ts`, `client-accounting-*-reader.service.ts` dahil kapsamlı bir modül — artık "NEW" değil, aktif geliştirilen kanonik yer |
 | `prisma/schema.prisma` | **ORTAK — migration koordine** | yalnız Claude model ekler (CODEX TM3 persist eklemez) |
 
 ---
