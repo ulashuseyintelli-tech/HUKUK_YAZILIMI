@@ -557,7 +557,7 @@ describe("guarded primary display pilot gate", () => {
   // cost/vekalet ClaimItem-boslugu yuzunden 0) toplamBorc/sonBorc/kalanBorc case-bazli
   // legacy'de kalir; guard'in kendisi bloklanmaz (B1_SCOPE_EXEMPT_DIFF_CODES ile tutarli),
   // diger 5 canonical override alan etkilenmez.
-  it("COSTS_DELTA RED ise decision LEGACY'e duser (ALC-AUTH-4A: suppress banner/reasonCodes'a yansir)", () => {
+  it("COSTS_DELTA RED tek basina ise decision PARTIAL_CANONICAL_LEGACY_TOTALS'a duser (ALC-AUTH-4A-IMPL)", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
     report.totals.diffs = [
@@ -581,16 +581,25 @@ describe("guarded primary display pilot gate", () => {
     const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
 
-    // ALC-AUTH-4A: suppress artik decision/banner katmaninda gorunur -- daha once burada
-    // primarySource yanlislikla CANONICAL_PRIMARY_CANDIDATE kalirdi, banner "eligible" derken
-    // toplamBorc/sonBorc/kalanBorc sessizce legacy'de kaliyordu (misleading-display).
-    expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    // ALC-AUTH-4A-IMPL (owner karari, 2026-07-05): PR #942'nin "her zaman tam LEGACY" safe
+    // default'u YALNIZ COST_ATTORNEY_FEE_SUPPRESSED baska hicbir engelleyici sebep olmadan tek
+    // basina varken PARTIAL_CANONICAL_LEGACY_TOTALS'a genisletildi -- 5 canonical-override alan
+    // korunur, yalniz toplamBorc/sonBorc/kalanBorc legacy'de kalir; suppress reasonCodes'ta hala
+    // GORUNUR (banner artik "eligible" yanilgisi vermez, ama tam legacy'e de dusmez).
+    expect(decision.primarySource).toBe("PARTIAL_CANONICAL_LEGACY_TOTALS");
     expect(decision.reasonCodes).toContain("COST_ATTORNEY_FEE_SUPPRESSED");
-    // decision LEGACY oldugu icin guarded primary hic secilmez -- kismi/hibrit sonuc uretilmez.
-    expect(guardedResult).toBeNull();
+    expect(guardedResult).not.toBeNull();
+    expect(guardedResult!.toplamBorc).toBe(legacy.toplamBorc);
+    expect(guardedResult!.sonBorc).toBe(legacy.sonBorc);
+    expect(guardedResult!.kalanBorc).toBe(legacy.kalanBorc);
+    expect(guardedResult!.asilAlacak).toBe(report.bucketDiffs[0].canonicalAmount);
+    expect(guardedResult!.takipTutari).toBe(report.bucketDiffs[0].canonicalAmount);
+    expect(guardedResult!.takipSonrasiFaiz).toBe(report.totals.canonical!.interestAmount);
+    expect(guardedResult!.toplamTahsilat).toBe(report.totals.canonical!.totalPaidAmount);
+    expect(guardedResult!.kalanAnapara).toBe(report.bucketDiffs[0].canonicalAmount);
   });
 
-  it("ATTORNEY_FEE_DELTA RED ise de decision LEGACY'e duser (ALC-AUTH-4A)", () => {
+  it("ATTORNEY_FEE_DELTA RED tek basina ise de decision PARTIAL_CANONICAL_LEGACY_TOTALS'a duser (ALC-AUTH-4A-IMPL)", () => {
     const legacy = makeMixedAuthorityLegacySummary();
     const report = makeMixedAuthorityCanonicalReport();
     report.totals.diffs = [
@@ -614,8 +623,44 @@ describe("guarded primary display pilot gate", () => {
     const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
     const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
 
+    expect(decision.primarySource).toBe("PARTIAL_CANONICAL_LEGACY_TOTALS");
+    expect(decision.reasonCodes).toContain("COST_ATTORNEY_FEE_SUPPRESSED");
+    expect(guardedResult).not.toBeNull();
+    expect(guardedResult!.toplamBorc).toBe(legacy.toplamBorc);
+    expect(guardedResult!.sonBorc).toBe(legacy.sonBorc);
+    expect(guardedResult!.kalanBorc).toBe(legacy.kalanBorc);
+  });
+
+  it("COST_ATTORNEY_FEE_SUPPRESSED baska bir engelleyici reasonCode ile birlikteyse safe default korunur: decision tam LEGACY'e duser (ALC-AUTH-4A-IMPL)", () => {
+    // Owner karari: partial-canonical istisnasi YALNIZ suppress TEK BASINA iken gecerlidir.
+    // Baska herhangi bir engelleyici sebep (burada: feature flag kapali) varken PR #942'nin
+    // "safe default"u (tam legacy) DEGISMEDEN korunur.
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    report.totals.diffs = [
+      ...report.totals.diffs,
+      {
+        code: "COSTS_DELTA",
+        label: "Legacy icraMasraflari vs canonical costs",
+        classification: "EXPECTED_CANONICAL_DIVERGENCE",
+        legacyField: "legacy.icraMasraflari",
+        canonicalField: "canonical.costs",
+        legacyAmount: legacy.icraMasraflari,
+        canonicalAmount: 0,
+        delta: -legacy.icraMasraflari,
+        deltaPercent: -100,
+        status: "MAJOR_DELTA",
+        severity: "RED",
+        explanation: "Legacy masraf hesaplari ile canonical case-level cost projection ayni otorite degildir.",
+      },
+    ];
+
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: false });
+    const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
+
     expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
     expect(decision.reasonCodes).toContain("COST_ATTORNEY_FEE_SUPPRESSED");
+    expect(decision.reasonCodes).toContain("FEATURE_FLAG_OFF");
     expect(guardedResult).toBeNull();
   });
 
@@ -1405,6 +1450,121 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
     expect(screen.getAllByText("980,00 TL").length).toBeGreaterThan(0);
     expect(screen.queryByText("1.234,00 TL")).not.toBeInTheDocument();
+  });
+
+  it("guarded primary pilot COSTS_DELTA RED (tek basina) durumunda artik yanlislikla ELIGIBLE gorunmez -- partial-canonical Turkce authority copy + satir etiketleri gosterir (ALC-AUTH-4A-IMPL)", async () => {
+    // Bu, ALC-AUTH-4A GO-ANALYZE'in bulguya isaret ettigi TAM senaryo: risk sadece
+    // buildGuardedPrimaryCalculationResult() icinde ele alinip decision/banner katmanina hic
+    // yansimiyordu -- bu test o boslugu (sifir render-seviyesi kapsam) kapatiyor.
+    const report = makeEligibleGuardedPrimaryReport();
+    report.totals.canonical!.totalPaidAmount = 100; // KALAN BORC blogunu render ettirmek icin
+    report.totals.diffs = [
+      {
+        code: "COSTS_DELTA",
+        label: "Legacy icraMasraflari vs canonical costs",
+        classification: "EXPECTED_CANONICAL_DIVERGENCE",
+        legacyField: "legacy.icraMasraflari",
+        canonicalField: "canonical.costs",
+        legacyAmount: 500,
+        canonicalAmount: 0,
+        delta: -500,
+        deltaPercent: -100,
+        status: "MAJOR_DELTA",
+        severity: "RED",
+        explanation: "Legacy masraf hesaplari ile canonical case-level cost projection ayni otorite degildir.",
+      },
+    ];
+    apiGet.mockResolvedValue({ data: report });
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(apiGet).toHaveBeenCalledWith(
+        "/interest-engine/case/case-1/balance/display/shadow-diff?asOfDate=2026-06-24",
+      ),
+    );
+    expect(await screen.findByText("Guarded canonical primary candidate")).toBeInTheDocument();
+
+    // Ham diagnostic satiri DEGISMEDI (additive, Fork 2) -- suppress kodu hala orada gorunur.
+    await waitFor(() =>
+      expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent(
+        "COST_ATTORNEY_FEE_SUPPRESSED",
+      ),
+    );
+
+    // YENI: Turkce authority copy artik "ELIGIBLE" yerine kismi-durumu acikliyor.
+    await waitFor(() =>
+      expect(screen.getByTestId("guarded-primary-display-authority-copy")).toHaveTextContent(
+        "Masraf/vekalet verisi tamamlanmadığı için Toplam Borç, Son Borç ve Kalan Borç mevcut hesaplama ile gösterilmektedir",
+      ),
+    );
+    expect(screen.getByTestId("guarded-primary-display-authority-copy").textContent).not.toContain("ELIGIBLE");
+
+    // YENI: TOPLAM BORC/SON BORC/KALAN BORC yaninda "(mevcut hesaplama)" satir etiketi.
+    expect(screen.getByTestId("guarded-primary-partial-label-toplam-borc")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-partial-label-son-borc")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-partial-label-kalan-borc")).toBeInTheDocument();
+
+    // toplamBorc/sonBorc/kalanBorc LEGACY degerini gosterir (legacyCalculationSummary: 1234);
+    // asilAlacak/takipTutari ise canonical'a gecmis olmali (980).
+    expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("980,00 TL").length).toBeGreaterThan(0);
+  });
+
+  it("guarded primary pilot COSTS_DELTA RED + gercek backend blocker birlikteyken safe default korunur: tam legacy fallback, partial etiket YOK (ALC-AUTH-4A-IMPL)", async () => {
+    // Owner karari: partial-canonical istisnasi YALNIZ suppress TEK BASINA (baska hicbir
+    // engelleyici reasonCode yokken) gecerli. Burada COST_ATTORNEY_FEE_SUPPRESSED'e ek olarak
+    // gercek bir backend blocker (CURRENCY_MISMATCH) de varsa PR #942'nin safe default'u
+    // (tam legacy, guarded primary hic secilmez) DEGISMEDEN korunmali.
+    const report = makeEligibleGuardedPrimaryReport();
+    report.cutoverReadiness = {
+      safeForPrimaryDisplay: false,
+      safeForOptInShadow: true,
+      blockers: ["CURRENCY_MISMATCH"],
+      nextRequiredEvidence: [],
+    };
+    report.totals.diffs = [
+      {
+        code: "COSTS_DELTA",
+        label: "Legacy icraMasraflari vs canonical costs",
+        classification: "EXPECTED_CANONICAL_DIVERGENCE",
+        legacyField: "legacy.icraMasraflari",
+        canonicalField: "canonical.costs",
+        legacyAmount: 500,
+        canonicalAmount: 0,
+        delta: -500,
+        deltaPercent: -100,
+        status: "MAJOR_DELTA",
+        severity: "RED",
+        explanation: "Legacy masraf hesaplari ile canonical case-level cost projection ayni otorite degildir.",
+      },
+    ];
+    apiGet.mockResolvedValue({ data: report });
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
+    await waitFor(() => {
+      const reasons = screen.getByTestId("guarded-primary-display-reasons").textContent ?? "";
+      expect(reasons).toContain("CURRENCY_MISMATCH");
+      expect(reasons).toContain("COST_ATTORNEY_FEE_SUPPRESSED");
+    });
+    expect(screen.queryByTestId("guarded-primary-partial-label-toplam-borc")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("guarded-primary-partial-label-son-borc")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("guarded-primary-partial-label-kalan-borc")).not.toBeInTheDocument();
+    expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
   });
 
   it("canonicalSummaryRows shadow metadata guarded primary render output'una sizmaz", async () => {
