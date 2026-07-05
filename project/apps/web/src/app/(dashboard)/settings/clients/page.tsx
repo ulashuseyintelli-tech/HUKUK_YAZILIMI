@@ -48,6 +48,18 @@ export default function ClientsSettingsPage() {
   const [sortField, setSortField] = useState<ClientSortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
+  // ACT-11 (2026-07-05): "Pasifleştir" butonu yalnız backend'in gerçek yetki kontrolüyle
+  // (isApproverEligible — PARTNER/yetkilendirilmiş avukat) uyumlu kullanıcıya gösterilir.
+  // Backend guard (assertCanManageLifecycle) DEĞİŞMEDİ; bu salt-okunur bir FE sinyalidir,
+  // yetkisiz kullanıcı butonu görmeyip "confirm→403" akışına girmez. Varsayılan false
+  // (fetch tamamlanana kadar güvenli taraf: buton gizli).
+  const [canManageLifecycle, setCanManageLifecycle] = useState(false);
+  useEffect(() => {
+    api.get("/clients/lifecycle-eligibility")
+      .then((res) => setCanManageLifecycle(!!(res.data?.data?.eligible)))
+      .catch(() => setCanManageLifecycle(false));
+  }, []);
+
   useEffect(() => { loadClients(); }, []);
 
   const loadClients = async () => {
@@ -523,9 +535,11 @@ export default function ClientsSettingsPage() {
                         }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Düzenle">
                           <Edit2 className="h-4 w-4" />
                         </button>
-                        <button onClick={() => handleDelete(client.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Pasifleştir">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {canManageLifecycle && (
+                          <button onClick={() => handleDelete(client.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Pasifleştir">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

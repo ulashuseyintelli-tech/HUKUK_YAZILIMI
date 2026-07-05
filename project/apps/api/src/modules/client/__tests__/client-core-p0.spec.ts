@@ -224,6 +224,30 @@ describe("ClientService.remove — Task 8A capability gate (owner-locked 2026-07
   });
 });
 
+describe("ClientService.canManageLifecycle — ACT-11 (FE gate signal, throw etmeyen boolean)", () => {
+  it("eligible aktör → true döner", async () => {
+    const { svc } = buildHarness({ officeApprovalEligible: true });
+    await expect(svc.canManageLifecycle("u1", "t1")).resolves.toBe(true);
+  });
+
+  it("ineligible aktör → false döner (throw ETMEZ)", async () => {
+    const { svc } = buildHarness({ officeApprovalEligible: false });
+    await expect(svc.canManageLifecycle("u1", "t1")).resolves.toBe(false);
+  });
+
+  it("userId yoksa → false döner (fail-closed, officeApproval'a hiç sormaz)", async () => {
+    const { svc, officeApproval } = buildHarness({ officeApprovalEligible: true });
+    await expect(svc.canManageLifecycle(undefined, "t1")).resolves.toBe(false);
+    expect(officeApproval.isApproverEligible).not.toHaveBeenCalled();
+  });
+
+  it("assertCanManageLifecycle ile AYNI alttaki kontrolü kullanır (aynı tenantId/userId ile çağrılır)", async () => {
+    const { svc, officeApproval } = buildHarness({ officeApprovalEligible: true });
+    await svc.canManageLifecycle("u1", "t-real");
+    expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u1", "t-real");
+  });
+});
+
 describe("ClientService.findOne — Task 4A soft-delete default-exclude (owner karar #2)", () => {
   it("default: where {id, tenantId, isActive:true} → arşivlenmiş müvekkil GET /clients/:id'de gelmez", async () => {
     const { svc, prisma } = buildHarness();

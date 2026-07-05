@@ -315,6 +315,21 @@ export class ClientService {
     }
   }
 
+  /**
+   * ACT-11 (2026-07-05) — assertCanManageLifecycle ile AYNI alttaki kontrolü
+   * (officeApproval.isApproverEligible) kullanan, throw ETMEYEN boolean varyant.
+   * YALNIZ FE'nin "Pasifleştir" butonunu gizlemesi için; gerçek yetki uygulaması
+   * hâlâ assertCanManageLifecycle()'da (remove()/update() içinde, DEĞİŞMEDİ) —
+   * bu metod defense-in-depth'i ZAYIFLATMAZ, salt-okunur bir ek sinyaldir.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - ClientController.lifecycleEligibility() → GET /clients/lifecycle-eligibility
+   */
+  async canManageLifecycle(userId: string | undefined, tenantId: string): Promise<boolean> {
+    if (!userId) return false;
+    return this.officeApproval.isApproverEligible(userId, tenantId);
+  }
+
   // Tüm müvekkilleri listele
   async findAll(tenantId: string, type?: string) {
     const clients = await this.prisma.client.findMany({
