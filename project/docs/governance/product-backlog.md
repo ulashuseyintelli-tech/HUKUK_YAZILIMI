@@ -1017,6 +1017,8 @@ Status: **MERGED/CLOSED** — Seçenek (c) implement edildi ve merge edildi (202
 
 Owner kararı: B1 technical blocker zinciri (ALC-AUTH-3B/3C/3D/3E) kapandı, `NEXT_PUBLIC_GUARDED_PRIMARY_DISPLAY_PILOT` hâlâ varsayılan KAPALI. Flag'e dokunmadan önce üç ayrı governance/rollout maddesi açıldı: **ALC-AUTH-4A = FIRST/GO-ANALYZE**, **ALC-AUTH-4B = BACKLOG (depends on 4A)**, **ALC-AUTH-4C = BACKLOG (depends on 4A+4B)**. ⚠️ **İsim-alanı notu:** `master-triage-register.md` ACT-27/ACT-28 (principal gross/net split, Collection/LedgerEntry/LedgerAllocation üç-otorite reconciliation) daha önce "gerçek iş muhtemelen ALC-AUTH-4/5 olarak devam eder" diye tahmin etmişti — bu tahmin YANLIŞ ÇIKTI, "ALC-AUTH-4" numarası burada FARKLI bir konuya (sign-off/rollout/kill-switch) verildi. ACT-27/28'in kendi konusu hâlâ AÇIK ve numarasız; ileride ALC-AUTH-5 veya ayrı bir alt-numara alacak. Cross-reference notu ACT-27/28'e eklendi (bkz `master-triage-register.md`).
 
+⚠️ **RECONCILE TAMAMLANDI (2026-07-05):** ALC-AUTH-4A'nın GO-ANALYZE bulguları, repo kökündeki (`project/` dışı) 8 dosyalık bağımsız `docs/audit/` guarded-primary rollout denetim setiyle (ayrı, issue#/CB-# numaralandırmalı, ALC-AUTH-* isim-alanından habersiz bir governance hattı) `docs/design/alc-auth-4a-display-authority-reconcile.md` belgesinde reconcile edildi. Sonuç: alt-satır (bottom-line) governance kararında çelişki YOK (her iki hat da NO-GO/CONDITIONAL-GO'da hemfikir); ALC-AUTH-4A'nın stop condition bulgusu (partial-canonical/partial-legacy misleading-display) 8 dosyanın HİÇBİRİNDE ele alınmamış, gerçek ve doldurulmamış bir boşluk olarak doğrulandı. Reconcile ayrıca 2 yeni, ALC-AUTH-4A-IMPL scope'u DIŞINDA tutulan madde açtı: **ALC-AUTH-3E-B-NEXT** (backend/display-adapter sınıflandırma sorusu) ve **ALC-AUTH-DOC-REFRESH** (docs/audit/ içinde 2 dosyanın artık stale olan "HesapOzetiPanel=saf legacy" önermesi, canlı risk yok).
+
 ID: ALC-AUTH-4A
 Title: UI / Avukat Sign-off Contract — guarded primary pilot enablement öncesi
 Problem: Avukatın canonical primary display açılmadan önce ekranda neyi gördüğü, neyi kabul ettiği ve hangi durumda legacy fallback oluştuğu netleşmemişti. GO-ANALYZE (docs-only, kod değişikliği yok) repo kanıtıyla tamamlandı.
@@ -1027,7 +1029,7 @@ Depends On: ALC-AUTH-3D (MERGED, PR #922/#925), ALC-AUTH-3E (MERGED, PR #929)
 Unlock Condition: —
 Estimated Size: — (analiz tamamlandı; UI-copy/partial-state-fix implementasyonu ayrı, küçük bir GO-IMPLEMENT gerektirir)
 Related Modules: guarded-primary-display.ts, HesapOzetiPanel.tsx, BalanceShadowDiffPanel.tsx, balance-shadow-display.ts, feature-flags.ts, balance-display-shadow-diff.types.ts
-Status: DONE (analiz) — GO-ANALYZE tamamlandı, kod değişikliği YAPILMADI. **STOP CONDITION AÇIK**: partial-canonical/partial-legacy misleading-display riski owner tarafından kabul/mitigate edilmeden ALC-AUTH-4B'ye geçilmemeli.
+Status: DONE (analiz + reconcile) — GO-ANALYZE ve ardından `docs/audit/` seti ile reconciliation tamamlandı (bkz `docs/design/alc-auth-4a-display-authority-reconcile.md`), kod değişikliği YAPILMADI. **STOP CONDITION owner tarafından ONAYLANDI/LOCKED** (2026-07-05): partial-canonical/partial-legacy misleading-display riski UI'da açıkça görünür kılınmadan (ALC-AUTH-4A-IMPL veya eşdeğeri) ALC-AUTH-4B'ye geçilmez. Sıradaki adım: `ALC-AUTH-4A-IMPL` — GO-ANALYZE (henüz başlamadı, scope Bölüm 12'de [reconcile belgesi] önceden kilitlendi).
 
 ID: ALC-AUTH-4B
 Title: Guarded Primary Pilot Rollout Plan
@@ -1052,6 +1054,30 @@ Unlock Condition: ALC-AUTH-4B tamamlanması
 Estimated Size: —
 Related Modules: feature-flags.ts
 Status: BACKLOG — ALC-AUTH-4A+4B kapanmadan başlamaz.
+
+ID: ALC-AUTH-3E-B-NEXT
+Title: Primary Eligible Fixture Preconditions — Contamination vs Guardrail Classification
+Problem: `docs/audit/PRIMARY-ELIGIBLE-FIXTURE-DESIGN.md` (§3/§4/§11 Risk 1) bulgusu — display adapter `CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY` diagnostic'ini HER ZAMAN genel bir bilgi/guardrail sinyali olarak üretiyor ve mevcut shadow-readiness bunu blocker listesine taşıyor. Bu, gerçek veriyle `safeForPrimaryDisplay=true` elde etmeyi YAPISAL olarak imkânsız kılabilir — sorun veri eksikliği değil, sinyalin "gerçek contamination" ile "genel bilgilendirici uyarı" arasında ayrılmamış olması.
+Business Value: Guarded pilot'un gerçek dev/prod verisiyle hiç `safeForPrimaryDisplay=true` üretemediği bir kör noktanın önceden tespit edilip kapatılması.
+Technical Value: Kod değişikliği bu kayıtla YAPILMAZ — yalnız sınıflandırma kararı (gerçek contamination ile genel guardrail'i ayıran bir kural/alan gerekip gerekmediği) owner GO-ANALYZE'ı bekliyor. `ALC-AUTH-4A-IMPL`'in (UI copy/authority visibility) scope'undan KASITLI olarak AYRIDIR — biri backend/display-adapter sınıflandırması, diğeri frontend UI transparency'sidir.
+Priority: —
+Depends On: — (ALC-AUTH-4A-IMPL'i beklemez, bağımsız)
+Unlock Condition: Owner GO-ANALYZE onayı
+Estimated Size: — (analiz)
+Related Modules: case-balance-display.ts (toCaseBalanceDisplay), balance-display-shadow-diff.service.ts
+Status: BACKLOG — `alc-auth-4a-display-authority-reconcile.md` Bölüm 9'da retroaktif kayda geçirildi, henüz GO-ANALYZE verilmedi.
+
+ID: ALC-AUTH-DOC-REFRESH
+Title: docs/audit/ governance drift düzeltmesi — "HesapOzetiPanel = saf legacy" önermesi stale
+Problem: `docs/audit/DISPLAY-AUTHORITY-AUDIT.md` ve `docs/audit/OVERPAYMENT-DISPLAY-WORDING-SIGNOFF.md`, "`HesapOzetiPanel` legacy `calculation-summary`'de kalıyor, değiştirilmedi" önermesini taşıyor — ALC-AUTH-3B/3D/3E (bağımsız hat) `guarded-primary-display.ts`'i `HesapOzetiPanel.tsx:166-172`'ye fiilen bağladığından beri bu önerme artık doğru değil.
+Business Value: Doğrulama artefaktı gerçek implementasyonun gerisinde kalırsa yanlış sistem doğrulanmış olur (aynı ders, `decision-log.md`'nin 2026-07-05 "Guarded primary rollout dokümanları governance-drift'ten arındırıldı" kaydında zaten bir kez uygulanmıştı — bu kez sıra bu 2 dosyada).
+Technical Value: Docs-only, dar kapsamlı düzeltme — yalnız "HesapOzetiPanel artık guarded-primary aktifken canonical/kısmi-canonical de gösterebiliyor" notu eklenir. Canlı risk YOK (overpayment senaryoları zaten guarded-eligible kapsamı dışında tutuluyor, `GUARDED-PRIMARY-CUTOVER-SCOPE-FREEZE.md` §6 — CB-05/CB-06 wording kurallarının pratik geçerliliği bozulmuyor).
+Priority: LOW
+Depends On: —
+Unlock Condition: Owner GO-IMPLEMENT onayı (docs-only, düşük risk)
+Estimated Size: XS
+Related Modules: docs/audit/DISPLAY-AUTHORITY-AUDIT.md, docs/audit/OVERPAYMENT-DISPLAY-WORDING-SIGNOFF.md
+Status: BACKLOG — düşük öncelik, canlı risk yok.
 ---
 
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
