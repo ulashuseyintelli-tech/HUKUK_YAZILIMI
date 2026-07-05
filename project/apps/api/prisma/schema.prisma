@@ -3381,7 +3381,7 @@ model StaffMember {
   canGenerateDocuments Boolean @default(false) // Belge taslağı hazırlayabilir
   canApproveDocuments  Boolean @default(false) // Belge onaylayabilir
   canSeeFinance        Boolean @default(false) // Muhasebe modülünü görebilir
-  canApproveFinance    Boolean @default(false) // Muhasebe işlemi onaylayabilir
+  canApproveFinance    Boolean @default(false) // Muhasebe işlemi onaylayabilir — ACT-21 (2026-07-05): şu an backend'de HİÇBİR yerde enforce edilmiyor (yalnız persist edilir); Staff final approver olamaz (kilitli politika, bkz. p4-approval-engine)
   canPrepareCollectionDisposition Boolean @default(false) // Tahsilat dağıtımı hazırlayabilir (recommend/preview); final approval DEĞİL
   canSendNotifications Boolean @default(false) // Tebligat gönderebilir
   isDefaultForNewCases Boolean @default(false) // Yeni dosyalarda otomatik seç
