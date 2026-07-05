@@ -82,6 +82,7 @@ BACKLOG
 | MPB-006 | Accounting | Dry-run vs journal reconciliation and real-data reconciliation | PR #892 squash merged, canonical HEAD `05260c781420be5262c142e310299b9f9cc90e4d` |
 | MPB-008 | Accounting | Offset audit detail projection | C-2D closeout: PR #644/#646 merged; read-only `GET /client-offsets/:offsetId/detail` projection verified |
 | MPB-010 | UI | Confirmed/POSTED collection cancel UX and audit visibility | PR #576 merged, merge commit `90a451b85b3c2b2dfdcc779a373afef45c1cd8e0`; Web Tests, Test Suite and Architectural Guardrails PASS |
+| MPB-011 | Architecture | Clean-break canonical claim balance model | Owner decision accepted canonical `computeBalance` / ClaimItem + TBK100 + Interest Engine line as the target single claim-balance engine / SoT; legacy `getCalculationSummary` will not be preserved as future production authority; clean-break implementation moved out of MPB-011 into `CCB-001`. |
 | MPB-014 | Authorization | Policy Engine expense/kambiyo/UYAP blockers | PR #42/#43/#44 merged; P3 UYAP outage merge `b222adc31143ae348aa0968302ab1138fd3d08a0`; focused Policy Engine tests PASS |
 | MPB-015 | Authorization | OfficeApproval platform hardening and finance bridges | PR #592/#618/#633/#639/#654/#658/#830/#846/#875 merged; focused OfficeApproval/client-settlement tests PASS |
 | MPB-016 | Alacak Kalemi | Mixed-source interest resolution (Kademe 1.5, resolveInterestConfig) | PR #898 squash merged, SHA `a8e71a91`; 2026/9502 canonical balance artık üretiliyor; 2026/9604 ve 2026/9605 DATA/PIPELINE blocker olarak açık kalıyor (engine bug değil) |
@@ -1120,6 +1121,21 @@ Related Modules: case.service.ts (getCalculationSummary, buildCalculationSummary
 Status: **GO-ANALYZE DONE + GO-IMPLEMENT DONE (2026-07-05, owner onaylı).** PR #952 → squash SHA `7b222c50` MERGED: `project/apps/api/src/modules/hesap-ozeti-coverage/` altında bağımsız, NestJS DI'ye bağlanmayan saf TS modülü — `ComponentCoverageStatus` (9 değer) + 19 Hesap Özeti bileşeni için kod-doğrulanmış sınıflandırma, `buildComponentCoverageReport()` saf fonksiyonu, 1 ground-truth fixture (statüter kaynaklı, teyitsiz kalemler PLACEHOLDER işaretli), 23 golden-file testi (23/23 PASS). Adversarial-verify turunda bulunan gerçek bir bulgu (faiz satırlarında `canonicalValue===0` iken koşulsuz `CANONICAL_COVERED` üretilmesi — motorun gerçekten mi çalıştığı yoksa sessizce mi başarısız olduğu ayırt edilemezken) bu PR'da düzeltildi: bu durum artık `UNVERIFIED`'a düşer ve `b1ReadinessBlocked` sinyaline dahildir. Kapsam tam olarak onaylanan sınırlar içinde kaldı — kod/schema/migration/flag-açma/rollout/ClaimItem-materialization/payment-reconciliation YOK, hiçbir mevcut dosya değişmedi (yalnız 4 yeni dosya). **B1 flag varsayılan KAPALI kalmaya devam eder.** Rapor artık çalıştırılabilir/test edilebilir durumda ama HİÇBİR canlı endpoint/UI'ya bağlanmadı — bu kasıtlı (onaylanan kapsam "wiring" içermiyordu); B1 rollout kararı için bu raporun gerçek dev-DB case verisiyle çalıştırılması ayrı, sonraki bir adımdır. Bu, ALC-AUTH-4A'nın (PR #942, MERGED) kapanışını GERİ ALMAZ — 4A kendi dar kapsamında (banner/reasonCodes mismatch) tamdır; ALC-AUTH-6 ondan sonraki, daha derin bir doğrulama katmanıdır.
 ---
 
+## Canonical Claim Balance Clean-Break Workstream (CCB)
+
+ID: CCB-001
+Title: Canonical Claim Balance Clean-Break Cutover
+Problem: MPB-011 owner decision closed the architecture question: canonical `computeBalance` / ClaimItem + TBK100 + Interest Engine is the target single claim-balance engine / SoT, and legacy `getCalculationSummary` will not remain the future production authority. The implementation now needs a separate clean-break workstream instead of extending MPB-011.
+Business Value: Removes the long-term two-headed balance architecture before live production reliance, so displayed claim balance has one auditable canonical source.
+Technical Value: Moves cutover execution into a dedicated workstream covering component coverage, ground-truth harness, shadow acceptance, legal/Product Owner sign-off, pilot, and final cutover decision.
+Priority: CRITICAL
+Depends On: MPB-011 owner decision; ALC-P0-3 / ALC-AUTH guarded-primary chain; component coverage; ground-truth harness; shadow comparison acceptance; Avukat/Product Owner sign-off; pilot success.
+Unlock Condition: Separate owner GO for CCB-001 design/implementation scope. This MPB-011 closeout does not authorize runtime changes, feature-flag enablement, or legacy removal.
+Estimated Size: XL
+Related Modules: case.service.ts (`getCalculationSummary`), interest-engine `computeBalance`, CaseBalanceService, guarded-primary-display, balance-display-shadow-diff, ClaimItem, TBK100 allocation, Interest Engine.
+Status: BACKLOG — owner-defined successor workstream. Runtime implementation has not started under this closeout.
+
+---
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
 
 2026-07-04 tarihli D6 GO-ANALYZE (14 ajanlı workflow: repo forensics + bağımsız hukuki/mimari analiz + adversarial kritik + sentez) sonucu owner tarafından ratifiye edilen nihai mimari: bkz `docs/design/d6-final-architecture.md` (kanonik karar kaydı) ve `decision-log.md` 2026-07-04 satırları. **D6A-1** (PR #878) ve **D6A-2 çekirdek** (PR #880, `DebtorCrossCaseNotification`) KAPALI/DOKUNULMAZ — aşağıdaki maddeler yalnız bunların eksik dışa-açılan yüzünü (D6A-2-SURFACE) ve ayrı-epic frameworkleri (ESF, IAF) kapsar. "D6B" etiketi emekli edilmiştir, kullanılmaz.
