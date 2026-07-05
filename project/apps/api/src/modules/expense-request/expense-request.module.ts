@@ -13,9 +13,10 @@ import { NotificationModule } from '@/modules/notification/notification.module';
 import { ClientNotificationModule } from '@/modules/client-notification/client-notification.module';
 import { OfficeModule } from '@/modules/office/office.module';
 import { ClientSettlementModule } from '@/modules/client-settlement/client-settlement.module';
+import { PolicyEngineModule } from '@/modules/policy-engine/policy-engine.module';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => CaseBalanceModule), TariffModule, NotificationModule, ClientNotificationModule, OfficeModule, ClientSettlementModule],
+  imports: [PrismaModule, forwardRef(() => CaseBalanceModule), TariffModule, NotificationModule, ClientNotificationModule, OfficeModule, ClientSettlementModule, PolicyEngineModule],
   controllers: [ExpenseRequestController],
   providers: [ExpenseRequestService, ExpenseCalculatorService, ExpenseGateService, ExpenseNotificationService, ExpenseViewService, ExpensePaymentReversalContractService],
   exports: [ExpenseRequestService, ExpenseCalculatorService, ExpenseGateService, ExpenseNotificationService, ExpenseViewService, ExpensePaymentReversalContractService],

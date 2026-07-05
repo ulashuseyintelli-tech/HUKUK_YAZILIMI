@@ -8,7 +8,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { ExpenseRequestStatus } from '@prisma/client';
 import { Request } from 'express';
 // CPE Integration - Phase 3
-import { CpeRequired } from '@/modules/policy-engine';
+import { CpeRequired, CpeRequiredGuard } from '@/modules/policy-engine';
 import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
 
 interface AuthRequest extends Request {
@@ -16,7 +16,7 @@ interface AuthRequest extends Request {
 }
 
 @Controller('expense-requests')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), CpeRequiredGuard)
 export class ExpenseRequestController {
   constructor(
     private readonly service: ExpenseRequestService,
