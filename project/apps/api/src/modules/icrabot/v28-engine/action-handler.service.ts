@@ -36,6 +36,15 @@ import {
 } from './outbox.constants';
 
 /**
+ * CAN-P0-001: send_email/send_sms handler'ları gerçek bir provider'a bağlı değil
+ * (yalnız log + DB kaydı yapıyor). Provider success dönmeden 'sent' yazılamaz;
+ * gerçek entegrasyon eklenene kadar durum her zaman NOT_SENT olarak loglanır.
+ * (IcrabotEmailLog.status / IcrabotSmsLog.status: schema'da enum değil, serbest
+ * String — bu değer migration gerektirmez.)
+ */
+const ICRABOT_NOTIFICATION_NOT_SENT_STATUS = 'NOT_SENT';
+
+/**
  * TM3 M1: handler'a outbox satır bağlamı. Consumer'ın IcrabotOutboxAction.tenantId'yi
  * satırdan thread edip cross-tenant doğrulaması için. Geriye uyumlu (opsiyonel 3. param —
  * mevcut handler'lar yok sayar). Domain logic action-handler'a KONMAZ; yalnız bağlam iletilir.
@@ -488,10 +497,11 @@ export class ActionHandlerService {
       if (!to || !subject) throw new Error('send_email requires to and subject');
 
       const toList = Array.isArray(to) ? to : [to];
-      
-      // Email gönderimi (production'da gerçek email servisi kullanılmalı)
-      this.logger.log(`[EMAIL] To: ${toList.join(', ')}, Subject: ${subject}`);
-      
+
+      // Email gönderimi (production'da gerçek email servisi kullanılmalı).
+      // Gerçek provider entegrasyonu yok; bu nedenle 'sent' yazılamaz (CAN-P0-001).
+      this.logger.warn(`[EMAIL][NOT_SENT] Provider entegrasyonu yok, gerçek gönderim yapılmadı. To: ${toList.join(', ')}, Subject: ${subject}`);
+
       // Log to DB
       await (this.prisma as any).icrabotEmailLog.create({
         data: {
@@ -501,7 +511,7 @@ export class ActionHandlerService {
           body: body || '',
           template,
           fromEmail: from_email,
-          status: 'sent',
+          status: ICRABOT_NOTIFICATION_NOT_SENT_STATUS,
         },
       });
     });
@@ -511,8 +521,9 @@ export class ActionHandlerService {
       const { phone, message } = payload;
       if (!phone || !message) throw new Error('send_sms requires phone and message');
 
-      // SMS gönderimi (production'da gerçek SMS servisi kullanılmalı)
-      this.logger.log(`[SMS] To: ${maskPhone(phone)}, Message: ${message.substring(0, 50)}...`);
+      // SMS gönderimi (production'da gerçek SMS servisi kullanılmalı).
+      // Gerçek provider entegrasyonu yok; bu nedenle 'sent' yazılamaz (CAN-P0-001).
+      this.logger.warn(`[SMS][NOT_SENT] Provider entegrasyonu yok, gerçek gönderim yapılmadı. To: ${maskPhone(phone)}, Message: ${message.substring(0, 50)}...`);
 
       // Log to DB
       await (this.prisma as any).icrabotSmsLog.create({
@@ -520,7 +531,7 @@ export class ActionHandlerService {
           caseId,
           phone,
           message,
-          status: 'sent',
+          status: ICRABOT_NOTIFICATION_NOT_SENT_STATUS,
         },
       });
     });
