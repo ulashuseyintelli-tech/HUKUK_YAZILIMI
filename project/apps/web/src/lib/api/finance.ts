@@ -166,21 +166,6 @@ export const financeApi = {
     });
   },
 
-  // Banks
-  async getBanks() {
-    return apiClient.request<any>("/banks");
-  },
-
-  async getBankAccounts() {
-    return apiClient.request<any>("/bank-accounts");
-  },
-
-  async createBankAccount(data: any) {
-    return apiClient.request<any>("/bank-accounts", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  },
 
   // Summary Engine (Hesap Özeti)
   async generateSummary(caseId: string, options?: any) {
