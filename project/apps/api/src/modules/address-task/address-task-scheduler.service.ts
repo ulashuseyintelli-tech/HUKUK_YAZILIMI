@@ -3,14 +3,22 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { AddressTaskService } from './address-task.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AddressTaskFailureReason } from '@prisma/client';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 
 /**
  * Address Task Scheduler Service
- * 
+ *
  * Cron job'lar:
  * - SLA Checker: Her saat çalışır, overdue task'ları işler
  * - Annual Refresh Checker: Günlük çalışır, yıllık adres taleplerini işler
  * - Outbox Publisher: Her 5 dakikada çalışır, pending event'leri yayınlar
+ *
+ * ACT-08 (defense-in-depth): birincil koruma removeCaseDebtor'ın açık AddressTask'ları iptal
+ * etmesidir (pratik pencere dar); bu scheduler'ın kendi createTask() çağrıları da (§ AddressTaskService
+ * remarks) enforceCaseDebtorLink bayrağını GEÇİRMEZ (ilişki yapısı/mevcut task'tan kopyalama gereği).
+ * Bu iki döngü (checkOverdueTasks/checkAnnualRefreshTasks) artık her task için ayrıca PASSIVE
+ * CaseDebtor kontrolü yapar — dar-pencere race'inde (deaktivasyon ile bir sonraki cron tick'i
+ * arasında) escalation/annual-refresh task'ının pasif borçlu için oluşmasını/ilerlemesini engeller.
  */
 @Injectable()
 export class AddressTaskSchedulerService {
@@ -19,6 +27,7 @@ export class AddressTaskSchedulerService {
   constructor(
     private readonly addressTaskService: AddressTaskService,
     private readonly prisma: PrismaService,
+    private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
   ) {}
 
   /**
@@ -36,6 +45,11 @@ export class AddressTaskSchedulerService {
 
       for (const task of overdueTasks) {
         try {
+          // ACT-08: pasif dosya borçlusu için hatırlatma/escalation ilerletilmez (defense-in-depth)
+          if (await this.caseDebtorLifecycleGuard.isPassiveByCaseAndDebtor(task.tenantId, task.caseId, task.debtorId)) {
+            this.logger.log(`Görev atlandı (pasif dosya borçlusu): ${task.id}`);
+            continue;
+          }
           // Hatırlatma gönder ve attempt count artır
           await this.addressTaskService.incrementAttempt(task.id);
           this.logger.log(`Hatırlatma gönderildi: ${task.id}`);
@@ -50,6 +64,11 @@ export class AddressTaskSchedulerService {
 
       for (const task of tasksAtMax) {
         try {
+          // ACT-08: pasif dosya borçlusu için escalation task'ı oluşturulmaz (defense-in-depth)
+          if (await this.caseDebtorLifecycleGuard.isPassiveByCaseAndDebtor(task.tenantId, task.caseId, task.debtorId)) {
+            this.logger.log(`Escalation atlandı (pasif dosya borçlusu): ${task.id}`);
+            continue;
+          }
           // Manuel görev oluştur (ASSIGN_MANUAL_CALL_CLIENT)
           await this.addressTaskService.createTask({
             tenantId: task.tenantId,
@@ -103,6 +122,11 @@ export class AddressTaskSchedulerService {
 
       for (const task of annualTasks) {
         try {
+          // ACT-08: pasif dosya borçlusu için yıllık yenileme ilerletilmez (defense-in-depth)
+          if (await this.caseDebtorLifecycleGuard.isPassiveByCaseAndDebtor(task.tenantId, task.caseId, task.debtorId)) {
+            this.logger.log(`Yıllık yenileme atlandı (pasif dosya borçlusu): ${task.id}`);
+            continue;
+          }
           // Yeni adres talebi görevi oluştur
           await this.addressTaskService.createTask({
             tenantId: task.tenantId,

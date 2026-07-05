@@ -147,4 +147,51 @@ describe("CaseDebtorLifecycleGuardService", () => {
       service.assertActiveByCaseAndDebtor(TENANT_ID, CASE_ID, DEBTOR_ID)
     ).rejects.toThrow("Dosya borçlusu bulunamadı.");
   });
+
+  // ACT-08: throw etmeyen (boolean) varyant — scheduler/cron bağlamı için
+  describe("isPassiveByCaseAndDebtor", () => {
+    it("active caseDebtor → false (throw etmez)", async () => {
+      mockPrisma.caseDebtor.findFirst.mockResolvedValue(activeCaseDebtor);
+
+      const result = await service.isPassiveByCaseAndDebtor(TENANT_ID, CASE_ID, DEBTOR_ID);
+
+      expect(result).toBe(false);
+    });
+
+    it("passive caseDebtor → true (throw etmez)", async () => {
+      mockPrisma.caseDebtor.findFirst.mockResolvedValue(passiveCaseDebtor);
+
+      const result = await service.isPassiveByCaseAndDebtor(TENANT_ID, CASE_ID, DEBTOR_ID);
+
+      expect(result).toBe(true);
+    });
+
+    it("bulunamayan CaseDebtor defensif olarak pasif sayılır (true), throw etmez", async () => {
+      mockPrisma.caseDebtor.findFirst.mockResolvedValue(null);
+
+      const result = await service.isPassiveByCaseAndDebtor(TENANT_ID, CASE_ID, DEBTOR_ID);
+
+      expect(result).toBe(true);
+    });
+
+    it("aynı where/select şeklini kullanır (assertActiveByCaseAndDebtor ile tutarlı)", async () => {
+      mockPrisma.caseDebtor.findFirst.mockResolvedValue(activeCaseDebtor);
+
+      await service.isPassiveByCaseAndDebtor(TENANT_ID, CASE_ID, DEBTOR_ID);
+
+      expect(mockPrisma.caseDebtor.findFirst).toHaveBeenCalledWith({
+        where: {
+          caseId: CASE_ID,
+          debtorId: DEBTOR_ID,
+          case: { tenantId: TENANT_ID },
+        },
+        select: {
+          id: true,
+          caseId: true,
+          debtorId: true,
+          lifecycleStatus: true,
+        },
+      });
+    });
+  });
 });
