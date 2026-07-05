@@ -2011,8 +2011,19 @@ class ApiClient {
   // Bank Methods
   // ============================================
 
-  async getBankAccounts(): Promise<BankAccount[]> {
-    return this.request<BankAccount[]>("/bank/accounts");
+  async getBankAccounts(filters?: {
+    ownerType?: string;
+    ownerId?: string;
+    isActive?: boolean;
+    isIntegrated?: boolean;
+  }): Promise<BankAccount[]> {
+    const params = new URLSearchParams();
+    if (filters?.ownerType) params.set("ownerType", filters.ownerType);
+    if (filters?.ownerId) params.set("ownerId", filters.ownerId);
+    if (filters?.isActive !== undefined) params.set("isActive", String(filters.isActive));
+    if (filters?.isIntegrated !== undefined) params.set("isIntegrated", String(filters.isIntegrated));
+    const query = params.toString() ? `?${params}` : "";
+    return this.request<BankAccount[]>(`/bank/accounts${query}`);
   }
 
   async createBankAccount(data: Omit<BankAccount, 'id' | 'tenantId' | 'createdAt' | 'lastSyncAt'>): Promise<BankAccount> {
@@ -2022,53 +2033,34 @@ class ApiClient {
     });
   }
 
-  async updateBankAccount(id: string, data: Partial<BankAccount>): Promise<BankAccount> {
-    return this.request<BankAccount>(`/bank/accounts/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
+  async getBankBalance(accountId: string): Promise<BankBalanceResponse> {
+    return this.request<BankBalanceResponse>(`/bank/accounts/${accountId}/balance`);
   }
 
-  async deleteBankAccount(id: string): Promise<void> {
-    return this.request<void>(`/bank/accounts/${id}`, { method: "DELETE" });
-  }
-
-  async getBankBalance(iban: string): Promise<BankBalanceResponse> {
-    return this.request<BankBalanceResponse>(`/bank/balance/${encodeURIComponent(iban)}`);
-  }
-
-  async syncBankBalance(accountId: string): Promise<BankBalanceResponse> {
-    return this.request<BankBalanceResponse>(`/bank/accounts/${accountId}/sync`, {
-      method: "POST",
-    });
-  }
-
-  async getBankTransactions(filters?: {
-    accountId?: string;
+  async getBankTransactions(accountId: string, filters?: {
     startDate?: string;
     endDate?: string;
-    type?: BankTransactionType;
-    status?: BankTransactionStatus;
-    unmatched?: boolean;
+    transactionType?: BankTransactionType;
+    isMatched?: boolean;
+    limit?: number;
   }): Promise<BankTransaction[]> {
     const params = new URLSearchParams();
-    if (filters?.accountId) params.set('accountId', filters.accountId);
-    if (filters?.startDate) params.set('startDate', filters.startDate);
-    if (filters?.endDate) params.set('endDate', filters.endDate);
-    if (filters?.type) params.set('type', filters.type);
-    if (filters?.status) params.set('status', filters.status);
-    if (filters?.unmatched) params.set('unmatched', 'true');
-    const query = params.toString() ? `?${params}` : '';
-    return this.request<BankTransaction[]>(`/bank/transactions${query}`);
+    if (filters?.startDate) params.set("startDate", filters.startDate);
+    if (filters?.endDate) params.set("endDate", filters.endDate);
+    if (filters?.transactionType) params.set("transactionType", filters.transactionType);
+    if (filters?.isMatched !== undefined) params.set("isMatched", String(filters.isMatched));
+    if (filters?.limit !== undefined) params.set("limit", String(filters.limit));
+    const query = params.toString() ? `?${params}` : "";
+    return this.request<BankTransaction[]>(`/bank/accounts/${accountId}/transactions${query}`);
   }
 
-  async syncBankTransactions(accountId: string, startDate?: string, endDate?: string): Promise<{ count: number; transactions: BankTransaction[] }> {
-    const params = new URLSearchParams();
-    if (startDate) params.set('startDate', startDate);
-    if (endDate) params.set('endDate', endDate);
-    const query = params.toString() ? `?${params}` : '';
-    return this.request<{ count: number; transactions: BankTransaction[] }>(`/bank/accounts/${accountId}/sync-transactions${query}`, {
+  async syncBankTransactions(accountId: string, startDate?: string, endDate?: string): Promise<BankSyncResult> {
+    const body: { startDate?: string; endDate?: string } = {};
+    if (startDate) body.startDate = startDate;
+    if (endDate) body.endDate = endDate;
+    return this.request<BankSyncResult>(`/bank/accounts/${accountId}/sync`, {
       method: "POST",
+      body: JSON.stringify(body),
     });
   }
 
@@ -2079,16 +2071,9 @@ class ApiClient {
     });
   }
 
-  async unmatchTransaction(transactionId: string): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/bank/transactions/${transactionId}/unmatch`, {
-      method: "POST",
-    });
-  }
-
-  async autoMatchTransactions(): Promise<{ matched: number; unmatched: number }> {
-    return this.request<{ matched: number; unmatched: number }>("/bank/auto-match", {
-      method: "POST",
-    });
+  async getUnmatchedBankTransactions(limit?: number): Promise<BankTransaction[]> {
+    const query = limit !== undefined ? `?limit=${encodeURIComponent(String(limit))}` : "";
+    return this.request<BankTransaction[]>(`/bank/transactions/unmatched${query}`);
   }
 
   async sendBankTransfer(data: BankTransferRequest): Promise<BankTransferResponse> {
@@ -2098,12 +2083,8 @@ class ApiClient {
     });
   }
 
-  async getTransferStatus(referenceNo: string): Promise<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }> {
-    return this.request<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }>(`/bank/transfer/status/${referenceNo}`);
-  }
-
-  async getBankIntegrationStatus(): Promise<{ connected: boolean; providers: BankProvider[]; lastSync?: string }> {
-    return this.request<{ connected: boolean; providers: BankProvider[]; lastSync?: string }>("/bank/status");
+  async getBankStats(): Promise<BankStats> {
+    return this.request<BankStats>("/bank/stats");
   }
 
   // ============================================
@@ -3855,7 +3836,7 @@ export interface PttTrackingResult {
   barcodeNo: string;
   status: string;
   statusCode: string;
-  lastUpdate: string;
+  lastUpdated: string;
   deliveryDate?: string;
   recipientName?: string;
   deliveryLocation?: string;
@@ -4287,13 +4268,30 @@ export interface BankTransaction {
   isAutoMatched: boolean;
   createdAt: string;
 }
+export interface BankSyncResult {
+  success?: boolean;
+  count?: number;
+  newTransactions?: number;
+  matchedTransactions?: number;
+  transactions?: BankTransaction[];
+  errors?: string[];
+  errorMessage?: string;
+}
 
+export interface BankStats {
+  totalAccounts: number;
+  integratedAccounts: number;
+  totalTransactions: number;
+  unmatchedTransactions: number;
+  totalIncoming: number;
+  totalOutgoing: number;
+}
 export interface BankBalanceResponse {
   iban: string;
   balance: number;
   currency: string;
   availableBalance: number;
-  lastUpdate: string;
+  lastUpdated: string;
 }
 
 export interface BankTransferRequest {
@@ -5266,28 +5264,26 @@ declare module './api' {
     cancelSignRequest(requestId: string): Promise<{ success: boolean; message: string }>;
     
     // Bank methods
-    getBankAccounts(): Promise<BankAccount[]>;
+    getBankAccounts(filters?: {
+      ownerType?: string;
+      ownerId?: string;
+      isActive?: boolean;
+      isIntegrated?: boolean;
+    }): Promise<BankAccount[]>;
     createBankAccount(data: Omit<BankAccount, 'id' | 'tenantId' | 'createdAt' | 'lastSyncAt'>): Promise<BankAccount>;
-    updateBankAccount(id: string, data: Partial<BankAccount>): Promise<BankAccount>;
-    deleteBankAccount(id: string): Promise<void>;
-    getBankBalance(iban: string): Promise<BankBalanceResponse>;
-    syncBankBalance(accountId: string): Promise<BankBalanceResponse>;
-    getBankTransactions(filters?: {
-      accountId?: string;
+    getBankBalance(accountId: string): Promise<BankBalanceResponse>;
+    getBankTransactions(accountId: string, filters?: {
       startDate?: string;
       endDate?: string;
-      type?: BankTransactionType;
-      status?: BankTransactionStatus;
-      unmatched?: boolean;
+      transactionType?: BankTransactionType;
+      isMatched?: boolean;
+      limit?: number;
     }): Promise<BankTransaction[]>;
-    syncBankTransactions(accountId: string, startDate?: string, endDate?: string): Promise<{ count: number; transactions: BankTransaction[] }>;
+    syncBankTransactions(accountId: string, startDate?: string, endDate?: string): Promise<BankSyncResult>;
     matchTransactionToCase(transactionId: string, caseId: string): Promise<{ success: boolean; collectionId?: string }>;
-    unmatchTransaction(transactionId: string): Promise<{ success: boolean }>;
-    autoMatchTransactions(): Promise<{ matched: number; unmatched: number }>;
+    getUnmatchedBankTransactions(limit?: number): Promise<BankTransaction[]>;
     sendBankTransfer(data: BankTransferRequest): Promise<BankTransferResponse>;
-    getTransferStatus(referenceNo: string): Promise<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }>;
-    getBankIntegrationStatus(): Promise<{ connected: boolean; providers: BankProvider[]; lastSync?: string }>;
-    
+    getBankStats(): Promise<BankStats>;
     // Expense Request methods
     getExpenseRequests(params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }): Promise<ExpenseRequest[]>;
     getExpenseRequest(id: string): Promise<ExpenseRequest>;
