@@ -285,6 +285,20 @@ export function canonicalPrimaryAmounts(
   };
 }
 
+const COST_FEE_UNDERSTATEMENT_RISK_CODES = new Set(['COSTS_DELTA', 'ATTORNEY_FEE_DELTA']);
+
+// ALC-AUTH-3E: toplamBorc/sonBorc/kalanBorc canonical totalDebtAmount/outstandingAmount'tan
+// gelir, ikisi de costs/ancillaries icerir -- cost/attorney-fee ClaimItem'i olmayan case'lerde
+// bu sessizce 0 sayilip aggregate'i olduğundan dusuk gosterebilir (COSTS_DELTA/ATTORNEY_FEE_DELTA
+// B1_SCOPE_EXEMPT_DIFF_CODES oldugu icin guard'i bloklamaz). Zaten mevcut report.totals.diffs'teki
+// RED/MAJOR_DELTA sinyali (legacy nonzero, canonical veri-bosluğu yuzunden 0) case-bazli tespit icin
+// kullanilir -- yeni backend contract gerekmez.
+function hasCostOrAttorneyFeeUnderstatementRisk(report: BalanceDisplayShadowDiffReport): boolean {
+  return report.totals.diffs.some(
+    (diff) => COST_FEE_UNDERSTATEMENT_RISK_CODES.has(diff.code) && diff.severity === 'RED',
+  );
+}
+
 export function evaluateGuardedPrimaryDisplayPilot(
   report: BalanceDisplayShadowDiffReport | null,
   policy: GuardedPrimaryDisplayPolicy = {},
@@ -329,26 +343,24 @@ export function evaluateGuardedPrimaryDisplayPilot(
     }
   }
 
+  // ALC-AUTH-4A (misleading-eligibility fix, 2026-07-05): ALC-AUTH-3E'nin suppress'i
+  // (toplamBorc/sonBorc/kalanBorc legacy'de kalir) daha once yalniz buildGuardedPrimaryCalculationResult
+  // icinde uygulaniyordu -- decision/banner katmani bunu hic gormuyordu, yani suppress calisirken
+  // banner "CANONICAL_PRIMARY_CANDIDATE"/"ELIGIBLE" demeye devam edebiliyordu (reasonCodes bos).
+  // Bu, guard'in en gorunur 3 alaninin (TOPLAM BORC/SON BORC/KALAN BORC) sessizce legacy'de kalirken
+  // ekranin "hazir" sinyali vermesi anlamina gelir. Artik ayni risk sinyali karar katmaninda da
+  // kontrol ediliyor: risk varsa primarySource LEGACY_CALCULATION_SUMMARY olur (Hesap Ozeti kismi/
+  // hibrit degil, tek-parca tutarli bir kaynaktan gosterilir).
+  if (hasCostOrAttorneyFeeUnderstatementRisk(report)) {
+    reasonCodes.push('COST_ATTORNEY_FEE_SUPPRESSED');
+  }
+
   return {
     primarySource: reasonCodes.length === 0
       ? 'CANONICAL_PRIMARY_CANDIDATE'
       : 'LEGACY_CALCULATION_SUMMARY',
     reasonCodes: [...new Set(reasonCodes)].sort(),
   };
-}
-
-const COST_FEE_UNDERSTATEMENT_RISK_CODES = new Set(['COSTS_DELTA', 'ATTORNEY_FEE_DELTA']);
-
-// ALC-AUTH-3E: toplamBorc/sonBorc/kalanBorc canonical totalDebtAmount/outstandingAmount'tan
-// gelir, ikisi de costs/ancillaries icerir -- cost/attorney-fee ClaimItem'i olmayan case'lerde
-// bu sessizce 0 sayilip aggregate'i olduğundan dusuk gosterebilir (COSTS_DELTA/ATTORNEY_FEE_DELTA
-// B1_SCOPE_EXEMPT_DIFF_CODES oldugu icin guard'i bloklamaz). Zaten mevcut report.totals.diffs'teki
-// RED/MAJOR_DELTA sinyali (legacy nonzero, canonical veri-bosluğu yuzunden 0) case-bazli tespit icin
-// kullanilir -- yeni backend contract gerekmez.
-function hasCostOrAttorneyFeeUnderstatementRisk(report: BalanceDisplayShadowDiffReport): boolean {
-  return report.totals.diffs.some(
-    (diff) => COST_FEE_UNDERSTATEMENT_RISK_CODES.has(diff.code) && diff.severity === 'RED',
-  );
 }
 
 export function buildGuardedPrimaryCalculationResult(
