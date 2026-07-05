@@ -111,4 +111,34 @@ export class CaseDebtorLifecycleGuardService {
 
     return caseDebtor;
   }
+
+  /**
+   * ACT-08: throw etmeyen (boolean) varyant — scheduler/cron gibi HTTP-request-dışı bağlamlar
+   * için. `assertActive*` metotları (NotFoundException/BadRequestException) HTTP-yanıt akışına
+   * göre tasarlanmıştır; bir cron job için "pasif borçlu" bir HATA değil, sessizce ATLANMASI
+   * gereken beklenen bir durumdur. Bulunamayan CaseDebtor da defensif olarak pasif SAYILIR (yeni
+   * operasyon hedefi olmamalı — assertActive'in NotFoundException davranışıyla aynı ihtiyat).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - AddressTaskSchedulerService.checkOverdueTasks() → ACT-08 defense-in-depth skip guard
+   * - AddressTaskSchedulerService.checkAnnualRefreshTasks() → ACT-08 defense-in-depth skip guard
+   */
+  async isPassiveByCaseAndDebtor(
+    tenantId: string,
+    caseId: string,
+    debtorId: string,
+    options: AssertActiveByCaseAndDebtorOptions = {}
+  ): Promise<boolean> {
+    const prisma = options.prisma ?? this.prisma;
+    const caseDebtor = await prisma.caseDebtor.findFirst({
+      where: {
+        caseId,
+        debtorId,
+        case: { tenantId },
+      },
+      select: caseDebtorLifecycleGuardSelect,
+    });
+
+    return !caseDebtor || caseDebtor.lifecycleStatus === CaseDebtorLifecycleStatus.PASSIVE;
+  }
 }
