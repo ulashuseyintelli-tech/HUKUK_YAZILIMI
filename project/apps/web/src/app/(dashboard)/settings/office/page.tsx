@@ -104,6 +104,13 @@ function OfficeSettingsInner() {
   const [testingSms, setTestingSms] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [smsTestResult, setSmsTestResult] = useState<{ status: "verified" | "unverified" | "error"; message: string } | null>(null);
+  // ACT-12 (2026-07-05): "Bugün ne gidecek?" önizlemesi — backend GET /greetings/today zaten
+  // mevcuttu (findTodayGreetings), FE hiç tüketmiyordu. null = henüz yüklenmedi (loading state).
+  const [todayGreetings, setTodayGreetings] = useState<{
+    birthdays: any[]; foundingAnniversaries: any[]; poaAnniversaries: any[];
+    specialDays: any[]; holidayClients: any[];
+  } | null>(null);
+  const [sendingGreetingKey, setSendingGreetingKey] = useState<string | null>(null);
 
   useEffect(() => { loadOffice(); loadStaff(); }, []);
 
@@ -160,6 +167,20 @@ function OfficeSettingsInner() {
         autoGreetingEnabled: greetingRes.data?.autoGreetingEnabled ?? true,
         autoGreetingTime: greetingRes.data?.autoGreetingTime || "09:00",
       });
+      // ACT-12: bugün gönderilecek tebrikler (önizleme)
+      try {
+        const todayRes = await api.get("/greetings/today");
+        setTodayGreetings({
+          birthdays: todayRes.data?.birthdays || [],
+          foundingAnniversaries: todayRes.data?.foundingAnniversaries || [],
+          poaAnniversaries: todayRes.data?.poaAnniversaries || [],
+          specialDays: todayRes.data?.specialDays || [],
+          holidayClients: todayRes.data?.holidayClients || [],
+        });
+      } catch (e) {
+        console.error("Bugünkü tebrikler yüklenemedi:", e);
+        setTodayGreetings({ birthdays: [], foundingAnniversaries: [], poaAnniversaries: [], specialDays: [], holidayClients: [] });
+      }
       // Görev & eskalasyon ayarlarını yükle
       const escRes = await api.get("/office/escalation-settings");
       setEscalationForm({
@@ -230,6 +251,20 @@ function OfficeSettingsInner() {
       showSaved();
     } catch (e) { console.error(e); }
     finally { setSaving(false); }
+  };
+
+  // ACT-12: "Bugün ne gidecek?" önizlemesinden manuel tebrik gönderimi (mevcut POST /greetings/send).
+  const handleSendGreeting = async (clientId: string, type: string, specialDayId?: string) => {
+    const key = `${clientId}-${type}`;
+    setSendingGreetingKey(key);
+    try {
+      await api.post("/greetings/send", { clientId, type, channel: "EMAIL", specialDayId });
+      alert("Tebrik gönderildi.");
+    } catch (e: any) {
+      alert(e.message || "Tebrik gönderilemedi.");
+    } finally {
+      setSendingGreetingKey(null);
+    }
   };
 
   const handleSaveEscalation = async () => {
@@ -944,6 +979,41 @@ function OfficeSettingsInner() {
                 <p className="text-[10px] text-gray-500">Doğum günü, kuruluş yıldönümü, vekalet yıldönümü ve bayram tebrikleri otomatik gönderilir.</p>
                 <button onClick={handleSaveGreeting} disabled={saving} className="w-full px-2 py-1 bg-purple-500 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
               </div>
+            </div>
+            {/* ACT-12: Bugün ne gidecek? önizlemesi */}
+            <div className="p-2 border rounded bg-blue-50 mt-2">
+              <p className="font-medium text-blue-700 mb-2">📋 Bugün Ne Gidecek?</p>
+              {!todayGreetings ? (
+                <p className="text-[10px] text-gray-500">Yükleniyor...</p>
+              ) : (() => {
+                const rows: { key: string; label: string; name: string; clientId: string; type: string; specialDayId?: string }[] = [];
+                const nameOf = (c: any) => c.displayName || c.companyName || `${c.firstName || ""} ${c.lastName || ""}`.trim();
+                todayGreetings.birthdays.forEach((c: any) => rows.push({ key: `bd-${c.id}`, label: "Doğum Günü", name: nameOf(c), clientId: c.id, type: "BIRTHDAY" }));
+                todayGreetings.foundingAnniversaries.forEach((c: any) => rows.push({ key: `fa-${c.id}`, label: "Kuruluş Yıldönümü", name: nameOf(c), clientId: c.id, type: "FOUNDING_ANNIVERSARY" }));
+                todayGreetings.poaAnniversaries.forEach((c: any) => rows.push({ key: `poa-${c.id}`, label: "Vekalet Yıldönümü", name: nameOf(c), clientId: c.id, type: "POA_ANNIVERSARY" }));
+                const specialDay = todayGreetings.specialDays[0];
+                todayGreetings.holidayClients.forEach((c: any) => rows.push({ key: `hc-${c.id}`, label: specialDay?.name || "Bayram", name: nameOf(c), clientId: c.id, type: "HOLIDAY", specialDayId: specialDay?.id }));
+                if (rows.length === 0) return <p className="text-[10px] text-gray-500">Bugün gönderilecek tebrik yok.</p>;
+                return (
+                  <div className="space-y-1 max-h-48 overflow-auto">
+                    {rows.map(r => {
+                      const key = `${r.clientId}-${r.type}`;
+                      return (
+                        <div key={r.key} className="flex items-center justify-between text-[11px] bg-white rounded px-2 py-1 border gap-2">
+                          <span className="truncate">{r.name} <span className="text-gray-400">— {r.label}</span></span>
+                          <button
+                            onClick={() => handleSendGreeting(r.clientId, r.type, r.specialDayId)}
+                            disabled={sendingGreetingKey === key}
+                            className="shrink-0 px-2 py-0.5 bg-purple-500 text-white rounded text-[10px] disabled:opacity-50"
+                          >
+                            {sendingGreetingKey === key ? "..." : "Gönder"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
         </div>
         )}
