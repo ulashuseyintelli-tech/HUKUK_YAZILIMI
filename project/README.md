@@ -86,7 +86,7 @@ pnpm install
 ### 3. Environment Ayarla
 `apps/api/.env`:
 ```env
-DATABASE_URL="postgresql://postgres:1@localhost:5432/hukuk_db?schema=public"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/hukuk_db?schema=public"
 JWT_SECRET="your-super-secret-jwt-key"
 JWT_EXPIRES_IN="7d"
 PORT=8080
