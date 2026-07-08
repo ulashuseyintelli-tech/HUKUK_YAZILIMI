@@ -89,6 +89,7 @@ Tanımların ve uygulama kurallarının bağlayıcı metni `canonicalization-pol
 ### CAN-CUT-02 — Hesap Özeti / interest-engine
 - **Required verification:** `BalanceShadowDiffPanel` shadow-diff sonuçlarının GREEN olma durumu.
 - **Acceptance criteria:** Faiz=0 stub olan `Hesap Özeti` görünümü kullanıcıya birincil/doğru sonuç gibi sunulmaz (guard/etiket); cutover tamamlanana kadar legacy hesaplamaya yeni iş mantığı eklenmez.
+- **Implementation owner (2026-07-09 owner reconciliation):** `CCB-001` (bkz. `product-backlog.md`) — bu maddenin canonical calculation cutover'ının implementation-authority/master stream'i. CAN-CUT-02, CCB-001'e bağımsız/rakip bir iş akışı DEĞİLDİR; CCB-001 altında bir milestone olarak izlenir. Mimari otorite `ADR-012`'dir (CCB-001 WIP branch'inde tanımlı, henüz `main`'e merge edilmemiş — bu register o dosyaya link vermez). Bu not statüyü değiştirmez: madde **OPEN/needs-owner-decision (guard)** olarak kalır; kapanışı yalnız CCB-001'in bu spesifik kapsamı karşılayan, main'e merge edilmiş bir deliverable ile ayrıca ve açıkça register'a işlenir.
 
 ### CAN-CUT-03 — DebtorAddress
 - **Required verification:** Bare ve nested route'ların davranış eşdeğerliği (`debtor-address-canonical.spec.ts` kapsamının yeterliliği).
