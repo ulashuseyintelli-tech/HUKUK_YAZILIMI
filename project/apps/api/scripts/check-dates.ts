@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: 'postgresql://postgres:1@localhost:5432/hukuk_db?schema=public'
+      url: 'postgresql://postgres:postgres@localhost:5432/hukuk_db?schema=public'
     }
   }
 });
