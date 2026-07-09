@@ -2,9 +2,19 @@
 
 Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar icin kalici davranis kurallarini tanimlar.
 
+## Otorite Zinciri
+
+1. `AGENTS.md` tum ajanlar icin repository-level zorunlu baseline'dir.
+2. `CLAUDE.md` Claude'a ozgu operasyonel supplement'tir; `AGENTS.md` ile celisemez veya onu override edemez.
+3. `project/docs/governance/` proje governance, roadmap, backlog, decision ve surec kayitlarini tutar; bu kayitlar `AGENTS.md` ile tutarli olmalidir.
+4. Gelecekteki repo-local skill'ler resmi Codex scan yuzeyi olan `.agents/skills/` altinda tanimlanir.
+5. `.codex/` Codex operasyonel config, hooks ve project-scoped custom agents yuzeyidir; mevcut owner/user WIP sayilir ve acik yetki olmadan degistirilmez.
+
 ## Ilkeler
 
 - Ground Truth First: Repository gercek durumunu dosya, komut ciktisi veya resmi kaynakla dogrula; repository state uydurma.
+- Repository-wide AI ground-truth rule: Sohbet gecmisi yalniz niyet ve karar tasir; mevcut gercekler her gorevde repository state, git state, dosya icerigi, governance kayitlari, PR/CI durumu ve komut ciktilarindan yeniden dogrulanir.
+- Buyuk veya uzun omurlu workstream'lerde ise baslamadan once Session Initialization ozeti uretilir: Repository State, Execution Context, Context Drift, Concurrent Activity ve Ready/Not Ready.
 - Varsayilan mod read-only'dir. Dosya degisikligi yalniz kullanici `GO-IMPLEMENT` veya `GO-COMPLETE` verdiginde yapilir.
 - Spekulatif refactor yapma.
 - En kucuk guvenli patch'i tercih et.
@@ -15,7 +25,7 @@ Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar ici
 
 - `GO-ANALYZE`: Salt-okunur analiz ve rapor. Dosya degisikligi, stage, commit, push veya merge yok.
 - `GO-IMPLEMENT`: Kapsam icinde degisiklik, ilgili validation ve rapor. Commit, push veya merge yok.
-- `GO-COMPLETE`: Kullanici acikca verdiyse implementasyon ve tamamlanma zinciri. Commit, push, merge veya branch silme yine yalniz acik yetki varsa yapilir.
+- `GO-COMPLETE`: Kullanici acikca verdiyse implementasyon ve tamamlanma zinciri. Commit, push, PR, CI, merge, main sync veya branch/worktree cleanup yalniz gorev brief'i acik `IF GO-COMPLETE` owner yetkisi iceriyorsa zincire dahildir. Tool/system guardrail veya PR'a ozgu yetki gereksinimi varsa dur ve owner'dan acik yetki iste; aksi halde CI PASS ve `mergeStateStatus` CLEAN sonrasi zincir icinde tekrar onay isteme.
 
 ## Uygulama Kurallari
 
