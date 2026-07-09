@@ -118,6 +118,16 @@ export class JobMonitorService {
     });
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AdminController.quarantineCase() -> POST /icrabot/admin/cases/:id/quarantine
+  /// CAN-P0-002-C: `Case.metadata` yazımı kaldırıldı — owner ürün kararı: bu bilgi
+  /// hiçbir zaman UI'da gösterilmeyecek. Gerçek source of truth zaten `IcrabotJobRun.status`
+  /// (bu metodun kendisi zaten tenant-scoped günceller); audit zaten `IcrabotJobAction`'da
+  /// (`logJobAction()`). `Case.metadata` üzerinde okuyucusu olmayan, tipsiz/shared bir JSON
+  /// alanına tam-obje-değiştirme (merge değil) yazan bu write, `executionOffice`/`monthlyNafaka`
+  /// gibi başka legacy fallback anahtarlarını sessizce silme riski taşıyordu.
+  /// </remarks>
   async quarantineCase(caseId: string, tenantId: string, userId: string, reason?: string): Promise<void> {
     // Update all pending/failed jobs for this case
     await this.prisma.icrabotJobRun.updateMany({
@@ -132,19 +142,6 @@ export class JobMonitorService {
       },
     });
 
-    // Mark case as quarantined
-    await this.prisma.case.update({
-      where: { id: caseId },
-      data: {
-        metadata: {
-          quarantined: true,
-          quarantinedAt: new Date().toISOString(),
-          quarantinedBy: userId,
-          quarantineReason: reason,
-        },
-      },
-    });
-
     // Log action
     await this.logJobAction({
       jobId: `case:${caseId}`,
@@ -154,6 +151,11 @@ export class JobMonitorService {
     });
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AdminController.unquarantineCase() -> POST /icrabot/admin/cases/:id/unquarantine
+  /// CAN-P0-002-C: `Case.metadata` yazımı kaldırıldı (bkz. quarantineCase() üstündeki not).
+  /// </remarks>
   async unquarantineCase(caseId: string, tenantId: string, userId: string): Promise<void> {
     // Update quarantined jobs back to queued
     await this.prisma.icrabotJobRun.updateMany({
@@ -167,18 +169,6 @@ export class JobMonitorService {
         attempt: 1,
         lastErrorCode: null,
         lastErrorMessage: null,
-      },
-    });
-
-    // Remove quarantine flag from case
-    await this.prisma.case.update({
-      where: { id: caseId },
-      data: {
-        metadata: {
-          quarantined: false,
-          unquarantinedAt: new Date().toISOString(),
-          unquarantinedBy: userId,
-        },
       },
     });
 
