@@ -22,7 +22,7 @@ Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar ici
 - En kucuk guvenli patch'i tercih et.
 - Mevcut mimariyi, geriye donuk uyumlulugu ve davranisi koru.
 - Commit, push, merge veya branch silme islemleri yalniz kullanici acikca yetki verdiginde yapilir.
-- DX-005 / Progress Maximization Policy: Calisma dis bir bagimlilikla (CI, baska worktree WIP'i, PR review, owner aksiyonu) bloklanirsa ajan pasif beklemeyi varsayilan davranis secmez. Once mevcut gorevin kapsami icinde guvenli hazirlik isi olup olmadigina bakar (decision-log taslagi, diff/checklist hazirligi, validation plani gibi) ve varsa bunu yapar veya onerir. Blocker mevcut gorevin useful-next-action alanini genisletir; gorevin kendi kapsamini genisletmez - farkli veya ilgisiz bir workstream'i owner GO olmadan baslatmaz. Guvenli hazirlik isi yoksa raporda salt STOP degil, "X su an mumkun degil cunku Y; bu sirada Z yapilabilir" formatinda sonraki-en-iyi-aksiyon onerilir.
+- DX-005 / Waiting & Progress Policy: Calisma dis bir bagimlilikla bloklandiginda ajanin davranisi icin bkz. `docs/adr/ADR-012-WAITING-PROGRESS-POLICY.md`.
 
 ## Calisma Modlari
 

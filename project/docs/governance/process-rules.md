@@ -138,6 +138,10 @@ GO-COMPLETE implementasyon ve validation zinciridir. Commit, push, PR, CI, merge
 - Açık `IF GO-COMPLETE` owner yetkisiyle yürüyen zincirin sonunda stop condition yoksa `Onay Bekleniyor: NO` yazılır; çünkü kullanıcı baştan operasyon zincirini tamamlama yetkisi vermiştir.
 - `GO-COMPLETE` sırasında stop condition varsa `Onay Bekleniyor: YES` yazılır; çünkü kullanıcı kararı gerekir.
 
+## Waiting & Progress Policy
+
+Bir görev dışsal bir bağımlılıkla (CI, başka worktree'nin WIP'i, PR review, owner deploy/karar bekleyişi) bloklandığında ajan doğrudan pasif beklemeye geçmez; önce onaylı kapsam içinde güvenli ilerlemeyi maksimize eder. Tam politika ve üç katmanlı model (Active Progress / Parallel Preparation / Passive Wait) için bkz. `docs/adr/ADR-012-WAITING-PROGRESS-POLICY.md`. Bu bölüm ile aşağıdaki CI WAIT / POLLING RULE arasında çelişki yoktur: ADR-012 yalnız "beklerken ne yapılır"ı tanımlar, "ne zaman durulur" aşağıdaki kuralda aynen geçerlidir.
+
 ## CI WAIT / POLLING RULE
 
 Bu kural yalnız açık `IF GO-COMPLETE` owner yetkisi içeren görevler için geçerlidir. `GO-ANALYZE` ve `GO-IMPLEMENT` sonunda ajan kullanıcıya rapor verir; CI bekleme zinciri otomatik merge anlamına gelmez.
