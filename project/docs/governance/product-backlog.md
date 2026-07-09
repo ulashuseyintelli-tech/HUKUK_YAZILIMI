@@ -1331,17 +1331,61 @@ Status: **NO_SAFE_PATCH / VERIFICATION_REQUIRED** — main'de implemente EDİLME
 
 ## CAN-P0-002-A — Icrabot automation flags canonicalization
 
+**Governance güncellemesi (2026-07-09, GO-ANALYZE sonrası):** Owner talimatıyla GO-ANALYZE tamamlandı (kod yazılmadı, yalnız statik trace + tüketici haritası). **Sonuç: tek patch'e zorlanmadı, CAN-P0-002/CAN-P0-002-B emsaliyle tutarlı şekilde 3 alt-maddeye bölündü.** Ana bulgu: `isAutomationEnabled` ve `isAutoMode` **aynı bounded context'e ait DEĞİL** — `isAutomationEnabled` statü-güdümlü bir izin kapısı (`CaseStatusService.changeStatus()` tarafından `HITAM/INFAZ/MUVEKKILE_IADE/ACIZ/BATAK/MAHSUP/TEMLIK` statülerinde bilinçli olarak `false` yazılıyor, `case-status.service.ts:117-121`; `scheduler.service.ts`'in 3 ayrı cron sorgusu ve `CaseSummaryCard.tsx`/`AutomationPanel.tsx` bunu tek başına okuyor), `isAutoMode` ise kullanıcının fiilen bastığı otomasyon toggle'ı (`AutomationPanel.tsx`'te ayrı buton; `workflow-engine.service.ts:127` ve `automation.service.ts`'in notification-yolu YALNIZ bunu kontrol ediyor). `icrabot.service.ts:118-124`'ün `startAutomation()`'ı ikisini birlikte, statü/gate kontrolü YAPMADAN `true` yazması — kapanmış/HITAM bir dosyada bile `CaseStatusService`'in bilinçli kill-switch'ini sessizce ezebilecek gerçek bir risk (teorik değil, kod okunarak doğrulandı). `isAutomationEnabled` için mevcut owner (`CaseService.patchFlags()`, case.service.ts:2371) zaten allowlist'te ve audit'li — icrabot bunu çağırmıyor, yol eksik değil, atlanıyor; human-actor de mevcut (`icrabot.controller.ts` JwtAuthGuard korumalı, `req.user` var, yalnız `userId` şu an threadlenmiyor). `isAutoMode` için mevcut "owner" (`AutomationService.toggleAutoMode()`, automation.service.ts:342) kendisi de audit'siz/tenant-guard'sız, genişletilmesi `nextActionAt` side-effect'i getirir (icrabot'un bugünkü davranışında yok). Analiz sırasında, bu ticket'ın kapsamı DIŞINDA ayrı bir bulgu ortaya çıktı: `automation.service.ts:154`'ün notification-tetikli işleme yolu `isAutomationEnabled` kill-switch'ini hiç kontrol etmiyor (cron yolu kontrol ediyor) — bu CAN-P0-002-A3 olarak ayrı triage'a açıldı, kapsam büyütülmedi.
+
 ID: CAN-P0-002-A
-Title: isAutomationEnabled / isAutoMode direct-write bypass canonicalization
+Title: isAutomationEnabled / isAutoMode direct-write bypass canonicalization (parent — 3 alt-maddeye bölündü)
 Problem: `icrabot.service.ts:118,153` `isAutomationEnabled` + `isAutoMode` alanlarına `CaseService`'i bypass ederek doğrudan yazıyor.
 Business Value: Otomasyon durumu yazımının tek, denetlenebilir bir yoldan geçmesini sağlar.
 Technical Value: `isAutomationEnabled`'ın `CaseService.patchFlags` allowlist'ine eklenip eklenemeyeceği, `isAutoMode`'un ayrı ele alınması gerektiği, `IcrabotService`'e `CaseService` injection'ının audit/duplication etkisi — hepsi ayrı GO-FIX kapsamında değerlendirilecek.
 Priority: HIGH
 Depends On: CAN-P0-002 (parent, VERIFICATION_REQUIRED)
-Unlock Condition: Owner GO-ANALYZE + ayrı GO-FIX onayı — audit davranış değişikliği açıkça değerlendirilmeden implementasyon başlamaz.
+Unlock Condition: Owner GO-ANALYZE tamamlandı (bu kayıt) — implementasyon alt-maddelerin kendi GO-FIX onayını bekliyor.
 Estimated Size: M (BE — DI + allowlist kararı + audit doğrulama)
-Related Modules: icrabot.service.ts, case.service.ts
-Status: NEXT / PENDING — implemente EDİLMEDİ.
+Related Modules: icrabot.service.ts, case.service.ts, automation.service.ts, case-status.service.ts, scheduler.service.ts
+Status: **NO_SAFE_PATCH / VERIFICATION_REQUIRED** — parent madde olarak implemente EDİLMEDİ, 3 alt-maddeye bölündü (aşağıda).
+
+## CAN-P0-002-A1 — isAutomationEnabled direct-write → CaseService.patchFlags redirect
+
+ID: CAN-P0-002-A1
+Title: `icrabot.service.ts`'in `isAutomationEnabled` yazımını `CaseService.patchFlags()`'e yönlendirme
+Problem: `startAutomation()`/`stopAutomation()` (icrabot.service.ts:118,156) `isAutomationEnabled`'ı ham `prisma.case.update()` ile, statü/gate kontrolü olmadan yazıyor — `CaseStatusService`'in HITAM/INFAZ/vb. statülerde bilinçli kapattığı kill-switch'i sessizce ezebiliyor, audit trail yok.
+Business Value: Statü-güdümlü otomasyon kill-switch'inin icrabot tarafından sessizce ezilmesini önler; audit trail ekler.
+Technical Value: Owner zaten var ve audit'li (`CaseService.patchFlags()`, allowlist'te `isAutomationEnabled` mevcut) — yalnız çağrı yeri değişmeli + `userId` threading (`icrabot.controller.ts`'teki `req.user`'dan) eklenmeli. `nextActionAt` side-effect'i yok (her iki yol da dokunmuyor) — davranış değişikliği yalnız audit ekleme + statü-kill-switch koruması.
+Priority: HIGH (gerçek correctness riski — kill-switch bypass)
+Depends On: CAN-P0-002-A (parent, NO_SAFE_PATCH/VERIFICATION_REQUIRED)
+Unlock Condition: Owner GO-FIX onayı. `icrabot-digital-twin-tenant-guard.spec.ts:144-147`'deki mevcut karakterizasyon testi (ham `prisma.case.update` çağrısını pinliyor) güncellenmeli — blast-radius'a dahil.
+Estimated Size: S-M (BE — çağrı yeri değişikliği + userId threading + 1 test güncellemesi)
+Related Modules: icrabot.service.ts, icrabot.controller.ts, case.service.ts, icrabot-digital-twin-tenant-guard.spec.ts
+Status: **PATCH_READY candidate** — implemente EDİLMEDİ, GO-FIX onayı bekliyor.
+
+## CAN-P0-002-A2 — isAutoMode owner/audit/tenant/nextActionAt tasarım kararı
+
+ID: CAN-P0-002-A2
+Title: `isAutoMode` için audit'li, tenant-guard'lı bir owner tasarımı gerekip gerekmediği kararı
+Problem: `icrabot.service.ts:118,153` `isAutoMode`'u ham yazıyor; mevcut "owner" adayı (`AutomationService.toggleAutoMode()`, automation.service.ts:342) de audit'siz ve tenant-guard'sız — icrabot'u ona yönlendirmek sorunu çözmez, yalnız taşır. Ayrıca `toggleAutoMode()` `nextActionAt`'a da dokunuyor (icrabot'un bugünkü davranışında olmayan yeni bir side-effect).
+Business Value: `isAutoMode` yazımının da denetlenebilir/tenant-güvenli hale gelmesi (bugün ikisi de değil).
+Technical Value: Kendi başına bir tasarım kararı gerekir — `AutomationService`'e audit+tenant-guard eklenmesi mi, yoksa `CaseService`'te `isAutoMode`'a özel dar bir metot mu, `nextActionAt` side-effect'inin icrabot akışına eklenmesinin kabul edilebilir olup olmadığı.
+Priority: MEDIUM (isAutomationEnabled'daki kadar acil correctness riski yok — ama audit boşluğu gerçek)
+Depends On: CAN-P0-002-A (parent, NO_SAFE_PATCH/VERIFICATION_REQUIRED)
+Unlock Condition: Owner GO-ANALYZE (tasarım kararı) + ayrı GO-FIX onayı.
+Estimated Size: M (BE — tasarım kararı + audit/tenant-guard ekleme, hangi serviste netleşecek)
+Related Modules: icrabot.service.ts, automation.service.ts, automation.controller.ts
+Status: **VERIFICATION_REQUIRED** — implemente EDİLMEDİ, tasarım kararı bekliyor.
+
+## CAN-P0-002-A3 — AutomationService notification path kill-switch bypass (yeni bulgu, CAN-P0-002-A GO-ANALYZE sırasında keşfedildi)
+
+ID: CAN-P0-002-A3
+Title: `automation.service.ts`'in notification-tetikli işleme yolu `isAutomationEnabled` kill-switch'ini kontrol etmiyor
+Problem: `automation.service.ts:46-50`'deki cron sorgusu (`processPendingCases`) hem `isAutoMode` hem `isAutomationEnabled`'ı AND'liyor; ama `automation.service.ts:154`'teki notification-tetikli yol (`if (notification.case?.isAutoMode && ...)`) YALNIZ `isAutoMode`'a bakıyor — `isAutomationEnabled=false` (statü-kapalı) bir dosyada `isAutoMode` hâlâ `true` ise (icrabot'un CAN-P0-002-A1 düzeltilmeden önceki davranışıyla mümkün), bu yol kill-switch'i atlayıp `workflowEngine.processCase()`'i çağırabilir.
+Business Value: Kapanmış/statü-kapalı dosyalarda otomasyonun her koşulda durdurulduğunun garanti edilmesi.
+Technical Value: `automation.service.ts:154`'e `isAutomationEnabled` kontrolü eklenmesi gerekip gerekmediği — bu CAN-P0-002-A'nın icrabot direct-write kapsamından TAMAMEN BAĞIMSIZ, `AutomationService`'in kendi iç tutarlılık sorunu.
+Priority: MEDIUM-HIGH (correctness riski, ama icrabot'un direct-write'ından ayrı bir kök neden)
+Depends On: Yok — bağımsız bulgu, CAN-P0-002-A1/A2'nin sonucunu beklemez.
+Unlock Condition: Owner triage — bu maddenin kapsamı, önceliği ve GO-ANALYZE/GO-FIX ayrımı henüz belirlenmedi.
+Estimated Size: S (BE — muhtemelen tek koşul eklemesi, ama önce GO-ANALYZE ile diğer çağrı yolları da taranmalı)
+Related Modules: automation.service.ts
+Status: **NEW FINDING / TRIAGE REQUIRED** — implemente EDİLMEDİ, henüz GO-ANALYZE bile görmedi.
 
 ## CAN-P0-002-B — Legacy Case.status write owner decision
 
