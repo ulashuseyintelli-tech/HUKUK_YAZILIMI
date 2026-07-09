@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-09 (GOV-REGISTER-SYNC-001)
+**Son güncelleme:** 2026-07-09 (VER-09 / OWN-02 governance bookkeeping remediation)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -12,6 +12,8 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 **Kullanım kuralı:** Bu dosyadaki hiçbir kayıt doğrudan doğru kabul edilmez. Bir kayıt üzerinde çalışılmadan önce repository güncel durumu son otoritedir; kayıt zaten kapanmışsa veya değişmişse bu dosya güncellenir. **POST-MERGE GOVERNANCE CHECK** (bkz. `decision-log.md` 2026-07-04 kaydı) her GO-COMPLETE sonrası bu dosyaya yansıtılmalıdır — aksi halde kayıtlar "zombie archive/backlog" haline gelir (bkz. ARC-05 vakası, Bölüm E).
 
 **Sync notu (2026-07-09, GOV-REGISTER-SYNC-001):** Bu dosya Master Triage indeksidir; Product Backlog, Decision Log ve Canonicalization Register karşısında tek başına otorite değildir. `MVR-*` namespace'i bu governance dosyalarında kanonik değildir; verification kayıtlarının kanonik namespace'i `VER-*` olarak korunur. `CCB-001` Master Triage kapsamına taşınmaz: canonical claim balance clean-break implementation authority `product-backlog.md` içindeki `CCB-001` kaydıdır; `canonicalization-register.md` içindeki `CAN-CUT-02` bu workstream altında milestone olarak izlenir.
+
+**Alias notu (2026-07-09, VER-09 / OWN-02 remediation):** "MVR-009 Route Drift Remediation" ifadesi bu register'da yeni bir `MVR-*` kaydı açmaz. Bu işin repo-doğrulanmış kapsamı runtime patch değil, `VER-*` kanonik namespace'i ile Owner Decision bookkeeping arasındaki governance drift düzeltmesidir. `VER-09` aşağıdaki tabloda escalation fallback doğrulaması olarak kalır; route-drift/P2 observe bookkeeping ile karıştırılmaz.
 
 ---
 
@@ -50,7 +52,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | VER-06 | Client.update() lifecycle-gate bypass (#827 CBND-6 ilişkisi) | Orta-Yüksek | Henüz doğrulanmadı |
 | VER-07 | icrabot action-executor PASSIVE CaseDebtor kontrolü iddiası | Düşük | Henüz doğrulanmadı |
 | VER-08 | case-compare-modal.tsx `d.type==='REAL'` DebtorType enum uyumsuzluğu | Düşük-Orta | Henüz doğrulanmadı |
-| VER-09 | Escalation FOUNDER/MANAGER fallback bug'ının resmî backlog kaydı var mı | Orta | Henüz doğrulanmadı |
+| VER-09 | Escalation FOUNDER/MANAGER fallback bug'ının resmî backlog kaydı var mı | Orta | Henüz doğrulanmadı — bu kayıt "MVR-009 Route Drift" alias'ı değildir; route-drift/P2 observe bookkeeping düzeltmesi ayrı governance-only remediation olarak kapatıldı |
 | VER-10 | Senet/bono arka-yüz OCR endorsement canlı doğrulama | Düşük-Orta | Henüz doğrulanmadı |
 | VER-11 | K8 UX-guard (müvekkil-bulunamadı uyarısı) forensic'i | Orta | Henüz doğrulanmadı |
 | VER-12 | 3 duplike `nest start --watch` süreci kasıtlı mı terkedilmiş mi | Düşük | Henüz doğrulanmadı |
@@ -148,6 +150,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **ARC-01 (ClaimGroup tablosu)** | ARCHIVED_CONFIRMED + ADR §Q1 clarification PR #902 → `aebe38e8` MERGED |
 | **ARC-05-A (Office-Approval Inbox FE, P4-6)** | ⚠️ **ARCHIVED → CLOSED yeniden sınıflandırıldı** (owner kararı, 2026-07-04): PR #823+#832 (2026-07-02) ile fiilen teslim edildi, `/office-approvals` canlı. Governance bookkeeping düzeltmesi PR #908 → `49cde917` MERGED (`product-backlog.md` P4-6 Status BACKLOG→DONE). |
 | **VER-32 (eski VR-13, PR #890'ı kapatan süreç)** | 2. batch doğrulaması + `act04-ocr-region-classifier` memory: diff-audit sonrası CLOSED, benzersiz iyileştirme yok |
+| **OWN-02 (CHANGE_STATUS/EDIT_PARTIES observe wiring)** | Governance drift remediation (2026-07-09): repo'da P2 observe wiring zaten mevcut ve testli — P2a resolver core PR #507, P2b-1 observe adapter PR #508, EDIT_PARTIES observe PR #527, CHANGE_STATUS observe PR #531. Runtime/schema/test değişikliği yapılmadı. Daha geniş Universal Office Approval/action-generalization işi `product-backlog.md` içindeki UA-1 altında DEFERRED kalır. |
 | **PB-03 (SummaryEngineService.allocateWithTBK100 3. allocator)** | 2. batch — sahiplik "alacak kalemleri" sayfasına devredildi. ⚠️ VER-28 yalnız transfer doğrulaması; geniş claim-item-domain-audit NO-GO'sunu kapatmaz. |
 | **ALC-AUTH-4A (misleading-eligibility fix, kod)** | PR #942 → `50aa2e33` MERGED. ALC-AUTH-3E'nin cost/attorney-fee suppress'i (`hasCostOrAttorneyFeeUnderstatementRisk`) yalnız `buildGuardedPrimaryCalculationResult()` içindeydi; `evaluateGuardedPrimaryDisplayPilot()` riski hiç görmüyordu, bu yüzden suppress tetiklenirken bile `decision.reasonCodes` boş kalıp banner "eligible" diyordu (toplamBorc/sonBorc/kalanBorc sessizce legacy'ye düşerken). Fix: aynı risk kontrolü artık `evaluateGuardedPrimaryDisplayPilot()` içinde de çalışıyor, yeni `COST_ATTORNEY_FEE_SUPPRESSED` reasonCode tetiklendiğinde `primarySource` otomatik `LEGACY_CALCULATION_SUMMARY`'ye düşüyor. Kapsam dar tutuldu (yalnız `guarded-primary-display.ts` + `balance-shadow-display.test.tsx`); ComponentCoverageReport/rollout/flag-açma kapsam DIŞI kaldı, B1 flag hâlâ OFF. 82/82 test PASS, tsc temiz. Not: PR #938 (ayrı oturum, ALC-AUTH-4A/4B/4C governance-only kaydı) bu fix'i İÇERMİYORDU — hâlâ OPEN, bu PR'dan bağımsız. |
 
@@ -201,7 +204,6 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 | ID | Domain | İş | Bekleyen karar |
 |---|---|---|---|
-| OWN-02 | Authorization | CHANGE_STATUS/EDIT_PARTIES observe wiring | Auth-context/endpoint eklenmeli mi |
 | OWN-03 | Authorization | CREATE_LOGIN_USER güvenli parola akışı | Tasarım sınırı |
 | OWN-04 | Authorization | runGuardedApply test-harness + regex host-scope + IPv6 dead-branch | Kullanıcı onayı yalnız kısmi kapsamı kapsadı |
 | OWN-05 | Accounting | CaseFeeAgreement (FAZ-2) | GO + design-gate |
@@ -277,8 +279,8 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | Master Verification Required | 33 (VER-02..18 + VER-20..31 + VER-33..36; VER-01/19/32 kapandı/taşındı) |
 | Master Workflow Queue — PENDING | 13 grup |
 | Master Workflow Queue — DONE | 5 zincir (PR #408 eklendi) |
-| Closed Register | 30 (ALC-AUTH-4A + ACT-17 + ACT-19 + ACT-15 + ACT-14 + ACT-11 + ACT-13 + ACT-10 + ACT-12 + ACT-09 + ACT-21 + ACT-22 eklendi) |
+| Closed Register | 31 (OWN-02 + ALC-AUTH-4A + ACT-17 + ACT-19 + ACT-15 + ACT-14 + ACT-11 + ACT-13 + ACT-10 + ACT-12 + ACT-09 + ACT-21 + ACT-22 eklendi) |
 | Archived Register | 7 (ARC-05 split sonrası tek satır, A parçası Closed'a gitti) |
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |
-| Owner Decision Register | 30 (OWN-30 yeni — ACT-18'den yeniden sınıflandırıldı; OWN-28 yalnız referans) |
+| Owner Decision Register | 29 (OWN-02 kapandı/ayrıştırıldı; OWN-30 yeni — ACT-18'den yeniden sınıflandırıldı; OWN-28 yalnız referans) |
