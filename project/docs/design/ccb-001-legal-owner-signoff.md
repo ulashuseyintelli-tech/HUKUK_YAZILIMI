@@ -5,11 +5,13 @@ Status:
 PENDING OWNER REVIEW
 
 Implementation under review:
-codex/ccb-001-pr1-pr6-rescue @ fcdbebde
+codex/ccb-001-pr1-pr6-rescue @ 961bbaf3 (refreshed 2026-07-09, was fcdbebde)
 
 Current main:
 does not yet contain this implementation.
 ```
+
+**Güncelleme notu (2026-07-09, ikinci tur):** Branch tip `fcdbebde` -> `961bbaf3` ilerledi (commit: "fix(ccb-001): reconcile allocation behavior and authority metadata before ADR-012", eş-zamanlı başka bir oturum tarafından). Bu belge o commit'in bulgularını (R1-R5) içerecek şekilde güncellendi. Statü **DEĞİŞMEDİ** — hâlâ PENDING OWNER REVIEW.
 
 **Bu belge neden main üzerinde yaşıyor:** Bu kayıt, `codex/ccb-001-pr1-pr6-rescue` WIP branch'inin inceleme sürecini belgeler. Kasıtlı olarak main-tabanlı ayrı bir dokümantasyon branch'inde oluşturulmuştur, çünkü implementasyon branch'i şu an aktif eş-zamanlı geliştirme altındadır ve commit edilmemiş çalışma içermektedir. Bu belge yalnız governance metadata'sıdır ve CCB-001'in main'e merge edildiği anlamına gelmez — **main şu an bu implementasyonu içermemektedir.**
 
@@ -24,12 +26,20 @@ does not yet contain this implementation.
 | Alan | Değer |
 |---|---|
 | İncelenen branch | `codex/ccb-001-pr1-pr6-rescue` |
-| İncelenen commit (tip) | `fcdbebde` ("fix(ccb-001): repair case service encoding contamination") |
+| İncelenen commit (tip) | `961bbaf3` ("fix(ccb-001): reconcile allocation behavior and authority metadata before ADR-012") — önceki tur `fcdbebde`'yi inceliyordu |
 | Merge-base (main ile ortak ata) | `7b222c50` |
-| Bu kaydın oluşturulduğu tarih | 2026-07-09 |
+| Bu kaydın oluşturulduğu tarih | 2026-07-09 (ilk tur), 2026-07-09 (ikinci tur — `961bbaf3` refresh) |
 | Değerlendirme yöntemi | GO-ANALYZE serisi (kod okuma, izole read-only worktree'de test çalıştırma, `git diff -w` ile CRLF-gürültüsünden arındırılmış gerçek diff analizi) — bu belge kodu tekrar değiştirmez, yalnız bulguları konsolide eder |
 
-**Not:** Bu kayıt, sign-off anındaki branch tip'ini (`fcdbebde`) referans alır. Branch üzerinde bu tarihten sonra yeni commit eklenirse, bu kayıt otomatik olarak geçersiz sayılır ve yeniden değerlendirme gerekir.
+**`961bbaf3`'ün getirdiği değişiklikler (R1-R5, başka bir eş-zamanlı oturum tarafından yapıldı, bu turda doğrulandı):**
+- **R1:** `FIN-TBK100-DI-001` (main'de PR #989/`f1bab70c` ile kapanmış DI-export hotfix'i) bu branch'e hiç yansımamıştı — forward-port edildi.
+- **R2:** `allocation-engine`'de COST/ANCILLARY/INTEREST/PRINCIPAL adımları artık cent-normalize ediliyor (float-dust birikimi riski giderildi, mevcut `minor-unit.ts` yardımcıları kullanıldı, yeni kütüphane yok).
+- **R3:** `allocateSinglePayment()` negatif ödemeyi doğrudan reddediyor (`TBK100AllocatorService.allocate()`'in mevcut guard'ıyla tutarlı).
+- **R5 (önemli):** `case-balance-display.ts`'deki `authority` alanı artık sabit `SHADOW_ONLY` değil — `status==='OK'` iken `CANONICAL_CANDIDATE` (mevcut ama hiç atanmamış enum değeri) dönüyor, çünkü bu display artık `CaseService`/`ReportService` tarafından production tek-kaynak olarak tüketiliyor. Kod içi yorum bilinçli olarak `CANONICAL_PRIMARY`/`ACTIVE` DEĞİL `CANDIDATE` seçmiş — ADR-012'nin PR-11 gate dilinde owner'dan henüz resmi "cutover tamamlandı" beyanı alınmadığı için. Bu, madde 1/9'un etiket-gerçek-durum tutarsızlığını düzeltiyor.
+- **R4:** Aynı oturum, branch'in kendi `product-backlog.md`/`decision-log.md`'sine "PR-11/13/14 kapsamı kodda governance kaydından önde, yalnız WIP-branch, main'i etkilemiyor" notu düşmüş — bu belgenin Bölüm 14'teki uyarısıyla aynı ruhta.
+- **Test kanıtı (bu turda yeniden doğrulandı):** 21 test suite / 173 test, dahil golden-legal-fixture-matrix, PASS. Commit mesajı ayrıca daha geniş bir set iddia ediyor (60 suite/785 test) — bu geniş set bu turda tekrar çalıştırılmadı, yalnız curated 21-suite alt kümesi doğrulandı.
+
+**Not:** Bu kayıt, sign-off anındaki branch tip'ini (`961bbaf3`) referans alır. Branch üzerinde bu tarihten sonra yeni commit eklenirse, bu kayıt otomatik olarak geçersiz sayılır ve yeniden değerlendirme gerekir.
 
 ---
 
@@ -62,15 +72,15 @@ Kaynak: `project/apps/api/src/modules/interest-engine/orchestration/__tests__/cc
 
 | # | Madde | Evidence | Teknik durum (review-altı kanıt) | Reviewer kararı |
 |---|---|---|---|---|
-| 1 | Canonical calculation wiring | `case.service.ts: getCalculationSummary()` → `computeCaseBalance` → `toCaseBalanceDisplay` → `adaptCanonicalCalculationSummary`, koşulsuz | VERIFIED (kod+test) | ☐ ACCEPT ☐ REJECT |
-| 2 | TBK100 allocation order | `tbk100-allocator.service.ts` — masraf→fer'i→faiz→anapara sırası (önceki hatalı "faiz-önce" sırasından düzeltilmiş) | VERIFIED | ☐ ACCEPT ☐ REJECT |
+| 1 | Canonical calculation wiring | `case.service.ts: getCalculationSummary()` → `computeCaseBalance` → `toCaseBalanceDisplay` → `adaptCanonicalCalculationSummary`, koşulsuz. **R5 (961bbaf3):** `authority` alanı artık gerçek durumu yansıtıyor (`CANONICAL_CANDIDATE`, önceden hardcoded `SHADOW_ONLY`) | VERIFIED (kod+test), etiket-gerçek tutarsızlığı R5 ile düzeltildi | ☐ ACCEPT ☐ REJECT |
+| 2 | TBK100 allocation order | `tbk100-allocator.service.ts` — masraf→fer'i→faiz→anapara sırası (önceki hatalı "faiz-önce" sırasından düzeltilmiş). **R2 (961bbaf3):** cent-normalizasyon eklendi (float-dust riski giderildi). **R3:** negatif ödeme guard'ı eklendi | VERIFIED | ☐ ACCEPT ☐ REJECT |
 | 3 | Reversal netting (PR-1A/1B) | `case-balance.service.spec.ts`, `'CCB-001 PR-1B'` testleri, ADR-012 ile aynı commit (`be9c0c90`) | VERIFIED | ☐ ACCEPT ☐ REJECT |
 | 4 | NO_BUCKETS fail-closed (PR-2) | `case-balance.service.ts`, merge-base'de (CCB-001 öncesi) zaten mevcut | VERIFIED (pre-existing) | ☐ ACCEPT ☐ REJECT |
 | 5 | Fee projection | `case-balance-fee-projection.ts` + spec PASS | VERIFIED (kod+test), adapter kontratı gevşek tip (`unknown`) | ☐ ACCEPT ☐ REJECT |
 | 6 | Snapshot/trace (AllocationLog dahil) | `case-balance-snapshot.ts`, `CalculationAllocationTrace`, `calculationTrace` — ephemeral (kalıcı değil) | VERIFIED işlevsel olarak; **kalıcılık YOK** — bkz. Bölüm 5 | ☐ ACCEPT (inherited-risk olarak) ☐ REJECT |
 | 7 | Adapter output | `case-calculation-summary.adapter.ts`, production path'e wired, test PASS | VERIFIED | ☐ ACCEPT ☐ REJECT |
 | 8 | UI switch | `HesapOzetiPanel.tsx` — guarded-primary-pilot koşullu mantığı tamamen kaldırılmış, koşulsuz canonical | VERIFIED (tam geçiş) | ☐ ACCEPT ☐ REJECT |
-| 9 | Legacy fallback removal | `getCalculationSummary()` legacy fallback yok, `ServiceUnavailableException` | VERIFIED (kaldırılmış) | ☐ ACCEPT — bkz. Bölüm 4 |
+| 9 | Legacy fallback removal | `getCalculationSummary()` legacy fallback yok, `ServiceUnavailableException`. **R1 (961bbaf3):** main'de zaten kapalı `FIN-TBK100-DI-001` (TBK100AllocatorService DI export eksikliği) bu branch'e forward-port edildi — gerçek tahsilat yolu artık bu branch'te de canonical TBK100 sırasını kullanıyor | VERIFIED (kaldırılmış + DI-eksikliği giderildi) | ☐ ACCEPT — bkz. Bölüm 4 |
 | 10 | Golden fixture kapsamı | 13 senaryo (Bölüm 2) | Test-PASS; hukuki kapsam yeterliliği reviewer kararına açık | ☐ ACCEPT ☐ EKSİK SENARYO VAR: _______ |
 | 11 | Merge readiness (main-divergence) | Kod dosyalarında main ile 0 dosya-seviyesi çakışma; yalnız `product-backlog.md` çakışması (bu belgenin kapsamı dışı, ayrı ele alınacak) | VERIFIED (düşük risk) | ☐ ACCEPT |
 
