@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-09 (VER-09 / OWN-02 governance bookkeeping remediation)
+**Son güncelleme:** 2026-07-09 (VER-10+ governance verification reconcile)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -14,6 +14,8 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 **Sync notu (2026-07-09, GOV-REGISTER-SYNC-001):** Bu dosya Master Triage indeksidir; Product Backlog, Decision Log ve Canonicalization Register karşısında tek başına otorite değildir. `MVR-*` namespace'i bu governance dosyalarında kanonik değildir; verification kayıtlarının kanonik namespace'i `VER-*` olarak korunur. `CCB-001` Master Triage kapsamına taşınmaz: canonical claim balance clean-break implementation authority `product-backlog.md` içindeki `CCB-001` kaydıdır; `canonicalization-register.md` içindeki `CAN-CUT-02` bu workstream altında milestone olarak izlenir.
 
 **Alias notu (2026-07-09, VER-09 / OWN-02 remediation):** "MVR-009 Route Drift Remediation" ifadesi bu register'da yeni bir `MVR-*` kaydı açmaz. Bu işin repo-doğrulanmış kapsamı runtime patch değil, `VER-*` kanonik namespace'i ile Owner Decision bookkeeping arasındaki governance drift düzeltmesidir. `VER-09` aşağıdaki tabloda escalation fallback doğrulaması olarak kalır; route-drift/P2 observe bookkeeping ile karıştırılmaz.
+
+**Verification reconcile notu (2026-07-09, VER-10+):** "MVR-010+" bu register'da kanonik namespace değildir; doğru namespace `VER-10+` olarak kalır ve yeni `MVR-*` namespace'i açılmaz. Bu reconcile runtime drift bulmadı; yalnız repo kanıtıyla kapanan/stale kalan verification kayıtlarını governance bookkeeping olarak ayrıştırır. Canlı ortam, DB apply, process, owner/local-WIP veya product-decision gerektiren kayıtlar otomatik kapatılmaz.
 
 ---
 
@@ -53,33 +55,23 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | VER-07 | icrabot action-executor PASSIVE CaseDebtor kontrolü iddiası | Düşük | Henüz doğrulanmadı |
 | VER-08 | case-compare-modal.tsx `d.type==='REAL'` DebtorType enum uyumsuzluğu | Düşük-Orta | Henüz doğrulanmadı |
 | VER-09 | Escalation FOUNDER/MANAGER fallback bug'ının resmî backlog kaydı var mı | Orta | Henüz doğrulanmadı — bu kayıt "MVR-009 Route Drift" alias'ı değildir; route-drift/P2 observe bookkeeping düzeltmesi ayrı governance-only remediation olarak kapatıldı |
-| VER-10 | Senet/bono arka-yüz OCR endorsement canlı doğrulama | Düşük-Orta | Henüz doğrulanmadı |
-| VER-11 | K8 UX-guard (müvekkil-bulunamadı uyarısı) forensic'i | Orta | Henüz doğrulanmadı |
-| VER-12 | 3 duplike `nest start --watch` süreci kasıtlı mı terkedilmiş mi | Düşük | Henüz doğrulanmadı |
-| VER-13 | PR #406/#407 mergeStateStatus canlı teyidi | Orta | Henüz doğrulanmadı |
-| VER-14 | Journal migration #645 + FAZ-1b migration 20260630120000 DB apply durumu | Yüksek | Henüz doğrulanmadı |
-| VER-15 | codex/dbind-p2-debtor-financial-binding WIP aktif mi terk mi | Düşük | Henüz doğrulanmadı |
-| VER-16 | 6 codex/* local branch stale/aktif durumu | Düşük | Henüz doğrulanmadı |
-| VER-17 | #795/#822/#838 main'deki kapanışların gerçekliği | Orta | Henüz doğrulanmadı |
-| VER-18 | fervent-rosalind-363133 worktree'nin `.git`'ten yoksun olma nedeni | Düşük | Henüz doğrulanmadı |
+| VER-10 | Senet/bono arka-yüz OCR endorsement canlı doğrulama | Düşük-Orta | Açık — PR/merge zinciri mevcut olsa da kayıt "canlı doğrulama" istiyor; canlı dataset/evidence olmadan kapatılmaz |
+| VER-12 | 3 duplike `nest start --watch` süreci kasıtlı mı terkedilmiş mi | Düşük | Açık — process command-line incelemesi güvenlik/owner izni gerektirir; repo ağacından kapanmaz |
+| VER-13 | PR #406/#407 mergeStateStatus canlı teyidi | Orta | Açık — PR #406 OPEN/UNKNOWN görüldü; PR #407 için dış metadata doğrulaması owner/açık izin gerektirir |
+| VER-14 | Journal migration #645 + FAZ-1b migration 20260630120000 DB apply durumu | Yüksek | Açık — migration dosyaları repo'da var; DB apply durumu repo ağacından kanıtlanamaz |
+| VER-16 | 6 codex/* local branch stale/aktif durumu | Düşük | Açık — branch/worktree hijyeni ayrı bakım/owner-local context gerektirir |
 | **VER-20** | pnpm store diğer paketler content-eksikliği | — | 2. batch (eski VR-01) |
 | **VER-21** | Diğer worktree'ler paylaşımlı pnpm store'dan etkilendi mi | — | 2. batch (eski VR-02), VER-20'ye bağımlı |
-| **VER-22** | Promote-ekranı nav-girişi eksik mi (→ ACT adayı) | — | 2. batch (eski VR-03) |
-| **VER-23** | CS1-5 (Case domain) hangi sayfaya devredildi | — | 2. batch (eski VR-04) |
-| **VER-24** | main'de a01f5ed2→aebe38e8 arası Müvekkil/intel/intake dokunulmuş mu | — | 2. batch (eski VR-05) |
+| **VER-22** | Promote-ekranı nav-girişi eksik mi (→ ACT adayı) | — | Açık / product-decision split — `/client-intake` sidebar var ve promote route mevcut; detail sayfasında promote bilinçli yok. Yeni ACT açılacaksa owner/product kararı gerekir |
+| **VER-23** | CS1-5 (Case domain) hangi sayfaya devredildi | — | Açık — doğrudan yeterli devir kanıtı çıkmadı |
 | **VER-25** | Mevcut WIP hangi sayfaya ait | — | 2. batch (eski VR-06) — ⚠️ kısmi gözlem var (MPB-027/AddressTask), bağımsız teyit yok |
 | **VER-26** | H1-H7+P4 Office Approval UI+TBK100 zinciri MERGED mi | — | 2. batch (eski VR-07) — **P4 Office Approval FE parçası ZATEN DOĞRULANDI** (bkz. ARC-05, Bölüm E): PR #823+#832 MERGED. H1-H7/TBK100 parçası hâlâ ayrı doğrulama gerektiriyor. |
-| **VER-27** | `authz-workstream-handoff` OWN-01 notu bu sayfaya mı ait | — | 2. batch (eski VR-08) |
-| **VER-28** | ACCRUES COST/ANCILLARY analizi "alacak kalemleri" sayfasına taşındı mı | — | 2. batch (eski VR-09) — PB-03'ün transfer/CLOSED statüsünü doğrular. ⚠️ Bu yalnız dar bir transfer doğrulaması; `claim-item-domain-audit`'teki geniş B1/B6/B5 NO-GO bulgularını KAPATMAZ. |
+| **VER-27** | `authz-workstream-handoff` OWN-01 notu bu sayfaya mı ait | — | Açık — finance ADR cross-reference var; docs-only açıklama/cross-ref kararı gerekir |
 | **VER-29** | Migration deploy sorunsuz mu | — | 2. batch (eski VR-10), WQ (migrate deploy) çalıştırıldıktan sonra anlamlı |
-| **VER-30** | D6A-1 "contact" gerçek field-set | — | 2. batch (eski VR-11) |
-| **VER-31** | `sourceCaseId` hiç doldurulmadı mı (FE-taraflı) | — | 2. batch (eski VR-12) |
 | **VER-33** | Orphaned worktree içerik teyidi | — | 2. batch (eski VR-14), WQ (orphan-cleanup grubu) öncesi gerekli |
-| **VER-34** | `office-approval-shadow.service.ts` gerçek tüketicisi | — | 3. batch (PAYOUT-VER-01), CPB-03'ü kapsıyor |
-| **VER-35** | `HUKUK_payout-audit-hardening` içeriğinin `git ls-files` ile foreign/tracked doğrulaması | — | 3. batch (PAYOUT-VER-02) |
-| **VER-36** | `dbind-financial-authority-decisions.md` §5'e çapraz-referans eklenmeli mi | — | 3. batch (PAYOUT-VER-03) |
+| **VER-36** | `dbind-financial-authority-decisions.md` §5'e çapraz-referans eklenmeli mi | — | Açık / docs-only follow-up — DBIND §5 ve OWN-29 riski mevcut; cross-reference ekleme ayrı dar governance patch olabilir |
 
-**KAPANMIŞ (bu bölümden çıkarıldı, bkz. Bölüm D):** VER-01 (Disposition-POST authz) CLOSED. VER-19 → OWN-24'e taşındı (aşağıda). VER-32 (eski VR-13, PR #890) → yukarıda not düşüldü, fiilen CLOSED.
+**KAPANMIŞ (bu bölümden çıkarıldı, bkz. Bölüm D):** VER-01 (Disposition-POST authz) CLOSED. VER-11/15/17/18/24/28/30/31/34/35 (VER-10+ reconcile, repo kanıtıyla CLOSED/stale-local). VER-19 → OWN-24'e taşındı (aşağıda). VER-32 (eski VR-13, PR #890) → yukarıda not düşüldü, fiilen CLOSED.
 
 ---
 
@@ -96,7 +88,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | ACCT-5B canlı tarayıcı smoke-test | — |
 | Vekalet drawer canlı UX doğrulaması | — |
 | Disposition→payout→offset canlı E2E smoke | ROLL-001/002 öncesi |
-| **Worktree orphan-dizin temizliği (toplu, owner-manuel)**: `fervent-rosalind-363133` (sharp-lalande-021067 başka oturumca halledildi, listeden düşürüldü), `HUKUK_client_workspace`, `HUKUK_debtor_lifecycle_hardening`, `HUKUK_faz1b_backfill_apply`, `HUKUK_acct5b_financial_statement_panel`, `HUKUK_client_address_ui`, `HUKUK_lawyer_office_approval_ui` (2. batch), `HUKUK_staff_prepare_disposition` (2. batch), `HUKUK_d6-debtor-notification` (2. batch, VER-33 önce gerekli), `HUKUK_alc-auth-total-debt-contract` (4. batch, WQ-1) | Junction-audit önce |
+| **Worktree orphan-dizin temizliği (toplu, owner-manuel)**: `HUKUK_client_workspace`, `HUKUK_debtor_lifecycle_hardening`, `HUKUK_faz1b_backfill_apply`, `HUKUK_acct5b_financial_statement_panel`, `HUKUK_client_address_ui`, `HUKUK_lawyer_office_approval_ui` (2. batch), `HUKUK_staff_prepare_disposition` (2. batch), `HUKUK_d6-debtor-notification` (2. batch, VER-33 önce gerekli), `HUKUK_alc-auth-total-debt-contract` (4. batch, WQ-1) | Junction-audit önce |
 | Rutin `git fetch` + `main==origin/main` taze kontrolü (her yeni sayfa öncesi) | — |
 | **[Ultra-tier, owner GO gerekir]** `canPrepareCollectionDisposition` → `prisma migrate deploy` (paylaşımlı `hukuk_db`) | 2. batch (eski WQ-02) |
 | **Canonical main fast-forward** — başka oturumun local commit'leri (`89e119cd`/`7d338bf0`, "Merge origin/main into main"/"MPB-027 closure") nedeniyle `git merge --ff-only` diverged hatası veriyor; dosya-WIP değil, gerçek git-tarihçesi ayrışması. Diğer oturum kendi işini reconcile/push edince kendiliğinden çözülür, o zamana kadar dokunulmaz. | 3. batch (PAYOUT-WQ-02) ile AYNI kayıt — dedupe edildi |
@@ -154,6 +146,16 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **PB-03 (SummaryEngineService.allocateWithTBK100 3. allocator)** | 2. batch — sahiplik "alacak kalemleri" sayfasına devredildi. ⚠️ VER-28 yalnız transfer doğrulaması; geniş claim-item-domain-audit NO-GO'sunu kapatmaz. |
 | **ALC-AUTH-4A (misleading-eligibility fix, kod)** | PR #942 → `50aa2e33` MERGED. ALC-AUTH-3E'nin cost/attorney-fee suppress'i (`hasCostOrAttorneyFeeUnderstatementRisk`) yalnız `buildGuardedPrimaryCalculationResult()` içindeydi; `evaluateGuardedPrimaryDisplayPilot()` riski hiç görmüyordu, bu yüzden suppress tetiklenirken bile `decision.reasonCodes` boş kalıp banner "eligible" diyordu (toplamBorc/sonBorc/kalanBorc sessizce legacy'ye düşerken). Fix: aynı risk kontrolü artık `evaluateGuardedPrimaryDisplayPilot()` içinde de çalışıyor, yeni `COST_ATTORNEY_FEE_SUPPRESSED` reasonCode tetiklendiğinde `primarySource` otomatik `LEGACY_CALCULATION_SUMMARY`'ye düşüyor. Kapsam dar tutuldu (yalnız `guarded-primary-display.ts` + `balance-shadow-display.test.tsx`); ComponentCoverageReport/rollout/flag-açma kapsam DIŞI kaldı, B1 flag hâlâ OFF. 82/82 test PASS, tsc temiz. Not: PR #938 (ayrı oturum, ALC-AUTH-4A/4B/4C governance-only kaydı) bu fix'i İÇERMİYORDU — hâlâ OPEN, bu PR'dan bağımsız. |
 | **UI-FEE-ENGINE-WARN-001 (fee-engine catch-block silent-failure warning)** | PR #996 → `7f57cc79` MERGED. `cases/new/page.tsx` içindeki `generateFromClaimEngine()`'in fee-engine catch bloğu sessizce yutuyordu (yalnız `console.log`) — transient fee-engine/tariff hatasında masraf kalemleri (harç/vekalet/tebligat) hiçbir kullanıcı uyarısı olmadan eksik kalabiliyordu. Fix: aynı dosyadaki `addFeesFromEngine()`'in kullandığı `alert()` konvansiyonuna hizalandı (tek satır). Hesaplama/backend/schema DEĞİŞMEDİ — ADR-012 implementasyonu değil, FEE-TARIFF-2026-001A'dan bağımsız. tsc+lint temiz, `next dev` derlemesi temiz; gerçek fee-engine-fail senaryosu canlı tetiklenmedi (backend+DB+auth gerektiriyor, LOW risk/tek-satır değişikliğe göre orantısız). No backlog/register impact (LEVEL 1 UX fix). |
+| **VER-11 (K8 UX-guard forensic)** | VER-10+ reconcile (2026-07-09): repo'da K8 non-blocking uyarı semantiği mevcut bulundu — `client-match.ts` NOT_FOUND/uyarı metni, `DebtorStep.tsx` non-blocking "müvekkil güvenilir eşleşmedi" badge/uyarı kullanımı ve `ocr-draft-architecture.md` K8 karar kaydı. Runtime patch yok. |
+| **VER-15 (dbind-p2-debtor-financial-binding WIP)** | VER-10+ reconcile (2026-07-09): `codex/dbind-p2-debtor-financial-binding` aktif local worktree/branch olarak görünmedi; DBIND-P2 karar/test/doküman izleri repo'da mevcut (`dbind-financial-authority-decisions.md`, DBIND-P2 smoke/spec). Stale-WIP verification olarak kapandı. |
+| **VER-17 (#795/#822/#838 main kapanışları)** | VER-10+ reconcile (2026-07-09): #795 ve #822 GitHub metadata ile MERGED doğrulandı; #838 git log'da `e10a6458 ... (#838)` olarak main geçmişinde görünüyor. |
+| **VER-18 (`fervent-rosalind-363133` .git yokluğu)** | VER-10+ reconcile (2026-07-09): parent dizin listelemesinde `fervent-rosalind-363133` artık yok; `.git` path varlık kontrolü false. Stale local-worktree doğrulaması kapandı; WQ orphan listesinden düşürüldü. |
+| **VER-24 (a01f5ed2→aebe38e8 arası Müvekkil/intel/intake dokunulmuş mu)** | VER-10+ reconcile (2026-07-09): `git diff --name-only a01f5ed2 aebe38e8` Client/Address/Accounting dosyalarına dokunulduğunu gösterdi; dar verification kapandı. |
+| **VER-28 (ACCRUES COST/ANCILLARY transfer doğrulaması)** | VER-10+ reconcile (2026-07-09): PB-03 Closed Register'da "alacak kalemleri" sayfasına devredilmiş; bu yalnız dar transfer doğrulamasını kapatır, geniş `claim-item-domain-audit` B1/B6/B5 NO-GO bulgularını kapatmaz. |
+| **VER-30 (D6A-1 contact field-set)** | VER-10+ reconcile (2026-07-09): D6 field semantics repo'da net — D6A-2 notification fieldGroup `{ADDRESS, KEP_ADDRESS, IDENTITY, NAME}`; CONTACT/phone/email kalıcı notification dışında, D6A-1 audit category olarak `contact` kullanır. Runtime patch yok. |
+| **VER-31 (`sourceCaseId` FE taraflı dolduruluyor mu)** | VER-10+ reconcile (2026-07-09): FE/API wiring mevcut — `DebtorDetailDrawer`, `AddressListSection`, `NewDebtorModal`, `AddressFormModal`, DTO/service/testlerde `sourceCaseId` ingress ve exclusion path görülüyor. |
+| **VER-34 (`office-approval-shadow.service.ts` gerçek tüketicisi)** | VER-10+ reconcile (2026-07-09): gerçek tüketici `case-status.controller.ts`; module ve spec importları da mevcut. CPB-03 kapsamındaki tüketici doğrulaması kapandı. |
+| **VER-35 (`HUKUK_payout-audit-hardening` foreign/tracked doğrulaması)** | VER-10+ reconcile (2026-07-09): `HUKUK_payout-audit-hardening` dizini parent workspace altında yok; repo içi referans yalnız bu register satırıydı. Stale local verification olarak kapandı. |
 
 ---
 
@@ -277,10 +279,10 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | Kategori | Sayı |
 |---|---|
 | Master Product Backlog (ACTIVE) | 3 (ACT-24, ACT-25, ACT-28; ACT-20→OWNER-GATED/FUTURE/HOLD, ACT-23→OWNER_DECISION_REQUIRED, ACT-27→DECISION_CLOSED/IMPLEMENTATION_NEEDED) |
-| Master Verification Required | 33 (VER-02..18 + VER-20..31 + VER-33..36; VER-01/19/32 kapandı/taşındı) |
+| Master Verification Required | 23 (VER-02..10 + VER-12..14 + VER-16 + VER-20..23 + VER-25..27 + VER-29 + VER-33 + VER-36; VER-01/11/15/17/18/19/24/28/30/31/32/34/35 kapandı/taşındı) |
 | Master Workflow Queue — PENDING | 13 grup |
 | Master Workflow Queue — DONE | 5 zincir (PR #408 eklendi) |
-| Closed Register | 31 (OWN-02 + ALC-AUTH-4A + ACT-17 + ACT-19 + ACT-15 + ACT-14 + ACT-11 + ACT-13 + ACT-10 + ACT-12 + ACT-09 + ACT-21 + ACT-22 eklendi) |
+| Closed Register | 41 (VER-10+ reconcile ile VER-11/15/17/18/24/28/30/31/34/35 eklendi) |
 | Archived Register | 7 (ARC-05 split sonrası tek satır, A parçası Closed'a gitti) |
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |
