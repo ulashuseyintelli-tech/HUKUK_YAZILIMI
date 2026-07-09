@@ -55,6 +55,26 @@ Readiness:
 
 Bu özet tam rapor değildir; ajan işe başlamadan önce repository-first durumunu hızlı görünür kılan kısa güvenlik kontrolüdür.
 
+## Implementation Worktree Gate
+
+Canonical project root ana üs olarak kabul edilir: read-only doğrulama, final `main` sync ve register verification için kullanılır. Operasyon, patch, test ve PR işi isolated worktree'de yapılır.
+
+Her `GO-IMPLEMENT`, `GO-HOTFIX` veya `GO-COMPLETE` dosya değişikliğinden önce ajan:
+
+1. Current directory doğrular.
+2. Current branch doğrular.
+3. Canonical root içinde olduğunu tespit ederse implementasyonu durdurur.
+4. `origin/main` tabanlı fresh isolated worktree oluşturur.
+5. Dosya editini, branch commit'ini, testleri ve PR hazırlığını yalnız isolated worktree içinde yapar.
+
+Yasak:
+
+- canonical root içinde PR branch'i oluşturmak
+- canonical root içinde dosya editleri yapmak
+- canonical root'u implementation workspace olarak kullanmak
+- unrelated active branch'lere veya worktree'lere dokunmak
+- fiziksel worktree dizinlerini recursive delete ile silmek
+
 ## Required Pre-Analysis
 
 Her görevde önce güncel repository gerçeği doğrulanır; önceki konuşma veya oturum hafızası güncel branch, HEAD, dosya içeriği, PR/CI/merge durumu veya governance kaydı için otorite sayılmaz.
