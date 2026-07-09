@@ -4504,6 +4504,7 @@ function DuesStep({
         feeItems = feeResponse.data?.items || [];
       } catch (feeError) {
         console.log("Fee Engine hatası (devam ediliyor):", feeError);
+        alert("Masraf kalemleri (harç, vekalet ücreti, tebligat gideri vb.) otomatik eklenemedi. Lütfen 'Masrafları Ekle' butonuyla tekrar deneyin veya kalemleri manuel kontrol edin.");
       }
       
       // Tüm kalemleri birleştir
