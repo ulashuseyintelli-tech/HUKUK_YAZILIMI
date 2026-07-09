@@ -2,22 +2,22 @@
 
 ```text
 Status:
-PENDING OWNER REVIEW
+SIGNED_OFF_WITH_CONDITIONS
 
 Implementation under review:
-codex/ccb-001-pr1-pr6-rescue @ 961bbaf3 (refreshed 2026-07-09, was fcdbebde)
+codex/ccb-001-pr1-pr6-rescue @ 961bbaf3
 
 Current main:
 does not yet contain this implementation.
 ```
 
-**Güncelleme notu (2026-07-09, ikinci tur):** Branch tip `fcdbebde` -> `961bbaf3` ilerledi (commit: "fix(ccb-001): reconcile allocation behavior and authority metadata before ADR-012", eş-zamanlı başka bir oturum tarafından). Bu belge o commit'in bulgularını (R1-R5) içerecek şekilde güncellendi. Statü **DEĞİŞMEDİ** — hâlâ PENDING OWNER REVIEW.
+**Güncelleme notu (2026-07-09, üçüncü tur — Owner Review tamamlandı):** Owner, bu belgeyi (961bbaf3 kanıt tabanıyla, Payment Allocation Authority Separation bölümü dahil) inceledi ve **`SIGNED_OFF_WITH_CONDITIONS`** kararını verdi (bkz. Bölüm 7). Bu, **CCB-001'in main'e merge edilmesi anlamına GELMEZ** — yalnız owner'ın teknik/hukuki bulguları kabul ettiği ve merge'in hangi koşullarla ilerleyebileceğini kayda geçirdiği anlamına gelir. Koşullar karşılanmadan/izlenmeden gerçek merge işlemi (branch'in kendisi + `product-backlog.md` conflict çözümü) ayrı bir GO-COMPLETE gerektirir.
 
-**Bu belge neden main üzerinde yaşıyor:** Bu kayıt, `codex/ccb-001-pr1-pr6-rescue` WIP branch'inin inceleme sürecini belgeler. Kasıtlı olarak main-tabanlı ayrı bir dokümantasyon branch'inde oluşturulmuştur, çünkü implementasyon branch'i şu an aktif eş-zamanlı geliştirme altındadır ve commit edilmemiş çalışma içermektedir. Bu belge yalnız governance metadata'sıdır ve CCB-001'in main'e merge edildiği anlamına gelmez — **main şu an bu implementasyonu içermemektedir.**
+**Bu belge neden main üzerinde yaşıyor:** Bu kayıt, `codex/ccb-001-pr1-pr6-rescue` WIP branch'inin inceleme sürecini belgeler. Kasıtlı olarak main-tabanlı ayrı bir dokümantasyon branch'inde oluşturulmuştur, çünkü implementasyon branch'i eş-zamanlı geliştirme altındadır ve commit edilmemiş çalışma içerebilir. Bu belge yalnız governance metadata'sıdır ve CCB-001'in main'e merge edildiği anlamına gelmez — **main şu an bu implementasyonu içermemektedir.**
 
-**Durum:** `PENDING OWNER REVIEW` — bu kayıt henüz imzalanmamıştır. Aşağıdaki tablo ve bulgular GO-ANALYZE turlarında toplanan repository kanıtıdır; hiçbir satır owner/Avukat tarafından onaylanmadan bu belge merge yetkisi vermez. Belgedeki hiçbir teknik madde "tamamlandı" dilinde değil, "review altında"/"kanıt bulundu" dilinde okunmalıdır.
+**Durum:** `SIGNED_OFF_WITH_CONDITIONS` (2026-07-09). Aşağıdaki tablo ve bulgular GO-ANALYZE turlarında toplanan repository kanıtıdır. Belgedeki teknik maddeler "review altında"/"kanıt bulundu" dilinde yazılmıştır; nihai onay yalnız Bölüm 7'deki owner kararıdır.
 
-**İlişkili dosyalar:** `product-backlog.md` (`ID: CCB-001`), `docs/adr/ADR-012-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`, `canonicalization-register.md` (`CAN-CUT-02`).
+**İlişkili dosyalar:** `product-backlog.md` (`ID: CCB-001`), `docs/adr/ADR-012-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`, `canonicalization-register.md` (`CAN-CUT-02`), `docs/finance/tm3-collection-disposition-boundary.md` (ONAYLANDI 2026-06-26), `docs/governance/dbind-financial-authority-decisions.md` (ONAYLANDI 2026-07-04).
 
 ---
 
@@ -49,20 +49,20 @@ Kaynak: `project/apps/api/src/modules/interest-engine/orchestration/__tests__/cc
 
 | Senaryo | Konu | Test durumu (bu turda çalıştırıldı) | Reviewer kararı |
 |---|---|---|---|
-| A / I / N | Basit TRY hukuki bakiye — final bakiye, fee diagnostics, trace, case-scoped kaynaklar | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| B | Anaparaya ulaşmayan kısmi ödeme — gelecek faiz tabanı değişmez | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| C | Anaparaya ulaşan kısmi ödeme — yalnız gelecek faiz tabanını mutasyona uğratır | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| D | TBK100 sırası: masraf, fer'i, faiz, anapara (allocation trace içinde) | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| E | Reversal netting — trace kanıtı, ekstra bir allocation oracle'ı olmuyor | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| F | NO_BUCKETS — hukuki ve gösterim statüsü BLOKLU (fail-closed) | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| G | Yabancı para, FX-basis olmadan — bloklu, uydurma TRY dönüşümü yok | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| H | Açık yabancı sözleşme-bazı olsa da TRY dönüşüm otoritesi yoksa hâlâ bloklu | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| J | Takip tarihi öncesi/sonrası faiz fazlarının ayrımı ve toplam mutabakatı | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| K | Aynı-gün ödemeler — tarih+id'ye göre deterministik, inputHash kararlı | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| L | Tutulan fazla ödeme (overpayment) — hukuki borçtan ayrı, kalan borcu asla negatif yapmıyor | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
-| M | Karışık para birimi gösterimi — bir para birimi FX-unsafe ise bloklu, TRY satırı ayrı kalıyor | PASS | ☐ PASS ☐ FAIL ☐ NEEDS_REVISION |
+| A / I / N | Basit TRY hukuki bakiye — final bakiye, fee diagnostics, trace, case-scoped kaynaklar | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION |
+| B | Anaparaya ulaşmayan kısmi ödeme — gelecek faiz tabanı değişmez | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION |
+| C | Anaparaya ulaşan kısmi ödeme — yalnız gelecek faiz tabanını mutasyona uğratır | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION |
+| D | TBK100 sırası: masraf, fer'i, faiz, anapara (allocation trace içinde) | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION |
+| E | Reversal netting — trace kanıtı, ekstra bir allocation oracle'ı olmuyor | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION |
+| F | NO_BUCKETS — hukuki ve gösterim statüsü BLOKLU (fail-closed) | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION (revize NO_BUCKETS açıklamasıyla kabul) |
+| G | Yabancı para, FX-basis olmadan — bloklu, uydurma TRY dönüşümü yok | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION |
+| H | Açık yabancı sözleşme-bazı olsa da TRY dönüşüm otoritesi yoksa hâlâ bloklu | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION |
+| J | Takip tarihi öncesi/sonrası faiz fazlarının ayrımı ve toplam mutabakatı | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION — *Covered by the overall SIGNED_OFF_WITH_CONDITIONS decision. No separate owner decision was recorded for this individual item.* |
+| K | Aynı-gün ödemeler — tarih+id'ye göre deterministik, inputHash kararlı | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION — *Covered by the overall SIGNED_OFF_WITH_CONDITIONS decision. No separate owner decision was recorded for this individual item.* |
+| L | Tutulan fazla ödeme (overpayment) — hukuki borçtan ayrı, kalan borcu asla negatif yapmıyor | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION — *Covered by the overall SIGNED_OFF_WITH_CONDITIONS decision. No separate owner decision was recorded for this individual item.* |
+| M | Karışık para birimi gösterimi — bir para birimi FX-unsafe ise bloklu, TRY satırı ayrı kalıyor | PASS | ☑ PASS ☐ FAIL ☐ NEEDS_REVISION |
 
-**Reviewer notu (doldurulacak):** _____________________________________________
+**Reviewer notu:** Owner 2026-07-09 mesajında A/I/N, B, C, D, E, F, G, H, M senaryolarını doğrudan kapsayan tematik kategorileri açıkça onayladı (bkz. Bölüm 1'in üstündeki owner özetine referans). J/K/L için ayrı satırlardaki not, bu üç maddenin owner tarafından tek tek adlandırılmadığını, yalnız genel `SIGNED_OFF_WITH_CONDITIONS` kararının kapsamında olduğunu — agent çıkarımı OLMADAN — açıkça belirtir.
 
 ---
 
@@ -72,32 +72,55 @@ Kaynak: `project/apps/api/src/modules/interest-engine/orchestration/__tests__/cc
 
 | # | Madde | Evidence | Teknik durum (review-altı kanıt) | Reviewer kararı |
 |---|---|---|---|---|
-| 1 | Canonical calculation wiring | `case.service.ts: getCalculationSummary()` → `computeCaseBalance` → `toCaseBalanceDisplay` → `adaptCanonicalCalculationSummary`, koşulsuz. **R5 (961bbaf3):** `authority` alanı artık gerçek durumu yansıtıyor (`CANONICAL_CANDIDATE`, önceden hardcoded `SHADOW_ONLY`) | VERIFIED (kod+test), etiket-gerçek tutarsızlığı R5 ile düzeltildi | ☐ ACCEPT ☐ REJECT |
-| 2 | TBK100 allocation order | `tbk100-allocator.service.ts` — masraf→fer'i→faiz→anapara sırası (önceki hatalı "faiz-önce" sırasından düzeltilmiş). **R2 (961bbaf3):** cent-normalizasyon eklendi (float-dust riski giderildi). **R3:** negatif ödeme guard'ı eklendi | VERIFIED | ☐ ACCEPT ☐ REJECT |
-| 3 | Reversal netting (PR-1A/1B) | `case-balance.service.spec.ts`, `'CCB-001 PR-1B'` testleri, ADR-012 ile aynı commit (`be9c0c90`) | VERIFIED | ☐ ACCEPT ☐ REJECT |
-| 4 | NO_BUCKETS fail-closed (PR-2) | `case-balance.service.ts`, merge-base'de (CCB-001 öncesi) zaten mevcut | VERIFIED (pre-existing) | ☐ ACCEPT ☐ REJECT |
-| 5 | Fee projection | `case-balance-fee-projection.ts` + spec PASS | VERIFIED (kod+test), adapter kontratı gevşek tip (`unknown`) | ☐ ACCEPT ☐ REJECT |
-| 6 | Snapshot/trace (AllocationLog dahil) | `case-balance-snapshot.ts`, `CalculationAllocationTrace`, `calculationTrace` — ephemeral (kalıcı değil) | VERIFIED işlevsel olarak; **kalıcılık YOK** — bkz. Bölüm 5 | ☐ ACCEPT (inherited-risk olarak) ☐ REJECT |
-| 7 | Adapter output | `case-calculation-summary.adapter.ts`, production path'e wired, test PASS | VERIFIED | ☐ ACCEPT ☐ REJECT |
-| 8 | UI switch | `HesapOzetiPanel.tsx` — guarded-primary-pilot koşullu mantığı tamamen kaldırılmış, koşulsuz canonical | VERIFIED (tam geçiş) | ☐ ACCEPT ☐ REJECT |
-| 9 | Legacy fallback removal | `getCalculationSummary()` legacy fallback yok, `ServiceUnavailableException`. **R1 (961bbaf3):** main'de zaten kapalı `FIN-TBK100-DI-001` (TBK100AllocatorService DI export eksikliği) bu branch'e forward-port edildi — gerçek tahsilat yolu artık bu branch'te de canonical TBK100 sırasını kullanıyor | VERIFIED (kaldırılmış + DI-eksikliği giderildi) | ☐ ACCEPT — bkz. Bölüm 4 |
-| 10 | Golden fixture kapsamı | 13 senaryo (Bölüm 2) | Test-PASS; hukuki kapsam yeterliliği reviewer kararına açık | ☐ ACCEPT ☐ EKSİK SENARYO VAR: _______ |
-| 11 | Merge readiness (main-divergence) | Kod dosyalarında main ile 0 dosya-seviyesi çakışma; yalnız `product-backlog.md` çakışması (bu belgenin kapsamı dışı, ayrı ele alınacak) | VERIFIED (düşük risk) | ☐ ACCEPT |
+| 1 | Canonical calculation wiring | `case.service.ts: getCalculationSummary()` → `computeCaseBalance` → `toCaseBalanceDisplay` → `adaptCanonicalCalculationSummary`, koşulsuz. **R5 (961bbaf3):** `authority` alanı artık gerçek durumu yansıtıyor (`CANONICAL_CANDIDATE`, önceden hardcoded `SHADOW_ONLY`) | VERIFIED (kod+test), etiket-gerçek tutarsızlığı R5 ile düzeltildi | ☑ ACCEPT ☐ REJECT |
+| 2 | TBK100 allocation order | `tbk100-allocator.service.ts` — masraf→fer'i→faiz→anapara sırası (önceki hatalı "faiz-önce" sırasından düzeltilmiş). **R2 (961bbaf3):** cent-normalizasyon eklendi (float-dust riski giderildi). **R3:** negatif ödeme guard'ı eklendi | VERIFIED | ☑ ACCEPT ☐ REJECT |
+| 3 | Reversal netting (PR-1A/1B) | `case-balance.service.spec.ts`, `'CCB-001 PR-1B'` testleri, ADR-012 ile aynı commit (`be9c0c90`) | VERIFIED | ☑ ACCEPT ☐ REJECT |
+| 4 | NO_BUCKETS fail-closed (PR-2) | `case-balance.service.ts` (`CaseBalanceSkipReason='NO_BUCKETS'`, `NO_BUCKETS_FOR_PAYMENT_CURRENCY`) — **salt-okunur display/hesaplama motorunda**, merge-base'de (CCB-001 öncesi) zaten mevcut. **Netleştirme (2026-07-09, GO-ANALYZE "Payment Allocation Authority" turu):** Bu, ödeme para biriminin dosyadaki hiçbir `ClaimItem` bucket'ına eşleşmemesi durumunda hesaplama motorunun bakiye özeti üretmeyi reddetmesidir — tahsilat girişinde kullanıcıdan bucket seçmesini istemek DEĞİL (öyle bir UI alanı yok, `CollectionModal.tsx` grep ile doğrulandı), müvekkil/ofis dağıtım kararı da DEĞİL. Ayrı, farklı bir kavramla karıştırılmamalı: write-path'teki (`summary-engine.service.ts`) `NO_CLAIM_ITEMS` guard'ı — "kalem yoksa ledger'a yazma" — CCB-001'in NO_BUCKETS'ından bağımsız, önceden var olan bir korumadır. | VERIFIED (pre-existing), anlam netleştirildi | ☑ ACCEPT (revize açıklamayla) ☐ REJECT |
+| 5 | Fee projection | `case-balance-fee-projection.ts` + spec PASS | VERIFIED (kod+test), adapter kontratı gevşek tip (`unknown`) | ☑ ACCEPT ☐ REJECT — *Covered by the overall SIGNED_OFF_WITH_CONDITIONS decision. No separate owner decision was recorded for this individual item.* |
+| 6 | Snapshot/trace (AllocationLog dahil) | `case-balance-snapshot.ts`, `CalculationAllocationTrace`, `calculationTrace` — ephemeral (kalıcı değil) | VERIFIED işlevsel olarak; **kalıcılık YOK** — bkz. Bölüm 6 | ☑ ACCEPT (inherited-risk olarak, Koşul 1) ☐ REJECT |
+| 7 | Adapter output | `case-calculation-summary.adapter.ts`, production path'e wired, test PASS | VERIFIED | ☑ ACCEPT ☐ REJECT |
+| 8 | UI switch | `HesapOzetiPanel.tsx` — guarded-primary-pilot koşullu mantığı tamamen kaldırılmış, koşulsuz canonical | VERIFIED (tam geçiş) | ☑ ACCEPT ☐ REJECT |
+| 9 | Legacy fallback removal | `getCalculationSummary()` legacy fallback yok, `ServiceUnavailableException`. **R1 (961bbaf3):** main'de zaten kapalı `FIN-TBK100-DI-001` (TBK100AllocatorService DI export eksikliği) bu branch'e forward-port edildi — gerçek tahsilat yolu artık bu branch'te de canonical TBK100 sırasını kullanıyor | VERIFIED (kaldırılmış + DI-eksikliği giderildi) | ☑ ACCEPT — bkz. Bölüm 5 |
+| 10 | Golden fixture kapsamı | 13 senaryo (Bölüm 2) | Test-PASS; hukuki kapsam yeterliliği reviewer kararına açık | ☑ ACCEPT ☐ EKSİK SENARYO VAR: _______ |
+| 11 | Merge readiness (main-divergence) | Kod dosyalarında main ile 0 dosya-seviyesi çakışma; yalnız `product-backlog.md` çakışması (bu belgenin kapsamı dışı, ayrı ele alınacak) | VERIFIED (düşük risk) | ☑ ACCEPT — *Covered by the overall SIGNED_OFF_WITH_CONDITIONS decision. No separate owner decision was recorded for this individual item.* (İlgili `product-backlog.md` çakışması Bölüm 7 Koşul 3'te owner tarafından ayrıca ele alınmıştır.) |
+| 12 | Payment Allocation Authority Separation | Bölüm 4 — CCB-001 = calculation-only, allocation-yazımı SummaryEngine'de, dağıtım CollectionDisposition'da | VERIFIED (kod+governance kanıtı) | ☑ ACCEPT — bkz. Bölüm 4, duplicate-TBK100 bulgusu Koşul 2'ye bağlı |
 
 ---
 
-## 4. Legacy Removal Ratification
+## 4. Payment Allocation Authority Separation
+
+**Bulgu (GO-ANALYZE ile doğrulandı, 2026-07-09 — "Payment Allocation Authority / CCB-001 Sign-off Reconciliation" turu):** CCB-001'in ödeme tahsis (allocation) otoritesi yoktur — yalnız hesaplama otoritesi vardır.
+
+- Ödeme kaydı anındaki yasal alacak dağıtımı (legal debt allocation), mevcut, onaylı TM3 mimarisi altında çalışan **`SummaryEngineService` write-path'i** tarafından yapılır (`allocatePaymentToLedgerInTx()` → `LedgerEntry`+`LedgerAllocation` yazımı, `CollectionService.create()` ile aynı transaction).
+- **CCB-001, hiçbir zaman ödeme tahsisi oluşturmaz, mutasyona uğratmaz veya kalıcı hale getirmez.** `case-balance.service.ts` / `allocation-engine.service.ts` / `tbk100-allocator.service.ts` içinde `.create(`/`.update(`/`.upsert(`/`prisma.` — sıfır eşleşme (doğrulandı); bu üç dosya salt-okunur.
+- CCB-001 yalnız zaten kaydedilmiş yasal gerçeklerden (`ClaimItem`, `LedgerEntry`, `Collection` — `computeCaseBalance()`'ın kendi kod yorumuyla "READ-ONLY okumalar") bakiyeyi **türetir ve görüntüler**.
+- Müvekkil/ofis dağıtımı (client/office distribution) **yalnız ve tamamen `CollectionDisposition`'da** kalır — `docs/governance/dbind-financial-authority-decisions.md` §3-4 gereği onay-kapılı (`recommend → approval → post`), CCB-001 bu domain'e hiç girmez (branch diff'inde `collection`/`CollectionDisposition`/`client-settlement` dosyalarına dokunuş yok).
+
+**Kanıt tabanı:** `docs/finance/tm3-collection-disposition-boundary.md` (ONAYLANDI 2026-06-26, invariant #7: "Legal allocation ≠ müvekkil/ofis dağıtımı"), `docs/governance/dbind-financial-authority-decisions.md` (ONAYLANDI 2026-07-04, §3-4), doğrudan kod incelemesi (`case-balance.service.ts`, `allocation-engine.service.ts`, `tbk100-allocator.service.ts`, `summary-engine.service.ts`, `CollectionModal.tsx`).
+
+**Bilinen ilgili ama ayrı risk (bu belgenin kapsamı dışı):** Sistemde TBK100 sırasını hesaplayan iki bağımsız implementasyon vardır — `SummaryEngineService`'in kendi private `allocateWithTBK100()`/`allocateLegacy()` metodları (write-path) ve CCB-001'in `interest-engine/allocation/*`'ı (display-path). Bunlar aynı kodu paylaşmaz. Bu bir CCB-001 sign-off blocker'ı değildir — canonicalization/duplicate-implementation-consistency kapsamına giren, ayrı bir governance kaydı (potansiyel yeni CAN-* maddesi) gerektiren bir bulgudur. Bu belge bu konuda yeni bir governance kararı AÇMAZ, yalnız bulguyu kayda geçirir.
+
+**Owner/Avukat onayı gerekiyor:** Bu otorite ayrımı (CCB-001 = hesaplama-only, SummaryEngine = allocation-yazımı, CollectionDisposition = müvekkil/ofis dağıtımı) doğru ve yeterli mi?
+
+☑ EVET, bu ayrım doğru ve CCB-001 sign-off açısından yeterli.
+☐ HAYIR — ek netleştirme/değişiklik gerekiyor (gerekçe: _______________).
+
+**Owner notu (2026-07-09):** Duplicate TBK100 implementation bulgusu (yukarıda "Bilinen ilgili ama ayrı risk") ayrı bir CAN/backlog maddesi olarak değerlendirilecek — bkz. Bölüm 7, Koşul 2. Bu belge o maddeyi AÇMAZ, yalnız takip yükümlülüğünü kayda geçirir.
+
+---
+
+## 5. Legacy Removal Ratification
 
 Legacy `getCalculationSummary` (satır-içi, `faiz=0` stub hesaplama) artık üretim otoritesi olarak **tamamen kaldırılmıştır** — `case.service.ts`'de fallback yolu yoktur, canonical servis kullanılamazsa istek `ServiceUnavailableException` ile başarısız olur.
 
 **Owner/Avukat onayı gerekiyor:** Legacy'nin geri-dönüşsüz şekilde üretim yolundan çıkarılmış olması kabul ediliyor mu?
 
-☐ EVET, kabul ediyorum — legacy artık yalnız `legacy-reference/` içinde referans/tarihsel amaçlı kalır.
+☑ EVET, kabul ediyorum — legacy artık yalnız `legacy-reference/` içinde referans/tarihsel amaçlı kalır.
 ☐ HAYIR — legacy fallback'in geçici olarak geri eklenmesi isteniyor (gerekçe: _______________).
 
 ---
 
-## 5. Inherited Risk Acknowledgment — Non-Persisted BalanceSnapshot / AllocationLog
+## 6. Inherited Risk Acknowledgment — Non-Persisted BalanceSnapshot / AllocationLog
 
 **Bulgu (GO-ANALYZE ile doğrulandı):** Ne CCB-001'in `BalanceSnapshot`/`calculationTrace` mekanizması ne de legacy `getCalculationSummary` hiçbir zaman bir hesaplama anının kalıcı (persisted) kaydını tutmuştur. Legacy'de snapshot/hash kavramı hiç yoktu; CCB-001 en azından bir `inputHash`/`balanceSnapshotId` üretiyor ama bunu hiçbir yere yazmıyor (ne DB modeli ne `.create()` çağrısı var). `report.service.ts`/`template-engine.service.ts` (hukuki belge üretimi) bu hesaplamayı her belge üretiminde taze olarak tekrar yapıyor.
 
@@ -107,27 +130,34 @@ Legacy `getCalculationSummary` (satır-içi, `faiz=0` stub hesaplama) artık ür
 
 > Neither the legacy `getCalculationSummary` nor CCB-001's canonical pipeline persists a point-in-time calculation snapshot for generated legal documents (report/template). This is a **pre-existing gap unchanged by CCB-001** — CCB-001 additionally computes (but does not yet store) a `balanceSnapshotId`/`inputHash` fingerprint, which legacy never had. Owner acknowledges this inherited risk and treats it as a **separate, non-blocking follow-up** (persisted `BalanceSnapshot` model + write-on-document-generation), independent of CCB-001 merge readiness. This acknowledgment does NOT block CCB-001 merge.
 
-☐ Owner bu metni aynen onaylıyor.
+☑ Owner bu metni aynen onaylıyor.
 ☐ Owner farklı bir karar veriyor: _______________________________________________
+
+**Owner kararı (2026-07-09):** Şimdilik merge blocker değil; persisted `BalanceSnapshot`/`AllocationLog` ayrı follow-up olarak izlenecek — bkz. Bölüm 7, Koşul 1.
 
 ---
 
-## 6. Final Verdict
+## 7. Final Verdict
 
 **Choose exactly one — default state is PENDING, no box is pre-checked:**
 
+☑ `SIGNED_OFF_WITH_CONDITIONS` — merge onaylanır, aşağıdaki koşullarla:
+
+1. Persisted `BalanceSnapshot` / `AllocationLog` ayrı follow-up olarak izlenecek (merge blocker değil, bkz. Bölüm 6).
+2. Duplicate TBK100 implementation riski (`SummaryEngineService` private allocator vs CCB-001 `interest-engine/allocation/*`) ayrı bir CAN/backlog maddesi olarak değerlendirilecek (bkz. Bölüm 4).
+3. `product-backlog.md`'deki `ID: CCB-001` Status çakışması (main-senkron vs branch-local versiyon) merge hazırlığı sırasında çözülecek (bkz. Bölüm 8).
+
 ☐ `SIGNED_OFF` — merge onaylanır, koşulsuz.
-☐ `SIGNED_OFF_WITH_CONDITIONS` — merge onaylanır, aşağıdaki koşullarla: _______________________________
 ☐ `REVISION_REQUIRED` — aşağıdaki madde(ler) düzeltilmeden merge onaylanmaz: _______________________________
 ☐ `BLOCKED` — owner/Avukat arasında çözülmemiş anlaşmazlık var: _______________________________
 
-**Şu anki durum: `PENDING OWNER REVIEW`** — yukarıdaki hiçbir kutu işaretlenmemiştir, bu kayıt henüz bir sign-off teşkil etmez.
+**Şu anki durum: `SIGNED_OFF_WITH_CONDITIONS`** — yukarıdaki 3 koşul karşılanmadan/izlenmeden gerçek CCB-001 merge işlemi başlatılmaz. Bu, teknik/hukuki içeriğin owner tarafından kabul edildiği anlamına gelir; merge'in kendisi ayrı bir GO-COMPLETE gerektirir.
 
-**Reviewer(s):** _______________________ **Tarih:** _______________________
+**Reviewer(s):** Ulaş Hüseyin Telli (Owner) **Tarih:** 2026-07-09
 
 ---
 
-## 7. Evidence Appendix — Kapsam Dışı Bırakılan Madde
+## 8. Evidence Appendix — Kapsam Dışı Bırakılan Madde
 
 `product-backlog.md`'deki `ID: CCB-001` Status satırı çakışması (main'in main-senkron versiyonu ile bu branch'in branch-local versiyonu arasında) **bu belgenin kapsamı dışıdır** — talimat gereği bu turda çözülmemiştir, ayrı bir GO-IMPLEMENT gerektirir.
 
