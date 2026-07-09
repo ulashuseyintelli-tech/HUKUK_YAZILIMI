@@ -5,7 +5,9 @@
  * Doğrulanan kontrat:
  *  - getMine() sonucu actionCode!=='CLIENT_PAYOUT_POST' olanlar HARİÇ tutulur.
  *  - savedIntent.caseId/caseClientId bu widget'ın prop'larıyla EŞLEŞMEYENLER gösterilmez (başka dosya).
+ *  - status==='PENDING_APPROVAL' olan satırlarda "Onayla" butonu görünür.
  *  - Yalnız status==='APPROVED' olan satırlarda "Kesinleştir" butonu görünür.
+ *  - "Onayla" tıklanınca officeApprovalApi.approve(id) çağrılır; başarı sonrası approval query'leri yenilenir.
  *  - "Kesinleştir" tıklanınca finalizePayout(id, savedIntent-türevi payload) çağrılır; başarı sonrası
  *    ilgili query'ler invalidate edilir.
  *  - Liste boşsa (veya hiçbiri bu case/caseClient'a ait değilse) widget HİÇBİR ŞEY render ETMEZ.
@@ -21,7 +23,7 @@ vi.mock('@/lib/api/office-approval', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api/office-approval')>();
   return {
     ...actual,
-    officeApprovalApi: { ...actual.officeApprovalApi, getMine: vi.fn(), getDetail: vi.fn() },
+    officeApprovalApi: { ...actual.officeApprovalApi, getMine: vi.fn(), getDetail: vi.fn(), approve: vi.fn() },
   };
 });
 
@@ -35,6 +37,7 @@ vi.mock('@/lib/api/client-accounting', async (importOriginal) => {
 
 const getMineMock = officeApprovalApi.getMine as unknown as ReturnType<typeof vi.fn>;
 const getDetailMock = officeApprovalApi.getDetail as unknown as ReturnType<typeof vi.fn>;
+const approveMock = officeApprovalApi.approve as unknown as ReturnType<typeof vi.fn>;
 const finalizePayoutMock = clientAccountingApi.finalizePayout as unknown as ReturnType<typeof vi.fn>;
 
 const summaryRow = (over: Partial<Record<string, unknown>> = {}) => ({
@@ -131,6 +134,20 @@ describe('PendingPayoutRequests', () => {
     renderWidget();
     await waitFor(() => expect(screen.getByText('Onay Bekliyor')).toBeTruthy());
     expect(screen.queryByRole('button', { name: /Kesinleştir/ })).toBeNull();
+  });
+
+  it('PENDING_APPROVAL kendi payout talebi icin "Onayla" butonu görünür, tıklanınca approval approve çağrılır', async () => {
+    getMineMock.mockResolvedValue([summaryRow({ status: 'PENDING_APPROVAL' })]);
+    getDetailMock.mockResolvedValue(detailRow({ status: 'PENDING_APPROVAL' }));
+    approveMock.mockResolvedValue(detailRow({ status: 'APPROVED' }));
+
+    renderWidget();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Onayla/ })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /Onayla/ }));
+
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith('oar-1'));
+    expect(finalizePayoutMock).not.toHaveBeenCalled();
   });
 
   it('finalize başarısız olursa hata mesajı gösterilir (backend mesajı iletilir)', async () => {

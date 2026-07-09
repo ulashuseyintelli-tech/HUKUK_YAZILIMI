@@ -7,8 +7,9 @@ import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonic
 
 /**
  * P4-1 — OfficeApprovalService substrate testleri.
- * KESİN: self-approval YASAK · approver=PARTNER∨canApproveOfficeActions · status state-machine guard'lı ·
- * execution yalnız APPROVED'da · audit ham savedIntent SIZDIRMAZ (yalnız payloadHash).
+ * KESİN: generic self-approval YASAK; DBIND §5 gereği yalnız CLIENT_PAYOUT_POST approve() için
+ * PayoutApprovalPolicy eligible üst-seviye aktör istisnası var · approver=PARTNER∨canApproveOfficeActions ·
+ * status state-machine guard'lı · execution yalnız APPROVED'da · audit ham savedIntent SIZDIRMAZ (yalnız payloadHash).
  */
 
 const REQUESTER = 'user-requester';
@@ -298,10 +299,33 @@ describe('PAYOUT-APPROVAL-2 OfficeApprovalService — actionCode dispatcher (CLI
     await expect(svc.approve('oar-1', APPROVER)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('self-approval guard, CLIENT_PAYOUT_POST için de AYNEN geçerli (dispatcher self-approval kontrolünü atlamaz)', async () => {
-    const { svc, prisma } = make({ reqSeq: [payoutReq()] });
-    await expect(svc.approve('oar-1', REQUESTER)).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  it('DBIND §5: eligible PARTNER kendi CLIENT_PAYOUT_POST talebini approve() ile onaylayabilir', async () => {
+    const selfPartner = {
+      id: REQUESTER,
+      isActive: true,
+      tenantId: TENANT,
+      lawyer: { lawyerRank: 'PARTNER', canApproveOfficeActions: false },
+    };
+    const { svc, prisma } = make({
+      reqSeq: [payoutReq(), payoutReq({ status: 'APPROVED', approverUserId: REQUESTER })],
+      approverUser: selfPartner,
+    });
+
+    const res = await svc.approve('oar-1', REQUESTER, 'dbind §5');
+
+    expect(res.status).toBe('APPROVED');
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: REQUESTER } }));
+    expect(prisma.officeApprovalRequest.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('DBIND §5: self requester CLIENT_PAYOUT_POST icin eligible degilse yine Forbidden ve karar yazilmaz', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [payoutReq()],
+      approverUser: { id: REQUESTER, isActive: true, tenantId: TENANT, lawyer: null },
+    });
+
+    await expect(svc.approve('oar-1', REQUESTER)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
   });
 });
 

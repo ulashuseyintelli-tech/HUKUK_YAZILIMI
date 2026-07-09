@@ -48,6 +48,7 @@ Bu kararlar sonraki payout, creditor cluster, debtor/estate ve collection dispos
 - Super admin, kurucu avukat, ortak veya açıkça yetkilendirilmiş üst seviye avukat rolleri kendi açtıkları payout taleplerini onaylayabilir (istisna).
 - Bu istisna dışındaki kullanıcılar kendi money-out taleplerini tek başına KESİNLEŞTİREMEZ.
 - Staff/operasyonel kullanıcılar money-out final approver OLAMAZ.
+- Runtime uygulama sınırı (VER-36, 2026-07-10): Bu istisna yalnız `CLIENT_PAYOUT_POST` için `approve()` kararında uygulanır; `reject`, `requestRevision`, `approveWithChanges` ve payout dışı OfficeApproval action'ları generic self-approval yasağı altında kalır.
 
 ## 6. Estate / Heir Notification
 

@@ -7,8 +7,8 @@
  * mekanizması YOK; onaylandıktan sonra hiçbir "Kesinleştir" butonu göstermez (OfficeApprovalDecisionActions
  * yalnız PENDING_APPROVAL'da render olur). Bu component o boşluğu TALEP SAHİBİ tarafında kapatır:
  * officeApprovalApi.getMine() ile kendi CLIENT_PAYOUT_POST taleplerini (tüm dosyalar) çeker, bu
- * case/caseClient'a ait olanları savedIntent üzerinden filtreler, APPROVED olanlar için "Kesinleştir"
- * (finalize) aksiyonu sunar.
+ * case/caseClient'a ait olanları savedIntent üzerinden filtreler, PENDING_APPROVAL olanlar için DBIND §5
+ * self-approval "Onayla" aksiyonu, APPROVED olanlar için "Kesinleştir" (finalize) aksiyonu sunar.
  *
  * Yetki UI'da TAKLİT EDİLMEZ: backend zaten defense-in-depth uyguluyor (payload-drift guard +
  * PayoutApprovalPolicy re-check) — bu component yalnız görünürlük/tetikleme sağlar, otorite DEĞİLDİR.
@@ -62,7 +62,7 @@ interface PendingPayoutRequestsProps {
 
 export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutRequestsProps) {
   const queryClient = useQueryClient();
-  const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const [payoutActionError, setPayoutActionError] = useState<string | null>(null);
 
   const mineQ = useQuery({
     queryKey: ['client-payout-approval-requests'],
@@ -103,7 +103,7 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
         idempotencyKey: intent.idempotencyKey,
       }),
     onSuccess: () => {
-      setFinalizeError(null);
+      setPayoutActionError(null);
       queryClient.invalidateQueries({ queryKey: ['client-accounting-outstanding'] });
       queryClient.invalidateQueries({ queryKey: ['client-accounting-payouts'] });
       queryClient.invalidateQueries({ queryKey: ['client-statement'] });
@@ -111,7 +111,19 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
       queryClient.invalidateQueries({ queryKey: ['client-payout-approval-request-details'] });
     },
     onError: (e: unknown) => {
-      setFinalizeError(friendlyFinalizeError((e as Error)?.message));
+      setPayoutActionError(friendlyFinalizeError((e as Error)?.message));
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (approvalRequestId: string) => officeApprovalApi.approve(approvalRequestId),
+    onSuccess: () => {
+      setPayoutActionError(null);
+      queryClient.invalidateQueries({ queryKey: ['client-payout-approval-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['client-payout-approval-request-details'] });
+    },
+    onError: (e: unknown) => {
+      setPayoutActionError((e as Error)?.message || 'Onaylama başarısız oldu.');
     },
   });
 
@@ -130,16 +142,17 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
         </Badge>
       </div>
 
-      {finalizeError && (
+      {payoutActionError && (
         <div className="flex items-start gap-2 text-red-600 text-xs mb-3">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          {finalizeError}
+          {payoutActionError}
         </div>
       )}
 
       <div className="space-y-2">
         {scoped.map(({ detail, intent }) => {
           const isFinalizingThis = finalizeMutation.isPending && finalizeMutation.variables?.approvalRequestId === detail.id;
+          const isApprovingThis = approveMutation.isPending && approveMutation.variables === detail.id;
           return (
             <div key={detail.id} className="flex items-center justify-between border rounded-lg p-3 text-sm">
               <div>
@@ -148,14 +161,26 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary">{STATUS_LABELS[detail.status] ?? detail.status}</Badge>
+                {detail.status === 'PENDING_APPROVAL' && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setPayoutActionError(null);
+                      approveMutation.mutate(detail.id);
+                    }}
+                    disabled={approveMutation.isPending || finalizeMutation.isPending}
+                  >
+                    {isApprovingThis ? <Spinner className="w-4 h-4" /> : 'Onayla'}
+                  </Button>
+                )}
                 {detail.status === 'APPROVED' && (
                   <Button
                     size="sm"
                     onClick={() => {
-                      setFinalizeError(null);
+                      setPayoutActionError(null);
                       finalizeMutation.mutate({ approvalRequestId: detail.id, intent });
                     }}
-                    disabled={finalizeMutation.isPending}
+                    disabled={finalizeMutation.isPending || approveMutation.isPending}
                   >
                     {isFinalizingThis ? <Spinner className="w-4 h-4" /> : 'Kesinleştir'}
                   </Button>
