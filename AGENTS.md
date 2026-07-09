@@ -16,6 +16,8 @@ Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar ici
 - Repository-wide AI ground-truth rule: Sohbet gecmisi yalniz niyet ve karar tasir; mevcut gercekler her gorevde repository state, git state, dosya icerigi, governance kayitlari, PR/CI durumu ve komut ciktilarindan yeniden dogrulanir.
 - Buyuk veya uzun omurlu workstream'lerde ise baslamadan once Session Initialization ozeti uretilir: Repository State, Execution Context, Context Drift, Concurrent Activity ve Ready/Not Ready.
 - Varsayilan mod read-only'dir. Dosya degisikligi yalniz kullanici `GO-IMPLEMENT` veya `GO-COMPLETE` verdiginde yapilir.
+- Implementation default: canonical project root icinde implementasyon yapilmaz. Her `GO-IMPLEMENT`, `GO-HOTFIX` veya `GO-COMPLETE` dosya degisikliginden once current directory ve branch dogrulanir; ajan canonical root icindeyse durur, `origin/main` tabanli fresh isolated worktree olusturur ve yalniz o worktree icinde calisir.
+- Canonical project root yalniz read-only dogrulama, final main sync ve register verification icin kullanilir; PR branch'i canonical root icinde acilmaz ve canonical root'ta dosya editlenmez.
 - Spekulatif refactor yapma.
 - En kucuk guvenli patch'i tercih et.
 - Mevcut mimariyi, geriye donuk uyumlulugu ve davranisi koru.
@@ -30,6 +32,7 @@ Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar ici
 ## Uygulama Kurallari
 
 - Degisiklikten once ilgili dosyalari ve yakin cevre kodunu oku.
+- Dosya editinden once current directory, branch ve worktree izolasyonu dogrulanir; canonical root'ta bulunuyorsan edit yapma.
 - Scope disi dosyalari degistirme.
 - Yeni abstraction yalniz gercek karmasayi azaltiyorsa veya mevcut mimariyle acikca uyumluysa eklenir.
 - Davranis degisikligini sessizce tanitma.

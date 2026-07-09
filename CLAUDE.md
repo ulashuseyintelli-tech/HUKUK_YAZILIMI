@@ -49,7 +49,9 @@ Gorev yetkileri:
 
 Repository root sabit bir Windows path'inden varsayilmaz; her oturumda guncel Git/repository state ile dogrulanir. Bagimsiz ikinci clone veya root belirsizligi tespit edilirse kodlamadan once dur ve raporla.
 
-Her implementasyon ayri branch ve ayri worktree ile, dogrulanmis repository root'un git agindan ve `origin/main` bazindan acilir. Canonical working tree yalniz `main` senkronu ve final dogrulama icindir; kirliyse kullanici WIP'i say, dokunma, yine yeni worktree ac.
+Implementation default: canonical project root icinde implementasyon yapilmaz. Her `GO-IMPLEMENT`, `GO-HOTFIX` veya `GO-COMPLETE` dosya degisikliginden once current directory ve branch dogrulanir. Ajan canonical root icindeyse dosya editini, PR branch olusturmayi ve commit'i durdurur; `origin/main` tabanli fresh isolated worktree olusturur ve yalniz o worktree icinde calisir.
+
+Her implementasyon ayri branch ve ayri worktree ile, dogrulanmis repository root'un git agindan ve `origin/main` bazindan acilir. Canonical working tree yalniz read-only dogrulama, `main` senkronu, register verification ve final dogrulama icindir; kirliyse kullanici WIP'i say, dokunma, yine yeni worktree ac.
 
 ```text
 git fetch origin
@@ -68,6 +70,8 @@ Tablo uzerinde islem yapacaksan iliskili tablolari ve yan etkileri incele. Yeni 
 ## 5. Development Rules
 
 Onay almadan kodlamaya gecme: ne yapacagini, nedenini ve beklenen etki alanini soyle; kullanici yetkisi geldikten sonra ilerle.
+
+Dosya editinden once hard gate: current directory, current branch ve worktree izolasyonu dogrulanir. Canonical root icindeysen edit yapma; isolated worktree'e gecmeden implementation baslatma.
 
 Yeni servis metodu veya controller action yazarken XML yorum ekle; mevcut metodu degistirirken listeyi kontrol edip guncelle:
 
@@ -111,7 +115,7 @@ Stop condition olusursa dur ve raporla: CI failure, merge conflict, scope/mimari
 
 Kullaniciya ait WIP'e dokunma; bilinmeyen degisiklikleri revert etme, stash'leme, tasima veya temizleme. Ilgiliyse uyumlu calis, ilgisizse yok say.
 
-Worktree cleanup fiziksel recursive silme ile yapilmaz: `rm -rf`, `cmd rd /s /q`, PowerShell `Remove-Item -Recurse`, `.NET Directory.Delete(path, true)` kullanma. Guvenli sira:
+Worktree cleanup fiziksel recursive silme ile yapilmaz: `rm -rf`, `cmd rd /s /q`, PowerShell `Remove-Item -Recurse`, `.NET Directory.Delete(path, true)` kullanma. Isolated worktree yalniz PR merge/final disposition sonrasi kaldirilir. Guvenli sira:
 
 ```text
 node_modules junction/symlink audit
