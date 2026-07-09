@@ -93,7 +93,7 @@ export class IcrabotController {
     @Param('caseId') caseId: string,
     @Request() req: any
   ) {
-    return this.icrabotService.startAutomation(caseId, req.user.tenantId);
+    return this.icrabotService.startAutomation(caseId, req.user.tenantId, req.user.id);
   }
 
   /**
@@ -102,7 +102,7 @@ export class IcrabotController {
    */
   @Post('cases/:caseId/stop')
   async stopAutomation(@Param('caseId') caseId: string, @Request() req: any) {
-    await this.icrabotService.stopAutomation(caseId, req.user.tenantId);
+    await this.icrabotService.stopAutomation(caseId, req.user.tenantId, req.user.id);
     return { success: true };
   }
 
