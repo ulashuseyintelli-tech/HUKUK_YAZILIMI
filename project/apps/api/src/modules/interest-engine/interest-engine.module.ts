@@ -121,6 +121,11 @@ const AuditServiceProvider = {
     PolicyGateV2Service,
     SegmentBuilderService,
     AllocationEngineService,
+    // TBK100AllocatorService: SummaryEngineService/CollectionService @Optional() DI'ı
+    // bu servisi bekliyor (TBK 100 hard rule, doc-27 P-0). Export edilmezse
+    // allocatePaymentToLedgerInTx() sessizce allocateLegacy() (deprecated, yanlış sıra)
+    // fallback'ine düşer.
+    TBK100AllocatorService,
     StrategySelectorService,
     'AUDIT_SERVICE',
 
