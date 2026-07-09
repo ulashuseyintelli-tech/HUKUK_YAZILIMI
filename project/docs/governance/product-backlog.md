@@ -1350,6 +1350,8 @@ Status: **NO_SAFE_PATCH / VERIFICATION_REQUIRED** — parent madde olarak implem
 
 ## CAN-P0-002-A1 — isAutomationEnabled direct-write → CaseService.patchFlags redirect
 
+**Governance güncellemesi (2026-07-09, GO-FIX + merge sonrası):** Owner dar kapsamlı GO-FIX verdi (yalnız bu redirect; `isAutoMode`/`AutomationService`/`nextActionAt`/`workflowStage`/A2/A3/CAN-P0-003/schema/migration kesin yasaktı). İzole `origin/main`-tabanlı worktree'de (`HUKUK_can-p0-002-a1-fix`) uygulandı: `IcrabotModule` artık `CaseModule`'ü import ediyor, `IcrabotService` `CaseService`'i inject ediyor, `startAutomation()`/`stopAutomation()` artık `patchFlags(tenantId, caseId, {isAutomationEnabled}, {userId})` çağırıyor (`userId` `icrabot.controller.ts`'teki `req.user.id`'den thread edildi). `isAutoMode` yazımı bilinçli olarak aynen bırakıldı (ayrı `prisma.case.update()` çağrısına taşındı, değer/koşul DEĞİŞMEDİ). Hiçbir kaçış koşulu (owner'ın önceden tanımladığı NO_SAFE_PATCH tetikleyicileri) tetiklenmedi. Doğrulama: CI'ın gerçek type-check komutu (`tsc --noEmit -p tsconfig.prod.json`) temiz; `icrabot-digital-twin-tenant-guard.spec.ts` (patchFlags-redirect assertion'ları eklenerek güncellendi) 22/22 PASS; `case-flags-audit.spec.ts` (hiç değiştirilmedi, regresyon kontrolü) 5/5 PASS. Diff merge-base'e göre kesinlikle 4 dosya.
+
 ID: CAN-P0-002-A1
 Title: `icrabot.service.ts`'in `isAutomationEnabled` yazımını `CaseService.patchFlags()`'e yönlendirme
 Problem: `startAutomation()`/`stopAutomation()` (icrabot.service.ts:118,156) `isAutomationEnabled`'ı ham `prisma.case.update()` ile, statü/gate kontrolü olmadan yazıyor — `CaseStatusService`'in HITAM/INFAZ/vb. statülerde bilinçli kapattığı kill-switch'i sessizce ezebiliyor, audit trail yok.
@@ -1357,10 +1359,10 @@ Business Value: Statü-güdümlü otomasyon kill-switch'inin icrabot tarafından
 Technical Value: Owner zaten var ve audit'li (`CaseService.patchFlags()`, allowlist'te `isAutomationEnabled` mevcut) — yalnız çağrı yeri değişmeli + `userId` threading (`icrabot.controller.ts`'teki `req.user`'dan) eklenmeli. `nextActionAt` side-effect'i yok (her iki yol da dokunmuyor) — davranış değişikliği yalnız audit ekleme + statü-kill-switch koruması.
 Priority: HIGH (gerçek correctness riski — kill-switch bypass)
 Depends On: CAN-P0-002-A (parent, NO_SAFE_PATCH/VERIFICATION_REQUIRED)
-Unlock Condition: Owner GO-FIX onayı. `icrabot-digital-twin-tenant-guard.spec.ts:144-147`'deki mevcut karakterizasyon testi (ham `prisma.case.update` çağrısını pinliyor) güncellenmeli — blast-radius'a dahil.
+Unlock Condition: Yok — implemente edildi, merge edildi. Ek yetkilendirme gerekmiyor.
 Estimated Size: S-M (BE — çağrı yeri değişikliği + userId threading + 1 test güncellemesi)
-Related Modules: icrabot.service.ts, icrabot.controller.ts, case.service.ts, icrabot-digital-twin-tenant-guard.spec.ts
-Status: **PATCH_READY candidate** — implemente EDİLMEDİ, GO-FIX onayı bekliyor.
+Related Modules: icrabot.service.ts, icrabot.controller.ts, icrabot.module.ts, case.service.ts, icrabot-digital-twin-tenant-guard.spec.ts
+Status: **CLOSED/MERGED** — PR #1006, squash SHA `0367ba163dbce1f234df56be112c9ee6c1c08a70`; CI 4/4 PASS (Architectural Guardrails/Test Suite/Web Tests (vitest)/Client Workspace Live Smoke), mergeStateStatus CLEAN (merge öncesi doğrulandı); diff kesinlikle 4 dosya (`icrabot.service.ts`+`icrabot.controller.ts`+`icrabot.module.ts`+test), migration/schema/package/lock değişikliği YOK. `isAutoMode`/`AutomationService`/`nextActionAt`/`workflowStage`'e dokunulmadı (doğrulandı). Remote branch silindi; izole worktree'de `git worktree remove --force` "Filename too long" hatası verdi (Windows path-limiti, pnpm node_modules) — git-side unregistered oldu ama fiziksel dizin force-delete EDİLMEDİ, `ORPHANED_WORKTREE_DIR` olarak bırakıldı (`C:\Development\HUKUK_YAZILIMI\HUKUK_can-p0-002-a1-fix`). Ana canonical `main`'e hiç dokunulmadı.
 
 ## CAN-P0-002-A2 — isAutoMode owner/audit/tenant/nextActionAt tasarım kararı
 

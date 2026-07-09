@@ -58,15 +58,20 @@ const makeIcrabotService = (sameTenant: boolean) => {
   const evidenceService = {
     generateEvidenceReport: jest.fn().mockResolvedValue({ totalEvidence: 0 }),
   };
+  // CAN-P0-002-A1: isAutomationEnabled artik CaseService.patchFlags() uzerinden yaziliyor.
+  const caseService = {
+    patchFlags: jest.fn().mockResolvedValue({ id: CASE_ID }),
+  };
 
   const svc = new IcrabotService(
     prisma as any,
     recipeService as any,
     taskOrchestrator as any,
     evidenceService as any,
+    caseService as any,
   );
 
-  return { svc, prisma, recipeService, taskOrchestrator, evidenceService };
+  return { svc, prisma, recipeService, taskOrchestrator, evidenceService, caseService };
 };
 
 describe('DBND-BLOCKER-1 icrabot tenant isolation', () => {
@@ -132,28 +137,37 @@ describe('DBND-BLOCKER-1 icrabot tenant isolation', () => {
     });
 
     it('startAutomation threads tenantId and enqueues only for owned cases', async () => {
-      const { svc, recipeService, taskOrchestrator, prisma } = makeIcrabotService(true);
+      const { svc, recipeService, taskOrchestrator, prisma, caseService } = makeIcrabotService(true);
 
-      await expect(svc.startAutomation(CASE_ID, TENANT)).resolves.toEqual({
+      await expect(svc.startAutomation(CASE_ID, TENANT, 'user-a')).resolves.toEqual({
         tasksEnqueued: 1,
         tasks: ['Recipe 1'],
       });
 
       expect(recipeService.calculateNextBestActions).toHaveBeenCalledWith(CASE_ID, TENANT);
       expect(taskOrchestrator.enqueueTasks).toHaveBeenCalledWith(['r1'], CASE_ID, TENANT);
+      // CAN-P0-002-A1: isAutomationEnabled artik canonical owner (patchFlags) uzerinden, audit'li.
+      expect(caseService.patchFlags).toHaveBeenCalledWith(
+        TENANT,
+        CASE_ID,
+        { isAutomationEnabled: true },
+        { userId: 'user-a' },
+      );
+      // isAutoMode yazimi BILINCLI OLARAK ayni birakildi (CAN-P0-002-A2 kapsami, degismedi).
       expect(prisma.case.update).toHaveBeenCalledWith({
         where: { id: CASE_ID },
-        data: { isAutomationEnabled: true, isAutoMode: true },
+        data: { isAutoMode: true },
       });
     });
 
     it('startAutomation on a foreign case returns 404 and does not enqueue', async () => {
-      const { svc, recipeService, taskOrchestrator, prisma } = makeIcrabotService(false);
+      const { svc, recipeService, taskOrchestrator, prisma, caseService } = makeIcrabotService(false);
 
       await expect(svc.startAutomation(CASE_ID, TENANT)).rejects.toBeInstanceOf(NotFoundException);
 
       expect(recipeService.calculateNextBestActions).not.toHaveBeenCalled();
       expect(taskOrchestrator.enqueueTasks).not.toHaveBeenCalled();
+      expect(caseService.patchFlags).not.toHaveBeenCalled();
       expect(prisma.case.update).not.toHaveBeenCalled();
     });
   });
@@ -295,9 +309,9 @@ describe('DBND-BLOCKER-1 icrabot tenant isolation', () => {
 
   describe('stopAutomation (DBND-B1C write path)', () => {
     it('same tenant passes guard and updates case automation state', async () => {
-      const { svc, prisma } = makeIcrabotService(true);
+      const { svc, prisma, caseService } = makeIcrabotService(true);
 
-      await svc.stopAutomation(CASE_ID, TENANT);
+      await svc.stopAutomation(CASE_ID, TENANT, 'user-a');
 
       expect(prisma.case.findFirst).toHaveBeenCalledWith({
         where: { id: CASE_ID, tenantId: TENANT },
@@ -306,17 +320,27 @@ describe('DBND-BLOCKER-1 icrabot tenant isolation', () => {
       expect(prisma.botTask.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ caseId: CASE_ID }) }),
       );
-      expect(prisma.case.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: CASE_ID } }),
+      // CAN-P0-002-A1: isAutomationEnabled artik canonical owner (patchFlags) uzerinden, audit'li.
+      expect(caseService.patchFlags).toHaveBeenCalledWith(
+        TENANT,
+        CASE_ID,
+        { isAutomationEnabled: false },
+        { userId: 'user-a' },
       );
+      // isAutoMode yazimi BILINCLI OLARAK ayni birakildi (CAN-P0-002-A2 kapsami, degismedi).
+      expect(prisma.case.update).toHaveBeenCalledWith({
+        where: { id: CASE_ID },
+        data: { isAutoMode: false },
+      });
     });
 
     it('foreign tenant returns 404 before botTask.updateMany or case.update', async () => {
-      const { svc, prisma } = makeIcrabotService(false);
+      const { svc, prisma, caseService } = makeIcrabotService(false);
 
       await expect(svc.stopAutomation(CASE_ID, TENANT)).rejects.toBeInstanceOf(NotFoundException);
 
       expect(prisma.botTask.updateMany).not.toHaveBeenCalled();
+      expect(caseService.patchFlags).not.toHaveBeenCalled();
       expect(prisma.case.update).not.toHaveBeenCalled();
     });
   });

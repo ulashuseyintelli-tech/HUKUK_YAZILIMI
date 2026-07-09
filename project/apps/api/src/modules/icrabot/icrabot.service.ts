@@ -3,6 +3,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RecipeService } from './recipe.service';
 import { TaskOrchestratorService } from './task-orchestrator.service';
 import { EvidenceService } from './evidence.service';
+// CAN-P0-002-A1: isAutomationEnabled artik CaseService.patchFlags() (canonical owner) uzerinden yaziliyor.
+import { CaseService } from '../case/case.service';
 import { NextBestAction, CaseDigitalTwin, StageTag, IcraType } from './types/recipe.types';
 import { StateMachine, CaseEvent, STAGE_METADATA } from './state-machine';
 import { getStageFlow, requiresFinalizationStage } from './config/stage-flows.config';
@@ -25,6 +27,7 @@ export class IcrabotService {
     private recipeService: RecipeService,
     private taskOrchestrator: TaskOrchestratorService,
     private evidenceService: EvidenceService,
+    private caseService: CaseService,
   ) {}
 
   // Prisma client'a erişim (generate sonrası düzelecek)
@@ -95,30 +98,40 @@ export class IcrabotService {
     return this.recipeService.calculateNextBestActions(caseId, tenantId);
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - IcrabotController.startAutomation() -> POST /icrabot/cases/:caseId/start
+  /// CAN-P0-002-A1: `isAutomationEnabled` artık ham `prisma.case.update()` yerine
+  /// `CaseService.patchFlags()` (canonical owner, allowlist'li+audit'li+tenant-guard'lı)
+  /// üzerinden yazılıyor. `isAutoMode` yazımı BİLİNÇLİ OLARAK aynen bırakıldı — bu alan
+  /// ayrı bounded context'e ait (CAN-P0-002-A2'nin kapsamı, bu değişikliğe dahil değil).
+  /// </remarks>
   /**
    * Dosya için otomasyonu başlat
    */
-  async startAutomation(caseId: string, tenantId: string): Promise<{
+  async startAutomation(caseId: string, tenantId: string, userId?: string): Promise<{
     tasksEnqueued: number;
     tasks: string[];
   }> {
     // Next best actions hesapla
     const actions = await this.getNextBestActions(caseId, tenantId);
-    
+
     // Otomatik çalıştırılabilir olanları kuyruğa ekle
     const autoActions = actions.filter(a => a.canAutoExecute);
-    
+
     const tasks = await this.taskOrchestrator.enqueueTasks(
       autoActions.map(a => a.recipeId),
       caseId,
       tenantId
     );
 
-    // Dosyayı otomasyon moduna al
+    // Otomasyon izni (isAutomationEnabled): canonical owner, audit'li.
+    await this.caseService.patchFlags(tenantId, caseId, { isAutomationEnabled: true }, { userId });
+
+    // Kullanıcı otomasyon toggle'ı (isAutoMode): CAN-P0-002-A2 kapsamı, davranış DEĞİŞMEDİ.
     await this.prisma.case.update({
       where: { id: caseId },
       data: {
-        isAutomationEnabled: true,
         isAutoMode: true,
       },
     });
@@ -131,10 +144,16 @@ export class IcrabotService {
     };
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - IcrabotController.stopAutomation() -> POST /icrabot/cases/:caseId/stop
+  /// CAN-P0-002-A1: `isAutomationEnabled` artık `CaseService.patchFlags()` üzerinden
+  /// yazılıyor (bkz. startAutomation() üstündeki not). `isAutoMode` aynen bırakıldı.
+  /// </remarks>
   /**
    * Dosya için otomasyonu durdur
    */
-  async stopAutomation(caseId: string, tenantId: string): Promise<void> {
+  async stopAutomation(caseId: string, tenantId: string, userId?: string): Promise<void> {
     await this.assertCaseTenant(caseId, tenantId);
 
     // Bekleyen görevleri iptal et
@@ -149,11 +168,13 @@ export class IcrabotService {
       },
     });
 
-    // Dosyayı otomasyon modundan çıkar
+    // Otomasyon izni (isAutomationEnabled): canonical owner, audit'li.
+    await this.caseService.patchFlags(tenantId, caseId, { isAutomationEnabled: false }, { userId });
+
+    // Kullanıcı otomasyon toggle'ı (isAutoMode): CAN-P0-002-A2 kapsamı, davranış DEĞİŞMEDİ.
     await this.db.case.update({
       where: { id: caseId },
       data: {
-        isAutomationEnabled: false,
         isAutoMode: false,
       },
     });
