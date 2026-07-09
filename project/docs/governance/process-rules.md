@@ -1,6 +1,10 @@
 # Process Rules
 
-Bu dosya AGENTS.md içindeki Agent Operating Standard v1.0'in kısa operasyonel özetidir. Bağlayıcı kaynak AGENTS.md'dir; çelişki halinde AGENTS.md uygulanır.
+Bu dosya `AGENTS.md` içindeki repository-level ajan standardının kısa operasyonel özetidir. Bağlayıcı baseline `AGENTS.md`'dir. `CLAUDE.md` Claude'a özgü supplement'tir ve `AGENTS.md` ile çelişemez. Governance kayıtları süreç ve karar dokümantasyonudur; çelişki halinde `AGENTS.md` uygulanır ve çelişen kayıt düzeltilmek üzere raporlanır.
+
+Repo-local uzmanlık skill'leri resmi Codex scan yüzeyi olan `.agents/skills/` altında tanımlanır. `.codex/` Codex operasyonel config, hooks ve project-scoped custom agents yüzeyidir; mevcut owner/user WIP sayılır ve açık yetki olmadan değiştirilmez.
+
+Repository-wide AI ground-truth rule: Sohbet geçmişi yalnız niyet ve karar taşır. Mevcut gerçekler her görevde repository state, git state, dosya içeriği, governance kayıtları, PR/CI durumu ve komut çıktılarından yeniden doğrulanır.
 
 ## Required Start
 
@@ -17,7 +21,43 @@ Her yeni görev çalışma seviyesi önerisiyle başlar:
 Neden: ...
 ```
 
+Büyük veya uzun ömürlü workstream'lerde görev ayrıca kısa bir Session Initialization özetiyle başlar:
+
+```text
+SESSION INITIALIZATION
+
+Repository State:
+- Branch:
+- HEAD:
+- Working tree:
+- Main / origin-main:
+
+Execution Context:
+- Requested mode:
+- Bounded context:
+- Allowed scope:
+
+Context Drift:
+- Conversation assumptions re-verified:
+- Concurrent commits:
+- Relevant upstream/local changes:
+- Requires re-analysis:
+
+Concurrent Activity:
+- Untracked/user WIP:
+- Other active branch/worktree signal:
+- PR/CI state if relevant:
+
+Readiness:
+- Ready / Not Ready:
+- Reason:
+```
+
+Bu özet tam rapor değildir; ajan işe başlamadan önce repository-first durumunu hızlı görünür kılan kısa güvenlik kontrolüdür.
+
 ## Required Pre-Analysis
+
+Her görevde önce güncel repository gerçeği doğrulanır; önceki konuşma veya oturum hafızası güncel branch, HEAD, dosya içeriği, PR/CI/merge durumu veya governance kaydı için otorite sayılmaz.
 
 Kod yazmadan önce en az şu başlıklar değerlendirilir:
 
@@ -69,20 +109,20 @@ NEXT RECOMMENDED STEP
 Dur
 ```
 
-GO-COMPLETE verilmişse merge, cleanup, main sync, final verification ve checkpoint tek operasyon sayılır. Kullanıcı bir görev için `GO-COMPLETE` verdiyse ve stop condition oluşmadıysa ajan zincir içinde tekrar onay istemez. Merge, remote branch cleanup, local branch cleanup, worktree cleanup, main sync, final verification ve checkpoint bu zincirde tek operasyonel bütündür. Bu zincirde `Onay Bekleniyor: YES` yazılmaz. Yalnız stop condition oluşursa ajan durur, sebebi raporlar ve `Onay Bekleniyor: YES` yazar.
+GO-COMPLETE implementasyon ve validation zinciridir. Commit, push, PR, CI, merge, main sync, remote branch cleanup, local branch cleanup, worktree cleanup, final verification ve checkpoint yalnız görev brief'i açık `IF GO-COMPLETE` owner yetkisi içeriyorsa tek operasyon sayılır. Tool/system guardrail merge'i bloklarsa veya PR'a özgü açık yetki gerektirirse ajan durur ve owner'dan açık yetki ister. Aksi halde CI PASS ve `mergeStateStatus` CLEAN sonrası stop condition oluşmadıysa ajan zincir içinde tekrar onay istemez. Bu zincirde `Onay Bekleniyor: YES` yazılmaz. Yalnız stop condition oluşursa ajan durur, sebebi raporlar ve `Onay Bekleniyor: YES` yazar.
 
 ## Approval Reporting Semantics
 
 - `GO-ANALYZE` sonunda `Onay Bekleniyor: YES` yazılır; çünkü analizden sonra kullanıcı karar verir.
 - `GO-IMPLEMENT` sonunda `Onay Bekleniyor: YES` yazılır; çünkü commit / PR / merge için kullanıcı karar verir.
-- `GO-COMPLETE` sonunda stop condition yoksa `Onay Bekleniyor: NO` yazılır; çünkü kullanıcı baştan operasyon zincirini tamamlama yetkisi vermiştir.
+- Açık `IF GO-COMPLETE` owner yetkisiyle yürüyen zincirin sonunda stop condition yoksa `Onay Bekleniyor: NO` yazılır; çünkü kullanıcı baştan operasyon zincirini tamamlama yetkisi vermiştir.
 - `GO-COMPLETE` sırasında stop condition varsa `Onay Bekleniyor: YES` yazılır; çünkü kullanıcı kararı gerekir.
 
 ## CI WAIT / POLLING RULE
 
-Bu kural yalnız `GO-COMPLETE` için geçerlidir. `GO-ANALYZE` ve `GO-IMPLEMENT` sonunda ajan kullanıcıya rapor verir; CI bekleme zinciri otomatik merge anlamına gelmez.
+Bu kural yalnız açık `IF GO-COMPLETE` owner yetkisi içeren görevler için geçerlidir. `GO-ANALYZE` ve `GO-IMPLEMENT` sonunda ajan kullanıcıya rapor verir; CI bekleme zinciri otomatik merge anlamına gelmez.
 
-`GO-COMPLETE` sırasında CI durumu `IN_PROGRESS` ise ajan hemen kullanıcıya dönmez. CI durumunu otomatik olarak belirli aralıklarla yeniden kontrol eder.
+`IF GO-COMPLETE` sırasında CI durumu `IN_PROGRESS` ise ajan hemen kullanıcıya dönmez. CI durumunu otomatik olarak belirli aralıklarla yeniden kontrol eder.
 
 - Önerilen polling aralığı: 60 saniyede bir.
 - Önerilen maksimum bekleme: 20 dakika.

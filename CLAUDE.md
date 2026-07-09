@@ -2,11 +2,17 @@
 
 ## 1. Purpose
 
-`CLAUDE.md` bu repodaki tek kanonik ve en yuksek oncelikli ajan talimat dosyasidir. `AGENTS.md` bagimsiz kural icermez; yalniz uyumluluk stub'idir. Bir ajan iki dosyayi da okursa her durumda `CLAUDE.md` takip edilir.
+`AGENTS.md` bu repodaki tum ajanlar icin repository-level zorunlu baseline'dir. `CLAUDE.md` Claude'a ozgu operasyonel supplement'tir; `AGENTS.md` ile celisemez veya onu override edemez. Bir kural celiskisi tespit edilirse `AGENTS.md` esas alinir ve celisen supplement/governance kaydi duzeltilmek uzere raporlanir.
 
 Her zaman Turkce konus ve Turkce yorum yap. Ana ilke: mevcut davranisi koru, tekrari azalt, niyeti tarif et. Guvenlik uzun yasak listeleriyle degil, kapsam ve beklenen davranisin netligiyle saglanir.
 
 Governance kayitlari `project/docs/governance/` altindadir; roadmap, backlog, mimari karar ve surec kayitlari burada tutulur.
+
+Repo-local uzmanlik skill'leri resmi Codex scan yuzeyi olan `.agents/skills/` altinda tanimlanir. `.codex/` Codex operasyonel config, hooks ve project-scoped custom agents yuzeyidir; mevcut owner/user WIP sayilir ve acik yetki olmadan degistirilmez.
+
+Repository-wide AI ground-truth rule: Sohbet gecmisi yalniz niyet ve karar tasir; mevcut gercekler her gorevde repository state, git state, dosya icerigi, governance kayitlari, PR/CI durumu ve komut ciktilarindan yeniden dogrulanir. Claude oturum hafizasi veya onceki konusma, guncel branch/HEAD/dosya/PR/CI/governance durumu icin otorite degildir.
+
+Buyuk veya uzun omurlu workstream'lerde Claude, ise baslamadan once Session Initialization ozeti uretir: Repository State, Execution Context, Context Drift, Concurrent Activity ve Ready/Not Ready. Bu ozet onceki konusmayi degil, guncel repository gercegini esas alir.
 
 ## 2. Architecture Principles
 
@@ -14,7 +20,7 @@ Mevcut mimariye ve kesinlesmis Architecture Decision'lara uy. Yeni gorev bir kar
 
 Multitenant yapi varsa ona uy. Degisiklikten once multitenant davranis gerekip gerekmedigini ve nedenini belirt.
 
-Scope buyutme. Yeni fikir once triage edilir: mevcut fazin parcasi mi, schema/migration veya mimari degisiklik gerektiriyor mu, Active Roadmap icinde mi? Degilse implement edilmez; Product Backlog maddesi onerilir.
+Bounded context / workstream scope buyutme. Yeni fikir once triage edilir: mevcut fazin parcasi mi, schema/migration veya mimari degisiklik gerektiriyor mu, Active Roadmap icinde mi? Degilse implement edilmez; Product Backlog maddesi onerilir.
 
 Backlog akisi: `Yeni fikir -> Triage -> Product Backlog -> READY -> Active Roadmap -> Implementation`. Her faz sonunda Backlog Review yap; `BACKLOG -> READY` ve roadmap tasimalari kullanici onayi olmadan uygulanmaz.
 
@@ -39,11 +45,11 @@ Gorev yetkileri:
 
 - `GO-ANALYZE`: yalniz analiz ve rapor; degisiklik yok. Sonunda kullanici karari beklenir.
 - `GO-IMPLEMENT`: degisiklik, test ve validation yapilir; merge yok. Commit/PR yalniz ayrica istenirse yapilir. Sonunda kullanici karari beklenir.
-- `GO-COMPLETE`: implementasyon, test, CI, merge, branch/worktree cleanup, main sync, final verification, checkpoint ve sonraki adim tek zincirdir. Stop condition yoksa zincir icinde tekrar onay istenmez.
+- `GO-COMPLETE`: implementasyon ve validation zinciridir. Commit, push, PR, CI, merge, branch/worktree cleanup, main sync, final verification, checkpoint ve sonraki adim yalniz gorev brief'i acik `IF GO-COMPLETE` owner yetkisi iceriyorsa tek zincire dahildir. Tool/system guardrail veya PR'a ozgu yetki gereksinimi varsa dur ve owner'dan acik yetki iste; aksi halde CI PASS ve `mergeStateStatus` CLEAN sonrasi zincir icinde tekrar onay istenmez.
 
-Kanonik repo: `C:\Users\ulas.htelli\Desktop\HUKUK_PROJE\HUKUK_YAZILIMI`. Bu tek dogru koktur; bagimsiz ikinci clone tespit edilirse kodlamadan once dur ve raporla.
+Repository root sabit bir Windows path'inden varsayilmaz; her oturumda guncel Git/repository state ile dogrulanir. Bagimsiz ikinci clone veya root belirsizligi tespit edilirse kodlamadan once dur ve raporla.
 
-Her implementasyon ayri branch ve ayri worktree ile, kanonik reponun git agindan ve `origin/main` bazindan acilir. Kanonik working tree yalniz `main` senkronu ve final dogrulama icindir; kirliyse kullanici WIP'i say, dokunma, yine yeni worktree ac.
+Her implementasyon ayri branch ve ayri worktree ile, dogrulanmis repository root'un git agindan ve `origin/main` bazindan acilir. Canonical working tree yalniz `main` senkronu ve final dogrulama icindir; kirliyse kullanici WIP'i say, dokunma, yine yeni worktree ac.
 
 ```text
 git fetch origin
@@ -79,7 +85,7 @@ Degisiklikleri mevcut modul sinirlari ve yerel pattern'ler icinde tut. Yeni abst
 
 Test seviyesi riskle orantili secilir. Docs-only degisikliklerde diff, kapsam ve uzunluk kontrolu yeterlidir. Kod veya davranis degisikliginde ilgili unit/integration/e2e veya smoke validation calistirilir.
 
-`GO-IMPLEMENT` sonunda validation sonucu raporlanir; merge yapilmaz. `GO-COMPLETE` icin CI takip edilir: `IN_PROGRESS` ise yaklasik 60 saniyede bir, en fazla 20 dakika kontrol et; `SUCCESS` olursa merge ve cleanup zinciri devam eder; `FAIL` veya timeout olursa dur. CI bitmeden gelen `mergeStateStatus: BLOCKED` tek basina stop condition degildir; CI bitince yeniden kontrol edilir. CI sonrasi `mergeStateStatus` `CLEAN` degilse dur.
+`GO-IMPLEMENT` sonunda validation sonucu raporlanir; merge yapilmaz. `IF GO-COMPLETE` owner yetkisi varsa CI takip edilir: `IN_PROGRESS` ise yaklasik 60 saniyede bir, en fazla 20 dakika kontrol et; `SUCCESS` olursa merge ve cleanup zinciri devam eder; `FAIL` veya timeout olursa dur. CI bitmeden gelen `mergeStateStatus: BLOCKED` tek basina stop condition degildir; CI bitince yeniden kontrol edilir. CI sonrasi `mergeStateStatus` `CLEAN` degilse dur.
 
 DB-gated integration test gerektiren gorevlerde production veya local development veritabanina karsi test kosulmaz. Guvenli sira:
 
@@ -95,7 +101,7 @@ test tamamlaninca container istege bagli silinebilir
 
 Raporlar kisa, karar odakli ve kapsama uygun olsun. Docs-only islerde tekrarlayan "schema yok/migration yok/runtime yok" boilerplate'i yazma.
 
-Onay semantigi: `GO-ANALYZE` ve `GO-IMPLEMENT` sonunda `Onay Bekleniyor: YES`; `GO-COMPLETE` sonunda stop condition yoksa `NO`, varsa `YES`.
+Onay semantigi: `GO-ANALYZE` ve `GO-IMPLEMENT` sonunda `Onay Bekleniyor: YES`; acik `IF GO-COMPLETE` owner yetkisiyle tamamlanan zincirde stop condition yoksa `NO`, varsa `YES`.
 
 Kapanista is gerektiriyorsa su bilgileri ver: degisen dosyalar, ozet, kaldirilan veya yeniden ifade edilen kural gruplari, verification, kalan risk, sonraki adim. Backlog veya mimari karar yoksa sabit blok uretme.
 

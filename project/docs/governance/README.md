@@ -4,11 +4,14 @@ Bu klasör HUKUK_YAZILIMI için kalıcı governance kayıt alanıdır.
 
 Tek kaynak modeli:
 
-- `CLAUDE.md` bu repo için kanonik ve bağlayıcı ajan standardıdır; `AGENTS.md` yalnız uyumluluk stub'ıdır.
-- `project/docs/governance/` roadmap, backlog, decision ve süreç kayıtlarını tutar.
-- `AGENTS.md` ve varsa diğer ajan stub'ları `CLAUDE.md` ve bu governance alanına pointer olarak kalır.
+- `AGENTS.md` bu repo için tüm ajanlara yönelik repository-level zorunlu baseline'dır.
+- `CLAUDE.md` Claude'a özgü operasyonel supplement'tir; `AGENTS.md` ile çelişemez veya onu override edemez.
+- `project/docs/governance/` roadmap, backlog, decision ve süreç kayıtlarını tutar; bu kayıtlar `AGENTS.md` ile tutarlı olmalıdır.
+- Gelecekteki repo-local skill'ler resmi Codex scan yüzeyi olan `.agents/skills/` altında tanımlanır.
+- `.codex/` Codex operasyonel config, hooks ve project-scoped custom agents yüzeyidir; mevcut owner/user WIP sayılır ve açık yetki olmadan değiştirilmez.
+- Repository-wide AI ground-truth rule: Sohbet geçmişi yalnız niyet ve karar taşır; mevcut gerçekler her görevde repository state, git state, dosya içeriği, governance kayıtları, PR/CI durumu ve komut çıktılarından yeniden doğrulanır.
 
-Bu klasör `CLAUDE.md` yerine geçmez ve ikinci bir kural seti oluşturmaz. Bir kural `CLAUDE.md` ile çelişirse `CLAUDE.md` uygulanır; governance dosyası düzeltilmek üzere raporlanır.
+Bu klasör `AGENTS.md` yerine geçmez ve ikinci bir kural seti oluşturmaz. Bir governance kuralı `AGENTS.md` ile çelişirse `AGENTS.md` uygulanır; governance dosyası düzeltilmek üzere raporlanır.
 
 Dosyalar:
 
@@ -17,4 +20,4 @@ Dosyalar:
 - `architecture-index.md` - kesinleşmiş mimari kararların indeksi.
 - `parking-lot.md` - şu anda değerlendirilmeyecek fikirler.
 - `decision-log.md` - governance ve ürün karar günlüğü.
-- `process-rules.md` - AGENTS.md standardının kısa operasyonel özeti.
+- `process-rules.md` - `AGENTS.md` standardının kısa operasyonel özeti.
