@@ -163,6 +163,27 @@ interest_rates:
         rate: 12
 
 # --------------------------------------------
+# CEZA/TAZMİNAT ORANLARI
+# --------------------------------------------
+penalties:
+  # FEE-TARIFF-2026-001B-1, LEGAL_RULE_CONFIRMED: TTK 6102 m.783/3 + Yargıtay
+  # 12. HD 05/03/2015 kararı. %5'ten %10'a 01.07.2012'de değişti, o günden beri sabit.
+  # max_rate kasıtlı yok: FEE-TARIFF-2026-001B-2, LEGACY_DATA_REQUIRES_SOURCE.
+  # 2025.yaml'daki max_rate: 0.20 hiçbir bağımsız kaynakla doğrulanamadı; kanun
+  # metni sabit %10 + hamilin ayrıca ispatlayacağı açık uçlu zarar öngörüyor,
+  # ikinci bir yüzde oranı değil. Kaynak bulunana kadar yazılmayacak.
+  bad_check_compensation:
+    default_rate: 0.10
+    label: "Karşılıksız Çek Tazminatı"
+    base: "principal"
+
+  contractual_penalty:
+    default_rate: null
+    max_rate: null
+    label: "Cezai Şart"
+    base: "principal"
+
+# --------------------------------------------
 # AVUKATLIK ASGARİ ÜCRET TARİFESİ 2026
 # İcra ve İflas Takipleri
 # --------------------------------------------
