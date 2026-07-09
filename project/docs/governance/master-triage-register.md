@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-09 (VER-10+ governance verification reconcile)
+**Son güncelleme:** 2026-07-10 (VER-36 DBIND §5 payout self-approval runtime reconcile)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -69,9 +69,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **VER-27** | `authz-workstream-handoff` OWN-01 notu bu sayfaya mı ait | — | Açık — finance ADR cross-reference var; docs-only açıklama/cross-ref kararı gerekir |
 | **VER-29** | Migration deploy sorunsuz mu | — | 2. batch (eski VR-10), WQ (migrate deploy) çalıştırıldıktan sonra anlamlı |
 | **VER-33** | Orphaned worktree içerik teyidi | — | 2. batch (eski VR-14), WQ (orphan-cleanup grubu) öncesi gerekli |
-| **VER-36** | `dbind-financial-authority-decisions.md` §5'e çapraz-referans eklenmeli mi | — | Açık / docs-only follow-up — DBIND §5 ve OWN-29 riski mevcut; cross-reference ekleme ayrı dar governance patch olabilir |
-
-**KAPANMIŞ (bu bölümden çıkarıldı, bkz. Bölüm D):** VER-01 (Disposition-POST authz) CLOSED. VER-11/15/17/18/24/28/30/31/34/35 (VER-10+ reconcile, repo kanıtıyla CLOSED/stale-local). VER-19 → OWN-24'e taşındı (aşağıda). VER-32 (eski VR-13, PR #890) → yukarıda not düşüldü, fiilen CLOSED.
+**KAPANMIŞ (bu bölümden çıkarıldı, bkz. Bölüm D):** VER-01 (Disposition-POST authz) CLOSED. VER-11/15/17/18/24/28/30/31/34/35 (VER-10+ reconcile, repo kanıtıyla CLOSED/stale-local). VER-36 (DBIND §5 payout self-approval runtime reconcile) CLOSED. VER-19 → OWN-24'e taşındı (aşağıda). VER-32 (eski VR-13, PR #890) → yukarıda not düşüldü, fiilen CLOSED.
 
 ---
 
@@ -156,6 +154,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **VER-31 (`sourceCaseId` FE taraflı dolduruluyor mu)** | VER-10+ reconcile (2026-07-09): FE/API wiring mevcut — `DebtorDetailDrawer`, `AddressListSection`, `NewDebtorModal`, `AddressFormModal`, DTO/service/testlerde `sourceCaseId` ingress ve exclusion path görülüyor. |
 | **VER-34 (`office-approval-shadow.service.ts` gerçek tüketicisi)** | VER-10+ reconcile (2026-07-09): gerçek tüketici `case-status.controller.ts`; module ve spec importları da mevcut. CPB-03 kapsamındaki tüketici doğrulaması kapandı. |
 | **VER-35 (`HUKUK_payout-audit-hardening` foreign/tracked doğrulaması)** | VER-10+ reconcile (2026-07-09): `HUKUK_payout-audit-hardening` dizini parent workspace altında yok; repo içi referans yalnız bu register satırıydı. Stale local verification olarak kapandı. |
+| **VER-36 (DBIND §5 payout self-approval runtime reconcile)** | Owner decision + runtime patch (2026-07-10): DBIND §5'in payout self-approval istisnası `CLIENT_PAYOUT_POST` + `approve()` için PayoutApprovalPolicy eligible üst-seviye aktörlere uygulandı. `reject`/`requestRevision`/`approveWithChanges` ve diğer actionCode'lar generic self-approval yasağı altında kaldı. `PendingPayoutRequests` PENDING kendi payout talebi için "Onayla", APPROVED için mevcut "Kesinleştir" akışını kullanır. Schema/migration yok. |
 
 ---
 
@@ -233,7 +232,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | OWN-26 | DevOps | Muhasebe kullanıcısına Lawyer'dan bağımsız capability alanı | Owner yönü |
 | OWN-27 | UI/Architecture | 3 silinen orphan component'in kalıcı terk mi | Ürün kararı |
 | **OWN-28 (YENİ)** | Authorization | 2. batch PB-01 = zaten ALT'daki ile aynı (bkz. not) | — |
-| **OWN-29 (YENİ, ÖNEMLİ)** | Authorization | K4 (2026-07-02, "money-out/void/close/reversal → PARTNER self-authority YOK, four-eyes") ile DBIND §5'in (payout için PARTNER self-approve istisnası) çelişkisi. Payout'ta DBIND §5 lehine çözüldü; K4'ün kapsadığı diğer 4 aksiyon sınıfı (**offset confirm-gate, collection void approval, case-close financial guard, receivable item approval**) hâlâ eski hüküm altında görünüyor. | Bu 4 sınıfa da PARTNER self-approve istisnası uygulanacak mı, yoksa K4'ün orijinal four-eyes hükmü mü korunacak? **Risk: Yüksek** — netleşmeden implementasyon başlarsa payout'taki rework tekrarlanabilir + canlı four-eyes koruma boşluğu. |
+| **OWN-29 (YENİ, ÖNEMLİ)** | Authorization | K4 (2026-07-02, "money-out/void/close/reversal → PARTNER self-authority YOK, four-eyes") ile DBIND §5'in çelişkisi payout için artık runtime'da da DBIND §5 lehine çözüldü (VER-36, 2026-07-10). K4'ün kapsadığı diğer 4 aksiyon sınıfı (**offset confirm-gate, collection void approval, case-close financial guard, receivable item approval**) hâlâ eski hüküm altında görünüyor. | Bu 4 sınıfa da PARTNER self-approve istisnası uygulanacak mı, yoksa K4'ün orijinal four-eyes hükmü mü korunacak? **Risk: Yüksek** — netleşmeden implementasyon başlarsa payout dışındaki canlı four-eyes koruma boşluğu sürebilir. |
 | **OWN-30 (2026-07-05, ACT-18'den yeniden sınıflandırıldı)** | Observability | Hata Logları (`error-logs-observability-pr-chain` memory) sayfası için "ileride geliştirme adayları" — retention manuel-tetik + retention-stats admin endpoint (şu an cron-only), UI resolved/unresolved filtresi (backend `isResolved` query param gerekir), log export (CSV), bulk resolve, hata-artış trend/alerting. Owner bu listeyi **2026-06-29'da bizzat PARK etti** ("bu sayfa Hata Logları olarak kalsın, başka işe gitmeyelim, ileride geliştirme için dönebilirim") ve kısa bir humanized-display turu sonrasında **yine** "merge sonrası dur, yeni Error Logs işi başlatma" dedi. Retention zaten owner-gated (`ERROR_LOG_RETENTION_ENABLED` + API restart gerekir, prod-etkili); admin endpoint/export/trend-alerting de operasyonel davranış etkisi taşıyor — **Low öncelikli kozmetik iş DEĞİL**. | Owner "şimdi dönüyorum" dediğinde hangi alt-maddeyle başlanacağı ve hangi kapsamda (retention aktivasyonu ayrı, dar bir GO-IMPLEMENT gerektirir). |
 
 **Not (OWN-28 hakkında):** 2. batch'in PB-01'i ("Staff ASLA final-approver kilidi dar istisnaya revize edilsin mi") zaten `p4-approval-engine` memory'sindeki mevcut "Staff/MUHASEBE final approver NO-GO pending owner" kararıyla aynıdır — **bu tabloya AYRI kayıt olarak eklenmedi**, yalnız referans amacıyla ID rezerve edildi. Gerçek yeni karar **OWN-29**'dur (3. batch'in CPB-06'sı).
@@ -244,7 +243,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 ### Kritik Çelişkiler
 1. **VER-02 (client çok-adres):** 5 bağımsız export aynı bulguyu yaptı — doğrulanmadan Task4 (OWN-11) kapsamına dahil edilirse kapsam belirsizliği büyür.
-2. **OWN-29 (K4↔DBIND§5 self-approval çelişkisi):** offset/void/case-close/receivable sınıflarında four-eyes koruma boşluğu riski — **YÜKSEK**, karar gelmeden implementasyon başlatılmamalı.
+2. **OWN-29 (K4↔DBIND§5 self-approval çelişkisi):** payout ayağı VER-36 ile runtime'da kapandı; offset/void/case-close/receivable sınıflarında four-eyes koruma boşluğu riski — **YÜKSEK**, karar gelmeden implementasyon başlatılmamalı.
 
 ### Kritik Bağımlılıklar
 - **BLK-04 (Faz2 Display Cutover)** zincirin kilit noktası: BLK-05/06/07/08 buna bağlı.
@@ -257,7 +256,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 - BLK-07 (Anapara alt-model refactor — migration+hukuki etki)
 - OWN-23 (A1 ciro-zinciri epik — legal sign-off)
 - OWN-16 (Debtor kimlik tekilliği — migration)
-- **OWN-29 (K4↔DBIND§5) — money-out sınıfının offset/void/case-close/receivable ayakları hâlâ four-eyes korumasız olabilir**
+- **OWN-29 (K4↔DBIND§5) — payout ayağı VER-36 ile reconcile edildi; offset/void/case-close/receivable ayakları hâlâ four-eyes korumasız olabilir**
 
 ### Mimari Riskler
 - OWN-12 (RISKY Fork A-D) — yüksek blast-radius kararlar bekliyor
@@ -279,10 +278,10 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | Kategori | Sayı |
 |---|---|
 | Master Product Backlog (ACTIVE) | 3 (ACT-24, ACT-25, ACT-28; ACT-20→OWNER-GATED/FUTURE/HOLD, ACT-23→OWNER_DECISION_REQUIRED, ACT-27→DECISION_CLOSED/IMPLEMENTATION_NEEDED) |
-| Master Verification Required | 23 (VER-02..10 + VER-12..14 + VER-16 + VER-20..23 + VER-25..27 + VER-29 + VER-33 + VER-36; VER-01/11/15/17/18/19/24/28/30/31/32/34/35 kapandı/taşındı) |
+| Master Verification Required | 22 (VER-02..10 + VER-12..14 + VER-16 + VER-20..23 + VER-25..27 + VER-29 + VER-33; VER-01/11/15/17/18/19/24/28/30/31/32/34/35/36 kapandı/taşındı) |
 | Master Workflow Queue — PENDING | 13 grup |
 | Master Workflow Queue — DONE | 5 zincir (PR #408 eklendi) |
-| Closed Register | 41 (VER-10+ reconcile ile VER-11/15/17/18/24/28/30/31/34/35 eklendi) |
+| Closed Register | 42 (VER-10+ reconcile ile VER-11/15/17/18/24/28/30/31/34/35 eklendi; VER-36 runtime reconcile eklendi) |
 | Archived Register | 7 (ARC-05 split sonrası tek satır, A parçası Closed'a gitti) |
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |

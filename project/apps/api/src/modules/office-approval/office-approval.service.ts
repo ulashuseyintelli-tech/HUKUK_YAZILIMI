@@ -6,8 +6,8 @@
 //
 // KESİN KARARLAR (Ulaş kilidi):
 //  - EventStore YOK → olgusal kayıt AuditLog'a (OFFICE_APPROVAL_*). Ham savedIntent audit'e YAZILMAZ (yalnız payloadHash).
-//  - Self-approval: approver === requester → 400 (SELF_APPROVAL_FORBIDDEN). (PARTNER'ın kendi işlemini doğrudan
-//    yapması decide()/resolver katmanında ALLOW ile çözülür [P4-2]; oraya gelirse zaten request oluşmaz.)
+//  - Self-approval: approver === requester → 400 (SELF_APPROVAL_FORBIDDEN). DBIND §5 gereği yalnız
+//    CLIENT_PAYOUT_POST approve() akışında, PayoutApprovalPolicy eligible üst-seviye aktör için dar istisna vardır.
 //  - Approver yeterliliği: aktif + aynı tenant + linkli Lawyer + (lawyerRank=PARTNER VEYA canApproveOfficeActions=true). Staff ASLA.
 //  - Deferred execution P4-3'te; burada yalnız execution durum işaretleyicileri (status=APPROVED ön-koşullu).
 //  - Geçişler koşullu-update (updateMany where status=...) ile yarış-güvenli + idempotent.
@@ -126,7 +126,7 @@ export class OfficeApprovalService {
   async approve(id: string, approverUserId: string, note?: string): Promise<OfficeApprovalRequest> {
     const req = await this.requireRequest(id);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
-    this.assertNotSelfApproval(req, approverUserId);
+    await this.assertApproveSelfApprovalPolicy(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
     return this.commitDecision(id, OfficeApprovalStatus.APPROVED, approverUserId, note ?? null, 'OFFICE_APPROVAL_APPROVED');
   }
@@ -360,6 +360,20 @@ export class OfficeApprovalService {
     if (approverUserId === req.requesterUserId) {
       throw new BadRequestException('SELF_APPROVAL_FORBIDDEN: Kendi talebinizi onaylayamaz/reddedemezsiniz.');
     }
+  }
+
+  /**
+   * DBIND §5 runtime reconciliation: generic self-approval ban korunur; yalnız CLIENT_PAYOUT_POST approve()
+   * kararında, PayoutApprovalPolicy eligible üst-seviye aktör kendi payout talebini onaylayabilir.
+   * reject/requestRevision/approveWithChanges bu istisnaya dahil değildir.
+   */
+  private async assertApproveSelfApprovalPolicy(req: OfficeApprovalRequest, approverUserId: string): Promise<void> {
+    if (approverUserId !== req.requesterUserId) return;
+    if (req.actionCode === ActionCode.CLIENT_PAYOUT_POST) {
+      await this.payoutApprovalPolicy.assertEligible(approverUserId, req.tenantId);
+      return;
+    }
+    this.assertNotSelfApproval(req, approverUserId);
   }
 
   /**
