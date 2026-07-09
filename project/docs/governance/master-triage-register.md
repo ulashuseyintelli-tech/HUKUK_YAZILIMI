@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-05 (ACT-22 POST-MERGE GOVERNANCE CHECK)
+**Son güncelleme:** 2026-07-09 (GOV-REGISTER-SYNC-001)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -11,18 +11,25 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 **Kullanım kuralı:** Bu dosyadaki hiçbir kayıt doğrudan doğru kabul edilmez. Bir kayıt üzerinde çalışılmadan önce repository güncel durumu son otoritedir; kayıt zaten kapanmışsa veya değişmişse bu dosya güncellenir. **POST-MERGE GOVERNANCE CHECK** (bkz. `decision-log.md` 2026-07-04 kaydı) her GO-COMPLETE sonrası bu dosyaya yansıtılmalıdır — aksi halde kayıtlar "zombie archive/backlog" haline gelir (bkz. ARC-05 vakası, Bölüm E).
 
+**Sync notu (2026-07-09, GOV-REGISTER-SYNC-001):** Bu dosya Master Triage indeksidir; Product Backlog, Decision Log ve Canonicalization Register karşısında tek başına otorite değildir. `MVR-*` namespace'i bu governance dosyalarında kanonik değildir; verification kayıtlarının kanonik namespace'i `VER-*` olarak korunur. `CCB-001` Master Triage kapsamına taşınmaz: canonical claim balance clean-break implementation authority `product-backlog.md` içindeki `CCB-001` kaydıdır; `canonicalization-register.md` içindeki `CAN-CUT-02` bu workstream altında milestone olarak izlenir.
+
 ---
 
 ## A. Master Product Backlog (ACTIVE)
 
 | ID | Domain | İş | Öncelik | Not |
 |---|---|---|---|---|
-| ACT-20 | OCR | Instrument identityNo taşıma (uzun vade) | Low | ⚠️ **GO-ANALYZE ile owner-gated/A1-d-bağımlı bulundu (2026-07-05):** `ocr-instrument-to-case-instrument.mapper.ts`'de `identityNo` şu an yalnız DRAWER node'unda taşınıyor; ENDORSER/PAYEE'ye genişletmek iki gerçek engelle karşılaşıyor — (1) **A1-d (ciro zinciri sırası)** owner tarafından bilinçli HOLD edilmiş ayrı bir epik (`a1-client-anchoring-design.md`/`a1-kambiyo-motoru-uygulama-plan.md` — "OCR arka-yüz sırası güvenilmez"), kimlik-no'yu anlamlı taşımak zincirdeki pozisyonu bilmeyi gerektirir; (2) ciranta için hiç OCR-kimlik-çıkarımı yok, yeni ekleme ACT-19'da kilitlenen "ön-yüz extraction prompt'una dokunulmaz" sınırına girer. **Bu kayıt "Low, uzun vade" başlığının dediği gibi gerçekten uzun vadeli** — A1-d HOLD'u çözülmeden güvenli, dar bir implementasyon yolu yok. Owner'a sunuldu, owner GO-IMPLEMENT vermedi; ACT-21'e geçilmesi onaylandı. Sıradaki adım: A1-d epic'i owner tarafından açıldığında yeniden değerlendirilir. |
-| **ACT-23** | Debtor | `setPrimaryAddress()`/`deleteAddress()` genişletme adayı | Low | ⚠️ 2. batch (eski PB-09) — **ARC-07 ile çakışma riski** (ClientAddress backfill owner bilinçli kapsam-dışı bırakmıştı); implement öncesi owner teyidi şart |
 | **ACT-24** | UI | Approval Inbox'a CLIENT_PAYOUT_POST summary projector eklenmesi | Low | 3. batch (PAYOUT-CPB-01), henüz ele alınmadı |
 | **ACT-25** | Accounting | ClientPayoutService.create() dead-code kararı + test suite finalize()'a taşıma | Low | 3. batch (PAYOUT-CPB-02), henüz ele alınmadı |
-| **ACT-27** | Alacak Kalemi | Principal gross/net semantic split (asilAlacak vs PRINCIPAL bucket) | Yüksek | 4. batch (CPB-1) — GO-ANALYZE onaylandı: hiçbir ALC-AUTH-3* kaydı bu ayrımı ele almadı. ⚠️ Bu, `product-backlog.md`'nin ayrı ALC-AUTH-* isim-alanına ait — gerçek iş muhtemelen ALC-AUTH-4/5 olarak orada devam eder, burada yalnız cross-reference. **✅ İSİMLENDİRME/SEMANTİK KARARI VERİLDİ (2026-07-05, bkz. `decision-log.md`):** `principalAmount` = kalan (current/outstanding) anapara; `originalPrincipalAmount`/`initialPrincipalAmount` = başlangıç takip anaparası. Her ikisi de hukuken "anapara"; fark yalnız zaman içindeki tahsilattan kaynaklanan bakiye. ⚠️ **Bu yalnız isimlendirme kararıdır — kod/schema/migration HENÜZ YAPILMADI.** GO-ANALYZE doğruladı: `principalAmount`/`asilAlacak` 137 dosyada kullanılıyor, `originalPrincipalAmount` şemada yok — gerçek implementasyon Ultra-tier (migration+finans+geniş blast-radius), ayrı bir GO-IMPLEMENT yetkilendirmesi ve kendi derin GO-ANALYZE'ı gerekir. `product-backlog.md`/ALC-AUTH numaralandırması bu turda YAPILMADI. |
 | **ACT-28** | Alacak Kalemi | Collection/LedgerEntry/LedgerAllocation üç-otorite reconciliation (PAID_DELTA kök nedeni) | Orta-Yüksek | 4. batch (CPB-2) — GO-ANALYZE onaylandı: ALC-AUTH-3D yalnız guard-seviyesi otoriteyi (frontend hangi listeyi dinliyor) birleştirdi, PAID_DELTA'ya yol açan alttaki veri-kaynağı çakışmasına hiç dokunmadı. ⚠️ ALC-AUTH-* isim-alanına ait, cross-reference. **Sıradaki adım: (VR-2 zaten bu turda cevaplandı) GO-ANALYZE (owner talimatı bekliyor).** ⚠️ **İSİM-ÇAKIŞMASI DÜZELTMESİ (2026-07-05):** bkz ACT-27 notu — "ALC-AUTH-4/5" tahmini bu madde için de geçersiz, "ALC-AUTH-4A/4B/4C" başka bir konuya (sign-off/rollout) atandı; bu üç-otorite reconciliation konusu hâlâ numarasız. |
+
+### Owner-Gated / Future / Decision-Split
+
+| ID | Domain | İş | Durum | Not |
+|---|---|---|---|---|
+| ACT-20 | OCR | Instrument identityNo taşıma (uzun vade) | OWNER-GATED / FUTURE / HOLD | GO-ANALYZE ile owner-gated/A1-d-bağımlı bulundu (2026-07-05). A1-d ciro zinciri sırası owner tarafından HOLD; ciranta için OCR kimlik çıkarımı yok; ACT-19 kapsam kilidi nedeniyle güvenli dar implementasyon yolu yok. A1-d epic'i owner tarafından açıldığında yeniden değerlendirilir. |
+| ACT-23 | Debtor | `setPrimaryAddress()`/`deleteAddress()` genişletme adayı | OWNER_DECISION_REQUIRED | ARC-07 ile çakışma riski sürüyor; ClientAddress backfill owner tarafından bilinçli kapsam dışı bırakılmıştı. Implement öncesi owner teyidi gerekir. |
+| ACT-27 | Alacak Kalemi | Principal current/original semantic split | DECISION_CLOSED / IMPLEMENTATION_NEEDED | Semantik karar verildi: `principalAmount` = kalan/current anapara; başlangıç takip anaparası ayrı `originalPrincipalAmount`/`initialPrincipalAmount` alanı ile temsil edilir. Kod/schema/migration yapılmadı; gerçek implementasyon ayrı GO-IMPLEMENT ve derin GO-ANALYZE gerektirir. |
 
 **KAPANMIŞ/MERGED (ACTIVE'den çıkarıldı, bkz. Bölüm D — Closed Register):** ACT-01 (CLOSED/INVALID/Zombie), ACT-02, ACT-03, ACT-04, ACT-05, ACT-06 (CLOSED/Zombie-Active — bkz. altta), ACT-07 (MERGED — bkz. altta), ACT-08 (MERGED — bkz. altta), ACT-09 (MERGED — bkz. altta), ACT-10 (MERGED — bkz. altta), ACT-11 (MERGED — bkz. altta), ACT-12 (MERGED — bkz. altta), ACT-13 (MERGED — bkz. altta), ACT-14 (MERGED — bkz. altta), ACT-15 (MERGED — bkz. altta), ACT-16 (MERGED — bkz. altta), ACT-17 (MERGED — bkz. altta), ACT-19 (MERGED — bkz. altta), ACT-21 (MERGED — bkz. altta), ACT-22 (MERGED — bkz. altta), ACT-26 (CLOSED/Zombie-Active — bkz. altta).
 
@@ -65,7 +72,6 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **VER-29** | Migration deploy sorunsuz mu | — | 2. batch (eski VR-10), WQ (migrate deploy) çalıştırıldıktan sonra anlamlı |
 | **VER-30** | D6A-1 "contact" gerçek field-set | — | 2. batch (eski VR-11) |
 | **VER-31** | `sourceCaseId` hiç doldurulmadı mı (FE-taraflı) | — | 2. batch (eski VR-12) |
-| **VER-32** | ~~PR #890'ı kapatan süreç~~ | — | 2. batch (eski VR-13) — **ZATEN ÇÖZÜLDÜ**: `act04-ocr-region-classifier` memory'si "diff-audit sonrası CLOSED, benzersiz iyileştirme yok" diyor. **CLOSED sayılır.** |
 | **VER-33** | Orphaned worktree içerik teyidi | — | 2. batch (eski VR-14), WQ (orphan-cleanup grubu) öncesi gerekli |
 | **VER-34** | `office-approval-shadow.service.ts` gerçek tüketicisi | — | 3. batch (PAYOUT-VER-01), CPB-03'ü kapsıyor |
 | **VER-35** | `HUKUK_payout-audit-hardening` içeriğinin `git ls-files` ile foreign/tracked doğrulaması | — | 3. batch (PAYOUT-VER-02) |
@@ -267,8 +273,8 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 | Kategori | Sayı |
 |---|---|
-| Master Product Backlog (ACTIVE) | 7 (ACT-20, ACT-23..25, ACT-27..28; ACT-01..17/19/21/22/26 Closed'a taşındı; ACT-18→OWN-30 owner-paused; ACT-27/28=ALC-AUTH-* cross-reference) |
-| Master Verification Required | 33 (VER-02..18 + VER-20..36, VER-01/19/32 kapandı/taşındı) |
+| Master Product Backlog (ACTIVE) | 3 (ACT-24, ACT-25, ACT-28; ACT-20→OWNER-GATED/FUTURE/HOLD, ACT-23→OWNER_DECISION_REQUIRED, ACT-27→DECISION_CLOSED/IMPLEMENTATION_NEEDED) |
+| Master Verification Required | 33 (VER-02..18 + VER-20..31 + VER-33..36; VER-01/19/32 kapandı/taşındı) |
 | Master Workflow Queue — PENDING | 13 grup |
 | Master Workflow Queue — DONE | 5 zincir (PR #408 eklendi) |
 | Closed Register | 30 (ALC-AUTH-4A + ACT-17 + ACT-19 + ACT-15 + ACT-14 + ACT-11 + ACT-13 + ACT-10 + ACT-12 + ACT-09 + ACT-21 + ACT-22 eklendi) |
