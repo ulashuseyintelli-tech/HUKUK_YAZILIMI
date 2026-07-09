@@ -17,6 +17,20 @@ import type { ITariffRepository, Tariff as SharedTariff } from '@shared/types';
  * @see ARCHITECTURE.md - Source of Truth Matrix
  */
 
+/**
+ * Bir tarife yılının YAML'ında zorunlu bir bölüm eksik olduğunda fırlatılır.
+ * Fail-closed: eksik veri asla sessizce {} / 0 olarak ele alınmaz.
+ */
+export class MissingTariffSectionError extends Error {
+  constructor(
+    public readonly year: number,
+    public readonly section: keyof TariffData,
+  ) {
+    super(`Tarife ${year} zorunlu "${section}" bölümünü içermiyor — eksik/hatalı yapılandırma nedeniyle tarife çözümü reddedildi.`);
+    this.name = 'MissingTariffSectionError';
+  }
+}
+
 export interface TariffData {
   version: number;
   year: number;
@@ -27,6 +41,20 @@ export interface TariffData {
   interest_rates: Record<string, Record<string, Array<{ start_date: string; rate: number }>>>;
   penalties: Record<string, { default_rate: number; max_rate?: number; label: string }>;
 }
+
+/**
+ * toSharedFormat() bu bölümlerin her birini Object.entries() ile koşulsuz okur.
+ * Biri eksikse fail-closed davranır (MissingTariffSectionError) — sessizce {} / 0 asla üretilmez.
+ * (version/year/effective_date bu listede değil: eksiklikleri farklı bir hata modeli üretir —
+ * crash değil, sessiz undefined — bu guard'ın kapsamı dışında.)
+ */
+const REQUIRED_TARIFF_SECTIONS: Array<keyof TariffData> = [
+  'fixed_fees',
+  'rate_fees',
+  'postage',
+  'interest_rates',
+  'penalties',
+];
 
 export interface TariffSummary {
   year: number;
@@ -56,6 +84,12 @@ export class TariffService implements ITariffRepository {
    * Shared Tariff formatına dönüştür
    */
   private toSharedFormat(data: TariffData): SharedTariff {
+    for (const section of REQUIRED_TARIFF_SECTIONS) {
+      if (!data[section]) {
+        throw new MissingTariffSectionError(data.year, section);
+      }
+    }
+
     return {
       version: data.version,
       year: data.year,
