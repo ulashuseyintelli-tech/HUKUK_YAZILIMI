@@ -1145,17 +1145,19 @@ Status: **IMPLEMENTATION AUTHORITY / MASTER STREAM** (owner reconciliation, 2026
 
 ---
 
+**Status reconcile notu (2026-07-09, governance-only):** Repo kanıtı D6 bölümündeki bazı BACKLOG/READY ifadelerinin main'e merge edilmiş runtime gerçekliğini yansıtmadığını gösterdi. Bu patch yalnız bookkeeping düzeltmesidir; runtime/test/schema/migration değişikliği yoktur. `D6A-2-SURFACE-1` tamamen kapatılmaz, `PARTIAL / MERGED_CORE` olarak kalır; `D6-INACTIVE-RECIPIENT-SWEEP`, `D6-TEBLIGAT-BRIDGE` ve `D6-TASK-LINK` repo kanıtıyla CLOSED kabul edilir. Retention ailesi, `ESF-1` ve `IAF-1` statüleri bu patch'te açık/deferred kalır.
+
 ID: D6A-2-SURFACE-1
 Title: D6A-2 dışa açılan yüzü — list/acknowledge endpoint + expiry cron + gözlem
-Problem: `DebtorCrossCaseNotification` (D6A-2, PR #880) çekirdek üretimi canlı ama backend-only — hiçbir HTTP endpoint listelemiyor/acknowledge etmiyor (5 controller'da sıfır referans, grep-doğrulandı); `expireStaleNotifications()` hiçbir cron'a bağlı değil (30 günlük PENDING kayıtlar sınırsız birikiyor); `resolveRecipients()` boş dönerse hiçbir iz/log kalmıyor.
+Problem: Reconcile öncesi kayıt `DebtorCrossCaseNotification` yüzeyini tamamen eksik gösteriyordu. Repo gerçeği: list/acknowledge endpoint'leri, expiry cron'u ve no-recipient `logger.warn` gözlemi merge edilmiş durumda; ancak backlog kapsamındaki reporting/groupBy sorguları ve create()/transaction hata yolu için persistent Hata Logları/event hook kanıtı bulunmadı.
 Business Value: Üretilen bildirimler gerçekten sorumlu avukat/personel tarafından görülüp kapatılabilir hale gelir; sessiz-veri-kaybı riski gözlemlenebilir olur.
-Technical Value: Mevcut şema/servis üzerine ince bir yüzey — EK MİGRASYON GEREKMEZ (recipientUserId/status/dedupeKey/fieldGroup/severity/changeSummary/expiresAt hepsi mevcut). Kapsam: (1) yeni `listForRecipient()` servis metodu + `GET /debtors/cross-case-notifications?status=PENDING` (tenantId+recipientUserId JWT'den zorunlu türetilir, client veremez), (2) `POST /debtors/cross-case-notifications/:id/acknowledge` (mevcut `acknowledge()` sarmalanır), (3) expiry cron — `automation.service.ts` içine yeni `@Cron(EVERY_HOUR)` metodu olarak (domain servisine gömülmez, mevcut `checkNotificationExpiries`/`sendExpiringPoaNotifications` idiom'u), (4) `resolveRecipients()` boş dönüşünde `logger.warn` (owner Q1 kararı gereği — DB constraint YOK, teknik olarak mümkün/anomaly kabul edilir), (5) create()/transaction hata yolu için mevcut Hata Logları observability'e event hook, (6) raporlama sorguları (Unacknowledged/byFieldGroup/bySeverity) — hepsi tek `groupBy()` ailesi, ayrı efor değil.
+Technical Value: MERGED_CORE kapsamı: `listForRecipient()` + `GET /debtors/cross-case-notifications`, `POST /debtors/cross-case-notifications/:id/acknowledge`, `AutomationService.expireCrossCaseNotifications()` hourly cron wiring, `resolveRecipients()` boş dönüşünde `logger.warn`. Remaining follow-up: reporting/groupBy sorguları ve persistent error-log/event hook ayrı küçük follow-up olarak kalır; yeni migration gerekmez.
 Priority: HIGH
 Depends On: — (D6A-2 çekirdek zaten canlı)
-Unlock Condition: Owner GO-IMPLEMENT onayı (bu backlog kaydı implementasyon yetkisi VERMEZ; Q2-Q6 — retention/purge, FK onDelete, i18n, Tebligat-köprü, action-note ayrımı — implementasyon önce/sırasında triage edilmeli)
-Estimated Size: M (BE — dar CRUD-benzeri, migration yok)
+Unlock Condition: Kalan follow-up'lar için ayrı owner GO gerekir.
+Estimated Size: Remaining S (docs-reconciled; merged core already in main)
 Related Modules: debtor-cross-case-notification.service.ts, debtor.controller.ts (veya yeni küçük controller), automation.service.ts
-Status: READY — Q1 owner tarafından cevaplandı (bkz decision-log.md 2026-07-04), governance zinciri FAZ 0 ile tamamlandı; ayrı GO-IMPLEMENT teklifi ile başlatılabilir.
+Status: PARTIAL / MERGED_CORE — repo kanıtı: `a421e93a` ile `listForRecipient()` + `GET /debtors/cross-case-notifications`, `POST /debtors/cross-case-notifications/:id/acknowledge`, `AutomationService.expireCrossCaseNotifications()` hourly cron wiring ve `resolveRecipients()` boş dönüşünde `logger.warn` merge edildi. Fully CLOSED değil; reporting/groupBy sorguları ve persistent error-log/event hook follow-up açık.
 
 ID: ESF-1
 Title: Entity Status Framework — design-gate (paylaşılan durum/rozet katmanı)
@@ -1257,37 +1259,37 @@ ID: D6-INACTIVE-RECIPIENT-SWEEP
 Title: Deaktif alıcının PENDING D6 bildirimlerini erken-expire eden sweep (Q3)
 Problem: `resolveRecipients()` yalnız ÜRETİM anında `user.isActive` kontrol ediyor; üretimden sonra deaktive olan bir personelin var olan PENDING kayıtları hiç ek işlem görmeden kalıcı olarak "kimse görmeyecek" halde PENDING kalabilir.
 Business Value: Sessiz/asla-görülmeyecek PENDING birikimini önler; gözlem/raporlama netliği.
-Technical Value: `expireCrossCaseNotifications()` (automation.service.ts) cron'una veya ayrı bir sweep'e "recipient artık isActive=false ise erken-EXPIRE et" kontrolü eklenmesi. Migration GEREKMEZ (mevcut User.isActive alanı zaten var).
+Technical Value: `DebtorCrossCaseNotificationService.expireStaleNotificationsForInactiveRecipients()` + `AutomationService.expireInactiveRecipientCrossCaseNotifications()` hourly cron wiring merge edildi. Migration yok; yalnız PENDING kayıtlar etkilenir, ACKNOWLEDGED/EXPIRED dokunulmaz.
 Priority: LOW
 Depends On: —
-Unlock Condition: Owner GO-IMPLEMENT onayı
-Estimated Size: S (BE — küçük kod değişikliği, migration yok)
+Unlock Condition: —
+Estimated Size: DONE
 Related Modules: debtor-cross-case-notification.service.ts, automation.service.ts
-Status: BACKLOG — kod YAPILMADI, yalnız aday olarak kaydedildi (bkz decision-log.md 2026-07-04, FAZ 2).
+Status: CLOSED — MERGED. Repo kanıtı: `728f979b` (inactive-recipient sweep service + cron + tests). Migration yok; yalnız PENDING kayıtlar etkilenir, ACKNOWLEDGED/EXPIRED dokunulmaz.
 
 ID: D6-TEBLIGAT-BRIDGE
-Title: CaseDebtor bazında aktif Tebligat/Collection sinyali — salt-okuma bridge (Q5)
-Problem: Borçlu adres/kimlik değişikliği aktif bir tebligat/tahsilat sürecini etkileyebilir ama D6A-2 bugün bu etkiyi hiç sinyallemez — avukat "borçlu değişti" bilgisini alır ama "bu değişiklik aktif bir tebligat/tahsilat sürecini etkiliyor olabilir" bilgisini almaz.
+Title: CaseDebtor bazında aktif Tebligat sinyali — salt-okuma bridge (Q5, Tebligat-only)
+Problem: Borçlu adres/kimlik değişikliği aktif bir tebligat sürecini etkileyebilir ama D6A-2 bu etkiyi üretmez. Repo gerçeği: aktif Tebligat sinyali salt-okuma bridge olarak merge edildi; Collection bilinçli olarak kapsam dışı bırakıldı.
 Business Value: Görünürlük artışı — avukat manuel incelemeye yönlendirilir; D6'nın hukukî sınırı (otomatik hüküm üretmeme) korunarak.
-Technical Value: `Collection.caseDebtorId`/`Tebligat.caseDebtorId` artık gerçek Prisma `@relation` (D5B/D5C) — CaseDebtor bazında aktif/pending Tebligat+Collection sayısını dönen SALT-OKUMA bir sorgu/endpoint. D6A-2'nin çekirdek modeline hiçbir YAZMA yapmaz. Migration muhtemelen GEREKMEZ (FK'ler zaten var) — bir sonraki GO-ANALYZE'da teyit edilmeli. Emsal: repo'daki mevcut "manual review" idiomu (`needsReview`, `manualReviewCaseIds`, `OTHER_SUSPENSE_MANUAL_REVIEW`).
+Technical Value: `GET /debtors/case-debtors/:caseDebtorId/active-process-summary` + `CaseDebtorService.getActiveProcessSummary()` merge edildi. Salt-okuma Tebligat sayımı yapar, `manualReviewRecommended` döner, D6A-2/Collection/Tebligat kayıtlarına yazmaz. Migration yok.
 Priority: MEDIUM
 Depends On: —
-Unlock Condition: Owner GO-ANALYZE (migration gerekip gerekmediğinin teyidi) + GO-IMPLEMENT onayı
-Estimated Size: M (BE — salt-okuma sorgu/endpoint)
-Related Modules: debtor-cross-case-notification.service.ts, Collection, Tebligat, CaseDebtor
-Status: BACKLOG — kod YAPILMADI. D6 otomatik hukukî hüküm ÜRETMEYECEK ilkesi NO-GO boundary olarak kilitlendi (bkz d6-legal-semantics-triage.md Bölüm 7).
+Unlock Condition: —
+Estimated Size: DONE
+Related Modules: debtor-cross-case-notification.service.ts, Tebligat, CaseDebtor
+Status: CLOSED — MERGED, Tebligat-only. Repo kanıtı: `bcdcc0bd` (`GET /debtors/case-debtors/:caseDebtorId/active-process-summary` + `CaseDebtorService.getActiveProcessSummary()`). Collection signal ayrı adaydır; bu kapanışın parçası değildir. D6 otomatik hukukî hüküm ÜRETMEYECEK ilkesi korunur.
 
 ID: D6-TASK-LINK
 Title: acknowledge sonrası opsiyonel Task/workflow linki (Q6)
-Problem: D6A-2 modelinde "gördüm" (acknowledgedAt) dışında hiçbir "önlem alındı" izi yok; ileride UI'da bu ayrımın net kalması ve isteğe bağlı iş-takibi gerekebilir.
+Problem: D6A-2 modelinde "gördüm" (acknowledgedAt) dışında hiçbir "önlem alındı" izi yoktu; repo gerçeği: D6A-2 çekirdeğine yazmadan, kullanıcı-tetikli idempotent Task oluşturma yüzeyi merge edildi.
 Business Value: "Gördüm" ile "işlem yaptım" hukukî/operasyonel ayrımını net tutarken, isteyen ekiplere iş-takibi imkânı sağlar.
-Technical Value: D6A-2 modeline action/resolution alanı EKLENMEZ (kapsam-şişmesi riski) — bunun yerine mevcut Task/workflow domaine opsiyonel `linkedTaskId` (nullable FK) ile bağlanır. Küçük migration gerektirir.
+Technical Value: `POST /debtors/cross-case-notifications/:id/create-task` + `DebtorCrossCaseNotificationTaskLinkService.createTaskForNotification()` merge edildi. `Task.dedupeKey = "D6-TASK-LINK:" + notification.id` ile idempotenttir. D6A-2 şemasına `linkedTaskId` eklenmedi; migration yok; acknowledge semantiği değişmedi.
 Priority: LOW
-Depends On: D6A-2-SURFACE UI fazı (henüz yapılmadı) + owner'ın action-tracking'i gerçekten isteyip istemediği kararı
-Unlock Condition: Owner GO-IMPLEMENT onayı
-Estimated Size: M (BE küçük migration + FE entegrasyonu)
+Depends On: D6A-2-SURFACE core (merged)
+Unlock Condition: —
+Estimated Size: DONE
 Related Modules: debtor-cross-case-notification.service.ts, Task domain, schema.prisma
-Status: BACKLOG — kod/migration YAPILMADI, yalnız aday olarak kaydedildi (bkz decision-log.md 2026-07-04, FAZ 2).
+Status: CLOSED — MERGED. Repo kanıtı: `4a53c222` (`POST /debtors/cross-case-notifications/:id/create-task` + `DebtorCrossCaseNotificationTaskLinkService.createTaskForNotification()`). No `linkedTaskId`, no migration, no D6A-2 lifecycle write; idempotency `Task.dedupeKey = "D6-TASK-LINK:" + notification.id` ile sağlanır.
 
 ## CAN-P0-001 — Canonicalization P0 Remediation (ARCHITECTURAL_DRIFT temizliği, 2026-07-05, 2026-07-06'da böldü)
 
