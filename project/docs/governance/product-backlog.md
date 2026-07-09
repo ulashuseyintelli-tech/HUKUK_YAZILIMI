@@ -1127,6 +1127,22 @@ Related Modules: case.service.ts (getCalculationSummary, buildCalculationSummary
 Status: **GO-ANALYZE DONE + GO-IMPLEMENT DONE (2026-07-05, owner onaylı).** PR #952 → squash SHA `7b222c50` MERGED: `project/apps/api/src/modules/hesap-ozeti-coverage/` altında bağımsız, NestJS DI'ye bağlanmayan saf TS modülü — `ComponentCoverageStatus` (9 değer) + 19 Hesap Özeti bileşeni için kod-doğrulanmış sınıflandırma, `buildComponentCoverageReport()` saf fonksiyonu, 1 ground-truth fixture (statüter kaynaklı, teyitsiz kalemler PLACEHOLDER işaretli), 23 golden-file testi (23/23 PASS). Adversarial-verify turunda bulunan gerçek bir bulgu (faiz satırlarında `canonicalValue===0` iken koşulsuz `CANONICAL_COVERED` üretilmesi — motorun gerçekten mi çalıştığı yoksa sessizce mi başarısız olduğu ayırt edilemezken) bu PR'da düzeltildi: bu durum artık `UNVERIFIED`'a düşer ve `b1ReadinessBlocked` sinyaline dahildir. Kapsam tam olarak onaylanan sınırlar içinde kaldı — kod/schema/migration/flag-açma/rollout/ClaimItem-materialization/payment-reconciliation YOK, hiçbir mevcut dosya değişmedi (yalnız 4 yeni dosya). **B1 flag varsayılan KAPALI kalmaya devam eder.** Rapor artık çalıştırılabilir/test edilebilir durumda ama HİÇBİR canlı endpoint/UI'ya bağlanmadı — bu kasıtlı (onaylanan kapsam "wiring" içermiyordu); B1 rollout kararı için bu raporun gerçek dev-DB case verisiyle çalıştırılması ayrı, sonraki bir adımdır. Bu, ALC-AUTH-4A'nın (PR #942, MERGED) kapanışını GERİ ALMAZ — 4A kendi dar kapsamında (banner/reasonCodes mismatch) tamdır; ALC-AUTH-6 ondan sonraki, daha derin bir doğrulama katmanıdır.
 ---
 
+## Product Architecture Control (PAC)
+
+ID: PAC-001-A
+Title: Authority Maps for ADR-013 Fee / Harc / Snapshot / Journal line
+Problem: GOV-ADR-NAMING-000 resolved the ADR-012 collision by reserving ADR-013 for the future Fee / Harc / Snapshot / Journal architecture line, but ADR-013 implementation would still cross calculation, fee, projection, persistence, presentation and external-adapter responsibilities. Without a pre-implementation authority map, fee fixes can accidentally introduce presentation formulas, projection duplication, persistence decisions, or snapshot/journal scope creep.
+Business Value: Keeps fee/harç implementation auditable and legally bounded by making every calculation-like producer declare its authority before code PRs start.
+Technical Value: Records AS-IS authority evidence plus six authority classes, forbidden-edge audit candidates, duplicate-formula taxonomy and candidate ADR-013 gate map. This prevents unclassified calculation owners while avoiding premature final producer ownership or PR-sequence decisions; CCB-001/CAN-CUT-02 separation is preserved.
+Priority: CRITICAL
+Depends On: GOV-ADR-NAMING-000 CLOSED/MERGED; CCB-001 release-blocker track closure; ADR-013 reserved as canonical Fee / Harc / Snapshot / Journal target.
+Unlock Condition: Owner GO-IMPLEMENT PAC-001-A AUTHORITY MAPS — docs-only. ADR-013 implementation remains blocked until PAC-001-A is merged and the later ADR-013 Boundary Audit gate is separately authorized/closed.
+Estimated Size: M docs-only
+Related Modules: `project/docs/design/pac-001-a-authority-maps.md`, `project/docs/governance/architecture-index.md`, `project/docs/governance/decision-log.md`; classification anchors include interest-engine, case-balance, fee-engine, tariff, expense-request, accounting-journal, calc-preview diagnostics, report/template/UI and external adapter surfaces.
+Status: **PREPARED / OWNER REVIEW REQUIRED (2026-07-10)**. WIP source: `project/docs/design/pac-001-a-authority-maps.md`. This is an AS-IS evidence map and audit rubric, not an owner-approved final producer map or PR sequence. ADR-013 evidence delta is reconciled for owner review; governance acceptance is not yet granted. It does not start PAC-Full, ADR-013 Boundary Audit, fee implementation, peşin harç code, TariffService/FeeEngine refactor, snapshot/journal spec, projection layer, UI/report adapter changes, tests, schema, migration or runtime behavior.
+
+---
+
 ## Canonical Claim Balance Clean-Break Workstream (CCB)
 
 ID: CCB-001
