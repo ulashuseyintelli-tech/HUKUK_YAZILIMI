@@ -1361,7 +1361,7 @@ Estimated Size: M (BE — dar servis metodu tasarımı + production trace doğru
 Related Modules: action-handler.service.ts, case.service.ts, case-status.service.ts (mevcut, yanlış hedef olarak doğrulandı), dto/case.dto.ts
 Status: **ACTIVE_LEGACY_FIELD_REQUIRES_OWNER / PRODUCTION TRACE REQUIRED** — implemente EDİLMEDİ.
 **CAN-P0-002-B-FIX attempt (2026-07-06): BLOCKED / NO_PATCH_TRACE_INCONCLUSIVE.** Production/staging trace gate denendi; yalnız yerel dev DB erişimi vardı, `IcrabotRulePack`/`IcrabotRule`/`IcrabotRuleRevision` tamamen boş çıktı — bu boşluk `update_case_status` için anlamlı bir "kullanılmıyor" kanıtı değil (rule-engine runtime kullanımını temsil etmiyor, aynı desen bilinen-canlı send_email/send_sms için de çıkardı). Bu yüzden ne patch üretildi ne de cleanup açıldı — ikisi de bu kanıtla güvenli değil. Status değişmedi. **Next unlock: gerçek production/staging rulepack/action-history trace** (owner veya production erişimi olan biri tarafından doğrulanmalı).
-Status: NEXT / PENDING — implemente EDİLMEDİ. **Öncelik sırasında CAN-P0-002-A/C'den önce ele alınması önerilir** (owner değerlendirmesi).
+**Öncelik sırasında CAN-P0-002-A/C'den önce ele alınması önerilir** (owner değerlendirmesi).
 
 ## CAN-P0-002-C — Quarantine metadata direct-write classification
 

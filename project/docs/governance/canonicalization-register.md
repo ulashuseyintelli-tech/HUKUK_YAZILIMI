@@ -26,7 +26,7 @@ Tanımların ve uygulama kurallarının bağlayıcı metni `canonicalization-pol
 
 | ID | Domain | Current Parallel Path | Canonical Owner | Classification | Action | Priority | Risk | Confidence |
 |---|---|---|---|---|---|---|---|---|
-| CAN-DRIFT-01 | icrabot notification | `action-handler.service.ts:485-533` — `send_email`/`send_sms` provider çağrısı olmadan `status:'sent'` yazıyor | Gerçek provider entegrasyonu (henüz yok) | ARCHITECTURAL_DRIFT | fix | P0 | Critical | High |
+| CAN-DRIFT-01 | icrabot notification | `send_email`/`send_sms` provider-success olmadan `status:'sent'` yazma sorunu PR #981 / `CAN-P0-001` ile remediate edildi; remaining follow-up: schema default kararı + webhook ghost/fake-sent hattı (`CAN-P0-008`) | Gerçek provider entegrasyonu (henüz yok) | ARCHITECTURAL_DRIFT (remediated for email/SMS) | monitor follow-ups | P0 (closed for email/SMS) | Critical | High |
 | CAN-DRIFT-02 | icrabot ↔ Case | `job-monitor.service.ts:136,174`, `icrabot.service.ts:118,358`, `task-orchestrator.service.ts:307`, `action-handler.service.ts:571` — doğrudan `prisma.case.update` | `CaseService` | ARCHITECTURAL_DRIFT | fix | P0 | High | High |
 | CAN-DRIFT-03 | Case workflow | `workflowStage` alanına `workflow-engine.service.ts:262`, `icrabot.service.ts:361`, `task-orchestrator.service.ts:301`, `scheduler.service.ts:74,107,294,658`, `case.service.ts` ayrı ayrı yazıyor; tek owner servis yok | `CaseWorkflowStageService` (henüz yok) | ARCHITECTURAL_DRIFT | fix | P0 | High | High |
 | CAN-DEAD-01 | Case stage history | `CaseStageHistory` yalnız `state-machine.service.ts:314` `updateMany` ile kapatılıyor; hiç `create` yok | `CaseLifecycle` veya tamamlanacak `CaseStageHistory` | DEAD_CODE (yarım özellik) | needs-owner-decision | P1 | Medium-High | High |
@@ -47,6 +47,8 @@ Tanımların ve uygulama kurallarının bağlayıcı metni `canonicalization-pol
 ## 2. Madde Detayları — Required Verification & Acceptance Criteria
 
 ### CAN-DRIFT-01 — icrabot notification truth
+- **Status update (2026-07-09, GOV-REGISTER-SYNC-001):** Email/SMS fake-sent write path'i `CAN-P0-001` kapsamında remediate edildi (PR #981, `action-handler.service.ts` + `action-handler-notification-truth.spec.ts`). Bu register satırı artık yeni bir email/SMS implementasyon yetkisi vermez.
+- **Remaining follow-ups:** (1) `IcrabotEmailLog`/`IcrabotSmsLog` `@default("sent")` schema-default owner kararı, (2) webhook action handler / `IcrabotWebhookLog` ghost model ve fake-sent pattern doğrulaması (`CAN-P0-008`). Bunlar ayrı follow-up/monitoring konularıdır; CAN-DRIFT-01 email/SMS kapanışını geri açmaz.
 - **Required verification:** `IcrabotEmailLog`/`IcrabotSmsLog.status` alanını okuyan bir frontend ekranı veya rapor var mı taranmalı.
 - **Acceptance criteria:** Provider success dönmeden hiçbir kayıt `sent` yazmaz; test provider mock success olmadan `sent` yazılmadığını doğrular; `send_notification` (status alanı yok) kapsam dışıdır.
 
@@ -112,7 +114,7 @@ Tanımların ve uygulama kurallarının bağlayıcı metni `canonicalization-pol
 ## 3. P0/P1/P2 Backlog
 
 ### P0 — Risk Durdurma (ARCHITECTURAL_DRIFT)
-- CAN-DRIFT-01 — icrabot notification truth
+- CAN-DRIFT-01 — icrabot notification truth (email/SMS remediated by `CAN-P0-001`; remaining follow-ups monitored separately)
 - CAN-DRIFT-02 — icrabot → Case bypass
 - CAN-DRIFT-03 — workflowStage single owner
 
