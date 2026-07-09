@@ -69,7 +69,9 @@ D6A-2-SURFACE.
 
 **İkincil kritik bulgu (üç kez tekrarlanan hata):** D6A-2 gerçek bir migration içermesine rağmen `decision-log.md` / `product-backlog.md` / `active-roadmap.md`'ye tek satır yazılmadan merge edildi — CLAUDE.md'nin "Yeni fikir → Triage → Backlog → READY → Roadmap → Implementation" zinciri tamamen atlandı. Bu belgenin kendisi ve bu FAZ 0 çalışması, tam olarak bu açığı kapatmak için üretildi (RATIFIED: P8).
 
-**Ayrıca:** D6A-2 bugün production'da eksiktir — `expireStaleNotifications()` hiçbir cron'a bağlı değil (30 günlük PENDING kayıtlar sınırsız birikiyor) ve `acknowledge()` hiçbir HTTP route'undan erişilemiyor (kimse gördüğü bildirimi kapatamıyor). Yani mekanizma "yazan ama okunamayan bir günlük" durumunda. Bu boşluk D6A-2-SURFACE olarak backlog'a işlendi (RATIFIED: P3).
+**Ayrıca (FAZ 0 bulgusu, 2026-07-04):** D6A-2 o tarihte production yüzeyi bakımından eksikti — `expireStaleNotifications()` hiçbir cron'a bağlı değildi ve `acknowledge()` hiçbir HTTP route'undan erişilemiyordu. Yani mekanizma "yazan ama okunamayan bir günlük" durumundaydı. Bu boşluk D6A-2-SURFACE olarak backlog'a işlendi (RATIFIED: P3).
+
+**Status reconcile notu (2026-07-09, governance-only):** Yukarıdaki FAZ 0 bulgusu tarihsel olarak doğruydu; main repo durumu sonradan değişti. `a421e93a` ile D6A-2-SURFACE core (list/ack endpoint'leri, expiry cron, no-recipient `logger.warn`) merge edildi. Bu kayıt fully closed değildir: reporting/groupBy ve persistent error-log/event hook follow-up açık kalır. Aynı reconcile turunda `D6-INACTIVE-RECIPIENT-SWEEP` (`728f979b`), `D6-TEBLIGAT-BRIDGE` (`bcdcc0bd`, Tebligat-only) ve `D6-TASK-LINK` (`4a53c222`, no `linkedTaskId`/no migration) closed olarak ayrıştırıldı.
 
 ---
 
@@ -81,7 +83,7 @@ D6A-2-SURFACE.
 |---|---|---|---|
 | **D6A-1** | Borçlu detay drawer'ında pull/computed çapraz-dosya uyarı banner'ı (AuditLog+CaseDebtor okuyarak her çağrıda hesaplanır, tablosu yok) | "D6 cross-file alert (MVP)" | KAPALI (PR #878) |
 | **D6A-2** | Kalıcı `DebtorCrossCaseNotification` tablosu + servis (backend-only, PENDING/ACKNOWLEDGED/EXPIRED) | "D6", "D6B" (pasted-doc), "DebtorCrossCaseNotification" | KAPALI-ÇEKİRDEK (PR #880) |
-| **D6A-2-SURFACE** | D6A-2'nin eksik dışa-açılan yüzü: list/acknowledge endpoint'i + expiry cron + sessiz-başarısızlık gözlemi | (yok — bu belge tanımlıyor) | AÇIK-YENİ-DEĞER, READY (`product-backlog.md` D6A-2-SURFACE-1) |
+| **D6A-2-SURFACE** | D6A-2'nin dışa-açılan yüzü: list/acknowledge endpoint'i + expiry cron + sessiz-başarısızlık gözlemi | (yok — bu belge tanımladı) | PARTIAL / MERGED_CORE (`product-backlog.md` D6A-2-SURFACE-1; follow-up açık) |
 | **ESF** (Entity Status Framework) | 11 dağınık `statusColors` haritasını + DebtorIssue + POA-expiry + D6A-2 durumunu tek bir `EntityStatusIndicator` DTO'suna toplayan salt-okuma sunum katmanı | pasted-doc "F2/F3" | AYRI-EPIC-BAŞLAMADI (`product-backlog.md` ESF-1) |
 | **IAF** (Internal Alert Feed) | Gerçek genel cross-domain in-app bildirim/bell-feed altyapısı (henüz yok; `components/notifications/` tamamen ölü kod) | "D6B" (agent-memory, Option C Hybrid), "gerçek D6B" | AYRI-EPIC-BAŞLAMADI, owner-gated (`product-backlog.md` IAF-1) |
 
@@ -95,7 +97,7 @@ D6A-2-SURFACE.
 |---|---|---|
 | **D6A-1** (pull/computed banner) | 🟢 **KAPALI-DOKUNMA** | `debtor.service.ts:1478-1585` (`getCrossFileDebtorAlerts`), controller `:id/cross-file-alerts`, FE `DebtorDetailDrawer.tsx:220-238` banner, test 9/9 PASS. PR #878 (`ee35a1cb`). Migration yok. |
 | **D6A-2 çekirdek** (persistent notification üretimi) | 🟢 **KAPALI-DOKUNMA** | `debtor-cross-case-notification.service.ts` (279 satır), `schema.prisma:1390-1453`, migration `20260704020428`, integration test 20 `it()` bloğu. PR #880 (`373c5b87`). AddressService birincil + DebtorService ikincil yol canlı. |
-| **D6A-2-SURFACE** (list/ack endpoint, cron, gözlem) | 🔴 **AÇIK-YENİ-DEĞER, READY** | HTTP endpoint YOK (5 controller'da sıfır referans, grep-doğrulandı), `expireStaleNotifications()` cron'a bağlı değil, `resolveRecipients()` boş dönerse sessiz `continue` (`logger.warn` bile yok). |
+| **D6A-2-SURFACE** (list/ack endpoint, cron, gözlem) | 🟡 **PARTIAL / MERGED_CORE** | `a421e93a`: `GET /debtors/cross-case-notifications`, `POST /debtors/cross-case-notifications/:id/acknowledge`, `AutomationService.expireCrossCaseNotifications()` hourly cron ve no-recipient `logger.warn` merge edildi. Fully CLOSED değil: reporting/groupBy + persistent error-log/event hook follow-up açık. |
 | **ESF** (Entity Status Framework) | 🟡 **AYRI-EPIC, GO-ANALYZE'da kalır** | 11 bağımsız `statusColors`/`STATUS_COLORS` tanımı (aynı DERDEST/KAPALI kodu için 3 dosyada 3 renk + 2 value-tipi), paylaşılan tip paketi YOK, DebtorIssue zaten DERIVED (`debtor.service.ts:2132-2238`). Emsal: `OfficeApprovalRequest.targetType/targetRef` (`schema.prisma:8535-8579`). |
 | **IAF** (genel bildirim feed) | 🟡 **AYRI-EPIC, owner-gated** | 3 bağımsız tablo (NotificationQueue/PoaExpiryNotificationDelivery/DebtorCrossCaseNotification), `components/notifications/` 6 dosya TAMAMEN ölü kod (mock-data, hiç import edilmiyor, enum çakışması). Option C Hybrid owner-gated (RATIFIED: P6). |
 
@@ -218,28 +220,28 @@ interface EntityStatusIndicator {
 |---|---|---|
 | P1 | Kanonik isimlendirme (D6A-1 / D6A-2 / D6A-2-SURFACE / ESF / IAF; "D6B" emekli) | **LOCKED** |
 | P2 | Yapıştırılan `DebtorCrossCaseImpactNotification` modeli İMPLEMENTE EDİLMEZ (tam duplikasyon) | **LOCKED** |
-| P3 | D6A-2-SURFACE = list/ack endpoint (self-scoped, JWT-zorunlu) + cron + sessiz-başarısızlık logu; migration SIFIR | **LOCKED**, backlog: `D6A-2-SURFACE-1` (READY) |
+| P3 | D6A-2-SURFACE = list/ack endpoint (self-scoped, JWT-zorunlu) + cron + sessiz-başarısızlık logu; migration SIFIR | **LOCKED**, `D6A-2-SURFACE-1` = PARTIAL / MERGED_CORE (`a421e93a`), reporting/error-log follow-up açık |
 | P4 | Cron `automation.service.ts`'e eklenir (servise gömülmez) | **LOCKED** |
 | P5 | ESF = paylaşılan TS arayüzü + provider pattern (yeni Prisma modeli değil); GO-ANALYZE'da kalır | **LOCKED**, backlog: `ESF-1` |
 | P6 | IAF Option C korunur, tetik eşiği (a)+(b) netleşti | **LOCKED**, backlog: `IAF-1` |
 | P7 | Collection/Tebligat traverse-etmeme gerekçesi güncellendi (teknik değil kavramsal sınır — D5 artık FK'li) | **LOCKED** |
 | P8 | D6A-1/D6A-2 retroaktif olarak decision-log'a işlendi | **LOCKED** — bu FAZ 0 ile tamamlandı |
 
-### 5.3 Hâlâ CEVAPSIZ (OWNER_DECISION_PENDING — D6A-2-SURFACE implementasyon teklifinden önce/sırasında ele alınmalı)
+### 5.3 Reconciled Decision Status (2026-07-09)
 | # | Soru |
 |---|---|
 | Q1 | ~~Prod'da bir aktif Case'in hiç CaseLawyer'ı + hiç TEBLIGAT-staff'ı olması mümkün mü?~~ **ANSWERED (2026-07-04, bkz. Bölüm 0):** Evet, mümkün kabul edilir, anomaly sayılır; DB-level invariant eklenmez, `logger.warn` + observability yeterli. |
-| Q2 | EXPIRED/ACKNOWLEDGED kayıtlar için retention/purge politikası ne olmalı? (KVKK saklama-süresi) |
-| Q3 | `recipientUserId` FK'sinin User `onDelete` davranışı (Cascade/SetNull/Restrict) nedir? Personel ayrılınca PENDING bildirimler ne olur? |
-| Q4 | changeSummary sabit-Türkçe-string kararı kalıcı mı? (i18n/export ihtiyacı çıkarsa backward-incompatible) |
-| Q5 | "Adres/kritik alan değişti + borçlunun aktif Tebligat/Collection süreci var" senaryosu ayrı backlog maddesi mi? (D5 FK artık var, kavramsal sınır kararı gerekli) |
-| Q6 | acknowledge veri modeline "gördüm" ≠ "önlem aldım" ayrımı için ayrı `actionTakenAt`/not alanı eklenmeli mi? |
+| Q2 | **OPEN/BLOCKED via retention family:** EXPIRED/ACKNOWLEDGED kayıtlar için retention/purge politikası D6-RETENTION kayıtlarında açık/blocked kalır. |
+| Q3 | **CLOSED/MERGED:** `recipientUserId` scalar kalır; inactive-recipient sweep `728f979b` ile merge edildi. |
+| Q4 | **LOCKED-AS-DESIGN / no runtime work:** changeSummary kısa vadede sabit Türkçe kalır; i18n gerekirse sunum katmanı işi olarak ayrı ele alınır. |
+| Q5 | **CLOSED/MERGED for Tebligat-only:** aktif Tebligat salt-okuma bridge `bcdcc0bd` ile merge edildi; Collection signal ayrı adaydır. |
+| Q6 | **CLOSED/MERGED:** kullanıcı-tetikli idempotent Task link `4a53c222` ile merge edildi; no `linkedTaskId`/no migration. |
 
 ---
 
 ## 6. RİSKLER / ANTI-PATTERN UYARILARI
 
-**R1 (HIGH) — D6A-2 bugün production'da EKSİK:** Cron yok → PENDING kayıtlar sınırsız birikiyor; acknowledge endpoint'i yok → kimse kapatamıyor. Bu bir "gelecek iyileştirme" değil, **şu an var olan işlevsel boşluk**. D6A-2-SURFACE-1 bu boşluğu kapatır.
+**R1 (HIGH, reconciled 2026-07-09) — D6A-2-SURFACE core merge edildi, follow-up kaldı:** FAZ 0 anında cron/ack endpoint yoktu; `a421e93a` ile core surface merge edildi. Kalan risk artık duplicate implementation değil, remaining follow-up'ın görünmez kalmasıdır: reporting/groupBy ve persistent error-log/event hook ayrı owner GO gerektirir.
 
 **R2 (HIGH) — İki sessiz-başarısızlık yolu:** (1) resolveRecipients boş → iz yok, (2) create() hata → sadece logger.warn. Avukatlık Kanunu m.34 özen borcu açısından iki yönde riskli. Q1 owner cevabı ile gözlem-seviyesinde (log+observability) çözüme bağlandı; DB-constraint bilinçli olarak ertelendi.
 
@@ -265,7 +267,7 @@ interface EntityStatusIndicator {
 3. `product-backlog.md`'ye `D6A-2-SURFACE-1` / `ESF-1` / `IAF-1` eklendi.
 4. Q1 owner tarafından cevaplandı.
 
-**FAZ 1 — D6A-2-SURFACE (GO-IMPLEMENT'e HAZIR, ayrı teklif gerekir):** P3+P4. Migration SIFIR. Q2-Q6 (retention, FK-onDelete, i18n, Tebligat-köprü, action-note) implementasyon sırasında veya öncesinde triage edilmeli.
+**FAZ 1 — D6A-2-SURFACE:** PARTIAL / MERGED_CORE (`a421e93a`). Migration SIFIR. Kalan follow-up: reporting/groupBy + persistent error-log/event hook. Q2/Q4 ve retention ailesi ayrı kalır; Q3/Q5/Q6 runtime alt işleri 2026-07-09 reconcile ile closed olarak ayrıştırıldı.
 
 **FAZ 2 — ESF (GO-ANALYZE'da kalır):** P5. Önce "paylaşılan tip paketi var mı" ön-koşulu netleşmeli.
 
@@ -295,4 +297,4 @@ Fazlar birbirini bloklamaz.
 
 ---
 
-**GOVERNANCE NOTU:** P1-P8 owner tarafından 2026-07-04 tarihinde chat üzerinden ratifiye edilmiştir (Bölüm 0). Q2-Q6 hâlâ açıktır ve D6A-2-SURFACE-1 için ayrı GO-IMPLEMENT teklifi hazırlanırken veya owner tarafından ayrıca ele alınmalıdır. Bu belge `product-backlog.md` (D6A-2-SURFACE-1/ESF-1/IAF-1) ve `decision-log.md` (2026-07-04 satırları) ile birlikte okunmalıdır.
+**GOVERNANCE NOTU:** P1-P8 owner tarafından 2026-07-04 tarihinde chat üzerinden ratifiye edilmiştir (Bölüm 0). 2026-07-09 reconcile sonrası D6A-2-SURFACE-1 PARTIAL / MERGED_CORE durumundadır; Q3/Q5/Q6 alt runtime işleri closed olarak ayrıştırılmıştır. Q2 retention ailesi açık/blocked, ESF-1 açık ve IAF-1 deferred kalır. Bu belge `product-backlog.md` ve `decision-log.md` ile birlikte okunmalıdır.

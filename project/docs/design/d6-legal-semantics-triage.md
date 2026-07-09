@@ -86,7 +86,7 @@ directly to D6A-2. UI copy must preserve this distinction.
 **RATIFIED KARAR:**
 > `recipientUserId` kalıcı olarak SCALAR kalır (relation'a çevrilmez, cascade/delete semantiği eklenmez). User hard-delete D6 için bir varsayım DEĞİLDİR — mevcut inactive-user modeli operasyonel varsayım olarak kalır. Deaktif-alıcının PENDING kayıtları için erken-expire sweep'i AYRI, LATER bir backlog maddesi olabilir (migration gerektirmez).
 
-**Implementation etkisi:** Karar kendisi NONE (mevcut tasarım zaten doğru). Sweep-geliştirmesi istenirse LATER BACKLOG (D6-INACTIVE-RECIPIENT-SWEEP), migration YOK.
+**Implementation etkisi (reconciled 2026-07-09):** Karar kendisi mevcut scalar tasarımı değiştirmedi. Sweep geliştirmesi artık LATER BACKLOG değildir; `728f979b` ile `D6-INACTIVE-RECIPIENT-SWEEP` service + hourly cron + tests olarak merge edildi. Migration yok.
 
 ---
 
@@ -107,12 +107,12 @@ directly to D6A-2. UI copy must preserve this distinction.
 
 **Hukukî mesele:** Borçlu adres/kimlik değişikliği aktif bir tebligat/tahsilat sürecini etkiliyorsa bunu görmezden gelmek ihmal; ama bunu OTOMATİK bir hukukî hükme (örn. "bu tebligat artık geçersiz") dönüştürmek yetki-aşımı riski taşır (Tebligat Kanunu m.35 mekanizması resmi kayda ve icra/hâkim kararına dayanır).
 
-**Mevcut repo durumu:** `Collection.caseDebtorId` ve `Tebligat.caseDebtorId` artık gerçek Prisma `@relation` (D5B/D5C). Teknik olarak sorgu mümkün, ama D6A-2 bunu hiç yapmıyor — bilinçli bir kavramsal sınır. Repo'da zaten "manual review" idiomu var (`needsReview`, `manualReviewCaseIds`, `OTHER_SUSPENSE_MANUAL_REVIEW`).
+**Mevcut repo durumu (reconciled 2026-07-09):** `Collection.caseDebtorId` ve `Tebligat.caseDebtorId` artık gerçek Prisma `@relation` (D5B/D5C). Teknik olarak sorgu mümkün. `bcdcc0bd` ile Tebligat-only salt-okuma bridge merge edildi: aktif Tebligat sayımı + `manualReviewRecommended`. Collection bilinçli olarak bu kapanışın kapsamı dışında kaldı.
 
 **RATIFIED KARAR:**
 > Tebligat/Collection etkisi AYRI, SALT-OKUMA bir bridge/backlog işidir. D6, tebligatı geçersiz kılmaz, tahsilat/icra sürecini otomatik durdurmaz, hiçbir otomatik hukukî hüküm üretmez. Olsa olsa ileride "manuel hukukî inceleme önerilir" sinyalini, ilgili CaseDebtor'daki aktif/bekleyen Tebligat/Collection kayıtlarına dayanarak SALT-OKUMA olarak sunabilir. D6A-2 ile ilişkisi READ-ONLY'dir; D6A-2'nin çekirdek modeline hiçbir yazma yapılmaz.
 
-**Implementation etkisi:** LATER BACKLOG (D6-TEBLIGAT-BRIDGE), migration muhtemelen gerekmez (FK'ler zaten var) — bir sonraki GO-ANALYZE'da teyit edilmeli.
+**Implementation etkisi (reconciled 2026-07-09):** `D6-TEBLIGAT-BRIDGE` CLOSED/MERGED, Tebligat-only. Migration yok. Collection signal ayrı adaydır; bu belge D6'nın otomatik hukukî hüküm üretmeme sınırını değiştirmez.
 
 ---
 
@@ -120,12 +120,12 @@ directly to D6A-2. UI copy must preserve this distinction.
 
 **Hukukî mesele:** "Gördüm" ile "gerekli işlemi yaptım" ayrılmazsa, ileride "sistem bildirdi, gördüm, demek ki özenimi gösterdim" şeklinde yanlış bir savunma argümanına dönüşme riski var.
 
-**Mevcut repo durumu:** D6A-2 modelinde "gördüm" (`acknowledgedAt`) dışında hiçbir "önlem alındı" izi yok. Genel bir Task/workflow domaini repo'da zaten var (`User.assignedTasks`, `CaseTaskEscalationEvent` benzeri yapılar).
+**Mevcut repo durumu (reconciled 2026-07-09):** D6A-2 modelinde "gördüm" (`acknowledgedAt`) dışında hiçbir "önlem alındı" izi yok ve bu bilinçli olarak korunur. `4a53c222` ile D6A-2 çekirdeğine yazmadan, kullanıcı-tetikli idempotent Task oluşturma yüzeyi merge edildi (`Task.dedupeKey = "D6-TASK-LINK:" + notification.id`). `linkedTaskId` alanı eklenmedi; migration yok.
 
 **RATIFIED KARAR:**
 > `acknowledge` yalnız "gördüm/okudum" anlamına gelir. Hukukî kabul, işlem yapıldı, risk giderildi veya dosya işlemi tamamlandı anlamına GELMEZ. İleride action/resolution izlemesi istenirse bu D6A-2 modeline gömülmez; mevcut Task/workflow domaine opsiyonel bir link (örn. `linkedTaskId`) olarak modellenir. UI copy bu ayrımı korumak zorundadır.
 
-**Implementation etkisi:** NONE kısa vadede (yalnız UI-copy kararı, ileriki UI fazında uygulanır). `linkedTaskId` istenirse LATER MIGRATION (D6-TASK-LINK).
+**Implementation etkisi (reconciled 2026-07-09):** `D6-TASK-LINK` CLOSED/MERGED, no `linkedTaskId`, no migration, no D6A-2 lifecycle write. Acknowledge semantiği "yalnız gördüm" olarak kalır.
 
 ---
 
@@ -180,12 +180,12 @@ gösterir.
 
 ## 9. NEXT BACKLOG CANDIDATES
 
-Aşağıdaki 4 aday `product-backlog.md`'ye bu belgeyle birlikte eklenmiştir (hepsi BACKLOG statüsünde, implementasyon yetkisi VERMEZ):
+Aşağıdaki adaylar `product-backlog.md`'ye bu belgeyle birlikte eklenmişti. 2026-07-09 governance reconcile sonrası statüler repo gerçeğine göre ayrıştırılmıştır:
 
 - **D6-RETENTION** (Q2): Retention/anonymize cron + gerekirse yeni `purgedAt`/`anonymizedAt` alanı.
-- **D6-INACTIVE-RECIPIENT-SWEEP** (Q3): Deaktif-alıcının PENDING kayıtlarını erken-EXPIRE eden sweep.
-- **D6-TEBLIGAT-BRIDGE** (Q5): CaseDebtor bazında aktif Tebligat/Collection sayısını salt-okuma sunan rapor/endpoint.
-- **D6-TASK-LINK** (Q6): Opsiyonel `linkedTaskId` alanı + Task-oluşturma entegrasyonu.
+- **D6-INACTIVE-RECIPIENT-SWEEP** (Q3): CLOSED/MERGED (`728f979b`).
+- **D6-TEBLIGAT-BRIDGE** (Q5): CLOSED/MERGED, Tebligat-only (`bcdcc0bd`); Collection signal ayrı aday.
+- **D6-TASK-LINK** (Q6): CLOSED/MERGED (`4a53c222`), no `linkedTaskId`/no migration.
 
 ---
 
