@@ -231,20 +231,21 @@ iki kez kontrol** — UYAP_SEND/UYAP_QUERY zaten var); (d) eklenen her leaf `ACT
 
 ## 12. P2a / P2b Implementation Split
 
-### P2a — resolver CORE (endpoint'e BAĞLANMAZ; üretim davranışı HİÇ değişmez)
+> **Implementation status update (2026-07-09, governance-only):** Bu bölüm artık sıradaki iş planı değil, P2'nin uygulanmış kapsam sınırının kaydıdır. Repo durumu: P2a resolver core PR #507 ile, P2b-1 observe adapter PR #508 ile, EDIT_PARTIES observe PR #527 ile, CHANGE_STATUS observe PR #531 ile merge edildi. Runtime davranışı hâlâ P2 sözleşmesine bağlıdır: `GUIDED_OPEN_AUTHZ_MODE` varsayılan `off`, observe açık olsa bile `enforced=false`, yeni 403/route/confirm/approval enforcement yok. P3/P4+ enforcement ve UA-1 action-generalization ayrı workstream olarak kalır.
+
+### P2a — resolver CORE (MERGED; endpoint'e BAĞLANMAZ; üretim davranışı HİÇ değişmez)
 
 İçerik: ActionCode v1 additive + `ACTION_RISK_LEVELS` · `effective-permission.types` · `EffectivePermissionResolver`
 (policy-engine/ veya authorization/) + capacity reader + case-grant reader + **unit testler + mapping testleri.**
 **P2a'da KESİNLİKLE YOK:** controller hook · observe service · AuditService yazımı · frontend · migration · yeni 403 ·
 guard/decorator · P3/P4 enforcement. *(Resolver hiç çağrılmadığı için üretim davranışı değişmez.)*
 
-### P2b — observe HOOK (ayrı PR; iki dar alt-parça)
+### P2b — observe HOOK (MERGED; iki dar alt-parça)
 
-- **P2b-1 (ilk DAR pilot):** `guided-open-observe.service` + `GUIDED_OPEN_AUTHZ_MODE` flag (default off) + best-effort
+- **P2b-1 (ilk DAR pilot, MERGED):** `guided-open-observe.service` + `GUIDED_OPEN_AUTHZ_MODE` flag (default off) + best-effort
   diagnostic + regression test; pilot = **cases.delete · legal-responsible-lawyer · credential management** (zaten
   guard'lı / düşük davranış riski).
-- **P2b-2:** CHANGE_STATUS · EDIT_PARTIES · SEND_NOTIFICATION ailesi · UYAP_SEND · bank.transfer. *(Tek PR'da
-  hepsini bağlama — log-noise + context-bug riski.)*
+- **P2b-2 (incremental MERGED):** CHANGE_STATUS · EDIT_PARTIES · SEND_NOTIFICATION ailesi · UYAP_SEND · bank.transfer observe hook'ları repo'da parça parça merge edildi; UA-1 action-generalization / OfficeApproval expansion bu kapanışla tamamlanmış sayılmaz.
 - **P2b kırmızı çizgisi:** resolver sonucu endpoint kararında KULLANILMAZ · response status/body DEĞİŞMEZ · hata
   olursa observe service YUTAR.
 
@@ -269,11 +270,11 @@ audit (actor_user_id GERÇEK · mode=observe · enforced=false).
 
 ```
 1. (TAMAM) #500 final + #502 pointer + #503 P2 scope merged → doküman tek-kaynak.
-2. (BU PR) P2 execution mini-plan §11/§12 (6 revizyonla).
-3. P2a kod PR (resolver core; endpoint'e BAĞLANMAZ; üretim davranışı değişmez)   ← sırada
-4. P2b-1 (dar pilot) → P2b-2 observe hook PR'ları (ayrı onay)
-5. P2 gözlem raporu
-6. P3 protected-action (route/confirm/approval) enforcement TASARIMI
+2. (TAMAM) P2 execution mini-plan §11/§12 (6 revizyonla).
+3. (TAMAM) P2a kod PR — resolver core; endpoint'e bağlanmaz; üretim davranışı değişmez.
+4. (TAMAM) P2b-1 dar pilot + P2b-2 observe hook PR'ları — default-off / observe-only.
+5. P2 gözlem raporu / operational review.
+6. P3 protected-action (route/confirm/approval) enforcement tasarımı ve UA-1 generalization — ayrı owner GO gerekir.
 ```
 
 **P3'e kadar route/confirm/approval enforcement CANLIYA ALINMAZ.** P2 yalnız gözlem.
