@@ -1415,6 +1415,8 @@ Status: **ACTIVE_LEGACY_FIELD_REQUIRES_OWNER / PRODUCTION TRACE REQUIRED** — i
 
 ## CAN-P0-002-C — Quarantine metadata direct-write classification
 
+**Governance güncellemesi (2026-07-09/10, GO-ANALYZE + ürün kararı + GO-FIX + merge sonrası):** Owner GO-ANALYZE verdi (yalnız teşhis). Bulgu: `Case.metadata` (tipsiz, shared, "ESKİ ALANLAR" bölümünde bir JSON alanı) üzerine `job-monitor.service.ts`'in quarantine/unquarantine yazımı **tam-obje-değiştirme** (merge değil) yapıyordu — `executionOffice` ([document.service.ts:82](project/apps/api/src/modules/document/document.service.ts:82)) ve `monthlyNafaka` ([scheduler.service.ts:206](project/apps/api/src/modules/scheduler/scheduler.service.ts:206)) gibi başka legacy fallback anahtarlarını sessizce silme riski taşıyordu. **Ama `Case.metadata.quarantined`'ın kendisinin hiçbir okuyucusu yoktu** (backend/frontend/audit-export'ta exhaustive grep ile doğrulandı) — gerçek gate zaten `IcrabotJobRun.status` üzerinden çalışıyordu ([recipe-runner.service.ts:93](project/apps/api/src/modules/icrabot/runner/recipe-runner.service.ts:93)), audit zaten `IcrabotJobAction` tablosunda duruyordu (CAN-P0-002-A1'in aksine audit eksikliği burada sorun DEĞİLDİ). **Owner'ın kritik itirazı:** "kimse okumuyor" statik-kod gerçeği "gelecekte de gerekmeyecek" anlamına gelmez — bu bir ürün kararı. GO-FIX vermeden önce tek soru soruldu: *quarantine bilgisi ileride UI'da gösterilecek mi?* Cevap **HAYIR** olarak kesinleşti — bu, owner'ın önceden tanımladığı koşullu patch'i tetikledi (HAYIR → write'ı tamamen kaldır; EVET olsaydı → tenant-guard+merge-safe writer eklenecekti). Sonuç: `Case.metadata` yazımı `quarantineCase()`/`unquarantineCase()`'den tamamen kaldırıldı; `IcrabotJobRun.status` (gate) ve `IcrabotJobAction`/`logJobAction()` (audit) DEĞİŞMEDİ.
+
 ID: CAN-P0-002-C
 Title: job-monitor.service.ts quarantine/unquarantine metadata write — bounded-context exception mi, canonical patch owner mı gerekiyor?
 Problem: `job-monitor.service.ts:136,174` `Case.metadata` üzerindeki quarantine/unquarantine flag'lerini `CaseService`'i bypass ederek doğrudan yazıyor. `CaseService.patchFlags` bugün metadata alanı için allowlist içermiyor.
@@ -1422,10 +1424,10 @@ Business Value: Bu write'ın kasıtlı bir bounded-context istisnası mı yoksa 
 Technical Value: Metadata allowlist genişletilecekse audit/DI etkisi ayrıca değerlendirilmeli; genişletilmeyecekse bu write deseni `canonicalization-policy.md`'nin INTENTIONAL_BOUNDED_CONTEXT kategorisine mi yoksa ARCHITECTURAL_DRIFT'e mi girdiği açıkça karara bağlanmalı.
 Priority: MEDIUM
 Depends On: CAN-P0-002 (parent, VERIFICATION_REQUIRED)
-Unlock Condition: Owner GO-ANALYZE (sınıflandırma kararı) — implementasyon bu karardan sonra, ayrı GO-FIX ile.
+Unlock Condition: Yok — implemente edildi, merge edildi. Ek yetkilendirme gerekmiyor.
 Estimated Size: S (BE — sınıflandırma kararı + gerekirse küçük allowlist genişletmesi)
 Related Modules: job-monitor.service.ts, case.service.ts
-Status: NEXT / PENDING — implemente EDİLMEDİ.
+Status: **CLOSED/MERGED** — PR #1014, squash SHA `2542ba5da4dd0de918d905116ddaab600cbad966`; CI 4/4 PASS (Architectural Guardrails/Test Suite/Web Tests (vitest)/Client Workspace Live Smoke), mergeStateStatus CLEAN (merge öncesi doğrulandı); diff kesinlikle 1 dosya (`job-monitor.service.ts`, +15/-25), migration/schema/package/lock değişikliği YOK. `IcrabotJobRun.status`/`IcrabotJobAction`'a dokunulmadı (doğrulandı). Repo genelinde `JobMonitorService` için hiç mevcut test bulunamadı — saf silme, regresyon riski yok. Remote branch silindi; izole worktree'de yine `git worktree remove --force` "Filename too long" hatası verdi (Windows path-limiti, pnpm node_modules) — git-side unregistered oldu ama fiziksel dizin force-delete EDİLMEDİ, `ORPHANED_WORKTREE_DIR` olarak bırakıldı (`C:\Development\HUKUK_YAZILIMI\HUKUK_can-p0-002-c-fix`). Ana canonical `main`'e hiç dokunulmadı.
 
 ## CAN-P0-003 — workflowStage / nextActionAt / riskScore single-owner orchestration refactor (CAN-P0-002'den carry-forward, 2026-07-06)
 
