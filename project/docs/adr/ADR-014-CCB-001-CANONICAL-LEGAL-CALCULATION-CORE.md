@@ -3,11 +3,11 @@
 **Status:** Accepted as binding direction; implementation gated by PR sequence
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
-**Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal architecture — reserved, not yet created; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
+**Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
 
 > **Reading note:** This ADR is the CCB-001 constitution. It locks the target architecture and the allowed implementation sequence. It does not authorize immediate cutover, UI switch, legacy deletion, snapshot creation, or hidden fallback.
 
-> **Naming note (owner arbitration, 2026-07-10 — supersedes an earlier same-day decision):** This document originated on the isolated `codex/ccb-001-pr1-pr6-rescue` branch as a draft numbered `ADR-012-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`. That number collided with `ADR-012-WAITING-PROGRESS-POLICY.md`, which independently became canonical on `main` (PR #1002, `GOV-ADR-NAMING-000`). Two candidate resolutions were considered the same day: **Option C** — broaden `ADR-013`'s reserved scope to mean this document, folding Fee/Harç/Snapshot/Journal in as sub-components (briefly implemented, PR #1019, merged `0afc401a`) — and **a distinct-number option** — keep `ADR-013` narrowly reserved for Fee/Harç/Snapshot/Journal per `GOV-ADR-NAMING-000`'s original text, and give this document its own number. After a side-by-side comparison (scope/invariants/architectural consequences/backward compatibility/migration impact/future ADR space — invariant and normative-rule content is identical either way), the owner's final arbitration is: **this document is `ADR-014`; `ADR-013` remains RESERVED for Fee/Harç/Snapshot/Journal architecture, unchanged from `GOV-ADR-NAMING-000`'s original scope.** Rationale (owner): the two architectures are genuinely separate decision spaces; the existing ADR set is composed of narrow, single-purpose documents and this precedent should hold; broadening `ADR-013` would have re-interpreted an already-merged `GOV-ADR-NAMING-000` decision without a compelling need to; two separate ADRs keep future changes and cross-references independently tractable. This correction fully supersedes the Option C text that briefly existed in this document as `ADR-013` between PR #1019 and this correction.
+> **Naming note (owner arbitration, 2026-07-10 — supersedes an earlier same-day decision):** This document originated on the isolated `codex/ccb-001-pr1-pr6-rescue` branch as a draft numbered `ADR-012-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`. That number collided with `ADR-012-WAITING-PROGRESS-POLICY.md`, which independently became canonical on `main` (PR #1002, `GOV-ADR-NAMING-000`). Two candidate resolutions were considered the same day: **Option C** — broaden `ADR-013`'s reserved scope to mean this document, folding Fee/Harç/Snapshot/Journal in as sub-components (briefly implemented, PR #1019, merged `0afc401a`) — and **a distinct-number option** — keep `ADR-013` narrowly reserved for Fee/Harç/Snapshot/Journal per `GOV-ADR-NAMING-000`'s original text, and give this document its own number. After a side-by-side comparison (scope/invariants/architectural consequences/backward compatibility/migration impact/future ADR space — invariant and normative-rule content is identical either way), the owner's final arbitration is: **this document is `ADR-014`; `ADR-013` remains the Fee/Harç/Snapshot/Journal architecture line, unchanged from `GOV-ADR-NAMING-000`'s original scope.** PR #1026 later created the ADR-013 draft owner-review document. Rationale (owner): the two architectures are genuinely separate decision spaces; the existing ADR set is composed of narrow, single-purpose documents and this precedent should hold; broadening `ADR-013` would have re-interpreted an already-merged `GOV-ADR-NAMING-000` decision without a compelling need to; two separate ADRs keep future changes and cross-references independently tractable. This correction fully supersedes the Option C text that briefly existed in this document as `ADR-013` between PR #1019 and this correction.
 
 ## Context
 
@@ -47,7 +47,7 @@ Case / legal obligation data
 
 `computeBalance` is necessary but not sufficient by itself. Production authority requires the surrounding legal, trace, currency, fee, and DTO contracts.
 
-**Scope boundary note (owner arbitration, 2026-07-10):** Fee Projection and the trace/AllocationLog/Snapshot layer below are pipeline steps *within this document's own CCB-001 scope* (unchanged from v1.0 — see Blocker Classification and Required PR Sequence). This is a narrower claim than "ADR-013's Fee/Harç/Snapshot/Journal architecture" — that is a separate, related but distinct architecture line, reserved as `ADR-013`, not a subsumed part of this document. See the Naming note above for the full history of this distinction.
+**Scope boundary note (owner arbitration, 2026-07-10):** Fee Projection and the trace/AllocationLog/Snapshot layer below are pipeline steps *within this document's own CCB-001 scope* (unchanged from v1.0 — see Blocker Classification and Required PR Sequence). This is a narrower claim than "ADR-013's Fee/Harç/Snapshot/Journal architecture" — that is a separate, related but distinct draft owner-review architecture line, not a subsumed part of this document. See the Naming note above for the full history of this distinction.
 
 ## Normative Rules
 
@@ -221,6 +221,48 @@ PR-14 Legacy quarantine/deletion
 
 No PR may implement work from a later PR.
 
+## Split-PR Plan Status (2026-07-10)
+
+The completed ADR-014 split-plan analysis records this binding execution posture:
+
+```text
+DIRECT_RESCUE_MERGE_NO_GO / RESCUE_SOURCE_ONLY
+```
+
+Verified analysis inputs:
+
+- Current main at analysis: `1f913d624e2cd014c6375aa7e0e0cfd8726726d3`.
+- Rescue branch: `codex/ccb-001-pr1-pr6-rescue @ 961bbaf38d3ab1a7c7a691fbd56880ca3f6ffcc8`.
+- Rescue branch drift at analysis: 7 commits ahead / 77 commits behind.
+- Rescue branch diff at analysis: 72 files, +6623 / -1138.
+- Merge-tree content conflicts were present in governance/support files; semantic drift was high in calculation, report, template, and UI authority surfaces.
+
+The rescue branch is **not** a merge branch. It may only be used as a reference source for controlled cherry-pick, rewrite, or split PR preparation. No rescue-branch runtime hunk is approved by this document.
+
+First safe work:
+
+```text
+ADR-014 SPLIT-PLAN DOCS-ONLY
+```
+
+First code work remains blocked until:
+
+1. REVERSAL production method owner decision is recorded.
+2. Scenario infrastructure prerequisites are implemented under separate authorization.
+3. PR-1A..PR-9 gates are revalidated against current main.
+4. Required DB-gated disposable Postgres validation passes for affected gates.
+
+PR-10..PR-14 are explicitly later-stage only. They cannot start until PR-1A..PR-9 have passed and the owner grants a separate cutover implementation GO.
+
+Owner decisions still open:
+
+- REVERSAL production method: real `cancel()` production-fidelity path vs deterministic materializer direct-write.
+- Duplicate TBK100 implementation disposition.
+- PR-7 Fee Projection boundary with ADR-013.
+- Legal signoff refresh policy after split/rewrite away from rescue tip `961bbaf3`.
+
+DB-gated validation is required before runtime authority switch for reversal, NO_BUCKETS, partial-payment interest-base mutation, enforcement-date split, FX/currency behavior, trace/snapshot blockers, golden fixture parity, canonical primary adapter, and UI/API/report/template switch.
+
 ## PR Work Protocol
 
 Every CCB-001 PR must start with:
@@ -377,7 +419,7 @@ Recommend only the next approved PR in sequence.
 - `project/apps/web/src/components/finance/HesapOzetiPanel.tsx`
 - `project/apps/web/src/hooks/useCaseCalculation.ts`
 - ADR-010: AccountingJournal North-Star Source of Truth
-- ADR-013: Fee / Harç / Snapshot / Journal architecture (reserved, not yet created — separate from this document, see GOV-ADR-NAMING-000)
+- ADR-013: Fee / Harç / Snapshot / Journal draft owner-review architecture (separate from this document, see GOV-ADR-NAMING-000 and `ADR-013-FEE-HARC-SNAPSHOT-JOURNAL.md`)
 - CCB-001 Constitution Report, 2026-07-05
 - GOV-ADR-NAMING-000 (`decision-log.md`, 2026-07-09): established `ADR-012` = Waiting & Progress Policy on `main`, reserved `ADR-013` for the Fee/Harç/Snapshot/Journal line
 - CCB-001 Branch Merge Reconciliation — Owner Arbitration (`decision-log.md`, 2026-07-10): final numbering decision (this document is `ADR-014`; `ADR-013` remains reserved per `GOV-ADR-NAMING-000`'s original scope), superseding the brief Option C interpretation
@@ -388,4 +430,5 @@ Recommend only the next approved PR in sequence.
 |---|---|---|
 | 2026-07-05 | 1.0 | Initial CCB-001 constitution ADR, drafted on isolated `codex/ccb-001-pr1-pr6-rescue` branch as `ADR-012-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`. Canonical target accepted, immediate cutover blocked, hardening PR sequence locked. |
 | 2026-07-10 | 1.1 (superseded same day) | Briefly created on `main` as `ADR-013-CANONICAL-LEGAL-CALCULATION-CORE.md` (PR #1019, Option C): `ADR-013`'s reserved scope was broadened to mean this document, with Fee Projection/Snapshot/Journal/tariff-classification framed as sub-components. No substantive rule/invariant/PR-sequence content changed from v1.0. |
-| 2026-07-10 | 1.2 | Owner arbitration superseded v1.1 the same day: this document is renumbered to **`ADR-014`**; `ADR-013` reverts to its original `GOV-ADR-NAMING-000` scope (Fee/Harç/Snapshot/Journal architecture, reserved, not yet created, a separate document). Rationale: the two architectures are separate decision spaces; existing ADRs are narrow/single-purpose by precedent; two independent ADRs keep future changes and cross-references tractable. No substantive rule/invariant/PR-sequence content changed from v1.0 — only the title, number, and framing paragraphs changed across v1.1 and v1.2. CCB-001 branch implementation itself remains unmerged; this file establishes the architecture record on `main` independent of that merge. |
+| 2026-07-10 | 1.2 | Owner arbitration superseded v1.1 the same day: this document is renumbered to **`ADR-014`**; `ADR-013` reverts to its original `GOV-ADR-NAMING-000` scope (Fee/Harç/Snapshot/Journal architecture, a separate document). Rationale: the two architectures are separate decision spaces; existing ADRs are narrow/single-purpose by precedent; two independent ADRs keep future changes and cross-references tractable. No substantive rule/invariant/PR-sequence content changed from v1.0 — only the title, number, and framing paragraphs changed across v1.1 and v1.2. CCB-001 branch implementation itself remains unmerged; this file establishes the architecture record on `main` independent of that merge. |
+| 2026-07-10 | 1.3 | Split-plan status added: direct merge of `codex/ccb-001-pr1-pr6-rescue @ 961bbaf3` is **NO-GO**; the branch is rescue/evidence source only. Runtime cutover remains blocked until scenario infrastructure, REVERSAL owner decision, PR-1A..PR-9 revalidation, and DB-gated validation close. Also updates stale ADR-013 wording now that ADR-013 exists as draft owner-review ADR. |
