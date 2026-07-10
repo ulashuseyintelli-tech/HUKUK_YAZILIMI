@@ -138,6 +138,16 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="scenario-diagnostic\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # ADR-014 PR-1A: characterization must execute explicitly; a renamed,
+      # removed, or zero-match spec must fail the Test Suite job closed.
+      - name: ADR-014 PR-1A reversal-netting characterization
+        run: |
+          cd apps/api
+          test -f src/modules/interest-engine/orchestration/__tests__/case-balance.service.spec.ts || \
+            { echo "MISSING ADR-014 PR-1A characterization spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="src/modules/interest-engine/orchestration/__tests__/case-balance\.service\.spec\.ts$"
+        working-directory: project
       # TEST-INFRA-1: Gate-1 (tenant-boundary) + Gate-2 (passive-writer) güvenlik spec'leri yukarıdaki
       # dar pattern'lerin dışında kalıyordu → CI'da koşmuyordu. Ayrı/açık step ile koşturulur.
       # passWithNoTests YOK + önce dosya-varlığı pre-check: rename/silme veya 0-eşleşme → CI RED.
