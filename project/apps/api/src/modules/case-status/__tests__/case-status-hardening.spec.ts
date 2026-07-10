@@ -10,11 +10,16 @@ import { GuidedOpenObserveService } from "../../permission-diagnostics/guided-op
 import { GuidedEdgeGateService } from "../../permission-diagnostics/guided-edge/guided-edge-gate.service";
 import { OfficeApprovalShadowService } from "../../office-approval/office-approval-shadow.service";
 import { ActionCode } from "../../policy-engine/types/action-code.enum";
+import { FinancialCaseCloseApprovalService } from "../financial-case-close-approval.service";
 
 // P3-2C: gate mock — VARSAYILAN OFF davranışı (her zaman PROCEED → mevcut hardening testleri AYNEN geçer).
 const mkGateProceed = () => ({ evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) });
 // P4-2: shadow mock — VARSAYILAN OFF (no-op → davranış/akış değişmez; mevcut testler AYNEN geçer).
 const mkShadowOff = () => ({ evaluate: jest.fn().mockResolvedValue({ flagMode: "off", evaluated: false }) });
+const mkFinancialBypass = () => ({
+  isFinancialCloseStatus: jest.fn().mockReturnValue(false),
+  requestApproval: jest.fn(),
+});
 
 /**
  * P2b-2c-1 — CHANGE_STATUS hardening (Option A) testleri.
@@ -156,6 +161,7 @@ describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
       observe as unknown as GuidedOpenObserveService,
       gate as unknown as GuidedEdgeGateService,
       shadow as unknown as OfficeApprovalShadowService,
+      mkFinancialBypass() as unknown as FinancialCaseCloseApprovalService,
     );
     return { controller, service, observe, gate, shadow };
   };
@@ -225,7 +231,13 @@ describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
       { resolve: jest.fn().mockRejectedValue(new Error("resolver boom")) } as never,
       { log: jest.fn().mockRejectedValue(new Error("audit boom")) } as never,
     );
-    const controller = new CaseStatusController(service as unknown as CaseStatusService, realObserve, mkGateProceed() as unknown as GuidedEdgeGateService, mkShadowOff() as unknown as OfficeApprovalShadowService);
+    const controller = new CaseStatusController(
+      service as unknown as CaseStatusService,
+      realObserve,
+      mkGateProceed() as unknown as GuidedEdgeGateService,
+      mkShadowOff() as unknown as OfficeApprovalShadowService,
+      mkFinancialBypass() as unknown as FinancialCaseCloseApprovalService,
+    );
     const res = await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never, reason: "r" });
     expect(service.changeStatus).toHaveBeenCalledTimes(1); // observe hata verse de mutation engellenmedi
     expect((res as { success: boolean }).success).toBe(true); // P3-2C: union dönüş; PROCEED → normal
@@ -242,6 +254,7 @@ describe("P3-2C — CaseStatusController ↔ guarded-edge gate entegrasyonu", ()
       observe as unknown as GuidedOpenObserveService,
       gate as unknown as GuidedEdgeGateService,
       mkShadowOff() as unknown as OfficeApprovalShadowService,
+      mkFinancialBypass() as unknown as FinancialCaseCloseApprovalService,
     );
     return { controller, service, observe, gate };
   };
@@ -297,6 +310,67 @@ describe("P3-2C — CaseStatusController ↔ guarded-edge gate entegrasyonu", ()
   });
 });
 
+describe("OWN-29-C — financial case close approval routing", () => {
+  const mk = (financial: { isFinancialCloseStatus: jest.Mock; requestApproval: jest.Mock }) => {
+    const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
+    const observe = { observe: jest.fn().mockResolvedValue(undefined) };
+    const gate = mkGateProceed();
+    const shadow = mkShadowOff();
+    const controller = new CaseStatusController(
+      service as unknown as CaseStatusService,
+      observe as unknown as GuidedOpenObserveService,
+      gate as unknown as GuidedEdgeGateService,
+      shadow as unknown as OfficeApprovalShadowService,
+      financial as unknown as FinancialCaseCloseApprovalService,
+    );
+    return { controller, service, observe, gate, shadow, financial };
+  };
+
+  it("financial close status → OfficeApproval request envelope; generic status mutation/gates çalışmaz", async () => {
+    const envelope = {
+      axis: "GUIDED_OPEN_PERMISSION",
+      outcome: "APPROVAL_REQUIRED",
+      actionCode: ActionCode.FINANCIAL_CASE_CLOSE,
+      target: { resourceType: "LegalCase", caseId: "c1" },
+      approval: { requestId: "req-1", status: "PENDING_APPROVAL" },
+    };
+    const financial = {
+      isFinancialCloseStatus: jest.fn().mockReturnValue(true),
+      requestApproval: jest.fn().mockResolvedValue(envelope),
+    };
+    const { controller, service, gate, shadow } = mk(financial);
+
+    const res = await controller.changeStatus("requester", "t1", "c1", { status: "HITAM" as never, reason: "tam ödeme" });
+
+    expect(financial.requestApproval).toHaveBeenCalledWith({
+      actorUserId: "requester",
+      tenantId: "t1",
+      caseId: "c1",
+      status: "HITAM",
+      reason: "tam ödeme",
+    });
+    expect(service.changeStatus).not.toHaveBeenCalled();
+    expect(shadow.evaluate).not.toHaveBeenCalled();
+    expect(gate.evaluate).not.toHaveBeenCalled();
+    expect(res).toBe(envelope);
+  });
+
+  it("AZIL financial-close değildir → mevcut generic CHANGE_STATUS akışı korunur", async () => {
+    const financial = {
+      isFinancialCloseStatus: jest.fn().mockReturnValue(false),
+      requestApproval: jest.fn(),
+    };
+    const { controller, service, gate, shadow } = mk(financial);
+
+    await controller.changeStatus("u1", "t1", "c1", { status: "AZIL" as never, reason: "vekalet sona erdi" });
+
+    expect(financial.requestApproval).not.toHaveBeenCalled();
+    expect(shadow.evaluate).toHaveBeenCalledTimes(1);
+    expect(gate.evaluate).toHaveBeenCalledTimes(1);
+    expect(service.changeStatus).toHaveBeenCalledWith("t1", "c1", "AZIL", "u1", "vekalet sona erdi");
+  });
+});
+
 // ---- P4-2: controller↔OfficeApproval shadow (observe-only; effectiveDecision DEĞİŞMEZ) ----
 describe("P4-2 — CaseStatusController ↔ OfficeApproval shadow", () => {
   const mkP4 = () => {
@@ -310,6 +384,7 @@ describe("P4-2 — CaseStatusController ↔ OfficeApproval shadow", () => {
       observe as unknown as GuidedOpenObserveService,
       gate as unknown as GuidedEdgeGateService,
       shadow as unknown as OfficeApprovalShadowService,
+      mkFinancialBypass() as unknown as FinancialCaseCloseApprovalService,
     );
     return { controller, service, observe, gate, shadow };
   };
@@ -349,6 +424,7 @@ describe("P4-3A — CaseStatusController ↔ OfficeApproval create (persist-only
       observe as unknown as GuidedOpenObserveService,
       gate as unknown as GuidedEdgeGateService,
       shadow as unknown as OfficeApprovalShadowService,
+      mkFinancialBypass() as unknown as FinancialCaseCloseApprovalService,
     );
     return { controller, service, observe, gate, shadow };
   };
@@ -405,6 +481,7 @@ describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", ()
         { provide: GuidedOpenObserveService, useValue: observe },
         { provide: GuidedEdgeGateService, useValue: gate },
         { provide: OfficeApprovalShadowService, useValue: shadow },
+        { provide: FinancialCaseCloseApprovalService, useValue: mkFinancialBypass() },
       ],
     })
       .overrideGuard(JwtAuthGuard)

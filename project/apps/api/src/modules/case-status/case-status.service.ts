@@ -59,6 +59,83 @@ export function isClosingStatus(status: LegalCaseStatus): boolean {
   return CLOSING_STATUSES.includes(status);
 }
 
+const KNOWN_STATUSES: ReadonlySet<string> = new Set([
+  ...STATUS_GROUPS.ACTIVE,
+  ...STATUS_GROUPS.COMPLETED,
+  ...STATUS_GROUPS.IMPOSSIBLE,
+  'AZIL',
+  'FERAGAT',
+  'SULH',
+]);
+
+export async function applyCaseStatusChange(
+  prisma: any,
+  tenantId: string,
+  caseId: string,
+  newStatus: LegalCaseStatus,
+  actorUserId: string,
+  reason?: string,
+): Promise<any> {
+  if (!newStatus || !KNOWN_STATUSES.has(newStatus)) {
+    throw new BadRequestException(`Geçersiz statü değeri: ${String(newStatus)}`);
+  }
+
+  const caseData = await prisma.case.findFirst({
+    where: { id: caseId, tenantId },
+    select: { caseStatus: true, isAutomationEnabled: true },
+  });
+
+  if (!caseData) {
+    throw new NotFoundException('Dosya bulunamadı');
+  }
+
+  const oldStatus = caseData.caseStatus;
+  const automationMode = STATUS_AUTOMATION_CONFIG[newStatus];
+  const nextAutomationEnabled = automationMode === 'OFF' ? false : caseData.isAutomationEnabled;
+  const automationChanged = caseData.isAutomationEnabled !== nextAutomationEnabled;
+
+  const applyInTransaction = async (tx: any) => {
+    const updatedCase = await tx.case.update({
+      where: { id: caseId },
+      data: {
+        caseStatus: newStatus,
+        isAutomationEnabled: nextAutomationEnabled,
+        nextActionAt: nextAutomationEnabled ? undefined : null,
+      },
+    });
+
+    await tx.caseStatusHistory.create({
+      data: {
+        caseId,
+        fromStatus: oldStatus,
+        toStatus: newStatus,
+        reason,
+        changedById: actorUserId,
+        automationWasEnabled: automationChanged ? nextAutomationEnabled : null,
+      },
+    });
+
+    await tx.decisionLog.create({
+      data: {
+        caseId,
+        decisionType: 'STATUS_CHANGE',
+        decision: `Statü değiştirildi: ${oldStatus} -> ${newStatus}`,
+        reasoning: reason,
+        isAutomatic: false,
+        executedAt: new Date(),
+      },
+    });
+
+    return updatedCase;
+  };
+
+  if (typeof prisma.$transaction === 'function') {
+    return prisma.$transaction(applyInTransaction);
+  }
+
+  return applyInTransaction(prisma);
+}
+
 @Injectable()
 export class CaseStatusService {
   private readonly logger = new Logger(CaseStatusService.name);
@@ -69,16 +146,6 @@ export class CaseStatusService {
   validateInitialStatus(status: LegalCaseStatus): void {
     if (!isInitialStatus(status)) {
       throw new Error(`Geçersiz başlangıç statüsü: ${status}. Sadece DERDEST, ISLEMDE veya DERKENAR seçilebilir.`);
-    }
-  }
-
-  // P3-2B-1: Tüm geçerli LegalCaseStatus değerleri (JSON body'den geçersiz değer gelebilir → runtime guard).
-  private static readonly KNOWN_STATUSES: ReadonlySet<string> = new Set(Object.values(LegalCaseStatus));
-
-  // P3-2B-1: geçersiz/eksik statü değeri → typed BadRequest (400). Eski plain Error/500 KALDIRILDI.
-  private assertKnownStatus(status: LegalCaseStatus): void {
-    if (!status || !CaseStatusService.KNOWN_STATUSES.has(status)) {
-      throw new BadRequestException(`Geçersiz statü değeri: ${String(status)}`);
     }
   }
 
@@ -99,68 +166,9 @@ export class CaseStatusService {
     actorUserId: string,
     reason?: string,
   ): Promise<any> {
-    // P3-2B-1: geçersiz/eksik statü değeri → typed 400 (DB'ye gitmeden). Eksik case ise aşağıdaki lookup 404 verir.
-    this.assertKnownStatus(newStatus);
+    const result = await applyCaseStatusChange(this.prisma, tenantId, caseId, newStatus, actorUserId, reason);
 
-    // P2b-2c-1: TENANT-SCOPED lookup. Cross-tenant veya yok → NotFound (404; varlık sızdırma yok).
-    const caseData = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
-      select: { caseStatus: true, isAutomationEnabled: true },
-    });
-
-    if (!caseData) {
-      throw new NotFoundException('Dosya bulunamadı');
-    }
-
-    const oldStatus = caseData.caseStatus;
-
-    // P3-2B-1: automation-sync TEK YÖNLÜ. Kapanış/OFF statüye geçiş otomasyonu KAPATABİLİR; aktif/ON statüye
-    // geçiş otomasyonu OTOMATİK AÇMAZ → mevcut (manuel) isAutomationEnabled tercihi KORUNUR (kullanıcı kapattıysa açılmaz).
-    const automationMode = STATUS_AUTOMATION_CONFIG[newStatus];
-    const nextAutomationEnabled = automationMode === 'OFF' ? false : caseData.isAutomationEnabled;
-    const automationChanged = caseData.isAutomationEnabled !== nextAutomationEnabled;
-
-    // Transaction ile güncelle
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Case'i güncelle
-      const updatedCase = await tx.case.update({
-        where: { id: caseId },
-        data: {
-          caseStatus: newStatus,
-          isAutomationEnabled: nextAutomationEnabled,
-          // Otomasyon kapanıyorsa nextActionAt temizlenir; açık kalıyorsa dokunulmaz.
-          nextActionAt: nextAutomationEnabled ? undefined : null,
-        },
-      });
-
-      // Statü geçmişine kaydet (B.18)
-      await tx.caseStatusHistory.create({
-        data: {
-          caseId,
-          fromStatus: oldStatus,
-          toStatus: newStatus,
-          reason,
-          changedById: actorUserId, // P2b-2c-1: truthful authenticated User.id (body.userId DEĞİL)
-          automationWasEnabled: automationChanged ? nextAutomationEnabled : null,
-        },
-      });
-
-      // DecisionLog'a kaydet
-      await tx.decisionLog.create({
-        data: {
-          caseId,
-          decisionType: 'STATUS_CHANGE',
-          decision: `Statü değiştirildi: ${oldStatus} -> ${newStatus}`,
-          reasoning: reason,
-          isAutomatic: false,
-          executedAt: new Date(),
-        },
-      });
-
-      return updatedCase;
-    });
-
-    this.logger.log(`Case ${caseId} status changed: ${oldStatus} -> ${newStatus}`);
+    this.logger.log(`Case ${caseId} status changed to ${newStatus}`);
     return result;
   }
 

@@ -6,14 +6,19 @@ vi.mock("@/components/office-approval/summary/collection-disposition-post.projec
 vi.mock("@/components/office-approval/summary/change-status.projector", () => ({
   projectChangeStatus: vi.fn(),
 }));
+vi.mock("@/components/office-approval/summary/financial-case-close.projector", () => ({
+  projectFinancialCaseClose: vi.fn(),
+}));
 
 import { getApprovalSummary } from "@/components/office-approval/summary/registry";
 import { projectCollectionDispositionPost } from "@/components/office-approval/summary/collection-disposition-post.projector";
 import { projectChangeStatus } from "@/components/office-approval/summary/change-status.projector";
+import { projectFinancialCaseClose } from "@/components/office-approval/summary/financial-case-close.projector";
 
 beforeEach(() => {
   vi.mocked(projectCollectionDispositionPost).mockReset();
   vi.mocked(projectChangeStatus).mockReset();
+  vi.mocked(projectFinancialCaseClose).mockReset();
 });
 
 describe("getApprovalSummary (registry)", () => {
@@ -23,6 +28,7 @@ describe("getApprovalSummary (registry)", () => {
     expect(result.reason).toMatch(/güvenli özet üretilemiyor/);
     expect(projectCollectionDispositionPost).not.toHaveBeenCalled();
     expect(projectChangeStatus).not.toHaveBeenCalled();
+    expect(projectFinancialCaseClose).not.toHaveBeenCalled();
   });
 
   it("COLLECTION_DISPOSITION_POST + summary sonucu -> action-behavior-catalog'dan impactNotes eklenir", () => {
@@ -44,6 +50,20 @@ describe("getApprovalSummary (registry)", () => {
     const result = getApprovalSummary("CHANGE_STATUS", { status: "HITAM" });
     expect(result.kind).toBe("summary");
     expect(result.impactNotes).toBeUndefined();
+  });
+
+  it("FINANCIAL_CASE_CLOSE + summary sonucu -> action-behavior-catalog'dan impactNotes eklenir", () => {
+    vi.mocked(projectFinancialCaseClose).mockReturnValue({
+      kind: "summary",
+      fields: [{ label: "Kapanış Durumu", value: "HITAM" }],
+    });
+    const result = getApprovalSummary("FINANCIAL_CASE_CLOSE", {
+      version: "OWN29C_FINANCIAL_CASE_CLOSE_V1",
+      caseId: "case-1",
+      status: "HITAM",
+    });
+    expect(result.kind).toBe("summary");
+    expect(result.impactNotes).toContain("Dosya finansal kapanış statüsüne geçirilir.");
   });
 
   it("projector unsafe dönerse -> impactNotes eklenmez, unsafe aynen geçer", () => {

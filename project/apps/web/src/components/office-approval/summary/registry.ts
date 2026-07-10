@@ -5,11 +5,13 @@ import type { ApprovalSummaryContext, ApprovalSummaryProjector, ApprovalSummaryR
 import { UNSAFE_SUMMARY_REASON } from "./types";
 import { projectCollectionDispositionPost } from "./collection-disposition-post.projector";
 import { projectChangeStatus } from "./change-status.projector";
+import { projectFinancialCaseClose } from "./financial-case-close.projector";
 import { actionBehaviorNotes } from "./action-behavior-catalog";
 
 const PROJECTORS: Record<string, ApprovalSummaryProjector> = {
   COLLECTION_DISPOSITION_POST: projectCollectionDispositionPost,
   CHANGE_STATUS: projectChangeStatus,
+  FINANCIAL_CASE_CLOSE: projectFinancialCaseClose,
 };
 
 const unsafe = (): ApprovalSummaryResult => ({ kind: "unsafe", fields: [], reason: UNSAFE_SUMMARY_REASON });

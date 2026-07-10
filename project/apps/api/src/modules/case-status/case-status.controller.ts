@@ -7,6 +7,7 @@ import { GuidedEdgeGateService } from '../permission-diagnostics/guided-edge/gui
 import { OfficeApprovalShadowService } from '../office-approval/office-approval-shadow.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { LegalCaseStatus } from '@prisma/client';
+import { FinancialCaseCloseApprovalService } from './financial-case-close-approval.service';
 
 // P3-2C: confirm token binding'in sabit yüzey kimliği (issue↔consume aynı olmalı).
 const CHANGE_STATUS_SURFACE = 'POST /case-status/:caseId/change';
@@ -21,6 +22,7 @@ export class CaseStatusController {
     private readonly guidedEdgeGate: GuidedEdgeGateService,
     // P4-2: OfficeApproval shadow (observe-only; davranış DEĞİŞTİRMEZ, OfficeApprovalRequest OLUŞTURMAZ)
     private readonly officeApprovalShadow: OfficeApprovalShadowService,
+    private readonly financialCaseCloseApproval: FinancialCaseCloseApprovalService,
   ) {}
 
   // Tüm statüleri listele
@@ -59,6 +61,15 @@ export class CaseStatusController {
       caseId,
       actionCode: ActionCode.CHANGE_STATUS,
     });
+    if (this.financialCaseCloseApproval.isFinancialCloseStatus(body.status)) {
+      return this.financialCaseCloseApproval.requestApproval({
+        actorUserId,
+        tenantId,
+        caseId,
+        status: body.status,
+        reason: body.reason ?? null,
+      });
+    }
     // P4-2/P4-3A/P4-3B: OfficeApproval gate (flag OFFICE_APPROVAL_CHANGE_STATUS_GATE; observe'den SONRA, P3 confirm gate ÖNCESİ).
     //  - off (varsayılan) → no-op → mevcut davranış AYNEN.   - observe (P4-2) → GÖLGE (audit; akış/statü DEĞİŞMEZ).
     //  - create (P4-3A)   → PERSIST-ONLY: request PENDING oluşturulur, DÖNÜŞ KULLANILMAZ (statü yine değişir).
