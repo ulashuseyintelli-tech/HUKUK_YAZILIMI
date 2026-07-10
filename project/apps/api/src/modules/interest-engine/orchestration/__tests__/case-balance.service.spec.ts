@@ -125,6 +125,78 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(res.source).toBe('LEDGER');
   });
 
+  it('ADR-014 PR-1A characterization: matching REVERSAL is ignored and cancelled balance remains paid', async () => {
+    const tenantId = 'tenant-pr1a';
+    const caseId = 'case-pr1a';
+    const asOfDate = '2025-06-01';
+    const confirmedPayment = {
+      id: 'ledger-payment-pr1a',
+      entryType: 'PAYMENT',
+      status: 'CONFIRMED',
+      amount: 2000,
+      currency: 'TRY',
+      entryDate: new Date('2025-03-01T00:00:00.000Z'),
+      effectiveDate: null,
+      sourceType: 'BANKA',
+    };
+    const matchingReversal = {
+      id: 'ledger-reversal-pr1a',
+      entryType: 'REVERSAL',
+      status: 'CONFIRMED',
+      amount: -2000,
+      currency: 'TRY',
+      entryDate: new Date('2025-03-02T00:00:00.000Z'),
+      effectiveDate: null,
+      sourceType: 'COLLECTION_CANCEL',
+      reversesLedgerEntryId: confirmedPayment.id,
+    };
+
+    const { service: prePaymentService } = setup({
+      claimItems: [principal()],
+      ledger: [],
+      collections: [],
+      rates: legalRate(),
+    });
+    const prePayment = await prePaymentService.computeCaseBalance(tenantId, caseId, asOfDate);
+
+    const { service: paidService } = setup({
+      claimItems: [principal()],
+      ledger: [confirmedPayment],
+      collections: [collection({ id: 'collection-pr1a', amount: 2000 })],
+      rates: legalRate(),
+    });
+    const paid = await paidService.computeCaseBalance(tenantId, caseId, asOfDate);
+
+    const { service: cancelledService, prisma, computeBalanceSpy } = setup({
+      claimItems: [principal()],
+      ledger: [confirmedPayment, matchingReversal],
+      collections: [
+        collection({
+          id: 'collection-pr1a',
+          amount: 2000,
+          status: 'CANCELLED',
+          cancelledAt: new Date('2025-03-02T00:00:00.000Z'),
+        }),
+      ],
+      rates: legalRate(),
+    });
+    const cancelled = await cancelledService.computeCaseBalance(tenantId, caseId, asOfDate);
+
+    const prePaymentDue = prePayment.currencyResults[0].result!.totalDue;
+    const paidDue = paid.currencyResults[0].result!.totalDue;
+    const cancelledDue = cancelled.currencyResults[0].result!.totalDue;
+
+    expect(paidDue).toBeLessThan(prePaymentDue);
+    expect(cancelledDue).toBeCloseTo(paidDue, 2);
+    expect(cancelledDue).not.toBeCloseTo(prePaymentDue, 2);
+    expect(prisma.ledgerEntry.findMany).toHaveBeenCalledWith({
+      where: { caseId, tenantId, entryType: 'PAYMENT' },
+    });
+    expect(computeBalanceSpy.mock.calls[0][0].payments.map((payment) => payment.id)).toEqual([
+      confirmedPayment.id,
+    ]);
+  });
+
   it('fixed-rate: SABIT bucket → sentetik rate, RateProvider ÇAĞRILMAZ, result null DEĞİL', async () => {
     const { service, rateProvider } = setup({
       claimItems: [principal({ interestType: 'SABIT', interestRate: 48 })],
