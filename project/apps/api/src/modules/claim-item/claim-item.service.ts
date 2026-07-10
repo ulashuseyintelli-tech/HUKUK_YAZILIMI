@@ -1,5 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Optional, ForbiddenException, ConflictException } from '@nestjs/common';
+import { OfficeApprovalStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import {
   CreateClaimItemDto,
   UpdateClaimItemDto,
@@ -13,12 +17,48 @@ import {
 } from './dto/claim-item.dto';
 import { ClaimEngineService } from '../claim-engine/claim-engine.service';
 import { defaultInterestAccrualStatusForItemType, validateInterestAccrualState } from './interest-accrual-policy';
+import {
+  CLAIM_ITEM_CASE_TARGET_TYPE,
+  CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+  CLAIM_ITEM_INTENT_VERSION,
+  CLAIM_ITEM_TARGET_TYPE,
+  type ClaimItemHighImpactSavedIntent,
+  type ClaimItemPatch,
+} from './claim-item-approval.constants';
+
+const LOW_IMPACT_USER_FIELDS = ['description', 'referenceNo', 'sortOrder'] as const;
+const HIGH_IMPACT_USER_FIELDS = [
+  'amount',
+  'itemType',
+  'currency',
+  'interestType',
+  'interestRate',
+  'interestStartDate',
+  'interestEndDate',
+  'dueDate',
+  'interestAccrualStatus',
+  'interestStartDateProvenance',
+  'noInterestReason',
+  'noInterestConfirmedById',
+  'isAllDebtorsLiable',
+  'liableDebtorIds',
+  'status',
+] as const;
+
+export interface ClaimItemMutationResult {
+  applied: boolean;
+  approvalRequired: boolean;
+  approvalRequestId?: string;
+  data?: unknown;
+}
 
 @Injectable()
 export class ClaimItemService {
   constructor(
     private prisma: PrismaService,
     @Optional() private claimEngineService?: ClaimEngineService,
+    @Optional() private audit?: AuditService,
+    @Optional() private officeApproval?: OfficeApprovalService,
   ) {}
 
   // ==================== CRUD İŞLEMLERİ ====================
@@ -78,6 +118,40 @@ export class ClaimItemService {
         sortOrder: dto.sortOrder || 0,
       },
     });
+  }
+
+  async createFromUser(tenantId: string, actorUserId: string, dto: CreateClaimItemDto): Promise<ClaimItemMutationResult> {
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: dto.caseId, tenantId },
+      select: { id: true },
+    });
+    if (!caseExists) {
+      throw new NotFoundException('Dosya bulunamadı');
+    }
+
+    const proposedPatch = this.buildCreatePatch(dto);
+    const request = await this.createHighImpactApprovalRequest({
+      tenantId,
+      actorUserId,
+      targetType: CLAIM_ITEM_CASE_TARGET_TYPE,
+      targetRef: dto.caseId,
+      intent: {
+        version: CLAIM_ITEM_INTENT_VERSION,
+        operation: 'CREATE',
+        caseId: dto.caseId,
+        proposedPatch,
+        currentSnapshot: null,
+        currentSnapshotHash: null,
+        reason: 'ClaimItem create requires K4 four-eyes approval.',
+      },
+      idempotencyKey: `claim-item-create:${dto.caseId}:${stableJsonHash(proposedPatch)}`,
+    });
+    return {
+      applied: false,
+      approvalRequired: true,
+      approvalRequestId: request.id,
+      data: request,
+    };
   }
 
 
@@ -162,6 +236,59 @@ export class ClaimItemService {
     });
   }
 
+  async updateFromUser(
+    tenantId: string,
+    actorUserId: string,
+    id: string,
+    dto: UpdateClaimItemDto,
+  ): Promise<ClaimItemMutationResult> {
+    const patch = this.stripUndefined(dto as Record<string, unknown>);
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('Güncellenecek alan yok.');
+    }
+
+    const highImpact = this.hasHighImpactField(patch);
+    const unknownFields = Object.keys(patch).filter(
+      (field) => !this.isLowImpactField(field) && !this.isHighImpactField(field),
+    );
+    if (unknownFields.length > 0) {
+      throw new BadRequestException(`ClaimItem update için desteklenmeyen alan(lar): ${unknownFields.join(', ')}`);
+    }
+
+    if (!highImpact) {
+      const data = await this.applyLowImpactMetadataUpdate(tenantId, actorUserId, id, patch);
+      return { applied: true, approvalRequired: false, data };
+    }
+
+    const existing = await this.findOne(tenantId, id);
+    this.assertUpdateInvariants(existing, dto);
+    const currentSnapshot = this.snapshotClaimItem(existing);
+    const proposedPatch = this.normalizePatchForIntent(patch);
+    const request = await this.createHighImpactApprovalRequest({
+      tenantId,
+      actorUserId,
+      targetType: CLAIM_ITEM_TARGET_TYPE,
+      targetRef: id,
+      intent: {
+        version: CLAIM_ITEM_INTENT_VERSION,
+        operation: 'UPDATE',
+        caseId: existing.caseId,
+        claimItemId: id,
+        proposedPatch,
+        currentSnapshot,
+        currentSnapshotHash: stableJsonHash(currentSnapshot),
+        reason: 'ClaimItem high-impact update requires K4 four-eyes approval.',
+      },
+      idempotencyKey: `claim-item-high-impact:${id}`,
+    });
+    return {
+      applied: false,
+      approvalRequired: true,
+      approvalRequestId: request.id,
+      data: request,
+    };
+  }
+
   // Alacak kalemi sil (soft delete - status değiştir)
   async remove(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
@@ -171,12 +298,40 @@ export class ClaimItemService {
     });
   }
 
+  async removeFromUser(tenantId: string, actorUserId: string, id: string): Promise<ClaimItemMutationResult> {
+    const existing = await this.findOne(tenantId, id);
+    const currentSnapshot = this.snapshotClaimItem(existing);
+    const proposedPatch = { status: 'CANCELLED' };
+    const request = await this.createHighImpactApprovalRequest({
+      tenantId,
+      actorUserId,
+      targetType: CLAIM_ITEM_TARGET_TYPE,
+      targetRef: id,
+      intent: {
+        version: CLAIM_ITEM_INTENT_VERSION,
+        operation: 'DELETE',
+        caseId: existing.caseId,
+        claimItemId: id,
+        proposedPatch,
+        currentSnapshot,
+        currentSnapshotHash: stableJsonHash(currentSnapshot),
+        reason: 'ClaimItem delete/cancel requires K4 four-eyes approval.',
+      },
+      idempotencyKey: `claim-item-high-impact:${id}`,
+    });
+    return {
+      applied: false,
+      approvalRequired: true,
+      approvalRequestId: request.id,
+      data: request,
+    };
+  }
+
   // Alacak kalemi kalıcı sil
   async hardDelete(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
     return (this.prisma as any).claimItem.delete({ where: { id } });
   }
-
 
   // ==================== OTOMATİK ALACAK KALEMİ OLUŞTURMA ====================
 
@@ -802,5 +957,254 @@ export class ClaimItemService {
       principalAmount,
       customRate,
     );
+  }
+
+  private async applyLowImpactMetadataUpdate(
+    tenantId: string,
+    actorUserId: string,
+    id: string,
+    patch: ClaimItemPatch,
+  ) {
+    await this.assertCanManageClaimItemMetadata(actorUserId, tenantId);
+    const data = this.pickLowImpactUpdateData(patch);
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('Metadata güncellemesi için desteklenen alan yok.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.claimItem.findFirst({
+        where: { id, tenantId },
+      });
+      if (!existing) {
+        throw new NotFoundException('Alacak kalemi bulunamadı');
+      }
+
+      const before = this.snapshotClaimItem(existing);
+      const updated = await tx.claimItem.update({
+        where: { id },
+        data,
+      });
+
+      await this.logClaimItemAuditInTransaction(tx, {
+        tenantId,
+        actorUserId,
+        action: 'CLAIM_ITEM_METADATA_UPDATED',
+        entityId: id,
+        caseId: existing.caseId,
+        oldValues: before,
+        newValues: this.snapshotClaimItem(updated),
+        source: 'USER_DIRECT_METADATA_EDIT',
+        approvalRequired: false,
+      });
+
+      return updated;
+    });
+  }
+
+  private async assertCanManageClaimItemMetadata(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!this.officeApproval) {
+      throw new ConflictException('ClaimItem capability dependency is not available.');
+    }
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException('Alacak kalemi metadata güncelleme yetkisi yok (PARTNER veya yetkilendirilmiş avukat gerekir).');
+    }
+  }
+
+  private async createHighImpactApprovalRequest(input: {
+    tenantId: string;
+    actorUserId: string;
+    targetType: string;
+    targetRef: string;
+    intent: ClaimItemHighImpactSavedIntent;
+    idempotencyKey: string;
+  }) {
+    if (!this.officeApproval) {
+      throw new ConflictException('ClaimItem approval dependency is not available.');
+    }
+
+    const existing = await this.prisma.officeApprovalRequest.findUnique({
+      where: { tenantId_idempotencyKey: { tenantId: input.tenantId, idempotencyKey: input.idempotencyKey } },
+    });
+    if (existing?.status === OfficeApprovalStatus.PENDING_APPROVAL && existing.payloadHash !== stableJsonHash(input.intent)) {
+      throw new ConflictException('Bu ClaimItem için farklı içerikli bekleyen bir onay talebi zaten var.');
+    }
+
+    return this.officeApproval.createPendingRequest({
+      tenantId: input.tenantId,
+      actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+      targetType: input.targetType,
+      targetRef: input.targetRef,
+      requesterUserId: input.actorUserId,
+      savedIntent: input.intent,
+      idempotencyKey: input.idempotencyKey,
+      reason: input.intent.reason,
+    });
+  }
+
+  private buildCreatePatch(dto: CreateClaimItemDto): ClaimItemPatch {
+    return this.normalizePatchForIntent(this.stripUndefined({ ...dto }));
+  }
+
+  private buildUpdateData(dto: Partial<UpdateClaimItemDto>): Record<string, unknown> {
+    const updateData: Record<string, unknown> = {};
+    if (dto.itemType) updateData.itemType = dto.itemType;
+    if (dto.amount !== undefined) updateData.amount = dto.amount;
+    if (dto.currency) updateData.currency = dto.currency;
+    if (dto.interestType) updateData.interestType = dto.interestType;
+    if (dto.interestRate !== undefined) updateData.interestRate = dto.interestRate;
+    if (dto.interestStartDate) updateData.interestStartDate = new Date(dto.interestStartDate);
+    if (dto.interestEndDate) updateData.interestEndDate = new Date(dto.interestEndDate);
+    if (dto.dueDate) updateData.dueDate = new Date(dto.dueDate);
+    if (dto.interestAccrualStatus) updateData.interestAccrualStatus = dto.interestAccrualStatus;
+    if (dto.interestStartDateProvenance) updateData.interestStartDateProvenance = dto.interestStartDateProvenance;
+    if (dto.interestAccrualStatus === ('NO_INTEREST' as any)) {
+      updateData.noInterestReason = dto.noInterestReason;
+      updateData.noInterestConfirmedById = dto.noInterestConfirmedById;
+      updateData.noInterestConfirmedAt = new Date();
+    }
+    if (dto.description !== undefined) updateData.description = dto.description;
+    if (dto.referenceNo !== undefined) updateData.referenceNo = dto.referenceNo;
+    if (dto.isAllDebtorsLiable !== undefined) updateData.isAllDebtorsLiable = dto.isAllDebtorsLiable;
+    if (dto.liableDebtorIds) updateData.liableDebtorIds = dto.liableDebtorIds;
+    if (dto.status) updateData.status = dto.status;
+    if (dto.sortOrder !== undefined) updateData.sortOrder = dto.sortOrder;
+    return updateData;
+  }
+
+  private pickLowImpactUpdateData(patch: ClaimItemPatch): Record<string, unknown> {
+    const updateData: Record<string, unknown> = {};
+    if (patch.description !== undefined) updateData.description = patch.description;
+    if (patch.referenceNo !== undefined) updateData.referenceNo = patch.referenceNo;
+    if (patch.sortOrder !== undefined) updateData.sortOrder = patch.sortOrder;
+    return updateData;
+  }
+
+  private assertUpdateInvariants(existing: any, dto: Partial<UpdateClaimItemDto>): void {
+    const collected = Number(existing.collectedAmount) || 0;
+    if (dto.amount !== undefined && Number(dto.amount) < collected) {
+      throw new BadRequestException(`Tutar tahsil edilen tutardan (${collected}) düşük olamaz.`);
+    }
+    if (collected > 0 && dto.itemType && dto.itemType !== existing.itemType) {
+      throw new BadRequestException('Tahsilat yapılmış kalemde kalem tipi (itemType) değiştirilemez.');
+    }
+  }
+
+  private hasHighImpactField(patch: ClaimItemPatch): boolean {
+    return Object.keys(patch).some((field) => this.isHighImpactField(field));
+  }
+
+  private isLowImpactField(field: string): boolean {
+    return (LOW_IMPACT_USER_FIELDS as readonly string[]).includes(field);
+  }
+
+  private isHighImpactField(field: string): boolean {
+    return (HIGH_IMPACT_USER_FIELDS as readonly string[]).includes(field);
+  }
+
+  private stripUndefined(input: Record<string, unknown>): ClaimItemPatch {
+    return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
+  }
+
+  private normalizePatchForIntent(input: ClaimItemPatch): ClaimItemPatch {
+    return Object.fromEntries(
+      Object.entries(input).map(([key, value]) => [
+        key,
+        value instanceof Date ? value.toISOString() : value,
+      ]),
+    );
+  }
+
+  private snapshotClaimItem(item: any): Record<string, unknown> {
+    return {
+      id: item.id,
+      tenantId: item.tenantId,
+      caseId: item.caseId,
+      itemType: item.itemType,
+      amount: this.toSnapshotScalar(item.amount),
+      originalAmount: this.toSnapshotScalar(item.originalAmount),
+      demandedAmount: this.toSnapshotScalar(item.demandedAmount),
+      collectedAmount: this.toSnapshotScalar(item.collectedAmount),
+      currency: item.currency,
+      interestType: item.interestType ?? null,
+      interestRate: this.toSnapshotScalar(item.interestRate),
+      interestStartDate: this.toSnapshotDate(item.interestStartDate),
+      interestEndDate: this.toSnapshotDate(item.interestEndDate),
+      dueDate: this.toSnapshotDate(item.dueDate),
+      interestAccrualStatus: item.interestAccrualStatus ?? null,
+      interestStartDateProvenance: item.interestStartDateProvenance ?? null,
+      isAllDebtorsLiable: item.isAllDebtorsLiable,
+      liableDebtorIds: Array.isArray(item.liableDebtorIds) ? [...item.liableDebtorIds] : [],
+      status: item.status,
+      description: item.description ?? null,
+      referenceNo: item.referenceNo ?? null,
+      sortOrder: item.sortOrder ?? 0,
+      updatedAt: this.toSnapshotDate(item.updatedAt),
+    };
+  }
+
+  private toSnapshotScalar(value: unknown): string | number | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return value;
+    return String(value);
+  }
+
+  private toSnapshotDate(value: unknown): string | null {
+    if (!value) return null;
+    if (value instanceof Date) return value.toISOString();
+    return String(value);
+  }
+
+  private async logClaimItemAuditInTransaction(
+    tx: Prisma.TransactionClient,
+    input: {
+      tenantId: string;
+      actorUserId: string;
+      action: string;
+      entityId: string;
+      caseId: string;
+      oldValues: Record<string, unknown>;
+      newValues: Record<string, unknown>;
+      source: string;
+      approvalRequired: boolean;
+    },
+  ): Promise<void> {
+    if (this.audit) {
+      await this.audit.logInTransaction(tx, {
+        tenantId: input.tenantId,
+        action: input.action,
+        entityType: 'ClaimItem',
+        entityId: input.entityId,
+        userId: input.actorUserId,
+        oldValues: input.oldValues as any,
+        newValues: input.newValues as any,
+        description: 'ClaimItem mutation audit',
+        metadata: {
+          caseId: input.caseId,
+          claimItemId: input.entityId,
+          source: input.source,
+          approvalRequired: input.approvalRequired,
+        },
+      });
+      return;
+    }
+
+    await tx.auditLog.create({
+      data: {
+        tenantId: input.tenantId,
+        action: input.action,
+        entityType: 'ClaimItem',
+        entityId: input.entityId,
+        userId: input.actorUserId,
+        oldValues: input.oldValues as any,
+        newValues: input.newValues as any,
+        description: 'ClaimItem mutation audit',
+        metadata: {
+          caseId: input.caseId,
+          claimItemId: input.entityId,
+          source: input.source,
+          approvalRequired: input.approvalRequired,
+        },
+      },
+    });
   }
 }

@@ -14,6 +14,14 @@ import {
   executeCollectionCancelInTransaction,
   type CollectionVoidSavedIntent,
 } from '../collection/collection-cancel-executor';
+import {
+  CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+  CLAIM_ITEM_INTENT_VERSION,
+  CLAIM_ITEM_TARGET_TYPE,
+  CLAIM_ITEM_CASE_TARGET_TYPE,
+  type ClaimItemHighImpactSavedIntent,
+} from '../claim-item/claim-item-approval.constants';
+import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 
 const COLLECTION_DISPOSITION_APPROVAL_ACTION = 'COLLECTION_DISPOSITION_POST';
 const COLLECTION_DISPOSITION_TARGET_TYPE = 'COLLECTION_DISPOSITION';
@@ -41,6 +49,9 @@ export class OfficeApprovalDomainSyncService {
     }
     if (this.isCollectionVoidApproval(req)) {
       return this.syncCollectionVoid(tx, req);
+    }
+    if (this.isClaimItemHighImpactApproval(req)) {
+      return this.syncClaimItemHighImpact(tx, req);
     }
   }
 
@@ -87,6 +98,30 @@ export class OfficeApprovalDomainSyncService {
 
   private isCollectionVoidApproval(req: OfficeApprovalRequest): boolean {
     return req.actionCode === COLLECTION_VOID_ACTION_CODE && req.targetType === COLLECTION_VOID_TARGET_TYPE;
+  }
+
+  private isClaimItemHighImpactApproval(req: OfficeApprovalRequest): boolean {
+    return (
+      req.actionCode === CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE &&
+      (req.targetType === CLAIM_ITEM_TARGET_TYPE || req.targetType === CLAIM_ITEM_CASE_TARGET_TYPE)
+    );
+  }
+
+  private async syncClaimItemHighImpact(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    switch (req.status) {
+      case OfficeApprovalStatus.APPROVED:
+        return this.approveClaimItemHighImpact(tx, req);
+      case OfficeApprovalStatus.REJECTED:
+      case OfficeApprovalStatus.REVISION_REQUESTED:
+      case OfficeApprovalStatus.CANCELLED:
+        return;
+      case OfficeApprovalStatus.APPROVED_WITH_CHANGES:
+        throw new BadRequestException(
+          'ClaimItem high-impact degisikligi degistirerek onaylanamaz; revizyon isteyin veya normal onaylayin.',
+        );
+      default:
+        return;
+    }
   }
 
   private async approveCollectionDisposition(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
@@ -200,5 +235,245 @@ export class OfficeApprovalDomainSyncService {
       throw new ConflictException('COLLECTION_VOID savedIntent hedef/gerekce bilgisi gecersiz.');
     }
     return { caseId, collectionId, cancelReason };
+  }
+
+  private async approveClaimItemHighImpact(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    if (!req.approverUserId) {
+      throw new ConflictException('Onayli CLAIM_ITEM approval kaydinda approverUserId yok.');
+    }
+    const intent = this.readClaimItemIntent(req);
+    const claim = await tx.officeApprovalRequest.updateMany({
+      where: {
+        id: req.id,
+        status: OfficeApprovalStatus.APPROVED,
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+        runningStartedAt: new Date(),
+      },
+    });
+    if (claim.count === 0) {
+      throw new ConflictException('ClaimItem approval zaten yurutulmus veya yurutme icin kilitlenmis.');
+    }
+
+    if (intent.operation === 'CREATE') {
+      await this.applyClaimItemCreate(tx, req, intent);
+    } else {
+      await this.applyClaimItemUpdateOrDelete(tx, req, intent);
+    }
+
+    const done = await tx.officeApprovalRequest.updateMany({
+      where: {
+        id: req.id,
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
+        executedAt: new Date(),
+      },
+    });
+    if (done.count === 0) {
+      throw new ConflictException('ClaimItem approval yurutme sonucu isaretlenemedi.');
+    }
+  }
+
+  private readClaimItemIntent(req: OfficeApprovalRequest): ClaimItemHighImpactSavedIntent {
+    const value = req.savedIntent as Partial<ClaimItemHighImpactSavedIntent> | null;
+    if (!value || typeof value !== 'object' || value.version !== CLAIM_ITEM_INTENT_VERSION) {
+      throw new ConflictException('CLAIM_ITEM savedIntent gecersiz.');
+    }
+    if (!value.caseId || typeof value.caseId !== 'string') {
+      throw new ConflictException('CLAIM_ITEM savedIntent caseId gecersiz.');
+    }
+    if (!value.proposedPatch || typeof value.proposedPatch !== 'object') {
+      throw new ConflictException('CLAIM_ITEM savedIntent proposedPatch gecersiz.');
+    }
+    if (!['CREATE', 'UPDATE', 'DELETE'].includes(String(value.operation))) {
+      throw new ConflictException('CLAIM_ITEM savedIntent operation gecersiz.');
+    }
+    if (value.operation !== 'CREATE' && (!value.claimItemId || value.claimItemId !== req.targetRef)) {
+      throw new ConflictException('CLAIM_ITEM savedIntent hedef bilgisi gecersiz.');
+    }
+    return value as ClaimItemHighImpactSavedIntent;
+  }
+
+  private async applyClaimItemCreate(
+    tx: Prisma.TransactionClient,
+    req: OfficeApprovalRequest,
+    intent: ClaimItemHighImpactSavedIntent,
+  ): Promise<void> {
+    const patch = intent.proposedPatch as any;
+    if (req.targetType !== CLAIM_ITEM_CASE_TARGET_TYPE || req.targetRef !== intent.caseId || patch.caseId !== intent.caseId) {
+      throw new ConflictException('CLAIM_ITEM create hedef bilgisi gecersiz.');
+    }
+    const caseExists = await tx.case.findFirst({
+      where: { id: intent.caseId, tenantId: req.tenantId },
+      select: { id: true },
+    });
+    if (!caseExists) {
+      throw new ConflictException('CLAIM_ITEM create case bulunamadi.');
+    }
+    const created = await tx.claimItem.create({
+      data: this.buildClaimItemCreateData(req.tenantId, patch) as any,
+    });
+    await this.writeClaimItemAudit(tx, req, created.id, intent.caseId, {}, this.snapshotClaimItem(created), 'CLAIM_ITEM_HIGH_IMPACT_CREATE_APPLIED');
+  }
+
+  private async applyClaimItemUpdateOrDelete(
+    tx: Prisma.TransactionClient,
+    req: OfficeApprovalRequest,
+    intent: ClaimItemHighImpactSavedIntent,
+  ): Promise<void> {
+    const current = await tx.claimItem.findFirst({
+      where: { id: intent.claimItemId, tenantId: req.tenantId },
+    });
+    if (!current) {
+      throw new ConflictException('CLAIM_ITEM hedef kalem bulunamadi.');
+    }
+    const currentSnapshot = this.snapshotClaimItem(current);
+    if (intent.currentSnapshotHash && stableJsonHash(currentSnapshot) !== intent.currentSnapshotHash) {
+      throw new ConflictException('ClaimItem stale-state conflict: kayit approval talebinden sonra degismis.');
+    }
+    const data = intent.operation === 'DELETE'
+      ? { status: 'CANCELLED' }
+      : this.buildClaimItemUpdateData(intent.proposedPatch as Record<string, unknown>);
+    const updated = await tx.claimItem.update({
+      where: { id: intent.claimItemId },
+      data,
+    });
+    await this.writeClaimItemAudit(
+      tx,
+      req,
+      intent.claimItemId!,
+      intent.caseId,
+      currentSnapshot,
+      this.snapshotClaimItem(updated),
+      intent.operation === 'DELETE' ? 'CLAIM_ITEM_HIGH_IMPACT_DELETE_APPLIED' : 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED',
+    );
+  }
+
+  private buildClaimItemCreateData(tenantId: string, patch: any): Record<string, unknown> {
+    return {
+      tenantId,
+      caseId: patch.caseId,
+      itemType: patch.itemType,
+      amount: patch.amount,
+      currency: patch.currency || 'TRY',
+      sourceDocumentId: patch.sourceDocumentId,
+      sourceDocumentType: patch.sourceDocumentType,
+      interestType: patch.interestType,
+      interestRate: patch.interestRate,
+      interestStartDate: patch.interestStartDate ? new Date(patch.interestStartDate) : null,
+      interestEndDate: patch.interestEndDate ? new Date(patch.interestEndDate) : null,
+      dueDate: patch.dueDate ? new Date(patch.dueDate) : null,
+      issueDate: patch.issueDate ? new Date(patch.issueDate) : null,
+      interestAccrualStatus: patch.interestAccrualStatus ?? 'UNKNOWN',
+      interestStartDateProvenance: patch.interestStartDateProvenance ?? null,
+      noInterestReason: patch.noInterestReason ?? null,
+      noInterestConfirmedById: patch.noInterestConfirmedById ?? null,
+      noInterestConfirmedAt: patch.noInterestConfirmedById ? new Date() : null,
+      description: patch.description,
+      referenceNo: patch.referenceNo,
+      isAllDebtorsLiable: patch.isAllDebtorsLiable ?? true,
+      liableDebtorIds: patch.liableDebtorIds || [],
+      sortOrder: patch.sortOrder || 0,
+    };
+  }
+
+  private buildClaimItemUpdateData(patch: Record<string, unknown>): Record<string, unknown> {
+    const data: Record<string, unknown> = {};
+    if (patch.itemType) data.itemType = patch.itemType;
+    if (patch.amount !== undefined) data.amount = patch.amount;
+    if (patch.currency) data.currency = patch.currency;
+    if (patch.interestType) data.interestType = patch.interestType;
+    if (patch.interestRate !== undefined) data.interestRate = patch.interestRate;
+    if (patch.interestStartDate) data.interestStartDate = new Date(String(patch.interestStartDate));
+    if (patch.interestEndDate) data.interestEndDate = new Date(String(patch.interestEndDate));
+    if (patch.dueDate) data.dueDate = new Date(String(patch.dueDate));
+    if (patch.interestAccrualStatus) data.interestAccrualStatus = patch.interestAccrualStatus;
+    if (patch.interestStartDateProvenance) data.interestStartDateProvenance = patch.interestStartDateProvenance;
+    if (patch.interestAccrualStatus === 'NO_INTEREST') {
+      data.noInterestReason = patch.noInterestReason;
+      data.noInterestConfirmedById = patch.noInterestConfirmedById;
+      data.noInterestConfirmedAt = new Date();
+    }
+    if (patch.description !== undefined) data.description = patch.description;
+    if (patch.referenceNo !== undefined) data.referenceNo = patch.referenceNo;
+    if (patch.isAllDebtorsLiable !== undefined) data.isAllDebtorsLiable = patch.isAllDebtorsLiable;
+    if (patch.liableDebtorIds) data.liableDebtorIds = patch.liableDebtorIds;
+    if (patch.status) data.status = patch.status;
+    if (patch.sortOrder !== undefined) data.sortOrder = patch.sortOrder;
+    return data;
+  }
+
+  private snapshotClaimItem(item: any): Record<string, unknown> {
+    return {
+      id: item.id,
+      tenantId: item.tenantId,
+      caseId: item.caseId,
+      itemType: item.itemType,
+      amount: this.scalar(item.amount),
+      originalAmount: this.scalar(item.originalAmount),
+      demandedAmount: this.scalar(item.demandedAmount),
+      collectedAmount: this.scalar(item.collectedAmount),
+      currency: item.currency,
+      interestType: item.interestType ?? null,
+      interestRate: this.scalar(item.interestRate),
+      interestStartDate: this.dateScalar(item.interestStartDate),
+      interestEndDate: this.dateScalar(item.interestEndDate),
+      dueDate: this.dateScalar(item.dueDate),
+      interestAccrualStatus: item.interestAccrualStatus ?? null,
+      interestStartDateProvenance: item.interestStartDateProvenance ?? null,
+      isAllDebtorsLiable: item.isAllDebtorsLiable,
+      liableDebtorIds: Array.isArray(item.liableDebtorIds) ? [...item.liableDebtorIds] : [],
+      status: item.status,
+      description: item.description ?? null,
+      referenceNo: item.referenceNo ?? null,
+      sortOrder: item.sortOrder ?? 0,
+      updatedAt: this.dateScalar(item.updatedAt),
+    };
+  }
+
+  private scalar(value: unknown): string | number | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return value;
+    return String(value);
+  }
+
+  private dateScalar(value: unknown): string | null {
+    if (!value) return null;
+    if (value instanceof Date) return value.toISOString();
+    return String(value);
+  }
+
+  private async writeClaimItemAudit(
+    tx: Prisma.TransactionClient,
+    req: OfficeApprovalRequest,
+    entityId: string,
+    caseId: string,
+    oldValues: Record<string, unknown>,
+    newValues: Record<string, unknown>,
+    action: string,
+  ): Promise<void> {
+    await tx.auditLog.create({
+      data: {
+        tenantId: req.tenantId,
+        action,
+        entityType: 'ClaimItem',
+        entityId,
+        userId: req.approverUserId ?? undefined,
+        oldValues: oldValues as any,
+        newValues: newValues as any,
+        description: 'ClaimItem high-impact mutation audit',
+        metadata: {
+          caseId,
+          claimItemId: entityId,
+          source: 'USER_HIGH_IMPACT_CHANGE_REQUEST',
+          approvalRequestId: req.id,
+          approvalRequired: true,
+        },
+      },
+    });
   }
 }

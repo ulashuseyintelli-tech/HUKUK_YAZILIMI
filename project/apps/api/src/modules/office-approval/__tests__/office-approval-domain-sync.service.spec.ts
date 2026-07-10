@@ -1,6 +1,11 @@
 /** @jest-environment node */
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { CollectionDispositionStatus, OfficeApprovalExecutionStatus, OfficeApprovalStatus } from '@prisma/client';
+import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
+import {
+  CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+  CLAIM_ITEM_INTENT_VERSION,
+} from '../../claim-item/claim-item-approval.constants';
 import { OfficeApprovalDomainSyncService } from '../office-approval-domain-sync.service';
 
 const decidedAt = new Date('2026-01-01T12:00:00.000Z');
@@ -238,5 +243,184 @@ describe('OWN-29-B OfficeApprovalDomainSyncService collection void', () => {
       svc.syncAfterDecision(db as any, collectionVoidReq({ status: OfficeApprovalStatus.APPROVED_WITH_CHANGES }) as any),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(db.collection.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () => {
+  const item = {
+    id: 'ci-1',
+    tenantId: 't1',
+    caseId: 'case-1',
+    itemType: 'PRINCIPAL',
+    amount: 1000,
+    originalAmount: 1000,
+    demandedAmount: 1000,
+    collectedAmount: 0,
+    currency: 'TRY',
+    interestType: null,
+    interestRate: null,
+    interestStartDate: null,
+    interestEndDate: null,
+    dueDate: null,
+    interestAccrualStatus: 'UNKNOWN',
+    interestStartDateProvenance: null,
+    isAllDebtorsLiable: true,
+    liableDebtorIds: [],
+    status: 'ACTIVE',
+    description: 'old',
+    referenceNo: 'ref-old',
+    sortOrder: 0,
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  const snapshot = (over: Record<string, unknown> = {}) => ({
+    id: 'ci-1',
+    tenantId: 't1',
+    caseId: 'case-1',
+    itemType: 'PRINCIPAL',
+    amount: 1000,
+    originalAmount: 1000,
+    demandedAmount: 1000,
+    collectedAmount: 0,
+    currency: 'TRY',
+    interestType: null,
+    interestRate: null,
+    interestStartDate: null,
+    interestEndDate: null,
+    dueDate: null,
+    interestAccrualStatus: 'UNKNOWN',
+    interestStartDateProvenance: null,
+    isAllDebtorsLiable: true,
+    liableDebtorIds: [],
+    status: 'ACTIVE',
+    description: 'old',
+    referenceNo: 'ref-old',
+    sortOrder: 0,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...over,
+  });
+
+  const claimItemReq = (intentOver: Record<string, unknown> = {}, reqOver: Record<string, unknown> = {}) => {
+    const currentSnapshot = snapshot();
+    return {
+      id: 'claim-appr-1',
+      tenantId: 't1',
+      actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+      targetType: 'CLAIM_ITEM',
+      targetRef: 'ci-1',
+      requesterUserId: 'requester-u',
+      approverUserId: 'approver-u',
+      status: OfficeApprovalStatus.APPROVED,
+      savedIntent: {
+        version: CLAIM_ITEM_INTENT_VERSION,
+        operation: 'UPDATE',
+        caseId: 'case-1',
+        claimItemId: 'ci-1',
+        proposedPatch: { amount: 1200 },
+        currentSnapshot,
+        currentSnapshotHash: stableJsonHash(currentSnapshot),
+        reason: 'test',
+        ...intentOver,
+      },
+      ...reqOver,
+    };
+  };
+
+  function claimItemTx(over: Record<string, any> = {}) {
+    return {
+      officeApprovalRequest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      claimItem: {
+        findFirst: jest.fn().mockResolvedValue(item),
+        update: jest.fn().mockResolvedValue({ ...item, amount: 1200, updatedAt: new Date('2026-01-02T00:00:00.000Z') }),
+        create: jest.fn(),
+      },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
+      },
+      ...over,
+    };
+  }
+
+  it('APPROVED high-impact update execution lock alir, patch uygular, audit yazar ve SUCCEEDED isaretler', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = claimItemTx();
+
+    await svc.syncAfterDecision(db as any, claimItemReq() as any);
+
+    expect(db.officeApprovalRequest.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        id: 'claim-appr-1',
+        status: OfficeApprovalStatus.APPROVED,
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+        runningStartedAt: expect.any(Date),
+      },
+    });
+    expect(db.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: { amount: 1200 },
+    });
+    expect(db.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED',
+        entityType: 'ClaimItem',
+        entityId: 'ci-1',
+        userId: 'approver-u',
+        metadata: expect.objectContaining({
+          source: 'USER_HIGH_IMPACT_CHANGE_REQUEST',
+          approvalRequestId: 'claim-appr-1',
+        }),
+      }),
+    });
+    expect(db.officeApprovalRequest.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        id: 'claim-appr-1',
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
+        executedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it('stale ClaimItem snapshot proposal uygulanmasini engeller', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = claimItemTx({
+      claimItem: {
+        findFirst: jest.fn().mockResolvedValue({ ...item, amount: 1500 }),
+        update: jest.fn(),
+        create: jest.fn(),
+      },
+    });
+
+    await expect(svc.syncAfterDecision(db as any, claimItemReq() as any)).rejects.toBeInstanceOf(ConflictException);
+    expect(db.claimItem.update).not.toHaveBeenCalled();
+  });
+
+  it('duplicate finalize lock count=0 ise cift mutasyon uretmez', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = claimItemTx({
+      officeApprovalRequest: {
+        updateMany: jest.fn().mockResolvedValueOnce({ count: 0 }),
+      },
+    });
+
+    await expect(svc.syncAfterDecision(db as any, claimItemReq() as any)).rejects.toBeInstanceOf(ConflictException);
+    expect(db.claimItem.update).not.toHaveBeenCalled();
+  });
+
+  it('APPROVED_WITH_CHANGES claim item high-impact icin fail-closed kalir', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = claimItemTx();
+
+    await expect(
+      svc.syncAfterDecision(db as any, claimItemReq({}, { status: OfficeApprovalStatus.APPROVED_WITH_CHANGES }) as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(db.claimItem.update).not.toHaveBeenCalled();
   });
 });

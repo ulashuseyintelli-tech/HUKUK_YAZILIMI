@@ -339,6 +339,35 @@ describe('PAYOUT-APPROVAL-2 OfficeApprovalService — actionCode dispatcher (CLI
     expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
   });
 
+  it('OWN-29-D: DBIND §5 CLAIM_ITEM_HIGH_IMPACT_CHANGE icin uygulanmaz; eligible PARTNER self-approve edemez', async () => {
+    const claimItemReq = () =>
+      mkReq({
+        actionCode: 'CLAIM_ITEM_HIGH_IMPACT_CHANGE',
+        targetType: 'CLAIM_ITEM',
+        targetRef: 'ci-1',
+        requesterUserId: REQUESTER,
+        savedIntent: {
+          version: 'OWN29D_CLAIM_ITEM_HIGH_IMPACT_V1',
+          operation: 'UPDATE',
+          caseId: 'case-1',
+          claimItemId: 'ci-1',
+          proposedPatch: { amount: 1200 },
+          currentSnapshot: {},
+          currentSnapshotHash: 'hash',
+        },
+      });
+    const selfPartner = {
+      id: REQUESTER,
+      isActive: true,
+      tenantId: TENANT,
+      lawyer: { lawyerRank: 'PARTNER', canApproveOfficeActions: false },
+    };
+    const { svc, prisma } = make({ reqSeq: [claimItemReq()], approverUser: selfPartner });
+
+    await expect(svc.approve('oar-1', REQUESTER, 'self claim item')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
   it('DBIND §5: self requester CLIENT_PAYOUT_POST icin eligible degilse yine Forbidden ve karar yazilmaz', async () => {
     const { svc, prisma } = make({
       reqSeq: [payoutReq()],
