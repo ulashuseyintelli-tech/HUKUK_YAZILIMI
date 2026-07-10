@@ -1213,8 +1213,8 @@ export default function CaseDetailPage() {
     if (!confirm(confirmMessage)) return;
 
     try {
-      await api.cancelCollection(caseData.id, collection.id, trimmedReason);
-      refreshCollectionDependentViews();
+      const approval = await api.cancelCollection(caseData.id, collection.id, trimmedReason);
+      alert(`Tahsilat iptal talebi onaya gönderildi. Talep: ${approval.approvalRequestId}`);
     } catch (err: any) {
       alert(`İptal hatası: ${err?.message || "Bilinmeyen hata"}`);
     }

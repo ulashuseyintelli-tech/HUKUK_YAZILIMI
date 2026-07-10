@@ -75,7 +75,7 @@ export class CollectionController {
   }
 
   /**
-   * Tahsilat iptal et
+   * Tahsilat iptali için onay talebi oluştur
    * POST /collections/:id/cancel
    */
   @Post(":id/cancel")
@@ -85,7 +85,7 @@ export class CollectionController {
     @Param("id") id: string,
     @Body() dto: CancelCollectionDto
   ) {
-    return this.collectionService.cancel(tenantId, id, dto, actorUserId);
+    return this.collectionService.requestCancel(tenantId, id, dto, actorUserId);
   }
 
   // ==================== KAPAK HESABI ====================

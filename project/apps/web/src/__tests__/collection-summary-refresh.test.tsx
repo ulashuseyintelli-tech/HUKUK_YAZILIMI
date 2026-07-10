@@ -223,7 +223,12 @@ describe("collection summary refresh", () => {
     apiMock.createCollection.mockResolvedValue({ id: "collection-1" });
     apiMock.updateCollection.mockResolvedValue({ id: "collection-1" });
     apiMock.deleteCollection.mockResolvedValue({ success: true });
-    apiMock.cancelCollection.mockResolvedValue({ id: "collection-1", status: "CANCELLED" });
+    apiMock.cancelCollection.mockResolvedValue({
+      requested: true,
+      approvalRequestId: "appr-1",
+      status: "PENDING_APPROVAL",
+      collectionId: "collection-1",
+    });
     apiMock.getCollectionDispositionsByCase.mockResolvedValue([]);
     apiMock.postCollectionDisposition.mockResolvedValue({ posted: true, dispositionId: "disp-1", lineCount: 1 });
     apiMock.previewCasePayment.mockResolvedValue(makePaymentPreviewResponse());
@@ -380,9 +385,10 @@ describe("collection summary refresh", () => {
     expect(apiMock.deleteCollection).not.toHaveBeenCalled();
     expect(refetchCalculation).not.toHaveBeenCalled();
   });
-  it("confirmed tahsilat iptalinde cancel endpointini kullanir ve delete cagirmaz", async () => {
+  it("confirmed tahsilat iptalinde approval request endpointini kullanir ve finansal refetch yapmaz", async () => {
     const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("sehven kayit");
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => undefined);
     render(
       <CaseFinanceRefreshHarness
         collection={{
@@ -404,16 +410,19 @@ describe("collection summary refresh", () => {
     });
     expect(apiMock.deleteCollection).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(refetchCalculation).toHaveBeenCalledTimes(1);
+      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining("Tahsilat iptal talebi onaya gönderildi"));
     });
+    expect(refetchCalculation).not.toHaveBeenCalled();
 
     promptSpy.mockRestore();
     confirmSpy.mockRestore();
+    alertSpy.mockRestore();
   });
 
   it("posted tahsilat iptalinde muhasebe uyarisi verir", async () => {
     const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("posted reversal");
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => undefined);
     render(
       <CaseFinanceRefreshHarness
         collection={{
@@ -438,9 +447,11 @@ describe("collection summary refresh", () => {
       expect(apiMock.cancelCollection).toHaveBeenCalledWith("case-1", "collection-1", "posted reversal");
     });
     expect(apiMock.deleteCollection).not.toHaveBeenCalled();
+    expect(refetchCalculation).not.toHaveBeenCalled();
 
     promptSpy.mockRestore();
     confirmSpy.mockRestore();
+    alertSpy.mockRestore();
   });
 
   it("case page tahsilat aksiyonunda confirmed icin cancel, draft icin disabled bilgi kullanir", () => {
@@ -448,6 +459,7 @@ describe("collection summary refresh", () => {
 
     expect(source).toContain("+ Yeni Ödeme");
     expect(source).toContain("await api.cancelCollection(caseData.id, collection.id, trimmedReason);");
+    expect(source).toContain("Tahsilat iptal talebi onaya gönderildi");
     expect(source).toContain("title={posted ? \"Tahsilatı İptal Et / Reversal\" : \"Tahsilatı İptal Et\"}");
 
     expect(source).toContain("Taslak tahsilat silme bu sürümde devre dışı; ayrı void/discard akışı gerekiyor.");

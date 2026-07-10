@@ -8,12 +8,20 @@ import { OfficeApprovalShadowService } from './office-approval-shadow.service';
 import { OfficeApprovalController } from './office-approval.controller';
 import { PayoutApprovalPolicy } from './client-payout-approval.policy';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { DomainEventIngestModule } from '../icrabot/domain-event-ingest';
+import { AccountingJournalWriterService } from '../accounting-journal';
 
 @Module({
   // P4-2: OfficeApprovalShadowService (CHANGE_STATUS shadow; ConfigService global, PrismaModule import, AuditService @Global).
-  imports: [PrismaModule],
+  imports: [PrismaModule, DomainEventIngestModule],
   controllers: [OfficeApprovalController],
-  providers: [OfficeApprovalService, OfficeApprovalShadowService, OfficeApprovalDomainSyncService, PayoutApprovalPolicy],
+  providers: [
+    OfficeApprovalService,
+    OfficeApprovalShadowService,
+    OfficeApprovalDomainSyncService,
+    PayoutApprovalPolicy,
+    AccountingJournalWriterService,
+  ],
   // PAYOUT-APPROVAL-2: PayoutApprovalPolicy export → ClientSettlementModule (zaten bu modülü import ediyor)
   // ClientPayoutService.finalize()'da izole re-check için kullanır.
   exports: [OfficeApprovalService, OfficeApprovalShadowService, OfficeApprovalDomainSyncService, PayoutApprovalPolicy],
