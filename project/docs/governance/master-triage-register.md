@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-10 (OWN-29-D ClaimItem/receivable mutation approval gate)
+**Son güncelleme:** 2026-07-10 (OWN-29-A Offset Confirm Gate governance closure)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -155,7 +155,9 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **VER-34 (`office-approval-shadow.service.ts` gerçek tüketicisi)** | VER-10+ reconcile (2026-07-09): gerçek tüketici `case-status.controller.ts`; module ve spec importları da mevcut. CPB-03 kapsamındaki tüketici doğrulaması kapandı. |
 | **VER-35 (`HUKUK_payout-audit-hardening` foreign/tracked doğrulaması)** | VER-10+ reconcile (2026-07-09): `HUKUK_payout-audit-hardening` dizini parent workspace altında yok; repo içi referans yalnız bu register satırıydı. Stale local verification olarak kapandı. |
 | **VER-36 (DBIND §5 payout self-approval runtime reconcile)** | Owner decision + runtime patch (2026-07-10): DBIND §5'in payout self-approval istisnası `CLIENT_PAYOUT_POST` + `approve()` için PayoutApprovalPolicy eligible üst-seviye aktörlere uygulandı. `reject`/`requestRevision`/`approveWithChanges` ve diğer actionCode'lar generic self-approval yasağı altında kaldı. `PendingPayoutRequests` PENDING kendi payout talebi için "Onayla", APPROVED için mevcut "Kesinleştir" akışını kullanır. Schema/migration yok. |
+| **OWN-29-A (Offset confirm-gate governance closure)** | **CLOSED / ANALYZED / RUNTIME UNCHANGED** (2026-07-10): `CLIENT_OFFSET_APPLY` ve `CLIENT_OFFSET_REVERSE` için mevcut service-level PARTNER/MANAGER `DIRECT_CAPABILITY` modeli v1 kapsamında korundu; `approvalRef=null` davranışı değişmedi. Offset payout/money-out değildir ve DBIND §5 uygulanmaz. OfficeApproval/four-eyes implementasyonu yetkilendirilmedi. Gelecekte confirm-gate açılması yeni owner-authorized workstream gerektirir. Runtime/test/schema/migration değişikliği yok. |
 | **OWN-29-B (confirmed/posted collection void approval gate)** | Runtime + web + tests + governance patch (2026-07-10): public collection cancel yolları doğrudan finansal mutasyon yapmak yerine `COLLECTION_VOID` OfficeApproval request üretir; duplicate pending request `collection-void:{collectionId}` idempotency key ile engellenir. Generic OfficeApproval self-approval yasağı korunur; DBIND §5 payout exception collection void'a uygulanmaz. Eligible approver `approve()` sonrası mevcut reversal/journal/`PAYMENT_REVERSED` zinciri aynı transaction içinde çalışır; request açılması collection/ledger/journal state'ini değiştirmez. Schema/migration yok. |
+| **OWN-29-C (financial case close approval gate)** | Runtime + web summary + tests + governance patch (2026-07-10): `HITAM`, `INFAZ`, `MUVEKKILE_IADE`, `ACIZ`, `BATAK`, `MAHSUP`, `TEMLIK` hedef statüleri generic `CHANGE_STATUS` direct/guided edge hattından ayrılarak `FINANCIAL_CASE_CLOSE` OfficeApproval request üretir. Request açılması Case status'unu değiştirmez; requester self-approve edemez ve DBIND §5 uygulanmaz. Approval sonrası domain-sync mevcut case-status uygulama hattını transaction içinde çalıştırır. Schema/migration yok. Bu satır, owner register ve özet sayımda zaten kapalı gösterilen OWN-29-C için eksik Closed Register bookkeeping repair'idir. |
 | **OWN-29-D (ClaimItem / receivable mutation approval gate)** | Runtime + web + tests + governance patch (2026-07-10): public/user ClaimItem create/update/delete yolları doğrudan yüksek etkili finansal mutasyon yapmak yerine `CLAIM_ITEM_HIGH_IMPACT_CHANGE` OfficeApproval request üretir; request yaratılması ClaimItem state'ini değiştirmez. Low-impact metadata (`description`, `referenceNo`, `sortOrder`) capability + transaction audit ile doğrudan uygulanır. Tutar, kalem türü, faiz türü/oranı/tarihleri, `dueDate`, borçlu sorumluluğu, status ve silme/pasifleştirme yüksek etkili kabul edilir; requester self-approve edemez ve DBIND §5 payout istisnası uygulanmaz. Approval sonrası domain-sync stale-state hash guard ile tek transaction içinde patch/delete/create uygular ve immutable audit yazar. Due sync / collection allocation / canonical recompute gibi system/internal yollar user approval flow'a sokulmadı. Schema/migration yok. |
 
 ---
@@ -234,7 +236,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | OWN-26 | DevOps | Muhasebe kullanıcısına Lawyer'dan bağımsız capability alanı | Owner yönü |
 | OWN-27 | UI/Architecture | 3 silinen orphan component'in kalıcı terk mi | Ürün kararı |
 | **OWN-28 (YENİ)** | Authorization | 2. batch PB-01 = zaten ALT'daki ile aynı (bkz. not) | — |
-| **OWN-29-A (YENİ, ÖNEMLİ)** | Authorization / Client Settlement | **Offset confirm-gate**: mevcut runtime `ClientOffset` akışında OfficeApproval/four-eyes yok; `CLIENT_OFFSET_APPLY`/`CLIENT_OFFSET_REVERSE` service-level PARTNER/MANAGER direct capability ile çalışır, `approvalRef=null` ve `authorizationMode='DIRECT_CAPABILITY'` v1 davranışıdır. | **Owner kararı:** Mevcut DIRECT_CAPABILITY geçici olarak korunur. DBIND §5 uygulanmaz. Yeni confirm/four-eyes modeli ayrı tasarım ve implementasyon işi olmadan açılmaz. Acceptance criteria: runtime patch yok; ileride gate açılırsa apply/reverse ayrı risk ve idempotency modeliyle tasarlanır. |
+| **OWN-29-A (CLOSED / ANALYZED / RUNTIME UNCHANGED)** | Authorization / Client Settlement | **Offset confirm-gate governance closure**: repository doğrulaması `CLIENT_OFFSET_APPLY`/`CLIENT_OFFSET_REVERSE` akışının service-level PARTNER/MANAGER `DIRECT_CAPABILITY`, `approvalRef=null` ve `authorizationMode='DIRECT_CAPABILITY'` v1 davranışını koruduğunu doğruladı. | **Owner kararı kapatıldı:** DIRECT_CAPABILITY v1 için korunur. Offset payout değildir; DBIND §5 uygulanmaz. OfficeApproval/four-eyes implementasyonu yetkilendirilmedi. Gelecekte confirm-gate açılması apply/reverse için ayrı risk, idempotency ve transaction tasarımı içeren yeni owner-authorized workstream gerektirir. Runtime patch yok. |
 | **OWN-29-B (CLOSED / RUNTIME IMPLEMENTED)** | Authorization / Collection | **Confirmed collection void**: `CollectionDisposition` approval zaten P4/four-eyes ile korunur; raw `Collection.cancel()` doğrudan kullanıcı mutasyon yolu olmaktan ayrıştırıldı. | **Owner kararı uygulandı:** Confirmed/posted collection void artık `COLLECTION_VOID` OfficeApproval request üretir; request açılması collection/journal/ledger state'ini değiştirmez. Approve kararı generic K4 four-eyes/self-approval yasağı altında çalışır; DBIND §5 payout istisnası uygulanmaz. Approval sonrası aynı transaction içinde mevcut cancel/reversal/journal/`PAYMENT_REVERSED` zinciri tek kez yürütülür. DRAFT/unposted cancel bu PR'da açılmadı; ayrı capability+audit modeli gerektirir. |
 | **OWN-29-C (CLOSED / RUNTIME IMPLEMENTED)** | Authorization / Case Status | **Financial case close**: finansal kapanış statüleri generic `CHANGE_STATUS` direct/guided edge akışından ayrıştırıldı. | **Owner kararı uygulandı:** `HITAM`, `INFAZ`, `MUVEKKILE_IADE`, `ACIZ`, `BATAK`, `MAHSUP`, `TEMLIK` hedef statüleri `FINANCIAL_CASE_CLOSE` OfficeApproval request üretir; request açılması Case status'unu değiştirmez. PARTNER/founding lawyer/super admin direct allow veya self-approval yoktur; DBIND §5 uygulanmaz. Approval sonrası domain sync mevcut `CaseStatusService.changeStatus()` uygulama hattını transaction içinde çalıştırır, duplicate pending request `financial-case-close:{caseId}` idempotency key ile engellenir. Repository'de canonical reason enum/alanı kanıtlanmadığı için serbest metin yorumlama eklenmedi; reason bazlı genişletme ayrı verification/backlog konusudur. `AZIL`, `FERAGAT`, `SULH` statüleri OWN-29-C financial-close kapsamına körlemesine alınmadı. |
 | **OWN-29-D (CLOSED / RUNTIME IMPLEMENTED)** | Authorization / Claim Item | **ClaimItem / receivable mutation**: public/user ClaimItem create/update/delete yolları artık low-impact metadata ile high-impact receivable mutation'ı ayırır. | **Owner kararı uygulandı:** DBIND §5 uygulanmaz. Low-impact metadata capability + immutable audit ile transactionally uygulanır; yüksek etkili değişiklikler `CLAIM_ITEM_HIGH_IMPACT_CHANGE` OfficeApproval request üretir ve approval öncesi ClaimItem state'ini değiştirmez. Self-approval generic K4 yasağı altında kalır; eligible approver `approve()` sonrası stale-state guard + single-transaction apply + audit çalışır. System/internal sync yolları user approval flow dışında bırakıldı. |
@@ -242,7 +244,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 **Not (OWN-28 hakkında):** 2. batch'in PB-01'i ("Staff ASLA final-approver kilidi dar istisnaya revize edilsin mi") zaten `p4-approval-engine` memory'sindeki mevcut "Staff/MUHASEBE final approver NO-GO pending owner" kararıyla aynıdır — **bu tabloya AYRI kayıt olarak eklenmedi**, yalnız referans amacıyla ID rezerve edildi.
 
-**Not (OWN-29 split hakkında):** Tekil **OWN-29** kaydı governance drift/karar belirsizliği olarak kapatılıp dört aksiyon sınıfına bölündü: **OWN-29-A/B/C/D**. DBIND §5 yalnız payout/`CLIENT_PAYOUT_POST` için geçerlidir; bu dört sınıf payout istisnasını miras almaz. **OWN-29-B**, **OWN-29-C** ve **OWN-29-D** runtime remediation ile kapandı; **OWN-29-A** ayrı GO-ANALYZE/GO-IMPLEMENT ister.
+**Not (OWN-29 split hakkında):** Tekil **OWN-29** kaydı governance drift/karar belirsizliği olarak kapatılıp dört aksiyon sınıfına bölündü: **OWN-29-A/B/C/D**. DBIND §5 yalnız payout/`CLIENT_PAYOUT_POST` için geçerlidir; bu dört sınıf payout istisnasını miras almaz. **OWN-29-B**, **OWN-29-C** ve **OWN-29-D** runtime remediation ile; **OWN-29-A** ise repository-backed analiz ve governance closure ile kapandı. OWN-29 hattında açık workstream kalmadı. Gelecekte offset confirm/four-eyes modeli istenirse yeni owner-authorized workstream açılır.
 
 ---
 
@@ -250,7 +252,6 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 ### Kritik Çelişkiler
 1. **VER-02 (client çok-adres):** 5 bağımsız export aynı bulguyu yaptı — doğrulanmadan Task4 (OWN-11) kapsamına dahil edilirse kapsam belirsizliği büyür.
-2. **OWN-29-A (K4↔DBIND§5 self-approval çelişkisi split):** payout ayağı VER-36 ile runtime'da kapandı; confirmed/posted collection void ayağı OWN-29-B ile runtime'da kapandı; financial case close ayağı OWN-29-C ile runtime'da kapandı; ClaimItem/receivable mutation ayağı OWN-29-D ile runtime'da kapandı. Offset mevcut direct capability altında kalır ve ayrı tasarım/owner GO ister.
 
 ### Kritik Bağımlılıklar
 - **BLK-04 (Faz2 Display Cutover)** zincirin kilit noktası: BLK-05/06/07/08 buna bağlı.
@@ -263,7 +264,6 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 - BLK-07 (Anapara alt-model refactor — migration+hukuki etki)
 - OWN-23 (A1 ciro-zinciri epik — legal sign-off)
 - OWN-16 (Debtor kimlik tekilliği — migration)
-- **OWN-29-A (K4↔DBIND§5 split) — payout ayağı VER-36 ile reconcile edildi; confirmed/posted collection void OWN-29-B ile runtime'da kapandı; financial case close OWN-29-C ile runtime'da kapandı; high-impact receivable mutation OWN-29-D ile runtime'da kapandı. Kalan offset confirm-gate sınıfı DBIND §5 uygulamaz ve ayrı tasarım kararı bekler.**
 
 ### Mimari Riskler
 - OWN-12 (RISKY Fork A-D) — yüksek blast-radius kararlar bekliyor
@@ -288,7 +288,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | Master Verification Required | 22 (VER-02..10 + VER-12..14 + VER-16 + VER-20..23 + VER-25..27 + VER-29 + VER-33; VER-01/11/15/17/18/19/24/28/30/31/32/34/35/36 kapandı/taşındı) |
 | Master Workflow Queue — PENDING | 13 grup |
 | Master Workflow Queue — DONE | 5 zincir (PR #408 eklendi) |
-| Closed Register | 44 (VER-10+ reconcile ile VER-11/15/17/18/24/28/30/31/34/35 eklendi; VER-36, OWN-29-B, OWN-29-C ve OWN-29-D runtime reconcile eklendi) |
+| Closed Register | 45 (VER-10+ reconcile ile VER-11/15/17/18/24/28/30/31/34/35 eklendi; VER-36, OWN-29-B, OWN-29-C ve OWN-29-D runtime reconcile, OWN-29-A governance closure eklendi) |
 | Archived Register | 7 (ARC-05 split sonrası tek satır, A parçası Closed'a gitti) |
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |
