@@ -1,28 +1,9 @@
-/**
- * ADR-014 W0.2 — Hybrid Materializer DB-gated doğrulaması (G1/G2/G3/G5 + Conditional B).
- *
- * G6 (fail-safe): yalnız `resolveTestDatabaseUrl` ile çözülen `hukuk_*_gate`
- * disposable DB'de koşar; TEST_DATABASE_URL yoksa suite SKIP (CI'da beklenen).
- *
- * G5 self-check: materialize → GERÇEK `CaseBalanceService.computeCaseBalance`
- * (DB-okuma + assembler + mapper + engine) sonucu, AYNI senaryonun saf in-memory
- * `engine.computeBalance` sonucuyla karşılaştırılır. Assertion HESAPLAMAZ —
- * yalnız iki gerçek-engine gözlemini kıyaslar (Acceptance Criteria §12).
- *
- * S2 (Conditional B): REVERSAL satırı direct-write ÜRETİLİR (G1 ilişkisiyle);
- * main'in mevcut `computeCaseBalance` semantiği REVERSAL'ı OKUMAZ
- * (`entryType: 'PAYMENT'` filtresi) — beklenti bu MEVCUT davranışa sabitlenir
- * (davranış değişikliği YOK; netting PR-1B'nin işi). `writePathNote` =
- * WRITE_PATH_NOT_EXERCISED işareti doğrulanır.
- *
- * GUARDRAIL: buradaki hiçbir PASS, CollectionService.cancel() production
- * write-path'inin doğrulandığı anlamına GELMEZ (ayrı PR-1B gate'i).
- */
+/** ADR-014 W0.2 PAYMENT-only materializer validation on a disposable database. */
 import { PrismaClient } from '@prisma/client';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import {
-  materializeScenario,
   cleanupMaterializedScenario,
+  materializeScenario,
   MaterializedScenarioRefs,
 } from '../scenario-materializer/scenario-materializer';
 import { defineScenario, scenarioClaimBucket, scenarioPayment } from '../scenario-support/scenario-builder';
@@ -38,8 +19,11 @@ import { AllocationEngineService } from '../allocation/allocation-engine.service
 import { DEFAULT_INTERPRETATION_PROFILE_ID } from '../types/calculation.types';
 import type { RateEntry } from '../rates/rate-provider.service';
 
-const TEST_DB_URL = resolveTestDatabaseUrl(process.env as Record<string, string | undefined>);
-const describeIf = TEST_DB_URL ? describe : describe.skip;
+const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
+if (process.env.CI && !TEST_DB_URL) {
+  throw new Error('W0.2 DB gate blocked: CI requires an approved TEST_DATABASE_URL.');
+}
+const describeWithDisposableDb = TEST_DB_URL ? describe : describe.skip;
 
 const AS_OF = '2026-07-01';
 const CLAIM_START = '2026-06-01';
@@ -51,8 +35,8 @@ function buildEngine(): InterestEngineService {
     new PolicyGateV2Service(),
     new SegmentBuilderService(),
     new AllocationEngineService(new TBK100AllocatorService(), new ClaimPriorityService()),
-    {} as never, // reportRenderer — computeBalance() içinde kullanılmaz (diagnostic-script emsali)
-    {} as never, // auditWriter — yalnız calculate() orkestratöründe
+    {} as never,
+    {} as never,
     new VersionPinningService(),
     undefined,
   );
@@ -70,38 +54,107 @@ const RATE: RateEntry = {
   currency: 'TRY',
 };
 
-describeIf('W0.2 Hybrid Materializer — DB-gated (G1/G2/G3/G5 + Conditional B)', () => {
+interface ScopedState {
+  tenant: number;
+  client: number;
+  debtor: number;
+  caseRow: number;
+  caseDebtor: number;
+  claimItem: number;
+  collection: number;
+  ledgerEntry: number;
+  ledgerAllocation: number;
+}
+
+const EMPTY_STATE: ScopedState = {
+  tenant: 0,
+  client: 0,
+  debtor: 0,
+  caseRow: 0,
+  caseDebtor: 0,
+  claimItem: 0,
+  collection: 0,
+  ledgerEntry: 0,
+  ledgerAllocation: 0,
+};
+
+describeWithDisposableDb('W0.2 PAYMENT-only materializer - disposable DB', () => {
   jest.setTimeout(60_000);
   let prisma: PrismaClient;
   let caseBalance: CaseBalanceService;
-  const allRefs: MaterializedScenarioRefs[] = [];
+  const refsToClean: MaterializedScenarioRefs[] = [];
+  const sentinelTenantIds = new Set<string>();
 
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
     await prisma.$connect();
-    const engine = buildEngine();
     caseBalance = new CaseBalanceService(
       prisma as never,
       new RateProviderService(prisma as never),
-      engine,
+      buildEngine(),
     );
   });
 
   afterAll(async () => {
-    for (const refs of allRefs) {
+    for (const refs of refsToClean.reverse()) {
       await cleanupMaterializedScenario(prisma, refs);
+    }
+    if (sentinelTenantIds.size > 0) {
+      await prisma.tenant.deleteMany({ where: { id: { in: [...sentinelTenantIds] } } });
     }
     await prisma.$disconnect();
   });
 
-  async function seedRate(tenantId: string): Promise<void> {
-    // Şema: RateSchedule.tenantId FK'sı Office.id'ye bağlıdır (`tenant Office @relation`);
-    // runtime sorgusu (RateProviderService) ise computeCaseBalance'ın Tenant.id'siyle
-    // filtreler. Bu ikisi ancak Office.id == Tenant.id iken buluşur (Office.tenantId
-    // @unique — tenant başına tek ofis). Kurulum aynı eşleşmeyi köprü satırıyla kurar.
-    await prisma.office.create({
-      data: { id: tenantId, tenantId, name: `W0.2 Office (${tenantId})` },
+  function expectedTenantId(scenarioId: string): string {
+    return `w02-${scenarioId}-tenant`;
+  }
+
+  function simpleScenario(id: string, paymentId = `${id}-pay-1`) {
+    return defineScenario({
+      id,
+      title: 'W0.2 simple TRY principal and payment',
+      domainInput: {
+        claimBuckets: [
+          scenarioClaimBucket({
+            id: `${id}-claim-1`,
+            amount: 10_000,
+            currency: 'TRY',
+            startDate: CLAIM_START,
+            interestType: 'LEGAL_3095' as never,
+          }),
+        ],
+        payments: [
+          scenarioPayment({ id: paymentId, date: PAY_DATE, amount: 2_000, currency: 'TRY' }),
+        ],
+        asOfDate: AS_OF,
+      },
+      expected: {
+        perCurrencyStatus: { TRY: 'OK' },
+        blockerCodes: [],
+        authority: 'CANONICAL_CANDIDATE',
+      },
+      persistenceIntent: { tenantSetup: 'SINGLE', currency: 'TRY' },
     });
+  }
+
+  async function scopedState(tenantId: string): Promise<ScopedState> {
+    const [tenant, client, debtor, caseRow, caseDebtor, claimItem, collection, ledgerEntry, ledgerAllocation] =
+      await Promise.all([
+        prisma.tenant.count({ where: { id: tenantId } }),
+        prisma.client.count({ where: { tenantId } }),
+        prisma.debtor.count({ where: { tenantId } }),
+        prisma.case.count({ where: { tenantId } }),
+        prisma.caseDebtor.count({ where: { case: { tenantId } } }),
+        prisma.claimItem.count({ where: { tenantId } }),
+        prisma.collection.count({ where: { tenantId } }),
+        prisma.ledgerEntry.count({ where: { tenantId } }),
+        prisma.ledgerAllocation.count({ where: { ledgerEntry: { tenantId } } }),
+      ]);
+    return { tenant, client, debtor, caseRow, caseDebtor, claimItem, collection, ledgerEntry, ledgerAllocation };
+  }
+
+  async function seedRate(tenantId: string): Promise<void> {
+    await prisma.office.create({ data: { id: tenantId, tenantId, name: `W0.2 Office (${tenantId})` } });
     await prisma.rateSchedule.create({
       data: {
         tenantId,
@@ -115,38 +168,8 @@ describeIf('W0.2 Hybrid Materializer — DB-gated (G1/G2/G3/G5 + Conditional B)'
     });
   }
 
-  function simpleScenario(id: string) {
-    return defineScenario({
-      id,
-      title: 'W0.2 basit TRY: tek anapara + tek ödeme',
-      domainInput: {
-        claimBuckets: [
-          scenarioClaimBucket({
-            id: `${id}-claim-1`,
-            amount: 10_000,
-            currency: 'TRY',
-            startDate: CLAIM_START,
-            interestType: 'LEGAL_3095',
-          }),
-        ],
-        payments: [
-          scenarioPayment({ id: `${id}-pay-1`, date: PAY_DATE, amount: 2_000, currency: 'TRY' }),
-        ],
-        asOfDate: AS_OF,
-      },
-      expected: {
-        perCurrencyStatus: { TRY: 'OK' },
-        blockerCodes: [],
-        authority: 'CANONICAL_CANDIDATE',
-      },
-      persistenceIntent: { tenantSetup: 'SINGLE', currency: 'TRY' },
-    });
-  }
-
-  /** Saf in-memory beklenti — GERÇEK engine, DB'siz (golden-matrix deseni). */
   function inMemoryResult(def: ReturnType<typeof simpleScenario>) {
-    const engine = buildEngine();
-    return engine.computeBalance(
+    return buildEngine().computeBalance(
       {
         caseId: def.id,
         claimBuckets: def.domainInput.claimBuckets,
@@ -156,87 +179,15 @@ describeIf('W0.2 Hybrid Materializer — DB-gated (G1/G2/G3/G5 + Conditional B)'
         options: { dayCountBasis: 365 },
       } as never,
       [RATE as never],
-      new Date().toISOString(),
+      `${AS_OF}T00:00:00.000Z`,
       DEFAULT_INTERPRETATION_PROFILE_ID,
     );
   }
 
-  it('S1: G1/G2 satır bütünlüğü + G5 self-check (materialize→computeCaseBalance == in-memory engine)', async () => {
-    const def = simpleScenario('w02-s1');
-    const refs = await materializeScenario(prisma, def, { fileNumberPrefix: 'W02S1' });
-    allRefs.push(refs);
-
-    // G1: ilişki bütünlüğü — tek tenant kaynağı + FK zinciri
-    const item = await prisma.claimItem.findUniqueOrThrow({ where: { id: refs.claimItemIds[0] } });
-    const ledger = await prisma.ledgerEntry.findUniqueOrThrow({
-      where: { id: refs.paymentLedgerEntryIds[0] },
-    });
-    const collection = await prisma.collection.findUniqueOrThrow({
-      where: { id: refs.collectionIds[0] },
-    });
-    expect(item.tenantId).toBe(refs.tenantId);
-    expect(item.caseId).toBe(refs.caseId);
-    expect(ledger.tenantId).toBe(refs.tenantId);
-    expect(ledger.caseId).toBe(refs.caseId);
-    expect(ledger.collectionId).toBe(collection.id);
-    expect(collection.caseId).toBe(refs.caseId);
-    expect(collection.status).toBe('CONFIRMED');
-
-    // G2: üç-tutar her zaman set
-    expect(Number(item.originalAmount)).toBe(10_000);
-    expect(Number(item.demandedAmount)).toBe(10_000);
-    expect(Number(item.amount)).toBe(10_000);
-
-    // G5: self-check — DB yolu == saf in-memory engine
-    await seedRate(refs.tenantId);
-    const dbResult = await caseBalance.computeCaseBalance(refs.tenantId, refs.caseId, AS_OF);
-    const memResult = inMemoryResult(def);
-
-    const dbTry = dbResult.currencyResults.find((c) => c.currency === 'TRY');
-    expect(dbTry?.result).not.toBeNull();
-    expect(dbTry!.result!.totalInterest).toBeCloseTo(memResult.totalInterest, 2);
-    expect(dbTry!.result!.totalDue).toBeCloseTo(memResult.totalDue, 2);
-  });
-
-  it('S2: Conditional B — REVERSAL direct-write üretilir (G1) ama mevcut main semantiği onu okumaz; writePathNote işaretli', async () => {
-    const def = simpleScenario('w02-s2');
-    const refs = await materializeScenario(prisma, def, {
-      fileNumberPrefix: 'W02S2',
-      reversals: [{ ofPaymentId: 'w02-s2-pay-1' }],
-    });
-    allRefs.push(refs);
-
-    // G1: REVERSAL ilişkisi zorunlu ve doğru
-    expect(refs.reversalLedgerEntryIds).toHaveLength(1);
-    const reversal = await prisma.ledgerEntry.findUniqueOrThrow({
-      where: { id: refs.reversalLedgerEntryIds[0] },
-    });
-    expect(reversal.entryType).toBe('REVERSAL');
-    expect(reversal.reversesLedgerEntryId).toBe(refs.paymentLedgerEntryIds[0]);
-    expect(Number(reversal.amount)).toBe(-2_000);
-
-    // Conditional B işareti (serbest-metin metadata)
-    expect(refs.writePathNote).toContain('WRITE_PATH_NOT_EXERCISED');
-
-    // Mevcut main davranışı SABİTLENİR: computeCaseBalance yalnız PAYMENT okur →
-    // sonuç, REVERSAL'sız in-memory ile AYNI (netting PR-1B'nin işi, burada beklenmez).
-    await seedRate(refs.tenantId);
-    const dbResult = await caseBalance.computeCaseBalance(refs.tenantId, refs.caseId, AS_OF);
-    const memResult = inMemoryResult(def);
-    const dbTry = dbResult.currencyResults.find((c) => c.currency === 'TRY');
-    expect(dbTry!.result!.totalDue).toBeCloseTo(memResult.totalDue, 2);
-  });
-
-  it('S3: G3 — scoped before/after delta==0 (timeline/outbox/journal/audit taklit edilmez)', async () => {
-    const def = simpleScenario('w02-s3');
-
-    // Scope'lu ÖNCE sayımları: tenant henüz yok → tenant-scoped sayaçlar 0 taban;
-    // caseId de materialize'da doğacak. Bu yüzden delta ölçümü materialize'ın
-    // ÜRETTİĞİ tenant/case kapsamı üzerinden yapılır (global count DEĞİL — owner G3 kuralı).
-    const refs = await materializeScenario(prisma, def, { fileNumberPrefix: 'W02S3' });
-    allRefs.push(refs);
-
-    const [timeline, outbox, journal, audit] = await Promise.all([
+  async function forbiddenWriteCounts(refs: MaterializedScenarioRefs) {
+    const [nonPaymentLedger, allocations, timeline, outbox, journal, audit] = await Promise.all([
+      prisma.ledgerEntry.count({ where: { tenantId: refs.tenantId, entryType: { not: 'PAYMENT' } } }),
+      prisma.ledgerAllocation.count({ where: { ledgerEntry: { tenantId: refs.tenantId } } }),
       (prisma as never as { icrabotTimelineEntry: { count(a: object): Promise<number> } })
         .icrabotTimelineEntry.count({ where: { caseId: refs.caseId } }),
       (prisma as never as { icrabotOutboxAction: { count(a: object): Promise<number> } })
@@ -246,34 +197,155 @@ describeIf('W0.2 Hybrid Materializer — DB-gated (G1/G2/G3/G5 + Conditional B)'
       (prisma as never as { auditLog: { count(a: object): Promise<number> } })
         .auditLog.count({ where: { tenantId: refs.tenantId } }),
     ]);
+    return { nonPaymentLedger, allocations, timeline, outbox, journal, audit };
+  }
 
-    expect({ timeline, outbox, journal, audit }).toEqual({
+  it('commits exact tenant-scoped PAYMENT state and preserves an unrelated tenant', async () => {
+    const def = simpleScenario('w02-success');
+    const tenantId = expectedTenantId(def.id);
+    const sentinelId = 'w02-unrelated-success';
+    sentinelTenantIds.add(sentinelId);
+    await prisma.tenant.create({ data: { id: sentinelId, slug: sentinelId, name: 'Unrelated tenant' } });
+
+    const before = await scopedState(tenantId);
+    const unrelatedBefore = await scopedState(sentinelId);
+    expect(before).toEqual(EMPTY_STATE);
+
+    const refs = await materializeScenario(prisma, def);
+    refsToClean.push(refs);
+
+    expect(await scopedState(tenantId)).toEqual({
+      tenant: 1,
+      client: 1,
+      debtor: 1,
+      caseRow: 1,
+      caseDebtor: 1,
+      claimItem: 1,
+      collection: 1,
+      ledgerEntry: 1,
+      ledgerAllocation: 0,
+    });
+    expect(await scopedState(sentinelId)).toEqual(unrelatedBefore);
+
+    const collection = await prisma.collection.findUniqueOrThrow({ where: { id: refs.collectionIds[0] } });
+    const ledger = await prisma.ledgerEntry.findUniqueOrThrow({ where: { id: refs.paymentLedgerEntryIds[0] } });
+    expect({
+      collectionTenant: collection.tenantId,
+      collectionCase: collection.caseId,
+      collectionAmount: Number(collection.amount),
+      collectionCurrency: collection.currency,
+      collectionDate: collection.date.toISOString().slice(0, 10),
+      ledgerTenant: ledger.tenantId,
+      ledgerCase: ledger.caseId,
+      ledgerCollection: ledger.collectionId,
+      ledgerAmount: Number(ledger.amount),
+      ledgerCurrency: ledger.currency,
+      ledgerDate: ledger.entryDate.toISOString().slice(0, 10),
+    }).toEqual({
+      collectionTenant: refs.tenantId,
+      collectionCase: refs.caseId,
+      collectionAmount: 2_000,
+      collectionCurrency: 'TRY',
+      collectionDate: PAY_DATE,
+      ledgerTenant: refs.tenantId,
+      ledgerCase: refs.caseId,
+      ledgerCollection: refs.collectionIds[0],
+      ledgerAmount: 2_000,
+      ledgerCurrency: 'TRY',
+      ledgerDate: PAY_DATE,
+    });
+    expect(await forbiddenWriteCounts(refs)).toEqual({
+      nonPaymentLedger: 0,
+      allocations: 0,
       timeline: 0,
       outbox: 0,
       journal: 0,
       audit: 0,
     });
-  });
-
-  it('S4: tenant izolasyonu — yanlış tenant ile senaryonun case verisi görünmez', async () => {
-    const def = defineScenario({
-      ...simpleScenario('w02-s4'),
-      id: 'w02-s4',
-      persistenceIntent: { tenantSetup: 'TWO_TENANT_ISOLATION', currency: 'TRY' },
-    });
-    const refs = await materializeScenario(prisma, def, { fileNumberPrefix: 'W02S4' });
-    allRefs.push(refs);
-    expect(refs.secondaryTenantId).toBeDefined();
 
     await seedRate(refs.tenantId);
-    const crossTenant = await caseBalance.computeCaseBalance(
-      refs.secondaryTenantId!,
-      refs.caseId,
-      AS_OF,
+    const dbResult = await caseBalance.computeCaseBalance(refs.tenantId, refs.caseId, AS_OF);
+    const memoryResult = inMemoryResult(def);
+    const dbTry = dbResult.currencyResults.find((currency) => currency.currency === 'TRY');
+    expect(dbTry?.result).not.toBeNull();
+    expect(dbTry!.result!.totalInterest).toBeCloseTo(memoryResult.totalInterest, 2);
+    expect(dbTry!.result!.totalDue).toBeCloseTo(memoryResult.totalDue, 2);
+  });
+
+  it('rolls back every intermediate write when canonical input is unsupported', async () => {
+    const def = simpleScenario('w02-rollback');
+    def.domainInput.claimBuckets.push(
+      scenarioClaimBucket({
+        id: 'w02-rollback-unsupported',
+        interestType: 'UNSUPPORTED_W02_INPUT' as never,
+      }),
+    );
+    const tenantId = expectedTenantId(def.id);
+    expect(await scopedState(tenantId)).toEqual(EMPTY_STATE);
+
+    await expect(materializeScenario(prisma, def)).rejects.toThrow(
+      "interestType 'UNSUPPORTED_W02_INPUT' icin Prisma ters-koprusu tanimli degil",
     );
 
-    // Yanlış tenant: canonical sonuç ÜRETİLMEMELİ (case tenant-scoped bulunamaz).
-    const produced = crossTenant.currencyResults.some((c) => c.result !== null);
-    expect(produced).toBe(false);
+    expect(await scopedState(tenantId)).toEqual(EMPTY_STATE);
+  });
+
+  it('fails repeated execution deterministically without adding partial rows', async () => {
+    const def = simpleScenario('w02-duplicate');
+    const refs = await materializeScenario(prisma, def);
+    refsToClean.push(refs);
+    const committed = await scopedState(refs.tenantId);
+
+    let duplicateError: unknown;
+    try {
+      await materializeScenario(prisma, def);
+    } catch (error) {
+      duplicateError = error;
+    }
+
+    expect(duplicateError).toMatchObject({
+      name: 'DuplicateScenarioMaterializationError',
+      code: 'W02_DUPLICATE_MATERIALIZATION',
+      cause: { code: 'P2002' },
+    });
+    expect(await scopedState(refs.tenantId)).toEqual(committed);
+  });
+
+  it('rejects cross-scenario identifier reuse and rolls back the second tenant', async () => {
+    const sharedPaymentId = 'w02-cross-scenario-payment';
+    const ownerDef = simpleScenario('w02-owner', sharedPaymentId);
+    const conflictingDef = simpleScenario('w02-conflict', sharedPaymentId);
+    const ownerRefs = await materializeScenario(prisma, ownerDef);
+    refsToClean.push(ownerRefs);
+    const ownerState = await scopedState(ownerRefs.tenantId);
+
+    await expect(materializeScenario(prisma, conflictingDef)).rejects.toMatchObject({
+      code: 'W02_DUPLICATE_MATERIALIZATION',
+      cause: { code: 'P2002' },
+    });
+
+    expect(await scopedState(expectedTenantId(conflictingDef.id))).toEqual(EMPTY_STATE);
+    expect(await scopedState(ownerRefs.tenantId)).toEqual(ownerState);
+  });
+
+  it('isolates both scenario tenants and cleanup leaves an unrelated tenant untouched', async () => {
+    const def = defineScenario({
+      ...simpleScenario('w02-isolation'),
+      persistenceIntent: { tenantSetup: 'TWO_TENANT_ISOLATION', currency: 'TRY' },
+    });
+    const sentinelId = 'w02-unrelated-isolation';
+    sentinelTenantIds.add(sentinelId);
+    await prisma.tenant.create({ data: { id: sentinelId, slug: sentinelId, name: 'Cleanup sentinel' } });
+    const refs = await materializeScenario(prisma, def);
+    expect(refs.secondaryTenantId).toBeDefined();
+
+    expect(await scopedState(refs.secondaryTenantId!)).toEqual({ ...EMPTY_STATE, tenant: 1 });
+    const crossTenant = await caseBalance.computeCaseBalance(refs.secondaryTenantId!, refs.caseId, AS_OF);
+    expect(crossTenant.currencyResults.some((currency) => currency.result !== null)).toBe(false);
+
+    await cleanupMaterializedScenario(prisma, refs);
+    expect(await scopedState(refs.tenantId)).toEqual(EMPTY_STATE);
+    expect(await scopedState(refs.secondaryTenantId!)).toEqual(EMPTY_STATE);
+    expect(await scopedState(sentinelId)).toEqual({ ...EMPTY_STATE, tenant: 1 });
   });
 });

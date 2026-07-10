@@ -32,7 +32,6 @@ import type { ScenarioDefinition } from '../scenario-support/scenario-definition
 import {
   materializeScenario,
   MaterializedScenarioRefs,
-  MaterializeReversalIntent,
 } from '../scenario-materializer/scenario-materializer';
 import {
   compareScenarioEvidence,
@@ -72,10 +71,6 @@ function buildCaseBalanceService(prisma: PrismaClient): CaseBalanceService {
 }
 
 export interface SyntheticDiagnosticOptions {
-  /** W0.2 materializer'a geçer — deterministik dosya no öneki. */
-  fileNumberPrefix?: string;
-  /** W0.2 Conditional-B REVERSAL kurulumları (materializer'a geçer). */
-  reversals?: MaterializeReversalIntent[];
   /** Yıllık oran (LEGAL_3095 seed'i; default 0.24). Hukuki yorum DEĞİL — kurulum verisi. */
   annualRate?: number;
 }
@@ -124,10 +119,7 @@ export async function runSyntheticScenarioDiagnostic(
   def: ScenarioDefinition,
   opts: SyntheticDiagnosticOptions = {},
 ): Promise<SyntheticDiagnosticRun> {
-  const refs = await materializeScenario(prisma, def, {
-    ...(opts.fileNumberPrefix ? { fileNumberPrefix: opts.fileNumberPrefix } : {}),
-    ...(opts.reversals ? { reversals: opts.reversals } : {}),
-  });
+  const refs = await materializeScenario(prisma, def);
   await seedLegalRate(prisma, refs.tenantId, opts.annualRate ?? 0.24);
 
   const service = buildCaseBalanceService(prisma);
