@@ -184,6 +184,7 @@ export type DebtorIssueCode =
   | "SERVICE_FAILED"
   | "RISK_CONCORDAT"
   | "RISK_BANKRUPTCY"
+  | "RISK_VERY_HIGH"
   | "RISK_ADDRESS_SUSPECT"
   | "STALE_30D"
   | "NO_ASSET_QUERY";
@@ -315,6 +316,7 @@ const DebtorIssueLabelMap: Record<DebtorIssueCode, string> = {
   SERVICE_FAILED: "Tebligat başarısız",
   RISK_CONCORDAT: "Konkordato riski",
   RISK_BANKRUPTCY: "İflas riski",
+  RISK_VERY_HIGH: "Çok yüksek risk (manuel değerlendirme)",
   RISK_ADDRESS_SUSPECT: "Adres şüpheli",
   STALE_30D: "30+ gündür işlem yok",
   NO_ASSET_QUERY: "Malvarlığı sorgusu yapılmadı",
@@ -2221,12 +2223,13 @@ export class DebtorService {
       });
     }
 
-    // Risk flags
+    // Risk flags — manuel COK_YUKSEK etiketi iflas olgusu/sinyali DEĞİLDİR;
+    // RISK_BANKRUPTCY gerçek/doğrulanmış iflas sinyali için rezerve kalır (MPB-028 follow-up (d)).
     if (debtor.riskLevel === "COK_YUKSEK") {
       issues.push({
-        code: "RISK_BANKRUPTCY",
+        code: "RISK_VERY_HIGH",
         level: "DANGER",
-        label: DebtorIssueLabelMap.RISK_BANKRUPTCY,
+        label: DebtorIssueLabelMap.RISK_VERY_HIGH,
       });
     }
 

@@ -294,6 +294,7 @@ export type DebtorIssueCode =
   | "SERVICE_FAILED"
   | "RISK_CONCORDAT"
   | "RISK_BANKRUPTCY"
+  | "RISK_VERY_HIGH"
   | "RISK_ADDRESS_SUSPECT"
   | "STALE_30D"
   | "NO_ASSET_QUERY";
@@ -449,6 +450,7 @@ export const DebtorIssueLabelMap: Record<DebtorIssueCode, string> = {
   SERVICE_FAILED: "Tebligat başarısız",
   RISK_CONCORDAT: "Konkordato riski",
   RISK_BANKRUPTCY: "İflas riski",
+  RISK_VERY_HIGH: "Çok yüksek risk (manuel değerlendirme)",
   RISK_ADDRESS_SUSPECT: "Adres şüpheli",
   STALE_30D: "30+ gündür işlem yok",
   NO_ASSET_QUERY: "Malvarlığı sorgusu yapılmadı",
