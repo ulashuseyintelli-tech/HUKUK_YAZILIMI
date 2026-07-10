@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-10 (VER-36 DBIND §5 payout self-approval runtime reconcile)
+**Son güncelleme:** 2026-07-10 (OWN-29 approval classes decision split)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -232,10 +232,15 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | OWN-26 | DevOps | Muhasebe kullanıcısına Lawyer'dan bağımsız capability alanı | Owner yönü |
 | OWN-27 | UI/Architecture | 3 silinen orphan component'in kalıcı terk mi | Ürün kararı |
 | **OWN-28 (YENİ)** | Authorization | 2. batch PB-01 = zaten ALT'daki ile aynı (bkz. not) | — |
-| **OWN-29 (YENİ, ÖNEMLİ)** | Authorization | K4 (2026-07-02, "money-out/void/close/reversal → PARTNER self-authority YOK, four-eyes") ile DBIND §5'in çelişkisi payout için artık runtime'da da DBIND §5 lehine çözüldü (VER-36, 2026-07-10). K4'ün kapsadığı diğer 4 aksiyon sınıfı (**offset confirm-gate, collection void approval, case-close financial guard, receivable item approval**) hâlâ eski hüküm altında görünüyor. | Bu 4 sınıfa da PARTNER self-approve istisnası uygulanacak mı, yoksa K4'ün orijinal four-eyes hükmü mü korunacak? **Risk: Yüksek** — netleşmeden implementasyon başlarsa payout dışındaki canlı four-eyes koruma boşluğu sürebilir. |
+| **OWN-29-A (YENİ, ÖNEMLİ)** | Authorization / Client Settlement | **Offset confirm-gate**: mevcut runtime `ClientOffset` akışında OfficeApproval/four-eyes yok; `CLIENT_OFFSET_APPLY`/`CLIENT_OFFSET_REVERSE` service-level PARTNER/MANAGER direct capability ile çalışır, `approvalRef=null` ve `authorizationMode='DIRECT_CAPABILITY'` v1 davranışıdır. | **Owner kararı:** Mevcut DIRECT_CAPABILITY geçici olarak korunur. DBIND §5 uygulanmaz. Yeni confirm/four-eyes modeli ayrı tasarım ve implementasyon işi olmadan açılmaz. Acceptance criteria: runtime patch yok; ileride gate açılırsa apply/reverse ayrı risk ve idempotency modeliyle tasarlanır. |
+| **OWN-29-B (YENİ, ÖNEMLİ)** | Authorization / Collection | **Confirmed collection void**: `CollectionDisposition` approval zaten P4/four-eyes ile korunur; raw `Collection.cancel()` ise doğrudan cancel/reversal/journal path'idir ve taslak iptali ile confirmed/posting reversal aynı güvenlik sınıfında tutulmamalıdır. | **Owner kararı:** Confirmed/posted collection void için K4 four-eyes zorunlu; DBIND §5 self-approval exception uygulanmaz. Raw cancel ile confirmed/posting reversal ayrıştırılmalı. Acceptance criteria: DRAFT/unposted cancel capability+audit olabilir; CONFIRMED/POSTED void approval request + four-eyes + reversal journal gerektirir. |
+| **OWN-29-C (YENİ, ÖNEMLİ)** | Authorization / Case Status | **Financial case close**: mevcut `CHANGE_STATUS` gate flag'e bağlıdır; default kapalıdır, enforce modunda PARTNER direct allow, non-PARTNER approval required davranışı vardır. Ayrı bir finansal kapanış guard'ı henüz tanımlı değildir. | **Owner kararı:** Finansal sonuç doğuran kapanışlarda K4 four-eyes zorunlu; DBIND §5 uygulanmaz. Önce hangi status/reason kombinasyonlarının finansal kapanış olduğu tanımlanmalı. Acceptance criteria: status/reason matrisi olmadan runtime patch yok; HITAM/INFAZ/MUVEKKILE_IADE/ACIZ/BATAK/MAHSUP/TEMLIK gibi kapanış statüleri finansal etkisine göre sınıflandırılır. |
+| **OWN-29-D (YENİ, ÖNEMLİ)** | Authorization / Claim Item | **ClaimItem / receivable mutation**: `ClaimItem` create/update/delete bugün doğrudan servis mutasyonudur; backlog zaten ClaimItem mutasyonunun audit'siz + capability-siz olduğunu kaydeder. | **Owner kararı:** DBIND §5 uygulanmaz. Tüm mutasyonlarda capability + immutable audit gerekir; yüksek etkili mutasyonlarda K4/four-eyes gerekir. Acceptance criteria: açıklama/metin düzeltmeleri, hukuki sonucu değiştirmeyen metadata, sıralama/görünüm alanları capability+audit ile kalabilir; tutar, kalem türü, faiz türü/oranı, faiz başlangıç/bitiş tarihi, borçlu sorumluluğu, silme/pasifleştirme, TBK100 dağıtımını veya takip sonrası borç/tahsilat dağılımını etkileyen alanlar four-eyes kapsamına girer. |
 | **OWN-30 (2026-07-05, ACT-18'den yeniden sınıflandırıldı)** | Observability | Hata Logları (`error-logs-observability-pr-chain` memory) sayfası için "ileride geliştirme adayları" — retention manuel-tetik + retention-stats admin endpoint (şu an cron-only), UI resolved/unresolved filtresi (backend `isResolved` query param gerekir), log export (CSV), bulk resolve, hata-artış trend/alerting. Owner bu listeyi **2026-06-29'da bizzat PARK etti** ("bu sayfa Hata Logları olarak kalsın, başka işe gitmeyelim, ileride geliştirme için dönebilirim") ve kısa bir humanized-display turu sonrasında **yine** "merge sonrası dur, yeni Error Logs işi başlatma" dedi. Retention zaten owner-gated (`ERROR_LOG_RETENTION_ENABLED` + API restart gerekir, prod-etkili); admin endpoint/export/trend-alerting de operasyonel davranış etkisi taşıyor — **Low öncelikli kozmetik iş DEĞİL**. | Owner "şimdi dönüyorum" dediğinde hangi alt-maddeyle başlanacağı ve hangi kapsamda (retention aktivasyonu ayrı, dar bir GO-IMPLEMENT gerektirir). |
 
-**Not (OWN-28 hakkında):** 2. batch'in PB-01'i ("Staff ASLA final-approver kilidi dar istisnaya revize edilsin mi") zaten `p4-approval-engine` memory'sindeki mevcut "Staff/MUHASEBE final approver NO-GO pending owner" kararıyla aynıdır — **bu tabloya AYRI kayıt olarak eklenmedi**, yalnız referans amacıyla ID rezerve edildi. Gerçek yeni karar **OWN-29**'dur (3. batch'in CPB-06'sı).
+**Not (OWN-28 hakkında):** 2. batch'in PB-01'i ("Staff ASLA final-approver kilidi dar istisnaya revize edilsin mi") zaten `p4-approval-engine` memory'sindeki mevcut "Staff/MUHASEBE final approver NO-GO pending owner" kararıyla aynıdır — **bu tabloya AYRI kayıt olarak eklenmedi**, yalnız referans amacıyla ID rezerve edildi.
+
+**Not (OWN-29 split hakkında):** Tekil **OWN-29** kaydı governance drift/karar belirsizliği olarak kapatılıp dört aksiyon sınıfına bölündü: **OWN-29-A/B/C/D**. DBIND §5 yalnız payout/`CLIENT_PAYOUT_POST` için geçerlidir; bu dört sınıf payout istisnasını miras almaz. Runtime PR'ları bu governance split ile yetkilendirilmez; her sınıf ayrı GO-ANALYZE/GO-IMPLEMENT ister.
 
 ---
 
@@ -243,7 +248,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 ### Kritik Çelişkiler
 1. **VER-02 (client çok-adres):** 5 bağımsız export aynı bulguyu yaptı — doğrulanmadan Task4 (OWN-11) kapsamına dahil edilirse kapsam belirsizliği büyür.
-2. **OWN-29 (K4↔DBIND§5 self-approval çelişkisi):** payout ayağı VER-36 ile runtime'da kapandı; offset/void/case-close/receivable sınıflarında four-eyes koruma boşluğu riski — **YÜKSEK**, karar gelmeden implementasyon başlatılmamalı.
+2. **OWN-29-A/B/C/D (K4↔DBIND§5 self-approval çelişkisi split):** payout ayağı VER-36 ile runtime'da kapandı. Offset mevcut direct capability altında kalır; confirmed collection void ve finansal case close K4/four-eyes gerektirir; ClaimItem mutasyonları capability+immutable audit, yüksek etkide four-eyes gerektirir. Runtime implementasyon her sınıf için ayrı tasarım ve owner GO ister.
 
 ### Kritik Bağımlılıklar
 - **BLK-04 (Faz2 Display Cutover)** zincirin kilit noktası: BLK-05/06/07/08 buna bağlı.
@@ -256,7 +261,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 - BLK-07 (Anapara alt-model refactor — migration+hukuki etki)
 - OWN-23 (A1 ciro-zinciri epik — legal sign-off)
 - OWN-16 (Debtor kimlik tekilliği — migration)
-- **OWN-29 (K4↔DBIND§5) — payout ayağı VER-36 ile reconcile edildi; offset/void/case-close/receivable ayakları hâlâ four-eyes korumasız olabilir**
+- **OWN-29-A/B/C/D (K4↔DBIND§5 split) — payout ayağı VER-36 ile reconcile edildi; payout dışı sınıflar için DBIND §5 uygulanmaz. Confirmed void/financial close/high-impact receivable mutation sınıflarında four-eyes tasarımı ayrı runtime işidir.**
 
 ### Mimari Riskler
 - OWN-12 (RISKY Fork A-D) — yüksek blast-radius kararlar bekliyor
@@ -264,7 +269,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 ### Çapraz-Domain Riskleri
 - VER-03 (FU1↔Faz7 accounting entegrasyonu)
-- VER-01(eski)/OWN-29 çözümü hem Accounting hem Authorization'ı etkiliyor
+- VER-01(eski)/OWN-29-A/B/C/D çözümü hem Accounting hem Authorization'ı etkiliyor
 - Worktree orphan-dizin birikimi (10+ örnek) — hijyen turu (ACT-17 dokümantasyonu tamamlandı, fiziksel temizlik hâlâ owner-manuel bekliyor, bkz. WQ orphan-listesi)
 - **ACT-23 ↔ ARC-07** (Debtor/Client/Notification sınırı çakışma riski)
 
