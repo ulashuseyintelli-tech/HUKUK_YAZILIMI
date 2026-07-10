@@ -771,15 +771,15 @@ Status: BACKLOG
 
 ID: ALC-P2-5
 Title: Immutable audit snapshot + capability (ClaimItem mutasyonu)
-Problem: ClaimItem mutasyonu audit'siz + capability-siz (B4/S10/RC9).
-Business Value: Kim-ne-zaman-neyi-değiştirdi denetlenebilirliği; ADR-009 tutarlılığı.
-Technical Value: ADR-009 office-approval akışına bağlanma + audit alanları.
+Problem: ClaimItem mutasyonu audit'siz + capability-sizdi (B4/S10/RC9); OWN-29-D ile public/user create/update/delete yolu low-impact metadata ve high-impact receivable mutation olarak ayrıştırıldı.
+Business Value: Kim-ne-zaman-neyi-değiştirdi denetlenebilirliği; ADR-009/K4 tutarlılığı.
+Technical Value: Public/user ClaimItem mutasyonları için capability + immutable audit + high-impact OfficeApproval gate; system/internal sync yolları user approval flow dışında kalır.
 Priority: HIGH
 Depends On: ADR-009 (Universal Office Approval, LOCKED ama POST-P4 sonrasına ertelendi — bkz UA-1)
-Unlock Condition: UA-1 sıraya girene kadar bloklu
+Unlock Condition: Public/user mutation remediation OWN-29-D ile tamamlandı; kalan ALC canonical balance/ledger/TBK100 riskleri kendi P0/P1 maddelerinde izlenir.
 Estimated Size: M
 Related Modules: claim-item.service.ts, office-approval
-Status: BACKLOG (UA-1 ile aynı blok zincirine bağımlı)
+Status: PARTIAL / OWN-29-D RUNTIME IMPLEMENTED — düşük etkili metadata capability+audit ile uygulanır; yüksek etkili ClaimItem değişiklikleri `CLAIM_ITEM_HIGH_IMPACT_CHANGE` OfficeApproval request üretir ve approval öncesi mutasyon yapmaz. Bu kapanış B1/B5/B6 canonical balance/ledger risklerini kapatmaz.
 
 ID: ALC-P2-6
 Title: Rollback plan (finansal migration)

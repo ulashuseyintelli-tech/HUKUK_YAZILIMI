@@ -13,6 +13,7 @@ vi.mock("@/lib/api", () => ({
 
 const get = api.get as unknown as ReturnType<typeof vi.fn>;
 const put = api.put as unknown as ReturnType<typeof vi.fn>;
+const del = api.delete as unknown as ReturnType<typeof vi.fn>;
 
 const mockItems = [
   { id: "i1", itemType: "PRINCIPAL", amount: 1000, currency: "TRY", description: "Asıl Alacak" },
@@ -34,11 +35,13 @@ function primeApi() {
       : Promise.resolve({ data: { data: mockItems } }),
   );
   put.mockResolvedValue({ data: { data: { ...mockItems[0] } } });
+  del.mockResolvedValue({ data: { data: { approvalRequired: true, approvalRequestId: "appr-1" } } });
 }
 
 describe("ClaimItemPanel — PR-5a readOnly surfacing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(window, "alert").mockImplementation(() => {});
     primeApi();
   });
 
@@ -70,6 +73,7 @@ describe("ClaimItemPanel — PR-5a readOnly surfacing", () => {
 describe("ClaimItemPanel — PR-5c metadata-only edit", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(window, "alert").mockImplementation(() => {});
     primeApi();
   });
 
@@ -96,7 +100,7 @@ describe("ClaimItemPanel — PR-5c metadata-only edit", () => {
     expect(desc.disabled).toBe(false);
   });
 
-  it("KIRMIZI ÇİZGİ: kaydet payload'u YALNIZ metadata içerir — amount/itemType/finansal alanlar SIZMAZ", async () => {
+  it("KIRMIZI ÇİZGİ: düşük etkili kaydet payload'u metadata içerir — amount/itemType/finansal alanlar SIZMAZ", async () => {
     render(<ClaimItemPanel caseId="c1" readOnly metadataEdit />);
     await waitFor(() => expect(screen.getByText("Düzenle")).toBeTruthy());
     fireEvent.click(screen.getByText("Düzenle"));
@@ -119,5 +123,33 @@ describe("ClaimItemPanel — PR-5c metadata-only edit", () => {
     expect(payload).not.toHaveProperty("status");
     expect(payload).not.toHaveProperty("collectedAmount");
     expect(payload).not.toHaveProperty("demandedAmount");
+  });
+
+  it("yüksek etkili vade değişikliği doğrudan kaydedildi mesajı vermez, onaya gönderildi olarak gösterir", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    put.mockResolvedValueOnce({ data: { data: { approvalRequired: true, approvalRequestId: "appr-1" } } });
+    const { container } = render(<ClaimItemPanel caseId="c1" readOnly metadataEdit />);
+    await waitFor(() => expect(screen.getByText("Düzenle")).toBeTruthy());
+    fireEvent.click(screen.getByText("Düzenle"));
+
+    const dueDate = container.querySelector('input[type="date"]') as HTMLInputElement;
+    fireEvent.change(dueDate, { target: { value: "2026-02-01" } });
+    fireEvent.click(screen.getByText("Onaya Gönder"));
+
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    expect(put.mock.calls[0][1]).toMatchObject({ dueDate: "2026-02-01" });
+    expect(alertSpy).toHaveBeenCalledWith("Yüksek etkili alacak kalemi değişikliği onaya gönderildi.");
+  });
+
+  it("delete aksiyonu silindi mesajı yerine approval request sonucunu gösterir", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<ClaimItemPanel caseId="c1" />);
+    await waitFor(() => expect(screen.getByTitle("Sil")).toBeTruthy());
+    fireEvent.click(screen.getByTitle("Sil"));
+
+    await waitFor(() => expect(del).toHaveBeenCalledWith("/claim-items/i1"));
+    expect(alertSpy).toHaveBeenCalledWith("Silme talebi onaya gönderildi.");
   });
 });

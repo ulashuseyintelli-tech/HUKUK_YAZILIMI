@@ -119,10 +119,14 @@ export function ClaimItemPanel({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Bu alacak kalemini silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Bu alacak kalemi için silme talebi oluşturulsun mu?")) return;
     try {
-      await api.delete(`/claim-items/${id}`);
-      loadData();
+      const res = await api.delete(`/claim-items/${id}`);
+      if (res.data?.data?.approvalRequired) {
+        alert("Silme talebi onaya gönderildi.");
+      } else {
+        loadData();
+      }
     } catch (error) {
       console.error("Silme hatası:", error);
     }
@@ -458,6 +462,7 @@ function AddClaimItemModal({
           dueDate: form.dueDate || undefined,
         });
       }
+      alert("Alacak kalemi ekleme talebi onaya gönderildi.");
       onSuccess();
     } catch (error) {
       console.error("Ekleme hatası:", error);
@@ -590,24 +595,46 @@ function EditMetadataModal({
     style: "currency",
     currency: item.currency || "TRY",
   }).format(Number(item.amount) || 0);
+  const initialHighImpact = {
+    dueDate: item.dueDate ? item.dueDate.slice(0, 10) : "",
+    interestStartDate: item.interestStartDate ? item.interestStartDate.slice(0, 10) : "",
+    interestEndDate: item.interestEndDate ? item.interestEndDate.slice(0, 10) : "",
+    interestRate: item.interestRate != null ? String(item.interestRate) : "",
+  };
+  const hasHighImpactChanges =
+    form.dueDate !== initialHighImpact.dueDate ||
+    form.interestStartDate !== initialHighImpact.interestStartDate ||
+    form.interestEndDate !== initialHighImpact.interestEndDate ||
+    form.interestRate !== initialHighImpact.interestRate;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      // YALNIZ metadata alanları — finansal/yapısal alanlar bilinçli olarak hariç.
       const payload: Record<string, any> = {
         description: form.description || undefined,
         referenceNo: form.referenceNo || undefined,
-        dueDate: form.dueDate || undefined,
-        interestStartDate: form.interestStartDate || undefined,
-        interestEndDate: form.interestEndDate || undefined,
-        interestRate: form.interestRate !== "" ? parseFloat(form.interestRate) : undefined,
         sortOrder: form.sortOrder !== "" ? parseInt(form.sortOrder, 10) : undefined,
       };
-      await api.put(`/claim-items/${item.id}`, payload);
-      await onSuccess();
+      if (form.dueDate !== initialHighImpact.dueDate) payload.dueDate = form.dueDate || undefined;
+      if (form.interestStartDate !== initialHighImpact.interestStartDate) {
+        payload.interestStartDate = form.interestStartDate || undefined;
+      }
+      if (form.interestEndDate !== initialHighImpact.interestEndDate) {
+        payload.interestEndDate = form.interestEndDate || undefined;
+      }
+      if (form.interestRate !== initialHighImpact.interestRate) {
+        payload.interestRate = form.interestRate !== "" ? parseFloat(form.interestRate) : undefined;
+      }
+
+      const res = await api.put(`/claim-items/${item.id}`, payload);
+      if (res.data?.data?.approvalRequired) {
+        alert("Yüksek etkili alacak kalemi değişikliği onaya gönderildi.");
+        onClose();
+      } else {
+        await onSuccess();
+      }
     } catch (err: any) {
       console.error("Metadata güncelleme hatası:", err);
       setError(err?.response?.data?.message || "Güncelleme sırasında bir hata oluştu");
@@ -620,7 +647,12 @@ function EditMetadataModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <h3 className="font-semibold text-lg mb-1">Kalem Metadata Düzenle</h3>
-        <p className="text-xs text-muted-foreground mb-4">{lockNote}</p>
+          <p className="text-xs text-muted-foreground mb-4">{lockNote}</p>
+          {hasHighImpactChanges && (
+            <p className="text-xs text-amber-700 mb-4">
+              Faiz veya vade değişiklikleri doğrudan kaydedilmez; onaya gönderilir.
+            </p>
+          )}
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Kilitli alanlar — salt görüntüleme (disabled) */}
           <div className="grid grid-cols-2 gap-3">
@@ -735,7 +767,7 @@ function EditMetadataModal({
               disabled={loading}
               className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
-              {loading ? "Kaydediliyor..." : "Kaydet"}
+              {loading ? "Kaydediliyor..." : hasHighImpactChanges ? "Onaya Gönder" : "Kaydet"}
             </button>
           </div>
         </form>

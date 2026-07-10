@@ -29,9 +29,10 @@ export class ClaimItemController {
   @Post()
   async create(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Body() dto: CreateClaimItemDto,
   ) {
-    const data = await this.service.create(tenantId, dto);
+    const data = await this.service.createFromUser(tenantId, actorUserId, dto);
     return { success: true, data };
   }
 
@@ -60,10 +61,11 @@ export class ClaimItemController {
   @Put(':id')
   async update(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Param('id') id: string,
     @Body() dto: UpdateClaimItemDto,
   ) {
-    const data = await this.service.update(tenantId, id, dto);
+    const data = await this.service.updateFromUser(tenantId, actorUserId, id, dto);
     return { success: true, data };
   }
 
@@ -71,10 +73,11 @@ export class ClaimItemController {
   @Delete(':id')
   async remove(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Param('id') id: string,
   ) {
-    await this.service.remove(tenantId, id);
-    return { success: true, message: 'Alacak kalemi silindi' };
+    const data = await this.service.removeFromUser(tenantId, actorUserId, id);
+    return { success: true, message: 'Alacak kalemi silme talebi onaya gönderildi', data };
   }
 
   // Evraktan otomatik alacak kalemleri oluştur
@@ -128,16 +131,20 @@ export class ClaimItemController {
   @Post('case/:caseId/add-expense')
   async addExpense(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Param('caseId') caseId: string,
     @Body() body: { amount: number; description: string; currency?: string },
   ) {
-    const data = await this.service.addExpenseItem(
+    const data = await this.service.createFromUser(
       tenantId,
+      actorUserId,
+      {
       caseId,
-      body.amount,
-      body.description,
-      body.currency,
-    );
+      itemType: 'EXPENSE' as any,
+      amount: body.amount,
+      description: body.description,
+      currency: body.currency,
+    });
     return { success: true, data };
   }
 
@@ -145,16 +152,20 @@ export class ClaimItemController {
   @Post('case/:caseId/add-fee')
   async addFee(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Param('caseId') caseId: string,
     @Body() body: { amount: number; description: string; currency?: string },
   ) {
-    const data = await this.service.addFeeItem(
+    const data = await this.service.createFromUser(
       tenantId,
+      actorUserId,
+      {
       caseId,
-      body.amount,
-      body.description,
-      body.currency,
-    );
+      itemType: 'FEE' as any,
+      amount: body.amount,
+      description: body.description,
+      currency: body.currency,
+    });
     return { success: true, data };
   }
 
@@ -162,16 +173,20 @@ export class ClaimItemController {
   @Post('case/:caseId/add-attorney-fee')
   async addAttorneyFee(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Param('caseId') caseId: string,
     @Body() body: { amount: number; description?: string; currency?: string },
   ) {
-    const data = await this.service.addAttorneyFeeItem(
+    const data = await this.service.createFromUser(
       tenantId,
+      actorUserId,
+      {
       caseId,
-      body.amount,
-      body.description,
-      body.currency,
-    );
+      itemType: 'ATTORNEY_FEE' as any,
+      amount: body.amount,
+      description: body.description || 'Vekalet ücreti',
+      currency: body.currency,
+    });
     return { success: true, data };
   }
 

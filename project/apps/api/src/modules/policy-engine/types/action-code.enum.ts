@@ -243,6 +243,12 @@ export enum ActionCode {
    * string-uyuşmazlığı BURADA tekrarlanmadı — enum-tip referans kullanılır, düz string literal DEĞİL).
    */
   CLIENT_PAYOUT_POST = 'CLIENT_PAYOUT_POST',
+
+  /**
+   * OWN-29-D — ClaimItem / receivable high-impact mutation approval.
+   * Payout degildir; DBIND §5 self-approval exception bu actionCode'a uygulanmaz.
+   */
+  CLAIM_ITEM_HIGH_IMPACT_CHANGE = 'CLAIM_ITEM_HIGH_IMPACT_CHANGE',
 }
 
 /**
@@ -329,6 +335,9 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
 
   // PAYOUT-APPROVAL-2 - Müvekkile ödeme talebini kesinleştir (ClientPayout finalize)
   [ActionCode.CLIENT_PAYOUT_POST]: RiskLevel.HIGH,
+
+  // OWN-29-D - Alacak kalemi yüksek etkili mutasyon onayı
+  [ActionCode.CLAIM_ITEM_HIGH_IMPACT_CHANGE]: RiskLevel.HIGH,
 };
 
 /**
