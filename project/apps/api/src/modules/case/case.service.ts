@@ -3730,8 +3730,8 @@ export class CaseService {
     });
     if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
 
-    // G3d: kanonik cancel'a delege; route caseId + tenant guard bu katmanda fail-closed uygulanır.
-    return this.collectionService.cancel(tenantId, collectionId, {
+    // OWN-29-B: confirmed/posted tahsilat iptali doğrudan mutasyon değil, K4 onay talebidir.
+    return this.collectionService.requestCancel(tenantId, collectionId, {
       cancelReason: reason || "",
     }, actorUserId, caseId);
   }

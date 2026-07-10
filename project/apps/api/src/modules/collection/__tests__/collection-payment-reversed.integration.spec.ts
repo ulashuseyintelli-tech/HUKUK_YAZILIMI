@@ -97,6 +97,12 @@ function buildHarness() {
       findFirst: jest.fn(async () => null),
       create: jest.fn(),
     },
+    accountingJournalEntry: {
+      findFirst: jest.fn(async () => ({ id: 'journal-recorded-1', metadata: { sourceVersion: 'recorded-v1' } })),
+      findMany: jest.fn(async () => [
+        { id: 'posted-journal-1', sourceId: 'disp-line-1', reversedByEntry: { id: 'posted-journal-reversal-1' } },
+      ]),
+    },
     claimItem: {
       updateMany: jest.fn(),
     },
@@ -138,6 +144,9 @@ function buildHarness() {
         Object.assign(disposition, args.data);
         return disposition;
       }),
+    },
+    collectionDispositionLine: {
+      findMany: jest.fn(async () => [{ id: 'disp-line-1' }]),
     },
     clientStatement: {
       create: jest.fn(),
@@ -188,7 +197,8 @@ function buildHarness() {
   const factStore = { write: jest.fn(async () => undefined) };
   const actionHandler = new ActionHandlerService(prisma, outbox as any, timeline as any, factStore as any);
   const domainEvent = new DomainEventIngestService();
-  const collectionService = new CollectionService(prisma, domainEvent, {} as any, undefined);
+  const journalWriter = { write: jest.fn(async () => ({ ok: true, output: { status: 'CREATED', journalEntryId: 'journal-cancel' } })) };
+  const collectionService = new CollectionService(prisma, domainEvent, {} as any, undefined, journalWriter as any);
 
   new PaymentReceivedRegistrar(
     actionHandler,

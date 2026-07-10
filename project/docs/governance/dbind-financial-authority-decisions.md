@@ -49,6 +49,7 @@ Bu kararlar sonraki payout, creditor cluster, debtor/estate ve collection dispos
 - Bu istisna dışındaki kullanıcılar kendi money-out taleplerini tek başına KESİNLEŞTİREMEZ.
 - Staff/operasyonel kullanıcılar money-out final approver OLAMAZ.
 - Runtime uygulama sınırı (VER-36, 2026-07-10): Bu istisna yalnız `CLIENT_PAYOUT_POST` için `approve()` kararında uygulanır; `reject`, `requestRevision`, `approveWithChanges` ve payout dışı OfficeApproval action'ları generic self-approval yasağı altında kalır.
+- OWN-29-B runtime sınırı (2026-07-10): Confirmed/posted collection void `COLLECTION_VOID` action'ıdır ve payout değildir; bu nedenle DBIND §5 self-approval istisnasını miras almaz. Requester kendi tahsilat iptal talebini onaylayamaz.
 
 ## 6. Estate / Heir Notification
 

@@ -213,8 +213,8 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
 
     setCanceling(true);
     try {
-      await api.cancelCollection(caseId, collection.id, trimmedReason);
-      onSuccess();
+      const approval = await api.cancelCollection(caseId, collection.id, trimmedReason);
+      alert(`Tahsilat iptal talebi onaya gönderildi. Talep: ${approval.approvalRequestId}`);
       onClose();
     } catch (error: any) {
       console.error("İptal hatası:", error);
