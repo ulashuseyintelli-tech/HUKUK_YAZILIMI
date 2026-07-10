@@ -4,6 +4,7 @@ import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueTyp
 import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import { claimItemNormalUpdateAmounts } from "../claim-item/claim-item-amount-contract";
+import { assertGenericDueTypeTransition } from "./due-type-transition.policy";
 import {
   resolveCaseInstrumentType,
   buildCaseInstrumentData,
@@ -3421,7 +3422,7 @@ export class CaseService {
     caseId: string,
     dueId: string,
     data: {
-      type?: string;
+      type?: DueType;
       description?: string;
       amount?: number;
       dueDate?: string;
@@ -3450,6 +3451,8 @@ export class CaseService {
         where: { id: dueId, caseId },
       });
       if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
+
+      assertGenericDueTypeTransition(due.type as DueType, data.type);
 
       const updatedDue = await tx.due.update({
         where: { id: dueId },

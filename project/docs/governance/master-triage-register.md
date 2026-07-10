@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-11 (VER-05 / CAN-CUT-01 PR-1A Three-Amount Write Contract)
+**Son güncelleme:** 2026-07-11 (VER-05 / CAN-CUT-01 PR-1B One-Way Authority and NAFAKA Guards)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -48,7 +48,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | ID | Konu | Öncelik | Not |
 |---|---|---|---|
 | VER-02 | Client çok-adres UI çelişkisi (eski sayfa vs ClientAddress closure) | Yüksek | Henüz doğrulanmadı |
-| VER-05 | ClaimItem/Due reconciliation kapsamı | Orta | **OPEN / PR-1A IMPLEMENTED / INVENTORY REVIEW PENDING:** PR-0 tenant-scoped, deterministic, `REPEATABLE READ READ ONLY` inventory aracını teslim etti. D1–D2 runtime write contract uygulanmıştır: `originalAmount` creation provenance olarak normal update'lerde korunur; `demandedAmount` canonical ve `amount` aynı-write mirror'dır; `0` geçerlidir ve ilgili read path'lerde falsy fallback değildir. Summary demanded mutation yeni action eklemeden mevcut `CLAIM_ITEM_HIGH_IMPACT_CHANGE` approval hattına yönlendirilmiştir. D3 reverse-write yok; D4 NAFAKA sınır kararı, D5 KDV modeli ve D6 lifecycle ayrı workstream'lerdir. **PR-1B ayrı GO-IMPLEMENT'e hazır; PR-1C implementation ayrı; PR-1D schema-migration design gerektirir.** Canlı inventory review, repair, reconciliation/backfill, schema/migration ve cutover yetkilendirilmedi. |
+| VER-05 | ClaimItem/Due reconciliation kapsamı | Orta | **OPEN / PR-1A + PR-1B IMPLEMENTED / INVENTORY REVIEW PENDING:** PR-0 tenant-scoped, deterministic, `REPEATABLE READ READ ONLY` inventory aracını teslim etti. D1–D2 runtime write contract uygulanmıştır: `originalAmount` creation provenance olarak normal update'lerde korunur; `demandedAmount` canonical ve `amount` aynı-write mirror'dır; `0` geçerlidir ve ilgili read path'lerde falsy fallback değildir. Summary demanded mutation mevcut `CLAIM_ITEM_HIGH_IMPACT_CHANGE` approval hattındadır. D3 ClaimItem→Due reverse-write yasağı static regression ile kilitlenmiş; D4 generic Due update'te `NAFAKA↔non-NAFAKA` iki yönlü sınır geçişi backend mutation öncesinde reddedilmiş ve UI edit seçenekleri aynı sınıra daraltılmıştır. D5 KDV modeli ve D6 lifecycle ayrı workstream'lerdir. **PR-1C implementation ayrı; PR-1D schema-migration design gerektirir.** Canlı inventory review, repair, reconciliation/backfill, schema/migration ve cutover yetkilendirilmedi. |
 | VER-07 | icrabot action-executor PASSIVE CaseDebtor kontrolü iddiası | Düşük | Henüz doğrulanmadı |
 | VER-09 | Escalation FOUNDER/MANAGER fallback bug'ının resmî backlog kaydı var mı | Orta | Henüz doğrulanmadı — bu kayıt "MVR-009 Route Drift" alias'ı değildir; route-drift/P2 observe bookkeeping düzeltmesi ayrı governance-only remediation olarak kapatıldı |
 | VER-10 | Senet/bono arka-yüz OCR endorsement canlı doğrulama | Düşük-Orta | Açık — PR/merge zinciri mevcut olsa da kayıt "canlı doğrulama" istiyor; canlı dataset/evidence olmadan kapatılmaz |

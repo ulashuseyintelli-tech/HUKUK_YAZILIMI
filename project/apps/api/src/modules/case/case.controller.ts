@@ -12,7 +12,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
-import { CreateCaseDto, UpdateCaseDto } from "./dto/case.dto";
+import { CreateCaseDto, DueType, UpdateCaseDto } from "./dto/case.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { OcrService } from "../ocr/ocr.service";
@@ -603,7 +603,7 @@ export class CaseController {
     @Param("id") id: string,
     @Param("dueId") dueId: string,
     @Body() body: {
-      type?: string;
+      type?: DueType;
       description?: string;
       amount?: number;
       dueDate?: string;
