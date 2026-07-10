@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TebligatStatus, TebligatChannel } from './dto/tebligat.dto';
+import { TebligatChannel } from './dto/tebligat.dto';
 
 export interface UetsRecipient {
   tcVkn: string;
@@ -112,25 +112,13 @@ export class UetsService {
       //   }),
       // });
 
-      // Mock response
-      const uetsNo = `UETS${Date.now()}`;
-      
-      // Tebligat kaydini guncelle
-      await (this.prisma as any).tebligat.update({
-        where: { id: request.tebligatId },
-        data: {
-          status: TebligatStatus.GONDERILDI,
-          channel: TebligatChannel.UETS,
-          sentAt: new Date(),
-          barcodeNo: uetsNo,
-          notes: `UETS ile gonderildi. UETS No: ${uetsNo}`,
-        },
-      });
+      // NOT_INTEGRATED: gercek UETS API entegrasyonu henuz yok.
+      // Gonderilmis gibi sahte basari durumu (GONDERILDI + uydurma barkod) YAZILMAZ.
+      this.logger.warn(`UETS entegrasyonu aktif degil, tebligat ${request.tebligatId} GONDERILMEDI (NOT_INTEGRATED)`);
 
       return {
-        success: true,
-        uetsNo,
-        sentAt: new Date(),
+        success: false,
+        errorMessage: 'UETS entegrasyonu henüz aktif değil (NOT_INTEGRATED)',
       };
     } catch (error) {
       this.logger.error(`UETS gonderim hatasi: ${error.message}`);
@@ -170,25 +158,13 @@ export class UetsService {
       //   }),
       // });
 
-      // Mock response
-      const kepNo = `KEP${Date.now()}`;
-      
-      // Tebligat kaydini guncelle
-      await (this.prisma as any).tebligat.update({
-        where: { id: request.tebligatId },
-        data: {
-          status: TebligatStatus.GONDERILDI,
-          channel: TebligatChannel.KEP,
-          sentAt: new Date(),
-          barcodeNo: kepNo,
-          notes: `KEP ile gonderildi. KEP No: ${kepNo}`,
-        },
-      });
+      // NOT_INTEGRATED: gercek KEP API entegrasyonu henuz yok.
+      // Gonderilmis gibi sahte basari durumu (GONDERILDI + uydurma barkod) YAZILMAZ.
+      this.logger.warn(`KEP entegrasyonu aktif degil, tebligat ${request.tebligatId} GONDERILMEDI (NOT_INTEGRATED)`);
 
       return {
-        success: true,
-        kepNo,
-        sentAt: new Date(),
+        success: false,
+        errorMessage: 'KEP entegrasyonu henüz aktif değil (NOT_INTEGRATED)',
       };
     } catch (error) {
       this.logger.error(`KEP gonderim hatasi: ${error.message}`);
@@ -205,27 +181,23 @@ export class UetsService {
   async checkDeliveryStatus(uetsOrKepNo: string): Promise<UetsDeliveryStatus> {
     this.logger.log(`UETS/KEP durum sorgulaniyor: ${uetsOrKepNo}`);
 
-    try {
-      // Gercek API cagirisi burada yapilacak
-      // const isKep = uetsOrKepNo.startsWith('KEP');
-      // const apiUrl = isKep ? this.KEP_API_URL : this.UETS_API_URL;
-      // const response = await fetch(`${apiUrl}/status/${uetsOrKepNo}`);
+    // Gercek API cagirisi burada yapilacak
+    // const isKep = uetsOrKepNo.startsWith('KEP');
+    // const apiUrl = isKep ? this.KEP_API_URL : this.UETS_API_URL;
+    // const response = await fetch(`${apiUrl}/status/${uetsOrKepNo}`);
 
-      // Mock response
-      return {
-        uetsNo: uetsOrKepNo,
-        status: 'TESLIM_EDILDI',
-        deliveredAt: new Date(),
-        readAt: new Date(),
-      };
-    } catch (error) {
-      this.logger.error(`UETS/KEP durum sorgulama hatasi: ${error.message}`);
-      return {
-        uetsNo: uetsOrKepNo,
-        status: 'HATA',
-        errorMessage: error.message,
-      };
-    }
+    // NOT_INTEGRATED: gercek UETS/KEP durum sorgu API'si henuz yok.
+    // Teslim edilmis gibi sahte basari YAZILMAZ. 'GONDERILDI' donuyoruz cunku
+    // recordElectronicResult (tebligat.service.ts) bunu "ara durum, terminal
+    // sonuc degil" olarak ele alip Tebligat/CaseDebtor'a HICBIR yazma yapmiyor
+    // ('HATA' ise IPTAL'e eslenip yanlislikla terminal-negatif durum yazdirirdi).
+    this.logger.warn(`UETS/KEP entegrasyonu aktif degil, ${uetsOrKepNo} icin gercek durum sorgulanamadi`);
+
+    return {
+      uetsNo: uetsOrKepNo,
+      status: 'GONDERILDI',
+      errorMessage: 'UETS/KEP durum sorgu entegrasyonu henüz aktif değil (NOT_INTEGRATED)',
+    };
   }
 
   /**

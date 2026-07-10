@@ -1,5 +1,10 @@
 'use client';
 
+// KARANTINA (P0 audit): Bu bileşen tamamen demo/mock veri kullanır (calculateRisk()
+// içindeki demoFactors sabit dizisi), hiçbir yerden import edilmiyor. Gerçek risk
+// verisine bağlanmadan production'da kullanılmamalı — bkz. DebtorDetailDrawer
+// içindeki gerçek SeizureScoreBadge bileşeni.
+
 import { useState, useEffect } from 'react';
 import { AlertTriangle, TrendingUp, TrendingDown, Shield, Clock, DollarSign, FileText, CheckCircle } from 'lucide-react';
 

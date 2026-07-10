@@ -1,5 +1,9 @@
 "use client";
 
+// KARANTINA (P0 audit): Bu bileşen sabit mockPayments dizisi kullanır, hiçbir yerden
+// import edilmiyor. Gerçek ödeme verisine bağlanmadan production'da kullanılmamalı —
+// bkz. DebtorDetailDrawer içindeki gerçek DebtorFinancialSummaryCard bileşeni.
+
 import { useState } from "react";
 import { CreditCard, Banknote, Building2, Wallet, Search, Download, Calendar } from "lucide-react";
 

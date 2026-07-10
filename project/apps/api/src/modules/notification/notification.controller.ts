@@ -5,7 +5,6 @@ import {
   Put,
   Param,
   Body,
-  Query,
   UseGuards,
 } from "@nestjs/common";
 import { NotificationService } from "./notification.service";
@@ -26,26 +25,28 @@ export class NotificationController {
 
   // Dosya için tebligatları getir
   @Get("case/:caseId")
-  async findByCaseId(@Param("caseId") caseId: string) {
-    return this.notificationService.findByCaseId(caseId);
+  async findByCaseId(@CurrentUser("tenantId") tenantId: string, @Param("caseId") caseId: string) {
+    return this.notificationService.findByCaseId(tenantId, caseId);
   }
 
   // Ödeme emri tebligatı oluştur
   @Post("case/:caseId/payment-order")
   async createPaymentOrder(
+    @CurrentUser("tenantId") tenantId: string,
     @Param("caseId") caseId: string,
     @Body() body: { tcNo: string; name: string; address?: string }
   ) {
-    return this.notificationService.createPaymentOrderNotification(caseId, body);
+    return this.notificationService.createPaymentOrderNotification(tenantId, caseId, body);
   }
 
   // Tebligat durumunu güncelle
   @Put(":id/status")
   async updateStatus(
+    @CurrentUser("tenantId") tenantId: string,
     @Param("id") id: string,
     @Body() body: { status: NotificationStatus; deliveredAt?: string; errorMessage?: string }
   ) {
-    return this.notificationService.updateStatus(id, body.status, {
+    return this.notificationService.updateStatus(tenantId, id, body.status, {
       deliveredAt: body.deliveredAt ? new Date(body.deliveredAt) : undefined,
       errorMessage: body.errorMessage,
     });
@@ -53,14 +54,14 @@ export class NotificationController {
 
   // E-Tebligat durumu kontrol et
   @Post(":id/check-status")
-  async checkStatus(@Param("id") id: string) {
-    return this.notificationService.checkETebligatStatus(id);
+  async checkStatus(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
+    return this.notificationService.checkETebligatStatus(tenantId, id);
   }
 
   // Ödeme süresi bilgisi
   @Get("case/:caseId/payment-deadline")
-  async getPaymentDeadline(@Param("caseId") caseId: string) {
-    return this.notificationService.getPaymentDeadline(caseId);
+  async getPaymentDeadline(@CurrentUser("tenantId") tenantId: string, @Param("caseId") caseId: string) {
+    return this.notificationService.getPaymentDeadline(tenantId, caseId);
   }
 
   // SMS gönder
@@ -79,7 +80,7 @@ export class NotificationController {
       caseId,
       actionCode: ActionCode.SEND_NOTIFICATION,
     });
-    return this.notificationService.sendSMS(caseId, body.phone, body.message);
+    return this.notificationService.sendSMS(tenantId, caseId, body.phone, body.message);
   }
 
   // Email gönder
@@ -99,6 +100,7 @@ export class NotificationController {
       actionCode: ActionCode.SEND_NOTIFICATION,
     });
     return this.notificationService.sendEmail(
+      tenantId,
       caseId,
       body.email,
       body.subject,
@@ -108,19 +110,19 @@ export class NotificationController {
 
   // Bekleyen tebligatlar
   @Get("pending")
-  async findPending() {
-    return this.notificationService.findPending();
+  async findPending(@CurrentUser("tenantId") tenantId: string) {
+    return this.notificationService.findPending(tenantId);
   }
 
   // Süresi dolan tebligatlar
   @Get("expired")
-  async findExpired() {
-    return this.notificationService.findExpired();
+  async findExpired(@CurrentUser("tenantId") tenantId: string) {
+    return this.notificationService.findExpired(tenantId);
   }
 
   // İstatistikler
   @Get("stats")
-  async getStats(@Query("tenantId") tenantId?: string) {
+  async getStats(@CurrentUser("tenantId") tenantId: string) {
     return this.notificationService.getStats(tenantId);
   }
 

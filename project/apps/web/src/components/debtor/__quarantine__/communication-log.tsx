@@ -1,5 +1,9 @@
 'use client';
 
+// KARANTINA (P0 audit): Bu bileşen yalnız localStorage'a yazılan demo iletişim
+// kayıtları kullanır (gerçek backend/API bağlantısı yok), hiçbir yerden import
+// edilmiyor. Production'da kullanılmamalı.
+
 import { useState, useEffect } from 'react';
 import { Phone, Mail, MessageSquare, Plus, Search, Filter, Calendar, User, CheckCircle, XCircle, Clock } from 'lucide-react';
 

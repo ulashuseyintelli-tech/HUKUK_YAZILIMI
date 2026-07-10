@@ -1,18 +1,29 @@
 /**
- * PR-S2 — cron tebligat sonuçları ortak senkron yoluna alındı.
- * Doğrulanan: cron artık db.tebligat.update'i DOĞRUDAN çağırmaz; tüm sonuçlar
- * TebligatService.recordPttResult / recordElectronicResult kapısından geçer (doğru tenant/id ile),
- * IADE halinde case-seviyesi takip görevi (createTebligatFollowupTask) recordPttResult'tan SONRA korunur.
+ * P0 — PTT barkod sorgusu artık sahte (Math.random) sonuç üretmez.
+ *
+ * Önceki davranış (PR-S2): cron, Math.random() ile TESLIM_EDILDI/IADE_GELDI/GONDERILDI
+ * arasından rastgele seçim yapıp TebligatService.recordPttResult ortak kapısı üzerinden
+ * CaseDebtor.serviceStatus'a kadar yazıyordu; IADE halinde case-seviyesi takip görevi de
+ * otomatik açılıyordu. Gerçek PTT API entegrasyonu olmadığından bu, uydurma tebliğ tarihi
+ * → yanlış itiraz süresi/kesinleşme riski taşıyordu (P0 güvenlik/hukuki-doğruluk düzeltmesi).
+ *
+ * Yeni davranış: gerçek entegrasyon gelene kadar queryPttBarcode hiçbir yazma yan etkisi
+ * üretmez (recordPttResult/tebligat.update/task.create hiçbiri çağrılmaz), yalnızca uyarı
+ * loglar. queryElectronicDelivery (UETS/KEP) değişmedi — hâlâ recordElectronicResult ortak
+ * kapısından geçer.
  */
 
 import { SchedulerService } from "../scheduler.service";
-import { TebligatPttResult } from "../../tebligat/dto/tebligat.dto";
 
-describe("SchedulerService — cron tebligat synced-path (PR-S2)", () => {
+describe("SchedulerService — cron tebligat synced-path (P0: PTT mock kapatıldı)", () => {
   const build = () => {
     const prisma: any = {
       tebligat: { update: jest.fn().mockResolvedValue({}) },
-      case: { findUnique: jest.fn().mockResolvedValue({ id: "c1", fileNumber: "2024/1", tenantId: "t1", sorumluPersonelId: "u9" }) },
+      case: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: "c1", fileNumber: "2024/1", tenantId: "t1", sorumluPersonelId: "u9" }),
+      },
       task: { create: jest.fn().mockResolvedValue({}) },
     };
     const metrics: any = { record: jest.fn() };
@@ -20,68 +31,27 @@ describe("SchedulerService — cron tebligat synced-path (PR-S2)", () => {
       recordPttResult: jest.fn().mockResolvedValue({}),
       recordElectronicResult: jest.fn().mockResolvedValue({ synced: true }),
     };
-    const svc = new SchedulerService(prisma, metrics, tebligatService);
+    const errorReporter: any = { reportCronError: jest.fn() };
+    const svc = new SchedulerService(prisma, metrics, tebligatService, errorReporter);
     return { svc, prisma, tebligatService };
   };
 
   const ptt = { id: "tb1", tenantId: "t1", barcodeNo: "PTT9", caseId: "c1", recipientName: "Ali Veli", channel: "PTT" };
 
-  afterEach(() => jest.spyOn(Math, "random").mockRestore?.());
-
-  it("PTT TESLIM_EDILDI → recordPttResult(tenant, id, {TESLIM_EDILDI}); db.tebligat.update DOĞRUDAN çağrılmaz", async () => {
+  it("queryPttBarcode: gerçek entegrasyon yok → hiçbir yazma yan etkisi tetiklenmez (recordPttResult/update/task.create)", async () => {
     const { svc, prisma, tebligatService } = build();
-    jest.spyOn(Math, "random").mockReturnValue(0); // index 0 → TESLIM_EDILDI
-
-    await (svc as any).queryPttBarcode(ptt);
-
-    expect(tebligatService.recordPttResult).toHaveBeenCalledWith(
-      "t1",
-      "tb1",
-      expect.objectContaining({ pttResult: TebligatPttResult.TESLIM_EDILDI })
-    );
-    expect(prisma.tebligat.update).not.toHaveBeenCalled();
-    expect(prisma.task.create).not.toHaveBeenCalled(); // teslimde takip görevi yok
-  });
-
-  it("PTT IADE_GELDI → recordPttResult(ADRESTE_BULUNAMADI) + SONRA createTebligatFollowupTask; doğrudan update yok", async () => {
-    const { svc, prisma, tebligatService } = build();
-    jest.spyOn(Math, "random").mockReturnValue(0.5); // index 1 → IADE_GELDI
-
-    await (svc as any).queryPttBarcode(ptt);
-
-    expect(tebligatService.recordPttResult).toHaveBeenCalledWith(
-      "t1",
-      "tb1",
-      expect.objectContaining({ pttResult: TebligatPttResult.ADRESTE_BULUNAMADI })
-    );
-    expect(prisma.task.create).toHaveBeenCalled(); // A kararı: case-seviyesi takip görevi korunur
-    const taskData = prisma.task.create.mock.calls[0][0].data;
-    expect(taskData.caseId).toBe("c1");
-    expect(taskData.assigneeId).toBeUndefined(); // G4a (A5 reversal): Dosya Sorumlusu (u9) VAR olsa BİLE otomatik görev ATANMAMIŞ doğar (owner DOER değil)
-    expect(prisma.tebligat.update).not.toHaveBeenCalled();
-  });
-
-  it("IADE + dosya sorumlusu YOK → görev yine ATANMAMIŞ (G4a: assignee sorumludan bağımsız)", async () => {
-    const { svc, prisma } = build();
-    prisma.case.findUnique.mockResolvedValueOnce({ id: "c1", fileNumber: "2024/1", tenantId: "t1" }); // sorumlu yok
-    jest.spyOn(Math, "random").mockReturnValue(0.5); // IADE
-
-    await (svc as any).queryPttBarcode(ptt);
-
-    const taskData = prisma.task.create.mock.calls[0][0].data;
-    expect(taskData.caseId).toBe("c1");
-    expect(taskData.assigneeId).toBeUndefined(); // G4a: assignee artık sorumludan bağımsız — her durumda atanmamış
-  });
-
-  it("PTT GONDERILDI (sonuç yok) → no-op (recordPttResult, update, followup hiçbiri yok)", async () => {
-    const { svc, prisma, tebligatService } = build();
-    jest.spyOn(Math, "random").mockReturnValue(0.9); // index 2 → GONDERILDI
 
     await (svc as any).queryPttBarcode(ptt);
 
     expect(tebligatService.recordPttResult).not.toHaveBeenCalled();
     expect(prisma.tebligat.update).not.toHaveBeenCalled();
     expect(prisma.task.create).not.toHaveBeenCalled();
+  });
+
+  it("queryPttBarcode: çağrı sorunsuz tamamlanır (cron çökmez)", async () => {
+    const { svc } = build();
+
+    await expect((svc as any).queryPttBarcode(ptt)).resolves.toBeUndefined();
   });
 
   it("UETS/KEP → recordElectronicResult(tenant, id); db.tebligat.update DOĞRUDAN çağrılmaz", async () => {
@@ -94,11 +64,11 @@ describe("SchedulerService — cron tebligat synced-path (PR-S2)", () => {
     expect(prisma.tebligat.update).not.toHaveBeenCalled();
   });
 
-  it("recordPttResult hata fırlatırsa cron çökmez (best-effort, yutulur)", async () => {
+  it("queryElectronicDelivery: recordElectronicResult hata fırlatırsa cron çökmez (best-effort, yutulur)", async () => {
     const { svc, tebligatService } = build();
-    jest.spyOn(Math, "random").mockReturnValue(0);
-    tebligatService.recordPttResult.mockRejectedValueOnce(new Error("boom"));
+    tebligatService.recordElectronicResult.mockRejectedValueOnce(new Error("boom"));
+    const eTebligat = { id: "tb2", tenantId: "t1", barcodeNo: "UETS5", channel: "UETS" };
 
-    await expect((svc as any).queryPttBarcode(ptt)).resolves.toBeUndefined();
+    await expect((svc as any).queryElectronicDelivery(eTebligat)).resolves.toBeUndefined();
   });
 });

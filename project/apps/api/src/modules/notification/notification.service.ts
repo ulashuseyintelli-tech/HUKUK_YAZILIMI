@@ -28,6 +28,24 @@ export class NotificationService {
 
   constructor(private prisma: PrismaService) {}
 
+  // Tenant guard: caseId çağıran tenant'a ait mi doğrula.
+  private async assertCaseOwnership(tenantId: string, caseId: string): Promise<void> {
+    const exists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException("Case not found");
+  }
+
+  // Tenant guard: notification'ın (doğrudan ya da bağlı case üzerinden) çağıran tenant'a ait olduğunu doğrula.
+  private async assertNotificationOwnership(tenantId: string, notificationId: string): Promise<void> {
+    const exists = await this.prisma.notificationQueue.findFirst({
+      where: { id: notificationId, OR: [{ tenantId }, { case: { tenantId } }] },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException("Notification not found");
+  }
+
   // Tebligat oluştur
   async create(dto: CreateNotificationDto) {
     return this.prisma.notificationQueue.create({
@@ -50,11 +68,12 @@ export class NotificationService {
 
   // Ödeme emri tebligatı oluştur
   async createPaymentOrderNotification(
+    tenantId: string,
     caseId: string,
     debtorInfo: { tcNo: string; name: string; address?: string }
   ) {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: { formType: true },
     });
 
@@ -102,10 +121,13 @@ export class NotificationService {
 
   // Tebligat durumunu güncelle
   async updateStatus(
+    tenantId: string,
     notificationId: string,
     status: NotificationStatus,
     details?: { deliveredAt?: Date; responseAt?: Date; errorMessage?: string }
   ) {
+    await this.assertNotificationOwnership(tenantId, notificationId);
+
     const notification = await this.prisma.notificationQueue.update({
       where: { id: notificationId },
       data: {
@@ -138,42 +160,40 @@ export class NotificationService {
     return notification;
   }
 
-  // E-Tebligat kontrolü (simülasyon)
-  async checkETebligatStatus(notificationId: string) {
-    // Gerçek sistemde UYAP/E-Tebligat API'si çağrılacak
-    // Şimdilik simülasyon
+  // E-Tebligat kontrolü
+  async checkETebligatStatus(tenantId: string, notificationId: string) {
+    await this.assertNotificationOwnership(tenantId, notificationId);
+
     const notification = await this.prisma.notificationQueue.findUnique({
       where: { id: notificationId },
     });
 
     if (!notification) throw new NotFoundException("Notification not found");
 
-    // Simülasyon: %80 başarılı teslim
-    const isDelivered = Math.random() > 0.2;
-
-    if (isDelivered) {
-      return this.updateStatus(notificationId, NotificationStatus.DELIVERED, {
-        deliveredAt: new Date(),
-      });
-    }
+    // NOT_INTEGRATED: gerçek UYAP/E-Tebligat API entegrasyonu henüz yok.
+    // Teslim edilmiş gibi sahte durum YAZILMAZ; mevcut durum değiştirilmeden döner.
+    this.logger.warn(
+      `checkETebligatStatus: gerçek entegrasyon yok, notification ${notificationId} durumu değiştirilmedi (mevcut: ${notification.status})`
+    );
 
     return notification;
   }
 
   // Dosya için tebligatları getir
-  async findByCaseId(caseId: string) {
+  async findByCaseId(tenantId: string, caseId: string) {
     return this.prisma.notificationQueue.findMany({
-      where: { caseId },
+      where: { caseId, case: { tenantId } },
       orderBy: { createdAt: "desc" },
     });
   }
 
   // Bekleyen tebligatları getir
-  async findPending() {
+  async findPending(tenantId: string) {
     return this.prisma.notificationQueue.findMany({
       where: {
         status: { in: [NotificationStatus.PENDING, NotificationStatus.SCHEDULED] },
         scheduledAt: { lte: new Date() },
+        OR: [{ tenantId }, { case: { tenantId } }],
       },
       include: { case: { select: { fileNumber: true, tenantId: true } } },
       orderBy: { scheduledAt: "asc" },
@@ -181,18 +201,20 @@ export class NotificationService {
   }
 
   // Süresi dolan tebligatları getir
-  async findExpired() {
+  async findExpired(tenantId: string) {
     return this.prisma.notificationQueue.findMany({
       where: {
         status: NotificationStatus.DELIVERED,
         expiresAt: { lte: new Date() },
+        OR: [{ tenantId }, { case: { tenantId } }],
       },
       include: { case: true },
     });
   }
 
   // SMS gönder (simülasyon)
-  async sendSMS(caseId: string, phone: string, message: string) {
+  async sendSMS(tenantId: string, caseId: string, phone: string, message: string) {
+    await this.assertCaseOwnership(tenantId, caseId);
     // Gerçek sistemde SMS API'si çağrılacak
     return this.create({
       caseId,
@@ -204,7 +226,8 @@ export class NotificationService {
   }
 
   // Email gönder (simülasyon)
-  async sendEmail(caseId: string, email: string, subject: string, content: string) {
+  async sendEmail(tenantId: string, caseId: string, email: string, subject: string, content: string) {
+    await this.assertCaseOwnership(tenantId, caseId);
     // Gerçek sistemde Email API'si çağrılacak
     return this.create({
       caseId,
@@ -217,10 +240,11 @@ export class NotificationService {
   }
 
   // 10 günlük ödeme süresi sayacı
-  async getPaymentDeadline(caseId: string): Promise<{ deadline: Date | null; daysRemaining: number }> {
+  async getPaymentDeadline(tenantId: string, caseId: string): Promise<{ deadline: Date | null; daysRemaining: number }> {
     const notification = await this.prisma.notificationQueue.findFirst({
       where: {
         caseId,
+        case: { tenantId },
         type: NotificationType.PAYMENT_ORDER,
         status: NotificationStatus.DELIVERED,
       },
@@ -243,8 +267,8 @@ export class NotificationService {
   }
 
   // İstatistikler
-  async getStats(tenantId?: string) {
-    const where = tenantId ? { case: { tenantId } } : {};
+  async getStats(tenantId: string) {
+    const where = { OR: [{ tenantId }, { case: { tenantId } }] };
 
     const [total, pending, delivered, expired] = await Promise.all([
       this.prisma.notificationQueue.count({ where }),
