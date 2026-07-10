@@ -1130,16 +1130,16 @@ Status: **GO-ANALYZE DONE + GO-IMPLEMENT DONE (2026-07-05, owner onaylı).** PR 
 ## Product Architecture Control (PAC)
 
 ID: PAC-001-A
-Title: Authority Maps for ADR-013 Fee / Harc / Snapshot / Journal line
-Problem: GOV-ADR-NAMING-000 resolved the ADR-012 collision by reserving ADR-013 for the future Fee / Harc / Snapshot / Journal architecture line, but ADR-013 implementation would still cross calculation, fee, projection, persistence, presentation and external-adapter responsibilities. Without a pre-implementation authority map, fee fixes can accidentally introduce presentation formulas, projection duplication, persistence decisions, or snapshot/journal scope creep.
+Title: Authority Maps for ADR-013 Fee / Harç / Snapshot / Journal line
+Problem: GOV-ADR-NAMING-000 resolved the ADR-012 collision by reserving ADR-013 for the future Fee / Harç / Snapshot / Journal architecture line, but ADR-013 implementation would still cross calculation, fee, projection, persistence, presentation and external-adapter responsibilities. Without a pre-implementation authority map, fee fixes can accidentally introduce presentation formulas, projection duplication, persistence decisions, or snapshot/journal scope creep.
 Business Value: Keeps fee/harç implementation auditable and legally bounded by making every calculation-like producer declare its authority before code PRs start.
 Technical Value: Records AS-IS authority evidence plus six authority classes, forbidden-edge audit candidates, duplicate-formula taxonomy and candidate ADR-013 gate map. This prevents unclassified calculation owners while avoiding premature final producer ownership or PR-sequence decisions; CCB-001/CAN-CUT-02 separation is preserved.
 Priority: CRITICAL
-Depends On: GOV-ADR-NAMING-000 CLOSED/MERGED; CCB-001 release-blocker track closure; ADR-013 reserved as canonical Fee / Harc / Snapshot / Journal target.
+Depends On: GOV-ADR-NAMING-000 CLOSED/MERGED; CCB-001 release-blocker track closure; ADR-013 reserved as canonical Fee / Harç / Snapshot / Journal target.
 Unlock Condition: Owner GO-IMPLEMENT PAC-001-A AUTHORITY MAPS — docs-only. ADR-013 implementation remains blocked until PAC-001-A is merged and the later ADR-013 Boundary Audit gate is separately authorized/closed.
 Estimated Size: M docs-only
 Related Modules: `project/docs/design/pac-001-a-authority-maps.md`, `project/docs/governance/architecture-index.md`, `project/docs/governance/decision-log.md`; classification anchors include interest-engine, case-balance, fee-engine, tariff, expense-request, accounting-journal, calc-preview diagnostics, report/template/UI and external adapter surfaces.
-Status: **PREPARED / OWNER REVIEW REQUIRED (2026-07-10)**. WIP source: `project/docs/design/pac-001-a-authority-maps.md`. This is an AS-IS evidence map and audit rubric, not an owner-approved final producer map or PR sequence. ADR-013 evidence delta is reconciled for owner review; governance acceptance is not yet granted. It does not start PAC-Full, ADR-013 Boundary Audit, fee implementation, peşin harç code, TariffService/FeeEngine refactor, snapshot/journal spec, projection layer, UI/report adapter changes, tests, schema, migration or runtime behavior.
+Status: **CLOSED / MERGED / CANONICAL_MAIN_INCLUDED (2026-07-10)**. PR #1024, merge SHA `281befe70acbe585c2a1bb7640533e17e7c19a8d`, CI 4/4 SUCCESS. Source: `project/docs/design/pac-001-a-authority-maps.md`. This is an AS-IS evidence map and audit rubric, not an owner-approved final producer map or PR sequence. ADR-013 evidence delta is reconciled and accepted as official owner-review input. It does not start PAC-Full, ADR-013 Boundary Audit, fee implementation, peşin harç code, TariffService/FeeEngine refactor, snapshot/journal spec, projection layer, UI/report adapter changes, tests, schema, migration or runtime behavior.
 
 ---
 
