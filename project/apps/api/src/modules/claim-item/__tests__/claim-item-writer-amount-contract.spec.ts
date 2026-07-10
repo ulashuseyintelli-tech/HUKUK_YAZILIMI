@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { ClaimItemService } from '../claim-item.service';
 
 function makeWriterService(generatedItems: any[] = []) {
@@ -18,6 +19,40 @@ function makeWriterService(generatedItems: any[] = []) {
 }
 
 describe('ClaimItem writer three-amount contract', () => {
+  it('internal explicit create rejects invoice-derived TAX_KDV before write', async () => {
+    const { service, claimItem } = makeWriterService();
+
+    await expect(service.create('t1', {
+      caseId: 'case-1',
+      itemType: 'TAX_KDV',
+      sourceDocumentType: 'FATURA',
+      amount: 180,
+    } as any)).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(claimItem.create).not.toHaveBeenCalled();
+  });
+
+  it('internal explicit create preserves non-invoice TAX_KDV', async () => {
+    const { service, claimItem } = makeWriterService();
+
+    await service.create('t1', {
+      caseId: 'case-1',
+      itemType: 'TAX_KDV',
+      sourceDocumentType: 'DIGER',
+      amount: 180,
+    } as any);
+
+    expect(claimItem.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        itemType: 'TAX_KDV',
+        sourceDocumentType: 'DIGER',
+        originalAmount: 180,
+        demandedAmount: 180,
+        amount: 180,
+      }),
+    }));
+  });
+
   it('internal create initializes all three fields and preserves zero', async () => {
     const { service, claimItem } = makeWriterService();
 

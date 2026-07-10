@@ -129,6 +129,21 @@ describe('buildClaimItemData — FATURA G2a (referenceNo + sourceDocumentType + 
     expect((data.metadata as any).kdv).toEqual({ hasKdv: true, kdvRate: 20, kdvAmount: 200 });
   });
 
+  it('kdvAmount=0 açık provenance değerini metadata.kdv içinde korur', () => {
+    const data = buildClaimItemData('t', 'c', {
+      ...base,
+      sourceDocumentType: DocumentSourceType.FATURA,
+      hasKdv: true,
+      kdvRate: 0,
+      kdvAmount: 0,
+    }, ClaimItemType.PRINCIPAL);
+
+    expect(data.originalAmount).toBe(1200);
+    expect(data.demandedAmount).toBe(1200);
+    expect(data.amount).toBe(1200);
+    expect((data.metadata as any).kdv).toEqual({ hasKdv: true, kdvRate: 0, kdvAmount: 0 });
+  });
+
   it('KDV/belge yok → referenceNo/sourceDocumentType/metadata set EDİLMEZ (regresyon)', () => {
     const data = buildClaimItemData('t', 'c', base, ClaimItemType.PRINCIPAL);
     expect(data.referenceNo).toBeUndefined();

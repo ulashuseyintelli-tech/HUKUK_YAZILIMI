@@ -26,6 +26,10 @@ import {
   claimItemNormalUpdateAmounts,
 } from '../claim-item/claim-item-amount-contract';
 import {
+  assertInvoiceClaimItemCreateAllowed,
+  assertInvoiceClaimItemTypeTransitionAllowed,
+} from '../claim-item/invoice-claim-item.policy';
+import {
   FINANCIAL_CASE_CLOSE_ACTION_CODE,
   FINANCIAL_CASE_CLOSE_INTENT_VERSION,
   FINANCIAL_CASE_CLOSE_STATUSES,
@@ -394,6 +398,7 @@ export class OfficeApprovalDomainSyncService {
     if (req.targetType !== CLAIM_ITEM_CASE_TARGET_TYPE || req.targetRef !== intent.caseId || patch.caseId !== intent.caseId) {
       throw new ConflictException('CLAIM_ITEM create hedef bilgisi gecersiz.');
     }
+    assertInvoiceClaimItemCreateAllowed(patch);
     const caseExists = await tx.case.findFirst({
       where: { id: intent.caseId, tenantId: req.tenantId },
       select: { id: true },
@@ -422,6 +427,10 @@ export class OfficeApprovalDomainSyncService {
     if (intent.currentSnapshotHash && stableJsonHash(currentSnapshot) !== intent.currentSnapshotHash) {
       throw new ConflictException('ClaimItem stale-state conflict: kayit approval talebinden sonra degismis.');
     }
+    assertInvoiceClaimItemTypeTransitionAllowed(
+      current,
+      (intent.proposedPatch as Record<string, unknown>).itemType,
+    );
     const data = intent.operation === 'DELETE'
       ? { status: 'CANCELLED' }
       : this.buildClaimItemUpdateData(intent.proposedPatch as Record<string, unknown>);

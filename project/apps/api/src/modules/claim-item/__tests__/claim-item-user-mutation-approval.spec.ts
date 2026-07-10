@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { OfficeApprovalStatus } from '@prisma/client';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import {
@@ -74,6 +74,41 @@ function makeSvc(opts: {
 }
 
 describe('OWN-29-D ClaimItemService user mutation gate', () => {
+  it('FATURA + TAX_KDV create talebini approval olusturmadan reddeder', async () => {
+    const { svc, prisma, officeApproval } = makeSvc();
+
+    await expect(svc.createFromUser('t1', 'requester-u', {
+      caseId: 'case-1',
+      itemType: 'TAX_KDV',
+      sourceDocumentType: 'FATURA',
+      amount: 180,
+    } as any)).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.case.findFirst).not.toHaveBeenCalled();
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('non-FATURA TAX_KDV create talebini mevcut approval hattinda korur', async () => {
+    const { svc, officeApproval } = makeSvc();
+
+    await expect(svc.createFromUser('t1', 'requester-u', {
+      caseId: 'case-1',
+      itemType: 'TAX_KDV',
+      sourceDocumentType: 'DIGER',
+      amount: 180,
+    } as any)).resolves.toMatchObject({ applied: false, approvalRequired: true });
+
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledWith(expect.objectContaining({
+      savedIntent: expect.objectContaining({
+        operation: 'CREATE',
+        proposedPatch: expect.objectContaining({
+          itemType: 'TAX_KDV',
+          sourceDocumentType: 'DIGER',
+        }),
+      }),
+    }));
+  });
+
   it('metadata edit capability sahibi aktorce transaction icinde uygulanir ve immutable audit yazar', async () => {
     const { svc, tx, audit } = makeSvc();
 
@@ -142,6 +177,33 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
     expect(officeApproval.createPendingRequest).toHaveBeenCalledWith(expect.objectContaining({
       savedIntent: expect.objectContaining({ proposedPatch: { amount: 0 } }),
     }));
+  });
+
+  it('FATURA PRINCIPAL -> TAX_KDV high-impact gecisini approval olusturmadan reddeder', async () => {
+    const { svc, officeApproval } = makeSvc({
+      item: { ...baseItem, sourceDocumentType: 'FATURA' },
+    });
+
+    await expect(
+      svc.updateFromUser('t1', 'requester-u', 'ci-1', { itemType: 'TAX_KDV' } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('tarihsel FATURA + TAX_KDV kaydinin normal metadata editini engellemez', async () => {
+    const { svc, tx } = makeSvc({
+      item: { ...baseItem, itemType: 'TAX_KDV', sourceDocumentType: 'FATURA' },
+    });
+
+    await expect(
+      svc.updateFromUser('t1', 'u1', 'ci-1', { description: 'new' } as any),
+    ).resolves.toMatchObject({ applied: true, approvalRequired: false });
+
+    expect(tx.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: { description: 'new' },
+    });
   });
 
   it('farkli icerikli duplicate pending high-impact request engellenir', async () => {

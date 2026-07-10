@@ -29,6 +29,10 @@ import {
   claimItemCreationAmounts,
   claimItemNormalUpdateAmounts,
 } from './claim-item-amount-contract';
+import {
+  assertInvoiceClaimItemCreateAllowed,
+  assertInvoiceClaimItemTypeTransitionAllowed,
+} from './invoice-claim-item.policy';
 
 const LOW_IMPACT_USER_FIELDS = ['description', 'referenceNo', 'sortOrder'] as const;
 const HIGH_IMPACT_USER_FIELDS = [
@@ -69,6 +73,8 @@ export class ClaimItemService {
 
   // Alacak kalemi oluştur
   async create(tenantId: string, dto: CreateClaimItemDto) {
+    assertInvoiceClaimItemCreateAllowed(dto);
+
     // Dosya kontrolü
     const caseExists = await this.prisma.case.findFirst({
       where: { id: dto.caseId, tenantId },
@@ -125,6 +131,8 @@ export class ClaimItemService {
   }
 
   async createFromUser(tenantId: string, actorUserId: string, dto: CreateClaimItemDto): Promise<ClaimItemMutationResult> {
+    assertInvoiceClaimItemCreateAllowed(dto);
+
     const caseExists = await this.prisma.case.findFirst({
       where: { id: dto.caseId, tenantId },
       select: { id: true },
@@ -265,6 +273,7 @@ export class ClaimItemService {
     }
 
     const existing = await this.findOne(tenantId, id);
+    assertInvoiceClaimItemTypeTransitionAllowed(existing, dto.itemType);
     this.assertUpdateInvariants(existing, dto);
     const currentSnapshot = this.snapshotClaimItem(existing);
     const proposedPatch = this.normalizePatchForIntent(patch);
@@ -341,13 +350,16 @@ export class ClaimItemService {
 
   // Evraktan otomatik alacak kalemleri oluştur
   async autoGenerateFromDocument(tenantId: string, dto: AutoGenerateClaimItemsDto) {
+    if (dto.documentType === DocumentSourceType.FATURA) {
+      throw new BadRequestException(
+        'Fatura alacağı auto-generate ile oluşturulamaz; kanonik Due -> ClaimItem yolu kullanılmalıdır.',
+      );
+    }
+
     const items: any[] = [];
 
     // Belge türüne göre alacak kalemleri oluştur
     switch (dto.documentType) {
-      case DocumentSourceType.FATURA:
-        items.push(...this.generateFromFatura(tenantId, dto));
-        break;
       case DocumentSourceType.CEK:
         items.push(...this.generateFromCek(tenantId, dto));
         break;
@@ -379,56 +391,6 @@ export class ClaimItemService {
 
     return createdItems;
   }
-
-  // Faturadan alacak kalemleri
-  private generateFromFatura(tenantId: string, dto: AutoGenerateClaimItemsDto): any[] {
-    const items: any[] = [];
-    const baseAmount = dto.totalAmount || 0;
-    const kdvAmount = dto.kdvAmount || 0;
-    const netAmount = baseAmount - kdvAmount;
-
-    // Ana para (KDV hariç)
-    items.push({
-      tenantId,
-      caseId: dto.caseId,
-      itemType: ClaimItemType.PRINCIPAL,
-      amount: netAmount > 0 ? netAmount : baseAmount,
-      currency: dto.currency || 'TRY',
-      sourceDocumentId: dto.documentId,
-      sourceDocumentType: DocumentSourceType.FATURA,
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-      issueDate: dto.issueDate ? new Date(dto.issueDate) : null,
-      referenceNo: dto.referenceNo,
-      description: 'Fatura alacağı',
-      isCalculated: true,
-      calculatedAt: new Date(),
-      sortOrder: 1,
-    });
-
-    // KDV varsa ayrı kalem
-    if (kdvAmount > 0) {
-      items.push({
-        tenantId,
-        caseId: dto.caseId,
-        itemType: ClaimItemType.TAX_KDV,
-        amount: kdvAmount,
-        currency: dto.currency || 'TRY',
-        sourceDocumentId: dto.documentId,
-        sourceDocumentType: DocumentSourceType.FATURA,
-        referenceNo: dto.referenceNo,
-        description: 'KDV',
-        isCalculated: true,
-        calculatedAt: new Date(),
-        sortOrder: 2,
-        // D (vergi): fatura KDV'si asıl alacağın parçası → mahsup tier'i ANAPARA.
-        // metadata konvansiyonu (şemasız parent-link, ledger D-Q2/D-Q3).
-        metadata: { taxParentCategory: 'PRINCIPAL' },
-      });
-    }
-
-    return items;
-  }
-
 
   // Çekten alacak kalemleri
   private generateFromCek(tenantId: string, dto: AutoGenerateClaimItemsDto): any[] {
