@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import OpenAI from 'openai';
 import { DecisionType } from '@prisma/client';
+import { sumConfirmedCollections } from '../../common/collection-confirmed.util';
 
 export interface AiSuggestion {
   action: string;
@@ -181,7 +182,7 @@ export class AiService {
   // Prompt oluştur - Öneri
   private buildSuggestionPrompt(caseData: any): string {
     const totalDebt = Number(caseData.principalAmount || 0);
-    const totalCollected = caseData.collections?.reduce((sum: number, c: any) => sum + Number(c.amount), 0) || 0;
+    const totalCollected = sumConfirmedCollections(caseData.collections);
     const remainingDebt = totalDebt - totalCollected;
     
     return `
@@ -214,7 +215,7 @@ Bu dosya için en uygun 3 sonraki adımı öner.
   // Prompt oluştur - Tahmin
   private buildPredictionPrompt(caseData: any): string {
     const totalDebt = Number(caseData.principalAmount || 0);
-    const totalCollected = caseData.collections?.reduce((sum: number, c: any) => sum + Number(c.amount), 0) || 0;
+    const totalCollected = sumConfirmedCollections(caseData.collections);
     const caseAge = Math.floor((Date.now() - new Date(caseData.createdAt).getTime()) / (1000 * 60 * 60 * 24));
     
     return `
@@ -308,7 +309,7 @@ Bu dosya için tahsilat olasılığını ve tahmini süreyi hesapla.
   // Kural bazlı tahmin (fallback)
   private getRuleBasedPrediction(caseData: any): AiPrediction {
     const totalDebt = Number(caseData.principalAmount || 0);
-    const totalCollected = caseData.collections?.reduce((sum: number, c: any) => sum + Number(c.amount), 0) || 0;
+    const totalCollected = sumConfirmedCollections(caseData.collections);
     const hasAssets = caseData.debtors?.some((d: any) => d.debtor.assets?.length > 0);
     const riskScore = caseData.riskScore || 50;
 

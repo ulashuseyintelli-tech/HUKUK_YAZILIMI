@@ -5,6 +5,7 @@ import { WorkflowEngine } from "./workflow-engine.service";
 import { PoaExpiryDeliveryService } from "./poa-expiry-delivery.service";
 import { DebtorCrossCaseNotificationService } from "../debtor/debtor-cross-case-notification.service";
 import { CaseStatus, WorkflowStage, NotificationStatus, LegalCaseStatus, PoaStatus } from "@prisma/client";
+import { filterConfirmedCollections, sumConfirmedCollections } from "../../common/collection-confirmed.util";
 
 // Otomasyon açık olan statüler (C.19)
 const AUTOMATION_ENABLED_STATUSES: LegalCaseStatus[] = [
@@ -278,11 +279,8 @@ export class AutomationService {
     if (totalAssets > 0) score -= 10;
     if (totalAssets > 3) score -= 10;
 
-    // Tahsilat durumu
-    const totalCollected = caseData.collections.reduce(
-      (sum: number, c: any) => sum + Number(c.amount),
-      0
-    );
+    // Tahsilat durumu (yalnız CONFIRMED tahsilat sayılır)
+    const totalCollected = sumConfirmedCollections(caseData.collections);
     const totalDebt = Number(caseData.principalAmount || 0);
     if (totalDebt > 0) {
       const collectionRate = totalCollected / totalDebt;
@@ -325,7 +323,7 @@ export class AutomationService {
           (sum: number, cd: any) => sum + cd.debtor.assets.length,
           0
         ) > 0,
-      hasCollections: caseData.collections.length > 0,
+      hasCollections: filterConfirmedCollections(caseData.collections).length > 0,
       caseAge: Math.floor(
         (Date.now() - caseData.createdAt.getTime()) / (1000 * 60 * 60 * 24)
       ),
