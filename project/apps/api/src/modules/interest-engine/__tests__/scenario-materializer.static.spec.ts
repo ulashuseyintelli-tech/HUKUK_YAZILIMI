@@ -1,15 +1,4 @@
-/**
- * ADR-014 W0.2 — Materializer statik sınır guard'ı (G4 + Acceptance Criteria §13).
- *
- * Kalıcı kilitler:
- * 1) PRODUCTION-ERİŞİLEMEZLİK (G4): production kaynak dosyaları (module/service/
- *    controller vb. — test/spec dışı) scenario-materializer'ı IMPORT EDEMEZ.
- *    Materializer yalnız test-support'tur; runtime authority olamaz (§7).
- * 2) BAĞIMLILIK FREEZE (§13): materializer dosyaları '@nestjs/*', ortam değişkeni
- *    erişimi ('process.env') ve 'DATABASE_URL' içeremez; '@prisma/client' yalnız
- *    bu adapter sınırında İZİNLİDİR. Import yüzeyi yalnız @prisma/client +
- *    scenario-support contract'ı ile sınırlıdır (competing contract yasağı, §9).
- */
+/** ADR-014 W0.2 static guards for PAYMENT-only test-support isolation. */
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -26,20 +15,21 @@ function walk(dir: string, acc: string[] = []): string[] {
   return acc;
 }
 
-function isTestSupportPath(p: string): boolean {
-  const n = p.replace(/\\/g, '/');
+function isTestSupportPath(file: string): boolean {
+  const normalized = file.replace(/\\/g, '/');
   return (
-    n.includes('/__tests__/') ||
-    n.endsWith('.spec.ts') ||
-    n.includes('/scenario-materializer/') ||
-    n.includes('/scenario-support/')
+    normalized.includes('/__tests__/') ||
+    normalized.endsWith('.spec.ts') ||
+    normalized.includes('/scenario-materializer/') ||
+    normalized.includes('/scenario-support/')
   );
 }
 
-describe('W0.2 scenario-materializer statik sınırları (G4 + §13)', () => {
+describe('W0.2 scenario-materializer static boundaries', () => {
   const allSrcFiles = walk(SRC_ROOT);
+  const materializerFiles = walk(MATERIALIZER_DIR);
 
-  it('G4: hiçbir production kaynak dosyası scenario-materializer import etmez', () => {
+  it('is unreachable from production source paths', () => {
     const offenders: string[] = [];
     for (const file of allSrcFiles) {
       if (isTestSupportPath(file)) continue;
@@ -49,12 +39,21 @@ describe('W0.2 scenario-materializer statik sınırları (G4 + §13)', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('§13: materializer dosyaları yasak bağımlılık içermez (@nestjs, env erişimi, DATABASE_URL)', () => {
-    const files = walk(MATERIALIZER_DIR);
-    expect(files.length).toBeGreaterThan(0);
-    for (const file of files) {
+  it('has no runtime, controller, API, UI, environment, or engine dependency', () => {
+    const forbiddenTokens = [
+      '@nestjs/',
+      'process.env',
+      'DATABASE_URL',
+      '/controller',
+      '/apps/web',
+      'interest-engine.service',
+      'allocation/',
+      'CollectionService',
+    ];
+
+    for (const file of materializerFiles) {
       const content = fs.readFileSync(file, 'utf-8');
-      for (const token of ['@nestjs/', 'process.env', 'DATABASE_URL']) {
+      for (const token of forbiddenTokens) {
         expect({ file, token, found: content.includes(token) }).toEqual({
           file,
           token,
@@ -64,15 +63,33 @@ describe('W0.2 scenario-materializer statik sınırları (G4 + §13)', () => {
     }
   });
 
-  it('§9/§13: materializer import yüzeyi yalnız @prisma/client + scenario-support contract', () => {
-    const files = walk(MATERIALIZER_DIR);
-    for (const file of files) {
+  it('imports only Prisma typing and the canonical scenario contract', () => {
+    for (const file of materializerFiles) {
       const content = fs.readFileSync(file, 'utf-8');
-      const imports = [...content.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
+      const imports = [...content.matchAll(/from\s+'([^']+)'/g)].map((match) => match[1]);
       const disallowed = imports.filter(
-        (i) => i !== '@prisma/client' && !i.startsWith('../scenario-support/'),
+        (dependency) =>
+          dependency !== '@prisma/client' && !dependency.startsWith('../scenario-support/'),
       );
       expect({ file, disallowed }).toEqual({ file, disallowed: [] });
+      expect(content).toContain("import type { ScenarioDefinition } from '../scenario-support/");
+      expect(content).not.toMatch(/interface\s+(ScenarioDefinition|ScenarioDomainInput|ScenarioExpected)\b/);
     }
+  });
+
+  it('keeps owner-removed relationship surfaces absent', () => {
+    const removedTokens = [
+      ['REVER', 'SAL'].join(''),
+      ['reverses', 'LedgerEntryId'].join(''),
+      ['Materialize', 'ReversalIntent'].join(''),
+      ['rever', 'sals'].join(''),
+    ];
+    const content = materializerFiles.map((file) => fs.readFileSync(file, 'utf-8')).join('\n');
+    for (const token of removedTokens) expect(content).not.toContain(token);
+  });
+
+  it('uses one callback transaction for materialization', () => {
+    const content = materializerFiles.map((file) => fs.readFileSync(file, 'utf-8')).join('\n');
+    expect(content).toContain('prisma.$transaction((tx) => materializeInTransaction(tx, def))');
   });
 });

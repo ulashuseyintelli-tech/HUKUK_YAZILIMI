@@ -1,11 +1,11 @@
 # ADR-014 Split-PR Baseline Execution Plan
 
-**Status:** APPROVED / BASELINE EXECUTION PLAN v1.2
+**Status:** APPROVED / BASELINE EXECUTION PLAN v1.3
 **Date:** 2026-07-10
 **Owner:** Ulaş
 **Related:** `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`, `product-backlog.md` (`ID: ADR-014-SCENARIO-INFRA`, `ID: ADR-014-SPLIT-PR-PLAN`, `ID: CCB-001`), `decision-log.md` (2026-07-10)
 
-> **Revizyon geçmişi:** v1 (2026-07-10, PR #1032) — ilk baseline. **v1.1 (2026-07-10)** — REVERSAL owner arbitration (CONDITIONAL OPTION B) sonrası: §11 REVERSAL çözüldü, §0 terminolojisi ve PR-1B acceptance gate güncellendi (gerçek `CollectionService.cancel()` DB integration eklendi). **v1.2 (2026-07-10)** — W0.2 iskele owner arbitration (Hard Stop → RESOLVED BY OWNER DECISION): iskele katmanı (Tenant/Client/Debtor/Case/CaseDebtor) materializer içinde **Prisma-direct** kurulur; G1–G6 acceptance gate'leri bağlayıcı (bkz. §3 W0.2 İskele Revizyonu). Ground-truth: `CaseService` 10-bağımlılıklı/elle kurulamaz, gerçek servisler Conditional-B'nin kaçındığı yan-etkileri (event/outbox/audit) getirir, repo'nun yerleşik DB-gated emsali iskeleyi zaten Prisma-direct kurar. Conditional Option B'nin diğer TÜM şartları, ClaimItem/Ledger direct-write, `Scenario → Materializer → DB` yönü ve `Materializer PASS ≠ CollectionService.cancel() PASS` guardrail'i DEĞİŞMEDİ.
+> **Revizyon geçmişi:** v1 (2026-07-10, PR #1032) — ilk baseline. **v1.1 (2026-07-10)** — REVERSAL owner arbitration (CONDITIONAL OPTION B) sonrası: §11 REVERSAL çözüldü, §0 terminolojisi ve PR-1B acceptance gate güncellendi. **v1.2 (2026-07-10)** — W0.2 iskele owner arbitration: Tenant/Client/Debtor/Case/CaseDebtor materializer içinde Prisma-direct kurulur; G1–G6 gate'leri bağlayıcıdır. **v1.3 (2026-07-10)** — owner scope narrowing: v1.1/v1.2'nin W0.2 dedicated PAYMENT/REVERSAL direct-write şartı supersede edildi. W0.2 yalnız declarative normal PAYMENT persistence setup destekler; REVERSAL materialization ve `reversesLedgerEntryId` W0.2 dışında kalır. Reversal contract/readiness PR-1A owner-review kapısına ertelenir. PR #1050 eski v1.2 davranışını aktif owner authorization olmadan merge etmiş; dar remediation bu ihlali tarihsel olarak koruyup teknik yüzeyi PAYMENT-only karara geri getirir.
 
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
@@ -21,9 +21,10 @@
 - Branch 961bbaf3 WHOLESALE MERGE EDİLMEYECEK.
   (GO-ANALYZE: NO-GO full cutover / GO incremental hardening.)
   Her PR, branch'in ilgili dilimini GÜNCEL main'e extract eder, izole doğrulanır.
-- REVERSAL = RESOLVED / CONDITIONAL OPTION B (bkz. §11). Wave 0 materializer direct-write
-  (yalnız test/disposable DB); gerçek `CollectionService.cancel()` write-path'i AYRI
-  DB-gated integration test'iyle doğrulanır. Materializer PASS ≠ production cancel path PASS.
+- W0.2 REVERSAL materialization = OUT OF SCOPE (v1.3 supersession, bkz. §11).
+  W0.2 yalnız declarative normal PAYMENT setup destekler; `reversesLedgerEntryId` üretmez
+  ve dolaylı metadata'dan reversal niyeti çıkarmaz. Reversal contract/readiness ve gerçek
+  `CollectionService.cancel()` integration şartları PR-1A OWNER-REVIEW kapısında kararlaştırılır.
 ```
 
 ---
@@ -31,8 +32,8 @@
 ## 1. Wave Yapısı
 
 ```text
-        ┌─ RESOLVED: REVERSAL = Conditional Option B (§11) ─┐
-        ▼                                                    ▼
+        ┌─ W0.2 REVERSAL OUT OF SCOPE / PR-1A OWNER REVIEW (§11) ─┐
+        ▼                                                         ▼
    WAVE 0  Scenario Infra (verification capability enabler)
         │  contract + builder + hybrid materializer + diagnostic dual-mode + evidence model
         ▼
@@ -69,26 +70,28 @@ Yani W0 "önce kod yazılamaz" demek DEĞİL; "DB-gated kanıt üretilemez" deme
 
 | PR | Kapsam | Önkoşul |
 |---|---|---|
-| **W0** Scenario Infra (minimal) | Arbitre edilen dilim: saf domain contract + tek domain builder + hybrid materializer + diagnostic dual-mode + evidence model. Kendi içinde 3 alt-PR'a bölünebilir (contract+builder / materializer / dual-mode) — ama platform DEĞİL. W0.1 (contract+builder) **MERGED** (PR #1037, `f998af79`). | **REVERSAL RESOLVED (Conditional Option B, §11)** — materializer reversal yolu direct-write olarak kilitlendi. Detay: `product-backlog.md` `ID: ADR-014-SCENARIO-INFRA`. |
+| **W0** Scenario Infra (minimal) | Arbitre edilen dilim: saf domain contract + tek domain builder + hybrid materializer + diagnostic dual-mode + evidence model. Kendi içinde 3 alt-PR'a bölünebilir (contract+builder / materializer / dual-mode) — ama platform DEĞİL. W0.1 (contract+builder) **MERGED** (PR #1037, `f998af79`). | **W0.2 REVERSAL OUT OF SCOPE (v1.3, §11)** — W0.2 yalnız declarative normal PAYMENT setup; technical remediation ve repository-based closure bekler. |
 
-#### W0.2 İskele Revizyonu (v1.2 — owner arbitration, 2026-07-10)
+#### W0.2 İskele ve Reversal Scope (v1.3 — owner arbitration, 2026-07-10)
 
 ```text
 "W0.2 iskele katmanı (Tenant/Client/Debtor/Case/CaseDebtor), materializer içinde
 Prisma-direct kurulur. G1–G6 acceptance gate'leri bağlayıcıdır."
 
-DEĞİŞMEYENLER: Conditional Option B'nin diğer tüm şartları · ClaimItem üç-tutar +
-LedgerEntry PAYMENT/REVERSAL dedicated direct-write · Scenario → Materializer → DB
-yönü · Materializer production service davranışını TAKLİT ETMEZ · Materializer
-PASS ≠ CollectionService.cancel() PASS · production cancel path ayrı DB-gated
-integration test (PR-1B gate'i) · registry/platformlaştırma ERTELENMİŞ.
+v1.3 SUPERSESSION: v1.1/v1.2'deki `LedgerEntry PAYMENT/REVERSAL dedicated
+direct-write` şartı W0.2 için GEÇERSİZDİR. W0.2 yalnız declarative normal PAYMENT
+persistence setup destekler; REVERSAL üretmez, `reversesLedgerEntryId` yazmaz ve
+source/expected/scenario id/fixture-test adı veya başka dolaylı metadata'dan reversal
+niyeti çıkarmaz. `CollectionService.cancel()` simüle edilmez; cancellation, reversal,
+allocation, journal, domain-event ve netting semantiği uygulanmaz. Reversal contract ve
+production-fidelity readiness PR-1A owner-review kapısına ertelenmiştir.
 ```
 
 **Bağlayıcı W0.2 Acceptance Gate'leri (G1–G6):**
 
 | Gate | İçerik |
 |---|---|
-| G1 İlişki bütünlüğü | `tenantId` tek kaynaktan damgalanır; Case→Client, CaseDebtor→Case/Debtor, Collection→Case, LedgerEntry→Case(+`collectionId`), REVERSAL'da `reversesLedgerEntryId` ZORUNLU |
+| G1 İlişki bütünlüğü | `tenantId` tek kaynaktan damgalanır; Case→Client, CaseDebtor→Case/Debtor, Collection→Case, normal PAYMENT LedgerEntry→Case(+`collectionId`). W0.2 REVERSAL ve `reversesLedgerEntryId` üretmez. |
 | G2 Şema-geçerlilik | ClaimItem üç-tutar (`originalAmount`+`demandedAmount`+`amount`) her zaman set |
 | G3 Side-effect negatif assertion | **Scoped before/after delta==0** — materialization öncesi ilgili tenant/case/scenario kapsamındaki timeline/outbox/journal/audit sayıları alınır, sonrası yeniden ölçülür, delta==0 doğrulanır; mümkünse caseId/tenantId/correlationId/aggregateId ile scope edilir; **global tablo count==0 assertion YAPILMAZ** (paylaşılan/önceden-veri-içeren DB'de yanlış sonuç üretir) |
 | G4 Production-erişilemezlik | Statik guard: production src (module/service/controller), materializer'ı import edemez |
@@ -101,8 +104,8 @@ integration test (PR-1B gate'i) · registry/platformlaştırma ERTELENMİŞ.
 
 | PR | Kapsam | Önkoşul |
 |---|---|---|
-| **PR-1A** | Reversal netting **verification** — yalnız karakterizasyon testi (mevcut davranışı sabitler) | — |
-| **PR-1B** | Reversal netting **fix** — `payment-mapper.netLedgerPayments()` net-zero | PR-1A + REVERSAL kararı (RESOLVED/Conditional B) + W0 |
+| **PR-1A** | Reversal contract/readiness **OWNER-REVIEW GATE** — declarative ilişki, scenario contract extension ihtiyacı, `reversesLedgerEntryId`, gerçek `CollectionService.cancel()` integration, production-fidelity evidence, Acceptance Criteria amendment ve legal-signoff refresh sorularını karara bağlar; implementasyon YOK | Ayrı owner review |
+| **PR-1B** | Reversal netting fix adayı — kapsam ve acceptance gate PR-1A owner review tamamlanmadan tanımlanmaz veya başlatılmaz | PR-1A owner decision + ayrı implementation GO |
 | **PR-2** | NO_BUCKETS fail-closed — temel main'de var; fee/snapshot'a blocker propagasyonu (branch delta) | W0 |
 | **PR-3h** | TBK100 **hardening** — R2 cent-normalization + R3 negatif-payment guard + raporlama-sıra fix (çekirdek sıra main'de ZATEN doğru; yalnız hardening delta) | W0 |
 | **PR-4** | Partial payment **interest-base mutation** — `allocatePaymentsWithInterestBaseMutation()` (main 4/5 param, branch 5/5) | W0 |
@@ -136,8 +139,8 @@ integration test (PR-1B gate'i) · registry/platformlaştırma ERTELENMİŞ.
 
 | PR | Merge edilebilir olması için ZORUNLU | Evidence Source | Owner Gate |
 |---|---|---|---|
-| **PR-1A** | CI 4/4 · karakterizasyon testleri GREEN | Unit | NO |
-| **PR-1B** | CI 4/4 · **materialized reversal net-zero (E) PASS** · **gerçek `CollectionService.cancel()` DB integration PASS** · PAYMENT + REVERSAL = 0 · no regression · shadow-diff unchanged *(materializer fixture PASS tek başına YETMEZ — v1.1)* | DB-Gated (materializer) **+ Real cancel() Integration** | NO *(REVERSAL RESOLVED/Conditional B önkoşul)* |
+| **PR-1A** | Owner-review record closes: canonical declarative reversal relationship; scenario contract extension; `reversesLedgerEntryId`; real `CollectionService.cancel()` integration; production-fidelity evidence; Acceptance Criteria amendment; legal-signoff refresh | Governance / Readiness Evidence | **REQUIRED** |
+| **PR-1B** | **BLOCKED** — acceptance gate and evidence source are defined only by the completed PR-1A owner decision; no implementation authorization exists | TBD by PR-1A owner review | **REQUIRED AFTER PR-1A** |
 | **PR-2** | CI 4/4 · NO_BUCKETS (F) PASS · blocker propagasyonu | DB-Gated | NO |
 | **PR-3h** | CI 4/4 · cent-normalization + TBK100-order (D) PASS · negatif-guard PASS · dust pinned | DB-Gated | NO |
 | **PR-4** | CI 4/4 · partial-payment (B+C) PASS · çok-dönemli faiz-tabanı · no regression | DB-Gated + Shadow Diff | NO |
@@ -153,7 +156,7 @@ integration test (PR-1B gate'i) · registry/platformlaştırma ERTELENMİŞ.
 | **PR-13** | CI 4/4 · orphan shadow YOK · dead-code static guard PASS | Static (dead-code guard) | NO |
 | **PR-14** | CI 4/4 · **production bake PASS** · legacy-quarantine static guard PASS | Production Bake | **REQUIRED** |
 
-**Owner Gate REQUIRED = 3 PR** (PR-11, PR-12, PR-14 — hepsi production-görünür / geri-dönüşü-zor). Diğerleri otomatik acceptance gate ile merge edilebilir. **REVERSAL** ayrıca Wave 0 öncesi tek başına bir owner gate'tir.
+**Owner Gate REQUIRED:** PR-1A reversal contract/readiness review ile production-görünür/geri-dönüşü-zor PR-11, PR-12 ve PR-14. PR-1B ancak PR-1A owner kararı ve ayrı implementation GO sonrasında yeniden sınıflandırılabilir. Diğerleri kendi acceptance gate'leriyle ilerler.
 
 **Scenario id notu:** Tablodaki B/C/D/E/F/G/H/J/M semantik senaryo etiketleridir (golden-fixture-matrix); stabil scenario id'leri W0 contract'ında sabitlenecek.
 
@@ -217,40 +220,39 @@ Pre-existing (PAC-001-A, DIŞI): TBK100 çift-implementasyon · interest-rate 3-
 
 ---
 
-## 11. REVERSAL — RESOLVED / CONDITIONAL OPTION B (owner arbitration, 2026-07-10)
+## 11. REVERSAL — W0.2 OUT OF SCOPE / PR-1A OWNER REVIEW REQUIRED (v1.3)
 
 ```text
-KARAR: CONDITIONAL OPTION B.
+v1.3 OWNER SUPERSESSION:
+  - v1.1/v1.2'nin W0.2 dedicated PAYMENT/REVERSAL direct-write şartı supersede edildi.
+  - W0.2 yalnız declarative normal PAYMENT persistence setup destekler.
+  - W0.2 `reversesLedgerEntryId` üretmez.
+  - Reversal niyeti source text, expected data, scenario id, fixture/test adı,
+    test açıklaması veya başka dolaylı metadata'dan ÇIKARILMAZ.
+  - W0.2 `CollectionService.cancel()` simüle etmez ve cancellation, reversal,
+    allocation, journal, domain-event veya legal netting semantiği uygulamaz.
 
-Wave 0 materializer REVERSAL üretimi → direct-write:
-  - deterministik fixture setup (senaryoyu kurar, hesaplama davranışını doğrular)
-  - YALNIZ test/disposable DB kapsamında; production runtime kodundan erişilemez
-  - tenantId, caseId, collectionId ve original-payment ilişkileri ZORUNLU
-  - REVERSAL kaydı production ledger şemasının minimum geçerli invariant'larını taşır
-  - PAYMENT+REVERSAL net-zero fixture'ında açık ilişki: reversalOfPaymentId (veya
-    scenario-level eşdeğer referans)
-  - timeline/journal kayıtları TAKLİT EDİLMEZ; yoksa evidence çıktısında
-    WRITE_PATH_NOT_EXERCISED olarak açıkça işaretlenir
+PR-1A OWNER-REVIEW GATE aşağıdaki soruları karara bağlamadan reversal implementasyonu
+başlayamaz:
+  - canonical declarative reversal relationship
+  - canonical scenario contract extension ihtiyacı
+  - `reversesLedgerEntryId` representation
+  - real `CollectionService.cancel()` integration requirements
+  - production-fidelity evidence classification
+  - Acceptance Criteria amendment ihtiyacı
+  - legal signoff refresh ihtiyacı
 
-GUARDRAIL: Materializer PASS ≠ production cancellation path PASS.
-  Materializer sonucu, production cancellation fidelity kanıtı SAYILMAZ.
+Bu bölüm PR-1A contract'ını TASARLAMAZ ve PR-1A/PR-1B implementasyonunu YETKİLENDİRMEZ.
+v1.1/v1.2 Conditional Option B kaydı tarihsel karar olarak korunur; W0.2'ye yönelik
+direct-reversal hükmü v1.3 ile artık uygulanabilir değildir.
 
-AYRI DOĞRULAMA YÜKÜMLÜLÜĞÜ (gerçek write-path):
-  CollectionService.cancel() için ZORUNLU DB-gated integration senaryosu:
-    PAYMENT_RECEIVED → COLLECTION_CASH_RECEIPT_RECORDED → CollectionService.cancel()
-    → REVERSAL ledger → net balance doğrulaması
-  Bu test materializer testi DEĞİLDİR; scenario setup için direct-write KULLANMAZ;
-  gerçek servis yolunu çalıştırır; cancellation write-path fidelity kanıtını üretir.
-
-İki amaç ayrı tutulur:
-  Materializer                       → hesaplama senaryosu kurar
-  CollectionService.cancel() integ.  → gerçek reversal yazma yolunu doğrular
-
-Bu karar Wave 0'ı minimal tutar; production fidelity borcunu da gizlemez.
-Rationale: Wave 0'ın amacı senaryoyu deterministik kurup hesaplama davranışını
-doğrulamaktır; collection-cancellation workflow'unun tamamını test etmek değildir.
-Option A materializer'a alınsaydı fixture altyapısı timeline/journal/event-prerequisite/
-lifecycle/notification/audit yan-etkilerine bağlanır ve minimal-infra kararını bozardı.
+HISTORICAL EXECUTION NOTE:
+  - PR #1050 eski v1.2 direct-reversal yüzeyini merge etti.
+  - Merge anında aktif owner implementation authorization yoktu.
+  - PR #1050 tarihsel kaydı yeniden yazılmaz veya sonradan yetkiliymiş gibi sunulmaz.
+  - Dar remediation, PAYMENT-only teknik yüzeyi koruyup uyumsuz reversal contract/write/test
+    yüzeyini kaldırır; W0.2 ancak validation ve repository-based Master Register closure
+    tamamlandıktan sonra CLOSED olabilir.
 ```
 
 ---
@@ -258,10 +260,11 @@ lifecycle/notification/audit yan-etkilerine bağlanır ve minimal-infra kararın
 ## 12. Status
 
 ```text
-ADR-014 Split-PR Planning → APPROVED / BASELINE EXECUTION PLAN v1.1
+ADR-014 Split-PR Planning → APPROVED / BASELINE EXECUTION PLAN v1.3
 
-REVERSAL → RESOLVED / CONDITIONAL OPTION B (§11). Tek açık owner-decision kapatıldı.
-Bundan sonraki iş plan değil, uygulama yönetimidir.
-Sonraki açılacak hat: ADR-014 Wave 0 Implementation (ayrı GO-IMPLEMENT).
-Revizyon gerekirse bu belge v2/v3 olarak güncellenir.
+W0.2 REVERSAL materialization → OUT OF SCOPE (§11).
+PR #1050 authorization + technical scope violation → NARROW REMEDIATION IN PROGRESS.
+W0.2 normal PAYMENT materialization → NOT CLOSED; validation + Master Register closure pending.
+PR-1A reversal contract/readiness → OWNER-REVIEW GATE / IMPLEMENTATION NOT AUTHORIZED.
+CCB runtime cutover → BLOCKED.
 ```
