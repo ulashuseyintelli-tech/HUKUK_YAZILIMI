@@ -22,6 +22,7 @@ import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import {
   runSyntheticScenarioDiagnostic,
   runOrganicReadinessDiagnostic,
+  ScenarioDiagnosticFailure,
 } from '../scenario-diagnostic/scenario-diagnostic-runner';
 import { cleanupMaterializedScenario, MaterializedScenarioRefs } from '../scenario-materializer/scenario-materializer';
 import { defineScenario, scenarioClaimBucket, scenarioPayment } from '../scenario-support/scenario-builder';
@@ -218,5 +219,40 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
       asOfDate: AS_OF,
     });
     expect(crossTenant).toHaveLength(0);
+  });
+
+  it('D4: hesaplama aşaması başarısızsa synthetic fixture otomatik temizlenir', async () => {
+    const id = 'w03-d4-cleanup';
+    const base = simpleScenario(id);
+    const def = defineScenario({
+      ...base,
+      domainInput: { ...base.domainInput, asOfDate: 'not-a-date' },
+    });
+
+    let failure: unknown;
+    try {
+      await runSyntheticScenarioDiagnostic(prisma, def);
+    } catch (cause) {
+      failure = cause;
+    }
+
+    expect(failure).toBeInstanceOf(ScenarioDiagnosticFailure);
+    expect(failure).toMatchObject({
+      code: 'W03_DIAGNOSTIC_FAILURE',
+      stage: 'CALCULATION',
+    });
+    expect(
+      await prisma.tenant.findUnique({ where: { id: `w02-${id}-tenant` } }),
+    ).toBeNull();
+  });
+
+  it('D5: failure taxonomy setup/calculation/observation/cleanup aşamalarını ayırır', () => {
+    for (const stage of ['SETUP', 'CALCULATION', 'OBSERVATION', 'CLEANUP'] as const) {
+      const failure = new ScenarioDiagnosticFailure(stage, new Error('diagnostic-test'));
+      expect(failure).toMatchObject({
+        code: 'W03_DIAGNOSTIC_FAILURE',
+        stage,
+      });
+    }
   });
 });
