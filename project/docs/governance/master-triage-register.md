@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-10 (MASTER-TRIAGE-REMAINDER-RECONCILIATION Wave 0 governance patch)
+**Son güncelleme:** 2026-07-10 (VER-05 / CAN-CUT-01 PR-0 read-only inventory tool)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -48,7 +48,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | ID | Konu | Öncelik | Not |
 |---|---|---|---|
 | VER-02 | Client çok-adres UI çelişkisi (eski sayfa vs ClientAddress closure) | Yüksek | Henüz doğrulanmadı |
-| VER-05 | ClaimItem/Due reconciliation kapsamı | Orta | Henüz doğrulanmadı |
+| VER-05 | ClaimItem/Due reconciliation kapsamı | Orta | **OPEN / INVENTORY TOOL IMPLEMENTED (PR-0):** tenant-scoped, deterministic, `REPEATABLE READ READ ONLY` Due–ClaimItem inventory aracı hazırdır. Canlı envanter koşumu, reconciliation/backfill ve Due write-path cutover'ı bu PR ile yetkilendirilmez. |
 | VER-07 | icrabot action-executor PASSIVE CaseDebtor kontrolü iddiası | Düşük | Henüz doğrulanmadı |
 | VER-09 | Escalation FOUNDER/MANAGER fallback bug'ının resmî backlog kaydı var mı | Orta | Henüz doğrulanmadı — bu kayıt "MVR-009 Route Drift" alias'ı değildir; route-drift/P2 observe bookkeeping düzeltmesi ayrı governance-only remediation olarak kapatıldı |
 | VER-10 | Senet/bono arka-yüz OCR endorsement canlı doğrulama | Düşük-Orta | Açık — PR/merge zinciri mevcut olsa da kayıt "canlı doğrulama" istiyor; canlı dataset/evidence olmadan kapatılmaz |
