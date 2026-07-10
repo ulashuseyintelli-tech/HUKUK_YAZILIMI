@@ -6,6 +6,8 @@
 
 **Revizyon (2026-07-10):** Bölüm 12 — Phase 2 read-only `DebtorScoringService` şartnaması eklendi (GO-ANALYZE çıktısı + M1-M7 owner kararları). Bölüm 9'daki hotfix o günün ilerleyen saatlerinde PR #1047 ile CLOSED; D1-D7 kararları decision-log'da kayıtlı.
 
+**Revizyon (2026-07-11):** Phase 2 (Bölüm 12) PR-2A/2B/2C ile tamamen kapandı — `DebtorScoringService.calculateCaseScore()` `app.module.ts`'de kayıtlı, henüz hiçbir consumer/endpoint ona bağlı değil. Bölüm 13 — Phase 3 shadow-compare şartnamesi eklendi (GO-ANALYZE çıktısı + D1-D5 owner kararları).
+
 ---
 
 ## 1. Current-State Inventory
@@ -344,6 +346,139 @@ DEBTOR-SCORING-CAN PHASE 2 VERDICT:
 - Case.riskScore write required: NO
 - Consumer switch included: NO — NOT_SAFE_FOR_CONSUMER_SWITCH (Phase 3 shadow şartı)
 - GO-IMPLEMENT ready: YES — PR-2A için READY (ayrı owner GO ile)
+```
+
+---
+
+## 13. Phase 3 — Shadow Compare Şartnamesi (2026-07-11 eki)
+
+Phase 3 GO-ANALYZE'ının kalıcı kaydı. **D1-D5 owner kararları bu ekle NİHAİDİR** (Bölüm 13.8). Bu bölüm implementasyon başlatmaz; PR-3A ayrı GO-IMPLEMENT ister.
+
+### 13.1 Phase 3 Sınırı
+
+```text
+PHASE 3 YAPAR:
+- Read-only compare: DebtorScoringService.calculateCaseScore() vs legacy Case.riskScore
+  (tek case, on-demand, auth-context tenantId)
+- Fark sınıflandırması (delta/band/factor-bazlı) + readinessCandidate (teknik sinyal, §13.3)
+- Yapılandırılmış telemetry/log (PII'siz)
+- Internal read-only GET endpoint (D1: EVET — ayrı PR-3B)
+
+PHASE 3 YAPMAZ:
+- Consumer switch (risk.service/ai.service/report.service/fact-store DEĞİŞMEZ) — D4: YASAK
+- Case.riskScore/RiskReport'a hiçbir write
+- Snapshot/compare sonucunun DB'ye persist edilmesi — D2: HAYIR, yalnız telemetry
+- UI karar değişikliği
+- Cron/scheduler/batch koşumu — D3: HAYIR
+- Portföy-geneli otomatik tarama
+```
+
+### 13.2 Compare Kontratı (owner düzeltmesiyle NİHAİ)
+
+```ts
+interface DebtorScoringShadowDiffReport {
+  tenantId: string;
+  caseId: string;
+  calculationVersion: string;        // dscan-v1.0
+
+  legacyScore: number | null;        // Case.riskScore (null ise hiç hesaplanmamış)
+  legacyBand: ScoreBand | null;
+  legacyCalculatedAt: string | null;  // en yeni RiskReport.createdAt (yaklaşık — §13.3 not)
+
+  canonicalScore: number;
+  canonicalBand: ScoreBand;
+  canonicalResult: DebtorScoringResult; // tam sonuç (factorBreakdown/provenance/dataGaps/warnings)
+
+  delta: number;                      // canonicalScore - legacyScore (legacy null ise null)
+  bandChanged: boolean;
+  factorDifferences: string[];        // insan-okunur özet
+
+  dataGaps: DataGap[];                // canonicalResult.dataGaps'in aynısı
+  blockers: string[];                 // readinessCandidate'ı false yapan gerekçeler (§13.3)
+
+  /** Bu case'in TEKNİK değerlendirmesi — "eğer switch bir gün açılırsa bu case iyi bir
+   * aday mıydı" sinyali. Hiçbir yetki/otorite İMA ETMEZ; yalnız bilgi amaçlıdır. */
+  readinessCandidate: boolean;
+
+  /** Phase 3 boyunca DAİMA false — case-bazlı hesaplanmaz, blocker sayısından/
+   * dataGaps'ten TÜRETİLMEZ. Politika kapısıdır, teknik sinyal DEĞİLDİR (D4). */
+  safeForConsumerSwitch: false;
+
+  generatedAt: string;                // yalnız BU alan sistem saatini okur (rapor üretim anı)
+}
+```
+
+**Kritik ayrım (owner düzeltmesi — önceki taslak hatasını giderir):** `safeForConsumerSwitch` ile `readinessCandidate` İKİ FARKLI KAVRAMDIR. Önceki taslak bunları karıştırıyordu ("blocker sayısı → safeForConsumerSwitch" mantığı) — bu YANLIŞTI çünkü `LEGAL_TIME_AUTHORITY_PENDING` gap'i HER sonuçta var olduğundan (Bölüm 12.5, M5 frozen), bu iki kavram ayrıştırılmazsa switch kapısı anlamsızca "her zaman kapalı ama neden belirsiz" görünürdü. Düzeltme: `safeForConsumerSwitch` Phase 3'te **sabit `false`** (D4 — case'e bakılmaksızın, tasarım gereği); `readinessCandidate` ise **yalnız teknik/bilgilendirici** bir sinyaldir, hiçbir zaman switch'e yetki vermez.
+
+### 13.3 Karar Kuralları
+
+| Kural | Eşik/Mantık |
+|---|---|
+| Delta bantları | 0–9 önemsiz · 10–24 dikkat · ≥25 önemli (rapor edilir, tek başına blocker değil) |
+| Band değişimi | `bandChanged=true` her zaman rapor edilir; **CRITICAL↔LOW** atlaması `blockers`'a `EXTREME_BAND_JUMP` olarak eklenir |
+| Balance fallback | `inputProvenance.financial === "CONFIRMED_FILTER_FALLBACK"` → `blockers`'a `FINANCIAL_NON_AUTHORITATIVE` |
+| **Legal Time Authority eksikliği (ayrı, sayılmayan blocker)** | `dataGaps`'te `LEGAL_TIME_AUTHORITY_PENDING` HER ZAMAN vardır (Bölüm 12.5, M5) — bu, `blockers` listesine kendi adıyla **`LEGAL_TIME_AUTHORITY_PENDING`** olarak ayrıca eklenir AMA aşağıdaki "çoklu DATA_GAP" sayımına KATILMAZ (owner düzeltmesi: tek yapısal/beklenen gap ile gerçek çoklu-gap sinyali birbirine KARIŞTIRILMAZ) |
+| Çoklu DATA_GAP (readinessCandidate'i etkiler) | `dataGaps.filter(g => g.code !== "LEGAL_TIME_AUTHORITY_PENDING").length >= 2` → `blockers`'a `MULTIPLE_DATA_GAPS` |
+| `readinessCandidate` | `blockers` listesi (yukarıdaki `EXTREME_BAND_JUMP`/`FINANCIAL_NON_AUTHORITATIVE`/`MULTIPLE_DATA_GAPS`) BOŞSA ve `legacyScore !== null` ise `true`; aksi halde `false`. **`LEGAL_TIME_AUTHORITY_PENDING`'in `blockers`'ta bulunması `readinessCandidate`'i FALSE YAPMAZ** (yapısal/beklenen, case-özel değil) — yalnız raporlama/şeffaflık amaçlı listede durur. |
+| `safeForConsumerSwitch` | **Her koşulda `false`** (D4) — `readinessCandidate`/`blockers` içeriğinden BAĞIMSIZ, Phase 3'ün politika sabiti. |
+| Determinizm | Motor zaten saf/deterministik (PR-2A). Shadow compare'in kendine özgü riski: `legacyScore` (gece cron'un son yazdığı değer) ile `canonicalScore` (\"şimdi\" hesaplanan) arasında **zamanlama farkı** vardır — gerçek formül farkı değildir. `legacyCalculatedAt` alanı bunu açıkça gösterir; yorumlayan taraf bu farkı hesaba katmalıdır. |
+
+### 13.4 Çalıştırma Modeli
+
+- **Servis:** `DebtorScoringShadowDiffService.compare(tenantId, caseId, asOf, generatedAt)` — `BalanceDisplayShadowDiffService.compare()` ile birebir aynı imza deseni (dört parametre, aynı sıra); `DebtorScoringModule`'e yeni provider olarak eklenir.
+- **Endpoint (D1 — EVET, ayrı PR-3B):** `GET /debtor-scoring/case/:caseId/shadow-diff`, `JwtAuthGuard` + `@CurrentUser('tenantId')` (client tenantId asla kabul edilmez — `BalanceDisplayShadowDiffController` emsali). PR-3A'nın servis/kontrat/test dilimi ile AYNI PR'da DEĞİL.
+- **Persistence (D2 — HAYIR):** yalnız yapılandırılmış log/telemetry; DB snapshot/tablo YOK (schema/migration gerektirmez).
+- **Batch/cron (D3 — HAYIR):** legacy `AutomationService.updateRiskScores` gece cron'u **portföy-geneli, tenant filtresiz, `take` limitsiz** çalışıyor (`automation.service.ts:235`, VERIFIED); canonical hesaplama F2'nin ~1-2 sorgusuna karşı ~8-12 sorgu/case gerektirdiğinden (Bölüm 12.6) aynı ölçekte otomatik bir batch koşumu DB yükü riski taşır — Phase 3'e alınmaz.
+
+### 13.5 Güvenlik
+
+- **Tenant isolation:** `calculateCaseScore` zaten adaptörler üzerinden `NotFoundException` ile kilitli; shadow-diff servisi `legacyScore`'u okurken de AYNI tenant-scoped `prisma.case.findFirst({ id: caseId, tenantId })` deseni kullanır.
+- **PII:** Repo'nun kendi taksonomisi uygulanır (`debtor-audit.util.ts`: yapısal PII maskeli, serbest-metin PII digest'li, PII-olmayan operasyonel alanlar düz) — **rapor ve loglar hiçbir zaman** borçlu adı/TCKN/VKN/adres/telefon taşımaz (D6); `DebtorScoringResult.factorBreakdown.rawInput` zaten yalnız enum/sayı/tarih taşıyor (PR-2A/2B tasarımı).
+- **TenantId kaynağı (D7):** yalnız auth context (`@CurrentUser('tenantId')`); client/body/query tenantId asla kabul edilmez.
+- **Otomatik aksiyon:** Rapor hiçbir hukuki/finansal aksiyon alanı taşımaz; `readinessCandidate`/`safeForConsumerSwitch` hiçbiri yetki ima etmez.
+
+### 13.6 Test Planı
+
+1. Aynı girdi + aynı `asOf` → deterministik rapor. 2. Delta bantları doğru sınıflandırılır. 3. `bandChanged` + `EXTREME_BAND_JUMP` doğru tetiklenir. 4. `LEGAL_TIME_AUTHORITY_PENDING` her sonuçta `blockers`'ta görünür AMA tek başına `readinessCandidate`'i false yapmaz. 5. `dataGaps` (legal-deadline hariç) `>=2` → `MULTIPLE_DATA_GAPS` + `readinessCandidate=false`. 6. `CONFIRMED_FILTER_FALLBACK` → `FINANCIAL_NON_AUTHORITATIVE` + `readinessCandidate=false`. 7. `legacyScore === null` → `readinessCandidate=false`. 8. **`safeForConsumerSwitch` HER senaryoda `false`** (readinessCandidate/blockers ne olursa olsun — ayrı, kayıtsız-şartsız test). 9. Tenant isolation: yanlış tenant → `NotFoundException`. 10. Hiçbir Prisma write/update/create çağrısı yok. 11. Consumer'lar (risk/ai/report/fact-store) hiçbir dosyada değişmeden kalır (diff-scope). 12. Rapor/log içeriğinde PII deseni yok (statik guard). 13. Legacy/canonical zaman farkı `legacyCalculatedAt` ile raporda açık görünür.
+
+### 13.7 Dosya ve PR Planı
+
+```text
+PR-3A (contract + read-only service + tests):
+  debtor-scoring/shadow-diff/debtor-scoring-shadow-diff.types.ts
+  debtor-scoring/shadow-diff/debtor-scoring-shadow-diff.service.ts
+  debtor-scoring/shadow-diff/__tests__/*.spec.ts (§13.6 + PII/saflık guard'ı)
+  debtor-scoring.module.ts (yeni provider)
+
+PR-3B (D1 — internal endpoint, AYRI PR):
+  debtor-scoring/debtor-scoring.controller.ts
+  app.module.ts (controller kaydı gerekmez, module zaten kayıtlı — yalnız controller
+  dosyası + module'ün controllers[] dizisine eklenmesi)
+
+DOKUNULMAYAN: risk/automation/ai/report/policy-engine, schema.prisma, tüm FE, cron tanımları.
+```
+
+### 13.8 Owner Kararları (NİHAİ)
+
+| Karar | Sonuç |
+|---|---|
+| D1 Endpoint şimdi mi? | **EVET — ayrı PR-3B** |
+| D2 Telemetry mi DB snapshot mı? | **HAYIR persistence — yalnız yapılandırılmış telemetry** |
+| D3 Batch kapsamı var mı? | **HAYIR** |
+| D4 Consumer-switch | **Phase 3'te YASAK; `readinessCandidate` ayrı hesaplanır, yetki ima etmez** |
+| D5 Shadow süresi/örneklem büyüklüğü | **Bu fazda uygulanmaz** (D3 HAYIR olduğundan anlamsız) |
+
+### 13.9 Phase 3 Verdict
+
+```text
+PHASE 3 SHADOW COMPARE VERDICT:
+- Feasible: YES — mevcut BalanceDisplayShadowDiffService deseniyle birebir uyumlu
+- Schema required: NO
+- Endpoint required: YES (D1) — ayrı PR-3B
+- Persistence required: NO (D2)
+- Safe for implementation: YES — PR-3A için READY
+- Safe for consumer switch: NO — Phase 3 boyunca safeForConsumerSwitch DAİMA false (D4);
+  readinessCandidate yalnız teknik sinyaldir, yetki vermez
 ```
 
 ---
