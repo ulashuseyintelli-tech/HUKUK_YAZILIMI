@@ -1,9 +1,11 @@
 # ADR-014 Split-PR Baseline Execution Plan
 
-**Status:** APPROVED / BASELINE EXECUTION PLAN v1
+**Status:** APPROVED / BASELINE EXECUTION PLAN v1.1
 **Date:** 2026-07-10
 **Owner:** Ulaş
-**Related:** `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`, `product-backlog.md` (`ID: ADR-014-SCENARIO-INFRA`, `ID: CCB-001`), `decision-log.md` (2026-07-10)
+**Related:** `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`, `product-backlog.md` (`ID: ADR-014-SCENARIO-INFRA`, `ID: ADR-014-SPLIT-PR-PLAN`, `ID: CCB-001`), `decision-log.md` (2026-07-10)
+
+> **Revizyon geçmişi:** v1 (2026-07-10, PR #1032) — ilk baseline. **v1.1 (2026-07-10)** — REVERSAL owner arbitration (CONDITIONAL OPTION B) sonrası: §11 REVERSAL çözüldü, §0 terminolojisi ve PR-1B acceptance gate güncellendi (gerçek `CollectionService.cancel()` DB integration eklendi).
 
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
@@ -19,7 +21,9 @@
 - Branch 961bbaf3 WHOLESALE MERGE EDİLMEYECEK.
   (GO-ANALYZE: NO-GO full cutover / GO incremental hardening.)
   Her PR, branch'in ilgili dilimini GÜNCEL main'e extract eder, izole doğrulanır.
-- REVERSAL = OPEN_OWNER_DECISION. Hiçbir PR bir reversal yöntemi VARSAYMAZ.
+- REVERSAL = RESOLVED / CONDITIONAL OPTION B (bkz. §11). Wave 0 materializer direct-write
+  (yalnız test/disposable DB); gerçek `CollectionService.cancel()` write-path'i AYRI
+  DB-gated integration test'iyle doğrulanır. Materializer PASS ≠ production cancel path PASS.
 ```
 
 ---
@@ -27,8 +31,8 @@
 ## 1. Wave Yapısı
 
 ```text
-        ┌─ OPEN_OWNER_DECISION: REVERSAL yöntemi ─┐
-        ▼                                          ▼
+        ┌─ RESOLVED: REVERSAL = Conditional Option B (§11) ─┐
+        ▼                                                    ▼
    WAVE 0  Scenario Infra (verification capability enabler)
         │  contract + builder + hybrid materializer + diagnostic dual-mode + evidence model
         ▼
@@ -65,14 +69,14 @@ Yani W0 "önce kod yazılamaz" demek DEĞİL; "DB-gated kanıt üretilemez" deme
 
 | PR | Kapsam | Önkoşul |
 |---|---|---|
-| **W0** Scenario Infra (minimal) | Arbitre edilen dilim: saf domain contract + tek domain builder + hybrid materializer + diagnostic dual-mode + evidence model. Kendi içinde 3 alt-PR'a bölünebilir (contract+builder / materializer / dual-mode) — ama platform DEĞİL. | **REVERSAL OPEN_OWNER_DECISION çözülmeli** (materializer reversal yolu buna bağlı). Detay: `product-backlog.md` `ID: ADR-014-SCENARIO-INFRA`. |
+| **W0** Scenario Infra (minimal) | Arbitre edilen dilim: saf domain contract + tek domain builder + hybrid materializer + diagnostic dual-mode + evidence model. Kendi içinde 3 alt-PR'a bölünebilir (contract+builder / materializer / dual-mode) — ama platform DEĞİL. | **REVERSAL RESOLVED (Conditional Option B, §11)** — materializer reversal yolu direct-write olarak kilitlendi. Detay: `product-backlog.md` `ID: ADR-014-SCENARIO-INFRA`. |
 
 ### WAVE 1 — Core Calculation Hardening (ADR-014 ✓)
 
 | PR | Kapsam | Önkoşul |
 |---|---|---|
 | **PR-1A** | Reversal netting **verification** — yalnız karakterizasyon testi (mevcut davranışı sabitler) | — |
-| **PR-1B** | Reversal netting **fix** — `payment-mapper.netLedgerPayments()` net-zero | PR-1A + REVERSAL kararı + W0 |
+| **PR-1B** | Reversal netting **fix** — `payment-mapper.netLedgerPayments()` net-zero | PR-1A + REVERSAL kararı (RESOLVED/Conditional B) + W0 |
 | **PR-2** | NO_BUCKETS fail-closed — temel main'de var; fee/snapshot'a blocker propagasyonu (branch delta) | W0 |
 | **PR-3h** | TBK100 **hardening** — R2 cent-normalization + R3 negatif-payment guard + raporlama-sıra fix (çekirdek sıra main'de ZATEN doğru; yalnız hardening delta) | W0 |
 | **PR-4** | Partial payment **interest-base mutation** — `allocatePaymentsWithInterestBaseMutation()` (main 4/5 param, branch 5/5) | W0 |
@@ -107,7 +111,7 @@ Yani W0 "önce kod yazılamaz" demek DEĞİL; "DB-gated kanıt üretilemez" deme
 | PR | Merge edilebilir olması için ZORUNLU | Evidence Source | Owner Gate |
 |---|---|---|---|
 | **PR-1A** | CI 4/4 · karakterizasyon testleri GREEN | Unit | NO |
-| **PR-1B** | CI 4/4 · reversal net-zero (E) PASS · no regression · shadow-diff unchanged | DB-Gated | NO *(REVERSAL kararı önkoşul)* |
+| **PR-1B** | CI 4/4 · **materialized reversal net-zero (E) PASS** · **gerçek `CollectionService.cancel()` DB integration PASS** · PAYMENT + REVERSAL = 0 · no regression · shadow-diff unchanged *(materializer fixture PASS tek başına YETMEZ — v1.1)* | DB-Gated (materializer) **+ Real cancel() Integration** | NO *(REVERSAL RESOLVED/Conditional B önkoşul)* |
 | **PR-2** | CI 4/4 · NO_BUCKETS (F) PASS · blocker propagasyonu | DB-Gated | NO |
 | **PR-3h** | CI 4/4 · cent-normalization + TBK100-order (D) PASS · negatif-guard PASS · dust pinned | DB-Gated | NO |
 | **PR-4** | CI 4/4 · partial-payment (B+C) PASS · çok-dönemli faiz-tabanı · no regression | DB-Gated + Shadow Diff | NO |
@@ -187,16 +191,40 @@ Pre-existing (PAC-001-A, DIŞI): TBK100 çift-implementasyon · interest-rate 3-
 
 ---
 
-## 11. REVERSAL — OPEN_OWNER_DECISION
+## 11. REVERSAL — RESOLVED / CONDITIONAL OPTION B (owner arbitration, 2026-07-10)
 
 ```text
-REVERSAL üretim yöntemi henüz karar bekliyor:
-  Option A  Gerçek CollectionService.cancel()   → production fidelity; ağır önkoşul
-            (PAYMENT_RECEIVED timeline + accounting journal, yoksa throw)
-  Option B  Materializer direct-write REVERSAL   → deterministik/izole; production path değil
+KARAR: CONDITIONAL OPTION B.
 
-İki doğru çözüm var. Bu karar W0'ın materializer reversal yolunu ve PR-1B'yi kilitliyor.
-Hiçbir PR bir yöntemi varsaymaz; karar implementation'dan önce owner tarafından verilir.
+Wave 0 materializer REVERSAL üretimi → direct-write:
+  - deterministik fixture setup (senaryoyu kurar, hesaplama davranışını doğrular)
+  - YALNIZ test/disposable DB kapsamında; production runtime kodundan erişilemez
+  - tenantId, caseId, collectionId ve original-payment ilişkileri ZORUNLU
+  - REVERSAL kaydı production ledger şemasının minimum geçerli invariant'larını taşır
+  - PAYMENT+REVERSAL net-zero fixture'ında açık ilişki: reversalOfPaymentId (veya
+    scenario-level eşdeğer referans)
+  - timeline/journal kayıtları TAKLİT EDİLMEZ; yoksa evidence çıktısında
+    WRITE_PATH_NOT_EXERCISED olarak açıkça işaretlenir
+
+GUARDRAIL: Materializer PASS ≠ production cancellation path PASS.
+  Materializer sonucu, production cancellation fidelity kanıtı SAYILMAZ.
+
+AYRI DOĞRULAMA YÜKÜMLÜLÜĞÜ (gerçek write-path):
+  CollectionService.cancel() için ZORUNLU DB-gated integration senaryosu:
+    PAYMENT_RECEIVED → COLLECTION_CASH_RECEIPT_RECORDED → CollectionService.cancel()
+    → REVERSAL ledger → net balance doğrulaması
+  Bu test materializer testi DEĞİLDİR; scenario setup için direct-write KULLANMAZ;
+  gerçek servis yolunu çalıştırır; cancellation write-path fidelity kanıtını üretir.
+
+İki amaç ayrı tutulur:
+  Materializer                       → hesaplama senaryosu kurar
+  CollectionService.cancel() integ.  → gerçek reversal yazma yolunu doğrular
+
+Bu karar Wave 0'ı minimal tutar; production fidelity borcunu da gizlemez.
+Rationale: Wave 0'ın amacı senaryoyu deterministik kurup hesaplama davranışını
+doğrulamaktır; collection-cancellation workflow'unun tamamını test etmek değildir.
+Option A materializer'a alınsaydı fixture altyapısı timeline/journal/event-prerequisite/
+lifecycle/notification/audit yan-etkilerine bağlanır ve minimal-infra kararını bozardı.
 ```
 
 ---
@@ -204,9 +232,10 @@ Hiçbir PR bir yöntemi varsaymaz; karar implementation'dan önce owner tarafın
 ## 12. Status
 
 ```text
-ADR-014 Split-PR Planning → APPROVED / BASELINE EXECUTION PLAN v1
+ADR-014 Split-PR Planning → APPROVED / BASELINE EXECUTION PLAN v1.1
 
+REVERSAL → RESOLVED / CONDITIONAL OPTION B (§11). Tek açık owner-decision kapatıldı.
 Bundan sonraki iş plan değil, uygulama yönetimidir.
-Sonraki açılacak hat: ADR-014 Wave 0 Implementation (ayrı GO-IMPLEMENT, REVERSAL kararına bağlı).
+Sonraki açılacak hat: ADR-014 Wave 0 Implementation (ayrı GO-IMPLEMENT).
 Revizyon gerekirse bu belge v2/v3 olarak güncellenir.
 ```
