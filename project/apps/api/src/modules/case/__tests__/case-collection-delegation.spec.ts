@@ -235,8 +235,8 @@ describe('CaseService collection delegation (G3d)', () => {
     expect(result[2]).toEqual(collections[2]);
     expect(result[2]).not.toHaveProperty('debtorFinancialBinding');
   });
-  it('T4: cancelCollection route caseId + tenant guard sonrası collectionService.cancel delegasyonu yapar', async () => {
-    const coll = { create: jest.fn(), cancel: jest.fn(async () => ({ id: 'col1' })) };
+  it('T4: cancelCollection route caseId + tenant guard sonrası collectionService.requestCancel delegasyonu yapar', async () => {
+    const coll = { create: jest.fn(), requestCancel: jest.fn(async () => ({ requested: true, approvalRequestId: 'appr-1' })) };
     const prisma = buildPrisma({ id: 'col1', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' });
     const svc = buildService(coll, prisma);
 
@@ -246,11 +246,11 @@ describe('CaseService collection delegation (G3d)', () => {
       where: { id: 'col1', caseId: 'c1', tenantId: 't1' },
       select: { id: true },
     });
-    expect(coll.cancel).toHaveBeenCalledWith('t1', 'col1', { cancelReason: 'iptal nedeni' }, 'user-1', 'c1');
+    expect(coll.requestCancel).toHaveBeenCalledWith('t1', 'col1', { cancelReason: 'iptal nedeni' }, 'user-1', 'c1');
   });
 
-  it('TM3-S2: cancelCollection wrong route caseId fail-closed olur ve cancel delegasyonu yapmaz', async () => {
-    const coll = { create: jest.fn(), cancel: jest.fn(async () => ({ id: 'col1' })) };
+  it('TM3-S2: cancelCollection wrong route caseId fail-closed olur ve requestCancel delegasyonu yapmaz', async () => {
+    const coll = { create: jest.fn(), requestCancel: jest.fn(async () => ({ requested: true, approvalRequestId: 'appr-1' })) };
     const prisma = buildPrisma(null);
     const svc = buildService(coll, prisma);
 
@@ -260,10 +260,10 @@ describe('CaseService collection delegation (G3d)', () => {
       where: { id: 'col1', caseId: 'wrong-case', tenantId: 't1' },
       select: { id: true },
     });
-    expect(coll.cancel).not.toHaveBeenCalled();
+    expect(coll.requestCancel).not.toHaveBeenCalled();
   });
-  it('TM3-S2: cancelCollection tenant mismatch fail-closed olur ve cancel/event yolu başlamaz', async () => {
-    const coll = { create: jest.fn(), cancel: jest.fn(async () => ({ id: 'col1' })) };
+  it('TM3-S2: cancelCollection tenant mismatch fail-closed olur ve request/event yolu başlamaz', async () => {
+    const coll = { create: jest.fn(), requestCancel: jest.fn(async () => ({ requested: true, approvalRequestId: 'appr-1' })) };
     const prisma = buildPrisma(null);
     const svc = buildService(coll, prisma);
 
@@ -273,7 +273,7 @@ describe('CaseService collection delegation (G3d)', () => {
       where: { id: 'collection-b', caseId: 'case-a', tenantId: 'tenant-a' },
       select: { id: true },
     });
-    expect(coll.cancel).not.toHaveBeenCalled();
+    expect(coll.requestCancel).not.toHaveBeenCalled();
   });
   it('TM3-S1: posted/confirmed delete returns reversal-required conflict and does not hard-delete', async () => {
     const prisma = buildPrisma({ id: 'col1', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' });

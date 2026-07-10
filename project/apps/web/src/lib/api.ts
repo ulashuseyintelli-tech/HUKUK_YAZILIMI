@@ -3154,10 +3154,10 @@ class ApiClient {
   }
 
   /**
-   * Tahsilat iptal et
+   * Tahsilat iptali için onay talebi oluştur
    */
   async cancelCollection(caseId: string, collectionId: string, reason?: string) {
-    return this.request<CollectionDTO>(`/cases/${caseId}/collections/${collectionId}/cancel`, {
+    return this.request<CollectionCancelApprovalDTO>(`/cases/${caseId}/collections/${collectionId}/cancel`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
@@ -5457,6 +5457,13 @@ export interface CollectionDTO {
   createdAt: string;
   updatedAt: string;
   debtor?: { id: string; name: string };
+}
+
+export interface CollectionCancelApprovalDTO {
+  requested: true;
+  approvalRequestId: string;
+  status: string;
+  collectionId: string;
 }
 
 export type CollectionDispositionLineType =

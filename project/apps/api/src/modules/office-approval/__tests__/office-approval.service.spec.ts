@@ -318,6 +318,27 @@ describe('PAYOUT-APPROVAL-2 OfficeApprovalService — actionCode dispatcher (CLI
     expect(prisma.officeApprovalRequest.updateMany).toHaveBeenCalledTimes(1);
   });
 
+  it('OWN-29-B: DBIND §5 COLLECTION_VOID icin uygulanmaz; eligible PARTNER self-approve edemez', async () => {
+    const collectionVoidReq = () =>
+      mkReq({
+        actionCode: 'COLLECTION_VOID',
+        targetType: 'COLLECTION',
+        targetRef: 'col-1',
+        requesterUserId: REQUESTER,
+        savedIntent: { caseId: 'case-1', collectionId: 'col-1', cancelReason: 'sehven kayit' },
+      });
+    const selfPartner = {
+      id: REQUESTER,
+      isActive: true,
+      tenantId: TENANT,
+      lawyer: { lawyerRank: 'PARTNER', canApproveOfficeActions: false },
+    };
+    const { svc, prisma } = make({ reqSeq: [collectionVoidReq()], approverUser: selfPartner });
+
+    await expect(svc.approve('oar-1', REQUESTER, 'self collection void')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
   it('DBIND §5: self requester CLIENT_PAYOUT_POST icin eligible degilse yine Forbidden ve karar yazilmaz', async () => {
     const { svc, prisma } = make({
       reqSeq: [payoutReq()],
