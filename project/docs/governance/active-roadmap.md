@@ -29,7 +29,7 @@ Owner kilidi = 7 faz. Accounting backend = Codex domain; Claude payı = her back
 | PHASE 4 | Offset / Payout Integration | Offset apply/reverse + payout journal baglari | Codex (BE) | CLOSED | Owner decision closed ACCT-4: `READY FOR OWNER CLOSURE` -> `CLOSED`; closure gate merged: `project/docs/finance/acct-4-offset-payout-closure-gate.md`; design gate + ACCT-4A contract lock complete, #719 verified web-only after #718. -> ACCT-4 |
 | PHASE 5 | Financial Statements | Cari/ekstre/finansal tablolar journal-türevi | Codex (BE) → Claude (FE) | CLOSED | Owner decision closed ACCT-5: `READY FOR OWNER CLOSURE` -> `CLOSED`; closure gate merged: `project/docs/finance/acct-5-financial-statements-closure-gate.md`; design gate + ACCT-5A read contract + ACCT-5B projection service + ACCT-5C HTTP boundary complete; no schema/migration/UI/posting/writer/legal-ledger/TBK100 change. → ACCT-5 |
 | PHASE 6 | Reporting | Firma-geneli raporlama | Codex (BE) → Claude (FE) | PLANNED | → ACCT-6 |
-| PHASE 7 | Approval UI | Office-approval Inbox/approve FE (P4-6) | Claude (FE-only) | PLANNED · demand-gated | Generic `/office-approvals` controller HAZIR; gerçek approval hacmi oluşunca (eksenin SONU). → P4-6 |
+| PHASE 7 | Approval UI | Office-approval Inbox/approve FE (P4-6) | Claude (FE-only) | CLOSED / DELIVERED | PR #823 ve #832 ile `/office-approvals` FE teslim edildi; Product Backlog P4-6 DONE ve Master Triage ARC-05-A Closed Register kanıtıyla uyumlu. UA-1 Universal Office Approval generalization ayrı ve DEFERRED kalır. → P4-6 |
 
 ## İkincil İz — Alacak Kalemi Domain (2026-07-03 GO-ANALYZE, owner faz kararı bekliyor)
 
