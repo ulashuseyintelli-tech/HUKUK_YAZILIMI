@@ -4,6 +4,8 @@
 
 **Bu belge implementasyon başlatmaz.** Her faz kendi ayrı GO-IMPLEMENT yetkisini gerektirir (Bölüm 8). `COLLECTION-STATUS-FILTER-HOTFIX` ayrı bir implementasyon işi olarak önerilir (Bölüm 9) ve bu tasarım PR'ı içinde hiçbir kod değişmez.
 
+**Revizyon (2026-07-10):** Bölüm 12 — Phase 2 read-only `DebtorScoringService` şartnaması eklendi (GO-ANALYZE çıktısı + M1-M7 owner kararları). Bölüm 9'daki hotfix o günün ilerleyen saatlerinde PR #1047 ile CLOSED; D1-D7 kararları decision-log'da kayıtlı.
+
 ---
 
 ## 1. Current-State Inventory
@@ -198,6 +200,150 @@ DEBTOR-SCORING-CANONICALIZATION VERDICT:
 - Owner decisions required: D1-D7 (Bölüm 10) — polarite, entity, hotfix önceliği,
   RiskReport migration, Case.riskScore deprecation, icrabot adapter/rewrite,
   canonical balance entegrasyon fazı.
+```
+
+---
+
+## 12. Phase 2 — Read-Only `DebtorScoringService` Şartnamesi (2026-07-10 eki)
+
+Phase 2 GO-ANALYZE'ının kalıcı kaydı. **M1-M7 owner kararları bu ekle NİHAİDİR** (Bölüm 12.9). Bu bölüm implementasyon başlatmaz; PR-2A ayrı GO-IMPLEMENT ister.
+
+### 12.1 Phase 2 Sınırı
+
+```text
+PHASE 2 YAPAR:
+- Yeni, bağımsız, read-only DebtorScoringService (apps/api/src/modules/debtor-scoring/,
+  tenant-zorunlu, on-demand, deterministik)
+- Kanonik girdi adaptörleri: canonical balance, confirmed collections, asset-query,
+  tebligat/serviceStatus sinyalleri
+- Tek factorBreakdown şeması + inputProvenance + dataGaps + warnings + explainability
+- Kendi birim/regresyon/saflık testleri
+
+PHASE 2 YAPMAZ:
+- Case.riskScore YAZMAZ (hiçbir Prisma write yok)
+- Persistence YOK (snapshot DB'ye yazılmaz — M4: ayrı schema fazı)
+- Endpoint YOK (internal read-only endpoint dahil — M3: Phase 3'e bırakıldı)
+- Cron/scheduler DEĞİŞTİRMEZ; AI/report/policy/UI consumer switch YAPMAZ
+- Schema/migration, RiskReport migration YAPMAZ
+- icrabot aktivasyonu/adaptörü YAPMAZ
+- Cross-case/debtor-level aggregate YAPMAZ (M6)
+- Otomatik hukuki/finansal aksiyon TETİKLEMEZ
+```
+
+### 12.2 Input Authority Matrix
+
+| Input | Mevcut kaynak | Kanonik kaynak (Phase 2) | Güven durumu | Kullanım |
+|---|---|---|---|---|
+| Confirmed collection total | ham `collections` (PR #1047 sonrası CONFIRMED-only) | `CaseBalanceOrchestration.computeCaseBalance(tenantId, caseId)` | AUTHORITATIVE | KULLAN — birincil |
+| Outstanding balance | `Case.principalAmount` | `computeCaseBalance` çıktısı (`cutoverReadiness` gate'li) | AUTHORITATIVE | KULLAN — unsafe'te fallback + provenance |
+| Case age | `Case.createdAt` | aynı | AUTHORITATIVE | KULLAN |
+| Asset signal | `debtor.assets[]` var/yok | `CaseDebtor.assetVehicle/RealEstate/Bank/SgkWage` (`AssetQueryStatus`) + `assetLastQueryAt`; `Asset[]` ikincil | AUTHORITATIVE — UNKNOWN "sorgulanmadı"yı YES/NO'dan ayırır | KULLAN |
+| Service status | F1'de `NotificationQueue DELIVERED` (yasak) | `CaseDebtor.serviceStatus` + `Tebligat.status/deliveredAt` (varlık/durum düzeyi) | AUTHORITATIVE | KULLAN |
+| Legal service date / süre | `Tebligat.tebligSayilmaDate` (MERNİS dalı +15 hatalı) | gelecek `LegalDeadlineService` | FOUNDATION_REQUIRED | KULLANMA → `DATA_GAP: LEGAL_TIME_AUTHORITY_PENDING` (M5) |
+| Workflow stage | `Case.workflowStage` | aynı | AUTHORITATIVE (tazeliği değişken) | KULLAN |
+| Payment behavior | F1 "herhangi collection −3" | CONFIRMED collection tarihleri | DERIVED | KULLAN |
+| Manual `Debtor.riskLevel` / `LookupRisk` | manuel eksenler | — | LEGACY_ONLY | KULLANMA (skora girmez) |
+| Bankruptcy/concordat/legalStatus | hayalet alanlar (MPB-028(d) açık) | gelecek `Debtor.legalStatus` tasarımı | DATA_GAP | KULLANMA → `DATA_GAP: LEGAL_STATUS_UNMODELED` |
+| NotificationQueue delivered | F1 girdisi | — | NON_AUTHORITATIVE | KULLANMA (test ile kilitli) |
+| `Case.riskScore`/`RiskReport`/`Case.riskId` | legacy | — | LEGACY_ONLY | KULLANMA (yalnız Phase 3 shadow referansı) |
+
+### 12.3 F1/F2/F3 Reconciliation
+
+| Factor | F1 | F2 | F3 (dormant, ters polarite) | Kanonik v1 | Gerekçe |
+|---|--:|--:|--:|---|---|
+| Varlık | 0-25 tür-bazlı | ±10/±10 adet | coverage (değer) | **EVET (revize)** | Kaynak `AssetQueryStatus`'a taşınır; UNKNOWN artık "varlık yok" sayılmaz |
+| Tahsilat oranı | 0-25 bant | −rate×30 | ters | **EVET (revize)** | Girdi kanonik balance; F1 bant eğrisi korunur |
+| Dosya yaşı | 0-20 bant | +10/+10 | ters | **EVET** | F1 bantları |
+| Aşama | 0-15 tablo | 2 dal | yok | **EVET** | F1 13-aşama tablosu |
+| Davranış | 0-15 (NotificationQueue'lu) | yok | ayrı compute | **EVET (revize)** | itiraz=lifecycle/stage, ödeme=CONFIRMED recency, tebligat=`serviceStatus` |
+| Haciz sırası/likidite (F3 YR/IR/SR) | yok | yok | var | **HAYIR (v1)** | Varlık-düzeyi ayrı problem; F3 ters polarite Phase 6 adapter konusu |
+| Borçlu tipi | yok | yok | var | **HAYIR (v1)** | Bilinçli dışlama (kalibrasyon/adalet tartışması ayrı) |
+| Süre/kesinleşme yakınlığı | yok | yok | yok | **DATA_GAP** | Legal Time Authority PR-2 önkoşul |
+
+### 12.4 Servis Kontratı
+
+```ts
+interface DebtorScoringService {
+  calculateCaseScore(tenantId: string, caseId: string): Promise<DebtorScoringResult>;
+}
+
+interface DebtorScoringResult {
+  score: number;                 // 0-100, yüksek = KÖTÜ (D1)
+  scoreBand: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"; // 0-24 / 25-49 / 50-74 / 75-100
+  calculationVersion: string;    // "dscan-v1.0" — formül değişiminde artar
+  factorBreakdown: FactorContribution[]; // {factorCode, rawInput, points, maxPoints, direction, note}
+  inputProvenance: InputProvenance;      // BALANCE_AUTHORITY | CONFIRMED_FILTER_FALLBACK | CASE_DEBTOR_FIELDS | TEBLIGAT | CASE
+  dataGaps: DataGap[];           // {code, factorCode, effect: NEUTRALIZED|PARTIAL|EXCLUDED, note}
+  warnings: string[];
+  calculatedAt: string;
+  tenantId: string;
+  caseId: string;
+}
+```
+
+Kural: **Score hiçbir zaman tek başına hukuki aksiyon yetkisi vermez** — kontratta yetki alanı yoktur; HIGH/CRITICAL bantları yalnız "insan değerlendirmesi önerilir" anlamı taşır.
+
+### 12.5 Faktör Modeli (M1 — ağırlıklar ONAYLI)
+
+| Factor code | Kaynak | Aralık | Ağırlık | Yön | DATA_GAP davranışı |
+|---|---|---|---|---|---|
+| `FIN_RECOVERY` | computeCaseBalance → fallback CONFIRMED util | 0-25 | **25** | oran ↑ = puan ↓ | balance unsafe + fallback boş → NEUTRALIZED (orta puan) |
+| `ASSET_COVERAGE` | `CaseDebtor.asset*` + `Asset[]` | 0-25 | **25** | YES ↑ = puan ↓ | tüm kanallar UNKNOWN/PENDING/ERROR → NEUTRALIZED + `ASSET_QUERY_NOT_RUN`; **`NO` = gerçek negatif (tam puan, gap DEĞİL)** |
+| `CASE_AGE` | `Case.createdAt` | 0-20 | **20** | yaş ↑ = puan ↑ | gap olmaz; <30 gün `EARLY_LIFECYCLE` işareti |
+| `STAGE_PROGRESS` | `Case.workflowStage` | 0-15 | **15** | ileri aşama = puan ↓ | gap olmaz |
+| `BEHAVIOR` | lifecycle (itiraz) + CONFIRMED ödeme recency + `serviceStatus` | 0-15 | **15** | işbirliği = puan ↓ | Tebligat kaydı hiç yok → alt-bileşen NEUTRALIZED + `SERVICE_NOT_INTEGRATED` |
+| `LEGAL_DEADLINE` (rezerve) | LegalDeadlineService (yok) | — | 0 | — | daima `EXCLUDED` + `LEGAL_TIME_AUTHORITY_PENDING` (M5: kaba tarih hesabı YASAK) |
+
+**Eksik veri politikası (M2 — NİHAİ):** nötr puan (NEUTRALIZED) + `dataGaps` kaydı + `warnings`; **v1'de ayrı sayısal confidence alanı YOK.** Diğer zorunlu ayrımlar: hiç collection yok ≠ yalnız CANCELLED/REFUNDED var (ikincisi `warnings` notu üretir, puan farkı üretmez); tebligat entegrasyonu yok ≠ tebliğ edilemedi (RETURNED/FAILED gerçek olumsuz sinyaldir).
+
+### 12.6 Balance Entegrasyonu (M7 — NİHAİ)
+
+`CaseBalanceOrchestration.computeCaseBalance(tenantId, caseId)` (interest-engine/orchestration) **servis-servise doğrudan modül import'uyla** tüketilir; **internal HTTP YOK.** `cutoverReadiness` güvensizse finansal girdi `collection-confirmed.util` CONFIRMED-only fallback'ine düşer ve `inputProvenance` bunu `CONFIRMED_FILTER_FALLBACK` olarak işaretler. Policy-engine fact-store KULLANILMAZ (legacy `Case.riskScore` taşır; yön ileride tersine kurulur). Circular dependency yok: debtor-scoring → interest-engine/prisma tek yönlü. On-demand tek dosya ~8-12 sorgu; portföy-geneli koşum Phase 2'de yok.
+
+### 12.7 Shadow Compare Kontratı (Phase 3 için şimdiden)
+
+```text
+{ legacyScore, canonicalScore, delta, legacyFormula: "F2_NIGHTLY",
+  canonicalVersion, factorDifferences[], dataGaps[], safeForConsumerSwitch }
+```
+
+- Delta bantları: 0-9 / 10-24 / ≥25; band-atlaması (örn. MEDIUM→CRITICAL) ayrı ve öncelikli sayılır.
+- Beklenen farklar: iptal/iade/pending geçmişli dosyalarda canonical ↑; tüm asset kanalları UNKNOWN olan dosyalarda canonical ↓ (F1/F2 karamsarlığı kalkar).
+- Blocker'lar: balance-unsafe iken üretilmiş skor; ≥2 DATA_GAP'li faktör; determinizm ihlali → `safeForConsumerSwitch=false`.
+- Persist YOK (M4) — yapılandırılmış log/telemetry; PII taşınmaz (yalnız id/skor/faktör kodu), tenant alanı zorunlu. Desen: mevcut `balance-display-shadow-diff` modülü.
+
+### 12.8 Test Planı (Phase 2 implementasyonunda zorunlu)
+
+1) Yalnız CONFIRMED sayılır (fallback yolu) · 2) CANCELLED/REFUNDED/PENDING dışlanır · 3) tüm asset kanalları UNKNOWN → DATA_GAP + nötr · 4) kanal `NO` → tam risk puanı · 5) `NotificationQueue` hiçbir sorguda yer almaz · 6) Tebligat kaydı yok → `SERVICE_NOT_INTEGRATED` · 7) tenant isolation · 8) determinizm (aynı girdi + sabit asOf → aynı sonuç) · 9) `Debtor.riskLevel` skora etkisiz · 10) hiçbir Prisma write çağrısı yok (`Case.riskScore` yazılmaz) · 11) dataGaps/warnings eksik faktörleri isimleriyle içerir · 12) F3/icrabot import'u modülde yok (statik saflık guard'ı, W0.1 emsali).
+
+### 12.9 PR Planı ve Owner Kararları (NİHAİ)
+
+**PR planı (owner onaylı):** `PR-2A` contracts + saf deterministik engine (DB'siz) → `PR-2B` kanonik input adapter'ları → `PR-2C` servis orkestrasyonu + testler. **Endpoint Phase 3'e bırakıldı.** Her PR ayrı GO-IMPLEMENT ister; PR-2B'nin tek riskli teması interest-engine modül export'udur (gerekirse tek satır exports eklemesi PR-2B kapsamında raporlanır).
+
+| Karar | Sonuç |
+|---|---|
+| M1 Ağırlıklar | **25/25/20/15/15 ONAY** |
+| M2 Eksik veri | **nötr puan + dataGaps + warnings; v1'de confidence alanı YOK** |
+| M3 Internal endpoint | **Phase 2'de YOK — Phase 3** |
+| M4 Snapshot persistence | **Phase 2'de YOK — ayrı schema fazı** |
+| M5 Legal Time yokken | **DATA_GAP; kaba serviceStatus tarih hesabı YOK** |
+| M6 Cross-case aggregate | **Phase 2 DIŞI** |
+| M7 Balance adapter | **servis-servise doğrudan import; internal HTTP YOK** |
+
+### 12.10 Phase 2 Verdict
+
+```text
+DEBTOR-SCORING-CAN PHASE 2 VERDICT:
+- Read-only service feasible: YES — SAFE_FOR_READ_ONLY
+- Canonical inputs available: YES (computeCaseBalance + AssetQueryStatus +
+  serviceStatus/Tebligat + createdAt/workflowStage)
+- Blocked inputs: LEGAL_DEADLINE (FOUNDATION_REQUIRED), legalStatus (DATA_GAP),
+  NotificationQueue (NON_AUTHORITATIVE), manuel etiketler (LEGACY_ONLY)
+- Formula v1 ready: YES (M1-M2 ile kilitlendi)
+- Schema migration required: NO
+- Case.riskScore write required: NO
+- Consumer switch included: NO — NOT_SAFE_FOR_CONSUMER_SWITCH (Phase 3 shadow şartı)
+- GO-IMPLEMENT ready: YES — PR-2A için READY (ayrı owner GO ile)
 ```
 
 ---
