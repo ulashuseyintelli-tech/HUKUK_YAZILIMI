@@ -4,7 +4,7 @@
 - **Scope:** TM3 Müvekkil Muhasebesi Faz C. Faz A (read-model: summary + Genel Cari + movements) ve
   Faz B (client-level immutable ekstre) main'de + dev-applied. Bu ADR yalnız TASARIM; kod/şema/migration YOK.
 - **Related:** [[collection-disposition-design]] · `tm3-collection-disposition-boundary.md` · Faz B (#587/#590) ·
-  Guided-Open yetki ([[authz-workstream-handoff]]).
+  `dbind-financial-authority-decisions.md` (OWN-29-A governance closure).
 
 > **Locked invariant (verbatim):**
 > *Offset is an immutable settlement event that reduces two opposite client-specific gross balances by the
@@ -146,7 +146,7 @@ REVERSAL row  : kind=REVERSAL, reversesOffsetId=<orijinal APPLY id>,
 - Orijinal APPLY kaydı **ASLA update edilmez** (taslaktaki `status=REVERSED` + update yaklaşımı REDDEDİLDİ).
 - "Reversed mı?" **türetilir:** `exists ClientOffset where kind=REVERSAL and reversesOffsetId = original.id`.
 - Double-reversal engeli: `@@unique([tenantId, reversesOffsetId])` (§5).
-- Reversal yalnız mevcut, henüz reverse edilmemiş bir APPLY'a yapılır; her zaman gated (§8).
+- Reversal yalnız mevcut, henüz reverse edilmemiş bir APPLY'a yapılır; service-level direct capability gerektirir (§8).
 
 ## 8. Approval model
 
@@ -156,15 +156,16 @@ Capability (CHANGE_STATUS DEĞİL — ayrı, yetki kirliliği önlenir):
   CLIENT_OFFSET_REVERSE
 
 Faz C v1 kuralı:
-  - Partner/Admin: apply + reverse yapabilir.
-  - Diğer roller: initiate/request edebilir → Guided-Open confirm-gate'e düşer.
-  - Cross-case offset (payableCaseId != expenseCaseId): HER ZAMAN gated.
-  - Reversal: HER ZAMAN gated.
+  - CLIENT_OFFSET_APPLY ve CLIENT_OFFSET_REVERSE mevcut service-level PARTNER/MANAGER
+    DIRECT_CAPABILITY modeliyle uygulanır.
+  - OfficeApproval request'i veya confirm/four-eyes kapısı yoktur; approvalRef=null kalır.
+  - Cross-case offset ve reversal aynı DIRECT_CAPABILITY modelini kullanır.
   - Aynı-dosya-içi offset dahil capability ŞART ("her personel yapar" REDDEDİLDİ).
 ```
 
-Guided-Open confirm-gate ([[authz-workstream-handoff]]) ile **entegre** olur (token akışı, audit result-kodlu,
-ham token yok); ama **yetki adı ayrı** (`CLIENT_OFFSET_*`), `CHANGE_STATUS` reuse edilmez.
+Offset payout/money-out değildir ve DBIND §5 payout self-approval istisnasını miras almaz. V1'de
+`DIRECT_CAPABILITY` korunur; `CLIENT_OFFSET_*` capability adları ayrıdır ve `CHANGE_STATUS` reuse edilmez.
+Gelecekte OfficeApproval/confirm/four-eyes modeli istenirse yeni owner-authorized workstream gerekir.
 
 ## 9. Concurrency / idempotency
 
@@ -246,7 +247,8 @@ Q-C2 Eligibility nasıl?
      FINAL kontrol apply-tx içinde (I10); approval anı yetmez.
 Q-C3 Statement satır tipi? → 4 explicit type (§6). Generic OFFSET REDDEDİLDİ.
 Q-C4 Approval rol/capability? → CLIENT_OFFSET_APPLY / CLIENT_OFFSET_REVERSE (CHANGE_STATUS DEĞİL).
-     cross-case + reversal HER ZAMAN gated; capability HER offset için şart.
+     v1 service-level PARTNER/MANAGER DIRECT_CAPABILITY; capability HER offset için şart.
+     OfficeApproval/confirm/four-eyes yok; DBIND §5 uygulanmaz.
 Q-C5 Ayrı tablo mı? → AYRI tablo ClientOffset. Mevcut ledger'lara gömülmez.
 ```
 
