@@ -565,6 +565,31 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     });
   });
 
+  it('APPROVED create executor FATURA + TAX_KDV invariantini uygular', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = claimItemTx();
+    const request = claimItemReq({
+      operation: 'CREATE',
+      claimItemId: undefined,
+      proposedPatch: {
+        caseId: 'case-1',
+        itemType: 'TAX_KDV',
+        sourceDocumentType: 'FATURA',
+        amount: 180,
+      },
+      currentSnapshot: undefined,
+      currentSnapshotHash: undefined,
+    }, {
+      targetType: 'CLAIM_ITEM_CASE',
+      targetRef: 'case-1',
+    });
+
+    await expect(svc.syncAfterDecision(db as any, request as any)).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(db.case.findFirst).not.toHaveBeenCalled();
+    expect(db.claimItem.create).not.toHaveBeenCalled();
+  });
+
   it('APPROVED amount=0 update mirrorlar ve originalAmount alanini yazmaz', async () => {
     const svc = new OfficeApprovalDomainSyncService();
     const db = claimItemTx({
@@ -582,6 +607,24 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
       data: { demandedAmount: 0, amount: 0 },
     });
     expect(db.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('originalAmount');
+  });
+
+  it('APPROVED executor FATURA PRINCIPAL -> TAX_KDV gecisini reddeder', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const invoicePrincipal = { ...item, sourceDocumentType: 'FATURA' };
+    const db = claimItemTx({
+      claimItem: {
+        findFirst: jest.fn().mockResolvedValue(invoicePrincipal),
+        update: jest.fn(),
+        create: jest.fn(),
+      },
+    });
+
+    await expect(
+      svc.syncAfterDecision(db as any, claimItemReq({ proposedPatch: { itemType: 'TAX_KDV' } }) as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(db.claimItem.update).not.toHaveBeenCalled();
   });
 
   it('stale ClaimItem snapshot proposal uygulanmasini engeller', async () => {

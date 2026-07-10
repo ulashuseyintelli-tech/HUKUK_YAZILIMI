@@ -1,38 +1,48 @@
-/**
- * D (vergi) K1 — FATURA autoGenerate KDV kalemi metadata.taxParentCategory='PRINCIPAL'.
- */
-
+import { BadRequestException } from '@nestjs/common';
 import { ClaimItemService } from '../claim-item.service';
 import { DocumentSourceType } from '../dto/claim-item.dto';
 
-describe('D K1 — FATURA KDV metadata', () => {
-  it('fatura KDV kalemi metadata.taxParentCategory=PRINCIPAL ile üretilir', async () => {
-    const created: any[] = [];
-    const prisma: any = {
-      claimItem: { create: jest.fn(async ({ data }: any) => { created.push(data); return data; }) },
+describe('VER-05 PR-1C invoice KDV write-path convergence', () => {
+  function makeService() {
+    const claimItem = {
+      create: jest.fn(async ({ data }: any) => ({ id: 'created', ...data })),
     };
-    const svc = new ClaimItemService(prisma);
+    return {
+      service: new ClaimItemService({ claimItem } as any),
+      claimItem,
+    };
+  }
 
-    await svc.autoGenerateFromDocument('t1', {
+  it('rejects FATURA auto-generate before any ClaimItem write', async () => {
+    const { service, claimItem } = makeService();
+
+    await expect(service.autoGenerateFromDocument('t1', {
       documentType: DocumentSourceType.FATURA,
       caseId: 'c1',
+      documentId: 'doc-1',
       totalAmount: 1180,
       kdvAmount: 180,
       currency: 'TRY',
-    } as any);
+    })).rejects.toThrow(BadRequestException);
 
-    const kdv = created.find((i) => i.itemType === 'TAX_KDV');
-    expect(kdv).toBeDefined();
-    expect(kdv.amount).toBe(180);
-    expect(kdv.originalAmount).toBe(180);
-    expect(kdv.demandedAmount).toBe(180);
-    expect(kdv.metadata).toEqual({ taxParentCategory: 'PRINCIPAL' });
+    expect(claimItem.create).not.toHaveBeenCalled();
+  });
 
-    // net anapara da üretildi (KDV hariç)
-    const principal = created.find((i) => i.itemType === 'PRINCIPAL');
-    expect(principal).toBeDefined();
-    expect(principal.amount).toBe(1000);
-    expect(principal.originalAmount).toBe(1000);
-    expect(principal.demandedAmount).toBe(1000);
+  it.each([
+    [DocumentSourceType.CEK, 2],
+    [DocumentSourceType.SENET, 1],
+    [DocumentSourceType.KIRA, 1],
+  ])('preserves %s auto-generate behavior', async (documentType, expectedCount) => {
+    const { service, claimItem } = makeService();
+
+    await service.autoGenerateFromDocument('t1', {
+      documentType,
+      caseId: 'c1',
+      documentId: 'doc-1',
+      totalAmount: 1000,
+      currency: 'TRY',
+    });
+
+    expect(claimItem.create).toHaveBeenCalledTimes(expectedCount);
   });
 });
