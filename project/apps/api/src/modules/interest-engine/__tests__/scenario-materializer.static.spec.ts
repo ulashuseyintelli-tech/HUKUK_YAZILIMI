@@ -32,7 +32,8 @@ function isTestSupportPath(p: string): boolean {
     n.includes('/__tests__/') ||
     n.endsWith('.spec.ts') ||
     n.includes('/scenario-materializer/') ||
-    n.includes('/scenario-support/')
+    n.includes('/scenario-support/') ||
+    n.includes('/scenario-diagnostic/')
   );
 }
 

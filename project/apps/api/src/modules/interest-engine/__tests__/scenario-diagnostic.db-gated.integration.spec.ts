@@ -1,0 +1,228 @@
+/**
+ * ADR-014 W0.3 — Diagnostic Dual Mode DB-gated doğrulaması.
+ *
+ * Fail-safe (W0.2 G6 emsali): yalnız `resolveTestDatabaseUrl` ile çözülen
+ * `hukuk_*_gate` disposable DB'de koşar; TEST_DATABASE_URL yoksa suite SKIP.
+ *
+ * D1 — SYNTHETIC mod: ScenarioDefinition → materialize → GERÇEK üretim yolu
+ *      (computeCaseBalance → toCaseBalanceDisplay) → expected-vs-actual
+ *      match. Ek olarak W0.2 G5 devamlılığı: DB yolundaki currency satırı
+ *      saf in-memory engine sonucuyla eşleşir (frozen e: AYNI senaryo
+ *      id'sinin unit ve DB-gated gözlemleri karşılaştırılabilir).
+ * D2 — Karşılaştırıcı DÜRÜSTLÜĞÜ: bilinçli yanlış expected → match=false ve
+ *      mismatch alanı doğru raporlanır (yalancı-PASS yok).
+ * D3 — ORGANIC mod: gerçek tenant case'leri taranır; excludeCaseIds yalnız
+ *      bu modda; tenant-scope dışına taşmaz; evidence kaydı expected TAŞIMAZ.
+ *
+ * GUARDRAIL: buradaki hiçbir PASS, CollectionService.cancel() production
+ * write-path'inin doğrulandığı anlamına GELMEZ (PR-1B ayrı gate).
+ */
+import { PrismaClient } from '@prisma/client';
+import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import {
+  runSyntheticScenarioDiagnostic,
+  runOrganicReadinessDiagnostic,
+} from '../scenario-diagnostic/scenario-diagnostic-runner';
+import { cleanupMaterializedScenario, MaterializedScenarioRefs } from '../scenario-materializer/scenario-materializer';
+import { defineScenario, scenarioClaimBucket, scenarioPayment } from '../scenario-support/scenario-builder';
+import type { ScenarioDefinition } from '../scenario-support/scenario-definition';
+import { CaseBalanceService } from '../orchestration/case-balance.service';
+import { toCaseBalanceDisplay } from '../orchestration/case-balance-display';
+import { RateProviderService } from '../rates/rate-provider.service';
+import { InterestEngineService } from '../interest-engine.service';
+import { PolicyGateV2Service } from '../policy-gate/policy-gate-v2.service';
+import { SegmentBuilderService } from '../segments/segment-builder.service';
+import { VersionPinningService } from '../version/version-pinning.service';
+import { TBK100AllocatorService } from '../allocation/tbk100-allocator.service';
+import { ClaimPriorityService } from '../allocation/claim-priority.service';
+import { AllocationEngineService } from '../allocation/allocation-engine.service';
+import { DEFAULT_INTERPRETATION_PROFILE_ID } from '../types/calculation.types';
+import type { RateEntry } from '../rates/rate-provider.service';
+
+const TEST_DB_URL = resolveTestDatabaseUrl(process.env as Record<string, string | undefined>);
+const describeIf = TEST_DB_URL ? describe : describe.skip;
+
+const AS_OF = '2026-07-01';
+const CLAIM_START = '2026-06-01';
+const PAY_DATE = '2026-06-20';
+const ANNUAL_RATE = 0.24;
+
+const RATE: RateEntry = {
+  id: 'w03-rate-legal',
+  interestType: 'LEGAL_3095' as RateEntry['interestType'],
+  annualRate: ANNUAL_RATE,
+  validFrom: '2020-01-01',
+  validTo: null,
+  sourceId: 'w03-test',
+  sourceName: 'W03_TEST',
+  publishedAt: '2020-01-01',
+  currency: 'TRY',
+};
+
+function buildEngine(): InterestEngineService {
+  return new InterestEngineService(
+    new PolicyGateV2Service(),
+    new SegmentBuilderService(),
+    new AllocationEngineService(new TBK100AllocatorService(), new ClaimPriorityService()),
+    {} as never,
+    {} as never,
+    new VersionPinningService(),
+    undefined,
+  );
+}
+
+function simpleScenario(id: string, tenantSetup: 'SINGLE' | 'TWO_TENANT_ISOLATION' = 'SINGLE'): ScenarioDefinition {
+  return defineScenario({
+    id,
+    title: 'W0.3 basit TRY: tek anapara + tek ödeme',
+    domainInput: {
+      claimBuckets: [
+        scenarioClaimBucket({
+          id: `${id}-claim-1`,
+          amount: 10_000,
+          currency: 'TRY',
+          startDate: CLAIM_START,
+          interestType: 'LEGAL_3095',
+        }),
+      ],
+      payments: [
+        scenarioPayment({ id: `${id}-pay-1`, date: PAY_DATE, amount: 2_000, currency: 'TRY' }),
+      ],
+      asOfDate: AS_OF,
+    },
+    expected: {
+      perCurrencyStatus: { TRY: 'OK' },
+      blockerCodes: [],
+      // Mevcut main davranışı SABİTLENİR (characterization): display mapper'ı
+      // bugün OK durumunda HER ZAMAN 'SHADOW_ONLY' üretir; 'CANONICAL_CANDIDATE'
+      // ataması cutover PR'larının (PR-11/12) işidir — burada beklenmez.
+      authority: 'SHADOW_ONLY',
+    },
+    persistenceIntent: { tenantSetup, currency: 'TRY' },
+  });
+}
+
+describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
+  jest.setTimeout(60_000);
+  let prisma: PrismaClient;
+  const allRefs: MaterializedScenarioRefs[] = [];
+
+  beforeAll(async () => {
+    prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
+    await prisma.$connect();
+  });
+
+  afterAll(async () => {
+    for (const refs of allRefs) {
+      await cleanupMaterializedScenario(prisma, refs);
+    }
+    await prisma.$disconnect();
+  });
+
+  it('D1: synthetic mod — expected-vs-actual match + in-memory devamlılık (G5/frozen e)', async () => {
+    const def = simpleScenario('w03-d1');
+    const { evidence, refs } = await runSyntheticScenarioDiagnostic(prisma, def, {
+      fileNumberPrefix: 'W03D1',
+    });
+    allRefs.push(refs);
+
+    expect(evidence.mode).toBe('SYNTHETIC_SCENARIO');
+    expect(evidence.scenarioId).toBe('w03-d1');
+    expect(evidence.classifications).toEqual([
+      'Deterministic Setup',
+      'Expected Evidence',
+      'Actual Runtime Observation',
+      'Diagnostic Output',
+    ]);
+    expect(evidence.comparison).toBeDefined();
+    expect(evidence.comparison!.mismatches).toEqual([]);
+    expect(evidence.comparison!.match).toBe(true);
+    expect(evidence.observedStatus).toBe('OK');
+    expect(evidence.observedAuthority).toBe(def.expected.authority);
+
+    // W0.2 G5 devamlılığı: AYNI senaryonun saf in-memory engine sonucu,
+    // DB-gated üretim yolu gözlemiyle eşleşir (assertion HESAPLAMAZ —
+    // iki gerçek gözlem kıyaslanır).
+    const mem = buildEngine().computeBalance(
+      {
+        caseId: def.id,
+        claimBuckets: def.domainInput.claimBuckets,
+        payments: def.domainInput.payments,
+        asOfDate: def.domainInput.asOfDate,
+        mode: 'PREVIEW',
+        options: { dayCountBasis: 365 },
+      } as never,
+      [RATE as never],
+      new Date().toISOString(),
+      DEFAULT_INTERPRETATION_PROFILE_ID,
+    );
+    const service = new CaseBalanceService(
+      prisma as never,
+      new RateProviderService(prisma as never),
+      buildEngine(),
+    );
+    const dbBalance = await service.computeCaseBalance(refs.tenantId, refs.caseId, AS_OF);
+    const display = toCaseBalanceDisplay({ tenantId: refs.tenantId, caseId: refs.caseId, balance: dbBalance });
+    const tryRow = display.currencies.find((c) => c.currency === 'TRY');
+    expect(tryRow).toBeDefined();
+    expect(tryRow!.skipped).toBe(false);
+    expect(tryRow!.interest).toBeCloseTo(mem.totalInterest, 2);
+    expect(tryRow!.claimRemaining).toBeCloseTo(mem.totalDue, 2);
+  });
+
+  it('D2: karşılaştırıcı dürüstlüğü — bilinçli yanlış expected match=false üretir', async () => {
+    const def = defineScenario({
+      ...simpleScenario('w03-d2'),
+      expected: {
+        perCurrencyStatus: { TRY: 'OK' },
+        blockerCodes: [],
+        // Bilinçli yanlış: mevcut main yolu SHADOW_ONLY üretir (cutover öncesi);
+        // CANONICAL_CANDIDATE beklentisi bugün mismatch ÜRETMEK ZORUNDADIR.
+        authority: 'CANONICAL_CANDIDATE',
+      },
+    });
+    const { evidence, refs } = await runSyntheticScenarioDiagnostic(prisma, def, {
+      fileNumberPrefix: 'W03D2',
+    });
+    allRefs.push(refs);
+
+    expect(evidence.comparison!.match).toBe(false);
+    expect(evidence.comparison!.mismatches.some((m) => m.field === 'authority')).toBe(true);
+  });
+
+  it('D3: organik mod — tenant-scoped tarama, excludeCaseIds yalnız bu modda, expected taşımaz', async () => {
+    const def = simpleScenario('w03-d3', 'TWO_TENANT_ISOLATION');
+    const { refs } = await runSyntheticScenarioDiagnostic(prisma, def, {
+      fileNumberPrefix: 'W03D3',
+    });
+    allRefs.push(refs);
+    expect(refs.secondaryTenantId).toBeDefined();
+
+    // (i) Organik tarama: tenant'ın gerçek case'i görünür; evidence gözlemdir.
+    const organic = await runOrganicReadinessDiagnostic(prisma, {
+      tenantId: refs.tenantId,
+      asOfDate: AS_OF,
+    });
+    expect(organic).toHaveLength(1);
+    expect(organic[0].scenarioId).toBe(`organic:${refs.caseId}`);
+    expect(organic[0].mode).toBe('ORGANIC_READINESS');
+    expect(organic[0].classifications).toEqual(['Actual Runtime Observation', 'Diagnostic Output']);
+    expect(organic[0].expected).toBeUndefined();
+    expect(organic[0].comparison).toBeUndefined();
+
+    // (ii) QA-seed dışlama ilkesi (yalnız organik): dışlanan case taranmaz.
+    const excluded = await runOrganicReadinessDiagnostic(prisma, {
+      tenantId: refs.tenantId,
+      asOfDate: AS_OF,
+      excludeCaseIds: [refs.caseId],
+    });
+    expect(excluded).toHaveLength(0);
+
+    // (iii) Tenant-scope: ikinci (boş) tenant'ta hiçbir case gözlemlenmez.
+    const crossTenant = await runOrganicReadinessDiagnostic(prisma, {
+      tenantId: refs.secondaryTenantId!,
+      asOfDate: AS_OF,
+    });
+    expect(crossTenant).toHaveLength(0);
+  });
+});
