@@ -249,6 +249,12 @@ export enum ActionCode {
    * Payout degildir; DBIND §5 self-approval exception bu actionCode'a uygulanmaz.
    */
   CLAIM_ITEM_HIGH_IMPACT_CHANGE = 'CLAIM_ITEM_HIGH_IMPACT_CHANGE',
+
+  /**
+   * OWN-29-C — Financial case close approval.
+   * Generic CHANGE_STATUS degildir; DBIND §5 self-approval exception bu actionCode'a uygulanmaz.
+   */
+  FINANCIAL_CASE_CLOSE = 'FINANCIAL_CASE_CLOSE',
 }
 
 /**
@@ -338,6 +344,9 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
 
   // OWN-29-D - Alacak kalemi yüksek etkili mutasyon onayı
   [ActionCode.CLAIM_ITEM_HIGH_IMPACT_CHANGE]: RiskLevel.HIGH,
+
+  // OWN-29-C - Finansal dosya kapanışı onayı
+  [ActionCode.FINANCIAL_CASE_CLOSE]: RiskLevel.HIGH,
 };
 
 /**

@@ -21,6 +21,14 @@ import {
   CLAIM_ITEM_CASE_TARGET_TYPE,
   type ClaimItemHighImpactSavedIntent,
 } from '../claim-item/claim-item-approval.constants';
+import {
+  FINANCIAL_CASE_CLOSE_ACTION_CODE,
+  FINANCIAL_CASE_CLOSE_INTENT_VERSION,
+  FINANCIAL_CASE_CLOSE_STATUSES,
+  FINANCIAL_CASE_CLOSE_TARGET_TYPE,
+  type FinancialCaseCloseSavedIntent,
+} from '../case-status/financial-case-close.constants';
+import { applyCaseStatusChange } from '../case-status/case-status.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 
 const COLLECTION_DISPOSITION_APPROVAL_ACTION = 'COLLECTION_DISPOSITION_POST';
@@ -52,6 +60,9 @@ export class OfficeApprovalDomainSyncService {
     }
     if (this.isClaimItemHighImpactApproval(req)) {
       return this.syncClaimItemHighImpact(tx, req);
+    }
+    if (this.isFinancialCaseCloseApproval(req)) {
+      return this.syncFinancialCaseClose(tx, req);
     }
   }
 
@@ -105,6 +116,78 @@ export class OfficeApprovalDomainSyncService {
       req.actionCode === CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE &&
       (req.targetType === CLAIM_ITEM_TARGET_TYPE || req.targetType === CLAIM_ITEM_CASE_TARGET_TYPE)
     );
+  }
+
+  private isFinancialCaseCloseApproval(req: OfficeApprovalRequest): boolean {
+    return req.actionCode === FINANCIAL_CASE_CLOSE_ACTION_CODE && req.targetType === FINANCIAL_CASE_CLOSE_TARGET_TYPE;
+  }
+
+  private async syncFinancialCaseClose(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    switch (req.status) {
+      case OfficeApprovalStatus.APPROVED:
+        return this.approveFinancialCaseClose(tx, req);
+      case OfficeApprovalStatus.REJECTED:
+      case OfficeApprovalStatus.REVISION_REQUESTED:
+      case OfficeApprovalStatus.CANCELLED:
+        return;
+      case OfficeApprovalStatus.APPROVED_WITH_CHANGES:
+        throw new BadRequestException(
+          'Finansal dosya kapanisi degistirerek onaylanamaz; revizyon isteyin veya normal onaylayin.',
+        );
+      default:
+        return;
+    }
+  }
+
+  private async approveFinancialCaseClose(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    if (!req.approverUserId) {
+      throw new ConflictException('Onayli FINANCIAL_CASE_CLOSE approval kaydinda approverUserId yok.');
+    }
+    const intent = this.readFinancialCaseCloseIntent(req);
+    const claim = await tx.officeApprovalRequest.updateMany({
+      where: {
+        id: req.id,
+        status: OfficeApprovalStatus.APPROVED,
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+        runningStartedAt: new Date(),
+      },
+    });
+    if (claim.count === 0) {
+      throw new ConflictException('Finansal dosya kapanis onayi zaten yurutulmus veya yurutme icin kilitlenmis.');
+    }
+
+    await applyCaseStatusChange(tx, req.tenantId, intent.caseId, intent.status, req.approverUserId, intent.reason ?? undefined);
+
+    const done = await tx.officeApprovalRequest.updateMany({
+      where: {
+        id: req.id,
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
+        executedAt: new Date(),
+      },
+    });
+    if (done.count === 0) {
+      throw new ConflictException('Finansal dosya kapanis onayi yurutme sonucu isaretlenemedi.');
+    }
+  }
+
+  private readFinancialCaseCloseIntent(req: OfficeApprovalRequest): FinancialCaseCloseSavedIntent {
+    const value = req.savedIntent as Partial<FinancialCaseCloseSavedIntent> | null;
+    if (!value || typeof value !== 'object' || value.version !== FINANCIAL_CASE_CLOSE_INTENT_VERSION) {
+      throw new ConflictException('FINANCIAL_CASE_CLOSE savedIntent gecersiz.');
+    }
+    if (!value.caseId || value.caseId !== req.targetRef) {
+      throw new ConflictException('FINANCIAL_CASE_CLOSE savedIntent hedef bilgisi gecersiz.');
+    }
+    if (!value.status || typeof value.status !== 'string' || !FINANCIAL_CASE_CLOSE_STATUSES.has(value.status)) {
+      throw new ConflictException('FINANCIAL_CASE_CLOSE savedIntent status bilgisi gecersiz.');
+    }
+    return value as FinancialCaseCloseSavedIntent;
   }
 
   private async syncClaimItemHighImpact(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {

@@ -9,6 +9,11 @@ export const ACTION_BEHAVIOR_CATALOG: Record<string, string[]> = {
     "Onay sonrası dağıtım post edilmeye hazır hale gelir.",
     "Post aşamasında müvekkil/caseClient payable, kesinti, masraf/mahsup satırları kesinleşir.",
   ],
+  FINANCIAL_CASE_CLOSE: [
+    "Dosya finansal kapanış statüsüne geçirilir.",
+    "Onay verilene kadar dosya statüsü değişmez.",
+    "Kapanış işlemi mevcut CaseStatusService statü geçmişi ve decision log akışıyla uygulanır.",
+  ],
 };
 
 export function actionBehaviorNotes(actionCode: string): string[] | undefined {

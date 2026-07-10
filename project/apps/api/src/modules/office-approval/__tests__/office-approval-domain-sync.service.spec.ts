@@ -6,6 +6,11 @@ import {
   CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
   CLAIM_ITEM_INTENT_VERSION,
 } from '../../claim-item/claim-item-approval.constants';
+import {
+  FINANCIAL_CASE_CLOSE_ACTION_CODE,
+  FINANCIAL_CASE_CLOSE_INTENT_VERSION,
+  FINANCIAL_CASE_CLOSE_TARGET_TYPE,
+} from '../../case-status/financial-case-close.constants';
 import { OfficeApprovalDomainSyncService } from '../office-approval-domain-sync.service';
 
 const decidedAt = new Date('2026-01-01T12:00:00.000Z');
@@ -167,6 +172,150 @@ describe('DBIND-P1 OfficeApprovalDomainSyncService', () => {
 
     await expect(svc.syncAfterDecision(db as any, req({ approverUserId: null }) as any)).rejects.toBeInstanceOf(ConflictException);
     expect(db.collectionDisposition.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('OWN-29-C OfficeApprovalDomainSyncService financial case close', () => {
+  const financialCloseReq = (over: Record<string, unknown> = {}) => ({
+    id: 'financial-close-appr-1',
+    tenantId: 't1',
+    actionCode: FINANCIAL_CASE_CLOSE_ACTION_CODE,
+    targetType: FINANCIAL_CASE_CLOSE_TARGET_TYPE,
+    targetRef: 'case-1',
+    requesterUserId: 'requester-u',
+    approverUserId: 'approver-u',
+    status: OfficeApprovalStatus.APPROVED,
+    savedIntent: {
+      version: FINANCIAL_CASE_CLOSE_INTENT_VERSION,
+      caseId: 'case-1',
+      status: 'HITAM',
+      reason: 'tam ödeme',
+    },
+    ...over,
+  });
+
+  const financialCloseTx = (count = 1) => ({
+    officeApprovalRequest: {
+      updateMany: jest.fn().mockResolvedValue({ count }),
+    },
+    case: {
+      findFirst: jest.fn().mockResolvedValue({ caseStatus: 'DERDEST', isAutomationEnabled: true }),
+      update: jest.fn().mockResolvedValue({ id: 'case-1', caseStatus: 'HITAM' }),
+    },
+    caseStatusHistory: {
+      create: jest.fn().mockResolvedValue({ id: 'hist-1' }),
+    },
+    decisionLog: {
+      create: jest.fn().mockResolvedValue({ id: 'decision-1' }),
+    },
+  });
+
+  it('APPROVED FINANCIAL_CASE_CLOSE execution lock alir, CaseStatusService helper ile uygular ve SUCCEEDED isaretler', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = financialCloseTx();
+
+    await svc.syncAfterDecision(db as any, financialCloseReq() as any);
+
+    expect(db.officeApprovalRequest.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        id: 'financial-close-appr-1',
+        status: OfficeApprovalStatus.APPROVED,
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+        runningStartedAt: expect.any(Date),
+      },
+    });
+    expect(db.case.findFirst).toHaveBeenCalledWith({
+      where: { id: 'case-1', tenantId: 't1' },
+      select: { caseStatus: true, isAutomationEnabled: true },
+    });
+    expect(db.case.update).toHaveBeenCalledWith({
+      where: { id: 'case-1' },
+      data: {
+        caseStatus: 'HITAM',
+        isAutomationEnabled: false,
+        nextActionAt: null,
+      },
+    });
+    expect(db.caseStatusHistory.create).toHaveBeenCalledWith({
+      data: {
+        caseId: 'case-1',
+        fromStatus: 'DERDEST',
+        toStatus: 'HITAM',
+        reason: 'tam ödeme',
+        changedById: 'approver-u',
+        automationWasEnabled: false,
+      },
+    });
+    expect(db.decisionLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        caseId: 'case-1',
+        decisionType: 'STATUS_CHANGE',
+        decision: 'Statü değiştirildi: DERDEST -> HITAM',
+        reasoning: 'tam ödeme',
+        isAutomatic: false,
+      }),
+    });
+    expect(db.officeApprovalRequest.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        id: 'financial-close-appr-1',
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
+        executedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it.each([
+    OfficeApprovalStatus.REJECTED,
+    OfficeApprovalStatus.REVISION_REQUESTED,
+    OfficeApprovalStatus.CANCELLED,
+  ])('%s FINANCIAL_CASE_CLOSE icin status mutation yapmaz', async (status) => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = financialCloseTx();
+
+    await svc.syncAfterDecision(db as any, financialCloseReq({ status }) as any);
+
+    expect(db.case.update).not.toHaveBeenCalled();
+    expect(db.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('duplicate execution lock count=0 ise status mutation yapmaz', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = financialCloseTx(0);
+
+    await expect(svc.syncAfterDecision(db as any, financialCloseReq() as any)).rejects.toBeInstanceOf(ConflictException);
+    expect(db.case.update).not.toHaveBeenCalled();
+  });
+
+  it('APPROVED_WITH_CHANGES FINANCIAL_CASE_CLOSE icin fail-closed kalir', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = financialCloseTx();
+
+    await expect(
+      svc.syncAfterDecision(db as any, financialCloseReq({ status: OfficeApprovalStatus.APPROVED_WITH_CHANGES }) as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(db.case.update).not.toHaveBeenCalled();
+  });
+
+  it('savedIntent financial-close olmayan status tasiyorsa mutation baslamadan fail-closed olur', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = financialCloseTx();
+
+    await expect(
+      svc.syncAfterDecision(db as any, financialCloseReq({ savedIntent: {
+        version: FINANCIAL_CASE_CLOSE_INTENT_VERSION,
+        caseId: 'case-1',
+        status: 'AZIL',
+        reason: 'vekalet sona erdi',
+      } }) as any),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(db.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+    expect(db.case.update).not.toHaveBeenCalled();
   });
 });
 
