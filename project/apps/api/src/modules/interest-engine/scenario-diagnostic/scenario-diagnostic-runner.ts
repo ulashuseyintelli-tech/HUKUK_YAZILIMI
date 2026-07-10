@@ -30,6 +30,7 @@
 import type { PrismaClient } from '@prisma/client';
 import type { ScenarioDefinition } from '../scenario-support/scenario-definition';
 import {
+  cleanupMaterializedScenario,
   materializeScenario,
   MaterializedScenarioRefs,
 } from '../scenario-materializer/scenario-materializer';
@@ -81,6 +82,49 @@ export interface SyntheticDiagnosticRun {
   refs: MaterializedScenarioRefs;
 }
 
+export type ScenarioDiagnosticFailureStage =
+  | 'SETUP'
+  | 'CALCULATION'
+  | 'OBSERVATION'
+  | 'CLEANUP';
+
+/** Diagnostic-only failure metadata; it never infers or replaces a legal result. */
+export class ScenarioDiagnosticFailure extends Error {
+  readonly code = 'W03_DIAGNOSTIC_FAILURE';
+
+  constructor(
+    readonly stage: ScenarioDiagnosticFailureStage,
+    cause: unknown,
+    readonly priorFailure?: ScenarioDiagnosticFailure,
+  ) {
+    super(`W0.3 diagnostic ${stage.toLowerCase()} stage failed.`);
+    this.name = 'ScenarioDiagnosticFailure';
+    (this as Error & { cause?: unknown }).cause = cause;
+  }
+}
+
+function diagnosticFailure(
+  stage: ScenarioDiagnosticFailureStage,
+  cause: unknown,
+): ScenarioDiagnosticFailure {
+  return cause instanceof ScenarioDiagnosticFailure
+    ? cause
+    : new ScenarioDiagnosticFailure(stage, cause);
+}
+
+async function cleanupFailedSyntheticRun(
+  prisma: PrismaClient,
+  refs: MaterializedScenarioRefs,
+  failure: ScenarioDiagnosticFailure,
+): Promise<never> {
+  try {
+    await cleanupMaterializedScenario(prisma, refs);
+  } catch (cleanupCause) {
+    throw new ScenarioDiagnosticFailure('CLEANUP', cleanupCause, failure);
+  }
+  throw failure;
+}
+
 /**
  * Minimal prerequisite kurulumu (§15): senaryonun koşabilmesi için gereken
  * RateSchedule satırı + Office köprüsü. Şema gerçeği: `RateSchedule.tenantId`
@@ -119,38 +163,57 @@ export async function runSyntheticScenarioDiagnostic(
   def: ScenarioDefinition,
   opts: SyntheticDiagnosticOptions = {},
 ): Promise<SyntheticDiagnosticRun> {
-  const refs = await materializeScenario(prisma, def);
-  await seedLegalRate(prisma, refs.tenantId, opts.annualRate ?? 0.24);
+  let refs: MaterializedScenarioRefs;
+  try {
+    refs = await materializeScenario(prisma, def);
+  } catch (cause) {
+    throw diagnosticFailure('SETUP', cause);
+  }
 
-  const service = buildCaseBalanceService(prisma);
-  const balance = await service.computeCaseBalance(
-    refs.tenantId,
-    refs.caseId,
-    def.domainInput.asOfDate,
-  );
-  const display = toCaseBalanceDisplay({
-    tenantId: refs.tenantId,
-    caseId: refs.caseId,
-    balance,
-  });
+  try {
+    await seedLegalRate(prisma, refs.tenantId, opts.annualRate ?? 0.24);
+  } catch (cause) {
+    return cleanupFailedSyntheticRun(prisma, refs, diagnosticFailure('SETUP', cause));
+  }
 
-  const comparison = compareScenarioEvidence(def.expected, display);
-  const evidence: ScenarioEvidenceRecord = {
-    scenarioId: def.id,
-    mode: 'SYNTHETIC_SCENARIO',
-    classifications: [
-      'Deterministic Setup',
-      'Expected Evidence',
-      'Actual Runtime Observation',
-      'Diagnostic Output',
-    ],
-    observedAuthority: display.authority,
-    observedStatus: display.status,
-    observedBlockerCodes: extractBlockerCodes(display),
-    expected: def.expected,
-    comparison,
-  };
-  return { evidence, refs };
+  let balance: Awaited<ReturnType<CaseBalanceService['computeCaseBalance']>>;
+  try {
+    const service = buildCaseBalanceService(prisma);
+    balance = await service.computeCaseBalance(
+      refs.tenantId,
+      refs.caseId,
+      def.domainInput.asOfDate,
+    );
+  } catch (cause) {
+    return cleanupFailedSyntheticRun(prisma, refs, diagnosticFailure('CALCULATION', cause));
+  }
+
+  try {
+    const display = toCaseBalanceDisplay({
+      tenantId: refs.tenantId,
+      caseId: refs.caseId,
+      balance,
+    });
+    const comparison = compareScenarioEvidence(def.expected, display);
+    const evidence: ScenarioEvidenceRecord = {
+      scenarioId: def.id,
+      mode: 'SYNTHETIC_SCENARIO',
+      classifications: [
+        'Deterministic Setup',
+        'Expected Evidence',
+        'Actual Runtime Observation',
+        'Diagnostic Output',
+      ],
+      observedAuthority: display.authority,
+      observedStatus: display.status,
+      observedBlockerCodes: extractBlockerCodes(display),
+      expected: def.expected,
+      comparison,
+    };
+    return { evidence, refs };
+  } catch (cause) {
+    return cleanupFailedSyntheticRun(prisma, refs, diagnosticFailure('OBSERVATION', cause));
+  }
 }
 
 export interface OrganicDiagnosticOptions {
@@ -177,33 +240,52 @@ export async function runOrganicReadinessDiagnostic(
   opts: OrganicDiagnosticOptions,
 ): Promise<ScenarioEvidenceRecord[]> {
   const excluded = opts.excludeCaseIds ?? [];
-  const cases = await prisma.case.findMany({
-    where: {
-      tenantId: opts.tenantId,
-      ...(excluded.length > 0 ? { id: { notIn: excluded } } : {}),
-    },
-    orderBy: { createdAt: 'asc' },
-    take: opts.limit ?? 50,
-    select: { id: true },
-  });
+  let cases: Array<{ id: string }>;
+  try {
+    cases = await prisma.case.findMany({
+      where: {
+        tenantId: opts.tenantId,
+        ...(excluded.length > 0 ? { id: { notIn: excluded } } : {}),
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: opts.limit ?? 50,
+      select: { id: true },
+    });
+  } catch (cause) {
+    throw diagnosticFailure('OBSERVATION', cause);
+  }
 
-  const service = buildCaseBalanceService(prisma);
+  let service: CaseBalanceService;
+  try {
+    service = buildCaseBalanceService(prisma);
+  } catch (cause) {
+    throw diagnosticFailure('CALCULATION', cause);
+  }
   const records: ScenarioEvidenceRecord[] = [];
   for (const row of cases) {
-    const balance = await service.computeCaseBalance(opts.tenantId, row.id, opts.asOfDate);
-    const display = toCaseBalanceDisplay({
-      tenantId: opts.tenantId,
-      caseId: row.id,
-      balance,
-    });
-    records.push({
-      scenarioId: `organic:${row.id}`,
-      mode: 'ORGANIC_READINESS',
-      classifications: ['Actual Runtime Observation', 'Diagnostic Output'],
-      observedAuthority: display.authority,
-      observedStatus: display.status,
-      observedBlockerCodes: extractBlockerCodes(display),
-    });
+    let balance: Awaited<ReturnType<CaseBalanceService['computeCaseBalance']>>;
+    try {
+      balance = await service.computeCaseBalance(opts.tenantId, row.id, opts.asOfDate);
+    } catch (cause) {
+      throw diagnosticFailure('CALCULATION', cause);
+    }
+    try {
+      const display = toCaseBalanceDisplay({
+        tenantId: opts.tenantId,
+        caseId: row.id,
+        balance,
+      });
+      records.push({
+        scenarioId: `organic:${row.id}`,
+        mode: 'ORGANIC_READINESS',
+        classifications: ['Actual Runtime Observation', 'Diagnostic Output'],
+        observedAuthority: display.authority,
+        observedStatus: display.status,
+        observedBlockerCodes: extractBlockerCodes(display),
+      });
+    } catch (cause) {
+      throw diagnosticFailure('OBSERVATION', cause);
+    }
   }
   return records;
 }

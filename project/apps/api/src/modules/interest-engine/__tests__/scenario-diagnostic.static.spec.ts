@@ -101,4 +101,25 @@ describe('W0.3 scenario-diagnostic statik sınırları', () => {
     const disallowed = imports.filter((i) => !allowedPrefixes.some((p) => i.startsWith(p)));
     expect(disallowed).toEqual([]);
   });
+
+  it('organik gözlem sırası createdAt eşitliğinde id ile deterministiktir', () => {
+    const content = fs.readFileSync(
+      path.join(DIAGNOSTIC_DIR, 'scenario-diagnostic-runner.ts'),
+      'utf-8',
+    );
+    expect(content).toContain("orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]");
+  });
+
+  it('failure sınıfları yalnız diagnostic aşamalarıdır ve authority üretmez', () => {
+    const content = fs.readFileSync(
+      path.join(DIAGNOSTIC_DIR, 'scenario-diagnostic-runner.ts'),
+      'utf-8',
+    );
+    for (const stage of ['SETUP', 'CALCULATION', 'OBSERVATION', 'CLEANUP']) {
+      expect(content).toContain(`'${stage}'`);
+    }
+    for (const token of ['CANONICAL_CANDIDATE', 'LEGAL_RESULT', 'fallbackCalculation']) {
+      expect({ token, found: content.includes(token) }).toEqual({ token, found: false });
+    }
+  });
 });
