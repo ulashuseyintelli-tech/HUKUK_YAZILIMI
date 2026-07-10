@@ -38,8 +38,8 @@ export class AiService {
   }
 
   // Dosya için AI önerisi al
-  async getSuggestions(caseId: string): Promise<AiSuggestion[]> {
-    const caseData = await this.getCaseWithDetails(caseId);
+  async getSuggestions(tenantId: string, caseId: string): Promise<AiSuggestion[]> {
+    const caseData = await this.getCaseWithDetails(tenantId, caseId);
     if (!caseData) {
       throw new Error('Case not found');
     }
@@ -55,8 +55,8 @@ export class AiService {
 
 
   // Tahsilat tahmini
-  async getPrediction(caseId: string): Promise<AiPrediction> {
-    const caseData = await this.getCaseWithDetails(caseId);
+  async getPrediction(tenantId: string, caseId: string): Promise<AiPrediction> {
+    const caseData = await this.getCaseWithDetails(tenantId, caseId);
     if (!caseData) {
       throw new Error('Case not found');
     }
@@ -69,9 +69,9 @@ export class AiService {
   }
 
   // Dosya detaylarını al
-  private async getCaseWithDetails(caseId: string) {
-    return this.prisma.case.findUnique({
-      where: { id: caseId },
+  private async getCaseWithDetails(tenantId: string, caseId: string) {
+    return this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         debtors: {
           include: {

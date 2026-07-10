@@ -4,7 +4,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { runBatched } from './scheduler-batch.helper';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { TebligatService } from '../tebligat/tebligat.service'; // PR-S2: tebligat sonuç senkronu ortak kapı
-import { TebligatPttResult } from '../tebligat/dto/tebligat.dto';
 import { DueType } from '@prisma/client';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter'; // PR-3
 
@@ -770,42 +769,17 @@ export class SchedulerService {
   }
 
   /**
-   * PTT barkod sorgulama (mock - gerçek PTT API entegrasyonu için güncellenecek).
-   * PR-S2: Doğrudan db.tebligat.update KALDIRILDI. Mock sonuç → pttResult koduna çevrilir ve
-   * TebligatService.recordPttResult ortak kapısından geçirilir → Tebligat.update + CaseDebtor
-   * senkronu + istihbarat tetiği AYNI yoldan (B kararı: IADE_GELDI → ADRESTE_BULUNAMADI).
-   * İade halinde, recordPttResult'tan SONRA case-seviyesi takip görevi korunur (A kararı).
+   * PTT barkod sorgulama.
+   * NOT_INTEGRATED (P0 güvenlik/hukuki-doğruluk düzeltmesi): gerçek PTT API entegrasyonu
+   * henüz yok. Daha önce burada Math.random() ile üretilen sahte TESLIM_EDILDI/IADE_GELDI
+   * sonucu, TebligatService.recordPttResult ortak kapısı üzerinden CaseDebtor.serviceStatus'a
+   * kadar akıyordu (uydurma tebliğ tarihi → yanlış itiraz süresi/kesinleşme riski). Gerçek
+   * entegrasyon gelene kadar durum değiştirilmez; case-seviyesi takip görevi de üretilmez.
    */
   private async queryPttBarcode(tebligat: any) {
-    try {
-      // Mock: Gerçek PTT API entegrasyonu burada yapılacak. Şimdilik rastgele sonuç (test için).
-      const mockResults = ['TESLIM_EDILDI', 'IADE_GELDI', 'GONDERILDI'];
-      const randomResult = mockResults[Math.floor(Math.random() * mockResults.length)];
-
-      // GONDERILDI = sonuç yok → no-op
-      if (randomResult === 'GONDERILDI') return;
-
-      // B kararı: mock durumu → tek kapı pttResult koduna eşle
-      const pttResult =
-        randomResult === 'TESLIM_EDILDI'
-          ? TebligatPttResult.TESLIM_EDILDI
-          : TebligatPttResult.ADRESTE_BULUNAMADI; // IADE_GELDI
-
-      // Ortak senkron kapısı: Tebligat.update + CaseDebtor.serviceStatus + istihbarat (atomik)
-      await this.tebligatService.recordPttResult(tebligat.tenantId, tebligat.id, {
-        pttResult,
-        pttResultDate: new Date().toISOString(),
-      } as any);
-
-      this.logger.log(`✅ Tebligat senkronlandı: ${tebligat.barcodeNo} -> ${randomResult}`);
-
-      // A kararı: İade geldiyse case-seviyesi takip görevi (MERNİS sorgu) recordPttResult'tan SONRA korunur
-      if (randomResult === 'IADE_GELDI') {
-        await this.createTebligatFollowupTask(tebligat);
-      }
-    } catch (error) {
-      this.logger.error(`Barkod sorgulama hatası (${tebligat.barcodeNo}):`, error);
-    }
+    this.logger.warn(
+      `PTT barkod sorgu entegrasyonu aktif değil, tebligat ${tebligat.barcodeNo} için durum güncellenmedi (NOT_INTEGRATED)`,
+    );
   }
 
   /**
@@ -820,34 +794,6 @@ export class SchedulerService {
     } catch (error) {
       this.logger.error(`E-tebligat sorgulama hatası (${tebligat.barcodeNo}):`, error);
     }
-  }
-
-  /**
-   * Tebligat takip task'ı oluştur
-   */
-  private async createTebligatFollowupTask(tebligat: any) {
-    // Case bilgisini al
-    const caseData = await this.db.case.findUnique({
-      where: { id: tebligat.caseId },
-      select: { id: true, fileNumber: true, tenantId: true },
-    });
-
-    if (!caseData) return;
-
-    await this.db.task.create({
-      data: {
-        tenantId: caseData.tenantId,
-        caseId: caseData.id,
-        // G4a (A5 reversal): otomatik görev ATANMAMIŞ doğar (Dosya Sorumlusu DOER değil; assignee=doer sonradan manuel atanır).
-        title: `Tebligat İade - ${tebligat.recipientName}`,
-        description: `${caseData.fileNumber} dosyasında ${tebligat.recipientName}'a gönderilen tebligat iade geldi. MERNİS adresi sorgulanarak yeni tebligat çıkarılmalı.`,
-        status: 'PENDING',
-        priority: 'HIGH',
-        dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // 2 gün içinde
-      },
-    });
-
-    this.logger.log(`✅ Tebligat takip task'ı oluşturuldu: ${caseData.fileNumber}`);
   }
 
   /**

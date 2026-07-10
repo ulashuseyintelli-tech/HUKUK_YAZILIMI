@@ -26,9 +26,9 @@ export class RiskService {
   constructor(private prisma: PrismaService) {}
 
   // Tam risk analizi yap
-  async analyzeCase(caseId: string): Promise<RiskAnalysis> {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+  async analyzeCase(tenantId: string, caseId: string): Promise<RiskAnalysis> {
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         collections: true,
         debtors: {
@@ -293,17 +293,17 @@ export class RiskService {
   }
 
   // Dosya için son risk raporu
-  async getLatestReport(caseId: string) {
+  async getLatestReport(tenantId: string, caseId: string) {
     return this.prisma.riskReport.findFirst({
-      where: { caseId },
+      where: { caseId, case: { tenantId } },
       orderBy: { createdAt: "desc" },
     });
   }
 
   // Dosya için tüm risk raporları
-  async getReportHistory(caseId: string) {
+  async getReportHistory(tenantId: string, caseId: string) {
     return this.prisma.riskReport.findMany({
-      where: { caseId },
+      where: { caseId, case: { tenantId } },
       orderBy: { createdAt: "desc" },
       take: 10,
     });

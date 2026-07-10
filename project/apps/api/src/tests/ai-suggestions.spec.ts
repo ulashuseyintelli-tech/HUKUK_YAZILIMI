@@ -14,7 +14,7 @@ describe('AiService - Suggestion Tests', () => {
 
   const mockPrisma = {
     case: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     decisionLog: {
       create: jest.fn(),
@@ -66,9 +66,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCase);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCase);
 
-      const suggestions = await service.getSuggestions('case-1');
+      const suggestions = await service.getSuggestions('tenant-1', 'case-1');
 
       expect(suggestions.length).toBeGreaterThan(0);
       expect(suggestions[0].action).toContain('Ödeme emri');
@@ -91,9 +91,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCase);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCase);
 
-      const suggestions = await service.getSuggestions('case-1');
+      const suggestions = await service.getSuggestions('tenant-1', 'case-1');
 
       expect(suggestions.length).toBeGreaterThan(0);
       expect(suggestions[0].action).toContain('Tebligat');
@@ -115,9 +115,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCase);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCase);
 
-      const suggestions = await service.getSuggestions('case-1');
+      const suggestions = await service.getSuggestions('tenant-1', 'case-1');
 
       expect(suggestions.length).toBeGreaterThan(0);
       expect(suggestions.some(s => s.action.includes('Banka') || s.action.includes('haciz'))).toBe(true);
@@ -139,9 +139,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCase);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCase);
 
-      const suggestions = await service.getSuggestions('case-1');
+      const suggestions = await service.getSuggestions('tenant-1', 'case-1');
 
       expect(suggestions.length).toBeGreaterThan(0);
       expect(suggestions[0].action).toContain('Satış');
@@ -170,9 +170,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCaseWithAssets);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCaseWithAssets);
 
-      const prediction = await service.getPrediction('case-1');
+      const prediction = await service.getPrediction('tenant-1', 'case-1');
 
       expect(prediction.collectionProbability).toBeGreaterThan(50);
     });
@@ -194,9 +194,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCaseHighRisk);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCaseHighRisk);
 
-      const prediction = await service.getPrediction('case-1');
+      const prediction = await service.getPrediction('tenant-1', 'case-1');
 
       expect(prediction.collectionProbability).toBeLessThan(50);
       expect(prediction.riskFactors).toContain('Yüksek risk skoru');
@@ -219,9 +219,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCaseWithPayments);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCaseWithPayments);
 
-      const prediction = await service.getPrediction('case-1');
+      const prediction = await service.getPrediction('tenant-1', 'case-1');
 
       expect(prediction.recommendations.some(r => r.includes('taksit'))).toBe(true);
     });
@@ -244,9 +244,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCase);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCase);
 
-      const suggestions = await service.getSuggestions('case-1');
+      const suggestions = await service.getSuggestions('tenant-1', 'case-1');
 
       suggestions.forEach(s => {
         expect(s.confidence).toBeGreaterThanOrEqual(0);
@@ -270,9 +270,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCase);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCase);
 
-      const suggestions = await service.getSuggestions('case-1');
+      const suggestions = await service.getSuggestions('tenant-1', 'case-1');
       const validPriorities = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 
       suggestions.forEach(s => {
@@ -296,9 +296,9 @@ describe('AiService - Suggestion Tests', () => {
         formType: null,
       };
 
-      mockPrisma.case.findUnique.mockResolvedValue(mockCase);
+      mockPrisma.case.findFirst.mockResolvedValue(mockCase);
 
-      const suggestions = await service.getSuggestions('case-1');
+      const suggestions = await service.getSuggestions('tenant-1', 'case-1');
 
       suggestions.forEach(s => {
         expect(s.reasoning).toBeDefined();

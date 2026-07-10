@@ -10,20 +10,20 @@ export class RiskController {
 
   // Dosya için risk analizi yap
   @Post("case/:caseId/analyze")
-  async analyzeCase(@Param("caseId") caseId: string) {
-    return this.riskService.analyzeCase(caseId);
+  async analyzeCase(@CurrentUser() user: any, @Param("caseId") caseId: string) {
+    return this.riskService.analyzeCase(user.tenantId, caseId);
   }
 
   // Son risk raporu
   @Get("case/:caseId/latest")
-  async getLatestReport(@Param("caseId") caseId: string) {
-    return this.riskService.getLatestReport(caseId);
+  async getLatestReport(@CurrentUser() user: any, @Param("caseId") caseId: string) {
+    return this.riskService.getLatestReport(user.tenantId, caseId);
   }
 
   // Risk raporu geçmişi
   @Get("case/:caseId/history")
-  async getReportHistory(@Param("caseId") caseId: string) {
-    return this.riskService.getReportHistory(caseId);
+  async getReportHistory(@CurrentUser() user: any, @Param("caseId") caseId: string) {
+    return this.riskService.getReportHistory(user.tenantId, caseId);
   }
 
   // Yüksek riskli dosyalar

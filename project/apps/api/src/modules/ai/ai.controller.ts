@@ -14,8 +14,8 @@ export class AiController {
 
   // Dosya için AI önerisi al
   @Get('case/:caseId/suggest')
-  async getSuggestions(@Param('caseId') caseId: string) {
-    const suggestions = await this.aiService.getSuggestions(caseId);
+  async getSuggestions(@Request() req: any, @Param('caseId') caseId: string) {
+    const suggestions = await this.aiService.getSuggestions(req.user.tenantId, caseId);
     return {
       success: true,
       data: suggestions,
@@ -24,8 +24,8 @@ export class AiController {
 
   // Dosya için tahsilat tahmini
   @Get('case/:caseId/predict')
-  async getPrediction(@Param('caseId') caseId: string) {
-    const prediction = await this.aiService.getPrediction(caseId);
+  async getPrediction(@Request() req: any, @Param('caseId') caseId: string) {
+    const prediction = await this.aiService.getPrediction(req.user.tenantId, caseId);
     return {
       success: true,
       data: prediction,
@@ -44,11 +44,12 @@ export class AiController {
 
   // Toplu öneri al (birden fazla dosya için)
   @Post('batch-suggest')
-  async batchSuggest(@Body() body: { caseIds: string[] }) {
+  async batchSuggest(@Request() req: any, @Body() body: { caseIds: string[] }) {
+    const tenantId = req.user.tenantId;
     const results = await Promise.all(
       body.caseIds.map(async (caseId) => {
         try {
-          const suggestions = await this.aiService.getSuggestions(caseId);
+          const suggestions = await this.aiService.getSuggestions(tenantId, caseId);
           return { caseId, suggestions, error: null };
         } catch (error: any) {
           return { caseId, suggestions: [], error: error.message };
