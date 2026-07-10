@@ -1161,6 +1161,23 @@ Status: **OWNER ARBITRATED (2026-07-10)** — tasarım kararı sabitlendi, imple
 
 ---
 
+## ADR-014 Split-PR Baseline Execution Plan
+
+ID: ADR-014-SPLIT-PR-PLAN
+Title: ADR-014 Canonical Legal Calculation Core — baseline split-PR yürütme planı (release plan, owner-approved v1)
+Classification: **Execution Plan / Release Plan** — analiz DEĞİL, teknik borç DEĞİL. ADR-014 implementasyonunu küçük, doğrulanabilir, en düşük riskli PR'lara bölen program-yönetimi artefaktı. Uygulama ekipleri için referans plan.
+Problem: ADR-014 cutover'ının implementasyonu 15 normatif PR adımı (PR-0..PR-14) + `ADR-014-SCENARIO-INFRA` enabler'ı içeriyor; branch `961bbaf3` bu işi 72 dosya/+6623 satırda topluca taşıyor ama wholesale merge NO-GO (GO-ANALYZE). Yapılandırılmış bir yürütme planı olmadan hangi PR'ın hangi kanıtla merge edilebileceği belirsiz kalır ve "CI geçti, merge edelim" refleksi risk taşır.
+Business Value: "Done ≠ Mergeable" ayrımını her PR için Acceptance Gate ile sabitler; production-görünür/geri-dönüşü-zor değişiklikleri (Owner Gate REQUIRED) otomatik-gate'lilerden ayırır; gereksiz onay trafiğini azaltır; anti-bloat sınırıyla cutover hattının platform projesine dönüşmesini engeller.
+Technical Value: Wave 0 (verification capability enabler) → Wave 1 (core hardening) → Wave 2 (fee/trace/snapshot + ✗ fix) → Wave 3 (cutover) yapısı; hazırlık-bağımlılığı vs merge/verification-bağımlılığı ayrımı; her PR için Acceptance Gate + Evidence Source + Owner Gate; dalga-bazlı rollback; seri/paralel yürütme kuralları; ADR-014/ADR-013/PAC-001-A disposition sınırları.
+Priority: HIGH (implementasyonun referans yol haritası)
+Depends On: `ADR-014-SCENARIO-INFRA` (OWNER ARBITRATED); ADR-014 (LOCKED); Diagnostic Readiness Architecture Audit + Scenario Infrastructure Design GO-ANALYZE (COMPLETE).
+Unlock Condition: Bu owner-approved baseline yalnız yürütme sırasını ve merge kriterlerini sabitler. Implementation AYRI GO-IMPLEMENT'ler gerektirir; sıradaki hat **ADR-014 Wave 0 Implementation** (REVERSAL `OPEN_OWNER_DECISION` kararına bağlı).
+Estimated Size: S docs-only (plan belgesi)
+Related Modules: `project/docs/design/adr-014-split-pr-plan.md` (kanonik plan belgesi), `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`, `product-backlog.md` `ID: ADR-014-SCENARIO-INFRA`/`ID: CCB-001`.
+Status: **APPROVED / BASELINE EXECUTION PLAN v1 (2026-07-10)**. Kanonik belge: `project/docs/design/adr-014-split-pr-plan.md`. Kritik terminoloji: W0 implementation prerequisite DEĞİL, DB-gated verification capability enabler'ıdır; Done ≠ Mergeable; ADR-014 bir Scenario Platform istemiyor; branch `961bbaf3` wholesale merge edilmeyecek; REVERSAL = `OPEN_OWNER_DECISION`. Owner Gate REQUIRED = PR-11/PR-12/PR-14 (production-görünür/geri-dönüşü-zor). Revizyon v2/v3 olarak işlenir. Bu kayıt kod/test/schema/migration/runtime değişikliği yaratmaz ve implementation'ı yetkilendirmez.
+
+---
+
 ## Canonical Claim Balance Clean-Break Workstream (CCB)
 
 ID: CCB-001
