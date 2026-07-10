@@ -4837,6 +4837,7 @@ export type DebtorIssueCode =
   | "SERVICE_FAILED"
   | "RISK_CONCORDAT"
   | "RISK_BANKRUPTCY"
+  | "RISK_VERY_HIGH"
   | "RISK_ADDRESS_SUSPECT"
   | "STALE_30D"
   | "NO_ASSET_QUERY";
