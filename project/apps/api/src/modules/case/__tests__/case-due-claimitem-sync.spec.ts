@@ -6,7 +6,7 @@
  * için heuristic çalışmaz.
  */
 
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ClaimItemType } from '@prisma/client';
 import { CaseService } from '../case.service';
 import { DueType, InterestType } from '../dto/case.dto';
@@ -118,6 +118,77 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
 
     expect(tx.claimItem.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [DueType.NAFAKA, DueType.PRINCIPAL],
+    [DueType.NAFAKA, DueType.EXPENSE],
+    [DueType.PRINCIPAL, DueType.NAFAKA],
+    [DueType.OTHER, DueType.NAFAKA],
+  ])('updateDue %s -> %s generic geçişini bütün mutationlardan önce reddeder', async (current, requested) => {
+    const tx = makeTx({
+      due: {
+        findFirst: jest.fn(async () => makeDue({ type: current })),
+        update: jest.fn(),
+      },
+      claimItem: {
+        findMany: jest.fn(),
+        update: jest.fn(),
+      },
+    });
+    const { service } = makeService(tx);
+
+    await expect(
+      service.updateDue('tenant-1', 'case-1', 'due-1', { type: requested }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(tx.due.update).not.toHaveBeenCalled();
+    expect(tx.claimItem.findMany).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+  });
+
+  it('updateDue NAFAKA -> NAFAKA same-side güncellemeye izin verir', async () => {
+    const tx = makeTx({
+      due: {
+        findFirst: jest.fn(async () => makeDue({ type: DueType.NAFAKA })),
+        update: jest.fn(async ({ data }: any) => makeDue({ ...data, type: DueType.NAFAKA })),
+      },
+      claimItem: {
+        findMany: jest.fn(async () => []),
+        update: jest.fn(),
+      },
+    });
+    const { service } = makeService(tx);
+
+    await service.updateDue('tenant-1', 'case-1', 'due-1', {
+      type: DueType.NAFAKA,
+      amount: 750,
+    });
+
+    expect(tx.due.update).toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+  });
+
+  it('updateDue non-NAFAKA -> non-NAFAKA geçişini ve Due -> ClaimItem sync yönünü korur', async () => {
+    const tx = makeTx({
+      due: {
+        findFirst: jest.fn(async () => makeDue({ type: DueType.PRINCIPAL })),
+        update: jest.fn(async ({ data }: any) => makeDue({ ...data, type: DueType.EXPENSE })),
+      },
+      claimItem: {
+        findMany: jest.fn(async () => [{ id: 'claim-1' }]),
+        update: jest.fn(async ({ data }: any) => ({ id: 'claim-1', ...data })),
+      },
+    });
+    const { service } = makeService(tx);
+
+    await service.updateDue('tenant-1', 'case-1', 'due-1', { type: DueType.EXPENSE });
+
+    expect(tx.due.update).toHaveBeenCalled();
+    expect(tx.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'claim-1' },
+      data: expect.objectContaining({ itemType: ClaimItemType.EXPENSE }),
+    });
   });
 
   it('updateDue markerlı ClaimItem amount/description/dueDate alanlarını günceller', async () => {
@@ -347,5 +418,22 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
 
     expect(tx.due.create).not.toHaveBeenCalled();
     expect(tx.claimItem.create).not.toHaveBeenCalled();
+  });
+
+  it('cross-tenant updateDue transition guard veya mutation yüzeyine ulaşmaz', async () => {
+    const tx = makeTx({
+      case: { findFirst: jest.fn(async () => null) },
+      due: { findFirst: jest.fn(), update: jest.fn() },
+      claimItem: { findMany: jest.fn(), update: jest.fn() },
+    });
+    const { service } = makeService(tx);
+
+    await expect(
+      service.updateDue('tenant-other', 'case-1', 'due-1', { type: DueType.NAFAKA }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(tx.due.findFirst).not.toHaveBeenCalled();
+    expect(tx.due.update).not.toHaveBeenCalled();
+    expect(tx.claimItem.findMany).not.toHaveBeenCalled();
   });
 });

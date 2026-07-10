@@ -20,6 +20,16 @@ const DUE_TYPES = [
   { value: "OTHER", label: "Diğer" },
 ];
 
+export function dueTypeOptionsForMode(existingType?: string) {
+  if (existingType === "NAFAKA") {
+    return DUE_TYPES.filter((type) => type.value === "NAFAKA");
+  }
+  if (existingType) {
+    return DUE_TYPES.filter((type) => type.value !== "NAFAKA");
+  }
+  return DUE_TYPES;
+}
+
 const INTEREST_TYPES = [
   { value: "YASAL", label: "Yasal Faiz (%24)" },
   { value: "TICARI_DEGISEN", label: "Ticari Faiz - TCMB Avans (Değişken)" },
@@ -46,6 +56,7 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
     currency: "TRY",
     interestType: "YASAL", // Default: Yasal Faiz
   });
+  const availableDueTypes = dueTypeOptionsForMode(due?.type);
 
   useEffect(() => {
     if (due) {
@@ -151,7 +162,7 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
               onChange={(e) => setForm({ ...form, type: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
-              {DUE_TYPES.map((t) => (
+              {availableDueTypes.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
