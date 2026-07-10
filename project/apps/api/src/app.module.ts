@@ -15,6 +15,7 @@ import { AutomationModule } from "./modules/automation/automation.module";
 import { NotificationModule } from "./modules/notification/notification.module";
 import { DocumentModule } from "./modules/document/document.module";
 import { RiskModule } from "./modules/risk/risk.module";
+import { DebtorScoringModule } from "./modules/debtor-scoring/debtor-scoring.module";
 import { AiModule } from "./modules/ai/ai.module";
 import { CaseStatusModule } from "./modules/case-status/case-status.module";
 import { ExecutionOfficeModule } from "./modules/execution-office/execution-office.module";
@@ -157,6 +158,7 @@ function getConditionalImports(): Type<unknown>[] {
     NotificationModule,
     DocumentModule,
     RiskModule,
+    DebtorScoringModule,
     AiModule,
     CaseStatusModule,
     ExecutionOfficeModule,
