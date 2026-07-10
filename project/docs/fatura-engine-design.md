@@ -8,6 +8,8 @@
 > doğrulandı). Sıradaki ürün kazancı = **makine-yazısı belgeler** (fatura/ilam/sözleşme/kira) — düzenli layout,
 > yüksek OCR doğruluğu. İlk ve en kolay: **Fatura** (en hızlı ticari değer, doğrudan ClaimItem üretir).
 
+> **2026-07-10 semantic alignment (VER-05 / CAN-CUT-01 D5):** O-1/O-2 kapatıldı. Fatura alacağı KDV dahil brüt tutarlı tek `PRINCIPAL` ClaimItem'dır; KDV kırılımı `metadata.kdv` içinde provenance/açıklama olarak tutulur ve ayrı invoice `TAX_KDV` ClaimItem üretilmez. Mevcut rakip auto-generate yolunun gate/deprecation'ı ayrı GO-IMPLEMENT ister; inventory olmadan conversion/backfill yoktur.
+
 **İlgili kilitli dokümanlar (bu doküman onları GENİŞLETİR, çelişmez):**
 - [`claim-item-wizard-1-design.md`](./claim-item-wizard-1-design.md) — kanonik çok-kalem ClaimItem modeli (manuel giriş). **Fatura Motoru = bu modelin OCR on-ramp'i.**
 - [`case-instrument-canonical-design.md`](./case-instrument-canonical-design.md) — CaseInstrument kanonik ayrımı + **D4 kilidi** (kambiyo-only).
@@ -43,7 +45,7 @@ Due→ClaimItem yolu işletilsin.
 | party-type + kimlik | `inferPartyType` (Kurum/Şahıs) · `drawerIdentityNo` + `sanitizeOcrIdentityNo` (VKN/TCKN checksum) | çek epiği — fatura için AYNEN |
 | per-page AI | `buildPageAiExtract` + `PAGE_EXTRACTION_PROMPT` | additive alan ekleyerek |
 | classify-file | `POST /ocr/classify-file` → `classifyDocument(WithAI)` → `DetectedCaseType` (fatura→ILAMSIZ) | per-page extraction'dan ayrı |
-| **KDV ŞEMA** | `ClaimItem`/`Due`: `hasKdv`/`kdvRate`/`hasBsmv`/`hasKkdf` + `ClaimItemType` `TAX_KDV/TAX_BSMV/TAX_KKDF` | model hazır, OCR+mapper DOLDURMUYOR |
+| **KDV TAŞIMA YÜZEYİ** | `Due.hasKdv`/`kdvRate` → `ClaimItem.metadata.kdv`; `ClaimItemType` vergi enum'ları genel modelde mevcut | D5 frozen: invoice için tek brüt `PRINCIPAL`; ayrı `TAX_KDV` üretilmez |
 | `faturaBilgileri` (manuel) | `ProfessionalClaimItemForm` | manuel çok-kalem formu zaten fatura alt-nesnesi topluyor |
 
 ### YOK (gerçek yeni iş)
@@ -63,7 +65,7 @@ Due→ClaimItem yolu işletilsin.
 | **F-1** | Fatura ClaimItem yolu = **`dues[]` köprüsü → kanonik `ClaimItem`** (PRINCIPAL, `sourceDocumentType=FATURA`, `referenceNo=faturaNo`). **CaseInstrument DEĞİL.** (claim-item-wizard **O-2/O-4** ile hizalı; uzun vade doğrudan ClaimItem.) |
 | **F-2** | Sıra = **OCR-only (G1/G2) → XML-first (G3).** Input önce scan/print PDF. |
 | **F-3** | **REUSE zorunlu:** `inferPartyType` + `drawerIdentityNo`/`sanitizeOcrIdentityNo` + `buildPageAiExtract`/`PAGE_EXTRACTION_PROMPT`. Paralel/yeni çıkarım modeli YASAK. |
-| **F-4** | KDV = `ClaimItem`/`Due`'nun **MEVCUT** alanlarına (`hasKdv`/`kdvRate`) ve/veya ayrı `TAX_KDV` kalemine map. **Yeni vergi tablosu YOK.** |
+| **F-4** | KDV kırılımı `Due.hasKdv`/`kdvRate` üzerinden `ClaimItem.metadata.kdv`'ye taşınır; fatura KDV dahil brüt tutarı tek `PRINCIPAL`'dır ve ayrı invoice `TAX_KDV` kalemi üretilmez. **Yeni vergi tablosu YOK.** |
 | **F-5** | ALACAKLI tarafı (fatura alacaklısı genelde **müvekkil**) → mevcut müvekkil/creditor akışıyla hizala; **çift-kayıt YASAK.** |
 | **F-6** | **D4 DOKUNULMAZ.** Fatura ≠ CaseInstrument. Fatura-özel alanlar `ClaimItem.referenceNo`/`sourceDocumentNo`/`metadata` içinde (O-4). |
 
@@ -77,7 +79,7 @@ Due→ClaimItem yolu işletilsin.
 faturaNo      = documentNo            ✅
 faturaTarihi  = issueDate             ✅
 vade          = dueDate               ✅
-toplam tutar  = amount                ✅   (KDV-dahil mi? → O-2 karar)
+toplam tutar  = amount                ✅   (KDV-dahil brüt toplam; O-2 CLOSED/FROZEN)
 para birimi   = currency              ✅
 borçlu        = drawerName + drawerIdentityNo(VKN/TCKN)   ✅ (çek epiği)
 ALACAKLI      = creditorName + creditorIdentityNo(VKN)    ➕
@@ -105,9 +107,9 @@ scan(documentType=FATURA) → DebtDocumentResult{debtInfo, parties[alacaklı + b
 ```
 
 - **F-1/O-2 ile hizalı:** kambiyo-dışı şerit Faz-1 `dues[]` köprüsünden ilerler (büyük cutover yok).
-- **KDV map (O-1 açık karar):** `hasKdv=true` + `kdvRate`; KDV ya PRINCIPAL'da bayrak ya da ayrı `TAX_KDV` kalemi.
-- **Tutar semantiği (O-2 açık karar, Av.):** takip PRINCIPAL = **KDV-dahil toplam** mı, **net + ayrı `TAX_KDV`** mı? (İcra pratiği genelde KDV-dahil toplam; ama ayrı kalem de mümkün — hukuki karar.)
-- **Çift-sayım yasağı (Corollary-1):** PRINCIPAL tek kaynak; KDV'yi **hem göm hem ayrı kalem yapma**. Toplamlar yalnız `ClaimItem`'dan.
+- **KDV map (O-1 CLOSED/FROZEN):** `hasKdv=true` + `kdvRate` ve varsa KDV tutarı `ClaimItem.metadata.kdv` içinde provenance/açıklamadır; ayrı invoice `TAX_KDV` oluşturulmaz.
+- **Tutar semantiği (O-2 CLOSED/FROZEN):** takip `PRINCIPAL` tutarı KDV-dahil brüt fatura toplamıdır.
+- **Çift-sayım yasağı (Corollary-1):** Fatura `PRINCIPAL` tek parasal kaynaktır; KDV ayrıca ClaimItem olarak eklenmez. Toplamlar yalnız `ClaimItem`'dan.
 - **Taşıma kararı (O-5):** fatura `referenceNo`/`sourceDocumentType` — `DueDto`'ya alan mı eklenir, yoksa köprüde `ClaimItem.referenceNo`/`sourceDocumentNo`'ya mı yazılır? (O-4: ClaimItem metadata/referenceNo tercih.)
 
 **Test:** unit (Due→ClaimItem + KDV map) + canlı `createCase` → ClaimItem + KDV alanları doğrulama (DB).
@@ -122,14 +124,14 @@ scan(documentType=FATURA) → DebtDocumentResult{debtInfo, parties[alacaklı + b
 
 ---
 
-## 7. Açık kararlar (Av./Ulaş-gated — G2 başlamadan netleşmeli)
+## 7. Karar durumu (O-1/O-2/O-4 kapalı; O-3/O-5 owner-gated)
 
 | # | Karar |
 |---|---|
-| **O-1** | KDV = PRINCIPAL'a gömülü bayrak mı / ayrı `TAX_KDV` kalemi mi? |
-| **O-2** | Takip PRINCIPAL tutarı = KDV-dahil toplam mı / net + ayrı KDV mi? (icra hukuku) |
+| **O-1 — CLOSED/FROZEN** | KDV kırılımı `metadata.kdv` içindedir; ayrı invoice `TAX_KDV` ClaimItem üretilmez. |
+| **O-2 — CLOSED/FROZEN** | Takip `PRINCIPAL` tutarı KDV-dahil brüt fatura toplamıdır. |
 | **O-3** | Alacaklı = müvekkil eşleştirme (mevcut creditor/client akışı) — çift-kayıt önleme yöntemi |
-| **O-4** | Tek-fatura çoklu-satır (kalem) → tek PRINCIPAL mı, satır-başı kalem mi? (MVP önerisi: tek toplam) |
+| **O-4 — CLOSED/FROZEN** | Tek fatura, satır sayısından bağımsız olarak KDV-dahil brüt toplamlı tek `PRINCIPAL` ClaimItem üretir. |
 | **O-5** | `referenceNo`/`sourceDocumentType` taşıma = `DueDto` alanı mı / köprüde ClaimItem'a mı? |
 
 ---
@@ -142,7 +144,7 @@ identityNo          drawerIdentityNo + sanitizeOcrIdentityNo (VKN)  → AYNEN (c
 per-page AI         buildPageAiExtract + PAGE_EXTRACTION_PROMPT     → FATURA zaten var, alan ekle
 doc classification  classify-file / classifyDocument               → fatura→ILAMSIZ (mevcut)
 claim üretimi       debtInfo→Due→ClaimItem (belge-agnostik köprü)   → AYNEN
-KDV                 ClaimItem/Due.hasKdv/kdvRate + TAX_KDV enum     → şema hazır, doldur
+KDV                 Due.hasKdv/kdvRate → ClaimItem.metadata.kdv     → tek brüt PRINCIPAL, ayrı invoice TAX_KDV yok
 ```
 
 ---
@@ -151,9 +153,9 @@ KDV                 ClaimItem/Due.hasKdv/kdvRate + TAX_KDV enum     → şema ha
 
 1. **Paralel çıkarım YOK** — mevcut OCR tiplerini genişlet; yeni model/servis kurma.
 2. **D4 DOKUNMA** — fatura ≠ CaseInstrument (O-4); fatura-özel alan = `ClaimItem.referenceNo`/`metadata`.
-3. **KDV** = mevcut şema alanları; yeni vergi tablosu yok.
+3. **KDV** = `ClaimItem.metadata.kdv` provenance/açıklaması; yeni vergi tablosu ve ayrı invoice `TAX_KDV` yok.
 4. **Alacaklı** = müvekkil akışıyla hizala; çift-kayıt yok (F-5).
-5. **Çift-sayım yok** — PRINCIPAL tek kaynak (Due/ClaimItem); KDV hem göm hem ayrı kalem olmaz.
+5. **Çift-sayım yok** — PRINCIPAL tek kaynak (Due/ClaimItem); KDV ayrıca ClaimItem olarak üretilmez.
 6. **claim-item-wizard-1 ile çelişme** — Fatura Motoru o modelin OCR on-ramp'i; ortak hedef = kanonik `ClaimItem`.
 
 ---
@@ -162,12 +164,11 @@ KDV                 ClaimItem/Due.hasKdv/kdvRate + TAX_KDV enum     → şema ha
 
 ```text
 G1  Fatura OCR alanları (prompt + types additive + creditor party + KDV extraction)
-G2  Fatura → Due(PRINCIPAL) → ClaimItem + KDV map   (O-1..O-5 ÖNCE netleşir)
+G2  Fatura → Due(PRINCIPAL) → ClaimItem + KDV map   (O-1/O-2/O-4 FROZEN; O-3/O-5 ayrıca netleşir)
 G3  XML-first (UBL-TR parser + .xml allowlist + XML→Due)   [SONRA, ayrı PR ailesi]
 ```
 
 Her gate: **plan → onay → izole git worktree (Windows junction-audit) → additive fix → unit + CANLI gerçek
 PDF gate → ayrı PR → tek CI → merge onayı.** (Çek epiğindeki disiplinin aynısı.)
 
-**Başlangıç ön-koşulu:** O-1/O-2 (KDV + tutar semantiği) hukuki kararı G2'den önce; G1 bunları beklemeden
-(saf extraction) başlayabilir.
+**Başlangıç ön-koşulu:** O-1/O-2/O-4, VER-05 / CAN-CUT-01 D5 ile kapatıldı; bu karar G2 runtime implementasyonu, rakip auto-generate gate/deprecation'ı, inventory, conversion veya backfill yetkisi vermez. O-3/O-5 ve her runtime adımı ayrı owner GO bekler.
