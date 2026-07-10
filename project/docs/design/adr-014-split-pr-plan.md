@@ -1,11 +1,11 @@
 # ADR-014 Split-PR Baseline Execution Plan
 
-**Status:** APPROVED / BASELINE EXECUTION PLAN v1.1
+**Status:** APPROVED / BASELINE EXECUTION PLAN v1.2
 **Date:** 2026-07-10
 **Owner:** Ulaş
 **Related:** `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`, `product-backlog.md` (`ID: ADR-014-SCENARIO-INFRA`, `ID: ADR-014-SPLIT-PR-PLAN`, `ID: CCB-001`), `decision-log.md` (2026-07-10)
 
-> **Revizyon geçmişi:** v1 (2026-07-10, PR #1032) — ilk baseline. **v1.1 (2026-07-10)** — REVERSAL owner arbitration (CONDITIONAL OPTION B) sonrası: §11 REVERSAL çözüldü, §0 terminolojisi ve PR-1B acceptance gate güncellendi (gerçek `CollectionService.cancel()` DB integration eklendi).
+> **Revizyon geçmişi:** v1 (2026-07-10, PR #1032) — ilk baseline. **v1.1 (2026-07-10)** — REVERSAL owner arbitration (CONDITIONAL OPTION B) sonrası: §11 REVERSAL çözüldü, §0 terminolojisi ve PR-1B acceptance gate güncellendi (gerçek `CollectionService.cancel()` DB integration eklendi). **v1.2 (2026-07-10)** — W0.2 iskele owner arbitration (Hard Stop → RESOLVED BY OWNER DECISION): iskele katmanı (Tenant/Client/Debtor/Case/CaseDebtor) materializer içinde **Prisma-direct** kurulur; G1–G6 acceptance gate'leri bağlayıcı (bkz. §3 W0.2 İskele Revizyonu). Ground-truth: `CaseService` 10-bağımlılıklı/elle kurulamaz, gerçek servisler Conditional-B'nin kaçındığı yan-etkileri (event/outbox/audit) getirir, repo'nun yerleşik DB-gated emsali iskeleyi zaten Prisma-direct kurar. Conditional Option B'nin diğer TÜM şartları, ClaimItem/Ledger direct-write, `Scenario → Materializer → DB` yönü ve `Materializer PASS ≠ CollectionService.cancel() PASS` guardrail'i DEĞİŞMEDİ.
 
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
@@ -69,7 +69,33 @@ Yani W0 "önce kod yazılamaz" demek DEĞİL; "DB-gated kanıt üretilemez" deme
 
 | PR | Kapsam | Önkoşul |
 |---|---|---|
-| **W0** Scenario Infra (minimal) | Arbitre edilen dilim: saf domain contract + tek domain builder + hybrid materializer + diagnostic dual-mode + evidence model. Kendi içinde 3 alt-PR'a bölünebilir (contract+builder / materializer / dual-mode) — ama platform DEĞİL. | **REVERSAL RESOLVED (Conditional Option B, §11)** — materializer reversal yolu direct-write olarak kilitlendi. Detay: `product-backlog.md` `ID: ADR-014-SCENARIO-INFRA`. |
+| **W0** Scenario Infra (minimal) | Arbitre edilen dilim: saf domain contract + tek domain builder + hybrid materializer + diagnostic dual-mode + evidence model. Kendi içinde 3 alt-PR'a bölünebilir (contract+builder / materializer / dual-mode) — ama platform DEĞİL. W0.1 (contract+builder) **MERGED** (PR #1037, `f998af79`). | **REVERSAL RESOLVED (Conditional Option B, §11)** — materializer reversal yolu direct-write olarak kilitlendi. Detay: `product-backlog.md` `ID: ADR-014-SCENARIO-INFRA`. |
+
+#### W0.2 İskele Revizyonu (v1.2 — owner arbitration, 2026-07-10)
+
+```text
+"W0.2 iskele katmanı (Tenant/Client/Debtor/Case/CaseDebtor), materializer içinde
+Prisma-direct kurulur. G1–G6 acceptance gate'leri bağlayıcıdır."
+
+DEĞİŞMEYENLER: Conditional Option B'nin diğer tüm şartları · ClaimItem üç-tutar +
+LedgerEntry PAYMENT/REVERSAL dedicated direct-write · Scenario → Materializer → DB
+yönü · Materializer production service davranışını TAKLİT ETMEZ · Materializer
+PASS ≠ CollectionService.cancel() PASS · production cancel path ayrı DB-gated
+integration test (PR-1B gate'i) · registry/platformlaştırma ERTELENMİŞ.
+```
+
+**Bağlayıcı W0.2 Acceptance Gate'leri (G1–G6):**
+
+| Gate | İçerik |
+|---|---|
+| G1 İlişki bütünlüğü | `tenantId` tek kaynaktan damgalanır; Case→Client, CaseDebtor→Case/Debtor, Collection→Case, LedgerEntry→Case(+`collectionId`), REVERSAL'da `reversesLedgerEntryId` ZORUNLU |
+| G2 Şema-geçerlilik | ClaimItem üç-tutar (`originalAmount`+`demandedAmount`+`amount`) her zaman set |
+| G3 Side-effect negatif assertion | **Scoped before/after delta==0** — materialization öncesi ilgili tenant/case/scenario kapsamındaki timeline/outbox/journal/audit sayıları alınır, sonrası yeniden ölçülür, delta==0 doğrulanır; mümkünse caseId/tenantId/correlationId/aggregateId ile scope edilir; **global tablo count==0 assertion YAPILMAZ** (paylaşılan/önceden-veri-içeren DB'de yanlış sonuç üretir) |
+| G4 Production-erişilemezlik | Statik guard: production src (module/service/controller), materializer'ı import edemez |
+| G5 Self-check | materialize→`computeCaseBalance` == in-memory `engine.computeBalance` (aynı senaryo) |
+| G6 DB fail-safe | `resolveTestDatabaseUrl` — yalnız `hukuk_*_gate` (MPB-025 altyapısı aynen) |
+
+`WRITE_PATH_NOT_EXERCISED` işareti yalnız MEVCUT evidence modelinde temsil edilebiliyorsa kullanılır (serbest-metin metadata alanı kabul); yeni enum / yeni evidence sınıfı / yeni mimari kavram gerekiyorsa **HARD STOP**.
 
 ### WAVE 1 — Core Calculation Hardening (ADR-014 ✓)
 
