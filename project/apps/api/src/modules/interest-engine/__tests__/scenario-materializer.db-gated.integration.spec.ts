@@ -1,4 +1,4 @@
-/** ADR-014 W0.2 PAYMENT-only materializer validation on a disposable database. */
+/** ADR-014 W0.2 materializer validation on a disposable database (PAYMENT + Conditional Option B REVERSAL). */
 import { PrismaClient } from '@prisma/client';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import {
@@ -347,5 +347,58 @@ describeWithDisposableDb('W0.2 PAYMENT-only materializer - disposable DB', () =>
     expect(await scopedState(refs.tenantId)).toEqual(EMPTY_STATE);
     expect(await scopedState(refs.secondaryTenantId!)).toEqual(EMPTY_STATE);
     expect(await scopedState(sentinelId)).toEqual({ ...EMPTY_STATE, tenant: 1 });
+  });
+
+  it('commits an opt-in REVERSAL row in the same transaction with reversesLedgerEntryId set, and no timeline/outbox/journal/audit side-effects', async () => {
+    const paymentId = 'w02-reversal-pay-1';
+    const def = simpleScenario('w02-reversal', paymentId);
+    const refs = await materializeScenario(prisma, def, {
+      reversals: [{ ofPaymentId: paymentId }],
+    });
+    refsToClean.push(refs);
+
+    expect(refs.reversalLedgerEntryIds).toHaveLength(1);
+    expect(refs.writePathNote).toContain('WRITE_PATH_NOT_EXERCISED');
+
+    const reversal = await prisma.ledgerEntry.findUniqueOrThrow({
+      where: { id: refs.reversalLedgerEntryIds[0] },
+    });
+    expect(reversal.entryType).toBe('REVERSAL');
+    expect(reversal.reversesLedgerEntryId).toBe(refs.paymentLedgerEntryIds[0]);
+    expect(Number(reversal.amount)).toBe(-2_000);
+    expect(reversal.tenantId).toBe(refs.tenantId);
+    expect(reversal.caseId).toBe(refs.caseId);
+
+    const [timeline, outbox, journal, audit] = await Promise.all([
+      (prisma as never as { icrabotTimelineEntry: { count(a: object): Promise<number> } })
+        .icrabotTimelineEntry.count({ where: { caseId: refs.caseId } }),
+      (prisma as never as { icrabotOutboxAction: { count(a: object): Promise<number> } })
+        .icrabotOutboxAction.count({ where: { tenantId: refs.tenantId } }),
+      (prisma as never as { accountingJournalEntry: { count(a: object): Promise<number> } })
+        .accountingJournalEntry.count({ where: { tenantId: refs.tenantId } }),
+      (prisma as never as { auditLog: { count(a: object): Promise<number> } })
+        .auditLog.count({ where: { tenantId: refs.tenantId } }),
+    ]);
+    expect({ timeline, outbox, journal, audit }).toEqual({ timeline: 0, outbox: 0, journal: 0, audit: 0 });
+
+    // Mevcut main davranışı SABİTLENİR: computeCaseBalance yalnız PAYMENT okur
+    // (entryType filtresi) — REVERSAL'sız in-memory sonuçla AYNI kalır
+    // (netting PR-1B'nin işi, burada beklenmez).
+    await seedRate(refs.tenantId);
+    const dbResult = await caseBalance.computeCaseBalance(refs.tenantId, refs.caseId, AS_OF);
+    const memoryResult = inMemoryResult(def);
+    const dbTry = dbResult.currencyResults.find((currency) => currency.currency === 'TRY');
+    expect(dbTry!.result!.totalDue).toBeCloseTo(memoryResult.totalDue, 2);
+  });
+
+  it('rejects a REVERSAL for an unknown ofPaymentId (G1) and rolls back the whole scenario', async () => {
+    const def = simpleScenario('w02-reversal-missing');
+    const tenantId = expectedTenantId(def.id);
+
+    await expect(
+      materializeScenario(prisma, def, { reversals: [{ ofPaymentId: 'no-such-payment' }] }),
+    ).rejects.toThrow('REVERSAL icin orijinal PAYMENT bulunamadi');
+
+    expect(await scopedState(tenantId)).toEqual(EMPTY_STATE);
   });
 });

@@ -1,12 +1,31 @@
 /**
- * ADR-014 Wave 0.2 - PAYMENT-only scenario materializer.
+ * ADR-014 Wave 0.2 - scenario materializer (PAYMENT + Conditional Option B REVERSAL).
  *
  * This test-support adapter consumes the canonical ScenarioDefinition and creates
  * deterministic persistence state in one transaction. It does not calculate,
  * allocate, cancel, journal, emit events, or become production authority.
+ *
+ * Governance reconciliation (2026-07-10, owner decision — bağlayıcı): Conditional
+ * Option B GEÇERLİDİR. REVERSAL direct-write, YALNIZ test/disposable DB kapsamında,
+ * `reversesLedgerEntryId` zorunlu ilişkiyle, opt-in olarak desteklenir.
+ * GUARDRAIL: Materializer PASS, production tahsilat-iptal write-path'inin
+ * doğrulandığı anlamına GELMEZ — o ayrı bir DB-gated integration testidir (PR-1B).
  */
 import type { Prisma, PrismaClient } from '@prisma/client';
 import type { ScenarioDefinition } from '../scenario-support/scenario-definition';
+
+/** Conditional Option B — REVERSAL kurulum niyeti (contract DEĞİL; DB-setup detayı). */
+export interface MaterializeReversalIntent {
+  /** ScenarioDefinition.domainInput.payments[].id — orijinal PAYMENT ledger satırı. */
+  ofPaymentId: string;
+  /** Verilmezse orijinal tutarın negatifi yazılır (production cancel deseniyle aynı işaret). */
+  amount?: number;
+}
+
+export interface MaterializeOptions {
+  /** Conditional Option B direct-write REVERSAL kurulumları (opt-in). */
+  reversals?: MaterializeReversalIntent[];
+}
 
 export interface MaterializedScenarioRefs {
   scenarioId: string;
@@ -19,7 +38,19 @@ export interface MaterializedScenarioRefs {
   claimItemIds: string[];
   collectionIds: string[];
   paymentLedgerEntryIds: string[];
+  reversalLedgerEntryIds: string[];
+  /**
+   * Conditional Option B kanıt işareti (serbest-metin metadata — yeni enum DEĞİL):
+   * timeline/outbox/journal/audit yazılmadı; production cancel write-path'i
+   * BU KURULUMLA doğrulanmış SAYILMAZ.
+   */
+  writePathNote: string;
 }
+
+const WRITE_PATH_NOTE =
+  'WRITE_PATH_NOT_EXERCISED: materializer direct-write kurulumudur; ' +
+  'timeline/outbox/journal/audit uretilmedi ve gercek tahsilat-iptal ' +
+  'production write-path bu kurulumla dogrulanmis sayilmaz (PR-1B ayri gate).';
 
 const DOMAIN_TO_PRISMA_INTEREST: Record<string, 'YASAL' | 'TICARI'> = {
   LEGAL_3095: 'YASAL',
@@ -59,6 +90,7 @@ function isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
 async function materializeInTransaction(
   tx: Prisma.TransactionClient,
   def: ScenarioDefinition,
+  opts: MaterializeOptions,
 ): Promise<MaterializedScenarioRefs> {
   const tenant = await tx.tenant.create({
     data: {
@@ -173,6 +205,33 @@ async function materializeInTransaction(
     paymentLedgerEntryIds.push(ledger.id);
   }
 
+  // ── REVERSAL (Conditional Option B — direct-write, G1 zorunlu ilişki) ───────
+  const reversalLedgerEntryIds: string[] = [];
+  for (const [index, rev] of (opts.reversals ?? []).entries()) {
+    const original = await tx.ledgerEntry.findFirst({
+      where: { id: rev.ofPaymentId, tenantId: tenant.id, caseId: caseRow.id, entryType: 'PAYMENT' },
+    });
+    if (!original) {
+      throw new Error(
+        `materializeScenario: REVERSAL icin orijinal PAYMENT bulunamadi (ofPaymentId=${rev.ofPaymentId}) - G1 iliski zorunlu.`,
+      );
+    }
+    const reversal = await tx.ledgerEntry.create({
+      data: {
+        id: entityId(def, 'reversal', index),
+        tenantId: tenant.id,
+        caseId: caseRow.id,
+        collectionId: original.collectionId,
+        entryType: 'REVERSAL',
+        amount: rev.amount ?? -Number(original.amount),
+        currency: original.currency,
+        entryDate: original.entryDate,
+        reversesLedgerEntryId: original.id,
+      },
+    });
+    reversalLedgerEntryIds.push(reversal.id);
+  }
+
   return {
     scenarioId: def.id,
     tenantId: tenant.id,
@@ -184,6 +243,8 @@ async function materializeInTransaction(
     claimItemIds,
     collectionIds,
     paymentLedgerEntryIds,
+    reversalLedgerEntryIds,
+    writePathNote: WRITE_PATH_NOTE,
   };
 }
 
@@ -197,9 +258,10 @@ async function materializeInTransaction(
 export async function materializeScenario(
   prisma: PrismaClient,
   def: ScenarioDefinition,
+  opts: MaterializeOptions = {},
 ): Promise<MaterializedScenarioRefs> {
   try {
-    return await prisma.$transaction((tx) => materializeInTransaction(tx, def));
+    return await prisma.$transaction((tx) => materializeInTransaction(tx, def, opts));
   } catch (error) {
     if (isUniqueConstraintError(error)) {
       throw new DuplicateScenarioMaterializationError(def.id, error);
@@ -208,12 +270,18 @@ export async function materializeScenario(
   }
 }
 
-/** Test/disposable DB cleanup scoped to the materializer-created tenants. */
+/**
+ * Test/disposable DB cleanup scoped to the materializer-created tenants.
+ * REVERSAL satırları önce silinir — `reversesLedgerEntryId` self-FK'sı
+ * `onDelete: Restrict` olduğundan orijinal PAYMENT satırı REVERSAL hâlâ ona
+ * işaret ederken silinemez.
+ */
 export async function cleanupMaterializedScenario(
   prisma: PrismaClient,
   refs: MaterializedScenarioRefs,
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    await tx.ledgerEntry.deleteMany({ where: { tenantId: refs.tenantId, entryType: 'REVERSAL' } });
     await tx.ledgerEntry.deleteMany({ where: { tenantId: refs.tenantId } });
     await tx.collection.deleteMany({ where: { tenantId: refs.tenantId } });
     await tx.claimItem.deleteMany({ where: { tenantId: refs.tenantId } });

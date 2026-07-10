@@ -1,4 +1,4 @@
-/** ADR-014 W0.2 static guards for PAYMENT-only test-support isolation. */
+/** ADR-014 W0.2 static guards for test-support isolation (PAYMENT + Conditional Option B REVERSAL). */
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -78,19 +78,8 @@ describe('W0.2 scenario-materializer static boundaries', () => {
     }
   });
 
-  it('keeps owner-removed relationship surfaces absent', () => {
-    const removedTokens = [
-      ['REVER', 'SAL'].join(''),
-      ['reverses', 'LedgerEntryId'].join(''),
-      ['Materialize', 'ReversalIntent'].join(''),
-      ['rever', 'sals'].join(''),
-    ];
+  it('uses one callback transaction for materialization, including opt-in REVERSAL writes', () => {
     const content = materializerFiles.map((file) => fs.readFileSync(file, 'utf-8')).join('\n');
-    for (const token of removedTokens) expect(content).not.toContain(token);
-  });
-
-  it('uses one callback transaction for materialization', () => {
-    const content = materializerFiles.map((file) => fs.readFileSync(file, 'utf-8')).join('\n');
-    expect(content).toContain('prisma.$transaction((tx) => materializeInTransaction(tx, def))');
+    expect(content).toContain('prisma.$transaction((tx) => materializeInTransaction(tx, def, opts))');
   });
 });
