@@ -33,6 +33,7 @@ import {
   cleanupMaterializedScenario,
   materializeScenario,
   MaterializedScenarioRefs,
+  MaterializeReversalIntent,
 } from '../scenario-materializer/scenario-materializer';
 import {
   compareScenarioEvidence,
@@ -74,6 +75,8 @@ function buildCaseBalanceService(prisma: PrismaClient): CaseBalanceService {
 export interface SyntheticDiagnosticOptions {
   /** Yıllık oran (LEGAL_3095 seed'i; default 0.24). Hukuki yorum DEĞİL — kurulum verisi. */
   annualRate?: number;
+  /** W0.2 Conditional-B REVERSAL kurulumları (materializer'a geçer, opt-in). */
+  reversals?: MaterializeReversalIntent[];
 }
 
 export interface SyntheticDiagnosticRun {
@@ -165,7 +168,9 @@ export async function runSyntheticScenarioDiagnostic(
 ): Promise<SyntheticDiagnosticRun> {
   let refs: MaterializedScenarioRefs;
   try {
-    refs = await materializeScenario(prisma, def);
+    refs = await materializeScenario(prisma, def, {
+      ...(opts.reversals ? { reversals: opts.reversals } : {}),
+    });
   } catch (cause) {
     throw diagnosticFailure('SETUP', cause);
   }
