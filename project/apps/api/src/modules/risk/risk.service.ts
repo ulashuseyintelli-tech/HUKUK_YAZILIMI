@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { WorkflowStage } from "@prisma/client";
+import { filterConfirmedCollections, sumConfirmedCollections } from "../../common/collection-confirmed.util";
 
 export interface RiskFactors {
   debtorAssetScore: number;      // Borçlu varlık skoru (0-25)
@@ -110,11 +111,8 @@ export class RiskService {
   // Tahsilat geçmişi skoru (0-25, düşük = iyi)
   private calculateCollectionScore(caseData: any): number {
     const totalDebt = Number(caseData.principalAmount || 0);
-    const totalCollected = caseData.collections.reduce(
-      (sum: number, c: any) => sum + Number(c.amount),
-      0
-    );
-    
+    const totalCollected = sumConfirmedCollections(caseData.collections);
+
     if (totalDebt === 0) return 12; // Orta risk
     
     const collectionRate = totalCollected / totalDebt;
@@ -170,8 +168,8 @@ export class RiskService {
     );
     if (hasObjection) score += 5;
     
-    // Kısmi ödeme var mı?
-    if (caseData.collections.length > 0) score -= 3;
+    // Kısmi ödeme var mı? (yalnız CONFIRMED tahsilat sayılır)
+    if (filterConfirmedCollections(caseData.collections).length > 0) score -= 3;
     
     // Tebligat teslim edildi mi?
     if (caseData.notifications.length > 0) score -= 2;

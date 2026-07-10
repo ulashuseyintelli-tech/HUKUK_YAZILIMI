@@ -211,7 +211,7 @@ describe('AiService - Suggestion Tests', () => {
         principalAmount: 50000,
         riskScore: 40,
         debtors: [],
-        collections: [{ amount: 10000 }], // Kısmi ödeme var
+        collections: [{ amount: 10000, status: 'CONFIRMED' }], // Kısmi ödeme var (yalnız CONFIRMED sayılır)
         enforcementActions: [],
         decisionLogs: [],
         lifecycleEvents: [],

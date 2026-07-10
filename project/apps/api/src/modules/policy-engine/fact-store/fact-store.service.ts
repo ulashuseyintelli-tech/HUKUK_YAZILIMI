@@ -8,6 +8,7 @@ import {
   CacheEntry,
   buildFactKey,
 } from './fact-store.types';
+import { sumConfirmedCollections } from '../../../common/collection-confirmed.util';
 
 // ComputedMetrics type for backward compatibility
 interface ComputedMetrics {
@@ -149,7 +150,7 @@ export class FactStoreService {
         createdAt: true,
         riskScore: true,
         collections: {
-          select: { amount: true },
+          select: { amount: true, status: true },
         },
       },
     });
@@ -159,10 +160,8 @@ export class FactStoreService {
     }
 
     const totalDebt = Number(caseData.principalAmount || 0);
-    const collectedAmount = caseData.collections.reduce(
-      (sum, c) => sum + Number(c.amount),
-      0,
-    );
+    // Yalnız CONFIRMED tahsilat sayılır (COLLECTION-STATUS-FILTER-HOTFIX)
+    const collectedAmount = sumConfirmedCollections(caseData.collections);
     const caseAgeDays = Math.floor(
       (Date.now() - caseData.createdAt.getTime()) / (1000 * 60 * 60 * 24),
     );
