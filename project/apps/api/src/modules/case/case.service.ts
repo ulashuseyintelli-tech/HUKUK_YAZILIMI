@@ -3,6 +3,7 @@ import { PrismaService } from "@/prisma/prisma.service";
 import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
+import { claimItemNormalUpdateAmounts } from "../claim-item/claim-item-amount-contract";
 import {
   resolveCaseInstrumentType,
   buildCaseInstrumentData,
@@ -959,6 +960,7 @@ export class CaseService {
           this.prisma.claimItem.aggregate({
             where: { caseId: c.id },
             _sum: { demandedAmount: true },
+            _count: true,
           }),
         ]);
         
@@ -966,7 +968,9 @@ export class CaseService {
         const totalExpense = Number(expenseAgg._sum?.totalAmount || 0);
         const expenseCollected = Number(expenseAgg._sum?.paidAmount || 0);
         // Toplam alacak: ClaimItem varsa oradan, yoksa principalAmount'tan
-        const totalClaim = Number(claimAgg._sum?.demandedAmount || 0) || Number(c.principalAmount || 0);
+        const totalClaim = claimAgg._count > 0
+          ? Number(claimAgg._sum?.demandedAmount ?? 0)
+          : Number(c.principalAmount ?? 0);
         
         // Borçu adresleriyle birlikte döndür
         const debtorsWithAddress = c.debtors.map((d: any) => ({
@@ -1304,9 +1308,7 @@ export class CaseService {
       where: { id: claimItem.id },
       data: {
         itemType,
-        originalAmount: amount,
-        demandedAmount: amount,
-        amount,
+        ...claimItemNormalUpdateAmounts(amount),
         currency: due.currency || "TRY",
         description: due.description,
         dueDate: due.dueDate instanceof Date ? due.dueDate : new Date(due.dueDate),

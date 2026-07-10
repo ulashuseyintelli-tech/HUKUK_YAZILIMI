@@ -22,6 +22,10 @@ import {
   type ClaimItemHighImpactSavedIntent,
 } from '../claim-item/claim-item-approval.constants';
 import {
+  claimItemCreationAmounts,
+  claimItemNormalUpdateAmounts,
+} from '../claim-item/claim-item-amount-contract';
+import {
   FINANCIAL_CASE_CLOSE_ACTION_CODE,
   FINANCIAL_CASE_CLOSE_INTENT_VERSION,
   FINANCIAL_CASE_CLOSE_STATUSES,
@@ -441,7 +445,7 @@ export class OfficeApprovalDomainSyncService {
       tenantId,
       caseId: patch.caseId,
       itemType: patch.itemType,
-      amount: patch.amount,
+      ...claimItemCreationAmounts(patch.amount),
       currency: patch.currency || 'TRY',
       sourceDocumentId: patch.sourceDocumentId,
       sourceDocumentType: patch.sourceDocumentType,
@@ -467,7 +471,7 @@ export class OfficeApprovalDomainSyncService {
   private buildClaimItemUpdateData(patch: Record<string, unknown>): Record<string, unknown> {
     const data: Record<string, unknown> = {};
     if (patch.itemType) data.itemType = patch.itemType;
-    if (patch.amount !== undefined) data.amount = patch.amount;
+    if (patch.amount !== undefined) Object.assign(data, claimItemNormalUpdateAmounts(patch.amount));
     if (patch.currency) data.currency = patch.currency;
     if (patch.interestType) data.interestType = patch.interestType;
     if (patch.interestRate !== undefined) data.interestRate = patch.interestRate;

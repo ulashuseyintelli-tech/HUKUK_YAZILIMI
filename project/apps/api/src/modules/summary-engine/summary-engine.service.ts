@@ -15,6 +15,7 @@ import {
 import { AncillaryType } from '../interest-engine/types/domain.types';
 // G4a: sınıflandırma TEK OTORİTE (ikinci kopya yok). mapItemTypeToAncillary + masraf/fer'i kuralı buradan.
 import { mapItemTypeToAncillary as classifierMapAncillary, isCostItemType } from '../interest-engine/classification/claim-item-classifier';
+import { ClaimItemService } from '../claim-item/claim-item.service';
 
 // ============================================================
 // TYPES
@@ -197,6 +198,7 @@ export class SummaryEngineService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly tbk100Allocator?: TBK100AllocatorService,
+    @Optional() private readonly claimItemService?: ClaimItemService,
   ) {}
 
   async onModuleInit() {
@@ -304,8 +306,8 @@ export class SummaryEngineService implements OnModuleInit {
 
     // Kalemleri özet formatına dönüştür
     const itemSummaries: ClaimItemSummary[] = items.map(item => {
-      const originalAmount = this.toNumber(item.originalAmount) || this.toNumber(item.amount);
-      const demandedAmount = this.toNumber(item.demandedAmount) || this.toNumber(item.amount);
+      const originalAmount = this.amountOrLegacy(item.originalAmount, item.amount);
+      const demandedAmount = this.amountOrLegacy(item.demandedAmount, item.amount);
       const collectedAmount = this.toNumber(item.collectedAmount) || 0;
       
       return {
@@ -492,6 +494,13 @@ export class SummaryEngineService implements OnModuleInit {
     if (value === null || value === undefined) return 0;
     if (typeof value === 'number') return value;
     return Number(value);
+  }
+
+  private amountOrLegacy(
+    canonical: Decimal | number | null | undefined,
+    legacy: Decimal | number | null | undefined,
+  ): number {
+    return this.toNumber(canonical ?? legacy);
   }
 
   /**
@@ -701,7 +710,7 @@ export class SummaryEngineService implements OnModuleInit {
     const itemsByCategory = new Map<string, { id: string; remaining: number }[]>();
 
     for (const item of items) {
-      const demandedAmount = this.toNumber(item.demandedAmount) || this.toNumber(item.amount);
+      const demandedAmount = this.amountOrLegacy(item.demandedAmount, item.amount);
       const collectedAmount = this.toNumber(item.collectedAmount) || 0;
       const remaining = Math.max(0, demandedAmount - collectedAmount);
 
@@ -870,7 +879,7 @@ export class SummaryEngineService implements OnModuleInit {
 
     for (let i = 0; i < sortedItems.length && remainingAmount > 0; i++) {
       const item = sortedItems[i];
-      const demandedAmount = this.toNumber(item.demandedAmount) || this.toNumber(item.amount);
+      const demandedAmount = this.amountOrLegacy(item.demandedAmount, item.amount);
       const collectedAmount = this.toNumber(item.collectedAmount) || 0;
       const remaining = demandedAmount - collectedAmount;
 
@@ -893,6 +902,7 @@ export class SummaryEngineService implements OnModuleInit {
    */
   async updateDemandedAmount(
     tenantId: string,
+    actorUserId: string,
     claimItemId: string,
     newDemandedAmount: number,
   ): Promise<any> {
@@ -904,7 +914,7 @@ export class SummaryEngineService implements OnModuleInit {
       throw new Error('Alacak kalemi bulunamadı');
     }
 
-    const originalAmount = this.toNumber(item.originalAmount) || this.toNumber(item.amount);
+    const originalAmount = this.amountOrLegacy(item.originalAmount, item.amount);
     
     if (newDemandedAmount > originalAmount) {
       throw new Error(`Talep edilen tutar (${newDemandedAmount}) orijinal tutarı (${originalAmount}) aşamaz`);
@@ -919,10 +929,16 @@ export class SummaryEngineService implements OnModuleInit {
       throw new Error(`Talep edilen tutar (${newDemandedAmount}) tahsil edilen tutarın (${collectedAmount}) altına düşemez`);
     }
 
-    return this.prisma.claimItem.update({
-      where: { id: claimItemId },
-      data: { demandedAmount: newDemandedAmount },
-    });
+    if (!this.claimItemService) {
+      throw new Error('ClaimItem approval service is unavailable');
+    }
+
+    return this.claimItemService.updateFromUser(
+      tenantId,
+      actorUserId,
+      claimItemId,
+      { amount: newDemandedAmount },
+    );
   }
 
   /**

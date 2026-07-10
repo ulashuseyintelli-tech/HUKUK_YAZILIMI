@@ -483,7 +483,10 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
       claimItem: {
         findFirst: jest.fn().mockResolvedValue(item),
         update: jest.fn().mockResolvedValue({ ...item, amount: 1200, updatedAt: new Date('2026-01-02T00:00:00.000Z') }),
-        create: jest.fn(),
+        create: jest.fn().mockResolvedValue(item),
+      },
+      case: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'case-1' }),
       },
       auditLog: {
         create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
@@ -511,7 +514,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     });
     expect(db.claimItem.update).toHaveBeenCalledWith({
       where: { id: 'ci-1' },
-      data: { amount: 1200 },
+      data: { demandedAmount: 1200, amount: 1200 },
     });
     expect(db.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -535,6 +538,50 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
         executedAt: expect.any(Date),
       },
     });
+  });
+
+  it('APPROVED create executor original, demanded ve mirror alanlarini esit yazar', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = claimItemTx();
+    const request = claimItemReq({
+      operation: 'CREATE',
+      claimItemId: undefined,
+      proposedPatch: {
+        caseId: 'case-1',
+        itemType: 'PRINCIPAL',
+        amount: 0,
+      },
+      currentSnapshot: undefined,
+      currentSnapshotHash: undefined,
+    }, {
+      targetType: 'CLAIM_ITEM_CASE',
+      targetRef: 'case-1',
+    });
+
+    await svc.syncAfterDecision(db as any, request as any);
+
+    expect(db.claimItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ originalAmount: 0, demandedAmount: 0, amount: 0 }),
+    });
+  });
+
+  it('APPROVED amount=0 update mirrorlar ve originalAmount alanini yazmaz', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = claimItemTx({
+      claimItem: {
+        findFirst: jest.fn().mockResolvedValue(item),
+        update: jest.fn().mockResolvedValue({ ...item, demandedAmount: 0, amount: 0 }),
+        create: jest.fn(),
+      },
+    });
+
+    await svc.syncAfterDecision(db as any, claimItemReq({ proposedPatch: { amount: 0 } }) as any);
+
+    expect(db.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: { demandedAmount: 0, amount: 0 },
+    });
+    expect(db.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('originalAmount');
   });
 
   it('stale ClaimItem snapshot proposal uygulanmasini engeller', async () => {

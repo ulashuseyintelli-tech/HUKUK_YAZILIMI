@@ -286,6 +286,37 @@ describe("CasePaymentPreviewService", () => {
     expectNoFinancialMutations(prisma);
   });
 
+  it("fallback outstanding keeps demandedAmount=0 instead of legacy amount", async () => {
+    const prisma = makePrisma({
+      claimItem: {
+        ...modelWithCount(1),
+        findMany: jest.fn(async () => [{
+          demandedAmount: 0,
+          amount: 1000,
+          collectedAmount: 0,
+        }]),
+      },
+    });
+    const balance = {
+      computeCaseBalance: jest.fn().mockRejectedValue(new Error("canonical unavailable")),
+    };
+    const service = new CasePaymentPreviewService(prisma as never, balance as never);
+
+    const result = await service.preview({
+      tenantId: "tenant-1",
+      caseId: "case-1",
+      input: { amount: 100 },
+    });
+
+    expect(result.balanceImpact).toMatchObject({
+      currentOutstandingAmount: 0,
+      appliedAmount: 0,
+      overpaymentAmount: 100,
+      projectedOutstandingAmount: 0,
+    });
+    expectNoFinancialMutations(prisma);
+  });
+
   it("closed collection case status returns blocking acceptance without writes", async () => {
     const prisma = makePrisma({
       case: {
