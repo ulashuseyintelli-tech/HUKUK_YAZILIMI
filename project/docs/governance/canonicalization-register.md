@@ -35,7 +35,7 @@ Tanımların ve uygulama kurallarının bağlayıcı metni `canonicalization-pol
 | CAN-DEAD-04 | Notifications FE | `components/notifications/*` dışarıdan hiç import edilmiyor | `settings/notifications` aktif sayfası | DEAD_CODE | delete | P1 | Low | High |
 | CAN-DEAD-05 | AutoReminderRules | `auto-reminder-rules.tsx:44,52,58` yalnız localStorage; dışarıdan import yok | Task/Calendar backend (product kararı) | DEAD_CODE | delete | P1 | Low | High |
 | CAN-DEAD-06 | LawyerCalendar | `lawyer-calendar.tsx:27-35` hardcoded mock event array; dışarıdan import yok | `CalendarService` `/calendar/events` | DEAD_CODE | delete | P1 | Low | High |
-| CAN-CUT-01 | Due / ClaimItem | `DueModal` + `ClaimItemPanel` aynı case detay sayfasında paralel render (`cases/[id]/page.tsx:63,68,2806,3974`) | `ClaimItem` + `interest-engine` | CUTOVER | inventory | P1 | Critical | High |
+| CAN-CUT-01 | Due / ClaimItem | `DueModal` + `ClaimItemPanel` aynı case detay sayfasında paralel render (`cases/[id]/page.tsx:63,68,2806,3974`) | `ClaimItem` + `interest-engine` | CUTOVER | inventory-tool-implemented | P1 | Critical | High |
 | CAN-CUT-02 | Hesap Özeti / interest-engine | `case.service.ts:3826-3866` `getCalculationSummary` faiz=0 stub, `TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek`; `BalanceShadowDiffPanel` zaten mevcut | `interest-engine` (`case-balance.service.ts`) | CUTOVER | needs-owner-decision (guard) | P1 | Critical | High |
 | CAN-CUT-03 | DebtorAddress | Bare `AddressService` vs `DebtorService.updateAddress/deleteAddress` (nested, `debtor.service.ts:1417,1587`); `debtor-address-canonical.spec.ts` canonical mapping testi mevcut | `AddressService` | CUTOVER | adapter | P1 | Medium-High | High |
 | CAN-CUT-04 | validation-gate / policy-engine | `validation-gate.service.ts:9` `@deprecated ... Phase 3 sonunda silinecek` ama satır 89-110'da canlı, controller tarafından çağrılan pre-haciz risk endpoint'i var | `policy-engine` | CUTOVER | adapter | P1 | Medium-High | High |
@@ -85,8 +85,9 @@ Tanımların ve uygulama kurallarının bağlayıcı metni `canonicalization-pol
 - **Acceptance criteria:** Karar belgelenir; kaldırma yönünde karar çıkarsa import yokluğu teyit edilip component silinir.
 
 ### CAN-CUT-01 — Due / ClaimItem
-- **Required verification:** Kaç case'de yalnız `Due`, kaç case'de yalnız `ClaimItem`, kaç case'de ikisi birden var; duplicate kayıt var mı (salt-okunur SQL envanteri).
-- **Acceptance criteria:** Envanter tamamlanmadan `Due` write path kapatılmaz; kod değişikliği bu envanterden sonraki ayrı bir GO-IMPLEMENT'tir.
+- **Status update (2026-07-10, VER-05 / PR-0):** `pnpm --filter @hukuk/api inventory:due-claimitem -- --tenant <tenantId>` tenant-zorunlu, deterministic JSON+özet üreten salt-okunur envanter aracını sağlar. Sorgu tek transaction içinde `REPEATABLE READ READ ONLY` ayarlar ve yalnız SELECT/CTE kullanır; Due sync ile backfill marker'ları ayrı raporlanır, açıklama/kişisel veri dışa verilmez. Araç `MATCHED_PAIR`, `DUPLICATE_PAIR`, `AMOUNT_OR_TYPE_DRIFT`, `ORPHANED_SYNC`, `MARKER_MISSING`, `DUE_ONLY`, `CLAIM_ITEM_ONLY`, `NAFAKA_EXPECTED_DUE_ONLY` ve `EXPECTED_CANCELLED_TOMBSTONE` sınıflarını üretir.
+- **Required verification:** Araç yetkili ortamda her tenant için salt-okunur çalıştırılmalı; sınıflar vaka örnekleriyle incelenmeli ve çoklu/çelişkili eşleşmeler owner'a reconciliation kararı için sunulmalıdır.
+- **Acceptance criteria:** Envanter tamamlanmadan `Due` write path kapatılmaz. PR-0 canlı koşum, reconciliation/backfill, schema/migration veya cutover yetkisi vermez; bunların her biri sonuçlara bağlı ayrı owner-authorized workstream gerektirir.
 
 ### CAN-CUT-02 — Hesap Özeti / interest-engine
 - **Required verification:** `BalanceShadowDiffPanel` shadow-diff sonuçlarının GREEN olma durumu.
