@@ -1,21 +1,12 @@
 import { toCaseBalanceDisplay } from '../case-balance-display';
 import type { CaseBalanceResult } from '../case-balance.service';
+// ADR-014 W0.1: makeBalance artık shared scenario-support builder'dan gelir
+// (davranış birebir — gövde oradan taşındı, bkz. scenario-support/scenario-builder.ts).
+import { makeBalance } from '../../scenario-support/scenario-builder';
 
 // BALANCE-DISPLAY PR-1: saf mapper testleri. Engine raw → panel DTO; YALNIZ doğrulanmış alanlar, uydurma yok.
 
 const GENERATED_AT = '2026-06-23T09:00:00.000Z';
-
-function makeBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalanceResult {
-  return {
-    asOfDate: '2026-06-23',
-    source: 'COLLECTION',
-    currencyResults: [],
-    projections: { costs: {}, ancillaries: {} },
-    diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
-    overpayments: { held: [], blocked: [] },
-    ...overrides,
-  } as unknown as CaseBalanceResult;
-}
 
 function currencyResult(currency: string, result: any, skippedReason: string | null = null) {
   return { currency, result, skippedReason: skippedReason ?? undefined };
