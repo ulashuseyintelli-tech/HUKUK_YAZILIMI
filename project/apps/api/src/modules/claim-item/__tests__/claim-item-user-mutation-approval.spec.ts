@@ -57,6 +57,7 @@ function makeSvc(opts: {
     claimItem: {
       findFirst: jest.fn().mockResolvedValue(item),
       update: jest.fn(),
+      create: jest.fn(),
     },
     officeApprovalRequest: {
       findUnique: jest.fn().mockResolvedValue(opts.existingApproval ?? null),
@@ -133,6 +134,16 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
     }));
   });
 
+  it('high-impact amount=0 degerini approval intent icinde korur', async () => {
+    const { svc, officeApproval } = makeSvc();
+
+    await svc.updateFromUser('t1', 'requester-u', 'ci-1', { amount: 0 } as any);
+
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledWith(expect.objectContaining({
+      savedIntent: expect.objectContaining({ proposedPatch: { amount: 0 } }),
+    }));
+  });
+
   it('farkli icerikli duplicate pending high-impact request engellenir', async () => {
     const { svc } = makeSvc({
       existingApproval: {
@@ -167,6 +178,10 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
     prisma.claimItem.update.mockResolvedValue({ id: 'ci-1', amount: 1200 });
 
     await expect(svc.update('t1', 'ci-1', { amount: 1200 } as any)).resolves.toEqual({ id: 'ci-1', amount: 1200 });
+    expect(prisma.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: { demandedAmount: 1200, amount: 1200 },
+    });
     expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
   });
 });

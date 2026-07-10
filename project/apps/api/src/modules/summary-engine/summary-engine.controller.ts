@@ -62,10 +62,11 @@ export class SummaryEngineController {
   @Put('claim-item/:id/demanded-amount')
   async updateDemandedAmount(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Param('id') claimItemId: string,
     @Body() body: { demandedAmount: number },
   ) {
-    return this.service.updateDemandedAmount(tenantId, claimItemId, body.demandedAmount);
+    return this.service.updateDemandedAmount(tenantId, actorUserId, claimItemId, body.demandedAmount);
   }
 
   /**

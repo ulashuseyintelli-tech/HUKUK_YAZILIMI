@@ -2,6 +2,7 @@
 // AuditService global modülden (AuditModule @Global) gelir → ek import gerekmez. PrismaModule import edilir.
 // P4-4: OfficeApprovalController eklendi → Inbox/Approve API route'ları (decision-only; execution P4-5).
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { OfficeApprovalService } from './office-approval.service';
 import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.service';
 import { OfficeApprovalShadowService } from './office-approval-shadow.service';
@@ -10,10 +11,11 @@ import { PayoutApprovalPolicy } from './client-payout-approval.policy';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { DomainEventIngestModule } from '../icrabot/domain-event-ingest';
 import { AccountingJournalWriterService } from '../accounting-journal';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   // P4-2: OfficeApprovalShadowService (CHANGE_STATUS shadow; ConfigService global, PrismaModule import, AuditService @Global).
-  imports: [PrismaModule, DomainEventIngestModule],
+  imports: [PrismaModule, DomainEventIngestModule, AuditModule, ConfigModule],
   controllers: [OfficeApprovalController],
   providers: [
     OfficeApprovalService,

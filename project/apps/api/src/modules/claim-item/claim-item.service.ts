@@ -25,6 +25,10 @@ import {
   type ClaimItemHighImpactSavedIntent,
   type ClaimItemPatch,
 } from './claim-item-approval.constants';
+import {
+  claimItemCreationAmounts,
+  claimItemNormalUpdateAmounts,
+} from './claim-item-amount-contract';
 
 const LOW_IMPACT_USER_FIELDS = ['description', 'referenceNo', 'sortOrder'] as const;
 const HIGH_IMPACT_USER_FIELDS = [
@@ -96,7 +100,7 @@ export class ClaimItemService {
         tenantId,
         caseId: dto.caseId,
         itemType: dto.itemType,
-        amount: dto.amount,
+        ...claimItemCreationAmounts(dto.amount),
         currency: dto.currency || 'TRY',
         sourceDocumentId: dto.sourceDocumentId,
         sourceDocumentType: dto.sourceDocumentType,
@@ -209,7 +213,7 @@ export class ClaimItemService {
 
     const updateData: any = {};
     if (dto.itemType) updateData.itemType = dto.itemType;
-    if (dto.amount !== undefined) updateData.amount = dto.amount;
+    if (dto.amount !== undefined) Object.assign(updateData, claimItemNormalUpdateAmounts(dto.amount));
     if (dto.currency) updateData.currency = dto.currency;
     if (dto.interestType) updateData.interestType = dto.interestType;
     if (dto.interestRate !== undefined) updateData.interestRate = dto.interestRate;
@@ -364,7 +368,12 @@ export class ClaimItemService {
     // Toplu oluştur
     const createdItems = [];
     for (const item of items) {
-      const created = await (this.prisma as any).claimItem.create({ data: item });
+      const created = await (this.prisma as any).claimItem.create({
+        data: {
+          ...item,
+          ...claimItemCreationAmounts(item.amount),
+        },
+      });
       createdItems.push(created);
     }
 
@@ -762,7 +771,7 @@ export class ClaimItemService {
         tenantId,
         caseId,
         itemType: 'EXPENSE',
-        amount,
+        ...claimItemCreationAmounts(amount),
         currency,
         description,
         sortOrder: 30,
@@ -783,7 +792,7 @@ export class ClaimItemService {
         tenantId,
         caseId,
         itemType: 'FEE',
-        amount,
+        ...claimItemCreationAmounts(amount),
         currency,
         description,
         sortOrder: 40,
@@ -804,7 +813,7 @@ export class ClaimItemService {
         tenantId,
         caseId,
         itemType: 'ATTORNEY_FEE',
-        amount,
+        ...claimItemCreationAmounts(amount),
         currency,
         description,
         sortOrder: 50,
@@ -860,12 +869,14 @@ export class ClaimItemService {
       // Sadece zorunlu veya tutarı olan kalemleri oluştur
       if (!item.required && !item.amount) continue;
 
+      const amount = item.amount ?? 0;
+
       const createdItem = await (this.prisma as any).claimItem.create({
         data: {
           tenantId,
           caseId,
           itemType: this.mapItemType(item.type),
-          amount: item.amount || 0,
+          ...claimItemCreationAmounts(amount),
           currency: item.currency || 'TRY',
           dueDate: item.dueDate ? new Date(item.dueDate) : null,
           description: item.label,
@@ -1048,7 +1059,7 @@ export class ClaimItemService {
   private buildUpdateData(dto: Partial<UpdateClaimItemDto>): Record<string, unknown> {
     const updateData: Record<string, unknown> = {};
     if (dto.itemType) updateData.itemType = dto.itemType;
-    if (dto.amount !== undefined) updateData.amount = dto.amount;
+    if (dto.amount !== undefined) Object.assign(updateData, claimItemNormalUpdateAmounts(dto.amount));
     if (dto.currency) updateData.currency = dto.currency;
     if (dto.interestType) updateData.interestType = dto.interestType;
     if (dto.interestRate !== undefined) updateData.interestRate = dto.interestRate;

@@ -166,7 +166,6 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       where: { id: 'claim-1' },
       data: expect.objectContaining({
         itemType: ClaimItemType.PRINCIPAL,
-        originalAmount: 1250,
         demandedAmount: 1250,
         amount: 1250,
         description: 'Güncel ana alacak',
@@ -177,6 +176,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         interestEndDate: new Date('2026-04-01T00:00:00.000Z'),
       }),
     });
+    expect(tx.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('originalAmount');
   });
 
   it('case-create markerıyla oluşan ClaimItemı updateDue senkronlar', async () => {
@@ -233,13 +233,13 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     expect(tx.claimItem.update).toHaveBeenCalledWith({
       where: { id: 'claim-opening' },
       data: expect.objectContaining({
-        originalAmount: 1500,
         demandedAmount: 1500,
         amount: 1500,
         description: 'Açılış alacağı güncel',
         dueDate: new Date('2026-03-01T00:00:00.000Z'),
       }),
     });
+    expect(tx.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('originalAmount');
   });
 
   it('updateDue unmarked eski kayıtta heuristic yapmaz', async () => {

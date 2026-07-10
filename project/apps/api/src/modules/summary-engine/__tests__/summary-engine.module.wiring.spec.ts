@@ -20,5 +20,6 @@ describe('SummaryEngineModule wiring', () => {
 
     const service = moduleRef.get(SummaryEngineService);
     expect((service as any).tbk100Allocator).toBeDefined();
+    expect((service as any).claimItemService).toBeDefined();
   });
 });

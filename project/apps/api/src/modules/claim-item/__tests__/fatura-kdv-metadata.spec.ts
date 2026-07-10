@@ -24,11 +24,15 @@ describe('D K1 — FATURA KDV metadata', () => {
     const kdv = created.find((i) => i.itemType === 'TAX_KDV');
     expect(kdv).toBeDefined();
     expect(kdv.amount).toBe(180);
+    expect(kdv.originalAmount).toBe(180);
+    expect(kdv.demandedAmount).toBe(180);
     expect(kdv.metadata).toEqual({ taxParentCategory: 'PRINCIPAL' });
 
     // net anapara da üretildi (KDV hariç)
     const principal = created.find((i) => i.itemType === 'PRINCIPAL');
     expect(principal).toBeDefined();
     expect(principal.amount).toBe(1000);
+    expect(principal.originalAmount).toBe(1000);
+    expect(principal.demandedAmount).toBe(1000);
   });
 });

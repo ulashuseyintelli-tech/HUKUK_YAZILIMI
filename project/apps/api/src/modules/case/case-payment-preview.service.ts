@@ -252,8 +252,9 @@ export class CasePaymentPreviewService {
     });
 
     const total = claimItems.reduce((sum, item) => {
-      const demandedAmount = toDecimal(item.demandedAmount);
-      const demanded = demandedAmount.isZero() ? toDecimal(item.amount) : demandedAmount;
+      const demanded = item.demandedAmount == null
+        ? toDecimal(item.amount)
+        : toDecimal(item.demandedAmount);
       const collected = toDecimal(item.collectedAmount);
       return sum.plus(maxMoney(ZERO, demanded.minus(collected)));
     }, new Prisma.Decimal(0));
