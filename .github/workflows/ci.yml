@@ -96,6 +96,27 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="(collection-payment-received|domain-event-ingest|uyap-event-ingest\.boundary)\.integration\.spec\.ts$"
         working-directory: project
+      # ADR-014 W0.2: explicit selection prevents a green job from hiding an
+      # unexecuted static boundary or disposable-DB materializer suite.
+      - name: W0.2 materializer static boundary tests
+        run: |
+          cd apps/api
+          test -f src/modules/interest-engine/__tests__/scenario-materializer.static.spec.ts || \
+            { echo "MISSING W0.2 static spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="scenario-materializer\.static\.spec\.ts$"
+        working-directory: project
+      - name: W0.2 materializer disposable DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts || \
+            { echo "MISSING W0.2 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="scenario-materializer\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
       # TEST-INFRA-1: Gate-1 (tenant-boundary) + Gate-2 (passive-writer) güvenlik spec'leri yukarıdaki
       # dar pattern'lerin dışında kalıyordu → CI'da koşmuyordu. Ayrı/açık step ile koşturulur.
       # passWithNoTests YOK + önce dosya-varlığı pre-check: rename/silme veya 0-eşleşme → CI RED.

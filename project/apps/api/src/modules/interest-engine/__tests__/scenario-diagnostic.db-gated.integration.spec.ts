@@ -121,9 +121,7 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
 
   it('D1: synthetic mod — expected-vs-actual match + in-memory devamlılık (G5/frozen e)', async () => {
     const def = simpleScenario('w03-d1');
-    const { evidence, refs } = await runSyntheticScenarioDiagnostic(prisma, def, {
-      fileNumberPrefix: 'W03D1',
-    });
+    const { evidence, refs } = await runSyntheticScenarioDiagnostic(prisma, def);
     allRefs.push(refs);
 
     expect(evidence.mode).toBe('SYNTHETIC_SCENARIO');
@@ -181,9 +179,7 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
         authority: 'CANONICAL_CANDIDATE',
       },
     });
-    const { evidence, refs } = await runSyntheticScenarioDiagnostic(prisma, def, {
-      fileNumberPrefix: 'W03D2',
-    });
+    const { evidence, refs } = await runSyntheticScenarioDiagnostic(prisma, def);
     allRefs.push(refs);
 
     expect(evidence.comparison!.match).toBe(false);
@@ -192,9 +188,7 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
 
   it('D3: organik mod — tenant-scoped tarama, excludeCaseIds yalnız bu modda, expected taşımaz', async () => {
     const def = simpleScenario('w03-d3', 'TWO_TENANT_ISOLATION');
-    const { refs } = await runSyntheticScenarioDiagnostic(prisma, def, {
-      fileNumberPrefix: 'W03D3',
-    });
+    const { refs } = await runSyntheticScenarioDiagnostic(prisma, def);
     allRefs.push(refs);
     expect(refs.secondaryTenantId).toBeDefined();
 
