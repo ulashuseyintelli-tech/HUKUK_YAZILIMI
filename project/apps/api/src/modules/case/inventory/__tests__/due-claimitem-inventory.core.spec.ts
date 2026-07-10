@@ -3,6 +3,7 @@ import {
   READ_ONLY_REPEATABLE_READ_SQL,
   buildDueClaimItemInventory,
   runReadOnlyDueClaimItemInventory,
+  rowsToInventoryInput,
   type ClaimItemInventoryRow,
   type DueInventoryRow,
   type InventoryDatabaseRow,
@@ -86,6 +87,18 @@ describe('VER-05 Due / ClaimItem read-only inventory classifier', () => {
     expect(report.findings.find((item) => item.classification === 'MARKER_MISSING')?.confidence).toBe('HEURISTIC');
   });
 
+  it('does not treat an unmarked interest drift as a marker-missing exact candidate', () => {
+    const report = buildDueClaimItemInventory({
+      tenantId: 'tenant-1',
+      dues: [due({ interestType: 'LEGAL', interestRate: '9.5' })],
+      claimItems: [claim({ interestType: 'LEGAL', interestRate: '8.5', dueSyncSourceDueId: null })],
+    });
+
+    expect(report.summary.classifications.MARKER_MISSING).toBe(0);
+    expect(report.summary.classifications.DUE_ONLY).toBe(1);
+    expect(report.summary.classifications.CLAIM_ITEM_ONLY).toBe(1);
+  });
+
   it('rejects tenant-crossing input before classification', () => {
     expect(() => buildDueClaimItemInventory({
       tenantId: 'tenant-1', dues: [due({ tenantId: 'tenant-2' })], claimItems: [],
@@ -120,8 +133,19 @@ describe('VER-05 Due / ClaimItem read-only inventory classifier', () => {
     expect(report.summary.classifications.MATCHED_PAIR).toBe(1);
     expect(tx.$executeRawUnsafe).toHaveBeenCalledWith(READ_ONLY_REPEATABLE_READ_SQL);
     expect(READ_ONLY_REPEATABLE_READ_SQL).toContain('READ ONLY');
+    expect(READ_ONLY_REPEATABLE_READ_SQL).toContain('REPEATABLE READ, READ ONLY');
     expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(DUE_CLAIM_ITEM_INVENTORY_SELECT_SQL, 'tenant-1');
     expect(DUE_CLAIM_ITEM_INVENTORY_SELECT_SQL).toMatch(/^\s*WITH tenant_cases/);
     expect(DUE_CLAIM_ITEM_INVENTORY_SELECT_SQL).not.toMatch(/\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/i);
+  });
+
+  it('rejects an unexpected database row kind instead of silently classifying it as ClaimItem', () => {
+    expect(() => rowsToInventoryInput([{
+      row_kind: 'UNKNOWN' as InventoryDatabaseRow['row_kind'], id: 'x', case_id: 'case-1',
+      tenant_id: 'tenant-1', case_tenant_id: 'tenant-1', due_type: null, claim_item_type: null,
+      amount: '1', original_amount: null, demanded_amount: null, currency: 'TRY', due_date: null,
+      interest_type: null, interest_rate: null, interest_start_date: null, interest_end_date: null,
+      status: null, due_sync_source_due_id: null, backfill_source_due_id: null,
+    }], 'tenant-1')).toThrow('Bilinmeyen inventory row_kind');
   });
 });

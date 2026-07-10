@@ -169,7 +169,11 @@ function isExactUnmarkedCandidate(due: DueInventoryRow, claimItem: ClaimItemInve
     claimItem.status === 'ACTIVE' &&
     same(claimItem.amount, due.amount) &&
     claimItem.currency === due.currency &&
-    sameDate(claimItem.dueDate, due.dueDate)
+    sameDate(claimItem.dueDate, due.dueDate) &&
+    (claimItem.interestType ?? null) === (due.interestType ?? null) &&
+    same(claimItem.interestRate, due.interestRate) &&
+    sameDate(claimItem.interestStartDate, due.interestStartDate) &&
+    sameDate(claimItem.interestEndDate, due.interestEndDate)
   );
 }
 
@@ -409,7 +413,7 @@ export function rowsToInventoryInput(rows: InventoryDatabaseRow[], tenantId: str
         interestType: row.interest_type, interestRate: row.interest_rate,
         interestStartDate: row.interest_start_date, interestEndDate: row.interest_end_date,
       });
-    } else {
+    } else if (row.row_kind === 'CLAIM_ITEM') {
       if (!row.claim_item_type || !row.status) throw new Error('ClaimItem CTE satırında zorunlu alan eksik.');
       claimItems.push({
         id: row.id, tenantId: row.tenant_id, caseId: row.case_id, caseTenantId: row.case_tenant_id,
@@ -420,6 +424,8 @@ export function rowsToInventoryInput(rows: InventoryDatabaseRow[], tenantId: str
         status: row.status, dueSyncSourceDueId: row.due_sync_source_due_id,
         backfillSourceDueId: row.backfill_source_due_id,
       });
+    } else {
+      throw new Error(`Bilinmeyen inventory row_kind: ${String(row.row_kind)}`);
     }
   }
   return { dues, claimItems };
@@ -486,7 +492,10 @@ FROM inventory_rows
 ORDER BY row_kind, case_id, id;
 `;
 
-export const READ_ONLY_REPEATABLE_READ_SQL = 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY';
+// PostgreSQL requires transaction modes after the isolation level to be
+// comma-separated; keeping this as a constant makes the read-only guard
+// visible to both the adapter and its no-write test.
+export const READ_ONLY_REPEATABLE_READ_SQL = 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY';
 
 export interface ReadOnlyInventoryTransaction {
   $executeRawUnsafe(query: string): Promise<unknown>;
