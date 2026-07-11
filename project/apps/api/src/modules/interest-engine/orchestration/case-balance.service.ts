@@ -56,7 +56,7 @@ const DEFAULT_OPTIONS: CalculationOptions = {
   claimPriorityRule: ClaimPriorityRule.OLDEST_DUE_FIRST,
 };
 
-export type CaseBalanceSkipReason = 'NO_BUCKETS' | 'ENGINE_ERROR';
+export type CaseBalanceSkipReason = 'NO_BUCKETS' | 'INVALID_CURRENCY' | 'ENGINE_ERROR';
 
 export interface CaseBalanceCurrencyResult {
   currency: string;
@@ -327,7 +327,14 @@ export class CaseBalanceService {
 
     // 5. Currency gruplama (G4b-1)
     const grouped = groupByCurrency(asm.buckets, pay.payments);
-    const hasNoBuckets = grouped.groups.some((group) => group.buckets.length === 0);
+    const hasNoBuckets = grouped.groups.some(
+      (group) => group.blockedReason == null && group.buckets.length === 0,
+    );
+    const invalidCurrencyFatalCodes = [...new Set(
+      grouped.diagnostics
+        .map((diagnostic) => diagnostic.code)
+        .filter((code) => code === 'CURRENCY_MISSING' || code === 'CURRENCY_UNSUPPORTED'),
+    )].sort();
 
     // 6. Her currency grubu için computeBalance
     const now = new Date().toISOString();
@@ -338,6 +345,18 @@ export class CaseBalanceService {
       // ALC-AUTH-3B: gross (allocation-öncesi) PRINCIPAL toplamı — computeBalance sonucundan bağımsız,
       // bucket'lar zaten mevcutsa her zaman hesaplanabilir.
       const grossPrincipal = group.buckets.reduce((sum, b) => sum + b.amount, 0);
+
+      // ADR-014 PR-6: eksik veya domain-dışı currency hiçbir hesaplama hattına girmez.
+      // Raw currency kanıtı grup + diagnostic üzerinde korunur; normalizasyon/conversion yapılmaz.
+      if (group.blockedReason) {
+        currencyResults.push({
+          currency: group.currency,
+          result: null,
+          skippedReason: 'INVALID_CURRENCY',
+          grossPrincipal,
+        });
+        continue;
+      }
 
       // Q4 / ADR-014 PR-2: bucket'sız grup (yalnız payment) hesaplanabilir bakiye
       // değildir. Currency kanıtı korunur; case-level fatal blocker aşağıda tekil taşınır.
@@ -375,7 +394,10 @@ export class CaseBalanceService {
       currencyResults,
       projections: { costs: asm.costs, ancillaries: asm.ancillaries },
       diagnostics: {
-        fatal: hasNoBuckets ? [{ code: 'NO_BUCKETS', caseId }] : [],
+        fatal: [
+          ...invalidCurrencyFatalCodes.map((code) => ({ code, caseId })),
+          ...(hasNoBuckets ? [{ code: 'NO_BUCKETS', caseId }] : []),
+        ],
         assembler: asm.diagnostics,
         payments: pay.diagnostics,
         currency: grouped.diagnostics,

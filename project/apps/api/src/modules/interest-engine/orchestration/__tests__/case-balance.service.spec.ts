@@ -379,6 +379,132 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(res.diagnostics.currency).toEqual([{ code: 'CURRENCY_MISMATCH', currency: 'USD', detail: '1 payment(s), 0 bucket' }]);
   });
 
+  it('ADR-014 PR-6: TRY ve USD grupları bağımsız hesaplanır; PRE+POST her currency için cent-exact mutabıktır', async () => {
+    const { service, computeBalanceSpy, rateProvider } = setup({
+      caseRow: {
+        interestType: null,
+        interestStartDate: null,
+        caseDate: new Date('2025-03-01T00:00:00.000Z'),
+      },
+      claimItems: [
+        principal({ interestType: 'SABIT', interestRate: 12 }),
+        principal({
+          id: 'p-usd',
+          demandedAmount: 2000,
+          amount: 2000,
+          currency: 'USD',
+          interestType: 'SABIT',
+          interestRate: 9,
+        }),
+      ],
+      collections: [
+        collection({ id: 'pay-try', amount: 100, currency: 'TRY' }),
+        collection({ id: 'pay-usd', amount: 25, currency: 'USD' }),
+      ],
+    });
+
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+    expect(res.diagnostics.fatal).toEqual([]);
+    expect(res.diagnostics.currency).toEqual([]);
+    expect(res.currencyResults.map((row) => row.currency)).toEqual(['TRY', 'USD']);
+    expect(computeBalanceSpy).toHaveBeenCalledTimes(2);
+    expect(computeBalanceSpy.mock.calls.map(([request]) => ({
+      bucketCurrencies: [...new Set(request.claimBuckets.map((bucket) => bucket.currency))],
+      paymentCurrencies: [...new Set((request.payments ?? []).map((payment) => payment.currency))],
+    }))).toEqual([
+      { bucketCurrencies: ['TRY'], paymentCurrencies: ['TRY'] },
+      { bucketCurrencies: ['USD'], paymentCurrencies: ['USD'] },
+    ]);
+    for (const row of res.currencyResults) {
+      expect(row.result).not.toBeNull();
+      const phaseTotalCents = Math.round(
+        ((row.result!.preEnforcementInterest ?? 0) + (row.result!.postEnforcementInterest ?? 0)) * 100,
+      );
+      expect(phaseTotalCents).toBe(Math.round(row.result!.totalInterest * 100));
+    }
+    expect(rateProvider.getRatesForPeriod).not.toHaveBeenCalled();
+  });
+
+  it('ADR-014 PR-6: eksik claim currency hesaplanmaz ve CURRENCY_MISSING fail-closed taşınır', async () => {
+    const { service, computeBalanceSpy, rateProvider } = setup({
+      claimItems: [principal({ currency: '', interestType: 'SABIT', interestRate: 12 })],
+    });
+
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+    expect(res.currencyResults).toEqual([
+      expect.objectContaining({
+        currency: 'UNKNOWN',
+        result: null,
+        skippedReason: 'INVALID_CURRENCY',
+      }),
+    ]);
+    expect(res.diagnostics.fatal).toEqual([{ code: 'CURRENCY_MISSING', caseId: 'case1' }]);
+    expect(res.diagnostics.currency).toEqual([expect.objectContaining({
+      code: 'CURRENCY_MISSING',
+      currency: 'UNKNOWN',
+      source: 'CLAIM_BUCKET',
+      sourceId: 'p1',
+    })]);
+    expect(computeBalanceSpy).not.toHaveBeenCalled();
+    expect(rateProvider.getRatesForPeriod).not.toHaveBeenCalled();
+  });
+
+  it('ADR-014 PR-6: desteklenmeyen payment currency normalize/conversion olmadan fail-closed kalır', async () => {
+    const { service, computeBalanceSpy } = setup({
+      claimItems: [principal({ interestType: 'SABIT', interestRate: 12 })],
+      collections: [collection({ id: 'pay-jpy', currency: 'JPY', amount: 100 })],
+    });
+
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+    expect(res.currencyResults.find((row) => row.currency === 'TRY')?.result).not.toBeNull();
+    expect(res.currencyResults.find((row) => row.currency === 'JPY')).toMatchObject({
+      result: null,
+      skippedReason: 'INVALID_CURRENCY',
+    });
+    expect(res.diagnostics.fatal).toEqual([{ code: 'CURRENCY_UNSUPPORTED', caseId: 'case1' }]);
+    expect(res.diagnostics.currency).toEqual([expect.objectContaining({
+      code: 'CURRENCY_UNSUPPORTED',
+      currency: 'JPY',
+      source: 'PAYMENT',
+      sourceId: 'pay-jpy',
+    })]);
+    expect(computeBalanceSpy).toHaveBeenCalledTimes(1);
+    expect(computeBalanceSpy.mock.calls[0][0].payments).toEqual([]);
+  });
+
+  it('ADR-014 PR-6 / PR-1B: reversal currency mismatch nettingi fatal durdurur', async () => {
+    const tenantId = 'tenant-currency-reversal';
+    const caseId = 'case-currency-reversal';
+    const payment = {
+      id: 'payment-try', tenantId, caseId, entryType: 'PAYMENT', status: 'CONFIRMED', amount: 500,
+      currency: 'TRY', entryDate: new Date('2025-03-01'), effectiveDate: null, sourceType: 'BANKA',
+    };
+    const { service, computeBalanceSpy } = setup({
+      claimItems: [principal()],
+      ledger: [
+        payment,
+        {
+          id: 'reversal-usd', tenantId, caseId, entryType: 'REVERSAL', status: 'CONFIRMED', amount: -500,
+          currency: 'USD', entryDate: new Date('2025-03-02'), effectiveDate: null,
+          sourceType: 'COLLECTION_CANCEL', reversesLedgerEntryId: payment.id,
+        },
+      ],
+      rates: legalRate(),
+    });
+
+    const res = await service.computeCaseBalance(tenantId, caseId, '2025-06-01');
+
+    expect(res.currencyResults).toEqual([]);
+    expect(res.diagnostics.fatal).toEqual([{ code: 'REVERSAL_INTEGRITY_INVALID', caseId }]);
+    expect(res.diagnostics.payments).toEqual([
+      expect.objectContaining({ code: 'REVERSAL_CURRENCY_MISMATCH', paymentId: 'reversal-usd' }),
+    ]);
+    expect(computeBalanceSpy).not.toHaveBeenCalled();
+  });
+
   it('assembler diagnostic: faiz konfigsiz principal → MISSING_INTEREST_CONFIG, bucket yok', async () => {
     const { service } = setup({
       caseRow: { interestType: null, interestStartDate: null },

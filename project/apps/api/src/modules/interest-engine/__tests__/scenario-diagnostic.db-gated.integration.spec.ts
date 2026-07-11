@@ -24,7 +24,11 @@ import {
   runOrganicReadinessDiagnostic,
   ScenarioDiagnosticFailure,
 } from '../scenario-diagnostic/scenario-diagnostic-runner';
-import { cleanupMaterializedScenario, MaterializedScenarioRefs } from '../scenario-materializer/scenario-materializer';
+import {
+  cleanupMaterializedScenario,
+  materializeScenario,
+  MaterializedScenarioRefs,
+} from '../scenario-materializer/scenario-materializer';
 import { defineScenario, scenarioClaimBucket, scenarioPayment } from '../scenario-support/scenario-builder';
 import type { ScenarioDefinition } from '../scenario-support/scenario-definition';
 import { CaseBalanceService } from '../orchestration/case-balance.service';
@@ -311,6 +315,135 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     );
     expect(crossTenant.currencyResults).toEqual([]);
     expect(crossTenant.diagnostics.fatal).toEqual([{ code: 'CASE_NOT_FOUND', caseId: refs.caseId }]);
+  });
+
+  it('D8 / PR-6: real DB flow isolates currencies and fail-closes payment/reversal mismatch evidence', async () => {
+    const id = 'pr6-currency-hardening';
+    const def = defineScenario({
+      id,
+      title: 'PR-6 TRY/USD independent groups with currency mismatch gates',
+      domainInput: {
+        claimBuckets: [
+          scenarioClaimBucket({
+            id: `${id}-claim-try`,
+            amount: 1_000,
+            currency: 'TRY',
+            startDate: '2026-06-01',
+            interestType: InterestTypeCode.LEGAL_3095,
+          }),
+          scenarioClaimBucket({
+            id: `${id}-claim-usd`,
+            amount: 500,
+            currency: 'USD',
+            startDate: '2026-06-01',
+            interestType: InterestTypeCode.LEGAL_3095,
+          }),
+        ],
+        payments: [
+          scenarioPayment({ id: `${id}-pay-try`, date: '2026-06-10', amount: 20, currency: 'TRY' }),
+          scenarioPayment({ id: `${id}-pay-usd`, date: '2026-06-12', amount: 10, currency: 'USD' }),
+        ],
+        asOfDate: '2026-06-21',
+        enforcementDate: '2026-06-15',
+      },
+      expected: {
+        perCurrencyStatus: { TRY: 'OK', USD: 'OK' },
+        blockerCodes: [],
+        authority: 'SHADOW_ONLY',
+      },
+      persistenceIntent: { tenantSetup: 'TWO_TENANT_ISOLATION', currency: 'TRY' },
+    });
+    const refs = await materializeScenario(prisma, def);
+    allRefs.push(refs);
+
+    // Fixed-rate test fixture: currency groupingi doğrularken yeni rate/FX authority kurmaz.
+    await prisma.claimItem.updateMany({
+      where: { tenantId: refs.tenantId, caseId: refs.caseId },
+      data: { interestType: 'SABIT', interestRate: 12 },
+    });
+
+    const service = new CaseBalanceService(
+      prisma as never,
+      new RateProviderService(prisma as never),
+      buildEngine(),
+    );
+    const valid = await service.computeCaseBalance(refs.tenantId, refs.caseId, def.domainInput.asOfDate);
+
+    expect(valid.diagnostics.fatal).toEqual([]);
+    expect(valid.diagnostics.currency).toEqual([]);
+    expect(valid.currencyResults.map((row) => row.currency)).toEqual(['TRY', 'USD']);
+    for (const row of valid.currencyResults) {
+      expect(row.result).not.toBeNull();
+      expect(new Set(row.result!.finalDebtStates.map((state) => state.currency))).toEqual(new Set([row.currency]));
+      expect(
+        toCents(row.result!.preEnforcementInterest ?? 0)
+        + toCents(row.result!.postEnforcementInterest ?? 0),
+      ).toBe(toCents(row.result!.totalInterest));
+    }
+
+    const crossTenant = await service.computeCaseBalance(
+      refs.secondaryTenantId!,
+      refs.caseId,
+      def.domainInput.asOfDate,
+    );
+    expect(crossTenant.currencyResults).toEqual([]);
+    expect(crossTenant.diagnostics.fatal).toEqual([{ code: 'CASE_NOT_FOUND', caseId: refs.caseId }]);
+
+    const usdPaymentId = `${id}-pay-usd`;
+    await prisma.ledgerEntry.update({ where: { id: usdPaymentId }, data: { currency: 'EUR' } });
+    const paymentMismatch = await service.computeCaseBalance(refs.tenantId, refs.caseId, def.domainInput.asOfDate);
+    const paymentMismatchDisplay = toCaseBalanceDisplay({
+      tenantId: refs.tenantId,
+      caseId: refs.caseId,
+      balance: paymentMismatch,
+    });
+
+    expect(paymentMismatch.currencyResults.find((row) => row.currency === 'EUR')).toMatchObject({
+      result: null,
+      skippedReason: 'NO_BUCKETS',
+    });
+    expect(paymentMismatch.diagnostics.currency).toEqual([
+      { code: 'CURRENCY_MISMATCH', currency: 'EUR', detail: '1 payment(s), 0 bucket' },
+    ]);
+    expect(paymentMismatchDisplay).toMatchObject({
+      status: 'UNAVAILABLE',
+      authority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+    });
+    expect(paymentMismatchDisplay.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'CURRENCY_MISMATCH', severity: 'BLOCKER' }),
+    ]));
+
+    await prisma.ledgerEntry.update({ where: { id: usdPaymentId }, data: { currency: 'USD' } });
+    await prisma.ledgerEntry.create({
+      data: {
+        id: `${id}-reversal-eur`,
+        tenantId: refs.tenantId,
+        caseId: refs.caseId,
+        collectionId: refs.collectionIds[1],
+        entryType: 'REVERSAL',
+        amount: -10,
+        currency: 'EUR',
+        entryDate: new Date('2026-06-13T00:00:00.000Z'),
+        reversesLedgerEntryId: usdPaymentId,
+      },
+    });
+    const reversalMismatch = await service.computeCaseBalance(refs.tenantId, refs.caseId, def.domainInput.asOfDate);
+    const reversalMismatchDisplay = toCaseBalanceDisplay({
+      tenantId: refs.tenantId,
+      caseId: refs.caseId,
+      balance: reversalMismatch,
+    });
+
+    expect(reversalMismatch.currencyResults).toEqual([]);
+    expect(reversalMismatch.diagnostics.fatal).toEqual([
+      { code: 'REVERSAL_INTEGRITY_INVALID', caseId: refs.caseId },
+    ]);
+    expect(reversalMismatch.diagnostics.payments).toEqual([
+      expect.objectContaining({ code: 'REVERSAL_CURRENCY_MISMATCH', paymentId: `${id}-reversal-eur` }),
+    ]);
+    expect(reversalMismatchDisplay.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'REVERSAL_CURRENCY_MISMATCH', severity: 'BLOCKER' }),
+    ]));
   });
 
   it('D2: karşılaştırıcı dürüstlüğü — bilinçli yanlış expected match=false üretir', async () => {

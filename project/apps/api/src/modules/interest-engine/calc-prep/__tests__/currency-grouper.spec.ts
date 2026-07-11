@@ -45,4 +45,44 @@ describe('currency-grouper (G4b-1)', () => {
     expect(res.diagnostics).toEqual([]);
     expect(res.groups.find((g) => g.currency === 'USD')!.payments).toEqual([]);
   });
+
+  it('eksik currency → UNKNOWN blocked grup + kaynağı belirli CURRENCY_MISSING', () => {
+    const missing = bucket('b-missing', '');
+    const res = groupByCurrency([missing], []);
+
+    expect(res.groups).toEqual([
+      expect.objectContaining({
+        currency: 'UNKNOWN',
+        blockedReason: 'CURRENCY_MISSING',
+        buckets: [missing],
+      }),
+    ]);
+    expect(res.diagnostics).toEqual([{
+      code: 'CURRENCY_MISSING',
+      currency: 'UNKNOWN',
+      source: 'CLAIM_BUCKET',
+      sourceId: 'b-missing',
+      detail: 'claimBucketId=b-missing',
+    }]);
+  });
+
+  it('domain dışı currency normalize edilmez → blocked CURRENCY_UNSUPPORTED', () => {
+    const unsupported = payment('p-jpy', 'JPY');
+    const res = groupByCurrency([], [unsupported]);
+
+    expect(res.groups).toEqual([
+      expect.objectContaining({
+        currency: 'JPY',
+        blockedReason: 'CURRENCY_UNSUPPORTED',
+        payments: [unsupported],
+      }),
+    ]);
+    expect(res.diagnostics).toEqual([{
+      code: 'CURRENCY_UNSUPPORTED',
+      currency: 'JPY',
+      source: 'PAYMENT',
+      sourceId: 'p-jpy',
+      detail: 'paymentId=p-jpy',
+    }]);
+  });
 });
