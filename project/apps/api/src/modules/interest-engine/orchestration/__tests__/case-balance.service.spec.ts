@@ -43,7 +43,11 @@ interface MockPrisma {
 }
 
 function setup(opts: {
-  caseRow?: { interestType: string | null; interestStartDate: Date | null } | null;
+  caseRow?: {
+    interestType: string | null;
+    interestStartDate: Date | null;
+    caseDate?: Date | null;
+  } | null;
   claimItems?: unknown[];
   ledger?: unknown[];
   collections?: unknown[];
@@ -54,7 +58,13 @@ function setup(opts: {
 }) {
   const claimItems = opts.claimItems ?? [];
   const prisma: MockPrisma = {
-    case: { findFirst: jest.fn().mockResolvedValue(opts.caseRow === undefined ? { interestType: null, interestStartDate: null } : opts.caseRow) },
+    case: {
+      findFirst: jest.fn().mockResolvedValue(
+        opts.caseRow === undefined
+          ? { interestType: null, interestStartDate: null, caseDate: null }
+          : opts.caseRow,
+      ),
+    },
     claimItem: {
       findMany: jest.fn().mockImplementation(async (args?: any) => {
         const excludedStatus = args?.where?.status?.not;
@@ -96,6 +106,30 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(res.currencyResults[0].result).not.toBeNull();
     expect(res.currencyResults[0].result!.totalInterest).toBeGreaterThanOrEqual(0);
     expect(rateProvider.getRatesForPeriod).toHaveBeenCalledTimes(1);
+  });
+
+  it('ADR-014 PR-5: tenant-scoped Case.caseDate enforcement boundary olarak computeBalance requestine taşınır', async () => {
+    const { service, prisma, computeBalanceSpy } = setup({
+      caseRow: {
+        interestType: null,
+        interestStartDate: null,
+        caseDate: new Date('2025-03-01T00:00:00.000Z'),
+      },
+      claimItems: [principal()],
+      rates: legalRate(),
+    });
+
+    const result = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+    expect(prisma.case.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'case1', tenantId: 't1' },
+      select: expect.objectContaining({ caseDate: true }),
+    }));
+    expect(computeBalanceSpy.mock.calls[0][0].enforcementDate).toBe('2025-03-01');
+    expect(result.currencyResults[0].result).toMatchObject({
+      preEnforcementInterest: expect.any(Number),
+      postEnforcementInterest: expect.any(Number),
+    });
   });
 
   it('ALC-AUTH-3B: grossPrincipal = ClaimBucket amount toplamı (demandedAmount??amount), ödemeden/allocation-den bağımsız', async () => {

@@ -40,6 +40,7 @@ import { AllocationEngineService } from '../allocation/allocation-engine.service
 import { DEFAULT_INTERPRETATION_PROFILE_ID } from '../types/calculation.types';
 import type { RateEntry } from '../rates/rate-provider.service';
 import { InterestTypeCode } from '../types/domain.types';
+import { toCents } from '../allocation/minor-unit';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env as Record<string, string | undefined>);
 const describeIf = TEST_DB_URL ? describe : describe.skip;
@@ -226,6 +227,81 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     ])).toEqual([
       ['2026-06-01', '2026-06-11', 1_000, 10],
       ['2026-06-11', '2026-06-21', 990, 9.9],
+    ]);
+
+    const crossTenant = await service.computeCaseBalance(
+      refs.secondaryTenantId!,
+      refs.caseId,
+      def.domainInput.asOfDate,
+    );
+    expect(crossTenant.currencyResults).toEqual([]);
+    expect(crossTenant.diagnostics.fatal).toEqual([{ code: 'CASE_NOT_FOUND', caseId: refs.caseId }]);
+  });
+
+  it('D7 / PR-5: real DB flow splits Case.caseDate PRE/POST and preserves PR-4 mutation plus tenant isolation', async () => {
+    const id = 'pr5-enforcement-date';
+    const def = defineScenario({
+      id,
+      title: 'PR-5 enforcement boundary with pre-enforcement principal payment',
+      domainInput: {
+        claimBuckets: [
+          scenarioClaimBucket({
+            id: `${id}-claim-1`,
+            amount: 1_000,
+            currency: 'TRY',
+            startDate: '2026-06-01',
+            interestType: InterestTypeCode.LEGAL_3095,
+          }),
+        ],
+        payments: [
+          scenarioPayment({ id: `${id}-pay-1`, date: '2026-06-11', amount: 20, currency: 'TRY' }),
+        ],
+        asOfDate: '2026-06-21',
+        enforcementDate: '2026-06-15',
+      },
+      expected: {
+        perCurrencyStatus: { TRY: 'OK' },
+        blockerCodes: [],
+        authority: 'SHADOW_ONLY',
+      },
+      persistenceIntent: { tenantSetup: 'TWO_TENANT_ISOLATION', currency: 'TRY' },
+    });
+    const { evidence, refs } = await runSyntheticScenarioDiagnostic(prisma, def, { annualRate: 0.365 });
+    allRefs.push(refs);
+
+    expect(evidence.comparison).toMatchObject({ match: true, mismatches: [] });
+    expect(refs.secondaryTenantId).toBeDefined();
+
+    const service = new CaseBalanceService(
+      prisma as never,
+      new RateProviderService(prisma as never),
+      buildEngine(),
+    );
+    const balance = await service.computeCaseBalance(refs.tenantId, refs.caseId, def.domainInput.asOfDate);
+    const tryResult = balance.currencyResults.find((currency) => currency.currency === 'TRY')?.result;
+
+    expect(balance.diagnostics.fatal).toEqual([]);
+    expect(tryResult).toMatchObject({
+      totalInterest: 19.9,
+      preEnforcementInterest: 13.96,
+      postEnforcementInterest: 5.94,
+    });
+    expect(
+      toCents(tryResult!.preEnforcementInterest ?? 0)
+      + toCents(tryResult!.postEnforcementInterest ?? 0),
+    ).toBe(toCents(tryResult!.totalInterest));
+    expect(tryResult!.finalDebtStates).toEqual([
+      expect.objectContaining({ principal: 990, accruedInterest: 9.9 }),
+    ]);
+    expect(tryResult!.segments.map((segment) => [
+      segment.periodStart,
+      segment.periodEnd,
+      segment.principal,
+      segment.phase,
+    ])).toEqual([
+      ['2026-06-01', '2026-06-11', 1_000, 'PRE_ENFORCEMENT'],
+      ['2026-06-11', '2026-06-15', 990, 'PRE_ENFORCEMENT'],
+      ['2026-06-15', '2026-06-21', 990, 'POST_ENFORCEMENT'],
     ]);
 
     const crossTenant = await service.computeCaseBalance(

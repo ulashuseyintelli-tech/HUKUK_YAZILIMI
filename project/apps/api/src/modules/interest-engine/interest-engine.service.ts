@@ -32,7 +32,10 @@ import { generateRateTableVersion } from './rates/rate-version-hash';
 import { PolicyGateV2Service } from './policy-gate/policy-gate-v2.service';
 import { SegmentBuilderService, SegmentBuildResult } from './segments/segment-builder.service';
 import { adjustEndDateForPayment } from './segments/day-count-calculator';
-import { calculateTotalInterest, roundMoney } from './segments/interest-formula';
+import {
+  calculateTotalInterest,
+  reconcileEnforcementPhaseInterest,
+} from './segments/interest-formula';
 import { 
   AllocationEngineService, 
   AllocationOptions,
@@ -190,8 +193,8 @@ export class InterestEngineService {
     }
 
     // 10. Calculate totals
-    const { totalInterest, preEnforcementInterest, postEnforcementInterest } = 
-      this.calculateTotals(segmentResults);
+    const { totalInterest, preEnforcementInterest, postEnforcementInterest } =
+      this.calculateTotals(segmentResults, request.enforcementDate !== undefined, effectiveOptions.roundingMode);
 
     const allSegments = this.collectAllSegments(segmentResults);
     const totalDue = this.calculateTotalDue(request.claimBuckets, totalInterest, allocationResult);
@@ -497,12 +500,21 @@ export class InterestEngineService {
         effectiveOptions.roundingMode,
         effectiveOptions.roundingScope,
       );
-      const preEnforcementInterest = claimState.segments
+      const rawPreEnforcementInterest = claimState.segments
         .filter((segment) => segment.phase === 'PRE_ENFORCEMENT')
         .reduce((sum, segment) => sum + segment.segmentInterest, 0);
-      const postEnforcementInterest = claimState.segments
+      const rawPostEnforcementInterest = claimState.segments
         .filter((segment) => segment.phase === 'POST_ENFORCEMENT')
         .reduce((sum, segment) => sum + segment.segmentInterest, 0);
+      const hasEnforcementPhase = claimState.segments.some((segment) => segment.phase !== undefined);
+      const { preEnforcementInterest, postEnforcementInterest } = hasEnforcementPhase
+        ? reconcileEnforcementPhaseInterest(
+            total,
+            rawPreEnforcementInterest,
+            rawPostEnforcementInterest,
+            effectiveOptions.roundingMode,
+          )
+        : { preEnforcementInterest: 0, postEnforcementInterest: 0 };
       const timeline = Array.from(new Set(
         claimState.segments.flatMap((segment) => [segment.periodStart, segment.periodEnd]),
       )).sort();
@@ -510,8 +522,8 @@ export class InterestEngineService {
       results.set(claimState.claimId, {
         segments: claimState.segments,
         totalInterest: total,
-        preEnforcementInterest: roundMoney(preEnforcementInterest, effectiveOptions.roundingMode),
-        postEnforcementInterest: roundMoney(postEnforcementInterest, effectiveOptions.roundingMode),
+        preEnforcementInterest,
+        postEnforcementInterest,
         roundingDifference,
         timeline,
       });
@@ -522,18 +534,33 @@ export class InterestEngineService {
 
   private calculateTotals(
     segmentResults: Map<string, SegmentBuildResult>,
+    hasEnforcementDate: boolean,
+    roundingMode: RoundingMode,
   ): { totalInterest: number; preEnforcementInterest: number; postEnforcementInterest: number } {
-    let totalInterest = 0;
-    let preEnforcementInterest = 0;
-    let postEnforcementInterest = 0;
+    let totalInterestCents = 0n;
+    let preEnforcementInterestCents = 0n;
+    let postEnforcementInterestCents = 0n;
 
     for (const result of segmentResults.values()) {
-      totalInterest += result.totalInterest;
-      preEnforcementInterest += result.preEnforcementInterest;
-      postEnforcementInterest += result.postEnforcementInterest;
+      totalInterestCents += toCents(result.totalInterest);
+      preEnforcementInterestCents += toCents(result.preEnforcementInterest);
+      postEnforcementInterestCents += toCents(result.postEnforcementInterest);
     }
 
-    return { totalInterest, preEnforcementInterest, postEnforcementInterest };
+    const totalInterest = fromCents(totalInterestCents);
+    if (!hasEnforcementDate) {
+      return { totalInterest, preEnforcementInterest: 0, postEnforcementInterest: 0 };
+    }
+
+    return {
+      totalInterest,
+      ...reconcileEnforcementPhaseInterest(
+        totalInterest,
+        fromCents(preEnforcementInterestCents),
+        fromCents(postEnforcementInterestCents),
+        roundingMode,
+      ),
+    };
   }
 
   private collectAllSegments(segmentResults: Map<string, SegmentBuildResult>): Segment[] {
