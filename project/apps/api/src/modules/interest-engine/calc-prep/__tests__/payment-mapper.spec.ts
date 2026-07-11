@@ -5,7 +5,24 @@
 import { mapPayments, LedgerPaymentRow, CollectionRow } from '../payment-mapper';
 
 function ledger(p: Partial<LedgerPaymentRow> & { id: string }): LedgerPaymentRow {
-  return { entryType: 'PAYMENT', status: 'CONFIRMED', amount: 100, currency: 'TRY', entryDate: '2025-03-10', ...p };
+  return {
+    tenantId: 't1',
+    caseId: 'case1',
+    entryType: 'PAYMENT',
+    status: 'CONFIRMED',
+    amount: 100,
+    currency: 'TRY',
+    entryDate: '2025-03-10',
+    ...p,
+  };
+}
+function reversal(paymentId: string | null, p: Partial<LedgerPaymentRow> & { id: string }): LedgerPaymentRow {
+  return ledger({
+    entryType: 'REVERSAL',
+    amount: -100,
+    reversesLedgerEntryId: paymentId,
+    ...p,
+  });
 }
 function collection(p: Partial<CollectionRow> & { id: string }): CollectionRow {
   return { status: 'CONFIRMED', amount: 100, currency: 'TRY', date: '2025-03-10', ...p };
@@ -80,5 +97,119 @@ describe('payment-mapper (G4b-1)', () => {
   it('Payment yalnız {id,date,amount,currency,source} taşır (LedgerAllocation/extra alan YOK)', () => {
     const res = mapPayments([ledger({ id: 'L1', amount: 100, sourceType: 'KASA' })], []);
     expect(Object.keys(res.payments[0]).sort()).toEqual(['amount', 'currency', 'date', 'id', 'source']);
+  });
+
+  it('tam PAYMENT + bağlı REVERSAL net-sıfır olur; LEDGER kaynağı korunur ve Collection fallback yapılmaz', () => {
+    const res = mapPayments(
+      [ledger({ id: 'P1' }), reversal('P1', { id: 'R1' })],
+      [collection({ id: 'C1', amount: 999 })],
+    );
+
+    expect(res).toEqual({ payments: [], source: 'LEDGER', diagnostics: [] });
+  });
+
+  it('birden çok PAYMENT içinde yalnız açıkça bağlı PAYMENT netlenir; ilgisiz PAYMENT etkili kalır', () => {
+    const res = mapPayments(
+      [ledger({ id: 'P1', amount: 100 }), ledger({ id: 'P2', amount: 250 }), reversal('P1', { id: 'R1', amount: -100 })],
+      [],
+    );
+
+    expect(res.payments).toEqual([expect.objectContaining({ id: 'P2', amount: 250 })]);
+  });
+
+  it('girdi sırası netting sonucunu değiştirmez', () => {
+    const rows = [
+      ledger({ id: 'P1', amount: 100 }),
+      ledger({ id: 'P2', amount: 250 }),
+      reversal('P1', { id: 'R1', amount: -100 }),
+    ];
+
+    const forward = mapPayments(rows, []);
+    const reversed = mapPayments([...rows].reverse(), []);
+
+    expect(forward.source).toBe('LEDGER');
+    expect(reversed.source).toBe('LEDGER');
+    expect(forward.diagnostics).toEqual([]);
+    expect(reversed.diagnostics).toEqual([]);
+    expect(forward.payments.map((payment) => [payment.id, payment.amount]).sort()).toEqual(
+      reversed.payments.map((payment) => [payment.id, payment.amount]).sort(),
+    );
+  });
+
+  it('non-CONFIRMED REVERSAL balance üzerinde etkisizdir', () => {
+    const res = mapPayments(
+      [ledger({ id: 'P1' }), reversal('P1', { id: 'R1', status: 'PENDING' })],
+      [],
+    );
+
+    expect(res.payments.map((payment) => payment.id)).toEqual(['P1']);
+    expect(res.diagnostics).toEqual([]);
+  });
+
+  it('reversesLedgerEntryId eksikliği fail-closed olur', () => {
+    const res = mapPayments([ledger({ id: 'P1' }), reversal(null, { id: 'R1' })], []);
+
+    expect(res).toMatchObject({ payments: [], source: 'LEDGER' });
+    expect(res.diagnostics).toEqual([
+      expect.objectContaining({ code: 'REVERSAL_REFERENCE_MISSING', paymentId: 'R1' }),
+    ]);
+  });
+
+  it('bulunmayan PAYMENT ilişkisi fail-closed olur', () => {
+    const res = mapPayments([reversal('missing', { id: 'R1' })], [collection({ id: 'C1' })]);
+
+    expect(res).toMatchObject({ payments: [], source: 'LEDGER' });
+    expect(res.diagnostics).toEqual([
+      expect.objectContaining({ code: 'REVERSAL_PAYMENT_NOT_FOUND', paymentId: 'R1' }),
+    ]);
+  });
+
+  it.each([
+    ['tenant', { tenantId: 't2' }, 'REVERSAL_TENANT_MISMATCH'],
+    ['case', { caseId: 'case2' }, 'REVERSAL_CASE_MISMATCH'],
+  ])('%s bağlamı farklı REVERSAL fail-closed olur', (_label, overrides, code) => {
+    const res = mapPayments([ledger({ id: 'P1' }), reversal('P1', { id: 'R1', ...overrides })], []);
+
+    expect(res.payments).toEqual([]);
+    expect(res.diagnostics).toEqual([expect.objectContaining({ code, paymentId: 'R1' })]);
+  });
+
+  it('non-negative REVERSAL işareti fail-closed olur', () => {
+    const res = mapPayments([ledger({ id: 'P1' }), reversal('P1', { id: 'R1', amount: 100 })], []);
+
+    expect(res.payments).toEqual([]);
+    expect(res.diagnostics).toEqual([
+      expect.objectContaining({ code: 'REVERSAL_SIGN_INVALID', paymentId: 'R1' }),
+    ]);
+  });
+
+  it('farklı para birimli REVERSAL fail-closed olur', () => {
+    const res = mapPayments([ledger({ id: 'P1' }), reversal('P1', { id: 'R1', currency: 'USD' })], []);
+
+    expect(res.payments).toEqual([]);
+    expect(res.diagnostics).toEqual([
+      expect.objectContaining({ code: 'REVERSAL_CURRENCY_MISMATCH', paymentId: 'R1' }),
+    ]);
+  });
+
+  it('kısmi veya tam zıt olmayan REVERSAL tutarı fail-closed olur', () => {
+    const res = mapPayments([ledger({ id: 'P1', amount: 100 }), reversal('P1', { id: 'R1', amount: -40 })], []);
+
+    expect(res.payments).toEqual([]);
+    expect(res.diagnostics).toEqual([
+      expect.objectContaining({ code: 'REVERSAL_AMOUNT_MISMATCH', paymentId: 'R1' }),
+    ]);
+  });
+
+  it('aynı PAYMENT için ikinci CONFIRMED REVERSAL fail-closed olur', () => {
+    const res = mapPayments(
+      [ledger({ id: 'P1' }), reversal('P1', { id: 'R1' }), reversal('P1', { id: 'R2' })],
+      [],
+    );
+
+    expect(res.payments).toEqual([]);
+    expect(res.diagnostics).toEqual([
+      expect.objectContaining({ code: 'REVERSAL_DUPLICATE', paymentId: 'R2' }),
+    ]);
   });
 });

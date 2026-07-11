@@ -27,7 +27,7 @@ import type { RateEntry as ProviderRateEntry } from '../rates/rate-provider.serv
 import { InterestEngineService } from '../interest-engine.service';
 import { assembleClaimBuckets, ClaimItemInput } from '../assembler/claim-bucket-assembler';
 import type { AssemblerDiagnostic } from '../assembler/claim-bucket-assembler';
-import { mapPayments, PaymentSource } from '../calc-prep/payment-mapper';
+import { hasFatalPaymentMapDiagnostic, mapPayments, PaymentSource } from '../calc-prep/payment-mapper';
 import type { LedgerPaymentRow, CollectionRow, PaymentMapDiagnostic } from '../calc-prep/payment-mapper';
 import { groupByCurrency } from '../calc-prep/currency-grouper';
 import type { CurrencyGroupDiagnostic } from '../calc-prep/currency-grouper';
@@ -232,7 +232,22 @@ export class CaseBalanceService {
       this.prisma.claimItem.findMany({
         where: { caseId, tenantId, status: { not: ClaimItemStatus.CANCELLED } },
       }),
-      this.prisma.ledgerEntry.findMany({ where: { caseId, tenantId, entryType: 'PAYMENT' } }),
+      this.prisma.ledgerEntry.findMany({
+        where: { caseId, tenantId, entryType: { in: ['PAYMENT', 'REVERSAL'] }, status: 'CONFIRMED' },
+        select: {
+          id: true,
+          tenantId: true,
+          caseId: true,
+          entryType: true,
+          status: true,
+          amount: true,
+          currency: true,
+          entryDate: true,
+          effectiveDate: true,
+          sourceType: true,
+          reversesLedgerEntryId: true,
+        },
+      }),
       this.prisma.collection.findMany({ where: { caseId, tenantId } }),
       this.readHeldOverpayments(tenantId, caseId),
       this.readBlockedOverpaymentDiagnostics(tenantId, caseId),
@@ -264,6 +279,8 @@ export class CaseBalanceService {
       ledgerRows.map(
         (e): LedgerPaymentRow => ({
           id: e.id,
+          tenantId: e.tenantId,
+          caseId: e.caseId,
           entryType: e.entryType,
           status: e.status,
           amount: e.amount as unknown as string,
@@ -271,6 +288,7 @@ export class CaseBalanceService {
           entryDate: e.entryDate,
           effectiveDate: e.effectiveDate ?? null,
           sourceType: e.sourceType ?? null,
+          reversesLedgerEntryId: e.reversesLedgerEntryId ?? null,
         }),
       ),
       collections.map(
@@ -286,6 +304,23 @@ export class CaseBalanceService {
         }),
       ),
     );
+
+    if (hasFatalPaymentMapDiagnostic(pay.diagnostics)) {
+      return {
+        asOfDate,
+        source: pay.source,
+        currencyResults: [],
+        projections: { costs: asm.costs, ancillaries: asm.ancillaries },
+        diagnostics: {
+          fatal: [{ code: 'REVERSAL_INTEGRITY_INVALID', caseId }],
+          assembler: asm.diagnostics,
+          payments: pay.diagnostics,
+          currency: [],
+          perCurrency: [],
+        },
+        overpayments: { held: heldOverpayments, blocked: blockedOverpayments },
+      };
+    }
 
     // 5. Currency gruplama (G4b-1)
     const grouped = groupByCurrency(asm.buckets, pay.payments);

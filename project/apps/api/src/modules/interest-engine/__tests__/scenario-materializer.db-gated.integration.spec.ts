@@ -168,12 +168,15 @@ describeWithDisposableDb('W0.2 PAYMENT-only materializer - disposable DB', () =>
     });
   }
 
-  function inMemoryResult(def: ReturnType<typeof simpleScenario>) {
+  function inMemoryResult(
+    def: ReturnType<typeof simpleScenario>,
+    payments = def.domainInput.payments,
+  ) {
     return buildEngine().computeBalance(
       {
         caseId: def.id,
         claimBuckets: def.domainInput.claimBuckets,
-        payments: def.domainInput.payments,
+        payments,
         asOfDate: def.domainInput.asOfDate,
         mode: 'PREVIEW',
         options: { dayCountBasis: 365 },
@@ -381,14 +384,16 @@ describeWithDisposableDb('W0.2 PAYMENT-only materializer - disposable DB', () =>
     ]);
     expect({ timeline, outbox, journal, audit }).toEqual({ timeline: 0, outbox: 0, journal: 0, audit: 0 });
 
-    // Mevcut main davranışı SABİTLENİR: computeCaseBalance yalnız PAYMENT okur
-    // (entryType filtresi) — REVERSAL'sız in-memory sonuçla AYNI kalır
-    // (netting PR-1B'nin işi, burada beklenmez).
+    // PR-1B: test-support materializer'ın açıkça bağlı PAYMENT + REVERSAL çifti
+    // CaseBalance'da net-sıfırdır. Bu, gerçek CollectionService.cancel() write-path
+    // fidelity kanıtı değildir; yalnız W0.2 materialized-state okuma kanıtıdır.
     await seedRate(refs.tenantId);
     const dbResult = await caseBalance.computeCaseBalance(refs.tenantId, refs.caseId, AS_OF);
-    const memoryResult = inMemoryResult(def);
+    const prePaymentResult = inMemoryResult(def, []);
     const dbTry = dbResult.currencyResults.find((currency) => currency.currency === 'TRY');
-    expect(dbTry!.result!.totalDue).toBeCloseTo(memoryResult.totalDue, 2);
+    expect(dbResult.source).toBe('LEDGER');
+    expect(dbResult.diagnostics.fatal).toEqual([]);
+    expect(dbTry!.result!.totalDue).toBeCloseTo(prePaymentResult.totalDue, 2);
   });
 
   it('rejects a REVERSAL for an unknown ofPaymentId (G1) and rolls back the whole scenario', async () => {
