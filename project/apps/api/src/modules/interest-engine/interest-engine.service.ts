@@ -31,12 +31,15 @@ import { CoverageMapBuilder } from './rates/coverage-map.builder';
 import { generateRateTableVersion } from './rates/rate-version-hash';
 import { PolicyGateV2Service } from './policy-gate/policy-gate-v2.service';
 import { SegmentBuilderService, SegmentBuildResult } from './segments/segment-builder.service';
+import { adjustEndDateForPayment } from './segments/day-count-calculator';
+import { calculateTotalInterest, roundMoney } from './segments/interest-formula';
 import { 
   AllocationEngineService, 
   AllocationOptions,
   ClaimDebtState,
 } from './allocation/allocation-engine.service';
 import { ClaimPriorityRule } from './allocation/claim-priority.service';
+import { fromCents, toCents } from './allocation/minor-unit';
 import { LegalReportRendererService } from './reporter/legal-report-renderer.service';
 import { AuditWriterService } from './audit/audit-writer.service';
 import { InterestEngineError, InterestEngineErrorCode } from './errors/interest-engine-errors';
@@ -170,13 +173,20 @@ export class InterestEngineService {
       );
     }
 
-    // 8. Build segments for each claim
-    const segmentResults = this.buildAllSegments(request, rates, effectiveOptions);
-
-    // 9. Allocate payments (if any)
+    // 8-9. Build segments and allocate payments. Payment-bearing calculations
+    // accrue sequentially so only principal allocation mutates the future base.
+    let segmentResults: Map<string, SegmentBuildResult>;
     let allocationResult: { steps: AllocationStep[]; finalDebtStates: ClaimDebtState[] } | undefined;
     if (request.payments && request.payments.length > 0) {
-      allocationResult = this.allocatePayments(request, segmentResults, effectiveOptions);
+      const paymentAwareResult = this.allocatePaymentsWithInterestBaseMutation(
+        request,
+        rates,
+        effectiveOptions,
+      );
+      segmentResults = paymentAwareResult.segmentResults;
+      allocationResult = paymentAwareResult.allocationResult;
+    } else {
+      segmentResults = this.buildAllSegments(request, rates, effectiveOptions);
     }
 
     // 10. Calculate totals
@@ -345,14 +355,18 @@ export class InterestEngineService {
     return results;
   }
 
-  private allocatePayments(
+  private allocatePaymentsWithInterestBaseMutation(
     request: CalculationRequest,
-    segmentResults: Map<string, SegmentBuildResult>,
+    rates: RateEntry[],
     effectiveOptions: CalculationRequest['options'],
-  ): { steps: AllocationStep[]; finalDebtStates: ClaimDebtState[] } {
-    const initialSegments = new Map<string, Segment[]>();
-    for (const [claimId, result] of segmentResults) {
-      initialSegments.set(claimId, result.segments);
+  ): {
+    segmentResults: Map<string, SegmentBuildResult>;
+    allocationResult: { steps: AllocationStep[]; finalDebtStates: ClaimDebtState[] };
+  } {
+    const claimDebtStates = this.createInitialClaimDebtStates(request.claimBuckets);
+    const lastAccrualBoundary = new Map<string, string>();
+    for (const claim of request.claimBuckets) {
+      lastAccrualBoundary.set(claim.id, claim.ibrazTarihi || claim.startDate);
     }
 
     const allocationOptions: AllocationOptions = {
@@ -360,17 +374,150 @@ export class InterestEngineService {
       ancillaryPriority: effectiveOptions.ancillaryPriority,
     };
 
-    const result = this.allocationEngine.allocateMultiplePayments(
-      request.payments!,
-      request.claimBuckets,
-      initialSegments,
-      allocationOptions,
+    const sortedPayments = [...request.payments!].sort((a, b) =>
+      a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
     );
 
+    const allSteps: AllocationStep[] = [];
+    for (const payment of sortedPayments) {
+      const paymentBoundary = adjustEndDateForPayment(
+        payment.date,
+        effectiveOptions.sameDayPaymentRule,
+      );
+
+      for (const claimState of claimDebtStates) {
+        const fromDate = lastAccrualBoundary.get(claimState.claimId)!;
+        const toDate = paymentBoundary <= request.asOfDate ? paymentBoundary : request.asOfDate;
+        this.accrueInterestForCurrentPrincipal(
+          claimState,
+          fromDate,
+          toDate,
+          rates,
+          request,
+          effectiveOptions,
+        );
+        if (toDate > fromDate) {
+          lastAccrualBoundary.set(claimState.claimId, toDate);
+        }
+      }
+
+      allSteps.push(...this.allocationEngine.allocateSinglePayment(
+        payment,
+        claimDebtStates,
+        allocationOptions,
+      ));
+    }
+
+    for (const claimState of claimDebtStates) {
+      this.accrueInterestForCurrentPrincipal(
+        claimState,
+        lastAccrualBoundary.get(claimState.claimId)!,
+        request.asOfDate,
+        rates,
+        request,
+        effectiveOptions,
+      );
+    }
+
     return {
-      steps: result.steps,
-      finalDebtStates: result.finalDebtStates,
+      segmentResults: this.buildSegmentResultsFromClaimStates(claimDebtStates, effectiveOptions),
+      allocationResult: { steps: allSteps, finalDebtStates: claimDebtStates },
     };
+  }
+
+  private createInitialClaimDebtStates(claims: ClaimBucket[]): ClaimDebtState[] {
+    return claims.map((claim) => ({
+      claimId: claim.id,
+      claim,
+      debtState: {
+        principal: claim.amount,
+        accruedInterest: 0,
+        costs: this.ancillaryRecordToMap(claim.costs),
+        ancillaries: this.ancillaryRecordToMap(claim.ancillaries),
+      },
+      segments: [],
+    }));
+  }
+
+  private ancillaryRecordToMap(rec?: Record<string, number | undefined>): Map<AncillaryType, number> {
+    const values = new Map<AncillaryType, number>();
+    for (const [key, value] of Object.entries(rec ?? {})) {
+      if (value != null && value > 0) {
+        values.set(key as AncillaryType, value);
+      }
+    }
+    return values;
+  }
+
+  private accrueInterestForCurrentPrincipal(
+    claimState: ClaimDebtState,
+    fromDate: string,
+    toDate: string,
+    rates: RateEntry[],
+    request: CalculationRequest,
+    effectiveOptions: CalculationRequest['options'],
+  ): void {
+    if (toDate <= fromDate || claimState.debtState.principal <= 0) {
+      return;
+    }
+
+    const result = this.segmentBuilder.buildSegments(
+      {
+        ...claimState.claim,
+        amount: claimState.debtState.principal,
+        startDate: fromDate,
+        ibrazTarihi: undefined,
+      },
+      toDate,
+      rates,
+      {
+        enforcementDate: request.enforcementDate,
+        dayCountBasis: effectiveOptions.dayCountBasis,
+        roundingMode: effectiveOptions.roundingMode,
+        roundingScope: effectiveOptions.roundingScope,
+        sameDayPaymentRule: effectiveOptions.sameDayPaymentRule,
+      },
+    );
+
+    claimState.debtState.accruedInterest = fromCents(
+      toCents(claimState.debtState.accruedInterest) + toCents(result.totalInterest),
+    );
+    claimState.segments.push(...result.segments);
+  }
+
+  private buildSegmentResultsFromClaimStates(
+    claimDebtStates: ClaimDebtState[],
+    effectiveOptions: CalculationRequest['options'],
+  ): Map<string, SegmentBuildResult> {
+    const results = new Map<string, SegmentBuildResult>();
+
+    for (const claimState of claimDebtStates) {
+      const { total, roundingDifference } = calculateTotalInterest(
+        claimState.segments.map((segment) => segment.segmentInterest),
+        effectiveOptions.roundingMode,
+        effectiveOptions.roundingScope,
+      );
+      const preEnforcementInterest = claimState.segments
+        .filter((segment) => segment.phase === 'PRE_ENFORCEMENT')
+        .reduce((sum, segment) => sum + segment.segmentInterest, 0);
+      const postEnforcementInterest = claimState.segments
+        .filter((segment) => segment.phase === 'POST_ENFORCEMENT')
+        .reduce((sum, segment) => sum + segment.segmentInterest, 0);
+      const timeline = Array.from(new Set(
+        claimState.segments.flatMap((segment) => [segment.periodStart, segment.periodEnd]),
+      )).sort();
+
+      results.set(claimState.claimId, {
+        segments: claimState.segments,
+        totalInterest: total,
+        preEnforcementInterest: roundMoney(preEnforcementInterest, effectiveOptions.roundingMode),
+        postEnforcementInterest: roundMoney(postEnforcementInterest, effectiveOptions.roundingMode),
+        roundingDifference,
+        timeline,
+      });
+    }
+
+    return results;
   }
 
   private calculateTotals(

@@ -39,6 +39,7 @@ import { ClaimPriorityService } from '../allocation/claim-priority.service';
 import { AllocationEngineService } from '../allocation/allocation-engine.service';
 import { DEFAULT_INTERPRETATION_PROFILE_ID } from '../types/calculation.types';
 import type { RateEntry } from '../rates/rate-provider.service';
+import { InterestTypeCode } from '../types/domain.types';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env as Record<string, string | undefined>);
 const describeIf = TEST_DB_URL ? describe : describe.skip;
@@ -83,7 +84,7 @@ function simpleScenario(id: string, tenantSetup: 'SINGLE' | 'TWO_TENANT_ISOLATIO
           amount: 10_000,
           currency: 'TRY',
           startDate: CLAIM_START,
-          interestType: 'LEGAL_3095',
+          interestType: InterestTypeCode.LEGAL_3095,
         }),
       ],
       payments: [
@@ -167,6 +168,73 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     expect(tryRow!.skipped).toBe(false);
     expect(tryRow!.interest).toBeCloseTo(mem.totalInterest, 2);
     expect(tryRow!.claimRemaining).toBeCloseTo(mem.totalDue, 2);
+  });
+
+  it('D6 / PR-4: real DB flow mutates only the future principal interest base and preserves tenant isolation', async () => {
+    const id = 'pr4-interest-base';
+    const def = defineScenario({
+      id,
+      title: 'PR-4 partial payment reaches principal and reduces only the future interest base',
+      domainInput: {
+        claimBuckets: [
+          scenarioClaimBucket({
+            id: `${id}-claim-1`,
+            amount: 1_000,
+            currency: 'TRY',
+            startDate: '2026-06-01',
+            interestType: InterestTypeCode.LEGAL_3095,
+          }),
+        ],
+        payments: [
+          scenarioPayment({ id: `${id}-pay-1`, date: '2026-06-11', amount: 20, currency: 'TRY' }),
+        ],
+        asOfDate: '2026-06-21',
+      },
+      expected: {
+        perCurrencyStatus: { TRY: 'OK' },
+        blockerCodes: [],
+        authority: 'SHADOW_ONLY',
+      },
+      persistenceIntent: { tenantSetup: 'TWO_TENANT_ISOLATION', currency: 'TRY' },
+    });
+    const { evidence, refs } = await runSyntheticScenarioDiagnostic(prisma, def, { annualRate: 0.365 });
+    allRefs.push(refs);
+
+    expect(evidence.comparison).toMatchObject({ match: true, mismatches: [] });
+    expect(refs.secondaryTenantId).toBeDefined();
+
+    const service = new CaseBalanceService(
+      prisma as never,
+      new RateProviderService(prisma as never),
+      buildEngine(),
+    );
+    const balance = await service.computeCaseBalance(refs.tenantId, refs.caseId, def.domainInput.asOfDate);
+    const tryResult = balance.currencyResults.find((currency) => currency.currency === 'TRY')?.result;
+
+    expect(balance.source).toBe('LEDGER');
+    expect(balance.diagnostics.fatal).toEqual([]);
+    expect(tryResult).toBeDefined();
+    expect(tryResult!.totalInterest).toBe(19.9);
+    expect(tryResult!.finalDebtStates).toEqual([
+      expect.objectContaining({ principal: 990, accruedInterest: 9.9 }),
+    ]);
+    expect(tryResult!.segments.map((segment) => [
+      segment.periodStart,
+      segment.periodEnd,
+      segment.principal,
+      segment.segmentInterest,
+    ])).toEqual([
+      ['2026-06-01', '2026-06-11', 1_000, 10],
+      ['2026-06-11', '2026-06-21', 990, 9.9],
+    ]);
+
+    const crossTenant = await service.computeCaseBalance(
+      refs.secondaryTenantId!,
+      refs.caseId,
+      def.domainInput.asOfDate,
+    );
+    expect(crossTenant.currencyResults).toEqual([]);
+    expect(crossTenant.diagnostics.fatal).toEqual([{ code: 'CASE_NOT_FOUND', caseId: refs.caseId }]);
   });
 
   it('D2: karşılaştırıcı dürüstlüğü — bilinçli yanlış expected match=false üretir', async () => {
