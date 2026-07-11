@@ -68,6 +68,26 @@ describe("ClaimItemPanel — PR-5a readOnly surfacing", () => {
     await waitFor(() => expect(screen.getByText("Ana Para Ekle")).toBeTruthy());
     expect(screen.getByText("Faizleri Yeniden Hesapla")).toBeTruthy();
   });
+
+  it("PR-A3 rich-only ClaimItem faiz türünü legacy veya YASAL tahmini olmadan gösterir", async () => {
+    get.mockImplementation((url: string) =>
+      url.endsWith("/summary")
+        ? Promise.resolve({ data: { data: mockSummary } })
+        : Promise.resolve({
+            data: {
+              data: [{
+                ...mockItems[0],
+                interestTypeCode: "CONTRACTUAL",
+                interestType: null,
+                interestRate: 18.5,
+              }],
+            },
+          }),
+    );
+    render(<ClaimItemPanel caseId="c1" readOnly />);
+    await waitFor(() => expect(screen.getByText("%18.5 Sözleşmesel (Akdi) Faiz")).toBeTruthy());
+    expect(screen.queryByText(/Yasal Faiz/)).toBeNull();
+  });
 });
 
 describe("ClaimItemPanel — PR-5c metadata-only edit", () => {

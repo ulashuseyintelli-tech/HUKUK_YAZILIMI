@@ -6,7 +6,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { InterestType as PrismaInterestType } from '@prisma/client';
+import {
+  InterestType as PrismaInterestType,
+  InterestTypeCode as PrismaInterestTypeCode,
+} from '@prisma/client';
 import { InterestTypeCode } from '../../types/domain.types';
 
 /**
@@ -42,12 +45,30 @@ function readPrismaModelFields(modelName: string): Map<string, string> {
 import {
   mapInterestType,
   mapInterestTypeString,
+  mapLegacyClaimItemCompatibilityType,
+  mapPersistedInterestTypeCode,
   tryMapInterestType,
   tryMapInterestTypeString,
   UnsupportedInterestTypeError,
 } from '../interest-type-bridge';
 
 describe('interest-type-bridge (E-G1)', () => {
+  describe('PR-A3 persisted rich authority', () => {
+    it.each(Object.values(PrismaInterestTypeCode))('%s persisted code için exact engine code üretir', (code) => {
+      expect(mapPersistedInterestTypeCode(code)).toBe(code);
+    });
+
+    it('legacy-only ClaimItem adapter yalnız frozen üç mirror değerini kabul eder', () => {
+      expect(mapLegacyClaimItemCompatibilityType('YASAL')).toBe(InterestTypeCode.LEGAL_3095);
+      expect(mapLegacyClaimItemCompatibilityType('TICARI')).toBe(InterestTypeCode.COMMERCIAL_AVANS_3095_2_2);
+      expect(mapLegacyClaimItemCompatibilityType('SABIT')).toBe(InterestTypeCode.COMMERCIAL_FIXED);
+      expect(() => mapLegacyClaimItemCompatibilityType('AVANS')).toThrow(UnsupportedInterestTypeError);
+      expect(() => mapLegacyClaimItemCompatibilityType('TEMERRUT')).toThrow(UnsupportedInterestTypeError);
+      expect(() => mapLegacyClaimItemCompatibilityType('OZEL')).toThrow(UnsupportedInterestTypeError);
+      expect(() => mapLegacyClaimItemCompatibilityType('YOKSUN')).toThrow(UnsupportedInterestTypeError);
+    });
+  });
+
   describe('mapInterestType — STRICT (Prisma enum yüzeyi)', () => {
     it('YASAL → LEGAL_3095', () => {
       expect(mapInterestType(PrismaInterestType.YASAL)).toBe(InterestTypeCode.LEGAL_3095);
