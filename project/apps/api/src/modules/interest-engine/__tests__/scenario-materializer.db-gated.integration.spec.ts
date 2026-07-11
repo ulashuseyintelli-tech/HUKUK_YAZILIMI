@@ -324,6 +324,21 @@ describeWithDisposableDb('W0.2 PAYMENT-only materializer - disposable DB', () =>
         details: { currencies: ['TRY'] },
       }),
     ]));
+    expect(display.trace).toMatchObject({
+      authority: 'NONE',
+      persisted: false,
+      allocationSteps: [],
+      blockerCodes: ['NO_BUCKETS', 'CURRENCY_INTEGRITY'],
+    });
+    expect(display.nonOfficialSnapshot).toMatchObject({
+      official: false,
+      persisted: false,
+      authority: 'NONE',
+      officialSnapshotAvailable: false,
+      displayAuthority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+      blockerCodes: ['NO_BUCKETS', 'CURRENCY_INTEGRITY'],
+      readiness: { status: 'BLOCKED', primaryDisplayEligible: false },
+    });
   });
 
   it('rolls back every intermediate write when canonical input is unsupported', async () => {
