@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-11 (VER-05 / CAN-CUT-01 PR-1C Invoice KDV Write-Path Convergence)
+**Son güncelleme:** 2026-07-11 (PR #406 stale/conflicting closure disposition)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -53,7 +53,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | VER-09 | Escalation FOUNDER/MANAGER fallback bug'ının resmî backlog kaydı var mı | Orta | Henüz doğrulanmadı — bu kayıt "MVR-009 Route Drift" alias'ı değildir; route-drift/P2 observe bookkeeping düzeltmesi ayrı governance-only remediation olarak kapatıldı |
 | VER-10 | Senet/bono arka-yüz OCR endorsement canlı doğrulama | Düşük-Orta | Açık — PR/merge zinciri mevcut olsa da kayıt "canlı doğrulama" istiyor; canlı dataset/evidence olmadan kapatılmaz |
 | VER-12 | 3 duplike `nest start --watch` süreci kasıtlı mı terkedilmiş mi | Düşük | Açık — process command-line incelemesi güvenlik/owner izni gerektirir; repo ağacından kapanmaz |
-| VER-13 | PR #406/#407 mergeStateStatus canlı teyidi | Orta | Açık — PR #406 OPEN/UNKNOWN görüldü; PR #407 için dış metadata doğrulaması owner/açık izin gerektirir |
+| VER-13 | PR #406/#407 mergeStateStatus canlı teyidi | Orta | Kısmen kapandı — PR #406 güncel metadata ile `DIRTY / CONFLICTING` doğrulandı ve owner kararıyla `CLOSED / UNMERGED` kapatıldı. PR #407 `OPEN / DIRTY / CONFLICTING` olarak doğrulandı; disposition kararı ayrı açık kapsam olarak korunur. |
 | VER-14 | Journal migration #645 + FAZ-1b migration 20260630120000 DB apply durumu | Yüksek | Açık — migration dosyaları repo'da var; DB apply durumu repo ağacından kanıtlanamaz |
 | VER-16 | 6 codex/* local branch stale/aktif durumu | Düşük | Açık — branch/worktree hijyeni ayrı bakım/owner-local context gerektirir |
 | **VER-20** | pnpm store diğer paketler content-eksikliği | — | 2. batch (eski VR-01) |
@@ -142,6 +142,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | **VER-34 (`office-approval-shadow.service.ts` gerçek tüketicisi)** | VER-10+ reconcile (2026-07-09): gerçek tüketici `case-status.controller.ts`; module ve spec importları da mevcut. CPB-03 kapsamındaki tüketici doğrulaması kapandı. |
 | **VER-35 (`HUKUK_payout-audit-hardening` foreign/tracked doğrulaması)** | VER-10+ reconcile (2026-07-09): `HUKUK_payout-audit-hardening` dizini parent workspace altında yok; repo içi referans yalnız bu register satırıydı. Stale local verification olarak kapandı. |
 | **VER-36 (DBIND §5 payout self-approval runtime reconcile)** | Owner decision + runtime patch (2026-07-10): DBIND §5'in payout self-approval istisnası `CLIENT_PAYOUT_POST` + `approve()` için PayoutApprovalPolicy eligible üst-seviye aktörlere uygulandı. `reject`/`requestRevision`/`approveWithChanges` ve diğer actionCode'lar generic self-approval yasağı altında kaldı. `PendingPayoutRequests` PENDING kendi payout talebi için "Onayla", APPROVED için mevcut "Kesinleştir" akışını kullanır. Schema/migration yok. |
+| **OWN-25 (PR #406 stale/conflicting disposition)** | **CLOSED / UNMERGED** (2026-07-11): PR head `53fb852a` güncel `main` karşısında 705 commit geride, GitHub `DIRTY / CONFLICTING` ve salt-okunur merge simülasyonunda `cases/new/page.tsx` content conflict bulundu. Direct merge/rebase/cherry-pick reddedildi. `YOK→YOKSUN`, `AKDI→SABIT` ve unknown→silent `YASAL` eşlemeleri canonical main'e taşınmadı. Çok-kalem canlı toplam, okunur `dues.N.interestType` hatası ve UI faiz değerlerinin API sınırında güvenli normalizasyonu ihtiyaçları current-main rebuild için korundu. Sonraki gate: `PR-A — Interest Boundary Contract / GO-ANALYZE`; `YOK` interestType üretmez, `YOKSUN` ayrı hukuki olgudur, `AKDI` contractual provenance'ı korunur, banka/mevduat türleri legacy enum'a kör daraltılmaz ve unknown sessizce `YASAL`a düşmez. Runtime/schema/migration/canonical-main değişikliği yok. |
 | **OWN-29-A (Offset confirm-gate governance closure)** | **CLOSED / ANALYZED / RUNTIME UNCHANGED** (2026-07-10): `CLIENT_OFFSET_APPLY` ve `CLIENT_OFFSET_REVERSE` için mevcut service-level PARTNER/MANAGER `DIRECT_CAPABILITY` modeli v1 kapsamında korundu; `approvalRef=null` davranışı değişmedi. Offset payout/money-out değildir ve DBIND §5 uygulanmaz. OfficeApproval/four-eyes implementasyonu yetkilendirilmedi. Gelecekte confirm-gate açılması yeni owner-authorized workstream gerektirir. Runtime/test/schema/migration değişikliği yok. |
 | **OWN-29-B (confirmed/posted collection void approval gate)** | Runtime + web + tests + governance patch (2026-07-10): public collection cancel yolları doğrudan finansal mutasyon yapmak yerine `COLLECTION_VOID` OfficeApproval request üretir; duplicate pending request `collection-void:{collectionId}` idempotency key ile engellenir. Generic OfficeApproval self-approval yasağı korunur; DBIND §5 payout exception collection void'a uygulanmaz. Eligible approver `approve()` sonrası mevcut reversal/journal/`PAYMENT_REVERSED` zinciri aynı transaction içinde çalışır; request açılması collection/ledger/journal state'ini değiştirmez. Schema/migration yok. |
 | **OWN-29-C (financial case close approval gate)** | Runtime + web summary + tests + governance patch (2026-07-10): `HITAM`, `INFAZ`, `MUVEKKILE_IADE`, `ACIZ`, `BATAK`, `MAHSUP`, `TEMLIK` hedef statüleri generic `CHANGE_STATUS` direct/guided edge hattından ayrılarak `FINANCIAL_CASE_CLOSE` OfficeApproval request üretir. Request açılması Case status'unu değiştirmez; requester self-approve edemez ve DBIND §5 uygulanmaz. Approval sonrası domain-sync mevcut case-status uygulama hattını transaction içinde çalıştırır. Schema/migration yok. Bu satır, owner register ve özet sayımda zaten kapalı gösterilen OWN-29-C için eksik Closed Register bookkeeping repair'idir. |
@@ -227,7 +228,6 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | OWN-22 | Notification | Kanal-bazlı KVKK rızası | Ayrı domain, owner "ayrı epik" dedi |
 | OWN-23 | OCR | A1 tam ciro-zinciri epik | Av./legal sign-off |
 | OWN-24 | DevOps | CI full-suite coverage triage | Gerçek backlog'a alınsın mı (eski VER-19 buraya taşınmıştı) |
-| OWN-25 | DevOps | PR #406 rebase-veya-kapat | Sahiplik/güncellik önce teyit, sonra karar |
 | OWN-26 | DevOps | Muhasebe kullanıcısına Lawyer'dan bağımsız capability alanı | Owner yönü |
 | OWN-27 | UI/Architecture | 3 silinen orphan component'in kalıcı terk mi | Ürün kararı |
 | **OWN-28 (YENİ)** | Authorization | 2. batch PB-01 = zaten ALT'daki ile aynı (bkz. not) | — |
@@ -283,8 +283,8 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | Master Verification Required | 14 (VER-02, VER-05, VER-07, VER-09, VER-10, VER-12, VER-13, VER-14, VER-16, VER-20, VER-21, VER-22, VER-29, VER-33) |
 | Master Workflow Queue — PENDING | 6 grup |
 | Master Workflow Queue — DONE | 7 zincir/kayıt |
-| Closed Register | 53 (Wave 0 ile VER-03/04/06/08/23/25/26/27 eklendi) |
+| Closed Register | 54 (PR #406 disposition ile OWN-25 eklendi) |
 | Archived Register | 7 (ARC-05 split sonrası tek satır, A parçası Closed'a gitti) |
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |
-| Owner Decision Register | 29 (OWN-02 kapandı/ayrıştırıldı; OWN-30 yeni — ACT-18'den yeniden sınıflandırıldı; OWN-28 yalnız referans) |
+| Owner Decision Register | 28 (OWN-25 kapandı; OWN-02 kapandı/ayrıştırıldı; OWN-30 ACT-18'den yeniden sınıflandırıldı; OWN-28 yalnız referans) |
