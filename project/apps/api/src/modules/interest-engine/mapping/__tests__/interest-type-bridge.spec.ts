@@ -10,9 +10,8 @@ import { InterestType as PrismaInterestType } from '@prisma/client';
 import { InterestTypeCode } from '../../types/domain.types';
 
 /**
- * Prisma `InterestTypeCode` enum'u hiçbir KOLON tarafından kullanılmadığından generated
- * client'a runtime export EDİLMEZ (Prisma kullanılmayan enum'u prune eder). Bu yüzden E5
- * parity'si kaynak-otoritesi olan schema.prisma'dan doğrulanır (drift kilidi).
+ * E5 parity'si ve PR-A1 persistence sözleşmesi doğrudan kaynak-otoritesi olan
+ * schema.prisma'dan doğrulanır; generated client çıktısına bağlanmaz.
  */
 function readPrismaEnumValues(enumName: string): string[] {
   const schemaPath = path.resolve(__dirname, '../../../../../prisma/schema.prisma');
@@ -23,6 +22,22 @@ function readPrismaEnumValues(enumName: string): string[] {
     .split(/\r?\n/)
     .map((l) => l.replace(/\/\/.*/, '').trim()) // satır-içi yorumu şerit (CRLF-güvenli)
     .filter((l) => l.length > 0);
+}
+
+function readPrismaModelFields(modelName: string): Map<string, string> {
+  const schemaPath = path.resolve(__dirname, '../../../../../prisma/schema.prisma');
+  const src = fs.readFileSync(schemaPath, 'utf8');
+  const model = new RegExp(`model\\s+${modelName}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(src);
+  if (!model) throw new Error(`model ${modelName} schema.prisma'da bulunamadı`);
+
+  const fields = new Map<string, string>();
+  for (const rawLine of model[1].split(/\r?\n/)) {
+    const line = rawLine.replace(/\/\/.*/, '').trim();
+    if (!line || line.startsWith('@@')) continue;
+    const field = /^(\w+)\s+([^\s]+)/.exec(line);
+    if (field) fields.set(field[1], field[2]);
+  }
+  return fields;
 }
 import {
   mapInterestType,
@@ -154,6 +169,18 @@ describe('interest-type-bridge (E-G1)', () => {
     it('COMMERCIAL_FIXED her iki tarafta da vardır', () => {
       expect(Object.values(InterestTypeCode)).toContain('COMMERCIAL_FIXED');
       expect(readPrismaEnumValues('InterestTypeCode')).toContain('COMMERCIAL_FIXED');
+    });
+
+    it('PR-A1: Due rich-code alanı nullable, legacy alanı korunmuş', () => {
+      const fields = readPrismaModelFields('Due');
+      expect(fields.get('interestTypeCode')).toBe('InterestTypeCode?');
+      expect(fields.get('interestType')).toBe('String?');
+    });
+
+    it('PR-A1: ClaimItem rich-code alanı nullable, legacy alanı korunmuş', () => {
+      const fields = readPrismaModelFields('ClaimItem');
+      expect(fields.get('interestTypeCode')).toBe('InterestTypeCode?');
+      expect(fields.get('interestType')).toBe('InterestType?');
     });
   });
 });

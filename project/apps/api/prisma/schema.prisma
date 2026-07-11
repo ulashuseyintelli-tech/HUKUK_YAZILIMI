@@ -1505,7 +1505,8 @@ model Due {
 
   // Faiz Detayları (type = INTEREST için)
   interestType      String? // YASAL, TICARI, AVANS, TEMERRUT, OZEL
-  interestRate      Decimal?  @db.Decimal(5, 2) // Faiz oranı (%)
+  interestTypeCode  InterestTypeCode? // Rich faiz kodu ingress/provenance; PR-A1'de runtime kullanımı dormant
+  interestRate      Decimal?          @db.Decimal(5, 2) // Faiz oranı (%)
   interestStartDate DateTime? // Faiz başlangıç tarihi
   interestEndDate   DateTime? // Faiz bitiş tarihi
   interestDays      Int? // Faiz gün sayısı
@@ -5004,7 +5005,8 @@ model ClaimItem {
 
   // Faiz Bilgileri (itemType = INTEREST için)
   interestType      InterestType? // YASAL, TICARI, AVANS, OZEL
-  interestRate      Decimal?      @db.Decimal(5, 2)
+  interestTypeCode  InterestTypeCode? // Kanonik rich faiz kodu; PR-A1'de writer/read authority dormant
+  interestRate      Decimal?          @db.Decimal(5, 2)
   interestStartDate DateTime?
   interestEndDate   DateTime?
 
