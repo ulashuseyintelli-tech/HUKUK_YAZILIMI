@@ -104,6 +104,8 @@ function simpleScenario(id: string, tenantSetup: 'SINGLE' | 'TWO_TENANT_ISOLATIO
       // bugün OK durumunda HER ZAMAN 'SHADOW_ONLY' üretir; 'CANONICAL_CANDIDATE'
       // ataması cutover PR'larının (PR-11/12) işidir — burada beklenmez.
       authority: 'SHADOW_ONLY',
+      // PR-8a official snapshot uretmez: blocker yokken read-only signal UNSAFE kalir.
+      snapshotStatus: 'UNSAFE',
     },
     persistenceIntent: { tenantSetup, currency: 'TRY' },
   });
@@ -144,6 +146,10 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     expect(evidence.comparison!.match).toBe(true);
     expect(evidence.observedStatus).toBe('OK');
     expect(evidence.observedAuthority).toBe(def.expected.authority);
+    expect(evidence.observedSnapshotStatus).toBe('UNSAFE');
+    expect(evidence.observedSnapshotAvailable).toBe(false);
+    expect(evidence.observedPrimaryDisplayEligible).toBe(false);
+    expect(evidence.observedReadinessBlockerCodes).toEqual([]);
 
     // W0.2 G5 devamlılığı: AYNI senaryonun saf in-memory engine sonucu,
     // DB-gated üretim yolu gözlemiyle eşleşir (assertion HESAPLAMAZ —
@@ -408,7 +414,16 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     expect(paymentMismatchDisplay).toMatchObject({
       status: 'UNAVAILABLE',
       authority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+      snapshotAvailable: false,
+      readiness: {
+        status: 'BLOCKED',
+        primaryDisplayEligible: false,
+      },
     });
+    expect(paymentMismatchDisplay.readiness.blockers.map((blocker) => blocker.code)).toEqual([
+      'NO_BUCKETS',
+      'CURRENCY_INTEGRITY',
+    ]);
     expect(paymentMismatchDisplay.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'CURRENCY_MISMATCH', severity: 'BLOCKER' }),
     ]));
@@ -444,6 +459,18 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     expect(reversalMismatchDisplay.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'REVERSAL_CURRENCY_MISMATCH', severity: 'BLOCKER' }),
     ]));
+    expect(reversalMismatchDisplay).toMatchObject({
+      status: 'UNAVAILABLE',
+      authority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+      snapshotAvailable: false,
+      readiness: {
+        status: 'BLOCKED',
+        primaryDisplayEligible: false,
+      },
+    });
+    expect(reversalMismatchDisplay.readiness.blockers.map((blocker) => blocker.code)).toEqual([
+      'REVERSAL_INTEGRITY',
+    ]);
   });
 
   it('D9 / PR-7: real DB carries persisted fee projection per currency and fails closed without zero fallback', async () => {

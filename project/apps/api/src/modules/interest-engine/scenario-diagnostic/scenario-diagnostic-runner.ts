@@ -212,6 +212,10 @@ export async function runSyntheticScenarioDiagnostic(
       observedAuthority: display.authority,
       observedStatus: display.status,
       observedBlockerCodes: extractBlockerCodes(display),
+      observedSnapshotStatus: display.readiness.status,
+      observedSnapshotAvailable: display.snapshotAvailable,
+      observedPrimaryDisplayEligible: display.readiness.primaryDisplayEligible,
+      observedReadinessBlockerCodes: display.readiness.blockers.map((blocker) => blocker.code),
       expected: def.expected,
       comparison,
     };
@@ -287,6 +291,10 @@ export async function runOrganicReadinessDiagnostic(
         observedAuthority: display.authority,
         observedStatus: display.status,
         observedBlockerCodes: extractBlockerCodes(display),
+        observedSnapshotStatus: display.readiness.status,
+        observedSnapshotAvailable: display.snapshotAvailable,
+        observedPrimaryDisplayEligible: display.readiness.primaryDisplayEligible,
+        observedReadinessBlockerCodes: display.readiness.blockers.map((blocker) => blocker.code),
       });
     } catch (cause) {
       throw diagnosticFailure('OBSERVATION', cause);
