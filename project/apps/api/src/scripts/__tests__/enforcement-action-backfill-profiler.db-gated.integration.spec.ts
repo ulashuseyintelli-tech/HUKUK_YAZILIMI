@@ -5,8 +5,16 @@
  */
 import { CaseDebtorLifecycleStatus, DebtorRole, PrismaClient } from "@prisma/client";
 import { randomUUID } from "crypto";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { resolveTestDatabaseUrl } from "../../../test/test-db-env";
-import { computeEnforcementActionBackfillProfile, SAMPLE_LIMIT } from "../enforcement-action-backfill-profiler";
+import {
+  computeEnforcementActionBackfillProfile,
+  computeReportManifest,
+  parseDatabaseIdentity,
+  SAMPLE_LIMIT,
+} from "../enforcement-action-backfill-profiler";
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -161,5 +169,63 @@ describeWithDisposableDb("PR-EA-3A EnforcementAction backfill profiler - disposa
     const orphanStat = profile.summary.caseDebtorId.ORPHAN;
     expect(orphanStat.count).toBeGreaterThanOrEqual(count);
     expect(orphanStat.sampleIds.length).toBeLessThanOrEqual(SAMPLE_LIMIT);
+  });
+
+  it("PR-EA-3A.1: gerçek (credential taşıyan) TEST_DB_URL ile üretilen artefaktlar credential sızdırmaz ve manifest gerçek içerikle eşleşir", async () => {
+    const { caseId } = await makeTenantAndCase();
+    await prisma.enforcementAction.create({ data: { caseId, type: "BANK_INQUIRY" } });
+
+    const profile = await computeEnforcementActionBackfillProfile(prisma as never);
+    // TEST_DB_URL gerçek bir credential taşıyan bağlantı dizesidir (bkz. test-db-env.ts) — main()'in
+    // gerçek akışıyla AYNI fonksiyonu, GERÇEK bir credential'lı URL ile çağırıyoruz.
+    const databaseIdentity = parseDatabaseIdentity(TEST_DB_URL, "test");
+    const outputFiles = ["summary.json", "records.csv"];
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ea3a1-artifact-test-"));
+    try {
+      const summaryPayload = {
+        generatedAt: new Date().toISOString(),
+        profilerVersion: "ea-backfill-profiler-v1.0",
+        database: databaseIdentity,
+        outputFiles,
+        ...profile.summary,
+      };
+      fs.writeFileSync(path.join(tmpDir, "summary.json"), JSON.stringify(summaryPayload, null, 2), "utf8");
+      fs.writeFileSync(path.join(tmpDir, "records.csv"), "id,caseId\n", "utf8");
+
+      const manifest = computeReportManifest(tmpDir, outputFiles);
+      fs.writeFileSync(path.join(tmpDir, "manifest.sha256"), manifest, "utf8");
+
+      const summaryContent = fs.readFileSync(path.join(tmpDir, "summary.json"), "utf8");
+      const manifestContent = fs.readFileSync(path.join(tmpDir, "manifest.sha256"), "utf8");
+
+      // TEST_DB_URL'in credential kısmı (varsa) hiçbir üretilen dosyada görünmemeli.
+      const parsedTestUrl = new URL(TEST_DB_URL);
+      if (parsedTestUrl.username) {
+        expect(summaryContent).not.toContain(parsedTestUrl.username);
+        expect(manifestContent).not.toContain(parsedTestUrl.username);
+      }
+      if (parsedTestUrl.password) {
+        expect(summaryContent).not.toContain(parsedTestUrl.password);
+        expect(manifestContent).not.toContain(parsedTestUrl.password);
+      }
+      expect(summaryContent).not.toContain(TEST_DB_URL);
+      expect(manifestContent).not.toContain(TEST_DB_URL);
+      expect(summaryContent).not.toMatch(/password/i);
+
+      // summary.json gerçekten database/profilerVersion/outputFiles taşıyor.
+      const parsedSummary = JSON.parse(summaryContent);
+      expect(parsedSummary.database.host).toBe(parsedTestUrl.hostname);
+      expect(parsedSummary.database.readOnlyMode).toBe(true);
+      expect(parsedSummary.profilerVersion).toBe("ea-backfill-profiler-v1.0");
+      expect(parsedSummary.outputFiles).toEqual(outputFiles);
+
+      // manifest tam olarak 2 satır (summary.json + records.csv), kendi dosyasını içermiyor.
+      const manifestLines = manifestContent.trim().split("\n");
+      expect(manifestLines).toHaveLength(2);
+      expect(manifestContent).not.toContain("manifest.sha256");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

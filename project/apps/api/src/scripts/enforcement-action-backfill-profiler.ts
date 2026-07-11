@@ -4,8 +4,10 @@
  *
  * Ne yapar: TÜM EnforcementAction kayıtlarını profilE eder (tenant + caseDebtor + targetDetails
  * gözlemi), saf sınıflandırıcıyı (enforcement-action-backfill-classifier.ts) çağırır, özet + CSV
- * raporları yazar. DB'ye YALNIZ SELECT atar — hiçbir create/update/upsert/delete/executeRaw
- * mutation İÇERMEZ (statik guard: enforcement-action-backfill-profiler.static-purity.spec.ts).
+ * raporları + bir SHA-256 hash manifest'i (manifest.sha256) yazar. summary.json credential İÇERMEYEN
+ * bir `database` kimliği (host/port/databaseName/environment/readOnlyMode) taşır — PR-EA-3A.1
+ * hardening. DB'ye YALNIZ SELECT atar — hiçbir create/update/upsert/delete/executeRaw mutation
+ * İÇERMEZ (statik guard: enforcement-action-backfill-profiler.static-purity.spec.ts).
  *
  * Onay/apply/write/execute/commit anlamına gelen HİÇBİR CLI bayrağı yoktur ve tasarım gereği
  * eklenmeyecektir — gerçek backfill APPLY = ayrı, owner-GO'lu bir sonraki task (PR-EA-3B).
@@ -29,6 +31,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { PrismaModule } from "../prisma/prisma.module";
 import { PrismaService } from "../prisma/prisma.service";
+import { computeReportManifest } from "./enforcement-action-report-hash";
 import {
   classifyEnforcementAction,
   observeTargetDetails,
@@ -218,16 +221,51 @@ function parseArgs(argv: string[]) {
   return { out: val("--out") };
 }
 
-/** DATABASE_URL'den yalnız host+db adını (credential OLMADAN) çıkarır — güvenli konsol banner'ı için. */
-function describeTargetDatabase(databaseUrl: string | undefined): string {
-  if (!databaseUrl) return "(DATABASE_URL tanımsız)";
+export interface DatabaseIdentity {
+  host: string;
+  port: string;
+  databaseName: string;
+  environment: string;
+  readOnlyMode: boolean;
+}
+
+/**
+ * DATABASE_URL'den yalnız host/port/db adını (credential OLMADAN) çıkarır — hem konsol banner'ı
+ * hem `summary.json`'daki `database` alanı BU TEK ayrıştırıcıyı kullanır (duplicate parser YOK).
+ * ASLA username/password/query-string/full connection string döndürmez. `readOnlyMode` script'in
+ * kendi tasarım garantisini yansıtır (statik guard: hiçbir mutation çağrısı yok) — verilen
+ * credential'ın DB tarafında gerçekten salt-okuma role'e sahip olduğunun doğrulanması DEĞİLDİR.
+ */
+export function parseDatabaseIdentity(databaseUrl: string | undefined, nodeEnv: string | undefined): DatabaseIdentity {
+  const environment = nodeEnv ?? "(tanımsız)";
+  if (!databaseUrl) {
+    return { host: "(tanımsız)", port: "(tanımsız)", databaseName: "(tanımsız)", environment, readOnlyMode: true };
+  }
   try {
     const parsed = new URL(databaseUrl);
-    return `${parsed.hostname}:${parsed.port || "5432"}${parsed.pathname}`;
+    return {
+      host: parsed.hostname || "(tanımsız)",
+      port: parsed.port || "5432",
+      databaseName: parsed.pathname.replace(/^\//, "") || "(tanımsız)",
+      environment,
+      readOnlyMode: true,
+    };
   } catch {
-    return "(DATABASE_URL ayrıştırılamadı)";
+    return { host: "(ayrıştırılamadı)", port: "(ayrıştırılamadı)", databaseName: "(ayrıştırılamadı)", environment, readOnlyMode: true };
   }
 }
+
+export function formatDatabaseIdentity(identity: DatabaseIdentity): string {
+  return `${identity.host}:${identity.port}/${identity.databaseName}`;
+}
+
+const OUTPUT_FILES = ["summary.json", "records.csv", "integrity-failures.csv", "inferable-review.csv", "ambiguous.csv", "orphans.csv"];
+const PROFILER_VERSION = "ea-backfill-profiler-v1.0";
+
+// computeReportManifest gerçek implementasyonu Prisma'dan bağımsız, ayrı bir dosyada tutulur
+// (enforcement-action-report-hash.ts) — burada yalnız re-export edilir, mevcut import path'i
+// ("../enforcement-action-backfill-profiler") test dosyalarında değişmeden çalışmaya devam eder.
+export { computeReportManifest };
 
 function writeCsv(filePath: string, header: string[], rows: Array<Array<string | number | null>>) {
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -263,10 +301,11 @@ function toRow(r: RecordRow) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const databaseIdentity = parseDatabaseIdentity(process.env.DATABASE_URL, process.env.NODE_ENV);
 
   console.log("=== PR-EA-3A EnforcementAction Backfill Profiler — SALT-OKUMA ===");
-  console.log(`Hedef DB: ${describeTargetDatabase(process.env.DATABASE_URL)}`);
-  console.log(`Ortam (NODE_ENV): ${process.env.NODE_ENV ?? "(tanımsız)"}`);
+  console.log(`Hedef DB: ${formatDatabaseIdentity(databaseIdentity)}`);
+  console.log(`Ortam (NODE_ENV): ${databaseIdentity.environment}`);
   console.log("Mod: READ-ONLY (yazma bayrağı yok, yalnız SELECT atılır)\n");
 
   const app = await NestFactory.createApplicationContext(PrismaModule, { logger: ["error", "warn"] });
@@ -300,7 +339,15 @@ async function main() {
 
     const outDir = args.out ?? path.join("backups", `ea-backfill-profile-${new Date().toISOString().replace(/[:.]/g, "-")}`);
     fs.mkdirSync(outDir, { recursive: true });
-    fs.writeFileSync(path.join(outDir, "summary.json"), JSON.stringify({ generatedAt: new Date().toISOString(), ...summary }, null, 2), "utf8");
+
+    const summaryPayload = {
+      generatedAt: new Date().toISOString(),
+      profilerVersion: PROFILER_VERSION,
+      database: databaseIdentity,
+      outputFiles: OUTPUT_FILES,
+      ...summary,
+    };
+    fs.writeFileSync(path.join(outDir, "summary.json"), JSON.stringify(summaryPayload, null, 2), "utf8");
 
     writeCsv(path.join(outDir, "records.csv"), RECORD_HEADER, records.map(toRow));
     writeCsv(
@@ -324,8 +371,13 @@ async function main() {
       records.filter((r) => r.caseDebtorBucket === "ORPHAN").map(toRow),
     );
 
+    // Manifest, yukarıdaki 6 dosya YAZILDIKTAN SONRA hesaplanır — kendi dosyasını (manifest.sha256)
+    // hiç hash'lemez, döngüsel bağımlılık yoktur. Kanonik hash kaynağı yalnız bu dosyadır.
+    const manifest = computeReportManifest(outDir, OUTPUT_FILES);
+    fs.writeFileSync(path.join(outDir, "manifest.sha256"), manifest, "utf8");
+
     console.log(
-      `\nRapor yazıldı: ${outDir}/ (summary.json + records.csv + integrity-failures.csv + inferable-review.csv + ambiguous.csv + orphans.csv)`,
+      `\nRapor yazıldı: ${outDir}/ (summary.json + records.csv + integrity-failures.csv + inferable-review.csv + ambiguous.csv + orphans.csv + manifest.sha256)`,
     );
   } finally {
     await app.close();
