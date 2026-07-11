@@ -281,7 +281,7 @@ describe('CaseBalanceService (G4c-1)', () => {
     );
   });
 
-  it('çok-currency: USD payment-only → NO_BUCKETS skip + CURRENCY_MISMATCH', async () => {
+  it('çok-currency: USD payment-only → NO_BUCKETS fail-closed blocker + CURRENCY_MISMATCH', async () => {
     const { service } = setup({
       claimItems: [principal()],
       collections: [collection(), collection({ id: 'c2', currency: 'USD', amount: 100 })],
@@ -291,6 +291,7 @@ describe('CaseBalanceService (G4c-1)', () => {
     const usd = res.currencyResults.find((r) => r.currency === 'USD')!;
     expect(usd.result).toBeNull();
     expect(usd.skippedReason).toBe('NO_BUCKETS');
+    expect(res.diagnostics.fatal).toEqual([{ code: 'NO_BUCKETS', caseId: 'case1' }]);
     expect(res.diagnostics.currency).toEqual([{ code: 'CURRENCY_MISMATCH', currency: 'USD', detail: '1 payment(s), 0 bucket' }]);
   });
 

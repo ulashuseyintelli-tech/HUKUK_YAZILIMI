@@ -18,6 +18,7 @@ import { ClaimPriorityService } from '../allocation/claim-priority.service';
 import { AllocationEngineService } from '../allocation/allocation-engine.service';
 import { DEFAULT_INTERPRETATION_PROFILE_ID } from '../types/calculation.types';
 import type { RateEntry } from '../rates/rate-provider.service';
+import { toCaseBalanceDisplay } from '../orchestration/case-balance-display';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -273,6 +274,56 @@ describeWithDisposableDb('W0.2 PAYMENT-only materializer - disposable DB', () =>
     expect(dbTry?.result).not.toBeNull();
     expect(dbTry!.result!.totalInterest).toBeCloseTo(memoryResult.totalInterest, 2);
     expect(dbTry!.result!.totalDue).toBeCloseTo(memoryResult.totalDue, 2);
+  });
+
+  it('fails closed when a materialized payment has no calculable claim bucket', async () => {
+    const def = simpleScenario('pr2-no-buckets');
+    def.domainInput.claimBuckets = [];
+    def.expected = {
+      perCurrencyStatus: { TRY: 'SKIPPED' },
+      blockerCodes: ['NO_BUCKETS'],
+      authority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+    };
+    const refs = await materializeScenario(prisma, def);
+    refsToClean.push(refs);
+
+    expect(await scopedState(refs.tenantId)).toEqual({
+      tenant: 1,
+      client: 1,
+      debtor: 1,
+      caseRow: 1,
+      caseDebtor: 1,
+      claimItem: 0,
+      collection: 1,
+      ledgerEntry: 1,
+      ledgerAllocation: 0,
+    });
+
+    const result = await caseBalance.computeCaseBalance(refs.tenantId, refs.caseId, AS_OF);
+    const display = toCaseBalanceDisplay({
+      tenantId: refs.tenantId,
+      caseId: refs.caseId,
+      balance: result,
+      generatedAt: `${AS_OF}T00:00:00.000Z`,
+    });
+
+    expect(result.source).toBe('LEDGER');
+    expect(result.currencyResults).toEqual([
+      { currency: 'TRY', result: null, skippedReason: 'NO_BUCKETS', grossPrincipal: 0 },
+    ]);
+    expect(result.diagnostics.fatal).toEqual([{ code: 'NO_BUCKETS', caseId: refs.caseId }]);
+    expect(display).toMatchObject({
+      status: 'UNAVAILABLE',
+      authority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+      unavailableReason: 'NO_BUCKETS',
+    });
+    expect(display.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'NO_BUCKETS',
+        severity: 'BLOCKER',
+        details: { currencies: ['TRY'] },
+      }),
+    ]));
   });
 
   it('rolls back every intermediate write when canonical input is unsupported', async () => {
