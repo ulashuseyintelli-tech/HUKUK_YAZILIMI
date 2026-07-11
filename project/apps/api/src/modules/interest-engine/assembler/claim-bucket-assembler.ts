@@ -99,8 +99,24 @@ export interface ClaimBucketAssemblyResult {
   buckets: ClaimBucket[];
   costs: Partial<Record<AncillaryType, number>>;
   ancillaries: Partial<Record<AncillaryType, number>>;
+  /**
+   * ADR-014 PR-7: persisted ClaimItem projection source carried without formula application.
+   * Aggregate `costs`/`ancillaries` remain unchanged; this additive evidence preserves
+   * source item, category, currency and source validity for the fee projection DTO.
+   */
+  projectionItems: ClaimItemProjectionSource[];
   excluded: { interestItemIds: string[] };
   diagnostics: AssemblerDiagnostic[];
+}
+
+export interface ClaimItemProjectionSource {
+  sourceItemId: string;
+  itemType: string;
+  category: 'COST' | 'ANCILLARY';
+  code: AncillaryType;
+  amount: number;
+  currency: string;
+  sourceStatus: 'AVAILABLE' | 'INVALID_AMOUNT';
 }
 
 interface ResolvedInterestConfig {
@@ -152,6 +168,7 @@ export function assembleClaimBuckets(
   const diagnostics: AssemblerDiagnostic[] = [];
   const costs: Partial<Record<AncillaryType, number>> = {};
   const ancillaries: Partial<Record<AncillaryType, number>> = {};
+  const projectionItems: ClaimItemProjectionSource[] = [];
   const excludedInterestIds: string[] = [];
   const buckets: ClaimBucket[] = [];
 
@@ -187,23 +204,63 @@ export function assembleClaimBuckets(
     const base = baseAmount(item);
     if (!(base > 0)) {
       diagnostics.push({ code: 'ZERO_OR_NEGATIVE_AMOUNT', claimItemId: item.id, detail: `base=${base}` });
+      if ((cls.category === 'COST' || cls.category === 'ANCILLARY') && cls.ancillaryType) {
+        projectionItems.push({
+          sourceItemId: item.id,
+          itemType: item.itemType,
+          category: cls.category,
+          code: cls.ancillaryType,
+          amount: base,
+          currency: item.currency,
+          sourceStatus: 'INVALID_AMOUNT',
+        });
+      }
       continue;
     }
 
     if (cls.category === 'COST' && cls.ancillaryType) {
       warnIfAccrualEngineUnsupported(item, diagnostics);
       addAncillaryBucketAmount(costs, cls.ancillaryType, base);
+      projectionItems.push({
+        sourceItemId: item.id,
+        itemType: item.itemType,
+        category: 'COST',
+        code: cls.ancillaryType,
+        amount: base,
+        currency: item.currency,
+        sourceStatus: 'AVAILABLE',
+      });
       continue;
     }
     if (cls.category === 'ANCILLARY' && cls.ancillaryType) {
       warnIfAccrualEngineUnsupported(item, diagnostics);
       addAncillaryBucketAmount(ancillaries, cls.ancillaryType, base);
+      projectionItems.push({
+        sourceItemId: item.id,
+        itemType: item.itemType,
+        category: 'ANCILLARY',
+        code: cls.ancillaryType,
+        amount: base,
+        currency: item.currency,
+        sourceStatus: 'AVAILABLE',
+      });
       continue;
     }
 
     if (cls.category === 'TAX') {
       warnIfAccrualEngineUnsupported(item, diagnostics);
-      handleTax(item, base, costs, ancillaries, diagnostics, addAncillaryBucketAmount);
+      const taxProjection = handleTax(item, base, costs, ancillaries, diagnostics, addAncillaryBucketAmount);
+      if (taxProjection) {
+        projectionItems.push({
+          sourceItemId: item.id,
+          itemType: item.itemType,
+          category: taxProjection.category,
+          code: taxProjection.code,
+          amount: base,
+          currency: item.currency,
+          sourceStatus: 'AVAILABLE',
+        });
+      }
       continue;
     }
 
@@ -222,7 +279,14 @@ export function assembleClaimBuckets(
     if (bucket) buckets.push(bucket);
   }
 
-  return { buckets, costs, ancillaries, excluded: { interestItemIds: excludedInterestIds }, diagnostics };
+  return {
+    buckets,
+    costs,
+    ancillaries,
+    projectionItems,
+    excluded: { interestItemIds: excludedInterestIds },
+    diagnostics,
+  };
 }
 
 /** TBK100 Interest Accrual Contract v1: COST/ANCILLARY/TAX + ACCRUES → motor desteği yok, sessiz kalma. */
@@ -239,18 +303,21 @@ function handleTax(
   ancillaries: Partial<Record<AncillaryType, number>>,
   diagnostics: AssemblerDiagnostic[],
   add: (t: Partial<Record<AncillaryType, number>>, a: AncillaryType, n: number) => void,
-): void {
+): { category: 'COST' | 'ANCILLARY'; code: AncillaryType } | null {
   const parent = (item.metadata as { taxParentCategory?: string } | null)?.taxParentCategory;
   if (parent === 'COST') {
     add(costs, AncillaryType.DIGER, base);
+    return { category: 'COST', code: AncillaryType.DIGER };
   } else if (parent === 'ANCILLARY') {
     add(ancillaries, AncillaryType.DIGER, base);
+    return { category: 'ANCILLARY', code: AncillaryType.DIGER };
   } else if (parent === 'PRINCIPAL' || parent === 'INTEREST') {
     // G4a costs/ancillaries dışı tier'i DAĞITMAZ (Q4); G4b/G4c çözer.
     diagnostics.push({ code: 'TAX_TIER_DEFERRED', claimItemId: item.id, detail: `parent=${parent}` });
   } else {
     diagnostics.push({ code: 'TAX_WITHOUT_PARENT', claimItemId: item.id, detail: `parent=${parent ?? 'none'}` });
   }
+  return null;
 }
 
 function buildPrincipalBucket(

@@ -5,6 +5,7 @@
 
 import { InterestEngineController } from '../interest-engine.controller';
 import type { CaseBalanceService, CaseBalanceResult } from '../orchestration/case-balance.service';
+import { buildCaseBalanceFeeProjection } from '../orchestration/case-balance-fee-projection';
 
 function makeController(computeCaseBalance: jest.Mock): InterestEngineController {
   const caseBalance = { computeCaseBalance } as unknown as CaseBalanceService;
@@ -23,6 +24,7 @@ const fakeResult: CaseBalanceResult = {
   source: 'NONE',
   currencyResults: [],
   projections: { costs: {}, ancillaries: {} },
+  feeProjection: buildCaseBalanceFeeProjection({ sourceItems: [], currencyResults: [] }),
   diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
   overpayments: { held: [], blocked: [] },
 };

@@ -45,6 +45,10 @@ import {
 } from '../types/calculation.types';
 import { CalculationMode, RoundingMode, RoundingScope, SameDayPaymentRule } from '../types/common.types';
 import { InterestEngineError } from '../errors/interest-engine-errors';
+import {
+  buildCaseBalanceFeeProjection,
+  type CaseBalanceFeeProjection,
+} from './case-balance-fee-projection';
 
 /** Q2: compute-on-demand default options. gapPolicy=WARN_ONLY_FOR_PREVIEW → PREVIEW'de gap bloklamaz. */
 const DEFAULT_OPTIONS: CalculationOptions = {
@@ -114,6 +118,8 @@ export interface CaseBalanceResult {
     costs: Partial<Record<AncillaryType, number>>;
     ancillaries: Partial<Record<AncillaryType, number>>;
   };
+  /** ADR-014 PR-7: formula-free, currency-aware persisted source projection DTO. */
+  feeProjection: CaseBalanceFeeProjection;
   diagnostics: {
     fatal: Array<{ code: string; caseId: string }>;
     assembler: AssemblerDiagnostic[];
@@ -212,6 +218,7 @@ export class CaseBalanceService {
       source: 'NONE',
       currencyResults: [],
       projections: { costs: {}, ancillaries: {} },
+      feeProjection: buildCaseBalanceFeeProjection({ sourceItems: [], currencyResults: [] }),
       diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
       overpayments: { held: [], blocked: [] },
     };
@@ -225,6 +232,11 @@ export class CaseBalanceService {
     });
     if (!caseRow) {
       empty.diagnostics.fatal.push({ code: 'CASE_NOT_FOUND', caseId });
+      empty.feeProjection = buildCaseBalanceFeeProjection({
+        sourceItems: [],
+        currencyResults: [],
+        globalBlockerCodes: ['CASE_NOT_FOUND'],
+      });
       return empty;
     }
 
@@ -309,13 +321,19 @@ export class CaseBalanceService {
     );
 
     if (hasFatalPaymentMapDiagnostic(pay.diagnostics)) {
+      const fatalCode = 'REVERSAL_INTEGRITY_INVALID';
       return {
         asOfDate,
         source: pay.source,
         currencyResults: [],
         projections: { costs: asm.costs, ancillaries: asm.ancillaries },
+        feeProjection: buildCaseBalanceFeeProjection({
+          sourceItems: asm.projectionItems,
+          currencyResults: [],
+          globalBlockerCodes: [fatalCode],
+        }),
         diagnostics: {
-          fatal: [{ code: 'REVERSAL_INTEGRITY_INVALID', caseId }],
+          fatal: [{ code: fatalCode, caseId }],
           assembler: asm.diagnostics,
           payments: pay.diagnostics,
           currency: [],
@@ -388,16 +406,27 @@ export class CaseBalanceService {
       }
     }
 
+    const fatalCodes = [
+      ...invalidCurrencyFatalCodes,
+      ...(hasNoBuckets ? ['NO_BUCKETS'] : []),
+    ];
+
     return {
       asOfDate,
       source: pay.source,
       currencyResults,
       projections: { costs: asm.costs, ancillaries: asm.ancillaries },
+      feeProjection: buildCaseBalanceFeeProjection({
+        sourceItems: asm.projectionItems,
+        currencyResults: currencyResults.map((row) => ({
+          currency: row.currency,
+          resultAvailable: row.result != null,
+          ...(row.skippedReason ? { skippedReason: row.skippedReason } : {}),
+        })),
+        globalBlockerCodes: fatalCodes,
+      }),
       diagnostics: {
-        fatal: [
-          ...invalidCurrencyFatalCodes.map((code) => ({ code, caseId })),
-          ...(hasNoBuckets ? [{ code: 'NO_BUCKETS', caseId }] : []),
-        ],
+        fatal: fatalCodes.map((code) => ({ code, caseId })),
         assembler: asm.diagnostics,
         payments: pay.diagnostics,
         currency: grouped.diagnostics,
