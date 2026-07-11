@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculat
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws } from "@/lib/case-due-payload";
+import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
 import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
@@ -1302,6 +1303,7 @@ export default function NewCasePage() {
   };
 
   const filteredForms = filterFormsByCategory(categoryFilter === "ALL" ? null : categoryFilter);
+  const listedClaimItemAggregates = aggregateListedClaimItems(claimDraftItems, caseData.currency);
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
@@ -1979,6 +1981,24 @@ export default function NewCasePage() {
                     </li>
                   ))}
                 </ul>
+                {listedClaimItemAggregates.length > 0 && (
+                  <div className="mt-3 border-t border-blue-200 pt-3">
+                    <p className="text-xs font-medium text-blue-800">Listelenen Alacak Kalemleri Toplamı</p>
+                    <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1" data-testid="listed-claim-items-live-aggregate">
+                      {listedClaimItemAggregates.map((aggregate) => (
+                        <div key={aggregate.currency} className="flex items-baseline gap-1 text-sm">
+                          <dt className="font-medium text-blue-700">{aggregate.currency}</dt>
+                          <dd className="font-semibold text-blue-950">
+                            {aggregate.amount.toLocaleString("tr-TR", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                )}
               </div>
             )}
             <ProfessionalClaimItemForm
