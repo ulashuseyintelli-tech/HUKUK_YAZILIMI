@@ -1,6 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { DueDto, DueType, InterestType } from '../dto/case.dto';
+import { CreateDueDto, DueDto, DueType, InterestType } from '../dto/case.dto';
 
 describe('DueDto faiz alanlari', () => {
   it('create-case DueDto interestType/rate/start/end/amount alanlarini kabul eder', async () => {
@@ -10,6 +10,7 @@ describe('DueDto faiz alanlari', () => {
       amount: 1000,
       dueDate: '2026-01-01',
       interestType: InterestType.YASAL,
+      interestTypeCode: 'LEGAL_3095',
       interestRate: 24,
       interestStartDate: '2026-01-02',
       interestEndDate: '2026-02-02',
@@ -17,5 +18,15 @@ describe('DueDto faiz alanlari', () => {
     });
 
     await expect(validate(dto)).resolves.toEqual([]);
+  });
+
+  it('unknown rich code DTO admission seviyesinde reddedilir', async () => {
+    const dto = plainToInstance(CreateDueDto, {
+      type: DueType.PRINCIPAL,
+      amount: 1000,
+      dueDate: '2026-01-01',
+      interestTypeCode: 'UNKNOWN',
+    });
+    expect((await validate(dto)).some((error) => error.property === 'interestTypeCode')).toBe(true);
   });
 });

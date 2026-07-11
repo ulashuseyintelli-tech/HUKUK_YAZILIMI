@@ -5357,7 +5357,8 @@ export interface DueDTO {
   dueDate: string;
   currency: string;
   interestType?: string;
-  interestRate?: number;
+  interestTypeCode?: string | null;
+  interestRate?: number | null;
   interestStartDate?: string;
   interestEndDate?: string;
   interestDays?: number;
@@ -5384,7 +5385,10 @@ export interface CreateDueDTO {
   dueDate: string;
   currency?: string;
   interestType?: string;
-  interestRate?: number;
+  interestTypeCode?: string | null;
+  interestRate?: number | null;
+  interestAccrualStatus?: 'NO_INTEREST' | 'UNKNOWN';
+  noInterestReason?: string;
   interestStartDate?: string;
   interestEndDate?: string;
   sourceDocumentNo?: string;
@@ -5400,7 +5404,10 @@ export interface UpdateDueDTO {
   dueDate?: string;
   currency?: string;
   interestType?: string;
-  interestRate?: number;
+  interestTypeCode?: string | null;
+  interestRate?: number | null;
+  interestAccrualStatus?: 'NO_INTEREST' | 'UNKNOWN';
+  noInterestReason?: string;
   interestStartDate?: string;
   interestEndDate?: string;
   sourceDocumentNo?: string;

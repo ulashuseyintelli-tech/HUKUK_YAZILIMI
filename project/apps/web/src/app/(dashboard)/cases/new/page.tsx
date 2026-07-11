@@ -6,7 +6,8 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError } from "@/lib/case-due-payload";
+import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
 import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
@@ -136,8 +137,11 @@ interface DueItem {
   amount: string; 
   dueDate: string;
   // Faiz hesaplama için ek alanlar
-  interestType?: "YASAL" | "TICARI" | "AVANS" | "TEMERRUT";
-  interestRate?: number;
+  interestType?: "YASAL" | "TICARI" | "SABIT" | null;
+  interestTypeCode?: string | null;
+  interestRate?: number | null;
+  interestAccrualStatus?: "NO_INTEREST" | "UNKNOWN";
+  noInterestReason?: string;
   interestAmount?: number;
   interestStartDate?: string;
   interestEndDate?: string;
@@ -224,14 +228,23 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
   if (item.bakiyeTutar && item.bakiyeTutar > 0) {
     // PR-i1: fer'i/masraf kalemTuru → doğru DueType (PRINCIPAL varsayılan).
     const anaDueType = mapClaimKalemTuruToDueType(kalemTuru);
+    const interestIntent = anaDueType === 'INTEREST'
+      ? null
+      : buildUiInterestWriteIntent(
+          item.takipOncesiFaiz as UiInterestTypeCode,
+          item.faizOrani,
+          item.faizsizGerekce,
+        );
     newDues.push({
       type: anaDueType,
       description: anaKalemLabel,
       amount: item.bakiyeTutar.toString(),
       dueDate: item.vadeTarihi || startDate,
-      // PR-i2: fer'i faiz uygunlaştırma (INTEREST→tip yok · "YOK"→undefined · PRINCIPAL korunur).
-      interestType: resolveDueInterestType(anaDueType, item.takipOncesiFaiz),
-      interestRate: 0,
+      interestType: interestIntent?.interestType,
+      interestTypeCode: interestIntent?.interestTypeCode,
+      interestRate: interestIntent?.interestRate,
+      interestAccrualStatus: interestIntent?.interestAccrualStatus,
+      noInterestReason: interestIntent?.noInterestReason,
       interestAmount: 0,
       interestStartDate: kalemTuru === 'CEK' && item.cekBilgileri?.ibrazTarihi
         ? item.cekBilgileri.ibrazTarihi
@@ -266,7 +279,9 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
           amount: yan.tutar.toString(),
           dueDate: item.vadeTarihi || startDate,
           interestType: yanDueType === 'INTEREST' ? undefined : 'YASAL',
-          interestRate: 0,
+          interestTypeCode: yanDueType === 'INTEREST' ? undefined : 'LEGAL_3095',
+          interestRate: null,
+          interestAccrualStatus: yanDueType === 'INTEREST' ? undefined : 'UNKNOWN',
           interestAmount: 0,
           interestStartDate: item.vadeTarihi,
           interestEndDate: startDate,
@@ -1299,7 +1314,9 @@ export default function NewCasePage() {
       clearCaseWizardDraftState({ tenantId: wizardTenantId, userId: wizardUserId });
       // Yeni takip oluşturuldu - belgeler sekmesine yönlendir
       router.push(`/cases/${response.id}?tab=documents`);
-    } catch (err: any) { setError(err.message || "Takip oluşturulurken bir hata oluştu"); } finally { setLoading(false); }
+    } catch (err: any) {
+      setError(formatCaseDueValidationError(err) || err.message || "Takip oluşturulurken bir hata oluştu");
+    } finally { setLoading(false); }
   };
 
   const filteredForms = filterFormsByCategory(categoryFilter === "ALL" ? null : categoryFilter);
