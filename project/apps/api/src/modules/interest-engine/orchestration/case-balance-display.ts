@@ -18,6 +18,7 @@ import { AncillaryType } from '../types/domain.types';
 import { isSupportedCurrency } from '../types/common.types';
 import type { FinalDebtState } from '../types/calculation.types';
 import type { CaseBalanceResult } from './case-balance.service';
+import type { CaseBalanceFeeProjection } from './case-balance-fee-projection';
 
 export interface CaseBalanceDisplayCurrency {
   currency: string;
@@ -148,6 +149,8 @@ export interface BalanceDisplayProvenance {
   finalDebtStatesAvailable: boolean;
   overpaymentProjectionUsed: boolean;
   blockedOverpaymentDiagnosticsUsed: boolean;
+  feeProjectionSourceUsed: boolean;
+  feeProjectionAuthorityPromoted: false;
 }
 
 export interface CaseBalanceDisplay {
@@ -164,6 +167,8 @@ export interface CaseBalanceDisplay {
   costs: number;
   /** Fer'i / yan-alacak projeksiyonu (CASE-level) = Σ projections.ancillaries. */
   ancillaries: number;
+  /** ADR-014 PR-7: legal totals/authority'den ayrı, fail-closed fee projection contract. */
+  feeProjection: CaseBalanceFeeProjection;
   currencies: CaseBalanceDisplayCurrency[];
   buckets: BalanceDisplayBucket[];
   totals: BalanceDisplayTotals;
@@ -628,6 +633,7 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     status,
     costs,
     ancillaries,
+    feeProjection: balance.feeProjection,
     currencies,
     buckets: buildBuckets(displayCurrency, {
       costs,
@@ -651,6 +657,8 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
       finalDebtStatesAvailable: principalAuthorityAvailable,
       overpaymentProjectionUsed: (balance.overpayments?.held?.length ?? 0) > 0,
       blockedOverpaymentDiagnosticsUsed: (balance.overpayments?.blocked?.length ?? 0) > 0,
+      feeProjectionSourceUsed: balance.feeProjection.groups.some((group) => group.lines.length > 0),
+      feeProjectionAuthorityPromoted: false,
     },
     notes: DISPLAY_NOTES,
   };

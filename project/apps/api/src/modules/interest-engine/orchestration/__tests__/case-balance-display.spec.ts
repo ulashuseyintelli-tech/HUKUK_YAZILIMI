@@ -109,6 +109,8 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
       finalDebtStatesAvailable: false,
       overpaymentProjectionUsed: true,
       blockedOverpaymentDiagnosticsUsed: true,
+      feeProjectionSourceUsed: false,
+      feeProjectionAuthorityPromoted: false,
     });
     expect(d.diagnostics.map((diag) => diag.code)).toEqual(
       expect.arrayContaining([
@@ -120,6 +122,64 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
       ]),
     );
     expect(d.unsafeSources?.map((source) => source.code)).toContain('RESTRICTED_PAYMENT_DISPLAY_UNSAFE');
+  });
+
+  it('ADR-014 PR-7: feeProjection display evidence içinde ayrı taşınır; legal totals ve authority değişmez', () => {
+    const balance = makeBalance({
+      currencyResults: [
+        {
+          currency: 'TRY',
+          grossPrincipal: 1000,
+          result: {
+            totalInterest: 50,
+            totalDue: 900,
+            allocations: [],
+            engineVersion: 'engine-v1',
+          },
+        },
+      ] as any,
+      projections: { costs: { HARC: 25 }, ancillaries: {} } as any,
+      feeProjection: {
+        status: 'AVAILABLE',
+        authority: 'SOURCE_PROJECTION_ONLY',
+        policyStatus: 'OWNER_GATED',
+        aggregation: 'PER_CURRENCY_ONLY',
+        currency: 'TRY',
+        totalProjectedAmount: 25,
+        groups: [{
+          currency: 'TRY',
+          status: 'AVAILABLE',
+          totalProjectedAmount: 25,
+          lines: [{
+            sourceItemId: 'fee-1',
+            itemType: 'FEE',
+            category: 'COST',
+            code: 'HARC',
+            amount: 25,
+            currency: 'TRY',
+            source: 'PERSISTED_CLAIM_ITEM',
+            status: 'AVAILABLE',
+          }],
+        }],
+        diagnostics: [{
+          code: 'FEE_POLICY_OWNER_GATED',
+          severity: 'INFO',
+          message: 'owner gated',
+        }],
+      } as any,
+    });
+
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+
+    expect(d.feeProjection).toBe(balance.feeProjection);
+    expect(d.feeProjection.totalProjectedAmount).toBe(25);
+    expect(d.authority).toBe('SHADOW_ONLY');
+    expect(d.status).toBe('OK');
+    expect(d.totals.totalDebtAmount).toBe(1075);
+    expect(d.provenance).toMatchObject({
+      feeProjectionSourceUsed: true,
+      feeProjectionAuthorityPromoted: false,
+    });
   });
 
   it('CB-01: finalDebtStates varsa PRINCIPAL bucket yalniz final debt state authority ile dolar', () => {

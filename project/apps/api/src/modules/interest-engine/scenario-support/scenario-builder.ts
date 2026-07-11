@@ -20,6 +20,7 @@
 import type { CaseBalanceResult } from '../orchestration/case-balance.service';
 import type { ClaimBucket, Payment } from '../types/domain.types';
 import type { ScenarioDefinition } from './scenario-definition';
+import { buildCaseBalanceFeeProjection } from '../orchestration/case-balance-fee-projection';
 
 /**
  * Boş/temel CaseBalanceResult iskeleti (test fixture).
@@ -31,6 +32,7 @@ export function makeBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBal
     source: 'COLLECTION',
     currencyResults: [],
     projections: { costs: {}, ancillaries: {} },
+    feeProjection: buildCaseBalanceFeeProjection({ sourceItems: [], currencyResults: [] }),
     diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
     overpayments: { held: [], blocked: [] },
     ...overrides,

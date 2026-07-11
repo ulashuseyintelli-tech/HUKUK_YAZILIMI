@@ -446,6 +446,88 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     ]));
   });
 
+  it('D9 / PR-7: real DB carries persisted fee projection per currency and fails closed without zero fallback', async () => {
+    const def = simpleScenario('pr7-fee-projection', 'TWO_TENANT_ISOLATION');
+    const refs = await materializeScenario(prisma, def);
+    allRefs.push(refs);
+    const service = new CaseBalanceService(
+      prisma as never,
+      new RateProviderService(prisma as never),
+      buildEngine(),
+    );
+
+    const before = await service.computeCaseBalance(refs.tenantId, refs.caseId, def.domainInput.asOfDate);
+    const beforeDisplay = toCaseBalanceDisplay({ tenantId: refs.tenantId, caseId: refs.caseId, balance: before });
+    expect(before.feeProjection).toMatchObject({
+      status: 'NOT_CALCULATED',
+      totalProjectedAmount: null,
+    });
+    expect(before.feeProjection.totalProjectedAmount).not.toBe(0);
+
+    const feeId = `${def.id}-fee-try`;
+    await prisma.claimItem.create({
+      data: {
+        id: feeId,
+        tenantId: refs.tenantId,
+        caseId: refs.caseId,
+        itemType: 'FEE',
+        originalAmount: 12.34,
+        demandedAmount: 12.34,
+        amount: 12.34,
+        currency: 'TRY',
+      },
+    });
+
+    const available = await service.computeCaseBalance(refs.tenantId, refs.caseId, def.domainInput.asOfDate);
+    const availableDisplay = toCaseBalanceDisplay({
+      tenantId: refs.tenantId,
+      caseId: refs.caseId,
+      balance: available,
+    });
+    expect(available.feeProjection).toMatchObject({
+      status: 'AVAILABLE',
+      authority: 'SOURCE_PROJECTION_ONLY',
+      policyStatus: 'OWNER_GATED',
+      currency: 'TRY',
+      totalProjectedAmount: 12.34,
+    });
+    expect(available.feeProjection.groups[0].lines).toEqual([
+      expect.objectContaining({ sourceItemId: feeId, amount: 12.34, currency: 'TRY' }),
+    ]);
+    expect(availableDisplay.feeProjection).toEqual(available.feeProjection);
+    expect(availableDisplay.status).toBe(beforeDisplay.status);
+    expect(availableDisplay.authority).toBe(beforeDisplay.authority);
+    expect(availableDisplay.provenance.feeProjectionAuthorityPromoted).toBe(false);
+
+    await prisma.claimItem.update({ where: { id: feeId }, data: { currency: 'USD' } });
+    const mismatch = await service.computeCaseBalance(refs.tenantId, refs.caseId, def.domainInput.asOfDate);
+    expect(mismatch.feeProjection).toMatchObject({
+      status: 'UNAVAILABLE',
+      totalProjectedAmount: null,
+    });
+    expect(mismatch.feeProjection.groups[0].lines[0]).toMatchObject({
+      currency: 'USD',
+      amount: null,
+      status: 'UNAVAILABLE',
+    });
+    expect(mismatch.feeProjection.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'FEE_PROJECTION_CURRENCY_MISMATCH',
+    );
+
+    const crossTenant = await service.computeCaseBalance(
+      refs.secondaryTenantId!,
+      refs.caseId,
+      def.domainInput.asOfDate,
+    );
+    expect(crossTenant.currencyResults).toEqual([]);
+    expect(crossTenant.feeProjection).toMatchObject({
+      status: 'UNAVAILABLE',
+      authority: 'UNAVAILABLE',
+      totalProjectedAmount: null,
+    });
+    expect(crossTenant.diagnostics.fatal).toEqual([{ code: 'CASE_NOT_FOUND', caseId: refs.caseId }]);
+  });
+
   it('D2: karşılaştırıcı dürüstlüğü — bilinçli yanlış expected match=false üretir', async () => {
     const def = defineScenario({
       ...simpleScenario('w03-d2'),

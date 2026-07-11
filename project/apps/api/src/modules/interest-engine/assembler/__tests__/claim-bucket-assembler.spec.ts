@@ -133,12 +133,18 @@ describe('claim-bucket-assembler (G4a)', () => {
       const res = assembleClaimBuckets([
         item({ id: 'p1', itemType: 'PRINCIPAL', interestType: 'YASAL', interestStartDate: '2025-01-01' }),
         item({ id: 'c1', itemType: 'FEE', amount: 100 }),
-        item({ id: 'c2', itemType: 'EXPENSE', amount: 50 }),
+        item({ id: 'c2', itemType: 'EXPENSE', amount: 50, currency: 'USD' }),
         item({ id: 'a1', itemType: 'ATTORNEY_FEE', amount: 300 }),
         item({ id: 'a2', itemType: 'PENALTY', amount: 70 }),
       ]);
       expect(res.costs).toEqual({ [AncillaryType.HARC]: 100, [AncillaryType.TEBLIGAT_MASRAFI]: 50 });
       expect(res.ancillaries).toEqual({ [AncillaryType.VEKALET_UCRETI]: 300, [AncillaryType.DIGER]: 70 });
+      expect(res.projectionItems).toEqual([
+        expect.objectContaining({ sourceItemId: 'c1', category: 'COST', code: AncillaryType.HARC, amount: 100, currency: 'TRY', sourceStatus: 'AVAILABLE' }),
+        expect.objectContaining({ sourceItemId: 'c2', category: 'COST', code: AncillaryType.TEBLIGAT_MASRAFI, amount: 50, currency: 'USD', sourceStatus: 'AVAILABLE' }),
+        expect.objectContaining({ sourceItemId: 'a1', category: 'ANCILLARY', code: AncillaryType.VEKALET_UCRETI, amount: 300, currency: 'TRY', sourceStatus: 'AVAILABLE' }),
+        expect.objectContaining({ sourceItemId: 'a2', category: 'ANCILLARY', code: AncillaryType.DIGER, amount: 70, currency: 'TRY', sourceStatus: 'AVAILABLE' }),
+      ]);
       // buckets'a dağıtılmadı
       expect(res.buckets[0].costs).toBeUndefined();
       expect(res.buckets[0].ancillaries).toBeUndefined();
@@ -150,6 +156,20 @@ describe('claim-bucket-assembler (G4a)', () => {
         item({ id: 'a2', itemType: 'OTHER', amount: 30 }),
       ]);
       expect(res.ancillaries).toEqual({ [AncillaryType.DIGER]: 100 });
+    });
+
+    it('geçersiz projection tutarını sıfır üretmeden source evidence olarak korur', () => {
+      const res = assembleClaimBuckets([
+        item({ id: 'fee-zero', itemType: 'FEE', amount: 0, demandedAmount: 0 }),
+      ]);
+      expect(res.costs).toEqual({});
+      expect(res.projectionItems).toEqual([
+        expect.objectContaining({
+          sourceItemId: 'fee-zero',
+          amount: 0,
+          sourceStatus: 'INVALID_AMOUNT',
+        }),
+      ]);
     });
   });
 

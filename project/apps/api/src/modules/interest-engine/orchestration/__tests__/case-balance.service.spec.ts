@@ -108,6 +108,43 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(rateProvider.getRatesForPeriod).toHaveBeenCalledTimes(1);
   });
 
+  it('ADR-014 PR-7: persisted fee projection source is carried separately without formula or zero fallback', async () => {
+    const feeItem = {
+      ...principal({
+        id: 'fee-try',
+        itemType: 'FEE',
+        demandedAmount: 75.25,
+        amount: 75.25,
+        interestType: null,
+        interestStartDate: null,
+      }),
+    };
+    const { service } = setup({
+      claimItems: [principal(), feeItem],
+      rates: legalRate(),
+    });
+
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+    expect(res.projections.costs).toEqual({ HARC: 75.25 });
+    expect(res.feeProjection).toMatchObject({
+      status: 'AVAILABLE',
+      authority: 'SOURCE_PROJECTION_ONLY',
+      policyStatus: 'OWNER_GATED',
+      currency: 'TRY',
+      totalProjectedAmount: 75.25,
+    });
+    expect(res.feeProjection.groups[0].lines).toEqual([
+      expect.objectContaining({
+        sourceItemId: 'fee-try',
+        amount: 75.25,
+        currency: 'TRY',
+        source: 'PERSISTED_CLAIM_ITEM',
+      }),
+    ]);
+    expect(res.currencyResults[0].result).not.toBeNull();
+  });
+
   it('ADR-014 PR-5: tenant-scoped Case.caseDate enforcement boundary olarak computeBalance requestine taşınır', async () => {
     const { service, prisma, computeBalanceSpy } = setup({
       caseRow: {
