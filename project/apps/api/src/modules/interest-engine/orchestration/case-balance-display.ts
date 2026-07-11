@@ -19,6 +19,10 @@ import { isSupportedCurrency } from '../types/common.types';
 import type { FinalDebtState } from '../types/calculation.types';
 import type { CaseBalanceResult } from './case-balance.service';
 import type { CaseBalanceFeeProjection } from './case-balance-fee-projection';
+import {
+  buildCaseBalanceSnapshotReadiness,
+  type CaseBalanceSnapshotReadiness,
+} from './case-balance-snapshot-readiness';
 
 export interface CaseBalanceDisplayCurrency {
   currency: string;
@@ -56,6 +60,10 @@ export type BalanceDisplayBucketSource =
 
 export type BalanceDisplayDiagnosticCode =
   | 'NO_BUCKETS'
+  | 'REVERSAL_INTEGRITY_INVALID'
+  | 'ZERO_OR_NEGATIVE_PAYMENT'
+  | 'ENGINE_ERROR'
+  | 'CASE_BALANCE_UNAVAILABLE'
   | 'CURRENCY_MISSING'
   | 'CURRENCY_UNSUPPORTED'
   | 'CURRENCY_MISMATCH'
@@ -163,6 +171,10 @@ export interface CaseBalanceDisplay {
   asOfDate: string;
   source: CaseBalanceResult['source'];
   status: 'OK' | 'UNAVAILABLE';
+  /** ADR-014 PR-8a: official/persisted snapshot bu katmanda uretilmez. */
+  snapshotAvailable: false;
+  /** Read-only, fail-closed snapshot/readiness sinyali; authority URETMEZ. */
+  readiness: CaseBalanceSnapshotReadiness;
   /** Masraf projeksiyonu (CASE-level; currency-split DEĞİL) = Σ projections.costs. */
   costs: number;
   /** Fer'i / yan-alacak projeksiyonu (CASE-level) = Σ projections.ancillaries. */
@@ -316,6 +328,73 @@ function buildDiagnostics(
     });
   }
 
+  const fatalCodes = new Set((balance.diagnostics?.fatal ?? []).map((diagnostic) => diagnostic.code));
+  if (fatalCodes.has('REVERSAL_INTEGRITY_INVALID')) {
+    diagnostics.push({
+      code: 'REVERSAL_INTEGRITY_INVALID',
+      severity: 'BLOCKER',
+      message: 'Reversal kaniti gecersiz; netting sonucu ve snapshot/readiness fail-closed kalir.',
+    });
+  }
+
+  const invalidPayments = (balance.diagnostics?.payments ?? [])
+    .filter((diagnostic) => diagnostic.code === 'ZERO_OR_NEGATIVE_PAYMENT')
+    .sort((a, b) => a.paymentId.localeCompare(b.paymentId));
+  if (invalidPayments.length > 0) {
+    diagnostics.push({
+      code: 'ZERO_OR_NEGATIVE_PAYMENT',
+      severity: 'BLOCKER',
+      message: 'Sifir veya negatif odeme canonical TBK100 tahsis kaniti olarak kullanilamaz.',
+      details: {
+        observations: invalidPayments.map((diagnostic) => ({
+          paymentId: diagnostic.paymentId,
+          ...(diagnostic.detail ? { detail: diagnostic.detail } : {}),
+        })),
+      },
+    });
+  }
+
+  const engineErrorCurrencies = [...new Set(
+    (balance.currencyResults ?? [])
+      .filter((result) => result.skippedReason === 'ENGINE_ERROR')
+      .map((result) => result.currency),
+  )].sort();
+  if (engineErrorCurrencies.length > 0) {
+    diagnostics.push({
+      code: 'ENGINE_ERROR',
+      severity: 'BLOCKER',
+      message: 'Interest-base hesaplama sonucu uretilemedi; bos veya sifir basari fallback uygulanmadi.',
+      details: {
+        currencies: engineErrorCurrencies,
+        observations: (balance.diagnostics?.perCurrency ?? [])
+          .filter((diagnostic) => engineErrorCurrencies.includes(diagnostic.currency))
+          .map((diagnostic) => ({
+            currency: diagnostic.currency,
+            code: diagnostic.code,
+            message: diagnostic.message,
+          }))
+          .sort((a, b) => a.currency.localeCompare(b.currency) || a.code.localeCompare(b.code)),
+      },
+    });
+  }
+
+  const unclassifiedFatalCodes = [...fatalCodes]
+    .filter((code) => ![
+      'REVERSAL_INTEGRITY_INVALID',
+      'NO_BUCKETS',
+      'CURRENCY_MISSING',
+      'CURRENCY_UNSUPPORTED',
+    ].includes(code))
+    .sort();
+  if (unclassifiedFatalCodes.length > 0) {
+    diagnostics.push({
+      code: 'CASE_BALANCE_UNAVAILABLE',
+      severity: 'BLOCKER',
+      message: 'CaseBalance fatal diagnostic nedeniyle kullanilamaz.',
+      details: { sourceCodes: unclassifiedFatalCodes },
+    });
+  }
+
   const currencyDiagnostics = balance.diagnostics?.currency ?? [];
   for (const code of ['CURRENCY_MISSING', 'CURRENCY_UNSUPPORTED', 'CURRENCY_MISMATCH'] as const) {
     const matches = currencyDiagnostics.filter((diagnostic) => diagnostic.code === code);
@@ -435,6 +514,23 @@ function buildUnsafeSources(diagnostics: BalanceDisplayDiagnostic[]): BalanceDis
       reason: 'Currency integrity blocker nedeniyle conversion, aggregation veya primary display authority uretilmez.',
     });
   }
+  for (const code of [
+    'REVERSAL_INTEGRITY_INVALID',
+    'ZERO_OR_NEGATIVE_PAYMENT',
+    'ENGINE_ERROR',
+    'CASE_BALANCE_UNAVAILABLE',
+  ] as const) {
+    if (!diagnostics.some((diagnostic) => diagnostic.code === code)) continue;
+    sources.push({
+      code,
+      source: code === 'ZERO_OR_NEGATIVE_PAYMENT'
+        ? 'CaseBalanceResult.diagnostics.payments'
+        : code === 'ENGINE_ERROR'
+          ? 'CaseBalanceResult.currencyResults'
+          : 'CaseBalanceResult.diagnostics.fatal',
+      reason: 'Canonical readiness blocker nedeniyle snapshot ve primary display authority fail-closed kalir.',
+    });
+  }
   if (diagnostics.some((d) => d.code === 'LEGACY_CALCULATION_SUMMARY_LIVE')) {
     sources.push({
       code: 'LEGACY_CALCULATION_SUMMARY_LIVE',
@@ -550,6 +646,7 @@ function buildBuckets(
 export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBalanceDisplay {
   const { tenantId, caseId, balance } = input;
   const fatal = balance.diagnostics?.fatal ?? [];
+  const readiness = buildCaseBalanceSnapshotReadiness(balance);
   const noBucketCurrencies = [...new Set(
     (balance.currencyResults ?? [])
       .filter((cr) => cr.skippedReason === 'NO_BUCKETS')
@@ -563,10 +660,7 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   );
   const hasReversalCurrencyMismatch = (balance.diagnostics?.payments ?? [])
     .some((diagnostic) => diagnostic.code === 'REVERSAL_CURRENCY_MISMATCH');
-  const status: 'OK' | 'UNAVAILABLE' =
-    fatal.length > 0 || noBucketCurrencies.length > 0 || currencyBlockerCodes.size > 0 || hasReversalCurrencyMismatch
-      ? 'UNAVAILABLE'
-      : 'OK';
+  const status: 'OK' | 'UNAVAILABLE' = readiness.blockers.length > 0 ? 'UNAVAILABLE' : 'OK';
 
   const currencies: CaseBalanceDisplayCurrency[] = (balance.currencyResults ?? []).map((cr) => ({
     currency: cr.currency,
@@ -631,6 +725,8 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     asOfDate: balance.asOfDate,
     source: balance.source,
     status,
+    snapshotAvailable: readiness.snapshotAvailable,
+    readiness,
     costs,
     ancillaries,
     feeProjection: balance.feeProjection,
@@ -666,7 +762,10 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     display.unavailableReason = fatal[0]?.code
       ?? (noBucketCurrencies.length > 0 ? 'NO_BUCKETS' : undefined)
       ?? [...currencyBlockerCodes].sort()[0]
-      ?? (hasReversalCurrencyMismatch ? 'REVERSAL_CURRENCY_MISMATCH' : 'UNKNOWN');
+      ?? (hasReversalCurrencyMismatch ? 'REVERSAL_CURRENCY_MISMATCH' : undefined)
+      ?? readiness.blockers[0]?.sourceCodes[0]
+      ?? readiness.blockers[0]?.code
+      ?? 'UNKNOWN';
   }
   return display;
 }

@@ -49,8 +49,16 @@ function makeDisplay(overrides: Partial<CaseBalanceDisplay> = {}): CaseBalanceDi
     asOfDate: '2026-07-01',
     source: 'LEDGER' as CaseBalanceDisplay['source'],
     status: 'OK',
+    snapshotAvailable: false,
+    readiness: {
+      status: 'UNSAFE',
+      snapshotAvailable: false,
+      primaryDisplayEligible: false,
+      blockers: [],
+    },
     costs: 0,
     ancillaries: 0,
+    feeProjection: {} as never,
     currencies: [makeCurrency()],
     buckets: [],
     totals: { ...NULL_TOTALS },
@@ -62,6 +70,8 @@ function makeDisplay(overrides: Partial<CaseBalanceDisplay> = {}): CaseBalanceDi
       finalDebtStatesAvailable: false,
       overpaymentProjectionUsed: false,
       blockedOverpaymentDiagnosticsUsed: false,
+      feeProjectionSourceUsed: false,
+      feeProjectionAuthorityPromoted: false,
     },
     notes: [],
     ...overrides,
@@ -177,12 +187,22 @@ describe('W0.3 scenario-evidence karşılaştırıcısı (§12: hesaplamaz)', ()
     expect(nullEqual.match).toBe(true);
   });
 
-  it('snapshotStatus verilirse karşılaştırılMAZ: not düşülür, match etkilenmez', () => {
-    const result = compareScenarioEvidence(
+  it('snapshotStatus read-only readiness sinyaliyle karsilastirilir; official snapshot uydurulmaz', () => {
+    const matching = compareScenarioEvidence(
+      { ...BASE_EXPECTED, snapshotStatus: 'UNSAFE' },
+      makeDisplay(),
+    );
+    expect(matching).toEqual({ match: true, mismatches: [], notes: [] });
+
+    const unsafePromotion = compareScenarioEvidence(
       { ...BASE_EXPECTED, snapshotStatus: 'SAFE' },
       makeDisplay(),
     );
-    expect(result.match).toBe(true);
-    expect(result.notes.some((n) => n.includes('SNAPSHOT_PATH_NOT_EXERCISED'))).toBe(true);
+    expect(unsafePromotion.match).toBe(false);
+    expect(unsafePromotion.mismatches).toContainEqual({
+      field: 'snapshotStatus',
+      expected: 'SAFE',
+      actual: 'UNSAFE',
+    });
   });
 });

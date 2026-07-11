@@ -180,6 +180,66 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
       feeProjectionSourceUsed: true,
       feeProjectionAuthorityPromoted: false,
     });
+    expect(d).toMatchObject({
+      status: 'OK',
+      authority: 'SHADOW_ONLY',
+      snapshotAvailable: false,
+      readiness: {
+        status: 'UNSAFE',
+        snapshotAvailable: false,
+        primaryDisplayEligible: false,
+        blockers: [],
+      },
+    });
+  });
+
+  it.each([
+    [
+      'TBK100_ALLOCATION',
+      makeBalance({
+        diagnostics: {
+          fatal: [],
+          assembler: [],
+          payments: [{ code: 'ZERO_OR_NEGATIVE_PAYMENT', paymentId: 'p1', detail: 'amount=-1' }],
+          currency: [],
+          perCurrency: [],
+        },
+      }),
+      'ZERO_OR_NEGATIVE_PAYMENT',
+    ],
+    [
+      'INTEREST_BASE',
+      makeBalance({
+        currencyResults: [{ currency: 'TRY', result: null, skippedReason: 'ENGINE_ERROR', grossPrincipal: 100 }],
+        diagnostics: {
+          fatal: [],
+          assembler: [],
+          payments: [],
+          currency: [],
+          perCurrency: [{ currency: 'TRY', code: 'E_RATE_COVERAGE_GAP', message: 'rate gap' }],
+        },
+      }),
+      'ENGINE_ERROR',
+    ],
+  ] as const)('ADR-014 PR-8a: %s display/readiness/authority sinyalleri fail-closed ve mutabiktir', (
+    readinessCode,
+    balance,
+    diagnosticCode,
+  ) => {
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+
+    expect(d).toMatchObject({
+      status: 'UNAVAILABLE',
+      authority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+      snapshotAvailable: false,
+      readiness: {
+        status: 'BLOCKED',
+        snapshotAvailable: false,
+        primaryDisplayEligible: false,
+      },
+    });
+    expect(d.readiness.blockers.map((blocker) => blocker.code)).toEqual([readinessCode]);
+    expect(d.diagnostics).toContainEqual(expect.objectContaining({ code: diagnosticCode, severity: 'BLOCKER' }));
   });
 
   it('CB-01: finalDebtStates varsa PRINCIPAL bucket yalniz final debt state authority ile dolar', () => {
@@ -322,6 +382,13 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     expect(d.provenance.finalDebtStatesAvailable).toBe(false);
     expect(d.diagnostics.map((diag) => diag.code)).toContain('FINAL_DEBT_STATES_CURRENCY_MISMATCH');
     expect(d.unsafeSources?.map((source) => source.code)).toContain('FINAL_DEBT_STATES_CURRENCY_MISMATCH');
+    expect(d).toMatchObject({
+      status: 'UNAVAILABLE',
+      authority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+      snapshotAvailable: false,
+      readiness: { status: 'BLOCKED', primaryDisplayEligible: false },
+    });
+    expect(d.readiness.blockers.map((blocker) => blocker.code)).toEqual(['CURRENCY_INTEGRITY']);
   });
 
   it('collected: aynı paymentId çoklu adımda DEDUP (çift saymaz)', () => {

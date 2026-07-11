@@ -8,9 +8,8 @@
  *   "actual runtime observation vs expected evidence" karşılaştırır.
  *   Fallback formül, hukuki anlam taşıyan tolerans, tahsis/TBK100/fee/
  *   tarife/reversal semantiği YOKTUR ve EKLENEMEZ.
- * - §14 Journal/snapshot notu: runtime yolu bir yüzeyi üretmiyorsa evidence
- *   bunu "not exercised" olarak SÖYLER (serbest-metin not — W0.2
- *   WRITE_PATH_NOT_EXERCISED emsali); asla taklit edilmez.
+ * - §14 Journal/snapshot notu: PR-8a official snapshot TAKLIT ETMEZ;
+ *   display'deki read-only readiness/snapshotAvailable sinyalini gozlemler.
  *
  * SAFLIK KURALI (statik guard ile korunur —
  * __tests__/scenario-diagnostic.static.spec.ts):
@@ -50,8 +49,7 @@ export interface ScenarioEvidenceMismatch {
 
 /**
  * Expected-vs-actual karşılaştırma sonucu. `match` yalnız KARŞILAŞTIRILAN
- * alanlar üzerinden anlamlıdır; karşılaştırılamayan yüzeyler (örn. snapshot)
- * `notes` içinde "not exercised" olarak açıkça söylenir.
+ * alanlar üzerinden anlamlıdır.
  */
 export interface ScenarioEvidenceComparison {
   match: boolean;
@@ -73,6 +71,10 @@ export interface ScenarioEvidenceRecord {
   observedAuthority: CaseBalanceDisplay['authority'];
   observedStatus: CaseBalanceDisplay['status'];
   observedBlockerCodes: BalanceDisplayDiagnosticCode[];
+  observedSnapshotStatus: CaseBalanceDisplay['readiness']['status'];
+  observedSnapshotAvailable: CaseBalanceDisplay['snapshotAvailable'];
+  observedPrimaryDisplayEligible: CaseBalanceDisplay['readiness']['primaryDisplayEligible'];
+  observedReadinessBlockerCodes: CaseBalanceDisplay['readiness']['blockers'][number]['code'][];
   expected?: ScenarioExpected;
   comparison?: ScenarioEvidenceComparison;
 }
@@ -96,10 +98,6 @@ export function extractBlockerCodes(display: CaseBalanceDisplay): BalanceDisplay
   return [...new Set(codes)].sort();
 }
 
-const SNAPSHOT_NOT_EXERCISED_NOTE =
-  'SNAPSHOT_PATH_NOT_EXERCISED: snapshot katmanı main runtime yüzeyinde üretilmiyor (PR-8 işi); ' +
-  'expected.snapshotStatus karşılaştırılMAdı ve bu koşum snapshot davranışı için kanıt SAYILMAZ.';
-
 /**
  * Expected-vs-actual karşılaştırıcı (§12: HESAPLAMAZ).
  *
@@ -109,8 +107,7 @@ const SNAPSHOT_NOT_EXERCISED_NOTE =
  * - perCurrencyStatus (expected'ta verilen her currency için OK/SKIPPED)
  * - totals (YALNIZ expected.totals'ta verilen alanlar; null==null dahil birebir,
  *   sayılar float-gürültü eşiğiyle)
- *
- * Karşılaştırılamayanlar açık not düşülür: snapshotStatus (yüzey main'de yok).
+ * - snapshotStatus (PR-8a read-only readiness sinyali; official snapshot DEGIL)
  */
 export function compareScenarioEvidence(
   expected: ScenarioExpected,
@@ -166,7 +163,13 @@ export function compareScenarioEvidence(
   }
 
   if (expected.snapshotStatus !== undefined) {
-    notes.push(SNAPSHOT_NOT_EXERCISED_NOTE);
+    if (actual.readiness.status !== expected.snapshotStatus) {
+      mismatches.push({
+        field: 'snapshotStatus',
+        expected: expected.snapshotStatus,
+        actual: actual.readiness.status,
+      });
+    }
   }
 
   return { match: mismatches.length === 0, mismatches, notes };
