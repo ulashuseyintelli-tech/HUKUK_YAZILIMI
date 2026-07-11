@@ -7,7 +7,7 @@
  * Kilitli kararlar (ledger, ulas 2026-06-14):
  *  - Q1 mode=PREVIEW (audit'siz, SAF computeBalance) · Q2 gapPolicy=WARN_ONLY_FOR_PREVIEW (gap bloklamaz,
  *    diagnostic'lenir) · Q3 fixed-rate bucket'lara sentetik CONTRACT RateEntry (coverage için) ·
- *    Q4 0-bucket grup → computeBalance ATLA + skippedReason · Q5 per-currency CalculationResult[]
+ *    Q4 0-bucket grup → computeBalance ATLA + fail-closed NO_BUCKETS blocker · Q5 per-currency CalculationResult[]
  *    (cross-currency toplam YOK) + birleşik diagnostics · Q6 endpoint YOK (yalnız servis).
  *  - ADDITIVE: trigger yok · persist yok · case_balance_view yok · summary-engine'e dokunulmaz ·
  *    READ-ONLY (prisma write/transaction yok) · mevcut canlı akış değişmez.
@@ -324,6 +324,7 @@ export class CaseBalanceService {
 
     // 5. Currency gruplama (G4b-1)
     const grouped = groupByCurrency(asm.buckets, pay.payments);
+    const hasNoBuckets = grouped.groups.some((group) => group.buckets.length === 0);
 
     // 6. Her currency grubu için computeBalance
     const now = new Date().toISOString();
@@ -335,7 +336,8 @@ export class CaseBalanceService {
       // bucket'lar zaten mevcutsa her zaman hesaplanabilir.
       const grossPrincipal = group.buckets.reduce((sum, b) => sum + b.amount, 0);
 
-      // Q4: bucket'sız grup (yalnız payment) → computeBalance atla
+      // Q4 / ADR-014 PR-2: bucket'sız grup (yalnız payment) hesaplanabilir bakiye
+      // değildir. Currency kanıtı korunur; case-level fatal blocker aşağıda tekil taşınır.
       if (group.buckets.length === 0) {
         currencyResults.push({ currency: group.currency, result: null, skippedReason: 'NO_BUCKETS', grossPrincipal: 0 });
         continue;
@@ -369,7 +371,7 @@ export class CaseBalanceService {
       currencyResults,
       projections: { costs: asm.costs, ancillaries: asm.ancillaries },
       diagnostics: {
-        fatal: [],
+        fatal: hasNoBuckets ? [{ code: 'NO_BUCKETS', caseId }] : [],
         assembler: asm.diagnostics,
         payments: pay.diagnostics,
         currency: grouped.diagnostics,

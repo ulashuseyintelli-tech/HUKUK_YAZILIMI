@@ -53,6 +53,7 @@ export type BalanceDisplayBucketSource =
   | 'UNAVAILABLE';
 
 export type BalanceDisplayDiagnosticCode =
+  | 'NO_BUCKETS'
   | 'LEGACY_CALCULATION_SUMMARY_LIVE'
   | 'FINAL_DEBT_STATES_MISSING'
   | 'FINAL_DEBT_STATES_CURRENCY_MISMATCH'
@@ -277,6 +278,7 @@ function buildDiagnostics(
   balance: CaseBalanceResult,
   currency: string,
   blockedTotal: number,
+  noBucketCurrencies: string[],
   finalDebtStatesStatus: {
     present: boolean;
     currencyMismatch: boolean;
@@ -294,6 +296,15 @@ function buildDiagnostics(
       message: 'ClaimItem.collectedAmount display authority olarak kullanilmiyor; tahsilat payment/ledger hattindan okunur.',
     },
   ];
+
+  if (noBucketCurrencies.length > 0) {
+    diagnostics.push({
+      code: 'NO_BUCKETS',
+      severity: 'BLOCKER',
+      message: 'Odeme etkisi var ancak hesaplanabilir claim bucket yok; bakiye primary display authority olamaz.',
+      details: { currencies: noBucketCurrencies },
+    });
+  }
 
   if (!finalDebtStatesStatus.present) {
     diagnostics.push({
@@ -352,6 +363,13 @@ function buildDiagnostics(
 
 function buildUnsafeSources(diagnostics: BalanceDisplayDiagnostic[]): BalanceDisplayUnsafeSource[] | undefined {
   const sources: BalanceDisplayUnsafeSource[] = [];
+  if (diagnostics.some((d) => d.code === 'NO_BUCKETS')) {
+    sources.push({
+      code: 'NO_BUCKETS',
+      source: 'CaseBalanceResult.currencyResults[].skippedReason',
+      reason: 'Odeme etkisi hesaplanabilir claim bucket ile eslesmedigi icin usable balance veya primary authority uretilmez.',
+    });
+  }
   if (diagnostics.some((d) => d.code === 'LEGACY_CALCULATION_SUMMARY_LIVE')) {
     sources.push({
       code: 'LEGACY_CALCULATION_SUMMARY_LIVE',
@@ -467,7 +485,13 @@ function buildBuckets(
 export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBalanceDisplay {
   const { tenantId, caseId, balance } = input;
   const fatal = balance.diagnostics?.fatal ?? [];
-  const status: 'OK' | 'UNAVAILABLE' = fatal.length > 0 ? 'UNAVAILABLE' : 'OK';
+  const noBucketCurrencies = [...new Set(
+    (balance.currencyResults ?? [])
+      .filter((cr) => cr.skippedReason === 'NO_BUCKETS')
+      .map((cr) => cr.currency),
+  )].sort();
+  const status: 'OK' | 'UNAVAILABLE' =
+    fatal.length > 0 || noBucketCurrencies.length > 0 ? 'UNAVAILABLE' : 'OK';
 
   const currencies: CaseBalanceDisplayCurrency[] = (balance.currencyResults ?? []).map((cr) => ({
     currency: cr.currency,
@@ -501,7 +525,7 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   const blockedOverpayment = round2(
     (balance.overpayments?.blocked ?? []).reduce((sum, row) => sum + (row.attemptedOverpaymentAmount ?? 0), 0),
   );
-  const diagnostics = buildDiagnostics(balance, displayCurrency, blockedOverpayment, {
+  const diagnostics = buildDiagnostics(balance, displayCurrency, blockedOverpayment, noBucketCurrencies, {
     present: finalDebtStatesPresent,
     currencyMismatch: finalDebtStatesCurrencyMismatch,
   });
@@ -561,7 +585,7 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     notes: DISPLAY_NOTES,
   };
   if (status === 'UNAVAILABLE') {
-    display.unavailableReason = fatal[0]?.code ?? 'UNKNOWN';
+    display.unavailableReason = fatal[0]?.code ?? (noBucketCurrencies.length > 0 ? 'NO_BUCKETS' : 'UNKNOWN');
   }
   return display;
 }

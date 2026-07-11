@@ -135,6 +135,22 @@ describe('W0.3 scenario-evidence karşılaştırıcısı (§12: hesaplamaz)', ()
     ]);
   });
 
+  it('NO_BUCKETS blocker ve unsafe authority evidence katmanına kayıpsız taşınır', () => {
+    const display = makeDisplay({
+      authority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+      status: 'UNAVAILABLE',
+      unavailableReason: 'NO_BUCKETS',
+      currencies: [makeCurrency({ skipped: true, skippedReason: 'NO_BUCKETS' })],
+      diagnostics: [diag('NO_BUCKETS', 'BLOCKER')],
+    });
+
+    expect(compareScenarioEvidence({
+      perCurrencyStatus: { TRY: 'SKIPPED' },
+      blockerCodes: ['NO_BUCKETS'],
+      authority: 'UNSAFE_FOR_PRIMARY_DISPLAY',
+    }, display)).toEqual({ match: true, mismatches: [], notes: [] });
+  });
+
   it('totals: yalnız verilen alanlar karşılaştırılır; float gürültüsü eşleşir, gerçek fark yakalanır, null==null geçer', () => {
     const display = makeDisplay({
       totals: { ...NULL_TOTALS, totalDebtAmount: 100, totalPaidAmount: 55.5 },

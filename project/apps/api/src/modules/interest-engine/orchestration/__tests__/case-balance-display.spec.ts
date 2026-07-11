@@ -339,7 +339,7 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     });
   });
 
-  it('skipped currency: result null → skipped true + skippedReason taşınır, tutarlar 0', () => {
+  it('NO_BUCKETS currency fail-closed olur; blocker, neden ve authority kayıpsız taşınır', () => {
     const balance = makeBalance({
       currencyResults: [currencyResult('USD', null, 'NO_BUCKETS')] as any,
     });
@@ -348,6 +348,19 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     expect(d.currencies[0].skippedReason).toBe('NO_BUCKETS');
     expect(d.currencies[0].interest).toBe(0);
     expect(d.currencies[0].claimRemaining).toBe(0);
+    expect(d.status).toBe('UNAVAILABLE');
+    expect(d.unavailableReason).toBe('NO_BUCKETS');
+    expect(d.authority).toBe('UNSAFE_FOR_PRIMARY_DISPLAY');
+    expect(d.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'NO_BUCKETS',
+        severity: 'BLOCKER',
+        details: { currencies: ['USD'] },
+      }),
+    ]));
+    expect(d.unsafeSources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'NO_BUCKETS' }),
+    ]));
   });
 
   it('UNAVAILABLE: diagnostics.fatal varsa status UNAVAILABLE + unavailableReason', () => {
