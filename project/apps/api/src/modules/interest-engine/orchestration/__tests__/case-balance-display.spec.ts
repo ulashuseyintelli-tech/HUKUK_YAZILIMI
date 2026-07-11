@@ -404,6 +404,62 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     expect(d.unsafeSources?.map((source) => source.code)).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
   });
 
+  it.each([
+    ['CURRENCY_MISSING', 'UNKNOWN'],
+    ['CURRENCY_UNSUPPORTED', 'JPY'],
+    ['CURRENCY_MISMATCH', 'USD'],
+  ] as const)('ADR-014 PR-6: %s display/evidence katmanında BLOCKER ve unavailable olur', (code, currency) => {
+    const balance = makeBalance({
+      currencyResults: [currencyResult(currency, null, code === 'CURRENCY_MISMATCH' ? 'NO_BUCKETS' : 'INVALID_CURRENCY')] as any,
+      diagnostics: {
+        fatal: code === 'CURRENCY_MISMATCH'
+          ? [{ code: 'NO_BUCKETS', caseId: 'c' }]
+          : [{ code, caseId: 'c' }],
+        assembler: [],
+        payments: [],
+        currency: [{ code, currency, source: 'PAYMENT', sourceId: 'pay-1', detail: 'paymentId=pay-1' }],
+        perCurrency: [],
+      } as any,
+    });
+
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+
+    expect(d.status).toBe('UNAVAILABLE');
+    expect(d.authority).toBe('UNSAFE_FOR_PRIMARY_DISPLAY');
+    expect(d.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code, severity: 'BLOCKER' }),
+    ]));
+    expect(d.unsafeSources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code }),
+    ]));
+    expect(d.totals.outstandingAmount).toBeNull();
+  });
+
+  it('ADR-014 PR-6: reversal currency mismatch özgül BLOCKER evidence olarak korunur', () => {
+    const balance = makeBalance({
+      currencyResults: [],
+      diagnostics: {
+        fatal: [{ code: 'REVERSAL_INTEGRITY_INVALID', caseId: 'c' }],
+        assembler: [],
+        payments: [{ code: 'REVERSAL_CURRENCY_MISMATCH', paymentId: 'r1', detail: 'paymentId=p1' }],
+        currency: [],
+        perCurrency: [],
+      } as any,
+    });
+
+    const d = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance, generatedAt: GENERATED_AT });
+
+    expect(d.status).toBe('UNAVAILABLE');
+    expect(d.authority).toBe('UNSAFE_FOR_PRIMARY_DISPLAY');
+    expect(d.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'REVERSAL_CURRENCY_MISMATCH',
+      severity: 'BLOCKER',
+    }));
+    expect(d.unsafeSources).toContainEqual(expect.objectContaining({
+      code: 'REVERSAL_CURRENCY_MISMATCH',
+    }));
+  });
+
   it('ALC-AUTH-1B: allocatedPaidAmount + heldOverpaymentAmount = grossReceivedAmount (220.000 + 100.000 = 320.000); totalPaidAmount geriye dönük DEĞİŞMEZ', () => {
     // 2026/9502 senaryosu (ALC-AUTH-1A forensiği): 4 ödemeden 3'ü (20k+100k+100k=220k)
     // borca tahsis edildi (allocation step üretti); 4. ödeme (100k) borç zaten kapandığı

@@ -7,7 +7,7 @@
  * - Validation içeride
  */
 
-import { InterestEngineError, InterestEngineErrorCode } from '../errors/interest-engine-errors';
+import { InterestEngineError } from '../errors/interest-engine-errors';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CURRENCY
@@ -22,6 +22,12 @@ export const CURRENCY_MINOR_UNITS: Record<Currency, number> = {
   GBP: 2,
   CHF: 2,
 };
+
+/** Canonical engine currency domain guard. Exact-match only; normalization/conversion yapmaz. */
+export function isSupportedCurrency(value: unknown): value is Currency {
+  return typeof value === 'string'
+    && Object.prototype.hasOwnProperty.call(CURRENCY_MINOR_UNITS, value);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MONEY (Immutable)

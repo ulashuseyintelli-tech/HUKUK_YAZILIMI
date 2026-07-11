@@ -15,6 +15,7 @@
  */
 
 import { AncillaryType } from '../types/domain.types';
+import { isSupportedCurrency } from '../types/common.types';
 import type { FinalDebtState } from '../types/calculation.types';
 import type { CaseBalanceResult } from './case-balance.service';
 
@@ -54,6 +55,10 @@ export type BalanceDisplayBucketSource =
 
 export type BalanceDisplayDiagnosticCode =
   | 'NO_BUCKETS'
+  | 'CURRENCY_MISSING'
+  | 'CURRENCY_UNSUPPORTED'
+  | 'CURRENCY_MISMATCH'
+  | 'REVERSAL_CURRENCY_MISMATCH'
   | 'LEGACY_CALCULATION_SUMMARY_LIVE'
   | 'FINAL_DEBT_STATES_MISSING'
   | 'FINAL_DEBT_STATES_CURRENCY_MISMATCH'
@@ -306,6 +311,46 @@ function buildDiagnostics(
     });
   }
 
+  const currencyDiagnostics = balance.diagnostics?.currency ?? [];
+  for (const code of ['CURRENCY_MISSING', 'CURRENCY_UNSUPPORTED', 'CURRENCY_MISMATCH'] as const) {
+    const matches = currencyDiagnostics.filter((diagnostic) => diagnostic.code === code);
+    if (matches.length === 0) continue;
+    const message = code === 'CURRENCY_MISSING'
+      ? 'Currency verisi eksik; ilgili claim/payment grubu hesaplanmadi ve primary authority uretilmedi.'
+      : code === 'CURRENCY_UNSUPPORTED'
+        ? 'Currency kodu canonical engine domaininde desteklenmiyor; conversion veya fallback uygulanmadi.'
+        : 'Odeme currency grubu hesaplanabilir claim bucket ile eslesmiyor; cross-currency tahsis uygulanmadi.';
+    diagnostics.push({
+      code,
+      severity: 'BLOCKER',
+      message,
+      details: {
+        observations: matches.map((diagnostic) => ({
+          currency: diagnostic.currency,
+          ...(diagnostic.source ? { source: diagnostic.source } : {}),
+          ...(diagnostic.sourceId ? { sourceId: diagnostic.sourceId } : {}),
+          ...(diagnostic.detail ? { detail: diagnostic.detail } : {}),
+        })),
+      },
+    });
+  }
+
+  const reversalCurrencyMismatches = (balance.diagnostics?.payments ?? [])
+    .filter((diagnostic) => diagnostic.code === 'REVERSAL_CURRENCY_MISMATCH');
+  if (reversalCurrencyMismatches.length > 0) {
+    diagnostics.push({
+      code: 'REVERSAL_CURRENCY_MISMATCH',
+      severity: 'BLOCKER',
+      message: 'Reversal currency, bagli payment currency ile eslesmiyor; reversal netting fail-closed durduruldu.',
+      details: {
+        observations: reversalCurrencyMismatches.map((diagnostic) => ({
+          paymentId: diagnostic.paymentId,
+          ...(diagnostic.detail ? { detail: diagnostic.detail } : {}),
+        })),
+      },
+    });
+  }
+
   if (!finalDebtStatesStatus.present) {
     diagnostics.push({
       code: 'FINAL_DEBT_STATES_MISSING',
@@ -368,6 +413,21 @@ function buildUnsafeSources(diagnostics: BalanceDisplayDiagnostic[]): BalanceDis
       code: 'NO_BUCKETS',
       source: 'CaseBalanceResult.currencyResults[].skippedReason',
       reason: 'Odeme etkisi hesaplanabilir claim bucket ile eslesmedigi icin usable balance veya primary authority uretilmez.',
+    });
+  }
+  for (const code of [
+    'CURRENCY_MISSING',
+    'CURRENCY_UNSUPPORTED',
+    'CURRENCY_MISMATCH',
+    'REVERSAL_CURRENCY_MISMATCH',
+  ] as const) {
+    if (!diagnostics.some((diagnostic) => diagnostic.code === code)) continue;
+    sources.push({
+      code,
+      source: code === 'REVERSAL_CURRENCY_MISMATCH'
+        ? 'CaseBalanceResult.diagnostics.payments'
+        : 'CaseBalanceResult.diagnostics.currency',
+      reason: 'Currency integrity blocker nedeniyle conversion, aggregation veya primary display authority uretilmez.',
     });
   }
   if (diagnostics.some((d) => d.code === 'LEGACY_CALCULATION_SUMMARY_LIVE')) {
@@ -490,8 +550,18 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
       .filter((cr) => cr.skippedReason === 'NO_BUCKETS')
       .map((cr) => cr.currency),
   )].sort();
+  const currencyBlockerCodes = new Set(
+    (balance.diagnostics?.currency ?? [])
+      .map((diagnostic) => diagnostic.code)
+      .filter((code) =>
+        code === 'CURRENCY_MISSING' || code === 'CURRENCY_UNSUPPORTED' || code === 'CURRENCY_MISMATCH'),
+  );
+  const hasReversalCurrencyMismatch = (balance.diagnostics?.payments ?? [])
+    .some((diagnostic) => diagnostic.code === 'REVERSAL_CURRENCY_MISMATCH');
   const status: 'OK' | 'UNAVAILABLE' =
-    fatal.length > 0 || noBucketCurrencies.length > 0 ? 'UNAVAILABLE' : 'OK';
+    fatal.length > 0 || noBucketCurrencies.length > 0 || currencyBlockerCodes.size > 0 || hasReversalCurrencyMismatch
+      ? 'UNAVAILABLE'
+      : 'OK';
 
   const currencies: CaseBalanceDisplayCurrency[] = (balance.currencyResults ?? []).map((cr) => ({
     currency: cr.currency,
@@ -503,7 +573,7 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   }));
 
   const displayCurrency = inferDisplayCurrency(balance);
-  const singleCurrency = displayCurrency !== 'MULTI' && displayCurrency !== 'UNKNOWN';
+  const singleCurrency = status === 'OK' && isSupportedCurrency(displayCurrency);
   const costs = round2(sumRecord(balance.projections?.costs));
   const ancillaries = round2(sumRecord(balance.projections?.ancillaries));
   const attorneyFee = round2(valueOfRecord(balance.projections?.ancillaries, AncillaryType.VEKALET_UCRETI));
@@ -585,7 +655,10 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     notes: DISPLAY_NOTES,
   };
   if (status === 'UNAVAILABLE') {
-    display.unavailableReason = fatal[0]?.code ?? (noBucketCurrencies.length > 0 ? 'NO_BUCKETS' : 'UNKNOWN');
+    display.unavailableReason = fatal[0]?.code
+      ?? (noBucketCurrencies.length > 0 ? 'NO_BUCKETS' : undefined)
+      ?? [...currencyBlockerCodes].sort()[0]
+      ?? (hasReversalCurrencyMismatch ? 'REVERSAL_CURRENCY_MISMATCH' : 'UNKNOWN');
   }
   return display;
 }
