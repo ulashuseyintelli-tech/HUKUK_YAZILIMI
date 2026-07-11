@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h closed; next eligible technical slice is PR-4 under the mandatory PR sequence
+**Status:** Accepted as binding direction; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4 closed; next eligible technical slice is PR-5 under the mandatory PR sequence
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -250,8 +250,9 @@ PR-1A                       → CLOSED / CHARACTERIZATION CANONICAL
 PR-1B                       → CLOSED / IMPLEMENTATION CANONICAL
 PR-2                        → CLOSED / NO_BUCKETS FAIL-CLOSED CANONICAL
 PR-3h                       → CLOSED / TBK100 CENT-HARDENING CANONICAL
+PR-4                        → CLOSED / PARTIAL-PAYMENT INTEREST-BASE CANONICAL
 Runtime cutover             → NOT AUTHORIZED
-Next technical slice        → PR-4 partial-payment interest-base mutation
+Next technical slice        → PR-5 enforcement-date / pre-post interest
 ```
 
 PR-1B canonical behavior is limited to valid linked full reversals: matching `PAYMENT + REVERSAL` has net-zero legal effect, ledger provenance is preserved, malformed reversal remains fail-closed, and the real `CollectionService.create()` → `cancel()` → `CaseBalance` disposable-DB gate passed. Partial reversal/refund support, inferred matching, historical repair/backfill, and runtime authority promotion were not authorized.
@@ -259,6 +260,8 @@ PR-1B canonical behavior is limited to valid linked full reversals: matching `PA
 PR-2 canonical behavior is limited to visibility and eligibility hardening for payment-effect groups with no calculable claim bucket: `CaseBalanceService` preserves the per-currency `result: null / skippedReason: NO_BUCKETS` evidence and additionally emits one deterministic case-level fatal blocker; display becomes `UNAVAILABLE / UNSAFE_FOR_PRIMARY_DISPLAY`, and scenario evidence carries the typed `NO_BUCKETS` blocker with sorted currency details. Normal bucket calculation, Collection writer behavior, ledger provenance, PR-1B reversal netting, schema/migrations, API/UI consumer selection, financial authority, and runtime cutover remain unchanged or unauthorized.
 
 PR-3h canonical behavior is limited to the existing `AllocationEngineService.allocateSinglePayment()` R2/R3 hardening boundary: COST/ANCILLARY/INTEREST/PRINCIPAL component math uses the existing allocator-local `minor-unit.ts` cents conversion, negative direct payments are rejected before normalization, and stale SummaryEngine comments now report the already-canonical MASRAF → FER'İ → FAİZ → ANAPARA order. The core order did not change; competing allocator implementations were not unified or dispositioned. PR-2 `NO_BUCKETS`, PR-1B reversal netting, Collection writer behavior, schema/migrations, PR-4 interest-base mutation, financial authority, and runtime cutover remain unchanged or unauthorized.
+
+PR-4 canonical behavior is limited to payment-aware interest accrual continuity inside `InterestEngineService.computeBalance()`: each claim accrues through the applicable payment boundary on its current principal, the existing TBK100 allocator applies COST → ANCILLARY → INTEREST → PRINCIPAL in cent-normalized form, and only the amount actually allocated to PRINCIPAL becomes the reduced base for later periods. Cost, ancillary, or interest-only allocation does not mutate principal. Same-day START_OF_DAY/END_OF_DAY policy, PR-3h cent normalization, PR-2 `NO_BUCKETS`, PR-1B reversal netting, tenant isolation, Collection writer behavior, schema/migrations, financial authority, and runtime cutover remain preserved or unauthorized.
 
 Remaining owner decisions and later gates:
 
@@ -268,7 +271,7 @@ Remaining owner decisions and later gates:
 - Legal signoff refresh policy, monitoring, rollback, bake, and post-cutover acceptance metrics.
 - Separate owner gates for PR-11, PR-12, and PR-14.
 
-The post-PR-3h dependency chain is maintained in `docs/design/adr-014-split-pr-plan.md` v2.2. Cutover authorization, PR-11 stability verification, PR-12 bake verification, post-cutover verification, and final ADR closure remain `UNASSIGNED` until the owner assigns canonical IDs. DB-gated validation remains mandatory for each affected downstream gate.
+The post-PR-4 dependency chain is maintained in `docs/design/adr-014-split-pr-plan.md` v2.3. Cutover authorization, PR-11 stability verification, PR-12 bake verification, post-cutover verification, and final ADR closure remain `UNASSIGNED` until the owner assigns canonical IDs. DB-gated validation remains mandatory for each affected downstream gate.
 
 ## PR Work Protocol
 
@@ -442,3 +445,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-11 | 1.4 | Post-PR-1B governance reconciliation: W0.1/W0.2/W0.3, Conditional Option B, PR-1A, and PR-1B are recorded CLOSED/CANONICAL; PR-2 is the next unresolved technical slice. Owner clarified that parallel work is preparation/branch parallelism only, while canonical merge, governance closure, and downstream eligibility follow the mandatory order. Runtime cutover remains not authorized. |
 | 2026-07-11 | 1.5 | PR-2 governance closure: payment-effect `NO_BUCKETS` is recorded as a deterministic fatal/display/evidence blocker; PR #1104 and squash `11023234457e57bdad108b0fb753a9892389ee4c` are canonical. PR-3h becomes next eligible only after this separate register closure; runtime cutover remains not authorized. |
 | 2026-07-11 | 1.6 | PR-3h governance closure: AllocationEngine R2 cent-normalization, R3 negative-payment guard, and reporting-order correction are canonical via PR #1101 / squash `566ae47a26e505a79ba8867b3c21c5f724c3b1ef`. Duplicate allocator disposition remains unresolved and out of scope; PR-4 becomes next eligible only after this separate register closure; runtime cutover remains not authorized. |
+| 2026-07-11 | 1.7 | PR-4 governance closure: payment-aware sequential accrual reduces the future interest base only by actual principal allocation via PR #1109 / squash `77a4ca353cbbc7687deb44d9eb794a3df511967c`. Cost/ancillary/interest-only payment leaves principal unchanged; cent and same-day policy remain canonical. PR-5 becomes next eligible only after this separate register closure; runtime cutover remains not authorized. |
