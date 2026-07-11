@@ -353,6 +353,7 @@ export class CaseBalanceService {
           claimBuckets: group.buckets,
           payments: group.payments,
           asOfDate,
+          enforcementDate: toISO(caseRow.caseDate) ?? undefined,
           mode: CalculationMode.PREVIEW,
           options: DEFAULT_OPTIONS,
         };

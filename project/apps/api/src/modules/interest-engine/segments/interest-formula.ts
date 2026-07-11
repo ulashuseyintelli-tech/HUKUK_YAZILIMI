@@ -133,6 +133,48 @@ export function calculateTotalInterest(
 }
 
 /**
+ * Reconcile PRE/POST phase totals to the already-authoritative rounded total.
+ *
+ * The enforcement boundary is an aggregation boundary, not a second interest
+ * formula. TOTAL_ONLY rounding can otherwise round both phase subtotals
+ * independently and create a one-cent mismatch. The PRE phase keeps its
+ * normal rounded value; any rounding remainder is assigned deterministically
+ * to POST, so the two minor-unit totals always equal totalInterest.
+ */
+export function reconcileEnforcementPhaseInterest(
+  totalInterest: number,
+  rawPreEnforcementInterest: number,
+  rawPostEnforcementInterest: number,
+  roundingMode: RoundingMode,
+): { preEnforcementInterest: number; postEnforcementInterest: number } {
+  const totalCents = BigInt(scaleUp(roundMoney(totalInterest, roundingMode), 2));
+
+  if (rawPreEnforcementInterest <= 0) {
+    return {
+      preEnforcementInterest: 0,
+      postEnforcementInterest: Number(totalCents) / 100,
+    };
+  }
+  if (rawPostEnforcementInterest <= 0) {
+    return {
+      preEnforcementInterest: Number(totalCents) / 100,
+      postEnforcementInterest: 0,
+    };
+  }
+
+  const roundedPreCents = BigInt(
+    scaleUp(roundMoney(rawPreEnforcementInterest, roundingMode), 2),
+  );
+  const preCents = roundedPreCents > totalCents ? totalCents : roundedPreCents;
+  const postCents = totalCents - preCents;
+
+  return {
+    preEnforcementInterest: Number(preCents) / 100,
+    postEnforcementInterest: Number(postCents) / 100,
+  };
+}
+
+/**
  * Calculate effective annual rate from interest calculation
  * 
  * Useful for sanity checks and anomaly detection

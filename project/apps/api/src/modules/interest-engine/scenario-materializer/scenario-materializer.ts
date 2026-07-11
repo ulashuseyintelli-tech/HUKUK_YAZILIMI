@@ -140,6 +140,9 @@ async function materializeInTransaction(
       caseStatus: 'DERDEST',
       status: 'ACTIVE',
       currency: def.persistenceIntent.currency,
+      caseDate: def.domainInput.enforcementDate
+        ? new Date(`${def.domainInput.enforcementDate}T00:00:00.000Z`)
+        : undefined,
     },
   });
 

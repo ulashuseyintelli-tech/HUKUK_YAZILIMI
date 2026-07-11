@@ -29,6 +29,7 @@ import {
   calculateSegmentInterest, 
   roundMoney,
   calculateTotalInterest,
+  reconcileEnforcementPhaseInterest,
 } from './interest-formula';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -149,19 +150,28 @@ export class SegmentBuilderService {
       options.roundingScope,
     );
 
-    const preEnforcementInterest = segments
+    const rawPreEnforcementInterest = segments
       .filter(s => s.phase === 'PRE_ENFORCEMENT')
       .reduce((sum, s) => sum + s.segmentInterest, 0);
 
-    const postEnforcementInterest = segments
+    const rawPostEnforcementInterest = segments
       .filter(s => s.phase === 'POST_ENFORCEMENT')
       .reduce((sum, s) => sum + s.segmentInterest, 0);
+
+    const { preEnforcementInterest, postEnforcementInterest } = options.enforcementDate
+      ? reconcileEnforcementPhaseInterest(
+          total,
+          rawPreEnforcementInterest,
+          rawPostEnforcementInterest,
+          options.roundingMode,
+        )
+      : { preEnforcementInterest: 0, postEnforcementInterest: 0 };
 
     return {
       segments,
       totalInterest: total,
-      preEnforcementInterest: roundMoney(preEnforcementInterest, options.roundingMode),
-      postEnforcementInterest: roundMoney(postEnforcementInterest, options.roundingMode),
+      preEnforcementInterest,
+      postEnforcementInterest,
       roundingDifference,
       timeline,
     };
@@ -177,50 +187,79 @@ export class SegmentBuilderService {
     basis: DayCountBasis,
     options: SegmentBuildOptions,
   ): SegmentBuildResult {
-    const days = calculateDays(startDate, endDate);
-    
-    if (days <= 0) {
+    const timeline = generateTimeline(startDate, endDate, [], {
+      enforcementDate: options.enforcementDate,
+    });
+    const segmentPairs = getTimelineSegments(timeline);
+
+    if (calculateDays(startDate, endDate) <= 0) {
       return {
         segments: [],
         totalInterest: 0,
         preEnforcementInterest: 0,
         postEnforcementInterest: 0,
         roundingDifference: 0,
-        timeline: [startDate, endDate],
+        timeline,
       };
     }
 
-    const interest = calculateSegmentInterest(
-      claimBucket.amount,
-      claimBucket.fixedRate!,
-      days,
-      basis,
+    const segments: Segment[] = [];
+    const rawSegmentInterests: number[] = [];
+    for (const [periodStart, periodEnd] of segmentPairs) {
+      const days = calculateDays(periodStart, periodEnd);
+      if (days <= 0) continue;
+
+      const rawInterest = calculateSegmentInterest(
+        claimBucket.amount,
+        claimBucket.fixedRate!,
+        days,
+        basis,
+      );
+      rawSegmentInterests.push(rawInterest);
+      segments.push({
+        claimBucketId: claimBucket.id,
+        periodStart,
+        periodEnd,
+        days,
+        rate: claimBucket.fixedRate!,
+        rateId: 'FIXED',
+        rateSource: 'Sabit Oran',
+        principal: claimBucket.amount,
+        segmentInterest: options.roundingScope === RoundingScope.PER_SEGMENT
+          ? roundMoney(rawInterest, options.roundingMode)
+          : rawInterest,
+        phase: determinePhase(periodStart, periodEnd, options.enforcementDate),
+        dayCountRule: getDayCountRuleString(basis),
+      });
+    }
+
+    const { total, roundingDifference } = calculateTotalInterest(
+      rawSegmentInterests,
+      options.roundingMode,
+      options.roundingScope,
     );
-
-    const roundedInterest = roundMoney(interest, options.roundingMode);
-    const phase = determinePhase(startDate, endDate, options.enforcementDate);
-
-    const segment: Segment = {
-      claimBucketId: claimBucket.id,
-      periodStart: startDate,
-      periodEnd: endDate,
-      days,
-      rate: claimBucket.fixedRate!,
-      rateId: 'FIXED',
-      rateSource: 'Sabit Oran',
-      principal: claimBucket.amount,
-      segmentInterest: roundedInterest,
-      phase,
-      dayCountRule: getDayCountRuleString(basis),
-    };
+    const rawPreEnforcementInterest = segments
+      .filter((segment) => segment.phase === 'PRE_ENFORCEMENT')
+      .reduce((sum, segment) => sum + segment.segmentInterest, 0);
+    const rawPostEnforcementInterest = segments
+      .filter((segment) => segment.phase === 'POST_ENFORCEMENT')
+      .reduce((sum, segment) => sum + segment.segmentInterest, 0);
+    const { preEnforcementInterest, postEnforcementInterest } = options.enforcementDate
+      ? reconcileEnforcementPhaseInterest(
+          total,
+          rawPreEnforcementInterest,
+          rawPostEnforcementInterest,
+          options.roundingMode,
+        )
+      : { preEnforcementInterest: 0, postEnforcementInterest: 0 };
 
     return {
-      segments: [segment],
-      totalInterest: roundedInterest,
-      preEnforcementInterest: phase === 'PRE_ENFORCEMENT' ? roundedInterest : 0,
-      postEnforcementInterest: phase === 'POST_ENFORCEMENT' ? roundedInterest : 0,
-      roundingDifference: roundMoney(roundedInterest - interest, options.roundingMode, 4),
-      timeline: [startDate, endDate],
+      segments,
+      totalInterest: total,
+      preEnforcementInterest,
+      postEnforcementInterest,
+      roundingDifference,
+      timeline,
     };
   }
 }
