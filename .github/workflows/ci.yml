@@ -138,15 +138,37 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="scenario-diagnostic\.db-gated\.integration\.spec\.ts$"
         working-directory: project
-      # ADR-014 PR-1A: characterization must execute explicitly; a renamed,
-      # removed, or zero-match spec must fail the Test Suite job closed.
-      - name: ADR-014 PR-1A reversal-netting characterization
+      # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
+      # mapper regression explicitly; rename/removal/zero-match must fail closed.
+      - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
         run: |
           cd apps/api
-          test -f src/modules/interest-engine/orchestration/__tests__/case-balance.service.spec.ts || \
-            { echo "MISSING ADR-014 PR-1A characterization spec"; exit 1; }
+          for f in src/modules/interest-engine/calc-prep/__tests__/payment-mapper.spec.ts \
+                   src/modules/interest-engine/orchestration/__tests__/case-balance.service.spec.ts; do
+            test -f "$f" || { echo "MISSING ADR-014 PR-1B spec: $f"; exit 1; }
+          done
           npx jest --ci --forceExit --runInBand \
-            --testPathPattern="src/modules/interest-engine/orchestration/__tests__/case-balance\.service\.spec\.ts$"
+            --testPathPattern="src/modules/interest-engine/(calc-prep/__tests__/payment-mapper|orchestration/__tests__/case-balance\.service)\.spec\.ts$"
+        working-directory: project
+      # ADR-014 PR-1B: real CollectionService.create -> cancel -> CaseBalance
+      # acceptance evidence must execute on disposable PostgreSQL; skipped/zero-test is RED.
+      - name: ADR-014 PR-1B real cancellation disposable DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/collection/__tests__/collection-cancel-reversal.db-gated.integration.spec.ts || \
+            { echo "MISSING ADR-014 PR-1B DB-gated spec"; exit 1; }
+          set -o pipefail
+          output_file="$(mktemp)"
+          npx jest --ci --forceExit --runInBand --verbose \
+            --testPathPattern="src/modules/collection/__tests__/collection-cancel-reversal\.db-gated\.integration\.spec\.ts$" \
+            2>&1 | tee "$output_file"
+          grep -Eq "Test Suites:[[:space:]]+1 passed, 1 total" "$output_file" || \
+            { echo "BLOCKED: ADR-014 PR-1B DB suite did not execute exactly once"; exit 1; }
+          grep -Eq "Tests:[[:space:]]+4 passed, 4 total" "$output_file" || \
+            { echo "BLOCKED: ADR-014 PR-1B DB tests did not execute 4/4"; exit 1; }
         working-directory: project
       # TEST-INFRA-1: Gate-1 (tenant-boundary) + Gate-2 (passive-writer) güvenlik spec'leri yukarıdaki
       # dar pattern'lerin dışında kalıyordu → CI'da koşmuyordu. Ayrı/açık step ile koşturulur.

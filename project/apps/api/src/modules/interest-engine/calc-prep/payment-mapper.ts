@@ -2,9 +2,9 @@
  * G4b-1: SAF Payment mapper — Collection/LedgerEntry satırları → engine Payment[].
  *
  * Kilitli kararlar (ledger, ulas 2026-06-14):
- *  - Q5: ledger-varsa-ledger / yoksa-Collection. Confirmed PAYMENT ledger VARSA Collection TAMAMEN
- *        yok sayılır. Ledger filtre: entryType=PAYMENT & status=CONFIRMED. Collection filtre:
- *        status=CONFIRMED & cancelledAt=null.
+ *  - Q5: ledger-varsa-ledger / yoksa-Collection. Confirmed PAYMENT/REVERSAL ledger VARSA Collection
+ *        TAMAMEN yok sayılır. REVERSAL yalnız reversesLedgerEntryId ile bağlı, tam ve aynı bağlamdaki
+ *        PAYMENT'ı netler. Collection filtre: status=CONFIRMED & cancelledAt=null.
  *  - LedgerAllocation KESİN taşınmaz; Payment yalnız {id,date,amount,currency,source}. Motor TBK100'ü
  *    YENİDEN dağıtır (kanonik = computeBalance).
  *  - date: LEDGER = effectiveDate ?? entryDate; COLLECTION = date (valueDate DEĞİL).
@@ -23,6 +23,8 @@ type DateLike = Date | string;
 
 export interface LedgerPaymentRow {
   id: string;
+  tenantId: string;
+  caseId: string;
   entryType: string;
   status: string;
   amount: DecimalLike;
@@ -30,6 +32,7 @@ export interface LedgerPaymentRow {
   entryDate: DateLike;
   effectiveDate?: DateLike | null;
   sourceType?: string | null;
+  reversesLedgerEntryId?: string | null;
 }
 
 export interface CollectionRow {
@@ -44,7 +47,16 @@ export interface CollectionRow {
 }
 
 export type PaymentSource = 'LEDGER' | 'COLLECTION' | 'NONE';
-export type PaymentMapDiagnosticCode = 'ZERO_OR_NEGATIVE_PAYMENT';
+export type PaymentMapDiagnosticCode =
+  | 'ZERO_OR_NEGATIVE_PAYMENT'
+  | 'REVERSAL_REFERENCE_MISSING'
+  | 'REVERSAL_PAYMENT_NOT_FOUND'
+  | 'REVERSAL_TENANT_MISMATCH'
+  | 'REVERSAL_CASE_MISMATCH'
+  | 'REVERSAL_CURRENCY_MISMATCH'
+  | 'REVERSAL_SIGN_INVALID'
+  | 'REVERSAL_AMOUNT_MISMATCH'
+  | 'REVERSAL_DUPLICATE';
 
 export interface PaymentMapDiagnostic {
   code: PaymentMapDiagnosticCode;
@@ -96,6 +108,29 @@ function collectionToRaw(c: CollectionRow): RawPayment {
   };
 }
 
+const FATAL_REVERSAL_DIAGNOSTICS = new Set<PaymentMapDiagnosticCode>([
+  'REVERSAL_REFERENCE_MISSING',
+  'REVERSAL_PAYMENT_NOT_FOUND',
+  'REVERSAL_TENANT_MISMATCH',
+  'REVERSAL_CASE_MISMATCH',
+  'REVERSAL_CURRENCY_MISMATCH',
+  'REVERSAL_SIGN_INVALID',
+  'REVERSAL_AMOUNT_MISMATCH',
+  'REVERSAL_DUPLICATE',
+]);
+
+export function hasFatalPaymentMapDiagnostic(diagnostics: PaymentMapDiagnostic[]): boolean {
+  return diagnostics.some((diagnostic) => FATAL_REVERSAL_DIAGNOSTICS.has(diagnostic.code));
+}
+
+function reversalDiagnostic(
+  code: PaymentMapDiagnosticCode,
+  reversal: LedgerPaymentRow,
+  detail: string,
+): PaymentMapDiagnostic {
+  return { code, paymentId: reversal.id, detail };
+}
+
 function finalize(raws: RawPayment[], source: PaymentSource): PaymentMapResult {
   const payments: Payment[] = [];
   const diagnostics: PaymentMapDiagnostic[] = [];
@@ -123,10 +158,70 @@ export function mapPayments(
   ledger: LedgerPaymentRow[],
   collections: CollectionRow[],
 ): PaymentMapResult {
-  // 1) KANONİK: confirmed PAYMENT ledger entry'leri
-  const confirmedLedger = ledger.filter((e) => e.entryType === 'PAYMENT' && e.status === 'CONFIRMED');
-  if (confirmedLedger.length > 0) {
-    return finalize(confirmedLedger.map(ledgerToRaw), 'LEDGER');
+  // 1) KANONİK: confirmed PAYMENT + yalnız açık ilişkiyle bağlı tam REVERSAL ledger entry'leri.
+  const confirmedPayments = ledger.filter((e) => e.entryType === 'PAYMENT' && e.status === 'CONFIRMED');
+  const confirmedReversals = ledger.filter((e) => e.entryType === 'REVERSAL' && e.status === 'CONFIRMED');
+  if (confirmedPayments.length > 0 || confirmedReversals.length > 0) {
+    const paymentsById = new Map(confirmedPayments.map((payment) => [payment.id, payment]));
+    const reversedPaymentIds = new Set<string>();
+    const diagnostics: PaymentMapDiagnostic[] = [];
+
+    for (const reversal of confirmedReversals) {
+      const referencedPaymentId = reversal.reversesLedgerEntryId;
+      if (!referencedPaymentId) {
+        diagnostics.push(reversalDiagnostic('REVERSAL_REFERENCE_MISSING', reversal, 'reversesLedgerEntryId is required'));
+        continue;
+      }
+
+      const payment = paymentsById.get(referencedPaymentId);
+      if (!payment) {
+        diagnostics.push(reversalDiagnostic('REVERSAL_PAYMENT_NOT_FOUND', reversal, `paymentId=${referencedPaymentId}`));
+        continue;
+      }
+      if (reversedPaymentIds.has(referencedPaymentId)) {
+        diagnostics.push(reversalDiagnostic('REVERSAL_DUPLICATE', reversal, `paymentId=${referencedPaymentId}`));
+        continue;
+      }
+      if (reversal.tenantId !== payment.tenantId) {
+        diagnostics.push(reversalDiagnostic('REVERSAL_TENANT_MISMATCH', reversal, `paymentId=${referencedPaymentId}`));
+        continue;
+      }
+      if (reversal.caseId !== payment.caseId) {
+        diagnostics.push(reversalDiagnostic('REVERSAL_CASE_MISMATCH', reversal, `paymentId=${referencedPaymentId}`));
+        continue;
+      }
+      if (reversal.currency !== payment.currency) {
+        diagnostics.push(reversalDiagnostic('REVERSAL_CURRENCY_MISMATCH', reversal, `paymentId=${referencedPaymentId}`));
+        continue;
+      }
+
+      const reversalAmount = toNumber(reversal.amount);
+      const paymentAmount = toNumber(payment.amount);
+      if (!(reversalAmount < 0)) {
+        diagnostics.push(reversalDiagnostic('REVERSAL_SIGN_INVALID', reversal, `amount=${reversalAmount}`));
+        continue;
+      }
+      if (reversalAmount !== -paymentAmount) {
+        diagnostics.push(
+          reversalDiagnostic(
+            'REVERSAL_AMOUNT_MISMATCH',
+            reversal,
+            `paymentAmount=${paymentAmount};reversalAmount=${reversalAmount}`,
+          ),
+        );
+        continue;
+      }
+
+      reversedPaymentIds.add(referencedPaymentId);
+    }
+
+    if (hasFatalPaymentMapDiagnostic(diagnostics)) {
+      return { payments: [], source: 'LEDGER', diagnostics };
+    }
+
+    const effectivePayments = confirmedPayments.filter((payment) => !reversedPaymentIds.has(payment.id));
+    const finalized = finalize(effectivePayments.map(ledgerToRaw), 'LEDGER');
+    return { ...finalized, diagnostics: [...diagnostics, ...finalized.diagnostics] };
   }
 
   // 2) FALLBACK: confirmed, iptal-edilmemiş collections

@@ -125,12 +125,14 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(res.source).toBe('LEDGER');
   });
 
-  it('ADR-014 PR-1A characterization: matching REVERSAL is ignored and cancelled balance remains paid', async () => {
+  it('ADR-014 PR-1B regression: matching REVERSAL restores the pre-payment balance', async () => {
     const tenantId = 'tenant-pr1a';
     const caseId = 'case-pr1a';
     const asOfDate = '2025-06-01';
     const confirmedPayment = {
       id: 'ledger-payment-pr1a',
+      tenantId,
+      caseId,
       entryType: 'PAYMENT',
       status: 'CONFIRMED',
       amount: 2000,
@@ -141,6 +143,8 @@ describe('CaseBalanceService (G4c-1)', () => {
     };
     const matchingReversal = {
       id: 'ledger-reversal-pr1a',
+      tenantId,
+      caseId,
       entryType: 'REVERSAL',
       status: 'CONFIRMED',
       amount: -2000,
@@ -187,14 +191,51 @@ describe('CaseBalanceService (G4c-1)', () => {
     const cancelledDue = cancelled.currencyResults[0].result!.totalDue;
 
     expect(paidDue).toBeLessThan(prePaymentDue);
-    expect(cancelledDue).toBeCloseTo(paidDue, 2);
-    expect(cancelledDue).not.toBeCloseTo(prePaymentDue, 2);
-    expect(prisma.ledgerEntry.findMany).toHaveBeenCalledWith({
-      where: { caseId, tenantId, entryType: 'PAYMENT' },
+    expect(cancelledDue).toBeCloseTo(prePaymentDue, 2);
+    expect(cancelledDue).not.toBeCloseTo(paidDue, 2);
+    expect(cancelled.source).toBe('LEDGER');
+    expect(cancelled.diagnostics.fatal).toEqual([]);
+    expect(prisma.ledgerEntry.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        caseId,
+        tenantId,
+        entryType: { in: ['PAYMENT', 'REVERSAL'] },
+        status: 'CONFIRMED',
+      },
+      select: expect.objectContaining({ reversesLedgerEntryId: true }),
+    }));
+    expect(computeBalanceSpy.mock.calls[0][0].payments).toEqual([]);
+  });
+
+  it('malformed CONFIRMED REVERSAL mevcut fatal formda unavailable olur ve Collection fallback yapmaz', async () => {
+    const tenantId = 'tenant-malformed';
+    const caseId = 'case-malformed';
+    const { service, computeBalanceSpy } = setup({
+      claimItems: [principal()],
+      ledger: [
+        {
+          id: 'P1', tenantId, caseId, entryType: 'PAYMENT', status: 'CONFIRMED', amount: 2000,
+          currency: 'TRY', entryDate: new Date('2025-03-01'), effectiveDate: null, sourceType: 'BANKA',
+        },
+        {
+          id: 'R1', tenantId, caseId, entryType: 'REVERSAL', status: 'CONFIRMED', amount: -1000,
+          currency: 'TRY', entryDate: new Date('2025-03-02'), effectiveDate: null,
+          sourceType: 'COLLECTION_CANCEL', reversesLedgerEntryId: 'P1',
+        },
+      ],
+      collections: [collection({ id: 'fallback-must-not-run', amount: 2000 })],
+      rates: legalRate(),
     });
-    expect(computeBalanceSpy.mock.calls[0][0].payments.map((payment) => payment.id)).toEqual([
-      confirmedPayment.id,
+
+    const result = await service.computeCaseBalance(tenantId, caseId, '2025-06-01');
+
+    expect(result.source).toBe('LEDGER');
+    expect(result.currencyResults).toEqual([]);
+    expect(result.diagnostics.fatal).toEqual([{ code: 'REVERSAL_INTEGRITY_INVALID', caseId }]);
+    expect(result.diagnostics.payments).toEqual([
+      expect.objectContaining({ code: 'REVERSAL_AMOUNT_MISMATCH', paymentId: 'R1' }),
     ]);
+    expect(computeBalanceSpy).not.toHaveBeenCalled();
   });
 
   it('fixed-rate: SABIT bucket → sentetik rate, RateProvider ÇAĞRILMAZ, result null DEĞİL', async () => {
@@ -295,7 +336,15 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(prisma.claimItem.findMany).toHaveBeenCalledWith({
       where: { caseId: 'caseY', tenantId: 'tenantX', status: { not: ClaimItemStatus.CANCELLED } },
     });
-    expect(prisma.ledgerEntry.findMany).toHaveBeenCalledWith({ where: { caseId: 'caseY', tenantId: 'tenantX', entryType: 'PAYMENT' } });
+    expect(prisma.ledgerEntry.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        caseId: 'caseY',
+        tenantId: 'tenantX',
+        entryType: { in: ['PAYMENT', 'REVERSAL'] },
+        status: 'CONFIRMED',
+      },
+      select: expect.objectContaining({ reversesLedgerEntryId: true }),
+    }));
   });
 
   it('NAFAKA Due satırlarını display balance için kör PRINCIPAL bucket kaynağı olarak okumaz', async () => {
