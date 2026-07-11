@@ -75,6 +75,14 @@ export interface ScenarioEvidenceRecord {
   observedSnapshotAvailable: CaseBalanceDisplay['snapshotAvailable'];
   observedPrimaryDisplayEligible: CaseBalanceDisplay['readiness']['primaryDisplayEligible'];
   observedReadinessBlockerCodes: CaseBalanceDisplay['readiness']['blockers'][number]['code'][];
+  observedTraceAuthority: CaseBalanceDisplay['trace']['authority'];
+  observedTracePersisted: CaseBalanceDisplay['trace']['persisted'];
+  observedAllocationTraceCount: number;
+  observedNonOfficialSnapshotKind: CaseBalanceDisplay['nonOfficialSnapshot']['kind'];
+  observedNonOfficialSnapshotOfficial: CaseBalanceDisplay['nonOfficialSnapshot']['official'];
+  observedNonOfficialSnapshotPersisted: CaseBalanceDisplay['nonOfficialSnapshot']['persisted'];
+  observedNonOfficialSnapshotAuthority: CaseBalanceDisplay['nonOfficialSnapshot']['authority'];
+  observedSnapshotBlockerCodes: CaseBalanceDisplay['nonOfficialSnapshot']['blockerCodes'];
   expected?: ScenarioExpected;
   comparison?: ScenarioEvidenceComparison;
 }

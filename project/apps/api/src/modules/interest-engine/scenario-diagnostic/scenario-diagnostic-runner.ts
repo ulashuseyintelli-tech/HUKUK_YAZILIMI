@@ -216,6 +216,14 @@ export async function runSyntheticScenarioDiagnostic(
       observedSnapshotAvailable: display.snapshotAvailable,
       observedPrimaryDisplayEligible: display.readiness.primaryDisplayEligible,
       observedReadinessBlockerCodes: display.readiness.blockers.map((blocker) => blocker.code),
+      observedTraceAuthority: display.trace.authority,
+      observedTracePersisted: display.trace.persisted,
+      observedAllocationTraceCount: display.trace.allocationSteps.length,
+      observedNonOfficialSnapshotKind: display.nonOfficialSnapshot.kind,
+      observedNonOfficialSnapshotOfficial: display.nonOfficialSnapshot.official,
+      observedNonOfficialSnapshotPersisted: display.nonOfficialSnapshot.persisted,
+      observedNonOfficialSnapshotAuthority: display.nonOfficialSnapshot.authority,
+      observedSnapshotBlockerCodes: display.nonOfficialSnapshot.blockerCodes,
       expected: def.expected,
       comparison,
     };
@@ -295,6 +303,14 @@ export async function runOrganicReadinessDiagnostic(
         observedSnapshotAvailable: display.snapshotAvailable,
         observedPrimaryDisplayEligible: display.readiness.primaryDisplayEligible,
         observedReadinessBlockerCodes: display.readiness.blockers.map((blocker) => blocker.code),
+        observedTraceAuthority: display.trace.authority,
+        observedTracePersisted: display.trace.persisted,
+        observedAllocationTraceCount: display.trace.allocationSteps.length,
+        observedNonOfficialSnapshotKind: display.nonOfficialSnapshot.kind,
+        observedNonOfficialSnapshotOfficial: display.nonOfficialSnapshot.official,
+        observedNonOfficialSnapshotPersisted: display.nonOfficialSnapshot.persisted,
+        observedNonOfficialSnapshotAuthority: display.nonOfficialSnapshot.authority,
+        observedSnapshotBlockerCodes: display.nonOfficialSnapshot.blockerCodes,
       });
     } catch (cause) {
       throw diagnosticFailure('OBSERVATION', cause);

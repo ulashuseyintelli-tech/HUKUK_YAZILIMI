@@ -56,6 +56,8 @@ function makeDisplay(overrides: Partial<CaseBalanceDisplay> = {}): CaseBalanceDi
       primaryDisplayEligible: false,
       blockers: [],
     },
+    trace: {} as never,
+    nonOfficialSnapshot: {} as never,
     costs: 0,
     ancillaries: 0,
     feeProjection: {} as never,
@@ -204,5 +206,28 @@ describe('W0.3 scenario-evidence karşılaştırıcısı (§12: hesaplamaz)', ()
       expected: 'SAFE',
       actual: 'UNSAFE',
     });
+  });
+
+  it('PR-8b trace/non-official snapshot evidence alanlari authority veya persistence uretmez', () => {
+    const display = makeDisplay({
+      trace: {
+        authority: 'NONE',
+        persisted: false,
+        allocationSteps: [{ sequence: 1 }],
+      } as never,
+      nonOfficialSnapshot: {
+        official: false,
+        authority: 'NONE',
+        blockerCodes: [],
+      } as never,
+    });
+
+    expect(display.trace).toMatchObject({ authority: 'NONE', persisted: false });
+    expect(display.nonOfficialSnapshot).toMatchObject({
+      official: false,
+      authority: 'NONE',
+      blockerCodes: [],
+    });
+    expect(compareScenarioEvidence(BASE_EXPECTED, display).match).toBe(true);
   });
 });

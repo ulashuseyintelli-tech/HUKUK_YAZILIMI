@@ -150,6 +150,14 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     expect(evidence.observedSnapshotAvailable).toBe(false);
     expect(evidence.observedPrimaryDisplayEligible).toBe(false);
     expect(evidence.observedReadinessBlockerCodes).toEqual([]);
+    expect(evidence.observedTraceAuthority).toBe('NONE');
+    expect(evidence.observedTracePersisted).toBe(false);
+    expect(evidence.observedAllocationTraceCount).toBeGreaterThan(0);
+    expect(evidence.observedNonOfficialSnapshotKind).toBe('NON_OFFICIAL_CASE_BALANCE_SNAPSHOT');
+    expect(evidence.observedNonOfficialSnapshotOfficial).toBe(false);
+    expect(evidence.observedNonOfficialSnapshotPersisted).toBe(false);
+    expect(evidence.observedNonOfficialSnapshotAuthority).toBe('NONE');
+    expect(evidence.observedSnapshotBlockerCodes).toEqual([]);
 
     // W0.2 G5 devamlılığı: AYNI senaryonun saf in-memory engine sonucu,
     // DB-gated üretim yolu gözlemiyle eşleşir (assertion HESAPLAMAZ —
@@ -179,6 +187,18 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     expect(tryRow!.skipped).toBe(false);
     expect(tryRow!.interest).toBeCloseTo(mem.totalInterest, 2);
     expect(tryRow!.claimRemaining).toBeCloseTo(mem.totalDue, 2);
+    expect([...new Set(display.trace.allocationSteps.map((step) => step.paymentId))]).toEqual([
+      'w03-d1-pay-1',
+    ]);
+    expect(display.trace.allocationSteps.map((step) => step.sequence)).toEqual([1, 2]);
+    expect(display.nonOfficialSnapshot).toMatchObject({
+      tenantId: refs.tenantId,
+      caseId: refs.caseId,
+      official: false,
+      persisted: false,
+      authority: 'NONE',
+      officialSnapshotAvailable: false,
+    });
   });
 
   it('D6 / PR-4: real DB flow mutates only the future principal interest base and preserves tenant isolation', async () => {

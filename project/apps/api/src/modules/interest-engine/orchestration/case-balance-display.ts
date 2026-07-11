@@ -23,6 +23,11 @@ import {
   buildCaseBalanceSnapshotReadiness,
   type CaseBalanceSnapshotReadiness,
 } from './case-balance-snapshot-readiness';
+import {
+  buildCaseBalanceExplainability,
+  type CaseBalanceExplainabilityTrace,
+  type NonOfficialCaseBalanceSnapshot,
+} from './case-balance-explainability';
 
 export interface CaseBalanceDisplayCurrency {
   currency: string;
@@ -175,6 +180,10 @@ export interface CaseBalanceDisplay {
   snapshotAvailable: false;
   /** Read-only, fail-closed snapshot/readiness sinyali; authority URETMEZ. */
   readiness: CaseBalanceSnapshotReadiness;
+  /** ADR-014 PR-8b: mevcut canonical sonucu aciklayan, authority uretmeyen allocation trace. */
+  trace: CaseBalanceExplainabilityTrace;
+  /** Ephemeral read-model; official snapshot, persistence veya hash/lifecycle authority DEGILDIR. */
+  nonOfficialSnapshot: NonOfficialCaseBalanceSnapshot;
   /** Masraf projeksiyonu (CASE-level; currency-split DEĞİL) = Σ projections.costs. */
   costs: number;
   /** Fer'i / yan-alacak projeksiyonu (CASE-level) = Σ projections.ancillaries. */
@@ -714,8 +723,17 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     // ALC-AUTH-1B: dosyaya gerçekten gelen toplam para = allocated + held overpayment.
     grossReceivedAmount: singleCurrency ? round2(collected + heldOverpayment) : null,
   };
+  const unavailableReason = status === 'UNAVAILABLE'
+    ? fatal[0]?.code
+      ?? (noBucketCurrencies.length > 0 ? 'NO_BUCKETS' : undefined)
+      ?? [...currencyBlockerCodes].sort()[0]
+      ?? (hasReversalCurrencyMismatch ? 'REVERSAL_CURRENCY_MISMATCH' : undefined)
+      ?? readiness.blockers[0]?.sourceCodes[0]
+      ?? readiness.blockers[0]?.code
+      ?? 'UNKNOWN'
+    : undefined;
 
-  const display: CaseBalanceDisplay = {
+  const displayCore: Omit<CaseBalanceDisplay, 'trace' | 'nonOfficialSnapshot'> = {
     tenantId,
     caseId,
     currency: displayCurrency,
@@ -757,15 +775,17 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
       feeProjectionAuthorityPromoted: false,
     },
     notes: DISPLAY_NOTES,
+    ...(unavailableReason ? { unavailableReason } : {}),
   };
-  if (status === 'UNAVAILABLE') {
-    display.unavailableReason = fatal[0]?.code
-      ?? (noBucketCurrencies.length > 0 ? 'NO_BUCKETS' : undefined)
-      ?? [...currencyBlockerCodes].sort()[0]
-      ?? (hasReversalCurrencyMismatch ? 'REVERSAL_CURRENCY_MISMATCH' : undefined)
-      ?? readiness.blockers[0]?.sourceCodes[0]
-      ?? readiness.blockers[0]?.code
-      ?? 'UNKNOWN';
-  }
+  const explainability = buildCaseBalanceExplainability({
+    tenantId,
+    caseId,
+    balance,
+    display: displayCore,
+  });
+  const display: CaseBalanceDisplay = {
+    ...displayCore,
+    ...explainability,
+  };
   return display;
 }
