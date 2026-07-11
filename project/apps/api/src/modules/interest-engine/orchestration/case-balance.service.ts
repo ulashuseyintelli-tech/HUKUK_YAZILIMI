@@ -33,6 +33,7 @@ import { groupByCurrency } from '../calc-prep/currency-grouper';
 import type { CurrencyGroupDiagnostic } from '../calc-prep/currency-grouper';
 import { deriveRateRequirements } from '../calc-prep/rate-requirements';
 import { ClaimBucket, AncillaryType } from '../types/domain.types';
+import { mapPersistedInterestTypeCode } from '../mapping/interest-type-bridge';
 import { RateEntry, RateSourceType } from '../rates/rate-entry.entity';
 import {
   CalculationRequest,
@@ -261,6 +262,8 @@ export class CaseBalanceService {
       amount: toNum(ci.amount) ?? 0,
       currency: ci.currency,
       interestType: ci.interestType ?? null,
+      interestTypeCode:
+        ci.interestTypeCode == null ? null : mapPersistedInterestTypeCode(ci.interestTypeCode),
       interestRate: toNum(ci.interestRate),
       interestStartDate: toISO(ci.interestStartDate),
       interestAccrualStatus: ci.interestAccrualStatus ?? null,

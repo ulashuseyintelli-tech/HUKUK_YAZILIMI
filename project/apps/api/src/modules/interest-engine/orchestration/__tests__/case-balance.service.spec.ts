@@ -248,6 +248,56 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(res.currencyResults[0].result).not.toBeNull();
   });
 
+  describe('PR-A3 rich-first CaseBalance projection', () => {
+    const variableCodes = [
+      InterestTypeCode.LEGAL_3095,
+      InterestTypeCode.COMMERCIAL_AVANS_3095_2_2,
+      InterestTypeCode.TTK_1530,
+      InterestTypeCode.MEVDUAT_TL_BANKALARCA,
+      InterestTypeCode.MEVDUAT_USD_BANKALARCA,
+      InterestTypeCode.MEVDUAT_EUR_BANKALARCA,
+      InterestTypeCode.MEVDUAT_TL_KAMU,
+      InterestTypeCode.MEVDUAT_USD_KAMU,
+      InterestTypeCode.MEVDUAT_EUR_KAMU,
+    ];
+
+    it.each(variableCodes)('%s RateProvider exact rich code alır; Case.YASAL devreye girmez', async (code) => {
+      const rates = [{
+        id: `rate-${code}`, interestType: code, validFrom: '2025-01-01', validTo: null,
+        annualRate: 0.24, sourceId: 'source-1', sourceName: 'TCMB',
+        publishedAt: '2025-01-01T00:00:00.000Z', currency: 'TRY',
+      }];
+      const { service, rateProvider, computeBalanceSpy } = setup({
+        caseRow: { interestType: 'YASAL', interestStartDate: new Date('2024-01-01') },
+        claimItems: [principal({ interestTypeCode: code, interestType: null })],
+        rates,
+      });
+
+      await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(rateProvider.getRatesForPeriod).toHaveBeenCalledWith(expect.objectContaining({ interestType: code }));
+      expect(computeBalanceSpy.mock.calls[0][0].claimBuckets[0].interestType).toBe(code);
+    });
+
+    it.each([
+      InterestTypeCode.COMMERCIAL_FIXED,
+      InterestTypeCode.CONTRACTUAL,
+    ])('%s persisted yüzdeyi decimal fixedRate yapar ve RateProvider çağırmaz', async (code) => {
+      const { service, rateProvider, computeBalanceSpy } = setup({
+        caseRow: { interestType: 'YASAL', interestStartDate: new Date('2024-01-01') },
+        claimItems: [principal({ interestTypeCode: code, interestType: null, interestRate: 18.5 })],
+      });
+
+      await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(rateProvider.getRatesForPeriod).not.toHaveBeenCalled();
+      expect(computeBalanceSpy.mock.calls[0][0].claimBuckets[0]).toMatchObject({
+        interestType: code,
+        fixedRate: 0.185,
+      });
+    });
+  });
+
   it('principal faiz configli + explicit INTEREST amount → engine tek principal bucket alır; INTEREST amount totalDueya eklenmez', async () => {
     const explicitInterest = {
       id: 'i1',

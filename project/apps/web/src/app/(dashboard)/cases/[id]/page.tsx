@@ -78,6 +78,7 @@ import {
   getGuardedPrimaryDisplayDate,
   shouldEnableGuardedPrimaryDisplayPilot,
 } from "@/lib/guarded-primary-display";
+import { getInterestReadDisplayLabel } from "@/lib/interest-type-resolver";
 
 // ============================================
 // TİPLER
@@ -2613,6 +2614,7 @@ export default function CaseDetailPage() {
                             OTHER: 'Diğer',
                           };
                           const displayName = due.description || typeLabels[due.type] || due.type;
+                          const interestLabel = getInterestReadDisplayLabel(due);
                           
                           return (
                           <div 
@@ -2630,13 +2632,9 @@ export default function CaseDetailPage() {
                                 </span>
                               )}
                               {/* Faiz türü bilgisi - sadece PRINCIPAL için göster */}
-                              {due.type === 'PRINCIPAL' && (
+                              {due.type === 'PRINCIPAL' && interestLabel && (
                                 <span className="text-[9px] text-purple-500 italic">
-                                  Faiz: {due.interestType === 'YASAL' ? 'Yasal Faiz' : 
-                                         due.interestType === 'TICARI_DEGISEN' ? 'Ticari (TCMB Avans)' :
-                                         due.interestType === 'TICARI_SABIT' ? 'Ticari (Sabit)' :
-                                         due.interestType ? due.interestType :
-                                         (caseData.type === 'CHECK' || caseData.type === 'BOND') ? 'Ticari (TCMB Avans)' : 'Yasal Faiz'}
+                                  Faiz: {interestLabel}
                                 </span>
                               )}
                             </div>

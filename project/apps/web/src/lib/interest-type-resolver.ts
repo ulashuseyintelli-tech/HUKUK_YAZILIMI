@@ -135,12 +135,19 @@ const API_TO_UI_MAP: Record<ApiInterestTypeCode, InterestTypeCode> = {
   'MEVDUAT_EUR_KAMU': 'KAMU_BANKA_TL',
 };
 
+function isApiInterestTypeCode(value: string): value is ApiInterestTypeCode {
+  return Object.prototype.hasOwnProperty.call(API_TO_UI_MAP, value);
+}
+
 /**
  * API faiz türünü UI faiz türüne çevir
  * API'den response alırken kullan
  */
 export function mapApiToUiInterestType(apiType: ApiInterestTypeCode | string): InterestTypeCode {
-  return API_TO_UI_MAP[apiType as ApiInterestTypeCode] ?? 'YASAL';
+  if (!isApiInterestTypeCode(apiType)) {
+    throw new Error(`Bilinmeyen API faiz türü: ${String(apiType)}`);
+  }
+  return API_TO_UI_MAP[apiType];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -412,3 +419,51 @@ export const INTEREST_TYPE_LABELS: Record<InterestTypeCode, string> = {
   BANKA_TL: 'Mevduat Faizi TL',
   KAMU_BANKA_TL: 'Kamu Bankası Mevduat',
 };
+
+const API_INTEREST_TYPE_LABELS: Record<ApiInterestTypeCode, string> = {
+  LEGAL_3095: 'Yasal Faiz',
+  COMMERCIAL_AVANS_3095_2_2: 'Ticari Temerrüt (TCMB Avans)',
+  COMMERCIAL_FIXED: 'Ticari Sabit Faiz',
+  TTK_1530: 'TTK 1530 Geç Ödeme Faizi',
+  CONTRACTUAL: 'Sözleşmesel (Akdi) Faiz',
+  MEVDUAT_TL_BANKALARCA: 'Bankalarca Uygulanan TL Mevduat Faizi',
+  MEVDUAT_USD_BANKALARCA: 'Bankalarca Uygulanan USD Mevduat Faizi',
+  MEVDUAT_EUR_BANKALARCA: 'Bankalarca Uygulanan EUR Mevduat Faizi',
+  MEVDUAT_TL_KAMU: 'Kamu Bankası TL Mevduat Faizi',
+  MEVDUAT_USD_KAMU: 'Kamu Bankası USD Mevduat Faizi',
+  MEVDUAT_EUR_KAMU: 'Kamu Bankası EUR Mevduat Faizi',
+};
+
+const LEGACY_INTEREST_TYPE_LABELS: Readonly<Record<string, string>> = {
+  YASAL: 'Yasal Faiz',
+  TICARI: 'Ticari Faiz',
+  SABIT: 'Sabit Faiz',
+  TICARI_DEGISEN: 'Ticari (TCMB Avans)',
+  TICARI_SABIT: 'Ticari (Sabit)',
+  AVANS: 'Avans Faizi',
+  TEMERRUT: 'Temerrüt Faizi',
+  YOKSUN: 'Yoksun Kalınan Faiz',
+  OZEL: 'Özel Faiz',
+  YOK: 'Faiz Yok',
+};
+
+export interface InterestReadDisplayInput {
+  interestTypeCode?: ApiInterestTypeCode | string | null;
+  interestType?: string | null;
+  interestAccrualStatus?: string | null;
+}
+
+/** PR-A3 presentation contract: NO_INTEREST → rich → legacy; hiçbir aşamada YASAL tahmini yok. */
+export function getInterestReadDisplayLabel(input: InterestReadDisplayInput): string | null {
+  if (input.interestAccrualStatus === 'NO_INTEREST') return 'Faiz Yok';
+  if (input.interestTypeCode != null && input.interestTypeCode !== '') {
+    if (!isApiInterestTypeCode(input.interestTypeCode)) {
+      throw new Error(`Bilinmeyen API faiz türü: ${String(input.interestTypeCode)}`);
+    }
+    return API_INTEREST_TYPE_LABELS[input.interestTypeCode];
+  }
+  if (input.interestType != null && input.interestType !== '') {
+    return LEGACY_INTEREST_TYPE_LABELS[input.interestType] ?? input.interestType;
+  }
+  return null;
+}

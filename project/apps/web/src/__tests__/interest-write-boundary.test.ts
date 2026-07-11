@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildUiInterestWriteIntent, mapUiToApiInterestType } from '../lib/interest-type-resolver';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  buildUiInterestWriteIntent,
+  getInterestReadDisplayLabel,
+  mapApiToUiInterestType,
+  mapUiToApiInterestType,
+} from '../lib/interest-type-resolver';
 import { buildCreateCaseDuesPayload, formatCaseDueValidationError } from '../lib/case-due-payload';
 
 describe('PR-A2 frontend rich interest write boundary', () => {
@@ -64,5 +71,39 @@ describe('PR-A2 frontend rich interest write boundary', () => {
     expect(formatCaseDueValidationError({ body: { message: ['dues.1.interestRate must be a number'] } }))
       .toBe('2. alacak kalemindeki sabit faiz oranı geçersiz veya eksik.');
     expect(formatCaseDueValidationError({ body: { message: ['unrelated error'] } })).toBeNull();
+  });
+
+  it('PR-A3 rich-only presentation exact label kullanır ve false-YASAL fallback yapmaz', () => {
+    expect(getInterestReadDisplayLabel({ interestTypeCode: 'CONTRACTUAL', interestType: null }))
+      .toBe('Sözleşmesel (Akdi) Faiz');
+    expect(getInterestReadDisplayLabel({ interestTypeCode: 'TTK_1530', interestType: null }))
+      .toBe('TTK 1530 Geç Ödeme Faizi');
+    expect(getInterestReadDisplayLabel({ interestTypeCode: 'MEVDUAT_USD_BANKALARCA', interestType: null }))
+      .toBe('Bankalarca Uygulanan USD Mevduat Faizi');
+    expect(getInterestReadDisplayLabel({ interestTypeCode: null, interestType: null })).toBeNull();
+  });
+
+  it('PR-A3 NO_INTEREST presentation precedence ve unknown rich fail-closed davranışını korur', () => {
+    expect(getInterestReadDisplayLabel({
+      interestAccrualStatus: 'NO_INTEREST',
+      interestTypeCode: 'LEGAL_3095',
+      interestType: 'YASAL',
+    })).toBe('Faiz Yok');
+    expect(() => mapApiToUiInterestType('UNKNOWN')).toThrow(/Bilinmeyen API faiz türü/);
+    expect(() => getInterestReadDisplayLabel({ interestTypeCode: 'UNKNOWN' })).toThrow(/Bilinmeyen API faiz türü/);
+  });
+
+  it('PR-A3 active ClaimItem ve Due read yüzeyleri ortak rich-first label resolver kullanır', () => {
+    const claimItemPanel = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/claim-item/ClaimItemPanel.tsx'),
+      'utf8',
+    );
+    const caseDetail = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/app/(dashboard)/cases/[id]/page.tsx'),
+      'utf8',
+    );
+    expect(claimItemPanel).toContain('getInterestReadDisplayLabel(item)');
+    expect(caseDetail).toContain('getInterestReadDisplayLabel(due)');
+    expect(caseDetail).not.toContain("(caseData.type === 'CHECK' || caseData.type === 'BOND') ? 'Ticari (TCMB Avans)' : 'Yasal Faiz'");
   });
 });

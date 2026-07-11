@@ -304,6 +304,165 @@ describe('claim-bucket-assembler (G4a)', () => {
     });
   });
 
+  describe('PR-A3 rich-first ClaimItem read authority', () => {
+    const allRichCodes = Object.values(InterestTypeCode);
+    const richOnlyHighRiskCodes = [
+      InterestTypeCode.TTK_1530,
+      InterestTypeCode.CONTRACTUAL,
+      InterestTypeCode.MEVDUAT_TL_BANKALARCA,
+      InterestTypeCode.MEVDUAT_USD_BANKALARCA,
+      InterestTypeCode.MEVDUAT_EUR_BANKALARCA,
+      InterestTypeCode.MEVDUAT_TL_KAMU,
+      InterestTypeCode.MEVDUAT_USD_KAMU,
+      InterestTypeCode.MEVDUAT_EUR_KAMU,
+    ];
+
+    it.each(allRichCodes)('%s doğrudan canonical bucket authority olur', (interestTypeCode) => {
+      const fixed = interestTypeCode === InterestTypeCode.COMMERCIAL_FIXED || interestTypeCode === InterestTypeCode.CONTRACTUAL;
+      const res = assembleClaimBuckets([
+        item({
+          id: 'p1', itemType: 'PRINCIPAL', interestTypeCode,
+          interestRate: fixed ? 18.5 : 999,
+          interestStartDate: '2025-01-01',
+        }),
+      ], { interestType: 'YASAL', interestStartDate: '2024-01-01' });
+
+      expect(res.buckets).toHaveLength(1);
+      expect(res.buckets[0].interestType).toBe(interestTypeCode);
+      expect(res.buckets[0].startDate).toBe('2025-01-01');
+      expect(res.buckets[0].fixedRate).toBe(fixed ? 0.185 : undefined);
+    });
+
+    it.each(richOnlyHighRiskCodes)('%s legacy null iken Case.YASAL tarafından overwrite edilmez', (interestTypeCode) => {
+      const res = assembleClaimBuckets([
+        item({
+          id: 'p1', itemType: 'PRINCIPAL', interestTypeCode, interestType: null,
+          interestRate: interestTypeCode === InterestTypeCode.CONTRACTUAL ? 24 : null,
+          interestStartDate: '2025-01-01',
+        }),
+      ], { interestType: 'YASAL', interestStartDate: '2024-01-01' });
+
+      expect(res.buckets[0].interestType).toBe(interestTypeCode);
+      expect(res.buckets[0].interestType).not.toBe(InterestTypeCode.LEGAL_3095);
+    });
+
+    it('rich/legacy mirror uyumsuzluğunda rich wins ve diagnostic üretilir', () => {
+      const res = assembleClaimBuckets([
+        item({
+          id: 'p1', itemType: 'PRINCIPAL', interestTypeCode: InterestTypeCode.CONTRACTUAL,
+          interestType: 'YASAL', interestRate: 30, interestStartDate: '2025-01-01',
+        }),
+      ]);
+      expect(res.buckets[0]).toMatchObject({ interestType: InterestTypeCode.CONTRACTUAL, fixedRate: 0.3 });
+      expect(res.diagnostics).toContainEqual(expect.objectContaining({
+        code: 'INTEREST_TYPE_MIRROR_DRIFT', claimItemId: 'p1',
+        detail: expect.stringContaining('rich=CONTRACTUAL;legacy=YASAL'),
+      }));
+    });
+
+    it.each([
+      [InterestTypeCode.LEGAL_3095, 'YASAL'],
+      [InterestTypeCode.COMMERCIAL_AVANS_3095_2_2, 'TICARI'],
+      [InterestTypeCode.COMMERCIAL_FIXED, 'SABIT'],
+    ] as const)('%s + %s uyumlu mirror rich authority olarak kalır', (interestTypeCode, interestType) => {
+      const res = assembleClaimBuckets([
+        item({
+          id: 'p1', itemType: 'PRINCIPAL', interestTypeCode, interestType,
+          interestRate: interestTypeCode === InterestTypeCode.COMMERCIAL_FIXED ? 22 : null,
+          interestStartDate: '2025-01-01',
+        }),
+      ]);
+      expect(res.buckets[0].interestType).toBe(interestTypeCode);
+      expect(res.diagnostics).not.toContainEqual(expect.objectContaining({ code: 'INTEREST_TYPE_MIRROR_DRIFT' }));
+    });
+
+    it.each([
+      ['YASAL', InterestTypeCode.LEGAL_3095, null],
+      ['TICARI', InterestTypeCode.COMMERCIAL_AVANS_3095_2_2, null],
+      ['SABIT', InterestTypeCode.COMMERCIAL_FIXED, 0.48],
+    ] as const)('legacy-only %s strict compatibility ile %s olur', (legacy, code, fixedRate) => {
+      const res = assembleClaimBuckets([
+        item({
+          id: 'p1', itemType: 'PRINCIPAL', interestType: legacy,
+          interestRate: legacy === 'SABIT' ? 48 : null, interestStartDate: '2025-01-01',
+        }),
+      ]);
+      expect(res.buckets[0]).toMatchObject({ interestType: code });
+      expect(res.buckets[0].fixedRate ?? null).toBe(fixedRate);
+    });
+
+    it.each(['YOKSUN', 'AVANS', 'TEMERRUT', 'OZEL', 'UNKNOWN'])('%s legacy-only iken Case fallback yapmadan fail-closed olur', (legacy) => {
+      const res = assembleClaimBuckets([
+        item({ id: 'p1', itemType: 'PRINCIPAL', interestType: legacy, interestStartDate: '2025-01-01' }),
+      ], { interestType: 'YASAL', interestStartDate: '2024-01-01' });
+      expect(res.buckets).toHaveLength(0);
+      expect(res.diagnostics).toContainEqual(expect.objectContaining({
+        code: 'UNSUPPORTED_INTEREST_TYPE', claimItemId: 'p1', detail: legacy,
+      }));
+    });
+
+    it.each([null, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])('fixed rich code rate=%s için fail-closed olur', (interestRate) => {
+      const res = assembleClaimBuckets([
+        item({
+          id: 'p1', itemType: 'PRINCIPAL', interestTypeCode: InterestTypeCode.CONTRACTUAL,
+          interestRate, interestStartDate: '2025-01-01',
+        }),
+      ], { interestType: 'YASAL', interestStartDate: '2024-01-01' });
+      expect(res.buckets).toHaveLength(0);
+      expect(res.diagnostics).toContainEqual(expect.objectContaining({ code: 'FIXED_RATE_REQUIRED', claimItemId: 'p1' }));
+    });
+
+    it.each([
+      [{ interestTypeCode: InterestTypeCode.LEGAL_3095 }, 'interestTypeCode'],
+      [{ interestType: 'YASAL' }, 'interestType'],
+      [{ interestTypeCode: InterestTypeCode.LEGAL_3095, interestType: 'YASAL' }, 'interestTypeCode,interestType'],
+    ] as const)('NO_INTEREST %j alanını bastırır ve %s diagnostic detayı üretir', (authority, fields) => {
+      const res = assembleClaimBuckets([
+        item({
+          id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'NO_INTEREST',
+          ...authority,
+          interestStartDate: '2025-01-01',
+        }),
+      ], { interestType: 'YASAL', interestStartDate: '2024-01-01' });
+      expect(res.buckets).toHaveLength(0);
+      expect(res.diagnostics).toContainEqual(expect.objectContaining({
+        code: 'NO_INTEREST_AUTHORITY_CONFLICT', claimItemId: 'p1', detail: `fields=${fields}`,
+      }));
+    });
+
+    it('NO_INTEREST INTEREST-config principal fallback kaynağı olamaz', () => {
+      const res = assembleClaimBuckets([
+        item({ id: 'p1', itemType: 'PRINCIPAL' }),
+        item({
+          id: 'i1', itemType: 'INTEREST', interestAccrualStatus: 'NO_INTEREST',
+          interestTypeCode: InterestTypeCode.LEGAL_3095, interestStartDate: '2025-01-01',
+        }),
+      ]);
+      expect(res.buckets).toHaveLength(0);
+      expect(res.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'NO_INTEREST_AUTHORITY_CONFLICT', claimItemId: 'i1' }),
+        expect.objectContaining({ code: 'MISSING_INTEREST_CONFIG', claimItemId: 'p1' }),
+      ]));
+    });
+
+    it('aynı semantik rich/legacy INTEREST config canonical key ile tekilleşir', () => {
+      const res = assembleClaimBuckets([
+        item({ id: 'p1', itemType: 'PRINCIPAL', interestStartDate: null }),
+        item({
+          id: 'i-rich', itemType: 'INTEREST', interestTypeCode: InterestTypeCode.LEGAL_3095,
+          interestStartDate: '2025-01-01',
+        }),
+        item({
+          id: 'i-legacy', itemType: 'INTEREST', interestType: 'YASAL',
+          interestStartDate: '2025-01-01',
+        }),
+      ]);
+      expect(res.buckets).toHaveLength(1);
+      expect(res.buckets[0]).toMatchObject({ interestType: InterestTypeCode.LEGAL_3095 });
+      expect(res.diagnostics).not.toContainEqual(expect.objectContaining({ code: 'AMBIGUOUS_INTEREST_CONFIG' }));
+    });
+  });
+
   describe('status filtreleme', () => {
     it('CANCELLED/WAIVED hariç tutulur', () => {
       const res = assembleClaimBuckets([

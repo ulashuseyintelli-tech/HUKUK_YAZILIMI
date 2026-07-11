@@ -21,16 +21,19 @@
  *  OZEL     → CONTRACTUAL                (YALNIZ string yüzeyi; Prisma InterestType enum'da OZEL yok)
  *
  * Kapsam: SAF tür-çevirisi. fixedRate sourcing + interestRate(%)↔fixedRate(0-1) dönüşümü =
- * E-G2. Canlı hesap yoluna WIRING YOK (bu gate yalnız aracıyı üretir).
+ * E-G2. PR-A3 ile persisted rich-code köprüsü canonical CaseBalance projection'ında canlıdır.
  *
  * <remarks>
  * Çağrıldığı yerler:
- * - (E-G1'de CANLI ÇAĞIRAN YOK — saf-additive.) Köprü ileride D-E assembler/computeBalance
- *   gate'inde ClaimItem.interestType / Due.interestType → ClaimBucket.interestType için tüketilecek.
+ * - ClaimBucket assembler legacy-only compatibility fallback'i.
+ * - CaseBalanceService persisted rich code → engine enum projection'ı.
  * </remarks>
  */
 
-import { InterestType as PrismaInterestType } from '@prisma/client';
+import {
+  InterestType as PrismaInterestType,
+  InterestTypeCode as PrismaInterestTypeCode,
+} from '@prisma/client';
 import { InterestTypeCode } from '../types/domain.types';
 
 /** Eşleme başarısızlık sebebi: desteklenmeyen (bilinen ama yasak) veya bilinmeyen değer. */
@@ -69,6 +72,65 @@ const STRING_ONLY_ALIASES: Readonly<Record<string, InterestTypeCode>> = {
  */
 function assertNeverInterestType(x: never): never {
   throw new UnsupportedInterestTypeError(String(x), 'UNKNOWN');
+}
+
+function assertNeverPersistedInterestTypeCode(x: never): never {
+  throw new UnsupportedInterestTypeError(String(x), 'UNKNOWN');
+}
+
+/**
+ * PR-A3 persistence → engine enum köprüsü. Prisma, shared-types ve engine enum'ları aynı
+ * string değerlerini taşısa da farklı TypeScript enum'larıdır; cast ile authority bypass
+ * etmek yerine her persisted değer exhaustive olarak çevrilir.
+ */
+export function mapPersistedInterestTypeCode(t: PrismaInterestTypeCode): InterestTypeCode {
+  switch (t) {
+    case PrismaInterestTypeCode.LEGAL_3095:
+      return InterestTypeCode.LEGAL_3095;
+    case PrismaInterestTypeCode.COMMERCIAL_AVANS_3095_2_2:
+      return InterestTypeCode.COMMERCIAL_AVANS_3095_2_2;
+    case PrismaInterestTypeCode.COMMERCIAL_FIXED:
+      return InterestTypeCode.COMMERCIAL_FIXED;
+    case PrismaInterestTypeCode.TTK_1530:
+      return InterestTypeCode.TTK_1530;
+    case PrismaInterestTypeCode.CONTRACTUAL:
+      return InterestTypeCode.CONTRACTUAL;
+    case PrismaInterestTypeCode.MEVDUAT_TL_BANKALARCA:
+      return InterestTypeCode.MEVDUAT_TL_BANKALARCA;
+    case PrismaInterestTypeCode.MEVDUAT_USD_BANKALARCA:
+      return InterestTypeCode.MEVDUAT_USD_BANKALARCA;
+    case PrismaInterestTypeCode.MEVDUAT_EUR_BANKALARCA:
+      return InterestTypeCode.MEVDUAT_EUR_BANKALARCA;
+    case PrismaInterestTypeCode.MEVDUAT_TL_KAMU:
+      return InterestTypeCode.MEVDUAT_TL_KAMU;
+    case PrismaInterestTypeCode.MEVDUAT_USD_KAMU:
+      return InterestTypeCode.MEVDUAT_USD_KAMU;
+    case PrismaInterestTypeCode.MEVDUAT_EUR_KAMU:
+      return InterestTypeCode.MEVDUAT_EUR_KAMU;
+    default:
+      return assertNeverPersistedInterestTypeCode(t);
+  }
+}
+
+/**
+ * PR-A3 legacy-only compatibility adapter. Yalnız owner-frozen, kayıpsız üç mirror kabul edilir.
+ * AVANS/TEMERRUT/OZEL gibi daha geniş tarihsel köprü değerleri canonical ClaimItem read fallback'i
+ * değildir; rich code yoksa fail-closed diagnostic üretmelidir.
+ */
+export function mapLegacyClaimItemCompatibilityType(s: string): InterestTypeCode {
+  const key = (s ?? '').trim().toUpperCase();
+  switch (key) {
+    case 'YASAL':
+      return InterestTypeCode.LEGAL_3095;
+    case 'TICARI':
+      return InterestTypeCode.COMMERCIAL_AVANS_3095_2_2;
+    case 'SABIT':
+      return InterestTypeCode.COMMERCIAL_FIXED;
+    case 'YOKSUN':
+      throw new UnsupportedInterestTypeError(s, 'UNSUPPORTED');
+    default:
+      throw new UnsupportedInterestTypeError(s, 'UNKNOWN');
+  }
 }
 
 /**

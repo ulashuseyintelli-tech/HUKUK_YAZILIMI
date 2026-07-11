@@ -20,7 +20,11 @@
  */
 
 import { ClaimBucket, AncillaryType, InterestTypeCode } from '../types/domain.types';
-import { mapInterestTypeString, UnsupportedInterestTypeError } from '../mapping/interest-type-bridge';
+import {
+  mapLegacyClaimItemCompatibilityType,
+  mapInterestTypeString,
+  UnsupportedInterestTypeError,
+} from '../mapping/interest-type-bridge';
 import { classifyClaimItemType } from '../classification/claim-item-classifier';
 import { requiresFixedRate, percentToRate } from '@shared/types';
 
@@ -34,6 +38,8 @@ export interface ClaimItemInput {
   currency: string;
   /** Prisma InterestType (YASAL/SABIT/AVANS/TEMERRUT/YOKSUN/TICARI) veya null. */
   interestType?: string | null;
+  /** PR-A3 canonical calculation authority. */
+  interestTypeCode?: InterestTypeCode | null;
   /** Faiz oranı YÜZDE (Decimal→number). */
   interestRate?: number | null;
   /** ISO date (YYYY-MM-DD). */
@@ -68,6 +74,8 @@ export type AssemblerDiagnosticCode =
   | 'MISSING_START_DATE'
   | 'FIXED_RATE_REQUIRED'
   | 'UNSUPPORTED_INTEREST_TYPE'
+  | 'INTEREST_TYPE_MIRROR_DRIFT'
+  | 'NO_INTEREST_AUTHORITY_CONFLICT'
   | 'UNMAPPED_ITEM_TYPE'
   | 'TAX_WITHOUT_PARENT'
   | 'TAX_TIER_DEFERRED'
@@ -96,7 +104,7 @@ export interface ClaimBucketAssemblyResult {
 }
 
 interface ResolvedInterestConfig {
-  interestType: string;
+  interestTypeCode: InterestTypeCode;
   interestRate?: number | null;
   interestStartDate?: string | null;
 }
@@ -108,9 +116,29 @@ function baseAmount(item: ClaimItemInput): number {
   return item.demandedAmount ?? item.amount;
 }
 
-/** Bir ClaimItem faiz konfig taşıyor mu (type set)? */
-function hasOwnInterestType(item: ClaimItemInput): boolean {
-  return item.interestType != null && item.interestType !== '';
+/** Bir ClaimItem kendi canonical veya legacy compatibility faiz otoritesini taşıyor mu? */
+function hasOwnInterestAuthority(item: ClaimItemInput): boolean {
+  return item.interestTypeCode != null || (item.interestType != null && item.interestType !== '');
+}
+
+/** Explicit NO_INTEREST bütün principal/config resolution yollarını bastırır. */
+function suppressExplicitNoInterest(
+  item: ClaimItemInput,
+  diagnostics: AssemblerDiagnostic[],
+): boolean {
+  if (item.interestAccrualStatus !== 'NO_INTEREST') return false;
+  const conflictingFields = [
+    item.interestTypeCode != null ? 'interestTypeCode' : null,
+    item.interestType != null && item.interestType !== '' ? 'interestType' : null,
+  ].filter((field): field is string => field != null);
+  if (conflictingFields.length > 0) {
+    diagnostics.push({
+      code: 'NO_INTEREST_AUTHORITY_CONFLICT',
+      claimItemId: item.id,
+      detail: `fields=${conflictingFields.join(',')}`,
+    });
+  }
+  return true;
 }
 
 /**
@@ -133,9 +161,9 @@ export function assembleClaimBuckets(
   // Q2 adım-2 için: belirsizlik tespiti. principal sayısı + INTEREST-config kalemleri.
   const principals = active.filter((i) => classifyClaimItemType(i.itemType).category === 'PRINCIPAL');
   const interestConfigItems = active.filter(
-    (i) => classifyClaimItemType(i.itemType).category === 'INTEREST' && hasOwnInterestType(i),
+    (i) => classifyClaimItemType(i.itemType).category === 'INTEREST' && hasOwnInterestAuthority(i),
   );
-  const distinctInterestConfigs = dedupeInterestConfigs(interestConfigItems);
+  const distinctInterestConfigs = dedupeInterestConfigs(interestConfigItems, diagnostics);
 
   const addAncillaryBucketAmount = (
     target: Partial<Record<AncillaryType, number>>,
@@ -235,25 +263,14 @@ function buildPrincipalBucket(
   },
   diagnostics: AssemblerDiagnostic[],
 ): ClaimBucket | null {
-  // TBK100 Interest Accrual Contract v1: NO_INTEREST = bilinçli faizsiz, HATA DEĞİL — diagnostic
-  // üretmeden sessizce bucket üretilmez (MISSING_*'ten kategorik olarak farklı, "eksik veri" değil).
-  if (item.interestAccrualStatus === 'NO_INTEREST') return null;
+  // PR-A3 precedence: explicit NO_INTEREST bütün type fallback'lerinden önce gelir.
+  if (suppressExplicitNoInterest(item, diagnostics)) return null;
 
   // Q2 FAİZ ÇÖZÜM ZİNCİRİ
   const resolved = resolveInterestConfig(item, ctx, diagnostics);
   if (!resolved) return null; // diagnostic resolveInterestConfig içinde üretildi
 
-  // interestType (Prisma string) → InterestTypeCode (E-G1 string-yüzeyi; YOKSUN/unknown → throw → diagnostic)
-  let code: InterestTypeCode;
-  try {
-    code = mapInterestTypeString(resolved.interestType);
-  } catch (e) {
-    if (e instanceof UnsupportedInterestTypeError) {
-      diagnostics.push({ code: 'UNSUPPORTED_INTEREST_TYPE', claimItemId: item.id, detail: resolved.interestType });
-      return null;
-    }
-    throw e;
-  }
+  const code = resolved.interestTypeCode;
 
   // startDate (Gb: yoksa diagnostic, tahmin yok — issueDate/dueDate fallback KESİNLİKLE YOK).
   // TBK100 Interest Accrual Contract v1: TEK istisna — provenance açıkça ENFORCEMENT_PROCEEDING_DATE
@@ -282,10 +299,14 @@ function buildPrincipalBucket(
 
   // E-G2b WIRING: requiresFixedRate ise interestRate(%) → fixedRate(0-1)
   if (requiresFixedRate(code)) {
-    if (resolved.interestRate != null) {
+    if (
+      typeof resolved.interestRate === 'number' &&
+      Number.isFinite(resolved.interestRate) &&
+      resolved.interestRate > 0
+    ) {
       bucket.fixedRate = percentToRate(resolved.interestRate);
     } else {
-      // Case-fallback rate veremez (Case'te interestRate yok); fixed türde oran zorunlu.
+      // Eksik, sıfır, negatif veya sonlu olmayan persisted yüzde fail-closed olur.
       diagnostics.push({ code: 'FIXED_RATE_REQUIRED', claimItemId: item.id, detail: code });
       return null;
     }
@@ -309,12 +330,8 @@ function resolveInterestConfig(
   diagnostics: AssemblerDiagnostic[],
 ): ResolvedInterestConfig | null {
   // 1) Principal'ın KENDİ konfigi
-  if (hasOwnInterestType(item)) {
-    return {
-      interestType: item.interestType as string,
-      interestRate: item.interestRate ?? null,
-      interestStartDate: item.interestStartDate ?? null,
-    };
+  if (hasOwnInterestAuthority(item)) {
+    return resolveOwnInterestConfig(item, diagnostics);
   }
 
   // 1.5) MIXED-SOURCE (ALC-P0-3B3, owner-locked 2026-07-04): faiz TÜRÜ dosya/takip seviyesinde
@@ -324,8 +341,10 @@ function resolveInterestConfig(
   // kaynağıdır. Kademe 3'ün case-tarihini SESSİZCE item-tarihinin üzerine yazmasını önlemek için
   // ayrı, adlandırılmış bir kademe olarak eklendi (mevcut atomik-kaynak modeli bozulmadı).
   if (item.interestStartDate != null && ctx.caseInterest?.interestType) {
+    const caseCode = resolveCaseCompatibilityType(ctx.caseInterest.interestType, item.id, diagnostics);
+    if (!caseCode) return null;
     return {
-      interestType: ctx.caseInterest.interestType,
+      interestTypeCode: caseCode,
       interestRate: item.interestRate ?? null,
       interestStartDate: item.interestStartDate,
     };
@@ -347,8 +366,10 @@ function resolveInterestConfig(
 
   // 3) Case-level fallback (yalnız tür + başlangıç; rate YOK)
   if (ctx.caseInterest?.interestType) {
+    const caseCode = resolveCaseCompatibilityType(ctx.caseInterest.interestType, item.id, diagnostics);
+    if (!caseCode) return null;
     return {
-      interestType: ctx.caseInterest.interestType,
+      interestTypeCode: caseCode,
       interestRate: null,
       interestStartDate: ctx.caseInterest.interestStartDate ?? null,
     };
@@ -359,16 +380,84 @@ function resolveInterestConfig(
   return null;
 }
 
-/** INTEREST-config kalemlerini (type+rate+startDate) tekilleştir. */
-function dedupeInterestConfigs(interestItems: ClaimItemInput[]): ResolvedInterestConfig[] {
+function resolveOwnInterestConfig(
+  item: ClaimItemInput,
+  diagnostics: AssemblerDiagnostic[],
+): ResolvedInterestConfig | null {
+  if (item.interestTypeCode != null) {
+    if (item.interestType != null && item.interestType !== '') {
+      let mirrorMatches = false;
+      try {
+        mirrorMatches = mapLegacyClaimItemCompatibilityType(item.interestType) === item.interestTypeCode;
+      } catch (error) {
+        if (!(error instanceof UnsupportedInterestTypeError)) throw error;
+      }
+      if (!mirrorMatches) {
+        diagnostics.push({
+          code: 'INTEREST_TYPE_MIRROR_DRIFT',
+          claimItemId: item.id,
+          detail: `rich=${item.interestTypeCode};legacy=${item.interestType};category=LEGACY_MIRROR_MISMATCH`,
+        });
+      }
+    }
+    return {
+      interestTypeCode: item.interestTypeCode,
+      interestRate: item.interestRate ?? null,
+      interestStartDate: item.interestStartDate ?? null,
+    };
+  }
+
+  if (item.interestType != null && item.interestType !== '') {
+    try {
+      return {
+        interestTypeCode: mapLegacyClaimItemCompatibilityType(item.interestType),
+        interestRate: item.interestRate ?? null,
+        interestStartDate: item.interestStartDate ?? null,
+      };
+    } catch (error) {
+      if (error instanceof UnsupportedInterestTypeError) {
+        diagnostics.push({
+          code: 'UNSUPPORTED_INTEREST_TYPE',
+          claimItemId: item.id,
+          detail: item.interestType,
+        });
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  return null;
+}
+
+function resolveCaseCompatibilityType(
+  legacyType: string,
+  claimItemId: string,
+  diagnostics: AssemblerDiagnostic[],
+): InterestTypeCode | null {
+  try {
+    return mapInterestTypeString(legacyType);
+  } catch (error) {
+    if (error instanceof UnsupportedInterestTypeError) {
+      diagnostics.push({ code: 'UNSUPPORTED_INTEREST_TYPE', claimItemId, detail: legacyType });
+      return null;
+    }
+    throw error;
+  }
+}
+
+/** INTEREST-config kalemlerini canonical rich code + fixed-rate + startDate ile tekilleştir. */
+function dedupeInterestConfigs(
+  interestItems: ClaimItemInput[],
+  diagnostics: AssemblerDiagnostic[],
+): ResolvedInterestConfig[] {
   const seen = new Map<string, ResolvedInterestConfig>();
   for (const i of interestItems) {
-    const cfg: ResolvedInterestConfig = {
-      interestType: i.interestType as string,
-      interestRate: i.interestRate ?? null,
-      interestStartDate: i.interestStartDate ?? null,
-    };
-    const key = `${cfg.interestType}|${cfg.interestRate ?? ''}|${cfg.interestStartDate ?? ''}`;
+    if (suppressExplicitNoInterest(i, diagnostics)) continue;
+    const cfg = resolveOwnInterestConfig(i, diagnostics);
+    if (!cfg) continue;
+    const fixedRateKey = requiresFixedRate(cfg.interestTypeCode) ? cfg.interestRate ?? '' : '';
+    const key = `${cfg.interestTypeCode}|${fixedRateKey}|${cfg.interestStartDate ?? ''}`;
     if (!seen.has(key)) seen.set(key, cfg);
   }
   return [...seen.values()];

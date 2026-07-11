@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { getInterestReadDisplayLabel } from "@/lib/interest-type-resolver";
 import {
   DollarSign,
   Plus,
@@ -25,6 +26,8 @@ interface ClaimItem {
   description?: string;
   referenceNo?: string;
   interestType?: string;
+  interestTypeCode?: string | null;
+  interestAccrualStatus?: string | null;
   interestRate?: number;
   interestStartDate?: string;
   interestEndDate?: string;
@@ -243,6 +246,7 @@ export function ClaimItemPanel({
           {items.map((item) => {
             const typeInfo = itemTypeLabels[item.itemType] || itemTypeLabels.OTHER;
             const Icon = typeInfo.icon;
+            const interestLabel = getInterestReadDisplayLabel(item);
             return (
               <div key={item.id} className="p-4 hover:bg-gray-50 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -267,9 +271,9 @@ export function ClaimItemPanel({
                           Vade: {new Date(item.dueDate).toLocaleDateString("tr-TR")}
                         </span>
                       )}
-                      {item.interestRate && (
+                      {interestLabel && (
                         <span className="text-xs text-green-600">
-                          %{item.interestRate} {item.interestType}
+                          {item.interestRate != null ? `%${item.interestRate} ` : ''}{interestLabel}
                         </span>
                       )}
                       {item.interestStartDate && item.interestEndDate && (
