@@ -1,0 +1,65 @@
+{
+  "fixtureVersion": "PR-A4-2-v1",
+  "persistedFixtureCount": 35,
+  "classifierOnlyFixtureCount": 2,
+  "inventoryProcessedRecordCount": 35,
+  "inventoryPageSize": 7,
+  "richCodeCoverage": {
+    "LEGAL_3095": 2,
+    "COMMERCIAL_AVANS_3095_2_2": 1,
+    "COMMERCIAL_FIXED": 5,
+    "TTK_1530": 1,
+    "CONTRACTUAL": 2,
+    "MEVDUAT_TL_BANKALARCA": 3,
+    "MEVDUAT_USD_BANKALARCA": 3,
+    "MEVDUAT_EUR_BANKALARCA": 3,
+    "MEVDUAT_TL_KAMU": 3,
+    "MEVDUAT_USD_KAMU": 3,
+    "MEVDUAT_EUR_KAMU": 3
+  },
+  "integrityCoverage": {
+    "FIXED_RATE_INVALID": 4,
+    "FIXED_RATE_MISSING": 1,
+    "FIXED_RATE_VALID": 2,
+    "LEGACY_ONLY": 4,
+    "NO_CLAIMITEM_INTEREST_AUTHORITY": 1,
+    "NO_INTEREST_AUDIT_INCOMPLETE": 1,
+    "NO_INTEREST_AUTHORITY": 3,
+    "NO_INTEREST_CONFLICT": 1,
+    "NO_INTEREST_VALID": 2,
+    "RICH_AND_LEGACY_DRIFT": 1,
+    "RICH_AND_LEGACY_MATCH": 1,
+    "RICH_ONLY": 27,
+    "UNSUPPORTED_LEGACY": 2,
+    "VARIABLE_RATE_WITH_STRAY_FIXED_RATE": 1
+  },
+  "uyapReadinessCoverage": {
+    "UYAP_COMMERCIAL_FIXED_MAPPING_MISSING": 5,
+    "UYAP_CONTRACTUAL_MAPPING_MISSING": 2,
+    "UYAP_DEPOSIT_TERM_AMBIGUOUS": 6,
+    "UYAP_EXPORTER_CONFLICT": 2,
+    "UYAP_LEGACY_ONLY_COMPATIBILITY": 4,
+    "UYAP_MAPPING_AMBIGUOUS": 6,
+    "UYAP_MAPPING_MISSING": 29,
+    "UYAP_NO_INTEREST": 3,
+    "UYAP_READY_EXACT": 2,
+    "UYAP_READY_ONLY_IN_NUMERIC_EXPORTER": 2,
+    "UYAP_SILENT_FALLBACK_RISK": 2
+  },
+  "mappingBlockerCoverage": {
+    "COMMERCIAL_FIXED_MAPPING_MISSING": 5,
+    "CONTRACTUAL_MAPPING_MISSING": 2,
+    "DEPOSIT_TERM_AMBIGUOUS": 6,
+    "SILENT_FALLBACK_RISK": 2
+  },
+  "calculationOutcomeCoverage": {
+    "BLOCKED": 6,
+    "BUCKET_CREATED": 28,
+    "NO_BUCKET": 3
+  },
+  "evidenceBoundary": {
+    "syntheticEvidence": "AVAILABLE",
+    "productionEmpiricalEvidence": "ABSENT",
+    "exactLegalUyapMapping": "NOT_DECIDED"
+  }
+}
