@@ -25,6 +25,7 @@
     "seed:client-workspace-live-smoke": "npx --yes tsx src/scripts/client-workspace-live-smoke-seed.ts",
     "backfill:due-claimitem": "npx --yes tsx scripts/backfill-due-to-claimitem.ts",
     "inventory:due-claimitem": "npx --yes tsx scripts/inventory-due-claimitem.ts",
+    "inventory:rich-interest-uyap": "npx --yes tsx scripts/inventory-rich-interest-uyap-readiness.ts",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
