@@ -71,6 +71,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       dueDate: '2026-01-01',
       currency: 'TRY',
       interestType: InterestType.YASAL,
+      interestTypeCode: 'LEGAL_3095',
       interestRate: 24,
       interestStartDate: '2026-01-02',
       interestEndDate: '2026-02-02',
@@ -87,7 +88,8 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         amount: 1000,
         currency: 'TRY',
         interestType: InterestType.YASAL,
-        interestRate: 24,
+        interestTypeCode: 'LEGAL_3095',
+        interestRate: null,
         interestStartDate: new Date('2026-01-02T00:00:00.000Z'),
         interestEndDate: new Date('2026-02-02T00:00:00.000Z'),
         metadata: {
@@ -118,6 +120,64 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
 
     expect(tx.claimItem.create).not.toHaveBeenCalled();
+  });
+
+  it('createDue YOK niyetini server actor/reason/time ile ClaimItem NO_INTEREST yapar', async () => {
+    const tx = makeTx();
+    const { service } = makeService(tx);
+
+    await service.createDue('tenant-1', 'case-1', {
+      type: DueType.PRINCIPAL,
+      amount: 1000,
+      dueDate: '2026-01-01',
+      interestTypeCode: null,
+      interestRate: null,
+      interestAccrualStatus: 'NO_INTEREST',
+      noInterestReason: 'sözleşmede faiz yok',
+    } as any, 'requester-1');
+
+    expect(tx.claimItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        interestType: null,
+        interestTypeCode: null,
+        interestRate: null,
+        interestAccrualStatus: 'NO_INTEREST',
+        noInterestReason: 'sözleşmede faiz yok',
+        noInterestConfirmedById: 'requester-1',
+        noInterestConfirmedAt: expect.any(Date),
+      }),
+    });
+  });
+
+  it('direct Due fixed rate eksikse hicbir write yapmadan fail-closed olur', async () => {
+    const tx = makeTx();
+    const { service } = makeService(tx);
+
+    await expect(service.createDue('tenant-1', 'case-1', {
+      type: DueType.PRINCIPAL,
+      amount: 1000,
+      dueDate: '2026-01-01',
+      interestTypeCode: 'CONTRACTUAL',
+      interestRate: null,
+    } as any, 'requester-1')).rejects.toThrow(/interestRate/);
+
+    expect(tx.due.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.create).not.toHaveBeenCalled();
+  });
+
+  it('direct Due NO_INTEREST authenticated actor olmadan reddedilir', async () => {
+    const tx = makeTx();
+    const { service } = makeService(tx);
+
+    await expect(service.createDue('tenant-1', 'case-1', {
+      type: DueType.PRINCIPAL,
+      amount: 1000,
+      dueDate: '2026-01-01',
+      interestAccrualStatus: 'NO_INTEREST',
+      noInterestReason: 'faiz yok',
+    } as any)).rejects.toThrow(/authenticated server context/);
+
+    expect(tx.due.create).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -220,6 +280,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       description: 'Güncel ana alacak',
       dueDate: '2026-02-01',
       interestType: InterestType.TICARI,
+      interestTypeCode: 'COMMERCIAL_AVANS_3095_2_2',
       interestRate: 48,
       interestStartDate: '2026-02-02',
       interestEndDate: '2026-04-01',
@@ -242,7 +303,8 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         description: 'Güncel ana alacak',
         dueDate: new Date('2026-02-01T00:00:00.000Z'),
         interestType: InterestType.TICARI,
-        interestRate: 48,
+        interestTypeCode: 'COMMERCIAL_AVANS_3095_2_2',
+        interestRate: null,
         interestStartDate: new Date('2026-02-02T00:00:00.000Z'),
         interestEndDate: new Date('2026-04-01T00:00:00.000Z'),
       }),

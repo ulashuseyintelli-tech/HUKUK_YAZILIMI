@@ -7,6 +7,7 @@ import {
   IsDateString,
   IsArray,
 } from 'class-validator';
+import { InterestTypeCode } from '@prisma/client';
 
 // Alacak Kalemi Türü
 export enum ClaimItemType {
@@ -109,8 +110,12 @@ export class CreateClaimItemDto {
   interestType?: InterestType;
 
   @IsOptional()
+  @IsEnum(InterestTypeCode)
+  interestTypeCode?: InterestTypeCode | null;
+
+  @IsOptional()
   @IsNumber()
-  interestRate?: number;
+  interestRate?: number | null;
 
   @IsOptional()
   @IsDateString()
@@ -139,10 +144,6 @@ export class CreateClaimItemDto {
   @IsOptional()
   @IsString()
   noInterestReason?: string;
-
-  @IsOptional()
-  @IsString()
-  noInterestConfirmedById?: string;
 
   @IsOptional()
   @IsString()
@@ -185,8 +186,12 @@ export class UpdateClaimItemDto {
   interestType?: InterestType;
 
   @IsOptional()
+  @IsEnum(InterestTypeCode)
+  interestTypeCode?: InterestTypeCode | null;
+
+  @IsOptional()
   @IsNumber()
-  interestRate?: number;
+  interestRate?: number | null;
 
   @IsOptional()
   @IsDateString()
@@ -211,10 +216,6 @@ export class UpdateClaimItemDto {
   @IsOptional()
   @IsString()
   noInterestReason?: string;
-
-  @IsOptional()
-  @IsString()
-  noInterestConfirmedById?: string;
 
   @IsOptional()
   @IsString()

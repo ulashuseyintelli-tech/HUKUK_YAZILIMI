@@ -38,6 +38,8 @@ import {
 } from '../case-status/financial-case-close.constants';
 import { applyCaseStatusChange } from '../case-status/case-status.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
+import { interestWriteData, normalizeInterestWriteIntent } from '../claim-item/interest-write-admission';
+import { validateInterestAccrualState } from '../claim-item/interest-accrual-policy';
 
 const COLLECTION_DISPOSITION_APPROVAL_ACTION = 'COLLECTION_DISPOSITION_POST';
 const COLLECTION_DISPOSITION_TARGET_TYPE = 'COLLECTION_DISPOSITION';
@@ -394,7 +396,7 @@ export class OfficeApprovalDomainSyncService {
     req: OfficeApprovalRequest,
     intent: ClaimItemHighImpactSavedIntent,
   ): Promise<void> {
-    const patch = intent.proposedPatch as any;
+    const patch = this.normalizeApprovedInterestPatch(intent.proposedPatch as any, null, req.requesterUserId);
     if (req.targetType !== CLAIM_ITEM_CASE_TARGET_TYPE || req.targetRef !== intent.caseId || patch.caseId !== intent.caseId) {
       throw new ConflictException('CLAIM_ITEM create hedef bilgisi gecersiz.');
     }
@@ -424,16 +426,22 @@ export class OfficeApprovalDomainSyncService {
       throw new ConflictException('CLAIM_ITEM hedef kalem bulunamadi.');
     }
     const currentSnapshot = this.snapshotClaimItem(current);
-    if (intent.currentSnapshotHash && stableJsonHash(currentSnapshot) !== intent.currentSnapshotHash) {
+    const comparableSnapshot = intent.currentSnapshot
+      ? Object.fromEntries(Object.keys(intent.currentSnapshot).map((key) => [key, currentSnapshot[key]]))
+      : currentSnapshot;
+    if (intent.currentSnapshotHash && stableJsonHash(comparableSnapshot) !== intent.currentSnapshotHash) {
       throw new ConflictException('ClaimItem stale-state conflict: kayit approval talebinden sonra degismis.');
     }
     assertInvoiceClaimItemTypeTransitionAllowed(
       current,
       (intent.proposedPatch as Record<string, unknown>).itemType,
     );
+    const normalizedPatch = intent.operation === 'DELETE'
+      ? intent.proposedPatch
+      : this.normalizeApprovedInterestPatch(intent.proposedPatch, current, req.requesterUserId);
     const data = intent.operation === 'DELETE'
       ? { status: 'CANCELLED' }
-      : this.buildClaimItemUpdateData(intent.proposedPatch as Record<string, unknown>);
+      : this.buildClaimItemUpdateData(normalizedPatch as Record<string, unknown>);
     const updated = await tx.claimItem.update({
       where: { id: intent.claimItemId },
       data,
@@ -449,6 +457,94 @@ export class OfficeApprovalDomainSyncService {
     );
   }
 
+  private normalizeApprovedInterestPatch(
+    proposedPatch: Record<string, unknown>,
+    current: Record<string, any> | null,
+    requesterUserId: string,
+  ): Record<string, unknown> {
+    const interestFields = [
+      'interestTypeCode',
+      'interestType',
+      'interestRate',
+      'interestAccrualStatus',
+      'noInterestReason',
+      'interestStartDate',
+      'interestEndDate',
+      'interestStartDateProvenance',
+    ];
+    if (!interestFields.some((field) => Object.prototype.hasOwnProperty.call(proposedPatch, field))) {
+      return proposedPatch;
+    }
+
+    const richExplicit = Object.prototype.hasOwnProperty.call(proposedPatch, 'interestTypeCode');
+    const legacyExplicit = Object.prototype.hasOwnProperty.call(proposedPatch, 'interestType');
+    const explicitNoInterest = proposedPatch.interestAccrualStatus === 'NO_INTEREST';
+    if (
+      explicitNoInterest &&
+      proposedPatch.noInterestConfirmedById !== requesterUserId
+    ) {
+      throw new ConflictException('NO_INTEREST actor approval requester ile uyumsuz.');
+    }
+
+    const normalized = normalizeInterestWriteIntent({
+      interestTypeCode: richExplicit ? proposedPatch.interestTypeCode as any : current?.interestTypeCode,
+      legacyInterestType: legacyExplicit
+        ? proposedPatch.interestType as string | null
+        : richExplicit
+          ? undefined
+          : current?.interestType,
+      interestRate: explicitNoInterest && !Object.prototype.hasOwnProperty.call(proposedPatch, 'interestRate')
+        ? null
+        : Object.prototype.hasOwnProperty.call(proposedPatch, 'interestRate')
+          ? proposedPatch.interestRate
+        : current?.interestRate == null
+          ? current?.interestRate
+          : Number(current.interestRate),
+      explicitNoInterest,
+      noInterestReason: proposedPatch.noInterestReason as string | null | undefined,
+    });
+
+    let patch = proposedPatch;
+    if (normalized.mode !== 'OMITTED') {
+      const data = interestWriteData(normalized);
+      patch = normalized.mode === 'NO_INTEREST'
+        ? {
+            ...proposedPatch,
+            ...data,
+            noInterestReason: normalized.noInterestReason,
+            noInterestConfirmedById: requesterUserId,
+          }
+        : {
+            ...proposedPatch,
+            ...data,
+            noInterestReason: null,
+            noInterestConfirmedById: null,
+            noInterestConfirmedAt: null,
+          };
+    }
+
+    const effective = (field: string) => Object.prototype.hasOwnProperty.call(patch, field)
+      ? patch[field]
+      : current?.[field];
+    const status = String(effective('interestAccrualStatus') ?? 'UNKNOWN');
+    validateInterestAccrualState(
+      {
+        interestAccrualStatus: status,
+        interestType: effective('interestType') as string | null | undefined,
+        interestTypeCode: effective('interestTypeCode') as string | null | undefined,
+        interestRate: effective('interestRate') == null
+          ? effective('interestRate') as null | undefined
+          : Number(effective('interestRate')),
+        interestStartDate: effective('interestStartDate') as string | null | undefined,
+        interestStartDateProvenance: effective('interestStartDateProvenance') as string | null | undefined,
+        noInterestReason: effective('noInterestReason') as string | null | undefined,
+        noInterestConfirmedById: effective('noInterestConfirmedById') as string | null | undefined,
+      },
+      explicitNoInterest,
+    );
+    return patch;
+  }
+
   private buildClaimItemCreateData(tenantId: string, patch: any): Record<string, unknown> {
     return {
       tenantId,
@@ -459,6 +555,7 @@ export class OfficeApprovalDomainSyncService {
       sourceDocumentId: patch.sourceDocumentId,
       sourceDocumentType: patch.sourceDocumentType,
       interestType: patch.interestType,
+      interestTypeCode: patch.interestTypeCode,
       interestRate: patch.interestRate,
       interestStartDate: patch.interestStartDate ? new Date(patch.interestStartDate) : null,
       interestEndDate: patch.interestEndDate ? new Date(patch.interestEndDate) : null,
@@ -482,7 +579,8 @@ export class OfficeApprovalDomainSyncService {
     if (patch.itemType) data.itemType = patch.itemType;
     if (patch.amount !== undefined) Object.assign(data, claimItemNormalUpdateAmounts(patch.amount));
     if (patch.currency) data.currency = patch.currency;
-    if (patch.interestType) data.interestType = patch.interestType;
+    if (Object.prototype.hasOwnProperty.call(patch, 'interestType')) data.interestType = patch.interestType;
+    if (Object.prototype.hasOwnProperty.call(patch, 'interestTypeCode')) data.interestTypeCode = patch.interestTypeCode;
     if (patch.interestRate !== undefined) data.interestRate = patch.interestRate;
     if (patch.interestStartDate) data.interestStartDate = new Date(String(patch.interestStartDate));
     if (patch.interestEndDate) data.interestEndDate = new Date(String(patch.interestEndDate));
@@ -493,6 +591,10 @@ export class OfficeApprovalDomainSyncService {
       data.noInterestReason = patch.noInterestReason;
       data.noInterestConfirmedById = patch.noInterestConfirmedById;
       data.noInterestConfirmedAt = new Date();
+    } else if (patch.interestAccrualStatus === 'UNKNOWN') {
+      data.noInterestReason = null;
+      data.noInterestConfirmedById = null;
+      data.noInterestConfirmedAt = null;
     }
     if (patch.description !== undefined) data.description = patch.description;
     if (patch.referenceNo !== undefined) data.referenceNo = patch.referenceNo;
@@ -515,12 +617,16 @@ export class OfficeApprovalDomainSyncService {
       collectedAmount: this.scalar(item.collectedAmount),
       currency: item.currency,
       interestType: item.interestType ?? null,
+      interestTypeCode: item.interestTypeCode ?? null,
       interestRate: this.scalar(item.interestRate),
       interestStartDate: this.dateScalar(item.interestStartDate),
       interestEndDate: this.dateScalar(item.interestEndDate),
       dueDate: this.dateScalar(item.dueDate),
       interestAccrualStatus: item.interestAccrualStatus ?? null,
       interestStartDateProvenance: item.interestStartDateProvenance ?? null,
+      noInterestReason: item.noInterestReason ?? null,
+      noInterestConfirmedById: item.noInterestConfirmedById ?? null,
+      noInterestConfirmedAt: this.dateScalar(item.noInterestConfirmedAt),
       isAllDebtorsLiable: item.isAllDebtorsLiable,
       liableDebtorIds: Array.isArray(item.liableDebtorIds) ? [...item.liableDebtorIds] : [],
       status: item.status,

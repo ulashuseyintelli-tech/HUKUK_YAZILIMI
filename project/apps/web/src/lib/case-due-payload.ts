@@ -3,8 +3,11 @@ export interface CreateCaseDueInput {
   description?: string;
   amount?: string | number;
   dueDate: string;
-  interestType?: string;
-  interestRate?: number;
+  interestType?: string | null;
+  interestTypeCode?: string | null;
+  interestRate?: number | null;
+  interestAccrualStatus?: 'NO_INTEREST' | 'UNKNOWN';
+  noInterestReason?: string;
   interestAmount?: number;
   interestStartDate?: string;
   interestEndDate?: string;
@@ -28,8 +31,11 @@ export interface CreateCaseDuePayload {
   description?: string;
   amount: number;
   dueDate: string;
-  interestType?: string;
-  interestRate?: number;
+  interestType?: string | null;
+  interestTypeCode?: string | null;
+  interestRate?: number | null;
+  interestAccrualStatus?: 'NO_INTEREST' | 'UNKNOWN';
+  noInterestReason?: string;
   interestAmount?: number;
   interestStartDate?: string;
   interestEndDate?: string;
@@ -56,7 +62,10 @@ export function buildCreateCaseDuesPayload(dues: CreateCaseDueInput[]): CreateCa
       amount: Number.parseFloat(String(due.amount)),
       dueDate: due.dueDate,
       interestType: due.interestType,
+      interestTypeCode: due.interestTypeCode,
       interestRate: due.interestRate,
+      interestAccrualStatus: due.interestAccrualStatus,
+      noInterestReason: due.noInterestReason,
       interestAmount: due.interestAmount,
       interestStartDate: due.interestStartDate,
       interestEndDate: due.interestEndDate,
@@ -74,6 +83,27 @@ export function buildCreateCaseDuesPayload(dues: CreateCaseDueInput[]): CreateCa
       kiraDonemBaslangic: due.kiraDonemBaslangic,
       kiraDonemBitis: due.kiraDonemBitis,
     }));
+}
+
+const DUE_INTEREST_VALIDATION_PATH = /^dues\.(\d+)\.(interestType|interestTypeCode|interestRate)\b/;
+
+export function formatCaseDueValidationError(error: unknown): string | null {
+  const body = (error as { body?: { message?: unknown } } | null)?.body;
+  const messages = Array.isArray(body?.message)
+    ? body!.message.filter((value): value is string => typeof value === 'string')
+    : typeof body?.message === 'string'
+      ? [body.message]
+      : [];
+  for (const message of messages) {
+    const match = DUE_INTEREST_VALIDATION_PATH.exec(message);
+    if (!match) continue;
+    const index = Number(match[1]) + 1;
+    const field = match[2];
+    return field === 'interestRate'
+      ? `${index}. alacak kalemindeki sabit faiz oranı geçersiz veya eksik.`
+      : `${index}. alacak kalemindeki faiz türü geçersiz.`;
+  }
+  return null;
 }
 
 /** G2b — OCR debtInfo (FATURA) için Due'ya gidecek belge/KDV alanları (SAF). */
@@ -192,29 +222,12 @@ export function mapClaimKalemTuruToDueType(kalemTuru?: string): ClaimDueType {
 }
 
 /**
- * PR-i2 (genel fer'i/masraf) — standalone/fer'i kalem için Due.interestType uygunlaştırma.
- * İşlemiş faiz (DueType INTEREST) kalemin KENDİSİ faizdir → ayrı faiz tipi YOK (undefined).
- * Geçersiz "YOK" (config faizTuru) payload'a SIZMASIN → undefined.
- * Diğer durumda MEVCUT davranış korunur: geçerli tip ya da varsayılan 'YASAL'
- * (PRINCIPAL akışı DEĞİŞMEZ; hiçbir ana kalemTuru faizTuru='YOK' değil).
- */
-export type DueInterestType = 'YASAL' | 'TICARI' | 'AVANS' | 'TEMERRUT';
-
-export function resolveDueInterestType(dueType: ClaimDueType, takipOncesiFaiz?: string): DueInterestType | undefined {
-  if (dueType === 'INTEREST') return undefined;
-  if (takipOncesiFaiz === 'YOK') return undefined;
-  // takipOncesiFaiz mevcut sistemde config.faizTuru'dan gelir (örn. TICARI_DEGISEN/AKDI de olabilir);
-  // eski davranış `item:any` üzerinden bu değeri aynen geçiriyordu → cast ile birebir korunur.
-  return (takipOncesiFaiz || 'YASAL') as DueInterestType;
-}
-
-/**
  * PR-i3 (nested emekli) — eski draft/item'lardaki nested `ilamYanAlacaklar[]`'ı AYRI standalone
  * fer'i kalemlere düzleştirir (göç; veri kaybı YOK). Her raw → parent (ilamYanAlacaklar TEMİZLENİR
  * → buildDuesFromClaimItem'daki defansif nested dal fire ETMEZ, çift-sayım yok) + her yan-alacak için
  * ayrı fer'i raw (yan.tur → genel fer'i kalemTuru; bilinmeyen → DIGER_FERI). SAF + idempotent
  * (nested yoksa parent passthrough). Üretilen fer'i kalemler buildDues'da ESKİ nested expansion ile
- * birebir aynı Due'yu verir (mapClaimKalemTuruToDueType + resolveDueInterestType).
+ * birebir aynı Due'yu verir (mapClaimKalemTuruToDueType + aktif rich interest admission).
  */
 const NESTED_YAN_TO_KALEM_TURU: Record<string, string> = {
   ILAM_YARGILAMA_GIDERI: 'YARGILAMA_GIDERI',

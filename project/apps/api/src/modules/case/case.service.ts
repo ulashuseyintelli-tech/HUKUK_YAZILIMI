@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef, Optional } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
-import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType } from "@prisma/client";
+import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
+import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import { claimItemNormalUpdateAmounts } from "../claim-item/claim-item-amount-contract";
+import { interestWriteData, normalizeInterestWriteIntent } from "../claim-item/interest-write-admission";
 import { assertGenericDueTypeTransition } from "./due-type-transition.policy";
 import {
   resolveCaseInstrumentType,
@@ -328,7 +329,12 @@ export type DueForClaimItemSync = {
   currency?: string | null;
   sortOrder?: number | null;
   interestType?: string | null;
+  interestTypeCode?: InterestTypeCode | string | null;
   interestRate?: unknown;
+  interestAccrualStatus?: InterestAccrualStatus | null;
+  noInterestReason?: string | null;
+  noInterestConfirmedById?: string | null;
+  noInterestConfirmedAt?: Date | null;
   interestStartDate?: Date | string | null;
   interestEndDate?: Date | string | null;
   interestAmount?: number | null;
@@ -348,8 +354,9 @@ export type DueForClaimItemSync = {
   kiraDonemBitis?: string | null;
 };
 
-function normalizeDueInterestRate(value: unknown): number | undefined {
-  if (value === undefined || value === null) return undefined;
+function normalizeDueInterestRate(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
   return Number(value);
 }
 
@@ -377,8 +384,11 @@ export function buildSyncDueDto(due: DueForClaimItemSync): DueDto {
     description: due.description ?? undefined,
     amount: Number(due.amount),
     dueDate: due.dueDate instanceof Date ? due.dueDate.toISOString() : due.dueDate,
-    interestType: due.interestType ? (due.interestType as InterestType) : undefined,
+    interestType: due.interestType === null ? null : due.interestType ? (due.interestType as InterestType) : undefined,
+    interestTypeCode: due.interestTypeCode ? (due.interestTypeCode as InterestTypeCode) : undefined,
     interestRate: normalizeDueInterestRate(due.interestRate),
+    interestAccrualStatus: due.interestAccrualStatus ?? undefined,
+    noInterestReason: due.noInterestReason ?? undefined,
     interestStartDate: serializeDueInterestDate(due.interestStartDate),
     interestEndDate: serializeDueInterestDate(due.interestEndDate),
     interestAmount: due.interestAmount ?? undefined,
@@ -386,7 +396,7 @@ export function buildSyncDueDto(due: DueForClaimItemSync): DueDto {
     sourceDocumentNo: due.sourceDocumentNo ?? undefined,
     sourceDocumentType: due.sourceDocumentType ?? undefined,
     hasKdv: due.hasKdv ?? undefined,
-    kdvRate: normalizeDueInterestRate(due.kdvRate),
+    kdvRate: normalizeDueInterestRate(due.kdvRate) ?? undefined,
     kdvAmount: due.kdvAmount ?? undefined,
     // PR-2c (G2-wire deseni): İLAM/KİRA belge alanları → DueDto → buildClaimItemData (metadata.ilam/kira · referenceNo · issueDate)
     ilamMahkeme: due.ilamMahkeme ?? undefined,
@@ -1200,14 +1210,12 @@ export class CaseService {
     tx: Prisma.TransactionClient,
     tenantId: string,
     caseId: string,
-    dues: Array<DueDto & { id?: string; currency?: string | null; sortOrder?: number | null }>,
+    dues: DueForClaimItemSync[],
   ): Promise<void> {
     for (const due of dues) {
-      const itemType = mapDueTypeToClaimItemType(due.type);
+      const itemType = mapDueTypeToClaimItemType(due.type as DueType);
       if (itemType === null) continue; // NAFAKA → yalnız Due (taksit takvimi)
-      const claimItemData = due.id
-        ? this.buildDueSyncClaimItemData(tenantId, caseId, { ...due, id: due.id })
-        : buildClaimItemData(tenantId, caseId, due, itemType);
+      const claimItemData = this.buildDueSyncClaimItemData(tenantId, caseId, due);
       if (!claimItemData) continue;
 
       await tx.claimItem.create({
@@ -1242,6 +1250,12 @@ export class CaseService {
       currency: due.currency || "TRY",
       sortOrder: due.sortOrder ?? 0,
       metadata: mergeDueSyncMetadata(base.metadata, due.id),
+      ...(due.interestAccrualStatus === InterestAccrualStatus.NO_INTEREST
+        ? {
+            noInterestConfirmedById: due.noInterestConfirmedById,
+            noInterestConfirmedAt: due.noInterestConfirmedAt ?? new Date(),
+          }
+        : {}),
     };
   }
 
@@ -1314,7 +1328,23 @@ export class CaseService {
         description: due.description,
         dueDate: due.dueDate instanceof Date ? due.dueDate : new Date(due.dueDate),
         interestType: due.interestType ? (due.interestType as PrismaInterestType) : null,
+        interestTypeCode: due.interestTypeCode ? (due.interestTypeCode as InterestTypeCode) : null,
         interestRate: normalizeClaimItemInterestRate(due.interestRate),
+        ...(due.interestAccrualStatus === InterestAccrualStatus.NO_INTEREST
+          ? {
+              interestAccrualStatus: InterestAccrualStatus.NO_INTEREST,
+              noInterestReason: due.noInterestReason,
+              noInterestConfirmedById: due.noInterestConfirmedById,
+              noInterestConfirmedAt: due.noInterestConfirmedAt ?? new Date(),
+            }
+          : due.interestAccrualStatus === InterestAccrualStatus.UNKNOWN
+            ? {
+                interestAccrualStatus: InterestAccrualStatus.UNKNOWN,
+                noInterestReason: null,
+                noInterestConfirmedById: null,
+                noInterestConfirmedAt: null,
+              }
+            : {}),
         interestStartDate: normalizeClaimItemInterestDate(due.interestStartDate),
         interestEndDate: normalizeClaimItemInterestDate(due.interestEndDate),
         sortOrder: due.sortOrder ?? 0,
@@ -1770,8 +1800,9 @@ export class CaseService {
         // 6. Alacak Kalemleri (Dues)
         let duesPrincipal = 0;
         if (dto.dues && dto.dues.length > 0) {
-          const createdDues: Array<DueDto & { id: string; currency?: string | null; sortOrder?: number | null }> = [];
+          const createdDues: DueForClaimItemSync[] = [];
           for (const dueDto of dto.dues) {
+            const normalizedInterest = this.normalizeDueInterestForWrite(dueDto, userId);
             const due = await tx.due.create({
               data: {
                 caseId: newCase.id,
@@ -1779,8 +1810,7 @@ export class CaseService {
                 description: dueDto.description,
                 amount: dueDto.amount,
                 dueDate: new Date(dueDto.dueDate),
-                interestType: dueDto.interestType,
-                interestRate: dueDto.interestRate,
+                ...normalizedInterest.persisted,
                 interestStartDate: dueDto.interestStartDate ? new Date(dueDto.interestStartDate) : undefined,
                 interestEndDate: dueDto.interestEndDate ? new Date(dueDto.interestEndDate) : undefined,
                 // FATURA (G2-wire): belge/KDV alanlarını Due'ya yaz (sourceDocumentType+kdvAmount Due alanı DEĞİL)
@@ -1797,8 +1827,10 @@ export class CaseService {
               dueDate: due.dueDate.toISOString(),
               currency: due.currency,
               sortOrder: due.sortOrder,
-              interestType: due.interestType ? (due.interestType as InterestType) : undefined,
+              interestType: due.interestType === null ? null : due.interestType ? (due.interestType as InterestType) : undefined,
+              interestTypeCode: due.interestTypeCode,
               interestRate: normalizeDueInterestRate(due.interestRate),
+              ...normalizedInterest.bridge,
               interestStartDate: serializeDueInterestDate(due.interestStartDate),
               interestEndDate: serializeDueInterestDate(due.interestEndDate),
               interestAmount: dueDto.interestAmount,
@@ -3352,22 +3384,10 @@ export class CaseService {
   async createDue(
     tenantId: string,
     caseId: string,
-    data: {
-      type: string;
-      description?: string;
-      amount: number;
-      dueDate: string;
-      currency?: string;
-      interestType?: string;
-      interestRate?: number;
-      interestStartDate?: string;
-      interestEndDate?: string;
-      sourceDocumentNo?: string;
-      hasKdv?: boolean;
-      kdvRate?: number;
-      isPrimary?: boolean;
-    }
+    data: CreateDueDto,
+    actorUserId?: string,
   ) {
+    const normalizedInterest = this.normalizeDueInterestForWrite(data, actorUserId);
     return this.prisma.$transaction(async (tx) => {
       const caseExists = await tx.case.findFirst({
         where: { id: caseId, tenantId },
@@ -3388,8 +3408,7 @@ export class CaseService {
           amount: data.amount,
           dueDate: new Date(data.dueDate),
           currency: data.currency || "TRY",
-          interestType: data.interestType,
-          interestRate: data.interestRate,
+          ...normalizedInterest.persisted,
           interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
           interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
           sourceDocumentNo: data.sourceDocumentNo,
@@ -3400,7 +3419,10 @@ export class CaseService {
         },
       });
 
-      const claimItemData = this.buildDueSyncClaimItemData(tenantId, caseId, due);
+      const claimItemData = this.buildDueSyncClaimItemData(tenantId, caseId, {
+        ...due,
+        ...normalizedInterest.bridge,
+      });
       if (claimItemData) {
         await tx.claimItem.create({ data: claimItemData });
       }
@@ -3421,25 +3443,8 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     dueId: string,
-    data: {
-      type?: DueType;
-      description?: string;
-      amount?: number;
-      dueDate?: string;
-      currency?: string;
-      interestType?: string;
-      interestRate?: number;
-      interestStartDate?: string;
-      interestEndDate?: string;
-      sourceDocumentNo?: string;
-      hasKdv?: boolean;
-      kdvRate?: number;
-      isFinalized?: boolean;
-      finalizationDate?: string;
-      finalizationNote?: string;
-      sortOrder?: number;
-      isPrimary?: boolean;
-    }
+    data: UpdateDueDto,
+    actorUserId?: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
       const caseExists = await tx.case.findFirst({
@@ -3453,6 +3458,7 @@ export class CaseService {
       if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
 
       assertGenericDueTypeTransition(due.type as DueType, data.type);
+      const normalizedInterest = this.normalizeDueInterestForWrite(data, actorUserId, due);
 
       const updatedDue = await tx.due.update({
         where: { id: dueId },
@@ -3462,8 +3468,7 @@ export class CaseService {
           amount: data.amount,
           dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
           currency: data.currency,
-          interestType: data.interestType,
-          interestRate: data.interestRate,
+          ...normalizedInterest.persisted,
           interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
           interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
           sourceDocumentNo: data.sourceDocumentNo,
@@ -3477,10 +3482,92 @@ export class CaseService {
         },
       });
 
-      await this.syncMarkedClaimItemFromDue(tx, tenantId, caseId, updatedDue);
+      await this.syncMarkedClaimItemFromDue(tx, tenantId, caseId, {
+        ...updatedDue,
+        ...normalizedInterest.bridge,
+      });
 
       return updatedDue;
     });
+  }
+
+  private normalizeDueInterestForWrite(
+    input: Record<string, any>,
+    actorUserId?: string,
+    current?: DueForClaimItemSync,
+  ): {
+    persisted: {
+      interestTypeCode?: InterestTypeCode | null;
+      interestType?: PrismaInterestType | null;
+      interestRate?: number | null;
+    };
+    bridge: Partial<DueForClaimItemSync>;
+  } {
+    const hasInterestWrite = [
+      'interestTypeCode',
+      'interestType',
+      'interestRate',
+      'interestAccrualStatus',
+      'noInterestReason',
+    ].some((key) => Object.prototype.hasOwnProperty.call(input, key));
+    if (!hasInterestWrite) return { persisted: {}, bridge: {} };
+
+    if (
+      input.interestAccrualStatus !== undefined &&
+      input.interestAccrualStatus !== InterestAccrualStatus.UNKNOWN &&
+      input.interestAccrualStatus !== InterestAccrualStatus.NO_INTEREST
+    ) {
+      throw new BadRequestException('Due write boundary ACCRUES veya başlangıç provenance uyduramaz.');
+    }
+
+    const richExplicit = Object.prototype.hasOwnProperty.call(input, 'interestTypeCode');
+    const legacyExplicit = Object.prototype.hasOwnProperty.call(input, 'interestType');
+    const normalized = normalizeInterestWriteIntent({
+      interestTypeCode: richExplicit ? input.interestTypeCode : current?.interestTypeCode,
+      legacyInterestType: legacyExplicit
+        ? input.interestType
+        : richExplicit
+          ? undefined
+          : current?.interestType,
+      interestRate: input.interestAccrualStatus === InterestAccrualStatus.NO_INTEREST && !Object.prototype.hasOwnProperty.call(input, 'interestRate')
+        ? null
+        : Object.prototype.hasOwnProperty.call(input, 'interestRate')
+          ? input.interestRate
+        : current?.interestRate == null
+          ? current?.interestRate
+          : Number(current.interestRate),
+      explicitNoInterest: input.interestAccrualStatus === InterestAccrualStatus.NO_INTEREST,
+      noInterestReason: input.noInterestReason,
+    });
+
+    if (normalized.mode === 'OMITTED') return { persisted: {}, bridge: {} };
+
+    if (normalized.mode === 'NO_INTEREST' && !actorUserId) {
+      throw new BadRequestException('NO_INTEREST aktörü authenticated server context üzerinden zorunludur.');
+    }
+
+    const normalizedData = interestWriteData(normalized);
+    const now = new Date();
+    const bridge: Partial<DueForClaimItemSync> = {
+      interestTypeCode: normalizedData.interestTypeCode,
+      interestType: normalizedData.interestType,
+      interestRate: normalizedData.interestRate,
+      interestAccrualStatus:
+        normalized.mode === 'NO_INTEREST'
+          ? InterestAccrualStatus.NO_INTEREST
+          : InterestAccrualStatus.UNKNOWN,
+      noInterestReason: normalized.mode === 'NO_INTEREST' ? normalized.noInterestReason : null,
+      noInterestConfirmedById: normalized.mode === 'NO_INTEREST' ? actorUserId : null,
+      noInterestConfirmedAt: normalized.mode === 'NO_INTEREST' ? now : null,
+    };
+    return {
+      persisted: {
+        interestTypeCode: normalizedData.interestTypeCode,
+        interestType: normalizedData.interestType as PrismaInterestType | null,
+        interestRate: normalizedData.interestRate,
+      },
+      bridge,
+    };
   }
 
   /**

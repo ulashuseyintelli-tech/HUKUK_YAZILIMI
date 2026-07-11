@@ -407,12 +407,16 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     collectedAmount: 0,
     currency: 'TRY',
     interestType: null,
+    interestTypeCode: null,
     interestRate: null,
     interestStartDate: null,
     interestEndDate: null,
     dueDate: null,
     interestAccrualStatus: 'UNKNOWN',
     interestStartDateProvenance: null,
+    noInterestReason: null,
+    noInterestConfirmedById: null,
+    noInterestConfirmedAt: null,
     isAllDebtorsLiable: true,
     liableDebtorIds: [],
     status: 'ACTIVE',
@@ -433,12 +437,16 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     collectedAmount: 0,
     currency: 'TRY',
     interestType: null,
+    interestTypeCode: null,
     interestRate: null,
     interestStartDate: null,
     interestEndDate: null,
     dueDate: null,
     interestAccrualStatus: 'UNKNOWN',
     interestStartDateProvenance: null,
+    noInterestReason: null,
+    noInterestConfirmedById: null,
+    noInterestConfirmedAt: null,
     isAllDebtorsLiable: true,
     liableDebtorIds: [],
     status: 'ACTIVE',
@@ -537,6 +545,36 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
         executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
         executedAt: expect.any(Date),
       },
+    });
+  });
+
+  it('executor NO_INTEREST stateini ayni contract ile tekrar dogrular ve server time uygular', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = claimItemTx();
+    const request = claimItemReq({
+      proposedPatch: {
+        interestAccrualStatus: 'NO_INTEREST',
+        interestType: null,
+        interestTypeCode: null,
+        interestRate: null,
+        noInterestReason: 'sözleşmede faiz yok',
+        noInterestConfirmedById: 'requester-u',
+      },
+    });
+
+    await svc.syncAfterDecision(db as any, request as any);
+
+    expect(db.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: expect.objectContaining({
+        interestAccrualStatus: 'NO_INTEREST',
+        interestType: null,
+        interestTypeCode: null,
+        interestRate: null,
+        noInterestReason: 'sözleşmede faiz yok',
+        noInterestConfirmedById: 'requester-u',
+        noInterestConfirmedAt: expect.any(Date),
+      }),
     });
   });
 

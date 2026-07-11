@@ -12,7 +12,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
-import { CreateCaseDto, DueType, UpdateCaseDto } from "./dto/case.dto";
+import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto } from "./dto/case.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { OcrService } from "../ocr/ocr.service";
@@ -573,24 +573,11 @@ export class CaseController {
   @Post(":id/dues")
   async createDue(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
-    @Body() body: {
-      type: string;
-      description?: string;
-      amount: number;
-      dueDate: string;
-      currency?: string;
-      interestType?: string;
-      interestRate?: number;
-      interestStartDate?: string;
-      interestEndDate?: string;
-      sourceDocumentNo?: string;
-      hasKdv?: boolean;
-      kdvRate?: number;
-      isPrimary?: boolean;
-    }
+    @Body() body: CreateDueDto,
   ) {
-    return this.caseService.createDue(tenantId, id, body);
+    return this.caseService.createDue(tenantId, id, body, actorUserId);
   }
 
   /**
@@ -600,29 +587,12 @@ export class CaseController {
   @Patch(":id/dues/:dueId")
   async updateDue(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
     @Param("dueId") dueId: string,
-    @Body() body: {
-      type?: DueType;
-      description?: string;
-      amount?: number;
-      dueDate?: string;
-      currency?: string;
-      interestType?: string;
-      interestRate?: number;
-      interestStartDate?: string;
-      interestEndDate?: string;
-      sourceDocumentNo?: string;
-      hasKdv?: boolean;
-      kdvRate?: number;
-      isFinalized?: boolean;
-      finalizationDate?: string;
-      finalizationNote?: string;
-      sortOrder?: number;
-      isPrimary?: boolean;
-    }
+    @Body() body: UpdateDueDto,
   ) {
-    return this.caseService.updateDue(tenantId, id, dueId, body);
+    return this.caseService.updateDue(tenantId, id, dueId, body, actorUserId);
   }
 
   /**

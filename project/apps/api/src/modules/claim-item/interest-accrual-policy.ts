@@ -40,6 +40,8 @@ export function defaultInterestAccrualStatusForItemType(itemType: string): 'UNKN
 export interface InterestAccrualEffectiveState {
   interestAccrualStatus: string;
   interestType?: string | null;
+  interestTypeCode?: string | null;
+  interestRate?: number | null;
   interestStartDate?: string | Date | null;
   interestStartDateProvenance?: string | null;
   noInterestReason?: string | null;
@@ -78,9 +80,9 @@ export function validateInterestAccrualState(
   }
 
   if (interestAccrualStatus === 'NO_INTEREST') {
-    if (interestType || interestStartDate || interestStartDateProvenance) {
+    if (interestType || state.interestTypeCode || state.interestRate != null || interestStartDate || interestStartDateProvenance) {
       throw new BadRequestException(
-        'interestAccrualStatus=NO_INTEREST iken interestType/interestStartDate/interestStartDateProvenance boş olmalıdır.',
+        'interestAccrualStatus=NO_INTEREST iken faiz türü/oranı/başlangıç alanları boş olmalıdır.',
       );
     }
     if (noInterestExplicitlyRequested) {

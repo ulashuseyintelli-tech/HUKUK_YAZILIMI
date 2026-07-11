@@ -9,7 +9,7 @@ import {
   IsBoolean,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { DocumentSourceType } from "@prisma/client";
+import { DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
 
 export enum CaseType {
   GENERAL_EXECUTION = "GENERAL_EXECUTION",
@@ -276,11 +276,23 @@ export class DueDto {
 
   @IsEnum(InterestType)
   @IsOptional()
-  interestType?: InterestType;
+  interestType?: InterestType | null;
+
+  @IsEnum(InterestTypeCode)
+  @IsOptional()
+  interestTypeCode?: InterestTypeCode | null;
 
   @IsNumber()
   @IsOptional()
-  interestRate?: number;
+  interestRate?: number | null;
+
+  @IsEnum(InterestAccrualStatus)
+  @IsOptional()
+  interestAccrualStatus?: InterestAccrualStatus;
+
+  @IsString()
+  @IsOptional()
+  noInterestReason?: string;
 
   @IsDateString()
   @IsOptional()
@@ -345,6 +357,98 @@ export class DueDto {
   @IsDateString()
   @IsOptional()
   kiraDonemBitis?: string; // → metadata.kira.donemBitis
+}
+
+export class CreateDueDto extends DueDto {
+  @IsString()
+  @IsOptional()
+  currency?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isPrimary?: boolean;
+}
+
+export class UpdateDueDto {
+  @IsEnum(DueType)
+  @IsOptional()
+  type?: DueType;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsNumber()
+  @IsOptional()
+  amount?: number;
+
+  @IsDateString()
+  @IsOptional()
+  dueDate?: string;
+
+  @IsString()
+  @IsOptional()
+  currency?: string;
+
+  @IsEnum(InterestType)
+  @IsOptional()
+  interestType?: InterestType | null;
+
+  @IsEnum(InterestTypeCode)
+  @IsOptional()
+  interestTypeCode?: InterestTypeCode | null;
+
+  @IsNumber()
+  @IsOptional()
+  interestRate?: number | null;
+
+  @IsEnum(InterestAccrualStatus)
+  @IsOptional()
+  interestAccrualStatus?: InterestAccrualStatus;
+
+  @IsString()
+  @IsOptional()
+  noInterestReason?: string;
+
+  @IsDateString()
+  @IsOptional()
+  interestStartDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  interestEndDate?: string;
+
+  @IsString()
+  @IsOptional()
+  sourceDocumentNo?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  hasKdv?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  kdvRate?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isFinalized?: boolean;
+
+  @IsDateString()
+  @IsOptional()
+  finalizationDate?: string;
+
+  @IsString()
+  @IsOptional()
+  finalizationNote?: string;
+
+  @IsNumber()
+  @IsOptional()
+  sortOrder?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isPrimary?: boolean;
 }
 
 /**

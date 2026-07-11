@@ -52,7 +52,8 @@ export function mapDueTypeToClaimItemType(dueType: DueType): ClaimItemType | nul
   return DUE_TO_CLAIM_ITEM[dueType];
 }
 
-function toPrismaInterestType(value?: string | null): PrismaInterestType | undefined {
+function toPrismaInterestType(value?: string | null): PrismaInterestType | null | undefined {
+  if (value === null) return null;
   return value ? (value as PrismaInterestType) : undefined;
 }
 
@@ -154,7 +155,10 @@ export function buildClaimItemData(
     // FATURA/İLAM (PR-2c): belge düzenleme tarihi → issueDate (fatura tarihi / ilam tarihi).
     ...(due.issueDate ? { issueDate: toDate(due.issueDate) } : {}),
     interestType: toPrismaInterestType(due.interestType),
+    interestTypeCode: due.interestTypeCode ?? null,
     interestRate: due.interestRate,
+    interestAccrualStatus: due.interestAccrualStatus ?? undefined,
+    noInterestReason: due.interestAccrualStatus === 'NO_INTEREST' ? due.noInterestReason : null,
     interestStartDate: toDate(due.interestStartDate),
     interestEndDate: toDate(due.interestEndDate),
     // FATURA (G2a) + İLAM (PR-2c): belge referansı → ClaimItem.referenceNo (faturaNo / "esasNo E. / kararNo K.").

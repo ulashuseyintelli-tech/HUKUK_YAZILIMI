@@ -19,12 +19,16 @@ const baseItem = {
   collectedAmount: 0,
   currency: 'TRY',
   interestType: null,
+  interestTypeCode: null,
   interestRate: null,
   interestStartDate: null,
   interestEndDate: null,
   dueDate: null,
   interestAccrualStatus: 'UNKNOWN',
   interestStartDateProvenance: null,
+  noInterestReason: null,
+  noInterestConfirmedById: null,
+  noInterestConfirmedAt: null,
   isAllDebtorsLiable: true,
   liableDebtorIds: [],
   status: 'ACTIVE',
@@ -176,6 +180,48 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
 
     expect(officeApproval.createPendingRequest).toHaveBeenCalledWith(expect.objectContaining({
       savedIntent: expect.objectContaining({ proposedPatch: { amount: 0 } }),
+    }));
+  });
+
+  it('rich code high-impact olur ve variable rate null-normalize edilir', async () => {
+    const { svc, officeApproval } = makeSvc();
+
+    await svc.updateFromUser('t1', 'requester-u', 'ci-1', {
+      interestTypeCode: 'COMMERCIAL_AVANS_3095_2_2',
+      interestRate: 99,
+    } as any);
+
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledWith(expect.objectContaining({
+      savedIntent: expect.objectContaining({
+        proposedPatch: expect.objectContaining({
+          interestTypeCode: 'COMMERCIAL_AVANS_3095_2_2',
+          interestType: 'TICARI',
+          interestRate: null,
+        }),
+      }),
+    }));
+  });
+
+  it('explicit NO_INTEREST actorunu authenticated requesterdan turetir', async () => {
+    const { svc, officeApproval } = makeSvc();
+
+    await svc.updateFromUser('t1', 'requester-u', 'ci-1', {
+      interestAccrualStatus: 'NO_INTEREST',
+      noInterestReason: '  sözleşmede faiz yok  ',
+    } as any);
+
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledWith(expect.objectContaining({
+      requesterUserId: 'requester-u',
+      savedIntent: expect.objectContaining({
+        proposedPatch: expect.objectContaining({
+          interestTypeCode: null,
+          interestType: null,
+          interestRate: null,
+          interestAccrualStatus: 'NO_INTEREST',
+          noInterestReason: 'sözleşmede faiz yok',
+          noInterestConfirmedById: 'requester-u',
+        }),
+      }),
     }));
   });
 

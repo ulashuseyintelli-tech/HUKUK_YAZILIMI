@@ -15,9 +15,6 @@
  * @see ARCHITECTURE.md - Source of Truth Matrix
  */
 
-// Import API types from shared package
-import { InterestTypeCode as ApiInterestTypeCodeEnum } from '@shared/types';
-
 // ═══════════════════════════════════════════════════════════════════════════
 // UI INTEREST TYPE (Web tarafı için kullanıcı dostu isimler)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -36,10 +33,18 @@ export type InterestTypeCode =
 // Re-export from shared types for convenience
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type ApiInterestTypeCode = `${ApiInterestTypeCodeEnum}`;
-
-// Also export the enum itself for direct usage
-export { InterestTypeCode as ApiInterestTypeCodeEnum } from '@shared/types';
+export type ApiInterestTypeCode =
+  | 'LEGAL_3095'
+  | 'COMMERCIAL_AVANS_3095_2_2'
+  | 'TTK_1530'
+  | 'CONTRACTUAL'
+  | 'MEVDUAT_TL_BANKALARCA'
+  | 'MEVDUAT_USD_BANKALARCA'
+  | 'MEVDUAT_EUR_BANKALARCA'
+  | 'MEVDUAT_TL_KAMU'
+  | 'MEVDUAT_USD_KAMU'
+  | 'MEVDUAT_EUR_KAMU'
+  | 'COMMERCIAL_FIXED';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UI → API MAPPING (Request gönderirken kullan)
@@ -60,7 +65,56 @@ const UI_TO_API_MAP: Record<InterestTypeCode, ApiInterestTypeCode | null> = {
  * API'ye request gönderirken kullan
  */
 export function mapUiToApiInterestType(uiType: InterestTypeCode): ApiInterestTypeCode | null {
-  return UI_TO_API_MAP[uiType] ?? null;
+  if (!Object.prototype.hasOwnProperty.call(UI_TO_API_MAP, uiType)) {
+    throw new Error(`Bilinmeyen faiz türü: ${String(uiType)}`);
+  }
+  return UI_TO_API_MAP[uiType];
+}
+
+export interface UiInterestWriteIntent {
+  interestTypeCode: ApiInterestTypeCode | null;
+  interestType: 'YASAL' | 'TICARI' | 'SABIT' | null;
+  interestRate: number | null;
+  interestAccrualStatus: 'NO_INTEREST' | 'UNKNOWN';
+  noInterestReason?: string;
+}
+
+export function buildUiInterestWriteIntent(
+  uiType: InterestTypeCode,
+  fixedRate?: number | null,
+  noInterestReason?: string,
+): UiInterestWriteIntent {
+  const interestTypeCode = mapUiToApiInterestType(uiType);
+  if (uiType === 'YOK') {
+    const reason = noInterestReason?.trim();
+    if (!reason) throw new Error('Faiz yok seçimi için gerekçe zorunludur.');
+    return {
+      interestTypeCode: null,
+      interestType: null,
+      interestRate: null,
+      interestAccrualStatus: 'NO_INTEREST',
+      noInterestReason: reason,
+    };
+  }
+
+  const fixed = uiType === 'TICARI_SABIT' || uiType === 'AKDI';
+  if (fixed && (typeof fixedRate !== 'number' || !Number.isFinite(fixedRate) || fixedRate <= 0)) {
+    throw new Error('Sabit veya akdi faiz için sıfırdan büyük geçerli bir oran girilmelidir.');
+  }
+
+  const legacy = uiType === 'YASAL'
+    ? 'YASAL'
+    : uiType === 'TICARI_DEGISEN'
+      ? 'TICARI'
+      : uiType === 'TICARI_SABIT'
+        ? 'SABIT'
+        : null;
+  return {
+    interestTypeCode,
+    interestType: legacy,
+    interestRate: fixed ? fixedRate! : null,
+    interestAccrualStatus: 'UNKNOWN',
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

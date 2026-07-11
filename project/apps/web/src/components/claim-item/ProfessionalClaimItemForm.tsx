@@ -143,7 +143,7 @@ const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
   },
   ISLEMIS_FAIZ: {
     label: "İşlemiş Faiz",
-    faizTuru: "YOK", // PR-i2: kalemin kendisi faiz → resolveDueInterestType interestType'ı undefined yapar
+    faizTuru: "YOK", // Kalemin kendisi faizdir; create-case köprüsü ayrı faiz intent'i üretmez.
     tazminatOrani: 0,
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar"],
@@ -364,6 +364,8 @@ interface AlacakKalemi {
   vadeTarihi: string;
   takipOncesiFaiz: string;
   takipSonrasiFaiz: string;
+  faizOrani: number | null;
+  faizsizGerekce: string;
   hesaplanmisFaiz: boolean;
   aciklama: string;
   // Çek bilgileri
@@ -621,6 +623,8 @@ const createEmptyKalem = (kalemTuru: string, currency = "TRY"): AlacakKalemi => 
     vadeTarihi: today,
     takipOncesiFaiz: config.faizTuru,
     takipSonrasiFaiz: config.faizTuru,
+    faizOrani: null,
+    faizsizGerekce: '',
     hesaplanmisFaiz: false,
     aciklama: "",
     cekBilgileri: kalemTuru === "CEK" ? {
@@ -1424,7 +1428,12 @@ export function ProfessionalClaimItemForm({
               <span className="text-[10px] text-gray-400">Öncesi:</span>
               <select
                 value={kalem.takipOncesiFaiz}
-                onChange={(e) => setKalem(prev => ({ ...prev, takipOncesiFaiz: e.target.value }))}
+                onChange={(e) => setKalem(prev => ({
+                  ...prev,
+                  takipOncesiFaiz: e.target.value,
+                  faizOrani: e.target.value === 'TICARI_SABIT' || e.target.value === 'AKDI' ? prev.faizOrani : null,
+                  faizsizGerekce: e.target.value === 'YOK' ? prev.faizsizGerekce : '',
+                }))}
                 className="border rounded px-1 py-0.5 text-[10px]"
               >
                 {FAIZ_TURU_OPTIONS.map(opt => (
@@ -1432,6 +1441,35 @@ export function ProfessionalClaimItemForm({
                 ))}
               </select>
             </div>
+            {(kalem.takipOncesiFaiz === 'TICARI_SABIT' || kalem.takipOncesiFaiz === 'AKDI') && (
+              <label className="flex items-center gap-1">
+                <span className="text-[10px] text-gray-400">Yıllık oran (%):</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={kalem.faizOrani ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value === '' ? null : Number(e.target.value);
+                    setKalem(prev => ({ ...prev, faizOrani: value }));
+                  }}
+                  className="w-24 border rounded px-1 py-0.5 text-[10px]"
+                  aria-label="Yıllık sabit faiz oranı"
+                />
+              </label>
+            )}
+            {kalem.takipOncesiFaiz === 'YOK' && (
+              <label className="flex flex-1 items-center gap-1 min-w-64">
+                <span className="text-[10px] text-gray-400">Gerekçe:</span>
+                <input
+                  type="text"
+                  value={kalem.faizsizGerekce}
+                  onChange={(e) => setKalem(prev => ({ ...prev, faizsizGerekce: e.target.value }))}
+                  className="flex-1 border rounded px-1 py-0.5 text-[10px]"
+                  aria-label="Faizsiz takip gerekçesi"
+                />
+              </label>
+            )}
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-gray-400">Sonrası:</span>
               <select

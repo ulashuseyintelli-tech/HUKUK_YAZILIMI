@@ -33,6 +33,7 @@ import {
   assertInvoiceClaimItemCreateAllowed,
   assertInvoiceClaimItemTypeTransitionAllowed,
 } from './invoice-claim-item.policy';
+import { interestWriteData, normalizeInterestWriteIntent } from './interest-write-admission';
 
 const LOW_IMPACT_USER_FIELDS = ['description', 'referenceNo', 'sortOrder'] as const;
 const HIGH_IMPACT_USER_FIELDS = [
@@ -40,6 +41,7 @@ const HIGH_IMPACT_USER_FIELDS = [
   'itemType',
   'currency',
   'interestType',
+  'interestTypeCode',
   'interestRate',
   'interestStartDate',
   'interestEndDate',
@@ -72,7 +74,7 @@ export class ClaimItemService {
   // ==================== CRUD İŞLEMLERİ ====================
 
   // Alacak kalemi oluştur
-  async create(tenantId: string, dto: CreateClaimItemDto) {
+  async create(tenantId: string, dto: CreateClaimItemDto, actorUserId?: string) {
     assertInvoiceClaimItemCreateAllowed(dto);
 
     // Dosya kontrolü
@@ -86,17 +88,24 @@ export class ClaimItemService {
     // TBK100 Interest Accrual Contract v1: caller hiç değer göndermediyse itemType-bazlı mekanik
     // varsayım (hukuki tahmin DEĞİL — bkz. interest-accrual-policy.ts); caller açıkça NO_INTEREST
     // yazdıysa audit zorunlu.
+    const normalizedPatch = this.normalizeInterestPatch(
+      this.stripUndefined({ ...dto }),
+      null,
+      actorUserId,
+    );
     const interestAccrualStatus =
-      dto.interestAccrualStatus ?? defaultInterestAccrualStatusForItemType(dto.itemType);
+      (normalizedPatch.interestAccrualStatus as string | undefined) ?? defaultInterestAccrualStatusForItemType(dto.itemType);
     const noInterestExplicitlyRequested = dto.interestAccrualStatus === ('NO_INTEREST' as any);
     validateInterestAccrualState(
       {
         interestAccrualStatus,
-        interestType: dto.interestType,
+        interestType: normalizedPatch.interestType as string | null | undefined,
+        interestTypeCode: normalizedPatch.interestTypeCode as string | null | undefined,
+        interestRate: normalizedPatch.interestRate as number | null | undefined,
         interestStartDate: dto.interestStartDate,
         interestStartDateProvenance: dto.interestStartDateProvenance,
-        noInterestReason: dto.noInterestReason,
-        noInterestConfirmedById: dto.noInterestConfirmedById,
+        noInterestReason: normalizedPatch.noInterestReason as string | null | undefined,
+        noInterestConfirmedById: normalizedPatch.noInterestConfirmedById as string | null | undefined,
       },
       noInterestExplicitlyRequested,
     );
@@ -110,16 +119,17 @@ export class ClaimItemService {
         currency: dto.currency || 'TRY',
         sourceDocumentId: dto.sourceDocumentId,
         sourceDocumentType: dto.sourceDocumentType,
-        interestType: dto.interestType,
-        interestRate: dto.interestRate,
+        interestType: normalizedPatch.interestType,
+        interestTypeCode: normalizedPatch.interestTypeCode,
+        interestRate: normalizedPatch.interestRate,
         interestStartDate: dto.interestStartDate ? new Date(dto.interestStartDate) : null,
         interestEndDate: dto.interestEndDate ? new Date(dto.interestEndDate) : null,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         issueDate: dto.issueDate ? new Date(dto.issueDate) : null,
         interestAccrualStatus,
         interestStartDateProvenance: dto.interestStartDateProvenance ?? null,
-        noInterestReason: noInterestExplicitlyRequested ? dto.noInterestReason : null,
-        noInterestConfirmedById: noInterestExplicitlyRequested ? dto.noInterestConfirmedById : null,
+        noInterestReason: noInterestExplicitlyRequested ? normalizedPatch.noInterestReason : null,
+        noInterestConfirmedById: noInterestExplicitlyRequested ? normalizedPatch.noInterestConfirmedById : null,
         noInterestConfirmedAt: noInterestExplicitlyRequested ? new Date() : null,
         description: dto.description,
         referenceNo: dto.referenceNo,
@@ -141,7 +151,7 @@ export class ClaimItemService {
       throw new NotFoundException('Dosya bulunamadı');
     }
 
-    const proposedPatch = this.buildCreatePatch(dto);
+    const proposedPatch = this.buildCreatePatch(dto, actorUserId);
     const request = await this.createHighImpactApprovalRequest({
       tenantId,
       actorUserId,
@@ -187,8 +197,13 @@ export class ClaimItemService {
   }
 
   // Alacak kalemi güncelle
-  async update(tenantId: string, id: string, dto: UpdateClaimItemDto) {
+  async update(tenantId: string, id: string, dto: UpdateClaimItemDto, actorUserId?: string) {
     const existing = await this.findOne(tenantId, id);
+    const normalizedPatch = this.normalizeInterestPatch(
+      this.stripUndefined({ ...dto }),
+      existing,
+      actorUserId,
+    );
 
     // PR-5b — tahsilat invariant'ları (PR-5c edit açılmadan ÖNCE backend guard).
     const collected = Number(existing.collectedAmount) || 0;
@@ -201,39 +216,26 @@ export class ClaimItemService {
       throw new BadRequestException('Tahsilat yapılmış kalemde kalem tipi (itemType) değiştirilemez.');
     }
 
-    // TBK100 Interest Accrual Contract v1: mevcut kayıt + dto override'larının BİRLEŞİK (effective)
-    // durumu doğrulanır — yalnız bu isteğin gönderdiği alanlar değil.
-    if (dto.interestAccrualStatus !== undefined || dto.interestStartDateProvenance !== undefined) {
-      const effectiveStatus = dto.interestAccrualStatus ?? existing.interestAccrualStatus ?? 'UNKNOWN';
-      const noInterestExplicitlyRequested = dto.interestAccrualStatus === ('NO_INTEREST' as any);
-      validateInterestAccrualState(
-        {
-          interestAccrualStatus: effectiveStatus,
-          interestType: dto.interestType ?? existing.interestType,
-          interestStartDate: dto.interestStartDate ?? existing.interestStartDate,
-          interestStartDateProvenance: dto.interestStartDateProvenance ?? existing.interestStartDateProvenance,
-          noInterestReason: dto.noInterestReason ?? existing.noInterestReason,
-          noInterestConfirmedById: dto.noInterestConfirmedById ?? existing.noInterestConfirmedById,
-        },
-        noInterestExplicitlyRequested,
-      );
-    }
-
     const updateData: any = {};
     if (dto.itemType) updateData.itemType = dto.itemType;
     if (dto.amount !== undefined) Object.assign(updateData, claimItemNormalUpdateAmounts(dto.amount));
     if (dto.currency) updateData.currency = dto.currency;
-    if (dto.interestType) updateData.interestType = dto.interestType;
-    if (dto.interestRate !== undefined) updateData.interestRate = dto.interestRate;
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'interestType')) updateData.interestType = normalizedPatch.interestType;
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'interestTypeCode')) updateData.interestTypeCode = normalizedPatch.interestTypeCode;
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'interestRate')) updateData.interestRate = normalizedPatch.interestRate;
     if (dto.interestStartDate) updateData.interestStartDate = new Date(dto.interestStartDate);
     if (dto.interestEndDate) updateData.interestEndDate = new Date(dto.interestEndDate);
     if (dto.dueDate) updateData.dueDate = new Date(dto.dueDate);
-    if (dto.interestAccrualStatus) updateData.interestAccrualStatus = dto.interestAccrualStatus;
+    if (normalizedPatch.interestAccrualStatus) updateData.interestAccrualStatus = normalizedPatch.interestAccrualStatus;
     if (dto.interestStartDateProvenance) updateData.interestStartDateProvenance = dto.interestStartDateProvenance;
-    if (dto.interestAccrualStatus === ('NO_INTEREST' as any)) {
-      updateData.noInterestReason = dto.noInterestReason;
-      updateData.noInterestConfirmedById = dto.noInterestConfirmedById;
+    if (normalizedPatch.interestAccrualStatus === 'NO_INTEREST') {
+      updateData.noInterestReason = normalizedPatch.noInterestReason;
+      updateData.noInterestConfirmedById = normalizedPatch.noInterestConfirmedById;
       updateData.noInterestConfirmedAt = new Date();
+    } else if (normalizedPatch.interestAccrualStatus === 'UNKNOWN') {
+      updateData.noInterestReason = null;
+      updateData.noInterestConfirmedById = null;
+      updateData.noInterestConfirmedAt = null;
     }
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.referenceNo !== undefined) updateData.referenceNo = dto.referenceNo;
@@ -276,7 +278,9 @@ export class ClaimItemService {
     assertInvoiceClaimItemTypeTransitionAllowed(existing, dto.itemType);
     this.assertUpdateInvariants(existing, dto);
     const currentSnapshot = this.snapshotClaimItem(existing);
-    const proposedPatch = this.normalizePatchForIntent(patch);
+    const proposedPatch = this.normalizePatchForIntent(
+      this.normalizeInterestPatch(patch, existing, actorUserId),
+    );
     const request = await this.createHighImpactApprovalRequest({
       tenantId,
       actorUserId,
@@ -1014,34 +1018,106 @@ export class ClaimItemService {
     });
   }
 
-  private buildCreatePatch(dto: CreateClaimItemDto): ClaimItemPatch {
-    return this.normalizePatchForIntent(this.stripUndefined({ ...dto }));
+  private buildCreatePatch(dto: CreateClaimItemDto, actorUserId: string): ClaimItemPatch {
+    return this.normalizePatchForIntent(
+      this.normalizeInterestPatch(this.stripUndefined({ ...dto }), null, actorUserId),
+    );
   }
 
-  private buildUpdateData(dto: Partial<UpdateClaimItemDto>): Record<string, unknown> {
-    const updateData: Record<string, unknown> = {};
-    if (dto.itemType) updateData.itemType = dto.itemType;
-    if (dto.amount !== undefined) Object.assign(updateData, claimItemNormalUpdateAmounts(dto.amount));
-    if (dto.currency) updateData.currency = dto.currency;
-    if (dto.interestType) updateData.interestType = dto.interestType;
-    if (dto.interestRate !== undefined) updateData.interestRate = dto.interestRate;
-    if (dto.interestStartDate) updateData.interestStartDate = new Date(dto.interestStartDate);
-    if (dto.interestEndDate) updateData.interestEndDate = new Date(dto.interestEndDate);
-    if (dto.dueDate) updateData.dueDate = new Date(dto.dueDate);
-    if (dto.interestAccrualStatus) updateData.interestAccrualStatus = dto.interestAccrualStatus;
-    if (dto.interestStartDateProvenance) updateData.interestStartDateProvenance = dto.interestStartDateProvenance;
-    if (dto.interestAccrualStatus === ('NO_INTEREST' as any)) {
-      updateData.noInterestReason = dto.noInterestReason;
-      updateData.noInterestConfirmedById = dto.noInterestConfirmedById;
-      updateData.noInterestConfirmedAt = new Date();
+  private normalizeInterestPatch(
+    patch: ClaimItemPatch,
+    current: Record<string, any> | null,
+    actorUserId?: string,
+  ): ClaimItemPatch {
+    const interestFields = [
+      'interestTypeCode',
+      'interestType',
+      'interestRate',
+      'interestAccrualStatus',
+      'noInterestReason',
+      'interestStartDate',
+      'interestEndDate',
+      'interestStartDateProvenance',
+    ];
+    if (!interestFields.some((field) => Object.prototype.hasOwnProperty.call(patch, field))) {
+      return patch;
     }
-    if (dto.description !== undefined) updateData.description = dto.description;
-    if (dto.referenceNo !== undefined) updateData.referenceNo = dto.referenceNo;
-    if (dto.isAllDebtorsLiable !== undefined) updateData.isAllDebtorsLiable = dto.isAllDebtorsLiable;
-    if (dto.liableDebtorIds) updateData.liableDebtorIds = dto.liableDebtorIds;
-    if (dto.status) updateData.status = dto.status;
-    if (dto.sortOrder !== undefined) updateData.sortOrder = dto.sortOrder;
-    return updateData;
+
+    const richExplicit = Object.prototype.hasOwnProperty.call(patch, 'interestTypeCode');
+    const legacyExplicit = Object.prototype.hasOwnProperty.call(patch, 'interestType');
+    const explicitNoInterest = patch.interestAccrualStatus === 'NO_INTEREST';
+    if (explicitNoInterest && !actorUserId) {
+      throw new BadRequestException('NO_INTEREST aktörü authenticated server context üzerinden zorunludur.');
+    }
+
+    const normalized = normalizeInterestWriteIntent({
+      interestTypeCode: richExplicit ? patch.interestTypeCode as any : current?.interestTypeCode,
+      legacyInterestType: legacyExplicit
+        ? patch.interestType as string | null
+        : richExplicit
+          ? undefined
+          : current?.interestType,
+      interestRate: explicitNoInterest && !Object.prototype.hasOwnProperty.call(patch, 'interestRate')
+        ? null
+        : Object.prototype.hasOwnProperty.call(patch, 'interestRate')
+          ? patch.interestRate
+        : current?.interestRate == null
+          ? current?.interestRate
+          : Number(current.interestRate),
+      explicitNoInterest,
+      noInterestReason: patch.noInterestReason as string | null | undefined,
+    });
+
+    let result: ClaimItemPatch;
+    if (normalized.mode === 'OMITTED') {
+      if (patch.interestAccrualStatus === 'UNKNOWN') {
+        result = {
+          ...patch,
+          interestTypeCode: null,
+          interestType: null,
+          interestRate: null,
+          noInterestReason: null,
+          noInterestConfirmedById: null,
+          noInterestConfirmedAt: null,
+        };
+      } else {
+        result = patch;
+      }
+    } else if (normalized.mode === 'NO_INTEREST') {
+      result = {
+        ...patch,
+        ...interestWriteData(normalized),
+        noInterestReason: normalized.noInterestReason,
+        noInterestConfirmedById: actorUserId,
+      };
+    } else {
+      result = {
+        ...patch,
+        ...interestWriteData(normalized),
+        ...(patch.interestAccrualStatus === undefined ? {} : { interestAccrualStatus: patch.interestAccrualStatus }),
+        noInterestReason: null,
+        noInterestConfirmedById: null,
+        noInterestConfirmedAt: null,
+      };
+    }
+
+    const effective = (field: string) => Object.prototype.hasOwnProperty.call(result, field)
+      ? result[field]
+      : current?.[field];
+    validateInterestAccrualState(
+      {
+        interestAccrualStatus: String(effective('interestAccrualStatus') ?? 'UNKNOWN'),
+        interestType: effective('interestType') as string | null | undefined,
+        interestTypeCode: effective('interestTypeCode') as string | null | undefined,
+        interestRate: effective('interestRate') == null ? effective('interestRate') as null | undefined : Number(effective('interestRate')),
+        interestStartDate: effective('interestStartDate') as string | null | undefined,
+        interestStartDateProvenance: effective('interestStartDateProvenance') as string | null | undefined,
+        noInterestReason: effective('noInterestReason') as string | null | undefined,
+        noInterestConfirmedById: effective('noInterestConfirmedById') as string | null | undefined,
+      },
+      explicitNoInterest,
+    );
+    return result;
   }
 
   private pickLowImpactUpdateData(patch: ClaimItemPatch): Record<string, unknown> {
@@ -1099,12 +1175,16 @@ export class ClaimItemService {
       collectedAmount: this.toSnapshotScalar(item.collectedAmount),
       currency: item.currency,
       interestType: item.interestType ?? null,
+      interestTypeCode: item.interestTypeCode ?? null,
       interestRate: this.toSnapshotScalar(item.interestRate),
       interestStartDate: this.toSnapshotDate(item.interestStartDate),
       interestEndDate: this.toSnapshotDate(item.interestEndDate),
       dueDate: this.toSnapshotDate(item.dueDate),
       interestAccrualStatus: item.interestAccrualStatus ?? null,
       interestStartDateProvenance: item.interestStartDateProvenance ?? null,
+      noInterestReason: item.noInterestReason ?? null,
+      noInterestConfirmedById: item.noInterestConfirmedById ?? null,
+      noInterestConfirmedAt: this.toSnapshotDate(item.noInterestConfirmedAt),
       isAllDebtorsLiable: item.isAllDebtorsLiable,
       liableDebtorIds: Array.isArray(item.liableDebtorIds) ? [...item.liableDebtorIds] : [],
       status: item.status,
