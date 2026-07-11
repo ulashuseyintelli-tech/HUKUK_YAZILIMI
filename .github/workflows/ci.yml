@@ -138,6 +138,30 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="scenario-diagnostic\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # PR-A4-2: synthetic rich-interest evidence must execute explicitly on the
+      # migrated disposable DB. Zero-match, renamed specs, skipped execution and
+      # cleanup/golden drift are all CI-red; production exporters are never invoked.
+      - name: PR-A4-2 rich-interest diagnostic fixture and disposable DB evidence
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          for f in src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.fixture.spec.ts \
+                   src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.fixture.db-gated.integration.spec.ts; do
+            test -f "$f" || { echo "MISSING PR-A4-2 spec: $f"; exit 1; }
+          done
+          set -o pipefail
+          output_file="$(mktemp)"
+          trap 'rm -f "$output_file"' EXIT
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="rich-interest-uyap-readiness\.fixture(\.db-gated\.integration)?\.spec\.ts$" \
+            2>&1 | tee "$output_file"
+          grep -Eq "Test Suites:[[:space:]]+2 passed, 2 total" "$output_file" || \
+            { echo "BLOCKED: PR-A4-2 suites did not execute exactly twice"; exit 1; }
+          grep -Eq "Tests:[[:space:]]+47 passed, 47 total" "$output_file" || \
+            { echo "BLOCKED: PR-A4-2 tests did not execute 47/47"; exit 1; }
+        working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
       - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
