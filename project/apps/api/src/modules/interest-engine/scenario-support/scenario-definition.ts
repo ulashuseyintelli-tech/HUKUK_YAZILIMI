@@ -20,8 +20,8 @@
  * Çağrıldığı yerler:
  * - Test-support: scenario-builder.ts (bu dizin) → spec dosyaları
  * - Runtime çağıranı YOK — bilinçli (production wiring yasak, W0.1 kapsamı)
- * - Gelecek tüketiciler (ayrı PR'lar): W0.2 materializer, W0.3 diagnostic
- *   synthetic mode, Wave 1-2 senaryo testleri
+ * - W0.2 materializer, W0.3 diagnostic synthetic mode ve PR-9 Golden Fixture
+ *   Matrix AYNI contract'i tuketir.
  */
 import type { ClaimBucket, Payment } from '../types/domain.types';
 import type { CalculationOptions } from '../types/calculation.types';
@@ -38,14 +38,81 @@ export type ScenarioId = string;
 /** Bir para biriminin beklenen sonucu: canonical sonuç üretildi mi, yoksa fail-closed skip mi. */
 export type ScenarioPerCurrencyStatus = 'OK' | 'SKIPPED';
 
-/**
- * Snapshot katmanı (ADR-014 PR-8) beklentisi.
- * NOT: Snapshot katmanı henüz main'de değil (Wave 2 / PR-8b'de gelecek);
- * bu yüzden tip yerel literal union olarak tanımlı ve alan opsiyonel.
- * PR-8b main'e indiğinde canonical tiple hizalanması beklenir
- * (değerler o katmanın SAFE/UNSAFE/BLOCKED/DIAGNOSTIC_ONLY sözleşmesiyle birebir).
- */
+/** Snapshot/readiness beklentisi; official snapshot authority anlamina gelmez. */
 export type ScenarioSnapshotExpectation = 'SAFE' | 'UNSAFE' | 'BLOCKED' | 'DIAGNOSTIC_ONLY';
+
+/**
+ * PR-9 normalize edilmis gozlem kontrati. Bu bir ikinci fixture/expected modeli
+ * degildir: ScenarioExpected'in opsiyonel, deterministik ayrinti yuzeyidir.
+ * Kimlik, generatedAt ve DB'ye ozgu source id'leri bilincli olarak tasinmaz.
+ */
+export interface ScenarioGoldenObservation {
+  status: 'OK' | 'UNAVAILABLE';
+  authority: BalanceDisplayAuthority;
+  blockerCodes: BalanceDisplayDiagnosticCode[];
+  readinessBlockerCodes: string[];
+  currencies: Array<{
+    currency: string;
+    status: ScenarioPerCurrencyStatus;
+    interestCents: number;
+    claimRemainingCents: number;
+    collectedCents: number;
+    skippedReason: string | null;
+  }>;
+  totals: {
+    totalDebtCents: number | null;
+    allocatedPaidCents: number | null;
+    outstandingCents: number | null;
+    heldOverpaymentCents: number | null;
+    grossReceivedCents: number | null;
+  };
+  feeProjection: {
+    status: 'AVAILABLE' | 'NOT_CALCULATED' | 'UNAVAILABLE';
+    authority: 'SOURCE_PROJECTION_ONLY' | 'UNAVAILABLE';
+    currency: string | null;
+    totalProjectedCents: number | null;
+    groups: Array<{
+      currency: string;
+      status: 'AVAILABLE' | 'UNAVAILABLE';
+      totalProjectedCents: number | null;
+      lineCents: Array<number | null>;
+    }>;
+    diagnosticCodes: string[];
+  };
+  allocations: Array<{
+    currency: string;
+    paymentId: string;
+    paymentDate: string;
+    paymentCents: number;
+    categories: Array<{ category: string; allocatedCents: number }>;
+    remainingPaymentCents: number;
+    newPrincipalCents: number;
+  }>;
+  interestSegments: Array<{
+    currency: string;
+    periodStart: string;
+    periodEnd: string;
+    principalCents: number;
+    interestCents: number;
+    phase: string;
+  }>;
+  trace: {
+    kind: 'NON_AUTHORITATIVE_EXPLAINABILITY_TRACE';
+    authority: 'NONE';
+    persisted: false;
+    orderPolicy: 'CURRENCY_ASC_THEN_CANONICAL_RESULT_ORDER';
+  };
+  nonOfficialSnapshot: {
+    kind: 'NON_OFFICIAL_CASE_BALANCE_SNAPSHOT';
+    official: false;
+    persisted: false;
+    authority: 'NONE';
+    blockerCodes: string[];
+  };
+}
+
+/** Expected taraf yalniz hukuken anlamli alanlari sabitleyebilir. */
+export type ScenarioGoldenExpectation = Partial<ScenarioGoldenObservation>;
 
 /** W0.2 materializer'ın tenant kurulum niyeti — declarative; Prisma şekli DEĞİL. */
 export type ScenarioTenantSetup = 'SINGLE' | 'TWO_TENANT_ISOLATION';
@@ -68,6 +135,8 @@ export interface ScenarioExpected {
   authority: BalanceDisplayAuthority;
   snapshotStatus?: ScenarioSnapshotExpectation;
   totals?: Partial<BalanceDisplayTotals>;
+  /** PR-9 unit/DB twin-run'in ortak normalize expected kontrati. */
+  golden?: ScenarioGoldenExpectation;
 }
 
 /**

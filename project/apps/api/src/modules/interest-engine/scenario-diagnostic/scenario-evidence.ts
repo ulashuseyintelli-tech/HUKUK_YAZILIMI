@@ -83,6 +83,8 @@ export interface ScenarioEvidenceRecord {
   observedNonOfficialSnapshotPersisted: CaseBalanceDisplay['nonOfficialSnapshot']['persisted'];
   observedNonOfficialSnapshotAuthority: CaseBalanceDisplay['nonOfficialSnapshot']['authority'];
   observedSnapshotBlockerCodes: CaseBalanceDisplay['nonOfficialSnapshot']['blockerCodes'];
+  /** TWO_TENANT_ISOLATION kurulumunda secondary tenant case'i goremedi mi. */
+  observedTenantIsolation?: boolean;
   expected?: ScenarioExpected;
   comparison?: ScenarioEvidenceComparison;
 }
