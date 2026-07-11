@@ -13,18 +13,24 @@
  */
 
 import { ClaimBucket, Payment } from '../types/domain.types';
+import { isSupportedCurrency } from '../types/common.types';
+
+export type CurrencyGroupBlockerCode = 'CURRENCY_MISSING' | 'CURRENCY_UNSUPPORTED';
 
 export interface CurrencyGroup {
   currency: string;
   buckets: ClaimBucket[];
   payments: Payment[];
+  blockedReason?: CurrencyGroupBlockerCode;
 }
 
-export type CurrencyGroupDiagnosticCode = 'CURRENCY_MISMATCH';
+export type CurrencyGroupDiagnosticCode = CurrencyGroupBlockerCode | 'CURRENCY_MISMATCH';
 
 export interface CurrencyGroupDiagnostic {
   code: CurrencyGroupDiagnosticCode;
   currency: string;
+  source?: 'CLAIM_BUCKET' | 'PAYMENT';
+  sourceId?: string;
   detail?: string;
 }
 
@@ -33,22 +39,60 @@ export interface CurrencyGroupResult {
   diagnostics: CurrencyGroupDiagnostic[];
 }
 
+function classifyCurrency(currency: unknown): {
+  currency: string;
+  blockedReason?: CurrencyGroupBlockerCode;
+} {
+  if (typeof currency !== 'string' || currency.trim().length === 0) {
+    return { currency: 'UNKNOWN', blockedReason: 'CURRENCY_MISSING' };
+  }
+  if (!isSupportedCurrency(currency)) {
+    return { currency, blockedReason: 'CURRENCY_UNSUPPORTED' };
+  }
+  return { currency };
+}
+
 export function groupByCurrency(buckets: ClaimBucket[], payments: Payment[]): CurrencyGroupResult {
   const map = new Map<string, CurrencyGroup>();
-  const groupFor = (currency: string): CurrencyGroup => {
+  const diagnostics: CurrencyGroupDiagnostic[] = [];
+  const groupFor = (currency: string, blockedReason?: CurrencyGroupBlockerCode): CurrencyGroup => {
     let g = map.get(currency);
     if (!g) {
-      g = { currency, buckets: [], payments: [] };
+      g = { currency, buckets: [], payments: [], ...(blockedReason ? { blockedReason } : {}) };
       map.set(currency, g);
     }
     return g;
   };
 
-  for (const b of buckets) groupFor(b.currency).buckets.push(b);
-  for (const p of payments) groupFor(p.currency).payments.push(p);
+  for (const b of buckets) {
+    const classified = classifyCurrency(b.currency);
+    groupFor(classified.currency, classified.blockedReason).buckets.push(b);
+    if (classified.blockedReason) {
+      diagnostics.push({
+        code: classified.blockedReason,
+        currency: classified.currency,
+        source: 'CLAIM_BUCKET',
+        sourceId: b.id,
+        detail: `claimBucketId=${b.id}`,
+      });
+    }
+  }
+  for (const p of payments) {
+    const classified = classifyCurrency(p.currency);
+    groupFor(classified.currency, classified.blockedReason).payments.push(p);
+    if (classified.blockedReason) {
+      diagnostics.push({
+        code: classified.blockedReason,
+        currency: classified.currency,
+        source: 'PAYMENT',
+        sourceId: p.id,
+        detail: `paymentId=${p.id}`,
+      });
+    }
+  }
 
-  const diagnostics: CurrencyGroupDiagnostic[] = [];
   for (const g of map.values()) {
+    if (g.blockedReason) continue;
     // payment var ama o currency'de bucket yok → ödeme hangi alacağa? (mismatch)
     if (g.buckets.length === 0 && g.payments.length > 0) {
       diagnostics.push({
