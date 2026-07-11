@@ -514,10 +514,10 @@ export class SummaryEngineService implements OnModuleInit {
 
   /**
    * Tahsilat kaydet ve TBK 100'e göre dağıt
-   * 
-   * TBK 100 HARD RULE (interest-engine/TBK100AllocatorService):
-   * Sıra: FAİZ → MASRAF → FER'İ → ANAPARA
-   * 
+   *
+   * TBK 100 HARD RULE (interest-engine/TBK100AllocatorService, doc-27 P-0):
+   * Sıra: MASRAF → FER'İ → FAİZ → ANAPARA
+   *
    * @see ARCHITECTURE.md - Source of Truth Matrix
    */
   async recordPayment(
@@ -692,7 +692,7 @@ export class SummaryEngineService implements OnModuleInit {
 
   /**
    * TBK 100 Allocator ile dağıtım (TEK KAYNAK)
-   * Sıra: FAİZ → MASRAF → FER'İ → ANAPARA
+   * Sıra: MASRAF → FER'İ → FAİZ → ANAPARA
    */
   private allocateWithTBK100(
     items: any[],

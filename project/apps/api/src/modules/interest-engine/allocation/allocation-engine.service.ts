@@ -28,12 +28,13 @@ import {
   DebtState,
   DEFAULT_ANCILLARY_PRIORITY,
 } from './tbk100-allocator.service';
-import { 
-  ClaimPriorityService, 
+import {
+  ClaimPriorityService,
   ClaimPriorityRule,
   ClaimWithInterest,
 } from './claim-priority.service';
 import { InterestEngineError, InterestEngineErrorCode } from '../errors/interest-engine-errors';
+import { toCents, fromCents } from './minor-unit';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ALLOCATION OPTIONS
@@ -194,8 +195,25 @@ export class AllocationEngineService {
     claimDebtStates: ClaimDebtState[],
     options: AllocationOptions,
   ): AllocationStep[] {
+    // R3 (961bbaf3 dilimi, PR-3h): negatif ödeme normalize edilmeden ÖNCE, orijinal
+    // number girdi üzerinde reddedilir. Sebep: cents dönüşümü HALF_UP away-from-zero
+    // yuvarlama kullanır — küçük negatif dust değerleri (örn. -0.001) normalize
+    // sonrası 0n'a yuvarlanıp bir cents-seviyeli guard'ı atlatabilir. Number-seviyeli
+    // guard bunu normalize'a hiç girmeden yakalar. TBK100AllocatorService.allocate()
+    // ile aynı desen (E_ALLOCATION_OVERFLOW, normalize öncesi).
+    if (payment.amount < 0) {
+      throw new InterestEngineError(
+        InterestEngineErrorCode.E_ALLOCATION_OVERFLOW,
+        'Ödeme tutarı negatif olamaz',
+        { paymentAmount: payment.amount, totalDebt: 0, overflow: payment.amount },
+      );
+    }
+
     const steps: AllocationStep[] = [];
-    let remaining = payment.amount;
+    // R2 (961bbaf3 dilimi, PR-3h): iç hesap tamamen integer kuruş (bigint) üzerinde
+    // yürür; number ↔ cents çevrimi yalnız bu metodun sınırında (TBK100AllocatorService
+    // ile aynı desen, minor-unit.ts). Public API (number/Map kontratı) korunur.
+    let remainingCents = toCents(payment.amount);
 
     // Sort claims by priority rule
     const claimsWithInterest: ClaimWithInterest[] = claimDebtStates.map(cds => ({
@@ -219,21 +237,22 @@ export class AllocationEngineService {
     // 1. COSTS (Masraflar) - tüm claim'lerin masrafı, ancillaryPriority sırasıyla
     for (const ancType of ancillaryPriority) {
       for (const claimId of claimOrder) {
-        if (remaining <= 0) break;
+        if (remainingCents <= 0n) break;
         const cds = claimDebtStates.find(c => c.claimId === claimId)!;
         const costAmount = cds.debtState.costs.get(ancType) || 0;
         if (costAmount > 0) {
-          const allocated = Math.min(costAmount, remaining);
-          cds.debtState.costs.set(ancType, costAmount - allocated);
-          remaining -= allocated;
+          const costBeforeCents = toCents(costAmount);
+          const allocatedCents = costBeforeCents < remainingCents ? costBeforeCents : remainingCents;
+          cds.debtState.costs.set(ancType, fromCents(costBeforeCents - allocatedCents));
+          remainingCents -= allocatedCents;
 
           steps.push(this.createAllocationStep(
             payment,
             claimId,
             ancType,
             this.getAncillaryLabel(ancType),
-            costAmount,
-            allocated,
+            fromCents(costBeforeCents),
+            fromCents(allocatedCents),
             cds.debtState.principal,
           ));
         }
@@ -243,21 +262,22 @@ export class AllocationEngineService {
     // 2. ANCILLARIES (Fer'iler) - tüm claim'lerin fer'isi, ancillaryPriority sırasıyla
     for (const ancType of ancillaryPriority) {
       for (const claimId of claimOrder) {
-        if (remaining <= 0) break;
+        if (remainingCents <= 0n) break;
         const cds = claimDebtStates.find(c => c.claimId === claimId)!;
         const ancAmount = cds.debtState.ancillaries.get(ancType) || 0;
         if (ancAmount > 0) {
-          const allocated = Math.min(ancAmount, remaining);
-          cds.debtState.ancillaries.set(ancType, ancAmount - allocated);
-          remaining -= allocated;
+          const ancBeforeCents = toCents(ancAmount);
+          const allocatedCents = ancBeforeCents < remainingCents ? ancBeforeCents : remainingCents;
+          cds.debtState.ancillaries.set(ancType, fromCents(ancBeforeCents - allocatedCents));
+          remainingCents -= allocatedCents;
 
           steps.push(this.createAllocationStep(
             payment,
             claimId,
             ancType,
             this.getAncillaryLabel(ancType),
-            ancAmount,
-            allocated,
+            fromCents(ancBeforeCents),
+            fromCents(allocatedCents),
             cds.debtState.principal,
           ));
         }
@@ -266,23 +286,24 @@ export class AllocationEngineService {
 
     // 3. INTEREST (İşlemiş Faiz) - masraf ve fer'iden SONRA
     for (const claimId of claimOrder) {
-      if (remaining <= 0) break;
+      if (remainingCents <= 0n) break;
 
       const cds = claimDebtStates.find(c => c.claimId === claimId)!;
       const interestAmount = cds.debtState.accruedInterest;
 
       if (interestAmount > 0) {
-        const allocated = Math.min(interestAmount, remaining);
-        cds.debtState.accruedInterest -= allocated;
-        remaining -= allocated;
+        const interestBeforeCents = toCents(interestAmount);
+        const allocatedCents = interestBeforeCents < remainingCents ? interestBeforeCents : remainingCents;
+        cds.debtState.accruedInterest = fromCents(interestBeforeCents - allocatedCents);
+        remainingCents -= allocatedCents;
 
         steps.push(this.createAllocationStep(
           payment,
           claimId,
           'INTEREST',
           'İşlemiş Faiz',
-          interestAmount,
-          allocated,
+          fromCents(interestBeforeCents),
+          fromCents(allocatedCents),
           cds.debtState.principal,
         ));
       }
@@ -290,23 +311,24 @@ export class AllocationEngineService {
 
     // 4. PRINCIPAL - All claims' principal last
     for (const claimId of claimOrder) {
-      if (remaining <= 0) break;
-      
+      if (remainingCents <= 0n) break;
+
       const cds = claimDebtStates.find(c => c.claimId === claimId)!;
       const principalAmount = cds.debtState.principal;
-      
+
       if (principalAmount > 0) {
-        const allocated = Math.min(principalAmount, remaining);
-        cds.debtState.principal -= allocated;
-        remaining -= allocated;
+        const principalBeforeCents = toCents(principalAmount);
+        const allocatedCents = principalBeforeCents < remainingCents ? principalBeforeCents : remainingCents;
+        cds.debtState.principal = fromCents(principalBeforeCents - allocatedCents);
+        remainingCents -= allocatedCents;
 
         steps.push(this.createAllocationStep(
           payment,
           claimId,
           'PRINCIPAL',
           'Anapara',
-          principalAmount,
-          allocated,
+          fromCents(principalBeforeCents),
+          fromCents(allocatedCents),
           cds.debtState.principal,
         ));
       }
@@ -399,7 +421,10 @@ export class AllocationEngineService {
         label,
         amountBefore,
         amountAllocated,
-        amountAfter: amountBefore - amountAllocated,
+        // R2: amountBefore/amountAllocated çağıranda zaten cent-exact (fromCents) —
+        // burada da cents üzerinde çıkarma yapılır (iki temiz number'ın float
+        // subtraction'ı yine dust üretebilir), component balance deterministik kalır.
+        amountAfter: fromCents(toCents(amountBefore) - toCents(amountAllocated)),
       }],
       remainingPayment: 0, // Will be calculated at the end
       newPrincipal,
