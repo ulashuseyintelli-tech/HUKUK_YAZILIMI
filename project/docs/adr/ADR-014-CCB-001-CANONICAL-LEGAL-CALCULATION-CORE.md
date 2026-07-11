@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; implementation gated by PR sequence
+**Status:** Accepted as binding direction; Wave 0 and PR-1A/PR-1B closed; next eligible technical slice is PR-2 under the mandatory PR sequence
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -221,15 +221,17 @@ PR-14 Legacy quarantine/deletion
 
 No PR may implement work from a later PR.
 
-## Split-PR Plan Status (2026-07-10)
+**Execution-order clarification (owner decision, 2026-07-11):** This numbered order is the canonical merge, governance-closure, and downstream-eligibility order. Independent workstreams may be analyzed, prepared, or developed on branches in parallel, but parallel preparation does not authorize an out-of-order canonical merge, governance closure, or downstream eligibility claim.
 
-The completed ADR-014 split-plan analysis records this binding execution posture:
+## Split-PR Plan Status (post-PR-1B, 2026-07-11)
+
+The direct-rescue disposition remains binding:
 
 ```text
 DIRECT_RESCUE_MERGE_NO_GO / RESCUE_SOURCE_ONLY
 ```
 
-Verified analysis inputs:
+Historical analysis inputs, preserved for traceability:
 
 - Current main at analysis: `1f913d624e2cd014c6375aa7e0e0cfd8726726d3`.
 - Rescue branch: `codex/ccb-001-pr1-pr6-rescue @ 961bbaf38d3ab1a7c7a691fbd56880ca3f6ffcc8`.
@@ -237,31 +239,30 @@ Verified analysis inputs:
 - Rescue branch diff at analysis: 72 files, +6623 / -1138.
 - Merge-tree content conflicts were present in governance/support files; semantic drift was high in calculation, report, template, and UI authority surfaces.
 
-The rescue branch is **not** a merge branch. It may only be used as a reference source for controlled cherry-pick, rewrite, or split PR preparation. No rescue-branch runtime hunk is approved by this document.
+The rescue branch is **not** a merge branch. It may only be used as a reference source for controlled rewrite or split-PR preparation. No rescue-branch runtime hunk is approved by this document.
 
-First safe work:
+Canonical completion state:
 
 ```text
-ADR-014 SPLIT-PLAN DOCS-ONLY
+Wave 0 (W0.1/W0.2/W0.3) → CLOSED / CANONICAL
+REVERSAL method             → RESOLVED / CONDITIONAL OPTION B
+PR-1A                       → CLOSED / CHARACTERIZATION CANONICAL
+PR-1B                       → CLOSED / IMPLEMENTATION CANONICAL
+Runtime cutover             → NOT AUTHORIZED
+Next technical slice        → PR-2 NO_BUCKETS fail-closed
 ```
 
-First code work remains blocked until:
+PR-1B canonical behavior is limited to valid linked full reversals: matching `PAYMENT + REVERSAL` has net-zero legal effect, ledger provenance is preserved, malformed reversal remains fail-closed, and the real `CollectionService.create()` → `cancel()` → `CaseBalance` disposable-DB gate passed. Partial reversal/refund support, inferred matching, historical repair/backfill, and runtime authority promotion were not authorized.
 
-1. REVERSAL production method owner decision is recorded.
-2. Scenario infrastructure prerequisites are implemented under separate authorization.
-3. PR-1A..PR-9 gates are revalidated against current main.
-4. Required DB-gated disposable Postgres validation passes for affected gates.
+Remaining owner decisions and later gates:
 
-PR-10..PR-14 are explicitly later-stage only. They cannot start until PR-1A..PR-9 have passed and the owner grants a separate cutover implementation GO.
+- Duplicate TBK100 implementation disposition; PR-3h must not silently unify competing allocators.
+- PR-7 projection-producer boundary with ADR-013; ADR-014 owns projection plumbing, while fee/harç policy remains ADR-013.
+- Official snapshot persistence, hash, and lifecycle remain ADR-013 owner decisions; ADR-014 PR-8a/8b remain non-official diagnostic/trace work unless separately authorized.
+- Legal signoff refresh policy, monitoring, rollback, bake, and post-cutover acceptance metrics.
+- Separate owner gates for PR-11, PR-12, and PR-14.
 
-Owner decisions still open:
-
-- REVERSAL production method: real `cancel()` production-fidelity path vs deterministic materializer direct-write.
-- Duplicate TBK100 implementation disposition.
-- PR-7 Fee Projection boundary with ADR-013.
-- Legal signoff refresh policy after split/rewrite away from rescue tip `961bbaf3`.
-
-DB-gated validation is required before runtime authority switch for reversal, NO_BUCKETS, partial-payment interest-base mutation, enforcement-date split, FX/currency behavior, trace/snapshot blockers, golden fixture parity, canonical primary adapter, and UI/API/report/template switch.
+The post-PR-1B dependency chain is maintained in `docs/design/adr-014-split-pr-plan.md` v2.0. Cutover authorization, PR-11 stability verification, PR-12 bake verification, post-cutover verification, and final ADR closure remain `UNASSIGNED` until the owner assigns canonical IDs. DB-gated validation remains mandatory for each affected downstream gate.
 
 ## PR Work Protocol
 
@@ -432,3 +433,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-10 | 1.1 (superseded same day) | Briefly created on `main` as `ADR-013-CANONICAL-LEGAL-CALCULATION-CORE.md` (PR #1019, Option C): `ADR-013`'s reserved scope was broadened to mean this document, with Fee Projection/Snapshot/Journal/tariff-classification framed as sub-components. No substantive rule/invariant/PR-sequence content changed from v1.0. |
 | 2026-07-10 | 1.2 | Owner arbitration superseded v1.1 the same day: this document is renumbered to **`ADR-014`**; `ADR-013` reverts to its original `GOV-ADR-NAMING-000` scope (Fee/Harç/Snapshot/Journal architecture, a separate document). Rationale: the two architectures are separate decision spaces; existing ADRs are narrow/single-purpose by precedent; two independent ADRs keep future changes and cross-references tractable. No substantive rule/invariant/PR-sequence content changed from v1.0 — only the title, number, and framing paragraphs changed across v1.1 and v1.2. CCB-001 branch implementation itself remains unmerged; this file establishes the architecture record on `main` independent of that merge. |
 | 2026-07-10 | 1.3 | Split-plan status added: direct merge of `codex/ccb-001-pr1-pr6-rescue @ 961bbaf3` is **NO-GO**; the branch is rescue/evidence source only. Runtime cutover remains blocked until scenario infrastructure, REVERSAL owner decision, PR-1A..PR-9 revalidation, and DB-gated validation close. Also updates stale ADR-013 wording now that ADR-013 exists as draft owner-review ADR. |
+| 2026-07-11 | 1.4 | Post-PR-1B governance reconciliation: W0.1/W0.2/W0.3, Conditional Option B, PR-1A, and PR-1B are recorded CLOSED/CANONICAL; PR-2 is the next unresolved technical slice. Owner clarified that parallel work is preparation/branch parallelism only, while canonical merge, governance closure, and downstream eligibility follow the mandatory order. Runtime cutover remains not authorized. |
