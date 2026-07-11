@@ -1,12 +1,12 @@
 # ADR-014 Split-PR Baseline Execution Plan
 
-**Status:** APPROVED / POST-PR-1B BASELINE EXECUTION PLAN v2.0
+**Status:** APPROVED / POST-PR-2 BASELINE EXECUTION PLAN v2.1
 **Date:** 2026-07-10
 **Last Reconciled:** 2026-07-11
 **Owner:** Ulaş
 **Related:** `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`, `product-backlog.md` (`ID: ADR-014-SCENARIO-INFRA`, `ID: ADR-014-SPLIT-PR-PLAN`, `ID: CCB-001`), `decision-log.md` (2026-07-10)
 
-> **Revizyon geçmişi:** v1 (2026-07-10, PR #1032) — ilk baseline. **v1.1 (2026-07-10)** — REVERSAL owner arbitration (CONDITIONAL OPTION B) sonrası: §11 REVERSAL çözüldü, §0 terminolojisi ve PR-1B acceptance gate güncellendi (gerçek `CollectionService.cancel()` DB integration eklendi). **v1.2 (2026-07-10)** — W0.2 iskele owner arbitration (Hard Stop → RESOLVED BY OWNER DECISION): iskele katmanı (Tenant/Client/Debtor/Case/CaseDebtor) materializer içinde **Prisma-direct** kurulur; G1–G6 acceptance gate'leri bağlayıcı (bkz. §3 W0.2 İskele Revizyonu). Ground-truth: `CaseService` 10-bağımlılıklı/elle kurulamaz, gerçek servisler Conditional-B'nin kaçındığı yan-etkileri (event/outbox/audit) getirir, repo'nun yerleşik DB-gated emsali iskeleyi zaten Prisma-direct kurar. Conditional Option B'nin diğer TÜM şartları, ClaimItem/Ledger direct-write, `Scenario → Materializer → DB` yönü ve `Materializer PASS ≠ CollectionService.cancel() PASS` guardrail'i DEĞİŞMEDİ. **v2.0 (2026-07-11)** — post-PR-1B reconciliation: W0.1/W0.2/W0.3, PR-1A ve PR-1B CLOSED/CANONICAL; PR-2 ilk unresolved technical slice; canonical merge/closure sırası mandatory, paralellik yalnız analiz/hazırlık/branch geliştirmesidir; post-cutover gate'ler owner atayana kadar UNASSIGNED.
+> **Revizyon geçmişi:** v1 (2026-07-10, PR #1032) — ilk baseline. **v1.1 (2026-07-10)** — REVERSAL owner arbitration (CONDITIONAL OPTION B) sonrası: §11 REVERSAL çözüldü, §0 terminolojisi ve PR-1B acceptance gate güncellendi (gerçek `CollectionService.cancel()` DB integration eklendi). **v1.2 (2026-07-10)** — W0.2 iskele owner arbitration (Hard Stop → RESOLVED BY OWNER DECISION): iskele katmanı (Tenant/Client/Debtor/Case/CaseDebtor) materializer içinde **Prisma-direct** kurulur; G1–G6 acceptance gate'leri bağlayıcı (bkz. §3 W0.2 İskele Revizyonu). Ground-truth: `CaseService` 10-bağımlılıklı/elle kurulamaz, gerçek servisler Conditional-B'nin kaçındığı yan-etkileri (event/outbox/audit) getirir, repo'nun yerleşik DB-gated emsali iskeleyi zaten Prisma-direct kurar. Conditional Option B'nin diğer TÜM şartları, ClaimItem/Ledger direct-write, `Scenario → Materializer → DB` yönü ve `Materializer PASS ≠ CollectionService.cancel() PASS` guardrail'i DEĞİŞMEDİ. **v2.0 (2026-07-11)** — post-PR-1B reconciliation: W0.1/W0.2/W0.3, PR-1A ve PR-1B CLOSED/CANONICAL; PR-2 ilk unresolved technical slice; canonical merge/closure sırası mandatory, paralellik yalnız analiz/hazırlık/branch geliştirmesidir; post-cutover gate'ler owner atayana kadar UNASSIGNED. **v2.1 (2026-07-11)** — PR-2 technical + governance closure: `NO_BUCKETS` fatal/display/evidence fail-closed davranışı canonical; PR-3h sonraki eligible slice; runtime cutover yine NOT AUTHORIZED.
 
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
@@ -25,8 +25,8 @@
 - REVERSAL = RESOLVED / CONDITIONAL OPTION B (bkz. §11). Wave 0 materializer direct-write
   (yalnız test/disposable DB); gerçek `CollectionService.cancel()` write-path'i AYRI
   DB-gated integration test'iyle doğrulanır. Materializer PASS ≠ production cancel path PASS.
-- POST-PR-1B: W0.1/W0.2/W0.3, PR-1A ve PR-1B CLOSED / CANONICAL.
-  İlk unresolved technical slice PR-2 NO_BUCKETS fail-closed'dur.
+- POST-PR-2: W0.1/W0.2/W0.3, PR-1A, PR-1B ve PR-2 CLOSED / CANONICAL.
+  İlk unresolved technical slice PR-3h TBK100 cent-allocation hardening'dir.
 - MANDATORY ORDER = canonical merge + governance closure + downstream eligibility sırası.
   PARALEL OK = yalnız analiz, hazırlık ve bağımsız branch geliştirmesi; out-of-order merge/closure değildir.
 ```
@@ -263,25 +263,26 @@ lifecycle/notification/audit yan-etkilerine bağlanır ve minimal-infra kararın
 
 ---
 
-## 12. Post-PR-1B Status and Mandatory Dependency Chain
+## 12. Post-PR-2 Status and Mandatory Dependency Chain
 
 ```text
 Wave 0                         CLOSED / CANONICAL
 PR-1A                          CLOSED / CHARACTERIZATION CANONICAL
 PR-1B                          CLOSED / IMPLEMENTATION CANONICAL
+PR-2                           CLOSED / NO_BUCKETS FAIL-CLOSED CANONICAL
 Calculation completeness       PARTIAL / NOT COMPLETE
 Technical readiness            NOT READY
-Governance readiness           RECONCILED BY v2.0; downstream closures still required
+Governance readiness           RECONCILED BY v2.1; downstream closures still required
 Production readiness           NOT READY
 Runtime-cutover readiness      NOT READY
 Runtime-cutover authorization  NOT AUTHORIZED
-Next technical slice           PR-2 NO_BUCKETS fail-closed
+Next technical slice           PR-3h TBK100 cent-allocation hardening
 ```
 
 | Sequence | Workstream | Prerequisite | Scope / hard stop | Required evidence | Owner gate | Closure dependency / next |
 |---:|---|---|---|---|---|---|
-| 1 | PR-2 | v2.0 governance reconciliation CLOSED | `NO_BUCKETS` fail-closed + display/evidence propagation; writer/schema/backfill forbidden | Scenario F, disposable DB, CI 4/4 | No new semantic decision | Technical PR + separate register closure → PR-3h |
-| 2 | PR-3h | PR-2 technical + governance closure | Cent normalization, negative-payment guard, reporting order; allocator unification forbidden | Scenario D, dust/negative tests, CI 4/4 | Duplicate-TBK100 disposition remains owner-held | Technical PR + register closure → PR-4 |
+| 1 | PR-2 | v2.0 governance reconciliation CLOSED | `NO_BUCKETS` fail-closed + display/evidence propagation; writer/schema/backfill forbidden | Scenario F, disposable DB, CI 4/4 | No new semantic decision | **CLOSED / CANONICAL** — PR #1104 + separate register closure; PR-3h eligible |
+| 2 | PR-3h | PR-2 technical + governance closure (**SATISFIED**) | Cent normalization, negative-payment guard, reporting order; allocator unification forbidden | Scenario D, dust/negative tests, CI 4/4 | Duplicate-TBK100 disposition remains owner-held | Technical PR + register closure → PR-4 |
 | 3 | PR-4 | PR-3h closure | Future interest-base mutation only by principal-allocated amount | B/C multi-period DB + shadow evidence | No | Technical PR + register closure → PR-5 |
 | 4 | PR-5 | PR-4 closure | Enforcement-date pre/post-interest interaction | Scenario J DB evidence | No | Technical PR + register closure → PR-6 |
 | 5 | PR-6 | PR-5 closure | FX policy, missing-FX fail-closed, FX-success; new FX authority/schema is a hard stop | G/H/M + FX-success DB evidence | New authority requires owner decision | Technical PR + Wave 1 closure → PR-7 |
