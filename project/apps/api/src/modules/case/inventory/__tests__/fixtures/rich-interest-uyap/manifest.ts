@@ -236,6 +236,9 @@ entries.push(
   fixture(id++, 'variable rich code with stray fixed rate', { rich: 'LEGAL_3095', interestRate: 12 }),
   fixture(id++, 'fixed NaN classifier-only', { rich: 'COMMERCIAL_FIXED', tier: 'CLASSIFIER_ONLY', classifierOnlyRate: Number.NaN }),
   fixture(id++, 'fixed Infinity classifier-only', { rich: 'CONTRACTUAL', tier: 'CLASSIFIER_ONLY', classifierOnlyRate: Number.POSITIVE_INFINITY }),
+  fixture(id++, 'FAIZT-only legacy Due projection', {
+    rich: null, legacy: null, dueLegacy: 'YASAL', caseLegacy: 'YASAL',
+  }),
 );
 
 export const RICH_INTEREST_FIXTURE_MANIFEST = entries satisfies readonly RichInterestFixtureManifestEntry[];
