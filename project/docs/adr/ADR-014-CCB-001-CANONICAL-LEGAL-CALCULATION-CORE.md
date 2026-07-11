@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6 closed; next eligible technical slice is PR-7 under the mandatory PR sequence
+**Status:** Accepted as binding direction; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7 closed; next eligible technical slice is PR-8a under the mandatory PR sequence
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -254,7 +254,7 @@ PR-4                        → CLOSED / PARTIAL-PAYMENT INTEREST-BASE CANONICAL
 PR-5                        → CLOSED / ENFORCEMENT-DATE PRE/POST INTEREST CANONICAL
 PR-6                        → CLOSED / CURRENCY-ISOLATION FAIL-CLOSED CANONICAL
 Runtime cutover             → NOT AUTHORIZED
-Next technical slice        → PR-7 Fee Projection Layer
+Next technical slice        → PR-8a Snapshot blocker/authority consistency hardening
 ```
 
 PR-1B canonical behavior is limited to valid linked full reversals: matching `PAYMENT + REVERSAL` has net-zero legal effect, ledger provenance is preserved, malformed reversal remains fail-closed, and the real `CollectionService.create()` → `cancel()` → `CaseBalance` disposable-DB gate passed. Partial reversal/refund support, inferred matching, historical repair/backfill, and runtime authority promotion were not authorized.
@@ -277,7 +277,7 @@ Remaining owner decisions and later gates:
 - Legal signoff refresh policy, monitoring, rollback, bake, and post-cutover acceptance metrics.
 - Separate owner gates for PR-11, PR-12, and PR-14.
 
-The post-PR-6 dependency chain is maintained in `docs/design/adr-014-split-pr-plan.md` v2.5. Cutover authorization, PR-11 stability verification, PR-12 bake verification, post-cutover verification, and final ADR closure remain `UNASSIGNED` until the owner assigns canonical IDs. DB-gated validation remains mandatory for each affected downstream gate.
+The post-PR-7 dependency chain is maintained in `docs/design/adr-014-split-pr-plan.md` v2.6. Cutover authorization, PR-11 stability verification, PR-12 bake verification, post-cutover verification, and final ADR closure remain `UNASSIGNED` until the owner assigns canonical IDs. DB-gated validation remains mandatory for each affected downstream gate.
 
 ## PR Work Protocol
 
@@ -454,3 +454,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-11 | 1.7 | PR-4 governance closure: payment-aware sequential accrual reduces the future interest base only by actual principal allocation via PR #1109 / squash `77a4ca353cbbc7687deb44d9eb794a3df511967c`. Cost/ancillary/interest-only payment leaves principal unchanged; cent and same-day policy remain canonical. PR-5 becomes next eligible only after this separate register closure; runtime cutover remains not authorized. |
 | 2026-07-11 | 1.8 | PR-5 governance closure: tenant-scoped `Case.caseDate` now drives existing PRE/POST enforcement classification; variable and fixed-rate periods split at the enforcement boundary and minor-unit phase totals reconcile exactly via PR #1113 / squash `6df5560bbab79a1314c41aadd412b6497d1f23af`. PR-4 principal-only future-base mutation and prior fail-closed behavior remain canonical. PR-6 becomes next eligible only after this separate register closure; runtime cutover remains not authorized. |
 | 2026-07-11 | 1.9 | PR-6 governance closure: exact canonical currency validation and per-currency CaseBalance isolation are canonical via PR #1118 / squash `371a6552717f6bc01ba4084450e45b5a4986cb1e`. Missing/unsupported and payment/reversal mismatch currency evidence is fail-closed; no conversion, new FX/rate authority, schema, or runtime cutover was introduced. PR-7 becomes next eligible only after this separate register closure. |
+| 2026-07-11 | 2.0 | PR-7 governance closure: persisted tenant/case-scoped ClaimItem projection evidence is carried through a typed per-currency fee projection DTO via PR #1120 / squash `a3bfb26b719fe9dbf7cd9f197305ed7709867b5e`. Missing, invalid, unsupported, mismatched or legal-balance-blocked projection data returns deterministic `NOT_CALCULATED`/`UNAVAILABLE` evidence and never a zero fallback. Cross-currency totals/conversion, fee/harç formula or policy, new financial authority, official persistence, consumer promotion and runtime cutover were not introduced. PR-8a becomes next eligible only after this separate register closure. |
