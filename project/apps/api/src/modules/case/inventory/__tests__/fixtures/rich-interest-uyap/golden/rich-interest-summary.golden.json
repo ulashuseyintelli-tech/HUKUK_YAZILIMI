@@ -1,8 +1,8 @@
 {
   "fixtureVersion": "PR-A4-2-v1",
-  "persistedFixtureCount": 35,
+  "persistedFixtureCount": 36,
   "classifierOnlyFixtureCount": 2,
-  "inventoryProcessedRecordCount": 35,
+  "inventoryProcessedRecordCount": 36,
   "inventoryPageSize": 7,
   "richCodeCoverage": {
     "LEGAL_3095": 2,
@@ -22,7 +22,7 @@
     "FIXED_RATE_MISSING": 1,
     "FIXED_RATE_VALID": 2,
     "LEGACY_ONLY": 4,
-    "NO_CLAIMITEM_INTEREST_AUTHORITY": 1,
+    "NO_CLAIMITEM_INTEREST_AUTHORITY": 2,
     "NO_INTEREST_AUDIT_INCOMPLETE": 1,
     "NO_INTEREST_AUTHORITY": 3,
     "NO_INTEREST_CONFLICT": 1,
@@ -43,6 +43,7 @@
     "UYAP_MAPPING_MISSING": 29,
     "UYAP_NO_INTEREST": 3,
     "UYAP_READY_EXACT": 2,
+    "UYAP_READY_ONLY_IN_FAIZT_EXPORTER": 1,
     "UYAP_READY_ONLY_IN_NUMERIC_EXPORTER": 2,
     "UYAP_SILENT_FALLBACK_RISK": 2
   },
@@ -54,7 +55,7 @@
   },
   "calculationOutcomeCoverage": {
     "BLOCKED": 6,
-    "BUCKET_CREATED": 28,
+    "BUCKET_CREATED": 29,
     "NO_BUCKET": 3
   },
   "evidenceBoundary": {

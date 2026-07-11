@@ -84,6 +84,15 @@ describe('PR-A4-2 canonical fixture manifest', () => {
     }
   });
 
+  it('exporter comparison coverage tüm zorunlu parity dallarını içerir', () => {
+    const relations = new Set(RICH_INTEREST_FIXTURE_MANIFEST.map(
+      (entry) => entry.expectedExporterComparison.relation,
+    ));
+    expect(relations).toEqual(new Set([
+      'EQUIVALENT', 'CONFLICT', 'NUMERIC_ONLY', 'FAIZT_ONLY', 'MISSING', 'SILENT_FALLBACK_RISK',
+    ]));
+  });
+
   it('classifier-only NaN/Infinity expected manifest sonucuyla birebir eşleşir', () => {
     for (const entry of CLASSIFIER_ONLY_FIXTURES) {
       const finding = classifyRichInterestUyapReadiness(inventoryRow(entry));

@@ -159,8 +159,8 @@ jobs:
             2>&1 | tee "$output_file"
           grep -Eq "Test Suites:[[:space:]]+2 passed, 2 total" "$output_file" || \
             { echo "BLOCKED: PR-A4-2 suites did not execute exactly twice"; exit 1; }
-          grep -Eq "Tests:[[:space:]]+47 passed, 47 total" "$output_file" || \
-            { echo "BLOCKED: PR-A4-2 tests did not execute 47/47"; exit 1; }
+          grep -Eq "Tests:[[:space:]]+49 passed, 49 total" "$output_file" || \
+            { echo "BLOCKED: PR-A4-2 tests did not execute 49/49"; exit 1; }
         working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
