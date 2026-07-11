@@ -1,6 +1,6 @@
 # ADR-014 Split-PR Baseline Execution Plan
 
-**Status:** APPROVED / POST-PR-8b BASELINE EXECUTION PLAN v2.8
+**Status:** APPROVED / POST-PR-9 BASELINE EXECUTION PLAN v2.9
 **Date:** 2026-07-10
 **Last Reconciled:** 2026-07-11
 **Owner:** Ulaş
@@ -11,6 +11,8 @@
 > **v2.7 (2026-07-11):** PR-8a technical + governance closure: beş canonical blocker sınıfı deterministic sırada typed readiness evidence olarak taşınır; blocker varsa display/authority/readiness fail-closed, blocker yoksa existing `SHADOW_ONLY` korunurken official snapshot yokluğu `UNSAFE / snapshotAvailable=false` kalır. Persistence/hash/lifecycle/trace/schema ve authority promotion eklenmedi; PR-8b sonraki eligible slice; runtime cutover NOT AUTHORIZED.
 
 > **v2.8 (2026-07-11):** PR-8b technical + governance closure: canonical allocation/interest evidence deterministic explainability trace'e ve ephemeral non-official snapshot DTO'suna additive olarak taşınır. Her iki DTO `authority=NONE / persisted=false`; official snapshot availability, readiness blockers, legal totals ve display authority değişmez. Persistence/hash/lifecycle/schema, writer, consumer switch ve yeni authority eklenmedi; PR-9 sonraki eligible slice; runtime cutover NOT AUTHORIZED.
+
+> **v2.9 (2026-07-11):** PR-9 technical + governance closure: mevcut Wave 0 `ScenarioDefinition` tek scenario/expected contract olarak 12 canonical vakayı unit ve disposable-PostgreSQL twin-run'da besler. Cent-normalized exact equality, expected matching, repeatability, blocker 5/5 ve tenant isolation kanıtlandı. Runtime hesaplama, writer, schema/migration, API/UI, official snapshot ve authority değişmedi; PR-10 sonraki eligible slice; runtime cutover NOT AUTHORIZED.
 
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
@@ -29,8 +31,8 @@
 - REVERSAL = RESOLVED / CONDITIONAL OPTION B (bkz. §11). Wave 0 materializer direct-write
   (yalnız test/disposable DB); gerçek `CollectionService.cancel()` write-path'i AYRI
   DB-gated integration test'iyle doğrulanır. Materializer PASS ≠ production cancel path PASS.
-- POST-PR-8b: W0.1/W0.2/W0.3, PR-1A, PR-1B, PR-2, PR-3h, PR-4, PR-5, PR-6, PR-7, PR-8a ve PR-8b CLOSED / CANONICAL.
-  İlk unresolved technical slice PR-9 Golden Fixture Matrix'tir.
+- POST-PR-9: W0.1/W0.2/W0.3, PR-1A, PR-1B, PR-2, PR-3h, PR-4, PR-5, PR-6, PR-7, PR-8a, PR-8b ve PR-9 CLOSED / CANONICAL.
+  İlk unresolved technical slice PR-10 Canonical primary adapter'dır.
 - MANDATORY ORDER = canonical merge + governance closure + downstream eligibility sırası.
   PARALEL OK = yalnız analiz, hazırlık ve bağımsız branch geliştirmesi; out-of-order merge/closure değildir.
 ```
@@ -53,7 +55,7 @@
            PR-10 → PR-11 → PR-12 → PR-13 → PR-14
 ```
 
-**Kritik yol:** `W0 → PR-4 → PR-5 → PR-8a → PR-8b → PR-10 → PR-11 → PR-12 → PR-13 → PR-14`.
+**Kritik yol:** `W0 → PR-4 → PR-5 → PR-8a → PR-8b → PR-9 → PR-10 → PR-11 → PR-12 → PR-13 → PR-14`.
 
 ---
 
@@ -209,6 +211,7 @@ DB-gated ek:   PR-1B/2/3h/4/5/6/8a/8b/9/10/11/12 — W0 üzerinden expected-vs-a
 ADR-014 ✓ (bu plan çözüyor):   PR-1A/1B, PR-2, PR-3h, PR-4, PR-5, PR-6 (core hardening)
 ADR-014 ✗ (bu plan içinde FIX): PR-8a blocker 5/5 + authority/snapshot tutarlılık CLOSED ·
                                 PR-8b non-official trace/snapshot layer CLOSED ·
+                                PR-9 golden fixture matrix CLOSED ·
                                 PR-10 hardcoded-0 display · DB-gated verification gap
 → ADR-013 (bu plan DIŞI):       TAHSIL_HARCI fee policy · hardcoded-0 fee CALC yarısı ·
                                 snapshot/journal PERSISTENCE
@@ -268,7 +271,7 @@ lifecycle/notification/audit yan-etkilerine bağlanır ve minimal-infra kararın
 
 ---
 
-## 12. Post-PR-8b Status and Mandatory Dependency Chain
+## 12. Post-PR-9 Status and Mandatory Dependency Chain
 
 ```text
 Wave 0                         CLOSED / CANONICAL
@@ -282,13 +285,14 @@ PR-6                           CLOSED / CURRENCY-ISOLATION FAIL-CLOSED CANONICAL
 PR-7                           CLOSED / FEE-PROJECTION PLUMBING FAIL-CLOSED CANONICAL
 PR-8a                          CLOSED / SNAPSHOT-READINESS CONSISTENCY CANONICAL
 PR-8b                          CLOSED / NON-OFFICIAL EXPLAINABILITY TRACE CANONICAL
+PR-9                           CLOSED / GOLDEN FIXTURE MATRIX CANONICAL
 Calculation completeness       PARTIAL / NOT COMPLETE
 Technical readiness            NOT READY
-Governance readiness           RECONCILED BY v2.8; downstream closures still required
+Governance readiness           RECONCILED BY v2.9; downstream closures still required
 Production readiness           NOT READY
 Runtime-cutover readiness      NOT READY
 Runtime-cutover authorization  NOT AUTHORIZED
-Next technical slice           PR-9 Golden Fixture Matrix
+Next technical slice           PR-10 Canonical primary adapter
 ```
 
 | Sequence | Workstream | Prerequisite | Scope / hard stop | Required evidence | Owner gate | Closure dependency / next |
@@ -301,8 +305,8 @@ Next technical slice           PR-9 Golden Fixture Matrix
 | 6 | PR-7 | PR-6 technical + governance closure / Wave 1 core hardening closure (**SATISFIED**) | Persisted ClaimItem projection plumbing + per-currency fail-closed DTO only; fee/harç formula/policy forbidden | DTO/orchestration + DB evidence + ADR-013 deferral proof | Producer/policy boundary owner-held | **CLOSED / CANONICAL** — PR #1120 + separate register closure; PR-8a eligible |
 | 7 | PR-8a | PR-7 closure (**SATISFIED**) | Read-only blocker coverage 5/5 + authority/snapshot/display/evidence signal consistency; persistence forbidden | Unit/display/evidence + real DB diagnostic/materializer/cancel gates + CI 4/4 | Official persistence excluded | **CLOSED / CANONICAL** — PR #1125 + separate register closure; PR-8b eligible |
 | 8 | PR-8b | PR-8a technical + governance closure (**SATISFIED**) | Trace/AllocationLog/non-official snapshot layer; schema/official persistence hard stop | Explainability + cleanup evidence | Official snapshot remains ADR-013 owner gate | **CLOSED / CANONICAL** — PR #1128 + separate register closure; PR-9 eligible |
-| 9 | PR-9 | PR-8b technical + governance closure (**SATISFIED**) | Twelve scenarios through the W0 contract; no second scenario format | Unit==DB twin-run, FX-success, CI 4/4 | No | Verification PR + register closure → PR-10 |
-| 10 | PR-10 | PR-9 closure | Canonical compatibility adapter; fee fields remain “hesaplanmadı”; no consumer switch | Adapter==engine + shadow diff | No | Technical PR + register closure → cutover authorization |
+| 9 | PR-9 | PR-8b technical + governance closure (**SATISFIED**) | Twelve scenarios through the W0 contract; no second scenario format | Unit==DB twin-run, currency isolation/mismatch, repeatability, CI 4/4 | No | **CLOSED / CANONICAL** — PR #1132 + separate register closure; PR-10 eligible |
+| 10 | PR-10 | PR-9 technical + governance closure (**SATISFIED**) | Canonical compatibility adapter; fee fields remain “hesaplanmadı”; no consumer switch | Adapter==engine + shadow diff | No | Technical PR + register closure → cutover authorization |
 | 11 | `UNASSIGNED` cutover authorization | PR-10 closure | Rollback, monitoring, audit, signoff and acceptance policy | Governance decision record | Required | Governance PR → PR-11 |
 | 12 | PR-11 | Owner cutover authorization | UI/API/report/template canonical consumer switch | I-10 integration, production smoke, kill-switch | Required | Cutover PR + register closure → PR-11 stability |
 | 13 | `UNASSIGNED` PR-11 stability | PR-11 closure | Live smoke, discrepancy monitoring, rollback drill | Accepted stability evidence | Acceptance metrics owner-held | Verification/closure PR → PR-12 |
