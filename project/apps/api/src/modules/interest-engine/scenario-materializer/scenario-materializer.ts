@@ -52,12 +52,14 @@ const WRITE_PATH_NOTE =
   'timeline/outbox/journal/audit uretilmedi ve gercek tahsilat-iptal ' +
   'production write-path bu kurulumla dogrulanmis sayilmaz (PR-1B ayri gate).';
 
-const DOMAIN_TO_PRISMA_INTEREST: Record<string, 'YASAL' | 'TICARI'> = {
+const DOMAIN_TO_PRISMA_INTEREST: Record<string, 'YASAL' | 'TICARI' | 'SABIT'> = {
   LEGAL_3095: 'YASAL',
   COMMERCIAL_AVANS_3095_2_2: 'TICARI',
+  CONTRACTUAL: 'SABIT',
+  COMMERCIAL_FIXED: 'SABIT',
 };
 
-function toPrismaInterestType(code: string): 'YASAL' | 'TICARI' {
+function toPrismaInterestType(code: string): 'YASAL' | 'TICARI' | 'SABIT' {
   const mapped = DOMAIN_TO_PRISMA_INTEREST[code];
   if (!mapped) {
     throw new Error(
@@ -65,6 +67,20 @@ function toPrismaInterestType(code: string): 'YASAL' | 'TICARI' {
     );
   }
   return mapped;
+}
+
+function projectionItemType(
+  code: string,
+  category: 'COST' | 'ANCILLARY',
+): 'FEE' | 'EXPENSE' | 'ATTORNEY_FEE' | 'CHECK_PENALTY' | 'OTHER' {
+  if (category === 'COST' && code === 'HARC') return 'FEE';
+  if (category === 'COST' && code === 'TEBLIGAT_MASRAFI') return 'EXPENSE';
+  if (code === 'VEKALET_UCRETI') return 'ATTORNEY_FEE';
+  if (code === 'CEK_TAZMINATI') return 'CHECK_PENALTY';
+  if (category === 'ANCILLARY' && code === 'DIGER') return 'OTHER';
+  throw new Error(
+    `materializeScenario: ${category} projection code '${code}' icin canonical ClaimItem ters-koprusu yok.`,
+  );
 }
 
 function entityId(def: ScenarioDefinition, kind: string, suffix?: string | number): string {
@@ -168,11 +184,47 @@ async function materializeInTransaction(
         amount: bucket.amount,
         currency: bucket.currency,
         interestType: toPrismaInterestType(bucket.interestType),
+        interestRate: bucket.fixedRate == null ? undefined : bucket.fixedRate * 100,
         interestStartDate: new Date(bucket.startDate),
         interestAccrualStatus: 'ACCRUES',
       },
     });
     claimItemIds.push(item.id);
+
+    for (const [code, amount] of Object.entries(bucket.costs ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+      if (amount == null) continue;
+      const projection = await tx.claimItem.create({
+        data: {
+          id: entityId(def, 'claim-cost', `${index}-${code}`),
+          tenantId: tenant.id,
+          caseId: caseRow.id,
+          itemType: projectionItemType(code, 'COST'),
+          originalAmount: amount,
+          demandedAmount: amount,
+          amount,
+          currency: bucket.currency,
+          interestAccrualStatus: 'NO_INTEREST',
+        },
+      });
+      claimItemIds.push(projection.id);
+    }
+    for (const [code, amount] of Object.entries(bucket.ancillaries ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+      if (amount == null) continue;
+      const projection = await tx.claimItem.create({
+        data: {
+          id: entityId(def, 'claim-ancillary', `${index}-${code}`),
+          tenantId: tenant.id,
+          caseId: caseRow.id,
+          itemType: projectionItemType(code, 'ANCILLARY'),
+          originalAmount: amount,
+          demandedAmount: amount,
+          amount,
+          currency: bucket.currency,
+          interestAccrualStatus: 'NO_INTEREST',
+        },
+      });
+      claimItemIds.push(projection.id);
+    }
   }
 
   const collectionIds: string[] = [];
@@ -293,6 +345,7 @@ export async function cleanupMaterializedScenario(
     await tx.debtor.deleteMany({ where: { tenantId: refs.tenantId } });
     await tx.client.deleteMany({ where: { tenantId: refs.tenantId } });
     await tx.rateSchedule.deleteMany({ where: { tenantId: refs.tenantId } });
+    await tx.office.deleteMany({ where: { id: refs.tenantId } });
     const tenantIds = [refs.tenantId, ...(refs.secondaryTenantId ? [refs.secondaryTenantId] : [])];
     await tx.tenant.deleteMany({ where: { id: { in: tenantIds } } });
   });

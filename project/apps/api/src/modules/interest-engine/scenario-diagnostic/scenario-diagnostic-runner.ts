@@ -81,6 +81,8 @@ export interface SyntheticDiagnosticOptions {
 
 export interface SyntheticDiagnosticRun {
   evidence: ScenarioEvidenceRecord;
+  /** PR-9 twin-run normalizasyonu icin uretim display gozlemi. */
+  display: ReturnType<typeof toCaseBalanceDisplay>;
   /** Cleanup ÇAĞIRANIN sorumluluğunda: cleanupMaterializedScenario(prisma, refs). */
   refs: MaterializedScenarioRefs;
 }
@@ -182,6 +184,7 @@ export async function runSyntheticScenarioDiagnostic(
   }
 
   let balance: Awaited<ReturnType<CaseBalanceService['computeCaseBalance']>>;
+  let observedTenantIsolation: boolean | undefined;
   try {
     const service = buildCaseBalanceService(prisma);
     balance = await service.computeCaseBalance(
@@ -189,6 +192,16 @@ export async function runSyntheticScenarioDiagnostic(
       refs.caseId,
       def.domainInput.asOfDate,
     );
+    if (refs.secondaryTenantId) {
+      const isolated = await service.computeCaseBalance(
+        refs.secondaryTenantId,
+        refs.caseId,
+        def.domainInput.asOfDate,
+      );
+      observedTenantIsolation = isolated.currencyResults.length === 0
+        && isolated.diagnostics.fatal.length === 1
+        && isolated.diagnostics.fatal[0]?.code === 'CASE_NOT_FOUND';
+    }
   } catch (cause) {
     return cleanupFailedSyntheticRun(prisma, refs, diagnosticFailure('CALCULATION', cause));
   }
@@ -224,10 +237,11 @@ export async function runSyntheticScenarioDiagnostic(
       observedNonOfficialSnapshotPersisted: display.nonOfficialSnapshot.persisted,
       observedNonOfficialSnapshotAuthority: display.nonOfficialSnapshot.authority,
       observedSnapshotBlockerCodes: display.nonOfficialSnapshot.blockerCodes,
+      ...(observedTenantIsolation === undefined ? {} : { observedTenantIsolation }),
       expected: def.expected,
       comparison,
     };
-    return { evidence, refs };
+    return { evidence, display, refs };
   } catch (cause) {
     return cleanupFailedSyntheticRun(prisma, refs, diagnosticFailure('OBSERVATION', cause));
   }

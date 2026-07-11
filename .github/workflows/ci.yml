@@ -162,6 +162,27 @@ jobs:
           grep -Eq "Tests:[[:space:]]+49 passed, 49 total" "$output_file" || \
             { echo "BLOCKED: PR-A4-2 tests did not execute 49/49"; exit 1; }
         working-directory: project
+      # ADR-014 PR-9: the Wave 0 ScenarioDefinition is the single fixture and
+      # expected contract for both the in-memory and disposable-Postgres twins.
+      - name: ADR-014 PR-9 golden fixture matrix unit tests
+        run: |
+          cd apps/api
+          test -f src/modules/interest-engine/__tests__/golden-fixture-matrix.spec.ts || \
+            { echo "MISSING ADR-014 PR-9 unit spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="golden-fixture-matrix\.spec\.ts$"
+        working-directory: project
+      - name: ADR-014 PR-9 golden fixture matrix disposable DB twin-run
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/interest-engine/__tests__/golden-fixture-matrix.db-gated.integration.spec.ts || \
+            { echo "MISSING ADR-014 PR-9 DB twin-run spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="golden-fixture-matrix\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
       - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
