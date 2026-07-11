@@ -258,6 +258,9 @@ model Tenant {
   addressAuditLogs    AddressAuditLog[]
   addressOutboxEvents AddressOutboxEvent[]
 
+  // PR-EA-2: EnforcementAction.tenantId FK karsi iliskisi
+  enforcementActions EnforcementAction[]
+
   @@index([slug])
   @@index([accountType])
 }
@@ -1370,12 +1373,15 @@ model CaseDebtor {
   assetQueries AssetQuery[]
 
   // DBND-D5B: Collection.caseDebtorId FK karsi iliskisi
-  collections Collection[]
+  collections            Collection[]
   // DBND-D6A-2: bu CaseDebtor'ın (affected tarafı) aldığı cross-case bildirimler
   crossCaseNotifications DebtorCrossCaseNotification[]
 
   // DBND-D5C: Tebligat.caseDebtorId FK karsi iliskisi
   tebligatlar Tebligat[]
+
+  // PR-EA-2: EnforcementAction.caseDebtorId FK karsi iliskisi
+  enforcementActions EnforcementAction[]
 
   @@unique([caseId, debtorId, role])
   @@index([caseId])
@@ -2467,9 +2473,18 @@ model CaseLifecycle {
 }
 
 model EnforcementAction {
-  id              String            @id @default(cuid())
-  caseId          String
-  case            Case              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  id           String      @id @default(cuid())
+  // PR-EA-2: additive-first (nullable), bkz. docs/design/enforcement-action-tenant-case-debtor-migration.md D2/D3.
+  // Backfill ve NOT NULL hardening bu migration'ın kapsamı dışındadır (D9, ayrı PR-EA-5).
+  tenantId     String?
+  tenant       Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caseId       String
+  case         Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  // PR-EA-2: DBND-D5B/D5C (Collection/Tebligat.caseDebtorId) emsali — Restrict BILINCLI
+  // (Cascade/SetNull DEGIL); kalici nullable kalabilir (D8). Otomatik backfill YOK (ayrı PR-EA-3).
+  caseDebtorId String?
+  caseDebtor   CaseDebtor? @relation(fields: [caseDebtorId], references: [id], onDelete: Restrict)
+
   type            EnforcementType
   status          EnforcementStatus @default(PENDING)
   targetType      String?
@@ -2486,6 +2501,9 @@ model EnforcementAction {
   @@index([caseId])
   @@index([type])
   @@index([status])
+  @@index([tenantId])
+  @@index([caseDebtorId])
+  @@index([tenantId, caseId])
 }
 
 model RiskReport {
