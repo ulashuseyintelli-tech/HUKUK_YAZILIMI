@@ -23,6 +23,8 @@ Dosyalar:
 - `GOVERNANCE-INDEX.md` - yeni göreve başlayan ajan için okuma sırası ve authority haritası
   (RATIFIED; repository effect approved merge ile başlar).
 - `DEBTOR-GOVERNANCE.md` - ratifiye Debtor Domain Law (RATIFIED v1.0, 2026-07-12).
+- `RECEIVABLE-GOVERNANCE.md` - ratifiye Receivable Domain Governance ve alacak hattının
+  tek domain giriş noktası (RATIFIED v1.0; repository-canonical upon approved merge).
 - `active-roadmap.md` - aktif fazlar ve implementasyona açık işler.
 - `product-backlog.md` - yeni governance Product Backlog hedef kaydı.
 - `architecture-index.md` - kesinleşmiş mimari kararların indeksi.

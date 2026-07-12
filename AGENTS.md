@@ -59,6 +59,19 @@ Borclu hattiyla ilgili her analiz, tasarim, implementation, migration, review ve
 
 Belge hiyerarsisi ve okuma sirasi: `project/docs/governance/GOVERNANCE-INDEX.md`.
 
+## Alacak Hatti (Receivable) Zorunlu On-Kural
+
+ClaimItem, Due bridge, Collection etkisi, allocation, faiz authority'si, legal balance,
+reversal veya receivable cutover ile ilgili her analiz, tasarim, implementation,
+migration, review veya governance gorevinden once:
+
+1. `project/docs/governance/RECEIVABLE-GOVERNANCE.md` okunur.
+2. Belgenin authority matrisi, invariantlari ve goreve uygulanabilir checklist'i izlenir.
+3. Belgenin invariant veya hard-stop kurallariyla celisen bir durum tespit edilirse durulur ve raporlanir.
+4. Kanonik receivable kurallari, ratifiye edilmis governance karari olmadan override edilmez.
+
+Belge hiyerarsisi ve okuma sirasi: `project/docs/governance/GOVERNANCE-INDEX.md`.
+
 ## Raporlama
 
 - Dogrulanmis gercekler, makul varsayimlar ve riskler ayri belirtilir.

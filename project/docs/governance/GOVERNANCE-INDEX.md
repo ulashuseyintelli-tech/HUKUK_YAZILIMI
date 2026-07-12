@@ -10,6 +10,8 @@ Rol        : Yeni bir göreve başlayan ajanın hangi belgeyi hangi sırayla oku
 
 - Üst çatı: `project/docs/governance/SYSTEM-CONSTITUTION.md`
 - Ajan baseline: `AGENTS.md` (repo kökü) + `CLAUDE.md` (Claude supplement)
+- Ratifiye domain governance: `project/docs/governance/DEBTOR-GOVERNANCE.md` ve
+  `project/docs/governance/RECEIVABLE-GOVERNANCE.md`
 
 ## 1. Zorunlu okuma sırası (her yeni görev)
 
@@ -18,7 +20,9 @@ Yeni görev
 → AGENTS.md                                   (execution ve repository-safety authority)
 → SYSTEM-CONSTITUTION.md                      (system-wide semantic authority)
 → İlgili Domain Law / domain governance       (borçlu hattı: DEBTOR-GOVERNANCE.md
-                                               + Mandatory Pre-Task Checklist doldurulur)
+                                               + Mandatory Pre-Task Checklist doldurulur;
+                                               alacak hattı: RECEIVABLE-GOVERNANCE.md
+                                               + uygulanabilir checklist izlenir)
 → İlgili contract / standard                  (varsa; domain belgesinin RELATED DOCUMENTS listesinden)
 → İlgili ADR                                  (architecture-index.md → project/docs/adr/)
 → decision-log.md                             (görev alanına dokunan son kararlar)
@@ -27,8 +31,9 @@ Yeni görev
 → Implementation                              (yalnız GO yetkisi + izole worktree ile)
 ```
 
-Kural: Sıradaki bir belge görev alanıyla ilgisizse atlanabilir; domain governance belgesi ve
-Master Register kontrolü hiçbir borçlu-hattı görevinde atlanamaz.
+Kural: Sıradaki bir belge görev alanıyla ilgisizse atlanabilir; ilgili ratifiye domain
+governance belgesi ve Master Register kontrolü borçlu veya alacak hattı görevlerinde
+atlanamaz.
 
 ## 2. Belge haritası
 
@@ -38,6 +43,7 @@ Master Register kontrolü hiçbir borçlu-hattı görevinde atlanamaz.
 | `project/docs/governance/SYSTEM-CONSTITUTION.md` | system-wide semantic authority | RATIFIED — BINDING; repository-canonical upon approved merge |
 | `project/docs/governance/GOVERNANCE-INDEX.md` | okuma sırası + belge/authority haritası | RATIFIED; repository effect approved merge ile başlar |
 | `project/docs/governance/DEBTOR-GOVERNANCE.md` | ratifiye Debtor Domain Law | RATIFIED v1.0 (2026-07-12; PR #1139 MERGED) |
+| `project/docs/governance/RECEIVABLE-GOVERNANCE.md` | ratifiye Receivable Domain Governance ve tek domain giriş noktası | RATIFIED v1.0; repository-canonical upon approved merge |
 | `project/docs/adr/` + `architecture-index.md` | teknik/mimari kararlar ve gerekçeleri | KAYITLI STATÜYE GÖRE |
 | Implementation standards | code/API/test/deployment/operation conventions | BELGE STATÜSÜNE GÖRE |
 | Roadmap / Master Register | work sequencing, owner gates ve closure state | AKTİF; authority/implementation izni üretmez |
@@ -49,7 +55,7 @@ Master Register kontrolü hiçbir borçlu-hattı görevinde atlanamaz.
 | `project/docs/governance/active-roadmap.md` | aktif fazlar | AKTİF |
 | `project/docs/governance/dbind-financial-authority-decisions.md` | finansal otorite kararları | AKTİF |
 | `project/docs/analysis/debtor-master-synthesis-v2.md` | borçlu hattı kanıt/gerekçe katmanı (operasyonel değil) | KANIT — SUPERSEDED BY governance |
-| Receivable Governance / Collection Governance | gelecek domain governance belgeleri | REZERVE (henüz yazılmadı) |
+| Collection Governance | gelecek domain governance belgesi | REZERVE (henüz yazılmadı) |
 
 ## 3. Authority eksenleri
 
@@ -72,5 +78,9 @@ Bir governance kuralının gerekçesi arandığında iz şudur:
 ```text
 DEBTOR-GOVERNANCE (kural, örn. INV-07)
 → Master Synthesis (project/docs/analysis/debtor-master-synthesis-v2.md — MS/DEC, MS/ADR, MS/FND kanıtı)
+→ decision-log.md (ratifikasyon ve sonraki değişiklik kayıtları)
+
+RECEIVABLE-GOVERNANCE (kural, örn. REC-INV-001)
+→ İlgili ADR ve authority kayıtları (ADR-010, ADR-013, ADR-014 ve Master Register)
 → decision-log.md (ratifikasyon ve sonraki değişiklik kayıtları)
 ```
