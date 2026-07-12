@@ -85,7 +85,7 @@ export class AutomationService {
 
           await this.workflowEngine.processCase(caseData.id, caseData.tenantId);
 
-          const nextActionAt = await this.workflowEngine.calculateNextActionTime(caseData.id);
+          const nextActionAt = await this.workflowEngine.calculateNextActionTime(caseData.id, caseData.tenantId);
           if (nextActionAt) {
             await this.prisma.case.update({
               where: { id: caseData.id },

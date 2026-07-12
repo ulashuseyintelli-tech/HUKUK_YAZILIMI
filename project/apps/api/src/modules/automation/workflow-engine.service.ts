@@ -237,7 +237,7 @@ export class WorkflowEngine {
 
     // Aşama değişikliği
     if (rule.nextStage) {
-      await this.updateCaseStage(caseId, rule.nextStage, rule.reason);
+      await this.updateCaseStage(caseId, context.tenantId, rule.nextStage, rule.reason);
     }
 
     // İcra işlemi oluştur
@@ -264,18 +264,24 @@ export class WorkflowEngine {
     });
   }
 
-  // Dosya aşamasını güncelle
+  // Dosya aşamasını güncelle (tenant boundary: caseId yalnız verilen tenantId altında aranır,
+  // cross-tenant erişim generic NotFoundException ile reddedilir — mutation gerçekleşmez).
   async updateCaseStage(
     caseId: string,
+    tenantId: string,
     newStage: WorkflowStage,
     reason: string,
     triggerType: TriggerType = TriggerType.AUTO
   ): Promise<void> {
     // Get case data for tenant info
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       select: { tenantId: true, clientId: true },
     });
+
+    if (!caseData) {
+      throw new NotFoundException("Dosya bulunamadı");
+    }
 
     await this.prisma.$transaction([
       this.prisma.case.update({
@@ -376,10 +382,12 @@ export class WorkflowEngine {
     });
   }
 
-  // Sonraki işlem zamanını hesapla
-  async calculateNextActionTime(caseId: string): Promise<Date | null> {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+  // Sonraki işlem zamanını hesapla (tenant boundary: caseId yalnız verilen tenantId altında
+  // aranır; cross-tenant/bulunmayan Case generic NotFoundException ile reddedilir — enumeration
+  // yok, buildContext/createEnforcementAction emsali).
+  async calculateNextActionTime(caseId: string, tenantId: string): Promise<Date | null> {
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         notifications: {
           where: { status: "DELIVERED" },
@@ -389,7 +397,9 @@ export class WorkflowEngine {
       },
     });
 
-    if (!caseData) return null;
+    if (!caseData) {
+      throw new NotFoundException("Dosya bulunamadı");
+    }
 
     const lastNotification = caseData.notifications[0];
 

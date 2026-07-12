@@ -31,6 +31,15 @@ describe('AutomationController tenant guard propagation (OD-3)', () => {
 
     expect(workflowEngine.buildContext).toHaveBeenCalledWith('case1', 'tenant1');
   });
+
+  it('GET /automation/cases/:id/next-action — JWT kullanıcısının tenantId\'si calculateNextActionTime\'a aktarılır', async () => {
+    const workflowEngine: any = { calculateNextActionTime: jest.fn().mockResolvedValue(null) };
+    const controller = new AutomationController({} as any, workflowEngine);
+
+    await controller.getNextAction({ tenantId: 'tenant1' }, 'case1');
+
+    expect(workflowEngine.calculateNextActionTime).toHaveBeenCalledWith('case1', 'tenant1');
+  });
 });
 
 describe('AutomationService tenant guard propagation (OD-3)', () => {
@@ -76,6 +85,8 @@ describe('AutomationService tenant guard propagation (OD-3)', () => {
 
     expect(workflowEngine.processCase).toHaveBeenNthCalledWith(1, 'case1', 'tenantA');
     expect(workflowEngine.processCase).toHaveBeenNthCalledWith(2, 'case2', 'tenantB');
+    expect(workflowEngine.calculateNextActionTime).toHaveBeenNthCalledWith(1, 'case1', 'tenantA');
+    expect(workflowEngine.calculateNextActionTime).toHaveBeenNthCalledWith(2, 'case2', 'tenantB');
   });
 
   it('checkNotificationExpiries (cron), notification.case.tenantId\'yi aktarır', async () => {
