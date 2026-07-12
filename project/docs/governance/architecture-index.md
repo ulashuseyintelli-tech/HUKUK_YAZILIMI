@@ -21,18 +21,22 @@ Kurallar:
 | ADR-014 | CCB-001 Canonical Legal Calculation Core — legacy→canonical claim-balance clean-break cutover constitution | `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md` | LOCKED / POST-PR-10 / PR-GATED / RUNTIME CUTOVER NOT AUTHORIZED | Canonical `computeBalance`/ClaimItem+TBK100+Interest Engine hedef tek hesaplama otoritesi. W0.1/W0.2/W0.3, Conditional Option B ve PR-1A..PR-10 CLOSED/CANONICAL. PR-10 existing calculation-summary alanlarını değiştirmeden typed/additive `canonicalCompatibility` payload'ı ekler; canonical per-currency balance, typed fee status, blocker/readiness, trace ve non-official snapshot kayıpsız taşınır, parity conflict fail-closed olur. Adapter `ADDITIVE_SHADOW_ONLY`; consumer switch ve primary authority promotion yoktur. Cutover policy ile PE-01/PE-01A/PE-02 DEFINED/CLOSED; ilk eligible pre-evidence hazırlık adımı PE-03 local environment contract'tır. PR-11 ve runtime cutover NOT AUTHORIZED. Fee/harç policy/formula, new FX/conversion authority ve official persistence owner-gated; duplicate allocator disposition owner-held kalır. `ADR-013` Fee/Harç policy ve official snapshot persistence için ayrı draft/owner-review hattıdır. Rescue branch merge kaynağı değildir. Cutover-authorization governance policy (split-plan §12 seq 11 decision record) `docs/design/adr-014-cutover-authorization-policy.md` olarak DEFINED/CANONICAL'dir — PR-11 scope = Hesap Özeti UI/API switch only (UYAP CAN-CUT-01/PR-A4/PR-A5'te bağımsız gated), synthetic≠representative/live evidence. Policy §9'da 15 cutover **owner decision** DEFINED/CANONICAL; policy §10 (2026-07-12) evidence env'i **LOCAL owner/ofis, gerçek veri doğrudan, harici aktarım/masking YOK** olarak reconcile eder ve §9.1/§9.2/§9.15/§2 sanitized-copy framing'ini SUPERSEDE eder (eski metin korunur). PE-02 procedure `docs/design/adr-014-evidence-data-access-procedure.md` içinde lifecycle/access/package/ownership standardını tanımlar, access veya runtime authority vermez. Anayasal çelişki yok (numeric+opak-ID çıktı SYS-AUTH-012/EVID-005'i, read-only SYS-AUTH-011'i karşılar). Policy + decisions + procedure DEFINED PR-11'i açmaz — authorization verified local environment + measured local baseline + local representative evidence + explicit owner APPROVED ister. Ayrıntılı current plan: `docs/design/adr-014-split-pr-plan.md` v2.14. |
 | PAC-001-A | Authority Maps for ADR-013 Fee / Harç / Snapshot / Journal line | `docs/design/pac-001-a-authority-maps.md` | CLOSED / ADR-013 EVIDENCE GATE COMPLETE | Docs-only AS-IS evidence map and audit rubric merged via PR #1024 (`281befe70acbe585c2a1bb7640533e17e7c19a8d`). Official input for ADR-013 owner review; does not decide final producer ownership, approve PR sequence, start PAC-Full, fee code, Boundary Audit, Snapshot/Journal spec, or runtime behavior. |
 
-**ADR-014 post-PE-02 routing override (2026-07-12):** PE-01 zero-cent contract,
-PE-01A readiness implementation alignment and PE-02 Evidence/Data-Access Procedure are
-`CLOSED / CANONICAL`. Technical/taxonomy detail is
+**ADR-014 post-PE-03 routing override (2026-07-12):** PE-01 zero-cent contract,
+PE-01A readiness implementation alignment, PE-02 Evidence/Data-Access Procedure and
+PE-03 Local Representative Evidence-Session Environment Contract are `CLOSED / CANONICAL`.
+Technical/taxonomy detail is
 `docs/design/adr-014-zero-cent-discrepancy-monitoring-contract.md`; lifecycle, separate
 access/execution approval, local environment/dataset classification, package, roles and
-ownership procedure is `docs/design/adr-014-evidence-data-access-procedure.md`. PE-02
-created no environment, used no data and granted no access/runtime authority. This does
+ownership procedure is `docs/design/adr-014-evidence-data-access-procedure.md`; local
+physical/logical isolation, read-only/no-egress, state-machine, hard-stop and attestation
+contract is `docs/design/adr-014-local-evidence-session-environment-contract.md`. PE-03
+created no environment or dataset, used no data and granted no access/runtime authority. This does
 not change the ADR-014 row's `PR-GATED` or `RUNTIME CUTOVER NOT AUTHORIZED` status. The
-single next eligible preparation task is `ADR014-PE-03 — Representative Staging
-Environment Contract`, interpreted under the canonical local-owner/office policy as a
-logical isolated/read-only local evidence-session contract; remote/cloud staging is not
-authorized. Representative evidence, PR-11 and runtime cutover remain blocked/unauthorized.
+single next eligible preparation task is `ADR014-PE-04 — Representative Dataset Matrix
+and Sampling Manifest`; it defines metadata/sampling only and grants no data execution.
+Representative evidence, PR-11 and runtime cutover remain blocked/unauthorized.
+This routing override supersedes the ADR-014 table row's older PE-03/v2.14 next-step
+wording; calculation, authority and cutover semantics in that row remain unchanged.
 
 ## ADR Naming Collision Matrix (GOV-ADR-NAMING-000)
 

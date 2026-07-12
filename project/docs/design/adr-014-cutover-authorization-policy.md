@@ -11,7 +11,10 @@ The operational zero-cent taxonomy and monitoring child contract is
 cutover or implementation authority. The canonical evidence lifecycle, access flow,
 environment/dataset classification and package standard are defined by
 `docs/design/adr-014-evidence-data-access-procedure.md`; that procedure grants no data
-access, evidence-run, PR-11 or runtime authority.
+access, evidence-run, PR-11 or runtime authority. The local physical/logical boundary,
+read-only matrix, session states, hard stops and environment attestation are defined by
+`docs/design/adr-014-local-evidence-session-environment-contract.md`; that contract does
+not activate an environment or authorize data use.
 
 > **Authority note.** This policy defines the acceptance framework under which a
 > future cutover *could* be authorized. Writing this policy **does not** authorize
@@ -459,3 +462,18 @@ baseline or representative evidence, and does not open PR-11. The next preparati
 is `ADR014-PE-03 — Representative Staging Environment Contract`, where “staging” is the
 logical, isolated, read-only session on the owner-controlled local environment under §10;
 remote/cloud staging remains not authorized.
+
+---
+
+## 12. PE-03 local environment-contract closure (2026-07-12)
+
+`ADR014-PE-03 — Local Representative Evidence-Session Environment Contract` is defined
+in `adr-014-local-evidence-session-environment-contract.md`. It fixes the local-only
+physical boundary, minimum logical isolation model, source read-only rule, no-egress and
+secrets boundaries, deterministic session states, opening/closing gates, failure taxonomy,
+evidence-validity classes, role matrix and environment attestation.
+
+This closes contract definition only. It creates no environment, selects no dataset, reads
+or copies no case data, grants no access/execution approval and produces no representative
+evidence. The single next preparation task is `ADR014-PE-04 — Representative Dataset
+Matrix and Sampling Manifest`. PR-11 and runtime cutover remain not authorized.
