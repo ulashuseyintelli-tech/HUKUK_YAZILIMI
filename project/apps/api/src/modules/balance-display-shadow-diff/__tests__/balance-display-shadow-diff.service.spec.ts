@@ -1,4 +1,5 @@
 import { BalanceDisplayShadowDiffService, cutoverReadiness } from '../balance-display-shadow-diff.service';
+import { BalanceDisplayShadowDiffMetrics } from '../balance-display-shadow-diff.metrics';
 import {
   SHADOW_FINANCIAL_DIFF_FIELDS,
   type BalanceDisplayShadowDiffReport,
@@ -111,6 +112,7 @@ function canonicalBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalan
 function makeService(
   legacy: unknown = legacySummary(),
   canonical: CaseBalanceResult | Error = canonicalBalance(),
+  metrics?: BalanceDisplayShadowDiffMetrics,
 ) {
   const mutators = {
     createLedgerEntry: jest.fn(),
@@ -139,7 +141,7 @@ function makeService(
   } as unknown as CaseBalanceService;
 
   return {
-    service: new BalanceDisplayShadowDiffService(caseService, caseBalance),
+    service: new BalanceDisplayShadowDiffService(caseService, caseBalance, metrics),
     caseService,
     caseBalance,
     mutators,
@@ -221,6 +223,36 @@ function expectLegacyRawNotPromotedToCanonicalRows(report: BalanceDisplayShadowD
 }
 
 describe('BalanceDisplayShadowDiffService', () => {
+  it('legacy, canonical ve shadow comparison component surelerini bounded outcome ile kaydeder', async () => {
+    const metrics = {
+      recordCalculationDuration: jest.fn(),
+      recordReport: jest.fn(),
+    } as unknown as BalanceDisplayShadowDiffMetrics;
+    const { service } = makeService(legacySummary(), canonicalBalance(), metrics);
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(metrics.recordCalculationDuration).toHaveBeenCalledWith('LEGACY', 'SUCCESS', expect.any(Number));
+    expect(metrics.recordCalculationDuration).toHaveBeenCalledWith('CANONICAL', 'SUCCESS', expect.any(Number));
+    expect(metrics.recordCalculationDuration).toHaveBeenCalledWith('SHADOW_COMPARE', 'SUCCESS', expect.any(Number));
+    expect(metrics.recordCalculationDuration).toHaveBeenCalledTimes(3);
+    expect(metrics.recordReport).toHaveBeenCalledWith(report, expect.any(Number));
+  });
+
+  it('source failure outcomeunu component metricinde ERROR olarak korur', async () => {
+    const metrics = {
+      recordCalculationDuration: jest.fn(),
+      recordReport: jest.fn(),
+    } as unknown as BalanceDisplayShadowDiffMetrics;
+    const { service } = makeService(new Error('Dosya bulunamadı'), canonicalBalance(), metrics);
+
+    await service.compare('tenant-1', 'missing', '2026-06-24', GENERATED_AT);
+
+    expect(metrics.recordCalculationDuration).toHaveBeenCalledWith('LEGACY', 'ERROR', expect.any(Number));
+    expect(metrics.recordCalculationDuration).toHaveBeenCalledWith('CANONICAL', 'SUCCESS', expect.any(Number));
+    expect(metrics.recordCalculationDuration).toHaveBeenCalledWith('SHADOW_COMPARE', 'SUCCESS', expect.any(Number));
+  });
+
   it('legacy calculation-summary ile hardened balance/display DTOsunu shadow-only raporda yan yana üretir', async () => {
     const { service, caseService, caseBalance } = makeService();
 

@@ -26,7 +26,7 @@ import { BalanceDisplayShadowDiffMetrics } from './balance-display-shadow-diff.m
 
 const LEGACY_ENDPOINT = '/cases/:id/calculation-summary' as const;
 const CANONICAL_DISPLAY_ENDPOINT = '/interest-engine/case/:caseId/balance/display' as const;
-type Outcome<T> = { ok: true; value: T } | { ok: false; message: string };
+type Outcome<T> = ({ ok: true; value: T } | { ok: false; message: string }) & { durationMs: number };
 
 type LegacyCalculationSummary = Record<string, unknown> & {
   canonicalShadow?: Record<string, unknown>;
@@ -74,10 +74,15 @@ function sumNumbers(...values: Array<number | null>): number | null {
 }
 
 async function capture<T>(fn: () => Promise<T>): Promise<Outcome<T>> {
+  const startedAt = Date.now();
   try {
-    return { ok: true, value: await fn() };
+    return { ok: true, value: await fn(), durationMs: Date.now() - startedAt };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : String(error),
+      durationMs: Date.now() - startedAt,
+    };
   }
 }
 
@@ -809,6 +814,17 @@ export class BalanceDisplayShadowDiffService {
       capture(() => this.caseService.getCalculationSummary(tenantId, caseId, asOfDate) as Promise<LegacyCalculationSummary>),
       capture(() => this.caseBalance.computeCaseBalance(tenantId, caseId, asOfDate)),
     ]);
+    this.metrics?.recordCalculationDuration(
+      'LEGACY',
+      legacyOutcome.ok ? 'SUCCESS' : 'ERROR',
+      legacyOutcome.durationMs,
+    );
+    this.metrics?.recordCalculationDuration(
+      'CANONICAL',
+      balanceOutcome.ok ? 'SUCCESS' : 'ERROR',
+      balanceOutcome.durationMs,
+    );
+    const shadowCompareStartedAt = Date.now();
 
     const legacy = legacyOutcome.ok ? legacyOutcome.value : undefined;
     const balance: CaseBalanceResult | undefined = balanceOutcome.ok ? balanceOutcome.value : undefined;
@@ -898,6 +914,7 @@ export class BalanceDisplayShadowDiffService {
         blockedOverpaymentDiagnosticsAvailable: display?.provenance.blockedOverpaymentDiagnosticsUsed ?? false,
       },
     };
+    this.metrics?.recordCalculationDuration('SHADOW_COMPARE', 'SUCCESS', Date.now() - shadowCompareStartedAt);
     this.metrics?.recordReport(report, Date.now() - startedAt);
     return report;
   }

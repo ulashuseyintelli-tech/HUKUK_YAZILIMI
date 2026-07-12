@@ -4,6 +4,8 @@ import type { BalanceDisplayShadowDiffReport, ShadowAmountDiffStatus } from './b
 import { SHADOW_FINANCIAL_DIFF_FIELDS } from './balance-display-shadow-diff.types';
 
 type RequestOutcome = 'READY' | 'BLOCKED' | 'SOURCE_UNAVAILABLE';
+export type ShadowCalculationComponent = 'LEGACY' | 'CANONICAL' | 'SHADOW_COMPARE';
+export type ShadowCalculationResult = 'SUCCESS' | 'ERROR';
 type ComparisonResult = 'MATCH' | 'NON_ZERO' | 'NOT_COMPARABLE' | 'MISSING_SOURCE' | 'UNKNOWN';
 type BlockerCategory =
   | 'FINANCIAL_DISCREPANCY'
@@ -34,6 +36,7 @@ function blockerCategory(code: string): BlockerCategory {
 export class BalanceDisplayShadowDiffMetrics {
   private readonly requestsTotal: Counter;
   private readonly durationSeconds: Histogram;
+  private readonly calculationDurationSeconds: Histogram;
   private readonly comparisonsTotal: Counter;
   private readonly readinessBlockersTotal: Counter;
 
@@ -50,6 +53,12 @@ export class BalanceDisplayShadowDiffMetrics {
       labelNames: ['outcome'],
       registers: [registry],
     });
+    this.calculationDurationSeconds = new Histogram({
+      name: 'adr014_calculation_duration_seconds',
+      help: 'ADR-014 calculation component duration in seconds by bounded component/result',
+      labelNames: ['component', 'result'],
+      registers: [registry],
+    });
     this.comparisonsTotal = new Counter({
       name: 'adr014_shadow_comparisons_total',
       help: 'ADR-014 financial comparison outcomes by bounded field/result/severity',
@@ -62,6 +71,14 @@ export class BalanceDisplayShadowDiffMetrics {
       labelNames: ['blocker_category'],
       registers: [registry],
     });
+  }
+
+  recordCalculationDuration(
+    component: ShadowCalculationComponent,
+    result: ShadowCalculationResult,
+    durationMs: number,
+  ): void {
+    this.calculationDurationSeconds.observe({ component, result }, Math.max(0, durationMs) / 1000);
   }
 
   recordReport(report: BalanceDisplayShadowDiffReport, durationMs: number): void {
