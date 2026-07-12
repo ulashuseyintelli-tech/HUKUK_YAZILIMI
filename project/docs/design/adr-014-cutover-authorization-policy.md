@@ -6,6 +6,9 @@
 **Relationship:** This document is the `Governance decision record` required by
 `docs/design/adr-014-split-pr-plan.md` §12 sequence 11 (`UNASSIGNED` cutover
 authorization) and by `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`.
+The operational zero-cent taxonomy and monitoring child contract is
+`docs/design/adr-014-zero-cent-discrepancy-monitoring-contract.md`; it does not add
+cutover or implementation authority.
 
 > **Authority note.** This policy defines the acceptance framework under which a
 > future cutover *could* be authorized. Writing this policy **does not** authorize
