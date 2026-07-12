@@ -48,6 +48,34 @@ Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar ici
 - Test iddialari factual olmalidir: yalniz gercekten calistirilan komutlar ve gozlenen sonuclar raporlanir.
 - Calistirilmayan test veya kontrol icin "calistirilmadi" denir; tahmini sonuc test sonucu gibi sunulmaz.
 
+## Canonical Constitution Compliance (Mandatory)
+
+Yeni domain, ADR, design, implementation veya governance calismasina baslamadan once
+asagidaki routing ve compliance sirasi izlenir:
+
+```text
+AGENTS.md
+→ project/docs/governance/GOVERNANCE-INDEX.md
+→ project/docs/governance/SYSTEM-CONSTITUTION.md
+→ gorevle ilgili tum RATIFIED / CANONICAL domain governance belgeleri
+→ ilgili contract / implementation standard
+→ project/docs/governance/architecture-index.md → ilgili ADR
+→ canonical split plan (varsa)
+→ project/docs/governance/decision-log.md
+→ Master Register / Product Backlog
+→ pre-implementation consistency check
+→ implementation
+```
+
+- `GOVERNANCE-INDEX.md` routing/discovery katmanidir; semantic veya execution authority uretmez.
+- Cross-domain gorevlerde tek domain governance secilmez; gorevle ilgili tum ratified/canonical domain belgeleri birlikte okunur.
+- `PROPOSED`, `DRAFT` veya `OWNER REVIEW` belgeleri kendiliginden binding authority veya implementation izni uretmez.
+- Decision Log son owner kararlarini ve supersession kayitlarini tasir; daha yeni bir kayit acik amendment, ratification veya supersession olmadan System Constitution'i ya da ratifiye Domain Governance'i sessizce override edemez.
+- Implementation oncesi ilgili canonical belgeler, cross-domain kapsam, authority/invariant cakismasi ve Master Register durumu acikca dogrulanir.
+- Canonical kaynaklar arasinda normatif celiski tespit edilirse implementation durur; ajan yalniz Governance Reconciliation onerir. Bu tespit tek basina dokuman degistirme, execution, commit, merge, release veya runtime authority yetkisi olusturmaz.
+
+Asagidaki Debtor ve Receivable on-kurallari bu genel kapinin domain-specific ek sartlaridir.
+
 ## Borclu Hatti (Debtor) Zorunlu On-Kural
 
 Borclu hattiyla ilgili her analiz, tasarim, implementation, migration, review veya governance gorevinden once:
