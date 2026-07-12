@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional, Inject, forwardRef } from "@nestjs/common";
+import { Injectable, Logger, Optional, Inject, forwardRef, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   WorkflowStage,
@@ -27,6 +27,16 @@ const ACTION_TO_CPE_CODE: Record<string, ActionCode> = {
   'EVICTION_REQUEST': ActionCode.UYAP_SEND,
   'CLOSE_CASE': ActionCode.CLOSE_CASE,
 };
+
+// PR-EA-4: guarded write-path input contract. tenantId zorunlu (üst çağrı zincirinden taşınır,
+// caseId'den yeniden tahmin edilmez); caseDebtorId yalnız çağıran zaten belirli bir CaseDebtor
+// biliyorsa verilir — otomatik seçim/tahmin YASAK, verilmezse null-compatible create'e düşer.
+export interface CreateEnforcementActionInput {
+  tenantId: string;
+  caseId: string;
+  type: EnforcementType;
+  caseDebtorId?: string | null;
+}
 
 /**
  * Workflow Engine - Otomatik iş akışı motoru
@@ -105,6 +115,7 @@ export class WorkflowEngine {
 
     return {
       caseId,
+      tenantId: caseData.tenantId,
       currentStage: caseData.workflowStage,
       daysSinceLastAction,
       hasPayment: collectedAmount > 0,
@@ -230,7 +241,16 @@ export class WorkflowEngine {
 
     // İcra işlemi oluştur
     if (rule.enforcementType) {
-      await this.createEnforcementAction(caseId, rule.enforcementType);
+      // context.tenantId, buildContext() içinde caseId ile aynı Case sorgusundan gelir — burada
+      // yeniden tahmin edilmez, güvenilir üst boundary'den (RuleContext) taşınır (PR-EA-4).
+      // Bu zincirde henüz hiçbir rule/context belirli bir CaseDebtor taşımıyor (RuleContext'te
+      // debtor-kimliği alanı yok, yalnız debtorAssets flatten listesi) — caseDebtorId bilinçli
+      // olarak verilmez, guarded write-path null-compatible create'e düşer (PR-EA-4 D-otomatik-seçim-yok).
+      await this.createEnforcementAction({
+        tenantId: context.tenantId,
+        caseId,
+        type: rule.enforcementType,
+      });
     }
 
     // Otomatik işlem sayacını güncelle
@@ -299,31 +319,60 @@ export class WorkflowEngine {
     EnforcementStatus.PARTIAL,
   ];
 
-  // İcra işlemi oluştur
+  // İcra işlemi oluştur (PR-EA-4: guarded write-path — tenantId zorunlu, caseDebtorId verildiyse doğrulanır)
   async createEnforcementAction(
-    caseId: string,
-    type: EnforcementType
+    input: CreateEnforcementActionInput
   ): Promise<void> {
-    // RFA-007: status-bazlı duplicate guard (unique constraint DEĞİL — meşru tekrarı kırmaz).
-    // Açık aynı caseId+type action varsa idempotent no-op. @@unique([caseId,type]) bilinçli YOK.
-    const open = await this.prisma.enforcementAction.findFirst({
-      where: { caseId, type, status: { in: WorkflowEngine.OPEN_ENFORCEMENT_STATUSES } },
-    });
-    if (open) {
-      this.logger.log(`Açık ${type} enforcement action zaten var (case ${caseId}), yeni açılmadı`);
-      return;
-    }
+    const { tenantId, caseId, type, caseDebtorId = null } = input;
 
-    await this.prisma.enforcementAction.create({
-      data: {
-        caseId,
-        type,
-        status: EnforcementStatus.PENDING,
-        requestDate: new Date(),
-      },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      // Composite Case doğrulaması — yalnız Case.findUnique({id}) KULLANILMAZ (OD-3 emsali tekrarlanmaz).
+      // Cross-tenant/mevcut-olmayan Case aynı generic mesajla reddedilir (enumeration yok).
+      const caseRow = await tx.case.findFirst({
+        where: { id: caseId, tenantId },
+        select: { id: true },
+      });
+      if (!caseRow) {
+        throw new NotFoundException("Dosya bulunamadı");
+      }
 
-    this.logger.log(`Enforcement action created for case ${caseId}: ${type}`);
+      // caseDebtorId verildiyse: aynı Case'e ait olduğu doğrulanır. CaseDebtor'da doğrudan tenantId
+      // yok — tenant bağı zaten doğrulanmış caseId üzerinden transitive olarak sağlanır.
+      if (caseDebtorId) {
+        const caseDebtorRow = await tx.caseDebtor.findFirst({
+          where: { id: caseDebtorId, caseId },
+          select: { id: true },
+        });
+        if (!caseDebtorRow) {
+          throw new NotFoundException("Borçlu bulunamadı veya bu dosyaya ait değil");
+        }
+      }
+
+      // RFA-007: status-bazlı duplicate guard (unique constraint DEĞİL — meşru tekrarı kırmaz).
+      // Açık aynı tenantId+caseId+type action varsa idempotent no-op. @@unique bilinçli YOK.
+      // Mevcut guard dosya-seviyesidir (caseDebtorId'ye göre ayrışmaz — bkz. PR-EA-4 §3.5 sınırlaması,
+      // final raporda belgelenir); bu davranış PR-EA-4 kapsamında GENİŞLETİLMEDİ, yalnız tenant-scoped edildi.
+      const open = await tx.enforcementAction.findFirst({
+        where: { tenantId, caseId, type, status: { in: WorkflowEngine.OPEN_ENFORCEMENT_STATUSES } },
+      });
+      if (open) {
+        this.logger.log(`Açık ${type} enforcement action zaten var (case ${caseId}), yeni açılmadı`);
+        return;
+      }
+
+      await tx.enforcementAction.create({
+        data: {
+          tenantId,
+          caseId,
+          caseDebtorId,
+          type,
+          status: EnforcementStatus.PENDING,
+          requestDate: new Date(),
+        },
+      });
+
+      this.logger.log(`Enforcement action created for case ${caseId}: ${type}`);
+    });
   }
 
   // Sonraki işlem zamanını hesapla

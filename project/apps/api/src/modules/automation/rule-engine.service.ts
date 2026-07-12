@@ -16,6 +16,7 @@ let deprecatedTracker: any = null;
 
 export interface RuleContext {
   caseId: string;
+  tenantId: string;
   currentStage: WorkflowStage;
   daysSinceLastAction: number;
   hasPayment: boolean;
