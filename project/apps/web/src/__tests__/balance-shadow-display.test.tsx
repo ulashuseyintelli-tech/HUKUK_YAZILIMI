@@ -1308,7 +1308,7 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.getByText("Primary display remains calculation-summary")).toBeInTheDocument();
     expect(screen.getByText("Canonical display is shadow evidence only")).toBeInTheDocument();
     expect(screen.getByText("Cutover readiness is audit evidence only")).toBeInTheDocument();
-    expect(screen.getByText("Primary display unchanged: true")).toBeInTheDocument();
+    expect(await screen.findByText("Primary display unchanged: true")).toBeInTheDocument();
   });
 
   it("canonicalSummaryRows shadow metadata BalanceShadowDiffPanel render yuzeyine sizmaz", async () => {
