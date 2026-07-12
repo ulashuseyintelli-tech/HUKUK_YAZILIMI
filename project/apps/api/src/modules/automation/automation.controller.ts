@@ -2,6 +2,7 @@ import { Controller, Get, Post, Param, Body, UseGuards } from "@nestjs/common";
 import { AutomationService } from "./automation.service";
 import { WorkflowEngine } from "./workflow-engine.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { CurrentUser } from "../auth/decorators/current-user.decorator";
 
 @Controller("automation")
 @UseGuards(JwtAuthGuard)
@@ -29,15 +30,15 @@ export class AutomationController {
 
   // Dosyayı manuel olarak işle
   @Post("cases/:id/process")
-  async processCase(@Param("id") caseId: string) {
-    await this.automationService.processCaseManually(caseId);
+  async processCase(@CurrentUser() user: any, @Param("id") caseId: string) {
+    await this.automationService.processCaseManually(caseId, user.tenantId);
     return { success: true, message: "Case processed" };
   }
 
   // Dosya için bağlam bilgisi al
   @Get("cases/:id/context")
-  async getCaseContext(@Param("id") caseId: string) {
-    return this.workflowEngine.buildContext(caseId);
+  async getCaseContext(@CurrentUser() user: any, @Param("id") caseId: string) {
+    return this.workflowEngine.buildContext(caseId, user.tenantId);
   }
 
   // Dosya için sonraki işlem zamanını hesapla

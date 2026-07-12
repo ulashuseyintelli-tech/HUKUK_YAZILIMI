@@ -66,10 +66,11 @@ export class WorkflowEngine {
     }
   }
 
-  // Dosya için bağlam oluştur
-  async buildContext(caseId: string): Promise<RuleContext> {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+  // Dosya için bağlam oluştur (OD-3 tenant guard: caseId yalnız verilen tenantId altında aranır,
+  // cross-tenant erişim generic NotFoundException ile reddedilir — enumeration yok, PR-EA-4 emsali).
+  async buildContext(caseId: string, tenantId: string): Promise<RuleContext> {
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         collections: true,
         debtors: {
@@ -90,7 +91,7 @@ export class WorkflowEngine {
     });
 
     if (!caseData) {
-      throw new Error(`Case not found: ${caseId}`);
+      throw new NotFoundException("Dosya bulunamadı");
     }
 
     const lastEvent = caseData.lifecycleEvents[0];
@@ -126,12 +127,12 @@ export class WorkflowEngine {
     };
   }
 
-  // Dosyayı işle
-  async processCase(caseId: string): Promise<void> {
+  // Dosyayı işle (OD-3: tenantId zorunlu, buildContext ile aynı guard'a tabi)
+  async processCase(caseId: string, tenantId: string): Promise<void> {
     try {
-      const context = await this.buildContext(caseId);
-      const caseData = await this.prisma.case.findUnique({
-        where: { id: caseId },
+      const context = await this.buildContext(caseId, tenantId);
+      const caseData = await this.prisma.case.findFirst({
+        where: { id: caseId, tenantId },
         include: { formType: true },
       });
 
