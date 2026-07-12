@@ -1,6 +1,6 @@
 # ADR-014 Cutover Authorization Policy
 
-**Status:** DEFINED / CANONICAL — governance decision record for split-plan §12 seq 11; owner operational decisions recorded 2026-07-12 (§9)
+**Status:** DEFINED / CANONICAL — governance decision record for split-plan §12 seq 11; owner operational decisions recorded 2026-07-12 (§9); evidence environment reconciled to LOCAL owner/office 2026-07-12 (§10 supersedes the sanitized-copy/staging framing)
 **Date:** 2026-07-12
 **Owner:** Ulaş
 **Relationship:** This document is the `Governance decision record` required by
@@ -76,22 +76,26 @@ operational evidence. Three evidence classes are separated:
 | Evidence class | Content | Status |
 |---|---|---|
 | **Synthetic correctness** | PR-9 golden matrix; unit/DB twin-run; deterministic shadow comparison | **SATISFIED** |
-| **Representative data** | Sanitized production copy; authorized read-replica shadow; a controlled pilot environment separately proven to represent real usage distribution | **ABSENT / BLOCKING** — environment method SELECTED IN PRINCIPLE (§9.1), not yet created |
+| **Representative data** | **LOCAL owner/office environment, real case data used directly** (§10 supersedes the earlier sanitized-copy/read-replica framing) | **ENVIRONMENT AVAILABLE (local); evidence PENDING** — not yet measured |
 | **Live operational** | Production smoke; discrepancy monitoring; rollback drill; bake period | **NOT STARTED / NOT CURRENTLY EXECUTABLE** |
 
 - Synthetic correctness evidence proves **calculation correctness, determinism,
   unit/DB parity and blocker behaviour**. It does **not** prove real data
   distribution, production tenant behaviour, production scale/latency, real
   operational rollback, bake stability, or the real discrepancy rate.
-- Because no production environment currently exists (recorded canonical fact), the
-  PR-11 **production smoke** gate and the subsequent **bake** gates (PR-12 bake,
-  PR-14) **are not waived** and are not currently executable.
-- Acceptable evidence environments (any one, separately validated):
-  1. Representative staging over a sanitized production copy.
-  2. An authorized read-replica or read-only production shadow.
-  3. A controlled pilot environment separately proven to represent real usage
-     distribution.
-- An ordinary synthetic fixture/staging environment alone is **not sufficient**.
+- The PR-11 **smoke** gate and the subsequent **bake** gates (PR-12 bake, PR-14) **are
+  not waived**; they are now run **locally on real case data** (§10) rather than on a
+  provisioned production/staging environment.
+- **Acceptable evidence environment — SUPERSEDED by §10.** The earlier list below
+  (sanitized production copy / read-replica / external controlled pilot) is retained for
+  history but is no longer the canonical method; per the binding owner decision (§10) the
+  representative evidence environment is the **local owner PC / office environment with
+  real case data used directly, no external transfer**:
+  1. ~~Representative staging over a sanitized production copy.~~ (superseded — §10)
+  2. ~~An authorized read-replica or read-only production shadow.~~ (superseded — §10)
+  3. ~~An external controlled pilot environment.~~ (superseded — §10)
+- An ordinary **synthetic** fixture alone is still **not sufficient** (SYS-SOT-007 /
+  SYS-MIG-008): representative evidence must come from real local case data.
 
 ---
 
@@ -195,16 +199,19 @@ The following roles are recorded distinctly; all required before authorization i
 Cutover authorization policy       → DEFINED / CANONICAL
 Cutover owner decisions (§9)       → DEFINED / CANONICAL
 PR-11 scope boundary               → DECIDED / CANONICAL
-Representative evidence environment → SELECTED IN PRINCIPLE / NOT YET AVAILABLE
-Operational thresholds             → DEFINED WITH BASELINE-DEPENDENT VALIDATION
-Pre-evidence allowed work          → DOCS / MONITORING PREPARATION ONLY
+Representative evidence strategy    → LOCAL REAL DATA / OWNER-CONTROLLED ENVIRONMENT (§10)
+Measured baseline                  → PENDING
+Representative evidence            → PENDING
+Pre-evidence allowed work          → LOCAL DOCS + READ-ONLY BASELINE/SHADOW EVIDENCE (§10)
 PR-11 implementation               → NOT AUTHORIZED
 PR-11 pilot                        → NOT AUTHORIZED
 Runtime cutover                    → NOT AUTHORIZED
 ```
 
-Defining this governance policy — and recording the §9 owner decisions — does **not**
-automatically open PR-11. "Decisions defined" is not "cutover approved".
+Reconciling the evidence environment to local (§10) — and recording the §9 owner
+decisions — does **not** automatically open PR-11. "Decisions defined" is not "cutover
+approved"; measured baseline + representative evidence + explicit owner `APPROVED` are
+still required.
 
 ---
 
@@ -227,12 +234,17 @@ They are binding governance decisions. **Recording them does not authorize PR-11
 pilot, a flag change, or runtime cutover.** PR-11 remains NOT AUTHORIZED.
 
 ### 9.1 Representative evidence environment
-- Primary method: `SANITIZED_PRODUCTION_COPY_ON_REPRESENTATIVE_STAGING`.
-- Secondary verification method, only where legally and technically possible:
-  `READ_ONLY_PRODUCTION_SHADOW`.
-- An ordinary synthetic fixture/staging environment alone is **not** representative evidence.
-- Read-only production shadow constraints: cannot write; cannot show canonical primary
-  to a user; requires separate access + KVKK authorization; usable for observation/parity only.
+> **SUPERSEDED by §10 (2026-07-12 owner decision).** The methods below (sanitized
+> production copy on representative staging / read-only production shadow) are retained
+> for history but are **no longer the canonical method**. The evidence environment is now
+> the **local owner PC / office environment with real case data used directly**; masking/
+> anonymization/pseudonymization/sanitization is **not** a prerequisite. See §10.
+- ~~Primary method: `SANITIZED_PRODUCTION_COPY_ON_REPRESENTATIVE_STAGING`.~~ (superseded — §10)
+- ~~Secondary verification method: `READ_ONLY_PRODUCTION_SHADOW`.~~ (superseded — §10)
+- Still binding: an ordinary **synthetic** fixture alone is **not** representative evidence
+  (must be real local data).
+- ~~Read-only production shadow constraints (external access + KVKK authorization).~~
+  (superseded — §10; execution is local, no external transfer.)
 
 ### 9.2 Dataset strategy
 `MANDATORY_EDGE_CASE_SET` + `STATISTICALLY_REPRESENTATIVE_SAMPLE`.
@@ -250,6 +262,11 @@ Minimum tenant count: AT LEAST 2 FOR SMOKE; FULL DATASET TARGET TO BE SET FROM P
 ```
 No arbitrary numbers are invented; case/tenant minimums are validated against the real
 portfolio distribution once the representative dataset is produced.
+
+> **Reconciled by §10 (2026-07-12):** the edge-case set + representative sample stay, but
+> the data source is now **the real local case data directly** — no sanitized copy or
+> pseudonymized staging is produced. Portfolio-derived minimums are read from the local
+> dataset.
 
 ### 9.3 Pilot cohort
 Phased: `Phase 1 → OWNER ONLY`; `Phase 2 → SELECTED INTERNAL USERS`;
@@ -343,8 +360,83 @@ that does not alter semantics may have its refresh requirement determined separa
 the owner.
 
 ### 9.15 Pre-representative-evidence allowed work
-Binding: `DOCS / MONITORING PREPARATION ONLY`. Allowed: dashboard/metric design;
-discrepancy taxonomy; rollback runbook; kill-switch runbook; sanitized-data procedure;
-access/KVKK procedure; smoke/bake checklist; sign-off templates. **Forbidden:** PR-11
-runtime implementation worktree; consumer-switch code; flag activation; cohort activation;
-pilot rollout; PR-12/13/14 preparation.
+> **Reconciled by §10 (2026-07-12).** With local real-data evidence, the earlier
+> `sanitized-data procedure` and `access/KVKK procedure` items are **no longer required
+> prerequisites**; the local safeguards in §10 replace them. Allowed work now includes a
+> **local read-only baseline + shadow evidence runner** (read-only measurement tooling —
+> not a consumer switch).
+
+Binding: allowed = dashboard/metric design; discrepancy taxonomy; rollback runbook;
+kill-switch runbook; smoke/bake checklist; sign-off templates; **and a local read-only
+baseline + shadow evidence runner (read-only, no consumer switch)**. **Forbidden (unchanged):**
+PR-11 runtime implementation worktree; consumer-switch code; flag activation; cohort
+activation; pilot rollout; PR-12/13/14 preparation.
+
+---
+
+## 10. Owner reconciliation — local evidence environment (2026-07-12, binding)
+
+The owner cancelled the earlier security-heavy evidence framing for this project's
+context. This section is the canonical evidence-environment decision and **supersedes**
+the sanitized-copy/staging/KVKK-pipeline framing in §2 and §9.1/§9.2/§9.15 (old text kept
+for history, not deleted — SYS-EVID-006 version/supersession, no silent delete).
+
+```text
+Evidence execution environment:
+LOCAL OWNER PC / LOCAL OFFICE ENVIRONMENT
+
+External access:
+NONE
+
+Cloud / third-party / external AI transfer:
+NOT AUTHORIZED
+
+Masking / anonymization / pseudonymization:
+NOT REQUIRED AS A CUTOVER PREREQUISITE
+
+Real local case data:
+AUTHORIZED FOR LOCAL BASELINE AND REPRESENTATIVE EVIDENCE
+
+Primary safeguards:
+- no accidental external transfer
+- read-only execution
+- no production-data mutation
+- backup/recovery
+- deterministic evidence
+```
+
+**Removed (no longer binding prerequisites):** sanitized production copy requirement;
+pseudonymized staging requirement; cloud/staging environment prerequisite; masking
+pipeline prerequisite; raw-export 24h / sanitized-dataset 30-day retention rules; external
+evidence environment.
+
+**Retained / still binding:**
+- Synthetic evidence still does not substitute for representative evidence — but
+  representative evidence is now produced from **real local case data** (SYS-SOT-007 /
+  SYS-MIG-008 honoured: real, not synthetic).
+- Read-only execution (no live-data mutation) — SYS-AUTH-011 / SYS-SOT-004, and the owner's
+  own safeguard; use the read-only-profiler pattern (`REPEATABLE READ, READ ONLY`) +
+  `balance-display-shadow-diff` (`mode: SHADOW_ONLY`).
+- No raw PII in evidence outputs / operational logs (SYS-AUTH-012 / SYS-EVID-005) — this
+  is **naturally** satisfied because monitored outputs are numeric (legacy↔canonical
+  differences, interest/total-balance parity, error/timeout, response time, blocker
+  distribution, rollback/kill-switch time) + opaque case IDs, not debtor identity. **No
+  masking pipeline is needed** to satisfy it.
+
+**Constitutional reconciliation:** no conflict. RECEIVABLE GOVERNANCE CHECK: PASS (real
+local data = authorized representative evidence per REC-CUTOVER-102/103; calc authority
+untouched; legacy stays primary). DEBTOR GOVERNANCE CHECK: PASS (tenant isolation
+preserved; outputs PII-light).
+
+**Canonical result:**
+```text
+Representative evidence strategy: LOCAL REAL DATA / OWNER-CONTROLLED ENVIRONMENT
+Measured baseline:                PENDING
+Representative evidence:          PENDING
+PR-11:                            NOT AUTHORIZED
+Runtime cutover:                  NOT AUTHORIZED
+```
+
+This reconciliation is docs-only. It authorizes **no** PR-11, flag, consumer switch, or
+runtime cutover. Producing the evidence (a local read-only baseline + shadow runner) is a
+separate task; the owner `APPROVED` after seeing results remains the final gate before PR-11.
