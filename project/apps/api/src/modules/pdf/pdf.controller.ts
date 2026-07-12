@@ -1,9 +1,15 @@
-import { Controller, Post, Body, Res, Get, Param, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Res, Get, Param, HttpStatus, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { PdfService } from './pdf.service';
 import { TemplateEngineService } from '../template-engine/template-engine.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
+// BOLA-001 (STF-PRD-BOLA-001): bu controller auth'suzdu; takip-talebi ucu caseId ile cross-tenant
+// dosya PDF'i sizdiriyordu. JwtAuthGuard + tenant-scoped case load ile kapatildi (template-engine.controller
+// ile ayni guvenli desen). generate/generate-table (govde-icerikli, caseId'siz) de artik authenticated.
 @Controller('pdf')
+@UseGuards(JwtAuthGuard)
 export class PdfController {
   constructor(
     private pdfService: PdfService,
@@ -12,9 +18,15 @@ export class PdfController {
 
   // Takip Talebi PDF indir
   @Get('takip-talebi/:caseId')
-  async downloadTakipTalebi(@Param('caseId') caseId: string, @Res() res: Response) {
+  async downloadTakipTalebi(
+    @Param('caseId') caseId: string,
+    // BOLA-001: tenantId truthful @CurrentUser'dan (body/path'ten DEGIL). generateTakipTalebiFromCase
+    // -> getCaseData where{id,tenantId} ile yuklenir; baska tenant'in caseId'si eslesmez, PDF donmez.
+    @CurrentUser('tenantId') tenantId: string,
+    @Res() res: Response,
+  ) {
     try {
-      const document = await this.templateEngine.generateTakipTalebiFromCase(caseId);
+      const document = await this.templateEngine.generateTakipTalebiFromCase(caseId, tenantId);
       const pdfBuffer = await this.pdfService.generateTakipTalebiPdf({
         title: document.title,
         content: document.content,
