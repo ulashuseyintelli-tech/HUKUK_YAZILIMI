@@ -1,5 +1,6 @@
 import { BalanceDisplayShadowDiffService, cutoverReadiness } from '../balance-display-shadow-diff.service';
 import { BalanceDisplayShadowDiffMetrics } from '../balance-display-shadow-diff.metrics';
+import { BalanceDisplayShadowDiffEventLogger } from '../balance-display-shadow-diff-event-logger';
 import {
   SHADOW_FINANCIAL_DIFF_FIELDS,
   type BalanceDisplayShadowDiffReport,
@@ -113,6 +114,7 @@ function makeService(
   legacy: unknown = legacySummary(),
   canonical: CaseBalanceResult | Error = canonicalBalance(),
   metrics?: BalanceDisplayShadowDiffMetrics,
+  eventLogger?: BalanceDisplayShadowDiffEventLogger,
 ) {
   const mutators = {
     createLedgerEntry: jest.fn(),
@@ -141,7 +143,7 @@ function makeService(
   } as unknown as CaseBalanceService;
 
   return {
-    service: new BalanceDisplayShadowDiffService(caseService, caseBalance, metrics),
+    service: new BalanceDisplayShadowDiffService(caseService, caseBalance, metrics, eventLogger),
     caseService,
     caseBalance,
     mutators,
@@ -223,6 +225,61 @@ function expectLegacyRawNotPromotedToCanonicalRows(report: BalanceDisplayShadowD
 }
 
 describe('BalanceDisplayShadowDiffService', () => {
+  it('start, component ve tek terminal event emission zincirini üretir', async () => {
+    const eventLogger = {
+      recordComparisonStarted: jest.fn(),
+      recordComponent: jest.fn(),
+      recordReport: jest.fn(),
+    } as unknown as BalanceDisplayShadowDiffEventLogger;
+    const { service } = makeService(legacySummary(), canonicalBalance(), undefined, eventLogger);
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(eventLogger.recordComparisonStarted).toHaveBeenCalledTimes(1);
+    expect(eventLogger.recordComponent).toHaveBeenNthCalledWith(1, 'LEGACY', true);
+    expect(eventLogger.recordComponent).toHaveBeenNthCalledWith(2, 'CANONICAL', true);
+    expect(eventLogger.recordComponent).toHaveBeenCalledTimes(2);
+    expect(eventLogger.recordReport).toHaveBeenCalledTimes(1);
+    expect(eventLogger.recordReport).toHaveBeenCalledWith(report);
+  });
+
+  it('legacy/canonical source failure bilgisini raw exception tasimadan component eventine aktarir', async () => {
+    const eventLogger = {
+      recordComparisonStarted: jest.fn(),
+      recordComponent: jest.fn(),
+      recordReport: jest.fn(),
+    } as unknown as BalanceDisplayShadowDiffEventLogger;
+    const { service } = makeService(
+      new Error('tenant-1 case-1 raw legacy failure'),
+      new Error('tenant-1 case-1 raw canonical failure'),
+      undefined,
+      eventLogger,
+    );
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(eventLogger.recordComponent).toHaveBeenNthCalledWith(1, 'LEGACY', false);
+    expect(eventLogger.recordComponent).toHaveBeenNthCalledWith(2, 'CANONICAL', false);
+    expect(eventLogger.recordReport).toHaveBeenCalledWith(report);
+    expect(eventLogger.recordComponent).not.toHaveBeenCalledWith(expect.anything(), expect.any(String));
+  });
+
+  it('event emitter failure durumunda financial/readiness/API reportunu degistirmez', async () => {
+    const baseline = await makeService().service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+    const throwingEventLogger = {
+      recordComparisonStarted: jest.fn(() => { throw new Error('sink down'); }),
+      recordComponent: jest.fn(() => { throw new Error('sink down'); }),
+      recordReport: jest.fn(() => { throw new Error('sink down'); }),
+    } as unknown as BalanceDisplayShadowDiffEventLogger;
+    const { service } = makeService(legacySummary(), canonicalBalance(), undefined, throwingEventLogger);
+
+    const actual = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(actual).toEqual(baseline);
+    expect(actual.cutoverReadiness).toEqual(baseline.cutoverReadiness);
+    expect(actual.totals).toEqual(baseline.totals);
+  });
+
   it('legacy, canonical ve shadow comparison component surelerini bounded outcome ile kaydeder', async () => {
     const metrics = {
       recordCalculationDuration: jest.fn(),
