@@ -23,6 +23,7 @@ import type {
 } from './balance-display-shadow-diff.types';
 import { SHADOW_FINANCIAL_DIFF_FIELDS } from './balance-display-shadow-diff.types';
 import { BalanceDisplayShadowDiffMetrics } from './balance-display-shadow-diff.metrics';
+import { BalanceDisplayShadowDiffEventLogger } from './balance-display-shadow-diff-event-logger';
 
 const LEGACY_ENDPOINT = '/cases/:id/calculation-summary' as const;
 const CANONICAL_DISPLAY_ENDPOINT = '/interest-engine/case/:caseId/balance/display' as const;
@@ -793,7 +794,17 @@ export class BalanceDisplayShadowDiffService {
     private readonly caseService: CaseService,
     private readonly caseBalance: CaseBalanceService,
     @Optional() private readonly metrics?: BalanceDisplayShadowDiffMetrics,
+    @Optional() private readonly eventLogger?: BalanceDisplayShadowDiffEventLogger,
   ) {}
+
+  private emitOperationalEvent(action: (logger: BalanceDisplayShadowDiffEventLogger) => void): void {
+    if (!this.eventLogger) return;
+    try {
+      action(this.eventLogger);
+    } catch {
+      // Operational telemetry is non-durable and cannot change financial/readiness behavior.
+    }
+  }
 
   /**
    * Legacy calculation-summary DTO ile hardened balance/display DTO'sunu yan yana üretir.
@@ -809,6 +820,7 @@ export class BalanceDisplayShadowDiffService {
     asOfDate: string,
     generatedAt: string,
   ): Promise<BalanceDisplayShadowDiffReport> {
+    this.emitOperationalEvent((logger) => logger.recordComparisonStarted());
     const startedAt = Date.now();
     const [legacyOutcome, balanceOutcome] = await Promise.all([
       capture(() => this.caseService.getCalculationSummary(tenantId, caseId, asOfDate) as Promise<LegacyCalculationSummary>),
@@ -916,6 +928,9 @@ export class BalanceDisplayShadowDiffService {
     };
     this.metrics?.recordCalculationDuration('SHADOW_COMPARE', 'SUCCESS', Date.now() - shadowCompareStartedAt);
     this.metrics?.recordReport(report, Date.now() - startedAt);
+    this.emitOperationalEvent((logger) => logger.recordComponent('LEGACY', legacyOutcome.ok));
+    this.emitOperationalEvent((logger) => logger.recordComponent('CANONICAL', balanceOutcome.ok));
+    this.emitOperationalEvent((logger) => logger.recordReport(report));
     return report;
   }
 }
