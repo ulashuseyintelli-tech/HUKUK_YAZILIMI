@@ -12,6 +12,13 @@
 > flag, a cohort, a consumer switch, authority promotion or runtime cutover. Code,
 > monitoring and dashboard implementation require a separately authorized task.
 
+> **PE-01A implementation reconciliation (2026-07-12).** The separately authorized
+> implementation alignment is `CLOSED / CANONICAL` through technical PR #1154 (head
+> `54102a50e2399ee5df393b180959bacb52d670ff`, squash
+> `52668ff97007a72496f351a701b1dbeaf8fe60d8`, CI `4/4 SUCCESS`). This updates the
+> implementation facts below; it does not authorize PR-11, pilot activation, consumer
+> switch, primary authority promotion or runtime cutover.
+
 ---
 
 ## 1. Canonical sources and scope
@@ -56,7 +63,24 @@ approved comparison contract exists.
 
 ---
 
-## 3. Verified current implementation inventory
+## 3. Verified implementation inventory
+
+The original PE-01 inventory below is retained as the discovery baseline. After PE-01A,
+the canonical implementation override is:
+
+- comparable non-zero financial differences are always `MAJOR_DELTA / RED` and block;
+- the public `MINOR_DELTA` enum remains backward-compatible but is no longer emitted by
+  the financial classifier and is fail-closed if supplied;
+- required `UNKNOWN`, missing-side and `NOT_COMPARABLE` financial evidence blocks;
+- B1 cost, fee and expense semantics are `NOT_COMPARABLE / UNKNOWN_NEEDS_FOLLOWUP` and
+  are no longer readiness-exempt;
+- `TOTAL_DEBT_DELTA` is an explicit comparison row;
+- missing payment-allocation, interest-base and fee-projection comparison evidence has
+  explicit deterministic blocker codes; no synthetic `MATCH` or zero fallback exists;
+- `safeForPrimaryDisplay=true` is possible only in the pure readiness function when every
+  bounded financial row is exact, all required evidence is present and all other blockers
+  are absent; the live shadow path remains fail-closed while required evidence is absent;
+- bounded PII-free Prometheus metrics use the existing global `PROM_REGISTRY`.
 
 ### 3.1 Shadow classifications, severities and amount statuses
 
@@ -90,7 +114,7 @@ CANONICAL_ONLY
 NOT_COMPARABLE
 ```
 
-### 3.2 Direct shadow discrepancy codes
+### 3.2 Direct shadow discrepancy codes (PE-01 discovery baseline)
 
 | Group | Codes |
 |---|---|
@@ -129,7 +153,7 @@ display type. No production producer for either code was found at the analysis b
 the latter has readiness-consumer and test references. They must not be reported as
 observed runtime signals until a producer is verified.
 
-### 3.3 Current amount severity mapping
+### 3.3 Amount severity mapping (PE-01 discovery baseline)
 
 | Current input state | Current result |
 |---|---|
@@ -144,7 +168,7 @@ observed runtime signals until a producer is verified.
 The `<1%` rule comes from `MINOR_DELTA_PERCENT = 1`. It is percentage-based, not the
 canonical exact-minor-unit acceptance rule.
 
-### 3.4 Current readiness flow
+### 3.4 Readiness flow (PE-01 discovery baseline)
 
 ```text
 GET shadow-diff
@@ -171,7 +195,7 @@ Other authority/readiness signals remain separately closed:
   owner-mandated triple gate. Triple-gate implementation belongs to future PR-11 and is
   not authorized by this contract.
 
-### 3.5 Current B1 exemptions
+### 3.5 B1 exemptions (PE-01 discovery baseline)
 
 The backend explicitly excludes these `RED` codes from readiness blockers:
 
@@ -196,6 +220,9 @@ Hybrid presentation: separately observable and policy-defined; never full-canoni
 
 This disposition does not decide fee calculation authority. Fee/harç policy remains
 ADR-013 owner-gated.
+
+The post-PE-01A override at the start of this section supersedes the percentage rule,
+RED-only aggregation and B1 exemption behavior described in §§3.3–3.5.
 
 ---
 
@@ -371,13 +398,14 @@ not this operational dashboard.
 | Canonical unavailable | Never | Never | Source unavailable | Readiness blocked; no fallback-as-success |
 | Unknown | Never | Never for financial acceptance | If security/authority hard trigger is known | Default: `UNKNOWN_NEEDS_FOLLOWUP`, readiness blocked |
 
-`Total` currently has no direct `totalDebtAmount` discrepancy row. `Allocation/payment
-application` and `interest base` also lack direct legacy/canonical comparison contracts.
-Their absence cannot be interpreted as `GREEN`.
+Post-PE-01A, `Total` has a direct `TOTAL_DEBT_DELTA` row. `Allocation/payment
+application`, `interest base` and fee projection still lack approved direct
+legacy/canonical comparison contracts; their absence is now represented by explicit
+`MISSING_*_COMPARISON_EVIDENCE` blockers and cannot be interpreted as `GREEN`.
 
 ---
 
-## 9. Verified implementation gaps
+## 9. PE-01 discovery gaps and PE-01A disposition
 
 | ID | Gap | Current effect | Required alignment |
 |---|---|---|---|
@@ -397,22 +425,35 @@ Their absence cannot be interpreted as `GREEN`.
 These are implementation alignment gaps, not evidence of an active production cutover.
 PR-11 and runtime cutover remain NOT AUTHORIZED.
 
+PE-01A disposition:
+
+| Gap | Disposition |
+|---|---|
+| PE01-G01..G06 | CLOSED by zero-cent classification, all-financial-status blocker aggregation, B1 fail-closed mapping, direct total row and explicit missing-evidence blockers |
+| PE01-G07 | Readiness alignment CLOSED; diagnostic list remains non-authoritative and readiness remains the source of truth |
+| PE01-G08 | CLOSED for this scope: guarded evidence consumes backend `safeForPrimaryDisplay`; global authority eligibility remains false and no promotion occurred |
+| PE01-G09 | CLOSED: bounded metrics added to existing global registry |
+| PE01-G10 | OPEN / DOCUMENTED GAP: no new durable audit/evidence-reference or safe correlation contract was authorized |
+| PE01-G11 | OPEN / DOCUMENTED GAP: operational dashboard and alert routing are not implemented |
+| PE01-G12 | OWNER-GATED: PR-11/pilot/feature activation/runtime cutover remain NOT AUTHORIZED |
+
 ---
 
-## 10. Minimal future implementation allowlist
+## 10. PE-01A implementation allowlist result
 
-No runtime patch is made by this docs task. A separately authorized monitoring-preparation
-patch should remain limited to:
+The separately authorized PE-01A patch remained limited to the following shadow/readiness
+surface and tests:
 
 ```text
 project/apps/api/src/modules/balance-display-shadow-diff/
   balance-display-shadow-diff.types.ts
   balance-display-shadow-diff.service.ts
   balance-display-shadow-diff.module.ts
-  balance-display-shadow-diff.metrics.ts                 (new only if required)
+  balance-display-shadow-diff.metrics.ts
   __tests__/balance-display-shadow-diff.service.spec.ts
   __tests__/balance-display-shadow-diff.readiness.spec.ts
-  __tests__/balance-display-shadow-diff.monitoring.spec.ts (new only if required)
+  __tests__/balance-display-shadow-diff.metrics.spec.ts
+  __tests__/balance-display-shadow-diff.guarded-cutover-evidence.spec.ts
 
 project/docs/design/adr-014-zero-cent-discrepancy-monitoring-contract.md
 ```
@@ -438,8 +479,8 @@ new metrics registry
 AuditLog mutation without separate authorization and privacy review
 ```
 
-The metrics implementation should use the existing global `PROM_REGISTRY`; the current
-metrics aggregator already exposes registry metrics and does not require a parallel stack.
+The metrics implementation uses the existing global `PROM_REGISTRY`; the current metrics
+aggregator exposes these registry metrics without a parallel stack.
 
 ---
 
@@ -450,9 +491,20 @@ metrics aggregator already exposes registry metrics and does not require a paral
 - `CAN-CUT-02` remains `OPEN / needs-owner-decision`.
 - Representative evidence remains `ABSENT / BLOCKING`.
 - PR-11 implementation/pilot and runtime cutover remain `NOT AUTHORIZED`.
-- This contract closes only the PE-01 docs/taxonomy preparation slice; it does not close
-  monitoring implementation or representative evidence.
+- PE-01 docs/taxonomy and PE-01A implementation alignment are `CLOSED / CANONICAL`.
+- Technical evidence: API production type-check and changed-file ESLint PASS; shadow module
+  `76/76`, affected web `110/110`, golden/adapter/reversal regression `84/84`; GitHub CI
+  `4/4 SUCCESS`, merge state `CLEAN` before squash.
+- Bounded metric instrumentation is implemented; durable log/audit correlation,
+  dashboard/alert routing and representative evidence remain open preparation/evidence
+  gaps and are not falsely marked complete.
+- Physical technical worktree residue is tracked separately as `MR-040 / OPEN /
+  NON-BLOCKING`; it does not reopen PE-01A.
+- Next eligible task is `ADR014-PE-02 — Evidence/Data-Access Procedure`, interpreted with
+  the canonical local-owner/office real-data policy. It does not authorize a data copy,
+  PR-11 or cutover.
 
 ```text
-Primary verdict: IMPLEMENTATION_ALIGNMENT_REQUIRED
+Primary verdict: PASS_READY_FOR_CLOSE
+PE-01A final status: CLOSED / CANONICAL
 ```
