@@ -18,6 +18,11 @@ import { ClientInfoRequestService } from "../address-discovery/client-info-reque
 import { InterestEngineService } from "../interest-engine/interest-engine.service";
 import { CaseBalanceService } from "../interest-engine/orchestration/case-balance.service";
 import type { CaseBalanceResult } from "../interest-engine/orchestration/case-balance.service";
+import { toCaseBalanceDisplay } from "../interest-engine/orchestration/case-balance-display";
+import {
+  buildCaseCalculationSummaryCompatibilityAdapter,
+  buildUnavailableCaseCalculationSummaryCompatibilityAdapter,
+} from "./case-calculation-summary.compatibility";
 import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
@@ -189,6 +194,11 @@ type CalculationSummaryCanonicalShadow = {
   diagnostics?: CaseBalanceResult["diagnostics"];
   errorCode?: CalculationSummaryCanonicalShadowErrorCode;
 };
+
+type CalculationSummaryCanonicalBalanceResolution =
+  | { status: "OK"; balance: CaseBalanceResult }
+  | { status: "UNAVAILABLE"; errorCode: "CASE_BALANCE_SERVICE_UNAVAILABLE" }
+  | { status: "ERROR"; errorCode: "CANONICAL_SHADOW_COMPUTE_FAILED" };
 
 const CANONICAL_SHADOW_MATCH_EPSILON = 0.01;
 const CANONICAL_SHADOW_MINOR_DELTA_PERCENT = 1;
@@ -4047,19 +4057,78 @@ export class CaseService {
       tahsilOranlari,
     };
 
+    const legacyShadowInput = {
+      legacyToplamBorc: toplamBorc,
+      legacySonBorc: sonBorc,
+      legacyToplamTahsilat: toplamTahsilat,
+      legacyKalanBorc: kalanBorc,
+      legacyTahsilHarci: pesinHarcHaricTahsilHarci,
+      legacyIcraMasraflari: icraMasraflari,
+      legacyVekaletUcreti: vekaletUcreti,
+      legacyCurrency,
+    };
+    const canonicalResolution = await this.resolveCalculationSummaryCanonicalBalance(
+      tenantId,
+      caseId,
+      calculationDate,
+    );
+    const canonicalShadow = await this.buildCalculationSummaryCanonicalShadow(
+      tenantId,
+      caseId,
+      calculationDate,
+      legacyShadowInput,
+      canonicalResolution,
+    );
+    const canonicalCompatibility = canonicalResolution.status === "OK"
+      ? buildCaseCalculationSummaryCompatibilityAdapter({
+        legacy: legacySummary,
+        display: toCaseBalanceDisplay({
+          tenantId,
+          caseId,
+          balance: canonicalResolution.balance,
+        }),
+      })
+      : buildUnavailableCaseCalculationSummaryCompatibilityAdapter({
+        reason: canonicalResolution.status === "UNAVAILABLE"
+          ? "CASE_BALANCE_SERVICE_UNAVAILABLE"
+          : "CANONICAL_COMPUTE_FAILED",
+      });
+
     return {
       ...legacySummary,
-      canonicalShadow: await this.buildCalculationSummaryCanonicalShadow(tenantId, caseId, calculationDate, {
-        legacyToplamBorc: toplamBorc,
-        legacySonBorc: sonBorc,
-        legacyToplamTahsilat: toplamTahsilat,
-        legacyKalanBorc: kalanBorc,
-        legacyTahsilHarci: pesinHarcHaricTahsilHarci,
-        legacyIcraMasraflari: icraMasraflari,
-        legacyVekaletUcreti: vekaletUcreti,
-        legacyCurrency,
-      }),
+      canonicalShadow,
+      canonicalCompatibility,
     };
+  }
+
+  /**
+   * Canonical balance'i calculation-summary istegi basina bir kez cozer. Shadow ve
+   * compatibility adapter ayni immutable sonucu kullanir; cift okuma/drift uretilmez.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CaseService.getCalculationSummary() → legacy shadow + additive compatibility adapter
+   * - CaseService.buildCalculationSummaryCanonicalShadow() → direct diagnostic test/helper yolu
+   * </remarks>
+   */
+  private async resolveCalculationSummaryCanonicalBalance(
+    tenantId: string,
+    caseId: string,
+    calculationDate: string,
+  ): Promise<CalculationSummaryCanonicalBalanceResolution> {
+    if (!this.canonicalCaseBalance) {
+      return { status: "UNAVAILABLE", errorCode: "CASE_BALANCE_SERVICE_UNAVAILABLE" };
+    }
+    try {
+      return {
+        status: "OK",
+        balance: await this.canonicalCaseBalance.computeCaseBalance(tenantId, caseId, calculationDate),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Canonical balance shadow failed for case ${caseId}: ${message}`);
+      return { status: "ERROR", errorCode: "CANONICAL_SHADOW_COMPUTE_FAILED" };
+    }
   }
 
   /**
@@ -4084,8 +4153,14 @@ export class CaseService {
       legacyVekaletUcreti: number;
       legacyCurrency: string;
     },
+    resolved?: CalculationSummaryCanonicalBalanceResolution,
   ): Promise<CalculationSummaryCanonicalShadow> {
-    if (!this.canonicalCaseBalance) {
+    const canonicalResolution = resolved ?? await this.resolveCalculationSummaryCanonicalBalance(
+      tenantId,
+      caseId,
+      calculationDate,
+    );
+    if (canonicalResolution.status === "UNAVAILABLE") {
       const scopeComparisonMatrix = buildCanonicalShadowScopeComparisonMatrix(legacy, {
         canonicalClaimOnlyTotal: null,
         canonicalProjectedWithCosts: null,
@@ -4132,8 +4207,8 @@ export class CaseService {
       };
     }
 
-    try {
-      const balance = await this.canonicalCaseBalance.computeCaseBalance(tenantId, caseId, calculationDate);
+    if (canonicalResolution.status === "OK") {
+      const balance = canonicalResolution.balance;
       const canonicalProjectionCostsTotal = sumCanonicalProjectionTotal(balance.projections.costs);
       const canonicalProjectionAncillariesTotal = sumCanonicalProjectionTotal(balance.projections.ancillaries);
       const legacyCurrencyResult = balance.currencyResults.find((entry) => entry.currency === legacy.legacyCurrency);
@@ -4226,9 +4301,7 @@ export class CaseService {
         }),
         diagnostics: balance.diagnostics,
       };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Canonical balance shadow failed for case ${caseId}: ${message}`);
+    } else {
       const scopeComparisonMatrix = buildCanonicalShadowScopeComparisonMatrix(legacy, {
         canonicalClaimOnlyTotal: null,
         canonicalProjectedWithCosts: null,

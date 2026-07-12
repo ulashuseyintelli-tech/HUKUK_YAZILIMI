@@ -183,6 +183,30 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="golden-fixture-matrix\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # ADR-014 PR-10: the legacy calculation-summary response remains intact;
+      # canonical evidence is exposed only through the additive, fail-closed adapter.
+      - name: ADR-014 PR-10 compatibility adapter and contract tests
+        run: |
+          cd apps/api
+          for f in src/modules/case/__tests__/case-calculation-summary.compatibility.spec.ts \
+                   src/modules/case/__tests__/case-calculation-summary-shadow.spec.ts; do
+            test -f "$f" || { echo "MISSING ADR-014 PR-10 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/case/__tests__/case-calculation-summary.compatibility.spec.ts \
+            src/modules/case/__tests__/case-calculation-summary-shadow.spec.ts
+        working-directory: project
+      - name: ADR-014 PR-10 compatibility adapter disposable DB acceptance
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/case/__tests__/case-calculation-summary.compatibility.db-gated.integration.spec.ts || \
+            { echo "MISSING ADR-014 PR-10 DB acceptance spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/case/__tests__/case-calculation-summary.compatibility.db-gated.integration.spec.ts
+        working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
       - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
