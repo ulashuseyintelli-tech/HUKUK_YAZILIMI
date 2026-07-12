@@ -477,3 +477,20 @@ This closes contract definition only. It creates no environment, selects no data
 or copies no case data, grants no access/execution approval and produces no representative
 evidence. The single next preparation task is `ADR014-PE-04 — Representative Dataset
 Matrix and Sampling Manifest`. PR-11 and runtime cutover remain not authorized.
+
+---
+
+## 13. PE-04 dataset/sampling-contract closure (2026-07-12)
+
+`ADR014-PE-04 — Representative Dataset Matrix and Sampling Manifest Contract` is defined
+in `adr-014-representative-dataset-matrix-sampling-manifest.md`. It separates canonical
+dataset classes, production-origin source status and representative qualification; defines
+distributional and edge-case sampling layers, coverage, inclusion/exclusion, bias review,
+an immutable reference-only manifest, traceability, validity and owner-only final approval.
+
+This closes contract definition only. It selects/materializes no dataset, reads or copies
+no case data, creates no manifest instance, activates no environment/session and grants no
+access, execution or evidence authority. The single next preparation task is
+`ADR014-PE-05 — ADR-014 Metrics, Audit, Dashboard and Alert Operational Contract`.
+Representative evidence remains absent/blocking; PR-11 and runtime cutover remain not
+authorized.
