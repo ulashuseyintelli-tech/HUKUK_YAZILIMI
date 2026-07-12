@@ -2,8 +2,10 @@
 
 ```text
 Belge yolu : project/docs/governance/SYSTEM-CONSTITUTION.md
-Durum      : PROPOSED — owner talimatıyla oluşturuldu (2026-07-12);
-             bu governance PR'ının owner review/merge onayı ile RATIFIED olur.
+Durum      : PROPOSED — owner talimatıyla oluşturuldu (2026-07-12).
+             Taşıyan PR #1139 MERGED (squash 413890dd, 2026-07-12, CI 4/4 PASS), ancak
+             PR merge'i belge metnini ratifiye ETMEZ; RATIFIED yalnız owner'ın bu belgenin
+             metnini ayrıca onaylamasıyla (ayrı governance PR ile) gerçekleşir.
 Rol        : Governance belge hiyerarşisinin çatısı. Domain kuralı içermez;
              hangi belgenin hangi otoriteye sahip olduğunu ve nasıl değiştiğini tanımlar.
 ```
