@@ -11,7 +11,10 @@ import {
   RICH_INTEREST_FIXTURE_MANIFEST,
   type RichInterestFixtureManifestEntry,
 } from './fixtures/rich-interest-uyap/manifest';
-import { extractFaiztMapping, extractNumericMapping } from './fixtures/rich-interest-uyap/exporter-parity-ast';
+import {
+  extractFaiztMapping,
+  extractNumericProjectionActivation,
+} from './fixtures/rich-interest-uyap/exporter-parity-ast';
 
 function inventoryRow(entry: RichInterestFixtureManifestEntry): RichInterestUyapInventoryRow {
   const claim = entry.claimItemInput;
@@ -139,21 +142,20 @@ describe('PR-A4-2 calculation authority evidence', () => {
 
 describe('PR-A4-2 production exporter AST parity (observation only)', () => {
   const numericPath = path.resolve(__dirname, '../../../uyap/uyap-xml.service.ts');
+  const numericAdapterPath = path.resolve(__dirname, '../../../uyap/numeric-interest-projection.adapter.ts');
+  const crosswalkPath = path.resolve(__dirname, '../../../../config/uyap-interest-crosswalk.ts');
   const faiztPath = path.resolve(__dirname, '../../../uyap-export/uyap-case-mapper.service.ts');
 
-  it('numeric mapping ve fallback production source ile inventory observation modelinde aynıdır', () => {
-    const extracted = extractNumericMapping(numericPath);
-    for (const [legacy, output] of Object.entries(extracted.entries)) {
-      const entry = PERSISTED_FIXTURES[0];
-      const finding = classifyRichInterestUyapReadiness({ ...inventoryRow(entry), richCode: null, legacyType: legacy,
-        dueLegacyType: null, dueInterestStartDate: null });
-      expect(finding.numericExporter.outputCode).toBe(output);
-      expect(finding.numericExporter.silentFallback).toBe(false);
-    }
-    const unknown = classifyRichInterestUyapReadiness({ ...inventoryRow(PERSISTED_FIXTURES[0]),
-      richCode: null, legacyType: 'PRA42_UNKNOWN', dueLegacyType: null, dueInterestStartDate: null });
-    expect(extracted.fallback).toBe('99');
-    expect(unknown.numericExporter).toMatchObject({ outputCode: '99', silentFallback: true });
+  it('numeric production path tek canonical adapter/crosswalk authority zincirini kullanır', () => {
+    expect(extractNumericProjectionActivation(numericPath, numericAdapterPath, crosswalkPath)).toEqual({
+      authorityChain: ['UyapXmlService', 'numeric-interest-projection.adapter', 'UYAP_INTEREST_CROSSWALK'],
+      serviceAdapterCallCount: 1,
+      adapterCrosswalkCallCount: 1,
+      crosswalkRegistryCount: 1,
+      legacyMapperPresent: false,
+      silent99Present: false,
+      dueDateInterestFallbackPresent: false,
+    });
   });
 
   it('FAIZT mapping, fallback ve missing-start omission production source ile aynıdır', () => {
@@ -173,7 +175,7 @@ describe('PR-A4-2 production exporter AST parity (observation only)', () => {
     expect(omitted.faiztExporter).toMatchObject({ outputCode: null, silentFallback: false, omittedReason: 'MISSING_START_DATE' });
   });
 
-  it('manifest exporter expectations inventory observation ile uyumludur', () => {
+  it('manifest exporter expectations inventory classifier observation ile uyumludur', () => {
     for (const entry of RICH_INTEREST_FIXTURE_MANIFEST) {
       const finding = classifyRichInterestUyapReadiness(inventoryRow(entry));
       expect(finding.numericExporter.outputCode).toBe(entry.expectedExporterComparison.numeric);

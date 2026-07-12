@@ -193,16 +193,20 @@ describe('PR-A4-N1 dormant numeric projection adapter', () => {
     });
   });
 
-  it('remains dormant: production exporters, controllers and submit services do not import it', () => {
+  it('has exactly one authorized production consumer and no controller/FAIZT/submit import', () => {
     const sourceRoot = resolve(__dirname, '..');
+    const numericXmlConsumer = resolve(sourceRoot, 'uyap-xml.service.ts');
     const consumers = [
       resolve(sourceRoot, 'uyap.controller.ts'),
-      resolve(sourceRoot, 'uyap-xml.service.ts'),
       resolve(sourceRoot, 'uyap.service.ts'),
       resolve(sourceRoot, '..', 'uyap-export', 'uyap-case-mapper.service.ts'),
       resolve(sourceRoot, '..', 'uyap-export', 'uyap-export.service.ts'),
       resolve(sourceRoot, '..', 'uyap-export', 'uyap-xml-builder.service.ts'),
     ];
+
+    const numericXmlSource = readFileSync(numericXmlConsumer, 'utf8');
+    expect(numericXmlSource).toContain('numeric-interest-projection.adapter');
+    expect(numericXmlSource.match(/resolveDormantNumericInterestProjection/g)).toHaveLength(2);
 
     for (const consumer of consumers) {
       const source = readFileSync(consumer, 'utf8');

@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { create } from 'xmlbuilder2';
+import {
+  resolveDormantNumericInterestProjection,
+  type NumericInterestProjectionAdapterResult,
+} from './numeric-interest-projection.adapter';
 
 /**
  * UYAP e-Takip XML Generator Service
@@ -16,17 +20,6 @@ import { create } from 'xmlbuilder2';
  */
 
 // ==================== UYAP KODLARI (KodluBilgilerData.xml) ====================
-
-/** Faiz türleri - UYAP faizIsmi kodları */
-export const UYAP_FAIZ_KODLARI = {
-  YASAL: { kod: '1', isim: 'Yasal Faiz' },
-  TICARI_TEMERRUT: { kod: '2', isim: 'Ticari Temerrüt Faizi' },
-  REESKONT: { kod: '3', isim: 'Reeskont Faizi' },
-  AVANS: { kod: '4', isim: 'Avans Faizi' },
-  MEVDUAT: { kod: '5', isim: 'Mevduat Faizi' },
-  AKIT: { kod: '6', isim: 'Akit Faizi' },
-  DIGER: { kod: '99', isim: 'Diğer' },
-} as const;
 
 /** Para birimi kodları - UYAP tutarTur */
 export const UYAP_PARA_BIRIMLERI = {
@@ -399,7 +392,7 @@ export interface UyapAlacakKalemi {
 
 /** UYAP Faiz */
 export interface UyapFaiz {
-  /** Faiz türü kodu (UYAP_FAIZ_KODLARI) */
+  /** Canonical crosswalk tarafından çözülmüş numeric UYAP faiz türü kodu */
   faizTuru: string;
   
   /** Faiz oranı (yıllık %) */
@@ -978,51 +971,79 @@ export class UyapXmlService {
 
     // ClaimItems'dan
     for (const ci of caseRecord.claimItems || []) {
+      const faiz = this.projectClaimItemInterest(ci);
       kalemleri.push({
         siraNo: siraNo++,
         aciklama: ci.description || 'Alacak',
         tutar: Number(ci.amount) || 0,
         paraBirimi: UYAP_PARA_BIRIMLERI[ci.currency as keyof typeof UYAP_PARA_BIRIMLERI]?.kod || 'TL',
         vadeTarihi: ci.dueDate?.toISOString().split('T')[0],
-        faiz: ci.interestType ? {
-          faizTuru: this.mapInterestTypeToUyapKod(ci.interestType),
-          faizOrani: ci.interestRate ? Number(ci.interestRate) : undefined,
-          baslangicTarihi: ci.interestStartDate?.toISOString().split('T')[0] || ci.dueDate?.toISOString().split('T')[0] || '',
-          islemisFaiz: ci.interestAmount ? Number(ci.interestAmount) : undefined,
-        } : undefined,
+        faiz,
       });
     }
 
     // Eğer alacak kalemi yoksa, principalAmount'tan oluştur
     if (kalemleri.length === 0 && caseRecord.principalAmount) {
+      if (caseRecord.interestType || caseRecord.interestRate) {
+        throw this.projectionFailure({
+          ok: false,
+          status: 'INVALID_INTEREST_STATE',
+          claimItemId: `case:${caseRecord.id ?? 'unknown'}`,
+          canonicalCode: null,
+          legacyInterestType: caseRecord.interestType ?? null,
+          requiredContext: [],
+          detail: 'INTEREST_AUTHORITY_MISSING',
+        });
+      }
       kalemleri.push({
         siraNo: 1,
         aciklama: 'Asıl Alacak',
         tutar: Number(caseRecord.principalAmount),
         paraBirimi: UYAP_PARA_BIRIMLERI[caseRecord.currency as keyof typeof UYAP_PARA_BIRIMLERI]?.kod || 'TL',
         vadeTarihi: caseRecord.startDate?.toISOString().split('T')[0],
-        faiz: caseRecord.interestType ? {
-          faizTuru: this.mapInterestTypeToUyapKod(caseRecord.interestType),
-          faizOrani: caseRecord.interestRate ? Number(caseRecord.interestRate) : undefined,
-          baslangicTarihi: caseRecord.startDate?.toISOString().split('T')[0] || '',
-        } : undefined,
       });
     }
 
     return kalemleri;
   }
 
-  private mapInterestTypeToUyapKod(type: string): string {
-    const mapping: Record<string, string> = {
-      'YASAL': UYAP_FAIZ_KODLARI.YASAL.kod,
-      'TICARI': UYAP_FAIZ_KODLARI.TICARI_TEMERRUT.kod,
-      'TEMERRUT': UYAP_FAIZ_KODLARI.TICARI_TEMERRUT.kod,
-      'REESKONT': UYAP_FAIZ_KODLARI.REESKONT.kod,
-      'AVANS': UYAP_FAIZ_KODLARI.AVANS.kod,
-      'MEVDUAT': UYAP_FAIZ_KODLARI.MEVDUAT.kod,
-      'AKIT': UYAP_FAIZ_KODLARI.AKIT.kod,
+  private projectClaimItemInterest(claimItem: any): UyapFaiz | undefined {
+    const result = resolveDormantNumericInterestProjection({
+      claimItemId: claimItem.id,
+      interestAccrualStatus: claimItem.interestAccrualStatus,
+      interestTypeCode: claimItem.interestTypeCode ?? null,
+      legacyInterestType: claimItem.interestType ?? null,
+      interestRate: claimItem.interestRate ?? null,
+      interestStartDate: claimItem.interestStartDate ?? null,
+      interestStartDateProvenance: claimItem.interestStartDateProvenance ?? null,
+    });
+
+    if (!result.ok) {
+      throw this.projectionFailure(result);
+    }
+    if (result.status === 'NO_INTEREST') {
+      return undefined;
+    }
+
+    return {
+      faizTuru: result.numericCode,
+      faizOrani: result.interestRate ?? undefined,
+      baslangicTarihi: result.interestStartDate,
+      islemisFaiz: claimItem.interestAmount ? Number(claimItem.interestAmount) : undefined,
     };
-    return mapping[type] || UYAP_FAIZ_KODLARI.DIGER.kod;
+  }
+
+  private projectionFailure(
+    result: Extract<NumericInterestProjectionAdapterResult, { ok: false }>,
+  ): BadRequestException {
+    return new BadRequestException({
+      error: 'UYAP_NUMERIC_INTEREST_PROJECTION_FAILED',
+      claimItemId: result.claimItemId,
+      canonicalCode: result.canonicalCode,
+      legacyInterestType: result.legacyInterestType,
+      projectionStatus: result.status,
+      reason: result.detail,
+    });
   }
 
   private async getCeklerFromCase(caseId: string): Promise<UyapCek[]> {

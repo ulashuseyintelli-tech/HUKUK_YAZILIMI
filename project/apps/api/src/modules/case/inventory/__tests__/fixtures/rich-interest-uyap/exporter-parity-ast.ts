@@ -6,6 +6,16 @@ export interface ExtractedExporterMapping {
   fallback: string;
 }
 
+export interface ExtractedNumericProjectionActivation {
+  authorityChain: readonly ['UyapXmlService', 'numeric-interest-projection.adapter', 'UYAP_INTEREST_CROSSWALK'];
+  serviceAdapterCallCount: number;
+  adapterCrosswalkCallCount: number;
+  crosswalkRegistryCount: number;
+  legacyMapperPresent: boolean;
+  silent99Present: boolean;
+  dueDateInterestFallbackPresent: boolean;
+}
+
 function propertyName(node: ts.PropertyName): string {
   if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node)) return node.text;
   throw new Error(`Unsupported mapping key AST: ${ts.SyntaxKind[node.kind]}`);
@@ -71,66 +81,50 @@ export function extractFaiztMapping(sourcePath: string): ExtractedExporterMappin
   return { entries, fallback: literalString(expression.right) };
 }
 
-function findConstObject(root: ts.SourceFile, name: string): ts.ObjectLiteralExpression {
-  for (const statement of root.statements) {
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== name || !declaration.initializer) continue;
-      const initializer = ts.isAsExpression(declaration.initializer) ? declaration.initializer.expression : declaration.initializer;
-      if (ts.isObjectLiteralExpression(initializer)) return initializer;
-    }
-  }
-  throw new Error(`Const object not found: ${name}`);
+function countIdentifierCalls(root: ts.Node, name: string): number {
+  let count = 0;
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === name) count++;
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return count;
 }
 
-function extractKodTable(object: ts.ObjectLiteralExpression): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const property of object.properties) {
-    if (!ts.isPropertyAssignment(property) || !ts.isObjectLiteralExpression(property.initializer)) {
-      throw new Error(`Unsupported numeric code table member: ${property.getText()}`);
-    }
-    const key = propertyName(property.name);
-    const kod = property.initializer.properties.find((candidate): candidate is ts.PropertyAssignment =>
-      ts.isPropertyAssignment(candidate) && propertyName(candidate.name) === 'kod');
-    if (!kod) throw new Error(`Missing kod for ${key}`);
-    result[key] = literalString(kod.initializer);
-  }
-  return result;
+function countNamedDeclarations(root: ts.Node, name: string): number {
+  let count = 0;
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isMethodDeclaration(node) || ts.isFunctionDeclaration(node) || ts.isVariableDeclaration(node)) &&
+      node.name && ts.isIdentifier(node.name) && node.name.text === name
+    ) count++;
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return count;
 }
 
-function propertyAccessPath(node: ts.Expression): string[] {
-  const parts: string[] = [];
-  let cursor: ts.Expression = node;
-  while (ts.isPropertyAccessExpression(cursor)) {
-    parts.unshift(cursor.name.text);
-    cursor = cursor.expression;
-  }
-  if (!ts.isIdentifier(cursor)) throw new Error(`Unsupported property access: ${node.getText()}`);
-  parts.unshift(cursor.text);
-  return parts;
-}
+export function extractNumericProjectionActivation(
+  servicePath: string,
+  adapterPath: string,
+  crosswalkPath: string,
+): ExtractedNumericProjectionActivation {
+  const serviceText = fs.readFileSync(servicePath, 'utf8');
+  const adapterText = fs.readFileSync(adapterPath, 'utf8');
+  const crosswalkText = fs.readFileSync(crosswalkPath, 'utf8');
+  const service = ts.createSourceFile(servicePath, serviceText, ts.ScriptTarget.Latest, true);
+  const adapter = ts.createSourceFile(adapterPath, adapterText, ts.ScriptTarget.Latest, true);
+  const crosswalk = ts.createSourceFile(crosswalkPath, crosswalkText, ts.ScriptTarget.Latest, true);
 
-export function extractNumericMapping(sourcePath: string): ExtractedExporterMapping {
-  const source = ts.createSourceFile(sourcePath, fs.readFileSync(sourcePath, 'utf8'), ts.ScriptTarget.Latest, true);
-  const codeTable = extractKodTable(findConstObject(source, 'UYAP_FAIZ_KODLARI'));
-  const method = findMethod(source, 'mapInterestTypeToUyapKod');
-  const object = findObjectLiteral(method, 'mapping');
-  const entries: Record<string, string> = {};
-  for (const property of object.properties) {
-    if (!ts.isPropertyAssignment(property)) throw new Error(`Unsupported numeric mapping member: ${property.getText()}`);
-    const key = propertyName(property.name);
-    if (Object.prototype.hasOwnProperty.call(entries, key)) throw new Error(`Duplicate mapping key: ${key}`);
-    const path = propertyAccessPath(property.initializer);
-    if (path.length !== 3 || path[0] !== 'UYAP_FAIZ_KODLARI' || path[2] !== 'kod' || !codeTable[path[1]]) {
-      throw new Error(`Unsupported numeric mapping value: ${property.initializer.getText()}`);
-    }
-    entries[key] = codeTable[path[1]];
-  }
-  const expression = returnExpression(method);
-  if (!ts.isBinaryExpression(expression) || expression.operatorToken.kind !== ts.SyntaxKind.BarBarToken) {
-    throw new Error('Numeric fallback must remain an explicit || expression.');
-  }
-  const fallbackPath = propertyAccessPath(expression.right);
-  if (fallbackPath.join('.') !== 'UYAP_FAIZ_KODLARI.DIGER.kod') throw new Error('Numeric fallback changed.');
-  return { entries, fallback: codeTable.DIGER };
+  return {
+    authorityChain: ['UyapXmlService', 'numeric-interest-projection.adapter', 'UYAP_INTEREST_CROSSWALK'],
+    serviceAdapterCallCount: countIdentifierCalls(service, 'resolveDormantNumericInterestProjection'),
+    adapterCrosswalkCallCount: countIdentifierCalls(adapter, 'resolveUyapInterestProjection'),
+    crosswalkRegistryCount: countNamedDeclarations(crosswalk, 'UYAP_INTEREST_CROSSWALK'),
+    legacyMapperPresent: countNamedDeclarations(service, 'mapInterestTypeToUyapKod') > 0,
+    silent99Present: /(?:kod:\s*['"]99['"]|\|\|\s*['"]99['"]|\?\?\s*['"]99['"])/.test(serviceText),
+    dueDateInterestFallbackPresent:
+      /baslangicTarihi\s*:\s*[^\n]*dueDate/.test(serviceText) ||
+      /interestStartDate[^\n]*(?:\|\||\?\?)[^\n]*dueDate/.test(serviceText),
+  };
 }
