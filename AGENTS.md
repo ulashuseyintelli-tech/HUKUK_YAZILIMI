@@ -100,6 +100,33 @@ migration, review veya governance gorevinden once:
 
 Belge hiyerarsisi ve okuma sirasi: `project/docs/governance/GOVERNANCE-INDEX.md`.
 
+## OFFICE Hatti Zorunlu On-Kural
+
+OFFICE domain (Person/UserAccount/OrganizationMembership/Employment/LawyerCredential,
+title/role/permission/assignment, authorization, approval actor, delegation,
+session/lifecycle, offboarding, audit attribution, personel read model) ile ilgili
+her analiz, tasarim, implementation, migration, review veya governance gorevinden once:
+
+1. OFFICE'e ozgu is icin `project/docs/governance/OFFICE-GOVERNANCE.md` okunur; bu belge
+   Domain Law'dir. Cross-domain gorevde sibling domain governance (`DEBTOR-GOVERNANCE.md`,
+   `RECEIVABLE-GOVERNANCE.md`) de okunur.
+2. `project/docs/governance/OFFICE-MASTER-SYNTHESIS.md` yalniz kanit/senaryo/evidence
+   katmanidir; NON-NORMATIVE'tir, Domain Law'a norm ekleyemez.
+3. `project/docs/governance/OFFICE-RISK-REGISTER.md` risk'i triage veya calisma durumu
+   uretmez; global triage/execution status yalniz
+   `project/docs/governance/master-triage-register.md`'den turetilir.
+4. `project/docs/governance/OFFICE-OWNER-DECISIONS.md` bir karari KAPATMAZ; kapanmis
+   owner karari yalniz `project/docs/governance/decision-log.md`'de authoritative'dir.
+5. `master-triage-register.md` ve `product-backlog.md` execution/status authority olarak
+   kalir; OFFICE dossier'leri bunlarin yerine gecmez.
+6. Aktif Program/Wave/Workstream/Task ve owner mode (GO-ANALYZE/GO-IMPLEMENT/GO-COMPLETE)
+   dogrulanmadan analiz veya implementation baslatilmaz.
+7. Belgenin invariant veya hard-stop kurallariyla celisen bir durum tespit edilirse
+   durulur ve raporlanir.
+8. Kanonik OFFICE kurallari, ratifiye edilmis governance karari olmadan override edilmez.
+
+Belge hiyerarsisi ve okuma sirasi: `project/docs/governance/GOVERNANCE-INDEX.md`.
+
 ## Raporlama
 
 - Dogrulanmis gercekler, makul varsayimlar ve riskler ayri belirtilir.

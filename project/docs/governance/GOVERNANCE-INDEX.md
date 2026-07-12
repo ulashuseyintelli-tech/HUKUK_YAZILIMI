@@ -61,6 +61,10 @@ commit, merge, release veya runtime authority yetkisi oluşturmaz.
 | `project/docs/governance/GOVERNANCE-INDEX.md` | routing/discovery ve okuma sırası; authority değildir | RATIFIED / CANONICAL |
 | `project/docs/governance/DEBTOR-GOVERNANCE.md` | ratifiye Debtor Domain Law | RATIFIED / BINDING / CANONICAL v1.0 (2026-07-12; PR #1139 MERGED) |
 | `project/docs/governance/RECEIVABLE-GOVERNANCE.md` | ratifiye Receivable Domain Governance ve tek domain giriş noktası | RATIFIED / BINDING / CANONICAL v1.0 (2026-07-12; PR #1145 MERGED) |
+| `project/docs/governance/OFFICE-GOVERNANCE.md` | aday OFFICE Domain Law — vocabulary/ownership/boundaries/invariants/contracts | DRAFT / OWNER REVIEW REQUIRED |
+| `project/docs/governance/OFFICE-MASTER-SYNTHESIS.md` | OFFICE kanıt/gerekçe/senaryo katmanı (operasyonel değil) | DRAFT / EVIDENCE REVIEW REQUIRED / NON-NORMATIVE |
+| `project/docs/governance/OFFICE-RISK-REGISTER.md` | OFFICE domain risk dossier'i; global triage/execution status otoritesi DEĞİLDİR | DRAFT / NOT YET TRIAGED |
+| `project/docs/governance/OFFICE-OWNER-DECISIONS.md` | OFFICE açık owner karar dossier'i; kapanmış karar otoritesi DEĞİLDİR | DRAFT / OWNER DECISIONS OPEN |
 | `project/docs/adr/` + `architecture-index.md` | teknik/mimari kararlar ve gerekçeleri | KAYITLI STATÜYE GÖRE |
 | Implementation standards | code/API/test/deployment/operation conventions | BELGE STATÜSÜNE GÖRE |
 | Roadmap / Master Register | work sequencing, owner gates ve closure state | AKTİF; authority/implementation izni üretmez |
