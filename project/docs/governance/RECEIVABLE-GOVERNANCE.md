@@ -430,7 +430,7 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 | `REC-AUTH-027` — UI hesap özeti | Cutover sonrası yetkili DTO tüketimi; UI formül üretmez | Presentation consumer contract | `TARGET / SHADOW_ONLY / PRODUCTION_NO_GO` | `LEGACY PRIMARY ACTIVE; CANONICAL CUTOVER NOT AUTHORIZED` |
 | `REC-AUTH-028` — Report/document balance | UI ile aynı canonical contract'ın tüketimi; ayrı formül yasak | Presentation/report consumer contract | `TARGET / PRODUCTION_NO_GO` | `REVALIDATION + CONSUMER CUTOVER REQUIRED` |
 | `REC-AUTH-029A` — UYAP source fact | Harici kaynaktan gelen provenance/evidence; doğrulanmadan canonical truth değildir | Validated UYAP adapter + domain confirmation | `CURRENT INPUT / NON_CANONICAL` | `CURRENT PARTIAL / PROVENANCE AND RECONCILIATION REQUIRED` |
-| `REC-AUTH-029B` — UYAP mapping policy | Rich-interest ve exporter kodları arasındaki ratifiye dönüşüm kararı | Owner/legal-approved integration mapping | `TARGET / PRODUCTION_NO_GO` | `NOT DECIDED / PR-A4 BLOCKED; PR-A5 NOT AUTHORIZED` |
+| `REC-AUTH-029B` — UYAP mapping policy | Rich-interest ve exporter kodları arasındaki ratifiye dönüşüm kararı | Owner/legal-approved integration mapping | `TARGET / PRODUCTION_NO_GO` | `SELECTED D1–D9 CELLS OWNER_LEGAL_ACCEPTED / CONTRACT CANONICAL-DORMANT; OTHER CELLS UNVERIFIED-FAIL-CLOSED; RUNTIME CONSUMPTION NOT IMPLEMENTED; PR-A5 NOT AUTHORIZED` |
 | `REC-AUTH-030` — Bank receipt candidate | Tahsis öncesi non-authoritative integration candidate | Bank adapter + authorized confirmation | `CURRENT INPUT / NON_CANONICAL` | `HUMAN/OWNER CONFIRMATION REQUIRED; NO AUTO-ALLOCATION` |
 | `REC-AUTH-031` — AI/risk output | Advisory derived output; hukuki/finansal authority değildir | AI/risk projection owner | `CURRENT PARTIAL / DERIVED_NON_AUTHORITATIVE` | `TENANT, VISIBILITY, PROVENANCE AND HUMAN-GATE COMPLIANCE REQUIRED` |
 
@@ -1319,7 +1319,7 @@ Status: FUTURE CANDIDATE / NOT RATIFIED / NOT IMPLEMENTATION AUTHORITY
 ```text
 Status: VOLATILE / NON-NORMATIVE
 Canonicalization review tarihi: 2026-07-12
-Canonicalization review baseline: 3fcdcecb36d11903ce15f763606370b401cf85f4
+Canonicalization review baseline: 298ed65a801c08d865c19372dc303ee29c08d0d3
 Kural: Her karar öncesi canonical main'den yeniden doğrulanır.
 ```
 
@@ -1345,8 +1345,14 @@ Kural: Her karar öncesi canonical main'den yeniden doğrulanır.
 | Synthetic evidence | AVAILABLE |
 | Exporter-model parity | VERIFIED within synthetic scope |
 | Production empirical evidence | ABSENT |
-| Exact legal/UYAP mapping | NOT DECIDED |
-| PR-A4 | BLOCKED |
+| Selected D1–D9 crosswalk cells | OWNER_LEGAL_ACCEPTED / CANONICAL |
+| Other crosswalk cells | UNVERIFIED / FAIL-CLOSED |
+| Crosswalk contract | IMPLEMENTED / DORMANT (PR #1158, squash `4daac1375888a83abbe8e0eba267038299397cc1`) |
+| Runtime projection consumption | NOT IMPLEMENTED |
+| Numeric / FAIZT exporter wiring | NOT AUTHORIZED |
+| Submit enforcement | NOT AUTHORIZED |
+| `VERIFIED_OFFICIAL` | NONE |
+| PR-A4 | PARTIAL — R1 CLOSED/CANONICAL/DORMANT; runtime activation NOT AUTHORIZED |
 | PR-A5 | NOT AUTHORIZED |
 | VER-05 | OPEN |
 | CAN-CUT-01 / CAN-CUT-02 | OPEN |
