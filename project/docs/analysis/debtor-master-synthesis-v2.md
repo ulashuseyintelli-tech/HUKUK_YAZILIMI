@@ -16,6 +16,62 @@
 > Mimari, severity, root cause, remediation ve test gereksinimleri korunmuştur; modül/dosya düzeyi
 > referanslar kalmıştır. `[SANITIZED — P0 kapanışına dek]` işareti maskelenen yerleri gösterir. Ayrıntılı
 > satır kanıtları ilgili P0 kapandıktan sonra ayrı bir governance PR ile geri eklenebilir.
+> **Not (2026-07-12 reconciliation):** Bu varsayım artık kısmen eskidir — bkz. aşağıdaki
+> CURRENT-STATE RECONCILIATION, FND-01/FND-02 zaten kapandı.
+
+---
+
+## CANONICAL METADATA (2026-07-12 — GO-DOCS canonicalization pass)
+
+```text
+STATUS: CANONICAL PROGRAM / GOVERNANCE INTEGRATED
+SOURCE: Owner-provided Master Synthesis v2 ("BORCLUPLATFORMUMASTERSYNTHESIS 2.md")
+HISTORICAL BASELINE: 5b51b2e (branch claude/debtor-module-audit-wnb2w3 — never existed in this repo;
+  predates MPB-028 / PR #1027 and all PR-EA-1..6 work)
+CURRENT IMPLEMENTATION STATUS: bkz. CURRENT-STATE RECONCILIATION (hemen aşağıda)
+PROGRAM STRUCTURE: Wave 0 → Wave 1 → Wave 2 → Wave 3 (bkz. Section AE Implementation Handoff)
+```
+
+## CURRENT-STATE RECONCILIATION
+
+**Program konumu:**
+
+```text
+PROGRAM: BORÇLU PLATFORMU
+CURRENT WAVE: WAVE 0 — PRODUCTION / LEGAL / SECURITY STABILIZATION
+CURRENT SUB-WORKSTREAM: MPB-028(c) / PR-EA
+PR-EA-4: CODE/RUNTIME CLOSED / MERGED · GOVERNANCE CLOSED / REGISTERED
+MPB-028(c): PARTIAL / OPEN
+```
+
+PR-EA dizisi (PR-EA-1..6) yalnız Wave 0 içindeki `MPB-028(c)` alt-workstream'inin uygulama sırasıdır;
+Borçlu Platformu programının tamamı **değildir** ve program Wave yapısıyla karıştırılmaz.
+
+**Bulgu mutabakatı** (Section E Canonical Findings Register'a karşı, güncel `origin/main` ile doğrulandı):
+
+| FND | Başlık | Belgedeki statü | Güncel statü | Kanıt |
+|---|---|---|---|---|
+| FND-01 | Tenant tek-savunma (Risk/AI/Notification leak) | P0 CONFIRMED | **CLOSED BY LATER PR** | MPB-028 (PR #1027, squash `612eede9`) — `RiskService`/`RiskController` + `AiService`/`AiController` artık tenantId zorunlu; `risk.service.ts`/`ai.service.ts` `where:{id,tenantId}` kullanıyor (PR-EA-1 design doc'unda 2026-07-11 taze doğrulandı) |
+| FND-02 | Mock legal-write kanonik alana | P0 CONFIRMED | **CLOSED BY LATER PR** | MPB-028 (aynı PR) — `uets.service.ts`'te `Math.random()` referansı sıfır (taze grep); `scheduler.service.ts`'te yalnız geçmişe atıf yapan açıklayıcı yorum kaldı |
+| FND-03 | Süre otoritesi non-canonical | P0 CONFIRMED | **OPEN** | MPB-028 closure kaydı bunu kapsam dışı bırakılan takip maddesi (a) olarak işaretledi (`legal-time-authority-rebase`); henüz owner GO-IMPLEMENT verilmedi |
+| FND-04 | Guard'sız otomatik aşama geçişi | P1 CONFIRMED | **VERIFICATION REQUIRED** | Bu GO-DOCS turunda taze doğrulanmadı — kapsam dışı |
+| FND-05 | Demo UI (DEAD_CODE) | P2 CONFIRMED | **CLOSED BY LATER PR** | MPB-028 — `debtor-risk-score.tsx`/`payment-history.tsx`/`communication-log.tsx` taze doğrulandı: `apps/web/src/components/debtor/__quarantine__/` altında |
+| FND-06 | 3 rakip skor motoru | P1 CONFIRMED | **PARTIALLY CLOSED** | DEBTOR-SCORING-CANON Phase 2 CLOSED (kanonik `DebtorScoringService` contracts+engine+adapters+orchestration); Phase 3 (consumer switch, `Case.riskScore` RETIRE) henüz uygulanmadı |
+| FND-07 | Hukuki durum structured değil | P1 CONFIRMED | **PARTIALLY CLOSED** | DEBTOR-RISK-LABEL-MAPPING-FIX (PR #1051) yalnız M1 (yanlış risk-etiketi eşlemesi) dar hotfix'ini kapattı; MPB-028(d) (`Debtor.legalStatus` hayalet alan kararı) hâlâ açık |
+| FND-08 | EnforcementAction tenant/borçlu bağı yok | P1 CONFIRMED | **PARTIALLY CLOSED** | PR-EA-2 (additive schema, PR #1085) + PR-EA-4 (guarded write-path, PR #1134) CLOSED; PR-EA-5 (NOT NULL hardening) ve PR-EA-6 (cleanup, 3 ayrı madde) henüz uygulanmadı |
+| FND-09 — FND-13 | (AuditLog/davranış sinyali/reporting/CI-skip/Party) | — | **VERIFICATION REQUIRED** | Bu GO-DOCS turunda taze doğrulanmadı — kapsam dışı |
+
+**Wave yapısı supersede edilmez:** Yukarıdaki teknik kapanışlar Section AE'deki dört-wave program yapısını
+(Wave 0→1→2→3) veya Section H/J'deki mimari kararları geçersiz kılmaz — bunlar mimari/program kararlarıdır,
+teknik kapanışla silinmez.
+
+**Terminoloji notu (çelişki değil, hizalama gözlemi):** `SYSTEM-CONSTITUTION.md` (§18) ve `decision-log.md`
+(PR #1140 kaydı) zaten "Wave-0" ve "`MS/EXEC-01`" terimlerini tanıyor; `DEBTOR-GOVERNANCE.md`'nin kendi §8.1
+Foundation Order'ı aynı bağımlılık zincirini "Security/tenant stabilization → ... → Digital Twin" 13 adımlı
+diziyle anlatıyor, "Wave" kelimesini kullanmıyor. İki tarif aynı temel sırayı farklı granülaritede anlatıyor;
+normatif bir çelişki tespit edilmedi, `GOVERNANCE_RECONCILIATION_REQUIRED` tetiklenmedi.
+
+---
 
 # BORÇLU PLATFORMU — MASTER SYNTHESIS, DECISION ARCHITECTURE & EXECUTION ROADMAP
 ## (Gap Closure, Traceability & Consistency Pass — v2, self-contained)
