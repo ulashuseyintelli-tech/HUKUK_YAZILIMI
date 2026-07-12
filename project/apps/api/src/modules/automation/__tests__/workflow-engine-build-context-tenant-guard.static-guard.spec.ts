@@ -2,9 +2,9 @@
  * OD-3 tenant guard — statik kaynak taraması.
  *
  * buildContext/processCase gövdelerinin tenant-siz `case.findUnique({id})` deseninine geri
- * dönmediğini kanıtlar (bu dosyada `updateCaseStage`/`calculateNextActionTime` KASITLI olarak
- * bu turun kapsamı dışında bırakıldı ve hâlâ `findUnique` kullanıyor — bu guard yalnız
- * buildContext/processCase gövdelerini izole eder, dosyanın tamamını değil).
+ * dönmediğini kanıtlar (bu guard yalnız buildContext/processCase gövdelerini izole eder).
+ * `updateCaseStage`/`calculateNextActionTime` için aynı iddia ayrı bir statik guard'da kanıtlanır:
+ * workflow-engine-remaining-tenant-boundaries.static-guard.spec.ts.
  */
 
 import * as fs from 'fs';

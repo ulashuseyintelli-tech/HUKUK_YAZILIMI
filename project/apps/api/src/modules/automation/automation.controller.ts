@@ -43,9 +43,9 @@ export class AutomationController {
 
   // Dosya için sonraki işlem zamanını hesapla
   @Get("cases/:id/next-action")
-  async getNextAction(@Param("id") caseId: string) {
+  async getNextAction(@CurrentUser() user: any, @Param("id") caseId: string) {
     const nextActionAt =
-      await this.workflowEngine.calculateNextActionTime(caseId);
+      await this.workflowEngine.calculateNextActionTime(caseId, user.tenantId);
     return { nextActionAt };
   }
 }
