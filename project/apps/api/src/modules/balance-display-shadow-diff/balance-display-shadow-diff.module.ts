@@ -6,6 +6,10 @@ import { BalanceDisplayShadowDiffService } from './balance-display-shadow-diff.s
 import { BalanceDisplayShadowDiffMetrics } from './balance-display-shadow-diff.metrics';
 import { BalanceDisplayShadowDiffEventLogger } from './balance-display-shadow-diff-event-logger';
 import { BalanceDisplayShadowDiffAuditCorrelationPreparation } from './balance-display-shadow-diff-audit-correlation';
+import {
+  ADR014_DURABLE_AUDIT_WRITER,
+  NoopAdr014DurableAuditWriter,
+} from './balance-display-shadow-diff-audit-writer';
 
 @Module({
   imports: [CaseModule, InterestEngineModule],
@@ -15,7 +19,11 @@ import { BalanceDisplayShadowDiffAuditCorrelationPreparation } from './balance-d
     BalanceDisplayShadowDiffMetrics,
     BalanceDisplayShadowDiffEventLogger,
     BalanceDisplayShadowDiffAuditCorrelationPreparation,
+    {
+      provide: ADR014_DURABLE_AUDIT_WRITER,
+      useClass: NoopAdr014DurableAuditWriter,
+    },
   ],
-  exports: [BalanceDisplayShadowDiffAuditCorrelationPreparation],
+  exports: [BalanceDisplayShadowDiffAuditCorrelationPreparation, ADR014_DURABLE_AUDIT_WRITER],
 })
 export class BalanceDisplayShadowDiffModule {}
