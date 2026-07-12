@@ -48,6 +48,17 @@ Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar ici
 - Test iddialari factual olmalidir: yalniz gercekten calistirilan komutlar ve gozlenen sonuclar raporlanir.
 - Calistirilmayan test veya kontrol icin "calistirilmadi" denir; tahmini sonuc test sonucu gibi sunulmaz.
 
+## Borclu Hatti (Debtor) Zorunlu On-Kural
+
+Borclu hattiyla ilgili her analiz, tasarim, implementation, migration, review veya governance gorevinden once:
+
+1. `project/docs/governance/DEBTOR-GOVERNANCE.md` okunur.
+2. Icindeki Mandatory Pre-Task Checklist doldurulur.
+3. Belgenin invariant veya hard-stop kurallariyla celisen bir durum tespit edilirse durulur ve raporlanir.
+4. Kanonik borclu kurallari, ratifiye edilmis governance karari olmadan override edilmez.
+
+Belge hiyerarsisi ve okuma sirasi: `project/docs/governance/GOVERNANCE-INDEX.md`.
+
 ## Raporlama
 
 - Dogrulanmis gercekler, makul varsayimlar ve riskler ayri belirtilir.
