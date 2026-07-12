@@ -61,4 +61,30 @@ describe('BalanceDisplayShadowDiffMetrics', () => {
     const output = await registry.metrics();
     expect(output).toContain('adr014_shadow_requests_total{outcome="SOURCE_UNAVAILABLE"} 1');
   });
+
+  it('component durationlarini bounded component/result etiketleriyle saniye olarak kaydeder', async () => {
+    const registry = new Registry();
+    const metrics = new BalanceDisplayShadowDiffMetrics(registry);
+
+    metrics.recordCalculationDuration('LEGACY', 'SUCCESS', 125);
+    metrics.recordCalculationDuration('CANONICAL', 'ERROR', 250);
+    metrics.recordCalculationDuration('SHADOW_COMPARE', 'SUCCESS', -5);
+
+    const output = await registry.metrics();
+    expect(output).toContain(
+      'adr014_calculation_duration_seconds_sum{component="LEGACY",result="SUCCESS"} 0.125',
+    );
+    expect(output).toContain(
+      'adr014_calculation_duration_seconds_count{component="LEGACY",result="SUCCESS"} 1',
+    );
+    expect(output).toContain(
+      'adr014_calculation_duration_seconds_sum{component="CANONICAL",result="ERROR"} 0.25',
+    );
+    expect(output).toContain(
+      'adr014_calculation_duration_seconds_sum{component="SHADOW_COMPARE",result="SUCCESS"} 0',
+    );
+    expect(output).not.toContain('tenant');
+    expect(output).not.toContain('case');
+    expect(output).not.toContain('amount');
+  });
 });
