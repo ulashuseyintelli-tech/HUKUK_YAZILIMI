@@ -2,6 +2,7 @@ import { BalanceDisplayShadowDiffService } from '../balance-display-shadow-diff.
 import type { BalanceDisplayShadowDiffReport } from '../balance-display-shadow-diff.types';
 import type { CaseService } from '../../case/case.service';
 import type { CaseBalanceService, CaseBalanceResult } from '../../interest-engine/orchestration/case-balance.service';
+import { buildCaseBalanceFeeProjection } from '../../interest-engine/orchestration/case-balance-fee-projection';
 import { AncillaryType } from '../../interest-engine/types/domain.types';
 
 const GENERATED_AT = '2026-06-24T10:00:00.000Z';
@@ -91,6 +92,10 @@ function canonicalBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalan
       costs: { [AncillaryType.HARC]: 50 },
       ancillaries: { [AncillaryType.VEKALET_UCRETI]: 150 },
     },
+    feeProjection: buildCaseBalanceFeeProjection({
+      sourceItems: [],
+      currencyResults: [{ currency: 'TRY', resultAvailable: true }],
+    }),
     diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
     overpayments: { held: [], blocked: [] },
     ...overrides,
@@ -260,6 +265,9 @@ function guardedPilotDecision(
   if (!report.comparability.comparable) {
     reasonCodes.push('NOT_COMPARABLE');
   }
+  if (!report.cutoverReadiness.safeForPrimaryDisplay) {
+    reasonCodes.push(...report.cutoverReadiness.blockers);
+  }
   if (report.currency === 'MULTI' || report.currency === 'UNKNOWN' || report.currency == null) {
     reasonCodes.push('DISPLAY_CURRENCY_UNSAFE');
   }
@@ -279,14 +287,14 @@ function expectLegacyFallback(decision: GuardedPilotDecision, expectedReason: st
 }
 
 describe('guarded primary cutover minimal evidence pack', () => {
-  it('eligible normal principal-only evidence can be classified as canonical primary candidate when the flag is on', async () => {
+  it('normal principal-only fixture required comparison evidence olmadan primary candidate olamaz', async () => {
     const report = await compare();
     const decision = guardedPilotDecision(report, { featureFlagEnabled: true });
 
-    expect(decision).toEqual({
-      primarySource: 'CANONICAL_PRIMARY_CANDIDATE',
-      reasonCodes: [],
-    });
+    expectLegacyFallback(decision, 'MISSING_PAYMENT_ALLOCATION_COMPARISON_EVIDENCE');
+    expectLegacyFallback(decision, 'MISSING_INTEREST_BASE_COMPARISON_EVIDENCE');
+    expectLegacyFallback(decision, 'MISSING_FEE_PROJECTION_COMPARISON_EVIDENCE');
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
     expect(report.provenance.finalDebtStatesAvailable).toBe(true);
     expect(report.provenance.claimItemCollectedAmountUsedAsAuthority).toBe(false);
     expect(report.bucketDiffs.find((diff) => diff.bucket === 'PRINCIPAL')).toMatchObject({
