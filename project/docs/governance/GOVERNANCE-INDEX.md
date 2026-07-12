@@ -2,8 +2,10 @@
 
 ```text
 Belge yolu : project/docs/governance/GOVERNANCE-INDEX.md
-Durum      : PROPOSED — owner talimatıyla oluşturuldu (2026-07-12);
-             bu governance PR'ının owner review/merge onayı ile RATIFIED olur.
+Durum      : PROPOSED — owner talimatıyla oluşturuldu (2026-07-12).
+             Taşıyan PR #1139 MERGED (squash 413890dd, 2026-07-12, CI 4/4 PASS), ancak
+             PR merge'i belge metnini ratifiye ETMEZ; RATIFIED yalnız owner'ın bu belgenin
+             metnini ayrıca onaylamasıyla (ayrı governance PR ile) gerçekleşir.
 Rol        : Yeni bir göreve başlayan ajanın hangi belgeyi hangi sırayla okuyacağını tanımlar.
 ```
 
@@ -36,9 +38,9 @@ Master Register kontrolü hiçbir borçlu-hattı görevinde atlanamaz.
 | Belge | Rol | Durum |
 |---|---|---|
 | `AGENTS.md` (repo kökü) | tüm ajanlar için zorunlu baseline | AKTİF |
-| `project/docs/governance/SYSTEM-CONSTITUTION.md` | governance çatısı ve hiyerarşi | PROPOSED (bu PR) |
-| `project/docs/governance/GOVERNANCE-INDEX.md` | okuma sırası + belge haritası | PROPOSED (bu PR) |
-| `project/docs/governance/DEBTOR-GOVERNANCE.md` | borçlu hattı kanonik operasyonel referans | RATIFIED v1.0 (2026-07-12) |
+| `project/docs/governance/SYSTEM-CONSTITUTION.md` | governance çatısı ve hiyerarşi | PROPOSED (metin ratifikasyonu bekliyor; PR #1139 MERGED) |
+| `project/docs/governance/GOVERNANCE-INDEX.md` | okuma sırası + belge haritası | PROPOSED (metin ratifikasyonu bekliyor; PR #1139 MERGED) |
+| `project/docs/governance/DEBTOR-GOVERNANCE.md` | borçlu hattı kanonik operasyonel referans | RATIFIED v1.0 (2026-07-12; PR #1139 MERGED) |
 | `project/docs/governance/README.md` | governance klasör tanımı ve dosya listesi | AKTİF |
 | `project/docs/governance/decision-log.md` | kronolojik karar kaydı | AKTİF |
 | `project/docs/governance/architecture-index.md` | repo ADR kütüğü indeksi | AKTİF |

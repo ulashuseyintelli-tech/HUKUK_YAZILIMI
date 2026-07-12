@@ -15,6 +15,9 @@ Bu klasör `AGENTS.md` yerine geçmez ve ikinci bir kural seti oluşturmaz. Bir 
 
 Dosyalar:
 
+- `SYSTEM-CONSTITUTION.md` - governance belge hiyerarşisinin çatısı (PROPOSED — metin ratifikasyonu bekliyor).
+- `GOVERNANCE-INDEX.md` - yeni göreve başlayan ajan için okuma sırası ve belge haritası (PROPOSED — metin ratifikasyonu bekliyor).
+- `DEBTOR-GOVERNANCE.md` - borçlu hattı kanonik ve bağlayıcı operasyonel referans (RATIFIED v1.0, 2026-07-12).
 - `active-roadmap.md` - aktif fazlar ve implementasyona açık işler.
 - `product-backlog.md` - yeni governance Product Backlog hedef kaydı.
 - `architecture-index.md` - kesinleşmiş mimari kararların indeksi.
