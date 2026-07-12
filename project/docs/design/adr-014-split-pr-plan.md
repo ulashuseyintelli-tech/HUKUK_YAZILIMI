@@ -1,8 +1,8 @@
 # ADR-014 Split-PR Baseline Execution Plan
 
-**Status:** APPROVED / POST-PR-9 BASELINE EXECUTION PLAN v2.9
+**Status:** APPROVED / POST-PR-10 BASELINE EXECUTION PLAN v2.10
 **Date:** 2026-07-10
-**Last Reconciled:** 2026-07-11
+**Last Reconciled:** 2026-07-12
 **Owner:** Ulaş
 **Related:** `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`, `product-backlog.md` (`ID: ADR-014-SCENARIO-INFRA`, `ID: ADR-014-SPLIT-PR-PLAN`, `ID: CCB-001`), `decision-log.md` (2026-07-10)
 
@@ -13,6 +13,8 @@
 > **v2.8 (2026-07-11):** PR-8b technical + governance closure: canonical allocation/interest evidence deterministic explainability trace'e ve ephemeral non-official snapshot DTO'suna additive olarak taşınır. Her iki DTO `authority=NONE / persisted=false`; official snapshot availability, readiness blockers, legal totals ve display authority değişmez. Persistence/hash/lifecycle/schema, writer, consumer switch ve yeni authority eklenmedi; PR-9 sonraki eligible slice; runtime cutover NOT AUTHORIZED.
 
 > **v2.9 (2026-07-11):** PR-9 technical + governance closure: mevcut Wave 0 `ScenarioDefinition` tek scenario/expected contract olarak 12 canonical vakayı unit ve disposable-PostgreSQL twin-run'da besler. Cent-normalized exact equality, expected matching, repeatability, blocker 5/5 ve tenant isolation kanıtlandı. Runtime hesaplama, writer, schema/migration, API/UI, official snapshot ve authority değişmedi; PR-10 sonraki eligible slice; runtime cutover NOT AUTHORIZED.
+
+> **v2.10 (2026-07-12):** PR-10 technical + governance closure: existing calculation-summary response keeps every legacy field unchanged and adds a typed `canonicalCompatibility` payload. Canonical per-currency principal/interest/payment/cost evidence, fee status, blockers/readiness, trace and non-official snapshot are losslessly mapped; zero fallback and conflicting parity fail closed. Adapter remains `ADDITIVE_SHADOW_ONLY`; consumer switch, primary authority promotion and runtime cutover were not introduced. Next eligible step is the `UNASSIGNED` owner cutover-authorization governance gate; PR-11 remains unauthorized until that gate closes.
 
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
@@ -31,8 +33,8 @@
 - REVERSAL = RESOLVED / CONDITIONAL OPTION B (bkz. §11). Wave 0 materializer direct-write
   (yalnız test/disposable DB); gerçek `CollectionService.cancel()` write-path'i AYRI
   DB-gated integration test'iyle doğrulanır. Materializer PASS ≠ production cancel path PASS.
-- POST-PR-9: W0.1/W0.2/W0.3, PR-1A, PR-1B, PR-2, PR-3h, PR-4, PR-5, PR-6, PR-7, PR-8a, PR-8b ve PR-9 CLOSED / CANONICAL.
-  İlk unresolved technical slice PR-10 Canonical primary adapter'dır.
+- POST-PR-10: W0.1/W0.2/W0.3, PR-1A, PR-1B, PR-2, PR-3h, PR-4, PR-5, PR-6, PR-7, PR-8a, PR-8b, PR-9 ve PR-10 CLOSED / CANONICAL.
+  İlk unresolved adım `UNASSIGNED` owner cutover-authorization governance gate'idir; PR-11 consumer switch henüz yetkili değildir.
 - MANDATORY ORDER = canonical merge + governance closure + downstream eligibility sırası.
   PARALEL OK = yalnız analiz, hazırlık ve bağımsız branch geliştirmesi; out-of-order merge/closure değildir.
 ```
@@ -271,7 +273,7 @@ lifecycle/notification/audit yan-etkilerine bağlanır ve minimal-infra kararın
 
 ---
 
-## 12. Post-PR-9 Status and Mandatory Dependency Chain
+## 12. Post-PR-10 Status and Mandatory Dependency Chain
 
 ```text
 Wave 0                         CLOSED / CANONICAL
@@ -286,13 +288,15 @@ PR-7                           CLOSED / FEE-PROJECTION PLUMBING FAIL-CLOSED CANO
 PR-8a                          CLOSED / SNAPSHOT-READINESS CONSISTENCY CANONICAL
 PR-8b                          CLOSED / NON-OFFICIAL EXPLAINABILITY TRACE CANONICAL
 PR-9                           CLOSED / GOLDEN FIXTURE MATRIX CANONICAL
+PR-10                          CLOSED / ADDITIVE COMPATIBILITY ADAPTER CANONICAL
 Calculation completeness       PARTIAL / NOT COMPLETE
 Technical readiness            NOT READY
-Governance readiness           RECONCILED BY v2.9; downstream closures still required
+Governance readiness           RECONCILED BY v2.10; owner cutover authorization required
 Production readiness           NOT READY
 Runtime-cutover readiness      NOT READY
 Runtime-cutover authorization  NOT AUTHORIZED
-Next technical slice           PR-10 Canonical primary adapter
+Next eligible step             `UNASSIGNED` owner cutover-authorization governance gate
+PR-11 consumer switch          NOT AUTHORIZED
 ```
 
 | Sequence | Workstream | Prerequisite | Scope / hard stop | Required evidence | Owner gate | Closure dependency / next |
@@ -306,8 +310,8 @@ Next technical slice           PR-10 Canonical primary adapter
 | 7 | PR-8a | PR-7 closure (**SATISFIED**) | Read-only blocker coverage 5/5 + authority/snapshot/display/evidence signal consistency; persistence forbidden | Unit/display/evidence + real DB diagnostic/materializer/cancel gates + CI 4/4 | Official persistence excluded | **CLOSED / CANONICAL** — PR #1125 + separate register closure; PR-8b eligible |
 | 8 | PR-8b | PR-8a technical + governance closure (**SATISFIED**) | Trace/AllocationLog/non-official snapshot layer; schema/official persistence hard stop | Explainability + cleanup evidence | Official snapshot remains ADR-013 owner gate | **CLOSED / CANONICAL** — PR #1128 + separate register closure; PR-9 eligible |
 | 9 | PR-9 | PR-8b technical + governance closure (**SATISFIED**) | Twelve scenarios through the W0 contract; no second scenario format | Unit==DB twin-run, currency isolation/mismatch, repeatability, CI 4/4 | No | **CLOSED / CANONICAL** — PR #1132 + separate register closure; PR-10 eligible |
-| 10 | PR-10 | PR-9 technical + governance closure (**SATISFIED**) | Canonical compatibility adapter; fee fields remain “hesaplanmadı”; no consumer switch | Adapter==engine + shadow diff | No | Technical PR + register closure → cutover authorization |
-| 11 | `UNASSIGNED` cutover authorization | PR-10 closure | Rollback, monitoring, audit, signoff and acceptance policy | Governance decision record | Required | Governance PR → PR-11 |
+| 10 | PR-10 | PR-9 technical + governance closure (**SATISFIED**) | Additive canonical compatibility adapter; typed fee unavailable states; parity conflict fail-closed; no consumer switch | Adapter unit/contract + W0 unit/DB twin + CI 4/4 | No | **CLOSED / CANONICAL** — PR #1137 + separate register closure; cutover-authorization gate eligible |
+| 11 | `UNASSIGNED` cutover authorization | PR-10 technical + governance closure (**SATISFIED**) | Rollback, monitoring, audit, signoff and acceptance policy | Governance decision record | Required | **NEXT ELIGIBLE / OWNER-GATED** — governance decision required before PR-11 |
 | 12 | PR-11 | Owner cutover authorization | UI/API/report/template canonical consumer switch | I-10 integration, production smoke, kill-switch | Required | Cutover PR + register closure → PR-11 stability |
 | 13 | `UNASSIGNED` PR-11 stability | PR-11 closure | Live smoke, discrepancy monitoring, rollback drill | Accepted stability evidence | Acceptance metrics owner-held | Verification/closure PR → PR-12 |
 | 14 | PR-12 | PR-11 stability accepted | Disable silent legacy fallback; canonical unavailable is fail-closed | DB/consumer integration | Required | Cutover PR + register closure → PR-12 bake |
