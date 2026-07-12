@@ -1,6 +1,6 @@
 # ADR-014 Cutover Authorization Policy
 
-**Status:** DEFINED / CANONICAL — governance decision record for split-plan §12 seq 11
+**Status:** DEFINED / CANONICAL — governance decision record for split-plan §12 seq 11; owner operational decisions recorded 2026-07-12 (§9)
 **Date:** 2026-07-12
 **Owner:** Ulaş
 **Relationship:** This document is the `Governance decision record` required by
@@ -73,7 +73,7 @@ operational evidence. Three evidence classes are separated:
 | Evidence class | Content | Status |
 |---|---|---|
 | **Synthetic correctness** | PR-9 golden matrix; unit/DB twin-run; deterministic shadow comparison | **SATISFIED** |
-| **Representative data** | Sanitized production copy; authorized read-replica shadow; a controlled pilot environment separately proven to represent real usage distribution | **ABSENT / BLOCKING** |
+| **Representative data** | Sanitized production copy; authorized read-replica shadow; a controlled pilot environment separately proven to represent real usage distribution | **ABSENT / BLOCKING** — environment method SELECTED IN PRINCIPLE (§9.1), not yet created |
 | **Live operational** | Production smoke; discrepancy monitoring; rollback drill; bake period | **NOT STARTED / NOT CURRENTLY EXECUTABLE** |
 
 - Synthetic correctness evidence proves **calculation correctness, determinism,
@@ -135,17 +135,18 @@ Numeric thresholds are not invented here without evidence. The policy is two-lay
 - Kill-switch failure.
 - Ledger / write-path mutation.
 
-### Owner-selected operational thresholds — `OWNER TO SET BEFORE PR-11`
-The exact numeric values of the following remain unset in this policy and must be
-assigned by the owner before any cutover authorization can be marked `APPROVED`:
-- parity discrepancy rate,
-- calculation latency regression,
-- error-rate ceiling,
-- pilot cohort size,
-- smoke duration,
-- bake duration.
+### Owner-selected operational thresholds — DEFINED WITH BASELINE-DEPENDENT VALIDATION (§9)
+The owner has now recorded these thresholds in §9 (Owner decisions, 2026-07-12):
+- parity discrepancy rate → **0-cent tolerance** (§9.5), stop-on-any-unexplained-discrepancy (§9.6);
+- calculation latency regression → **p95 ≤ 20% / p99 ≤ 30%**, baseline-required (§9.7);
+- error-rate / timeout-rate ceiling → **0 material increase**, baseline-required (§9.7);
+- pilot cohort size → phased OWNER→internal→allowlist (§9.3), default exposure `0`;
+- smoke duration → **3 business days / 500 requests / ≥2 tenants**, whichever later (§9.8);
+- bake duration → **PR-11 14 days; PR-12 eligibility ≥30 days; PR-14 owner-set, ≥ PR-12 window** (§9.9).
 
-Cutover authorization **cannot be `APPROVED`** while these fields are unset.
+These are **baseline-dependent**: cutover authorization still **cannot be `APPROVED`**
+until (a) a representative/production latency+error baseline is measured, and (b)
+representative evidence (§2) exists. Defining thresholds is not authorization.
 
 ---
 
@@ -188,14 +189,19 @@ The following roles are recorded distinctly; all required before authorization i
 ## 7. Canonical status
 
 ```text
-Cutover authorization policy → DEFINED / CANONICAL
-PR-11 scope boundary          → DECIDED / CANONICAL
-Representative evidence       → ABSENT / BLOCKING
-PR-11 authorization           → NOT AUTHORIZED
-Runtime cutover               → NOT AUTHORIZED
+Cutover authorization policy       → DEFINED / CANONICAL
+Cutover owner decisions (§9)       → DEFINED / CANONICAL
+PR-11 scope boundary               → DECIDED / CANONICAL
+Representative evidence environment → SELECTED IN PRINCIPLE / NOT YET AVAILABLE
+Operational thresholds             → DEFINED WITH BASELINE-DEPENDENT VALIDATION
+Pre-evidence allowed work          → DOCS / MONITORING PREPARATION ONLY
+PR-11 implementation               → NOT AUTHORIZED
+PR-11 pilot                        → NOT AUTHORIZED
+Runtime cutover                    → NOT AUTHORIZED
 ```
 
-Defining this governance policy does **not** automatically open PR-11.
+Defining this governance policy — and recording the §9 owner decisions — does **not**
+automatically open PR-11. "Decisions defined" is not "cutover approved".
 
 ---
 
@@ -208,3 +214,134 @@ Defining this governance policy does **not** automatically open PR-11.
 - Does not change runtime, source, schema, migration, API or UI behaviour.
 - Does not close CAN-CUT-01 or CAN-CUT-02.
 - Does not create representative or live evidence; that remains ABSENT / BLOCKING.
+
+---
+
+## 9. Owner decisions (recorded 2026-07-12)
+
+The following fifteen owner decisions fill the previously-unset fields of this policy.
+They are binding governance decisions. **Recording them does not authorize PR-11, a
+pilot, a flag change, or runtime cutover.** PR-11 remains NOT AUTHORIZED.
+
+### 9.1 Representative evidence environment
+- Primary method: `SANITIZED_PRODUCTION_COPY_ON_REPRESENTATIVE_STAGING`.
+- Secondary verification method, only where legally and technically possible:
+  `READ_ONLY_PRODUCTION_SHADOW`.
+- An ordinary synthetic fixture/staging environment alone is **not** representative evidence.
+- Read-only production shadow constraints: cannot write; cannot show canonical primary
+  to a user; requires separate access + KVKK authorization; usable for observation/parity only.
+
+### 9.2 Dataset strategy
+`MANDATORY_EDGE_CASE_SET` + `STATISTICALLY_REPRESENTATIVE_SAMPLE`.
+
+Mandatory edge-case coverage (minimum): TRY single currency; USD or EUR foreign
+currency; multiple currencies in one case; pre-enforcement interest; post-enforcement
+interest; partial payment; payment not reaching principal; payment reaching principal;
+valid reversal; malformed reversal; `NO_BUCKETS`; currency mismatch;
+fee/cost/attorney-fee projection; trace / non-official snapshot; large ClaimItem/payment
+volume; old or low-quality legacy data; multiple tenants.
+
+```text
+Minimum case count:   TO BE DERIVED FROM REPRESENTATIVE PORTFOLIO DISTRIBUTION
+Minimum tenant count: AT LEAST 2 FOR SMOKE; FULL DATASET TARGET TO BE SET FROM PORTFOLIO PROFILE
+```
+No arbitrary numbers are invented; case/tenant minimums are validated against the real
+portfolio distribution once the representative dataset is produced.
+
+### 9.3 Pilot cohort
+Phased: `Phase 1 → OWNER ONLY`; `Phase 2 → SELECTED INTERNAL USERS`;
+`Phase 3 → ALLOWLISTED TENANT / CASE SET`. No percentage/global rollout at start.
+Authorized internal users: owner; owner-explicitly-allowlisted founding lawyer/partner;
+owner-explicitly-allowlisted technical-operations user. **Holding a role alone does not
+grant pilot access — an explicit allowlist entry is required.**
+
+### 9.4 Pilot activation gate
+Mandatory triple gate: `SERVER / ENVIRONMENT FLAG` + `BACKEND USER/TENANT/CASE ALLOWLIST`
++ `EXPLICIT PILOT ACTIVATION GATE`. The URL parameter `?guardedPrimary=1` alone is not
+sufficient and only has meaning when the backend allowlist and server flag are active.
+Default exposure `0`; global activation is forbidden.
+
+### 9.5 Financial discrepancy policy
+Initial policy: **`0 CENT TOLERANCE`**. Tolerance is strictly `0` for: principal;
+allocation; payment application; total balance; outstanding; paid; interest base;
+currency grouping; reversal result; authority/status/blocker semantics.
+`Allowed 1-cent fields: NONE`. A presentation-only 1-cent exception may only be defined
+later by a separate owner decision.
+
+### 9.6 Pilot stop threshold
+`Any unexplained financial discrepancy → STOP`. A single event stops the pilot for:
+principal difference; total balance difference; cross-currency aggregation; canonical
+primary while a blocker is present; zero-fill of an unavailable value; tenant/case
+isolation breach; authority promotion; ledger/write mutation; kill-switch failure.
+Presentation-only: `0 unexplained discrepancies`; pre-classified owner-accepted
+presentation differences are tracked as a separate metric, never auto-accepted.
+
+### 9.7 Performance policy
+`Latency baseline required: YES`. Initial ceilings: `p95 regression ≤ 20%`;
+`p99 regression ≤ 30%`; `material error-rate increase = 0`;
+`material timeout-rate increase = 0`. But: PR-11 authorization cannot be granted before
+the baseline is measured; percentages may be tightened by the owner after baseline;
+"material" is uninterpretable without the current error/timeout rate; any new
+canonical-sourced timeout/error increase is classified separately.
+
+### 9.8 Smoke policy
+Minimum for controlled pilot smoke: `Duration: 3 business days`;
+`Request count: 500 successful/observed calculation-summary requests`;
+`Tenant count: at least 2`. Additional: the full mandatory edge-case set must have run;
+kill-switch drill completed; discrepancy dashboard/report available; whichever of
+duration or request count finishes later governs. Not satisfiable without a
+representative evidence environment.
+
+### 9.9 Bake policy
+```text
+PR-11 pilot bake:                14 consecutive days after successful smoke
+PR-12 fallback-disable eligibility: ≥ 30 consecutive days after PR-11 stability acceptance
+PR-14 legacy-quarantine eligibility: OWNER TO SET AFTER PR-12 BAKE AND ARCHIVE/ROLLBACK REVIEW
+```
+`PR-14 cannot be shorter than the accepted PR-12 stability window and requires a separate
+owner authorization.` No arbitrary fixed PR-14 duration is written now.
+
+### 9.10 Kill-switch authority
+Authorized roles: owner; owner-authorized technical-operations lead; super admin in an
+emergency. `Dual approval for emergency disable: NO`. Re-activation does not use the
+emergency path — a new owner GO is required. Every kill-switch use is logged with: audit
+log, user, time, reason, affected cohort, previous/new flag state.
+
+### 9.11 Rollback time
+`Maximum rollback time: 5 minutes`; `Technical target rollback time: 1 minute`. Rollback
+must be possible without a deploy. During rollback: legacy primary is preserved; canonical
+shadow evidence continues where possible; no data rollback (no canonical writes); incident
+evidence is not deleted; re-activation is never automatic.
+
+### 9.12 Rollback trigger model
+`Security / financial hard triggers → automatic rollback`;
+`Performance triggers → manual owner/operations decision`.
+Automatic rollback: cross-currency aggregation; principal or balance difference; canonical
+primary while blocker present; zero-fill; tenant/case leakage; unauthorized authority
+promotion; ledger/write mutation; kill-switch failure; any unexplained financial
+discrepancy. Manual assessment: p95/p99 regression; non-material latency variation;
+presentation-only classified difference; transient infrastructure error. If a performance
+threshold is materially exceeded or the error/timeout increase becomes sustained, the
+owner/operations makes the rollback decision.
+
+### 9.13 Re-activation
+Default: `NEW OWNER GO REQUIRED`. If the fault affected calculation semantics, currency,
+allocation, authority or financial display: `NEW PR + FULL ACCEPTANCE GATES + NEW LEGAL
+SIGN-OFF + NEW OWNER GO`. Even a purely operational/infrastructure issue requires an owner
+GO; the team cannot re-enable on its own.
+
+### 9.14 Legal sign-off
+Primary legal authority: `OWNER / LEGAL OWNER`; additional reviewer: independent legal
+reviewer where available. Scope: TBK 100; PRE/POST enforcement interest; partial-payment
+interest-base mutation; reversal semantics; currency isolation; displayed authority;
+`0` / `NOT_CALCULATED` distinction; fee/harç fields staying ADR-013 owner-gated.
+`Refresh required after calculation-semantic changes: YES`. A presentation-only change
+that does not alter semantics may have its refresh requirement determined separately by
+the owner.
+
+### 9.15 Pre-representative-evidence allowed work
+Binding: `DOCS / MONITORING PREPARATION ONLY`. Allowed: dashboard/metric design;
+discrepancy taxonomy; rollback runbook; kill-switch runbook; sanitized-data procedure;
+access/KVKK procedure; smoke/bake checklist; sign-off templates. **Forbidden:** PR-11
+runtime implementation worktree; consumer-switch code; flag activation; cohort activation;
+pilot rollout; PR-12/13/14 preparation.
