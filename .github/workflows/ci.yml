@@ -256,6 +256,58 @@ jobs:
             --testPathPattern="(confidence-score\.tenant-boundary|ihbarname-summary\.tenant-boundary|third-party-passive-writer|quick-note-passive-writer|debtor-identity-format)\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # GATE-1 CI Tenant-Isolation Regression Coverage: Borçlu Wave 0 (MPB-028/OD-3/PR-EA) tenant-
+      # boundary unit+static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç
+      # koşmuyordu (yalnız local `pnpm test` ile çalışırdı — GATE-1'in "cross-tenant testler yeşil"
+      # kriteri sürekli doğrulanamıyordu). Ayrı/açık step ile koşturulur. passWithNoTests YOK +
+      # önce dosya-varlığı pre-check: rename/silme veya 0-eşleşme → CI RED. Açık liste dizin-bazlı
+      # regex yerine bilinçli tercih edildi: enforcement-action-backfill-* dosyaları farklı bir
+      # dizinde (src/scripts/__tests__/), ve automation/__tests__/ altında tenant-ilgisiz dosyalar
+      # (rfa007-enforcement-guard, automation.service, poa-expiry-delivery) da var — dizin-geneli
+      # bir glob bunları yanlışlıkla dahil ederdi. Yeni Wave 0 tenant testi eklenirse bu listeye
+      # açıkça eklenmelidir (bkz. maintenance-register.md notu).
+      - name: Wave 0 tenant-boundary unit/static tests (Risk/AI/Notification/WorkflowEngine/EnforcementAction)
+        run: |
+          cd apps/api
+          for f in src/modules/risk/risk.service.tenant-boundary.spec.ts \
+                   src/modules/ai/ai.service.tenant-boundary.spec.ts \
+                   src/modules/notification/notification.service.tenant-boundary.spec.ts \
+                   src/modules/automation/__tests__/automation-tenant-guard-propagation.spec.ts \
+                   src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.spec.ts \
+                   src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.static-guard.spec.ts \
+                   src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.spec.ts \
+                   src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.static-guard.spec.ts \
+                   src/modules/automation/__tests__/enforcement-action-guarded-write-path.spec.ts \
+                   src/modules/automation/__tests__/enforcement-action-guarded-write-path.static-guard.spec.ts \
+                   src/scripts/__tests__/enforcement-action-backfill-classifier.spec.ts \
+                   src/scripts/__tests__/enforcement-action-backfill-profiler.report-hardening.spec.ts \
+                   src/scripts/__tests__/enforcement-action-backfill-profiler.static-purity.spec.ts; do
+            test -f "$f" || { echo "MISSING Wave 0 tenant spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="(risk\.service\.tenant-boundary|ai\.service\.tenant-boundary|notification\.service\.tenant-boundary|automation-tenant-guard-propagation|workflow-engine-build-context-tenant-guard\.static-guard|workflow-engine-build-context-tenant-guard|workflow-engine-remaining-tenant-boundaries\.static-guard|workflow-engine-remaining-tenant-boundaries|enforcement-action-guarded-write-path\.static-guard|enforcement-action-guarded-write-path|enforcement-action-backfill-classifier|enforcement-action-backfill-profiler\.report-hardening|enforcement-action-backfill-profiler\.static-purity)\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # GATE-1 CI Tenant-Isolation Regression Coverage (disposable-DB kısmı): aynı Wave 0 ailesinin
+      # composite where-clause'ının gerçek Postgres üzerinde doğru davrandığını doğrulayan
+      # entegrasyon testleri de aynı nedenle CI'da hiç koşmuyordu. Mevcut job'ın Postgres service'i
+      # (yukarıdaki `services: postgres:`) reuse edilir — yeni container/job YOK.
+      - name: Wave 0 tenant-boundary disposable-DB tests (WorkflowEngine/EnforcementAction)
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          for f in src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.db-gated.integration.spec.ts \
+                   src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.db-gated.integration.spec.ts \
+                   src/modules/automation/__tests__/enforcement-action-guarded-write-path.db-gated.integration.spec.ts \
+                   src/modules/automation/__tests__/enforcement-action-tenant-case-debtor-fk.db-gated.integration.spec.ts \
+                   src/scripts/__tests__/enforcement-action-backfill-profiler.db-gated.integration.spec.ts; do
+            test -f "$f" || { echo "MISSING Wave 0 tenant DB-gated spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="(workflow-engine-build-context-tenant-guard|workflow-engine-remaining-tenant-boundaries|enforcement-action-guarded-write-path|enforcement-action-tenant-case-debtor-fk|enforcement-action-backfill-profiler)\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
       # PR-1 (güvenlik): RBAC + metadata redaction + source/tenant/level spoof engeli.
       # PR-2a (observability): global ExceptionFilter + requestId + fingerprint + flood-guard
       # + server-log builder (≥500 logging, 4xx noise exclusion, logging isolation).
