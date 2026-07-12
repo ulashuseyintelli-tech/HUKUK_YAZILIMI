@@ -1,56 +1,784 @@
-# SYSTEM CONSTITUTION — HUKUK_YAZILIMI Governance Çatısı
+# CANONICAL SYSTEM GOVERNANCE
 
 ```text
-Belge yolu : project/docs/governance/SYSTEM-CONSTITUTION.md
-Durum      : PROPOSED — owner talimatıyla oluşturuldu (2026-07-12).
-             Taşıyan PR #1139 MERGED (squash 413890dd, 2026-07-12, CI 4/4 PASS), ancak
-             PR merge'i belge metnini ratifiye ETMEZ; RATIFIED yalnız owner'ın bu belgenin
-             metnini ayrıca onaylamasıyla (ayrı governance PR ile) gerçekleşir.
-Rol        : Governance belge hiyerarşisinin çatısı. Domain kuralı içermez;
-             hangi belgenin hangi otoriteye sahip olduğunu ve nasıl değiştiğini tanımlar.
+Belge kimliği           : SYS-CONST-001
+Canonical path          : project/docs/governance/SYSTEM-CONSTITUTION.md
+Version                 : 1.0
+Owner status            : RATIFIED — BINDING
+Repository status       : CANONICAL UPON APPROVED MERGE TO MAIN
+Canonical effective date: Approved merge date
+Supersedes              : PR #1139 ile eklenen tarihsel short-form Constitution içeriği
+Semantic scope          : System-wide domain/business governance
+Execution authority     : Ayrı eksen; AGENTS.md ve geçerli repository/tool policies
 ```
+
+Bu belge mevcut dosya yolunu koruyarak PR #1139 ile eklenen kısa governance çatısını
+Canonical System Governance v1.0 içinde reconcile eder. PR #1139 ve PR #1140 tarihsel
+olarak geçerli kayıtlardır; içerikleri veya o tarihlerdeki owner kararları geriye dönük
+olarak yanlışlanmaz. Bu sürüm, daha sonraki owner ratifikasyonunun bağlayıcı semantik
+sonucudur ve repository etkisini yalnız approved merge ile kazanır.
 
 ## RELATED DOCUMENTS
 
-- Okuma sırası: `project/docs/governance/GOVERNANCE-INDEX.md`
-- Domain governance (aktif): `project/docs/governance/DEBTOR-GOVERNANCE.md` (borçlu hattı)
-- Domain governance (rezerve — henüz yazılmadı): Receivable Governance · Collection Governance
-- Kanıt/analiz katmanı: `project/docs/analysis/debtor-master-synthesis-v2.md`
-- ADR kütüğü: `project/docs/governance/architecture-index.md` + `project/docs/adr/`
-- Karar kaydı: `project/docs/governance/decision-log.md`
-- Master Register: `project/docs/governance/product-backlog.md`, `project/docs/governance/master-triage-register.md`, `project/docs/governance/active-roadmap.md`
-- Ajan baseline: `AGENTS.md` (repo kökü)
+- Okuma sırası: [GOVERNANCE-INDEX.md](./GOVERNANCE-INDEX.md)
+- Ratifiye Debtor Domain Law: [DEBTOR-GOVERNANCE.md](./DEBTOR-GOVERNANCE.md)
+- Karar geçmişi: [decision-log.md](./decision-log.md)
+- ADR indeksi: [architecture-index.md](./architecture-index.md)
+- Master Register: [product-backlog.md](./product-backlog.md),
+  [master-triage-register.md](./master-triage-register.md),
+  [active-roadmap.md](./active-roadmap.md)
+- Finansal authority: [dbind-financial-authority-decisions.md](./dbind-financial-authority-decisions.md)
+- Collection/disposition sınırı: [tm3-collection-disposition-boundary.md](../finance/tm3-collection-disposition-boundary.md)
+- AccountingJournal yönü: [ADR-010](../adr/ADR-010-ACCOUNTING-JOURNAL-SOT-NORTH-STAR.md)
+- Fee/Harç/Snapshot/Journal: [ADR-013](../adr/ADR-013-FEE-HARC-SNAPSHOT-JOURNAL.md)
+- Canonical legal calculation: [ADR-014](../adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md)
+- Repository execution baseline: [AGENTS.md](../../../AGENTS.md)
+---
+## 1. Belgenin Niteliği
 
-## 1. Otorite hiyerarşisi
+### `SYS-GOV-001 — Normatif Amaç`
+Bu belge sistemin domain/business semantiğini, source-of-truth sınırlarını,
+değiştirilemez invariant'larını, governance hiyerarşisini ve canonicalization
+kurallarını tanımlayan sistem çapında üst normdur.
 
-```text
-AGENTS.md (repository-level ajan baseline'ı — bu anayasanın üstünde)
-→ SYSTEM-CONSTITUTION (governance çatısı: hiyerarşi + değişim kuralları)
-→ Domain governance belgeleri (DEBTOR-GOVERNANCE; ileride Receivable/Collection)
-→ Contract / standard belgeleri (ilgili domain'in sözleşmeleri)
-→ ADR'lar (architecture-index.md üzerinden, project/docs/adr/)
-→ decision-log.md (kronolojik karar kaydı)
-→ Master Register (product-backlog / master-triage-register / active-roadmap)
-→ Implementation (kod, migration, test)
+### `SYS-GOV-002 — Compliance Sertifikası Değildir`
+Bu belge mevcut runtime'ın bütün kurallara uyduğunu iddia etmez. Ratifikasyon,
+sistemin hangi normlara göre gelişeceğini; compliance ise runtime'ın bu normları
+hangi kanıtla uyguladığını gösterir.
+
+### `SYS-GOV-003 — Implementation Yetkisi Vermez`
+Ratifikasyon, belge merge'i veya target modelin tanımlanması; kod, schema, migration,
+cutover, feature activation, release veya production write yetkisi üretmez. Bu işlemler
+ayrı task authorization ve ilgili owner/cutover gate'lerini gerektirir.
+
+### `SYS-GOV-004 — Mevzuatın Yerine Geçmez`
+Yürürlükteki mevzuat ve bağlayıcı resmî kararlar bu belgeden üstündür. Hukuki yorum
+belirsizse veya güncelliği doğrulanmamışsa sistem fail-closed davranır; yetkili hukukçu
+sign-off'u olmadan production authority oluşturulamaz.
+
+### `SYS-GOV-005 — Repository Gerçeği Yeniden Doğrulanır`
+Sohbet geçmişi niyet ve karar taşır. Mevcut gerçek; repository, git, governance,
+PR/CI, ortam ve komut kanıtından görev başında yeniden doğrulanır.
+
+### `SYS-GOV-006 — Tarihsel Kayıt Korunur`
+Yeni karar eski kararı içerik bakımından supersede edebilir; fakat eski kararın o
+tarihteki anlamı rewrite edilmez. Düzeltme ve supersession append-only kayıtla yapılır.
+---
+## 2. İki Authority Ekseni
+
+### 2.1 Semantic authority
+
+```mermaid
+flowchart TD
+  C["System Constitution\nSystem-wide semantic norm"] --> D["Domain Law / Domain Governance\nDomain legal and business semantics"]
+  D --> A["ADR\nTechnical or architectural decision"]
+  A --> I["Implementation\nCode, schema, migration, tests"]
 ```
 
-- Bu anayasa `AGENTS.md` ile çelişemez ve onu override etmez; çelişki halinde `AGENTS.md` uygulanır ve çelişki düzeltilmek üzere raporlanır (README kuralı ile aynı).
-- Alt katman üst katmanla çelişemez; çelişki bir bulgudur, sessizce çözülmez.
-- Bir domain governance belgesi yalnız kendi domain'i için bağlayıcıdır; domain'ler arası kesişim koordinasyon gerektirir (örn. borçlu hattı ↔ repo ADR-013/ADR-014 finansal hatları).
+### `SYS-AUTH-001 — Constitution Sistem Çapında Üst Semantik Normdur`
+Constitution bütün domainleri bağlayan authority, source-of-truth, güvenlik,
+finansal anlam, AI, evidence, migration ve governance kurallarını tanımlar.
 
-## 2. Çekirdek ilkeler
+### `SYS-AUTH-002 — Domain Law Constitution'ı Ayrıntılandırır`
+Domain Law belirli bir domainin hukuki ve iş semantiğini tanımlar. Constitution'ı
+genişletebilir; değiştiremez, zayıflatamaz veya sessizce override edemez.
 
-1. **Evidence-first:** Sohbet geçmişi yalnız niyet taşır; güncel gerçek her görevde repo/git/CI/governance state'inden doğrulanır.
-2. **Owner kapıları:** Açık owner kararları (`MS/OD-*`, `MS/EXEC-*` vb.) decision-log kaydı olmadan kapanmış sayılmaz.
-3. **Ratifikasyon ≠ implementation yetkisi:** Governance onayı iş başlatmaz; implementation ayrıca `GO-IMPLEMENT`/`GO-COMPLETE` ister.
-4. **Hukuki zorunluluk koddan üstündür:** Kod ile hukuk çelişirse hukuk esas alınır; kod düzeltme backlog'una girer.
-5. **Hukuki/finansal NEVER_AUTO sınırları değiştirilemez** (bkz. DEBTOR-GOVERNANCE §7).
-6. **Operasyonel belge ≠ kanıt belgesi:** Governance belgeleri kuralı taşır; gerekçe ve kanıt analiz katmanında (`project/docs/analysis/`) yaşar ve silinmez.
+### `SYS-AUTH-003 — ADR Teknik Tercihi Kaydeder`
+ADR alternatifler arasındaki teknik/mimari seçimi ve gerekçeyi kaydeder. ADR owner
+kararının, Constitution'ın veya Domain Law'ın yerine geçmez.
 
-## 3. Governance değişim kuralları
+### `SYS-AUTH-004 — Implementation Norm Üretmez`
+Kodun mevcut davranışı AS-IS kanıtıdır; hukuken veya finansal olarak doğru olduğunun
+tek başına kanıtı değildir. Implementation yeni owner, hukuk veya finans politikası
+üretemez.
 
-- Bu anayasa ve domain governance belgeleri yalnız **governance PR'ı** ile değişir.
-- Her karar değişikliği `decision-log.md`'ye kaydedilir.
-- Ratifiye edilmemiş fikirler kanonik kural olarak eklenmez (Triage → Product Backlog → READY → Active Roadmap).
-- Yeni domain governance belgesi eklenirse: bu anayasanın RELATED DOCUMENTS listesi ve `GOVERNANCE-INDEX.md` aynı PR'da güncellenir.
-- Her governance belgesinin başında `RELATED DOCUMENTS` bölümü, her kanıt/analiz belgesinin başında operasyonel karşılığını gösteren `SUPERSEDED BY` notu bulunur.
+### 2.2 Execution and safety authority
+
+```text
+AGENTS.md
+Repository policies
+Task authorization
+Environment and tool restrictions
+Managed security policies
+```
+
+### `SYS-AUTH-005 — AGENTS.md Execution Otoritesidir`
+`AGENTS.md`; görev modu, mutation, worktree, tool, validation, commit/push/PR/merge,
+cleanup ve repository safety konularında bağlayıcıdır.
+
+### `SYS-AUTH-006 — Authority Eksenleri Birbirini Üretmez`
+Semantic authority execution izni vermez. Execution izni domain semantiğini
+değiştirmez. Her işlem iki eksene aynı anda uymalıdır. Çelişki iki ekseni birlikte
+etkiliyorsa işlem durur ve owner/governance kararı alınır.
+---
+## 3. Rule Placement
+
+| İçerik türü | Canonical belge |
+|---|---|
+| Tüm sistemi ve domainleri bağlayan değişmez norm | Constitution |
+| Belirli domainin hukuki veya iş semantiği | Domain Law / Domain Governance |
+| Teknik veya mimari alternatifler arasındaki karar | ADR |
+| Kodlama, API, test, deployment veya operasyon standardı | Implementation Standard |
+| İş sırası, capability gate ve owner kapısı | Roadmap / Master Register |
+
+### `SYS-GOV-007 — Tek Canonical Yerleşim`
+Aynı norm bağımsız ve çelişkili biçimde birden fazla katmanda tanımlanamaz. Alt belge
+üst normu referanslar; gerekli domain ayrıntısını ekler, üst normu yeniden üretmez.
+
+### `SYS-GOV-008 — Roadmap Authority Değildir`
+Roadmap/foundation sırası work sequencing bilgisidir. Tek başına canonical authority,
+runtime izni, owner approval veya implementation authorization oluşturmaz.
+
+### `SYS-GOV-009 — Yanlış Yerleşim Governance Drift'tir`
+Bir norm yanlış katmandaysa sessizce kopyalanmaz. Canonical hedef belirlenir, eski
+referans korunur ve mapping/supersession governance kaydıyla yapılır.
+
+### `SYS-GOV-010 — Alt Belge Eksikliği Capability Statüsüdür`
+Domain Law, contract veya standard eksikliği Constitution ratifikasyonunu otomatik
+engellemez. İlgili capability `DOCUMENTED_ONLY`, `NOT_IMPLEMENTED`, `SHADOW_ONLY`
+veya `PRODUCTION_NO_GO` olarak sınıflandırılır.
+---
+## 4. Rule Namespace
+
+Sistem seviyesi kural kimlikleri yalnız `SYS-*` namespace'i kullanır:
+
+```text
+SYS-GOV-*   Governance and placement
+SYS-AUTH-*  Authority axes
+SYS-SOT-*   Source of truth
+SYS-ID-*    Identity
+SYS-LEGAL-* Legal truth and action
+SYS-FIN-*   Financial semantics
+SYS-DEC-*   Decision authority
+SYS-AI-*    AI and automation
+SYS-EVID-*  Evidence, event and audit
+SYS-MIG-*   Migration and cutover
+SYS-COMP-*  Compliance and release evidence
+SYS-CAN-*   Canonicalization and closure
+```
+
+### `SYS-GOV-011 — Kimlikler Benzersizdir`
+Aynı `SYS-*` kimliği iki farklı norm için kullanılamaz. Kimlik yeniden kullanımı veya
+sessiz anlam değişikliği yasaktır.
+
+### `SYS-GOV-012 — Domain Namespace'leri Korunur`
+`DEBTOR-GOVERNANCE.md` içindeki `INV-*` ve `MS/*` kimlikleri domain/evidence-local
+kimliklerdir; `SYS-*` kimliği değildir ve bu sürümle silinmez. Repository-canonical
+short-form Constitution sistem rule ID'si taşımadığından legacy SYS mapping gerekmez.
+---
+## 5. Sistem Topolojisi ve Domain Ownership
+
+### `SYS-GOV-013 — Beş Primary Legal-Operation Domain`
+Sistemin beş primary legal-operation domain'i şunlardır:
+
+1. `OFFICE`
+2. `CLIENT`
+3. `DEBTOR`
+4. `RECEIVABLE`
+5. `COLLECTION`
+
+Bu ifade yalnız beş bounded context veya teknik modül bulunduğu anlamına gelmez.
+
+### `SYS-GOV-014 — OFFICE Sınırı`
+OFFICE actor, user/staff role, authorization, organizational responsibility ve
+office-level approval policy sahibidir. Task instance, legal truth, liability,
+receivable calculation veya creditor disposition sahibi değildir.
+
+### `SYS-GOV-015 — CLIENT Sınırı`
+CLIENT client role/profile, mandate, instruction, client approval ve client-level
+visibility sahibidir. Tek başına receivable balance veya legal allocation hesaplayamaz.
+
+### `SYS-GOV-016 — DEBTOR Sınırı`
+DEBTOR debtor role/profile, CaseDebtor relation, legal role, address/service evidence,
+legal status ve eligibility girdilerinin domain sahibidir. Tek başına receivable amount
+veya creditor disposition üretemez.
+
+### `SYS-GOV-017 — RECEIVABLE Sınırı`
+RECEIVABLE claim item, legal basis/version, principal/interest/cost buckets,
+deterministic calculation ve legal-allocation debt buckets sahibidir. Cash receipt,
+payout veya journal posting sahibi değildir.
+
+### `SYS-GOV-018 — COLLECTION Sınırı`
+COLLECTION receipt, cash provenance, idempotency, reversal/refund başlangıcı ve legal
+allocation sonucu ile bağlantının sahibidir. Creditor entitlement veya accounting
+classification'ı tek başına belirleyemez.
+
+### `SYS-GOV-019 — Shared ve Supporting Contexts`
+Tenant/Security, Party Registry, DomainEvent/Outbox, Audit/LegalEvidence, Document
+Storage, Read Models ve AI Context shared kernel olabilir. Case Context, Workflow/Task,
+Reporting, Provider Integration, Migration/Reconciliation supporting context'tir.
+
+### `SYS-GOV-020 — Accounting Konumu Açık Owner Kararıdır`
+Accounting'in supporting financial context veya ayrı business domain olması açık owner
+kararı bekler. Bu Constitution seçeneklerden birini verilmiş saymaz. ADR-010 yönü korunur;
+AccountingJournal cutover olmadan current authority olmaz.
+---
+## 6. Authority Yaşam Döngüsü
+
+```text
+CURRENT         Repository/runtime'da fiilen uygulanan ve izin verilmiş authority
+TARGET          Ratifiye/tasarlanmış; implementation veya cutover tamamlanmamış model
+NOT_IMPLEMENTED Runtime authority veya canonical write path bulunmayan yapı
+DEPRECATED      Mevcut; migration veya kaldırma sürecindeki yapı
+SUPERSEDED      Daha yeni canonical normla içerik bakımından değiştirilmiş yapı
+SHADOW_ONLY     Sonuç üretir; production decision/write authority değildir
+PRODUCTION_NO_GO Production primary veya write kullanımı yasaktır
+```
+
+### `SYS-SOT-001 — Current ve Target Ayrıdır`
+Target model current reality olarak yazılamaz. Belge veya schema varlığı runtime
+implementation ve write authority kanıtı değildir.
+
+### `SYS-SOT-002 — Projection Authority Değildir`
+Projection, snapshot, cache, report, export, frontend, compatibility adapter ve read
+model source of truth veya canonical write authority olamaz.
+
+### `SYS-SOT-003 — Tek Canonical Authority`
+Aynı hukuki veya finansal fact için aynı anda birden fazla production primary authority
+bulunamaz. Geçişteki ikincil yol açıkça shadow/compatibility olarak etiketlenir.
+
+### `SYS-SOT-004 — Write ve Read Authority Ayrıdır`
+Canonical write owner ile canonical/derived reader ayrı tanımlanır. Read authority,
+write yetkisi üretmez.
+
+### `SYS-SOT-005 — Conflict Fail-Closed'dur`
+Canonical ve derived sonuç çatışırsa projection kazanmaz; işlem fail-closed olur,
+conflict evidence kaydedilir ve ilgili cutover/reconciliation gate açılmaz.
+
+### `SYS-SOT-006 — Cutover Açık Gate Gerektirir`
+Target ancak migration/reconciliation, gerekli legal/financial/security sign-off,
+backward compatibility, test, observation ve owner cutover kararı tamamlanınca current
+authority olabilir.
+
+### `SYS-SOT-007 — Fixture Production Evidence Değildir`
+Test fixture, synthetic scenario veya shadow parity production empirical evidence
+değildir; production readiness iddiası için kullanılamaz.
+
+### `SYS-SOT-008 — Source-of-Truth Register Kanıt Taşır`
+Her authority kaydı authoritative source, writer, reader, derived-view sınırı, conflict
+rule, prohibited authority, current status, cutover gate ve evidence taşır.
+---
+## 7. Identity Source of Truth
+
+| Fact | Authoritative Source | Write Authority | Read Authority / Derived Views | Conflict / Prohibited Authority | Status / Cutover Gate / Evidence |
+|---|---|---|---|---|---|
+| User/staff identity | Current `User`/`Office`/staff records ve trusted identity context | OFFICE-owned identity/authorization services | Authorized UI, audit ve task views | Header/query/display identity authority olamaz | `CURRENT`; auth/tenant tests ve repository evidence |
+| External party identity | Target Party Registry | Target Party Registry service | Party card/search projections | Client/Debtor role veya import row global identity olamaz | `TARGET / NOT_IMPLEMENTED`; SB-001 `HOLD`, owner+identity migration gate |
+| Client identity/role | Current `Client`; target Party-linked Client role/profile | CLIENT owner | Client/case views | `Case.clientId` global Party veya financial authority olamaz | `TRANSITIONAL CURRENT`; Party cutover/reconciliation |
+| Debtor identity/role | Current `Debtor`; target Party-linked Debtor role/profile | DEBTOR owner | Debtor 360/read models | Debtor role Party identity root olamaz | `TRANSITIONAL CURRENT`; Party cutover/reconciliation |
+| Case-specific debtor role | Current `CaseDebtor` relation | DEBTOR/CaseDebtor domain owner | Case relation views | Global Debtor kaydı case legal role yerine geçemez | `CURRENT PARTIAL`; target role/evidence contract |
+| External-source identity | Provider/import evidence | Validated adapter; canonical owner confirmation | Intake/match candidate views | Unverified import, fuzzy score veya display identity authority olamaz | `CURRENT INPUT / NON_CANONICAL`; provenance+human review gate |
+
+### `SYS-ID-001 — Identity Root ile Domain Rolü Ayrıdır`
+Party, Client, Debtor, CaseClient ve CaseDebtor aynı kavram değildir. Domain rolü global
+identity root yerine geçmez.
+
+### `SYS-ID-002 — Duplicate Detection Legal Equivalence Değildir`
+Benzerlik veya fuzzy score insan onayı olmadan Party merge üretemez. Merge reversible,
+evidence-backed ve tenant-local olmalıdır.
+
+### `SYS-ID-003 — Cross-Tenant Party Merge Yasaktır`
+Tenantlar arası global Party graph veya otomatik merge oluşturulamaz.
+
+### `SYS-ID-004 — Import Doğrulanmadan Canonical Değildir`
+Provider/import sonucu provenance ve gerekli doğrulama olmadan canonical identity veya
+verified address oluşturamaz.
+
+### `SYS-ID-005 — Display Identity Write Authority Değildir`
+UI, report, export, search index veya cache identity fact'i değiştiremez.
+---
+## 8. Legal Source of Truth
+
+| Fact | Authoritative Source | Write Authority | Read Authority / Derived Views | Conflict / Prohibited Authority | Status / Cutover Gate / Evidence |
+|---|---|---|---|---|---|
+| Legal event/evidence | Verified legal source + immutable evidence record | Legal-domain owner/adapters | Timeline/case projections | User note, operational log veya AI output legal event olamaz | `CURRENT PARTIAL`; evidence lineage/retention gate |
+| Service attempt/result | Current Tebligat-related records; target single Service-of-Process context | DEBTOR Service-of-Process owner | Timeline/status views | Queue state veya generic update terminal legal result olamaz | `TARGET / CURRENT PARTIAL`; state-machine+legal sign-off |
+| LegalServiceDate | Target versioned LegalServiceDate | Target Service-of-Process owner | Deadline/status projections | `NotificationQueue.deliveredAt`, reminder veya workflow stage authority olamaz | `NOT_IMPLEMENTED / PRODUCTION_NO_GO`; legal rule matrix+cutover |
+| LegalDeadline | Target versioned LegalDeadlineSnapshot | Target legal-time service | Reminder/calendar projections | Operational reminder veya UI calculation legal deadline olamaz | `NOT_IMPLEMENTED / PRODUCTION_NO_GO`; LegalServiceDate cutover |
+| DebtorLegalStatus | Target evidence-backed state machine | DEBTOR legal-status owner | Legal-status card | Displayed/manual flag, workflow stage veya AI inference authority olamaz | `NOT_IMPLEMENTED`; taxonomy+evidence+legal sign-off |
+| EnforcementEligibility | Target versioned eligibility result | Eligibility owner | Guard/action views | NBA, score veya workflow stage eligibility olamaz | `NOT_IMPLEMENTED / PRODUCTION_NO_GO`; LegalStatus/time foundation |
+| LegalGuard | Target mandatory legal-action gateway | LegalGuard owner; approved rule catalogue | Guard outcome/audit view | Controller flag, AI veya manual bypass authority olamaz | `NOT_IMPLEMENTED / PRODUCTION_NO_GO`; legal sign-off+coverage tests |
+| Court/UYAP import | Verified source evidence, not raw projection | Validated external adapter + domain confirmation | UYAP/read projections | Raw import/projection tek başına canonical truth olamaz | `CURRENT INPUT / PARTIAL`; provenance and reconciliation |
+
+### `SYS-LEGAL-001 — Legal Truth Operational Truth'ten Ayrıdır`
+Queue, reminder, task, workflow stage, cache ve displayed status operational truth'tür;
+legal event, effective date veya eligibility yerine geçemez.
+
+### `SYS-LEGAL-002 — User Input Tek Başına External Truth Değildir`
+User-entered legal data provenance, authority ve gerekli evidence olmadan external legal
+fact oluşturmaz.
+
+### `SYS-LEGAL-003 — Legal Time Versiyonludur`
+Hukuki tarih/süre kaynak evidence, rule/version, timezone/calendar policy, calculation
+time ve supersession relation taşır.
+
+### `SYS-LEGAL-004 — NotificationQueue Legal Authority Değildir`
+`NotificationQueue.deliveredAt` operational delivery verisidir; LegalServiceDate veya
+LegalDeadline olarak kullanılamaz.
+
+### `SYS-LEGAL-005 — Competing Legal-Time Authority NO-GO'dur`
+Birden fazla competing legal-time yolu varsa reconciliation/cutover tamamlanmadan hiçbir
+yol production primary ilan edilemez.
+
+### `SYS-LEGAL-006 — LegalRole ve Liability Ayrıdır`
+Bir kişinin dosyadaki legal role'u her claim item bakımından aynı liability'yi doğurmaz.
+Liability legal basis, scope, amount/regime, evidence ve version taşır.
+
+### `SYS-LEGAL-007 — Legal Action Zinciri Zorunludur`
+```text
+Evidence → legal facts/time → LegalStatus → Eligibility
+→ LegalGuard → required HumanApproval → domain command
+→ audit/evidence/outbox
+```
+
+Gerekli parça yoksa capability `PRODUCTION_NO_GO` olur.
+
+### `SYS-LEGAL-008 — State Transition Domain-Owned'dur`
+Generic update, direct ORM mutation, frontend veya workflow stage legal transition'ı
+ikame edemez.
+
+### `SYS-LEGAL-009 — Settlement Semantiği Ayrıdır`
+`LegalSettlement / Sulh`, borç veya uyuşmazlığın hukuki agreement semantiğidir.
+`ClientSettlement / Creditor Disposition`, tahsil edilen değerin müvekkil yönlendirmesiyle
+yönetimidir. Tek model iki authority alanını birleştiremez.
+
+### `SYS-LEGAL-010 — Settlement Authority Taşınmaz`
+Hukuki sulh payout yetkisi oluşturmaz. Client disposition kararı debtor'ın hukuki
+yükümlülüğünü tek başına değiştirmez. `SettlementOffer` bağlamı açıkça sınıflandırılır.
+---
+## 9. Financial Source of Truth
+
+| Fact | Authoritative Source | Write Authority | Read Authority / Derived Views | Conflict / Prohibited Authority | Status / Cutover Gate / Evidence |
+|---|---|---|---|---|---|
+| Creditor authority | `CaseClient` / creditor set | CLIENT/creditor relation owner | Creditor/disposition views | `Case.clientId` financial authority olamaz | `CURRENT`; DBIND evidence; değişiklik açık supersession ister |
+| Collection Receipt | Current `Collection` receipt path | COLLECTION owner | Receipt/timeline/report views | Bank mock, event veya projection receipt yazamaz | `CURRENT PARTIAL`; idempotency+provider+tenant gates |
+| Legal Allocation / TBK 100 | Current `LedgerEntry`/`LedgerAllocation`; TBK 100 legal rule authority | RECEIVABLE/COLLECTION legal-allocation owner | Balance/allocation projections | `CollectionAllocation`, disposition veya journal legal allocation olamaz | `CURRENT WITH OPEN RECONCILIATION`; TM3, ACT-28, legal tests |
+| Canonical receivable balance | Current legacy production views; target ADR-014 canonical core | Current owner until cutover; target calculation owner after gate | Shadow/compatibility/display DTO | Shadow adapter, frontend/report alternate calculation authority olamaz | `TARGET / SHADOW_ONLY`; ADR-014 owner-gated cutover |
+| Creditor Disposition | Current `CollectionDisposition` + lines | Approval-gated CLIENT/COLLECTION disposition owner | Client statement/disposition views | Receipt veya `clientId` entitlement/disposition authority olamaz | `CURRENT PARTIAL`; DBIND/TM3+reversal reconciliation |
+| Payout / Offset | Current payout/offset command paths | Authorized money-out/offset owner | Statement/payment views | Disposition draft veya journal line para çıkışı değildir | `CURRENT PARTIAL`; approval+idempotency+reversal gates |
+| Accounting Journal Posting | Current additive/journal paths do not supersede legal ledger; target ADR-010 | Accounting owner after explicit cutover | Trial balance/financial statements | Journal legal rule, receipt veya payout authority olamaz | `TARGET / SHADOW-DIRECTION`; shadow→prove→sign-off→owner cutover |
+| Fee/harç/snapshot | Current producer candidates; target ADR-013 owner decision | Unassigned pending ADR-013 | Projection/readiness views | Candidate producer veya non-official snapshot authority olamaz | `OWNER DECISION / NOT_IMPLEMENTED`; boundary audit+sign-off |
+
+### `SYS-FIN-001 — Beş Finansal Kavram Ayrıdır`
+```text
+1. Collection Receipt
+2. Legal Allocation / TBK 100 Application
+3. Creditor Disposition
+4. Payout / Offset
+5. Accounting Journal Posting
+```
+
+Bu kavramlar eş anlamlı değildir ve tek `Collection`, `Allocation` veya `Posting`
+terimi altında birleştirilemez.
+
+### `SYS-FIN-002 — Receipt Para Girişidir`
+Collection Receipt paranın sisteme girmesini ve dosyaya bağlanmasını ifade eder;
+legal allocation, disposition, payout veya journal approval'ını ima etmez.
+
+### `SYS-FIN-003 — Legal Allocation Hukuki Uygulamadır`
+Legal Allocation tahsilatın canonical receivable buckets'a TBK 100 ve geçerli hukuki
+kurallarla uygulanmasıdır; creditor disposition değildir.
+
+### `SYS-FIN-004 — Disposition Creditor Kullanım Kararıdır`
+Creditor Disposition proceeds'in hak sahibi, amaç ve approval bağlamında ayrılmasıdır;
+receipt, legal allocation veya para çıkışı değildir.
+
+### `SYS-FIN-005 — Payout/Offset Gerçek Money-Out veya Mahsuptur`
+Payout fiili para çıkışıdır. Offset ayrı borçların açık authority ile mahsubudur.
+Disposition draft veya journal posting bunları tek başına oluşturamaz.
+
+### `SYS-FIN-006 — Journal Muhasebe Kaydıdır`
+Journal posting finansal olayın muhasebe temsilidir; para hareketinin kendisi veya
+TBK 100 legal rule authority değildir.
+
+### `SYS-FIN-007 — Exact Money Standardı`
+Authoritative para hesabı exact decimal veya doğrulanmış integer minor-unit kullanır.
+Binary floating point, UI rounding veya locale string authoritative hesap olamaz.
+
+### `SYS-FIN-008 — Financial Write Idempotent'tir`
+Stable idempotency key, payload identity/hash, replay sonucu, conflict davranışı ve
+concurrency boundary tanımlanır. Aynı key/farklı payload fail-closed conflict üretir.
+
+### `SYS-FIN-009 — Reversal İzlenebilir Ters Etki Üretir`
+Receipt, allocation, balance, disposition, payout/offset, journal, statement,
+audit/evidence ve downstream consumer etkileri sınıflandırılır. Kısmi compensation tam
+reversal olarak sunulamaz.
+
+### `SYS-FIN-010 — DBIND, TM3 ve ADR Gate'leri Korunur`
+Bu Constitution DBIND/TM3'ü, ADR-010 yönünü, ADR-013 owner-review sınırını veya ADR-014
+runtime cutover gate'lerini sessizce supersede etmez.
+---
+## 10. Decision Source of Truth
+
+| Decision | Authoritative Source | Write Authority | Read Authority / Derived Views | Conflict / Prohibited Authority | Status / Gate / Evidence |
+|---|---|---|---|---|---|
+| Owner decision | Explicit owner decision + append-only decision log | Owner / authorized governance workflow | Governance index/register views | Merge, ADR, code veya agent inference owner kararı olamaz | `CURRENT`; decision-log evidence |
+| Product decision | Product owner record + backlog/register | Product owner/governance | Roadmap/product views | Implementation convenience product policy olamaz | `CURRENT PARTIAL`; owner/status evidence |
+| Legal/domain decision | Ratified Constitution/Domain Law + legal sign-off | Authorized legal/domain owner | Rule catalogues and guards | AI, developer veya workflow stage legal decision olamaz | `CURRENT/TARGET` per rule; sign-off gate |
+| Architecture decision | Accepted/locked ADR | ADR governance process | Architecture index | ADR semantic owner decisioni değiştiremez | `CURRENT` only within recorded status/scope |
+| Implementation choice | Authorized task/PR | Assigned implementation owner | Code/review evidence | Implementation yeni policy oluşturamaz | `TASK-SCOPED`; authorization+validation |
+| Operational approval | Approval record | Authorized approver | Approval/audit views | Recommendation veya actor identity approval olamaz | `CURRENT PARTIAL`; approval policy |
+| Automated recommendation | Versioned deterministic/AI recommendation | Recommendation service | Recommendation UI | Recommendation binding karar veya command olamaz | `SHADOW/ADVISORY`; guard+approval gate |
+
+### `SYS-DEC-001 — Owner Kararı Açık ve İzlenebilirdir`
+Owner kararı scope, tarih, semantic effect ve repository effect taşır. Agent verilmemiş
+owner kararını varsayamaz.
+
+### `SYS-DEC-002 — Merge Ratifikasyon Değildir`
+Merge repository fact üretir; açık normatif owner kararını tek başına üretmez.
+
+### `SYS-DEC-003 — Ratifikasyon Implementation Değildir`
+Semantic ratification ile `GO-ANALYZE`, `GO-IMPLEMENT` ve `IF GO-COMPLETE` execution
+yetkileri ayrıdır.
+
+### `SYS-DEC-004 — Geçmiş Rewrite Edilmez`
+Yeni karar eski kararı supersede edebilir; eski kayıt korunur ve yeni append-only kayıt
+supersession/effective effect'i açıklar.
+
+### `SYS-DEC-005 — ADR Owner Kararı Değildir`
+ADR yalnız kendi accepted/locked scope'u içinde architecture authority taşır.
+
+### `SYS-DEC-006 — Approval ve Actor Ayrılabilir`
+İşlemi yapan ile onaylayan ayrı kimlikler olabilir; required approval actor action'ı ile
+varsayılamaz.
+
+### `SYS-DEC-007 — Recommendation Command Değildir`
+Deterministic score, NBA veya AI çıktısı domain command'a required guard/approval olmadan
+dönüşemez.
+
+### `SYS-DEC-008 — Açık Owner Gate Açık Kalır`
+Belge, kod veya test varlığı owner-held kararı kapatmaz. Owner gate yalnız açık karar ve
+governance kaydıyla kapanır.
+---
+## 11. AI Source of Truth ve Authority Sınırı
+
+| AI fact/capability | Authoritative Source | Write Authority | Read Authority / Derived Views | Conflict / Prohibited Authority | Status / Gate / Evidence |
+|---|---|---|---|---|---|
+| AI context | Canonical, authorized, minimized source references | AIContextBuilder-like authorized context owner | Model request/audit projection | Raw PII, unauthorized client data veya arbitrary body context authority olamaz | `CURRENT PARTIAL / TARGET`; tenant+visibility+PII gates |
+| AI recommendation | Versioned recommendation record | AI recommendation service only | Advisory UI/read model | Legal/financial fact, owner decision veya command olamaz | `SHADOW/ADVISORY`; lineage+human review |
+| Deterministic score | Versioned score aggregate and inputs | Score owner | Priority/risk views | Score LegalStatus, Eligibility veya LegalGuard olamaz | `TARGET/PARTIAL`; determinism+consumer gate |
+| NBA | Guarded recommendation/task candidate | NBA owner | NBA panel/task draft | Direct legal/financial mutation olamaz | `SHADOW_ONLY` until guard+approval+rollout |
+| Digital Twin | Derived read model | Projection owner; canonical writes prohibited | Twin/360 views | Source of truth veya action owner olamaz | `TARGET/SHADOW`; lineage+no-side-effect evidence |
+
+### `SYS-AI-001 — AI Legal Authority Değildir`
+AI legal fact, LegalServiceDate, LegalStatus, Eligibility, liability veya LegalGuard
+sonucu oluşturamaz.
+
+### `SYS-AI-002 — AI Financial Authority Değildir`
+AI balance, receipt, legal allocation, disposition, payout/offset veya journal posting
+yazamaz.
+
+### `SYS-AI-003 — AI Owner Decision Authority Değildir`
+AI owner/product/legal policy üretmez veya açık owner gate'i kapatmaz.
+
+### `SYS-AI-004 — AI Tek Başına Write Authority Olamaz`
+AI-generated mutation yalnız explicit policy, canonical inputs, deterministic guard,
+required human approval ve domain command ile mümkündür.
+
+### `SYS-AI-005 — Recommendation Advisory'dir`
+AI-generated legal interpretation advisory olarak etiketlenir; binding karar değildir.
+
+### `SYS-AI-006 — AI Lineage Zorunludur`
+Model/provider, version, prompt/template, tarih, minimized input lineage, evidence refs,
+confidence/uncertainty, fallback, human decision ve outcome izlenebilir olmalıdır.
+
+### `SYS-AI-007 — Hallucination ve Uncertainty Saklanamaz`
+Eksik evidence, fallback veya uncertainty kullanıcıdan ve audit kaydından gizlenemez.
+
+### `SYS-AI-008 — PII ve Client Visibility Korunur`
+AI context tenant, actor, client/case visibility, purpose limitation ve data minimization
+kontrollerinden geçer.
+
+### `SYS-AI-009 — Promotion Zinciri Zorunludur`
+```text
+canonical inputs → tenant/client-safe context → versioned recommendation
+→ LegalGuard → required HumanApproval → domain command → outcome audit
+```
+
+### `SYS-AI-010 — High-Impact Automation Fail-Closed'dur`
+Hukuki veya finansal etki yaratabilecek automation foundation, guard veya evidence eksikse
+çalışmaz; safe fallback canonical write üretmez.
+---
+## 12. Evidence, Event, Audit ve Traceability
+
+### `SYS-EVID-001 — DomainEvent Business Fact'tir`
+DomainEvent gerçekleşmiş domain fact'ini temsil eder; tenant, aggregate, type/version,
+correlation ve producer taşır. Command veya mutable operational log değildir.
+
+### `SYS-EVID-002 — Outbox Same-Transaction'dır`
+Canonical mutation ile onu yayınlayan outbox record aynı transaction boundary içinde
+oluşur. Best-effort event canonical completion için yeterli değildir.
+
+### `SYS-EVID-003 — AuditLog Actor İzidir`
+AuditLog kimin ne zaman hangi işlemi yaptığını kaydeder; business fact, DomainEvent veya
+LegalEvidence yerine geçmez.
+
+### `SYS-EVID-004 — LegalEvidence Delildir`
+LegalEvidence provenance, integrity, retention ve access policy taşır; operational log
+veya kullanıcı açıklamasıyla ikame edilemez.
+
+### `SYS-EVID-005 — Operational Log Ayrı Sınıftır`
+Diagnostic/operational log canonical fact veya evidence değildir; raw PII içeremez.
+
+### `SYS-EVID-006 — Evidence Immutable ve Traceable'dır`
+Correction yeni version/supersession ile yapılır. Silent update/delete/cascade yasaktır.
+
+### `SYS-EVID-007 — Replay Side Effect Üretmez`
+Event replay hukuki veya finansal side effect'i duplicate etmez; consumer idempotent'tir.
+
+### `SYS-EVID-008 — Read Model Yazamaz`
+Timeline, report, export, search, cache ve Digital Twin canonical modele yazamaz.
+---
+## 13. Tenant, Security ve Privacy
+
+### `SYS-AUTH-007 — Tenant Trusted Context'ten Gelir`
+Tenant, actor ve role doğrulanmış identity/session/service-account bağlamından gelir;
+serbest header/query param authority olamaz.
+
+### `SYS-AUTH-008 — Tenant ve Client Visibility Ayrıdır`
+Tenant izolasyonu bütün tenant kullanıcılarının bütün client/case verisini görebileceği
+anlamına gelmez. Read/report/export/file/AI/search yüzeyleri client visibility ve purpose
+kontrolü uygular.
+
+### `SYS-AUTH-009 — Defense in Depth`
+Riskle orantılı controller, service/repository ve database ownership kontrolleri uygulanır.
+Tek guard evrensel savunma sayılmaz.
+
+### `SYS-AUTH-010 — Background İşlem Kimlik Taşır`
+Job, scheduler ve consumer açık service identity, tenant partition, correlation ve
+idempotency taşır.
+
+### `SYS-AUTH-011 — Provider Default-Deny`
+Production provider eksik/belirsizse mock'a sessiz fallback yapılamaz. Mock/random/demo
+sonucu canonical legal veya financial state'e yazılamaz.
+
+### `SYS-AUTH-012 — PII Minimizasyonu`
+Yalnız amaç için gerekli veri işlenir. External provider/AI payload minimize edilir;
+ham kimlik/iletişim/adres/serbest içerik operational log'a yazılmaz.
+---
+## 14. Migration ve Cutover
+
+### `SYS-MIG-001 — Target Cutover Yetkisi Değildir`
+Target belge/model veya schema migration varlığı canonical authority geçişi değildir.
+
+### `SYS-MIG-002 — Risk-Based Staged Migration`
+Uygun fazlar `EXPAND`, `BACKFILL`, `SHADOW/DUAL-WRITE`, `RECONCILE`, `SHADOW-READ`,
+`CUTOVER`, `DEPRECATE`, `CONTRACT`tır. Uygulanmayan faz için `NOT_APPLICABLE` gerekçesi yazılır.
+
+### `SYS-MIG-003 — Backfill No-Guess ve Idempotent'tir`
+Backfill tahmine dayalı legal/financial fact üretmez; belirsiz kayıtları quarantine eder,
+re-run ve count/sum/hash reconciliation kanıtı üretir.
+
+### `SYS-MIG-004 — Dual-Write Geçici ve Sürelidir`
+Dual-write owner, süre, compare, stop ve rollback gate taşır; permanent dual authority
+oluşturamaz.
+
+### `SYS-MIG-005 — Dual-Read Authority Belirsizliği Yaratmaz`
+Primary reader ve shadow reader açıkça etiketlenir; mismatch fail-closed evidence üretir.
+
+### `SYS-MIG-006 — Read ve Write Ayrı Cutover Edilir`
+Write authority ile read/display authority geçişleri ayrı gate ve doğrulama taşır.
+
+### `SYS-MIG-007 — Cutover Evidence Gerektirir`
+Reconciliation, legal/financial/security sign-off, required tests, monitoring, rollback
+ve owner cutover kararı olmadan new authority primary ilan edilemez.
+
+### `SYS-MIG-008 — Production Evidence Ayrıdır`
+Fixture/shadow parity production parity değildir. Production observation yoksa empirical
+parity iddia edilemez.
+
+### `SYS-MIG-009 — Old Authority Kontrollü Kaldırılır`
+Consumer inventory ve rollback tamamlanmadan old authority silinemez veya new authority
+tek kaynak ilan edilemez.
+
+### `SYS-MIG-010 — Backward Compatibility Varsayılandır`
+Değişiklikler en küçük güvenli, additive ve reversible adımlarla ilerler. Destructive
+değişiklik açık gerekçe, migration, reconciliation ve owner onayı gerektirir.
+---
+## 15. Compliance Model
+
+Her compliance kaydı en az şu alanları taşır:
+
+```text
+Rule ID
+Status
+Current Authority
+Target Authority
+Evidence
+Gap
+Risk
+Patch Strategy
+Owner Gate
+Migration Gate
+Verification
+Closure Condition
+```
+
+### 15.1 Status
+
+```text
+ENFORCED
+PARTIALLY_ENFORCED
+DOCUMENTED_ONLY
+NOT_IMPLEMENTED
+VIOLATED
+UNVERIFIABLE
+NOT_APPLICABLE
+```
+
+### 15.2 Patch Strategy
+
+| Patch Strategy | Anlam |
+|---|---|
+| `Quick Fix` | Lokal, sınırlı ve düşük riskli uyum düzeltmesi |
+| `Architectural` | Authority, ownership veya sistem sorumluluğu değişikliği |
+| `Migration` | Veri, schema, canonical authority veya cutover geçişi |
+| `Owner Decision` | Normatif, ticari veya hukuki tercih gerektiren konu |
+| `Research` | Yeterli evidence bulunmayan inceleme konusu |
+
+### `SYS-COMP-001 — Compliance Ratifikasyondan Ayrıdır`
+Runtime ihlali tek başına Constitution ratification blocker değildir; ilgili capability
+implementation/production blocker olabilir.
+
+### `SYS-COMP-002 — Evidence Status'tan Ayrıdır`
+`CONFIRMED`, `REVALIDATION_REQUIRED`, `UNVERIFIABLE` ve `REFUTED` evidence güvenini;
+implementation status ise enforcement durumunu gösterir.
+
+### `SYS-COMP-003 — Required Test Skip Başarı Değildir`
+Required suite çalışmamış, zero-test üretmiş veya dependency/config nedeniyle skip olmuşsa
+PASS sayılamaz.
+
+### `SYS-COMP-004 — Validation İddiası Factual'dır`
+Yalnız gerçekten çalıştırılan komut ve gözlenen sonuç PASS olarak raporlanır.
+
+### `SYS-COMP-005 — Risk Bazlı Suite Manifest'i`
+Production-impacting capability tenant, visibility, legal matrix, financial invariant,
+event/replay, migration, provider, AI ve UI safety kapsamından etkilenen suite'leri açıkça
+required olarak tanımlar.
+
+### `SYS-COMP-006 — Exception Süreli ve İzlenebilirdir`
+Exception owner, scope, reason, risk, expiry/review date ve compensating control taşır;
+kalıcı sessiz override olamaz.
+
+### `SYS-COMP-007 — Override Üst Normu Değiştirmez`
+Operational exception Constitution/Domain Law hükmünü değiştirmez. Norm değişikliği
+amendment/supersession gerektirir.
+
+### `SYS-COMP-008 — Compliance Kaydı Implementation Emri Değildir`
+Gap veya Patch Strategy kaydı ayrı task authorization olmadan patch yetkisi vermez.
+
+### `SYS-COMP-009 — Production State Doğrulanamazsa UNVERIFIABLE'dır`
+Deployment, branch protection, database apply veya production evidence repository'den
+kanıtlanamıyorsa varsayılmaz.
+
+### `SYS-COMP-010 — Closure Condition Önceden Tanımlanır`
+Compliance kaydı evidence, tests, owner/migration gates ve canonical status tamamlanmadan
+closed sayılamaz.
+---
+## 16. Canonicalization ve Governance Closure
+
+```text
+IMPLEMENTED ≠ VERIFIED ≠ MERGED ≠ CANONICAL ≠ CLOSED
+```
+
+### `SYS-CAN-001 — Repository Canonical Effect Merge ile Başlar`
+Owner-ratified bir taslak repository'de ancak approved merge to main sonrasında canonical
+etki kazanır.
+
+### `SYS-CAN-002 — Tek Canonical Constitution Yolu`
+Tek sistem Constitution yolu `project/docs/governance/SYSTEM-CONSTITUTION.md`dir. İkinci
+system Constitution oluşturulamaz.
+
+### `SYS-CAN-003 — Supersession Açık Kaydedilir`
+Yeni norm superseded içerik, effective effect ve korunacak historical references'ı açık
+append-only kararla belirtir.
+
+### `SYS-CAN-004 — Governance PR Zorunludur`
+Constitution ve ratifiye Domain Law yalnız governance PR ve decision-log kaydıyla değişir.
+
+### `SYS-CAN-005 — Closure Kanıt Kümesidir`
+Closure değerlendirmesi PR, branch commit, squash SHA, CI, mergeability, main sync,
+branch/worktree cleanup, runtime/schema/migration etkisi, Master Register, açık verification
+ve superseded workstreams'i kontrol eder.
+
+### `SYS-CAN-006 — Master Register Kontrolü Zorunludur`
+Master Register kontrolü olmadan “hat kapandı” denemez. Duplicate register yaratılmaz;
+canonical owner kaydına pointer verilir.
+
+### `SYS-CAN-007 — Open Gate'ler Korunur`
+Constitution closure Party, Liability, LegalTime, CCB, Accounting veya başka owner-held
+implementation/cutover gate'lerini kapatmaz.
+
+### `SYS-CAN-008 — Historical PR'lar Korunur`
+PR #1139 short-form Constitution'ın tarihsel kaynağıdır. PR #1140 valid post-merge
+bookkeeping'tir. Bu sürüm PR #1140'ı hatalı/obsolete saymaz; daha sonraki owner ratifikasyonu
+yalnız `PROPOSED` semantic status'u ileriye dönük supersede eder.
+---
+## 17. Hard Stops
+
+İlgili implementation veya production activation aşağıdaki durumda durur:
+
+1. canonical source of truth belirsiz veya çift otoriteliyse;
+2. tenant, actor veya client visibility doğrulanamıyorsa;
+3. mock/random/demo data canonical state'e yazacaksa;
+4. legal time source/rule version belirsizse;
+5. LegalRole, Liability veya creditor authority varsayılıyorsa;
+6. receipt/allocation/disposition/payout/journal ayrımı bozuluyorsa;
+7. destructive migration reconciliation/recovery olmadan ilerliyorsa;
+8. required test skip/zero-test ile yeşil görünüyorsa;
+9. AI/NBA guard ve required approval'ı atlıyorsa;
+10. evidence history bozuluyorsa;
+11. owner kararı verilmiş gibi gösteriliyorsa;
+12. ADR-010/013/014 veya DBIND/TM3 gate'i atlanıyorsa;
+13. roadmap veya merge implementation/cutover authority gibi kullanılıyorsa;
+14. alt belge Constitution'ı sessizce değiştiriyorsa.
+
+Hard stop ilgili capability'yi durdurur. Sorun Constitution'ın kendi authority veya
+semantik metnindeyse governance amendment/owner kararı gerekir.
+---
+## 18. Açık Owner Kararları ve Non-Goals
+
+Bu belge aşağıdaki kararları verilmiş saymaz:
+
+- Accounting'in supporting context veya ayrı business domain olması;
+- Party Registry implementation/cutover;
+- Liability aggregate ve estate/heir semantics;
+- LegalServiceDate/LegalStatus/Eligibility taxonomy/cutover;
+- LegalGuard rule catalogue;
+- ADR-014 runtime cutover;
+- duplicate allocation engine disposition;
+- ADR-013 fee/harç/snapshot producer ownership;
+- official snapshot lifecycle;
+- detailed LegalSettlement/reversal implementation;
+- tenant enforcement technology;
+- production provider/retention policies.
+
+Bu Constitution Debtor roadmap sırasını değiştirmez, Wave-0 veya `MS/EXEC-01` kararı
+vermez, runtime/schema/migration/code davranışını değiştirmez ve hiçbir feature'ı açmaz.
+---
+## 19. Amendment ve Version History
+
+### `SYS-CAN-009 — Constitutional Amendment`
+Primary domain, authority hierarchy, source-of-truth ilkesi, hukuki/finansal semantik,
+AI authority veya invariant kaldırma/zayıflatma Constitutional Amendment'tır. Gerekçe,
+etki, backward compatibility, migration/cutover, owner/sign-off ve supersession taşır.
+
+### `SYS-CAN-010 — Compliance Güncellemesi Amendment Değildir`
+Runtime status'unun değişmesi Constitution'ı kendiliğinden değiştirmez; compliance kaydı
+kanıtla güncellenir.
+
+### Version history
+
+| Version / tarih | Repository fact | Semantic effect |
+|---|---|---|
+| Short-form, PR #1139, 2026-07-12 | Governance çatısı aynı canonical path'e eklendi | Tarihsel short-form; v1.0 tarafından içerik bakımından superseded |
+| PR #1140, 2026-07-12 | Post-merge bookkeeping; Constitution/Index `PROPOSED` kaldı | O tarihteki owner kararını doğru yansıtan valid historical record |
+| v1.0, later owner decision | Canonical System Governance owner tarafından ratifiye edildi | `RATIFIED — BINDING`; repository effect approved merge ile başlar |
+---
+## Son Hüküm
+
+Canonical System Governance v1.0 sistemin üst semantik yönetişim normudur. Domain Law'lar
+onu ayrıntılandırır; ADR'lar teknik kararları kaydeder; implementation bu normları uygular.
+`AGENTS.md` ayrı execution/safety ekseninde bağlayıcıdır. Runtime compliance ayrı kanıt
+programıdır. Bu metin approved merge to main sonrasında repository-canonical olur; açık
+owner, migration ve cutover gate'lerini kendiliğinden kapatmaz.
