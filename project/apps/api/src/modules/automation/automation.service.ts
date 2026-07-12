@@ -83,7 +83,7 @@ export class AutomationService {
             continue;
           }
 
-          await this.workflowEngine.processCase(caseData.id);
+          await this.workflowEngine.processCase(caseData.id, caseData.tenantId);
 
           const nextActionAt = await this.workflowEngine.calculateNextActionTime(caseData.id);
           if (nextActionAt) {
@@ -153,7 +153,7 @@ export class AutomationService {
 
       // Dosya otomatik moddaysa işle
       if (notification.case?.isAutoMode && notification.caseId) {
-        await this.workflowEngine.processCase(notification.caseId);
+        await this.workflowEngine.processCase(notification.caseId, notification.case.tenantId);
       }
     }
 
@@ -332,8 +332,8 @@ export class AutomationService {
   }
 
   // Manuel olarak dosya işleme
-  async processCaseManually(caseId: string): Promise<void> {
-    await this.workflowEngine.processCase(caseId);
+  async processCaseManually(caseId: string, tenantId: string): Promise<void> {
+    await this.workflowEngine.processCase(caseId, tenantId);
   }
 
   // Otomatik modu aç/kapat
