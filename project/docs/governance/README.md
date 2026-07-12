@@ -25,6 +25,10 @@ Dosyalar:
 - `DEBTOR-GOVERNANCE.md` - ratifiye Debtor Domain Law (RATIFIED v1.0, 2026-07-12).
 - `RECEIVABLE-GOVERNANCE.md` - ratifiye Receivable Domain Governance ve alacak hattının
   tek domain giriş noktası (RATIFIED v1.0; repository-canonical upon approved merge).
+- `OFFICE-GOVERNANCE.md` - aday OFFICE Domain Law (DRAFT / OWNER REVIEW REQUIRED).
+- `OFFICE-MASTER-SYNTHESIS.md` - OFFICE kanıt/gerekçe/senaryo katmanı (NON-NORMATIVE).
+- `OFFICE-RISK-REGISTER.md` - OFFICE domain risk dossier'i (global triage otoritesi değil).
+- `OFFICE-OWNER-DECISIONS.md` - OFFICE açık owner karar dossier'i (kapanmış karar otoritesi değil).
 - `active-roadmap.md` - aktif fazlar ve implementasyona açık işler.
 - `product-backlog.md` - yeni governance Product Backlog hedef kaydı.
 - `architecture-index.md` - kesinleşmiş mimari kararların indeksi.
