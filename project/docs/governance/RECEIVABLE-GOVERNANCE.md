@@ -1,0 +1,1434 @@
+# RECEIVABLE GOVERNANCE
+
+## Alacak Kalemi / Kanonik Hesaplama Domain Anayasası
+
+> **Tek domain giriş noktası:** Bu metin receivable-specific authority, boundary ve invariant kurallarının kanonik giriş noktasıdır. System-wide normları yeniden tanımlamaz; ratifiye `SYSTEM-CONSTITUTION` içindeki ilgili `SYS-*` hükümlerini referans alır ve yalnız receivable domain ayrıntısını ekler.
+
+```text
+Belge Durumu: CANONICAL
+Belge Sınıfı: DOMAIN GOVERNANCE
+Üst Otorite: SYSTEM-CONSTITUTION
+Version: 1.0
+Canonical Path: project/docs/governance/RECEIVABLE-GOVERNANCE.md
+Owner Status: RATIFIED — BINDING
+Repository Status: CANONICAL UPON APPROVED MERGE TO MAIN
+Execution Authority: Bu belgenin ratifikasyonu veya merge'i hiçbir durumda kod, schema,
+                     migration, feature activation, runtime cutover ya da release yetkisi
+                     üretmez. Her mutation ayrıca AGENTS.md ve task-specific GO authorization
+                     gerektirir.
+Domain: Receivable / ClaimItem / Due ingress / Collection effect / Canonical legal calculation
+Dil: Türkçe
+Kalıcılık: Stable governance; volatil PR/SHA/blocker bilgileri yalnız Appendix C'de
+```
+
+---
+
+# İçindekiler
+
+0A. Non-goals
+0B. Reading order
+1. Belgenin rolü ve anayasal yeri
+2. Amaç, kapsam ve kapsam dışı alanlar
+3. Normatif hukuk ve AS-IS kanıt hiyerarşisi
+4. Temel kavramlar
+5. Dört otorite modeli
+6. Domain ownership ve sınırlar
+7. Alan-bazlı authority matrisi
+8. Alacak ingress ve write-path anayasası
+9. Payment / Collection / Allocation anayasası
+10. Faiz ve kısmi ödeme anayasası
+11. Reversal / refund / cancellation sınırı
+12. Döviz ve currency anayasası
+13. Fee / harç sınırı
+14. Journal / Trace / Snapshot ayrımı
+15. Presentation ve API anayasası
+16. Integration ve NEVER_AUTO kuralları
+17. Determinizm, hassasiyet ve test invariantları
+18. CURRENT / TARGET / OUT-OF-SCOPE ayrımı
+19. ADR sınırları ve terminoloji
+20. Canonical consumer cutover anayasası
+21. Legacy sınıflandırma ve silme sırası
+22. Repository / provenance ve kapanış protokolü
+23. Değişiklik, istisna ve ratifikasyon kuralları
+24. Related documents ve zorunlu pointer'lar
+25. Appendix A — Proposed / not ratified kararlar
+26. Appendix B — Future product architecture programı
+27. Appendix C — Non-normative current-state snapshot
+28. Appendix D — Owner ratification checklist
+
+---
+
+# NON-GOALS
+
+Bu belge:
+
+- Product Architecture Constitution veya PAC değildir.
+- ADR değildir.
+- Release Plan değildir.
+- Roadmap değildir.
+- Master Register değildir.
+- Decision Log değildir.
+- Implementation Guide değildir.
+
+Bu belge, `SYSTEM-CONSTITUTION` altında yalnız receivable domaininin kalıcı semantik,
+authority ve boundary kurallarını ayrıntılandırır. Ratifikasyon veya merge hiçbir
+implementation, migration, cutover, feature activation ya da release yetkisi üretmez.
+Bu sınır `SYS-GOV-003`, `SYS-AUTH-006` ve `SYS-DEC-003` hükümlerini uygular.
+
+---
+
+# READING ORDER
+
+Yeni geliştirici, reviewer veya ajan için zorunlu semantik okuma sırası:
+
+```text
+SYSTEM-CONSTITUTION
+→ RECEIVABLE-GOVERNANCE
+→ ADR-014
+→ ADR-013
+→ ADR-010
+→ Decision Log
+→ Master Register / Canonicalization Register
+```
+
+Execution ve repository-safety kuralları ayrı authority ekseninde `AGENTS.md` üzerinden
+uygulanır. Semantic authority execution izni üretmez; execution izni de bu belgedeki
+domain semantiğini değiştirmez (`SYS-AUTH-005`, `SYS-AUTH-006`).
+
+---
+
+# 1. Belgenin rolü ve anayasal yeri
+
+## 1.1. Hiyerarşi
+
+Bu belgenin repository governance hiyerarşisindeki yeri şöyledir:
+
+```text
+Semantic authority:
+SYSTEM-CONSTITUTION
+→ RECEIVABLE-GOVERNANCE (bu belge)
+→ Contract / Standard
+→ ADR
+→ Implementation
+
+Execution and safety authority:
+AGENTS.md + repository policies + task-specific authorization
+```
+
+Decision Log ve Master Register/Canonicalization Register bu hiyerarşinin karar/evidence
+kayıt yüzeyleridir; tek başlarına semantic veya execution authority üretmez.
+
+**REC-GOV-001 — Bu belge sistem üst anayasası değildir.**
+`SYSTEM-CONSTITUTION` altında yer alan alacak domain governance belgesidir.
+
+**REC-GOV-002 — ADR, bu belgenin yerine geçmez.**
+ADR-014, ADR-013 ve ADR-010 belirli karar ve uygulama sınırlarını yönetir; alacak domaininin kalıcı authority ve boundary kuralları bu belgede tutulur.
+
+**REC-GOV-003 — Gelecekteki PAC-Full bu belgenin kendiliğinden üstü değildir.**
+Product Architecture çalışması, `SYSTEM-CONSTITUTION` altında ayrı bir program veya domainler-arası contract seti olarak ratifiye edilmedikçe mevcut governance hiyerarşisini değiştiremez.
+
+## 1.2. Tek domain giriş noktası
+
+Bu doküman aşağıdaki receivable-specific konuların kanonik giriş noktasıdır:
+
+- alacak kalemi field authority matrisi,
+- Due / ClaimItem yönü,
+- payment ve tahsilat etkisi,
+- allocation ve TBK100 sırası,
+- faiz matrahı,
+- reversal sınırı,
+- currency isolation,
+- fee/harç sınırı,
+- journal/trace/snapshot ayrımı,
+- presentation authority,
+- consumer cutover,
+- legacy quarantine,
+- governance ve ratifikasyon.
+
+Ayrı sözleşme veya ADR'ler bu belgenin ayrıntısını uygulayabilir; fakat bu belgedeki bir invariant'ı sessizce değiştiremez. System-wide normlar burada bağımsız kopya olarak yeniden üretilmez; ilgili `SYS-*` hükmüne referans verilir.
+
+Rule placement `SYS-GOV-007`ye tabidir. `REC-*` kimlikleri domain-local namespace'tir;
+benzersizlik ve namespace koruması `SYS-GOV-011` ile `SYS-GOV-012` uyarınca uygulanır.
+
+---
+
+# 2. Amaç, kapsam ve kapsam dışı alanlar
+
+## 2.1. Amaç
+
+Bu belgenin amacı, alacak hattında daha önce görülen şu mimari bozulmaların tekrarını engellemektir:
+
+1. Canonical diye geliştirilen bir hattın fiilen legacy kalması.
+2. Aynı bakiye veya kalem için iki bağımsız production authority oluşması.
+3. `Due`, `ClaimItem`, Collection, Ledger ve display alanlarının birbirini çift yönlü ve kontrolsüz tetiklemesi.
+4. Tahsilat etkisinin `ClaimItem.collectedAmount` gibi non-authoritative alanlardan okunması.
+5. UI, controller, report veya template içinde ayrı formül bulunması.
+6. Eksik mapping, tarife veya currency verisinin sessiz `0`, `{}` veya legacy fallback üretmesi.
+7. Adapter varlığının cutover tamamlanmış gibi yorumlanması.
+8. Synthetic test kanıtının production empirical evidence yerine kullanılması.
+9. Legacy kodun sınıflandırılmadan silinmesi.
+10. WIP branch'te doğrulanan durumun `main`, production veya release durumuymuş gibi raporlanması.
+
+## 2.2. Kapsam içi
+
+- `ClaimItem` alanlarının hukuki ve teknik authority rolleri
+- `Due → ClaimItem` ingress/provenance sınırı
+- Payment / Collection / Ledger etkisinin alacak bakiyesine yansıması
+- Allocation ve TBK100 sıra invariantları
+- Kısmi ödemenin principal ve interest-base etkisi
+- Full reversal için doğrulanmış net-zero sınırı
+- Currency isolation ve fail-closed davranış
+- Legal balance, projection, persistence ve presentation ayrımı
+- ADR-014 pre-cutover canonical core sınırı
+- Consumer cutover, bake, rollback ve legacy quarantine
+- Legacy classification taxonomy
+- Repository/provenance ve evidence-before-closure protokolü
+
+## 2.3. Kapsam dışı
+
+Bu belge aşağıdaki konuların bütün özel politikasını ratifiye etmez:
+
+- tahsil harcı stage/rate matrisi,
+- cezaevi harcı modeli,
+- peşin harç floor/minimum kararı,
+- yıllık tarife rakamları,
+- Accounting Journal'ın bütün hesap planı,
+- official/durable snapshot persistence implementasyonu,
+- exact UYAP rich-interest mapping tablosu,
+- banka import ve otomatik eşleştirme,
+- full product aggregate/state/event/concurrency programı.
+
+Bu alanlar ilgili ADR, contract veya ayrı domain governance altında yürütülür.
+
+---
+
+# 3. Normatif hukuk ve AS-IS kanıt hiyerarşisi
+
+## 3.1. Normatif hukuk hiyerarşisi
+
+Bu belge `SYS-GOV-004`, `SYS-AUTH-002`, `SYS-AUTH-003` ve `SYS-AUTH-004` hükümlerini
+receivable domaininde uygular. Bağlayıcı mevzuat ve resmî kararlar üst normdur; Domain
+Governance bunları receivable semantiğine taşır, ADR teknik/mimari tercihi kaydeder ve
+implementation norm üretmez.
+
+**REC-INV-001 — Hukuka üstün ürün kararı yoktur.**
+Owner kararı, hukuken mümkün modeller arasından ürün politikasını seçebilir; bağlayıcı hukuk kuralını geçersiz kılamaz.
+
+**REC-INV-002 — Kaynaksız hukuki oran yoktur.**
+Kanuni sabit, yıllık tarife, sözleşmesel oran ve manuel hukuki karar ayrı kaynak sınıflarıdır; biri diğerinin yerine kullanılamaz.
+
+## 3.2. AS-IS kanıt hiyerarşisi
+
+AS-IS doğrulaması `SYS-GOV-005`, `SYS-COMP-002`, `SYS-COMP-004` ve `SYS-COMP-009`
+uyarınca repository, git, runtime/DB, PR/CI ve governance kanıtından görev başında yeniden
+yapılır. Evidence güveni ile authority/lifecycle/compliance statüsü birbirine karıştırılmaz.
+
+**REC-INV-003 — Normatif hedef ile fiili davranış ayrıdır.**
+“Hukuken ne olmalı?” ve “kod bugün ne yapıyor?” aynı kanıt türüyle cevaplanamaz.
+
+**REC-INV-004 — Repository kanıtı olmayan receivable kapanışı yoktur.**
+`SYS-CAN-005` ve `SYS-CAN-006` uygulanır; `DONE`, `CLOSED`, `CANONICAL`, `CUTOVER READY`
+veya `RELEASED` iddiası ilgili seviyenin receivable evidence ve Master Register kanıtı
+olmadan kullanılamaz.
+
+---
+
+# 4. Temel kavramlar
+
+| Kavram | Bağlayıcı tanım |
+|---|---|
+| **Receivable** | Hukuki kaynağı, talep tutarı, faiz politikası ve yaşam döngüsü bulunan alacak hakkı |
+| **Due** | Alacağın ingress/provenance kaynağı; canonical calculation authority olması zorunlu değildir |
+| **ClaimItem** | Takip/alacak bileşeninin canonical domain kaydı; her alanı authority değildir |
+| **Payment** | Borçlu veya üçüncü kişi tarafından yapılan ödeme fact'i |
+| **Collection** | Ödemenin tahsilat bağlamı, statüsü ve ilişkili belge/işlem kaydı |
+| **Allocation** | Ödeme tutarının hukuki sıraya göre borç bileşenlerine dağıtılması |
+| **Legal Balance** | Yetkili input, policy ve rate setiyle hesaplanan hukuki bakiye sonucu |
+| **Projection** | Persist edilmiş fact'lerden türetilen read model veya görünüm |
+| **Journal** | Gerçek finansal olayın muhasebe kaydı |
+| **Trace** | Hesap sonucunun nasıl oluştuğunu açıklayan evidence |
+| **Snapshot** | Belirli input/policy/version setine ait hesaplama sonucu delili |
+| **Compatibility Mirror** | Geçiş süresince taşınan, bağımsız authority olmayan uyumluluk alanı |
+| **Consumer Cutover** | Production tüketicisinin legacy çıktından canonical çıktıya geçirilmesi |
+| **Production Empirical Evidence** | Gerçek veya yetkili temsilî üretim verisiyle elde edilmiş davranış kanıtı |
+| **Synthetic Evidence** | Fixture veya sentetik veriyle elde edilen test kanıtı; production evidence değildir |
+
+---
+
+# 5. Dört otorite modeli
+
+```text
+Single Source of Calculation
+≠ Projection Ownership / Derived Read Contract
+≠ Single Source of Persistence
+≠ Single Source of Presentation
+```
+
+Bu ayrım `SYS-SOT-002`, `SYS-SOT-003` ve `SYS-SOT-004` hükümlerinin receivable-domain
+uygulamasıdır. Projection ve presentation owner'ları source-of-truth veya canonical write
+authority değildir.
+
+## 5.1. Calculation Authority
+
+Şu sorunun tek owner'ıdır:
+
+> Hukuki ve matematiksel olarak hangi tutar hesaplanmalıdır?
+
+Örnekler:
+
+- canonical allocation,
+- interest engine,
+- legal balance core,
+- ratifiye fee calculation engine,
+- ratifiye FX policy.
+
+## 5.2. Projection Ownership / Derived Read Contract
+
+Şu sorunun tek owner'ıdır:
+
+> Persist edilmiş fact'lere göre dosyada bugün hangi durum görünmelidir?
+
+Örnekler:
+
+- CaseBalance projection,
+- fee projection,
+- reconciliation view,
+- canonical display DTO.
+
+**REC-AUTH-PROJ-001 — Projection source fact'i override edemez.**
+
+**REC-AUTH-PROJ-002 — Projection canonical write authority değildir.**
+
+**REC-AUTH-PROJ-003 — Projection conflict-resolution authority değildir.**
+Canonical ve derived sonuç çatışırsa `SYS-SOT-005` uygulanır; projection kazanmaz ve
+conflict fail-closed evidence üretir.
+
+## 5.3. Persistence Authority
+
+Şu sorunun tek owner'ıdır:
+
+> Hangi olay gerçekten gerçekleşti ve kalıcı kayıt nedir?
+
+Örnekler:
+
+- Payment / Collection fact,
+- Accounting Journal posting,
+- ClaimItem creation/update,
+- frozen observation,
+- official snapshot yalnız ratifiye edildikten sonra.
+
+## 5.4. Presentation Authority
+
+Şu sorunun tek owner'ıdır:
+
+> Kullanıcıya, API'ye, rapora veya belgeye hangi yetkili sonuç gösterilir?
+
+Presentation katmanı hesap yapmaz; yetkili DTO tüketir.
+
+**REC-AUTH-000 — Aynı receivable semantiği için iki production authority yasaktır.**
+Bu hüküm `SYS-SOT-003`ün domain ayrıntısıdır.
+
+---
+
+# 6. Domain ownership ve sınırlar
+
+| Domain | Sahip olduğu gerçek | Sahip olmadığı gerçek |
+|---|---|---|
+| **Receivable / Claim** | alacak provenance'ı, demanded amount, interest code, claim semantiği | ödeme gerçekleşmesi, journal posting, Debtor/CaseDebtor legal role veya liability |
+| **Collection** | payment/collection fact, statü, belge, reversal linki | legal balance formülü |
+| **Calculation** | allocation, interest segmentleri, legal balance result | finansal event persistence'ı |
+| **Accounting** | journal posting ve finansal event evidence | hukuki bakiye formülü |
+| **Fee** | tarife/mevzuat/sözleşme kaynaklı fee calculation | receivable core içine gizli formül |
+| **Presentation** | yetkili DTO tüketimi | bağımsız formül ve policy |
+| **Integration** | harici fact, candidate veya mapping input'u | otomatik hukuki authority |
+
+**REC-BOUNDARY-001 — Payment, ClaimItem'ı keyfî biçimde mutate etmez.**
+Etki, Collection fact + canonical allocation akışı üzerinden üretilir.
+
+**REC-BOUNDARY-002 — Accounting Journal legal balance hesaplamaz.**
+
+**REC-BOUNDARY-003 — Calculation result finansal olayın gerçekleştiğini ispatlamaz.**
+
+**REC-BOUNDARY-004 — Domain governance belgeleri birbirinin authority'sini sahiplenemez.**
+
+Debtor/Receivable sınırı `SYS-GOV-016`, `SYS-GOV-017` ve `DEBTOR-GOVERNANCE` ile birlikte
+okunur: ClaimItem receivable semantiğini taşır; Debtor/CaseDebtor legal role veya liability
+authority'si üretmez.
+
+---
+
+# 7. Alan-bazlı authority matrisi
+
+## 7.1. Statü sınıfları
+
+Receivable-specific nitelemeler system lifecycle statüsünün yerine geçmez. Her authority
+satırı semantik rolü, owner'ı, system lifecycle'ı ve evidence/compliance durumunu ayrı taşır.
+
+| Receivable niteliği | System lifecycle mapping | Kullanım sınırı |
+|---|---|---|
+| `CURRENT_CANONICAL` | `CURRENT` + `CANONICAL_WITHIN_STATED_SCOPE` | Yalnız kanıtlanmış read/write veya calculation scope'u |
+| `CURRENT_PROVENANCE` | `CURRENT` + `NON_CANONICAL_INPUT` | Kaynak/ingress kanıtı; hesap veya write authority değil |
+| `COMPATIBILITY_ONLY` | `DEPRECATED` veya `SHADOW_ONLY` | Geçiş uyumluluğu; bağımsız authority değil |
+| `NON_AUTHORITATIVE` | `CURRENT` + `DERIVED_ONLY` | Cache/projection/display/evidence; canonical write üretmez |
+| `TARGET_OWNER_GATED` | `TARGET` + `PRODUCTION_NO_GO` | Owner/ADR/cutover gate kapanmadan current olamaz |
+| `FORBIDDEN` | `PRODUCTION_NO_GO` | İlgili açık authority contract oluşana kadar yasak |
+| `OUT_OF_SCOPE` | `STATUS_PER_CANONICAL_OWNER` | Ayrı domain/ADR statüsü esas alınır |
+
+Evidence statüsü (`CONFIRMED`, `REVALIDATION_REQUIRED`, `UNVERIFIABLE`, `REFUTED`) ile
+lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
+
+## 7.2. ClaimItem ve Due
+
+| ID / alan | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
+|---|---|---|---|---|
+| `REC-AUTH-001` — `ClaimItem.originalAmount` | Creation provenance; normal mutation ile değişmez | ClaimItem creation command | `CURRENT / NON_CANONICAL_PROVENANCE` | `CONFIRMED / RUNTIME CONTRACT IMPLEMENTED` |
+| `REC-AUTH-002` — `ClaimItem.demandedAmount` | Takipte talep edilen canonical alacak tutarı | Receivable/ClaimItem command owner | `CURRENT / CANONICAL_WITHIN_CLAIMITEM_SCOPE` | `CONFIRMED / RUNTIME IMPLEMENTED` |
+| `REC-AUTH-003` — `ClaimItem.amount` | Controlled compatibility mirror; canonical değeri override edemez | Compatibility writer, demandedAmount ile kontrollü aynı akış | `DEPRECATED / COMPATIBILITY_ONLY` | `CONFIRMED / TRANSITIONAL COMPLIANCE` |
+| `REC-AUTH-004` — `ClaimItem.collectedAmount` | Legacy/cache alanı; tahsilat, legal balance veya display authority değildir | Alanın write/read authority'si yok; tahsilat etkisi payment/ledger hattından okunur | `CURRENT / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / AUTHORITY EXCLUSION IMPLEMENTED` |
+| `REC-AUTH-005` — `ClaimItem.interestTypeCode` | Faiz hesaplama read authority | Receivable mapping/ClaimItem command owner | `CURRENT / CANONICAL_WITHIN_INTEREST_SCOPE` | `CONFIRMED / RUNTIME IMPLEMENTED` |
+| `REC-AUTH-006` — `Due.interestTypeCode` | Ingress ve kaynak provenance'ı; calculation authority değil | Due owner | `CURRENT / NON_CANONICAL_INPUT` | `CONFIRMED / RUNTIME IMPLEMENTED` |
+| `REC-AUTH-007` — legacy `interestType` | Sınırlı compatibility projection; yeni canonical karar kaynağı olamaz | Compatibility adapter | `DEPRECATED / COMPATIBILITY_ONLY` | `CONFIRMED / STRICT MAPPING ONLY` |
+| `REC-AUTH-008` — Due → ClaimItem | Kontrollü tek yönlü ingress bridge | Due-to-ClaimItem bridge | `CURRENT / CONTROLLED_BRIDGE` | `CONFIRMED / RUNTIME IMPLEMENTED; IDEMPOTENCY CONTRACT APPLIES` |
+| `REC-AUTH-009` — ClaimItem → Due | Implicit/otomatik reverse-write yasaktır | Write authority yok | `PRODUCTION_NO_GO / FORBIDDEN` | `CONFIRMED / STATIC REGRESSION GUARD` |
+
+## 7.3. Payment / Collection / Allocation
+
+| ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
+|---|---|---|---|---|
+| `REC-AUTH-010` — Payment/Collection receipt varlığı ve statüsü | Dosyaya bağlanan para giriş fact'i; ClaimItem cache alanından çıkarılamaz | COLLECTION owner; receivable yalnız yetkili fact'i tüketir | `CURRENT PARTIAL` | `CONFIRMED / IDEMPOTENCY, PROVIDER AND TENANT GATES OPEN` |
+| `REC-AUTH-011` — Tahsilatın alacağa etkisi | Collection fact'in legal allocation üzerinden receivable bucket'lara etkisi | RECEIVABLE/COLLECTION legal-allocation boundary | `CURRENT WITH OPEN RECONCILIATION` | `CONFIRMED / TM3-ACT28-LEGAL RECONCILIATION OPEN` |
+| `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile legal allocation sonucu | RECEIVABLE/COLLECTION legal-allocation owner | `CURRENT WITH OPEN RECONCILIATION` | `CONFIRMED / DUPLICATE ALLOCATOR DISPOSITION OWNER-HELD` |
+| `REC-AUTH-013` — Overpayment / hold | Kapsamı belirlenmiş allocation/collection sonucu; principal'a sessiz yazılamaz | Allocation/Collection result owner | `CURRENT PARTIAL / SCOPE-BOUNDED` | `CONFIRMED WITHIN ADR-014 FIXTURE/ENGINE SCOPE; PRODUCTION REVALIDATION REQUIRED` |
+| `REC-AUTH-014` — Valid linked full reversal | Bağlı payment'ın canonical legal etkisini net-zero yapar | Reversal link + canonical allocation | `CURRENT / CANONICAL_WITHIN_LINKED_FULL_REVERSAL_SCOPE` | `CONFIRMED / UNIT + DISPOSABLE-DB + REAL CANCEL PATH` |
+| `REC-AUTH-015` — Partial reversal/refund | Ayrı ratifikasyon olmadan inference yapılamaz | Owner/contract henüz tanımlanmamış | `TARGET / PRODUCTION_NO_GO` | `NOT_IMPLEMENTED / OWNER DECISION REQUIRED` |
+
+## 7.4. Interest ve currency
+
+| ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
+|---|---|---|---|---|
+| `REC-AUTH-016` — Interest type selection | Canonical faiz türü seçimi; legacy label override edemez | `ClaimItem.interestTypeCode` + ratifiye policy | `CURRENT / CANONICAL_WITHIN_INTEREST_SCOPE` | `CONFIRMED / RUNTIME IMPLEMENTED` |
+| `REC-AUTH-017` — Interest base mutation | Yalnız principal allocation kadar, effective date sonrası base azaltımı | Canonical allocation result + interest engine | `CURRENT / CANONICAL_WITHIN_PRE_CUTOVER_SCOPE` | `CONFIRMED / UNIT + DB REGRESSION EVIDENCE` |
+| `REC-AUTH-018` — Currency isolation | Currency gruplarını ayırır; mismatch fail-closed | ADR-014 calculation core | `CURRENT / CANONICAL_WITHIN_PRE_CUTOVER_SCOPE` | `CONFIRMED / UNIT + DB REGRESSION EVIDENCE` |
+| `REC-AUTH-019` — Cross-currency conversion | Yetkili FX contract olmadan uygulanamaz | Current authority yok | `NOT_IMPLEMENTED / PRODUCTION_NO_GO` | `CONFIRMED ABSENT / FUTURE OWNER GATE REQUIRED` |
+| `REC-AUTH-020` — Frozen FX observation | Gelecekteki explicit observation contract adayı | Owner-gated future FX contract | `TARGET / PRODUCTION_NO_GO` | `NOT IMPLEMENTED / CONTRACT DETAILS NOT RATIFIED` |
+
+## 7.5. Legal balance, trace, snapshot ve journal
+
+| ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
+|---|---|---|---|---|
+| `REC-AUTH-021` — ADR-014 legal-balance computation | Tanımlı pre-cutover inputlarda canonical calculation üretir; production primary değildir | ADR-014 calculation core | `CURRENT / CANONICAL_WITHIN_PRE_CUTOVER_SCOPE` | `CONFIRMED / W0-PR10 CLOSED; COMPLETENESS PARTIAL` |
+| `REC-AUTH-022` — Production receivable balance/display | Production consumer'ın yetkili legal-balance contract'ı | Current legacy owner until cutover; target canonical calculation owner after gate | `TARGET / SHADOW_ONLY / PRODUCTION_NO_GO` | `CONFIRMED / ADAPTER ADDITIVE; CUTOVER NOT AUTHORIZED` |
+| `REC-AUTH-023` — Calculation trace | Hesabı açıklayan derived evidence; financial event değildir | Explainability owner | `SHADOW_ONLY / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / NON-PERSISTED` |
+| `REC-AUTH-024` — Non-official snapshot | Request-time/non-official calculation evidence | Explainability evidence owner | `SHADOW_ONLY / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / authority=NONE; persisted=false` |
+| `REC-AUTH-025` — Official snapshot | Yalnız ratifiye lifecycle/hash/persistence contract sonrası official evidence | ADR-013 + future authority contract | `TARGET / PRODUCTION_NO_GO` | `NOT_IMPLEMENTED / OWNER DECISION REQUIRED` |
+| `REC-AUTH-026` — Financial posting | Muhasebe temsili; legal calculation sonucu posting authority değildir | Accounting Journal / ADR-010 | `TARGET / SHADOW-DIRECTION; STATUS PER ACCOUNTING OWNER` | `EXECUTION GATED / ADR-010 EVIDENCE REQUIRED` |
+
+## 7.6. Presentation ve integration
+
+| ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
+|---|---|---|---|---|
+| `REC-AUTH-027` — UI hesap özeti | Cutover sonrası yetkili DTO tüketimi; UI formül üretmez | Presentation consumer contract | `TARGET / SHADOW_ONLY / PRODUCTION_NO_GO` | `LEGACY PRIMARY ACTIVE; CANONICAL CUTOVER NOT AUTHORIZED` |
+| `REC-AUTH-028` — Report/document balance | UI ile aynı canonical contract'ın tüketimi; ayrı formül yasak | Presentation/report consumer contract | `TARGET / PRODUCTION_NO_GO` | `REVALIDATION + CONSUMER CUTOVER REQUIRED` |
+| `REC-AUTH-029A` — UYAP source fact | Harici kaynaktan gelen provenance/evidence; doğrulanmadan canonical truth değildir | Validated UYAP adapter + domain confirmation | `CURRENT INPUT / NON_CANONICAL` | `CURRENT PARTIAL / PROVENANCE AND RECONCILIATION REQUIRED` |
+| `REC-AUTH-029B` — UYAP mapping policy | Rich-interest ve exporter kodları arasındaki ratifiye dönüşüm kararı | Owner/legal-approved integration mapping | `TARGET / PRODUCTION_NO_GO` | `NOT DECIDED / PR-A4 BLOCKED; PR-A5 NOT AUTHORIZED` |
+| `REC-AUTH-030` — Bank receipt candidate | Tahsis öncesi non-authoritative integration candidate | Bank adapter + authorized confirmation | `CURRENT INPUT / NON_CANONICAL` | `HUMAN/OWNER CONFIRMATION REQUIRED; NO AUTO-ALLOCATION` |
+| `REC-AUTH-031` — AI/risk output | Advisory derived output; hukuki/finansal authority değildir | AI/risk projection owner | `CURRENT PARTIAL / DERIVED_NON_AUTHORITATIVE` | `TENANT, VISIBILITY, PROVENANCE AND HUMAN-GATE COMPLIANCE REQUIRED` |
+
+**REC-INV-005 — Model canonical olabilir; her alanı authority değildir.**
+
+---
+
+# 8. Alacak ingress ve write-path anayasası
+
+## 8.1. Due → ClaimItem
+
+```text
+Due / source fact
+→ validate
+→ map
+→ ClaimItem create/update command
+→ audit/provenance
+```
+
+Kurallar:
+
+1. Bridge tek yönlüdür.
+2. Mapper deterministic ve idempotent olmalıdır.
+3. Kaynak referansı ve actor bilgisi korunmalıdır.
+4. Compatibility alanı canonical alanı override edemez.
+5. ClaimItem değişikliği Due'ya implicit reverse-write üretemez.
+
+## 8.2. Write-path asgari şartları
+
+Bu sınır `SYS-AUTH-007`, `SYS-AUTH-008` ve `SYS-FIN-008` hükümlerinin receivable
+write-path uygulamasıdır.
+
+Her canonical write command şunları açıkça taşımalıdır:
+
+```text
+tenantId
+aggregate/case identity
+actor
+idempotency key veya eşdeğer tekrar koruması
+source/provenance
+legal/policy basis gerekiyorsa referans
+```
+
+**REC-WRITE-001 — Tenant'sız canonical financial record kabul edilmez.**
+
+**REC-WRITE-002 — Compatibility mirror yazımı canonical write ile aynı kontrollü akışta olmalıdır.**
+
+**REC-WRITE-003 — Compatibility alanından canonical alana implicit reverse-write yasaktır.**
+
+---
+
+# 9. Payment / Collection / Allocation anayasası
+
+Bu bölüm `SYS-FIN-002`, `SYS-FIN-003`, `SYS-FIN-007` ve `SYS-FIN-008` ile birlikte
+uygulanır.
+
+## 9.1. Case-scoped payment
+
+Standart manuel akış:
+
+```text
+Kullanıcı belirli dosyayı açar
+→ tahsilat girer
+→ payment caseId ile persist edilir
+→ canonical allocation yalnız seçili dosyada çalışır
+```
+
+Sistem global debtor-level payment pool varmış gibi davranamaz.
+
+`DEBTOR-GOVERNANCE` §7'deki “Tahsilat tahsisi = NEVER_AUTO” sınırı korunur: AI, NBA veya
+generic automation Collection ledger'a allocation yazamaz. Yetkili kullanıcının case-scoped
+payment command'ı sonrasında domain-owned deterministic TBK100 calculation yürütülmesi bu
+otomasyon yasağını genişletmez veya bypass etmez.
+
+## 9.2. TBK100 sıra invariantı
+
+Canonical intra-case allocation sırası:
+
+```text
+1. Masraf / takip / yargılama giderleri
+2. Fer'i alacaklar
+3. İşlemiş faiz
+4. Ana para
+```
+
+**REC-ALLOC-001 — Yüksek öncelikli bucket açıkken principal allocation yapılamaz.**
+
+**REC-ALLOC-002 — Payment principal'ı doğrudan düşürmez.**
+Principal yalnız allocation sonucu principal bucket'a ulaşan tutar kadar azalır.
+
+**REC-ALLOC-003 — Negatif payment kabul edilmez.**
+
+**REC-ALLOC-004 — Money allocation minor-unit/decimal hassasiyetinde yürütülür; float-dust authority olamaz.**
+
+## 9.3. TBK101/102 sınırı
+
+TBK101/102 standart manuel workflow'da otomatik dosyalar-arası allocator değildir.
+
+Sistem:
+
+- uyarabilir,
+- dekont açıklamasını kontrol edebilir,
+- başka dosyayı önerebilir,
+- audit kaydı oluşturabilir.
+
+Sistem:
+
+- ödemeyi sessizce başka dosyaya taşıyamaz,
+- global debtor pool'dan otomatik dağıtım yapamaz.
+
+---
+
+# 10. Faiz ve kısmi ödeme anayasası
+
+## 10.1. Faiz tabanı
+
+```text
+Future interest base
+= previous outstanding principal
+- principalAllocatedAmount
+```
+
+**REC-INT-001 — Principal allocation yoksa gelecekteki faiz tabanı değişmez.**
+
+**REC-INT-002 — Principal allocation varsa faiz tabanı yalnız principal'a tahsis edilen tutar kadar ve tahsis tarihinden sonrası için azalır.**
+
+## 10.2. İşlemiş faiz ve pre/post dönem
+
+- Faiz segmentleri tarih aralıklarına ayrılmalıdır.
+- Takip öncesi ve takip sonrası faiz ayrımı policy/ADR ile tanımlıysa deterministic uygulanmalıdır.
+- Aynı gün olaylarında tie-breaker açık olmalıdır.
+- Timezone ve date cutoff belirsiz bırakılamaz.
+
+## 10.3. Trace
+
+Her allocation ve faiz segmenti en az şu bilgileri taşıyabilmelidir:
+
+```text
+source claim item
+period
+rate/policy reference
+base
+amount
+payment event
+allocation category
+principal touched?
+rounding/precision basis
+```
+
+Trace açıklama evidence'ıdır; financial event veya official snapshot değildir.
+
+---
+
+# 11. Reversal / refund / cancellation sınırı
+
+Bu bölüm `SYS-FIN-009`un valid linked full-reversal için ADR-014 ile kanıtlanmış dar
+receivable uygulamasıdır; detailed/partial reversal owner gate'i kapanmış sayılmaz.
+
+## 11.1. Ratifiye full reversal invariantı
+
+> Geçerli biçimde linklenmiş tam reversal, bağlandığı payment'ın canonical legal etkisini net-zero yapar.
+
+```text
+Payment + valid linked full reversal = zero net canonical legal effect
+```
+
+## 11.2. Fail-closed
+
+- bağlantısız reversal,
+- malformed relation,
+- duplicate reversal,
+- currency uyumsuzluğu
+
+resmi hesapta sessizce uygulanamaz.
+
+## 11.3. Bu invariant kapsamında olmayanlar
+
+```text
+partial reversal
+partial refund
+inferred matching
+historical repair
+cross-case compensation
+```
+
+Bunlar ayrıca ratifiye edilmedikçe otomatik uygulanamaz.
+
+---
+
+# 12. Döviz ve currency anayasası
+
+## 12.1. CURRENT / ratifiye sınır
+
+Mevcut canonical sınır:
+
+```text
+currency isolation
+mismatch fail-closed
+cross-currency conversion yok
+yeni FX authority yok
+```
+
+**REC-FX-001 — Aynı currency bucket içinde olmayan payment/claim sessizce netlenemez.**
+
+**REC-FX-002 — Yetkili FX contract olmadan conversion yoktur.**
+
+## 12.2. TARGET / owner-gated
+
+Stable invariant şudur:
+
+> Production-grade cross-currency calculation veya conversion, açık owner/legal kararıyla
+> ratifiye edilmiş FX authority contract olmadan üretilemez.
+
+Gelecekteki observation alanları, hash kapsamı, source/date/type/value modeli ve frozen-state
+lifecycle'ı bu belgeyle ratifiye edilmez. Aday ayrıntılar Appendix A'da non-normative olarak
+tutulur. Bu hedef mevcut implementation tamamlanmış gibi raporlanamaz.
+
+---
+
+# 13. Fee / harç sınırı
+
+## 13.1. Kaynak sınıfları
+
+Her fee/harç kuralı şu sınıflardan birine aittir:
+
+```text
+STATUTORY_CONSTANT
+ANNUAL_TARIFF
+CONTRACTUAL
+MANUAL_LEGAL_DECISION
+CASE_STATE_CALCULATED
+```
+
+Bu sınıflar birbirinin yerine kullanılamaz.
+
+## 13.2. Otorite ayrımı
+
+```text
+Fee Calculation Authority
+≠ Fee Projection Ownership / Derived Read Contract
+≠ Fee Persistence Authority
+≠ Fee Presentation Authority
+```
+
+## 13.3. Bağlayıcı hükümler
+
+**REC-FEE-001 — Fee/harç hesabı receivable core içine gizlice gömülemez.**
+
+**REC-FEE-002 — UI, controller veya report içinde bağımsız tarife/formül bulunamaz.**
+
+**REC-FEE-003 — Eksik hukuki/tarife veri sessiz `0`, `{}` veya varsayılan üretmez.**
+
+**REC-FEE-004 — Legacy fee fallback canonical authority değildir.**
+
+**REC-FEE-005 — ADR-013 ratifiye edilmeden proposed fee policy production authority olamaz.**
+
+## 13.4. Bu belgede ratifiye edilmeyen özel politikalar
+
+Bu belgenin stable gövdesi şu spesifik kararları tek başına ratifiye etmez:
+
+- peşin harç floor/minimum,
+- tahsil harcı stage/rate matrisi,
+- cezaevi harcı base ve liable party,
+- yıllık opening fee rakamları,
+- exact attorney-fee tariff.
+
+Bunlar ilgili source contract/ADR altında ratifiye edilmelidir.
+
+---
+
+# 14. Journal / Trace / Snapshot ayrımı
+
+```text
+Accounting Journal = ne oldu?
+Calculation Trace  = nasıl hesaplandı?
+Balance Snapshot   = belirli input/policy/version ile ne sonuç çıktı?
+```
+
+## 14.1. Journal
+
+- `SYS-FIN-001`, `SYS-FIN-006` ve `SYS-FIN-010` receivable sınırında uygulanır.
+- Finansal event persistence'ıdır; legal balance formülünün owner'ı değildir.
+- Additive accounting hardening, receivable cutover sınırını değiştirmediği sürece paralel ilerleyebilir.
+
+## 14.2. Trace
+
+- Explainability evidence'ıdır.
+- Payment, journal veya official snapshot authority'si değildir.
+
+## 14.3. Non-official snapshot
+
+- Request-time veya non-persisted evidence olabilir.
+- `authority:NONE`, `persisted:false` veya eşdeğer statüdeyse official değildir.
+
+## 14.4. Official snapshot hedefi
+
+Stable invariant şudur:
+
+> ADR-013 ve ilgili authority contract ratifiye edilmeden durable official snapshot
+> oluşturulamaz veya production evidence authority'si olarak sunulamaz.
+
+Lifecycle enum'u, hash sözleşmesi ve alan listesi bu stable gövdeyle ratifiye edilmez;
+Appendix A'da owner-gated candidate detail olarak tutulur.
+
+---
+
+# 15. Presentation ve API anayasası
+
+## 15.1. Tek canonical contract
+
+Production cutover sonrasında:
+
+```text
+Canonical legal balance
++ authorized fee projection
++ FX summary
++ warnings/blockers
++ trace reference
+→ Canonical DTO
+→ API / UI / Report / Document
+```
+
+## 15.2. Yasaklar
+
+```text
+UI hesap yapamaz.
+Report ayrı formül üretemez.
+Template ayrı bakiye üretemez.
+Controller tarife tablosu taşıyamaz.
+Frontend oran uygulayamaz.
+```
+
+## 15.3. Pre-cutover sınır
+
+Compatibility adapter veya canonical shadow alanının bulunması, production presentation authority'nin canonical olduğu anlamına gelmez.
+
+**REC-PRES-001 — Adapter hazır ≠ consumer switch yetkili.**
+
+---
+
+# 16. Integration ve NEVER_AUTO kuralları
+
+## 16.1. UYAP
+
+Bu ayrım `SYS-ID-004`, `SYS-LEGAL-002` ve canonical UYAP evidence/mapping gate'leriyle
+birlikte uygulanır.
+
+### 16.1.1. UYAP Source Fact
+
+UYAP adapter'dan gelen source fact:
+
+- provenance/evidence taşıyan harici input'tur,
+- doğrulanmadan canonical legal truth değildir,
+- legal balance hesaplamaz,
+- domain confirmation ve reconciliation gerektirir.
+
+### 16.1.2. UYAP Mapping Policy
+
+UYAP mapping policy:
+
+- source fact'ten ayrı bir authority'dir,
+- owner/legal-approved exact mapping contract gerektirir,
+- belirsiz, unknown veya ambiguous mapping'i tahmin etmez,
+- PR-A4 exact-mapping gate'i kapanmadan production authority olamaz.
+
+## 16.2. Banka
+
+Bank adapter:
+
+- receipt candidate üretir,
+- kullanıcı/onay olmadan dosyaya tahsis yapmaz,
+- otomatik cross-case allocation yapmaz.
+
+## 16.3. AI / Risk
+
+Bu bölüm `SYS-AI-001`, `SYS-AI-002`, `SYS-AI-004` ve `SYS-AI-008` hükümlerinin
+receivable-domain uygulamasıdır.
+
+AI/risk çıktısı:
+
+- advisory'dir,
+- kaynak/evidence göstermelidir,
+- hukuki veya finansal authority olamaz,
+- cross-tenant debtor intelligence üretemez.
+
+## 16.4. NEVER_AUTO listesi
+
+Aşağıdakiler otomatik ve sessiz yapılamaz:
+
+```text
+ClaimItem → Due reverse synchronization
+unknown mapping tahmini
+unsupported FX conversion
+partial reversal/refund inference
+unmatched payment auto-allocation
+cross-tenant aggregation
+source'suz oran üretme
+official snapshot yaratma
+consumer cutover
+legacy deletion
+```
+
+---
+
+# 17. Determinizm, hassasiyet ve test invariantları
+
+Bu bölüm `SYS-FIN-007`, `SYS-SOT-007`, `SYS-COMP-003`, `SYS-COMP-004` ve
+`SYS-COMP-005` hükümlerinin receivable-specific test ve hesaplama uygulamasıdır.
+
+## 17.1. Matematiksel invariantlar
+
+```text
+Same authorized inputs + same policy/rate versions → same result
+```
+
+Asgari kurallar:
+
+1. Para hesabı float authority ile yürütülmez; minor-unit/decimal normalization kullanılır.
+2. Same-day ordering deterministic olmalıdır.
+3. Timezone/date cutoff açık olmalıdır.
+4. Negative payment reddedilmelidir.
+5. Overpayment principal/interest bucket'larını bozmaz.
+6. Currency mismatch fail-closed'dur.
+7. Full reversal yalnız valid link ile net-zero'dur.
+8. UI/API/report aynı yetkili contract'ı tüketmelidir.
+
+## 17.2. Test sınıfları
+
+```text
+Unit invariants
+Property/edge tests
+Golden legal fixtures
+Integration tests
+Disposable DB tests
+Shadow/diff diagnostics
+Production empirical evidence
+```
+
+**REC-TEST-001 — Golden fixture production evidence değildir.**
+
+**REC-TEST-002 — Scratchpad doğrulaması kalıcı regression test yerine geçmez.**
+
+**REC-TEST-003 — Bir test behavior contract'ı mı, characterization mı açıkça belirtilmelidir.**
+
+---
+
+# 18. CURRENT / TARGET / OUT-OF-SCOPE ayrımı
+
+## 18.1. CURRENT CANONICAL
+
+- ADR-014'ün tanımlı pre-cutover W0–PR-10 zinciri kendi sınırları içinde CLOSED/CANONICAL'dır.
+- Trace/non-official snapshot evidence mevcuttur.
+- Golden fixture matrisi mevcuttur.
+- Additive compatibility adapter mevcuttur.
+
+## 18.2. CURRENT LEGACY / COMPATIBILITY
+
+- Production consumer cutover yapılmadığı sürece legacy consumer primary kalabilir.
+- Compatibility alanları yalnız açık sınıflandırmayla tutulabilir.
+- Legacy primary'nin aktif olması canonical core'ın varlığını geçersiz kılmaz; fakat cutover tamamlandı anlamına gelmez.
+
+## 18.3. TARGET / OWNER-GATED
+
+```text
+canonical consumer switch
+legacy fallback disable
+shadow cleanup
+legacy quarantine/deletion
+official snapshot lifecycle
+frozen FX observation
+exact UYAP mapping
+fee/harç authority tamamlaması
+production empirical evidence
+```
+
+## 18.4. OUT-OF-SCOPE / FUTURE
+
+```text
+partial reversal/refund model
+full PAC aggregate/state/event/concurrency programı
+bank import auto-matching
+cross-file allocator
+konkordato/iflas geniş kapsamı
+```
+
+**REC-INV-006 — “Canonical” sözcüğü scope dışına taşırılamaz.**
+Pre-cutover core kapanışı; genel calculation completeness, production readiness, consumer cutover, fee completion veya bütün receivable lifecycle'ının tamamlandığı anlamına gelmez.
+
+---
+
+# 19. ADR sınırları ve terminoloji
+
+## 19.1. ADR-014
+
+Canonical legal calculation pre-cutover core, trace, fixtures ve additive compatibility adapter sınırını yönetir.
+
+## 19.2. ADR-013
+
+Fee / harç / snapshot programıdır. `DRAFT / OWNER REVIEW` olduğu sürece proposed kararlar implementation authority değildir.
+
+## 19.3. ADR-010
+
+Accounting Journal SoT yönünü yönetir. Additive journal hardening otomatik olarak ADR-014 cutover sonrasına ertelenmez; receivable authority/cutover sınırını değiştiren işler gated'dir.
+
+## 19.4. Güncel terminoloji
+
+```text
+CCB-001 → tarihsel/master-stream kimliği
+ADR-014 → güncel canonical legal calculation programı
+ADR-013 → fee/harç/snapshot programı
+ADR-010 → journal SoT programı
+PAC-001-A → dar authority-map çalışması
+PAC-Full → henüz tanımlanmamış gelecek program
+```
+
+Yanlış/stale kullanımlar:
+
+```text
+ADR-012 = CCB/Fee
+ADR012-FEE
+REL-001 bağımsız epic
+PAC-001-A = full product constitution
+```
+
+---
+
+# 20. Canonical consumer cutover anayasası
+
+Bu bölüm `SYS-MIG-001`, `SYS-MIG-006`, `SYS-MIG-007`, `SYS-MIG-009` ve `SYS-SOT-006`
+hükümlerini ADR-014 consumer cutover sırasına uygular.
+
+```text
+Canonical core ready
+≠ adapter ready
+≠ consumer switch authorized
+≠ production accepted
+≠ legacy removable
+```
+
+## 20.1. Cutover öncesi zorunlu kanıt
+
+### REC-CUTOVER-101 — Repository/provenance
+
+- canonical `main` doğrulanmış,
+- branch/HEAD/remote/tracking açık,
+- çalışma ağacı temiz veya sahipliği açıklanmış,
+- migration/schema/package/lock etkisi raporlanmış olmalıdır.
+
+### REC-CUTOVER-102 — Technical evidence
+
+- ADR-014 pre-cutover zinciri scope'unda closed,
+- golden fixtures PASS,
+- representative integration/disposable DB tests PASS,
+- compatibility adapter fail-closed,
+- PR-11 sırasında fallback varsa açık, observable, policy-defined ve audit edilebilir;
+  sessiz legacy substitution yoktur. Fallback'ın tamamen kaldırılması PR-12 kapsamıdır.
+
+### REC-CUTOVER-103 — Legal/mapping evidence
+
+- desteklenen mapping kapsamı açık,
+- unknown mapping fail-closed,
+- exact UYAP mapping blocker'ları ayrılmış,
+- production evidence yoksa açıkça belirtilmiş.
+
+### REC-CUTOVER-104 — Operational evidence
+
+- feature flag owner,
+- monitoring/log source,
+- rollback runbook,
+- incident owner,
+- acceptance threshold,
+- pilot scope,
+- bake duration.
+
+## 20.2. Owner karar formu
+
+Yalnız şu verdict'lerden biri verilebilir:
+
+```text
+GO-PR-11
+NO-GO
+MORE-EVIDENCE-REQUIRED
+```
+
+GO için doldurulacak alanlar:
+
+```text
+Pilot scope
+Start condition
+Acceptance thresholds
+Monitoring owner
+Rollback owner
+Rollback trigger
+Maximum tolerated discrepancy
+Bake duration
+Audit/signoff authority
+Legacy fallback policy
+Production evidence status
+Known exclusions
+```
+
+## 20.3. Uygulama sırası
+
+```text
+PR-11 — Consumer switch
+↓
+Bake / monitoring / acceptance
+↓
+PR-12 — Legacy fallback disable
+↓
+PR-13 — Shadow/diagnostic cleanup
+↓
+PR-14 — Legacy quarantine/deletion
+```
+
+Her PR ayrı scope, CI/validation ve register kapanışına sahiptir. Canonical split-plan ile
+uyumlu owner gate dağılımı:
+
+```text
+PR-11 → owner gate REQUIRED
+PR-12 → owner gate REQUIRED
+PR-13 → canonical scope genişlemedikçe additional owner gate YOK
+PR-14 → owner gate REQUIRED
+```
+
+Bu dağılım hard-coded yeni policy üretmez; canonical split-plan değişirse bu belge açık
+governance reconciliation ile güncellenir.
+
+## 20.4. PR-11 sınırı
+
+İzin verilen:
+
+- mevcut adapter'ın yetkili consumer tarafından kullanılması,
+- kontrollü feature flag,
+- açık rollback,
+- diagnostic evidence'in korunması.
+
+Yasak:
+
+- legacy silme,
+- fallback disable,
+- fee/harç scope ekleme,
+- journal/snapshot authority değiştirme,
+- unknown mapping tahmini.
+
+## 20.5. Bake ve acceptance
+
+İzlenecek başlıca sınıflar:
+
+```text
+total balance
+principal
+interest
+collection allocation
+reversal
+currency
+cost/attorney-fee data gap
+unknown mapping
+fail-closed/error counts
+```
+
+Synthetic PASS tek başına production acceptance değildir.
+
+## 20.6. PR-12
+
+Yalnız:
+
+- PR-11 acceptance tamam,
+- rollback doğrulanmış,
+- canonical availability yeterli,
+- unexplained blocker yok,
+- owner ayrı GO vermişse
+
+fallback disable yapılabilir.
+
+## 20.7. PR-13
+
+Yalnız operasyonel değeri kalmayan diagnostic yüzey temizlenir. Golden fixtures, migration reference ve audit evidence korunabilir.
+
+## 20.8. PR-14
+
+Legacy quarantine/deletion ancak:
+
+- classification,
+- zero production caller,
+- replacement parity,
+- bake tamamlanması,
+- rollback ihtiyacının kalkması,
+- owner GO
+
+ile yapılabilir.
+
+## 20.9. Rollback
+
+Rollback:
+
+- veri kaybı üretmez,
+- canonical write'ı legacy formatına tahminle çeviremez,
+- feature flag/consumer routing seviyesinde tanımlanır,
+- journal/collection fact'lerini geri yazmaz,
+- incident/divergence evidence'i silmez.
+
+---
+
+# 21. Legacy sınıflandırma ve silme sırası
+
+| Sınıf | İzin verilen aksiyon |
+|---|---|
+| `LEGACY_PRODUCTION_AUTHORITY` | Cutover ile devreden çıkarılır; yeni kullanım yasak |
+| `COMPATIBILITY_WRAPPER` | Canonical'a yönlendirilmiş, süreli tutulabilir |
+| `MIGRATION_REFERENCE` | Quarantine/reference alanında tutulabilir |
+| `GOLDEN_FIXTURE_SOURCE` | Test fixture kaynağı olarak korunabilir |
+| `DIAGNOSTIC_DIFF_ONLY` | Cutover/bake sonuna kadar read-only tutulabilir |
+| `DUPLICATE_FORMULA` | Tek authority'ye taşınmadan silinemez |
+| `UNSAFE_FALLBACK` | Fail-closed yapılır veya kaldırılır |
+| `DEAD_CODE_CANDIDATE` | Call-site/evidence doğrulaması sonrası silinebilir |
+
+**REC-LEGACY-001 — Classification-first, deletion-last.**
+
+**REC-LEGACY-002 — Compatibility wrapper bağımsız hesap yapamaz.**
+
+**REC-LEGACY-003 — Legacy silme, rollback kapasitesi veya audit evidence'i erken yok edemez.**
+
+---
+
+# 22. Repository / provenance ve kapanış protokolü
+
+## 22.1. Büyük faz öncesi preflight
+
+Execution preflight `AGENTS.md`, repository policy ve `SYS-GOV-005` uyarınca yapılır.
+Receivable görevinde bunlara ek olarak ilgili ClaimItem/Due/Collection authority satırı,
+ADR-010/013/014 gate'i, test database güvenliği ve concurrent PR/worktree ownership
+doğrulanır. Yanlış branch veya belirsiz provenance durumunda kod yazılmaz.
+
+## 22.2. Durum zinciri
+
+`SYS-COMP-002`, `SYS-CAN-001` ve `SYS-CAN-005` uygulanır.
+`IMPLEMENTED`, `VERIFIED`, `MERGED`, `CANONICAL`, `CLOSED`, `CUTOVER_READY` ve
+`RELEASED` ayrı statülerdir; receivable evidence olmadan bir üst statü kullanılamaz.
+
+## 22.3. Kapanış zinciri
+
+Receivable closure `SYS-CAN-005`, `SYS-CAN-006` ve `SYS-CAN-007` uyarınca PR/commit,
+CI, mergeability, canonical-main sync, scope, cleanup, açık gate ve Master Register
+kanıtını birlikte doğrular. `Master Register yap` kapanış kuralı korunur.
+
+## 22.4. Active waiting
+
+Harici blocker davranışı `AGENTS.md` ve ADR-012 Waiting & Progress Policy'den okunur.
+Blocker, receivable task scope'unu veya mutation authority'sini genişletmez.
+
+## 22.5. No code during audit
+
+Audit/verification görevi açık task-specific implementation GO almadıkça mutation üretmez.
+Bu execution hükmünün canonical kaynağı `AGENTS.md`dir; bu belge ek yetki vermez.
+
+---
+
+# 23. Değişiklik, istisna ve ratifikasyon kuralları
+
+## 23.1. Invariant değişikliği
+
+Bir `REC-GOV-*`, `REC-INV-*`, `REC-AUTH-*`, `REC-BOUNDARY-*`, `REC-WRITE-*`,
+`REC-ALLOC-*`, `REC-INT-*`, `REC-FX-*`, `REC-FEE-*`, `REC-PRES-*`, `REC-TEST-*`,
+`REC-CUTOVER-*` veya `REC-LEGACY-*` maddesi şu zincir olmadan değiştirilemez:
+
+Bu zincir `SYS-CAN-003`, `SYS-CAN-004` ve `SYS-CAN-009` hükümlerinin receivable-domain
+uygulamasıdır:
+
+```text
+hukuki/ürün impact analizi
+→ owner-hukuk review
+→ ilgili ADR/contract kararı
+→ backward-compatibility/migration analizi
+→ test/evidence planı
+→ Decision Log
+→ register etkisi
+→ governance PR
+→ owner merge/ratification
+```
+
+## 23.2. Emergency hotfix / REGULARIZE
+
+Acil hotfix ve operational exception için `SYS-COMP-006`, `SYS-COMP-007` ve geçerli
+execution policy uygulanır. Governance'dan önce yapılmışsa:
+
+1. kapsam dar tutulur,
+2. no-broad-refactor kuralı uygulanır,
+3. test/evidence alınır,
+4. sonrasında açıkça `REGULARIZE` protokolüyle Decision Log ve register güncellenir.
+
+Emergency hotfix, anayasal değişiklik sayılmaz.
+
+## 23.3. Ratifikasyon statüleri
+
+```text
+PROPOSED
+OWNER REVIEW
+REVISIONS REQUIRED
+RATIFIED
+SUPERSEDED
+VOID
+```
+
+Header, Decision Log ve Governance Index statüleri birbiriyle tutarlı olmalıdır.
+
+---
+
+# 24. Related documents ve zorunlu pointer'lar
+
+Canonical repository'de en az şu pointer'lar bulunmalıdır:
+
+```text
+SYSTEM-CONSTITUTION.md
+GOVERNANCE-INDEX.md
+DEBTOR-GOVERNANCE.md
+ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md
+ADR-013-FEE-HARC-SNAPSHOT-JOURNAL.md
+ADR-010-ACCOUNTING-JOURNAL-SOT-NORTH-STAR.md
+master-triage-register.md
+canonicalization-register.md
+decision-log.md
+```
+
+`AGENTS.md` içinde şu mandatory-read pointer bulunmalıdır:
+
+> ClaimItem, Due, collection effect, allocation, interest authority, legal balance, reversal veya consumer cutover değişikliğine başlamadan önce `RECEIVABLE-GOVERNANCE.md` okunmalıdır.
+
+---
+
+# Appendix A — Proposed / not ratified kararlar
+
+Bu appendix implementation authority değildir.
+
+```text
+peşin harç minimum/floor politikası
+tahsil harcı stage matrix
+cezaevi harcı modeli
+frozen FX observation contract candidate details:
+  source / observationDate / rateType / applicationReason / value /
+  retrievedAt / sourceHash / frozenState
+official snapshot candidate details:
+  lifecycle candidate: DRAFT → OFFICIAL_LOCKED → SUPERSEDED → VOIDED
+  field/hash candidates: inputHash / resultHash / engineVersion / policyVersion /
+  rateSourceReferences / generatedAt / generatedBy / lifecycleStatus
+exact UYAP rich-interest mapping
+partial reversal/refund modeli
+```
+
+Her madde ilgili ADR/contract altında ayrıca ratifiye edilmelidir.
+
+---
+
+# Appendix B — Future product architecture programı
+
+Aşağıdaki konular gelecekte değerlendirilebilecek aday cross-domain architecture programı
+başlıklarıdır. Bu liste ihtiyaç, öncelik, program kimliği, roadmap yükümlülüğü veya
+implementation zorunluluğu oluşturmaz:
+
+```text
+Domain Ownership Constitution
+Aggregate Boundaries
+Lifecycle & State Machines
+Event Constitution
+Concurrency & Idempotency
+Repository & Persistence Boundaries
+Integration Constitution
+Presentation / API Contracts
+Versioning & Migration Policy
+```
+
+## B.1. Bu belgeyle ilişkisi
+
+- Bu belge receivable domaininin stable authority ve boundary kurallarını tanımlar.
+- Gelecekteki PAC-Full bu kuralları cross-domain mimariye bağlayabilir.
+- PAC çalışması, ratifiye receivable invariant'larını sessizce değiştiremez.
+
+```text
+Status: FUTURE CANDIDATE / NOT RATIFIED / NOT IMPLEMENTATION AUTHORITY
+```
+
+---
+
+# Appendix C — Non-normative current-state snapshot
+
+```text
+Status: VOLATILE / NON-NORMATIVE
+Canonicalization review tarihi: 2026-07-12
+Canonicalization review baseline: 3fcdcecb36d11903ce15f763606370b401cf85f4
+Kural: Her karar öncesi canonical main'den yeniden doğrulanır.
+```
+
+## C.1. ADR-014
+
+| Alan | Son gözlemlenen durum |
+|---|---|
+| W0 → PR-10 | CLOSED / CANONICAL within defined pre-cutover scope |
+| Calculation completeness | PARTIAL / NOT COMPLETE |
+| Production readiness | NOT READY |
+| Compatibility adapter | ADDITIVE_SHADOW_ONLY |
+| `consumerSwitchAuthorized` | false |
+| `primaryDisplayEligible` | false |
+| Legacy production consumer | PRIMARY / ACTIVE |
+| Cutover authorization policy | DEFINED / CANONICAL; PR-11 authorization NOT AUTHORIZED |
+| PR-11 → PR-14 | NOT AUTHORIZED |
+| Runtime cutover | NOT AUTHORIZED |
+
+## C.2. Evidence ve blocker
+
+| Alan | Son gözlemlenen durum |
+|---|---|
+| Synthetic evidence | AVAILABLE |
+| Exporter-model parity | VERIFIED within synthetic scope |
+| Production empirical evidence | ABSENT |
+| Exact legal/UYAP mapping | NOT DECIDED |
+| PR-A4 | BLOCKED |
+| PR-A5 | NOT AUTHORIZED |
+| VER-05 | OPEN |
+| CAN-CUT-01 / CAN-CUT-02 | OPEN |
+
+## C.3. İlgili programlar
+
+| Program | Son gözlemlenen durum |
+|---|---|
+| ADR-013 | DRAFT / OWNER REVIEW |
+| ADR-010 | Direction locked / execution gated |
+| PAC-001-A | CLOSED / MERGED |
+| PAC-Full | NOT DEFINED / NOT AUTHORIZED |
+
+## C.4. Üst governance
+
+| Belge | Son gözlemlenen durum |
+|---|---|
+| `SYSTEM-CONSTITUTION` | RATIFIED / BINDING / CANONICAL |
+| `GOVERNANCE-INDEX` | RATIFIED / CANONICAL |
+
+PR #1141 ratifikasyonu ve PR #1142 closure'ı canonical main'e merge edilmiştir.
+
+---
+
+# Appendix D — Owner ratification checklist
+
+## D.1. Üst governance
+
+- [x] `SYSTEM-CONSTITUTION` statüsü doğrulandı.
+- [x] `GOVERNANCE-INDEX` statüsü doğrulandı.
+- [x] Decision Log ile header statüleri uzlaştırıldı.
+
+## D.2. Field authority
+
+- [x] `ClaimItem.demandedAmount` canonical receivable amount olarak kabul edildi.
+- [x] `ClaimItem.originalAmount` creation provenance olarak kilitlendi.
+- [x] `ClaimItem.amount` compatibility-only olarak kabul edildi.
+- [x] `ClaimItem.collectedAmount` non-authoritative olarak kabul edildi.
+- [x] `ClaimItem.interestTypeCode` canonical calculation read authority olarak kabul edildi.
+- [x] Due → ClaimItem tek yönlü bridge kabul edildi.
+- [x] ClaimItem → Due reverse-write yasaklandı.
+
+## D.3. Collection / allocation
+
+- [x] Case-scoped payment workflow kabul edildi.
+- [x] TBK100 sıra invariantı kabul edildi.
+- [x] Principal/interest-base mutation kuralı kabul edildi.
+- [x] Negatif payment ve float-dust kuralları kabul edildi.
+
+## D.4. Reversal / FX
+
+- [x] Full reversal invariantı dar kapsamıyla kabul edildi.
+- [x] Partial reversal/refund kapsam dışı bırakıldı.
+- [x] Currency CURRENT/TARGET ayrımı kabul edildi.
+
+## D.5. Cutover
+
+- [x] Adapter hazır ≠ cutover ilkesi kabul edildi.
+- [x] Owner cutover pack zorunluluğu kabul edildi.
+- [x] PR-11 → PR-14 sırası ve ayrı gate'ler kabul edildi.
+- [x] Synthetic evidence'in production evidence olmadığı kabul edildi.
+
+## D.6. Fee / journal / snapshot
+
+- [x] Fee özel politikalarının ADR-013'e bırakılması kabul edildi.
+- [x] Journal / Trace / Snapshot ayrımı kabul edildi.
+- [x] ADR-010 additive hardening istisnası kabul edildi.
+
+## D.7. Repository governance
+
+- [x] Evidence-before-closure statü zinciri kabul edildi.
+- [x] `Master Register yap` kapanış kuralı kabul edildi.
+- [x] `AGENTS.md` mandatory pointer kabul edildi.
+
+## D.8. Ratifikasyon sonucu
+
+```text
+RATIFIED / CANONICAL
+```
+
+---
+
+# Nihai anayasal hüküm
+
+> **Alacak domaininde canonical olmak, tek bir model veya tek bir servis kullanmak değildir. Her hukuki semantiğin tek, açık ve kanıtlanabilir bir authority'si olması; ingress, collection, allocation, calculation, persistence ve presentation sınırlarının çift yönlü veya sessiz fallback üretmeden korunmasıdır. ADR-014 pre-cutover çekirdeği bu hedefin hesaplama katmanını kurar; production consumer cutover yalnız owner-gated contract ile yapılır. Fee, journal, snapshot, FX ve integration alanları kendi ratifiye authority sözleşmeleri olmadan receivable core'a gizlice eklenemez.**
