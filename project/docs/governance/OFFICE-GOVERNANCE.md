@@ -2,17 +2,17 @@
 
 ```text
 Belge yolu   : project/docs/governance/OFFICE-GOVERNANCE.md
-Durum        : DRAFT — OWNER REVIEW REQUIRED
-Sürüm        : v0.3 (draft)
+Durum        : RATIFIED / CANONICAL DOMAIN LAW (owner text-ratification: 2026-07-13; canonical SHA `6fa8395dc9d7f25d37a9330fe454b1d6724522a5`)
+Sürüm        : v1.0 (ratifiye)
 Rol          : DOMAIN LAW SOURCE OF TRUTH — vocabulary/ownership/boundaries/invariants/contracts
 Kimlik uzayı : OFF-INV-01..OFF-INV-10 (bu belgenin invariant kimlikleri) — SYS-*/MS/* ile çakıştırılamaz
 Sibling dossier'lar (bu belgenin İÇİNE gömülmez, yalnız referans verilir):
-  - project/docs/governance/OFFICE-MASTER-SYNTHESIS.md (evidence/senaryo, NON-NORMATIVE)
-  - project/docs/governance/OFFICE-RISK-REGISTER.md (STF-PRD-*, domain dossier)
-  - project/docs/governance/OFFICE-OWNER-DECISIONS.md (OFF/OD-*, açık karar dossier'i)
+  - project/docs/governance/OFFICE-MASTER-SYNTHESIS.md (CANONICAL REFERENCE / NON-NORMATIVE EVIDENCE BASELINE)
+  - project/docs/governance/OFFICE-RISK-REGISTER.md (STF-PRD-*, CANONICAL DOMAIN RISK DOSSIER)
+  - project/docs/governance/OFFICE-OWNER-DECISIONS.md (OFF/OD-*, CANONICAL OPEN-DECISION DOSSIER)
 ```
 
-Bu belge **RATIFIED değildir**. Merge tek başına ratifikasyon üretmez (`SYS-DEC-002`); repository-canonical etki yalnız approved merge + **ayrı owner text-ratifikasyonu** ile başlar (Debtor/Receivable precedent'i — PR merge sonrası önce `PROPOSED` kalmıştı).
+Bu belge owner tarafından **RATIFIED / CANONICAL DOMAIN LAW** olarak text-ratifiye edilmiştir (`decision-log.md` ratifikasyon kaydı; canonical SHA `6fa8395dc9d7f25d37a9330fe454b1d6724522a5`; `SYS-CAN-001/SYS-DEC-002`). `SYSTEM-CONSTITUTION.md`'ye tabidir, onu değiştiremez/zayıflatamaz. Bu ratifikasyon tek başına runtime implementation, `STF-PRD-*` risklerinin triyajı, `OFF/OD-*` kararlarının kapanışı veya Phase 0 yetkisi vermez.
 
 ## RELATED DOCUMENTS
 

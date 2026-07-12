@@ -2,7 +2,7 @@
 
 ```text
 Belge yolu : project/docs/governance/OFFICE-OWNER-DECISIONS.md
-Durum      : DRAFT — OWNER DECISIONS OPEN
+Durum      : CANONICAL OPEN-DECISION DOSSIER (owner text-ratification: 2026-07-13; canonical SHA `6fa8395dc9d7f25d37a9330fe454b1d6724522a5`)
 Rol        : OPEN DECISION DOSSIER — CLOSED DECISION SOURCE OF TRUTH DEĞİL
 ```
 
