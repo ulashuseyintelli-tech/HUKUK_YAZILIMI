@@ -1,4 +1,5 @@
 import { CaseService } from '../case.service';
+import { buildCaseBalanceFeeProjection } from '../../interest-engine/orchestration/case-balance-fee-projection';
 
 const stub = {} as any;
 
@@ -51,11 +52,18 @@ function makeCanonical(overrides: Record<string, any> = {}) {
       currencyResults: [
         {
           currency: 'TRY',
+          grossPrincipal: 1200,
           result: {
             totalDue: 1234.56,
             totalInterest: 34.56,
             preEnforcementInterest: 0,
             postEnforcementInterest: 34.56,
+            allocations: [],
+            segments: [],
+            finalDebtStates: [
+              { claimId: 'claim-1', currency: 'TRY', principal: 1200, accruedInterest: 34.56 },
+            ],
+            engineVersion: 'engine-v1',
           },
         },
       ],
@@ -63,7 +71,12 @@ function makeCanonical(overrides: Record<string, any> = {}) {
         costs: { HARC: 12.5 },
         ancillaries: { VEKALET_UCRETI: 100 },
       },
+      feeProjection: buildCaseBalanceFeeProjection({
+        sourceItems: [],
+        currencyResults: [{ currency: 'TRY', resultAvailable: true }],
+      }),
       diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
+      overpayments: { held: [], blocked: [] },
       ...overrides,
     }),
   };
@@ -111,6 +124,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       where: { id: 'case-1', tenantId: 'tenant-1' },
     }));
     expect(canonical.computeCaseBalance).toHaveBeenCalledWith('tenant-1', 'case-1', '2026-06-21');
+    expect(canonical.computeCaseBalance).toHaveBeenCalledTimes(1);
     expect(result.asilAlacak).toBe(1000);
     expect(result.kalemTuru).toBe('PRINCIPAL');
     expect(result.toplamTahsilat).toBe(0);
@@ -223,6 +237,45 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       },
     ]));
     expect((result.canonicalShadow as any).canonicalSonBorc).toBeUndefined();
+    expect(result.canonicalCompatibility).toMatchObject({
+      mode: 'ADDITIVE_SHADOW_ONLY',
+      consumerSwitchAuthorized: false,
+      primaryAuthorityPromoted: false,
+      legacyFieldsPreserved: true,
+    });
+    const { canonicalShadow, canonicalCompatibility, ...legacyResponse } = result;
+    expect(canonicalShadow).toBeDefined();
+    expect(canonicalCompatibility).toBeDefined();
+    expect(Object.keys(legacyResponse).sort()).toEqual([
+      'caseId',
+      'hesapTarihi',
+      'takipTarihi',
+      'kalemTuru',
+      'asilAlacak',
+      'tazminat',
+      'komisyon',
+      'takipOncesiFaiz',
+      'takipTutari',
+      'basvurmaHarci',
+      'vekaletHarci',
+      'pesinHarc',
+      'dosyaGideri',
+      'tebligatGideri',
+      'vekaletPulu',
+      'icraMasraflari',
+      'pesinHarcDahilTahsilHarci',
+      'pesinHarcHaricTahsilHarci',
+      'vekaletUcreti',
+      'takipSonrasiFaiz',
+      'toplamBorc',
+      'sonBorc',
+      'toplamTahsilat',
+      'kalanBorc',
+      'kalanAnapara',
+      'mahsupDetaylari',
+      'faizSegmentleri',
+      'tahsilOranlari',
+    ].sort());
   });
 
   it('computeCaseBalance hata verirse legacy response kirilmadan ERROR diagnostic doner', async () => {
@@ -289,6 +342,12 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
     ]));
     expect((result.canonicalShadow as any).error).toBeUndefined();
     expect(JSON.stringify(result.canonicalShadow)).not.toContain('engine down');
+    expect(canonical.computeCaseBalance).toHaveBeenCalledTimes(1);
+    expect(result.canonicalCompatibility).toMatchObject({
+      status: 'UNAVAILABLE',
+      canonical: null,
+      unavailableReason: 'CANONICAL_COMPUTE_FAILED',
+    });
   });
 
   it('canonical servis yoksa UNAVAILABLE stable errorCode doner', async () => {
@@ -349,6 +408,11 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
         paymentSourceParity: 'NOT_PROVEN',
       }),
     ]));
+    expect(result.canonicalCompatibility).toMatchObject({
+      status: 'UNAVAILABLE',
+      canonical: null,
+      unavailableReason: 'CASE_BALANCE_SERVICE_UNAVAILABLE',
+    });
   });
 
   it('legacySonBorc sifirsa deltaPercent null ve LEGACY_ZERO doner', async () => {

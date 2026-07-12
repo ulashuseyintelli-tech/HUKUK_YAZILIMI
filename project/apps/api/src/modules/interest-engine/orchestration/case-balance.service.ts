@@ -205,7 +205,7 @@ export class CaseBalanceService {
    * - InterestEngineController.getCaseBalance() → GET /interest-engine/case/:caseId/balance (read-only bakiye endpoint)
    * - InterestEngineController.getCaseBalanceDisplay() → GET /interest-engine/case/:caseId/balance/display (backend display contract)
    * - BalanceShadowCompareService.compare() → summary-engine vs computeBalance read-only gözlem
-   * - CaseService.getCalculationSummary() → GET /cases/:id/calculation-summary (canonicalShadow diagnostic)
+   * - CaseService.getCalculationSummary() → GET /cases/:id/calculation-summary (canonicalShadow + additive compatibility adapter)
    * </remarks>
    */
   async computeCaseBalance(

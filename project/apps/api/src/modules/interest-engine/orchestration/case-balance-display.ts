@@ -31,8 +31,16 @@ import {
 
 export interface CaseBalanceDisplayCurrency {
   currency: string;
+  /** Allocation-oncesi principal evidence; per-currency ve conversion uygulanmadan tasinir. */
+  grossPrincipal: number;
+  /** Allocation-sonrasi principal; finalDebtStates yoksa null, turetilmis fallback yoktur. */
+  remainingPrincipal: number | null;
   /** BRÜT işlemiş faiz (totalInterest; ödeme tahsisinden bağımsız). */
   interest: number;
+  /** Takip oncesi brut faiz; hesaplama sonucu yoksa null. */
+  preEnforcementInterest: number | null;
+  /** Takip sonrasi brut faiz; hesaplama sonucu yoksa null. */
+  postEnforcementInterest: number | null;
   /** NET kalan alacak (anapara+faiz, ödeme tahsisi sonrası, claim-only) = totalDue. */
   claimRemaining: number;
   /** Best-effort tahsilat: ödeme-bazında dedup Σ allocations.paymentAmount (ödeme yoksa 0). */
@@ -221,6 +229,16 @@ const valueOfRecord = (rec: Partial<Record<string, number>> | undefined, key: st
   if (!rec) return 0;
   return rec[key] ?? 0;
 };
+
+function remainingPrincipalForCurrency(
+  result: CaseBalanceResult['currencyResults'][number]['result'],
+  currency: string,
+): number | null {
+  if (result == null) return null;
+  const states = (result.finalDebtStates ?? []).filter((state) => state.currency === currency);
+  if (states.length === 0) return null;
+  return round2(states.reduce((sum, state) => sum + state.principal, 0));
+}
 
 const DISPLAY_NOTES: string[] = [
   'interest = BRÜT işlemiş faiz (totalInterest); claimRemaining = ödeme tahsisi sonrası NET kalan alacak (totalDue) — farklı baz.',
@@ -673,7 +691,15 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
 
   const currencies: CaseBalanceDisplayCurrency[] = (balance.currencyResults ?? []).map((cr) => ({
     currency: cr.currency,
+    grossPrincipal: round2(cr.grossPrincipal),
+    remainingPrincipal: remainingPrincipalForCurrency(cr.result, cr.currency),
     interest: round2(cr.result?.totalInterest ?? 0),
+    preEnforcementInterest: cr.result == null
+      ? null
+      : round2(cr.result.preEnforcementInterest ?? 0),
+    postEnforcementInterest: cr.result == null
+      ? null
+      : round2(cr.result.postEnforcementInterest ?? 0),
     claimRemaining: round2(cr.result?.totalDue ?? 0),
     collected: round2(sumCollected(cr.result?.allocations)),
     skipped: cr.result == null,
