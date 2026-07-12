@@ -6,9 +6,15 @@ Durum      : DRAFT — EVIDENCE REVIEW REQUIRED
 Rol        : SYNTHESIS / EVIDENCE / NON-NORMATIVE — CANNOT OVERRIDE DOMAIN LAW
 ```
 
+## SECURITY-SENSITIVE PUBLICATION NOTICE
+
+Bu **public synthesis**, henüz giderilmemiş (unremediated) güvenlik bulguları için kasıtlı olarak somut route/endpoint, controller/service/dosya:satır çalışma yeri, çalışan request/payload, authentication/tenant bypass sırası, reproduction adımları, istismarı kolaylaştıran ön-koşulları, PII çıkarım mekaniği veya token/signed-URL/cache bypass mekaniğini **içermez**. Risk identifier'lar (`LF-RT-*`/`OP-RT-*`/`PR-RT-*`), severity, mimari etki ve hedef kontrol korunur. Tam teknik kanıt owner'ın local ortamında tutulur ve bu repository'nin parçası değildir.
+
+**Sanitizasyon notu:** Aşağıdaki senaryo tablolarında disposition `CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE` olarak işaretlenen satırlar, orijinal private evidence'ta **confirmed/reachable** olarak sınıflandırılmıştı; public disposition bu sınıflandırmayı zayıflatmaz veya `UNKNOWN`'a düşürmez — yalnız somut mekanik ayrıntıyı public repository'den çıkarır. `UNKNOWN`/`CONDITIONAL`/`LIKELY PREVENTED`/`PREVENTED`/`NOT APPLICABLE CURRENTLY` etiketli satırlar zaten mekanik ayrıntı içermeyen epistemik durumlardır; bunlar olduğu gibi korunmuştur.
+
 ## 1. Status and Role
 
-Bu belge `Avukat_Personel_Konsolide_Mimari_ve_Risk_Raporu`'nun (kullanıcının Desktop'ındaki kaynak dosya) analiz/kanıt/senaryo içeriğini korur. **Norm üretmez.** Herhangi bir ilke ifadesi `OFFICE-GOVERNANCE.md` ile çelişirse, **OFFICE-GOVERNANCE.md esas alınır** ve çelişki bir bulgu olarak `decision-log.md`'ye taşınır — burada sessizce çözülmez.
+Bu belge `Avukat_Personel_Konsolide_Mimari_ve_Risk_Raporu`'nun (kullanıcının Desktop'ındaki kaynak dosya) analiz/kanıt/senaryo içeriğinin **public-repository-safe** damıtmasını korur. **Norm üretmez.** Herhangi bir ilke ifadesi `OFFICE-GOVERNANCE.md` ile çelişirse, **OFFICE-GOVERNANCE.md esas alınır** ve çelişki bir bulgu olarak `decision-log.md`'ye taşınır — burada sessizce çözülmez.
 
 ## RELATED DOCUMENTS
 
@@ -20,11 +26,11 @@ Bu belge `Avukat_Personel_Konsolide_Mimari_ve_Risk_Raporu`'nun (kullanıcının 
 ## 2. Provenance and Evidence Chain
 
 ```text
-Kaynak A: Yapıştırılan metin, özellikle satırlar 14–78, 164–230, 233–328, 342–361.
-Kaynak B: Yapıştırılan metin, özellikle satırlar 13–25, 33–48, 51–119, 141–215, 228–260.
+Kaynak A: Yapıştırılan metin (repo dışı, loglanmamış önceki oturum).
+Kaynak B: Yapıştırılan metin (repo dışı, loglanmamış önceki oturum).
 ```
 
-**Evidence gap:** Kaynak A/B repo içinde doğrulanamayan, önceki/loglanmamış bir oturumun yapıştırılmış çıktılarıdır — SHA-anchored, commit-anchored veya CI-anchored bir kanıt zinciri **yoktur**. Bu belgedeki tüm teknik iddialar bu nedenle varsayılan olarak `REVALIDATION_REQUIRED` statüsündedir (`SYS-COMP-002`), `CONFIRMED` değil.
+**Evidence gap:** Kaynak A/B repo içinde doğrulanamayan, önceki/loglanmamış bir oturumun yapıştırılmış çıktılarıdır — SHA-anchored, commit-anchored veya CI-anchored bir kanıt zinciri **yoktur**. Bu belgedeki tüm teknik iddialar bu nedenle varsayılan olarak `REVALIDATION_REQUIRED` statüsündedir (`SYS-COMP-002`), `CONFIRMED` değil. Ayrıntılı satır-numarası referansları bu sürümden kasıtlı olarak çıkarılmıştır (bkz. Security-Sensitive Publication Notice).
 
 ## 3. Current-State vs Target-State Summary
 
@@ -38,187 +44,187 @@ Kaynak B: Yapıştırılan metin, özellikle satırlar 13–25, 33–48, 51–11
 
 ## 4. Epistemic Status Legend
 
-Candidate rapordaki "Disposition" değerleri şu taksonomiye eşlenir (merkezi eşleme tablosu; satır-satır yeniden etiketleme yapılmamıştır — orijinal Disposition zaten bu ayrımı daha ince granülerlikte taşır):
-
-| Bu belgenin taksonomisi | Candidate rapordaki karşılık gelen Disposition değerleri |
+| Bu belgenin taksonomisi | Anlamı |
 |---|---|
-| OBSERVED | REACHABLE / *, PREVENTED / REJECTED, OBSERVED * |
-| INFERRED | LIKELY PREVENTED, LIKELY REACHABLE |
-| CONDITIONAL | DERIVED CONDITIONAL, MITIGATED / RECHECK, PARTIALLY PREVENTED, CONDITIONAL / * |
-| UNKNOWN | UNKNOWN, UNKNOWN / * |
-| NOT APPLICABLE | NOT APPLICABLE CURRENTLY |
-| SUPERSEDED | *(bu turda yok — ileride bir bulgu güncel kanıtla değiştirilirse kullanılır)* |
+| OBSERVED | Doğrulanmış, güvenli/beklenen davranış (ör. bir korumanın çalıştığı teyit edilmiş) |
+| INFERRED | Muhtemelen güvenli, ama doğrudan gözlem yok |
+| CONDITIONAL | Belirsiz, koşula bağlı; ek doğrulama gerekir |
+| UNKNOWN | Doğrulanmamış, kanıt yok |
+| NOT APPLICABLE | İlgili yüzey/akış şu an mevcut değil |
+| SUPERSEDED | İleride güncel kanıtla değiştirilmiş bulgu |
+| **CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE** | Private evidence'ta confirmed/reachable olarak sınıflandırılmış; somut mekanik ayrıntı bu public belgeden çıkarılmıştır |
 
 ## 5. Lifecycle Scenarios (45) — `LF-RT-*`
 
-| ID | Senaryo | Disposition | Kontrol/not |
+| ID | Senaryo (genericized) | Disposition | Kontrol/not |
 |---|---|---|---|
-| LF-RT-01 | User oluşturulur, Staff oluşturma başarısız olur | UNKNOWN | Creation transaction/orphan davranışı yeni PC'de doğrulanmalı |
-| LF-RT-02 | Staff oluşturulur, Membership oluşturma başarısız olur | UNKNOWN | Membership/Employment ayrımı ve transaction sınırı belirsiz |
-| LF-RT-03 | Membership ve role oluşur, invitation gönderilemez | DERIVED CONDITIONAL | Preboarding'de authority activation sırası doğrulanmalı |
-| LF-RT-04 | Invitation iki kez kabul edilir | LIKELY PREVENTED | Idempotency line-level revalidation gerekir |
-| LF-RT-05 | Expired invitation kabul edilir | LIKELY PREVENTED | Gerçek route testi önerilir |
-| LF-RT-06 | Başka User'a ait invitation token kullanılır | LIKELY PREVENTED | Integration kanıtı korunmalı |
-| LF-RT-07 | Staff active olmadan session oluşturulur | UNKNOWN | Ayrı end-to-end kanıt yok |
-| LF-RT-08 | User active, Membership inactive iken tenant erişimi | REACHABLE / P1 FAMILY | Active-state conflation; SES-001 ile aynı kök neden |
-| LF-RT-09 | Staff inactive, User active token ile işlem | REACHABLE / P1 | PRD-SES-001 doğrudan kanıtı |
-| LF-RT-10 | LawyerCredential inactive iken case assignment | UNKNOWN / CONTROL GAP | Eligibility model dağınık |
-| LF-RT-11 | Takım transferinde eski team permission kalır | DERIVED CONDITIONAL | Scope/role cleanup orchestration eksik |
-| LF-RT-12 | Demotion sonrası eski token geniş yetkiyi kullanır | REACHABLE / P3 | JWT stale-authority |
-| LF-RT-13 | İzin delegation'ı bitişte iptal edilmez | UNKNOWN | Delegation lifecycle tam kanıtlı değil |
-| LF-RT-14 | Suspension sırasında pending approval onaylanır | DERIVED CONDITIONAL | Staff/Membership active enforcement belirsiz |
-| LF-RT-15 | Pasifleştirme sırasında yeni task atanır | DERIVED CONDITIONAL | Lifecycle lock yok |
-| LF-RT-16 | Termination sırasında refresh token kullanılır | REACHABLE / P1 | Session/refresh revocation yokluğu |
-| LF-RT-17 | Membership kapanır, global role aktif kalır | DERIVED CONDITIONAL | RoleAssignment owner/scope belirsiz |
-| LF-RT-18 | Permission revoke sonrası cache eski permission döndürür | DERIVED CONDITIONAL | JWT/cache stale family |
-| LF-RT-19 | Staff deactivate yalnız flag değiştirir, session aktif kalır | REACHABLE / P1 | staff.remove yalnız isActive=false |
-| LF-RT-20 | User deactivate tüm tenant üyeliklerini yanlış kapatır | NOT APPLICABLE CURRENTLY | Aktif endpoint yok |
-| LF-RT-21 | Offboarding replacement olmadan sorumlu avukatı kaldırır | REACHABLE AS GAP | Orchestration yok |
-| LF-RT-22 | Replacement farklı tenant personeli | UNKNOWN / HIGH CONTROL NEED | Cross-tenant constraint kanıtı eksik |
-| LF-RT-23 | Replacement pasif/izinli personel | DERIVED CONDITIONAL | Candidate eligibility eksik |
-| LF-RT-24 | Replacement avukat değilken ResponsibleLawyer atanır | UNKNOWN / CONTROL GAP | Credential eligibility target invariant |
-| LF-RT-25 | Case reassignment, ClientAccess eski personelde kalır | DERIVED CONDITIONAL | Assignment/access ayrımı belirsiz |
-| LF-RT-26 | Task reassignment yarıda kalır | UNKNOWN | Transaction/partial failure matrisi eksik |
-| LF-RT-27 | Recurring task eski personele üretilir | DERIVED CONDITIONAL | Scheduled work cleanup yok |
-| LF-RT-28 | Authority revoke sonrası eski approver onaylar | DERIVED CONDITIONAL | Authority snapshot hardening açığı |
-| LF-RT-29 | Approval reassignment self-approval oluşturur | LIKELY PREVENTED / RECHECK | Reassignment sonrası yeniden kontrol doğrulanmalı |
-| LF-RT-30 | Delegator terminate olur, delegation aktif kalır | DERIVED CONDITIONAL | Delegation/offboarding entegrasyonu eksik |
-| LF-RT-31 | Delegate terminate olur, effective permission'a dahil kalır | DERIVED CONDITIONAL | Active-state enforcement eksik |
-| LF-RT-32 | Signed file URL termination sonrası çalışır | UNKNOWN | File/signed URL lifecycle hardening |
-| LF-RT-33 | Scheduled export eski personel için üretilir | UNKNOWN | Job recipient/actor recheck kanıtı yok |
-| LF-RT-34 | Reminder ayrılan personele gönderilir | UNKNOWN / PRODUCT GAP | Notification cleanup tanımlı değil |
-| LF-RT-35 | Offboarding DB commit olur, session revoke başarısız | REACHABLE ARCHITECTURAL RISK | Orchestrator/partial failure görünürlüğü yok |
-| LF-RT-36 | Session revoke olur, offboarding transaction rollback | UNKNOWN | Compensation/idempotency tasarlanmalı |
-| LF-RT-37 | Offboarding event iki kez işlenir | NOT APPLICABLE CURRENTLY | Orchestrator yok |
-| LF-RT-38 | Aynı personel için iki offboarding aynı anda başlar | NOT APPLICABLE CURRENTLY | Workflow lock/idempotency gerekir |
-| LF-RT-39 | Scheduled termination ile manual reactivation yarışır | UNKNOWN | Scheduled lifecycle davranışı doğrulanmadı |
-| LF-RT-40 | Bulk offboarding kısmi başarı üretir | NOT APPLICABLE CURRENTLY | Bulk workflow yok |
-| LF-RT-41 | Last TenantOwner offboard edilir | UNKNOWN / OWNER DECISION | Safe default: engelle |
-| LF-RT-42 | Reactivation eski role/permission'ları geri getirir | REACHABLE / P2 | PRD-LIFE-001 |
-| LF-RT-43 | Rehire eski delegation/approval authority'yi açar | DERIVED CONDITIONAL | Rehire semantics belirsiz |
-| LF-RT-44 | Hard delete approval/audit actor referanslarını siler | PREVENTED / REJECTED RISK | Hard delete yok |
-| LF-RT-45 | Search index terminated personeli active gösterir | UNKNOWN | Search projection/lifecycle reindex kanıtı yok |
+| LF-RT-01 | Personel/hesap oluşturma zincirinde ara adım hatası senaryosu | UNKNOWN | Transaction/orphan davranışı ayrıca doğrulanmalı |
+| LF-RT-02 | Hesap/üyelik oluşturma zincirinde ara adım hatası senaryosu | UNKNOWN | Transaction sınırı ayrıca doğrulanmalı |
+| LF-RT-03 | Üyelik/rol oluşturma sonrası bildirim adımı hatası senaryosu | CONDITIONAL | Authority activation sırası ayrıca doğrulanmalı |
+| LF-RT-04 | Davet/token tekrar-kullanım kontrolü senaryosu | LIKELY PREVENTED | Idempotency ayrıca doğrulanmalı |
+| LF-RT-05 | Davet/token süre-aşımı kontrolü senaryosu | LIKELY PREVENTED | Expiry kontrolü ayrıca doğrulanmalı |
+| LF-RT-06 | Davet/token sahiplik doğrulaması senaryosu | LIKELY PREVENTED | Identity binding ayrıca doğrulanmalı |
+| LF-RT-07 | Hesap aktivasyon durumu ile oturum oluşturma senkronizasyonu senaryosu | UNKNOWN | Ayrı end-to-end doğrulama gerekir |
+| LF-RT-08 | Hesap ile üyelik aktiflik durumu arasındaki senkronizasyon senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | STF-PRD-SES-001 ile aynı kök neden |
+| LF-RT-09 | Personel pasifleştirme ile oturum geçerliliği senkronizasyonu senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | STF-PRD-SES-001 doğrudan ilişkili |
+| LF-RT-10 | Mesleki yeterlilik (credential) durumu ile görev ataması senkronizasyonu senaryosu | UNKNOWN / CONTROL GAP | Eligibility modeli ayrıca netleştirilmeli |
+| LF-RT-11 | Ekip/takım değişikliği sonrası yetki temizliği senaryosu | CONDITIONAL | Scope/role cleanup orchestration'ı ayrıca değerlendirilmeli |
+| LF-RT-12 | Rol düşürme sonrası önceki yetki bilgisinin geçerliliği senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Yetki bilgisi yenileme stratejisiyle ilişkili |
+| LF-RT-13 | Delegasyonun sona erme kontrolü senaryosu | UNKNOWN | Delegation lifecycle ayrıca kanıtlanmalı |
+| LF-RT-14 | Askıya alma durumunda bekleyen onay işlemleri senaryosu | CONDITIONAL | Aktiflik durumu enforcement'ı ayrıca netleştirilmeli |
+| LF-RT-15 | Pasifleştirme sürecinde yeni görev ataması senaryosu | CONDITIONAL | Lifecycle kilidi ayrıca değerlendirilmeli |
+| LF-RT-16 | Sonlandırma sürecinde yenileme bilgisinin geçerliliği senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Yetki bilgisi yenileme stratejisiyle ilişkili |
+| LF-RT-17 | Üyelik kapanışı ile genel kapsamlı yetki ilişkisi senaryosu | CONDITIONAL | Yetki sahipliği/kapsamı ayrıca netleştirilmeli |
+| LF-RT-18 | Yetki iptali sonrası önbellek tutarlılığı senaryosu | CONDITIONAL | Önbellek geçersizleştirme ayrıca değerlendirilmeli |
+| LF-RT-19 | Personel pasifleştirme işleminin kapsamı senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Pasifleştirme yalnız durum bayrağı ile sınırlı kalmamalı; ilişkili oturum/erişim etkisi ayrıca ele alınmalı |
+| LF-RT-20 | Hesap deaktivasyonunun çoklu üyelik kapsamına etkisi senaryosu | NOT APPLICABLE CURRENTLY | İlgili aktif akış şu an mevcut değil |
+| LF-RT-21 | Devir olmadan sorumluluk kaldırma senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Offboarding orchestration'ı eksik; owner kararı gerekir |
+| LF-RT-22 | Devir alan personelin kapsam/tenant uygunluğu senaryosu | UNKNOWN / HIGH CONTROL NEED | Cross-tenant constraint ayrıca kanıtlanmalı |
+| LF-RT-23 | Devir alan personelin uygunluk durumu senaryosu | CONDITIONAL | Aday uygunluk kontrolü ayrıca netleştirilmeli |
+| LF-RT-24 | Mesleki yeterliliği olmayan personele sorumluluk ataması senaryosu | UNKNOWN / CONTROL GAP | Credential eligibility hedef invariant olarak ele alınmalı |
+| LF-RT-25 | Sorumluluk devri sonrası erişim kalıntısı senaryosu | CONDITIONAL | Assignment/access ayrımı ayrıca netleştirilmeli |
+| LF-RT-26 | Görev devrinin yarıda kalması senaryosu | UNKNOWN | Transaction/partial failure davranışı ayrıca doğrulanmalı |
+| LF-RT-27 | Tekrarlayan görevlerin ayrılan personel için üretilmeye devam etmesi senaryosu | CONDITIONAL | Scheduled work cleanup'ı offboarding'e dahil edilmeli |
+| LF-RT-28 | Yetki iptali sonrası bekleyen onay işleminin durumu senaryosu | CONDITIONAL | Authority snapshot mekanizması ayrıca güçlendirilmeli |
+| LF-RT-29 | Onay devri sonrası kendi-kendini-onaylama kontrolü senaryosu | LIKELY PREVENTED / RECHECK | Devir sonrası yeniden kontrol ayrıca doğrulanmalı |
+| LF-RT-30 | Delegasyon veren kişinin sonlandırılması sonrası delegasyon durumu senaryosu | CONDITIONAL | Delegation/offboarding entegrasyonu ayrıca değerlendirilmeli |
+| LF-RT-31 | Delegasyon alan kişinin sonlandırılması sonrası etkin yetki durumu senaryosu | CONDITIONAL | Aktiflik durumu enforcement'ı ayrıca netleştirilmeli |
+| LF-RT-32 | Paylaşılan belge bağlantısının geçerlilik süresi senaryosu | UNKNOWN | Bağlantı yaşam döngüsü ayrıca güçlendirilmeli |
+| LF-RT-33 | Zamanlanmış dışa aktarımın alıcı geçerliliği senaryosu | UNKNOWN | İş kuyruğu alıcı/aktör yeniden kontrolü ayrıca kanıtlanmalı |
+| LF-RT-34 | Bildirimin ayrılan personele ulaşmaya devam etmesi senaryosu | UNKNOWN / PRODUCT GAP | Bildirim temizliği offboarding'e dahil edilmeli |
+| LF-RT-35 | Offboarding işleminin kısmi tamamlanması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Orchestrator/partial-failure görünürlüğü eksik |
+| LF-RT-36 | Offboarding işleminin geri alınması senaryosu | UNKNOWN | Compensation/idempotency ayrıca tasarlanmalı |
+| LF-RT-37 | Offboarding olayının tekrar işlenmesi senaryosu | NOT APPLICABLE CURRENTLY | İlgili orchestrator şu an mevcut değil |
+| LF-RT-38 | Aynı personel için eşzamanlı offboarding başlatılması senaryosu | NOT APPLICABLE CURRENTLY | İlgili workflow şu an mevcut değil |
+| LF-RT-39 | Zamanlanmış sonlandırma ile manuel yeniden-aktifleştirme çakışması senaryosu | UNKNOWN | Zamanlanmış lifecycle davranışı ayrıca doğrulanmalı |
+| LF-RT-40 | Toplu offboarding işleminin kısmi başarısı senaryosu | NOT APPLICABLE CURRENTLY | İlgili toplu işlem akışı şu an mevcut değil |
+| LF-RT-41 | Son yetkili yönetici hesabının offboard edilmesi senaryosu | UNKNOWN / OWNER DECISION | Invariant ayrıca doğrulanmalı; safe default: engelle |
+| LF-RT-42 | Yeniden aktifleştirmenin önceki yetkileri geri getirmesi senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | STF-PRD-LIFE-001 ile ilişkili |
+| LF-RT-43 | Yeniden işe alımın önceki yetki/delegasyonu açması senaryosu | CONDITIONAL | Rehire semantiği ayrıca netleştirilmeli |
+| LF-RT-44 | Kalıcı silme işleminin denetim/onay referanslarına etkisi senaryosu | PREVENTED / REJECTED RISK | Kalıcı silme yolu mevcut değil (olumlu bulgu) |
+| LF-RT-45 | Arama indeksinin sonlandırılmış personeli göstermeye devam etmesi senaryosu | UNKNOWN | Arama projeksiyonu/lifecycle senkronizasyonu ayrıca kanıtlanmalı |
 
 ## 6. Product/Operations Scenarios (45) — `OP-RT-*`
 
-| ID | Senaryo | Disposition | Kontrol/not |
+| ID | Senaryo (genericized) | Disposition | Kontrol/not |
 |---|---|---|---|
-| OP-RT-01 | Manager başka takım personelini görür | DERIVED CONDITIONAL | Flat intra-tenant scope P2 |
-| OP-RT-02 | Listede active, Membership inactive | REACHABLE | Active-state conflation |
-| OP-RT-03 | Aynı kişi User/Staff nedeniyle iki satır | DERIVED CONDITIONAL | Identity/source-of-truth ambiguity |
-| OP-RT-04 | Detail User ID ile açılır, action Staff ID bekler | DERIVED CONDITIONAL | ID-type conflation |
-| OP-RT-05 | Personel 360 role gösterir, direct grant göstermez | OBSERVED PRODUCT GAP | Effective permission explainability yok |
-| OP-RT-06 | Kişi dosyayı global permission ile görür, neden açıklanmaz | OBSERVED GAP | Effective access source görünmüyor |
-| OP-RT-07 | ResponsibleLawyer ve CaseTeamMember aynı etiket | DERIVED CONDITIONAL | Assignment semantics ambiguous |
-| OP-RT-08 | Client owner ve ClientAccess aynı sayı | DERIVED CONDITIONAL | Ownership/access ayrımı hedefte zorunlu |
-| OP-RT-09 | Inactive personel assignee selector'da | LIKELY REACHABLE | Task assignee validation eksik |
-| OP-RT-10 | İzinli personel yüksek uygunlukla önerilir | UNKNOWN | Leave/capacity model kanıtı yok |
-| OP-RT-11 | Credential inactive personel case sorumlusu seçilir | UNKNOWN / CONTROL GAP | Credential eligibility doğrulanmalı |
-| OP-RT-12 | Assignment başarılı, gerekli access oluşmaz | DERIVED CONDITIONAL | Assignment/access coupling belirsiz |
-| OP-RT-13 | Backend fail, optimistic UI geri alınmaz | UNKNOWN | Frontend mutation davranışı doğrulanmadı |
-| OP-RT-14 | Task duplicate assign, workload iki kez artar | DERIVED CONDITIONAL | Uniqueness/race + workload lineage eksik |
-| OP-RT-15 | Reassignment sonrası eski owner görünür | DERIVED CONDITIONAL | Cache/history/read-model drift |
-| OP-RT-16 | Recurring task ayrılan personele üretilir | DERIVED CONDITIONAL | Lifecycle/job cleanup yok |
-| OP-RT-17 | Workload yalnız task count kullanır | PARTIAL / MISLEADING | Canonical formula yok |
-| OP-RT-18 | İzinli/part-time personel tam kapasite sayılır | UNKNOWN / LIKELY GAP | Capacity/availability model kanıtlanmadı |
-| OP-RT-19 | Join çoğalması workload'u şişirir | DERIVED CONDITIONAL | Metric lineage/count-distinct eksik |
-| OP-RT-20 | Dashboard count ile liste count uyuşmaz | DERIVED CONDITIONAL | Farklı query/read-model riski |
-| OP-RT-21 | Workload cache eski, detail canlı | DERIVED CONDITIONAL | Freshness/cache invalidation eksik |
-| OP-RT-22 | Metric backend hatasında sıfır görünür | UNKNOWN | Error/empty/partial UX kanıtı eksik |
-| OP-RT-23 | Completed task count doğrudan performans skoru | CONDITIONAL / NOT RECOMMENDED | Performans yönetişimi yok |
-| OP-RT-24 | Farklı roller aynı leaderboard'da | OBSERVED/MISLEADING | Case-count leaderboard bağlamdan kopuk |
-| OP-RT-25 | Approval inbox aynı request'i iki kez gösterir | UNKNOWN | Projection/dedupe kanıtı yok |
-| OP-RT-26 | Delegated approval normal approval gibi görünür | UNKNOWN / UX GAP | Delegation explainability eksik |
-| OP-RT-27 | Approval içeriği değişti, UI uyarmaz | UNKNOWN | UI version/change indicator doğrulanmadı |
-| OP-RT-28 | Stale approval item optimistic approved görünür | UNKNOWN | Cache/mutation rollback kanıtı yok |
-| OP-RT-29 | Expired delegation UI'da aktif | UNKNOWN | Delegation state/freshness kanıtı yok |
-| OP-RT-30 | Role revoke sonrası Personel 360 eski permission gösterir | DERIVED CONDITIONAL | JWT/cache stale + P360 yokluğu |
-| OP-RT-31 | Frontend title üzerinden admin aksiyonu gösterir | DERIVED CONDITIONAL | Role/title drift, UI-only gate |
-| OP-RT-32 | Offboarding success alt job'lar bitmeden gösterilir | NOT APPLICABLE CURRENTLY | Workflow yok |
-| OP-RT-33 | Offboarding partial failure görünmez | OBSERVED CAPABILITY GAP | Orchestrator/progress yok |
-| OP-RT-34 | Reactivation grants restore eder, UI açıklamaz | REACHABLE / P2 | PRD-LIFE-001 + explainability gap |
-| OP-RT-35 | Bulk reassignment kısmi fail, tümü başarılı görünür | UNKNOWN | Bulk/item result kanıtı yok |
-| OP-RT-36 | Export UI filtresinden geniş veri içerir | UNKNOWN / PRIVACY CHECK | Export/list consistency doğrulanmalı |
-| OP-RT-37 | Dashboard 403 sonucu empty data gösterir | UNKNOWN | Error/deny UX doğrulanmadı |
-| OP-RT-38 | Tenant switch sonrası cache eski personeli gösterir | DERIVED CONDITIONAL | Tenant-aware query key doğrulaması eksik |
-| OP-RT-39 | Liste hassas termination/leave verisini geniş gösterir | OBSERVED PRIVACY FAMILY | TCKN/IBAN kanıtı var |
-| OP-RT-40 | Analytics click completion olarak kaydedilir | UNKNOWN | Instrumentasyon doğrulanmadı |
-| OP-RT-41 | Organization tree inactive managerı aktif gösterir | UNKNOWN | Organization tree eksik/partial |
-| OP-RT-42 | İki manager var, UI yalnız birini gösterir | UNKNOWN | Cardinality/history modeli belirsiz |
-| OP-RT-43 | Case detail ve Personel 360 farklı responsible lawyer | DERIVED CONDITIONAL | Farklı read source riski |
-| OP-RT-44 | Approval count ve inbox farklı scope kullanır | UNKNOWN | Count/list lineage doğrulanmadı |
-| OP-RT-45 | Workload listesinde N+1 | OBSERVED / P3 | STF-PRD-PERF-001 |
+| OP-RT-01 | Yönetici görünürlük kapsamının geniş olması senaryosu | CONDITIONAL | Kapsam daraltma tasarımı ayrıca değerlendirilmeli |
+| OP-RT-02 | Listede aktif görünen ama üyeliği pasif olan kayıt senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Aktiflik durumu ayrımı ayrıca netleştirilmeli |
+| OP-RT-03 | Aynı kişinin farklı kayıt kaynaklarından iki kez listelenmesi senaryosu | CONDITIONAL | Identity/source-of-truth belirsizliği ayrıca netleştirilmeli |
+| OP-RT-04 | Detay ve aksiyon ekranları arasında kimlik türü tutarsızlığı senaryosu | CONDITIONAL | ID-türü ayrımı ayrıca netleştirilmeli |
+| OP-RT-05 | Rol gösterilirken doğrudan verilen iznin gösterilmemesi senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Effective permission açıklanabilirliği eksik |
+| OP-RT-06 | Erişim nedeninin arayüzde açıklanmaması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Effective access kaynağı görünür değil |
+| OP-RT-07 | Farklı sorumluluk türlerinin aynı etiketle gösterilmesi senaryosu | CONDITIONAL | Assignment semantiği ayrıca netleştirilmeli |
+| OP-RT-08 | Sahiplik ve erişim sayılarının aynı gösterilmesi senaryosu | CONDITIONAL | Ownership/access ayrımı hedefte zorunlu |
+| OP-RT-09 | Pasif personelin görev atama seçeneklerinde görünmesi senaryosu | CONDITIONAL | Task assignee doğrulaması ayrıca eklenmeli |
+| OP-RT-10 | İzinli personelin uygunluk önerisinde yüksek sıralanması senaryosu | UNKNOWN | Kapasite/izin modeli ayrıca kanıtlanmalı |
+| OP-RT-11 | Mesleki yeterliliği geçersiz personelin sorumlu olarak önerilmesi senaryosu | UNKNOWN / CONTROL GAP | Credential eligibility ayrıca doğrulanmalı |
+| OP-RT-12 | Atama başarılı olduğu halde ilişkili erişimin oluşmaması senaryosu | CONDITIONAL | Assignment/access bağlantısı ayrıca netleştirilmeli |
+| OP-RT-13 | Arka uç hatası sonrası arayüzün geri alınmaması senaryosu | UNKNOWN | Mutation davranışı ayrıca doğrulanmalı |
+| OP-RT-14 | Yinelenen atamanın yük metriğini çift saydırması senaryosu | CONDITIONAL | Uniqueness/eşzamanlılık ve metrik hesaplama ayrıca netleştirilmeli |
+| OP-RT-15 | Devir sonrası eski sahibin görünmeye devam etmesi senaryosu | CONDITIONAL | Önbellek/geçmiş/read-model tazeliği ayrıca değerlendirilmeli |
+| OP-RT-16 | Tekrarlayan görevin ayrılan personel için üretilmesi senaryosu | CONDITIONAL | Lifecycle/iş kuyruğu temizliği ayrıca eklenmeli |
+| OP-RT-17 | Yük metriğinin yalnız tek bir sayaç kullanması senaryosu | PARTIAL / MISLEADING | Canonical formül ayrıca tanımlanmalı |
+| OP-RT-18 | İzinli/yarı-zamanlı personelin tam kapasite sayılması senaryosu | UNKNOWN / LIKELY GAP | Kapasite/uygunluk modeli ayrıca kanıtlanmalı |
+| OP-RT-19 | Veri birleştirme işleminin metriği şişirmesi senaryosu | CONDITIONAL | Metrik hesaplama yöntemi ayrıca netleştirilmeli |
+| OP-RT-20 | Farklı ekranların farklı sayılar göstermesi senaryosu | CONDITIONAL | Sorgu/read-model farkı ayrıca değerlendirilmeli |
+| OP-RT-21 | Önbellekli metriğin güncel olmaması senaryosu | CONDITIONAL | Tazelik/önbellek geçersizleştirme ayrıca eklenmeli |
+| OP-RT-22 | Arka uç hatasında metriğin sıfır gösterilmesi senaryosu | UNKNOWN | Hata/boş/kısmi durum arayüzü ayrıca kanıtlanmalı |
+| OP-RT-23 | Tamamlanan görev sayısının doğrudan performans skoru olarak kullanılması senaryosu | CONDITIONAL / NOT RECOMMENDED | Performans yönetişimi ayrıca tanımlanmalı |
+| OP-RT-24 | Farklı rollerin aynı karşılaştırma listesinde gösterilmesi senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Bağlamdan kopuk karşılaştırma; yanıltıcı olabilir |
+| OP-RT-25 | Onay kutusunun aynı talebi iki kez göstermesi senaryosu | UNKNOWN | Projeksiyon/tekilleştirme ayrıca kanıtlanmalı |
+| OP-RT-26 | Devredilen onayın normal onay gibi görünmesi senaryosu | UNKNOWN / UX GAP | Delegasyon açıklanabilirliği eksik |
+| OP-RT-27 | Onay içeriği değiştiğinde arayüzün uyarmaması senaryosu | UNKNOWN | Versiyon/değişiklik göstergesi ayrıca doğrulanmalı |
+| OP-RT-28 | Güncel olmayan onay öğesinin onaylanmış gibi görünmesi senaryosu | UNKNOWN | Önbellek/mutation geri alma ayrıca kanıtlanmalı |
+| OP-RT-29 | Süresi dolmuş delegasyonun arayüzde aktif görünmesi senaryosu | UNKNOWN | Delegasyon durumu/tazeliği ayrıca kanıtlanmalı |
+| OP-RT-30 | Rol iptali sonrası önceki iznin gösterilmeye devam etmesi senaryosu | CONDITIONAL | Önbellek tutarlılığı ve read-model eksikliği ayrıca netleştirilmeli |
+| OP-RT-31 | Arayüzün unvan üzerinden yönetici aksiyonu göstermesi senaryosu | CONDITIONAL | Rol/unvan ayrımı ve arayüz-only gate ayrıca netleştirilmeli |
+| OP-RT-32 | Offboarding başarı mesajının alt işlemler bitmeden gösterilmesi senaryosu | NOT APPLICABLE CURRENTLY | İlgili workflow şu an mevcut değil |
+| OP-RT-33 | Offboarding kısmi başarısızlığının görünür olmaması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Orchestrator/ilerleme görünürlüğü eksik |
+| OP-RT-34 | Yeniden aktifleştirmenin yetkileri geri getirdiğinin arayüzde açıklanmaması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | STF-PRD-LIFE-001 + açıklanabilirlik boşluğu |
+| OP-RT-35 | Toplu devrin kısmi başarısızlığının tümü-başarılı gösterilmesi senaryosu | UNKNOWN | Toplu/madde-bazlı sonuç ayrıca kanıtlanmalı |
+| OP-RT-36 | Dışa aktarımın arayüz filtresinden daha geniş veri içermesi senaryosu | UNKNOWN / PRIVACY CHECK | Export/liste tutarlılığı ayrıca doğrulanmalı |
+| OP-RT-37 | Yetkisiz erişim hatasının boş veri olarak gösterilmesi senaryosu | UNKNOWN | Hata/red durumu arayüzü ayrıca doğrulanmalı |
+| OP-RT-38 | Kiracı (tenant) değişikliği sonrası önbelleğin eski veriyi göstermesi senaryosu | CONDITIONAL | Tenant-farkında sorgu anahtarı ayrıca doğrulanmalı |
+| OP-RT-39 | Listenin hassas kişisel veriyi geniş kapsamda göstermesi senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Alan bazlı görünürlük kapsamı owner kararı gerektirir |
+| OP-RT-40 | Analitik olayının yanlış sınıflandırılması senaryosu | UNKNOWN | Enstrümantasyon ayrıca doğrulanmalı |
+| OP-RT-41 | Organizasyon şemasının pasif yöneticiyi aktif göstermesi senaryosu | UNKNOWN | Organizasyon şeması yeteneği eksik/kısmi |
+| OP-RT-42 | Birden fazla yönetici olduğunda yalnız birinin gösterilmesi senaryosu | UNKNOWN | Çokluluk/geçmiş modeli ayrıca netleştirilmeli |
+| OP-RT-43 | Farklı ekranların farklı sorumlu kişi göstermesi senaryosu | CONDITIONAL | Farklı okuma kaynağı riski |
+| OP-RT-44 | Sayaç ve liste ekranlarının farklı kapsam kullanması senaryosu | UNKNOWN | Sayaç/liste tutarlılığı ayrıca doğrulanmalı |
+| OP-RT-45 | Personel listesi sorgusunda performans darboğazı senaryosu | OBSERVED / P3 | STF-PRD-PERF-001; performans konusu, yetkilendirme riski değil |
 
 ## 7. Production Red-Team Scenarios (60) — `PR-RT-*`
 
-| ID | Senaryo | Disposition | Kanıt/sonraki kontrol |
+| ID | Senaryo (genericized) | Disposition | Kanıt/sonraki kontrol |
 |---|---|---|---|
-| PR-RT-01 | Başka User invitation token'ı kullanır | LIKELY PREVENTED | Integration gate korunmalı |
-| PR-RT-02 | Expired invitation yeniden kullanılır | LIKELY PREVENTED | Expiry kontrolü raporlandı |
-| PR-RT-03 | Staff inactive, User aktif token ile işlem | REACHABLE / P1 | SES-001 |
-| PR-RT-04 | Membership kapalıyken refresh token | CONDITIONAL / P1 FAMILY | Refresh yolunda doğrulanmalı |
-| PR-RT-05 | JWT tenant ile path/header tenant farklı | PARTIALLY PREVENTED | Source precedence revalidate |
-| PR-RT-06 | Body tenantId başka tenant | PARTIALLY PREVENTED | Kritik istisnalar var |
-| PR-RT-07 | Tenant A, Tenant B Staff detail | LIKELY PREVENTED | Route recheck gerekir |
-| PR-RT-08 | Tenant A, Tenant B Staff update | LIKELY PREVENTED | Aynı sınırlama |
-| PR-RT-09 | Mixed-tenant bulk payload | UNKNOWN | Bulk item-level matrix eksik |
-| PR-RT-10 | Tenant içermeyen cache key ile permission sızıntısı | UNKNOWN | Cache key kanıtı eksik |
-| PR-RT-11 | Generic Staff PATCH ile roleIds/isAdmin | CONDITIONAL / P2 | Mass assignment/RBAC gap |
-| PR-RT-12 | Aktör kendi role'ünü değiştirir | CONDITIONAL / P2 | Grant ceiling doğrulaması eksik |
-| PR-RT-13 | Aktör sahip olmadığı permission'ı verir | CONDITIONAL / P2 | Canonical grant ceiling yok |
-| PR-RT-14 | Protected role clone edilir | UNKNOWN | Protected role modeli belirsiz |
-| PR-RT-15 | Son TenantOwner kaldırılır | UNKNOWN / OWNER DECISION | Invariant doğrulanmadı |
-| PR-RT-16 | Expired/soft-deleted RoleAssignment effective olur | UNKNOWN / P3 | Soft-delete/filter audit eksik |
-| PR-RT-17 | Role revoke sonrası eski JWT kullanılır | REACHABLE / P3 | JWT stale |
-| PR-RT-18 | Delegation scope/limit büyütür | UNKNOWN / HIGH CONTROL NEED | Model hedefte ayrılmalı |
-| PR-RT-19 | Kullanıcı kendi işlemini onaylar | PREVENTED | Approval self-check çekirdeği güçlü |
-| PR-RT-20 | Aynı Person ikinci User ile self-approval | MITIGATED / RECHECK | Stable Person identity zorunlu |
-| PR-RT-21 | Düşük approval policy ID payload ile seçilir | LIKELY PREVENTED | Approval policy core güçlü |
-| PR-RT-22 | Approval amount/currency sonradan değişir | LIKELY PREVENTED / HARDEN | Authority snapshot eksik |
-| PR-RT-23 | Approval step paralel iki kez onaylanır | PREVENTED | Concurrency kontrolleri pozitif |
-| PR-RT-24 | Approval sırası atlanır | PREVENTED | Step/state guard pozitif |
-| PR-RT-25 | Authority revoke sonrası pending onay | CONDITIONAL | Authority snapshot eksik |
-| PR-RT-26 | Bulk approval self-check atlar | UNKNOWN | Bulk yüzeyi doğrulanmadı |
-| PR-RT-27 | Impersonation ile approval | NOT APPLICABLE CURRENTLY | Impersonation yok |
-| PR-RT-28 | Approved resource finalize öncesi değişir | LIKELY PREVENTED | Version snapshot önerilir |
-| PR-RT-29 | Offboarding commit, session revoke fail | REACHABLE ARCHITECTURAL | Orchestrator yok |
-| PR-RT-30 | Session revoke, offboarding rollback | UNKNOWN | Compensation konusu |
-| PR-RT-31 | Staff terminate, RoleAssignment aktif | REACHABLE / P1-P2 FAMILY | Lifecycle residue |
-| PR-RT-32 | Delegator terminate, delegation aktif | CONDITIONAL | Entegrasyon yok |
-| PR-RT-33 | Case reassigned, ClientAccess eski kişide | CONDITIONAL | Assignment/access residue |
-| PR-RT-34 | Pending approval eski approverda | CONDITIONAL | Offboarding handoff yok |
-| PR-RT-35 | Offboarding sırasında yeni task | CONDITIONAL | Lifecycle lock yok |
-| PR-RT-36 | Reactivation eski grants'i açar | REACHABLE / P2 | LIFE-001 |
-| PR-RT-37 | Rehire eski authority/delegation'ı açar | CONDITIONAL | Rehire yeni Employment değil |
-| PR-RT-38 | Last owner/admin offboard edilir | UNKNOWN | Owner decision/invariant |
-| PR-RT-39 | Paralel aynı Person için Staff create | CONDITIONAL / P3 | DB uniqueness/race |
-| PR-RT-40 | Paralel ResponsibleLawyer kayıtları | CONDITIONAL / P3 | Cardinality constraint belirsiz |
-| PR-RT-41 | Task iki manager tarafından farklı assign | CONDITIONAL | Version/locking/idempotency belirsiz |
-| PR-RT-42 | Role grant ve revoke aynı anda | CONDITIONAL | JWT/cache + DB race |
-| PR-RT-43 | Membership kapanırken tenant switch | CONDITIONAL / P1 FAMILY | Session/membership state race |
-| PR-RT-44 | ApprovalRequest ve resource version ayrışır | MITIGATED / HARDEN | Explicit snapshot önerilir |
-| PR-RT-45 | Hard delete AuditEvent actoru siler | PREVENTED / REJECTED | Hard delete yok |
-| PR-RT-46 | Soft-deleted grant effective query'ye girer | UNKNOWN / P3 | Filter/constraint revalidation |
-| PR-RT-47 | File ID değiştirip başka belge indirme | UNKNOWN / HARDENING | File object authorization eksik |
-| PR-RT-48 | Export create auth, download auth yok | UNKNOWN / HARDENING | İki aşamalı authorization doğrulanmalı |
-| PR-RT-49 | CSV formula payload export | UNKNOWN | Escaping doğrulanmadı |
-| PR-RT-50 | Personel export hassas alanları geniş | CONDITIONAL / P2 PRIVACY | Field allowlist/masking gerekli |
-| PR-RT-51 | Search başka tenant personelini döndürür | LIKELY PREVENTED / RECHECK | Search/index yüzeyi doğrulanmalı |
-| PR-RT-52 | Dashboard 403/error'u sıfır gösterir | UNKNOWN / OPS | Error/empty semantics eksik |
-| PR-RT-53 | Workload join çoğalması load'u şişirir | CONDITIONAL / P2 OPS | Metric lineage eksik |
-| PR-RT-54 | Tenant switch sonrası eski cache | CONDITIONAL | Cache key revalidation |
-| PR-RT-55 | Offboarding event iki kez işlenir | NOT APPLICABLE CURRENTLY | Future idempotency |
-| PR-RT-56 | Export bütün dataset'i memory'ye alır | CONDITIONAL / P3 | Streaming/limit kanıtı yok |
-| PR-RT-57 | Workload listesinde N+1 | OBSERVED / P3 | PERF-001 |
-| PR-RT-58 | Search index tenant filtresi client parametresi | UNKNOWN | Search evidence gap |
-| PR-RT-59 | Queue retry duplicate approval/assignment | UNKNOWN | Event/job idempotency eksik |
-| PR-RT-60 | Cache/queue outage fail-open | UNKNOWN / RELEASE GATE | Fail-closed doğrulanmalı |
+| PR-RT-01 | Davet/token sahiplik doğrulaması senaryosu | LIKELY PREVENTED | Integration gate ayrıca korunmalı |
+| PR-RT-02 | Süresi dolmuş davetin yeniden kullanımı senaryosu | LIKELY PREVENTED | Expiry kontrolü ayrıca doğrulanmalı |
+| PR-RT-03 | Pasifleştirilmiş hesabın geçerli oturumla işlem yapması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | STF-PRD-SES-001 |
+| PR-RT-04 | Üyelik kapalıyken yenileme işleminin durumu senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | STF-PRD-SES-001 ile aynı aile |
+| PR-RT-05 | Birden fazla kaynaktan gelen kiracı (tenant) bilgisi arasında tutarlılık senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Kaynak önceliklendirmesi ayrıca doğrulanmalı |
+| PR-RT-06 | İstek gövdesindeki kiracı bilgisinin doğrulanması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Kritik istisnalar mevcut; ayrıca doğrulanmalı |
+| PR-RT-07 | Farklı kiracılar arası kayıt görüntüleme izolasyonu senaryosu | LIKELY PREVENTED | Rota bazlı yeniden kontrol önerilir |
+| PR-RT-08 | Farklı kiracılar arası kayıt güncelleme izolasyonu senaryosu | LIKELY PREVENTED | Aynı sınırlama geçerli |
+| PR-RT-09 | Karışık-kiracı içerikli toplu işlem senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Toplu işlem madde-bazlı doğrulama ayrıca kanıtlanmalı |
+| PR-RT-10 | Kiracı bilgisi içermeyen önbellek anahtarı senaryosu | UNKNOWN | Önbellek anahtarı tasarımı ayrıca kanıtlanmalı |
+| PR-RT-11 | Genel güncelleme uç noktası üzerinden yetki alanlarının değiştirilmesi senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Alan bazlı yazma kontrolü ayrıca eklenmeli |
+| PR-RT-12 | Aktörün kendi rolünü değiştirmesi senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Yetki tavanı kontrolü ayrıca eklenmeli |
+| PR-RT-13 | Aktörün sahip olmadığı yetkiyi başkasına vermesi senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Canonical yetki tavanı eksik |
+| PR-RT-14 | Korunan bir rolün çoğaltılması senaryosu | UNKNOWN | Korunan rol modeli ayrıca netleştirilmeli |
+| PR-RT-15 | Son yetkili yönetici hesabının kaldırılması senaryosu | UNKNOWN / OWNER DECISION | Invariant ayrıca doğrulanmalı |
+| PR-RT-16 | Süresi dolmuş/silinmiş yetki kaydının hâlâ etkili olması senaryosu | UNKNOWN / P3 | Filtre/constraint denetimi ayrıca kanıtlanmalı |
+| PR-RT-17 | Rol iptali sonrası önceki oturum bilgisinin geçerliliği senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Yetki bilgisi yenileme stratejisiyle ilişkili |
+| PR-RT-18 | Delegasyonun kapsam/limit genişletmesi senaryosu | UNKNOWN / HIGH CONTROL NEED | Delegasyon modeli hedefte ayrıca netleştirilmeli |
+| PR-RT-19 | Kullanıcının kendi işlemini onaylaması senaryosu | PREVENTED | Kendi-kendini-onaylama kontrolü güçlü (olumlu bulgu) |
+| PR-RT-20 | Aynı kişinin ikinci hesapla kendi işlemini onaylaması senaryosu | MITIGATED / RECHECK | Kararlı kimlik (Person) düzeyinde kontrol gerekli |
+| PR-RT-21 | Düşük yetki seviyeli onay politikasının seçilebilmesi senaryosu | LIKELY PREVENTED | Onay politikası çekirdeği güçlü |
+| PR-RT-22 | Onay sonrası tutar/para birimi değerinin değişmesi senaryosu | LIKELY PREVENTED / HARDEN | Yetki anlık görüntüsü (snapshot) eksik |
+| PR-RT-23 | Onay adımının paralel olarak iki kez tamamlanması senaryosu | PREVENTED | Eşzamanlılık kontrolleri güçlü (olumlu bulgu) |
+| PR-RT-24 | Onay sırasının atlanması senaryosu | PREVENTED | Adım/durum koruması güçlü (olumlu bulgu) |
+| PR-RT-25 | Yetki iptali sonrası bekleyen onayın durumu senaryosu | CONDITIONAL | Yetki anlık görüntüsü eksik |
+| PR-RT-26 | Toplu onay işleminde kendi-kendini-onaylama kontrolünün atlanması senaryosu | UNKNOWN | Toplu işlem yüzeyi ayrıca doğrulanmalı |
+| PR-RT-27 | Başka kullanıcı adına işlem yapma yoluyla onay senaryosu | NOT APPLICABLE CURRENTLY | İlgili yetenek mevcut değil |
+| PR-RT-28 | Onaylanan kaynağın kesinleşme öncesi değişmesi senaryosu | LIKELY PREVENTED | Versiyon anlık görüntüsü önerilir |
+| PR-RT-29 | Offboarding işleminin kısmen tamamlanması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Orchestrator eksik |
+| PR-RT-30 | Offboarding işleminin geri alınması senaryosu | UNKNOWN | Compensation konusu |
+| PR-RT-31 | Sonlandırılan personelin yetki kaydının aktif kalması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Lifecycle kalıntısı |
+| PR-RT-32 | Delegasyon verenin sonlandırılması sonrası delegasyonun durumu senaryosu | CONDITIONAL | Entegrasyon eksik |
+| PR-RT-33 | Sorumluluk devri sonrası erişim kalıntısı senaryosu | CONDITIONAL | Assignment/access kalıntısı |
+| PR-RT-34 | Bekleyen onayın eski onaylayıcıda kalması senaryosu | CONDITIONAL | Offboarding handoff'u eksik |
+| PR-RT-35 | Offboarding sürecinde yeni görev ataması senaryosu | CONDITIONAL | Lifecycle kilidi eksik |
+| PR-RT-36 | Yeniden aktifleştirmenin önceki yetkileri açması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | STF-PRD-LIFE-001 |
+| PR-RT-37 | Yeniden işe alımın önceki yetki/delegasyonu açması senaryosu | CONDITIONAL | Rehire, yeni çalışma ilişkisi olarak ele alınmalı |
+| PR-RT-38 | Son yetkili yönetici/sahip hesabının offboard edilmesi senaryosu | UNKNOWN | Owner kararı/invariant gerekli |
+| PR-RT-39 | Aynı kişi için eşzamanlı kayıt oluşturma senaryosu | CONDITIONAL / P3 | Veritabanı düzeyi benzersizlik/eşzamanlılık kontrolü |
+| PR-RT-40 | Aynı sorumluluk için eşzamanlı kayıt oluşturma senaryosu | CONDITIONAL / P3 | Çokluluk kısıtı ayrıca netleştirilmeli |
+| PR-RT-41 | Aynı görevin iki farklı yönetici tarafından farklı şekilde atanması senaryosu | CONDITIONAL | Versiyon/kilitleme/eşzamanlılık ayrıca netleştirilmeli |
+| PR-RT-42 | Yetki verme ve iptalinin eşzamanlı gerçekleşmesi senaryosu | CONDITIONAL | Önbellek/veritabanı eşzamanlılığı ayrıca netleştirilmeli |
+| PR-RT-43 | Üyelik kapanırken kiracı değişikliği yapılması senaryosu | CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE | Oturum/üyelik durum çakışması |
+| PR-RT-44 | Onay kaydı ile ilişkili kaynak versiyonunun ayrışması senaryosu | MITIGATED / HARDEN | Açık versiyon anlık görüntüsü önerilir |
+| PR-RT-45 | Kalıcı silme işleminin denetim aktörü referanslarına etkisi senaryosu | PREVENTED / REJECTED | Kalıcı silme yolu mevcut değil (olumlu bulgu) |
+| PR-RT-46 | Silinmiş yetki kaydının sorguya dahil olması senaryosu | UNKNOWN / P3 | Filtre/constraint denetimi ayrıca kanıtlanmalı |
+| PR-RT-47 | Kaynak referansı üzerinden yetkisiz belge erişimi senaryosu | UNKNOWN / HARDENING | Nesne düzeyi yetkilendirme ayrıca eklenmeli |
+| PR-RT-48 | Oluşturma ve indirme aşamalarında farklı yetkilendirme seviyesi senaryosu | UNKNOWN / HARDENING | İki aşamalı yetkilendirme ayrıca doğrulanmalı |
+| PR-RT-49 | Dışa aktarım içeriğinin doğrulanmadan işlenmesi senaryosu | UNKNOWN | Girdi doğrulama/escaping ayrıca doğrulanmalı |
+| PR-RT-50 | Personel dışa aktarımının hassas alanları geniş içermesi senaryosu | CONDITIONAL / P2 PRIVACY | Alan bazlı izin listesi/maskeleme gerekli |
+| PR-RT-51 | Arama sonuçlarının farklı kiracı kayıtlarını döndürmesi senaryosu | LIKELY PREVENTED / RECHECK | Arama/indeks yüzeyi ayrıca doğrulanmalı |
+| PR-RT-52 | Yetkisiz erişim/hata durumunun sıfır olarak gösterilmesi senaryosu | UNKNOWN / OPS | Hata/boş durum semantiği eksik |
+| PR-RT-53 | Veri birleştirme işleminin yük hesaplamasını etkilemesi senaryosu | CONDITIONAL / P2 OPS | Metrik hesaplama yöntemi eksik |
+| PR-RT-54 | Kiracı değişikliği sonrası önbelleğin eski veriyi göstermesi senaryosu | CONDITIONAL | Önbellek anahtarı yeniden doğrulaması gerekli |
+| PR-RT-55 | Offboarding olayının tekrar işlenmesi senaryosu | NOT APPLICABLE CURRENTLY | İleride idempotency gerekir |
+| PR-RT-56 | Dışa aktarımın tüm veri kümesini belleğe yüklemesi senaryosu | CONDITIONAL / P3 | Akış/limit kanıtı yok |
+| PR-RT-57 | Personel listesi sorgusunda performans darboğazı senaryosu | OBSERVED / P3 | STF-PRD-PERF-001; performans konusu |
+| PR-RT-58 | Arama indeksi kiracı filtresinin istemci tarafından belirlenmesi senaryosu | UNKNOWN | Arama implementasyonu kanıt boşluğu |
+| PR-RT-59 | Yeniden deneme mekanizmasının yinelenen işlem üretmesi senaryosu | UNKNOWN | Olay/iş idempotency'si eksik |
+| PR-RT-60 | Önbellek/kuyruk kesintisinde güvenli-olmayan varsayılan davranış senaryosu | UNKNOWN / RELEASE GATE | Fail-closed davranışı ayrıca doğrulanmalı |
 
 ## 8. Evidence Gaps
 
 - Kaynak A/B'nin repo-verifiable kanıt zinciri yok (bkz. §2).
-- Bu synthesis'in hiçbir maddesi bu workstream içinde canonical repository HEAD'e karşı yeniden doğrulanmadı (runtime analizi bu turlarda FORBIDDEN'dı).
-- LawyerCredential eligibility, cross-tenant replacement constraint, ve delegation lifecycle gibi alanlar için ayrı end-to-end kanıt eksikliği tekrarlayan bir temadır (bkz. UNKNOWN etiketli maddeler).
+- Bu synthesis'in hiçbir maddesi bu workstream içinde canonical repository HEAD'e karşı yeniden doğrulanmadı (runtime analizi bu workstream'de FORBIDDEN'dı).
+- `CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE` etiketli maddelerin tam teknik kanıtı owner'ın local ortamında tutulur; bu belge yalnız mimari kategoriyi ve severity'yi taşır.
+- Mesleki yeterlilik (credential) eligibility, kiracılar-arası devir kısıtı ve delegasyon yaşam döngüsü gibi alanlar için ayrı end-to-end kanıt eksikliği tekrarlayan bir temadır (bkz. `UNKNOWN` etiketli maddeler).
 
 ## 9. Excluded Content Note
 
@@ -226,7 +232,7 @@ Candidate rapordaki "Disposition" değerleri şu taksonomiye eşlenir (merkezi e
 
 ## 10. Non-Normativity Statement
 
-Bu belge **norm üretmez**. Yalnız `OFFICE-GOVERNANCE.md`'nin invariant'ları bağlayıcıdır. Bu belge yalnız o invariant'ların kanıt/gerekçe/senaryo temelini taşır.
+Bu belge **norm üretmez**. Yalnız `OFFICE-GOVERNANCE.md`'nin invariant'ları bağlayıcıdır. Bu belge yalnız o invariant'ların kanıt/gerekçe/senaryo temelini, public-repository-safe biçimde taşır.
 
 ## 11. Reclassified Items
 
