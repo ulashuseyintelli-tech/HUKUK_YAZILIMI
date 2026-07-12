@@ -2,7 +2,7 @@
 
 ```text
 Belge yolu : project/docs/governance/OFFICE-RISK-REGISTER.md
-Durum      : DRAFT — NOT YET TRIAGED
+Durum      : CANONICAL DOMAIN RISK DOSSIER (owner text-ratification: 2026-07-13; canonical SHA `6fa8395dc9d7f25d37a9330fe454b1d6724522a5`)
 Rol        : DOMAIN RISK DOSSIER AND TRACEABILITY SOURCE
              GLOBAL TRIAGE / EXECUTION STATUS SOURCE OF TRUTH DEĞİL
 ```

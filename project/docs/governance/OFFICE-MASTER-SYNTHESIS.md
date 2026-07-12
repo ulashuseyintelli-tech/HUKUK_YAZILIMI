@@ -2,7 +2,7 @@
 
 ```text
 Belge yolu : project/docs/governance/OFFICE-MASTER-SYNTHESIS.md
-Durum      : DRAFT — EVIDENCE REVIEW REQUIRED
+Durum      : CANONICAL REFERENCE / NON-NORMATIVE EVIDENCE BASELINE (owner text-ratification: 2026-07-13; canonical SHA `6fa8395dc9d7f25d37a9330fe454b1d6724522a5`)
 Rol        : SYNTHESIS / EVIDENCE / NON-NORMATIVE — CANNOT OVERRIDE DOMAIN LAW
 ```
 
