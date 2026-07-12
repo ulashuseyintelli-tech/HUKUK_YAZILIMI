@@ -5,10 +5,17 @@ import { BalanceDisplayShadowDiffController } from './balance-display-shadow-dif
 import { BalanceDisplayShadowDiffService } from './balance-display-shadow-diff.service';
 import { BalanceDisplayShadowDiffMetrics } from './balance-display-shadow-diff.metrics';
 import { BalanceDisplayShadowDiffEventLogger } from './balance-display-shadow-diff-event-logger';
+import { BalanceDisplayShadowDiffAuditCorrelationPreparation } from './balance-display-shadow-diff-audit-correlation';
 
 @Module({
   imports: [CaseModule, InterestEngineModule],
   controllers: [BalanceDisplayShadowDiffController],
-  providers: [BalanceDisplayShadowDiffService, BalanceDisplayShadowDiffMetrics, BalanceDisplayShadowDiffEventLogger],
+  providers: [
+    BalanceDisplayShadowDiffService,
+    BalanceDisplayShadowDiffMetrics,
+    BalanceDisplayShadowDiffEventLogger,
+    BalanceDisplayShadowDiffAuditCorrelationPreparation,
+  ],
+  exports: [BalanceDisplayShadowDiffAuditCorrelationPreparation],
 })
 export class BalanceDisplayShadowDiffModule {}
