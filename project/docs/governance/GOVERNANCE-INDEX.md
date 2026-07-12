@@ -2,10 +2,7 @@
 
 ```text
 Belge yolu : project/docs/governance/GOVERNANCE-INDEX.md
-Durum      : PROPOSED — owner talimatıyla oluşturuldu (2026-07-12).
-             Taşıyan PR #1139 MERGED (squash 413890dd, 2026-07-12, CI 4/4 PASS), ancak
-             PR merge'i belge metnini ratifiye ETMEZ; RATIFIED yalnız owner'ın bu belgenin
-             metnini ayrıca onaylamasıyla (ayrı governance PR ile) gerçekleşir.
+Durum      : RATIFIED — repository effect approved merge ile başlar.
 Rol        : Yeni bir göreve başlayan ajanın hangi belgeyi hangi sırayla okuyacağını tanımlar.
 ```
 
@@ -18,9 +15,9 @@ Rol        : Yeni bir göreve başlayan ajanın hangi belgeyi hangi sırayla oku
 
 ```text
 Yeni görev
-→ AGENTS.md                                   (ajan baseline; CLAUDE.md supplement)
-→ SYSTEM-CONSTITUTION.md                      (governance çatısı)
-→ İlgili domain governance                    (borçlu hattı: DEBTOR-GOVERNANCE.md
+→ AGENTS.md                                   (execution ve repository-safety authority)
+→ SYSTEM-CONSTITUTION.md                      (system-wide semantic authority)
+→ İlgili Domain Law / domain governance       (borçlu hattı: DEBTOR-GOVERNANCE.md
                                                + Mandatory Pre-Task Checklist doldurulur)
 → İlgili contract / standard                  (varsa; domain belgesinin RELATED DOCUMENTS listesinden)
 → İlgili ADR                                  (architecture-index.md → project/docs/adr/)
@@ -37,10 +34,13 @@ Master Register kontrolü hiçbir borçlu-hattı görevinde atlanamaz.
 
 | Belge | Rol | Durum |
 |---|---|---|
-| `AGENTS.md` (repo kökü) | tüm ajanlar için zorunlu baseline | AKTİF |
-| `project/docs/governance/SYSTEM-CONSTITUTION.md` | governance çatısı ve hiyerarşi | PROPOSED (metin ratifikasyonu bekliyor; PR #1139 MERGED) |
-| `project/docs/governance/GOVERNANCE-INDEX.md` | okuma sırası + belge haritası | PROPOSED (metin ratifikasyonu bekliyor; PR #1139 MERGED) |
-| `project/docs/governance/DEBTOR-GOVERNANCE.md` | borçlu hattı kanonik operasyonel referans | RATIFIED v1.0 (2026-07-12; PR #1139 MERGED) |
+| `AGENTS.md` (repo kökü) | agent execution ve repository-safety authority | AKTİF |
+| `project/docs/governance/SYSTEM-CONSTITUTION.md` | system-wide semantic authority | RATIFIED — BINDING; repository-canonical upon approved merge |
+| `project/docs/governance/GOVERNANCE-INDEX.md` | okuma sırası + belge/authority haritası | RATIFIED; repository effect approved merge ile başlar |
+| `project/docs/governance/DEBTOR-GOVERNANCE.md` | ratifiye Debtor Domain Law | RATIFIED v1.0 (2026-07-12; PR #1139 MERGED) |
+| `project/docs/adr/` + `architecture-index.md` | teknik/mimari kararlar ve gerekçeleri | KAYITLI STATÜYE GÖRE |
+| Implementation standards | code/API/test/deployment/operation conventions | BELGE STATÜSÜNE GÖRE |
+| Roadmap / Master Register | work sequencing, owner gates ve closure state | AKTİF; authority/implementation izni üretmez |
 | `project/docs/governance/README.md` | governance klasör tanımı ve dosya listesi | AKTİF |
 | `project/docs/governance/decision-log.md` | kronolojik karar kaydı | AKTİF |
 | `project/docs/governance/architecture-index.md` | repo ADR kütüğü indeksi | AKTİF |
@@ -51,7 +51,21 @@ Master Register kontrolü hiçbir borçlu-hattı görevinde atlanamaz.
 | `project/docs/analysis/debtor-master-synthesis-v2.md` | borçlu hattı kanıt/gerekçe katmanı (operasyonel değil) | KANIT — SUPERSEDED BY governance |
 | Receivable Governance / Collection Governance | gelecek domain governance belgeleri | REZERVE (henüz yazılmadı) |
 
-## 3. "Neden bu kural var?" zinciri
+## 3. Authority eksenleri
+
+```text
+Semantic authority:
+SYSTEM-CONSTITUTION → Domain Law → ADR → Implementation
+
+Execution and safety authority:
+AGENTS.md + repository policies + task authorization + environment/tool restrictions
+```
+
+Bu eksenler tek doğrusal üstünlük sırası değildir. Semantic authority execution izni
+vermez; execution authority domain semantiğini değiştirmez. Her görev iki eksene aynı
+anda uymalıdır.
+
+## 4. "Neden bu kural var?" zinciri
 
 Bir governance kuralının gerekçesi arandığında iz şudur:
 

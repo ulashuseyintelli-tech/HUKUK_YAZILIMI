@@ -33,6 +33,28 @@ Yol sözleşmesi: Bu belgedeki tüm repo yolları repo köküne göredir ve `pro
 
 ## 1. Document Authority
 
+### System Constitution v1.0 Alignment
+
+`SYSTEM-CONSTITUTION.md` sistem çapında üst semantik normdur; bu belge ratifiye edilmiş
+Debtor Domain Law olarak onu borçlu domaininde ayrıntılandırır, değiştiremez veya
+zayıflatamaz. Bu belgedeki `Party`, `Liability`, `LegalServiceDate`, `LegalStatus`,
+`EnforcementEligibility` ve `LegalGuard` ifadeleri aksi açıkça belirtilmedikçe **target
+domain authority**'dir; belgede bulunmaları current runtime implementation veya cutover
+kanıtı değildir. Current runtime statüsü System Constitution'ın current/target modeli,
+repository evidence ve ilgili compliance kayıtlarından okunur.
+
+`LegalServiceDate = Tebligat.tebligSayilmaDate` bu Domain Law'ın target authority
+ifadesidir; cutover tamamlanmadan production current authority olarak kullanılamaz.
+Competing legal-time authority varsa `PRODUCTION_NO_GO` uygulanır. Finansal kesişimlerde
+DBIND, TM3 ve Constitution'ın `Collection Receipt ≠ Legal Allocation / TBK 100 ≠
+Creditor Disposition ≠ Payout / Offset ≠ Accounting Journal Posting` ayrımı korunur.
+`SettlementOffer`, `LegalSettlement / Sulh` ile `ClientSettlement / Creditor Disposition`
+ayrımını bozamaz.
+
+§8 foundation order ve Master Synthesis roadmap'i implementation sırasıdır; tek başına
+canonical authority, runtime izni, cutover veya owner approval oluşturmaz. Alignment
+note ile çözülemeyen gerçek norm çatışması owner-governance amendment gerektirir.
+
 **Amaç.** Bu belge, borçlu platformu hattındaki bütün ajan görevleri (Claude, Codex veya başka bir ajan) için **bağlayıcı başlangıç referansıdır**. Master Synthesis'te uzlaştırılmış kanonik kararları kısa, kesin ve operasyonel kurallara çevirir. Analiz, tasarım, implementation, review ve governance görevleri bu belgedeki terminoloji, sahiplik, invariant, sıra ve gate kurallarına uymak zorundadır.
 
 **Kapsam.** §2'de listelenen borçlu hattı alanları. Bu alanlardaki model, servis, controller, migration, event, read-model, UI yüzeyi ve governance işleri kapsamdadır.

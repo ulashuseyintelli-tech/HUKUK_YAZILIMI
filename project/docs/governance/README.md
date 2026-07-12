@@ -4,20 +4,25 @@ Bu klasör HUKUK_YAZILIMI için kalıcı governance kayıt alanıdır.
 
 Tek kaynak modeli:
 
-- `AGENTS.md` bu repo için tüm ajanlara yönelik repository-level zorunlu baseline'dır.
+- `AGENTS.md` bu repo için tüm ajanlara yönelik execution ve repository-safety baseline'ıdır.
 - `CLAUDE.md` Claude'a özgü operasyonel supplement'tir; `AGENTS.md` ile çelişemez veya onu override edemez.
 - `project/docs/governance/` roadmap, backlog, decision ve süreç kayıtlarını tutar; bu kayıtlar `AGENTS.md` ile tutarlı olmalıdır.
 - Gelecekteki repo-local skill'ler resmi Codex scan yüzeyi olan `.agents/skills/` altında tanımlanır.
 - `.codex/` Codex operasyonel config, hooks ve project-scoped custom agents yüzeyidir; mevcut owner/user WIP sayılır ve açık yetki olmadan değiştirilmez.
 - Repository-wide AI ground-truth rule: Sohbet geçmişi yalnız niyet ve karar taşır; mevcut gerçekler her görevde repository state, git state, dosya içeriği, governance kayıtları, PR/CI durumu ve komut çıktılarından yeniden doğrulanır.
 
-Bu klasör `AGENTS.md` yerine geçmez ve ikinci bir kural seti oluşturmaz. Bir governance kuralı `AGENTS.md` ile çelişirse `AGENTS.md` uygulanır; governance dosyası düzeltilmek üzere raporlanır.
+Bu klasör `AGENTS.md` yerine geçmez. `AGENTS.md` execution/repository-safety,
+`SYSTEM-CONSTITUTION.md` system-wide domain/business semantiği otoritesidir. Semantic
+authority execution izni üretmez; execution authority domain semantiğini değiştirmez.
+Bir görev her iki authority eksenine aynı anda uymalıdır.
 
 Dosyalar:
 
-- `SYSTEM-CONSTITUTION.md` - governance belge hiyerarşisinin çatısı (PROPOSED — metin ratifikasyonu bekliyor).
-- `GOVERNANCE-INDEX.md` - yeni göreve başlayan ajan için okuma sırası ve belge haritası (PROPOSED — metin ratifikasyonu bekliyor).
-- `DEBTOR-GOVERNANCE.md` - borçlu hattı kanonik ve bağlayıcı operasyonel referans (RATIFIED v1.0, 2026-07-12).
+- `SYSTEM-CONSTITUTION.md` - system-wide semantic authority (RATIFIED — BINDING;
+  repository-canonical upon approved merge).
+- `GOVERNANCE-INDEX.md` - yeni göreve başlayan ajan için okuma sırası ve authority haritası
+  (RATIFIED; repository effect approved merge ile başlar).
+- `DEBTOR-GOVERNANCE.md` - ratifiye Debtor Domain Law (RATIFIED v1.0, 2026-07-12).
 - `active-roadmap.md` - aktif fazlar ve implementasyona açık işler.
 - `product-backlog.md` - yeni governance Product Backlog hedef kaydı.
 - `architecture-index.md` - kesinleşmiş mimari kararların indeksi.
