@@ -1,15 +1,33 @@
 import { BalanceDisplayShadowDiffService, cutoverReadiness } from '../balance-display-shadow-diff.service';
-import type { BalanceDisplayShadowDiffReport } from '../balance-display-shadow-diff.types';
+import {
+  SHADOW_FINANCIAL_DIFF_FIELDS,
+  type BalanceDisplayShadowDiffReport,
+  type ShadowRequiredComparisonEvidence,
+} from '../balance-display-shadow-diff.types';
 import type { CaseService } from '../../case/case.service';
 import type { CaseBalanceService, CaseBalanceResult } from '../../interest-engine/orchestration/case-balance.service';
 import {
   CANONICAL_SUMMARY_ROWS_CONTRACT_VERSION,
   CANONICAL_SUMMARY_TARGET_ROW_IDS,
 } from '../../interest-engine/orchestration/canonical-summary-rows';
+import { buildCaseBalanceFeeProjection } from '../../interest-engine/orchestration/case-balance-fee-projection';
 import { AncillaryType } from '../../interest-engine/types/domain.types';
 
 const GENERATED_AT = '2026-06-24T10:00:00.000Z';
 const TARGET_LEGACY_FINANCIAL_ROWS = ['tazminat', 'komisyon', 'takipOncesiFaiz'] as const;
+const ALL_REQUIRED_COMPARISON_EVIDENCE: ShadowRequiredComparisonEvidence = {
+  paymentAllocationTotals: true,
+  interestBase: true,
+  feeProjection: true,
+};
+
+function exactFinancialDiffs(): any[] {
+  return Object.keys(SHADOW_FINANCIAL_DIFF_FIELDS).map((code) => ({
+    code,
+    status: 'MATCH',
+    severity: 'GREEN',
+  }));
+}
 
 function legacySummary(overrides: Record<string, unknown> = {}) {
   return {
@@ -57,6 +75,10 @@ function canonicalBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalan
       costs: { [AncillaryType.HARC]: 50 },
       ancillaries: { [AncillaryType.VEKALET_UCRETI]: 150 },
     },
+    feeProjection: buildCaseBalanceFeeProjection({
+      sourceItems: [],
+      currencyResults: [{ currency: 'TRY', resultAvailable: true }],
+    }),
     diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
     overpayments: {
       held: [
@@ -404,6 +426,7 @@ describe('BalanceDisplayShadowDiffService', () => {
         faizSegmentleri: { takipOncesi: [], takipSonrasi: [{ id: 'legacy-post' }] },
         toplamTahsilat: 100,
         kalanBorc: 1100,
+        sonBorc: 225,
         icraMasraflari: 50,
         vekaletUcreti: 150,
       }),
@@ -441,11 +464,19 @@ describe('BalanceDisplayShadowDiffService', () => {
     expect(report.provenance.claimItemCollectedAmountUsedAsAuthority).toBe(false);
     expect(report.sources.canonicalBalanceDisplay.diagnostics).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
     expect(report.sources.canonicalBalanceDisplay.diagnostics).not.toContain('FINAL_DEBT_STATES_MISSING');
-    expect(report.cutoverReadiness.blockers).toEqual([]);
-    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(true);
+    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
+      'PAID_DELTA',
+      'COSTS_DELTA',
+      'ATTORNEY_FEE_DELTA',
+      'EXPENSE_BUCKET_DELTA',
+      'ATTORNEY_FEE_BUCKET_DELTA',
+      'MISSING_PAYMENT_ALLOCATION_COMPARISON_EVIDENCE',
+      'MISSING_INTEREST_BASE_COMPARISON_EVIDENCE',
+      'MISSING_FEE_PROJECTION_COMPARISON_EVIDENCE',
+    ]));
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
     expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
-    expect(report.totals.diffs.filter((diff) => diff.severity === 'RED')).toEqual([]);
-    expect(report.bucketDiffs.filter((diff) => diff.severity === 'RED')).toEqual([]);
+    expect(report.totals.diffs.find((diff) => diff.code === 'TOTAL_DEBT_DELTA')).toBeDefined();
   });
 
   it('blocks primary readiness when actual ClaimItem authority contamination is proven', () => {
@@ -457,48 +488,147 @@ describe('BalanceDisplayShadowDiffService', () => {
         },
       } as any,
       blockers: [],
-      totalDiffs: [],
+      totalDiffs: exactFinancialDiffs(),
       bucketDiffs: [],
+      requiredEvidence: ALL_REQUIRED_COMPARISON_EVIDENCE,
     });
 
     expect(readiness.blockers).toEqual(['CLAIM_ITEM_AUTHORITY_CONTAMINATION']);
     expect(readiness.safeForPrimaryDisplay).toBe(false);
   });
 
-  // ALC-AUTH-1A: B1 guarded primary gate principal + interest + payment ile sinirlandi.
-  // Cost/vekalet (icraMasraflari/vekaletUcreti <-> canonical costs/ATTORNEY_FEE) buyuk delta
-  // vermesi BEKLENIR (farkli otorite/kaynak) -- artik readiness'i bloklamamali, yalniz
-  // diagnostic olarak (totalDiffs/bucketDiffs icinde) raporlanmaya devam eder.
-  it('ALC-AUTH-1A: RED severity COSTS_DELTA/ATTORNEY_FEE_DELTA/EXPENSE_BUCKET_DELTA/ATTORNEY_FEE_BUCKET_DELTA readiness bloklamaz', () => {
+  it('ADR014-PE-01A: B1 cost/fee/expense alanlari NOT_COMPARABLE ise readiness fail-closed kalir', () => {
+    const b1Codes = new Set([
+      'COSTS_DELTA',
+      'ATTORNEY_FEE_DELTA',
+      'EXPENSE_BUCKET_DELTA',
+      'ATTORNEY_FEE_BUCKET_DELTA',
+    ]);
+    const diffs = exactFinancialDiffs().map((diff) => b1Codes.has(diff.code)
+      ? { ...diff, status: 'NOT_COMPARABLE', severity: 'UNKNOWN_NEEDS_FOLLOWUP' }
+      : diff);
     const readiness = cutoverReadiness({
       display: { diagnostics: [], provenance: {} } as any,
       blockers: [],
-      totalDiffs: [
-        { code: 'COSTS_DELTA', severity: 'RED' } as any,
-        { code: 'ATTORNEY_FEE_DELTA', severity: 'RED' } as any,
-      ],
-      bucketDiffs: [
-        { code: 'EXPENSE_BUCKET_DELTA', severity: 'RED' } as any,
-        { code: 'ATTORNEY_FEE_BUCKET_DELTA', severity: 'RED' } as any,
-      ],
+      totalDiffs: diffs,
+      bucketDiffs: [],
+      requiredEvidence: ALL_REQUIRED_COMPARISON_EVIDENCE,
+    });
+
+    expect(readiness.blockers).toEqual(expect.arrayContaining([...b1Codes]));
+    expect(readiness.safeForPrimaryDisplay).toBe(false);
+  });
+
+  it('ADR014-PE-01A: tum evidence exact match ise case-level readiness true olabilir', () => {
+    const readiness = cutoverReadiness({
+      display: { diagnostics: [], provenance: {} } as any,
+      blockers: [],
+      totalDiffs: exactFinancialDiffs(),
+      bucketDiffs: [{
+        code: 'HELD_OVERPAYMENT_BUCKET_DELTA',
+        status: 'CANONICAL_ONLY',
+        severity: 'YELLOW',
+      } as any],
+      requiredEvidence: ALL_REQUIRED_COMPARISON_EVIDENCE,
     });
 
     expect(readiness.blockers).toEqual([]);
     expect(readiness.safeForPrimaryDisplay).toBe(true);
   });
 
-  it('ALC-AUTH-1A: scope-exempt olmayan RED diff (orn. OUTSTANDING_DELTA) readiness bloklamaya devam eder', () => {
+  it.each(
+    Object.keys(SHADOW_FINANCIAL_DIFF_FIELDS).flatMap((code) => [
+      { code, minorUnitDelta: 1, delta: 0.01 },
+      { code, minorUnitDelta: -1, delta: -0.01 },
+    ]),
+  )('ADR014-PE-01A: $code $minorUnitDelta minor-unit farki primary readiness bloklar', ({ code, delta }) => {
+    const diffs = exactFinancialDiffs().map((diff) => diff.code === code
+      ? {
+          ...diff,
+          classification: 'EXPECTED_CANONICAL_DIVERGENCE',
+          status: 'MAJOR_DELTA',
+          severity: 'RED',
+          delta,
+        }
+      : diff);
     const readiness = cutoverReadiness({
       display: { diagnostics: [], provenance: {} } as any,
       blockers: [],
-      totalDiffs: [
-        { code: 'OUTSTANDING_DELTA', severity: 'RED' } as any,
-        { code: 'COSTS_DELTA', severity: 'RED' } as any,
-      ],
+      totalDiffs: diffs,
       bucketDiffs: [],
+      requiredEvidence: ALL_REQUIRED_COMPARISON_EVIDENCE,
+    });
+
+    expect(readiness.blockers).toContain(code);
+    expect(readiness.safeForPrimaryDisplay).toBe(false);
+  });
+
+  it('ADR014-PE-01A: backward-compatible MINOR_DELTA girdisi dahi fail-closed bloklanir', () => {
+    const diffs = exactFinancialDiffs().map((diff) => diff.code === 'OUTSTANDING_DELTA'
+      ? { ...diff, status: 'MINOR_DELTA', severity: 'YELLOW', delta: 0.01 }
+      : diff);
+    const readiness = cutoverReadiness({
+      display: { diagnostics: [], provenance: {} } as any,
+      blockers: [],
+      totalDiffs: diffs,
+      bucketDiffs: [],
+      requiredEvidence: ALL_REQUIRED_COMPARISON_EVIDENCE,
     });
 
     expect(readiness.blockers).toEqual(['OUTSTANDING_DELTA']);
+    expect(readiness.safeForPrimaryDisplay).toBe(false);
+  });
+
+  it('ADR014-PE-01A: scope-exempt olmayan non-zero financial diff readiness bloklar', () => {
+    const diffs = exactFinancialDiffs().map((diff) => diff.code === 'OUTSTANDING_DELTA'
+      ? { ...diff, status: 'MAJOR_DELTA', severity: 'RED' }
+      : diff);
+    const readiness = cutoverReadiness({
+      display: { diagnostics: [], provenance: {} } as any,
+      blockers: [],
+      totalDiffs: diffs,
+      bucketDiffs: [],
+      requiredEvidence: ALL_REQUIRED_COMPARISON_EVIDENCE,
+    });
+
+    expect(readiness.blockers).toEqual(['OUTSTANDING_DELTA']);
+    expect(readiness.safeForPrimaryDisplay).toBe(false);
+  });
+
+  it('ADR014-PE-01A: UNKNOWN/NOT_COMPARABLE financial evidence readiness bloklar', () => {
+    const diffs = exactFinancialDiffs().map((diff) => diff.code === 'INTEREST_DELTA'
+      ? { ...diff, status: 'NOT_COMPARABLE', severity: 'UNKNOWN_NEEDS_FOLLOWUP' }
+      : diff);
+    const readiness = cutoverReadiness({
+      display: { diagnostics: [], provenance: {} } as any,
+      blockers: [],
+      totalDiffs: diffs,
+      bucketDiffs: [],
+      requiredEvidence: ALL_REQUIRED_COMPARISON_EVIDENCE,
+    });
+
+    expect(readiness.blockers).toContain('INTEREST_DELTA');
+    expect(readiness.safeForPrimaryDisplay).toBe(false);
+  });
+
+  it('ADR014-PE-01A: direct comparison evidence eksikse sahte MATCH yerine typed blocker uretir', () => {
+    const readiness = cutoverReadiness({
+      display: { diagnostics: [], provenance: {} } as any,
+      blockers: [],
+      totalDiffs: exactFinancialDiffs(),
+      bucketDiffs: [],
+      requiredEvidence: {
+        paymentAllocationTotals: false,
+        interestBase: false,
+        feeProjection: false,
+      },
+    });
+
+    expect(readiness.blockers).toEqual(expect.arrayContaining([
+      'MISSING_PAYMENT_ALLOCATION_COMPARISON_EVIDENCE',
+      'MISSING_INTEREST_BASE_COMPARISON_EVIDENCE',
+      'MISSING_FEE_PROJECTION_COMPARISON_EVIDENCE',
+    ]));
     expect(readiness.safeForPrimaryDisplay).toBe(false);
   });
 
@@ -539,6 +669,7 @@ describe('BalanceDisplayShadowDiffService', () => {
         faizSegmentleri: { takipOncesi: [], takipSonrasi: [{ id: 'legacy-post' }] },
         toplamTahsilat: 100,
         kalanBorc: 1100,
+        sonBorc: 225,
         icraMasraflari: 50,
         vekaletUcreti: 150,
       }),
@@ -565,7 +696,13 @@ describe('BalanceDisplayShadowDiffService', () => {
       }),
     ]));
     expect(report.cutoverReadiness.blockers).not.toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
-    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(true);
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
+      'PAID_DELTA',
+      'COSTS_DELTA',
+      'ATTORNEY_FEE_DELTA',
+      'MISSING_PAYMENT_ALLOCATION_COMPARISON_EVIDENCE',
+    ]));
     expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
   });
 
@@ -613,7 +750,18 @@ describe('BalanceDisplayShadowDiffService', () => {
       status: 'LEGACY_ONLY',
       classification: 'MISSING_CANONICAL_FIELD',
     });
-    expect(report.cutoverReadiness.blockers).toEqual(['FINAL_DEBT_STATES_MISSING']);
+    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
+      'FINAL_DEBT_STATES_MISSING',
+      'PAID_DELTA',
+      'COSTS_DELTA',
+      'ATTORNEY_FEE_DELTA',
+      'PRINCIPAL_BUCKET_DELTA',
+      'EXPENSE_BUCKET_DELTA',
+      'ATTORNEY_FEE_BUCKET_DELTA',
+      'MISSING_PAYMENT_ALLOCATION_COMPARISON_EVIDENCE',
+      'MISSING_INTEREST_BASE_COMPARISON_EVIDENCE',
+      'MISSING_FEE_PROJECTION_COMPARISON_EVIDENCE',
+    ]));
     expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
   });
 
@@ -705,6 +853,27 @@ describe('BalanceDisplayShadowDiffService', () => {
       delta: 0,
     });
   });
+
+  it.each([
+    { legacyOutstanding: 1099.99, minorUnitDelta: 1, expectedDelta: 0.01 },
+    { legacyOutstanding: 1100.01, minorUnitDelta: -1, expectedDelta: -0.01 },
+  ])(
+    'ADR014-PE-01A: $minorUnitDelta minor-unit fark yuzde 1 altinda olsa da MINOR_DELTA/YELLOW uretmez',
+    async ({ legacyOutstanding, expectedDelta }) => {
+      const { service } = makeService(legacySummary({ kalanBorc: legacyOutstanding }));
+
+      const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+      expect(report.totals.diffs.find((diff) => diff.code === 'OUTSTANDING_DELTA')).toMatchObject({
+        classification: 'EXPECTED_CANONICAL_DIVERGENCE',
+        status: 'MAJOR_DELTA',
+        severity: 'RED',
+        delta: expectedDelta,
+      });
+      expect(report.cutoverReadiness.blockers).toContain('OUTSTANDING_DELTA');
+      expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    },
+  );
 
   it('currency mismatch varsa amount comparison yapmaz ve RED blocker döner', async () => {
     const { service } = makeService(legacySummary({ currency: 'USD' }));

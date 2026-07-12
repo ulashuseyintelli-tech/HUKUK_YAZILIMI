@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { CaseService } from '../case/case.service';
 import { CaseBalanceService } from '../interest-engine/orchestration/case-balance.service';
 import type { CaseBalanceResult } from '../interest-engine/orchestration/case-balance.service';
@@ -19,12 +19,13 @@ import type {
   ShadowDiffSeverity,
   ShadowDiffWarning,
   ShadowTotals,
+  ShadowRequiredComparisonEvidence,
 } from './balance-display-shadow-diff.types';
+import { SHADOW_FINANCIAL_DIFF_FIELDS } from './balance-display-shadow-diff.types';
+import { BalanceDisplayShadowDiffMetrics } from './balance-display-shadow-diff.metrics';
 
 const LEGACY_ENDPOINT = '/cases/:id/calculation-summary' as const;
 const CANONICAL_DISPLAY_ENDPOINT = '/interest-engine/case/:caseId/balance/display' as const;
-const MINOR_DELTA_PERCENT = 1;
-
 type Outcome<T> = { ok: true; value: T } | { ok: false; message: string };
 
 type LegacyCalculationSummary = Record<string, unknown> & {
@@ -126,15 +127,9 @@ function classifyAmountDiff(
       severity: 'GREEN',
     };
   }
-  if (deltaPercent != null && Math.abs(deltaPercent) < MINOR_DELTA_PERCENT) {
-    return {
-      classification: 'EXPECTED_CANONICAL_DIVERGENCE',
-      delta,
-      deltaPercent,
-      status: 'MINOR_DELTA',
-      severity: 'YELLOW',
-    };
-  }
+  // ADR014-PE-01A: Yuzdesel kucukluk finansal tolerans degildir. Public
+  // MINOR_DELTA enum'u backward compatibility icin korunur fakat finansal
+  // comparison hattinda artik uretilmez; her non-zero minor-unit RED'dir.
   return {
     classification: 'EXPECTED_CANONICAL_DIVERGENCE',
     delta,
@@ -155,9 +150,18 @@ function amountDiff(input: {
   comparisonBlockedBy?: ShadowDiffClassification;
   classificationOverride?: ShadowDiffClassification;
   severityOverride?: ShadowDiffSeverity;
+  notComparable?: boolean;
 }): ShadowAmountDiff {
   const comparisonBlocked = Boolean(input.comparisonBlockedBy);
-  const classified = input.comparisonBlockedBy
+  const classified = input.notComparable
+    ? {
+        classification: 'BLOCKER' as const,
+        delta: null,
+        deltaPercent: null,
+        status: 'NOT_COMPARABLE' as const,
+        severity: 'UNKNOWN_NEEDS_FOLLOWUP' as const,
+      }
+    : input.comparisonBlockedBy
     ? {
         classification: input.comparisonBlockedBy,
         delta: null,
@@ -303,6 +307,16 @@ function buildTotalDiffs(
 ): ShadowAmountDiff[] {
   return [
     amountDiff({
+      code: 'TOTAL_DEBT_DELTA',
+      label: 'Legacy sonBorc vs canonical totalDebtAmount',
+      legacyField: 'legacy.sonBorc',
+      canonicalField: 'canonical.totals.totalDebtAmount',
+      legacyAmount: legacy?.totalDebtAmount ?? null,
+      canonicalAmount: canonical?.totalDebtAmount ?? null,
+      explanation: 'Toplam borc comparison evidence ayri ve gorunur tutulur; outstanding ile ikame edilmez.',
+      comparisonBlockedBy,
+    }),
+    amountDiff({
       code: 'OUTSTANDING_DELTA',
       label: 'Legacy kalanBorc vs canonical outstandingAmount',
       legacyField: 'legacy.kalanBorc',
@@ -319,8 +333,9 @@ function buildTotalDiffs(
       canonicalField: 'canonical.totals.totalPaidAmount',
       legacyAmount: legacy?.totalPaidAmount ?? null,
       canonicalAmount: canonical?.totalPaidAmount ?? null,
-      explanation: 'Legacy collections toplamı ile canonical payment mapper kaynağı farklı olabilir.',
+      explanation: 'Legacy toplamTahsilat gross receipt, canonical totalPaidAmount ise borca tahsis edilen tutardir; semantik reconciliation olmadan parity authority degildir.',
       comparisonBlockedBy,
+      notComparable: !comparisonBlockedBy,
     }),
     amountDiff({
       code: 'INTEREST_DELTA',
@@ -341,6 +356,7 @@ function buildTotalDiffs(
       canonicalAmount: canonical?.costsAmount ?? null,
       explanation: 'Legacy masraf hesapları ile canonical case-level cost projection aynı otorite değildir.',
       comparisonBlockedBy,
+      notComparable: !comparisonBlockedBy,
     }),
     amountDiff({
       code: 'ATTORNEY_FEE_DELTA',
@@ -351,6 +367,7 @@ function buildTotalDiffs(
       canonicalAmount: canonical?.attorneyFeeAmount ?? null,
       explanation: 'Vekalet ücreti farkı cutover öncesi görünür kalmalıdır.',
       comparisonBlockedBy,
+      notComparable: !comparisonBlockedBy,
     }),
   ];
 }
@@ -372,6 +389,7 @@ function buildBucketDiffs(
     explanation: string;
     classificationOverride?: ShadowDiffClassification;
     severityOverride?: ShadowDiffSeverity;
+    notComparable?: boolean;
   }> = [
     {
       bucket: 'PRINCIPAL',
@@ -398,6 +416,7 @@ function buildBucketDiffs(
       legacyAmount: legacy ? numberField(legacy, 'icraMasraflari') : null,
       canonicalCode: 'EXPENSE',
       explanation: 'Masraf projection farkları hesap mantığına müdahale edilmeden raporlanır.',
+      notComparable: true,
     },
     {
       bucket: 'ATTORNEY_FEE',
@@ -406,6 +425,7 @@ function buildBucketDiffs(
       legacyAmount: legacy ? numberField(legacy, 'vekaletUcreti') : null,
       canonicalCode: 'ATTORNEY_FEE',
       explanation: 'Vekalet ücreti projection farkı cutover blocker adayıdır.',
+      notComparable: true,
     },
     {
       bucket: 'HELD_OVERPAYMENT',
@@ -432,6 +452,7 @@ function buildBucketDiffs(
       comparisonBlockedBy,
       classificationOverride: spec.classificationOverride,
       severityOverride: spec.severityOverride,
+      notComparable: !comparisonBlockedBy && spec.notComparable,
     });
     return {
       ...diff,
@@ -688,28 +709,40 @@ function allDiagnostics(input: {
   return diagnostics;
 }
 
-// ALC-AUTH-1A: B1 guarded primary gate ilk asamada principal + interest + payment ile
-// sinirlandi. Cost/vekalet (icraMasraflari/vekaletUcreti <-> canonical costs/ATTORNEY_FEE)
-// farkli otorite/kaynaklardan geldigi icin (legacy tarife formulu vs canonical ClaimItem-
-// materialization, ki henuz yok) buyuk delta VERMESI BEKLENIR -- bu, cutover readiness'i
-// bloklamamali; yalniz diagnostic olarak (totalDiffs/bucketDiffs icinde) raporlanmaya devam eder.
-const B1_SCOPE_EXEMPT_DIFF_CODES = new Set([
-  'COSTS_DELTA',
-  'ATTORNEY_FEE_DELTA',
-  'EXPENSE_BUCKET_DELTA',
-  'ATTORNEY_FEE_BUCKET_DELTA',
-]);
+const MISSING_REQUIRED_EVIDENCE_CODES: Record<keyof ShadowRequiredComparisonEvidence, string> = {
+  paymentAllocationTotals: 'MISSING_PAYMENT_ALLOCATION_COMPARISON_EVIDENCE',
+  interestBase: 'MISSING_INTEREST_BASE_COMPARISON_EVIDENCE',
+  feeProjection: 'MISSING_FEE_PROJECTION_COMPARISON_EVIDENCE',
+};
+
+const NO_REQUIRED_COMPARISON_EVIDENCE: ShadowRequiredComparisonEvidence = {
+  paymentAllocationTotals: false,
+  interestBase: false,
+  feeProjection: false,
+};
 
 export function cutoverReadiness(input: {
   display?: CaseBalanceDisplay;
   blockers: ShadowDiffBlocker[];
   totalDiffs: ShadowAmountDiff[];
   bucketDiffs: ShadowBucketDiff[];
+  requiredEvidence?: ShadowRequiredComparisonEvidence;
 }): BalanceDisplayShadowDiffReport['cutoverReadiness'] {
-  const diffBlockers = [...input.totalDiffs, ...input.bucketDiffs]
-    .filter((diff) => diff.severity === 'RED' && !B1_SCOPE_EXEMPT_DIFF_CODES.has(diff.code))
+  const diffs = [...input.totalDiffs, ...input.bucketDiffs];
+  const presentDiffCodes = new Set(diffs.map((diff) => diff.code));
+  const diffBlockers = diffs
+    .filter((diff) => diff.code in SHADOW_FINANCIAL_DIFF_FIELDS && diff.status !== 'MATCH')
     .map((diff) => diff.code);
   const blockerCodes = [...input.blockers.map((blocker) => blocker.code), ...diffBlockers];
+  for (const code of Object.keys(SHADOW_FINANCIAL_DIFF_FIELDS)) {
+    if (!presentDiffCodes.has(code)) blockerCodes.push(`MISSING_${code}_COMPARISON_EVIDENCE`);
+  }
+  const requiredEvidence = input.requiredEvidence ?? NO_REQUIRED_COMPARISON_EVIDENCE;
+  for (const [key, code] of Object.entries(MISSING_REQUIRED_EVIDENCE_CODES) as Array<
+    [keyof ShadowRequiredComparisonEvidence, string]
+  >) {
+    if (!requiredEvidence[key]) blockerCodes.push(code);
+  }
   if (input.display?.diagnostics.some((diagnostic) => diagnostic.code === 'FINAL_DEBT_STATES_MISSING')) {
     blockerCodes.push('FINAL_DEBT_STATES_MISSING');
   }
@@ -754,6 +787,7 @@ export class BalanceDisplayShadowDiffService {
   constructor(
     private readonly caseService: CaseService,
     private readonly caseBalance: CaseBalanceService,
+    @Optional() private readonly metrics?: BalanceDisplayShadowDiffMetrics,
   ) {}
 
   /**
@@ -770,6 +804,7 @@ export class BalanceDisplayShadowDiffService {
     asOfDate: string,
     generatedAt: string,
   ): Promise<BalanceDisplayShadowDiffReport> {
+    const startedAt = Date.now();
     const [legacyOutcome, balanceOutcome] = await Promise.all([
       capture(() => this.caseService.getCalculationSummary(tenantId, caseId, asOfDate) as Promise<LegacyCalculationSummary>),
       capture(() => this.caseBalance.computeCaseBalance(tenantId, caseId, asOfDate)),
@@ -815,9 +850,12 @@ export class BalanceDisplayShadowDiffService {
       blockers: compare.blockers,
       totalDiffs,
       bucketDiffs,
+      // Bu uc contract icin legacy/canonical direct comparison row'u henuz yoktur.
+      // Sahte MATCH yerine case-level readiness fail-closed kalir.
+      requiredEvidence: NO_REQUIRED_COMPARISON_EVIDENCE,
     });
 
-    return {
+    const report: BalanceDisplayShadowDiffReport = {
       tenantId,
       caseId,
       currency: display?.currency ?? legacyTotals?.currency ?? null,
@@ -860,5 +898,7 @@ export class BalanceDisplayShadowDiffService {
         blockedOverpaymentDiagnosticsAvailable: display?.provenance.blockedOverpaymentDiagnosticsUsed ?? false,
       },
     };
+    this.metrics?.recordReport(report, Date.now() - startedAt);
+    return report;
   }
 }

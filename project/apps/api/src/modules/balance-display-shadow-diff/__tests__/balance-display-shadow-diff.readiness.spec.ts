@@ -5,6 +5,7 @@ import type {
 } from '../balance-display-shadow-diff.types';
 import type { CaseService } from '../../case/case.service';
 import type { CaseBalanceService, CaseBalanceResult } from '../../interest-engine/orchestration/case-balance.service';
+import { buildCaseBalanceFeeProjection } from '../../interest-engine/orchestration/case-balance-fee-projection';
 import { AncillaryType } from '../../interest-engine/types/domain.types';
 
 type ReadinessClassification =
@@ -185,6 +186,10 @@ function canonicalBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalan
       costs: { [AncillaryType.HARC]: 50 },
       ancillaries: { [AncillaryType.VEKALET_UCRETI]: 150 },
     },
+    feeProjection: buildCaseBalanceFeeProjection({
+      sourceItems: [],
+      currencyResults: [{ currency: 'TRY', resultAvailable: true }],
+    }),
     diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
     overpayments: { held: [], blocked: [] },
     ...overrides,

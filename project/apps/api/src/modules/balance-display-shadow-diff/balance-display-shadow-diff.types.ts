@@ -26,6 +26,33 @@ export type ShadowAmountDiffStatus =
   | 'CANONICAL_ONLY'
   | 'NOT_COMPARABLE';
 
+/**
+ * ADR014-PE-01A: Finansal readiness'e katılan bounded comparison alanları.
+ * Bu map metric label cardinality'sini ve blocker derivation'ını tek yerde tutar.
+ */
+export const SHADOW_FINANCIAL_DIFF_FIELDS = {
+  TOTAL_DEBT_DELTA: 'TOTAL',
+  OUTSTANDING_DELTA: 'OUTSTANDING',
+  PAID_DELTA: 'PAID',
+  INTEREST_DELTA: 'INTEREST',
+  COSTS_DELTA: 'COST',
+  ATTORNEY_FEE_DELTA: 'ATTORNEY_FEE',
+  PRINCIPAL_BUCKET_DELTA: 'PRINCIPAL',
+  ACCRUED_INTEREST_BUCKET_DELTA: 'INTEREST',
+  EXPENSE_BUCKET_DELTA: 'EXPENSE',
+  ATTORNEY_FEE_BUCKET_DELTA: 'ATTORNEY_FEE',
+} as const;
+
+export type ShadowFinancialDiffCode = keyof typeof SHADOW_FINANCIAL_DIFF_FIELDS;
+export type ShadowFinancialField = typeof SHADOW_FINANCIAL_DIFF_FIELDS[ShadowFinancialDiffCode];
+
+/** Direct comparison row'u bulunmayan fakat canonical contract'ta zorunlu evidence. */
+export interface ShadowRequiredComparisonEvidence {
+  paymentAllocationTotals: boolean;
+  interestBase: boolean;
+  feeProjection: boolean;
+}
+
 export interface ShadowDiffIssue {
   code: string;
   classification: ShadowDiffClassification;
