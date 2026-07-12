@@ -494,3 +494,21 @@ access, execution or evidence authority. The single next preparation task is
 `ADR014-PE-05 — ADR-014 Metrics, Audit, Dashboard and Alert Operational Contract`.
 Representative evidence remains absent/blocking; PR-11 and runtime cutover remain not
 authorized.
+
+---
+
+## 14. PE-05 operational-observability-contract closure (2026-07-12)
+
+`ADR014-PE-05 — Metrics, Audit, Dashboard and Alert Operational Contract` is defined in
+`adr-014-metrics-audit-dashboard-alert-operational-contract.md`. It fixes the metric
+catalogue, bounded-cardinality/PII rules, structured-log envelope, durable correlation and
+audit requirements, four dashboard views, readiness states, alert severity/routing/delivery,
+baseline-window metadata, retention/integrity, evidence-package integration and ownership.
+
+This closes contract definition only. Existing Prometheus/ADR-014 metrics are partial;
+session instrumentation, durable ADR-014 log/audit correlation, dashboard, alert rules,
+verified alert delivery and evidence sealing remain implementation or operations
+prerequisites. No metric, dashboard, alert, audit storage, environment, dataset, baseline or
+evidence was implemented or activated. The single next preparation task is
+`ADR014-PE-05A — Metrics, Audit and Alert Implementation Preparation`. Representative
+evidence remains absent/blocking; PR-11 and runtime cutover remain not authorized.
