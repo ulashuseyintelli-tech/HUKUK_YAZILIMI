@@ -52,5 +52,9 @@ _archive/
 *.dump
 project/apps/api/backups/ignored/
 
+# ADR-014 local shadow evidence runner çıktısı + girdisi — YALNIZ YEREL, asla commit edilmez
+# (owner GO-COMPLETE decision 2; policy §10 LOCAL owner/office evidence; gerçek tenantId/caseId içerir)
+project/apps/api/evidence/
+
 # Lock files (opsiyonel - büyük dosyalar)
 # pnpm-lock.yaml
