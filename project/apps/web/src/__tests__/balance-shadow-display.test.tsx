@@ -1321,8 +1321,8 @@ describe("BalanceShadowDiffPanel", () => {
     render(<BalanceShadowDiffPanel caseId="case-1" enabled />);
 
     expect(await screen.findByText("Shadow Balance Diff")).toBeInTheDocument();
-    expect(screen.getByText("audit only")).toBeInTheDocument();
-    expect(screen.getByText("Primary display unchanged: true")).toBeInTheDocument();
+    expect(await screen.findByText("audit only")).toBeInTheDocument();
+    expect(await screen.findByText("Primary display unchanged: true")).toBeInTheDocument();
 
     const panelText = screen.getByTestId("balance-shadow-diff-panel").textContent ?? "";
     expect(panelText).not.toContain("canonicalSummaryRows");
