@@ -8,7 +8,10 @@
 authorization) and by `docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md`.
 The operational zero-cent taxonomy and monitoring child contract is
 `docs/design/adr-014-zero-cent-discrepancy-monitoring-contract.md`; it does not add
-cutover or implementation authority.
+cutover or implementation authority. The canonical evidence lifecycle, access flow,
+environment/dataset classification and package standard are defined by
+`docs/design/adr-014-evidence-data-access-procedure.md`; that procedure grants no data
+access, evidence-run, PR-11 or runtime authority.
 
 > **Authority note.** This policy defines the acceptance framework under which a
 > future cutover *could* be authorized. Writing this policy **does not** authorize
@@ -440,3 +443,19 @@ Runtime cutover:                  NOT AUTHORIZED
 This reconciliation is docs-only. It authorizes **no** PR-11, flag, consumer switch, or
 runtime cutover. Producing the evidence (a local read-only baseline + shadow runner) is a
 separate task; the owner `APPROVED` after seeing results remains the final gate before PR-11.
+
+---
+
+## 11. PE-02 procedure closure (2026-07-12)
+
+`ADR014-PE-02 — Evidence / Data-Access Procedure` is defined in
+`adr-014-evidence-data-access-procedure.md`. It standardizes the lifecycle, separate
+access/execution approvals, local-environment meaning, dataset classes, PII-safe evidence
+package, roles, ownership and gap classification.
+
+This closes the **procedure-definition** prerequisite only. It does not create an
+environment, use representative data, approve access, implement monitoring, produce a
+baseline or representative evidence, and does not open PR-11. The next preparation task
+is `ADR014-PE-03 — Representative Staging Environment Contract`, where “staging” is the
+logical, isolated, read-only session on the owner-controlled local environment under §10;
+remote/cloud staging remains not authorized.
