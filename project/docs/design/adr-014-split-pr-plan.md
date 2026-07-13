@@ -57,6 +57,8 @@
 > The owner-designated next bounded workstream is ADR014-PE-06E, but it requires separate explicit
 > authorization and cannot activate telemetry or evidence execution implicitly.
 
+> **v2.23 governance closure PR:** #1204.
+
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
 ---

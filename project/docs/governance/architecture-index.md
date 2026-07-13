@@ -133,7 +133,7 @@ evidence and cutover gates remain unchanged. Current execution plan:
 **ADR-014 post-PE-06D routing override (2026-07-13):** ADR014-PE-06D is
 `CLOSED / CANONICAL / DRY-VALIDATION-ONLY` after technical PR #1203 (head
 `075a079a2b680abf246bd9b173fc3e77bcb89ddf`; squash
-`2d626b156cab5ed726c2ac9ae551220e8d51392b`) and its governance closure. A new pure shell composes
+`2d626b156cab5ed726c2ac9ae551220e8d51392b`) and governance PR #1204. A new pure shell composes
 the existing PE-06A preparation gate, PE-06B1 factories and PE-06C1 v2 mappings only under explicit
 `TEST_ONLY`; default mode remains `DISABLED`. Deterministic synthetic fixtures validate session and
 phase ordering, caller-injected monotonic phase durations, success/error/timeout/cancellation,

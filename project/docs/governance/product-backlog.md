@@ -1338,7 +1338,7 @@ representative evidence `ABSENT / BLOCKING`, PR-11 and runtime cutover `NOT AUTH
 maintenance records remain untouched. No successor is auto-opened; next eligible task is `OWNER
 DECISION REQUIRED`.
 
-**ADR014-PE-06D Master Register Closure (2026-07-13):** Local Session Orchestrator
+**ADR014-PE-06D Master Register Closure (2026-07-13; governance PR #1204):** Local Session Orchestrator
 Dry-Validation is `CLOSED / CANONICAL / DRY-VALIDATION-ONLY` after technical PR #1203 (head
 `075a079a2b680abf246bd9b173fc3e77bcb89ddf`; squash
 `2d626b156cab5ed726c2ac9ae551220e8d51392b`; CI `4/4 SUCCESS`; pre-merge `CLEAN / MERGEABLE`).
