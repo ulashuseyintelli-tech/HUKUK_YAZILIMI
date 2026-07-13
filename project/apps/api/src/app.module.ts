@@ -65,6 +65,11 @@ import { SummaryEngineModule } from "./modules/summary-engine/summary-engine.mod
 // G4c-3: read-only bakiye gözlem (summary-engine vs computeBalance)
 import { BalanceShadowCompareModule } from "./modules/balance-shadow-compare/balance-shadow-compare.module";
 import { BalanceDisplayShadowDiffModule } from "./modules/balance-display-shadow-diff/balance-display-shadow-diff.module";
+// MPB-028(a) PR-3 Evidence Activation: shadow-diff altyapısını runtime DI'a kaydet.
+// LegalDeadlineModule (PR-2) hiçbir consumer'a bağlı değildir; LegalTimeShadowModule (PR-3)
+// yalnız LEGAL_TIME_SHADOW_ENABLED açıkken ve yeni/bağımsız controller üzerinden tetiklenir.
+import { LegalDeadlineModule } from "./modules/legal-deadline/legal-deadline.module";
+import { LegalTimeShadowModule } from "./modules/legal-time-shadow/legal-time-shadow.module";
 import { AccountingJournalTrialBalanceModule } from "./modules/accounting-journal/accounting-journal-trial-balance.module";
 import { PrecautionaryOrderModule } from "./modules/precautionary-order/precautionary-order.module";
 import { LimitationEngineModule } from "./modules/limitation-engine/limitation-engine.module";
@@ -204,6 +209,8 @@ function getConditionalImports(): Type<unknown>[] {
     SummaryEngineModule,
     BalanceShadowCompareModule,
     BalanceDisplayShadowDiffModule,
+    LegalDeadlineModule,
+    LegalTimeShadowModule,
     AccountingJournalTrialBalanceModule,
     PrecautionaryOrderModule,
     LimitationEngineModule,
