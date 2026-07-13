@@ -130,6 +130,22 @@ owner decision. This record supersedes only the post-PE-06C0 next-step wording; 
 evidence and cutover gates remain unchanged. Current execution plan:
 `docs/design/adr-014-split-pr-plan.md` v2.22.
 
+**ADR-014 post-PE-06D routing override (2026-07-13):** ADR014-PE-06D is
+`CLOSED / CANONICAL / DRY-VALIDATION-ONLY` after technical PR #1203 (head
+`075a079a2b680abf246bd9b173fc3e77bcb89ddf`; squash
+`2d626b156cab5ed726c2ac9ae551220e8d51392b`) and governance PR #1204. A new pure shell composes
+the existing PE-06A preparation gate, PE-06B1 factories and PE-06C1 v2 mappings only under explicit
+`TEST_ONLY`; default mode remains `DISABLED`. Deterministic synthetic fixtures validate session and
+phase ordering, caller-injected monotonic phase durations, success/error/timeout/cancellation,
+session abort, invalid transition and missing-authorization behavior. It has no production
+call-site, data/environment activation, registry/event emission, persistence, external egress or
+business/calculation/readiness/API effect. Its output is synthetic test evidence, not
+representative evidence or execution/cutover authority. Representative evidence remains `ABSENT /
+BLOCKING`; CAN-CUT-02 remains open; PR-11 and runtime cutover remain `NOT AUTHORIZED`. The
+owner-designated next bounded workstream is ADR014-PE-06E, requiring separate explicit owner
+authorization and carrying no implied activation. Current execution plan:
+`docs/design/adr-014-split-pr-plan.md` v2.23.
+
 ## ADR Naming Collision Matrix (GOV-ADR-NAMING-000)
 
 Bu bölüm, `ADR-012` numarasının DX-005 için main üzerinde kanonikleşmesinden sonra yanlış ADR referansı üretilmesini engeller. **2026-07-10 owner arbitration (final):** Aynı gün iki aday çözüm değerlendirildi — Option C (`ADR-013`'ün kapsamını CCB-001'i içerecek şekilde genişletme, kısa süre uygulandı, PR #1019) ve ayrı-numara seçeneği (`ADR-013`'ü `GOV-ADR-NAMING-000`'ın orijinal dar kapsamında bırakıp CCB-001'e kendi numarasını verme). Owner'ın nihai kararı: **CCB-001'in mimari dokümanı `ADR-014`'tür; `ADR-013` `GOV-ADR-NAMING-000`'ın orijinal kapsamında (Fee/Harç/Snapshot/Journal) kalır, DEĞİŞMEDEN.** PR #1026 sonrası ADR-013 artık draft/owner-review ADR olarak mevcuttur. Bu patch runtime davranışı, kod, migration veya CCB-001 branch merge'i yaratmaz.

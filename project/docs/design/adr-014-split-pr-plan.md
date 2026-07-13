@@ -1,6 +1,6 @@
 # ADR-014 Split-PR Baseline Execution Plan
 
-**Status:** APPROVED / POST-PR-10 BASELINE EXECUTION PLAN v2.22
+**Status:** APPROVED / POST-PR-10 BASELINE EXECUTION PLAN v2.23
 **Date:** 2026-07-10
 **Last Reconciled:** 2026-07-13
 **Owner:** Ulaş
@@ -42,6 +42,23 @@
 
 > **v2.22 governance closure PR:** #1202.
 
+> **v2.23 (2026-07-13):** ADR014-PE-06D technical/governance closure reconciliation. Technical
+> PR #1203 (head `075a079a2b680abf246bd9b173fc3e77bcb89ddf`; squash
+> `2d626b156cab5ed726c2ac9ae551220e8d51392b`) adds a default-disabled, synthetic-only local
+> session-orchestrator dry-validation shell. In explicit `TEST_ONLY` mode it first requires the
+> existing PE-06A preparation gate, then validates deterministic session/phase ordering, obtains
+> terminal phase duration only from an injected monotonic test clock, and reuses PE-06B1 factories
+> plus PE-06C1 v2 event/metric mappers. Success, failure, timeout, cancellation, abort, invalid
+> transition, missing authorization and disabled no-emission paths are covered. There is no
+> production call-site, real/local-production data access, runtime telemetry activation,
+> persistence, external egress, evidence execution, financial/readiness/API behavior or authority
+> change. Synthetic `DRY_VALIDATED` output is not representative evidence. Representative evidence
+> remains absent/blocking; CAN-CUT-02 remains open; PR-11 and runtime cutover remain NOT AUTHORIZED.
+> The owner-designated next bounded workstream is ADR014-PE-06E, but it requires separate explicit
+> authorization and cannot activate telemetry or evidence execution implicitly.
+
+> **v2.23 governance closure PR:** #1204.
+
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
 ---
@@ -63,7 +80,8 @@
   Cutover authorization policy; PE-01/PE-01A/PE-02/PE-03/PE-04/PE-05; PE-05A1a–PE-05A4; PE-05B;
   default-disabled PE-06A harness; PE-06B1 fact contract; default-disabled PE-06B2 producer/mapping
   preparation, PE-06C0 event/timing owner decisions ve default-disabled PE-06C1 contract completion
-  CLOSED/CANONICAL'dır. Representative evidence yoktur; next workstream OWNER DECISION REQUIRED'dır
+  ve PE-06D local-session dry-validation CLOSED/CANONICAL'dır. Representative evidence yoktur;
+  next workstream ADR014-PE-06E'dir ve ayrı owner authorization gerektirir
   ve PR-11 consumer switch yetkili değildir.
 - MANDATORY ORDER = canonical merge + governance closure + downstream eligibility sırası.
   PARALEL OK = yalnız analiz, hazırlık ve bağımsız branch geliştirmesi; out-of-order merge/closure değildir.
@@ -331,7 +349,8 @@ Observation fact contract     PE-06B1 CLOSED / CANONICAL / PREPARATION-ONLY
 Observation producer/mapping  PE-06B2 CLOSED / CANONICAL / DEFAULT-DISABLED
 Event/timing decisions        PE-06C0 CLOSED / CANONICAL / OWNER DECISIONS DEFINED
 Observation contract v2       PE-06C1 CLOSED / CANONICAL / DEFAULT-DISABLED
-Next eligible step             OWNER DECISION REQUIRED
+Local dry-validation          PE-06D CLOSED / CANONICAL / DRY-VALIDATION-ONLY
+Next eligible step             ADR014-PE-06E / SEPARATE OWNER AUTHORIZATION REQUIRED
 PR-11 consumer switch          NOT AUTHORIZED
 ```
 
