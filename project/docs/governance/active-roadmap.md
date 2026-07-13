@@ -43,3 +43,12 @@ POST-P4 Accounting Engine ekseninden BAĞIMSIZ, ayrı bir hukuki-hesaplama izi (
 | ALC-P0-4..7, P1-1..7, P2-1..7 | BACKLOG | Detay `product-backlog.md`'de |
 
 **Production tahsilat geliştirmesi: NO-GO** (yukarıdaki P0 maddeleri kapanana kadar). **Owner karar noktası (2026-07-04 itibarıyla açık):** (1) ALC-P0-2B/C tamamlansın mı, yoksa (2) ALC-P0-3/P0-4 (canonical balance / Due cutover) tasarımına mı geçilsin?
+
+## Üçüncü İz — OFFICE Domain (2026-07-14, Phase 0 CLOSED, Phase 1 ACTIVE)
+
+OFFICE Canonical Architecture Transformation programı Phase 0'ı (WS0.1-WS0.4, one-time foundation) kapattı; Phase 1 (Incremental Canonical Slice Delivery) aktif. Bu tablo tam durumu KOPYALAMAZ — tek kaynak `project/docs/governance/OFFICE-DELIVERY-MANIFEST.md` (Finding/Decision/Slice/Wave/Milestone/Dependency modeli). Bu tablo implementasyon yetkisi VERMEZ.
+
+| Öge | Durum | Not |
+|---|---|---|
+| SLICE-02 | CANONICAL | main @ `a3eee8b8`, PR #1226 |
+| NEXT ELIGIBLE UNIT | WAVE 1 — Candidate Inventory and Slice Decomposition | Owner selection/GO bekliyor → bkz. `OFFICE-DELIVERY-MANIFEST.md` §7-8 |
