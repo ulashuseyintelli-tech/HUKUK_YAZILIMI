@@ -1379,6 +1379,24 @@ representative evidence `ABSENT / BLOCKING`, PR-11 and runtime cutover `NOT AUTH
 pre-evidence observability preparation is complete. Next: `OWNER DECISION REQUIRED —
 Representative Evidence Preparation`; this closure does not authorize preparation or execution.
 
+**ADR014-REP-01B Master Register Closure (2026-07-13; governance PR #1213):** Local Read-Only
+Representative Evidence Runner is `CLOSED / CANONICAL / EXECUTION-MECHANISM-ONLY` after technical
+PR #1211 (head `e34faea3a45127edd29d15cb5b7bd7f91448ca53`; squash
+`a4c72414ab3cea26e36cd9b6c42735024c01db7b`; CI `4/4 SUCCESS`; pre-merge `CLEAN /
+MERGEABLE`). The exact five-file scope adds a default-disabled runner, direct functional/security
+tests, a non-authoritative runbook and explicit CI selection. It composes PE-06A and PE-06D,
+requires bound canonical/environment/session/manifest/access/execution references, enforces
+`REPEATABLE READ / READ ONLY`, provides a guarded query port, rejects write-capable SQL, supports
+deterministic abort and creates one local JSON artifact below a realpath-verified owner root with
+exclusive write semantics. There is no production call-site, import-time execution, telemetry
+activation, network/external service, schema/migration, financial/readiness/API behavior or
+authority change. Output remains `CAPTURED_NOT_ACCEPTED`, non-official and authority-free. No new
+backlog ID or maintenance record is created. REP-01A remains `OPEN / BLOCKED`; environment and
+manifest instances, named roles, access/execution authorizations, baseline, retention and sign-offs
+are not approved. Representative execution/evidence remain `ABSENT / BLOCKING`; CAN-CUT-02 remains
+`OPEN / needs-owner-decision`; PR-11 and runtime cutover remain `NOT AUTHORIZED`. Single next
+eligible task after closure: `ADR014-REP-01A — Run-Specific Authorization Package Completion`.
+
 ---
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
 
