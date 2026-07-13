@@ -1168,6 +1168,7 @@ model Case {
   stageHistory                  CaseStageHistory[]            @relation("CaseStageHistory")
   caseClients                   CaseClient[]
   tebligatlar                   Tebligat[]
+  legalDeadlineSnapshots        LegalDeadlineSnapshot[]
   claimItems                    ClaimItem[]
   ledgerEntries                 LedgerEntry[] // Tahsilat/düzeltme kayıtları
   precautionaryOrders           PrecautionaryOrder[] // İhtiyati haciz kararları
@@ -1382,6 +1383,9 @@ model CaseDebtor {
 
   // PR-EA-2: EnforcementAction.caseDebtorId FK karsi iliskisi
   enforcementActions EnforcementAction[]
+
+  // MPB-028(a) PR-2: LegalDeadlineSnapshot.caseDebtorId FK karsi iliskisi
+  legalDeadlineSnapshots LegalDeadlineSnapshot[]
 
   @@unique([caseId, debtorId, role])
   @@index([caseId])
@@ -2622,7 +2626,8 @@ model Tebligat {
   tk21Type          Tk21Type? // TK_21_1, TK_21_2
   muhtarlikDate     DateTime? // Muhtarlığa bırakılma tarihi
   ilanDate          DateTime? // İhbar yapıştırma tarihi
-  tebligSayilmaDate DateTime? // Tebliğ edilmiş sayılma tarihi (21/2 için +15 gün)
+  tebligSayilmaDate DateTime? // Tebliğ edilmiş sayılma tarihi (21/1 ve 21/2 gecikmesiz;
+  // +15 gün yalnız TK m.20'ye aittir — MPB-028(a) düzeltmesi, bkz. legal-time-authority-rebase.md §1.2)
 
   // Sonraki Adım
   nextAction     TebligatNextAction?
@@ -2638,6 +2643,9 @@ model Tebligat {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // MPB-028(a) PR-2: LegalDeadlineSnapshot.sourceTebligatId FK karsi iliskisi
+  legalDeadlineSnapshots LegalDeadlineSnapshot[]
 
   @@index([tenantId])
   @@index([caseId])
@@ -2705,10 +2713,65 @@ enum TebligatPttResult {
   DIGER // Diğer
 }
 
-// TK 21 Türü
+// TK 21 Türü (+ MPB-028(a) PR-2: TK m.20 additive eklendi)
 enum Tk21Type {
-  TK_21_1 // Bilinen adreste imtina (aynı gün tebliğ)
-  TK_21_2 // MERNİS adresi (ihbar + 15 gün)
+  TK_21_1 // Bilinen adreste imtina (kapıya yapıştırma tarihi = tebliğ tarihi, gecikmesiz)
+  TK_21_2 // MERNİS adresi (kapıya yapıştırma tarihi = tebliğ tarihi, gecikmesiz — TK m.21/2,
+  // MPB-028(a) düzeltmesi: önceki "+15 gün" yorumu hatalıydı, bkz. legal-time-authority-rebase.md §1)
+  TK_20 // Muvakkaten başka yere gitme (kapıya yapıştırma + 15 gün, TK m.20 — MPB-028(a) PR-2, additive)
+}
+
+// MPB-028(a) PR-2: kanonik hukuki süre türü (bu PR yalnız OBJECTION_PERIOD kapsar)
+enum LegalDeadlineType {
+  OBJECTION_PERIOD // İtiraz süresi (İİK m.62/m.168 vb., takip türüne göre)
+}
+
+// MPB-028(a) PR-2: snapshot yaşam döngüsü — immutable, silent update YOK (owner Decision 5)
+enum LegalDeadlineSnapshotStatus {
+  ACTIVE // Güncel, henüz supersede edilmemiş hesap
+  SUPERSEDED // Yeniden hesaplama ile değiştirilmiş, geçmiş kayıt olarak korunur
+}
+
+// MPB-028(a) PR-2: kanonik hukuki süre hesabı (LegalDeadlineService tarafından üretilir).
+// Immutable: mevcut satır asla update edilmez, yeniden hesaplama yeni satır + supersede zinciri
+// üretir (owner Decision 5). NotificationQueue bu modelin hiçbir girdisi değildir (owner Decision 4).
+// finalizationDate legalServiceDate'ten bağımsız, bu PR'da otomatik doldurulmaz (owner Decision 6).
+model LegalDeadlineSnapshot {
+  id           String  @id @default(cuid())
+  tenantId     String
+  caseId       String
+  case         Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  caseDebtorId String? // Tebligat.caseDebtorId emsali — bazı tebligatlar dosyaya bağlı, belirli bir borçluya değil
+  caseDebtor   CaseDebtor? @relation(fields: [caseDebtorId], references: [id], onDelete: Restrict)
+
+  sourceTebligatId String
+  sourceTebligat   Tebligat @relation(fields: [sourceTebligatId], references: [id], onDelete: Restrict)
+
+  deadlineType LegalDeadlineType
+
+  legalServiceDate DateTime // Hukuken tebliğ/tebliğ-sayılma tarihi (Bölüm 3 rejim tablosu)
+  dueDate          DateTime // legalServiceDate + itiraz günü (takip türüne göre)
+  finalizationDate DateTime? // Kesinleşmenin AYRICA doğrulandığı tarih; bu PR'da hiçbir zaman otomatik doldurulmaz
+
+  calculationRule    String // Uygulanan hesaplama algoritmasının kimliği (örn. "TK_21_2_NO_DELAY")
+  calculationVersion String // Hesaplama mantığı değiştiğinde eski/yeni ayrımı için
+  deadlineReasonCode String // Hangi rejim + hangi madde (örn. "TK_21_2", "TK_20", "ILANEN", "UETS_M7A")
+
+  calculatedAt DateTime @default(now())
+
+  supersedesSnapshotId String?                 @unique
+  supersedesSnapshot   LegalDeadlineSnapshot?  @relation("SnapshotSupersession", fields: [supersedesSnapshotId], references: [id], onDelete: SetNull)
+  supersededBy         LegalDeadlineSnapshot?  @relation("SnapshotSupersession")
+
+  status LegalDeadlineSnapshotStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([sourceTebligatId])
+  @@index([status])
+  @@index([tenantId, sourceTebligatId, status])
 }
 
 // Sonraki Adım

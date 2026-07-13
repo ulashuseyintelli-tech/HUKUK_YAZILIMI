@@ -65,10 +65,12 @@ export enum TebligatPttResult {
   DIGER = "DIGER",
 }
 
-// TK 21 Türü
+// TK 21 Türü (+ MPB-028(a) PR-2 blocker resolution: TK_20 additive — operatörün açıkça
+// seçtiği hukuki rejim, bkz. TebligatService.determinePttResultAction)
 export enum Tk21Type {
   TK_21_1 = "TK_21_1",
   TK_21_2 = "TK_21_2",
+  TK_20 = "TK_20",
 }
 
 // Sonraki Adım
