@@ -126,3 +126,36 @@ binding and all later evidence-validation/acceptance gates remain separate.
 Even after `CAPTURE_COMPLETE`, the REP-01B runner output remains `CAPTURED_NOT_ACCEPTED`;
 validation, domain sign-offs, evidence acceptance and any future PR-11 decision remain separate
 gates.
+
+## First v2 pre-run owner-decision instance
+
+`adr014-v2-pre-run-package-instance.ts` records the owner-approved decisions for
+`ADR014-REP-01A-R2-I1` without storing raw identity, credentials, database connection details or
+runtime facts. It binds the owner-controlled Windows 11 office workstation, same-host local
+PostgreSQL source, local-only/read-only/no-write/no-egress controls, full eligible population,
+owner operator/evidence ownership, independent authorized-lawyer-or-partner policy, create-once
+local evidence root, indefinite owner-controlled retention, distinct run-specific access and
+single-run execution approvals, five approved-for-run sign-offs and the current-database baseline
+method to opaque deterministic references.
+
+The instance factory requires the caller to supply the verified 40-character canonical HEAD. This
+is deliberate: a file committed to Git cannot contain its own future squash-merge SHA. The supplied
+SHA is validated by the canonical v2 contract and participates in the shared binding and package
+hash. Invalid input fails closed; no Git, filesystem, database or network lookup occurs.
+
+The materialized result is exactly:
+
+```text
+status                         = PRE_RUN_AUTHORIZED
+runtimeBindingStatus           = RUNTIME_BINDING_REQUIRED
+executionStarted               = false
+representativeEvidenceProduced = false
+representativeEvidenceAccepted = false
+rep02Authorized                = false
+pr11Ready                      = false
+runtimeCutoverAuthorized       = false
+```
+
+Exact manifest/approval, reviewer actor, session, actual UTC windows, warm-up/population/request
+counts and capture-package hash are intentionally absent. They may be supplied only through the
+runtime-binding contract during or immediately after a separately authorized run.
