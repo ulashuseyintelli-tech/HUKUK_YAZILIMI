@@ -1010,6 +1010,23 @@ model Case {
   mtsReferenceNo String? // MTS referans numarası
   mtsReturnDate  DateTime? // MTS'den icra takibine dönüş tarihi
 
+  // MPB-028(a) PR-3C: kanonik takip-türü sınıflandırması (additive, nullable — backfill YOK,
+  // owner Decision — Canonical Proceeding-Type and Legal-Period Rule Matrix, 2026-07-13).
+  // Bu alanlar CaseType/subType/subCategory/executionPath'in YERİNE geçmez, onlarla birlikte
+  // var olur; ProceedingClassificationService bu alanlardan OKUR, CaseType/subType/
+  // executionPath'ten TAHMİN ETMEZ (gizli fallback YOK — hiçbiri doluysa null ise UNRESOLVED).
+  // Enstrüman (çek/bono/poliçe) alanı BİLİNÇLİ OLARAK burada YOKTUR — owner kararıyla
+  // kanonik enstrüman kaynağı mevcut CaseInstrument[] modelidir (bir Case birden fazla ve
+  // farklı türde enstrüman içerebilir, Case seviyesinde tekil sınıflandırma kurulmaz).
+  proceedingType              ProceedingType?
+  rentalType                  RentalType? // yalnız RENT'te anlamlı
+  bankruptcyType              BankruptcyType? // yalnız BANKRUPTCY'de anlamlı
+  judgmentExecutionType       JudgmentExecutionType? // yalnız JUDGMENT_ENFORCEMENT'ta anlamlı
+  // MTS bir ProceedingType DEĞİLDİR — icra takibinden ÖNCEKİ ayrı bir süreç/kanal alanıdır.
+  // Mevcut isMtsCase geçiş uyumluluğu için KORUNUR; kanonik takip-türü kaynağı bu ikilidir.
+  preEnforcementProcess       PreEnforcementProcessType?
+  preEnforcementProcessStatus PreEnforcementProcessStatus?
+
   // Faiz Bilgileri
   interestType        InterestType @default(YASAL)
   interestStartDate   DateTime? // Faiz başlangıç tarihi
@@ -2760,6 +2777,20 @@ model LegalDeadlineSnapshot {
   calculationVersion String // Hesaplama mantığı değiştiğinde eski/yeni ayrımı için
   deadlineReasonCode String // Hangi rejim + hangi madde (örn. "TK_21_2", "TK_20", "ILANEN", "UETS_M7A")
 
+  // MPB-028(a) PR-3C: kanonik takip-türü + paralel süre modeli sonucunun izlenebilirliği
+  // (deadlineReasonCode ile aynı ilke — hesaplama SONUCU kaydedilir, tahmin YAPILMAZ).
+  // Tümü nullable: PR-3C hesabı tetiklenmemiş snapshot'larda (PR-2 legacy akışı) boş kalır.
+  resolvedProceedingType ProceedingType? // Case.proceedingType'tan hesaplama anında çözümlenen tür
+  resolvedSubTypeCode    String? // Uygulanan RentalType/BankruptcyType/JudgmentExecutionType adı (varsa)
+  objectionDays          Int? // İtiraz/şikâyet süresi (gün) — takip türüne göre, hardcode değil
+  paymentDays            Int? // Ödeme süresi (gün)
+  vacateDays             Int? // Tahliye süresi (gün)
+  performanceDays        Int? // İfa/bekleme süresi (gün) — SPECIFIC_PERFORMANCE'ta caller-supplied
+  complaintDays          Int? // Şikâyet süresi (gün), itirazdan ayrı rejimlerde
+  nextActionWaitingDays  Int? // max(objectionDays, paymentDays, vacateDays, performanceDays, complaintDays)
+  nextActionEligibleDate DateTime? // periodStartDate + nextActionWaitingDays - 1 gün
+  nextActionType         NextActionType? // Süre sonunda doğan yetkinin türü
+
   calculatedAt DateTime @default(now())
 
   supersedesSnapshotId String?                 @unique
@@ -3200,6 +3231,90 @@ enum ExecutionPath {
   REHIN // Rehin paraya çevirme
   IPOTEK // İpotek paraya çevirme
   TAHLIYE // Tahliye
+}
+
+// MPB-028(a) PR-3C: Canonical Proceeding-Type and Legal-Period Rule Matrix (owner Decision,
+// 2026-07-13). CaseType/subType/ExecutionPath'in YERİNE geçmez — additive, paralel bir
+// kanonik sınıflandırma ekseni.
+//
+// Enstrüman (çek/bono/poliçe) NOTU: owner kararıyla bu PR'da Case seviyesinde YENİ bir
+// InstrumentType enum'ı/alanı OLUŞTURULMAZ. Mevcut `CaseInstrument.instrumentType`
+// (CEK/SENET/BONO/POLICE) kanonik enstrüman kaynağıdır — bir Case birden fazla ve farklı
+// türde kambiyo evrakı içerebileceğinden Case seviyesinde tekil bir instrument sınıflandırması
+// kurulmaz. ProceedingType.CAMBIO'nun süre kuralı (5/10 gün) enstrüman türüne göre
+// FARKLILAŞMAZ; `CaseInstrument` kayıtları ileride çek/bono/poliçeye özgü yaşam
+// döngülerinin (ibraz/protesto/karşılıksız/zamanaşımı) kanonik kaynağı olacaktır, bu PR'ın
+// kapsamı dışındadır. Mevcut `CaseInstrument.instrumentType` SENET/BONO ayrı değerlerinin
+// (aynı kambiyo senedi ailesi içinde iki farklı kod olması) redundant/belirsiz olup
+// olmadığı NEW FINDING / NOT AUTHORIZED olarak kaydedilir, bu PR'da çözülmez.
+enum ProceedingType {
+  GENERAL_EXECUTION
+  CAMBIO
+  RENT
+  EVICTION
+  PLEDGE
+  MORTGAGE
+  BANKRUPTCY
+  JUDGMENT_ENFORCEMENT
+  PUBLIC_RECEIVABLE
+  // MTS burada YOKTUR — bkz. PreEnforcementProcessType (icra takibinden önceki ayrı süreç).
+}
+
+// ProceedingType.RENT altındaki kanonik alt sınıflandırma (owner Decision) — dört alt türün
+// süresi farklıdır (30/10/60/15 gün); RENT tek başına yeterli değildir.
+enum RentalType {
+  RESIDENTIAL_COMMERCIAL // Konut / çatılı işyeri kirası — 30 gün
+  GENERAL // Diğer adi kira — 10 gün
+  CROP // Ürün / hasılat kirası — 60 gün
+  EVICTION_COMMITMENT // Tahliye taahhüdü — 15 gün (RENT altında başlar, ileride ayrı
+  // bir ProceedingType olma ihtimali owner tarafından açık bırakılmıştır)
+}
+
+// ProceedingType.BANKRUPTCY altındaki kanonik alt sınıflandırma (owner Decision) — adi
+// iflas ile kambiyo iflası aynı kategori altında eritilmez, ayrı sürelere sahiptir (7 vs 5).
+// Enstrüman ayrımı burada da YOKTUR (bkz. ProceedingType yorumu) — CAMBIO değeri kambiyo
+// senedine dayalı iflas yolunu ifade eder, hangi enstrüman (çek/bono/poliçe) olduğu
+// `CaseInstrument` kaydından ayrıca okunur, bu enum'a taşınmaz.
+enum BankruptcyType {
+  ORDINARY
+  CAMBIO
+}
+
+// ProceedingType.JUDGMENT_ENFORCEMENT altındaki kanonik beş alt tür (owner Decision) — tek
+// bir genel "İlamlı" koduyla süre hesabı yapılmaz, her alt tür ayrı hukuk kuralı taşır.
+enum JudgmentExecutionType {
+  MONEY_OR_SECURITY // Para veya teminat ilamı — 7 gün
+  MOVABLE_DELIVERY // Taşınır teslimi — 7 gün
+  IMMOVABLE_DELIVERY_OR_EVICTION // Taşınmaz tahliye ve teslimi — 7 gün
+  SPECIFIC_PERFORMANCE // Bir işin yapılması/yapılmaması — süre CALLER-SUPPLIED (kanonik
+  // tabloda sabit sayı YOK, mahkeme/icra müdürünce belirlenir — bkz. LegalPeriodRuleMatrix)
+  MORTGAGE_JUDGMENT // İpotekli ilam/icra emri — 30 gün
+}
+
+// Süre sonunda doğan yetkinin türü (owner Decision) — tek bir finalizationEligibleDate
+// yerine takip türüne özgü sonuç tipleri.
+enum NextActionType {
+  HACIZ_REQUEST_ELIGIBLE
+  SALE_REQUEST_ELIGIBLE
+  EVICTION_REQUEST_ELIGIBLE
+  BANKRUPTCY_REQUEST_ELIGIBLE
+  FORCED_DELIVERY_ELIGIBLE
+  FORCED_PERFORMANCE_ELIGIBLE
+  FINALIZATION_REQUEST_ELIGIBLE
+}
+
+// MTS bir ProceedingType DEĞİLDİR (owner Decision) — icra takibinden ÖNCEKİ ayrı bir
+// tahsil/başlatma mekanizmasıdır. Mevcut isMtsCase/mtsReturnDate ile birlikte, geçiş
+// uyumluluğu bozulmadan yaşar; MTS süreci icraya dönüştüğünde status=TRANSFERRED olur ve
+// Case.proceedingType ayrıca (gerçek icra takip türüne göre) doldurulur.
+enum PreEnforcementProcessType {
+  MTS
+}
+
+enum PreEnforcementProcessStatus {
+  ACTIVE
+  CLOSED
+  TRANSFERRED
 }
 
 // Alt Kategori - UYAP Uyumlu
