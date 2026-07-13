@@ -22,9 +22,70 @@ import { CollectionService } from '../collection.service';
 import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
 import { CreateCollectionDto, CollectionSource, CollectionType } from '../dto/collection.dto';
 import { CaseDebtorLifecycleGuardService } from '../../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
+import { SummaryEngineService } from '../../summary-engine/summary-engine.service';
+import { TBK100AllocatorService } from '../../interest-engine/allocation/tbk100-allocator.service';
+import { AccountingJournalWriterService } from '../../accounting-journal/accounting-journal.writer';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
 const describeIf = DATABASE_URL ? describe : describe.skip;
+
+interface AllocationReadObservation {
+  claimItemIds: string[];
+  collectedAmounts: number[];
+  demandedAmounts: number[];
+}
+
+function createControlledAllocationReadProbe() {
+  let arrivals = 0;
+  let firstReleased = false;
+  let resolveFirstArrival!: () => void;
+  let resolveSecondArrival!: () => void;
+  let resolveFirstRelease!: () => void;
+  const observations: AllocationReadObservation[] = [];
+  const firstArrival = new Promise<void>((resolve) => { resolveFirstArrival = resolve; });
+  const secondArrival = new Promise<void>((resolve) => { resolveSecondArrival = resolve; });
+  const firstReleaseSignal = new Promise<void>((resolve) => { resolveFirstRelease = resolve; });
+
+  return {
+    async observe(claimItems: any[]) {
+      observations.push({
+        claimItemIds: claimItems.map((item) => item.id),
+        collectedAmounts: claimItems.map((item) => Number(item.collectedAmount)),
+        demandedAmounts: claimItems.map((item) => Number(item.demandedAmount)),
+      });
+      arrivals += 1;
+      if (arrivals === 1) {
+        resolveFirstArrival();
+        await firstReleaseSignal;
+      } else if (arrivals === 2) {
+        resolveSecondArrival();
+      }
+    },
+    waitForFirstArrival: () => firstArrival,
+    waitForSecondArrival: () => secondArrival,
+    releaseFirst() {
+      if (firstReleased) return;
+      firstReleased = true;
+      resolveFirstRelease();
+    },
+    get arrivals() { return arrivals; },
+    get observations() { return observations; },
+  };
+}
+
+async function waitForAdvisoryLockWaiter(prisma: PrismaClient): Promise<number> {
+  for (let attempt = 0; attempt < 1_000; attempt += 1) {
+    const [row] = await prisma.$queryRaw<Array<{ waiting: number }>>`
+      SELECT COUNT(*)::int AS waiting
+      FROM pg_locks
+      WHERE locktype = 'advisory'
+        AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+        AND NOT granted
+    `;
+    if (row.waiting > 0) return row.waiting;
+  }
+  throw new Error('Second collection transaction did not become an advisory-lock waiter.');
+}
 
 describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
   let prisma: PrismaClient;
@@ -69,6 +130,9 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
     await (prisma as any).icrabotOutboxAction.deleteMany({
       where: { tenantId },
     });
+    await prisma.accountingJournalEntry.deleteMany({ where: { tenantId } });
+    await prisma.collectionOverpayment.deleteMany({ where: { tenantId } });
+    await prisma.ledgerEntry.deleteMany({ where: { tenantId } });
     // IcrabotTimelineEntry BİLEREK silinmiyor: DB trigger'ı (prevent_timeline_delete,
     // 00000000000001_legal_kernel_triggers migration.sql:169-172) her DELETE'i errcode 45010
     // ("immutable_violation: Legal facts are immutable") ile reddediyor — legal-fact append-only
@@ -77,6 +141,7 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
     // ve her test beforeEach'te taze randomUUID tenantId/caseId ürettiği için (satır ~87,~111)
     // kalan satırlar hiçbir sonraki testin scoped assertion'ıyla çakışmaz — yetim ama zararsız.
     await prisma.collection.deleteMany({ where: { tenantId } });
+    await prisma.claimItem.deleteMany({ where: { tenantId } });
     await prisma.caseDebtor.deleteMany({ where: { case: { tenantId } } });
     await prisma.case.deleteMany({ where: { tenantId } });
     await prisma.debtor.deleteMany({ where: { tenantId } });
@@ -589,5 +654,182 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       expect(event.body.header.occurredAtConfidence).toBe('EXTERNAL_SIGNED');
       expect(event.body.header.occurredAtEvidence).toBe('BANK-EVIDENCE-REF-001');
     });
+  });
+
+  describe('PATCH A2: allocation concurrency characterization', () => {
+    it('farklı key ile aynı ClaimItem hedefleyen iki create çağrısının kalıcı concurrency sonucunu sabitler', async () => {
+      const claimItem = await prisma.claimItem.create({
+        data: {
+          tenantId: testTenantId,
+          caseId: testCaseId,
+          itemType: 'PRINCIPAL',
+          originalAmount: 100,
+          demandedAmount: 100,
+          amount: 100,
+          currency: 'TRY',
+          liableDebtorIds: [],
+        },
+      });
+
+      const concurrencyPrisma = new PrismaClient({
+        datasources: { db: { url: DATABASE_URL } },
+      });
+      await concurrencyPrisma.$connect();
+
+      const allocationReads = createControlledAllocationReadProbe();
+      let caseAdvisoryLockAttempts = 0;
+      let resolveSecondCaseLockAttempt!: () => void;
+      const secondCaseLockAttempt = new Promise<void>((resolve) => {
+        resolveSecondCaseLockAttempt = resolve;
+      });
+
+      concurrencyPrisma.$use(async (params, next) => {
+        const rawQuery = (params.args as any)?.[0];
+        const queryText = String(rawQuery?.sql ?? rawQuery?.text ?? rawQuery ?? '');
+        const isTargetCaseAdvisoryLock =
+          params.action === 'executeRaw' &&
+          queryText.includes('hashtextextended');
+        if (isTargetCaseAdvisoryLock) {
+          caseAdvisoryLockAttempts += 1;
+          if (caseAdvisoryLockAttempts === 2) resolveSecondCaseLockAttempt();
+        }
+
+        const result = await next(params);
+        const isTargetAllocationRead =
+          params.model === 'Case' &&
+          params.action === 'findFirst' &&
+          (params.args as any)?.where?.id === testCaseId &&
+          Boolean((params.args as any)?.include?.claimItems);
+        if (isTargetAllocationRead) {
+          await allocationReads.observe((result as any)?.claimItems ?? []);
+        }
+        return result;
+      });
+
+      const summaryEngine = new SummaryEngineService(
+        concurrencyPrisma as any,
+        new TBK100AllocatorService(),
+      );
+      await summaryEngine.onModuleInit();
+      const concurrencyService = new CollectionService(
+        concurrencyPrisma as any,
+        new DomainEventIngestService(),
+        new CaseDebtorLifecycleGuardService(concurrencyPrisma as any),
+        summaryEngine,
+        new AccountingJournalWriterService(concurrencyPrisma as any),
+      );
+
+      const paymentDate = '2026-07-13T12:00:00.000Z';
+      const firstCall = concurrencyService.create(testTenantId, buildDto({
+        idempotencyKey: `a2-first-${randomUUID()}`,
+        amount: 75,
+        currency: 'TRY',
+        date: paymentDate,
+        sourceType: CollectionSource.MANUAL,
+        autoAllocate: false,
+      }), 'test-user-1');
+      const calls: Array<ReturnType<CollectionService['create']>> = [firstCall];
+
+      try {
+        await allocationReads.waitForFirstArrival();
+
+        const secondCall = concurrencyService.create(testTenantId, buildDto({
+          idempotencyKey: `a2-second-${randomUUID()}`,
+          amount: 75,
+          currency: 'TRY',
+          date: paymentDate,
+          sourceType: CollectionSource.MANUAL,
+          autoAllocate: false,
+        }), 'test-user-2');
+        calls.push(secondCall);
+
+        await secondCaseLockAttempt;
+        const advisoryLockWaiters = await waitForAdvisoryLockWaiter(prisma);
+        expect(caseAdvisoryLockAttempts).toBe(2);
+        expect(advisoryLockWaiters).toBe(1);
+        expect(allocationReads.arrivals).toBe(1);
+
+        allocationReads.releaseFirst();
+        const results = await Promise.allSettled(calls);
+        expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+        await allocationReads.waitForSecondArrival();
+
+        expect(allocationReads.arrivals).toBe(2);
+        expect(allocationReads.observations.map((observation) => observation.claimItemIds))
+          .toEqual([[claimItem.id], [claimItem.id]]);
+        expect(allocationReads.observations.map((observation) => observation.collectedAmounts))
+          .toEqual([[0], [75]]);
+        expect(allocationReads.observations.map((observation) => observation.demandedAmounts))
+          .toEqual([[100], [100]]);
+
+        const [
+          collections,
+          ledgerEntries,
+          allocations,
+          persistedClaimItem,
+          journalEntries,
+          events,
+          overpaymentEvents,
+          outbox,
+          compatAllocations,
+          overpayments,
+        ] = await Promise.all([
+          prisma.collection.findMany({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+          prisma.ledgerEntry.findMany({
+            where: { tenantId: testTenantId, caseId: testCaseId, entryType: 'PAYMENT' },
+          }),
+          prisma.ledgerAllocation.findMany({ where: { claimItemId: claimItem.id } }),
+          prisma.claimItem.findUniqueOrThrow({ where: { id: claimItem.id } }),
+          prisma.accountingJournalEntry.findMany({
+            where: { tenantId: testTenantId, sourceType: 'COLLECTION', sourceAction: 'recorded' },
+          }),
+          (prisma as any).icrabotTimelineEntry.findMany({
+            where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+          }),
+          (prisma as any).icrabotTimelineEntry.findMany({
+            where: { caseId: testCaseId, type: 'OVERPAYMENT_RECORDED' },
+          }),
+          (prisma as any).icrabotOutboxAction.findMany({
+            where: { tenantId: testTenantId, caseId: testCaseId },
+          }),
+          prisma.collectionAllocation.findMany({
+            where: { collection: { tenantId: testTenantId, caseId: testCaseId } },
+          }),
+          prisma.collectionOverpayment.findMany({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+        ]);
+
+        const collectionIds = new Set(collections.map((collection) => collection.id));
+        const ledgerEntryIds = new Set(ledgerEntries.map((entry) => entry.id));
+        const allocatedAmount = allocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0);
+        const demandedAmount = Number(persistedClaimItem.demandedAmount);
+        const consumedAmount = Number(persistedClaimItem.collectedAmount);
+
+        expect(collections).toHaveLength(2);
+        expect(ledgerEntries).toHaveLength(2);
+        expect(allocations).toHaveLength(2);
+        expect(journalEntries).toHaveLength(2);
+        expect(events).toHaveLength(2);
+        expect(overpaymentEvents).toHaveLength(1);
+        expect(outbox).toHaveLength(3);
+        expect(compatAllocations).toHaveLength(0);
+        expect(overpayments).toHaveLength(1);
+        expect(ledgerEntries.every((entry) => entry.collectionId && collectionIds.has(entry.collectionId))).toBe(true);
+        expect(new Set(ledgerEntries.map((entry) => entry.collectionId))).toEqual(collectionIds);
+        expect(allocations.every((allocation) => ledgerEntryIds.has(allocation.ledgerEntryId))).toBe(true);
+        expect(allocations.map((allocation) => Number(allocation.amount)).sort((a, b) => a - b))
+          .toEqual([25, 75]);
+        expect(allocatedAmount).toBe(100);
+        expect(consumedAmount).toBe(100);
+        expect(demandedAmount).toBe(100);
+        expect(demandedAmount - consumedAmount).toBe(0);
+        expect(allocatedAmount).toBeLessThanOrEqual(demandedAmount);
+        expect(Number(overpayments[0].amount)).toBe(50);
+        expect(Number(overpayments[0].remainingAmount)).toBe(50);
+      } finally {
+        allocationReads.releaseFirst();
+        await Promise.allSettled(calls);
+        await concurrencyPrisma.$disconnect();
+      }
+    }, 30_000);
   });
 });
