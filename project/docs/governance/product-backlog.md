@@ -1358,7 +1358,7 @@ runtime cutover `NOT AUTHORIZED`. The owner-designated next bounded workstream i
 requires separate explicit authorization; this closure does not activate telemetry or evidence
 execution.
 
-**ADR014-PE-06E Master Register Closure (2026-07-13; governance PR #TBD):** Audit / Evidence
+**ADR014-PE-06E Master Register Closure (2026-07-13; governance PR #1207):** Audit / Evidence
 Sealing / Monitoring Surfaces is `CLOSED / CANONICAL / LOCAL-PREPARATION-ONLY` after technical PR
 #1206 (head `8c6a42cdbf39c39491a97ec70df8e1f99d7d70be`; squash
 `31cf03e79b4c734cf574f6fd17311a6bb49ec722`; CI `4/4 SUCCESS`; pre-merge `CLEAN / MERGEABLE`).

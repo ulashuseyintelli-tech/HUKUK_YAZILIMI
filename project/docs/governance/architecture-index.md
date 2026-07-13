@@ -149,7 +149,7 @@ authorization and carrying no implied activation. Current execution plan:
 **ADR-014 post-PE-06E routing override (2026-07-13):** ADR014-PE-06E is
 `CLOSED / CANONICAL / LOCAL-PREPARATION-ONLY` after technical PR #1206 (head
 `8c6a42cdbf39c39491a97ec70df8e1f99d7d70be`; squash
-`31cf03e79b4c734cf574f6fd17311a6bb49ec722`) and governance PR #TBD. The new pure
+`31cf03e79b4c734cf574f6fd17311a6bb49ec722`) and governance PR #1207. The new pure
 default-disabled contract prepares an immutable append-only audit-reference chain, a complete
 non-official evidence-reference index and inert local read-only dashboard/rule-only alert
 descriptors. It reuses existing PE-05/PE-06 metric and correlation vocabularies and has no

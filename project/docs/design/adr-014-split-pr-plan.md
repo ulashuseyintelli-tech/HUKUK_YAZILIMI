@@ -74,7 +74,7 @@
 > observability preparation chain is complete. Next step: `OWNER DECISION REQUIRED —
 > Representative Evidence Preparation`; no evidence preparation/execution starts automatically.
 
-> **v2.24 governance closure PR:** #TBD.
+> **v2.24 governance closure PR:** #1207.
 
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
