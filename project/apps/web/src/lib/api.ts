@@ -4871,8 +4871,30 @@ export interface DebtorListItemDTO {
   serviceLabel: string;
   /** Tebliğ tarihi - hukuki süreler için kritik */
   deliveredAt?: string;
-  /** Kesinleşme tarihi - tebliğ + yasal süre (genellikle 7-14 gün) */
+  /**
+   * ⚠️ LEGACY COMPATIBILITY ALANI — değiştirilmez. GERÇEK bir kesinleşme olgusu DEĞİLDİR;
+   * yalnız tebliğ + sabit 7 gün (eski/kaba bir tahmin), itiraz/durdurucu-etki gibi hiçbir
+   * hukuki fact'i hesaba katmaz. Owner kararı (2026-07-14, "PR-4 final scope"):
+   * `finalizationEligibilitySource` CANONICAL ise (flag açık) bu alan UI'da ASLA "Kesinleşti"
+   * hükmü üretmek için kullanılmamalıdır — yalnız LEGACY (flag kapalı, backward-compat)
+   * durumunda mevcut gösterim için kullanılır.
+   */
   finalizationDate?: string;
+  /**
+   * MPB-028(a) PR-4: kanonik süre motorundan gelen READ-ONLY PROJECTION tarihi — GERÇEK bir
+   * kesinleşme olgusu değildir, yalnız bir süre hesabıdır. İtiraz/durdurucu-etki fact'i henüz
+   * kanonik olarak modellenmediği için tek başına herhangi bir hukuki hüküm taşımaz.
+   * `finalizationDate` İLE KARIŞTIRILMAMALIDIR.
+   */
+  finalizationRequestEligibleDate?: string;
+  /**
+   * `finalizationRequestEligibleDate`'in kaynağı. LEGACY = sabit +7 gün (flag kapalı/servis
+   * yok, varsayılan); CANONICAL = kanonik hukuki süre motoru (flag açık) — UI ASLA
+   * "Kesinleşti" yazmaz, yalnız nötr bir projeksiyon tarihi gösterir; UNRESOLVED = flag açık
+   * ama sınıflandırma/kural/tebligat eksik — bu durumda undefined'dır, tahmini bir tarih ASLA
+   * üretilmez.
+   */
+  finalizationEligibilitySource: "LEGACY" | "CANONICAL" | "UNRESOLVED";
   assets: AssetsDTO;
   alertCount: number;
   alertLevel: AlertLevel;

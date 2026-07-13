@@ -1,14 +1,14 @@
 "use client";
 
 import { ServiceStatus } from "@/lib/api";
-import { 
+import {
   AlertTriangle,
-  FileText, 
-  Send, 
-  CheckCircle, 
-  RotateCcw, 
-  Home, 
-  Megaphone, 
+  FileText,
+  Send,
+  CheckCircle,
+  RotateCcw,
+  Home,
+  Megaphone,
   XCircle,
   HelpCircle,
   Clock,
@@ -20,14 +20,29 @@ interface ServiceStatusBadgeProps {
   /** Pre-computed label with date from backend, e.g. "Tebliğ Edildi — 12.01.2026" */
   serviceLabel?: string;
   size?: "sm" | "md";
-  /** Kesinleşme tarihi - eğer geçmişse yeşil göster */
+  /**
+   * ⚠️ LEGACY COMPATIBILITY ALANI — değiştirilmez. GERÇEK bir kesinleşme olgusu DEĞİLDİR
+   * (yalnız tebliğ + sabit 7 gün tahmini). Owner kararı (2026-07-14, "PR-4 final scope"):
+   * `finalizationEligibilitySource` CANONICAL ise (flag açık) bu alan "FINALIZED"/"Kesinleşti"
+   * geçişini TETİKLEMEZ — yalnız LEGACY (flag kapalı, backward-compat) durumunda mevcut
+   * gösterim için kullanılır.
+   */
   finalizationDate?: string;
+  /**
+   * MPB-028(a) PR-4: kanonik süre motorundan gelen READ-ONLY PROJECTION tarihi — GERÇEK bir
+   * kesinleşme olgusu DEĞİLDİR, `finalizationDate` İLE KARIŞTIRILMAZ. Bu prop yalnızca
+   * tooltip'e ek, nötr bir bilgi eklemek için kullanılır; ASLA "Kesinleşti"/"FINALIZED"
+   * durumuna geçiş TETİKLEMEZ (owner: "yalnız eligibility hesabına dayanarak 'Kesinleşti'
+   * gösterme").
+   */
+  finalizationRequestEligibleDate?: string;
+  finalizationEligibilitySource?: "LEGACY" | "CANONICAL" | "UNRESOLVED";
 }
 
-const statusConfig: Record<ServiceStatus, { 
-  icon: typeof AlertTriangle; 
-  bg: string; 
-  text: string; 
+const statusConfig: Record<ServiceStatus, {
+  icon: typeof AlertTriangle;
+  bg: string;
+  text: string;
   border: string;
   defaultLabel: string;
 }> = {
@@ -53,12 +68,29 @@ const statusConfig: Record<ServiceStatus, {
   FINALIZED: { icon: ShieldCheck, bg: "bg-emerald-50", text: "text-emerald-600", border: "border-emerald-200", defaultLabel: "Kesinleşti" },
 };
 
-export function ServiceStatusBadge({ status, serviceLabel, size = "sm", finalizationDate }: ServiceStatusBadgeProps) {
-  // Kesinleşme kontrolü: Tebliğ edilmiş ve süre dolmuşsa yeşil göster
+export function ServiceStatusBadge({
+  status,
+  serviceLabel,
+  size = "sm",
+  finalizationDate,
+  finalizationRequestEligibleDate,
+  finalizationEligibilitySource,
+}: ServiceStatusBadgeProps) {
+  // MPB-028(a) PR-4 (owner kararı, 2026-07-14): "Kesinleşti" hükmü YALNIZ flag kapalıyken
+  // (LEGACY, backward-compat) `finalizationDate`'e dayanarak üretilir. Flag açıkken
+  // (finalizationEligibilitySource CANONICAL/UNRESOLVED), itiraz/durdurucu-etki fact'i henüz
+  // kanonik olarak modellenmediği için `finalizationDate` (eski bir tahmin) ARTIK "Kesinleşti"
+  // hükmü üretmek için KULLANILMAZ — sistem bunu bilerek UNRESOLVED/nötr bırakır.
+  const isFlagOn = finalizationEligibilitySource !== undefined && finalizationEligibilitySource !== "LEGACY";
+
   let effectiveStatus = status;
   let effectiveLabel = serviceLabel;
-  
-  if ((status === "DELIVERED" || status === "MUHTAR" || status === "ANNOUNCEMENT") && finalizationDate) {
+
+  if (
+    !isFlagOn &&
+    (status === "DELIVERED" || status === "MUHTAR" || status === "ANNOUNCEMENT") &&
+    finalizationDate
+  ) {
     const finDate = new Date(finalizationDate);
     const now = new Date();
     if (finDate <= now) {
@@ -66,32 +98,49 @@ export function ServiceStatusBadge({ status, serviceLabel, size = "sm", finaliza
       effectiveLabel = `Kesinleşti — ${finDate.toLocaleDateString("tr-TR", { day: "2-digit", month: "short", year: "numeric" })}`;
     }
   }
-  
+
   const config = statusConfig[effectiveStatus] || statusConfig.UNKNOWN;
   const Icon = config.icon;
-  
+
   // Use serviceLabel if provided (includes date), otherwise use default
   const label = effectiveLabel || config.defaultLabel;
-  
-  const sizeClasses = size === "sm" 
-    ? "px-2 py-0.5 text-[10px] gap-1" 
+
+  const sizeClasses = size === "sm"
+    ? "px-2 py-0.5 text-[10px] gap-1"
     : "px-2.5 py-1 text-xs gap-1.5";
-  
+
   const iconSize = size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5";
 
-  // Tooltip with finalization info
+  // Tooltip: flag kapalıyken (LEGACY) mevcut davranış; flag açıkken (CANONICAL/UNRESOLVED)
+  // ASLA "Kesinleşti" ifadesi kullanılmaz, yalnız nötr bir projeksiyon tarihi bağlamı
+  // gösterilir.
   let tooltip = label;
-  if (status === "DELIVERED" && finalizationDate) {
+  if (!isFlagOn && status === "DELIVERED" && finalizationDate) {
     const finDate = new Date(finalizationDate);
     const now = new Date();
     const daysLeft = Math.ceil((finDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     if (daysLeft > 0) {
       tooltip = `${label}\nKesinleşme: ${finDate.toLocaleDateString("tr-TR")}\nKalan: ${daysLeft} gün`;
     }
+  } else if (
+    status === "DELIVERED" &&
+    finalizationEligibilitySource === "CANONICAL" &&
+    finalizationRequestEligibleDate
+  ) {
+    const eligibleDate = new Date(finalizationRequestEligibleDate);
+    const now = new Date();
+    const daysLeft = Math.ceil((eligibleDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    tooltip =
+      daysLeft > 0
+        ? `${label}\nKesinleştirme talebine ${daysLeft} gün`
+        : `${label}\nKesinleştirme talebi için uygun tarih: ${eligibleDate.toLocaleDateString("tr-TR")}`;
+  } else if (status === "DELIVERED" && finalizationEligibilitySource === "UNRESOLVED") {
+    // MPB-028(a) PR-4: fail-closed — tahmini bir tarih göstermek yerine durumu şeffaf belirt.
+    tooltip = `${label}\nKesinleştirme talebi için uygunluk hesaplanamadı`;
   }
 
   return (
-    <span 
+    <span
       className={`inline-flex items-center rounded-full border font-medium whitespace-nowrap ${config.bg} ${config.text} ${config.border} ${sizeClasses}`}
       title={tooltip}
     >

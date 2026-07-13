@@ -31,6 +31,8 @@ import {
   DebtorCrossCaseNotificationService,
   DebtorNotificationFieldGroupKey,
 } from "./debtor-cross-case-notification.service";
+// MPB-028(a) PR-4: LEGAL_TIME_CUTOVER flag altında kanonik finalizationDate kaynağı.
+import { LegalPeriodCalculationService } from "@/modules/legal-deadline/legal-period-calculation.service";
 
 // ==================== PR-D5-a: DEPRECATED addressType/isMernis → KANONİK type/source ====================
 // Frontend hâlâ DTO addressType (EV/IS/TEBLIGAT/MERNIS/KEP) + isMernis gönderir; backend KANONİK
@@ -210,8 +212,35 @@ export interface DebtorListItemDTO {
   serviceLabel: string;
   /** Tebliğ tarihi */
   deliveredAt?: string;
-  /** Kesinleşme tarihi */
+  /**
+   * ⚠️ LEGACY COMPATIBILITY ALANI — değiştirilmez. GERÇEK bir kesinleşme OLGUSU DEĞİLDİR;
+   * yalnız tebliğ + sabit 7 gün (eski/kaba bir TAHMİN) formülüdür, itiraz/durdurucu-etki/
+   * gerçek-süre gibi hiçbir hukuki fact'i hesaba katmaz. Owner kararı (2026-07-14, "PR-4
+   * final scope"): bu alan `LEGAL_TIME_CUTOVER` flag'inden ETKİLENMEZ, kanonik hesapla ASLA
+   * doldurulmaz, yeniden anlamlandırılmaz veya otomatik üretilmez — GERÇEK kesinleşme
+   * (itiraz fact'i + süre + gerekirse müdürlük/UYAP teyidi) bu PR'ın kapsamı dışındadır,
+   * borçlu temel hattı bittikten sonra ayrı bir tebligat/icra-sonrası workstream'inde
+   * kanonik olarak modellenecektir. `finalizationEligibilitySource` CANONICAL ise (flag
+   * açık) bu alan UI'da ASLA "Kesinleşti" hükmü üretmek için KULLANILMAMALIDIR — yalnız
+   * LEGACY (flag kapalı, backward-compat) durumunda mevcut "Kesinleşti" gösterimi İÇİN
+   * kullanılabilir.
+   */
   finalizationDate?: string;
+  /**
+   * MPB-028(a) PR-4: kanonik süre motorundan gelen READ-ONLY PROJECTION tarihi
+   * (`nextActionEligibleDate`) — GERÇEK bir kesinleşme olgusu değildir, yalnız "bu süre
+   * uzunluğuyla, tarih X'te dolar" bilgisidir. İtiraz/durdurucu-etki fact'i henüz kanonik
+   * olarak modellenmediği için bu alan tek başına herhangi bir hukuki hüküm (kesinleşme,
+   * cebrî icra kabiliyeti vb.) TAŞIMAZ — yalnız bir projeksiyondur. `finalizationDate` İLE
+   * KARIŞTIRILMAMALIDIR. `finalizationEligibilitySource` LEGACY ise flag kapalı/servis yok
+   * anlamına gelir ve `finalizationDate` ile AYNI (+7 gün) değeri taşır (yalnız geriye dönük
+   * tutarlılık için). CANONICAL ise kanonik motor sonucu döner; UI bu durumda ASLA
+   * "Kesinleşti"/"Kesinleşme tarihi" YAZMAZ, yalnız nötr bir projeksiyon tarihi olarak
+   * gösterir. UNRESOLVED ise undefined kalır — tahmini bir tarih ASLA üretilmez
+   * (fail-closed).
+   */
+  finalizationRequestEligibleDate?: string;
+  finalizationEligibilitySource: "LEGACY" | "CANONICAL" | "UNRESOLVED";
   assets: AssetsDTO;
   alertCount: number;
   alertLevel: AlertLevel;
@@ -363,8 +392,79 @@ export class DebtorService {
     private readonly caseDebtorLifecycleGuard?: CaseDebtorLifecycleGuardService,
     // DBND-D6A-2: opsiyonel — mevcut testler (yalnız 4 arg ile constructor çağıran) kırılmasın diye
     // caseDebtorLifecycleGuard ile AYNI opsiyonel-DI deseni. Sağlanmazsa fan-out sessizce atlanır.
-    private readonly crossCaseNotification?: DebtorCrossCaseNotificationService
+    private readonly crossCaseNotification?: DebtorCrossCaseNotificationService,
+    // MPB-028(a) PR-4: opsiyonel — AYNI desen. Sağlanmazsa (ya da flag kapalıysa)
+    // finalizationRequestEligibleDate her zaman LEGACY (+7 gün) hesabına düşer; `finalizationDate`
+    // bu servisten HİÇ etkilenmez (owner kararı — bkz. computeFinalizationEligibilityInfo).
+    private readonly legalPeriodCalculationService?: LegalPeriodCalculationService
   ) {}
+
+  /**
+   * MPB-028(a) PR-4: consumer-by-consumer read-only cutover flag. Varsayılan KAPALI —
+   * kapalıyken `computeFinalizationEligibilityInfo` mevcut LEGACY (+7 gün) hesabını birebir
+   * korur, hiçbir davranış değişmez (PR-3B'nin `LEGAL_TIME_SHADOW_ENABLED` deseniyle aynı ilke).
+   */
+  private isLegalTimeCutoverEnabled(): boolean {
+    return process.env.LEGAL_TIME_CUTOVER === "true";
+  }
+
+  /**
+   * MPB-028(a) PR-4 (owner revizyonu, 2026-07-14 — "PR-4 LEGAL SEMANTICS"): kesinleştirme
+   * TALEBİ için UYGUN OLUNAN tarihi (`finalizationRequestEligibleDate`) hesaplar — GERÇEK bir
+   * kesinleşme OLGUSU DEĞİLDİR, `finalizationDate`'e YAZILMAZ/karıştırılmaz (owner kararı: bu
+   * PR'da `finalizationDate` hiçbir canonical hesapla doldurulmaz; gerçek kesinleşme yalnız
+   * UYAP/adliye kabulüyle oluşur, kapsam dışıdır).
+   *
+   * Tebliğ edilmemişse (deliveredAt yok) flag'den bağımsız LEGACY döner — hiçbir hesap
+   * yapılmaz, davranış değişmez. Flag açıkken kanonik motoru (LegalPeriodCalculationService)
+   * dener; sınıflandırma/kural/ilgili Tebligat kaydı eksikse UNRESOLVED döner ve
+   * `finalizationRequestEligibleDate` undefined kalır — tahmini bir tarih ASLA üretilmez
+   * (fail-closed).
+   */
+  private async computeFinalizationEligibilityInfo(
+    tenantId: string,
+    caseId: string,
+    cd: { id: string; deliveredAt: Date | null }
+  ): Promise<{
+    finalizationRequestEligibleDate?: string;
+    finalizationEligibilitySource: "LEGACY" | "CANONICAL" | "UNRESOLVED";
+  }> {
+    if (!cd.deliveredAt) {
+      return { finalizationRequestEligibleDate: undefined, finalizationEligibilitySource: "LEGACY" };
+    }
+
+    if (!this.isLegalTimeCutoverEnabled() || !this.legalPeriodCalculationService) {
+      return {
+        finalizationRequestEligibleDate: new Date(
+          cd.deliveredAt.getTime() + 7 * 24 * 60 * 60 * 1000
+        ).toISOString(),
+        finalizationEligibilitySource: "LEGACY",
+      };
+    }
+
+    const tebligat = await this.prisma.tebligat.findFirst({
+      where: { tenantId, caseDebtorId: cd.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (!tebligat) {
+      return { finalizationRequestEligibleDate: undefined, finalizationEligibilitySource: "UNRESOLVED" };
+    }
+
+    const result = await this.legalPeriodCalculationService.computeCanonicalLegalPeriod({
+      tenantId,
+      tebligatId: tebligat.id,
+      caseId,
+    });
+    if (result.status === "UNRESOLVED") {
+      return { finalizationRequestEligibleDate: undefined, finalizationEligibilitySource: "UNRESOLVED" };
+    }
+
+    return {
+      finalizationRequestEligibleDate: result.nextActionEligibleDate.toISOString(),
+      finalizationEligibilitySource: "CANONICAL",
+    };
+  }
 
   private requireCaseDebtorLifecycleGuard(): CaseDebtorLifecycleGuardService {
     if (!this.caseDebtorLifecycleGuard) {
@@ -1824,9 +1924,17 @@ export class DebtorService {
       const serviceStatus = (cd.serviceStatus as ServiceStatus) || "NOT_STARTED";
 
       // Kesinleşme tarihi hesapla (tebliğ + 7 gün - ilamsız icra için ödeme emrine itiraz süresi)
-      const finalizationDate = cd.deliveredAt 
+      // Owner kararı (2026-07-14): bu alan GERÇEK kesinleşme OLGUSU (UYAP/adliye kabulü) taşır
+      // ve hiçbir canonical/eligibility hesabıyla DOLDURULMAZ — flag'den bağımsız, değişmez.
+      const finalizationDate = cd.deliveredAt
         ? new Date(cd.deliveredAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
         : undefined;
+
+      // MPB-028(a) PR-4: kesinleştirme TALEBİ için uygun olunan tarih (eligibility) — ayrı ve
+      // farklı bir kavram, LEGAL_TIME_CUTOVER flag'i kapalıyken LEGACY (+7 gün); açıkken
+      // kanonik hukuki süre motoru (fail-closed UNRESOLVED).
+      const { finalizationRequestEligibleDate, finalizationEligibilitySource } =
+        await this.computeFinalizationEligibilityInfo(tenantId, caseId, cd);
 
       // Check if debtor has different address in other cases (cross-file)
       let hasDifferentAddressInOtherCase = false;
@@ -1875,6 +1983,8 @@ export class DebtorService {
         serviceLabel: this.computeServiceLabel(serviceStatus, cd),
         deliveredAt: cd.deliveredAt?.toISOString(),
         finalizationDate,
+        finalizationRequestEligibleDate,
+        finalizationEligibilitySource,
         assets: {
           vehicle: (cd.assetVehicle as AssetQueryStatus) || "UNKNOWN",
           realEstate: (cd.assetRealEstate as AssetQueryStatus) || "UNKNOWN",
@@ -1935,6 +2045,14 @@ export class DebtorService {
     const alertLevel = this.getMaxAlertLevel(issues);
     const serviceStatus = (caseDebtor.serviceStatus as ServiceStatus) || "NOT_STARTED";
     const financialSummary = await this.buildCaseDebtorFinancialSummary(tenantId, caseId, caseDebtor.id);
+    // Kesinleşme tarihi — liste (getDebtorsForCase) ile AYNI: flag'den bağımsız, GERÇEK
+    // kesinleşme olgusu (owner kararı, 2026-07-14) — hiçbir canonical hesapla doldurulmaz.
+    const finalizationDate = caseDebtor.deliveredAt
+      ? new Date(caseDebtor.deliveredAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      : undefined;
+    // MPB-028(a) PR-4: kesinleştirme talebi eligibility — liste ile AYNI kaynak/flag mantığı.
+    const { finalizationRequestEligibleDate, finalizationEligibilitySource } =
+      await this.computeFinalizationEligibilityInfo(tenantId, caseId, caseDebtor);
 
     return {
       id: debtor.id,
@@ -1974,6 +2092,9 @@ export class DebtorService {
       selectedAddressId: caseDebtor.selectedAddressId || undefined,
       serviceStatus,
       serviceLabel: this.computeServiceLabel(serviceStatus, caseDebtor),
+      finalizationDate,
+      finalizationRequestEligibleDate,
+      finalizationEligibilitySource,
       alertCount: issues.length,
       alertLevel,
       service: {
