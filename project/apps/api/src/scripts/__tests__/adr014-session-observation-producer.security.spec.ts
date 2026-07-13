@@ -31,11 +31,20 @@ const boundedInputs = [
   { kind: 'HEALTH', component: 'ALERT', result: 'NOT_CONFIGURED' },
 ] as const satisfies readonly Adr014ObservationProducerInput[];
 
+const projectionContext = Object.freeze({
+  event: Object.freeze({
+    timestamp: '2026-07-13T14:00:00.000Z',
+    canonicalShaReference: 'b'.repeat(40),
+    environmentReference: 'TEST' as const,
+  }),
+  phaseDurationSeconds: 0.5,
+});
+
 describe('ADR014-PE-06B2 producer security boundary', () => {
   it('emits no identity, financial, free-text or arbitrary metadata fields', () => {
     const sink = new SecurityInspectionSink();
     const producer = createAdr014ObservationProducer({ mode: 'TEST_ONLY' }, sink);
-    boundedInputs.forEach((input) => producer.produce(input));
+    boundedInputs.forEach((input) => producer.produce(input, projectionContext));
 
     const serialized = JSON.stringify(sink.projections);
     for (const prohibited of [
@@ -78,18 +87,39 @@ describe('ADR014-PE-06B2 producer security boundary', () => {
       'coverage_category',
       'boundary_type',
       'component',
+      'phase',
       'result',
     ]);
 
     for (const projection of sink.projections) {
-      if (projection.metric.status !== 'MAPPED') continue;
-      for (const key of Object.keys(projection.metric.labels)) {
-        expect(allowedLabelKeys.has(key)).toBe(true);
+      for (const metric of [projection.metric, ...projection.additionalMetrics]) {
+        if (metric.status !== 'MAPPED') continue;
+        for (const key of Object.keys(metric.labels)) {
+          expect(allowedLabelKeys.has(key)).toBe(true);
+        }
+        expect(Object.values(metric.labels).every((value) => typeof value === 'string')).toBe(true);
       }
-      expect(Object.values(projection.metric.labels).every((value) => typeof value === 'string')).toBe(
-        true,
-      );
     }
+  });
+
+  it('fails closed for invalid v2 context without copying caller metadata', () => {
+    const sink = new SecurityInspectionSink();
+    const producer = createAdr014ObservationProducer({ mode: 'TEST_ONLY' }, sink);
+
+    producer.produce(boundedInputs[0], {
+      event: {
+        timestamp: 'not-utc',
+        canonicalShaReference: 'A'.repeat(40),
+        environmentReference: 'TEST',
+        tenantId: 'raw-tenant',
+      },
+    });
+
+    expect(sink.projections[0].event).toEqual({
+      status: 'BLOCKED_WITH_REASON',
+      blockerCode: 'INVALID_SESSION_CONTROL_EVENT_CONTEXT',
+    });
+    expect(JSON.stringify(sink.projections[0])).not.toContain('raw-tenant');
   });
 
   it.each([
