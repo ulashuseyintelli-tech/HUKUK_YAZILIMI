@@ -208,6 +208,19 @@ open; PR-11 and runtime cutover remain `NOT AUTHORIZED`. The single next eligibl
 separately owner-authorized v2 pre-run package-instance materialization. Current execution plan:
 `docs/design/adr-014-split-pr-plan.md` v2.27.
 
+**ADR-014 post-REP-01A-R2-I1 routing override (2026-07-14):**
+ADR014-REP-01A-R2-I1 is `CLOSED / CANONICAL / PRE-RUN-INSTANCE-ONLY` after technical PR #1224
+(head `b4f88941360e7442430d98183f8967a3780f9312`; squash
+`d15f35a327ea3ddda74a15cfb98414568214a32a`) and its governance closure. The first v2
+owner-decision instance is repository-backed and materializes against a caller-supplied verified
+canonical HEAD, producing `PRE_RUN_AUTHORIZED / RUNTIME_BINDING_REQUIRED`. It contains no exact
+manifest/approval, reviewer actor, session, actual UTC windows, observed counts or capture hash.
+It performs no data access or execution and grants no evidence acceptance, REP-02, PR-11 or
+runtime/cutover authority. Representative evidence remains `ABSENT / BLOCKING`; CAN-CUT-02 stays
+open; PR-11 and runtime cutover remain `NOT AUTHORIZED`. The single next action is an explicit
+owner decision for ADR014-REP-02 execution. Current execution plan:
+`docs/design/adr-014-split-pr-plan.md` v2.28.
+
 ## ADR Naming Collision Matrix (GOV-ADR-NAMING-000)
 
 Bu bölüm, `ADR-012` numarasının DX-005 için main üzerinde kanonikleşmesinden sonra yanlış ADR referansı üretilmesini engeller. **2026-07-10 owner arbitration (final):** Aynı gün iki aday çözüm değerlendirildi — Option C (`ADR-013`'ün kapsamını CCB-001'i içerecek şekilde genişletme, kısa süre uygulandı, PR #1019) ve ayrı-numara seçeneği (`ADR-013`'ü `GOV-ADR-NAMING-000`'ın orijinal dar kapsamında bırakıp CCB-001'e kendi numarasını verme). Owner'ın nihai kararı: **CCB-001'in mimari dokümanı `ADR-014`'tür; `ADR-013` `GOV-ADR-NAMING-000`'ın orijinal kapsamında (Fee/Harç/Snapshot/Journal) kalır, DEĞİŞMEDEN.** PR #1026 sonrası ADR-013 artık draft/owner-review ADR olarak mevcuttur. Bu patch runtime davranışı, kod, migration veya CCB-001 branch merge'i yaratmaz.

@@ -1437,6 +1437,24 @@ ID is created. Representative evidence remains `ABSENT / BLOCKING`; CAN-CUT-02 r
 PR-11 and runtime cutover remain `NOT AUTHORIZED`. Next eligible workstream: separately
 owner-authorized v2 pre-run package-instance materialization.
 
+**ADR014-REP-01A-R2-I1 Master Register Closure (2026-07-14):** The first v2 pre-run
+owner-decision instance is `CLOSED / CANONICAL / PRE-RUN-INSTANCE-ONLY` after technical PR #1224
+(head `b4f88941360e7442430d98183f8967a3780f9312`; squash
+`d15f35a327ea3ddda74a15cfb98414568214a32a`; CI `4/4 SUCCESS`; pre-merge `CLEAN / MERGEABLE`).
+The exact five-file scope adds one pure instance materializer, functional/security tests, runbook
+clarification and CI selection. Approved environment/data/operator/reviewer-policy/access/execution/
+output/retention/sign-off/baseline decisions are bound to deterministic opaque references. The
+verified canonical HEAD is supplied at materialization and validated by the unchanged v2 contract.
+The result is `PRE_RUN_AUTHORIZED / runtimeBindingStatus=RUNTIME_BINDING_REQUIRED`, with
+`executionStarted=false`, `representativeEvidenceProduced=false`,
+`representativeEvidenceAccepted=false`, `rep02Authorized=false`, `pr11Ready=false` and
+`runtimeCutoverAuthorized=false`. Exact manifest/approval, reviewer actor, session, UTC windows,
+counts and capture hash remain runtime facts and are absent. No database access, representative
+run, evidence, schema/migration, API/consumer or authority change occurred. No new backlog or
+maintenance ID is created. Representative evidence remains `ABSENT / BLOCKING`; CAN-CUT-02 stays
+open; PR-11 and runtime cutover remain `NOT AUTHORIZED`. Next action: `OWNER DECISION REQUIRED —
+ADR014-REP-02 LOCAL REPRESENTATIVE EVIDENCE EXECUTION`; this closure does not grant that GO.
+
 ---
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
 
