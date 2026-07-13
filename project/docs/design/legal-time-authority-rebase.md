@@ -134,11 +134,14 @@ Ek not: `workflow-engine.ts`'nin `NotificationQueue` include'unda `type` filtres
 
 ## 7. Önerilen PR Sıralaması
 
+**Owner kararı (2026-07-13):** aşağıdaki "PR-3", implementasyon sırasında tek bir PR'ın taşıyamayacağı iki ayrı işe (hesaplama motoru vs. bunun runtime aktivasyonu) ayrıştığı için, owner tarafından retroaktif olarak **PR-3A** ve **PR-3B** alt-workstream'lerine bölünmüştür (bkz. `decision-log.md` aynı tarihli OWNER DECISION kaydı). PR-4/PR-5/PR-6 numaraları bu ayrımdan etkilenmemiştir.
+
 | PR | Kapsam | Not |
 |---|---|---|
 | **PR-1** | docs/design only | Bu belge |
 | **PR-2** | `LegalDeadlineService` read-only | Henüz hiçbir tüketiciyi değiştirmez; tam test kapsamı (Bölüm 3'teki "required tests" sütunu) |
-| **PR-3** | Compare endpoint / shadow report | Açık dosyalar için mevcut (yanlış) değer vs yeni (doğru) değer farkı |
+| **PR-3A** | Shadow Read + Diff Engine | Legacy (WorkflowEngine replikası) vs canonical (`LegalDeadlineService`) hesabı arasındaki farkı ölçen, immutable `LegalTimeShadowDiff` kaydı üreten read-only mekanizma — **CLOSED** (PR #1192, squash `e22777c6`) |
+| **PR-3B** | Evidence Activation | PR-3A'nın runtime DI kaydı (`app.module.ts`), tetikleme/okuma yüzeyi (`LegalTimeShadowController`) ve local/ofis evidence üretim prosedürü (runbook) — **CLOSED** (PR #1198, squash `6b07bd09`); operasyonel mekanizma AVAILABLE, gerçek ofis verisiyle representative evidence hâlâ ABSENT/owner execution required |
 | **PR-4** | UI read-only display | Dört tutarsız frontend gösterimini tek kaynağa yönlendir, demo-veri fallback'ini kaldır |
 | **PR-5** | Scheduler/workflow switch | `checkPaymentOrderDeadlines`/`processPendingCases`/policy-engine fact zincirini `LegalDeadlineService`'e bağla, `NotificationQueue` yolunu kaldır |
 | **PR-6** | Backfill/data cleanup | Ayrı owner onayı ister — bu belge onu yetkilendirmez |
