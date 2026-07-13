@@ -51,6 +51,26 @@ export function extractEndorserNames(raw: unknown): string[] {
   return [];
 }
 
+export interface TemplateInstrumentInfo {
+  type: 'CEK' | 'SENET' | 'BONO' | 'POLICE';
+  serialNo?: string;            // Çek seri numarası
+  instrumentNo?: string;        // Çek/Senet numarası
+  issueDate?: string;           // Keşide/Düzenleme tarihi
+  dueDate?: string;             // Vade tarihi
+  presentationDate?: string;    // İbraz tarihi (çek için)
+  bankName?: string;            // Banka adı
+  branchName?: string;          // Şube adı
+  drawerName?: string;          // Keşideci
+  endorsers?: string[];         // Cirantalar
+  amount?: string;              // Tutar (formatlanmış)
+  currency?: string;            // Para birimi
+  amountText?: string;          // Tutar yazıyla (Birmilyon Türk Lirası)
+  issuePlace?: string;          // Tanzim yeri
+  bounceAmount?: string;        // Karşılıksız tutar
+  isBounced?: boolean;          // Karşılıksız mı
+  bounceDate?: string;          // Karşılıksız tarihi
+}
+
 export interface TemplateData {
   fileNumber: string;
   filingDate: string;
@@ -104,25 +124,8 @@ export interface TemplateData {
   subCategory: string;
   executionPath: string;
   // Kambiyo (Çek/Senet) bilgileri
-  instrumentInfo?: { 
-    type: 'CEK' | 'SENET';
-    serialNo?: string;            // Çek seri numarası
-    instrumentNo?: string;        // Çek/Senet numarası
-    issueDate?: string;           // Keşide/Düzenleme tarihi
-    dueDate?: string;             // Vade tarihi
-    presentationDate?: string;    // İbraz tarihi (çek için)
-    bankName?: string;            // Banka adı
-    branchName?: string;          // Şube adı
-    drawerName?: string;          // Keşideci
-    endorsers?: string[];         // Cirantalar
-    amount?: string;              // Tutar (formatlanmış)
-    currency?: string;            // Para birimi
-    amountText?: string;          // Tutar yazıyla (Birmilyon Türk Lirası)
-    issuePlace?: string;          // Tanzim yeri
-    bounceAmount?: string;        // Karşılıksız tutar
-    isBounced?: boolean;          // Karşılıksız mı
-    bounceDate?: string;          // Karşılıksız tarihi
-  };
+  instrumentInfo?: TemplateInstrumentInfo;
+  instrumentInfos?: TemplateInstrumentInfo[];
   // İlam bilgileri
   courtInfo?: { 
     name: string;                 // Mahkeme adı
@@ -412,14 +415,17 @@ export class TemplateEngineService {
     }
     
     // Çek/Senet bilgilerini çek
-    let instrumentInfo: TemplateData['instrumentInfo'] = undefined;
+    let instrumentInfos: TemplateInstrumentInfo[] = [];
     if (['CEK', 'SENET', 'KAMBIYO_CEK', 'KAMBIYO_SENET'].includes(caseRecord.subCategory) || ['CHECK', 'BOND'].includes(caseRecord.type)) {
-      const instrument = await (this.prisma as any).caseInstrument.findFirst({ where: { caseId } });
-      if (instrument) {
+      const instruments = await (this.prisma as any).caseInstrument.findMany({
+        where: { caseId },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      instrumentInfos = instruments.map((instrument: any) => {
         // Tutarı yazıyla ifade et
         const amountText = this.numberToWords(Number(instrument.amount || 0));
-        
-        instrumentInfo = {
+
+        return {
           type: instrument.instrumentType || 'CEK',
           serialNo: instrument.serialNo || instrument.instrumentNo,
           instrumentNo: instrument.instrumentNo,
@@ -438,8 +444,9 @@ export class TemplateEngineService {
           isBounced: instrument.isBounced,
           bounceDate: instrument.bounceDate?.toISOString().split('T')[0],
         };
-      }
+      });
     }
+    const instrumentInfo = instrumentInfos[0];
     
     // Rehin/İpotek bilgilerini çek
     let collateralInfo: TemplateData['collateralInfo'] = undefined;
@@ -523,8 +530,37 @@ export class TemplateEngineService {
       leaseInfo,
       courtInfo,
       instrumentInfo,
+      instrumentInfos,
       collateralInfo,
     };
+  }
+
+  private getInstrumentInfos(data: TemplateData): TemplateInstrumentInfo[] {
+    if (data.instrumentInfos?.length) return data.instrumentInfos;
+    return data.instrumentInfo ? [data.instrumentInfo] : [];
+  }
+
+  private formatTakipTalebiInstrumentText(data: TemplateData, format: 'pdf' | 'word'): string {
+    const instrumentInfos = this.getInstrumentInfos(data);
+    const isMultiInstrument = instrumentInfos.length > 1;
+
+    return instrumentInfos.map(instrument => {
+      const amountAndCurrency = isMultiInstrument && instrument.amount
+        ? `${instrument.amount} ${this.getCurrencySymbol(instrument.currency || data.totals.currency)}`
+        : `${this.formatMoney(data.totals.principal)} ${this.getCurrencySymbol(data.totals.currency)}`;
+
+      if (instrument.type === 'CEK') {
+        const bankText = format === 'pdf'
+          ? `${instrument.bankName || ''} ${instrument.branchName || ''}`
+          : instrument.bankName || '';
+        return `${amountAndCurrency} ÇEK ALACAĞI\nÇek No: ${instrument.instrumentNo || ''}\nBanka: ${bankText}\nİbraz Tarihi: ${instrument.presentationDate ? this.formatDate(instrument.presentationDate) : ''}`;
+      }
+
+      const issueDateText = format === 'pdf'
+        ? `\nDüzenleme Tarihi: ${instrument.issueDate ? this.formatDate(instrument.issueDate) : ''}`
+        : '';
+      return `${amountAndCurrency} SENET/BONO ALACAĞI\nVade Tarihi: ${instrument.dueDate ? this.formatDate(instrument.dueDate) : ''}${issueDateText}`;
+    }).join('\n\n');
   }
   
   private getDebtorRoleLabel(role: string): string {
@@ -1970,12 +2006,9 @@ Borclu: ............................    Yediemin: ..............................
     
     // Madde 8 - Senet/Çek bilgisi veya borcun sebebi
     let instrumentText = '';
-    if (data.instrumentInfo) {
-      if (data.instrumentInfo.type === 'CEK') {
-        instrumentText = `${this.formatMoney(data.totals.principal)} ${this.getCurrencySymbol(data.totals.currency)} ÇEK ALACAĞI\nÇek No: ${data.instrumentInfo.instrumentNo || ''}\nBanka: ${data.instrumentInfo.bankName || ''} ${data.instrumentInfo.branchName || ''}\nİbraz Tarihi: ${data.instrumentInfo.presentationDate ? this.formatDate(data.instrumentInfo.presentationDate) : ''}`;
-      } else {
-        instrumentText = `${this.formatMoney(data.totals.principal)} ${this.getCurrencySymbol(data.totals.currency)} SENET/BONO ALACAĞI\nVade Tarihi: ${data.instrumentInfo.dueDate ? this.formatDate(data.instrumentInfo.dueDate) : ''}\nDüzenleme Tarihi: ${data.instrumentInfo.issueDate ? this.formatDate(data.instrumentInfo.issueDate) : ''}`;
-      }
+    const formattedInstrumentText = this.formatTakipTalebiInstrumentText(data, 'pdf');
+    if (formattedInstrumentText) {
+      instrumentText = formattedInstrumentText;
     } else if (data.claimItems.length > 0) {
       // Borcun sebebi olarak alacak kalemlerini yaz
       instrumentText = data.claimItems.map(item => {
@@ -2361,12 +2394,9 @@ Borclu: ............................    Yediemin: ..............................
     
     // Madde 8 - Senet/Çek bilgisi veya borcun sebebi
     let instrumentText = '';
-    if (data.instrumentInfo) {
-      if (data.instrumentInfo.type === 'CEK') {
-        instrumentText = `${this.formatMoney(data.totals.principal)} ${this.getCurrencySymbol(data.totals.currency)} ÇEK ALACAĞI\nÇek No: ${data.instrumentInfo.instrumentNo || ''}\nBanka: ${data.instrumentInfo.bankName || ''}\nİbraz Tarihi: ${data.instrumentInfo.presentationDate ? this.formatDate(data.instrumentInfo.presentationDate) : ''}`;
-      } else {
-        instrumentText = `${this.formatMoney(data.totals.principal)} ${this.getCurrencySymbol(data.totals.currency)} SENET/BONO ALACAĞI\nVade Tarihi: ${data.instrumentInfo.dueDate ? this.formatDate(data.instrumentInfo.dueDate) : ''}`;
-      }
+    const formattedInstrumentText = this.formatTakipTalebiInstrumentText(data, 'word');
+    if (formattedInstrumentText) {
+      instrumentText = formattedInstrumentText;
     } else if (data.claimItems.length > 0) {
       instrumentText = data.claimItems.map(item => {
         let line = `${this.formatMoney(item.amount)} ${this.getCurrencySymbol(item.currency)} ${item.description}`;
@@ -2542,6 +2572,7 @@ Borclu: ............................    Yediemin: ..............................
    */
   private createUdfDocument(data: TemplateData, documentType: string, documentCode: string): UdfDocument {
     const now = new Date().toISOString();
+    const instrumentInfos = this.getInstrumentInfos(data);
     
     return {
       version: '1.0',
@@ -2603,11 +2634,12 @@ Borclu: ............................    Yediemin: ..............................
               interestInfo: data.interestInfo
             }
           },
-          ...(data.instrumentInfo ? [{
+          ...(instrumentInfos.length > 0 ? [{
             type: 'INSTRUMENT_INFO',
             title: 'Kambiyo Senedi Bilgileri',
             data: {
-              instrumentInfo: data.instrumentInfo
+              instrumentInfo: instrumentInfos[0],
+              ...(instrumentInfos.length > 1 ? { instrumentInfos } : {}),
             }
           }] : []),
           ...(data.leaseInfo ? [{
