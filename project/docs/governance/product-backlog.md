@@ -1416,6 +1416,25 @@ CAN-CUT-02 remains `OPEN / needs-owner-decision`; PR-11 and runtime cutover rema
 AUTHORIZED`. REP-02 is eligible to start only after the owner provides a complete run-specific
 package instance. Single next action: `OWNER INPUT REQUIRED — RUN-SPECIFIC PACKAGE INSTANCE`.
 
+**ADR014-REP-01A-R2 Master Register Closure (2026-07-13):** Run-Specific Authorization Contract
+Phase Separation is `CLOSED / CANONICAL / PHASED-CONTRACT-ONLY` after technical PR #1219 (head
+`82ccff90f1734a623ef0928dcba6ab40c7ecd1b5`; squash
+`3421f5c46b8b32268731fa6d96c72fd290c416b4`; CI `4/4 SUCCESS`; pre-merge `CLEAN /
+MERGEABLE`). The exact four-file scope preserves the v1 one-shot contract and adds a pure,
+immutable v2 phase boundary with direct functional/security tests and a runbook update. Pre-run
+owner decisions now produce `PRE_RUN_AUTHORIZED / runtimeBindingStatus=RUNTIME_BINDING_REQUIRED`;
+missing pre-run decisions remain execution blockers. Session, approved manifest, actual reviewer,
+UTC windows and observed counts remain runtime/post-capture facts; missing facts block
+`CAPTURE_COMPLETE` and evidence acceptance without invalidating the pre-run package. V2 supports
+owner-controlled indefinite retention with `automaticDeletion=false`, owner-only disposition and
+non-replacing supersession. `CAPTURE_COMPLETE` remains `representativeEvidenceAccepted=false`,
+`rep02Authorized=false`, `pr11Ready=false`, `runtimeCutoverAuthorized=false` and
+`authority=CAPTURE_REFERENCE_ONLY`. No package instance, data access, execution, evidence,
+schema/migration, production call-site or authority change occurred. No new backlog or maintenance
+ID is created. Representative evidence remains `ABSENT / BLOCKING`; CAN-CUT-02 remains open;
+PR-11 and runtime cutover remain `NOT AUTHORIZED`. Next eligible workstream: separately
+owner-authorized v2 pre-run package-instance materialization.
+
 ---
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
 
