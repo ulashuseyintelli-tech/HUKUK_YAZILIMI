@@ -176,6 +176,22 @@ CAN-CUT-02 remains open; PR-11 and runtime cutover remain `NOT AUTHORIZED`. The 
 task is `ADR014-REP-01A — Run-Specific Authorization Package Completion`; REP-02 remains ineligible.
 Current execution plan: `docs/design/adr-014-split-pr-plan.md` v2.25.
 
+**ADR-014 post-REP-01A routing override (2026-07-13):** ADR014-REP-01A is `CLOSED /
+CANONICAL / PACKAGE-MECHANISM-ONLY` after technical PR #1216 (rebased head
+`14064893c10a511925f203f499b16cfd1266dfe6`; squash
+`da0d70061f21da1db4ff5aae0e0583c3ed3f4e75`) and its governance closure. The pure
+contract requires one shared run binding across canonical SHA, environment/session, approved
+manifest and separate access/execution authorization records; it also requires distinct operator
+and independent-reviewer assignments, read-only/no-egress proofs, owner-controlled output,
+retention, baseline/population/request-count metadata and five approved-for-run sign-offs. A
+complete validation remains mechanism-only: it starts no execution, produces or accepts no
+representative evidence, and grants no PR-11, runtime or cutover authority. No concrete package
+instance exists yet. Representative evidence remains `ABSENT / BLOCKING`; CAN-CUT-02 remains
+open; PR-11 and runtime cutover remain `NOT AUTHORIZED`. REP-02 is conditionally eligible only
+after the owner provides a complete run-specific package instance. The single next action is
+`OWNER INPUT REQUIRED — RUN-SPECIFIC PACKAGE INSTANCE`; this is not a new implementation
+workstream. Current execution plan: `docs/design/adr-014-split-pr-plan.md` v2.26.
+
 ## ADR Naming Collision Matrix (GOV-ADR-NAMING-000)
 
 Bu bölüm, `ADR-012` numarasının DX-005 için main üzerinde kanonikleşmesinden sonra yanlış ADR referansı üretilmesini engeller. **2026-07-10 owner arbitration (final):** Aynı gün iki aday çözüm değerlendirildi — Option C (`ADR-013`'ün kapsamını CCB-001'i içerecek şekilde genişletme, kısa süre uygulandı, PR #1019) ve ayrı-numara seçeneği (`ADR-013`'ü `GOV-ADR-NAMING-000`'ın orijinal dar kapsamında bırakıp CCB-001'e kendi numarasını verme). Owner'ın nihai kararı: **CCB-001'in mimari dokümanı `ADR-014`'tür; `ADR-013` `GOV-ADR-NAMING-000`'ın orijinal kapsamında (Fee/Harç/Snapshot/Journal) kalır, DEĞİŞMEDEN.** PR #1026 sonrası ADR-013 artık draft/owner-review ADR olarak mevcuttur. Bu patch runtime davranışı, kod, migration veya CCB-001 branch merge'i yaratmaz.

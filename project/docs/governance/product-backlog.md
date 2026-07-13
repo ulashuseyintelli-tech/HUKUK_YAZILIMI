@@ -1397,6 +1397,25 @@ are not approved. Representative execution/evidence remain `ABSENT / BLOCKING`; 
 `OPEN / needs-owner-decision`; PR-11 and runtime cutover remain `NOT AUTHORIZED`. Single next
 eligible task after closure: `ADR014-REP-01A — Run-Specific Authorization Package Completion`.
 
+**ADR014-REP-01A Master Register Closure (2026-07-13):** Run-Specific Authorization Package
+mechanism is `CLOSED / CANONICAL / PACKAGE-MECHANISM-ONLY` after technical PR #1216 (rebased head
+`14064893c10a511925f203f499b16cfd1266dfe6`; squash
+`da0d70061f21da1db4ff5aae0e0583c3ed3f4e75`; final-base CI `4/4 SUCCESS`; pre-merge `CLEAN /
+MERGEABLE`). The exact five-file scope adds a pure deterministic contract, direct
+functional/security tests, a non-authoritative runbook and explicit CI selection. The contract
+requires the exact canonical/environment/session/approved-manifest binding, separate access and
+execution authorization records/windows, distinct operator/reviewer assignments, read-only and
+no-egress proofs, owner-controlled create-once output, retention, baseline/population/request-count
+definition and five approved-for-run sign-offs. Missing or conflicting values fail closed.
+`PACKAGE_COMPLETE` remains `executionStarted=false`, `representativeEvidenceProduced=false`,
+`representativeEvidenceAccepted=false`, `pr11Ready=false`, `runtimeCutoverAuthorized=false` and
+creates no runtime authority. No package instance, environment activation, data read, evidence
+execution/acceptance, telemetry activation, schema/migration or consumer switch occurred. No new
+backlog ID or maintenance record is created. Representative evidence remains `ABSENT / BLOCKING`;
+CAN-CUT-02 remains `OPEN / needs-owner-decision`; PR-11 and runtime cutover remain `NOT
+AUTHORIZED`. REP-02 is eligible to start only after the owner provides a complete run-specific
+package instance. Single next action: `OWNER INPUT REQUIRED — RUN-SPECIFIC PACKAGE INSTANCE`.
+
 ---
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
 
