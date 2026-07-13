@@ -300,6 +300,31 @@ jobs:
             "$functional_spec" \
             "$security_spec"
         working-directory: project
+      # ADR014-REP-01B is an exact local execution boundary, not an activated run.
+      # It must remain default-disabled, local-only, read-only and free of network clients.
+      - name: ADR014-REP-01B local read-only representative runner tests
+        run: |
+          cd apps/api
+          source_file=src/scripts/adr014-local-read-only-representative-runner.ts
+          functional_spec=src/scripts/__tests__/adr014-local-read-only-representative-runner.spec.ts
+          security_spec=src/scripts/__tests__/adr014-local-read-only-representative-runner.security.spec.ts
+          for f in "$source_file" "$functional_spec" "$security_spec"; do
+            test -f "$f" || { echo "MISSING ADR014-REP-01B file: $f"; exit 1; }
+          done
+          if grep -E -n '@nestjs/|node:(http|https|net|tls|dgram)|process\.(env|argv)|NestFactory|fetch\(|axios|console\.|AuditLog|AuditService|prom-client|setTimeout|setInterval|function[[:space:]]+main|require\.main' "$source_file"; then
+            echo "FORBIDDEN ADR014-REP-01B runtime, egress or activation surface"; exit 1
+          fi
+          if grep -E -n 'tenantId|caseId|debtorId|creditorId|clientId|personId|rawError|stack|metadata' "$source_file"; then
+            echo "FORBIDDEN ADR014-REP-01B business or sensitive payload field"; exit 1
+          fi
+          grep -F -q 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY' "$source_file" || \
+            { echo "MISSING ADR014-REP-01B read-only transaction guard"; exit 1; }
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            "$functional_spec" \
+            "$security_spec" \
+            src/scripts/__tests__/adr014-local-session-orchestrator-dry-validation.spec.ts \
+            src/scripts/__tests__/adr014-local-session-orchestrator-dry-validation.security.spec.ts
+        working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
       - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
