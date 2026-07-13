@@ -17,6 +17,8 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 **Verification reconcile notu (2026-07-09, VER-10+):** "MVR-010+" bu register'da kanonik namespace değildir; doğru namespace `VER-10+` olarak kalır ve yeni `MVR-*` namespace'i açılmaz. Bu reconcile runtime drift bulmadı; yalnız repo kanıtıyla kapanan/stale kalan verification kayıtlarını governance bookkeeping olarak ayrıştırır. Canlı ortam, DB apply, process, owner/local-WIP veya product-decision gerektiren kayıtlar otomatik kapatılmaz.
 
+**OFFICE domain notu (2026-07-14):** OFFICE domain'inin 12 STF-PRD Finding + 20 OFF/OD Decision + 3 Slice kaydının delivery-tracking durumu bu register'a KOPYALANMAZ; tek kaynak `project/docs/governance/OFFICE-DELIVERY-MANIFEST.md`. `MPB-031` (`product-backlog.md`) bu belgeye pointer taşır.
+
 ---
 
 ## A. Master Product Backlog (ACTIVE)
