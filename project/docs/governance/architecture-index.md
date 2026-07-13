@@ -162,6 +162,20 @@ step is `OWNER DECISION REQUIRED — Representative Evidence Preparation`; no pr
 execution is authorized implicitly. Current execution plan:
 `docs/design/adr-014-split-pr-plan.md` v2.24.
 
+**ADR-014 post-REP-01B routing override (2026-07-13):** ADR014-REP-01B is `CLOSED /
+CANONICAL / EXECUTION-MECHANISM-ONLY` after technical PR #1211 (head
+`e34faea3a45127edd29d15cb5b7bd7f91448ca53`; squash
+`a4c72414ab3cea26e36cd9b6c42735024c01db7b`) and the separate governance closure PR. The exact
+local runner remains default-disabled and has no production call-site. It requires run-bound
+canonical/environment/session/manifest/access/execution references, enforces database-level
+`REPEATABLE READ / READ ONLY`, has no external-egress dependency and writes only a non-official
+`CAPTURED_NOT_ACCEPTED / authority=NONE` artifact under an owner-controlled local root. REP-01A
+remains open and blocked on the specific run package; no environment, dataset, access, execution or
+evidence acceptance is granted by REP-01B. Representative evidence remains `ABSENT / BLOCKING`;
+CAN-CUT-02 remains open; PR-11 and runtime cutover remain `NOT AUTHORIZED`. The single next eligible
+task is `ADR014-REP-01A — Run-Specific Authorization Package Completion`; REP-02 remains ineligible.
+Current execution plan: `docs/design/adr-014-split-pr-plan.md` v2.25.
+
 ## ADR Naming Collision Matrix (GOV-ADR-NAMING-000)
 
 Bu bölüm, `ADR-012` numarasının DX-005 için main üzerinde kanonikleşmesinden sonra yanlış ADR referansı üretilmesini engeller. **2026-07-10 owner arbitration (final):** Aynı gün iki aday çözüm değerlendirildi — Option C (`ADR-013`'ün kapsamını CCB-001'i içerecek şekilde genişletme, kısa süre uygulandı, PR #1019) ve ayrı-numara seçeneği (`ADR-013`'ü `GOV-ADR-NAMING-000`'ın orijinal dar kapsamında bırakıp CCB-001'e kendi numarasını verme). Owner'ın nihai kararı: **CCB-001'in mimari dokümanı `ADR-014`'tür; `ADR-013` `GOV-ADR-NAMING-000`'ın orijinal kapsamında (Fee/Harç/Snapshot/Journal) kalır, DEĞİŞMEDEN.** PR #1026 sonrası ADR-013 artık draft/owner-review ADR olarak mevcuttur. Bu patch runtime davranışı, kod, migration veya CCB-001 branch merge'i yaratmaz.
