@@ -238,6 +238,24 @@ jobs:
             "$functional_spec" \
             "$security_spec"
         working-directory: project
+      # ADR014-PE-06B2 remains preparation-only: the producer must stay
+      # default-disabled, pure and dependency-free while both specs execute explicitly.
+      - name: ADR014-PE-06B2 default-disabled observation producer tests
+        run: |
+          cd apps/api
+          source_file=src/scripts/adr014-session-observation-producer.ts
+          functional_spec=src/scripts/__tests__/adr014-session-observation-producer.spec.ts
+          security_spec=src/scripts/__tests__/adr014-session-observation-producer.security.spec.ts
+          for f in "$source_file" "$functional_spec" "$security_spec"; do
+            test -f "$f" || { echo "MISSING ADR014-PE-06B2 file: $f"; exit 1; }
+          done
+          if grep -E -n '@nestjs/|@prisma/|node:(fs|http|https|net|tls|crypto)|process\.(env|argv)|NestFactory|Date\.|new Date|Math\.random|randomUUID|fetch\(|axios|console\.|AuditLog|prom-client|function[[:space:]]+main|require\.main' "$source_file"; then
+            echo "FORBIDDEN ADR014-PE-06B2 runtime or nondeterminism surface"; exit 1
+          fi
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            "$functional_spec" \
+            "$security_spec"
+        working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
       - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
