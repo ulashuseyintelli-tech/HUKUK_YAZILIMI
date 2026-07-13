@@ -10,7 +10,7 @@
  * - Test 4: PAYMENT_RECEIVED payload has no allocation fields
  * - Test 5: Currency empty → event payload has explicit 'TRY'
  * - Test 6: forDebtorId present → appears in payload
- * - Test 7: autoAllocateInTx fail → full rollback (collection + event + outbox gone)
+ * - Test 7 / PATCH A3: post-allocation failure → full financial-chain rollback
  * - Test 8: EXTERNAL_SIGNED without evidence → HR-34 fail
  *
  * Requires: DATABASE_URL pointing to test database with migrations applied.
@@ -571,44 +571,135 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
     });
   });
 
-  // ── Test 7: autoAllocate fail → full rollback ─────────────────────────
+  // ── Test 7 / PATCH A3: post-allocation failure → full rollback ────────
 
-  describe('Test 7: Allocation failure → full rollback', () => {
-    it('if autoAllocate throws, collection + event + outbox all rolled back', async () => {
-      // Sabotage: create a case with invalid state that will cause allocation to fail
-      // We'll use a spy to force autoAllocateInTx to throw
-      const originalMethod = (service as any).autoAllocateInTx.bind(service);
-      (service as any).autoAllocateInTx = async () => {
-        throw new Error('ALLOCATION_FAILURE: simulated projection crash');
+  describe('PATCH A3: mid-transaction rollback characterization', () => {
+    it('rolls back the complete financial chain after a deterministic post-allocation failure', async () => {
+      const claimItem = await prisma.claimItem.create({
+        data: {
+          tenantId: testTenantId,
+          caseId: testCaseId,
+          itemType: 'PRINCIPAL',
+          originalAmount: 100,
+          demandedAmount: 100,
+          amount: 100,
+          currency: 'TRY',
+          liableDebtorIds: [],
+        },
+      });
+
+      const readFinancialChain = async (db: any): Promise<Record<string, number>> => {
+        const [
+          collections,
+          journalEntries,
+          journalLines,
+          events,
+          ledgerEntries,
+          ledgerAllocations,
+          claimItems,
+          persistedClaimItem,
+          overpayments,
+          outbox,
+          compatAllocations,
+        ] = await Promise.all([
+          db.collection.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+          db.accountingJournalEntry.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+          db.accountingJournalLine.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+          db.icrabotTimelineEntry.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+          db.ledgerEntry.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+          db.ledgerAllocation.count({ where: { claimItemId: claimItem.id } }),
+          db.claimItem.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+          db.claimItem.findUniqueOrThrow({ where: { id: claimItem.id } }),
+          db.collectionOverpayment.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+          db.icrabotOutboxAction.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+          db.collectionAllocation.count({
+            where: { collection: { tenantId: testTenantId, caseId: testCaseId } },
+          }),
+        ]);
+
+        return {
+          collections,
+          journalEntries,
+          journalLines,
+          events,
+          ledgerEntries,
+          ledgerAllocations,
+          claimItems,
+          collectedAmount: Number(persistedClaimItem.collectedAmount),
+          demandedAmount: Number(persistedClaimItem.demandedAmount),
+          overpayments,
+          outbox,
+          compatAllocations,
+        };
       };
 
-      const dto = buildDto({ autoAllocate: true });
+      const summaryEngine = new SummaryEngineService(
+        prisma as any,
+        new TBK100AllocatorService(),
+      );
+      await summaryEngine.onModuleInit();
+      const rollbackService = new CollectionService(
+        prisma as any,
+        new DomainEventIngestService(),
+        new CaseDebtorLifecycleGuardService(prisma as any),
+        summaryEngine,
+        new AccountingJournalWriterService(prisma as any),
+      );
 
-      await expect(
-        service.create(testTenantId, dto, 'test-user-1'),
-      ).rejects.toThrow(/ALLOCATION_FAILURE/);
+      let preFailureSnapshot: Record<string, number> | undefined;
+      const originalAutoAllocate = (rollbackService as any).autoAllocateInTx.bind(rollbackService);
+      const failurePoint = jest
+        .spyOn(rollbackService as any, 'autoAllocateInTx')
+        .mockImplementation(async (tx: any, ...args: any[]) => {
+          await originalAutoAllocate(tx, ...args);
+          preFailureSnapshot = await readFinancialChain(tx);
+          throw new Error('PATCH_A3_FAILURE_POINT: post-allocation rollback probe');
+        });
 
-      // Full rollback: no collection
-      const collections = await prisma.collection.findMany({
-        where: { caseId: testCaseId },
-      });
-      expect(collections).toHaveLength(0);
+      try {
+        await expect(
+          rollbackService.create(testTenantId, buildDto({
+            amount: 150,
+            currency: 'TRY',
+            sourceType: CollectionSource.MANUAL,
+            autoAllocate: true,
+          }), 'test-user-1'),
+        ).rejects.toThrow(/PATCH_A3_FAILURE_POINT/);
 
-      // Full rollback: no event
-      const events = await (prisma as any).icrabotTimelineEntry.findMany({
-        where: { caseId: testCaseId },
-      });
-      expect(events).toHaveLength(0);
+        expect(failurePoint).toHaveBeenCalledTimes(1);
+        expect(preFailureSnapshot).toEqual({
+          collections: 1,
+          journalEntries: 1,
+          journalLines: 2,
+          events: 2,
+          ledgerEntries: 1,
+          ledgerAllocations: 1,
+          claimItems: 1,
+          collectedAmount: 100,
+          demandedAmount: 100,
+          overpayments: 1,
+          outbox: 2,
+          compatAllocations: 1,
+        });
 
-      // Full rollback: no outbox
-      const outbox = await (prisma as any).icrabotOutboxAction.findMany({
-        where: { caseId: testCaseId },
-      });
-      expect(outbox).toHaveLength(0);
-
-      // Restore
-      (service as any).autoAllocateInTx = originalMethod;
-    });
+        await expect(readFinancialChain(prisma as any)).resolves.toEqual({
+          collections: 0,
+          journalEntries: 0,
+          journalLines: 0,
+          events: 0,
+          ledgerEntries: 0,
+          ledgerAllocations: 0,
+          claimItems: 1,
+          collectedAmount: 0,
+          demandedAmount: 100,
+          overpayments: 0,
+          outbox: 0,
+          compatAllocations: 0,
+        });
+      } finally {
+        failurePoint.mockRestore();
+      }
+    }, 30_000);
   });
 
   // ── Test 8: EXTERNAL_SIGNED without evidence → HR-34 fail ────────────
