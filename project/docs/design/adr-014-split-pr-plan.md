@@ -1,6 +1,6 @@
 # ADR-014 Split-PR Baseline Execution Plan
 
-**Status:** APPROVED / POST-PR-10 BASELINE EXECUTION PLAN v2.21
+**Status:** APPROVED / POST-PR-10 BASELINE EXECUTION PLAN v2.22
 **Date:** 2026-07-10
 **Last Reconciled:** 2026-07-13
 **Owner:** Ulaş
@@ -38,6 +38,8 @@
 
 > **v2.21 (2026-07-13):** ADR014-PE-06C0 owner-decision closure reconciliation. OD-C0-01..18 and the seven-family mapping matrix are complete in `docs/design/adr-014-session-control-event-vocabulary-phase-timing-decisions.md`. PE-05A2 v1 remains immutable; the same canonical envelope family gains a separately versioned `event_version=2` / `event_profile=SESSION_CONTROL` decision profile, not a second event system. Existing PE-06B1 facts stay clock-free and unchanged. The future local session orchestrator owns monotonic phase timing and supplies duration through immutable projection context; mapper/producer/factory cannot invent time. PE-06C1 is the single next eligible task and is limited to pure default-disabled mappings, compatibility/security tests, session-counter mapping, phase-duration context/validation and typed absent-source blockers. Production call-sites, metric/event emission, activation, session execution, persistence, external egress, representative evidence, PR-11 and runtime cutover remain unauthorized.
 
+> **v2.22 (2026-07-13):** ADR014-PE-06C1 technical/governance closure reconciliation. Technical PR #1201 (head `ca1d8baf1a25f2e7cba1219e4d2880e4a8676eb9`; squash `8948cadb7ce4c2061edb82bcff9afd901af98acf`) adds the same-family v2 `SESSION_CONTROL` profile, pure exhaustive 7/7 fact-to-event mapping, bounded session-counter mapping, caller-supplied finite monotonic phase-duration projection and typed source-absent blockers. PE-05A2 v1 serialization/semantics and PE-06B1 fact contract remain unchanged. The producer remains default `DISABLED`; `TEST_ONLY` is the only projection mode. No production call-site, registry registration/emission, runtime clock, session/control activation, persistence, external egress, evidence execution, financial/readiness/API behavior or authority was added. Representative evidence remains absent/blocking; PR-11 and runtime cutover remain NOT AUTHORIZED. No successor is auto-opened; the next workstream requires an explicit owner decision.
+
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
 ---
@@ -58,9 +60,9 @@
 - POST-PR-10: W0.1/W0.2/W0.3, PR-1A, PR-1B, PR-2, PR-3h, PR-4, PR-5, PR-6, PR-7, PR-8a, PR-8b, PR-9 ve PR-10 CLOSED / CANONICAL.
   Cutover authorization policy; PE-01/PE-01A/PE-02/PE-03/PE-04/PE-05; PE-05A1a–PE-05A4; PE-05B;
   default-disabled PE-06A harness; PE-06B1 fact contract; default-disabled PE-06B2 producer/mapping
-  preparation ve PE-06C0 event/timing owner decisions CLOSED/CANONICAL'dır. Representative evidence
-  yoktur; tek eligible successor ayrı task authorization gerektiren PE-06C1'dir ve PR-11 consumer
-  switch yetkili değildir.
+  preparation, PE-06C0 event/timing owner decisions ve default-disabled PE-06C1 contract completion
+  CLOSED/CANONICAL'dır. Representative evidence yoktur; next workstream OWNER DECISION REQUIRED'dır
+  ve PR-11 consumer switch yetkili değildir.
 - MANDATORY ORDER = canonical merge + governance closure + downstream eligibility sırası.
   PARALEL OK = yalnız analiz, hazırlık ve bağımsız branch geliştirmesi; out-of-order merge/closure değildir.
 ```
@@ -326,7 +328,8 @@ Pre-evidence harness           PE-06A CLOSED / CANONICAL / DEFAULT-DISABLED
 Observation fact contract     PE-06B1 CLOSED / CANONICAL / PREPARATION-ONLY
 Observation producer/mapping  PE-06B2 CLOSED / CANONICAL / DEFAULT-DISABLED
 Event/timing decisions        PE-06C0 CLOSED / CANONICAL / OWNER DECISIONS DEFINED
-Next eligible step             ADR014-PE-06C1 / separate task authorization required
+Observation contract v2       PE-06C1 CLOSED / CANONICAL / DEFAULT-DISABLED
+Next eligible step             OWNER DECISION REQUIRED
 PR-11 consumer switch          NOT AUTHORIZED
 ```
 
@@ -342,7 +345,7 @@ PR-11 consumer switch          NOT AUTHORIZED
 | 8 | PR-8b | PR-8a technical + governance closure (**SATISFIED**) | Trace/AllocationLog/non-official snapshot layer; schema/official persistence hard stop | Explainability + cleanup evidence | Official snapshot remains ADR-013 owner gate | **CLOSED / CANONICAL** — PR #1128 + separate register closure; PR-9 eligible |
 | 9 | PR-9 | PR-8b technical + governance closure (**SATISFIED**) | Twelve scenarios through the W0 contract; no second scenario format | Unit==DB twin-run, currency isolation/mismatch, repeatability, CI 4/4 | No | **CLOSED / CANONICAL** — PR #1132 + separate register closure; PR-10 eligible |
 | 10 | PR-10 | PR-9 technical + governance closure (**SATISFIED**) | Additive canonical compatibility adapter; typed fee unavailable states; parity conflict fail-closed; no consumer switch | Adapter unit/contract + W0 unit/DB twin + CI 4/4 | No | **CLOSED / CANONICAL** — PR #1137 + separate register closure; cutover-authorization gate eligible |
-| 11 | `UNASSIGNED` cutover authorization | PR-10 technical + governance closure (**SATISFIED**) | Rollback, monitoring, audit, signoff and acceptance policy | Governance decision record → **`docs/design/adr-014-cutover-authorization-policy.md`**; PE-01/PE-01A zero-cent contract/alignment; PE-02 procedure; PE-03 environment contract; PE-04 dataset/manifest contract; PE-05 → **`docs/design/adr-014-metrics-audit-dashboard-alert-operational-contract.md`** | Required | **POLICY + OWNER DECISIONS + PE-01/01A/02/03/04/05 + PE-05A1a–A4 + PE-05B + PE-06A + PE-06B1/B2 + PE-06C0 DEFINED/CLOSED / EVIDENCE ENV = LOCAL / STILL OWNER-GATED** — bounded metrics, shadow event/correlation preparation, disabled writer, default-disabled local harness, typed observation facts, default-disabled producer/mapping preparation and event/timing owner decisions are canonical. PE-06C0 preserves v1 and selects a same-family v2 session/control profile plus orchestrator-owned monotonic timing; it adds no runtime call-site or emission. PE-06C1 is the single eligible default-disabled contract-completion task under separate authorization. Durable delivery, environment/session activation, dataset materialization, baseline and representative evidence remain absent; PE-06A `PREPARED` is not execution/evidence/readiness authority; remaining cutover gate = implemented/verified local session + approved manifest/selection + measured local baseline + local representative evidence + explicit owner `APPROVED`; PR-11 remains NOT AUTHORIZED |
+| 11 | `UNASSIGNED` cutover authorization | PR-10 technical + governance closure (**SATISFIED**) | Rollback, monitoring, audit, signoff and acceptance policy | Governance decision record → **`docs/design/adr-014-cutover-authorization-policy.md`**; PE-01/PE-01A zero-cent contract/alignment; PE-02 procedure; PE-03 environment contract; PE-04 dataset/manifest contract; PE-05 → **`docs/design/adr-014-metrics-audit-dashboard-alert-operational-contract.md`** | Required | **POLICY + OWNER DECISIONS + PE-01/01A/02/03/04/05 + PE-05A1a–A4 + PE-05B + PE-06A + PE-06B1/B2 + PE-06C0/C1 DEFINED/CLOSED / EVIDENCE ENV = LOCAL / STILL OWNER-GATED** — bounded metrics, shadow event/correlation preparation, disabled writer, default-disabled local harness, typed observation facts, same-family v2 session/control mapping and caller-supplied duration projection are canonical preparation. PE-06C1 adds no runtime call-site, emission, timer or authority. Durable delivery, environment/session activation, dataset materialization, baseline and representative evidence remain absent; PE-06A `PREPARED` is not execution/evidence/readiness authority; remaining cutover gate = implemented/verified local session + approved manifest/selection + measured local baseline + local representative evidence + explicit owner `APPROVED`; PR-11 remains NOT AUTHORIZED; next workstream requires owner decision |
 | 12 | PR-11 | Owner cutover authorization | UI/API/report/template canonical consumer switch | I-10 integration, production smoke, kill-switch | Required | Cutover PR + register closure → PR-11 stability |
 | 13 | `UNASSIGNED` PR-11 stability | PR-11 closure | Live smoke, discrepancy monitoring, rollback drill | Accepted stability evidence | Acceptance metrics owner-held | Verification/closure PR → PR-12 |
 | 14 | PR-12 | PR-11 stability accepted | Disable silent legacy fallback; canonical unavailable is fail-closed | DB/consumer integration | Required | Cutover PR + register closure → PR-12 bake |
