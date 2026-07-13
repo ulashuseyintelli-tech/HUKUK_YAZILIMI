@@ -48,7 +48,7 @@ export interface CalculateDeadlineInput {
   objectionPeriodDays: number;
 }
 
-interface LegalServiceDateResult {
+export interface LegalServiceDateResult {
   legalServiceDate: Date;
   deadlineReasonCode: string;
   calculationRule: string;
@@ -142,6 +142,27 @@ export class LegalDeadlineService {
 
       return created;
     });
+  }
+
+  /**
+   * MPB-028(a) PR-3 (shadow-read + diff evidence): yalnız legalServiceDate hesabını döner —
+   * dueDate/objectionPeriodDays/snapshot YOK. `calculateDeadline`'ın aksine hiçbir
+   * LegalDeadlineSnapshot satırı YAZMAZ (tamamen read-only) ve hiçbir owner-onaylı
+   * objectionPeriodDays girdisi gerektirmez. Shadow-diff karşılaştırmasının canonical
+   * tarafı için eklenmiştir. Tebligat bulunamazsa veya hiçbir rejim eşleşmezse null döner
+   * (fail-closed — çağıran tahmin ETMEZ, "CANONICAL_UNRESOLVED" olarak işaretler).
+   */
+  async resolveLegalServiceDateForTebligat(
+    tenantId: string,
+    tebligatId: string,
+  ): Promise<LegalServiceDateResult | null> {
+    const tebligat = await this.prisma.tebligat.findFirst({
+      where: { id: tebligatId, tenantId },
+    });
+    if (!tebligat) {
+      return null;
+    }
+    return this.determineLegalServiceDate(tebligat);
   }
 
   /**

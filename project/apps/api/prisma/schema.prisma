@@ -1169,6 +1169,7 @@ model Case {
   caseClients                   CaseClient[]
   tebligatlar                   Tebligat[]
   legalDeadlineSnapshots        LegalDeadlineSnapshot[]
+  legalTimeShadowDiffs          LegalTimeShadowDiff[]
   claimItems                    ClaimItem[]
   ledgerEntries                 LedgerEntry[] // Tahsilat/düzeltme kayıtları
   precautionaryOrders           PrecautionaryOrder[] // İhtiyati haciz kararları
@@ -2646,6 +2647,8 @@ model Tebligat {
 
   // MPB-028(a) PR-2: LegalDeadlineSnapshot.sourceTebligatId FK karsi iliskisi
   legalDeadlineSnapshots LegalDeadlineSnapshot[]
+  // MPB-028(a) PR-3: LegalTimeShadowDiff.sourceTebligatId FK karsi iliskisi
+  legalTimeShadowDiffs   LegalTimeShadowDiff[]
 
   @@index([tenantId])
   @@index([caseId])
@@ -2772,6 +2775,39 @@ model LegalDeadlineSnapshot {
   @@index([sourceTebligatId])
   @@index([status])
   @@index([tenantId, sourceTebligatId, status])
+}
+
+// MPB-028(a) PR-3: shadow-read + diff evidence. Tamamen read-only/immutable — hiçbir
+// consumer, scheduler veya workflow bu tabloyu OKUMAZ; yalnız delta-ölçüm kanıtı taşır.
+// Legacy hesap (WorkflowEngine.calculateNextActionTime'ın PAYMENT_ORDER/WAITING_RESPONSE
+// dalının bağımsız replikası) ile canonical hesap (LegalDeadlineService) arasındaki farkı
+// kaydeder. Hiçbir satır update veya delete edilmez; her hesaplama yeni bir satırdır.
+model LegalTimeShadowDiff {
+  id       String @id @default(cuid())
+  tenantId String // LegalDeadlineSnapshot emsali — Tenant'a gerçek FK yok, yalnız index
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  sourceTebligatId String?
+  sourceTebligat   Tebligat? @relation(fields: [sourceTebligatId], references: [id], onDelete: SetNull)
+
+  legacySource    String // örn. "WORKFLOW_ENGINE_NOTIFICATION_QUEUE"
+  canonicalSource String // örn. "LEGAL_DEADLINE_SERVICE"
+
+  legacyDate    DateTime? // Legacy sistemin ürettiği tarih (yoksa null)
+  canonicalDate DateTime? // LegalDeadlineService'in ürettiği legalServiceDate (yoksa null)
+  deltaDays     Int? // canonicalDate - legacyDate (gün); ikisinden biri yoksa null
+
+  reasonCode         String // hangi rejim eşleşti veya neden eksik (örn. "TK_21_2", "NO_LEGACY_DATA", "CANONICAL_UNRESOLVED")
+  calculationVersion String
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([sourceTebligatId])
+  @@index([tenantId, createdAt])
 }
 
 // Sonraki Adım
