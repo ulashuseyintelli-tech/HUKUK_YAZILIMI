@@ -369,6 +369,32 @@ jobs:
             "$functional_spec" \
             "$security_spec"
         working-directory: project
+      # ADR014-REP-02 is an owner-authorized local-only execution call-site. CI exercises
+      # only mocks/static guards; it never reads local or representative data.
+      - name: ADR014-REP-02 local representative execution contract tests
+        run: |
+          cd apps/api
+          source_file=src/scripts/adr014-rep-02-local-execution.ts
+          runner_source=src/scripts/adr014-local-read-only-representative-runner.ts
+          functional_spec=src/scripts/__tests__/adr014-rep-02-local-execution.spec.ts
+          security_spec=src/scripts/__tests__/adr014-rep-02-local-execution.security.spec.ts
+          for f in "$source_file" "$runner_source" "$functional_spec" "$security_spec"; do
+            test -f "$f" || { echo "MISSING ADR014-REP-02 file: $f"; exit 1; }
+          done
+          grep -F -q 'ADR014_REPRESENTATIVE_RUNNER_READ_ONLY_SQL' "$source_file" || \
+            { echo "MISSING ADR014-REP-02 canonical read-only transaction binding"; exit 1; }
+          grep -F -q 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY' "$runner_source" || \
+            { echo "MISSING ADR014-REP-02 read-only transaction guard"; exit 1; }
+          if grep -E -n "node:(http|https|net|tls|dgram)|from ['\"](axios|openai|ioredis|prom-client)|@aws-sdk|NestFactory|createApplicationContext|fetch\(" "$source_file"; then
+            echo "FORBIDDEN ADR014-REP-02 external egress, telemetry or runtime bootstrap surface"; exit 1
+          fi
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            "$functional_spec" \
+            "$security_spec" \
+            src/scripts/__tests__/adr014-v2-pre-run-package-instance.spec.ts \
+            src/scripts/__tests__/adr014-run-specific-authorization-package.spec.ts \
+            src/scripts/__tests__/adr014-local-read-only-representative-runner.spec.ts
+        working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
       - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
