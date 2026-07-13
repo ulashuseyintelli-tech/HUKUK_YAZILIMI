@@ -1338,6 +1338,26 @@ representative evidence `ABSENT / BLOCKING`, PR-11 and runtime cutover `NOT AUTH
 maintenance records remain untouched. No successor is auto-opened; next eligible task is `OWNER
 DECISION REQUIRED`.
 
+**ADR014-PE-06D Master Register Closure (2026-07-13):** Local Session Orchestrator
+Dry-Validation is `CLOSED / CANONICAL / DRY-VALIDATION-ONLY` after technical PR #1203 (head
+`075a079a2b680abf246bd9b173fc3e77bcb89ddf`; squash
+`2d626b156cab5ed726c2ac9ae551220e8d51392b`; CI `4/4 SUCCESS`; pre-merge `CLEAN / MERGEABLE`).
+The five-file technical scope adds a pure default-disabled orchestrator, direct functional/security
+tests, non-authoritative runbook and explicit CI selection. Only explicit `TEST_ONLY` composes the
+PE-06A preparation gate, PE-06B1 factories and PE-06C1 same-family v2 mappings. Bounded synthetic
+fixtures cover success, phase failure/timeout/cancellation, session abort, invalid transition,
+missing authorization and disabled no-emission; terminal phase duration comes only from an injected
+finite monotonic test clock. Direct tests 14/14 and PE-06A–PE-06D regressions 162/162 passed;
+changed-file ESLint, isolated TypeScript and `git diff --check` passed. There is no production
+call-site, real/local-production data access, environment or telemetry activation, persistence,
+external egress, financial/readiness/blocker/API/DTO behavior or authority change. `DRY_VALIDATED`
+is synthetic test evidence, not representative evidence or execution authority. No new backlog ID
+is created. Existing maintenance records remain untouched. `CCB-001` remains unchanged;
+`CAN-CUT-02 OPEN / needs-owner-decision`, representative evidence `ABSENT / BLOCKING`, PR-11 and
+runtime cutover `NOT AUTHORIZED`. The owner-designated next bounded workstream is ADR014-PE-06E and
+requires separate explicit authorization; this closure does not activate telemetry or evidence
+execution.
+
 ---
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
 
