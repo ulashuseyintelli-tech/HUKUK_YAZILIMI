@@ -410,6 +410,32 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="legal-deadline\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # MPB-028(a) PR-3: LegalTimeShadowService (legacy vs canonical shadow-read + immutable
+      # diff evidence) unit-static spec'i. Aynı CI-coverage silent-skip riski (bkz. GATE-1/PR-2
+      # emsali) baştan önlenmek için bu PR'ın kendi merge'inde eklenmiştir.
+      - name: MPB-028(a) PR-3 legal-time-shadow unit/static tests
+        run: |
+          cd apps/api
+          test -f src/modules/legal-time-shadow/__tests__/legal-time-shadow.service.spec.ts || \
+            { echo "MISSING MPB-028(a) PR-3 spec"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="legal-time-shadow\.service\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # MPB-028(a) PR-3 (disposable-DB kısmı): immutable diff kaydı + tenant isolation +
+      # feature-flag-kapalı no-op davranışının gerçek Postgres üzerinde doğru çalıştığını
+      # doğrular. Mevcut job'ın Postgres service'i reuse edilir — yeni container/job YOK.
+      - name: MPB-028(a) PR-3 legal-time-shadow disposable-DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/legal-time-shadow/__tests__/legal-time-shadow.db-gated.integration.spec.ts || \
+            { echo "MISSING MPB-028(a) PR-3 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="legal-time-shadow\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
