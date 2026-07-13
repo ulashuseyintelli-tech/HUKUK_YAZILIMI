@@ -1317,7 +1317,7 @@ runtime cutover remain `NOT AUTHORIZED`. Existing maintenance records, including
 untouched. The single next eligible task is `ADR014-PE-06C1 — Default-Disabled Observation
 Contract Completion`, requiring separate task authorization.
 
-**ADR014-PE-06C1 Master Register Closure (2026-07-13):** Default-Disabled Observation Contract
+**ADR014-PE-06C1 Master Register Closure (2026-07-13; governance PR #1202):** Default-Disabled Observation Contract
 Completion is `CLOSED / CANONICAL / DEFAULT-DISABLED` after technical PR #1201 (head
 `ca1d8baf1a25f2e7cba1219e4d2880e4a8676eb9`; squash
 `8948cadb7ce4c2061edb82bcff9afd901af98acf`; CI `4/4 SUCCESS`; pre-merge `CLEAN /

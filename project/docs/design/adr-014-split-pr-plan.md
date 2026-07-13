@@ -40,6 +40,8 @@
 
 > **v2.22 (2026-07-13):** ADR014-PE-06C1 technical/governance closure reconciliation. Technical PR #1201 (head `ca1d8baf1a25f2e7cba1219e4d2880e4a8676eb9`; squash `8948cadb7ce4c2061edb82bcff9afd901af98acf`) adds the same-family v2 `SESSION_CONTROL` profile, pure exhaustive 7/7 fact-to-event mapping, bounded session-counter mapping, caller-supplied finite monotonic phase-duration projection and typed source-absent blockers. PE-05A2 v1 serialization/semantics and PE-06B1 fact contract remain unchanged. The producer remains default `DISABLED`; `TEST_ONLY` is the only projection mode. No production call-site, registry registration/emission, runtime clock, session/control activation, persistence, external egress, evidence execution, financial/readiness/API behavior or authority was added. Representative evidence remains absent/blocking; PR-11 and runtime cutover remain NOT AUTHORIZED. No successor is auto-opened; the next workstream requires an explicit owner decision.
 
+> **v2.22 governance closure PR:** #1202.
+
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
 ---

@@ -113,7 +113,7 @@ record supersedes only the post-PE-06B2 next-step wording; all receivable, evide
 gates remain unchanged. Current execution plan: `docs/design/adr-014-split-pr-plan.md` v2.21.
 
 **ADR-014 post-PE-06C1 routing override (2026-07-13):** ADR014-PE-06C1 is
-`CLOSED / CANONICAL / DEFAULT-DISABLED` after technical PR #1201 (head
+`CLOSED / CANONICAL / DEFAULT-DISABLED` after technical PR #1201 and governance PR #1202 (head
 `ca1d8baf1a25f2e7cba1219e4d2880e4a8676eb9`; squash
 `8948cadb7ce4c2061edb82bcff9afd901af98acf`). PE-05A2 v1 serialization and semantics remain
 immutable; the same operational-event envelope family now contains the bounded
