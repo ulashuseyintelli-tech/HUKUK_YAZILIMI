@@ -1,0 +1,398 @@
+# COLLECTION GOVERNANCE
+
+## Tahsilat Domaini — Domain Governance
+
+```text
+Belge yolu              : project/docs/governance/COLLECTION-GOVERNANCE.md
+Durum                   : CANONICAL DOMAIN GOVERNANCE
+Owner Status            : OWNER-APPROVED CANONICALIZATION (owner review tamamlandı + GO-DOCS
+                          canonicalization talimatı, 2026-07-13)
+Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
+Üst Otorite             : SYSTEM-CONSTITUTION (SYS-*) — bu belge system-wide normu yeniden tanımlamaz
+Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.0 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
+Sürüm                   : 1.0 (2026-07-13 — owner review R1–R7 revizyonları uygulanmış metin)
+Kanıt tabanı            : repo main @ beb7d6735fb4002ad6169604531681414a17aa0e
+                          + Handoff Acceptance Report (2026-07-13)
+                          + TAHSILAT_BLOKU_CANONICAL_MIMARI v1.0 (Master Analysis damıtımı, Desktop 01)
+IMPLEMENTATION AUTHORITY: NONE — bu belgenin varlığı, review'i veya merge'i hiçbir kod, schema,
+                          migration, feature activation, cutover ya da release yetkisi üretmez
+                          (SYS-GOV-003 uygulaması)
+```
+
+---
+
+# NON-GOALS
+
+Bu belge:
+
+- RECEIVABLE-GOVERNANCE'ın tekrarı veya ikinci Receivable anayasası değildir.
+- Master Synthesis (kanıt katmanı) değildir — kanıt COLLECTION-MASTER-SYNTHESIS.md'dedir.
+- Risk Register, Owner Decisions dossier'i veya Decomposition değildir.
+- ADR değildir; teknik implementasyon rehberi değildir.
+- Hiçbir açık owner kararını ratifiye etmez (açık kararlar COLLECTION-OWNER-DECISIONS.md'de).
+
+Normatif tekrar yasağı (SDOM §2): Başka canonical belgede yaşayan norm burada yalnız
+ID/bölüm referansıyla anılır, kopyalanmaz.
+
+# READING ORDER
+
+```text
+AGENTS.md → GOVERNANCE-INDEX.md → SYSTEM-CONSTITUTION.md
+→ RECEIVABLE-GOVERNANCE.md → (bu belge) COLLECTION-GOVERNANCE.md
+→ tm3-collection-disposition-boundary.md (ONAYLANDI sınır sözleşmesi)
+→ dbind-financial-authority-decisions.md (ONAYLANDI finansal otorite kararları)
+→ ADR-014 / ADR-013 / ADR-010 / ADR-009
+→ decision-log.md → Master Register
+```
+
+---
+
+# 1. Domain amacı ve bounded context
+
+## 1.0. Anayasal çapa
+
+COLLECTION, `SYS-GOV-013 — Beş Primary Legal-Operation Domain` hükmünde sayılan beş primary
+domain'den biridir (SYSTEM-CONSTITUTION.md:172). Bu belge, Constitution'ın COLLECTION sınır
+hükmü `SYS-GOV-018`'i — "COLLECTION receipt, cash provenance, idempotency, reversal/refund
+başlangıcı ve legal allocation sonucu ile bağlantının sahibidir. Creditor entitlement veya
+accounting classification'ı tek başına belirleyemez." (SYSTEM-CONSTITUTION.md:202-205) —
+YALNIZ AYRINTILANDIRIR; değiştiremez veya zayıflatamaz (additive ilişki; OFFICE-GOVERNANCE'ın
+SYS-GOV-014 ile kurduğu desenin aynısı).
+
+## 1.1. Amaç
+
+COLLECTION domaini şunların sahibidir (SOURCE: Master Analysis → Desktop 01 §5;
+KANIT: `CollectionService` tek otorite — TM3 §2, invariant 13):
+
+- gerçekleşen para/değer girişini (receipt fact) kaydetmek,
+- işlem kimliği, belge ve provenance taşımak,
+- Collection lifecycle durumunu yönetmek,
+- idempotent command execution sağlamak,
+- Receivable'ın hukuki allocation politikasını deterministic olarak YÜRÜTMEK
+  (politikanın sahibi değil, yürütücüsüdür — REC-AUTH-011/012),
+- ledger etkisini append-only kayıtlarla üretmek,
+- fazla ödeme (overpayment), refund ve reversal lifecycle'ını yönetmek,
+- downstream finansal dağıtım için güvenilir tahsilat fact'i üretmek,
+- audit, actor ve correlation bilgisini taşımak (bugün kısmi — bkz. COL-INV-037..043
+  lifecycle etiketleri).
+
+## 1.2. Bounded context hükmü
+
+**COL-BC-001 — "Tahsilat Bloku" tek bounded context değildir.**
+RECEIVABLE, COLLECTION, CLIENT-FINANCIAL SETTLEMENT ve ACCOUNTING ayrı domainlerdir;
+Tahsilat Bloku bunları çapraz kontratlarla yöneten bir Program şemsiyesidir.
+(SOURCE: Desktop 01 §0.2; repo teyidi: REC-GOV §6 domain ownership tablosu + TM3 §1.)
+
+**COL-BC-002 — İki ayrı "tahsilat" vardır ve asla tek kelimeyle anılmaz.**
+Borçlu tahsilatı (`Collection`, dosya etkisi) ≠ tahsilatın dağıtımı
+(`CollectionDisposition`, müvekkil–ofis etkisi). (SOURCE: TM3 §1 — ONAYLANDI.)
+
+---
+
+# 2. Canonical vocabulary
+
+REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ekleridir
+(SOURCE: Desktop 01 §7; çakışma kontrolü: REC-GOV §4 ile uyumlu):
+
+| Terim | Canonical anlam | Lifecycle |
+|---|---|---|
+| Receipt / Tahsilat Girişi | Paranın/değerin sisteme girdiği fact | CURRENT |
+| Collection | Receipt'in bağlam, statü, belge ve işlem taşıyıcısı | CURRENT |
+| Internal Confirmation | Sistem içi kayıt onayı; banka finality değildir | CURRENT |
+| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — owner-gated (COL/OD-06) |
+| Legal Allocation | Tahsilatın alacak bileşenlerine hukuki uygulanması | CURRENT (REC-AUTH-011) |
+| TBK100 Allocation | Masraf→fer'i→işlemiş faiz→anapara deterministic mahsup | CURRENT (REC-GOV §9.2 — norm oradadır) |
+| Client Disposition | Tahsilatın müvekkil/ofis dağıtım kararı | CURRENT (TM3) |
+| Client Offset | Müvekkil finansal bakiyeleri arası settlement; debtor set-off DEĞİL | CURRENT (adr-client-offset) |
+| Overpayment | Borcu aşan para; borç değil, emanet/HELD sınıfı | CURRENT (schema `CollectionOverpayment`) |
+| Unapplied Payment | Borca uygulanmamış tahsilat; overpayment ile otomatik eş anlamlı DEĞİL | TARGET — lifecycle owner-gated (COL/OD-06) |
+| Refund | Paranın ayrı çıkış hareketiyle iadesi | TARGET — partial refund NO_GO (REC-AUTH-015) |
+| Reversal | Önceki hukuki etkinin bağlı compensating event ile geri alınması | CURRENT — yalnız linked FULL reversal (REC §11) |
+| Legal Balance | Receivable policy'ye göre hukuki bakiye | REC-AUTH-021/022 statüsüne tabidir |
+| Accounting Balance | Journal projection'ı; legal balance authority DEĞİL | ADR-010 gated |
+| Operational Metric | Strateji/eligibility türevi; canonical legal balance DEĞİL | CURRENT ilke |
+
+**COL-VOC-001 — Yalın `payment`, `mahsup`, `bakiye`, `settlement`, `dosya tutarı`,
+`amount`, `remainingAmount` isimleri qualifier olmadan yeni API/kolon/DTO'da kullanılamaz.**
+(SOURCE: Desktop 01 §7; SYS ile uyumlu basis-açıklığı ilkesi.)
+
+---
+
+# 3. Dört gerçeklik ve source-of-truth matrisi
+
+## 3.1. Dört gerçeklik
+
+Her parasal çıktı basis'ini açıkça taşır (SOURCE: Desktop 01 §9):
+
+1. **Cash Reality** — para gerçekten girdi/çıktı mı? (Collection / ClientPayout)
+2. **Legal Reality** — hukuki borç ne ölçüde azaldı? (LedgerEntry + LedgerAllocation + canonical hesap)
+3. **Operational Reality** — hangi aksiyon alınmalı? (projection/metric)
+4. **Accounting Reality** — muhasebede ne tanındı? (AccountingJournal — ADR-010)
+
+Bu dörtlünün aynı tutarı göstermesi zorunlu değildir; alan yalnız `balance` adı taşıyamaz.
+
+## 3.2. Source-of-truth matrisi
+
+(KANIT sütunu: repo main @ beb7d673 üzerinde bu oturumda doğrulanan dosya/satır ya da
+ratifiye belge referansı.)
+
+| Gerçek | Canonical authority | KANIT / statü |
+|---|---|---|
+| Receipt fact | `Collection` — tek yazım otoritesi `CollectionService` | collection.service.ts:393; TM3 inv-13 |
+| Hukuki para etkisi | `LedgerEntry` + `LedgerAllocation`, append-only | schema.prisma:5169-5217; update/delete production yolunda yok |
+| Claim amount/provenance | `ClaimItem` authority alanları | REC-AUTH-001..004 (collectedAmount NON-AUTHORITATIVE) |
+| Hukuki bakiye (hedef) | canonical computeBalance | REC-AUTH-021/022 — bugün SHADOW_ONLY (case-balance-display.ts:766) |
+| Hukuki bakiye (fiili bugün) | legacy calculation-summary | case.service.ts:4097-4101 primary; CUTOVER NOT AUTHORIZED |
+| Overpayment | `CollectionOverpayment` (HELD) | schema.prisma:2362-2391; collection.service.ts:548-666 |
+| Müvekkil dağıtımı | posted `CollectionDisposition` + satırları | TM3 §3/§5.1; dbind §3 kanonik akış |
+| Müvekkile borç | `CLIENT_PAYABLE` disposition line | TM3 inv-3 |
+| Gerçek payout | `ClientPayout` | schema.prisma:8529/8540 (idempotency kontratlı) |
+| Client offset | `ClientOffset` | adr-client-offset-cross-ledger-settlement.md (Accepted) |
+| Muhasebe | `AccountingJournalEntry/Line` | ADR-010 (LOCKED direction; UNWIRED/shadow) |
+| UI/report/export/UYAP | yukarıdaki otoritelerin read projection'ı | REC-AUTH-027/028; bağımsız formül yasak |
+
+---
+
+# 4. Ownership sınırı (ÖZEL GÖREV — Receivable/Collection/komşu domainler)
+
+## 4.1. COLLECTION'ın sahip OLDUĞU
+
+- Collection receipt fact, statüsü, belgesi, provenance'ı (REC-AUTH-010: "COLLECTION owner").
+- Collection lifecycle: create → (internal confirmation) → cancel/void (approval-gated).
+- Legal allocation SONUCU ile bağlantı ve ledger yazımı (`SYS-GOV-018` dili): TBK100
+  politikasının (sahibi RECEIVABLE — REC-GOV §9.2) tek transaction içinde deterministic
+  yürütülmesi ve LedgerEntry/LedgerAllocation üretimi. Yürütme, REC-AUTH-011/012 ortak
+  legal-allocation boundary'sine tabidir (TM3-ACT28 reconciliation OPEN); bu belge tek
+  taraflı allocation sahipliği kurmaz.
+- CollectionOverpayment (yalnız borç-üstü tahsil; HELD emanet sınıfı).
+- Linked full reversal execution (compensating REVERSAL satırı + net-zero ayna).
+- PAYMENT_RECEIVED / PAYMENT_REVERSED / OVERPAYMENT_RECORDED domain event üretimi (same-tx).
+
+## 4.2. RECEIVABLE'ın sahip olduğu (Collection burada yalnız tüketici/yürütücü)
+
+- ClaimItem semantiği, demandedAmount, interestTypeCode, Due→ClaimItem ingress (REC §7.2, §8).
+- Allocation POLİTİKASI: TBK100 sırası ve REC-ALLOC-001..004 (REC-GOV §9.2 — norm oradadır,
+  burada kopyalanmaz).
+- Faiz tabanı ve legal balance semantiği (REC §10; REC-AUTH-021/022).
+- Reversal'ın hukuki kapsam sınırı: linked-full-only, partial NO_GO (REC §11, REC-AUTH-015).
+
+## 4.3. ACCOUNTING'e bırakılan
+
+- Journal posting ve muhasebesel projection (ADR-010; REC-BOUNDARY-002: journal legal balance
+  hesaplamaz). Collection create/cancel journal'a kanıt yazar (collection.service.ts:496;
+  collection-cancel-executor.ts:209-217) ama muhasebe otoritesi ACCOUNTING domainindedir.
+- Accounting write-off hukuki sona erme üretmez (COL-INV-005; SYS-FIN ailesiyle uyumlu).
+
+## 4.4. DEBTOR'a bırakılan
+
+- Debtor/CaseDebtor kimliği, legal role, liability rejimi (DEBTOR-GOVERNANCE).
+- Tahsilat tahsisi = NEVER_AUTO sınırı DEBTOR-GOV §7'de yaşar; REC-GOV §9.1 bunu korur.
+  Collection, case-scoped payment dışında debtor-level pool davranışı sergileyemez.
+- PaymentDesignation/PaymentScope ratifiye DEĞİL: sistem kendiliğinden tahsis beyanı üretemez
+  (SOURCE: Desktop 01 §20; repo teyidi: böyle bir model/contract yok).
+
+## 4.5. OFFICE'e bırakılan
+
+- Actor kimliği, rol, yetki, delegasyon (OFFICE-GOVERNANCE Domain Law).
+- Approval kararının kendisi: `OfficeApprovalRequest` zinciri (ADR-009 — tahsilat iptali,
+  ödeme iptali, mahsup apply/reverse kapsam-içi). Finansal domain approval'ın VARLIĞINI
+  doğrular, kararı yeniden üretmez ve approval kaydını overwrite etmez.
+- Self-approval rejimi ve istisnaları dbind §5 + OWN-29-A/B/C/D ile sabittir:
+  `COLLECTION_VOID` payout değildir, self-approval istisnasını miras almaz.
+
+## 4.6. CLIENT-FINANCIAL SETTLEMENT'a bırakılan
+
+- CollectionDisposition, ClientPayable, ClientPayout, ClientOffset, ClientStatement
+  (TM3 §3/§5/§5.1 — D1 KİLİTLİ: payout BalanceLedger'a yazılmaz).
+- Finansal otorite CaseClient/creditor set'tir; `Case.clientId` finansal otorite DEĞİLDİR
+  (dbind §1). Disposition `clientId` ile kurulmaz (TM3 inv-4).
+- Borçlu tahsilatı otomatik müvekkile borç değildir (TM3 inv-1/2/3).
+
+## 4.7. Açık sınır uyuşmazlığı (çözüm bekleyen — sessizce çözülmemiştir)
+
+**COL-BOUNDARY-CONFLICT-001:** Handoff işletim haritası (Desktop 01 §0.3 / 03 §2)
+CollectionDisposition/ClientPayable/ClientPayout/ClientOffset uygulamasını **Codex para
+hattına** atar; repo'da bağlayıcı TM3 (§5, §11) client-settlement modülünü **Claude'a** atar
+ve D2 kararı consumer handler'ı Claude client-settlement'a kilitler. Repo otorite sırası
+gereği TM3 CURRENT-BINDING'dir; handoff ataması PROPOSED'dur. Nihai lane ataması
+**COL/OD-18** owner kararına bırakılmıştır. Bu belge lane değiştirmez.
+
+---
+
+# 5. Invariantlar
+
+Aşağıdaki tablolar Master Analysis'in COL-INV-001..048 setini (SOURCE: Desktop 01 §11–16)
+korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
+
+- `CURRENT-CONFIRMED` — main @ beb7d673 üzerinde davranış/şema kanıtı bu oturumda doğrulandı.
+- `CURRENT-PARTIAL` — kısmen mevcut; açık boşluk Risk Register'da kayıtlı.
+- `CURRENT-PRINCIPLE` — normatif ilke; ihlali bilinmiyor, hedefli runtime kanıtı bu turda üretilmedi.
+- `TARGET-OWNER-GATED` — bugün mevcut değil; owner kararı/kontratı olmadan CURRENT ilan edilemez.
+- `CURRENT-VIOLATED-KNOWN` — norm bağlayıcıdır ve yürürlüktedir; bilinen ihlaller Risk
+  Register'da DRIFT sınıfında kayıtlıdır ve düzeltmeleri cutover/W-programına bağlanmıştır.
+
+## 5.1. Finansal ve hukuki invariantlar
+
+| ID | Kural (kısa) | Lifecycle | Kanıt/Kaynak |
+|---|---|---|---|
+| COL-INV-001 | Tahsilat girişi tek başına alacağı kapatmaz | CURRENT-CONFIRMED | Etki yalnız allocation hattından; REC-BOUNDARY-001 |
+| COL-INV-002 | ClaimItem yalnız legal allocation etkisiyle azalır | CURRENT-CONFIRMED | REC-AUTH-004 (collectedAmount NON-AUTH); summary-engine ledger hattı |
+| COL-INV-003 | Collection ≠ LedgerEntry ≠ LedgerAllocation | CURRENT-CONFIRMED | schema.prisma:2311/5169/5217 ayrı modeller |
+| COL-INV-004 | Legal allocation ≠ client disposition | CURRENT-CONFIRMED | TM3 inv-7 |
+| COL-INV-005 | Accounting write-off hukuki sona erme üretmez | CURRENT-PRINCIPLE | ADR-010 sınırı; REC-BOUNDARY-002 |
+| COL-INV-006 | ClientOffset debtor set-off değildir | CURRENT-CONFIRMED | adr-client-offset (Accepted, locked invariants) |
+| COL-INV-007 | Overpayment borç veya negatif claim değildir | CURRENT-CONFIRMED | CollectionOverpayment HELD; schema:2362-2391 |
+| COL-INV-008 | Unapplied ≠ overpayment | TARGET-OWNER-GATED | Unapplied lifecycle yok; COL/OD-06 |
+| COL-INV-009 | Refund ayrı para çıkış event'idir; Collection overwrite edilmez | CURRENT-PRINCIPLE (full) / TARGET (partial) | REC §11.3; REC-AUTH-015 |
+| COL-INV-010 | Reversal yalnız açık bağlı compensating event ile | CURRENT-CONFIRMED | cancel-executor.ts:137-145; reversesLedgerEntryId @unique |
+| COL-INV-011 | Posted/confirmed finansal kayıt fiziksel silinmez | CURRENT-CONFIRMED | Ledger'da production update/delete yok; TM3-S1 hard-delete kapatıldı |
+| COL-INV-012 | collectedAmount/amount/display cache legal authority olamaz | CURRENT-CONFIRMED | REC-AUTH-003/004 |
+| COL-INV-013 | Dosya kapanışı claim satisfaction değildir | CURRENT-PRINCIPLE | Satisfaction modeli yok; COL/OD-08 |
+| COL-INV-014 | Muhasebe kapanışı hukuki kapanış değildir | CURRENT-PRINCIPLE | ADR-010 yön sınırı |
+| COL-INV-015 | Hukuki politika/override yalnız yetkili actor + approval ile | CURRENT-PARTIAL | ADR-009 + OWN-29-B (void approval-gated); genel override matrisi COL/OD-07 |
+| COL-INV-016 | Para çıkışı/override/yüksek etkili adjustment özel approval taşır | CURRENT-CONFIRMED | CLIENT_PAYOUT_POST + COLLECTION_VOID + CLAIM_ITEM_HIGH_IMPACT_CHANGE (dbind §5, OWN-29-*) |
+
+## 5.2. Para birimi ve hassasiyet
+
+| ID | Kural | Lifecycle | Kanıt/Kaynak |
+|---|---|---|---|
+| COL-INV-017 | Her tutar currency taşır | CURRENT-PRINCIPLE | REC-FX-001 ekseni |
+| COL-INV-018 | Yetkili FX contract'sız toplama/netleme yok | CURRENT-CONFIRMED | REC-AUTH-018/019; mismatch fail-closed |
+| COL-INV-019 | Floating point authority olamaz | CURRENT-PRINCIPLE | REC-ALLOC-004 (norm REC'te) |
+| COL-INV-020 | Minor-unit/rounding merkezî ve deterministic | CURRENT-PARTIAL | ADR-014 PR-3h cent hardening (calc-core scope) |
+| COL-INV-021 | Allocation satır toplamı uygulanan tutarı aşamaz | CURRENT-PRINCIPLE | Farklı-key concurrent kanıt açık — COL-RISK-T01/COL-RISK-G02 |
+| COL-INV-022 | Bileşen bazında allocation hukuki tutarı aşamaz | CURRENT-PRINCIPLE | Aynı test boşluğu — COL-RISK-T01 |
+| COL-INV-023 | Kuruş remainder davranışı testle sabitlenir | CURRENT-PARTIAL | calc-core'da var; ledger hattında hedefli test COL/DEC W1.1 |
+
+## 5.3. Transaction / concurrency / idempotency
+
+| ID | Kural | Lifecycle | Kanıt/Kaynak |
+|---|---|---|---|
+| COL-INV-024 | Finansal command tenant-scoped idempotency taşır | CURRENT-CONFIRMED (create yolları) | Collection @@unique(tenantId,idempotencyKey) schema:2336; ClientPayout schema:8540 |
+| COL-INV-025 | Aynı key + aynı payload yeni etki üretmez | CURRENT-CONFIRMED | collection.service.ts:414-418; client-payout.service.ts:333-353 |
+| COL-INV-026 | Aynı key + farklı payload fail-closed conflict | CURRENT-CONFIRMED | IDEMPOTENCY_KEY_CONFLICT client-payout.service.ts:595-613 |
+| COL-INV-027 | Collection+ledger+allocation+overpayment aynı atomic boundary'de | CURRENT-CONFIRMED | collection.service.ts:393-666 tek $transaction |
+| COL-INV-028 | Aynı case/currency scope'ta concurrency over-allocation üretemez | CURRENT-PARTIAL | Ana yol dolaylı korumalı; canonical create dışında ikinci bir allocation giriş yolunun concurrency kontratı açık (P0; teknik ayrıntı public-repo dışında) — COL-RISK-D04/COL-RISK-G02; COL/OD-04 |
+| COL-INV-029 | Money-out command'leri approval'a ek idempotent | CURRENT-CONFIRMED | dbind §5 + ClientPayout kontratı; CollectionDisposition collectionId @unique |
+| COL-INV-030 | Retry duplicate statement/journal/payable/payout üretemez | CURRENT-PARTIAL | P2002-safe yollar var; replay harness kanıtı planlı (Desktop 04 A4) |
+| COL-INV-031 | Mid-transaction failure orphan satır bırakamaz | CURRENT-PRINCIPLE | Tek-tx tasarım; rollback harness kanıtı planlı (Desktop 04 A3) |
+
+## 5.4. Zaman
+
+| ID | Kural | Lifecycle | Kanıt/Kaynak |
+|---|---|---|---|
+| COL-INV-032 | createdAt hukuki etki tarihi değildir | CURRENT-PRINCIPLE | Desktop 01 §14 |
+| COL-INV-033 | transactionDate/valueDate/effectiveDate/confirmedAt/externalSettledAt ayrıdır | TARGET-OWNER-GATED | Tek authority bağlanmadı — COL/OD-03; COL-RISK-G05 |
+| COL-INV-034 | Faiz+legal balance tek canonical effectiveDate policy tüketir | TARGET-OWNER-GATED | COL/OD-03 |
+| COL-INV-035 | Raw source tarihleri provenance olarak korunur | CURRENT-PRINCIPLE | REC §8.1 provenance ilkesi |
+| COL-INV-036 | Official as-of/known-at sonucu snapshot authority'siz iddia edilemez | CURRENT-CONFIRMED (yasak olarak) | REC-AUTH-024/025; official snapshot yok |
+
+## 5.5. Actor / tenant / audit
+
+| ID | Kural | Lifecycle | Kanıt/Kaynak |
+|---|---|---|---|
+| COL-INV-037 | Hiçbir finansal write yalnız nesne ID'siyle yürümez | CURRENT-PRINCIPLE | REC-WRITE-001 ekseni |
+| COL-INV-038 | Her write en az tenantId+caseId+actor doğrular | CURRENT-PARTIAL | tenant/case gate'ler mevcut; actor zorunluluğu reversal'da CONFIRMED (PR #805), create genelinde envanter COL-RISK-G01 |
+| COL-INV-039 | Actor yetkisi OFFICE'ten gelir; Collection rol sistemi yaratmaz | CURRENT-CONFIRMED | ADR-009; Collection'da rol tablosu yok |
+| COL-INV-040 | Approval OFFICE contract'ından referanslanır, overwrite edilmez | CURRENT-CONFIRMED | OWN-29-B COLLECTION_VOID zinciri |
+| COL-INV-041 | Finansal command idempotencyKey+commandId+actor+audit izi taşır | CURRENT-PARTIAL / TARGET | idempotencyKey+actor var; commandId repo'da YOK; AuditLog yazımı Collection'da YOK — COL-RISK-G01; COL/OD-05 |
+| COL-INV-042 | Correlation/causation zinciri domainler arası kaybolmaz | CURRENT-PARTIAL | Event-düzeyi causedBy (HR-23) VAR; correlationId şema/koda YOK — COL-RISK-G01; COL/OD-05 |
+| COL-INV-043 | Tenant dışı read/write fail-closed | CURRENT-CONFIRMED | TM3 §7; cross-tenant 404 deseni |
+
+## 5.6. Projection ve cutover
+
+| ID | Kural | Lifecycle | Kanıt/Kaynak |
+|---|---|---|---|
+| COL-INV-044 | UI/API/report/template/UYAP yeni finansal formül üretemez | CURRENT-VIOLATED-KNOWN | Norm bağlayıcı; bilinen ihlaller COL-RISK-D01..D03 ve D05 — düzeltme cutover programında (Phase 4) |
+| COL-INV-045 | Projection canonical authority'yi değiştiremez | CURRENT-CONFIRMED | REC-AUTH-PROJ-001..003 |
+| COL-INV-046 | Legacy consumer cutover parity+flag+rollback+owner sign-off ister | CURRENT-CONFIRMED (gate olarak) | REC-GOV §20; decision-log cutover kayıtları |
+| COL-INV-047 | Canonical motor SHADOW iken production authority ilan edilemez | CURRENT-CONFIRMED | case-balance-display.ts:766 SHADOW_ONLY |
+| COL-INV-048 | Report/UI parity kapanmadan tek-motor iddiası yok | CURRENT-CONFIRMED | REC-AUTH-027/028 |
+
+---
+
+# 6. Yasak davranışlar (forbidden behaviors)
+
+(SOURCE: Desktop 01 §6 + TM3 §10 + dbind; repo normlarıyla çakışmaz.)
+
+COLLECTION şunları YAPAMAZ:
+
+1. Party/avukat/personel/kullanıcı kimliği veya rol sistemi sahiplenmek (OFFICE'in).
+2. Debtor legal role/liability rejimi tanımlamak (DEBTOR'un).
+3. Müvekkil vekâlet/talimat ilişkisi yönetmek (CLIENT'ın).
+4. ClaimItem'ın hukuki doğum/geçerlilik semantiğini sahiplenmek (RECEIVABLE'ın).
+5. Fee/harç hukuk politikası üretmek (ADR-013 alanı; REC-FEE-001..005).
+6. Muhasebe kaydıyla hukuki borcu sona erdirmek (ADR-010 sınırı).
+7. UI/report'ta yeni bakiye formülü üretmek veya buna izin vermek (COL-INV-044).
+8. Owner kararsız cross-currency kur politikası uygulamak (REC-FX-002).
+9. Tahsil edilebilirlik/operational balance'ı kendiliğinden tanımlamak.
+10. `CollectionService.create/cancel` dışında ikinci tahsilat yazım otoritesi açmak (TM3 §10).
+11. Global debtor-level payment pool davranışı veya otomatik dosyalar-arası allocation
+    (REC §9.1/§9.3; DEBTOR §7 NEVER_AUTO).
+12. Event payload'ına `clientId` koymak; disposition'ı `clientId` ile kurmak (TM3 §6/inv-4).
+13. `remainingDebtAfterCollection` benzeri türetilmiş borcu persist etmek (TM3 §10).
+14. Posted/confirmed kaydı fiziksel silmek veya ledger-bypass update yapmak (COL-INV-011).
+
+---
+
+# 7. Lifecycle
+
+## 7.1. Collection lifecycle (CURRENT — repo kanıtlı)
+
+```text
+create (idempotencyKey ZORUNLU — PR #851)
+  → tek $transaction: Collection + recorded journal + PAYMENT_RECEIVED event
+    + ledger forward (LedgerEntry+LedgerAllocation) + overpayment(HELD, koşullu)
+  → confirmed
+  → cancel/void:
+      unconfirmed  → cancel path
+      confirmed    → COLLECTION_VOID approval (ADR-009; OWN-29-B; self-approval YOK)
+        → executeCollectionCancelInTransaction:
+          REVERSAL LedgerEntry (negatif ayna, reversesLedgerEntryId bağı, tek-reversal)
+          + allocation aynası + collectedAmount decrement + overpayment HELD→REVERSED
+          + PAYMENT_REVERSED (causedBy=orijinal event)
+```
+
+## 7.2. Downstream dağıtım köprüsü (CURRENT — TM3/dbind)
+
+```text
+Collection(confirmed)
+  → PAYMENT_RECEIVED outbox
+  → CollectionDisposition draft (HELD_PENDING_DISTRIBUTION; otomatik dağıtım YOK)
+  → disposition recommendation → approval → post (kesin dağıtım etkisi YALNIZ burada doğar)
+  → ClientStatementLine / (yalnız avans etkili satırlarda) BalanceLedger
+  → CLIENT_PAYABLE → ClientPayout (idempotent + approval)
+```
+
+## 7.3. TARGET lifecycle alanları (owner-gated)
+
+`confirmedAt/external settlement`, `unapplied payment`, `refund/downstream reversal`,
+`claim satisfaction/re-open` — tümü COLLECTION-OWNER-DECISIONS.md'deki ilgili karar
+paketleri kapanmadan CURRENT ilan edilemez.
+
+---
+
+# 8. Cross-domain contracts
+
+| Contract | Statü | Taşıyıcı |
+|---|---|---|
+| RECEIVABLE–COLLECTION balance/allocation | CURRENT-PARTIAL — REC-GOV §7.3/§9 + TM3; ayrı contract belgesi YOK; TM3-ACT28-LEGAL reconciliation OPEN | REC-GOV + TM3 |
+| OFFICE–COLLECTION actor/approval | CURRENT — ADR-009 evrensel approval + dbind §5 + OWN-29-*; collection'a özgü ayrı belge YOK | ADR-009 + dbind |
+| DEBTOR–COLLECTION attribution | CURRENT-PARTIAL — case-scoped + NEVER_AUTO CURRENT; PaymentDesignation TARGET | REC §9.1 + DEBTOR §7 |
+| CLIENT–COLLECTION settlement | CURRENT — TM3 + adr-client-offset + dbind §1-5; tek çatı belge YOK | TM3 + dbind |
+| COLLECTION–ACCOUNTING journal | DIRECTION LOCKED / EXECUTION GATED | ADR-010 |
+| GLOBAL-ACTOR-AUDIT-CONTEXT | TARGET — correlationId/causationId/commandId şemada YOK | Desktop 01 §17 (öneri); COL/OD-05 |
+
+**COL-CONTRACT-001 — Eksik contract belgesi, mevcut ratifiye normların yokluğu anlamına
+gelmez; yeni contract belgesi mevcut normları yalnız konsolide eder, değiştiremez.**
+
+---
+
+# 9. Değişiklik ve ratifikasyon
+
+- Bu belge yalnız owner text-ratification + docs-only PR ile canonical olur; o ana kadar
+  hiçbir ajan bu belgeye dayanarak davranış değiştiremez.
+- Ratifikasyon sonrası değişiklikler append-only supersession ile yürür (SYS-GOV-006).
+- Bu belgedeki hiçbir hüküm RECEIVABLE-GOVERNANCE, DEBTOR-GOVERNANCE, OFFICE-GOVERNANCE,
+  TM3 veya dbind kayıtlarını override edemez; çelişki tespitinde implementation durur ve
+  yalnız Governance Reconciliation önerilir (AGENTS.md kuralı).

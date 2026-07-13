@@ -1,0 +1,200 @@
+# COLLECTION OWNER DECISIONS
+
+## Tahsilat Domaini — Açık Owner Karar Paketleri (Normalize Edilmiş)
+
+```text
+Belge yolu              : project/docs/governance/COLLECTION-OWNER-DECISIONS.md
+Durum                   : CANONICAL OPEN-DECISION DOSSIER
+Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; kapanmış karar
+                          yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
+                          ile aynı sınıf ve sınır)
+Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
+                          onaylandı; içindeki HİÇBİR karar ratified DEĞİLDİR, tamamı OPEN
+Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
+Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
+IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
+```
+
+---
+
+# 0. ODP-1..ODP-12 crosswalk durumu
+
+Orijinal ODP-1..ODP-12 ve TDP dossier metinleri repo'da, git geçmişinde, PROJECT_MEMORY_PACK'te
+ve bu makinede MEVCUT DEĞİLDİR (Handoff Acceptance Report §3, doğrulanmış). Bu belge ODP'leri
+YENİDEN ÜRETMEZ; Desktop 01 §23'teki karar kuyruğunu repo'daki açık kayıtlarla birleştirip
+`COL/OD-*` kimlikleriyle NORMALIZE eder (repo konvansiyonu: OFF/OD-* örneği).
+
+**ODP-N ↔ COL/OD-NN eşlemesi:** UNRESOLVED — owner orijinal dossier'leri sağlarsa tek
+docs-only güncellemeyle eşleme sütunu doldurulur. Eşleme yokluğu karar içeriğini etkilemez.
+
+---
+
+# 1. Karar paketleri
+
+Format: her paket → SORU / BAĞLAM+KANIT / SEÇENEK UZAYI (icat değil, analizden) / BAĞIMLILIK /
+ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
+
+## KUYRUK A — P0 patch'lerinden ÖNCE (NOW)
+
+### COL/OD-01 — Legal ledger adjustment policy
+- SORU: Hatalı/eksik geçmiş finansal kayıt hangi mekanizmayla düzeltilir (yalnız compensating
+  entry mi; kim, hangi approval ile)?
+- KANIT: Append-only ledger CURRENT (F-04); adjustment kavramının kontratı yok.
+- BAĞIMLILIK: — (kök karar). ETKİ: reversal/refund ailesinin tamamı (COL/OD-09, -10).
+
+### COL/OD-02 — "Dosya tutarı" tanımı
+- SORU: UI/rapor/UYAP'ta "dosya tutarı" hangi basis'tir (hangi gerçeklik, hangi as-of)?
+- KANIT: COL-VOC-001 qualifier zorunluluğu; legacy yüzeyler kendi toplamlarını üretiyor (OF-05).
+- BAĞIMLILIK: COL/OD-03. ETKİ: consumer cutover (COL/OD-16), CAN-CUT-02.
+
+### COL/OD-03 — Canonical effective-date policy
+- SORU: transactionDate/valueDate/effectiveDate/confirmedAt hangi tek policy'ye bağlanır;
+  faiz ve legal balance hangisini tüketir?
+- KANIT: COL-INV-033/034 TARGET; çift-tarih tek authority'siz (OF-06, UNVERIFIED-THIS-PASS).
+- BAĞIMLILIK: —. ETKİ: faiz kesinliği, COL/OD-02, -06, -14.
+
+### COL/OD-04 — Allocation concurrency control kontratı
+- SORU: Aynı case/currency/ClaimItem scope'unda eşzamanlılık hangi AÇIK mekanizmayla
+  serialize edilir (per-case advisory lock kontratlaşır mı, serializable mı, unique guard mı)?
+  Canonical create dışındaki ikinci allocation giriş yolunun kaderi ne?
+- KANIT: Koruma bugün DOLAYLI (OF-02); COL-INV-028 CURRENT-PARTIAL.
+- BAĞIMLILIK: race harness kanıtı (Desktop 04 / A2) karara girdi üretir; karar test sonrası.
+- ETKİ: W1.2 lock patch'i.
+
+### COL/OD-05 — Audit/correlation sınırı + GLOBAL-ACTOR-AUDIT-CONTEXT ratification
+- SORU: Collection create/cancel hangi audit yazımını, hangi correlation alanlarını
+  (correlationId/causationId/commandId) hangi katmanda taşır? Shared contract (Desktop 01 §17)
+  ratifiye edilecek mi, hangi alan seti zorunlu?
+- KANIT: OF-01 (audit=0, correlation şemada yok, commandId hiç yok; causedBy VAR).
+- BAĞIMLILIK: —. ETKİ: W1.6 audit capture; tüm cross-domain event kontratları.
+
+## KUYRUK B — P1'den ÖNCE
+
+### COL/OD-06 — External settlement / unapplied payment / chargeback kapsamı
+- SORU: Banka kesinleşmesi (externalSettledAt), borca uygulanmamış tahsilat lifecycle'ı ve
+  chargeback bu domain'e giriyor mu; hangi statülerle?
+- KANIT: Vocabulary'de TARGET (COL-INV-008/033); runtime karşılığı yok.
+- BAĞIMLILIK: COL/OD-03. ETKİ: W2.2, W2.3.
+
+### COL/OD-07 — Feragat / indirim / sulh / ibra / write-off etki matrisi
+- SORU: Bu hukuki işlemler ClaimItem/ledger/faiz üzerinde hangi etkiyi, hangi approval ile üretir?
+- KANIT: COL-INV-015 CURRENT-PARTIAL (genel override matrisi yok); COL-INV-005 accounting sınırı.
+- BAĞIMLILIK: COL/OD-01. ETKİ: W2.5, claim satisfaction.
+
+### COL/OD-08 — Claim satisfaction / re-open
+- SORU: Alacak ne zaman "karşılandı" sayılır; re-open hangi koşul ve kayıtla olur?
+- KANIT: COL-INV-013 (dosya kapanışı ≠ satisfaction); FINANCIAL_CASE_CLOSE (OWN-29-C) actor
+  sınırı var, satisfaction semantiği yok.
+- BAĞIMLILIK: COL/OD-07. ETKİ: W2.5.
+
+### COL/OD-09 — Refund / partial reversal kontratı
+- SORU: Kısmi iade/kısmi reversal hangi model, hangi netting ve hangi approval ile tanımlanır?
+- KANIT: REC-AUTH-015 TARGET/PRODUCTION_NO_GO; full reversal CURRENT (F-07).
+- BAĞIMLILIK: COL/OD-01. ETKİ: W2.4.
+
+### COL/OD-10 — Downstream reversal (dağıtım sonrası iptal)
+- SORU: Disposition/payable/payout doğduktan sonra tahsilat void edilirse downstream etki
+  nasıl geri sarılır?
+- KANIT: Upstream net-zero CURRENT; downstream reversal kontratı analizde açık kalem.
+- BAĞIMLILIK: COL/OD-01, -09; TM3 lane kararı COL/OD-18. ETKİ: W2.4.
+
+### COL/OD-11 — Eski UYAP route disposition (AS7 revizyonu)
+- SORU: `/uyap-export` kalıcı kararı ne: guard'la, düzelt, yönlendir, emekli et? Üçüncü XML
+  yolu (template-engine) dahil mi?
+- KANIT: OF-04; AS7 mevcut owner kararı "emekli EDİLMEZ, düzeltme ayrı PR".
+- BAĞIMLILIK: —. ETKİ: W1.5, W4.3; CAN-CUT-01/PR-A5 hattıyla koordinasyon.
+
+## KUYRUK C — CUTOVER'dan ÖNCE
+
+### COL/OD-12 — ADR-014 cutover authorization
+- SORU: Ölçülmüş baseline + representative evidence sonrası PR-11 ve runtime cutover APPROVED mı?
+- KANIT: decision-log:15/48 — 3 gate açık; policy DEFINED ≠ APPROVED.
+- BAĞIMLILIK: baseline + evidence (owner-side operasyonel gate). ETKİ: W4.4/W4.6.
+
+### COL/OD-13 — Official snapshot / as-of authority
+- SORU: Durable official snapshot lifecycle/hash/persistence kontratı ratifiye edilecek mi?
+- KANIT: REC-AUTH-025 TARGET; REC-GOV §14.4.
+- BAĞIMLILIK: ADR-013 hattı (COL/OD-14 ile birlikte okunur). ETKİ: W4.5.
+
+### COL/OD-14 — ADR-013 fee/harç TO-BE seçimi
+- SORU: Fee/harç authority modeli (A–D opsiyonları) hangisi; tahsil harcı + cezaevi harcı
+  temsili nasıl?
+- KANIT: ADR-013 Draft/owner-review-required; boundary audit BLOCKED-before-implementation.
+- BAĞIMLILIK: ADR-013 Boundary Audit (GO-ANALYZE). ETKİ: W3.1.
+
+### COL/OD-15 — FX contract
+- SORU: Cross-currency observation/conversion kontratı açılacak mı; kapsam ne?
+- KANIT: REC-AUTH-019/020 NO_GO; REC-FX-001/002.
+- BAĞIMLILIK: COL/OD-03. ETKİ: W3.5.
+
+### COL/OD-16 — Report/UI/template consumer switch
+- SORU: Hangi tüketici hangi sırayla canonical DTO'ya geçer; parity kanıtı ve rollback nasıl?
+- KANIT: REC-AUTH-027/028; CAN-CUT-02 needs-owner-decision; OF-05 legacy formüller.
+- BAĞIMLILIK: COL/OD-02, -12. ETKİ: W4.1/W4.2/W4.4.
+
+## KUYRUK D — GELECEK DOMAIN GENİŞLEMESİ
+
+### COL/OD-17 — Liability / kefalet / müşterek-müteselsil double-count
+- SORU: Kefalet/müşterek-müteselsil rejimde aynı alacağın birden çok borçlu üzerindeki
+  görünümü nasıl temsil edilir; debtor-level agregasyonda double-count nasıl önlenir?
+- KANIT: Desktop 01 §23; DEBTOR-GOV liability sınırı. BAĞIMLILIK: DEBTOR hattıyla ortak.
+
+### COL/OD-19 — PaymentDesignation / PaymentScope
+- SORU: Ödeyen≠borçlu ve tahsis beyanı modeli ratifiye edilecek mi?
+- KANIT: §4.4 — bugün NEVER_AUTO + case-scoped; model yok. ETKİ: W3.4.
+
+### COL/OD-20 — Muaccel / overdue / dispute / conditionality / collectability
+- SORU: Muaccel/overdue/dispute/conditionality/collectability durumları hangi domainde ve
+  hangi statü modeliyle tanımlanır; bu türevler canonical legal balance'tan nasıl ayrık tutulur?
+- KANIT: Desktop 01 §23 gelecek kuyruğu; operational metric sınırı COL-INV setinde. ETKİ: W3.2/W3.3.
+
+## KUYRUK E — İŞLETİM (teknik değil, sahiplik)
+
+### COL/OD-18 — Client-settlement lane ataması (TM3 ↔ handoff çelişkisi)
+- SORU: CollectionDisposition/ClientPayable/ClientPayout/ClientOffset uygulama hattı Claude'da
+  mı kalır (TM3 §5/§11 + D2, CURRENT-BINDING) yoksa Codex para hattına mı devredilir
+  (Desktop 01 §0.3 / 03 §2, PROPOSED)?
+- KANIT: COL-BOUNDARY-CONFLICT-001 (COLLECTION-GOVERNANCE §4.7).
+- BAĞIMLILIK: — (işletim kararı; teknik ön koşulu yok). ETKİ: tüm W-SET lane'leri, worktree
+  adlandırması, dosya sahiplik matrisi.
+
+### COL/OD-21 — Money-out idempotency kontratının text-ratification'ı
+- SORU: Runtime'da MEVCUT kontrat (F-12) canonical governance metnine bağlanacak mı?
+- KANIT: Handoff bu maddeyi "eksik" biliyordu; repo'da CLOSED bulundu — kalan iş yalnız
+  normatif kayıt. BAĞIMLILIK: —. ETKİ: docs-only.
+
+---
+
+# 2. Owner Decision Dependency Graph
+
+```text
+KÖK (bağımsız başlar):
+  COL/OD-01 (adjustment)   COL/OD-03 (effective-date)   COL/OD-05 (audit/correlation)
+  COL/OD-11 (UYAP route)   COL/OD-18 (lane)             COL/OD-21 (idempotency text)
+
+COL/OD-01 ─┬─> COL/OD-07 (feragat/indirim/sulh) ──> COL/OD-08 (satisfaction/re-open)
+           ├─> COL/OD-09 (partial refund/reversal) ─┬─> COL/OD-10 (downstream reversal)
+           │                                        └── (COL/OD-18 lane sonucunu tüketir)
+COL/OD-03 ─┬─> COL/OD-02 (dosya tutarı) ──> COL/OD-16 (consumer switch)
+           ├─> COL/OD-06 (external settlement/unapplied)
+           └─> COL/OD-15 (FX)
+COL/OD-04 (concurrency) <── kanıt girdisi: race harness (Desktop 04 / A2) — karar test SONRASI
+COL/OD-12 (cutover auth) <── owner-side gate: baseline + representative evidence
+COL/OD-13 (snapshot) ── ADR-013 hattı ── COL/OD-14 (fee TO-BE)
+COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
+```
+
+Önerilen oturum sırası (yalnız sıralama önerisidir, karar değildir):
+1) COL/OD-18 + COL/OD-21 (hızlı, bağımsız, işletimi kilitler)
+2) COL/OD-01, -03, -05 (P0 kök üçlüsü)
+3) COL/OD-04 (race harness kanıtı geldikten sonra)
+4) Kuyruk B → Kuyruk C.
+
+---
+
+# 3. Kapanış kuralı
+
+Bir COL/OD kararı yalnız şu zincirle kapanır:
+owner kararı → decision-log.md kaydı → (gerekiyorsa) ilgili governance belgesine amendment
+→ bu dossier'de satırın `OPEN → RECORDED(decision-log #ref)` işaretlenmesi.
+Bu dossier'de "kapalı" görünen hiçbir satır tek başına authority değildir.
