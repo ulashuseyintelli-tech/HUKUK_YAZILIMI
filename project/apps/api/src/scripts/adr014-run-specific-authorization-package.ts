@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   ADR014_LOCAL_EVIDENCE_HARNESS_CONTRACT_VERSION,
   type Adr014BoundOpaqueReference,
+  type Adr014LocalEvidenceHarnessReferenceKind,
   prepareAdr014DisabledLocalEvidenceHarness,
 } from './adr014-disabled-local-evidence-harness';
 
@@ -437,5 +438,554 @@ export function completeAdr014RunSpecificAuthorizationPackage(
     status: 'PACKAGE_COMPLETE' as const,
     blockerCodes: Object.freeze([] as []),
     package: completed,
+  });
+}
+
+// V1 remains immutable for callers that already provide post-capture values in one request.
+// V2 removes that temporal coupling by separating owner decisions from runtime binding facts.
+export const ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION = '2' as const;
+
+export const ADR014_PHASED_RUN_AUTHORIZATION_STATUSES = Object.freeze([
+  'BLOCKED',
+  'PRE_RUN_AUTHORIZED',
+  'RUNTIME_BINDING_REQUIRED',
+  'CAPTURE_COMPLETE',
+] as const);
+
+export const ADR014_PRE_RUN_BLOCKER_CODES = Object.freeze([
+  'INVALID_PRE_RUN_REQUEST_SHAPE',
+  'UNSUPPORTED_PRE_RUN_CONTRACT_VERSION',
+  'INVALID_PRE_RUN_CANONICAL_SHA',
+  'PRE_RUN_CANONICAL_SHA_MISMATCH',
+  'MISSING_PRE_RUN_ENVIRONMENT_REFERENCE',
+  'MISSING_PRE_RUN_OPERATOR_ASSIGNMENT',
+  'MISSING_REVIEWER_ASSIGNMENT_POLICY',
+  'MISSING_PRE_RUN_ACCESS_AUTHORIZATION',
+  'MISSING_PRE_RUN_EXECUTION_AUTHORIZATION',
+  'PRE_RUN_AUTHORIZATION_REFERENCES_NOT_DISTINCT',
+  'PRE_RUN_REFERENCE_BINDING_MISMATCH',
+  'MISSING_PRE_RUN_READ_ONLY_PROOF',
+  'MISSING_PRE_RUN_NO_EGRESS_PROOF',
+  'MISSING_PRE_RUN_OUTPUT_PATH_CONTRACT',
+  'MISSING_PRE_RUN_RETENTION_POLICY',
+  'MISSING_MANIFEST_PREPARATION_METHOD',
+  'MISSING_BASELINE_METHOD',
+  'MISSING_PRE_RUN_TECHNICAL_SIGNOFF',
+  'MISSING_PRE_RUN_PRIVACY_SIGNOFF',
+  'MISSING_PRE_RUN_FINANCIAL_SIGNOFF',
+  'MISSING_PRE_RUN_LEGAL_SIGNOFF',
+  'MISSING_PRE_RUN_OPERATIONS_SIGNOFF',
+  'PRE_RUN_SIGNOFF_NOT_APPROVED',
+] as const);
+
+export const ADR014_RUNTIME_BINDING_BLOCKER_CODES = Object.freeze([
+  'INVALID_PRE_RUN_PACKAGE',
+  'INVALID_RUNTIME_BINDING_SHAPE',
+  'UNSUPPORTED_RUNTIME_CONTRACT_VERSION',
+  'PRE_RUN_PACKAGE_REFERENCE_MISMATCH',
+  'MISSING_RUNTIME_SESSION_REFERENCE',
+  'MISSING_RUNTIME_MANIFEST_REFERENCE',
+  'RUNTIME_MANIFEST_NOT_APPROVED',
+  'MISSING_RUNTIME_REVIEWER_ASSIGNMENT',
+  'RUNTIME_REVIEWER_CONFLICT',
+  'MISSING_ACTUAL_ACCESS_WINDOW',
+  'MISSING_ACTUAL_EXECUTION_WINDOW',
+  'ACTUAL_EXECUTION_OUTSIDE_ACCESS_WINDOW',
+  'MISSING_ACTUAL_BASELINE_WINDOW',
+  'MISSING_ACTUAL_POPULATION_OR_REQUEST_COUNT',
+  'RUNTIME_REFERENCE_BINDING_MISMATCH',
+] as const);
+
+export type Adr014PreRunBlockerCode = (typeof ADR014_PRE_RUN_BLOCKER_CODES)[number];
+export type Adr014RuntimeBindingBlockerCode =
+  (typeof ADR014_RUNTIME_BINDING_BLOCKER_CODES)[number];
+
+export interface Adr014PreRunReviewerAssignmentPolicy {
+  readonly role: 'AUTHORIZED_LAWYER_OR_PARTNER';
+  readonly assignedByReference: string;
+  readonly assignmentTiming: 'BEFORE_EXECUTION';
+  readonly mustDifferFromOperator: true;
+}
+
+export interface Adr014PreRunAccessAuthorization {
+  readonly reference: Adr014BoundOpaqueReference<'ACCESS_AUTHORIZATION'>;
+  readonly approvalStatus: 'APPROVED';
+  readonly authorizedByReference: string;
+  readonly sourceAccess: 'READ_ONLY';
+  readonly runSpecific: true;
+}
+
+export interface Adr014PreRunExecutionAuthorization {
+  readonly reference: Adr014BoundOpaqueReference<'EXECUTION_AUTHORIZATION'>;
+  readonly approvalStatus: 'APPROVED';
+  readonly authorizedByReference: string;
+  readonly singleRun: true;
+  readonly implicit: false;
+}
+
+export interface Adr014OwnerControlledIndefiniteRetentionPolicy {
+  readonly ownerReference: string;
+  readonly automaticDeletion: false;
+  readonly dispositionRequiresOwnerDecision: true;
+  readonly supersessionReplacesPreviousEvidence: false;
+}
+
+export interface Adr014ManifestPreparationMethod {
+  readonly source: 'REAL_LOCAL_OFFICE_DATA';
+  readonly population: 'FULL_ELIGIBLE_POPULATION';
+  readonly sampling: 'NONE';
+  readonly syntheticDataset: 'FORBIDDEN';
+  readonly goldenFixture: 'FORBIDDEN';
+  readonly copiedDatabase: 'FORBIDDEN';
+}
+
+export interface Adr014BaselineMethod {
+  readonly source: 'CURRENT_LOCAL_DATABASE_STATE';
+  readonly dateFilter: 'NONE';
+  readonly population: 'FULL_ELIGIBLE_POPULATION';
+  readonly sampling: 'NONE';
+  readonly latencyPercentiles: readonly ['P95', 'P99'];
+  readonly errorComparisonBasis: 'BASELINE_RELATIVE';
+  readonly timeoutComparisonBasis: 'BASELINE_RELATIVE';
+}
+
+export interface Adr014PreRunAuthorizationRequest {
+  readonly contractVersion: typeof ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION;
+  readonly canonicalSha: string;
+  readonly environmentReference: Adr014BoundOpaqueReference<'ENVIRONMENT'>;
+  readonly operatorAssignment: Adr014RunRoleAssignment;
+  readonly reviewerAssignmentPolicy: Adr014PreRunReviewerAssignmentPolicy;
+  readonly accessAuthorization: Adr014PreRunAccessAuthorization;
+  readonly executionAuthorization: Adr014PreRunExecutionAuthorization;
+  readonly readOnlyProof: Adr014ReadOnlyProofContract;
+  readonly noEgressProof: Adr014NoEgressProofContract;
+  readonly outputPath: Adr014OutputPathContract;
+  readonly retention: Adr014OwnerControlledIndefiniteRetentionPolicy;
+  readonly manifestPreparation: Adr014ManifestPreparationMethod;
+  readonly baselineMethod: Adr014BaselineMethod;
+  readonly signoffs: readonly Adr014RunAuthorizationSignoff[];
+}
+
+export interface Adr014PreRunAuthorizedPackage extends Adr014PreRunAuthorizationRequest {
+  readonly preRunPackageReference: string;
+  readonly status: 'PRE_RUN_AUTHORIZED';
+  readonly runtimeBindingStatus: 'RUNTIME_BINDING_REQUIRED';
+  readonly executionStarted: false;
+  readonly representativeEvidenceProduced: false;
+  readonly representativeEvidenceAccepted: false;
+  readonly rep02Authorized: false;
+  readonly pr11Ready: false;
+  readonly runtimeCutoverAuthorized: false;
+  readonly authority: 'PRE_RUN_OWNER_DECISIONS_ONLY';
+}
+
+export type Adr014PreRunAuthorizationResult =
+  | Readonly<{
+      contractVersion: typeof ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION;
+      status: 'BLOCKED';
+      blockerCodes: readonly Adr014PreRunBlockerCode[];
+    }>
+  | Readonly<{
+      contractVersion: typeof ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION;
+      status: 'PRE_RUN_AUTHORIZED';
+      blockerCodes: readonly [];
+      package: Readonly<Adr014PreRunAuthorizedPackage>;
+    }>;
+
+export interface Adr014RuntimeBaselineFacts {
+  readonly window: Adr014AuthorizationWindow;
+  readonly warmupRequestCount: number;
+  readonly populationCount: number;
+  readonly requestCount: number;
+}
+
+export interface Adr014RuntimeBindingRequest {
+  readonly contractVersion: typeof ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION;
+  readonly preRunPackageReference: string;
+  readonly sessionReference: Adr014BoundOpaqueReference<'SESSION'>;
+  readonly approvedManifest: Adr014ApprovedManifestReference;
+  readonly independentReviewerAssignment: Adr014RunRoleAssignment;
+  readonly actualAccessWindow: Adr014AuthorizationWindow;
+  readonly actualExecutionWindow: Adr014AuthorizationWindow;
+  readonly baselineFacts: Adr014RuntimeBaselineFacts;
+}
+
+export interface Adr014CaptureCompletePackage {
+  readonly contractVersion: typeof ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION;
+  readonly preRunPackageReference: string;
+  readonly capturePackageReference: string;
+  readonly status: 'CAPTURE_COMPLETE';
+  readonly sessionReference: Adr014BoundOpaqueReference<'SESSION'>;
+  readonly approvedManifest: Adr014ApprovedManifestReference;
+  readonly independentReviewerAssignment: Adr014RunRoleAssignment;
+  readonly actualAccessWindow: Adr014AuthorizationWindow;
+  readonly actualExecutionWindow: Adr014AuthorizationWindow;
+  readonly baselineFacts: Adr014RuntimeBaselineFacts;
+  readonly representativeEvidenceAccepted: false;
+  readonly rep02Authorized: false;
+  readonly pr11Ready: false;
+  readonly runtimeCutoverAuthorized: false;
+  readonly authority: 'CAPTURE_REFERENCE_ONLY';
+}
+
+export type Adr014RuntimeBindingResult =
+  | Readonly<{
+      contractVersion: typeof ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION;
+      status: 'BLOCKED';
+      blockerCodes: readonly Adr014RuntimeBindingBlockerCode[];
+    }>
+  | Readonly<{
+      contractVersion: typeof ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION;
+      status: 'RUNTIME_BINDING_REQUIRED';
+      blockerCodes: readonly Adr014RuntimeBindingBlockerCode[];
+      preRunPackageReference: string;
+      representativeEvidenceAccepted: false;
+    }>
+  | Readonly<{
+      contractVersion: typeof ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION;
+      status: 'CAPTURE_COMPLETE';
+      blockerCodes: readonly [];
+      package: Readonly<Adr014CaptureCompletePackage>;
+    }>;
+
+const PRE_RUN_PACKAGE_REF = /^adr014-pre-run-package:v2:[0-9a-f]{64}$/;
+
+const PRE_RUN_REQUEST_KEYS = Object.freeze([
+  'contractVersion', 'canonicalSha', 'environmentReference', 'operatorAssignment',
+  'reviewerAssignmentPolicy', 'accessAuthorization', 'executionAuthorization', 'readOnlyProof',
+  'noEgressProof', 'outputPath', 'retention', 'manifestPreparation', 'baselineMethod', 'signoffs',
+] as const);
+
+const RUNTIME_BINDING_KEYS = Object.freeze([
+  'contractVersion', 'preRunPackageReference', 'sessionReference', 'approvedManifest',
+  'independentReviewerAssignment', 'actualAccessWindow', 'actualExecutionWindow', 'baselineFacts',
+] as const);
+
+function validBoundReference(
+  value: unknown,
+  kind: Adr014LocalEvidenceHarnessReferenceKind,
+): value is Adr014BoundOpaqueReference<Adr014LocalEvidenceHarnessReferenceKind> {
+  return isObject(value) && exactKeys(value, ['kind', 'opaqueReference', 'bindingReference']) &&
+    value.kind === kind && validOpaque(value.opaqueReference) &&
+    typeof value.bindingReference === 'string' && BINDING_REF.test(value.bindingReference);
+}
+
+function orderedPreRunBlockers(
+  blockers: readonly Adr014PreRunBlockerCode[],
+): readonly Adr014PreRunBlockerCode[] {
+  return Object.freeze(ADR014_PRE_RUN_BLOCKER_CODES.filter((code) => blockers.includes(code)));
+}
+
+function orderedRuntimeBlockers(
+  blockers: readonly Adr014RuntimeBindingBlockerCode[],
+): readonly Adr014RuntimeBindingBlockerCode[] {
+  return Object.freeze(
+    ADR014_RUNTIME_BINDING_BLOCKER_CODES.filter((code) => blockers.includes(code)),
+  );
+}
+
+function preRunSignoffBlocker(scope: Adr014RunAuthorizationSignoffScope): Adr014PreRunBlockerCode {
+  switch (scope) {
+    case 'TECHNICAL': return 'MISSING_PRE_RUN_TECHNICAL_SIGNOFF';
+    case 'PRIVACY': return 'MISSING_PRE_RUN_PRIVACY_SIGNOFF';
+    case 'FINANCIAL': return 'MISSING_PRE_RUN_FINANCIAL_SIGNOFF';
+    case 'LEGAL': return 'MISSING_PRE_RUN_LEGAL_SIGNOFF';
+    case 'OPERATIONS': return 'MISSING_PRE_RUN_OPERATIONS_SIGNOFF';
+  }
+}
+
+function validPreRunAuthorization(
+  value: unknown,
+  kind: 'ACCESS_AUTHORIZATION' | 'EXECUTION_AUTHORIZATION',
+): boolean {
+  if (!isObject(value) || !validBoundReference(value.reference, kind) ||
+    value.approvalStatus !== 'APPROVED' || !validOpaque(value.authorizedByReference)) return false;
+  if (kind === 'ACCESS_AUTHORIZATION') {
+    return exactKeys(value, [
+      'reference', 'approvalStatus', 'authorizedByReference', 'sourceAccess', 'runSpecific',
+    ]) && value.sourceAccess === 'READ_ONLY' && value.runSpecific === true;
+  }
+  return exactKeys(value, [
+    'reference', 'approvalStatus', 'authorizedByReference', 'singleRun', 'implicit',
+  ]) && value.singleRun === true && value.implicit === false;
+}
+
+/** Validates only decisions that must exist before a local read-only run can start. */
+export function authorizeAdr014PreRunPackage(
+  candidate: unknown,
+  constraints: Readonly<Adr014RunAuthorizationConstraints>,
+): Adr014PreRunAuthorizationResult {
+  if (!isObject(candidate)) {
+    return Object.freeze({
+      contractVersion: ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION,
+      status: 'BLOCKED' as const,
+      blockerCodes: orderedPreRunBlockers(['INVALID_PRE_RUN_REQUEST_SHAPE']),
+    });
+  }
+  const blockers: Adr014PreRunBlockerCode[] = [];
+  if (!exactKeys(candidate, PRE_RUN_REQUEST_KEYS)) blockers.push('INVALID_PRE_RUN_REQUEST_SHAPE');
+  if (candidate.contractVersion !== ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION) {
+    blockers.push('UNSUPPORTED_PRE_RUN_CONTRACT_VERSION');
+  }
+  if (typeof candidate.canonicalSha !== 'string' || !FULL_SHA.test(candidate.canonicalSha) ||
+    typeof constraints.currentCanonicalSha !== 'string' || !FULL_SHA.test(constraints.currentCanonicalSha)) {
+    blockers.push('INVALID_PRE_RUN_CANONICAL_SHA');
+  } else if (candidate.canonicalSha !== constraints.currentCanonicalSha) {
+    blockers.push('PRE_RUN_CANONICAL_SHA_MISMATCH');
+  }
+  if (!validBoundReference(candidate.environmentReference, 'ENVIRONMENT')) {
+    blockers.push('MISSING_PRE_RUN_ENVIRONMENT_REFERENCE');
+  }
+  if (!validAssignment(candidate.operatorAssignment)) blockers.push('MISSING_PRE_RUN_OPERATOR_ASSIGNMENT');
+
+  const reviewerPolicy = candidate.reviewerAssignmentPolicy;
+  if (!isObject(reviewerPolicy) || !exactKeys(reviewerPolicy, [
+    'role', 'assignedByReference', 'assignmentTiming', 'mustDifferFromOperator',
+  ]) || reviewerPolicy.role !== 'AUTHORIZED_LAWYER_OR_PARTNER' ||
+    !validOpaque(reviewerPolicy.assignedByReference) ||
+    reviewerPolicy.assignmentTiming !== 'BEFORE_EXECUTION' ||
+    reviewerPolicy.mustDifferFromOperator !== true) blockers.push('MISSING_REVIEWER_ASSIGNMENT_POLICY');
+
+  const access = candidate.accessAuthorization;
+  const execution = candidate.executionAuthorization;
+  if (!validPreRunAuthorization(access, 'ACCESS_AUTHORIZATION')) {
+    blockers.push('MISSING_PRE_RUN_ACCESS_AUTHORIZATION');
+  }
+  if (!validPreRunAuthorization(execution, 'EXECUTION_AUTHORIZATION')) {
+    blockers.push('MISSING_PRE_RUN_EXECUTION_AUTHORIZATION');
+  }
+  if (isObject(access) && isObject(execution) && isObject(access.reference) &&
+    isObject(execution.reference) && access.reference.opaqueReference === execution.reference.opaqueReference) {
+    blockers.push('PRE_RUN_AUTHORIZATION_REFERENCES_NOT_DISTINCT');
+  }
+
+  const bindings = [candidate.environmentReference, isObject(access) ? access.reference : undefined,
+    isObject(execution) ? execution.reference : undefined].map(bindingOf)
+    .filter((value): value is string => value !== undefined);
+  if (bindings.length > 1 && bindings.some((value) => value !== bindings[0])) {
+    blockers.push('PRE_RUN_REFERENCE_BINDING_MISMATCH');
+  }
+
+  const readOnly = candidate.readOnlyProof;
+  if (!isObject(readOnly) || !exactKeys(readOnly, [
+    'proofReference', 'sourceAccess', 'transactionBoundary', 'writeBack',
+  ]) || !validOpaque(readOnly.proofReference) || readOnly.sourceAccess !== 'READ_ONLY' ||
+    readOnly.transactionBoundary !== 'REPEATABLE_READ_READ_ONLY' ||
+    readOnly.writeBack !== 'FORBIDDEN') blockers.push('MISSING_PRE_RUN_READ_ONLY_PROOF');
+
+  const noEgress = candidate.noEgressProof;
+  if (!isObject(noEgress) || !exactKeys(noEgress, [
+    'proofReference', 'networkBoundary', 'externalServices', 'externalAi', 'cloudOrRemoteStaging',
+  ]) || !validOpaque(noEgress.proofReference) || noEgress.networkBoundary !== 'NO_EGRESS' ||
+    noEgress.externalServices !== 'FORBIDDEN' || noEgress.externalAi !== 'FORBIDDEN' ||
+    noEgress.cloudOrRemoteStaging !== 'FORBIDDEN') blockers.push('MISSING_PRE_RUN_NO_EGRESS_PROOF');
+
+  const output = candidate.outputPath;
+  if (!isObject(output) || !exactKeys(output, [
+    'outputPathReference', 'ownerControlledRootReference', 'locality', 'writeMode',
+  ]) || typeof output.outputPathReference !== 'string' || !OUTPUT_REF.test(output.outputPathReference) ||
+    !validOpaque(output.ownerControlledRootReference) || output.locality !== 'OWNER_CONTROLLED_LOCAL' ||
+    output.writeMode !== 'CREATE_ONCE') blockers.push('MISSING_PRE_RUN_OUTPUT_PATH_CONTRACT');
+
+  const retention = candidate.retention;
+  if (!isObject(retention) || !exactKeys(retention, [
+    'ownerReference', 'automaticDeletion', 'dispositionRequiresOwnerDecision',
+    'supersessionReplacesPreviousEvidence',
+  ]) || !validOpaque(retention.ownerReference) || retention.automaticDeletion !== false ||
+    retention.dispositionRequiresOwnerDecision !== true ||
+    retention.supersessionReplacesPreviousEvidence !== false) {
+    blockers.push('MISSING_PRE_RUN_RETENTION_POLICY');
+  }
+
+  const manifest = candidate.manifestPreparation;
+  if (!isObject(manifest) || !exactKeys(manifest, [
+    'source', 'population', 'sampling', 'syntheticDataset', 'goldenFixture', 'copiedDatabase',
+  ]) || manifest.source !== 'REAL_LOCAL_OFFICE_DATA' ||
+    manifest.population !== 'FULL_ELIGIBLE_POPULATION' || manifest.sampling !== 'NONE' ||
+    manifest.syntheticDataset !== 'FORBIDDEN' || manifest.goldenFixture !== 'FORBIDDEN' ||
+    manifest.copiedDatabase !== 'FORBIDDEN') blockers.push('MISSING_MANIFEST_PREPARATION_METHOD');
+
+  const baselineMethod = candidate.baselineMethod;
+  if (!isObject(baselineMethod) || !exactKeys(baselineMethod, [
+    'source', 'dateFilter', 'population', 'sampling', 'latencyPercentiles',
+    'errorComparisonBasis', 'timeoutComparisonBasis',
+  ]) || baselineMethod.source !== 'CURRENT_LOCAL_DATABASE_STATE' ||
+    baselineMethod.dateFilter !== 'NONE' || baselineMethod.population !== 'FULL_ELIGIBLE_POPULATION' ||
+    baselineMethod.sampling !== 'NONE' || !Array.isArray(baselineMethod.latencyPercentiles) ||
+    baselineMethod.latencyPercentiles.length !== 2 || baselineMethod.latencyPercentiles[0] !== 'P95' ||
+    baselineMethod.latencyPercentiles[1] !== 'P99' ||
+    baselineMethod.errorComparisonBasis !== 'BASELINE_RELATIVE' ||
+    baselineMethod.timeoutComparisonBasis !== 'BASELINE_RELATIVE') blockers.push('MISSING_BASELINE_METHOD');
+
+  const signoffs = candidate.signoffs;
+  if (!Array.isArray(signoffs)) {
+    for (const scope of ADR014_RUN_AUTHORIZATION_SIGNOFF_SCOPES) {
+      blockers.push(preRunSignoffBlocker(scope));
+    }
+  } else {
+    for (const scope of ADR014_RUN_AUTHORIZATION_SIGNOFF_SCOPES) {
+      const matches = signoffs.filter((signoff) => isObject(signoff) && signoff.scope === scope);
+      if (matches.length !== 1) blockers.push(preRunSignoffBlocker(scope));
+      else if (!validSignoff(matches[0])) blockers.push('PRE_RUN_SIGNOFF_NOT_APPROVED');
+    }
+    if (signoffs.some((signoff) => !validSignoff(signoff))) {
+      blockers.push('PRE_RUN_SIGNOFF_NOT_APPROVED');
+    }
+  }
+
+  if (blockers.length > 0) {
+    return Object.freeze({
+      contractVersion: ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION,
+      status: 'BLOCKED' as const,
+      blockerCodes: orderedPreRunBlockers(blockers),
+    });
+  }
+
+  const request = canonicalize(candidate) as Adr014PreRunAuthorizationRequest;
+  const body = deepFreeze({
+    ...request,
+    signoffs: [...request.signoffs].sort((left, right) =>
+      ADR014_RUN_AUTHORIZATION_SIGNOFF_SCOPES.indexOf(left.scope) -
+      ADR014_RUN_AUTHORIZATION_SIGNOFF_SCOPES.indexOf(right.scope)),
+    status: 'PRE_RUN_AUTHORIZED' as const,
+    runtimeBindingStatus: 'RUNTIME_BINDING_REQUIRED' as const,
+    executionStarted: false as const,
+    representativeEvidenceProduced: false as const,
+    representativeEvidenceAccepted: false as const,
+    rep02Authorized: false as const,
+    pr11Ready: false as const,
+    runtimeCutoverAuthorized: false as const,
+    authority: 'PRE_RUN_OWNER_DECISIONS_ONLY' as const,
+  });
+  const preRunPackageReference = `adr014-pre-run-package:v2:${createHash('sha256')
+    .update(stableJson(body)).digest('hex')}`;
+  return Object.freeze({
+    contractVersion: ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION,
+    status: 'PRE_RUN_AUTHORIZED' as const,
+    blockerCodes: Object.freeze([] as []),
+    package: deepFreeze({ ...body, preRunPackageReference }),
+  });
+}
+
+function validPreRunPackage(value: unknown): value is Readonly<Adr014PreRunAuthorizedPackage> {
+  if (!isObject(value) || value.status !== 'PRE_RUN_AUTHORIZED' ||
+    typeof value.preRunPackageReference !== 'string' ||
+    !PRE_RUN_PACKAGE_REF.test(value.preRunPackageReference) ||
+    typeof value.canonicalSha !== 'string') return false;
+  const request = Object.fromEntries(
+    PRE_RUN_REQUEST_KEYS.map((key) => [key, value[key]]),
+  );
+  const validation = authorizeAdr014PreRunPackage(request, {
+    currentCanonicalSha: value.canonicalSha,
+  });
+  return validation.status === 'PRE_RUN_AUTHORIZED' &&
+    validation.package.preRunPackageReference === value.preRunPackageReference &&
+    stableJson(validation.package) === stableJson(value);
+}
+
+/** Binds facts that can exist only during or after the separately authorized local run. */
+export function bindAdr014RuntimeCapture(
+  preRunPackage: unknown,
+  candidate: unknown,
+): Adr014RuntimeBindingResult {
+  if (!validPreRunPackage(preRunPackage)) {
+    return Object.freeze({
+      contractVersion: ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION,
+      status: 'BLOCKED' as const,
+      blockerCodes: orderedRuntimeBlockers(['INVALID_PRE_RUN_PACKAGE']),
+    });
+  }
+  const blockers: Adr014RuntimeBindingBlockerCode[] = [];
+  if (!isObject(candidate)) {
+    return Object.freeze({
+      contractVersion: ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION,
+      status: 'RUNTIME_BINDING_REQUIRED' as const,
+      blockerCodes: orderedRuntimeBlockers(['INVALID_RUNTIME_BINDING_SHAPE']),
+      preRunPackageReference: preRunPackage.preRunPackageReference,
+      representativeEvidenceAccepted: false as const,
+    });
+  }
+  if (!exactKeys(candidate, RUNTIME_BINDING_KEYS)) blockers.push('INVALID_RUNTIME_BINDING_SHAPE');
+  if (candidate.contractVersion !== ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION) {
+    blockers.push('UNSUPPORTED_RUNTIME_CONTRACT_VERSION');
+  }
+  if (candidate.preRunPackageReference !== preRunPackage.preRunPackageReference) {
+    blockers.push('PRE_RUN_PACKAGE_REFERENCE_MISMATCH');
+  }
+  if (!validBoundReference(candidate.sessionReference, 'SESSION')) {
+    blockers.push('MISSING_RUNTIME_SESSION_REFERENCE');
+  }
+  const manifest = candidate.approvedManifest;
+  if (!isObject(manifest) || !validBoundReference(manifest.reference, 'MANIFEST')) {
+    blockers.push('MISSING_RUNTIME_MANIFEST_REFERENCE');
+  } else if (!exactKeys(manifest, ['reference', 'approvalStatus', 'approvalReference']) ||
+    manifest.approvalStatus !== 'APPROVED' || !validOpaque(manifest.approvalReference)) {
+    blockers.push('RUNTIME_MANIFEST_NOT_APPROVED');
+  }
+  if (!validAssignment(candidate.independentReviewerAssignment)) {
+    blockers.push('MISSING_RUNTIME_REVIEWER_ASSIGNMENT');
+  } else if (isObject(preRunPackage.operatorAssignment) &&
+    candidate.independentReviewerAssignment.actorReference ===
+      preRunPackage.operatorAssignment.actorReference) blockers.push('RUNTIME_REVIEWER_CONFLICT');
+
+  if (!validWindow(candidate.actualAccessWindow)) blockers.push('MISSING_ACTUAL_ACCESS_WINDOW');
+  if (!validWindow(candidate.actualExecutionWindow)) blockers.push('MISSING_ACTUAL_EXECUTION_WINDOW');
+  if (validWindow(candidate.actualAccessWindow) && validWindow(candidate.actualExecutionWindow) &&
+    (Date.parse(candidate.actualExecutionWindow.startsAt) <
+      Date.parse(candidate.actualAccessWindow.startsAt) ||
+      Date.parse(candidate.actualExecutionWindow.endsAt) >
+      Date.parse(candidate.actualAccessWindow.endsAt))) {
+    blockers.push('ACTUAL_EXECUTION_OUTSIDE_ACCESS_WINDOW');
+  }
+
+  const baseline = candidate.baselineFacts;
+  if (!isObject(baseline) || !exactKeys(baseline, [
+    'window', 'warmupRequestCount', 'populationCount', 'requestCount',
+  ]) || !validWindow(baseline.window)) blockers.push('MISSING_ACTUAL_BASELINE_WINDOW');
+  if (!isObject(baseline) || !Number.isInteger(baseline.warmupRequestCount) ||
+    Number(baseline.warmupRequestCount) < 0 || !Number.isInteger(baseline.populationCount) ||
+    Number(baseline.populationCount) <= 0 || !Number.isInteger(baseline.requestCount) ||
+    Number(baseline.requestCount) <= 0) blockers.push('MISSING_ACTUAL_POPULATION_OR_REQUEST_COUNT');
+
+  const runtimeBindings = [candidate.sessionReference,
+    isObject(manifest) ? manifest.reference : undefined].map(bindingOf)
+    .filter((value): value is string => value !== undefined);
+  const preRunBindings = [preRunPackage.environmentReference,
+    isObject(preRunPackage.accessAuthorization) ? preRunPackage.accessAuthorization.reference : undefined,
+    isObject(preRunPackage.executionAuthorization) ? preRunPackage.executionAuthorization.reference : undefined]
+    .map(bindingOf).filter((value): value is string => value !== undefined);
+  const expectedBinding = preRunBindings[0];
+  if (!expectedBinding || runtimeBindings.length !== 2 ||
+    runtimeBindings.some((value) => value !== expectedBinding)) {
+    blockers.push('RUNTIME_REFERENCE_BINDING_MISMATCH');
+  }
+
+  if (blockers.length > 0) {
+    return Object.freeze({
+      contractVersion: ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION,
+      status: 'RUNTIME_BINDING_REQUIRED' as const,
+      blockerCodes: orderedRuntimeBlockers(blockers),
+      preRunPackageReference: preRunPackage.preRunPackageReference,
+      representativeEvidenceAccepted: false as const,
+    });
+  }
+
+  const runtime = canonicalize(candidate) as Adr014RuntimeBindingRequest;
+  const body = deepFreeze({
+    ...runtime,
+    status: 'CAPTURE_COMPLETE' as const,
+    representativeEvidenceAccepted: false as const,
+    rep02Authorized: false as const,
+    pr11Ready: false as const,
+    runtimeCutoverAuthorized: false as const,
+    authority: 'CAPTURE_REFERENCE_ONLY' as const,
+  });
+  const capturePackageReference = `adr014-capture-package:v2:${createHash('sha256')
+    .update(stableJson(body)).digest('hex')}`;
+  return Object.freeze({
+    contractVersion: ADR014_PHASED_RUN_AUTHORIZATION_CONTRACT_VERSION,
+    status: 'CAPTURE_COMPLETE' as const,
+    blockerCodes: Object.freeze([] as []),
+    package: deepFreeze({ ...body, capturePackageReference }),
   });
 }

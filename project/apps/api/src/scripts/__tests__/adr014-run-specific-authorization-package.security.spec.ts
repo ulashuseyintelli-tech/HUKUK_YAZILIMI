@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  authorizeAdr014PreRunPackage,
+  bindAdr014RuntimeCapture,
   completeAdr014RunSpecificAuthorizationPackage,
   type Adr014RunSpecificAuthorizationPackageRequest,
 } from '../adr014-run-specific-authorization-package';
@@ -32,5 +34,28 @@ describe('ADR014-REP-01A security and non-activation boundary', () => {
     expect(JSON.stringify(result)).not.toContain('representativeEvidenceProduced":true');
     expect(JSON.stringify(result)).not.toContain('pr11Ready":true');
     expect(JSON.stringify(result)).not.toContain('runtimeCutoverAuthorized":true');
+  });
+
+  it('keeps malformed phased requests fail-closed without execution or evidence acceptance', () => {
+    const preRun = authorizeAdr014PreRunPackage({ contractVersion: '2' }, {
+      currentCanonicalSha: 'b'.repeat(40),
+    });
+    expect(preRun.status).toBe('BLOCKED');
+    const runtime = bindAdr014RuntimeCapture({}, {});
+    expect(runtime.status).toBe('BLOCKED');
+    for (const result of [preRun, runtime]) {
+      const serialized = JSON.stringify(result);
+      expect(serialized).not.toContain('executionStarted":true');
+      expect(serialized).not.toContain('representativeEvidenceAccepted":true');
+      expect(serialized).not.toContain('rep02Authorized":true');
+      expect(serialized).not.toContain('pr11Ready":true');
+      expect(serialized).not.toContain('runtimeCutoverAuthorized":true');
+    }
+  });
+
+  it('contains no finite-retention requirement in the phased owner policy', () => {
+    expect(source).toContain('automaticDeletion: false');
+    expect(source).toContain('dispositionRequiresOwnerDecision: true');
+    expect(source).toContain('supersessionReplacesPreviousEvidence: false');
   });
 });
