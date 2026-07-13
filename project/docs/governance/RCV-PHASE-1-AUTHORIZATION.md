@@ -7,7 +7,8 @@ Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
 Architecture                : ADR-014
-Record status               : CANONICAL UPON APPROVED MERGE TO MAIN
+Record status               : CANONICAL / DEC-0030 CLOSED
+Canonical merge             : PR #1222 / fcffb12941f33e36e6e42d9d742d0249eb210ab8
 Phase 0                     : CLOSED (owner-supplied RCV-P0-T09 baseline)
 Phase 1 execution authority : NOT GRANTED
 Owner GO                    : OPEN / REQUIRED
@@ -52,8 +53,9 @@ attestation'ını repository'nin mevcut canonical register zincirine bağlar.
 **DEC-0030 disposition:** `RCV-P0/P1`, program identity/register anchor amacıyla `CCB-001`
 altında subordinate planning decomposition olarak kaydedilir. Bu pointer, RCV work-item'larının
 execution veya status owner'lığını `CCB-001`e taşımaz. Ayrı implementation authority, anayasal
-semantik, canonicalization milestone veya cutover hattı oluşturulmaz. Bu disposition approved
-merge ile canonical olduğunda DEC-0030 kapanır; Phase 1 owner GO kapısı ayrı ve açık kalır.
+semantik, canonicalization milestone veya cutover hattı oluşturulmaz. PR #1222'nin approved
+merge'iyle disposition canonical ve DEC-0030 `CLOSED` olmuştur; Phase 1 owner GO kapısı ayrı ve
+açık kalır.
 
 ## 2. Program/Register Alignment Kaydı
 
@@ -159,10 +161,10 @@ açık kararı gelene kadar `UNSET` kalır.
 
 | Kontrol | Gerekli durum | Mevcut durum |
 |---|---|---|
-| `CCB-001` cross-pointer canonical main'de | PASS | PENDING APPROVED MERGE |
-| `CAN-CUT-02` cross-pointer canonical main'de | PASS | PENDING APPROVED MERGE |
-| DEC-0030 canonical disposition | CLOSED | PENDING APPROVED MERGE |
-| `RCV-P0-CP-01` entry condition | SATISFIED | PENDING APPROVED MERGE |
+| `CCB-001` cross-pointer canonical main'de | PASS | PASS — PR #1222 |
+| `CAN-CUT-02` cross-pointer canonical main'de | PASS | PASS — PR #1222 |
+| DEC-0030 canonical disposition | CLOSED | CLOSED — PR #1222 |
+| `RCV-P0-CP-01` entry condition | SATISFIED | SATISFIED — PR #1222 |
 | Explicit owner `GO-PHASE-1` | PRESENT | MISSING / REQUIRED |
 | Authorized scope | Yalnız `WAVE 0 / RCV-P1-T15-A` | NOT AUTHORIZED |
 | WAVE 1+ | CLOSED TO ENTRY | CLOSED TO ENTRY |
