@@ -132,9 +132,72 @@ Ek not: `workflow-engine.ts`'nin `NotificationQueue` include'unda `type` filtres
 
 ---
 
+## 6A. Owner Decision 3 (2026-07-13) — Canonical Legal Time Model
+
+**Statü:** Owner kararı, kesin ve bağlayıcı; owner'ın kendi ifadesiyle "yeniden tartışılmayacak veya alternatif önerilmeyecektir." Bu bölüm Bölüm 3-6'yı YOK SAYMAZ — `legalServiceDate`'in kendisinin nasıl hesaplandığı (Bölüm 3, altı rejim) hâlâ GEÇERLİDİR; bu karar onun ÜZERİNE, tebliğ tarihinden SONRAKİ süre modelini (itiraz/ödeme/tahliye/bekleme + "sonraki işlem" uygunluğu) kesinleştirir.
+
+### 6A.1 Temel model
+
+1. **Tek hukuki başlangıç tarihi:** `LegalServiceDate`. Ayrı bir `PhysicalDeliveryDate` modeli OLMAYACAK (repo'da hâlihazırda böyle bir alan/model mevcut değil — doğrulandı, bkz. 6A.3).
+2. **Sürenin başlangıcı:** tebliğ günü süreye dahil değildir; `periodStartDate = legalServiceDate + 1 gün`. Bütün takip türlerinde ortak kuraldır.
+3. **Elektronik tebligat:** UETS/KEP'teki 5 gün itiraz/bekleme/ödeme süresi DEĞİLDİR — yalnızca "tebliğ edilmiş sayılma" kuralıdır: `electronicArrivalDate + 5 gün = legalServiceDate`, ardından `legalServiceDate + 1 gün` takip süresinin 1. günüdür.
+4. **Takip türü kuralları:** her takip türünün kendi itiraz/ödeme/bekleme/tahliye süreleri vardır; bu süreler takip türünün kuralı olarak saklanır. Sistemde hiçbir yerde sabit `+7/+10/+15/+23/+30` gibi sayılar kod içinde hardcode EDİLMEYECEK — kanonik bir takip-türü tablosundan (6A.2) okunacaktır.
+5. **Paralel süre modeli:** itiraz süresi ile ödeme/bekleme/tahliye süresi genellikle ARDIŞIK değil, AYNI tebliğ tarihinden başlayan PARALEL sürelerdir:
+   ```
+   nextActionWaitingDays = max(objectionDays, complaintDays, paymentDays, vacateDays, performanceDays)
+   nextActionEligibleDate = periodStartDate + nextActionWaitingDays - 1 gün
+   ```
+   (Bu, `legalServiceDate + nextActionWaitingDays`'e sayısal olarak denktir — mevcut `LegalDeadlineService.calculateDeadline`'ın `dueDate = addDays(legalServiceDate, objectionPeriodDays)` formülüyle TUTARLIDIR; bkz. 6A.3.)
+6. **Operasyonel gösterim:** kullanıcıya "5 + 5", "7 + 23", "7 + 8" gibi "kalan süre" gösterilebilir — ama bu YALNIZCA UI gösterimidir, kanonik hukuk kuralı DEĞİLDİR ve birincil fact olarak SAKLANMAZ (`waitingDays` birincil alan olarak persist EDİLMEYECEK; gerekirse `remainingAfterObjectionDays = nextActionWaitingDays - objectionDays` olarak türetilir).
+7. **Sonraki işlem tipi:** tek bir `finalizationEligibleDate` yerine, süre sonunda doğan yetki takip türüne göre ayrı tiplerde temsil edilir: `HACIZ_REQUEST_ELIGIBLE`, `SALE_REQUEST_ELIGIBLE`, `EVICTION_REQUEST_ELIGIBLE`, `BANKRUPTCY_REQUEST_ELIGIBLE`, `FORCED_DELIVERY_ELIGIBLE`, `FORCED_PERFORMANCE_ELIGIBLE`, `FINALIZATION_REQUEST_ELIGIBLE`.
+
+### 6A.2 Kanonik takip-türü süre tablosu (owner araştırması, 2026-07-13 — 2004 sayılı İİK + TBK + 7155 + 6183 esas alınarak; Yeni Cebrî İcra Kanunu henüz yürürlükte değil, taslak aşamasında)
+
+| Takip türü | İtiraz/şikâyet | Ödeme/ifa/tahliye | Toplam (max) | Sonraki işlem |
+|---|---:|---:|---:|---|
+| Genel haciz (Form 7) | 7 | 7 | **7** | HACIZ_REQUEST_ELIGIBLE |
+| Kambiyo haciz | 5 | 10 | **10** | HACIZ_REQUEST_ELIGIBLE |
+| Taşınır rehni (ödeme emri) | 7 | 15 | **15** | SALE_REQUEST_ELIGIBLE |
+| İpotek (ödeme emri) | 7 | 30 | **30** | SALE_REQUEST_ELIGIBLE |
+| İpotek (icra emri) | yok | 30 | **30** | SALE_REQUEST_ELIGIBLE |
+| Taşınır rehni (icra emri) | yok | 7 | **7** | SALE_REQUEST_ELIGIBLE |
+| Adi iflas | 7 | 7 | **7** | BANKRUPTCY_REQUEST_ELIGIBLE |
+| Kambiyo iflas | 5 | 5 | **5** | BANKRUPTCY_REQUEST_ELIGIBLE |
+| Para/teminat ilamı | yok | 7 | **7** | FORCED_PERFORMANCE_ELIGIBLE |
+| Taşınır teslimi (ilamlı) | yok | 7 | **7** | FORCED_DELIVERY_ELIGIBLE |
+| Taşınmaz tahliye (ilamlı) | yok | 7 | **7** | EVICTION_REQUEST_ELIGIBLE |
+| İş yapılması/yapılmaması | yok | değişken | **değişken** | FORCED_PERFORMANCE_ELIGIBLE |
+| İpotekli ilam/icra emri | yok | 30 | **30** | SALE_REQUEST_ELIGIBLE |
+| Konut/çatılı işyeri kira | 7 | 30 | **30** | EVICTION_REQUEST_ELIGIBLE |
+| Diğer adi kira | 7 | 10 | **10** | EVICTION_REQUEST_ELIGIBLE |
+| Ürün/hasılat kirası | 7 | 60 | **60** | EVICTION_REQUEST_ELIGIBLE |
+| Tahliye taahhüdü | 7 | 15 | **15** | EVICTION_REQUEST_ELIGIBLE |
+| MTS | 7 | 7 | **7** | HACIZ_REQUEST_ELIGIBLE |
+| 6183 kamu alacağı | 15 | 15 | **15** | FINALIZATION_REQUEST_ELIGIBLE |
+| İİK m.89/1 (üçüncü kişi haciz ihbarnamesi) | — | 7 | **7** | Bağımsız takip türü değil, ayrı rule |
+| İİK m.89/2 | — | 7 | **7** | Bağımsız takip türü değil, ayrı rule |
+| İİK m.89/3 | — | 15 | **15** | Bağımsız takip türü değil, ayrı rule |
+
+### 6A.3 Bu kararın MEVCUT koda etkisi (kod taraması ile doğrulanmış bulgular, 2026-07-13)
+
+- **`LegalDeadlineService.determineLegalServiceDate`** (Bölüm 3'teki altı rejim: Doğrudan/TK21-1/TK21-2/TK20/İlanen/UETS) **DEĞİŞMİYOR** — `legalServiceDate`'in kendisinin hesaplanmasıyla ilgili, owner'ın 6A.1/#1-3 maddeleriyle zaten TUTARLI. UETS/KEP dalı zaten `addDays(deliveredAt, 5)` yapıyor — owner'ın "e-tebligat 5 günü tebliğ-sayılma kuralı" maddesiyle birebir uyumlu, düzeltme GEREKMİYOR.
+- **`CalculateDeadlineInput.objectionPeriodDays: number`** (tek alan) owner'ın 6A.1/#5 paralel-süre modeliyle **YETERSİZ KALIYOR** — artık `objectionDays`/`paymentDays`/`vacateDays`/`performanceDays` gibi ayrı paralel alanlara ve bunların `max()`'ına ihtiyaç var.
+- **Kritik bulgu:** `LegalDeadlineService.calculateDeadline` (owner'ın paralel modelinin uygulanacağı asıl metod) **production'da hiçbir yerden çağrılmıyor** — yalnızca kendi test dosyalarında literal sabit değerlerle (7/10/365/-1) çağrılıyor; `LegalTimeShadowService` de bu metodu değil, `objectionPeriodDays` almayan `resolveLegalServiceDateForTebligat`'ı kullanıyor. Yani PR-2'nin ana snapshot-yazan metodu henüz hiçbir gerçek akışa bağlı değil — owner'ın yeni modelini uygularken geriye dönük bir tüketiciyi bozma riski YOK.
+- **`CaseObjectionPeriodDaysProvider`** (`policy-engine/fact-store/computed-fact-registry.ts:258-272`) zaten VAR ama **dead logic**: yalnızca `case.type === 'ILAMSIZ' && case.sub_type === 'KAMBIYO' ? 5 : 7` mantığı çalıştırıyor; gerçek `CaseType` enum'ında (`GENERAL_EXECUTION/MORTGAGE/PLEDGE/BANKRUPTCY/CHECK/BOND/RENTAL/OTHER`) `'ILAMSIZ'` diye bir değer YOK — yani bu provider pratikte HER ZAMAN 7 dönüyor, kambiyo dalı hiç tetiklenmiyor. Bu, MEVCUT PR-2/PR-3A/PR-3B kapsamının HİÇBİRİNİ etkilemiyor (zaten bağlantısız, tasarım belgesi Bölüm 2'de "(B) Doğru, bağlantısız" olarak işaretli).
+- **Şema tarafında owner'ın 6A.2 tablosundaki ~20 takip türünü birebir temsil eden tek bir alan/enum YOK:** `CaseType` (8 değer, enstrüman bazlı), `subType` (serbest metin, enum değil), `CaseSubCategory` (5 değer: GENEL/NAFAKA/DOVIZ/KIRA/CEZA), `isMtsCase` (ayrı boolean), `ExecutionPath` (5 değer: HACIZ/IFLAS/REHIN/IPOTEK/TAHLIYE — owner'ın "sonraki işlem tipi" kavramına en yakın alan, ama owner'ın 7 NextActionType değerine birebir eşlenmiyor). **Bu, owner'ın hukuki modelini koda bağlayacak şema/eşleştirme kararının henüz verilmediği anlamına gelir — ayrı bir teknik adım gerektirir (bkz. Bölüm 7, PR-3C).**
+- **`PhysicalDeliveryDate`:** repo genelinde (kod, schema, migration, docs) hiç geçmiyor — doğrulandı, owner'ın "olmayacak" kararıyla zaten tutarlı, hiçbir düzeltme gerekmiyor.
+
+### 6A.4 Icrabot 6-kırılım verisiyle karşılaştırma
+
+Bölüm 2/6'daki "icrabot'un 6 kırılımı" (İlamsız 7, Kambiyo 5, Kira 7, İlamlı 0, MTS 7, Diğer 7) owner'ın 6A.2 tablosuyla karşılaştırıldığında, icrabot verisinin YALNIZCA İTİRAZ süresini temsil ettiği görülüyor (toplamı değil): Kambiyo'da icrabot "5" diyor ama owner'ın tablosunda toplam 10'dur (itiraz 5, ödeme 10, max); Kira'da icrabot tek bir "7" diyor ama owner'ın tablosunda dört ayrı kira alt-türü vardır (Konut 30 / Diğer 10 / Ürün 60 / Tahliye taahhüdü 15). Form 7 (İlamsız 7) ve MTS (7) icrabot verisiyle owner'ın toplam sütunuyla yalnızca bu türlerde itiraz=ödeme=7 olduğu için örtüşüyor. **Sonuç: Bölüm 6'daki Owner Kararı #1 ("icrabot'un 6 kırılımı esas alınır") artık owner'ın 6A.2 tablosuyla SÜPERSEDE edilmiştir — icrabot verisi yalnızca kısmi/eksik bir ilk kaynaktı.**
+
+---
+
 ## 7. Önerilen PR Sıralaması
 
-**Owner kararı (2026-07-13):** aşağıdaki "PR-3", implementasyon sırasında tek bir PR'ın taşıyamayacağı iki ayrı işe (hesaplama motoru vs. bunun runtime aktivasyonu) ayrıştığı için, owner tarafından retroaktif olarak **PR-3A** ve **PR-3B** alt-workstream'lerine bölünmüştür (bkz. `decision-log.md` aynı tarihli OWNER DECISION kaydı). PR-4/PR-5/PR-6 numaraları bu ayrımdan etkilenmemiştir.
+**Owner kararı (2026-07-13):** "PR-3", implementasyon sırasında tek bir PR'ın taşıyamayacağı iki ayrı işe (hesaplama motoru vs. bunun runtime aktivasyonu) ayrıştığı için, owner tarafından retroaktif olarak **PR-3A** ve **PR-3B** alt-workstream'lerine bölünmüştür (bkz. `decision-log.md` aynı tarihli OWNER DECISION kaydı). PR-4/PR-5/PR-6 numaraları bu ayrımdan etkilenmemiştir.
+
+**Owner Decision 3 etkisi (2026-07-13, aynı gün, ayrı karar — bkz. Bölüm 6A):** Canonical Legal Time Model, PR-4/PR-5'in dayanacağı süre modelini (paralel objectionDays/paymentDays/vacateDays/performanceDays + max() formülü + takip-türüne-özgü NextActionType) PR-2'nin tek-alanlı `objectionPeriodDays` tasarımından daha geniş bir hale getirdi. Bu nedenle PR-4'ten önce, PR-3 ailesinin doğal devamı olarak **PR-3C** eklenmiştir (owner'ın alt-revizyon adlandırma normuna uygun — bu öneridir, owner'ın adlandırma/kapsam düzeltmesine açıktır). PR-3C açılmadan PR-4/PR-5 owner'ın Decision 3 modeline göre inşa edilemez.
 
 | PR | Kapsam | Not |
 |---|---|---|
@@ -142,8 +205,9 @@ Ek not: `workflow-engine.ts`'nin `NotificationQueue` include'unda `type` filtres
 | **PR-2** | `LegalDeadlineService` read-only | Henüz hiçbir tüketiciyi değiştirmez; tam test kapsamı (Bölüm 3'teki "required tests" sütunu) |
 | **PR-3A** | Shadow Read + Diff Engine | Legacy (WorkflowEngine replikası) vs canonical (`LegalDeadlineService`) hesabı arasındaki farkı ölçen, immutable `LegalTimeShadowDiff` kaydı üreten read-only mekanizma — **CLOSED** (PR #1192, squash `e22777c6`) |
 | **PR-3B** | Evidence Activation | PR-3A'nın runtime DI kaydı (`app.module.ts`), tetikleme/okuma yüzeyi (`LegalTimeShadowController`) ve local/ofis evidence üretim prosedürü (runbook) — **CLOSED** (PR #1198, squash `6b07bd09`); operasyonel mekanizma AVAILABLE, gerçek ofis verisiyle representative evidence hâlâ ABSENT/owner execution required |
-| **PR-4** | UI read-only display | Dört tutarsız frontend gösterimini tek kaynağa yönlendir, demo-veri fallback'ini kaldır |
-| **PR-5** | Scheduler/workflow switch | `checkPaymentOrderDeadlines`/`processPendingCases`/policy-engine fact zincirini `LegalDeadlineService`'e bağla, `NotificationQueue` yolunu kaldır |
+| **PR-3C** *(öneri — owner onayı bekliyor)* | Canonical Takip-Türü Süre Tablosu + Çoklu-Paralel Süre Modeli | Owner Decision 3'ün (Bölüm 6A) kod tarafındaki karşılığı: `LegalDeadlineSnapshot`'a paralel süre alanları (`objectionDays`/`paymentDays`/`vacateDays`/`performanceDays`/`nextActionType`/`nextActionEligibleDate`) eklenmesi, 6A.2 tablosunun kanonik bir kaynağa (config/servis) taşınması, ve bunu `Case.type`/`subType`/`CaseSubCategory`/`isMtsCase`/`ExecutionPath`'e bağlayacak şema/eşleştirme kararının verilmesi. Kapsam netleşmeden implementasyon BAŞLAMAZ — ayrı owner GO-ANALYZE/GO-IMPLEMENT gerektirir |
+| **PR-4** | UI read-only display | Dört tutarsız frontend gösterimini tek kaynağa yönlendir, demo-veri fallback'ini kaldır; PR-3C'nin `nextActionType`/`nextActionEligibleDate` alanlarına dayanır |
+| **PR-5** | Scheduler/workflow switch | `checkPaymentOrderDeadlines`/`processPendingCases`/policy-engine fact zincirini `LegalDeadlineService`'e bağla, `NotificationQueue` yolunu kaldır; PR-3C'nin paralel süre modeline dayanır |
 | **PR-6** | Backfill/data cleanup | Ayrı owner onayı ister — bu belge onu yetkilendirmez |
 
 ---
