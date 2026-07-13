@@ -13,6 +13,8 @@ Rol        : Routing/discovery katmanıdır; semantic veya execution authority �
 - Ajan baseline: `AGENTS.md` (repo kökü) + `CLAUDE.md` (Claude supplement)
 - Ratifiye domain governance: `project/docs/governance/DEBTOR-GOVERNANCE.md` ve
   `project/docs/governance/RECEIVABLE-GOVERNANCE.md`
+- Collection domain governance: `project/docs/governance/COLLECTION-GOVERNANCE.md`
+  (owner-approved canonicalization 2026-07-13; canonical upon approved merge)
 
 ## 1. Zorunlu okuma sırası (her yeni görev)
 
@@ -76,7 +78,11 @@ commit, merge, release veya runtime authority yetkisi oluşturmaz.
 | `project/docs/governance/active-roadmap.md` | aktif fazlar | AKTİF |
 | `project/docs/governance/dbind-financial-authority-decisions.md` | finansal otorite kararları | AKTİF |
 | `project/docs/analysis/debtor-master-synthesis-v2.md` | borçlu hattı kanıt/gerekçe katmanı (operasyonel değil) | KANIT — SUPERSEDED BY governance |
-| Collection Governance | gelecek domain governance belgesi | REZERVE (henüz yazılmadı) |
+| `project/docs/governance/COLLECTION-GOVERNANCE.md` | Collection Domain Governance — receipt/lifecycle/allocation-execution sınırı, COL-INV-001..048, cross-domain contract haritası | OWNER-APPROVED CANONICALIZATION v1.0 (2026-07-13); CANONICAL UPON APPROVED MERGE TO MAIN |
+| `project/docs/governance/COLLECTION-MASTER-SYNTHESIS.md` | Collection kanıt/kalıcı-gerçek katmanı (operasyonel değil) | CANONICAL REFERENCE / NON-NORMATIVE EVIDENCE BASELINE |
+| `project/docs/governance/COLLECTION-OWNER-DECISIONS.md` | Collection açık owner karar dossier'i (COL/OD-01..21); kapanmış karar otoritesi DEĞİLDİR | CANONICAL OPEN-DECISION DOSSIER — içindeki kararların tamamı OPEN |
+| `project/docs/governance/COLLECTION-RISK-REGISTER.md` | Collection domain risk dossier'i; global triage/execution status otoritesi DEĞİLDİR | CANONICAL DOMAIN RISK DOSSIER |
+| `project/docs/governance/COLLECTION-DECOMPOSITION.md` | RC-COL Program→Phase→Wave→Workstream haritası; execution yetkisi üretmez | CANONICAL DECOMPOSITION / EXECUTION-PLANNING REFERENCE |
 
 ## 3. Authority eksenleri
 
@@ -104,4 +110,9 @@ DEBTOR-GOVERNANCE (kural, örn. INV-07)
 RECEIVABLE-GOVERNANCE (kural, örn. REC-INV-001)
 → İlgili ADR ve authority kayıtları (ADR-010, ADR-013, ADR-014 ve Master Register)
 → decision-log.md (ratifikasyon ve sonraki değişiklik kayıtları)
+
+COLLECTION-GOVERNANCE (kural, örn. COL-INV-010)
+→ COLLECTION-MASTER-SYNTHESIS (F-01..F-16 / OF-01..OF-06 kanıt katmanı)
+→ tm3-collection-disposition-boundary.md + dbind-financial-authority-decisions.md (bağlayıcı sınır/karar kaynakları)
+→ decision-log.md (canonicalization ve sonraki değişiklik kayıtları)
 ```
