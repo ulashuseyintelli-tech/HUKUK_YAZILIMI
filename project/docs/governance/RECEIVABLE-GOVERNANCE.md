@@ -430,7 +430,7 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 | `REC-AUTH-027` — UI hesap özeti | Cutover sonrası yetkili DTO tüketimi; UI formül üretmez | Presentation consumer contract | `TARGET / SHADOW_ONLY / PRODUCTION_NO_GO` | `LEGACY PRIMARY ACTIVE; CANONICAL CUTOVER NOT AUTHORIZED` |
 | `REC-AUTH-028` — Report/document balance | UI ile aynı canonical contract'ın tüketimi; ayrı formül yasak | Presentation/report consumer contract | `TARGET / PRODUCTION_NO_GO` | `REVALIDATION + CONSUMER CUTOVER REQUIRED` |
 | `REC-AUTH-029A` — UYAP source fact | Harici kaynaktan gelen provenance/evidence; doğrulanmadan canonical truth değildir | Validated UYAP adapter + domain confirmation | `CURRENT INPUT / NON_CANONICAL` | `CURRENT PARTIAL / PROVENANCE AND RECONCILIATION REQUIRED` |
-| `REC-AUTH-029B` — UYAP mapping policy | Rich-interest ve exporter kodları arasındaki ratifiye dönüşüm kararı | Owner/legal-approved integration mapping | `TARGET / PRODUCTION_NO_GO` | `SELECTED D1–D9 CELLS OWNER_LEGAL_ACCEPTED / CONTRACT + NUMERIC ADAPTER CANONICAL; SHARED NUMERIC XML CONSUMER ACTIVE IN UyapXmlService; OTHER CELLS UNVERIFIED-FAIL-CLOSED; SUBMIT EXECUTION + FAIZT + CUTOVER NOT AUTHORIZED; PR-A5 NOT AUTHORIZED` |
+| `REC-AUTH-029B` — UYAP mapping policy | Rich-interest ve exporter kodları arasındaki ratifiye dönüşüm kararı | Owner/legal-approved integration mapping | `TARGET / PRODUCTION_NO_GO` | `SELECTED D1–D9 CELLS OWNER_LEGAL_ACCEPTED / CONTRACT + NUMERIC ADAPTER CANONICAL; SHARED NUMERIC XML CONSUMER ACTIVE IN UyapXmlService; OTHER CELLS UNVERIFIED-FAIL-CLOSED; SUBMIT EXECUTION + FAIZT + CUTOVER NOT AUTHORIZED; PR-A5-1 DORMANT RELATION/PROJECTION/BATCH CONTRACT IMPLEMENTED WITH ZERO PRODUCTION CONSUMERS; PR-A5-2 NOT AUTHORIZED` |
 | `REC-AUTH-030` — Bank receipt candidate | Tahsis öncesi non-authoritative integration candidate | Bank adapter + authorized confirmation | `CURRENT INPUT / NON_CANONICAL` | `HUMAN/OWNER CONFIRMATION REQUIRED; NO AUTO-ALLOCATION` |
 | `REC-AUTH-031` — AI/risk output | Advisory derived output; hukuki/finansal authority değildir | AI/risk projection owner | `CURRENT PARTIAL / DERIVED_NON_AUTHORITATIVE` | `TENANT, VISIBILITY, PROVENANCE AND HUMAN-GATE COMPLIANCE REQUIRED` |
 
@@ -1366,7 +1366,7 @@ Kural: Her karar öncesi canonical main'den yeniden doğrulanır.
 | Submit enforcement | NOT AUTHORIZED |
 | `VERIFIED_OFFICIAL` | NONE |
 | PR-A4 | PARTIAL — R1 + N1 canonical; N2 shared numeric XML projection active; submit execution/FAIZT/cutover NOT AUTHORIZED |
-| PR-A5 | NOT AUTHORIZED |
+| PR-A5 | PARTIAL — OD-A5-01..04 OWNER-APPROVED; PR-A5-1 dormant relation/projection/batch contract IMPLEMENTED; production consumer NONE; PR-A5-2/runtime activation NOT AUTHORIZED |
 | VER-05 | OPEN |
 | CAN-CUT-01 / CAN-CUT-02 | OPEN |
 
