@@ -10,12 +10,13 @@
  * - Test 4: PAYMENT_RECEIVED payload has no allocation fields
  * - Test 5: Currency empty → event payload has explicit 'TRY'
  * - Test 6: forDebtorId present → appears in payload
+ * - RC-COL / W1.1: cent remainder → exact ledger allocation + overpayment
  * - Test 7 / PATCH A3: post-allocation failure → full financial-chain rollback
  * - Test 8: EXTERNAL_SIGNED without evidence → HR-34 fail
  *
  * Requires: DATABASE_URL pointing to test database with migrations applied.
  */
-import { CaseDebtorLifecycleStatus, PrismaClient } from '@prisma/client';
+import { CaseDebtorLifecycleStatus, Prisma, PrismaClient } from '@prisma/client';
 import { BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { CollectionService } from '../collection.service';
@@ -568,6 +569,112 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       });
 
       expect(event.body.payload.forDebtorId).toBeUndefined();
+    });
+  });
+
+  // ── RC-COL / W1.1: exact cent remainder characterization ──────────────
+
+  describe('RC-COL / W1.1: ledger cent-remainder characterization', () => {
+    it('preserves a one-cent payment remainder as exact HELD overpayment without drift', async () => {
+      const claimItems = await Promise.all(
+        [1, 2, 3].map((sortOrder) => prisma.claimItem.create({
+          data: {
+            tenantId: testTenantId,
+            caseId: testCaseId,
+            itemType: 'PRINCIPAL',
+            originalAmount: new Prisma.Decimal('33.33'),
+            demandedAmount: new Prisma.Decimal('33.33'),
+            amount: new Prisma.Decimal('33.33'),
+            currency: 'TRY',
+            liableDebtorIds: [],
+            sortOrder,
+          },
+        })),
+      );
+
+      const summaryEngine = new SummaryEngineService(
+        prisma as any,
+        new TBK100AllocatorService(),
+      );
+      await summaryEngine.onModuleInit();
+      const exactMoneyService = new CollectionService(
+        prisma as any,
+        new DomainEventIngestService(),
+        new CaseDebtorLifecycleGuardService(prisma as any),
+        summaryEngine,
+        new AccountingJournalWriterService(prisma as any),
+      );
+
+      const collection = await exactMoneyService.create(testTenantId, buildDto({
+        amount: 100,
+        currency: 'TRY',
+        sourceType: CollectionSource.MANUAL,
+        autoAllocate: false,
+      }), 'test-user-1');
+
+      const [ledgerEntry, allocations, persistedClaimItems, overpayment] = await Promise.all([
+        prisma.ledgerEntry.findFirstOrThrow({
+          where: {
+            tenantId: testTenantId,
+            caseId: testCaseId,
+            collectionId: collection.id,
+            entryType: 'PAYMENT',
+          },
+        }),
+        prisma.ledgerAllocation.findMany({
+          where: { claimItemId: { in: claimItems.map((item) => item.id) } },
+          orderBy: { allocationOrder: 'asc' },
+        }),
+        prisma.claimItem.findMany({
+          where: { id: { in: claimItems.map((item) => item.id) } },
+          orderBy: { sortOrder: 'asc' },
+        }),
+        prisma.collectionOverpayment.findFirstOrThrow({
+          where: {
+            tenantId: testTenantId,
+            caseId: testCaseId,
+            collectionId: collection.id,
+          },
+        }),
+      ]);
+
+      const zero = new Prisma.Decimal(0);
+      const paymentAmount = new Prisma.Decimal(ledgerEntry.amount);
+      const allocationTotal = allocations.reduce(
+        (sum, allocation) => sum.plus(allocation.amount),
+        zero,
+      );
+      const demandedTotal = persistedClaimItems.reduce(
+        (sum, item) => sum.plus(item.demandedAmount),
+        zero,
+      );
+      const collectedTotal = persistedClaimItems.reduce(
+        (sum, item) => sum.plus(item.collectedAmount),
+        zero,
+      );
+      const remainingDebt = demandedTotal.minus(collectedTotal);
+      const overpaymentAmount = new Prisma.Decimal(overpayment.amount);
+      const overpaymentRemaining = new Prisma.Decimal(overpayment.remainingAmount);
+      const accountedPayment = allocationTotal.plus(overpaymentAmount);
+      const unaccountedRemainder = paymentAmount.minus(accountedPayment);
+
+      expect(allocations).toHaveLength(3);
+      expect(allocations.map((allocation) => allocation.amount.toFixed(2)))
+        .toEqual(['33.33', '33.33', '33.33']);
+      expect(paymentAmount.toFixed(2)).toBe('100.00');
+      expect(allocationTotal.toFixed(2)).toBe('99.99');
+      expect(demandedTotal.toFixed(2)).toBe('99.99');
+      expect(collectedTotal.toFixed(2)).toBe('99.99');
+      expect(remainingDebt.toFixed(2)).toBe('0.00');
+      expect(overpaymentAmount.toFixed(2)).toBe('0.01');
+      expect(overpaymentRemaining.toFixed(2)).toBe('0.01');
+      expect(overpayment.status).toBe('HELD');
+      expect(overpayment.currency).toBe('TRY');
+      expect(accountedPayment.toFixed(2)).toBe('100.00');
+      expect(unaccountedRemainder.toFixed(2)).toBe('0.00');
+      expect(allocationTotal.lessThanOrEqualTo(demandedTotal)).toBe(true);
+      expect(remainingDebt.greaterThanOrEqualTo(0)).toBe(true);
+      expect(overpaymentRemaining.greaterThanOrEqualTo(0)).toBe(true);
     });
   });
 
