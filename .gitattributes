@@ -2,3 +2,7 @@
 *.sh text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+
+# Keep rich-interest golden JSON fixtures byte-stable across development environments
+project/apps/api/src/modules/case/inventory/__tests__/fixtures/rich-interest-uyap/golden/*.json text eol=lf
+project/apps/api/src/modules/case/inventory/__tests__/fixtures/rich-interest-uyap/golden/*.ndjson text eol=lf
