@@ -1,6 +1,6 @@
 # ADR-014 Split-PR Baseline Execution Plan
 
-**Status:** APPROVED / POST-PR-10 BASELINE EXECUTION PLAN v2.25
+**Status:** APPROVED / POST-PR-10 BASELINE EXECUTION PLAN v2.26
 **Date:** 2026-07-10
 **Last Reconciled:** 2026-07-13
 **Owner:** Ulaş
@@ -90,6 +90,20 @@
 > task: `ADR014-REP-01A — Run-Specific Authorization Package Completion`; REP-02 is not eligible.
 
 > **v2.25 governance closure PR:** #1213.
+
+> **v2.26 (2026-07-13):** ADR014-REP-01A technical/governance closure reconciliation. Technical
+> PR #1216 (rebased head `14064893c10a511925f203f499b16cfd1266dfe6`; squash
+> `da0d70061f21da1db4ff5aae0e0583c3ed3f4e75`) adds one pure deterministic run-specific
+> authorization-package contract with ordered fail-closed blockers. It requires canonical,
+> environment/session, independently approved manifest and separate access/execution bindings;
+> distinct operator/reviewer assignments; read-only/no-egress proofs; owner-controlled output;
+> retention; baseline/population/request-count definition; and five approved-for-run sign-offs.
+> `PACKAGE_COMPLETE` does not execute, produce/accept evidence, declare PR-11 readiness or grant
+> runtime/cutover authority. REP-01A closes as `PACKAGE-MECHANISM-ONLY`; no concrete package
+> instance exists. Representative evidence remains absent/blocking, CAN-CUT-02 stays open, and
+> PR-11/runtime cutover remain NOT AUTHORIZED. REP-02 is conditionally eligible only after owner
+> provision of a complete run-specific package instance. The single next action is owner input,
+> not an automatically opened technical workstream.
 
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 
@@ -386,8 +400,9 @@ Observation contract v2       PE-06C1 CLOSED / CANONICAL / DEFAULT-DISABLED
 Local dry-validation          PE-06D CLOSED / CANONICAL / DRY-VALIDATION-ONLY
 Local observability surfaces  PE-06E CLOSED / CANONICAL / LOCAL-PREPARATION-ONLY
 Local representative runner   REP-01B CLOSED / CANONICAL / EXECUTION-MECHANISM-ONLY
-Run authorization package     REP-01A OPEN / BLOCKED / RUN-SPECIFIC DECISIONS REQUIRED
-Next eligible step             ADR014-REP-01A / RUN-SPECIFIC AUTHORIZATION PACKAGE
+Run authorization mechanism   REP-01A CLOSED / CANONICAL / PACKAGE-MECHANISM-ONLY
+Run-specific package instance ABSENT / OWNER INPUT REQUIRED / BLOCKING EXECUTION
+Next eligible step             OWNER INPUT / RUN-SPECIFIC PACKAGE INSTANCE
 PR-11 consumer switch          NOT AUTHORIZED
 ```
 
@@ -403,7 +418,7 @@ PR-11 consumer switch          NOT AUTHORIZED
 | 8 | PR-8b | PR-8a technical + governance closure (**SATISFIED**) | Trace/AllocationLog/non-official snapshot layer; schema/official persistence hard stop | Explainability + cleanup evidence | Official snapshot remains ADR-013 owner gate | **CLOSED / CANONICAL** — PR #1128 + separate register closure; PR-9 eligible |
 | 9 | PR-9 | PR-8b technical + governance closure (**SATISFIED**) | Twelve scenarios through the W0 contract; no second scenario format | Unit==DB twin-run, currency isolation/mismatch, repeatability, CI 4/4 | No | **CLOSED / CANONICAL** — PR #1132 + separate register closure; PR-10 eligible |
 | 10 | PR-10 | PR-9 technical + governance closure (**SATISFIED**) | Additive canonical compatibility adapter; typed fee unavailable states; parity conflict fail-closed; no consumer switch | Adapter unit/contract + W0 unit/DB twin + CI 4/4 | No | **CLOSED / CANONICAL** — PR #1137 + separate register closure; cutover-authorization gate eligible |
-| 11 | `UNASSIGNED` cutover authorization | PR-10 technical + governance closure (**SATISFIED**) | Rollback, monitoring, audit, signoff and acceptance policy | Governance decision record → **`docs/design/adr-014-cutover-authorization-policy.md`**; PE-01/PE-01A zero-cent contract/alignment; PE-02 procedure; PE-03 environment contract; PE-04 dataset/manifest contract; PE-05 → **`docs/design/adr-014-metrics-audit-dashboard-alert-operational-contract.md`** | Required | **POLICY + PRE-EVIDENCE CONTRACTS + REP-01B EXECUTION MECHANISM CLOSED / EVIDENCE ENV = LOCAL / STILL OWNER-GATED** — PE-01/01A/02/03/04/05, PE-05A1a–A4, PE-05B and PE-06A–E remain canonical; REP-01B adds only the default-disabled read-only local runner. `PREPARED`, `DRY_VALIDATED` and `CAPTURED_NOT_ACCEPTED` are not execution/evidence/readiness authority. REP-01A remains open until the exact environment/session/manifest, named roles, separate access/execution approvals, output/retention, baseline and sign-offs are frozen. Dataset materialization, measured baseline and representative evidence remain absent; remaining cutover gate = REP-01A closure + authorized local run + validated/accepted local representative evidence + explicit owner `APPROVED`; PR-11 remains NOT AUTHORIZED; next workstream is REP-01A only |
+| 11 | `UNASSIGNED` cutover authorization | PR-10 technical + governance closure (**SATISFIED**) | Rollback, monitoring, audit, signoff and acceptance policy | Governance decision record → **`docs/design/adr-014-cutover-authorization-policy.md`**; PE-01/PE-01A zero-cent contract/alignment; PE-02 procedure; PE-03 environment contract; PE-04 dataset/manifest contract; PE-05 → **`docs/design/adr-014-metrics-audit-dashboard-alert-operational-contract.md`** | Required | **POLICY + PRE-EVIDENCE CONTRACTS + REP-01A/REP-01B MECHANISMS CLOSED / EVIDENCE ENV = LOCAL / STILL OWNER-GATED** — PE-01/01A/02/03/04/05, PE-05A1a–A4, PE-05B and PE-06A–E remain canonical; REP-01B adds only the default-disabled read-only local runner and REP-01A adds only its fail-closed package mechanism. `PREPARED`, `DRY_VALIDATED`, `PACKAGE_COMPLETE` and `CAPTURED_NOT_ACCEPTED` are not execution/evidence/readiness authority. A concrete run-specific package instance remains absent and owner-gated. Dataset materialization, measured baseline and representative evidence remain absent; remaining cutover gate = complete owner package instance + authorized local run + validated/accepted local representative evidence + explicit owner `APPROVED`; PR-11 remains NOT AUTHORIZED; next action is owner provision of the run-specific package instance, and REP-02 is eligible only after that input |
 | 12 | PR-11 | Owner cutover authorization | UI/API/report/template canonical consumer switch | I-10 integration, production smoke, kill-switch | Required | Cutover PR + register closure → PR-11 stability |
 | 13 | `UNASSIGNED` PR-11 stability | PR-11 closure | Live smoke, discrepancy monitoring, rollback drill | Accepted stability evidence | Acceptance metrics owner-held | Verification/closure PR → PR-12 |
 | 14 | PR-12 | PR-11 stability accepted | Disable silent legacy fallback; canonical unavailable is fail-closed | DB/consumer integration | Required | Cutover PR + register closure → PR-12 bake |
