@@ -59,8 +59,11 @@ export const ELECTRONIC_DELIVERY_TO_TEBLIGAT_STATUS: Record<string, TebligatStat
 export class TebligatService {
   private readonly logger = new Logger(TebligatService.name);
 
-  // TK 21/2 için tebliğ edilmiş sayılma süresi (gün)
-  private readonly TK_21_2_DAYS = 15;
+  // TK m.20 (muvakkaten başka yere gitme) için kapıya yapıştırma + bekleme süresi (gün).
+  // MPB-028(a) PR-2 blocker resolution: yalnız operatörün açıkça tk21Type=TK_20 seçtiği
+  // dalda kullanılır (determinePttResultAction) — TK 21/1 ve 21/2 gecikmesizdir, bu sabiti
+  // KULLANMAZ.
+  private readonly TK_20_DAYS = 15;
 
   constructor(
     private prisma: PrismaService,
@@ -538,6 +541,30 @@ export class TebligatService {
   } {
     const { pttResult, tk21Type, muhtarlikDate, ilanDate } = dto;
 
+    // MPB-028(a) PR-2 blocker resolution (Decision B): TK m.20 yalnız operatörün AÇIKÇA
+    // seçtiği bir hukuki rejimdir; PTT sonucundan (pttResult) hiçbir zaman otomatik
+    // çıkarılmaz. Operatör tk21Type=TK_20 gönderdiğinde bu override PTT-bazlı çıkarımın
+    // ÖNÜNE geçer (pttResult ne olursa olsun); gerekli kanıt tarihi (ilanDate veya
+    // muhtarlikDate) yoksa fail-closed — sessizce varsayılan tarih (new Date()) ÜRETİLMEZ.
+    if (tk21Type === Tk21Type.TK_20) {
+      const evidenceDateRaw = ilanDate ?? muhtarlikDate;
+      if (!evidenceDateRaw) {
+        throw new BadRequestException(
+          "TK m.20 (muvakkaten başka yere gitme) seçimi için ilanDate veya muhtarlikDate zorunludur"
+        );
+      }
+
+      const tebligSayilmaDate = new Date(evidenceDateRaw);
+      tebligSayilmaDate.setDate(tebligSayilmaDate.getDate() + this.TK_20_DAYS);
+
+      return {
+        status: TebligatStatus.MUHTARLIGA_BIRAKILDI,
+        nextAction: TebligatNextAction.BEKLE,
+        tk21Type: Tk21Type.TK_20,
+        tebligSayilmaDate,
+      };
+    }
+
     // Başarılı teslim durumları
     if (
       pttResult === TebligatPttResult.TESLIM_EDILDI ||
@@ -565,17 +592,17 @@ export class TebligatService {
 
     // Muhtarlığa bırakıldı
     if (pttResult === TebligatPttResult.MUHTARLIGA_BIRAKILDI) {
-      // MERNİS adresinde muhtarlığa bırakıldı = 21/2 (+15 gün)
+      // MERNİS adresinde muhtarlığa bırakıldı = 21/2 (gecikmesiz — MPB-028(a) düzeltmesi:
+      // TK m.21/2 kapıya yapıştırma tarihi doğrudan tebliğ tarihidir, +15 gün TK m.20'ye
+      // ait bir kuraldır ve buraya YANLIŞLIKLA uygulanıyordu; bkz. legal-time-authority-rebase.md §1.2)
       if (tebligat.addressType === TebligatAddressType.MERNIS) {
         const ilanTarihi = ilanDate ? new Date(ilanDate) : new Date();
-        const tebligTarihi = new Date(ilanTarihi);
-        tebligTarihi.setDate(tebligTarihi.getDate() + this.TK_21_2_DAYS);
 
         return {
           status: TebligatStatus.MUHTARLIGA_BIRAKILDI,
           nextAction: TebligatNextAction.BEKLE,
           tk21Type: Tk21Type.TK_21_2,
-          tebligSayilmaDate: tebligTarihi,
+          tebligSayilmaDate: ilanTarihi,
         };
       }
 

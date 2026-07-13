@@ -1,0 +1,253 @@
+import { Injectable, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
+import { PrismaService } from "../../prisma/prisma.service";
+import { Tk21Type, TebligatChannel, LegalDeadlineType } from "@prisma/client";
+
+/**
+ * MPB-028(a) PR-2 — kanonik hukuki süre hesabı foundation'ı.
+ *
+ * Bu servis:
+ * - NotificationQueue okumaz (owner Decision 4 — hukuki süre otoritesi değildir),
+ * - hiçbir workflow stage/scheduler tetiklemez,
+ * - hiçbir UI consumer'ı değiştirmez,
+ * - geçmiş kayıtları backfill etmez (owner Decision 2 — yalnız forward-only).
+ *
+ * Kapsam dışı (bu PR'da bilinçli olarak YOK — bkz. final rapor "NEW FINDING"):
+ * - Tatil/iş günü hesaplaması (owner Decision 3 — ayrı workstream).
+ * - Kesinleşme (finalizationDate) hesaplaması — bu servis yalnız legalServiceDate/dueDate
+ *   üretir; finalizationDate her zaman null bırakılır (owner Decision 6).
+ * - İtiraz gün sayısının (objectionPeriodDays) Case.type/subType'tan OTOMATİK türetilmesi —
+ *   CaseType (Prisma enum) ile tasarım belgesinin 6 kırılımlı takip-türü taksonomisi
+ *   arasında canonical bir eşleştirme repo'da bulunamadı (bkz. final rapor
+ *   "OBJECTION PERIOD TABLE NOT CANONICALLY RESOLVED"). Bu yüzden objectionPeriodDays
+ *   çağıran tarafından PARAMETRE olarak sağlanır; bu servis "kaç gün olması gerektiğini"
+ *   tahmin ETMEZ.
+ */
+
+const CALCULATION_VERSION = "legal-deadline-v1";
+
+/**
+ * MPB-028(a) PR-2 blocker resolution (Decision A): CaseType/subType → 6-kırılım takip türü
+ * eşleştirmesi canonical olarak çözümlenmedikçe bu servis itiraz gün sayısını TAHMİN ETMEZ.
+ * objectionPeriodDays çağıran tarafından sağlanan, doğrulanmış bir girdidir. Üst sınır
+ * spesifik bir kanun maddesine dayanmaz — bilinen hiçbir itiraz/süre rejiminin bu değeri
+ * aşmadığı bir "sanity guard"dır (aşırı büyük/hatalı girdiyi fail-closed reddetmek için).
+ */
+const MAX_OBJECTION_PERIOD_DAYS = 365;
+
+export interface CalculateDeadlineInput {
+  tenantId: string;
+  tebligatId: string;
+  /**
+   * İtiraz süresi (gün). Bu servis bu sayıyı ÜRETMEZ — CaseType/subType → takip türü
+   * eşleştirmesi canonical olarak netleşmeden bu servisin kendi içinde tahmin edilmesi
+   * "yeni hukuki yorum" sayılır ve MPB-028(a) PR-2 GO-IMPLEMENT talimatının hard-stop
+   * kriterine girer. Çağıran, bu sayıyı ayrı bir owner-onaylı kaynaktan sağlamalıdır.
+   * Doğrulama: pozitif tam sayı olmalı, MAX_OBJECTION_PERIOD_DAYS'i aşamaz; aksi halde
+   * fail-closed (BadRequestException) — hiçbir varsayılan gün sayısı (5/7/10 vb.) üretilmez.
+   */
+  objectionPeriodDays: number;
+}
+
+interface LegalServiceDateResult {
+  legalServiceDate: Date;
+  deadlineReasonCode: string;
+  calculationRule: string;
+}
+
+@Injectable()
+export class LegalDeadlineService {
+  private readonly logger = new Logger(LegalDeadlineService.name);
+
+  constructor(private prisma: PrismaService) {}
+
+  /**
+   * Tebligat verisinden kanonik LegalDeadlineSnapshot üretir/günceller.
+   *
+   * Idempotent: aynı Tebligat için hesaplama sonucu (legalServiceDate/dueDate/
+   * deadlineReasonCode/calculationVersion) mevcut ACTIVE snapshot ile birebir aynıysa
+   * yeni satır YAZILMAZ, mevcut snapshot döner. Sonuç farklıysa (veya hiç snapshot
+   * yoksa) yeni bir ACTIVE snapshot oluşturulur; varsa önceki ACTIVE snapshot
+   * SUPERSEDED olarak işaretlenir ve supersedesSnapshotId ile yeni kayda bağlanır
+   * (owner Decision 5 — mevcut satırın hesaplanan alanları asla update edilmez;
+   * yalnız yaşam-döngüsü meta verisi olan `status` alanı supersede işleminin
+   * bir parçası olarak güncellenir, bu "silent update" değildir).
+   */
+  async calculateDeadline(input: CalculateDeadlineInput) {
+    this.assertValidObjectionPeriodDays(input.objectionPeriodDays);
+
+    const tebligat = await this.prisma.tebligat.findFirst({
+      where: { id: input.tebligatId, tenantId: input.tenantId },
+    });
+
+    if (!tebligat) {
+      throw new NotFoundException("Tebligat bulunamadı");
+    }
+
+    const regime = this.determineLegalServiceDate(tebligat);
+    if (!regime) {
+      throw new BadRequestException(
+        "Hukuki tebliğ tarihi hesaplanamadı: eksik veya uyumsuz tebligat kanıtı",
+      );
+    }
+
+    const dueDate = addDays(regime.legalServiceDate, input.objectionPeriodDays);
+
+    return this.prisma.$transaction(async (tx) => {
+      const existingActive = await tx.legalDeadlineSnapshot.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          sourceTebligatId: input.tebligatId,
+          status: "ACTIVE",
+        },
+      });
+
+      if (
+        existingActive &&
+        existingActive.legalServiceDate.getTime() === regime.legalServiceDate.getTime() &&
+        existingActive.dueDate.getTime() === dueDate.getTime() &&
+        existingActive.deadlineReasonCode === regime.deadlineReasonCode &&
+        existingActive.calculationVersion === CALCULATION_VERSION
+      ) {
+        // Idempotent no-op — girdi değişmedi, gereksiz duplicate snapshot üretilmez.
+        return existingActive;
+      }
+
+      if (existingActive) {
+        await tx.legalDeadlineSnapshot.update({
+          where: { id: existingActive.id },
+          data: { status: "SUPERSEDED" },
+        });
+      }
+
+      const created = await tx.legalDeadlineSnapshot.create({
+        data: {
+          tenantId: input.tenantId,
+          caseId: tebligat.caseId,
+          caseDebtorId: tebligat.caseDebtorId,
+          sourceTebligatId: tebligat.id,
+          deadlineType: LegalDeadlineType.OBJECTION_PERIOD,
+          legalServiceDate: regime.legalServiceDate,
+          dueDate,
+          calculationRule: regime.calculationRule,
+          calculationVersion: CALCULATION_VERSION,
+          deadlineReasonCode: regime.deadlineReasonCode,
+          supersedesSnapshotId: existingActive?.id ?? null,
+          status: "ACTIVE",
+        },
+      });
+
+      this.logger.log(
+        `LegalDeadlineSnapshot oluşturuldu: tebligat=${tebligat.id}, reasonCode=${regime.deadlineReasonCode}`,
+      );
+
+      return created;
+    });
+  }
+
+  /**
+   * MPB-028(a) PR-2 blocker resolution (Decision A): objectionPeriodDays çağıran tarafından
+   * sağlanan doğrulanmış bir girdi olmalıdır — servis içinde CaseType/subType üzerinden gizli
+   * bir fallback veya tahmin YOKTUR. Eksik/sıfır/negatif/tam-sayı-olmayan/aşırı büyük girdi
+   * fail-closed reddedilir.
+   */
+  private assertValidObjectionPeriodDays(objectionPeriodDays: number): void {
+    if (
+      typeof objectionPeriodDays !== "number" ||
+      !Number.isInteger(objectionPeriodDays) ||
+      objectionPeriodDays <= 0
+    ) {
+      throw new BadRequestException(
+        "objectionPeriodDays pozitif bir tam sayı olmalıdır (eksik/sıfır/negatif değer kabul edilmez)",
+      );
+    }
+    if (objectionPeriodDays > MAX_OBJECTION_PERIOD_DAYS) {
+      throw new BadRequestException(
+        `objectionPeriodDays makul üst sınırı (${MAX_OBJECTION_PERIOD_DAYS} gün) aşıyor`,
+      );
+    }
+  }
+
+  /**
+   * Bölüm 3 rejim tablosu (legal-time-authority-rebase.md): tebligat kaydının rejim
+   * sinyallerinden (tk21Type/channel/deliveredAt) hukuken doğru tebliğ/tebliğ-sayılma
+   * tarihini üretir. Hiçbir dal eşleşmezse null döner (fail-closed — çağıran
+   * BadRequestException fırlatır, tahmin YAPILMAZ).
+   */
+  private determineLegalServiceDate(tebligat: {
+    tk21Type: Tk21Type | null;
+    channel: TebligatChannel;
+    muhtarlikDate: Date | null;
+    ilanDate: Date | null;
+    deliveredAt: Date | null;
+  }): LegalServiceDateResult | null {
+    // TK m.20 — muvakkaten başka yere gitme (+15 gün). Kaynak tarih: ilanDate öncelikli,
+    // yoksa muhtarlikDate (tasarım belgesi "kapıya yapıştırma / muhtar-zabıtaya teslim"
+    // ifadesiyle iki olası kaynağı ayırt etmiyor — bkz. final rapor NEW FINDING).
+    if (tebligat.tk21Type === Tk21Type.TK_20) {
+      const baseDate = tebligat.ilanDate ?? tebligat.muhtarlikDate;
+      if (!baseDate) return null;
+      return {
+        legalServiceDate: addDays(baseDate, 15),
+        deadlineReasonCode: "TK_20",
+        calculationRule: "TK_20_PLUS_15_DAYS",
+      };
+    }
+
+    // TK 21/2 — MERNİS adresi (gecikmesiz — MPB-028(a) düzeltmesi).
+    if (tebligat.tk21Type === Tk21Type.TK_21_2) {
+      if (!tebligat.ilanDate) return null;
+      return {
+        legalServiceDate: tebligat.ilanDate,
+        deadlineReasonCode: "TK_21_2",
+        calculationRule: "TK_21_2_NO_DELAY",
+      };
+    }
+
+    // TK 21/1 — bilinen adreste imtina (gecikmesiz).
+    if (tebligat.tk21Type === Tk21Type.TK_21_1) {
+      if (!tebligat.muhtarlikDate) return null;
+      return {
+        legalServiceDate: tebligat.muhtarlikDate,
+        deadlineReasonCode: "TK_21_1",
+        calculationRule: "TK_21_1_NO_DELAY",
+      };
+    }
+
+    // İlanen tebliğ (+7 gün, TK m.31).
+    if (tebligat.channel === TebligatChannel.ILANEN) {
+      if (!tebligat.ilanDate) return null;
+      return {
+        legalServiceDate: addDays(tebligat.ilanDate, 7),
+        deadlineReasonCode: "ILANEN_M31",
+        calculationRule: "ILANEN_PLUS_7_DAYS",
+      };
+    }
+
+    // E-tebligat/UETS/KEP (+5 gün, TK m.7/a + Elektronik Tebligat Yönetmeliği m.9/6).
+    if (tebligat.channel === TebligatChannel.UETS || tebligat.channel === TebligatChannel.KEP) {
+      if (!tebligat.deliveredAt) return null;
+      return {
+        legalServiceDate: addDays(tebligat.deliveredAt, 5),
+        deadlineReasonCode: "UETS_M7A",
+        calculationRule: "UETS_PLUS_5_DAYS",
+      };
+    }
+
+    // Doğrudan/elden teslim (gecikmesiz).
+    if (tebligat.deliveredAt) {
+      return {
+        legalServiceDate: tebligat.deliveredAt,
+        deadlineReasonCode: "DIRECT_DELIVERY",
+        calculationRule: "DIRECT_NO_DELAY",
+      };
+    }
+
+    return null;
+  }
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
