@@ -112,6 +112,24 @@ Default-Disabled Observation Contract Completion`, requiring separate task autho
 record supersedes only the post-PE-06B2 next-step wording; all receivable, evidence and cutover
 gates remain unchanged. Current execution plan: `docs/design/adr-014-split-pr-plan.md` v2.21.
 
+**ADR-014 post-PE-06C1 routing override (2026-07-13):** ADR014-PE-06C1 is
+`CLOSED / CANONICAL / DEFAULT-DISABLED` after technical PR #1201 and governance PR #1202 (head
+`ca1d8baf1a25f2e7cba1219e4d2880e4a8676eb9`; squash
+`8948cadb7ce4c2061edb82bcff9afd901af98acf`). PE-05A2 v1 serialization and semantics remain
+immutable; the same operational-event envelope family now contains the bounded
+`event_version=2` / `event_profile=SESSION_CONTROL` preparation profile. All seven PE-06B1 fact
+families have pure exhaustive event mappings. Session start/terminal states have a bounded counter
+projection; terminal phase facts accept only caller-supplied finite monotonic duration. Execution-
+request and control-event counters remain typed `BLOCKED_WITH_REASON` because their producers are
+absent. The producer remains default `DISABLED`, with no production call-site, registry
+registration/emission, runtime clock, session/control activation, persistence, external egress,
+evidence execution, financial/readiness/API change or authority promotion. Representative evidence
+remains `ABSENT / BLOCKING`; CAN-CUT-02 remains open; PR-11 and runtime cutover remain
+`NOT AUTHORIZED`. No successor is assigned automatically; the next workstream requires an explicit
+owner decision. This record supersedes only the post-PE-06C0 next-step wording; all receivable,
+evidence and cutover gates remain unchanged. Current execution plan:
+`docs/design/adr-014-split-pr-plan.md` v2.22.
+
 ## ADR Naming Collision Matrix (GOV-ADR-NAMING-000)
 
 Bu bölüm, `ADR-012` numarasının DX-005 için main üzerinde kanonikleşmesinden sonra yanlış ADR referansı üretilmesini engeller. **2026-07-10 owner arbitration (final):** Aynı gün iki aday çözüm değerlendirildi — Option C (`ADR-013`'ün kapsamını CCB-001'i içerecek şekilde genişletme, kısa süre uygulandı, PR #1019) ve ayrı-numara seçeneği (`ADR-013`'ü `GOV-ADR-NAMING-000`'ın orijinal dar kapsamında bırakıp CCB-001'e kendi numarasını verme). Owner'ın nihai kararı: **CCB-001'in mimari dokümanı `ADR-014`'tür; `ADR-013` `GOV-ADR-NAMING-000`'ın orijinal kapsamında (Fee/Harç/Snapshot/Journal) kalır, DEĞİŞMEDEN.** PR #1026 sonrası ADR-013 artık draft/owner-review ADR olarak mevcuttur. Bu patch runtime davranışı, kod, migration veya CCB-001 branch merge'i yaratmaz.

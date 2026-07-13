@@ -1317,6 +1317,27 @@ runtime cutover remain `NOT AUTHORIZED`. Existing maintenance records, including
 untouched. The single next eligible task is `ADR014-PE-06C1 — Default-Disabled Observation
 Contract Completion`, requiring separate task authorization.
 
+**ADR014-PE-06C1 Master Register Closure (2026-07-13; governance PR #1202):** Default-Disabled Observation Contract
+Completion is `CLOSED / CANONICAL / DEFAULT-DISABLED` after technical PR #1201 (head
+`ca1d8baf1a25f2e7cba1219e4d2880e4a8676eb9`; squash
+`8948cadb7ce4c2061edb82bcff9afd901af98acf`; CI `4/4 SUCCESS`; pre-merge `CLEAN /
+MERGEABLE`). PE-05A2 v1 serialization and semantics remain unchanged. The same event-envelope
+family has the bounded v2 `SESSION_CONTROL` profile and exhaustive pure event mapping for all seven
+PE-06B1 fact families. Existing bounded state projections remain; session start/terminal facts add
+`adr014_evidence_sessions_total`, and terminal PHASE facts map
+`adr014_evidence_phase_duration_seconds` only from caller-supplied finite monotonic seconds.
+`adr014_execution_requests_total` and `adr014_control_events_total` remain typed
+`BLOCKED_WITH_REASON` because their real producers are absent. Default mode remains `DISABLED`;
+only `TEST_ONLY` can project to the local sink. There is no production call-site, registry
+registration/emission, runtime timer, session/control activation, persistence, external egress,
+environment/dataset access, evidence execution, financial/readiness/blocker/API/DTO behavior or
+authority change. Direct tests 82/82 and wider PE-05/PE-06 regressions 267/267 passed; changed-file
+ESLint, static runtime/egress guard, exact seven-file allowlist and `git diff --check` passed. No new
+backlog ID is created. `CCB-001` remains unchanged; `CAN-CUT-02 OPEN / needs-owner-decision`,
+representative evidence `ABSENT / BLOCKING`, PR-11 and runtime cutover `NOT AUTHORIZED`. Existing
+maintenance records remain untouched. No successor is auto-opened; next eligible task is `OWNER
+DECISION REQUIRED`.
+
 ---
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
 
