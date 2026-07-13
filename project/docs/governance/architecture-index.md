@@ -60,6 +60,22 @@ is assigned, so further implementation requires an owner decision. This routing 
 the older PE-05A next-step wording only; all calculation, evidence and cutover gates remain
 unchanged. Current execution plan: `docs/design/adr-014-split-pr-plan.md` v2.18.
 
+**ADR-014 post-PE-06A routing override (2026-07-13):** ADR014-PE-06A is
+`CLOSED / CANONICAL`. Technical PR #1190 (squash
+`77d8e6bdcb16199d01a920a95f78f370837dd28f`) adds a pure, typed, immutable and
+default-disabled local evidence-harness preparation contract. It validates caller-supplied
+canonical SHA and opaque PE-03 environment/session, PE-04 manifest and separate
+access/execution authorization references under one binding; it neither discovers authority nor
+starts execution. The only outcomes are `BLOCKED` and `PREPARED`, and `PREPARED` is not data
+access, execution, evidence acceptance, readiness or cutover authority. Database, filesystem,
+network, persistence, Nest bootstrap, financial calculation, API/DTO and telemetry behavior are
+unchanged. PR #1159 remains open, non-canonical and on hold; it was not rebased, merged,
+cherry-picked or used as implementation authority. Representative evidence remains
+`ABSENT / BLOCKING`; PR-11 and runtime cutover remain `NOT AUTHORIZED`. No canonical successor
+is assigned, so further implementation requires an owner decision. This routing record
+supersedes only the prior PE-05B next-step wording; all calculation, evidence and cutover gates
+remain unchanged. Current execution plan: `docs/design/adr-014-split-pr-plan.md` v2.19.
+
 ## ADR Naming Collision Matrix (GOV-ADR-NAMING-000)
 
 Bu bölüm, `ADR-012` numarasının DX-005 için main üzerinde kanonikleşmesinden sonra yanlış ADR referansı üretilmesini engeller. **2026-07-10 owner arbitration (final):** Aynı gün iki aday çözüm değerlendirildi — Option C (`ADR-013`'ün kapsamını CCB-001'i içerecek şekilde genişletme, kısa süre uygulandı, PR #1019) ve ayrı-numara seçeneği (`ADR-013`'ü `GOV-ADR-NAMING-000`'ın orijinal dar kapsamında bırakıp CCB-001'e kendi numarasını verme). Owner'ın nihai kararı: **CCB-001'in mimari dokümanı `ADR-014`'tür; `ADR-013` `GOV-ADR-NAMING-000`'ın orijinal kapsamında (Fee/Harç/Snapshot/Journal) kalır, DEĞİŞMEDEN.** PR #1026 sonrası ADR-013 artık draft/owner-review ADR olarak mevcuttur. Bu patch runtime davranışı, kod, migration veya CCB-001 branch merge'i yaratmaz.
