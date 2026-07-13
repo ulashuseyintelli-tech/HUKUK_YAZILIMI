@@ -103,3 +103,207 @@ export function buildAdr014OperationalEvent(
     environment_reference: environmentReference(environment),
   });
 }
+
+export const ADR014_SESSION_CONTROL_EVENT_VERSION = '2' as const;
+export const ADR014_SESSION_CONTROL_EVENT_PROFILE = 'SESSION_CONTROL' as const;
+
+export const ADR014_SESSION_CONTROL_EVENT_TYPES = [
+  'ADR014_SESSION_REQUESTED',
+  'ADR014_SESSION_ENVIRONMENT_VERIFIED',
+  'ADR014_SESSION_ACCESS_STATE_OBSERVED',
+  'ADR014_SESSION_EXECUTION_AUTH_STATE_OBSERVED',
+  'ADR014_SESSION_STARTED',
+  'ADR014_SESSION_CAPTURE_COMPLETED',
+  'ADR014_SESSION_VALIDATION_STARTED',
+  'ADR014_SESSION_VALIDATED',
+  'ADR014_SESSION_CLOSED',
+  'ADR014_SESSION_REJECTED',
+  'ADR014_SESSION_ABORTED',
+  'ADR014_SESSION_INVALIDATED',
+  'ADR014_PHASE_STARTED',
+  'ADR014_PHASE_COMPLETED',
+  'ADR014_PHASE_FAILED',
+  'ADR014_PHASE_TIMEOUT',
+  'ADR014_PHASE_CANCELLED',
+  'ADR014_MANIFEST_STATE_OBSERVED',
+  'ADR014_COVERAGE_STATE_OBSERVED',
+  'ADR014_BOUNDARY_RESULT_OBSERVED',
+  'ADR014_CONTROL_STATE_OBSERVED',
+  'ADR014_INSTRUMENTATION_HEALTH_OBSERVED',
+] as const;
+
+export const ADR014_SESSION_CONTROL_EVENT_COMPONENTS = [
+  'SESSION',
+  'PHASE',
+  'MANIFEST',
+  'COVERAGE',
+  'BOUNDARY',
+  'CONTROL',
+  'INSTRUMENTATION_HEALTH',
+] as const;
+
+export const ADR014_SESSION_CONTROL_EVENT_OPERATIONS = [
+  'OBSERVE_SESSION',
+  'OBSERVE_PHASE',
+  'OBSERVE_MANIFEST',
+  'OBSERVE_COVERAGE',
+  'VERIFY_BOUNDARY',
+  'OBSERVE_CONTROL',
+  'OBSERVE_HEALTH',
+  'EVALUATE_EXECUTION_REQUEST',
+] as const;
+
+export const ADR014_SESSION_CONTROL_EVENT_RESULTS = [
+  'OBSERVED',
+  'STARTED',
+  'COMPLETED',
+  'ACCEPTED',
+  'SUCCESS',
+  'ERROR',
+  'TIMEOUT',
+  'CANCELLED',
+  'FAILED',
+  'REJECTED',
+  'NOT_AUTHORIZED',
+  'INVALID_STATE',
+  'UNAVAILABLE',
+  'BLOCKED',
+  'ABORTED',
+  'INVALIDATED',
+] as const;
+
+export const ADR014_SESSION_CONTROL_EVENT_FAILURE_CODES = [
+  'NONE',
+  'AUTHORIZATION_ABSENT',
+  'REQUEST_REJECTED',
+  'INVALID_LIFECYCLE_STATE',
+  'SOURCE_UNAVAILABLE',
+  'PHASE_PROCESSING_ERROR',
+  'PHASE_TIMEOUT',
+  'PHASE_CANCELLED',
+  'SESSION_ABORTED',
+  'SESSION_INVALIDATED',
+  'MANIFEST_ABSENT',
+  'MANIFEST_INVALID',
+  'MANIFEST_REJECTED',
+  'COVERAGE_MISSING',
+  'COVERAGE_INVALID',
+  'BOUNDARY_FAILED',
+  'BOUNDARY_NOT_EVALUATED',
+  'CONTROL_NOT_CONFIGURED',
+  'CONTROL_BLOCKED',
+  'CONTROL_UNAVAILABLE',
+  'INSTRUMENTATION_DEGRADED',
+  'INSTRUMENTATION_FAILED',
+  'INSTRUMENTATION_UNKNOWN',
+  'INSTRUMENTATION_NOT_CONFIGURED',
+] as const;
+
+export type Adr014SessionControlEventType = (typeof ADR014_SESSION_CONTROL_EVENT_TYPES)[number];
+export type Adr014SessionControlEventComponent =
+  (typeof ADR014_SESSION_CONTROL_EVENT_COMPONENTS)[number];
+export type Adr014SessionControlEventOperation =
+  (typeof ADR014_SESSION_CONTROL_EVENT_OPERATIONS)[number];
+export type Adr014SessionControlEventResult =
+  (typeof ADR014_SESSION_CONTROL_EVENT_RESULTS)[number];
+export type Adr014SessionControlEventFailureCode =
+  (typeof ADR014_SESSION_CONTROL_EVENT_FAILURE_CODES)[number];
+
+/**
+ * PE-06C1 profile in the existing ADR-014 operational-event envelope family.
+ * This profile is preparation-only and does not create execution or evidence authority.
+ */
+export interface Adr014SessionControlEvent {
+  readonly event_type: Adr014SessionControlEventType;
+  readonly event_version: typeof ADR014_SESSION_CONTROL_EVENT_VERSION;
+  readonly event_profile: typeof ADR014_SESSION_CONTROL_EVENT_PROFILE;
+  readonly timestamp: string;
+  readonly severity: Adr014OperationalEventSeverity;
+  readonly component: Adr014SessionControlEventComponent;
+  readonly operation: Adr014SessionControlEventOperation;
+  readonly result: Adr014SessionControlEventResult;
+  readonly failure_code: Adr014SessionControlEventFailureCode;
+  readonly canonical_sha_reference: string;
+  readonly environment_reference: Adr014EnvironmentReference;
+  readonly session_reference?: Adr014OpaqueReference;
+  readonly manifest_reference?: Adr014OpaqueReference;
+  readonly trace_reference?: Adr014OpaqueReference;
+  readonly evidence_reference?: Adr014OpaqueReference;
+}
+
+export type Adr014CanonicalOperationalEvent = Adr014OperationalEvent | Adr014SessionControlEvent;
+
+export interface BuildAdr014SessionControlEventInput {
+  readonly eventType: Adr014SessionControlEventType;
+  readonly severity: Adr014OperationalEventSeverity;
+  readonly component: Adr014SessionControlEventComponent;
+  readonly operation: Adr014SessionControlEventOperation;
+  readonly result: Adr014SessionControlEventResult;
+  readonly failureCode: Adr014SessionControlEventFailureCode;
+}
+
+export interface Adr014SessionControlEventContext {
+  readonly timestamp: string;
+  readonly canonicalShaReference: string;
+  readonly environmentReference: Exclude<Adr014EnvironmentReference, 'UNKNOWN'>;
+}
+
+const LOWERCASE_FULL_GIT_SHA = /^[0-9a-f]{40}$/;
+const UTC_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function isBoundedValue<T extends string>(values: readonly T[], value: unknown): value is T {
+  return typeof value === 'string' && values.includes(value as T);
+}
+
+export function isAdr014SessionControlEventContext(
+  context: unknown,
+): context is Adr014SessionControlEventContext {
+  if (typeof context !== 'object' || context === null || Array.isArray(context)) return false;
+  const candidate = context as Record<string, unknown>;
+  if (
+    Object.keys(candidate).length !== 3 ||
+    !UTC_ISO_TIMESTAMP.test(String(candidate.timestamp)) ||
+    Number.isNaN(Date.parse(String(candidate.timestamp))) ||
+    !LOWERCASE_FULL_GIT_SHA.test(String(candidate.canonicalShaReference)) ||
+    !isBoundedValue(
+      ['PRODUCTION', 'DEVELOPMENT', 'TEST'] as const,
+      candidate.environmentReference,
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function buildAdr014SessionControlEvent(
+  input: BuildAdr014SessionControlEventInput,
+  context: Adr014SessionControlEventContext,
+): Adr014SessionControlEvent {
+  if (
+    !isBoundedValue(ADR014_SESSION_CONTROL_EVENT_TYPES, input.eventType) ||
+    !isBoundedValue(ADR014_OPERATIONAL_EVENT_SEVERITIES, input.severity) ||
+    !isBoundedValue(ADR014_SESSION_CONTROL_EVENT_COMPONENTS, input.component) ||
+    !isBoundedValue(ADR014_SESSION_CONTROL_EVENT_OPERATIONS, input.operation) ||
+    !isBoundedValue(ADR014_SESSION_CONTROL_EVENT_RESULTS, input.result) ||
+    !isBoundedValue(ADR014_SESSION_CONTROL_EVENT_FAILURE_CODES, input.failureCode)
+  ) {
+    throw new TypeError('INVALID_ADR014_SESSION_CONTROL_EVENT_INPUT');
+  }
+  if (!isAdr014SessionControlEventContext(context)) {
+    throw new TypeError('INVALID_ADR014_SESSION_CONTROL_EVENT_CONTEXT');
+  }
+
+  return Object.freeze({
+    event_type: input.eventType,
+    event_version: ADR014_SESSION_CONTROL_EVENT_VERSION,
+    event_profile: ADR014_SESSION_CONTROL_EVENT_PROFILE,
+    timestamp: context.timestamp,
+    severity: input.severity,
+    component: input.component,
+    operation: input.operation,
+    result: input.result,
+    failure_code: input.failureCode,
+    canonical_sha_reference: context.canonicalShaReference,
+    environment_reference: context.environmentReference,
+  });
+}
