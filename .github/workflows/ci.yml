@@ -375,12 +375,15 @@ jobs:
         run: |
           cd apps/api
           source_file=src/scripts/adr014-rep-02-local-execution.ts
+          runner_source=src/scripts/adr014-local-read-only-representative-runner.ts
           functional_spec=src/scripts/__tests__/adr014-rep-02-local-execution.spec.ts
           security_spec=src/scripts/__tests__/adr014-rep-02-local-execution.security.spec.ts
-          for f in "$source_file" "$functional_spec" "$security_spec"; do
+          for f in "$source_file" "$runner_source" "$functional_spec" "$security_spec"; do
             test -f "$f" || { echo "MISSING ADR014-REP-02 file: $f"; exit 1; }
           done
-          grep -F -q 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY' "$source_file" || \
+          grep -F -q 'ADR014_REPRESENTATIVE_RUNNER_READ_ONLY_SQL' "$source_file" || \
+            { echo "MISSING ADR014-REP-02 canonical read-only transaction binding"; exit 1; }
+          grep -F -q 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY' "$runner_source" || \
             { echo "MISSING ADR014-REP-02 read-only transaction guard"; exit 1; }
           if grep -E -n "node:(http|https|net|tls|dgram)|from ['\"](axios|openai|ioredis|prom-client)|@aws-sdk|NestFactory|createApplicationContext|fetch\(" "$source_file"; then
             echo "FORBIDDEN ADR014-REP-02 external egress, telemetry or runtime bootstrap surface"; exit 1
