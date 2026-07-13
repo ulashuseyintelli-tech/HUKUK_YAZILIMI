@@ -35,8 +35,9 @@ Governance, TM3/DBIND boundaries, ADR-014, the canonical split plan, Cutover Aut
 Policy and PE-01 through PE-04 contracts. Draft, proposed, owner-review or unmerged PR content
 does not create authority.
 
-The repository capability inventory below was verified on canonical baseline
-`d755bec1418a718eb4a537d69968799384a843e5`. PR #1159 remains open, on an older base, held for
+The repository capability inventory below was reconciled after ADR014-PE-05A1a through
+ADR014-PE-05A4 and ADR014-PE-05B on technical canonical baseline
+`215f8b20c901c1cf88be723df84ae5dc57cc868e`. PR #1159 remains open, on an older base, held for
 owner review and non-canonical; its code is not counted as capability or evidence.
 
 ## 3. Current capability inventory
@@ -45,14 +46,14 @@ owner review and non-canonical; its code is not counted as capability or evidenc
 |---|---|---|---|
 | Prometheus registry and `/metrics` aggregation | `CANONICAL_AND_IMPLEMENTED` | Global `PROM_REGISTRY`, `MetricsRegistryModule` and metrics aggregator are wired | Reuse; do not create a second registry |
 | HTTP request/error counters | `PARTIAL` | `http_responses_total{status,method}` exists; no ADR-014 success/error/timeout family | Extend only in a separately authorized implementation task |
-| Latency timer infrastructure | `PARTIAL` | ADR-014 total shadow duration histogram exists; component and evidence-phase timers do not | Existing histogram is retained; missing families are prerequisites |
-| ADR-014 shadow comparison metrics | `CANONICAL_AND_IMPLEMENTED` | Request, duration, comparison and readiness-blocker families are registered | Preserve names and bounded labels; add no duplicate family |
-| PE-01A bounded metrics coverage | `PARTIAL` | Zero-cent classifier outcomes are observable through four families, but session/dataset/control coverage is absent | Extend the existing provider/registry in a future narrow implementation |
-| Structured operational logging | `PARTIAL` | Nest logging and a sanitized server `ErrorLog` path exist; no typed ADR-014 event envelope | ADR-014 envelope is an `IMPLEMENTATION_PREREQUISITE` |
+| Latency timer infrastructure | `PARTIAL` | ADR-014 total shadow duration and PE-05A1a bounded component/outcome histograms exist; evidence-phase timers do not | Existing histograms are retained; remaining families require separate authorization |
+| ADR-014 shadow comparison metrics | `CANONICAL_AND_IMPLEMENTED` | Existing request, duration, comparison and readiness-blocker families plus PE-05B financial-discrepancy, missing-evidence, integrity-failure and primary-display-safety families are registered | Preserve names and bounded labels; add no duplicate family |
+| PE-01A bounded metrics coverage | `PARTIAL` | Zero-cent classifier and PE-05B financial-integrity outcomes are observable, but session/dataset/control coverage is absent | Remaining coverage requires a separately authorized workstream |
+| Structured operational logging | `PARTIAL` | PE-05A2 typed, bounded and PII-safe ADR-014 event envelope emits through the existing Nest logger; no durable sink exists | Preserve the envelope; durable delivery remains a prerequisite |
 | Generic operational audit sink | `CANONICAL_AND_IMPLEMENTED` | `AuditService`/`AuditLog` exists for generic audit records | Reuse only after ADR-014 event and durability semantics are proven |
-| ADR-014 operational audit chain | `ABSENT` | No durable session/manifest/metric/alert correlation writes exist | `IMPLEMENTATION_PREREQUISITE` |
+| ADR-014 operational audit chain | `PARTIAL` | PE-05A3 correlation contract and PE-05A4 disabled NO-OP writer abstraction exist; no call-site or durable session/manifest/metric/alert writes exist | Persistence and activation remain separately authorized prerequisites |
 | Request correlation | `PARTIAL` | Global request ID middleware propagates an opaque request reference into server error records | Session/evidence correlation remains absent |
-| Durable ADR-014 correlation chain | `ABSENT` | No durable SHA → session → manifest → evidence reference index | `IMPLEMENTATION_PREREQUISITE` |
+| Durable ADR-014 correlation chain | `PARTIAL` | PE-05A3 provides a non-durable typed correlation abstraction; no durable SHA → session → manifest → evidence reference index exists | Durable correlation remains an `IMPLEMENTATION_PREREQUISITE` |
 | Generic Grafana dashboard | `CANONICAL_AND_IMPLEMENTED` | Guard dashboard/provisioning exists outside ADR-014 | Infrastructure precedent only; not ADR-014 evidence |
 | ADR-014 operational dashboard | `ABSENT` | Case-level shadow-diff UI is diagnostic, not the required operational dashboard | `IMPLEMENTATION_PREREQUISITE` |
 | Generic Prometheus alert rules | `CANONICAL_AND_IMPLEMENTED` | Redrive/simulation/guard rule groups exist outside ADR-014 | Infrastructure precedent only |
@@ -390,11 +391,11 @@ state can infer it.
 | Capability | Gap class | Required disposition before representative evidence |
 |---|---|---|
 | Prometheus registry/exposition | `EXISTING_AND_SUFFICIENT` | reuse singleton registry and current endpoint |
-| Total ADR-014 latency histogram | `EXISTING_BUT_PARTIAL` | add bounded component and evidence-phase coverage without duplicate semantics |
+| Total ADR-014 latency histogram | `EXISTING_BUT_PARTIAL` | total and bounded component/outcome coverage exist; evidence-phase coverage remains separately gated |
 | Timeout metric | `IMPLEMENTATION_PREREQUISITE` | implement explicit bounded timeout result |
-| ADR-014 comparison metrics | `EXISTING_BUT_PARTIAL` | reconcile current families with discrepancy/evidence/integrity catalogue |
-| Durable structured logs | `IMPLEMENTATION_PREREQUISITE` | implement typed PII-safe envelope and controlled references |
-| Durable audit correlation | `IMPLEMENTATION_PREREQUISITE` | implement ADR-014 event writes and append-only reference chain |
+| ADR-014 comparison metrics | `EXISTING_AND_SUFFICIENT` | PE-05B adds the four bounded financial-integrity families without changing existing metric semantics |
+| Durable structured logs | `IMPLEMENTATION_PREREQUISITE` | typed PII-safe PE-05A2 envelope exists; durable controlled delivery does not |
+| Durable audit correlation | `IMPLEMENTATION_PREREQUISITE` | PE-05A3 correlation and PE-05A4 disabled writer preparation exist; event writes and append-only reference chain do not |
 | ADR-014 dashboard | `CONTRACT_ONLY` | implement/provision four views; data source/access is `OPERATIONS_GATED` |
 | ADR-014 alert rules | `CONTRACT_ONLY` | implement taxonomy/rules and tests |
 | Alert delivery | `OPERATIONS_GATED` | choose and verify channels/receivers/escalation outside this contract |
@@ -413,27 +414,31 @@ created.
 ## 19. Master Register and next step
 
 This contract links `CCB-001`, `CAN-CUT-02`, `ADR014-PE-01`, `ADR014-PE-01A`,
-`ADR014-PE-02`, `ADR014-PE-03`, `ADR014-PE-04` and `ADR014-PE-05`. `MR-040` remains
-`OPEN / NON-BLOCKING / UNTOUCHED`.
+`ADR014-PE-02`, `ADR014-PE-03`, `ADR014-PE-04`, `ADR014-PE-05`,
+`ADR014-PE-05A1a` through `ADR014-PE-05A4` and `ADR014-PE-05B`. Existing open maintenance
+records remain unchanged; PE-05B filesystem residues are tracked by `MR-049 / OPEN /
+NON-BLOCKING`.
 
 Representative environment activation, manifest instance/selection, baseline measurement and
 representative evidence are absent and blocking. PR-11 and runtime cutover remain not
 authorized.
 
-The single next eligible task is:
+No canonical record assigns a successor after PE-05B. The next eligible task is therefore:
 
 ```text
-ADR014-PE-05A — Metrics, Audit and Alert Implementation Preparation
+OWNER DECISION REQUIRED
 ```
 
-PE-05A may analyze and prepare the narrow implementation plan against this catalogue; it does
-not receive implementation, session, evidence, PR-11 or cutover authority from this document.
+This contract does not create a new workstream or grant implementation, session, evidence,
+PR-11 or cutover authority.
 
 ## 20. Final disposition
 
 ```text
 Primary verdict: OPERATIONAL_CONTRACT_READY
 PE-05 status: CLOSED / CANONICAL after approved merge
+PE-05A1a through PE-05A4: CLOSED / CANONICAL
+PE-05B status: CLOSED / CANONICAL after approved governance merge
 Representative evidence: ABSENT / BLOCKING
 PR-11: NOT AUTHORIZED
 Runtime cutover: NOT AUTHORIZED

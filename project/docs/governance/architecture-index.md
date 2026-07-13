@@ -47,6 +47,19 @@ ADR-014 table row's older PE-03/v2.14 and post-PE-04 next-step wording; calculat
 authority and cutover semantics in that row remain unchanged. Current execution plan:
 `docs/design/adr-014-split-pr-plan.md` v2.17.
 
+**ADR-014 post-PE-05B routing override (2026-07-13):** PE-05A1a, PE-05A2, PE-05A3,
+PE-05A4 and PE-05B are `CLOSED / CANONICAL`. PE-05A1a adds bounded component/outcome
+duration metrics; PE-05A2 adds a typed PII-safe non-durable event envelope; PE-05A3 and
+PE-05A4 add non-durable correlation preparation and a disabled NO-OP writer abstraction with
+no runtime call-site. PE-05B technical PR #1187 (squash
+`215f8b20c901c1cf88be723df84ae5dc57cc868e`) adds four bounded financial-integrity metric
+families from existing shadow comparison reports without changing existing metrics, financial
+results, readiness, blockers, API/DTO, persistence or authority. Representative evidence remains
+`ABSENT / BLOCKING`; PR-11 and runtime cutover remain `NOT AUTHORIZED`. No canonical successor
+is assigned, so further implementation requires an owner decision. This routing record supersedes
+the older PE-05A next-step wording only; all calculation, evidence and cutover gates remain
+unchanged. Current execution plan: `docs/design/adr-014-split-pr-plan.md` v2.18.
+
 ## ADR Naming Collision Matrix (GOV-ADR-NAMING-000)
 
 Bu bölüm, `ADR-012` numarasının DX-005 için main üzerinde kanonikleşmesinden sonra yanlış ADR referansı üretilmesini engeller. **2026-07-10 owner arbitration (final):** Aynı gün iki aday çözüm değerlendirildi — Option C (`ADR-013`'ün kapsamını CCB-001'i içerecek şekilde genişletme, kısa süre uygulandı, PR #1019) ve ayrı-numara seçeneği (`ADR-013`'ü `GOV-ADR-NAMING-000`'ın orijinal dar kapsamında bırakıp CCB-001'e kendi numarasını verme). Owner'ın nihai kararı: **CCB-001'in mimari dokümanı `ADR-014`'tür; `ADR-013` `GOV-ADR-NAMING-000`'ın orijinal kapsamında (Fee/Harç/Snapshot/Journal) kalır, DEĞİŞMEDEN.** PR #1026 sonrası ADR-013 artık draft/owner-review ADR olarak mevcuttur. Bu patch runtime davranışı, kod, migration veya CCB-001 branch merge'i yaratmaz.
