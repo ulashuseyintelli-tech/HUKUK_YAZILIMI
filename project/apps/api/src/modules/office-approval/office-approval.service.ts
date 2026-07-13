@@ -1,13 +1,19 @@
 // P4-1 — OfficeApprovalService (kurumsal Approval Engine substrate; salt-veri omurgası).
 //
 // İÇ kurumsal onay kaydının yaşam döngüsünü yönetir: requester (işlemi başlatan) ≠ approver
-// (PARTNER veya canApproveOfficeActions delege avukat). HENÜZ HİÇBİR ROUTE/AKIŞA BAĞLI DEĞİL — yalnız
-// bu servis çağrıldığında çalışır; P4-1'de hiçbir controller onu çağırmaz → uygulama davranışı DEĞİŞMEZ.
+// (PARTNER veya canApproveOfficeActions delege avukat). AKTİF TÜKETİCİLERİ VAR: DispositionPostingService
+// (recommend/approve) ve ClientPayoutService (requestPayout/finalize, PAYOUT-APPROVAL-2 route'u) bu servisi
+// çağırıyor — "hiçbir controller onu çağırmaz" notu ARTIK GEÇERLİ DEĞİL, düzeltildi (OFFICE WS0.3/T0.3.3
+// REVISION 2'de tespit edildi).
 //
 // KESİN KARARLAR (Ulaş kilidi):
 //  - EventStore YOK → olgusal kayıt AuditLog'a (OFFICE_APPROVAL_*). Ham savedIntent audit'e YAZILMAZ (yalnız payloadHash).
 //  - Self-approval: approver === requester → 400 (SELF_APPROVAL_FORBIDDEN). DBIND §5 gereği yalnız
 //    CLIENT_PAYOUT_POST approve() akışında, PayoutApprovalPolicy eligible üst-seviye aktör için dar istisna vardır.
+//  - OFFICE SLICE-02 (OFF/OD-11, RATIFIED T0.3.4 REVISION 3): self-approval karşılaştırması UserAccount-eşitliğine
+//    EK OLARAK (additive, ASLA yerine değil) Lawyer/StaffMember TCKN candidate-set kesişimini de kapsar —
+//    bkz. isSameApprovalIdentity()/resolveSelfApprovalIdentityCandidates(). TCKN yalnız bu resolver İÇİNDE
+//    geçici bir correlation signal'dır, canonical identity DEĞİLDİR, başka hiçbir subsystem'e sızmaz.
 //  - Approver yeterliliği: aktif + aynı tenant + linkli Lawyer + (lawyerRank=PARTNER VEYA canApproveOfficeActions=true). Staff ASLA.
 //  - Deferred execution P4-3'te; burada yalnız execution durum işaretleyicileri (status=APPROVED ön-koşullu).
 //  - Geçişler koşullu-update (updateMany where status=...) ile yarış-güvenli + idempotent.
@@ -34,6 +40,7 @@ import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.service';
 import { PayoutApprovalPolicy } from './client-payout-approval.policy';
+import { isValidTckn } from '../../common/identity-validation.util';
 
 export interface CreatePendingRequestInput {
   tenantId: string;
@@ -136,7 +143,7 @@ export class OfficeApprovalService {
     if (!note || !note.trim()) throw new BadRequestException('Reddetme gerekçesi zorunludur.');
     const req = await this.requireRequest(id);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
-    this.assertNotSelfApproval(req, approverUserId);
+    await this.assertNotSelfApproval(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
     return this.commitDecision(id, OfficeApprovalStatus.REJECTED, approverUserId, note, 'OFFICE_APPROVAL_REJECTED');
   }
@@ -157,7 +164,7 @@ export class OfficeApprovalService {
     }
     const req = await this.requireRequest(id);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
-    this.assertNotSelfApproval(req, approverUserId);
+    await this.assertNotSelfApproval(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
     const replacementPayloadHash = stableJsonHash(replacementSavedIntent);
     return this.commitDecision(
@@ -178,7 +185,7 @@ export class OfficeApprovalService {
     if (!note || !note.trim()) throw new BadRequestException('Revizyon notu zorunludur.');
     const req = await this.requireRequest(id);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
-    this.assertNotSelfApproval(req, approverUserId);
+    await this.assertNotSelfApproval(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
     return this.commitDecision(id, OfficeApprovalStatus.REVISION_REQUESTED, approverUserId, note, 'OFFICE_APPROVAL_REVISION_REQUESTED');
   }
@@ -356,8 +363,55 @@ export class OfficeApprovalService {
     }
   }
 
-  private assertNotSelfApproval(req: OfficeApprovalRequest, approverUserId: string): void {
-    if (approverUserId === req.requesterUserId) {
+  /**
+   * OFFICE SLICE-02 (OFF/OD-11, RATIFIED T0.3.4 REVISION 3) — bir userId'nin, VERİLEN tenantId kapsamında,
+   * self-approval karşılaştırması için geçerli TCKN candidate'larını üretir. TCKN yalnız bu resolver İÇİNDE
+   * geçici bir correlation signal'dır — canonical identity DEĞİLDİR, başka hiçbir subsystem bu eşitliği
+   * tüketemez.
+   *
+   * Candidate eklenebilir IFF: profile mevcut AND profile.tenantId === tenantId (User.tenantId'ye
+   * BAĞIMSIZ GÜVENİLMEZ — User↔Lawyer/StaffMember tenant tutarlılığı DB-seviyesinde zorlanmıyor) AND
+   * normalize edilmiş TCKN isValidTckn() ile geçerli. isValidTckn() yalnız boolean döner; normalize edilmiş
+   * karşılaştırma anahtarını BURADA ayrıca üretiyoruz.
+   */
+  private async resolveSelfApprovalIdentityCandidates(userId: string, tenantId: string): Promise<Set<string>> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        lawyer: { select: { tenantId: true, tckn: true } },
+        staffMember: { select: { tenantId: true, tckn: true } },
+      },
+    });
+    const candidates = new Set<string>();
+    if (user?.lawyer && user.lawyer.tenantId === tenantId && isValidTckn(user.lawyer.tckn)) {
+      candidates.add(String(user.lawyer.tckn).replace(/\D/g, ''));
+    }
+    if (user?.staffMember && user.staffMember.tenantId === tenantId && isValidTckn(user.staffMember.tckn)) {
+      candidates.add(String(user.staffMember.tckn).replace(/\D/g, ''));
+    }
+    return candidates;
+  }
+
+  /**
+   * OFFICE SLICE-02 — nihai self-approval eşleşme kuralı: sameUserAccount OR candidate-set kesişimi.
+   * ADDITIVE: mevcut UserAccount-eşitlik kontrolü hiçbir dalda kaldırılmaz, yalnız üstüne eklenir —
+   * bu resolver'daki bir hata/boş küme EN KÖTÜ İHTİMALLE bugünkü davranışa (UserAccount-only) düşer,
+   * asla ondan daha gevşek bir sonuç üretmez.
+   */
+  private async isSameApprovalIdentity(userIdA: string, userIdB: string, tenantId: string): Promise<boolean> {
+    if (userIdA === userIdB) return true;
+    const [candidatesA, candidatesB] = await Promise.all([
+      this.resolveSelfApprovalIdentityCandidates(userIdA, tenantId),
+      this.resolveSelfApprovalIdentityCandidates(userIdB, tenantId),
+    ]);
+    for (const candidate of candidatesA) {
+      if (candidatesB.has(candidate)) return true;
+    }
+    return false;
+  }
+
+  private async assertNotSelfApproval(req: OfficeApprovalRequest, approverUserId: string): Promise<void> {
+    if (await this.isSameApprovalIdentity(approverUserId, req.requesterUserId, req.tenantId)) {
       throw new BadRequestException('SELF_APPROVAL_FORBIDDEN: Kendi talebinizi onaylayamaz/reddedemezsiniz.');
     }
   }
@@ -365,15 +419,15 @@ export class OfficeApprovalService {
   /**
    * DBIND §5 runtime reconciliation: generic self-approval ban korunur; yalnız CLIENT_PAYOUT_POST approve()
    * kararında, PayoutApprovalPolicy eligible üst-seviye aktör kendi payout talebini onaylayabilir.
-   * reject/requestRevision/approveWithChanges bu istisnaya dahil değildir.
+   * reject/requestRevision/approveWithChanges bu istisnaya dahil değildir — istisna GENİŞLETİLMEDİ.
    */
   private async assertApproveSelfApprovalPolicy(req: OfficeApprovalRequest, approverUserId: string): Promise<void> {
-    if (approverUserId !== req.requesterUserId) return;
+    if (!(await this.isSameApprovalIdentity(approverUserId, req.requesterUserId, req.tenantId))) return;
     if (req.actionCode === ActionCode.CLIENT_PAYOUT_POST) {
       await this.payoutApprovalPolicy.assertEligible(approverUserId, req.tenantId);
       return;
     }
-    this.assertNotSelfApproval(req, approverUserId);
+    await this.assertNotSelfApproval(req, approverUserId);
   }
 
   /**
