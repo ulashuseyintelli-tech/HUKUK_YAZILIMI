@@ -440,9 +440,28 @@ jobs:
             --testPathPattern="legal-time-shadow\.service\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # MPB-028(a) PR-3 Evidence Activation: LegalTimeShadowController (compute + evidence-report
+      # route/tenant-scoping) + app.module.ts DI-registration regresyon testi (PR-4 Readiness
+      # analizinde tespit edilen "modüller koda yazıldı ama DI container'a hiç kayıtlı değildi"
+      # bulgusunu kilitler). Aynı CI-coverage silent-skip riski (bkz. GATE-1/PR-2/PR-3 emsali)
+      # baştan önlenmek için bu dosyaların kendi ekleniş turunda ayrı/açık step ile koşturulur.
+      - name: MPB-028(a) PR-3 Evidence Activation controller + DI-registration tests
+        run: |
+          cd apps/api
+          for f in src/modules/legal-time-shadow/__tests__/legal-time-shadow.controller.spec.ts \
+                   src/modules/legal-time-shadow/__tests__/legal-time-shadow.app-module-registration.spec.ts; do
+            test -f "$f" || { echo "MISSING MPB-028(a) PR-3 Evidence Activation spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="legal-time-shadow\.(controller|app-module-registration)\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
       # MPB-028(a) PR-3 (disposable-DB kısmı): immutable diff kaydı + tenant isolation +
       # feature-flag-kapalı no-op davranışının gerçek Postgres üzerinde doğru çalıştığını
       # doğrular. Mevcut job'ın Postgres service'i reuse edilir — yeni container/job YOK.
+      # Evidence Activation turunda aynı dosyaya LegalTimeShadowController uçtan uca (gerçek
+      # servis + gerçek DB) testleri de eklendi — ayrı bir step gerekmez, mevcut dar pattern
+      # zaten dosya adına göre eşleşir.
       - name: MPB-028(a) PR-3 legal-time-shadow disposable-DB tests
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test

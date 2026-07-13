@@ -11,6 +11,7 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { resolveTestDatabaseUrl } from "../../../../test/test-db-env";
 import { LegalTimeShadowService } from "../legal-time-shadow.service";
+import { LegalTimeShadowController } from "../legal-time-shadow.controller";
 import { LegalDeadlineService } from "../../legal-deadline/legal-deadline.service";
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
@@ -187,5 +188,134 @@ describeWithDisposableDb("LegalTimeShadowService — disposable DB", () => {
     expect(result!.reasonCode).toBe("LEGACY_NOT_APPLICABLE_WORKFLOW_STAGE");
     expect(result!.deltaDays).toBeNull();
     expect(result!.canonicalDate).toEqual(new Date("2026-07-20T00:00:00Z"));
+  });
+});
+
+describeWithDisposableDb("LegalTimeShadowController — disposable DB (Evidence Activation, uçtan uca)", () => {
+  jest.setTimeout(30_000);
+  let prisma: PrismaClient;
+  let controller: LegalTimeShadowController;
+  const createdTenantIds = new Set<string>();
+  const ORIGINAL_ENV = process.env.LEGAL_TIME_SHADOW_ENABLED;
+
+  beforeAll(async () => {
+    prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
+    await prisma.$connect();
+    const legalDeadlineService = new LegalDeadlineService(prisma as any);
+    const service = new LegalTimeShadowService(prisma as any, legalDeadlineService);
+    controller = new LegalTimeShadowController(service);
+  });
+
+  afterAll(async () => {
+    for (const tenantId of createdTenantIds) {
+      await prisma.legalTimeShadowDiff.deleteMany({ where: { tenantId } });
+      await prisma.notificationQueue.deleteMany({ where: { tenantId } });
+      await prisma.tebligat.deleteMany({ where: { tenantId } });
+      await prisma.case.deleteMany({ where: { tenantId } });
+      await prisma.client.deleteMany({ where: { tenantId } });
+      await prisma.tenant.deleteMany({ where: { id: tenantId } });
+    }
+    await prisma.$disconnect();
+    process.env.LEGAL_TIME_SHADOW_ENABLED = ORIGINAL_ENV;
+  });
+
+  beforeEach(() => {
+    process.env.LEGAL_TIME_SHADOW_ENABLED = "true";
+  });
+
+  async function buildFixture(label: string) {
+    const tenantId = `test-lts-ctrl-${label}-${randomUUID().slice(0, 8)}`;
+    createdTenantIds.add(tenantId);
+
+    await prisma.tenant.create({
+      data: { id: tenantId, name: `LegalTimeShadow Controller Test ${label}`, slug: `test-lts-ctrl-${label}-${randomUUID().slice(0, 8)}` },
+    });
+    const client = await prisma.client.create({
+      data: { tenantId, displayName: "LegalTimeShadow Controller Test Muvekkil", type: "INDIVIDUAL" },
+    });
+    const caseRow = await prisma.case.create({
+      data: {
+        tenantId,
+        clientId: client.id,
+        fileNumber: `TEST-LTS-CTRL-${randomUUID().slice(0, 6)}`,
+        type: "GENERAL_EXECUTION",
+        caseStatus: "DERDEST",
+        status: "ACTIVE",
+        isAutoMode: false,
+        workflowStage: "PAYMENT_ORDER" as any,
+      },
+    });
+    await prisma.notificationQueue.create({
+      data: {
+        tenantId,
+        caseId: caseRow.id,
+        type: "PAYMENT_ORDER",
+        channel: "SMS",
+        recipient: "05001234567",
+        status: "DELIVERED",
+        deliveredAt: new Date("2026-07-18T00:00:00Z"),
+      },
+    });
+    const tebligat = await prisma.tebligat.create({
+      data: {
+        tenantId,
+        caseId: caseRow.id,
+        tebligatType: "ODEME_EMRI",
+        addressType: "BILINEN",
+        addressText: "Test Adres No:1",
+        recipientName: "Test Borçlu",
+        channel: "PTT",
+        deliveredAt: new Date("2026-07-20T00:00:00Z"),
+      },
+    });
+
+    return { tenantId, tebligatId: tebligat.id };
+  }
+
+  it("controller.compute → gerçek DB'de LegalTimeShadowDiff satırı oluşturur (DI zinciri uçtan uca çalışır)", async () => {
+    const { tenantId, tebligatId } = await buildFixture("compute-happy");
+
+    const result = await controller.compute(tenantId, tebligatId);
+
+    expect(result.triggered).toBe(true);
+    expect(result.diff).not.toBeNull();
+    expect(result.diff.deltaDays).toBe(2);
+
+    const rows = await prisma.legalTimeShadowDiff.findMany({ where: { tenantId, sourceTebligatId: tebligatId } });
+    expect(rows).toHaveLength(1);
+  });
+
+  it("controller.compute: flag kapalıyken triggered=false, hiçbir satır oluşmaz", async () => {
+    process.env.LEGAL_TIME_SHADOW_ENABLED = "false";
+    const { tenantId, tebligatId } = await buildFixture("compute-flag-off");
+
+    const result = await controller.compute(tenantId, tebligatId);
+
+    expect(result).toEqual({ triggered: false, diff: null });
+    const rows = await prisma.legalTimeShadowDiff.findMany({ where: { tenantId } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("controller.evidenceReport → controller.compute ile yazılan satırı gerçek DB'den okur", async () => {
+    const { tenantId, tebligatId } = await buildFixture("evidence-report");
+    await controller.compute(tenantId, tebligatId);
+
+    const report = await controller.evidenceReport(tenantId);
+
+    expect(report.totalCount).toBe(1);
+    expect(report.records).toHaveLength(1);
+    expect(report.records[0].sourceTebligatId).toBe(tebligatId);
+  });
+
+  it("controller.evidenceReport: tenant-isolation — başka tenant'ın kaydını görmez", async () => {
+    const fixtureA = await buildFixture("tenant-isolation-a");
+    const fixtureB = await buildFixture("tenant-isolation-b");
+    await controller.compute(fixtureA.tenantId, fixtureA.tebligatId);
+    await controller.compute(fixtureB.tenantId, fixtureB.tebligatId);
+
+    const reportA = await controller.evidenceReport(fixtureA.tenantId);
+
+    expect(reportA.totalCount).toBe(1);
+    expect(reportA.records[0].sourceTebligatId).toBe(fixtureA.tebligatId);
   });
 });
