@@ -258,6 +258,27 @@ jobs:
             "$security_spec" \
             "$compatibility_spec"
         working-directory: project
+      # ADR014-PE-06D composes PE-06A/B1/C1 only in a default-disabled, synthetic,
+      # test-only dry-validation shell. Runtime activation and external I/O remain forbidden.
+      - name: ADR014-PE-06D local session orchestrator dry-validation tests
+        run: |
+          cd apps/api
+          source_file=src/scripts/adr014-local-session-orchestrator-dry-validation.ts
+          functional_spec=src/scripts/__tests__/adr014-local-session-orchestrator-dry-validation.spec.ts
+          security_spec=src/scripts/__tests__/adr014-local-session-orchestrator-dry-validation.security.spec.ts
+          for f in "$source_file" "$functional_spec" "$security_spec"; do
+            test -f "$f" || { echo "MISSING ADR014-PE-06D file: $f"; exit 1; }
+          done
+          if grep -E -n '@nestjs/|@prisma/|node:(fs|path|http|https|net|tls|crypto)|process\.(env|argv)|NestFactory|new Date|Date\.|Math\.random|randomUUID|fetch\(|axios|console\.|AuditLog|AuditService|prom-client|setTimeout|setInterval|function[[:space:]]+main|require\.main' "$source_file"; then
+            echo "FORBIDDEN ADR014-PE-06D runtime, I/O or nondeterminism surface"; exit 1
+          fi
+          if grep -E -n 'tenantId|caseId|debtorId|creditorId|clientId|personId|principal|interest|fee|amount|currency|rawError|stack|metadata' "$source_file"; then
+            echo "FORBIDDEN ADR014-PE-06D business or financial payload field"; exit 1
+          fi
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            "$functional_spec" \
+            "$security_spec"
+        working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
       - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
