@@ -68,6 +68,7 @@ commit, merge, release veya runtime authority yetkisi oluşturmaz.
 | `project/docs/governance/OFFICE-MASTER-SYNTHESIS.md` | OFFICE kanıt/gerekçe/senaryo katmanı (operasyonel değil) | CANONICAL REFERENCE / NON-NORMATIVE EVIDENCE BASELINE |
 | `project/docs/governance/OFFICE-RISK-REGISTER.md` | OFFICE domain risk dossier'i; global triage/execution status otoritesi DEĞİLDİR | CANONICAL DOMAIN RISK DOSSIER |
 | `project/docs/governance/OFFICE-OWNER-DECISIONS.md` | OFFICE açık owner karar dossier'i; kapanmış karar otoritesi DEĞİLDİR | CANONICAL OPEN-DECISION DOSSIER |
+| `project/docs/governance/OFFICE-DELIVERY-MANIFEST.md` | OFFICE Phase 1 delivery sequencing, dependency and slice-state authority | CANONICAL / AUTHORITATIVE LIVING DELIVERY SOURCE |
 | `project/docs/adr/` + `architecture-index.md` | teknik/mimari kararlar ve gerekçeleri | KAYITLI STATÜYE GÖRE |
 | Implementation standards | code/API/test/deployment/operation conventions | BELGE STATÜSÜNE GÖRE |
 | Roadmap / Master Register | work sequencing, owner gates ve closure state | AKTİF; authority/implementation izni üretmez |
