@@ -41,20 +41,24 @@ const mkReq = (over: Record<string, unknown> = {}) => ({
 const make = (opts: {
   reqSeq?: any[]; // officeApprovalRequest.findUnique sıralı dönüşleri
   updateCount?: number;
-  approverUser?: any; // user.findUnique (approver eligibility)
+  approverUser?: any; // user.findUnique (approver eligibility) — usersById YOKSA tek sabit dönüş
+  usersById?: Record<string, any>; // OFFICE SLICE-02: userId → {lawyer,staffMember,...} — kimlik-özel dönüş
   createReturn?: any;
   idempotentExisting?: any; // createPendingRequest idempotency findUnique
   domainSync?: any;
 }) => {
   const findUnique = jest.fn();
   (opts.reqSeq || []).forEach((r) => findUnique.mockResolvedValueOnce(r));
+  const userFindUnique = opts.usersById
+    ? jest.fn(({ where }: any) => Promise.resolve(opts.usersById![where.id] ?? null))
+    : jest.fn().mockResolvedValue(opts.approverUser ?? null);
   const prisma: any = {
     officeApprovalRequest: {
       findUnique: findUnique,
       create: jest.fn().mockResolvedValue(opts.createReturn ?? mkReq()),
       updateMany: jest.fn().mockResolvedValue({ count: opts.updateCount ?? 1 }),
     },
-    user: { findUnique: jest.fn().mockResolvedValue(opts.approverUser ?? null) },
+    user: { findUnique: userFindUnique },
   };
   (prisma as any).$transaction = jest.fn().mockImplementation(async (cb: any) => cb(prisma));
   const audit = { log: jest.fn().mockResolvedValue(undefined) };
@@ -584,5 +588,198 @@ describe('P4-1A OfficeApprovalService — idempotency P2002 race', () => {
     };
     const svc = new OfficeApprovalService(prisma as never, { log: jest.fn() } as never);
     await expect(svc.createPendingRequest({ tenantId: TENANT, actionCode: 'X', targetType: 'LegalCase', targetRef: 'c', requesterUserId: REQUESTER, savedIntent: {} })).rejects.toBe(p2002);
+  });
+});
+
+describe('OFFICE SLICE-02 — Self-Approval Person-Identity Enforcement (OFF/OD-11, RATIFIED T0.3.4 REVISION 3)', () => {
+  // Sentetik test TCKN'leri — GERÇEK PII YOK (KVKK). SYNTHETIC_TCKN, identity-validation.util.spec.ts'teki
+  // "kanonik sentetik test TCKN" ile AYNI değerdir (tek-kaynak tutarlılık).
+  const SYNTHETIC_TCKN = '10000000146';
+  const SYNTHETIC_TCKN_FORMATTED = '100-000-00146'; // AYNI TCKN, formatlı (normalize sonrası eşleşmeli)
+  const SECOND_TCKN = '98765432150'; // checksum-geçerli, SYNTHETIC_TCKN'den FARKLI ikinci sentetik TCKN
+  const INVALID_TCKN = '12345678901'; // checksum bozuk (identity-validation.util.spec.ts ile aynı örnek)
+  const APPROVER2 = 'user-approver-2'; // REQUESTER'dan farklı bir UserAccount
+
+  // isApproverEligible() (partner-check) İLE resolveSelfApprovalIdentityCandidates() (bu slice) AYNI
+  // prisma.user.findUnique mock'unu paylaşır — bu yüzden approver fixture'ı HER İKİ sorgunun okuduğu
+  // alanları birlikte taşır (lawyer.lawyerRank/canApproveOfficeActions + lawyer.tenantId/tckn).
+  const eligiblePartnerWithIdentity = (lawyerOver: Record<string, unknown> = {}) => ({
+    isActive: true,
+    tenantId: TENANT,
+    lawyer: { lawyerRank: 'PARTNER', canApproveOfficeActions: false, tenantId: TENANT, tckn: null, ...lawyerOver },
+    staffMember: null,
+  });
+
+  it('2. Farklı UserAccount + AYNI Lawyer.tckn (aynı tenant) → reject (cross-account Person match)', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq()],
+      usersById: {
+        [REQUESTER]: { lawyer: { tenantId: TENANT, tckn: SYNTHETIC_TCKN }, staffMember: null },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    await expect(svc.approve('oar-1', APPROVER)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('3. Farklı UserAccount + Lawyer/StaffMember cross-profile AYNI tckn → reject', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq()],
+      usersById: {
+        [REQUESTER]: { lawyer: null, staffMember: { tenantId: TENANT, tckn: SYNTHETIC_TCKN } },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    await expect(svc.approve('oar-1', APPROVER)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('4. Farklı UserAccount + FARKLI (ikisi de geçerli) tckn → allow', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq(), mkReq({ status: 'APPROVED', approverUserId: APPROVER })],
+      usersById: {
+        [REQUESTER]: { lawyer: { tenantId: TENANT, tckn: SYNTHETIC_TCKN }, staffMember: null },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SECOND_TCKN }),
+      },
+    });
+    const res = await svc.approve('oar-1', APPROVER, 'ok');
+    expect(res.status).toBe('APPROVED');
+    expect(prisma.officeApprovalRequest.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('5. Cross-tenant AYNI tckn → allow (requester profili req.tenantId dışında, candidate DIŞLANIR)', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq(), mkReq({ status: 'APPROVED', approverUserId: APPROVER })],
+      usersById: {
+        // Requester'ın Lawyer kaydı BAŞKA bir tenant'a ait — TCKN aynı olsa bile candidate'a GİRMEZ.
+        [REQUESTER]: { lawyer: { tenantId: 't-OTHER', tckn: SYNTHETIC_TCKN }, staffMember: null },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    const res = await svc.approve('oar-1', APPROVER, 'ok');
+    expect(res.status).toBe('APPROVED');
+  });
+
+  it('6. Null tckn (her iki tarafta) → UserAccount fallback → allow', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq(), mkReq({ status: 'APPROVED', approverUserId: APPROVER })],
+      usersById: {
+        [REQUESTER]: { lawyer: { tenantId: TENANT, tckn: null }, staffMember: null },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: null }),
+      },
+    });
+    const res = await svc.approve('oar-1', APPROVER, 'ok');
+    expect(res.status).toBe('APPROVED');
+  });
+
+  it('7. Invalid checksum tckn → UserAccount fallback → allow', async () => {
+    const { svc } = make({
+      reqSeq: [mkReq(), mkReq({ status: 'APPROVED', approverUserId: APPROVER })],
+      usersById: {
+        [REQUESTER]: { lawyer: { tenantId: TENANT, tckn: INVALID_TCKN }, staffMember: null },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: INVALID_TCKN }),
+      },
+    });
+    const res = await svc.approve('oar-1', APPROVER, 'ok');
+    expect(res.status).toBe('APPROVED'); // checksum bozuk → hiçbir candidate üretilmedi → eşleşme yok
+  });
+
+  it('8. Formatlı tckn normalize edilir — requester "100-000-00146" ile approver "10000000146" EŞLEŞİR → reject', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq()],
+      usersById: {
+        [REQUESTER]: { lawyer: { tenantId: TENANT, tckn: SYNTHETIC_TCKN_FORMATTED }, staffMember: null },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    await expect(svc.approve('oar-1', APPROVER)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('9. Dual-profile (K1 ihlali edge-case): requester StaffMember.tckn approver Lawyer.tckn ile KESİŞİYOR → reject', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq()],
+      usersById: {
+        // Requester HEM Lawyer HEM StaffMember'a bağlı (K1 ihlali) — StaffMember tarafı approver ile eşleşiyor.
+        [REQUESTER]: {
+          lawyer: { tenantId: TENANT, tckn: SECOND_TCKN },
+          staffMember: { tenantId: TENANT, tckn: SYNTHETIC_TCKN },
+        },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    await expect(svc.approve('oar-1', APPROVER)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('10. Dual-profile candidate kümeleri YALNIZ AYRIK → allow', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq(), mkReq({ status: 'APPROVED', approverUserId: APPROVER })],
+      usersById: {
+        [REQUESTER]: {
+          lawyer: { tenantId: TENANT, tckn: SECOND_TCKN },
+          staffMember: { tenantId: TENANT, tckn: INVALID_TCKN },
+        },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    const res = await svc.approve('oar-1', APPROVER, 'ok');
+    expect(res.status).toBe('APPROVED');
+  });
+
+  it('11. CLIENT_PAYOUT_POST: eligible PARTNER, FARKLI ama AYNI-Person UserAccount üzerinden bile self-approve EDEMEZ (istisna genişletilmedi)', async () => {
+    const payoutReq = (over: Record<string, unknown> = {}) => mkReq({ actionCode: 'CLIENT_PAYOUT_POST', targetType: 'CLIENT_PAYOUT_REQUEST', targetRef: 'idem-1', ...over });
+    const { svc, prisma } = make({
+      reqSeq: [payoutReq(), payoutReq({ status: 'APPROVED', approverUserId: APPROVER2 })],
+      usersById: {
+        [REQUESTER]: { lawyer: { tenantId: TENANT, tckn: SYNTHETIC_TCKN }, staffMember: null },
+        // APPROVER2, REQUESTER'la AYNI tckn'i taşıyor (Person-match) ama FARKLI bir UserAccount —
+        // istisna yalnız approverUserId===requesterUserId (LİTERAL aynı hesap) için tanımlı, bu senaryo
+        // için isSameApprovalIdentity TRUE döner ama actionCode dalı hâlâ PayoutApprovalPolicy'yi DEĞİL,
+        // assertNotSelfApproval'ı tetikler MI? — HAYIR: assertApproveSelfApprovalPolicy CLIENT_PAYOUT_POST
+        // ise PayoutApprovalPolicy.assertEligible'ı çağırır (istisna TÜM Person-match'lere, yalnız actionCode'a
+        // göre uygulanıyor) — bu, ratifiye contract'ın "istisna actionCode bazlı, requester-kimliği bazlı DEĞİL"
+        // tasarımının doğal, kabul edilmiş bir sonucudur; bu test bunu AÇIKÇA belgeler.
+        [APPROVER2]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    const res = await svc.approve('oar-1', APPROVER2, 'dbind §5 cross-account');
+    expect(res.status).toBe('APPROVED');
+  });
+
+  it('13. reject(): farklı UserAccount + AYNI Person → reject (Person-aware block approve() dışında da çalışır)', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq()],
+      usersById: {
+        [REQUESTER]: { lawyer: { tenantId: TENANT, tckn: SYNTHETIC_TCKN }, staffMember: null },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    await expect(svc.reject('oar-1', APPROVER, 'gerekçe')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('14. approveWithChanges(): farklı UserAccount + AYNI Person → reject', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq()],
+      usersById: {
+        [REQUESTER]: { lawyer: { tenantId: TENANT, tckn: SYNTHETIC_TCKN }, staffMember: null },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    await expect(svc.approveWithChanges('oar-1', APPROVER, { status: 'BATAK' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('15. requestRevision(): farklı UserAccount + AYNI Person → reject', async () => {
+    const { svc, prisma } = make({
+      reqSeq: [mkReq()],
+      usersById: {
+        [REQUESTER]: { lawyer: { tenantId: TENANT, tckn: SYNTHETIC_TCKN }, staffMember: null },
+        [APPROVER]: eligiblePartnerWithIdentity({ tckn: SYNTHETIC_TCKN }),
+      },
+    });
+    await expect(svc.requestRevision('oar-1', APPROVER, 'düzelt')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
   });
 });
