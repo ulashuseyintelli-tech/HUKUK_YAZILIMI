@@ -207,6 +207,37 @@ jobs:
           npx jest --ci --forceExit --runInBand --runTestsByPath \
             src/modules/case/__tests__/case-calculation-summary.compatibility.db-gated.integration.spec.ts
         working-directory: project
+      # ADR014-PE-06A is a pure, default-disabled preparation shell. The source and both
+      # security/functional specs must exist, remain dependency-free and execute explicitly.
+      - name: ADR014-PE-06A disabled local evidence harness tests
+        run: |
+          cd apps/api
+          source_file=src/scripts/adr014-disabled-local-evidence-harness.ts
+          functional_spec=src/scripts/__tests__/adr014-disabled-local-evidence-harness.spec.ts
+          security_spec=src/scripts/__tests__/adr014-disabled-local-evidence-harness.security.spec.ts
+          for f in "$source_file" "$functional_spec" "$security_spec"; do
+            test -f "$f" || { echo "MISSING ADR014-PE-06A file: $f"; exit 1; }
+          done
+          for pattern in '@nestjs/' '@prisma/' 'node:fs' 'node:path' 'node:http' 'node:https' \
+                         'node:net' 'node:tls' 'AuditService' 'AuditLog' 'prom-client' \
+                         'worker_threads' 'balance-display-shadow-diff' "from 'fs'" 'from "fs"' \
+                         "from 'path'" 'from "path"' "from 'http'" 'from "http"' \
+                         "from 'https'" 'from "https"' "from 'net'" 'from "net"' \
+                         "from 'tls'" 'from "tls"' 'axios' 'fetch(' 'cron' 'bullmq' 'ioredis'; do
+            if grep -F -n "$pattern" "$source_file" "$functional_spec" "$security_spec"; then
+              echo "FORBIDDEN ADR014-PE-06A dependency: $pattern"; exit 1
+            fi
+          done
+          if grep -E -n 'require\.main|process\.argv|process\.env|NestFactory|function[[:space:]]+main|Math\.random|randomUUID|Date\.' "$source_file"; then
+            echo "FORBIDDEN ADR014-PE-06A execution or nondeterminism surface"; exit 1
+          fi
+          if grep -E -n 'tenantId|caseId|debtorId|creditorId|clientId|personId|amount|principal|interest|fee|rawError|stack|reason|metadata' "$source_file"; then
+            echo "FORBIDDEN ADR014-PE-06A payload field"; exit 1
+          fi
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            "$functional_spec" \
+            "$security_spec"
+        working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
       - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
