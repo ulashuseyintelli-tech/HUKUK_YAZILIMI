@@ -517,6 +517,38 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="legal-time-shadow\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # MPB-028(a) PR-3C: Canonical Proceeding-Type and Legal-Period Rule Matrix — tek merkezli
+      # typed süre tablosu + resolver unit/static spec'leri. Aynı CI-coverage silent-skip riski
+      # (bkz. GATE-1/PR-2/PR-3 emsali) baştan önlenmek için bu PR'ın kendi merge'inde eklenmiştir.
+      - name: MPB-028(a) PR-3C proceeding-type rule matrix unit/static tests
+        run: |
+          cd apps/api
+          for f in src/modules/legal-deadline/__tests__/legal-period-rule-matrix.spec.ts \
+                   src/modules/legal-deadline/__tests__/proceeding-classification.service.spec.ts \
+                   src/modules/legal-deadline/__tests__/legal-period-calculation.service.spec.ts \
+                   src/modules/legal-deadline/__tests__/proceeding-classification.static-guard.spec.ts; do
+            test -f "$f" || { echo "MISSING MPB-028(a) PR-3C spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runTestsByPath \
+            src/modules/legal-deadline/__tests__/legal-period-rule-matrix.spec.ts \
+            src/modules/legal-deadline/__tests__/proceeding-classification.service.spec.ts \
+            src/modules/legal-deadline/__tests__/legal-period-calculation.service.spec.ts \
+            src/modules/legal-deadline/__tests__/proceeding-classification.static-guard.spec.ts
+        working-directory: project
+      # MPB-028(a) PR-3C (disposable-DB kısmı): gerçek Postgres'te Case.proceedingType/
+      # rentalType/bankruptcyType/judgmentExecutionType sütunlarından doğru sınıflandırma +
+      # süre hesabı, tenant-isolation ve read-only (satır yazmama) davranışını doğrular.
+      - name: MPB-028(a) PR-3C proceeding-type rule matrix disposable-DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/legal-deadline/__tests__/proceeding-classification.db-gated.integration.spec.ts || \
+            { echo "MISSING MPB-028(a) PR-3C DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="proceeding-classification\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
