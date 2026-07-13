@@ -1299,6 +1299,24 @@ Status: **IMPLEMENTATION AUTHORITY / MASTER STREAM** (owner reconciliation, 2026
 
 **ADR014-PE-06B2 Master Register Closure (2026-07-13):** Default-Disabled Session / Control Observation Producer and Telemetry Mapping Preparation `CLOSED / CANONICAL / PREPARATION-ONLY` oldu. Technical PR #1196; head `ef0c380d3aa94b3d4f9032de4398ff7aa60a3d08`; squash `e3b9639c71943d7ea45be5c27da52d48daa16389`; CI `4/4 SUCCESS`; pre-merge `CLEAN / MERGEABLE`. PE-06B1'in yedi canonical factory'si tek pure producer boundary'sinde aynen kullanılır; producer default `DISABLED`, yalnız explicit `TEST_ONLY` moduyla direct test edilebilir ve production call-site/module wiring taşımaz. Six bounded metric projection mappings are defined; PHASE duration source absent olduğu için sahte süre üretilmeden typed blocker taşınır. PE-05A2 shadow event envelope değişmez; session/control event mapping canonical vocabulary yokluğu nedeniyle typed blocker olarak kalır ve ikinci event sistemi kurulmaz. NO-OP default sink production emission yapmaz; in-memory sink yalnız testtedir. Fact contract, existing metrics/event/correlation/writer contracts, financial/readiness/blocker/API/DTO sonuçları ve authority değişmemiştir; session/environment/dataset execution, persistence ve external egress yoktur. Direct + PE-06B1 tests 50/50, PE-06A/PE-05 regressions 156/156, production TypeScript, changed-file ESLint, exact five-file allowlist, security/cardinality, determinism/immutability ve CI PASS olmuştur. `CCB-001` ve `CAN-CUT-02 OPEN / needs-owner-decision` korunur; representative evidence `ABSENT / BLOCKING`, PR-11 ve runtime cutover `NOT AUTHORIZED`; yeni product backlog ID yoktur. Technical worktree Git kaydı ve local/remote branch'ler temizlenmiş, fakat `C:\Development\HUKUK_YAZILIMI\project\.worktrees\adr014-pe-06b2` Windows long-path hatası nedeniyle fiziksel residue olarak kalmış ve `MR-052 / OPEN / NON-BLOCKING` altında izlenmiştir; recursive delete yapılmamıştır. Canonical successor atanmadığından next eligible task `OWNER DECISION REQUIRED`dır; bu closure yeni workstream açmaz.
 
+**ADR014-PE-06C0 Master Register Closure (2026-07-13):** Canonical session/control
+structured-event vocabulary and phase-timing owner decisions are `CLOSED / CANONICAL / OWNER
+DECISIONS DEFINED` after approved merge. OD-C0-01..18 and the 7/7 mapping matrix are fixed in
+`docs/design/adr-014-session-control-event-vocabulary-phase-timing-decisions.md`. PE-05A2 v1
+remains immutable; a backward-compatible `event_version=2` / `event_profile=SESSION_CONTROL`
+profile uses the same canonical envelope family and creates no second event system. PE-06B1 facts
+remain clock-free and unchanged. The future local session orchestrator owns monotonic phase timing
+and supplies immutable duration context; fact factory, mapper and producer do not invent time.
+PE-06C1 is limited to pure default-disabled mappings, v1/v2 compatibility and security tests,
+session-counter mapping, phase-duration context/validation and typed source-absent blockers.
+Production call-sites, metric/event emission, activation, timeout/cancellation behavior, session
+execution, control mutation, persistence, external egress, data/evidence execution and authority
+remain excluded. No new backlog ID is created; `CCB-001` and `CAN-CUT-02 OPEN /
+needs-owner-decision` remain unchanged. Representative evidence is `ABSENT / BLOCKING`; PR-11 and
+runtime cutover remain `NOT AUTHORIZED`. Existing maintenance records, including MR-052, remain
+untouched. The single next eligible task is `ADR014-PE-06C1 — Default-Disabled Observation
+Contract Completion`, requiring separate task authorization.
+
 ---
 ## D6 Domain — Borçlu Çapraz-Dosya Bildirimi & İlgili Framework'ler (2026-07-04, GO-ANALYZE + owner ratifikasyonu)
 
