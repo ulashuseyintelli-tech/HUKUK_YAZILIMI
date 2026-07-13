@@ -618,6 +618,37 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="proceeding-classification\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # MPB-028(a) PR-4 (owner revizyonu 2026-07-14 — "PR-4 dar düzeltme"): Consumer-by-Consumer
+      # Read-Only Cutover — kesinleştirme talebi uygunluk süre hesabını (finalizationRequest-
+      # EligibleDate/finalizationEligibilitySource) LEGAL_TIME_CUTOVER flag'i altında kanonik
+      # hukuki süre motoruna yönlendirir. `finalizationDate` (LEGACY PROJECTION — GERÇEK kesinleşme olgusu
+      # DEĞİL, itiraz/durdurucu-etki fact'i henüz kanonik olarak modellenmediği için) bu PR'da
+      # hiçbir canonical hesapla doldurulmaz, flag'den bağımsız kalır; flag açıkken UI ASLA
+      # "Kesinleşti" hükmü üretmez. Aynı CI-coverage silent-skip riski (bkz. GATE-1/PR-2/PR-3/
+      # PR-3C emsali) baştan önlenmek için bu PR'ın kendi merge'inde eklenmiştir.
+      - name: MPB-028(a) PR-4 finalizationDate cutover unit tests
+        run: |
+          cd apps/api
+          test -f src/modules/debtor/__tests__/debtor-finalization-cutover.spec.ts || \
+            { echo "MISSING MPB-028(a) PR-4 spec: debtor-finalization-cutover.spec.ts"; exit 1; }
+          npx jest --ci --forceExit --runTestsByPath \
+            src/modules/debtor/__tests__/debtor-finalization-cutover.spec.ts
+        working-directory: project
+      # MPB-028(a) PR-4 (disposable-DB kısmı): gerçek Postgres'te CaseDebtor -> Tebligat köprüsü
+      # (caseDebtorId) + LegalPeriodCalculationService zincirinin GERÇEK servislerle (mock değil)
+      # doğru enforcementEligibilityDate/enforcementEligibilitySource ürettiğini, finalizationDate'e
+      # HİÇ dokunmadığını ve tenant-isolation'ı doğrular.
+      - name: MPB-028(a) PR-4 finalizationDate cutover disposable-DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/debtor/__tests__/debtor-finalization-cutover.db-gated.integration.spec.ts || \
+            { echo "MISSING MPB-028(a) PR-4 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="debtor-finalization-cutover\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.

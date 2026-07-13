@@ -427,8 +427,32 @@ export function DebtorDetailDrawer({
                           })}
                         </div>
                       </div>
-                      <FinalizationCountdown deliveredAt={debtor.service.deliveredAt} />
+                      {/* MPB-028(a) PR-4 (owner kararı, 2026-07-14): finalizationDate bir LEGACY
+                          COMPATIBILITY alanıdır, GERÇEK kesinleşme olgusu değildir. Flag
+                          açıkken (finalizationEligibilitySource !== LEGACY) bu "Kesinleşti"
+                          göstergesi ARTIK HİÇ render edilmez — yalnız flag kapalı/backward-
+                          compat durumunda (mevcut davranış birebir korunur). */}
+                      {(!debtor.finalizationEligibilitySource ||
+                        debtor.finalizationEligibilitySource === "LEGACY") && (
+                        <FinalizationCountdown deliveredAt={debtor.service.deliveredAt} />
+                      )}
                     </div>
+                    {/* Flag açıkken ayrı ve açıkça etiketlenmiş, nötr bir "kesinleştirme talebi
+                        uygunluğu" (read-only projection) göstergesi gösterilir; GERÇEK
+                        finalizationDate ile ASLA karıştırılmaz, "Kesinleşti" ifadesi
+                        KULLANILMAZ. */}
+                    {debtor.finalizationEligibilitySource &&
+                      debtor.finalizationEligibilitySource !== "LEGACY" && (
+                        <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-amber-200">
+                          <div className="text-[9px] text-slate-500 font-medium uppercase tracking-wide">
+                            Kesinleştirme Talebi Uygunluğu
+                          </div>
+                          <FinalizationRequestEligibilityIndicator
+                            finalizationRequestEligibleDate={debtor.finalizationRequestEligibleDate}
+                            finalizationEligibilitySource={debtor.finalizationEligibilitySource}
+                          />
+                        </div>
+                      )}
                   </div>
                 )}
 
@@ -760,16 +784,17 @@ function AssetBadge({
   );
 }
 
-// Kesinleşme Geri Sayımı
+// Kesinleşme Geri Sayımı (LEGACY) — deliveredAt'ten +7 gün, GERÇEK kesinleşme olgusu
+// (owner kararı, 2026-07-14): bu hesap flag'den bağımsızdır, HİÇ DEĞİŞMEZ.
 function FinalizationCountdown({ deliveredAt }: { deliveredAt: string }) {
   const delivered = new Date(deliveredAt);
   const finalization = new Date(delivered);
   finalization.setDate(finalization.getDate() + 7); // İlamsız icra için 7 gün
-  
+
   const now = new Date();
   const diffMs = finalization.getTime() - now.getTime();
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  
+
   if (diffDays <= 0) {
     return (
       <div className="text-right">
@@ -782,9 +807,9 @@ function FinalizationCountdown({ deliveredAt }: { deliveredAt: string }) {
       </div>
     );
   }
-  
+
   const urgencyColor = diffDays <= 2 ? "bg-red-500" : diffDays <= 5 ? "bg-amber-500" : "bg-blue-500";
-  
+
   return (
     <div className="text-right">
       <div className={`px-3 py-1.5 ${urgencyColor} text-white rounded-lg text-sm font-bold`}>
@@ -792,6 +817,64 @@ function FinalizationCountdown({ deliveredAt }: { deliveredAt: string }) {
       </div>
       <div className="text-xs text-slate-500 mt-1">
         Kesinleşme: {finalization.toLocaleDateString("tr-TR")}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * MPB-028(a) PR-4 (owner revizyonu, 2026-07-14 — "PR-4 dar düzeltme") — Kesinleştirme Talebi
+ * Uygunluk Göstergesi. `finalizationRequestEligibleDate`, GERÇEK bir kesinleşme OLGUSU
+ * DEĞİLDİR — yalnız kanonik hukuki süre motorunun ürettiği bir SÜRE HESABIDIR; itiraz/
+ * durdurucu-etki fact'i henüz kanonik olarak modellenmediği için bu gösterge ASLA
+ * "Kesinleşti"/"Kesinleşme tarihi" YAZMAZ, yalnız nötr "kesinleştirme talebi için uygun
+ * tarih" bağlamında bir tarih/gün sayısı gösterir. UNRESOLVED'da tahmini bir tarih ASLA
+ * üretilmez (fail-closed).
+ */
+function FinalizationRequestEligibilityIndicator({
+  finalizationRequestEligibleDate,
+  finalizationEligibilitySource,
+}: {
+  finalizationRequestEligibleDate?: string;
+  finalizationEligibilitySource: "LEGACY" | "CANONICAL" | "UNRESOLVED";
+}) {
+  if (finalizationEligibilitySource === "UNRESOLVED" || !finalizationRequestEligibleDate) {
+    return (
+      <div className="text-right">
+        <div className="px-3 py-1.5 bg-slate-400 text-white rounded-lg text-sm font-bold">
+          Hesaplanamadı
+        </div>
+        <div className="text-xs text-slate-500 mt-1">Kesinleştirme talebi için uygunluk belirsiz</div>
+      </div>
+    );
+  }
+
+  const eligibleDate = new Date(finalizationRequestEligibleDate);
+  const now = new Date();
+  const diffDays = Math.ceil((eligibleDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 0) {
+    return (
+      <div className="text-right">
+        <div className="px-3 py-1.5 bg-blue-500 text-white rounded-lg text-sm font-bold">
+          Kesinleştirme talebi için uygun tarih
+        </div>
+        <div className="text-xs text-blue-600 mt-1">
+          {eligibleDate.toLocaleDateString("tr-TR")}
+        </div>
+      </div>
+    );
+  }
+
+  const urgencyColor = diffDays <= 2 ? "bg-red-500" : diffDays <= 5 ? "bg-amber-500" : "bg-blue-500";
+
+  return (
+    <div className="text-right">
+      <div className={`px-3 py-1.5 ${urgencyColor} text-white rounded-lg text-sm font-bold`}>
+        Kesinleştirme talebine {diffDays} gün
+      </div>
+      <div className="text-xs text-slate-500 mt-1">
+        Uygun tarih: {eligibleDate.toLocaleDateString("tr-TR")}
       </div>
     </div>
   );

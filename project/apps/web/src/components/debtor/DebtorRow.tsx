@@ -120,11 +120,13 @@ export function DebtorRow({ debtor, onClick }: DebtorRowProps) {
       </div>
 
       {/* Service status badge - renk ile süreç yönetimi */}
-      <ServiceStatusBadge 
-        status={debtor.serviceStatus} 
+      <ServiceStatusBadge
+        status={debtor.serviceStatus}
         serviceLabel={debtor.serviceLabel}
         finalizationDate={debtor.finalizationDate}
-        size="sm" 
+        finalizationRequestEligibleDate={debtor.finalizationRequestEligibleDate}
+        finalizationEligibilitySource={debtor.finalizationEligibilitySource}
+        size="sm"
       />
 
       {/* Alert badge */}

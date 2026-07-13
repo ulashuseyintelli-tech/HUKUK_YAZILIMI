@@ -16,17 +16,21 @@ import { CaseDebtorLifecycleGuardModule } from "../case-debtor-lifecycle-guard/c
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
 import { AuditModule } from "../audit/audit.module";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
+import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module";
 
 @Module({
   // G3d: ThirdPartyService alacak haczi tahsilatını kanonik CollectionService'ten yansıtır.
   // P2b-2b-1: CaseDebtorController'da EDIT_PARTIES observe hook için GuidedOpenObserveService.
   // Task D1A: AuditModule (create/update/delete audit) + OfficeApprovalModule (delete capability gate).
+  // MPB-028(a) PR-4: LegalDeadlineModule — DebtorService'in LEGAL_TIME_CUTOVER flag'i altında
+  // kanonik finalizationDate hesabı için LegalPeriodCalculationService'e ihtiyacı var.
   imports: [
     CollectionModule,
     CaseDebtorLifecycleGuardModule,
     PermissionDiagnosticsModule,
     AuditModule,
     OfficeApprovalModule,
+    LegalDeadlineModule,
   ],
   controllers: [
     DebtorController,
