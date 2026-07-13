@@ -325,6 +325,29 @@ jobs:
             src/scripts/__tests__/adr014-local-session-orchestrator-dry-validation.spec.ts \
             src/scripts/__tests__/adr014-local-session-orchestrator-dry-validation.security.spec.ts
         working-directory: project
+      # ADR014-REP-01A validates run-specific owner references only. It cannot access data,
+      # execute the runner, emit telemetry or promote evidence/PR-11/runtime authority.
+      - name: ADR014-REP-01A run-specific authorization package tests
+        run: |
+          cd apps/api
+          source_file=src/scripts/adr014-run-specific-authorization-package.ts
+          functional_spec=src/scripts/__tests__/adr014-run-specific-authorization-package.spec.ts
+          security_spec=src/scripts/__tests__/adr014-run-specific-authorization-package.security.spec.ts
+          for f in "$source_file" "$functional_spec" "$security_spec"; do
+            test -f "$f" || { echo "MISSING ADR014-REP-01A file: $f"; exit 1; }
+          done
+          if grep -E -n '@nestjs/|@prisma/|node:(fs|http|https|net|tls|dgram)|process\.(env|argv)|NestFactory|PrismaClient|fetch\(|axios|console\.|AuditLog|AuditService|prom-client|setTimeout|setInterval|function[[:space:]]+main|require\.main' "$source_file"; then
+            echo "FORBIDDEN ADR014-REP-01A runtime, persistence, egress or activation surface"; exit 1
+          fi
+          if grep -E -n 'tenantId|caseId|debtorId|creditorId|clientId|personId|rawError|stack|arbitraryMetadata' "$source_file"; then
+            echo "FORBIDDEN ADR014-REP-01A business or sensitive payload field"; exit 1
+          fi
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            "$functional_spec" \
+            "$security_spec" \
+            src/scripts/__tests__/adr014-disabled-local-evidence-harness.spec.ts \
+            src/scripts/__tests__/adr014-local-read-only-representative-runner.spec.ts
+        working-directory: project
       # ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
       # mapper regression explicitly; rename/removal/zero-match must fail closed.
       - name: ADR-014 PR-1B reversal-netting unit and orchestration tests
