@@ -310,6 +310,21 @@ describe('BalanceDisplayShadowDiffService', () => {
     expect(metrics.recordCalculationDuration).toHaveBeenCalledWith('SHADOW_COMPARE', 'SUCCESS', expect.any(Number));
   });
 
+  it('metric failure durumunda financial/readiness/API reportunu degistirmez', async () => {
+    const baseline = await makeService().service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+    const throwingMetrics = {
+      recordCalculationDuration: jest.fn(() => { throw new Error('metric sink down'); }),
+      recordReport: jest.fn(() => { throw new Error('metric sink down'); }),
+    } as unknown as BalanceDisplayShadowDiffMetrics;
+    const { service } = makeService(legacySummary(), canonicalBalance(), throwingMetrics);
+
+    const actual = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(actual).toEqual(baseline);
+    expect(throwingMetrics.recordCalculationDuration).toHaveBeenCalledTimes(3);
+    expect(throwingMetrics.recordReport).toHaveBeenCalledTimes(1);
+  });
+
   it('legacy calculation-summary ile hardened balance/display DTOsunu shadow-only raporda yan yana üretir', async () => {
     const { service, caseService, caseBalance } = makeService();
 
