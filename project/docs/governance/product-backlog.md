@@ -1379,7 +1379,7 @@ representative evidence `ABSENT / BLOCKING`, PR-11 and runtime cutover `NOT AUTH
 pre-evidence observability preparation is complete. Next: `OWNER DECISION REQUIRED —
 Representative Evidence Preparation`; this closure does not authorize preparation or execution.
 
-**ADR014-REP-01B Master Register Closure (2026-07-13; governance PR pending):** Local Read-Only
+**ADR014-REP-01B Master Register Closure (2026-07-13; governance PR #1213):** Local Read-Only
 Representative Evidence Runner is `CLOSED / CANONICAL / EXECUTION-MECHANISM-ONLY` after technical
 PR #1211 (head `e34faea3a45127edd29d15cb5b7bd7f91448ca53`; squash
 `a4c72414ab3cea26e36cd9b6c42735024c01db7b`; CI `4/4 SUCCESS`; pre-merge `CLEAN /

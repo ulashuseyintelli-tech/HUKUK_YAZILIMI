@@ -89,7 +89,7 @@
 > CAN-CUT-02 remains open, and PR-11/runtime cutover remain NOT AUTHORIZED. Single next eligible
 > task: `ADR014-REP-01A — Run-Specific Authorization Package Completion`; REP-02 is not eligible.
 
-> **v2.25 governance closure PR:** pending.
+> **v2.25 governance closure PR:** #1213.
 
 > **Amaç:** ADR-014 canonical legal calculation core cutover'ının implementasyonunu, riski en düşük olacak şekilde küçük ve doğrulanabilir PR'lara bölen **baseline yürütme yol haritası**. Bu bir program-yönetimi artefaktıdır — analiz değildir. Revizyonlar v2/v3 olarak işlenir; uygulama ekipleri için referans plan budur.
 

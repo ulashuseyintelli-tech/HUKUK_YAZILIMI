@@ -165,7 +165,7 @@ execution is authorized implicitly. Current execution plan:
 **ADR-014 post-REP-01B routing override (2026-07-13):** ADR014-REP-01B is `CLOSED /
 CANONICAL / EXECUTION-MECHANISM-ONLY` after technical PR #1211 (head
 `e34faea3a45127edd29d15cb5b7bd7f91448ca53`; squash
-`a4c72414ab3cea26e36cd9b6c42735024c01db7b`) and the separate governance closure PR. The exact
+`a4c72414ab3cea26e36cd9b6c42735024c01db7b`) and governance PR #1213. The exact
 local runner remains default-disabled and has no production call-site. It requires run-bound
 canonical/environment/session/manifest/access/execution references, enforces database-level
 `REPEATABLE READ / READ ONLY`, has no external-egress dependency and writes only a non-official
