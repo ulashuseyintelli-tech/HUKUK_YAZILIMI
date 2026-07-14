@@ -68,6 +68,7 @@ export class UyapCaseMapperService {
         },
         lawyers: { include: { lawyer: true } },
         claimItems: true,
+        caseInstruments: { select: { id: true } },
         dues: true,
       },
     });
@@ -75,6 +76,26 @@ export class UyapCaseMapperService {
     if (!caseData) throw new Error('Case bulunamadı');
     if (!caseData.debtors?.length) {
       throw new BadRequestException('Operasyonel çıktı için aktif borçlu bulunmuyor');
+    }
+
+    const takipTuru = this.mapTakipTuru(caseData.type, caseData.subType);
+    const hasInstrumentClaim = caseData.claimItems.some(
+      (item) =>
+        Boolean(item.instrumentId) ||
+        item.sourceDocumentType === 'CEK' ||
+        item.sourceDocumentType === 'SENET',
+    );
+    const requiresInstrumentOutput =
+      takipTuru.startsWith('KAMBIYO_') ||
+      caseData.caseInstruments.length > 0 ||
+      hasInstrumentClaim;
+
+    if (requiresInstrumentOutput) {
+      throw new BadRequestException({
+        code: 'LEGACY_UYAP_INSTRUMENT_DATA_UNAVAILABLE',
+        message:
+          'Legacy UYAP export yolu kambiyo enstrüman verisini güvenli biçimde üretemiyor',
+      });
     }
 
     // Tarafları oluştur
@@ -116,7 +137,7 @@ export class UyapCaseMapperService {
     const takipTalebi: UyapTakipTalebi = {
       dosyaBelirleyici: caseData.fileNumber,
       dosyaTuru: this.mapDosyaTuru(caseData.type),
-      takipTuru: this.mapTakipTuru(caseData.type, caseData.subType),
+      takipTuru,
       takipYolu: this.mapTakipYolu(caseData.executionPath),
       takipSekli: caseData.type?.includes('ILAMLI') ? 'ILAMLI' : 'ILAMSIZ',
       madde48_4Aciklama: this.generate48_4Aciklama(alacakKalemleri),
