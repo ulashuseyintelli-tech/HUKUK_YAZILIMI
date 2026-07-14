@@ -9,7 +9,7 @@ Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; 
                           yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
                           ile aynı sınıf ve sınır)
 Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
-                          onaylandı; COL/OD-05 RECORDED, kalan 20 karar OPEN
+                          onaylandı; COL/OD-05 ve COL/OD-18 RECORDED, kalan 19 karar OPEN
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
 IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
@@ -171,12 +171,26 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 ## KUYRUK E — İŞLETİM (teknik değil, sahiplik)
 
 ### COL/OD-18 — Client-settlement lane ataması (TM3 ↔ handoff çelişkisi)
+- STATUS: **RECORDED** (2026-07-15) — authoritative kayıt:
+  `decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18`.
 - SORU: CollectionDisposition/ClientPayable/ClientPayout/ClientOffset uygulama hattı Claude'da
   mı kalır (TM3 §5/§11 + D2, CURRENT-BINDING) yoksa Codex para hattına mı devredilir
   (Desktop 01 §0.3 / 03 §2, PROPOSED)?
 - KANIT: COL-BOUNDARY-CONFLICT-001 (COLLECTION-GOVERNANCE §4.7).
 - BAĞIMLILIK: — (işletim kararı; teknik ön koşulu yok). ETKİ: tüm W-SET lane'leri, worktree
   adlandırması, dosya sahiplik matrisi.
+- KARAR:
+  - `CollectionDisposition`, `ClientPayable`, `ClientPayout`, `ClientOffset` ve
+    `project/apps/api/src/modules/client-settlement/` execution lane'i **Claude** olarak kalır;
+    W1.3 Payout Replay Harness sahibi Claude'dur.
+  - Aynı `client-settlement` servisleri, testleri ve W1.3'e özgü fixture/harness yüzeyinde
+    paralel yazım **PROHIBITED**'dır. Aynı anda yalnız bir aktif writer ve bir execution
+    worktree bulunur; diğer ajanlar aynı yüzeyde eşzamanlı edit, rebase, commit veya merge yapmaz.
+  - W1.3 yalnız sequential/concurrent replay, idempotency ve concurrency evidence üretir.
+    Production payout remediation, production davranış değişikliği, schema, migration ve para
+    onay politikası kapsam dışıdır.
+- IMPLEMENTATION EFFECT: W1.3, bu kayıt approved merge ile canonical olduktan sonra ayrı owner
+  `GO-IMPLEMENT` için hazırdır. Bu kayıt tek başına implementation authority üretmez.
 
 ### COL/OD-21 — Money-out idempotency kontratının text-ratification'ı
 - SORU: Runtime'da MEVCUT kontrat (F-12) canonical governance metnine bağlanacak mı?
@@ -190,7 +204,7 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 ```text
 KÖK (bağımsız başlar):
   COL/OD-01 (adjustment)   COL/OD-03 (effective-date)   COL/OD-05 (audit/correlation — RECORDED)
-  COL/OD-11 (UYAP route)   COL/OD-18 (lane)             COL/OD-21 (idempotency text)
+  COL/OD-11 (UYAP route)   COL/OD-18 (lane — RECORDED)  COL/OD-21 (idempotency text)
 
 COL/OD-01 ─┬─> COL/OD-07 (feragat/indirim/sulh) ──> COL/OD-08 (satisfaction/re-open)
            ├─> COL/OD-09 (partial refund/reversal) ─┬─> COL/OD-10 (downstream reversal)
@@ -205,7 +219,7 @@ COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
 ```
 
 Önerilen oturum sırası (yalnız sıralama önerisidir, karar değildir):
-1) COL/OD-18 + COL/OD-21 (hızlı, bağımsız, işletimi kilitler)
+1) COL/OD-21 (COL/OD-18 RECORDED — 2026-07-15; client-settlement lane'i kilitlendi)
 2) COL/OD-01, -03 (COL/OD-05 RECORDED — 2026-07-14)
 3) COL/OD-04 (race harness kanıtı geldikten sonra)
 4) Kuyruk B → Kuyruk C.
