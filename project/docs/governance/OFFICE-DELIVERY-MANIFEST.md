@@ -135,7 +135,7 @@ Bu satır tek başına global triage/backlog yetkisi üretmez.
 | SLICE-03 | DEFERRED | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | — | — | — | — | T0.3.1 REV2 | Karar kapalı, scope minimum-safe-slice'a daraltılmalı |
 | CANDIDATE-A | **CANONICAL** | — | OFF/OD-14 (CLOSED) | STF-PRD-SES-001 | SELECTED (2026-07-14) | **CONSUMED** (2026-07-14) | WIRING | RATIFIED (2026-07-14) | GO-ANALYZE + Contract Draft/Validation + GO-IMPLEMENT | Offboarding → User Deactivation Wiring — bkz. §4b. PR #1239, branch commit `55dc2374`, squash SHA `b0ce36db`, CI 4/4 PASS |
 | CANDIDATE-B | **DEFERRED** (2026-07-14) | NOT_READY | OFF/OD-15 (CLOSED) | STF-PRD-SES-002 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 1 decomposition) | JWT/Session Revocation Mechanism (tokenVersion) — bkz. §4b. DEFERRED gerekçesi: CANDIDATE-A ile WAVE 1'in acil offboarding riski kapatıldı; bu, geniş auth/session altyapısı gerektiren ayrı bir iş |
-| CANDIDATE-C | CANDIDATE | **READY_FOR_CONTRACT** (2026-07-14) | OFF/OD-05, OFF/OD-09 (ikisi de CLOSED) | STF-PRD-RBAC-001 | **SELECTED** (2026-07-14) | NONE | **EXTENSION** | NOT_DRAFTED | GO-ANALYZE (WAVE 2 decomposition) | Detay: private evidence (bkz. §4c) |
+| CANDIDATE-C | CANDIDATE | **READY_FOR_CONTRACT** (2026-07-14) | OFF/OD-05, OFF/OD-09 (ikisi de CLOSED) | STF-PRD-RBAC-001 | **SELECTED** (2026-07-14) | NONE | **HARDENING** (owner re-scope 2026-07-14; eski EXTENSION/"enforcement mode" SUPERSEDED) | NOT_DRAFTED | GO-ANALYZE (WAVE 2 decomposition) + Owner Re-scope | **Canonical Actor Capacity Read Consolidation** — objective: authorization davranışını değiştirmeden actor-capacity okuma desenini tek canonical kaynağa taşımak. Detay: §4c + private evidence |
 | CANDIDATE-D | **PRODUCT_DECISION_REQUIRED** | NOT_READY | — | STF-PRD-RBAC-001 (dolaylı) | **NOT_A_SELECTABLE_SLICE** (2026-07-14) | NONE | — | — | GO-ANALYZE (WAVE 2 decomposition) | Ürün niyeti netleşmeden Contract açılamaz. Detay: private evidence (bkz. §4c) |
 | CANDIDATE-E | **BLOCKED** | NOT_READY | OFF/OD-05, OFF/OD-09 (CLOSED) + OFF/OD-08 (**OPEN — blocker**) | STF-PRD-RBAC-001 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 2 decomposition) | Blocker: OFF/OD-08 OPEN. Detay: private evidence (bkz. §4c) |
 
@@ -216,8 +216,17 @@ containment kararı) public manifest'ten çıkarılmıştır.
 
 Tutulan güvenli seviye — yalnız governance metadata (bkz. §4 Slice Register):
 
-CANDIDATE-C   implementationCategory EXTENSION · ownerSelectionStatus SELECTED ·
-              implementationAuthorization NONE · readinessStatus READY_FOR_CONTRACT
+CANDIDATE-C   name: Canonical Actor Capacity Read Consolidation (owner re-scope 2026-07-14) ·
+              implementationCategory HARDENING · ownerSelectionStatus SELECTED ·
+              implementationAuthorization NONE · readinessStatus READY_FOR_CONTRACT ·
+              contractStatus NOT_DRAFTED
+              OWNER RE-SCOPE (2026-07-14, APPROVED): Eski "resolver enforcement mode" hedefi
+              SUPERSEDED BY OWNER RE-SCOPE. #503 observe-only invariant KORUNUR (enforce/assert
+              modu EKLENMEZ, permission semantiği değişmez). Yeni objective: authorization
+              davranışını birebir koruyarak, aynı actor-capacity okuma desenini tek canonical
+              kaynağa taşıyan davranış-nötr HARDENING. Prior Contract Draft verdict: NOT READY —
+              SUPERSEDED, tarihsel evidence olarak korunur. Ayrıntılı teknik gerekçe (dosya/metot
+              ismi, consumer sayısı, mekanizma detayı) yalnız private evidence'ta — public'e YAZILMAZ.
 CANDIDATE-D   PRODUCT DECISION REQUIRED · NOT A SELECTABLE SLICE
 CANDIDATE-E   implementationCategory NEW_SUBSYSTEM · status BLOCKED ·
               blocker OFF/OD-08 OPEN
@@ -263,9 +272,11 @@ WAVE 1 — Session/Lifecycle Safety              [P1, karar TAM kapalı]
 
 WAVE 2 — Authority/RBAC Consistency            [P2, karar TAM kapalı]
   Kapsam: STF-PRD-RBAC-001 (OD-05 + OD-09 CLOSED_CANONICAL)
-  status: CANDIDATE DECOMPOSITION COMPLETE (2026-07-14) — CANDIDATE-C SELECTED
+  status: CANDIDATE DECOMPOSITION COMPLETE (2026-07-14) — CANDIDATE-C SELECTED (owner re-scope 2026-07-14)
   SONUÇ: RBAC-001 TEK slice ÜRETMEDİ — 3 candidate, 3 farklı disposition:
-    CANDIDATE-C (EXTENSION) → SELECTED, readinessStatus READY_FOR_CONTRACT
+    CANDIDATE-C (HARDENING) → SELECTED, readinessStatus READY_FOR_CONTRACT — owner re-scope
+      2026-07-14: "Canonical Actor Capacity Read Consolidation"; eski EXTENSION/enforcement-mode
+      hedefi SUPERSEDED, #503 observe-only invariant korunur (davranış-nötr)
     CANDIDATE-D → PRODUCT DECISION REQUIRED / NOT A SELECTABLE SLICE
     CANDIDATE-E (NEW_SUBSYSTEM) → BLOCKED (blocker: OFF/OD-08 OPEN)
   Detay: §4 Slice Register + §4c (teknik mekanizma detayı redakte — bkz. §4c gerekçe)
@@ -295,6 +306,9 @@ status (CANDIDATE-B)                      : DEFERRED (2026-07-14) — bkz. §4b 
 ownerSelectionStatus (CANDIDATE-B)        : NOT_SELECTED (değişmedi)
 contractStatus (CANDIDATE-B)              : NOT_DRAFTED (değişmedi)
 implementationAuthorization (CANDIDATE-B) : NONE (değişmedi)
+name (CANDIDATE-C)                        : Canonical Actor Capacity Read Consolidation
+                                             (owner re-scope 2026-07-14; eski "enforcement mode" SUPERSEDED)
+implementationCategory (CANDIDATE-C)      : HARDENING (eski EXTENSION SUPERSEDED)
 ownerSelectionStatus (CANDIDATE-C)        : SELECTED (2026-07-14)
 readinessStatus (CANDIDATE-C)             : READY_FOR_CONTRACT (2026-07-14)
 contractStatus (CANDIDATE-C)              : NOT_DRAFTED
@@ -414,4 +428,23 @@ yalnız ilgili brief'lerin SCOPE'unda açıkça verilen alanlar işlendi.
 - Başka durum (CANDIDATE-C/D/E, WAVE 2/3/4+) değiştirildi  NO (yalnız CANDIDATE-B'nin kendi
   mi:                                                      status/REASON alanı, §7'de yalnız
                                                             WAVE 1'in kendi CANDIDATE-B satırı)
+- CANDIDATE-C owner re-scope işlendi mi (§4/§4c/§7/§8):   YES — name→"Canonical Actor Capacity
+                                                           Read Consolidation", category
+                                                           EXTENSION→HARDENING
+- Eski "resolver enforcement mode" hedefi SUPERSEDED       YES — §4/§4c/§7'de "SUPERSEDED BY
+  BY OWNER RE-SCOPE olarak kaydedildi mi:                  OWNER RE-SCOPE" birebir
+- #503 observe-only invariant korunduğu belirtildi mi:    YES — §4c, "enforce/assert modu
+                                                           EKLENMEZ, permission semantiği değişmez"
+- Yeni objective (davranış-nötr, tek canonical kaynak)    YES — §4/§4c/§7
+  kaydedildi mi:
+- Korunan alanlar (SELECTED/READY_FOR_CONTRACT/            YES — §4 satırı + §8, hiçbiri
+  NOT_DRAFTED/NONE) değişmeden kaldı mı:                   değiştirilmedi
+- NEXT ELIGIBLE UNIT (CANDIDATE-C — Contract Draft)        YES — §8, hiç değiştirilmedi
+  korundu mu:
+- PUBLIC CONTENT RULE: dosya/metot ismi, consumer sayısı,  NO — hiçbiri eklenmedi; yalnız
+  bypass/mekanizma ayrıntısı manifest'e eklendi mi:        redakte governance metadata
+                                                           (grep ile doğrulandı)
+- Contract başlatıldı mı (CANDIDATE-C):                    NO
+- Kod/schema/migration değişikliği:                       NONE
+- Başka candidate/wave durumu değiştirildi mi:             NO (yalnız CANDIDATE-C re-scope alanları)
 ```
