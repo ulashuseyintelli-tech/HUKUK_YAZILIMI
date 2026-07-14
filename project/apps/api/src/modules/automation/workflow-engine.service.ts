@@ -11,6 +11,7 @@ import { RuleEngine, RuleContext, RuleResult } from "./rule-engine.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { CasePolicyEngine } from "../policy-engine/case-policy-engine.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
+import { LegalPeriodCalculationService } from "../legal-deadline/legal-period-calculation.service";
 
 // Workflow stage to expense stage code mapping
 const STAGE_TO_EXPENSE_CODE: Partial<Record<WorkflowStage, string>> = {
@@ -58,6 +59,8 @@ export class WorkflowEngine {
     private expenseRequestService: ExpenseRequestService,
     @Optional() @Inject(forwardRef(() => CasePolicyEngine))
     private casePolicyEngine?: CasePolicyEngine,
+    @Optional()
+    private legalPeriodCalculationService?: LegalPeriodCalculationService,
   ) {
     if (this.casePolicyEngine) {
       this.logger.log('WorkflowEngine: CasePolicyEngine entegrasyonu aktif');
@@ -405,14 +408,21 @@ export class WorkflowEngine {
 
     switch (caseData.workflowStage) {
       case WorkflowStage.PAYMENT_ORDER:
-      case WorkflowStage.WAITING_RESPONSE:
-        // Tebligattan 10 gün sonra
+      case WorkflowStage.WAITING_RESPONSE: {
+        const canonicalDate = await this.computeCanonicalNextActionTime(tenantId, caseId);
+        if (canonicalDate) {
+          return canonicalDate;
+        }
+        // Legacy fallback — tebligattan 10 gün sonra. MPB-028(a) PR-5 owner kararı:
+        // flag kapalı, servis inject edilmemiş, Tebligat yok veya kanonik motor UNRESOLVED
+        // dönerse NotificationQueue yalnız legacy fallback olarak bu davranışı korur.
         if (lastNotification?.deliveredAt) {
           const nextDate = new Date(lastNotification.deliveredAt);
           nextDate.setDate(nextDate.getDate() + 10);
           return nextDate;
         }
         break;
+      }
 
       case WorkflowStage.ENFORCEMENT:
         // 1 gün sonra banka sorgulama
@@ -428,6 +438,44 @@ export class WorkflowEngine {
     }
 
     return null;
+  }
+
+  private isLegalTimeCutoverEnabled(): boolean {
+    return process.env.LEGAL_TIME_CUTOVER === "true";
+  }
+
+  /**
+   * MPB-028(a) PR-5 (owner GO-IMPLEMENT, 2026-07-14 — "PR-5 yalnız calculateNextActionTime
+   * kapsamında, NotificationQueue yalnız legacy fallback"). Flag açıkken bu case için en son
+   * Tebligat kaydı üzerinden kanonik LegalPeriodCalculationService'i (PR-3C) çağırır. Tebligat
+   * bulunamazsa, kanonik kural UNRESOLVED dönerse veya flag kapalı/servis inject edilmemişse
+   * null döner — çağıran (calculateNextActionTime) bu durumda legacy NotificationQueue
+   * formülüne düşer (owner kararı: "NotificationQueue yalnız legacy fallback olarak
+   * kalacaktır"). `NotificationService.getPaymentDeadline` (gerçek consumer'ı yok),
+   * `RuleEngine.checkNotificationExpiry`, Scheduler'ın otomatik ENFORCEMENT geçişi ve MTS
+   * bu PR'ın kapsamı DIŞINDADIR (ayrı canonicalization workstream, owner kararıyla
+   * dokunulmaz).
+   */
+  private async computeCanonicalNextActionTime(tenantId: string, caseId: string): Promise<Date | null> {
+    if (!this.isLegalTimeCutoverEnabled() || !this.legalPeriodCalculationService) {
+      return null;
+    }
+
+    const tebligat = await this.prisma.tebligat.findFirst({
+      where: { tenantId, caseId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!tebligat) {
+      return null;
+    }
+
+    const result = await this.legalPeriodCalculationService.computeCanonicalLegalPeriod({
+      tenantId,
+      tebligatId: tebligat.id,
+      caseId,
+    });
+
+    return result.status === "RESOLVED" ? result.nextActionEligibleDate : null;
   }
 
   private mapActionToDecisionType(action: string): DecisionType {
