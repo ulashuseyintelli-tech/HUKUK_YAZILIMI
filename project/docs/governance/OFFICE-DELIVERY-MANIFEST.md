@@ -135,7 +135,7 @@ Bu satır tek başına global triage/backlog yetkisi üretmez.
 | SLICE-03 | DEFERRED | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | — | — | — | — | T0.3.1 REV2 | Karar kapalı, scope minimum-safe-slice'a daraltılmalı |
 | CANDIDATE-A | **CANONICAL** | — | OFF/OD-14 (CLOSED) | STF-PRD-SES-001 | SELECTED (2026-07-14) | **CONSUMED** (2026-07-14) | WIRING | RATIFIED (2026-07-14) | GO-ANALYZE + Contract Draft/Validation + GO-IMPLEMENT | Offboarding → User Deactivation Wiring — bkz. §4b. PR #1239, branch commit `55dc2374`, squash SHA `b0ce36db`, CI 4/4 PASS |
 | CANDIDATE-B | **DEFERRED** (2026-07-14) | NOT_READY | OFF/OD-15 (CLOSED) | STF-PRD-SES-002 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 1 decomposition) | JWT/Session Revocation Mechanism (tokenVersion) — bkz. §4b. DEFERRED gerekçesi: CANDIDATE-A ile WAVE 1'in acil offboarding riski kapatıldı; bu, geniş auth/session altyapısı gerektiren ayrı bir iş |
-| CANDIDATE-C | CANDIDATE | **READY_FOR_CONTRACT** (2026-07-14) | OFF/OD-05, OFF/OD-09 (ikisi de CLOSED) | STF-PRD-RBAC-001 | **SELECTED** (2026-07-14) | NONE | **HARDENING** (owner re-scope 2026-07-14; eski EXTENSION/"enforcement mode" SUPERSEDED) | NOT_DRAFTED | GO-ANALYZE (WAVE 2 decomposition) + Owner Re-scope | **Canonical Actor Capacity Read Consolidation** — objective: authorization davranışını değiştirmeden actor-capacity okuma desenini tek canonical kaynağa taşımak. Detay: §4c + private evidence |
+| CANDIDATE-C | CANDIDATE | **READY_FOR_CONTRACT** (2026-07-14) | OFF/OD-05, OFF/OD-09 (ikisi de CLOSED) | STF-PRD-RBAC-001 | **SELECTED** (2026-07-14) | NONE | **HARDENING** (owner re-scope 2026-07-14; eski EXTENSION/"enforcement mode" SUPERSEDED) | **RATIFIED_WITH_RECORDED_LIMITATIONS** (2026-07-14) | GO-ANALYZE (WAVE 2 decomposition) + Owner Re-scope + Contract Draft/Validation/Ratification | **Canonical Actor Capacity Read Consolidation** — objective: authorization davranışını değiştirmeden actor-capacity okuma desenini tek canonical kaynağa taşımak. Contract RATIFIED (WITH RECORDED LIMITATIONS). Detay: §4c + private evidence |
 | CANDIDATE-D | **PRODUCT_DECISION_REQUIRED** | NOT_READY | — | STF-PRD-RBAC-001 (dolaylı) | **NOT_A_SELECTABLE_SLICE** (2026-07-14) | NONE | — | — | GO-ANALYZE (WAVE 2 decomposition) | Ürün niyeti netleşmeden Contract açılamaz. Detay: private evidence (bkz. §4c) |
 | CANDIDATE-E | **BLOCKED** | NOT_READY | OFF/OD-05, OFF/OD-09 (CLOSED) + OFF/OD-08 (**OPEN — blocker**) | STF-PRD-RBAC-001 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 2 decomposition) | Blocker: OFF/OD-08 OPEN. Detay: private evidence (bkz. §4c) |
 
@@ -219,7 +219,7 @@ Tutulan güvenli seviye — yalnız governance metadata (bkz. §4 Slice Register
 CANDIDATE-C   name: Canonical Actor Capacity Read Consolidation (owner re-scope 2026-07-14) ·
               implementationCategory HARDENING · ownerSelectionStatus SELECTED ·
               implementationAuthorization NONE · readinessStatus READY_FOR_CONTRACT ·
-              contractStatus NOT_DRAFTED
+              contractStatus RATIFIED_WITH_RECORDED_LIMITATIONS (2026-07-14)
               OWNER RE-SCOPE (2026-07-14, APPROVED): Eski "resolver enforcement mode" hedefi
               SUPERSEDED BY OWNER RE-SCOPE. #503 observe-only invariant KORUNUR (enforce/assert
               modu EKLENMEZ, permission semantiği değişmez). Yeni objective: authorization
@@ -227,6 +227,23 @@ CANDIDATE-C   name: Canonical Actor Capacity Read Consolidation (owner re-scope 
               kaynağa taşıyan davranış-nötr HARDENING. Prior Contract Draft verdict: NOT READY —
               SUPERSEDED, tarihsel evidence olarak korunur. Ayrıntılı teknik gerekçe (dosya/metot
               ismi, consumer sayısı, mekanizma detayı) yalnız private evidence'ta — public'e YAZILMAZ.
+
+              CONTRACT STATUS: RATIFIED (2026-07-14) — WITH RECORDED LIMITATIONS
+              BINDING SCOPE (redakte governance metadata):
+                - capacity mapping tek canonical kaynağa taşınır
+                - eşdeğer consumer'lar ve resolver mapping'i buna bağlanır
+                - fetch/query davranışları korunur (yalnız mapping ortaklaşır)
+                - mevcut authorization sonucu değişmez
+                - #503 observe-only invariant korunur (resolver sorgu/metadata/decision/mode/
+                  enforced:false dokunulmaz)
+              RECORDED LIMITATIONS (4):
+                1. Fetch/query katmanı ortaklaştırılmaz (yalnız capacity mapping).
+                2. Runtime Capacity doğrulaması eklenmez.
+                3. Resolver yalnız leaf-mapping için delege edilir.
+                4. Davranış-eşdeğerlik, capacity-kaynak alanlarının non-null schema invariant'ına
+                   bağlıdır (invariant değişirse yeniden doğrulanmalı).
+              Ayrıntılı teknik Contract (kanonik helper imzası, exact affected files, silinecek
+              yerel duplicate'ler, non-null invariant kanıtı) yalnız private evidence'ta — public'e YAZILMAZ.
 CANDIDATE-D   PRODUCT DECISION REQUIRED · NOT A SELECTABLE SLICE
 CANDIDATE-E   implementationCategory NEW_SUBSYSTEM · status BLOCKED ·
               blocker OFF/OD-08 OPEN
@@ -296,7 +313,7 @@ UNMAPPED (owner review required, decision-graph dışı)
 ## 8. NEXT ELIGIBLE UNIT (readiness ≠ authorization)
 
 ```text
-NEXT ELIGIBLE UNIT: CANDIDATE-C — Implementation Contract Draft
+NEXT ELIGIBLE UNIT: CANDIDATE-C — GO-IMPLEMENT (Contract RATIFIED; owner'ın ayrı, açık GO-IMPLEMENT'ı gerekir — bu belge onu üretmez)
 
 status (CANDIDATE-A)                      : CANONICAL (2026-07-14, main @ b0ce36db)
 ownerSelectionStatus (CANDIDATE-A)        : SELECTED (2026-07-14)
@@ -311,8 +328,8 @@ name (CANDIDATE-C)                        : Canonical Actor Capacity Read Consol
 implementationCategory (CANDIDATE-C)      : HARDENING (eski EXTENSION SUPERSEDED)
 ownerSelectionStatus (CANDIDATE-C)        : SELECTED (2026-07-14)
 readinessStatus (CANDIDATE-C)             : READY_FOR_CONTRACT (2026-07-14)
-contractStatus (CANDIDATE-C)              : NOT_DRAFTED
-implementationAuthorization (CANDIDATE-C) : NONE
+contractStatus (CANDIDATE-C)              : RATIFIED_WITH_RECORDED_LIMITATIONS (2026-07-14) — bkz. §4c
+implementationAuthorization (CANDIDATE-C) : NONE (ratifikasyon ≠ GO-IMPLEMENT — değişmedi)
 ownerSelectionStatus (CANDIDATE-D)        : NOT_A_SELECTABLE_SLICE (2026-07-14) — PRODUCT
                                              DECISION REQUIRED
 ownerSelectionStatus (CANDIDATE-E)        : NOT_SELECTED — status BLOCKED (blocker: OFF/OD-08
@@ -320,10 +337,11 @@ ownerSelectionStatus (CANDIDATE-E)        : NOT_SELECTED — status BLOCKED (blo
 ```
 ```text
 NEXT ELIGIBLE ≠ AUTHORIZED.
-CANDIDATE-C artık SELECTED/READY_FOR_CONTRACT olsa bile, bu Contract başlatma yetkisi
-DEĞİLDİR. CANDIDATE-C Contract'ı owner'ın ayrı, açık bir GO'suyla başlar. Bu belge onu
-üretmez. CANDIDATE-B artık owner'ın açık kararıyla DEFERRED (iptal DEĞİL — ayrı bir GO ile
-yeniden açılabilir). CANDIDATE-D/E (WAVE 2) için owner kararı bu belgede hâlâ VARSAYILMADI —
+CANDIDATE-C Contract'ı artık RATIFIED (WITH RECORDED LIMITATIONS) olsa bile, bu GO-IMPLEMENT
+yetkisi DEĞİLDİR. Ratifikasyon yalnız implementasyonu HAZIR kılar; implementasyon owner'ın
+ayrı, açık bir GO-IMPLEMENT'ıyla başlar. Bu belge onu üretmez (implementationAuthorization
+NONE olarak korunur). CANDIDATE-B owner'ın açık kararıyla DEFERRED (iptal DEĞİL — ayrı bir GO
+ile yeniden açılabilir). CANDIDATE-D/E (WAVE 2) için owner kararı bu belgede hâlâ VARSAYILMADI —
 yalnız ilgili brief'lerin SCOPE'unda açıkça verilen alanlar işlendi.
 ```
 
@@ -447,4 +465,22 @@ yalnız ilgili brief'lerin SCOPE'unda açıkça verilen alanlar işlendi.
 - Contract başlatıldı mı (CANDIDATE-C):                    NO
 - Kod/schema/migration değişikliği:                       NONE
 - Başka candidate/wave durumu değiştirildi mi:             NO (yalnız CANDIDATE-C re-scope alanları)
+- CANDIDATE-C contractStatus RATIFIED işlendi mi           YES — NOT_DRAFTED →
+  (§4/§4c/§8):                                             RATIFIED_WITH_RECORDED_LIMITATIONS
+- BINDING SCOPE redakte governance metadata olarak         YES — §4c, 5 madde soyut
+  kaydedildi mi:                                           (mapping tek kaynak / consumer+resolver
+                                                           delege / fetch korunur / auth sonucu
+                                                           değişmez / #503 korunur)
+- 4 RECORDED LIMITATION kaydedildi mi:                     YES — §4c (fetch ortaklaştırılmaz /
+                                                           runtime doğrulama yok / resolver leaf-only /
+                                                           non-null schema invariant bağımlılığı)
+- Korunan alanlar (SELECTED / NONE) değişmedi mi:          YES — §4 satırı + §8, ikisi de korundu
+- NEXT ELIGIBLE UNIT → CANDIDATE-C — GO-IMPLEMENT:         YES — §8 (ratifikasyon ≠ GO-IMPLEMENT
+                                                           açıkça yazıldı, implementationAuthorization
+                                                           NONE korundu)
+- PUBLIC CONTENT RULE (ratifikasyon delta'sı): dosya/metot  NO — hiçbiri eklenmedi; helper adı/imzası,
+  ismi, consumer sayısı, helper imzası, mekanizma detayı   silinecek dosyalar, non-null kolon isimleri
+  eklendi mi:                                              private evidence'ta (grep ile doğrulandı)
+- Kod/schema/migration / implementasyon başlatıldı mı:     NO / NONE
+- Başka candidate (D/E) veya wave durumu değiştirildi mi:  NO (yalnız CANDIDATE-C ratifikasyon alanları)
 ```
