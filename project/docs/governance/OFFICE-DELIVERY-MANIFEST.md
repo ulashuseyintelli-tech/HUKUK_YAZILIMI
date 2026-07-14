@@ -28,7 +28,10 @@ PHASE 1 (Incremental Canonical Slice Delivery)
  └─ WAVE                (sıralama konteyneri — hangi bölüm önce yürütülür)
      └─ SLICE            readinessStatus{NOT_READY,NEXT_ELIGIBLE} ·
                           ownerSelectionStatus{NOT_SELECTED,SELECTED} ·
-                          implementationAuthorization{NONE,GO_IMPLEMENT_ISSUED} ·
+                          implementationAuthorization{NONE,GO_IMPLEMENT_ISSUED,CONSUMED}
+                          (CONSUMED owner eklentisi, 2026-07-14 — GO_IMPLEMENT_ISSUED'ın
+                          implementasyon merge sonrası vardığı son durum; yetki "harcanmıştır",
+                          aynı slice için tekrar implementasyon açmaz) ·
                           implementationCategory{WIRING,HARDENING,EXTENSION,NEW_SUBSYSTEM}
                           (owner eklentisi, 2026-07-14 — WAVE 1 decomposition'da CANDIDATE-A/B'nin
                           aynı sınıfta olmadığını ayırt etmek için: WIRING = mevcut mekanizmayı
@@ -122,7 +125,7 @@ Bu satır tek başına global triage/backlog yetkisi üretmez.
 | SLICE-01 | DEFERRED | NOT_READY | OFF/OD-21 (CLOSED) | — | — | — | — | — | T0.3.1, T0.3.3, T0.3.4 | Karar kapalı ama implementation surface yok (User rol/deaktivasyon hiç inşa edilmemiş) |
 | SLICE-02 | CANONICAL | — | OFF/OD-11 (CLOSED) | — | SELECTED | GO_IMPLEMENT_ISSUED (tamamlandı) | — | RATIFIED (tamamlandı) | T0.3.1 REV2, T0.3.3 REV2/3, T0.3.4 REV3, GO-IMPLEMENT | PR #1226, mergeSha `a3eee8b8` |
 | SLICE-03 | DEFERRED | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | — | — | — | — | T0.3.1 REV2 | Karar kapalı, scope minimum-safe-slice'a daraltılmalı |
-| CANDIDATE-A | CANDIDATE | NEXT_ELIGIBLE | OFF/OD-14 (CLOSED) | STF-PRD-SES-001 | **SELECTED** (2026-07-14) | NONE | **WIRING** | **RATIFIED** (2026-07-14) | GO-ANALYZE (WAVE 1 decomposition + Contract Draft + Contract Validation) | Offboarding → User Deactivation Wiring — bkz. §4b. NEXT: GO-IMPLEMENT (ayrı, açık owner GO'su gerekir) |
+| CANDIDATE-A | **CANONICAL** | — | OFF/OD-14 (CLOSED) | STF-PRD-SES-001 | SELECTED (2026-07-14) | **CONSUMED** (2026-07-14) | WIRING | RATIFIED (2026-07-14) | GO-ANALYZE + Contract Draft/Validation + GO-IMPLEMENT | Offboarding → User Deactivation Wiring — bkz. §4b. PR #1239, branch commit `55dc2374`, squash SHA `b0ce36db`, CI 4/4 PASS |
 | CANDIDATE-B | CANDIDATE | NOT_READY | OFF/OD-15 (CLOSED) | STF-PRD-SES-002 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 1 decomposition) | JWT/Session Revocation Mechanism (tokenVersion) — bkz. §4b |
 
 ### 4b. WAVE 1 Candidate Detay (Objective/Scope/Risk — GO-ANALYZE'den kanonikleştirildi)
@@ -140,6 +143,9 @@ Risk                 DÜŞÜK — additive
 Suggested order      1.
 
 CONTRACT STATUS: RATIFIED (2026-07-14) — RATIFIED WITH RECORDED LIMITATIONS
+IMPLEMENTATION: CANONICAL (2026-07-14) — PR #1239, branch commit `55dc2374`,
+  squash SHA `b0ce36db`, CI 4/4 PASS (Architectural Guardrails/Test Suite/Web Tests/
+  Client Workspace Live Smoke), mergeStateStatus CLEAN
 
 BINDING RULE (fail-closed + atomic — owner düzeltmesi, ilk taslaktaki "best-effort" REDDEDİLDİ):
   userId dolu ise:
@@ -151,7 +157,8 @@ BINDING RULE (fail-closed + atomic — owner düzeltmesi, ilk taslaktaki "best-e
   userId null ise:
     mevcut profile-only davranış korunur (User write hiç denenmez)
 
-RECORDED LIMITATIONS (4):
+RECORDED LIMITATIONS (4) — CARRIED FORWARD post-implementation (implementasyon bunları
+ÇÖZMEDİ, hâlâ geçerli açık kayıtlar):
   1. Dar TOCTOU relink senaryosu (fetch↔transaction arası userId farklı bir User'a relink
      edilirse) — düşük olasılık, satır kilitleme ile pratikte ihmal edilebilir
   2. Staff offboarding audit eksikliği bu Contract'la DÜZELTİLMEZ (§2b, ayrı FUTURE WAVE)
@@ -160,11 +167,13 @@ RECORDED LIMITATIONS (4):
      NEW FINDING — FUTURE WAVE/NOT AUTHORIZED); fail-closed rollback SERVİS/VERİ katmanında
      tam çalışır, yalnız HTTP status'u Staff tarafında 200'e düşer (pre-existing davranış)
 
-Exact affected files (implementasyon aşamasında):
-  DEĞİŞECEK: lawyer.service.ts (delete()) · staff.service.ts (remove(), $transaction eklenir)
-             · lawyer-deactivate-lifecycle.spec.ts (genişletilir)
-  YENİ:      staff/__tests__/staff-deactivate-lifecycle.spec.ts (mevcut değil, sıfırdan)
-  DEĞİŞMEYECEK: controller'lar (imza aynı) · schema.prisma (migration yok)
+Exact affected files (IMPLEMENTED, main @ b0ce36db):
+  DEĞİŞTİ: lawyer.service.ts (delete()) · staff.service.ts (remove(), $transaction eklendi)
+           · lawyer-deactivate-lifecycle.spec.ts (+5 senaryo, 18 mevcut DEĞİŞMEDEN geçti)
+  YENİ:    staff/__tests__/staff-deactivate-lifecycle.spec.ts (6 senaryo)
+  DEĞİŞMEDİ: controller'lar (imza aynı) · schema.prisma (migration yok)
+  Test: Lawyer 23/23 · Staff 6/6 · regresyon (staff 43/43, lawyer 89/89, invite 32/32,
+        auth 73/74+1 pre-existing skip) · tsc --noEmit: 4 dosyada sıfır yeni hata
 
 CANDIDATE-B — JWT/Session Revocation Mechanism (tokenVersion)
 Objective     OD-15'in seçtiği mekanizma: kısa access TTL + refresh-time DB check +
@@ -183,6 +192,9 @@ Suggested order      2.
 ```text
 PHASE 1 MILESTONE 01
 SLICE-02 · IMPLEMENTED · MERGED · CANONICAL (main @ a3eee8b8, 2026-07-13)
+
+PHASE 1 MILESTONE 02
+CANDIDATE-A · IMPLEMENTED · MERGED · CANONICAL (main @ b0ce36db, 2026-07-14, PR #1239)
 ```
 
 ## 6. Mapping Completeness ve Orphan Kontrolü
@@ -201,9 +213,10 @@ Yeni bulgu (§2b): 1 — Risk Register'ın 12'sine DAHİL DEĞİL, ayrı izleniy
 ```text
 WAVE 1 — Session/Lifecycle Safety              [P1, karar TAM kapalı]
   Kapsam: STF-PRD-SES-001 + STF-PRD-SES-002 (OD-14 + OD-15 CLOSED_CANONICAL)
-  readinessStatus: CANDIDATE DECOMPOSITION COMPLETE (2026-07-14, kod-kanıtlı)
+  status: PARTIALLY DELIVERED (2026-07-14) — CANDIDATE-A CANONICAL, CANDIDATE-B henüz seçilmedi
   SONUÇ: SES-001+SES-002 TEK slice ÜRETMEDİ — farklı implementationCategory'de 2 candidate:
-    CANDIDATE-A (WIRING, SELECTED, Contract RATIFIED) · CANDIDATE-B (NEW_SUBSYSTEM, NOT_SELECTED)
+    CANDIDATE-A (WIRING) → CANONICAL, main @ b0ce36db (PHASE 1 MILESTONE 02)
+    CANDIDATE-B (NEW_SUBSYSTEM) → NOT_SELECTED, implementationAuthorization NONE (değişmedi)
   Detay: §4 Slice Register + §4b
 
 WAVE 2 — Authority/RBAC Consistency            [P2, karar TAM kapalı]
@@ -225,23 +238,24 @@ UNMAPPED (owner review required, decision-graph dışı)
 ## 8. NEXT ELIGIBLE UNIT (readiness ≠ authorization)
 
 ```text
-NEXT ELIGIBLE UNIT: CANDIDATE-A — GO-IMPLEMENT
+NEXT ELIGIBLE UNIT: OWNER REVIEW / SELECTION — CANDIDATE-B
 
-Proposed sequence: CANDIDATE-A → CANDIDATE-B (WAVE 1 içinde) → WAVE 2
+Proposed sequence: CANDIDATE-A (TAMAMLANDI) → CANDIDATE-B (WAVE 1 içinde) → WAVE 2
 (Bu bir sıralama ÖNERİSİDİR — implementation authorization DEĞİLDİR.)
 
+status (CANDIDATE-A)                      : CANONICAL (2026-07-14, main @ b0ce36db)
 ownerSelectionStatus (CANDIDATE-A)        : SELECTED (2026-07-14)
 contractStatus (CANDIDATE-A)              : RATIFIED (2026-07-14, WITH RECORDED LIMITATIONS)
-implementationAuthorization (CANDIDATE-A) : NONE
-ownerSelectionStatus (CANDIDATE-B)        : NOT_SELECTED
-contractStatus (CANDIDATE-B)              : NOT_DRAFTED
-implementationAuthorization (CANDIDATE-B) : NONE
+implementationAuthorization (CANDIDATE-A) : CONSUMED (2026-07-14) — PR #1239, squash `b0ce36db`
+ownerSelectionStatus (CANDIDATE-B)        : NOT_SELECTED (değişmedi)
+contractStatus (CANDIDATE-B)              : NOT_DRAFTED (değişmedi)
+implementationAuthorization (CANDIDATE-B) : NONE (değişmedi)
 ```
 ```text
 NEXT ELIGIBLE ≠ AUTHORIZED.
-CANDIDATE-A'nın hem ownerSelectionStatus'u SELECTED hem contractStatus'ü RATIFIED olsa bile
-implementationAuthorization hâlâ NONE'dur. GO-IMPLEMENT için owner'ın ayrı, açık bir GO'su
-gerekir. Bu belge onu üretmez.
+CANDIDATE-A artık CANONICAL/CONSUMED olsa bile, CANDIDATE-B için owner review/selection
+Contract başlatma yetkisi DEĞİLDİR. CANDIDATE-B Contract'ı owner'ın ayrı, açık bir GO'suyla
+başlar. Bu belge onu üretmez.
 ```
 
 ## 9. Document Self-Check
@@ -285,4 +299,16 @@ gerekir. Bu belge onu üretmez.
 - Kod/schema/migration değişikliği:                      NONE
 - Implementasyon başlatıldı mı:                          NO
 - Başka Wave/Slice durumu değiştirildi mi:               NO (yalnız CANDIDATE-A + §2b)
+- CANDIDATE-A status→CANONICAL, implementationAuthorization  YES — §4/§4b/§5(MILESTONE 02)/§8,
+  →CONSUMED, PR/commit/squash/CI kaydı işlendi:                PR #1239, `55dc2374`→`b0ce36db`
+- 4 recorded limitation CARRIED FORWARD işaretlendi:      YES — §4b, "implementasyon bunları
+                                                        ÇÖZMEDİ" notuyla
+- WAVE 1 → PARTIALLY DELIVERED:                          YES — §7
+- CANDIDATE-B durumu (NOT_SELECTED/NONE) korundu:         YES — değiştirilmedi, §4/§8'de teyitli
+- NEXT ELIGIBLE UNIT → OWNER REVIEW/SELECTION CANDIDATE-B: YES — §8, Contract başlatma yetkisi
+                                                        DEĞİL olduğu açıkça yazıldı
+- CANDIDATE-B Contract başlatıldı mı:                     NO
+- Yeni slice üretildi mi:                                 NO
+- Kod/schema/migration değişikliği (bu PR):               NONE
+- Başka Wave durumu (2/3/4+) değiştirildi mi:              NO
 ```
