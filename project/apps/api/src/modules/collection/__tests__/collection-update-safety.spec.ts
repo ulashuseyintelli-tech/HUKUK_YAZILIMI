@@ -7,12 +7,15 @@ function buildService(prisma: any) {
 }
 
 function buildPrisma(collection: any) {
-  return {
+  const prisma: any = {
     collection: {
       findFirst: jest.fn(async () => collection),
       update: jest.fn(async ({ data }) => ({ ...collection, ...data })),
     },
+    auditLog: { create: jest.fn() },
   };
+  prisma.$transaction = jest.fn(async (fn: any) => fn(prisma));
+  return prisma;
 }
 
 function expectCollectionRequiresReversal(error: any, fields?: string[]) {

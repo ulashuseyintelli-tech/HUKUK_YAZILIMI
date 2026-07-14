@@ -44,6 +44,15 @@ import {
   validateJournalDraft,
 } from "../accounting-journal";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { AuditService } from "../audit/audit.service";
+import {
+  COLLECTION_AUDIT_ACTION,
+  changedCollectionFields,
+  createCollectionMutationTrace,
+  logCollectionMutationInTransaction,
+  type CollectionMutationTrace,
+  type CollectionRequestContext,
+} from "./collection-audit";
 import {
   buildCollectionVoidIntent,
   COLLECTION_VOID_ACTION_CODE,
@@ -160,6 +169,7 @@ export class CollectionService {
     @Optional() private readonly summaryEngine?: SummaryEngineService,
     @Optional() private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
     @Optional() private readonly officeApproval?: OfficeApprovalService,
+    @Optional() private readonly auditService: AuditService = new AuditService(prisma),
   ) {}
 
   /// <remarks>
@@ -179,11 +189,13 @@ export class CollectionService {
       attemptedOverpaymentAmount: number;
       currency: string;
       blocks: OverpaymentBlock[];
+      trace: CollectionMutationTrace;
     },
-  ) {
+  ): Promise<void> {
+    const eventId = randomUUID();
     await this.domainEventIngestService.appendInTransaction(tx, {
       header: {
-        eventId: randomUUID(),
+        eventId,
         aggregateType: 'Case',
         aggregateId: input.caseId,
         eventType: 'OVERPAYMENT_BLOCKED',
@@ -194,6 +206,8 @@ export class CollectionService {
           reason: 'COLLECTION_OVERPAYMENT_GUARD',
         },
         causedBy: input.paymentEventId,
+        correlationId: input.trace.correlationId,
+        commandId: input.trace.commandId,
         tenantId: input.tenantId,
       },
       payload: {
@@ -390,7 +404,12 @@ export class CollectionService {
   /// - BankService.matchTransaction() → POST /bank/transactions/:id/match (banka hareketinden tahsilat oluşturma)
   /// - ThirdPartyService.addExternalCaseCollection() → POST /external-cases/:id/collection (alacak haczi tahsilatını ana dosyaya yansıtma)
   /// </remarks>
-  async create(tenantId: string, dto: CreateCollectionDto, userId?: string) {
+  async create(
+    tenantId: string,
+    dto: CreateCollectionDto,
+    userId?: string,
+    requestContext: CollectionRequestContext = {},
+  ) {
     // Late-entry warning (audit flag, no reject)
     const daysDiff = Math.floor(
       (Date.now() - new Date(dto.date).getTime()) / (1000 * 60 * 60 * 24)
@@ -416,6 +435,8 @@ export class CollectionService {
       this.assertSameCollectionPayload(preExisting, dto);
       return this.findById(tenantId, preExisting.id);
     }
+
+    const trace = createCollectionMutationTrace(requestContext.correlationId);
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -493,7 +514,13 @@ export class CollectionService {
         },
       });
 
-      await this.writeCollectionRecordedJournal(tx, tenantId, userId, collection);
+      const recordedJournalEntryId = await this.writeCollectionRecordedJournal(
+        tx,
+        tenantId,
+        userId,
+        collection,
+        trace,
+      );
 
       // ── 4. PAYMENT_RECEIVED event append (HR-39: same-tx) ───────────────
       const confidence = mapSourceToConfidence(dto.sourceType as CollectionSource);
@@ -510,6 +537,8 @@ export class CollectionService {
           occurredAtConfidence: confidence,
           occurredAtEvidence: confidence === 'EXTERNAL_SIGNED' ? (dto.sourceId || undefined) : undefined,
           actor,
+          correlationId: trace.correlationId,
+          commandId: trace.commandId,
           tenantId,
         },
         payload: {
@@ -527,6 +556,10 @@ export class CollectionService {
         },
       });
 
+      const ledgerEntryIds: string[] = [];
+      let overpaymentId: string | undefined;
+      let ledgerAllocationCount = 0;
+
       // ── 5. G3a: KANONİK ledger forward write (LedgerAllocation = legal SoT) ──
       // Aynı tx; case'te ACTIVE ClaimItem varsa LedgerEntry+LedgerAllocation üretilir
       // (P-0 allocator tek otorite; sıra düzeltmesi PR-AO). Kalem yoksa S5(i): ledger
@@ -543,9 +576,13 @@ export class CollectionService {
             referenceNo: dto.receiptNo,
             sourceType: dto.sourceType,
             collectionId: collection.id,
+            correlationId: trace.correlationId,
+            commandId: trace.commandId,
           },
         );
         if (ledger.allocated && ledger.ledgerEntry) {
+          ledgerEntryIds.push(ledger.ledgerEntry.id);
+          ledgerAllocationCount = ledger.allocations?.length ?? 0;
           const allocatedAmount = sumAmounts(ledger.allocations || []);
           const overpaymentAmount = roundMoney(toFiniteAmount(dto.amount) - allocatedAmount);
 
@@ -617,9 +654,10 @@ export class CollectionService {
                 attemptedOverpaymentAmount: overpaymentAmount,
                 currency,
                 blocks,
+                trace,
               });
             } else {
-              await (tx as any).collectionOverpayment.create({
+              const overpayment = await (tx as any).collectionOverpayment.create({
                 data: {
                   tenantId,
                   caseId: dto.caseId,
@@ -636,10 +674,12 @@ export class CollectionService {
                   },
                 },
               });
+              overpaymentId = overpayment.id;
 
+              const overpaymentEventId = randomUUID();
               await this.domainEventIngestService.appendInTransaction(tx, {
                 header: {
-                  eventId: randomUUID(),
+                  eventId: overpaymentEventId,
                   aggregateType: 'Case',
                   aggregateId: dto.caseId,
                   eventType: 'OVERPAYMENT_RECORDED',
@@ -650,6 +690,8 @@ export class CollectionService {
                     reason: 'COLLECTION_OVERPAYMENT_PROJECTION',
                   },
                   causedBy: paymentEventId,
+                  correlationId: trace.correlationId,
+                  commandId: trace.commandId,
                   tenantId,
                 },
                 payload: {
@@ -698,6 +740,27 @@ export class CollectionService {
           });
         }
       }
+
+      await logCollectionMutationInTransaction(this.auditService, tx, {
+        tenantId,
+        collectionId: collection.id,
+        action: COLLECTION_AUDIT_ACTION.CREATE,
+        trace,
+        evidence: {
+          caseId: collection.caseId,
+          status: collection.status,
+          actor,
+          amount: collection.amount?.toString?.() ?? String(collection.amount),
+          currency,
+          occurredAt: coerceDate(collection.createdAt, collection.date).toISOString(),
+          journalEntryIds: [recordedJournalEntryId],
+          ledgerEntryIds,
+          ledgerAllocationCount,
+          eventId: paymentEventId,
+          outboxIdempotencyKey: `evt:${paymentEventId}`,
+          overpaymentId,
+        },
+      });
 
       return collection;
       });
@@ -830,29 +893,59 @@ export class CollectionService {
   /// Çağrıldığı yerler:
   /// - CollectionController.update() → PUT /collections/:id (doğrudan tahsilat metadata güncelleme)
   /// </remarks>
-  async update(tenantId: string, id: string, dto: UpdateCollectionDto) {
-    const collection = await this.findById(tenantId, id);
+  async update(
+    tenantId: string,
+    id: string,
+    dto: UpdateCollectionDto,
+    actorUserId?: string,
+    options: CollectionRequestContext & { expectedCaseId?: string } = {},
+  ) {
+    const trace = createCollectionMutationTrace(options.correlationId);
+    return this.prisma.$transaction(async (tx) => {
+      const collection = await (tx.collection as any).findFirst({
+        where: { id, tenantId, ...(options.expectedCaseId ? { caseId: options.expectedCaseId } : {}) },
+        include: {
+          case: { select: { id: true, fileNumber: true, executionFileNumber: true } },
+          allocations: true,
+        },
+      });
+      if (!collection) {
+        throw new NotFoundException("Tahsilat bulunamadı");
+      }
 
-    assertCollectionPublicUpdateAllowed(String(collection.status), dto as Record<string, unknown>);
+      assertCollectionPublicUpdateAllowed(String(collection.status), dto as Record<string, unknown>);
 
-    const updateData = pickDefinedCollectionUpdateData(
-      dto as Record<string, unknown>,
-      collection.status === COLLECTION_STATUS_PENDING
-        ? ["amount", "date", ...COLLECTION_METADATA_UPDATE_FIELDS]
-        : COLLECTION_METADATA_UPDATE_FIELDS,
-      ["date"],
-    );
+      const updateData = pickDefinedCollectionUpdateData(
+        dto as Record<string, unknown>,
+        collection.status === COLLECTION_STATUS_PENDING
+          ? ["amount", "date", ...COLLECTION_METADATA_UPDATE_FIELDS]
+          : COLLECTION_METADATA_UPDATE_FIELDS,
+        ["date"],
+      );
+      const changedFields = changedCollectionFields(collection, updateData);
 
-    if (Object.keys(updateData).length === 0) {
-      return collection;
-    }
+      if (changedFields.length === 0) {
+        return collection;
+      }
 
-    return (this.prisma.collection as any).update({
-      where: { id },
-      data: updateData,
-      include: {
-        allocations: true,
-      },
+      const updated = await (tx.collection as any).update({
+        where: { id },
+        data: Object.fromEntries(changedFields.map((field) => [field, updateData[field]])),
+        include: { allocations: true },
+      });
+      await logCollectionMutationInTransaction(this.auditService, tx, {
+        tenantId,
+        collectionId: id,
+        action: COLLECTION_AUDIT_ACTION.UPDATE,
+        trace,
+        evidence: {
+          caseId: collection.caseId,
+          status: updated.status,
+          actor: { type: 'HUMAN', ...(actorUserId ? { userId: actorUserId } : {}) },
+          changedFields,
+        },
+      });
+      return updated;
     });
   }
 
@@ -867,6 +960,7 @@ export class CollectionService {
     dto: CancelCollectionDto,
     actorUserId: string,
     expectedCaseId?: string,
+    requestContext: CollectionRequestContext = {},
   ) {
     if (!this.officeApproval) {
       throw new ConflictException('OfficeApproval service is required for collection void requests.');
@@ -898,6 +992,7 @@ export class CollectionService {
         caseId: collection.caseId,
         collectionId: id,
         cancelReason,
+        correlationId: createCollectionMutationTrace(requestContext.correlationId).correlationId,
       }),
       reason: "Confirmed/posted tahsilat iptali K4 four-eyes onayı gerektirir.",
       idempotencyKey: `collection-void:${id}`,
@@ -921,7 +1016,9 @@ export class CollectionService {
     dto: CancelCollectionDto,
     actorUserId: string,
     expectedCaseId?: string,
+    requestContext: CollectionRequestContext = {},
   ) {
+    const trace = createCollectionMutationTrace(requestContext.correlationId);
     try {
       return await this.prisma.$transaction(async (tx) => {
         return executeCollectionCancelInTransaction(tx, {
@@ -933,6 +1030,7 @@ export class CollectionService {
           dto,
           actorUserId,
           expectedCaseId,
+          trace,
         });
       });
     } catch (error: any) {
@@ -946,7 +1044,13 @@ export class CollectionService {
     }
   }
 
-  private async writeCollectionRecordedJournal(tx: any, tenantId: string, actorUserId: string | undefined, collection: any): Promise<void> {
+  private async writeCollectionRecordedJournal(
+    tx: any,
+    tenantId: string,
+    actorUserId: string | undefined,
+    collection: any,
+    trace: CollectionMutationTrace,
+  ): Promise<string> {
     const draft = this.buildCollectionCashJournalDraft({
       tenantId,
       actorUserId,
@@ -955,11 +1059,13 @@ export class CollectionService {
       sourceAction: 'recorded',
       sourceVersionSuffix: 'RECORDED',
       originalRecordedSourceVersion: null,
+      trace,
     });
     const write = await this.journalWriter.write({ draft }, tx);
     if (!write.ok) {
       throw new ConflictException('Collection recorded journal write failed: ' + write.errors.map((error) => error.code).join(', '));
     }
+    return write.output.journalEntryId;
   }
 
   private buildCollectionCashJournalDraft(params: {
@@ -970,8 +1076,9 @@ export class CollectionService {
     sourceAction: 'recorded' | 'cancel';
     sourceVersionSuffix: 'RECORDED' | 'CANCEL';
     originalRecordedSourceVersion: string | null;
+    trace?: CollectionMutationTrace;
   }): ValidatedJournalEntryDraft {
-    const { tenantId, actorUserId, collection, kind, sourceAction, sourceVersionSuffix, originalRecordedSourceVersion } = params;
+    const { tenantId, actorUserId, collection, kind, sourceAction, sourceVersionSuffix, originalRecordedSourceVersion, trace } = params;
     const occurredAt = kind === 'RECORDED'
       ? coerceDate(collection.date, collection.createdAt)
       : coerceDate(collection.cancelledAt, collection.updatedAt);
@@ -1019,6 +1126,8 @@ export class CollectionService {
       metadata: {
         sourceName: 'collection',
         status: kind,
+        ...(trace ? { correlationId: trace.correlationId, commandId: trace.commandId } : {}),
+        ...(trace?.causationId ? { causationId: trace.causationId } : {}),
       },
       payload,
     };

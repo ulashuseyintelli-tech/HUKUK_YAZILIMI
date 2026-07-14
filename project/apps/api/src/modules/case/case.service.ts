@@ -38,6 +38,12 @@ import {
   COLLECTION_STATUS_PENDING,
   pickDefinedCollectionUpdateData,
 } from "../collection/collection-safety.helper";
+import {
+  COLLECTION_AUDIT_ACTION,
+  changedCollectionFields,
+  createCollectionMutationTrace,
+  logCollectionMutationInTransaction,
+} from "../collection/collection-audit";
 // RFA-016: case.create içindeki inline taraf oluşturma artık bu guard'lı servislere devredilir
 // (tx.client/lawyer/debtor.create duplicate guard'ı atlıyordu → Şükrü-deseninin dış-kapı hali).
 import { ClientService } from "../client/client.service";
@@ -3741,10 +3747,11 @@ export class CaseService {
       notes?: string;
     },
     userId?: string,
+    correlationId?: string,
   ) {
     // G3d: kanonik yola delege — closed/duplicate guard + PAYMENT_RECEIVED event +
     // G3a ledger + CollectionAllocation tek otoritede (collection.service.create).
-    return this.collectionService.create(
+    const args = [
       tenantId,
       {
         caseId,
@@ -3763,7 +3770,10 @@ export class CaseService {
         notes: data.notes,
       } as any,
       userId,
-    );
+    ] as const;
+    return correlationId
+      ? this.collectionService.create(...args, { correlationId })
+      : this.collectionService.create(...args);
   }
 
   /// <remarks>
@@ -3788,30 +3798,45 @@ export class CaseService {
       currency?: string;
       paymentDate?: string;
       collectionDate?: string;
-    }
+    },
+    actorUserId?: string,
+    correlationId?: string,
   ) {
-    const collection = await this.prisma.collection.findFirst({
-      where: { id: collectionId, caseId, tenantId },
-    });
-    if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
+    const trace = createCollectionMutationTrace(correlationId);
+    return this.prisma.$transaction(async (tx) => {
+      const collection = await tx.collection.findFirst({
+        where: { id: collectionId, caseId, tenantId },
+      });
+      if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
 
-    assertCollectionPublicUpdateAllowed(String(collection.status), data as Record<string, unknown>);
+      assertCollectionPublicUpdateAllowed(String(collection.status), data as Record<string, unknown>);
+      const updateData = pickDefinedCollectionUpdateData(
+        data as Record<string, unknown>,
+        collection.status === COLLECTION_STATUS_PENDING
+          ? ["amount", "type", "channel", "date", "valueDate", "description", "receiptNo", "bankName", "notes"]
+          : COLLECTION_METADATA_UPDATE_FIELDS,
+        ["date", "valueDate"],
+      );
+      const changedFields = changedCollectionFields(collection as unknown as Record<string, unknown>, updateData);
+      if (changedFields.length === 0) return collection;
 
-    const updateData = pickDefinedCollectionUpdateData(
-      data as Record<string, unknown>,
-      collection.status === COLLECTION_STATUS_PENDING
-        ? ["amount", "type", "channel", "date", "valueDate", "description", "receiptNo", "bankName", "notes"]
-        : COLLECTION_METADATA_UPDATE_FIELDS,
-      ["date", "valueDate"],
-    );
-
-    if (Object.keys(updateData).length === 0) {
-      return collection;
-    }
-
-    return this.prisma.collection.update({
-      where: { id: collectionId },
-      data: updateData,
+      const updated = await tx.collection.update({
+        where: { id: collectionId },
+        data: Object.fromEntries(changedFields.map((field) => [field, updateData[field]])),
+      });
+      await logCollectionMutationInTransaction(this.auditService, tx, {
+        tenantId,
+        collectionId,
+        action: COLLECTION_AUDIT_ACTION.UPDATE,
+        trace,
+        evidence: {
+          caseId,
+          status: String(updated.status),
+          actor: { type: 'HUMAN', ...(actorUserId ? { userId: actorUserId } : {}) },
+          changedFields,
+        },
+      });
+      return updated;
     });
   }
 
@@ -3825,6 +3850,7 @@ export class CaseService {
     collectionId: string,
     actorUserId: string,
     reason?: string,
+    correlationId?: string,
   ) {
     const collection = await this.prisma.collection.findFirst({
       where: { id: collectionId, caseId, tenantId },
@@ -3833,9 +3859,12 @@ export class CaseService {
     if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
 
     // OWN-29-B: confirmed/posted tahsilat iptali doğrudan mutasyon değil, K4 onay talebidir.
-    return this.collectionService.requestCancel(tenantId, collectionId, {
+    const cancelDto = {
       cancelReason: reason || "",
-    }, actorUserId, caseId);
+    };
+    return correlationId
+      ? this.collectionService.requestCancel(tenantId, collectionId, cancelDto, actorUserId, caseId, { correlationId })
+      : this.collectionService.requestCancel(tenantId, collectionId, cancelDto, actorUserId, caseId);
   }
 
   /// <remarks>

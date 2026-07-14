@@ -47,6 +47,7 @@ const collectionVoidReq = (over: Record<string, unknown> = {}) => ({
     caseId: 'case-1',
     collectionId: 'col-1',
     cancelReason: 'sehven kayit',
+    correlationId: 'corr-void-request',
   },
   ...over,
 });
@@ -88,6 +89,7 @@ const collectionVoidTx = () => ({
     findFirst: jest.fn().mockResolvedValue(null),
   },
   collectionOverpayment: {
+    findMany: jest.fn().mockResolvedValue([]),
     updateMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
 });
@@ -322,11 +324,35 @@ describe('OWN-29-C OfficeApprovalDomainSyncService financial case close', () => 
 describe('OWN-29-B OfficeApprovalDomainSyncService collection void', () => {
   it('APPROVED COLLECTION_VOID icin execution lock alir, reversal executor calisir ve SUCCEEDED isaretler', async () => {
     const domainEventIngest = { appendInTransaction: jest.fn().mockResolvedValue(undefined) };
-    const journalWriter = { write: jest.fn().mockResolvedValue({ ok: true }) };
-    const svc = new OfficeApprovalDomainSyncService(domainEventIngest as any, journalWriter as any);
+    const journalWriter = {
+      write: jest.fn().mockResolvedValue({
+        ok: true,
+        output: { journalEntryId: 'journal-void-1' },
+      }),
+    };
+    const auditService = { logInTransaction: jest.fn().mockResolvedValue(undefined) };
+    const svc = new OfficeApprovalDomainSyncService(
+      domainEventIngest as any,
+      journalWriter as any,
+      auditService as any,
+    );
     const db = collectionVoidTx();
 
     await svc.syncAfterDecision(db as any, collectionVoidReq() as any);
+
+    expect(auditService.logInTransaction).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        action: 'COLLECTION_VOID_EXECUTED',
+        entityType: 'COLLECTION',
+        entityId: 'col-1',
+        metadata: expect.objectContaining({
+          correlationId: 'corr-void-request',
+          causationId: 'void-appr-1',
+          approvalRequestId: 'void-appr-1',
+        }),
+      }),
+    );
 
     expect(db.officeApprovalRequest.updateMany).toHaveBeenNthCalledWith(1, {
       where: {

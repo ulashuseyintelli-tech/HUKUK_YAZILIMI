@@ -530,6 +530,8 @@ export class SummaryEngineService implements OnModuleInit {
       referenceNo?: string;
       sourceType?: string;
       collectionId?: string;
+      correlationId?: string;
+      commandId?: string;
     } = {},
   ): Promise<{ ledgerEntry: any; allocations: any[] }> {
     const result = await this.prisma.$transaction((tx) =>
@@ -578,6 +580,8 @@ export class SummaryEngineService implements OnModuleInit {
       referenceNo?: string;
       sourceType?: string;
       collectionId?: string;
+      correlationId?: string;
+      commandId?: string;
     } = {},
   ): Promise<{
     allocated: boolean;
@@ -657,6 +661,10 @@ export class SummaryEngineService implements OnModuleInit {
         sourceType: options.sourceType,
         collectionId: options.collectionId,
         status: 'CONFIRMED',
+        metadata: {
+          ...(options.correlationId ? { correlationId: options.correlationId } : {}),
+          ...(options.commandId ? { commandId: options.commandId } : {}),
+        },
         allocations: {
           create: allocations.map((a) => ({
             claimItemId: a.claimItemId,

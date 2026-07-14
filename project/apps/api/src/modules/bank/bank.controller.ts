@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
+import { getRequestId } from '../../common/request-id.middleware';
 
 @Controller('bank')
 @UseGuards(JwtAuthGuard)
@@ -121,8 +122,9 @@ export class BankController {
     @Param('id') id: string,
     @Body() body: { caseId: string },
     @CurrentUser('id') userId: string,
+    @Req() req: any,
   ) {
-    return this.bankService.matchTransaction(id, body.caseId, userId, tenantId);
+    return this.bankService.matchTransaction(id, body.caseId, userId, tenantId, getRequestId(req));
   }
 
   /**

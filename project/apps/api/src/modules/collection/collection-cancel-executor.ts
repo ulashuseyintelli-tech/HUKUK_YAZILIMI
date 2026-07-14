@@ -11,6 +11,13 @@ import {
   validateJournalDraft,
 } from "../accounting-journal";
 import { CancelCollectionDto, CollectionStatus } from "./dto/collection.dto";
+import { AuditService } from "../audit/audit.service";
+import {
+  COLLECTION_AUDIT_ACTION,
+  createCollectionMutationTrace,
+  logCollectionMutationInTransaction,
+  type CollectionMutationTrace,
+} from "./collection-audit";
 
 export const COLLECTION_VOID_ACTION_CODE = "COLLECTION_VOID";
 export const COLLECTION_VOID_TARGET_TYPE = "COLLECTION";
@@ -19,11 +26,13 @@ export interface CollectionVoidSavedIntent {
   caseId: string;
   collectionId: string;
   cancelReason: string;
+  correlationId?: string;
 }
 
 export interface CollectionCancelExecutorDeps {
   domainEventIngestService: DomainEventIngestService;
   journalWriter: AccountingJournalWriterService;
+  auditService?: AuditService;
 }
 
 export interface ExecuteCollectionCancelInput {
@@ -32,6 +41,8 @@ export interface ExecuteCollectionCancelInput {
   dto: CancelCollectionDto;
   actorUserId: string;
   expectedCaseId?: string;
+  trace?: CollectionMutationTrace;
+  approvalRequestId?: string;
 }
 
 const PAYMENT_REVERSED_EVENT_NAMESPACE = "PAYMENT_REVERSED:v1";
@@ -43,11 +54,13 @@ export function buildCollectionVoidIntent(input: {
   caseId: string;
   collectionId: string;
   cancelReason: string;
+  correlationId?: string;
 }): CollectionVoidSavedIntent {
   return {
     caseId: input.caseId,
     collectionId: input.collectionId,
     cancelReason: input.cancelReason,
+    ...(input.correlationId ? { correlationId: input.correlationId } : {}),
   };
 }
 
@@ -57,6 +70,7 @@ export async function executeCollectionCancelInTransaction(
   input: ExecuteCollectionCancelInput,
 ) {
   const { tenantId, id, dto, actorUserId, expectedCaseId } = input;
+  const trace = input.trace ?? createCollectionMutationTrace(undefined, input.approvalRequestId);
   const collection = await (tx.collection as any).findFirst({
     where: { id, tenantId, ...(expectedCaseId ? { caseId: expectedCaseId } : {}) },
   });
@@ -134,8 +148,10 @@ export async function executeCollectionCancelInTransaction(
     },
   });
 
+  const reversalLedgerEntryIds: string[] = [];
+  let reversalAllocationCount = 0;
   if (originalLedger && !originalLedger.reversedByLedgerEntry) {
-    await (tx.ledgerEntry as any).create({
+    const reversalLedger = await (tx.ledgerEntry as any).create({
       data: {
         tenantId,
         caseId: collection.caseId,
@@ -151,6 +167,11 @@ export async function executeCollectionCancelInTransaction(
         sourceType: "COLLECTION_CANCEL",
         sourceId: collection.id,
         status: "CONFIRMED",
+        metadata: {
+          correlationId: trace.correlationId,
+          commandId: trace.commandId,
+          ...(trace.causationId ? { causationId: trace.causationId } : {}),
+        },
         allocations: {
           create: (originalLedger.allocations || []).map((allocation: any) => ({
             claimItemId: allocation.claimItemId,
@@ -160,6 +181,8 @@ export async function executeCollectionCancelInTransaction(
         },
       },
     });
+    reversalLedgerEntryIds.push(reversalLedger.id);
+    reversalAllocationCount = originalLedger.allocations?.length ?? 0;
 
     for (const allocation of originalLedger.allocations || []) {
       const amount = Number(allocation.amount);
@@ -192,6 +215,17 @@ export async function executeCollectionCancelInTransaction(
     }
   }
 
+  const reversedOverpayments = input.approvalRequestId
+    ? await (tx as any).collectionOverpayment.findMany({
+        where: {
+          tenantId,
+          caseId: collection.caseId,
+          collectionId: collection.id,
+          status: "HELD",
+        },
+        select: { id: true },
+      })
+    : [];
   await (tx as any).collectionOverpayment.updateMany({
     where: {
       tenantId,
@@ -206,7 +240,7 @@ export async function executeCollectionCancelInTransaction(
     },
   });
 
-  await writeCollectionCancelJournal(
+  const cancelJournalEntryId = await writeCollectionCancelJournal(
     tx,
     deps.journalWriter,
     tenantId,
@@ -214,11 +248,13 @@ export async function executeCollectionCancelInTransaction(
     cancelledCollection,
     cancelledAt,
     originalRecordedSourceVersion,
+    trace,
   );
 
+  const reversedEventId = paymentReversedEventId(tenantId, collection.id);
   await deps.domainEventIngestService.appendInTransaction(tx, {
     header: {
-      eventId: paymentReversedEventId(tenantId, collection.id),
+      eventId: reversedEventId,
       aggregateType: "Case",
       aggregateId: collection.caseId,
       eventType: "PAYMENT_REVERSED",
@@ -229,6 +265,9 @@ export async function executeCollectionCancelInTransaction(
         userId: actorUserId,
       },
       causedBy: originalPaymentEventId,
+      correlationId: trace.correlationId,
+      commandId: trace.commandId,
+      ...(trace.causationId ? { causationId: trace.causationId } : {}),
       tenantId,
     },
     payload: {
@@ -239,6 +278,33 @@ export async function executeCollectionCancelInTransaction(
       cancelReason: dto.cancelReason,
     },
   });
+
+  if (input.approvalRequestId) {
+    if (!deps.auditService) {
+      throw new ConflictException('COLLECTION_VOID audit dependency is not available.');
+    }
+    await logCollectionMutationInTransaction(deps.auditService, tx, {
+      tenantId,
+      collectionId: collection.id,
+      action: COLLECTION_AUDIT_ACTION.VOID_EXECUTED,
+      trace,
+      evidence: {
+        caseId: collection.caseId,
+        status: cancelledCollection.status,
+        actor: { type: 'HUMAN', userId: actorUserId },
+        amount: cancelledCollection.amount?.toString?.() ?? String(cancelledCollection.amount),
+        currency: cancelledCollection.currency || 'TRY',
+        occurredAt: cancelledAt.toISOString(),
+        journalEntryIds: [cancelJournalEntryId],
+        ledgerEntryIds: reversalLedgerEntryIds,
+        ledgerAllocationCount: reversalAllocationCount,
+        eventId: reversedEventId,
+        outboxIdempotencyKey: `evt:${reversedEventId}`,
+        overpaymentId: reversedOverpayments[0]?.id,
+        approvalRequestId: input.approvalRequestId,
+      },
+    });
+  }
 
   return cancelledCollection;
 }
@@ -300,7 +366,8 @@ async function writeCollectionCancelJournal(
   collection: any,
   cancelledAt: Date,
   originalRecordedSourceVersion: string,
-): Promise<void> {
+  trace: CollectionMutationTrace,
+): Promise<string> {
   const draft = buildCollectionCashJournalDraft({
     tenantId,
     actorUserId,
@@ -309,11 +376,13 @@ async function writeCollectionCancelJournal(
     sourceAction: "cancel",
     sourceVersionSuffix: "CANCEL",
     originalRecordedSourceVersion,
+    trace,
   });
   const write = await journalWriter.write({ draft }, tx);
   if (!write.ok) {
     throw new ConflictException("Collection cancel journal write failed: " + write.errors.map((error) => error.code).join(", "));
   }
+  return write.output.journalEntryId;
 }
 
 function buildCollectionCashJournalDraft(params: {
@@ -324,8 +393,9 @@ function buildCollectionCashJournalDraft(params: {
   sourceAction: "recorded" | "cancel";
   sourceVersionSuffix: "RECORDED" | "CANCEL";
   originalRecordedSourceVersion: string | null;
+  trace?: CollectionMutationTrace;
 }): ValidatedJournalEntryDraft {
-  const { tenantId, actorUserId, collection, kind, sourceAction, sourceVersionSuffix, originalRecordedSourceVersion } = params;
+  const { tenantId, actorUserId, collection, kind, sourceAction, sourceVersionSuffix, originalRecordedSourceVersion, trace } = params;
   const occurredAt = kind === "RECORDED"
     ? coerceDate(collection.date, collection.createdAt)
     : coerceDate(collection.cancelledAt, collection.updatedAt);
@@ -373,6 +443,8 @@ function buildCollectionCashJournalDraft(params: {
     metadata: {
       sourceName: "collection",
       status: kind,
+      ...(trace ? { correlationId: trace.correlationId, commandId: trace.commandId } : {}),
+      ...(trace?.causationId ? { causationId: trace.causationId } : {}),
     },
     payload,
   };

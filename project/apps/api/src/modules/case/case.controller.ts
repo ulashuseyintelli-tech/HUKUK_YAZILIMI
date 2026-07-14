@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  Req,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto } from "./dto/case.dto";
@@ -26,6 +27,7 @@ import { LegalResponsibleLawyerService } from "./legal-responsible-lawyer.servic
 import { ChangeLegalResponsibleLawyerDto } from "./dto/legal-responsible-lawyer.dto";
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
+import { getRequestId } from "../../common/request-id.middleware";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
@@ -645,9 +647,10 @@ export class CaseController {
       bankName?: string;
       accountNo?: string;
       notes?: string;
-    }
+    },
+    @Req() req: any,
   ) {
-    return this.caseService.createCollection(tenantId, id, body, userId);
+    return this.caseService.createCollection(tenantId, id, body, userId, getRequestId(req));
   }
 
   /**
@@ -657,6 +660,7 @@ export class CaseController {
   @Patch(":id/collections/:collectionId")
   async updateCollection(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
     @Param("collectionId") collectionId: string,
     @Body() body: {
@@ -670,9 +674,17 @@ export class CaseController {
       bankName?: string;
       notes?: string;
       status?: string;
-    }
+    },
+    @Req() req: any,
   ) {
-    return this.caseService.updateCollection(tenantId, id, collectionId, body);
+    return this.caseService.updateCollection(
+      tenantId,
+      id,
+      collectionId,
+      body,
+      actorUserId,
+      getRequestId(req),
+    );
   }
 
   /**
@@ -685,9 +697,17 @@ export class CaseController {
     @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
     @Param("collectionId") collectionId: string,
-    @Body() body: { reason?: string }
+    @Body() body: { reason?: string },
+    @Req() req: any,
   ) {
-    return this.caseService.cancelCollection(tenantId, id, collectionId, actorUserId, body.reason);
+    return this.caseService.cancelCollection(
+      tenantId,
+      id,
+      collectionId,
+      actorUserId,
+      body.reason,
+      getRequestId(req),
+    );
   }
 
   /**

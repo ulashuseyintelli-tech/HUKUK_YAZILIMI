@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  Req,
 } from "@nestjs/common";
 import { ThirdPartyService } from "./third-party.service";
 import {
@@ -17,6 +18,7 @@ import {
 } from "./dto/third-party.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { getRequestId } from "../../common/request-id.middleware";
 
 @Controller()
 @UseGuards(JwtAuthGuard)
@@ -172,9 +174,10 @@ export class ThirdPartyController {
   addExternalCaseCollection(
     @CurrentUser("tenantId") tenantId: string,
     @Param("id") id: string,
-    @Body() dto: { amount: number; date?: string; notes?: string; syncToMainCase?: boolean }
+    @Body() dto: { amount: number; date?: string; notes?: string; syncToMainCase?: boolean },
+    @Req() req: any,
   ) {
-    return this.thirdPartyService.addExternalCaseCollection(tenantId, id, dto);
+    return this.thirdPartyService.addExternalCaseCollection(tenantId, id, dto, getRequestId(req));
   }
 
   /**

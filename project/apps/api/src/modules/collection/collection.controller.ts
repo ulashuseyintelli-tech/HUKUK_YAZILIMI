@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   UseGuards,
+  Req,
 } from "@nestjs/common";
 import { CollectionService } from "./collection.service";
 import {
@@ -16,6 +17,7 @@ import {
 } from "./dto/collection.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { getRequestId } from "../../common/request-id.middleware";
 
 @Controller("collections")
 @UseGuards(JwtAuthGuard)
@@ -32,9 +34,10 @@ export class CollectionController {
   create(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body() dto: CreateCollectionDto
+    @Body() dto: CreateCollectionDto,
+    @Req() req: any,
   ) {
-    return this.collectionService.create(tenantId, dto, userId);
+    return this.collectionService.create(tenantId, dto, userId, { correlationId: getRequestId(req) });
   }
 
   /**
@@ -68,10 +71,14 @@ export class CollectionController {
   @Put(":id")
   update(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
-    @Body() dto: UpdateCollectionDto
+    @Body() dto: UpdateCollectionDto,
+    @Req() req: any,
   ) {
-    return this.collectionService.update(tenantId, id, dto);
+    return this.collectionService.update(tenantId, id, dto, actorUserId, {
+      correlationId: getRequestId(req),
+    });
   }
 
   /**
@@ -83,9 +90,17 @@ export class CollectionController {
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
-    @Body() dto: CancelCollectionDto
+    @Body() dto: CancelCollectionDto,
+    @Req() req: any,
   ) {
-    return this.collectionService.requestCancel(tenantId, id, dto, actorUserId);
+    return this.collectionService.requestCancel(
+      tenantId,
+      id,
+      dto,
+      actorUserId,
+      undefined,
+      { correlationId: getRequestId(req) },
+    );
   }
 
   // ==================== KAPAK HESABI ====================
