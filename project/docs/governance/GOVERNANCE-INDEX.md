@@ -80,6 +80,7 @@ commit, merge, release veya runtime authority yetkisi oluşturmaz.
 | `project/docs/governance/active-roadmap.md` | aktif fazlar | AKTİF |
 | `project/docs/governance/dbind-financial-authority-decisions.md` | finansal otorite kararları | AKTİF |
 | `project/docs/analysis/debtor-master-synthesis-v2.md` | borçlu hattı kanıt/gerekçe katmanı (operasyonel değil) | KANIT — SUPERSEDED BY governance |
+| `project/docs/governance/DEBTOR-PHASE-0-COMPLETION-ROADMAP.md` | BORÇLU PLATFORMU Phase 0 (Wave 0) tamamlanma sentezi — completed foundations, owner kararları, deferred/transferred work, Blueprint girdileri, Phase 1 giriş kriterleri | CANONICAL / PHASE 0 CLOSED — PR #1240 owner-ratified Wave 0 closure'ının sentez belgesi |
 | `project/docs/governance/COLLECTION-GOVERNANCE.md` | Collection Domain Governance — receipt/lifecycle/allocation-execution sınırı, COL-INV-001..048, cross-domain contract haritası | OWNER-APPROVED CANONICALIZATION v1.0 (2026-07-13); CANONICAL UPON APPROVED MERGE TO MAIN |
 | `project/docs/governance/COLLECTION-MASTER-SYNTHESIS.md` | Collection kanıt/kalıcı-gerçek katmanı (operasyonel değil) | CANONICAL REFERENCE / NON-NORMATIVE EVIDENCE BASELINE |
 | `project/docs/governance/COLLECTION-OWNER-DECISIONS.md` | Collection açık owner karar dossier'i (COL/OD-01..21); kapanmış karar otoritesi DEĞİLDİR | CANONICAL OPEN-DECISION DOSSIER — içindeki kararların tamamı OPEN |
