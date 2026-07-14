@@ -675,6 +675,39 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="debtor-finalization-cutover\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # MPB-028(a) PR-5 (owner GO-IMPLEMENT 2026-07-14 — "PR-5 yalnız calculateNextActionTime
+      # kapsamında"): WorkflowEngine.calculateNextActionTime'ın PAYMENT_ORDER/WAITING_RESPONSE
+      # dalı LEGAL_TIME_CUTOVER flag'i altında kanonik LegalPeriodCalculationService'e
+      # yönlendirilir; NotificationQueue yalnız legacy fallback olarak kalır (Tebligat yok/
+      # kural UNRESOLVED/servis yok durumlarında). NotificationService.getPaymentDeadline
+      # (gerçek consumer'ı yok) ve RuleEngine.checkNotificationExpiry/Scheduler ENFORCEMENT/MTS
+      # (itiraz fact'i modellenmeden dokunulamaz, ayrı workstream) bu PR'ın kapsamı DIŞINDADIR.
+      # Aynı CI-coverage silent-skip riski (bkz. GATE-1/PR-2/PR-3/PR-3C/PR-4 emsali) baştan
+      # önlenmek için bu PR'ın kendi merge'inde eklenmiştir.
+      - name: MPB-028(a) PR-5 calculateNextActionTime cutover unit tests
+        run: |
+          cd apps/api
+          test -f src/modules/automation/__tests__/workflow-engine-legal-time-cutover.spec.ts || \
+            { echo "MISSING MPB-028(a) PR-5 spec: workflow-engine-legal-time-cutover.spec.ts"; exit 1; }
+          npx jest --ci --forceExit --runTestsByPath \
+            src/modules/automation/__tests__/workflow-engine-legal-time-cutover.spec.ts
+        working-directory: project
+      # MPB-028(a) PR-5 (disposable-DB kısmı): gerçek Postgres'te Case -> Tebligat köprüsü
+      # (caseId) + LegalPeriodCalculationService zincirinin GERÇEK servislerle (mock değil)
+      # doğru nextActionEligibleDate ürettiğini, flag kapalıyken/Tebligat yokken/kural
+      # UNRESOLVED iken legacy NotificationQueue formülüne düştüğünü ve tenant-isolation'ı
+      # doğrular.
+      - name: MPB-028(a) PR-5 calculateNextActionTime cutover disposable-DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/automation/__tests__/workflow-engine-legal-time-cutover.db-gated.integration.spec.ts || \
+            { echo "MISSING MPB-028(a) PR-5 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="workflow-engine-legal-time-cutover\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.

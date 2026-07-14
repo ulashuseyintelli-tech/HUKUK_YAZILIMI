@@ -5,11 +5,15 @@ import { ProceedingClassificationService } from "./proceeding-classification.ser
 import { LegalPeriodCalculationService } from "./legal-period-calculation.service";
 
 /**
- * MPB-028(a) PR-2/PR-3C/PR-4 — kanonik hukuki süre hesabı foundation modülü.
- * PR-4 ile ilk consumer (DebtorModule) bu modülü import etmeye başladı —
- * yalnız `LEGAL_TIME_CUTOVER` flag'i altında, read-only. NotificationService/
- * WorkflowEngine cutover'ları hâlâ ayrı PR kapsamındadır (PR-5). Hiçbir
- * controller/endpoint bu servisleri doğrudan dışarıya açmaz.
+ * MPB-028(a) PR-2/PR-3C/PR-4/PR-5 — kanonik hukuki süre hesabı foundation modülü.
+ * PR-4 ile ilk consumer (DebtorModule) bu modülü import etmeye başladı — yalnız
+ * `LEGAL_TIME_CUTOVER` flag'i altında, read-only. PR-5 ile ikinci consumer
+ * (AutomationModule/WorkflowEngine.calculateNextActionTime) eklendi — dar kapsam,
+ * yalnız PAYMENT_ORDER/WAITING_RESPONSE dalı; `NotificationService.getPaymentDeadline`
+ * (gerçek consumer'ı yok, owner kararıyla kapsam dışı bırakıldı) ve
+ * `RuleEngine.checkNotificationExpiry`/Scheduler ENFORCEMENT cutover'ları (itiraz fact'i
+ * kanonik olarak modellenmeden dokunulamaz, ayrı workstream) hâlâ ayrı kapsamdadır.
+ * Hiçbir controller/endpoint bu servisleri doğrudan dışarıya açmaz.
  */
 @Module({
   imports: [PrismaModule],
