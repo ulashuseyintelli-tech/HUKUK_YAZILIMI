@@ -26,8 +26,16 @@ IMPLEMENTATION AUTHORITY: NONE — bu belge hiçbir slice'ı GO-IMPLEMENT ile ba
 ```text
 PHASE 1 (Incremental Canonical Slice Delivery)
  └─ WAVE                (sıralama konteyneri — hangi bölüm önce yürütülür)
-     └─ SLICE            readinessStatus{NOT_READY,NEXT_ELIGIBLE} ·
-                          ownerSelectionStatus{NOT_SELECTED,SELECTED} ·
+     └─ SLICE            readinessStatus{NOT_READY,NEXT_ELIGIBLE,READY_FOR_CONTRACT}
+                          (READY_FOR_CONTRACT owner eklentisi, 2026-07-14 — bir Candidate owner
+                          tarafından SELECTED edildiğinde ama Contract henüz taslak DEĞİLKEN ara
+                          durumu adlandırmak için; NEXT_ELIGIBLE'ın yerini almaz, iki değer
+                          arasındaki kesin sınır ileride ayrıca netleştirilebilir) ·
+                          ownerSelectionStatus{NOT_SELECTED,SELECTED,NOT_A_SELECTABLE_SLICE}
+                          (NOT_A_SELECTABLE_SLICE owner eklentisi, 2026-07-14 — ürün niyeti
+                          netleşmeden Contract'a giremeyecek adaylar için; NOT_SELECTED'tan farkı:
+                          NOT_SELECTED "seçilebilir ama seçilmedi", bu ise "seçilebilir hâle
+                          gelmemiş") ·
                           implementationAuthorization{NONE,GO_IMPLEMENT_ISSUED,CONSUMED}
                           (CONSUMED owner eklentisi, 2026-07-14 — GO_IMPLEMENT_ISSUED'ın
                           implementasyon merge sonrası vardığı son durum; yetki "harcanmıştır",
@@ -127,6 +135,9 @@ Bu satır tek başına global triage/backlog yetkisi üretmez.
 | SLICE-03 | DEFERRED | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | — | — | — | — | T0.3.1 REV2 | Karar kapalı, scope minimum-safe-slice'a daraltılmalı |
 | CANDIDATE-A | **CANONICAL** | — | OFF/OD-14 (CLOSED) | STF-PRD-SES-001 | SELECTED (2026-07-14) | **CONSUMED** (2026-07-14) | WIRING | RATIFIED (2026-07-14) | GO-ANALYZE + Contract Draft/Validation + GO-IMPLEMENT | Offboarding → User Deactivation Wiring — bkz. §4b. PR #1239, branch commit `55dc2374`, squash SHA `b0ce36db`, CI 4/4 PASS |
 | CANDIDATE-B | CANDIDATE | NOT_READY | OFF/OD-15 (CLOSED) | STF-PRD-SES-002 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 1 decomposition) | JWT/Session Revocation Mechanism (tokenVersion) — bkz. §4b |
+| CANDIDATE-C | CANDIDATE | **READY_FOR_CONTRACT** (2026-07-14) | OFF/OD-05, OFF/OD-09 (ikisi de CLOSED) | STF-PRD-RBAC-001 | **SELECTED** (2026-07-14) | NONE | **EXTENSION** | NOT_DRAFTED | GO-ANALYZE (WAVE 2 decomposition) | Detay: private evidence (bkz. §4c) |
+| CANDIDATE-D | **PRODUCT_DECISION_REQUIRED** | NOT_READY | — | STF-PRD-RBAC-001 (dolaylı) | **NOT_A_SELECTABLE_SLICE** (2026-07-14) | NONE | — | — | GO-ANALYZE (WAVE 2 decomposition) | Ürün niyeti netleşmeden Contract açılamaz. Detay: private evidence (bkz. §4c) |
+| CANDIDATE-E | **BLOCKED** | NOT_READY | OFF/OD-05, OFF/OD-09 (CLOSED) + OFF/OD-08 (**OPEN — blocker**) | STF-PRD-RBAC-001 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 2 decomposition) | Blocker: OFF/OD-08 OPEN. Detay: private evidence (bkz. §4c) |
 
 ### 4b. WAVE 1 Candidate Detay (Objective/Scope/Risk — GO-ANALYZE'den kanonikleştirildi)
 
@@ -187,6 +198,30 @@ Risk                 ORTA-YÜKSEK — Contract fazı muhtemelen High/Ultra çal�
 Suggested order      2.
 ```
 
+### 4c. WAVE 2 Candidate Detay (redakte — güvenlik containment, 2026-07-14)
+
+```text
+Bu bölüm, WAVE 2 GO-ANALYZE sırasında üretilen ayrıntılı teknik kod-kanıtını KASITLI OLARAK
+içermez. Gerekçe: bulgular hâlâ UNPATCHED'tır (WAVE 2 için henüz hiçbir Contract veya
+implementasyon başlamadı) ve bu repo PUBLIC'tir; mekanizma-seviyesi açıklama (etkilenen
+dosya/metot isimleri, enforcement/bypass ayrıntıları, hangi permission flag'in nerede
+tüketilmediği) exploitation-grade bilgi teşkil eder ve owner talimatıyla (2026-07-14,
+containment kararı) public manifest'ten çıkarılmıştır.
+
+Tutulan güvenli seviye — yalnız governance metadata (bkz. §4 Slice Register):
+
+CANDIDATE-C   implementationCategory EXTENSION · ownerSelectionStatus SELECTED ·
+              implementationAuthorization NONE · readinessStatus READY_FOR_CONTRACT
+CANDIDATE-D   PRODUCT DECISION REQUIRED · NOT A SELECTABLE SLICE
+CANDIDATE-E   implementationCategory NEW_SUBSYSTEM · status BLOCKED ·
+              blocker OFF/OD-08 OPEN
+
+Ayrıntılı teknik evidence (call-chain, dosya/metot isimleri, mekanizma açıklaması,
+kod-kanıtı) yalnız private handoff/scratchpad kaydındadır — bu public repo'ya
+taşınmayacaktır. Contract Draft aşamasına geçildiğinde bu evidence o aşamanın kendi
+sürecinde ayrıca ele alınacaktır.
+```
+
 ## 5. Milestone Register (yalnız CANONICAL slice'lardan türetilir)
 
 ```text
@@ -221,7 +256,12 @@ WAVE 1 — Session/Lifecycle Safety              [P1, karar TAM kapalı]
 
 WAVE 2 — Authority/RBAC Consistency            [P2, karar TAM kapalı]
   Kapsam: STF-PRD-RBAC-001 (OD-05 + OD-09 CLOSED_CANONICAL)
-  readinessStatus: READY_FOR_CANDIDATE_DECOMPOSITION
+  status: CANDIDATE DECOMPOSITION COMPLETE (2026-07-14) — CANDIDATE-C SELECTED
+  SONUÇ: RBAC-001 TEK slice ÜRETMEDİ — 3 candidate, 3 farklı disposition:
+    CANDIDATE-C (EXTENSION) → SELECTED, readinessStatus READY_FOR_CONTRACT
+    CANDIDATE-D → PRODUCT DECISION REQUIRED / NOT A SELECTABLE SLICE
+    CANDIDATE-E (NEW_SUBSYSTEM) → BLOCKED (blocker: OFF/OD-08 OPEN)
+  Detay: §4 Slice Register + §4c (teknik mekanizma detayı redakte — bkz. §4c gerekçe)
 
 WAVE 3 — Privacy Field-Masking (revival)        [P2, karar kapalı, scope daraltma gerekir]
   Kapsam: SLICE-03 revival (OD-18 CLOSED_CANONICAL, STF-PRD-PRIV-001)
@@ -238,24 +278,32 @@ UNMAPPED (owner review required, decision-graph dışı)
 ## 8. NEXT ELIGIBLE UNIT (readiness ≠ authorization)
 
 ```text
-NEXT ELIGIBLE UNIT: OWNER REVIEW / SELECTION — CANDIDATE-B
-
-Proposed sequence: CANDIDATE-A (TAMAMLANDI) → CANDIDATE-B (WAVE 1 içinde) → WAVE 2
-(Bu bir sıralama ÖNERİSİDİR — implementation authorization DEĞİLDİR.)
+NEXT ELIGIBLE UNIT: CANDIDATE-C — Implementation Contract Draft
 
 status (CANDIDATE-A)                      : CANONICAL (2026-07-14, main @ b0ce36db)
 ownerSelectionStatus (CANDIDATE-A)        : SELECTED (2026-07-14)
 contractStatus (CANDIDATE-A)              : RATIFIED (2026-07-14, WITH RECORDED LIMITATIONS)
 implementationAuthorization (CANDIDATE-A) : CONSUMED (2026-07-14) — PR #1239, squash `b0ce36db`
-ownerSelectionStatus (CANDIDATE-B)        : NOT_SELECTED (değişmedi)
+ownerSelectionStatus (CANDIDATE-B)        : NOT_SELECTED (bu belgede değişmedi — owner'ın
+                                             chat-seviyesi "DEFERRED" ifadesi bu PR'ın SCOPE'u
+                                             dışında; ayrı bir GO-CANONICALIZE bekliyor, bkz. §9)
 contractStatus (CANDIDATE-B)              : NOT_DRAFTED (değişmedi)
 implementationAuthorization (CANDIDATE-B) : NONE (değişmedi)
+ownerSelectionStatus (CANDIDATE-C)        : SELECTED (2026-07-14)
+readinessStatus (CANDIDATE-C)             : READY_FOR_CONTRACT (2026-07-14)
+contractStatus (CANDIDATE-C)              : NOT_DRAFTED
+implementationAuthorization (CANDIDATE-C) : NONE
+ownerSelectionStatus (CANDIDATE-D)        : NOT_A_SELECTABLE_SLICE (2026-07-14) — PRODUCT
+                                             DECISION REQUIRED
+ownerSelectionStatus (CANDIDATE-E)        : NOT_SELECTED — status BLOCKED (blocker: OFF/OD-08
+                                             OPEN)
 ```
 ```text
 NEXT ELIGIBLE ≠ AUTHORIZED.
-CANDIDATE-A artık CANONICAL/CONSUMED olsa bile, CANDIDATE-B için owner review/selection
-Contract başlatma yetkisi DEĞİLDİR. CANDIDATE-B Contract'ı owner'ın ayrı, açık bir GO'suyla
-başlar. Bu belge onu üretmez.
+CANDIDATE-C artık SELECTED/READY_FOR_CONTRACT olsa bile, bu Contract başlatma yetkisi
+DEĞİLDİR. CANDIDATE-C Contract'ı owner'ın ayrı, açık bir GO'suyla başlar. Bu belge onu
+üretmez. CANDIDATE-B (WAVE 1) ve CANDIDATE-D/E (WAVE 2) için de owner kararı bu belgede
+VARSAYILMADI — yalnız bu brief'in SCOPE'unda açıkça verilen alanlar işlendi.
 ```
 
 ## 9. Document Self-Check
@@ -311,4 +359,40 @@ başlar. Bu belge onu üretmez.
 - Yeni slice üretildi mi:                                 NO
 - Kod/schema/migration değişikliği (bu PR):               NONE
 - Başka Wave durumu (2/3/4+) değiştirildi mi:              NO
+- WAVE 2 Candidate Decomposition kaydedildi mi (§4/§4c):  YES — yalnız güvenli governance
+                                                           metadata seviyesinde (bkz. altı)
+- Güvenlik containment (2026-07-14):                      Bu PR'ın ilk sürümü (commit
+                                                           67bbc27c, branch codex/
+                                                           wave2-decomposition) mekanizma-
+                                                           seviyesi teknik detay içeriyordu;
+                                                           auto-mode sınıflandırıcısı PR
+                                                           açılmadan ENGELLEDİ (public repo +
+                                                           unpatched finding). Owner kararıyla
+                                                           remote branch silindi, local
+                                                           history origin/main'den sıfırdan
+                                                           yeniden kuruldu, bu redakte sürüm
+                                                           onun yerine geçti. Ayrıntılı
+                                                           teknik evidence yalnız private
+                                                           handoff/scratchpad kaydındadır.
+- CANDIDATE-C (EXTENSION/SELECTED/READY_FOR_CONTRACT)     YES — §4/§4c/§8, Contract henüz
+  işlendi mi (yalnız governance metadata):                NOT_DRAFTED
+- CANDIDATE-D (PRODUCT_DECISION_REQUIRED/                 YES — §4/§4c, owner'ın disposition'ı
+  NOT_A_SELECTABLE_SLICE) işlendi mi:                     birebir, mekanizma detayı YOK
+- CANDIDATE-E (NEW_SUBSYSTEM/BLOCKED,                     YES — §4/§4c, blocker OFF/OD-08 OPEN
+  blocker OD-08) işlendi mi:                              olarak kaydedildi, detay YOK
+- NEXT ELIGIBLE UNIT → CANDIDATE-C Contract Draft:        YES — §8, CANDIDATE-A/B tarihi
+                                                           korunarak
+- Yeni enum değerleri (READY_FOR_CONTRACT,                YES — §1, owner eklentisi 2026-07-14
+  NOT_A_SELECTABLE_SLICE) §1 Veri Modeli'ne işlendi mi:   olarak işaretli
+- CANDIDATE-D/E için owner kararı varsayıldı mı:          NO — yalnız brief'te verilen
+                                                           disposition'lar birebir işlendi
+- CANDIDATE-B (WAVE 1) chat-seviyesi "NOT_SELECTED/       NO — bu PR'ın SCOPE'u dışında;
+  DEFERRED" beyanı bu PR'a dahil edildi mi:               §8'de açıkça flagged, ayrı bir
+                                                           GO-CANONICALIZE bekliyor
+- Dosya/metot ismi, bypass/enforcement mekanizma          NO — §4c'nin kendisi bunun
+  açıklaması, permission flag tüketilmeme ayrıntısı       yerine yalnız redaksiyon
+  bu belgede var mı:                                      gerekçesini açıklıyor
+- Contract başlatıldı mı (CANDIDATE-C/D/E):               NO
+- Kod/schema/migration değişikliği:                       NONE
+- Başka Wave (1/3/4+) durumu değiştirildi mi:              NO (yalnız WAVE 2 kendi §7 satırı)
 ```
