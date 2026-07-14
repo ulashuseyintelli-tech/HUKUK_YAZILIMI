@@ -13,7 +13,7 @@ const activeDebtor = {
   },
 };
 
-const caseData = (debtors: any[]) => ({
+const caseData = (debtors: any[], overrides: Record<string, unknown> = {}) => ({
   id: "case-1",
   fileNumber: "2026/1",
   type: "ILAMSIZ",
@@ -36,7 +36,9 @@ const caseData = (debtors: any[]) => ({
   debtors,
   lawyers: [],
   claimItems: [],
+  caseInstruments: [],
   dues: [],
+  ...overrides,
 });
 
 describe("PR-RE2 UYAP export passive policy", () => {
@@ -60,6 +62,73 @@ describe("PR-RE2 UYAP export passive policy", () => {
       }),
     );
     expect(result.taraflar).toHaveLength(2);
+    expect(result.takipTuru).toBe("GENEL_HACIZ");
+    expect(result.cekler).toBeUndefined();
+    expect(result.senetler).toBeUndefined();
+  });
+
+  it("kambiyo takibinde eksik instrument verisini fail-closed engeller", async () => {
+    const prisma: any = {
+      case: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue(caseData([activeDebtor], { subType: "KAMBIYO_CEK" })),
+      },
+    };
+    const mapper = new UyapCaseMapperService(prisma);
+
+    await expect(mapper.mapCaseToTakipTalebi("case-1", "tenant-1")).rejects.toMatchObject({
+      status: 400,
+      response: {
+        code: "LEGACY_UYAP_INSTRUMENT_DATA_UNAVAILABLE",
+        message:
+          "Legacy UYAP export yolu kambiyo enstrüman verisini güvenli biçimde üretemiyor",
+      },
+    });
+  });
+
+  it("ClaimItem instrument kaynağını sessizce atmak yerine fail-closed engeller", async () => {
+    const prisma: any = {
+      case: {
+        findFirst: jest.fn().mockResolvedValue(
+          caseData([activeDebtor], {
+            claimItems: [{ instrumentId: null, sourceDocumentType: "CEK" }],
+          }),
+        ),
+      },
+    };
+    const mapper = new UyapCaseMapperService(prisma);
+
+    await expect(mapper.mapCaseToTakipTalebi("case-1", "tenant-1")).rejects.toMatchObject({
+      status: 400,
+      response: {
+        code: "LEGACY_UYAP_INSTRUMENT_DATA_UNAVAILABLE",
+        message:
+          "Legacy UYAP export yolu kambiyo enstrüman verisini güvenli biçimde üretemiyor",
+      },
+    });
+  });
+
+  it("canonical CaseInstrument verisini sessizce atmak yerine fail-closed engeller", async () => {
+    const prisma: any = {
+      case: {
+        findFirst: jest.fn().mockResolvedValue(
+          caseData([activeDebtor], {
+            caseInstruments: [{ id: "instrument-1" }],
+          }),
+        ),
+      },
+    };
+    const mapper = new UyapCaseMapperService(prisma);
+
+    await expect(mapper.mapCaseToTakipTalebi("case-1", "tenant-1")).rejects.toMatchObject({
+      status: 400,
+      response: {
+        code: "LEGACY_UYAP_INSTRUMENT_DATA_UNAVAILABLE",
+        message:
+          "Legacy UYAP export yolu kambiyo enstrüman verisini güvenli biçimde üretemiyor",
+      },
+    });
   });
 
   it("mapper all-PASSIVE case icin kontrollu hata verir", async () => {
