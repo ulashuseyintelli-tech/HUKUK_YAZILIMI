@@ -28,7 +28,11 @@ PHASE 1 (Incremental Canonical Slice Delivery)
  └─ WAVE                (sıralama konteyneri — hangi bölüm önce yürütülür)
      └─ SLICE            readinessStatus{NOT_READY,NEXT_ELIGIBLE} ·
                           ownerSelectionStatus{NOT_SELECTED,SELECTED} ·
-                          implementationAuthorization{NONE,GO_IMPLEMENT_ISSUED}
+                          implementationAuthorization{NONE,GO_IMPLEMENT_ISSUED} ·
+                          implementationCategory{WIRING,HARDENING,EXTENSION,NEW_SUBSYSTEM}
+                          (owner eklentisi, 2026-07-14 — WAVE 1 decomposition'da CANDIDATE-A/B'nin
+                          aynı sınıfta olmadığını ayırt etmek için: WIRING = mevcut mekanizmayı
+                          tetikleyen küçük değişiklik, NEW_SUBSYSTEM = sıfırdan altyapı)
          └─ MILESTONE     (derived event — Slice.status→CANONICAL olduğunda otomatik üretilir;
                             elle yazılmaz)
 
@@ -68,6 +72,16 @@ varsayılmaz.
 | STF-PRD-DATA-001 | P3 | OFF/OD-01, OFF/OD-03 | OD-01 CLOSED · OD-03 OPEN(BLOCKING) | LINKED TO DECISION | OD-03 kapanmadan DB-constraint işi başlamaz |
 | STF-PRD-SES-002 | P3 | OFF/OD-15 | CLOSED_CANONICAL | LINKED TO DECISION | WAVE 1 kapsamına giriyor (SES-001 ile birlikte triyaj edilecek) |
 
+### 2b. Yeni Bulgular (WAVE 1 decomposition sırasında keşfedildi — Risk Register kaydı BEKLİYOR)
+
+Bu bölümdeki kayıtlar `OFFICE-RISK-REGISTER.md`'nin resmi `STF-PRD-*` register'ında HENÜZ YOKTUR —
+kanonik risk otoritesi hâlâ o dosyadır, bu tablo yalnız keşif anını ve disposition'ı kaydeder.
+Bu satır tek başına global triage/backlog yetkisi üretmez.
+
+| Kayıt | Keşif Bağlamı | relatedInvariant | DISPOSITION |
+|---|---|---|---|
+| Staff offboarding audit trail eksikliği | WAVE 1 Candidate Decomposition (`staff.service.ts:remove()`'un hiç audit log yazmadığı, `lawyer.service.ts:delete()`'in aksine, kod okunarak doğrulandı) | OFF-INV-08 | NEW FINDING — FUTURE WAVE |
+
 ## 3. Decision Register (20/20 — 3-eksen model)
 
 | ID | lifecycleStatus | resolutionMode | gateEffect | dependsOn (REQUIRES) |
@@ -98,11 +112,39 @@ varsayılmaz.
 
 ## 4. Slice Register
 
-| ID | status | readinessStatus | relatedDecision | relatedFinding | taskDecompositionRefs | Not |
-|---|---|---|---|---|---|---|
-| SLICE-01 | DEFERRED | NOT_READY | OFF/OD-21 (CLOSED) | — | T0.3.1, T0.3.3, T0.3.4 | Karar kapalı ama implementation surface yok (User rol/deaktivasyon hiç inşa edilmemiş) |
-| SLICE-02 | CANONICAL | — | OFF/OD-11 (CLOSED) | — | T0.3.1 REV2, T0.3.3 REV2/3, T0.3.4 REV3, GO-IMPLEMENT | PR #1226, mergeSha `a3eee8b8` |
-| SLICE-03 | DEFERRED | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | T0.3.1 REV2 | Karar kapalı, scope minimum-safe-slice'a daraltılmalı |
+| ID | status | readinessStatus | relatedDecision | relatedFinding | ownerSelectionStatus | implementationAuthorization | implementationCategory | taskDecompositionRefs | Not |
+|---|---|---|---|---|---|---|---|---|---|
+| SLICE-01 | DEFERRED | NOT_READY | OFF/OD-21 (CLOSED) | — | — | — | — | T0.3.1, T0.3.3, T0.3.4 | Karar kapalı ama implementation surface yok (User rol/deaktivasyon hiç inşa edilmemiş) |
+| SLICE-02 | CANONICAL | — | OFF/OD-11 (CLOSED) | — | SELECTED | GO_IMPLEMENT_ISSUED (tamamlandı) | — | T0.3.1 REV2, T0.3.3 REV2/3, T0.3.4 REV3, GO-IMPLEMENT | PR #1226, mergeSha `a3eee8b8` |
+| SLICE-03 | DEFERRED | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | — | — | — | T0.3.1 REV2 | Karar kapalı, scope minimum-safe-slice'a daraltılmalı |
+| CANDIDATE-A | CANDIDATE | NEXT_ELIGIBLE | OFF/OD-14 (CLOSED) | STF-PRD-SES-001 | **SELECTED** (2026-07-14) | NONE | **WIRING** | GO-ANALYZE (WAVE 1 decomposition) | Offboarding → User Deactivation Wiring — bkz. §4b |
+| CANDIDATE-B | CANDIDATE | NOT_READY | OFF/OD-15 (CLOSED) | STF-PRD-SES-002 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | GO-ANALYZE (WAVE 1 decomposition) | JWT/Session Revocation Mechanism (tokenVersion) — bkz. §4b |
+
+### 4b. WAVE 1 Candidate Detay (Objective/Scope/Risk — GO-ANALYZE'den kanonikleştirildi)
+
+```text
+CANDIDATE-A — Offboarding → User Deactivation Wiring
+Objective     Staff/Lawyer pasifleştirmesi bağlı User hesabını da (varsa) deaktive etsin —
+              mevcut per-request enforcement'ı (auth.service.ts:validateUser(), her istekte
+              User.isActive kontrol eder) tetiklesin.
+Scope         staff.service.ts:remove() · lawyer.service.ts:delete()
+Dependencies  Yok
+Est. impl. surface   KÜÇÜK — schema/migration YOK (User.isActive + Lawyer/StaffMember.userId
+                     FK zaten var)
+Risk                 DÜŞÜK — additive
+Suggested order      1.
+
+CANDIDATE-B — JWT/Session Revocation Mechanism (tokenVersion)
+Objective     OD-15'in seçtiği mekanizma: kısa access TTL + refresh-time DB check +
+              tokenVersion.
+Scope         schema migration (User.tokenVersion) · JwtPayload + validateUser() genişletmesi ·
+              tokenVersion increment tetikleyicileri · muhtemelen yeni refresh-token akışı
+              (şu an YOK — grep: 0 eşleşme)
+Dependencies  Yok (teknik blok yok) — CANDIDATE-A'nın önce gitmesi önerilir
+Est. impl. surface   ORTA-BÜYÜK — migration + auth çekirdeğine dokunan geniş blast-radius
+Risk                 ORTA-YÜKSEK — Contract fazı muhtemelen High/Ultra çalışma seviyesi gerektirir
+Suggested order      2.
+```
 
 ## 5. Milestone Register (yalnız CANONICAL slice'lardan türetilir)
 
@@ -119,6 +161,7 @@ Decision toplam: 20 · her biri en az bir kökene bağlı (Finding VEYA Domain L
 Slice toplam: 3 · her biri bir Decision'a bağlı — orphan YOK
 Decision→Decision dependsOn referansları: tamamı OFFICE-OWNER-DECISIONS.md'nin kendi
   DEPENDENCIES alanından türetildi, ekleme/çıkarma yapılmadı
+Yeni bulgu (§2b): 1 — Risk Register'ın 12'sine DAHİL DEĞİL, ayrı izleniyor, sayıya karışmıyor
 ```
 
 ## 7. Wave Önerisi
@@ -126,9 +169,10 @@ Decision→Decision dependsOn referansları: tamamı OFFICE-OWNER-DECISIONS.md'n
 ```text
 WAVE 1 — Session/Lifecycle Safety              [P1, karar TAM kapalı]
   Kapsam: STF-PRD-SES-001 + STF-PRD-SES-002 (OD-14 + OD-15 CLOSED_CANONICAL)
-  readinessStatus: READY_FOR_CANDIDATE_DECOMPOSITION
-  NOT: SES-001+SES-002'nin TEK slice üreteceği VARSAYILMAZ — candidate decomposition
-       sırasında bir veya birkaç küçük slice'a ayrılabilir.
+  readinessStatus: CANDIDATE DECOMPOSITION COMPLETE (2026-07-14, kod-kanıtlı)
+  SONUÇ: SES-001+SES-002 TEK slice ÜRETMEDİ — farklı implementationCategory'de 2 candidate:
+    CANDIDATE-A (WIRING, SELECTED) · CANDIDATE-B (NEW_SUBSYSTEM, NOT_SELECTED)
+  Detay: §4 Slice Register + §4b
 
 WAVE 2 — Authority/RBAC Consistency            [P2, karar TAM kapalı]
   Kapsam: STF-PRD-RBAC-001 (OD-05 + OD-09 CLOSED_CANONICAL)
@@ -149,18 +193,20 @@ UNMAPPED (owner review required, decision-graph dışı)
 ## 8. NEXT ELIGIBLE UNIT (readiness ≠ authorization)
 
 ```text
-NEXT ELIGIBLE UNIT: WAVE 1 — Candidate Inventory and Slice Decomposition
+NEXT ELIGIBLE UNIT: CANDIDATE-A — Implementation Contract Draft
 
-Proposed sequence: WAVE 1 → WAVE 2
-(Bu bir sıralama ÖNERİSİDİR — owner selection veya implementation authorization DEĞİLDİR.)
+Proposed sequence: CANDIDATE-A → CANDIDATE-B (WAVE 1 içinde) → WAVE 2
+(Bu bir sıralama ÖNERİSİDİR — implementation authorization DEĞİLDİR.)
 
-ownerSelectionStatus (Wave 1)        : NOT_SELECTED
-implementationAuthorization (Wave 1) : NONE
+ownerSelectionStatus (CANDIDATE-A)        : SELECTED (2026-07-14)
+implementationAuthorization (CANDIDATE-A) : NONE
+ownerSelectionStatus (CANDIDATE-B)        : NOT_SELECTED
+implementationAuthorization (CANDIDATE-B) : NONE
 ```
 ```text
 NEXT ELIGIBLE ≠ AUTHORIZED.
-Owner'ın ayrı iki eylemi gerekir: (1) bir Wave/Slice'ı SELECTED işaretlemek,
-(2) implementationAuthorization → GO_IMPLEMENT_ISSUED. Bu belge ikisini de üretmez.
+CANDIDATE-A'nın ownerSelectionStatus'u SELECTED olsa bile implementationAuthorization hâlâ NONE'dur.
+Contract fazının başlaması için owner'ın ayrı, açık bir GO'su gerekir. Bu belge onu üretmez.
 ```
 
 ## 9. Document Self-Check
@@ -179,9 +225,21 @@ Owner'ın ayrı iki eylemi gerekir: (1) bir Wave/Slice'ı SELECTED işaretlemek,
 - 12/12 Finding disposition aldı:                      YES
 - 20/20 Decision işlendi:                              YES
 - 3/3 mevcut Slice işlendi:                             YES
-- Wave 1/2 NEXT_ELIGIBLE OLARAK işaretlenmedi:          YES (READY_FOR_CANDIDATE_DECOMPOSITION)
+- Wave 1/2 kendisi NEXT_ELIGIBLE OLARAK işaretlenmedi:  YES (WAVE 1: CANDIDATE DECOMPOSITION
+                                                        COMPLETE, kendi candidate'ları readiness
+                                                        taşır · WAVE 2: hâlâ
+                                                        READY_FOR_CANDIDATE_DECOMPOSITION)
 - Global register'larda mutable durum çoğaltılmadı:     YES (yalnız pointer, bkz. bu PR'ın
                                                         active-roadmap.md/product-backlog.md/
                                                         master-triage-register.md değişiklikleri)
 - Kod/schema/implementation değişikliği:                NONE
+- implementationCategory eklendi (§1):                  YES (WIRING/HARDENING/EXTENSION/NEW_SUBSYSTEM)
+- CANDIDATE-A/B §4 Slice Register'a işlendi:             YES (CANDIDATE statüsünde, SLICE-0N'e
+                                                        yeniden numaralandırılmadı — owner'ın
+                                                        kendi kullandığı ID korundu)
+- Yeni bulgu (audit gap) UNMAPPED yerine NEW FINDING/    YES (§2b, OFF-INV-08, FUTURE WAVE —
+  FUTURE WAVE olarak kaydedildi:                        Risk Register'a henüz eklenmedi, ayrıca
+                                                        işaretlendi)
+- WAVE 2/3/4+ veya orijinal 12 Finding değiştirildi mi:  NO (brief'in BOUNDARY'sine uyuldu)
+- Contract başlatıldı mı:                                NO (yalnız manifest bookkeeping)
 ```
