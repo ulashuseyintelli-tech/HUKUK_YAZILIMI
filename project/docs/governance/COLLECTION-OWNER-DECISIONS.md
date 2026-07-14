@@ -9,7 +9,7 @@ Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; 
                           yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
                           ile aynı sınıf ve sınır)
 Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
-                          onaylandı; içindeki HİÇBİR karar ratified DEĞİLDİR, tamamı OPEN
+                          onaylandı; COL/OD-05 RECORDED, kalan 20 karar OPEN
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
 IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
@@ -62,11 +62,31 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 - ETKİ: W1.2 lock patch'i.
 
 ### COL/OD-05 — Audit/correlation sınırı + GLOBAL-ACTOR-AUDIT-CONTEXT ratification
+- STATUS: **RECORDED** (2026-07-14) — authoritative kayıt:
+  `decision-log.md` § `2026-07-14 — RC-COL / COL/OD-05`.
 - SORU: Collection create/cancel hangi audit yazımını, hangi correlation alanlarını
   (correlationId/causationId/commandId) hangi katmanda taşır? Shared contract (Desktop 01 §17)
   ratifiye edilecek mi, hangi alan seti zorunlu?
 - KANIT: OF-01 (audit=0, correlation şemada yok, commandId hiç yok; causedBy VAR).
 - BAĞIMLILIK: —. ETKİ: W1.6 audit capture; tüm cross-domain event kontratları.
+- KARAR:
+  - Zorunlu committed mutation audit kataloğu `COLLECTION_CREATE`, `COLLECTION_UPDATE` ve
+    `COLLECTION_VOID_EXECUTED`'dır. Idempotent replay, no-op update ve rollback ikinci/yanlış
+    başarı audit'i üretmez. Void approval lifecycle mevcut `OFFICE_APPROVAL_*` authority'sinde
+    kalır; yinelenen Collection approval audit'i yoktur.
+  - HTTP correlation authority'si doğrulanmış server request context; internal/job authority'si
+    command boundary'de bir kez üretilen server UUID'sidir. `correlationId` transaction boyunca
+    immutable; `commandId` mutation attempt'e özgü ve idempotency key'den ayrıdır;
+    `causationId` yalnız gerçek önceki kayıt varsa zorunludur. Void execution causation'ı
+    `approvalRequestId`, `PAYMENT_REVERSED.header.causedBy` ise özgün payment event ID'sidir.
+  - Audit actor/tenant/case/collection ile journal, ledger, event, outbox, varsa overpayment ve
+    approval bağlantılarını allowlist metadata ile taşır. Başarı audit'i aynı transaction'da
+    hata yutmadan yazılır; audit write başarısızsa tüm finansal mutation rollback olur.
+  - Ham DTO/event/outbox/savedIntent, hassas kimlik/iletişim/banka verisi, serbest metin,
+    credential/header, SQL ve stack audit'e yazılmaz. Hassas before/after yalnız presence,
+    changed-field listesi ve SHA-256 fingerprint ile temsil edilir.
+- IMPLEMENTATION EFFECT: W1.6, bu kayıt approved merge ile canonical olduktan sonra ayrı owner
+  `GO-IMPLEMENT` için hazırdır. Bu kayıt tek başına implementation authority üretmez.
 
 ## KUYRUK B — P1'den ÖNCE
 
@@ -169,7 +189,7 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 
 ```text
 KÖK (bağımsız başlar):
-  COL/OD-01 (adjustment)   COL/OD-03 (effective-date)   COL/OD-05 (audit/correlation)
+  COL/OD-01 (adjustment)   COL/OD-03 (effective-date)   COL/OD-05 (audit/correlation — RECORDED)
   COL/OD-11 (UYAP route)   COL/OD-18 (lane)             COL/OD-21 (idempotency text)
 
 COL/OD-01 ─┬─> COL/OD-07 (feragat/indirim/sulh) ──> COL/OD-08 (satisfaction/re-open)
@@ -186,7 +206,7 @@ COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
 
 Önerilen oturum sırası (yalnız sıralama önerisidir, karar değildir):
 1) COL/OD-18 + COL/OD-21 (hızlı, bağımsız, işletimi kilitler)
-2) COL/OD-01, -03, -05 (P0 kök üçlüsü)
+2) COL/OD-01, -03 (COL/OD-05 RECORDED — 2026-07-14)
 3) COL/OD-04 (race harness kanıtı geldikten sonra)
 4) Kuyruk B → Kuyruk C.
 
