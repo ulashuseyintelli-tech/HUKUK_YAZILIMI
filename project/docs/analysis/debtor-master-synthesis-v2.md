@@ -39,13 +39,36 @@ PROGRAM STRUCTURE: Wave 0 → Wave 1 → Wave 2 → Wave 3 (bkz. Section AE Impl
 ```text
 PROGRAM: BORÇLU PLATFORMU
 CURRENT WAVE: WAVE 0 — PRODUCTION / LEGAL / SECURITY STABILIZATION
+WAVE 0 STATUS: CLOSED / OWNER-RATIFIED (2026-07-14)
 CURRENT SUB-WORKSTREAM: MPB-028(c) / PR-EA
 PR-EA-4: CODE/RUNTIME CLOSED / MERGED · GOVERNANCE CLOSED / REGISTERED
-MPB-028(c): PARTIAL / OPEN
+MPB-028(c): PARTIAL / OPEN (Wave 0 exit blocker DEĞİL — bkz. aşağıdaki owner-override notu)
 ```
 
 PR-EA dizisi (PR-EA-1..6) yalnız Wave 0 içindeki `MPB-028(c)` alt-workstream'inin uygulama sırasıdır;
 Borçlu Platformu programının tamamı **değildir** ve program Wave yapısıyla karıştırılmaz.
+
+**OWNER-OVERRIDE NOTU — WAVE 0 EXIT REVIEW (2026-07-14, bkz. `decision-log.md` aynı tarihli
+"BORÇLU PLATFORMU WAVE 0 — CLOSED / OWNER-RATIFIED" kaydı):** Owner, Wave 0'ı `GATE-0: PASS`,
+`GATE-1: PASS`, `GATE-2: PASS — PHASE 0 NARROW LEGAL-TIME SCOPE` hükmüyle resmen kapattı. Bu
+belgenin Section R (satır 588-592) ve Section AE'deki (satır 937-946) **geniş** GATE-2 okuması
+("EPIC-02/06 merged" — yani kanonik süre VE `Debtor.legalStatus`/Eligibility fact'in İKİSİ
+BİRDEN), **bu Wave 0 kapanış kararı bakımından** owner'ın aşağıdaki dar tanımıyla
+**SUPERSEDE edilmiştir**:
+
+> GATE-2 (Wave 0 kapanışı için), kanonik tebliğ/süre otoritesinin kurulması + shadow evidence
+> üretilmesi + kanonik takip/süre matrisinin kurulması + read-path consumer cutover +
+> WorkflowEngine süre kaynağı geçişi ile SINIRLIDIR (MPB-028(a) PR-2/PR-3A/PR-3B/PR-3C/PR-4/PR-5).
+
+`Debtor.legalStatus` (EPIC-06/DEC-07/Q1), itiraz kaydı ve itirazın durdurucu etkisi, cebrî icra
+kabiliyeti, müdürlük/UYAP idari teyit akışı, `MPB-028(c)`'nin kalan kısmı (PR-EA-5/6), PR-6/
+backfill, holiday/calendar, unresolved PLEDGE/MORTGAGE/bağımsız EVICTION/PUBLIC_RECEIVABLE
+kuralları ve legacy remediation Wave 0 exit blocker **DEĞİLDİR** — silinmiş veya çözülmüş
+sayılmazlar, Phase 0 sonrasına taşınan açık domain workstream'leridir. Bu owner-override notu
+Section R/AE'nin metnini SİLMEZ/DEĞİŞTİRMEZ (MS "değiştirilmeden" korunur ilkesi — bkz. yukarıdaki
+REPO INTAKE NOTU); yalnız hangi okumanın bu spesifik kapanış kararında esas alındığını kaydeder.
+Sonraki yetkilendirilen görev: **Phase 0 Completion Roadmap** (ayrı owner yetkisi gerektirir).
+Blueprint: NOT YET AUTHORIZED. Wave 1: NOT YET OPEN.
 
 **Bulgu mutabakatı** (Section E Canonical Findings Register'a karşı, güncel `origin/main` ile doğrulandı):
 
