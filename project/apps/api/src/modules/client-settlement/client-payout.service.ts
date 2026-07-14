@@ -8,7 +8,7 @@ import {
   type ClientPayoutJournalSource,
   type ValidatedJournalEntryDraft,
 } from '../accounting-journal';
-import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
+import { isOfficeAdminCapacity, capacityFromUser } from '../policy-engine/effective-permission-mapping';
 import { Capacity } from '../policy-engine/types/effective-permission.types';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { AuditService } from '../audit/audit.service';
@@ -165,7 +165,7 @@ export class ClientPayoutService {
       where: { id: actorUserId },
       include: { lawyer: { select: { lawyerRank: true } }, staffMember: { select: { staffType: true } } },
     });
-    const capacity = (user?.lawyer?.lawyerRank ?? user?.staffMember?.staffType ?? 'UNKNOWN') as Capacity;
+    const capacity = capacityFromUser(user);
     if (!isOfficeAdminCapacity(capacity)) {
       throw new ForbiddenException({
         code: 'CLIENT_PAYOUT_FORBIDDEN',

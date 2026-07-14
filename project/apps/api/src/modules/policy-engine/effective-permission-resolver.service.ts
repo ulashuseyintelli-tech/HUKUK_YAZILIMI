@@ -9,6 +9,7 @@ import {
 } from './types/effective-permission.types';
 import {
   ACTION_TO_CASE_PERMISSION,
+  capacityFromUser,
   classifyAction,
   decide,
   isOfficeAdminCapacity,
@@ -96,21 +97,17 @@ export class EffectivePermissionResolver {
       include: { lawyer: true, staffMember: true },
     });
     if (!user) return { capacity: 'UNKNOWN', tenantId: null };
+    // CANDIDATE-C (RATIFIED): capacity leaf mapping tek canonical kaynağa (capacityFromUser) delege
+    // edilir; if/else YALNIZ superset metadata (tenantId/lawyerId/staffMemberId) attach eder.
+    // Davranış-eşdeğer (lawyerRank/staffType non-null). #503 observe-only + resolve() çıktısı DEĞİŞMEZ.
+    const capacity = capacityFromUser(user);
     if (user.lawyer) {
-      return {
-        capacity: (user.lawyer.lawyerRank as Capacity) ?? 'UNKNOWN',
-        tenantId: user.tenantId,
-        lawyerId: user.lawyer.id,
-      };
+      return { capacity, tenantId: user.tenantId, lawyerId: user.lawyer.id };
     }
     if (user.staffMember) {
-      return {
-        capacity: (user.staffMember.staffType as Capacity) ?? 'UNKNOWN',
-        tenantId: user.tenantId,
-        staffMemberId: user.staffMember.id,
-      };
+      return { capacity, tenantId: user.tenantId, staffMemberId: user.staffMember.id };
     }
-    return { capacity: 'UNKNOWN', tenantId: user.tenantId };
+    return { capacity, tenantId: user.tenantId };
   }
 
   /**

@@ -2,8 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ClientPayoutManualReversalClosureMethod, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
-import { Capacity } from '../policy-engine/types/effective-permission.types';
+import { isOfficeAdminCapacity, capacityFromUser } from '../policy-engine/effective-permission-mapping';
 import { CloseClientPayoutManualReversalDto } from './dto/close-client-payout-manual-reversal.dto';
 
 const REVERSAL_SELECT = {
@@ -162,7 +161,7 @@ export class ClientPayoutManualReversalService {
       where: { id: actorUserId },
       include: { lawyer: { select: { lawyerRank: true } }, staffMember: { select: { staffType: true } } },
     });
-    const capacity = (user?.lawyer?.lawyerRank ?? user?.staffMember?.staffType ?? 'UNKNOWN') as Capacity;
+    const capacity = capacityFromUser(user);
     if (!isOfficeAdminCapacity(capacity)) {
       throw new ForbiddenException({
         code: 'CLIENT_PAYOUT_MANUAL_REVERSAL_FORBIDDEN',
