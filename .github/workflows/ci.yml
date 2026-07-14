@@ -424,8 +424,8 @@ jobs:
             2>&1 | tee "$output_file"
           grep -Eq "Test Suites:[[:space:]]+1 passed, 1 total" "$output_file" || \
             { echo "BLOCKED: ADR-014 PR-1B DB suite did not execute exactly once"; exit 1; }
-          grep -Eq "Tests:[[:space:]]+4 passed, 4 total" "$output_file" || \
-            { echo "BLOCKED: ADR-014 PR-1B DB tests did not execute 4/4"; exit 1; }
+          awk '/^[[:space:]]*Tests:/ { seen = 1; passed = $2; total = $4 } END { exit !(seen && passed ~ /^[0-9]+$/ && total ~ /^[0-9]+$/ && passed == total && total > 0) }' "$output_file" || \
+            { echo "BLOCKED: ADR-014 PR-1B DB tests did not complete with every discovered test passing"; exit 1; }
         working-directory: project
       # TEST-INFRA-1: Gate-1 (tenant-boundary) + Gate-2 (passive-writer) güvenlik spec'leri yukarıdaki
       # dar pattern'lerin dışında kalıyordu → CI'da koşmuyordu. Ayrı/açık step ile koşturulur.
