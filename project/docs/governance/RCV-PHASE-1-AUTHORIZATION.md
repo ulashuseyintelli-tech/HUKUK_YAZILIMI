@@ -1,22 +1,30 @@
-# RCV Program/Register Alignment and Phase 1 Authorization Record
+# RCV Program/Register Alignment and Phase Authorization Record
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance task             : RCV-GOV-001
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
 Architecture                : ADR-014
 Record status               : CANONICAL / DEC-0030 CLOSED
 Canonical merge             : PR #1222 / fcffb12941f33e36e6e42d9d742d0249eb210ab8
+RCV-GOV-002 effect          : PREPARED / CANONICAL UPON APPROVED MERGE
 Phase 0                     : CLOSED (owner-supplied RCV-P0-T09 baseline)
-Phase 1 execution authority : NOT GRANTED
-Owner GO                    : OPEN / REQUIRED
+Phase 1 Analysis            : COMPLETE (owner-supplied progression baseline)
+Consolidation               : COMPLETE (owner-supplied progression baseline)
+Target Architecture         : COMPLETE (owner-supplied progression baseline)
+Implementation Roadmap      : COMPLETE (owner-supplied progression baseline)
+Current phase               : RCV-P2 (planning label; no new Master Register identity)
+RCV-P2-WS01-P01             : CLOSED (PR #1249 / 52b35a0d)
+Next eligible task          : RCV-P2-WS01-P02
+WS01-P02 authority          : NOT GRANTED / OWNER GO REQUIRED
 ```
 
-Bu kayıt yalnız governance/register alignment ve Phase 1 yetki kapısını tanımlar. Kod,
+Bu kayıt yalnız governance/register alignment, gerçekleşen phase progression ve bir sonraki
+task için owner yetki kapısını tanımlar. Kod,
 schema, migration, test, runtime, veri erişimi, evidence execution, consumer switch veya
-cutover yetkisi üretmez.
+cutover yetkisi üretmez; açık owner ve legal gate'leri kapatmaz.
 
 ## 1. Governance Reconciliation Report
 
@@ -38,10 +46,14 @@ cutover yetkisi üretmez.
 
 ### 1.2 Owner tarafından sağlanan, bu görevde yeniden üretilmeyen baseline
 
-Owner görev brief'i `RCV-P0-T01..T09 = COMPLETE`, `PHASE 0 CLOSED` ve
-`PHASE 1 NOT AUTHORIZED` durumlarını precondition olarak verir. Bu kayıt Phase 0 analizini,
-coverage'ını veya evidence paketini yeniden üretmez; yalnız bu owner-supplied closure
-attestation'ını repository'nin mevcut canonical register zincirine bağlar.
+RCV-GOV-001 görev brief'i `RCV-P0-T01..T09 = COMPLETE`, `PHASE 0 CLOSED` ve o tarihte
+`PHASE 1 NOT AUTHORIZED` durumlarını precondition olarak vermiştir. Sonraki explicit owner
+task brief'leri Phase 1 entry ve task-scoped ilerlemeyi sağlamış; RCV-GOV-002 brief'i ise
+`Phase 1 Analysis`, `Consolidation`, `Target Architecture` ve `Implementation Roadmap`
+durumlarını `COMPLETE`, `RCV-P2-WS01-P01` durumunu `CLOSED` olarak kaydetme talimatı vermiştir.
+Bu kayıt söz konusu analiz, mimari veya roadmap çıktılarını yeniden üretmez ve içerik kabulü
+yapmaz; yalnız owner-supplied progression attestation'ını repository'nin mevcut canonical
+register zinciriyle uzlaştırır.
 
 ### 1.3 Alignment seçimi
 
@@ -54,8 +66,22 @@ attestation'ını repository'nin mevcut canonical register zincirine bağlar.
 altında subordinate planning decomposition olarak kaydedilir. Bu pointer, RCV work-item'larının
 execution veya status owner'lığını `CCB-001`e taşımaz. Ayrı implementation authority, anayasal
 semantik, canonicalization milestone veya cutover hattı oluşturulmaz. PR #1222'nin approved
-merge'iyle disposition canonical ve DEC-0030 `CLOSED` olmuştur; Phase 1 owner GO kapısı ayrı ve
-açık kalır.
+merge'iyle disposition canonical ve DEC-0030 `CLOSED` olmuştur. Ayrı Phase 1 owner GO kapısı
+RCV-GOV-001 kapanış anında açık kalmıştır. Sonraki owner progression durumu §1.4 ve §5'te
+ayrı, tarihsel kaydı yeniden yazmadan uzlaştırılır.
+
+### 1.4 RCV-GOV-002 progression reconciliation
+
+- `RCV-P0-BAR-0021:PHASE1_ENTRY`, owner'ın explicit `GO-PHASE-1` kararı ve bunu izleyen
+  ayrı task-scoped brief'lerle Phase 1 entry amacı bakımından tüketilmiştir.
+- Phase 1 yetkisi hiçbir zaman genel veya süresiz bir implementation/cutover yetkisi olarak
+  yorumlanmaz; tamamlanan her adım kendi owner brief'iyle sınırlıdır.
+- `RCV-P2-WS01-P01` repository gerçeği PR #1249, squash
+  `52b35a0d668d6efdc043dde672b47fdd6f320cb1` ve dört başarılı CI check'iyle doğrulanır.
+- `RCV-P2-WS01-P02` yalnız next-eligible task'tır. Implementation authority verilmemiştir;
+  ayrı ve explicit owner GO zorunludur.
+- Bu reconciliation yeni program/register kimliği veya ikinci bir Master Register entry
+  oluşturmaz.
 
 ## 2. Program/Register Alignment Kaydı
 
@@ -63,10 +89,10 @@ açık kalır.
 |---|---|---|
 | `RCV` | `CCB-001` altında identity-only program/planning cross-pointer'ı | Yeni master stream veya work-item owner'lığı oluşturmaz |
 | `RCV-P0` | Owner-supplied Phase 0 analytical closure | Execution veya implementation authority üretmez |
-| `RCV-P1` | `CCB-001` altında owner-gated Phase 1 planning decomposition | Explicit owner GO olmadan task açılamaz |
+| `RCV-P1` | `CCB-001` altında owner-gated Phase 1 planning decomposition | Analysis/consolidation/target architecture tamamlanmıştır; her execution adımı task-scoped owner brief'i gerektirir |
 | `RCV-P0-CP-01` | `Receivable Program Governance and Source Control` control-plane node'u | Yalnız §3 entry condition ile Phase 1 route'una izin verir; domain workstream değildir |
-| `RCV-P0-BAR-0021:PHASE1_ENTRY` | Phase 1 execution entry barrier | Yalnız §4 kriterleriyle kapanır |
-| `WAVE 0 / RCV-P1-T15-A` | İlk ve tek Phase 1 task adayı | Eligible adaydır; authorized veya started değildir |
+| `RCV-P0-BAR-0021:PHASE1_ENTRY` | Phase 1 execution entry barrier | Phase 1 entry için `SATISFIED / CONSUMED`; başka phase/task yetkisi üretmez |
+| `WAVE 0 / RCV-P1-T15-A` | İlk Phase 1 task adayı | Owner-authorized ve tamamlanmış tarihsel entry task'ıdır; sonraki task'lara yetki taşımaz |
 
 ### Namespace ayrımı
 
@@ -132,30 +158,28 @@ Barrier yalnız aşağıdaki kriterlerin tümü sağlanırsa kapanabilir:
 
 Barrier kapanmadan Phase 1 task execution başlatılamaz.
 
-## 5. Phase 1 Authorization Record Taslağı
+RCV-GOV-002 ile kaydedilen owner progression baseline'ı ve bu Decision Log kaydı approved
+merge ile canonical olduğunda barrier, yalnız Phase 1 entry amacı bakımından
+`SATISFIED / CONSUMED` olarak uzlaştırılır. Bu historical closure; `RCV-P2-WS01-P02`,
+evidence, PR-11, consumer switch veya cutover authority oluşturmaz.
+
+## 5. Phase 1 Authorization Reconciliation
 
 ```text
 Authorization ID : RCV-P1-AUTH-001
 Program          : RECEIVABLE / RCV
 Parent register  : CCB-001
 Entry barrier    : RCV-P0-BAR-0021:PHASE1_ENTRY
-Authorized wave  : [UNSET — owner decision required]
-Authorized task  : [UNSET — owner decision required]
-Owner decision   : [UNSET]
-Decision date    : [UNSET]
-Decision-log ref : [UNSET]
-Status           : DRAFT / NOT AUTHORIZED
+Initial authority: GO-PHASE-1 / WAVE 0 / RCV-P1-T15-A only
+Progression      : Subsequent tasks authorized by separate owner task briefs
+Decision date    : 2026-07-14
+Decision-log ref : RCV-GOV-002 progression reconciliation
+Status           : CONSUMED / PHASE 1 ANALYSIS COMPLETE
 ```
 
-Beklenen owner kararı yalnız şudur:
-
-```text
-GO-PHASE-1:
-Authorize WAVE 0 / RCV-P1-T15-A only.
-```
-
-Bu metnin taslakta bulunması kararın verilmiş olduğu anlamına gelmez. Alanlar owner'ın ayrı,
-açık kararı gelene kadar `UNSET` kalır.
+Bu reconciliation geçmiş task brief'lerini tek ve genel bir Phase 1 authority'ye dönüştürmez.
+Her tamamlanan task kendi brief'iyle sınırlıdır; bir sonraki implementation task'ı ayrıca
+owner GO gerektirir.
 
 ## 6. WAVE 0 Entry Checklist
 
@@ -165,27 +189,33 @@ açık kararı gelene kadar `UNSET` kalır.
 | `CAN-CUT-02` cross-pointer canonical main'de | PASS | PASS — PR #1222 |
 | DEC-0030 canonical disposition | CLOSED | CLOSED — PR #1222 |
 | `RCV-P0-CP-01` entry condition | SATISFIED | SATISFIED — PR #1222 |
-| Explicit owner `GO-PHASE-1` | PRESENT | MISSING / REQUIRED |
-| Authorized scope | Yalnız `WAVE 0 / RCV-P1-T15-A` | NOT AUTHORIZED |
-| WAVE 1+ | CLOSED TO ENTRY | CLOSED TO ENTRY |
-| Phase 1 execution | NOT STARTED before barrier closure | NOT STARTED |
+| Explicit owner `GO-PHASE-1` | PRESENT | PRESENT — initial `WAVE 0 / RCV-P1-T15-A` |
+| Initial authorized scope | Yalnız `WAVE 0 / RCV-P1-T15-A` | CONSUMED / COMPLETE |
+| Subsequent Phase 1 tasks | Ayrı task-scoped owner brief | COMPLETE per owner-supplied progression baseline |
+| Phase 1 Analysis | COMPLETE | COMPLETE |
+| Consolidation / Target Architecture | COMPLETE | COMPLETE |
+| Implementation Roadmap | COMPLETE | COMPLETE |
 
-## 7. Açık Owner GO Alanı
+## 7. Phase 2 Next-Task Owner Gate
 
 ```text
-OWNER DECISION: ______________________________________________
-OWNER / RATIFIER: _____________________________________________
-DECISION DATE: ________________________________________________
-AUTHORITATIVE RECORD REFERENCE: ________________________________
+CURRENT CLOSED TASK : RCV-P2-WS01-P01
+NEXT ELIGIBLE TASK  : RCV-P2-WS01-P02
+IMPLEMENTATION GO   : [UNSET / OWNER GO REQUIRED]
+OWNER / RATIFIER    : __________________________________________
+DECISION DATE       : __________________________________________
+AUTHORITATIVE REF   : __________________________________________
 ```
 
-Owner GO verilmezse korunacak safe-hold:
+WS01-P02 için ayrı owner GO verilmezse korunacak safe-hold:
 
 ```text
-PHASE 1 NOT AUTHORIZED
-NO RCV-P1 TASK STARTED
+RCV-P2-WS01-P01 CLOSED
+RCV-P2-WS01-P02 NOT AUTHORIZED / NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN
+OWNER / LEGAL DECISION GATES UNCHANGED
+REPRESENTATIVE EVIDENCE / ACCEPTANCE GATES UNCHANGED
 PR-11 NOT AUTHORIZED
 RUNTIME CUTOVER NOT AUTHORIZED
 ```
