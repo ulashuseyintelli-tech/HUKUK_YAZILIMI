@@ -555,6 +555,23 @@ export class LawyerService {
       });
       if (count === 0) throw new NotFoundException("Avukat bulunamadı");
 
+      // CANDIDATE-A (OFF/OD-14, WAVE 1 — RATIFIED Contract): bağlı UserAccount varsa AYNI transaction
+      // içinde deaktive edilir — mevcut per-request enforcement'ı (auth.service.ts:validateUser())
+      // tetikler. Fail-closed + atomic: count!==1 (tenant uyuşmazlığı veya bütünlük sorunu) → TÜM
+      // transaction (Lawyer write dahil) rollback edilir; "best-effort" YASAK (ratifikasyon kararı —
+      // aksi hâl kapatılmaya çalışılan riski veri bütünlüğü bozulduğunda sessizce yeniden üretirdi).
+      if (existing.userId) {
+        const userResult = await tx.user.updateMany({
+          where: { id: existing.userId, tenantId },
+          data: { isActive: false },
+        });
+        if (userResult.count !== 1) {
+          throw new ConflictException(
+            "Bağlı kullanıcı hesabı deaktive edilemedi (tenant uyuşmazlığı veya veri bütünlüğü sorunu); pasifleştirme iptal edildi."
+          );
+        }
+      }
+
       for (const t of transferPlan) {
         await tx.caseLawyer.update({
           where: { id: t.oldCaseLawyerId },
