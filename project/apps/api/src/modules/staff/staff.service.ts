@@ -176,15 +176,34 @@ export class StaffService {
   }
 
   // Personel sil (soft delete)
+  //
+  // CANDIDATE-A (OFF/OD-14, WAVE 1 — RATIFIED Contract): bağlı UserAccount varsa AYNI transaction
+  // içinde deaktive edilir — mevcut per-request enforcement'ı (auth.service.ts:validateUser())
+  // tetikler. Fail-closed + atomic: count!==1 (tenant uyuşmazlığı veya bütünlük sorunu) → TÜM
+  // transaction (StaffMember write dahil) rollback edilir; "best-effort" YASAK (ratifikasyon kararı).
   async remove(id: string, tenantId: string) {
     const existing = await this.prisma.staffMember.findFirst({
       where: { id, tenantId },
     });
     if (!existing) throw new NotFoundException('Personel bulunamadı');
 
-    return this.prisma.staffMember.update({
-      where: { id },
-      data: { isActive: false },
+    return this.prisma.$transaction(async (tx) => {
+      if (existing.userId) {
+        const userResult = await tx.user.updateMany({
+          where: { id: existing.userId, tenantId },
+          data: { isActive: false },
+        });
+        if (userResult.count !== 1) {
+          throw new ConflictException(
+            'Bağlı kullanıcı hesabı deaktive edilemedi (tenant uyuşmazlığı veya veri bütünlüğü sorunu); pasifleştirme iptal edildi.'
+          );
+        }
+      }
+
+      return tx.staffMember.update({
+        where: { id },
+        data: { isActive: false },
+      });
     });
   }
 

@@ -10,7 +10,7 @@
  * invariant'ı yalnız KARAKTERİZE etmişti ("CaseLawyer'a hiç dokunulmaz") — o karakterizasyon artık
  * YANLIŞ (bilerek), bu görev tam da o boşluğu kapatıyor; eski testler bu dosyada GÜNCELLENDİ.
  */
-import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { LawyerService } from "../lawyer.service";
 
 const TENANT = "t1";
@@ -35,6 +35,7 @@ const build = (
     replacementLawyer?: Record<string, unknown> | null;
     responsibleCaseLawyers?: Array<{ id: string; caseId: string }>;
     replacementCaseLawyers?: Array<{ id: string; caseId: string }>;
+    userUpdateCount?: number; // CANDIDATE-A: tx.user.updateMany({id,tenantId}) mock count'u
   } = {},
 ) => {
   const existing = opts.existing ?? EXISTING;
@@ -50,6 +51,10 @@ const build = (
       }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       delete: jest.fn(), // hard-delete ÇAĞRILMAMALI
+    },
+    user: {
+      // CANDIDATE-A (OFF/OD-14, RATIFIED Contract): bağlı UserAccount fail-closed deaktivasyonu
+      updateMany: jest.fn().mockResolvedValue({ count: opts.userUpdateCount ?? 1 }),
     },
     caseLawyer: {
       deleteMany: jest.fn(), // ÇAĞRILMAMALI (L1A: ilişkiler korunur)
@@ -281,5 +286,64 @@ describe("H1 — LawyerService.delete() sorumlu avukat devri", () => {
     await svc.delete(TENANT, LAWYER_ID, { userId: "u1" });
     const metadata = audit.logInTransaction.mock.calls[0][1].metadata;
     expect(metadata).not.toHaveProperty("responsibilityTransfer");
+  });
+});
+
+/**
+ * CANDIDATE-A (OFF/OD-14, WAVE 1 — Session/Lifecycle Safety, RATIFIED Contract) — bağlı
+ * UserAccount'ın Lawyer ile AYNI transaction içinde deaktive edilmesi. Fail-closed + atomic:
+ * userId dolu VE user.updateMany count!==1 ise ConflictException fırlar (best-effort YASAK —
+ * owner ratifikasyonu, ilk taslaktaki "sessiz no-op" tasarımı REDDETTİ). userId null ise
+ * mevcut profile-only davranış (bu dosyanın ÜSTÜNDEKİ tüm testler) DEĞİŞMEDEN korunur.
+ */
+describe("CANDIDATE-A — LawyerService.delete() bağlı User deaktivasyonu", () => {
+  it("userId NULL ise user.updateMany HİÇ ÇAĞRILMAZ (mevcut profile-only davranış korunur)", async () => {
+    const { svc, prisma } = build(); // EXISTING'de userId yok
+    await svc.delete(TENANT, LAWYER_ID, { userId: "u1" });
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("bağlı userId VARSA → user.updateMany({id,tenantId}, isActive:false) doğru where ile çağrılır", async () => {
+    const { svc, prisma } = build({ existing: { ...EXISTING, userId: "u-linked" } });
+    const result = await svc.delete(TENANT, LAWYER_ID, { userId: "u1" });
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: "u-linked", tenantId: TENANT },
+      data: { isActive: false },
+    });
+    expect(result.isActive).toBe(false);
+  });
+
+  it("bağlı User ZATEN inactive olsa bile updateMany count=1 döner → idempotent, hata FIRLATILMAZ", async () => {
+    const { svc } = build({ existing: { ...EXISTING, userId: "u-linked" }, userUpdateCount: 1 });
+    await expect(svc.delete(TENANT, LAWYER_ID, { userId: "u1" })).resolves.toMatchObject({ isActive: false });
+  });
+
+  it("user.updateMany count!==1 (tenant uyuşmazlığı/bütünlük sorunu) → ConflictException; " +
+     "Lawyer AKTİF profil YAYINLAMAZ (rollback — gerçek atomicity Prisma $transaction'ın kendi " +
+     "garantisi, aynı tx callback'i içinde doğrulandı; bu unit test yalnız fail-closed throw'u doğrular)",
+    async () => {
+      const { svc } = build({ existing: { ...EXISTING, userId: "u-linked" }, userUpdateCount: 0 });
+      await expect(svc.delete(TENANT, LAWYER_ID, { userId: "u1" })).rejects.toThrow(ConflictException);
+    },
+  );
+
+  it("REGRESYON: H1 sorumluluk devri + User deaktivasyonu AYNI transaction'da birlikte çalışır", async () => {
+    const { svc, prisma } = build({
+      existing: { ...EXISTING, userId: "u-linked" },
+      responsibleCaseLawyers: [{ id: "cl-old-1", caseId: "c1" }],
+      replacementLawyer: { id: REPLACEMENT_ID, isActive: true },
+      replacementCaseLawyers: [{ id: "cl-new-1", caseId: "c1" }],
+    });
+    const result = await svc.delete(TENANT, LAWYER_ID, { userId: "u1" }, REPLACEMENT_ID);
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: "u-linked", tenantId: TENANT },
+      data: { isActive: false },
+    });
+    expect(prisma.caseLawyer.update).toHaveBeenCalledWith({
+      where: { id: "cl-new-1" },
+      data: { isResponsible: true, role: "RESPONSIBLE" },
+    });
+    expect(result.isActive).toBe(false);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 });
