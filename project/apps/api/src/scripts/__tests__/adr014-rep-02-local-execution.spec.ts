@@ -174,6 +174,16 @@ describe('ADR014-REP-02 local representative evidence execution', () => {
     expect(result.artifact.baseline.abortCount).toBe(1);
   });
 
+  it('does not report zero-cent exact reconciliation for an empty eligible population', async () => {
+    const result = await executeAdr014Rep02(config(root), database([]));
+
+    expect(result.status).toBe('FAILED');
+    expect(result.artifact.failureCodes).toEqual(['EMPTY_ELIGIBLE_POPULATION']);
+    expect(result.artifact.financialReconciliation.result).toBe('FAIL_CLOSED');
+    expect(result.artifact.coverage.complete).toBe(false);
+    expect(result.artifact.runtimeBindingStatus).toBe('NOT_COMPLETED');
+  });
+
   it('does not overwrite an existing evidence artifact', async () => {
     const input = config(root, 'write-once.json');
     await fs.writeFile(input.outputPath, 'owner-data', 'utf8');

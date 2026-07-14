@@ -603,7 +603,8 @@ function artifactBody(input: {
       exactMatchRowCount,
       nonZeroRowCount,
       notComparableRowCount,
-      result: nonZeroRowCount === 0 && notComparableRowCount === 0 &&
+      result: input.status === 'CAPTURE_COMPLETE' && input.snapshot.populationCount > 0 &&
+        nonZeroRowCount === 0 && notComparableRowCount === 0 &&
         observations.length === input.snapshot.populationCount
         ? 'ZERO_CENT_EXACT' as const
         : 'FAIL_CLOSED' as const,
