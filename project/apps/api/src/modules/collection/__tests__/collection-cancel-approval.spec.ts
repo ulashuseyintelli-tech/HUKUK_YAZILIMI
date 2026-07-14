@@ -32,7 +32,14 @@ describe('OWN-29-B CollectionService.requestCancel', () => {
     };
     const { svc, prisma } = buildService({ id: 'col-1', caseId: 'case-1', status: 'CONFIRMED' }, officeApproval);
 
-    const result = await svc.requestCancel('tenant-1', 'col-1', { cancelReason: 'sehven kayit' }, 'requester-1', 'case-1');
+    const result = await svc.requestCancel(
+      'tenant-1',
+      'col-1',
+      { cancelReason: 'sehven kayit' },
+      'requester-1',
+      'case-1',
+      { correlationId: 'corr-void-request' },
+    );
 
     expect(result).toEqual({
       requested: true,
@@ -50,6 +57,7 @@ describe('OWN-29-B CollectionService.requestCancel', () => {
         caseId: 'case-1',
         collectionId: 'col-1',
         cancelReason: 'sehven kayit',
+        correlationId: 'corr-void-request',
       },
       reason: 'Confirmed/posted tahsilat iptali K4 four-eyes onayı gerektirir.',
       idempotencyKey: 'collection-void:col-1',

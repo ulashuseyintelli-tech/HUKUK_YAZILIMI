@@ -40,6 +40,8 @@ import { applyCaseStatusChange } from '../case-status/case-status.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import { interestWriteData, normalizeInterestWriteIntent } from '../claim-item/interest-write-admission';
 import { validateInterestAccrualState } from '../claim-item/interest-accrual-policy';
+import { AuditService } from '../audit/audit.service';
+import { createCollectionMutationTrace } from '../collection/collection-audit';
 
 const COLLECTION_DISPOSITION_APPROVAL_ACTION = 'COLLECTION_DISPOSITION_POST';
 const COLLECTION_DISPOSITION_TARGET_TYPE = 'COLLECTION_DISPOSITION';
@@ -49,6 +51,7 @@ export class OfficeApprovalDomainSyncService {
   constructor(
     @Optional() private readonly domainEventIngestService?: DomainEventIngestService,
     @Optional() private readonly journalWriter?: AccountingJournalWriterService,
+    @Optional() private readonly auditService?: AuditService,
   ) {}
 
   /**
@@ -270,7 +273,7 @@ export class OfficeApprovalDomainSyncService {
     if (!req.approverUserId) {
       throw new ConflictException('Onayli COLLECTION_VOID approval kaydinda approverUserId yok.');
     }
-    if (!this.domainEventIngestService || !this.journalWriter) {
+    if (!this.domainEventIngestService || !this.journalWriter || !this.auditService) {
       throw new ConflictException('COLLECTION_VOID finalize dependencies are not available.');
     }
 
@@ -293,12 +296,15 @@ export class OfficeApprovalDomainSyncService {
     await executeCollectionCancelInTransaction(tx, {
       domainEventIngestService: this.domainEventIngestService,
       journalWriter: this.journalWriter,
+      auditService: this.auditService,
     }, {
       tenantId: req.tenantId,
       id: intent.collectionId,
       dto: { cancelReason: intent.cancelReason },
       actorUserId: req.approverUserId,
       expectedCaseId: intent.caseId,
+      trace: createCollectionMutationTrace(intent.correlationId, req.id),
+      approvalRequestId: req.id,
     });
 
     const done = await tx.officeApprovalRequest.updateMany({
@@ -324,10 +330,11 @@ export class OfficeApprovalDomainSyncService {
     const caseId = typeof value.caseId === 'string' ? value.caseId.trim() : '';
     const collectionId = typeof value.collectionId === 'string' ? value.collectionId.trim() : '';
     const cancelReason = typeof value.cancelReason === 'string' ? value.cancelReason.trim() : '';
+    const correlationId = typeof value.correlationId === 'string' ? value.correlationId.trim() : '';
     if (!caseId || !collectionId || !cancelReason || collectionId !== req.targetRef) {
       throw new ConflictException('COLLECTION_VOID savedIntent hedef/gerekce bilgisi gecersiz.');
     }
-    return { caseId, collectionId, cancelReason };
+    return { caseId, collectionId, cancelReason, ...(correlationId ? { correlationId } : {}) };
   }
 
   private async approveClaimItemHighImpact(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {

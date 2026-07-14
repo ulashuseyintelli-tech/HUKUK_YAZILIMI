@@ -34,7 +34,8 @@ function setup(opts: { summaryEngine?: any; caseRecord?: any; lockedDup?: any; p
       findUnique: jest.fn(async () => opts.lockedDup ?? null),
     },
     collectionAllocation: { create: jest.fn() },
-    collectionOverpayment: { create: jest.fn() },
+    collectionOverpayment: { create: jest.fn(async () => ({ id: 'overpayment-1' })) },
+    auditLog: { create: jest.fn() },
     // P0-1: advisory xact lock — mock no-op.
     $executeRaw: jest.fn(async () => 0),
   };

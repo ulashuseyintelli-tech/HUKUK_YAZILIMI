@@ -354,7 +354,13 @@ export class BankService {
    * - BankController.matchTransaction() → POST /bank/transactions/:id/match (banka hareketini dosyayla eşleştirir)
    * </remarks>
    */
-  async matchTransaction(transactionId: string, caseId: string, userId: string, tenantId: string) {
+  async matchTransaction(
+    transactionId: string,
+    caseId: string,
+    userId: string,
+    tenantId: string,
+    correlationId?: string,
+  ) {
     const transaction = await this.db.bankTransaction.findFirst({
       where: { id: transactionId, tenantId },
     });
@@ -372,7 +378,7 @@ export class BankService {
     // BANK_SEIZURE ≠ bu). Idempotency = mevcut isMatched/matchedCollectionId (yalnız create BAŞARILIYSA).
     let collection: any;
     try {
-      collection = await this.collectionService.create(
+      const collectionArgs = [
         tenantId,
         {
           caseId,
@@ -384,7 +390,10 @@ export class BankService {
           description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
         } as any,
         userId,
-      );
+      ] as const;
+      collection = correlationId
+        ? await this.collectionService.create(...collectionArgs, { correlationId })
+        : await this.collectionService.create(...collectionArgs);
     } catch (err: any) {
       // Closed-case (BadRequestException) vb. → eşleşme YAPILMAZ, raporlanır.
       this.logger.warn(

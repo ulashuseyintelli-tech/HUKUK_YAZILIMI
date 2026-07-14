@@ -150,6 +150,9 @@ export class DomainEventIngestService {
           aggregateVersion: Number(nextVersion),
           occurredAt: event.header.occurredAt,
           tenantId: event.header.tenantId,
+          ...(event.header.correlationId ? { correlationId: event.header.correlationId } : {}),
+          ...(event.header.commandId ? { commandId: event.header.commandId } : {}),
+          ...(event.header.causationId ? { causationId: event.header.causationId } : {}),
         },
       },
     });

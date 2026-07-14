@@ -44,6 +44,9 @@ export interface DomainEventHeader {
 
   actor: EventActor; // HR-26
   causedBy?: string; // eventId of causing event — HR-23
+  correlationId?: string; // request/process trace — COL/OD-05
+  commandId?: string; // server-generated mutation attempt id — COL/OD-05
+  causationId?: string; // non-event cause such as approvalRequestId — COL/OD-05
 
   tenantId: string;
 }

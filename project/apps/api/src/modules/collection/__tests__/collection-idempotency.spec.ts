@@ -51,6 +51,7 @@ function setup(
     },
     collectionAllocation: { create: jest.fn() },
     collectionOverpayment: { create: jest.fn() },
+    auditLog: { create: jest.fn() },
   };
   const prisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(tx)),

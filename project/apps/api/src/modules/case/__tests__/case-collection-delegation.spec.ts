@@ -12,7 +12,7 @@ function buildService(coll: any, prisma: any = {}) {
   // domainEventIngest, collectionService, clientService, lawyerService, debtorService (RFA-016).
   return new CaseService(
     prisma,
-    {} as any,
+    { logInTransaction: jest.fn(async () => undefined) } as any,
     {} as any,
     {} as any,
     {} as any,
@@ -25,13 +25,15 @@ function buildService(coll: any, prisma: any = {}) {
 }
 
 function buildPrisma(collection: any) {
-  return {
+  const prisma: any = {
     collection: {
       findFirst: jest.fn(async () => collection),
       update: jest.fn(async ({ data }) => ({ ...collection, ...data })),
       delete: jest.fn(async () => collection),
     },
   };
+  prisma.$transaction = jest.fn(async (fn: any) => fn(prisma));
+  return prisma;
 }
 
 function expectConflict(error: any, response: Record<string, unknown>) {

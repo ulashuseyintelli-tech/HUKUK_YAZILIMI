@@ -610,7 +610,8 @@ export class ThirdPartyService {
   async addExternalCaseCollection(
     tenantId: string, 
     externalCaseId: string, 
-    dto: { amount: number; date?: string; notes?: string; syncToMainCase?: boolean }
+    dto: { amount: number; date?: string; notes?: string; syncToMainCase?: boolean },
+    correlationId?: string,
   ) {
     const externalCase = await (this.prisma as any).externalCase.findFirst({
       where: { id: externalCaseId, tenantId },
@@ -659,7 +660,7 @@ export class ThirdPartyService {
     // sourceType=EXTERNAL_CASE + sourceId=externalCaseId → idempotency (duplicate guard).
     if (dto.syncToMainCase !== false && externalCase.caseDebtor?.case?.id) {
       try {
-        await this.collectionService.create(tenantId, {
+        const collectionArgs = [tenantId, {
           caseId: externalCase.caseDebtor.case.id,
           amount: dto.amount,
           type: "OTHER", // Alacak Haczi tahsilatı
@@ -667,7 +668,12 @@ export class ThirdPartyService {
           sourceType: "EXTERNAL_CASE" as any,
           sourceId: externalCaseId,
           description: `[Alacak Haczi] ${externalCase.externalOffice} ${externalCase.externalCaseNo} - ${externalCase.counterpartyName}${dto.notes ? ` - ${dto.notes}` : ''}`,
-        } as any);
+        } as any] as const;
+        if (correlationId) {
+          await this.collectionService.create(...collectionArgs, undefined, { correlationId });
+        } else {
+          await this.collectionService.create(...collectionArgs);
+        }
       } catch (err: any) {
         // Closed-case reddi vb. → ana dosyaya yansıtılamadı, raporlanır (yutulmaz).
         console.log("Ana dosyaya tahsilat kaydı eklenemedi (kanonik yol):", err?.message ?? err);
