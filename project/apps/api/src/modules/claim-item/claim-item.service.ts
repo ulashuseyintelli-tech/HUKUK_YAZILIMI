@@ -20,7 +20,9 @@ import { defaultInterestAccrualStatusForItemType, validateInterestAccrualState }
 import {
   CLAIM_ITEM_CASE_TARGET_TYPE,
   CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+  CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS,
   CLAIM_ITEM_INTENT_VERSION,
+  CLAIM_ITEM_LOW_IMPACT_USER_FIELDS,
   CLAIM_ITEM_TARGET_TYPE,
   type ClaimItemHighImpactSavedIntent,
   type ClaimItemPatch,
@@ -34,26 +36,6 @@ import {
   assertInvoiceClaimItemTypeTransitionAllowed,
 } from './invoice-claim-item.policy';
 import { interestWriteData, normalizeInterestWriteIntent } from './interest-write-admission';
-
-const LOW_IMPACT_USER_FIELDS = ['description', 'referenceNo', 'sortOrder'] as const;
-const HIGH_IMPACT_USER_FIELDS = [
-  'amount',
-  'itemType',
-  'currency',
-  'interestType',
-  'interestTypeCode',
-  'interestRate',
-  'interestStartDate',
-  'interestEndDate',
-  'dueDate',
-  'interestAccrualStatus',
-  'interestStartDateProvenance',
-  'noInterestReason',
-  'noInterestConfirmedById',
-  'isAllDebtorsLiable',
-  'liableDebtorIds',
-  'status',
-] as const;
 
 export interface ClaimItemMutationResult {
   applied: boolean;
@@ -1143,11 +1125,11 @@ export class ClaimItemService {
   }
 
   private isLowImpactField(field: string): boolean {
-    return (LOW_IMPACT_USER_FIELDS as readonly string[]).includes(field);
+    return (CLAIM_ITEM_LOW_IMPACT_USER_FIELDS as readonly string[]).includes(field);
   }
 
   private isHighImpactField(field: string): boolean {
-    return (HIGH_IMPACT_USER_FIELDS as readonly string[]).includes(field);
+    return (CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS as readonly string[]).includes(field);
   }
 
   private stripUndefined(input: Record<string, unknown>): ClaimItemPatch {
