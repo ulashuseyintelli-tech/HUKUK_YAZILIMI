@@ -68,7 +68,19 @@ export interface ClaimItemHumanDocumentCreateInput {
   readonly envelope: CanonicalWriteEnvelopeV1<'ClaimItem'>;
 }
 
-type ClaimItemSourceAuthority = ClaimItemSystemWriterRoute | 'HUMAN_DOCUMENT';
+export interface ClaimItemBackfillSourceCreateInput {
+  readonly tenantId: string;
+  readonly caseId: string;
+  readonly sourceId: string;
+  readonly sourceSlot?: string;
+  readonly data: Record<string, unknown>;
+  readonly envelope: CanonicalWriteEnvelopeV1<'ClaimItem'>;
+}
+
+type ClaimItemSourceAuthority =
+  | ClaimItemSystemWriterRoute
+  | 'HUMAN_DOCUMENT'
+  | 'DUE_BACKFILL';
 
 interface ClaimItemSourceContext {
   readonly authority: ClaimItemSourceAuthority;
@@ -106,8 +118,9 @@ const OPAQUE_SOURCE_SLOT = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
  * tenant/case/source/slot across app instances. The persisted JSON marker makes
  * retries and changed-payload conflicts deterministic without a schema change.
  * This is deliberately not represented as a structural DB unique constraint:
- * raw SQL, explicitly deferred backfills and test materializers remain outside
- * this guard and require their own authorization.
+ * raw SQL and test materializers remain outside this guard and require their own
+ * authorization. The already-authorized Due backfill enters through the dedicated
+ * `prepareBackfillCreate` boundary; it is not promoted to a runtime writer route.
  */
 export class ClaimItemSourceIntegrityGuard {
   async prepareSystemCreate(
@@ -122,11 +135,48 @@ export class ClaimItemSourceIntegrityGuard {
       sourceSlot: context.sourceSlot,
     });
     this.assertProvenanceScope(context, provenance);
-    await this.lockCreate(context, input.data, database);
+    await this.lockCreate(context, input.data, provenance, database);
     const sourceRecord = await this.validateSourceRecord(context, database);
     this.assertSystemPayloadBinding(context, input.data, sourceRecord);
     const payloadHash = this.payloadHash(input.data);
     await this.assertCreateConflictFree(context, input.data, payloadHash, sourceRecord, database);
+    return this.withMarker(
+      input.data,
+      this.marker(context, payloadHash),
+      provenance,
+    );
+  }
+
+  async prepareBackfillCreate(
+    input: ClaimItemBackfillSourceCreateInput,
+    database: any,
+  ): Promise<Record<string, unknown>> {
+    this.assertPayloadScope(input.tenantId, input.caseId, input.data);
+    const context = this.context({
+      authority: 'DUE_BACKFILL',
+      sourceType: 'DUE_BACKFILL',
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      sourceId: input.sourceId,
+      sourceSlot: this.normalizeSourceSlot(input.sourceSlot ?? DEFAULT_SOURCE_SLOT),
+    });
+    const provenance = buildClaimItemSourceProvenanceV1({
+      ingress: 'BACKFILL',
+      envelope: input.envelope,
+      sourceSlot: context.sourceSlot,
+    });
+    this.assertProvenanceScope(context, provenance);
+    await this.lockCreate(context, input.data, provenance, database);
+    const sourceRecord = await this.validateSourceRecord(context, database);
+    this.assertSystemPayloadBinding(context, input.data, sourceRecord);
+    const payloadHash = this.payloadHash(input.data);
+    await this.assertCreateConflictFree(
+      context,
+      input.data,
+      payloadHash,
+      sourceRecord,
+      database,
+    );
     return this.withMarker(
       input.data,
       this.marker(context, payloadHash),
@@ -162,7 +212,7 @@ export class ClaimItemSourceIntegrityGuard {
       sourceSlot,
     });
     this.assertProvenanceScope(context, provenance);
-    await this.lockCreate(context, input.data, database);
+    await this.lockCreate(context, input.data, provenance, database);
     await this.validateSourceRecord(context, database);
     const payloadHash = this.payloadHash(input.data);
     await this.assertCreateConflictFree(context, input.data, payloadHash, {}, database);
@@ -290,19 +340,23 @@ export class ClaimItemSourceIntegrityGuard {
   private async lockCreate(
     context: ClaimItemSourceContext,
     data: Record<string, unknown>,
+    provenance: ClaimItemSourceProvenanceV1,
     database: any,
   ): Promise<void> {
-    const collisionHash = context.authority === 'DOCUMENT_AUTO_GENERATOR' ||
-      context.authority === 'HUMAN_DOCUMENT'
-      ? stableJsonHash({
-          version: 1,
-          sourceType: 'CASE_DOCUMENT',
-          tenantId: context.tenantId,
-          caseId: context.caseId,
-          sourceId: context.sourceId,
-          itemType: data.itemType,
-        })
-      : context.identityHash;
+    const collisionHash = context.authority === 'DUE_BRIDGE' ||
+      context.authority === 'DUE_BACKFILL'
+      ? provenance.sourceIdentity.identityHash
+      : context.authority === 'DOCUMENT_AUTO_GENERATOR' ||
+          context.authority === 'HUMAN_DOCUMENT'
+        ? stableJsonHash({
+            version: 1,
+            sourceType: 'CASE_DOCUMENT',
+            tenantId: context.tenantId,
+            caseId: context.caseId,
+            sourceId: context.sourceId,
+            itemType: data.itemType,
+          })
+        : context.identityHash;
     await this.lockIdentity(collisionHash, database);
   }
 
@@ -316,7 +370,8 @@ export class ClaimItemSourceIntegrityGuard {
     database: any,
   ): Promise<ValidatedSourceRecord> {
     switch (context.authority) {
-      case 'DUE_BRIDGE': {
+      case 'DUE_BRIDGE':
+      case 'DUE_BACKFILL': {
         const due = await database.due.findFirst({
           where: { id: context.sourceId, caseId: context.caseId },
           select: { id: true },
@@ -391,6 +446,11 @@ export class ClaimItemSourceIntegrityGuard {
           this.payloadMismatch('Due');
         }
         return;
+      case 'DUE_BACKFILL':
+        if (this.readBackfillSourceId(data.metadata) !== context.sourceId) {
+          this.payloadMismatch('backfill Due');
+        }
+        return;
       case 'CASE_INSTRUMENT_GENERATOR':
         if (data.instrumentId !== context.sourceId) this.payloadMismatch('instrument');
         return;
@@ -420,21 +480,32 @@ export class ClaimItemSourceIntegrityGuard {
     sourceRecord: ValidatedSourceRecord,
     database: any,
   ): Promise<void> {
-    const dueLiveMarkers = context.authority === 'DUE_BRIDGE'
+    const dueSourceMarkers = context.authority === 'DUE_BRIDGE' ||
+      context.authority === 'DUE_BACKFILL'
       ? await database.claimItem.findMany({
           where: {
             tenantId: context.tenantId,
             caseId: context.caseId,
-            metadata: {
-              path: ['dueSync', 'sourceDueId'],
-              equals: context.sourceId,
-            },
+            OR: [
+              {
+                metadata: {
+                  path: ['dueSync', 'sourceDueId'],
+                  equals: context.sourceId,
+                },
+              },
+              {
+                metadata: {
+                  path: ['backfill', 'sourceDueId'],
+                  equals: context.sourceId,
+                },
+              },
+            ],
           },
           select: { id: true },
           take: 2,
         })
       : null;
-    if (dueLiveMarkers && dueLiveMarkers.length > 1) {
+    if (dueSourceMarkers && dueSourceMarkers.length > 1) {
       this.fail(
         'DUE_BRIDGE_MULTIPLE_LIVE_MARKERS',
         'Due source identity is bound to multiple live ClaimItem markers.',
@@ -463,7 +534,7 @@ export class ClaimItemSourceIntegrityGuard {
       this.duplicate();
     }
 
-    if (dueLiveMarkers?.length === 1) this.duplicate();
+    if (dueSourceMarkers?.length === 1) this.duplicate();
 
     const legacy = await this.findLegacyConflict(context, data, sourceRecord, database);
     if (legacy) this.duplicate();
@@ -477,6 +548,7 @@ export class ClaimItemSourceIntegrityGuard {
   ): Promise<unknown> {
     switch (context.authority) {
       case 'DUE_BRIDGE':
+      case 'DUE_BACKFILL':
         // Due markers are counted under the same advisory lock before the
         // canonical marker check, so multiplicity cannot be hidden by findFirst.
         return null;
@@ -576,6 +648,13 @@ export class ClaimItemSourceIntegrityGuard {
     // content. Retries must remain DUPLICATE rather than payload conflicts solely
     // because the application clock advanced between equivalent generations.
     delete serializable.calculatedAt;
+    const metadata = serializable.metadata;
+    if (this.isPlainRecord(metadata) && this.isPlainRecord(metadata.backfill)) {
+      // Backfill run/time identify the execution attempt, not the canonical Due
+      // payload. Equivalent retries across runs must remain DUPLICATE.
+      delete metadata.backfill.runId;
+      delete metadata.backfill.at;
+    }
     return stableJsonHash(serializable);
   }
 
@@ -584,6 +663,15 @@ export class ClaimItemSourceIntegrityGuard {
     const dueSync = metadata.dueSync;
     if (!this.isPlainRecord(dueSync)) return undefined;
     return typeof dueSync.sourceDueId === 'string' ? dueSync.sourceDueId : undefined;
+  }
+
+  private readBackfillSourceId(metadata: unknown): string | undefined {
+    if (!this.isPlainRecord(metadata)) return undefined;
+    const backfill = metadata.backfill;
+    if (!this.isPlainRecord(backfill)) return undefined;
+    return typeof backfill.sourceDueId === 'string'
+      ? backfill.sourceDueId
+      : undefined;
   }
 
   private readMarker(metadata: unknown): ClaimItemSourceMarker | null {

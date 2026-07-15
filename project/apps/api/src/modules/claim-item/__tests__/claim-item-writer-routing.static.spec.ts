@@ -16,6 +16,10 @@ describe('RCV-P2-WS01-P03 static ClaimItem direct-write absence', () => {
     join(__dirname, '..', '..', 'precautionary-order', 'precautionary-order.service.ts'),
     'utf8',
   );
+  const backfillCore = readFileSync(
+    join(__dirname, '..', '..', 'case', 'backfill', 'due-to-claimitem-backfill.core.ts'),
+    'utf8',
+  );
 
   it('CaseService Due and instrument production paths contain no direct ClaimItem mutation', () => {
     expect(caseService).not.toMatch(/claimItem\.(create|update|delete)\s*\(/);
@@ -41,5 +45,13 @@ describe('RCV-P2-WS01-P03 static ClaimItem direct-write absence', () => {
     expect(source).toContain("route: 'PRECAUTIONARY_COST_WRITER'");
     expect(source).not.toMatch(/claimItem\.create\s*\(/);
     expect(precautionaryService).toContain('this.prisma.claimItem.delete');
+  });
+
+  it('authorized backfill prepares every create through the shared source-integrity guard', () => {
+    const source = methodSlice(backfillCore, 'export async function runBackfill(', 'export interface RollbackReport');
+    expect(source).toContain('sourceIntegrity.prepareBackfillCreate');
+    expect(source.indexOf('sourceIntegrity.prepareBackfillCreate'))
+      .toBeLessThan(source.indexOf('tx.claimItem.create'));
+    expect(backfillCore).not.toContain("route: 'DUE_BACKFILL'");
   });
 });

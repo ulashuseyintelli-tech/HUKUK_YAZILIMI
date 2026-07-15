@@ -88,6 +88,73 @@ describeWithDisposableDb('RCV-P2-WS01-P04 source integrity - disposable PostgreS
     };
   }
 
+  function backfillEnvelope(
+    fixture: Awaited<ReturnType<typeof createDueFixture>>,
+    runId: string,
+  ) {
+    return buildCanonicalWriteEnvelopeV1({
+      tenantId: fixture.tenantId,
+      caseId: fixture.caseId,
+      target: { aggregateType: 'ClaimItem' as const },
+      actor: { type: 'SYSTEM', system: 'DUE_BACKFILL' },
+      correlationId: `claim-item-backfill:${runId}`,
+      idempotencyKey: `claim-item-backfill:${runId}:${fixture.dueId}`,
+      occurredAt: '2026-07-15T00:00:00.000Z',
+      effectiveAt: '2026-07-15T00:00:00.000Z',
+      source: {
+        sourceType: 'DUE_BACKFILL',
+        sourceId: fixture.dueId,
+        evidenceRefs: [`backfill-run:${runId}`],
+      },
+      authority: { policyRef: 'REC-AUTH-008' },
+      currency: 'TRY',
+    });
+  }
+
+  function backfillData(
+    fixture: Awaited<ReturnType<typeof createDueFixture>>,
+    runId: string,
+    amount = 100,
+  ) {
+    return {
+      tenantId: fixture.tenantId,
+      caseId: fixture.caseId,
+      itemType: 'PRINCIPAL',
+      originalAmount: amount,
+      demandedAmount: amount,
+      collectedAmount: 0,
+      amount,
+      currency: 'TRY',
+      liableDebtorIds: [],
+      metadata: {
+        backfill: {
+          sourceDueId: fixture.dueId,
+          runId,
+          mappedFrom: 'PRINCIPAL',
+          at: '2026-07-15T00:00:00.000Z',
+        },
+      },
+    };
+  }
+
+  async function createBackfillClaimItem(
+    fixture: Awaited<ReturnType<typeof createDueFixture>>,
+    runId: string,
+    amount = 100,
+  ) {
+    const guard = new ClaimItemSourceIntegrityGuard();
+    return prisma.$transaction(async (tx) => {
+      const data = await guard.prepareBackfillCreate({
+        tenantId: fixture.tenantId,
+        caseId: fixture.caseId,
+        sourceId: fixture.dueId,
+        envelope: backfillEnvelope(fixture, runId),
+        data: backfillData(fixture, runId, amount),
+      }, tx);
+      return tx.claimItem.create({ data: data as any });
+    });
+  }
+
   it('serializes concurrent creates and persists exactly one ClaimItem per source identity', async () => {
     const fixture = await createDueFixture('concurrent');
     const results = await Promise.allSettled([
@@ -115,6 +182,32 @@ describeWithDisposableDb('RCV-P2-WS01-P04 source integrity - disposable PostgreS
     })).rejects.toMatchObject({
       conflictCode: 'SOURCE_PAYLOAD_CONFLICT',
     });
+    expect(await prisma.claimItem.count({ where: { caseId: fixture.caseId } })).toBe(1);
+  });
+
+  it('classifies authorized Backfill retries and changed payloads deterministically', async () => {
+    const fixture = await createDueFixture('backfill-retry-conflict');
+    await createBackfillClaimItem(fixture, 'run-1');
+
+    await expect(createBackfillClaimItem(fixture, 'run-2')).rejects.toMatchObject({
+      conflictCode: 'DUPLICATE_SOURCE_IDENTITY',
+    });
+    await expect(createBackfillClaimItem(fixture, 'run-2', 101)).rejects.toMatchObject({
+      conflictCode: 'SOURCE_PAYLOAD_CONFLICT',
+    });
+    expect(await prisma.claimItem.count({ where: { caseId: fixture.caseId } })).toBe(1);
+  });
+
+  it('serializes live Due and authorized Backfill writers on one source identity', async () => {
+    const fixture = await createDueFixture('due-backfill-race');
+    const results = await Promise.allSettled([
+      router.createSystemClaimItem(dueCreateInput(fixture)),
+      createBackfillClaimItem(fixture, 'race-run'),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+    expect(rejected.reason).toMatchObject({ conflictCode: 'DUPLICATE_SOURCE_IDENTITY' });
     expect(await prisma.claimItem.count({ where: { caseId: fixture.caseId } })).toBe(1);
   });
 
