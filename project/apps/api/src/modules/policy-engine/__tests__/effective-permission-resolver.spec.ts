@@ -8,6 +8,7 @@ import {
 } from '../types/effective-permission.types';
 import {
   ACTION_TO_CASE_PERMISSION,
+  capacityFromUser,
   CASE_PERMISSION_TO_ACTION,
   classifyAction,
   decide,
@@ -168,6 +169,29 @@ describe('casePermissions ↔ ActionCode mapping', () => {
     expect(isQualifiedForValidity('SEKRETER' as Capacity)).toBe(false);
     expect(isOfficeAdminCapacity('PARTNER')).toBe(true);
     expect(isOfficeAdminCapacity('LAWYER')).toBe(false);
+  });
+
+  it('capacityFromUser — canonical actor-capacity mapping (CANDIDATE-C, davranış-nötr)', () => {
+    // Lawyer rütbeleri → doğrudan Capacity
+    expect(capacityFromUser({ lawyer: { lawyerRank: 'PARTNER' }, staffMember: null })).toBe('PARTNER');
+    expect(capacityFromUser({ lawyer: { lawyerRank: 'MANAGER' }, staffMember: null })).toBe('MANAGER');
+    expect(capacityFromUser({ lawyer: { lawyerRank: 'AUTHORIZED' }, staffMember: null })).toBe('AUTHORIZED');
+    expect(capacityFromUser({ lawyer: { lawyerRank: 'LAWYER' }, staffMember: null })).toBe('LAWYER');
+    expect(capacityFromUser({ lawyer: { lawyerRank: 'INTERN' }, staffMember: null })).toBe('INTERN');
+    // Lawyer yoksa StaffMember.staffType
+    expect(capacityFromUser({ lawyer: null, staffMember: { staffType: 'MUHASEBE' } })).toBe('MUHASEBE');
+    expect(capacityFromUser({ lawyer: null, staffMember: { staffType: 'SEKRETER' } })).toBe('SEKRETER');
+    // Lawyer ÖNCELİKLİDİR (resolver if/else eşdeğerlik kanıtı — RATIFIED recorded limitation #4)
+    expect(
+      capacityFromUser({ lawyer: { lawyerRank: 'PARTNER' }, staffMember: { staffType: 'MUHASEBE' } }),
+    ).toBe('PARTNER');
+    // Ne lawyer ne staff / null user → UNKNOWN
+    expect(capacityFromUser({ lawyer: null, staffMember: null })).toBe('UNKNOWN');
+    expect(capacityFromUser(null)).toBe('UNKNOWN');
+    // isOfficeAdminCapacity gate ile birlikte: yalnız PARTNER/MANAGER office-admin (davranış korunur)
+    expect(isOfficeAdminCapacity(capacityFromUser({ lawyer: { lawyerRank: 'PARTNER' }, staffMember: null }))).toBe(true);
+    expect(isOfficeAdminCapacity(capacityFromUser({ lawyer: { lawyerRank: 'LAWYER' }, staffMember: null }))).toBe(false);
+    expect(isOfficeAdminCapacity(capacityFromUser({ lawyer: null, staffMember: { staffType: 'MUHASEBE' } }))).toBe(false);
   });
 });
 

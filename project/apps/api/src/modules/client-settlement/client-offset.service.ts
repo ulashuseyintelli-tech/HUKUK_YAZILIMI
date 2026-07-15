@@ -9,7 +9,7 @@ import {
   validateJournalDraft,
   type ClientOffsetSourceSnapshot,
 } from '../accounting-journal';
-import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
+import { isOfficeAdminCapacity, capacityFromUser } from '../policy-engine/effective-permission-mapping';
 import { Capacity } from '../policy-engine/types/effective-permission.types';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { CreateClientOffsetDto, ReverseClientOffsetDto, PreviewClientOffsetDto } from './dto/client-offset.dto';
@@ -152,7 +152,7 @@ export class ClientOffsetService {
       where: { id: actorUserId },
       include: { lawyer: { select: { lawyerRank: true } }, staffMember: { select: { staffType: true } } },
     });
-    return (user?.lawyer?.lawyerRank ?? user?.staffMember?.staffType ?? 'UNKNOWN') as Capacity;
+    return capacityFromUser(user);
   }
 
   /**

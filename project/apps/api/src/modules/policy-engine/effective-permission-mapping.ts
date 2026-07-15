@@ -120,6 +120,31 @@ export function isOfficeAdminCapacity(capacity: Capacity): boolean {
   return capacity === 'PARTNER' || capacity === 'MANAGER';
 }
 
+/**
+ * Canonical actor-capacity mapping (CANDIDATE-C — RATIFIED): yüklenmiş User → Lawyer.lawyerRank
+ * XOR StaffMember.staffType (K1 köprü), yoksa 'UNKNOWN'. SAF/IO-suz — capacity FETCH burada
+ * YAPILMAZ; çağıran kendi sorgusunu (tenant/isActive scoping dahil) yapar ve yüklenmiş user'ı verir.
+ * Tüm eşdeğer capacity-gate consumer'ları ve EffectivePermissionResolver.readCapacity'nin leaf
+ * mapping'i bu TEK kaynağa bağlanır (davranış-nötr consolidation; permission semantiği DEĞİŞMEZ).
+ * Not: lawyer öncelikli; Lawyer.lawyerRank ve StaffMember.staffType şemada non-null olduğundan
+ * `??` zinciri resolver'ın if/else'iyle davranış-eşdeğerdir (bkz. RATIFIED recorded limitation #4).
+ * <remarks>
+ * Çağrıldığı yerler:
+ * - EffectivePermissionResolver.readCapacity() -> capacity türetimi (tenantId/lawyerId/staffMemberId AYRI)
+ * - ClientOffsetService.readActorCapacity() -> CLIENT_OFFSET_APPLY/REVERSE gate
+ * - ClientPayoutService.assertOfficeAdmin() -> CLIENT_PAYOUT_CREATE gate
+ * - ClientPayoutManualReversalService.assertOfficeAdmin() -> payout manual-reversal gate
+ * - AccountingJournalReversalService.assertOfficeAdmin() -> journal reversal gate
+ * - AccountingJournalManualAdjustmentService.assertOfficeAdmin() -> manual adjustment gate
+ * </remarks>
+ */
+export function capacityFromUser(user: {
+  lawyer: { lawyerRank: string | null } | null;
+  staffMember: { staffType: string | null } | null;
+} | null): Capacity {
+  return (user?.lawyer?.lawyerRank ?? user?.staffMember?.staffType ?? 'UNKNOWN') as Capacity;
+}
+
 // ============================================
 // Saf karar fonksiyonu (4-katman: tenant > validity-route > guarded-edge > guided-open)
 // ============================================

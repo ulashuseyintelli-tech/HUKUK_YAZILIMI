@@ -7,8 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
-import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
-import { Capacity } from '../policy-engine/types/effective-permission.types';
+import { isOfficeAdminCapacity, capacityFromUser } from '../policy-engine/effective-permission-mapping';
 import { PrismaService } from '../../prisma/prisma.service';
 import { buildAccountingJournal } from './accounting-journal.builder';
 import { createCanonicalSourceHash } from './accounting-journal-source-hash';
@@ -147,7 +146,7 @@ export class AccountingJournalReversalService {
       },
     });
 
-    const capacity = readActorCapacity(user);
+    const capacity = capacityFromUser(user);
     if (!isOfficeAdminCapacity(capacity)) {
       throw new ForbiddenException({
         code: 'ACCOUNTING_JOURNAL_REVERSAL_FORBIDDEN',
@@ -266,13 +265,6 @@ function normalizeOptionalString(value: unknown): string | null {
 
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
-}
-
-function readActorCapacity(user: {
-  lawyer: { lawyerRank: string | null } | null;
-  staffMember: { staffType: string | null } | null;
-} | null): Capacity {
-  return (user?.lawyer?.lawyerRank ?? user?.staffMember?.staffType ?? 'UNKNOWN') as Capacity;
 }
 
 function assertReversibleSnapshot(original: OriginalJournalEntry): void {
