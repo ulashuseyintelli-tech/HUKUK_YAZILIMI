@@ -27,7 +27,7 @@ diğer parantezli atamalar PROPOSED kalır.
 
 ```text
 PHASE 0 — CANONICALIZATION & HANDOFF          [AKTİF]
-PHASE 1 — P0 FINANCIAL SAFETY                 [PARTIALLY CLOSED — W1.2 canonical merge pending]
+PHASE 1 — P0 FINANCIAL SAFETY                 [CLOSED / CANONICAL]
 PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [owner-decision-gated]
 PHASE 3 — DOMAIN COMPLETENESS                 [owner-decision-gated]
 PHASE 4 — CONSUMER CUTOVER                    [cutover-gated — NOT AUTHORIZED]
@@ -49,20 +49,22 @@ PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
 
 | Wave | Workstream | Amaç | Gate | Lane |
 |---|---|---|---|---|
-| W1.1 | Deterministic test infrastructure | JSON EOL determinism + kuruş remainder sabitleme | Karar gerektirmez (Desktop 04/A1) | (Codex — Desktop 04 önerisi) |
-| W1.2 | Allocation concurrency proof & lock | A2 race harness CLOSED; COL/OD-04 same-case lock kontratı RECORDED; ikinci allocation yolu CLOSE | **BLOCKED — CANONICAL MERGE PENDING**; merge sonrası ayrı owner GO-IMPLEMENT | Codex (TM3 §11: collection modülü) |
+| W1.1 | Deterministic test infrastructure | JSON EOL determinism + kuruş remainder sabitleme | **CLOSED / CANONICAL** — PR #1214 (`bb9c1973`) + PR #1223 (`5fe5f0eb`); cross-platform LF ve exact-money kanıtı | Codex |
+| W1.2 | Allocation concurrency proof & lock | A2 race harness + COL/OD-04 same-case lock kontratı + ikinci allocation yolunun kapanışı | **CLOSED / CANONICAL** — PR #1217 (`4e8243e5`) + COL/OD-04 PR #1275 (`762837d1`) + PR #1279 (`6c2329dc`); canonical path preserved, secondary path fail-closed | Codex (TM3 §11: collection modülü) |
 | W1.3 | Money-out idempotency evidence | Replay harness'ları (04/A4); kontrat KODDA MEVCUT (F-12) — schema işi YOK | **CLOSED / CANONICAL** — PR #1265, squash `081bd9615429d24a6a205a2e6740daf2fd549770`; idempotency confirmed, concurrency safe, duplicate payout none. Harness karar gerektirmedi; `COL/OD-21` text-ratification ayrı ve OPEN. | Implementation: Codex (COL/OD-18A); Analysis/Review: Claude; paralel yazım PROHIBITED — tek aktif writer (COL/OD-18) |
-| W1.4 | Multi-instrument legal document integrity | Red test (04/A5) + PR-N5 findFirst→findMany düzeltmesi | GO-IMPLEMENT sınıfı (Desktop 03 §8) | (Codex — Desktop 03/04 önerisi) |
-| W1.5 | Old UYAP route containment | Red test + guard | Guard: GO-IMPLEMENT sınıfı; kalıcı disposition COL/OD-11 | (Codex — Desktop 03/04 önerisi) |
-| W1.6 | Collection audit capture | Mevcut canonical kurala göre audit capture | Kapsam COL/OD-05'e bağlı | Codex (TM3 §11: collection modülü; audit contract OFFICE ile ortak) |
+| W1.4 | Multi-instrument legal document integrity | Red test + deterministic `findMany` projection | **CLOSED / CANONICAL** — PR #1229 (`4c1968ce`); single-instrument compatibility preserved | Codex |
+| W1.5 | Old UYAP route containment | Red test + fail-closed guard | **CLOSED / CANONICAL** — PR #1236 (`fbef6915`); valid legacy flow preserved, unsupported kambiyo output fail-closed. Kalıcı route disposition `COL/OD-11` kapsamında açık kalır ve containment kapanışını geri açmaz. | Codex |
+| W1.6 | Collection audit capture | COL/OD-05 transaction-bound audit/correlation contract | **CLOSED / CANONICAL** — PR #1246 (`c7f55da4`); create/update/void audit atomic, allowlist-only, replay/no-op duplicate audit yok | Codex (TM3 §11: collection modülü; audit contract OFFICE ile ortak) |
 
 Not: Parantezsiz lane = TM3/dbind CURRENT-BINDING dosya sahipliğiyle uyumlu atama; parantezli
 lane = handoff (Desktop 03/04) önerisi olup COL/OD-18 kapanışına tabidir.
 
-Phase 1 durumu **PARTIALLY CLOSED**'dur: W1.3 canonical olarak kapanmıştır; COL/OD-04
-RECORDED'dır ve W1.2 lock/second-path remediation patch'i bu docs-only kaydın approved
-merge'ine kadar **BLOCKED — CANONICAL MERGE PENDING** durumundadır. Açık `COL/OD-21`,
-W1.3'ün teknik evidence kapanışını geri açmayan ayrı bir docs-only text-ratification kararıdır.
+Phase 1 durumu **CLOSED / CANONICAL**'dır: W1.1–W1.6 approved merge kanıtlarıyla
+canonical main'dedir. Açık `COL/OD-21`, W1.3'ün teknik evidence kapanışını geri açmayan
+ayrı bir docs-only text-ratification kararıdır. `COL/OD-11` kalıcı legacy UYAP route
+disposition'ını, daha geniş `REC-AUTH-011/012` reconciliation'ı ise Phase 1 dışındaki
+cross-domain authority çalışmasını açık tutar. Bu kapanış Phase 2'yi başlatmaz veya
+implementation authority üretmez.
 
 ## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (tamamı owner-gated)
 
@@ -110,11 +112,12 @@ W1.3'ün teknik evidence kapanışını geri açmayan ayrı bir docs-only text-r
 
 ```text
 W0.2 (suite) ──> W0.3 (kararlar) ──> W0.4 (register)
-W1.1, W1.2-harness, W1.4, W1.5-guard : W0'a paralel başlayabilir
-                                        (decision-independent; Desktop 04 paketi)
-W1.3-harness : CLOSED / CANONICAL — PR #1265 @ 081bd961
-W1.2-lock/second-path CLOSE <── COL/OD-04 RECORDED (canonical merge pending) <── A2 CLOSED
-W1.6       <── COL/OD-05
+W1.1             : CLOSED / CANONICAL — PR #1214 + #1223
+W1.2             : CLOSED / CANONICAL — PR #1217 + COL/OD-04 + PR #1279
+W1.3             : CLOSED / CANONICAL — PR #1265 @ 081bd961
+W1.4             : CLOSED / CANONICAL — PR #1229 @ 4c1968ce
+W1.5             : CLOSED / CANONICAL — PR #1236 @ fbef6915
+W1.6             : CLOSED / CANONICAL — COL/OD-05 + PR #1246 @ c7f55da4
 PHASE 2    <── COL/OD-01, -03, -06..-10
 PHASE 3    <── COL/OD-02, -14, -15, -17, -19, -20
 PHASE 4    <── PHASE 1 tamamı + COL/OD-11, -12, -13, -16 + CAN-CUT-01/02

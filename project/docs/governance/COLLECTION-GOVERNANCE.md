@@ -270,7 +270,7 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | COL-INV-020 | Minor-unit/rounding merkezî ve deterministic | CURRENT-PARTIAL | ADR-014 PR-3h cent hardening (calc-core scope) |
 | COL-INV-021 | Allocation satır toplamı uygulanan tutarı aşamaz | CURRENT-CONFIRMED (canonical create) | A2 gerçek PostgreSQL concurrency harness: PR #1217; COL-RISK-T01 CLOSED |
 | COL-INV-022 | Bileşen bazında allocation hukuki tutarı aşamaz | CURRENT-CONFIRMED (canonical create) | Aynı Case/ClaimItem, farklı-key A2 kanıtı: PR #1217; COL-RISK-T01 CLOSED |
-| COL-INV-023 | Kuruş remainder davranışı testle sabitlenir | CURRENT-PARTIAL | calc-core'da var; ledger hattında hedefli test COL/DEC W1.1 |
+| COL-INV-023 | Kuruş remainder davranışı testle sabitlenir | CURRENT-CONFIRMED | Gerçek Collection→ledger zincirinde exact decimal allocation/remaining/overpayment kanıtı: W1.1 PR #1223, squash `5fe5f0eb`; lost cent, over-allocation ve negative remainder yok |
 
 ## 5.3. Transaction / concurrency / idempotency
 
@@ -280,17 +280,18 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | COL-INV-025 | Aynı key + aynı payload yeni etki üretmez | CURRENT-CONFIRMED | collection.service.ts:414-418; client-payout.service.ts:333-353 |
 | COL-INV-026 | Aynı key + farklı payload fail-closed conflict | CURRENT-CONFIRMED | IDEMPOTENCY_KEY_CONFLICT client-payout.service.ts:595-613 |
 | COL-INV-027 | Collection+ledger+allocation+overpayment aynı atomic boundary'de | CURRENT-CONFIRMED | collection.service.ts:393-666 tek $transaction |
-| COL-INV-028 | Aynı case/currency scope'ta concurrency over-allocation üretemez | CURRENT-PARTIAL / TARGET-DECIDED | Canonical create A2 ile güvenli; explicit lock contract COL/OD-04 RECORDED; ikinci yol CLOSE, W1.2 remediation canonical merge pending — COL-RISK-D04/G02 |
+| COL-INV-028 | Aynı case/currency scope'ta concurrency over-allocation üretemez | CURRENT-CONFIRMED (canonical path) | A2 gerçek PostgreSQL kanıtı PR #1217; explicit lock contract COL/OD-04; ikinci allocation write path'i W1.2 PR #1279 ile fail-closed kapatıldı — COL-RISK-D04/G02 CLOSED |
 | COL-INV-029 | Money-out command'leri approval'a ek idempotent | CURRENT-CONFIRMED | dbind §5 + ClientPayout kontratı; CollectionDisposition collectionId @unique |
-| COL-INV-030 | Retry duplicate statement/journal/payable/payout üretemez | CURRENT-PARTIAL | P2002-safe yollar var; replay harness kanıtı planlı (Desktop 04 A4) |
-| COL-INV-031 | Mid-transaction failure orphan satır bırakamaz | CURRENT-PRINCIPLE | Tek-tx tasarım; rollback harness kanıtı planlı (Desktop 04 A3) |
+| COL-INV-030 | Retry duplicate statement/journal/payable/payout üretemez | CURRENT-CONFIRMED | Gerçek PostgreSQL sequential+concurrent same-key payout replay harness'ı 10/10 PASS: W1.3 PR #1265, squash `081bd961`; duplicate payout yok |
+| COL-INV-031 | Mid-transaction failure orphan satır bırakamaz | CURRENT-CONFIRMED | Gerçek Collection transaction'ında deterministic post-allocation failure ve orphan-row doğrulaması: PR #1220, squash `c46de431`; atomic rollback confirmed |
 
 ### COL-LOCK-001 — Canonical allocation concurrency contract (COL/OD-04)
 
 1. **Authority:** PostgreSQL transaction-scoped same-case advisory lock, canonical allocation
-   concurrency authority'dir. Event aggregate-version akışındaki mevcut kullanım A2 ile güvenli
-   bulunmuştur; W1.2 bu korumayı allocation kontratı olarak açıklaştırır ve event yan etkisine
-   sessiz bağımlılığı kaldırır.
+   concurrency authority'dir. Event aggregate-version akışındaki kullanım A2 ile güvenli
+   bulunmuş; W1.2 PR #1279 lock'u ilk allocation-sensitive ClaimItem okumasından önce açıkça
+   alarak korumayı allocation kontratına taşımış ve event yan etkisine sessiz bağımlılığı
+   kaldırmıştır.
 2. **Scope:** Tenant doğrulaması yapılmış tek `Case`; lock currency'den bağımsız case-wide
    serialization uygular. Bu, aynı case/currency minimum invariantından daha sıkı bir kapsamdır.
 3. **Key:** `hashtextextended(caseId, 0)`. `Case.id` global primary key'dir. Mevcut
@@ -309,8 +310,11 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
    bağlanarak yaşatılamaz. Ortak internal allocator yalnız canonical Collection transaction'ı
    içinde ve bu lock altında kullanılabilir. Bu karar daha geniş REC-AUTH-011/012
    reconciliation'ını, ADR-014 allocator/cutover hattını veya runtime cutover'ı kapatmaz.
-7. **Implementation gate:** W1.2, COL/OD-04 canonical merge'ine kadar
-   `BLOCKED — CANONICAL MERGE PENDING`; merge sonrası ayrıca owner `GO-IMPLEMENT` gerektirir.
+7. **Implementation status:** **CLOSED / CANONICAL.** COL/OD-04 PR #1275 ile canonical;
+   secondary allocation write path W1.2 PR #1279 / squash `6c2329dc` ile fail-closed kapalıdır.
+   Ortak internal allocator yalnız canonical `CollectionService.create` transaction'ı ve bu
+   lock altında kullanılabilir. Bu kapanış daha geniş REC-AUTH-011/012 reconciliation'ını veya
+   runtime cutover'ı kapatmaz.
 
 ## 5.4. Zaman
 
@@ -327,11 +331,11 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | ID | Kural | Lifecycle | Kanıt/Kaynak |
 |---|---|---|---|
 | COL-INV-037 | Hiçbir finansal write yalnız nesne ID'siyle yürümez | CURRENT-PRINCIPLE | REC-WRITE-001 ekseni |
-| COL-INV-038 | Her write en az tenantId+caseId+actor doğrular | CURRENT-PARTIAL | tenant/case gate'ler mevcut; actor zorunluluğu reversal'da CONFIRMED (PR #805), create genelinde envanter COL-RISK-G01 |
+| COL-INV-038 | Her write en az tenantId+caseId+actor doğrular | CURRENT-CONFIRMED (Collection mutations) | W1.6 PR #1246: public create/update/cancel boundary trusted tenant+actor alır; tenant-scoped case/collection doğrulaması ve actor trace transaction-bound audit'e taşınır |
 | COL-INV-039 | Actor yetkisi OFFICE'ten gelir; Collection rol sistemi yaratmaz | CURRENT-CONFIRMED | ADR-009; Collection'da rol tablosu yok |
 | COL-INV-040 | Approval OFFICE contract'ından referanslanır, overwrite edilmez | CURRENT-CONFIRMED | OWN-29-B COLLECTION_VOID zinciri |
-| COL-INV-041 | Finansal command idempotencyKey+commandId+actor+audit izi taşır | CURRENT-PARTIAL / TARGET | idempotencyKey+actor var; commandId repo'da YOK; AuditLog yazımı Collection'da YOK — COL-RISK-G01; COL/OD-05 |
-| COL-INV-042 | Correlation/causation zinciri domainler arası kaybolmaz | CURRENT-PARTIAL | Event-düzeyi causedBy (HR-23) VAR; correlationId şema/koda YOK — COL-RISK-G01; COL/OD-05 |
+| COL-INV-041 | Finansal command idempotencyKey+commandId+actor+audit izi taşır | CURRENT-CONFIRMED (Collection mutations) | COL/OD-05 + W1.6 PR #1246: create/gerçek update/başarılı void transaction-bound audit; replay/no-op duplicate audit yok; allowlist-only metadata |
+| COL-INV-042 | Correlation/causation zinciri domainler arası kaybolmaz | CURRENT-CONFIRMED (Collection mutations) | W1.6 PR #1246: trusted request context correlationId immutable taşınır; commandId mutation-attempt scoped; gerçek predecessor varsa causationId; audit failure tüm finansal transaction'ı rollback eder |
 | COL-INV-043 | Tenant dışı read/write fail-closed | CURRENT-CONFIRMED | TM3 §7; cross-tenant 404 deseni |
 
 ## 5.6. Projection ve cutover

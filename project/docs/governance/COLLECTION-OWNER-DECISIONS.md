@@ -9,8 +9,8 @@ Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; 
                           yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
                           ile aynı sınıf ve sınır)
 Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
-                          onaylandı; COL/OD-05 RECORDED; COL/OD-18 RECORDED → COL/OD-18A ile
-                          AMENDED (2026-07-15); kalan 19 karar OPEN
+                          onaylandı; COL/OD-04 ve COL/OD-05 RECORDED; COL/OD-18 RECORDED →
+                          COL/OD-18A ile AMENDED (2026-07-15); kalan 18 karar OPEN
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
 IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
@@ -80,9 +80,9 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
   canlı allocation giriş yolu ayrı authority olarak bırakılamaz ve aynı lock'a bağlanarak
   yaşatılamaz. Ortak internal allocator yalnız canonical Collection transaction'ı içinde,
   canonical same-case lock altında kullanılabilir.
-- IMPLEMENTATION EFFECT: W1.2, bu kaydın approved merge'ine kadar
-  **BLOCKED — CANONICAL MERGE PENDING** durumundadır. Merge sonrasında ayrı owner
-  `GO-IMPLEMENT` gerekir; bu kayıt tek başına implementation authority üretmez.
+- IMPLEMENTATION EFFECT: **W1.2 CLOSED / CANONICAL** — A2 concurrency evidence PR #1217,
+  bu kararın canonicalization'ı PR #1275 ve secondary allocation write-path closure PR #1279
+  ile tamamlanmıştır. Daha geniş REC-AUTH-011/012 reconciliation'ı ayrı ve açık kalır.
 
 ### COL/OD-05 — Audit/correlation sınırı + GLOBAL-ACTOR-AUDIT-CONTEXT ratification
 - STATUS: **RECORDED** (2026-07-14) — authoritative kayıt:
@@ -108,8 +108,8 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
   - Ham DTO/event/outbox/savedIntent, hassas kimlik/iletişim/banka verisi, serbest metin,
     credential/header, SQL ve stack audit'e yazılmaz. Hassas before/after yalnız presence,
     changed-field listesi ve SHA-256 fingerprint ile temsil edilir.
-- IMPLEMENTATION EFFECT: W1.6, bu kayıt approved merge ile canonical olduktan sonra ayrı owner
-  `GO-IMPLEMENT` için hazırdır. Bu kayıt tek başına implementation authority üretmez.
+- IMPLEMENTATION EFFECT: **W1.6 CLOSED / CANONICAL** — COL/OD-05 kontratı W1.6 PR #1246 /
+  squash `c7f55da4` ile transaction-bound Collection audit capture olarak uygulanmıştır.
 
 ## KUYRUK B — P1'den ÖNCE
 
@@ -234,9 +234,9 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 - İLKE: **Analysis Owner ≠ Implementation Owner** — her workstream/lane kaydında analysis/
   review sahibi ile implementation sahibi ayrı ve açık yazılır
   (`process-rules.md` § Lane Ownership).
-- IMPLEMENTATION EFFECT: W1.3, bu kayıt approved merge ile canonical olduktan sonra Codex
-  lane'inde ayrı owner `GO-IMPLEMENT` için hazırdır. Bu kayıt tek başına implementation
-  authority üretmez.
+- IMPLEMENTATION EFFECT: **W1.3 CLOSED / CANONICAL** — amendment ile belirlenen Codex-exclusive
+  lane altında PR #1265 / squash `081bd961` ile replay evidence tamamlanmış; closure evidence
+  PR #1269 ile canonical kayıtlara işlenmiştir.
 
 ### COL/OD-21 — Money-out idempotency kontratının text-ratification'ı
 - SORU: Runtime'da MEVCUT kontrat (F-12) canonical governance metnine bağlanacak mı?
@@ -258,7 +258,7 @@ COL/OD-01 ─┬─> COL/OD-07 (feragat/indirim/sulh) ──> COL/OD-08 (satisfa
 COL/OD-03 ─┬─> COL/OD-02 (dosya tutarı) ──> COL/OD-16 (consumer switch)
            ├─> COL/OD-06 (external settlement/unapplied)
            └─> COL/OD-15 (FX)
-COL/OD-04 (RECORDED; canonical merge pending) <── A2 race harness kanıtı
+COL/OD-04 (RECORDED; W1.2 CLOSED / CANONICAL) <── A2 race harness kanıtı
 COL/OD-12 (cutover auth) <── owner-side gate: baseline + representative evidence
 COL/OD-13 (snapshot) ── ADR-013 hattı ── COL/OD-14 (fee TO-BE)
 COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
@@ -267,7 +267,7 @@ COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
 Önerilen oturum sırası (yalnız sıralama önerisidir, karar değildir):
 1) COL/OD-21 (COL/OD-18 RECORDED — 2026-07-15; client-settlement lane'i kilitlendi)
 2) COL/OD-01, -03 (COL/OD-05 RECORDED — 2026-07-14)
-3) COL/OD-04 RECORDED (W1.2: BLOCKED — CANONICAL MERGE PENDING)
+3) COL/OD-04 RECORDED (W1.2: CLOSED / CANONICAL)
 4) Kuyruk B → Kuyruk C.
 
 ---
