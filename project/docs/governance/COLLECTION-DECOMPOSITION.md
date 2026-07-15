@@ -15,8 +15,10 @@ IMPLEMENTATION AUTHORITY: NONE — hiçbir node kendiliğinden implementasyona a
 NOT                     : Bu fazda TASK YAZILMAZ; yalnız decomposition üretilir.
 ```
 
-Lane sütunu: TM3/dbind CURRENT-BINDING atamaları esas; handoff lane modeli (01/03)
-PROPOSED'dur ve COL/OD-18 kapanana kadar parantezle gösterilir.
+Lane sütunu: Semantic domain sınırı TM3/dbind CURRENT-BINDING atamalarını korur. Ajan execution
+lane'i için daha yeni COL/OD-18 amendment'ı geçerlidir: `client-settlement` ve W1.3
+**CODEX — EXCLUSIVE**; Claude **ANALYSIS / REVIEW / ARCHITECTURAL VALIDATION**. Amendment'ın
+canonical etkisi approved merge bekler.
 
 ---
 
@@ -48,13 +50,14 @@ PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
 |---|---|---|---|---|
 | W1.1 | Deterministic test infrastructure | JSON EOL determinism + kuruş remainder sabitleme | Karar gerektirmez (Desktop 04/A1) | (Codex — Desktop 04 önerisi) |
 | W1.2 | Allocation concurrency proof & lock | Önce race harness (04/A2 — red/characterization), sonra AÇIK lock kontratı; bypass endpoint (COL-RISK-D04) kapsam dahil | Harness: karar gerektirmez; LOCK PATCH: COL/OD-04 | Codex (TM3 §11: collection modülü) |
-| W1.3 | Money-out idempotency evidence | Replay harness'ları (04/A4); kontrat KODDA MEVCUT (F-12) — schema işi YOK | Karar gerektirmez; text-ratification COL/OD-21 | (Codex — COL/OD-18'e tabi; TM3 §11'de client-settlement = Claude) |
+| W1.3 | Money-out idempotency evidence | Replay harness'ları (04/A4); kontrat KODDA MEVCUT (F-12) — schema işi YOK | **BLOCKED — CANONICAL AMENDMENT MERGE PENDING**; sonra ayrı owner `GO-IMPLEMENT`; text-ratification COL/OD-21 | **Codex — EXCLUSIVE** (COL/OD-18 amendment); Claude analysis/review/architectural validation |
 | W1.4 | Multi-instrument legal document integrity | Red test (04/A5) + PR-N5 findFirst→findMany düzeltmesi | GO-IMPLEMENT sınıfı (Desktop 03 §8) | (Codex — Desktop 03/04 önerisi) |
 | W1.5 | Old UYAP route containment | Red test + guard | Guard: GO-IMPLEMENT sınıfı; kalıcı disposition COL/OD-11 | (Codex — Desktop 03/04 önerisi) |
 | W1.6 | Collection audit capture | Mevcut canonical kurala göre audit capture | Kapsam COL/OD-05'e bağlı | Codex (TM3 §11: collection modülü; audit contract OFFICE ile ortak) |
 
-Not: Parantezsiz lane = TM3/dbind CURRENT-BINDING dosya sahipliğiyle uyumlu atama; parantezli
-lane = handoff (Desktop 03/04) önerisi olup COL/OD-18 kapanışına tabidir.
+Not: Parantezsiz lane TM3/dbind semantic domain sınırıyla uyumlu atamadır. Parantezli tarihsel
+handoff önerileri current authority değildir. W1.3'ün current agent lane'i COL/OD-18 amendment
+ile açıkça Codex-exclusive'dir; approved merge öncesinde implementasyon bloke kalır.
 
 ## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (tamamı owner-gated)
 
@@ -102,21 +105,24 @@ lane = handoff (Desktop 03/04) önerisi olup COL/OD-18 kapanışına tabidir.
 
 ```text
 W0.2 (suite) ──> W0.3 (kararlar) ──> W0.4 (register)
-W1.1, W1.2-harness, W1.3-harness, W1.4, W1.5-guard : W0'a paralel başlayabilir
-                                                     (decision-independent; Desktop 04 paketi)
+W1.1, W1.2-harness, W1.4, W1.5-guard : W0'a paralel başlayabilir
+                                      (decision-independent; Desktop 04 paketi)
+W1.3-harness <── COL/OD-18 amendment approved merge + ayrı owner GO-IMPLEMENT
 W1.2-lock  <── COL/OD-04  <── W1.2-harness kanıtı
 W1.6       <── COL/OD-05
 PHASE 2    <── COL/OD-01, -03, -06..-10
 PHASE 3    <── COL/OD-02, -14, -15, -17, -19, -20
 PHASE 4    <── PHASE 1 tamamı + COL/OD-11, -12, -13, -16 + CAN-CUT-01/02
 PHASE 5    <── PHASE 4
-Çapraz     : COL/OD-18 (lane) tüm Codex/Claude atamalarını etkiler — erken kapanmalı
+Çapraz     : COL/OD-18 amendment current client-settlement lane'ini CODEX — EXCLUSIVE yapar;
+             canonical merge öncesinde W1.3 BLOCKED'dır
 ```
 
-## Worktree/branch adlandırma (PROPOSED — COL/OD-18 ile birlikte ratifiye edilir)
+## Worktree/branch adlandırma (COL/OD-18 amendment)
 
 ```text
 codex/rc-col-<workstream>-<slug>     (para hattı)
-claude/rc-gov-<workstream>-<slug>    (governance/docs)
+Claude, RC-COL client-settlement execution worktree/branch'i açmaz; rolü analysis/review/
+architectural validation'dır.
 Desktop 03 §5 prefix seti: RC-GOV-* / RC-EVD-* / RC-COL-* / RC-BAL-* / RC-SET-* / RC-UYAP-*
 ```

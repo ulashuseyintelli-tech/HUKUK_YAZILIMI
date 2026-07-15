@@ -208,14 +208,24 @@ ratifiye belge referansı.)
   (dbind §1). Disposition `clientId` ile kurulmaz (TM3 inv-4).
 - Borçlu tahsilatı otomatik müvekkile borç değildir (TM3 inv-1/2/3).
 
-## 4.7. Açık sınır uyuşmazlığı (çözüm bekleyen — sessizce çözülmemiştir)
+## 4.7. Sınır uyuşmazlığı — COL/OD-18 amendment ile çözüm
 
-**COL-BOUNDARY-CONFLICT-001:** Handoff işletim haritası (Desktop 01 §0.3 / 03 §2)
-CollectionDisposition/ClientPayable/ClientPayout/ClientOffset uygulamasını **Codex para
-hattına** atar; repo'da bağlayıcı TM3 (§5, §11) client-settlement modülünü **Claude'a** atar
-ve D2 kararı consumer handler'ı Claude client-settlement'a kilitler. Repo otorite sırası
-gereği TM3 CURRENT-BINDING'dir; handoff ataması PROPOSED'dur. Nihai lane ataması
-**COL/OD-18** owner kararına bırakılmıştır. Bu belge lane değiştirmez.
+**COL-BOUNDARY-CONFLICT-001 (AMENDMENT MERGE PENDING):** Handoff işletim haritasının
+Codex para-hattı ataması ile TM3'ün 2026-06-26 tarihli Claude ataması arasındaki uyuşmazlık
+önce 2026-07-15 tarihli COL/OD-18 kararıyla **Claude — EXCLUSIVE** olarak çözülmüştü. Bu karar
+Decision Log'da tarihsel kayıt olarak aynen korunur. Owner'ın daha yeni COL/OD-18 amendment'ı,
+önceki kararın yalnız ajan/execution-lane bölümünü açıkça **SUPERSEDE** eder:
+
+- Current `CollectionDisposition` / `ClientPayable` / `ClientPayout` / `ClientOffset` ve
+  `client-settlement` implementation lane'i **CODEX — EXCLUSIVE**'dir.
+- Claude rolü **ANALYSIS / REVIEW / ARCHITECTURAL VALIDATION**'dır; aynı yüzeyde aktif writer
+  veya execution worktree açmaz.
+- Paralel yazım **PROHIBITED** ve tek aktif writer/worktree kuralı yürürlüktedir.
+- W1.3 yalnız replay/idempotency/concurrency evidence kapsamındadır ve
+  **BLOCKED — CANONICAL AMENDMENT MERGE PENDING** durumundadır.
+
+Bu amendment TM3'ün domain sınırını, D1 payout evini, hukuki/finansal semantiği, production
+payout davranışını, schema/migration'ı veya para onay politikasını değiştirmez.
 
 ---
 

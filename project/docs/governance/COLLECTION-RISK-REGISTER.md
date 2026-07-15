@@ -60,7 +60,7 @@ Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
 | COL-RISK-O01 | Runtime cutover 3 gate'e kilitli: ölçülmüş baseline + representative evidence (ABSENT/BLOCKING) + açık owner APPROVED | decision-log:15/48; ADR-014 status | OPEN | COL/OD-12 |
 | COL-RISK-O02 | CAN-CUT-01 (Due/ClaimItem) ve CAN-CUT-02 (Hesap Özeti) cutover kayıtları açık | canonicalization-register.md:38-39/87/109 | OPEN | COL/OD-16 |
 | COL-RISK-O03 | ADR-013 fee/harç TO-BE seçimi + boundary audit kapanmadan fee implementation BLOCKED | ADR-013 non-authorization clause | OPEN | COL/OD-14 |
-| COL-RISK-O04 | Client-settlement lane çelişkisi (TM3=Claude ↔ handoff=Codex) çözülmeden bu modüllerde paralel implementasyon riskli | COL-BOUNDARY-CONFLICT-001 | OPEN | COL/OD-18 |
+| COL-RISK-O04 | Client-settlement lane çelişkisi COL/OD-18 amendment ile **CODEX — EXCLUSIVE** olarak karara bağlandı; Claude analysis/review/architectural validation rolündedir ve tek aktif writer/worktree kuralı korunur | COL-BOUNDARY-CONFLICT-001; önceki Claude-exclusive kayıt tarihsel olarak korunur ve explicit supersession Decision Log'a eklenmiştir | OPEN | COL/OD-18 amendment; CANONICAL AMENDMENT MERGE PENDING, approved merge sonrası lane riski kapanır |
 
 ## 5. TEST-LIMITATION
 
@@ -68,7 +68,7 @@ Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
 |---|---|---|---|---|
 | COL-RISK-T01 | Farklı-key CONCURRENT allocation/ClaimItem race testi yok (aynı-key race ve farklı-key sequential testleri VAR) | collection-payment-received.integration.spec.ts:390/418; grep race/concurrent=0 hedefli senaryoda | OPEN | Desktop 04/A2 harness planlı |
 | COL-RISK-T02 | Mid-transaction rollback (orphan satır) harness'ı yok | Desktop 04/A3 planlı | OPEN | COL-INV-031 kanıtı |
-| COL-RISK-T03 | Money-out sequential+concurrent replay harness'ı yok (kontrat kodda mevcut, kanıt paketi yok) | Desktop 04/A4 planlı; kontrat kanıtı: client-payout.service.spec.ts:373-419/719-739 (birim düzeyi VAR) | OPEN | COL/OD-21 |
+| COL-RISK-T03 | Money-out sequential+concurrent replay harness'ı yok (kontrat kodda mevcut, kanıt paketi yok) | Desktop 04/A4 planlı; kontrat kanıtı: client-payout.service.spec.ts:373-419/719-739 (birim düzeyi VAR) | OPEN | W1.3 BLOCKED — CANONICAL AMENDMENT MERGE PENDING; COL/OD-18 amendment; COL/OD-21 |
 | COL-RISK-T04 | Master Analysis'in "2.200 test pass / gerçek DB" kanıtı bu hesapta yeniden koşulmadı; golden JSON EOL determinism doğrulanmadı | Synthesis §3 evidence limitations | OPEN | Desktop 04/A1 |
 | COL-RISK-T05 | Kuruş remainder davranışı ledger yazım hattında hedefli testle sabitlenmedi (calc-core tarafında cent hardening VAR — PR #1101) | COL-INV-023 CURRENT-PARTIAL | OPEN | W1.1 |
 

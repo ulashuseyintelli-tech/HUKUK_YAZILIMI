@@ -4,11 +4,34 @@
 > **Statü:** ONAYLANDI (2026-06-26) — D1 kilitlendi (payout = proceeds-tarafı; BalanceLedger değil). Bağlayıcı.
 > **Kanıt tabanı:** 2026-06-26 — iki doğrulama workflow'u + spot-doğrulama. Satır numaraları `project/apps/api/...` gerçek kodundan; base `origin/main@c82f238`.
 
+## COL/OD-18 current execution-lane amendment (2026-07-15)
+
+> **CANONICAL EFFECT PENDING APPROVED MERGE:** Aşağıdaki 2026-06-26 gövdesindeki
+> CODEX/Claude ajan atamaları tarihsel baseline olarak korunur; current execution authority
+> bu amendment'tır. Önceki **Claude — EXCLUSIVE** kararı Decision Log'da aynen kalır ve yalnız
+> ajan/execution-lane yönünden açıkça **SUPERSEDE** edilmiştir.
+
+- `CollectionDisposition`, `ClientPayable`, `ClientPayout`, `ClientOffset`,
+  `project/apps/api/src/modules/client-settlement/` ve W1.3 Payout Replay Harness current
+  execution lane'i **CODEX — EXCLUSIVE**'dir.
+- Claude rolü **ANALYSIS / REVIEW / ARCHITECTURAL VALIDATION** ile sınırlıdır; bu yüzeyde aktif
+  writer veya execution worktree açmaz.
+- Paralel yazım **PROHIBITED** kalır: aynı anda yalnız bir aktif Codex writer ve bir execution
+  worktree bulunur.
+- TM3'ün semantic domain sınırı, D1 payout evi, allocation/statement/approval otoriteleri ve
+  hukuki/finansal invariantları değişmemiştir. Bu amendment agent execution ownership'ini
+  değiştirir; domain authority'yi bir ajana dönüştürmez.
+- **W1.3: BLOCKED — CANONICAL AMENDMENT MERGE PENDING.** Approved merge sonrasında ayrı owner
+  `GO-IMPLEMENT` olmadan implementasyon başlamaz.
+
 ---
 
 ## 0. Bağlam — neden bu doküman
 
 Müvekkil-muhasebesi denetimi gösterdi ki finansal veri `Collection`, `LedgerEntry`, `BalanceLedger`, `ClientStatement`, `Expense*` arasında dağılmış; merkezi `ClientAccount` yok. TM3, tahsilatın **dosya etkisi** (CODEX) ile **müvekkil-ofis dağıtımı** (Claude) tarafını ayırır. İki ajan paralel çalışacağı için bu doküman tek hakemdir.
+
+Bu paragraftaki ajan dağılımı 2026-06-26 tarihsel bağlamıdır. Current tek-writer/execution
+kuralı COL/OD-18 amendment bölümündedir; aşağıdaki semantic taraf ayrımı değişmemiştir.
 
 ---
 
@@ -24,9 +47,15 @@ Köprü  = PAYMENT_RECEIVED / PAYMENT_REVERSED outbox event'i + CollectionDispos
 - **Borçlu tahsilatı** (`Collection`) — borçludan dosyaya gelen para → CODEX.
 - **Tahsilatın dağıtımı** (`CollectionDisposition`) — o paranın müvekkile/ofise/masrafa/emanete ayrılması → Claude.
 
+Bu CODEX/Claude etiketleri semantic tarafların tarihsel ajan eşlemesidir; current
+`client-settlement` execution lane'i **CODEX — EXCLUSIVE**, Claude rolü review katmanıdır.
+
 ---
 
 ## 2. Mevcut model — REUSE (yeni açılmayacak)
+
+`Sahip` sütunundaki ajan adları 2026-06-26 tarihsel eşlemedir; current execution lane için
+COL/OD-18 amendment uygulanır. Model ve domain sahipliği semantiği değişmez.
 
 | Model / yapı | Konum (project/apps/api) | Sahip | Not |
 |---|---|---|---|
@@ -48,6 +77,9 @@ Köprü  = PAYMENT_RECEIVED / PAYMENT_REVERSED outbox event'i + CollectionDispos
 
 ## 3. Yeni model — minimal (yalnız Claude açar)
 
+Başlıktaki ve `Sahip` sütunundaki Claude ataması tarihsel plandır ve current execution
+authority değildir. Bu amendment yeni model, schema veya migration yetkisi üretmez.
+
 | Model | Sahip | Faz | Gerekçe |
 |---|---|---|---|
 | `CollectionDisposition` (caseId, collectionId @unique, tenantId, beneficiaryScope, caseClientId?, status, totalAmount) | Claude | M1 | proceeds dağıtım taslağı — **clientId YOK** |
@@ -62,6 +94,9 @@ Köprü  = PAYMENT_RECEIVED / PAYMENT_REVERSED outbox event'i + CollectionDispos
 
 ## 4. CODEX sorumlulukları
 
+Bu bölüm 2026-06-26 tarihsel execution ayrımını korur. `YAPMAZ` listesi current Codex
+file-writer yasağı değildir; semantic domain sınırıdır ve COL/OD-18 amendment ile birlikte okunur.
+
 **YAPAR:**
 - `Collection` create/cancel motoru (tek tahsilat otoritesi = `CollectionService`).
 - Dosya borcu düşüşü (`LedgerEntry`+`LedgerAllocation`+`ClaimItem.collectedAmount`).
@@ -74,6 +109,9 @@ Köprü  = PAYMENT_RECEIVED / PAYMENT_REVERSED outbox event'i + CollectionDispos
 ---
 
 ## 5. Claude sorumlulukları
+
+Bu bölümdeki `YAPAR/YAPMAZ` ajan ataması tarihsel baseline'dır. Current Claude rolü yalnız
+analysis/review/architectural validation; current implementation writer'ı Codex'tir.
 
 **YAPAR:** outbox consumer + `CollectionDisposition` taslağı · disposition posting **→ `ClientStatementLine` üretir** (`BalanceLedger` YALNIZ masraf-avansı / expense-advance etkili satırlarda kullanılır — bkz §5.1; normal proceeds, `CLIENT_PAYABLE` ve payout BalanceLedger'a YAZILMAZ) · payout (proceeds-tarafı) · müvekkil masraf-avans tarafı · client audit (`client.service.ts`) · CPE forensic.
 
@@ -100,6 +138,9 @@ Köprü  = PAYMENT_RECEIVED / PAYMENT_REVERSED outbox event'i + CollectionDispos
 ---
 
 ## 6. Event akışı (mevcut altyapı üzerine)
+
+Aşağıdaki `Claude (consumer)` etiketi tarihsel agent mapping'dir; consumer'ın semantic evi
+değişmez, current implementation/execution lane'i COL/OD-18 amendment uyarınca Codex'tir.
 
 ```
 CODEX (tek $transaction):
@@ -161,6 +202,10 @@ Claude (consumer):
 
 ## 11. Dosya/modül sahiplik matrisi (çakışma önleyici — EN KRİTİK)
 
+Bu matristeki ajan adları 2026-06-26 tarihsel atamasını gösterir. Current `client-settlement`
+writer/execution lane'i yukarıdaki COL/OD-18 amendment uyarınca **CODEX — EXCLUSIVE**; Claude
+rolü analysis/review/architectural validation'dır. Semantic modül sınırları değişmemiştir.
+
 | Dosya / modül | Sahip | Eylem |
 |---|---|---|
 | `src/modules/collection/collection.service.ts` | **CODEX** | create/cancel engine |
@@ -197,9 +242,16 @@ Claude (consumer):
 13. CODEX `Collection` motoru tek tahsilat otoritesi.
 14. Claude müvekkil kasası tek otoritesi.
 
+COL/OD-18 amendment yorum kuralı: invariant 14'teki `Claude` tarihsel ajan etiketidir;
+tek otorite **CLIENT-FINANCIAL SETTLEMENT domain**'idir. Current execution lane'i Codex,
+Claude rolü analysis/review/architectural validation'dır.
+
 ---
 
 ## 13. Uygulama sırası
+
+Bu tablo 2026-06-26 tarihsel uygulama planıdır; tamamlanmış işlerin geçmişini korur ve current
+execution-lane authority üretmez. Yeni RC-COL `client-settlement` işi COL/OD-18 amendment'a tabidir.
 
 | # | İş | Sahip | Worktree | Başlama şartı |
 |---|---|---|---|---|
@@ -222,6 +274,7 @@ Claude (consumer):
 |---|---|---|
 | **D1** | Payout evi | **disposition-line settlement + `ClientStatementLine.CLIENT_PAYOUT_SENT`; `BalanceLedger.PAYOUT` KULLANILMAZ.** Proceeds payout BalanceLedger'a yazılmaz. |
 | **D2** | Outbox consumer sahipliği | generic cron/retry/dead-letter = **icrabot/outbox platform**; `EVENT_PUBLISHED:PAYMENT_RECEIVED` handler = **Claude `client-settlement`**; `action-handler` içinde domain logic YOK |
+| **D2-A** | COL/OD-18 execution amendment | D2'nin semantic handler evi `client-settlement` olarak değişmez; tarihsel Claude ajan ataması execution yönünden **SUPERSEDED**'dır. Current handler implementation/writer lane'i **CODEX — EXCLUSIVE**; Claude rolü **ANALYSIS / REVIEW / ARCHITECTURAL VALIDATION**'dır. |
 | **D3** | CPE | önce **forensic rapor**; enforce/observe açma YOK |
 | Q1 | Disposition taslağı | `PAYMENT_RECEIVED` → otomatik **draft (HELD)**; dağıtım **manuel onay** |
 | Q3 | Çoklu alacaklı | Faz 1 **manuel**; `CaseClient.shareRatio` EKLENMEZ; `CollectionDisposition.clientId` YOK |
