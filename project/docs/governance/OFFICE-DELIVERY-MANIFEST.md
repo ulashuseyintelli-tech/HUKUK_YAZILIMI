@@ -80,7 +80,7 @@ varsayılmaz.
 | STF-PRD-SCP-001 | P2 | OFF/OD-08 | OPEN(BLOCKING) | LINKED TO DECISION | BOLA-001 ile aynı gate |
 | STF-PRD-CFG-001 | P2 | — | yok | UNMAPPED — OWNER REVIEW REQUIRED | Hiçbir OD'ye bağlı değil; owner karar-gerekmez mi onaylamalı |
 | STF-PRD-LIFE-001 | P2 | OFF/OD-16, OFF/OD-17 | OD-16 OPEN(NON_BLOCKING) · OD-17 CLOSED | LINKED TO DECISION | OD-16 non-blocking — owner bunun gerçekten gate olup olmadığını teyit etmeli |
-| STF-PRD-PRIV-001 | P2 | OFF/OD-18 | CLOSED_CANONICAL | LINKED TO SLICE | = SLICE-03 → CANDIDATE-F1/F2/G/H decomp (WAVE 3). F1 CANONICAL (list-display maskeli, PHASE 1 MILESTONE 04); STF-PRD-PRIV-001 OPEN / NOT CLOSED — F1 bunu KAPATMAZ |
+| STF-PRD-PRIV-001 | P2 | OFF/OD-18 | CLOSED_CANONICAL | LINKED TO SLICE | = SLICE-03 → CANDIDATE-F1/F2/G/H decomp (WAVE 3 CLOSED WITH RESIDUALS, 2026-07-16). F1+H1 CANONICAL (list+case-embedded maskeli, MILESTONE 04/05); STF-PRD-PRIV-001 OPEN / CARRIED FORWARD — WAVE 3 closure bunu KAPATMAZ (kalan detay yüzeyi = CANDIDATE-G, BLOCKED) |
 | STF-PRD-OPS-001 | P2 | OFF/OD-19 | OPEN(BLOCKING) | LINKED TO DECISION | — |
 | STF-PRD-PERF-001 | P3 | — | yok | UNMAPPED — OWNER REVIEW REQUIRED | Karar gerekmez (salt mühendislik) ama henüz slice'a triyaj edilmedi |
 | STF-PRD-BOLA-002 | P3 | OFF/OD-10 | OPEN(BLOCKING) | LINKED TO DECISION | — |
@@ -421,8 +421,9 @@ WAVE 2 — Authority/RBAC Consistency            [P2, karar TAM kapalı]
 
 WAVE 3 — Privacy Revival (Sensitive Field Masking)  [P2, karar kapalı]
   Kapsam: SLICE-03 revival (OD-18 CLOSED_CANONICAL, STF-PRD-PRIV-001)
-  status: PARTIALLY DELIVERED (2026-07-15) — CANDIDATE-F1 CANONICAL; H VERIFICATION COMPLETE;
-    CANDIDATE-H1 CANONICAL (PHASE 1 MILESTONE 05); F2 DORMANT, G BLOCKED
+  status: CLOSED / COMPLETE WITH RECORDED RESIDUALS (owner closure decision 2026-07-16) — teslim edilen
+    scope CANDIDATE-F1 + CANDIDATE-H1 CANONICAL/CONSUMED (MILESTONE 04/05); H VERIFICATION COMPLETE
+    (H-AUDIT: NO IMPLEMENTATION REQUIRED). Kapanış TESLİMAT scope'unadır — bulgu remediation'ı DEĞİL.
   SONUÇ: SLICE-03 TEK slice ÜRETMEDİ — 4 candidate + 1 dormant not:
     CANDIDATE-F1 (HARDENING) → CANONICAL, main @ a170da3e (PHASE 1 MILESTONE 04); Personnel List
       Masked Default; mevcut masking REUSE; OFF/OD-18 yeterli. Contract RATIFIED_WITH_RECORDED_LIMITATIONS
@@ -438,6 +439,17 @@ WAVE 3 — Privacy Revival (Sensitive Field Masking)  [P2, karar kapalı]
       STF-PRD-PRIV-001 OPEN/NOT CLOSED); evidence limitation (CI allowlist) kaydedildi; CANDIDATE-G AÇILMAZ
     DORMANT not: "leave/termination reason" masking — ŞEMA SURFACE'İ BULUNAMADI (slice değil)
   Detay: §4 Slice Register + §4d (teknik mekanizma detayı redakte — bkz. §4d gerekçe)
+  WAVE 3 CLOSURE (owner decision 2026-07-16): CLOSED / COMPLETE WITH RECORDED RESIDUALS.
+    Teslim edilen: F1 (list) + H1 (case-embedded read-model) mask-default CANONICAL/CONSUMED; H-AUDIT
+    NO IMPLEMENTATION REQUIRED. ⚠️ Bu FINDING CLOSURE DEĞİLDİR — STF-PRD-PRIV-001 KAPANMAZ, OFF-INV-10 TAMAMLANMAZ.
+    ACCEPTED RESIDUALS (carried forward):
+      · CANDIDATE-F2 → DORMANT (Personnel Export Masking — surface not found; export yüzeyi belirirse reaktive)
+      · CANDIDATE-G → BLOCKED / FUTURE WORKSTREAM (Detail Masking + Field-Level Unmask; field-level-unmask
+        governance/mekanizma AYRI owner kararı gerektirir — WAVE 3 kapsamı dışı ileri workstream)
+      · OFF-INV-10 → PARTIAL (list + read-model + audit done; detail + export pending)
+      · STF-PRD-PRIV-001 → OPEN / CARRIED FORWARD (WAVE 3 closure bunu KAPATMAZ)
+      · "leave/termination reason" masking → DORMANT / SURFACE NOT FOUND (slice değil)
+    NEXT PROGRAM ACTION: OWNER SELECTION / OWNER DECISION REQUIRED (bkz. §8).
 
 WAVE 4+ — Gated (henüz decision-tarafı kapanmadı)
   BOLA-001/SCP-001 ← OD-08 OPEN · BOLA-002 ← OD-10 OPEN · DATA-001 ← OD-03 OPEN ·
@@ -450,10 +462,11 @@ UNMAPPED (owner review required, decision-graph dışı)
 ## 8. NEXT ELIGIBLE UNIT (readiness ≠ authorization)
 
 ```text
-NEXT ELIGIBLE UNIT: YOK — implementasyona hazır birim yok. WAVE 3'ün seçili candidate'ı CANDIDATE-H1
-CANONICAL/CONSUMED'a ulaştı (PHASE 1 MILESTONE 05); implementationAuthorization CONSUMED — aynı slice için
-tekrar implementasyon açılmaz. Geriye kalan candidate'ların TÜMÜ owner-gated ve implementasyona hazır
-DEĞİL; bu belge hiçbirini SEÇMEZ/başlatmaz, her biri owner'ın ayrı, açık bir GO'sunu bekler:
+NEXT ELIGIBLE UNIT: NONE. WAVE 3 CLOSED / COMPLETE WITH RECORDED RESIDUALS (owner decision 2026-07-16);
+F1+H1 CANONICAL/CONSUMED (MILESTONE 04/05), H-AUDIT NO IMPLEMENTATION. WAVE 1-3'te teslim edilebilir/seçili
+slice kalmadı; WAVE 4+ decision-tarafı kapalı DEĞİL. NEXT PROGRAM ACTION: OWNER SELECTION / OWNER DECISION
+REQUIRED — geriye kalan candidate'ların TÜMÜ owner-gated; bu belge hiçbirini SEÇMEZ/başlatmaz/sıralamaz,
+her biri owner'ın ayrı, açık bir GO/decision'ını bekler:
   · CANDIDATE-D (WAVE 2) — product decision (canApproveFinance ürün niyeti) gerekir · NOT_A_SELECTABLE_SLICE
   · CANDIDATE-E (WAVE 2) — OFF/OD-08 (blocker) kapanışı gerekir · BLOCKED
   · CANDIDATE-F2 (WAVE 3) — DORMANT (IMPLEMENTATION SURFACE NOT FOUND, owner disposition)
@@ -757,4 +770,19 @@ candidate/implementasyon başlatmaz.
 - PUBLIC CONTENT RULE (H1 canonicalization): dosya/metot/   NO — yalnız governance + evidence metadata +
   alan-endpoint/exact-guard/edit-mekanizma eklendi mi:     PR/SHA/CI; teknik detay private (grep doğrulandı)
 - Kod/schema/migration/CI-config değişikliği / yeni candidate: NONE / NO
+- WAVE 3 CLOSURE (CLOSED / COMPLETE WITH RECORDED           YES — §2 note + §7 status + §7 WAVE 3 CLOSURE
+  RESIDUALS) işlendi mi (§2/§7/§8):                         bloğu + §8 NEXT ELIGIBLE NONE
+- F1+H1 CANONICAL/CONSUMED + H-AUDIT NO IMPLEMENTATION      YES — §4/§5/§7/§8 değişmedi (MILESTONE 04/05;
+  korundu mu:                                               H VERIFICATION COMPLETE)
+- 5 residual aynen taşındı mı:                              YES — §7 (F2 DORMANT · G BLOCKED/FUTURE ·
+                                                            OFF-INV-10 PARTIAL · STF-PRD-PRIV-001 OPEN/CARRIED
+                                                            FORWARD · leave-term DORMANT)
+- WAVE 3 closure ≠ finding closure açıkça yazıldı mı:       YES — §2/§7 "KAPATMAZ / remediation DEĞİL" birebir
+- Finding/invariant status flip yapıldı mı (owner: yapma):   NO — STF-PRD-PRIV-001 OPEN/CARRIED FORWARD +
+                                                             OFF-INV-10 PARTIAL korundu; yalnız WAVE teslimatı kapatıldı
+- NEXT ELIGIBLE UNIT → NONE + NEXT PROGRAM ACTION owner      YES — §7/§8; hiçbir birim seçilmedi/başlatılmadı/
+  selection/decision:                                       sıralanmadı (program-izolasyon)
+- Yeni candidate/wave seçildi mi / kod-schema-migration:     NO / NONE
+- PUBLIC CONTENT RULE (WAVE 3 closure): alan/endpoint/      NO — yalnız governance closure + residual metadata
+  guard/edit-mekanizma eklendi mi:                         (grep doğrulandı)
 ```
