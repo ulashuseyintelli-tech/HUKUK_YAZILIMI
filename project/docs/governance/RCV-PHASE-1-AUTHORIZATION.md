@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -10,23 +10,34 @@ Architecture                : ADR-014
 Record status               : CANONICAL / DEC-0030 CLOSED
 Canonical merge             : PR #1222 / fcffb12941f33e36e6e42d9d742d0249eb210ab8
 RCV-GOV-002 effect          : CLOSED / CANONICAL (PR #1250 / d06a6743)
-RCV-GOV-003 effect          : PREPARED / CANONICAL UPON APPROVED MERGE
+RCV-GOV-003 effect          : CLOSED / CANONICAL (PR #1268 / 6492478f)
+RCV-GOV-004-R01 effect      : PREPARED / CANONICAL UPON APPROVED MERGE
 Phase 0                     : CLOSED (owner-supplied RCV-P0-T09 baseline)
+Phase 1                     : CLOSED
+Phase 1 deliverables        : COMPLETE
 Phase 1 Analysis            : COMPLETE (owner-supplied progression baseline)
 Consolidation               : COMPLETE (owner-supplied progression baseline)
 Target Architecture         : COMPLETE (owner-supplied progression baseline)
 Implementation Roadmap      : COMPLETE (owner-supplied progression baseline)
 Current phase               : RCV-P2 (planning label; no new Master Register identity)
-Current workstream          : WS01 — Claim Authority & Tenant Integrity
-WS01 status                 : TECHNICALLY COMPLETE
+Current workstream          : WS02 — Ingress, Lifecycle & Provenance
+WS01 status                 : CLOSED
+WS01 historical status      : TECHNICALLY COMPLETE
 WS01 roadmap                : COMPLETE (P01–P04)
 RCV-P2-WS01-P01             : CLOSED (PR #1249 / 52b35a0d)
 RCV-P2-WS01-P02             : CLOSED (PR #1254 / 919e6e2e)
 RCV-P2-WS01-P03             : CLOSED (PR #1259 / fe4c954a)
 RCV-P2-WS01-P04             : CLOSED (PR #1264 / c1df2f2e)
-Next eligible workstream    : WS02 — Ingress, Lifecycle & Provenance
-Next eligible task          : RCV-P2-WS02-P01
-WS02 authority              : NOT GRANTED / OWNER GO REQUIRED
+WS02 status                 : CLOSED
+WS02 historical status      : TECHNICALLY COMPLETE
+WS02 roadmap                : COMPLETE (P01–P04)
+RCV-P2-WS02-P01             : CLOSED (PR #1272 / 63f27aa9)
+RCV-P2-WS02-P02             : CLOSED (PR #1278 / 54ef79af)
+RCV-P2-WS02-P03             : CLOSED (PR #1282 / 150f9d28)
+RCV-P2-WS02-P04             : CLOSED (PR #1286 / 37a86fd2)
+Next eligible workstream    : WS03 — Payment Fact & Collection Ingress
+Next eligible task          : RCV-P2-WS03-P01
+WS03 implementation authority: NOT GRANTED — OWNER GO REQUIRED
 ```
 
 Bu kayıt yalnız governance/register alignment, gerçekleşen phase/workstream progression ve bir
@@ -62,6 +73,15 @@ durumlarını `COMPLETE`, `RCV-P2-WS01-P01` durumunu `CLOSED` olarak kaydetme ta
 RCV-GOV-003 brief'i `RCV-P2-WS01-P01..P04 = CLOSED` ve `WS01 = TECHNICALLY COMPLETE`
 durumlarını; sonraki eligible workstream'in `WS02 — Ingress, Lifecycle & Provenance` olduğunu
 ve WS02 implementation authority'sinin verilmediğini kaydetme talimatı vermiştir. Bu kayıt söz
+konusu progression'ı PR #1268 ile canonical olarak uzlaştırmıştır. Canonical main bunun
+ardından WS01'i `TECHNICALLY COMPLETE` olarak taşımış; formal `CLOSED` statüsü henüz açıkça
+kaydedilmemiştir. RCV-GOV-004 yerel taslağı canonical etki kazanmadan önce bu eksiklik fark
+edilmiş ve `RCV-GOV-004-R01` düzeltme brief'iyle consume edilmiştir. R01; Phase 1'i teslimat
+basis'iyle, WS01'i PR #1268 governance reconciliation basis'iyle ve WS02'yi P01–P04 teknik
+kapanış + bu kaydın approved merge'i basis'iyle formal `CLOSED` olarak kaydetme; sonraki
+eligible workstream'i `WS03 — Payment Fact & Collection Ingress`, sonraki eligible task'ı
+`RCV-P2-WS03-P01` olarak koruma ve WS03 implementation authority'sini vermeme talimatı
+vermiştir. Bu kayıt söz
 konusu analiz, mimari, roadmap veya teknik paket çıktılarını yeniden üretmez ve içerik kabulü
 yapmaz; yalnız owner-supplied progression attestation'ını repository'nin mevcut canonical
 register zinciri ve merge kanıtlarıyla uzlaştırır.
@@ -119,13 +139,89 @@ RCV-GOV-002, PR #1250 squash
 - RCV-GOV-003 yalnız governance kayıtlarını uzlaştırır; kod, schema, migration, runtime, DB,
   evidence execution veya teknik implementation içermez.
 
+RCV-GOV-003, PR #1268 squash
+`6492478fd5c18112c305aed3d0ea12e15db94d1f` ile canonical main'e alınmış ve kapanmıştır.
+
+### 1.6 RCV-GOV-004-R01 Phase 1 / WS01 / WS02 formal closure reconciliation
+
+Formal closure record:
+
+```text
+PHASE 1:
+CLOSED
+
+PHASE 1 DELIVERABLES:
+COMPLETE
+
+WS01:
+CLOSED
+
+WS01 CLOSURE BASIS:
+P01–P04 MERGED
+REQUIRED CI PASS
+GOVERNANCE RECONCILED (RCV-GOV-003 / PR #1268)
+
+WS02:
+CLOSED
+
+WS02 CLOSURE BASIS:
+P01–P04 MERGED
+REQUIRED CI PASS
+GOVERNANCE RECONCILED (RCV-GOV-004-R01 UPON APPROVED MERGE)
+
+CURRENT PHASE:
+RCV-P2
+
+NEXT ELIGIBLE WORKSTREAM:
+WS03 — Payment Fact & Collection Ingress
+
+NEXT ELIGIBLE TASK:
+RCV-P2-WS03-P01
+
+WS03 AUTHORIZATION:
+NOT GRANTED — OWNER GO REQUIRED
+```
+
+- Phase 1 formal closure basis'i owner-supplied progression baseline'da `COMPLETE` olan
+  Phase 1 Analysis, Consolidation, Target Architecture ve Implementation Roadmap
+  teslimatlarıdır. RCV-GOV-002 PR #1250 ile bu progression'ı canonical kayda bağlamıştır;
+  R01 bunları yeniden analiz etmez veya yeniden kabul etmez.
+- WS01'in tarihsel `TECHNICALLY COMPLETE` statüsü korunur. `RCV-P2-WS01-P01..P04`
+  PR #1249/#1254/#1259/#1264 ile merged, required CI her biri için `4/4 SUCCESS` ve
+  RCV-GOV-003 PR #1268 ile governance reconciled olduğundan WS01 formal `CLOSED`dır.
+
+- `RCV-P2-WS02-P01` PR #1272 / squash
+  `63f27aa9761b0ec99f685d04f6cde1f477af300e` ile `CLOSED`dır.
+- `RCV-P2-WS02-P02` PR #1278 / squash
+  `54ef79af479b80d3602a018fb7bc9f454b30fff2` ile `CLOSED`dır.
+- `RCV-P2-WS02-P03` PR #1282 / squash
+  `150f9d2818f6d9dea0a03c94073bdb4ea55967fb` ile `CLOSED`dır.
+- `RCV-P2-WS02-P04` PR #1286 / squash
+  `37a86fd2b4f32d97d805f9f341b602204c61dd21` ile `CLOSED`dır.
+- Her dört teknik PR `MERGED` durumundadır ve required CI check'leri `4/4 SUCCESS`tır;
+  squash commit'leri güncel canonical main'in atasıdır.
+- WS02'nin tarihsel `TECHNICALLY COMPLETE` statüsü korunur. Owner-supplied workstream
+  disposition'ına göre `WS02 roadmap = COMPLETE`; P01–P04 teknik paket zinciri merged ve
+  required CI PASS olduğundan, bu R01 governance reconciliation approved merge ile canonical
+  olduğunda WS02 formal `CLOSED` olur. WS01 `CLOSED` olarak korunur. Bu formal workstream
+  kapanışları `CAN-CUT-01`, `VER-05`, `CAN-CUT-02`, representative evidence acceptance,
+  consumer switch veya runtime cutover kapanışı değildir.
+- `WS03 — Payment Fact & Collection Ingress` yalnız next-eligible workstream;
+  `RCV-P2-WS03-P01 — Collection Bypass Closure` yalnız next-eligible task'tır. WS03
+  başlamamıştır ve implementation authority **NOT GRANTED / OWNER GO REQUIRED** durumundadır.
+- WS03–WS09 `NOT STARTED` olarak korunur. Bu reconciliation yeni workstream, program/register
+  kimliği veya ikinci bir Master Register entry oluşturmaz; mevcut WS03 roadmap içeriğini veya
+  paket sırasını değiştirmez.
+- RCV-GOV-004-R01 yalnız governance kayıtlarını uzlaştırır; kod, schema, migration, runtime, DB,
+  evidence/cutover execution veya teknik implementation içermez.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
 |---|---|---|
 | `RCV` | `CCB-001` altında identity-only program/planning cross-pointer'ı | Yeni master stream veya work-item owner'lığı oluşturmaz |
 | `RCV-P0` | Owner-supplied Phase 0 analytical closure | Execution veya implementation authority üretmez |
-| `RCV-P1` | `CCB-001` altında owner-gated Phase 1 planning decomposition | Analysis/consolidation/target architecture tamamlanmıştır; her execution adımı task-scoped owner brief'i gerektirir |
+| `RCV-P1` | `CCB-001` altında owner-gated Phase 1 planning decomposition | Formal `CLOSED`; Analysis/Consolidation/Target Architecture/Implementation Roadmap teslimatları `COMPLETE`; başka execution authority üretmez |
 | `RCV-P0-CP-01` | `Receivable Program Governance and Source Control` control-plane node'u | Yalnız §3 entry condition ile Phase 1 route'una izin verir; domain workstream değildir |
 | `RCV-P0-BAR-0021:PHASE1_ENTRY` | Phase 1 execution entry barrier | Phase 1 entry için `SATISFIED / CONSUMED`; başka phase/task yetkisi üretmez |
 | `WAVE 0 / RCV-P1-T15-A` | İlk Phase 1 task adayı | Owner-authorized ve tamamlanmış tarihsel entry task'ıdır; sonraki task'lara yetki taşımaz |
@@ -210,8 +306,8 @@ Initial authority: GO-PHASE-1 / WAVE 0 / RCV-P1-T15-A only
 Progression      : Subsequent tasks authorized by separate owner task briefs
 Decision date    : 2026-07-14
 Decision-log ref : RCV-GOV-002 progression reconciliation
-Current reconcile: RCV-GOV-003 / 2026-07-15
-Status           : CONSUMED / PHASE 1 ANALYSIS COMPLETE / WS01 TECHNICALLY COMPLETE
+Current reconcile: RCV-GOV-004-R01 / 2026-07-16
+Status           : CONSUMED / PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED
 ```
 
 Bu reconciliation geçmiş task brief'lerini tek ve genel bir Phase 1 authority'ye dönüştürmez.
@@ -229,37 +325,47 @@ owner GO gerektirir.
 | Explicit owner `GO-PHASE-1` | PRESENT | PRESENT — initial `WAVE 0 / RCV-P1-T15-A` |
 | Initial authorized scope | Yalnız `WAVE 0 / RCV-P1-T15-A` | CONSUMED / COMPLETE |
 | Subsequent Phase 1 tasks | Ayrı task-scoped owner brief | COMPLETE per owner-supplied progression baseline |
+| Phase 1 formal closure | Deliverables complete + governance reconciliation | CLOSED |
 | Phase 1 Analysis | COMPLETE | COMPLETE |
 | Consolidation / Target Architecture | COMPLETE | COMPLETE |
 | Implementation Roadmap | COMPLETE | COMPLETE |
-| WS01 roadmap technical packages | P01–P04 CLOSED | P01–P04 CLOSED / WS01 TECHNICALLY COMPLETE |
-| WS02 entry | Ayrı owner GO | UNSET / NOT AUTHORIZED / NOT STARTED |
+| WS01 roadmap technical packages | P01–P04 CLOSED + required CI PASS + governance reconciled | P01–P04 CLOSED / WS01 CLOSED |
+| WS02 roadmap technical packages | P01–P04 CLOSED + required CI PASS + governance reconciled | P01–P04 CLOSED / WS02 CLOSED upon approved R01 merge |
+| WS03 entry | Ayrı owner GO | UNSET / NOT AUTHORIZED / NOT STARTED |
 | WS03–WS09 | Açılmamış | NOT STARTED |
 
-## 7. Phase 2 WS02 Entry Owner Gate
+## 7. Phase 2 WS03 Entry Owner Gate
 
 ```text
-CURRENT WORKSTREAM       : WS01 — Claim Authority & Tenant Integrity
-STATUS                   : TECHNICALLY COMPLETE
-CURRENT IMPLEMENTATION   :
-  RCV-P2-WS01-P01        : CLOSED
-  RCV-P2-WS01-P02        : CLOSED
-  RCV-P2-WS01-P03        : CLOSED
-  RCV-P2-WS01-P04        : CLOSED
-NEXT ELIGIBLE WORKSTREAM : WS02 — Ingress, Lifecycle & Provenance
-NEXT ELIGIBLE TASK       : RCV-P2-WS02-P01
-IMPLEMENTATION GO        : [UNSET / OWNER GO REQUIRED]
+CURRENT IMPLEMENTATION STATUS:
+
+PHASE 1                  : CLOSED
+PHASE 1 DELIVERABLES     : COMPLETE
+WS01                     : CLOSED
+WS01 HISTORICAL STATUS   : TECHNICALLY COMPLETE
+WS02                     : CLOSED
+WS02 HISTORICAL STATUS   : TECHNICALLY COMPLETE
+WS02-P01                 : CLOSED
+WS02-P02                 : CLOSED
+WS02-P03                 : CLOSED
+WS02-P04                 : CLOSED
+NEXT ELIGIBLE WORKSTREAM : WS03 — Payment Fact & Collection Ingress
+NEXT ELIGIBLE TASK       : RCV-P2-WS03-P01
+WS03 IMPLEMENTATION AUTHORITY:
+NOT GRANTED — OWNER GO REQUIRED
 OWNER / RATIFIER         : __________________________________________
 DECISION DATE            : __________________________________________
 AUTHORITATIVE REF        : __________________________________________
 ```
 
-WS02 için ayrı owner GO verilmezse korunacak safe-hold:
+WS03 için ayrı owner GO verilmezse korunacak safe-hold:
 
 ```text
 RCV-P2-WS01-P01..P04 CLOSED
-WS01 TECHNICALLY COMPLETE
-WS02 NOT AUTHORIZED / NOT STARTED
+WS01 CLOSED
+RCV-P2-WS02-P01..P04 CLOSED
+WS02 CLOSED
+WS03 NOT AUTHORIZED / NOT STARTED
 WS03–WS09 NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN
