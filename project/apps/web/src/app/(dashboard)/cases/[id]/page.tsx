@@ -1701,7 +1701,9 @@ export default function CaseDetailPage() {
       address: le.lawyer.address || '',
       bankName: le.lawyer.bankName || '',
       branchName: le.lawyer.branchName || '',
-      iban: le.lawyer.iban || '',
+      // CANDIDATE-H1: no-prefill — maskeli/raw IBAN'ı edit alanına DOLDURMA (no-prefill+omit-if-empty
+      // AYRILMAZ çift; prefill yapılırsa kaydetmede maskeli/eski değer gerçek IBAN üstüne yazılır).
+      iban: '',
     });
     setLawyerDrawerTab('permissions');
     setLawyerDrawerOpen(true);
@@ -1761,7 +1763,11 @@ export default function CaseDetailPage() {
     const confirmed = window.confirm('Bu değişiklikler avukatın TÜM dosyalarında görünecek. Devam etmek istiyor musunuz?');
     if (!confirmed) return;
     try {
-      await api.updateLawyer(selectedLawyer.lawyerId, lawyerProfile);
+      // CANDIDATE-H1: edit-safe. IBAN'ı YALNIZ kullanıcı yeni tam değer girdiyse gönder; boş bırakılırsa
+      // payload'a EKLEME → backend omit=preserve ile mevcut değeri korur (masked round-trip önlenir).
+      const { iban, ...restProfile } = lawyerProfile;
+      const profilePayload = iban.trim() ? { ...restProfile, iban: iban.trim() } : restProfile;
+      await api.updateLawyer(selectedLawyer.lawyerId, profilePayload);
       await fetchCase();
       setLawyerDrawerOpen(false);
     } catch (error) {
@@ -3330,13 +3336,19 @@ export default function CaseDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">IBAN</label>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      IBAN
+                      {/* CANDIDATE-H1: yalnız generic presence göstergesi — maskeli/raw değer GÖSTERİLMEZ */}
+                      <span className={`ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${selectedLawyer?.iban ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {selectedLawyer?.iban ? 'IBAN tanımlı' : 'IBAN tanımsız'}
+                      </span>
+                    </label>
                     <input
                       type="text"
                       value={lawyerProfile.iban}
                       onChange={(e) => setLawyerProfile({...lawyerProfile, iban: e.target.value})}
                       className="w-full border rounded px-2 py-1.5 text-sm font-mono"
-                      placeholder="TR00 0000 0000 0000 0000 0000 00"
+                      placeholder="Değiştirmek için yeni IBAN girin (boş bırakılırsa değişmez)"
                     />
                   </div>
                 </div>
