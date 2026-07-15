@@ -27,7 +27,7 @@ diğer parantezli atamalar PROPOSED kalır.
 
 ```text
 PHASE 0 — CANONICALIZATION & HANDOFF          [AKTİF]
-PHASE 1 — P0 FINANCIAL SAFETY                 [decision-independent kısmı eligible]
+PHASE 1 — P0 FINANCIAL SAFETY                 [PARTIALLY CLOSED — W1.2 lock/COL/OD-04 açık]
 PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [owner-decision-gated]
 PHASE 3 — DOMAIN COMPLETENESS                 [owner-decision-gated]
 PHASE 4 — CONSUMER CUTOVER                    [cutover-gated — NOT AUTHORIZED]
@@ -51,13 +51,17 @@ PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
 |---|---|---|---|---|
 | W1.1 | Deterministic test infrastructure | JSON EOL determinism + kuruş remainder sabitleme | Karar gerektirmez (Desktop 04/A1) | (Codex — Desktop 04 önerisi) |
 | W1.2 | Allocation concurrency proof & lock | Önce race harness (04/A2 — red/characterization), sonra AÇIK lock kontratı; bypass endpoint (COL-RISK-D04) kapsam dahil | Harness: karar gerektirmez; LOCK PATCH: COL/OD-04 | Codex (TM3 §11: collection modülü) |
-| W1.3 | Money-out idempotency evidence | Replay harness'ları (04/A4); kontrat KODDA MEVCUT (F-12) — schema işi YOK | Karar gerektirmez; text-ratification COL/OD-21 | Implementation: Codex (COL/OD-18A); Analysis/Review: Claude; paralel yazım PROHIBITED — tek aktif writer (COL/OD-18) |
+| W1.3 | Money-out idempotency evidence | Replay harness'ları (04/A4); kontrat KODDA MEVCUT (F-12) — schema işi YOK | **CLOSED / CANONICAL** — PR #1265, squash `081bd9615429d24a6a205a2e6740daf2fd549770`; idempotency confirmed, concurrency safe, duplicate payout none. Harness karar gerektirmedi; `COL/OD-21` text-ratification ayrı ve OPEN. | Implementation: Codex (COL/OD-18A); Analysis/Review: Claude; paralel yazım PROHIBITED — tek aktif writer (COL/OD-18) |
 | W1.4 | Multi-instrument legal document integrity | Red test (04/A5) + PR-N5 findFirst→findMany düzeltmesi | GO-IMPLEMENT sınıfı (Desktop 03 §8) | (Codex — Desktop 03/04 önerisi) |
 | W1.5 | Old UYAP route containment | Red test + guard | Guard: GO-IMPLEMENT sınıfı; kalıcı disposition COL/OD-11 | (Codex — Desktop 03/04 önerisi) |
 | W1.6 | Collection audit capture | Mevcut canonical kurala göre audit capture | Kapsam COL/OD-05'e bağlı | Codex (TM3 §11: collection modülü; audit contract OFFICE ile ortak) |
 
 Not: Parantezsiz lane = TM3/dbind CURRENT-BINDING dosya sahipliğiyle uyumlu atama; parantezli
 lane = handoff (Desktop 03/04) önerisi olup COL/OD-18 kapanışına tabidir.
+
+Phase 1 durumu **PARTIALLY CLOSED**'dur: W1.3 canonical olarak kapanmıştır; W1.2 lock
+patch'i `COL/OD-04` owner kararına bağlı kalır. Açık `COL/OD-21`, W1.3'ün teknik evidence
+kapanışını geri açmayan ayrı bir docs-only text-ratification kararıdır.
 
 ## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (tamamı owner-gated)
 
@@ -105,8 +109,9 @@ lane = handoff (Desktop 03/04) önerisi olup COL/OD-18 kapanışına tabidir.
 
 ```text
 W0.2 (suite) ──> W0.3 (kararlar) ──> W0.4 (register)
-W1.1, W1.2-harness, W1.3-harness, W1.4, W1.5-guard : W0'a paralel başlayabilir
-                                                     (decision-independent; Desktop 04 paketi)
+W1.1, W1.2-harness, W1.4, W1.5-guard : W0'a paralel başlayabilir
+                                        (decision-independent; Desktop 04 paketi)
+W1.3-harness : CLOSED / CANONICAL — PR #1265 @ 081bd961
 W1.2-lock  <── COL/OD-04  <── W1.2-harness kanıtı
 W1.6       <── COL/OD-05
 PHASE 2    <── COL/OD-01, -03, -06..-10
