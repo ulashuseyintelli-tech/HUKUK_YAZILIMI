@@ -292,6 +292,22 @@ export class LawyerService {
     // Avukatın bu tenant'a ait olduğunu kontrol et
     const existing = await this.findOne(tenantId, id);
 
+    // CANDIDATE-H1 (RATIFIED): edit-safe IBAN update guard. IBAN alanı ya OMIT edilir (mevcut değer
+    // korunur — Prisma undefined-skip) ya da geçerli tam değer girilir. Maskeli ('*') / boş / whitespace /
+    // null / non-string REDDEDİLİR (400) — maskeli read-model değerinin round-trip'le gerçek IBAN üstüne
+    // yazılması önlenir. Kasıtlı silme bu slice'ta desteklenmez. (Bildirilen tip `iban?: string` compile-time
+    // kurgu; inline @Body + global ValidationPipe inert olduğu için runtime null/non-string ULAŞABİLİR → unknown.)
+    if (data.iban !== undefined) {
+      const ibanValue: unknown = data.iban;
+      if (typeof ibanValue !== "string" || ibanValue.trim() === "" || ibanValue.includes("*")) {
+        throw new BadRequestException({
+          code: "INVALID_IBAN_UPDATE",
+          message:
+            "IBAN güncellemek için geçerli tam değer girin. Boş, boşluk, maskeli veya null değer kabul edilmez; değiştirmek istemiyorsanız alanı göndermeyin.",
+        });
+      }
+    }
+
     // PR-U1: UPDATE-PATH DUPLICATE GUARD. create guard'ı vardı ama edit yan kapısı açıktı
     // (örn. "Ulaş Telli" açıp sonra "Hüseyin" ekleyerek mükerrer üretmek). Self (id) HARİÇ,
     // yalnız AKTİF diğer kayıtlara bakılır. confirmSimilarNameUpdate yalnız İSİM review'ını geçer

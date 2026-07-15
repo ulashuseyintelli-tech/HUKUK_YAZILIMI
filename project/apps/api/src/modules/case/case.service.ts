@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef, Optional } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { maskIban } from "@/common/pii-mask.util";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
@@ -1048,6 +1049,16 @@ export class CaseService {
     };
   }
 
+  /**
+   * CANDIDATE-H1 (RATIFIED): case read-model'lerinde avukat IBAN'ını null-preserving maskeler.
+   * OFF/OD-18 + OFF-INV-10 maskeli-varsayılan; pii-mask.util REUSE (F1 deseni). null/'' KORUNUR
+   * (sentinel yazılmaz); dolu değer maskelenir. Yalnız RESPONSE projeksiyonu — persistence dokunulmaz.
+   */
+  private maskLawyerIban<T extends { iban: string | null }>(lawyer: T): T {
+    const v = lawyer.iban;
+    return { ...lawyer, iban: v == null || v === "" ? v : maskIban(v) };
+  }
+
   async findOne(tenantId: string, id: string) {
     const caseItem = await this.prisma.case.findFirst({
       where: { id, tenantId },
@@ -1177,6 +1188,8 @@ export class CaseService {
 
     return {
       ...caseItem,
+      // CANDIDATE-H1: case-embedded avukat IBAN'ı maskeli döner (null-preserving); persistence dokunulmaz.
+      lawyers: caseItem.lawyers.map((l) => ({ ...l, lawyer: this.maskLawyerIban(l.lawyer) })),
       instruments,
       reportingSummary,
     };
@@ -3099,7 +3112,7 @@ export class CaseService {
       casePermissions: cl.casePermissions,
       permissionSource: cl.permissionSource,
       receiveNotifications: cl.receiveNotifications,
-      lawyer: cl.lawyer,
+      lawyer: this.maskLawyerIban(cl.lawyer), // CANDIDATE-H1: null-preserving IBAN maskeleme
     }));
   }
 
