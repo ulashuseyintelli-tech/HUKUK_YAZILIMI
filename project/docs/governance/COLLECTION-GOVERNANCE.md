@@ -208,7 +208,7 @@ ratifiye belge referansı.)
   (dbind §1). Disposition `clientId` ile kurulmaz (TM3 inv-4).
 - Borçlu tahsilatı otomatik müvekkile borç değildir (TM3 inv-1/2/3).
 
-## 4.7. Açık sınır uyuşmazlığı (çözüm bekleyen — sessizce çözülmemiştir)
+## 4.7. Açık sınır uyuşmazlığı (ÇÖZÜLDÜ — COL/OD-18 RECORDED → COL/OD-18A AMENDED)
 
 **COL-BOUNDARY-CONFLICT-001:** Handoff işletim haritası (Desktop 01 §0.3 / 03 §2)
 CollectionDisposition/ClientPayable/ClientPayout/ClientOffset uygulamasını **Codex para
@@ -216,6 +216,14 @@ hattına** atar; repo'da bağlayıcı TM3 (§5, §11) client-settlement modülü
 ve D2 kararı consumer handler'ı Claude client-settlement'a kilitler. Repo otorite sırası
 gereği TM3 CURRENT-BINDING'dir; handoff ataması PROPOSED'dur. Nihai lane ataması
 **COL/OD-18** owner kararına bırakılmıştır. Bu belge lane değiştirmez.
+
+**ÇÖZÜM (2026-07-15):** COL-BOUNDARY-CONFLICT-001 owner kararıyla kapanmıştır:
+COL/OD-18 RECORDED (execution lane = Claude; main@`dd46aa03`) → **COL/OD-18A AMENDED**
+(PR #1257, main@`c4ee2332`): client-settlement + W1.3 Payout Replay Harness
+implementation/execution lane'i **Codex**, Claude **analysis/review**; aynı anda tek aktif
+writer, paralel yazım PROHIBITED (Analysis Owner ≠ Implementation Owner —
+`process-rules.md` § Lane Ownership). Yukarıdaki paragraf tarihsel kayıt olarak korunmuştur;
+authoritative kayıt: `decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18A`.
 
 ---
 
