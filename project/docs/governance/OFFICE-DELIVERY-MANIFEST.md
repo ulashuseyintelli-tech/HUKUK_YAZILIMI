@@ -74,7 +74,7 @@ varsayılmaz.
 
 | ID | Sev | İlgili Decision(lar) | Decision Durumu | DISPOSITION | Not |
 |---|---|---|---|---|---|
-| STF-PRD-BOLA-001 | P1 | OFF/OD-08, OFF/OD-09 | OD-08 OPEN(BLOCKING) · OD-09 CLOSED | LINKED TO DECISION | OD-08 kapanmadan slice başlamaz |
+| STF-PRD-BOLA-001 | P1 | OFF/OD-08, OFF/OD-09 | OD-08 OPEN(BLOCKING) · OD-09 CLOSED | LINKED TO DECISION | OD-08 kapanmadan slice başlamaz. **RECORDED SECURITY EXCEPTION:** CLIENT-SEC-H1 S1–S4 emergency containment ayrıca ve dar biçimde yetkilendirildi, PR #1291 ile tamamlandı (squash SHA `328dcdf6689575da8a4849f4b632a737079c22ad`, CI 4/4 SUCCESS; bkz. `decision-log.md` CLIENT-SEC-H1 kaydı, `OFFICE-RISK-REGISTER.md` STF-PRD-BOLA-001 remediation bloğu). **EFFECT:** Bu istisna OFF/OD-08'i çözmez ve CANDIDATE-E'yi unblock etmez. |
 | STF-PRD-SES-001 | P1 | OFF/OD-14, OFF/OD-15 | ikisi de CLOSED_CANONICAL | LINKED TO DECISION | WAVE 1 kapsamına giriyor (SES-002 ile birlikte triyaj edilecek) |
 | STF-PRD-RBAC-001 | P2 | OFF/OD-05, OFF/OD-09 | ikisi de CLOSED_CANONICAL | LINKED TO DECISION | WAVE 2 kapsamına giriyor |
 | STF-PRD-SCP-001 | P2 | OFF/OD-08 | OPEN(BLOCKING) | LINKED TO DECISION | BOLA-001 ile aynı gate |
