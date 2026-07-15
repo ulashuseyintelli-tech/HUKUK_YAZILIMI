@@ -9,7 +9,8 @@ Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; 
                           yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
                           ile aynı sınıf ve sınır)
 Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
-                          onaylandı; COL/OD-05 ve COL/OD-18 RECORDED, kalan 19 karar OPEN
+                          onaylandı; COL/OD-05 RECORDED; COL/OD-18 RECORDED → COL/OD-18A ile
+                          AMENDED (2026-07-15); kalan 19 karar OPEN
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
 IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
@@ -171,8 +172,10 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 ## KUYRUK E — İŞLETİM (teknik değil, sahiplik)
 
 ### COL/OD-18 — Client-settlement lane ataması (TM3 ↔ handoff çelişkisi)
-- STATUS: **RECORDED** (2026-07-15) — authoritative kayıt:
-  `decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18`.
+- STATUS: **RECORDED** (2026-07-15) → **AMENDED** (2026-07-15) — execution lane ataması
+  **SUPERSEDED BY COL/OD-18A**; karar metni gerçekleşmiş owner kararı olarak SİLİNMEDEN
+  korunur. Authoritative kayıtlar: `decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18`
+  ve § `2026-07-15 — RC-COL / COL/OD-18A`.
 - SORU: CollectionDisposition/ClientPayable/ClientPayout/ClientOffset uygulama hattı Claude'da
   mı kalır (TM3 §5/§11 + D2, CURRENT-BINDING) yoksa Codex para hattına mı devredilir
   (Desktop 01 §0.3 / 03 §2, PROPOSED)?
@@ -192,6 +195,27 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 - IMPLEMENTATION EFFECT: W1.3, bu kayıt approved merge ile canonical olduktan sonra ayrı owner
   `GO-IMPLEMENT` için hazırdır. Bu kayıt tek başına implementation authority üretmez.
 
+### COL/OD-18A — Execution lane amendment (implementation lane Codex'e devir)
+- STATUS: **RECORDED** (2026-07-15) — authoritative kayıt:
+  `decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18A`.
+- KARAR:
+  - COL/OD-18'in execution lane ataması AMEND edilmiştir: `CollectionDisposition`,
+    `ClientPayable`, `ClientPayout`, `ClientOffset`, bunların
+    `project/apps/api/src/modules/client-settlement/` uygulama hattı ve W1.3 Payout Replay
+    Harness **implementation/execution lane'i Codex**'tir; **Claude analysis/review
+    lane'indedir**. COL/OD-18'in `CLAUDE EXCLUSIVE` execution ataması silinmez; yalnız
+    SUPERSEDED işaretlenir.
+  - COL/OD-18'in lane-dışı hükümleri aynen yürürlüktedir: aynı yüzeyde paralel yazım
+    **PROHIBITED** (aynı anda yalnız bir aktif writer — artık Codex — ve bir execution
+    worktree); W1.3 kapsam sınırı (yalnız replay/idempotency/concurrency evidence; production
+    davranışı, schema, migration, para onay politikası kapsam dışı) değişmemiştir.
+- İLKE: **Analysis Owner ≠ Implementation Owner** — her workstream/lane kaydında analysis/
+  review sahibi ile implementation sahibi ayrı ve açık yazılır
+  (`process-rules.md` § Lane Ownership).
+- IMPLEMENTATION EFFECT: W1.3, bu kayıt approved merge ile canonical olduktan sonra Codex
+  lane'inde ayrı owner `GO-IMPLEMENT` için hazırdır. Bu kayıt tek başına implementation
+  authority üretmez.
+
 ### COL/OD-21 — Money-out idempotency kontratının text-ratification'ı
 - SORU: Runtime'da MEVCUT kontrat (F-12) canonical governance metnine bağlanacak mı?
 - KANIT: Handoff bu maddeyi "eksik" biliyordu; repo'da CLOSED bulundu — kalan iş yalnız
@@ -204,7 +228,7 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 ```text
 KÖK (bağımsız başlar):
   COL/OD-01 (adjustment)   COL/OD-03 (effective-date)   COL/OD-05 (audit/correlation — RECORDED)
-  COL/OD-11 (UYAP route)   COL/OD-18 (lane — RECORDED)  COL/OD-21 (idempotency text)
+  COL/OD-11 (UYAP route)   COL/OD-18 (lane — AMENDED: COL/OD-18A)  COL/OD-21 (idempotency text)
 
 COL/OD-01 ─┬─> COL/OD-07 (feragat/indirim/sulh) ──> COL/OD-08 (satisfaction/re-open)
            ├─> COL/OD-09 (partial refund/reversal) ─┬─> COL/OD-10 (downstream reversal)

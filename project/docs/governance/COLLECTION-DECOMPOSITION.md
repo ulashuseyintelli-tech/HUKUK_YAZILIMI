@@ -16,7 +16,10 @@ NOT                     : Bu fazda TASK YAZILMAZ; yalnız decomposition üretili
 ```
 
 Lane sütunu: TM3/dbind CURRENT-BINDING atamaları esas; handoff lane modeli (01/03)
-PROPOSED'dur ve COL/OD-18 kapanana kadar parantezle gösterilir.
+PROPOSED'dur ve COL/OD-18 kapanana kadar parantezle gösterilir. COL/OD-18 (RECORDED) +
+COL/OD-18A (AMENDMENT) yalnız client-settlement/W1.3 lane'ini karara bağlamıştır:
+implementation = Codex, analysis/review = Claude (Analysis Owner ≠ Implementation Owner);
+diğer parantezli atamalar PROPOSED kalır.
 
 ---
 
@@ -48,7 +51,7 @@ PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
 |---|---|---|---|---|
 | W1.1 | Deterministic test infrastructure | JSON EOL determinism + kuruş remainder sabitleme | Karar gerektirmez (Desktop 04/A1) | (Codex — Desktop 04 önerisi) |
 | W1.2 | Allocation concurrency proof & lock | Önce race harness (04/A2 — red/characterization), sonra AÇIK lock kontratı; bypass endpoint (COL-RISK-D04) kapsam dahil | Harness: karar gerektirmez; LOCK PATCH: COL/OD-04 | Codex (TM3 §11: collection modülü) |
-| W1.3 | Money-out idempotency evidence | Replay harness'ları (04/A4); kontrat KODDA MEVCUT (F-12) — schema işi YOK | Karar gerektirmez; text-ratification COL/OD-21 | (Codex — COL/OD-18'e tabi; TM3 §11'de client-settlement = Claude) |
+| W1.3 | Money-out idempotency evidence | Replay harness'ları (04/A4); kontrat KODDA MEVCUT (F-12) — schema işi YOK | Karar gerektirmez; text-ratification COL/OD-21 | Implementation: Codex (COL/OD-18A); Analysis/Review: Claude; paralel yazım PROHIBITED — tek aktif writer (COL/OD-18) |
 | W1.4 | Multi-instrument legal document integrity | Red test (04/A5) + PR-N5 findFirst→findMany düzeltmesi | GO-IMPLEMENT sınıfı (Desktop 03 §8) | (Codex — Desktop 03/04 önerisi) |
 | W1.5 | Old UYAP route containment | Red test + guard | Guard: GO-IMPLEMENT sınıfı; kalıcı disposition COL/OD-11 | (Codex — Desktop 03/04 önerisi) |
 | W1.6 | Collection audit capture | Mevcut canonical kurala göre audit capture | Kapsam COL/OD-05'e bağlı | Codex (TM3 §11: collection modülü; audit contract OFFICE ile ortak) |

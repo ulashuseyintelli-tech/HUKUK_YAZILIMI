@@ -131,6 +131,26 @@ Dur
 
 GO-COMPLETE implementasyon ve validation zinciridir. Commit, push, PR, CI, merge, main sync, remote branch cleanup, local branch cleanup, worktree cleanup, final verification ve checkpoint yalnız görev brief'i açık `IF GO-COMPLETE` owner yetkisi içeriyorsa tek operasyon sayılır. Tool/system guardrail merge'i bloklarsa veya PR'a özgü açık yetki gerektirirse ajan durur ve owner'dan açık yetki ister. Aksi halde CI PASS ve `mergeStateStatus` CLEAN sonrası stop condition oluşmadıysa ajan zincir içinde tekrar onay istemez. Bu zincirde `Onay Bekleniyor: YES` yazılmaz. Yalnız stop condition oluşursa ajan durur, sebebi raporlar ve `Onay Bekleniyor: YES` yazar.
 
+## Lane Ownership: Analysis Owner ≠ Implementation Owner
+
+Analiz/review sahipliği ile implementation/execution sahipliği farklı kavramlardır; biri
+diğerini ima etmez. Bir workstream'in analizini bir ajanın yapmış olması implementation
+lane'inin de o ajanda olduğu anlamına gelmez; tersi de geçerlidir (ör. Analysis: Claude /
+Implementation: Codex veya Analysis: Codex / Implementation: Claude).
+
+- Her workstream, lane kararı ve execution-lane governance kaydında iki sahiplik ayrı ve
+  açık yazılır:
+
+```text
+Analysis / Review Owner : <ajan>
+Implementation Owner    : <ajan>
+```
+
+- Lane devri normaldir ve ayrı owner kararıyla kaydedilir; devredilen eski kayıt gerçekleşmiş
+  owner kararı olarak silinmez, `SUPERSEDED BY <yeni kayıt>` işaretlenir.
+
+Kaynak: COL/OD-18A (`decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18A`).
+
 ## Approval Reporting Semantics
 
 - `GO-ANALYZE` sonunda `Onay Bekleniyor: YES` yazılır; çünkü analizden sonra kullanıcı karar verir.
