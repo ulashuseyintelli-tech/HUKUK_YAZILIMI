@@ -96,13 +96,15 @@ Her satır: GERÇEK → KANIT (main @ beb7d673).
   commandId deseni repo'da hiç kullanılmaz.** Event-düzeyi `causedBy` zinciri VARDIR (HR-23)
   ama HTTP `x-request-id` domain katmanına taşınmaz.
   KANIT: collection modülünde auditLog.create=0; schema AuditLog:4926-4958 correlationsuz.
-- **OF-02 — Allocation concurrency'nin açık kontratı yoktur.** Ana yolun koruması dolaylı bir
-  yan etkiye dayanır ve yapı değişirse sessizce kaybolabilir; ayrıca canonical
-  `CollectionService.create` dışında, aynı concurrency/idempotency kontratını taşımayan ikinci
-  bir allocation giriş yolu bulunur. Bu bir **P0 para bütünlüğü riskidir**; COL/OD-04 ve hedefli
-  implementation patch'i gerektirir.
-  KANIT: publication-safety gereği route/dosya-satır/reprodüksiyon ayrıntısı public governance'tan
-  çıkarıldı; owner'a özel kanalda tutulur. (Bkz. COL-RISK-D04 / COL-RISK-G02.)
+- **OF-02 — Allocation concurrency gap'i (historical baseline; contract decided, runtime
+  remediation pending).** Baseline'da ana yolun koruması dolaylı event yan etkisine dayanıyordu
+  ve canonical `CollectionService.create` dışında aynı kontratı taşımayan ikinci allocation
+  giriş yolu bulunuyordu. A2, mevcut same-case transaction advisory lock altında race safety'yi
+  10/10 doğruladı. COL/OD-04 bu lock'u canonical allocation concurrency authority olarak
+  kaydetti ve ikinci yol için **CLOSE** disposition'ı verdi. W1.2, lock bağımlılığını allocation
+  kontratı olarak açıklaştırıp ikinci yolu kapatana kadar P0 runtime remediation açıktır.
+  KANIT: PR #1217 / `4e8243e5`; decision-log COL/OD-04; publication-safety nedeniyle ikinci
+  yolun route/dosya-satır ayrıntısı owner'a özel kanalda korunur. (COL-RISK-D04 / G02 / T01.)
 - **OF-03 — Çok-enstrüman template bütünlüğü açıktır.** Template hattı `findFirst` ile yalnız
   ilk CaseInstrument'ı basar; düzeltme (PR-N5) tasarımda onaylı, implement edilmemiştir.
   KANIT: template-engine.service.ts:417; case-instrument-canonical-design.md:101/143/193.
