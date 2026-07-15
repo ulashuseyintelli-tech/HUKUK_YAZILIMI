@@ -8,7 +8,7 @@
 > yeni analiz, owner kararı, LDO/Finance sign-off'u veya mimari üretilmemiştir. **OD-07
 > IMPLEMENTATION HOLD'dur; hiçbir rol/sorumluluk/exposure modeli implementasyon, schema veya
 > cutover yetkisi ÜRETMEZ. Liability'nin parasal semantiği Alacak/Muhasebe domain'inindir ve bu
-> belgeyle yeniden tasarlanmaz (N-16/N-17/N-28).**
+> belgeyle yeniden tasarlanmaz (N-16/N-17).**
 
 ---
 
@@ -47,7 +47,7 @@ KİMLİK UZAYI       : LR/RP/RS/EX/LRV kimlikleri DBP-07-local PROPOSED'dur (DBP
 `DEBTOR-GOVERNANCE.md` (§3/§4/§5 rol-sorumluluk-müteselsillik satırları) → ADR. Execution/safety
 — `AGENTS.md` + task authorization. `SYS-GOV-004`: yürürlükteki mevzuat bu belgeden üstündür;
 hukuki yorum belirsizse sistem fail-closed davranır ve LDO sign-off'suz production authority
-oluşmaz. `N-28D`: legal-responsibility parasal tutar HESAPLAMAZ.
+oluşmaz. Legal-responsibility parasal tutar HESAPLAMAZ (bkz. §6).
 
 ## RELATED DOCUMENTS
 
@@ -60,8 +60,8 @@ oluşmaz. `N-28D`: legal-responsibility parasal tutar HESAPLAMAZ.
   (Identity≠Role≠Liability; §14 succession — Liability aktarımı OTOMATİK DEĞİL; EstateHeir/estate
   Party; GUARANTOR_OF/REPRESENTS relationship'i tek başına sorumluluk/yetki üretmez)
 - Domain Law: `project/docs/governance/DEBTOR-GOVERNANCE.md`
-- Alacak sınırı: `SYSTEM-CONSTITUTION.md` DEBTOR/RECEIVABLE BOUNDARY (N-28; exposure derived,
-  ledger yeniden-yazılmaz)
+- Alacak sınırı: Charter N-16 (Liability/Alacak Kalemi/Accounting ile koordineli tasarlanır) +
+  N-17 (Collection ledger yeniden yazılmaz/bypass edilmez)
 
 ---
 
@@ -98,9 +98,9 @@ LEGAL RESPONSIBILITY IS MULTI-DIMENSIONAL — tek enum/tek alan ile ifade edilem
                                 borçlu sıfatını DEĞİŞTİRMEZ (RC: representation does not alter
                                 debtor liability; DBP-06 REPRESENTS yetki vermez).
   D. LEGAL RESPONSIBILITY     : role + kapsam + limit + pay (share) + müteselsillik boyutlarından
-                                oluşan değerlendirme; parasal TUTAR HESAPLAMAZ (N-28D).
+                                oluşan değerlendirme; parasal TUTAR HESAPLAMAZ (bkz. §6).
   E. FINANCIAL EXPOSURE       : sorumluluğun parasal karşılığı — Alacak/Muhasebe domain'inin
-                                türettiği DERIVED büyüklük (N-28A). LegalResponsibility exposure'ı
+                                türettiği DERIVED büyüklük (N-16). LegalResponsibility exposure'ı
                                 ÜRETMEZ; yalnız hukuki çerçevesini verir.
 İLKE: bu beş kavram AYNI alanda/enumda birleştirilmez; biri diğerini otomatik türetmez.
 ```
@@ -159,7 +159,7 @@ LEGAL RESPONSIBILITY (PROPOSED; hukuki içerik LSR):
   boyutlar : responsibility scope (hangi borç/kalem) · limit türü (TAM/KISMI/SINIRLI-türevi;
              hukuki içerik LSR) · pay/share (mirasçı pay oranı vb.) · müteselsillik (joint &
              several) · effective period · evidence/provenance · rule/version.
-  KURAL    : LegalResponsibility PARASAL TUTAR HESAPLAMAZ (N-28D). "Sorumluluk sınırı" bir hukuki
+  KURAL    : LegalResponsibility PARASAL TUTAR HESAPLAMAZ. "Sorumluluk sınırı" bir hukuki
              kapsam ifadesidir; "açık borç/bakiye" DEĞİLDİR (§7 exposure ayrımı).
   transitional: `liabilityAmount`/`liabilityType` READ-COMPATIBLE bırakılır; yeni canonical
              sorumluluk-kapsamı olarak OTOMATİK KABUL EDİLMEZ (ambiguity → §16/DBP-11 UNRESOLVED).
@@ -167,19 +167,19 @@ LEGAL RESPONSIBILITY (PROPOSED; hukuki içerik LSR):
 
 ---
 
-## 7. Exposure Contract & Financial Boundary — OWNER-APPROVED [E] (BR-07 · FGO · N-16/17/28)
+## 7. Exposure Contract & Financial Boundary — OWNER-APPROVED [E] (BR-07 · FGO · N-16/17)
 
 ```text
 RC: FINANCIAL CONTRACT MUST NOT OWN LEGAL SEMANTICS — ve tersi: legal responsibility parasal
     büyüklük üretmez. İki domain arasındaki bağ bir KOORDİNASYON SÖZLEŞMESİDİR, füzyon değil.
-EX-01  OUTSTANDING EXPOSURE      : Alacak/Muhasebe domain'inin türettiği DERIVED büyüklük (N-28A);
+EX-01  OUTSTANDING EXPOSURE      : Alacak/Muhasebe domain'inin türettiği DERIVED büyüklük (N-16);
                                    collection-total ≠ outstanding-balance; missing-exposure ≠ 0.
 EX-02  RESPONSIBILITY→EXPOSURE   : LegalResponsibility (scope/limit/share) exposure'ın HUKUKİ
                                    ÇERÇEVESİDİR; parasal değeri Alacak domain hesaplar.
 EX-03  EXPOSURE CONTRACT VARIANTS: müteselsil (aynı borçtan birden çok sorumlu) · kısmi/pay-oranlı
                                    (mirasçı) · sınırlı (rehin/aval limitli) · kefalet (obligation-
                                    scoped) — variant hukuki içerikleri LSR; parasal projeksiyon FGO.
-KURAL: Collection ledger / receivable accounting BU BELGEYLE YENİDEN YAZILMAZ (N-17/N-18).
+KURAL: Collection ledger / receivable accounting BU BELGEYLE YENİDEN YAZILMAZ (N-17).
        Exposure↔Alacak koordinasyon sözleşmesi FINANCE + LDO GATE'e (BR-07) tabidir.
 ```
 
@@ -205,7 +205,7 @@ RC: ESTATE IS PARTY KIND NOT AUTOMATIC ROLE — ölüm/tereke bir Party-kind'dı
 - Legal succession (birleşme/bölünme/tereke/halefiyet) YENİ Party oluşturabilir, eski Party
   KORUNUR (DBP-06 §14); **Liability/Receivable aktarımı OTOMATİK DEĞİLDİR** (LSR + FGO).
 - Mirasçı sorumluluğu (terekeyle sınırlı / şahsi) ve pay (`shareRatio`) hukuki içerikleri LSR;
-  sistem `shareRatio` string'inden parasal pay HESAPLAMAZ (N-28D).
+  sistem `shareRatio` string'inden parasal pay HESAPLAMAZ.
 - LG-03 (ölümde takip BLOK; DBP-04) korunur — DECEASED fact'i olmadan mirasçıya otomatik
   enforcement üretilmez.
 BANKRUPTCY / İFLAS MASASI (TASFIYE_MEMURU/IFLAS_MASASI): sınıflandırma OPEN — LEGAL-SIGN-OFF
@@ -346,7 +346,7 @@ kararları · çoklu-rol "baskın rol" sunum kuralı.
 sorumluluk türü ve pay hukuki içeriği · iflas masası/tasfiye organı sınıflandırması · instrument-
 party-role hukuki etkileri · legal succession × Liability aktarım kuralları.
 **FGO (Finance+LDO):** exposure↔Alacak/Accounting koordinasyon sözleşmesi (BR-07) · outstanding
-exposure türetim sınırı (N-28A).
+exposure türetim sınırı (N-16).
 
 ---
 
@@ -399,7 +399,7 @@ kararı; bu belge kaydın repo taşıyıcısıdır)
 ONAYLANAN ([A]–[N]): kavram ayrımı (rol/temsil/sorumluluk/borç-kalemi/exposure) · Legal Role
 Catalog YAPISI · Representation modeli (temsil sorumluluğu değiştirmez) · Legal Responsibility
 çok-boyutlu modeli (parasal tutar üretmez) · Exposure Contract & Financial Boundary (BR-07/FGO/
-N-16/17/28) · Estate/Heir/Succession × Liability (aktarım otomatik değil) · Multiple Role (OPTION
+N-16/17) · Estate/Heir/Succession × Liability (aktarım otomatik değil) · Multiple Role (OPTION
 C) · Rol/Sorumluluk geçmişi + backfill yasağı · Passivation guard universality · Aggregate/Record
 ayrımı + lifecycle normalizasyonu · OD-07 Architecture Coordination Framework · AS-IS Violation
 Register (LRV-02/LRV-03) · Event/Fact delta disposition · Implementation Entry Blocker tespiti.
@@ -415,7 +415,7 @@ tespiti; AS-IS enum + CaseDebtor kanıtı; LRV bulguları) → R0.2 ROLE/RESPONS
 CORRECTION (beş-kavram ayrımı; LegalResponsibility çok-boyutlu + parasal-tutar-üretmez ilkesi;
 exposure/Alacak koordinasyon sözleşmesi + FGO; estate/succession × Liability aktarım-otomatik-değil;
 passivation universality; backfill yasağı; OD-07 framework) → GO-DOCS pre-normalizasyonu (repo
-konvansiyonuna hizalama; BR-04/06/07 + BC-03 + AGG-04/05 + OBD-02 + OD-07 + N-16/17/28 + LG-03
+konvansiyonuna hizalama; BR-04/06/07 + BC-03 + AGG-04/05 + OBD-02 + OD-07 + N-16/17 + LG-03
 cross-ref'leri; LRV-02/LRV-03 @351c7820 re-verification; RC clarification'ların gövdeye
 absorbe edilmesi). Ara revizyon metinleri görev sohbetindedir; bağlayıcı olan bu konsolide belgedir.
 
@@ -423,9 +423,9 @@ absorbe edilmesi). Ara revizyon metinleri görev sohbetindedir; bağlayıcı ola
 
 ```text
 - Rol/temsil/sorumluluk/exposure ayrımı korundu mu:            YES (§3; beş kavram ayrık)
-- LegalResponsibility parasal tutar üretiyor mu:               NO (N-28D; §6)
+- LegalResponsibility parasal tutar üretiyor mu:               NO (§6)
 - Financial contract legal semantik sahibi mi:                 NO (§7; BR-07/FGO)
-- Collection ledger / receivable yeniden yazıldı mı:           NO (N-17/N-18; §7)
+- Collection ledger / receivable yeniden yazıldı mı:           NO (N-17; §7)
 - Estate/heir otomatik borçlu rolü/sorumluluğu üretiyor mu:    NO (§8; RC estate=party-kind)
 - Legal succession Liability'yi otomatik aktarıyor mu:         NO (§8; LSR+FGO)
 - Instrument-party-role otomatik debtor-role mu:               NO (§4 LR-04)

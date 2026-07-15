@@ -210,7 +210,7 @@ MASKING ≠ EXPORT (RC-DBP10-08). Retention/anonymization POLICY İÇERİĞİ (s
 ```text
 AI CONTEXT = ALLOWLIST + LOCAL-ONLY (RC-DBP10-09): raw-evidence · TCKN/passport · audit kayıtları ·
   full-address · unminimized-object VARSAYILAN YASAK (allowlist'te açıkça yoksa AI'ya gitmez).
-AI kanonik state YAZMAZ (N-11); finansal/hukuki işlem yapmaz (N-09); açıklama/taslak advisory-only.
+AI kanonik state YAZMAZ (N-10); finansal/hukuki işlem yapmaz (N-09); açıklama/taslak advisory-only.
 AS-IS (VERIFIED @2e2108aa): `ai.service` tenant-boundary testli (`ai.service.tenant-boundary.spec.ts`);
   allowlist enforcement'ı ve minimizasyon DBP-11 test-gate + CPSG kapsamında doğrulanır.
 ```
@@ -335,7 +335,7 @@ authz; decision vocabulary + deny-reason; cross-case OPTION D; final-approver el
 sınıf≠md6; masking-policy-class; AI allowlist+local-only; iki güvenlik gate; TENANT_SUPER_ADMIN tenant-
 local) → v1.1 MATRIX COMPLETION (10×30×14 authorization matrisi; 8 resource-family; unknown=OWNER_
 DECISION_REQUIRED; CPSG 11-bulgu 5-sınıf çerçevesi; RC-DBP10-01..11) → GO-DOCS pre-normalizasyonu (repo
-BR-18/19 + artefakt #23-26 + BC-18 + INV-01/02 + N-09/11 cross-ref'leri; AS-IS @2e2108aa re-verification;
+BR-18/19 + artefakt #23-26 + BC-18 + INV-01/02 + N-09/10 cross-ref'leri; AS-IS @2e2108aa re-verification;
 GÜVENLİK REDAKSİYONU: bulgu id/severity/gate/closure korunup mekanizma/route redakte; RC clarification'
 ların gövdeye absorbe edilmesi). Ara revizyon metinleri görev sohbetindedir; bağlayıcı bu belgedir.
 

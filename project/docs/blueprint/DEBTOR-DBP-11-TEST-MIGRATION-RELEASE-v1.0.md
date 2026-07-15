@@ -86,9 +86,9 @@ EXPAND → BACKFILL → SHADOW/DUAL-READ → RECONCILE → CUTOVER → CONTRACT/
 - SHADOW/DUAL-READ : yeni yol eskiyle PARALEL çalışır, karşılaştırılır; kullanıcıya yansımaz.
 - RECONCILE  : fark/drift ölçülür, kapatılır; count/drift reconciliation ZORUNLU.
 - CUTOVER    : yalnız reconcile temiz + evidence + rollback yolu hazırsa; insan-onaylı (geri-
-               alınamaz aksiyonda N-22).
+               alınamaz aksiyonda N-21).
 - CONTRACT/RETIRE : eski yol kaldırılır — YALNIZ cutover kanıtlandıktan sonra.
-BIG-BANG MIGRATION PROHIBITED (N-19); destructive migration ilk geçişte YOK (N-20; EXPAND-first).
+BIG-BANG MIGRATION PROHIBITED (N-18); destructive migration ilk geçişte YOK (N-19; EXPAND-first).
 ```
 
 ---
