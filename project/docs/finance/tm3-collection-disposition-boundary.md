@@ -3,6 +3,17 @@
 > **Amaç:** İki ajanın (CODEX / Claude) aynı kavramı farklı isimle yazmasını ve aynı dosyaya çakışmasını önlemek.
 > **Statü:** ONAYLANDI (2026-06-26) — D1 kilitlendi (payout = proceeds-tarafı; BalanceLedger değil). Bağlayıcı.
 > **Kanıt tabanı:** 2026-06-26 — iki doğrulama workflow'u + spot-doğrulama. Satır numaraları `project/apps/api/...` gerçek kodundan; base `origin/main@c82f238`.
+>
+> **COL/OD-18A AMENDMENT (2026-07-15):** Bu belgenin **client-settlement yüzeyine** ilişkin
+> execution/implementation atamaları — `CollectionDisposition`, `ClientPayable`, `ClientPayout`,
+> `ClientOffset`, `src/modules/client-settlement/` ve W1.3 Payout Replay Harness'a dair tüm
+> "Claude" execution satırları (§5/§11 sahiplik satırları ve D2 consumer-handler execution
+> ataması dahil) — **SUPERSEDED BY COL/OD-18A**: implementation/execution lane = **Codex**,
+> Claude = **analysis/review**; aynı anda tek aktif writer (Codex), paralel yazım PROHIBITED
+> (Analysis Owner ≠ Implementation Owner — `process-rules.md` § Lane Ownership). Belge metni
+> tarihsel kayıt olarak korunmuştur; OD-18A kapsamı DIŞINDAKİ atamalar (ör. `ClientStatement`,
+> `BalanceLedger` masraf-avans hattı, `Expense*`, audit) bu amendment'tan etkilenmez.
+> Authoritative: `decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18A` (PR #1257, main@`c4ee2332`).
 
 ---
 

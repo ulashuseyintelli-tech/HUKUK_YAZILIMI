@@ -60,7 +60,7 @@ Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
 | COL-RISK-O01 | Runtime cutover 3 gate'e kilitli: ölçülmüş baseline + representative evidence (ABSENT/BLOCKING) + açık owner APPROVED | decision-log:15/48; ADR-014 status | OPEN | COL/OD-12 |
 | COL-RISK-O02 | CAN-CUT-01 (Due/ClaimItem) ve CAN-CUT-02 (Hesap Özeti) cutover kayıtları açık | canonicalization-register.md:38-39/87/109 | OPEN | COL/OD-16 |
 | COL-RISK-O03 | ADR-013 fee/harç TO-BE seçimi + boundary audit kapanmadan fee implementation BLOCKED | ADR-013 non-authorization clause | OPEN | COL/OD-14 |
-| COL-RISK-O04 | Client-settlement lane çelişkisi (TM3=Claude ↔ handoff=Codex) çözülmeden bu modüllerde paralel implementasyon riskli | COL-BOUNDARY-CONFLICT-001 | OPEN | COL/OD-18 |
+| COL-RISK-O04 | Client-settlement lane çelişkisi (TM3=Claude ↔ handoff=Codex) çözülmeden bu modüllerde paralel implementasyon riskli | COL-BOUNDARY-CONFLICT-001 — lane çelişkisi ÇÖZÜLDÜ: COL/OD-18 RECORDED → COL/OD-18A AMENDED (implementation=Codex, Claude=analysis/review, tek aktif writer, paralel yazım PROHIBITED; PR #1257 main@`c4ee2332`); kapanış owner kararı bekler | OPEN | COL/OD-18 → COL/OD-18A |
 
 ## 5. TEST-LIMITATION
 
