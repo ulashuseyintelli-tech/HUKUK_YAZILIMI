@@ -9,8 +9,9 @@ Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; 
                           yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
                           ile aynı sınıf ve sınır)
 Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
-                          onaylandı; COL/OD-04, COL/OD-05 ve COL/OD-21 RECORDED; COL/OD-18
-                          RECORDED → COL/OD-18A ile AMENDED (2026-07-15); kalan 17 karar OPEN
+                          onaylandı; COL/OD-03, COL/OD-04, COL/OD-05 ve COL/OD-21 RECORDED;
+                          COL/OD-18 RECORDED → COL/OD-18A ile AMENDED (2026-07-15);
+                          kalan 16 karar OPEN
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
 IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
@@ -49,10 +50,28 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 - BAĞIMLILIK: COL/OD-03. ETKİ: consumer cutover (COL/OD-16), CAN-CUT-02.
 
 ### COL/OD-03 — Canonical effective-date policy
+- STATUS: **RECORDED** (2026-07-16) — authoritative kayıt:
+  `decision-log.md` § `2026-07-16 — RC-COL / COL/OD-03`.
 - SORU: transactionDate/valueDate/effectiveDate/confirmedAt hangi tek policy'ye bağlanır;
   faiz ve legal balance hangisini tüketir?
-- KANIT: COL-INV-033/034 TARGET; çift-tarih tek authority'siz (OF-06, UNVERIFIED-THIS-PASS).
+- OWNER SELECTION: **OPTION A — Current-compatible effective-date authority.**
+- KARAR:
+  - Faiz ve legal balance yalnız canonical `effectiveDate` tüketir.
+  - Explicit authorized canonical `effectiveDate` varsa kullanılır. Yoksa current-compatible
+    resolver `LedgerEntry.entryDate` değerini; Ledger bulunmayan mevcut Collection fallback'inde
+    `Collection.date` değerini kullanır.
+  - `valueDate`, `confirmedAt`, `transactionDate`, `externalSettledAt` ve diğer ham tarihler
+    provenance/lifecycle kanıtı olarak korunur; `valueDate` veya `confirmedAt` kendiliğinden
+    hukuki etki tarihi değildir.
+  - Zorunlu tarih eksik veya canonical authority çelişkiliyse tahmin yapılmaz; faiz/legal-balance
+    sonucu fail-closed kalır.
+  - Karar snapshot, migration, backfill, geçmiş kayıtların yeniden hesaplanması, consumer switch
+    veya Phase 2 runtime cutover yetkisi vermez.
+- KANIT: COL-INV-033/034; historical çift-tarih authority gap'i OF-06/COL-RISK-G05; current
+  interest mapper `effectiveDate ?? entryDate`, Collection fallback'i `Collection.date` tüketir.
 - BAĞIMLILIK: —. ETKİ: faiz kesinliği, COL/OD-02, -06, -14.
+- PHASE 0 EFFECT: Bu karar approved merge ile canonical olduktan sonra COL/OD-03 W0.3
+  blocker'ı kalkar; COL/OD-01 açık kaldığı için Phase 0 kapanmaz.
 
 ### COL/OD-04 — Allocation concurrency control kontratı
 - STATUS: **RECORDED** (2026-07-15) — authoritative kayıt:
@@ -275,7 +294,7 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 
 ```text
 KÖK (bağımsız başlar):
-  COL/OD-01 (adjustment)   COL/OD-03 (effective-date)   COL/OD-05 (audit/correlation — RECORDED)
+  COL/OD-01 (adjustment)   COL/OD-03 (effective-date — RECORDED)   COL/OD-05 (audit/correlation — RECORDED)
   COL/OD-11 (UYAP route)   COL/OD-18 (lane — AMENDED: COL/OD-18A)  COL/OD-21 (RECORDED)
 
 COL/OD-01 ─┬─> COL/OD-07 (feragat/indirim/sulh) ──> COL/OD-08 (satisfaction/re-open)
@@ -292,7 +311,7 @@ COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
 
 Önerilen oturum sırası (yalnız sıralama önerisidir, karar değildir):
 1) COL/OD-21 RECORDED (2026-07-16; money-out idempotency contract canonicalization kaydı)
-2) COL/OD-01, -03 (COL/OD-05 RECORDED — 2026-07-14; sıradaki açık kök kararlar)
+2) COL/OD-03 RECORDED (2026-07-16); COL/OD-01 sıradaki açık Phase 0 kök kararı
 3) COL/OD-04 RECORDED (W1.2: CLOSED / CANONICAL)
 4) Kuyruk B → Kuyruk C.
 
