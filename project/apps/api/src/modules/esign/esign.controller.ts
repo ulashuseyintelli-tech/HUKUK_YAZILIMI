@@ -1,6 +1,14 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, ServiceUnavailableException } from '@nestjs/common';
 import { ESignService, ESignRequest } from './esign.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+// CLIENT-SEC-H2A: EsignLog modelinde tenantId kolonu yok — /history ve /stats tenant-scope
+// UYGULANAMAZ (şema-seviyesi eksiklik, kod-only fix yok). Kalıcı şema/migration çözümü ayrı
+// ve yetkilendirilmemiş bir iştir (CLIENT-SEC-H2C). Bu, o çözüme kadar fail-closed containment'tır.
+const H2A_CONTAINMENT_ERROR = {
+  error: 'TENANT_SCOPED_HISTORY_TEMPORARILY_UNAVAILABLE',
+  message: 'Bu uç nokta güvenlik incelemesi nedeniyle geçici olarak kullanılamıyor.',
+};
 
 @Controller('esign')
 @UseGuards(JwtAuthGuard)
@@ -54,17 +62,13 @@ export class ESignController {
    */
   @Get('history')
   async getHistory(
-    @Query('documentId') documentId?: string,
-    @Query('signerId') signerId?: string,
-    @Query('status') status?: string,
-    @Query('limit') limit?: string,
+    @Query('documentId') _documentId?: string,
+    @Query('signerId') _signerId?: string,
+    @Query('status') _status?: string,
+    @Query('limit') _limit?: string,
   ) {
-    return this.esignService.getSignatureHistory({
-      documentId,
-      signerId,
-      status,
-      limit: limit ? parseInt(limit) : undefined,
-    });
+    // CLIENT-SEC-H2A: fail-closed — service/Prisma'ya hiç ulaşılmaz.
+    throw new ServiceUnavailableException(H2A_CONTAINMENT_ERROR);
   }
 
   /**
@@ -72,6 +76,8 @@ export class ESignController {
    */
   @Get('stats')
   async getStats() {
-    return this.esignService.getStats();
+    // CLIENT-SEC-H2A: fail-closed — service/Prisma'ya hiç ulaşılmaz.
+    // NOT: /esign/status kendi getStats() çağrısını KORUR — bu yalnız bu route'a özgüdür.
+    throw new ServiceUnavailableException(H2A_CONTAINMENT_ERROR);
   }
 }
