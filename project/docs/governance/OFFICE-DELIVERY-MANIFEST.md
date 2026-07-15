@@ -74,16 +74,16 @@ varsayılmaz.
 
 | ID | Sev | İlgili Decision(lar) | Decision Durumu | DISPOSITION | Not |
 |---|---|---|---|---|---|
-| STF-PRD-BOLA-001 | P1 | OFF/OD-08, OFF/OD-09 | OD-08 OPEN(BLOCKING) · OD-09 CLOSED | LINKED TO DECISION | OD-08 kapanmadan slice başlamaz. **RECORDED SECURITY EXCEPTION:** CLIENT-SEC-H1 S1–S4 emergency containment ayrıca ve dar biçimde yetkilendirildi, PR #1291 ile tamamlandı (squash SHA `328dcdf6689575da8a4849f4b632a737079c22ad`, CI 4/4 SUCCESS; bkz. `decision-log.md` CLIENT-SEC-H1 kaydı, `OFFICE-RISK-REGISTER.md` STF-PRD-BOLA-001 remediation bloğu). **EFFECT:** Bu istisna OFF/OD-08'i çözmez ve CANDIDATE-E'yi unblock etmez. |
+| STF-PRD-BOLA-001 | P1 | OFF/OD-08, OFF/OD-09 | OD-08 CLOSED (2026-07-16) · OD-09 CLOSED | LINKED TO DECISION | OD-08 kapandı (2026-07-16, Access-Scope Owner Decision Package) — READY_FOR_CANDIDATE_DECOMPOSITION (candidate henüz seçilmedi/başlatılmadı). **RECORDED SECURITY EXCEPTION:** CLIENT-SEC-H1 S1–S4 emergency containment ayrıca ve dar biçimde yetkilendirildi, PR #1291 ile tamamlandı (squash SHA `328dcdf6689575da8a4849f4b632a737079c22ad`, CI 4/4 SUCCESS; bkz. `decision-log.md` CLIENT-SEC-H1 kaydı, `OFFICE-RISK-REGISTER.md` STF-PRD-BOLA-001 remediation bloğu). **EFFECT:** Bu istisna OFF/OD-08'i çözmez ve CANDIDATE-E'yi unblock etmez. |
 | STF-PRD-SES-001 | P1 | OFF/OD-14, OFF/OD-15 | ikisi de CLOSED_CANONICAL | LINKED TO DECISION | WAVE 1 kapsamına giriyor (SES-002 ile birlikte triyaj edilecek) |
 | STF-PRD-RBAC-001 | P2 | OFF/OD-05, OFF/OD-09 | ikisi de CLOSED_CANONICAL | LINKED TO DECISION | WAVE 2 kapsamına giriyor |
-| STF-PRD-SCP-001 | P2 | OFF/OD-08 | OPEN(BLOCKING) | LINKED TO DECISION | BOLA-001 ile aynı gate |
+| STF-PRD-SCP-001 | P2 | OFF/OD-08 | CLOSED (2026-07-16) | LINKED TO DECISION | BOLA-001 ile aynı gate; OD-08 kapandı — READY_FOR_CANDIDATE_DECOMPOSITION (candidate seçilmedi/başlatılmadı) |
 | STF-PRD-CFG-001 | P2 | — | yok | UNMAPPED — OWNER REVIEW REQUIRED | Hiçbir OD'ye bağlı değil; owner karar-gerekmez mi onaylamalı |
 | STF-PRD-LIFE-001 | P2 | OFF/OD-16, OFF/OD-17 | OD-16 OPEN(NON_BLOCKING) · OD-17 CLOSED | LINKED TO DECISION | OD-16 non-blocking — owner bunun gerçekten gate olup olmadığını teyit etmeli |
 | STF-PRD-PRIV-001 | P2 | OFF/OD-18 | CLOSED_CANONICAL | LINKED TO SLICE | = SLICE-03 → CANDIDATE-F1/F2/G/H decomp (WAVE 3 CLOSED WITH RESIDUALS, 2026-07-16). F1+H1 CANONICAL (list+case-embedded maskeli, MILESTONE 04/05); STF-PRD-PRIV-001 OPEN / CARRIED FORWARD — WAVE 3 closure bunu KAPATMAZ (kalan detay yüzeyi = CANDIDATE-G, BLOCKED) |
 | STF-PRD-OPS-001 | P2 | OFF/OD-19 | OPEN(BLOCKING) | LINKED TO DECISION | — |
 | STF-PRD-PERF-001 | P3 | — | yok | UNMAPPED — OWNER REVIEW REQUIRED | Karar gerekmez (salt mühendislik) ama henüz slice'a triyaj edilmedi |
-| STF-PRD-BOLA-002 | P3 | OFF/OD-10 | OPEN(BLOCKING) | LINKED TO DECISION | — |
+| STF-PRD-BOLA-002 | P3 | OFF/OD-10 | CLOSED (2026-07-16) | LINKED TO DECISION | OD-10 kapandı (Access-Scope Owner Decision Package) — READY_FOR_CANDIDATE_DECOMPOSITION (candidate seçilmedi/başlatılmadı) |
 | STF-PRD-DATA-001 | P3 | OFF/OD-01, OFF/OD-03 | OD-01 CLOSED · OD-03 OPEN(BLOCKING) | LINKED TO DECISION | OD-03 kapanmadan DB-constraint işi başlamaz |
 | STF-PRD-SES-002 | P3 | OFF/OD-15 | CLOSED_CANONICAL | LINKED TO DECISION | WAVE 1 kapsamına giriyor (SES-001 ile birlikte triyaj edilecek) |
 
@@ -109,9 +109,9 @@ Bu satır tek başına global triage/backlog yetkisi üretmez.
 | OFF/OD-05 | CLOSED_CANONICAL | OWNER_SELECTED | BLOCKING | OD-06, OD-09, ADR-009 |
 | OFF/OD-06 | OPEN | NOT_RESOLVED | NON_BLOCKING | OD-05, DBIND§5 |
 | OFF/OD-07 | OPEN | NOT_RESOLVED | BLOCKING | OD-02 |
-| OFF/OD-08 | OPEN | NOT_RESOLVED | BLOCKING | OD-09, OD-10 |
+| OFF/OD-08 | CLOSED_CANONICAL | OWNER_SELECTED | BLOCKING | OD-09, OD-10 |
 | OFF/OD-09 | CLOSED_CANONICAL | OWNER_SELECTED | BLOCKING | OD-05, OD-08 |
-| OFF/OD-10 | OPEN | NOT_RESOLVED | BLOCKING | OD-08 |
+| OFF/OD-10 | CLOSED_CANONICAL | OWNER_SELECTED | BLOCKING | OD-08 |
 | OFF/OD-11 | CLOSED_CANONICAL | OWNER_SELECTED | NON_BLOCKING | OD-01, ADR-009 — IMPLEMENTS→SLICE-02 |
 | OFF/OD-12 | OPEN | NOT_RESOLVED | BLOCKING | OD-11, ADR-009 |
 | OFF/OD-13 | OPEN | NOT_RESOLVED | BLOCKING | OD-12 |
@@ -123,8 +123,9 @@ Bu satır tek başına global triage/backlog yetkisi üretmez.
 | OFF/OD-19 | OPEN | NOT_RESOLVED | BLOCKING | Product, HR |
 | OFF/OD-21 | CLOSED_CANONICAL | OWNER_SELECTED | NON_BLOCKING | OD-05 |
 
-*(11 OPEN: OD-02,03,04,06,07,08,10,12,13,16,19 · 9 CLOSED_CANONICAL: OD-01,05,09,11,14,15,17,18,21
-— `OFFICE-OWNER-DECISIONS.md` ile birebir tutarlı, 2026-07-14 itibarıyla.)*
+*(9 OPEN: OD-02,03,04,06,07,12,13,16,19 · 11 CLOSED_CANONICAL: OD-01,05,08,09,10,11,14,15,17,18,21
+— `OFFICE-OWNER-DECISIONS.md` ile birebir tutarlı, 2026-07-16 itibarıyla — OD-08/OD-10 Access-Scope
+Owner Decision Package'da kapandı.)*
 
 ## 4. Slice Register
 
@@ -137,7 +138,7 @@ Bu satır tek başına global triage/backlog yetkisi üretmez.
 | CANDIDATE-B | **DEFERRED** (2026-07-14) | NOT_READY | OFF/OD-15 (CLOSED) | STF-PRD-SES-002 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 1 decomposition) | JWT/Session Revocation Mechanism (tokenVersion) — bkz. §4b. DEFERRED gerekçesi: CANDIDATE-A ile WAVE 1'in acil offboarding riski kapatıldı; bu, geniş auth/session altyapısı gerektiren ayrı bir iş |
 | CANDIDATE-C | **CANONICAL** | — | OFF/OD-05, OFF/OD-09 (ikisi de CLOSED) | STF-PRD-RBAC-001 | **SELECTED** (2026-07-14) | **CONSUMED** (2026-07-15) | **HARDENING** | **RATIFIED_WITH_RECORDED_LIMITATIONS** (2026-07-14) | GO-ANALYZE (WAVE 2 decomposition) + Owner Re-scope + Contract Draft/Validation/Ratification + GO-IMPLEMENT | Canonical Actor Capacity Read Consolidation — bkz. §4c. PR #1255, branch commit `33cc6710`, squash SHA `038dbbb9`, CI 4/4 PASS |
 | CANDIDATE-D | **PRODUCT_DECISION_REQUIRED** | NOT_READY | — | STF-PRD-RBAC-001 (dolaylı) | **NOT_A_SELECTABLE_SLICE** (2026-07-14) | NONE | — | — | GO-ANALYZE (WAVE 2 decomposition) | Ürün niyeti netleşmeden Contract açılamaz. Detay: private evidence (bkz. §4c) |
-| CANDIDATE-E | **BLOCKED** | NOT_READY | OFF/OD-05, OFF/OD-09 (CLOSED) + OFF/OD-08 (**OPEN — blocker**) | STF-PRD-RBAC-001 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 2 decomposition) | Blocker: OFF/OD-08 OPEN. Detay: private evidence (bkz. §4c) |
+| CANDIDATE-E | **UNBLOCKED** (2026-07-16) | **NEXT_ELIGIBLE** | OFF/OD-05, OFF/OD-09, OFF/OD-08 (**hepsi CLOSED**) | STF-PRD-RBAC-001 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 2 decomposition) + blocker recompute (Access-Scope Owner Decision Package) | Blocker GİDERİLDİ (OFF/OD-08 CLOSED, 2026-07-16). readinessStatus NEXT_ELIGIBLE yalnız hesaplanan bir gerçektir (readiness ≠ authorization) — ownerSelectionStatus/implementationAuthorization/contractStatus DEĞİŞMEDİ; Contract Draft ayrı, açık bir owner GO'su gerektirir. Detay: private evidence (bkz. §4c) |
 | CANDIDATE-F1 | **CANONICAL** | — | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | **SELECTED** (2026-07-15) | **CONSUMED** (2026-07-15) | **HARDENING** | **RATIFIED_WITH_RECORDED_LIMITATIONS** (2026-07-15) | GO-ANALYZE (WAVE 3 decomposition) + Contract Draft/Validation/Ratification + GO-IMPLEMENT | Personnel List Masked Default — mevcut masking altyapısı REUSE; OFF/OD-18 yeterli. bkz. §4d. PR #1270, branch commit `a08932fb`, squash SHA `a170da3e`, CI 4/4 PASS |
 | CANDIDATE-F2 | **DORMANT** | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | NOT_SELECTED | NONE | — | — | GO-ANALYZE (WAVE 3 decomposition) | Personnel Export Masking — IMPLEMENTATION SURFACE NOT FOUND (owner disposition 2026-07-15). bkz. §4d |
 | CANDIDATE-G | **BLOCKED** | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 3 decomposition) | Detail Masking + Field-Level Unmask Permission — blocker: FIELD-LEVEL UNMASK GOVERNANCE / MECHANISM UNRESOLVED. bkz. §4d |
@@ -255,8 +256,12 @@ CANDIDATE-C   name: Canonical Actor Capacity Read Consolidation (owner re-scope 
               exact affected files, silinecek yerel duplicate'ler, non-null invariant kanıtı, test
               sayıları) yalnız private evidence'ta — public'e YAZILMAZ.
 CANDIDATE-D   PRODUCT DECISION REQUIRED · NOT A SELECTABLE SLICE
-CANDIDATE-E   implementationCategory NEW_SUBSYSTEM · status BLOCKED ·
-              blocker OFF/OD-08 OPEN
+CANDIDATE-E   implementationCategory NEW_SUBSYSTEM · status UNBLOCKED (2026-07-16) ·
+              readinessStatus NEXT_ELIGIBLE · ownerSelectionStatus NOT_SELECTED (değişmedi) ·
+              implementationAuthorization NONE (değişmedi) · contractStatus NOT_DRAFTED (değişmedi)
+              Eski blocker (OFF/OD-08 OPEN) Access-Scope Owner Decision Package'da (2026-07-16,
+              Option B) GİDERİLDİ. Bu yalnız hesaplanan bir readiness gerçeğidir — owner selection
+              veya Contract Draft ayrı, açık bir owner GO'su gerektirir; bu belge onu üretmez.
 
 Ayrıntılı teknik evidence (call-chain, dosya/metot isimleri, mekanizma açıklaması,
 kod-kanıtı) yalnız private handoff/scratchpad kaydındadır — bu public repo'ya
@@ -452,8 +457,12 @@ WAVE 3 — Privacy Revival (Sensitive Field Masking)  [P2, karar kapalı]
     NEXT PROGRAM ACTION: OWNER SELECTION / OWNER DECISION REQUIRED (bkz. §8).
 
 WAVE 4+ — Gated (henüz decision-tarafı kapanmadı)
-  BOLA-001/SCP-001 ← OD-08 OPEN · BOLA-002 ← OD-10 OPEN · DATA-001 ← OD-03 OPEN ·
-  OPS-001 ← OD-19 OPEN · LIFE-001 ← OD-16 OPEN(non-blocking, teyit gerekir)
+  DATA-001 ← OD-03 OPEN · OPS-001 ← OD-19 OPEN · LIFE-001 ← OD-16 OPEN(non-blocking, teyit gerekir)
+
+WAVE 4+ — Decision-tarafı kapandı, henüz candidate-decomposition yapılmadı (2026-07-16)
+  BOLA-001 (P1) + SCP-001 (P2) ← OD-08 CLOSED (2026-07-16, Access-Scope Owner Decision Package) ·
+  BOLA-002 (P3) ← OD-10 CLOSED (aynı paket) — üçü de READY_FOR_CANDIDATE_DECOMPOSITION; hiçbir
+  candidate seçilmedi/başlatılmadı, bu belge onları seçmez
 
 UNMAPPED (owner review required, decision-graph dışı)
   STF-PRD-CFG-001, STF-PRD-PERF-001
@@ -462,16 +471,22 @@ UNMAPPED (owner review required, decision-graph dışı)
 ## 8. NEXT ELIGIBLE UNIT (readiness ≠ authorization)
 
 ```text
-NEXT ELIGIBLE UNIT: NONE. WAVE 3 CLOSED / COMPLETE WITH RECORDED RESIDUALS (owner decision 2026-07-16);
-F1+H1 CANONICAL/CONSUMED (MILESTONE 04/05), H-AUDIT NO IMPLEMENTATION. WAVE 1-3'te teslim edilebilir/seçili
-slice kalmadı; WAVE 4+ decision-tarafı kapalı DEĞİL. NEXT PROGRAM ACTION: OWNER SELECTION / OWNER DECISION
-REQUIRED — geriye kalan candidate'ların TÜMÜ owner-gated; bu belge hiçbirini SEÇMEZ/başlatmaz/sıralamaz,
-her biri owner'ın ayrı, açık bir GO/decision'ını bekler:
+NEXT ELIGIBLE UNIT: CANDIDATE-E (2026-07-16, yeniden hesaplandı — readiness ≠ authorization).
+OFF/OD-08 Access-Scope Owner Decision Package'da CLOSED olduğundan CANDIDATE-E'nin kayıtlı tek
+blocker'ı giderildi; readinessStatus NEXT_ELIGIBLE (yalnız hesaplanan bir gerçek). Bu bir Contract
+Draft yetkisi DEĞİLDİR — ownerSelectionStatus NOT_SELECTED, implementationAuthorization NONE,
+contractStatus NOT_DRAFTED KORUNUR; bu belge E'yi seçmez/başlatmaz, owner'ın ayrı, açık bir GO'sunu
+bekler. STF-PRD-BOLA-001(P1)/SCP-001(P2)/BOLA-002(P3) de aynı pakette READY_FOR_CANDIDATE_DECOMPOSITION
+statüsüne ulaştı (bkz. §7) — hiçbiri için candidate seçilmedi/başlatılmadı.
+WAVE 1-3'te CANONICAL olarak teslim edilmiş ek bir slice yok (F1/H1/A/C zaten CANONICAL). NEXT
+PROGRAM ACTION: E için OWNER SELECTION (Contract Draft'a girmesi için), diğerleri için OWNER
+DECISION REQUIRED — geriye kalan candidate'ların TÜMÜ hâlâ owner-gated; bu belge hiçbirini
+SEÇMEZ/başlatmaz/sıralamaz, her biri owner'ın ayrı, açık bir GO/decision'ını bekler:
   · CANDIDATE-D (WAVE 2) — product decision (canApproveFinance ürün niyeti) gerekir · NOT_A_SELECTABLE_SLICE
-  · CANDIDATE-E (WAVE 2) — OFF/OD-08 (blocker) kapanışı gerekir · BLOCKED
   · CANDIDATE-F2 (WAVE 3) — DORMANT (IMPLEMENTATION SURFACE NOT FOUND, owner disposition)
   · CANDIDATE-G (WAVE 3) — field-level unmask governance/mechanism çözülmeli (olası ek owner decision) · BLOCKED · bu slice (H1) onu AÇMAZ
   · CANDIDATE-B (WAVE 1) — DEFERRED, ayrı owner GO ile yeniden açılabilir
+  · BOLA-001/SCP-001/BOLA-002 (WAVE 4+) — READY_FOR_CANDIDATE_DECOMPOSITION, henüz decompose edilmedi
 
 status (CANDIDATE-A)                      : CANONICAL (2026-07-14, main @ b0ce36db)
 ownerSelectionStatus (CANDIDATE-A)        : SELECTED (2026-07-14)
@@ -489,8 +504,11 @@ contractStatus (CANDIDATE-C)              : RATIFIED_WITH_RECORDED_LIMITATIONS (
 implementationAuthorization (CANDIDATE-C) : CONSUMED (2026-07-15) — PR #1255, squash `038dbbb9`, CI 4/4 PASS
 ownerSelectionStatus (CANDIDATE-D)        : NOT_A_SELECTABLE_SLICE (2026-07-14) — PRODUCT
                                              DECISION REQUIRED
-ownerSelectionStatus (CANDIDATE-E)        : NOT_SELECTED — status BLOCKED (blocker: OFF/OD-08
-                                             OPEN)
+status (CANDIDATE-E)                      : UNBLOCKED (2026-07-16) — eski blocker OFF/OD-08 CLOSED
+readinessStatus (CANDIDATE-E)             : NEXT_ELIGIBLE (2026-07-16, yalnız hesaplanan gerçek)
+ownerSelectionStatus (CANDIDATE-E)        : NOT_SELECTED (değişmedi)
+implementationAuthorization (CANDIDATE-E) : NONE (değişmedi)
+contractStatus (CANDIDATE-E)              : NOT_DRAFTED (değişmedi)
 name (CANDIDATE-F1)                       : Personnel List Masked Default (WAVE 3, SLICE-03 decomp)
 status (CANDIDATE-F1)                     : CANONICAL (2026-07-15, main @ a170da3e) — PHASE 1 MILESTONE 04
 implementationCategory (CANDIDATE-F1)     : HARDENING
@@ -510,15 +528,20 @@ implementationAuthorization (CANDIDATE-H1): CONSUMED (2026-07-15) — PR #1283, 
 ```
 ```text
 NEXT ELIGIBLE ≠ AUTHORIZED.
-CANDIDATE-H1 artık CANONICAL/CONSUMED'dur (PHASE 1 MILESTONE 05) — implementationAuthorization
-GO_IMPLEMENT_ISSUED → CONSUMED'a vardı; aynı slice için tekrar implementasyon açılmaz. CANDIDATE-A/C/F1
-de CANONICAL/CONSUMED'dur. Bu belgenin kurallarına göre implementasyona hazır bir NEXT ELIGIBLE UNIT
-YOKTUR: geriye kalan candidate'ların tümü owner-gated (CANDIDATE-B DEFERRED · D PRODUCT_DECISION/
-NOT_A_SELECTABLE_SLICE · E ve G BLOCKED · F2 DORMANT). CANDIDATE-G BLOCKED/NOT_SELECTED korunur —
-H1 edit-safe yolu onu AÇMADI. Bu canonicalization yalnız CANDIDATE-H1'in IMPLEMENTED/MERGED/CANONICAL
-durumunu + recorded limitations'ın CARRIED FORWARD statüsünü (OFF-INV-10 PARTIAL, STF-PRD-PRIV-001
-OPEN/NOT CLOSED) + evidence limitation (CI allowlist) kaydını kaydeder; yeni Contract/decision package/
-candidate/implementasyon başlatmaz.
+CANDIDATE-A/C/F1/H1 CANONICAL/CONSUMED'dur (implementationAuthorization GO_IMPLEMENT_ISSUED →
+CONSUMED'a vardı; aynı slice için tekrar implementasyon açılmaz). **Güncelleme (2026-07-16, Access-Scope
+Owner Decision Package):** OFF/OD-08 CLOSED oldu; CANDIDATE-E'nin kayıtlı tek blocker'ı giderildi,
+readinessStatus NEXT_ELIGIBLE'a yükseldi (yalnız hesaplanan bir gerçek — ownerSelectionStatus NOT_SELECTED,
+implementationAuthorization NONE, contractStatus NOT_DRAFTED KORUNUR; bu belge E'yi seçmez/başlatmaz,
+Contract Draft owner'ın ayrı, açık bir GO'sunu bekler). Geriye kalan diğer candidate'lar hâlâ owner-gated
+(CANDIDATE-B DEFERRED · D PRODUCT_DECISION/NOT_A_SELECTABLE_SLICE · G BLOCKED · F2 DORMANT).
+CANDIDATE-G BLOCKED/NOT_SELECTED korunur — H1 edit-safe yolu onu AÇMADI; bu OD-08 kapanışıyla da
+İLİŞKİSİZDİR (G'nin blocker'ı ayrı bir field-level-unmask mekanizma sorusudur). STF-PRD-BOLA-001/SCP-001/
+BOLA-002 aynı pakette READY_FOR_CANDIDATE_DECOMPOSITION'a ulaştı (bkz. §7) — hiçbiri seçilmedi/başlatılmadı.
+Bu canonicalization CANDIDATE-H1'in IMPLEMENTED/MERGED/CANONICAL durumunu (önceki turdan, DEĞİŞMEDİ) +
+OFF/OD-08+OFF/OD-10'un CLOSED/CANONICAL durumunu + CANDIDATE-E'nin yeniden hesaplanan blocker/readiness
+durumunu + BOLA-001/SCP-001/BOLA-002'nin downstream readiness kaydını kaydeder; yeni Contract/decision
+package/candidate/implementasyon başlatmaz.
 ```
 
 ## 9. Document Self-Check
@@ -785,4 +808,24 @@ candidate/implementasyon başlatmaz.
 - Yeni candidate/wave seçildi mi / kod-schema-migration:     NO / NONE
 - PUBLIC CONTENT RULE (WAVE 3 closure): alan/endpoint/      NO — yalnız governance closure + residual metadata
   guard/edit-mekanizma eklendi mi:                         (grep doğrulandı)
+- OFF/OD-08 → CLOSED_CANONICAL/OWNER_SELECTED işlendi mi     YES — §3 satırı + OFFICE-OWNER-DECISIONS.md +
+  (§3):                                                     decision-log.md; Option B metni owner'dan birebir
+- OFF/OD-10 → CLOSED_CANONICAL/OWNER_SELECTED işlendi mi     YES — §3 satırı + OFFICE-OWNER-DECISIONS.md +
+  (§3):                                                     decision-log.md; Option B metni owner'dan birebir
+- Önceki QUESTION/OPTIONS/SAFE DEFAULT metni korundu mu      YES — yalnız OWNER SELECTION + DECISION-LOG
+  (OFFICE-OWNER-DECISIONS.md):                              REFERENCE alanları dolduruldu, geçmiş silinmedi
+- CANDIDATE-E blocker recompute: status/readinessStatus      YES — §4/§4c/§8: status UNBLOCKED,
+  vs ownerSelectionStatus/implementationAuthorization/       readinessStatus NEXT_ELIGIBLE (hesaplanan gerçek);
+  contractStatus ayrımı korundu mu (readiness ≠              ownerSelectionStatus NOT_SELECTED / implementation-
+  authorization):                                            Authorization NONE / contractStatus NOT_DRAFTED — DEĞİŞMEDİ
+- BOLA-001/SCP-001/BOLA-002 → READY_FOR_CANDIDATE_           YES — §2/§7; üçü de "candidate seçilmedi/
+  DECOMPOSITION işlendi mi (candidate seçildi/başlatıldı mı): başlatılmadı" notuyla; hiçbiri SEÇİLMEDİ
+- PR #1296 (CLIENT-SEC-H1 dar istisna, 2026-07-15) metni      YES — §2 BOLA-001 satırındaki "RECORDED SECURITY
+  korunarak üstüne mi inşa edildi (rebase-onto, çelişki       EXCEPTION" bloğu birebir korundu; bu turun OD-08
+  değil):                                                     kapanışı AYRI ve sonraki bir olay olarak eklendi
+- CANDIDATE-G/F2/B/D durumu değiştirildi mi:                  NO — yalnız CANDIDATE-E (blocker: yalnız OD-08) +
+                                                              yeni decision-readiness kayıtları etkilendi
+- Yeni candidate/wave seçildi mi / kod-schema-migration:      NO / NONE
+- PUBLIC CONTENT RULE (OD-08/OD-10 closure): alan/endpoint/   NO — yalnız governance decision metadata +
+  guard/exact-mekanizma eklendi mi:                          decision-readiness notu (grep doğrulandı)
 ```
