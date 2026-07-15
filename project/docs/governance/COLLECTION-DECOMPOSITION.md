@@ -42,7 +42,7 @@ PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
 |---|---|---|---|---|
 | W0.1 | Repository baseline acceptance | Handoff kabul + delta reconcile | **KAPANDI** — Handoff Acceptance Report (2026-07-13, ACCEPTED_WITH_DELTA @ beb7d673) | Claude |
 | W0.2 | Collection Governance suite materialization | 5 belge + matrisler owner-review taslağı | **BU FAZ** — taslaklar üretildi; sırada owner review → docs-only PR | Claude |
-| W0.3 | Owner decision ratification session(ları) | COL/OD kuyruklarının karara bağlanması | W0.2 review sonrası; kök: COL/OD-18, -21, -01, -03, -05 | Owner (+ChatGPT) |
+| W0.3 | Owner decision ratification session(ları) | COL/OD kuyruklarının karara bağlanması | **PARTIAL** — RECORDED: COL/OD-18/-21/-05; OPEN kökler: COL/OD-01/-03 | Owner (+ChatGPT) |
 | W0.4 | Master Register / backlog alignment | Suite + kararların register'a bağlanması | W0.2 PR + W0.3 kayıtları | Claude |
 
 ## PHASE 1 — P0 FINANCIAL SAFETY
@@ -51,7 +51,7 @@ PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
 |---|---|---|---|---|
 | W1.1 | Deterministic test infrastructure | JSON EOL determinism + kuruş remainder sabitleme | **CLOSED / CANONICAL** — PR #1214 (`bb9c1973`) + PR #1223 (`5fe5f0eb`); cross-platform LF ve exact-money kanıtı | Codex |
 | W1.2 | Allocation concurrency proof & lock | A2 race harness + COL/OD-04 same-case lock kontratı + ikinci allocation yolunun kapanışı | **CLOSED / CANONICAL** — PR #1217 (`4e8243e5`) + COL/OD-04 PR #1275 (`762837d1`) + PR #1279 (`6c2329dc`); canonical path preserved, secondary path fail-closed | Codex (TM3 §11: collection modülü) |
-| W1.3 | Money-out idempotency evidence | Replay harness'ları (04/A4); kontrat KODDA MEVCUT (F-12) — schema işi YOK | **CLOSED / CANONICAL** — PR #1265, squash `081bd9615429d24a6a205a2e6740daf2fd549770`; idempotency confirmed, concurrency safe, duplicate payout none. Harness karar gerektirmedi; `COL/OD-21` text-ratification ayrı ve OPEN. | Implementation: Codex (COL/OD-18A); Analysis/Review: Claude; paralel yazım PROHIBITED — tek aktif writer (COL/OD-18) |
+| W1.3 | Money-out idempotency evidence | Replay harness'ları (04/A4); kontrat KODDA MEVCUT (F-12) — schema işi YOK | **CLOSED / CANONICAL** — PR #1265, squash `081bd9615429d24a6a205a2e6740daf2fd549770`; idempotency confirmed, concurrency safe, duplicate payout none. Harness karar gerektirmedi; `COL/OD-21` text-ratification RECORDED. | Implementation: Codex (COL/OD-18A); Analysis/Review: Claude; paralel yazım PROHIBITED — tek aktif writer (COL/OD-18) |
 | W1.4 | Multi-instrument legal document integrity | Red test + deterministic `findMany` projection | **CLOSED / CANONICAL** — PR #1229 (`4c1968ce`); single-instrument compatibility preserved | Codex |
 | W1.5 | Old UYAP route containment | Red test + fail-closed guard | **CLOSED / CANONICAL** — PR #1236 (`fbef6915`); valid legacy flow preserved, unsupported kambiyo output fail-closed. Kalıcı route disposition `COL/OD-11` kapsamında açık kalır ve containment kapanışını geri açmaz. | Codex |
 | W1.6 | Collection audit capture | COL/OD-05 transaction-bound audit/correlation contract | **CLOSED / CANONICAL** — PR #1246 (`c7f55da4`); create/update/void audit atomic, allowlist-only, replay/no-op duplicate audit yok | Codex (TM3 §11: collection modülü; audit contract OFFICE ile ortak) |
@@ -60,8 +60,8 @@ Not: Parantezsiz lane = TM3/dbind CURRENT-BINDING dosya sahipliğiyle uyumlu ata
 lane = handoff (Desktop 03/04) önerisi olup COL/OD-18 kapanışına tabidir.
 
 Phase 1 durumu **CLOSED / CANONICAL**'dır: W1.1–W1.6 approved merge kanıtlarıyla
-canonical main'dedir. Açık `COL/OD-21`, W1.3'ün teknik evidence kapanışını geri açmayan
-ayrı bir docs-only text-ratification kararıdır. `COL/OD-11` kalıcı legacy UYAP route
+canonical main'dedir. `COL/OD-21` RECORDED'dır; text-ratification W1.3'ün teknik evidence
+kapanışını değiştirmez. `COL/OD-11` kalıcı legacy UYAP route
 disposition'ını, daha geniş `REC-AUTH-011/012` reconciliation'ı ise Phase 1 dışındaki
 cross-domain authority çalışmasını açık tutar. Bu kapanış Phase 2'yi başlatmaz veya
 implementation authority üretmez.
@@ -111,7 +111,7 @@ implementation authority üretmez.
 ## Dependency Matrix (faz-üstü)
 
 ```text
-W0.2 (suite) ──> W0.3 (kararlar) ──> W0.4 (register)
+W0.2 (suite) ──> W0.3 (RECORDED: -18/-21/-05; OPEN: -01/-03) ──> W0.4 (register)
 W1.1             : CLOSED / CANONICAL — PR #1214 + #1223
 W1.2             : CLOSED / CANONICAL — PR #1217 + COL/OD-04 + PR #1279
 W1.3             : CLOSED / CANONICAL — PR #1265 @ 081bd961
