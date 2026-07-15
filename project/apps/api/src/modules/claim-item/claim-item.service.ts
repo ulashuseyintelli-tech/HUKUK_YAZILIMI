@@ -401,7 +401,7 @@ export class ClaimItemService {
 
     // Toplu oluştur
     const createdItems = [];
-    for (const item of items) {
+    for (const [sourceIndex, item] of items.entries()) {
       const data = {
         ...item,
         ...claimItemCreationAmounts(item.amount),
@@ -411,6 +411,7 @@ export class ClaimItemService {
         tenantId,
         caseId: dto.caseId,
         sourceId: dto.documentId,
+        sourceSlot: `${dto.documentType}:${sourceIndex}:${item.itemType}`,
         initiatedByUserId: actorUserId,
         data,
         currency: item.currency,
@@ -857,7 +858,7 @@ export class ClaimItemService {
 
     const createdItems: any[] = [];
 
-    for (const item of generatedItems) {
+    for (const [sourceIndex, item] of generatedItems.entries()) {
       // Sadece zorunlu veya tutarı olan kalemleri oluştur
       if (!item.required && !item.amount) continue;
 
@@ -882,6 +883,7 @@ export class ClaimItemService {
         tenantId,
         caseId,
         sourceId: caseId,
+        sourceSlot: `${subCategory}:${sourceIndex}:${item.type}`,
         initiatedByUserId: actorUserId,
         data,
         currency: data.currency,

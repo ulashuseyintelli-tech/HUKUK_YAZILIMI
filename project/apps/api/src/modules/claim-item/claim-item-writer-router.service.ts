@@ -11,6 +11,7 @@ import {
   type ClaimItemWriteGateResult,
   ClaimItemWriteGateService,
 } from './claim-item-write-gate.service';
+import { ClaimItemSourceIntegrityGuard } from './claim-item-source-integrity.guard';
 import {
   CLAIM_ITEM_HUMAN_WRITE_POLICY_REF,
   CLAIM_ITEM_SYSTEM_WRITER_ROUTES,
@@ -23,6 +24,7 @@ interface ClaimItemRouteBase {
   readonly tenantId: string;
   readonly caseId: string;
   readonly sourceId: string;
+  readonly sourceSlot?: string;
   readonly initiatedByUserId: string;
   readonly effectiveAt?: Date;
 }
@@ -65,6 +67,8 @@ interface CancelSystemClaimItemInput extends ClaimItemRouteBase {
  */
 @Injectable()
 export class ClaimItemWriterRouterService {
+  private readonly sourceIntegrity = new ClaimItemSourceIntegrityGuard();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly gate: ClaimItemWriteGateService,
@@ -109,8 +113,12 @@ export class ClaimItemWriterRouterService {
     input: CreateSystemClaimItemInput,
     database: ClaimItemWriterDatabase = this.prisma,
   ): Promise<T> {
+    if (database === this.prisma) {
+      return this.prisma.$transaction((tx) => this.createSystemClaimItem<T>(input, tx));
+    }
     await this.assertSystemRouteAllowed('CREATE', input, undefined, input.data, database);
-    return (database as any).claimItem.create({ data: input.data }) as Promise<T>;
+    const data = await this.sourceIntegrity.prepareSystemCreate(input, database);
+    return (database as any).claimItem.create({ data }) as Promise<T>;
   }
 
   async updateSystemClaimItem<T>(
@@ -124,6 +132,7 @@ export class ClaimItemWriterRouterService {
       input.data,
       database,
     );
+    await this.sourceIntegrity.assertSystemMutation(input, database);
     return (database as any).claimItem.update({
       where: { id: input.claimItemId },
       data: input.data,
@@ -142,6 +151,7 @@ export class ClaimItemWriterRouterService {
       payload,
       database,
     );
+    await this.sourceIntegrity.assertSystemMutation(input, database);
     return (database as any).claimItem.update({
       where: { id: input.claimItemId },
       data: payload,
@@ -171,7 +181,7 @@ export class ClaimItemWriterRouterService {
         idempotencyKey: this.buildIdempotencyKey(
           input.route,
           operation,
-          input.sourceId,
+          `${input.sourceId}:${input.sourceSlot ?? 'PRIMARY'}`,
           payload,
         ),
         occurredAt,
