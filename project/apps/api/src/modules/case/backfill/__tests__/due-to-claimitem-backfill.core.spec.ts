@@ -45,7 +45,9 @@ describe('planBackfillForCase', () => {
     expect(plan.alreadyBackfilled).toBe(0);
     expect(plan.toCreate).toHaveLength(2);
 
-    const [p0, p1] = plan.toCreate as any[];
+    const [w0, w1] = plan.toCreate as any[];
+    const p0 = w0.data;
+    const p1 = w1.data;
     expect(p0.itemType).toBe('PRINCIPAL');
     expect(p0.tenantId).toBe('t1');
     expect(p0.caseId).toBe('c1');
@@ -57,30 +59,13 @@ describe('planBackfillForCase', () => {
       mappedFrom: 'PRINCIPAL',
       at: '2026-06-14T00:00:00.000Z',
     });
-    expect(p0.metadata.canonicalSourceProvenance).toEqual(
-      expect.objectContaining({
-        version: 1,
-        sourceIdentity: expect.objectContaining({
-          sourceType: 'DUE',
-          sourceId: 'd1',
-          sourceSlot: 'PRIMARY',
-        }),
-        provenance: expect.objectContaining({
-          ingress: 'BACKFILL',
-          generationClass: 'SYSTEM_GENERATED_CLAIM_ITEM',
-        }),
-        createdByAuthority: expect.objectContaining({
-          actorRef: 'system:DUE_BACKFILL',
-          policyRef: 'REC-AUTH-008',
-        }),
-        createdAt: '2026-06-14T00:00:00.000Z',
-        causationId: null,
-        canonicalSourceMetadata: expect.objectContaining({
-          executionBoundary: 'AUTHORIZED_BACKFILL_SCRIPT',
-          writerRoute: null,
-        }),
-      }),
-    );
+    expect(w0.sourceDueId).toBe('d1');
+    expect(w0.envelope).toEqual(expect.objectContaining({
+      actor: { type: 'SYSTEM', system: 'DUE_BACKFILL' },
+      correlationId: expect.stringMatching(/^claim-item-backfill:/),
+      source: expect.objectContaining({ sourceType: 'DUE_BACKFILL', sourceId: 'd1' }),
+      authority: { policyRef: 'REC-AUTH-008' },
+    }));
     // Q2: currency korunur (TRY default override)
     expect(p1.currency).toBe('USD');
     expect(p1.itemType).toBe('INTEREST');
@@ -110,7 +95,7 @@ describe('planBackfillForCase', () => {
     expect(plan.skipCase).toBe(false);
     expect(plan.alreadyBackfilled).toBe(1);
     expect(plan.toCreate).toHaveLength(1);
-    expect((plan.toCreate[0] as any).itemType).toBe('FEE'); // d2 HARC→FEE
+    expect((plan.toCreate[0] as any).data.itemType).toBe('FEE'); // d2 HARC→FEE
   });
 });
 
@@ -156,10 +141,19 @@ describe('parseBackfillArgs (kilitler)', () => {
 describe('runBackfill (mock prisma)', () => {
   function mockPrisma(cases: any[]) {
     const txCreate = jest.fn(async ({ data }: any) => data);
+    const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      due: { findFirst: jest.fn().mockResolvedValue({ id: 'due' }) },
+      claimItem: {
+        create: txCreate,
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
     const prisma: any = {
       case: { findMany: jest.fn(async () => cases) },
       claimItem: { create: jest.fn(), findMany: jest.fn(), delete: jest.fn() },
-      $transaction: jest.fn(async (fn: any) => fn({ claimItem: { create: txCreate } })),
+      $transaction: jest.fn(async (fn: any) => fn(tx)),
     };
     return { prisma, txCreate };
   }
@@ -195,6 +189,20 @@ describe('runBackfill (mock prisma)', () => {
     expect(report.claimItemsCreated).toBe(2);
     const second = txCreate.mock.calls[1][0].data;
     expect(second.currency).toBe('USD');
+    expect(second.metadata.canonicalSourceProvenance).toEqual(
+      expect.objectContaining({
+        sourceIdentity: expect.objectContaining({ sourceType: 'DUE', sourceId: 'd2' }),
+        provenance: expect.objectContaining({ ingress: 'BACKFILL' }),
+        createdByAuthority: expect.objectContaining({ actorRef: 'system:DUE_BACKFILL' }),
+        canonicalSourceMetadata: expect.objectContaining({
+          executionBoundary: 'AUTHORIZED_BACKFILL_SCRIPT',
+          writerRoute: null,
+        }),
+      }),
+    );
+    expect(second.metadata.canonicalWriterSource).toEqual(
+      expect.objectContaining({ authority: 'DUE_BACKFILL', sourceId: 'd2' }),
+    );
   });
 
   it('isaretsiz ClaimItem olan dosya → atlanir + manuel rapor', async () => {

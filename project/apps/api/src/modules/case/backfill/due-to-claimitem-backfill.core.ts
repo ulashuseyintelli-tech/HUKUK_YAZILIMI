@@ -1,9 +1,9 @@
 import { Prisma } from '@prisma/client';
-import { buildCanonicalWriteEnvelopeV1 } from '../../../common/canonical-write-envelope';
 import {
-  buildClaimItemSourceProvenanceV1,
-  CLAIM_ITEM_SOURCE_PROVENANCE_METADATA_KEY,
-} from '../../claim-item/claim-item-source-provenance';
+  buildCanonicalWriteEnvelopeV1,
+  type CanonicalWriteEnvelopeV1,
+} from '../../../common/canonical-write-envelope';
+import { ClaimItemSourceIntegrityGuard } from '../../claim-item/claim-item-source-integrity.guard';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import { DueType, DueDto } from '../dto/case.dto';
 import { mapDueTypeToClaimItemType, buildClaimItemData } from '../due-to-claim-item.mapper';
@@ -36,12 +36,18 @@ export interface BackfillCasePlan {
   /** İşaretsiz (insan/G1/panel) ClaimItem varsa TÜM dosya atlanır (Q1). */
   skipCase: boolean;
   reason?: 'HAS_UNMARKED_CLAIMITEM';
-  /** Üretilecek ClaimItem create verileri (idempotency işareti dahil). */
-  toCreate: Prisma.ClaimItemUncheckedCreateInput[];
+  /** Üretilecek ClaimItem create verisi ve doğrulanacak canonical write envelope. */
+  toCreate: BackfillClaimItemCreatePlan[];
   /** NAFAKA (Due-only takvim) → atlanan Due sayısı. */
   nafakaSkipped: number;
   /** Bu Due için zaten backfill ClaimItem var → atlanan (idempotent). */
   alreadyBackfilled: number;
+}
+
+export interface BackfillClaimItemCreatePlan {
+  readonly sourceDueId: string;
+  readonly envelope: CanonicalWriteEnvelopeV1<'ClaimItem'>;
+  readonly data: Prisma.ClaimItemUncheckedCreateInput;
 }
 
 interface BackfillMarker {
@@ -94,7 +100,7 @@ export function planBackfillForCase(params: {
     if (m?.sourceDueId) alreadyDueIds.add(m.sourceDueId);
   }
 
-  const toCreate: Prisma.ClaimItemUncheckedCreateInput[] = [];
+  const toCreate: BackfillClaimItemCreatePlan[] = [];
   let nafakaSkipped = 0;
   let alreadyBackfilled = 0;
 
@@ -140,23 +146,21 @@ export function planBackfillForCase(params: {
       },
       authority: { policyRef: 'REC-AUTH-008' },
     });
-    const sourceProvenance = buildClaimItemSourceProvenanceV1({
-      ingress: 'BACKFILL',
-      envelope,
-    });
     toCreate.push({
-      ...base,
-      currency: due.currency, // Q2: backfill due.currency'yi korur ('TRY' override)
-      sortOrder: due.sortOrder ?? 0,
-      metadata: {
-        backfill: {
-          sourceDueId: due.id,
-          runId,
-          mappedFrom: due.type,
-          at: now.toISOString(),
+      sourceDueId: due.id,
+      envelope,
+      data: {
+        ...base,
+        currency: due.currency, // Q2: backfill due.currency'yi korur ('TRY' override)
+        sortOrder: due.sortOrder ?? 0,
+        metadata: {
+          backfill: {
+            sourceDueId: due.id,
+            runId,
+            mappedFrom: due.type,
+            at: now.toISOString(),
+          },
         },
-        [CLAIM_ITEM_SOURCE_PROVENANCE_METADATA_KEY]:
-          sourceProvenance as unknown as Prisma.InputJsonValue,
       },
     });
   }
@@ -270,7 +274,7 @@ export interface BackfillReport {
   claimItemsPlanned: number;
   nafakaSkipped: number;
   alreadyBackfilled: number;
-  errors: Array<{ caseId: string; message: string }>;
+  errors: Array<{ caseId: string; code?: string; message: string }>;
   manualReviewCaseIds: string[];
 }
 
@@ -287,6 +291,7 @@ export async function runBackfill(
 ): Promise<BackfillReport> {
   const log = deps.log ?? (() => undefined);
   const now = deps.now ?? (() => new Date());
+  const sourceIntegrity = new ClaimItemSourceIntegrityGuard();
   const runId = generateRunId(now());
   const mode: BackfillReport['mode'] = opts.apply ? 'APPLY' : 'DRY-RUN';
   const scope = opts.tenantId ? `tenant=${opts.tenantId}` : 'all-tenants';
@@ -360,13 +365,27 @@ export async function runBackfill(
 
     try {
       await prisma.$transaction(async (tx) => {
-        for (const data of plan.toCreate) {
+        for (const write of plan.toCreate) {
+          const data = await sourceIntegrity.prepareBackfillCreate(
+            {
+              tenantId: c.tenantId,
+              caseId: c.id,
+              sourceId: write.sourceDueId,
+              envelope: write.envelope,
+              data: write.data as unknown as Record<string, unknown>,
+            },
+            tx,
+          );
           await tx.claimItem.create({ data });
         }
       });
       report.claimItemsCreated += plan.toCreate.length;
     } catch (e: any) {
-      report.errors.push({ caseId: c.id, message: e?.message ?? String(e) });
+      report.errors.push({
+        caseId: c.id,
+        ...(typeof e?.conflictCode === 'string' ? { code: e.conflictCode } : {}),
+        message: e?.message ?? String(e),
+      });
       if (report.errors.length > opts.maxErrors) {
         log(`! max-errors (${opts.maxErrors}) aşıldı → DURDURULDU`);
         break;

@@ -29,6 +29,25 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
     });
   }
 
+  function backfillEnvelope(sourceId: string, runId: string) {
+    return buildCanonicalWriteEnvelopeV1({
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      target: { aggregateType: 'ClaimItem' as const },
+      actor: { type: 'SYSTEM', system: 'DUE_BACKFILL' },
+      correlationId: `claim-item-backfill:${runId}`,
+      idempotencyKey: `claim-item-backfill:${runId}:${sourceId}`,
+      occurredAt: '2026-07-15T00:00:00.000Z',
+      effectiveAt: '2026-07-15T00:00:00.000Z',
+      source: {
+        sourceType: 'DUE_BACKFILL',
+        sourceId,
+        evidenceRefs: [`backfill-run:${runId}`],
+      },
+      authority: { policyRef: 'REC-AUTH-008' },
+    });
+  }
+
   function setup() {
     const database: any = {
       $executeRaw: jest.fn().mockResolvedValue(1),
@@ -283,6 +302,133 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
     )).rejects.toMatchObject<Partial<ClaimItemSourceIntegrityException>>({
       conflictCode: 'SOURCE_PAYLOAD_CONFLICT',
     });
+  });
+
+  it.each([
+    {
+      route: 'CASE_INSTRUMENT_GENERATOR' as const,
+      sourceId: 'instrument-1',
+      sourceSlot: 'PRIMARY',
+      data: {
+        tenantId: 'tenant-1', caseId: 'case-1', itemType: 'PRINCIPAL', amount: 100,
+        instrumentId: 'instrument-1',
+      },
+    },
+    {
+      route: 'DOCUMENT_AUTO_GENERATOR' as const,
+      sourceId: 'document-1',
+      sourceSlot: 'SOZLESME:0:PRINCIPAL',
+      data: {
+        tenantId: 'tenant-1', caseId: 'case-1', itemType: 'PRINCIPAL', amount: 100,
+        sourceDocumentId: 'document-1',
+      },
+    },
+    {
+      route: 'RULE_ENGINE_GENERATOR' as const,
+      sourceId: 'case-1',
+      sourceSlot: 'ILAMSIZ_GENEL:0:PRINCIPAL',
+      data: {
+        tenantId: 'tenant-1', caseId: 'case-1', itemType: 'PRINCIPAL', amount: 100,
+      },
+    },
+    {
+      route: 'PRECAUTIONARY_COST_WRITER' as const,
+      sourceId: 'cost-1',
+      sourceSlot: 'PRIMARY',
+      data: {
+        tenantId: 'tenant-1', caseId: 'case-1', itemType: 'EXPENSE', amount: 100,
+        sourceProcess: 'PRECAUTIONARY', sourceProcessId: 'order-1',
+      },
+    },
+  ])('$route uses the common duplicate/conflict result classes', async (input) => {
+    const { guard, database } = setup();
+    const envelope = systemEnvelope(input.route, input.sourceId);
+    const createInput = {
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      ...input,
+      envelope,
+    };
+    const first = await guard.prepareSystemCreate(createInput, database);
+    database.claimItem.findFirst.mockResolvedValue({
+      id: 'claim-existing',
+      metadata: first.metadata,
+    });
+
+    await expect(guard.prepareSystemCreate(createInput, database))
+      .rejects.toMatchObject({ conflictCode: 'DUPLICATE_SOURCE_IDENTITY' });
+    await expect(guard.prepareSystemCreate({
+      ...createInput,
+      data: { ...input.data, amount: 101 },
+    }, database)).rejects.toMatchObject({ conflictCode: 'SOURCE_PAYLOAD_CONFLICT' });
+  });
+
+  it('normalizes Backfill retries across run timestamps to the common result classes', async () => {
+    const { guard, database } = setup();
+    const data = {
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      itemType: 'PRINCIPAL',
+      amount: 100,
+      metadata: {
+        backfill: {
+          sourceDueId: 'due-1',
+          runId: 'run-1',
+          mappedFrom: 'PRINCIPAL',
+          at: '2026-07-15T00:00:00.000Z',
+        },
+      },
+    };
+    const first = await guard.prepareBackfillCreate({
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      sourceId: 'due-1',
+      envelope: backfillEnvelope('due-1', 'run-1'),
+      data,
+    }, database);
+    database.claimItem.findMany.mockResolvedValue([{ id: 'claim-existing' }]);
+    database.claimItem.findFirst.mockResolvedValue({
+      id: 'claim-existing',
+      metadata: first.metadata,
+    });
+    const retriedData = {
+      ...data,
+      metadata: {
+        backfill: {
+          ...data.metadata.backfill,
+          runId: 'run-2',
+          at: '2026-07-16T00:00:00.000Z',
+        },
+      },
+    };
+
+    await expect(guard.prepareBackfillCreate({
+      tenantId: 'tenant-1', caseId: 'case-1', sourceId: 'due-1',
+      envelope: backfillEnvelope('due-1', 'run-2'), data: retriedData,
+    }, database)).rejects.toMatchObject({ conflictCode: 'DUPLICATE_SOURCE_IDENTITY' });
+    await expect(guard.prepareBackfillCreate({
+      tenantId: 'tenant-1', caseId: 'case-1', sourceId: 'due-1',
+      envelope: backfillEnvelope('due-1', 'run-2'),
+      data: { ...retriedData, amount: 101 },
+    }, database)).rejects.toMatchObject({ conflictCode: 'SOURCE_PAYLOAD_CONFLICT' });
+  });
+
+  it('uses one canonical Due lock for live bridge and authorized backfill', async () => {
+    const { guard, database } = setup();
+    await guard.prepareSystemCreate({
+      route: 'DUE_BRIDGE', tenantId: 'tenant-1', caseId: 'case-1', sourceId: 'due-1',
+      envelope: systemEnvelope('DUE_BRIDGE', 'due-1'), data: dueData,
+    }, database);
+    await guard.prepareBackfillCreate({
+      tenantId: 'tenant-1', caseId: 'case-1', sourceId: 'due-1',
+      envelope: backfillEnvelope('due-1', 'run-1'),
+      data: {
+        tenantId: 'tenant-1', caseId: 'case-1', itemType: 'PRINCIPAL', amount: 100,
+        metadata: { backfill: { sourceDueId: 'due-1', runId: 'run-1', mappedFrom: 'PRINCIPAL' } },
+      },
+    }, database);
+
+    expect(database.$executeRaw.mock.calls[0][1]).toBe(database.$executeRaw.mock.calls[1][1]);
   });
 
   it('classifies equivalent rule retries as duplicate despite a new calculatedAt timestamp', async () => {
