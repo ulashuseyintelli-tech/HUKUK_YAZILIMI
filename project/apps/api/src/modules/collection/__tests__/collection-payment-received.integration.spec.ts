@@ -875,7 +875,7 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       await concurrencyPrisma.$connect();
 
       const allocationReads = createControlledAllocationReadProbe();
-      let caseAdvisoryLockAttempts = 0;
+      let canonicalAllocationLockAttempts = 0;
       let resolveSecondCaseLockAttempt!: () => void;
       const secondCaseLockAttempt = new Promise<void>((resolve) => {
         resolveSecondCaseLockAttempt = resolve;
@@ -884,12 +884,12 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       concurrencyPrisma.$use(async (params, next) => {
         const rawQuery = (params.args as any)?.[0];
         const queryText = String(rawQuery?.sql ?? rawQuery?.text ?? rawQuery ?? '');
-        const isTargetCaseAdvisoryLock =
+        const isCanonicalAllocationLock =
           params.action === 'executeRaw' &&
-          queryText.includes('hashtextextended');
-        if (isTargetCaseAdvisoryLock) {
-          caseAdvisoryLockAttempts += 1;
-          if (caseAdvisoryLockAttempts === 2) resolveSecondCaseLockAttempt();
+          queryText.includes('COL-LOCK-001: canonical allocation lock');
+        if (isCanonicalAllocationLock) {
+          canonicalAllocationLockAttempts += 1;
+          if (canonicalAllocationLockAttempts === 2) resolveSecondCaseLockAttempt();
         }
 
         const result = await next(params);
@@ -943,7 +943,7 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
 
         await secondCaseLockAttempt;
         const advisoryLockWaiters = await waitForAdvisoryLockWaiter(prisma);
-        expect(caseAdvisoryLockAttempts).toBe(2);
+        expect(canonicalAllocationLockAttempts).toBe(2);
         expect(advisoryLockWaiters).toBe(1);
         expect(allocationReads.arrivals).toBe(1);
 
@@ -1021,6 +1021,7 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
         expect(demandedAmount).toBe(100);
         expect(demandedAmount - consumedAmount).toBe(0);
         expect(allocatedAmount).toBeLessThanOrEqual(demandedAmount);
+        expect(canonicalAllocationLockAttempts).toBe(2);
         expect(Number(overpayments[0].amount)).toBe(50);
         expect(Number(overpayments[0].remainingAmount)).toBe(50);
       } finally {

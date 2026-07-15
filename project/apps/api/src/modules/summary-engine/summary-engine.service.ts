@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
+import { GoneException, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -513,18 +513,14 @@ export class SummaryEngineService implements OnModuleInit {
   }
 
   /**
-   * Tahsilat kaydet ve TBK 100'e göre dağıt
-   *
-   * TBK 100 HARD RULE (interest-engine/TBK100AllocatorService, doc-27 P-0):
-   * Sıra: MASRAF → FER'İ → FAİZ → ANAPARA
-   *
-   * @see ARCHITECTURE.md - Source of Truth Matrix
+   * @deprecated Standalone ödeme yazım yolu COL/OD-04 uyarınca kapatılmıştır.
+   * Tahsilat ve allocation yalnız canonical CollectionService transaction'ında yapılır.
    */
   async recordPayment(
-    tenantId: string,
-    caseId: string,
-    amount: number,
-    options: {
+    _tenantId: string,
+    _caseId: string,
+    _amount: number,
+    _options: {
       entryDate?: Date;
       description?: string;
       referenceNo?: string;
@@ -533,24 +529,12 @@ export class SummaryEngineService implements OnModuleInit {
       correlationId?: string;
       commandId?: string;
     } = {},
-  ): Promise<{ ledgerEntry: any; allocations: any[] }> {
-    const result = await this.prisma.$transaction((tx) =>
-      this.allocatePaymentToLedgerInTx(tx, tenantId, caseId, amount, options),
-    );
-
-    // Endpoint eski sözleşmesini koru: dağıtılamazsa hata fırlat.
-    if (!result.allocated) {
-      if (result.reason === 'LEDGER_DISABLED') {
-        throw new Error('Tahsilat dağıtımı devre dışı');
-      }
-      // NO_CLAIM_ITEMS: S5(i) — kalem yoksa ledger yazılmaz.
-      throw new Error('Dosyada aktif alacak kalemi yok; tahsilat ledger\'a dağıtılamadı');
-    }
-
-    return {
-      ledgerEntry: result.ledgerEntry,
-      allocations: result.allocations,
-    };
+  ): Promise<never> {
+    throw new GoneException({
+      error: 'SECONDARY_ALLOCATION_PATH_CLOSED',
+      message:
+        'Standalone Summary Engine payment writes are closed; use the canonical Collection endpoint.',
+    });
   }
 
   /**
@@ -564,9 +548,8 @@ export class SummaryEngineService implements OnModuleInit {
    * P-0 düzeltmesi ayrı gate (PR-AO).
    *
    * <remarks>
-   * Çağrıldığı yerler:
-   * - SummaryEngineService.recordPayment() → POST /summary-engine/case/:caseId/payment (deprecated/internal, S4)
-   * - CollectionService.create() → POST /collections (G3a forward write, aynı tx)
+   * Production çağrı yeri:
+   * - CollectionService.create() → POST /collections (G3a forward write, aynı tx ve COL-LOCK-001 altında)
    * </remarks>
    */
   async allocatePaymentToLedgerInTx(
