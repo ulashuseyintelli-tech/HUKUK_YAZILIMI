@@ -3,6 +3,7 @@ import { ConflictException, ForbiddenException, Injectable } from '@nestjs/commo
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
+import { DomainEventIngestService } from '../icrabot/domain-event-ingest';
 import {
   buildClaimItemWriteCommand,
   type ClaimItemWriteCommand,
@@ -18,6 +19,12 @@ import {
   CLAIM_ITEM_SYSTEM_WRITER_ROUTES,
   type ClaimItemSystemWriterRoute,
 } from './claim-item-writer-routes';
+import {
+  appendClaimItemContinuity,
+  assertClaimItemCreateStatus,
+  assertClaimItemLifecycleMutation,
+  type ClaimItemLifecycleRecord,
+} from './claim-item-lifecycle-contract';
 
 type ClaimItemWriterDatabase = PrismaService | Prisma.TransactionClient;
 
@@ -75,6 +82,7 @@ export class ClaimItemWriterRouterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gate: ClaimItemWriteGateService,
+    private readonly domainEventIngest: DomainEventIngestService,
   ) {}
 
   async evaluateHuman(
@@ -130,14 +138,31 @@ export class ClaimItemWriterRouterService {
       { ...input, envelope: command.envelope },
       database,
     );
-    return (database as any).claimItem.create({ data }) as Promise<T>;
+    assertClaimItemCreateStatus(data.status);
+    const created = await (database as any).claimItem.create({ data }) as T;
+    await appendClaimItemContinuity({
+      tx: database as Prisma.TransactionClient,
+      domainEventIngest: this.domainEventIngest,
+      envelope: command.envelope,
+      operation: 'CREATE',
+      before: null,
+      after: created as ClaimItemLifecycleRecord,
+      auditAction: 'CLAIM_ITEM_SYSTEM_CREATED',
+      auditUserId: input.initiatedByUserId,
+      auditSource: input.route,
+      approvalRequired: false,
+    });
+    return created;
   }
 
   async updateSystemClaimItem<T>(
     input: UpdateSystemClaimItemInput,
     database: ClaimItemWriterDatabase = this.prisma,
   ): Promise<T> {
-    await this.assertSystemRouteAllowed(
+    if (database === this.prisma) {
+      return this.prisma.$transaction((tx) => this.updateSystemClaimItem<T>(input, tx));
+    }
+    const command = await this.assertSystemRouteAllowed(
       'UPDATE',
       input,
       input.claimItemId,
@@ -145,18 +170,37 @@ export class ClaimItemWriterRouterService {
       database,
     );
     await this.sourceIntegrity.assertSystemMutation(input, database);
-    return (database as any).claimItem.update({
+    const current = await this.findLifecycleRecord(input, database);
+    const lifecycle = assertClaimItemLifecycleMutation(current.status, input.data);
+    if (lifecycle.noOp) return current as T;
+    const updated = await (database as any).claimItem.update({
       where: { id: input.claimItemId },
       data: input.data,
-    }) as Promise<T>;
+    }) as T;
+    await appendClaimItemContinuity({
+      tx: database as Prisma.TransactionClient,
+      domainEventIngest: this.domainEventIngest,
+      envelope: command.envelope,
+      operation: 'UPDATE',
+      before: current,
+      after: updated as ClaimItemLifecycleRecord,
+      auditAction: 'CLAIM_ITEM_SYSTEM_UPDATED',
+      auditUserId: input.initiatedByUserId,
+      auditSource: input.route,
+      approvalRequired: false,
+    });
+    return updated;
   }
 
   async cancelSystemClaimItem<T>(
     input: CancelSystemClaimItemInput,
     database: ClaimItemWriterDatabase = this.prisma,
   ): Promise<T> {
+    if (database === this.prisma) {
+      return this.prisma.$transaction((tx) => this.cancelSystemClaimItem<T>(input, tx));
+    }
     const payload = { status: 'CANCELLED' };
-    await this.assertSystemRouteAllowed(
+    const command = await this.assertSystemRouteAllowed(
       'CANCEL',
       input,
       input.claimItemId,
@@ -164,10 +208,44 @@ export class ClaimItemWriterRouterService {
       database,
     );
     await this.sourceIntegrity.assertSystemMutation(input, database);
-    return (database as any).claimItem.update({
+    const current = await this.findLifecycleRecord(input, database);
+    const lifecycle = assertClaimItemLifecycleMutation(current.status, payload);
+    if (lifecycle.noOp) return current as T;
+    const updated = await (database as any).claimItem.update({
       where: { id: input.claimItemId },
       data: payload,
-    }) as Promise<T>;
+    }) as T;
+    await appendClaimItemContinuity({
+      tx: database as Prisma.TransactionClient,
+      domainEventIngest: this.domainEventIngest,
+      envelope: command.envelope,
+      operation: 'CANCEL',
+      before: current,
+      after: updated as ClaimItemLifecycleRecord,
+      auditAction: 'CLAIM_ITEM_SYSTEM_CANCELLED',
+      auditUserId: input.initiatedByUserId,
+      auditSource: input.route,
+      approvalRequired: false,
+      retentionDisposition: 'TOMBSTONE_RETAINED',
+    });
+    return updated;
+  }
+
+  private async findLifecycleRecord(
+    input: ClaimItemRouteBase & { readonly claimItemId: string },
+    database: ClaimItemWriterDatabase,
+  ): Promise<ClaimItemLifecycleRecord> {
+    const current = await (database as any).claimItem.findFirst({
+      where: {
+        id: input.claimItemId,
+        tenantId: input.tenantId,
+        caseId: input.caseId,
+      },
+    });
+    if (!current) {
+      throw new ConflictException('ClaimItem lifecycle target is not in the canonical source scope.');
+    }
+    return current as ClaimItemLifecycleRecord;
   }
 
   private async assertSystemRouteAllowed(

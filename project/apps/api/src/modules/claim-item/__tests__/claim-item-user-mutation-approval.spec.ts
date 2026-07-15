@@ -73,6 +73,9 @@ function makeSvc(opts: {
   const officeApproval = {
     createPendingRequest: jest.fn().mockResolvedValue({ id: 'appr-1' }),
   };
+  const domainEventIngest = {
+    appendInTransaction: jest.fn().mockResolvedValue({ id: 'event-1' }),
+  };
   const writerRouter = {
     evaluateHuman: jest.fn(async (input: any) => {
       if (opts.gateDenied) {
@@ -109,13 +112,19 @@ function makeSvc(opts: {
   };
   return {
     svc: new ClaimItemService(
-      prisma, undefined, audit as any, officeApproval as any, writerRouter as any,
+      prisma,
+      undefined,
+      audit as any,
+      officeApproval as any,
+      writerRouter as any,
+      domainEventIngest as any,
     ),
     prisma,
     tx,
     audit,
     officeApproval,
     writerRouter,
+    domainEventIngest,
   };
 }
 
@@ -156,7 +165,7 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
   });
 
   it('metadata edit capability sahibi aktorce transaction icinde uygulanir ve immutable audit yazar', async () => {
-    const { svc, tx, audit } = makeSvc();
+    const { svc, tx, domainEventIngest } = makeSvc();
 
     const res = await svc.updateFromUser('t1', 'u1', 'ci-1', {
       description: 'new',
@@ -169,16 +178,30 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
       where: { id: 'ci-1' },
       data: { description: 'new', referenceNo: 'ref-new', sortOrder: 2 },
     });
-    expect(audit.logInTransaction).toHaveBeenCalledWith(tx, expect.objectContaining({
-      action: 'CLAIM_ITEM_METADATA_UPDATED',
-      entityType: 'ClaimItem',
-      entityId: 'ci-1',
-      userId: 'u1',
-      metadata: expect.objectContaining({
-        source: 'USER_DIRECT_METADATA_EDIT',
-        approvalRequired: false,
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'CLAIM_ITEM_METADATA_UPDATED',
+        entityType: 'ClaimItem',
+        entityId: 'ci-1',
+        userId: 'u1',
+        metadata: expect.objectContaining({
+          source: 'USER_DIRECT_METADATA_EDIT',
+          approvalRequired: false,
+        }),
       }),
-    }));
+    });
+    expect(domainEventIngest.appendInTransaction).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        header: expect.objectContaining({
+          aggregateType: 'Case',
+          aggregateId: 'case-1',
+          eventType: 'CLAIM_ITEM_UPDATED',
+          actor: { type: 'HUMAN', userId: 'u1' },
+        }),
+        payload: expect.objectContaining({ claimItemId: 'ci-1', operation: 'UPDATE' }),
+      }),
+    );
   });
 
   it('metadata edit capability yoksa reddedilir', async () => {

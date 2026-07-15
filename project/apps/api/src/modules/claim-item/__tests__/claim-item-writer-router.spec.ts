@@ -24,8 +24,22 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
       claimItem: {
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({ id: 'claim-1' }),
+        create: jest.fn().mockImplementation(async ({ data }: any) => ({
+          id: 'claim-1',
+          status: 'ACTIVE',
+          ...data,
+        })),
+        update: jest.fn().mockImplementation(async ({ data }: any) => ({
+          id: 'claim-1',
+          tenantId: 'tenant-1',
+          caseId: 'case-1',
+          currency: 'TRY',
+          metadata: { dueSync: { sourceDueId: 'due-1' } },
+          status: 'ACTIVE',
+          ...data,
+        })),
       },
+      auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
     };
     const prisma: any = {
       ...transaction,
@@ -51,7 +65,16 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
             },
       ),
     };
-    return { router: new ClaimItemWriterRouterService(prisma, gate), prisma, transaction, gate };
+    const domainEventIngest: any = {
+      appendInTransaction: jest.fn().mockResolvedValue({ aggregateVersion: 1n }),
+    };
+    return {
+      router: new ClaimItemWriterRouterService(prisma, gate, domainEventIngest),
+      prisma,
+      transaction,
+      gate,
+      domainEventIngest,
+    };
   }
 
   function createInput(route: keyof typeof CLAIM_ITEM_SYSTEM_WRITER_ROUTES) {
@@ -111,13 +134,21 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
   }
 
   it.each(routes)('%s persists only after an explicit system direct-allow', async (route) => {
-    const { router, prisma, gate } = setup('DIRECT_ALLOWED');
+    const { router, prisma, gate, transaction, domainEventIngest } = setup('DIRECT_ALLOWED');
 
     await router.createSystemClaimItem(createInput(route));
 
     expect(gate.evaluate).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.claimItem.create).toHaveBeenCalledTimes(1);
+    expect(transaction.auditLog.create).toHaveBeenCalledTimes(1);
+    expect(domainEventIngest.appendInTransaction).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({
+        header: expect.objectContaining({ eventType: 'CLAIM_ITEM_CREATED' }),
+        payload: expect.objectContaining({ claimItemId: 'claim-1' }),
+      }),
+    );
     expect(prisma.claimItem.create.mock.calls[0][0].data.metadata).toEqual(
       expect.objectContaining({
         canonicalSourceProvenance: expect.objectContaining({
@@ -198,5 +229,46 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
       prisma.claimItem.create.mock.calls[0][0].data.metadata.canonicalSourceProvenance
         .causationId,
     ).toBe('event:due-created-1');
+  });
+
+  it('system cancel lifecycle guard, retained tombstone audit ve event continuity uygular', async () => {
+    const { router, transaction, domainEventIngest } = setup('DIRECT_ALLOWED');
+    transaction.claimItem.findFirst.mockResolvedValue({
+      id: 'claim-1',
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      currency: 'TRY',
+      status: 'ACTIVE',
+      metadata: { dueSync: { sourceDueId: 'due-1' } },
+    });
+
+    await router.cancelSystemClaimItem({
+      route: 'DUE_BRIDGE',
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      sourceId: 'due-1',
+      initiatedByUserId: 'requester-1',
+      claimItemId: 'claim-1',
+      currency: 'TRY',
+    });
+
+    expect(transaction.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'claim-1' },
+      data: { status: 'CANCELLED' },
+    });
+    expect(transaction.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'CLAIM_ITEM_SYSTEM_CANCELLED',
+        metadata: expect.objectContaining({
+          retentionDisposition: 'TOMBSTONE_RETAINED',
+        }),
+      }),
+    });
+    expect(domainEventIngest.appendInTransaction).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({
+        header: expect.objectContaining({ eventType: 'CLAIM_ITEM_CANCELLED' }),
+      }),
+    );
   });
 });

@@ -45,6 +45,12 @@ import { interestWriteData, normalizeInterestWriteIntent } from '../claim-item/i
 import { validateInterestAccrualState } from '../claim-item/interest-accrual-policy';
 import { AuditService } from '../audit/audit.service';
 import { createCollectionMutationTrace } from '../collection/collection-audit';
+import {
+  appendClaimItemContinuity,
+  assertClaimItemCreateStatus,
+  assertClaimItemLifecycleMutation,
+  type ClaimItemLifecycleRecord,
+} from '../claim-item/claim-item-lifecycle-contract';
 
 const COLLECTION_DISPOSITION_APPROVAL_ACTION = 'COLLECTION_DISPOSITION_POST';
 const COLLECTION_DISPOSITION_TARGET_TYPE = 'COLLECTION_DISPOSITION';
@@ -421,7 +427,15 @@ export class OfficeApprovalDomainSyncService {
       throw new ConflictException('CLAIM_ITEM create case bulunamadi.');
     }
     const createData = this.buildClaimItemCreateData(req.tenantId, patch);
+    assertClaimItemCreateStatus(createData.status);
     const sourceDocumentId = createData.sourceDocumentId;
+    const envelope = this.buildApprovedClaimItemEnvelope(
+      req,
+      intent.caseId,
+      undefined,
+      typeof sourceDocumentId === 'string' ? sourceDocumentId : undefined,
+      String(createData.currency ?? 'TRY'),
+    );
     const guardedData =
       typeof sourceDocumentId === 'string' && sourceDocumentId.length > 0
         ? await this.claimItemSourceIntegrity.prepareHumanDocumentCreate(
@@ -429,23 +443,32 @@ export class OfficeApprovalDomainSyncService {
               tenantId: req.tenantId,
               caseId: intent.caseId,
               data: createData,
-              envelope: this.buildApprovedDocumentEnvelope(
-                req,
-                intent.caseId,
-                sourceDocumentId,
-              ),
+              envelope,
             },
             tx,
           )
         : createData;
     const created = await tx.claimItem.create({ data: guardedData as any });
-    await this.writeClaimItemAudit(tx, req, created.id, intent.caseId, {}, this.snapshotClaimItem(created), 'CLAIM_ITEM_HIGH_IMPACT_CREATE_APPLIED');
+    await appendClaimItemContinuity({
+      tx,
+      domainEventIngest: this.domainEventIngestService,
+      envelope,
+      operation: 'CREATE',
+      before: null,
+      after: created as ClaimItemLifecycleRecord,
+      auditAction: 'CLAIM_ITEM_HIGH_IMPACT_CREATE_APPLIED',
+      auditUserId: req.approverUserId ?? undefined,
+      auditSource: 'USER_HIGH_IMPACT_CHANGE_REQUEST',
+      approvalRequired: true,
+    });
   }
 
-  private buildApprovedDocumentEnvelope(
+  private buildApprovedClaimItemEnvelope(
     req: OfficeApprovalRequest,
     caseId: string,
-    sourceDocumentId: string,
+    claimItemId: string | undefined,
+    sourceDocumentId: string | undefined,
+    currency: string,
   ) {
     if (!req.approverUserId) {
       throw new ConflictException('Onayli CLAIM_ITEM approval kaydinda approverUserId yok.');
@@ -454,16 +477,19 @@ export class OfficeApprovalDomainSyncService {
     return buildCanonicalWriteEnvelopeV1({
       tenantId: req.tenantId,
       caseId,
-      target: { aggregateType: 'ClaimItem' as const },
+      target: {
+        aggregateType: 'ClaimItem' as const,
+        ...(claimItemId === undefined ? {} : { aggregateId: claimItemId }),
+      },
       actor: { type: 'HUMAN', userId: req.requesterUserId },
       correlationId: `claim-item-approval:${req.id}`,
       causationId: `office-approval:${req.id}`,
-      idempotencyKey: `claim-item-approved-create:${req.id}`,
+      idempotencyKey: `claim-item-approved:${req.id}`,
       occurredAt,
       effectiveAt: occurredAt,
       source: {
-        sourceType: 'USER_DOCUMENT',
-        sourceId: sourceDocumentId,
+        sourceType: sourceDocumentId ? 'USER_DOCUMENT' : 'USER_COMMAND',
+        sourceId: sourceDocumentId ?? claimItemId ?? caseId,
         evidenceRefs: [
           `approval:${req.id}`,
           `requester:${req.requesterUserId}`,
@@ -474,6 +500,7 @@ export class OfficeApprovalDomainSyncService {
         policyRef: CLAIM_ITEM_HUMAN_WRITE_POLICY_REF,
         approvalRequestId: req.id,
       },
+      currency,
     });
   }
 
@@ -505,19 +532,40 @@ export class OfficeApprovalDomainSyncService {
     const data = intent.operation === 'DELETE'
       ? { status: 'CANCELLED' }
       : this.buildClaimItemUpdateData(normalizedPatch as Record<string, unknown>);
-    const updated = await tx.claimItem.update({
-      where: { id: intent.claimItemId },
-      data,
-    });
-    await this.writeClaimItemAudit(
-      tx,
+    const lifecycle = assertClaimItemLifecycleMutation(current.status, data);
+    const updated = lifecycle.noOp
+      ? current
+      : await tx.claimItem.update({
+          where: { id: intent.claimItemId },
+          data,
+        });
+    if (lifecycle.noOp) return;
+
+    const envelope = this.buildApprovedClaimItemEnvelope(
       req,
-      intent.claimItemId!,
       intent.caseId,
-      currentSnapshot,
-      this.snapshotClaimItem(updated),
-      intent.operation === 'DELETE' ? 'CLAIM_ITEM_HIGH_IMPACT_DELETE_APPLIED' : 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED',
+      intent.claimItemId,
+      undefined,
+      String(updated.currency),
     );
+    await appendClaimItemContinuity({
+      tx,
+      domainEventIngest: this.domainEventIngestService,
+      envelope,
+      operation: intent.operation === 'DELETE' ? 'CANCEL' : 'UPDATE',
+      before: current as ClaimItemLifecycleRecord,
+      after: updated as ClaimItemLifecycleRecord,
+      auditAction:
+        intent.operation === 'DELETE'
+          ? 'CLAIM_ITEM_HIGH_IMPACT_DELETE_APPLIED'
+          : 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED',
+      auditUserId: req.approverUserId ?? undefined,
+      auditSource: 'USER_HIGH_IMPACT_CHANGE_REQUEST',
+      approvalRequired: true,
+      ...(intent.operation === 'DELETE'
+        ? { retentionDisposition: 'TOMBSTONE_RETAINED' as const }
+        : {}),
+    });
   }
 
   private normalizeApprovedInterestPatch(
@@ -712,33 +760,4 @@ export class OfficeApprovalDomainSyncService {
     return String(value);
   }
 
-  private async writeClaimItemAudit(
-    tx: Prisma.TransactionClient,
-    req: OfficeApprovalRequest,
-    entityId: string,
-    caseId: string,
-    oldValues: Record<string, unknown>,
-    newValues: Record<string, unknown>,
-    action: string,
-  ): Promise<void> {
-    await tx.auditLog.create({
-      data: {
-        tenantId: req.tenantId,
-        action,
-        entityType: 'ClaimItem',
-        entityId,
-        userId: req.approverUserId ?? undefined,
-        oldValues: oldValues as any,
-        newValues: newValues as any,
-        description: 'ClaimItem high-impact mutation audit',
-        metadata: {
-          caseId,
-          claimItemId: entityId,
-          source: 'USER_HIGH_IMPACT_CHANGE_REQUEST',
-          approvalRequestId: req.id,
-          approvalRequired: true,
-        },
-      },
-    });
-  }
 }

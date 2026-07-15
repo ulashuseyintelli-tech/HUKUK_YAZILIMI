@@ -422,6 +422,10 @@ describe('OWN-29-B OfficeApprovalDomainSyncService collection void', () => {
 });
 
 describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () => {
+  const claimItemService = () => new OfficeApprovalDomainSyncService({
+    appendInTransaction: jest.fn().mockResolvedValue({ aggregateVersion: 1n }),
+  } as any);
+
   const item = {
     id: 'ci-1',
     tenantId: 't1',
@@ -509,7 +513,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     };
   };
 
-  function claimItemTx(over: Record<string, any> = {}) {
+  function claimItemTx(over: Record<string, any> = {}): any {
     return {
       officeApprovalRequest: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -530,7 +534,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   }
 
   it('APPROVED high-impact update execution lock alir, patch uygular, audit yazar ve SUCCEEDED isaretler', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const db = claimItemTx();
 
     await svc.syncAfterDecision(db as any, claimItemReq() as any);
@@ -575,7 +579,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   });
 
   it('executor NO_INTEREST stateini ayni contract ile tekrar dogrular ve server time uygular', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const db = claimItemTx();
     const request = claimItemReq({
       proposedPatch: {
@@ -605,7 +609,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   });
 
   it('APPROVED create executor original, demanded ve mirror alanlarini esit yazar', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const db = claimItemTx();
     const request = claimItemReq({
       operation: 'CREATE',
@@ -630,7 +634,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   });
 
   it('APPROVED document create kaynagini case scope icinde kilitler ve canonical marker yazar', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const db = claimItemTx({
       $executeRaw: jest.fn().mockResolvedValue(1),
       caseDocument: { findFirst: jest.fn().mockResolvedValue({ id: 'doc-1' }) },
@@ -696,7 +700,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   });
 
   it('APPROVED create executor FATURA + TAX_KDV invariantini uygular', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const db = claimItemTx();
     const request = claimItemReq({
       operation: 'CREATE',
@@ -721,7 +725,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   });
 
   it('APPROVED amount=0 update mirrorlar ve originalAmount alanini yazmaz', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const db = claimItemTx({
       claimItem: {
         findFirst: jest.fn().mockResolvedValue(item),
@@ -740,7 +744,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   });
 
   it('APPROVED executor FATURA PRINCIPAL -> TAX_KDV gecisini reddeder', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const invoicePrincipal = { ...item, sourceDocumentType: 'FATURA' };
     const db = claimItemTx({
       claimItem: {
@@ -758,7 +762,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   });
 
   it('stale ClaimItem snapshot proposal uygulanmasini engeller', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const db = claimItemTx({
       claimItem: {
         findFirst: jest.fn().mockResolvedValue({ ...item, amount: 1500 }),
@@ -772,7 +776,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   });
 
   it('duplicate finalize lock count=0 ise cift mutasyon uretmez', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const db = claimItemTx({
       officeApprovalRequest: {
         updateMany: jest.fn().mockResolvedValueOnce({ count: 0 }),
@@ -784,7 +788,7 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
   });
 
   it('APPROVED_WITH_CHANGES claim item high-impact icin fail-closed kalir', async () => {
-    const svc = new OfficeApprovalDomainSyncService();
+    const svc = claimItemService();
     const db = claimItemTx();
 
     await expect(

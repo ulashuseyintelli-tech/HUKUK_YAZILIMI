@@ -86,7 +86,7 @@ export class PrecautionaryOrderController {
    */
   @Delete('costs/:costId')
   async deleteCost(@Req() req: any, @Param('costId') costId: string) {
-    return this.service.deleteCost(req.user.tenantId, costId);
+    return this.service.deleteCost(req.user.tenantId, costId, req.user.id);
   }
 
   /**
