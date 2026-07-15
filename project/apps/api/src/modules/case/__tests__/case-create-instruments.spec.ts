@@ -17,8 +17,13 @@ import { OcrInstrumentInputType, Currency, CaseInstrumentInputDto, CaseInstrumen
 
 describe('CaseService.createInstrumentsAndClaims (N3-wire)', () => {
   const stub = {} as any;
+  const writerRouter = {
+    createSystemClaimItem: jest.fn(async ({ data }: any, tx: any) => tx.claimItem.create({ data })),
+  } as any;
   // RFA-016: constructor 10 dep (prisma + 9 servis).
-  const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  const service = new CaseService(
+    stub, stub, stub, stub, stub, stub, stub, stub, stub, stub, undefined, writerRouter,
+  );
 
   function mockTx() {
     const instruments: any[] = [];
@@ -52,10 +57,11 @@ describe('CaseService.createInstrumentsAndClaims (N3-wire)', () => {
       ...over,
     } as CaseInstrumentInputDto);
 
-  // PR-2b-1: ocrEnabled (5. arg) + manualEnabled (6. arg, default false). Eski 3-arg çağrılar
-  // ocrEnabled'ı verir, manualEnabled=false → source'suz (OCR) enstrümanlar eskisi gibi davranır.
+  // P03: originating human (6. arg) provenance; manualEnabled (7. arg, default false).
   const call = (tx: any, instruments: CaseInstrumentInputDto[], ocrEnabled: boolean, manualEnabled = false) =>
-    (service as any).createInstrumentsAndClaims(tx, 'tenant-1', 'case-1', instruments, ocrEnabled, manualEnabled);
+    (service as any).createInstrumentsAndClaims(
+      tx, 'tenant-1', 'case-1', instruments, ocrEnabled, 'requester-1', manualEnabled,
+    );
 
   it('flag KAPALI → hiçbir şey üretmez (legacy); 0 döner', async () => {
     const { tx, instruments, claims } = mockTx();

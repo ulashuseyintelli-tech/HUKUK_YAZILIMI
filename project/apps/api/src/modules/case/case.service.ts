@@ -50,6 +50,7 @@ import { ClientService } from "../client/client.service";
 import { LawyerService } from "../lawyer/lawyer.service";
 import { DebtorService } from "../debtor/debtor.service";
 import { DebtorType } from "@prisma/client";
+import { ClaimItemWriterRouterService } from "../claim-item/claim-item-writer-router.service";
 
 // ASSIGN-4b sorumlu-avukat invariant'ının SAF karar fonksiyonları
 // (pickResponsibleFallbackIndex / resolveResponsiblePromotion / planResponsible)
@@ -472,7 +473,16 @@ export class CaseService {
     private debtorService: DebtorService,
     @Optional()
     private canonicalCaseBalance?: CaseBalanceService,
+    @Optional()
+    private claimItemWriterRouter?: ClaimItemWriterRouterService,
   ) {}
+
+  private requireClaimItemWriterRouter(): ClaimItemWriterRouterService {
+    if (!this.claimItemWriterRouter) {
+      throw new ConflictException("ClaimItem writer router kullanıma hazır değil");
+    }
+    return this.claimItemWriterRouter;
+  }
 
   /**
    * RFA-016: case.create içindeki inline-yeni taraflar (id YOK) için guard'lı resolve/create.
@@ -1227,6 +1237,7 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     dues: DueForClaimItemSync[],
+    initiatedByUserId: string,
   ): Promise<void> {
     for (const due of dues) {
       const itemType = mapDueTypeToClaimItemType(due.type as DueType);
@@ -1234,9 +1245,18 @@ export class CaseService {
       const claimItemData = this.buildDueSyncClaimItemData(tenantId, caseId, due);
       if (!claimItemData) continue;
 
-      await tx.claimItem.create({
-        data: claimItemData,
-      });
+      await this.requireClaimItemWriterRouter().createSystemClaimItem(
+        {
+          route: "DUE_BRIDGE",
+          tenantId,
+          caseId,
+          sourceId: due.id,
+          initiatedByUserId,
+          data: claimItemData,
+          currency: due.currency || "TRY",
+        },
+        tx,
+      );
     }
   }
 
@@ -1321,51 +1341,69 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     due: DueForClaimItemSync,
+    initiatedByUserId: string,
   ): Promise<void> {
     const claimItem = await this.findDueSyncClaimItem(tx, tenantId, caseId, due.id);
     if (!claimItem) return;
 
     const itemType = mapDueTypeToClaimItemType(due.type as DueType);
     if (itemType === null) {
-      await tx.claimItem.update({
-        where: { id: claimItem.id },
-        data: { status: "CANCELLED" },
-      });
+      await this.requireClaimItemWriterRouter().cancelSystemClaimItem(
+        {
+          route: "DUE_BRIDGE",
+          tenantId,
+          caseId,
+          sourceId: due.id,
+          initiatedByUserId,
+          claimItemId: claimItem.id,
+          currency: due.currency || "TRY",
+        },
+        tx,
+      );
       return;
     }
 
     const amount = Number(due.amount);
-    await tx.claimItem.update({
-      where: { id: claimItem.id },
-      data: {
-        itemType,
-        ...claimItemNormalUpdateAmounts(amount),
+    await this.requireClaimItemWriterRouter().updateSystemClaimItem(
+      {
+        route: "DUE_BRIDGE",
+        tenantId,
+        caseId,
+        sourceId: due.id,
+        initiatedByUserId,
+        claimItemId: claimItem.id,
         currency: due.currency || "TRY",
-        description: due.description,
-        dueDate: due.dueDate instanceof Date ? due.dueDate : new Date(due.dueDate),
-        interestType: due.interestType ? (due.interestType as PrismaInterestType) : null,
-        interestTypeCode: due.interestTypeCode ? (due.interestTypeCode as InterestTypeCode) : null,
-        interestRate: normalizeClaimItemInterestRate(due.interestRate),
-        ...(due.interestAccrualStatus === InterestAccrualStatus.NO_INTEREST
-          ? {
-              interestAccrualStatus: InterestAccrualStatus.NO_INTEREST,
-              noInterestReason: due.noInterestReason,
-              noInterestConfirmedById: due.noInterestConfirmedById,
-              noInterestConfirmedAt: due.noInterestConfirmedAt ?? new Date(),
-            }
-          : due.interestAccrualStatus === InterestAccrualStatus.UNKNOWN
+        data: {
+          itemType,
+          ...claimItemNormalUpdateAmounts(amount),
+          currency: due.currency || "TRY",
+          description: due.description,
+          dueDate: due.dueDate instanceof Date ? due.dueDate : new Date(due.dueDate),
+          interestType: due.interestType ? (due.interestType as PrismaInterestType) : null,
+          interestTypeCode: due.interestTypeCode ? (due.interestTypeCode as InterestTypeCode) : null,
+          interestRate: normalizeClaimItemInterestRate(due.interestRate),
+          ...(due.interestAccrualStatus === InterestAccrualStatus.NO_INTEREST
             ? {
-                interestAccrualStatus: InterestAccrualStatus.UNKNOWN,
-                noInterestReason: null,
-                noInterestConfirmedById: null,
-                noInterestConfirmedAt: null,
+                interestAccrualStatus: InterestAccrualStatus.NO_INTEREST,
+                noInterestReason: due.noInterestReason,
+                noInterestConfirmedById: due.noInterestConfirmedById,
+                noInterestConfirmedAt: due.noInterestConfirmedAt ?? new Date(),
               }
-            : {}),
-        interestStartDate: normalizeClaimItemInterestDate(due.interestStartDate),
-        interestEndDate: normalizeClaimItemInterestDate(due.interestEndDate),
-        sortOrder: due.sortOrder ?? 0,
+            : due.interestAccrualStatus === InterestAccrualStatus.UNKNOWN
+              ? {
+                  interestAccrualStatus: InterestAccrualStatus.UNKNOWN,
+                  noInterestReason: null,
+                  noInterestConfirmedById: null,
+                  noInterestConfirmedAt: null,
+                }
+              : {}),
+          interestStartDate: normalizeClaimItemInterestDate(due.interestStartDate),
+          interestEndDate: normalizeClaimItemInterestDate(due.interestEndDate),
+          sortOrder: due.sortOrder ?? 0,
+        },
       },
-    });
+      tx,
+    );
   }
 
   /**
@@ -1409,6 +1447,7 @@ export class CaseService {
     caseId: string,
     instruments: CaseInstrumentInputDto[],
     ocrEnabled: boolean,
+    initiatedByUserId: string,
     manualEnabled = false,
   ): Promise<number> {
     if (instruments.length === 0) return 0;
@@ -1423,9 +1462,24 @@ export class CaseService {
       const created = await tx.caseInstrument.create({
         data: buildCaseInstrumentData(tenantId, caseId, input, instrumentType),
       });
-      await tx.claimItem.create({
-        data: buildInstrumentPrincipalClaimItemData(tenantId, caseId, created.id, input),
-      });
+      const claimItemData = buildInstrumentPrincipalClaimItemData(
+        tenantId,
+        caseId,
+        created.id,
+        input,
+      );
+      await this.requireClaimItemWriterRouter().createSystemClaimItem(
+        {
+          route: "CASE_INSTRUMENT_GENERATOR",
+          tenantId,
+          caseId,
+          sourceId: created.id,
+          initiatedByUserId,
+          data: claimItemData,
+          currency: input.currency,
+        },
+        tx,
+      );
       totalPrincipal += input.amount;
     }
     return totalPrincipal;
@@ -1870,7 +1924,7 @@ export class CaseService {
           // 6b. G1 KÖPRÜSÜ — kanonik ClaimItem'lar üret (bakiye motoru bunları okur).
           // Due satırları korunur (legacy/transition + nafaka takvimi); NAFAKA için
           // ClaimItem üretilmez. Aynı tx içinde, tenantId zorunlu.
-          await this.createClaimItemsFromDues(tx, tenantId, newCase.id, createdDues);
+          await this.createClaimItemsFromDues(tx, tenantId, newCase.id, createdDues, userId);
 
           // Ana para (dues PRINCIPAL); case.update aşağıda instrument ile birleştirilir.
           duesPrincipal = dto.dues
@@ -1886,6 +1940,7 @@ export class CaseService {
           newCase.id,
           dto.instruments ?? [],
           this.multiInstrumentEnabled(),
+          userId,
           this.manualCaseInstrumentsEnabled(),
         );
 
@@ -3401,7 +3456,7 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     data: CreateDueDto,
-    actorUserId?: string,
+    actorUserId: string,
   ) {
     const normalizedInterest = this.normalizeDueInterestForWrite(data, actorUserId);
     return this.prisma.$transaction(async (tx) => {
@@ -3440,7 +3495,18 @@ export class CaseService {
         ...normalizedInterest.bridge,
       });
       if (claimItemData) {
-        await tx.claimItem.create({ data: claimItemData });
+        await this.requireClaimItemWriterRouter().createSystemClaimItem(
+          {
+            route: "DUE_BRIDGE",
+            tenantId,
+            caseId,
+            sourceId: due.id,
+            initiatedByUserId: actorUserId,
+            data: claimItemData,
+            currency: due.currency || "TRY",
+          },
+          tx,
+        );
       }
 
       return due;
@@ -3460,7 +3526,7 @@ export class CaseService {
     caseId: string,
     dueId: string,
     data: UpdateDueDto,
-    actorUserId?: string,
+    actorUserId: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
       const caseExists = await tx.case.findFirst({
@@ -3501,7 +3567,7 @@ export class CaseService {
       await this.syncMarkedClaimItemFromDue(tx, tenantId, caseId, {
         ...updatedDue,
         ...normalizedInterest.bridge,
-      });
+      }, actorUserId);
 
       return updatedDue;
     });
@@ -3594,7 +3660,7 @@ export class CaseService {
    * - CaseController.deleteDue() → DELETE /cases/:id/dues/:dueId (dosya açıldıktan sonra alacak kalemi silme)
    * </remarks>
    */
-  async deleteDue(tenantId: string, caseId: string, dueId: string) {
+  async deleteDue(tenantId: string, caseId: string, dueId: string, actorUserId: string) {
     return this.prisma.$transaction(async (tx) => {
       const caseExists = await tx.case.findFirst({
         where: { id: caseId, tenantId },
@@ -3608,10 +3674,18 @@ export class CaseService {
 
       const claimItem = await this.findDueSyncClaimItem(tx, tenantId, caseId, dueId);
       if (claimItem) {
-        await tx.claimItem.update({
-          where: { id: claimItem.id },
-          data: { status: "CANCELLED" },
-        });
+        await this.requireClaimItemWriterRouter().cancelSystemClaimItem(
+          {
+            route: "DUE_BRIDGE",
+            tenantId,
+            caseId,
+            sourceId: dueId,
+            initiatedByUserId: actorUserId,
+            claimItemId: claimItem.id,
+            currency: due.currency || "TRY",
+          },
+          tx,
+        );
       }
 
       await tx.due.delete({ where: { id: dueId } });

@@ -1,5 +1,7 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClaimItemWriterRouterService } from '../claim-item/claim-item-writer-router.service';
 
 export interface CreatePrecautionaryOrderDto {
   caseId: string;
@@ -33,7 +35,17 @@ export interface CreatePrecautionaryCostDto {
 export class PrecautionaryOrderService {
   private readonly logger = new Logger(PrecautionaryOrderService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private claimItemWriterRouter?: ClaimItemWriterRouterService,
+  ) {}
+
+  private requireClaimItemWriterRouter(): ClaimItemWriterRouterService {
+    if (!this.claimItemWriterRouter) {
+      throw new ConflictException('ClaimItem writer router kullanıma hazır değil');
+    }
+    return this.claimItemWriterRouter;
+  }
 
   /**
    * İhtiyati haciz kararı oluştur
@@ -221,36 +233,45 @@ export class PrecautionaryOrderService {
   /**
    * İhtiyati haciz masraf kalemi ekle
    */
-  async addCost(tenantId: string, dto: CreatePrecautionaryCostDto, userId?: string) {
+  async addCost(tenantId: string, dto: CreatePrecautionaryCostDto, userId: string) {
     // Kararı kontrol et
     const order = await this.findOne(tenantId, dto.precautionaryOrderId);
 
-    // Sıralama için mevcut kalem sayısını al
-    const existingCount = await (this.prisma as any).precautionaryCost.count({
-      where: { precautionaryOrderId: dto.precautionaryOrderId },
+    return this.prisma.$transaction(async (tx) => {
+      // Sıralama için mevcut kalem sayısını al
+      const existingCount = await (tx as any).precautionaryCost.count({
+        where: { precautionaryOrderId: dto.precautionaryOrderId },
+      });
+
+      // Masraf kalemi oluştur
+      const cost = await (tx as any).precautionaryCost.create({
+        data: {
+          tenantId,
+          precautionaryOrderId: dto.precautionaryOrderId,
+          costType: dto.costType,
+          amount: dto.amount,
+          currency: dto.currency || 'TRY',
+          description: dto.description,
+          label: dto.label || this.getCostLabel(dto.costType),
+          isClaimedInEnforcement: dto.isClaimedInEnforcement ?? true,
+          sortOrder: existingCount,
+        },
+      });
+
+      // Ana takipte talep ediliyorsa ClaimItem oluştur
+      if (dto.isClaimedInEnforcement !== false) {
+        await this.createClaimItemFromCost(
+          tx,
+          tenantId,
+          order.caseId,
+          cost.id,
+          dto,
+          userId,
+        );
+      }
+
+      return cost;
     });
-
-    // Masraf kalemi oluştur
-    const cost = await (this.prisma as any).precautionaryCost.create({
-      data: {
-        tenantId,
-        precautionaryOrderId: dto.precautionaryOrderId,
-        costType: dto.costType,
-        amount: dto.amount,
-        currency: dto.currency || 'TRY',
-        description: dto.description,
-        label: dto.label || this.getCostLabel(dto.costType),
-        isClaimedInEnforcement: dto.isClaimedInEnforcement ?? true,
-        sortOrder: existingCount,
-      },
-    });
-
-    // Ana takipte talep ediliyorsa ClaimItem oluştur
-    if (dto.isClaimedInEnforcement !== false) {
-      await this.createClaimItemFromCost(tenantId, order.caseId, cost.id, dto);
-    }
-
-    return cost;
   }
 
   /**
@@ -350,33 +371,44 @@ export class PrecautionaryOrderService {
    * Masraf kaleminden ClaimItem oluştur
    */
   private async createClaimItemFromCost(
+    tx: Prisma.TransactionClient,
     tenantId: string,
     caseId: string,
     costId: string,
-    dto: CreatePrecautionaryCostDto
+    dto: CreatePrecautionaryCostDto,
+    initiatedByUserId: string,
   ) {
     const itemType = this.mapCostTypeToClaimItemType(dto.costType);
 
-    const claimItem = await (this.prisma.claimItem as any).create({
-      data: {
+    const claimItem = await this.requireClaimItemWriterRouter().createSystemClaimItem<any>(
+      {
+        route: 'PRECAUTIONARY_COST_WRITER',
         tenantId,
         caseId,
-        itemType: itemType as any,
-        sourceProcess: 'PRECAUTIONARY',
-        sourceProcessId: dto.precautionaryOrderId,
-        originalAmount: dto.amount,
-        demandedAmount: dto.amount,
-        collectedAmount: 0,
-        amount: dto.amount,
+        sourceId: costId,
+        initiatedByUserId,
         currency: dto.currency || 'TRY',
-        description: dto.description,
-        label: dto.label || this.getCostLabel(dto.costType),
-        bucket: 'precautionary_bucket',
+        data: {
+          tenantId,
+          caseId,
+          itemType: itemType as any,
+          sourceProcess: 'PRECAUTIONARY',
+          sourceProcessId: dto.precautionaryOrderId,
+          originalAmount: dto.amount,
+          demandedAmount: dto.amount,
+          collectedAmount: 0,
+          amount: dto.amount,
+          currency: dto.currency || 'TRY',
+          description: dto.description,
+          label: dto.label || this.getCostLabel(dto.costType),
+          bucket: 'precautionary_bucket',
+        },
       },
-    });
+      tx,
+    );
 
     // Cost'a claimItemId'yi bağla
-    await (this.prisma as any).precautionaryCost.update({
+    await (tx as any).precautionaryCost.update({
       where: { id: costId },
       data: { claimItemId: claimItem.id },
     });

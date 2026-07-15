@@ -604,10 +604,11 @@ export class CaseController {
   @Delete(":id/dues/:dueId")
   async deleteDue(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
     @Param("dueId") dueId: string
   ) {
-    return this.caseService.deleteDue(tenantId, id, dueId);
+    return this.caseService.deleteDue(tenantId, id, dueId, actorUserId);
   }
 
   // ==================== TAHSİLATLAR (COLLECTIONS) ====================

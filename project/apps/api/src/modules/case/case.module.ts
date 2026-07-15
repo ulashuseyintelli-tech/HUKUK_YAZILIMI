@@ -19,6 +19,7 @@ import { LegalResponsibleLawyerService } from "./legal-responsible-lawyer.servic
 import { CasePaymentPreviewService } from "./case-payment-preview.service";
 // WP-4d-1: warn-only diagnostic audit (PERMISSION_WOULD_DENY) için.
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
+import { ClaimItemModule } from "../claim-item/claim-item.module";
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { PermissionDiagnosticsModule } from "../permission-diagnostics/permissio
     ClientModule,
     LawyerModule,
     DebtorModule,
+    ClaimItemModule,
   ],
   controllers: [CaseController, CasePaymentPreviewController],
   providers: [CaseService, CasePaymentPreviewService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService],

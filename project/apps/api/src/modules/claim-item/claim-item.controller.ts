@@ -84,9 +84,10 @@ export class ClaimItemController {
   @Post('auto-generate')
   async autoGenerate(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Body() dto: AutoGenerateClaimItemsDto,
   ) {
-    const data = await this.service.autoGenerateFromDocument(tenantId, dto);
+    const data = await this.service.autoGenerateFromDocument(tenantId, actorUserId, dto);
     return { success: true, data };
   }
 
@@ -206,6 +207,7 @@ export class ClaimItemController {
   @Post('case/:caseId/generate-from-rules')
   async generateFromRules(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Param('caseId') caseId: string,
     @Body() body: {
       subCategory: string;
@@ -215,6 +217,7 @@ export class ClaimItemController {
   ) {
     const data = await this.service.generateFromRuleEngine(
       tenantId,
+      actorUserId,
       caseId,
       body.subCategory,
       body.extractedData,

@@ -15,8 +15,13 @@ import { DueType, InterestType } from '../dto/case.dto';
 
 describe('CaseService.createClaimItemsFromDues (G1)', () => {
   const stub = {} as any;
+  const writerRouter = {
+    createSystemClaimItem: jest.fn(async ({ data }: any, tx: any) => tx.claimItem.create({ data })),
+  } as any;
   // RFA-016: constructor 10 dep (… + clientService, lawyerService, debtorService).
-  const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  const service = new CaseService(
+    stub, stub, stub, stub, stub, stub, stub, stub, stub, stub, undefined, writerRouter,
+  );
 
   function mockTx() {
     const created: any[] = [];
@@ -49,7 +54,7 @@ describe('CaseService.createClaimItemsFromDues (G1)', () => {
       { id: 'due-3', type: DueType.EXPENSE, amount: 50, dueDate: '2026-01-01' },
     ];
 
-    await (service as any).createClaimItemsFromDues(tx, 'tenant-1', 'case-1', dues);
+    await (service as any).createClaimItemsFromDues(tx, 'tenant-1', 'case-1', dues, 'requester-1');
 
     expect(created).toHaveLength(3);
     expect(created.map((c) => c.itemType)).toEqual([
@@ -80,7 +85,7 @@ describe('CaseService.createClaimItemsFromDues (G1)', () => {
     const { tx, created } = mockTx();
     const dues = [{ id: 'due-nafaka', type: DueType.NAFAKA, amount: 500, dueDate: '2026-01-01' }];
 
-    await (service as any).createClaimItemsFromDues(tx, 'tenant-1', 'case-1', dues);
+    await (service as any).createClaimItemsFromDues(tx, 'tenant-1', 'case-1', dues, 'requester-1');
 
     expect(created).toHaveLength(0);
     expect(tx.claimItem.create).not.toHaveBeenCalled();
@@ -94,7 +99,7 @@ describe('CaseService.createClaimItemsFromDues (G1)', () => {
       { id: 'due-2', type: DueType.HARC, amount: 100, dueDate: '2026-01-01' },
     ];
 
-    await (service as any).createClaimItemsFromDues(tx, 'tenant-1', 'case-1', dues);
+    await (service as any).createClaimItemsFromDues(tx, 'tenant-1', 'case-1', dues, 'requester-1');
 
     expect(created).toHaveLength(2);
     expect(created.map((c) => c.itemType)).toEqual([
