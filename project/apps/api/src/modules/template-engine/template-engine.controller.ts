@@ -865,8 +865,11 @@ export class TemplateEngineController {
    * GET /template-engine/cases/:caseId/documents
    */
   @Get('cases/:caseId/documents')
-  async listDocumentArtifacts(@Param('caseId') caseId: string): Promise<any[]> {
-    return this.templateEngineService.listDocumentArtifacts(caseId);
+  async listDocumentArtifacts(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<any[]> {
+    return this.templateEngineService.listDocumentArtifacts(caseId, tenantId);
   }
 
   /**
@@ -876,9 +879,10 @@ export class TemplateEngineController {
   @Get('documents/:artifactId/download')
   async downloadArtifact(
     @Param('artifactId') artifactId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const result = await this.templateEngineService.downloadArtifact(artifactId);
+    const result = await this.templateEngineService.downloadArtifact(artifactId, tenantId);
     
     if (!result) {
       res.status(404).json({ message: 'Doküman bulunamadı' });

@@ -290,6 +290,7 @@ export class ValidationGateService implements OnModuleInit {
   async validateGate(
     caseId: string,
     gateId: GateId,
+    tenantId: string,
     additionalData?: Record<string, any>
   ): Promise<GateValidationResult> {
     if (!this.rules) {
@@ -303,7 +304,7 @@ export class ValidationGateService implements OnModuleInit {
     }
 
     // Dosya verisini al
-    const caseData = await this.getCaseData(caseId);
+    const caseData = await this.getCaseData(caseId, tenantId);
     if (!caseData) {
       return {
         gateId,
@@ -428,10 +429,11 @@ export class ValidationGateService implements OnModuleInit {
   /**
    * Dosya verisini al
    */
-  private async getCaseData(caseId: string): Promise<any> {
+  private async getCaseData(caseId: string, tenantId: string): Promise<any> {
     try {
-      const caseData = await this.prisma.case.findUnique({
-        where: { id: caseId },
+      // CLIENT-SEC-H1 (S3): fail-closed tenant-scope. Cross-tenant caseId eşleşmez → null.
+      const caseData = await this.prisma.case.findFirst({
+        where: { id: caseId, tenantId },
         include: {
           client: true,
           debtors: {
@@ -721,11 +723,11 @@ export class ValidationGateService implements OnModuleInit {
   /**
    * Tum gate'leri validate et
    */
-  async validateAllGates(caseId: string, additionalData?: Record<string, any>): Promise<Record<GateId, GateValidationResult>> {
+  async validateAllGates(caseId: string, tenantId: string, additionalData?: Record<string, any>): Promise<Record<GateId, GateValidationResult>> {
     const results: Record<string, GateValidationResult> = {};
-    
+
     for (const gate of this.rules?.gates || []) {
-      results[gate.id] = await this.validateGate(caseId, gate.id, additionalData);
+      results[gate.id] = await this.validateGate(caseId, gate.id, tenantId, additionalData);
     }
 
     return results as Record<GateId, GateValidationResult>;

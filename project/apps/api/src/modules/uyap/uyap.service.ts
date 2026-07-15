@@ -112,15 +112,11 @@ export class UyapService {
     const result = await this.poaService.checkValidPoa(clientId, lawyerId, tenantId);
 
     if (!result.isValid) {
-      // Avukat ve müvekkil isimlerini al
-      const [client, lawyer] = await Promise.all([
-        this.prisma.client.findUnique({ where: { id: clientId }, select: { displayName: true } }),
-        this.prisma.lawyer.findUnique({ where: { id: lawyerId }, select: { name: true, surname: true } }),
-      ]);
-
+      // CLIENT-SEC-H1 (S1): PII-safe error handling. Kimlik-enrichment lookup'ları kaldırıldı; her
+      // geçersiz durumda AYNI generic mesaj döner — kayıt-varlığı veya kimlik (PII) ifşası yok.
       return {
         isValid: false,
-        message: `${lawyer?.name} ${lawyer?.surname} için ${client?.displayName} müvekkiline ait geçerli vekalet bulunamadı`,
+        message: 'Geçerli vekalet bulunamadı',
       };
     }
 
@@ -136,8 +132,10 @@ export class UyapService {
    * Takip için tüm müvekkil-avukat kombinasyonlarının vekaletlerini kontrol et
    */
   async validateCasePoaForUyap(caseId: string, tenantId: string): Promise<{ isValid: boolean; errors: string[] }> {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+    // CLIENT-SEC-H1 (S1): case load tenant-scoped (fail-closed). Cross-tenant caseId eşleşmez →
+    // caseData null → 'Takip bulunamadı' (varlık ifşası yok).
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         caseClients: { include: { client: true } },
         lawyers: { include: { lawyer: true } },

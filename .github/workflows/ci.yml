@@ -90,6 +90,20 @@ jobs:
             --testPathPattern="guards/__tests__/(drift-guard|baseline-math|stage-0|stage-1|sd-2|sd-25|sd-26|sd-3)" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # CLIENT-SEC-H1: cross-tenant/unauth Client PII containment (S1-S4) regression.
+      # Explicit test -f guard: bir spec silinir/yeniden adlandırılırsa step FAIL eder (allowlist stale-test gap koruması).
+      - name: CLIENT-SEC-H1 cross-tenant containment regression
+        run: |
+          cd apps/api
+          for f in src/modules/uyap/__tests__/uyap-poa-tenant-scope.spec.ts \
+                   src/modules/pdf/__tests__/pdf-takip-talebi-authz.spec.ts \
+                   src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts \
+                   src/modules/template-engine/__tests__/template-artifact-tenant-scope.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-SEC-H1 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="(uyap-poa-tenant-scope|pdf-takip-talebi-authz|validation-gate-authz-tenant|template-artifact-tenant-scope)\.spec\.ts$"
+        working-directory: project
       - name: Integration Tests (legal-kernel, real Postgres)
         run: |
           cd apps/api

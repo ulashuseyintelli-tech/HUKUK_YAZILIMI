@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeeEngineService } from '../fee-engine/fee-engine.service';
 import type { TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
@@ -260,7 +260,7 @@ export class TemplateEngineService {
   /// - TemplateEngineController.generateTakipTalebiFromCase() → GET /template-engine/takip-talebi/case/:caseId (takip talebi üretimi)
   /// - PdfController.downloadTakipTalebi() → GET /pdf/takip-talebi/:caseId (legacy PDF üretimi)
   /// </remarks>
-  async generateTakipTalebiFromCase(caseId: string, tenantId?: string): Promise<GeneratedDocument> {
+  async generateTakipTalebiFromCase(caseId: string, tenantId: string): Promise<GeneratedDocument> {
     const caseData = await this.getCaseData(caseId, tenantId);
     return this.generateTakipTalebi(caseData);
   }
@@ -324,7 +324,13 @@ export class TemplateEngineService {
   /// - TemplateEngineService.generateDocumentFromCase() → merkezi doküman üretim verisi
   /// </remarks>
   private async getCaseData(caseId: string, tenantId?: string): Promise<TemplateData> {
-    const where = tenantId ? { id: caseId, tenantId } : { id: caseId };
+    // CLIENT-SEC-H1 (S2): fail-closed. Opsiyonel-tenantId fail-open fallback ({id: caseId})
+    // KALDIRILDI; tenantId yoksa case yüklenmez. Tüm generate*FromCase yolları buradan geçtiği
+    // için bu guard hepsini cross-tenant sızıntıya karşı korur.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const where = { id: caseId, tenantId };
     const caseRecord = await (this.prisma as any).case.findFirst({
       where,
       include: { 
@@ -3242,9 +3248,10 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
   /**
    * Mevcut artifact'ları listele
    */
-  async listDocumentArtifacts(caseId: string): Promise<any[]> {
+  async listDocumentArtifacts(caseId: string, tenantId: string): Promise<any[]> {
+    // CLIENT-SEC-H1 (S4): tenant-scoped list. caseId TEK BAŞINA sorgulanmaz.
     return (this.prisma as any).documentArtifact.findMany({
-      where: { caseId },
+      where: { caseId, tenantId },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -3252,9 +3259,11 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
   /**
    * Artifact'ı indir
    */
-  async downloadArtifact(artifactId: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
-    const artifact = await (this.prisma as any).documentArtifact.findUnique({
-      where: { id: artifactId },
+  async downloadArtifact(artifactId: string, tenantId: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
+    // CLIENT-SEC-H1 (S4): tenant-scoped ownership. artifactId TEK BAŞINA sorgulanmaz; başka tenant'ın
+    // artifact'ı findFirst'te eşleşmez → null → 404 (metadata/varlık ifşası yok).
+    const artifact = await (this.prisma as any).documentArtifact.findFirst({
+      where: { id: artifactId, tenantId },
     });
     
     if (!artifact || artifact.status !== 'READY' || !artifact.filePath) {
