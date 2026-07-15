@@ -20,6 +20,8 @@ export const CLAIM_ITEM_SOURCE_INTEGRITY_CONFLICT_CODES = [
   'DUPLICATE_SOURCE_IDENTITY',
   'SOURCE_PAYLOAD_CONFLICT',
   'SOURCE_BINDING_MISMATCH',
+  'DUE_BRIDGE_MARKER_MISSING',
+  'DUE_BRIDGE_MULTIPLE_LIVE_MARKERS',
 ] as const;
 
 export type ClaimItemSourceIntegrityConflictCode =
@@ -418,6 +420,27 @@ export class ClaimItemSourceIntegrityGuard {
     sourceRecord: ValidatedSourceRecord,
     database: any,
   ): Promise<void> {
+    const dueLiveMarkers = context.authority === 'DUE_BRIDGE'
+      ? await database.claimItem.findMany({
+          where: {
+            tenantId: context.tenantId,
+            caseId: context.caseId,
+            metadata: {
+              path: ['dueSync', 'sourceDueId'],
+              equals: context.sourceId,
+            },
+          },
+          select: { id: true },
+          take: 2,
+        })
+      : null;
+    if (dueLiveMarkers && dueLiveMarkers.length > 1) {
+      this.fail(
+        'DUE_BRIDGE_MULTIPLE_LIVE_MARKERS',
+        'Due source identity is bound to multiple live ClaimItem markers.',
+      );
+    }
+
     const canonical = await database.claimItem.findFirst({
       where: {
         tenantId: context.tenantId,
@@ -440,6 +463,8 @@ export class ClaimItemSourceIntegrityGuard {
       this.duplicate();
     }
 
+    if (dueLiveMarkers?.length === 1) this.duplicate();
+
     const legacy = await this.findLegacyConflict(context, data, sourceRecord, database);
     if (legacy) this.duplicate();
   }
@@ -452,17 +477,9 @@ export class ClaimItemSourceIntegrityGuard {
   ): Promise<unknown> {
     switch (context.authority) {
       case 'DUE_BRIDGE':
-        return database.claimItem.findFirst({
-          where: {
-            tenantId: context.tenantId,
-            caseId: context.caseId,
-            metadata: {
-              path: ['dueSync', 'sourceDueId'],
-              equals: context.sourceId,
-            },
-          },
-          select: { id: true },
-        });
+        // Due markers are counted under the same advisory lock before the
+        // canonical marker check, so multiplicity cannot be hidden by findFirst.
+        return null;
       case 'CASE_INSTRUMENT_GENERATOR':
         return database.claimItem.findFirst({
           where: {

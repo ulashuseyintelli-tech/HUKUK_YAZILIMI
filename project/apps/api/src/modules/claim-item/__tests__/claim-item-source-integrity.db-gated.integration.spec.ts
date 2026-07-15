@@ -101,6 +101,35 @@ describeWithDisposableDb('RCV-P2-WS01-P04 source integrity - disposable PostgreS
     expect(await prisma.claimItem.count({ where: { caseId: fixture.caseId } })).toBe(1);
   });
 
+  it('classifies persisted Due retries and changed payloads deterministically', async () => {
+    const fixture = await createDueFixture('retry-conflict');
+    const input = dueCreateInput(fixture);
+    await router.createSystemClaimItem(input);
+
+    await expect(router.createSystemClaimItem(input)).rejects.toMatchObject({
+      conflictCode: 'DUPLICATE_SOURCE_IDENTITY',
+    });
+    await expect(router.createSystemClaimItem({
+      ...input,
+      data: { ...input.data, amount: 101 },
+    })).rejects.toMatchObject({
+      conflictCode: 'SOURCE_PAYLOAD_CONFLICT',
+    });
+    expect(await prisma.claimItem.count({ where: { caseId: fixture.caseId } })).toBe(1);
+  });
+
+  it('fails closed when an out-of-bound writer created a second live Due marker', async () => {
+    const fixture = await createDueFixture('multiple-live-marker');
+    const input = dueCreateInput(fixture);
+    await router.createSystemClaimItem(input);
+    await prisma.claimItem.create({ data: input.data as any });
+
+    await expect(router.createSystemClaimItem(input)).rejects.toMatchObject({
+      conflictCode: 'DUE_BRIDGE_MULTIPLE_LIVE_MARKERS',
+    });
+    expect(await prisma.claimItem.count({ where: { caseId: fixture.caseId } })).toBe(2);
+  });
+
   it('rejects a Due source owned by another case and tenant without writing', async () => {
     const target = await createDueFixture('target');
     const foreign = await createDueFixture('foreign');

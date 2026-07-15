@@ -53,6 +53,7 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
       },
       claimItem: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
       },
     };
     return { guard: new ClaimItemSourceIntegrityGuard(), database };
@@ -150,11 +151,62 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
 
   it('rejects a second legacy Due marker for the same source', async () => {
     const { guard, database } = setup();
-    database.claimItem.findFirst.mockImplementation(({ where }: any) => {
-      if (where.metadata?.path?.join('.') === 'dueSync.sourceDueId') {
-        return { id: 'claim-existing', metadata: dueData.metadata };
-      }
-      return null;
+    database.claimItem.findMany.mockResolvedValue([{ id: 'claim-existing' }]);
+
+    await expect(guard.prepareSystemCreate(
+      {
+        route: 'DUE_BRIDGE',
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        sourceId: 'due-1',
+        envelope: systemEnvelope('DUE_BRIDGE', 'due-1'),
+        data: dueData,
+      },
+      database,
+    )).rejects.toMatchObject<Partial<ClaimItemSourceIntegrityException>>({
+      conflictCode: 'DUPLICATE_SOURCE_IDENTITY',
+    });
+  });
+
+  it('fails closed when a Due source has multiple live markers', async () => {
+    const { guard, database } = setup();
+    database.claimItem.findMany.mockResolvedValue([
+      { id: 'claim-existing-1' },
+      { id: 'claim-existing-2' },
+    ]);
+
+    await expect(guard.prepareSystemCreate(
+      {
+        route: 'DUE_BRIDGE',
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        sourceId: 'due-1',
+        envelope: systemEnvelope('DUE_BRIDGE', 'due-1'),
+        data: dueData,
+      },
+      database,
+    )).rejects.toMatchObject<Partial<ClaimItemSourceIntegrityException>>({
+      conflictCode: 'DUE_BRIDGE_MULTIPLE_LIVE_MARKERS',
+    });
+  });
+
+  it('distinguishes a Due retry from a changed payload conflict', async () => {
+    const { guard, database } = setup();
+    const first = await guard.prepareSystemCreate(
+      {
+        route: 'DUE_BRIDGE',
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        sourceId: 'due-1',
+        envelope: systemEnvelope('DUE_BRIDGE', 'due-1'),
+        data: dueData,
+      },
+      database,
+    );
+    database.claimItem.findMany.mockResolvedValue([{ id: 'claim-existing' }]);
+    database.claimItem.findFirst.mockResolvedValue({
+      id: 'claim-existing',
+      metadata: first.metadata,
     });
 
     await expect(guard.prepareSystemCreate(
@@ -169,6 +221,20 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
       database,
     )).rejects.toMatchObject<Partial<ClaimItemSourceIntegrityException>>({
       conflictCode: 'DUPLICATE_SOURCE_IDENTITY',
+    });
+
+    await expect(guard.prepareSystemCreate(
+      {
+        route: 'DUE_BRIDGE',
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        sourceId: 'due-1',
+        envelope: systemEnvelope('DUE_BRIDGE', 'due-1'),
+        data: { ...dueData, amount: 200 },
+      },
+      database,
+    )).rejects.toMatchObject<Partial<ClaimItemSourceIntegrityException>>({
+      conflictCode: 'SOURCE_PAYLOAD_CONFLICT',
     });
   });
 

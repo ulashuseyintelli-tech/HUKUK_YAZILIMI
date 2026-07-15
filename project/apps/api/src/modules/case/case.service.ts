@@ -51,6 +51,7 @@ import { LawyerService } from "../lawyer/lawyer.service";
 import { DebtorService } from "../debtor/debtor.service";
 import { DebtorType } from "@prisma/client";
 import { ClaimItemWriterRouterService } from "../claim-item/claim-item-writer-router.service";
+import { ClaimItemSourceIntegrityException } from "../claim-item/claim-item-source-integrity.guard";
 
 // ASSIGN-4b sorumlu-avukat invariant'ının SAF karar fonksiyonları
 // (pickResponsibleFallbackIndex / resolveResponsiblePromotion / planResponsible)
@@ -1321,7 +1322,10 @@ export class CaseService {
     });
 
     if (claimItems.length > 1) {
-      throw new BadRequestException("Due senkronu için birden fazla ClaimItem bulundu");
+      throw new ClaimItemSourceIntegrityException(
+        "DUE_BRIDGE_MULTIPLE_LIVE_MARKERS",
+        "Due source identity is bound to multiple live ClaimItem markers.",
+      );
     }
 
     return claimItems[0] ?? null;
@@ -1344,9 +1348,17 @@ export class CaseService {
     initiatedByUserId: string,
   ): Promise<void> {
     const claimItem = await this.findDueSyncClaimItem(tx, tenantId, caseId, due.id);
-    if (!claimItem) return;
-
     const itemType = mapDueTypeToClaimItemType(due.type as DueType);
+    if (!claimItem) {
+      if (itemType !== null) {
+        throw new ClaimItemSourceIntegrityException(
+          "DUE_BRIDGE_MARKER_MISSING",
+          "Mapped Due has no live ClaimItem source marker; lifecycle sync is fail-closed.",
+        );
+      }
+      return;
+    }
+
     if (itemType === null) {
       await this.requireClaimItemWriterRouter().cancelSystemClaimItem(
         {
@@ -3673,6 +3685,12 @@ export class CaseService {
       if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
 
       const claimItem = await this.findDueSyncClaimItem(tx, tenantId, caseId, dueId);
+      if (!claimItem && mapDueTypeToClaimItemType(due.type as DueType) !== null) {
+        throw new ClaimItemSourceIntegrityException(
+          "DUE_BRIDGE_MARKER_MISSING",
+          "Mapped Due has no live ClaimItem source marker; lifecycle sync is fail-closed.",
+        );
+      }
       if (claimItem) {
         await this.requireClaimItemWriterRouter().cancelSystemClaimItem(
           {
