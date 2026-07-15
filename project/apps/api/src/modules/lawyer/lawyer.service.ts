@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException, ForbiddenException, B
 import { PrismaService } from "@/prisma/prisma.service";
 import { LawyerRole, LawyerRank } from "@prisma/client";
 import { normalizePersonName } from "@/common/name-match.util";
+import { maskTckn, maskIban } from "@/common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import type { AuditActor } from "@/modules/client/client.service";
@@ -76,6 +77,25 @@ export class LawyerService {
     private officeApproval: OfficeApprovalService,
   ) {}
 
+  /**
+   * CANDIDATE-F1 (WAVE 3, RATIFIED — Personnel List Masked Default): avukat LİSTE yüzeyinde
+   * hassas alanları (tckn, iban, deprecated identityNo) varsayılan maskele. Null/undefined/boş
+   * KORUNUR (sentinel üretilmez). Yalnız liste projeksiyonu; detail (findOne), create/update,
+   * duplicate-guard sorguları, search WHERE ve response shape/displayName DEĞİŞMEZ.
+   */
+  private maskListRow<
+    T extends { tckn: string | null; iban: string | null; identityNo: string | null },
+  >(row: T): T {
+    const m = (v: string | null, fn: (s: string) => string) =>
+      v == null || v === "" ? v : fn(v);
+    return {
+      ...row,
+      tckn: m(row.tckn, maskTckn),
+      iban: m(row.iban, maskIban),
+      identityNo: m(row.identityNo, maskTckn),
+    };
+  }
+
   // Tüm avukatları getir (displayName ile birlikte)
   async findAll(tenantId: string, search?: string, includeInactive = false) {
     const where: any = { tenantId };
@@ -99,7 +119,7 @@ export class LawyerService {
     });
 
     // Her avukata displayName ekle (Av. Ad Soyad)
-    return withDisplayNames(lawyers);
+    return withDisplayNames(lawyers.map((l) => this.maskListRow(l)));
   }
 
   // Varsayılan avukatları getir (yeni takiplerde otomatik seçilecekler)
@@ -113,7 +133,7 @@ export class LawyerService {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
 
-    return withDisplayNames(lawyers);
+    return withDisplayNames(lawyers.map((l) => this.maskListRow(l)));
   }
 
   // Tek avukat getir

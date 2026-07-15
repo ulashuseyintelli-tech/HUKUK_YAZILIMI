@@ -1,17 +1,29 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePersonName } from '../../common/name-match.util';
+import { maskTckn } from '../../common/pii-mask.util';
 
 @Injectable()
 export class StaffService {
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * CANDIDATE-F1 (WAVE 3, RATIFIED — Personnel List Masked Default): personel LİSTE yüzeyinde
+   * hassas alanı (tckn) varsayılan maskele. Null/undefined/boş KORUNUR (sentinel üretilmez —
+   * ham maskTckn null'da '[NO_TCKN]' döndürürdü). Yalnız liste projeksiyonu; detail (findOne),
+   * create/update, duplicate-guard sorguları ve response shape DEĞİŞMEZ.
+   */
+  private maskListRow<T extends { tckn: string | null }>(row: T): T {
+    return { ...row, tckn: row.tckn == null || row.tckn === '' ? row.tckn : maskTckn(row.tckn) };
+  }
+
   // Tüm personeli listele
   async findAll(tenantId: string) {
-    return this.prisma.staffMember.findMany({
+    const rows = await this.prisma.staffMember.findMany({
       where: { tenantId, isActive: true },
       orderBy: [{ staffType: 'asc' }, { sortOrder: 'asc' }, { firstName: 'asc' }],
     });
+    return rows.map((row) => this.maskListRow(row));
   }
 
   // Tek personel getir
@@ -209,10 +221,11 @@ export class StaffService {
 
   // Personel türüne göre listele
   async findByType(tenantId: string, staffType: any) {
-    return this.prisma.staffMember.findMany({
+    const rows = await this.prisma.staffMember.findMany({
       where: { tenantId, staffType, isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { firstName: 'asc' }],
     });
+    return rows.map((row) => this.maskListRow(row));
   }
 
   // Sıralama güncelle
