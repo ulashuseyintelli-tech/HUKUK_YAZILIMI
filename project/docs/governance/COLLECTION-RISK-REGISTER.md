@@ -20,7 +20,8 @@ Sınıflar: `BUG` (yanlış davranış) · `DRIFT` (canonical hedeften sapmış 
 `TEST-LIMITATION` (kanıt eksikliği; davranış iddiası değil).
 
 Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
-`UNVERIFIED-THIS-PASS` (analiz bulgusu; bu turda yeniden üretilmedi).
+`UNVERIFIED-THIS-PASS` (analiz bulgusu; bu turda yeniden üretilmedi) ·
+`CLOSED` (kanıtla giderildi; historical baseline ilgili satırda korunur).
 
 ---
 
@@ -68,7 +69,7 @@ Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
 |---|---|---|---|---|
 | COL-RISK-T01 | Farklı-key CONCURRENT allocation/ClaimItem race testi yok (aynı-key race ve farklı-key sequential testleri VAR) | collection-payment-received.integration.spec.ts:390/418; grep race/concurrent=0 hedefli senaryoda | OPEN | Desktop 04/A2 harness planlı |
 | COL-RISK-T02 | Mid-transaction rollback (orphan satır) harness'ı yok | Desktop 04/A3 planlı | OPEN | COL-INV-031 kanıtı |
-| COL-RISK-T03 | Money-out sequential+concurrent replay harness'ı yok (kontrat kodda mevcut, kanıt paketi yok) | Desktop 04/A4 planlı; kontrat kanıtı: client-payout.service.spec.ts:373-419/719-739 (birim düzeyi VAR) | OPEN | COL/OD-21 |
+| COL-RISK-T03 | Money-out sequential+concurrent replay harness eksikliği (historical baseline; giderildi) | Baseline: Desktop 04/A4 planlıydı; yalnız `client-payout.service.spec.ts:373-419/719-739` birim kanıtı vardı. Closure: gerçek PostgreSQL ve gerçek payout call chain'i üzerinde sequential+concurrent same-key replay harness'ı; 10/10 run PASS; PR #1265, squash `081bd9615429d24a6a205a2e6740daf2fd549770`; idempotency confirmed, concurrency safe, duplicate payout none. | **CLOSED** | W1.3 **CLOSED / CANONICAL**; `COL/OD-21` ayrı text-ratification olarak OPEN |
 | COL-RISK-T04 | Master Analysis'in "2.200 test pass / gerçek DB" kanıtı bu hesapta yeniden koşulmadı; golden JSON EOL determinism doğrulanmadı | Synthesis §3 evidence limitations | OPEN | Desktop 04/A1 |
 | COL-RISK-T05 | Kuruş remainder davranışı ledger yazım hattında hedefli testle sabitlenmedi (calc-core tarafında cent hardening VAR — PR #1101) | COL-INV-023 CURRENT-PARTIAL | OPEN | W1.1 |
 
