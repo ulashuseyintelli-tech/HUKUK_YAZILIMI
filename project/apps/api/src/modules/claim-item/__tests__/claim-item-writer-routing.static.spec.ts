@@ -1,0 +1,45 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+function methodSlice(source: string, start: string, end: string): string {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  expect(startIndex).toBeGreaterThanOrEqual(0);
+  expect(endIndex).toBeGreaterThan(startIndex);
+  return source.slice(startIndex, endIndex);
+}
+
+describe('RCV-P2-WS01-P03 static ClaimItem direct-write absence', () => {
+  const claimItemService = readFileSync(join(__dirname, '..', 'claim-item.service.ts'), 'utf8');
+  const caseService = readFileSync(join(__dirname, '..', '..', 'case', 'case.service.ts'), 'utf8');
+  const precautionaryService = readFileSync(
+    join(__dirname, '..', '..', 'precautionary-order', 'precautionary-order.service.ts'),
+    'utf8',
+  );
+
+  it('CaseService Due and instrument production paths contain no direct ClaimItem mutation', () => {
+    expect(caseService).not.toMatch(/claimItem\.(create|update|delete)\s*\(/);
+    expect(caseService).toContain("route: \"DUE_BRIDGE\"");
+    expect(caseService).toContain("route: \"CASE_INSTRUMENT_GENERATOR\"");
+  });
+
+  it.each([
+    ['autoGenerateFromDocument', 'async autoGenerateFromDocument(', 'async calculateInterest('],
+    ['generateFromRuleEngine', 'async generateFromRuleEngine(', 'async validateWithRuleEngine('],
+  ])('%s contains routed writes and no direct create', (_name, start, end) => {
+    const source = methodSlice(claimItemService, start, end);
+    expect(source).toContain('createSystemClaimItem');
+    expect(source).not.toMatch(/claimItem\.create\s*\(/);
+  });
+
+  it('precautionary cost create is routed while the explicitly deferred delete remains untouched', () => {
+    const source = methodSlice(
+      precautionaryService,
+      'private async createClaimItemFromCost(',
+      'private mapCostTypeToClaimItemType(',
+    );
+    expect(source).toContain("route: 'PRECAUTIONARY_COST_WRITER'");
+    expect(source).not.toMatch(/claimItem\.create\s*\(/);
+    expect(precautionaryService).toContain('this.prisma.claimItem.delete');
+  });
+});

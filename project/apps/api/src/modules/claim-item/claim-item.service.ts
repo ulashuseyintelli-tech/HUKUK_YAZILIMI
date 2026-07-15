@@ -36,6 +36,8 @@ import {
   assertInvoiceClaimItemTypeTransitionAllowed,
 } from './invoice-claim-item.policy';
 import { interestWriteData, normalizeInterestWriteIntent } from './interest-write-admission';
+import { type ClaimItemWriteGateResult } from './claim-item-write-gate.service';
+import { ClaimItemWriterRouterService } from './claim-item-writer-router.service';
 
 export interface ClaimItemMutationResult {
   applied: boolean;
@@ -51,6 +53,7 @@ export class ClaimItemService {
     @Optional() private claimEngineService?: ClaimEngineService,
     @Optional() private audit?: AuditService,
     @Optional() private officeApproval?: OfficeApprovalService,
+    @Optional() private claimItemWriterRouter?: ClaimItemWriterRouterService,
   ) {}
 
   // ==================== CRUD İŞLEMLERİ ====================
@@ -134,6 +137,15 @@ export class ClaimItemService {
     }
 
     const proposedPatch = this.buildCreatePatch(dto, actorUserId);
+    const gateResult = await this.requireClaimItemWriterRouter().evaluateHuman({
+      operation: 'CREATE',
+      tenantId,
+      caseId: dto.caseId,
+      actorUserId,
+      payload: proposedPatch,
+      currency: dto.currency ?? 'TRY',
+    });
+    this.assertApprovalRequired(gateResult);
     const request = await this.createHighImpactApprovalRequest({
       tenantId,
       actorUserId,
@@ -263,6 +275,16 @@ export class ClaimItemService {
     const proposedPatch = this.normalizePatchForIntent(
       this.normalizeInterestPatch(patch, existing, actorUserId),
     );
+    const gateResult = await this.requireClaimItemWriterRouter().evaluateHuman({
+      operation: 'UPDATE',
+      tenantId,
+      caseId: existing.caseId,
+      actorUserId,
+      claimItemId: id,
+      payload: proposedPatch,
+      currency: String(proposedPatch.currency ?? existing.currency),
+    });
+    this.assertApprovalRequired(gateResult);
     const request = await this.createHighImpactApprovalRequest({
       tenantId,
       actorUserId,
@@ -299,6 +321,16 @@ export class ClaimItemService {
 
   async removeFromUser(tenantId: string, actorUserId: string, id: string): Promise<ClaimItemMutationResult> {
     const existing = await this.findOne(tenantId, id);
+    const gateResult = await this.requireClaimItemWriterRouter().evaluateHuman({
+      operation: 'CANCEL',
+      tenantId,
+      caseId: existing.caseId,
+      actorUserId,
+      claimItemId: id,
+      payload: {},
+      currency: existing.currency,
+    });
+    this.assertApprovalRequired(gateResult);
     const currentSnapshot = this.snapshotClaimItem(existing);
     const proposedPatch = { status: 'CANCELLED' };
     const request = await this.createHighImpactApprovalRequest({
@@ -335,7 +367,11 @@ export class ClaimItemService {
   // ==================== OTOMATİK ALACAK KALEMİ OLUŞTURMA ====================
 
   // Evraktan otomatik alacak kalemleri oluştur
-  async autoGenerateFromDocument(tenantId: string, dto: AutoGenerateClaimItemsDto) {
+  async autoGenerateFromDocument(
+    tenantId: string,
+    actorUserId: string,
+    dto: AutoGenerateClaimItemsDto,
+  ) {
     if (dto.documentType === DocumentSourceType.FATURA) {
       throw new BadRequestException(
         'Fatura alacağı auto-generate ile oluşturulamaz; kanonik Due -> ClaimItem yolu kullanılmalıdır.',
@@ -366,11 +402,18 @@ export class ClaimItemService {
     // Toplu oluştur
     const createdItems = [];
     for (const item of items) {
-      const created = await (this.prisma as any).claimItem.create({
-        data: {
-          ...item,
-          ...claimItemCreationAmounts(item.amount),
-        },
+      const data = {
+        ...item,
+        ...claimItemCreationAmounts(item.amount),
+      };
+      const created = await this.requireClaimItemWriterRouter().createSystemClaimItem<any>({
+        route: 'DOCUMENT_AUTO_GENERATOR',
+        tenantId,
+        caseId: dto.caseId,
+        sourceId: dto.documentId,
+        initiatedByUserId: actorUserId,
+        data,
+        currency: item.currency,
       });
       createdItems.push(created);
     }
@@ -787,6 +830,7 @@ export class ClaimItemService {
   // Kural motorundan alacak kalemleri oluştur
   async generateFromRuleEngine(
     tenantId: string,
+    actorUserId: string,
     caseId: string,
     subCategory: string,
     extractedData: Record<string, any>,
@@ -819,21 +863,28 @@ export class ClaimItemService {
 
       const amount = item.amount ?? 0;
 
-      const createdItem = await (this.prisma as any).claimItem.create({
-        data: {
-          tenantId,
-          caseId,
-          itemType: this.mapItemType(item.type),
-          ...claimItemCreationAmounts(amount),
-          currency: item.currency || 'TRY',
-          dueDate: item.dueDate ? new Date(item.dueDate) : null,
-          description: item.label,
-          isCalculated: item.isCalculated,
-          calculatedAt: item.isCalculated ? new Date() : null,
-          interestType: item.interestRule?.interestType,
-          interestRate: item.interestRule?.annualRate,
-          sortOrder: createdItems.length + 1,
-        },
+      const data = {
+        tenantId,
+        caseId,
+        itemType: this.mapItemType(item.type),
+        ...claimItemCreationAmounts(amount),
+        currency: item.currency || 'TRY',
+        dueDate: item.dueDate ? new Date(item.dueDate) : null,
+        description: item.label,
+        isCalculated: item.isCalculated,
+        calculatedAt: item.isCalculated ? new Date() : null,
+        interestType: item.interestRule?.interestType,
+        interestRate: item.interestRule?.annualRate,
+        sortOrder: createdItems.length + 1,
+      };
+      const createdItem = await this.requireClaimItemWriterRouter().createSystemClaimItem<any>({
+        route: 'RULE_ENGINE_GENERATOR',
+        tenantId,
+        caseId,
+        sourceId: caseId,
+        initiatedByUserId: actorUserId,
+        data,
+        currency: data.currency,
       });
 
       createdItems.push(createdItem);
@@ -924,7 +975,6 @@ export class ClaimItemService {
     id: string,
     patch: ClaimItemPatch,
   ) {
-    await this.assertCanManageClaimItemMetadata(actorUserId, tenantId);
     const data = this.pickLowImpactUpdateData(patch);
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('Metadata güncellemesi için desteklenen alan yok.');
@@ -937,6 +987,20 @@ export class ClaimItemService {
       if (!existing) {
         throw new NotFoundException('Alacak kalemi bulunamadı');
       }
+
+      const gateResult = await this.requireClaimItemWriterRouter().evaluateHuman(
+        {
+          operation: 'UPDATE',
+          tenantId,
+          caseId: existing.caseId,
+          actorUserId,
+          claimItemId: id,
+          payload: patch,
+          currency: existing.currency,
+        },
+        tx,
+      );
+      this.assertDirectAllowed(gateResult);
 
       const before = this.snapshotClaimItem(existing);
       const updated = await tx.claimItem.update({
@@ -960,12 +1024,28 @@ export class ClaimItemService {
     });
   }
 
-  private async assertCanManageClaimItemMetadata(userId: string | undefined, tenantId: string): Promise<void> {
-    if (!this.officeApproval) {
-      throw new ConflictException('ClaimItem capability dependency is not available.');
+  private requireClaimItemWriterRouter(): ClaimItemWriterRouterService {
+    if (!this.claimItemWriterRouter) {
+      throw new ConflictException('ClaimItem writer routing dependency is not available.');
     }
-    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
-      throw new ForbiddenException('Alacak kalemi metadata güncelleme yetkisi yok (PARTNER veya yetkilendirilmiş avukat gerekir).');
+    return this.claimItemWriterRouter;
+  }
+
+  private assertApprovalRequired(result: ClaimItemWriteGateResult): void {
+    if (result.outcome === 'DENIED') {
+      throw new ForbiddenException(`ClaimItem write denied: ${result.reasonCode}`);
+    }
+    if (result.outcome !== 'OFFICE_APPROVAL_REQUIRED') {
+      throw new ConflictException('ClaimItem high-impact command did not require OfficeApproval.');
+    }
+  }
+
+  private assertDirectAllowed(result: ClaimItemWriteGateResult): void {
+    if (result.outcome === 'DENIED') {
+      throw new ForbiddenException(`ClaimItem write denied: ${result.reasonCode}`);
+    }
+    if (result.outcome !== 'DIRECT_ALLOWED' || result.actorType !== 'HUMAN') {
+      throw new ConflictException('ClaimItem low-impact command was not directly authorized.');
     }
   }
 

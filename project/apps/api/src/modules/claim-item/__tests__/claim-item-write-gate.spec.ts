@@ -4,6 +4,7 @@ import { type CanonicalWriteActor } from '../../../common/canonical-write-envelo
 import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE } from '../claim-item-approval.constants';
 import { buildClaimItemWriteCommand } from '../claim-item-write-command';
 import { ClaimItemWriteGateService } from '../claim-item-write-gate.service';
+import { CLAIM_ITEM_SYSTEM_WRITER_ROUTES } from '../claim-item-writer-routes';
 
 const occurredAt = '2026-07-15T08:00:00.000Z';
 
@@ -13,6 +14,8 @@ function command(input: {
   caseId?: string;
   actor?: CanonicalWriteActor;
   payload?: Record<string, unknown>;
+  sourceType?: string;
+  policyRef?: string;
 } = {}) {
   const operation = input.operation ?? 'UPDATE';
   const caseId = input.caseId ?? 'case-1';
@@ -28,11 +31,11 @@ function command(input: {
       occurredAt,
       effectiveAt: occurredAt,
       source: {
-        sourceType: 'USER_COMMAND',
+        sourceType: input.sourceType ?? 'USER_COMMAND',
         sourceId: 'request:rcv-p02-1',
         evidenceRefs: [],
       },
-      authority: { policyRef: 'CLAIM_ITEM_WRITE_POLICY_V1' },
+      authority: { policyRef: input.policyRef ?? 'CLAIM_ITEM_WRITE_POLICY_V1' },
       currency: 'TRY',
     },
     payload:
@@ -346,6 +349,65 @@ describe('RCV-P2-WS01-P02 ClaimItemWriteGateService', () => {
     });
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
+
+  it.each(Object.entries(CLAIM_ITEM_SYSTEM_WRITER_ROUTES))(
+    '%s exact route source/policy is directly allowed for its declared operation',
+    async (routeName, route) => {
+      const { gate, prisma } = makeGate();
+      const operation = route.operations[0];
+
+      await expect(gate.evaluate(command({
+        operation,
+        actor: { type: 'SYSTEM', system: routeName },
+        sourceType: route.sourceType,
+        policyRef: route.policyRef,
+      }))).resolves.toMatchObject({
+        outcome: 'DIRECT_ALLOWED',
+        actorType: 'SYSTEM',
+        permission: 'SYSTEM_ROUTE',
+        permissionSource: routeName,
+      });
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(Object.entries(CLAIM_ITEM_SYSTEM_WRITER_ROUTES))(
+    '%s fails closed on cross-tenant/case scope',
+    async (routeName, route) => {
+      const { gate } = makeGate({ caseInScope: null });
+      const operation = route.operations[0];
+
+      await expect(gate.evaluate(command({
+        operation,
+        actor: { type: 'SYSTEM', system: routeName },
+        sourceType: route.sourceType,
+        policyRef: route.policyRef,
+      }))).resolves.toMatchObject({
+        outcome: 'DENIED',
+        actorType: 'SYSTEM',
+        reasonCode: 'TENANT_CASE_SCOPE_MISMATCH',
+      });
+    },
+  );
+
+  it.each(Object.entries(CLAIM_ITEM_SYSTEM_WRITER_ROUTES))(
+    '%s actor cannot use a mismatched source/authority contract',
+    async (routeName, route) => {
+      const { gate, prisma } = makeGate();
+
+      await expect(gate.evaluate(command({
+        operation: route.operations[0],
+        actor: { type: 'SYSTEM', system: routeName },
+        sourceType: `${route.sourceType}:UNAUTHORIZED`,
+        policyRef: route.policyRef,
+      }))).resolves.toMatchObject({
+        outcome: 'DENIED',
+        actorType: 'SYSTEM',
+        reasonCode: 'SYSTEM_ACTOR_AUTHORITY_NOT_ROUTED',
+      });
+      expect(prisma.case.findFirst).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     [{}, 'EMPTY_UPDATE_PAYLOAD'],

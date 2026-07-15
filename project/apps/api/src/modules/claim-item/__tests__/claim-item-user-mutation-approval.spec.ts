@@ -39,7 +39,7 @@ const baseItem = {
 };
 
 function makeSvc(opts: {
-  eligible?: boolean;
+  gateDenied?: boolean;
   existingApproval?: any;
   item?: any;
 } = {}) {
@@ -71,10 +71,52 @@ function makeSvc(opts: {
     logInTransaction: jest.fn((auditTx, input) => auditTx.auditLog.create({ data: input })),
   };
   const officeApproval = {
-    isApproverEligible: jest.fn().mockResolvedValue(opts.eligible ?? true),
     createPendingRequest: jest.fn().mockResolvedValue({ id: 'appr-1' }),
   };
-  return { svc: new ClaimItemService(prisma, undefined, audit as any, officeApproval as any), prisma, tx, audit, officeApproval };
+  const writerRouter = {
+    evaluateHuman: jest.fn(async (input: any) => {
+      if (opts.gateDenied) {
+        return {
+          outcome: 'DENIED',
+          actorType: 'HUMAN',
+          reasonCode: 'OBJECT_PERMISSION_DENIED',
+          approvalRequired: false,
+          scope: { tenantId: input.tenantId, caseId: input.caseId, claimItemId: input.claimItemId },
+        };
+      }
+      const lowImpact =
+        input.operation === 'UPDATE' &&
+        Object.keys(input.payload).every((key) => ['description', 'referenceNo', 'sortOrder'].includes(key));
+      return lowImpact
+        ? {
+            outcome: 'DIRECT_ALLOWED',
+            actorType: 'HUMAN',
+            permission: 'EDIT_FINANCE',
+            permissionSource: 'CASE_STAFF',
+            approvalRequired: false,
+            scope: { tenantId: input.tenantId, caseId: input.caseId, claimItemId: input.claimItemId },
+          }
+        : {
+            outcome: 'OFFICE_APPROVAL_REQUIRED',
+            actorType: 'HUMAN',
+            permission: 'EDIT_FINANCE',
+            permissionSource: 'CASE_STAFF',
+            approvalRequired: true,
+            approvalActionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+            scope: { tenantId: input.tenantId, caseId: input.caseId, claimItemId: input.claimItemId },
+          };
+    }),
+  };
+  return {
+    svc: new ClaimItemService(
+      prisma, undefined, audit as any, officeApproval as any, writerRouter as any,
+    ),
+    prisma,
+    tx,
+    audit,
+    officeApproval,
+    writerRouter,
+  };
 }
 
 describe('OWN-29-D ClaimItemService user mutation gate', () => {
@@ -140,7 +182,7 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
   });
 
   it('metadata edit capability yoksa reddedilir', async () => {
-    const { svc, tx } = makeSvc({ eligible: false });
+    const { svc, tx } = makeSvc({ gateDenied: true });
 
     await expect(
       svc.updateFromUser('t1', 'u1', 'ci-1', { description: 'new' } as any),

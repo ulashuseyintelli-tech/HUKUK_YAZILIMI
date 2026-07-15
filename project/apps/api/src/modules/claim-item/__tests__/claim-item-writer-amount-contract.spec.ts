@@ -12,8 +12,13 @@ function makeWriterService(generatedItems: any[] = []) {
   const claimEngine = {
     generateClaimItems: jest.fn().mockReturnValue(generatedItems),
   };
+  const writerRouter = {
+    createSystemClaimItem: jest.fn(async ({ data }: any) => claimItem.create({ data })),
+  };
   return {
-    service: new ClaimItemService(prisma, claimEngine as any),
+    service: new ClaimItemService(
+      prisma, claimEngine as any, undefined, undefined, writerRouter as any,
+    ),
     claimItem,
   };
 }
@@ -75,7 +80,7 @@ describe('ClaimItem writer three-amount contract', () => {
       label: 'Asıl alacak',
     }]);
 
-    await service.generateFromRuleEngine('t1', 'case-1', 'SUB', {}, {});
+    await service.generateFromRuleEngine('t1', 'requester-1', 'case-1', 'SUB', {}, {});
 
     expect(claimItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ originalAmount: 0, demandedAmount: 0, amount: 0 }),

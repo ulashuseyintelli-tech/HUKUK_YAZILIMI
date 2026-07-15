@@ -17,7 +17,21 @@ function makeService(tx: any) {
   const prisma = {
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   } as any;
-  return { service: new CaseService(prisma, stub, stub, stub, stub, stub, stub, stub, stub, stub), prisma };
+  const writerRouter = {
+    createSystemClaimItem: jest.fn(async ({ data }: any, database: any) =>
+      database.claimItem.create({ data })),
+    updateSystemClaimItem: jest.fn(async ({ claimItemId, data }: any, database: any) =>
+      database.claimItem.update({ where: { id: claimItemId }, data })),
+    cancelSystemClaimItem: jest.fn(async ({ claimItemId }: any, database: any) =>
+      database.claimItem.update({ where: { id: claimItemId }, data: { status: 'CANCELLED' } })),
+  } as any;
+  return {
+    service: new CaseService(
+      prisma, stub, stub, stub, stub, stub, stub, stub, stub, stub, undefined, writerRouter,
+    ),
+    prisma,
+    writerRouter,
+  };
 }
 
 function makeDue(overrides: Record<string, any> = {}) {
@@ -75,7 +89,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       interestRate: 24,
       interestStartDate: '2026-01-02',
       interestEndDate: '2026-02-02',
-    });
+    }, 'requester-1');
 
     expect(tx.claimItem.create).toHaveBeenCalledTimes(1);
     expect(tx.claimItem.create).toHaveBeenCalledWith({
@@ -117,7 +131,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       amount: 500,
       dueDate: '2026-01-01',
       currency: 'TRY',
-    });
+    }, 'requester-1');
 
     expect(tx.claimItem.create).not.toHaveBeenCalled();
   });
@@ -175,7 +189,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       dueDate: '2026-01-01',
       interestAccrualStatus: 'NO_INTEREST',
       noInterestReason: 'faiz yok',
-    } as any)).rejects.toThrow(/authenticated server context/);
+    } as any, undefined as any)).rejects.toThrow(/authenticated server context/);
 
     expect(tx.due.create).not.toHaveBeenCalled();
   });
@@ -199,7 +213,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     const { service } = makeService(tx);
 
     await expect(
-      service.updateDue('tenant-1', 'case-1', 'due-1', { type: requested }),
+      service.updateDue('tenant-1', 'case-1', 'due-1', { type: requested }, 'requester-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(tx.due.update).not.toHaveBeenCalled();
@@ -223,7 +237,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     await service.updateDue('tenant-1', 'case-1', 'due-1', {
       type: DueType.NAFAKA,
       amount: 750,
-    });
+    }, 'requester-1');
 
     expect(tx.due.update).toHaveBeenCalled();
     expect(tx.claimItem.update).not.toHaveBeenCalled();
@@ -242,7 +256,9 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
     const { service } = makeService(tx);
 
-    await service.updateDue('tenant-1', 'case-1', 'due-1', { type: DueType.EXPENSE });
+    await service.updateDue(
+      'tenant-1', 'case-1', 'due-1', { type: DueType.EXPENSE }, 'requester-1',
+    );
 
     expect(tx.due.update).toHaveBeenCalled();
     expect(tx.claimItem.update).toHaveBeenCalledWith({
@@ -284,7 +300,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       interestRate: 48,
       interestStartDate: '2026-02-02',
       interestEndDate: '2026-04-01',
-    });
+    }, 'requester-1');
 
     expect(tx.claimItem.findMany).toHaveBeenCalledWith({
       where: {
@@ -337,7 +353,9 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       },
     } as any;
 
-    await (service as any).createClaimItemsFromDues(createTx, 'tenant-1', 'case-1', [makeDue()]);
+    await (service as any).createClaimItemsFromDues(
+      createTx, 'tenant-1', 'case-1', [makeDue()], 'requester-1',
+    );
     expect(createTx.claimItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         metadata: {
@@ -353,7 +371,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       amount: 1500,
       description: 'Açılış alacağı güncel',
       dueDate: '2026-03-01',
-    });
+    }, 'requester-1');
 
     expect(tx.claimItem.findMany).toHaveBeenCalledWith({
       where: {
@@ -388,7 +406,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       amount: 1250,
       description: 'Güncel ana alacak',
       dueDate: '2026-02-01',
-    });
+    }, 'requester-1');
 
     expect(tx.claimItem.findMany).toHaveBeenCalledWith({
       where: {
@@ -410,7 +428,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
     const { service } = makeService(tx);
 
-    await service.deleteDue('tenant-1', 'case-1', 'due-1');
+    await service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1');
 
     expect(tx.claimItem.update).toHaveBeenCalledWith({
       where: { id: 'claim-1' },
@@ -433,7 +451,9 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       },
     } as any;
 
-    await (service as any).createClaimItemsFromDues(createTx, 'tenant-1', 'case-1', [makeDue()]);
+    await (service as any).createClaimItemsFromDues(
+      createTx, 'tenant-1', 'case-1', [makeDue()], 'requester-1',
+    );
     expect(createTx.claimItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         metadata: {
@@ -445,7 +465,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       }),
     });
 
-    await service.deleteDue('tenant-1', 'case-1', 'due-1');
+    await service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1');
 
     expect(tx.claimItem.findMany).toHaveBeenCalledWith({
       where: {
@@ -475,7 +495,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         description: 'Ana alacak',
         amount: 1000,
         dueDate: '2026-01-01',
-      }),
+      }, 'requester-1'),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(tx.due.create).not.toHaveBeenCalled();
@@ -491,7 +511,9 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     const { service } = makeService(tx);
 
     await expect(
-      service.updateDue('tenant-other', 'case-1', 'due-1', { type: DueType.NAFAKA }),
+      service.updateDue(
+        'tenant-other', 'case-1', 'due-1', { type: DueType.NAFAKA }, 'requester-1',
+      ),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(tx.due.findFirst).not.toHaveBeenCalled();

@@ -54,6 +54,10 @@ function setup() {
   const prisma = {
     $transaction: jest.fn(async (cb: any) => cb(tx)),
   } as any;
+  const writerRouter = {
+    createSystemClaimItem: jest.fn(async ({ data }: any, database: any) =>
+      database.claimItem.create({ data })),
+  } as any;
   const service = new CaseService(
     prisma,
     auditService,
@@ -65,6 +69,8 @@ function setup() {
     stub,
     stub,
     stub,
+    undefined,
+    writerRouter,
   );
 
   (service as any).validateSubCategoryRules = jest.fn();

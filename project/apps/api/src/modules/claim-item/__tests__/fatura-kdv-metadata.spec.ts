@@ -7,8 +7,13 @@ describe('VER-05 PR-1C invoice KDV write-path convergence', () => {
     const claimItem = {
       create: jest.fn(async ({ data }: any) => ({ id: 'created', ...data })),
     };
+    const writerRouter = {
+      createSystemClaimItem: jest.fn(async ({ data }: any) => claimItem.create({ data })),
+    };
     return {
-      service: new ClaimItemService({ claimItem } as any),
+      service: new ClaimItemService(
+        { claimItem } as any, undefined, undefined, undefined, writerRouter as any,
+      ),
       claimItem,
     };
   }
@@ -16,7 +21,7 @@ describe('VER-05 PR-1C invoice KDV write-path convergence', () => {
   it('rejects FATURA auto-generate before any ClaimItem write', async () => {
     const { service, claimItem } = makeService();
 
-    await expect(service.autoGenerateFromDocument('t1', {
+    await expect(service.autoGenerateFromDocument('t1', 'requester-1', {
       documentType: DocumentSourceType.FATURA,
       caseId: 'c1',
       documentId: 'doc-1',
@@ -35,7 +40,7 @@ describe('VER-05 PR-1C invoice KDV write-path convergence', () => {
   ])('preserves %s auto-generate behavior', async (documentType, expectedCount) => {
     const { service, claimItem } = makeService();
 
-    await service.autoGenerateFromDocument('t1', {
+    await service.autoGenerateFromDocument('t1', 'requester-1', {
       documentType,
       caseId: 'c1',
       documentId: 'doc-1',
