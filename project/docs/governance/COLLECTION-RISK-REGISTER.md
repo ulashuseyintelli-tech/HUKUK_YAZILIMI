@@ -39,7 +39,7 @@ Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
 | COL-RISK-D01 | Legacy rapor kendi basit faiz formülünü taşıyor | report.service.ts:674-680 | OPEN | COL/OD-16; W4.1 |
 | COL-RISK-D02 | Legacy Hesap Özeti stub faiz + kendi oran formülleri (tazminat %10, komisyon 0.003, peşin harç 0.005, tahsil harcı 0.0455) primary payload olarak dönüyor | case.service.ts:3960-4008, 4097-4101 | OPEN | CAN-CUT-02; COL/OD-12/-16 |
 | COL-RISK-D03 | Dağınık yerel faiz formülleri: expense-request, document, fee-engine controller, web yeni-dosya formu (lint kuralı var, legacy kullanımlar duruyor) | expense-request.service.ts:629; document.service.ts:78; fee-engine.controller.ts:280-281; cases/new/page.tsx:4870-4871; .eslintrc.js:28-35 | OPEN | COL/OD-14/-16 |
-| COL-RISK-D04 | Canonical `CollectionService.create` dışında, aynı concurrency/idempotency kontratını taşımayan ikinci bir allocation giriş yolu bulunuyor — **P0 para bütünlüğü riski** | Ayrıntılı teknik kanıt (route/dosya-satır/reprodüksiyon) publication-safety gereği public governance'tan çıkarıldı; owner'a özel kanalda tutulur | OPEN — **handoff'ta olmayan YENİ bulgu** | COL/OD-04 + hedefli implementation patch (W1.2); TM3 §10 "ikinci tahsilat otoritesi yasağı" ile gerilim |
+| COL-RISK-D04 | Canonical `CollectionService.create` dışında, aynı concurrency/idempotency kontratını taşımayan ikinci bir allocation giriş yolu bulunuyor — **P0 para bütünlüğü riski** | Historical teknik kanıt publication-safety gereği owner'a özel kanalda korunur; COL/OD-04 disposition: **CLOSE** | **OPEN — DISPOSITION DECIDED / REMEDIATION PENDING** | COL/OD-04 RECORDED; W1.2 canonical merge sonrası hedefli close patch'i; TM3 §10 |
 | COL-RISK-D05 | Üçüncü XML yolu: `GET /template-engine/case/:caseId/xml` kendi "UYAP uyumlu" XML'ini üretiyor | template-engine.controller.ts:537 | OPEN | COL/OD-11; W4.3 |
 
 ## 3. GAP
@@ -47,12 +47,12 @@ Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
 | ID | Başlık | Kanıt | Statü | İlişki |
 |---|---|---|---|---|
 | COL-RISK-G01 | Collection create/cancel audit yazımı YOK; correlationId/causationId AuditLog şemasında ve domain kodunda YOK; commandId hiç kullanılmıyor; x-request-id domain katmanına taşınmıyor (event-düzeyi causedBy VAR) | collection modülünde auditLog.create=0; schema.prisma:4926-4958; request-id.middleware.ts:7-19 | OPEN | COL/OD-05; W1.6 |
-| COL-RISK-G02 | Allocation concurrency için açık bir kontrat yok: ana yolun koruması dolaylı bir yan etkiye dayanıyor ve yapı değişirse sessizce kaybolabilir — **P0 para bütünlüğü riski** | Ayrıntılı teknik kanıt (dosya-satır/reprodüksiyon) publication-safety gereği public governance'tan çıkarıldı; owner'a özel kanalda tutulur | OPEN | COL/OD-04 + hedefli implementation patch (W1.2) |
+| COL-RISK-G02 | Allocation concurrency için açık kontrat eksikliği (historical baseline; karar ile giderildi) | COL/OD-04: same-case transaction advisory lock; scope/key/boundary/failure/retry kontratı RECORDED. Runtime'ın event yan etkisinden açık allocation kontratına taşınması W1.2'dir. | **CLOSED — EFFECTIVE ON APPROVED MERGE** | COL/OD-04 RECORDED; W1.2 runtime remediation pending |
 | COL-RISK-G03 | Unapplied payment lifecycle'ı yok (overpayment ile örtük eşitlik riski) | Vocabulary TARGET; runtime karşılığı yok | OPEN | COL/OD-06; W2.3 |
 | COL-RISK-G04 | Partial refund/reversal + downstream (disposition sonrası) reversal kontratı yok | REC-AUTH-015 NO_GO; cancel-executor yalnız full | OPEN | COL/OD-09/-10; W2.4 |
 | COL-RISK-G05 | valueDate/date çift-tarih tek authority'ye bağlanmamış; canonical effective-date policy yok | Master Analysis bulgusu (Desktop 01 §32) | UNVERIFIED-THIS-PASS | COL/OD-03; W2.1 |
 | COL-RISK-G06 | Official as-of/snapshot yok | REC-AUTH-024/025; REC-GOV §14.4 | OPEN | COL/OD-13; W4.5 |
-| COL-RISK-G07 | RECEIVABLE–COLLECTION allocation sınır reconciliation'ı açık | REC-AUTH-011 "TM3-ACT28-LEGAL RECONCILIATION OPEN"; REC-AUTH-012 "DUPLICATE ALLOCATOR DISPOSITION OWNER-HELD" | OPEN | Suite ratification + COL/OD-04 |
+| COL-RISK-G07 | RECEIVABLE–COLLECTION allocation sınır reconciliation'ı açık | REC-AUTH-011 "TM3-ACT28-LEGAL RECONCILIATION OPEN"; COL/OD-04 ikinci allocation yolunu CLOSE olarak karara bağladı | OPEN — W1.2 REMEDIATION PENDING | Suite ratification + COL/OD-04 RECORDED + W1.2 |
 
 ## 4. OWNER-GATE
 
@@ -67,7 +67,7 @@ Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
 
 | ID | Başlık | Kanıt | Statü | İlişki |
 |---|---|---|---|---|
-| COL-RISK-T01 | Farklı-key CONCURRENT allocation/ClaimItem race testi yok (aynı-key race ve farklı-key sequential testleri VAR) | collection-payment-received.integration.spec.ts:390/418; grep race/concurrent=0 hedefli senaryoda | OPEN | Desktop 04/A2 harness planlı |
+| COL-RISK-T01 | Farklı-key concurrent allocation/ClaimItem race test eksikliği (historical baseline; giderildi) | Gerçek PostgreSQL, gerçek `CollectionService.create` zinciri, aynı Case/ClaimItem ve farklı idempotency key: 10/10 PASS; PR #1217, squash `4e8243e507b9887101600f6bef00e3ad5cc5b465` | **CLOSED** | A2 race safety confirmed; COL/OD-04 karar girdisi |
 | COL-RISK-T02 | Mid-transaction rollback (orphan satır) harness'ı yok | Desktop 04/A3 planlı | OPEN | COL-INV-031 kanıtı |
 | COL-RISK-T03 | Money-out sequential+concurrent replay harness eksikliği (historical baseline; giderildi) | Baseline: Desktop 04/A4 planlıydı; yalnız `client-payout.service.spec.ts:373-419/719-739` birim kanıtı vardı. Closure: gerçek PostgreSQL ve gerçek payout call chain'i üzerinde sequential+concurrent same-key replay harness'ı; 10/10 run PASS; PR #1265, squash `081bd9615429d24a6a205a2e6740daf2fd549770`; idempotency confirmed, concurrency safe, duplicate payout none. | **CLOSED** | W1.3 **CLOSED / CANONICAL**; `COL/OD-21` ayrı text-ratification olarak OPEN |
 | COL-RISK-T04 | Master Analysis'in "2.200 test pass / gerçek DB" kanıtı bu hesapta yeniden koşulmadı; golden JSON EOL determinism doğrulanmadı | Synthesis §3 evidence limitations | OPEN | Desktop 04/A1 |

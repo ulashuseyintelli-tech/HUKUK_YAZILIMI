@@ -55,12 +55,34 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 - BAĞIMLILIK: —. ETKİ: faiz kesinliği, COL/OD-02, -06, -14.
 
 ### COL/OD-04 — Allocation concurrency control kontratı
+- STATUS: **RECORDED** (2026-07-15) — authoritative kayıt:
+  `decision-log.md` § `2026-07-15 — RC-COL / COL/OD-04`.
 - SORU: Aynı case/currency/ClaimItem scope'unda eşzamanlılık hangi AÇIK mekanizmayla
   serialize edilir (per-case advisory lock kontratlaşır mı, serializable mı, unique guard mı)?
   Canonical create dışındaki ikinci allocation giriş yolunun kaderi ne?
 - KANIT: Koruma bugün DOLAYLI (OF-02); COL-INV-028 CURRENT-PARTIAL.
 - BAĞIMLILIK: race harness kanıtı (Desktop 04 / A2) karara girdi üretir; karar test sonrası.
 - ETKİ: W1.2 lock patch'i.
+- KARAR — CANONICAL LOCK: Mevcut PostgreSQL transaction-scoped same-case advisory lock
+  canonical allocation concurrency authority'dir. Scope, tenant doğrulaması yapılmış tek
+  `Case`'tir; currency'den bağımsız case-wide serialization uygulanır. Canonical key
+  `hashtextextended(caseId, 0)`'dır. `tenantId + idempotencyKey` lock'u ayrı idempotency
+  authority'sidir ve allocation lock'un yerine geçmez.
+- TRANSACTION BOUNDARY: Lock, ilk allocation-sensitive `ClaimItem` okumasından önce
+  canonical `CollectionService.create` Prisma transaction'ı içinde alınır; Collection,
+  event/outbox, ledger, allocation, `ClaimItem`, overpayment ve transaction-bound audit
+  etkileri commit veya rollback olana kadar tutulur.
+- FAILURE / RETRY: Lock timeout, deadlock veya transaction hatası fail-closed'dur ve bütün
+  transaction rollback edilir. Kısmi persistence ve transaction-içi kısmi retry yasaktır;
+  retry yalnız bütün canonical Collection command'inin aynı idempotency key ile yeniden
+  yürütülmesidir. `SERIALIZABLE`, schema, migration veya yeni unique guard gerekli değildir.
+- SECOND ALLOCATION PATH: **CLOSE**. Canonical `CollectionService.create` dışındaki ikinci
+  canlı allocation giriş yolu ayrı authority olarak bırakılamaz ve aynı lock'a bağlanarak
+  yaşatılamaz. Ortak internal allocator yalnız canonical Collection transaction'ı içinde,
+  canonical same-case lock altında kullanılabilir.
+- IMPLEMENTATION EFFECT: W1.2, bu kaydın approved merge'ine kadar
+  **BLOCKED — CANONICAL MERGE PENDING** durumundadır. Merge sonrasında ayrı owner
+  `GO-IMPLEMENT` gerekir; bu kayıt tek başına implementation authority üretmez.
 
 ### COL/OD-05 — Audit/correlation sınırı + GLOBAL-ACTOR-AUDIT-CONTEXT ratification
 - STATUS: **RECORDED** (2026-07-14) — authoritative kayıt:
@@ -236,7 +258,7 @@ COL/OD-01 ─┬─> COL/OD-07 (feragat/indirim/sulh) ──> COL/OD-08 (satisfa
 COL/OD-03 ─┬─> COL/OD-02 (dosya tutarı) ──> COL/OD-16 (consumer switch)
            ├─> COL/OD-06 (external settlement/unapplied)
            └─> COL/OD-15 (FX)
-COL/OD-04 (concurrency) <── kanıt girdisi: race harness (Desktop 04 / A2) — karar test SONRASI
+COL/OD-04 (RECORDED; canonical merge pending) <── A2 race harness kanıtı
 COL/OD-12 (cutover auth) <── owner-side gate: baseline + representative evidence
 COL/OD-13 (snapshot) ── ADR-013 hattı ── COL/OD-14 (fee TO-BE)
 COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
@@ -245,7 +267,7 @@ COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
 Önerilen oturum sırası (yalnız sıralama önerisidir, karar değildir):
 1) COL/OD-21 (COL/OD-18 RECORDED — 2026-07-15; client-settlement lane'i kilitlendi)
 2) COL/OD-01, -03 (COL/OD-05 RECORDED — 2026-07-14)
-3) COL/OD-04 (race harness kanıtı geldikten sonra)
+3) COL/OD-04 RECORDED (W1.2: BLOCKED — CANONICAL MERGE PENDING)
 4) Kuyruk B → Kuyruk C.
 
 ---

@@ -268,8 +268,8 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | COL-INV-018 | Yetkili FX contract'sız toplama/netleme yok | CURRENT-CONFIRMED | REC-AUTH-018/019; mismatch fail-closed |
 | COL-INV-019 | Floating point authority olamaz | CURRENT-PRINCIPLE | REC-ALLOC-004 (norm REC'te) |
 | COL-INV-020 | Minor-unit/rounding merkezî ve deterministic | CURRENT-PARTIAL | ADR-014 PR-3h cent hardening (calc-core scope) |
-| COL-INV-021 | Allocation satır toplamı uygulanan tutarı aşamaz | CURRENT-PRINCIPLE | Farklı-key concurrent kanıt açık — COL-RISK-T01/COL-RISK-G02 |
-| COL-INV-022 | Bileşen bazında allocation hukuki tutarı aşamaz | CURRENT-PRINCIPLE | Aynı test boşluğu — COL-RISK-T01 |
+| COL-INV-021 | Allocation satır toplamı uygulanan tutarı aşamaz | CURRENT-CONFIRMED (canonical create) | A2 gerçek PostgreSQL concurrency harness: PR #1217; COL-RISK-T01 CLOSED |
+| COL-INV-022 | Bileşen bazında allocation hukuki tutarı aşamaz | CURRENT-CONFIRMED (canonical create) | Aynı Case/ClaimItem, farklı-key A2 kanıtı: PR #1217; COL-RISK-T01 CLOSED |
 | COL-INV-023 | Kuruş remainder davranışı testle sabitlenir | CURRENT-PARTIAL | calc-core'da var; ledger hattında hedefli test COL/DEC W1.1 |
 
 ## 5.3. Transaction / concurrency / idempotency
@@ -280,10 +280,37 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | COL-INV-025 | Aynı key + aynı payload yeni etki üretmez | CURRENT-CONFIRMED | collection.service.ts:414-418; client-payout.service.ts:333-353 |
 | COL-INV-026 | Aynı key + farklı payload fail-closed conflict | CURRENT-CONFIRMED | IDEMPOTENCY_KEY_CONFLICT client-payout.service.ts:595-613 |
 | COL-INV-027 | Collection+ledger+allocation+overpayment aynı atomic boundary'de | CURRENT-CONFIRMED | collection.service.ts:393-666 tek $transaction |
-| COL-INV-028 | Aynı case/currency scope'ta concurrency over-allocation üretemez | CURRENT-PARTIAL | Ana yol dolaylı korumalı; canonical create dışında ikinci bir allocation giriş yolunun concurrency kontratı açık (P0; teknik ayrıntı public-repo dışında) — COL-RISK-D04/COL-RISK-G02; COL/OD-04 |
+| COL-INV-028 | Aynı case/currency scope'ta concurrency over-allocation üretemez | CURRENT-PARTIAL / TARGET-DECIDED | Canonical create A2 ile güvenli; explicit lock contract COL/OD-04 RECORDED; ikinci yol CLOSE, W1.2 remediation canonical merge pending — COL-RISK-D04/G02 |
 | COL-INV-029 | Money-out command'leri approval'a ek idempotent | CURRENT-CONFIRMED | dbind §5 + ClientPayout kontratı; CollectionDisposition collectionId @unique |
 | COL-INV-030 | Retry duplicate statement/journal/payable/payout üretemez | CURRENT-PARTIAL | P2002-safe yollar var; replay harness kanıtı planlı (Desktop 04 A4) |
 | COL-INV-031 | Mid-transaction failure orphan satır bırakamaz | CURRENT-PRINCIPLE | Tek-tx tasarım; rollback harness kanıtı planlı (Desktop 04 A3) |
+
+### COL-LOCK-001 — Canonical allocation concurrency contract (COL/OD-04)
+
+1. **Authority:** PostgreSQL transaction-scoped same-case advisory lock, canonical allocation
+   concurrency authority'dir. Event aggregate-version akışındaki mevcut kullanım A2 ile güvenli
+   bulunmuştur; W1.2 bu korumayı allocation kontratı olarak açıklaştırır ve event yan etkisine
+   sessiz bağımlılığı kaldırır.
+2. **Scope:** Tenant doğrulaması yapılmış tek `Case`; lock currency'den bağımsız case-wide
+   serialization uygular. Bu, aynı case/currency minimum invariantından daha sıkı bir kapsamdır.
+3. **Key:** `hashtextextended(caseId, 0)`. `Case.id` global primary key'dir. Mevcut
+   `tenantId + idempotencyKey` lock'u replay/conflict sınırıdır; allocation serialization
+   authority'si değildir ve bu lock'un yerine geçmez.
+4. **Transaction boundary:** Lock ilk allocation-sensitive `ClaimItem` okumasından önce
+   canonical `CollectionService.create` Prisma transaction'ı içinde alınır; Collection,
+   event/outbox, ledger, allocation, `ClaimItem`, overpayment ve transaction-bound audit
+   etkileri commit veya rollback olana kadar tutulur.
+5. **Failure / retry:** Lock timeout, deadlock veya transaction hatası fail-closed'dur; bütün
+   transaction rollback edilir. Kısmi persistence ve transaction-içi kısmi retry yasaktır.
+   Retry yalnız bütün canonical Collection command'inin aynı idempotency key ile yeniden
+   yürütülmesidir. Bu karar `SERIALIZABLE`, schema, migration veya yeni unique guard gerektirmez.
+6. **Second path:** Canonical `CollectionService.create` dışındaki ikinci canlı allocation
+   giriş yolunun disposition'ı **CLOSE**'dur. Ayrı authority bırakılamaz veya aynı lock'a
+   bağlanarak yaşatılamaz. Ortak internal allocator yalnız canonical Collection transaction'ı
+   içinde ve bu lock altında kullanılabilir. Bu karar daha geniş REC-AUTH-011/012
+   reconciliation'ını, ADR-014 allocator/cutover hattını veya runtime cutover'ı kapatmaz.
+7. **Implementation gate:** W1.2, COL/OD-04 canonical merge'ine kadar
+   `BLOCKED — CANONICAL MERGE PENDING`; merge sonrası ayrıca owner `GO-IMPLEMENT` gerektirir.
 
 ## 5.4. Zaman
 
