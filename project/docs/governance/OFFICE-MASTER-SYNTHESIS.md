@@ -40,7 +40,7 @@ Kaynak B: Yapıştırılan metin (repo dışı, loglanmamış önceki oturum).
 | Independent evidence certification | CONDITIONAL — line-level kanıt + yeni-PC baseline gerekir |
 | Implementation authorization | NOT GRANTED |
 | Overall transformation | CANONICAL IMPLEMENTATION NOT STARTED |
-| PR #1147 | OPEN / UNMERGED / NON-CANONICAL CANDIDATE (bkz. §11 — repository-wide dependency, OFFICE kapsamı dışı) |
+| PR #1147 | CLOSED / UNMERGED / SUPERSEDED BY PR #1291 (bkz. §11 — repository-wide dependency, OFFICE kapsamı dışı) |
 
 ## 4. Epistemic Status Legend
 
@@ -237,3 +237,5 @@ Bu belge **norm üretmez**. Yalnız `OFFICE-GOVERNANCE.md`'nin invariant'ları b
 ## 11. Reclassified Items
 
 **Former candidate `OD-20`** (PR #1147'nin kaderi): OFFICE domain owner-decision setinden çıkarılmıştır. Reclassified outside OFFICE domain authority — cross-program governance dependency (PR #1147 yalnız OFFICE'e özgü değil, repository-wide non-canonical candidate statüsü taşır). Bu madde artık `OFFICE-OWNER-DECISIONS.md`'de aktif bir dossier olarak yer almaz; `OFF/OD-20` numarası yeniden kullanılmaz. Kapanışı ayrı, repository-wide bir governance kararını gerektirir; OFFICE workstream'i tarafından tek başına yönlendirilemez.
+
+**CLIENT-SEC-H1 S1–S4 remediation** (2026-07-15) — bu repository-wide kapanış gerçekleşti: `PR #1291` MERGED / CANONICAL CODE EVIDENCE (squash SHA `328dcdf6689575da8a4849f4b632a737079c22ad`; CI 4/4 SUCCESS). `PR #1147` bu remediation ile SUPERSEDED oldu ve CLOSED edildi — **merge edilmedi**; `PR #1147`'nin kendi kodu main'e hiç girmedi, main'e giren `PR #1291`'in bağımsız yazılmış diff'idir (`PR #1147` hâlâ, tanımı gereği, non-canonical bir candidate olarak kalır — yalnız artık kapalı/superseded, açık/unmerged değil). **`OFF/OD-08` bu remediation ile ÇÖZÜLMEDİ/KAPANMADI** — daha geniş OFFICE intra-tenant access-scope kararı (manager/team/office modeli) hâlâ OPEN'dır; owner yalnız CLIENT-SEC-H1 S1–S4 kapsamı için dar, tek-seferlik ve emsal oluşturmayan bir override verdi (bkz. `decision-log.md` CLIENT-SEC-H1 kaydı; `OFFICE-DELIVERY-MANIFEST.md` STF-PRD-BOLA-001 RECORDED SECURITY EXCEPTION notu).

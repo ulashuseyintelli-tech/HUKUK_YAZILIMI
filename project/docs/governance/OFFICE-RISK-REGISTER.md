@@ -33,7 +33,13 @@ CURRENT CANONICAL EVIDENCE: NOT PUBLICLY DISCLOSED / REVALIDATION REQUIRED
 TARGET CONTROL / DESIRED OUTCOME: Object-scope evaluation tüm belge erişim yollarında zorunlu (OFF-INV-05)
 RELATED OFF-INV: OFF-INV-05 · RELATED OFF/OD: OFF/OD-08, OFF/OD-09
 GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: NONE
-NOTES: PR #1147 ile ilişkili olabilir; PR #1147 kendisi OFFICE kapsamı dışı (bkz. Master Synthesis §11).
+RISK STATUS (S1–S4 scope only): REMEDIATED / CLOSED — DOMAIN STATUS ve EVIDENCE STATUS alanları (yukarıda) BİLEREK DEĞİŞTİRİLMEDİ: bu belgenin kendi "Statü otoritesi ayrımı" kuralı (yukarıda) OPEN/CLOSED yürütme statüsünü yalnız `master-triage-register.md`'ye ayırır; bu satır yalnız S1–S4 remediation kanıtını taşır, global triage/domain-status kararı DEĞİLDİR.
+IMPLEMENTATION: PR #1291
+SQUASH SHA: 328dcdf6689575da8a4849f4b632a737079c22ad
+EVIDENCE: CI 4/4 SUCCESS (Architectural Guardrails, Test Suite, Web Tests vitest, Client Workspace Live Smoke) · S1–S4 regression coverage (4 test suite, 16 test, wired into CI)
+PREVIOUS PR: PR #1147 — CLOSED / SUPERSEDED BY PR #1291 (merge edilmedi; kodu main'e girmedi)
+SCOPE NOTE: Remediation, tespit edilen authentication/tenant-scope/object-ownership exposure'ını kapatır. OFF/OD-08'in daha geniş intra-tenant access-scope kararını ÇÖZMEZ.
+NOTES: PR #1147 kapatıldı (2026-07-15, superseded by PR #1291) — artık "OFFICE kapsamı dışı, ilişkili olabilir" belirsizliği taşımaz. Owner kararı ve tam kanıt zinciri: `decision-log.md` CLIENT-SEC-H1 kaydı; güncel PR #1147 durumu: `OFFICE-MASTER-SYNTHESIS.md` §11.
 
 **STF-PRD-SES-001** — Lifecycle/oturum kontrol boşluğu (offboarding sonrası erişim)
 SEVERITY: P1 · DOMAIN STATUS: CANDIDATE / NOT YET TRIAGED · EVIDENCE STATUS: REVALIDATION_REQUIRED
