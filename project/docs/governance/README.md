@@ -26,7 +26,8 @@ Dosyalar:
 - `RECEIVABLE-GOVERNANCE.md` - ratifiye Receivable Domain Governance ve alacak hattının
   tek domain giriş noktası (RATIFIED v1.0; repository-canonical upon approved merge).
 - `RCV-PHASE-1-AUTHORIZATION.md` - RCV program/register cross-pointer'ı, DEC-0030
-  disposition'ı, gerçekleşen phase progression ve bir sonraki task için owner-GO gate kaydı.
+  disposition'ı, gerçekleşen phase/workstream progression ve bir sonraki workstream/task için
+  owner-GO gate kaydı.
 - `OFFICE-GOVERNANCE.md` - aday OFFICE Domain Law (DRAFT / OWNER REVIEW REQUIRED).
 - `OFFICE-MASTER-SYNTHESIS.md` - OFFICE kanıt/gerekçe/senaryo katmanı (NON-NORMATIVE).
 - `OFFICE-RISK-REGISTER.md` - OFFICE domain risk dossier'i (global triage otoritesi değil).
