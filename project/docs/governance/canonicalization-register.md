@@ -1,7 +1,7 @@
 # Canonicalization Register
 
 **Durum:** Living document — governance kaydı, implementasyon değil.
-**Son güncelleme:** 2026-07-14 (RCV-GOV-002 Phase 2 authorization reconciliation preparation)
+**Son güncelleme:** 2026-07-15 (RCV-GOV-003 WS01 closure / WS02 entry reconciliation preparation)
 **Kaynak:** `canonicalizationsiniflandirmaraporu.md` (kullanıcı tarafından sağlanan sınıflandırma raporu) + repo kodu doğrulaması, base commit `e65dc08564c09bfbe6db09a680606ac3d4b1f828`.
 **İlişkili dosya:** `canonicalization-policy.md` (sınıflandırma tanımları ve uygulama kuralları için bağlayıcı kaynak; bu register yalnız veri/kayıt tutar).
 
@@ -115,6 +115,10 @@ Tanımların ve uygulama kurallarının bağlayıcı metni `canonicalization-pol
 - **RCV post-merge closure (2026-07-14):** PR #1222 squash `fcffb12941f33e36e6e42d9d742d0249eb210ab8` canonical main'e merge edilmiştir; DEC-0030 `CLOSED`, `RCV-P0-CP-01` entry condition `SATISFIED`dır. Owner GO alanı `UNSET` olduğundan `RCV-P0-BAR-0021:PHASE1_ENTRY` `OPEN` ve Phase 1 `NOT AUTHORIZED` kalır. Bu closure CAN-CUT-02'nin kendi status'unu değiştirmez: **OPEN / needs-owner-decision**; representative evidence, PR-11 ve runtime cutover yetkisizdir.
 
 - **RCV-GOV-002 progression reconciliation (2026-07-14; canonical upon approved merge):** RCV-GOV-001 kapanışındaki `Owner GO = UNSET / Phase 1 NOT AUTHORIZED` durumu tarihsel olarak korunur. Sonraki explicit owner `GO-PHASE-1` ve task-scoped brief zinciri owner-supplied progression baseline olarak kaydedilir: Phase 1 Analysis, Consolidation, Target Architecture ve Implementation Roadmap `COMPLETE`; `RCV-P2-WS01-P01` PR #1249 / squash `52b35a0d668d6efdc043dde672b47fdd6f320cb1` ile `CLOSED`; next eligible task `RCV-P2-WS01-P02`dir fakat implementation authority **NOT GRANTED / OWNER GO REQUIRED**. Yeni Master Register ID veya program/register kimliği oluşturulmaz. CAN-CUT-02 bu kayıtla kapanmaz: **OPEN / needs-owner-decision**; `CAN-CUT-01/VER-05`, representative evidence/acceptance, PR-11, consumer switch, runtime cutover ve external-owner gate'leri değişmez.
+
+- **RCV-GOV-002 post-merge closure (2026-07-14):** PR #1250 squash `d06a6743045beae4b0b2c79735a638633d833d0a` canonical main'e merge edilmiş ve RCV-GOV-002 `CLOSED / CANONICAL` olmuştur. Bu closure CAN-CUT-02'yi kapatmamış veya WS01-P02 authority'si üretmemiştir.
+
+- **RCV-GOV-003 WS01 closure / WS02 entry reconciliation (2026-07-15; canonical upon approved merge):** `RCV-P2-WS01-P01` PR #1249 / `52b35a0d668d6efdc043dde672b47fdd6f320cb1`, P02 PR #1254 / `919e6e2e97fdc22efd9d3655682d4cabc4425cd9`, P03 PR #1259 / `fe4c954af49172c37502a0630adb048c441208f1` ve P04 PR #1264 / `c1df2f2e59fcd6f0ad62d7429eaef903cf197cbd` ile `CLOSED`dır. Owner-supplied disposition'a göre `WS01 roadmap = COMPLETE`; P01–P04 teknik paket zinciri tamamlanmış ve `WS01 = TECHNICALLY COMPLETE` olmuştur. Next eligible workstream `WS02 — Ingress, Lifecycle & Provenance`, next eligible task `RCV-P2-WS02-P01`dir; WS02 implementation authority **NOT GRANTED / OWNER GO REQUIRED** ve WS02 `NOT STARTED`dır. WS03–WS09 `NOT STARTED`dır. Yeni Master Register ID veya program/register kimliği oluşturulmaz. Bu teknik workstream kapanışı CAN-CUT-02'yi kapatmaz: **OPEN / needs-owner-decision**; `CAN-CUT-01/VER-05`, owner/legal/evidence/acceptance, representative evidence, PR-11, consumer switch, runtime cutover ve external-owner gate'leri değişmez.
 
 ### CAN-CUT-03 — DebtorAddress
 - **Required verification:** Bare ve nested route'ların davranış eşdeğerliği (`debtor-address-canonical.spec.ts` kapsamının yeterliliği).
