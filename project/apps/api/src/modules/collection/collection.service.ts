@@ -27,7 +27,7 @@ import {
   pickDefinedCollectionUpdateData,
 } from "./collection-safety.helper";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
-import { OccurredAtConfidence, ActorType } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
+import { OccurredAtConfidence } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
 import { SummaryEngineService } from "../summary-engine/summary-engine.service";
 import {
   AllocationBreakdown,
@@ -59,6 +59,7 @@ import {
   COLLECTION_VOID_TARGET_TYPE,
   executeCollectionCancelInTransaction,
 } from "./collection-cancel-executor";
+import { resolveCanonicalCollectionReceiptCommand } from "./collection-receipt-command";
 
 // ─── Source → Header Mapping ─────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ const EXTERNAL_SIGNED_SOURCES = new Set<string>([
 const EXTERNAL_SOURCES = new Set<string>([
   ...EXTERNAL_SIGNED_SOURCES,
   CollectionSource.THIRD_PARTY,
+  CollectionSource.BANK_INTEGRATION,
 ]);
 
 // P0-1: idempotent replay/conflict için mevcut tahsilatın payload alanları.
@@ -81,6 +83,9 @@ const IDEMPOTENCY_PAYLOAD_SELECT = {
   amount: true,
   currency: true,
   date: true,
+  valueDate: true,
+  type: true,
+  channel: true,
   sourceType: true,
   sourceId: true,
   caseDebtorId: true,
@@ -136,13 +141,6 @@ function hasUnsupportedRestrictedPaymentSignal(dto: CreateCollectionDto): boolea
     (dto.sourceType && RESTRICTED_OVERPAYMENT_SOURCES.has(dto.sourceType)) ||
     (dto.channel && RESTRICTED_OVERPAYMENT_CHANNELS.has(dto.channel)),
   );
-}
-
-function mapSourceToActor(sourceType: CollectionSource | undefined, userId?: string): { type: ActorType; userId?: string; externalSystem?: string } {
-  if (!sourceType || sourceType === CollectionSource.MANUAL || sourceType === CollectionSource.SETTLEMENT) {
-    return { type: 'HUMAN', userId: userId || 'unknown' };
-  }
-  return { type: 'EXTERNAL', externalSystem: sourceType };
 }
 
 function mapSourceToConfidence(sourceType: CollectionSource | undefined): OccurredAtConfidence {
@@ -410,6 +408,23 @@ export class CollectionService {
     userId?: string,
     requestContext: CollectionRequestContext = {},
   ) {
+    const traceSeed = createCollectionMutationTrace(
+      requestContext.correlationId,
+      requestContext.causationId,
+      requestContext.producer,
+    );
+    const command = resolveCanonicalCollectionReceiptCommand({
+      tenantId,
+      dto,
+      userId,
+      requestContext,
+      trace: traceSeed,
+    });
+    const trace = command.trace;
+    tenantId = command.tenantId;
+    dto = command.dto;
+    const actor = command.actor;
+
     // Late-entry warning (audit flag, no reject)
     const daysDiff = Math.floor(
       (Date.now() - new Date(dto.date).getTime()) / (1000 * 60 * 60 * 24)
@@ -435,8 +450,6 @@ export class CollectionService {
       this.assertSameCollectionPayload(preExisting, dto);
       return this.findById(tenantId, preExisting.id);
     }
-
-    const trace = createCollectionMutationTrace(requestContext.correlationId);
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -533,7 +546,6 @@ export class CollectionService {
 
       // ── 4. PAYMENT_RECEIVED event append (HR-39: same-tx) ───────────────
       const confidence = mapSourceToConfidence(dto.sourceType as CollectionSource);
-      const actor = mapSourceToActor(dto.sourceType as CollectionSource, userId);
       const paymentEventId = randomUUID();
 
       await this.domainEventIngestService.appendInTransaction(tx, {
@@ -548,6 +560,7 @@ export class CollectionService {
           actor,
           correlationId: trace.correlationId,
           commandId: trace.commandId,
+          causationId: trace.causationId,
           tenantId,
         },
         payload: {
@@ -557,6 +570,8 @@ export class CollectionService {
           channel: dto.channel || 'BANKA',
           sourceType: dto.sourceType || 'MANUAL',
           sourceId: dto.sourceId,
+          sourceIdentity: command.sourceIdentity,
+          producer: command.producer,
           forDebtorId: dto.caseDebtorId,
           description: dto.description,
           bankName: dto.bankName,
@@ -587,6 +602,8 @@ export class CollectionService {
             collectionId: collection.id,
             correlationId: trace.correlationId,
             commandId: trace.commandId,
+            causationId: trace.causationId,
+            producer: command.producer,
           },
         );
         if (ledger.allocated && ledger.ledgerEntry) {
@@ -837,6 +854,9 @@ export class CollectionService {
       amount: Prisma.Decimal | number | string;
       currency: string;
       date: Date;
+      valueDate: Date | null;
+      type: string;
+      channel: string;
       sourceType: string | null;
       sourceId: string | null;
       caseDebtorId: string | null;
@@ -847,11 +867,18 @@ export class CollectionService {
       Number(existing.amount).toFixed(2) === Number(dto.amount).toFixed(2);
     const sameDate =
       new Date(existing.date).getTime() === new Date(dto.date).getTime();
+    const sameValueDate = existing.valueDate === null
+      ? !dto.valueDate
+      : Boolean(dto.valueDate) &&
+        new Date(existing.valueDate).getTime() === new Date(dto.valueDate as string).getTime();
     const same =
       existing.caseId === dto.caseId &&
       sameAmount &&
       sameDate &&
+      sameValueDate &&
       String(existing.currency) === String(dto.currency || "TRY") &&
+      String(existing.type) === String(dto.type) &&
+      String(existing.channel) === String(dto.channel || "BANKA") &&
       (existing.sourceType ?? null) === (dto.sourceType ?? null) &&
       (existing.sourceId ?? null) === (dto.sourceId ?? null) &&
       (existing.caseDebtorId ?? null) === (dto.caseDebtorId ?? null);
@@ -859,7 +886,7 @@ export class CollectionService {
       throw new ConflictException({
         code: "IDEMPOTENCY_KEY_CONFLICT",
         message:
-          "Aynı idempotencyKey farklı payload ile kullanıldı (amount/caseId/date/source/caseDebtorId/currency)",
+          "Aynı idempotencyKey farklı payload ile kullanıldı (amount/caseId/date/valueDate/type/channel/source/caseDebtorId/currency)",
       });
     }
   }
@@ -1137,6 +1164,7 @@ export class CollectionService {
         status: kind,
         ...(trace ? { correlationId: trace.correlationId, commandId: trace.commandId } : {}),
         ...(trace?.causationId ? { causationId: trace.causationId } : {}),
+        ...(trace?.producer ? { producer: trace.producer } : {}),
       },
       payload,
     };

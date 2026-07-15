@@ -334,7 +334,7 @@ describe("PR-L6d operational create passive guards", () => {
     expect(thirdParty.prisma.externalCase.create).not.toHaveBeenCalled();
   });
 
-  it("late-result ve tarihsel akışlar passive guard çağırmadan devam eder", async () => {
+  it("late-result/tarihsel akışlar guard dışı kalır; secondary external receipt write fail-closed kapanır", async () => {
     const asset = makeAssetQueryService();
     await asset.service.updateQueryResult(tenantId, "asset-query-1", { result: "YES" } as any);
     expect(asset.guard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
@@ -364,12 +364,16 @@ describe("PR-L6d operational create passive guards", () => {
       responseDate: "2026-01-02",
       responseContent: "Cevap",
     });
-    await thirdParty.service.addExternalCaseCollection(tenantId, "external-case-1", {
-      amount: 100,
-      syncToMainCase: false,
-    });
+    await expect(thirdParty.service.addExternalCaseCollection(
+      tenantId,
+      "external-case-1",
+      { amount: 100, syncToMainCase: false },
+      "user-1",
+    )).rejects.toMatchObject({ response: expect.objectContaining({
+      code: "EXTERNAL_RECEIPT_REQUIRES_CANONICAL_COLLECTION",
+    }) });
     expect(thirdParty.guard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
     expect(thirdParty.prisma.thirdParty.update).toHaveBeenCalledTimes(1);
-    expect(thirdParty.prisma.externalCase.update).toHaveBeenCalledTimes(1);
+    expect(thirdParty.prisma.externalCase.update).not.toHaveBeenCalled();
   });
 });

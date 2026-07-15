@@ -37,7 +37,11 @@ export class CollectionController {
     @Body() dto: CreateCollectionDto,
     @Req() req: any,
   ) {
-    return this.collectionService.create(tenantId, dto, userId, { correlationId: getRequestId(req) });
+    return this.collectionService.create(tenantId, dto, userId, {
+      correlationId: getRequestId(req),
+      producer: 'COLLECTION_PUBLIC_API',
+      actor: { type: 'HUMAN', userId },
+    });
   }
 
   /**

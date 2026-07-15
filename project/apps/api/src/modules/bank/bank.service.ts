@@ -1,9 +1,19 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { maskIban } from '../../common/pii-mask.util';
 import { CollectionService } from '../collection/collection.service';
-import { CollectionSource } from '../collection/dto/collection.dto';
+import {
+  CollectionChannel,
+  CollectionSource,
+  CollectionType,
+} from '../collection/dto/collection.dto';
 
 /**
  * Banka Entegrasyon Servisi
@@ -361,6 +371,13 @@ export class BankService {
     tenantId: string,
     correlationId?: string,
   ) {
+    if (!caseId?.trim()) {
+      throw new BadRequestException({ code: 'BANK_RECEIPT_CASE_REQUIRED' });
+    }
+    if (!userId?.trim()) {
+      throw new BadRequestException({ code: 'BANK_RECEIPT_ACTOR_REQUIRED' });
+    }
+
     const transaction = await this.db.bankTransaction.findFirst({
       where: { id: transactionId, tenantId },
     });
@@ -369,8 +386,32 @@ export class BankService {
       throw new NotFoundException('İşlem bulunamadı');
     }
 
+    if (transaction.transactionType !== 'INCOMING') {
+      throw new BadRequestException({
+        code: 'BANK_RECEIPT_INCOMING_REQUIRED',
+        message: 'Yalnız gelen banka hareketi tahsilat adayı olabilir.',
+      });
+    }
+
+    const amount = Number(transaction.amount);
+    if (!Number.isFinite(amount) || amount <= 0 || !String(transaction.currency || '').trim()) {
+      throw new BadRequestException({
+        code: 'BANK_RECEIPT_CANDIDATE_INVALID',
+        message: 'Banka tahsilat adayı pozitif tutar ve para birimi taşımalıdır.',
+      });
+    }
+
     if (transaction.isMatched) {
-      throw new Error('Bu işlem zaten eşleştirilmiş');
+      if (transaction.matchedCaseId === caseId && transaction.matchedCollectionId) {
+        const collection = await this.collectionService.findById(tenantId, transaction.matchedCollectionId);
+        return { transaction, collection };
+      }
+      throw new ConflictException({
+        code: transaction.matchedCollectionId
+          ? 'BANK_TRANSACTION_ALREADY_MATCHED'
+          : 'BANK_TRANSACTION_MATCH_INCOMPLETE',
+        message: 'Banka hareketinin mevcut eşleşmesi canonical Collection ile uzlaştırılamadı.',
+      });
     }
 
     // G3d: kanonik yola delege (closed/duplicate guard + PAYMENT_RECEIVED + G3a ledger).
@@ -382,18 +423,26 @@ export class BankService {
         tenantId,
         {
           caseId,
-          amount: transaction.amount,
-          currency: transaction.currency,
-          date: transaction.transactionDate,
-          channel: 'BANKA',
+          idempotencyKey: `bank-transaction:${transaction.id}`,
+          amount,
+          currency: String(transaction.currency).trim().toUpperCase(),
+          type: CollectionType.BANK_TRANSFER,
+          channel: CollectionChannel.BANKA,
+          date: new Date(transaction.transactionDate).toISOString(),
+          valueDate: transaction.valueDate ? new Date(transaction.valueDate).toISOString() : undefined,
           sourceType: CollectionSource.BANK_INTEGRATION,
+          sourceId: transaction.id,
           description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
+          receiptNo: transaction.referenceNo || undefined,
         } as any,
         userId,
       ] as const;
-      collection = correlationId
-        ? await this.collectionService.create(...collectionArgs, { correlationId })
-        : await this.collectionService.create(...collectionArgs);
+      collection = await this.collectionService.create(...collectionArgs, {
+        correlationId,
+        causationId: `bank-transaction:${transaction.id}`,
+        producer: 'BANK_TRANSACTION_MATCH',
+        actor: { type: 'HUMAN', userId },
+      });
     } catch (err: any) {
       // Closed-case (BadRequestException) vb. → eşleşme YAPILMAZ, raporlanır.
       this.logger.warn(
@@ -447,18 +496,10 @@ export class BankService {
       });
 
       if (caseData) {
-        // Otomatik eşleştir
-        await this.db.bankTransaction.update({
-          where: { id: transactionId },
-          data: {
-            isMatched: true,
-            matchedCaseId: caseData.id,
-            matchedAt: new Date(),
-          },
-        });
-
-        this.logger.log(`Otomatik eşleştirme: ${transaction.referenceNo} -> ${fileNumber}`);
-        return true;
+        // Bank adapter yalnız aday üretir. İnsan onayı + canonical Collection create
+        // olmadan isMatched/matchedCaseId/matchedAt receipt fact'i gibi persist edilmez.
+        this.logger.log(`Banka eşleştirme adayı: ${transaction.referenceNo} -> ${fileNumber}`);
+        return false;
       }
     }
 

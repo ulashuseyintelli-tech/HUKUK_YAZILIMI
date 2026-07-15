@@ -299,6 +299,7 @@ describeWithDisposableDb('ADR-014 PR-1B CollectionService cancellation reversal 
       caseId: fixture.caseId,
       correlationId,
       actorType: 'HUMAN',
+      producer: 'COLLECTION_SERVICE_COMPATIBILITY',
       status: 'CONFIRMED',
       amount: '2000',
       currency: 'TRY',
@@ -316,6 +317,7 @@ describeWithDisposableDb('ADR-014 PR-1B CollectionService cancellation reversal 
       'ledgerEntryIds',
       'occurredAt',
       'outboxIdempotencyKey',
+      'producer',
       'status',
     ]);
     expect(JSON.stringify(createAudit)).not.toContain('must-not-enter-audit');

@@ -154,8 +154,8 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
     expect(guard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
   });
 
-  // ─── addExternalCaseCollection: AÇIK ÜRÜN KARARI (late-result) → şu an guard YOK (kasıtlı) ───
-  it("KARAKTERİZASYON: addExternalCaseCollection şu an lifecycle guard ÇAĞIRMAZ (tahsilat=late-result, ürün kararı bekliyor)", async () => {
+  // ─── addExternalCaseCollection: late-result guard kararı değişmez; secondary receipt yolu kapanır ───
+  it("addExternalCaseCollection lifecycle guard çağırmaz; canonical Collection olmadan projection yazmaz", async () => {
     const prisma = makePrisma();
     prisma.externalCase.findFirst.mockResolvedValue({
       ...ec,
@@ -168,9 +168,18 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
     const guard = makeGuard(false);
     const svc = makeService(prisma, guard);
 
-    await svc.addExternalCaseCollection(TENANT, "ec1", { amount: 50, syncToMainCase: false });
-    // Bilinçli: bu metoda Gate-2 guard'ı EKLENMEDİ (finansal late-result; bloklama vs istisna kararı ulas'ta).
+    await expect(
+      svc.addExternalCaseCollection(
+        TENANT,
+        "ec1",
+        { amount: 50, syncToMainCase: false },
+        "user-1",
+      ),
+    ).rejects.toMatchObject({ response: expect.objectContaining({
+      code: "EXTERNAL_RECEIPT_REQUIRES_CANONICAL_COLLECTION",
+    }) });
     expect(guard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
+    expect(prisma.externalCase.update).not.toHaveBeenCalled();
   });
 
   // ─── caseDebtorId-bazlı create'ler (zaten guard'lıydı; spec gereği explicit kapsam) ───

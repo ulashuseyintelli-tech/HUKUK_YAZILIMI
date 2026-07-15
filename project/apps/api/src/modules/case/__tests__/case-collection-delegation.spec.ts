@@ -82,6 +82,11 @@ describe('CaseService collection delegation (G3d)', () => {
         date: '2026-01-01',
       }),
       'u1',
+      {
+        correlationId: undefined,
+        producer: 'CASE_COLLECTION_COMPATIBILITY_API',
+        actor: { type: 'HUMAN', userId: 'u1' },
+      },
     );
   });
 

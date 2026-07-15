@@ -565,6 +565,8 @@ export class SummaryEngineService implements OnModuleInit {
       collectionId?: string;
       correlationId?: string;
       commandId?: string;
+      causationId?: string;
+      producer?: string;
     } = {},
   ): Promise<{
     allocated: boolean;
@@ -647,6 +649,8 @@ export class SummaryEngineService implements OnModuleInit {
         metadata: {
           ...(options.correlationId ? { correlationId: options.correlationId } : {}),
           ...(options.commandId ? { commandId: options.commandId } : {}),
+          ...(options.causationId ? { causationId: options.causationId } : {}),
+          ...(options.producer ? { producer: options.producer } : {}),
         },
         allocations: {
           create: allocations.map((a) => ({
