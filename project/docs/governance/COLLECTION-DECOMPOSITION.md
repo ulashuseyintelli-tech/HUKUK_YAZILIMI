@@ -42,7 +42,7 @@ PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
 |---|---|---|---|---|
 | W0.1 | Repository baseline acceptance | Handoff kabul + delta reconcile | **KAPANDI** — Handoff Acceptance Report (2026-07-13, ACCEPTED_WITH_DELTA @ beb7d673) | Claude |
 | W0.2 | Collection Governance suite materialization | 5 belge + matrisler owner-review taslağı | **BU FAZ** — taslaklar üretildi; sırada owner review → docs-only PR | Claude |
-| W0.3 | Owner decision ratification session(ları) | COL/OD kuyruklarının karara bağlanması | **PARTIAL** — RECORDED: COL/OD-18/-21/-05; OPEN kökler: COL/OD-01/-03 | Owner (+ChatGPT) |
+| W0.3 | Owner decision ratification session(ları) | COL/OD kuyruklarının karara bağlanması | **PARTIAL** — RECORDED: COL/OD-18/-21/-05/-03; OPEN kök: COL/OD-01 | Owner (+ChatGPT) |
 | W0.4 | Master Register / backlog alignment | Suite + kararların register'a bağlanması | W0.2 PR + W0.3 kayıtları | Claude |
 
 ## PHASE 1 — P0 FINANCIAL SAFETY
@@ -70,8 +70,8 @@ implementation authority üretmez.
 
 | Wave | Workstream | Gate |
 |---|---|---|
-| W2.1 | Canonical effective-date policy | COL/OD-03 |
-| W2.2 | confirmedAt / external settlement | COL/OD-06 (+COL/OD-03) |
+| W2.1 | Canonical effective-date policy | COL/OD-03 **RECORDED / CONTRACT CANONICAL**; implementation ve Phase 2 cutover NOT AUTHORIZED |
+| W2.2 | confirmedAt / external settlement | COL/OD-06 OPEN (+COL/OD-03 RECORDED); Phase 2 NOT AUTHORIZED |
 | W2.3 | Unapplied payment lifecycle | COL/OD-06 |
 | W2.4 | Refund / downstream reversal | COL/OD-09, -10 (+COL/OD-01) |
 | W2.5 | Claim satisfaction / re-open | COL/OD-07, -08 |
@@ -111,14 +111,14 @@ implementation authority üretmez.
 ## Dependency Matrix (faz-üstü)
 
 ```text
-W0.2 (suite) ──> W0.3 (RECORDED: -18/-21/-05; OPEN: -01/-03) ──> W0.4 (register)
+W0.2 (suite) ──> W0.3 (RECORDED: -18/-21/-05/-03; OPEN: -01) ──> W0.4 (register)
 W1.1             : CLOSED / CANONICAL — PR #1214 + #1223
 W1.2             : CLOSED / CANONICAL — PR #1217 + COL/OD-04 + PR #1279
 W1.3             : CLOSED / CANONICAL — PR #1265 @ 081bd961
 W1.4             : CLOSED / CANONICAL — PR #1229 @ 4c1968ce
 W1.5             : CLOSED / CANONICAL — PR #1236 @ fbef6915
 W1.6             : CLOSED / CANONICAL — COL/OD-05 + PR #1246 @ c7f55da4
-PHASE 2    <── COL/OD-01, -03, -06..-10
+PHASE 2    <── COL/OD-01, -06..-10 (COL/OD-03 RECORDED; Phase 2 NOT AUTHORIZED)
 PHASE 3    <── COL/OD-02, -14, -15, -17, -19, -20
 PHASE 4    <── PHASE 1 tamamı + COL/OD-11, -12, -13, -16 + CAN-CUT-01/02
 PHASE 5    <── PHASE 4

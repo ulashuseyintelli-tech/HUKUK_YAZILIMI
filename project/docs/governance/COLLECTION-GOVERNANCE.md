@@ -350,10 +350,28 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | ID | Kural | Lifecycle | Kanıt/Kaynak |
 |---|---|---|---|
 | COL-INV-032 | createdAt hukuki etki tarihi değildir | CURRENT-PRINCIPLE | Desktop 01 §14 |
-| COL-INV-033 | transactionDate/valueDate/effectiveDate/confirmedAt/externalSettledAt ayrıdır | TARGET-OWNER-GATED | Tek authority bağlanmadı — COL/OD-03; COL-RISK-G05 |
-| COL-INV-034 | Faiz+legal balance tek canonical effectiveDate policy tüketir | TARGET-OWNER-GATED | COL/OD-03 |
+| COL-INV-033 | transactionDate/valueDate/effectiveDate/confirmedAt/externalSettledAt ayrıdır | CURRENT-CANONICAL POLICY | COL/OD-03 Option A RECORDED; raw source tarihleri provenance olarak korunur |
+| COL-INV-034 | Faiz+legal balance yalnız canonical effectiveDate policy tüketir | CURRENT-CANONICAL POLICY | COL/OD-03 Option A; COL-TIME-001 |
 | COL-INV-035 | Raw source tarihleri provenance olarak korunur | CURRENT-PRINCIPLE | REC §8.1 provenance ilkesi |
 | COL-INV-036 | Official as-of/known-at sonucu snapshot authority'siz iddia edilemez | CURRENT-CONFIRMED (yasak olarak) | REC-AUTH-024/025; official snapshot yok |
+
+### COL-TIME-001 — Canonical effective-date contract (COL/OD-03 Option A)
+
+1. **Authority:** Faiz ve legal balance yalnız kendi calculation contract'ındaki canonical
+   `effectiveDate` değerini tüketir. Aynı hesapta `transactionDate`, `valueDate`, `confirmedAt`,
+   `createdAt` veya başka bir ham tarih competing legal-time authority olamaz.
+2. **Resolver:** Açık ve yetkili bir canonical `effectiveDate` varsa bu değer kullanılır. Yoksa
+   current-compatible resolver `LedgerEntry.entryDate` değerini; Ledger bulunmayan mevcut
+   Collection fallback'inde `Collection.date` değerini kullanır.
+3. **Provenance:** `valueDate`, `confirmedAt`, `transactionDate`, `externalSettledAt` ve diğer
+   ham tarih alanları kaynağı ve lifecycle kanıtını korur. `valueDate` veya `confirmedAt` salt
+   mevcut olmaları nedeniyle hukuki etki tarihi hâline gelmez.
+4. **Fail-closed:** Resolver'ın zorunlu tarih girdisi eksikse veya canonical authority'ler
+   çelişiyorsa tarih tahmin edilmez; faiz/legal-balance sonucu fail-closed kalır.
+5. **Scope boundary:** Bu karar snapshot, migration, backfill, geçmiş kayıtların yeniden
+   hesaplanması, consumer switch veya Phase 2 runtime cutover yetkisi vermez. Accounting
+   Journal gibi legal-balance authority'si olmayan modellerde aynı adlı alanların mevcut
+   kullanımı bu kontratla kendiliğinden legal authority kazanmaz.
 
 ## 5.5. Actor / tenant / audit
 
