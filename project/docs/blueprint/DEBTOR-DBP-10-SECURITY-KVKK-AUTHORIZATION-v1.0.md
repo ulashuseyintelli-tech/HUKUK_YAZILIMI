@@ -9,10 +9,13 @@
 > tenant izolasyonu ≠ iş-yetkilendirme.** İki AYRI güvenlik gate: CURRENT PRODUCTION SECURITY GATE
 > ≠ DIGITAL TWIN SECURITY GATE (Twin HOLD mevcut üretim risklerini ERTELEMEZ).
 >
-> **GÜVENLİK REDAKSİYONU (SYS-AUTH-012 hizası):** bu belge açık üretim güvenlik bulgularının
-> KİMLİĞİNİ / SEVERITY'sini / gate-etkisini / kapanış-koşulunu KORUR; ancak exploit/bypass
-> mekanizmasını, kesin route/method adlarını ve enumeration ayrıntılarını REDAKTE eder. Ayrıntılı
-> teknik disposition owner-özel kanal + DBP-11 Master Blocker Register kuyruğundadır.
+> **GÜVENLİK SINIRI (owner-directed public-safe boundary kararı, 2026-07-16; SYS-AUTH-012 hizası):**
+> yaşayan üretim güvenlik bulgularının teknik mekanizması, etkilenen yüzey/route/servis kombinasyonu,
+> enumeration/bypass yöntemi ve ayrıntılı remediation adımları bu genel-erişimli repoya YAZILMAZ.
+> Public repo yalnız şunu taşır: restricted-security-register'ın VARLIĞI · Implementation Entry =
+> HOLD etkisi · ilgili remediation'ın AYRI owner GO-IMPLEMENT gerektirdiği. Ayrıntılı bulgu register'ı
+> owner-local/restricted konumdadır (git-tracked DEĞİL; repository/PR/CI-artifact DEĞİL; cloud/
+> external/3rd-party-AI DEĞİL).
 
 ---
 
@@ -71,7 +74,8 @@ DEC ∈ { CANONICALLY DEFINED (CD) · PROPOSED · OWNER DECISION REQUIRED (ODR) 
         REQUIRED (VR) }
 CPSG = CURRENT PRODUCTION SECURITY GATE (mevcut açık üretim yüzeyleri).
 DTSG = DIGITAL TWIN SECURITY GATE (yeni Twin/tile aktivasyonu).
-SAV  = SECURITY-ADJACENT VULNERABILITY (redakte bulgu; mekanizma owner-özel + DBP-11).
+RSF  = RESTRICTED SECURITY FINDING (public repo'da ENUMERE EDİLMEZ; yalnız varlığı + program-etkisi
+       görünür — bkz. §14; ayrıntı owner-local restricted register'dadır).
 Aksi yazılmadıkça: default = DENY · TENANT SCOPE = tenant-local · EXEC = NOT AUTHORIZED.
 ```
 
@@ -226,25 +230,21 @@ DTSG — DIGITAL TWIN SECURITY GATE : yeni Twin/tile aktivasyonu (DBP-09 HOLD). 
 
 ---
 
-## 14. Current Production Security Findings — REDACTED CLASS-LEVEL REGISTER (mekanizma owner-özel)
-
-> Aşağıdaki bulgular SINIF düzeyinde, exploit/route/enumeration ayrıntısı REDAKTE edilerek listelenir;
-> kimlik/severity/gate-etki/kapanış-koşulu korunur. Tam teknik disposition = DBP-11 Master Blocker
-> Register + owner-özel kanal.
-
-| SAV | Sınıf (redakte) | Sev | Gate etkisi | Kapanış koşulu |
-|---|---|---|---|---|
-| SAV-A | Kimlik-detay okuma yüzeyi maskeleme tutarsızlığı | HIGH | IMPLEMENTATION ENTRY BLOCKER (ilgili yüzey) | field-level masking + authz enforcement |
-| SAV-B | Kimlik-arama yüzeyinde audit/rate sınırı eksikliği (enumeration sınıfı) | HIGH | CPSG immediate/entry | audit + rate-limit + scope enforcement |
-| SAV-C | Portal/şablon indirme kapsam kontrolü (**NOT VERIFIED/HIGH** — RC-DBP10-05) | HIGH | IMPLEMENTATION ENTRY BLOCKER: YES-until-verified-or-contained | scope doğrulama veya containment |
-| SAV-D | Audit-log geniş-tenant erişimi (ayrı FOUND SAV) | MED/HIGH | CPSG | ADMIN-gate + need-to-know |
-| SAV-E | Background-job/cron tenant-partition eksikliği | MED | CPSG/entry | tenant-partition + tenant-scoped write |
-| SAV-F | Maskesiz full-identity export / evidence-dereference (aktivasyon-koşullu) | HIGH | DT-ACTIVATION / cutover blocker | export authz + masking + minimization |
+## 14. Current Production Security Findings — PUBLIC-SAFE DISPOSITION (detay owner-local)
 
 ```text
-NOT (RC): full-identity-detail + evidence-dereference + maskesiz-export bir "canonical gap" DEĞİLDİR
-— ilgili yüzeyin aktivasyonu için IMPLEMENTATION BLOCKER'dır (owner düzeltmesi). Bu 11-bulgu kümesi
-DBP-11'de 5 sınıfa dağıtılır; hiçbir source-finding disposition'suz kaybolmaz.
+RESTRICTED SECURITY FINDINGS          : PRESENT
+DETAILED REGISTER AUTHORITY           : OWNER LOCAL / RESTRICTED (git-tracked DEĞİL; repository/PR/
+                                         CI-artifact DEĞİL; cloud/external/3rd-party-AI DEĞİL)
+PUBLIC DISCLOSURE                     : WITHHELD (mekanizma · etkilenen yüzey/route/servis
+                                         kombinasyonu · enumeration/bypass yöntemi · ayrıntılı
+                                         remediation adımları)
+PROGRAM EFFECT                        : IMPLEMENTATION ENTRY HOLD (ilgili yüzeyler için)
+REMEDIATION AUTHORITY                 : SEPARATE OWNER GO-IMPLEMENT REQUIRED (bu belge remediation
+                                         açmaz/yetkilendirmez)
+SOURCE-FINDING TRACKING               : hiçbir bulgu disposition'suz kaybolmaz — tam kayıt owner-
+                                         local restricted register'da; public-safe sınıflandırması
+                                         DBP-11 Master Blocker Register'da (bkz. DBP-11 §6)
 ```
 
 ---
@@ -258,13 +258,12 @@ kalemlerini ERTELEMEZ (§13).
 
 ---
 
-## 16. AS-IS Evidence (VERIFIED @2e2108aa — redakte; bu belge davranış değiştirmez)
+## 16. AS-IS Evidence (VERIFIED @2e2108aa — public-safe; bu belge davranış değiştirmez)
 
 Tek yapısal enforce **tenantId** (role-decorator/guard tabanlı iş-yetki katmanı gözlenmedi) →
 default-deny + capacity/relationship/field katmanları TARGET · `capacityFromUser` capacity primitive
-mevcut · `ai.service` tenant-boundary testli · kimlik-detay/arama/indirme/audit/cron yüzeylerinde §14
-SAV sınıfları (mekanizma redakte) · full-identity-export/evidence-dereference aktivasyon-koşullu
-IMPLEMENTATION BLOCKER.
+mevcut · `ai.service` tenant-boundary testli. Belirli üretim yüzeylerinde ek güvenlik bulguları
+mevcuttur (§14); yüzey/mekanizma ayrıntısı owner-local restricted register'dadır.
 
 ---
 
@@ -320,7 +319,8 @@ vocabulary (11 karar + 14-kod deny-reason) · cross-case need-to-know (OPTION D)
 (final-approver eligible set; eligible≠her-aksiyon; staff final-approver değil) · Authorization Matrix
 (10×30×14; unknown=OWNER_DECISION_REQUIRED; target≠runtime) · KVKK Data Inventory (iç-sınıf≠md6) ·
 Masking/Retention/Anonymization YAPISI (masking-policy-class; format ratifiye değil) · AI Context
-(allowlist+local-only) · iki güvenlik gate ayrımı · CPSG redakte bulgu register'ı · DTSG HOLD.
+(allowlist+local-only) · iki güvenlik gate ayrımı · CPSG restricted bulgu register'ı (public-safe
+opak disposition; detay owner-local) · DTSG HOLD.
 KARARLAR: cross-case = OPTION D · final-approver eligible = {TENANT_SUPER_ADMIN,PARTNER,MANAGER,
 AUTHORIZED_LAWYER} · Digital Twin Security Gate = HOLD · staff final-approver = NO.
 ONAYLANMAMIŞ/AÇIK: 30-resource matris UNKNOWN'ları · CPSG 11 bulgu (DBP-11 5 sınıf) · DTSG · KVKK
@@ -354,8 +354,9 @@ ların gövdeye absorbe edilmesi). Ara revizyon metinleri görev sohbetindedir; 
 - AI'ya raw-PII/evidence varsayılan gidiyor mu:                NO (§12; allowlist+local-only)
 - İki güvenlik gate ayrı tutuldu mu:                           YES (§13; CPSG≠DTSG)
 - Twin HOLD mevcut prod risklerini erteledi mi:                NO (§13; CPSG ayrı kuyruk)
-- Güvenlik bulgusu exploit/route/enumeration ifşa edildi mi:   NO (§14; REDACTED — id/sev/gate/closure korundu)
-- Source-finding disposition'suz kayboldu mu:                  NO (§14; DBP-11 Master Blocker Register)
+- Güvenlik bulgusu exploit/route/enumeration ifşa edildi mi:   NO (§14; PUBLIC-SAFE — yalnız varlık/HOLD/ayrı-GO görünür)
+- Yüzey/mekanizma ipucu (kimlik-arama/indirme/cron vb.) var mı: NO (§16; genelleştirildi)
+- Source-finding disposition'suz kayboldu mu:                  NO (§14; owner-local register + DBP-11 Master Blocker Register)
 - Digital Twin Security Gate HOLD korundu mu:                  YES (§15)
 - IMPLEMENTATION/remediation AUTHORITY üretildi mi:            NO (NONE; §1)
 - Register/decision-log değişikliği:                           NO
