@@ -21,13 +21,16 @@ export class ValidationGateController {
    * Belirli bir gate icin dosyayi validate et
    * POST /api/validation-gate/:caseId/validate/:gateId
    */
+  // CLIENT-SEC-H1 (S3): 6 POST endpoint fail-closed — JwtAuthGuard + authenticated principal'dan tenantId.
   @Post(':caseId/validate/:gateId')
+  @UseGuards(JwtAuthGuard)
   async validateGate(
     @Param('caseId') caseId: string,
     @Param('gateId') gateId: GateId,
+    @CurrentUser('tenantId') tenantId: string,
     @Body() additionalData?: Record<string, any>,
   ): Promise<GateValidationResult> {
-    return this.validationGateService.validateGate(caseId, gateId, additionalData);
+    return this.validationGateService.validateGate(caseId, gateId, tenantId, additionalData);
   }
 
   /**
@@ -35,11 +38,13 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/validate-all
    */
   @Post(':caseId/validate-all')
+  @UseGuards(JwtAuthGuard)
   async validateAllGates(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Body() additionalData?: Record<string, any>,
   ): Promise<Record<GateId, GateValidationResult>> {
-    return this.validationGateService.validateAllGates(caseId, additionalData);
+    return this.validationGateService.validateAllGates(caseId, tenantId, additionalData);
   }
 
   /**
@@ -47,11 +52,13 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/case-creation
    */
   @Post(':caseId/case-creation')
+  @UseGuards(JwtAuthGuard)
   async validateCaseCreation(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Body() additionalData?: Record<string, any>,
   ): Promise<GateValidationResult> {
-    return this.validationGateService.validateGate(caseId, 'GATE_1_CASE_CREATION', additionalData);
+    return this.validationGateService.validateGate(caseId, 'GATE_1_CASE_CREATION', tenantId, additionalData);
   }
 
   /**
@@ -59,11 +66,13 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/ornek1-generation
    */
   @Post(':caseId/ornek1-generation')
+  @UseGuards(JwtAuthGuard)
   async validateOrnek1Generation(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Body() additionalData?: Record<string, any>,
   ): Promise<GateValidationResult> {
-    return this.validationGateService.validateGate(caseId, 'GATE_2_ORNEK1_GENERATION', additionalData);
+    return this.validationGateService.validateGate(caseId, 'GATE_2_ORNEK1_GENERATION', tenantId, additionalData);
   }
 
   /**
@@ -71,11 +80,13 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/service-of-process
    */
   @Post(':caseId/service-of-process')
+  @UseGuards(JwtAuthGuard)
   async validateServiceOfProcess(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Body() additionalData?: Record<string, any>,
   ): Promise<GateValidationResult> {
-    return this.validationGateService.validateGate(caseId, 'GATE_3_SERVICE_OF_PROCESS', additionalData);
+    return this.validationGateService.validateGate(caseId, 'GATE_3_SERVICE_OF_PROCESS', tenantId, additionalData);
   }
 
   /**
@@ -83,11 +94,13 @@ export class ValidationGateController {
    * POST /api/validation-gate/:caseId/uyap-integration
    */
   @Post(':caseId/uyap-integration')
+  @UseGuards(JwtAuthGuard)
   async validateUyapIntegration(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Body() additionalData?: Record<string, any>,
   ): Promise<GateValidationResult> {
-    return this.validationGateService.validateGate(caseId, 'GATE_4_UYAP_INTEGRATION', additionalData);
+    return this.validationGateService.validateGate(caseId, 'GATE_4_UYAP_INTEGRATION', tenantId, additionalData);
   }
 
   /**

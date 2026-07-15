@@ -1,9 +1,15 @@
-import { Controller, Post, Body, Res, Get, Param, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Res, Get, Param, HttpStatus, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { PdfService } from './pdf.service';
 import { TemplateEngineService } from '../template-engine/template-engine.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
+// CLIENT-SEC-H1 (S2): authentication + tenant-scope enforcement. JwtAuthGuard (sınıf-seviyesi;
+// 3 endpoint) + authenticated principal'dan tenantId ile fail-closed case yükleme
+// (template-engine.controller ile aynı güvenli desen).
 @Controller('pdf')
+@UseGuards(JwtAuthGuard)
 export class PdfController {
   constructor(
     private pdfService: PdfService,
@@ -12,9 +18,14 @@ export class PdfController {
 
   // Takip Talebi PDF indir
   @Get('takip-talebi/:caseId')
-  async downloadTakipTalebi(@Param('caseId') caseId: string, @Res() res: Response) {
+  async downloadTakipTalebi(
+    @Param('caseId') caseId: string,
+    // CLIENT-SEC-H1 (S2): tenantId body/path'ten DEĞİL, authenticated principal'dan.
+    @CurrentUser('tenantId') tenantId: string,
+    @Res() res: Response,
+  ) {
     try {
-      const document = await this.templateEngine.generateTakipTalebiFromCase(caseId);
+      const document = await this.templateEngine.generateTakipTalebiFromCase(caseId, tenantId);
       const pdfBuffer = await this.pdfService.generateTakipTalebiPdf({
         title: document.title,
         content: document.content,
