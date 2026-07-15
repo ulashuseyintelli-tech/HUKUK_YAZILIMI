@@ -88,7 +88,7 @@ B. SCORE (BC-12)                : feature'lardan türetilen versiyonlu skor. Huk
                                   DEĞİLDİR (DBP-03 §8B); yüksek skor hiçbir hukuki guard'ı AŞAMAZ.
 C. NBA / RECOMMENDATION (BC-14) : guard'lı ÖNERİ adayı — advisory. Hukuki/finansal İŞLEM YAPMAZ
                                   (N-09); guard-blocked bir öneri ÜRETİLMEZ.
-D. AI RECOMMENDATION (BC-15)    : açıklama/taslak — advisory-only WRAP; kanonik state YAZMAZ (N-11).
+D. AI RECOMMENDATION (BC-15)    : açıklama/taslak — advisory-only WRAP; kanonik state YAZMAZ (N-10).
 E. LEGAL FACT / GUARD (BC-06/13): hukuki olgu + deterministik kapı — score/NBA/AI GİRDİSİ OLAMAZ.
 F. ENFORCEMENT (CPE, N-07)      : tek action-enforcement authority; paralel/bypass ikinci otorite
                                   KURULAMAZ.
@@ -315,7 +315,7 @@ orkestratör kanonik zincir; EXTRACT; shadow-only scope; feature≠legal-fact; N
 PAYMENT_RESPONSE_PROPENSITY yeniden-adlandırma; Case.riskScore CPE-policy-fact-değil düzeltmesi) →
 v1.1 A18/A19/A20 record-level completion (feature/score/NBA record matrisleri; double/triple guard;
 8-skor target catalogue; 4 evidence gap) → GO-DOCS pre-normalizasyonu (repo BR-13/14/15/20 + BC-11/
-12/14/15/09/13/10 + AGG-10/11/12A/15/16 + N-07/09/14/26 + INV-06 cross-ref'leri; AS-IS @fc06a0b3
+12/14/15/09/13/10 + AGG-10/11/12A/15/16 + N-07/09/10/14/26 + INV-06 cross-ref'leri; AS-IS @fc06a0b3
 re-verification; RC clarification'ların gövdeye absorbe edilmesi). Ara revizyon metinleri görev
 sohbetindedir; bağlayıcı olan bu konsolide belgedir.
 

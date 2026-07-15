@@ -35,8 +35,9 @@ ARTIFACT STATUS    : SYNTHESIS COMPLETE / AWAITING OWNER BLUEPRINT RATIFICATION 
                      merge'i onu OLUŞTURMAZ.
 REVIEW DISPOSITION : DRAFT SYNTHESIS FOR OWNER REVIEW — repository lifecycle state DEĞİLDİR.
 AÇIK KALANLAR      : bkz. §7 Owner Decision Pack (tüm DBP-02..11 ODR/OBD/LSO/sign-off kalemleri
-                     konsolide) + §8 Exit Criteria Assessment (kısmi karşılanmış) + §9 confirmed
-                     documentation residuals (DBP-07/08/10/11'de tespit edilen N-* atıf hataları)
+                     konsolide) + §8 Exit Criteria Assessment (kısmi karşılanmış). §6'da tespit
+                     edilen DBP-07/08/10/11 N-* atıf hataları DBP-NREF-01 (owner GO-DOCS,
+                     2026-07-16) ile DÜZELTİLDİ — bkz. §6.
 CANONICAL STATUS   : CANONICAL UPON APPROVED MERGE TO MAIN (bu belgenin KENDİSİ docs-only
                      canonicalize edilir; ANCAK bu, §16 Charter Exit Criteria'nın sağlandığı veya
                      owner Blueprint ratifikasyonunun verildiği anlamına GELMEZ)
@@ -164,28 +165,35 @@ TESPİT EDİLMEMİŞTİR. Paketler birbirine tutarlı routing zinciriyle bağlan
 {06,07}→08→09→10(yatay)→11(yatay)→12) ve her paket kendinden SONRAKİ paketlere doğru referans
 verir, öncekini bozmaz.
 
-RESIDUAL (düzeltme gerektirir, ayrı owner GO'ya tabi — bu belge KAPATMAZ):
+RESOLVED (DBP-NREF-01, owner GO-DOCS 2026-07-16, aynı reconciliation kapsamında düzeltildi —
+tarihsel kayıt olarak korunur; hiçbir mimari hüküm/gate/status/owner-decision değişmedi):
 - DBP-07 (§1 callout, §6-8, §20, self-check; PR #1287, main `fc06a0b3`): birden fazla yerde
-  "N-28"/"N-28A"/"N-28D" atfı kullanılmış. Bu numaralar Charter'ın N-01..26 registerında YOKTUR
+  "N-28"/"N-28A"/"N-28D" atfı kullanılmıştı. Bu numaralar Charter'ın N-01..26 registerında YOKTUR
   ve SYSTEM-CONSTITUTION.md'de de karşılık gelen bir "DEBTOR/RECEIVABLE BOUNDARY" maddesi
   BULUNAMAMIŞTIR — atıf, bu belgenin yazarının ayrı chat-thread paralel analizinden (repo-harici
-  bir NN-numaralama şeması) yanlışlıkla taşınmıştır. Altta yatan ilke (exposure Alacak/Muhasebe'den
-  türetilir; legal responsibility parasal tutar hesaplamaz) YANLIŞ DEĞİLDİR ve çoğu yerde zaten
-  geçerli N-16/N-17 ile birlikte anılmıştır — yalnız "N-28*" numarası fabrikedir ve kaldırılmalı/
-  düz metne çevrilmelidir. Ayrıca §7/§20'de "N-17/N-18" ikilisi kullanılmış; N-18 (big-bang yasağı)
-  bu bağlamla (collection ledger yeniden yazılmaz) doğrudan İLGİLİ DEĞİLDİR, yalnız N-17 yeterlidir.
+  bir NN-numaralama şeması) yanlışlıkla taşınmıştı. DÜZELTME: "exposure Alacak/Muhasebe'den
+  türetilir" bağlamındaki N-28A kalemleri **N-16**'ya (Liability/Alacak/Accounting koordineli)
+  bağlandı; "legal responsibility parasal tutar hesaplamaz" bağlamındaki N-28D kalemleri için
+  KESİN bir tekil Charter karşılığı bulunamadığından atıf KALDIRILDI (metin/hüküm aynı kaldı,
+  yalnız fabrik citation silindi). §7/§20'deki "N-17/N-18" ikilisi de N-17'ye daraltıldı (N-18
+  big-bang yasağı bu bağlamla ilgisizdi).
 - DBP-08 (§4, satır ~91; PR #1288, main `3cd4b11c`) ve DBP-10 (§12, satır ~213; PR #1292/#1297):
-  "AI kanonik state YAZMAZ" ifadesi (N-11) olarak atfedilmiş; Charter'da N-11 = "Digital Twin
-  source of truth değildir" — "AI kanonik state yazmaz" ifadesinin doğru karşılığı **N-10**'dur.
+  "AI kanonik state YAZMAZ" ifadesi yanlışlıkla N-11'e atfedilmişti; Charter'da N-11 = "Digital
+  Twin source of truth değildir". DÜZELTME: **N-10**'a ("AI kanonik hukuki/finansal state
+  yazmaz" — verbatim eşleşme) çevrildi.
 - DBP-11 (§3-4, satır ~89/91; PR #1298, main `1f4253c5`): "geri-alınamaz aksiyonda N-22" atfı
-  kullanılmış; Charter'da N-22 = "Mock/synthetic veri legal fact olamaz" — doğru karşılık **N-21**
-  ("Geri alınamaz aksiyonlarda insan onayı zorunlu")'dur. Aynı bölümde "BIG-BANG MIGRATION
-  PROHIBITED (N-19)" atfı da bir kayma taşır — Charter'da N-18 = big-bang yasağı, N-19 = ilk
-  geçişte destructive migration yasağı.
-BU RESIDUAL'LERİN HİÇBİRİ mimari bir karari BOZMAZ veya bir owner-onaylı sonucu GEÇERSİZ KILMAZ —
-tümü N-* CİTATION NUMARASI doğruluğuyla sınırlıdır; altta yatan mimari ilkeler doğrudur. Düzeltme
-(dar, docs-only, yalnız atıf numaralarını hizalayan bir PR) AYRI owner GO'suna tabidir; bu belge
-kendiliğinden düzeltme YAPMAZ (kapsam: yalnız DBP-12 sentezi).
+  yanlıştı; Charter'da N-22 = "Mock/synthetic veri legal fact olamaz". DÜZELTME: **N-21**'e
+  ("Geri alınamaz aksiyonlarda insan onayı zorunlu" — verbatim eşleşme) çevrildi. Aynı bölümdeki
+  "BIG-BANG MIGRATION PROHIBITED (N-19)" da bir kayma taşıyordu — Charter'da N-18 = big-bang
+  yasağı, N-19 = ilk geçişte destructive migration yasağı; DÜZELTME: sırasıyla **N-18** ve
+  **N-19**'a çevrildi.
+Repo-genelinde ek doğrulama: DBP-07 §8 (satır ~234) "N-19/N-20" kullanımı ve DBP-09'un tüm N-11/
+N-15 kullanımları AYRICA KONTROL EDİLDİ, doğru bulundu — değiştirilmedi.
+BU DÜZELTMELERİN HİÇBİRİ mimari bir kararı BOZMADI veya bir owner-onaylı sonucu GEÇERSİZ KILMADI —
+tümü N-* CİTATION NUMARASI doğruluğuyla sınırlıydı; altta yatan mimari ilkeler doğruydu ve
+değişmedi. Düzeltme owner GO-DOCS yetkisiyle (DBP-NREF-01, 2026-07-16) dar, docs-only, yalnız
+atıf numaralarını hizalayan bir PR ile uygulandı; bu PR DBP-07/08/10/11'i ve bu §6'yı eşzamanlı
+günceller.
 ```
 
 ---
@@ -352,8 +360,8 @@ OWNER-APPROVED gövdeye absorbe edilmesi) korunmuştur; hiçbir yeni BR/N/BC/OBD
 - Owner Blueprint ratifikasyonu bu belgeyle verilmiş mi:         NO (§11; ayrı owner eylemi gerekir)
 - Vertical-slice seçimi bu belgede yapıldı mı:                   NO (§10; yalnız aday+kriter, owner seçer)
 - Yeni BR/N/BC/OBD/OD ID'si icat edildi mi:                      NO (§12; yalnız mevcutlar referans edildi)
-- DBP-07/08/10/11'deki confirmed N-* atıf hataları gizlendi mi:  NO (§6; açıkça listelendi, RESIDUAL)
-- Bu belge o residual'leri kendiliğinden düzeltti mi:            NO (§6; ayrı owner GO'ya bırakıldı — kapsam disiplini)
+- DBP-07/08/10/11'deki confirmed N-* atıf hataları gizlendi mi:  NO (§6; açıkça listelendi, sonra düzeltildi)
+- Bu düzeltme mimari hüküm/gate/status/owner-decision değiştirdi mi: NO (§6; yalnız atıf numarası)
 - Güvenlik içeriği (DBP-10/11 restricted register) tekrar mı üretildi: NO (§7; yalnız gate-adı+HOLD referansı, detay yok)
 - IMPLEMENTATION AUTHORITY: NONE korundu:                        YES
 - Register/decision-log değişikliği:                             NO
