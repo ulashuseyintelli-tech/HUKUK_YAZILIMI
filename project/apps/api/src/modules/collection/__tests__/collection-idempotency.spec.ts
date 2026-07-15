@@ -89,6 +89,9 @@ const existingRow = {
   amount: 5000,
   currency: 'TRY',
   date: new Date('2026-07-03'),
+  valueDate: null,
+  type: CollectionType.CASH,
+  channel: 'BANKA',
   sourceType: null,
   sourceId: null,
   caseDebtorId: null,
@@ -105,7 +108,8 @@ function p2002(target?: string): Prisma.PrismaClientKnownRequestError {
 describe('CollectionService.create — P0-1 idempotency', () => {
   it('eksik idempotencyKey → BadRequestException, tx açılmaz', async () => {
     const { svc, prisma } = setup();
-    const { idempotencyKey: _omit, ...noKey } = baseDto;
+    const noKey = { ...baseDto };
+    delete noKey.idempotencyKey;
     await expect(svc.create('t1', noKey, 'u1')).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });

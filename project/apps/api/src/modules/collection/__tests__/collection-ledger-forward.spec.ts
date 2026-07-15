@@ -449,6 +449,7 @@ describe('CollectionService.create — G3a ledger forward write', () => {
         amount: 1200,
         currency: 'TRY',
         sourceType: CollectionSource.SALARY_SEIZURE,
+        sourceId: 'salary-seizure-1',
         channel: CollectionChannel.HACIZ,
       },
       'u1',

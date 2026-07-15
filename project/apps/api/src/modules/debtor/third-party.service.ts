@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
+import { createHash } from "crypto";
 import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util"; // RFA-008 isim-fallback dedup
 import {
@@ -12,7 +13,32 @@ import {
   RecordResponseDto,
 } from "./dto/third-party.dto";
 import { CollectionService } from "../collection/collection.service";
+import {
+  CollectionChannel,
+  CollectionSource,
+  CollectionStatus,
+  CollectionType,
+} from "../collection/dto/collection.dto";
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
+
+export interface ExternalCaseReceiptInput {
+  amount: number;
+  date?: string;
+  notes?: string;
+  syncToMainCase?: boolean;
+  idempotencyKey?: string;
+}
+
+function externalReceiptIdentity(externalCaseId: string, dto: ExternalCaseReceiptInput): string {
+  const explicit = dto.idempotencyKey?.trim();
+  const payload = explicit || JSON.stringify({
+    externalCaseId,
+    amountMinor: BigInt(Math.round(Number(dto.amount) * 100)).toString(),
+    date: dto.date ? new Date(dto.date).toISOString() : null,
+    notes: dto.notes?.trim() || null,
+  });
+  return createHash("sha256").update(payload).digest("hex");
+}
 
 @Injectable()
 export class ThirdPartyService {
@@ -610,9 +636,27 @@ export class ThirdPartyService {
   async addExternalCaseCollection(
     tenantId: string, 
     externalCaseId: string, 
-    dto: { amount: number; date?: string; notes?: string; syncToMainCase?: boolean },
+    dto: ExternalCaseReceiptInput,
+    actorUserId: string,
     correlationId?: string,
   ) {
+    if (dto.syncToMainCase === false) {
+      throw new BadRequestException({
+        code: "EXTERNAL_RECEIPT_REQUIRES_CANONICAL_COLLECTION",
+        message: "Dış dosya tahsilatı canonical Collection kaydı olmadan yazılamaz.",
+      });
+    }
+    if (!actorUserId?.trim()) {
+      throw new BadRequestException({ code: "EXTERNAL_RECEIPT_ACTOR_REQUIRED" });
+    }
+    const amount = Number(dto.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException({ code: "EXTERNAL_RECEIPT_AMOUNT_INVALID" });
+    }
+    if (dto.date && Number.isNaN(new Date(dto.date).getTime())) {
+      throw new BadRequestException({ code: "EXTERNAL_RECEIPT_DATE_INVALID" });
+    }
+
     const externalCase = await (this.prisma as any).externalCase.findFirst({
       where: { id: externalCaseId, tenantId },
       include: {
@@ -628,11 +672,71 @@ export class ThirdPartyService {
       throw new NotFoundException("Dış dosya bulunamadı");
     }
 
-    const currentReceived = Number(externalCase.receivedAmount) || 0;
-    const newReceived = currentReceived + dto.amount;
-    const claimAmount = Number(externalCase.claimAmount);
+    const caseId = externalCase.caseDebtor?.case?.id;
+    if (!caseId) {
+      throw new BadRequestException({ code: "EXTERNAL_RECEIPT_CASE_REQUIRED" });
+    }
+    const currency = String(externalCase.claimCurrency || "").trim().toUpperCase();
+    if (!currency) {
+      throw new BadRequestException({ code: "EXTERNAL_RECEIPT_CURRENCY_REQUIRED" });
+    }
 
-    // Durum güncelle
+    const receiptIdentity = externalReceiptIdentity(externalCaseId, dto);
+    const sourceId = `${externalCaseId}:${receiptIdentity}`;
+    const existingReceipt = await (this.prisma as any).collection.findFirst({
+      where: {
+        tenantId,
+        caseId,
+        sourceType: CollectionSource.EXTERNAL_CASE,
+        sourceId,
+        status: { not: CollectionStatus.CANCELLED },
+      },
+      select: { date: true },
+    });
+    const collectionDate = dto.date
+      ? new Date(dto.date)
+      : existingReceipt?.date || startOfCurrentUtcDay();
+
+    await this.collectionService.create(
+      tenantId,
+      {
+        caseId,
+        idempotencyKey: `external-case:${externalCaseId}:${receiptIdentity}`,
+        amount,
+        currency,
+        type: CollectionType.OTHER,
+        channel: CollectionChannel.ICRA_DAIRESI,
+        date: collectionDate.toISOString(),
+        sourceType: CollectionSource.EXTERNAL_CASE,
+        sourceId,
+        description: `[Alacak Haczi] ${externalCase.externalOffice} ${externalCase.externalCaseNo} - ${externalCase.counterpartyName}${dto.notes ? ` - ${dto.notes}` : ''}`,
+      },
+      actorUserId,
+      {
+        correlationId,
+        causationId: `external-case-receipt:${sourceId}`,
+        producer: "EXTERNAL_CASE_RECEIPT",
+        actor: { type: "HUMAN", userId: actorUserId },
+      },
+    );
+
+    // ExternalCase.receivedAmount yalnız canonical Collection fact'lerinden yeniden
+    // türetilir; retry/replay kümülatif projection'ı ikinci kez artırmaz.
+    const receiptTotal = await (this.prisma as any).collection.aggregate({
+      where: {
+        tenantId,
+        caseId,
+        sourceType: CollectionSource.EXTERNAL_CASE,
+        status: CollectionStatus.CONFIRMED,
+        OR: [
+          { sourceId: externalCaseId },
+          { sourceId: { startsWith: `${externalCaseId}:` } },
+        ],
+      },
+      _sum: { amount: true },
+    });
+    const newReceived = Number(receiptTotal?._sum?.amount) || 0;
+    const claimAmount = Number(externalCase.claimAmount);
     let newStatus = externalCase.attachmentStatus;
     if (newReceived > 0 && newStatus !== "KAPANDI") {
       newStatus = "TAHSIL_BASLADI";
@@ -640,47 +744,23 @@ export class ThirdPartyService {
     if (newReceived >= claimAmount) {
       newStatus = "KAPANDI";
     }
+    const noteMarker = `[Collection:${receiptIdentity}]`;
+    const collectionNote = `${noteMarker} [${collectionDate.toLocaleDateString("tr-TR")}] Alacak Haczi Tahsilatı: ${amount.toLocaleString("tr-TR")} ${currency} - Dış Dosya: ${externalCase.externalCaseNo}${dto.notes ? ` - ${dto.notes}` : ""}`;
+    const notes = externalCase.notes?.includes(noteMarker)
+      ? externalCase.notes
+      : externalCase.notes
+        ? `${externalCase.notes}\n${collectionNote}`
+        : collectionNote;
 
-    const collectionDate = dto.date ? new Date(dto.date) : new Date();
-    const collectionNote = `[${collectionDate.toLocaleDateString("tr-TR")}] Alacak Haczi Tahsilatı: ${dto.amount.toLocaleString('tr-TR')} ${externalCase.claimCurrency} - Dış Dosya: ${externalCase.externalCaseNo}${dto.notes ? ` - ${dto.notes}` : ''}`;
-
-    // Dış dosyayı güncelle
-    const updatedExternalCase = await (this.prisma as any).externalCase.update({
+    return (this.prisma as any).externalCase.update({
       where: { id: externalCaseId },
       data: {
         receivedAmount: newReceived,
         attachmentStatus: newStatus,
         lastReceivedAt: collectionDate,
-        notes: externalCase.notes ? `${externalCase.notes}\n${collectionNote}` : collectionNote,
+        notes,
       },
     });
-
-    // Ana dosyaya tahsilat kaydı ekle (syncToMainCase varsayılan true)
-    // G3d: kanonik yola delege (closed/duplicate guard + PAYMENT_RECEIVED + G3a ledger).
-    // sourceType=EXTERNAL_CASE + sourceId=externalCaseId → idempotency (duplicate guard).
-    if (dto.syncToMainCase !== false && externalCase.caseDebtor?.case?.id) {
-      try {
-        const collectionArgs = [tenantId, {
-          caseId: externalCase.caseDebtor.case.id,
-          amount: dto.amount,
-          type: "OTHER", // Alacak Haczi tahsilatı
-          date: collectionDate.toISOString(),
-          sourceType: "EXTERNAL_CASE" as any,
-          sourceId: externalCaseId,
-          description: `[Alacak Haczi] ${externalCase.externalOffice} ${externalCase.externalCaseNo} - ${externalCase.counterpartyName}${dto.notes ? ` - ${dto.notes}` : ''}`,
-        } as any] as const;
-        if (correlationId) {
-          await this.collectionService.create(...collectionArgs, undefined, { correlationId });
-        } else {
-          await this.collectionService.create(...collectionArgs);
-        }
-      } catch (err: any) {
-        // Closed-case reddi vb. → ana dosyaya yansıtılamadı, raporlanır (yutulmaz).
-        console.log("Ana dosyaya tahsilat kaydı eklenemedi (kanonik yol):", err?.message ?? err);
-      }
-    }
-
-    return updatedExternalCase;
   }
 
   /**
@@ -709,4 +789,9 @@ export class ThirdPartyService {
       where: { id: externalCaseId },
     });
   }
+}
+
+function startOfCurrentUtcDay(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }

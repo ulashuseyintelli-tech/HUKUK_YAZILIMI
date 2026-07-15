@@ -10,14 +10,25 @@ export const COLLECTION_AUDIT_ACTION = {
   VOID_EXECUTED: 'COLLECTION_VOID_EXECUTED',
 } as const;
 
+export type CollectionCommandProducer =
+  | 'COLLECTION_PUBLIC_API'
+  | 'CASE_COLLECTION_COMPATIBILITY_API'
+  | 'BANK_TRANSACTION_MATCH'
+  | 'EXTERNAL_CASE_RECEIPT'
+  | 'COLLECTION_SERVICE_COMPATIBILITY';
+
 export interface CollectionRequestContext {
   correlationId?: string;
+  causationId?: string;
+  producer?: CollectionCommandProducer;
+  actor?: EventActor;
 }
 
 export interface CollectionMutationTrace {
   correlationId: string;
   commandId: string;
   causationId?: string;
+  producer?: CollectionCommandProducer;
 }
 
 export interface CollectionAuditEvidence {
@@ -40,11 +51,13 @@ export interface CollectionAuditEvidence {
 export function createCollectionMutationTrace(
   correlationId?: string,
   causationId?: string,
+  producer?: CollectionCommandProducer,
 ): CollectionMutationTrace {
   return {
     correlationId: normalizeRequestId(correlationId) ?? randomUUID(),
     commandId: randomUUID(),
     ...(causationId ? { causationId } : {}),
+    ...(producer ? { producer } : {}),
   };
 }
 
@@ -78,6 +91,7 @@ export async function logCollectionMutationInTransaction(
     correlationId: trace.correlationId,
     commandId: trace.commandId,
     causationId: trace.causationId,
+    producer: trace.producer,
     actorType: evidence.actor.type,
     externalSystem: evidence.actor.externalSystem,
     status: evidence.status,

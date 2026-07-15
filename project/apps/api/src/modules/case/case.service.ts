@@ -3876,9 +3876,11 @@ export class CaseService {
       } as any,
       userId,
     ] as const;
-    return correlationId
-      ? this.collectionService.create(...args, { correlationId })
-      : this.collectionService.create(...args);
+    return this.collectionService.create(...args, {
+      correlationId,
+      producer: 'CASE_COLLECTION_COMPATIBILITY_API',
+      actor: { type: 'HUMAN', userId },
+    });
   }
 
   /// <remarks>

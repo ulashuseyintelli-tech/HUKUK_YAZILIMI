@@ -10,6 +10,7 @@ import {
   Req,
 } from "@nestjs/common";
 import { ThirdPartyService } from "./third-party.service";
+import type { ExternalCaseReceiptInput } from "./third-party.service";
 import {
   CreateThirdPartyDto,
   UpdateThirdPartyDto,
@@ -173,11 +174,18 @@ export class ThirdPartyController {
   @Post("external-cases/:id/collection")
   addExternalCaseCollection(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
-    @Body() dto: { amount: number; date?: string; notes?: string; syncToMainCase?: boolean },
+    @Body() dto: ExternalCaseReceiptInput,
     @Req() req: any,
   ) {
-    return this.thirdPartyService.addExternalCaseCollection(tenantId, id, dto, getRequestId(req));
+    return this.thirdPartyService.addExternalCaseCollection(
+      tenantId,
+      id,
+      dto,
+      actorUserId,
+      getRequestId(req),
+    );
   }
 
   /**
