@@ -1,4 +1,10 @@
 import { Prisma } from '@prisma/client';
+import { buildCanonicalWriteEnvelopeV1 } from '../../../common/canonical-write-envelope';
+import {
+  buildClaimItemSourceProvenanceV1,
+  CLAIM_ITEM_SOURCE_PROVENANCE_METADATA_KEY,
+} from '../../claim-item/claim-item-source-provenance';
+import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import { DueType, DueDto } from '../dto/case.dto';
 import { mapDueTypeToClaimItemType, buildClaimItemData } from '../due-to-claim-item.mapper';
 
@@ -111,6 +117,33 @@ export function planBackfillForCase(params: {
     };
 
     const base = buildClaimItemData(tenantId, caseId, dueDto, itemType);
+    const occurredAt = now.toISOString();
+    const backfillLineage = stableJsonHash({
+      version: 1,
+      tenantId,
+      caseId,
+      runId,
+    });
+    const envelope = buildCanonicalWriteEnvelopeV1({
+      tenantId,
+      caseId,
+      target: { aggregateType: 'ClaimItem' as const },
+      actor: { type: 'SYSTEM', system: 'DUE_BACKFILL' },
+      correlationId: `claim-item-backfill:${backfillLineage}`,
+      idempotencyKey: `claim-item-backfill:${stableJsonHash({ backfillLineage, dueId: due.id })}`,
+      occurredAt,
+      effectiveAt: occurredAt,
+      source: {
+        sourceType: 'DUE_BACKFILL',
+        sourceId: due.id,
+        evidenceRefs: [`backfill-run:${backfillLineage}`],
+      },
+      authority: { policyRef: 'REC-AUTH-008' },
+    });
+    const sourceProvenance = buildClaimItemSourceProvenanceV1({
+      ingress: 'BACKFILL',
+      envelope,
+    });
     toCreate.push({
       ...base,
       currency: due.currency, // Q2: backfill due.currency'yi korur ('TRY' override)
@@ -122,6 +155,8 @@ export function planBackfillForCase(params: {
           mappedFrom: due.type,
           at: now.toISOString(),
         },
+        [CLAIM_ITEM_SOURCE_PROVENANCE_METADATA_KEY]:
+          sourceProvenance as unknown as Prisma.InputJsonValue,
       },
     });
   }

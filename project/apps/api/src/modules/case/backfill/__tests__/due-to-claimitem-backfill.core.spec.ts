@@ -57,6 +57,30 @@ describe('planBackfillForCase', () => {
       mappedFrom: 'PRINCIPAL',
       at: '2026-06-14T00:00:00.000Z',
     });
+    expect(p0.metadata.canonicalSourceProvenance).toEqual(
+      expect.objectContaining({
+        version: 1,
+        sourceIdentity: expect.objectContaining({
+          sourceType: 'DUE',
+          sourceId: 'd1',
+          sourceSlot: 'PRIMARY',
+        }),
+        provenance: expect.objectContaining({
+          ingress: 'BACKFILL',
+          generationClass: 'SYSTEM_GENERATED_CLAIM_ITEM',
+        }),
+        createdByAuthority: expect.objectContaining({
+          actorRef: 'system:DUE_BACKFILL',
+          policyRef: 'REC-AUTH-008',
+        }),
+        createdAt: '2026-06-14T00:00:00.000Z',
+        causationId: null,
+        canonicalSourceMetadata: expect.objectContaining({
+          executionBoundary: 'AUTHORIZED_BACKFILL_SCRIPT',
+          writerRoute: null,
+        }),
+      }),
+    );
     // Q2: currency korunur (TRY default override)
     expect(p1.currency).toBe('USD');
     expect(p1.itemType).toBe('INTEREST');

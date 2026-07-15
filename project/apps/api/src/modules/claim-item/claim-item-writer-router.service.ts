@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import {
   buildClaimItemWriteCommand,
+  type ClaimItemWriteCommand,
   type ClaimItemWriteOperation,
 } from './claim-item-write-command';
 import {
@@ -27,6 +28,8 @@ interface ClaimItemRouteBase {
   readonly sourceSlot?: string;
   readonly initiatedByUserId: string;
   readonly effectiveAt?: Date;
+  readonly correlationId?: string;
+  readonly causationId?: string;
 }
 
 interface EvaluateHumanClaimItemWriteInput {
@@ -116,8 +119,17 @@ export class ClaimItemWriterRouterService {
     if (database === this.prisma) {
       return this.prisma.$transaction((tx) => this.createSystemClaimItem<T>(input, tx));
     }
-    await this.assertSystemRouteAllowed('CREATE', input, undefined, input.data, database);
-    const data = await this.sourceIntegrity.prepareSystemCreate(input, database);
+    const command = await this.assertSystemRouteAllowed(
+      'CREATE',
+      input,
+      undefined,
+      input.data,
+      database,
+    );
+    const data = await this.sourceIntegrity.prepareSystemCreate(
+      { ...input, envelope: command.envelope },
+      database,
+    );
     return (database as any).claimItem.create({ data }) as Promise<T>;
   }
 
@@ -167,7 +179,7 @@ export class ClaimItemWriterRouterService {
     claimItemId: string | undefined,
     payload: Record<string, unknown>,
     database: ClaimItemWriterDatabase,
-  ): Promise<void> {
+  ): Promise<ClaimItemWriteCommand<Record<string, unknown>>> {
     const route = CLAIM_ITEM_SYSTEM_WRITER_ROUTES[input.route];
     const occurredAt = new Date().toISOString();
     const command = buildClaimItemWriteCommand({
@@ -177,7 +189,11 @@ export class ClaimItemWriterRouterService {
         tenantId: input.tenantId,
         caseId: input.caseId,
         actor: { type: 'SYSTEM', system: input.route },
-        correlationId: `claim-item-system:${randomUUID()}`,
+        correlationId:
+          input.correlationId ?? this.buildSystemCorrelationId(input),
+        ...(input.causationId === undefined
+          ? {}
+          : { causationId: input.causationId }),
         idempotencyKey: this.buildIdempotencyKey(
           input.route,
           operation,
@@ -208,6 +224,21 @@ export class ClaimItemWriterRouterService {
         `ClaimItem ${input.route} route did not produce a system direct-allow result.`,
       );
     }
+    return command;
+  }
+
+  private buildSystemCorrelationId(
+    input: ClaimItemRouteBase & { readonly route: ClaimItemSystemWriterRoute },
+  ): string {
+    const lineage = stableJsonHash({
+      version: 1,
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      route: input.route,
+      sourceId: input.sourceId,
+      sourceSlot: input.sourceSlot ?? 'PRIMARY',
+    });
+    return `claim-item-source:${lineage}`;
   }
 
   private buildIdempotencyKey(

@@ -117,6 +117,23 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
     expect(gate.evaluate).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.claimItem.create).toHaveBeenCalledTimes(1);
+    expect(prisma.claimItem.create.mock.calls[0][0].data.metadata).toEqual(
+      expect.objectContaining({
+        canonicalSourceProvenance: expect.objectContaining({
+          version: 1,
+          provenance: expect.objectContaining({
+            ingress: expect.any(String),
+            generationClass: 'SYSTEM_GENERATED_CLAIM_ITEM',
+          }),
+          createdByAuthority: expect.objectContaining({
+            actorType: 'SYSTEM',
+            actorRef: `system:${route}`,
+          }),
+          correlationId: expect.stringMatching(/^claim-item-source:/),
+          causationId: null,
+        }),
+      }),
+    );
   });
 
   it.each(routes)('%s performs no write when authorization is denied', async (route) => {
@@ -163,5 +180,22 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
     const first = gate.evaluate.mock.calls[0][0].envelope.idempotencyKey;
     const second = gate.evaluate.mock.calls[1][0].envelope.idempotencyKey;
     expect(first).not.toBe(second);
+    expect(gate.evaluate.mock.calls[0][0].envelope.correlationId).toBe(
+      gate.evaluate.mock.calls[1][0].envelope.correlationId,
+    );
+  });
+
+  it('preserves an explicit causation reference in the persisted provenance contract', async () => {
+    const { router, prisma } = setup('DIRECT_ALLOWED');
+
+    await router.createSystemClaimItem({
+      ...createInput('DUE_BRIDGE'),
+      causationId: 'event:due-created-1',
+    });
+
+    expect(
+      prisma.claimItem.create.mock.calls[0][0].data.metadata.canonicalSourceProvenance
+        .causationId,
+    ).toBe('event:due-created-1');
   });
 });
