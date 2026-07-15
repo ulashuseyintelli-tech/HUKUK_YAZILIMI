@@ -8,6 +8,7 @@
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ClaimItemType } from '@prisma/client';
+import { ClaimItemSourceIntegrityException } from '../../claim-item/claim-item-source-integrity.guard';
 import { CaseService } from '../case.service';
 import { DueType, InterestType } from '../dto/case.dto';
 
@@ -326,6 +327,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       }),
     });
     expect(tx.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('originalAmount');
+    expect(tx.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('metadata');
   });
 
   it('case-create markerıyla oluşan ClaimItemı updateDue senkronlar', async () => {
@@ -393,7 +395,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     expect(tx.claimItem.update.mock.calls[0][0].data).not.toHaveProperty('originalAmount');
   });
 
-  it('updateDue unmarked eski kayıtta heuristic yapmaz', async () => {
+  it('updateDue live marker bulunamadığında heuristic yapmadan fail-closed kalır', async () => {
     const tx = makeTx({
       claimItem: {
         findMany: jest.fn(async () => []),
@@ -402,11 +404,13 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
     const { service } = makeService(tx);
 
-    await service.updateDue('tenant-1', 'case-1', 'due-1', {
+    await expect(service.updateDue('tenant-1', 'case-1', 'due-1', {
       amount: 1250,
       description: 'Güncel ana alacak',
       dueDate: '2026-02-01',
-    }, 'requester-1');
+    }, 'requester-1')).rejects.toMatchObject<Partial<ClaimItemSourceIntegrityException>>({
+      conflictCode: 'DUE_BRIDGE_MARKER_MISSING',
+    });
 
     expect(tx.claimItem.findMany).toHaveBeenCalledWith({
       where: {
@@ -416,6 +420,24 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       },
       take: 2,
     });
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+  });
+
+  it('updateDue birden fazla live marker bulunduğunda fail-closed kalır', async () => {
+    const tx = makeTx({
+      claimItem: {
+        findMany: jest.fn(async () => [{ id: 'claim-1' }, { id: 'claim-2' }]),
+        update: jest.fn(),
+      },
+    });
+    const { service } = makeService(tx);
+
+    await expect(service.updateDue('tenant-1', 'case-1', 'due-1', {
+      amount: 1250,
+    }, 'requester-1')).rejects.toMatchObject<Partial<ClaimItemSourceIntegrityException>>({
+      conflictCode: 'DUE_BRIDGE_MULTIPLE_LIVE_MARKERS',
+    });
+
     expect(tx.claimItem.update).not.toHaveBeenCalled();
   });
 
@@ -479,6 +501,33 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       where: { id: 'claim-opening' },
       data: { status: 'CANCELLED' },
     });
+  });
+
+  it('deleteDue live marker bulunamadığında Due kaydını silmeden fail-closed kalır', async () => {
+    const tx = makeTx({
+      claimItem: {
+        findMany: jest.fn(async () => []),
+        update: jest.fn(),
+      },
+    });
+    const { service } = makeService(tx);
+
+    await expect(
+      service.deleteDue('tenant-1', 'case-1', 'due-1', 'requester-1'),
+    ).rejects.toMatchObject<Partial<ClaimItemSourceIntegrityException>>({
+      conflictCode: 'DUE_BRIDGE_MARKER_MISSING',
+    });
+
+    expect(tx.claimItem.findMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        metadata: { path: ['dueSync', 'sourceDueId'], equals: 'due-1' },
+      },
+      take: 2,
+    });
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+    expect(tx.due.delete).not.toHaveBeenCalled();
   });
 
   it('cross-tenant caseId ile Due/ClaimItem sync yapılamaz', async () => {

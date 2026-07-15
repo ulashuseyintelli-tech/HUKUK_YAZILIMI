@@ -23,6 +23,7 @@ describe('RCV-P2-WS01-P03 ClaimItemWriterRouterService', () => {
       },
       claimItem: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({ id: 'claim-1' }),
       },
     };
