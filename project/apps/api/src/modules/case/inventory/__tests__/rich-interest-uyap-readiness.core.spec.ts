@@ -294,7 +294,10 @@ describe('PR-A4-0 read-only paginated adapter', () => {
     for (const source of [numericExporter, faiztExporter, schema]) {
       expect(source).not.toContain('rich-interest-uyap-readiness');
     }
-    expect(numericExporter).toContain("mapping[type] || UYAP_FAIZ_KODLARI.DIGER.kod");
+    // Sessiz DIGER/99 fallback (PR #1176, fc84ba22) kaldırıldı; güncel fail-closed
+    // sözleşme hem eski deseni yasaklar hem de tipli hata kodunu zorunlu kılar.
+    expect(numericExporter).not.toContain('UYAP_FAIZ_KODLARI');
+    expect(numericExporter).toContain("error: 'UYAP_NUMERIC_INTEREST_PROJECTION_FAILED'");
     expect(faiztExporter).toContain("return codeMap[interestType] || 'FAIZT00003'");
   });
 

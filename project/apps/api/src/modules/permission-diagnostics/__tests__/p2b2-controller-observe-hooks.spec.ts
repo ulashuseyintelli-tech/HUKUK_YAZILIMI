@@ -46,7 +46,8 @@ describe("P2b-2 NotificationController — SEND_NOTIFICATION observe hook", () =
     expect(arg.phone).toBeUndefined();
     expect(arg.message).toBeUndefined();
     // ALLOW: business çağrısı eksiksiz yapıldı, engellenmedi
-    expect(svc.sendSMS).toHaveBeenCalledWith("c1", "5550001122", "gizli içerik");
+    // tenantId (P0 güvenlik sertleştirmesi, #1027/612eede9): leading parametre olarak geçer.
+    expect(svc.sendSMS).toHaveBeenCalledWith("t1", "c1", "5550001122", "gizli içerik");
   });
 
   it("sendEmail: observe SEND_NOTIFICATION; email/subject/content observe'a GEÇMEZ; ALLOW", async () => {
@@ -60,7 +61,8 @@ describe("P2b-2 NotificationController — SEND_NOTIFICATION observe hook", () =
     expect(arg.email).toBeUndefined();
     expect(arg.subject).toBeUndefined();
     expect(arg.content).toBeUndefined();
-    expect(svc.sendEmail).toHaveBeenCalledWith("c1", "a@b.c", "S", "C");
+    // tenantId (P0 güvenlik sertleştirmesi, #1027/612eede9): leading parametre olarak geçer.
+    expect(svc.sendEmail).toHaveBeenCalledWith("t1", "c1", "a@b.c", "S", "C");
   });
 
   it("catch-boundary: business exception observe try/catch tarafından YUTULMAZ (propagate)", async () => {
