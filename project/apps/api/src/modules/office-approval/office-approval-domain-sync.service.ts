@@ -25,6 +25,7 @@ import {
   claimItemCreationAmounts,
   claimItemNormalUpdateAmounts,
 } from '../claim-item/claim-item-amount-contract';
+import { ClaimItemSourceIntegrityGuard } from '../claim-item/claim-item-source-integrity.guard';
 import {
   assertInvoiceClaimItemCreateAllowed,
   assertInvoiceClaimItemTypeTransitionAllowed,
@@ -48,6 +49,8 @@ const COLLECTION_DISPOSITION_TARGET_TYPE = 'COLLECTION_DISPOSITION';
 
 @Injectable()
 export class OfficeApprovalDomainSyncService {
+  private readonly claimItemSourceIntegrity = new ClaimItemSourceIntegrityGuard();
+
   constructor(
     @Optional() private readonly domainEventIngestService?: DomainEventIngestService,
     @Optional() private readonly journalWriter?: AccountingJournalWriterService,
@@ -415,9 +418,16 @@ export class OfficeApprovalDomainSyncService {
     if (!caseExists) {
       throw new ConflictException('CLAIM_ITEM create case bulunamadi.');
     }
-    const created = await tx.claimItem.create({
-      data: this.buildClaimItemCreateData(req.tenantId, patch) as any,
-    });
+    const createData = this.buildClaimItemCreateData(req.tenantId, patch);
+    const guardedData = await this.claimItemSourceIntegrity.prepareHumanDocumentCreate(
+      {
+        tenantId: req.tenantId,
+        caseId: intent.caseId,
+        data: createData,
+      },
+      tx,
+    );
+    const created = await tx.claimItem.create({ data: guardedData as any });
     await this.writeClaimItemAudit(tx, req, created.id, intent.caseId, {}, this.snapshotClaimItem(created), 'CLAIM_ITEM_HIGH_IMPACT_CREATE_APPLIED');
   }
 

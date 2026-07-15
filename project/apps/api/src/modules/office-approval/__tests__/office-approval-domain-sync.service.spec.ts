@@ -629,6 +629,55 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     });
   });
 
+  it('APPROVED document create kaynagini case scope icinde kilitler ve canonical marker yazar', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const db = claimItemTx({
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      caseDocument: { findFirst: jest.fn().mockResolvedValue({ id: 'doc-1' }) },
+      claimItem: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn(),
+        create: jest.fn().mockResolvedValue(item),
+      },
+    });
+    const request = claimItemReq({
+      operation: 'CREATE',
+      claimItemId: undefined,
+      proposedPatch: {
+        caseId: 'case-1',
+        itemType: 'PRINCIPAL',
+        sourceDocumentId: 'doc-1',
+        sourceDocumentType: 'SOZLESME',
+        amount: 1000,
+      },
+      currentSnapshot: undefined,
+      currentSnapshotHash: undefined,
+    }, {
+      targetType: 'CLAIM_ITEM_CASE',
+      targetRef: 'case-1',
+    });
+
+    await svc.syncAfterDecision(db as any, request as any);
+
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(db.caseDocument.findFirst).toHaveBeenCalledWith({
+      where: { id: 'doc-1', caseId: 'case-1' },
+      select: { id: true },
+    });
+    expect(db.claimItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sourceDocumentId: 'doc-1',
+        metadata: {
+          canonicalWriterSource: expect.objectContaining({
+            authority: 'HUMAN_DOCUMENT',
+            sourceId: 'doc-1',
+            sourceSlot: 'SOZLESME:PRINCIPAL',
+          }),
+        },
+      }),
+    });
+  });
+
   it('APPROVED create executor FATURA + TAX_KDV invariantini uygular', async () => {
     const svc = new OfficeApprovalDomainSyncService();
     const db = claimItemTx();
