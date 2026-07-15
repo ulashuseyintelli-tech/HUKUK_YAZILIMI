@@ -1,5 +1,12 @@
 import { ConflictException } from '@nestjs/common';
+import { type CanonicalWriteEnvelopeV1 } from '../../common/canonical-write-envelope';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
+import {
+  buildClaimItemSourceProvenanceV1,
+  claimItemIngressForSystemRoute,
+  CLAIM_ITEM_SOURCE_PROVENANCE_METADATA_KEY,
+  type ClaimItemSourceProvenanceV1,
+} from './claim-item-source-provenance';
 import {
   CLAIM_ITEM_SYSTEM_WRITER_ROUTES,
   type ClaimItemSystemWriterRoute,
@@ -40,6 +47,7 @@ export interface ClaimItemSystemSourceCreateInput {
   readonly sourceId: string;
   readonly sourceSlot?: string;
   readonly data: Record<string, unknown>;
+  readonly envelope: CanonicalWriteEnvelopeV1<'ClaimItem'>;
 }
 
 export interface ClaimItemSystemSourceMutationInput {
@@ -55,6 +63,7 @@ export interface ClaimItemHumanDocumentCreateInput {
   readonly tenantId: string;
   readonly caseId: string;
   readonly data: Record<string, unknown>;
+  readonly envelope: CanonicalWriteEnvelopeV1<'ClaimItem'>;
 }
 
 type ClaimItemSourceAuthority = ClaimItemSystemWriterRoute | 'HUMAN_DOCUMENT';
@@ -105,12 +114,22 @@ export class ClaimItemSourceIntegrityGuard {
   ): Promise<Record<string, unknown>> {
     this.assertPayloadScope(input.tenantId, input.caseId, input.data);
     const context = this.systemContext(input);
+    const provenance = buildClaimItemSourceProvenanceV1({
+      ingress: claimItemIngressForSystemRoute(input.route),
+      envelope: input.envelope,
+      sourceSlot: context.sourceSlot,
+    });
+    this.assertProvenanceScope(context, provenance);
     await this.lockCreate(context, input.data, database);
     const sourceRecord = await this.validateSourceRecord(context, database);
     this.assertSystemPayloadBinding(context, input.data, sourceRecord);
     const payloadHash = this.payloadHash(input.data);
     await this.assertCreateConflictFree(context, input.data, payloadHash, sourceRecord, database);
-    return this.withMarker(input.data, this.marker(context, payloadHash));
+    return this.withMarker(
+      input.data,
+      this.marker(context, payloadHash),
+      provenance,
+    );
   }
 
   async prepareHumanDocumentCreate(
@@ -135,11 +154,21 @@ export class ClaimItemSourceIntegrityGuard {
       sourceId: sourceDocumentId,
       sourceSlot,
     });
+    const provenance = buildClaimItemSourceProvenanceV1({
+      ingress: 'CASE_DOCUMENT',
+      envelope: input.envelope,
+      sourceSlot,
+    });
+    this.assertProvenanceScope(context, provenance);
     await this.lockCreate(context, input.data, database);
     await this.validateSourceRecord(context, database);
     const payloadHash = this.payloadHash(input.data);
     await this.assertCreateConflictFree(context, input.data, payloadHash, {}, database);
-    return this.withMarker(input.data, this.marker(context, payloadHash));
+    return this.withMarker(
+      input.data,
+      this.marker(context, payloadHash),
+      provenance,
+    );
   }
 
   async assertSystemMutation(
@@ -480,9 +509,28 @@ export class ClaimItemSourceIntegrityGuard {
     });
   }
 
+  private assertProvenanceScope(
+    context: ClaimItemSourceContext,
+    provenance: ClaimItemSourceProvenanceV1,
+  ): void {
+    const identity = provenance.sourceIdentity;
+    if (
+      identity.tenantId !== context.tenantId ||
+      identity.caseId !== context.caseId ||
+      identity.sourceId !== context.sourceId ||
+      identity.sourceSlot !== context.sourceSlot
+    ) {
+      this.fail(
+        'SOURCE_BINDING_MISMATCH',
+        'ClaimItem provenance does not match the guarded source identity.',
+      );
+    }
+  }
+
   private withMarker(
     data: Record<string, unknown>,
     marker: ClaimItemSourceMarker,
+    provenance: ClaimItemSourceProvenanceV1,
   ): Record<string, unknown> {
     const metadata = data.metadata;
     if (metadata != null && !this.isPlainRecord(metadata)) {
@@ -492,11 +540,15 @@ export class ClaimItemSourceIntegrityGuard {
     if (Object.prototype.hasOwnProperty.call(record, SOURCE_MARKER_KEY)) {
       this.fail('SOURCE_MARKER_RESERVED', 'ClaimItem canonical source marker is router-owned.');
     }
+    if (Object.prototype.hasOwnProperty.call(record, CLAIM_ITEM_SOURCE_PROVENANCE_METADATA_KEY)) {
+      this.fail('SOURCE_MARKER_RESERVED', 'ClaimItem canonical source provenance is router-owned.');
+    }
     return {
       ...data,
       metadata: {
         ...record,
         [SOURCE_MARKER_KEY]: marker,
+        [CLAIM_ITEM_SOURCE_PROVENANCE_METADATA_KEY]: provenance,
       },
     };
   }

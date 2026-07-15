@@ -1,9 +1,34 @@
+import { buildCanonicalWriteEnvelopeV1 } from '../../../common/canonical-write-envelope';
 import {
   ClaimItemSourceIntegrityException,
   ClaimItemSourceIntegrityGuard,
 } from '../claim-item-source-integrity.guard';
+import {
+  CLAIM_ITEM_SYSTEM_WRITER_ROUTES,
+  type ClaimItemSystemWriterRoute,
+} from '../claim-item-writer-routes';
 
 describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
+  function systemEnvelope(route: ClaimItemSystemWriterRoute, sourceId: string) {
+    const routeConfig = CLAIM_ITEM_SYSTEM_WRITER_ROUTES[route];
+    return buildCanonicalWriteEnvelopeV1({
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      target: { aggregateType: 'ClaimItem' as const },
+      actor: { type: 'SYSTEM', system: route },
+      correlationId: `test-correlation:${route}:${sourceId}`,
+      idempotencyKey: `test-idempotency:${route}:${sourceId}`,
+      occurredAt: '2026-07-15T00:00:00.000Z',
+      effectiveAt: '2026-07-15T00:00:00.000Z',
+      source: {
+        sourceType: routeConfig.sourceType,
+        sourceId,
+        evidenceRefs: ['user:test-requester'],
+      },
+      authority: { policyRef: routeConfig.policyRef },
+    });
+  }
+
   function setup() {
     const database: any = {
       $executeRaw: jest.fn().mockResolvedValue(1),
@@ -50,6 +75,7 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
         tenantId: 'tenant-1',
         caseId: 'case-1',
         sourceId: 'due-1',
+        envelope: systemEnvelope('DUE_BRIDGE', 'due-1'),
         data: dueData,
       },
       database,
@@ -64,6 +90,18 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
         sourceId: 'due-1',
         sourceSlot: 'PRIMARY',
       }),
+      canonicalSourceProvenance: expect.objectContaining({
+        version: 1,
+        sourceIdentity: expect.objectContaining({
+          sourceType: 'DUE',
+          sourceId: 'due-1',
+          sourceSlot: 'PRIMARY',
+        }),
+        provenance: expect.objectContaining({
+          ingress: 'DUE',
+          generationClass: 'SYSTEM_GENERATED_CLAIM_ITEM',
+        }),
+      }),
     }));
   });
 
@@ -77,6 +115,7 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
         tenantId: 'tenant-1',
         caseId: 'case-1',
         sourceId: 'due-other-case',
+        envelope: systemEnvelope('DUE_BRIDGE', 'due-other-case'),
         data: {
           ...dueData,
           metadata: { dueSync: { sourceDueId: 'due-other-case' } },
@@ -97,6 +136,7 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
         tenantId: 'tenant-1',
         caseId: 'case-1',
         sourceId: 'due-1',
+        envelope: systemEnvelope('DUE_BRIDGE', 'due-1'),
         data: {
           ...dueData,
           metadata: { dueSync: { sourceDueId: 'due-2' } },
@@ -123,6 +163,7 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
         tenantId: 'tenant-1',
         caseId: 'case-1',
         sourceId: 'due-1',
+        envelope: systemEnvelope('DUE_BRIDGE', 'due-1'),
         data: dueData,
       },
       database,
@@ -140,6 +181,7 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
         caseId: 'case-1',
         sourceId: 'case-1',
         sourceSlot: 'ILAMSIZ_GENEL:0:PRINCIPAL',
+        envelope: systemEnvelope('RULE_ENGINE_GENERATOR', 'case-1'),
         data: { tenantId: 'tenant-1', caseId: 'case-1', itemType: 'PRINCIPAL', amount: 100 },
       },
       database,
@@ -153,6 +195,7 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
         caseId: 'case-1',
         sourceId: 'case-1',
         sourceSlot: 'ILAMSIZ_GENEL:0:PRINCIPAL',
+        envelope: systemEnvelope('RULE_ENGINE_GENERATOR', 'case-1'),
         data: { tenantId: 'tenant-1', caseId: 'case-1', itemType: 'PRINCIPAL', amount: 100 },
       },
       database,
@@ -167,6 +210,7 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
         caseId: 'case-1',
         sourceId: 'case-1',
         sourceSlot: 'ILAMSIZ_GENEL:0:PRINCIPAL',
+        envelope: systemEnvelope('RULE_ENGINE_GENERATOR', 'case-1'),
         data: { tenantId: 'tenant-1', caseId: 'case-1', itemType: 'PRINCIPAL', amount: 200 },
       },
       database,
@@ -183,6 +227,7 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
       caseId: 'case-1',
       sourceId: 'case-1',
       sourceSlot: 'ILAMSIZ_GENEL:0:PRINCIPAL',
+      envelope: systemEnvelope('RULE_ENGINE_GENERATOR', 'case-1'),
     };
     const first = await guard.prepareSystemCreate({
       ...input,
@@ -228,18 +273,21 @@ describe('RCV-P2-WS01-P04 ClaimItem source integrity guard', () => {
 
     await expect(guard.prepareSystemCreate({
       route: 'CASE_INSTRUMENT_GENERATOR', tenantId: 'tenant-1', caseId: 'case-1',
-      sourceId: 'instrument-1', data: { tenantId: 'tenant-1', caseId: 'case-1', instrumentId: 'other' },
+      sourceId: 'instrument-1', envelope: systemEnvelope('CASE_INSTRUMENT_GENERATOR', 'instrument-1'),
+      data: { tenantId: 'tenant-1', caseId: 'case-1', instrumentId: 'other' },
     }, database)).rejects.toMatchObject({ conflictCode: 'SOURCE_PAYLOAD_MISMATCH' });
 
     await expect(guard.prepareSystemCreate({
       route: 'DOCUMENT_AUTO_GENERATOR', tenantId: 'tenant-1', caseId: 'case-1',
       sourceId: 'document-1', sourceSlot: 'CEK:0:PRINCIPAL',
+      envelope: systemEnvelope('DOCUMENT_AUTO_GENERATOR', 'document-1'),
       data: { tenantId: 'tenant-1', caseId: 'case-1', sourceDocumentId: 'other', itemType: 'PRINCIPAL' },
     }, database)).rejects.toMatchObject({ conflictCode: 'SOURCE_PAYLOAD_MISMATCH' });
 
     await expect(guard.prepareSystemCreate({
       route: 'PRECAUTIONARY_COST_WRITER', tenantId: 'tenant-1', caseId: 'case-1',
       sourceId: 'cost-1',
+      envelope: systemEnvelope('PRECAUTIONARY_COST_WRITER', 'cost-1'),
       data: { tenantId: 'tenant-1', caseId: 'case-1', sourceProcess: 'PRECAUTIONARY', sourceProcessId: 'other' },
     }, database)).rejects.toMatchObject({ conflictCode: 'SOURCE_PAYLOAD_MISMATCH' });
   });

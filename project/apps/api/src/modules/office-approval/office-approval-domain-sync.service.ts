@@ -6,6 +6,7 @@ import {
   OfficeApprovalStatus,
   Prisma,
 } from '@prisma/client';
+import { buildCanonicalWriteEnvelopeV1 } from '../../common/canonical-write-envelope';
 import { AccountingJournalWriterService } from '../accounting-journal';
 import { DomainEventIngestService } from '../icrabot/domain-event-ingest';
 import {
@@ -26,6 +27,7 @@ import {
   claimItemNormalUpdateAmounts,
 } from '../claim-item/claim-item-amount-contract';
 import { ClaimItemSourceIntegrityGuard } from '../claim-item/claim-item-source-integrity.guard';
+import { CLAIM_ITEM_HUMAN_WRITE_POLICY_REF } from '../claim-item/claim-item-writer-routes';
 import {
   assertInvoiceClaimItemCreateAllowed,
   assertInvoiceClaimItemTypeTransitionAllowed,
@@ -419,16 +421,60 @@ export class OfficeApprovalDomainSyncService {
       throw new ConflictException('CLAIM_ITEM create case bulunamadi.');
     }
     const createData = this.buildClaimItemCreateData(req.tenantId, patch);
-    const guardedData = await this.claimItemSourceIntegrity.prepareHumanDocumentCreate(
-      {
-        tenantId: req.tenantId,
-        caseId: intent.caseId,
-        data: createData,
-      },
-      tx,
-    );
+    const sourceDocumentId = createData.sourceDocumentId;
+    const guardedData =
+      typeof sourceDocumentId === 'string' && sourceDocumentId.length > 0
+        ? await this.claimItemSourceIntegrity.prepareHumanDocumentCreate(
+            {
+              tenantId: req.tenantId,
+              caseId: intent.caseId,
+              data: createData,
+              envelope: this.buildApprovedDocumentEnvelope(
+                req,
+                intent.caseId,
+                sourceDocumentId,
+              ),
+            },
+            tx,
+          )
+        : createData;
     const created = await tx.claimItem.create({ data: guardedData as any });
     await this.writeClaimItemAudit(tx, req, created.id, intent.caseId, {}, this.snapshotClaimItem(created), 'CLAIM_ITEM_HIGH_IMPACT_CREATE_APPLIED');
+  }
+
+  private buildApprovedDocumentEnvelope(
+    req: OfficeApprovalRequest,
+    caseId: string,
+    sourceDocumentId: string,
+  ) {
+    if (!req.approverUserId) {
+      throw new ConflictException('Onayli CLAIM_ITEM approval kaydinda approverUserId yok.');
+    }
+    const occurredAt = (req.decidedAt ?? new Date()).toISOString();
+    return buildCanonicalWriteEnvelopeV1({
+      tenantId: req.tenantId,
+      caseId,
+      target: { aggregateType: 'ClaimItem' as const },
+      actor: { type: 'HUMAN', userId: req.requesterUserId },
+      correlationId: `claim-item-approval:${req.id}`,
+      causationId: `office-approval:${req.id}`,
+      idempotencyKey: `claim-item-approved-create:${req.id}`,
+      occurredAt,
+      effectiveAt: occurredAt,
+      source: {
+        sourceType: 'USER_DOCUMENT',
+        sourceId: sourceDocumentId,
+        evidenceRefs: [
+          `approval:${req.id}`,
+          `requester:${req.requesterUserId}`,
+          `approver:${req.approverUserId}`,
+        ],
+      },
+      authority: {
+        policyRef: CLAIM_ITEM_HUMAN_WRITE_POLICY_REF,
+        approvalRequestId: req.id,
+      },
+    });
   }
 
   private async applyClaimItemUpdateOrDelete(

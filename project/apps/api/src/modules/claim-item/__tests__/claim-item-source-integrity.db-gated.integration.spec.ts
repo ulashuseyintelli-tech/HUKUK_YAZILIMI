@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
+import { buildCanonicalWriteEnvelopeV1 } from '../../../common/canonical-write-envelope';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { ClaimItemSourceIntegrityGuard } from '../claim-item-source-integrity.guard';
 import { ClaimItemWriteGateService } from '../claim-item-write-gate.service';
 import { ClaimItemWriterRouterService } from '../claim-item-writer-router.service';
+import { CLAIM_ITEM_HUMAN_WRITE_POLICY_REF } from '../claim-item-writer-routes';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -156,6 +158,26 @@ describeWithDisposableDb('RCV-P2-WS01-P04 source integrity - disposable PostgreS
           tenantId: fixture.tenantId,
           caseId: fixture.caseId,
           data: baseData,
+          envelope: buildCanonicalWriteEnvelopeV1({
+            tenantId: fixture.tenantId,
+            caseId: fixture.caseId,
+            target: { aggregateType: 'ClaimItem' as const },
+            actor: { type: 'HUMAN', userId: 'human-requester' },
+            correlationId: `claim-item-approval:${document.id}`,
+            causationId: `office-approval:${document.id}`,
+            idempotencyKey: `claim-item-approved-create:${document.id}`,
+            occurredAt: '2026-07-15T00:00:00.000Z',
+            effectiveAt: '2026-07-15T00:00:00.000Z',
+            source: {
+              sourceType: 'USER_DOCUMENT',
+              sourceId: document.id,
+              evidenceRefs: ['approval:test-approval'],
+            },
+            authority: {
+              policyRef: CLAIM_ITEM_HUMAN_WRITE_POLICY_REF,
+              approvalRequestId: 'test-approval',
+            },
+          }),
         }, tx);
         return tx.claimItem.create({ data: data as any });
       }),

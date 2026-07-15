@@ -667,13 +667,30 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     expect(db.claimItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         sourceDocumentId: 'doc-1',
-        metadata: {
+        metadata: expect.objectContaining({
           canonicalWriterSource: expect.objectContaining({
             authority: 'HUMAN_DOCUMENT',
             sourceId: 'doc-1',
             sourceSlot: 'SOZLESME:PRINCIPAL',
           }),
-        },
+          canonicalSourceProvenance: expect.objectContaining({
+            sourceIdentity: expect.objectContaining({
+              sourceType: 'CASE_DOCUMENT',
+              sourceId: 'doc-1',
+              sourceSlot: 'SOZLESME:PRINCIPAL',
+            }),
+            provenance: expect.objectContaining({
+              ingress: 'CASE_DOCUMENT',
+              generationClass: 'HUMAN_GENERATED_CLAIM_ITEM',
+            }),
+            createdByAuthority: expect.objectContaining({
+              actorRef: 'user:requester-u',
+              approvalRequestId: 'claim-appr-1',
+            }),
+            correlationId: 'claim-item-approval:claim-appr-1',
+            causationId: 'office-approval:claim-appr-1',
+          }),
+        }),
       }),
     });
   });
