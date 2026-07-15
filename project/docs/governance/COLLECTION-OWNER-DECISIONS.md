@@ -9,8 +9,8 @@ Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; 
                           yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
                           ile aynı sınıf ve sınır)
 Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
-                          onaylandı; COL/OD-04 ve COL/OD-05 RECORDED; COL/OD-18 RECORDED →
-                          COL/OD-18A ile AMENDED (2026-07-15); kalan 18 karar OPEN
+                          onaylandı; COL/OD-04, COL/OD-05 ve COL/OD-21 RECORDED; COL/OD-18
+                          RECORDED → COL/OD-18A ile AMENDED (2026-07-15); kalan 17 karar OPEN
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
 IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
@@ -239,9 +239,35 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
   PR #1269 ile canonical kayıtlara işlenmiştir.
 
 ### COL/OD-21 — Money-out idempotency kontratının text-ratification'ı
+- STATUS: **RECORDED** (2026-07-16) — authoritative kayıt:
+  `decision-log.md` § `2026-07-16 — RC-COL / COL/OD-21`.
 - SORU: Runtime'da MEVCUT kontrat (F-12) canonical governance metnine bağlanacak mı?
+- KARAR:
+  - Current recorded money-out authority `ClientPayout`tır. `OfficeApprovalRequest`
+    authorization intent/gate, `ClientPayoutAllocation` source linkage ve Accounting Journal
+    muhasebe temsilidir; ayrı payout authority değildir.
+  - Canonical replay identity zorunlu ve logical command boyunca stabil
+    `tenantId + idempotencyKey`dir. Finansal payload identity `caseId + caseClientId + exact
+    Decimal amount + currency` alanlarıdır. `note` ve actor payout replay identity'sine dahil
+    değildir; approval saved-intent hash'i finalize aşamasında yine birebir eşleşir.
+  - Aynı key + aynı finansal payload mevcut `payoutId` ile side-effect üretmeyen idempotent
+    replay'dir. Aynı key + farklı payload fail-closed `IDEMPOTENCY_KEY_CONFLICT`tır. Farklı key
+    yeni command'dir; transport retry sırasında re-key yasaktır ve tutar/zaman benzerliğinden
+    duplicate tahmini yapılmaz.
+  - Concurrency boundary `tenantId + caseId + caseClientId + currency` transaction advisory
+    lock'ıdır; `ClientPayout @@unique([tenantId, idempotencyKey])` nihai replay fence'idir.
+  - Payout, source allocations, accounting journal ve transaction-bound audit tek Prisma
+    transaction'da atomiktir. Hata bütün finansal write'ları rollback eder; partial persistence
+    yasaktır. Approval intent rollback dışında kalabilir. Commit sonrası best-effort approval
+    execution-marker hatası committed payout'ı geri almaz.
+  - Current `RECORDED` contract repository içi money-out fact'ini kapsar; harici banka/provider
+    transfer lifecycle'ı bu kararın kapsamı dışındadır.
 - KANIT: Handoff bu maddeyi "eksik" biliyordu; repo'da CLOSED bulundu — kalan iş yalnız
-  normatif kayıt. BAĞIMLILIK: —. ETKİ: docs-only.
+  normatif kayıttı. W1.3 PR #1265 / squash `081bd961` gerçek PostgreSQL üzerinde sequential ve
+  concurrent same-key replay'i 10/10 doğruladı; duplicate payout yok. BAĞIMLILIK: —.
+  ETKİ: docs-only.
+- PHASE 0 EFFECT: Bu karar approved merge ile canonical olduktan sonra COL/OD-21 W0.3
+  blocker'ı kalkar; COL/OD-01 ve COL/OD-03 açık kaldığı için Phase 0 kapanmaz.
 
 ---
 
@@ -250,7 +276,7 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 ```text
 KÖK (bağımsız başlar):
   COL/OD-01 (adjustment)   COL/OD-03 (effective-date)   COL/OD-05 (audit/correlation — RECORDED)
-  COL/OD-11 (UYAP route)   COL/OD-18 (lane — AMENDED: COL/OD-18A)  COL/OD-21 (idempotency text)
+  COL/OD-11 (UYAP route)   COL/OD-18 (lane — AMENDED: COL/OD-18A)  COL/OD-21 (RECORDED)
 
 COL/OD-01 ─┬─> COL/OD-07 (feragat/indirim/sulh) ──> COL/OD-08 (satisfaction/re-open)
            ├─> COL/OD-09 (partial refund/reversal) ─┬─> COL/OD-10 (downstream reversal)
@@ -265,8 +291,8 @@ COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
 ```
 
 Önerilen oturum sırası (yalnız sıralama önerisidir, karar değildir):
-1) COL/OD-21 (COL/OD-18 RECORDED — 2026-07-15; client-settlement lane'i kilitlendi)
-2) COL/OD-01, -03 (COL/OD-05 RECORDED — 2026-07-14)
+1) COL/OD-21 RECORDED (2026-07-16; money-out idempotency contract canonicalization kaydı)
+2) COL/OD-01, -03 (COL/OD-05 RECORDED — 2026-07-14; sıradaki açık kök kararlar)
 3) COL/OD-04 RECORDED (W1.2: CLOSED / CANONICAL)
 4) Kuyruk B → Kuyruk C.
 

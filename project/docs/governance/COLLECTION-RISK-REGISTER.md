@@ -69,7 +69,7 @@ Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
 |---|---|---|---|---|
 | COL-RISK-T01 | Farklı-key concurrent allocation/ClaimItem race test eksikliği (historical baseline; giderildi) | Gerçek PostgreSQL, gerçek `CollectionService.create` zinciri, aynı Case/ClaimItem ve farklı idempotency key: 10/10 PASS; PR #1217, squash `4e8243e507b9887101600f6bef00e3ad5cc5b465` | **CLOSED** | A2 race safety confirmed; COL/OD-04 karar girdisi |
 | COL-RISK-T02 | Mid-transaction rollback orphan-row harness eksikliği (historical baseline; giderildi) | Gerçek PostgreSQL + gerçek Collection transaction zinciri; deterministic post-allocation failure; finansal satırlar ve ClaimItem rollback, orphan none; PR #1220, squash `c46de4319de1e13063237d168cdffd207f525ceb` | **CLOSED** | Atomicity confirmed; test-only, runtime impact yok |
-| COL-RISK-T03 | Money-out sequential+concurrent replay harness eksikliği (historical baseline; giderildi) | Baseline: Desktop 04/A4 planlıydı; yalnız `client-payout.service.spec.ts:373-419/719-739` birim kanıtı vardı. Closure: gerçek PostgreSQL ve gerçek payout call chain'i üzerinde sequential+concurrent same-key replay harness'ı; 10/10 run PASS; PR #1265, squash `081bd9615429d24a6a205a2e6740daf2fd549770`; idempotency confirmed, concurrency safe, duplicate payout none. | **CLOSED** | W1.3 **CLOSED / CANONICAL**; `COL/OD-21` ayrı text-ratification olarak OPEN |
+| COL-RISK-T03 | Money-out sequential+concurrent replay harness eksikliği (historical baseline; giderildi) | Baseline: Desktop 04/A4 planlıydı; yalnız `client-payout.service.spec.ts:373-419/719-739` birim kanıtı vardı. Closure: gerçek PostgreSQL ve gerçek payout call chain'i üzerinde sequential+concurrent same-key replay harness'ı; 10/10 run PASS; PR #1265, squash `081bd9615429d24a6a205a2e6740daf2fd549770`; idempotency confirmed, concurrency safe, duplicate payout none. | **CLOSED** | W1.3 **CLOSED / CANONICAL**; `COL/OD-21` money-out idempotency contract **RECORDED** |
 | COL-RISK-T04 | Master Analysis'in "2.200 test pass / gerçek DB" kanıtı bu hesapta yeniden koşulmadı | Golden JSON/NDJSON EOL determinism bölümü PR #1214 / squash `bb9c1973` ile cross-platform SHA-256 equality, zero CRLF, terminal LF ve parse kanıtıyla giderildi; geniş 2.200-test iddiası bu hesapta yeniden koşulmadı. | **OPEN — PARTIALLY RECONCILED** | A1 CLOSED; kalan risk yalnız geniş historical evidence limitation |
 | COL-RISK-T05 | Kuruş remainder davranışı ledger yazım hattında hedefli testle sabitlenmemişti (historical baseline; giderildi) | Gerçek Collection→ledger allocation zincirinde exact decimal allocation/remaining/overpayment testi; 10/10 deterministic; PR #1223, squash `5fe5f0eb8a3553d817b97a3f03c12da3ae0a66bf` | **CLOSED** | W1.1 exact-money confirmed |
 
@@ -78,6 +78,7 @@ Statüler: `OPEN` · `OPEN-DELIBERATE` (bilinçli owner kararıyla açık) ·
 ## 6. Sınıf-dışı bırakılanlar (bilinçli)
 
 - Money-out idempotency eksikliği — handoff iddiasıydı; repo'da KAPALI bulundu (F-12).
-  Risk satırı açılmadı; kalan iş yalnız text-ratification (COL/OD-21).
+  COL/OD-21 contract RECORDED; risk satırı açılmaz. Harici banka/provider transfer lifecycle'ı
+  bu kararın kapsamı dışındadır ve bu dossier'de çözülmüş sayılmaz.
 - ADR-014 calc-core iç riskleri — ADR-014/split-plan kendi register'ında izlenir; bu dossier
   çift kayıt açmaz (SDOM tek-yetkili-belge kuralı).

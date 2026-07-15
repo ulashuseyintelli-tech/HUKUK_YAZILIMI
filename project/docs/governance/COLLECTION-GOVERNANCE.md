@@ -281,8 +281,8 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | COL-INV-026 | Aynı key + farklı payload fail-closed conflict | CURRENT-CONFIRMED | IDEMPOTENCY_KEY_CONFLICT client-payout.service.ts:595-613 |
 | COL-INV-027 | Collection+ledger+allocation+overpayment aynı atomic boundary'de | CURRENT-CONFIRMED | collection.service.ts:393-666 tek $transaction |
 | COL-INV-028 | Aynı case/currency scope'ta concurrency over-allocation üretemez | CURRENT-CONFIRMED (canonical path) | A2 gerçek PostgreSQL kanıtı PR #1217; explicit lock contract COL/OD-04; ikinci allocation write path'i W1.2 PR #1279 ile fail-closed kapatıldı — COL-RISK-D04/G02 CLOSED |
-| COL-INV-029 | Money-out command'leri approval'a ek idempotent | CURRENT-CONFIRMED | dbind §5 + ClientPayout kontratı; CollectionDisposition collectionId @unique |
-| COL-INV-030 | Retry duplicate statement/journal/payable/payout üretemez | CURRENT-CONFIRMED | Gerçek PostgreSQL sequential+concurrent same-key payout replay harness'ı 10/10 PASS: W1.3 PR #1265, squash `081bd961`; duplicate payout yok |
+| COL-INV-029 | Money-out command'leri approval'a ek idempotent | CURRENT-CONFIRMED | dbind §5 + COL/OD-21; ClientPayout kontratı; CollectionDisposition collectionId @unique |
+| COL-INV-030 | Retry duplicate statement/journal/payable/payout üretemez | CURRENT-CONFIRMED | COL/OD-21 + gerçek PostgreSQL sequential+concurrent same-key payout replay harness'ı 10/10 PASS: W1.3 PR #1265, squash `081bd961`; duplicate payout yok |
 | COL-INV-031 | Mid-transaction failure orphan satır bırakamaz | CURRENT-CONFIRMED | Gerçek Collection transaction'ında deterministic post-allocation failure ve orphan-row doğrulaması: PR #1220, squash `c46de431`; atomic rollback confirmed |
 
 ### COL-LOCK-001 — Canonical allocation concurrency contract (COL/OD-04)
@@ -315,6 +315,35 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
    Ortak internal allocator yalnız canonical `CollectionService.create` transaction'ı ve bu
    lock altında kullanılabilir. Bu kapanış daha geniş REC-AUTH-011/012 reconciliation'ını veya
    runtime cutover'ı kapatmaz.
+
+### COL-IDEM-001 — Canonical money-out idempotency contract (COL/OD-21)
+
+1. **Replay authority:** Current recorded money-out authority `ClientPayout`tır. Canlı command
+   zinciri `requestPayout → approve → finalize`dır. `OfficeApprovalRequest` authorization
+   intent/gate, `ClientPayoutAllocation` source linkage ve Accounting Journal muhasebe
+   temsilidir; ayrı payout authority değildir.
+2. **Idempotency boundary:** Key zorunludur ve logical command boyunca stabil kalır. Canonical
+   replay identity `tenantId + idempotencyKey`; finansal payload identity `caseId + caseClientId
+   + exact Decimal amount + currency` alanlarıdır. `note` ve actor payout replay identity'sine
+   dahil değildir; approval saved-intent hash'i finalize aşamasında birebir eşleşir.
+3. **Replay / conflict:** Aynı key + aynı finansal payload mevcut `payoutId` ile
+   `created=false, idempotentReplay=true` döner ve yeni finansal side-effect üretmez. Aynı key +
+   farklı payload fail-closed `IDEMPOTENCY_KEY_CONFLICT` üretir.
+4. **Duplicate policy:** Farklı key yeni command'dir. Transport retry sırasında yeni key üretmek
+   yasaktır; tutar, tarih veya actor benzerliğinden duplicate tahmini yapılmaz. Yeni command
+   bağımsız approval ve taze outstanding kontrolüne tabidir.
+5. **Concurrency boundary:** `tenantId + caseId + caseClientId + currency` transaction advisory
+   lock'ı aynı outstanding kaynağını tüketen payout/offset çağrılarını serialize eder.
+   `ClientPayout @@unique([tenantId, idempotencyKey])` nihai replay fence'idir.
+6. **Transaction / failure:** `ClientPayout`, source allocations, accounting journal ve
+   transaction-bound audit aynı Prisma transaction'da atomiktir. Lock, transaction, allocation,
+   journal veya audit hatası bütün finansal write'ları rollback eder; partial persistence ve
+   transaction-içi kısmi retry yasaktır. Approval intent rollback dışında kalabilir; retry aynı
+   key ile tüm finalize command'ini yeniden yürütür. Commit sonrası best-effort approval
+   execution-marker hatası committed payout'ı geri almaz; `ClientPayout` financial truth kalır.
+7. **Scope boundary:** Current `RECORDED` contract repository içi money-out fact'ini kapsar.
+   Harici banka/provider instruction, settlement confirmation veya provider-level idempotency bu
+   kararın kapsamı dışındadır ve ayrı explicit contract gerektirir.
 
 ## 5.4. Zaman
 
@@ -400,7 +429,7 @@ Collection(confirmed)
   → CollectionDisposition draft (HELD_PENDING_DISTRIBUTION; otomatik dağıtım YOK)
   → disposition recommendation → approval → post (kesin dağıtım etkisi YALNIZ burada doğar)
   → ClientStatementLine / (yalnız avans etkili satırlarda) BalanceLedger
-  → CLIENT_PAYABLE → ClientPayout (idempotent + approval)
+  → CLIENT_PAYABLE → ClientPayout (idempotent + approval; COL/OD-21)
 ```
 
 ## 7.3. TARGET lifecycle alanları (owner-gated)
