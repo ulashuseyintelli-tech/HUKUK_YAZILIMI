@@ -142,6 +142,24 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     expect(journalWriter.write).toHaveBeenCalledTimes(1);
     expect(domainEvent.appendInTransaction).toHaveBeenCalled();
   });
+  it('tenant doğrulamasından sonra canonical same-case allocation lock alır', async () => {
+    const { svc, tx } = setup();
+
+    await svc.create('t1', dto, 'u1');
+
+    const lockCallIndex = tx.$executeRaw.mock.calls.findIndex(([query]: any[]) =>
+      Array.isArray(query) && query.join('?').includes('COL-LOCK-001: canonical allocation lock'),
+    );
+    const lockCall = tx.$executeRaw.mock.calls[lockCallIndex];
+    const lockCallOrder = tx.$executeRaw.mock.invocationCallOrder[lockCallIndex];
+    expect(lockCall).toBeDefined();
+    expect(lockCall![0].join('?')).toContain('pg_advisory_xact_lock(hashtextextended(?, 0))');
+    expect(lockCall![1]).toBe('c1');
+    expect(tx.case.findFirst.mock.invocationCallOrder[0])
+      .toBeLessThan(lockCallOrder);
+    expect(lockCallOrder)
+      .toBeLessThan(tx.collection.create.mock.invocationCallOrder[0]);
+  });
   it('ClaimItem varsa: ledger çağrılır + Collection/event korunur + CollectionAllocation compat', async () => {
     const summaryEngine = {
       allocatePaymentToLedgerInTx: jest.fn(async () => ({

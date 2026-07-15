@@ -468,6 +468,15 @@ export class CollectionService {
         );
       }
 
+      // ── COL-LOCK-001: canonical allocation concurrency authority ─────────
+      // Tenant-scoped Case doğrulamasından sonra, ilk allocation-sensitive ClaimItem
+      // okumasından önce aynı case'i serialize et. Lock transaction commit/rollback'una
+      // kadar tutulur; hata fail-closed olarak bütün Collection transaction'ını geri alır.
+      await tx.$executeRaw`
+        /* COL-LOCK-001: canonical allocation lock */
+        SELECT pg_advisory_xact_lock(hashtextextended(${dto.caseId}, 0))
+      `;
+
       // ── 2. Duplicate pre-check (external source) ────────────────────────
       await this.validateCaseDebtorForCollectionInTx(tx, tenantId, dto.caseId, dto.caseDebtorId);
 
