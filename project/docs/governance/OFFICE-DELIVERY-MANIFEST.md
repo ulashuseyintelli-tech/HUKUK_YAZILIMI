@@ -141,7 +141,8 @@ Bu satır tek başına global triage/backlog yetkisi üretmez.
 | CANDIDATE-F1 | **CANONICAL** | — | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | **SELECTED** (2026-07-15) | **CONSUMED** (2026-07-15) | **HARDENING** | **RATIFIED_WITH_RECORDED_LIMITATIONS** (2026-07-15) | GO-ANALYZE (WAVE 3 decomposition) + Contract Draft/Validation/Ratification + GO-IMPLEMENT | Personnel List Masked Default — mevcut masking altyapısı REUSE; OFF/OD-18 yeterli. bkz. §4d. PR #1270, branch commit `a08932fb`, squash SHA `a170da3e`, CI 4/4 PASS |
 | CANDIDATE-F2 | **DORMANT** | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | NOT_SELECTED | NONE | — | — | GO-ANALYZE (WAVE 3 decomposition) | Personnel Export Masking — IMPLEMENTATION SURFACE NOT FOUND (owner disposition 2026-07-15). bkz. §4d |
 | CANDIDATE-G | **BLOCKED** | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 3 decomposition) | Detail Masking + Field-Level Unmask Permission — blocker: FIELD-LEVEL UNMASK GOVERNANCE / MECHANISM UNRESOLVED. bkz. §4d |
-| CANDIDATE-H | **EVIDENCE_REVALIDATION_REQUIRED** | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | NOT_SELECTED | NONE | HARDENING | — | GO-ANALYZE (WAVE 3 decomposition) | Audit/Read-Model Minimization Verification. bkz. §4d |
+| CANDIDATE-H | **VERIFICATION COMPLETE** (2026-07-15) | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | NOT_SELECTED | NONE | HARDENING | — | GO-ANALYZE (WAVE 3 decomposition) + H-READMODEL consumer validation | Audit/Read-Model Minimization Verification — H-AUDIT: EVIDENCE COMPLETE / NO IMPLEMENTATION; H-READMODEL: EDIT-SAFE MASKING PATH → CANDIDATE-H1. bkz. §4d |
+| CANDIDATE-H1 | CANDIDATE | **READY_FOR_CONTRACT** (2026-07-15) | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | **SELECTED** (2026-07-15) | NONE | **HARDENING** | NOT_DRAFTED | GO-ANALYZE (H-READMODEL consumer validation) | Case-Embedded Personnel Sensitive Field Edit-Safe Masking — read-model varsayılan maskeli + edit-safe kontrat; CANDIDATE-G AÇILMAZ. bkz. §4d |
 
 ### 4b. WAVE 1 Candidate Detay (Objective/Scope/Risk — GO-ANALYZE'den kanonikleştirildi)
 
@@ -312,9 +313,25 @@ CANDIDATE-G   name: Detail Masking + Field-Level Unmask Permission ·
               blocker: FIELD-LEVEL UNMASK GOVERNANCE / MECHANISM UNRESOLVED
               (OFF/OD-18 policy'yi belirler ama unmask MEKANİZMA tasarımı — kim/purpose-binding —
               tanımsız; olası ek owner decision gerekir)
-CANDIDATE-H   name: Audit/Read-Model Minimization Verification · status EVIDENCE_REVALIDATION_REQUIRED ·
-              ownerSelectionStatus NOT_SELECTED · implementationAuthorization NONE ·
-              implementationCategory HARDENING (doğrulama ağırlıklı)
+CANDIDATE-H   name: Audit/Read-Model Minimization Verification · status VERIFICATION COMPLETE (2026-07-15)
+              H-AUDIT: EVIDENCE COMPLETE / NO IMPLEMENTATION REQUIRED — personel audit minimization
+              doğrulandı (audit yazımları ratifiye hassas alan taşımıyor; mevcut minimization altyapısı
+              yeterli). Ayrıntı private evidence.
+              H-READMODEL: EDIT-SAFE MASKING PATH SELECTED (owner, 2026-07-15) → CANDIDATE-H1 üretti.
+              Consumer validation: purpose-bound (raw-bağımlı) düzenleme tüketicisi tespit edildi;
+              naif maskeleme veri bütünlüğünü bozar → edit-safe kontrat seçildi. CANDIDATE-G
+              field-level-unmask subsystem AÇILMAZ. Ayrıntı (yüzey/alan/edit mekanizması) private evidence.
+CANDIDATE-H1  name: Case-Embedded Personnel Sensitive Field Edit-Safe Masking ·
+              implementationCategory HARDENING · ownerSelectionStatus SELECTED ·
+              implementationAuthorization NONE · readinessStatus READY_FOR_CONTRACT ·
+              contractStatus NOT_DRAFTED
+              Objective (soyut): case read-model yüzeylerinde personel hassas alan varsayılan
+              maskeli döner; düzenleme akışı edit-safe kontratla veri bütünlüğünü korur (kontrat
+              ayrıntısı private evidence). OFF/OD-18 mask-default'u yetkilendirir; edit-safe yol
+              CANDIDATE-G field-level-unmask'a İHTİYAÇ DUYMAZ.
+              DEPENDENCY: CANDIDATE-G BLOCKED/NOT_SELECTED korunur — bu slice onu AÇMAZ.
+              Ayrıntılı Contract (yüzey/metot, alan, edit-mekanizma adımları) yalnız private
+              evidence — public'e YAZILMAZ.
 
 DORMANT (slice DEĞİL): "leave/termination reason" masking — ŞEMA SURFACE'İ BULUNAMADI
 (OFF-INV-10 bu alanları sayar ama karşılık gelen şema alanı yok; SLICE-01 emsali dormant).
@@ -375,8 +392,8 @@ WAVE 2 — Authority/RBAC Consistency            [P2, karar TAM kapalı]
 
 WAVE 3 — Privacy Revival (Sensitive Field Masking)  [P2, karar kapalı]
   Kapsam: SLICE-03 revival (OD-18 CLOSED_CANONICAL, STF-PRD-PRIV-001)
-  status: PARTIALLY DELIVERED (2026-07-15) — CANDIDATE-F1 CANONICAL; F2 DORMANT, G BLOCKED,
-    H revalidation (teslim edilmedi)
+  status: PARTIALLY DELIVERED (2026-07-15) — CANDIDATE-F1 CANONICAL; H VERIFICATION COMPLETE →
+    CANDIDATE-H1 SELECTED/READY_FOR_CONTRACT; F2 DORMANT, G BLOCKED
   SONUÇ: SLICE-03 TEK slice ÜRETMEDİ — 4 candidate + 1 dormant not:
     CANDIDATE-F1 (HARDENING) → CANONICAL, main @ a170da3e (PHASE 1 MILESTONE 04); Personnel List
       Masked Default; mevcut masking REUSE; OFF/OD-18 yeterli. Contract RATIFIED_WITH_RECORDED_LIMITATIONS
@@ -384,7 +401,10 @@ WAVE 3 — Privacy Revival (Sensitive Field Masking)  [P2, karar kapalı]
     CANDIDATE-F2 → DORMANT (Personnel Export Masking — IMPLEMENTATION SURFACE NOT FOUND, owner disposition)
     CANDIDATE-G (NEW_SUBSYSTEM) → BLOCKED (Detail Masking + Field-Level Unmask Permission;
       blocker: FIELD-LEVEL UNMASK GOVERNANCE / MECHANISM UNRESOLVED)
-    CANDIDATE-H → EVIDENCE_REVALIDATION_REQUIRED (Audit/Read-Model Minimization Verification)
+    CANDIDATE-H → VERIFICATION COMPLETE (H-AUDIT: EVIDENCE COMPLETE/NO IMPLEMENTATION; H-READMODEL:
+      EDIT-SAFE MASKING PATH → CANDIDATE-H1)
+    CANDIDATE-H1 (HARDENING) → SELECTED, READY_FOR_CONTRACT (Case-Embedded Personnel Sensitive Field
+      Edit-Safe Masking; read-model maskeli-varsayılan + edit-safe kontrat; CANDIDATE-G AÇILMAZ)
     DORMANT not: "leave/termination reason" masking — ŞEMA SURFACE'İ BULUNAMADI (slice değil)
   Detay: §4 Slice Register + §4d (teknik mekanizma detayı redakte — bkz. §4d gerekçe)
 
@@ -399,16 +419,15 @@ UNMAPPED (owner review required, decision-graph dışı)
 ## 8. NEXT ELIGIBLE UNIT (readiness ≠ authorization)
 
 ```text
-NEXT ELIGIBLE UNIT: YOK — implementasyona hazır birim yok. WAVE 3'ün seçili candidate'ı
-CANDIDATE-F1 CANONICAL/CONSUMED'a ulaştı (PHASE 1 MILESTONE 04); implementationAuthorization
-CONSUMED — aynı slice için tekrar implementasyon açılmaz. Geriye kalan candidate'ların TÜMÜ
-owner-gated ve implementasyona hazır DEĞİL; bu belge hiçbirini SEÇMEZ/başlatmaz, her biri owner'ın
-ayrı, açık bir GO'sunu bekler:
+NEXT ELIGIBLE UNIT: CANDIDATE-H1 — Implementation Contract Draft (owner SELECTED, HARDENING,
+READY_FOR_CONTRACT; contractStatus NOT_DRAFTED — bir sonraki adım owner-yetkili Contract Draft/
+Validation akışıdır; bu belge Contract'ı başlatmaz ve GO-IMPLEMENT üretmez, implementationAuthorization NONE).
+
+Diğer owner-gated açık kalemler (bu belge SEÇMEZ/başlatmaz):
   · CANDIDATE-D (WAVE 2) — product decision (canApproveFinance ürün niyeti) gerekir · NOT_A_SELECTABLE_SLICE
   · CANDIDATE-E (WAVE 2) — OFF/OD-08 (blocker) kapanışı gerekir · BLOCKED
   · CANDIDATE-F2 (WAVE 3) — DORMANT (IMPLEMENTATION SURFACE NOT FOUND, owner disposition)
-  · CANDIDATE-G (WAVE 3) — field-level unmask governance/mechanism çözülmeli (olası ek owner decision) · BLOCKED
-  · CANDIDATE-H (WAVE 3) — evidence revalidation gerekir · EVIDENCE_REVALIDATION_REQUIRED
+  · CANDIDATE-G (WAVE 3) — field-level unmask governance/mechanism çözülmeli (olası ek owner decision) · BLOCKED · bu slice (H1) onu AÇMAZ
   · CANDIDATE-B (WAVE 1) — DEFERRED, ayrı owner GO ile yeniden açılabilir
 
 status (CANDIDATE-A)                      : CANONICAL (2026-07-14, main @ b0ce36db)
@@ -438,19 +457,25 @@ implementationAuthorization (CANDIDATE-F1): CONSUMED (2026-07-15) — PR #1270, 
 status (CANDIDATE-F2)                     : DORMANT — IMPLEMENTATION SURFACE NOT FOUND (owner disposition)
 status (CANDIDATE-G)                      : BLOCKED — FIELD-LEVEL UNMASK GOVERNANCE / MECHANISM UNRESOLVED
                                              (implementationCategory NEW_SUBSYSTEM)
-status (CANDIDATE-H)                      : EVIDENCE_REVALIDATION_REQUIRED — NOT_SELECTED / NONE
+status (CANDIDATE-H)                      : VERIFICATION COMPLETE (2026-07-15) — H-AUDIT evidence-complete/no-impl; H-READMODEL edit-safe path → CANDIDATE-H1
+name (CANDIDATE-H1)                       : Case-Embedded Personnel Sensitive Field Edit-Safe Masking (WAVE 3)
+implementationCategory (CANDIDATE-H1)     : HARDENING
+ownerSelectionStatus (CANDIDATE-H1)       : SELECTED (2026-07-15)
+readinessStatus (CANDIDATE-H1)            : READY_FOR_CONTRACT (2026-07-15)
+contractStatus (CANDIDATE-H1)             : NOT_DRAFTED
+implementationAuthorization (CANDIDATE-H1): NONE (Contract Draft bekliyor — ratifikasyon/GO-IMPLEMENT değil)
 ```
 ```text
 NEXT ELIGIBLE ≠ AUTHORIZED.
-CANDIDATE-F1 artık CANONICAL/CONSUMED'dur (PHASE 1 MILESTONE 04) — implementationAuthorization
-GO_IMPLEMENT_ISSUED → CONSUMED'a vardı; aynı slice için tekrar implementasyon açılmaz. CANDIDATE-A
-ve CANDIDATE-C de CANONICAL/CONSUMED'dur. Bu belgenin kurallarına göre implementasyona hazır bir
-NEXT ELIGIBLE UNIT YOKTUR: geriye kalan candidate'ların tümü owner-gated (CANDIDATE-B DEFERRED ·
-D PRODUCT_DECISION/NOT_A_SELECTABLE_SLICE · E ve G BLOCKED · F2 DORMANT · H EVIDENCE_REVALIDATION_REQUIRED).
-Hiçbiri bu belge tarafından SEÇİLMEZ/başlatılmaz; her biri owner'ın ayrı, açık bir GO'sunu bekler.
-Bu canonicalization yalnız CANDIDATE-F1'in IMPLEMENTED/MERGED/CANONICAL durumunu + accepted records'un
-CARRIED FORWARD statüsünü (OFF-INV-10 PARTIAL, STF-PRD-PRIV-001 OPEN/NOT CLOSED dahil) kaydeder;
-yeni Contract/decision package/candidate/implementasyon başlatmaz.
+CANDIDATE-H doğrulaması TAMAMLANDI (H-AUDIT: evidence-complete/no-implementation; H-READMODEL:
+edit-safe masking path, owner 2026-07-15) ve owner-seçili CANDIDATE-H1'i üretti. NEXT ELIGIBLE UNIT
+artık CANDIDATE-H1 — Implementation Contract Draft'tır; ancak bu bir CONTRACT DRAFT adımıdır,
+GO-IMPLEMENT DEĞİL (contractStatus NOT_DRAFTED, implementationAuthorization NONE). Bu belge Contract'ı
+başlatmaz — owner'ın ayrı, açık bir GO'su gerekir. CANDIDATE-A/C/F1 CANONICAL/CONSUMED'dur; diğer
+kalemler owner-gated kalır (CANDIDATE-B DEFERRED · D PRODUCT_DECISION/NOT_A_SELECTABLE_SLICE · E ve G
+BLOCKED · F2 DORMANT). CANDIDATE-G BLOCKED/NOT_SELECTED korunur — H1 edit-safe yolu onu AÇMAZ.
+Bu canonicalization yalnız CANDIDATE-H doğrulama sonucunu + CANDIDATE-H1'in oluşturulmasını (SELECTED/
+HARDENING/READY_FOR_CONTRACT) kaydeder; yeni Contract/decision package/implementasyon başlatmaz.
 ```
 
 ## 9. Document Self-Check
@@ -655,4 +680,19 @@ yeni Contract/decision package/candidate/implementasyon başlatmaz.
 - PUBLIC CONTENT RULE (F1 canonicalization): metot/dosya    NO — yalnız governance metadata + PR/SHA/CI;
   ismi, alan-endpoint eşlemesi, masking util eklendi mi:    teknik detay private evidence'ta (grep doğrulandı)
 - Kod/schema/migration değişikliği / yeni candidate:        NONE / NO
+- CANDIDATE-H VERIFICATION COMPLETE işlendi mi (§4/§4d/     YES — EVIDENCE_REVALIDATION_REQUIRED →
+  §7/§8):                                                   VERIFICATION COMPLETE; H-AUDIT + H-READMODEL sonucu
+- H-AUDIT EVIDENCE COMPLETE / NO IMPLEMENTATION kaydedildi  YES — §4d + §4/§7/§8
+  mi:
+- CANDIDATE-H1 kaydı oluşturuldu mu (SELECTED/HARDENING/    YES — §4 yeni satır + §4d blok + §8 durum
+  READY_FOR_CONTRACT/NONE/NOT_DRAFTED):                     satırları; owner'ın seçtiği ad korundu
+- CANDIDATE-G BLOCKED/NOT_SELECTED korundu + H1 onu AÇMAZ:  YES — §4/§4d/§7/§8, "AÇILMAZ" birebir
+- WAVE 3 → PARTIALLY DELIVERED güncellendi mi (§7):         YES — F1 CANONICAL; H VERIFICATION COMPLETE →
+                                                            H1 SELECTED/READY_FOR_CONTRACT; F2/G değişmedi
+- NEXT ELIGIBLE UNIT → CANDIDATE-H1 Implementation          YES — §8; Contract Draft adımı (GO-IMPLEMENT
+  Contract Draft:                                           DEĞİL, implementationAuthorization NONE)
+- Başka candidate/wave durumu değiştirildi mi:              NO — yalnız CANDIDATE-H/H1 (F1/F2/G/D/E/B korundu)
+- Contract başlatıldı mı / kod-schema-migration:           NO / NONE
+- PUBLIC CONTENT RULE (H1): açık yüzey/alan/endpoint/metot/  NO — yalnız owner'ın candidate adı + governance
+  edit-mekanizma ayrıntısı manifest'e eklendi mi:          metadata + soyut objective; detay private (grep doğrulandı)
 ```
