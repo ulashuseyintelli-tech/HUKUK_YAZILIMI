@@ -6,6 +6,7 @@
  * Mevcut spec deseni: new ClaimItemService(prisma) + minimal mock (fatura-kdv-metadata.spec).
  */
 
+import { ClaimItemStatus } from '@prisma/client';
 import { ClaimItemService } from '../claim-item.service';
 
 function makeSvc(existing: any) {
@@ -23,7 +24,13 @@ function makeSvc(existing: any) {
 }
 
 describe('ClaimItemService.update — PR-5b tahsilat guard', () => {
-  const base = { id: 'i1', tenantId: 't1', amount: 1000, itemType: 'PRINCIPAL' };
+  const base = {
+    id: 'i1',
+    tenantId: 't1',
+    amount: 1000,
+    itemType: 'PRINCIPAL',
+    status: ClaimItemStatus.ACTIVE,
+  };
 
   it('G-A: collected>0 + amount tahsil-altı → throw', async () => {
     const { svc } = makeSvc({ ...base, collectedAmount: 500 });

@@ -304,27 +304,41 @@ export class PrecautionaryOrderService {
   /**
    * İhtiyati haciz masraf kalemini sil
    */
-  async deleteCost(tenantId: string, costId: string) {
-    const cost = await (this.prisma as any).precautionaryCost.findFirst({
-      where: { id: costId, tenantId },
+  async deleteCost(tenantId: string, costId: string, actorUserId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const cost = await tx.precautionaryCost.findFirst({
+        where: { id: costId, tenantId },
+        include: {
+          precautionaryOrder: {
+            select: { id: true, tenantId: true, caseId: true },
+          },
+        },
+      });
+
+      if (!cost) {
+        throw new NotFoundException('Masraf kalemi bulunamadı');
+      }
+
+      // ClaimItem bir retained lifecycle tombstone olarak kalır. Silme hatası
+      // yutulmaz; cancel audit/event veya cost delete başarısızsa bütün tx rollback olur.
+      if (cost.claimItemId) {
+        await this.requireClaimItemWriterRouter().cancelSystemClaimItem(
+          {
+            route: 'PRECAUTIONARY_COST_WRITER',
+            tenantId,
+            caseId: cost.precautionaryOrder.caseId,
+            sourceId: cost.id,
+            initiatedByUserId: actorUserId,
+            claimItemId: cost.claimItemId,
+            currency: cost.currency,
+          },
+          tx,
+        );
+      }
+
+      await tx.precautionaryCost.delete({ where: { id: costId } });
+      return { success: true };
     });
-
-    if (!cost) {
-      throw new NotFoundException('Masraf kalemi bulunamadı');
-    }
-
-    // Bağlı ClaimItem varsa sil
-    if (cost.claimItemId) {
-      await this.prisma.claimItem.delete({
-        where: { id: cost.claimItemId },
-      }).catch(() => {}); // Hata olursa sessizce geç
-    }
-
-    await (this.prisma as any).precautionaryCost.delete({
-      where: { id: costId },
-    });
-
-    return { success: true };
   }
 
   /**

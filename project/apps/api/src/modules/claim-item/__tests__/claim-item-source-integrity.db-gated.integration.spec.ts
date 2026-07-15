@@ -6,6 +6,7 @@ import { ClaimItemSourceIntegrityGuard } from '../claim-item-source-integrity.gu
 import { ClaimItemWriteGateService } from '../claim-item-write-gate.service';
 import { ClaimItemWriterRouterService } from '../claim-item-writer-router.service';
 import { CLAIM_ITEM_HUMAN_WRITE_POLICY_REF } from '../claim-item-writer-routes';
+import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -26,11 +27,13 @@ describeWithDisposableDb('RCV-P2-WS01-P04 source integrity - disposable PostgreS
     router = new ClaimItemWriterRouterService(
       prisma as any,
       new ClaimItemWriteGateService(prisma as any),
+      new DomainEventIngestService(),
     );
   });
 
   afterAll(async () => {
     for (const tenantId of tenantIds) {
+      await prisma.auditLog.deleteMany({ where: { tenantId } });
       await prisma.tenant.deleteMany({ where: { id: tenantId } });
     }
     await prisma.$disconnect();

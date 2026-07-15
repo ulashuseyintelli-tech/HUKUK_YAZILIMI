@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Optional, ForbiddenException, ConflictException } from '@nestjs/common';
-import { OfficeApprovalStatus, Prisma } from '@prisma/client';
+import { OfficeApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
@@ -38,6 +38,15 @@ import {
 import { interestWriteData, normalizeInterestWriteIntent } from './interest-write-admission';
 import { type ClaimItemWriteGateResult } from './claim-item-write-gate.service';
 import { ClaimItemWriterRouterService } from './claim-item-writer-router.service';
+import { buildCanonicalWriteEnvelopeV1 } from '../../common/canonical-write-envelope';
+import { DomainEventIngestService } from '../icrabot/domain-event-ingest';
+import { CLAIM_ITEM_HUMAN_WRITE_POLICY_REF } from './claim-item-writer-routes';
+import {
+  appendClaimItemContinuity,
+  assertClaimItemHardDeleteForbidden,
+  assertClaimItemLifecycleMutation,
+  type ClaimItemLifecycleRecord,
+} from './claim-item-lifecycle-contract';
 
 export interface ClaimItemMutationResult {
   applied: boolean;
@@ -51,9 +60,10 @@ export class ClaimItemService {
   constructor(
     private prisma: PrismaService,
     @Optional() private claimEngineService?: ClaimEngineService,
-    @Optional() private audit?: AuditService,
+    @Optional() _audit?: AuditService,
     @Optional() private officeApproval?: OfficeApprovalService,
     @Optional() private claimItemWriterRouter?: ClaimItemWriterRouterService,
+    @Optional() private domainEventIngest?: DomainEventIngestService,
   ) {}
 
   // ==================== CRUD İŞLEMLERİ ====================
@@ -238,6 +248,8 @@ export class ClaimItemService {
     if (dto.status) updateData.status = dto.status;
     if (dto.sortOrder !== undefined) updateData.sortOrder = dto.sortOrder;
 
+    assertClaimItemLifecycleMutation(existing.status, updateData);
+
     return (this.prisma as any).claimItem.update({
       where: { id },
       data: updateData,
@@ -312,7 +324,9 @@ export class ClaimItemService {
 
   // Alacak kalemi sil (soft delete - status değiştir)
   async remove(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
+    const existing = await this.findOne(tenantId, id);
+    const lifecycle = assertClaimItemLifecycleMutation(existing.status, { status: 'CANCELLED' });
+    if (lifecycle.noOp) return existing;
     return (this.prisma as any).claimItem.update({
       where: { id },
       data: { status: 'CANCELLED' },
@@ -361,7 +375,7 @@ export class ClaimItemService {
   // Alacak kalemi kalıcı sil
   async hardDelete(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
-    return (this.prisma as any).claimItem.delete({ where: { id } });
+    return assertClaimItemHardDeleteForbidden();
   }
 
   // ==================== OTOMATİK ALACAK KALEMİ OLUŞTURMA ====================
@@ -990,6 +1004,8 @@ export class ClaimItemService {
         throw new NotFoundException('Alacak kalemi bulunamadı');
       }
 
+      assertClaimItemLifecycleMutation(existing.status, data);
+
       const gateResult = await this.requireClaimItemWriterRouter().evaluateHuman(
         {
           operation: 'UPDATE',
@@ -1004,21 +1020,39 @@ export class ClaimItemService {
       );
       this.assertDirectAllowed(gateResult);
 
-      const before = this.snapshotClaimItem(existing);
       const updated = await tx.claimItem.update({
         where: { id },
         data,
       });
 
-      await this.logClaimItemAuditInTransaction(tx, {
+      const occurredAt = new Date().toISOString();
+      const envelope = buildCanonicalWriteEnvelopeV1({
         tenantId,
-        actorUserId,
-        action: 'CLAIM_ITEM_METADATA_UPDATED',
-        entityId: id,
         caseId: existing.caseId,
-        oldValues: before,
-        newValues: this.snapshotClaimItem(updated),
-        source: 'USER_DIRECT_METADATA_EDIT',
+        target: { aggregateType: 'ClaimItem' as const, aggregateId: id },
+        actor: { type: 'HUMAN', userId: actorUserId },
+        correlationId: `claim-item-direct:${id}`,
+        idempotencyKey: `claim-item-direct-update:${id}:${stableJsonHash({ data, occurredAt })}`,
+        occurredAt,
+        effectiveAt: occurredAt,
+        source: {
+          sourceType: 'USER_COMMAND',
+          sourceId: id,
+          evidenceRefs: [`user:${actorUserId}`, `claim-item:${id}`],
+        },
+        authority: { policyRef: CLAIM_ITEM_HUMAN_WRITE_POLICY_REF },
+        currency: existing.currency,
+      });
+      await appendClaimItemContinuity({
+        tx,
+        domainEventIngest: this.domainEventIngest,
+        envelope,
+        operation: 'UPDATE',
+        before: existing as ClaimItemLifecycleRecord,
+        after: updated as ClaimItemLifecycleRecord,
+        auditAction: 'CLAIM_ITEM_METADATA_UPDATED',
+        auditUserId: actorUserId,
+        auditSource: 'USER_DIRECT_METADATA_EDIT',
         approvalRequired: false,
       });
 
@@ -1271,57 +1305,4 @@ export class ClaimItemService {
     return String(value);
   }
 
-  private async logClaimItemAuditInTransaction(
-    tx: Prisma.TransactionClient,
-    input: {
-      tenantId: string;
-      actorUserId: string;
-      action: string;
-      entityId: string;
-      caseId: string;
-      oldValues: Record<string, unknown>;
-      newValues: Record<string, unknown>;
-      source: string;
-      approvalRequired: boolean;
-    },
-  ): Promise<void> {
-    if (this.audit) {
-      await this.audit.logInTransaction(tx, {
-        tenantId: input.tenantId,
-        action: input.action,
-        entityType: 'ClaimItem',
-        entityId: input.entityId,
-        userId: input.actorUserId,
-        oldValues: input.oldValues as any,
-        newValues: input.newValues as any,
-        description: 'ClaimItem mutation audit',
-        metadata: {
-          caseId: input.caseId,
-          claimItemId: input.entityId,
-          source: input.source,
-          approvalRequired: input.approvalRequired,
-        },
-      });
-      return;
-    }
-
-    await tx.auditLog.create({
-      data: {
-        tenantId: input.tenantId,
-        action: input.action,
-        entityType: 'ClaimItem',
-        entityId: input.entityId,
-        userId: input.actorUserId,
-        oldValues: input.oldValues as any,
-        newValues: input.newValues as any,
-        description: 'ClaimItem mutation audit',
-        metadata: {
-          caseId: input.caseId,
-          claimItemId: input.entityId,
-          source: input.source,
-          approvalRequired: input.approvalRequired,
-        },
-      },
-    });
-  }
 }

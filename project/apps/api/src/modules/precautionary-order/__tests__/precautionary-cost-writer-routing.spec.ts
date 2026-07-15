@@ -8,6 +8,18 @@ describe('RCV-P2-WS01-P03 precautionary cost ClaimItem routing', () => {
         count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockResolvedValue({ id: 'cost-1', amount: 100 }),
         update: jest.fn().mockResolvedValue({ id: 'cost-1', claimItemId: 'claim-1' }),
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'cost-1',
+          tenantId: 'tenant-1',
+          claimItemId: 'claim-1',
+          currency: 'TRY',
+          precautionaryOrder: {
+            id: 'order-1',
+            tenantId: 'tenant-1',
+            caseId: 'case-1',
+          },
+        }),
+        delete: jest.fn().mockResolvedValue({ id: 'cost-1' }),
       },
       claimItem: {
         create: jest.fn().mockResolvedValue({ id: 'claim-1' }),
@@ -27,6 +39,10 @@ describe('RCV-P2-WS01-P03 precautionary cost ClaimItem routing', () => {
       createSystemClaimItem: jest.fn(async ({ data }: any, database: any) => {
         if (denied) throw new ForbiddenException('route denied');
         return database.claimItem.create({ data });
+      }),
+      cancelSystemClaimItem: jest.fn().mockResolvedValue({
+        id: 'claim-1',
+        status: 'CANCELLED',
       }),
     };
     return {
@@ -72,5 +88,27 @@ describe('RCV-P2-WS01-P03 precautionary cost ClaimItem routing', () => {
 
     expect(tx.claimItem.create).not.toHaveBeenCalled();
     expect(tx.precautionaryCost.update).not.toHaveBeenCalled();
+  });
+
+  it('delete, ClaimItem hard-delete yerine aynı tx içinde retained-tombstone cancel uygular', async () => {
+    const { service, tx, writerRouter } = setup();
+
+    await service.deleteCost('tenant-1', 'cost-1', 'requester-1');
+
+    expect(writerRouter.cancelSystemClaimItem).toHaveBeenCalledWith(
+      {
+        route: 'PRECAUTIONARY_COST_WRITER',
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        sourceId: 'cost-1',
+        initiatedByUserId: 'requester-1',
+        claimItemId: 'claim-1',
+        currency: 'TRY',
+      },
+      tx,
+    );
+    expect(tx.precautionaryCost.delete).toHaveBeenCalledWith({
+      where: { id: 'cost-1' },
+    });
   });
 });

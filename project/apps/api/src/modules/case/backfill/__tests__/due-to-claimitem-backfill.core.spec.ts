@@ -139,11 +139,23 @@ describe('parseBackfillArgs (kilitler)', () => {
 });
 
 describe('runBackfill (mock prisma)', () => {
+  const continuityDeps = () => ({
+    domainEventIngest: {
+      appendInTransaction: jest.fn().mockResolvedValue({ aggregateVersion: 1n }),
+    } as any,
+  });
+
   function mockPrisma(cases: any[]) {
-    const txCreate = jest.fn(async ({ data }: any) => data);
+    let createdIndex = 0;
+    const txCreate = jest.fn(async ({ data }: any) => ({
+      id: `created-${++createdIndex}`,
+      status: 'ACTIVE',
+      ...data,
+    }));
     const tx = {
       $executeRaw: jest.fn().mockResolvedValue(1),
       due: { findFirst: jest.fn().mockResolvedValue({ id: 'due' }) },
+      auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
       claimItem: {
         create: txCreate,
         findFirst: jest.fn().mockResolvedValue(null),
@@ -182,7 +194,11 @@ describe('runBackfill (mock prisma)', () => {
 
   it('APPLY → per-case tx ile yazar (currency korunur)', async () => {
     const { prisma, txCreate } = mockPrisma([eligibleCase]);
-    const report = await runBackfill(prisma, parseBackfillArgs(['--apply', '--tenant', 't1']));
+    const report = await runBackfill(
+      prisma,
+      parseBackfillArgs(['--apply', '--tenant', 't1']),
+      continuityDeps(),
+    );
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(txCreate).toHaveBeenCalledTimes(2);
@@ -235,25 +251,45 @@ describe('runBackfill (mock prisma)', () => {
 describe('runRollback (mock prisma)', () => {
   function mockPrisma(items: any[]) {
     const del = jest.fn(async () => ({}));
+    const tx: any = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'locked' }]),
+      claimItem: {
+        findFirst: jest.fn(async ({ where }: any) =>
+          items.find((item) => item.id === where.id) ?? null,
+        ),
+        delete: del,
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
+    };
     const prisma: any = {
       case: { findMany: jest.fn() },
       claimItem: { create: jest.fn(), findMany: jest.fn(async () => items), delete: del },
-      $transaction: jest.fn(),
+      $transaction: jest.fn(async (fn: any) => fn(tx)),
     };
     return { prisma, del };
   }
 
   const items = [
-    { id: 'x1', _count: { ledgerAllocations: 0 } },
-    { id: 'x2', _count: { ledgerAllocations: 2 } },
+    rollbackCandidate('x1', 0),
+    rollbackCandidate('x2', 2),
   ];
 
   it('APPLY → allocationsizi siler, allocationliyi REDDEDER (Q3)', async () => {
     const { prisma, del } = mockPrisma(items);
-    const report = await runRollback(prisma, parseBackfillArgs(['--rollback', 'run-X', '--apply']));
+    const report = await runRollback(
+      prisma,
+      parseBackfillArgs(['--rollback', 'run-X', '--apply']),
+      {
+        now: () => new Date('2026-07-15T00:00:00.000Z'),
+        domainEventIngest: {
+          appendInTransaction: jest.fn().mockResolvedValue({ aggregateVersion: 1n }),
+        } as any,
+      },
+    );
     expect(report.matched).toBe(2);
     expect(report.deleted).toBe(1);
     expect(report.refused_hasAllocations).toBe(1);
+    expect(report.refused_invalidProvenance).toBe(0);
     expect(report.refusedIds).toEqual(['x2']);
     expect(del).toHaveBeenCalledTimes(1);
     expect(del).toHaveBeenCalledWith({ where: { id: 'x1' } });
@@ -266,7 +302,56 @@ describe('runRollback (mock prisma)', () => {
     expect(report.deleted).toBe(0);
     expect(report.refused_hasAllocations).toBe(1);
   });
+
+  it('exact canonical backfill provenance yoksa hard-delete yerine refused raporlar', async () => {
+    const invalid = rollbackCandidate('x3', 0);
+    invalid.metadata.canonicalSourceProvenance.provenance.ingress = 'DUE';
+    const { prisma, del } = mockPrisma([invalid]);
+
+    const report = await runRollback(
+      prisma,
+      parseBackfillArgs(['--rollback', 'run-X', '--apply']),
+      {
+        domainEventIngest: {
+          appendInTransaction: jest.fn().mockResolvedValue({ aggregateVersion: 1n }),
+        } as any,
+      },
+    );
+
+    expect(del).not.toHaveBeenCalled();
+    expect(report.refused_invalidProvenance).toBe(1);
+    expect(report.refusedIds).toEqual(['x3']);
+  });
 });
+
+function rollbackCandidate(id: string, ledgerAllocations: number) {
+  return {
+    id,
+    tenantId: 't1',
+    caseId: 'c1',
+    status: 'ACTIVE',
+    metadata: {
+      backfill: { runId: 'run-X', sourceDueId: `due-${id}` },
+      canonicalWriterSource: {
+        authority: 'DUE_BACKFILL',
+        sourceId: `due-${id}`,
+      },
+      canonicalSourceProvenance: {
+        provenance: { ingress: 'BACKFILL' },
+        createdByAuthority: {
+          actorType: 'SYSTEM',
+          actorRef: 'system:DUE_BACKFILL',
+        },
+        sourceIdentity: {
+          tenantId: 't1',
+          caseId: 'c1',
+          sourceId: `due-${id}`,
+        },
+      },
+    },
+    _count: { ledgerAllocations },
+  };
+}
 
 describe('generateRunId', () => {
   it('deterministik biçim (bf- öneki, : ve . yok)', () => {

@@ -4,6 +4,14 @@ import {
   type CanonicalWriteEnvelopeV1,
 } from '../../../common/canonical-write-envelope';
 import { ClaimItemSourceIntegrityGuard } from '../../claim-item/claim-item-source-integrity.guard';
+import {
+  appendClaimItemContinuity,
+  assertBackfillRollbackCandidate,
+  ClaimItemLifecycleException,
+  type BackfillRollbackCandidate,
+  type ClaimItemLifecycleRecord,
+} from '../../claim-item/claim-item-lifecycle-contract';
+import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import { DueType, DueDto } from '../dto/case.dto';
 import { mapDueTypeToClaimItemType, buildClaimItemData } from '../due-to-claim-item.mapper';
@@ -251,7 +259,7 @@ export interface BackfillPrisma {
   };
   claimItem: {
     create(args: any): Promise<any>;
-    findMany(args: any): Promise<Array<{ id: string; _count: { ledgerAllocations: number } }>>;
+    findMany(args: any): Promise<Array<BackfillRollbackCandidate>>;
     delete(args: any): Promise<any>;
   };
   $transaction<T>(fn: (tx: any) => Promise<T>): Promise<T>;
@@ -260,6 +268,7 @@ export interface BackfillPrisma {
 export interface BackfillDeps {
   log?: (line: string) => void;
   now?: () => Date;
+  domainEventIngest?: DomainEventIngestService;
 }
 
 export interface BackfillReport {
@@ -292,6 +301,7 @@ export async function runBackfill(
   const log = deps.log ?? (() => undefined);
   const now = deps.now ?? (() => new Date());
   const sourceIntegrity = new ClaimItemSourceIntegrityGuard();
+  const domainEventIngest = deps.domainEventIngest ?? new DomainEventIngestService();
   const runId = generateRunId(now());
   const mode: BackfillReport['mode'] = opts.apply ? 'APPLY' : 'DRY-RUN';
   const scope = opts.tenantId ? `tenant=${opts.tenantId}` : 'all-tenants';
@@ -376,7 +386,18 @@ export async function runBackfill(
             },
             tx,
           );
-          await tx.claimItem.create({ data });
+          const created = await tx.claimItem.create({ data });
+          await appendClaimItemContinuity({
+            tx,
+            domainEventIngest,
+            envelope: write.envelope,
+            operation: 'CREATE',
+            before: null,
+            after: created as ClaimItemLifecycleRecord,
+            auditAction: 'CLAIM_ITEM_BACKFILL_CREATED',
+            auditSource: 'DUE_BACKFILL',
+            approvalRequired: false,
+          });
         }
       });
       report.claimItemsCreated += plan.toCreate.length;
@@ -402,6 +423,7 @@ export interface RollbackReport {
   matched: number;
   deleted: number;
   refused_hasAllocations: number;
+  refused_invalidProvenance: number;
   refusedIds: string[];
 }
 
@@ -424,7 +446,14 @@ export async function runRollback(
 
   const items = await prisma.claimItem.findMany({
     where: { metadata: { path: ['backfill', 'runId'], equals: runId } },
-    select: { id: true, _count: { select: { ledgerAllocations: true } } },
+    select: {
+      id: true,
+      tenantId: true,
+      caseId: true,
+      status: true,
+      metadata: true,
+      _count: { select: { ledgerAllocations: true } },
+    },
   });
 
   const report: RollbackReport = {
@@ -433,6 +462,7 @@ export async function runRollback(
     matched: items.length,
     deleted: 0,
     refused_hasAllocations: 0,
+    refused_invalidProvenance: 0,
     refusedIds: [],
   };
 
@@ -443,8 +473,90 @@ export async function runRollback(
       continue;
     }
     if (!opts.apply) continue; // dry-run: silme yok
-    await prisma.claimItem.delete({ where: { id: it.id } });
-    report.deleted += 1;
+    try {
+      const deleted = await prisma.$transaction(async (tx) => {
+        // Allocation eklenmesi ile hard-delete arasında yarış oluşmaması için row lock;
+        // source/provenance ve allocation sayısı kilit altında yeniden doğrulanır.
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ClaimItem" WHERE "id" = ${it.id} FOR UPDATE`);
+        const current = await tx.claimItem.findFirst({
+          where: { id: it.id },
+          select: {
+            id: true,
+            tenantId: true,
+            caseId: true,
+            status: true,
+            metadata: true,
+            _count: { select: { ledgerAllocations: true } },
+          },
+        }) as BackfillRollbackCandidate | null;
+        if (!current) {
+          throw new ClaimItemLifecycleException(
+            'CLAIM_ITEM_ROLLBACK_PROVENANCE_MISMATCH',
+            'Rollback ClaimItem kaydı kilit altında bulunamadı.',
+          );
+        }
+        if (current._count.ledgerAllocations > 0) return false;
+        assertBackfillRollbackCandidate(current, runId);
+
+        const metadata = current.metadata as Record<string, any>;
+        const sourceDueId = String(metadata.backfill.sourceDueId);
+        const occurredAt = (deps.now ?? (() => new Date()))().toISOString();
+        const lineage = stableJsonHash({
+          version: 1,
+          tenantId: current.tenantId,
+          caseId: current.caseId,
+          runId,
+          claimItemId: current.id,
+        });
+        const envelope = buildCanonicalWriteEnvelopeV1({
+          tenantId: current.tenantId,
+          caseId: current.caseId,
+          target: { aggregateType: 'ClaimItem' as const, aggregateId: current.id },
+          actor: { type: 'SYSTEM', system: 'DUE_BACKFILL' },
+          correlationId: `claim-item-rollback:${lineage}`,
+          idempotencyKey: `claim-item-rollback:${lineage}:${current.id}`,
+          occurredAt,
+          effectiveAt: occurredAt,
+          source: {
+            sourceType: 'DUE_BACKFILL',
+            sourceId: sourceDueId,
+            evidenceRefs: [`backfill-run:${lineage}`],
+          },
+          authority: { policyRef: 'REC-AUTH-008' },
+        });
+
+        await appendClaimItemContinuity({
+          tx,
+          domainEventIngest: deps.domainEventIngest ?? new DomainEventIngestService(),
+          envelope,
+          operation: 'OPERATIONAL_ROLLBACK_DELETE',
+          before: current,
+          after: null,
+          auditAction: 'CLAIM_ITEM_BACKFILL_ROLLED_BACK',
+          auditSource: 'DUE_BACKFILL_ROLLBACK',
+          approvalRequired: false,
+          retentionDisposition: 'AUTHORIZED_OPERATIONAL_ROLLBACK',
+        });
+        await tx.claimItem.delete({ where: { id: current.id } });
+        return true;
+      });
+      if (!deleted) {
+        report.refused_hasAllocations += 1;
+        report.refusedIds.push(it.id);
+        continue;
+      }
+      report.deleted += 1;
+    } catch (error) {
+      if (
+        error instanceof ClaimItemLifecycleException &&
+        error.conflictCode === 'CLAIM_ITEM_ROLLBACK_PROVENANCE_MISMATCH'
+      ) {
+        report.refused_invalidProvenance += 1;
+        report.refusedIds.push(it.id);
+        continue;
+      }
+      throw error;
+    }
   }
 
   return report;
