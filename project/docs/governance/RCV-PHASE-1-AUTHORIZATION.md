@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -38,7 +38,8 @@ RCV-P2-WS02-P04             : CLOSED (PR #1286 / 37a86fd2)
 WS03 status                 : OPEN
 RCV-P2-WS03-P01             : CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE (PR #1300 / da8eef62)
 Next eligible task          : UNSET — OWNER GO REQUIRED
-RCV-P2-WS03-P02             : NOT AUTHORIZED / NOT STARTED
+RCV-P2-WS03-P02             : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE (PR #1316 / 208588d7)
+RCV-P2-WS03-P03             : NOT AUTHORIZED / NOT STARTED
 ```
 
 Bu kayıt yalnız governance/register alignment, gerçekleşen phase/workstream progression ve bir
@@ -266,6 +267,58 @@ NOT AUTHORIZED / NOT STARTED
   representative evidence, PR-11, consumer switch, runtime cutover ve external-domain gate'leri
   değişmez.
 
+### 1.8 RCV-P2-WS03-P02 formal closure reconciliation
+
+Formal package closure record:
+
+```text
+RCV-P2-WS03-P02:
+FORMALLY CLOSED / CANONICAL
+
+CLOSURE BASIS:
+IMPLEMENTATION PR #1316 MERGED
+SQUASH 208588d7fd065b4aaf8e29d08a4675deec395411
+REQUIRED CI 4/4 PASS
+PRODUCTION BEHAVIOR CHANGE NONE
+CHANGED FILES 2 CONTRACT TEST FILES
+SCHEMA / MIGRATION / PUBLIC API NONE
+GOVERNANCE RECONCILED UPON THIS APPROVED MERGE
+
+WS03:
+OPEN
+
+NEXT ELIGIBLE TASK:
+UNSET — OWNER GO REQUIRED
+
+RCV-P2-WS03-P03:
+NOT AUTHORIZED / NOT STARTED
+```
+
+- Implementation PR #1316, squash
+  `208588d7fd065b4aaf8e29d08a4675deec395411` ile canonical main'e alınmıştır; squash
+  commit güncel canonical main'in atasıdır. Required CI sonuçları `4/4 SUCCESS`tır:
+  `Architectural Guardrails`, `Test Suite`, `Web Tests (vitest)` ve
+  `Client Workspace Live Smoke`.
+- Implementation yalnız
+  `project/apps/api/src/modules/bank/__tests__/bank-match-delegation.spec.ts` ve
+  `project/apps/api/src/modules/debtor/__tests__/third-party-collection-delegation.spec.ts`
+  contract testlerini değiştirmiştir. Production davranışı, kodu, schema/migration,
+  public API ve governance kaydı değişmemiştir.
+- Test/evidence patch'i Bank ve ExternalCase post-commit projection retry/convergence
+  davranışını mevcut canonical Collection idempotency sözleşmesi altında sabitler; yeni
+  receipt, allocation veya legal-authority semantiği üretmez.
+- Bu approved governance merge'iyle `RCV-P2-WS03-P02` formal
+  `FORMALLY CLOSED / CANONICAL` olur. WS03 workstream'i `OPEN` kalır; package kapanışı
+  workstream kapanışı değildir.
+- Canonical roadmap/register kaynakları P02 sonrasında yürütülebilir bir successor task
+  atamamaktadır. Bu nedenle next eligible task `UNSET — OWNER GO REQUIRED` olarak korunur.
+  `RCV-P2-WS03-P03` `NOT AUTHORIZED / NOT STARTED`tır; bu kayıt ona eligibility veya
+  execution authority vermez.
+- Yeni Master Register ID veya program/register kimliği oluşturulmaz. `CCB-001` identity-only
+  cross-pointer'ı, `CAN-CUT-01/VER-05`, `CAN-CUT-02/ADR-014`, owner/legal/evidence/acceptance,
+  representative evidence, PR-11, consumer switch, runtime cutover ve external-domain gate'leri
+  değişmez.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
@@ -357,8 +410,8 @@ Initial authority: GO-PHASE-1 / WAVE 0 / RCV-P1-T15-A only
 Progression      : Subsequent tasks authorized by separate owner task briefs
 Decision date    : 2026-07-14
 Decision-log ref : RCV-GOV-002 progression reconciliation
-Current reconcile: RCV-P2-WS03-P01 formal closure / 2026-07-16
-Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 OPEN / WS03-P01 CLOSED
+Current reconcile: RCV-P2-WS03-P02 formal closure / 2026-07-16
+Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 OPEN / WS03-P01 CLOSED / WS03-P02 FORMALLY CLOSED
 ```
 
 Bu reconciliation geçmiş task brief'lerini tek ve genel bir Phase 1 authority'ye dönüştürmez.
@@ -385,7 +438,8 @@ owner GO gerektirir.
 | WS03-P01 implementation | PR merged + required CI PASS + governance reconciliation | CLOSED / CANONICAL upon this approved merge — PR #1300 / `da8eef62` |
 | WS03 workstream | Package statusundan ayrı izlenir | OPEN |
 | WS03 successor task | Canonical roadmap/register assignment + ayrı owner GO | UNSET — OWNER GO REQUIRED |
-| WS03-P02 | Ayrı canonical eligibility ve owner GO | NOT AUTHORIZED / NOT STARTED |
+| WS03-P02 implementation | PR merged + required CI PASS + governance reconciliation | FORMALLY CLOSED / CANONICAL upon this approved merge — PR #1316 / `208588d7` |
+| WS03-P03 | Ayrı canonical eligibility ve owner GO | NOT AUTHORIZED / NOT STARTED |
 | WS04–WS09 | Açılmamış | NOT STARTED |
 
 ## 7. Phase 2 WS03 Current Package Gate
@@ -406,9 +460,11 @@ WS02-P04                 : CLOSED
 CURRENT WORKSTREAM       : WS03 — Payment Fact & Collection Ingress
 WS03                     : OPEN
 WS03-P01                 : CLOSED / CANONICAL
-IMPLEMENTATION EVIDENCE  : PR #1300 / da8eef6204e3c85ac09f722d43f2f5803920fb16 / CI 4/4 PASS
+WS03-P01 EVIDENCE        : PR #1300 / da8eef6204e3c85ac09f722d43f2f5803920fb16 / CI 4/4 PASS
+WS03-P02                 : FORMALLY CLOSED / CANONICAL
+WS03-P02 EVIDENCE        : PR #1316 / 208588d7fd065b4aaf8e29d08a4675deec395411 / CI 4/4 PASS
 NEXT ELIGIBLE TASK       : UNSET — OWNER GO REQUIRED
-WS03-P02                 : NOT AUTHORIZED / NOT STARTED
+WS03-P03                 : NOT AUTHORIZED / NOT STARTED
 OWNER / RATIFIER         : __________________________________________
 DECISION DATE            : __________________________________________
 AUTHORITATIVE REF        : __________________________________________
@@ -422,9 +478,10 @@ WS01 CLOSED
 RCV-P2-WS02-P01..P04 CLOSED
 WS02 CLOSED
 RCV-P2-WS03-P01 CLOSED / CANONICAL
+RCV-P2-WS03-P02 FORMALLY CLOSED / CANONICAL
 WS03 OPEN
 NEXT ELIGIBLE TASK UNSET — OWNER GO REQUIRED
-RCV-P2-WS03-P02 NOT AUTHORIZED / NOT STARTED
+RCV-P2-WS03-P03 NOT AUTHORIZED / NOT STARTED
 WS04–WS09 NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN
