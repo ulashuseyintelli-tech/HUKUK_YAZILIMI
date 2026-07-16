@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { create } from 'xmlbuilder2';
+import { DebtorRole } from '@prisma/client';
 import {
   resolveDormantNumericInterestProjection,
   type NumericInterestProjectionAdapterResult,
@@ -952,17 +953,41 @@ export class UyapXmlService {
     };
   }
 
-  private mapDebtorRoleToUyapKod(role: string): string {
-    const mapping: Record<string, string> = {
-      'ASIL_BORCLU': UYAP_ROL_TURLERI.BORCLU.kod,
-      'KEFIL': UYAP_ROL_TURLERI.KEFIL.kod,
-      'MUSTEREN_BORCLU': UYAP_ROL_TURLERI.MUSTEREN_BORCLU.kod,
-      'MIRASCI': UYAP_ROL_TURLERI.MIRASCI.kod,
-      'KESIDECI': UYAP_ROL_TURLERI.KESIDECI.kod,
-      'CIRANTA': UYAP_ROL_TURLERI.CIRANTA.kod,
-      'AVALCI': UYAP_ROL_TURLERI.AVALCI.kod,
+  /**
+   * LRV-02 (DBP-P2-SEC-P01): mapping, DebtorRole enum'unun tamamini (TASFIYE_MEMURU/IFLAS_MASASI
+   * haric) Record tipiyle kapsar - yeni bir DebtorRole degeri eklenip burada unutulursa derleme
+   * hatasi verir (exhaustive mapping guard).
+   *
+   * TASFIYE_MEMURU / IFLAS_MASASI: UYAP exchange.dtd'de (UYAP_ROL_TURLERI, 10 kod) karsilik gelen
+   * bir rol kodu YOK. Davranis kasitli olarak degistirilmedi - AS-IS BORCLU fallback'i korunur;
+   * yeni bir kod icat edilmedi. Bu iki rol ayri bir owner/LDO karari bekler (DBP-P2-SEC-P01 kapsam
+   * disi).
+   */
+  private mapDebtorRoleToUyapKod(role: DebtorRole): string {
+    const mapping: Record<
+      Exclude<DebtorRole, typeof DebtorRole.TASFIYE_MEMURU | typeof DebtorRole.IFLAS_MASASI>,
+      string
+    > = {
+      [DebtorRole.ASIL_BORCLU]: UYAP_ROL_TURLERI.BORCLU.kod,
+      [DebtorRole.MUSETEREK_BORCLU]: UYAP_ROL_TURLERI.MUSTEREN_BORCLU.kod,
+      [DebtorRole.ADI_KEFIL]: UYAP_ROL_TURLERI.KEFIL.kod,
+      [DebtorRole.MUTESELSIL_KEFIL]: UYAP_ROL_TURLERI.KEFIL.kod,
+      [DebtorRole.AVAL]: UYAP_ROL_TURLERI.AVALCI.kod,
+      [DebtorRole.CIRANTA]: UYAP_ROL_TURLERI.CIRANTA.kod,
+      [DebtorRole.LEHDAR]: UYAP_ROL_TURLERI.LEHTAR.kod,
+      [DebtorRole.KESIDECI]: UYAP_ROL_TURLERI.KESIDECI.kod,
+      [DebtorRole.MUHATAP]: UYAP_ROL_TURLERI.MUHATAP.kod,
+      [DebtorRole.MIRASCI]: UYAP_ROL_TURLERI.MIRASCI.kod,
     };
-    return mapping[role] || UYAP_ROL_TURLERI.BORCLU.kod;
+
+    if (role === DebtorRole.TASFIYE_MEMURU || role === DebtorRole.IFLAS_MASASI) {
+      this.logger.warn(
+        `mapDebtorRoleToUyapKod: ${role} icin UYAP exchange.dtd'de tanimli rol kodu yok, BORCLU fallback kullaniliyor (AS-IS, owner/LDO karari bekliyor)`,
+      );
+      return UYAP_ROL_TURLERI.BORCLU.kod;
+    }
+
+    return mapping[role];
   }
 
   private buildAlacakKalemleri(caseRecord: any): UyapAlacakKalemi[] {
