@@ -132,7 +132,7 @@ kaynak DBP'ye göre değil.
 | Sınıf | Örnek kayıtlar (kaynak-ID) | Not |
 |---|---|---|
 | CURRENT_PRODUCTION_REMEDIATION | *(restricted — owner-local register; public'te yalnız "PRESENT")* | QUEUE-A; owner GO ile açılabilir |
-| IMPLEMENTATION_ENTRY_BLOCKER | DBP-07 LRV-02/LRV-03 (public) · *(+ restricted kalemler — owner-local register)* | yeni implementasyon öncesi çözülmeli |
+| IMPLEMENTATION_ENTRY_BLOCKER | DBP-07 LRV-03 (public) · *(+ restricted kalemler — owner-local register)* | yeni implementasyon öncesi çözülmeli — **LRV-02 REMEDIATED, bkz. aşağıdaki reconciliation notu** |
 | CAPABILITY_ACTIVATION_BLOCKER | DBP-09 office tenant-only read gap — DTIB (public) · *(+ restricted kalemler — owner-local register)* | Twin/yeni-yüzey aktivasyonu bekler |
 | CUTOVER_BLOCKER | DBP-04 AS-IS scheduler itiraz-fact'siz geçiş (owner-kabullü bilinen risk; public) | cutover öncesi kapanmalı |
 | LEGAL_SIGN_OFF_BLOCKER | DBP-04 LSR (OF-02/03/04, DA-03..07, LG-01..10 içerikleri) · DBP-07 LSR (müteselsillik/kefalet/iflas) (public) | LDO/Finance sign-off bekler |
@@ -155,6 +155,22 @@ sonuçtur**; bu alanlardan hiçbiri analiz veya migration sırasında otomatik c
 **Kayıt sayısı:** 31 kayıt (yukarıdaki kategorilerin toplamı; tam liste = kaynak DBP belgelerinin
 kendi register'ları + bu belgenin sınıflandırma eşlemesi). Bu belge sayıyı DEĞİŞTİRMEZ, yalnız
 sınıflar.
+
+**LRV-02 REMEDIATION RECONCILIATION (2026-07-16, DBP-P2-SEC-P01-GOV — bkz. `decision-log.md`
+aynı tarihli kayıt):** Yukarıdaki IMPLEMENTATION_ENTRY_BLOCKER satırındaki "DBP-07 LRV-02/LRV-03"
+ifadesi bu register'ın yazıldığı tarihte doğruydu; bu not onu SİLMEZ/DEĞİŞTİRMEZ, yalnız güncel
+repository truth ile uzlaştırır. **LRV-02 (UYAP `DebtorRole`→`rolTur` mapping — `uyap-xml.service.ts`
+`mapDebtorRoleToUyapKod`) IMPLEMENTED / MERGED / EVIDENCED** (PR #1322, squash
+`fa359a1d78801e6b560a78ec61c3fc5e9ca2585b`, 2026-07-16; CI 4/4 SUCCESS). Kapsam: 6/12 rol eşlemesi
+(`MUSETEREK_BORCLU`/`ADI_KEFIL`/`MUTESELSIL_KEFIL`/`AVAL`/`LEHDAR`/`MUHATAP`) düzeltildi + exhaustive
+mapping guard eklendi. **RISK CLASS: PRE-PRODUCTION LEGAL DATA INTEGRITY RISK** (gerçek UYAP
+submission — `uyapService.submitDocument` — bugün bir `[STUB]`'dır; **RUNTIME AUTHORIZATION EFFECT:
+NONE PROVEN**). **TENANT ISOLATION EFFECT: NONE.** **`TASFIYE_MEMURU`/`IFLAS_MASASI`: AS-IS korunur,
+ayrı OWNER-LDO DECISION PENDING** (UYAP `exchange.dtd`'de karşılık gelen kod yok). **İkinci UYAP
+mapper (`uyap-case-mapper.service.ts`): kapsam dışı, ayrı analiz gerekir.** **LRV-03: HENÜZ
+BAŞLAMADI** — bu kayıt onu kapatmaz, yukarıdaki tablo satırında AÇIK kalmaya devam eder. Bu kayıt
+Phase 2'yi genel olarak yetkilendirmez; **IMPLEMENTATION ENTRY: tamamlanan bu remediation birimi
+HARİCİNDE HOLD** olarak kalır.
 
 ---
 
