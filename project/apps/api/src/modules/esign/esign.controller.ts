@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, ServiceUnavailableException } from '@nestjs/common';
 import { ESignService, ESignRequest } from './esign.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 // CLIENT-SEC-H2A: EsignLog modelinde tenantId kolonu yok — /history ve /stats tenant-scope
 // UYGULANAMAZ (şema-seviyesi eksiklik, kod-only fix yok). Kalıcı şema/migration çözümü ayrı
@@ -29,16 +30,16 @@ export class ESignController {
    * İmza isteği başlat
    */
   @Post('sign')
-  async requestSignature(@Body() body: ESignRequest) {
-    return this.esignService.requestSignature(body);
+  async requestSignature(@Body() body: ESignRequest, @CurrentUser('tenantId') tenantId: string) {
+    return this.esignService.requestSignature(body, tenantId);
   }
 
   /**
    * Toplu imza isteği
    */
   @Post('sign/bulk')
-  async requestBulkSignature(@Body() body: { requests: ESignRequest[] }) {
-    return this.esignService.requestBulkSignature(body.requests);
+  async requestBulkSignature(@Body() body: { requests: ESignRequest[] }, @CurrentUser('tenantId') tenantId: string) {
+    return this.esignService.requestBulkSignature(body.requests, tenantId);
   }
 
   /**

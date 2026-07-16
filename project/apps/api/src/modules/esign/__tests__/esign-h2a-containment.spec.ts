@@ -92,17 +92,17 @@ describe('CLIENT-SEC-H2A — EsignLog fail-closed containment', () => {
       expect(res.stats).toEqual({ total: 1, pending: 0, success: 1, failed: 0 });
     });
 
-    it('POST /esign/sign davranışı değişmedi', async () => {
+    it('POST /esign/sign davranışı değişmedi (CLIENT-SEC-H2C-P02: tenantId artık authenticated context\'ten geçiyor)', async () => {
       const { controller, esignService } = buildController();
       const body: any = { documentId: 'd1', documentName: 'n', documentContent: 'c', signerId: 's1', signerName: 'x', signerTcNo: '1', signatureType: 'SIMPLE' };
-      await controller.requestSignature(body);
-      expect(esignService.requestSignature).toHaveBeenCalledWith(body);
+      await controller.requestSignature(body, 'tenant-A');
+      expect(esignService.requestSignature).toHaveBeenCalledWith(body, 'tenant-A');
     });
 
-    it('POST /esign/sign/bulk davranışı değişmedi', async () => {
+    it('POST /esign/sign/bulk davranışı değişmedi (CLIENT-SEC-H2C-P02: tenantId artık authenticated context\'ten geçiyor)', async () => {
       const { controller, esignService } = buildController();
-      await controller.requestBulkSignature({ requests: [] });
-      expect(esignService.requestBulkSignature).toHaveBeenCalledWith([]);
+      await controller.requestBulkSignature({ requests: [] }, 'tenant-A');
+      expect(esignService.requestBulkSignature).toHaveBeenCalledWith([], 'tenant-A');
     });
 
     it('GET /esign/status/:transactionId davranışı değişmedi', async () => {
