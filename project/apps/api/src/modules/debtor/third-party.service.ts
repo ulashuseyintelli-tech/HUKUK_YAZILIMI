@@ -27,6 +27,7 @@ export interface ExternalCaseReceiptInput {
   notes?: string;
   syncToMainCase?: boolean;
   idempotencyKey?: string;
+  confirmationToken?: string;
 }
 
 function externalReceiptIdentity(externalCaseId: string, dto: ExternalCaseReceiptInput): string {

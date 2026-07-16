@@ -10,6 +10,8 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  Optional,
+  ServiceUnavailableException,
   Req,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
@@ -28,6 +30,10 @@ import { ChangeLegalResponsibleLawyerDto } from "./dto/legal-responsible-lawyer.
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 import { getRequestId } from "../../common/request-id.middleware";
+import {
+  RECEIPT_AUTHORIZATION_SURFACES,
+  ReceiptObjectScopeAuthorizationService,
+} from "../collection/receipt-object-scope-authorization.service";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
@@ -42,7 +48,9 @@ export class CaseController {
     private responsibilityHistoryService: ResponsibilityHistoryService,
     private legalResponsibleLawyerService: LegalResponsibleLawyerService,
     // P2b-1: Guided-Open observe adapter (diagnostic only; engelleme yok)
-    private guidedOpenObserve: GuidedOpenObserveService
+    private guidedOpenObserve: GuidedOpenObserveService,
+    @Optional()
+    private receiptAuthorization?: ReceiptObjectScopeAuthorizationService,
   ) {}
 
   @Get()
@@ -648,10 +656,36 @@ export class CaseController {
       bankName?: string;
       accountNo?: string;
       notes?: string;
+      confirmationToken?: string;
     },
     @Req() req: any,
   ) {
-    return this.caseService.createCollection(tenantId, id, body, userId, getRequestId(req));
+    const receiptAuthorization = this.requireReceiptAuthorization();
+    const { confirmationToken, ...collectionInput } = body;
+    const authorization = await receiptAuthorization.authorize({
+      tenantId,
+      actorUserId: userId,
+      caseId: id,
+      surface: RECEIPT_AUTHORIZATION_SURFACES.CASE_COLLECTIONS,
+      payload: { caseId: id, ...collectionInput },
+      confirmationToken,
+    });
+    if (authorization.kind === 'ENVELOPE') return authorization.envelope;
+
+    return this.caseService.createCollection(
+      tenantId,
+      id,
+      collectionInput,
+      userId,
+      getRequestId(req),
+    );
+  }
+
+  private requireReceiptAuthorization(): ReceiptObjectScopeAuthorizationService {
+    if (!this.receiptAuthorization) {
+      throw new ServiceUnavailableException({ code: 'RECEIPT_AUTHORIZATION_BOUNDARY_UNAVAILABLE' });
+    }
+    return this.receiptAuthorization;
   }
 
   /**

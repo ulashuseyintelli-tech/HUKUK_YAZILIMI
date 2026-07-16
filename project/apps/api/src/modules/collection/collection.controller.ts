@@ -18,11 +18,18 @@ import {
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { getRequestId } from "../../common/request-id.middleware";
+import {
+  RECEIPT_AUTHORIZATION_SURFACES,
+  ReceiptObjectScopeAuthorizationService,
+} from "./receipt-object-scope-authorization.service";
 
 @Controller("collections")
 @UseGuards(JwtAuthGuard)
 export class CollectionController {
-  constructor(private collectionService: CollectionService) {}
+  constructor(
+    private collectionService: CollectionService,
+    private receiptAuthorization: ReceiptObjectScopeAuthorizationService,
+  ) {}
 
   // ==================== CRUD ====================
 
@@ -31,13 +38,24 @@ export class CollectionController {
    * POST /collections
    */
   @Post()
-  create(
+  async create(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
     @Body() dto: CreateCollectionDto,
     @Req() req: any,
   ) {
-    return this.collectionService.create(tenantId, dto, userId, {
+    const { confirmationToken, ...collectionDto } = dto;
+    const authorization = await this.receiptAuthorization.authorize({
+      tenantId,
+      actorUserId: userId,
+      caseId: collectionDto.caseId,
+      surface: RECEIPT_AUTHORIZATION_SURFACES.COLLECTIONS,
+      payload: collectionDto,
+      confirmationToken,
+    });
+    if (authorization.kind === 'ENVELOPE') return authorization.envelope;
+
+    return this.collectionService.create(tenantId, collectionDto as CreateCollectionDto, userId, {
       correlationId: getRequestId(req),
       producer: 'COLLECTION_PUBLIC_API',
       actor: { type: 'HUMAN', userId },
