@@ -26,9 +26,9 @@ diğer parantezli atamalar PROPOSED kalır.
 ## PROGRAM: RC-COL — Receivable & Collection Canonical Transformation
 
 ```text
-PHASE 0 — CANONICALIZATION & HANDOFF          [AKTİF]
+PHASE 0 — CANONICALIZATION & HANDOFF          [CLOSED / CANONICAL UPON APPROVED MERGE]
 PHASE 1 — P0 FINANCIAL SAFETY                 [CLOSED / CANONICAL]
-PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [owner-decision-gated]
+PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [NOT AUTHORIZED — ENTRY REVIEW OWNER GO REQUIRED]
 PHASE 3 — DOMAIN COMPLETENESS                 [owner-decision-gated]
 PHASE 4 — CONSUMER CUTOVER                    [cutover-gated — NOT AUTHORIZED]
 PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
@@ -40,10 +40,30 @@ PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
 
 | Wave | Workstream | Amaç | Durum / Bağımlılık | Lane |
 |---|---|---|---|---|
-| W0.1 | Repository baseline acceptance | Handoff kabul + delta reconcile | **KAPANDI** — Handoff Acceptance Report (2026-07-13, ACCEPTED_WITH_DELTA @ beb7d673) | Claude |
-| W0.2 | Collection Governance suite materialization | 5 belge + matrisler owner-review taslağı | **BU FAZ** — taslaklar üretildi; sırada owner review → docs-only PR | Claude |
-| W0.3 | Owner decision ratification session(ları) | COL/OD kuyruklarının karara bağlanması | **CLOSED / CANONICAL** — Phase 0 kökleri RECORDED: COL/OD-18/-21/-05/-03/-01 | Owner (+ChatGPT) |
-| W0.4 | Master Register / backlog alignment | Suite + kararların register'a bağlanması | **PENDING** — W0.3 complete; Phase 0 final closure reconciliation ayrı GO bekler | Claude |
+| W0.1 | Repository baseline acceptance | Handoff kabul + delta reconcile | **CLOSED / CANONICAL** — Handoff Acceptance Report (2026-07-13, ACCEPTED_WITH_DELTA @ `beb7d673`) | Claude |
+| W0.2 | Collection Governance suite materialization | 5 belge + matrisler owner-review taslağı | **CLOSED / CANONICAL** — suite PR #1209 (`c36fa47b`) + MPB-030 closure evidence PR #1210 (`25db930c`) | Claude |
+| W0.3 | Owner decision ratification session(ları) | Phase 0 kök COL/OD kararlarının repository authority'ye kaydı | **CLOSED / CANONICAL** — COL/OD-18A #1257 (`c4ee2332`), COL/OD-05 #1242 (`6e154c68`), COL/OD-21 #1295 (`a6372cca`), COL/OD-03 #1303 (`539fd9e5`), COL/OD-01 #1307 (`a3729d9c`) | Owner (+ChatGPT) |
+| W0.4 | Master Register / backlog alignment | Suite + kararların register'a bağlanması | **CLOSED / CANONICAL UPON APPROVED MERGE** — Governance Index, Decision Log, Master Triage ve Product Backlog closure pointer'ları hizalandı | Codex |
+
+### Phase 0 Final Closure Evidence
+
+Phase 0 exit criteria ve canonical kanıtları:
+
+1. **Repository acceptance:** W0.1 `ACCEPTED_WITH_DELTA`; kabul edilen delta'lar canonical
+   suite/risk/decomposition kayıtlarında sınıflandırıldı.
+2. **Governance materialization:** W0.2 beş belgeli Collection Governance Suite ve MPB-030
+   closure evidence'i canonical main'dedir.
+3. **Root owner gates:** W0.3 için gerekli COL/OD-18A, COL/OD-05, COL/OD-21, COL/OD-03 ve
+   COL/OD-01 kararları Decision Log'da `RECORDED` ve merge SHA'ları canonical ancestry'dedir.
+4. **Register alignment:** W0.4 ile Governance Index, bu decomposition, Decision Log, Master
+   Triage Register ve Product Backlog aynı Phase 0 closure gerçeğine bağlanır.
+5. **Scope/authority boundary:** Phase 1 `CLOSED / CANONICAL` kalır. Açık sonraki-faz owner
+   kararları ve riskler Phase 0 blocker'ı değildir; çözülmüş sayılmaz. Phase 2 `NOT AUTHORIZED`
+   kalır ve yalnız ayrı owner `ENTRY REVIEW` GO ile değerlendirilebilir.
+
+Bu reconciliation'ın approved merge'iyle W0.1–W0.4 ve **RC-COL Phase 0** formal olarak
+`CLOSED / CANONICAL` olur. Bu kapanış kod, schema, migration, backfill, runtime, cutover veya
+Phase 2 implementation authority'si üretmez.
 
 ## PHASE 1 — P0 FINANCIAL SAFETY
 
@@ -66,7 +86,7 @@ disposition'ını, daha geniş `REC-AUTH-011/012` reconciliation'ı ise Phase 1 
 cross-domain authority çalışmasını açık tutar. Bu kapanış Phase 2'yi başlatmaz veya
 implementation authority üretmez.
 
-## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (tamamı owner-gated)
+## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (NOT AUTHORIZED — entry review owner GO required)
 
 | Wave | Workstream | Gate |
 |---|---|---|
@@ -111,7 +131,11 @@ implementation authority üretmez.
 ## Dependency Matrix (faz-üstü)
 
 ```text
-W0.2 (suite) ──> W0.3 CLOSED (RECORDED: -18/-21/-05/-03/-01) ──> W0.4 PENDING (final closure reconciliation)
+PHASE 0           : CLOSED / CANONICAL UPON APPROVED MERGE
+W0.1              : CLOSED / CANONICAL — repository acceptance
+W0.2              : CLOSED / CANONICAL — suite PR #1209 + closure evidence PR #1210
+W0.3              : CLOSED / CANONICAL — RECORDED: -18A/-05/-21/-03/-01
+W0.4              : CLOSED / CANONICAL UPON APPROVED MERGE — register/backlog alignment
 W1.1             : CLOSED / CANONICAL — PR #1214 + #1223
 W1.2             : CLOSED / CANONICAL — PR #1217 + COL/OD-04 + PR #1279
 W1.3             : CLOSED / CANONICAL — PR #1265 @ 081bd961
