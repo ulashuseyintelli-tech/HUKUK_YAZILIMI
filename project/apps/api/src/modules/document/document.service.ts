@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { TemplateService, DocumentData } from "./template.service";
 import { TDocumentDefinitions } from "pdfmake/interfaces";
@@ -30,7 +30,14 @@ export class DocumentService {
   /// - DocumentService.generateAlacakHacziTalebi() → alacak haczi talebi verisi
   /// </remarks>
   async prepareDocumentData(caseId: string, tenantId?: string): Promise<DocumentData> {
-    const where = tenantId ? { id: caseId, tenantId } : { id: caseId };
+    // CLIENT-SEC-H2B: fail-closed (CLIENT-SEC-H1 S2 / template-engine.service.ts::getCaseData'nın
+    // aynı deseni). Opsiyonel-tenantId fail-open fallback KALDIRILDI; tüm production çağıranlar
+    // zaten zorunlu tenantId geçiriyor (doğrulandı) — bu yalnız gelecekteki bir çağıran unutursa
+    // sessiz cross-tenant sızıntıyı engeller.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const where = { id: caseId, tenantId };
     const caseData = await this.prisma.case.findFirst({
       where,
       include: {

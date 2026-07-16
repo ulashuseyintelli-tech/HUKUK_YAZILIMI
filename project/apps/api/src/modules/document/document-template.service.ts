@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface TemplateVariables {
@@ -170,7 +170,13 @@ export class DocumentTemplateService {
   /// - DocumentTemplateService.generateDocument() → /documents/case/:caseId/generate/:templateCode şablon verisi
   /// </remarks>
   async prepareVariablesFromCase(caseId: string, tenantId?: string): Promise<TemplateVariables> {
-    const where = tenantId ? { id: caseId, tenantId } : { id: caseId };
+    // CLIENT-SEC-H2B: fail-closed (CLIENT-SEC-H1 S2 / template-engine.service.ts::getCaseData'nın
+    // aynı deseni, document.service.ts::prepareDocumentData ile tutarlı). Opsiyonel-tenantId
+    // fail-open fallback KALDIRILDI; tüm production çağıranlar zaten zorunlu tenantId geçiriyor.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const where = { id: caseId, tenantId };
     const caseData = await this.prisma.case.findFirst({
       where,
       include: {

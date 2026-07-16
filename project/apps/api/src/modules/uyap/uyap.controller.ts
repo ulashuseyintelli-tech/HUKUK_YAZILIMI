@@ -151,9 +151,10 @@ export class UyapController {
   @Get('case/:caseId/status')
   async queryCaseStatus(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Query('uyapDosyaId') uyapDosyaId?: string,
   ) {
-    return this.uyapService.queryCaseStatus(caseId, uyapDosyaId);
+    return this.uyapService.queryCaseStatus(caseId, tenantId, uyapDosyaId);
   }
 
   /**
@@ -297,8 +298,8 @@ export class UyapController {
   ) {
     const xml = await this.uyapXmlService.generateFromCase(caseId, tenantId);
     
-    // Dosya adı için case bilgisini al
-    const caseData = await this.uyapService.queryCaseStatus(caseId);
+    // Dosya adı için case bilgisini al (tenantId zaten bu metotta scope'ta — CLIENT-SEC-H2B)
+    const caseData = await this.uyapService.queryCaseStatus(caseId, tenantId);
     const fileName = `e-takip-${caseData.data?.localStatus || caseId}.xml`;
     
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');

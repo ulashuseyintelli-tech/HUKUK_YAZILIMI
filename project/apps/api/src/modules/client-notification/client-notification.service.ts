@@ -920,6 +920,9 @@ export class ClientNotificationService {
   }
 
   // E-posta şablonu güncelle
+  // CLIENT-SEC-H2B: atomik tenant-scoped update. `updateMany({id,tenantId})` + count===0 kontrolü
+  // ile cross-tenant ve nonexistent template AYNI güvenli sonucu üretir (varlık ifşası yok);
+  // read-then-write TOCTOU'suna dönülmez (bkz. office-approval.service.ts'in aynı deseni).
   async updateEmailTemplate(
     tenantId: string,
     templateId: string,
@@ -931,8 +934,8 @@ export class ClientNotificationService {
       isDefault?: boolean;
     }
   ) {
-    return this.prisma.messageTemplate.update({
-      where: { id: templateId },
+    const result = await this.prisma.messageTemplate.updateMany({
+      where: { id: templateId, tenantId },
       data: {
         name: data.name,
         subject: data.subject,
@@ -940,6 +943,13 @@ export class ClientNotificationService {
         isActive: data.isActive,
       },
     });
+    if (result.count === 0) {
+      throw new NotFoundException("Şablon bulunamadı");
+    }
+    // updateMany güncellenmiş satırı döndürmez; response-contract'ı korumak için aynı
+    // tenant-scope ile yeniden okunur (yukarıdaki updateMany zaten bu tenant'a ait olduğunu
+    // kanıtladığından bu okuma güvenlidir).
+    return this.prisma.messageTemplate.findFirst({ where: { id: templateId, tenantId } });
   }
 
   // Varsayılan şablonları oluştur

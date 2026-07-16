@@ -116,6 +116,19 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="(esign-h2a-containment|uyap-history-h2a-containment)\.spec\.ts$"
         working-directory: project
+      # CLIENT-SEC-H2B: code-level tenant-scope enforcement regression (template update,
+      # UYAP case-status query, document/document-template fail-closed tenant guard).
+      - name: CLIENT-SEC-H2B tenant-scope enforcement regression
+        run: |
+          cd apps/api
+          for f in src/modules/client-notification/__tests__/client-notification-template-tenant-scope.spec.ts \
+                   src/modules/uyap/__tests__/uyap-case-status-tenant-scope.spec.ts \
+                   src/modules/document/__tests__/document-fail-closed-tenant.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-SEC-H2B spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="(client-notification-template-tenant-scope|uyap-case-status-tenant-scope|document-fail-closed-tenant)\.spec\.ts$"
+        working-directory: project
       - name: Integration Tests (legal-kernel, real Postgres)
         run: |
           cd apps/api
