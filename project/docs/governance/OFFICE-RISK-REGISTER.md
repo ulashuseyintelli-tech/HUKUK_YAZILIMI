@@ -164,3 +164,35 @@ NOTES: SES-001 ile birlikte ele alınmalı.
 ---
 
 **STF-PRD-* toplam: 12.** Bu dosya hiçbir riski kendiliğinden global backlog'a eklemez, yetkilendirmez veya kapatmaz.
+
+---
+
+## CLIENT-SEC-H2 Structural Findings (STF-PRD-* ailesinden ayrı, CLIENT domain provenance)
+
+Aşağıdaki iki kart, MÜVEKKİL/CLIENT Canonical Analysis programının CLIENT-SEC-H2 hattından (bkz. `decision-log.md` CLIENT-SEC-H2 kaydı) gelir; OFFICE'in kendi `OFF/OD` karar setine bağlı değildir ve yukarıdaki "STF-PRD-* toplam: 12" sayımına dahil değildir. Bu dosyanın "Statü otoritesi ayrımı" kuralı (yukarıda) bu iki karta da aynen uygulanır.
+
+**CLIENT-SEC-H2-STRUCT-01** — Audit/entegrasyon log yüzeyinde tenant ownership boşluğu (şema-seviyesi, I)
+SEVERITY: P1 · DOMAIN STATUS: CANDIDATE / NOT YET TRIAGED · EVIDENCE STATUS: REVALIDATION_REQUIRED
+PUBLIC SUMMARY: Bir entegrasyon/audit log yüzeyinde tenant kolonu veya tenant'a giden bir ilişki bulunmuyor olabilir; okuma yolları H2A ile fail-closed containment altına alındı. Etkilenen model/tablo adı, alan adları ve runtime konumları kasıtlı olarak public repository dışında tutulur.
+PRIVATE EVIDENCE: RETAINED LOCALLY / NOT PUBLISHED
+CURRENT CANONICAL EVIDENCE: NOT PUBLICLY DISCLOSED / REVALIDATION REQUIRED
+TARGET CONTROL / DESIRED OUTCOME: Kalıcı tenant-scope (schema-level) veya endpoint'in kalıcı olarak emekliye ayrılması — owner kararı gerekir (H2C Option A/D)
+RELATED OFF-INV: — (CLIENT domain finding, OFFICE invariant setine bağlı değil) · RELATED OFF/OD: —
+GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: `e3e9bbae`
+CURRENT SAFETY POSITION: H2A fail-closed containment (PR #1304, squash `676eead29cc2249051398ba20d504c82ba937402`) ilgili okuma yollarını service/Prisma katmanına hiç ulaşmadan kapatıyor; live exposure CONTAINED.
+STRUCTURAL FINDING (H2C, read-only analiz): **STRUCTURAL REMEDIATION: FEASIBLE (yüksek güven)** — bir tenant-ilişkilendirme yolu için yüksek-güvenilirlikli kanıt bulundu; bir alt-küme kayıt için ilişkilendirme başarısız olabilir. Gerçek satır sayısı/oran MATERIAL UNKNOWN (DB erişimi yok). Mekanizma ayrıntısı kasıtlı olarak public repository dışında tutulur.
+IMPLEMENTATION AUTHORITY: NONE — schema, migration, backfill veya endpoint restoration için hiçbir yetki bu kartla verilmez.
+NOTES: H2A containment, yapısal çözüm + owner-onaylı backfill kanıtı olmadan KALDIRILAMAZ. Detaylı backfill/cutover analizi owner'ın local ortamında tutulur.
+
+**CLIENT-SEC-H2-STRUCT-02** — Audit/entegrasyon log yüzeyinde tenant ownership boşluğu (şema-seviyesi, II — kısmen çözülemez)
+SEVERITY: P1 · DOMAIN STATUS: CANDIDATE / NOT YET TRIAGED · EVIDENCE STATUS: REVALIDATION_REQUIRED
+PUBLIC SUMMARY: Ayrı bir entegrasyon/audit log yüzeyinde tenant kolonu bulunmuyor olabilir. Okuma yolları H2A ile fail-closed containment altına alındı. Etkilenen model/tablo adı, alan adları ve runtime konumları kasıtlı olarak public repository dışında tutulur.
+PRIVATE EVIDENCE: RETAINED LOCALLY / NOT PUBLISHED
+CURRENT CANONICAL EVIDENCE: NOT PUBLICLY DISCLOSED / REVALIDATION REQUIRED
+TARGET CONTROL / DESIRED OUTCOME: Kalıcı tenant-scope (schema-level, kısmi nullable altküme kabulüyle) veya endpoint'in kalıcı olarak emekliye ayrılması — owner kararı gerekir (H2C Option A/B/D)
+RELATED OFF-INV: — (CLIENT domain finding, OFFICE invariant setine bağlı değil) · RELATED OFF/OD: —
+GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: `e3e9bbae`
+CURRENT SAFETY POSITION: H2A fail-closed containment (PR #1304, squash `676eead29cc2249051398ba20d504c82ba937402`) ilgili okuma yollarını service/Prisma katmanına hiç ulaşmadan kapatıyor; live exposure CONTAINED. H2B (PR #1311, squash `a46d320072c6e80f983832be02aba305fc8b5940`) ayrıca ayrı bir kod-seviyesi sorguyu tenant-scoped hale getirdi — bu, log tablosunun KENDİ yapısal boşluğunu KAPATMAZ.
+STRUCTURAL FINDING (H2C, read-only analiz): **STRUCTURAL REMEDIATION: PARTIALLY FEASIBLE** — bir alt-küme kayıt için deterministik ilişkilendirme yolu bulundu; ayrı bir alt-küme ise ilgili işlemin doğası gereği retroaktif olarak çözülemez (UNRESOLVABLE sınıfı mevcut, kalıcı olabilir) — **tam deterministik backfill mümkün DEĞİL.** Ayrıca meşru, tasarım-gereği tenant-nötr bir sistem-içi tüketici mevcut — herhangi bir gelecekteki tenant-filtre zorunluluğu bunu KIRMAMALI. Gerçek satır sayısı/dağılım MATERIAL UNKNOWN (DB erişimi yok). Mekanizma ayrıntısı kasıtlı olarak public repository dışında tutulur.
+IMPLEMENTATION AUTHORITY: NONE — schema, migration, backfill veya endpoint restoration için hiçbir yetki bu kartla verilmez.
+NOTES: H2A containment, yapısal çözüm + owner-onaylı backfill kanıtı olmadan KALDIRILAMAZ. Detaylı backfill/cutover analizi ve owner karar listesi: `decision-log.md` CLIENT-SEC-H2 kaydı.
