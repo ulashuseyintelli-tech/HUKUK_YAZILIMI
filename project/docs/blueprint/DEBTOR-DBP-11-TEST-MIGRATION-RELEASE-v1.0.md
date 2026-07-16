@@ -172,6 +172,25 @@ BAŞLAMADI** — bu kayıt onu kapatmaz, yukarıdaki tablo satırında AÇIK kal
 Phase 2'yi genel olarak yetkilendirmez; **IMPLEMENTATION ENTRY: tamamlanan bu remediation birimi
 HARİCİNDE HOLD** olarak kalır.
 
+**DBP-P2-SEC-P02 GOVERNANCE RECONCILIATION (2026-07-16, bkz. `decision-log.md` aynı tarihli
+kayıt):** Yukarıdaki nottaki "İkinci UYAP mapper (`uyap-case-mapper.service.ts`): kapsam dışı,
+ayrı analiz gerekir" ifadesi o tarihte doğruydu; bu not onu SİLMEZ/DEĞİŞTİRMEZ, yalnız o ayrı
+analizin sonucunu kaydeder. **İkinci UYAP mapper (`UyapCaseMapperService.mapDebtorRole`)
+HARDENING: IMPLEMENTED / MERGED / EVIDENCED** (PR #1327, squash
+`af29e60e9da3cdcea922a74b77d97ca325cd24a6`, 2026-07-16; CI 4/4 SUCCESS). **BEHAVIOR CHANGE: 0**
+— 12/12 mevcut rol çıktısı AS-IS korundu; yalnız exhaustive mapping guard
+(`Record<Exclude<DebtorRole, TASFIYE_MEMURU|IFLAS_MASASI>, UyapTarafRolu>`) eklendi. **RISK
+CLASS: PRE-PRODUCTION EXPORT DATA INTEGRITY HARDENING.** **SECOND MAPPER CONTRACT: LEGACY /
+NARROW EXPORT CONTRACT** (kendi hata mesajında "Legacy UYAP export yolu" olarak öz-tanımlı;
+6-değerli `UyapTarafRolu` sözleşmesi, `uyap-xml.service.ts`'in 10-kodlu `exchange.dtd`
+sözleşmesinden yapısal olarak farklı — LRV-02'nin duplikasyonu DEĞİL). **`TASFIYE_MEMURU`/
+`IFLAS_MASASI`: AS-IS korunur, OWNER-LDO DECISION PENDING** (LRV-02 ile ORTAK açık karar).
+**`LEHDAR`/`MUHATAP` hedef sınıflandırması: OWNER-LDO DECISION PENDING** (bu iki rol için
+"BORCLU" sınıflandırmasının hukuki uygunluğu repo'dan kanıtlanamaz — DBP-P2-SEC-P02 analizinde
+UNPROVEN olarak işaretlendi). **LRV-02: CLOSED / NOT REOPENED.** **LRV-03: HENÜZ BAŞLAMADI** —
+bu kayıt açmaz. Bu kayıt Phase 2'yi genel olarak yetkilendirmez; **IMPLEMENTATION ENTRY:
+tamamlanan remediation birimleri HARİCİNDE HOLD** olarak kalır.
+
 ---
 
 ## 7. QUEUE-A / QUEUE-B Disposition — OWNER-APPROVED [E]
