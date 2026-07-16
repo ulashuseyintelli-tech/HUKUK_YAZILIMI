@@ -84,9 +84,9 @@ commit, merge, release veya runtime authority yetkisi oluşturmaz.
 | `project/docs/blueprint/` (`DEBTOR-CANONICAL-DOMAIN-BLUEPRINT-CHARTER-v1.0.md` + `DEBTOR-DBP-02..12-*.md`, 13 belge) | BORÇLU PLATFORMU Phase 1 Canonical Domain Blueprint — 9-katman mimari sentez (L1-L9), 12 work-package (DBP-02..12), 31 zorunlu artefakt, BR-01..21/N-01..26 register'ları | BLUEPRINT DOCUMENT SET: IMPLEMENTED/MERGED/CANONICALIZED (her belge kendi `Owner Approval Record`'unu taşır) / GOVERNANCE RECONCILIATION: RECORDED (`decision-log.md` 2026-07-16 DBP-GOV-01) / OWNER BLUEPRINT RATIFICATION: PENDING / PHASE 1 CANONICAL CLOSED: NOT YET DECLARED / IMPLEMENTATION ENTRY: HOLD |
 | `project/docs/governance/COLLECTION-GOVERNANCE.md` | Collection Domain Governance — receipt/lifecycle/allocation-execution sınırı, COL-INV-001..048, cross-domain contract haritası | OWNER-APPROVED CANONICALIZATION v1.0 (2026-07-13); CANONICAL UPON APPROVED MERGE TO MAIN |
 | `project/docs/governance/COLLECTION-MASTER-SYNTHESIS.md` | Collection kanıt/kalıcı-gerçek katmanı (operasyonel değil) | CANONICAL REFERENCE / NON-NORMATIVE EVIDENCE BASELINE |
-| `project/docs/governance/COLLECTION-OWNER-DECISIONS.md` | Collection açık owner karar dossier'i (COL/OD-01..21); kapanmış karar otoritesi DEĞİLDİR | CANONICAL OPEN-DECISION DOSSIER — içindeki kararların tamamı OPEN |
+| `project/docs/governance/COLLECTION-OWNER-DECISIONS.md` | Collection owner karar dossier'i (COL/OD-01..21); kapanmış karar otoritesi DEĞİLDİR | CANONICAL OPEN-DECISION DOSSIER — RECORDED/CANONICAL: COL/OD-01, -03, -04, -05, -21; COL/OD-18 → COL/OD-18A AMENDED; kalan 15 karar OPEN |
 | `project/docs/governance/COLLECTION-RISK-REGISTER.md` | Collection domain risk dossier'i; global triage/execution status otoritesi DEĞİLDİR | CANONICAL DOMAIN RISK DOSSIER |
-| `project/docs/governance/COLLECTION-DECOMPOSITION.md` | RC-COL Program→Phase→Wave→Workstream haritası; execution yetkisi üretmez | CANONICAL DECOMPOSITION / EXECUTION-PLANNING REFERENCE |
+| `project/docs/governance/COLLECTION-DECOMPOSITION.md` | RC-COL Program→Phase→Wave→Workstream haritası; execution yetkisi üretmez | CANONICAL DECOMPOSITION — PHASE 0 CLOSED / CANONICAL UPON APPROVED CLOSURE MERGE; PHASE 1 CLOSED / CANONICAL; PHASE 2 NOT AUTHORIZED — ENTRY REVIEW OWNER GO REQUIRED |
 
 ## 3. Authority eksenleri
 
