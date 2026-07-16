@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional, Inject, forwardRef, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, Optional, Inject, forwardRef, NotFoundException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   WorkflowStage,
@@ -6,6 +6,7 @@ import {
   EnforcementType,
   EnforcementStatus,
   DecisionType,
+  CaseDebtorLifecycleStatus,
 } from "@prisma/client";
 import { RuleEngine, RuleContext, RuleResult } from "./rule-engine.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
@@ -346,15 +347,23 @@ export class WorkflowEngine {
         throw new NotFoundException("Dosya bulunamadı");
       }
 
-      // caseDebtorId verildiyse: aynı Case'e ait olduğu doğrulanır. CaseDebtor'da doğrudan tenantId
-      // yok — tenant bağı zaten doğrulanmış caseId üzerinden transitive olarak sağlanır.
+      // caseDebtorId verildiyse: aynı Case'e ait olduğu VE lifecycle'ının ACTIVE olduğu doğrulanır
+      // (LRV-03A / DBP-P2-SEC-P03A — DBP-07 §11 "Passivation Guard Is Universal" invariant'ının bu
+      // yazım yoluna uygulanması; CaseDebtorLifecycleGuardService'in 15+ başka write-path'te
+      // uyguladığı AYNI invariant). Bugün caseDebtorId hiçbir üretici tarafından verilmediği için
+      // (yalnız executeRule() çağırır ve her zaman omit eder) bu kontrol mevcut davranışı
+      // DEĞİŞTİRMEZ; ileride caseDebtorId veren bir çağıran eklendiğinde sessiz bug'ı engeller.
+      // Tenant bağı zaten doğrulanmış caseId üzerinden transitive olarak sağlanır.
       if (caseDebtorId) {
         const caseDebtorRow = await tx.caseDebtor.findFirst({
           where: { id: caseDebtorId, caseId },
-          select: { id: true },
+          select: { id: true, lifecycleStatus: true },
         });
         if (!caseDebtorRow) {
           throw new NotFoundException("Borçlu bulunamadı veya bu dosyaya ait değil");
+        }
+        if (caseDebtorRow.lifecycleStatus === CaseDebtorLifecycleStatus.PASSIVE) {
+          throw new BadRequestException("Pasif dosya borçlusu yeni operasyon hedefi olamaz.");
         }
       }
 

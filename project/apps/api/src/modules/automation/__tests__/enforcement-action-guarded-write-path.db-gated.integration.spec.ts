@@ -10,7 +10,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { WorkflowEngine } from '../workflow-engine.service';
 
@@ -175,5 +175,101 @@ describeWithDisposableDb('PR-EA-4 Guarded Write Path - disposable DB', () => {
     const readBack = await prisma.enforcementAction.findUnique({ where: { id: legacyRow.id } });
     expect(readBack).not.toBeNull();
     expect(readBack!.tenantId).toBeNull();
+  });
+});
+
+/**
+ * LRV-03A / DBP-P2-SEC-P03A — CaseDebtor passivation guard, gerçek Postgres üzerinde.
+ *
+ * buildScopedFixture() varsayılan olarak ACTIVE bir CaseDebtor üretir (schema @default(ACTIVE));
+ * burada fixture'ı gerçek bir UPDATE ile PASSIVE'e çevirip guard'ın gerçek composite where +
+ * lifecycleStatus select üzerinde doğru çalıştığı kanıtlanır.
+ */
+describeWithDisposableDb('LRV-03A — CaseDebtor passivation guard - disposable DB', () => {
+  jest.setTimeout(30_000);
+  let prisma: PrismaClient;
+  let engine: WorkflowEngine;
+  const createdTenantIds = new Set<string>();
+
+  beforeAll(async () => {
+    prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
+    await prisma.$connect();
+    engine = new WorkflowEngine(prisma as any, {} as any, {} as any);
+  });
+
+  afterAll(async () => {
+    for (const tenantId of createdTenantIds) {
+      await cleanupTenant(tenantId);
+    }
+    await prisma.$disconnect();
+  });
+
+  async function cleanupTenant(tenantId: string) {
+    await prisma.enforcementAction.deleteMany({ where: { case: { tenantId } } });
+    await prisma.caseDebtor.deleteMany({ where: { case: { tenantId } } });
+    await prisma.case.deleteMany({ where: { tenantId } });
+    await prisma.debtor.deleteMany({ where: { tenantId } });
+    await prisma.client.deleteMany({ where: { tenantId } });
+    await prisma.tenant.deleteMany({ where: { id: tenantId } });
+    createdTenantIds.delete(tenantId);
+  }
+
+  async function buildScopedFixture(label: string) {
+    const tenantId = `test-lrv03a-${label}-${randomUUID().slice(0, 8)}`;
+    createdTenantIds.add(tenantId);
+
+    await prisma.tenant.create({
+      data: { id: tenantId, name: `LRV-03A Test Tenant ${label}`, slug: `test-lrv03a-${label}-${randomUUID().slice(0, 8)}` },
+    });
+
+    const client = await prisma.client.create({
+      data: { tenantId, displayName: 'LRV-03A Test Muvekkil', type: 'INDIVIDUAL' },
+    });
+
+    const debtor = await prisma.debtor.create({
+      data: { tenantId, name: 'LRV-03A Test Borclu', type: 'INDIVIDUAL' },
+    });
+
+    const caseRow = await prisma.case.create({
+      data: {
+        tenantId,
+        clientId: client.id,
+        fileNumber: `TEST-LRV03A-${randomUUID().slice(0, 6)}`,
+        type: 'GENERAL_EXECUTION',
+        caseStatus: 'DERDEST',
+        status: 'ACTIVE',
+      },
+    });
+
+    const caseDebtor = await prisma.caseDebtor.create({
+      data: { caseId: caseRow.id, debtorId: debtor.id, role: 'ASIL_BORCLU' },
+    });
+
+    return { tenantId, caseId: caseRow.id, caseDebtorId: caseDebtor.id };
+  }
+
+  it('PASSIVE CaseDebtor hedefli caseDebtorId → BadRequestException, hiçbir satır yazılmaz', async () => {
+    const { tenantId, caseId, caseDebtorId } = await buildScopedFixture('passive');
+    await prisma.caseDebtor.update({
+      where: { id: caseDebtorId },
+      data: { lifecycleStatus: 'PASSIVE' },
+    });
+
+    await expect(
+      engine.createEnforcementAction({ tenantId, caseId, caseDebtorId, type: 'SALARY_SEIZURE' }),
+    ).rejects.toThrow(BadRequestException);
+
+    const rows = await prisma.enforcementAction.findMany({ where: { caseId } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('ACTIVE CaseDebtor hedefli caseDebtorId → create succeeds (regresyon)', async () => {
+    const { tenantId, caseId, caseDebtorId } = await buildScopedFixture('active');
+
+    await engine.createEnforcementAction({ tenantId, caseId, caseDebtorId, type: 'SALARY_SEIZURE' });
+
+    const rows = await prisma.enforcementAction.findMany({ where: { caseId } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].caseDebtorId).toBe(caseDebtorId);
   });
 });

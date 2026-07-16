@@ -86,7 +86,7 @@ describe('PR-EA-4 Guarded Write Path — CaseDebtor validation', () => {
     });
     expect(prisma.caseDebtor.findFirst).toHaveBeenCalledWith({
       where: { id: 'cd1', caseId: 'case1' },
-      select: { id: true },
+      select: { id: true, lifecycleStatus: true },
     });
     const data = prisma.enforcementAction.create.mock.calls[0][0].data;
     expect(data.caseDebtorId).toBe('cd1');
