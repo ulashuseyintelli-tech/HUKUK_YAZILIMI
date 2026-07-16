@@ -58,8 +58,13 @@ PRIVATE EVIDENCE: RETAINED LOCALLY / NOT PUBLISHED
 CURRENT CANONICAL EVIDENCE: NOT PUBLICLY DISCLOSED / REVALIDATION REQUIRED
 TARGET CONTROL / DESIRED OUTCOME: Title/SystemRole/PermissionGrant ayrımı tutarlı uygulanır (OFF-INV-03)
 RELATED OFF-INV: OFF-INV-03 · RELATED OFF/OD: OFF/OD-05, OFF/OD-09
-GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: NONE
-NOTES: —
+GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: WAVE 2 · LAST VERIFIED SHA: `fa6851c0`
+MITIGATION STATUS: OPEN / PARTIALLY MITIGATED
+DELIVERED SLICES: CANDIDATE-C — CANONICAL (davranış-nötr actor-capacity read consolidation) · CANDIDATE-E1 — CANONICAL (additive-only PermissionGrant/SystemRole şema temeli)
+EVIDENCE: PR #1255 (squash `038dbbb9`) · PR #1308 (Contract Draft canonical) + PR #1312 (squash `fa6851c0`, implementasyon) — bkz. `OFFICE-DELIVERY-MANIFEST.md` §4/§4c/§7
+RESIDUALS (CARRIED FORWARD): tam consumer-migration kapsamı (CANDIDATE-E'nin kalan scope'u — mevcut sert yetkilendirme noktaları + StaffMember izin bayrakları + gerçek enforcement wiring) TESLİM EDİLMEDİ, ayrı/HENÜZ candidate ID'si olmayan owner-gated future scope · CANDIDATE-D hâlâ PRODUCT_DECISION_REQUIRED
+FINDING VERDICT: OPEN / NOT CLOSED — teslim edilen iki slice (C: okuma-tarafı konsolidasyon; E1: şema temeli) riskin TARGET CONTROL'ünü (title/SystemRole/PermissionGrant ayrımının tutarlı UYGULANMASI) henüz sağlamıyor; ikisi de sıfır enforcement/runtime davranış değişikliğiyle geldi. Asıl davranışsal kapanış, hâlâ owner-gated kalan tam consumer-migration'ı gerektirir.
+NOTES: Owner policy required (tam consumer-migration kapsamının ne zaman/nasıl candidate'a dönüşeceği).
 
 **STF-PRD-SCP-001** — Tenant içi nesne düzeyi kapsam kontrol boşluğu
 SEVERITY: P2 · DOMAIN STATUS: CANDIDATE / NOT YET TRIAGED · EVIDENCE STATUS: REVALIDATION_REQUIRED
