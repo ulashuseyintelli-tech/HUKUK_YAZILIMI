@@ -83,6 +83,28 @@ describe('payment-mapper (G4b-1)', () => {
     expect(res.payments[0].source).toBe('BANKA');
   });
 
+  it('COLLECTION provenance tarihleri canonical effective-date authority olmaz', () => {
+    const row = {
+      ...collection({ id: 'C1', date: '2025-05-02' }),
+      valueDate: '2025-05-10',
+      confirmedAt: '2025-05-11',
+    };
+
+    const res = mapPayments([], [row]);
+
+    expect(res.payments[0].date).toBe('2025-05-02');
+    expect(res.payments[0]).not.toHaveProperty('valueDate');
+    expect(res.payments[0]).not.toHaveProperty('confirmedAt');
+  });
+
+  it.each([
+    ['LEDGER effectiveDate', () => mapPayments([ledger({ id: 'L1', effectiveDate: 'invalid-date' })], [])],
+    ['LEDGER entryDate fallback', () => mapPayments([ledger({ id: 'L1', entryDate: 'invalid-date', effectiveDate: null })], [])],
+    ['COLLECTION date fallback', () => mapPayments([], [collection({ id: 'C1', date: 'invalid-date' })])],
+  ])('%s geçersizse legal-balance girdisi üretmek yerine fail-closed olur', (_label, map) => {
+    expect(map).toThrow(RangeError);
+  });
+
   it('Decimal-string amount → number', () => {
     const res = mapPayments([ledger({ id: 'L1', amount: '1234.56' })], []);
     expect(res.payments[0].amount).toBe(1234.56);
