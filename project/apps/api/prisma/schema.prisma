@@ -2902,6 +2902,10 @@ enum DocumentCategory {
 model UyapRequestLog {
   id          String   @id @default(cuid())
   caseId      String?
+  /// CLIENT-SEC-H2C-P01: nullable-first tenant ownership hazırlığı (owner ratification,
+  /// 2026-07-16). Additive-only; mevcut satırlar/writer/reader davranışı DEĞİŞMEDİ.
+  /// Bir alt-küme kayıt için kalıcı NULL kalması beklenir (bkz. decision-log.md).
+  tenantId    String?
   requestType String // sendPaymentOrder, checkTebligat vs.
   requestData Json? // Gönderilen veri
   requestAt   DateTime @default(now())
@@ -2925,6 +2929,7 @@ model UyapRequestLog {
   @@index([caseId])
   @@index([status])
   @@index([requestType])
+  @@index([tenantId, caseId])
 }
 
 enum UyapRequestStatus {
@@ -5834,6 +5839,10 @@ enum AddressTaskStatus {
 model EsignLog {
   id String @id @default(cuid())
 
+  /// CLIENT-SEC-H2C-P01: nullable-first tenant ownership hazırlığı (owner ratification,
+  /// 2026-07-16). Additive-only; mevcut satırlar/writer/reader davranışı DEĞİŞMEDİ.
+  tenantId String?
+
   // Belge Bilgileri
   documentId   String
   documentName String
@@ -5864,6 +5873,7 @@ model EsignLog {
   @@index([status])
   @@index([provider])
   @@index([createdAt])
+  @@index([tenantId, documentId])
 }
 
 // ==================== BANKA ENTEGRASYONU ====================
