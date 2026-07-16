@@ -132,7 +132,7 @@ kaynak DBP'ye göre değil.
 | Sınıf | Örnek kayıtlar (kaynak-ID) | Not |
 |---|---|---|
 | CURRENT_PRODUCTION_REMEDIATION | *(restricted — owner-local register; public'te yalnız "PRESENT")* | QUEUE-A; owner GO ile açılabilir |
-| IMPLEMENTATION_ENTRY_BLOCKER | DBP-07 LRV-03 (public) · *(+ restricted kalemler — owner-local register)* | yeni implementasyon öncesi çözülmeli — **LRV-02 REMEDIATED, bkz. aşağıdaki reconciliation notu** |
+| IMPLEMENTATION_ENTRY_BLOCKER | DBP-07 LRV-03B (public) · *(+ restricted kalemler — owner-local register)* | yeni implementasyon öncesi çözülmeli — **LRV-02 REMEDIATED + LRV-03 SPLIT (LRV-03A REMEDIATED, yalnız LRV-03B açık kalır), bkz. aşağıdaki reconciliation notları** |
 | CAPABILITY_ACTIVATION_BLOCKER | DBP-09 office tenant-only read gap — DTIB (public) · *(+ restricted kalemler — owner-local register)* | Twin/yeni-yüzey aktivasyonu bekler |
 | CUTOVER_BLOCKER | DBP-04 AS-IS scheduler itiraz-fact'siz geçiş (owner-kabullü bilinen risk; public) | cutover öncesi kapanmalı |
 | LEGAL_SIGN_OFF_BLOCKER | DBP-04 LSR (OF-02/03/04, DA-03..07, LG-01..10 içerikleri) · DBP-07 LSR (müteselsillik/kefalet/iflas) (public) | LDO/Finance sign-off bekler |
@@ -190,6 +190,30 @@ sözleşmesinden yapısal olarak farklı — LRV-02'nin duplikasyonu DEĞİL). *
 UNPROVEN olarak işaretlendi). **LRV-02: CLOSED / NOT REOPENED.** **LRV-03: HENÜZ BAŞLAMADI** —
 bu kayıt açmaz. Bu kayıt Phase 2'yi genel olarak yetkilendirmez; **IMPLEMENTATION ENTRY:
 tamamlanan remediation birimleri HARİCİNDE HOLD** olarak kalır.
+
+**DBP-P2-SEC-P03A GOVERNANCE RECONCILIATION (2026-07-16, bkz. `decision-log.md` aynı tarihli
+kayıt):** Yukarıdaki notlardaki "LRV-03: HENÜZ BAŞLAMADI" ifadesi o tarihte doğruydu; bu not onu
+SİLMEZ/DEĞİŞTİRMEZ, yalnız `DBP-P2-SEC-P03` GO-ANALYZE'inin sonucunu uzlaştırır. **LRV-03 SPLIT:
+analiz, LRV-03'ü iki ayrı bulguya böldü — LRV-03A (mekanik invariant: eksik CaseDebtor lifecycle
+guard) ve LRV-03B (iş kuralı: bir/bazı `CaseDebtor` PASSIVE iken Case-seviyesi otomasyon
+semantiği).** **LRV-03A (`WorkflowEngine.createEnforcementAction`'ın `caseDebtorId` dalına
+`CaseDebtor.lifecycleStatus` guard'ı — DBP-07 §11 "Passivation Guard Is Universal"):
+IMPLEMENTED / MERGED / EVIDENCED** (PR #1336, squash
+`93f5f77f4b447bc6cd15e77908e386b635107bf1`, 2026-07-16; CI 4/4 SUCCESS; yeni CI step canlı
+çalıştı — 6/6 PASS; disposable Postgres 10/10 PASS). **LRV-03A INVARIANT: `caseDebtorId` PROVIDED
++ PASSIVE = REJECT (`BadRequestException`); `caseDebtorId` PROVIDED + ACTIVE = ALLOW;
+`caseDebtorId` OMITTED = AS-IS/UNCHANGED.** **BEHAVIOR CHANGE: 0** — bugünkü tek üretici
+(`executeRule`) `caseDebtorId` vermediği için üretim davranışı kanıtlı şekilde değişmez.
+**RISK CLASS: PRE-PRODUCTION LEGAL-STATE / WORKFLOW INTEGRITY.** **TENANT EFFECT: NONE.**
+**AUTHORIZATION EFFECT: NONE.** **SCHEMA/MIGRATION: NONE.** **PUBLIC API: NONE.**
+**LRV-03B: NOT STARTED / SEPARATE OWNER PROGRAM** (Case-seviyesi "tüm/bazı borçlular pasif iken
+otomasyon" politikası; Liability modeli / çok-borçlulu dosya / OD-07 ile kesişir — bu kayıt onu
+AÇMAZ, karara bağlamaz; yukarıdaki tablo satırında `LRV-03B` AÇIK blocker olarak kalır).
+**PHASE 2 GENEL GİRİŞ: YETKİLENDİRİLMEDİ (NOT AUTHORIZED).** **IMPLEMENTATION ENTRY:
+tamamlanan remediation birimleri (LRV-02, ikinci mapper hardening, LRV-03A) HARİCİNDE HOLD**
+olarak kalır. **AYRI CI BULGUSU (yalnız referans, bu görevde remediate EDİLMEDİ):** LRV-02 ve
+DBP-P2-SEC-P02'nin test dosyaları ci.yml'in dosya-adı bazlı allowlist'inde YER ALMIYOR olabilir —
+ayrı OWNER task'ıdır, LRV-03A-GOV'un parçası DEĞİLDİR.
 
 ---
 
