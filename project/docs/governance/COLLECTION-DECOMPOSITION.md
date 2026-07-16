@@ -28,7 +28,7 @@ diğer parantezli atamalar PROPOSED kalır.
 ```text
 PHASE 0 — CANONICALIZATION & HANDOFF          [CLOSED / CANONICAL UPON APPROVED MERGE]
 PHASE 1 — P0 FINANCIAL SAFETY                 [CLOSED / CANONICAL]
-PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [NOT AUTHORIZED — ENTRY REVIEW OWNER GO REQUIRED]
+PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [ACTIVE — W2.1 CLOSED UPON APPROVED RECONCILIATION MERGE; NEXT OWNER GATE REQUIRED]
 PHASE 3 — DOMAIN COMPLETENESS                 [owner-decision-gated]
 PHASE 4 — CONSUMER CUTOVER                    [cutover-gated — NOT AUTHORIZED]
 PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
@@ -86,15 +86,33 @@ disposition'ını, daha geniş `REC-AUTH-011/012` reconciliation'ı ise Phase 1 
 cross-domain authority çalışmasını açık tutar. Bu kapanış Phase 2'yi başlatmaz veya
 implementation authority üretmez.
 
-## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (NOT AUTHORIZED — entry review owner GO required)
+## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (ACTIVE — W2.1 closure; W2.2–W2.5 not authorized)
 
 | Wave | Workstream | Gate |
 |---|---|---|
-| W2.1 | Canonical effective-date policy | COL/OD-03 **RECORDED / CONTRACT CANONICAL**; implementation ve Phase 2 cutover NOT AUTHORIZED |
-| W2.2 | confirmedAt / external settlement | COL/OD-06 OPEN (+COL/OD-03 RECORDED); Phase 2 NOT AUTHORIZED |
-| W2.3 | Unapplied payment lifecycle | COL/OD-06 |
-| W2.4 | Refund / downstream reversal | COL/OD-09/-10 OPEN (+COL/OD-01 RECORDED); partial/delta fail-closed, Phase 2 NOT AUTHORIZED |
-| W2.5 | Claim satisfaction / re-open | COL/OD-07, -08 |
+| W2.1 | Canonical effective-date policy | **CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE** — COL/OD-03 RECORDED; W2.1A PR #1315 / `1d5974e5` test-only evidence; precedence, fallback, provenance exclusion ve fail-closed confirmed |
+| W2.2 | confirmedAt / external settlement | COL/OD-06 OPEN (+COL/OD-03 RECORDED); workstream NOT AUTHORIZED |
+| W2.3 | Unapplied payment lifecycle | COL/OD-06 OPEN; workstream NOT AUTHORIZED |
+| W2.4 | Refund / downstream reversal | COL/OD-09/-10 OPEN (+COL/OD-01 RECORDED); partial/delta fail-closed; workstream NOT AUTHORIZED |
+| W2.5 | Claim satisfaction / re-open | COL/OD-07/-08 OPEN; workstream NOT AUTHORIZED |
+
+### W2.1 Exit Evidence
+
+W2.1 exit criteria ve canonical kanıtı:
+
+1. **Contract:** COL/OD-03 Option A ve `COL-TIME-001` canonical main'dedir.
+2. **Precedence/fallback:** Explicit `LedgerEntry.effectiveDate`, ardından
+   `LedgerEntry.entryDate`; Ledger bulunmayan current-compatible fallback'te
+   `Collection.date` testle sabitlenmiştir.
+3. **Provenance exclusion:** `valueDate` ve `confirmedAt` farklı olsa da legal-balance
+   girdisinde effective-date authority olmaz.
+4. **Fail-closed:** Geçersiz zorunlu Ledger/Collection tarihi sonuç üretmez ve açık
+   `RangeError` ile durur.
+5. **Repository evidence:** W2.1A PR #1315, squash
+   `1d5974e5b15961cd1ebc04d84dcb43c3c9073fce`, required CI `4/4 SUCCESS`; diff yalnız
+   `payment-mapper.spec.ts`, runtime/schema/migration/backfill/snapshot/cutover etkisi yoktur.
+6. **Open-boundary preservation:** W2.2–W2.5 ve COL/OD-06/-07/-08/-09/-10 açık ve ayrı
+   owner gate'leridir. Phase 2 kapanmaz; sıradaki workstream owner GO olmadan başlamaz.
 
 ## PHASE 3 — DOMAIN COMPLETENESS (tamamı owner-gated)
 
@@ -142,7 +160,8 @@ W1.3             : CLOSED / CANONICAL — PR #1265 @ 081bd961
 W1.4             : CLOSED / CANONICAL — PR #1229 @ 4c1968ce
 W1.5             : CLOSED / CANONICAL — PR #1236 @ fbef6915
 W1.6             : CLOSED / CANONICAL — COL/OD-05 + PR #1246 @ c7f55da4
-PHASE 2    <── COL/OD-06..-10 (COL/OD-01/-03 RECORDED; Phase 2 NOT AUTHORIZED)
+W2.1             : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR #1315 @ 1d5974e5
+PHASE 2          : ACTIVE — W2.1 closed; W2.2–W2.5 owner-gated / NOT AUTHORIZED
 PHASE 3    <── COL/OD-02, -14, -15, -17, -19, -20
 PHASE 4    <── PHASE 1 tamamı + COL/OD-11, -12, -13, -16 + CAN-CUT-01/02
 PHASE 5    <── PHASE 4
