@@ -252,13 +252,39 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | COL-INV-007 | Overpayment borç veya negatif claim değildir | CURRENT-CONFIRMED | CollectionOverpayment HELD; schema:2362-2391 |
 | COL-INV-008 | Unapplied ≠ overpayment | TARGET-OWNER-GATED | Unapplied lifecycle yok; COL/OD-06 |
 | COL-INV-009 | Refund ayrı para çıkış event'idir; Collection overwrite edilmez | CURRENT-PRINCIPLE (full) / TARGET (partial) | REC §11.3; REC-AUTH-015 |
-| COL-INV-010 | Reversal yalnız açık bağlı compensating event ile | CURRENT-CONFIRMED | cancel-executor.ts:137-145; reversesLedgerEntryId @unique |
-| COL-INV-011 | Posted/confirmed finansal kayıt fiziksel silinmez | CURRENT-CONFIRMED | Ledger'da production update/delete yok; TM3-S1 hard-delete kapatıldı |
+| COL-INV-010 | Reversal yalnız açık bağlı compensating event ile | CURRENT-CONFIRMED | COL/OD-01 Option A; cancel-executor.ts:137-145; reversesLedgerEntryId @unique |
+| COL-INV-011 | Posted/confirmed finansal kayıt fiziksel silinmez veya yerinde değiştirilmez | CURRENT-CONFIRMED | COL/OD-01 Option A; Ledger'da production update/delete yok; TM3-S1 hard-delete kapatıldı |
 | COL-INV-012 | collectedAmount/amount/display cache legal authority olamaz | CURRENT-CONFIRMED | REC-AUTH-003/004 |
 | COL-INV-013 | Dosya kapanışı claim satisfaction değildir | CURRENT-PRINCIPLE | Satisfaction modeli yok; COL/OD-08 |
 | COL-INV-014 | Muhasebe kapanışı hukuki kapanış değildir | CURRENT-PRINCIPLE | ADR-010 yön sınırı |
 | COL-INV-015 | Hukuki politika/override yalnız yetkili actor + approval ile | CURRENT-PARTIAL | ADR-009 + OWN-29-B (void approval-gated); genel override matrisi COL/OD-07 |
 | COL-INV-016 | Para çıkışı/override/yüksek etkili adjustment özel approval taşır | CURRENT-CONFIRMED | CLIENT_PAYOUT_POST + COLLECTION_VOID + CLAIM_ITEM_HIGH_IMPACT_CHANGE (dbind §5, OWN-29-*) |
+
+### COL-CORR-001 — Historical financial correction contract (COL/OD-01 Option A)
+
+1. **Lifecycle split:** `PENDING` kayıtlar yalnız ilgili kayıt tipi için yetkilendirilmiş
+   correction kuralları içinde düzeltilebilir. `CONFIRMED` veya `POSTED` finansal fact yerinde
+   değiştirilemez ve fiziksel olarak silinemez.
+2. **Erroneous fact:** Hatalı confirmed/posted kayıt, özgün kaydı açıkça referanslayan valid
+   linked full reversal ile terslenir. Doğru finansal sonuç, reversal satırının overwrite'ı
+   olarak değil, ayrı ve idempotent yeni canonical command ile oluşturulur.
+3. **Missing fact:** Eksik finansal kayıt yalnız kaynak evidence ve provenance taşıyan yeni
+   canonical command olarak eklenebilir; mevcut bir fact'e sessiz backfill veya in-place edit
+   yapılamaz.
+4. **Partial/delta boundary:** Partial reversal, delta adjustment ve indirgenemeyen historical
+   repair için ayrı typed contract ratifiye edilene kadar işlem fail-closed kalır. Genel amaçlı
+   `ADJUSTMENT` etiketi tek başına hukuki veya finansal correction authority'si değildir.
+5. **Authorization and audit:** Historical correction dual control, action-specific approval ve
+   COL/OD-05'e uygun transaction-bound audit gerektirir. Approved execution; reversal, yeni
+   command, allocation/ledger etkileri, event/outbox ve audit izleri bakımından ilgili atomic
+   boundary dışında kısmi başarı üretemez. Approval workflow kendi authority'sinde kalır;
+   execution onaylanmış intent'i açıkça referanslar.
+6. **Effective date:** Reversal ve replacement command'in hukuki etki tarihi COL/OD-03
+   `COL-TIME-001` canonical effective-date authority'sine tabidir; correction işlemi yeni veya
+   tahmine dayalı bir tarih authority'si üretemez.
+7. **Scope boundary:** Bu contract runtime implementasyonu, schema, migration, backfill,
+   geçmiş kayıtların yeniden hesaplanması, partial refund/reversal, downstream remediation veya
+   Phase 2 başlangıcı/cutover yetkisi vermez.
 
 ## 5.2. Para birimi ve hassasiyet
 
