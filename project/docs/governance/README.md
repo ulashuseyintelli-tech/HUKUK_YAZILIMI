@@ -27,7 +27,7 @@ Dosyalar:
   tek domain giriş noktası (RATIFIED v1.0; repository-canonical upon approved merge).
 - `RCV-PHASE-1-AUTHORIZATION.md` - RCV program/register cross-pointer'ı, DEC-0030
   disposition'ı, gerçekleşen phase/workstream progression, Phase 1 ile WS01/WS02 formal
-  closure ve bir sonraki workstream/task için owner-GO gate kaydı.
+  closure, `RCV-P2-WS03-P01` formal closure ve açık WS03 için owner-GO gate kaydı.
 - `OFFICE-GOVERNANCE.md` - aday OFFICE Domain Law (DRAFT / OWNER REVIEW REQUIRED).
 - `OFFICE-MASTER-SYNTHESIS.md` - OFFICE kanıt/gerekçe/senaryo katmanı (NON-NORMATIVE).
 - `OFFICE-RISK-REGISTER.md` - OFFICE domain risk dossier'i (global triage otoritesi değil).
