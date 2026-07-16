@@ -1,10 +1,35 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CreateTaskDto, UpdateTaskDto } from "./dto/task.dto";
 
 @Injectable()
 export class TaskService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - TaskService.create() → POST /tasks (yeni görev; dolu assignee doğrulaması)
+   * - TaskService.update() → PUT /tasks/:id (görev güncelleme; dolu assignee doğrulaması)
+   * </remarks>
+   * CANDIDATE-J1 (STF-PRD-BOLA-002 baseline, OFF-INV-04): bir görev yalnız aynı-tenant + aktif bir
+   * kullanıcıya atanabilir. responsible-candidates.service.ts::validateResponsibleSelection'ın
+   * tenant+aktiflik `findFirst` kalıbını, Task assignee'sinin hedef modeli olan `User` için izler
+   * (Task.assigneeId → User; User'da `canBeResponsible` benzeri kapasite bayrağı yoktur, bu yüzden
+   * yalnız tenant + isActive doğrulanır). Yalnız ileriye-dönük (write-time): mevcut kayıtlar
+   * taranmaz/reddedilmez. Rol/kapasite policy'si KAPSAM DIŞI (ayrı owner kararı).
+   */
+  private async assertAssigneeEligible(tenantId: string, assigneeId: string): Promise<void> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: assigneeId, tenantId, isActive: true },
+      select: { id: true },
+    });
+    if (!user) {
+      throw new BadRequestException(
+        "Geçersiz atanan: aktif ve aynı ofise ait bir kullanıcı değil."
+      );
+    }
+  }
 
   async findAll(tenantId: string, params?: { status?: string; page?: number; limit?: number }) {
     const { status, page = 1, limit = 20 } = params || {};
@@ -54,6 +79,12 @@ export class TaskService {
   }
 
   async create(tenantId: string, userId: string, dto: CreateTaskDto) {
+    // CANDIDATE-J1: dolu assignee → aynı-tenant + aktif doğrulaması. Boş/null assignee dokunulmaz
+    // (sahipsiz görev meşru; null assignee davranışı korunur).
+    if (dto.assigneeId) {
+      await this.assertAssigneeEligible(tenantId, dto.assigneeId);
+    }
+
     return this.prisma.task.create({
       data: {
         tenantId,
@@ -73,6 +104,12 @@ export class TaskService {
    */
   async update(tenantId: string, id: string, userId: string, dto: UpdateTaskDto) {
     await this.findOne(tenantId, id);
+
+    // CANDIDATE-J1: dolu assignee güncellemesi → aynı-tenant + aktif doğrulaması. Assignee alanı
+    // gönderilmeyen (veya boşaltılan) güncellemeler dokunulmaz (null assignee davranışı korunur).
+    if (dto.assigneeId) {
+      await this.assertAssigneeEligible(tenantId, dto.assigneeId);
+    }
 
     const data: any = { ...dto };
     if (dto.status === "COMPLETED") {
