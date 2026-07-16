@@ -83,7 +83,7 @@ varsayılmaz.
 | STF-PRD-PRIV-001 | P2 | OFF/OD-18 | CLOSED_CANONICAL | LINKED TO SLICE | = SLICE-03 → CANDIDATE-F1/F2/G/H decomp (WAVE 3 CLOSED WITH RESIDUALS, 2026-07-16). F1+H1 CANONICAL (list+case-embedded maskeli, MILESTONE 04/05); STF-PRD-PRIV-001 OPEN / CARRIED FORWARD — WAVE 3 closure bunu KAPATMAZ (kalan detay yüzeyi = CANDIDATE-G, BLOCKED) |
 | STF-PRD-OPS-001 | P2 | OFF/OD-19 | OPEN(BLOCKING) | LINKED TO DECISION | — |
 | STF-PRD-PERF-001 | P3 | — | yok | UNMAPPED — OWNER REVIEW REQUIRED | Karar gerekmez (salt mühendislik) ama henüz slice'a triyaj edilmedi |
-| STF-PRD-BOLA-002 | P3 | OFF/OD-10 | CLOSED (2026-07-16) | LINKED TO DECISION | OD-10 kapandı (Access-Scope Owner Decision Package) — READY_FOR_CANDIDATE_DECOMPOSITION (candidate seçilmedi/başlatılmadı) |
+| STF-PRD-BOLA-002 | P3 | OFF/OD-10 | CLOSED (2026-07-16) | LINKED TO SLICE | OD-10 kapandı (Access-Scope Owner Decision Package). **CANDIDATE-J** (Task-atama) + **CANDIDATE-K** (Case-atama) ile mapping yapıldı (2026-07-17) — CANDIDATE-J DECOMPOSED → ilk dilimi **CANDIDATE-J1** (Task Assignee Baseline Eligibility Gate) **OWNER_SELECTED / CONTRACT_RATIFIED** (2026-07-17, implementationAuthorization NONE). **Finding KAPANMADI** — J1 yalnız Task-atama yüzeyinin baseline (aynı-tenant + aktiflik, ileriye-dönük) alt-boşluğunu ele alacak; kalan J rol/kapasite policy kapsamı + tüm CANDIDATE-K (Case ekip-atama yüzeyi) AYRI, owner-gated future scope. Detay: bkz. §4f |
 | STF-PRD-DATA-001 | P3 | OFF/OD-01, OFF/OD-03 | OD-01 CLOSED · OD-03 OPEN(BLOCKING) | LINKED TO DECISION | OD-03 kapanmadan DB-constraint işi başlamaz |
 | STF-PRD-SES-002 | P3 | OFF/OD-15 | CLOSED_CANONICAL | LINKED TO DECISION | WAVE 1 kapsamına giriyor (SES-001 ile birlikte triyaj edilecek) |
 
@@ -147,6 +147,8 @@ Owner Decision Package'da kapandı.)*
 | CANDIDATE-H1 | **CANONICAL** | — | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | **SELECTED** (2026-07-15) | **CONSUMED** (2026-07-15) | **HARDENING** | **RATIFIED_WITH_RECORDED_LIMITATIONS** (2026-07-15) | GO-ANALYZE (H-READMODEL consumer validation) + Contract Draft/Validation/Ratification + GO-IMPLEMENT | Case-Embedded Personnel Sensitive Field Edit-Safe Masking — read-model varsayılan maskeli + edit-safe kontrat; CANDIDATE-G AÇILMAZ. bkz. §4d. PR #1283, branch commit `8f7dd1c8`, squash SHA `29eb6384`, CI 4/4 PASS |
 | CANDIDATE-I | **DECOMPOSED** (2026-07-16) | NOT_READY | OFF/OD-08 (CLOSED) | STF-PRD-BOLA-001, STF-PRD-SCP-001 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | — | GO-ANALYZE (WAVE 4+ decomposition) + CANDIDATE-I first-slice re-scope (2026-07-16) | Object-Scope Evaluation Foundation — tam kapsam (case/client'ın tüm nesne-erişim yüzeyine gerçek bir kapsam-değerlendirme adımı eklemek) tek Contract için çok büyük bulundu (CANDIDATE-C/E'nin kendi re-scope emsaliyle aynı desen) → **CANDIDATE-I1** (additive-only hiyerarşi şema temeli) SEÇİLDİ; kalan tam enforcement kapsamı AYRI, HENÜZ candidate ID'si olmayan, owner-gated future scope olarak kalır. Bu satırın kendisi hiç seçilmedi. Detay: bkz. §4e |
 | CANDIDATE-I1 | **CANONICAL** (2026-07-16/17) | — | OFF/OD-08 (CLOSED) | STF-PRD-BOLA-001, STF-PRD-SCP-001 | **SELECTED** (2026-07-16) | **CONSUMED** (2026-07-16/17) | **NEW_SUBSYSTEM** | **RATIFIED** (2026-07-16) | GO-ANALYZE (CANDIDATE-I first-slice re-scope) + OWNER SELECTION + GO-ANALYZE (Contract Draft) + OWNER RATIFICATION + GO-CANONICALIZE + GO-IMPLEMENT + GO-CANONICALIZE (Implementation Closure) | Team/Manager-Hiyerarşi additive-only şema temeli (`ReportingLine`) — sıfır consumer-bağlama, sıfır enforcement/runtime davranış değişikliği; OD-08'in hedef modelini (manager-tipi erişimde varsayılan direct-report/team scope) yapısal olarak temsil eder. Tam object-scope enforcement (CANDIDATE-J/K ve BOLA-002 dahil değil, ayrı) bu candidate'ın DIŞINDA. PR #1325 (implementasyon, squash SHA `05e73579`), CI 4/4 PASS. STF-PRD-BOLA-001/SCP-001 finding **OPEN/NOT CLOSED kalır** (bkz. OFFICE-RISK-REGISTER.md). Detay: bkz. §4e |
+| CANDIDATE-J | **DECOMPOSED** (2026-07-17) | NOT_READY | OFF/OD-10 (CLOSED) | STF-PRD-BOLA-002 | NOT_SELECTED | NONE | **HARDENING** | — | GO-ANALYZE (CANDIDATE-J/K next-slice selection) + CANDIDATE-J first-slice re-scope (2026-07-17) | Task Assignment Eligibility Gate — tam kapsam (Task-atama uygunluğu + rol/kapasite policy) tek Contract için gereğinden geniş bulundu; ilk davranış-değiştiren enforcement dilimi olarak baseline'a daraltıldı (CANDIDATE-C/E/I'nin re-scope emsaliyle aynı desen) → **CANDIDATE-J1** (baseline tenant+aktiflik kapısı) SEÇİLDİ; kalan rol/kapasite policy kapsamı AYRI, HENÜZ candidate ID'si olmayan, owner-gated future scope olarak kalır. Bu satırın kendisi hiç seçilmedi. Detay: bkz. §4f |
+| CANDIDATE-J1 | **OWNER_SELECTED / CONTRACT_RATIFIED** (2026-07-17) | — | OFF/OD-10 (CLOSED) | STF-PRD-BOLA-002 | **SELECTED** (2026-07-17) | **NONE** | **HARDENING** | **RATIFIED** (2026-07-17) | GO-ANALYZE (CANDIDATE-J first-slice re-scope) + OWNER SELECTION + CONTRACT RATIFICATION + GO-CANONICALIZE | Task Assignee Baseline Eligibility Gate — görev oluşturma/güncelleme sırasında dolu atama alanı için aynı-tenant + aktiflik doğrulaması; yalnız ileriye-dönük (write-time) enforcement; null atama davranışı korunur; mevcut kayıtlar retroaktif taranmaz/reddedilmez; **schema/migration YOK**. Mevcut çalışan tekil-sorumlu uygunluk kapısının kalıbını izler. OD-10 Option B'nin (assignment≠access, explicit policy) hedef modelini davranışsal olarak temsil eder. **İlk davranış-DEĞİŞTİREN WAVE 4+ enforcement dilimi** (I1'in additive-only deseninden farklı). Rol/kapasite policy · UI filtreleme · CANDIDATE-K (Case ekip-atama) bu dilimin DIŞINDA. STF-PRD-BOLA-002 **KAPANMAZ**. implementationAuthorization NONE — bu canonicalization GO-IMPLEMENT vermez. Detay: bkz. §4f |
 
 ### 4b. WAVE 1 Candidate Detay (Objective/Scope/Risk — GO-ANALYZE'den kanonikleştirildi)
 
@@ -509,8 +511,95 @@ CANDIDATE-I1  name: Team/Manager-Hiyerarşi Additive Schema Foundation (CANDIDAT
               mekanizma detayı) yalnız private evidence'ta — public'e YAZILMAZ.
 
 CANDIDATE-J/K (Task Assignment Eligibility Gate / Case Assignment Scope Alignment — BOLA-002)
-bu canonicalization'ın KAPSAMI DIŞINDADIR — hiçbiri seçilmedi/başlatılmadı, hiçbir alanları
-değiştirilmedi.
+BU (I1) canonicalization'ının KAPSAMI DIŞINDAYDI — o turda hiçbiri seçilmedi/başlatılmadı.
+GÜNCELLEME (2026-07-17): CANDIDATE-J ayrı bir GO-ANALYZE + OWNER SELECTION ile decompose
+edildi, ilk dilimi CANDIDATE-J1 seçildi/ratifiye edildi — bkz. §4f. CANDIDATE-K hâlâ
+seçilmedi/başlatılmadı.
+
+Ayrıntılı teknik evidence (route/dosya/metot isimleri, mevcut kontrolün tam şekli, kod-kanıtı)
+yalnız private handoff/scratchpad kaydındadır — bu public repo'ya taşınmayacaktır.
+```
+
+### 4f. WAVE 4+ Candidate Detay — BOLA-002 (redakte — güvenlik containment, 2026-07-17)
+
+```text
+Bu bölüm, CANDIDATE-J/K GO-ANALYZE sırasında üretilen ayrıntılı teknik kod-kanıtını KASITLI
+OLARAK içermez. Gerekçe: STF-PRD-BOLA-002 hâlâ UNPATCHED'tır ve bu repo PUBLIC'tir; mekanizma-
+seviyesi açıklama (etkilenen dosya/metot/route isimleri, mevcut kontrolün tam şekli, hangi
+alanın hangi guard'dan geçmediği) exploitation-grade bilgi teşkil eder — WAVE 2/3/4e'nin aynı
+containment kuralı uygulanır.
+
+Tutulan güvenli seviye — yalnız governance metadata (bkz. §4 Slice Register):
+
+CANDIDATE-J    implementationCategory HARDENING · status DECOMPOSED (2026-07-17) ·
+               readinessStatus NOT_READY · ownerSelectionStatus NOT_SELECTED (bu satırın kendisi
+               hiç seçilmedi) · implementationAuthorization NONE · contractStatus —
+               (bkz. CANDIDATE-J1)
+               CANDIDATE-J'nin tam kapsamı (Task-atama uygunluğu + herhangi bir rol/kapasite
+               uygunluk policy'si) owner GO-ANALYZE'ında (2026-07-17) ilk davranış-değiştiren
+               enforcement dilimi için gereğinden geniş bulundu — CANDIDATE-C/E/I'nin kendi
+               re-scope emsaliyle aynı desen. DECOMPOSED → CANDIDATE-J1 (first slice, SEÇİLDİ) +
+               kalan rol/kapasite policy kapsamı (future, henüz candidate ID'si yok, owner-gated).
+
+CANDIDATE-J1   name: Task Assignee Baseline Eligibility Gate (CANDIDATE-J first-slice re-scope,
+               2026-07-17) · status OWNER_SELECTED / CONTRACT_RATIFIED (2026-07-17) ·
+               implementationCategory HARDENING · ownerSelectionStatus SELECTED (2026-07-17) ·
+               implementationAuthorization NONE · contractStatus RATIFIED (2026-07-17)
+               OWNER RE-SCOPE (2026-07-17, APPROVED): CANDIDATE-J'nin orijinal kapsamı (Task-atama
+               uygunluğu + rol/kapasite policy) tek Contract için gereğinden geniş bulundu. Yeni
+               objective: OD-10 Option B'nin hedef modelini (assignment≠access, her türetim
+               explicit policy) davranışsal olarak temsil eden, YALNIZ İLERİYE-DÖNÜK (write-time)
+               bir baseline uygunluk kapısı — görev oluşturma/güncelleme sırasında, atama alanı
+               doluysa, atanan-kişinin aynı-tenant + aktif olduğunu doğrular. Mevcut çalışan
+               tekil-sorumlu uygunluk kapısının kalıbını izler.
+
+               CONTRACT STATUS: RATIFIED (2026-07-17) — Implementation Contract Draft, aşağıdaki
+               kapsam/invariants/acceptance-criteria/stop-conditions ile owner tarafından RATIFIED
+               edildi.
+               BINDING SCOPE (redakte governance metadata):
+                 - görev oluşturma + güncelleme yazma yolunda, atama alanı doluysa uygunluk
+                   doğrulaması (aynı-tenant + aktiflik)
+                 - doğrulama mevcut çalışan tekil-sorumlu uygunluk kapısının kalıbını izler
+                 - uygun-olmayan atama yazma anında açık bir hata ile reddedilir
+                 - null/boş atama serbest kalır (sistem/otomasyon görevleri) — davranış korunur
+                 - yalnız ileriye-dönük: mevcut kayıtlar retroaktif taranmaz/reddedilmez
+               VERİ MODELİ SINIRLARI: gereken alanlar (tenant, aktiflik) zaten mevcut · yeni alan/
+                 tablo YOK · yeni consumer YOK (mevcut yazma yolunun içine tek bir doğrulama eklenir)
+               DAVRANIŞ ETKİSİ: Bu, WAVE 4+'te İLK davranış-DEĞİŞTİREN enforcement dilimidir
+                 (E1/I1'in additive-only/sıfır-davranış deseninden AÇIKÇA farklı) — önceden kabul
+                 edilen uygun-olmayan atamalar artık yazma anında reddedilir. Owner bunu bilerek
+                 seçti/ratifiye etti.
+               BACKFILL: UYGULANMAZ — bu bir enforcement dilimi, veri-taşıma değil; ileriye-dönük
+                 tasarım mevcut satırlara dokunmaz.
+               OUT-OF-SCOPE (bu dilim için): rol/kapasite tabanlı uygunluk policy'si (owner POLICY
+                 kararı — eşik/kategori icat edilmez) · retroaktif/okuma-anında enforcement · arayüz
+                 seçim-listesi kaynağının aktiflik filtresi (ayrı savunma-derinliği UX dilimi) ·
+                 CANDIDATE-K (Case ekip-atama yüzeyi) · STF-PRD-BOLA-001/SCP-001/CANDIDATE-I kapsamı
+               STOP CONDITIONS: mevcut bir alana dokunma ihtiyacı · bir consumer'ı yeniden kablolama
+                 ihtiyacı · retroaktif enforcement ihtiyacı · rol/kapasite policy'ye genişleme
+                 ihtiyacı · CANDIDATE-K yüzeyine sıçrama · mevcut test paketinde regresyon → hepsi
+                 STOP, re-scope/escalate, ayrı Contract gerekir.
+               ACCEPTANCE CRITERIA: aynı-tenant+aktif atama kabul edilir · cross-tenant atama
+                 reddedilir · aynı-tenant-fakat-pasif atama reddedilir · null atama serbest kalır ·
+                 mevcut tam regresyon paketi değişmeden PASS · tsc çıktısı değişiklikle/değişiklik
+                 olmadan özdeş
+               TEST/EVIDENCE PLANI: yeni pozitif/negatif enforcement birim testleri · mevcut görev-
+                 modülü regresyonu · tsc diff-clean · DB-gated bir entegrasyon testi eklenirse
+                 disposable Docker Postgres (paylaşımlı dev DB'ye asla dokunulmaz)
+               Kalan rol/kapasite policy kapsamı + tüm CANDIDATE-K AYRI, HENÜZ (K için ayrı) bir
+               candidate ID'si olmayan, owner-gated future scope olarak kalır — bu canonicalization
+               onları yetkilendirmez/başlatmaz.
+               IMPLEMENTATION: NONE — implementationAuthorization NONE korunur; GO-IMPLEMENT ayrı,
+               açık bir owner GO'su gerektirir. Ayrıntılı teknik Contract (enforcement metot
+               imzaları, helper adı, emsal servis referansı, tam ret koşulları) yalnız private
+               evidence'ta — public'e YAZILMAZ.
+
+CANDIDATE-K (Case Assignment Scope Alignment — BOLA-002'nin Case-atama porsiyonu) bu
+canonicalization'ın KAPSAMI DIŞINDADIR — seçilmedi/başlatılmadı, hiçbir alanı değiştirilmedi.
+Kod-yüzeyi analizi (GO-ANALYZE, 2026-07-17): daha büyük blast radius; retroaktif enforcement için
+kod-doğrulanmış bir backward-compat gerilimi (pasifleştirme mevcut ekip satırlarını bilinçli
+bırakıyor); ve kapsamının bir bölümü henüz verilmemiş bir ürün kararına bağımlı — bu yüzden
+"sıradaki dar ve güvenli" dilim DEĞİL, geçerli bir gelecek candidate olarak kalır.
 
 Ayrıntılı teknik evidence (route/dosya/metot isimleri, mevcut kontrolün tam şekli, kod-kanıtı)
 yalnız private handoff/scratchpad kaydındadır — bu public repo'ya taşınmayacaktır.
@@ -625,9 +714,15 @@ WAVE 4+ — BOLA-001/SCP-001 candidate-decomposition tamamlandı (2026-07-16); C
   candidate ID'si olmayan, owner-gated future scope. STF-PRD-BOLA-001/SCP-001 finding'leri
   **OPEN/NOT CLOSED kalır** (şema temeli riskin davranışsal kısmını kapatmaz — bkz.
   OFFICE-RISK-REGISTER.md). Detay: §4 Slice Register + §4e.
-  BOLA-002 (P3) ← OD-10 CLOSED (aynı paket) — hâlâ READY_FOR_CANDIDATE_DECOMPOSITION; bu
-  canonicalization'la DEĞİŞMEDİ, hiçbir candidate seçilmedi/başlatılmadı (CANDIDATE-J/K bu
-  belgenin kapsamı dışında kalır)
+  BOLA-002 (P3) ← OD-10 CLOSED (aynı paket) — candidate-decomposition tamamlandı (2026-07-17);
+  CANDIDATE-J1 CONTRACT RATIFIED. **CANDIDATE-J** (Task-atama, Task Assignment Eligibility Gate)
+  DECOMPOSED → **CANDIDATE-J1** (Task Assignee Baseline Eligibility Gate — aynı-tenant + aktiflik,
+  ileriye-dönük write-time enforcement, schema/migration YOK) **OWNER_SELECTED / CONTRACT_RATIFIED**
+  (implementationAuthorization NONE). Kalan J rol/kapasite policy kapsamı + tüm **CANDIDATE-K**
+  (Case ekip-atama yüzeyi) AYRI, owner-gated future scope. BOLA-002 finding'i **OPEN/NOT CLOSED
+  kalır** (J1 yalnız Task-atama baseline'ını ele alacak, bulguyu kapatmaz — bkz.
+  OFFICE-RISK-REGISTER.md). J1 **ilk davranış-DEĞİŞTİREN WAVE 4+ enforcement dilimidir** (I1'in
+  additive-only deseninden farklı). Detay: §4 Slice Register + §4f.
 
 UNMAPPED (owner review required, decision-graph dışı)
   STF-PRD-CFG-001, STF-PRD-PERF-001
@@ -636,26 +731,27 @@ UNMAPPED (owner review required, decision-graph dışı)
 ## 8. NEXT ELIGIBLE UNIT (readiness ≠ authorization)
 
 ```text
-NEXT ELIGIBLE UNIT: NONE. CANDIDATE-I1 (Team/Manager-Hiyerarşi additive-only şema temeli) Contract
-RATIFIED sonrası owner IMPLEMENTATION EVIDENCE sundu (PR #1325 MERGED, squash `05e73579`, CI 4/4
-PASS, additive-only schema/migration, sıfır consumer, backfill NONE, runtime/enforcement değişikliği
-NONE) ve GO-CANONICALIZE — DOCS ONLY ile **CANONICAL/CONSUMED** olarak kapatıldı (PHASE 1
-MILESTONE 07). STF-PRD-BOLA-001/SCP-001 **finding'ler KAPANMADI** (bkz. §2/§7) — şema temeli
-riskin davranışsal/enforcement kısmını kapatmaz. CANDIDATE-I'nın kalan tam object-scope enforcement
-kapsamı DECOMPOSED/NOT_SELECTED kalır, henüz candidate ID'si yok, owner-gated future scope. STF-PRD-
-BOLA-002 hâlâ READY_FOR_CANDIDATE_DECOMPOSITION (bkz. §7) — bu canonicalization ona dokunmadı,
-candidate seçilmedi/başlatılmadı. WAVE 1-4+'te CANONICAL olarak teslim edilmiş ek bir slice yok
-(A/C/F1/H1/E1/I1 zaten CANONICAL).
-NEXT PROGRAM ACTION: OWNER SELECTION/DECISION REQUIRED — geriye kalan candidate'ların TÜMÜ hâlâ
-owner-gated; bu belge hiçbirini SEÇMEZ/başlatmaz/sıralamaz, her biri owner'ın ayrı, açık bir
-GO/decision'ını bekler:
+NEXT ELIGIBLE UNIT: CANDIDATE-J1 — GO-IMPLEMENT (2026-07-17). CANDIDATE-J owner GO-ANALYZE'ında
+DECOMPOSED edildi (tam Task-atama uygunluğu + rol/kapasite policy ilk enforcement dilimi için
+gereğinden geniş bulundu, CANDIDATE-C/E/I'nin kendi re-scope emsaliyle aynı desen) → CANDIDATE-J1
+(Task Assignee Baseline Eligibility Gate — aynı-tenant + aktiflik, ileriye-dönük write-time
+enforcement, schema/migration YOK) owner tarafından SEÇİLDİ ve Contract RATIFIED edildi. Bu
+implementationAuthorization VERMEZ — implementationAuthorization NONE KORUNUR; GO-IMPLEMENT owner'ın
+ayrı, açık bir GO'sunu bekler. J1 **ilk davranış-DEĞİŞTİREN WAVE 4+ enforcement dilimidir** (E1/I1'in
+additive-only/sıfır-davranış deseninden farklı). STF-PRD-BOLA-002 **CANDIDATE-J (+ gelecekteki
+CANDIDATE-K) ile mapping yapıldı** (bkz. §2/§7) — finding KAPANMADI; J1 yalnız Task-atama baseline'ını
+ele alacak. Önceki CANONICAL slice'lar (A/C/F1/H1/E1/I1) değişmedi.
+NEXT PROGRAM ACTION: J1 için GO-IMPLEMENT (owner'ın ayrı, açık bir GO'su), diğer candidate'lar için
+OWNER SELECTION/DECISION REQUIRED — geriye kalan candidate'ların TÜMÜ hâlâ owner-gated; bu belge
+hiçbirini SEÇMEZ/başlatmaz/sıralamaz, her biri owner'ın ayrı, açık bir GO/decision'ını bekler:
   · CANDIDATE-D (WAVE 2) — product decision (canApproveFinance ürün niyeti) gerekir · NOT_A_SELECTABLE_SLICE
   · CANDIDATE-E kalan kapsamı (WAVE 2) — tam consumer-migration, HENÜZ candidate ID'si yok, owner-gated future scope
   · CANDIDATE-F2 (WAVE 3) — DORMANT (IMPLEMENTATION SURFACE NOT FOUND, owner disposition)
   · CANDIDATE-G (WAVE 3) — field-level unmask governance/mechanism çözülmeli (olası ek owner decision) · BLOCKED · bu slice (H1) onu AÇMAZ
   · CANDIDATE-B (WAVE 1) — DEFERRED, ayrı owner GO ile yeniden açılabilir
   · CANDIDATE-I kalan kapsamı (WAVE 4+) — tam object-scope enforcement, HENÜZ candidate ID'si yok, owner-gated future scope
-  · BOLA-002 (WAVE 4+) — READY_FOR_CANDIDATE_DECOMPOSITION, henüz decompose edilmedi (CANDIDATE-J/K bu belgenin kapsamı dışında)
+  · CANDIDATE-J kalan kapsamı (WAVE 4+) — rol/kapasite uygunluk policy'si, HENÜZ candidate ID'si yok, owner-gated future scope
+  · CANDIDATE-K (WAVE 4+) — Case Assignment Scope Alignment, henüz SEÇİLMEDİ/decompose edilmedi (daha büyük blast radius + kod-doğrulanmış backward-compat gerilimi + kısmi ürün-kararı bağımlılığı — bkz. §4f)
 
 status (CANDIDATE-A)                      : CANONICAL (2026-07-14, main @ b0ce36db)
 ownerSelectionStatus (CANDIDATE-A)        : SELECTED (2026-07-14)
@@ -717,6 +813,23 @@ ownerSelectionStatus (CANDIDATE-I1)       : SELECTED (2026-07-16)
 contractStatus (CANDIDATE-I1)             : RATIFIED (2026-07-16) — Contract Draft başarılı
                                              implementasyonla uzlaştırıldı, bkz. §4e
 implementationAuthorization (CANDIDATE-I1): CONSUMED (2026-07-16/17) — PR #1325, squash `05e73579`, CI 4/4 PASS
+status (CANDIDATE-J)                      : DECOMPOSED (2026-07-17) — bu satırın kendisi hiç
+                                             seçilmedi, bkz. CANDIDATE-J1
+readinessStatus (CANDIDATE-J)             : NOT_READY (kalan rol/kapasite policy kapsamı, henüz candidate değil)
+ownerSelectionStatus (CANDIDATE-J)        : NOT_SELECTED
+implementationAuthorization (CANDIDATE-J) : NONE
+contractStatus (CANDIDATE-J)              : — (bkz. CANDIDATE-J1)
+name (CANDIDATE-J1)                       : Task Assignee Baseline Eligibility Gate
+                                             (WAVE 4+, CANDIDATE-J first-slice re-scope)
+status (CANDIDATE-J1)                     : OWNER_SELECTED / CONTRACT_RATIFIED (2026-07-17)
+implementationCategory (CANDIDATE-J1)     : HARDENING
+ownerSelectionStatus (CANDIDATE-J1)       : SELECTED (2026-07-17)
+contractStatus (CANDIDATE-J1)             : RATIFIED (2026-07-17) — Implementation Contract
+                                             Draft owner tarafından ratifiye edildi, bkz. §4f
+implementationAuthorization (CANDIDATE-J1): NONE — bu canonicalization GO-IMPLEMENT vermez
+status (CANDIDATE-K)                      : NOT_SELECTED (2026-07-17) — Case Assignment Scope
+                                             Alignment; GO-ANALYZE'da incelendi, seçilmedi/
+                                             decompose edilmedi (owner-gated future scope, bkz. §4f)
 ```
 ```text
 NEXT ELIGIBLE ≠ AUTHORIZED.
@@ -785,6 +898,29 @@ hiçbiri bu canonicalization'la değişmedi. **NEXT ELIGIBLE UNIT yeniden NONE'a
 DECISION REQUIRED (bkz. §8 üst blok). Bu canonicalization CANDIDATE-I1'in IMPLEMENTED/MERGED/
 CANONICAL/CONSUMED durumunu + STF-PRD-BOLA-001/SCP-001'in OPEN/NOT CLOSED kalan finding
 verdict'ini kaydeder; kod/schema/migration/yeni candidate seçimi başlatmaz.
+
+**Güncelleme (2026-07-17, CANDIDATE-J1 Contract Ratification):** Owner "CANDIDATE-J/K Next Slice
+Selection" GO-ANALYZE'ı verdi (STF-PRD-BOLA-002 — OD-10 Access-Scope Owner Decision Package'da
+decision-tarafı kapanmıştı). Taze kod-yüzeyi doğrulaması (HEAD `2487d52b`): CANDIDATE-J (Task-atama)
+neredeyse tamamen guard'sız (tenant bile kontrol edilmiyor), küçük blast radius; CANDIDATE-K
+(Case-atama) tenant-kontrollü ama aktiflik-kontrolsüz, çok daha büyük blast radius + kod-doğrulanmış
+retroaktif-enforcement backward-compat gerilimi + kısmi ürün-kararı bağımlılığı. **CANDIDATE-J**
+"dar ve güvenli" ölçütünün net karşılığı olarak önerildi ve owner tarafından SEÇİLDİ, ardından
+ilk davranış-değiştiren enforcement dilimi için gereğinden geniş bulunduğundan DECOMPOSED edildi
+(CANDIDATE-C/E/I emsaliyle aynı desen) → **CANDIDATE-J1** (Task Assignee Baseline Eligibility Gate —
+aynı-tenant + aktiflik, ileriye-dönük write-time enforcement, schema/migration YOK) SEÇİLDİ ve
+Contract **RATIFIED** olarak kaydedildi. **implementationAuthorization (CANDIDATE-J1) NONE KORUNUR** —
+bu canonicalization GO-IMPLEMENT vermez, owner'ın ayrı, açık bir GO'sunu bekler. **STF-PRD-BOLA-002**
+CANDIDATE-J (+ gelecekteki CANDIDATE-K) ile mapping yapıldı (bkz. §2/§7) — **finding KAPANMADI**;
+J1 yalnız Task-atama baseline'ını ele alacak. J1, **WAVE 4+'te ilk davranış-DEĞİŞTİREN enforcement
+dilimidir** (E1/I1'in additive-only/sıfır-davranış deseninden AÇIKÇA farklı — owner bunu bilerek
+seçti). **Backfill: UYGULANMAZ** — enforcement dilimi, veri-taşıma değil; ileriye-dönük tasarım
+mevcut satırlara dokunmaz. Rol/kapasite uygunluk policy'si (owner POLICY kararı — eşik icat edilmez),
+UI filtreleme, retroaktif enforcement ve tüm CANDIDATE-K bu canonicalization'ın KAPSAMI DIŞINDA
+bırakıldı (owner BOUNDARY). Diğer OFFICE hatları (CANDIDATE-B/D/E-kalan/F2/G, CANDIDATE-I-kalan,
+BOLA-001/SCP-001) değişmedi/seçilmedi. **NEXT ELIGIBLE UNIT → CANDIDATE-J1 — GO-IMPLEMENT.** Bu
+canonicalization CANDIDATE-J'nin decomposition'ını + CANDIDATE-J1'in Contract RATIFIED durumunu +
+BOLA-002'nin candidate-mapping kaydını kaydeder; kod/schema/migration/implementasyon başlatmaz.
 ```
 
 ## 9. Document Self-Check
@@ -1154,4 +1290,28 @@ verdict'ini kaydeder; kod/schema/migration/yeni candidate seçimi başlatmaz.
 - Yeni candidate seçildi mi / kod-schema-migration:            NO / NONE
 - PUBLIC CONTENT RULE (I1 implementation closure): şema        NO — yalnız governance/test-evidence
   alan/dosya/consumer/mekanizma detayı eklendi mi:            metadata (grep doğrulandı)
+- CANDIDATE-J → J1 first-slice decompose + Contract RATIFIED   YES — §4/§4f/§7/§8; CANDIDATE-J
+  işlendi mi (§4/§4f/§7/§8):                                    DECOMPOSED/NOT_SELECTED + yeni
+                                                                CANDIDATE-J1 (SELECTED/RATIFIED)
+- implementationAuthorization (CANDIDATE-J1) verildi mi        NO — NONE korunur; GO-IMPLEMENT
+  (owner: koru NONE):                                          owner'ın ayrı, açık bir GO'sunu bekler
+- STF-PRD-BOLA-002 kapatıldı mı (owner: kapatma) /             NO / YES — finding OPEN kaldı,
+  yalnız J1 mapping'i eklendi mi:                               CANDIDATE-J mapping'i §2/§7'ye eklendi
+- CANDIDATE-K ve kalan J policy kapsamı owner-gated future     YES — §4/§4f/§8 açıkça "seçilmedi/
+  scope olarak bırakıldı mı:                                    future scope" olarak not edildi
+- J1 davranış-değiştiren enforcement dilimi olduğu             YES — §4/§4f/§7/§8: "ilk davranış-
+  açıkça yazıldı mı (I1/additive-only'den farklı):             DEĞİŞTİREN WAVE 4+ enforcement dilimi"
+- Backfill kapsamı doğru mu (enforcement, veri-taşıma değil):  YES — §4f: BACKFILL UYGULANMAZ
+                                                                (ileriye-dönük tasarım)
+- Sunulan Contract (in/out-of-scope, invariants, acceptance    YES — §4f CANDIDATE-J1 bloğu, redakte
+  criteria, test/evidence, stop conditions) canonical kayda    (enforcement metot/helper/emsal ismi
+  dönüştü mü:                                                   private evidence'ta, grep doğrulandı)
+- CANDIDATE-A/B/C/D/E/F1/F2/G/H/H1/E1/I/I1 durumu               NO — yalnız CANDIDATE-J/J1/K + ilgili
+  değiştirildi mi:                                             finding (BOLA-002) etkilendi
+- NEXT ELIGIBLE UNIT yeniden hesaplandı mı:                    YES — §8: CANDIDATE-J1 — GO-IMPLEMENT
+                                                                (implementationAuthorization NONE ile)
+- Yeni candidate seçildi mi (K) / kod-schema-migration:        NO / NONE — K incelendi, SEÇİLMEDİ
+- PUBLIC CONTENT RULE (J1 contract): enforcement metot/        NO — yalnız governance-seviyesi soyut
+  route/dosya/mekanizma detayı eklendi mi:                     yapı tarifi (grep doğrulandı; BOLA-002
+                                                                hâlâ UNPATCHED, aynı containment kuralı)
 ```

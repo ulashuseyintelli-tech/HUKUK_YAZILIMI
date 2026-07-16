@@ -148,8 +148,13 @@ PRIVATE EVIDENCE: RETAINED LOCALLY / NOT PUBLISHED
 CURRENT CANONICAL EVIDENCE: NOT PUBLICLY DISCLOSED / REVALIDATION REQUIRED
 TARGET CONTROL / DESIRED OUTCOME: Assignment/access ayrımı + eligibility kontrolü (OFF-INV-04)
 RELATED OFF-INV: OFF-INV-04 · RELATED OFF/OD: OFF/OD-10
-GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: NONE
-NOTES: OFF/OD-10 owner tarafından Option B ile CLOSED/CANONICAL kapatıldı (2026-07-16, Access-Scope Owner Decision Package — bkz. `decision-log.md`). Bu bulgunun kendisi KAPANMADI (DOMAIN STATUS/EVIDENCE STATUS değişmedi); decision kapanışıyla READY_FOR_CANDIDATE_DECOMPOSITION haline geldi, henüz candidate seçilmedi/başlatılmadı (bkz. `OFFICE-DELIVERY-MANIFEST.md` §2/§7).
+GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: WAVE 4+ · LAST VERIFIED SHA: `2487d52b`
+MITIGATION STATUS: OPEN / NOT YET MITIGATED (Contract ratified, henüz implement edilmedi)
+MAPPED SLICES: CANDIDATE-J1 (Task-atama baseline; OWNER_SELECTED/CONTRACT_RATIFIED, implementationAuthorization NONE) · CANDIDATE-K (Case-atama; henüz SEÇİLMEDİ/decompose edilmedi, owner-gated future)
+EVIDENCE (CANDIDATE-J1): Contract Draft canonical — bkz. `OFFICE-DELIVERY-MANIFEST.md` §4/§4f/§7; `decision-log.md` § 2026-07-17 CANDIDATE-J1 Contract Ratification
+RESIDUALS (CARRIED FORWARD): J1 yalnız Task-atama baseline (aynı-tenant + aktiflik, ileriye-dönük) alt-boşluğunu ele alacak — henüz IMPLEMENT EDİLMEDİ (Contract ratified). Kalan J rol/kapasite policy kapsamı + tüm CANDIDATE-K (Case ekip-atama yüzeyi, daha büyük blast radius + retroaktif-enforcement backward-compat gerilimi + kısmi ürün-kararı bağımlılığı) AYRI, owner-gated future scope
+FINDING VERDICT: OPEN / NOT CLOSED — candidate-decomposition tamamlandı ama hiçbir enforcement henüz teslim edilmedi (J1 Contract RATIFIED, GO-IMPLEMENT verilmedi); ayrıca J1 tam teslim edildiğinde bile yalnız Task-atama porsiyonunun baseline'ını kapatır, bulgunun Case-atama porsiyonu (CANDIDATE-K) hâlâ açık kalır.
+NOTES: OFF/OD-10 owner tarafından Option B ile CLOSED/CANONICAL kapatıldı (2026-07-16, Access-Scope Owner Decision Package — bkz. `decision-log.md`). Bu bulgunun kendisi KAPANMADI (DOMAIN STATUS/EVIDENCE STATUS değişmedi); decision kapanışıyla READY_FOR_CANDIDATE_DECOMPOSITION haline geldi, **CANDIDATE-J (Task) + CANDIDATE-K (Case) ile mapping yapıldı** (2026-07-17), CANDIDATE-J DECOMPOSED → ilk dilimi **CANDIDATE-J1 OWNER_SELECTED/CONTRACT_RATIFIED** (bkz. `OFFICE-DELIVERY-MANIFEST.md` §2/§7/§4f). CANDIDATE-K henüz seçilmedi/başlatılmadı.
 
 **STF-PRD-DATA-001** — Veri bütünlüğü / eşzamanlılık kontrol boşluğu
 SEVERITY: P3 · DOMAIN STATUS: CANDIDATE / NOT YET TRIAGED · EVIDENCE STATUS: REVALIDATION_REQUIRED
