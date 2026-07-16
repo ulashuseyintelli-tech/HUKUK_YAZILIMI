@@ -80,6 +80,12 @@ export class CreateCollectionDto {
   @IsString()
   caseId: string;
 
+  // RCV-P2-WS03-P03: guarded-edge retry için additive/non-breaking input.
+  // Controller bu alanı authorization boundary'de tüketir; Collection command'a taşımaz.
+  @IsOptional()
+  @IsString()
+  confirmationToken?: string;
+
   // İdempotency (P0-1 / S9) — ZORUNLU. Client, form/işlem başına STABİL bir key üretir
   //   (ör. crypto.randomUUID); double-click/retry aynı key'i taşır → tek tahsilat.
   //   Aynı key + aynı payload → replay (mevcut tahsilat döner); aynı key + farklı payload

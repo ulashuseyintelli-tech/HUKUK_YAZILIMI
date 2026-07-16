@@ -7,6 +7,8 @@ import { SummaryEngineModule } from "../summary-engine/summary-engine.module";
 import { CaseDebtorLifecycleGuardModule } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module";
 import { AccountingJournalWriterService } from "../accounting-journal";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
+import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
+import { ReceiptObjectScopeAuthorizationService } from "./receipt-object-scope-authorization.service";
 
 @Module({
   // G3a: SummaryEngineModule → CollectionService kanonik ledger forward write için.
@@ -16,9 +18,10 @@ import { OfficeApprovalModule } from "../office-approval/office-approval.module"
     SummaryEngineModule,
     CaseDebtorLifecycleGuardModule,
     OfficeApprovalModule,
+    PermissionDiagnosticsModule,
   ],
   controllers: [CollectionController],
-  providers: [CollectionService, AccountingJournalWriterService],
-  exports: [CollectionService],
+  providers: [CollectionService, AccountingJournalWriterService, ReceiptObjectScopeAuthorizationService],
+  exports: [CollectionService, ReceiptObjectScopeAuthorizationService],
 })
 export class CollectionModule {}

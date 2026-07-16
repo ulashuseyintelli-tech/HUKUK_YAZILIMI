@@ -20,11 +20,18 @@ import {
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { getRequestId } from "../../common/request-id.middleware";
+import {
+  RECEIPT_AUTHORIZATION_SURFACES,
+  ReceiptObjectScopeAuthorizationService,
+} from "../collection/receipt-object-scope-authorization.service";
 
 @Controller()
 @UseGuards(JwtAuthGuard)
 export class ThirdPartyController {
-  constructor(private thirdPartyService: ThirdPartyService) {}
+  constructor(
+    private thirdPartyService: ThirdPartyService,
+    private receiptAuthorization: ReceiptObjectScopeAuthorizationService,
+  ) {}
 
   // ==================== THIRD PARTY CRUD ====================
 
@@ -172,17 +179,32 @@ export class ThirdPartyController {
    * POST /external-cases/:id/collection
    */
   @Post("external-cases/:id/collection")
-  addExternalCaseCollection(
+  async addExternalCaseCollection(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
     @Body() dto: ExternalCaseReceiptInput,
     @Req() req: any,
   ) {
+    const { confirmationToken, ...receiptInput } = dto;
+    const caseId = await this.receiptAuthorization.resolveExternalCaseId({
+      tenantId,
+      externalCaseId: id,
+    });
+    const authorization = await this.receiptAuthorization.authorize({
+      tenantId,
+      actorUserId,
+      caseId,
+      surface: RECEIPT_AUTHORIZATION_SURFACES.EXTERNAL_CASE_COLLECTION,
+      payload: { externalCaseId: id, ...receiptInput },
+      confirmationToken,
+    });
+    if (authorization.kind === 'ENVELOPE') return authorization.envelope;
+
     return this.thirdPartyService.addExternalCaseCollection(
       tenantId,
       id,
-      dto,
+      receiptInput,
       actorUserId,
       getRequestId(req),
     );

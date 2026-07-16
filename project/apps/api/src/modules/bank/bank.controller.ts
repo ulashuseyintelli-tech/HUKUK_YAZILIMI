@@ -1,10 +1,14 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { BankService } from './bank.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { getRequestId } from '../../common/request-id.middleware';
+import {
+  RECEIPT_AUTHORIZATION_SURFACES,
+  ReceiptObjectScopeAuthorizationService,
+} from '../collection/receipt-object-scope-authorization.service';
 
 @Controller('bank')
 @UseGuards(JwtAuthGuard)
@@ -13,6 +17,8 @@ export class BankController {
     private bankService: BankService,
     // P2b-2: Guided-Open observe adapter (diagnostic only; engelleme yok; finansal mantığa DOKUNMAZ)
     private guidedOpenObserve: GuidedOpenObserveService,
+    @Optional()
+    private receiptAuthorization?: ReceiptObjectScopeAuthorizationService,
   ) {}
 
   // ==================== HESAP YÖNETİMİ ====================
@@ -120,11 +126,29 @@ export class BankController {
   async matchTransaction(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
-    @Body() body: { caseId: string },
+    @Body() body: { caseId: string; confirmationToken?: string },
     @CurrentUser('id') userId: string,
     @Req() req: any,
   ) {
-    return this.bankService.matchTransaction(id, body.caseId, userId, tenantId, getRequestId(req));
+    if (!this.receiptAuthorization) {
+      throw new ServiceUnavailableException({ code: 'RECEIPT_AUTHORIZATION_BOUNDARY_UNAVAILABLE' });
+    }
+    const caseId = await this.receiptAuthorization.resolveBankCaseId({
+      tenantId,
+      transactionId: id,
+      requestedCaseId: body.caseId,
+    });
+    const authorization = await this.receiptAuthorization.authorize({
+      tenantId,
+      actorUserId: userId,
+      caseId,
+      surface: RECEIPT_AUTHORIZATION_SURFACES.BANK_MATCH,
+      payload: { transactionId: id, caseId },
+      confirmationToken: body.confirmationToken,
+    });
+    if (authorization.kind === 'ENVELOPE') return authorization.envelope;
+
+    return this.bankService.matchTransaction(id, caseId, userId, tenantId, getRequestId(req));
   }
 
   /**
