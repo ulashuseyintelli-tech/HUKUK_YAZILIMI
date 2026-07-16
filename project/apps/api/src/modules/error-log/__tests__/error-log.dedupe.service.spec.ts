@@ -6,6 +6,7 @@ function makePrisma() {
       upsert: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       update: jest.fn().mockResolvedValue({}),
+      findFirst: jest.fn().mockResolvedValue({}),
     },
   };
 }
@@ -90,12 +91,12 @@ describe("ErrorLogService.log — kalıcı dedupe upsert (PR-2b)", () => {
 });
 
 describe("ErrorLogService.resolve — activeDedupeKey null (PR-2b)", () => {
-  it("resolve → update data.activeDedupeKey=null + isResolved + resolvedBy (kabul #9)", async () => {
+  it("resolve → tenant-scoped updateMany, data.activeDedupeKey=null + isResolved + resolvedBy (kabul #9)", async () => {
     const prisma = makePrisma();
     const svc = new ErrorLogService(prisma as any);
-    await svc.resolve("log1", "admin1", "fixed");
-    const arg = prisma.errorLog.update.mock.calls[0][0];
-    expect(arg.where).toEqual({ id: "log1" });
+    await svc.resolve("log1", "admin1", "t1", "fixed");
+    const arg = prisma.errorLog.updateMany.mock.calls[0][0];
+    expect(arg.where).toEqual({ id: "log1", tenantId: "t1" });
     expect(arg.data.activeDedupeKey).toBeNull();
     expect(arg.data.isResolved).toBe(true);
     expect(arg.data.resolvedBy).toBe("admin1");

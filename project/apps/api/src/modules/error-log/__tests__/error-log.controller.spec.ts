@@ -32,8 +32,8 @@ describe("AdminGuard — rol kapısı davranışı", () => {
   it("rol yok → reddedilir", () => expect(() => guard.canActivate(ctx())).toThrow());
 });
 
-describe("ErrorLogController.resolve — resolvedBy spoof engeli", () => {
-  it("body.userId verilse bile resolvedBy = req.user.id", async () => {
+describe("ErrorLogController.resolve — resolvedBy spoof engeli + tenantId auth-context'ten", () => {
+  it("body.userId verilse bile resolvedBy = req.user.id, tenantId = req.user.tenantId", async () => {
     const svc = { resolve: jest.fn().mockResolvedValue({}) } as any;
     const c = new ErrorLogController(svc);
     await c.resolve(
@@ -41,7 +41,7 @@ describe("ErrorLogController.resolve — resolvedBy spoof engeli", () => {
       { user: { id: "admin-real", tenantId: "t1" } },
       { resolution: "fixed", userId: "attacker" } as any,
     );
-    expect(svc.resolve).toHaveBeenCalledWith("log1", "admin-real", "fixed");
+    expect(svc.resolve).toHaveBeenCalledWith("log1", "admin-real", "t1", "fixed");
   });
 });
 
