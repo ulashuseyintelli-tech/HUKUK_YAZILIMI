@@ -32,14 +32,19 @@ PRIVATE EVIDENCE: RETAINED LOCALLY / NOT PUBLISHED
 CURRENT CANONICAL EVIDENCE: NOT PUBLICLY DISCLOSED / REVALIDATION REQUIRED
 TARGET CONTROL / DESIRED OUTCOME: Object-scope evaluation tüm belge erişim yollarında zorunlu (OFF-INV-05)
 RELATED OFF-INV: OFF-INV-05 · RELATED OFF/OD: OFF/OD-08, OFF/OD-09
-GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: NONE
+GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: WAVE 4+ · LAST VERIFIED SHA: `05e73579`
 RISK STATUS (S1–S4 scope only): REMEDIATED / CLOSED — DOMAIN STATUS ve EVIDENCE STATUS alanları (yukarıda) BİLEREK DEĞİŞTİRİLMEDİ: bu belgenin kendi "Statü otoritesi ayrımı" kuralı (yukarıda) OPEN/CLOSED yürütme statüsünü yalnız `master-triage-register.md`'ye ayırır; bu satır yalnız S1–S4 remediation kanıtını taşır, global triage/domain-status kararı DEĞİLDİR.
 IMPLEMENTATION: PR #1291
 SQUASH SHA: 328dcdf6689575da8a4849f4b632a737079c22ad
 EVIDENCE: CI 4/4 SUCCESS (Architectural Guardrails, Test Suite, Web Tests vitest, Client Workspace Live Smoke) · S1–S4 regression coverage (4 test suite, 16 test, wired into CI)
 PREVIOUS PR: PR #1147 — CLOSED / SUPERSEDED BY PR #1291 (merge edilmedi; kodu main'e girmedi)
 SCOPE NOTE: Remediation, tespit edilen authentication/tenant-scope/object-ownership exposure'ını kapatır. OFF/OD-08'in daha geniş intra-tenant access-scope kararını ÇÖZMEZ.
-NOTES: PR #1147 kapatıldı (2026-07-15, superseded by PR #1291) — artık "OFFICE kapsamı dışı, ilişkili olabilir" belirsizliği taşımaz. Owner kararı ve tam kanıt zinciri: `decision-log.md` CLIENT-SEC-H1 kaydı; güncel PR #1147 durumu: `OFFICE-MASTER-SYNTHESIS.md` §11. EK (2026-07-16): OFF/OD-08 owner tarafından Option B ile ayrıca CLOSED/CANONICAL kapatıldı (Access-Scope Owner Decision Package — bkz. `decision-log.md` § 2026-07-16 Access-Scope Owner Decision Package Closure). Bu, SCOPE NOTE'ta ayrı tutulan geniş intra-tenant access-scope kararının owner tarafından seçilmesidir; PR #1291'in dar remediation kapsamını değiştirmez ve bu bulguyu KAPATMAZ (DOMAIN STATUS/EVIDENCE STATUS değişmedi). Decision kapanmasıyla READY_FOR_CANDIDATE_DECOMPOSITION durumuna geçen ilişkili kayıt CANDIDATE-E'dir (bkz. `OFFICE-DELIVERY-MANIFEST.md` §4/§4c/§8) — henüz owner tarafından seçilmedi/başlatılmadı.
+MITIGATION STATUS: OPEN / PARTIALLY MITIGATED
+DELIVERED SLICES: CANDIDATE-I1 — CANONICAL (additive-only Team/Manager-Hiyerarşi `ReportingLine` şema temeli)
+EVIDENCE (CANDIDATE-I1): PR #1320 (Contract Draft canonical) + PR #1325 (squash `05e73579f295615db8a0f3f3ff5816caa958acd5`, implementasyon) — bkz. `OFFICE-DELIVERY-MANIFEST.md` §4/§4e/§7
+RESIDUALS (CARRIED FORWARD): tam object-scope enforcement kapsamı (CANDIDATE-I'nin kalan scope'u — case/client'ın tüm nesne-erişim yüzeyine gerçek bir kapsam-değerlendirme adımı) TESLİM EDİLMEDİ, ayrı/HENÜZ candidate ID'si olmayan owner-gated future scope
+FINDING VERDICT: OPEN / NOT CLOSED — teslim edilen slice (I1: hiyerarşi şema temeli) riskin TARGET CONTROL'ünü (object-scope evaluation'ın tüm belge erişim yollarında zorunlu kılınması) henüz sağlamıyor; sıfır enforcement/runtime davranış değişikliğiyle geldi. Asıl davranışsal kapanış, hâlâ owner-gated kalan tam object-scope enforcement'ı gerektirir.
+NOTES: PR #1147 kapatıldı (2026-07-15, superseded by PR #1291) — artık "OFFICE kapsamı dışı, ilişkili olabilir" belirsizliği taşımaz. Owner kararı ve tam kanıt zinciri: `decision-log.md` CLIENT-SEC-H1 kaydı; güncel PR #1147 durumu: `OFFICE-MASTER-SYNTHESIS.md` §11. EK (2026-07-16): OFF/OD-08 owner tarafından Option B ile ayrıca CLOSED/CANONICAL kapatıldı (Access-Scope Owner Decision Package — bkz. `decision-log.md` § 2026-07-16 Access-Scope Owner Decision Package Closure). Bu, SCOPE NOTE'ta ayrı tutulan geniş intra-tenant access-scope kararının owner tarafından seçilmesidir; PR #1291'in dar remediation kapsamını değiştirmez ve bu bulguyu KAPATMAZ (DOMAIN STATUS/EVIDENCE STATUS değişmedi). Decision kapanmasıyla READY_FOR_CANDIDATE_DECOMPOSITION durumuna geçen ilişkili kayıt **CANDIDATE-I**'dir (bkz. `OFFICE-DELIVERY-MANIFEST.md` §4/§4e/§8) — düzeltme (2026-07-16/17 fresh-read): bu satır önceki bir turda yanlışlıkla "CANDIDATE-E"/"§4c" referansı taşıyordu (RBAC-001'in kendi decomposition'ı — BOLA-001'le ilgisiz); doğru referans CANDIDATE-I/CANDIDATE-I1/§4e olarak düzeltildi. CANDIDATE-I'nin ilk dilimi **CANDIDATE-I1 CANONICAL/CONSUMED** (2026-07-16/17, PR #1325) — kalan tam object-scope enforcement kapsamı hâlâ owner tarafından seçilmedi/başlatılmadı.
 
 **STF-PRD-SES-001** — Lifecycle/oturum kontrol boşluğu (offboarding sonrası erişim)
 SEVERITY: P1 · DOMAIN STATUS: CANDIDATE / NOT YET TRIAGED · EVIDENCE STATUS: REVALIDATION_REQUIRED
@@ -73,8 +78,13 @@ PRIVATE EVIDENCE: RETAINED LOCALLY / NOT PUBLISHED
 CURRENT CANONICAL EVIDENCE: NOT PUBLICLY DISCLOSED / REVALIDATION REQUIRED
 TARGET CONTROL / DESIRED OUTCOME: Object-scope evaluation manager/team kapsamını uygular (OFF-INV-05)
 RELATED OFF-INV: OFF-INV-05 · RELATED OFF/OD: OFF/OD-08
-GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: NONE
-NOTES: OFF/OD-08 owner tarafından Option B ile CLOSED/CANONICAL kapatıldı (2026-07-16, Access-Scope Owner Decision Package — bkz. `decision-log.md`). Bu bulgunun kendisi KAPANMADI (DOMAIN STATUS/EVIDENCE STATUS değişmedi); decision kapanışıyla READY_FOR_CANDIDATE_DECOMPOSITION haline geldi, henüz candidate seçilmedi/başlatılmadı (bkz. `OFFICE-DELIVERY-MANIFEST.md` §2/§7).
+GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: WAVE 4+ · LAST VERIFIED SHA: `05e73579`
+MITIGATION STATUS: OPEN / PARTIALLY MITIGATED
+DELIVERED SLICES: CANDIDATE-I1 — CANONICAL (additive-only Team/Manager-Hiyerarşi `ReportingLine` şema temeli)
+EVIDENCE (CANDIDATE-I1): PR #1320 (Contract Draft canonical) + PR #1325 (squash `05e73579f295615db8a0f3f3ff5816caa958acd5`, implementasyon) — bkz. `OFFICE-DELIVERY-MANIFEST.md` §4/§4e/§7
+RESIDUALS (CARRIED FORWARD): tam object-scope enforcement kapsamı (SCP-001'in kapsadığı geniş case/client CRUD yüzeyi) TESLİM EDİLMEDİ, ayrı/HENÜZ candidate ID'si olmayan owner-gated future scope
+FINDING VERDICT: OPEN / NOT CLOSED — teslim edilen slice (I1: hiyerarşi şema temeli) riskin TARGET CONTROL'ünü (object-scope evaluation'ın manager/team kapsamını uygulaması) henüz sağlamıyor; sıfır enforcement/runtime davranış değişikliğiyle geldi. Asıl davranışsal kapanış, hâlâ owner-gated kalan tam object-scope enforcement'ı gerektirir.
+NOTES: OFF/OD-08 owner tarafından Option B ile CLOSED/CANONICAL kapatıldı (2026-07-16, Access-Scope Owner Decision Package — bkz. `decision-log.md`). Bu bulgunun kendisi KAPANMADI (DOMAIN STATUS/EVIDENCE STATUS değişmedi); decision kapanışıyla READY_FOR_CANDIDATE_DECOMPOSITION haline geldi, **CANDIDATE-I** ile mapping yapıldı, ilk dilimi **CANDIDATE-I1 CANONICAL/CONSUMED** (2026-07-16/17, PR #1325) — kalan tam object-scope enforcement kapsamı hâlâ owner tarafından seçilmedi/başlatılmadı (bkz. `OFFICE-DELIVERY-MANIFEST.md` §2/§7/§4e).
 
 **STF-PRD-CFG-001** — Yapılandırma yüzeyi erişim kontrol boşluğu
 SEVERITY: P2 · DOMAIN STATUS: CANDIDATE / NOT YET TRIAGED · EVIDENCE STATUS: REVALIDATION_REQUIRED
