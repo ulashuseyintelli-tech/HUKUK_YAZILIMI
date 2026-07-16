@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientNotificationService } from '../client-notification/client-notification.service';
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
@@ -439,10 +439,15 @@ export class AddressTaskService {
   /**
    * Dosya için bekleyen görevleri getir
    */
-  async getPendingTasksForCase(caseId: string, tenantId?: string): Promise<AddressTask[]> {
+  async getPendingTasksForCase(caseId: string, tenantId: string): Promise<AddressTask[]> {
+    // SEC-TENANT-HARDEN-P01 (ADDR-TID-03): fail-closed. Opsiyonel-tenantId fail-open
+    // fallback kaldırıldı; gerçek bir scheduler/iç çağıran yoktu (bkz. commit mesajı).
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     return this.prisma.addressTask.findMany({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        tenantId,
         caseId,
         status: {
           in: ['PENDING', 'IN_PROGRESS', 'WAITING_EXTERNAL', 'OVERDUE'],
@@ -455,10 +460,14 @@ export class AddressTaskService {
   /**
    * Dosya için tüm görevleri getir (tamamlananlar dahil)
    */
-  async getAllTasksForCase(caseId: string, tenantId?: string): Promise<AddressTask[]> {
+  async getAllTasksForCase(caseId: string, tenantId: string): Promise<AddressTask[]> {
+    // SEC-TENANT-HARDEN-P01 (ADDR-TID-04): fail-closed, bkz. getPendingTasksForCase.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     return this.prisma.addressTask.findMany({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        tenantId,
         caseId,
       },
       orderBy: { createdAt: 'desc' },
@@ -468,10 +477,14 @@ export class AddressTaskService {
   /**
    * Dosya için notları getir (audit log'lardan showInNotes=true olanlar)
    */
-  async getNotesForCase(caseId: string, tenantId?: string): Promise<any[]> {
+  async getNotesForCase(caseId: string, tenantId: string): Promise<any[]> {
+    // SEC-TENANT-HARDEN-P01 (ADDR-TID-05): fail-closed, bkz. getPendingTasksForCase.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     const logs = await this.prisma.addressAuditLog.findMany({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        tenantId,
         caseId,
         showInNotes: true,
       },
@@ -493,10 +506,14 @@ export class AddressTaskService {
   /**
    * Borçlu için görevleri getir
    */
-  async getTasksByDebtor(debtorId: string, tenantId?: string): Promise<AddressTask[]> {
+  async getTasksByDebtor(debtorId: string, tenantId: string): Promise<AddressTask[]> {
+    // SEC-TENANT-HARDEN-P01 (ADDR-TID-06): fail-closed, bkz. getPendingTasksForCase.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     return this.prisma.addressTask.findMany({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        tenantId,
         debtorId,
       },
       orderBy: { createdAt: 'desc' },
@@ -843,10 +860,14 @@ export class AddressTaskService {
    * 1. Debtor'un addressIntakeMode = CLIENT_CONFIRMED
    * 2. VE yararlı adresi var
    */
-  async shouldBypassAddressRequest(debtorId: string, tenantId?: string): Promise<{ bypass: boolean; reason?: string }> {
-    // Debtor tenant-scoped (ASSIGN-1 blocker #3): tenantId verilirse yabancı tenant borçlusu okunmaz.
+  async shouldBypassAddressRequest(debtorId: string, tenantId: string): Promise<{ bypass: boolean; reason?: string }> {
+    // SEC-TENANT-HARDEN-P01 (ADDR-TID-07): fail-closed. Debtor tenant-scoped (ASSIGN-1
+    // blocker #3) — yabancı tenant borçlusu artık hiçbir koşulda okunmaz.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     const debtor = await this.prisma.debtor.findFirst({
-      where: { id: debtorId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: debtorId, tenantId },
       select: { addressIntakeMode: true, name: true },
     });
 
@@ -952,13 +973,17 @@ export class AddressTaskService {
    */
   async confirmReceivedByOperator(
     taskId: string,
-    operatorId?: string,
-    tenantId?: string,
+    operatorId: string | undefined,
+    tenantId: string,
   ): Promise<AddressTask> {
-    // Tenant-scoped sahiplik kontrolü (ASSIGN-1): controller tenantId geçirir,
-    // scheduler/iç bağlam geçmezse tüm tenant'larda aranır (eski davranış).
+    // SEC-TENANT-HARDEN-P01 (ADDR-TID-08): fail-closed. Tenant-scoped sahiplik kontrolü
+    // (ASSIGN-1) — eski "scheduler/iç bağlam geçmezse tüm tenant'larda aranır" davranışı
+    // kaldırıldı; gerçek bir üretim çağıranı yoktu (yalnız controller, her zaman tenantId ile).
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     const task = await this.prisma.addressTask.findFirst({
-      where: { id: taskId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: taskId, tenantId },
     });
 
     if (!task) {

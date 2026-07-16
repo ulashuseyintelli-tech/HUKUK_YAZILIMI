@@ -537,12 +537,40 @@ jobs:
                    src/modules/error-log/__tests__/all-exceptions.filter.spec.ts \
                    src/modules/error-log/__tests__/error-dedupe-key.spec.ts \
                    src/modules/error-log/__tests__/error-log.dedupe.service.spec.ts \
-                   src/modules/error-log/__tests__/error-reporter.spec.ts; do
+                   src/modules/error-log/__tests__/error-reporter.spec.ts \
+                   src/modules/error-log/__tests__/error-log-tenant-scope.service.spec.ts; do
             test -f "$f" || { echo "MISSING error-log spec: $f"; exit 1; }
           done
           npx jest --ci --forceExit \
             --testPathPattern="error-log/__tests__/.*\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # SEC-TENANT-HARDEN-P01: address-task.service.ts/controller.ts hiçbir CI step'inde
+      # koşmuyordu (ADDR-TID-03..08 fail-closed sertleştirmesi bu keşifle birlikte yapıldı).
+      # Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
+      - name: Address-task tenant isolation tests (SEC-TENANT-HARDEN-P01)
+        run: |
+          cd apps/api
+          for f in src/modules/address-task/address-task.service.spec.ts \
+                   src/modules/address-task/address-task.controller.spec.ts; do
+            test -f "$f" || { echo "MISSING address-task spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="src/modules/address-task/address-task\.(service|controller)\.spec\.ts$"
+        working-directory: project
+      # SEC-TENANT-HARDEN-P01: icrabot-digital-twin-tenant-guard.spec.ts (mevcut DBND-B1/B1B/B1C
+      # emsali) de dahil hiçbir icrabot tenant-isolation spec'i CI'da koşmuyordu. getQueueStats
+      # (ICRABOT-TID-01) sertleştirmesiyle birlikte ikisi de wiring'e eklendi.
+      # Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
+      - name: Icrabot tenant isolation tests (SEC-TENANT-HARDEN-P01)
+        run: |
+          cd apps/api
+          for f in src/modules/icrabot/__tests__/icrabot-digital-twin-tenant-guard.spec.ts \
+                   src/modules/icrabot/__tests__/icrabot-queue-stats-tenant-scope.spec.ts; do
+            test -f "$f" || { echo "MISSING icrabot tenant-isolation spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="src/modules/icrabot/__tests__/icrabot-(digital-twin-tenant-guard|queue-stats-tenant-scope)\.spec\.ts$"
         working-directory: project
       # CLIENT-LANE-1: client modülü saf unit spec'leri (mock prisma, DB GEREKMEZ) yukarıdaki dar
       # pattern'lerin dışında kalıyordu → CI'da koşmuyordu (#656 client-update-duplicate-guard false-green

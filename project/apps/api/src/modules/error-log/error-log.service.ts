@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { computePersistentFingerprint, computeActiveDedupeKey } from './internal/error-dedupe-key';
 
@@ -85,9 +85,14 @@ export class ErrorLogService {
   }
 
   async getLogs(tenantId: string, filters: { level?: string; source?: string; page?: number; limit?: number }) {
+    // SEC-TENANT-HARDEN-P01 (ERRLOG-TID-02): fail-closed. Servis @Global() export edildiği
+    // için tenantId'siz herhangi bir internal çağrı da reddedilmeli — yalnız TS tipine güvenmek
+    // yetmez (runtime'da falsy bir değer tipi atlatabilir).
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     const { level, source, page = 1, limit = 50 } = filters;
-    const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    const where: any = { tenantId };
     if (level) where.level = level;
     if (source) where.source = source;
 
@@ -112,8 +117,12 @@ export class ErrorLogService {
     });
   }
 
-  async getStats(tenantId?: string) {
-    const where: any = tenantId ? { tenantId } : {};
+  async getStats(tenantId: string) {
+    // SEC-TENANT-HARDEN-P01 (ERRLOG-TID-01): fail-closed, bkz. getLogs.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const where: any = { tenantId };
     const [total, errors, warnings, unresolved] = await Promise.all([
       this.prisma.errorLog.count({ where }),
       this.prisma.errorLog.count({ where: { ...where, level: 'ERROR' } }),

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import * as fc from 'fast-check';
 import { AddressTaskService } from './address-task.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -438,7 +438,7 @@ describe('AddressTaskService', () => {
       });
       mockPrismaService.debtorAddress.count.mockResolvedValue(1);
 
-      const result = await service.shouldBypassAddressRequest('debtor-1');
+      const result = await service.shouldBypassAddressRequest('debtor-1', 'tenant-1');
 
       expect(result.bypass).toBe(true);
     });
@@ -450,7 +450,7 @@ describe('AddressTaskService', () => {
         addressIntakeMode: 'UNKNOWN',
       });
 
-      const result = await service.shouldBypassAddressRequest('debtor-1');
+      const result = await service.shouldBypassAddressRequest('debtor-1', 'tenant-1');
 
       expect(result.bypass).toBe(false);
     });
@@ -490,7 +490,7 @@ describe('AddressTaskService', () => {
       mockPrismaService.addressTask.updateMany.mockResolvedValue({ count: 0 });
       mockPrismaService.addressAuditLog.create.mockResolvedValue({});
 
-      const result = await service.confirmReceivedByOperator('task-1', 'operator-1');
+      const result = await service.confirmReceivedByOperator('task-1', 'operator-1', 'tenant-1');
 
       expect(result.status).toBe('DONE');
     });
@@ -877,13 +877,71 @@ describe('AddressTaskService', () => {
       expect(mockPrismaService.addressAuditLog.findFirst).not.toHaveBeenCalled();
     });
 
-    it('omitting tenantId keeps system-context behavior (scheduler path, no tenant filter)', async () => {
+    // SEC-TENANT-HARDEN-P01: eski "scheduler path, no tenant filter" testi kaldırıldı —
+    // gerçek bir scheduler/iç çağıran hiç var olmadı (bkz. commit mesajı). Artık bu 6 metodun
+    // hepsinde tenantId zorunlu ve fail-closed; her biri için hem pozitif tenant-scope hem
+    // fail-closed testi aşağıda.
+
+    it('getPendingTasksForCase tenantId olmadan fail-closed reddeder (ADDR-TID-03)', async () => {
+      await expect(service.getPendingTasksForCase('case-1', '')).rejects.toThrow(ForbiddenException);
+      expect(mockPrismaService.addressTask.findMany).not.toHaveBeenCalled();
+    });
+
+    it('getAllTasksForCase tenant ile scope eder ve tenantId olmadan fail-closed reddeder (ADDR-TID-04)', async () => {
       mockPrismaService.addressTask.findMany.mockResolvedValue([]);
 
-      await service.getPendingTasksForCase('case-1');
+      await service.getAllTasksForCase('case-1', 'tenant-1');
 
-      const callArg = mockPrismaService.addressTask.findMany.mock.calls[0][0];
-      expect(callArg.where.tenantId).toBeUndefined();
+      expect(mockPrismaService.addressTask.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-1' }) }),
+      );
+
+      await expect(service.getAllTasksForCase('case-1', '')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('getNotesForCase tenant ile scope eder ve tenantId olmadan fail-closed reddeder (ADDR-TID-05)', async () => {
+      mockPrismaService.addressAuditLog.findMany.mockResolvedValue([]);
+
+      await service.getNotesForCase('case-1', 'tenant-1');
+
+      expect(mockPrismaService.addressAuditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-1' }) }),
+      );
+
+      await expect(service.getNotesForCase('case-1', '')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('getTasksByDebtor tenant ile scope eder ve tenantId olmadan fail-closed reddeder (ADDR-TID-06)', async () => {
+      mockPrismaService.addressTask.findMany.mockResolvedValue([]);
+
+      await service.getTasksByDebtor('debtor-1', 'tenant-1');
+
+      expect(mockPrismaService.addressTask.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1', debtorId: 'debtor-1' }) }),
+      );
+
+      await expect(service.getTasksByDebtor('debtor-1', '')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('shouldBypassAddressRequest tenantId olmadan fail-closed reddeder (ADDR-TID-07)', async () => {
+      await expect(service.shouldBypassAddressRequest('debtor-1', '')).rejects.toThrow(ForbiddenException);
+      expect(mockPrismaService.debtor.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('confirmReceivedByOperator tenantId olmadan fail-closed reddeder (ADDR-TID-08)', async () => {
+      await expect(service.confirmReceivedByOperator('task-1', 'operator-1', '')).rejects.toThrow(ForbiddenException);
+      expect(mockPrismaService.addressTask.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('confirmReceivedByOperator yabancı tenant için ana kaydı ve cascade kayıtlarını değiştirmez', async () => {
+      mockPrismaService.addressTask.findFirst.mockResolvedValue(null); // tenant-scoped findFirst yabancı task'ı bulamaz
+
+      await expect(
+        service.confirmReceivedByOperator('foreign-task', 'operator-1', 'tenant-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrismaService.addressTask.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.addressTask.updateMany).not.toHaveBeenCalled();
     });
 
     // ------------------------------------------------------------------------
