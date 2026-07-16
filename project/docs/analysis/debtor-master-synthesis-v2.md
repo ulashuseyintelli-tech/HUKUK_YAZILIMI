@@ -90,6 +90,22 @@ yoktur — her DBP-0N'in kendi "OWNER-APPROVED" ifadesi yalnız o paketin İÇER
 **PHASE 1 CANONICAL CLOSED: NOT YET DECLARED. IMPLEMENTATION ENTRY: HOLD.** Wave 1 durumu (NOT
 YET OPEN) DEĞİŞMEMİŞTİR. Bu not hiçbir ODR/OBD/LSR/security-gate/evidence-gap maddesini kapatmaz.
 
+**OWNER-OVERRIDE NOTU — BLUEPRINT PHASE 1 OWNER RATIFICATION (2026-07-16, bkz. `decision-log.md`
+aynı tarihli "BORÇLU PLATFORMU BLUEPRINT PHASE 1 — OWNER RATIFICATION RECORDED (DBP-OWNER-RATIFY-01)"
+kaydı):** Yukarıdaki 2026-07-16 tarihli DBP-GOV-01 owner-override notundaki `OWNER BLUEPRINT
+RATIFICATION: PENDING` ifadesi O ANKİ gerçek durumu doğru yansıtıyordu; bu yeni owner-override
+notu onu SİLMEZ/DEĞİŞTİRMEZ (yukarıdaki "MS 'değiştirilmeden' korunur ilkesi" aynen geçerlidir).
+Güncel repository truth: owner, `DEBTOR CANONICAL DOMAIN BLUEPRINT CHARTER v1.0` + DBP-02..12
+work-package belgelerinin TAMAMINI (13 belge) bütünsel olarak ratifiye etmiştir; bu ratifikasyon
+`DBP-P1-CANON-CLOSE` R1 (NO-GO, 9 stale remote branch) → `DBP-REMOTE-BRANCH-CLEANUP` → R2
+(`VERIFIED / CANONICALIZATION CLOSED`) doğrulama zincirini takip eder. **BLUEPRINT DOCUMENT SET:
+IMPLEMENTED/MERGED/CANONICALIZED. DBP-P1-CANONICALIZATION: VERIFIED/CLOSED. OWNER BLUEPRINT
+RATIFICATION: RECORDED/CANONICAL. PHASE 1 BLUEPRINT: CANONICAL CLOSED. IMPLEMENTATION ENTRY:
+HOLD. NEXT IMPLEMENTATION WORKSTREAM: OWNER DECISION REQUIRED.** Wave 1 durumu (NOT YET OPEN)
+DEĞİŞMEMİŞTİR. Bu not hiçbir ODR/OBD/LSR/security-gate/evidence-gap maddesini kapatmaz; DBP-12'nin
+kendi Owner Decision Pack'i (§7) aynen açık kalır; Implementation Entry AÇILMAZ; Phase 2 veya
+sonraki implementation workstream yetkilendirilmez.
+
 **Bulgu mutabakatı** (Section E Canonical Findings Register'a karşı, güncel `origin/main` ile doğrulandı):
 
 | FND | Başlık | Belgedeki statü | Güncel statü | Kanıt |
