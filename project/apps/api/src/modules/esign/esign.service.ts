@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
@@ -96,11 +96,16 @@ export class ESignService {
   /**
    * Belge imzalama isteği başlat
    */
-  async requestSignature(request: ESignRequest): Promise<ESignResult> {
+  async requestSignature(request: ESignRequest, tenantId: string): Promise<ESignResult> {
+    // CLIENT-SEC-H2C-P02: fail-closed — tenantId authenticated context'ten gelmeli.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+
     this.logger.log(`E-imza isteği: ${request.documentName} (${this.provider})`);
 
     // İsteği logla
-    const logEntry = await this.logRequest(request);
+    const logEntry = await this.logRequest(request, tenantId);
 
     try {
       let result: ESignResult;
@@ -174,11 +179,11 @@ export class ESignService {
   /**
    * Toplu imza isteği
    */
-  async requestBulkSignature(requests: ESignRequest[]): Promise<ESignResult[]> {
+  async requestBulkSignature(requests: ESignRequest[], tenantId: string): Promise<ESignResult[]> {
     const results: ESignResult[] = [];
-    
+
     for (const request of requests) {
-      const result = await this.requestSignature(request);
+      const result = await this.requestSignature(request, tenantId);
       results.push(result);
       
       // Rate limiting
@@ -575,9 +580,12 @@ export class ESignService {
 
   // ==================== LOGGING ====================
 
-  private async logRequest(request: ESignRequest) {
+  // CLIENT-SEC-H2C-P02: tenantId authenticated context'ten zorunlu geçirilir (controller
+  // @CurrentUser); request body'den ASLA alınmaz. Mevcut satırlar/update yolu etkilenmez.
+  private async logRequest(request: ESignRequest, tenantId: string) {
     return this.prisma.esignLog.create({
       data: {
+        tenantId,
         documentId: request.documentId,
         documentName: request.documentName,
         signerId: request.signerId,

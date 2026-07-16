@@ -129,6 +129,17 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="(client-notification-template-tenant-scope|uyap-case-status-tenant-scope|document-fail-closed-tenant)\.spec\.ts$"
         working-directory: project
+      # CLIENT-SEC-H2C-P02: EsignLog/UyapRequestLog new-write tenant population regression.
+      - name: CLIENT-SEC-H2C-P02 tenant write population regression
+        run: |
+          cd apps/api
+          for f in src/modules/esign/__tests__/esign-tenant-write-population.spec.ts \
+                   src/modules/uyap/__tests__/uyap-tenant-write-population.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-SEC-H2C-P02 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="(esign-tenant-write-population|uyap-tenant-write-population)\.spec\.ts$"
+        working-directory: project
       - name: Integration Tests (legal-kernel, real Postgres)
         run: |
           cd apps/api

@@ -89,7 +89,7 @@ export class UyapController {
    * Ödeme emri gönder (test)
    */
   @Post('test/payment-order')
-  async testPaymentOrder(@Body() body: any) {
+  async testPaymentOrder(@Body() body: any, @CurrentUser('tenantId') tenantId: string) {
     return this.uyapService.sendPaymentOrder({
       caseId: body.caseId || 'test-case',
       executionOfficeCode: body.executionOfficeCode || 'TEST-001',
@@ -97,6 +97,7 @@ export class UyapController {
       debtor: body.debtor || { name: 'Test Borçlu' },
       amount: body.amount || 10000,
       currency: body.currency || 'TRY',
+      tenantId,
     });
   }
 
@@ -104,16 +105,16 @@ export class UyapController {
    * Tebligat durumu sorgula
    */
   @Get('tebligat/:id')
-  async checkTebligat(@Param('id') id: string) {
-    return this.uyapService.checkTebligatStatus(id);
+  async checkTebligat(@Param('id') id: string, @CurrentUser('tenantId') tenantId: string) {
+    return this.uyapService.checkTebligatStatus(id, tenantId);
   }
 
   /**
    * MTS durumu sorgula
    */
   @Get('mts/:referenceNo')
-  async checkMts(@Param('referenceNo') referenceNo: string) {
-    return this.uyapService.checkMtsStatus(referenceNo);
+  async checkMts(@Param('referenceNo') referenceNo: string, @CurrentUser('tenantId') tenantId: string) {
+    return this.uyapService.checkMtsStatus(referenceNo, tenantId);
   }
 
   /**
@@ -161,8 +162,8 @@ export class UyapController {
    * Borçlu mal varlığı sorgula
    */
   @Post('debtor/assets')
-  async queryDebtorAssets(@Body() body: { debtorIdentityNo: string; caseId: string }) {
-    return this.uyapService.queryDebtorAssets(body.debtorIdentityNo, body.caseId);
+  async queryDebtorAssets(@Body() body: { debtorIdentityNo: string; caseId: string }, @CurrentUser('tenantId') tenantId: string) {
+    return this.uyapService.queryDebtorAssets(body.debtorIdentityNo, body.caseId, tenantId);
   }
 
   /**
@@ -252,8 +253,8 @@ export class UyapController {
    * İlgili dava durumunu sorgula
    */
   @Get('lawsuit/status/:evkNo')
-  async queryRelatedLawsuitStatus(@Param('evkNo') evkNo: string) {
-    return this.uyapService.queryRelatedLawsuitStatus(evkNo);
+  async queryRelatedLawsuitStatus(@Param('evkNo') evkNo: string, @CurrentUser('tenantId') tenantId: string) {
+    return this.uyapService.queryRelatedLawsuitStatus(evkNo, tenantId);
   }
 
   // ==================== E-TAKİP XML ENDPOINT'LERİ ====================

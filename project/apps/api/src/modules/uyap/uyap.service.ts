@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, Inject, forwardRef, Optional } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ForbiddenException, Inject, forwardRef, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PoaService } from '../poa/poa.service';
 import { CasePolicyEngine } from '../policy-engine/case-policy-engine.service';
@@ -239,7 +239,7 @@ export class UyapService {
       }
     }
 
-    const requestId = await this.logRequest('sendPaymentOrder', request);
+    const requestId = await this.logRequest('sendPaymentOrder', request, request.tenantId);
 
     try {
       // TODO: Gerçek UYAP SOAP çağrısı
@@ -277,8 +277,12 @@ export class UyapService {
    * Tebligat durumunu sorgula
    * E-Tebligat veya PTT tebligat durumu
    */
-  async checkTebligatStatus(tebligatId: string): Promise<UyapResponse<TebligatStatus>> {
-    const requestId = await this.logRequest('checkTebligatStatus', { tebligatId });
+  async checkTebligatStatus(tebligatId: string, tenantId: string): Promise<UyapResponse<TebligatStatus>> {
+    // CLIENT-SEC-H2C-P02: fail-closed — tenantId authenticated context'ten gelmeli.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const requestId = await this.logRequest('checkTebligatStatus', { tebligatId }, tenantId);
 
     try {
       // TODO: Gerçek UYAP SOAP çağrısı
@@ -380,7 +384,7 @@ export class UyapService {
       }
     }
 
-    const requestId = await this.logRequest('pushHacizRequest', request);
+    const requestId = await this.logRequest('pushHacizRequest', request, request.tenantId);
 
     // PR-D4e-6: KARAR-ANI risk snapshot audit (best-effort, BLOK YOK — audit hatası haczi kesmez).
     await this.auditHacizDecision(request, requestId, cpeTraceId, cpeWarnings);
@@ -514,7 +518,7 @@ export class UyapService {
       documentType: request.documentType,
       documentName: request.documentName,
       hasContent: !!request.documentContent,
-    });
+    }, request.tenantId);
 
     try {
       this.logger.log(`[STUB] UYAP'a evrak gönderiliyor: ${request.documentType} - ${request.documentName}`);
@@ -552,7 +556,7 @@ export class UyapService {
   // validatePowerOfAttorney/validateCasePoaForUyap deseniyle birebir). Cross-tenant ve
   // nonexistent case AYNI sonucu (localStatus:'UNKNOWN') üretir — varlık ifşası yok.
   async queryCaseStatus(caseId: string, tenantId: string, uyapDosyaId?: string): Promise<UyapResponse> {
-    const requestId = await this.logRequest('queryCaseStatus', { caseId, uyapDosyaId });
+    const requestId = await this.logRequest('queryCaseStatus', { caseId, uyapDosyaId }, tenantId);
 
     try {
       this.logger.log(`[STUB] UYAP takip durumu sorgulanıyor: ${caseId}`);
@@ -603,8 +607,12 @@ export class UyapService {
   /**
    * UYAP'tan borçlu mal varlığı sorgula
    */
-  async queryDebtorAssets(debtorIdentityNo: string, caseId: string): Promise<UyapResponse> {
-    const requestId = await this.logRequest('queryDebtorAssets', { debtorIdentityNo, caseId });
+  async queryDebtorAssets(debtorIdentityNo: string, caseId: string, tenantId: string): Promise<UyapResponse> {
+    // CLIENT-SEC-H2C-P02: fail-closed — tenantId authenticated context'ten gelmeli.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const requestId = await this.logRequest('queryDebtorAssets', { debtorIdentityNo, caseId }, tenantId);
 
     try {
       this.logger.log(`[STUB] Borçlu mal varlığı sorgulanıyor: ${maskIdentity(debtorIdentityNo)}`);
@@ -666,8 +674,12 @@ export class UyapService {
   /**
    * MTS (Merkezi Takip Sistemi) sorgusu
    */
-  async checkMtsStatus(mtsReferenceNo: string): Promise<UyapResponse> {
-    const requestId = await this.logRequest('checkMtsStatus', { mtsReferenceNo });
+  async checkMtsStatus(mtsReferenceNo: string, tenantId: string): Promise<UyapResponse> {
+    // CLIENT-SEC-H2C-P02: fail-closed — tenantId authenticated context'ten gelmeli.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const requestId = await this.logRequest('checkMtsStatus', { mtsReferenceNo }, tenantId);
 
     try {
       this.logger.log(`[STUB] MTS durumu sorgulanıyor: ${mtsReferenceNo}`);
@@ -702,13 +714,17 @@ export class UyapService {
   /**
    * İstek logla ve requestId döndür
    */
-  private async logRequest(requestType: string, requestData: any): Promise<string> {
+  // CLIENT-SEC-H2C-P02: tenantId opsiyonel — bazı requestType'lar (case-bağımsız dış-referans
+  // sorguları) için güvenilir tenant kaynağı olmayabilir (bkz. çağıranlar); bu satırlarda NULL
+  // kalması bilinçlidir, sentinel/sahte tenant ÜRETİLMEZ. Mevcut satırlar/update yolu etkilenmez.
+  private async logRequest(requestType: string, requestData: any, tenantId?: string): Promise<string> {
     const log = await this.prisma.uyapRequestLog.create({
       data: {
         requestType,
         requestData,
         // PR-D4e-6/D6-Q5: transport log'unda caseId boş kalıyordu; requestData'dan set et.
         caseId: requestData?.caseId ?? null,
+        tenantId: tenantId ?? null,
         status: 'PENDING',
       },
     });
@@ -946,7 +962,7 @@ export class UyapService {
       complainant: request.complainant.name,
       suspect: request.suspect.name,
       hasInstrument: !!request.instrumentInfo,
-    });
+    }, request.tenantId);
 
     try {
       this.logger.log(`[STUB] UYAP'a ceza davası gönderiliyor: ${request.lawsuitType} - ${request.documentName}`);
@@ -1066,7 +1082,7 @@ export class UyapService {
       plaintiff: request.plaintiff.name,
       defendant: request.defendant.name,
       claimAmount: request.claimAmount,
-    });
+    }, request.tenantId);
 
     try {
       this.logger.log(`[STUB] UYAP'a hukuk davası gönderiliyor: ${request.lawsuitType} - ${request.documentName}`);
@@ -1125,8 +1141,12 @@ export class UyapService {
   /**
    * İlgili dava durumunu sorgula
    */
-  async queryRelatedLawsuitStatus(evkNo: string): Promise<UyapResponse> {
-    const requestId = await this.logRequest('queryRelatedLawsuitStatus', { evkNo });
+  async queryRelatedLawsuitStatus(evkNo: string, tenantId: string): Promise<UyapResponse> {
+    // CLIENT-SEC-H2C-P02: fail-closed — tenantId authenticated context'ten gelmeli.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const requestId = await this.logRequest('queryRelatedLawsuitStatus', { evkNo }, tenantId);
 
     try {
       this.logger.log(`[STUB] İlgili dava durumu sorgulanıyor: ${evkNo}`);
