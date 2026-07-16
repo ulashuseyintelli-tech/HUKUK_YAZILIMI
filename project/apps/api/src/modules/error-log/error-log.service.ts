@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { computePersistentFingerprint, computeActiveDedupeKey } from './internal/error-dedupe-key';
 
@@ -108,13 +108,29 @@ export class ErrorLogService {
     return { logs, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async resolve(id: string, userId: string, resolution: string) {
+  async resolve(id: string, userId: string, tenantId: string, resolution: string) {
+    // SEC-ERRLOG-RESOLVE-P01: fail-closed, bkz. getLogs/getStats.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     // PR-2b: resolve → activeDedupeKey NULL. Böylece aynı hata yarın tekrar patlarsa
     // eski resolved kayda gömülmez; yeni unresolved aktif olay açılır.
-    return this.prisma.errorLog.update({
-      where: { id },
+    //
+    // SEC-ERRLOG-RESOLVE-P01: sahiplik kontrolü ve mutasyon TEK atomik updateMany ile
+    // yapılır (önce find, sonra korumasız update({id}) YOK) — where: {id, tenantId} eşleşmezse
+    // (kayıt yok VEYA başka tenant'a ait) count=0 döner, ikisi dışarıdan ayırt edilemez
+    // (enumeration resistance). Güncellenmiş kaydı döndürmek için yalnız {id, tenantId} ile
+    // tekrar okunur — cross-tenant okuma hiçbir dalda gerçekleşmez.
+    const result = await this.prisma.errorLog.updateMany({
+      where: { id, tenantId },
       data: { isResolved: true, resolvedAt: new Date(), resolvedBy: userId, resolution, activeDedupeKey: null },
     });
+
+    if (result.count === 0) {
+      throw new NotFoundException(`Hata kaydı bulunamadı: ${id}`);
+    }
+
+    return this.prisma.errorLog.findFirst({ where: { id, tenantId } });
   }
 
   async getStats(tenantId: string) {

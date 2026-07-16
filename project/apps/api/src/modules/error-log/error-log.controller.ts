@@ -43,7 +43,8 @@ export class ErrorLogController {
   ) {
     // PR-1: resolvedBy AUTH oturumundan alınır (spoof engeli).
     // PR-6A: resolution ZORUNLU + trim>=10 → DTO + global ValidationPipe (transform/validate).
-    return this.errorLogService.resolve(id, req.user.id, dto.resolution);
+    // SEC-ERRLOG-RESOLVE-P01: tenantId de AUTH oturumundan alınır (cross-tenant guard).
+    return this.errorLogService.resolve(id, req.user.id, req.user.tenantId, dto.resolution);
   }
 
   // PR-1: Dış istemci/frontend endpoint'i — JwtAuthGuard yeterli (ADMIN gerekmez), AMA gövde
