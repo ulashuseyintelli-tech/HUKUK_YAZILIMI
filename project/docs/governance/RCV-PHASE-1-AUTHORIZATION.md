@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -36,10 +36,11 @@ RCV-P2-WS02-P02             : CLOSED (PR #1278 / 54ef79af)
 RCV-P2-WS02-P03             : CLOSED (PR #1282 / 150f9d28)
 RCV-P2-WS02-P04             : CLOSED (PR #1286 / 37a86fd2)
 WS03 status                 : OPEN
-RCV-P2-WS03-P01             : CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE (PR #1300 / da8eef62)
-Next eligible task          : UNSET — OWNER GO REQUIRED
-RCV-P2-WS03-P02             : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE (PR #1316 / 208588d7)
-RCV-P2-WS03-P03             : NOT AUTHORIZED / NOT STARTED
+RCV-P2-WS03-P01             : CLOSED / CANONICAL (PR #1300 / da8eef62)
+RCV-P2-WS03-P02             : FORMALLY CLOSED / CANONICAL (PR #1316 / 208588d7)
+RCV-P2-WS03-P03 contract    : RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+Implementation authorization: NONE
+Next eligible task          : RCV-P2-WS03-P03 — GO-IMPLEMENT / OWNER GO REQUIRED
 ```
 
 Bu kayıt yalnız governance/register alignment, gerçekleşen phase/workstream progression ve bir
@@ -319,6 +320,81 @@ NOT AUTHORIZED / NOT STARTED
   representative evidence, PR-11, consumer switch, runtime cutover ve external-domain gate'leri
   değişmez.
 
+### 1.9 RCV-P2-WS03-P03 owner decision and contract ratification
+
+Owner-approved canonical contract record:
+
+```text
+RCV-P2-WS03-P03 CONTRACT:
+RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+
+OWNER DECISIONS:
+NARROW RECORD_COLLECTION ENFORCEMENT CONSUMER: APPROVED
+ADDITIVE CONFIRMATION CONTRACT: APPROVED
+
+CONTRACT STATUS:
+RATIFIED
+
+IMPLEMENTATION AUTHORIZATION:
+NONE
+
+NEXT ELIGIBLE TASK:
+RCV-P2-WS03-P03 — GO-IMPLEMENT
+
+OWNER GO:
+REQUIRED
+```
+
+#### Public receipt entrypoint / resolver contract
+
+| Public receipt entrypoint | Tenant-scoped case resolver | Existing action | Additive confirmation surface |
+|---|---|---|---|
+| `POST /collections` | Request tenant + body `caseId` | `RECORD_COLLECTION` | Optional `confirmationToken`; `ALLOW` veya `GuardedEdgeOutcomeEnvelope` |
+| `POST /cases/:id/collections` | Request tenant + path `id` | `RECORD_COLLECTION` | Optional `confirmationToken`; `ALLOW` veya `GuardedEdgeOutcomeEnvelope` |
+| `POST /bank/transactions/:id/match` | Request tenant + bank transaction üzerinden canonical `caseId` | `RECORD_COLLECTION` | Optional `confirmationToken`; `ALLOW` veya `GuardedEdgeOutcomeEnvelope` |
+| `POST /external-cases/:id/collection` | Request tenant + external-case üzerinden canonical `caseId` | `RECORD_COLLECTION` | Optional `confirmationToken`; `ALLOW` veya `GuardedEdgeOutcomeEnvelope` |
+
+- Bu sözleşme dört public receipt endpoint'i için additive ve non-breaking'dir. Mevcut başarılı
+  istemci davranışı `ALLOW` yolunda korunur; doğrulama gerektiren guarded-edge sonucu
+  `GuardedEdgeOutcomeEnvelope` ile temsil edilir. `confirmationToken` optional input'tur; mevcut
+  alan kaldırılmaz, yeniden adlandırılmaz veya zorunlu hale getirilmez.
+- P03, `RECORD_COLLECTION` için ilk dar OFFICE object-scope enforcement consumer'ıdır. Yalnız
+  mevcut action'ı consume eder; yeni action, role, permission, approval veya genel OFFICE
+  enforcement semantiği üretmez.
+- `MANAGER` kapsamı bu contract ile yeniden tanımlanmaz. `OFF/OD-08` direct-report/team sınırı ve
+  global office-wide yetki için ayrı explicit permission gerekliliği aynen korunur.
+- Observe-only resolver veya decorator-only işaretleme enforcement authority değildir. Aktif
+  permission enforcement; idempotency fast-path'ten ve `Collection`, `LedgerEntry`,
+  `LedgerAllocation`, event, journal ya da projection dahil bütün finansal write'lardan önce
+  çalışır.
+- Tenant-scoped resolver, permission veya confirmation doğrulamasının eksik, belirsiz ya da
+  başarısız olduğu her durumda davranış fail-closed'dur. Yetkisiz veya doğrulanamayan istekte
+  hiçbir financial write oluşamaz.
+- P01 canonical routing ile P02 atomicity/idempotency contract'ları korunur. Allocation/TBK100,
+  refund/reversal, provider finality, WS04, consumer switch, cutover ve global OFFICE enforcement
+  kapsam dışıdır.
+
+#### Acceptance criteria ve stop conditions
+
+1. Dört endpoint'in her biri request tenant'ına bağlı tek ve explicit `caseId` resolver'ı ile
+   `RECORD_COLLECTION` object-scope kontrolüne bağlanır.
+2. Resolver ve permission enforcement ortak, executable bir boundary'de çalışır; yalnız decorator
+   veya observe-only sonuç canonical enforcement sayılmaz.
+3. `ALLOW` mevcut başarı yolunu korur; confirmation gereken yol yalnız ratified additive
+   `GuardedEdgeOutcomeEnvelope` contract'ını ve optional `confirmationToken` retry'sini kullanır.
+4. Permission, resolver veya confirmation failure halinde zero-write negative evidence;
+   `Collection`, `LedgerEntry`, `LedgerAllocation`, event, journal ve projection yüzeylerinin
+   hiçbirinde mutation oluşmadığını kanıtlar.
+5. P01 routing ile P02 atomicity/idempotency davranışlarında regression oluşmaz; yeni action,
+   role, permission, approval veya authority üretilmez.
+6. Schema, migration ve breaking public API değişikliği yoktur.
+
+Implementation; exact dört-route inventory'si doğrulanamazsa, `caseId` tenant-scoped ve
+deterministik çözülemezse, `RECORD_COLLECTION` mapping'i mevcut OFFICE L2 semantiğiyle
+çelişirse, authorization idempotency fast-path ve bütün financial write'lardan önce güvenle
+çalıştırılamazsa veya additive contract breaking değişiklik gerektirirse durur. Bu ratification
+tek başına `GO-IMPLEMENT` değildir; ayrı owner GO olmadan kod veya test değişikliği başlatılamaz.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
@@ -410,8 +486,8 @@ Initial authority: GO-PHASE-1 / WAVE 0 / RCV-P1-T15-A only
 Progression      : Subsequent tasks authorized by separate owner task briefs
 Decision date    : 2026-07-14
 Decision-log ref : RCV-GOV-002 progression reconciliation
-Current reconcile: RCV-P2-WS03-P02 formal closure / 2026-07-16
-Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 OPEN / WS03-P01 CLOSED / WS03-P02 FORMALLY CLOSED
+Current reconcile: RCV-P2-WS03-P03 contract ratification / 2026-07-17
+Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 OPEN / P01-P02 CLOSED / P03 CONTRACT RATIFIED / IMPLEMENTATION AUTHORIZATION NONE
 ```
 
 Bu reconciliation geçmiş task brief'lerini tek ve genel bir Phase 1 authority'ye dönüştürmez.
@@ -435,11 +511,12 @@ owner GO gerektirir.
 | Implementation Roadmap | COMPLETE | COMPLETE |
 | WS01 roadmap technical packages | P01–P04 CLOSED + required CI PASS + governance reconciled | P01–P04 CLOSED / WS01 CLOSED |
 | WS02 roadmap technical packages | P01–P04 CLOSED + required CI PASS + governance reconciled | P01–P04 CLOSED / WS02 CLOSED |
-| WS03-P01 implementation | PR merged + required CI PASS + governance reconciliation | CLOSED / CANONICAL upon this approved merge — PR #1300 / `da8eef62` |
+| WS03-P01 implementation | PR merged + required CI PASS + governance reconciliation | CLOSED / CANONICAL — PR #1300 / `da8eef62` |
 | WS03 workstream | Package statusundan ayrı izlenir | OPEN |
-| WS03 successor task | Canonical roadmap/register assignment + ayrı owner GO | UNSET — OWNER GO REQUIRED |
-| WS03-P02 implementation | PR merged + required CI PASS + governance reconciliation | FORMALLY CLOSED / CANONICAL upon this approved merge — PR #1316 / `208588d7` |
-| WS03-P03 | Ayrı canonical eligibility ve owner GO | NOT AUTHORIZED / NOT STARTED |
+| WS03-P02 implementation | PR merged + required CI PASS + governance reconciliation | FORMALLY CLOSED / CANONICAL — PR #1316 / `208588d7` |
+| WS03-P03 contract | Owner decisions + OFFICE/RCV authority consistency + approved governance merge | RATIFIED / CANONICAL upon this approved merge |
+| WS03-P03 implementation | Ayrı task-scoped owner GO | AUTHORIZATION NONE / NOT STARTED |
+| WS03 successor task | Canonical task assignment + ayrı owner GO | `RCV-P2-WS03-P03 — GO-IMPLEMENT` / OWNER GO REQUIRED |
 | WS04–WS09 | Açılmamış | NOT STARTED |
 
 ## 7. Phase 2 WS03 Current Package Gate
@@ -463,14 +540,16 @@ WS03-P01                 : CLOSED / CANONICAL
 WS03-P01 EVIDENCE        : PR #1300 / da8eef6204e3c85ac09f722d43f2f5803920fb16 / CI 4/4 PASS
 WS03-P02                 : FORMALLY CLOSED / CANONICAL
 WS03-P02 EVIDENCE        : PR #1316 / 208588d7fd065b4aaf8e29d08a4675deec395411 / CI 4/4 PASS
-NEXT ELIGIBLE TASK       : UNSET — OWNER GO REQUIRED
-WS03-P03                 : NOT AUTHORIZED / NOT STARTED
+WS03-P03 CONTRACT        : RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+WS03-P03 OWNER DECISIONS : NARROW RECORD_COLLECTION CONSUMER APPROVED / ADDITIVE CONFIRMATION CONTRACT APPROVED
+IMPLEMENTATION AUTHORITY : NONE
+NEXT ELIGIBLE TASK       : RCV-P2-WS03-P03 — GO-IMPLEMENT / OWNER GO REQUIRED
 OWNER / RATIFIER         : __________________________________________
 DECISION DATE            : __________________________________________
 AUTHORITATIVE REF        : __________________________________________
 ```
 
-Yeni bir WS03 paketi için canonical task assignment ve ayrı owner GO verilmezse korunacak safe-hold:
+WS03-P03 için ayrı owner GO verilmezse korunacak safe-hold:
 
 ```text
 RCV-P2-WS01-P01..P04 CLOSED
@@ -480,8 +559,9 @@ WS02 CLOSED
 RCV-P2-WS03-P01 CLOSED / CANONICAL
 RCV-P2-WS03-P02 FORMALLY CLOSED / CANONICAL
 WS03 OPEN
-NEXT ELIGIBLE TASK UNSET — OWNER GO REQUIRED
-RCV-P2-WS03-P03 NOT AUTHORIZED / NOT STARTED
+RCV-P2-WS03-P03 CONTRACT RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+RCV-P2-WS03-P03 IMPLEMENTATION AUTHORIZATION NONE / NOT STARTED
+NEXT ELIGIBLE TASK RCV-P2-WS03-P03 — GO-IMPLEMENT / OWNER GO REQUIRED
 WS04–WS09 NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN
