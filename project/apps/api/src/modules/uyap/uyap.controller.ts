@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Res } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Res, ServiceUnavailableException } from '@nestjs/common';
 import { Response } from 'express';
 import { UyapService } from './uyap.service';
 import { UyapXmlService } from './uyap-xml.service';
@@ -8,6 +8,14 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CpeRequired, ScopeResolvers } from '@/modules/policy-engine';
 import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
+
+// CLIENT-SEC-H2A: UyapRequestLog modelinde tenantId kolonu yok — /history tenant-scope
+// UYGULANAMAZ (şema-seviyesi eksiklik, kod-only fix yok). Kalıcı şema/migration çözümü ayrı
+// ve yetkilendirilmemiş bir iştir (CLIENT-SEC-H2C). Bu, o çözüme kadar fail-closed containment'tır.
+const H2A_CONTAINMENT_ERROR = {
+  error: 'TENANT_SCOPED_HISTORY_TEMPORARILY_UNAVAILABLE',
+  message: 'Bu uç nokta güvenlik incelemesi nedeniyle geçici olarak kullanılamıyor.',
+};
 
 @Controller('uyap')
 @UseGuards(JwtAuthGuard)
@@ -161,10 +169,11 @@ export class UyapController {
    */
   @Get('history')
   async getRequestHistory(
-    @Query('caseId') caseId?: string,
-    @Query('limit') limit?: string,
+    @Query('caseId') _caseId?: string,
+    @Query('limit') _limit?: string,
   ) {
-    return this.uyapService.getRequestHistory(caseId, limit ? parseInt(limit) : 50);
+    // CLIENT-SEC-H2A: fail-closed — service/Prisma'ya hiç ulaşılmaz.
+    throw new ServiceUnavailableException(H2A_CONTAINMENT_ERROR);
   }
 
   /**
