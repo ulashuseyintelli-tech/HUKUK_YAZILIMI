@@ -248,7 +248,8 @@ describe('PR-A4-N2 preview/download/submit runtime parity', () => {
 
     const preview = await controller.generateXmlFromCase('case-1', 'tenant-1');
     await controller.downloadXmlFromCase('case-1', 'tenant-1', response as never);
-    await controller.submitXmlToUyap('case-1', {
+    // CLIENT-SEC-H2C-P02-R1: submitXmlToUyap imzası (caseId, @CurrentUser tenantId, @Req req).
+    await controller.submitXmlToUyap('case-1', 'tenant-1', {
       user: { id: 'user-1', tenantId: 'tenant-1' },
     });
 
@@ -257,10 +258,14 @@ describe('PR-A4-N2 preview/download/submit runtime parity', () => {
     expect(xmlService.generateFromCase).toHaveBeenNthCalledWith(3, 'case-1', 'tenant-1');
     expect(preview.xml).toBe(generatedXml);
     expect(response.send).toHaveBeenCalledWith(generatedXml);
-    expect(uyapService.submitDocument).toHaveBeenCalledWith(expect.objectContaining({
-      documentContent: Buffer.from(generatedXml).toString('base64'),
-      tenantId: 'tenant-1',
-    }));
+    // CLIENT-SEC-H2C-P02-R1: submitDocument artık trusted tenant'ı 2. arg olarak da alır.
+    expect(uyapService.submitDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentContent: Buffer.from(generatedXml).toString('base64'),
+        tenantId: 'tenant-1',
+      }),
+      'tenant-1',
+    );
   });
 
   it('propagates projection failure before submitDocument without changing the pre-existing observe order', async () => {
@@ -272,7 +277,7 @@ describe('PR-A4-N2 preview/download/submit runtime parity', () => {
     });
     xmlService.generateFromCase.mockRejectedValue(failure);
 
-    await expect(controller.submitXmlToUyap('case-1', {
+    await expect(controller.submitXmlToUyap('case-1', 'tenant-1', {
       user: { id: 'user-1', tenantId: 'tenant-1' },
     })).rejects.toBe(failure);
 

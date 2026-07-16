@@ -180,7 +180,10 @@ export class UyapService {
    * 
    * CPE Gate Kontrolü: UYAP_SEND aksiyonu için policy-engine onayı gerekir
    */
-  async sendPaymentOrder(request: PaymentOrderRequest): Promise<UyapResponse> {
+  // CLIENT-SEC-H2C-P02-R1: `tenantId` trusted execution context (authenticated principal,
+  // controller @CurrentUser) — business DTO'nun opsiyonel `request.tenantId` (POA) alanından
+  // AYRI ve zorunludur; log ownership yalnız buradan gelir. Business/POA davranışı DEĞİŞMEZ.
+  async sendPaymentOrder(request: PaymentOrderRequest, tenantId: string): Promise<UyapResponse> {
     let cpeTraceId: string | undefined;
 
     // CPE Gate kontrolü (HIGH risk aksiyon)
@@ -239,7 +242,7 @@ export class UyapService {
       }
     }
 
-    const requestId = await this.logRequest('sendPaymentOrder', request, request.tenantId);
+    const requestId = await this.logRequest('sendPaymentOrder', request, tenantId);
 
     try {
       // TODO: Gerçek UYAP SOAP çağrısı
@@ -318,7 +321,10 @@ export class UyapService {
    * 
    * CPE Gate Kontrolü: TRIGGER_HACIZ aksiyonu için policy-engine onayı gerekir (HIGH risk)
    */
-  async pushHacizRequest(request: HacizRequest): Promise<UyapResponse> {
+  // CLIENT-SEC-H2C-P02-R1: `tenantId` trusted execution context (authenticated principal) —
+  // business DTO'nun opsiyonel `request.tenantId` (POA + D4e-6 audit) alanından AYRI ve zorunludur;
+  // log ownership yalnız buradan gelir. POA/audit davranışı request.tenantId'yi kullanmaya devam eder.
+  async pushHacizRequest(request: HacizRequest, tenantId: string): Promise<UyapResponse> {
     let cpeTraceId: string | undefined;
     let cpeWarnings: any[] = []; // PR-D4e-6: CPE soft warnings audit metadata'sına eklenecek
 
@@ -384,7 +390,7 @@ export class UyapService {
       }
     }
 
-    const requestId = await this.logRequest('pushHacizRequest', request, request.tenantId);
+    const requestId = await this.logRequest('pushHacizRequest', request, tenantId);
 
     // PR-D4e-6: KARAR-ANI risk snapshot audit (best-effort, BLOK YOK — audit hatası haczi kesmez).
     await this.auditHacizDecision(request, requestId, cpeTraceId, cpeWarnings);
@@ -486,6 +492,8 @@ export class UyapService {
    * UYAP'a dosya/evrak gönder
    * Takip talebi, dilekçe vb. evrakları UYAP'a yükler
    */
+  // CLIENT-SEC-H2C-P02-R1: `tenantId` trusted execution context — DTO'nun opsiyonel `request.tenantId`
+  // (POA) alanından AYRI ve zorunlu; log ownership yalnız buradan gelir.
   async submitDocument(request: {
     caseId: string;
     documentType: 'TAKIP_TALEBI' | 'DILEKCE' | 'BEYAN' | 'ITIRAZ' | 'HACIZ_TALEBI' | 'DIGER';
@@ -495,7 +503,7 @@ export class UyapService {
     lawyerId?: string;
     tenantId?: string;
     skipPoaCheck?: boolean;
-  }): Promise<UyapResponse> {
+  }, tenantId: string): Promise<UyapResponse> {
     // Vekalet kontrolü
     if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
       const poaValidation = await this.validatePowerOfAttorney(
@@ -518,7 +526,7 @@ export class UyapService {
       documentType: request.documentType,
       documentName: request.documentName,
       hasContent: !!request.documentContent,
-    }, request.tenantId);
+    }, tenantId);
 
     try {
       this.logger.log(`[STUB] UYAP'a evrak gönderiliyor: ${request.documentType} - ${request.documentName}`);
@@ -853,13 +861,26 @@ export class UyapService {
       });
 
       // İstek tipine göre yeniden dene
+      // CLIENT-SEC-H2C-P02-R1: re-dispatch'te trusted tenant LOG SATIRININ KENDİ `tenantId`'sinden
+      // alınır (requestData'dan DEĞİL). Legacy `tenantId=NULL` satırlar için sahte tenant ÜRETİLMEZ;
+      // re-dispatch atlanır (yeni NULL-owned log oluşmaz). Bu, legacy-null satırların re-dispatch
+      // davranışında bilinçli bir daralmadır (status/retryCount güncellemesi değişmez); scope
+      // genişletilmeden burada raporlanır (bkz. PR açıklaması).
       try {
         switch (request.requestType) {
           case 'sendPaymentOrder':
-            await this.sendPaymentOrder(request.requestData as unknown as PaymentOrderRequest);
+            if (request.tenantId) {
+              await this.sendPaymentOrder(request.requestData as unknown as PaymentOrderRequest, request.tenantId);
+            } else {
+              this.logger.warn(`CLIENT-SEC-H2C-P02-R1: legacy tenant-less kayıt re-dispatch atlandı (sahte tenant üretilmez): ${request.id}`);
+            }
             break;
           case 'pushHacizRequest':
-            await this.pushHacizRequest(request.requestData as unknown as HacizRequest);
+            if (request.tenantId) {
+              await this.pushHacizRequest(request.requestData as unknown as HacizRequest, request.tenantId);
+            } else {
+              this.logger.warn(`CLIENT-SEC-H2C-P02-R1: legacy tenant-less kayıt re-dispatch atlandı (sahte tenant üretilmez): ${request.id}`);
+            }
             break;
           // Diğer tipler...
         }
@@ -935,7 +956,7 @@ export class UyapService {
     lawyerId?: string;
     tenantId?: string;
     skipPoaCheck?: boolean;
-  }): Promise<UyapResponse> {
+  }, tenantId: string): Promise<UyapResponse> {
     // Vekalet kontrolü
     if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
       const poaValidation = await this.validatePowerOfAttorney(
@@ -953,6 +974,7 @@ export class UyapService {
       }
     }
 
+    // CLIENT-SEC-H2C-P02-R1: log ownership trusted `tenantId` param'ından (DTO'dan DEĞİL).
     const requestId = await this.logRequest('submitCriminalComplaint', {
       caseId: request.caseId,
       lawsuitType: request.lawsuitType,
@@ -962,7 +984,7 @@ export class UyapService {
       complainant: request.complainant.name,
       suspect: request.suspect.name,
       hasInstrument: !!request.instrumentInfo,
-    }, request.tenantId);
+    }, tenantId);
 
     try {
       this.logger.log(`[STUB] UYAP'a ceza davası gönderiliyor: ${request.lawsuitType} - ${request.documentName}`);
@@ -1055,7 +1077,7 @@ export class UyapService {
     lawyerId?: string;
     tenantId?: string;
     skipPoaCheck?: boolean;
-  }): Promise<UyapResponse> {
+  }, tenantId: string): Promise<UyapResponse> {
     // Vekalet kontrolü
     if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
       const poaValidation = await this.validatePowerOfAttorney(
@@ -1073,6 +1095,7 @@ export class UyapService {
       }
     }
 
+    // CLIENT-SEC-H2C-P02-R1: log ownership trusted `tenantId` param'ından (DTO'dan DEĞİL).
     const requestId = await this.logRequest('submitCivilLawsuit', {
       caseId: request.caseId,
       lawsuitType: request.lawsuitType,
@@ -1082,7 +1105,7 @@ export class UyapService {
       plaintiff: request.plaintiff.name,
       defendant: request.defendant.name,
       claimAmount: request.claimAmount,
-    }, request.tenantId);
+    }, tenantId);
 
     try {
       this.logger.log(`[STUB] UYAP'a hukuk davası gönderiliyor: ${request.lawsuitType} - ${request.documentName}`);
