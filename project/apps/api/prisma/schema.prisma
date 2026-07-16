@@ -5878,6 +5878,12 @@ model EsignLog {
 
 // ==================== BANKA ENTEGRASYONU ====================
 
+enum BankTransactionCandidateStatus {
+  PENDING
+  SETTLED
+  REJECTED
+}
+
 model BankAccount {
   id       String @id @default(cuid())
   tenantId String
@@ -5931,6 +5937,9 @@ model BankTransaction {
   amount          Decimal   @db.Decimal(18, 2)
   currency        String    @default("TRY")
   transactionType String // INCOMING, OUTGOING
+
+  // Candidate lifecycle (legacy null = unknown; SETTLED olarak yorumlanmaz)
+  candidateStatus BankTransactionCandidateStatus?
 
   // Karşı Taraf
   counterpartyName String?
