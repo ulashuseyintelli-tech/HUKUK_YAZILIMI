@@ -548,15 +548,18 @@ export class UyapService {
   /**
    * Takip durumunu UYAP'tan sorgula
    */
-  async queryCaseStatus(caseId: string, uyapDosyaId?: string): Promise<UyapResponse> {
+  // CLIENT-SEC-H2B: tenantId zorunlu parametre (CLIENT-SEC-H1 S1'in aynı dosyadaki
+  // validatePowerOfAttorney/validateCasePoaForUyap deseniyle birebir). Cross-tenant ve
+  // nonexistent case AYNI sonucu (localStatus:'UNKNOWN') üretir — varlık ifşası yok.
+  async queryCaseStatus(caseId: string, tenantId: string, uyapDosyaId?: string): Promise<UyapResponse> {
     const requestId = await this.logRequest('queryCaseStatus', { caseId, uyapDosyaId });
 
     try {
       this.logger.log(`[STUB] UYAP takip durumu sorgulanıyor: ${caseId}`);
 
-      // Veritabanından case bilgilerini al
-      const caseData = await this.prisma.case.findUnique({
-        where: { id: caseId },
+      // Veritabanından case bilgilerini al (tenant-scoped)
+      const caseData = await this.prisma.case.findFirst({
+        where: { id: caseId, tenantId },
         select: {
           id: true,
           fileNumber: true,
