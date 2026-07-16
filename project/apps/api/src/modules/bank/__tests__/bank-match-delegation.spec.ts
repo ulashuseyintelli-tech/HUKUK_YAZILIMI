@@ -117,6 +117,56 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it('post-commit projection hatasında retry aynı Collection fact\'ini replay eder ve eşleşmeyi tamamlar', async () => {
+    let canonicalReceiptWrites = 0;
+    let matched = false;
+    let updateAttempts = 0;
+    const receipts = new Map<string, { id: string; caseId: string; amount: number }>();
+    const create = jest.fn(async (_tenantId: string, dto: any) => {
+      const existing = receipts.get(dto.idempotencyKey);
+      if (existing) return existing;
+
+      canonicalReceiptWrites += 1;
+      const collection = { id: 'col1', caseId: dto.caseId, amount: dto.amount };
+      receipts.set(dto.idempotencyKey, collection);
+      return collection;
+    });
+    const bankTransaction = {
+      findFirst: jest.fn(async () => ({
+        id: 'tx1',
+        tenantId: 't1',
+        amount: 500,
+        currency: 'TRY',
+        transactionDate: new Date('2026-01-01'),
+        transactionType: 'INCOMING',
+        isMatched: matched,
+        matchedCaseId: matched ? 'c1' : null,
+        matchedCollectionId: matched ? 'col1' : null,
+      })),
+      update: jest.fn(async () => {
+        updateAttempts += 1;
+        if (updateAttempts === 1) throw new Error('bank projection failed');
+        matched = true;
+        return {};
+      }),
+    };
+    const { svc, coll } = buildService(create, { bankTransaction });
+
+    await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1'))
+      .rejects.toThrow('bank projection failed');
+    await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1'))
+      .resolves.toMatchObject({ collection: { id: 'col1' } });
+
+    expect(canonicalReceiptWrites).toBe(1);
+    expect(coll.create).toHaveBeenCalledTimes(2);
+    expect(coll.create.mock.calls[1][1]).toMatchObject({
+      idempotencyKey: coll.create.mock.calls[0][1].idempotencyKey,
+      sourceId: coll.create.mock.calls[0][1].sourceId,
+    });
+    expect(bankTransaction.update).toHaveBeenCalledTimes(2);
+    expect(matched).toBe(true);
+  });
+
   it('fail-closed: outgoing hareket Collection üretmez', async () => {
     const { svc, coll, update } = buildService(undefined, {
       bankTransaction: {
