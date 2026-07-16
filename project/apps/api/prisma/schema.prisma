@@ -8836,3 +8836,44 @@ enum OfficeApprovalExecutionStatus {
   FAILED
   STALE
 }
+
+// ==================== PERMISSION GRANT FOUNDATION (CANDIDATE-E1, additive-only) ====================
+// OFF/OD-05 (title != SystemRole, izin ayrı verilir) + OFF/OD-08 (manager-tipi erişimde
+// varsayılan scope = direct-report/team, global ayrı izin) + OFF/OD-09 (sınırlı/süreli direct
+// grant, explicit deny yalnız gerçek ihtiyaçta) hedef modelini yapısal olarak temsil eder.
+// Bu tablo HENÜZ hiçbir authorization consumer tarafından okunmuyor — yalnız şema temeli.
+
+enum PermissionGrantScope {
+  DIRECT_REPORTS // OFF/OD-08 varsayılan alt-kapsam: yalnız doğrudan rapor eden kişiler
+  TEAM // OFF/OD-08 varsayılan: team kapsamı
+  GLOBAL // OFF/OD-08: yalnız ayrı, açık bir izinle
+}
+
+enum PermissionGrantEffect {
+  ALLOW
+  DENY // OFF/OD-09: yalnız gerçek ihtiyaçta kullanılır, varsayılan mekanizma değildir
+}
+
+model PermissionGrant {
+  id       String @id @default(cuid())
+  tenantId String
+
+  subjectUserId String
+  permissionKey String
+  effect        PermissionGrantEffect @default(ALLOW)
+  scope         PermissionGrantScope  @default(TEAM)
+
+  validFrom  DateTime  @default(now())
+  validUntil DateTime? // OFF/OD-09: süreli grant desteği (null = süresiz)
+
+  grantedByUserId String?
+  reason          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, subjectUserId])
+  @@index([tenantId, permissionKey])
+  @@index([validUntil])
+}
