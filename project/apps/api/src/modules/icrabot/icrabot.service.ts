@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RecipeService } from './recipe.service';
 import { TaskOrchestratorService } from './task-orchestrator.service';
@@ -262,7 +262,14 @@ export class IcrabotService {
   /**
    * Kuyruk istatistiklerini getir
    */
-  async getQueueStats(tenantId?: string): Promise<any> {
+  async getQueueStats(tenantId: string): Promise<any> {
+    // SEC-TENANT-HARDEN-P01 (ICRABOT-TID-01): fail-closed. Aggregate count sorgusu olduğu
+    // için assertCaseTenant/assertTaskTenant (belirli bir case/task sahiplik kontrolü) burada
+    // uygulanamaz — bunun yerine explicit guard, bu dosyadaki diğer hardened metotların
+    // required-tenantId sözleşmesiyle aynı ilkeyi (fail-closed) izler.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     return this.taskOrchestrator.getQueueStats(tenantId);
   }
 

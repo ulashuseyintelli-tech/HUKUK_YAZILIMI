@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { 
   BotTask, 
@@ -439,7 +439,7 @@ export class TaskOrchestratorService {
   /**
    * Kuyruk istatistiklerini getir
    */
-  async getQueueStats(tenantId?: string): Promise<{
+  async getQueueStats(tenantId: string): Promise<{
     pending: number;
     queued: number;
     running: number;
@@ -447,7 +447,12 @@ export class TaskOrchestratorService {
     failed: number;
     completedToday: number;
   }> {
-    const where = tenantId ? { tenantId } : {};
+    // SEC-TENANT-HARDEN-P01 (ICRABOT-TID-01): fail-closed, bkz. IcrabotService.getQueueStats
+    // (sarmalayıcı katman aynı guard'ı taşır — burası doğrudan enjekte edilirse bağımsız korur).
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const where = { tenantId };
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
