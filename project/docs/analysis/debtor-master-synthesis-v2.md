@@ -70,6 +70,26 @@ REPO INTAKE NOTU); yalnız hangi okumanın bu spesifik kapanış kararında esas
 Sonraki yetkilendirilen görev: **Phase 0 Completion Roadmap** (ayrı owner yetkisi gerektirir).
 Blueprint: NOT YET AUTHORIZED. Wave 1: NOT YET OPEN.
 
+**OWNER-OVERRIDE NOTU — BLUEPRINT PHASE 1 GOVERNANCE RECONCILIATION (2026-07-16, bkz.
+`decision-log.md` aynı tarihli "BORÇLU PLATFORMU BLUEPRINT PHASE 1 — GOVERNANCE RECONCILIATION
+RECORDED (DBP-GOV-01)" kaydı):** Yukarıdaki 2026-07-14 tarihli notun "Blueprint: NOT YET
+AUTHORIZED" ifadesi O TARİHTEKİ gerçek durumu doğru yansıtıyordu; bu owner-override notu onu
+SİLMEZ/DEĞİŞTİRMEZ (yukarıdaki "MS 'değiştirilmeden' korunur ilkesi" aynen geçerlidir). Güncel
+repository truth: `DEBTOR CANONICAL DOMAIN BLUEPRINT CHARTER v1.0` + DBP-02..12 work-package
+belgelerinin TAMAMI (13 belge; Charter/DBP-01 PR #1248 `f918f16d` ile DBP-12 PR #1299 `18394f77`
+arası + cross-cutting reference correction DBP-NREF-01 PR #1302 `b12a815d`) artık `origin/main`'de
+canonical'dır — tam PR/SHA zinciri `decision-log.md`'nin 2026-07-16 DBP-GOV-01 kaydındadır. Aşağıdaki
+SRC-006 ("Platform Blueprint", `5b51b2e`, GÜNCEL) satırı bu belgenin kendi analiz-base pin'ine
+(HEAD `5b51b2e`) sadıktır ve SİLİNMEZ/DEĞİŞTİRİLMEZ; ancak Platform Blueprint'in kendisi o pin'den
+BERİ önemli ölçüde ilerlemiştir (Charter + 11 DBP work-package'ı canonicalize edilmiştir) — SRC-006
+artık Blueprint'in YALNIZ o tarihteki hedef-mimari taslağını temsil eder, güncel canonical Blueprint
+durumunu DEĞİL. **BLUEPRINT DOCUMENT SET: IMPLEMENTED/MERGED/CANONICALIZED. GOVERNANCE
+RECONCILIATION: RECORDED. OWNER BLUEPRINT RATIFICATION: PENDING** (Charter §15/16'nın istediği
+bütünsel ratifikasyon için repository'de ayrı, bağımsız doğrulanabilir bir owner karar kaydı
+yoktur — her DBP-0N'in kendi "OWNER-APPROVED" ifadesi yalnız o paketin İÇERİĞİNE ilişkindir).
+**PHASE 1 CANONICAL CLOSED: NOT YET DECLARED. IMPLEMENTATION ENTRY: HOLD.** Wave 1 durumu (NOT
+YET OPEN) DEĞİŞMEMİŞTİR. Bu not hiçbir ODR/OBD/LSR/security-gate/evidence-gap maddesini kapatmaz.
+
 **Bulgu mutabakatı** (Section E Canonical Findings Register'a karşı, güncel `origin/main` ile doğrulandı):
 
 | FND | Başlık | Belgedeki statü | Güncel statü | Kanıt |
