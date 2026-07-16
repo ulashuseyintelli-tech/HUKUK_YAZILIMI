@@ -8877,3 +8877,28 @@ model PermissionGrant {
   @@index([tenantId, permissionKey])
   @@index([validUntil])
 }
+
+// ==================== TEAM/MANAGER HIERARCHY FOUNDATION (CANDIDATE-I1, additive-only) ====================
+// OFF/OD-08 hedef modelinin (manager-tipi erişimde varsayılan direct-report/team scope) dayanacağı
+// organizasyon-hiyerarşisi kaydı. Tek-amirli, tarihsel (validFrom/validUntil) model. Bu tablo HENÜZ
+// hiçbir authorization consumer tarafından okunmuyor — yalnız şema temeli. Backfill YOK/UYGULANAMAZ
+// (bu kavrama ait mevcut hiçbir alan yok). PermissionGrant'ın scope etiketinden AYRI, tamamlayıcı bir
+// katman: PermissionGrant "hangi kapsam" der, bu tablo "kim kimin amiri" sorusuna karşılık verir.
+
+model ReportingLine {
+  id            String @id @default(cuid())
+  tenantId      String
+
+  actorUserId   String // amiri bu satırla tanımlanan kişi
+  managerUserId String // amir/yönetici
+
+  validFrom  DateTime  @default(now())
+  validUntil DateTime? // null = güncel/aktif; reorg/offboarding'de eski kayıt kapanır
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, actorUserId])
+  @@index([tenantId, managerUserId])
+}
