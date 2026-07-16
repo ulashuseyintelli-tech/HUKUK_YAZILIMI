@@ -87,6 +87,67 @@ describe('ThirdPartyService.addExternalCaseCollection canonical routing', () => 
       .toEqual([300, 300]);
   });
 
+  it('post-commit projection hatasında retry aynı Collection fact\'ini replay eder ve projection\'ı yakınsar', async () => {
+    let canonicalReceiptWrites = 0;
+    let projectionAttempts = 0;
+    const receipts = new Map<string, { id: string }>();
+    const externalCase: any = {
+      id: 'ec1',
+      tenantId: 't1',
+      receivedAmount: 0,
+      claimAmount: 1000,
+      claimCurrency: 'TRY',
+      attachmentStatus: 'ACIK',
+      externalCaseNo: '2026/9',
+      externalOffice: 'X İcra Dairesi',
+      counterpartyName: 'Y Ltd',
+      notes: null,
+      caseDebtor: { case: { id: 'case1' } },
+    };
+    const coll = {
+      create: jest.fn(async (_tenantId: string, dto: any) => {
+        const existing = receipts.get(dto.idempotencyKey);
+        if (existing) return existing;
+
+        canonicalReceiptWrites += 1;
+        const collection = { id: 'col1' };
+        receipts.set(dto.idempotencyKey, collection);
+        return collection;
+      }),
+    };
+    const externalCaseRepository = {
+      findFirst: jest.fn(async () => externalCase),
+      update: jest.fn(async ({ data }: any) => {
+        projectionAttempts += 1;
+        if (projectionAttempts === 1) throw new Error('external projection failed');
+        Object.assign(externalCase, data);
+        return externalCase;
+      }),
+    };
+    const { svc } = buildService(coll, {
+      externalCase: externalCaseRepository,
+      collection: {
+        findFirst: jest.fn(async () => null),
+        aggregate: jest.fn(async () => ({ _sum: { amount: 300 } })),
+      },
+    });
+    const input = { amount: 300, date: '2026-07-01', idempotencyKey: 'client-operation-1' };
+
+    await expect(svc.addExternalCaseCollection('t1', 'ec1', input, 'user-1'))
+      .rejects.toThrow('external projection failed');
+    await expect(svc.addExternalCaseCollection('t1', 'ec1', input, 'user-1'))
+      .resolves.toMatchObject({ receivedAmount: 300, attachmentStatus: 'TAHSIL_BASLADI' });
+
+    expect(canonicalReceiptWrites).toBe(1);
+    expect(coll.create).toHaveBeenCalledTimes(2);
+    expect(coll.create.mock.calls[1][1]).toMatchObject({
+      idempotencyKey: coll.create.mock.calls[0][1].idempotencyKey,
+      sourceId: coll.create.mock.calls[0][1].sourceId,
+    });
+    expect(externalCaseRepository.update).toHaveBeenCalledTimes(2);
+    expect(externalCase.notes.match(/\[Collection:/g)).toHaveLength(1);
+  });
+
   it('Collection create başarısızsa ExternalCase receipt projection yazılmaz ve hata yutulmaz', async () => {
     const coll = { create: jest.fn(async () => { throw new Error('canonical create failed'); }) };
     const { svc, prisma } = buildService(coll);
