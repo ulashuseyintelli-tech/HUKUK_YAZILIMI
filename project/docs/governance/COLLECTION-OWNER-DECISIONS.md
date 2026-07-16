@@ -9,9 +9,9 @@ Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; 
                           yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
                           ile aynı sınıf ve sınır)
 Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
-                          onaylandı; COL/OD-03, COL/OD-04, COL/OD-05 ve COL/OD-21 RECORDED;
-                          COL/OD-18 RECORDED → COL/OD-18A ile AMENDED (2026-07-15);
-                          kalan 16 karar OPEN
+                          onaylandı; COL/OD-01, COL/OD-03, COL/OD-04, COL/OD-05 ve COL/OD-21
+                          RECORDED; COL/OD-18 RECORDED → COL/OD-18A ile AMENDED (2026-07-15);
+                          kalan 15 karar OPEN
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
 IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
@@ -39,10 +39,28 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 ## KUYRUK A — P0 patch'lerinden ÖNCE (NOW)
 
 ### COL/OD-01 — Legal ledger adjustment policy
+- STATUS: **RECORDED** (2026-07-16) — authoritative kayıt:
+  `decision-log.md` § `2026-07-16 — RC-COL / COL/OD-01`.
 - SORU: Hatalı/eksik geçmiş finansal kayıt hangi mekanizmayla düzeltilir (yalnız compensating
   entry mi; kim, hangi approval ile)?
-- KANIT: Append-only ledger CURRENT (F-04); adjustment kavramının kontratı yok.
+- OWNER SELECTION: **OPTION A — Lifecycle-Split Append-Only Correction.**
+- KARAR:
+  - `PENDING` kayıt yalnız yetkili correction kurallarıyla düzeltilebilir.
+  - `CONFIRMED/POSTED` kayıt değiştirilemez veya silinemez.
+  - Hatalı kayıt linked full reversal ile terslenir; doğru finansal sonuç ayrı, idempotent yeni
+    canonical command ile oluşturulur.
+  - Eksik kayıt evidence-backed ve provenance taşıyan yeni canonical command olarak eklenir.
+  - Partial/delta historical repair ayrı typed contract oluşana kadar fail-closed kalır;
+    genel amaçlı `ADJUSTMENT` etiketi correction authority'si değildir.
+  - Dual control, action-specific approval ve COL/OD-05 uyumlu transaction-bound audit
+    zorunludur.
+  - Correction'ın hukuki etki tarihi COL/OD-03 / COL-TIME-001 authority'sine tabidir.
+- KANIT: Append-only ledger F-04; SYS-FIN-009; SYS-EVID-006; COL-INV-010/-011/-015/-016;
+  REC-AUTH-014 linked full reversal CURRENT; REC-AUTH-015 ve historical repair kapsamı
+  ayrıca ratifiye edilene kadar PRODUCTION_NO_GO.
 - BAĞIMLILIK: — (kök karar). ETKİ: reversal/refund ailesinin tamamı (COL/OD-09, -10).
+- PHASE 0 EFFECT: Bu karar approved merge ile canonical olduktan sonra W0.3 owner-decision
+  ratification tamamlanır; Phase 0 kapanmaz ve ayrı final closure reconciliation gerektirir.
 
 ### COL/OD-02 — "Dosya tutarı" tanımı
 - SORU: UI/rapor/UYAP'ta "dosya tutarı" hangi basis'tir (hangi gerçeklik, hangi as-of)?
@@ -294,7 +312,7 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 
 ```text
 KÖK (bağımsız başlar):
-  COL/OD-01 (adjustment)   COL/OD-03 (effective-date — RECORDED)   COL/OD-05 (audit/correlation — RECORDED)
+  COL/OD-01 (adjustment — RECORDED)   COL/OD-03 (effective-date — RECORDED)   COL/OD-05 (audit/correlation — RECORDED)
   COL/OD-11 (UYAP route)   COL/OD-18 (lane — AMENDED: COL/OD-18A)  COL/OD-21 (RECORDED)
 
 COL/OD-01 ─┬─> COL/OD-07 (feragat/indirim/sulh) ──> COL/OD-08 (satisfaction/re-open)
@@ -311,7 +329,7 @@ COL/OD-12 + COL/OD-16 ──> W4.6 nihai cutover
 
 Önerilen oturum sırası (yalnız sıralama önerisidir, karar değildir):
 1) COL/OD-21 RECORDED (2026-07-16; money-out idempotency contract canonicalization kaydı)
-2) COL/OD-03 RECORDED (2026-07-16); COL/OD-01 sıradaki açık Phase 0 kök kararı
+2) COL/OD-01 ve COL/OD-03 RECORDED (2026-07-16); Phase 0 final closure reconciliation ayrı GO bekler
 3) COL/OD-04 RECORDED (W1.2: CLOSED / CANONICAL)
 4) Kuyruk B → Kuyruk C.
 
