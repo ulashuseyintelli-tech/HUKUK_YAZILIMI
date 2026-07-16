@@ -252,23 +252,42 @@ export class UyapCaseMapperService {
 
   /**
    * DebtorRole'u UYAP TarafRolu'na dönüştür
+   *
+   * DBP-P2-SEC-P02: mapping, DebtorRole enum'unun tamamini (TASFIYE_MEMURU/IFLAS_MASASI haric)
+   * Record tipiyle kapsar - yeni bir DebtorRole degeri eklenip burada unutulursa derleme hatasi
+   * verir (exhaustive mapping guard, LRV-02/DBP-P2-SEC-P01 ile ayni desen).
+   *
+   * TASFIYE_MEMURU / IFLAS_MASASI: mevcut BORCLU sonucu kasitli olarak AS-IS korunur - yeni hedef
+   * kod veya semantik icat edilmedi. Bu iki rol ayri bir owner/LDO karari bekler (LRV-02 ile ortak
+   * acik karar; DBP-P2-SEC-P02 kapsam disi).
+   *
+   * Diger 10 rol icin mevcut BORCLU/KEFIL sonuclari da DEGISTIRILMEDI (DBP-P2-SEC-P02 owner
+   * karariyla behavior-lock) - bu format'in kendi dar UyapTarafRolu sozlesmesi (6 deger) ve
+   * enstruman-ozgu rollerin mapCaseToTakipTalebi() instrument-guard'i tarafindan ayrica
+   * korunmasi nedeniyle.
    */
   private mapDebtorRole(role: DebtorRole): UyapTarafRolu {
-    const roleMap: Partial<Record<DebtorRole, UyapTarafRolu>> = {
-      ASIL_BORCLU: 'BORCLU',
-      MUSETEREK_BORCLU: 'BORCLU',
-      ADI_KEFIL: 'KEFIL',
-      MUTESELSIL_KEFIL: 'KEFIL',
-      AVAL: 'BORCLU',
-      CIRANTA: 'BORCLU',
-      LEHDAR: 'BORCLU',
-      KESIDECI: 'BORCLU',
-      MUHATAP: 'BORCLU',
-      MIRASCI: 'BORCLU',
-      TASFIYE_MEMURU: 'BORCLU',
-      IFLAS_MASASI: 'BORCLU',
+    if (role === DebtorRole.TASFIYE_MEMURU || role === DebtorRole.IFLAS_MASASI) {
+      return 'BORCLU';
+    }
+
+    const roleMap: Record<
+      Exclude<DebtorRole, typeof DebtorRole.TASFIYE_MEMURU | typeof DebtorRole.IFLAS_MASASI>,
+      UyapTarafRolu
+    > = {
+      [DebtorRole.ASIL_BORCLU]: 'BORCLU',
+      [DebtorRole.MUSETEREK_BORCLU]: 'BORCLU',
+      [DebtorRole.ADI_KEFIL]: 'KEFIL',
+      [DebtorRole.MUTESELSIL_KEFIL]: 'KEFIL',
+      [DebtorRole.AVAL]: 'BORCLU',
+      [DebtorRole.CIRANTA]: 'BORCLU',
+      [DebtorRole.LEHDAR]: 'BORCLU',
+      [DebtorRole.KESIDECI]: 'BORCLU',
+      [DebtorRole.MUHATAP]: 'BORCLU',
+      [DebtorRole.MIRASCI]: 'BORCLU',
     };
-    return roleMap[role] || 'BORCLU';
+
+    return roleMap[role];
   }
 
   // ==========================================
