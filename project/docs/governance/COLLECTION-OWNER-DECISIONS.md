@@ -9,9 +9,9 @@ Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; 
                           yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
                           ile aynı sınıf ve sınır)
 Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
-                          onaylandı; COL/OD-01, COL/OD-03, COL/OD-04, COL/OD-05 ve COL/OD-21
+                          onaylandı; COL/OD-01, COL/OD-03, COL/OD-04, COL/OD-05, COL/OD-06 ve COL/OD-21
                           RECORDED; COL/OD-18 RECORDED → COL/OD-18A ile AMENDED (2026-07-15);
-                          kalan 15 karar OPEN
+                          kalan 14 karar OPEN
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
 IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
@@ -151,10 +151,33 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 ## KUYRUK B — P1'den ÖNCE
 
 ### COL/OD-06 — External settlement / unapplied payment / chargeback kapsamı
+- STATUS: **RECORDED** (2026-07-16) — authoritative kayıt:
+  `decision-log.md` § `2026-07-16 — RC-COL / COL/OD-06`.
 - SORU: Banka kesinleşmesi (externalSettledAt), borca uygulanmamış tahsilat lifecycle'ı ve
   chargeback bu domain'e giriyor mu; hangi statülerle?
-- KANIT: Vocabulary'de TARGET (COL-INV-008/033); runtime karşılığı yok.
+- OWNER SELECTION: **OPTION A — Candidate-first, orthogonal lifecycle.**
+- KARAR:
+  - Harici banka/provider hareketi doğrulanıp yetkili eşleştirme yapılana kadar non-canonical
+    candidate'dır. Candidate durumları `PENDING | SETTLED | REJECTED`tır.
+  - Settlement kanıtı ve yetkili eşleştirme olmadan canonical Collection, allocation, legal
+    balance, journal veya disposition etkisi doğmaz. Canonical Collection doğrulama sonrasında
+    `CONFIRMED` olarak oluşturulur.
+  - `CollectionStatus.PENDING` draft/unposted anlamında kalır; settlement bekleme hali için
+    kullanılmaz. External finality ekseni `NOT_APPLICABLE | SETTLED | REVERSED`tır.
+  - Application ekseni `UNAPPLIED | PARTIALLY_APPLIED | APPLIED`tır. `UNAPPLIED`, overpayment
+    değildir; overpayment yalnız canonical allocation sonrasında borcu aşan tutarın ayrı `HELD`
+    sonucudur.
+  - `confirmedAt` ve `externalSettledAt` lifecycle/provenance tarihleridir; `effectiveDate`
+    authority'si değildir.
+  - Chargeback linked external reversal evidence üretir; otomatik cancellation, refund veya
+    financial reversal üretmez. Partial refund ve downstream reversal COL/OD-09/-10 kapsamında
+    açık kalır; `CollectionStatus.REFUNDED` bu kararla aktive edilmez.
+- KANIT: COL-INV-008/033; REC-AUTH-030 bank receipt candidate sınırı; current runtime external
+  settlement/unapplied/chargeback lifecycle'ı taşımıyor ve Collection create doğrudan
+  `CONFIRMED` + financial side-effect üretiyor.
 - BAĞIMLILIK: COL/OD-03. ETKİ: W2.2, W2.3.
+- IMPLEMENTATION EFFECT: W2.2 decision gate sağlanmıştır ancak implementation yetkisi yoktur.
+  W2.3, W2.2 boundary uygulanıp kanıtlanana kadar `BLOCKED — W2.2 BOUNDARY PENDING` kalır.
 
 ### COL/OD-07 — Feragat / indirim / sulh / ibra / write-off etki matrisi
 - SORU: Bu hukuki işlemler ClaimItem/ledger/faiz üzerinde hangi etkiyi, hangi approval ile üretir?

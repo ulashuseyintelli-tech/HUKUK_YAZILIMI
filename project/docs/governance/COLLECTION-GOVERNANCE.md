@@ -99,13 +99,13 @@ REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ek
 | Receipt / Tahsilat Girişi | Paranın/değerin sisteme girdiği fact | CURRENT |
 | Collection | Receipt'in bağlam, statü, belge ve işlem taşıyıcısı | CURRENT |
 | Internal Confirmation | Sistem içi kayıt onayı; banka finality değildir | CURRENT |
-| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — owner-gated (COL/OD-06) |
+| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — CONTRACT RECORDED / RUNTIME ABSENT (COL/OD-06 Option A) |
 | Legal Allocation | Tahsilatın alacak bileşenlerine hukuki uygulanması | CURRENT (REC-AUTH-011) |
 | TBK100 Allocation | Masraf→fer'i→işlemiş faiz→anapara deterministic mahsup | CURRENT (REC-GOV §9.2 — norm oradadır) |
 | Client Disposition | Tahsilatın müvekkil/ofis dağıtım kararı | CURRENT (TM3) |
 | Client Offset | Müvekkil finansal bakiyeleri arası settlement; debtor set-off DEĞİL | CURRENT (adr-client-offset) |
 | Overpayment | Borcu aşan para; borç değil, emanet/HELD sınıfı | CURRENT (schema `CollectionOverpayment`) |
-| Unapplied Payment | Borca uygulanmamış tahsilat; overpayment ile otomatik eş anlamlı DEĞİL | TARGET — lifecycle owner-gated (COL/OD-06) |
+| Unapplied Payment | Borca uygulanmamış tahsilat; overpayment ile otomatik eş anlamlı DEĞİL | TARGET — CONTRACT RECORDED / RUNTIME ABSENT (COL/OD-06 Option A) |
 | Refund | Paranın ayrı çıkış hareketiyle iadesi | TARGET — partial refund NO_GO (REC-AUTH-015) |
 | Reversal | Önceki hukuki etkinin bağlı compensating event ile geri alınması | CURRENT — yalnız linked FULL reversal (REC §11) |
 | Legal Balance | Receivable policy'ye göre hukuki bakiye | REC-AUTH-021/022 statüsüne tabidir |
@@ -250,8 +250,8 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | COL-INV-005 | Accounting write-off hukuki sona erme üretmez | CURRENT-PRINCIPLE | ADR-010 sınırı; REC-BOUNDARY-002 |
 | COL-INV-006 | ClientOffset debtor set-off değildir | CURRENT-CONFIRMED | adr-client-offset (Accepted, locked invariants) |
 | COL-INV-007 | Overpayment borç veya negatif claim değildir | CURRENT-CONFIRMED | CollectionOverpayment HELD; schema:2362-2391 |
-| COL-INV-008 | Unapplied ≠ overpayment | TARGET-OWNER-GATED | Unapplied lifecycle yok; COL/OD-06 |
-| COL-INV-009 | Refund ayrı para çıkış event'idir; Collection overwrite edilmez | CURRENT-PRINCIPLE (full) / TARGET (partial) | REC §11.3; REC-AUTH-015 |
+| COL-INV-008 | Unapplied ≠ overpayment | TARGET-CONTRACT-RECORDED / RUNTIME-ABSENT | COL/OD-06 Option A; unapplied lifecycle henüz yok |
+| COL-INV-009 | Refund ayrı para çıkış event'idir; Collection overwrite edilmez; chargeback otomatik refund/reversal değildir | CURRENT-PRINCIPLE (full) / TARGET (partial) | COL/OD-06 Option A; REC §11.3; REC-AUTH-015 |
 | COL-INV-010 | Reversal yalnız açık bağlı compensating event ile | CURRENT-CONFIRMED | COL/OD-01 Option A; cancel-executor.ts:137-145; reversesLedgerEntryId @unique |
 | COL-INV-011 | Posted/confirmed finansal kayıt fiziksel silinmez veya yerinde değiştirilmez | CURRENT-CONFIRMED | COL/OD-01 Option A; Ledger'da production update/delete yok; TM3-S1 hard-delete kapatıldı |
 | COL-INV-012 | collectedAmount/amount/display cache legal authority olamaz | CURRENT-CONFIRMED | REC-AUTH-003/004 |
@@ -485,11 +485,29 @@ Collection(confirmed)
   → CLIENT_PAYABLE → ClientPayout (idempotent + approval; COL/OD-21)
 ```
 
-## 7.3. TARGET lifecycle alanları (owner-gated)
+## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; runtime absent)
 
-`confirmedAt/external settlement`, `unapplied payment`, `refund/downstream reversal`,
-`claim satisfaction/re-open` — tümü COLLECTION-OWNER-DECISIONS.md'deki ilgili karar
-paketleri kapanmadan CURRENT ilan edilemez.
+1. **Candidate boundary:** Harici banka/provider hareketi doğrulanıp yetkili eşleştirme
+   yapılana kadar Integration tarafında non-canonical candidate'dır. Candidate durumları
+   `PENDING | SETTLED | REJECTED`tır.
+2. **Canonical admission:** Settlement kanıtı ve yetkili eşleştirme olmadan Collection,
+   allocation, legal balance, journal veya disposition etkisi doğmaz. Canonical Collection
+   doğrulama sonrasında `CONFIRMED` olarak oluşturulur.
+3. **Status-axis separation:** `CollectionStatus.PENDING` draft/unposted anlamında kalır ve
+   settlement bekleme hali için kullanılmaz. External finality ekseni
+   `NOT_APPLICABLE | SETTLED | REVERSED`; application ekseni
+   `UNAPPLIED | PARTIALLY_APPLIED | APPLIED`tır.
+4. **Unapplied/overpayment boundary:** `UNAPPLIED`, overpayment değildir. Overpayment yalnız
+   canonical allocation sonrasında borcu aşan tutarın ayrı `HELD` sonucudur.
+5. **Temporal boundary:** `confirmedAt` ve `externalSettledAt` provenance/lifecycle
+   tarihleridir; COL-TIME-001 `effectiveDate` authority'sini değiştirmez.
+6. **Chargeback boundary:** Chargeback linked external reversal evidence üretir; otomatik
+   cancellation, refund veya financial reversal üretmez. Partial refund ve downstream reversal
+   COL/OD-09/-10 kapsamında açık kalır; `CollectionStatus.REFUNDED` bu kararla aktive edilmez.
+7. **Execution gate:** Contract `RECORDED`dır fakat runtime/schema/migration uygulanmamıştır.
+   W2.2 decision gate sağlanmış olsa da implementation ayrı owner GO gerektirir; W2.3 W2.2
+   boundary uygulanıp kanıtlanana kadar blokludur. Refund/downstream reversal ve claim
+   satisfaction/re-open paketleri kendi owner kararları kapanmadan CURRENT ilan edilemez.
 
 ---
 
