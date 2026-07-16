@@ -28,7 +28,7 @@ diğer parantezli atamalar PROPOSED kalır.
 ```text
 PHASE 0 — CANONICALIZATION & HANDOFF          [CLOSED / CANONICAL UPON APPROVED MERGE]
 PHASE 1 — P0 FINANCIAL SAFETY                 [CLOSED / CANONICAL]
-PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [ACTIVE — W2.1 CLOSED; W2.2 DECISION GATE SATISFIED / IMPLEMENTATION NOT AUTHORIZED]
+PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [ACTIVE — W2.1 CLOSED; W2.2A CLOSED / W2.2B OWNER GO REQUIRED]
 PHASE 3 — DOMAIN COMPLETENESS                 [owner-decision-gated]
 PHASE 4 — CONSUMER CUTOVER                    [cutover-gated — NOT AUTHORIZED]
 PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
@@ -86,12 +86,12 @@ disposition'ını, daha geniş `REC-AUTH-011/012` reconciliation'ı ise Phase 1 
 cross-domain authority çalışmasını açık tutar. Bu kapanış Phase 2'yi başlatmaz veya
 implementation authority üretmez.
 
-## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (ACTIVE — W2.1 closed; W2.2 decision gate satisfied)
+## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (ACTIVE — W2.1 closed; W2.2A closed, W2.2B owner GO required)
 
 | Wave | Workstream | Gate |
 |---|---|---|
 | W2.1 | Canonical effective-date policy | **CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE** — COL/OD-03 RECORDED; W2.1A PR #1315 / `1d5974e5` test-only evidence; precedence, fallback, provenance exclusion ve fail-closed confirmed |
-| W2.2 | confirmedAt / external settlement | **DECISION GATE SATISFIED / IMPLEMENTATION NOT AUTHORIZED** — COL/OD-06 Option A + COL/OD-03 RECORDED; separate owner GO required |
+| W2.2 | confirmedAt / external settlement | **ACTIVE — W2.2A CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE** — COL/OD-06 Option A + COL/OD-03 RECORDED; PR #1332 / `88290071` additive candidate schema foundation; W2.2B owner GO required |
 | W2.3 | Unapplied payment lifecycle | **BLOCKED — W2.2 BOUNDARY PENDING** — COL/OD-06 contract RECORDED; runtime lifecycle absent |
 | W2.4 | Refund / downstream reversal | COL/OD-09/-10 OPEN (+COL/OD-01 RECORDED); partial/delta fail-closed; workstream NOT AUTHORIZED |
 | W2.5 | Claim satisfaction / re-open | COL/OD-07/-08 OPEN; workstream NOT AUTHORIZED |
@@ -115,6 +115,31 @@ W2.1 exit criteria ve canonical kanıtı:
    implementation hâlâ ayrı owner GO gerektirir. W2.3, W2.2 boundary pending nedeniyle
    blokludur. W2.4–W2.5 ve COL/OD-07/-08/-09/-10 açık ve ayrı owner gate'leridir. Phase 2
    kapanmaz; sıradaki workstream owner GO olmadan başlamaz.
+
+### W2.2A Exit Evidence
+
+W2.2A additive schema foundation exit criteria ve canonical kanıtı:
+
+1. **Repository evidence:** PR #1332, branch commit
+   `7a4fefa4866dd7b0cc4211849be8aeececf1e337`, squash
+   `88290071c5508952ad0c875e00f072a45e57ba4c`; required CI `4/4 SUCCESS` ve squash SHA
+   canonical main ancestry'sindedir.
+2. **Additive schema:** `BankTransactionCandidateStatus` yalnız `PENDING`, `SETTLED` ve
+   `REJECTED` değerlerini taşır. `BankTransaction.candidateStatus` nullable ve defaultsuzdur.
+3. **Migration boundary:** Migration yalnız enum creation ve nullable column addition içerir;
+   backfill, default, index veya mevcut satır mutation'ı yoktur.
+4. **Database validation:** Disposable PostgreSQL üzerinde canonical migration deploy,
+   W2.2A apply ve manual reverse-SQL rollback PASS; existing row değişmedi, legacy
+   `candidateStatus IS NULL` kaldı, üç canonical enum değeri kabul edildi ve `UNKNOWN`
+   reddedildi.
+5. **Regression evidence:** Prisma validate/generate, bank matching regression `12/12`,
+   production TypeScript check ve `git diff --check` PASS olarak PR kanıtında kayıtlıdır.
+6. **Authority preservation:** Runtime writer, bank matching/Collection create davranışı,
+   application/external-finality eksenleri ve finansal authority değişmemiştir. Legacy `NULL`
+   unknown'dır ve `SETTLED` kabul edilemez. COL-RISK-G03 açık kalır.
+7. **Next gate:** W2.2 workstream'i ACTIVE kalır; sıradaki aday W2.2B ayrı owner GO bekler.
+   W2.3 `BLOCKED — W2.2 BOUNDARY PENDING`; W2.2B–W2.2E ve Phase 2 closure bu kayıtla
+   yetkilendirilmez.
 
 ## PHASE 3 — DOMAIN COMPLETENESS (tamamı owner-gated)
 
@@ -163,9 +188,10 @@ W1.4             : CLOSED / CANONICAL — PR #1229 @ 4c1968ce
 W1.5             : CLOSED / CANONICAL — PR #1236 @ fbef6915
 W1.6             : CLOSED / CANONICAL — COL/OD-05 + PR #1246 @ c7f55da4
 W2.1             : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR #1315 @ 1d5974e5
-W2.2             : DECISION GATE SATISFIED / IMPLEMENTATION NOT AUTHORIZED — COL/OD-06 Option A
+W2.2A            : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR #1332 @ 88290071
+W2.2             : ACTIVE — W2.2A closed; W2.2B owner GO required
 W2.3             : BLOCKED — W2.2 BOUNDARY PENDING
-PHASE 2          : ACTIVE — W2.1 closed; W2.2 owner GO required; W2.3 blocked; W2.4–W2.5 owner-gated
+PHASE 2          : ACTIVE — W2.1/W2.2A closed; W2.2B owner GO required; W2.3 blocked; W2.4–W2.5 owner-gated
 PHASE 3    <── COL/OD-02, -14, -15, -17, -19, -20
 PHASE 4    <── PHASE 1 tamamı + COL/OD-11, -12, -13, -16 + CAN-CUT-01/02
 PHASE 5    <── PHASE 4
