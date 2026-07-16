@@ -376,9 +376,9 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | ID | Kural | Lifecycle | Kanıt/Kaynak |
 |---|---|---|---|
 | COL-INV-032 | createdAt hukuki etki tarihi değildir | CURRENT-PRINCIPLE | Desktop 01 §14 |
-| COL-INV-033 | transactionDate/valueDate/effectiveDate/confirmedAt/externalSettledAt ayrıdır | CURRENT-CANONICAL POLICY | COL/OD-03 Option A RECORDED; raw source tarihleri provenance olarak korunur |
-| COL-INV-034 | Faiz+legal balance yalnız canonical effectiveDate policy tüketir | CURRENT-CANONICAL POLICY | COL/OD-03 Option A; COL-TIME-001 |
-| COL-INV-035 | Raw source tarihleri provenance olarak korunur | CURRENT-PRINCIPLE | REC §8.1 provenance ilkesi |
+| COL-INV-033 | transactionDate/valueDate/effectiveDate/confirmedAt/externalSettledAt ayrıdır | CURRENT-CONFIRMED (W2.1 scope) | COL/OD-03 Option A + W2.1A PR #1315; raw source tarihleri competing authority değildir |
+| COL-INV-034 | Faiz+legal balance yalnız canonical effectiveDate policy tüketir | CURRENT-CONFIRMED (W2.1 scope) | COL-TIME-001 precedence/fallback zinciri W2.1A PR #1315 ile karakterize edildi |
+| COL-INV-035 | Raw source tarihleri provenance olarak korunur | CURRENT-CONFIRMED (W2.1 scope) | REC §8.1 + W2.1A provenance-exclusion kanıtı; `valueDate`/`confirmedAt` legal-balance girdisine taşınmaz |
 | COL-INV-036 | Official as-of/known-at sonucu snapshot authority'siz iddia edilemez | CURRENT-CONFIRMED (yasak olarak) | REC-AUTH-024/025; official snapshot yok |
 
 ### COL-TIME-001 — Canonical effective-date contract (COL/OD-03 Option A)
@@ -398,6 +398,15 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
    hesaplanması, consumer switch veya Phase 2 runtime cutover yetkisi vermez. Accounting
    Journal gibi legal-balance authority'si olmayan modellerde aynı adlı alanların mevcut
    kullanımı bu kontratla kendiliğinden legal authority kazanmaz.
+6. **W2.1 implementation evidence:** Test-only W2.1A PR #1315 / squash
+   `1d5974e5b15961cd1ebc04d84dcb43c3c9073fce`; explicit `LedgerEntry.effectiveDate`
+   precedence'ını, yokluğunda `LedgerEntry.entryDate` fallback'ini, Ledger bulunmadığında
+   `valueDate`/`confirmedAt` farklı olsa da `Collection.date` kullanımını ve geçersiz zorunlu
+   tarihte fail-closed `RangeError` davranışını karakterize eder. Required CI `4/4 SUCCESS`tır;
+   production kodu, schema, migration, backfill, snapshot veya Accounting Journal değişmemiştir.
+7. **W2.1 closure boundary:** Yukarıdaki contract ve W2.1A kanıtı W2.1 exit criteria'sını
+   karşılar. Approved closure-reconciliation merge'iyle W2.1 `CLOSED / CANONICAL` olur;
+   W2.2–W2.5, snapshot, cutover ve ilgili owner gate'leri ayrı ve açık kalır.
 
 ## 5.5. Actor / tenant / audit
 
