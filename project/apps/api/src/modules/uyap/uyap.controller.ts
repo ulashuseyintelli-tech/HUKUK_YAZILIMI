@@ -98,7 +98,7 @@ export class UyapController {
       amount: body.amount || 10000,
       currency: body.currency || 'TRY',
       tenantId,
-    });
+    }, tenantId);
   }
 
   /**
@@ -133,8 +133,7 @@ export class UyapController {
    * UYAP'a evrak gönder
    */
   @Post('document/submit')
-  async submitDocument(@Body() body: any, @Req() req: any) {
-    const tenantId = req.user?.tenantId;
+  async submitDocument(@Body() body: any, @CurrentUser('tenantId') tenantId: string) {
     return this.uyapService.submitDocument({
       caseId: body.caseId,
       documentType: body.documentType,
@@ -143,7 +142,7 @@ export class UyapController {
       clientId: body.clientId,
       lawyerId: body.lawyerId,
       tenantId,
-    });
+    }, tenantId);
   }
 
   /**
@@ -185,8 +184,7 @@ export class UyapController {
    */
   @Post('haciz')
   @CpeRequired(ActionCode.TRIGGER_HACIZ, ScopeResolvers.fromBody)
-  async pushHacizRequest(@Body() body: any, @Req() req: any) {
-    const tenantId = req.user?.tenantId;
+  async pushHacizRequest(@Body() body: any, @CurrentUser('tenantId') tenantId: string, @Req() req: any) {
     return this.uyapService.pushHacizRequest({
       caseId: body.caseId,
       targetType: body.targetType,
@@ -196,7 +194,7 @@ export class UyapController {
       lawyerId: body.lawyerId,
       tenantId,
       userId: req.user?.id, // PR-D4e-6: karar-anı audit aktörü
-    });
+    }, tenantId);
   }
 
   // ==================== İLGİLİ DAVA AÇMA ENDPOINT'LERİ ====================
@@ -206,8 +204,7 @@ export class UyapController {
    * Karşılıksız çek, dolandırıcılık vb.
    */
   @Post('lawsuit/criminal')
-  async submitCriminalComplaint(@Body() body: any, @Req() req: any) {
-    const tenantId = req.user?.tenantId;
+  async submitCriminalComplaint(@Body() body: any, @CurrentUser('tenantId') tenantId: string) {
     return this.uyapService.submitCriminalComplaint({
       caseId: body.caseId,
       lawsuitType: body.lawsuitType,
@@ -221,7 +218,7 @@ export class UyapController {
       clientId: body.clientId,
       lawyerId: body.lawyerId,
       tenantId,
-    });
+    }, tenantId);
   }
 
   /**
@@ -229,8 +226,7 @@ export class UyapController {
    * İtirazın iptali, tasarrufun iptali vb.
    */
   @Post('lawsuit/civil')
-  async submitCivilLawsuit(@Body() body: any, @Req() req: any) {
-    const tenantId = req.user?.tenantId;
+  async submitCivilLawsuit(@Body() body: any, @CurrentUser('tenantId') tenantId: string) {
     return this.uyapService.submitCivilLawsuit({
       caseId: body.caseId,
       lawsuitType: body.lawsuitType,
@@ -246,7 +242,7 @@ export class UyapController {
       clientId: body.clientId,
       lawyerId: body.lawyerId,
       tenantId,
-    });
+    }, tenantId);
   }
 
   /**
@@ -331,10 +327,9 @@ export class UyapController {
   @CpeRequired(ActionCode.UYAP_SEND)
   async submitXmlToUyap(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Req() req: any,
   ) {
-    const tenantId = req.user?.tenantId;
-
     // Önce vekalet kontrolü
     const poaCheck = await this.uyapService.validateCasePoaForUyap(caseId, tenantId);
     if (!poaCheck.isValid) {
@@ -377,7 +372,7 @@ export class UyapController {
       documentContent: Buffer.from(xml).toString('base64'),
       documentName: `e-takip-${caseId}.xml`,
       tenantId,
-    });
+    }, tenantId);
 
     return {
       success: result.success,

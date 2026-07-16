@@ -99,38 +99,41 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
     });
   });
 
-  describe('Mevcut opsiyonel-tenantId alanını yeniden kullanan metotlar — mevcut davranış korunur', () => {
-    it('pushHacizRequest: request.tenantId varsa create tenantId ile çağrılır', async () => {
+  describe('5 mevcut metot — CLIENT-SEC-H2C-P02-R1: log ownership trusted param\'dan (DTO\'dan DEĞİL)', () => {
+    it('pushHacizRequest: log tenantId trusted 2. arg\'dan gelir', async () => {
       const { service, prisma } = buildService();
       await service.pushHacizRequest({
         caseId: 'case-1',
         targetType: 'BANK',
         targetDetails: {},
         amount: 1000,
-        tenantId: 'tenant-A',
         skipPoaCheck: true,
-      });
+      }, 'tenant-A');
       expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-A' }) }),
       );
     });
 
-    it('pushHacizRequest: tenantId YOKSA fail-closed OLMAZ (mevcut test edilmiş davranış korunur) — log satırı tenantId NULL', async () => {
+    it('pushHacizRequest: DTO.tenantId trusted execution tenant\'ı OVERRIDE edemez', async () => {
       const { service, prisma } = buildService();
-      const res = await service.pushHacizRequest({
+      await service.pushHacizRequest({
         caseId: 'case-1',
         targetType: 'BANK',
         targetDetails: {},
         amount: 1000,
+        tenantId: 'body-attacker-tenant', // DTO alanı (POA amaçlı) — log ownership'i belirleyemez
         skipPoaCheck: true,
-      });
-      expect(res.success).toBe(true);
+      }, 'tenant-authenticated');
       expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ tenantId: null }) }),
+        expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-authenticated' }) }),
+      );
+      // DTO'daki attacker değeri log ownership'e ASLA yazılmaz:
+      expect(prisma.uyapRequestLog.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ tenantId: 'body-attacker-tenant' }) }),
       );
     });
 
-    it('sendPaymentOrder: request.tenantId varsa create tenantId ile çağrılır', async () => {
+    it('sendPaymentOrder: log tenantId trusted 2. arg\'dan gelir', async () => {
       const { service, prisma } = buildService();
       await service.sendPaymentOrder({
         caseId: 'case-1',
@@ -139,9 +142,58 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
         debtor: { name: 'Borçlu' },
         amount: 1000,
         currency: 'TRY',
-        tenantId: 'tenant-A',
         skipPoaCheck: true,
-      });
+      }, 'tenant-A');
+      expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-A' }) }),
+      );
+    });
+
+    it('submitDocument: log tenantId trusted 2. arg\'dan gelir', async () => {
+      const { service, prisma } = buildService();
+      await service.submitDocument({
+        caseId: 'case-1',
+        documentType: 'TAKIP_TALEBI',
+        documentContent: 'YmFzZTY0',
+        documentName: 'takip.xml',
+        skipPoaCheck: true,
+      }, 'tenant-A');
+      expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-A' }) }),
+      );
+    });
+
+    it('submitCriminalComplaint: log tenantId trusted 2. arg\'dan gelir', async () => {
+      const { service, prisma } = buildService();
+      await service.submitCriminalComplaint({
+        caseId: 'case-1',
+        lawsuitType: 'KARSILIKSIZ_CEK',
+        uyapDavaTuru: 'X',
+        courtType: 'ASLIYE',
+        documentContent: 'YmFzZTY0',
+        documentName: 'sikayet.pdf',
+        complainant: { name: 'A' },
+        suspect: { name: 'B' },
+        skipPoaCheck: true,
+      }, 'tenant-A');
+      expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-A' }) }),
+      );
+    });
+
+    it('submitCivilLawsuit: log tenantId trusted 2. arg\'dan gelir', async () => {
+      const { service, prisma } = buildService();
+      await service.submitCivilLawsuit({
+        caseId: 'case-1',
+        lawsuitType: 'ITIRAZIN_IPTALI',
+        uyapDavaTuru: 'X',
+        courtType: 'ASLIYE',
+        documentContent: 'YmFzZTY0',
+        documentName: 'dava.pdf',
+        plaintiff: { name: 'A' },
+        defendant: { name: 'B' },
+        skipPoaCheck: true,
+      }, 'tenant-A');
       expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-A' }) }),
       );

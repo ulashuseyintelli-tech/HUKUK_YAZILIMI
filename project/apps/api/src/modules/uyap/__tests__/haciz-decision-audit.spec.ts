@@ -45,7 +45,8 @@ describe("UyapService.pushHacizRequest — D4e-6 karar-anı audit", () => {
   it("submission anında riski YENİDEN hesaplar + AuditLog'a snapshot yazar", async () => {
     const { svc, prisma, validationGate } = build();
 
-    const res = await svc.pushHacizRequest(req());
+    // CLIENT-SEC-H2C-P02-R1: 2. arg = trusted execution tenant (authenticated context).
+    const res = await svc.pushHacizRequest(req(), "t1");
 
     expect(res.success).toBe(true);
     expect(validationGate.checkPreHacizIntelligence).toHaveBeenCalledWith("t1", "c1");
@@ -69,7 +70,7 @@ describe("UyapService.pushHacizRequest — D4e-6 karar-anı audit", () => {
   it("userId yoksa SYSTEM aktör (otomasyon/retry yolu)", async () => {
     const { svc, prisma } = build();
 
-    await svc.pushHacizRequest(req({ userId: undefined }));
+    await svc.pushHacizRequest(req({ userId: undefined }), "t1");
 
     const audit = prisma.auditLog.create.mock.calls[0][0].data;
     expect(audit.userId).toBeNull();
@@ -79,7 +80,7 @@ describe("UyapService.pushHacizRequest — D4e-6 karar-anı audit", () => {
   it("BEST-EFFORT: risk hesabı patlasa da haciz BAŞARILI (audit yutulur)", async () => {
     const { svc, prisma } = build(jest.fn().mockRejectedValue(new Error("boom")));
 
-    const res = await svc.pushHacizRequest(req());
+    const res = await svc.pushHacizRequest(req(), "t1");
 
     expect(res.success).toBe(true); // haciz kesilmez
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
@@ -89,24 +90,28 @@ describe("UyapService.pushHacizRequest — D4e-6 karar-anı audit", () => {
     const { svc, prisma } = build();
     prisma.auditLog.create.mockRejectedValueOnce(new Error("db down"));
 
-    const res = await svc.pushHacizRequest(req());
+    const res = await svc.pushHacizRequest(req(), "t1");
     expect(res.success).toBe(true);
   });
 
-  it("tenantId yoksa audit atlanır ama haciz BAŞARILI", async () => {
+  it("DTO tenantId yoksa (POA/audit alanı) audit atlanır ama haciz BAŞARILI — trusted execution tenant ayrı", async () => {
     const { svc, prisma, validationGate } = build();
 
-    const res = await svc.pushHacizRequest(req({ tenantId: undefined }));
+    // DTO.tenantId (POA + D4e-6 audit alanı) yok → audit atlanır; ama trusted execution tenant ("t1")
+    // ayrı 2. arg olarak sağlanır (CLIENT-SEC-H2C-P02-R1). Bu iki eksen birbirine bağlı DEĞİL.
+    const res = await svc.pushHacizRequest(req({ tenantId: undefined }), "t1");
 
     expect(res.success).toBe(true);
     expect(validationGate.checkPreHacizIntelligence).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    // Log ownership yine de trusted tenant'tan yazılır (DTO'dan bağımsız):
+    expect(prisma.uyapRequestLog.create.mock.calls[0][0].data.tenantId).toBe("t1");
   });
 
   it("logRequest transport log'una caseId set edilir (D6-Q5)", async () => {
     const { svc, prisma } = build();
 
-    await svc.pushHacizRequest(req());
+    await svc.pushHacizRequest(req(), "t1");
 
     expect(prisma.uyapRequestLog.create.mock.calls[0][0].data.caseId).toBe("c1");
   });

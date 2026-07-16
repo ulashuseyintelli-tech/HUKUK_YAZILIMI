@@ -142,7 +142,8 @@ describe("P2b-2 UyapController — UYAP_SEND observe hook", () => {
 
   it("submitXmlToUyap: observe UYAP_SEND (truthful actor=req.user.id); credential/XML observe'a GEÇMEZ; ALLOW", async () => {
     const { ctrl, observe, uyapSvc } = make(true);
-    await ctrl.submitXmlToUyap("c1", { user: { id: "u1", tenantId: "t1" } } as any);
+    // CLIENT-SEC-H2C-P02-R1: submitXmlToUyap imzası (caseId, @CurrentUser tenantId, @Req req).
+    await ctrl.submitXmlToUyap("c1", "t1", { user: { id: "u1", tenantId: "t1" } } as any);
 
     expect(observe).toHaveBeenCalledTimes(1);
     const arg = observe.mock.calls[0][0];
@@ -160,7 +161,7 @@ describe("P2b-2 UyapController — UYAP_SEND observe hook", () => {
 
   it("observe POA gate'inden SONRA: POA geçersizse erken döner, observe ÇAĞRILMAZ", async () => {
     const { ctrl, observe, uyapSvc } = make(false);
-    const res = await ctrl.submitXmlToUyap("c1", { user: { id: "u1", tenantId: "t1" } } as any);
+    const res = await ctrl.submitXmlToUyap("c1", "t1", { user: { id: "u1", tenantId: "t1" } } as any);
     expect(res).toMatchObject({ success: false, error: "POA_VALIDATION_FAILED" });
     expect(observe).not.toHaveBeenCalled();
     expect(uyapSvc.submitDocument).not.toHaveBeenCalled();
