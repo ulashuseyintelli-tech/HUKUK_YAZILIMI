@@ -835,12 +835,17 @@ export class AddressTaskService {
    * Yararlı adres: DECLARED_CLIENT, DECLARED_DOCUMENT veya MERNIS_RESIDENCE
    * isCurrent = true ve confidenceLevel >= MEDIUM
    */
-  async hasUsefulAddresses(debtorId: string, tenantId?: string): Promise<boolean> {
+  async hasUsefulAddresses(debtorId: string, tenantId: string): Promise<boolean> {
+    // SEC-TENANT-HARDEN-P01 (ADDR-TID-09): fail-closed. DebtorAddress'te tenantId yok →
+    // debtor relation üzerinden scope zorunlu; tenantId olmadan hiçbir koşulda okunmaz.
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     const usefulAddressCount = await this.prisma.debtorAddress.count({
       where: {
         debtorId,
         // DebtorAddress'te tenantId yok → debtor relation üzerinden scope (ASSIGN-1)
-        ...(tenantId ? { debtor: { tenantId } } : {}),
+        debtor: { tenantId },
         isCurrent: true,
         addressCategory: {
           in: ['DECLARED_CLIENT', 'DECLARED_DOCUMENT', 'MERNIS_RESIDENCE'],
