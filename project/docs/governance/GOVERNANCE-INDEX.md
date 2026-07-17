@@ -86,7 +86,7 @@ commit, merge, release veya runtime authority yetkisi oluşturmaz.
 | `project/docs/governance/COLLECTION-MASTER-SYNTHESIS.md` | Collection kanıt/kalıcı-gerçek katmanı (operasyonel değil) | CANONICAL REFERENCE / NON-NORMATIVE EVIDENCE BASELINE |
 | `project/docs/governance/COLLECTION-OWNER-DECISIONS.md` | Collection owner karar dossier'i (COL/OD-01..21); kapanmış karar otoritesi DEĞİLDİR | CANONICAL OPEN-DECISION DOSSIER — RECORDED/CANONICAL: COL/OD-01, -03, -04, -05, -06, -21; COL/OD-18 → COL/OD-18A AMENDED; kalan 14 karar OPEN |
 | `project/docs/governance/COLLECTION-RISK-REGISTER.md` | Collection domain risk dossier'i; global triage/execution status otoritesi DEĞİLDİR | CANONICAL DOMAIN RISK DOSSIER |
-| `project/docs/governance/COLLECTION-DECOMPOSITION.md` | RC-COL Program→Phase→Wave→Workstream haritası; execution yetkisi üretmez | CANONICAL DECOMPOSITION — PHASE 0 CLOSED / CANONICAL; PHASE 1 CLOSED / CANONICAL; PHASE 2 ACTIVE — W2.1/W2.2A CLOSED, W2.2B CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE, W2.2C OWNER GO REQUIRED, W2.3 BLOCKED — W2.2 BOUNDARY PENDING |
+| `project/docs/governance/COLLECTION-DECOMPOSITION.md` | RC-COL Program→Phase→Wave→Workstream haritası; execution yetkisi üretmez | CANONICAL DECOMPOSITION — PHASE 0 CLOSED / CANONICAL; PHASE 1 CLOSED / CANONICAL; PHASE 2 ACTIVE — W2.1/W2.2A/W2.2B CLOSED, W2.2C-0 CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE; NEXT OWNER GATE settlement evidence/transition foundation; W2.3 BLOCKED — W2.2 BOUNDARY PENDING |
 
 ## 3. Authority eksenleri
 
