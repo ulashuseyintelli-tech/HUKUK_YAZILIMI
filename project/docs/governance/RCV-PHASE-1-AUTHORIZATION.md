@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -35,14 +35,15 @@ RCV-P2-WS02-P01             : CLOSED (PR #1272 / 63f27aa9)
 RCV-P2-WS02-P02             : CLOSED (PR #1278 / 54ef79af)
 RCV-P2-WS02-P03             : CLOSED (PR #1282 / 150f9d28)
 RCV-P2-WS02-P04             : CLOSED (PR #1286 / 37a86fd2)
-WS03 status                 : OPEN
+WS03 status                 : CLOSED / CANONICAL
 RCV-P2-WS03-P01             : CLOSED / CANONICAL (PR #1300 / da8eef62)
 RCV-P2-WS03-P02             : FORMALLY CLOSED / CANONICAL (PR #1316 / 208588d7)
 RCV-P2-WS03-P03 contract    : RATIFIED / CANONICAL (PR #1328 / 507fa7d0)
-RCV-P2-WS03-P03             : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE (PR #1333 / 1be0e64a)
-Implementation authorization: CONSUMED / COMPLETE FOR WS03-P03; NONE FOR WS03-P04
-Next eligible task          : UNSET — OWNER GO REQUIRED
-RCV-P2-WS03-P04             : NOT AUTHORIZED / NOT STARTED
+RCV-P2-WS03-P03             : FORMALLY CLOSED / CANONICAL (PR #1333 / 1be0e64a; governance PR #1341 / 3dac354d)
+Implementation authorization: CONSUMED / COMPLETE FOR WS03-P03; NONE / NOT REQUIRED FOR WS03-P04
+Next candidate              : WS04 / ACT-28 — GO-ANALYZE — OWNER GO REQUIRED
+RCV-P2-WS03-P04             : NOT AUTHORIZED / NOT REQUIRED
+WS04                        : NOT AUTHORIZED / NOT STARTED
 ```
 
 Bu kayıt yalnız governance/register alignment, gerçekleşen phase/workstream progression ve bir
@@ -457,6 +458,80 @@ NOT AUTHORIZED / NOT STARTED
   representative evidence, PR-11, consumer switch, runtime cutover ve external-domain gate'leri
   değişmez.
 
+### 1.11 RCV-P2-WS03 formal closure / WS04 entry gate reconciliation
+
+Formal workstream closure record:
+
+```text
+RCV-P2-WS03:
+CLOSED / CANONICAL
+
+CLOSURE BASIS:
+P01–P03 FORMALLY CLOSED / CANONICAL
+REQUIRED CI 4/4 PASS FOR EACH IMPLEMENTATION / GOVERNANCE PR
+CANONICAL-MAIN ANCESTRY PASS
+RECEIPT AUTHORITY / RESIDUAL ROUTING RECONCILED
+
+RCV-P2-WS03-P04:
+NOT AUTHORIZED / NOT REQUIRED
+
+WS04:
+NOT AUTHORIZED / NOT STARTED
+
+NEXT CANDIDATE:
+WS04 / ACT-28 — GO-ANALYZE
+
+OWNER GO:
+REQUIRED
+```
+
+Pre-closure canonical evidence baseline `44a8ef592e8c3cf0b26a8674ac50ca9b6c6c4680`
+üzerinde `main == origin/main == remote main` ve ahead/behind `0/0` doğrulanmıştır. Closure
+evidence seti:
+
+| Paket | Implementation / contract evidence | Formal governance evidence | Sonuç |
+|---|---|---|---|
+| `RCV-P2-WS03-P01` | PR #1300 / `da8eef6204e3c85ac09f722d43f2f5803920fb16` / required CI `4/4 SUCCESS` | PR #1306 / `95be1647d6b0cc8d9faa3120ecd02f33bc3f9e49` / required CI `4/4 SUCCESS` | `CLOSED / CANONICAL` |
+| `RCV-P2-WS03-P02` | PR #1316 / `208588d7fd065b4aaf8e29d08a4675deec395411` / required CI `4/4 SUCCESS` | PR #1318 / `15c8e114a4844516ec27bc9072a583451d36c49f` / required CI `4/4 SUCCESS` | `FORMALLY CLOSED / CANONICAL` |
+| `RCV-P2-WS03-P03` | Contract PR #1328 / `507fa7d017cd8de308aa7907296366ae360681c8`; implementation PR #1333 / `1be0e64abdd5aed81f3304cc0f6517804a0f93e1`; her ikisi required CI `4/4 SUCCESS` | PR #1341 / `3dac354d676ca06aef8555a0dd30aced299cf423` / required CI `4/4 SUCCESS` | `FORMALLY CLOSED / CANONICAL` |
+
+Yedi squash commit'in tamamı pre-closure canonical baseline'ın atasıdır. P01 canonical receipt
+routing/bypass closure'ını, P02 mevcut transaction/convergence contract kanıtını ve P03 dört
+public receipt endpoint'i için authorization-before-idempotency/write + fail-closed no-write
+contract'ını kapatır. Bu capability seti WS03'ün owner-approved bounded kapsamını tamamlar;
+ayrı bir P04 implementation capability'si gerekmez.
+
+`REC-AUTH-010` authority ve lifecycle statüsü değiştirilmez:
+
+```text
+AUTHORITY:
+COLLECTION
+
+STATUS:
+CURRENT PARTIAL
+
+EVIDENCE:
+IDEMPOTENCY CONFIRMED
+CANONICAL PUBLIC RECEIPT TENANT / OBJECT-SCOPE GATES CONFIRMED
+PROVIDER FINALITY OPEN UNDER RC-COL / W2.2
+```
+
+Residual routing:
+
+| Residual konu | Canonical owner / route | Korunan gate |
+|---|---|---|
+| Provider lifecycle / finality | `RC-COL / W2.2C` ve ardından `W2.3` | W2.2C ayrı owner GO gerektirir; W2.3 `BLOCKED — W2.2 BOUNDARY PENDING` |
+| Allocation authority | `WS04 / ACT-28 / REC-AUTH-011/012` | Authority reconciliation açıktır; bu closure owner veya legal seçim üretmez |
+| Refund / reversal | Ayrı owner/legal-gated Collection–Receivable hattı | `REC-AUTH-015` ve ilgili Collection owner kararları açık kalır |
+| Evidence / cutover | `CAN-CUT-01 / CAN-CUT-02 / VER-05` | Representative evidence, PR-11, consumer switch ve runtime cutover yetkisiz kalır |
+
+Bu approved governance merge'iyle WS03 `CLOSED / CANONICAL` olur. `WS03-P04` bir successor
+implementation paketi olarak oluşturulmaz; `NOT AUTHORIZED / NOT REQUIRED`dır. WS04 açılmaz:
+yalnız `WS04 / ACT-28 — GO-ANALYZE` next candidate olarak kaydedilir ve ayrı owner GO olmadan
+analiz ya da implementation başlatılamaz. `REC-AUTH-011/012/015`, Collection W2.2/W2.3
+semantiği, `CCB-001` identity-only cross-pointer'ı ve bütün owner/legal/evidence/cutover
+gate'leri değişmez.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
@@ -548,8 +623,8 @@ Initial authority: GO-PHASE-1 / WAVE 0 / RCV-P1-T15-A only
 Progression      : Subsequent tasks authorized by separate owner task briefs
 Decision date    : 2026-07-14
 Decision-log ref : RCV-GOV-002 progression reconciliation
-Current reconcile: RCV-P2-WS03-P03 formal closure / 2026-07-17
-Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 OPEN / P01-P03 FORMALLY CLOSED / P04 NOT AUTHORIZED
+Current reconcile: RCV-P2-WS03 formal closure / WS04 entry gate / 2026-07-17
+Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 CLOSED / P01-P03 FORMALLY CLOSED / P04 NOT REQUIRED / WS04 NOT AUTHORIZED
 ```
 
 Bu reconciliation geçmiş task brief'lerini tek ve genel bir Phase 1 authority'ye dönüştürmez.
@@ -574,15 +649,16 @@ owner GO gerektirir.
 | WS01 roadmap technical packages | P01–P04 CLOSED + required CI PASS + governance reconciled | P01–P04 CLOSED / WS01 CLOSED |
 | WS02 roadmap technical packages | P01–P04 CLOSED + required CI PASS + governance reconciled | P01–P04 CLOSED / WS02 CLOSED |
 | WS03-P01 implementation | PR merged + required CI PASS + governance reconciliation | CLOSED / CANONICAL — PR #1300 / `da8eef62` |
-| WS03 workstream | Package statusundan ayrı izlenir | OPEN |
+| WS03 workstream | P01–P03 closure + residual routing + governance reconciliation | CLOSED / CANONICAL upon approved closure merge |
 | WS03-P02 implementation | PR merged + required CI PASS + governance reconciliation | FORMALLY CLOSED / CANONICAL — PR #1316 / `208588d7` |
 | WS03-P03 contract | Owner decisions + OFFICE/RCV authority consistency + approved governance merge | RATIFIED / CANONICAL — PR #1328 / `507fa7d0` |
-| WS03-P03 implementation | PR merged + required CI PASS + governance reconciliation | FORMALLY CLOSED / CANONICAL upon this approved merge — PR #1333 / `1be0e64a` |
-| WS03 successor task | Canonical task assignment + ayrı owner GO | UNSET — OWNER GO REQUIRED |
-| WS03-P04 | Ayrı canonical assignment + owner GO | NOT AUTHORIZED / NOT STARTED |
-| WS04–WS09 | Açılmamış | NOT STARTED |
+| WS03-P03 implementation | PR merged + required CI PASS + governance reconciliation | FORMALLY CLOSED / CANONICAL — PR #1333 / `1be0e64a`; governance PR #1341 / `3dac354d` |
+| WS03 residual routing | Provider/allocation/refund/cutover konuları canonical owner'larına yönlendirilmiş | REC-AUTH-010 CURRENT PARTIAL; provider finality OPEN; ACT-28/REC-AUTH-011/012 OPEN |
+| WS03-P04 | Yalnız kanıtlanmış residual capability varsa ayrı canonical assignment | NOT AUTHORIZED / NOT REQUIRED |
+| WS04 / ACT-28 | Yalnız owner-gated analiz adayı | NOT AUTHORIZED / NOT STARTED — OWNER GO REQUIRED |
+| WS05–WS09 | Açılmamış | NOT STARTED |
 
-## 7. Phase 2 WS03 Current Package Gate
+## 7. Phase 2 WS03 Closure / WS04 Entry Gate
 
 ```text
 CURRENT IMPLEMENTATION STATUS:
@@ -598,24 +674,27 @@ WS02-P02                 : CLOSED
 WS02-P03                 : CLOSED
 WS02-P04                 : CLOSED
 CURRENT WORKSTREAM       : WS03 — Payment Fact & Collection Ingress
-WS03                     : OPEN
+WS03                     : CLOSED / CANONICAL
 WS03-P01                 : CLOSED / CANONICAL
-WS03-P01 EVIDENCE        : PR #1300 / da8eef6204e3c85ac09f722d43f2f5803920fb16 / CI 4/4 PASS
+WS03-P01 EVIDENCE        : PR #1300 / da8eef6204e3c85ac09f722d43f2f5803920fb16 + governance PR #1306 / 95be1647d6b0cc8d9faa3120ecd02f33bc3f9e49 / CI 4/4 PASS each
 WS03-P02                 : FORMALLY CLOSED / CANONICAL
-WS03-P02 EVIDENCE        : PR #1316 / 208588d7fd065b4aaf8e29d08a4675deec395411 / CI 4/4 PASS
+WS03-P02 EVIDENCE        : PR #1316 / 208588d7fd065b4aaf8e29d08a4675deec395411 + governance PR #1318 / 15c8e114a4844516ec27bc9072a583451d36c49f / CI 4/4 PASS each
 WS03-P03 CONTRACT        : RATIFIED / CANONICAL — PR #1328 / 507fa7d017cd8de308aa7907296366ae360681c8
 WS03-P03 OWNER DECISIONS : NARROW RECORD_COLLECTION CONSUMER APPROVED / ADDITIVE CONFIRMATION CONTRACT APPROVED
-WS03-P03                 : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
-WS03-P03 EVIDENCE        : PR #1333 / 1be0e64abdd5aed81f3304cc0f6517804a0f93e1 / CI 4/4 PASS
-IMPLEMENTATION AUTHORITY : CONSUMED / COMPLETE FOR WS03-P03; NONE FOR WS03-P04
-NEXT ELIGIBLE TASK       : UNSET — OWNER GO REQUIRED
-WS03-P04                 : NOT AUTHORIZED / NOT STARTED
+WS03-P03                 : FORMALLY CLOSED / CANONICAL
+WS03-P03 EVIDENCE        : PR #1333 / 1be0e64abdd5aed81f3304cc0f6517804a0f93e1 + governance PR #1341 / 3dac354d676ca06aef8555a0dd30aced299cf423 / CI 4/4 PASS each
+REC-AUTH-010             : COLLECTION / CURRENT PARTIAL / PROVIDER FINALITY OPEN UNDER RC-COL / W2.2
+IMPLEMENTATION AUTHORITY : CONSUMED / COMPLETE FOR WS03-P03; NONE / NOT REQUIRED FOR WS03-P04
+WS03-P04                 : NOT AUTHORIZED / NOT REQUIRED
+NEXT CANDIDATE           : WS04 / ACT-28 — GO-ANALYZE
+WS04                     : NOT AUTHORIZED / NOT STARTED
+OWNER GO                 : REQUIRED
 OWNER / RATIFIER         : __________________________________________
 DECISION DATE            : __________________________________________
 AUTHORITATIVE REF        : __________________________________________
 ```
 
-WS03 için ayrı successor assignment ve owner GO verilmezse korunacak safe-hold:
+WS04 / ACT-28 için ayrı owner GO verilmezse korunacak safe-hold:
 
 ```text
 RCV-P2-WS01-P01..P04 CLOSED
@@ -624,12 +703,12 @@ RCV-P2-WS02-P01..P04 CLOSED
 WS02 CLOSED
 RCV-P2-WS03-P01 CLOSED / CANONICAL
 RCV-P2-WS03-P02 FORMALLY CLOSED / CANONICAL
-WS03 OPEN
+WS03 CLOSED / CANONICAL
 RCV-P2-WS03-P03 CONTRACT RATIFIED / CANONICAL — PR #1328 / 507fa7d0
-RCV-P2-WS03-P03 FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
-RCV-P2-WS03-P04 NOT AUTHORIZED / NOT STARTED
-NEXT ELIGIBLE TASK UNSET — OWNER GO REQUIRED
-WS04–WS09 NOT STARTED
+RCV-P2-WS03-P03 FORMALLY CLOSED / CANONICAL — PR #1333 / 1be0e64a; PR #1341 / 3dac354d
+RCV-P2-WS03-P04 NOT AUTHORIZED / NOT REQUIRED
+WS04 / ACT-28 GO-ANALYZE OWNER GO REQUIRED
+WS04–WS09 NOT AUTHORIZED / NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN
 OWNER / LEGAL DECISION GATES UNCHANGED

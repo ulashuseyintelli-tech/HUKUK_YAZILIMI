@@ -395,7 +395,7 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 
 | ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
 |---|---|---|---|---|
-| `REC-AUTH-010` — Payment/Collection receipt varlığı ve statüsü | Dosyaya bağlanan para giriş fact'i; ClaimItem cache alanından çıkarılamaz | COLLECTION owner; receivable yalnız yetkili fact'i tüketir | `CURRENT PARTIAL` | `CONFIRMED / IDEMPOTENCY, PROVIDER AND TENANT GATES OPEN` |
+| `REC-AUTH-010` — Payment/Collection receipt varlığı ve statüsü | Dosyaya bağlanan para giriş fact'i; ClaimItem cache alanından çıkarılamaz | COLLECTION owner; receivable yalnız yetkili fact'i tüketir | `CURRENT PARTIAL` | `CONFIRMED / IDEMPOTENCY CONFIRMED; CANONICAL PUBLIC RECEIPT TENANT / OBJECT-SCOPE GATES CONFIRMED; PROVIDER FINALITY OPEN UNDER RC-COL / W2.2` |
 | `REC-AUTH-011` — Tahsilatın alacağa etkisi | Collection fact'in legal allocation üzerinden receivable bucket'lara etkisi | RECEIVABLE/COLLECTION legal-allocation boundary | `CURRENT WITH OPEN RECONCILIATION` | `CONFIRMED / TM3-ACT28-LEGAL RECONCILIATION OPEN` |
 | `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile legal allocation sonucu | RECEIVABLE/COLLECTION legal-allocation owner | `CURRENT WITH OPEN RECONCILIATION` | `CONFIRMED / DUPLICATE ALLOCATOR DISPOSITION OWNER-HELD` |
 | `REC-AUTH-013` — Overpayment / hold | Kapsamı belirlenmiş allocation/collection sonucu; principal'a sessiz yazılamaz | Allocation/Collection result owner | `CURRENT PARTIAL / SCOPE-BOUNDED` | `CONFIRMED WITHIN ADR-014 FIXTURE/ENGINE SCOPE; PRODUCTION REVALIDATION REQUIRED` |
