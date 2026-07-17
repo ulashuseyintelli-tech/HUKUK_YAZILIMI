@@ -734,6 +734,13 @@ CANDIDATE-J1 · IMPLEMENTED · MERGED · CANONICAL (main @ 7210ea7c, 2026-07-17,
 
 PHASE 1 MILESTONE 09
 CANDIDATE-K1 · IMPLEMENTED · MERGED · CANONICAL (main @ 423d72ea, 2026-07-17, PR #1356)
+
+────────────────────────────────────────────────────────────────────────────
+PHASE 1 — CLOSED / COMPLETE WITH RECORDED RESIDUALS (owner ratification 2026-07-17,
+decision-log § "OFFICE Phase 1 Closure with Recorded Residuals"). MILESTONE 01–09 teyitli.
+Kapanış hiçbir OPEN/PARTIALLY MITIGATED bulguyu kapatmaz, hiçbir PARTIAL invariant'ı
+tamamlamaz; deferred/blocked/dormant/owner-gated tüm residual'lar ileriye taşınır;
+candidate seçimi/implementation authorization ÜRETMEZ.
 ```
 
 ## 6. Mapping Completeness ve Orphan Kontrolü
@@ -854,6 +861,18 @@ aktiflik, ileriye-dönük write-time) ele aldı. STF-PRD-BOLA-002 finding'i **OP
 kalır** — K2 (toplu atama, ASSIGN-4d'ye bağlı) + K3 (legal-sorumlu terfi re-check) + CANDIDATE-J/K
 rol/kapasite policy açık; finding KAPANMADI (bkz. §2/§7 + OFFICE-RISK-REGISTER.md). Önceki CANONICAL
 slice'lar (A/C/F1/H1/E1/I1/J1) + şimdi K1 değişmedi.
+
+FAZ-STATÜ KAYDI (owner ratification 2026-07-17; decision-log kayıtları: "OFFICE PHASE 1 CLOSURE
+WITH RECORDED RESIDUALS — OWNER RATIFIED" + "OFFICE PHASE 2 CONSTITUTIONAL FOUNDATION OWNER
+TEXT-RATIFICATION"):
+  PHASE 1                    : CLOSED / COMPLETE WITH RECORDED RESIDUALS (MILESTONE 01–09; §5 kaydı)
+  PHASE 2 FOUNDATION         : RATIFIED / CANONICAL (4 belge, farklı authority rolleri —
+                               OFFICE-PHASE2-{CONSTITUTION,MASTER-SYNTHESIS,PROGRAM-CHARTER,ROADMAP}.md)
+  PHASE 2 DECOMPOSITION      : NOT STARTED (OFF-P2-ENTRY-03 OPEN — ayrı GO-ANALYZE gerekli)
+  CURRENT SELECTED WAVE      : NONE
+  CURRENT SELECTED CANDIDATE : NONE
+  IMPLEMENTATION AUTHORIZATION: NONE
+
 NEXT PROGRAM ACTION: OWNER SELECTION/DECISION REQUIRED — implementasyona hazır, owner-seçili bekleyen
 birim YOK; geriye kalan candidate'ların TÜMÜ hâlâ owner-gated; bu belge hiçbirini SEÇMEZ/başlatmaz/
 sıralamaz, her biri owner'ın ayrı, açık bir GO/decision'ını bekler:

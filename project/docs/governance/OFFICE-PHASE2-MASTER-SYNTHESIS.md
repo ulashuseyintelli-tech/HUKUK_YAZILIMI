@@ -2,14 +2,15 @@
 
 ```text
 Belge yolu   : project/docs/governance/OFFICE-PHASE2-MASTER-SYNTHESIS.md
-Durum        : FOUNDATION DRAFT v1.0 (OWNER GO-DOCS, 2026-07-17) — OWNER TEXT-RATIFICATION: PENDING;
-               repository etkisi approved merge to main ile başlar (SYS-DEC-002: merge ≠ ratification)
+Durum        : CANONICAL REFERENCE / NON-NORMATIVE / AS-OF EVIDENCE BASELINE — v1.0 (owner
+               text-ratification: 2026-07-17, `decision-log.md` § "OFFICE Phase 2 Constitutional
+               Foundation Owner Text-Ratification"; kuruluş: OWNER GO-DOCS, PR #1359 `20423d4a`)
 Rol          : PHASE 2 ARCHITECTURAL SYNTHESIS / CAPABILITY-DEPENDENCY BASELINE — NON-NORMATIVE.
                Norm kaynağı DEĞİLDİR; norm OFFICE-PHASE2-CONSTITUTION.md + OFFICE-GOVERNANCE.md'dedir.
                Bu belge Domain Law'ı veya Phase 2 Constitution'ı OVERRIDE EDEMEZ.
 Kimlik uzayı : OFF-P2-CAP-* (capability) ve OFF-P2-DEP-* (dependency) — yalnız bu belgede tanımlanır.
 IMPLEMENTATION AUTHORITY: NONE — hiçbir capability bu belgeyle işe dönüşmez, seçilmez, sıralanmaz.
-GOVERNANCE-INDEX kaydı: PENDING (ratifikasyon sonrası ayrı adım).
+GOVERNANCE-INDEX kaydı: COMPLETED — ratifikasyon PR'ıyla yapıldı (OFF-P2-ENTRY-02).
 ```
 
 **AD AYRIMI (önemli):** Bu belge, Phase-1-dönemi `OFFICE-MASTER-SYNTHESIS.md` belgesinin devamı veya değiştiricisi DEĞİLDİR. O belge "CANONICAL REFERENCE / NON-NORMATIVE EVIDENCE BASELINE" rolüyle (150 senaryo, LF/OP/PR-RT-*) aynen yürürlükte kalır ve bu belge onun hiçbir satırını değiştirmez/zayıflatmaz. Bu belge, Phase 2 için **mimari yetenek/bağımlılık sentezidir**; kanıt tabanı olarak Phase 1 evidence baseline'ına yalnız referans verir.
@@ -24,7 +25,7 @@ GOVERNANCE-INDEX kaydı: PENDING (ratifikasyon sonrası ayrı adım).
 
 **AS-OF SNAPSHOT (2026-07-17):** Bu bölümdeki ve §3-§4'teki tüm statüler bu tarihli snapshot'tır; bağlayıcı güncel statü YALNIZ otorite belgelerindedir (`OFFICE-OWNER-DECISIONS.md` / `OFFICE-RISK-REGISTER.md` / `master-triage-register.md` / `OFFICE-DELIVERY-MANIFEST.md` / `decision-log.md`).
 
-Phase 1 milestone dizisi, PHASE 1 MILESTONE 09 ile tamamlandı (main `423d72ea`; MILESTONE 09 kapanış kaydı `af7785d2`); delivery register'ında NEXT ELIGIBLE UNIT = NONE'dır. Owner, Phase 2 GO-DOCS brief'inde (2026-07-17) Phase 1'i **CANONICAL CLOSED** ilan etmiştir; faz-seviyesi kapanışın repository/register kaydı bu setle üretilmez — ratifikasyon adımında decision-log'a işlenecek ayrı bir kalemdir (Phase 1 yapısı içindeki owner-gated kalemler açık devam eder). Teslim edilen zemin dört sınıftır:
+Phase 1, owner ratifikasyonuyla **CLOSED / COMPLETE WITH RECORDED RESIDUALS** olarak kapanmıştır (2026-07-17, `decision-log.md` § "OFFICE Phase 1 Closure with Recorded Residuals"; milestone dizisi PHASE 1 MILESTONE 01–09 teyitli, son milestone main `423d72ea`, MILESTONE 09 kapanış kaydı `af7785d2`; delivery register'ında NEXT ELIGIBLE UNIT = NONE). Kapanış hiçbir açık bulguyu kapatmaz, hiçbir PARTIAL invariant'ı tamamlamaz; owner-gated tüm residual'lar açık devam eder. Teslim edilen zemin dört sınıftır:
 
 ```text
 1. Additive-only ŞEMA TEMELLERİ (sıfır davranış, sıfır consumer):
@@ -43,9 +44,15 @@ Phase 1 milestone dizisi, PHASE 1 MILESTONE 09 ile tamamlandı (main `423d72ea`;
 
 **Dürüst durum tespiti:** Hiçbir STF-PRD bulgusu Phase 1'de kapanmadı (12/12 açık; 5 hat kısmen hafifletildi). 11/20 OFF/OD kararı CLOSED (tümü Option B); 9'u OPEN. 2 bulgu UNMAPPED (CFG-001, PERF-001); 2 yeni bulgu resmi register'a henüz alınmadı (register-intake bekliyor; ayrıntı private evidence'ta — kayıt yeri: `OFFICE-DELIVERY-MANIFEST.md` §2b; not: manifest §6'daki "yeni bulgu: 1" sayacı §2b tablosuyla uyumsuz/bayat görünümlüdür — reconciliation ayrı kalemdir, bu belge taraf seçmez, yalnız çelişkiyi işaretler). Phase 2'nin başlangıç gerçeği budur.
 
+## 1a. Tarihsel Kanıt Önceliği (owner-ratified, 2026-07-17)
+
+"Avukat / Personel Master Audit — **Tur 2** (Kimlik/Organizasyon/Yetki Ontolojisi)" raporu, **HISTORICAL / NON-NORMATIVE** kanıttır (provenance: AS-OF 2026-07-11, Phase-1-teslimatları-öncesi, farklı branch bazı). Öncelik sırası owner tarafından ratifiye edilmiştir: güncel repository gerçeği + kapanmış canonical owner kararları + ratifiye OFFICE Domain Law her zaman üstündür; Phase 1 teslimatlarıyla supersede edilen yapısal/davranışsal beyanları current truth olarak kullanılamaz; CLOSED/CANONICAL OFF/OD kararları o rapora dayanılarak yeniden açılamaz; rapordaki hedef-model önerilerinin normatif otoritesi yoktur ve ratifiye OFFICE hedef modelini override edemez; rapordaki kimlik aileleri kanonik register kimliği değildir ve bu belgelere import edilmemiştir. Raporun ince-taneli ontoloji bulguları bu ratifikasyonla ne kabul ne ret edilmiştir — eşleme/yeniden-adlandırma/canonical-gap triage'ı ayrı bir **Tur 2 Reconciliation GO-ANALYZE** görevine tabidir (henüz başlatılmadı).
+
 ## 2. Current-State vs Target-State Disiplini
 
 Bu belgedeki her capability, SYSTEM-CONSTITUTION Bölüm 6 yaşam-döngüsü statüleriyle etiketlenir. `TARGET` hiçbir yerde CURRENT gibi sunulmaz (SYS-SOT-001). "Zemin" = Phase 1'in repository-doğrulanmış teslimatı; "hedef" = ratifiye kararların/invariantların işaret ettiği durum; "kapı" = statü geçişini bloklayan açık owner kararı veya ürün kararı.
+
+**Capability-status kuralı (owner-ratified, 2026-07-17):** Capability statüsü her zaman kanıt-nitelikli ve yaşam-döngüsü-nitelikli kalır. Target-state capability, current repository truth olarak SUNULAMAZ (SYS-SOT-001). Agregat statüler MIXED / PARTIAL / PROPOSED / UNKNOWN (veya eşdeğer nitelikli) durumları KORUR; agregat özetler daha zayıf veya çelişen alt-kanıtı SİLEMEZ/düzleyemez. Roadmap'teki konum readiness, seçim veya implementation authorization İMA ETMEZ.
 
 ## 3. Capability Map
 
@@ -146,7 +153,7 @@ Phase 1 evidence baseline'ının (150 senaryo) tüm teknik iddiaları SYS-COMP-0
 
 ## 6. Non-Normativity Statement
 
-Bu belge norm üretmez; capability/dependency tanımları planlama-referansıdır. Bağlayıcı kurallar yalnız `SYSTEM-CONSTITUTION.md`, `OFFICE-GOVERNANCE.md` ve (ratifikasyon sonrası) `OFFICE-PHASE2-CONSTITUTION.md`'dedir. Bu belge hiçbir capability'yi seçmez, sıralamaz, önceliklendirmez, iş birimine dönüştürmez; hiçbir açık owner kararına cevap vermez; hiçbir bulguyu kapatmaz. Çelişki halinde üst norm kazanır ve çelişki decision-log'a bulgu olarak taşınır.
+Bu belge norm üretmez; capability/dependency tanımları planlama-referansıdır. Bağlayıcı kurallar yalnız `SYSTEM-CONSTITUTION.md`, `OFFICE-GOVERNANCE.md` ve `OFFICE-PHASE2-CONSTITUTION.md`'dedir (ratifiye, 2026-07-17). Bu belge hiçbir capability'yi seçmez, sıralamaz, önceliklendirmez, iş birimine dönüştürmez; hiçbir açık owner kararına cevap vermez; hiçbir bulguyu kapatmaz. Çelişki halinde üst norm kazanır ve çelişki decision-log'a bulgu olarak taşınır.
 
 ## 7. Document Self-Check
 
