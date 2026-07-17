@@ -173,7 +173,7 @@ describe('WP-1d-5-9 CaseService.addCaseLawyer (lifecycle — mevcut sorumlu koru
     const auditLog = jest.fn(async () => undefined);
     const mockPrisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
-      lawyer: { findFirst: jest.fn(async () => ({ id: 'law-1', tenantId: 'tenant-1', lawyerRank: opts.lawyerRank ?? 'PARTNER' })) },
+      lawyer: { findFirst: jest.fn(async () => ({ id: 'law-1', tenantId: 'tenant-1', lawyerRank: opts.lawyerRank ?? 'PARTNER', isActive: true })) },
       caseLawyer: {
         findFirst: jest.fn(async () => null), // henüz ekli değil
         count,

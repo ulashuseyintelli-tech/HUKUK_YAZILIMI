@@ -3144,6 +3144,14 @@ export class CaseService {
     });
     if (!lawyer) throw new NotFoundException("Avukat bulunamadı");
 
+    // CANDIDATE-K1 (STF-PRD-BOLA-002 baseline, OFF-INV-04): dosya ekibine yalnız AKTİF bir avukat
+    // eklenebilir. Uygunluk ekip üyeliği için tenant + aktiflik ile SINIRLIDIR (canBeResponsible
+    // gibi sorumlu-uygunluk bayrağı BURADA aranmaz — o yalnız "Dosya Sorumlusu" alanına özgüdür).
+    // Yalnız ileriye-dönük (write-time): mevcut CaseLawyer satırları taranmaz/değiştirilmez.
+    if (!lawyer.isActive) {
+      throw new BadRequestException("Pasif avukat dosya ekibine eklenemez.");
+    }
+
     // Zaten ekli mi kontrol et
     const existing = await this.prisma.caseLawyer.findFirst({
       where: { caseId, lawyerId: data.lawyerId },
@@ -3334,6 +3342,13 @@ export class CaseService {
       where: { id: data.staffMemberId, tenantId },
     });
     if (!staffMember) throw new NotFoundException("Personel bulunamadı");
+
+    // CANDIDATE-K1 (STF-PRD-BOLA-002 baseline, OFF-INV-04): dosya ekibine yalnız AKTİF bir personel
+    // eklenebilir. Uygunluk ekip üyeliği için tenant + aktiflik ile SINIRLIDIR. Yalnız ileriye-dönük
+    // (write-time): mevcut CaseStaff satırları taranmaz/değiştirilmez.
+    if (!staffMember.isActive) {
+      throw new BadRequestException("Pasif personel dosya ekibine eklenemez.");
+    }
 
     // Zaten ekli mi kontrol et
     const existing = await this.prisma.caseStaff.findFirst({

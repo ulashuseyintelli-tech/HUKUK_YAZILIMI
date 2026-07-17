@@ -38,7 +38,7 @@ describe("WP-1d-2-pre — CASE_LAWYER audit metadata.caseId", () => {
     }));
     (service as any).prisma = {
       case: { findFirst: jest.fn(async () => ({ id: CASE_ID, tenantId: "t1" })) },
-      lawyer: { findFirst: jest.fn(async () => ({ id: "law-1", tenantId: "t1", lawyerRank: "LAWYER" })) },
+      lawyer: { findFirst: jest.fn(async () => ({ id: "law-1", tenantId: "t1", lawyerRank: "LAWYER", isActive: true })) },
       // WP-1d-5-9: addCaseLawyer count + doğrudan create (eski $transaction yok).
       caseLawyer: { findFirst: jest.fn(async () => null), count: jest.fn(async () => 0), create: txCreate },
     };
