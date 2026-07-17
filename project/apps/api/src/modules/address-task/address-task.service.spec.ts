@@ -418,13 +418,13 @@ describe('AddressTaskService', () => {
   describe('hasUsefulAddresses', () => {
     it('should return true when useful addresses exist', async () => {
       mockPrismaService.debtorAddress.count.mockResolvedValue(2);
-      const result = await service.hasUsefulAddresses('debtor-1');
+      const result = await service.hasUsefulAddresses('debtor-1', 'tenant-1');
       expect(result).toBe(true);
     });
 
     it('should return false when no useful addresses exist', async () => {
       mockPrismaService.debtorAddress.count.mockResolvedValue(0);
-      const result = await service.hasUsefulAddresses('debtor-1');
+      const result = await service.hasUsefulAddresses('debtor-1', 'tenant-1');
       expect(result).toBe(false);
     });
   });
@@ -862,6 +862,14 @@ describe('AddressTaskService', () => {
         }),
       );
     });
+
+    it.each([['' as const], [undefined as any], [null as any]])(
+      'hasUsefulAddresses tenantId=%p ile fail-closed reddeder (ADDR-TID-09)',
+      async (badTenantId) => {
+        await expect(service.hasUsefulAddresses('debtor-1', badTenantId)).rejects.toThrow(ForbiddenException);
+        expect(mockPrismaService.debtorAddress.count).not.toHaveBeenCalled();
+      },
+    );
 
     it('triggerAddressWorkflowForCase scopes case lookup by tenant', async () => {
       mockPrismaService.case.findFirst.mockResolvedValue(null); // bu tenant'ta dosya yok
