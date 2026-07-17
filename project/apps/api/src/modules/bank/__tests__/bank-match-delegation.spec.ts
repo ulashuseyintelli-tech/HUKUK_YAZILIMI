@@ -11,6 +11,17 @@ import { BankService } from '../bank.service';
 
 function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col1' }), overrides: any = {}) {
   const update = jest.fn(async () => ({}));
+  const financialWrites = {
+    collection: jest.fn(),
+    accountingJournalEntry: jest.fn(),
+    icrabotTimelineEntry: jest.fn(),
+    icrabotOutboxAction: jest.fn(),
+    ledgerEntry: jest.fn(),
+    ledgerAllocation: jest.fn(),
+    collectionAllocation: jest.fn(),
+    collectionOverpayment: jest.fn(),
+    claimItem: jest.fn(),
+  };
   const prisma: any = {
     bankAccount: {
       findFirst: jest.fn(async () => ({
@@ -46,6 +57,15 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
       update: jest.fn(async () => ({})),
       ...(overrides.bankIntegrationLog || {}),
     },
+    collection: { create: financialWrites.collection },
+    accountingJournalEntry: { create: financialWrites.accountingJournalEntry },
+    icrabotTimelineEntry: { create: financialWrites.icrabotTimelineEntry },
+    icrabotOutboxAction: { create: financialWrites.icrabotOutboxAction },
+    ledgerEntry: { create: financialWrites.ledgerEntry },
+    ledgerAllocation: { create: financialWrites.ledgerAllocation },
+    collectionAllocation: { create: financialWrites.collectionAllocation },
+    collectionOverpayment: { create: financialWrites.collectionOverpayment },
+    claimItem: { update: financialWrites.claimItem },
   };
   const coll = {
     create: jest.fn(createImpl),
@@ -53,7 +73,7 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
   };
   const svc = new BankService({} as any, prisma, coll as any);
   jest.spyOn((svc as any).logger, 'warn').mockImplementation(() => undefined);
-  return { svc, prisma, coll, update };
+  return { svc, prisma, coll, update, financialWrites };
 }
 
 describe('BankService.matchTransaction delegation (G3d)', () => {
@@ -198,18 +218,38 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('auto-match yalnız aday keşfeder; Collection olmadan receipt eşleşmesi persist etmez', async () => {
+  it('auto-match yalnız tenant-scoped PENDING adayı keşfeder; Collection olmadan receipt eşleşmesi persist etmez', async () => {
     const { svc, prisma, update } = buildService(undefined, {
       bankTransaction: {
-        findUnique: jest.fn(async () => ({
-          id: 'tx1', transactionType: 'INCOMING', description: 'Dosya 2026/42', referenceNo: 'R1',
+        findFirst: jest.fn(async () => ({
+          id: 'tx1', tenantId: 't1', candidateStatus: 'PENDING',
+          transactionType: 'INCOMING', description: 'Dosya 2026/42', referenceNo: 'R1',
         })),
       },
     });
     prisma.case = { findFirst: jest.fn(async () => ({ id: 'c1' })) };
 
     await expect((svc as any).tryAutoMatch('tx1', 't1')).resolves.toBe(false);
+    expect(prisma.bankTransaction.findFirst).toHaveBeenCalledWith({
+      where: { id: 'tx1', tenantId: 't1', candidateStatus: 'PENDING' },
+    });
     expect(prisma.case.findFirst).toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('auto-match PENDING olmayan veya legacy-unknown hareketi aday kabul etmez', async () => {
+    const { svc, prisma, coll, update } = buildService(undefined, {
+      bankTransaction: { findFirst: jest.fn(async () => null) },
+    });
+    prisma.case = { findFirst: jest.fn(async () => ({ id: 'c1' })) };
+
+    await expect((svc as any).tryAutoMatch('tx-legacy', 't1')).resolves.toBe(false);
+
+    expect(prisma.bankTransaction.findFirst).toHaveBeenCalledWith({
+      where: { id: 'tx-legacy', tenantId: 't1', candidateStatus: 'PENDING' },
+    });
+    expect(prisma.case.findFirst).not.toHaveBeenCalled();
+    expect(coll.create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -220,6 +260,119 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
 
     await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1')).rejects.toThrow();
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('BankService.syncTransactions candidate ingress (W2.2B)', () => {
+  const incoming = {
+    transactionDate: new Date('2026-07-17T09:00:00.000Z'),
+    valueDate: new Date('2026-07-17T09:00:00.000Z'),
+    amount: 1250,
+    currency: 'TRY',
+    transactionType: 'INCOMING' as const,
+    description: 'Dosya 2026/42 tahsilat adayı',
+    referenceNo: 'REF-IN-1',
+    bankReferenceId: 'BANK-IN-1',
+  };
+
+  it('yeni incoming hareketi PENDING candidate olarak yazar ve finansal etki üretmez', async () => {
+    const { svc, prisma, coll, update, financialWrites } = buildService(undefined, {
+      bankTransaction: { findFirst: jest.fn(async () => null) },
+    });
+    jest.spyOn(svc as any, 'fetchTransactions').mockResolvedValue([incoming]);
+    const tryAutoMatch = jest.spyOn(svc as any, 'tryAutoMatch').mockResolvedValue(false);
+
+    await expect(svc.syncTransactions('acc1', 't1')).resolves.toMatchObject({
+      success: true,
+      transactionCount: 1,
+      newTransactions: 1,
+      matchedTransactions: 0,
+    });
+
+    expect(prisma.bankTransaction.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tenantId: 't1',
+        bankAccountId: 'acc1',
+        transactionType: 'INCOMING',
+        candidateStatus: 'PENDING',
+        bankReferenceId: 'BANK-IN-1',
+      }),
+    });
+    expect(tryAutoMatch).toHaveBeenCalledWith('tx-new', 't1');
+    expect(coll.create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    for (const write of Object.values(financialWrites)) {
+      expect(write).not.toHaveBeenCalled();
+    }
+  });
+
+  it('outgoing hareketi candidate lifecycle başlatmadan persist eder', async () => {
+    const { svc, prisma, coll, financialWrites } = buildService(undefined, {
+      bankTransaction: { findFirst: jest.fn(async () => null) },
+    });
+    jest.spyOn(svc as any, 'fetchTransactions').mockResolvedValue([{
+      ...incoming,
+      transactionType: 'OUTGOING',
+      referenceNo: 'REF-OUT-1',
+      bankReferenceId: 'BANK-OUT-1',
+    }]);
+    const tryAutoMatch = jest.spyOn(svc as any, 'tryAutoMatch').mockResolvedValue(false);
+
+    await expect(svc.syncTransactions('acc1', 't1')).resolves.toMatchObject({
+      success: true,
+      newTransactions: 1,
+      matchedTransactions: 0,
+    });
+
+    const createData = prisma.bankTransaction.create.mock.calls[0][0].data;
+    expect(createData).toMatchObject({
+      transactionType: 'OUTGOING',
+      bankReferenceId: 'BANK-OUT-1',
+    });
+    expect(createData).not.toHaveProperty('candidateStatus');
+    expect(tryAutoMatch).not.toHaveBeenCalled();
+    expect(coll.create).not.toHaveBeenCalled();
+    for (const write of Object.values(financialWrites)) {
+      expect(write).not.toHaveBeenCalled();
+    }
+  });
+
+  it('duplicate sync mevcut legacy-unknown row için ikinci row, backfill veya finansal etki üretmez', async () => {
+    const existing = {
+      id: 'tx-existing',
+      tenantId: 't1',
+      bankAccountId: 'acc1',
+      bankReferenceId: 'BANK-IN-1',
+      transactionType: 'INCOMING',
+      candidateStatus: null,
+    };
+    const { svc, prisma, coll, update, financialWrites } = buildService(undefined, {
+      bankTransaction: { findFirst: jest.fn(async () => existing) },
+    });
+    jest.spyOn(svc as any, 'fetchTransactions').mockResolvedValue([incoming]);
+    const tryAutoMatch = jest.spyOn(svc as any, 'tryAutoMatch').mockResolvedValue(false);
+
+    await expect(svc.syncTransactions('acc1', 't1')).resolves.toMatchObject({
+      success: true,
+      transactionCount: 1,
+      newTransactions: 0,
+      matchedTransactions: 0,
+    });
+
+    expect(prisma.bankTransaction.findFirst).toHaveBeenCalledWith({
+      where: {
+        tenantId: 't1',
+        bankAccountId: 'acc1',
+        bankReferenceId: 'BANK-IN-1',
+      },
+    });
+    expect(prisma.bankTransaction.create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(tryAutoMatch).not.toHaveBeenCalled();
+    expect(coll.create).not.toHaveBeenCalled();
+    for (const write of Object.values(financialWrites)) {
+      expect(write).not.toHaveBeenCalled();
+    }
   });
 });
 

@@ -82,6 +82,8 @@ export interface SyncResult {
   errorMessage?: string;
 }
 
+const BANK_CANDIDATE_PENDING = 'PENDING' as const;
+
 @Injectable()
 export class BankService {
   private readonly logger = new Logger(BankService.name);
@@ -261,6 +263,9 @@ export class BankService {
               description: tx.description,
               referenceNo: tx.referenceNo,
               bankReferenceId: tx.bankReferenceId,
+              ...(tx.transactionType === 'INCOMING'
+                ? { candidateStatus: BANK_CANDIDATE_PENDING }
+                : {}),
             },
           });
 
@@ -472,8 +477,12 @@ export class BankService {
    * Otomatik eşleştirme dene
    */
   private async tryAutoMatch(transactionId: string, tenantId: string): Promise<boolean> {
-    const transaction = await this.db.bankTransaction.findUnique({
-      where: { id: transactionId },
+    const transaction = await this.db.bankTransaction.findFirst({
+      where: {
+        id: transactionId,
+        tenantId,
+        candidateStatus: BANK_CANDIDATE_PENDING,
+      },
     });
 
     if (!transaction || transaction.transactionType !== 'INCOMING') {
