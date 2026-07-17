@@ -83,6 +83,7 @@ export interface SyncResult {
 }
 
 const BANK_CANDIDATE_PENDING = 'PENDING' as const;
+const BANK_CANDIDATE_SETTLED = 'SETTLED' as const;
 
 @Injectable()
 export class BankService {
@@ -416,6 +417,18 @@ export class BankService {
           ? 'BANK_TRANSACTION_ALREADY_MATCHED'
           : 'BANK_TRANSACTION_MATCH_INCOMPLETE',
         message: 'Banka hareketinin mevcut eşleşmesi canonical Collection ile uzlaştırılamadı.',
+      });
+    }
+
+    if (transaction.candidateStatus !== BANK_CANDIDATE_SETTLED) {
+      const code = transaction.candidateStatus === BANK_CANDIDATE_PENDING
+        ? 'BANK_RECEIPT_SETTLEMENT_REQUIRED'
+        : transaction.candidateStatus === 'REJECTED'
+          ? 'BANK_RECEIPT_CANDIDATE_REJECTED'
+          : 'BANK_RECEIPT_CANDIDATE_STATUS_UNKNOWN';
+      throw new ConflictException({
+        code,
+        message: 'Banka tahsilat adayı doğrulanmış settlement olmadan canonical Collection oluşturamaz.',
       });
     }
 

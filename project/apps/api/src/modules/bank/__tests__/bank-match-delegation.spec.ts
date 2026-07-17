@@ -43,6 +43,7 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
         transactionDate: new Date('2026-01-01'),
         valueDate: new Date('2026-01-02'),
         transactionType: 'INCOMING',
+        candidateStatus: 'SETTLED',
         description: 'EFT',
         referenceNo: 'REF-1',
         isMatched: false,
@@ -77,7 +78,7 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
 }
 
 describe('BankService.matchTransaction delegation (G3d)', () => {
-  it('T2: başarılı -> canonical Collection command + isMatched set', async () => {
+  it('T2: SETTLED aday -> canonical Collection command + isMatched set', async () => {
     const { svc, prisma, coll, update } = buildService(async () => ({ id: 'col1' }));
 
     await svc.matchTransaction('tx1', 'c1', 'u1', 't1');
@@ -159,6 +160,7 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
         currency: 'TRY',
         transactionDate: new Date('2026-01-01'),
         transactionType: 'INCOMING',
+        candidateStatus: 'SETTLED',
         isMatched: matched,
         matchedCaseId: matched ? 'c1' : null,
         matchedCollectionId: matched ? 'col1' : null,
@@ -217,6 +219,39 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
     expect(coll.create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['PENDING', 'BANK_RECEIPT_SETTLEMENT_REQUIRED'],
+    ['REJECTED', 'BANK_RECEIPT_CANDIDATE_REJECTED'],
+    [null, 'BANK_RECEIPT_CANDIDATE_STATUS_UNKNOWN'],
+  ])(
+    'fail-closed: %s aday canonical Collection veya finansal etki üretmez',
+    async (candidateStatus, errorCode) => {
+      const { svc, coll, update, financialWrites } = buildService(undefined, {
+        bankTransaction: {
+          findFirst: jest.fn(async () => ({
+            id: 'tx1',
+            tenantId: 't1',
+            amount: 500,
+            currency: 'TRY',
+            transactionDate: new Date('2026-01-01'),
+            transactionType: 'INCOMING',
+            candidateStatus,
+            isMatched: false,
+          })),
+        },
+      });
+
+      await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1')).rejects.toMatchObject({
+        response: { code: errorCode },
+      });
+      expect(coll.create).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+      for (const write of Object.values(financialWrites)) {
+        expect(write).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it('auto-match yalnız tenant-scoped PENDING adayı keşfeder; Collection olmadan receipt eşleşmesi persist etmez', async () => {
     const { svc, prisma, update } = buildService(undefined, {
