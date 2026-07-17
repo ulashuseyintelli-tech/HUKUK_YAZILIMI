@@ -265,6 +265,29 @@ SINIFLANDIRMASI: OPEN / NOT DECIDED** (bu implementation yeni istisna/hukuki son
 **LRV-03A: CLOSED / NOT REOPENED.** **PHASE 2 GENEL GİRİŞ: YETKİLENDİRİLMEDİ.** Bu kayıt yeni
 workstream başlatmaz.
 
+**DBP-P2-LDO-01 UYAP ROLE-CONTRACT DISPOSITION & CUTOVER GATE (2026-07-17, bkz. `decision-log.md`
+aynı tarihli kayıt):** Yukarıdaki DBP-P2-SEC-P02 notundaki "`TASFIYE_MEMURU`/`IFLAS_MASASI`: AS-IS
+korunur, OWNER-LDO DECISION PENDING" ve "`LEHDAR`/`MUHATAP` hedef sınıflandırması: OWNER-LDO
+DECISION PENDING ... UNPROVEN" ifadeleri o tarihte doğruydu; bu not onları SİLMEZ/DEĞİŞTİRMEZ,
+yalnız `DBP-P2-LDO-01` GO-ANALYZE'i sonrası owner disposition'ını uzlaştırır. **DBP-P2-LDO-01:
+ANALYSIS COMPLETE.** **OWNER DISPOSITION: INTERIM OPTION C SELECTED** (transitional AS-IS + açık
+risk); **OPTION A (fail-closed): PREFERRED CONDITIONAL TARGET, IMPLEMENTATION NOT AUTHORIZED**;
+**OPTION B (representation/organ model): DEFERRED TO OD-07 + PARTY FOUNDATION.** **BAĞLAYICI
+SINIFLANDIRMA:** `LEHDAR → LEHTAR` **REPOSITORY-CONTRACT CONSISTENT / PRESERVED** (XML 10-kod
+sözleşmesi; NO GLOBAL DEBTOR OR LIABILITY CONCLUSION); `MUHATAP → MUHATAP` **REPOSITORY-CONTRACT
+CONSISTENT / PRESERVED** (legal effect senet türüne ve kabule bağlıdır; NO GLOBAL DEBTOR OR
+LIABILITY CONCLUSION); `TASFIYE_MEMURU`/`IFLAS_MASASI → BORCLU FALLBACK` **TRANSITIONAL /
+NON-CANONICAL** (her iki sözleşmede). **UYAP ROLE-CONTRACT CUTOVER GATE (kurulur):** gerçek UYAP
+submit cutover'ı (`uyapService.submitDocument` STUB'ının kaldırılması) `TASFIYE_MEMURU`/
+`IFLAS_MASASI` için doğru taraf/temsil hedefi owner/LDO + resmi UYAP rolTur sözleşmesiyle
+kararlaştırılana kadar **HOLD**; iki UYAP sözleşmesi (XML 10-kod / export 6-değer `UyapTarafRolu`)
+ayrı izlenir. **FAIL-CLOSED ROLE PATCH: NOT YET AUTHORIZED.** **ESTATE / SUCCESSION EXCEPTION: NOT
+CREATED** (DBP-P2-BP-01 UNCHANGED). **OD-07 / PARTY FOUNDATION REOPEN TRIGGERS: PRESERVED** (bu
+kayıt OD-07'yi açmaz, Party Foundation'ı reopen etmez). Bu kayıt kod/test/CI/schema/UYAP-kodu
+ÜRETMEZ ve şu görevleri BAŞLATMAZ: `DBP-P2-UYAP-CONTRACT-01`, fail-closed role patch, OD-07/Party
+reopen. **NEXT ELIGIBLE TASK: OWNER SEÇİMİ** — bu governance kaydı tamamlandıktan sonra owner
+`DBP-P2-UYAP-CONTRACT-01` veya başka owner-gated birimi ayrıca yetkilendirebilir.
+
 ---
 
 ## 7. QUEUE-A / QUEUE-B Disposition — OWNER-APPROVED [E]
