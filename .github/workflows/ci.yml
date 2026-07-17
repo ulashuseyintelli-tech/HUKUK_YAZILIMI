@@ -803,6 +803,32 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="workflow-engine-legal-time-cutover\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # LRV-02 / DBP-P2-SEC-P01: UyapXmlService.mapDebtorRoleToUyapKod DebtorRole->UYAP rol-kodu
+      # mapping regresyonu (PR #1322). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyordu
+      # → CI'da hiç koşmuyordu (yalnız o merge'in GO-IMPLEMENT'inde local `npx jest` ile doğrulandı).
+      # Ayrı/açık step; dosya-varlığı pre-check (rename/silme/0-eşleşme → CI RED) + passWithNoTests YOK.
+      - name: LRV-02 UYAP XML DebtorRole mapping regression tests
+        run: |
+          cd apps/api
+          test -f src/modules/uyap/__tests__/uyap-xml.debtor-role-mapping.spec.ts || \
+            { echo "MISSING LRV-02 spec: uyap-xml.debtor-role-mapping.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="uyap-xml\.debtor-role-mapping\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # DBP-P2-SEC-P02: UyapCaseMapperService.mapDebtorRole (ikinci UYAP mapper) DebtorRole->rol
+      # behavior-lock regresyonu (PR #1327). Yukarıdaki dar allowlist pattern'lerinin hiçbirine
+      # girmiyordu → CI'da hiç koşmuyordu (yalnız o merge'in GO-IMPLEMENT'inde local `npx jest` ile
+      # doğrulandı). Ayrı/açık step; dosya-varlığı pre-check (rename/silme/0-eşleşme → CI RED) + passWithNoTests YOK.
+      - name: DBP-P2-SEC-P02 UYAP case-mapper DebtorRole mapping regression tests
+        run: |
+          cd apps/api
+          test -f src/modules/uyap-export/__tests__/uyap-case-mapper.debtor-role-mapping.spec.ts || \
+            { echo "MISSING DBP-P2-SEC-P02 spec: uyap-case-mapper.debtor-role-mapping.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="uyap-case-mapper\.debtor-role-mapping\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
