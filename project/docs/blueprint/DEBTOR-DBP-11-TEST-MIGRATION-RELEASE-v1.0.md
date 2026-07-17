@@ -242,6 +242,29 @@ NOT REOPENED.** **PHASE 2 GENEL GİRİŞ: YETKİLENDİRİLMEDİ (NOT AUTHORIZED)
 korunur: **LRV-03A = mechanical invariant (implemented); LRV-03B/`DBP-P2-BP-01` = business policy
 (owner decision)** — güvenlik remediation ile iş-kuralı tasarım kararları ayrı eksenlerde izlenir.
 
+**DBP-P2-BP-01 IMPLEMENTATION EVIDENCE RECONCILIATION (2026-07-17, bkz. `decision-log.md` aynı
+tarihli kayıt):** Yukarıdaki DBP-P2-BP-01 GOVERNANCE RECORD notundaki "**IMPLEMENTATION: NOT
+STARTED**" ifadesi o tarihte (owner kararı kaydedilirken) doğruydu; bu not onu SİLMEZ/DEĞİŞTİRMEZ,
+yalnız `OWNER GO-IMPLEMENT — DBP-P2-BP-01` sonucunu current-state olarak uzlaştırır.
+**`DBP-P2-BP-01` (Option A — all-passive case automation stop): IMPLEMENTED / MERGED / EVIDENCED**
+(PR #1346, squash `fc761c4ebb683b324c819094d3603d1466652c1d`, 2026-07-17; CI 4/4 SUCCESS;
+her iki yeni CI step canlı çalıştı — unit 9/9 PASS + db-gated 3/3 PASS). **IMPLEMENTED POLICY:
+CaseDebtor kaydı VARSA ve TÜMÜ PASSIVE ise case-seviyesi otomasyon = STOP / CONTROLLED NO-OP;
+en az bir ACTIVE varsa = CONTINUE; hiç CaseDebtor yoksa (debtorless) = AS-IS / CONTINUE.** Guard
+`WorkflowEngine.processCase` içinde, rule değerlendirmesinden ÖNCE; lifecycle dağılımı mevcut
+caseData sorgusuna eklendi (yeni/duplicate query YOK). **SIDE-EFFECT CONTRACT: NO-OP / NO PARTIAL
+WRITE.** **CASE CLOSURE: NOT CREATED. CLAIM SATISFACTION: NOT CREATED. `Case.isAutoMode`:
+UNCHANGED. CASE STATUS: UNCHANGED. CASEDEBTOR LIFECYCLE: UNCHANGED. ERROR/API CONTRACT: UNCHANGED.
+SCHEMA/MIGRATION: NONE. PUBLIC API: NONE.** Kanıt: production tsc PASS (0 yeni hata),
+diff-aware ESLint 0 error/0 warning, automation modülü regresyon 113 PASS / 0 FAIL (LRV-03A +
+RFA-007 dahil), disposable Postgres migrate deploy PASS + db-gated 3/3, shared/dev DB mutation
+NONE. **OPTION A: IMPLEMENTED / CLOSED.** **OPTION B (tam rule-classification / debtor-bound
+execution): DEFERRED TO OD-07 PROGRAM (açık).** **OD-07: HOLD / UNTOUCHED.** **RULE
+CLASSIFICATION / DEBTOR-BOUND EXECUTION: NOT STARTED.** **ESTATE / SUCCESSION / TEREKE
+SINIFLANDIRMASI: OPEN / NOT DECIDED** (bu implementation yeni istisna/hukuki sonuç ÜRETMEDİ).
+**LRV-03A: CLOSED / NOT REOPENED.** **PHASE 2 GENEL GİRİŞ: YETKİLENDİRİLMEDİ.** Bu kayıt yeni
+workstream başlatmaz.
+
 ---
 
 ## 7. QUEUE-A / QUEUE-B Disposition — OWNER-APPROVED [E]
