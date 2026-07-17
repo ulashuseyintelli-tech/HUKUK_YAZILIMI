@@ -83,7 +83,7 @@ varsayılmaz.
 | STF-PRD-PRIV-001 | P2 | OFF/OD-18 | CLOSED_CANONICAL | LINKED TO SLICE | = SLICE-03 → CANDIDATE-F1/F2/G/H decomp (WAVE 3 CLOSED WITH RESIDUALS, 2026-07-16). F1+H1 CANONICAL (list+case-embedded maskeli, MILESTONE 04/05); STF-PRD-PRIV-001 OPEN / CARRIED FORWARD — WAVE 3 closure bunu KAPATMAZ (kalan detay yüzeyi = CANDIDATE-G, BLOCKED) |
 | STF-PRD-OPS-001 | P2 | OFF/OD-19 | OPEN(BLOCKING) | LINKED TO DECISION | — |
 | STF-PRD-PERF-001 | P3 | — | yok | UNMAPPED — OWNER REVIEW REQUIRED | Karar gerekmez (salt mühendislik) ama henüz slice'a triyaj edilmedi |
-| STF-PRD-BOLA-002 | P3 | OFF/OD-10 | CLOSED (2026-07-16) | LINKED TO SLICE | OD-10 kapandı (Access-Scope Owner Decision Package). **CANDIDATE-J** (Task-atama) + **CANDIDATE-K** (Case-atama) ile mapping yapıldı (2026-07-17). **J-tarafı:** CANDIDATE-J DECOMPOSED → ilk dilimi **CANDIDATE-J1** (Task Assignee Baseline Eligibility Gate) **CANONICAL/CONSUMED** (2026-07-17, impl PR #1338 squash `7210ea7c`, closure PR #1344 squash `dfbe8258`, PHASE 1 MILESTONE 08). **K-tarafı:** CANDIDATE-K DECOMPOSED (K1/K2/K3) → ilk dilimi **CANDIDATE-K1** (Case Team-Membership Baseline Eligibility Gate) **OWNER_SELECTED / CONTRACT_RATIFIED** (2026-07-17, implementationAuthorization NONE). **Finding KAPANMADI** — J1 yalnız Task-atama baseline'ını IMPLEMENTED, K1 yalnız Case ekip-ekleme baseline'ını ele alacak; K2 (toplu atama, **ASSIGN-4d** ürün-kararına bağlı) + K3 (legal-sorumlu terfi re-check) + kalan J rol/kapasite policy AYRI, owner-gated future scope. Detay: bkz. §4f |
+| STF-PRD-BOLA-002 | P3 | OFF/OD-10 | CLOSED (2026-07-16) | LINKED TO SLICE | OD-10 kapandı (Access-Scope Owner Decision Package). **CANDIDATE-J** (Task-atama) + **CANDIDATE-K** (Case-atama) ile mapping yapıldı (2026-07-17). **J-tarafı:** CANDIDATE-J DECOMPOSED → ilk dilimi **CANDIDATE-J1** (Task Assignee Baseline Eligibility Gate) **CANONICAL/CONSUMED** (2026-07-17, impl PR #1338 squash `7210ea7c`, closure PR #1344 squash `dfbe8258`, PHASE 1 MILESTONE 08). **K-tarafı:** CANDIDATE-K DECOMPOSED (K1/K2/K3) → ilk dilimi **CANDIDATE-K1** (Case Team-Membership Baseline Eligibility Gate) **CANONICAL/CONSUMED** (2026-07-17, impl PR #1356 squash `423d72ea`, PHASE 1 MILESTONE 09). **Finding KAPANMADI (OPEN / PARTIALLY MITIGATED)** — J1 yalnız Task-atama baseline'ını IMPLEMENTED, K1 yalnız Case ekip-ekleme baseline'ını IMPLEMENTED; K2 (toplu atama, **ASSIGN-4d** ürün-kararına bağlı) + K3 (legal-sorumlu terfi re-check) + kalan J rol/kapasite policy AYRI, owner-gated future scope. Detay: bkz. §4f |
 | STF-PRD-DATA-001 | P3 | OFF/OD-01, OFF/OD-03 | OD-01 CLOSED · OD-03 OPEN(BLOCKING) | LINKED TO DECISION | OD-03 kapanmadan DB-constraint işi başlamaz |
 | STF-PRD-SES-002 | P3 | OFF/OD-15 | CLOSED_CANONICAL | LINKED TO DECISION | WAVE 1 kapsamına giriyor (SES-001 ile birlikte triyaj edilecek) |
 
@@ -150,7 +150,7 @@ Owner Decision Package'da kapandı.)*
 | CANDIDATE-J | **DECOMPOSED** (2026-07-17) | NOT_READY | OFF/OD-10 (CLOSED) | STF-PRD-BOLA-002 | NOT_SELECTED | NONE | **HARDENING** | — | GO-ANALYZE (CANDIDATE-J/K next-slice selection) + CANDIDATE-J first-slice re-scope (2026-07-17) | Task Assignment Eligibility Gate — tam kapsam (Task-atama uygunluğu + rol/kapasite policy) tek Contract için gereğinden geniş bulundu; ilk davranış-değiştiren enforcement dilimi olarak baseline'a daraltıldı (CANDIDATE-C/E/I'nin re-scope emsaliyle aynı desen) → **CANDIDATE-J1** (baseline tenant+aktiflik kapısı) SEÇİLDİ; kalan rol/kapasite policy kapsamı AYRI, HENÜZ candidate ID'si olmayan, owner-gated future scope olarak kalır. Bu satırın kendisi hiç seçilmedi. Detay: bkz. §4f |
 | CANDIDATE-J1 | **CANONICAL** (2026-07-17) | — | OFF/OD-10 (CLOSED) | STF-PRD-BOLA-002 | **SELECTED** (2026-07-17) | **CONSUMED** (2026-07-17) | **HARDENING** | **RATIFIED** (2026-07-17) | GO-ANALYZE (CANDIDATE-J first-slice re-scope) + OWNER SELECTION + CONTRACT RATIFICATION + GO-CANONICALIZE + GO-IMPLEMENT + GO-CANONICALIZE (Implementation Closure) | Task Assignee Baseline Eligibility Gate — görev oluşturma/güncelleme sırasında dolu atama alanı için aynı-tenant + aktiflik doğrulaması; yalnız ileriye-dönük (write-time) enforcement; null atama davranışı korunur; mevcut kayıtlar retroaktif taranmaz/reddedilmez; **schema/migration YOK**. Mevcut çalışan tekil-sorumlu uygunluk kapısının kalıbını (User modeli için) izler. OD-10 Option B'nin (assignment≠access, explicit policy) hedef modelini davranışsal olarak temsil eder. **İlk davranış-DEĞİŞTİREN WAVE 4+ enforcement dilimi** (E1/I1'in additive-only deseninden farklı). Rol/kapasite policy · UI filtreleme · CANDIDATE-K (Case ekip-atama) bu dilimin DIŞINDA. PR #1338 (implementasyon, squash SHA `7210ea7c`), CI 4/4 PASS. STF-PRD-BOLA-002 finding **OPEN/NOT CLOSED kalır** — yalnız Task-atama alt-boşluğu ele alındı, Case porsiyonu (CANDIDATE-K) açık (bkz. OFFICE-RISK-REGISTER.md). Detay: bkz. §4f |
 | CANDIDATE-K | **DECOMPOSED** (2026-07-17) | NOT_READY | OFF/OD-10 (CLOSED) | STF-PRD-BOLA-002 | NOT_SELECTED | NONE | **HARDENING** | — | GO-ANALYZE (CANDIDATE-J/K next-slice selection) + GO-ANALYZE (CANDIDATE-K re-scope) (2026-07-17) | Case Assignment Scope Alignment — geniş case-assignment kapsamı (ekip-ekleme + toplu atama + legal-sorumlu terfi) tek Contract için gereğinden geniş bulundu → K1/K2/K3'e ayrıştırıldı; ilk dilimi **CANDIDATE-K1** (ekip-ekleme baseline uygunluk kapısı, ürün-kararından bağımsız) SEÇİLDİ. Bu satırın kendisi hiç seçilmedi. Detay: bkz. §4f |
-| CANDIDATE-K1 | **OWNER_SELECTED / CONTRACT_RATIFIED** (2026-07-17) | — | OFF/OD-10 (CLOSED) | STF-PRD-BOLA-002 | **SELECTED** (2026-07-17) | **NONE** | **HARDENING** | **RATIFIED** (2026-07-17) | GO-ANALYZE (CANDIDATE-K re-scope) + OWNER SELECTION + CONTRACT RATIFICATION + GO-CANONICALIZE | Case Team-Membership Baseline Eligibility Gate — dosya ekibine avukat/personel eklerken hedefin aynı-tenant (zaten uygulanıyor) + **aktif** olması; yalnız ileriye-dönük (write-time) enforcement; mevcut ekip kayıtları retroaktif taranmaz/değiştirilmez; **schema/migration YOK**. **GOVERNANCE-PRECISE:** ekip-üyesi uygunluğu = tenant + aktiflik YALNIZCA — sorumlu-uygunluk bayrağı (yalnız "dosya sorumlusu" alanı için) DEĞİL. Mevcut tenant + rank-default + legal-sorumlu guard'ları korunur. J1'in kardeş deseni (davranış-değiştiren enforcement) ama farklı model (Lawyer/StaffMember). K2 (toplu atama, ASSIGN-4d) · K3 (legal-sorumlu terfi re-check) · rol/kapasite policy · CANDIDATE-J kalan · BOLA-001/SCP-001 bu dilimin DIŞINDA. STF-PRD-BOLA-002 **KAPANMAZ**. implementationAuthorization NONE — bu canonicalization GO-IMPLEMENT vermez. Detay: bkz. §4f |
+| CANDIDATE-K1 | **CANONICAL** (2026-07-17) | — | OFF/OD-10 (CLOSED) | STF-PRD-BOLA-002 | **SELECTED** (2026-07-17) | **CONSUMED** (2026-07-17) | **HARDENING** | **CONSUMED** (2026-07-17) | GO-ANALYZE (CANDIDATE-K re-scope) + OWNER SELECTION + CONTRACT RATIFICATION + GO-CANONICALIZE + GO-IMPLEMENT + GO-CANONICALIZE (Implementation Closure) | Case Team-Membership Baseline Eligibility Gate — dosya ekibine avukat/personel eklerken hedefin aynı-tenant (zaten uygulanıyor) + **aktif** olması; yalnız ileriye-dönük (write-time) enforcement; mevcut ekip kayıtları retroaktif taranmaz/değiştirilmez; **schema/migration YOK**. **GOVERNANCE-PRECISE:** ekip-üyesi uygunluğu = tenant + aktiflik YALNIZCA — sorumlu-uygunluk bayrağı (yalnız "dosya sorumlusu" alanı için) DEĞİL. Mevcut tenant + rank-default + legal-sorumlu guard'ları korunur. J1'in kardeş deseni (davranış-değiştiren enforcement) ama farklı model (Lawyer/StaffMember). K2 (toplu atama, ASSIGN-4d) · K3 (legal-sorumlu terfi re-check) · rol/kapasite policy · CANDIDATE-J kalan · BOLA-001/SCP-001 bu dilimin DIŞINDA. PR #1356 (implementasyon, squash SHA `423d72ea`), CI 4/4 PASS, PHASE 1 MILESTONE 09. STF-PRD-BOLA-002 finding **OPEN / PARTIALLY MITIGATED kalır** — yalnız Case ekip-ekleme baseline'ı ele alındı; K2/K3 + rol/kapasite policy açık (bkz. OFFICE-RISK-REGISTER.md). Detay: bkz. §4f |
 | CANDIDATE-K2 | **BLOCKED_ON_PRODUCT_DECISION** (2026-07-17) | NOT_READY | OFF/OD-10 (CLOSED) | STF-PRD-BOLA-002 | NOT_SELECTED | NONE | **HARDENING** | — | GO-ANALYZE (CANDIDATE-K re-scope) | Bulk Case-Assignment — toplu-avukat yolu **ASSIGN-4d** ürün-kararına BLOKE (toplu sorumluluk yeniden-atama semantiği: düşürme/görev-devri/audit/çok-avukatlı dosya); toplu-personel aktiflik-kontrolü (K2a) ürün-kararından bağımsız ama legacy alan dokunur. ASSIGN-4d owner tarafından yanıtlanmadan seçilemez. Detay: bkz. §4f |
 | CANDIDATE-K3 | **DEFERRED** (2026-07-17) | NOT_READY | OFF/OD-10 (CLOSED) | STF-PRD-BOLA-002 | NOT_SELECTED | NONE | **HARDENING** | — | GO-ANALYZE (CANDIDATE-K re-scope) | Legal-Responsible Promotion Active Re-check — legal-sorumlu terfisinde ileriye-dönük aktiflik re-check'i (küçük/edge-case; ekipte olup sonradan pasifleştirilen avukatın terfisi). Ürün-kararından bağımsız, düşük öncelik, owner-gated future scope. Detay: bkz. §4f |
 
@@ -618,9 +618,10 @@ atama (personel legacy alan, aktiflik YOK; avukat yolu DEVRE DIŞI) · legal-sor
 re-check YOK). → K1/K2/K3'e ayrıştırıldı.
 
 CANDIDATE-K1   name: Case Team-Membership Baseline Eligibility Gate (CANDIDATE-K first-slice
-               re-scope, 2026-07-17) · status OWNER_SELECTED / CONTRACT_RATIFIED (2026-07-17) ·
-               implementationCategory HARDENING · ownerSelectionStatus SELECTED (2026-07-17) ·
-               implementationAuthorization NONE · contractStatus RATIFIED (2026-07-17)
+               re-scope, 2026-07-17) · status CANONICAL (2026-07-17, main @ `423d72ea`, PHASE 1
+               MILESTONE 09) · implementationCategory HARDENING · ownerSelectionStatus SELECTED
+               (2026-07-17) · implementationAuthorization CONSUMED (2026-07-17) · contractStatus
+               RATIFIED (2026-07-17)
                OWNER RE-SCOPE (2026-07-17, APPROVED): CANDIDATE-K'nin geniş kapsamı ilk enforcement
                dilimi için gereğinden geniş; ürün-kararından bağımsız en büyük baseline boşluğu =
                ekip-üyesi ekleme. Yeni objective: dosya ekibine avukat/personel eklerken hedefin
@@ -664,9 +665,18 @@ CANDIDATE-K1   name: Case Team-Membership Baseline Eligibility Gate (CANDIDATE-K
                DUPLICATE-LOGIC VERDICT: mevcut ekleme kontrol noktaları genişletilir; sorumlu-
                  doğrulayıcıyla YANLIŞ konsolidasyondan kaçınılır (farklı, daha katı kural); J1'in
                  User-kapısı kardeş şekildir ama farklı model olduğu için yeniden kullanılamaz.
-               IMPLEMENTATION: NONE — implementationAuthorization NONE korunur; GO-IMPLEMENT ayrı,
-               açık bir owner GO'su gerektirir. Ayrıntılı teknik Contract (enforcement metot/site
-               imzaları, tam ret koşulları) yalnız private evidence'ta — public'e YAZILMAZ.
+               IMPLEMENTATION: CANONICAL (2026-07-17) — PR #1356, squash SHA
+               `423d72ea82124d657b91973973e7ccece556f3c1`, CI 4/4 PASS (Architectural Guardrails/
+               Test Suite/Web Tests vitest/Client Workspace Live Smoke), mergeStateStatus CLEAN.
+               Enforcement mevcut ekip-ekleme kontrol noktalarına eklendi (yeni framework yok);
+               yalnız ileriye-dönük; zero schema/migration. Yeni pozitif/negatif enforcement
+               testleri (avukat + personel: aktif→kabul/pasif→ret/cross-tenant→mevcut ret); 1780
+               regresyon PASS (2 pre-existing/ilgisiz hata differential testle bağımsız kanıtlandı);
+               tsc çıktısı değişiklikle/değişiklik olmadan birebir özdeş. **Gate-öncesi yazılmış 4
+               mevcut ekip-testinin mock'una `aktiflik=true` eklendi** (yeni kapının gerektirdiği
+               alan eksikti — meşru mock-tamamlama, davranış regresyonu değil). Ayrıntılı teknik
+               Contract (enforcement metot/site imzaları, tam ret koşulları) yalnız private
+               evidence'ta — public'e YAZILMAZ.
 
 CANDIDATE-K2   name: Bulk Case-Assignment · status BLOCKED_ON_PRODUCT_DECISION (2026-07-17) ·
                ownerSelectionStatus NOT_SELECTED · implementationAuthorization NONE
@@ -721,6 +731,9 @@ CANDIDATE-I1 · IMPLEMENTED · MERGED · CANONICAL (main @ 05e73579, 2026-07-16/
 
 PHASE 1 MILESTONE 08
 CANDIDATE-J1 · IMPLEMENTED · MERGED · CANONICAL (main @ 7210ea7c, 2026-07-17, PR #1338)
+
+PHASE 1 MILESTONE 09
+CANDIDATE-K1 · IMPLEMENTED · MERGED · CANONICAL (main @ 423d72ea, 2026-07-17, PR #1356)
 ```
 
 ## 6. Mapping Completeness ve Orphan Kontrolü
@@ -818,11 +831,12 @@ WAVE 4+ — BOLA-001/SCP-001 candidate-decomposition tamamlandı (2026-07-16); C
   J1 **ilk davranış-DEĞİŞTİREN WAVE 4+ enforcement dilimidir** (E1/I1'in additive-only deseninden farklı).
   **CANDIDATE-K (Case-atama) DECOMPOSED (2026-07-17)** → **CANDIDATE-K1** (Case Team-Membership Baseline
   Eligibility Gate — ekip-ekleme aynı-tenant + aktiflik, ileriye-dönük write-time, schema/migration YOK,
-  J1 kardeşi ama Lawyer/StaffMember modeli) **OWNER_SELECTED / CONTRACT_RATIFIED** (implementationAuthorization
-  NONE) + **CANDIDATE-K2** (Bulk Case-Assignment — toplu-avukat yolu **ASSIGN-4d** ürün-kararına BLOKE;
-  ASSIGN-4d DEFERRED, owner yanıtı bekliyor) + **CANDIDATE-K3** (Legal-Responsible Promotion Active
-  Re-check — minor, owner-gated future). K1 yalnız Case ekip-ekleme baseline'ını ele alacak; BOLA-002
-  KAPANMAZ. Detay: §4 Slice Register + §4f.
+  J1 kardeşi ama Lawyer/StaffMember modeli) **CANONICAL / IMPLEMENTED / MERGED** (main @ 423d72ea,
+  PR #1356, PHASE 1 MILESTONE 09; implementationAuthorization CONSUMED) + **CANDIDATE-K2** (Bulk
+  Case-Assignment — toplu-avukat yolu **ASSIGN-4d** ürün-kararına BLOKE; ASSIGN-4d DEFERRED, owner yanıtı
+  bekliyor) + **CANDIDATE-K3** (Legal-Responsible Promotion Active Re-check — minor, owner-gated future).
+  K1 yalnız Case ekip-ekleme baseline'ını ele aldı; K2/K3 + rol/kapasite policy açık kaldığı için
+  **BOLA-002 KAPANMAZ (OPEN / PARTIALLY MITIGATED)**. Detay: §4 Slice Register + §4f.
 
 UNMAPPED (owner review required, decision-graph dışı)
   STF-PRD-CFG-001, STF-PRD-PERF-001
@@ -831,18 +845,18 @@ UNMAPPED (owner review required, decision-graph dışı)
 ## 8. NEXT ELIGIBLE UNIT (readiness ≠ authorization)
 
 ```text
-NEXT ELIGIBLE UNIT: CANDIDATE-K1 — GO-IMPLEMENT (2026-07-17). CANDIDATE-K owner GO-ANALYZE'ında
-(CANDIDATE-K re-scope) DECOMPOSED edildi (geniş case-assignment kapsamı ilk enforcement dilimi için
-gereğinden geniş — C/E/I/J re-scope emsaliyle aynı desen) → CANDIDATE-K1 (Case Team-Membership Baseline
-Eligibility Gate — ekip-ekleme aynı-tenant + aktiflik, ileriye-dönük write-time, schema/migration YOK)
-owner tarafından SEÇİLDİ ve Contract RATIFIED edildi. Bu implementationAuthorization VERMEZ —
-implementationAuthorization NONE KORUNUR; GO-IMPLEMENT owner'ın ayrı, açık bir GO'sunu bekler. K1,
-J1'in davranış-değiştiren enforcement kardeşidir (farklı model: Lawyer/StaffMember). STF-PRD-BOLA-002
-**CANDIDATE-K1 ile mapping yapıldı** (bkz. §2/§7) — finding KAPANMADI; K1 yalnız Case ekip-ekleme
-baseline'ını ele alacak. Önceki CANONICAL slice'lar (A/C/F1/H1/E1/I1/J1) değişmedi.
-NEXT PROGRAM ACTION: K1 için GO-IMPLEMENT (owner'ın ayrı, açık bir GO'su), diğer candidate'lar için
-OWNER SELECTION/DECISION REQUIRED — geriye kalan candidate'ların TÜMÜ hâlâ owner-gated; bu belge
-hiçbirini SEÇMEZ/başlatmaz/sıralamaz, her biri owner'ın ayrı, açık bir GO/decision'ını bekler:
+NEXT ELIGIBLE UNIT: NONE (2026-07-17). CANDIDATE-K1 (Case Team-Membership Baseline Eligibility Gate)
+IMPLEMENTED / MERGED / CANONICAL edildi (main @ 423d72ea, PR #1356, PHASE 1 MILESTONE 09);
+implementationAuthorization CONSUMED, contractStatus CONSUMED. Bu Implementation Closure yeni bir
+GO-IMPLEMENT yetkisi VERMEZ ve yeni bir candidate SEÇMEZ. K1, J1'in davranış-değiştiren enforcement
+kardeşiydi (farklı model: Lawyer/StaffMember); yalnız Case ekip-ekleme baseline'ını (aynı-tenant +
+aktiflik, ileriye-dönük write-time) ele aldı. STF-PRD-BOLA-002 finding'i **OPEN / PARTIALLY MITIGATED
+kalır** — K2 (toplu atama, ASSIGN-4d'ye bağlı) + K3 (legal-sorumlu terfi re-check) + CANDIDATE-J/K
+rol/kapasite policy açık; finding KAPANMADI (bkz. §2/§7 + OFFICE-RISK-REGISTER.md). Önceki CANONICAL
+slice'lar (A/C/F1/H1/E1/I1/J1) + şimdi K1 değişmedi.
+NEXT PROGRAM ACTION: OWNER SELECTION/DECISION REQUIRED — implementasyona hazır, owner-seçili bekleyen
+birim YOK; geriye kalan candidate'ların TÜMÜ hâlâ owner-gated; bu belge hiçbirini SEÇMEZ/başlatmaz/
+sıralamaz, her biri owner'ın ayrı, açık bir GO/decision'ını bekler:
   · CANDIDATE-D (WAVE 2) — product decision (canApproveFinance ürün niyeti) gerekir · NOT_A_SELECTABLE_SLICE
   · CANDIDATE-E kalan kapsamı (WAVE 2) — tam consumer-migration, HENÜZ candidate ID'si yok, owner-gated future scope
   · CANDIDATE-F2 (WAVE 3) — DORMANT (IMPLEMENTATION SURFACE NOT FOUND, owner disposition)
@@ -935,12 +949,12 @@ implementationAuthorization (CANDIDATE-K) : NONE
 contractStatus (CANDIDATE-K)              : — (bkz. CANDIDATE-K1)
 name (CANDIDATE-K1)                       : Case Team-Membership Baseline Eligibility Gate
                                              (WAVE 4+, CANDIDATE-K first-slice re-scope)
-status (CANDIDATE-K1)                     : OWNER_SELECTED / CONTRACT_RATIFIED (2026-07-17)
+status (CANDIDATE-K1)                     : CANONICAL (2026-07-17, main @ 423d72ea) — PHASE 1 MILESTONE 09
 implementationCategory (CANDIDATE-K1)     : HARDENING
 ownerSelectionStatus (CANDIDATE-K1)       : SELECTED (2026-07-17)
-contractStatus (CANDIDATE-K1)             : RATIFIED (2026-07-17) — Implementation Contract
-                                             Draft owner tarafından ratifiye edildi, bkz. §4f
-implementationAuthorization (CANDIDATE-K1): NONE — bu canonicalization GO-IMPLEMENT vermez
+contractStatus (CANDIDATE-K1)             : CONSUMED (2026-07-17) — Contract Draft başarılı
+                                             implementasyonla uzlaştırıldı/tüketildi, bkz. §4f
+implementationAuthorization (CANDIDATE-K1): CONSUMED (2026-07-17) — PR #1356, squash `423d72ea`, CI 4/4 PASS
 status (CANDIDATE-K2)                     : BLOCKED_ON_PRODUCT_DECISION (2026-07-17) — Bulk
                                              Case-Assignment; toplu-avukat yolu ASSIGN-4d'ye bağlı
                                              (DEFERRED); K2a toplu-personel aktiflik ürün-kararsız
@@ -1085,6 +1099,34 @@ Diğer OFFICE hatları (CANDIDATE-B/D/E-kalan/F2/G/I-kalan/J-kalan, BOLA-001/SCP
 seçilmedi. **NEXT ELIGIBLE UNIT → CANDIDATE-K1 — GO-IMPLEMENT.** Bu canonicalization CANDIDATE-K'nin
 decomposition'ını + CANDIDATE-K1'in Contract RATIFIED durumunu + K2/K3/ASSIGN-4d kayıtlarını +
 BOLA-002'nin K1-mapping'ini kaydeder; kod/schema/migration/implementasyon başlatmaz.
+
+**Güncelleme (2026-07-17, CANDIDATE-K1 Implementation Closure):** Owner IMPLEMENTATION EVIDENCE'ı
+(PR #1356 MERGED, squash SHA `423d72ea`, CI 4/4 PASS, schema/migration NONE, forward-only enforcement,
+differential regression doğrulandı) sundu ve **GO-CANONICALIZE — DOCS ONLY** verdi. İmplementasyon
+Contract'ın tüm invariant/stop-condition'larına tam uyumlu tamamlandı: mevcut ekip-ekleme yazma
+yollarının (dosya ekibine avukat + personel ekleme) içine, hedefin NotFound (tenant-scope) kontrolünden
+hemen sonra tek bir **aktiflik** doğrulaması eklendi; ekip-üyesi uygunluğu **tenant + aktiflik YALNIZCA**
+(sorumlu-uygunluk bayrağı DEĞİL — o yalnız "dosya sorumlusu" alanına özgü, dokunulmadı); yeni framework
+değil; yalnız ileriye-dönük (write-time), mevcut satırlar retroaktif taranmaz/değiştirilmez. Yeni
+pozitif/negatif enforcement testleri (avukat + personel: aktif→kabul / pasif→ret / cross-tenant→mevcut
+NotFound ret); 1780 regresyon PASS + 2 pre-existing/ilgisiz hata differential testle bağımsız
+kanıtlandı; tsc çıktısı değişiklikle/değişiklik olmadan birebir özdeş. **Gate-öncesi yazılmış 4 mevcut
+ekip-testinin mock'una `aktiflik=true` eklendi** — yeni kapının gerektirdiği alan bu mock'larda eksikti;
+meşru mock-tamamlama, davranış regresyonu DEĞİL (şeffaf raporlandı). Mevcut tenant + rank-default +
+legal-sorumlu guard'ları korundu. Bu canonicalization: **status (CANDIDATE-K1) → CANONICAL** (PHASE 1
+MILESTONE 09) · **contractStatus → CONSUMED** (Contract Draft başarılı implementasyonla uzlaştırıldı/
+tüketildi) · **implementationAuthorization → CONSUMED** — yeni bir implementasyon yetkisi ÜRETİLMEDİ,
+yalnız tamamlanan işin kaydı. **STF-PRD-BOLA-002 finding'i OPEN / PARTIALLY MITIGATED KORUNUR** — K1
+yalnız Case ekip-ekleme alt-boşluğunun baseline'ını (aynı-tenant + aktiflik, ileriye-dönük) kapattı;
+**K2** (toplu atama, ASSIGN-4d'ye bağlı) + **K3** (legal-sorumlu terfi re-check) + CANDIDATE-J/K
+rol/kapasite policy hâlâ açık (bkz. §2/§7 + OFFICE-RISK-REGISTER.md); bu bir finding closure DEĞİLDİR.
+Geriye kalan CANDIDATE-K kapsamı (K2 BLOCKED_ON_PRODUCT_DECISION · K3 DEFERRED) + diğer OFFICE hatları
+(B DEFERRED · D PRODUCT_DECISION · G BLOCKED · F2 DORMANT · E/I/J kalan kapsamı) owner-gated future
+scope — BU CANONICALIZATION'LA DEĞİŞMEDİ. **NEXT ELIGIBLE UNIT yeniden NONE'a döndü** — WAVE 1-4+'te
+implementasyona hazır, owner-seçili bekleyen başka slice yok; NEXT PROGRAM ACTION = OWNER SELECTION/
+DECISION REQUIRED (bkz. §8 üst blok). Bu canonicalization CANDIDATE-K1'in IMPLEMENTED/MERGED/CANONICAL/
+CONSUMED durumunu + STF-PRD-BOLA-002'nin OPEN/PARTIALLY MITIGATED kalan finding verdict'ini kaydeder;
+kod/schema/migration/yeni candidate seçimi başlatmaz.
 ```
 
 ## 9. Document Self-Check
@@ -1522,4 +1564,28 @@ BOLA-002'nin K1-mapping'ini kaydeder; kod/schema/migration/implementasyon başla
 - PUBLIC CONTENT RULE (K1 contract): enforcement metot/        NO — yalnız governance-seviyesi soyut
   site/route/mekanizma detayı eklendi mi:                      yapı tarifi (grep doğrulandı; BOLA-002
                                                                 hâlâ OPEN, aynı containment kuralı)
+- CANDIDATE-K1 → CANONICAL/CONSUMED/CONSUMED işlendi mi         YES — §2/§4/§4f/§5/§7/§8; PR #1356,
+  (§2/§4/§4f/§5/§7/§8):                                         squash `423d72ea`, CI 4/4, PHASE 1 MILESTONE 09
+- contractStatus RATIFIED→CONSUMED uzlaştırıldı mı             YES — §4 register + §8 field-summary +
+  (owner talimatı):                                            §8 closure paragrafı: CONSUMED
+- implementationAuthorization (CANDIDATE-K1) yeni bir          NO — yalnız tamamlanan işin kaydı;
+  yetki mi yoksa tamamlanan işin kaydı mı (owner: yeni         GO_IMPLEMENT_ISSUED→CONSUMED aynı slice
+  yetki üretme):                                               için tekrar açılmaz
+- STF-PRD-BOLA-002 finding CLOSED işaretlendi mi               NO — OPEN / PARTIALLY MITIGATED KORUNDU
+  (owner: Case baseline teslim edildi ama K2/K3/policy açık):  (§2/§7/§8/OFFICE-RISK-REGISTER.md); K1 yalnız
+                                                                Case ekip-ekleme baseline'ını kapattı
+- Yalnız Case ekip-ekleme baseline'ı uzlaştırıldı mı,          YES — §2/§7/§8 + risk kartı: K1 Case
+  finding kapatılmadan (owner talimatı):                       baseline IMPLEMENTED; K2/K3 + rol/kapasite
+                                                                policy açık; verdict OPEN/PARTIALLY MITIGATED
+- Gate-öncesi 4 mevcut test mock'una aktiflik=true             YES — §4f IMPLEMENTATION + §8 closure:
+  eklendiği şeffaf kaydedildi mi (meşru mock-tamamlama):       meşru mock-tamamlama, regresyon DEĞİL
+- CANDIDATE-K2/K3 + kalan kapsam owner-gated korundu mu:       YES — §4f/§8: K2 BLOCKED_ON_PRODUCT_
+                                                                DECISION, K3 DEFERRED, dokunulmadı
+- CANDIDATE-A..J1 durumu değiştirildi mi:                      NO — yalnız CANDIDATE-K1 + ilgili
+                                                                finding (BOLA-002) etkilendi
+- NEXT ELIGIBLE UNIT yeniden hesaplandı mı:                    YES — §8: NONE'a döndü (K1 CONSUMED
+                                                                oldu, başka hazır candidate yok)
+- Yeni candidate seçildi mi / kod-schema-migration:            NO / NONE
+- PUBLIC CONTENT RULE (K1 implementation closure): şema/       NO — yalnız governance/test-evidence
+  enforcement metot/route/mekanizma detayı eklendi mi:        metadata (grep doğrulandı)
 ```
