@@ -99,7 +99,7 @@ REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ek
 | Receipt / Tahsilat Girişi | Paranın/değerin sisteme girdiği fact | CURRENT |
 | Collection | Receipt'in bağlam, statü, belge ve işlem taşıyıcısı | CURRENT |
 | Internal Confirmation | Sistem içi kayıt onayı; banka finality değildir | CURRENT |
-| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — CONTRACT RECORDED / ADDITIVE SCHEMA FOUNDATION PRESENT / RUNTIME ABSENT (COL/OD-06 Option A; W2.2A) |
+| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — CONTRACT RECORDED / PENDING CANDIDATE INGRESS PRESENT / FULL RUNTIME LIFECYCLE INCOMPLETE (COL/OD-06 Option A; W2.2A/B) |
 | Legal Allocation | Tahsilatın alacak bileşenlerine hukuki uygulanması | CURRENT (REC-AUTH-011) |
 | TBK100 Allocation | Masraf→fer'i→işlemiş faiz→anapara deterministic mahsup | CURRENT (REC-GOV §9.2 — norm oradadır) |
 | Client Disposition | Tahsilatın müvekkil/ofis dağıtım kararı | CURRENT (TM3) |
@@ -485,7 +485,7 @@ Collection(confirmed)
   → CLIENT_PAYABLE → ClientPayout (idempotent + approval; COL/OD-21)
 ```
 
-## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; additive schema foundation present, runtime absent)
+## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; PENDING candidate ingress present, full runtime lifecycle incomplete)
 
 1. **Candidate boundary:** Harici banka/provider hareketi doğrulanıp yetkili eşleştirme
    yapılana kadar Integration tarafında non-canonical candidate'dır. Candidate durumları
@@ -510,9 +510,17 @@ Collection(confirmed)
    defaultsuz `BankTransaction.candidateStatus` kolonunu additive olarak eklemiştir. Backfill
    yoktur; legacy `NULL` unknown kalır ve `SETTLED` olarak yorumlanamaz. Schema varlığı
    lifecycle authority, runtime writer veya davranış üretmez.
-8. **Execution gate:** Contract `RECORDED`, W2.2A schema foundation kanıtı
-   `CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE` durumundadır; runtime lifecycle
-   hâlâ yoktur. W2.2B ve sonraki birimler ayrı owner GO gerektirir; W2.3 W2.2 boundary
+8. **Candidate ingress boundary:** W2.2B PR #1347 / squash
+   `61b49ce02b75ed966f163e290d8bdd1ed140587a`, yeni `INCOMING` banka receipt hareketlerini
+   `candidateStatus=PENDING` ile oluşturur. `OUTGOING` hareketlerde candidate lifecycle
+   başlatılmaz. `tryAutoMatch` yalnız tenant-scoped `PENDING` adayı tespit/eşleştirme hazırlığı
+   için okur; Collection, journal, event, outbox, ledger, allocation veya overpayment üretmez.
+   Duplicate sync mevcut satırı çoğaltmaz ya da legacy `NULL` değerini backfill etmez; tenant
+   isolation korunur. Bu kanıt `SETTLED`/`REJECTED` transition, settlement evidence,
+   `externalSettledAt` veya canonical Collection confirmation authority'si üretmez.
+9. **Execution gate:** Contract `RECORDED`; W2.2A schema foundation ve W2.2B PENDING ingress
+   kanıtları approved reconciliation merge'leriyle `CLOSED / CANONICAL` olur. Full runtime
+   lifecycle hâlâ tamamlanmamıştır; W2.2C ayrı owner GO gerektirir ve W2.3 W2.2 boundary
    uygulanıp kanıtlanana kadar blokludur. Refund/downstream reversal ve claim
    satisfaction/re-open paketleri kendi owner kararları kapanmadan CURRENT ilan edilemez.
 
