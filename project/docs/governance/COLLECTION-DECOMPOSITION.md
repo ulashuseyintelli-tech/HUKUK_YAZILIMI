@@ -28,7 +28,7 @@ diğer parantezli atamalar PROPOSED kalır.
 ```text
 PHASE 0 — CANONICALIZATION & HANDOFF          [CLOSED / CANONICAL UPON APPROVED MERGE]
 PHASE 1 — P0 FINANCIAL SAFETY                 [CLOSED / CANONICAL]
-PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [ACTIVE — W2.1/W2.2A/W2.2B CLOSED; W2.2C-0 CLOSED UPON APPROVED RECONCILIATION / NEXT OWNER GATE REQUIRED]
+PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0 CLOSED; W2.2C DECISION GATE SATISFIED / W2.2C-1 OWNER GO REQUIRED]
 PHASE 3 — DOMAIN COMPLETENESS                 [owner-decision-gated]
 PHASE 4 — CONSUMER CUTOVER                    [cutover-gated — NOT AUTHORIZED]
 PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
@@ -86,12 +86,12 @@ disposition'ını, daha geniş `REC-AUTH-011/012` reconciliation'ı ise Phase 1 
 cross-domain authority çalışmasını açık tutar. Bu kapanış Phase 2'yi başlatmaz veya
 implementation authority üretmez.
 
-## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (ACTIVE — W2.1/W2.2A/W2.2B closed; W2.2C-0 closes upon approved reconciliation, next owner gate required)
+## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0 closed; W2.2C decision gate satisfied)
 
 | Wave | Workstream | Gate |
 |---|---|---|
 | W2.1 | Canonical effective-date policy | **CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE** — COL/OD-03 RECORDED; W2.1A PR #1315 / `1d5974e5` test-only evidence; precedence, fallback, provenance exclusion ve fail-closed confirmed |
-| W2.2 | confirmedAt / external settlement | **ACTIVE — W2.2A/W2.2B CLOSED / CANONICAL; W2.2C-0 CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE** — COL/OD-06 Option A + COL/OD-03 RECORDED; PR #1332 / `88290071` additive schema foundation + PR #1347 / `61b49ce0` PENDING candidate ingress + PR #1353 / `758f6186` unsettled candidate admission guard; next owner gate settlement evidence/transition foundation |
+| W2.2 | confirmedAt / external settlement | **ACTIVE — W2.2A/W2.2B/W2.2C-0 CLOSED / CANONICAL; W2.2C DECISION GATE SATISFIED** — COL/OD-06 Option A + COL/OD-06A Option C + COL/OD-03 RECORDED; PR #1332 / `88290071` additive candidate-status schema + PR #1347 / `61b49ce0` PENDING candidate ingress + PR #1353 / `758f6186` unsettled candidate admission guard; `W2.2C-1 — Typed Settlement Evidence Additive Schema Foundation` READY FOR OWNER GO / IMPLEMENTATION NOT AUTHORIZED |
 | W2.3 | Unapplied payment lifecycle | **BLOCKED — W2.2 BOUNDARY PENDING** — COL/OD-06 contract RECORDED; full runtime lifecycle incomplete |
 | W2.4 | Refund / downstream reversal | COL/OD-09/-10 OPEN (+COL/OD-01 RECORDED); partial/delta fail-closed; workstream NOT AUTHORIZED |
 | W2.5 | Claim satisfaction / re-open | COL/OD-07/-08 OPEN; workstream NOT AUTHORIZED |
@@ -194,9 +194,25 @@ W2.2C-0 unsettled candidate canonicalization guard exit criteria ve canonical ka
 6. **Scope boundary:** Diff yalnız bank service + hedef test dosyasıdır. Schema, migration,
    backfill, settlement transition/evidence writer, dedicated verifier permission,
    `externalSettledAt`, chargeback/refund/reversal ve W2.2D/W2.2E/W2.3 değişikliği yoktur.
-   COL-RISK-G03 `OPEN — TRANSITION/EVIDENCE RUNTIME ABSENT` kalır. W2.2 ACTIVE; sıradaki
-   owner gate settlement evidence/transition foundation'dır ve W2.3
-   `BLOCKED — W2.2 BOUNDARY PENDING` kalır.
+   COL-RISK-G03 `OPEN — TRANSITION/EVIDENCE RUNTIME ABSENT` kalır. W2.2 ACTIVE;
+   COL/OD-06A approved merge ile settlement evidence decision gate'ini sağlar ve W2.2C-1 ayrı
+   owner GO bekler. W2.3 `BLOCKED — W2.2 BOUNDARY PENDING` kalır.
+
+### W2.2C Settlement Evidence Decision Gate
+
+1. **Authority:** COL/OD-06A Option C ve `COL-SETTLE-001`, approved merge ile hybrid typed
+   evidence authority'sini ve dedicated `bank.settlement.verify` permission'ını `RECORDED`
+   duruma getirir.
+2. **Evidence boundary:** Validated provider attestation ile evidence-backed dedicated
+   `SETTLEMENT_VERIFIER` tek izinli kaynak sınıflarıdır. Tarih alanları ve kullanıcı beyanı
+   tek başına evidence değildir; provider yolu finality desteğine kadar `DEFERRED` kalır.
+3. **Mutation separation:** Immutable evidence append ile candidate status transition ayrı
+   canonical mutation'lardır; transaction-bound audit ve allowlist metadata sınırı uygulanır.
+4. **First patch boundary:** `W2.2C-1 — Typed Settlement Evidence Additive Schema Foundation`
+   yalnız owner-go adayıdır. Permission implementation, evidence writer, status transition,
+   Collection admission, W2.2D/W2.2E ve W2.3 kapsam dışıdır.
+5. **Open-boundary preservation:** COL-RISK-G03 `OPEN — TRANSITION/EVIDENCE RUNTIME ABSENT`
+   kalır. Decision gate'in sağlanması runtime lifecycle veya implementation authority üretmez.
 
 ## PHASE 3 — DOMAIN COMPLETENESS (tamamı owner-gated)
 
@@ -247,10 +263,12 @@ W1.6             : CLOSED / CANONICAL — COL/OD-05 + PR #1246 @ c7f55da4
 W2.1             : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR #1315 @ 1d5974e5
 W2.2A            : CLOSED / CANONICAL — PR #1332 @ 88290071
 W2.2B            : CLOSED / CANONICAL — PR #1347 @ 61b49ce0
-W2.2C-0          : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR #1353 @ 758f6186
-W2.2             : ACTIVE — W2.2A/W2.2B closed; W2.2C-0 closes upon approved reconciliation; next owner gate settlement evidence/transition foundation
+W2.2C-0          : CLOSED / CANONICAL — PR #1353 @ 758f6186 + reconciliation @ 77a83db3
+W2.2C            : DECISION GATE SATISFIED — COL/OD-06A Option C; runtime absent
+W2.2C-1          : READY FOR OWNER GO / IMPLEMENTATION NOT AUTHORIZED — typed settlement evidence additive schema foundation
+W2.2             : ACTIVE — W2.2A/W2.2B/W2.2C-0 closed; W2.2C decision gate satisfied
 W2.3             : BLOCKED — W2.2 BOUNDARY PENDING
-PHASE 2          : ACTIVE — W2.1/W2.2A/W2.2B closed; W2.2C-0 closes upon approved reconciliation; next owner gate required; W2.3 blocked; W2.4–W2.5 owner-gated
+PHASE 2          : ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0 closed; W2.2C-1 owner GO required; W2.3 blocked; W2.4–W2.5 owner-gated
 PHASE 3    <── COL/OD-02, -14, -15, -17, -19, -20
 PHASE 4    <── PHASE 1 tamamı + COL/OD-11, -12, -13, -16 + CAN-CUT-01/02
 PHASE 5    <── PHASE 4

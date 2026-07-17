@@ -9,9 +9,9 @@ Sınıf                   : OPEN-DECISION DOSSIER — hiçbir kararı KAPATMAZ; 
                           yalnız decision-log.md'de authoritative'dir (OFFICE-OWNER-DECISIONS
                           ile aynı sınıf ve sınır)
 Owner Status            : OWNER-APPROVED CANONICALIZATION (2026-07-13) — dossier'in kendisi
-                          onaylandı; COL/OD-01, COL/OD-03, COL/OD-04, COL/OD-05, COL/OD-06 ve COL/OD-21
-                          RECORDED; COL/OD-18 RECORDED → COL/OD-18A ile AMENDED (2026-07-15);
-                          kalan 14 karar OPEN
+                          onaylandı; COL/OD-01, COL/OD-03, COL/OD-04, COL/OD-05, COL/OD-06,
+                          COL/OD-06A ve COL/OD-21 RECORDED; COL/OD-18 RECORDED →
+                          COL/OD-18A ile AMENDED (2026-07-15); kalan 14 kök karar OPEN
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Kanıt tabanı            : repo main @ beb7d673 + Desktop 01 §23 karar kuyruğu damıtımı
 IMPLEMENTATION AUTHORITY: NONE — karar paketi hazırlığı hiçbir implementasyon yetkisi üretmez
@@ -178,6 +178,35 @@ ETKİ. Hiçbirinde öneri "karar" olarak yazılmamıştır.
 - BAĞIMLILIK: COL/OD-03. ETKİ: W2.2, W2.3.
 - IMPLEMENTATION EFFECT: W2.2 decision gate sağlanmıştır ancak implementation yetkisi yoktur.
   W2.3, W2.2 boundary uygulanıp kanıtlanana kadar `BLOCKED — W2.2 BOUNDARY PENDING` kalır.
+
+### COL/OD-06A — Settlement evidence authority / dedicated verifier
+- STATUS: **RECORDED** (2026-07-17) — authoritative kayıt:
+  `decision-log.md` § `2026-07-17 — RC-COL / COL/OD-06A`.
+- İLİŞKİ: COL/OD-06 Option A'yı değiştirmeyen additive karar; candidate-first ve orthogonal
+  lifecycle contract'ını settlement evidence authority düzeyinde tamamlar.
+- SORU: `PENDING` banka candidate'ı hangi typed evidence ve actor authority ile `SETTLED` veya
+  `REJECTED` durumuna geçirilebilir?
+- OWNER SELECTION: **OPTION C — Hybrid Typed Evidence.**
+- KARAR:
+  - Settlement evidence authority; doğrulanmış provider attestation veya evidence-backed,
+    dedicated `SETTLEMENT_VERIFIER` doğrulamasıdır.
+  - Dedicated permission key `bank.settlement.verify`dır. Title, genel SystemRole, Collection
+    admission authority veya salt tenant üyeliği bu permission'ı kendiliğinden üretmez.
+  - `transactionDate`, `valueDate`, `confirmedAt` ve kullanıcı beyanı tek başına settlement
+    evidence değildir.
+  - Settlement verification ile canonical Collection admission ayrı authority gate'leridir.
+  - Candidate transition yalnız immutable typed evidence ile yapılabilir. Evidence append
+    append-only'dir; status transition evidence append'den ayrı canonical mutation'dır.
+  - Audit transaction-bound ve allowlist metadata ile tutulur. Ham provider payload, IBAN,
+    açıklama ve serbest metin audit metadata'sına yazılmaz.
+  - Provider evidence yolu doğrulanabilir provider finality desteği gelene kadar `DEFERRED`
+    kalır.
+- KANIT: SYS-GOV-018; SYS-EVID-003/-004/-006; SYS-AUTH-007/-009/-011/-012;
+  REC-AUTH-010/-030; OFFICE-GOVERNANCE OFF-INV-03/-05/-08/-10; ADR-011; COL/OD-06.
+- BAĞIMLILIK: COL/OD-06 ve COL/OD-03. ETKİ: W2.2C evidence/transition foundation.
+- IMPLEMENTATION EFFECT: W2.2C decision gate sağlanır. İlk aday `W2.2C-1 — Typed Settlement
+  Evidence Additive Schema Foundation`, ayrı owner GO bekler; implementation bu kayıtla
+  yetkilendirilmez. COL-RISK-G03 `OPEN — TRANSITION/EVIDENCE RUNTIME ABSENT` kalır.
 
 ### COL/OD-07 — Feragat / indirim / sulh / ibra / write-off etki matrisi
 - SORU: Bu hukuki işlemler ClaimItem/ledger/faiz üzerinde hangi etkiyi, hangi approval ile üretir?
