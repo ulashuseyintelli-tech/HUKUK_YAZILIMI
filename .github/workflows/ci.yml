@@ -542,11 +542,12 @@ jobs:
                    src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.db-gated.integration.spec.ts \
                    src/modules/automation/__tests__/enforcement-action-guarded-write-path.db-gated.integration.spec.ts \
                    src/modules/automation/__tests__/enforcement-action-tenant-case-debtor-fk.db-gated.integration.spec.ts \
+                   src/modules/automation/__tests__/all-passive-case-automation-stop.db-gated.integration.spec.ts \
                    src/scripts/__tests__/enforcement-action-backfill-profiler.db-gated.integration.spec.ts; do
             test -f "$f" || { echo "MISSING Wave 0 tenant DB-gated spec: $f"; exit 1; }
           done
           npx jest --ci --forceExit --runInBand \
-            --testPathPattern="(workflow-engine-build-context-tenant-guard|workflow-engine-remaining-tenant-boundaries|enforcement-action-guarded-write-path|enforcement-action-tenant-case-debtor-fk|enforcement-action-backfill-profiler)\.db-gated\.integration\.spec\.ts$"
+            --testPathPattern="(workflow-engine-build-context-tenant-guard|workflow-engine-remaining-tenant-boundaries|enforcement-action-guarded-write-path|enforcement-action-tenant-case-debtor-fk|all-passive-case-automation-stop|enforcement-action-backfill-profiler)\.db-gated\.integration\.spec\.ts$"
         working-directory: project
       # LRV-03A / DBP-P2-SEC-P03A: CaseDebtor.lifecycleStatus guard'ı createEnforcementAction'ın
       # caseDebtorId dalına eklendi (DBP-07 §11 "Passivation Guard Is Universal"). Yeni dosya —
@@ -561,6 +562,20 @@ jobs:
             { echo "MISSING LRV-03A spec: enforcement-action-passivation-guard.spec.ts"; exit 1; }
           npx jest --ci --forceExit \
             --testPathPattern="enforcement-action-passivation-guard\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # DBP-P2-BP-01 (LRV-03B, owner OPTION A): tüm CaseDebtor PASSIVE ise case-seviyesi otomasyon
+      # fail-closed durur (WorkflowEngine.processCase). Yeni dosya — yukarıdaki tenant/lifecycle
+      # allowlist'lerine dahil DEĞİL (ayrı invariant ekseni: case-level automation policy) —
+      # narrow-allowlist stale-test gap'i tekrarlamamak için ayrı, açık isimli step. db-gated satırı
+      # yukarıdaki "Wave 0 tenant-boundary disposable-DB tests" step'inin allowlist'ine eklendi.
+      - name: DBP-P2-BP-01 all-passive case automation stop tests (WorkflowEngine.processCase)
+        run: |
+          cd apps/api
+          test -f src/modules/automation/__tests__/all-passive-case-automation-stop.spec.ts || \
+            { echo "MISSING DBP-P2-BP-01 spec: all-passive-case-automation-stop.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="all-passive-case-automation-stop\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
       # PR-1 (güvenlik): RBAC + metadata redaction + source/tenant/level spoof engeli.

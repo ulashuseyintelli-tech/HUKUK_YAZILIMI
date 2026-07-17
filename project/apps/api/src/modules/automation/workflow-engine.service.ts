@@ -137,11 +137,32 @@ export class WorkflowEngine {
       const context = await this.buildContext(caseId, tenantId);
       const caseData = await this.prisma.case.findFirst({
         where: { id: caseId, tenantId },
-        include: { formType: true },
+        include: {
+          formType: true,
+          // LRV-03B / DBP-P2-BP-01 all-passive guard'ı için lifecycle dağılımı; ayrı yeni sorgu
+          // açmamak adına mevcut caseData sorgusuna eklenir (owner: "duplicate query üretme").
+          debtors: { select: { lifecycleStatus: true } },
+        },
       });
 
       if (!caseData || !caseData.isAutoMode) {
         return; // Otomatik mod kapalıysa işleme
+      }
+
+      // LRV-03B / DBP-P2-BP-01 (owner OPTION A, 2026-07-17): Dosyadaki TÜM CaseDebtor kayıtları
+      // PASSIVE ise case-seviyesi otomasyon fail-closed durur (kontrollü no-op) — hiçbir rule
+      // değerlendirilmez, stage değişmez, EnforcementAction yazılmaz, notification/side-effect
+      // üretilmez. "Tüm borçlular pasif" ile "borçlu ilişkisi kaydı yok" AYNI durum DEĞİLDİR:
+      // debtorless case (length === 0) AS-IS devam eder. Bu guard yeni hukuki istisna (estate/
+      // tereke) ÜRETMEZ; yalnız mevcut lifecycle verisini okur. En az bir ACTIVE varsa devam edilir.
+      if (
+        caseData.debtors.length > 0 &&
+        caseData.debtors.every(
+          (caseDebtor) =>
+            caseDebtor.lifecycleStatus === CaseDebtorLifecycleStatus.PASSIVE,
+        )
+      ) {
+        return; // Tüm dosya borçluları pasif — otomasyon çalıştırılmaz (kontrollü no-op)
       }
 
       // Form tipine göre özel kuralları değerlendir
