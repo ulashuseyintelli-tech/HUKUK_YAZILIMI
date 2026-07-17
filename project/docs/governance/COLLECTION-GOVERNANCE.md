@@ -99,7 +99,7 @@ REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ek
 | Receipt / Tahsilat Girişi | Paranın/değerin sisteme girdiği fact | CURRENT |
 | Collection | Receipt'in bağlam, statü, belge ve işlem taşıyıcısı | CURRENT |
 | Internal Confirmation | Sistem içi kayıt onayı; banka finality değildir | CURRENT |
-| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — CONTRACT RECORDED / PENDING CANDIDATE INGRESS PRESENT / FULL RUNTIME LIFECYCLE INCOMPLETE (COL/OD-06 Option A; W2.2A/B) |
+| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — CONTRACT RECORDED / PENDING CANDIDATE INGRESS + UNSETTLED ADMISSION GUARD PRESENT / TRANSITION-EVIDENCE RUNTIME ABSENT (COL/OD-06 Option A; W2.2A/B/C-0) |
 | Legal Allocation | Tahsilatın alacak bileşenlerine hukuki uygulanması | CURRENT (REC-AUTH-011) |
 | TBK100 Allocation | Masraf→fer'i→işlemiş faiz→anapara deterministic mahsup | CURRENT (REC-GOV §9.2 — norm oradadır) |
 | Client Disposition | Tahsilatın müvekkil/ofis dağıtım kararı | CURRENT (TM3) |
@@ -485,7 +485,7 @@ Collection(confirmed)
   → CLIENT_PAYABLE → ClientPayout (idempotent + approval; COL/OD-21)
 ```
 
-## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; PENDING candidate ingress present, full runtime lifecycle incomplete)
+## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; PENDING ingress + unsettled admission guard present, transition/evidence runtime absent)
 
 1. **Candidate boundary:** Harici banka/provider hareketi doğrulanıp yetkili eşleştirme
    yapılana kadar Integration tarafında non-canonical candidate'dır. Candidate durumları
@@ -518,10 +518,20 @@ Collection(confirmed)
    Duplicate sync mevcut satırı çoğaltmaz ya da legacy `NULL` değerini backfill etmez; tenant
    isolation korunur. Bu kanıt `SETTLED`/`REJECTED` transition, settlement evidence,
    `externalSettledAt` veya canonical Collection confirmation authority'si üretmez.
-9. **Execution gate:** Contract `RECORDED`; W2.2A schema foundation ve W2.2B PENDING ingress
-   kanıtları approved reconciliation merge'leriyle `CLOSED / CANONICAL` olur. Full runtime
-   lifecycle hâlâ tamamlanmamıştır; W2.2C ayrı owner GO gerektirir ve W2.3 W2.2 boundary
-   uygulanıp kanıtlanana kadar blokludur. Refund/downstream reversal ve claim
+9. **Canonical admission guard boundary:** W2.2C-0 PR #1353 / squash
+   `758f6186a7fe72edb43c81e7514d3e4acc5dceee`, yeni canonical Collection oluşturulmadan
+   önce `candidateStatus=SETTLED` şartını uygular. `PENDING`, `REJECTED` ve legacy `NULL`
+   açık hata ile fail-closed kalır; Collection, journal, event, outbox, ledger, allocation,
+   overpayment, ClaimItem veya bank-match projection write'ı üretmez. `SETTLED` aday mevcut
+   canonical match yoluna devam eder. Daha önce başarıyla eşleşmiş transaction replay'i
+   admission guard'dan önce değerlendirilir ve yeni etki üretmeden mevcut Collection'ı döndürür.
+   Bu containment settlement transition, evidence writer, verifier permission veya finality
+   authority'si oluşturmaz.
+10. **Execution gate:** Contract `RECORDED`; W2.2A schema foundation ve W2.2B PENDING ingress
+   `CLOSED / CANONICAL`dır. W2.2C-0 approved reconciliation merge'iyle
+   `CLOSED / CANONICAL` olur. Transition/evidence runtime hâlâ yoktur; sıradaki owner gate
+   settlement evidence/transition foundation'dır ve W2.3 W2.2 boundary uygulanıp kanıtlanana
+   kadar blokludur. Refund/downstream reversal ve claim
    satisfaction/re-open paketleri kendi owner kararları kapanmadan CURRENT ilan edilemez.
 
 ---
