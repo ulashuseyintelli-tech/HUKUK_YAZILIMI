@@ -280,6 +280,29 @@ obligation-scope, iflas masası sınıflandırması) BU BELGEYLE seçilmez — h
 LDO/Finance kararıdır. OD-07 IMPLEMENTATION HOLD: analiz devam eder, kod/schema/migration YOK.
 ```
 
+**OD-07-DECISION-01 REALIZATION DEFERRAL RECONCILIATION (2026-07-17, bkz. `decision-log.md` aynı
+tarihli kayıt):** Yukarıdaki "realization HOLD" ifadesi o tarihte (DBP-07 canonicalization'ında)
+doğruydu; bu not onu SİLMEZ/DEĞİŞTİRMEZ, yalnız `OD-07-DECISION-01` GO-ANALYZE'i sonrası owner
+kararını uzlaştırır. **OD-07 FRAMEWORK: APPROVED / PRESERVED** (§3 beş-kavram ayrımı bağlayıcı
+kalır; exposure parasal değeri Alacak/Muhasebe domain'inde; DEBTOR yalnız hukuki çerçeve). **OD-07
+REALIZATION: DEFERRED / HOLD CONTINUES** — owner `OPTION 1 SELECTED` (realization'ı ertele).
+Karar repository truth'a dayanır: **mevcut `LegalResponsibility` aggregate'ı YOK; onun yokluğuyla
+TAM bloklu hiçbir capability YOK; hiçbir finansal hesap / Collection / allocation coupling YOK;
+`liabilityType` runtime tüketicisi 0; `liabilityAmount` yalnız görüntü-istatistiği tüketilir.**
+**OPTION 2 (additive shadow LegalResponsibility record): NOT AUTHORIZED. OPTION 3 (full aggregate):
+NOT AUTHORIZED.** **CURRENT MODEL: transitional `CaseDebtor` + case-seviyesi model AS-IS sürer;
+`liabilityAmount`/`liabilityType` canonical authority İLAN EDİLMEZ (ambigü, DBP-11 UNRESOLVED).**
+**REOPEN TRIGGERS (yetkilendirmez; yalnız yeniden-analiz tetikleyicisi):** per-debtor enforcement
+eligibility · multi-role/multi-responsibility support · joint/limited/share-based exposure ·
+estate/heir responsibility model · responsibility digital-twin tile · liability signal for score ·
+per-debtor claim or payment designation. **KORUNAN SINIRLAR:** Party Foundation UNCHANGED /
+SEPARATE HOLD (OD-04) · exposure authority = RECEIVABLE domain (N-16) · calculation authority =
+canonical legal calculation (ADR-014) · collection authority = COLLECTION domain (N-17) ·
+accounting authority = ACCOUNTING domain · LSO (müteselsillik/kefalet/iflas/succession hukuki
+içeriği) OPEN · FGO (exposure↔Alacak koordinasyon sözleşmesi, Finance+LDO) OPEN · **OBD-02
+(Liability yerleşimi: CaseDebtor-gömülü mü ayrı LiabilityGroup mu) OPEN AS CANONICAL.** Bu kayıt
+kod/schema/migration/aggregate/shadow-record ÜRETMEZ ve sonraki capability'yi başlatmaz.
+
 ---
 
 ## 14. Current Repository Gap & AS-IS Violation Register (VERIFIED @351c7820)
