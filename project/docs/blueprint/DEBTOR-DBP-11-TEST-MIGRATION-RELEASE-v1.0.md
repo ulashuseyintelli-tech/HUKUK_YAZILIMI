@@ -132,7 +132,7 @@ kaynak DBP'ye göre değil.
 | Sınıf | Örnek kayıtlar (kaynak-ID) | Not |
 |---|---|---|
 | CURRENT_PRODUCTION_REMEDIATION | *(restricted — owner-local register; public'te yalnız "PRESENT")* | QUEUE-A; owner GO ile açılabilir |
-| IMPLEMENTATION_ENTRY_BLOCKER | DBP-07 LRV-03B (public) · *(+ restricted kalemler — owner-local register)* | yeni implementasyon öncesi çözülmeli — **LRV-02 REMEDIATED + LRV-03 SPLIT (LRV-03A REMEDIATED, yalnız LRV-03B açık kalır), bkz. aşağıdaki reconciliation notları** |
+| IMPLEMENTATION_ENTRY_BLOCKER | *(restricted kalemler — owner-local register)* | yeni implementasyon öncesi çözülmeli — **LRV-02 REMEDIATED + LRV-03 SPLIT (LRV-03A REMEDIATED; LRV-03B RECLASSIFIED → `DBP-P2-BP-01`, business-policy / automation-semantics eksenine TAŞINDI — artık bu security implementation-entry-blocker satırında DEĞİL), bkz. aşağıdaki reconciliation notları** |
 | CAPABILITY_ACTIVATION_BLOCKER | DBP-09 office tenant-only read gap — DTIB (public) · *(+ restricted kalemler — owner-local register)* | Twin/yeni-yüzey aktivasyonu bekler |
 | CUTOVER_BLOCKER | DBP-04 AS-IS scheduler itiraz-fact'siz geçiş (owner-kabullü bilinen risk; public) | cutover öncesi kapanmalı |
 | LEGAL_SIGN_OFF_BLOCKER | DBP-04 LSR (OF-02/03/04, DA-03..07, LG-01..10 içerikleri) · DBP-07 LSR (müteselsillik/kefalet/iflas) (public) | LDO/Finance sign-off bekler |
@@ -214,6 +214,33 @@ tamamlanan remediation birimleri (LRV-02, ikinci mapper hardening, LRV-03A) HAR�
 olarak kalır. **AYRI CI BULGUSU (yalnız referans, bu görevde remediate EDİLMEDİ):** LRV-02 ve
 DBP-P2-SEC-P02'nin test dosyaları ci.yml'in dosya-adı bazlı allowlist'inde YER ALMIYOR olabilir —
 ayrı OWNER task'ıdır, LRV-03A-GOV'un parçası DEĞİLDİR.
+
+**DBP-P2-BP-01 GOVERNANCE RECORD & LRV-03B RECLASSIFICATION (2026-07-17, bkz. `decision-log.md`
+aynı tarihli kayıt):** Yukarıdaki DBP-P2-SEC-P03A notundaki "LRV-03B: NOT STARTED / SEPARATE OWNER
+PROGRAM ... yukarıdaki tablo satırında `LRV-03B` AÇIK blocker olarak kalır" ifadesi o tarihte
+doğruydu; bu not onu SİLMEZ/DEĞİŞTİRMEZ, yalnız `DBP-P2-SEC-P03B` GO-ANALYZE'i sonrası owner
+kararını uzlaştırır. **RECLASSIFICATION: eski `LRV-03B` bir güvenlik açığı DEĞİL, bir iş-kuralı
+tasarım sorusudur** — analiz kanıtladı ki Case-seviyesi otomasyon (cron seçimi + `processCase` +
+6 kural) CaseDebtor lifecycle'a tamamen kördür ve tartışılan konu "tüm borçlular pasif olduğunda
+case-seviyesi otomasyonun hukuken ne yapması gerektiği"dir. Bu nedenle kayıt **`LRV-03B` (security
+implementation-entry-blocker) → `DBP-P2-BP-01`** olarak yeniden sınıflandırıldı ve
+**BUSINESS POLICY / AUTOMATION SEMANTICS / LEGAL RESPONSIBILITY** eksenine taşındı (güvenlik
+remediation listesinde artık izlenmez; yukarıdaki IMPLEMENTATION_ENTRY_BLOCKER satırından
+çıkarıldı). **KANONİK İŞ KURALI (OWNER-DECIDED): tüm `CaseDebtor` kayıtları PASSIVE ise
+case-seviyesi otomasyon = STOP / FAIL-CLOSED; en az bir `CaseDebtor` ACTIVE ise = CONTINUE.**
+Bu karar case closure OLUŞTURMAZ, claim satisfaction OLUŞTURMAZ, `Case.isAutoMode` değerini
+DEĞİŞTİRMEZ, CaseDebtor-bazlı rule classification OLUŞTURMAZ, LegalResponsibility realization
+AÇMAZ. **OPTION A: AUTHORIZED** (bounded fail-closed all-passive stop; migration'sız,
+LegalResponsibility aggregate'ını varsaymayan, OD-07 realization'ını beklemeyen). **OPTION B
+(tam rule-classification / debtor-bound execution): DEFERRED TO OD-07 PROGRAM** (artık remediation
+değil, yeni domain capability tasarımı). **OPTION C: NOT SELECTED.** **AÇIK İSTİSNA:
+ESTATE / SUCCESSION / TEREKE senaryoları bu kararla ÇÖZÜLMEDİ** — ayrıca owner/LDO
+değerlendirmesine açık; ancak bu açık konu Option A implementation'ını otomatik BLOKE ETMEZ.
+**IMPLEMENTATION: NOT STARTED** — bu kayıt yalnız owner kararını ve yeniden sınıflandırmayı
+kaydeder; `DBP-P2-BP-01` implementation'ı ayrı owner GO-IMPLEMENT gerektirir. **LRV-03A: CLOSED /
+NOT REOPENED.** **PHASE 2 GENEL GİRİŞ: YETKİLENDİRİLMEDİ (NOT AUTHORIZED).** Metodolojik ayrım
+korunur: **LRV-03A = mechanical invariant (implemented); LRV-03B/`DBP-P2-BP-01` = business policy
+(owner decision)** — güvenlik remediation ile iş-kuralı tasarım kararları ayrı eksenlerde izlenir.
 
 ---
 
