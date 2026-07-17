@@ -288,6 +288,29 @@ kayıt OD-07'yi açmaz, Party Foundation'ı reopen etmez). Bu kayıt kod/test/CI
 reopen. **NEXT ELIGIBLE TASK: OWNER SEÇİMİ** — bu governance kaydı tamamlandıktan sonra owner
 `DBP-P2-UYAP-CONTRACT-01` veya başka owner-gated birimi ayrıca yetkilendirebilir.
 
+**DBP-P2-LDO-01-GOV-R1 OWNER DISPOSITION REVISION RECONCILIATION (2026-07-17, bkz. `decision-log.md`
+aynı tarihli kayıt):** Yukarıdaki DBP-P2-LDO-01 notundaki "**OPTION A (fail-closed): PREFERRED
+CONDITIONAL TARGET**" ifadesi o tarihte doğruydu; bu not onu SİLMEZ/DEĞİŞTİRMEZ, yalnız owner'ın
+`DBP-P2-UYAP-CONTRACT-01` GO-VERIFY sonrası verdiği revize kararını uzlaştırır. **REVİZYON GEREKÇESİ
+(owner):** GO-VERIFY, resmî UYAP party-rolTur sözleşmesinin ne repository'den ne kamusal birincil
+kaynaktan kanıtlanabildiğini gösterdi (BLOCKED). Fail-closed davranış üretmek de bir **ÜRÜN
+KARARIDIR** — "unknown role → current transitional" davranışını "unknown role → REJECT"e çevirir;
+resmî sözleşme doğrulanmadan bu davranış değişikliği de erkendir. **REVİZE DISPOSITION:** **OPTION A
+(fail-closed): NOT YET AUTHORIZED / DEFERRED** (önceki "PREFERRED" konumu geri çekildi). **INTERIM
+OPTION C: CONFIRMED.** **OPTION B (representation/organ): DEFERRED TO OD-07 + PARTY FOUNDATION**
+(değişmedi). **REVİZE BAĞLAYICI SINIFLANDIRMA:** `LEHDAR → LEHTAR` **XML CANONICAL** (yükseltildi;
+XML 10-kod sözleşmesinde kendi kambiyo kodu doğru); `MUHATAP → MUHATAP` **XML CANONICAL**
+(yükseltildi; legal effect senet türü + kabule bağlı, global borçlu/sorumluluk sonucu YOK);
+`LEHDAR`/`MUHATAP` **EXPORT: TRANSITIONAL**; `TASFIYE_MEMURU`: **TRANSITIONAL**; `IFLAS_MASASI`:
+**TRANSITIONAL**; **REAL UYAP CUTOVER: HOLD**; **FAIL-CLOSED IMPLEMENTATION: DEFERRED.** **NEXT
+ELIGIBLE TASK REFRAMED:** artık `DBP-P2-UYAP-CONTRACT-01` (teknik doğrulama) DEĞİL — analizin kendi
+sonucu (repo + kamusal kaynak KANITLAYAMIYOR) gereği sıradaki owner görevi **OFFICIAL UYAP TECHNICAL
+PACKAGE ACQUISITION** (resmî UYAP entegrasyon paketi — DTD/XSD/şartname — teminidir; owner/procurement
+tarafı eylem, teknik analiz DEĞİL). **IMPLEMENTATION FREEZE:** resmî UYAP paketi temin edilmeden
+şunlar için implementation yetkisi VERİLMEZ: fail-closed role patch · `TASFIYE_MEMURU` · `IFLAS_MASASI`
+· export target değişiklikleri. **OD-07 / PARTY FOUNDATION: NOT REOPENED. `DBP-P2-BP-01`: UNCHANGED.**
+Bu kayıt kod/test/CI/schema/UYAP-kodu ÜRETMEZ ve yeni workstream başlatmaz.
+
 ---
 
 ## 7. QUEUE-A / QUEUE-B Disposition — OWNER-APPROVED [E]
