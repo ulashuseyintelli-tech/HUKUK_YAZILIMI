@@ -69,6 +69,10 @@ commit, merge, release veya runtime authority yetkisi oluşturmaz.
 | `project/docs/governance/OFFICE-RISK-REGISTER.md` | OFFICE domain risk dossier'i; global triage/execution status otoritesi DEĞİLDİR | CANONICAL DOMAIN RISK DOSSIER |
 | `project/docs/governance/OFFICE-OWNER-DECISIONS.md` | OFFICE açık owner karar dossier'i; kapanmış karar otoritesi DEĞİLDİR | CANONICAL OPEN-DECISION DOSSIER |
 | `project/docs/governance/OFFICE-DELIVERY-MANIFEST.md` | OFFICE Phase 1 delivery sequencing, dependency and slice-state authority | CANONICAL / AUTHORITATIVE LIVING DELIVERY SOURCE |
+| `project/docs/governance/OFFICE-PHASE2-CONSTITUTION.md` | OFFICE Phase 2 program-seviyesi normatif çerçeve; SYSTEM-CONSTITUTION ve OFFICE-GOVERNANCE'a TABİDİR, ikisini de değiştiremez; implementation authority üretmez | RATIFIED / CANONICAL PROGRAM-LEVEL NORMATIVE v1.0 (2026-07-17; kuruluş PR #1359) |
+| `project/docs/governance/OFFICE-PHASE2-MASTER-SYNTHESIS.md` | OFFICE Phase 2 capability/dependency sentezi (operasyonel değil; norm kaynağı değildir) | CANONICAL REFERENCE / NON-NORMATIVE / AS-OF EVIDENCE BASELINE v1.0 (2026-07-17; kuruluş PR #1359) |
+| `project/docs/governance/OFFICE-PHASE2-PROGRAM-CHARTER.md` | OFFICE Phase 2 program charter — hedef/teslimat/başarı/çıkış kriterleri; authorization belgesi DEĞİLDİR | RATIFIED / CANONICAL PHASE PROGRAM AUTHORITY v1.0 (2026-07-17; kuruluş PR #1359) |
+| `project/docs/governance/OFFICE-PHASE2-ROADMAP.md` | OFFICE Phase 2 sıralama/decomposition çerçevesi; Wave/Candidate/Task/implementasyon-sırası SEÇMEZ, authority üretmez | CANONICAL PLANNING REFERENCE / NON-AUTHORIZING v1.0 (2026-07-17; kuruluş PR #1359) |
 | `project/docs/adr/` + `architecture-index.md` | teknik/mimari kararlar ve gerekçeleri | KAYITLI STATÜYE GÖRE |
 | Implementation standards | code/API/test/deployment/operation conventions | BELGE STATÜSÜNE GÖRE |
 | Roadmap / Master Register | work sequencing, owner gates ve closure state | AKTİF; authority/implementation izni üretmez |
@@ -119,4 +123,14 @@ COLLECTION-GOVERNANCE (kural, örn. COL-INV-010)
 → COLLECTION-MASTER-SYNTHESIS (F-01..F-16 / OF-01..OF-06 kanıt katmanı)
 → tm3-collection-disposition-boundary.md + dbind-financial-authority-decisions.md (bağlayıcı sınır/karar kaynakları)
 → decision-log.md (canonicalization ve sonraki değişiklik kayıtları)
+
+OFFICE-GOVERNANCE (kural, örn. OFF-INV-05)
+→ OFFICE-MASTER-SYNTHESIS (LF/OP/PR-RT-* kanıt katmanı) + OFFICE-RISK-REGISTER (STF-PRD-*)
+  + OFFICE-OWNER-DECISIONS (OFF/OD-*)
+→ decision-log.md (ratifikasyon 2026-07-13 ve sonraki değişiklik kayıtları)
+
+OFFICE-PHASE2-CONSTITUTION (hüküm, örn. OFF-P2-GOV-06)
+→ dayanak: OFFICE-GOVERNANCE maddesi / kapanmış OFF-OD kararı / STF-PRD hedef kontrolü /
+  Phase 1 delivery kanıtı (OFFICE-DELIVERY-MANIFEST)
+→ decision-log.md (owner text-ratification kaydı, 2026-07-17)
 ```

@@ -35,6 +35,16 @@ Dosyalar:
 - `OFFICE-MASTER-SYNTHESIS.md` - OFFICE kanıt/gerekçe/senaryo katmanı (NON-NORMATIVE).
 - `OFFICE-RISK-REGISTER.md` - OFFICE domain risk dossier'i (global triage otoritesi değil).
 - `OFFICE-OWNER-DECISIONS.md` - OFFICE açık owner karar dossier'i (kapanmış karar otoritesi değil).
+- `OFFICE-PHASE2-CONSTITUTION.md` - OFFICE Phase 2 program-seviyesi normatif çerçeve;
+  SYSTEM-CONSTITUTION ve OFFICE-GOVERNANCE'a tabidir, implementation authority üretmez
+  (RATIFIED / CANONICAL PROGRAM-LEVEL NORMATIVE v1.0, 2026-07-17).
+- `OFFICE-PHASE2-MASTER-SYNTHESIS.md` - OFFICE Phase 2 capability/dependency sentezi
+  (CANONICAL REFERENCE / NON-NORMATIVE / AS-OF EVIDENCE BASELINE v1.0, 2026-07-17).
+- `OFFICE-PHASE2-PROGRAM-CHARTER.md` - OFFICE Phase 2 program charter; authorization
+  belgesi değildir (RATIFIED / CANONICAL PHASE PROGRAM AUTHORITY v1.0, 2026-07-17).
+- `OFFICE-PHASE2-ROADMAP.md` - OFFICE Phase 2 sıralama/decomposition çerçevesi;
+  Wave/Candidate/Task/implementasyon-sırası seçmez, authority üretmez
+  (CANONICAL PLANNING REFERENCE / NON-AUTHORIZING v1.0, 2026-07-17).
 - `active-roadmap.md` - aktif fazlar ve implementasyona açık işler.
 - `product-backlog.md` - yeni governance Product Backlog hedef kaydı.
 - `architecture-index.md` - kesinleşmiş mimari kararların indeksi.

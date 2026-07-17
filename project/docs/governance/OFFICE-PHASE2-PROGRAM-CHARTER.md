@@ -2,15 +2,16 @@
 
 ```text
 Belge yolu   : project/docs/governance/OFFICE-PHASE2-PROGRAM-CHARTER.md
-Durum        : FOUNDATION DRAFT v1.0 (OWNER GO-DOCS, 2026-07-17) — OWNER TEXT-RATIFICATION: PENDING;
-               repository etkisi approved merge to main ile başlar (SYS-DEC-002: merge ≠ ratification)
+Durum        : RATIFIED / CANONICAL PHASE PROGRAM AUTHORITY — v1.0 (owner text-ratification:
+               2026-07-17, `decision-log.md` § "OFFICE Phase 2 Constitutional Foundation Owner
+               Text-Ratification"; kuruluş: OWNER GO-DOCS, PR #1359 squash `20423d4a`)
 Rol          : PHASE 2 PROGRAM CHARTER — hedefler, faz teslimatları (outcome-sınıfı), başarı ve
                çıkış kriterleri, program-seviyesi non-goal'ler. AUTHORIZATION BELGESİ DEĞİLDİR:
                hiçbir iş birimini yetkilendirmez/başlatmaz (emsal: faz-kapanış/authorization
                kayıtlarının 'NOT AUTHORIZED / NOT STARTED' açık-kapı disiplini).
 Kimlik uzayı : OFF-P2-OBJ-* / OFF-P2-DLV-* / OFF-P2-SC-* / OFF-P2-EXIT-* / OFF-P2-PNG-*
-IMPLEMENTATION AUTHORITY: NONE (SYS-GOV-003, SYS-DEC-003).
-GOVERNANCE-INDEX kaydı: PENDING (ratifikasyon sonrası ayrı adım).
+IMPLEMENTATION AUTHORITY: NONE (SYS-GOV-003, SYS-DEC-003) — ratifikasyon da yetki üretmez.
+GOVERNANCE-INDEX kaydı: COMPLETED — ratifikasyon PR'ıyla yapıldı (OFF-P2-ENTRY-02).
 ```
 
 ## RELATED DOCUMENTS
@@ -22,7 +23,7 @@ GOVERNANCE-INDEX kaydı: PENDING (ratifikasyon sonrası ayrı adım).
 
 ## 1. Program Context
 
-OFFICE Canonical Architecture Transformation programının Phase 1 milestone dizisi, PHASE 1 MILESTONE 09 ile tamamlandı (2026-07-17, main `423d72ea`; delivery register'ında NEXT ELIGIBLE UNIT = NONE; NEXT PROGRAM ACTION = OWNER SELECTION/DECISION REQUIRED). Owner, Phase 2 GO-DOCS brief'inde (2026-07-17) Phase 1'i **CANONICAL CLOSED** ilan etmiştir; faz-seviyesi kapanışın repository/register kaydı bu setle üretilmez — ratifikasyon adımında decision-log'a işlenecek ayrı bir kalemdir (Phase 1 içindeki owner-gated kalemler delivery register'ında açık devam eder). Register taraması sonucu (2026-07-17): `product-backlog.md` ve `decision-log.md`'de OFFICE Phase 2'ye dair önceden var olan hiçbir kayıt, yetki, rezervasyon veya HOLD yoktur; OFFICE'e ait tek MPB kaydı MPB-031 (Phase 1 delivery tracking) Closed Register bölümündedir ve kapanış-kanıtı hücresi bayat metin taşır — o hücrenin reconciliation'ı bu setin kapsamı dışında ayrı bir register-hijyen adımıdır. Bu Charter, o açık owner kapısının ürünü olan OWNER GO-DOCS (2026-07-17) ile üretilmiştir; ratifikasyon + merge + INDEX/README kaydı tamamlandığında Phase 2 hattının kurucu kaydı OLACAKTIR — kendisi hiçbir işi başlatmaz.
+OFFICE Canonical Architecture Transformation programının Phase 1'i, owner ratifikasyonuyla **CLOSED / COMPLETE WITH RECORDED RESIDUALS** olarak kapanmıştır (2026-07-17, `decision-log.md` § "OFFICE Phase 1 Closure with Recorded Residuals"; milestone dizisi PHASE 1 MILESTONE 01–09 teyitli, son milestone main `423d72ea`; delivery register'ında NEXT ELIGIBLE UNIT = NONE). Bu kapanış hiçbir OPEN/PARTIALLY MITIGATED bulguyu kapatmaz, hiçbir PARTIAL invariant'ı tamamlamaz; deferred/blocked/dormant/owner-gated tüm residual'ları ileriye taşır ve hiçbir candidate seçimi/implementation yetkisi üretmez. Register taraması sonucu (2026-07-17): `product-backlog.md` ve `decision-log.md`'de OFFICE Phase 2'ye dair önceden var olan hiçbir kayıt, yetki, rezervasyon veya HOLD yoktu; OFFICE'e ait tek MPB kaydı MPB-031 (Phase 1 delivery tracking) Closed Register bölümündedir ve kapanış-kanıtı hücresi bayat metin taşır — o hücrenin reconciliation'ı bu setin kapsamı dışında ayrı bir register-hijyen adımıdır. Bu Charter, OWNER GO-DOCS (2026-07-17, PR #1359) ile üretilmiş ve owner text-ratification + INDEX/README kaydıyla **Phase 2 hattının kurucu kaydı olmuştur** — kendisi hiçbir işi başlatmaz.
 
 ## 2. Objectives
 
@@ -88,9 +89,9 @@ Yetki modları (GO-ANALYZE/GO-IMPLEMENT/GO-COMPLETE), onay semantiği, stop-cond
 
 ## 8. Entry into Force
 
-Bu Charter, OWNER GO-DOCS ürünüdür ve tek başına hiçbir etki doğurmaz. Bağlayıcılık yolu: owner text-ratification (decision-log kaydı) → approved merge → GOVERNANCE-INDEX/README kaydı. Ratifikasyon hiçbir işi başlatmaz; herhangi bir Phase 2 iş biriminin varlık ön-koşulu, ayrı owner GO'lu decomposition sürecidir (`OFFICE-PHASE2-ROADMAP.md §4-§5`).
+Bu Charter'ın bağlayıcılık yolu tamamlanmıştır: owner text-ratification (2026-07-17, decision-log kaydı) → approved merge → GOVERNANCE-INDEX/README kaydı (ratifikasyon PR'ıyla). Ratifikasyon hiçbir işi başlatmaz; herhangi bir Phase 2 iş biriminin varlık ön-koşulu, ayrı owner GO'lu decomposition sürecidir (`OFFICE-PHASE2-ROADMAP.md §4-§5`).
 
-**FOUNDATION STATUS: READY FOR PHASE 2 DECOMPOSITION** *(OFF-P2-ENTRY-01..03 koşullarına tabi)* — bu statü "belge seti tamam ve decomposition owner kapısında" demektir; decomposition'ın kendisi bu belgeyle NE başlatılmış NE yetkilendirilmiştir.
+**FOUNDATION STATUS: READY FOR PHASE 2 DECOMPOSITION** — giriş kapıları: OFF-P2-ENTRY-01 **PASS** (owner text-ratification verildi) · OFF-P2-ENTRY-02 **PASS** (INDEX/README authority kaydı tamamlandı) · OFF-P2-ENTRY-03 **OPEN** (ayrı decomposition GO-ANALYZE brief'i gerekli). Decomposition'ın kendisi bu belgeyle NE başlatılmış NE yetkilendirilmiştir; PHASE 2 DECOMPOSITION: NOT STARTED.
 
 ## 9. Document Self-Check
 

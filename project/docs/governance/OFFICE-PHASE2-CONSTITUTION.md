@@ -2,8 +2,10 @@
 
 ```text
 Belge yolu   : project/docs/governance/OFFICE-PHASE2-CONSTITUTION.md
-Durum        : FOUNDATION DRAFT v1.0 (OWNER GO-DOCS, 2026-07-17) — OWNER TEXT-RATIFICATION: PENDING;
-               repository etkisi approved merge to main ile başlar (SYS-DEC-002: merge ≠ ratification)
+Durum        : RATIFIED / CANONICAL PROGRAM-LEVEL NORMATIVE — v1.0 (owner text-ratification:
+               2026-07-17, `decision-log.md` § "OFFICE Phase 2 Constitutional Foundation Owner
+               Text-Ratification" kaydı; kuruluş: OWNER GO-DOCS, PR #1359 squash `20423d4a`).
+               SYSTEM-CONSTITUTION.md ve OFFICE-GOVERNANCE.md'ye TABİDİR.
 Rol          : PROGRAM-LEVEL CONSTITUTIONAL FRAME — OFFICE Canonical Architecture Transformation
                Phase 2'nin vizyon, mimari kapsam, domain sınırı, non-goal, implementation principle
                ve governance rule çerçevesi. SYSTEM-CONSTITUTION DEĞİLDİR (SYS-CAN-002) ve
@@ -12,9 +14,10 @@ Kimlik uzayı : OFF-P2-* (bu belge setinin kimlikleri) — SYS-* / OFF-INV-* / O
                CANDIDATE-* ile çakıştırılamaz; SYS-GOV-011/012 gereği mevcut kimlikler yeniden
                kullanılmaz, yalnız referanslanır.
 IMPLEMENTATION AUTHORITY: NONE — bu belge hiçbir kod/schema/migration/runtime değişikliği,
-               candidate seçimi veya GO-IMPLEMENT yetkisi ÜRETMEZ (SYS-GOV-003, SYS-DEC-003).
-GOVERNANCE-INDEX kaydı: PENDING — ratifikasyon + Bölüm 2 belge haritası kaydı ayrı governance
-               adımıdır; bu kayıt olmadan belge zorunlu discovery zincirine dahil DEĞİLDİR.
+               candidate seçimi veya GO-IMPLEMENT yetkisi ÜRETMEZ (SYS-GOV-003, SYS-DEC-003);
+               ratifikasyon da yetki üretmez (ratification ≠ GO-IMPLEMENT).
+GOVERNANCE-INDEX kaydı: COMPLETED — Bölüm 2 belge haritası + Bölüm 4 zinciri ve README kaydı,
+               ratifikasyon PR'ının kendisiyle yapılmıştır (OFF-P2-ENTRY-02).
 ```
 
 ## RELATED DOCUMENTS
@@ -75,7 +78,7 @@ ADR-009 (approval engine/executor) ve `dbind-financial-authority-decisions.md` (
 ### `OFF-P2-NG-02` — Açık OFF/OD kararlarına (OFF/OD-02, -03, -04, -06, -07, -12, -13, -16, -19) örtük veya açık ön-karar vermek; bu kararlar yalnız owner'ındır ve bu belge seti hiçbirini "verilmiş" sayamaz.
 ### `OFF-P2-NG-03` — Retroaktif enforcement'ı varsayılan yapmak: Phase 1'in ileriye-dönük (write-time) baseline deseni korunur; mevcut kayıtların retroaktif taranması/değiştirilmesi ancak ayrı owner kararıyla kapsamlaştırılabilir.
 ### `OFF-P2-NG-04` — İş/politika eşiklerini (rol/kapasite eşikleri, severity/kategori eşikleri, sonuç-sayısı limitleri) implementation katmanında icat etmek — eşikler owner POLICY kararıdır.
-### `OFF-P2-NG-05` — Impersonation yeteneği inşa etmek: Phase 1 sentezi bu yönde hiçbir ihtiyaç kaydetmemiştir; bilinçli non-goal'dür, ancak owner talebiyle yeniden değerlendirilebilir.
+### `OFF-P2-NG-05` — Impersonation / delegated-acting yeteneği inşa etmek. **Owner-ratified niteliği (2026-07-17): bu, YALNIZ bir Phase 2 kapsam sınırıdır — kalıcı, sistem-geneli bir yasak DEĞİLDİR.** Phase 2'de impersonation/delegated-acting varsayılan olarak teslim edilmez; gelecekte böyle bir yetenek ayrı bir owner kararı + güvenlik modeli + yetki/rıza modeli + audit kontratı + implementation authorization gerektirir. (Phase 1 sentezi bu yönde ihtiyaç kaydetmemiştir; önceki kayda dayanmayan yeni bir non-goal beyanı olduğu owner'a açıkça sunulmuş ve bu nitelikle ratifiye edilmiştir.)
 ### `OFF-P2-NG-06` — Kalıcı silme (hard-delete) yolu açmak: yolun yokluğu kayıtlı REJECTED RISK'tir ve korunur.
 ### `OFF-P2-NG-07` — Matrix/çoklu-amir organizasyon desteği ve "team"in hiyerarşiden bağımsız modellenmesi: I1'in kayıtlı tasarım tercihleri (tek-amirli, team hiyerarşiden türetilir) ancak ayrı owner kararıyla değişir.
 ### `OFF-P2-NG-08` — CLIENT-SEC kalıcı-emekli yüzeyinin restorasyonu, production backfill, NOT NULL/FK hardening: bu programda yetkilendirilmemiştir (OFF-P2-BND-04).
@@ -146,7 +149,7 @@ Her Phase 2 workstream kaydında Analysis/Review Owner ile Implementation Owner 
 Bu setin kimlikleri OFF-P2-* uzayındadır. SYS-*, OFF-INV-*, OFF/OD-*, STF-PRD-*, CANDIDATE-*, LF/OP/PR-RT-* kimlikleri yalnız referanslanır; anlamları değiştirilmez; emekli numaralar (ör. OFF/OD-20) yeniden kullanılmaz.
 
 ### `OFF-P2-GOV-10 — İzlenebilirlik Zinciri`
-Bu setteki her normatif hüküm için hedef iz: hüküm → dayanak (Domain Law maddesi / kapanmış OFF-OD kararı / STF-PRD hedef kontrolü / Phase 1 kanıtı) → decision-log ratifikasyon kaydı. Ratifikasyonla birlikte GOVERNANCE-INDEX Bölüm 4'e ("Neden bu kural var?" zinciri) OFFICE zinciri + Phase-2 girdisinin eklenmesi beklenir (ayrı adım; OFFICE zinciri o bölümde henüz hiç yoktur — ratifikasyon adımı bunu da kapsamalıdır).
+Bu setteki her normatif hüküm için hedef iz: hüküm → dayanak (Domain Law maddesi / kapanmış OFF-OD kararı / STF-PRD hedef kontrolü / Phase 1 kanıtı) → decision-log ratifikasyon kaydı. GOVERNANCE-INDEX Bölüm 4'e ("Neden bu kural var?" zinciri) OFFICE zinciri + Phase-2 girdisi, ratifikasyon PR'ıyla EKLENMİŞTİR (2026-07-17; OFF-P2-ENTRY-02).
 
 ## 9. Capability Lifecycle ve Kanıt Standardı
 
@@ -154,7 +157,7 @@ Capability Map'teki her yeteneğin statü geçişi yalnız şu kanıt merdiveniy
 
 ## 10. Ratification and Amendment
 
-Bu belge setinin bağlayıcı hale gelme yolu: (1) owner text-ratification + decision-log kaydı; (2) approved merge (repository-canonical etki); (3) GOVERNANCE-INDEX Bölüm 2 kaydı + README mutabakatı. Bu üç adım bu GO-DOCS görevinin diff kapsamında DEĞİLDİR (yalnız 4 belge üretilir); her biri ayrı owner adımıdır. Set ratifiye edildikten sonra değişiklik yalnız governance PR + decision-log kaydıyla yapılır (SYS-CAN-004); supersession append-only'dir.
+Bağlayıcılık yolu tamamlanmıştır: (1) owner text-ratification — VERİLDİ (2026-07-17, `decision-log.md` § "OFFICE Phase 2 Constitutional Foundation Owner Text-Ratification"); (2) approved merge — kuruluş PR #1359 (`20423d4a`) + bu ratifikasyon PR'ı; (3) GOVERNANCE-INDEX Bölüm 2 + Bölüm 4 kaydı ve README mutabakatı — ratifikasyon PR'ıyla yapıldı. Ratifikasyon, dört belgenin FARKLI authority rollerini ayrı ayrı tanır (bkz. decision-log kaydı: Constitution=PROGRAM-LEVEL NORMATIVE, Master-Synthesis=NON-NORMATIVE REFERENCE, Charter=PHASE PROGRAM AUTHORITY, Roadmap=NON-AUTHORIZING PLANNING REFERENCE) ve hiçbir implementation/decomposition yetkisi üretmez. Set ratifiye edildikten sonra değişiklik yalnız governance PR + decision-log kaydıyla yapılır (SYS-CAN-004); supersession append-only'dir.
 
 ## 11. Document Set and Element Ownership
 
@@ -186,7 +189,8 @@ Bu belge Phase 2'nin ne olduğunu tanımlar; neyi KAPATMADIĞI da açıktır: hi
 - Wave/Candidate/Task/Owner-Decision/Contract/impl-plan var mı: NO (OFF-P2-NG-09, OFF-P2-GOV-03)
 - Açık OFF/OD kararlarına ön-karar verildi mi:                  NO (OFF-P2-NG-02; yalnız referans)
 - TARGET, CURRENT gibi sunuldu mu:                              NO (SYS-SOT-001; §4/§9 statü disiplini)
-- Kendi kendine RATIFIED/CANONICAL ilan var mı:                 NO (Durum: DRAFT / RATIFICATION PENDING)
+- RATIFIED statüsü öz-ilan mı:                                  NO — owner text-ratification kaydına
+                                                                 dayanır (decision-log, 2026-07-17)
 - Implementation authority üretildi mi:                         NO (IMPLEMENTATION AUTHORITY: NONE)
 - PUBLIC CONTENT RULE ihlali (somut mekanizma detayı):          NO (OFF-P2-GOV-06 uygulanır)
 - Kimlik uzayı çakışması:                                       NO (yalnız OFF-P2-*; mevcut ID'ler referans)

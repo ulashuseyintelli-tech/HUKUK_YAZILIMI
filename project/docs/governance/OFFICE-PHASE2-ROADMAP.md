@@ -2,15 +2,17 @@
 
 ```text
 Belge yolu   : project/docs/governance/OFFICE-PHASE2-ROADMAP.md
-Durum        : FOUNDATION DRAFT v1.0 (OWNER GO-DOCS, 2026-07-17) — OWNER TEXT-RATIFICATION: PENDING;
-               repository etkisi approved merge to main ile başlar (SYS-DEC-002: merge ≠ ratification)
+Durum        : CANONICAL PLANNING REFERENCE / NON-AUTHORIZING — v1.0 (owner text-ratification:
+               2026-07-17, `decision-log.md` § "OFFICE Phase 2 Constitutional Foundation Owner
+               Text-Ratification"; kuruluş: OWNER GO-DOCS, PR #1359 `20423d4a`). Ratifikasyon
+               bu belgeye Wave/Candidate/Task/implementasyon-sırası SEÇME yetkisi VERMEZ.
 Rol          : SEQUENCING/DECOMPOSITION FRAME — work-sequencing bilgisi taşır; AUTHORITY ÜRETMEZ
                (SYS-GOV-008; Hard Stop #13: roadmap authority gibi kullanılamaz). Bu belge hiçbir
                iş birimi TANIMLAMAZ: Wave yok, Candidate yok, Task yok, Contract yok, takvim yok.
                Yalnız bağımlılık-türevi sıralama KISITLARI ve decomposition PROSEDÜRÜ içerir.
 Kimlik uzayı : OFF-P2-SEQ-* (sıralama kısıtları) / OFF-P2-ENTRY-* (decomposition giriş koşulları)
 IMPLEMENTATION AUTHORITY: NONE.
-GOVERNANCE-INDEX kaydı: PENDING (ratifikasyon sonrası ayrı adım).
+GOVERNANCE-INDEX kaydı: COMPLETED — ratifikasyon PR'ıyla yapıldı (OFF-P2-ENTRY-02).
 ```
 
 ## RELATED DOCUMENTS
@@ -87,17 +89,17 @@ Kurallar: "tam kapsam tek Contract için büyükse" first-slice re-scope emsali 
 
 ## 5. Entry Conditions for Decomposition
 
-### `OFF-P2-ENTRY-01` — Bu 4-belgelik setin owner text-ratification'ı (decision-log kaydıyla) tamamlanmıştır.
-### `OFF-P2-ENTRY-02` — Set approved merge ile repository-canonical olmuştur ve GOVERNANCE-INDEX Bölüm 2 + README kayıtları (ayrı governance adımı) yapılmıştır.
-### `OFF-P2-ENTRY-03` — Owner, decomposition için açık GO-ANALYZE brief'i vermiştir (bu belge o brief'in yerine geçmez).
+### `OFF-P2-ENTRY-01` — Bu 4-belgelik setin owner text-ratification'ı (decision-log kaydıyla) tamamlanmıştır. **DURUM: PASS** (2026-07-17, decision-log § "OFFICE Phase 2 Constitutional Foundation Owner Text-Ratification").
+### `OFF-P2-ENTRY-02` — Set approved merge ile repository-canonical olmuştur ve GOVERNANCE-INDEX Bölüm 2 + README kayıtları yapılmıştır. **DURUM: PASS** (kuruluş merge PR #1359 `20423d4a`; INDEX/README authority kaydı ratifikasyon PR'ıyla).
+### `OFF-P2-ENTRY-03` — Owner, decomposition için açık GO-ANALYZE brief'i vermiştir (bu belge o brief'in yerine geçmez). **DURUM: OPEN** — ayrı decomposition GO-ANALYZE brief'i gereklidir; verilmemiştir.
 
-Üç koşul da sağlanmadan hiçbir Phase 2 iş birimi tanımlanamaz. Koşulların sağlanması bu belgeyle DEĞİL, her biri kendi kaydıyla kanıtlanır. (Decomposition kayıtlarının yaşayacağı delivery yüzeyinin belirlenmesi de ratifikasyon sonrası ayrı bir owner tasarrufudur — `OFF-P2-GOV-03`.)
+Üç koşul da sağlanmadan hiçbir Phase 2 iş birimi tanımlanamaz; ENTRY-03 açık olduğundan **PHASE 2 DECOMPOSITION: NOT STARTED**. Koşulların sağlanması bu belgeyle DEĞİL, her biri kendi kaydıyla kanıtlanır. (Decomposition kayıtlarının yaşayacağı delivery yüzeyinin belirlenmesi de ratifikasyon sonrası ayrı bir owner tasarrufudur — `OFF-P2-GOV-03`.)
 
 ## 6. Son Hüküm
 
-Bu roadmap Phase 2'nin sıralama fiziğini (neyin neyi beklemek zorunda olduğunu) ve decomposition prosedürünü sabitler; ne bir işi başlatır, ne bir hattı seçer, ne bir tarihi taahhüt eder. Phase 1'in mevcut durumundan (NEXT ELIGIBLE UNIT = NONE; faz-seviyesi kapanış kaydı ratifikasyon adımında işlenecek ayrı kalemdir) Phase 2'nin ilk iş birimine giden yolun HER adımı owner kapısındadır.
+Bu roadmap Phase 2'nin sıralama fiziğini (neyin neyi beklemek zorunda olduğunu) ve decomposition prosedürünü sabitler; ne bir işi başlatır, ne bir hattı seçer, ne bir tarihi taahhüt eder. Phase 1'in kapanmış durumundan (CLOSED / COMPLETE WITH RECORDED RESIDUALS, 2026-07-17; delivery register'ında NEXT ELIGIBLE UNIT = NONE) Phase 2'nin ilk iş birimine giden yolun HER adımı owner kapısındadır.
 
-**FOUNDATION STATUS: READY FOR PHASE 2 DECOMPOSITION** (OFF-P2-ENTRY-01..03 koşullarına tabi).
+**FOUNDATION STATUS: READY FOR PHASE 2 DECOMPOSITION** — ENTRY-01 PASS · ENTRY-02 PASS · ENTRY-03 OPEN (ayrı decomposition GO-ANALYZE gerekli).
 
 ## 7. Document Self-Check
 
@@ -106,7 +108,8 @@ Bu roadmap Phase 2'nin sıralama fiziğini (neyin neyi beklemek zorunda olduğun
 - Authority/izin üreten hüküm var mı:                           NO (SYS-GOV-008; Hard Stop #13 uyumu)
 - Bir hat seçildi/öne alındı mı:                                NO (§3 envanter, sıra önerisi değil)
 - Açık kararlara ön-karar verildi mi:                           NO (yalnız gate kaydı)
-- Decomposition başlatıldı mı:                                  NO (ENTRY-01..03 açık koşullar)
+- Decomposition başlatıldı mı:                                  NO (ENTRY-01/02 PASS; ENTRY-03
+                                                                 OPEN — ayrı GO-ANALYZE gerekli)
 - PUBLIC CONTENT RULE ihlali:                                   NO
 - Kimlik uzayı çakışması:                                       NO (yalnız OFF-P2-SEQ/ENTRY-*)
 ```
