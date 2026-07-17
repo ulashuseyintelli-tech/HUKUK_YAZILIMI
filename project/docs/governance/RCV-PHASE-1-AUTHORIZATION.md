@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -20,7 +20,7 @@ Consolidation               : COMPLETE (owner-supplied progression baseline)
 Target Architecture         : COMPLETE (owner-supplied progression baseline)
 Implementation Roadmap      : COMPLETE (owner-supplied progression baseline)
 Current phase               : RCV-P2 (planning label; no new Master Register identity)
-Current workstream          : WS03 — Payment Fact & Collection Ingress
+Current workstream          : WS04 — Allocation & Derived Payment State (contract only; implementation not started)
 WS01 status                 : CLOSED
 WS01 historical status      : TECHNICALLY COMPLETE
 WS01 roadmap                : COMPLETE (P01–P04)
@@ -41,9 +41,11 @@ RCV-P2-WS03-P02             : FORMALLY CLOSED / CANONICAL (PR #1316 / 208588d7)
 RCV-P2-WS03-P03 contract    : RATIFIED / CANONICAL (PR #1328 / 507fa7d0)
 RCV-P2-WS03-P03             : FORMALLY CLOSED / CANONICAL (PR #1333 / 1be0e64a; governance PR #1341 / 3dac354d)
 Implementation authorization: CONSUMED / COMPLETE FOR WS03-P03; NONE / NOT REQUIRED FOR WS03-P04
-Next candidate              : WS04 / ACT-28 — GO-ANALYZE — OWNER GO REQUIRED
 RCV-P2-WS03-P04             : NOT AUTHORIZED / NOT REQUIRED
 WS04                        : NOT AUTHORIZED / NOT STARTED
+RCV-P2-WS04-P01 contract    : RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+WS04-P01 implementation auth: NONE
+Next eligible task          : RCV-P2-WS04-P01 — GO-IMPLEMENT / OWNER GO REQUIRED
 ```
 
 Bu kayıt yalnız governance/register alignment, gerçekleşen phase/workstream progression ve bir
@@ -532,6 +534,111 @@ analiz ya da implementation başlatılamaz. `REC-AUTH-011/012/015`, Collection W
 semantiği, `CCB-001` identity-only cross-pointer'ı ve bütün owner/legal/evidence/cutover
 gate'leri değişmez.
 
+### 1.12 RCV-P2-WS04-P01 authority contract ratification
+
+Owner-approved canonical contract record:
+
+```text
+RCV-P2-WS04-P01 CONTRACT:
+RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+
+DUPLICATE ALLOCATOR:
+DA-4 — DRIFT BASELINE ONLY / DISPOSITION DEFERRED
+
+COLLECTIONALLOCATION:
+CA-1 — RETAIN AS COMPATIBILITY PROJECTION
+
+CLAIMITEM.COLLECTEDAMOUNT:
+CM-1 — RETAIN AS RECONCILED CACHE
+
+DRIFT CONTRACT:
+RATIFIED
+
+FIRST IMPLEMENTATION PACKAGE:
+DRIFT BASELINE ONLY
+
+IMPLEMENTATION AUTHORIZATION:
+NONE
+
+NEXT ELIGIBLE TASK:
+RCV-P2-WS04-P01 — GO-IMPLEMENT
+
+OWNER GO:
+REQUIRED
+```
+
+#### Per-fact authority contract
+
+| Fact | Ratified authority / role | Boundary |
+|---|---|---|
+| `Collection` | Receipt fact authority | Legal allocation veya derived balance authority değildir |
+| `LedgerEntry` | Payment/reversal financial fact | Receipt fact veya allocation policy değildir |
+| `LedgerAllocation` | Persisted legal allocation authority | Runtime projection tarafından override edilemez |
+| Runtime allocation | Calculation-only | Persistence üretemez; persisted legal allocation authority değildir |
+| `CollectionAllocation` | Compatibility projection (`CA-1`) | LedgerAllocation mevcutken canonical legal read kaynağı olamaz |
+| `ClaimItem.collectedAmount` | Reconciled cache (`CM-1`) | Receipt, legal allocation veya balance authority değildir |
+| `PAID_DELTA` | Diagnostic | Tek başına authority conflict veya engine defect hükmü üretmez |
+
+`DA-4` altında write-path ve runtime allocator'lar değiştirilmez. Same-input parity,
+allowed-divergence, not-comparable ve drift evidence üretilmeden allocator birleştirme,
+ortak kernel veya persisted-first reader switch yapılamaz. Duplicate allocator'ın nihai
+disposition'ı ertelenmiştir; bu kayıt unification/removal kararı değildir.
+
+#### Ratified comparison and drift classes
+
+1. **EQUALITY:** Aynı tenant/case/currency, payment identity ve amount, effective date,
+   ClaimItem/bucket snapshot, interest/accrual girdileri, TBK100 policy ve minor-unit/rounding
+   context'i altında persisted/runtime sonuç cent-exact eşit olmalıdır.
+2. **ALLOWED_DIVERGENCE:** Gross receipt ile allocated amount farkı yalnız explicit `HELD`
+   overpayment ile açıklanabiliyorsa allowed divergence'dır.
+3. **NOT_COMPARABLE:** Eksik veya farklı comparison context mismatch değildir; explicit
+   `NOT_COMPARABLE` sonucu üretir ve alternatif authority seçmez.
+4. **FAIL_CLOSED_DRIFT:** Aynı frozen input altındaki cent-exact fark drift'tir. Drift,
+   canonical financial write'ın sessizce devam etmesine veya cache/projection fallback'ine
+   izin vermez.
+
+Ratified invariants:
+
+- Net confirmed `LedgerAllocation` per ClaimItem, `ClaimItem.collectedAmount` ile eşleşir.
+- `ClaimItem.collectedAmount` drift'i sessizce sonraki allocation girdisine taşınamaz.
+- Ledger mevcutken `CollectionAllocation` legal fallback olamaz.
+- `CollectionAllocation` projection drift'i explicit diagnostic üretir.
+- Runtime allocator persistence üretemez.
+- Legacy allocator activation sessiz kalamaz.
+- Historical kayıtlar mutate veya backfill edilmez.
+
+#### Authorized first implementation slice
+
+| Slice | Ratified scope |
+|---|---|
+| Contract | Authority/comparison contract tipleri |
+| Classification | Equality, allowed-divergence, not-comparable ve drift classifier |
+| Static guards | Writer/reader inventory ve runtime allocator no-write guard |
+| Cache evidence | `LedgerAllocation` ↔ `ClaimItem.collectedAmount` reconciliation evidence |
+| Projection evidence | `LedgerAllocation` ↔ `CollectionAllocation` drift diagnostic |
+| Parity | Same-input persisted/runtime parity harness |
+| Legacy guard | Legacy allocator activation diagnostic |
+| DB evidence | Disposable PostgreSQL drift-injection evidence |
+
+Bu scope yalnız implementation-ready package sınırını tanımlar; execution authority vermez.
+Aşağıdakiler açıkça yetkisizdir:
+
+- allocator birleştirme, kaldırma veya ortak kernel'e geçiş;
+- persisted-first reader switch;
+- `CollectionAllocation` write'larını durdurma;
+- `ClaimItem.collectedAmount` consumer migration'ı veya alan kaldırma;
+- TBK100 sırası ya da hukuki sonuç değişikliği;
+- historical backfill veya data mutation;
+- schema/migration;
+- consumer cutover;
+- WS05 kapsamı.
+
+Schema/migration yetkisi verilmemiştir. İlk slice mevcut schema üzerinde kalır; implementation
+sırasında schema/migration ihtiyacı ortaya çıkarsa çalışma durur ve ayrı owner authorization
+gerektirir. `REC-AUTH-011/012` open reconciliation statüsü, `CAN-CUT-01/VER-05`,
+`CAN-CUT-02/ADR-014`, representative evidence, owner/legal/evidence/acceptance, PR-11,
+consumer switch, runtime cutover, provider finality ve refund/reversal gate'leri değişmez.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
@@ -623,8 +730,8 @@ Initial authority: GO-PHASE-1 / WAVE 0 / RCV-P1-T15-A only
 Progression      : Subsequent tasks authorized by separate owner task briefs
 Decision date    : 2026-07-14
 Decision-log ref : RCV-GOV-002 progression reconciliation
-Current reconcile: RCV-P2-WS03 formal closure / WS04 entry gate / 2026-07-17
-Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 CLOSED / P01-P03 FORMALLY CLOSED / P04 NOT REQUIRED / WS04 NOT AUTHORIZED
+Current reconcile: RCV-P2-WS04-P01 authority contract ratification / 2026-07-17
+Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 CLOSED / WS04-P01 CONTRACT RATIFIED / IMPLEMENTATION AUTHORIZATION NONE
 ```
 
 Bu reconciliation geçmiş task brief'lerini tek ve genel bir Phase 1 authority'ye dönüştürmez.
@@ -655,10 +762,12 @@ owner GO gerektirir.
 | WS03-P03 implementation | PR merged + required CI PASS + governance reconciliation | FORMALLY CLOSED / CANONICAL — PR #1333 / `1be0e64a`; governance PR #1341 / `3dac354d` |
 | WS03 residual routing | Provider/allocation/refund/cutover konuları canonical owner'larına yönlendirilmiş | REC-AUTH-010 CURRENT PARTIAL; provider finality OPEN; ACT-28/REC-AUTH-011/012 OPEN |
 | WS03-P04 | Yalnız kanıtlanmış residual capability varsa ayrı canonical assignment | NOT AUTHORIZED / NOT REQUIRED |
-| WS04 / ACT-28 | Yalnız owner-gated analiz adayı | NOT AUTHORIZED / NOT STARTED — OWNER GO REQUIRED |
+| WS04-P01 authority contract | Owner `DA-4` / `CA-1` / `CM-1`, drift-class ratification ve approved governance merge | RATIFIED / CANONICAL upon approved merge |
+| ACT-28 / REC-AUTH-011/012 | Drift baseline first; allocator convergence disposition deferred | OPEN / reconciliation continues |
+| WS04-P01 implementation | Ayrı task-scoped owner GO | AUTHORIZATION NONE / NOT STARTED |
 | WS05–WS09 | Açılmamış | NOT STARTED |
 
-## 7. Phase 2 WS03 Closure / WS04 Entry Gate
+## 7. Phase 2 WS04 Contract / Implementation Gate
 
 ```text
 CURRENT IMPLEMENTATION STATUS:
@@ -673,7 +782,7 @@ WS02-P01                 : CLOSED
 WS02-P02                 : CLOSED
 WS02-P03                 : CLOSED
 WS02-P04                 : CLOSED
-CURRENT WORKSTREAM       : WS03 — Payment Fact & Collection Ingress
+CURRENT WORKSTREAM       : WS04 — Allocation & Derived Payment State
 WS03                     : CLOSED / CANONICAL
 WS03-P01                 : CLOSED / CANONICAL
 WS03-P01 EVIDENCE        : PR #1300 / da8eef6204e3c85ac09f722d43f2f5803920fb16 + governance PR #1306 / 95be1647d6b0cc8d9faa3120ecd02f33bc3f9e49 / CI 4/4 PASS each
@@ -686,15 +795,18 @@ WS03-P03 EVIDENCE        : PR #1333 / 1be0e64abdd5aed81f3304cc0f6517804a0f93e1 +
 REC-AUTH-010             : COLLECTION / CURRENT PARTIAL / PROVIDER FINALITY OPEN UNDER RC-COL / W2.2
 IMPLEMENTATION AUTHORITY : CONSUMED / COMPLETE FOR WS03-P03; NONE / NOT REQUIRED FOR WS03-P04
 WS03-P04                 : NOT AUTHORIZED / NOT REQUIRED
-NEXT CANDIDATE           : WS04 / ACT-28 — GO-ANALYZE
-WS04                     : NOT AUTHORIZED / NOT STARTED
+WS04-P01 CONTRACT        : RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+WS04-P01 DISPOSITIONS    : DA-4 / CA-1 / CM-1
+WS04-P01 PACKAGE         : DRIFT BASELINE ONLY
+WS04-P01 AUTHORIZATION   : NONE / NOT STARTED
+NEXT ELIGIBLE TASK       : RCV-P2-WS04-P01 — GO-IMPLEMENT
 OWNER GO                 : REQUIRED
-OWNER / RATIFIER         : __________________________________________
-DECISION DATE            : __________________________________________
-AUTHORITATIVE REF        : __________________________________________
+OWNER / RATIFIER         : OWNER — WS04-P01 disposition brief
+DECISION DATE            : 2026-07-17
+AUTHORITATIVE REF        : decision-log / WS04-P01 authority contract ratification
 ```
 
-WS04 / ACT-28 için ayrı owner GO verilmezse korunacak safe-hold:
+WS04-P01 için ayrı owner GO-IMPLEMENT verilmezse korunacak safe-hold:
 
 ```text
 RCV-P2-WS01-P01..P04 CLOSED
@@ -707,8 +819,10 @@ WS03 CLOSED / CANONICAL
 RCV-P2-WS03-P03 CONTRACT RATIFIED / CANONICAL — PR #1328 / 507fa7d0
 RCV-P2-WS03-P03 FORMALLY CLOSED / CANONICAL — PR #1333 / 1be0e64a; PR #1341 / 3dac354d
 RCV-P2-WS03-P04 NOT AUTHORIZED / NOT REQUIRED
-WS04 / ACT-28 GO-ANALYZE OWNER GO REQUIRED
-WS04–WS09 NOT AUTHORIZED / NOT STARTED
+RCV-P2-WS04-P01 CONTRACT RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+RCV-P2-WS04-P01 IMPLEMENTATION AUTHORIZATION NONE / NOT STARTED
+NEXT ELIGIBLE TASK RCV-P2-WS04-P01 — GO-IMPLEMENT / OWNER GO REQUIRED
+WS05–WS09 NOT AUTHORIZED / NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN
 OWNER / LEGAL DECISION GATES UNCHANGED
