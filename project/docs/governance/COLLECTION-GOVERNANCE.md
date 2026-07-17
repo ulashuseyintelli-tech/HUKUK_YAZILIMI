@@ -99,7 +99,7 @@ REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ek
 | Receipt / Tahsilat Girişi | Paranın/değerin sisteme girdiği fact | CURRENT |
 | Collection | Receipt'in bağlam, statü, belge ve işlem taşıyıcısı | CURRENT |
 | Internal Confirmation | Sistem içi kayıt onayı; banka finality değildir | CURRENT |
-| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — CONTRACT RECORDED / RUNTIME ABSENT (COL/OD-06 Option A) |
+| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — CONTRACT RECORDED / ADDITIVE SCHEMA FOUNDATION PRESENT / RUNTIME ABSENT (COL/OD-06 Option A; W2.2A) |
 | Legal Allocation | Tahsilatın alacak bileşenlerine hukuki uygulanması | CURRENT (REC-AUTH-011) |
 | TBK100 Allocation | Masraf→fer'i→işlemiş faiz→anapara deterministic mahsup | CURRENT (REC-GOV §9.2 — norm oradadır) |
 | Client Disposition | Tahsilatın müvekkil/ofis dağıtım kararı | CURRENT (TM3) |
@@ -485,7 +485,7 @@ Collection(confirmed)
   → CLIENT_PAYABLE → ClientPayout (idempotent + approval; COL/OD-21)
 ```
 
-## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; runtime absent)
+## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; additive schema foundation present, runtime absent)
 
 1. **Candidate boundary:** Harici banka/provider hareketi doğrulanıp yetkili eşleştirme
    yapılana kadar Integration tarafında non-canonical candidate'dır. Candidate durumları
@@ -504,9 +504,16 @@ Collection(confirmed)
 6. **Chargeback boundary:** Chargeback linked external reversal evidence üretir; otomatik
    cancellation, refund veya financial reversal üretmez. Partial refund ve downstream reversal
    COL/OD-09/-10 kapsamında açık kalır; `CollectionStatus.REFUNDED` bu kararla aktive edilmez.
-7. **Execution gate:** Contract `RECORDED`dır fakat runtime/schema/migration uygulanmamıştır.
-   W2.2 decision gate sağlanmış olsa da implementation ayrı owner GO gerektirir; W2.3 W2.2
-   boundary uygulanıp kanıtlanana kadar blokludur. Refund/downstream reversal ve claim
+7. **Schema foundation boundary:** W2.2A PR #1332 / squash
+   `88290071c5508952ad0c875e00f072a45e57ba4c` yalnız
+   `BankTransactionCandidateStatus(PENDING | SETTLED | REJECTED)` enum'unu ve nullable,
+   defaultsuz `BankTransaction.candidateStatus` kolonunu additive olarak eklemiştir. Backfill
+   yoktur; legacy `NULL` unknown kalır ve `SETTLED` olarak yorumlanamaz. Schema varlığı
+   lifecycle authority, runtime writer veya davranış üretmez.
+8. **Execution gate:** Contract `RECORDED`, W2.2A schema foundation kanıtı
+   `CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE` durumundadır; runtime lifecycle
+   hâlâ yoktur. W2.2B ve sonraki birimler ayrı owner GO gerektirir; W2.3 W2.2 boundary
+   uygulanıp kanıtlanana kadar blokludur. Refund/downstream reversal ve claim
    satisfaction/re-open paketleri kendi owner kararları kapanmadan CURRENT ilan edilemez.
 
 ---
