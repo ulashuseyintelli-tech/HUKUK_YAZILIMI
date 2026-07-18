@@ -106,8 +106,9 @@ describe('P02B — SERIALIZED_DRAFT + contract-derived official XML şekli', () 
 });
 
 describe('P02B — UNRESOLVED-ROLE REJECTION (gerçek P02A translator çıktısıyla)', () => {
-  it('UNRESOLVED_AUTHORITY_REQUIRED taraf (ASIL_BORCLU) → REJECTED, XML yok', () => {
-    const taraf = resolvedTaraf({ roleResolution: resolveOfficialRole(DebtorRole.ASIL_BORCLU) });
+  it('UNRESOLVED_AUTHORITY_REQUIRED taraf (MIRASCI, LDO_OWNER) → REJECTED, XML yok', () => {
+    // P03A sonrası ASIL_BORCLU RESOLVED oldu; hâlâ unresolved olan LDO_OWNER rolü MIRASCI kullanılır.
+    const taraf = resolvedTaraf({ roleResolution: resolveOfficialRole(DebtorRole.MIRASCI) });
     const r = serializeOfficialExchange(baseInput([taraf]));
     expect(r.status).toBe('REJECTED');
     if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
@@ -158,6 +159,33 @@ describe('P02B — determinizm ve encoding etiketi', () => {
     expect(JSON.stringify(r)).not.toContain('EMITTED');
     // gerçek byte encoding iddiası taşınmaz
     expect(JSON.stringify(r)).not.toContain('"byteEncodingPerformed":true');
+  });
+});
+
+describe('P03A — owner-safe roller serializer entegrasyonu (gerçek translator)', () => {
+  it('pure owner-safe resolved (ASIL_BORCLU + ADI_KEFIL) → SERIALIZED_DRAFT + owner-ratified rolTur emisyonu', () => {
+    const r = serializeOfficialExchange(
+      baseInput([
+        resolvedTaraf({ id: 'B1', roleResolution: resolveOfficialRole(DebtorRole.ASIL_BORCLU) }),
+        resolvedTaraf({ id: 'K1', roleResolution: resolveOfficialRole(DebtorRole.ADI_KEFIL) }),
+      ]),
+    );
+    expect(r.status).toBe('SERIALIZED_DRAFT');
+    if (r.status !== 'SERIALIZED_DRAFT') throw new Error('beklenen SERIALIZED_DRAFT');
+    expect(r.xml).toMatch(/<rolTur\s+rolID="22"\s+Rol="BORÇLU\/MÜFLİS"\s*\/>/);
+    expect(r.xml).toMatch(/<rolTur\s+rolID="33"\s+Rol="KEFİL"\s*\/>/);
+  });
+
+  it('mixed gerçek-resolved (ASIL_BORCLU) + gerçek-unresolved (MIRASCI) → REJECTED (all-or-nothing)', () => {
+    const r = serializeOfficialExchange(
+      baseInput([
+        resolvedTaraf({ id: 'B1', roleResolution: resolveOfficialRole(DebtorRole.ASIL_BORCLU) }),
+        resolvedTaraf({ id: 'M1', roleResolution: resolveOfficialRole(DebtorRole.MIRASCI) }),
+      ]),
+    );
+    expect(r.status).toBe('REJECTED');
+    if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
+    expect(r.unresolved).toEqual([{ tarafId: 'M1', kind: 'UNRESOLVED_AUTHORITY_REQUIRED' }]);
   });
 });
 
