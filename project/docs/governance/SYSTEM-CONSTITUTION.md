@@ -23,6 +23,7 @@ sonucudur ve repository etkisini yalnız approved merge ile kazanır.
 - Okuma sırası: [GOVERNANCE-INDEX.md](./GOVERNANCE-INDEX.md)
 - Ratifiye Debtor Domain Law: [DEBTOR-GOVERNANCE.md](./DEBTOR-GOVERNANCE.md)
 - Ratifiye Receivable Domain Governance: [RECEIVABLE-GOVERNANCE.md](./RECEIVABLE-GOVERNANCE.md)
+- Ratifiye CLIENT Governance Charter (bounded; full Domain Law değil): [CLIENT-GOVERNANCE-CHARTER.md](./CLIENT-GOVERNANCE-CHARTER.md)
 - Karar geçmişi: [decision-log.md](./decision-log.md)
 - ADR indeksi: [architecture-index.md](./architecture-index.md)
 - Master Register: [product-backlog.md](./product-backlog.md),
