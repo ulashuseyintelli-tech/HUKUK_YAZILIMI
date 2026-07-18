@@ -18,8 +18,12 @@ function buildHarness(options: { balance?: Prisma.Decimal } = {}) {
     caseBalance: { update: jest.fn() },
   };
   const prisma = {
+    case: {
+      findFirst: jest.fn().mockResolvedValue({ id: balance.caseId }),
+    },
     caseBalance: {
-      upsert: jest.fn().mockResolvedValue(balance),
+      findUnique: jest.fn().mockResolvedValue(balance),
+      create: jest.fn().mockResolvedValue(balance),
     },
     $transaction: jest.fn().mockImplementation(async (callback: (txArg: any) => Promise<unknown>) => callback(tx)),
   };
