@@ -208,6 +208,8 @@ ratifiye belge referansı.)
   (dbind §1). Disposition `clientId` ile kurulmaz (TM3 inv-4).
 - Borçlu tahsilatı otomatik müvekkile borç değildir (TM3 inv-1/2/3).
 
+**CLIENT ↔ COLLECTION named contract (XDC-C — Creditor Disposition and Client Settlement)**: yukarıdaki §4.6 hükümleri tekrar edilmeden — COLLECTION receipt, collection ledger, payable, payout, offset, allocation/source-linkage ve money-out lifecycle otoritesini elinde tutar; **creditor disposition CLIENT/COLLECTION shared ve approval-gated**tır (`CL-INV-005`; Constitution Financial SOT §9). CLIENT PROVIDES: creditor scope/context, instruction/disposition context. CLIENT NON-AUTHORITY: collection ledger mutation, money-out execution, legacy `clientId`-tabanlı entitlement. AÇIK pointer'lar: COL/OD-07 · COL/OD-08 · COL/OD-09 · COL/OD-10 · COL/OD-14 · COL/OD-15 · COL/OD-19 · financial role/approval predicate. Refund/reversal/financial-role policy bu clause'da SEÇİLMEZ. CLIENT-tarafı index: `CLIENT-GOVERNANCE-CHARTER.md` §6 XDC-C.
+
 ## 4.7. Açık sınır uyuşmazlığı (ÇÖZÜLDÜ — COL/OD-18 RECORDED → COL/OD-18A AMENDED)
 
 **COL-BOUNDARY-CONFLICT-001:** Handoff işletim haritası (Desktop 01 §0.3 / 03 §2)

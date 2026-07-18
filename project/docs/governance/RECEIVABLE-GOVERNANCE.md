@@ -355,6 +355,8 @@ Debtor/Receivable sınırı `SYS-GOV-016`, `SYS-GOV-017` ve `DEBTOR-GOVERNANCE` 
 okunur: ClaimItem receivable semantiğini taşır; Debtor/CaseDebtor legal role veya liability
 authority'si üretmez.
 
+**CLIENT ↔ RECEIVABLE sınırı (XDC-B — Creditor Context versus Receivable Authority)**: RECEIVABLE ClaimItem, receivable kompozisyonu, principal/interest/cost ve legal allocation + receivable lifecycle otoritesini elinde tutar; CLIENT tarafı creditor relationship/context, client instruction context ve client-facing read context'idir. CLIENT NON-AUTHORITY: independent receivable balance, claim mutation, legal allocation authority. Guard: **legacy client reference (`Case.clientId`) creditor veya finansal authority DEĞİLDİR** (`SYS-ID-001`; DBIND §1; `CL-INV-002`); creditor identity `CaseClient`/creditor set üzerinden belirlenir. ADR-014 calculation cutover ve ADR-013 fee/harç ownership bu sınırda çözülmez (kendi owner-gate'leri). CLIENT-tarafı index: `CLIENT-GOVERNANCE-CHARTER.md` §6 XDC-B.
+
 ---
 
 # 7. Alan-bazlı authority matrisi
