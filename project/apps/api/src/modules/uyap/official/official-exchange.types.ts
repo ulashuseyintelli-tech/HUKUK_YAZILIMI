@@ -13,6 +13,10 @@ import type { OfficialRoleResolution } from './official-role-translation.types';
  * - Encoding yalnız XML DEKLARASYON ETİKETİ olarak taşınır (ISO-8859-9); gerçek byte dönüşümü ve
  *   Türkçe round-trip P04 kapsamındadır (`byteEncodingPerformed=false`).
  * - `faizTipKod` gibi değerler taşınabilir ama P02B hiçbir kanonik değer ATAMAZ (ADR-014/P03).
+ * - ID ANCHOR INTEGRITY (P02B-R1): `id` anchor'ları (taraf zorunlu, alacakKalemi opsiyonel) resmî `id ID`
+ *   tipidir → belge genelinde BENZERSİZ ve BOŞ-OLMAYAN olmalıdır. Boş veya çift `id` → `REJECTED`
+ *   (`idViolations`). **`ref`/IDREF CROSS-REFERENCE bu alt-kümede DESTEKLENMEZ** — girdi tipi `ref`
+ *   taşımaz (ref-bearing input TYPE TARAFINDAN İFADE EDİLEMEZ), serializer `<ref>` üretmez.
  */
 
 /** Resmî `kisiTumBilgileri` (EMPTY element + attribute modeli). */
@@ -50,11 +54,14 @@ export interface OfficialAdres {
 }
 
 /**
- * Resmî `taraf`: `id ID` (ID/IDREF için) + `<rolTur>` ELEMENT (girdideki resolution'dan) +
+ * Resmî `taraf`: `id ID` anchor + `<rolTur>` ELEMENT (girdideki resolution'dan) +
  * `kisiKurumBilgileri` (kişi VEYA kurum, opsiyonel adres). Yalnız `RESOLVED` resolution serialize edilir.
  */
 export interface OfficialTaraf {
-  /** taraf `id ID` — ID/IDREF çapraz-referans için. */
+  /**
+   * taraf `id ID` anchor — belge genelinde BENZERSİZ ve BOŞ-OLMAYAN olmalıdır (boş/çift → REJECTED).
+   * `ref`/IDREF cross-reference bu alt-kümede DESTEKLENMEZ (P02B-R1); bu alan yalnız ID anchor'ıdır.
+   */
   id: string;
   /** Rol çözümlemesi (P02A `OfficialRoleResolution`). Yalnız `RESOLVED` serialize edilir. */
   roleResolution: OfficialRoleResolution;
@@ -119,4 +126,13 @@ export type OfficialSerializationResult =
       reason: string;
       /** Çözülemeyen/desteklenmeyen taraf id'leri ve resolution kind'ları. */
       unresolved: Array<{ tarafId: string; kind: string }>;
+      /**
+       * ID ANCHOR INTEGRITY ihlalleri (P02B-R1): boş veya çift `id`. Yalnız id-integrity reddinde
+       * doldurulur; rol reddinde tanımsızdır. `source` ihlalin geldiği element türüdür.
+       */
+      idViolations?: Array<{
+        id: string;
+        issue: 'EMPTY_ID' | 'DUPLICATE_ID';
+        source: 'taraf' | 'alacakKalemi';
+      }>;
     };

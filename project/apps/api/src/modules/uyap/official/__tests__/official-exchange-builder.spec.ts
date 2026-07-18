@@ -161,6 +161,58 @@ describe('P02B — determinizm ve encoding etiketi', () => {
   });
 });
 
+describe('P02B-R1 — ID ANCHOR INTEGRITY + REF BOUNDARY', () => {
+  it('DUPLICATE ID (iki taraf aynı id) → REJECTED (idViolations DUPLICATE_ID)', () => {
+    const r = serializeOfficialExchange(
+      baseInput([resolvedTaraf({ id: 'DUP' }), resolvedTaraf({ id: 'DUP' })]),
+    );
+    expect(r.status).toBe('REJECTED');
+    if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
+    expect(r.idViolations).toEqual([{ id: 'DUP', issue: 'DUPLICATE_ID', source: 'taraf' }]);
+    expect((r as { xml?: string }).xml).toBeUndefined();
+  });
+
+  it('EMPTY ID (taraf id boş) → REJECTED (idViolations EMPTY_ID)', () => {
+    const r = serializeOfficialExchange(baseInput([resolvedTaraf({ id: '' })]));
+    expect(r.status).toBe('REJECTED');
+    if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
+    expect(r.idViolations).toEqual([{ id: '', issue: 'EMPTY_ID', source: 'taraf' }]);
+  });
+
+  it('alacakKalemi id, taraf id ile çakışırsa → REJECTED (belge-genelinde benzersizlik)', () => {
+    const input: OfficialExchangeInput = {
+      ...baseInput([resolvedTaraf({ id: 'X1' })]),
+      alacakKalemleri: [{ id: 'X1', alacakKalemTutar: '10' }],
+    };
+    const r = serializeOfficialExchange(input);
+    expect(r.status).toBe('REJECTED');
+    if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
+    expect(r.idViolations).toEqual([{ id: 'X1', issue: 'DUPLICATE_ID', source: 'alacakKalemi' }]);
+  });
+
+  it('geçerli benzersiz + boş-olmayan id → SERIALIZED_DRAFT (kabul)', () => {
+    const r = serializeOfficialExchange(
+      baseInput([resolvedTaraf({ id: 'A' }), resolvedTaraf({ id: 'B' })]),
+    );
+    expect(r.status).toBe('SERIALIZED_DRAFT');
+  });
+
+  it('REF BOUNDARY: input tipi `ref`/`to` alanı taşımaz (ref-bearing input ifade edilemez)', () => {
+    const types = readOfficial('official-exchange.types.ts');
+    expect(types).not.toMatch(/\bOfficialRef\b/); // OfficialRef tipi yok
+    expect(types).not.toMatch(/^\s*ref\??\s*:/m); // `ref:` alanı yok
+    expect(types).not.toMatch(/^\s*to\??\s*:/m); // `to:` (IDREF) alanı yok
+  });
+
+  it('REF BOUNDARY: builder `<ref>` üretmez; SERIALIZED_DRAFT çıktısı `<ref` içermez', () => {
+    const builder = readOfficial('official-exchange-builder.ts');
+    expect(builder).not.toMatch(/\.ele\(\s*['"`]ref['"`]/); // ele('ref') yok
+    const r = serializeOfficialExchange(baseInput([resolvedTaraf()]));
+    if (r.status !== 'SERIALIZED_DRAFT') throw new Error('beklenen SERIALIZED_DRAFT');
+    expect(r.xml).not.toContain('<ref');
+  });
+});
+
 describe('P02B — izolasyon / no-wiring / no domain→rolID mapping (kaynak-grep)', () => {
   it('builder yalnız en dar bağımlılıkları IMPORT eder (Prisma/NestJS/legacy YOK)', () => {
     const importBlob = readOfficial('official-exchange-builder.ts')
