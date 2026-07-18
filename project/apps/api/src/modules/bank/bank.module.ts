@@ -7,6 +7,7 @@ import { CollectionModule } from '../collection/collection.module';
 import { PermissionDiagnosticsModule } from '../permission-diagnostics/permission-diagnostics.module';
 import { SettlementVerifierAuthorizationService } from './settlement-verifier-authorization.service';
 import { BankSettlementEvidenceWriterService } from './bank-settlement-evidence-writer.service';
+import { BankCandidateSettlementTransitionService } from './bank-candidate-settlement-transition.service';
 
 @Module({
   // G3d: banka eşleşmesi tahsilatı kanonik CollectionService'ten üretir.
@@ -17,11 +18,13 @@ import { BankSettlementEvidenceWriterService } from './bank-settlement-evidence-
     BankService,
     SettlementVerifierAuthorizationService,
     BankSettlementEvidenceWriterService,
+    BankCandidateSettlementTransitionService,
   ],
   exports: [
     BankService,
     SettlementVerifierAuthorizationService,
     BankSettlementEvidenceWriterService,
+    BankCandidateSettlementTransitionService,
   ],
 })
 export class BankModule {}
