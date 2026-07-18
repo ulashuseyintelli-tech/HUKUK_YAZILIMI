@@ -445,3 +445,70 @@ Instruction/declaration evidence: OFFICE'e değerlendirme + approval context sa�
 ### 13.10 BP-03 Self-Check
 
 Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; **first-class AS-IS client instruction aggregate'i ABSENT/NOT CLAIMED** olarak kaydeder; `ClientIntelStatement`'ı **otomatik instruction İLAN ETMEZ** (declaration evidence); recorder'ı client principal ile **EŞİTLEMEZ** (direct attribution AS-IS PARTIAL/GAP); intake promotion'ı **FACT A olarak GÖSTERMEZ**; system-derived data'yı client instruction SAYMAZ; instruction'dan business-effect authority ÜRETMEZ; yeni subject taxonomy / precedence / contradiction / consent / portal / KVKK policy SEÇMEZ; enum-only transition çıkarımı YAPMAZ; `CL-INV-001..008` / §6 / §8.A / §8.B / §11 / §12'yi değiştirmez; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 14. CLIENT-P1-BP-04 — Client Approval / Consent Provenance Map (BOUNDED CONSOLIDATION — OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-BP-04` read-only analizinin **owner-ratified bounded consolidation**'ıdır (`decision-log.md` CLIENT-P1-BP-04-GOV; **MODEL 1 — BOUNDED APPROVAL / CONSENT PROVENANCE CONSOLIDATION MAP**). Mevcut kanonik AS-IS gerçekleri (AS-IS kod/schema + charter §3–§8.B + §11 + §12 + §13 + XDC-A–E + POL-A + POL-B + SYSTEM-CONSTITUTION + DBIND) ve owner kararlarını **konsolide eder**; yeni domain authority, policy, taxonomy, subject-sufficiency-selection, role, rank, predicate veya lifecycle mekanizması ÜRETMEZ. §5 `CL-INV-001..008`, §6 XDC-A–E, §8.A POL-B, §8.B POL-A, §11, §12 ve §13 metinlerini **semantik olarak değiştirmez veya yeniden yorumlamaz**. CLIENT domain kayıtlarını **yapısal/mimari konsolidasyon sözlüğü** olarak adlandırır; route/method/field-wiring/exploit detayı İÇERMEZ. **IMPLEMENTATION AUTHORITY: NONE; runtime/schema/writer-routing değişikliği ÖNERMEZ.** **PER-SUBJECT CONSENT SUFFICIENCY: OPEN / NOT SELECTED.** **AUTHENTICATED EXTERNAL-CLIENT DECISION (FACT A): AS-IS ABSENT / UNWIRED.**
+
+### 14.1 Three-Track Model (ayrı ve NON-CONVERTIBLE)
+
+- **TRACK A — Authenticated external-client act:** POL-B CLASS = FACT A; AS-IS = **ABSENT / UNWIRED**; client authentication = NOT IMPLEMENTED; business-effect authority = NONE. FACT A kaydı olsa dahi OFFICE internal approval yerine geçmez, financial authority oluşturmaz, target-domain execution gerçekleştirmez.
+- **TRACK B — Staff-recorded client-attributed disposition:** POL-B CLASS = FACT B; AS-IS CARRIER = `ClientApprovalRequest` + `ClientApprovalEvent`; RECORDER = **STAFF ACTOR**; client principal authentication = **NOT PROVEN**; business-effect authority = NONE. `APPROVED`/`REJECTED` statüsü personelce kaydedilen disposition fact'idir; otomatik authenticated client consent DEĞİL; recorder identity'yi client principal identity'ye DÖNÜŞTÜRMEZ; **FACT A'ya YÜKSELTİLEMEZ**.
+- **TRACK C — Internal Office approval:** AS-IS CARRIER = `OfficeApprovalRequest`; AUTHORITY OWNER = OFFICE; FUNCTION = INTERNAL APPROVAL GATE; target-domain execution = SEPARATE. Track C client consent DEĞİL, CLIENT authority DEĞİL, tek başına execution DEĞİL; ilgili target-domain işlemini yalnız canonical contract uyarınca gate edebilir.
+
+### 14.2 Canonical Non-Equations
+
+`CLIENTAPPROVALREQUEST ≠ AUTHENTICATED CLIENT CONSENT` · `CLIENTAPPROVALREQUEST ≠ OFFICEAPPROVALREQUEST` · `FACT A ≠ FACT B` · `FACT B ≠ INTERNAL OFFICE APPROVAL` · `CLIENT CONSENT ≠ CLIENT INSTRUCTION` · `CLIENT CONSENT ≠ MANDATE` · `CLIENT CONSENT ≠ FINANCIAL AUTHORITY` · `APPROVAL EVIDENCE ≠ EXECUTION AUTHORIZATION` · `INTERNAL OFFICE APPROVAL ≠ TARGET-DOMAIN EXECUTION` · `RECORDER IDENTITY ≠ CLIENT PRINCIPAL IDENTITY`.
+
+### 14.3 AS-IS Client Approval Ledger
+
+`ClientApprovalRequest` + `ClientApprovalEvent` = bounded approval-request/provenance ledger. **Verified lifecycle (kod-kanıtlı):** CREATE → DRAFT · DRAFT → SENT · SENT → APPROVED · SENT → REJECTED · SENT → EXPIRED · {DRAFT / SENT} → CANCELLED. Precision: yalnız kod/test ile doğrulanmış geçişler yazılır; enum üyelerinden ek transition ÇIKARILMAZ; terminal disposition'dan revocation/supersession canonical DEĞİL; event kayıtları historical evidence'dır; **`PORTAL` channel değeri external-client authentication kanıtı DEĞİL**; decision recorder'ın **staff actor** olması açıkça korunur.
+
+### 14.4 Subject Inventory and Sufficiency
+
+AS-IS envanter (yalnız mevcut değerler): **`EXPENSE_REQUEST`** · **`OPERATION`** · **`OTHER`**.
+
+**Canonical sufficiency kararı:**
+
+| Subject | Canonical semantik | FACT-B yeterliliği | FACT-A zorunluluğu |
+|---|---|---|---|
+| `EXPENSE_REQUEST` | Yetersiz / bounded label | **UNRESOLVED** | **UNRESOLVED** |
+| `OPERATION` | Generic / instance-dependent | **UNRESOLVED** | **UNRESOLVED** |
+| `OTHER` | Catch-all / semantik belirsiz | **UNRESOLVED** | **UNRESOLVED** |
+
+**CANONICALIZE EDİLMEZ:** `EXPENSE_REQUEST = S5`; FACT B'nin herhangi bir subject için yeterli olduğu; FACT A'nın herhangi bir subject için zorunlu olduğu; subject etiketi üzerinden OFFICE approval veya execution zinciri türetilmesi. **Sufficiency ayrı owner `GO-DECIDE — PER-SUBJECT CONSENT SUFFICIENCY` olmadan SEÇİLMEZ.** (S1–S6 sınıflandırması analitik bir araçtır; canonical policy DEĞİLDİR.)
+
+### 14.5 Evidence Gap / Policy Gap Ayrımı
+
+- **EVIDENCE / CAPABILITY GAP:** authenticated external-client decision track absent · direct principal authentication absent · portal decision flow unwired.
+- **POLICY GAP:** hangi subject client fact gerektirir · hangi subject FACT B kabul eder · hangi subject FACT A gerektirir · contradictory decision nasıl çözülür · approved disposition revoke/supersede edilebilir mi.
+- **Capability gap ile policy gap birbirinin yerine KULLANILAMAZ.**
+
+### 14.6 Replay / Contradiction / Concurrency
+
+AS-IS açıkları bounded risk: request-level idempotency contract canonical DEĞİL; aynı subject için birden fazla request coexist edebilir; contradictory disposition'lar için precedence contract YOK; supersession/revocation contract YOK; concurrent terminal transition için canonical compare-and-set garantisi YOK. Korunan hüküm: **MULTIPLE RECORDS MAY COEXIST · COEXISTENCE ≠ EQUIVALENCE · NEWER RECORD ≠ AUTOMATIC LEGAL PRECEDENCE · TERMINAL STATUS ≠ IRREVOCABLE LEGAL CONSENT.** Bu görevde çözüm/implementation SEÇİLMEZ.
+
+### 14.7 Cross-Domain Boundary
+
+Client approval/consent evidence: OFFICE'e approval context sağlayabilir; RECEIVABLE'a context sağlayabilir (mutation authority VERMEZ); COLLECTION'a disposition context sağlayabilir (posting/payout/offset authority VERMEZ); DEBTOR'a context sağlayabilir (legal-status authority VERMEZ); portal/document yüzeylerine evidence context sağlayabilir (external authority VERMEZ). **XDC-A–E tüketilir; başka domain authority'si CLIENT'e taşınmaz.** *(AS-IS: ledger defter-only; cross-module business-effect consumer YOK.)*
+
+### 14.8 Open-Slot Register (yalnız pointer; ÇÖZÜLMEZ)
+
+- Per-subject consent sufficiency
+- FACT-A gerektiren subject'ler
+- FACT-B'nin yeterli kabul edilebileceği subject'ler
+- Portal / external-client authority → **BP-05 / POL-C**
+- Direct client principal attribution
+- Contradiction and precedence policy
+- Decision revocation / supersession policy
+- Idempotency / concurrency hardening
+- KVKK retention / anonymization / legal hold
+- Target-domain consumption and enforcement implementation
+
+### 14.9 Status Precision
+
+**CLIENT-P1-BP-04: BOUNDED APPROVAL / CONSENT PROVENANCE MODEL** · **`ClientApprovalRequest`: FACT-B LEDGER, NOT AUTHENTICATED CLIENT CONSENT** · **`OfficeApprovalRequest`: INTERNAL OFFICE APPROVAL GATE, NOT TARGET-DOMAIN EXECUTION** · **PER-SUBJECT CONSENT SUFFICIENCY: OPEN / NOT SELECTED** · **AUTHENTICATED FACT-A: AS-IS ABSENT / UNWIRED** · **BUSINESS-EFFECT AUTHORITY: NONE** · **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 14.10 BP-04 Self-Check
+
+Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; üç track'i (FACT A / FACT B / OFFICE) ayrı ve non-convertible kaydeder; `APPROVED` statüsünü **authenticated client consent olarak GÖSTERMEZ**; FACT B'yi FACT A'ya **YÜKSELTMEZ**; recorder'ı client principal ile **EŞİTLEMEZ**; `PORTAL` channel'ı **wired external flow olarak GÖSTERMEZ**; `OfficeApprovalRequest`'i **target-domain execution authority olarak GÖSTERMEZ**; per-subject sufficiency (S1–S6 dahil) **canonical policy YAPMAZ** (tümü UNRESOLVED/OPEN); yeni subject taxonomy / contradiction / precedence / portal / KVKK policy SEÇMEZ; enum-only transition çıkarımı YAPMAZ; `CL-INV-001..008` / §6 / §8.A / §8.B / §11 / §12 / §13'ü değiştirmez; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
