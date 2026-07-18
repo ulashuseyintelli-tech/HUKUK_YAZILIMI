@@ -86,49 +86,67 @@ Aşağıdaki invariant'lar mevcut kanonik normların **KONSOLİDASYONUDUR** (kay
 
 Bu bölüm yeni teknik mekanizma veya çözüm tasarımı içermez.
 
-## 6. Cross-Domain Contract Map
+## 6. Cross-Domain Contract Map — Named Bounded Contracts (XDC-A–E)
 
-Her sözleşme **referans-only**'dir; ilgili kardeş domainin kendi otoritesi bu charter'ın ÜSTÜNdedir.
+Her sözleşme **referans-only**'dir; ilgili kardeş domainin kendi otoritesi bu charter'ın ÜSTÜNdedir. Bu bölüm **MODEL D — HYBRID canonicalization** (owner-ratified; `decision-log.md` CLIENT-P1-XDC-01) uyarınca beş adlandırılmış sınırlı sözleşmenin **CLIENT-tarafı kanonik index'idir**; her sözleşmenin reciprocal authority sınırı ilgili kardeş Domain Law'da **adlandırılır ve orada kalır** (RECIPROCAL HOME). Bu index yeni command/write/approval/source-of-truth authority ÜRETMEZ, açık policy'yi ÇÖZMEZ, kardeş Domain Law hükümlerini YENİDEN YAZMAZ. **AUTHORITY CONFLICT: NONE** (CLIENT-P1-XDC-01 analizi; consolidation only).
 
-### CLIENT ↔ OFFICE — authority, internal approval, actor identity
+### XDC-A — CLIENT ↔ OFFICE — Client Approval and Actor Identity
 
+- **PURPOSE:** CLIENT onay talebi + relationship/mandate/instruction bağlamı sağlar; OFFICE internal approval kararını ve approving actor identity'yi üretir. Business-effect ilgili hedef domainde kalır.
 - **CLIENT PROVIDES:** client relationship / mandate / instruction context; onay talebi.
-- **CLIENT CONSUMES:** internal approval kararı ve actor identity.
+- **CLIENT CONSUMES:** internal approval kararı ve actor identity (okuma).
 - **OTHER DOMAIN AUTHORITY:** OFFICE — actor / role / approval policy (`SYS-GOV-014`; OFFICE §15; ADR-009; OFF/OD-08/10/11).
 - **CLIENT NON-AUTHORITY:** office role/personnel authority; approval actor kimliğini üretmek.
-- **OPEN OWNER DECISION:** OFF/OD-06, OFF/OD-12, OFF/OD-13.
+- **CANONICAL SOURCE REFERENCES:** `SYS-GOV-014` / `SYS-GOV-015`; OFFICE-GOVERNANCE §15/§21; ADR-009 (`OfficeApprovalRequest` ≠ `ClientApprovalRequest`, LOCKED-ayrı); Constitution Identity SOT §7; `SYS-DEC-006`.
+- **OPEN OWNER-DECISION POINTERS:** OFF/OD-06, OFF/OD-12, OFF/OD-13; executed-approval reversal ownership; approval provenance (CL-INV-007 komşu, ayrı).
+- **RECIPROCAL HOME:** OFFICE-GOVERNANCE §21 (OFFICE→CLIENT clause).
 
-### CLIENT ↔ RECEIVABLE — creditor context vs receivable authority
+### XDC-B — CLIENT ↔ RECEIVABLE — Creditor Context versus Receivable Authority
 
-- **CLIENT PROVIDES:** creditor identity / relationship context (creditor ucu).
+- **PURPOSE:** CLIENT'ın creditor-identity/relationship (creditor ucu) sahipliğini RECEIVABLE'ın claim item + deterministic calculation otoritesinden ayırır; CLIENT receivable kompozisyonunu OKUR, mutasyon etmez.
+- **CLIENT PROVIDES:** creditor identity / relationship context (creditor ucu; `CaseClient`/creditor set).
 - **CLIENT CONSUMES:** claim / receivable kompozisyonu (okuma).
-- **OTHER DOMAIN AUTHORITY:** RECEIVABLE — claim item, principal/interest/cost, deterministic calculation (`SYS-GOV-017`).
-- **CLIENT NON-AUTHORITY:** independent receivable balance veya legal allocation (`SYS-GOV-015`).
-- **OPEN OWNER DECISION:** adlandırılmış CLIENT↔RECEIVABLE contract yüzeyi bugün örtüktür — gelecekte konsolide edilebilir.
+- **OTHER DOMAIN AUTHORITY:** RECEIVABLE — claim item, principal/interest/cost, deterministic calculation ve legal allocation (`SYS-GOV-017`).
+- **CLIENT NON-AUTHORITY:** independent receivable balance veya legal allocation (`SYS-GOV-015`); claim mutation.
+- **CANONICAL SOURCE REFERENCES:** `SYS-GOV-015` / `SYS-GOV-017`; Constitution Financial SOT §9 (Creditor authority + Canonical receivable balance satırları); DBIND §1; `CL-INV-002` (`Case.clientId` finansal/party authority DEĞİL).
+- **OPEN OWNER-DECISION POINTERS:** adlandırılmış yüzey bugüne dek örtüktü — bu index ile named; client-facing receivable projection/masking (XDC-E ailesi). ADR-014 calc cutover / ADR-013 fee = **other-program** (bu sözleşmede çözülmez).
+- **RECIPROCAL HOME:** RECEIVABLE-GOVERNANCE §6 (Domain ownership ve sınırlar).
 
-### CLIENT ↔ COLLECTION — disposition, payable, payout, settlement
+### XDC-C — CLIENT ↔ COLLECTION — Creditor Disposition and Client Settlement
 
+- **PURPOSE:** Tahsil edilen değerin müvekkil/creditor yönlendirmesinin (creditor disposition → client payable → payout/offset/statement) CLIENT sınırı ile COLLECTION money-out lane'i arasındaki scope/approval/read sözleşmesi.
 - **CLIENT PROVIDES:** creditor identity (disposition scope); ödeme-rota bağlamı.
 - **CLIENT CONSUMES:** posted disposition sonucu (client payable / payout / offset / statement).
-- **OTHER DOMAIN AUTHORITY:** COLLECTION — receipt, cash provenance, allocation-execution, money-out idempotency (`SYS-GOV-018`; COLLECTION §4.6; COL-IDEM-001; kabul edilmiş Client-offset ADR'i; DBIND §3/§5).
-- **CLIENT NON-AUTHORITY:** collection ledger mutation; disposition'ı `clientId` ile kurmak.
-- **OPEN OWNER DECISION:** client-settlement umbrella consolidation; COL/OD-07/08/09/10/14/15/19.
+- **OTHER DOMAIN AUTHORITY:** COLLECTION — receipt, cash provenance, allocation-execution, money-out idempotency (`SYS-GOV-018`; COLLECTION §4.6; COL-IDEM-001; kabul edilmiş Client-offset ADR'i; DBIND §3/§5). Creditor disposition = **approval-gated SHARED CLIENT/COLLECTION** (`CL-INV-005`; Constitution Financial SOT §9).
+- **CLIENT NON-AUTHORITY:** collection ledger mutation; money-out execution; disposition'ı `clientId` ile kurmak.
+- **CANONICAL SOURCE REFERENCES:** `SYS-GOV-018`; COLLECTION-GOVERNANCE §4.6; DBIND §1/§3/§5; Constitution Financial SOT §9 (Creditor Disposition + Payout/Offset satırları); Client-offset ADR (ACCEPTED); `CL-INV-004`/`CL-INV-005`.
+- **OPEN OWNER-DECISION POINTERS:** client-settlement umbrella consolidation; COL/OD-07/08/09/10/14/15/19; financial role/approval predicate.
+- **RECIPROCAL HOME:** COLLECTION-GOVERNANCE §4.6 (CLIENT-financial settlement).
 
-### CLIENT ↔ DEBTOR — client instruction/approval vs debtor legal status
+### XDC-D — CLIENT ↔ DEBTOR — Client Instruction versus Debtor Legal Status
 
-- **CLIENT PROVIDES:** müvekkil onayı / talimatı (sulh bağlamı).
+- **PURPOSE:** Client instruction/consent (sulh bağlamı) ile debtor legal status arasındaki sınır; client consent kaydedilir/talimattır, debtor yükümlülüğünü tek başına değiştirmez.
+- **CLIENT PROVIDES:** müvekkil onayı / talimatı (sulh bağlamı; consent context).
 - **CLIENT CONSUMES:** debtor legal-status bağlamı (okuma).
-- **OTHER DOMAIN AUTHORITY:** DEBTOR — debtor identity, legal role/status, sulh taslağı (`SYS-GOV-016`; DEBTOR §7/§8; OfficeApproval REUSE).
-- **CLIENT NON-AUTHORITY:** debtor legal status; client disposition debtor yükümlülüğünü tek başına değiştiremez (`SYS-LEGAL-010`).
-- **OPEN OWNER DECISION:** müvekkil görünürlük / self-service (MS/OD-10, MS/OD-11).
+- **OTHER DOMAIN AUTHORITY:** DEBTOR — debtor identity, legal role/status, debtor workflow, sulh/legal-settlement mutation (`SYS-GOV-016`; DEBTOR §6/§7/§8; OfficeApproval REUSE).
+- **CLIENT NON-AUTHORITY:** debtor legal status; unilateral debtor obligation change; otomatik/self-service settlement authority (`SYS-LEGAL-010`; MS/ADR-020).
+- **CANONICAL SOURCE REFERENCES:** `SYS-GOV-015` / `SYS-GOV-016`; `SYS-LEGAL-009`/`SYS-LEGAL-010` (LegalSettlement/Sulh ≠ ClientSettlement/Creditor Disposition); DEBTOR-GOVERNANCE §6/§7/§8; `CL-INV-004`.
+- **OPEN OWNER-DECISION POINTERS:** MS/OD-10, MS/OD-11; client approval artefakt kimliği + staff-proxy provenance (CL-INV-007).
+- **RECIPROCAL HOME:** DEBTOR-GOVERNANCE §6 (Bounded Context Ownership).
 
-### CLIENT ↔ DOCUMENT / PORTAL — client-facing evidence and visibility
+### XDC-E — CLIENT ↔ DOCUMENT / PORTAL — Client-Facing Evidence and Visibility
 
-- **CLIENT PROVIDES:** client-facing görünürlük ve onay talebi.
+Bu sözleşmenin **contract core'u canonicalize edilir; substantive policy clause'ları OWNER-GATED / ÇÖZÜLMEMİŞ pointer olarak kalır**. **Yeni DOCUMENT/PORTAL Domain Law OLUŞTURULMAZ** (Constitution shared-kernel authority korunur, `SYS-GOV-019`).
+
+- **PURPOSE:** Client-facing belge/evidence yüzeyleri + client visibility & approval-request sınırı.
+- **CLIENT PROVIDES:** client-facing görünürlük ve onay talebi bağlamı; mandate context.
 - **CLIENT CONSUMES:** client-facing belge / evidence yüzeyleri.
-- **OTHER DOMAIN AUTHORITY:** Constitution visibility ilkeleri (`SYS-AUTH-008` / `SYS-AUTH-012`); tenant containment kaydı (CLIENT-P0-T04-C1, canonical).
-- **CLIENT NON-AUTHORITY:** other-tenant visibility.
-- **OPEN OWNER DECISION:** portal / external-client authority; client-facing masking; KVKK retention / anonymization / legal hold.
+- **OTHER DOMAIN AUTHORITY:** shared-kernel — document/evidence infrastructure, evidence integrity & retention mechanism, authentication infrastructure (`SYS-GOV-019`; `SYS-EVID-004`); Constitution visibility ilkeleri (`SYS-AUTH-008` / `SYS-AUTH-012`); internal actor identity & authorization = OFFICE (`SYS-GOV-014`). Tenant containment kaydı = CLIENT-P0-T04-C1 (finansal-yüzey tenant boundary evidence; **client-facing visibility policy DEĞİL**, `CL-INV-006`).
+- **CLIENT NON-AUTHORITY:** other-tenant visibility; portal authority'yi tek başına tanımlamak; masking veya retention policy'yi tek başına belirlemek.
+- **CANONICAL SOURCE REFERENCES:** `SYS-AUTH-008` / `SYS-AUTH-012`; `SYS-GOV-019`; `SYS-EVID-004`; `CL-INV-006` / `CL-INV-007`.
+- **OPEN OWNER-DECISION POINTERS (yalnız pointer; ÇÖZÜLMEZ):** portal / external-client authority; client-facing masking; KVKK retention / anonymization / legal hold; external-approval vs staff-proxy provenance; aggregate visibility; document/portal RBAC.
+- **CONTRACT STATUS:** CONTRACT CORE = CANONICALIZED; OPEN POLICY CLAUSES = OWNER-GATED / NOT RESOLVED.
+- **RECIPROCAL HOME:** yeni Domain Law YOK; shared-kernel authority Constitution'da (`SYS-GOV-019`/`SYS-EVID`), OFFICE actor authority OFFICE-GOVERNANCE'da kalır; substantive policy = bounded owner decisions/ADR (charter'a gömülmez).
 
 ## 7. Existing Superior Authorities
 

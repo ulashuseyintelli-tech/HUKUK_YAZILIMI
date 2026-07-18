@@ -226,6 +226,8 @@ Master Synthesis §H'deki kanonik ayrım aynen korunur (18 context):
 
 Kural: bir context başka context'in kanonik modeline **yazamaz**; iletişim DomainEvent veya servis sözleşmesi üzerindendir. Read Models (16-17) hiçbir kanonik modele yazmaz.
 
+**CLIENT ↔ DEBTOR sınırı (XDC-D — Client Instruction versus Debtor Legal Status)**: DEBTOR debtor identity, legal status, debtor workflow ve legal-settlement/sulh mutation otoritesini elinde tutar; CLIENT tarafı instruction/consent context ve client-side approval context'idir. CLIENT NON-AUTHORITY: unilateral debtor obligation change, debtor legal-status ownership, otomatik/self-service settlement authority (`SYS-LEGAL-010`; MS/ADR-020). LegalSettlement/Sulh ile ClientSettlement/Creditor Disposition **birleştirilemez** (`SYS-LEGAL-009`; `CL-INV-004`). AÇIK pointer'lar: MS/OD-10 · MS/OD-11 · client approval artefakt kimliği · staff-proxy provenance (CL-INV-007). OfficeApproval REUSE ile ayrı ClientApproval artefaktı arasındaki seçim bu clause'da YAPILMAZ. CLIENT-tarafı index: `CLIENT-GOVERNANCE-CHARTER.md` §6 XDC-D.
+
 ---
 
 ## 7. Legal and Financial Action Boundaries

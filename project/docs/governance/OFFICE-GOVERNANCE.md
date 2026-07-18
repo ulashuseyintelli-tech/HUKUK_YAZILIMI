@@ -151,6 +151,7 @@ Reactivation eski authority'yi otomatik geri vermez; reactivation ≠ rehire. Re
 
 **OFFICE → RECEIVABLE**: preparedBy/approvedBy/approval authority/actor identity/permission/audit/lifecycle bağlantıları tanımlanır; finansal formül/bakiye/tahakkuk semantiği **değiştirilemez**.
 **OFFICE → DEBTOR**: kimin erişebileceği/hangi Person-UserAccount aktör olduğu/access üretip üretmediği/audit attribution tanımlanır; debtor'ın canonical kimliği/ilişkileri **değiştirilemez**.
+**OFFICE → CLIENT (XDC-A — Client Approval and Actor Identity)**: OFFICE internal actor identity, role/rank/delegation authority, internal approval kararı ve approval audit/evidence otoritesini elinde tutar; CLIENT tarafı client relationship, mandate/instruction ve client-side approval context'idir. Business-effect ilgili hedef business domainde kalır. `OfficeApprovalRequest` (internal) ile `ClientApprovalRequest` (external) **eşitlenemez** (ADR-009 LOCKED). Client'ın relationship/mandate/instruction otoritesi **değiştirilemez**. AÇIK: executed-approval reversal ownership · OFF/OD-06 · OFF/OD-12 · OFF/OD-13 · approval provenance (CL-INV-007 komşu). Bu clause yeni reversal veya delegation politikası ÜRETMEZ. CLIENT-tarafı index: `CLIENT-GOVERNANCE-CHARTER.md` §6 XDC-A.
 
 ## 22. Forbidden Conflations
 
