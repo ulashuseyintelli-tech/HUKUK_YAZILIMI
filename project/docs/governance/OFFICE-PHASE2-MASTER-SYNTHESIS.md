@@ -151,6 +151,59 @@ Tüm domain'ler                REQUIRES  OFFICE'in ürettiği trusted identity/s
 
 Phase 1 evidence baseline'ının (150 senaryo) tüm teknik iddiaları SYS-COMP-002 gereği REVALIDATION_REQUIRED mirasını taşır; CONTROL GAP / SECURITY-SENSITIVE / PRIVATE EVIDENCE satırları private evidence'ta doğrulanmıştır ve bu sınıflandırma zayıflatılamaz. Bu belgedeki capability statüleri yalnız repository-doğrulanmış Phase 1 teslimatlarına (PR/squash SHA/CI kayıtlı) CURRENT der; sentez-kaynaklı her diğer iddia, Phase 2'de kullanılmadan önce canonical HEAD'e karşı yeniden doğrulanır. Tekrarlayan yüksek-belirsizlik alanları (credential eligibility, kiracılar-arası devir kısıtı, delegasyon yaşam döngüsü) kanıt-üretimi gerektiren alanlar olarak işaretlidir.
 
+## 5a. Tur 2 Canonical Evidence Reconciliation (owner-dispositioned, 2026-07-17)
+
+**Provenance ve otorite sınırı.** "Avukat / Personel Master Audit — Tur 2 (Kimlik/Organizasyon/Yetki Ontolojisi)" raporu **HISTORICAL / NON-NORMATIVE** kanıttır (AS-OF 2026-07-11). Historical anchor `be9c0c90` meşru bir tarihsel dal-işaretçisidir; ancak Tur 2'nin incelediği her dosyanın commit'lenmiş anlık görüntüsü DEĞİLDİR — raporun ayrıntılı gözlemleri o dönemin working-tree'sinden elde edilmiş kanıt içerebilir. Bu nedenle güncel-durum uzlaştırması `be9c0c90..origin/main` diff'iyle değil, **claim-by-claim olarak güncel `origin/main`'e karşı** yapılmıştır (bu, kabul edilen tek tazelik yöntemidir). Bu uzlaştırmanın kendisi kanonik otorite ÜRETMEZ; sonucu yalnız **CANONICAL EVIDENCE DISPOSITION / NON-NORMATIVE** olarak kaydedilir. Güncel `origin/main` repository gerçeği, ratifiye OFFICE Domain Law, kapanmış owner kararları ve Phase 1 delivery kanıtı her zaman önceliklidir.
+
+**Uzlaştırma metrikleri (özet).** 20 material Tur 2 claim'i uzlaştırıldı; 35 tarihsel OD sorusu eşlendi; 11 STF-ONT gözlemi eşlendi veya disposition aldı; 9 Phase 1 milestone'u supersession etkisi için değerlendirildi. Yapısal teslimat ile davranışsal enforcement AYRI nitelenmeye devam eder; ilgili bir dilim teslim edildi diye hiçbir Phase 1 finding'i KAPANMIŞ sayılmaz. *(Tam claim-by-claim teknik matris owner-local analiz kaydındadır; bu public belgeye kopyalanmaz.)*
+
+**Target-model disposition'ı.** Tur 2 **Model B**, ratifiye OFFICE hedef sözlüğüyle (Person / UserAccount / OrganizationMembership / Employment-StaffProfile / LawyerCredential / OrganizationalTitle / SystemRole / PermissionGrant) maddi olarak TUTARLIDIR — Tur 2 yazıldığında (2026-07-11) bu bir alternatifti; iki gün sonra (2026-07-13) ratifiye Domain Law'da tam olarak bu hedef kanonlaştı. Tur 2 **Model A**'nın normatif otoritesi YOKTUR; yalnız bir sıralama/tempo tercihini betimleyebilir, Person'ı veya diğer ratifiye hedef kavramları hedef modelden ÇIKARAMAZ. Tur 2 **Model C**, mevcut kanonik hedefin ÖTESİNDE ratifiye-edilmemiş bir genişlemedir. **"Deferred implementation" ≠ "hedef modelden çıkarıldı"**: yukarıdaki 8 kavramın hiçbiri hedeften çıkarılmamıştır; hepsi bağlayıcı hedeftir, yalnız farklı olgunluk aşamalarındadır.
+
+**Kapanmış owner-karar kümesi (bu uzlaştırmayla ilgili).** `OFF/OD-01, OFF/OD-05, OFF/OD-08, OFF/OD-09, OFF/OD-10, OFF/OD-11, OFF/OD-14, OFF/OD-15, OFF/OD-17, OFF/OD-18, OFF/OD-21` — CLOSED / CANONICAL (hepsi Option B). Bu kümedeki hiçbir karar yeniden açılmaz. Tarihsel `OD-01..35` kimlikleri kanonik değildir ve register'a alınmaz.
+
+**Semantik-atama kanıtı.** `STF-ONT-ASN-001` (operasyon/hukuki/görev "sorumlu" çokluğu) şu nitelikte kaydedilir: **CURRENT / PARTIAL — REUSABLE SEMANTIC EVIDENCE / NO CURRENT CANONICAL MAPPING**. K1'in governance-precise ekip-üyeliği/sorumlu-bayrağı ayrımı bu semantik çokluğun HÂLÂ GÜNCEL olduğunu gösterir. Kanonik finding'e YÜKSELTİLMEZ; yeni ID/severity/verdict ALMAZ.
+
+**Kanıt sınıflandırması (Phase 2 decomposition için).**
+
+```text
+REUSABLE EVIDENCE:
+  - E1 PermissionGrant yapısal temeli (sıfır consumer)
+  - I1 ReportingLine yapısal temeli (sıfır consumer)
+  - J1/K1 ileriye-dönük (write-time) uygunluk-kapısı deseni
+  - CANDIDATE-A transaction'lı offboarding-wiring deseni
+  - 11 CLOSED/CANONICAL OFFICE kararı (yukarıdaki küme) — bağlayıcı tasarım kısıtları
+
+SUPERSEDED EVIDENCE (Phase 1 tarafından; artık current-truth olarak kullanılamaz):
+  - "PermissionGrant kalıcılık yapısı yok" (yapısal kısım — artık şema temeli var)
+  - "task-assignee baseline uygunluk doğrulaması yok" (J1 gate'i var)
+  - "case-ekip baseline aktif-üye doğrulaması yok" (K1 gate'i var)
+
+PROHIBITED ASSUMPTIONS (decomposition'da varsayılamaz):
+  - Tur 2 Model A kanonik hedeftir
+  - tarihsel STF-ONT ID'leri kanonik finding'dir
+  - tarihsel OD numaraları kanonik OFFICE kararıdır
+  - yapısal temeller runtime enforcement ima eder
+  - delivery closure finding closure ima eder
+
+UNRESOLVED DEPENDENCIES (açık owner kapıları — bu görev hiçbirini çözmez/sıralamaz):
+  - OFF/OD-02 · OFF/OD-03 · OFF/OD-04 · OFF/OD-07 · OFF/OD-13 · OFF/OD-16 · OFF/OD-19
+  - ASSIGN-4d (ürün kararı) · credential-ilişkili owner triage
+```
+
+**Owner-triage adayları (yedi kalem — NON-CANONICAL / NO FINDING ID / NO SEVERITY / NO PRIORITY / NO IMPLEMENTATION AUTHORIZATION).** Kanonik korpusta doğrudan karşılığı olmayan, güncel repository gerçeğiyle uzlaştırılmış ince gözlemler. Hiçbiri kanonik finding olarak yazılmaz; hiçbir owner önceliği/implementasyon sırası atanmaz. Ayrıntılı teknik kanıt owner-local private evidence'ta kalır.
+
+```text
+A. LawyerCredential ownership sınırı (credential Person'a mı Employment'a mı bağlı)     — evidence-qualified
+B. LawyerCredential uniqueness + intern (stajyer) çift-temsili                          — evidence-qualified
+C. ApprovalAuthority modelleme sınırı (title-vs-role ötesi "ayrı entity" ekseni)        — evidence-qualified
+D. Lifecycle / tarihsel-durum (history) modeli (mevcut alanlar için temporal iz yok)    — evidence-qualified
+E. Audit actor atıf + effective-context kanıtı                                          — HISTORICAL CANDIDATE / REVALIDATION REQUIRED
+F. Branch / Department / Team organizasyon-yapısı (birinci-sınıf entity yok)            — evidence-qualified
+G. Service / non-human actor modeli                                                     — HISTORICAL CANDIDATE / REVALIDATION REQUIRED
+```
+
+**Register-tazelik takip pointer'ı.** STF-PRD-SES-001 kartı ile CANDIDATE-A teslimatı (OFF/OD-14 target control'ünü kısmen implemente eden offboarding-wiring) arasındaki izlenebilirlik gözlemi yalnız **REGISTER FRESHNESS FOLLOW-UP / NON-BLOCKING / SEPARATE OWNER-GATED TASK** olarak kabul edilir. Bu uzlaştırma `OFFICE-RISK-REGISTER.md`'yi DEĞİŞTİRMEZ ve SES-001'in kapandığını İDDİA ETMEZ.
+
 ## 6. Non-Normativity Statement
 
 Bu belge norm üretmez; capability/dependency tanımları planlama-referansıdır. Bağlayıcı kurallar yalnız `SYSTEM-CONSTITUTION.md`, `OFFICE-GOVERNANCE.md` ve `OFFICE-PHASE2-CONSTITUTION.md`'dedir (ratifiye, 2026-07-17). Bu belge hiçbir capability'yi seçmez, sıralamaz, önceliklendirmez, iş birimine dönüştürmez; hiçbir açık owner kararına cevap vermez; hiçbir bulguyu kapatmaz. Çelişki halinde üst norm kazanır ve çelişki decision-log'a bulgu olarak taşınır.
@@ -171,4 +224,9 @@ Bu belge norm üretmez; capability/dependency tanımları planlama-referansıdı
                                                                  snapshot + otorite-belgesi pointer'ları
                                                                  (canlı statü otoritesi ilgili register'larda;
                                                                  §1 başındaki açık şerh)
+- Tur 2 reconciliation kanonik finding/ID/severity üretti mi:   NO (§5a — yalnız evidence disposition;
+                                                                 7 owner-triage adayı NON-CANONICAL, E+G
+                                                                 HISTORICAL CANDIDATE/REVALIDATION REQUIRED)
+- Tur 2 uzlaştırması CLOSED OFF/OD kararı yeniden açtı mı:       NO (11'li küme OFF/OD-01 dahil referans;
+                                                                 tarihsel OD-01..35 register'a alınmadı)
 ```
