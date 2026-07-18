@@ -10,7 +10,7 @@ Owner Status            : OWNER-APPROVED CANONICALIZATION (owner review tamamlan
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Üst Otorite             : SYSTEM-CONSTITUTION (SYS-*) — bu belge system-wide normu yeniden tanımlamaz
 Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.0 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
-Sürüm                   : 1.0 (2026-07-13 — owner review R1–R7 revizyonları uygulanmış metin)
+Sürüm                   : 1.1 (2026-07-18 — RCV-P2-WS04 legal-application boundary amendment)
 Kanıt tabanı            : repo main @ beb7d6735fb4002ad6169604531681414a17aa0e
                           + Handoff Acceptance Report (2026-07-13)
                           + TAHSILAT_BLOKU_CANONICAL_MIMARI v1.0 (Master Analysis damıtımı, Desktop 01)
@@ -100,7 +100,7 @@ REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ek
 | Collection | Receipt'in bağlam, statü, belge ve işlem taşıyıcısı | CURRENT |
 | Internal Confirmation | Sistem içi kayıt onayı; banka finality değildir | CURRENT |
 | External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — LIFECYCLE + HYBRID TYPED EVIDENCE CONTRACT RECORDED / PENDING CANDIDATE INGRESS + UNSETTLED ADMISSION GUARD + TYPED EVIDENCE + FINALITY PROJECTION SCHEMA FOUNDATIONS + DEDICATED VERIFIER PERMISSION BOUNDARY + IMMUTABLE HUMAN EVIDENCE WRITER + CANDIDATE CAS TRANSITION + EVIDENCE-INTEGRITY ADMISSION GUARD PRESENT / `confirmedAt` + PROJECTION HARDENING REMAIN (COL/OD-06 Option A + COL/OD-06A; W2.2A/B/C-0/C-1/C-2/C-3/C-4/C-5/D-0) |
-| Legal Allocation | Tahsilatın alacak bileşenlerine hukuki uygulanması | CURRENT (REC-AUTH-011) |
+| Legal Allocation | Tahsilatın target `LegalCalculationBucket` üzerindeki hukuki etkisi (`LegalApplication`); ClaimItem/source açıklaması ayrı `ApplicationAttribution` fact'idir | CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY (REC-AUTH-011/012) |
 | TBK100 Allocation | Masraf→fer'i→işlemiş faiz→anapara deterministic mahsup | CURRENT (REC-GOV §9.2 — norm oradadır) |
 | Client Disposition | Tahsilatın müvekkil/ofis dağıtım kararı | CURRENT (TM3) |
 | Client Offset | Müvekkil finansal bakiyeleri arası settlement; debtor set-off DEĞİL | CURRENT (adr-client-offset) |
@@ -125,7 +125,9 @@ REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ek
 Her parasal çıktı basis'ini açıkça taşır (SOURCE: Desktop 01 §9):
 
 1. **Cash Reality** — para gerçekten girdi/çıktı mı? (Collection / ClientPayout)
-2. **Legal Reality** — hukuki borç ne ölçüde azaldı? (LedgerEntry + LedgerAllocation + canonical hesap)
+2. **Legal Reality** — hukuki borç ne ölçüde azaldı? (current AS-IS
+   `LedgerEntry`/ClaimItem-keyed `LedgerAllocation`; target
+   `LegalCalculationBucket` + `LegalApplication` + canonical hesap)
 3. **Operational Reality** — hangi aksiyon alınmalı? (projection/metric)
 4. **Accounting Reality** — muhasebede ne tanındı? (AccountingJournal — ADR-010)
 
@@ -139,7 +141,7 @@ ratifiye belge referansı.)
 | Gerçek | Canonical authority | KANIT / statü |
 |---|---|---|
 | Receipt fact | `Collection` — tek yazım otoritesi `CollectionService` | collection.service.ts:393; TM3 inv-13 |
-| Hukuki para etkisi | `LedgerEntry` + `LedgerAllocation`, append-only | schema.prisma:5169-5217; update/delete production yolunda yok |
+| Hukuki para etkisi | Current AS-IS/legacy: `LedgerEntry` + ClaimItem-keyed `LedgerAllocation`, append-only; target: `LegalApplication` on `LegalCalculationBucket` | Current schema evidence: schema.prisma:5169-5217; target persistence design/schema/migration NOT AUTHORIZED |
 | Claim amount/provenance | `ClaimItem` authority alanları | REC-AUTH-001..004 (collectedAmount NON-AUTHORITATIVE) |
 | Hukuki bakiye (hedef) | canonical computeBalance | REC-AUTH-021/022 — bugün SHADOW_ONLY (case-balance-display.ts:766) |
 | Hukuki bakiye (fiili bugün) | legacy calculation-summary | case.service.ts:4097-4101 primary; CUTOVER NOT AUTHORIZED |
@@ -159,10 +161,11 @@ ratifiye belge referansı.)
 
 - Collection receipt fact, statüsü, belgesi, provenance'ı (REC-AUTH-010: "COLLECTION owner").
 - Collection lifecycle: create → (internal confirmation) → cancel/void (approval-gated).
-- Legal allocation SONUCU ile bağlantı ve ledger yazımı (`SYS-GOV-018` dili): TBK100
-  politikasının (sahibi RECEIVABLE — REC-GOV §9.2) tek transaction içinde deterministic
-  yürütülmesi ve LedgerEntry/LedgerAllocation üretimi. Yürütme, REC-AUTH-011/012 ortak
-  legal-allocation boundary'sine tabidir (TM3-ACT28 reconciliation OPEN); bu belge tek
+- Legal allocation SONUCU ile bağlantı ve current AS-IS ledger yazımı (`SYS-GOV-018`
+  dili): TBK100 politikasının (sahibi RECEIVABLE — REC-GOV §9.2) tek transaction içinde
+  deterministic yürütülmesi ve mevcut LedgerEntry/LedgerAllocation üretimi. Bu persistence
+  target legal authority olarak ratifiye edilmemiştir. Yürütme REC-AUTH-011/012 ortak
+  legal-application boundary'sine tabidir (TM3-ACT28 reconciliation OPEN); bu belge tek
   taraflı allocation sahipliği kurmaz.
 - CollectionOverpayment (yalnız borç-üstü tahsil; HELD emanet sınıfı).
 - Linked full reversal execution (compensating REVERSAL satırı + net-zero ayna).
@@ -173,6 +176,8 @@ ratifiye belge referansı.)
 - ClaimItem semantiği, demandedAmount, interestTypeCode, Due→ClaimItem ingress (REC §7.2, §8).
 - Allocation POLİTİKASI: TBK100 sırası ve REC-ALLOC-001..004 (REC-GOV §9.2 — norm oradadır,
   burada kopyalanmaz).
+- Canonical Receivable snapshot, target `LegalCalculationBucket`, `LegalApplication` ve
+  `ApplicationAttribution` ayrımı (REC §4, §9.2).
 - Faiz tabanı ve legal balance semantiği (REC §10; REC-AUTH-021/022).
 - Reversal'ın hukuki kapsam sınırı: linked-full-only, partial NO_GO (REC §11, REC-AUTH-015).
 
@@ -246,7 +251,7 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | ID | Kural (kısa) | Lifecycle | Kanıt/Kaynak |
 |---|---|---|---|
 | COL-INV-001 | Tahsilat girişi tek başına alacağı kapatmaz | CURRENT-CONFIRMED | Etki yalnız allocation hattından; REC-BOUNDARY-001 |
-| COL-INV-002 | ClaimItem yalnız legal allocation etkisiyle azalır | CURRENT-CONFIRMED | REC-AUTH-004 (collectedAmount NON-AUTH); summary-engine ledger hattı |
+| COL-INV-002 | ClaimItem legal source/provenance/calculation input'tur; target legal-application target'ı değildir | CURRENT-CONFIRMED SOURCE ROLE / TARGET APPLICATION GRAIN OWNER-RATIFIED | REC-AUTH-004/011/012; RCV-P2-WS04 amendment |
 | COL-INV-003 | Collection ≠ LedgerEntry ≠ LedgerAllocation | CURRENT-CONFIRMED | schema.prisma:2311/5169/5217 ayrı modeller |
 | COL-INV-004 | Legal allocation ≠ client disposition | CURRENT-CONFIRMED | TM3 inv-7 |
 | COL-INV-005 | Accounting write-off hukuki sona erme üretmez | CURRENT-PRINCIPLE | ADR-010 sınırı; REC-BOUNDARY-002 |
@@ -667,3 +672,24 @@ gelmez; yeni contract belgesi mevcut normları yalnız konsolide eder, değişti
 - Bu belgedeki hiçbir hüküm RECEIVABLE-GOVERNANCE, DEBTOR-GOVERNANCE, OFFICE-GOVERNANCE,
   TM3 veya dbind kayıtlarını override edemez; çelişki tespitinde implementation durur ve
   yalnız Governance Reconciliation önerilir (AGENTS.md kuralı).
+
+## 9.1. RCV-P2-WS04 legal-application boundary amendment — 2026-07-18
+
+Collection receipt fact ve transaction execution owner'ı olmaya devam eder. Bu rol,
+Collection'a ClaimItem, target legal-calculation bucket, legal-application policy veya
+legal-balance authority vermez.
+
+- `LedgerAllocation` ClaimItem-keyed current AS-IS/legacy persistence'tır; target legal
+  authority olarak ratifiye edilmemiştir.
+- `CollectionAllocation` compatibility projection only'dir; legal authority veya fallback
+  authority değildir.
+- `ClaimItem.collectedAmount` deprecated/non-authoritative derived cache'tir; yeni consumer
+  açılamaz.
+- Target application `LegalCalculationBucket` üzerinde `LegalApplication` üretir;
+  `ApplicationAttribution` ClaimItem/source lineage açıklamasıdır.
+- Balance Engine target canonical legal-calculation authority'dir, fakat `SHADOW_ONLY`
+  kalır; cutover yetkili değildir.
+
+ACT-28 ve REC-AUTH-011/012 `OPEN` kalır. Target persistence için schema/migration likely
+required'dır; design ve implementation yetkili değildir. Bu amendment current Collection
+transaction davranışını, ledger writer'ını, runtime'ı, schema'yı veya migration'ı değiştirmez.

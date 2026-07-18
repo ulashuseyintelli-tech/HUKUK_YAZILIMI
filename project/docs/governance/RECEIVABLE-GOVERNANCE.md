@@ -8,7 +8,7 @@
 Belge Durumu: CANONICAL
 Belge Sınıfı: DOMAIN GOVERNANCE
 Üst Otorite: SYSTEM-CONSTITUTION
-Version: 1.0
+Version: 1.1
 Canonical Path: project/docs/governance/RECEIVABLE-GOVERNANCE.md
 Owner Status: RATIFIED — BINDING
 Repository Status: CANONICAL UPON APPROVED MERGE TO MAIN
@@ -239,7 +239,10 @@ olmadan kullanılamaz.
 |---|---|
 | **Receivable** | Hukuki kaynağı, talep tutarı, faiz politikası ve yaşam döngüsü bulunan alacak hakkı |
 | **Due** | Alacağın ingress/provenance kaynağı; canonical calculation authority olması zorunlu değildir |
-| **ClaimItem** | Takip/alacak bileşeninin canonical domain kaydı; her alanı authority değildir |
+| **ClaimItem** | Takip/alacak bileşeninin legal source, provenance ve calculation input kaydı; payment veya legal-application target değildir ve her alanı authority değildir |
+| **LegalCalculationBucket** | Canonical Receivable snapshot'tan üretilen target legal-application grain'i; category ile currency/legal-basis/effective-date/interest-rule/priority bağlamını korur |
+| **LegalApplication** | Receipt'in `LegalCalculationBucket` üzerindeki hukuki etkisi |
+| **ApplicationAttribution** | `LegalApplication` sonucunun ClaimItem/source lineage açıklaması; application fact'i değildir |
 | **Payment** | Borçlu veya üçüncü kişi tarafından yapılan ödeme fact'i |
 | **Collection** | Ödemenin tahsilat bağlamı, statüsü ve ilişkili belge/işlem kaydı |
 | **Allocation** | Ödeme tutarının hukuki sıraya göre borç bileşenlerine dağıtılması |
@@ -386,7 +389,7 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 | `REC-AUTH-001` — `ClaimItem.originalAmount` | Creation provenance; normal mutation ile değişmez | ClaimItem creation command | `CURRENT / NON_CANONICAL_PROVENANCE` | `CONFIRMED / RUNTIME CONTRACT IMPLEMENTED` |
 | `REC-AUTH-002` — `ClaimItem.demandedAmount` | Takipte talep edilen canonical alacak tutarı | Receivable/ClaimItem command owner | `CURRENT / CANONICAL_WITHIN_CLAIMITEM_SCOPE` | `CONFIRMED / RUNTIME IMPLEMENTED` |
 | `REC-AUTH-003` — `ClaimItem.amount` | Controlled compatibility mirror; canonical değeri override edemez | Compatibility writer, demandedAmount ile kontrollü aynı akış | `DEPRECATED / COMPATIBILITY_ONLY` | `CONFIRMED / TRANSITIONAL COMPLIANCE` |
-| `REC-AUTH-004` — `ClaimItem.collectedAmount` | Legacy/cache alanı; tahsilat, legal balance veya display authority değildir | Alanın write/read authority'si yok; tahsilat etkisi payment/ledger hattından okunur | `CURRENT / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / AUTHORITY EXCLUSION IMPLEMENTED` |
+| `REC-AUTH-004` — `ClaimItem.collectedAmount` | Deprecated derived cache; tahsilat, legal application, legal balance veya display authority değildir | Yeni consumer açılamaz; legacy backward compatibility dışında authority üretmez | `DEPRECATED / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / AUTHORITY EXCLUSION IMPLEMENTED; MIGRATION/CUTOVER NOT AUTHORIZED` |
 | `REC-AUTH-005` — `ClaimItem.interestTypeCode` | Faiz hesaplama read authority | Receivable mapping/ClaimItem command owner | `CURRENT / CANONICAL_WITHIN_INTEREST_SCOPE` | `CONFIRMED / RUNTIME IMPLEMENTED` |
 | `REC-AUTH-006` — `Due.interestTypeCode` | Ingress ve kaynak provenance'ı; calculation authority değil | Due owner | `CURRENT / NON_CANONICAL_INPUT` | `CONFIRMED / RUNTIME IMPLEMENTED` |
 | `REC-AUTH-007` — legacy `interestType` | Sınırlı compatibility projection; yeni canonical karar kaynağı olamaz | Compatibility adapter | `DEPRECATED / COMPATIBILITY_ONLY` | `CONFIRMED / STRICT MAPPING ONLY` |
@@ -398,8 +401,8 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 | ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
 |---|---|---|---|---|
 | `REC-AUTH-010` — Payment/Collection receipt varlığı ve statüsü | Dosyaya bağlanan para giriş fact'i; ClaimItem cache alanından çıkarılamaz | COLLECTION owner; receivable yalnız yetkili fact'i tüketir | `CURRENT PARTIAL` | `CONFIRMED / IDEMPOTENCY CONFIRMED; CANONICAL PUBLIC RECEIPT TENANT / OBJECT-SCOPE GATES CONFIRMED; PROVIDER FINALITY OPEN UNDER RC-COL / W2.2` |
-| `REC-AUTH-011` — Tahsilatın alacağa etkisi | Collection fact'in legal allocation üzerinden receivable bucket'lara etkisi | RECEIVABLE/COLLECTION legal-allocation boundary | `CURRENT WITH OPEN RECONCILIATION` | `CONFIRMED / TM3-ACT28-LEGAL RECONCILIATION OPEN` |
-| `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile legal allocation sonucu | RECEIVABLE/COLLECTION legal-allocation owner | `CURRENT WITH OPEN RECONCILIATION` | `CONFIRMED / DA-4 DRIFT BASELINE IMPLEMENTED; WS04-P01 FORMALLY CLOSED; WS04-P02 STATIC / SYNTHETIC / DISPOSABLE EVIDENCE PACKAGE FORMALLY CLOSED; WS04-P03 REPRESENTATIVE REPLAY PACKAGE CONTRACT RATIFIED; DEFAULT-DISABLED READER/ADAPTER FORMALLY CLOSED; P03-A DEFAULT-DISABLED PREFLIGHT/LAUNCH PACKAGE FORMALLY CLOSED / CANONICAL; PRODUCTION CALL-SITE / RUNTIME BEHAVIOR NONE; DATA ACCESS / EVIDENCE EXECUTION / PRODUCTION OBSERVATION NOT AUTHORIZED; REPRESENTATIVE REPLAY NOT EXECUTED; DISPOSITION READINESS NOT ASSESSED; DA-4 / CA-1 / CM-1 ACTIVE SAFE-HOLD; ACT-28 / REC-AUTH-011/012 RECONCILIATION OPEN` |
+| `REC-AUTH-011` — Tahsilatın alacağa etkisi | Receipt'in target `LegalCalculationBucket` üzerindeki `LegalApplication` etkisi; attribution ayrı fact'tir | RECEIVABLE calculation/policy + COLLECTION receipt execution boundary; target persistence design unassigned | `CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY / OPEN RECONCILIATION` | `TM3-ACT28-LEGAL RECONCILIATION OPEN; SCHEMA/MIGRATION LIKELY REQUIRED BUT UNAUTHORIZED` |
+| `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile `MASRAF → FERİ → FAİZ → ANA PARA` sırasındaki target legal-application sonucu | RECEIVABLE legal-calculation policy; COLLECTION yalnız yetkili receipt execution boundary'si | `CURRENT AS-IS CLAIMITEM-KEYED LEDGER / TARGET LEGALCALCULATIONBUCKET / OPEN RECONCILIATION` | `HISTORICAL: DA-4 drift baseline, WS04-P01/P02/P03/P03-A closure kayıtları korunur. AMENDMENT: P01/P02 AMENDMENT REQUIRED; P03 SUPERSEDED / REQUIRES REDESIGN; P03-A SAFETY INFRASTRUCTURE ONLY; P03-B SUPERSEDED / DO NOT EXECUTE; DATA/REPLAY/PRODUCTION OBSERVATION/CUTOVER NOT AUTHORIZED; ACT-28 / REC-AUTH-011/012 OPEN` |
 | `REC-AUTH-013` — Overpayment / hold | Kapsamı belirlenmiş allocation/collection sonucu; principal'a sessiz yazılamaz | Allocation/Collection result owner | `CURRENT PARTIAL / SCOPE-BOUNDED` | `CONFIRMED WITHIN ADR-014 FIXTURE/ENGINE SCOPE; PRODUCTION REVALIDATION REQUIRED` |
 | `REC-AUTH-014` — Valid linked full reversal | Bağlı payment'ın canonical legal etkisini net-zero yapar | Reversal link + canonical allocation | `CURRENT / CANONICAL_WITHIN_LINKED_FULL_REVERSAL_SCOPE` | `CONFIRMED / UNIT + DISPOSABLE-DB + REAL CANCEL PATH` |
 | `REC-AUTH-015` — Partial reversal/refund | Ayrı ratifikasyon olmadan inference yapılamaz | Owner/contract henüz tanımlanmamış | `TARGET / PRODUCTION_NO_GO` | `NOT_IMPLEMENTED / OWNER DECISION REQUIRED` |
@@ -418,7 +421,7 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 
 | ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
 |---|---|---|---|---|
-| `REC-AUTH-021` — ADR-014 legal-balance computation | Tanımlı pre-cutover inputlarda canonical calculation üretir; production primary değildir | ADR-014 calculation core | `CURRENT / CANONICAL_WITHIN_PRE_CUTOVER_SCOPE` | `CONFIRMED / W0-PR10 CLOSED; COMPLETENESS PARTIAL` |
+| `REC-AUTH-021` — ADR-014 / Balance Engine legal-balance computation | Target canonical legal-calculation authority; production primary değildir | ADR-014 calculation core / Balance Engine | `TARGET / SHADOW_ONLY` | `CONFIRMED IMPLEMENTATION EVIDENCE / W0-PR10 CLOSED; AUTHORITY PROMOTION AND CUTOVER NOT AUTHORIZED` |
 | `REC-AUTH-022` — Production receivable balance/display | Production consumer'ın yetkili legal-balance contract'ı | Current legacy owner until cutover; target canonical calculation owner after gate | `TARGET / SHADOW_ONLY / PRODUCTION_NO_GO` | `CONFIRMED / ADAPTER ADDITIVE; CUTOVER NOT AUTHORIZED` |
 | `REC-AUTH-023` — Calculation trace | Hesabı açıklayan derived evidence; financial event değildir | Explainability owner | `SHADOW_ONLY / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / NON-PERSISTED` |
 | `REC-AUTH-024` — Non-official snapshot | Request-time/non-official calculation evidence | Explainability evidence owner | `SHADOW_ONLY / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / authority=NONE; persisted=false` |
@@ -527,6 +530,17 @@ Principal yalnız allocation sonucu principal bucket'a ulaşan tutar kadar azal�
 
 **REC-ALLOC-004 — Money allocation minor-unit/decimal hassasiyetinde yürütülür; float-dust authority olamaz.**
 
+**REC-ALLOC-005 — Target legal-application grain'i ClaimItem değildir.**
+Canonical Receivable snapshot, application öncesinde `LegalCalculationBucket` üretir.
+`LegalApplication` bu bucket'a uygulanır; `ApplicationAttribution` sonucu ClaimItem/source
+lineage'ına açıklar. ClaimItem-keyed `LedgerAllocation` current AS-IS/legacy persistence'tır
+ve target legal authority olarak yorumlanamaz.
+
+**REC-ALLOC-006 — Sub-bucket context kaybı yasaktır.**
+Aynı kategori içinde currency, legal basis, effective date, interest rule veya priority
+bağlamı farklıysa ayrı calculation sub-bucket korunur. Bu bağlamlardan biri eksikken
+bucket'lar tahminle birleştirilemez.
+
 ## 9.3. TBK101/102 sınırı
 
 TBK101/102 standart manuel workflow'da otomatik dosyalar-arası allocator değildir.
@@ -561,6 +575,11 @@ Future interest base
 
 ## 10.2. İşlemiş faiz ve pre/post dönem
 
+- Takip tarihine kadar işlemiş ve tutarı belirli faiz `ACCRUED_INTEREST` sabit hukuki
+  borç bucket'ıdır.
+- Takipten sonra işleyecek faiz `InterestPolicy` / calculation rule'dur; sabit tutarlı
+  ClaimItem veya legal-application target'ı olarak modellenmez.
+- Faize faiz yalnız açık hukuki dayanak ve ratifiye policy varsa uygulanabilir.
 - Faiz segmentleri tarih aralıklarına ayrılmalıdır.
 - Takip öncesi ve takip sonrası faiz ayrımı policy/ADR ile tanımlıysa deterministic uygulanmalıdır.
 - Aynı gün olaylarında tie-breaker açık olmalıdır.
@@ -903,6 +922,10 @@ Production empirical evidence
 - Production consumer cutover yapılmadığı sürece legacy consumer primary kalabilir.
 - Compatibility alanları yalnız açık sınıflandırmayla tutulabilir.
 - Legacy primary'nin aktif olması canonical core'ın varlığını geçersiz kılmaz; fakat cutover tamamlandı anlamına gelmez.
+- ClaimItem-keyed `LedgerAllocation` current AS-IS/legacy persistence'tır; target
+  legal-application authority değildir.
+- `CollectionAllocation` compatibility projection only'dir ve legal fallback authority değildir.
+- `ClaimItem.collectedAmount` deprecated/non-authoritative derived cache'tir; yeni consumer açılamaz.
 
 ## 18.3. TARGET / OWNER-GATED
 
@@ -916,6 +939,8 @@ frozen FX observation
 exact UYAP mapping
 fee/harç authority tamamlaması
 production empirical evidence
+LegalCalculationBucket target persistence design
+LegalApplication / ApplicationAttribution persistence separation
 ```
 
 ## 18.4. OUT-OF-SCOPE / FUTURE
@@ -1248,6 +1273,30 @@ VOID
 ```
 
 Header, Decision Log ve Governance Index statüleri birbiriyle tutarlı olmalıdır.
+
+## 23.4. RCV-P2-WS04 allocation-authority amendment — 2026-07-18
+
+Bu amendment owner'ın ClaimItem source/input ile target legal-application grain'ini
+ayıran kararını canonical domain normuna taşır. Tarihsel WS04 implementation ve closure
+kayıtları silinmez veya geriye dönük başarısız sayılmaz; yalnız ileriye dönük authority
+ve evidence etkileri açıkça amend/supersede edilir:
+
+```text
+P01   AMENDMENT REQUIRED
+P02   AMENDMENT REQUIRED
+P03   SUPERSEDED / REQUIRES REDESIGN
+P03-A CONFIRMED — SAFETY INFRASTRUCTURE ONLY
+P03-B SUPERSEDED / DO NOT EXECUTE
+```
+
+Target persistence için schema/migration **LIKELY REQUIRED**dır; design ve implementation
+yetkili değildir. ACT-28 ile REC-AUTH-011/012 `OPEN` kalır. ClaimItem-keyed synthetic
+corpus, representative replay, data access, production observation, consumer switch,
+Balance Engine cutover, WS05 ve WS06 hard-hold'dadır.
+
+PR #407 `HOLD / DO NOT MERGE`dir. Amendment canonical olduktan sonra ayrı salt-okunur
+semantic triage yapılmadan PR rebase, safe-patch extraction, close veya redesign kararı
+verilemez.
 
 ---
 

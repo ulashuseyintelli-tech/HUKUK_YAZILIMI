@@ -1927,6 +1927,33 @@ representative replay `NOT EXECUTED`; disposition readiness `NOT ASSESSED`; `DA-
 OWNER GO REQUIRED`. Bu kayıt dataset seçimi, data access, replay, evidence acceptance,
 allocator/reader disposition, consumer switch, cutover, WS04-P04 veya WS05 authority üretmez.
 
+**RCV-P2-WS04 Allocation-Authority Constitutional Amendment (2026-07-18; CANONICAL UPON
+APPROVED GOVERNANCE MERGE):** Owner, ClaimItem'ı legal source/provenance/calculation input
+olarak ratifiye etmiş ve doğrudan payment/legal-application target olmaktan çıkarmıştır.
+Target application grain'i canonical Receivable snapshot'tan üretilen
+`LegalCalculationBucket`; target effect fact'i `LegalApplication`; ClaimItem/source lineage
+fact'i ayrı `ApplicationAttribution`dır. Canonical sıra
+`MASRAF → FERİ → FAİZ → ANA PARA` olarak korunur; currency, legal basis, effective date,
+interest rule ve priority farklılıkları ayrı sub-bucket'tır. Takip öncesi belirli faiz
+`ACCRUED_INTEREST` debt bucket; takip sonrası faiz `InterestPolicy`dir.
+
+Current ClaimItem-keyed `LedgerAllocation` AS-IS/legacy persistence'tır ve target legal
+authority değildir. `CollectionAllocation` compatibility projection only olup legal fallback
+authority değildir. `ClaimItem.collectedAmount` deprecated/non-authoritative derived cache'tir;
+yeni consumer açılamaz. Balance Engine target canonical legal-calculation authority'dir,
+fakat `SHADOW_ONLY`; cutover yetkili değildir.
+
+Tarihsel P01–P03-A implementation/CI/closure kayıtları korunur. İleriye dönük disposition:
+P01/P02 `AMENDMENT REQUIRED`; P03 `SUPERSEDED / REQUIRES REDESIGN`; P03-A
+`CONFIRMED — SAFETY INFRASTRUCTURE ONLY`; P03-B `SUPERSEDED / DO NOT EXECUTE`.
+Target persistence için schema/migration `LIKELY REQUIRED`, fakat design ve implementation
+`NOT AUTHORIZED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; ClaimItem-keyed synthetic corpus,
+representative replay, data access, production observation, cutover, WS05 ve WS06 hard-hold'dadır.
+
+PR #407 `HOLD / DO NOT MERGE`; rebase/close yetkisi yoktur. Amendment canonical olduktan
+sonra yalnız ayrı owner-gated read-only semantic triage yapılabilir. **CURRENT NEXT: PR #407
+POST-AMENDMENT SEMANTIC TRIAGE — OWNER GO REQUIRED.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

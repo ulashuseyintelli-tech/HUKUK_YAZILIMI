@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -20,7 +20,7 @@ Consolidation               : COMPLETE (owner-supplied progression baseline)
 Target Architecture         : COMPLETE (owner-supplied progression baseline)
 Implementation Roadmap      : COMPLETE (owner-supplied progression baseline)
 Current phase               : RCV-P2 (planning label; no new Master Register identity)
-Current workstream          : WS04 — Allocation & Derived Payment State (OPEN; P01/P02 closed; P03 reader/adapter closed; P03-A launch package FORMALLY CLOSED / CANONICAL)
+Current workstream          : WS04 — Allocation & Derived Payment State (OPEN; historical P01–P03-A closures preserved; allocation-authority amendment active)
 WS01 status                 : CLOSED
 WS01 historical status      : TECHNICALLY COMPLETE
 WS01 roadmap                : COMPLETE (P01–P04)
@@ -53,10 +53,16 @@ RCV-P2-WS04-P03             : FORMALLY CLOSED / CANONICAL (implementation PR #13
 WS04-P03 implementation auth: CONSUMED / COMPLETE — READER/ADAPTER ONLY
 RCV-P2-WS04-P03-A           : FORMALLY CLOSED / CANONICAL (implementation PR #1406 / 661f9907; governance PR #1410 / 238d72a4)
 WS04-P03-A authorization    : CONSUMED / COMPLETE — PREFLIGHT/LAUNCH PACKAGE ONLY
+WS04-P01 disposition        : AMENDMENT REQUIRED
+WS04-P02 disposition        : AMENDMENT REQUIRED
+WS04-P03 disposition        : SUPERSEDED / REQUIRES REDESIGN
+WS04-P03-A disposition      : CONFIRMED — SAFETY INFRASTRUCTURE ONLY
+WS04-P03-B disposition      : SUPERSEDED / DO NOT EXECUTE
 WS04-P03 data access        : NOT AUTHORIZED
 WS04-P03 evidence execution : NOT AUTHORIZED
 Production observation      : NOT AUTHORIZED
-Next eligible action        : P03 DATA-ACCESS / EVIDENCE-EXECUTION AUTHORIZATION REQUEST — SEPARATE OWNER GO REQUIRED
+PR #407                     : HOLD / DO NOT MERGE — POST-AMENDMENT READ-ONLY TRIAGE REQUIRED
+Next eligible action        : PR #407 POST-AMENDMENT SEMANTIC TRIAGE — SEPARATE OWNER GO REQUIRED
 ```
 
 Bu kayıt yalnız governance/register alignment, gerçekleşen phase/workstream progression ve bir
@@ -1066,6 +1072,96 @@ replay `NOT EXECUTED`; disposition readiness `NOT ASSESSED`; `DA-4` / `CA-1` / `
 Bu kayıt dataset seçimi, data access, replay, evidence acceptance, allocator/reader disposition,
 consumer switch, WS04 closure, WS04-P04, WS05, PR-11 veya runtime cutover authority üretmez.
 
+Bu tarihsel next-action ve safe-hold kaydı, aşağıdaki 1.18 amendment kaydıyla ileriye dönük
+olarak supersede edilmiştir; geçmiş closure/evidence kaydının kendisi yeniden yazılmaz.
+
+### 1.18 RCV-P2-WS04 allocation-authority amendment ve PR #407 hold
+
+```text
+CLAIMITEM ROLE:
+LEGAL SOURCE / PROVENANCE / CALCULATION INPUT
+NOT A PAYMENT OR LEGAL-APPLICATION TARGET
+
+TARGET LEGAL-APPLICATION GRAIN:
+LEGALCALCULATIONBUCKET
+
+CANONICAL ORDER:
+MASRAF → FERİ → FAİZ → ANA PARA
+
+LEGALAPPLICATION:
+RECEIPT EFFECT ON LEGALCALCULATIONBUCKET
+
+APPLICATIONATTRIBUTION:
+CLAIMITEM / SOURCE LINEAGE EXPLANATION
+
+CURRENT LEDGERALLOCATION:
+AS-IS / LEGACY CLAIMITEM-KEYED PERSISTENCE
+NOT RATIFIED AS TARGET LEGAL AUTHORITY
+
+COLLECTIONALLOCATION:
+COMPATIBILITY PROJECTION ONLY
+NOT LEGAL OR FALLBACK AUTHORITY
+
+CLAIMITEM.COLLECTEDAMOUNT:
+DEPRECATED / NON-AUTHORITATIVE DERIVED CACHE
+NO NEW CONSUMERS
+
+BALANCE ENGINE:
+TARGET CANONICAL LEGAL CALCULATION AUTHORITY
+SHADOW_ONLY
+CUTOVER NOT AUTHORIZED
+
+WS04-P01:
+AMENDMENT REQUIRED
+
+WS04-P02:
+AMENDMENT REQUIRED
+
+WS04-P03:
+SUPERSEDED / REQUIRES REDESIGN
+
+WS04-P03-A:
+CONFIRMED — SAFETY INFRASTRUCTURE ONLY
+
+WS04-P03-B:
+SUPERSEDED / DO NOT EXECUTE
+
+SCHEMA / MIGRATION:
+LIKELY REQUIRED
+DESIGN NOT AUTHORIZED
+IMPLEMENTATION NOT AUTHORIZED
+
+PR #407:
+HOLD / DO NOT MERGE
+REBASE NOT AUTHORIZED
+CLOSE NOT AUTHORIZED
+POST-AMENDMENT READ-ONLY TRIAGE REQUIRED
+
+ACT-28 / REC-AUTH-011 / REC-AUTH-012:
+OPEN
+
+DATA ACCESS / SYNTHETIC CLAIMITEM CORPUS / REPRESENTATIVE REPLAY:
+NOT AUTHORIZED
+
+PRODUCTION OBSERVATION / CUTOVER / WS05 / WS06:
+NOT AUTHORIZED
+
+NEXT ELIGIBLE ACTION:
+PR #407 POST-AMENDMENT SEMANTIC TRIAGE
+SEPARATE OWNER GO REQUIRED
+```
+
+Bu amendment 2026-07-17 P01 owner disposition'ını target authority bakımından açıkça
+supersede eder; tarihsel implementation, CI ve formal closure kanıtlarını silmez veya
+yeniden yazmaz. P01/P02 drift/evidence araçları yalnız geçmişte doğruladıkları AS-IS
+ClaimItem-keyed yüzeyi karakterize eder. P03 reader/adapter ve P03-A launch package yeni
+target semantics için evidence/disposition authority değildir; P03-A yalnız default-disabled
+safety infrastructure olarak korunur.
+
+Target `LegalCalculationBucket`, `LegalApplication` ve `ApplicationAttribution` persistence
+modeli ayrı owner-gated architecture/schema analysis gerektirir. Bu kayıt schema, migration,
+runtime, data access, replay, cutover veya implementation authority üretmez.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
@@ -1247,20 +1343,31 @@ WS04-P03-A               : FORMALLY CLOSED / CANONICAL — PR #1406 / 661f9907; 
 WS04-P03-A EVIDENCE      : PR #1406 / 661f99079039d1026f17a26311727fc93c9b733d / CI 4/4 PASS
 WS04-P03-A PACKAGE       : DEFAULT-DISABLED REPLAY PREFLIGHT / LAUNCH PACKAGE
 WS04-P03-A AUTHORIZATION : CONSUMED / COMPLETE — PREFLIGHT/LAUNCH PACKAGE ONLY
+WS04-P01 DISPOSITION     : AMENDMENT REQUIRED
+WS04-P02 DISPOSITION     : AMENDMENT REQUIRED
+WS04-P03 DISPOSITION     : SUPERSEDED / REQUIRES REDESIGN
+WS04-P03-A DISPOSITION   : CONFIRMED — SAFETY INFRASTRUCTURE ONLY
+WS04-P03-B DISPOSITION   : SUPERSEDED / DO NOT EXECUTE
 PRODUCTION CALL-SITE     : NONE
 RUNTIME BEHAVIOR         : NONE
 WS04-P03 DATA ACCESS     : NOT AUTHORIZED
 WS04-P03 EVIDENCE RUN    : NOT AUTHORIZED
 REPRESENTATIVE DATA      : NOT EXECUTED / NOT AUTHORIZED
 PRODUCTION OBSERVATION   : NOT EXECUTED / NOT AUTHORIZED
-DISPOSITION READINESS    : NOT ASSESSED
-DA-4 / CA-1 / CM-1      : ACTIVE SAFE-HOLD
+DISPOSITION READINESS    : SUPERSEDED BY 2026-07-18 ALLOCATION-AUTHORITY AMENDMENT
+CLAIMITEM TARGET ROLE    : SOURCE / PROVENANCE / CALCULATION INPUT — NOT APPLICATION TARGET
+TARGET APPLICATION GRAIN : LEGALCALCULATIONBUCKET
+LEDGERALLOCATION         : CURRENT AS-IS / LEGACY PERSISTENCE
+COLLECTIONALLOCATION     : COMPATIBILITY PROJECTION ONLY / NO LEGAL FALLBACK
+COLLECTEDAMOUNT          : DEPRECATED NON-AUTHORITATIVE DERIVED CACHE / NO NEW CONSUMERS
+BALANCE ENGINE           : TARGET / SHADOW_ONLY / CUTOVER NOT AUTHORIZED
 ACT-28 / REC-AUTH-011/012: OPEN
-NEXT ELIGIBLE ACTION     : P03 DATA-ACCESS / EVIDENCE-EXECUTION AUTHORIZATION REQUEST
+PR #407                  : HOLD / DO NOT MERGE
+NEXT ELIGIBLE ACTION     : PR #407 POST-AMENDMENT SEMANTIC TRIAGE
 OWNER GO                 : REQUIRED
-OWNER / RATIFIER         : OWNER — WS04-P03-A launch-package formal closure brief
+OWNER / RATIFIER         : OWNER — WS04 allocation-authority amendment + PR #407 coordination
 DECISION DATE            : 2026-07-18
-AUTHORITATIVE REF        : decision-log / WS04-P03-A launch-package formal closure reconciliation
+AUTHORITATIVE REF        : decision-log / RCV-P2-WS04 allocation-authority constitutional amendment
 ```
 
 WS04-P03-A launch-package formal kapanışından sonra ayrı data-access veya evidence-execution
@@ -1288,14 +1395,24 @@ RCV-P2-WS04-P03-A LAUNCH PACKAGE FORMALLY CLOSED / CANONICAL — IMPLEMENTATION 
 RCV-P2-WS04-P03-A AUTHORIZATION CONSUMED / COMPLETE — PREFLIGHT/LAUNCH PACKAGE ONLY
 RCV-P2-WS04-P03 PRODUCTION CALL-SITE NONE
 RCV-P2-WS04-P03 RUNTIME BEHAVIOR NONE
+RCV-P2-WS04-P01 AMENDMENT REQUIRED
+RCV-P2-WS04-P02 AMENDMENT REQUIRED
+RCV-P2-WS04-P03 SUPERSEDED / REQUIRES REDESIGN
+RCV-P2-WS04-P03-A CONFIRMED — SAFETY INFRASTRUCTURE ONLY
+RCV-P2-WS04-P03-B SUPERSEDED / DO NOT EXECUTE
 RCV-P2-WS04-P03 DATA ACCESS NOT AUTHORIZED
 RCV-P2-WS04-P03 EVIDENCE EXECUTION NOT AUTHORIZED
 REPRESENTATIVE DATA NOT EXECUTED / NOT AUTHORIZED
 PRODUCTION OBSERVATION NOT EXECUTED / NOT AUTHORIZED
-DISPOSITION READINESS NOT ASSESSED
-DA-4 / CA-1 / CM-1 ACTIVE SAFE-HOLD
+CLAIMITEM SOURCE / PROVENANCE / CALCULATION INPUT — NOT APPLICATION TARGET
+TARGET LEGAL APPLICATION GRAIN LEGALCALCULATIONBUCKET
+LEDGERALLOCATION CURRENT AS-IS / LEGACY PERSISTENCE
+COLLECTIONALLOCATION COMPATIBILITY PROJECTION ONLY / NO LEGAL FALLBACK
+CLAIMITEM.COLLECTEDAMOUNT DEPRECATED NON-AUTHORITATIVE CACHE / NO NEW CONSUMERS
+BALANCE ENGINE TARGET / SHADOW_ONLY
+PR #407 HOLD / DO NOT MERGE
 ACT-28 / REC-AUTH-011 / REC-AUTH-012 OPEN
-NEXT ACTION P03 DATA-ACCESS / EVIDENCE-EXECUTION AUTHORIZATION REQUEST / SEPARATE OWNER GO REQUIRED
+NEXT ACTION PR #407 POST-AMENDMENT SEMANTIC TRIAGE / SEPARATE OWNER GO REQUIRED
 WS05–WS09 NOT AUTHORIZED / NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN
