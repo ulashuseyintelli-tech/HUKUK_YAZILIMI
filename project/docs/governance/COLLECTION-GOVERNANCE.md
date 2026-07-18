@@ -99,7 +99,7 @@ REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ek
 | Receipt / Tahsilat Girişi | Paranın/değerin sisteme girdiği fact | CURRENT |
 | Collection | Receipt'in bağlam, statü, belge ve işlem taşıyıcısı | CURRENT |
 | Internal Confirmation | Sistem içi kayıt onayı; banka finality değildir | CURRENT |
-| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — LIFECYCLE + HYBRID TYPED EVIDENCE CONTRACT RECORDED / PENDING CANDIDATE INGRESS + UNSETTLED ADMISSION GUARD + TYPED EVIDENCE + FINALITY PROJECTION SCHEMA FOUNDATIONS + DEDICATED VERIFIER PERMISSION BOUNDARY + IMMUTABLE HUMAN EVIDENCE WRITER + CANDIDATE CAS TRANSITION PRESENT / CONFIRMATION BOUNDARY REMAINS (COL/OD-06 Option A + COL/OD-06A; W2.2A/B/C-0/C-1/C-2/C-3/C-4/C-5) |
+| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — LIFECYCLE + HYBRID TYPED EVIDENCE CONTRACT RECORDED / PENDING CANDIDATE INGRESS + UNSETTLED ADMISSION GUARD + TYPED EVIDENCE + FINALITY PROJECTION SCHEMA FOUNDATIONS + DEDICATED VERIFIER PERMISSION BOUNDARY + IMMUTABLE HUMAN EVIDENCE WRITER + CANDIDATE CAS TRANSITION + EVIDENCE-INTEGRITY ADMISSION GUARD PRESENT / `confirmedAt` + PROJECTION HARDENING REMAIN (COL/OD-06 Option A + COL/OD-06A; W2.2A/B/C-0/C-1/C-2/C-3/C-4/C-5/D-0) |
 | Legal Allocation | Tahsilatın alacak bileşenlerine hukuki uygulanması | CURRENT (REC-AUTH-011) |
 | TBK100 Allocation | Masraf→fer'i→işlemiş faiz→anapara deterministic mahsup | CURRENT (REC-GOV §9.2 — norm oradadır) |
 | Client Disposition | Tahsilatın müvekkil/ofis dağıtım kararı | CURRENT (TM3) |
@@ -487,7 +487,7 @@ Collection(confirmed)
   → CLIENT_PAYABLE → ClientPayout (idempotent + approval; COL/OD-21)
 ```
 
-## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; PENDING ingress + admission guard + evidence/finality projection foundations + verifier permission boundary + immutable human evidence writer present, transition runtime absent)
+## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; candidate lifecycle + evidence/finality runtime + evidence-integrity admission guard present, `confirmedAt` / projection hardening pending)
 
 1. **Candidate boundary:** Harici banka/provider hareketi doğrulanıp yetkili eşleştirme
    yapılana kadar Integration tarafında non-canonical candidate'dır. Candidate durumları
@@ -578,13 +578,24 @@ Collection(confirmed)
     kalır. Concurrent yarışta tek transition kazanır; audit failure tüm transition'ı rollback
     eder. Mutation Collection, journal, event, outbox, ledger, allocation veya overpayment
     yazımı üretmez.
-15. **Execution gate:** COL/OD-06 contract'ı `RECORDED`; W2.2A schema foundation, W2.2B
+15. **Evidence-integrity admission guard boundary:** W2.2D-0 PR #1407 / squash
+    `1156e4def38795f25b834ed46a1224ff4de12483`, yeni canonical Collection admission'ından
+    önce `INCOMING + candidateStatus=SETTLED + settlementEvidenceId` tuple'ını ve evidence'ın
+    aynı tenant'ta `outcome=SETTLED`, `source=SETTLEMENT_VERIFIER` olmasını zorunlu kılar.
+    `externalSettledAt`, aynı canonical evidence'ın `observedAt` değeriyle birebir eşleşir.
+    Eksik pointer, bulunamayan/cross-tenant evidence, deferred provider source, non-SETTLED
+    outcome ve eksik/uyuşmayan settlement zamanı açık hata ile fail-closed kalır. Daha önce
+    başarıyla eşleşmiş transaction replay'i guard'dan önce değerlendirilir. Hata yollarında
+    Collection, journal, event, outbox, ledger, allocation, overpayment, ClaimItem ve
+    bank-match projection write'ı oluşmaz.
+16. **Execution gate:** COL/OD-06 contract'ı `RECORDED`; W2.2A schema foundation, W2.2B
     PENDING ingress ve W2.2C-0 admission guard `CLOSED / CANONICAL`dır. COL/OD-06A ile
     settlement evidence authority kaydedilmiş ve W2.2C decision gate sağlanmıştır. W2.2C-1
-    ila W2.2C-4 `CLOSED / CANONICAL`dır; W2.2C-5 approved reconciliation merge'iyle
-    `CLOSED / CANONICAL` olur. Candidate finality transition mevcuttur; canonical Collection
-    admission/confirmation boundary'si hâlâ tamamlanmamıştır. Sonraki gate yalnız
-    W2.2D/W2.2E confirmation-boundary review'dür; implementation yetkisi vermez. W2.3,
+    ila W2.2C-5 `CLOSED / CANONICAL`dır; W2.2D-0 approved reconciliation merge'iyle
+    `CLOSED / CANONICAL` olur. Candidate finality ve evidence-integrity admission guard
+    mevcuttur; `Collection.confirmedAt` ve match-projection hardening hâlâ tamamlanmamıştır.
+    Sonraki gate yalnız `W2.2D-1 — OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED`dır.
+    W2.3,
     W2.2 boundary uygulanıp kanıtlanana kadar blokludur.
     Refund/downstream reversal ve claim satisfaction/re-open paketleri kendi owner kararları
     kapanmadan CURRENT ilan edilemez.
@@ -621,12 +632,13 @@ Collection(confirmed)
    `e7d2f11d` kanıtıyla ve `W2.2C-2 — Candidate Finality Projection Schema`, PR #1377 /
    `fcba6d98` kanıtıyla ve `W2.2C-3 — Dedicated Settlement Verifier Boundary`, PR #1382 /
    `be1771d3` kanıtıyla ve `W2.2C-4 — Immutable Evidence Append`, PR #1391 /
-   `facc7789` kanıtıyla `CLOSED / CANONICAL`dır. `W2.2C-5 — Candidate CAS Transition`,
-   PR #1401 / `0452e836` kanıtıyla approved reconciliation merge'i üzerine
-   `CLOSED / CANONICAL` olur. Candidate finality transition mevcuttur; canonical Collection
-   admission/confirmation boundary'si hâlâ tamamlanmamıştır. W2.2D/W2.2E confirmation-boundary
-   review'ü yalnız sonraki owner gate'tir; W2.2D/W2.2E/W2.3 veya başka runtime implementation
-   bu kapanışla yetkilendirilmez. COL-RISK-G03
+   `facc7789` kanıtıyla ve `W2.2C-5 — Candidate CAS Transition`, PR #1401 /
+   `0452e836` kanıtıyla `CLOSED / CANONICAL`dır. `W2.2D-0 — Evidence-Integrity Admission
+   Guard`, PR #1407 / `1156e4de` kanıtıyla approved reconciliation merge'i üzerine
+   `CLOSED / CANONICAL` olur. Candidate finality ve canonical settlement-evidence tuple
+   admission guard mevcuttur; `Collection.confirmedAt` ve match-projection hardening hâlâ
+   tamamlanmamıştır. `W2.2D-1` yalnız sonraki owner gate'tir; W2.2D-1/W2.2E/W2.3 veya başka
+   runtime implementation bu kapanışla yetkilendirilmez. COL-RISK-G03
    `PARTIALLY MITIGATED — CONFIRMATION BOUNDARY REMAINS` kalır.
 
 ---
@@ -636,7 +648,7 @@ Collection(confirmed)
 | Contract | Statü | Taşıyıcı |
 |---|---|---|
 | RECEIVABLE–COLLECTION balance/allocation | CURRENT-PARTIAL — REC-GOV §7.3/§9 + TM3; ayrı contract belgesi YOK; TM3-ACT28-LEGAL reconciliation OPEN | REC-GOV + TM3 |
-| OFFICE–COLLECTION actor/approval | CURRENT (approval) / TARGET-CONTRACT-RECORDED + PERMISSION BOUNDARY + IMMUTABLE HUMAN EVIDENCE WRITER + CANDIDATE CAS TRANSITION PRESENT (dedicated `bank.settlement.verify`; Collection admission/confirmation boundary remains) — approval ile settlement verifier permission aynı authority değildir | ADR-009 + dbind + COL/OD-06A |
+| OFFICE–COLLECTION actor/approval | CURRENT (approval) / TARGET-CONTRACT-RECORDED + PERMISSION BOUNDARY + IMMUTABLE HUMAN EVIDENCE WRITER + CANDIDATE CAS TRANSITION + EVIDENCE-INTEGRITY ADMISSION GUARD PRESENT (dedicated `bank.settlement.verify`; `Collection.confirmedAt` / projection hardening remain) — approval ile settlement verifier permission aynı authority değildir | ADR-009 + dbind + COL/OD-06A |
 | DEBTOR–COLLECTION attribution | CURRENT-PARTIAL — case-scoped + NEVER_AUTO CURRENT; PaymentDesignation TARGET | REC §9.1 + DEBTOR §7 |
 | CLIENT–COLLECTION settlement | CURRENT — TM3 + adr-client-offset + dbind §1-5; tek çatı belge YOK | TM3 + dbind |
 | COLLECTION–ACCOUNTING journal | DIRECTION LOCKED / EXECUTION GATED | ADR-010 |
