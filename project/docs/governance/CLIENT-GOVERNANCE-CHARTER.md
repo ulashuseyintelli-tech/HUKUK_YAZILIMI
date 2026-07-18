@@ -98,7 +98,7 @@ Her sözleşme **referans-only**'dir; ilgili kardeş domainin kendi otoritesi bu
 - **OTHER DOMAIN AUTHORITY:** OFFICE — actor / role / approval policy (`SYS-GOV-014`; OFFICE §15; ADR-009; OFF/OD-08/10/11).
 - **CLIENT NON-AUTHORITY:** office role/personnel authority; approval actor kimliğini üretmek.
 - **CANONICAL SOURCE REFERENCES:** `SYS-GOV-014` / `SYS-GOV-015`; OFFICE-GOVERNANCE §15/§21; ADR-009 (`OfficeApprovalRequest` ≠ `ClientApprovalRequest`, LOCKED-ayrı); Constitution Identity SOT §7; `SYS-DEC-006`.
-- **OPEN OWNER-DECISION POINTERS:** OFF/OD-06, OFF/OD-12, OFF/OD-13; executed-approval reversal ownership; approval provenance (CL-INV-007 komşu, ayrı).
+- **OPEN OWNER-DECISION POINTERS:** OFF/OD-06, OFF/OD-12, OFF/OD-13; executed-approval reversal ownership; approval provenance — **POL-B DUAL-TRACK MODEL CANONICAL (§8.A)**, subject applicability OPEN, portal dependency POL-C (CL-INV-007 komşu, ayrı).
 - **RECIPROCAL HOME:** OFFICE-GOVERNANCE §21 (OFFICE→CLIENT clause).
 
 ### XDC-B — CLIENT ↔ RECEIVABLE — Creditor Context versus Receivable Authority
@@ -131,7 +131,7 @@ Her sözleşme **referans-only**'dir; ilgili kardeş domainin kendi otoritesi bu
 - **OTHER DOMAIN AUTHORITY:** DEBTOR — debtor identity, legal role/status, debtor workflow, sulh/legal-settlement mutation (`SYS-GOV-016`; DEBTOR §6/§7/§8; OfficeApproval REUSE).
 - **CLIENT NON-AUTHORITY:** debtor legal status; unilateral debtor obligation change; otomatik/self-service settlement authority (`SYS-LEGAL-010`; MS/ADR-020).
 - **CANONICAL SOURCE REFERENCES:** `SYS-GOV-015` / `SYS-GOV-016`; `SYS-LEGAL-009`/`SYS-LEGAL-010` (LegalSettlement/Sulh ≠ ClientSettlement/Creditor Disposition); DEBTOR-GOVERNANCE §6/§7/§8; `CL-INV-004`.
-- **OPEN OWNER-DECISION POINTERS:** MS/OD-10, MS/OD-11; client approval artefakt kimliği + staff-proxy provenance (CL-INV-007).
+- **OPEN OWNER-DECISION POINTERS:** MS/OD-10, MS/OD-11; client approval artefakt kimliği + staff-proxy provenance — **POL-B DUAL-TRACK MODEL CANONICAL (§8.A)**, subject applicability OPEN, portal dependency POL-C (CL-INV-007).
 - **RECIPROCAL HOME:** DEBTOR-GOVERNANCE §6 (Bounded Context Ownership).
 
 ### XDC-E — CLIENT ↔ DOCUMENT / PORTAL — Client-Facing Evidence and Visibility
@@ -144,7 +144,7 @@ Bu sözleşmenin **contract core'u canonicalize edilir; substantive policy claus
 - **OTHER DOMAIN AUTHORITY:** shared-kernel — document/evidence infrastructure, evidence integrity & retention mechanism, authentication infrastructure (`SYS-GOV-019`; `SYS-EVID-004`); Constitution visibility ilkeleri (`SYS-AUTH-008` / `SYS-AUTH-012`); internal actor identity & authorization = OFFICE (`SYS-GOV-014`). Tenant containment kaydı = CLIENT-P0-T04-C1 (finansal-yüzey tenant boundary evidence; **client-facing visibility policy DEĞİL**, `CL-INV-006`).
 - **CLIENT NON-AUTHORITY:** other-tenant visibility; portal authority'yi tek başına tanımlamak; masking veya retention policy'yi tek başına belirlemek.
 - **CANONICAL SOURCE REFERENCES:** `SYS-AUTH-008` / `SYS-AUTH-012`; `SYS-GOV-019`; `SYS-EVID-004`; `CL-INV-006` / `CL-INV-007`.
-- **OPEN OWNER-DECISION POINTERS (yalnız pointer; ÇÖZÜLMEZ):** portal / external-client authority; client-facing masking; KVKK retention / anonymization / legal hold; external-approval vs staff-proxy provenance; aggregate visibility; document/portal RBAC.
+- **OPEN OWNER-DECISION POINTERS (yalnız pointer; ÇÖZÜLMEZ):** portal / external-client authority; client-facing masking; KVKK retention / anonymization / legal hold; external-approval vs staff-proxy provenance (**POL-B DUAL-TRACK MODEL CANONICAL, §8.A; subject applicability OPEN; portal dependency POL-C**); aggregate visibility; document/portal RBAC.
 - **CONTRACT STATUS:** CONTRACT CORE = CANONICALIZED; OPEN POLICY CLAUSES = OWNER-GATED / NOT RESOLVED.
 - **RECIPROCAL HOME:** yeni Domain Law YOK; shared-kernel authority Constitution'da (`SYS-GOV-019`/`SYS-EVID`), OFFICE actor authority OFFICE-GOVERNANCE'da kalır; substantive policy = bounded owner decisions/ADR (charter'a gömülmez).
 
@@ -170,10 +170,28 @@ Aşağıdaki karar aileleri AÇIK bırakılır; bu charter hiçbirini SEÇMEZ ve
 - Client-facing masking
 - Financial role / approval predicate
 - Aggregate visibility policy
-- External approval vs staff-proxy provenance
+- External approval vs staff-proxy provenance — **POL-B RATIFIED: OPTION C — DUAL-TRACK PROVENANCE (bkz. §8.A)**; per-subject applicability + portal authority (POL-C) OPEN
 - Calculation cutover
 - Fee / harç producer ownership
 - Reversal / manual recovery policy
+
+## 8.A POL-B — Approval Provenance Disposition (OWNER RATIFIED)
+
+Bu bölüm CL-INV-007'yi (§5) **değiştirmez**; yalnız onun ilgili açık kararının owner disposition'ını kaydeder (`decision-log.md` CLIENT-P1-POL-B-GOV).
+
+- **STATUS:** OWNER RATIFIED
+- **MODEL:** DUAL-TRACK PROVENANCE (OPTION C)
+- **FACT A — AUTHENTICATED EXTERNAL-CLIENT DECISION:** ayrı fact.
+- **FACT B — STAFF-RECORDED CLIENT STATEMENT / INSTRUCTION:** ayrı fact.
+- **FACT RELATIONSHIP:** DISTINCT · NON-EQUIVALENT · NON-CONVERTIBLE (CL-INV-007 gereği).
+- **INTERNAL OFFICE APPROVAL:** ayrı authority fact (ADR-009; iç/patron onayı).
+- **TARGET-DOMAIN EXECUTION:** ayrı business-effect fact (mutation hedef domainde kalır).
+- **PER-SUBJECT SUFFICIENCY:** OPEN OWNER DECISION (hangi subject'te hangi fact yeterli — bu kararla topluca çözülmedi).
+- **PORTAL / EXTERNAL-CLIENT AUTHORITY:** OPEN under POL-C.
+- **EXTERNAL-TRACK IMPLEMENTATION:** NOT AUTHORIZED.
+- **AS-IS DISPOSITION:** mevcut staff-recorded approval evidence bir authenticated external-client act olarak temsil EDİLEMEZ.
+
+Bu disposition schema/enum/route/authentication implementation önermez; global provenance modeli C'dir, subject-level yeterlilik ayrıca belirlenecektir. Bu charter A/B/D seçeneklerini yasaklı subject-level sonuç olarak göstermez; D'nin subject-taxonomy kaygısı Option C içinde per-subject applicability olarak korunur.
 
 ## 9. Upgrade Rule
 
