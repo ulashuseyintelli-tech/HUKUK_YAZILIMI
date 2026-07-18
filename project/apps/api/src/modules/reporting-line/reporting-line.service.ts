@@ -5,29 +5,26 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, ReportingLineDisposition } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 
 /**
- * ReportingLine Population Core — CAP-02 object-scope enforcement'ın gerektirdiği
- * manager–personel raporlama ilişkilerinin oluşturulması/bakımı/doğrulaması.
+ * ReportingLine Population Core + Top-Level Disposition Persistence — CAP-02
+ * object-scope enablement. Manager–personel raporlama ilişkilerinin (User→User)
+ * oluşturulması/bakımı/doğrulaması. Object-scope FİLTRELEME/deny AKTİVE ETMEZ.
  *
- * SINIR: Bu birim object-scope FİLTRELEME/deny davranışı AKTİVE ETMEZ. Yalnız
- * ReportingLine (User→User) populasyonu + reconciliation + audit sağlar. Şema
- * değişmez; GLOBAL PermissionGrant yazılmaz; CAP-03/04/09 kapsamına girilmez.
+ * Current-state otoritesi = aktör başına TEK aktif ReportingLine kaydı:
+ *   MANAGED     → disposition=MANAGED,   managerUserId dolu
+ *   TOP_LEVEL   → disposition=TOP_LEVEL, managerUserId null (açık kök)
+ *   UNCLASSIFIED→ aktif kayıt yok
+ * "Explicit top-level" artık KALICI (audit-only değil); graf-konumundan TÜRETİLMEZ.
+ * Invariant sınırı DB-level'dır: CHECK (disposition↔manager nullability) + partial
+ * unique index (tenant+actor, validUntil IS NULL); Serializable + app-sayım ek kat.
  *
- * Kimlik: raporlama ilişkisi User ID tabanlıdır. StaffMember/Lawyer profilleri
- * yalnız kimlik çözümü, gösterim ve uygunluk doğrulaması içindir. User bağı
- * olmayan profil hiyerarşiye giremez; ClientPortalUser ve sistem/insan-dışı
- * aktörler hariçtir (User tablosu personel/admin hesaplarını taşır).
- *
- * "Explicit top-level": mevcut şema managerUserId'yi zorunlu tutar ve self-manager
- * bir anomalidir; bu yüzden top-level AYRI bir kalıcı bayrakla DEĞİL, aktif manager
- * kaydının yokluğuyla temsil edilir (markTopLevel aktif ilişkiyi kapatır + audit'ler).
- * Reconciliation, aktif manager'ı olmayan Users'ı graf konumundan türetir: başkalarını
- * yöneten kök = top-level; kimseyi yönetmeyen izole = disposition yok. Kalıcı, açık
- * "explicit top-level" bayrağı bir şema işareti gerektirir (bu birim dışı).
+ * Kimlik: User ID tabanlı. StaffMember/Lawyer profilleri yalnız kimlik çözümü/
+ * gösterim/uygunluk içindir. ClientPortalUser + sistem/insan-dışı aktörler hariç.
+ * SINIR: GLOBAL PermissionGrant yazılmaz; CAP-03/04/09 yok; enforcement yok.
  */
 @Injectable()
 export class ReportingLineService {
@@ -37,8 +34,6 @@ export class ReportingLineService {
   ) {}
 
   private assertAdmin(role: string | undefined): void {
-    // Birincil kapı controller'daki AdminGuard'dır; bu servis-seviyesi kontrol
-    // defense-in-depth + doğrudan-birim-testi içindir (K1-7 AdminGuard deseniyle uyumlu).
     if (role !== "ADMIN") {
       throw new ForbiddenException("Bu işlem için ADMIN yetkisi gerekir");
     }
@@ -46,10 +41,6 @@ export class ReportingLineService {
 
   /**
    * Aktif, aynı-tenant User doğrular. Eksik/pasif/başka-tenant → BadRequest.
-   * <remarks>
-   * Çağrıldığı yerler:
-   * - ReportingLineService.assignManager()/markTopLevel() -> actor + manager uygunluk kapısı
-   * </remarks>
    */
   private async assertActiveTenantUser(
     tenantId: string,
@@ -68,9 +59,9 @@ export class ReportingLineService {
   }
 
   /**
-   * Önerilen actor→manager kenarı bir döngü yaratır mı? manager'ın aktif amir
-   * zinciri yukarı yürünür; actor'a ulaşılırsa döngü. Mevcut bozuk veri için
-   * ziyaret-seti + derinlik sınırı ile korunur.
+   * Önerilen actor→manager kenarı döngü yaratır mı? manager'ın aktif amir zinciri
+   * yukarı yürünür; actor'a ulaşılırsa döngü. TOP_LEVEL (managerUserId null) kaydı
+   * kökü işaretler, zincir orada biter. Ziyaret-seti + derinlik sınırı ek koruma.
    */
   private async wouldCreateCycle(
     tx: Prisma.TransactionClient,
@@ -85,12 +76,12 @@ export class ReportingLineService {
       if (current === actorUserId) return true; // actor'a dönüş = döngü
       if (visited.has(current)) return true; // önceden var olan döngü koruması
       visited.add(current);
-      const row: { managerUserId: string } | null =
+      const row: { managerUserId: string | null } | null =
         await tx.reportingLine.findFirst({
           where: { tenantId, actorUserId: current, validUntil: null },
           select: { managerUserId: true },
         });
-      if (!row) break; // köke ulaşıldı
+      if (!row || !row.managerUserId) break; // köke/TOP_LEVEL'e ulaşıldı
       current = row.managerUserId;
       depth++;
     }
@@ -98,10 +89,8 @@ export class ReportingLineService {
   }
 
   /**
-   * Aktif bir manager ata veya değiştir. Tek-transaction: eski aktif ilişki
-   * kapatılır (validUntil), yeni aktif ilişki açılır; audit aynı tx içinde yazılır.
-   * Serializable izolasyon + post-write tekil-aktif sayımı ile eşzamanlılıkta
-   * en fazla bir aktif manager garanti edilir.
+   * Aktif MANAGED disposition ata/değiştir. Tek transaction (kapat→aç) + Serializable
+   * + post-write tekil-aktif sayımı; nihai sınır DB partial unique index'tir.
    * <remarks>
    * Çağrıldığı yerler:
    * - ReportingLineController.assign() -> POST /reporting-lines/assign (ADMIN)
@@ -112,7 +101,7 @@ export class ReportingLineService {
     actingUserId: string,
     role: string,
     dto: { actorUserId: string; managerUserId: string },
-  ): Promise<{ actorUserId: string; managerUserId: string }> {
+  ): Promise<{ actorUserId: string; managerUserId: string; disposition: "MANAGED" }> {
     this.assertAdmin(role);
     const { actorUserId, managerUserId } = dto;
 
@@ -127,14 +116,12 @@ export class ReportingLineService {
     await this.prisma.$transaction(
       async (tx) => {
         if (await this.wouldCreateCycle(tx, tenantId, actorUserId, managerUserId)) {
-          throw new BadRequestException(
-            "Bu atama hiyerarşide döngü oluşturur",
-          );
+          throw new BadRequestException("Bu atama hiyerarşide döngü oluşturur");
         }
 
         const previous = await tx.reportingLine.findFirst({
           where: { tenantId, actorUserId, validUntil: null },
-          select: { managerUserId: true },
+          select: { managerUserId: true, disposition: true },
         });
 
         await tx.reportingLine.updateMany({
@@ -143,7 +130,12 @@ export class ReportingLineService {
         });
 
         await tx.reportingLine.create({
-          data: { tenantId, actorUserId, managerUserId },
+          data: {
+            tenantId,
+            actorUserId,
+            managerUserId,
+            disposition: ReportingLineDisposition.MANAGED,
+          },
         });
 
         const activeCount = await tx.reportingLine.count({
@@ -151,7 +143,7 @@ export class ReportingLineService {
         });
         if (activeCount !== 1) {
           throw new ConflictException(
-            "Eşzamanlı değişiklik: tekil aktif amir ihlali",
+            "Eşzamanlı değişiklik: tekil aktif disposition ihlali",
           );
         }
 
@@ -161,19 +153,88 @@ export class ReportingLineService {
           entityType: "REPORTING_LINE",
           entityId: actorUserId,
           userId: actingUserId,
-          oldValues: previous ? { managerUserId: previous.managerUserId } : {},
-          newValues: { actorUserId, managerUserId },
+          oldValues: previous
+            ? { managerUserId: previous.managerUserId, disposition: previous.disposition }
+            : {},
+          newValues: { actorUserId, managerUserId, disposition: "MANAGED" },
         });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
-    return { actorUserId, managerUserId };
+    return { actorUserId, managerUserId, disposition: "MANAGED" };
   }
 
   /**
-   * Aktif raporlama ilişkisini kapat (validUntil). Tarihsel kayıt silinmez.
-   * Aktif ilişki yoksa NotFound.
+   * Aktörü açık TOP_LEVEL (kök) olarak işaretle: aktif disposition kapatılır ve
+   * managerUserId=null olan yeni TOP_LEVEL disposition yazılır (KALICI). Tek
+   * transaction + Serializable + tekil-aktif sayımı; DB CHECK manager=null'ı zorlar.
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ReportingLineController.topLevel() -> POST /reporting-lines/top-level (ADMIN)
+   * </remarks>
+   */
+  async markTopLevel(
+    tenantId: string,
+    actingUserId: string,
+    role: string,
+    dto: { actorUserId: string },
+  ): Promise<{ actorUserId: string; disposition: "TOP_LEVEL" }> {
+    this.assertAdmin(role);
+    const { actorUserId } = dto;
+    await this.assertActiveTenantUser(tenantId, actorUserId, "personel");
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const previous = await tx.reportingLine.findFirst({
+          where: { tenantId, actorUserId, validUntil: null },
+          select: { managerUserId: true, disposition: true },
+        });
+
+        await tx.reportingLine.updateMany({
+          where: { tenantId, actorUserId, validUntil: null },
+          data: { validUntil: new Date() },
+        });
+
+        await tx.reportingLine.create({
+          data: {
+            tenantId,
+            actorUserId,
+            managerUserId: null,
+            disposition: ReportingLineDisposition.TOP_LEVEL,
+          },
+        });
+
+        const activeCount = await tx.reportingLine.count({
+          where: { tenantId, actorUserId, validUntil: null },
+        });
+        if (activeCount !== 1) {
+          throw new ConflictException(
+            "Eşzamanlı değişiklik: tekil aktif disposition ihlali",
+          );
+        }
+
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: "REPORTING_LINE_TOP_LEVEL",
+          entityType: "REPORTING_LINE",
+          entityId: actorUserId,
+          userId: actingUserId,
+          oldValues: previous
+            ? { managerUserId: previous.managerUserId, disposition: previous.disposition }
+            : {},
+          newValues: { actorUserId, disposition: "TOP_LEVEL" },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+
+    return { actorUserId, disposition: "TOP_LEVEL" };
+  }
+
+  /**
+   * Aktif disposition'ı kapat (validUntil) → aktör UNCLASSIFIED olur. Tarihsel
+   * kayıt silinmez; yerine yeni kayıt oluşturulmaz. Aktif yoksa NotFound.
    * <remarks>
    * Çağrıldığı yerler:
    * - ReportingLineController.end() -> POST /reporting-lines/end (ADMIN)
@@ -192,10 +253,10 @@ export class ReportingLineService {
       async (tx) => {
         const active = await tx.reportingLine.findMany({
           where: { tenantId, actorUserId, validUntil: null },
-          select: { managerUserId: true },
+          select: { managerUserId: true, disposition: true },
         });
         if (active.length === 0) {
-          throw new NotFoundException("Kapatılacak aktif raporlama ilişkisi yok");
+          throw new NotFoundException("Kapatılacak aktif disposition yok");
         }
 
         const result = await tx.reportingLine.updateMany({
@@ -209,8 +270,13 @@ export class ReportingLineService {
           entityType: "REPORTING_LINE",
           entityId: actorUserId,
           userId: actingUserId,
-          oldValues: { managerUserIds: active.map((a) => a.managerUserId) },
-          newValues: {},
+          oldValues: {
+            dispositions: active.map((a) => ({
+              managerUserId: a.managerUserId,
+              disposition: a.disposition,
+            })),
+          },
+          newValues: { disposition: "UNCLASSIFIED" },
         });
 
         return { actorUserId, closed: result.count };
@@ -220,55 +286,7 @@ export class ReportingLineService {
   }
 
   /**
-   * Bir kullanıcıyı açıkça top-level (kök) olarak işaretle: aktif amir ilişkisi
-   * kapatılır ve niyet audit'lenir. Kalıcı self-row YAZILMAZ (self-manager anomali
-   * kalır). İdempotent: zaten kök ise yalnız audit yazılır.
-   * <remarks>
-   * Çağrıldığı yerler:
-   * - ReportingLineController.topLevel() -> POST /reporting-lines/top-level (ADMIN)
-   * </remarks>
-   */
-  async markTopLevel(
-    tenantId: string,
-    actingUserId: string,
-    role: string,
-    dto: { actorUserId: string },
-  ): Promise<{ actorUserId: string; closed: number }> {
-    this.assertAdmin(role);
-    const { actorUserId } = dto;
-    await this.assertActiveTenantUser(tenantId, actorUserId, "personel");
-
-    return this.prisma.$transaction(
-      async (tx) => {
-        const active = await tx.reportingLine.findMany({
-          where: { tenantId, actorUserId, validUntil: null },
-          select: { managerUserId: true },
-        });
-
-        const result = await tx.reportingLine.updateMany({
-          where: { tenantId, actorUserId, validUntil: null },
-          data: { validUntil: new Date() },
-        });
-
-        await this.audit.logInTransaction(tx, {
-          tenantId,
-          action: "REPORTING_LINE_TOP_LEVEL",
-          entityType: "REPORTING_LINE",
-          entityId: actorUserId,
-          userId: actingUserId,
-          oldValues: { managerUserIds: active.map((a) => a.managerUserId) },
-          newValues: { topLevel: true },
-        });
-
-        return { actorUserId, closed: result.count };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
-  }
-
-  /**
-   * Aktif raporlama ilişkilerini listele (tenant-scoped). actor===manager
-   * asla döndürülmez (self-row yazılmaz); her satır PLACED sınıfıdır.
+   * Aktif disposition kayıtlarını listele (tenant-scoped) — disposition dahil.
    * <remarks>
    * Çağrıldığı yerler:
    * - ReportingLineController.list() -> GET /reporting-lines (ADMIN)
@@ -281,6 +299,7 @@ export class ReportingLineService {
         id: true,
         actorUserId: true,
         managerUserId: true,
+        disposition: true,
         validFrom: true,
       },
       orderBy: { validFrom: "desc" },
@@ -289,8 +308,8 @@ export class ReportingLineService {
   }
 
   /**
-   * Hiyerarşiye girebilecek uygun personel/amir Users'ı listele: aktif, aynı
-   * tenant ve bir StaffMember veya Lawyer profiline bağlı Users.
+   * Hiyerarşiye girebilecek uygun personel/amir Users (aktif, aynı tenant, bir
+   * StaffMember/Lawyer profiline bağlı).
    * <remarks>
    * Çağrıldığı yerler:
    * - ReportingLineController.eligible() -> GET /reporting-lines/eligible (ADMIN)
@@ -325,8 +344,9 @@ export class ReportingLineService {
   }
 
   /**
-   * Salt-okunur reconciliation: enforcement-hazırlığı için anomali sınıflarını
-   * sayar. Hiçbir üretim verisini DÜZELTMEZ.
+   * Salt-okunur reconciliation: disposition-tabanlı sınıflandırma + anomali sayımı.
+   * Explicit top-level artık graf-konumundan TÜRETİLMEZ (kalıcı TOP_LEVEL kaydı).
+   * Üretim verisini DÜZELTMEZ.
    * <remarks>
    * Çağrıldığı yerler:
    * - ReportingLineController.reconciliation() -> GET /reporting-lines/reconciliation (ADMIN)
@@ -354,11 +374,10 @@ export class ReportingLineService {
       }),
       this.prisma.reportingLine.findMany({
         where: { tenantId, validUntil: null },
-        select: { actorUserId: true, managerUserId: true },
+        select: { actorUserId: true, managerUserId: true, disposition: true },
       }),
     ]);
 
-    // Personel Users kümesi (aktif, profilli, User-bağlı) — disposition analizi için.
     const personnelUsers = await this.prisma.user.findMany({
       where: {
         tenantId,
@@ -374,33 +393,52 @@ export class ReportingLineService {
         lawyer: { select: { id: true } },
       },
     });
-
-    // Aynı anda hem aktif Staff hem aktif Lawyer profiline bağlı Users = belirsiz.
     const ambiguousProfileUsers = personnelUsers.filter(
       (u) => u.staffMember && u.lawyer,
     ).length;
 
-    // Graf konumu: aktif kenarlardan actor/manager kümeleri.
     const actorsWithActive = new Set(activeRows.map((r) => r.actorUserId));
-    const managersActive = new Set(activeRows.map((r) => r.managerUserId));
 
-    const selfManager = activeRows.filter(
-      (r) => r.actorUserId === r.managerUserId,
+    // Disposition-tabanlı sınıflandırma (graf-türetme YOK).
+    const managedActors = activeRows.filter(
+      (r) => r.disposition === ReportingLineDisposition.MANAGED,
+    ).length;
+    const explicitTopLevelActors = activeRows.filter(
+      (r) => r.disposition === ReportingLineDisposition.TOP_LEVEL,
+    ).length;
+    let unclassifiedActors = 0;
+    for (const u of personnelUsers) {
+      if (!actorsWithActive.has(u.id)) unclassifiedActors++;
+    }
+
+    // Anomali sınıfları (DB constraint'leri normalde 0'da tutar; reconciliation izler).
+    const invalidManagedWithoutManager = activeRows.filter(
+      (r) => r.disposition === ReportingLineDisposition.MANAGED && r.managerUserId == null,
+    ).length;
+    const invalidTopLevelWithManager = activeRows.filter(
+      (r) => r.disposition === ReportingLineDisposition.TOP_LEVEL && r.managerUserId != null,
+    ).length;
+    const selfManagerRelationships = activeRows.filter(
+      (r) => r.managerUserId != null && r.actorUserId === r.managerUserId,
     ).length;
 
-    // Aynı actor için >1 aktif kayıt = mükerrer aktif ilişki.
     const perActorCount = new Map<string, number>();
     for (const r of activeRows) {
       perActorCount.set(r.actorUserId, (perActorCount.get(r.actorUserId) ?? 0) + 1);
     }
-    const duplicateActiveActors = [...perActorCount.values()].filter(
+    const duplicateActiveDispositions = [...perActorCount.values()].filter(
       (c) => c > 1,
     ).length;
 
-    // Döngü tespiti: her aktif actor için zinciri yürü (aktif kenar haritası).
+    // Döngü: yalnız MANAGED kenarlar (managerUserId dolu).
     const managerOf = new Map<string, string>();
     for (const r of activeRows) {
-      if (r.actorUserId !== r.managerUserId && !managerOf.has(r.actorUserId)) {
+      if (
+        r.disposition === ReportingLineDisposition.MANAGED &&
+        r.managerUserId &&
+        r.actorUserId !== r.managerUserId &&
+        !managerOf.has(r.actorUserId)
+      ) {
         managerOf.set(r.actorUserId, r.managerUserId);
       }
     }
@@ -418,54 +456,28 @@ export class ReportingLineService {
       }
     }
 
-    // disposition: personel User aktif actor mı? değilse — kök mü (başkasını yönetir)
-    // yoksa izole mi (disposition yok)?
-    let placed = 0;
-    let topLevelRoots = 0;
-    let noDisposition = 0;
-    for (const u of personnelUsers) {
-      if (actorsWithActive.has(u.id)) {
-        placed++;
-      } else if (managersActive.has(u.id)) {
-        topLevelRoots++;
-      } else {
-        noDisposition++;
-      }
-    }
-
-    // Aktif/başka-tenant referans anomalileri: kenarlarda geçen User ID'lerin
-    // tenant içi aktif olup olmadığını kontrol et.
+    // Aktif/başka-tenant referans anomalileri.
     const referencedIds = new Set<string>();
     for (const r of activeRows) {
       referencedIds.add(r.actorUserId);
-      referencedIds.add(r.managerUserId);
+      if (r.managerUserId) referencedIds.add(r.managerUserId);
     }
-    let inactiveOrCrossTenantRefs = 0;
+    let inactiveOrCrossTenantReferences = 0;
     if (referencedIds.size > 0) {
       const validRefs = await this.prisma.user.count({
-        where: {
-          tenantId,
-          isActive: true,
-          id: { in: [...referencedIds] },
-        },
+        where: { tenantId, isActive: true, id: { in: [...referencedIds] } },
       });
-      inactiveOrCrossTenantRefs = referencedIds.size - validRefs;
+      inactiveOrCrossTenantReferences = referencedIds.size - validRefs;
     }
 
     // Gelecek enforcement için sınıflandırılamayan task-atanabilir Users:
-    // task work-queue enforcement assignee (User) eksenine göre daraltacaktır.
-    // Aktif Task assignee'si olan ancak hiyerarşi disposition'ı olmayan
-    // (ne placed ne kök) Users.
+    // aktif Task assignee'si olan ama hiç aktif disposition'ı olmayan (UNCLASSIFIED) Users.
     const assigneeUsers = await this.prisma.user.findMany({
-      where: {
-        tenantId,
-        isActive: true,
-        assignedTasks: { some: {} },
-      },
+      where: { tenantId, isActive: true, assignedTasks: { some: {} } },
       select: { id: true },
     });
     const unclassifiableTaskAssignees = assigneeUsers.filter(
-      (u) => !actorsWithActive.has(u.id) && !managersActive.has(u.id),
+      (u) => !actorsWithActive.has(u.id),
     ).length;
 
     return {
@@ -473,13 +485,15 @@ export class ReportingLineService {
       activeUserLinkedStaff: activeLinkedStaff,
       activeProfilesWithoutUserLink: activeStaffNoUser + activeLawyerNoUser,
       usersLinkedToMultipleProfileTypes: ambiguousProfileUsers,
-      actorsPlaced: placed,
-      explicitTopLevelRoots: topLevelRoots,
-      actorsWithNoDisposition: noDisposition,
-      duplicateActiveRelationships: duplicateActiveActors,
-      selfManagerRelationships: selfManager,
+      managedActors,
+      explicitTopLevelActors,
+      unclassifiedActors,
+      inactiveOrCrossTenantReferences,
+      duplicateActiveDispositions,
+      invalidManagedWithoutManager,
+      invalidTopLevelWithManager,
+      selfManagerRelationships,
       cycles: cyclicActors.size,
-      inactiveOrCrossTenantReferences: inactiveOrCrossTenantRefs,
       unclassifiableTaskAssignees,
     };
   }

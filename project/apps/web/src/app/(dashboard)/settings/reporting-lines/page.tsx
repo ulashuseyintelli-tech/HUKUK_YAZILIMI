@@ -21,7 +21,8 @@ interface Eligible {
 interface Relationship {
   id: string;
   actorUserId: string;
-  managerUserId: string;
+  managerUserId: string | null;
+  disposition: "MANAGED" | "TOP_LEVEL";
   validFrom: string;
 }
 
@@ -132,23 +133,29 @@ export default function ReportingLinesPage() {
 
       {recon && (
         <div className="mb-4 grid grid-cols-2 md:grid-cols-4 gap-2">
-          <ReconCard label="Yerleşmiş" value={recon.actorsPlaced} />
-          <ReconCard label="Kök (top-level)" value={recon.explicitTopLevelRoots} />
-          <ReconCard label="Disposition yok" value={recon.actorsWithNoDisposition} />
+          <ReconCard label="Managed" value={recon.managedActors} />
+          <ReconCard label="Top-level (açık)" value={recon.explicitTopLevelActors} />
+          <ReconCard label="Unclassified" value={recon.unclassifiedActors} />
           <ReconCard
             label="Sınıflandırılamayan atanan"
             value={recon.unclassifiableTaskAssignees}
+            warn
           />
           <ReconCard label="Döngü" value={recon.cycles} warn />
           <ReconCard
             label="Mükerrer aktif"
-            value={recon.duplicateActiveRelationships}
+            value={recon.duplicateActiveDispositions}
             warn
           />
           <ReconCard label="Self-manager" value={recon.selfManagerRelationships} warn />
           <ReconCard
-            label="User bağı yok"
-            value={recon.activeProfilesWithoutUserLink}
+            label="Geçersiz MANAGED (amirsiz)"
+            value={recon.invalidManagedWithoutManager}
+            warn
+          />
+          <ReconCard
+            label="Geçersiz TOP_LEVEL (amirli)"
+            value={recon.invalidTopLevelWithManager}
             warn
           />
         </div>
@@ -197,6 +204,7 @@ export default function ReportingLinesPage() {
           <thead className="bg-gray-50 text-left text-xs text-gray-500">
             <tr>
               <th className="px-4 py-2">Personel</th>
+              <th className="px-4 py-2">Durum</th>
               <th className="px-4 py-2">Amir</th>
               <th className="px-4 py-2 text-right">İşlem</th>
             </tr>
@@ -205,7 +213,20 @@ export default function ReportingLinesPage() {
             {relationships.map((r) => (
               <tr key={r.id} className="border-t">
                 <td className="px-4 py-2">{nameOf(r.actorUserId)}</td>
-                <td className="px-4 py-2">{nameOf(r.managerUserId)}</td>
+                <td className="px-4 py-2">
+                  {r.disposition === "TOP_LEVEL" ? (
+                    <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700">
+                      Top-level
+                    </span>
+                  ) : (
+                    <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-700">
+                      Managed
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2">
+                  {r.managerUserId ? nameOf(r.managerUserId) : "—"}
+                </td>
                 <td className="px-4 py-2 text-right">
                   <button
                     onClick={() => topLevel(r.actorUserId)}
@@ -228,7 +249,7 @@ export default function ReportingLinesPage() {
             ))}
             {relationships.length === 0 && !loading && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
                   Aktif raporlama ilişkisi yok
                 </td>
               </tr>
