@@ -512,3 +512,78 @@ Client approval/consent evidence: OFFICE'e approval context sağlayabilir; RECEI
 ### 14.10 BP-04 Self-Check
 
 Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; üç track'i (FACT A / FACT B / OFFICE) ayrı ve non-convertible kaydeder; `APPROVED` statüsünü **authenticated client consent olarak GÖSTERMEZ**; FACT B'yi FACT A'ya **YÜKSELTMEZ**; recorder'ı client principal ile **EŞİTLEMEZ**; `PORTAL` channel'ı **wired external flow olarak GÖSTERMEZ**; `OfficeApprovalRequest`'i **target-domain execution authority olarak GÖSTERMEZ**; per-subject sufficiency (S1–S6 dahil) **canonical policy YAPMAZ** (tümü UNRESOLVED/OPEN); yeni subject taxonomy / contradiction / precedence / portal / KVKK policy SEÇMEZ; enum-only transition çıkarımı YAPMAZ; `CL-INV-001..008` / §6 / §8.A / §8.B / §11 / §12 / §13'ü değiştirmez; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 15. CLIENT-P1-BP-07 — Client Financial Relationship Model (BOUNDED CONSOLIDATION — OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-BP-07` read-only analizinin **owner-ratified bounded consolidation**'ıdır (`decision-log.md` CLIENT-P1-BP-07-GOV; **MODEL 1 — BOUNDED FINANCIAL RELATIONSHIP CONSOLIDATION MAP**). Mevcut kanonik AS-IS gerçekleri (AS-IS kod/schema + charter §3–§8.B + §11–§14 + XDC-A–E + POL-A + POL-B + T04 Financial Boundary Map + SYSTEM-CONSTITUTION + DBIND) ve owner kararlarını **konsolide eder**; yeni domain authority, ledger, financial policy, global predicate veya lifecycle mekanizması ÜRETMEZ. §5 `CL-INV-001..008`, §6 XDC-A–E, §8.A POL-B, §8.B POL-A, §11, §12, §13 ve §14 metinlerini **semantik olarak değiştirmez**. CLIENT domain kayıtlarını **yapısal/mimari konsolidasyon sözlüğü** olarak adlandırır; route/method/field-wiring/exploit **ve agent/lane/storage-type/precision-format detayı İÇERMEZ**. **IMPLEMENTATION AUTHORITY: NONE.** **SINGLE CLIENT-FINANCIAL LEDGER SOURCE-OF-TRUTH: NOT SELECTED.** **BALANCE RECONCILIATION POLICY: OPEN / NOT SELECTED.** **FINANCIAL REMEDIATION: NOT AUTHORIZED.**
+
+### 15.1 Client Financial Boundary
+
+**CLIENT yalnız şunların sahibidir:** creditor relationship context · mandate and instruction context · client-side provenance · creditor disposition context · client-facing financial presentation context · fee/contract context.
+**CLIENT şunların sahibi DEĞİLDİR:** receivable composition · legal allocation · collection receipt ledger · payable/payout/offset execution · money-out posting · accounting journal · bank execution.
+
+### 15.2 Canonical Authority Map
+
+- **RECEIVABLE:** claim and receivable composition; legal allocation authority.
+- **COLLECTION:** receipt, payable, payout, offset, posting ve money-out authority.
+- **ACCOUNTING:** accounting representation ve journal authority.
+- **OFFICE:** actor eligibility ve internal approval gate.
+- **CLIENT:** creditor relationship, mandate, instruction, client-side provenance ve financial context.
+
+Başka domain authority'si CLIENT'e **taşınmaz**.
+
+### 15.3 Record ≠ Authority
+
+**A RECORD DOES NOT CREATE AUTHORITY.** Authority şuradan türer: canonical policy · actor eligibility · cross-domain contract · approval requirements. Bu nedenle: `OfficeApprovalRequest` = internal approval workflow/evidence record; `CollectionDisposition` = shared disposition workflow/state record; `ClientApprovalRequest` = client-attributed provenance ledger. **Bunların hiçbiri kendi başına actor veya execution authority ÜRETMEZ.**
+
+### 15.4 Advance / Cari Dual Representation
+
+Mevcut yüzeyler: `CaseBalance` = **AS-IS current stored balance state**; `BalanceLedger` = **AS-IS movement history / evidence**. **Canonical karar:** SINGLE SOURCE-OF-TRUTH PRECEDENCE = **NOT SELECTED**; RECONCILIATION CONTRACT = **NOT CANONICAL**; DRIFT HANDLING = **OPEN / OWNER-GATED**. **YAZILMAZ:** `BalanceLedger` tek canonical source-of-truth'tur; `CaseBalance` tek canonical ledger'dır; iki temsil her koşulda mutlak eşleşir; bu yapı COLLECTION veya ACCOUNTING ledger'ıdır. `CaseBalance` ve `BalanceLedger`, mevcut advance/cari yüzeyinin **iki AS-IS temsilidir**; aralarındaki canonical precedence ve reconciliation **ayrı owner kararı gerektirir**.
+
+### 15.5 Client Statement Semantics
+
+`ClientStatement` = **CLIENT-owned, client-facing, IMMUTABLE statement/evidence artifact**. **DEĞİL:** collection ledger · accounting journal · canonical balance source · live mutable account. Statement: belirli zamanda oluşturulmuş finansal sunum/evidence artifact'ıdır; kaynak finansal kayıtları yeniden sahiplenmez; source kayıtları değiştirmez; **daha yeni statement otomatik olarak eski statement'ın hukuki yanlışlığını KANITLAMAZ**; supersession/void **underlying ledger reversal DEĞİLDİR**.
+
+### 15.6 Payout Semantics
+
+**PAYOUT REQUEST ≠ INTERNAL APPROVAL ≠ BANK EXECUTION ≠ PAYOUT RECORDING ≠ REVERSAL/RECOVERY.** `ClientPayout` = **COLLECTION-owned payout recording evidence**. **DEĞİL:** bank execution proof · client-owned money-out authority · accounting journal. **AS-IS banka transfer execution mekanizması modellenmemiştir; kayıt otomatik banka icrası kanıtı SAYILMAZ.** Legacy payout-recording yolu yalnız **bounded implementation gap** olarak kaydedilir (somut method/route/agent-lane ayrıntısı bu belgeye yazılmaz).
+
+### 15.7 Offset Semantics
+
+**OFFSET CONTEXT ≠ OFFSET APPROVAL ≠ OFFSET EXECUTION ≠ OFFSET RECORDING.** Offset authority **COLLECTION**'dadır; OFFICE actor eligibility yalnız canonical gate sağlar; CLIENT yalnız creditor/context tarafını sağlar.
+
+### 15.8 Creditor Disposition Shared Contract
+
+`CollectionDisposition` = CLIENT ve COLLECTION arasında **shared contract record**. **CLIENT PROVIDES:** creditor identity · creditor relationship context · disposition scope · client-side provenance (when applicable). **OFFICE PROVIDES:** internal approval gate ve actor eligibility. **COLLECTION OWNS:** posting · payable creation · offset/payout financial effect · money-out state transition. **CLIENT posting/financial-effect authority'sini SAHİPLENMEZ.** Financial effect'in yalnız canonical posting aşamasında oluştuğu AS-IS transition fact olarak kaydedilir.
+
+### 15.9 POL-A Application
+
+POL-A subject-specific model korunur: tek global predicate YOK; requester / approver / executor / recorder AYRI; four-eyes yalnız canonical gerekli subject'lerde; MANAGER authority global normalize EDİLMEZ; client consent / PoA flag financial predicate DEĞİL; `OfficeApprovalRequest` target-domain execution DEĞİL. **POL-A target ile AS-IS enforcement AYRI gösterilir.**
+
+### 15.10 POL-B / Consent Boundary
+
+BP-04 kararı korunur: **PER-SUBJECT CONSENT SUFFICIENCY = OPEN / NOT SELECTED · FACT A REQUIREMENT = UNRESOLVED · FACT B SUFFICIENCY = UNRESOLVED.** Client fact: financial authority ÜRETMEZ; OFFICE approval yerine geçmez; target-domain execution gerçekleştirmez; subject label üzerinden zorunlu KABUL EDİLMEZ.
+
+### 15.11 AS-IS Enforcement Delta
+
+Şu yüzeyler implementation/remediation input'u olarak kaydedilir: advance/cari actor enforcement · expense approval/payment enforcement · statement issue/void enforcement · payout-request floor · legacy payout-recording path · idempotency/concurrency gaps · stored-state/movement-history reconciliation gap. **AS-IS DELTA = KNOWN / NON-ZERO. REMEDIATION = NOT AUTHORIZED. BLUEPRINT CANONICALIZATION DOES NOT AUTHORIZE CODE.**
+
+### 15.12 Precision / Currency
+
+Representation farklılığı yalnız **implementation-boundary riskidir**. Bu belgeye somut database type / precision / storage-format **normatif model olarak YAZILMAZ**. Canonical: **FINANCIAL REPRESENTATIONS MAY DIFFER ACROSS CLIENT / COLLECTION / ACCOUNTING; CONVERSION AND RECONCILIATION CONTRACT = NOT SELECTED IN BP-07.**
+
+### 15.13 Other-Program Routing
+
+REVERSAL / MANUAL RECOVERY → **COLLECTION PROGRAM** · STORED-BALANCE RECONCILIATION → **SEPARATE OWNER-GATED UNIT** · ACCOUNTING JOURNAL RECONCILIATION → **ACCOUNTING BOUNDARY** · ADR-013 → **OTHER PROGRAM** · ADR-014 → **OTHER PROGRAM**. Bu konular CLIENT blueprint içinde çözülmez.
+
+### 15.14 Canonical Non-Equations
+
+`CLIENT FINANCIAL CONTEXT ≠ RECEIVABLE AUTHORITY` · `CLIENT FINANCIAL CONTEXT ≠ COLLECTION LEDGER AUTHORITY` · `CASEBALANCE ≠ COLLECTION LEDGER` · `BALANCELEDGER ≠ COLLECTION RECEIPT LEDGER` · `CLIENT STATEMENT ≠ FINANCIAL LEDGER` · `CLIENT SETTLEMENT ≠ LEGAL SETTLEMENT` · `PAYOUT RECORD ≠ BANK EXECUTION` · `OFFICE APPROVAL ≠ TARGET-DOMAIN EXECUTION` · `CLIENT CONSENT ≠ FINANCIAL AUTHORITY` · `MANDATE SCOPE ≠ EXECUTION AUTHORITY`.
+
+### 15.15 Status Precision
+
+**CLIENT-P1-BP-07: BOUNDED FINANCIAL RELATIONSHIP MODEL** · **CLIENT FINANCIAL AUTHORITY: CONTEXT ONLY** · **ADVANCE/CARI REPRESENTATION: DUAL AS-IS REPRESENTATION** · **SINGLE CANONICAL BALANCE SOT: NOT SELECTED** · **`ClientStatement`: IMMUTABLE CLIENT-FACING ARTIFACT, NOT LEDGER** · **`ClientPayout`: COLLECTION RECORDING EVIDENCE, NOT BANK EXECUTION** · **PER-SUBJECT CONSENT: OPEN / NOT SELECTED** · **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 15.16 BP-07 Self-Check
+
+Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; `BalanceLedger`'ı tek canonical source-of-truth **İLAN ETMEZ**; `CaseBalance`'ı canonical collection ledger **İLAN ETMEZ**; `ClientStatement`'ı ledger **İLAN ETMEZ**; `ClientPayout`'u bank execution proof olarak **GÖSTERMEZ**; `OfficeApprovalRequest`'i execution authority olarak **GÖSTERMEZ**; Collection/Accounting authority'sini CLIENT'e **TAŞIMAZ**; per-subject consent **SEÇMEZ**; ledger-precedence / reconciliation / reversal / financial-remediation **SEÇMEZ**; teknik storage formatını normatif policy **YAPMAZ**; agent/lane bilgisi **İÇERMEZ**; yeni global financial predicate **ÜRETMEZ**; `CL-INV-001..008` / §6 / §8.A / §8.B / §11 / §12 / §13 / §14'ü değiştirmez; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
