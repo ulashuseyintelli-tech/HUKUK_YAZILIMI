@@ -1,0 +1,114 @@
+{
+  "contractVersion": "RCV-WS04-P03-A-V1",
+  "taskId": "RCV-P2-WS04-P03-A",
+  "enabled": false,
+  "mode": "DISABLED",
+  "canonicalSha": "",
+  "datasetManifest": {
+    "contractVersion": "RCV-WS04-P03-DATASET-V1",
+    "manifestStatus": "TEST_FIXTURE",
+    "sourceClassification": "REPRESENTATIVE",
+    "selectionShape": "DISTRIBUTIONAL_BASE_PLUS_EDGE_CASE_SUPPLEMENT",
+    "privacyBoundary": "PII_SAFE_REFERENCES_ONLY",
+    "canonicalSha": "",
+    "environmentReference": "",
+    "sessionReference": "",
+    "manifestReference": "",
+    "datasetVersion": "",
+    "selectionUniverseReference": "",
+    "selectionMethodReference": "",
+    "distributionalBaseReference": "",
+    "edgeCaseSupplementReference": "",
+    "selectionSetReference": "",
+    "recordCountReference": "",
+    "ownerReference": "",
+    "reviewReference": "",
+    "supersedesManifestReference": null,
+    "approvedAt": null,
+    "selectionReferences": [],
+    "checksum": ""
+  },
+  "preparationRequest": {
+    "contractVersion": "1",
+    "enabled": false,
+    "canonicalSha": "",
+    "environmentReference": {
+      "kind": "ENVIRONMENT",
+      "opaqueReference": "",
+      "bindingReference": ""
+    },
+    "sessionReference": {
+      "kind": "SESSION",
+      "opaqueReference": "",
+      "bindingReference": ""
+    },
+    "manifestReference": {
+      "kind": "MANIFEST",
+      "opaqueReference": "",
+      "bindingReference": ""
+    },
+    "accessAuthorizationReference": {
+      "kind": "ACCESS_AUTHORIZATION",
+      "opaqueReference": "",
+      "bindingReference": ""
+    },
+    "executionAuthorizationReference": {
+      "kind": "EXECUTION_AUTHORIZATION",
+      "opaqueReference": "",
+      "bindingReference": ""
+    }
+  },
+  "accessRecord": {
+    "authorizationStatus": "NOT_AUTHORIZED",
+    "authorizationReference": "",
+    "namedOperatorReference": "",
+    "approvedByReference": "",
+    "purpose": "REPRESENTATIVE_ALLOCATION_REPLAY",
+    "sourceAccess": "READ_ONLY",
+    "startsAt": null,
+    "endsAt": null,
+    "datasetManifestChecksum": ""
+  },
+  "executionRecord": {
+    "authorizationStatus": "NOT_AUTHORIZED",
+    "authorizationReference": "",
+    "approvedByReference": "",
+    "purpose": "REPRESENTATIVE_ALLOCATION_REPLAY",
+    "singleRun": true,
+    "startsAt": null,
+    "endsAt": null,
+    "canonicalSha": "",
+    "datasetManifestChecksum": ""
+  },
+  "environmentSession": {
+    "approvalStatus": "DRAFT",
+    "approvedByReference": "",
+    "locality": "LOCAL_OWNER_PC_OFFICE",
+    "environmentReference": "",
+    "sessionReference": "",
+    "canonicalSha": "",
+    "database": {
+      "attestationStatus": "UNVERIFIED",
+      "attestationReference": "",
+      "transactionReadOnly": "unverified",
+      "isolationLevel": "unverified",
+      "verifiedAt": null
+    },
+    "network": {
+      "attestationStatus": "UNVERIFIED",
+      "attestationReference": "",
+      "boundary": "UNVERIFIED",
+      "enforcement": "UNVERIFIED",
+      "verifiedAt": null
+    }
+  },
+  "output": {
+    "ownerControlledRoot": "",
+    "outputPath": "",
+    "writeMode": "CREATE_ONCE",
+    "locality": "OWNER_CONTROLLED_LOCAL",
+    "contentBoundary": "PII_SAFE_EVIDENCE_ONLY"
+  },
+  "productionObservation": "NOT_AUTHORIZED",
+  "checksum": ""
+}
