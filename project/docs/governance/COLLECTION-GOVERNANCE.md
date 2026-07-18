@@ -99,7 +99,7 @@ REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ek
 | Receipt / Tahsilat Girişi | Paranın/değerin sisteme girdiği fact | CURRENT |
 | Collection | Receipt'in bağlam, statü, belge ve işlem taşıyıcısı | CURRENT |
 | Internal Confirmation | Sistem içi kayıt onayı; banka finality değildir | CURRENT |
-| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — LIFECYCLE + HYBRID TYPED EVIDENCE CONTRACT RECORDED / PENDING CANDIDATE INGRESS + UNSETTLED ADMISSION GUARD + TYPED EVIDENCE SCHEMA FOUNDATION PRESENT / RUNTIME WRITER-TRANSITION ABSENT (COL/OD-06 Option A + COL/OD-06A; W2.2A/B/C-0/C-1) |
+| External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — LIFECYCLE + HYBRID TYPED EVIDENCE CONTRACT RECORDED / PENDING CANDIDATE INGRESS + UNSETTLED ADMISSION GUARD + TYPED EVIDENCE + FINALITY PROJECTION SCHEMA FOUNDATIONS PRESENT / PERMISSION-WRITER-TRANSITION ABSENT (COL/OD-06 Option A + COL/OD-06A; W2.2A/B/C-0/C-1/C-2) |
 | Legal Allocation | Tahsilatın alacak bileşenlerine hukuki uygulanması | CURRENT (REC-AUTH-011) |
 | TBK100 Allocation | Masraf→fer'i→işlemiş faiz→anapara deterministic mahsup | CURRENT (REC-GOV §9.2 — norm oradadır) |
 | Client Disposition | Tahsilatın müvekkil/ofis dağıtım kararı | CURRENT (TM3) |
@@ -485,7 +485,7 @@ Collection(confirmed)
   → CLIENT_PAYABLE → ClientPayout (idempotent + approval; COL/OD-21)
 ```
 
-## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; PENDING ingress + unsettled admission guard present, transition/evidence runtime absent)
+## 7.3. TARGET lifecycle contract (COL/OD-06 Option A; PENDING ingress + admission guard + evidence/finality projection foundations present, permission/writer/transition runtime absent)
 
 1. **Candidate boundary:** Harici banka/provider hareketi doğrulanıp yetkili eşleştirme
    yapılana kadar Integration tarafında non-canonical candidate'dır. Candidate durumları
@@ -538,12 +538,21 @@ Collection(confirmed)
     Backfill ve yeni evidence modelinde raw provider payload alanı yoktur. Schema varlığı runtime
     evidence writer, `bank.settlement.verify` enforcement, candidate transition veya Collection
     admission authority'si üretmez.
-11. **Execution gate:** COL/OD-06 contract'ı `RECORDED`; W2.2A schema foundation, W2.2B
+11. **Candidate finality projection schema boundary:** W2.2C-2 PR #1377 / squash
+    `fcba6d989c8d6699e540e4d37a4b00b85a85fcc8`, nullable/defaultsuz
+    `BankTransaction.externalSettledAt` provenance alanını additive olarak eklemiştir. Legacy
+    `NULL` korunur; default, backfill veya tarih tahmini yoktur. W2.2C-1'in nullable/defaultsuz
+    tenant-safe settlement-evidence relation'ı değiştirilmeden korunur ve cross-tenant evidence
+    bağlama fail-closed kalır. `externalSettledAt`, COL-TIME-001 `effectiveDate` authority'si
+    değildir. Schema varlığı runtime evidence writer, verifier permission consumer, candidate
+    transition veya Collection admission authority'si üretmez.
+12. **Execution gate:** COL/OD-06 contract'ı `RECORDED`; W2.2A schema foundation, W2.2B
     PENDING ingress ve W2.2C-0 admission guard `CLOSED / CANONICAL`dır. COL/OD-06A ile
-    settlement evidence authority kaydedilmiş ve W2.2C decision gate sağlanmıştır. W2.2C-1,
-    approved reconciliation merge'iyle `CLOSED / CANONICAL` olur; runtime evidence writer,
-    verifier permission consumer ve candidate transition hâlâ yoktur. `W2.2C-2` yalnız sonraki
-    owner-gated adaydır ve W2.3 W2.2 boundary uygulanıp kanıtlanana kadar blokludur.
+    settlement evidence authority kaydedilmiş ve W2.2C decision gate sağlanmıştır. W2.2C-1
+    `CLOSED / CANONICAL`dır; W2.2C-2 approved reconciliation merge'iyle
+    `CLOSED / CANONICAL` olur. Runtime evidence writer, verifier permission consumer ve
+    candidate transition hâlâ yoktur. `W2.2C-3` yalnız sonraki owner-gated adaydır ve W2.3
+    W2.2 boundary uygulanıp kanıtlanana kadar blokludur.
     Refund/downstream reversal ve claim satisfaction/re-open paketleri kendi owner kararları
     kapanmadan CURRENT ilan edilemez.
 
@@ -576,11 +585,12 @@ Collection(confirmed)
    evidence olamaz.
 9. **Execution status:** COL/OD-06A `RECORDED`; W2.2C decision gate sağlanmıştır.
    `W2.2C-1 — Typed Settlement Evidence Additive Schema Foundation`, PR #1369 /
-   `e7d2f11d` kanıtıyla approved reconciliation merge'i üzerine `CLOSED / CANONICAL` olur.
-   Runtime permission consumer, evidence writer, status transition ve Collection admission
-   hâlâ yoktur. `W2.2C-2` yalnız owner-gated sıradaki adaydır; W2.2D/W2.2E/W2.3 veya başka
-   runtime implementation bu kapanışla yetkilendirilmez. COL-RISK-G03
-   `OPEN — RUNTIME WRITER / TRANSITION ABSENT` kalır.
+   `e7d2f11d` kanıtıyla `CLOSED / CANONICAL`dır. `W2.2C-2 — Candidate Finality Projection
+   Schema`, PR #1377 / `fcba6d98` kanıtıyla approved reconciliation merge'i üzerine
+   `CLOSED / CANONICAL` olur. Runtime permission consumer, evidence writer, status transition
+   ve Collection admission hâlâ yoktur. `W2.2C-3` yalnız owner-gated sıradaki adaydır;
+   W2.2D/W2.2E/W2.3 veya başka runtime implementation bu kapanışla yetkilendirilmez.
+   COL-RISK-G03 `OPEN — PERMISSION / WRITER / TRANSITION ABSENT` kalır.
 
 ---
 
