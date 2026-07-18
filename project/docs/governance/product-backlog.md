@@ -1954,6 +1954,28 @@ PR #407 `HOLD / DO NOT MERGE`; rebase/close yetkisi yoktur. Amendment canonical 
 sonra yalnız ayrı owner-gated read-only semantic triage yapılabilir. **CURRENT NEXT: PR #407
 POST-AMENDMENT SEMANTIC TRIAGE — OWNER GO REQUIRED.**
 
+**RCV-P2-WS04-PR407-RD01-R01 Balance Exposure Contract Ratification (2026-07-19;
+CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner, PR #407 disposition'ını
+`COORDINATED REDESIGN REQUIRED` olarak ratifiye etmiş; code extraction'ı `NONE`, reusable
+input'u yalnız business rules/test scenarios olarak sabitlemiştir. Stable
+`bucketContextKey`, snapshot-specific `bucketInstanceId`den ayrıdır. `LegalApplication`
+bucket context + application-time snapshot + rule version + effective time üzerinde receipt
+effect fact'i; `ApplicationAttribution` ayrı/non-authoritative lineage fact'idir.
+
+Her currency ve MASRAF/FERİ/FAİZ/ANA PARA kategorisi için gross/applied/remaining exposure
+exact-cent reconcile edilir; held receipt exposure dışıdır. Missing/stale context typed
+`null` ve fail-closed availability üretir. Public projection yalnız category-level
+per-currency toplamdır; sub-bucket/source trace restricted diagnostic'tir. Authority enum
+`SHADOW_ONLY/CANONICAL/LEGACY_COMPATIBILITY`, current value `SHADOW_ONLY`dır. Legacy
+deprecation explicit cutover gate'ine bağlıdır; shadow UI normal kullanıcı primary
+display'ına açılmaz.
+
+PR #407 `OPEN / HOLD / DO NOT MERGE / DO NOT REBASE / DO NOT CLOSE YET` kalır. Historical
+P01–P03-A closure/amendment kayıtları korunur. Target persistence analysis yalnız
+`READ-ONLY AUTHORIZED`; schema/migration design/implementation, runtime/API, data/replay,
+consumer switch ve cutover `NOT AUTHORIZED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN` kalır.
+**NEXT ELIGIBLE ACTION: TARGET PERSISTENCE READ-ONLY DESIGN ANALYSIS — OWNER GO REQUIRED.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

@@ -8,7 +8,7 @@
 Belge Durumu: CANONICAL
 Belge Sınıfı: DOMAIN GOVERNANCE
 Üst Otorite: SYSTEM-CONSTITUTION
-Version: 1.1
+Version: 1.2
 Canonical Path: project/docs/governance/RECEIVABLE-GOVERNANCE.md
 Owner Status: RATIFIED — BINDING
 Repository Status: CANONICAL UPON APPROVED MERGE TO MAIN
@@ -541,6 +541,82 @@ Aynı kategori içinde currency, legal basis, effective date, interest rule veya
 bağlamı farklıysa ayrı calculation sub-bucket korunur. Bu bağlamlardan biri eksikken
 bucket'lar tahminle birleştirilemez.
 
+### 9.2.1. RD01 LegalCalculationBucket ve balance-exposure contract'ı
+
+**REC-ALLOC-007 — Bucket context ile snapshot instance ayrı kimliklerdir.**
+
+```text
+bucketContextKey =
+  category
+  + subcategory
+  + currency
+  + legalBasisRef
+  + effectiveDate/period
+  + interestRuleRef
+  + priority
+
+bucketInstanceId =
+  tenantId
+  + caseId
+  + canonicalSnapshotRef
+  + asOfDate
+  + calculationRuleVersion
+  + bucketContextKey hash
+```
+
+`bucketContextKey` stable hukuki bağlamı, `bucketInstanceId` belirli hesaplama snapshot'ını
+tanımlar. Her bucket `sourceLineageSetRef`, currency minor-unit bilgisi ve
+gross/applied/remaining tutarlarını taşır. ClaimItem id bu anahtarlardan biri veya
+legal-application target'ı değildir.
+
+**REC-ALLOC-008 — Gross, applied ve remaining exposure aynı bağlamda reconcile edilir.**
+
+Her currency için MASRAF, FERİ, FAİZ ve ANA PARA ayrı category olarak korunur:
+
+```text
+remainingAmountMinor
+= grossAmountMinor - netAppliedAmountMinor
+
+receiptAmountMinor
+= Σ LegalApplication.appliedAmountMinor + heldRemainderMinor
+```
+
+Cross-currency aggregate veya conversion yapılmaz. Held/unapplied receipt amount legal
+exposure'a eklenmez. Eksik context, currency, snapshot, rule version veya lineage
+referansı `0` değildir; typed `null` ile `UNAVAILABLE`, `NOT_COMPARABLE`, `STALE` veya
+`FAIL_CLOSED` sonucu üretir.
+
+**REC-ALLOC-009 — LegalApplication ve ApplicationAttribution contract'ları ayrıdır.**
+
+`LegalApplication` en az receipt fact referansı, `bucketContextKey`, application-time
+snapshot, effective time, application sequence, rule version, applied exact-cent amount,
+before/after bucket state ve varsa linked reversal referansı taşır. Held remainder tekil
+application değil receipt/application-batch seviyesindedir.
+
+`ApplicationAttribution` application sonucunu ClaimItem/source lineage'a açıklayan ayrı,
+non-authoritative fact'tir. Amount-based attribution varsa attribution tutarları exact-cent
+olarak application tutarıyla reconcile edilir; attribution payment, bucket veya legal
+application authority'si üretemez. Attribution eksikliği bucket-level application'ı
+otomatik hükümsüz kılmaz. Bununla birlikte zorunlu trace/provenance eksikse projection
+primary-eligible olamaz ve source-level açıklama `AVAILABLE` gösterilemez.
+
+**REC-ALLOC-010 — Public projection category-level ve fail-closed'dur.**
+
+Public projection yalnız per-currency/category gross/applied/remaining toplamları,
+tenant/case, as-of, snapshot/input hash, engine/rule/policy version, authority,
+availability, provenance ve diagnostic bilgisi taşır. Sub-bucket/source trace restricted
+diagnostic yüzeyinde kalır; raw lineage/PII public contract'a sızamaz.
+
+```text
+availability = AVAILABLE | UNAVAILABLE | NOT_COMPARABLE | STALE | FAIL_CLOSED
+authority    = SHADOW_ONLY | CANONICAL | LEGACY_COMPATIBILITY
+current      = SHADOW_ONLY
+```
+
+`AVAILABLE`, authority promotion anlamına gelmez. Legacy field'lar breaking rename olmadan
+korunur; deprecation yalnız explicit cutover gate'iyle tamamlanır. Shadow projection normal
+kullanıcı primary display'ına açılamaz; restricted diagnostic olarak kalır.
+
 ## 9.3. TBK101/102 sınırı
 
 TBK101/102 standart manuel workflow'da otomatik dosyalar-arası allocator değildir.
@@ -579,6 +655,12 @@ Future interest base
   borç bucket'ıdır.
 - Takipten sonra işleyecek faiz `InterestPolicy` / calculation rule'dur; sabit tutarlı
   ClaimItem veya legal-application target'ı olarak modellenmez.
+- Takip sonrası as-of tarihine kadar policy ile deterministik hesaplanmış faiz,
+  `InterestPolicy` ve period/rule context'ine bağlı calculation sub-bucket exposure'ıdır;
+  source ClaimItem değildir. As-of sonrasındaki henüz işlememiş faiz yalnız policy'dir ve
+  monetary exposure olarak gösterilemez.
+- Pre-enforcement ve post-enforcement accrued-interest sonuçları ayrı gross/applied/remaining
+  bileşenler olarak reconcile edilir.
 - Faize faiz yalnız açık hukuki dayanak ve ratifiye policy varsa uygulanabilir.
 - Faiz segmentleri tarih aralıklarına ayrılmalıdır.
 - Takip öncesi ve takip sonrası faiz ayrımı policy/ADR ile tanımlıysa deterministic uygulanmalıdır.
@@ -1297,6 +1379,22 @@ Balance Engine cutover, WS05 ve WS06 hard-hold'dadır.
 PR #407 `HOLD / DO NOT MERGE`dir. Amendment canonical olduktan sonra ayrı salt-okunur
 semantic triage yapılmadan PR rebase, safe-patch extraction, close veya redesign kararı
 verilemez.
+
+## 23.5. RD01 balance-exposure contract ratifikasyonu — 2026-07-19
+
+Owner, PR #407 disposition'ını `COORDINATED REDESIGN REQUIRED` olarak ratifiye etmiştir.
+PR'ın production code hunk'ları rebase, cherry-pick veya safe-patch extraction ile
+taşınmayacaktır; yalnız gross/remaining ayrımı, remaining principal'ın
+`totalDue-interest` ile uydurulmaması, interest-only application'ın principal'ı
+azaltmaması, application yoksa aynı context içinde gross=remaining ve projection'ın
+side-effect-free olması iş kuralları yeniden kullanılabilir.
+
+RD01 contract'ı `REC-ALLOC-007..010` ile canonicalizedır. Public projection
+per-currency/category-level ve fail-closed; sub-bucket/source trace restricted diagnostic;
+Balance Engine current authority `SHADOW_ONLY`dır. PR #407 `OPEN / HOLD / DO NOT MERGE /
+DO NOT REBASE / DO NOT CLOSE YET` kalır. Target persistence analysis yalnız
+`READ-ONLY AUTHORIZED`; schema/migration design veya implementation, runtime/API,
+consumer switch ve cutover `NOT AUTHORIZED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN` kalır.
 
 ---
 

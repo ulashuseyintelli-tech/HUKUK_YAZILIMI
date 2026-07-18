@@ -104,6 +104,38 @@ amendment becomes canonical, a separate read-only semantic triage may classify i
 as `SUPERSEDED / CLOSE`, `PARTIALLY REUSABLE — SAFE PATCH EXTRACTION`, or
 `COORDINATED REDESIGN REQUIRED`.
 
+## RD01 Balance Exposure Projection Contract — 2026-07-19
+
+Owner disposition for PR #407 is `COORDINATED REDESIGN REQUIRED`. No production code hunk
+may be rebased, cherry-picked, or extracted; only its business-rule scenarios may inform
+the redesigned contract. PR #407 remains `OPEN / HOLD / DO NOT MERGE / DO NOT REBASE /
+DO NOT CLOSE YET`.
+
+The target logical contract separates stable `bucketContextKey` from snapshot-specific
+`bucketInstanceId`. The stable key binds category/subcategory, currency, legal basis,
+effective date/period, interest rule and priority. The instance binds that context to
+tenant/case, canonical Receivable snapshot, as-of date and calculation-rule version.
+`sourceLineageSetRef` is mandatory; ClaimItem identity is not the application target.
+
+Gross, legally applied and remaining exposure are reconciled per currency and category in
+minor units. Costs, ancillaries, accrued interest and principal remain separate;
+held/unapplied receipt is outside legal exposure. `LegalApplication` binds receipt effect
+to bucket context plus the application-time snapshot, rule version and effective time.
+`ApplicationAttribution` remains a separate, non-authoritative lineage fact; missing
+attribution does not automatically void bucket-level application, but incomplete
+trace/provenance prevents primary-eligible projection.
+
+Public projection is limited to per-currency/category totals. Sub-bucket/source trace is
+restricted diagnostic evidence. Missing or stale context returns typed `null` and
+`UNAVAILABLE`, `NOT_COMPARABLE`, `STALE` or `FAIL_CLOSED`; it never returns a fabricated
+zero. Projection authority vocabulary is
+`SHADOW_ONLY | CANONICAL | LEGACY_COMPATIBILITY`, while the current Balance Engine value
+remains only `SHADOW_ONLY`. Legacy deprecation, authority promotion, consumer switch and
+cutover require explicit later gates.
+
+Target persistence analysis is read-only authorized. Persistence/schema/migration design
+and implementation remain unauthorized. ACT-28 and REC-AUTH-011/012 remain open.
+
 ## Normative Rules
 
 ### MUST
@@ -529,3 +561,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-11 | 2.3 | PR-9 governance closure: the existing Wave 0 scenario contract now drives a 12-scenario golden fixture matrix via PR #1132 / squash `6ca5b6333abdc288bb6001e794230501fb1178f6`. Unit and disposable-PostgreSQL observations use one cent-normalized expected contract, exact twin comparison and repeatability gate; blocker coverage is 5/5. Runtime calculation, schema/migration, writer, API/UI, official snapshot and financial authority remain unchanged. PR-10 becomes next eligible only after this separate register closure. |
 | 2026-07-12 | 2.4 | PR-10 governance closure: PR #1137 / squash `681203fad25ffd6e2e51f3c92e4656b0c853a6f8` adds a typed, additive, shadow-only calculation-summary compatibility adapter while preserving every legacy field. Canonical per-currency balance, fee status, blocker/readiness, trace and non-official snapshot evidence remain lossless; conflicts fail closed. Consumer switch, primary authority promotion and runtime cutover remain unauthorized. The next eligible step is the owner-gated cutover-authorization decision; PR-11 does not start automatically. |
 | 2026-07-18 | 2.5 | Allocation-authority amendment: ClaimItem source/input is separated from target `LegalCalculationBucket`; `LegalApplication` and `ApplicationAttribution` are distinct; current ClaimItem-keyed Ledger persistence is legacy AS-IS rather than target authority. Balance Engine remains TARGET/SHADOW_ONLY; P01/P02 require amendment, P03 is superseded/redesign-required, P03-A remains safety infrastructure only, P03-B must not execute. PR #407 is HOLD/DO NOT MERGE. Schema/migration design, data/replay, PR-11 and cutover remain unauthorized. |
+| 2026-07-19 | 2.6 | RD01 balance-exposure contract: stable bucket context and snapshot instance are separated; per-currency/category gross-applied-remaining amounts, LegalApplication identity, non-authoritative attribution, typed-null/fail-closed availability and restricted sub-bucket/source trace are ratified. PR #407 remains OPEN/HOLD; current authority remains SHADOW_ONLY; target persistence analysis is read-only authorized, design/implementation/cutover are not. |
