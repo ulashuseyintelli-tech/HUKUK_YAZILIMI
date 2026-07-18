@@ -89,9 +89,11 @@ Kurallar: "tam kapsam tek Contract için büyükse" first-slice re-scope emsali 
 
 ## 5. Entry Conditions for Decomposition
 
+**Kanıt-hazırlık notu:** Tur 2 tarihsel ontoloji kanıtının güncel repository gerçeğiyle uzlaştırılması **COMPLETE**'tir (2026-07-17, decision-log § "TUR 2 CANONICAL EVIDENCE RECONCILIATION DISPOSITION"; kanıt `OFFICE-PHASE2-MASTER-SYNTHESIS.md §5a`). Bu uzlaştırma NON-NORMATIVE evidence disposition'dır; hiçbir entry-gate'i otomatik PASS yapmaz, hiçbir iş birimi seçmez/başlatmaz ve ENTRY-03'ü açık bırakır.
+
 ### `OFF-P2-ENTRY-01` — Bu 4-belgelik setin owner text-ratification'ı (decision-log kaydıyla) tamamlanmıştır. **DURUM: PASS** (2026-07-17, decision-log § "OFFICE Phase 2 Constitutional Foundation Owner Text-Ratification").
 ### `OFF-P2-ENTRY-02` — Set approved merge ile repository-canonical olmuştur ve GOVERNANCE-INDEX Bölüm 2 + README kayıtları yapılmıştır. **DURUM: PASS** (kuruluş merge PR #1359 `20423d4a`; INDEX/README authority kaydı ratifikasyon PR'ıyla).
-### `OFF-P2-ENTRY-03` — Owner, decomposition için açık GO-ANALYZE brief'i vermiştir (bu belge o brief'in yerine geçmez). **DURUM: OPEN** — ayrı decomposition GO-ANALYZE brief'i gereklidir; verilmemiştir.
+### `OFF-P2-ENTRY-03` — Owner, decomposition için açık GO-ANALYZE brief'i vermiştir (bu belge o brief'in yerine geçmez). **DURUM: OPEN** — ayrı decomposition GO-ANALYZE brief'i gereklidir; verilmemiştir. (Tur 2 evidence reconciliation'ın tamamlanmış olması bu koşulu KARŞILAMAZ.)
 
 Üç koşul da sağlanmadan hiçbir Phase 2 iş birimi tanımlanamaz; ENTRY-03 açık olduğundan **PHASE 2 DECOMPOSITION: NOT STARTED**. Koşulların sağlanması bu belgeyle DEĞİL, her biri kendi kaydıyla kanıtlanır. (Decomposition kayıtlarının yaşayacağı delivery yüzeyinin belirlenmesi de ratifikasyon sonrası ayrı bir owner tasarrufudur — `OFF-P2-GOV-03`.)
 
