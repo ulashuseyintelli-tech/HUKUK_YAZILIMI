@@ -3,7 +3,7 @@
 ```text
 Belge kimliği           : SYS-CONST-001
 Canonical path          : project/docs/governance/SYSTEM-CONSTITUTION.md
-Version                 : 1.0
+Version                 : 1.1
 Owner status            : RATIFIED — BINDING
 Repository status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Canonical effective date: Approved merge date
@@ -13,7 +13,8 @@ Execution authority     : Ayrı eksen; AGENTS.md ve geçerli repository/tool pol
 ```
 
 Bu belge mevcut dosya yolunu koruyarak PR #1139 ile eklenen kısa governance çatısını
-Canonical System Governance v1.0 içinde reconcile eder. PR #1139 ve PR #1140 tarihsel
+Canonical System Governance v1.0 içinde reconcile eder; v1.1 allocation-authority
+amendment'ını aynı canonical path'te taşır. PR #1139 ve PR #1140 tarihsel
 olarak geçerli kayıtlardır; içerikleri veya o tarihlerdeki owner kararları geriye dönük
 olarak yanlışlanmaz. Bu sürüm, daha sonraki owner ratifikasyonunun bağlayıcı semantik
 sonucudur ve repository etkisini yalnız approved merge ile kazanır.
@@ -198,7 +199,10 @@ veya creditor disposition üretemez.
 ### `SYS-GOV-017 — RECEIVABLE Sınırı`
 RECEIVABLE claim item, legal basis/version, principal/interest/cost buckets,
 deterministic calculation ve legal-allocation debt buckets sahibidir. Cash receipt,
-payout veya journal posting sahibi değildir.
+payout veya journal posting sahibi değildir. `ClaimItem` legal receivable source,
+provenance ve calculation input'tur; receipt'in doğrudan payment/legal-application
+target'ı değildir. Target legal-application grain'i canonical Receivable snapshot'tan
+üretilen `LegalCalculationBucket`tır.
 
 ### `SYS-GOV-018 — COLLECTION Sınırı`
 COLLECTION receipt, cash provenance, idempotency, reversal/refund başlangıcı ve legal
@@ -354,7 +358,7 @@ yükümlülüğünü tek başına değiştirmez. `SettlementOffer` bağlamı aç
 |---|---|---|---|---|---|
 | Creditor authority | `CaseClient` / creditor set | CLIENT/creditor relation owner | Creditor/disposition views | `Case.clientId` financial authority olamaz | `CURRENT`; DBIND evidence; değişiklik açık supersession ister |
 | Collection Receipt | Current `Collection` receipt path | COLLECTION owner | Receipt/timeline/report views | Bank mock, event veya projection receipt yazamaz | `CURRENT PARTIAL`; idempotency+provider+tenant gates |
-| Legal Allocation / TBK 100 | Current `LedgerEntry`/`LedgerAllocation`; TBK 100 legal rule authority | RECEIVABLE/COLLECTION legal-allocation owner | Balance/allocation projections | `CollectionAllocation`, disposition veya journal legal allocation olamaz | `CURRENT WITH OPEN RECONCILIATION`; TM3, ACT-28, legal tests |
+| Legal Allocation / TBK 100 | Current AS-IS/legacy persistence: `LedgerEntry`/ClaimItem-keyed `LedgerAllocation`; target fact: `LegalApplication` on `LegalCalculationBucket` | RECEIVABLE calculation/policy owner + COLLECTION receipt execution boundary; target persistence owner not yet implemented | `ApplicationAttribution`, `CollectionAllocation` compatibility projection, deprecated `ClaimItem.collectedAmount` cache ve balance projections | ClaimItem, `LedgerAllocation`, `CollectionAllocation`, attribution, cache, disposition veya journal target legal-application authority olamaz | `CURRENT WITH OPEN RECONCILIATION / TARGET SHADOW_ONLY`; ACT-28, REC-AUTH-011/012; schema/migration likely required but unauthorized |
 | Canonical receivable balance | Current legacy production views; target ADR-014 canonical core | Current owner until cutover; target calculation owner after gate | Shadow/compatibility/display DTO | Shadow adapter, frontend/report alternate calculation authority olamaz | `TARGET / SHADOW_ONLY`; ADR-014 owner-gated cutover |
 | Creditor Disposition | Current `CollectionDisposition` + lines | Approval-gated CLIENT/COLLECTION disposition owner | Client statement/disposition views | Receipt veya `clientId` entitlement/disposition authority olamaz | `CURRENT PARTIAL`; DBIND/TM3+reversal reconciliation |
 | Payout / Offset | Current payout/offset command paths | Authorized money-out/offset owner | Statement/payment views | Disposition draft veya journal line para çıkışı değildir | `CURRENT PARTIAL`; approval+idempotency+reversal gates |
@@ -380,6 +384,23 @@ legal allocation, disposition, payout veya journal approval'ını ima etmez.
 ### `SYS-FIN-003 — Legal Allocation Hukuki Uygulamadır`
 Legal Allocation tahsilatın canonical receivable buckets'a TBK 100 ve geçerli hukuki
 kurallarla uygulanmasıdır; creditor disposition değildir.
+
+### `SYS-FIN-011 — Legal Application Grain ve Attribution Ayrıdır`
+Target legal application, canonical Receivable snapshot'tan üretilen
+`LegalCalculationBucket`lara uygulanır. Canonical sıra
+`MASRAF → FERİ → FAİZ → ANA PARA`dır. Aynı kategori içindeki currency, legal basis,
+effective date, interest rule veya priority bağlamı farklıysa ayrı calculation
+sub-bucket korunur.
+
+`LegalApplication` receipt'in legal bucket üzerindeki hukuki etkisidir.
+`ApplicationAttribution` bu etkinin `ClaimItem` ve source lineage açıklamasıdır; target
+ve attribution aynı fact değildir. ClaimItem-keyed `LedgerAllocation` mevcut AS-IS
+persistence kanıtıdır, target legal authority ratifikasyonu değildir.
+
+Takip tarihine kadar işlemiş ve tutarı belirli faiz `ACCRUED_INTEREST` sabit hukuki
+borç bucket'ıdır. Takipten sonra işleyecek faiz `InterestPolicy` / calculation rule'dur;
+sabit tutarlı ClaimItem veya application target'ı olarak modellenemez. Faize faiz yalnız
+açık hukuki dayanakla uygulanabilir.
 
 ### `SYS-FIN-004 — Disposition Creditor Kullanım Kararıdır`
 Creditor Disposition proceeds'in hak sahibi, amaç ve approval bağlamında ayrılmasıdır;
@@ -776,6 +797,7 @@ kanıtla güncellenir.
 | Short-form, PR #1139, 2026-07-12 | Governance çatısı aynı canonical path'e eklendi | Tarihsel short-form; v1.0 tarafından içerik bakımından superseded |
 | PR #1140, 2026-07-12 | Post-merge bookkeeping; Constitution/Index `PROPOSED` kaldı | O tarihteki owner kararını doğru yansıtan valid historical record |
 | v1.0, later owner decision | Canonical System Governance owner tarafından ratifiye edildi | `RATIFIED — BINDING`; repository effect approved merge ile başlar |
+| v1.1, 2026-07-18 | RCV-P2-WS04 allocation-authority amendment; PR #407 `HOLD / DO NOT MERGE` | ClaimItem source/input ile target `LegalCalculationBucket` application grain'i ayrıldı; `LegalApplication ≠ ApplicationAttribution`; current Ledger persistence ile target authority ayrıştırıldı. Runtime, schema/migration ve cutover yetkisi üretmez. |
 ---
 ## Son Hüküm
 

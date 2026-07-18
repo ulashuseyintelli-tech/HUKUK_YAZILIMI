@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 closed; next eligible step is the owner-gated cutover-authorization decision; PR-11 and runtime cutover remain unauthorized
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE; target persistence design, PR-11 and runtime cutover remain unauthorized
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -13,7 +13,10 @@
 
 The owner decision is final:
 
-- Canonical `computeBalance` / `ClaimItem` + TBK100 + Interest Engine is the long-term single calculation authority for claim, case, and enforcement balance.
+- Canonical Balance Engine + Receivable snapshot + `LegalCalculationBucket` + TBK100 +
+  Interest Engine is the long-term target single calculation authority for claim, case,
+  and enforcement balance. ClaimItem is legal source/provenance/calculation input, not
+  the target legal-application grain.
 - Legacy `getCalculationSummary` is not long-term production authority.
 - Immediate clean-break cutover is blocked until the canonical hardening PR chain passes.
 - Production dual-authority balance is prohibited.
@@ -32,9 +35,12 @@ Every production-displayed balance must be derived from the same canonical pipel
 
 ```text
 Case / legal obligation data
--> ClaimItem / legal component model
+-> ClaimItem legal source / provenance / calculation input
+-> canonical Receivable snapshot
+-> LegalCalculationBucket model
 -> case-scoped payment entry
--> intra-case TBK100 allocation
+-> intra-case TBK100 LegalApplication
+-> ApplicationAttribution to ClaimItem/source lineage
 -> interest base mutation
 -> interest engine
 -> currency-aware legal balance
@@ -48,6 +54,55 @@ Case / legal obligation data
 `computeBalance` is necessary but not sufficient by itself. Production authority requires the surrounding legal, trace, currency, fee, and DTO contracts.
 
 **Scope boundary note (owner arbitration, 2026-07-10):** Fee Projection and the trace/AllocationLog/Snapshot layer below are pipeline steps *within this document's own CCB-001 scope* (unchanged from v1.0 — see Blocker Classification and Required PR Sequence). This is a narrower claim than "ADR-013's Fee/Harç/Snapshot/Journal architecture" — that is a separate, related but distinct draft owner-review architecture line, not a subsumed part of this document. See the Naming note above for the full history of this distinction.
+
+## Allocation Authority Amendment — 2026-07-18
+
+This amendment supersedes the target-authority interpretation that treated
+ClaimItem-keyed `LedgerAllocation` as the target persisted legal allocation authority.
+It does not erase or invalidate historical implementation/closure evidence.
+
+1. `ClaimItem` is the legal receivable source, provenance source, and calculation input.
+   It is not a direct payment or legal-application target.
+2. The target legal-application grain is `LegalCalculationBucket`, produced from a
+   canonical Receivable snapshot.
+3. The canonical order remains
+   `MASRAF → FERİ → FAİZ → ANA PARA`. Different currency, legal basis, effective date,
+   interest rule, or priority contexts remain separate calculation sub-buckets.
+4. `LegalApplication` is the receipt's legal effect on a calculation bucket.
+   `ApplicationAttribution` explains that result against ClaimItem/source lineage.
+   These are separate facts.
+5. ClaimItem-keyed `LedgerAllocation` remains current AS-IS/legacy persistence and is not
+   ratified as target legal authority.
+6. `CollectionAllocation` remains compatibility projection only and cannot be legal or
+   fallback authority.
+7. `ClaimItem.collectedAmount` is a deprecated, non-authoritative derived cache. New
+   consumers are prohibited.
+8. Accrued and determinable interest through the enforcement date is an
+   `ACCRUED_INTEREST` debt bucket. Future interest is an `InterestPolicy`/calculation
+   rule, not a fixed-amount ClaimItem. Compound interest requires explicit legal basis.
+9. The Balance Engine is the target canonical legal-calculation authority but remains
+   `SHADOW_ONLY`. Authority promotion, consumer switch, and cutover are not authorized.
+10. Target persistence likely requires schema/migration. Design and implementation are
+    not authorized by this ADR amendment.
+
+Package disposition is append-only:
+
+```text
+WS04-P01   AMENDMENT REQUIRED
+WS04-P02   AMENDMENT REQUIRED
+WS04-P03   SUPERSEDED / REQUIRES REDESIGN
+WS04-P03-A CONFIRMED — SAFETY INFRASTRUCTURE ONLY
+WS04-P03-B SUPERSEDED / DO NOT EXECUTE
+```
+
+ACT-28 and REC-AUTH-011/012 remain open. ClaimItem-keyed synthetic corpus,
+representative replay, data access, production observation, schema/migration, cutover,
+WS05, and WS06 remain on hard hold.
+
+PR #407 is `HOLD / DO NOT MERGE`. It must not be directly rebased or merged. After this
+amendment becomes canonical, a separate read-only semantic triage may classify it only
+as `SUPERSEDED / CLOSE`, `PARTIALLY REUSABLE — SAFE PATCH EXTRACTION`, or
+`COORDINATED REDESIGN REQUIRED`.
 
 ## Normative Rules
 
@@ -473,3 +528,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-11 | 2.2 | PR-8b governance closure: deterministic allocation/interest explainability trace and an ephemeral non-official snapshot DTO are canonical via PR #1128 / squash `995333a77aba63ad8c3b093d714ba6c529f13485`. Both DTOs carry `authority=NONE` and `persisted=false`; PR-8a blocker/readiness and display authority remain unchanged. Official persistence/hash/lifecycle, schema, writer, consumer switch, new authority and runtime cutover were not introduced. PR-9 becomes next eligible only after this separate register closure. |
 | 2026-07-11 | 2.3 | PR-9 governance closure: the existing Wave 0 scenario contract now drives a 12-scenario golden fixture matrix via PR #1132 / squash `6ca5b6333abdc288bb6001e794230501fb1178f6`. Unit and disposable-PostgreSQL observations use one cent-normalized expected contract, exact twin comparison and repeatability gate; blocker coverage is 5/5. Runtime calculation, schema/migration, writer, API/UI, official snapshot and financial authority remain unchanged. PR-10 becomes next eligible only after this separate register closure. |
 | 2026-07-12 | 2.4 | PR-10 governance closure: PR #1137 / squash `681203fad25ffd6e2e51f3c92e4656b0c853a6f8` adds a typed, additive, shadow-only calculation-summary compatibility adapter while preserving every legacy field. Canonical per-currency balance, fee status, blocker/readiness, trace and non-official snapshot evidence remain lossless; conflicts fail closed. Consumer switch, primary authority promotion and runtime cutover remain unauthorized. The next eligible step is the owner-gated cutover-authorization decision; PR-11 does not start automatically. |
+| 2026-07-18 | 2.5 | Allocation-authority amendment: ClaimItem source/input is separated from target `LegalCalculationBucket`; `LegalApplication` and `ApplicationAttribution` are distinct; current ClaimItem-keyed Ledger persistence is legacy AS-IS rather than target authority. Balance Engine remains TARGET/SHADOW_ONLY; P01/P02 require amendment, P03 is superseded/redesign-required, P03-A remains safety infrastructure only, P03-B must not execute. PR #407 is HOLD/DO NOT MERGE. Schema/migration design, data/replay, PR-11 and cutover remain unauthorized. |
