@@ -13,6 +13,8 @@ import type {
  * Resmî `exchange.dtd` v1.2 şeklinden TÜRETİLMİŞ (contract-derived) DETERMİNİSTİK serializer.
  *
  * Davranış:
+ * - ID ANCHOR INTEGRITY (P02B-R1): tüm `id` anchor'ları (taraf zorunlu + alacakKalemi opsiyonel) belge
+ *   genelinde BENZERSİZ + BOŞ-OLMAYAN olmalı (official `id ID`). Boş/çift `id` → `REJECTED` (`idViolations`).
  * - UNRESOLVED-ROLE REJECTION: herhangi bir `taraf.roleResolution` `RESOLVED` değilse → `REJECTED`
  *   (XML ÜRETİLMEZ). Boş taraf listesi de `REJECTED`.
  * - Aksi hâlde official-shaped XML üretilir ve `SERIALIZED_DRAFT` döner (owner düzeltmesi: `EMITTED`
@@ -26,6 +28,8 @@ import type {
  *   `RESOLVED` resolution'dan alınır. Bu dosyada hiçbir kanonik `rolID` (21-71) değeri yoktur.
  * - Runtime wiring YOK; `PrismaService`/NestJS bağımlılığı YOK; yalnız test-reachable saf fonksiyondur.
  * - Instrument (cek/senet/police) elementleri bu iskelette KAPSAM DIŞIdır (P04-adjacent artım).
+ * - `ref`/IDREF CROSS-REFERENCE bu alt-kümede DESTEKLENMEZ: girdi tipi `ref` taşımaz, serializer `<ref>`
+ *   ÜRETMEZ. `id` yalnız ID anchor'ıdır (benzersiz/boş-olmayan garanti edilir); IDREF çözümlemesi yoktur.
  *
  * /// <remarks>
  * /// Çağrıldığı yerler:
@@ -35,7 +39,21 @@ import type {
 export function serializeOfficialExchange(
   input: OfficialExchangeInput,
 ): OfficialSerializationResult {
-  // 1) UNRESOLVED-ROLE REJECTION — her taraf RESOLVED olmalı.
+  // 1) ID ANCHOR INTEGRITY (P02B-R1) — tüm `id` anchor'ları belge genelinde BENZERSİZ + BOŞ-OLMAYAN
+  //    olmalıdır (official `id ID`). Boş/çift id → REJECTED. `ref`/IDREF cross-reference DESTEKLENMEZ.
+  const idViolations = collectIdViolations(input);
+  if (idViolations.length > 0) {
+    return {
+      status: 'REJECTED',
+      reason:
+        'Gecersiz id anchor: bos veya cift id var; official `id ID` belge genelinde benzersiz ve ' +
+        'bos-olmayan olmalidir (P02B-R1). ref/IDREF cross-reference bu alt-kumede desteklenmez.',
+      unresolved: [],
+      idViolations,
+    };
+  }
+
+  // 2) UNRESOLVED-ROLE REJECTION — her taraf RESOLVED olmalı.
   const unresolved = input.taraflar
     .filter((t) => t.roleResolution.kind !== 'RESOLVED')
     .map((t) => ({ tarafId: t.id, kind: t.roleResolution.kind }));
@@ -58,7 +76,7 @@ export function serializeOfficialExchange(
     };
   }
 
-  // 2) DETERMİNİSTİK official-shaped XML (resmî exchange.dtd v1.2).
+  // 3) DETERMİNİSTİK official-shaped XML (resmî exchange.dtd v1.2).
   const doc = create({ version: '1.0', encoding: 'ISO-8859-9' })
     .dtd({ name: 'exchangeData', sysID: 'exchange.dtd' })
     .ele('exchangeData');
@@ -188,6 +206,47 @@ function addOfficialAlacakKalemi(parent: XmlNode, kalem: OfficialAlacakKalemi): 
       )
       .up();
   }
+}
+
+/**
+ * ID ANCHOR INTEGRITY (P02B-R1): tüm `id` anchor'larını (taraf zorunlu + alacakKalemi opsiyonel)
+ * belge genelinde toplar; BOŞ (`''`) veya ÇİFT `id`'leri ihlal olarak döndürür. Deterministik:
+ * girdi sırası korunur; ilk görülen benzersiz sayılır, sonraki aynı değer `DUPLICATE_ID`.
+ * `ref`/IDREF çözümlemesi YOKTUR (cross-reference bu alt-kümede desteklenmez).
+ */
+function collectIdViolations(
+  input: OfficialExchangeInput,
+): Array<{ id: string; issue: 'EMPTY_ID' | 'DUPLICATE_ID'; source: 'taraf' | 'alacakKalemi' }> {
+  const violations: Array<{
+    id: string;
+    issue: 'EMPTY_ID' | 'DUPLICATE_ID';
+    source: 'taraf' | 'alacakKalemi';
+  }> = [];
+  const seen = new Set<string>();
+
+  const check = (id: string | undefined, source: 'taraf' | 'alacakKalemi'): void => {
+    if (id === undefined) {
+      return; // opsiyonel id yok → ihlal değil
+    }
+    if (id === '') {
+      violations.push({ id: '', issue: 'EMPTY_ID', source });
+      return;
+    }
+    if (seen.has(id)) {
+      violations.push({ id, issue: 'DUPLICATE_ID', source });
+      return;
+    }
+    seen.add(id);
+  };
+
+  for (const taraf of input.taraflar) {
+    check(taraf.id, 'taraf');
+  }
+  for (const kalem of input.alacakKalemleri ?? []) {
+    check(kalem.id, 'alacakKalemi');
+  }
+
+  return violations;
 }
 
 /** `undefined` attribute'ları eler — deterministik ve temiz XML. */
