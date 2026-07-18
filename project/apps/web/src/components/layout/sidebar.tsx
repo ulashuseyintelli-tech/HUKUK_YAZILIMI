@@ -62,6 +62,7 @@ const navigation: NavItem[] = [
   { name: "Portal Yönetimi", href: "/settings/portal", icon: Globe, disabled: false },
   { name: "Audit Log", href: "/settings/audit", icon: Shield, disabled: false },
   { name: "Hata Logları", href: "/settings/error-logs", icon: AlertTriangle, disabled: false, adminOnly: true },
+  { name: "Raporlama Hiyerarşisi", href: "/settings/reporting-lines", icon: Users, disabled: false, adminOnly: true },
   { name: "Bildirim Merkezi", href: "/settings/notifications", icon: Bell, disabled: false },
   { name: "Büro Ayarları", href: "/settings/office", icon: Settings, disabled: false },
 ];

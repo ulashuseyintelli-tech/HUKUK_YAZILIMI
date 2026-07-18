@@ -690,6 +690,20 @@ jobs:
             --testPathPattern="src/modules/client/__tests__/.*\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # CAP-02 ReportingLine Population Core (OFFICE object-scope enablement): ADMIN-only
+      # hiyerarşi yönetimi + invariant'lar (self-manager/cross-tenant/aktiflik/direkt+dolaylı
+      # döngü) + transaction/concurrency (tekil-aktif-amir, Serializable) + tarihsel kapatma +
+      # reconciliation + audit. Dar allowlist'in dışında kalır → explicit step + test -f guard
+      # (ci-narrow-allowlist stale-test gap koruması).
+      - name: ReportingLine Population Core tests (CAP-02 object-scope enablement)
+        run: |
+          cd apps/api
+          for f in src/modules/reporting-line/__tests__/reporting-line.service.spec.ts; do
+            test -f "$f" || { echo "MISSING reporting-line spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="reporting-line\.service\.spec\.ts$"
+        working-directory: project
       # MPB-028(a) PR-2: LegalDeadlineService (rejim hesaplama, snapshot immutable/supersede,
       # objectionPeriodDays validation) + TebligatService TK 21/2 correction / TK m.20 explicit-
       # override unit-static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç
