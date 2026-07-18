@@ -383,3 +383,65 @@ Mevcut otoritelere map edilir; yeni system/charter invariant ID üretilmez.
 ### 12.7 BP-02 Self-Check
 
 Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; `CaseClient`'ı **CLIENT-owned separate relationship aggregate** olarak kaydeder (Case/Client child DEĞİL, bounded context DEĞİL); `ClientPowerOfAttorney` artifact'ını **canonical mandate evidence** olarak kaydeder; flat flag'leri **legacy indicator** olarak sınırlar (evidence/authority DEĞİL); PoA revocation guard'ını **POL-A finansal predicate'i olarak GÖSTERMEZ**; relationship termination / KVKK / retention'ı **OPEN** bırakır; yeni authority/policy/role/rank/predicate/invariant-ID üretmez; `CL-INV-001..008` / §6 / §8.A / §8.B / §11'i değiştirmez; enum-only transition çıkarımı YAPMAZ; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 13. CLIENT-P1-BP-03 — Client Instruction / Declaration Provenance Map (BOUNDED CONSOLIDATION — OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-BP-03` read-only analizinin **owner-ratified bounded consolidation**'ıdır (`decision-log.md` CLIENT-P1-BP-03-GOV; **MODEL 1 — BOUNDED INSTRUCTION / DECLARATION PROVENANCE CONSOLIDATION MAP**). Mevcut kanonik AS-IS gerçekleri (AS-IS kod/schema + charter §3–§8.B + §11 + §12 + XDC-A–E + POL-A + POL-B + SYSTEM-CONSTITUTION + DBIND) ve owner semantic-boundary / provenance kararlarını **konsolide eder**; yeni domain authority, policy, taxonomy, role, rank, predicate veya lifecycle mekanizması ÜRETMEZ. §5 `CL-INV-001..008`, §6 XDC-A–E, §8.A POL-B, §8.B POL-A, §11 ve §12 metinlerini **semantik olarak değiştirmez veya yeniden yorumlamaz**. CLIENT domain kayıtlarını **yapısal/mimari konsolidasyon sözlüğü** olarak adlandırır; route/method/field-wiring/exploit detayı İÇERMEZ. **IMPLEMENTATION AUTHORITY: NONE; runtime/schema/writer-routing değişikliği ÖNERMEZ.** **FIRST-CLASS AS-IS CLIENT INSTRUCTION AGGREGATE: ABSENT / NOT CLAIMED.**
+
+### 13.1 Semantic Boundary
+
+Ayrı tutulan kavramlar: **CLIENT DECLARATION** (müvekkile atfedilen olgu/beyan/bilgi) · **CLIENT INSTRUCTION** (belirli bir subject ve beklenen işlem/sonuç hakkında müvekkile atfedilen yönlendirici irade açıklaması) · **CLIENT REQUEST** (bir işlemin değerlendirilmesi/başlatılması talebi) · **CLIENT CONSENT** (belirli bir işleme ilişkin kabul/izin fact'i) · **INTERNAL OFFICE APPROVAL** (OFFICE-controlled karar) · **MANDATE** (PoA artifact ile kanıtlanan temsil/yetki kapsamı, §12) · **TARGET-DOMAIN EXECUTION** (ilgili domain tarafından gerçekleştirilen business effect).
+
+**Canonical non-equations:** DECLARATION ≠ INSTRUCTION · INSTRUCTION ≠ CONSENT · INSTRUCTION ≠ INTERNAL OFFICE APPROVAL · INSTRUCTION ≠ MANDATE · INSTRUCTION ≠ FINANCIAL AUTHORITY · INSTRUCTION ≠ TARGET-DOMAIN EXECUTION · REQUEST ≠ APPROVAL.
+
+### 13.2 AS-IS Record Classification
+
+- **`ClientIntelStatement`** — **CLASS: STAFF-RECORDED CLIENT-ATTRIBUTED DECLARATION EVIDENCE**; POL-B ALIGNMENT: **FACT-B-LIKE RECORD**. **NOT AUTOMATICALLY:** client instruction · authenticated external-client act · consent · approval · mandate · execution authority. Precision: `createdById` = recorder/staff actor, **müvekkil principal identity DEĞİL**; `caseId` ve ilişkili creditor set **yalnız attribution context** sağlar; birden fazla `CaseClient` varsa hangi müvekkilin beyan sahibi olduğu AS-IS'te **kesin kanıtlanmayabilir**; doğrudan client/principal linkage eksikliği **OPEN provenance gap** olarak kaydedilir; bu görev schema/linkage çözümü SEÇMEZ.
+- **`ClientApprovalRequest`** — approval-request/provenance ledger; staff-recorded decision fact = POL-B FACT B; **instruction aggregate DEĞİL**; internal OFFICE approval kararının yerine geçmez.
+- **Intake promotion** — intake submission'dan promote edilen kayıt **authenticated external-client instruction sayılmaz**; staff review/promotion nedeniyle **FACT-B-like declaration evidence** olarak kalır; intake origin reference **korunması gereken provenance input**'tur; external authentication/authority **POL-C ve BP-05'e açıktır**.
+
+### 13.3 Source / Provenance Classes
+
+- **A. AUTHENTICATED EXTERNAL-CLIENT ACT** — POL-B FACT A — **AS-IS UNWIRED / OPEN.**
+- **B. STAFF-RECORDED CLIENT STATEMENT** — POL-B FACT B — **AS-IS PRESENT.**
+- **C. STAFF-PROMOTED INTAKE DECLARATION** — FACT-B-LIKE — **INTAKE PROVENANCE REQUIRED.**
+- **D. COMMUNICATION-DERIVED CLIENT ACT** — **AS-IS CANONICAL PIPELINE ABSENT / OPEN.**
+- **E. SYSTEM-DERIVED OR INFERRED DATA** — **NOT CLIENT INSTRUCTION.**
+
+**Recorder identity ile principal/client identity birbirine EŞİTLENMEZ.**
+
+### 13.4 Instruction Evidence Minimum Semantics
+
+Blueprint **target semantic map**'inde gerçek bir client instruction'ın en az şu bağlara sahip olması gerektiği kaydedilir: TENANT CONTEXT · CLIENT / PRINCIPAL ATTRIBUTION · CREDITOR-RELATIONSHIP CONTEXT (when applicable) · SUBJECT · DIRECTIVE OR REQUEST CONTENT · SOURCE / PROVENANCE CLASS · RECORDER IDENTITY (when staff-recorded) · EVENT TIME · EVIDENCE REFERENCE · CURRENT EVIDENCE STATUS. **Bu liste persistence schema / DTO / API tasarımı DEĞİLDİR; alan/kolon ekleme yetkisi OLUŞTURMAZ.**
+
+### 13.5 Evidence Lifecycle (VERIFIED AS-IS ONLY)
+
+Yalnız doğrulanmış AS-IS davranışları canonical fact: **CREATE → ACTIVE** · **ACTIVE → RETRACTED** · **ACTIVE → FALSE_POSITIVE** · **ACTIVE → SUPERSEDED (+ NEW ACTIVE RECORD)**. Precision: enum/state üyelerinden ek transition ÇIKARILMAZ; expiry transition'ı canonical DEĞİL; **retraction fiziksel silme DEĞİL**; supersession geçmiş evidence'ı yok ETMEZ; terminal state'lerden reactivation canonical DEĞİL; create authorization / actor guard ayrıntıları **target authority olarak yorumlanmaz.**
+
+### 13.6 Contradiction and Precedence
+
+AS-IS: aynı subject/category bağlamında birden fazla ACTIVE declaration bulunabilir; otomatik contradiction detection canonical DEĞİL; otomatik precedence rule canonical DEĞİL; duplicate/idempotency contract canonical DEĞİL; concurrent supersession için canonical compare-and-set contract YOK. Bunlar **veri-kalitesi ve lifecycle açık slotları**dır; bu görevde policy/implementation SEÇİLMEZ. Korunan hüküm: **MULTIPLE EVIDENCE RECORDS MAY COEXIST · COEXISTENCE ≠ EQUIVALENCE · NEWER RECORD ≠ AUTOMATIC LEGAL PRECEDENCE.**
+
+### 13.7 Cross-Domain Consumption
+
+Instruction/declaration evidence: OFFICE'e değerlendirme + approval context sağlayabilir; RECEIVABLE'a creditor context sağlayabilir (mutation authority VERMEZ); COLLECTION'a disposition context sağlayabilir (posting/money-out authority VERMEZ); DEBTOR'a client-attributed information sağlayabilir (debtor legal-status authority VERMEZ); DOCUMENT/PORTAL yüzeylerine evidence context sağlayabilir (external authority VERMEZ). **XDC-A–E tüketilir; authority CLIENT'e taşınmaz.** *(AS-IS doğrulanmış consumer: DEBTOR modülü yalnız count-read; target-domain mutation YOK.)*
+
+### 13.8 Open-Slot Register (yalnız pointer; ÇÖZÜLMEZ)
+
+- Authenticated external-client source → **BP-05 / POL-C**
+- Per-subject consent sufficiency → **BP-04**
+- Instruction subject taxonomy → **BP-03 successor owner decision**
+- Principal/client direct attribution mechanism → implementation/remediation
+- Contradiction and precedence policy → ayrı owner decision
+- Communication-derived instruction capture → **BP-05** veya ayrı bounded unit
+- Intake provenance preservation → implementation input
+- KVKK retention / anonymization / legal hold → ilgili policy section
+- Idempotency / concurrency hardening → ayrı implementation authority
+
+### 13.9 Status Precision
+
+**CLIENT-P1-BP-03: BOUNDED PROVENANCE MODEL** · **`ClientIntelStatement`: DECLARATION EVIDENCE, NOT AUTOMATICALLY INSTRUCTION** · **AUTHENTICATED EXTERNAL-CLIENT INSTRUCTION: AS-IS ABSENT / OPEN** · **DIRECT CLIENT PRINCIPAL ATTRIBUTION: AS-IS PARTIAL / GAP** · **BUSINESS-EFFECT AUTHORITY: NONE** · **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 13.10 BP-03 Self-Check
+
+Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; **first-class AS-IS client instruction aggregate'i ABSENT/NOT CLAIMED** olarak kaydeder; `ClientIntelStatement`'ı **otomatik instruction İLAN ETMEZ** (declaration evidence); recorder'ı client principal ile **EŞİTLEMEZ** (direct attribution AS-IS PARTIAL/GAP); intake promotion'ı **FACT A olarak GÖSTERMEZ**; system-derived data'yı client instruction SAYMAZ; instruction'dan business-effect authority ÜRETMEZ; yeni subject taxonomy / precedence / contradiction / consent / portal / KVKK policy SEÇMEZ; enum-only transition çıkarımı YAPMAZ; `CL-INV-001..008` / §6 / §8.A / §8.B / §11 / §12'yi değiştirmez; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
