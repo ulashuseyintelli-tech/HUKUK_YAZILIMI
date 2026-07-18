@@ -5985,6 +5985,7 @@ model BankTransaction {
 
   // Candidate lifecycle (legacy null = unknown; SETTLED olarak yorumlanmaz)
   candidateStatus      BankTransactionCandidateStatus?
+  externalSettledAt    DateTime?
   settlementEvidenceId String?
 
   // Karşı Taraf
