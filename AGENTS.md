@@ -127,6 +127,31 @@ her analiz, tasarim, implementation, migration, review veya governance gorevinde
 
 Belge hiyerarsisi ve okuma sirasi: `project/docs/governance/GOVERNANCE-INDEX.md`.
 
+## Muvekkil Hatti (Client) Zorunlu On-Kural
+
+Client/Muvekkil domain (client profile/relationship, representation/mandate, client
+instruction, client approval, client-facing visibility, fee/contract context,
+client-facing creditor identity) ile ilgili her analiz, tasarim, implementation,
+migration, review veya governance gorevinden once su okuma sirasi izlenir:
+
+1. `project/docs/governance/SYSTEM-CONSTITUTION.md` (ust cati).
+2. `project/docs/governance/CLIENT-GOVERNANCE-CHARTER.md` okunur; bu belge bounded
+   CLIENT Governance Charter'dir (FULL DOMAIN LAW DEGILDIR) ve client ownership,
+   invariants (CL-INV-001..008) ile cross-domain contract map'i konsolide eder.
+3. Uygulanabilir Domain Law'lar okunur (cross-domain gorevde `OFFICE-GOVERNANCE.md`,
+   `COLLECTION-GOVERNANCE.md`, `RECEIVABLE-GOVERNANCE.md`, `DEBTOR-GOVERNANCE.md`);
+   charter bu Domain Law'larin otoritesini yeniden sahiplenmez veya override etmez.
+4. Ilgili owner kararlari/ADR'ler (`dbind-financial-authority-decisions.md`, kabul
+   edilmis Client settlement/offset ADR'leri, `decision-log.md`) okunur; kapanmis owner
+   karari yalniz `decision-log.md`'de authoritative'dir.
+5. Task brief ve owner mode (GO-ANALYZE/GO-IMPLEMENT/GO-DOCS/GO-COMPLETE) dogrulanir.
+6. Charter'in invariant veya sinir kurallariyla celisen bir durum tespit edilirse
+   durulur ve raporlanir.
+7. Kanonik client kurallari ve mevcut Domain Law otoriteleri, ratifiye edilmis
+   governance karari olmadan override edilmez.
+
+Belge hiyerarsisi ve okuma sirasi: `project/docs/governance/GOVERNANCE-INDEX.md`.
+
 ## Raporlama
 
 - Dogrulanmis gercekler, makul varsayimlar ve riskler ayri belirtilir.
