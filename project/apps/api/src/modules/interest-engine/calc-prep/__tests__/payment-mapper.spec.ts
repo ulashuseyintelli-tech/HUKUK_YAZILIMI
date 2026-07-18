@@ -88,6 +88,7 @@ describe('payment-mapper (G4b-1)', () => {
       ...collection({ id: 'C1', date: '2025-05-02' }),
       valueDate: '2025-05-10',
       confirmedAt: '2025-05-11',
+      externalSettledAt: '2025-05-12',
     };
 
     const res = mapPayments([], [row]);
@@ -95,6 +96,7 @@ describe('payment-mapper (G4b-1)', () => {
     expect(res.payments[0].date).toBe('2025-05-02');
     expect(res.payments[0]).not.toHaveProperty('valueDate');
     expect(res.payments[0]).not.toHaveProperty('confirmedAt');
+    expect(res.payments[0]).not.toHaveProperty('externalSettledAt');
   });
 
   it.each([
