@@ -28,9 +28,9 @@ Dosyalar:
 - `RCV-PHASE-1-AUTHORIZATION.md` - RCV program/register cross-pointer'ı, DEC-0030
   disposition'ı, gerçekleşen phase/workstream progression, Phase 1 ile WS01/WS02 formal
   closure, `RCV-P2-WS03-P01/P02/P03` formal closure, P03 için ratified
-  `RECORD_COLLECTION` object-scope/additive confirmation contract'ı, WS03 formal closure
-  ile WS04-P01 `DA-4`/`CA-1`/`CM-1` drift-baseline authority contract'ı ve ayrı
-  implementation owner-GO gate kaydı.
+  `RECORD_COLLECTION` object-scope/additive confirmation contract'ı, WS03 formal closure,
+  WS04-P01 `DA-4`/`CA-1`/`CM-1` drift-baseline authority contract'ı ve P01 formal
+  closure/WS04 successor owner-GO gate kaydı.
 - `OFFICE-GOVERNANCE.md` - aday OFFICE Domain Law (DRAFT / OWNER REVIEW REQUIRED).
 - `OFFICE-MASTER-SYNTHESIS.md` - OFFICE kanıt/gerekçe/senaryo katmanı (NON-NORMATIVE).
 - `OFFICE-RISK-REGISTER.md` - OFFICE domain risk dossier'i (global triage otoritesi değil).
