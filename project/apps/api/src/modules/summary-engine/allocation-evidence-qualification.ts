@@ -301,6 +301,12 @@ export const COLLECTED_AMOUNT_REFERENCE_MANIFEST_V1: ReadonlyArray<{
     rationale: 'Consumer-complete evidence manifest; runtime consumer değildir.',
   },
   {
+    path: 'src/modules/summary-engine/allocation-representative-replay-adapter.ts',
+    classification: 'RECONCILED_CACHE',
+    access: 'NEGATIVE_REFERENCE',
+    rationale: 'P03 representative evidence adapter manifesti; runtime consumer değildir.',
+  },
+  {
     path: 'src/modules/summary-engine/summary-engine.service.ts',
     classification: 'RECONCILED_CACHE',
     access: 'READ_WRITE',
