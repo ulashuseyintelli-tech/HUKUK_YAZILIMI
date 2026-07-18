@@ -5884,6 +5884,16 @@ enum BankTransactionCandidateStatus {
   REJECTED
 }
 
+enum BankSettlementEvidenceSource {
+  VALIDATED_PROVIDER_ATTESTATION
+  SETTLEMENT_VERIFIER
+}
+
+enum BankSettlementEvidenceOutcome {
+  SETTLED
+  REJECTED
+}
+
 model BankAccount {
   id       String @id @default(cuid())
   tenantId String
@@ -5926,6 +5936,41 @@ model BankAccount {
   @@index([isActive])
 }
 
+/// Immutable typed evidence for external settlement finality.
+/// Evidence append and candidate status transition are separate mutations.
+model BankSettlementEvidence {
+  id             String @id @default(cuid())
+  tenantId       String
+  idempotencyKey String
+
+  source  BankSettlementEvidenceSource
+  outcome BankSettlementEvidenceOutcome
+
+  // Opaque reference + integrity hash only; raw provider payload is not persisted.
+  evidenceReference String
+  evidenceHash      String
+
+  // Provider evidence may not have a human actor; SETTLEMENT_VERIFIER evidence must.
+  actorId    String?
+  observedAt DateTime
+  recordedAt DateTime
+
+  supersedesEvidenceId String?
+  supersedesEvidence   BankSettlementEvidence? @relation("BankSettlementEvidenceSupersession", fields: [tenantId, supersedesEvidenceId], references: [tenantId, id], onDelete: Restrict)
+  supersededBy         BankSettlementEvidence? @relation("BankSettlementEvidenceSupersession")
+
+  bankTransaction BankTransaction?
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, supersedesEvidenceId])
+  @@index([tenantId])
+  @@index([source])
+  @@index([outcome])
+  @@index([actorId])
+  @@index([observedAt])
+}
+
 model BankTransaction {
   id            String @id @default(cuid())
   tenantId      String
@@ -5939,7 +5984,8 @@ model BankTransaction {
   transactionType String // INCOMING, OUTGOING
 
   // Candidate lifecycle (legacy null = unknown; SETTLED olarak yorumlanmaz)
-  candidateStatus BankTransactionCandidateStatus?
+  candidateStatus      BankTransactionCandidateStatus?
+  settlementEvidenceId String?
 
   // Karşı Taraf
   counterpartyName String?
@@ -5966,8 +6012,10 @@ model BankTransaction {
   updatedAt DateTime @updatedAt
 
   // İlişkiler
-  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id])
+  bankAccount        BankAccount             @relation(fields: [bankAccountId], references: [id])
+  settlementEvidence BankSettlementEvidence? @relation(fields: [tenantId, settlementEvidenceId], references: [tenantId, id], onDelete: Restrict)
 
+  @@unique([tenantId, settlementEvidenceId])
   @@index([tenantId])
   @@index([bankAccountId])
   @@index([transactionDate])
