@@ -10,9 +10,12 @@ import {
 /**
  * UYAP e-Takip XML Generator Service
  * 
- * Resmi UYAP exchange.dtd formatına uygun XML oluşturur.
- * Kaynak: https://uyap.gov.tr/e-takip-tanitimi-ve-programlari
- * DTD: exchange.dtd (etakipkurulum paketi)
+ * YEREL/LEGACY XML üretir. Bu çıktı resmî UYAP exchange.dtd sözleşmesine uygun olduğu
+ * KANITLANMAMIŞTIR (NOT PROVEN CONTRACT-COMPLIANT) ve resmî sözleşmeyle yapısal olarak
+ * ıraksaktır (bkz. DBP-P2-UYAP-CONTRACT-A). Resmî builder ayrıdır (P02, NOT STARTED).
+ * Tarihsel kaynak-notu (authority DEĞİL): resmî e-Takip paketi tarihsel olarak
+ * https://uyap.gov.tr/e-takip-tanitimi-ve-programlari adresinde yayımlanmıştı.
+ * Local DTD şeması: schemas/exchange.dtd (LOCAL/LEGACY, resmî değil).
  * 
  * XML Yapısı:
  * exchangeData -> dosyalar -> dosya (attributes: dosyaTipi, takipTuru, takipYolu, takipSekli, mahiyetKodu)
@@ -1150,9 +1153,17 @@ export class UyapXmlService {
   // ==================== VALIDATION ====================
 
   /**
-   * XML'i doğrula (exchange.dtd formatına göre)
+   * Yerel yapısal ön-kontrol (LOCAL_STRUCTURAL_PRECHECK).
+   * DİKKAT: Bu resmî UYAP DTD doğrulaması DEĞİLDİR (officialDtdValidated=false). Yalnız üretilen
+   * legacy XML'de birkaç zorunlu element/attribute'un string düzeyinde bulunup bulunmadığını
+   * kontrol eder; resmî exchange.dtd sözleşmesine uygunluğu KANITLAMAZ.
    */
-  validateXml(xml: string): { isValid: boolean; errors: string[] } {
+  validateXml(xml: string): {
+    isValid: boolean;
+    errors: string[];
+    validationMode: 'LOCAL_STRUCTURAL_PRECHECK';
+    officialDtdValidated: false;
+  } {
     const errors: string[] = [];
     
     if (!xml.includes('<exchangeData')) {
@@ -1185,6 +1196,8 @@ export class UyapXmlService {
     return {
       isValid: errors.length === 0,
       errors,
+      validationMode: 'LOCAL_STRUCTURAL_PRECHECK',
+      officialDtdValidated: false,
     };
   }
 

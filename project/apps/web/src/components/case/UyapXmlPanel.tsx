@@ -6,12 +6,10 @@ import {
   Download,
   Eye,
   Send,
-  CheckCircle,
   XCircle,
   Loader2,
   Copy,
   AlertTriangle,
-  RefreshCw,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -24,12 +22,19 @@ interface UyapXmlPanelProps {
 interface XmlValidation {
   isValid: boolean;
   errors: string[];
+  // F2: yerel yapısal ön-kontrol; resmî DTD doğrulaması DEĞİL.
+  validationMode?: string;
+  officialDtdValidated?: boolean;
 }
 
 interface XmlResponse {
   xml: string;
   validation: XmlValidation;
-  version: string;
+  // F1: legacy/local envelope — resmî sözleşme uyumluluğu iddia edilmez.
+  contractMode?: string;
+  officialContractCompliant?: boolean;
+  officialContractVersion?: string | null;
+  cutoverStatus?: string;
   generatedAt: string;
 }
 
@@ -75,9 +80,9 @@ export function UyapXmlPanel({ caseId, fileNumber, hasUyapCode }: UyapXmlPanelPr
     }
   };
 
-  // UYAP'a Gönder
+  // Yerel Simülasyon (STUB)
   const handleSubmitToUyap = async () => {
-    if (!confirm("XML'i UYAP'a göndermek istediğinizden emin misiniz?")) return;
+    if (!confirm("Yerel simülasyon çalıştırılsın mı? Gerçek UYAP iletimi YAPILMAZ (STUB).")) return;
     
     setSubmitting(true);
     setError(null);
@@ -109,7 +114,7 @@ export function UyapXmlPanel({ caseId, fileNumber, hasUyapCode }: UyapXmlPanelPr
           <FileCode className="h-4 w-4 text-blue-600" />
           UYAP e-Takip XML
         </h3>
-        <span className="text-xs text-muted-foreground">exchange.dtd v2024.03</span>
+        <span className="text-xs text-amber-600">Yerel legacy XML · resmî UYAP ile doğrulanmamış</span>
       </div>
 
       {/* UYAP Kodu Uyarısı */}
@@ -148,7 +153,7 @@ export function UyapXmlPanel({ caseId, fileNumber, hasUyapCode }: UyapXmlPanelPr
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
         >
           {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-          UYAP'a Gönder
+          Yerel Simülasyon (STUB)
         </button>
       </div>
 
@@ -160,21 +165,24 @@ export function UyapXmlPanel({ caseId, fileNumber, hasUyapCode }: UyapXmlPanelPr
         </div>
       )}
 
-      {/* Gönderim Sonucu */}
+      {/* Gönderim Sonucu — STUB: gerçek UYAP iletimi YOK */}
       {submitResult && (
-        <div className={`p-3 rounded border ${submitResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+        <div className={`p-3 rounded border ${submitResult.success ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
           <div className="flex items-center gap-2 mb-2">
             {submitResult.success ? (
-              <CheckCircle className="h-4 w-4 text-green-600" />
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
             ) : (
               <XCircle className="h-4 w-4 text-red-600" />
             )}
-            <span className={`text-sm font-medium ${submitResult.success ? 'text-green-800' : 'text-red-800'}`}>
-              {submitResult.success ? 'Gönderim Başarılı' : 'Gönderim Başarısız'}
+            <span className={`text-sm font-medium ${submitResult.success ? 'text-amber-800' : 'text-red-800'}`}>
+              {submitResult.success ? 'Yerel simülasyon tamamlandı' : 'Yerel simülasyon başarısız'}
             </span>
           </div>
-          {submitResult.evkNo && (
-            <p className="text-xs text-green-700">EVK No: <span className="font-mono font-medium">{submitResult.evkNo}</span></p>
+          <p className="text-xs text-amber-700">Gerçek UYAP iletimi yapılmadı (STUB).</p>
+          {submitResult.stubReference && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Simülasyon referansı: <span className="font-mono">{submitResult.stubReference}</span> (resmî EVK değildir)
+            </p>
           )}
           {submitResult.message && (
             <p className="text-xs mt-1">{submitResult.message}</p>
@@ -197,8 +205,8 @@ export function UyapXmlPanel({ caseId, fileNumber, hasUyapCode }: UyapXmlPanelPr
             <div className="flex items-center justify-between p-4 border-b">
               <div>
                 <h3 className="font-semibold">UYAP e-Takip XML Önizleme</h3>
-                <p className="text-xs text-muted-foreground">
-                  Versiyon: {xmlData.version} | Oluşturulma: {new Date(xmlData.generatedAt).toLocaleString('tr-TR')}
+                <p className="text-xs text-amber-600">
+                  Yerel legacy XML · resmî UYAP Contract A ile doğrulanmamış · Oluşturulma: {new Date(xmlData.generatedAt).toLocaleString('tr-TR')}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -225,18 +233,18 @@ export function UyapXmlPanel({ caseId, fileNumber, hasUyapCode }: UyapXmlPanelPr
               </div>
             </div>
 
-            {/* Validation Status */}
-            <div className={`px-4 py-2 flex items-center gap-2 ${xmlData.validation.isValid ? 'bg-green-50' : 'bg-red-50'}`}>
+            {/* Validation Status — yerel yapısal ön-kontrol (resmî DTD doğrulaması DEĞİL) */}
+            <div className={`px-4 py-2 flex items-center gap-2 ${xmlData.validation.isValid ? 'bg-amber-50' : 'bg-red-50'}`}>
               {xmlData.validation.isValid ? (
                 <>
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-sm text-green-800">XML doğrulama başarılı</span>
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <span className="text-sm text-amber-800">Yerel yapısal ön-kontrol geçti. Resmî UYAP DTD doğrulaması yapılmadı.</span>
                 </>
               ) : (
                 <>
                   <XCircle className="h-4 w-4 text-red-600" />
                   <span className="text-sm text-red-800">
-                    XML doğrulama hatası ({xmlData.validation.errors.length} hata)
+                    Yerel yapısal ön-kontrol hatası ({xmlData.validation.errors.length} hata)
                   </span>
                 </>
               )}
@@ -278,7 +286,7 @@ export function UyapXmlPanel({ caseId, fileNumber, hasUyapCode }: UyapXmlPanelPr
                   className="px-4 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  UYAP'a Gönder
+                  Yerel Simülasyon (STUB)
                 </button>
               </div>
             </div>

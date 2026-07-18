@@ -887,6 +887,20 @@ jobs:
             --testPathPattern="uyap-case-mapper\.debtor-role-mapping\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # DBP-P2-UYAP-CONTRACT-A-P01: legacy Contract A yüzeyi TRUTHFULNESS CONTAINMENT (F1-F5) regresyonu.
+      # Preview envelope (legacy/noncompliant), validation semantics (local precheck), STUB submit
+      # (transmitted=false / evkNo=null), yorum/dead-code temizliği ve FE label doğrulukları.
+      # Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyor → ayrı/açık step; dosya-varlığı
+      # pre-check (rename/silme/0-eşleşme → CI RED) + passWithNoTests YOK.
+      - name: DBP-P2-UYAP-CONTRACT-A-P01 legacy truthfulness containment tests
+        run: |
+          cd apps/api
+          test -f src/modules/uyap/__tests__/uyap-legacy-truthfulness.spec.ts || \
+            { echo "MISSING P01 spec: uyap-legacy-truthfulness.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="uyap-legacy-truthfulness\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.

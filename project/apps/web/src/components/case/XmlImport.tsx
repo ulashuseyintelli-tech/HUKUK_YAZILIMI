@@ -175,8 +175,8 @@ export function XmlImport({ onImportComplete }: XmlImportProps) {
           <p className="text-sm text-muted-foreground">
             {uploading ? 'Yükleniyor...' : parsing ? 'XML analiz ediliyor...' : 'XML dosyası seçin veya sürükleyin'}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            exchange.dtd formatında UYAP XML dosyası
+          <p className="text-xs text-amber-600 mt-1">
+            Yerel legacy exchange.dtd biçimi (resmî UYAP ile doğrulanmamış)
           </p>
         </div>
       )}
