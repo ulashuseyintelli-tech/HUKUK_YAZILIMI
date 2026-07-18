@@ -30,8 +30,9 @@ Dosyalar:
   closure, `RCV-P2-WS03-P01/P02/P03` formal closure, P03 için ratified
   `RECORD_COLLECTION` object-scope/additive confirmation contract'ı, WS03 formal closure,
   WS04-P01 `DA-4`/`CA-1`/`CM-1` drift-baseline authority contract'ı ve P01 formal
-  closure, WS04-P02 static/synthetic/disposable evidence-package formal closure kaydı ve
-  representative/production evidence ile disposition/successor owner-GO gate'leri.
+  closure, WS04-P02 static/synthetic/disposable evidence-package formal closure kaydı,
+  WS04-P03 representative replay package contract ratification'ı ve ayrı implementation,
+  data-access, evidence-execution, production-observation ve disposition owner gate'leri.
 - `OFFICE-GOVERNANCE.md` - aday OFFICE Domain Law (DRAFT / OWNER REVIEW REQUIRED).
 - `OFFICE-MASTER-SYNTHESIS.md` - OFFICE kanıt/gerekçe/senaryo katmanı (NON-NORMATIVE).
 - `OFFICE-RISK-REGISTER.md` - OFFICE domain risk dossier'i (global triage otoritesi değil).
