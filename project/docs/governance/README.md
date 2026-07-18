@@ -45,6 +45,10 @@ Dosyalar:
 - `OFFICE-PHASE2-ROADMAP.md` - OFFICE Phase 2 sıralama/decomposition çerçevesi;
   Wave/Candidate/Task/implementasyon-sırası seçmez, authority üretmez
   (CANONICAL PLANNING REFERENCE / NON-AUTHORIZING v1.0, 2026-07-17).
+- `OFFICE-PHASE2-DECOMPOSITION.md` - OFFICE Phase 2 decomposition blueprint (capability
+  delivery map + increment/Wave mimarisi + decision queue + exit coverage + first-unit
+  seçenekleri); hiçbir Wave/unit seçmez, mutable delivery statü taşımaz — statü authority
+  OFFICE-DELIVERY-MANIFEST.md'dir (CANONICAL REFERENCE / NON-NORMATIVE / NON-AUTHORIZING v1.0, 2026-07-18).
 - `active-roadmap.md` - aktif fazlar ve implementasyona açık işler.
 - `product-backlog.md` - yeni governance Product Backlog hedef kaydı.
 - `architecture-index.md` - kesinleşmiş mimari kararların indeksi.

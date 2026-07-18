@@ -93,15 +93,29 @@ Kurallar: "tam kapsam tek Contract için büyükse" first-slice re-scope emsali 
 
 ### `OFF-P2-ENTRY-01` — Bu 4-belgelik setin owner text-ratification'ı (decision-log kaydıyla) tamamlanmıştır. **DURUM: PASS** (2026-07-17, decision-log § "OFFICE Phase 2 Constitutional Foundation Owner Text-Ratification").
 ### `OFF-P2-ENTRY-02` — Set approved merge ile repository-canonical olmuştur ve GOVERNANCE-INDEX Bölüm 2 + README kayıtları yapılmıştır. **DURUM: PASS** (kuruluş merge PR #1359 `20423d4a`; INDEX/README authority kaydı ratifikasyon PR'ıyla).
-### `OFF-P2-ENTRY-03` — Owner, decomposition için açık GO-ANALYZE brief'i vermiştir (bu belge o brief'in yerine geçmez). **DURUM: OPEN** — ayrı decomposition GO-ANALYZE brief'i gereklidir; verilmemiştir. (Tur 2 evidence reconciliation'ın tamamlanmış olması bu koşulu KARŞILAMAZ.)
+### `OFF-P2-ENTRY-03` — Owner, decomposition için açık GO-ANALYZE brief'i vermiştir (bu belge o brief'in yerine geçmez). **DURUM: PASS** (2026-07-18) — Phase 2 decomposition owner GO-ANALYZE brief'iyle analiz edildi, owner decomposition kararıyla ratifiye edildi ve `OFFICE-PHASE2-DECOMPOSITION.md` (CANONICAL REFERENCE / NON-NORMATIVE / NON-AUTHORIZING) olarak kanonlaştırıldı (decision-log § "OFFICE PHASE 2 CONSTITUTIONAL DECOMPOSITION RATIFICATION").
 
-Üç koşul da sağlanmadan hiçbir Phase 2 iş birimi tanımlanamaz; ENTRY-03 açık olduğundan **PHASE 2 DECOMPOSITION: NOT STARTED**. Koşulların sağlanması bu belgeyle DEĞİL, her biri kendi kaydıyla kanıtlanır. (Decomposition kayıtlarının yaşayacağı delivery yüzeyinin belirlenmesi de ratifikasyon sonrası ayrı bir owner tasarrufudur — `OFF-P2-GOV-03`.)
+Üç giriş koşulu da (ENTRY-01/02/03) sağlanmıştır. **Bu, hiçbir Wave veya delivery unit'i SEÇMEZ/BAŞLATMAZ:** decomposition analizi tamamlandı, ancak ilk iş birimi seçimi ayrı bir owner **First-Unit Selection** kararına tabidir. Decomposition kayıtlarının yaşayacağı delivery yüzeyi ratifikasyon sonrası ayrı owner tasarrufudur (`OFF-P2-GOV-03`); mutable delivery statü otoritesi `OFFICE-DELIVERY-MANIFEST.md`'dir.
+
+## 5a. Decomposition Blueprint Pointer ve Önerilen Wave Mimarisi (kaydedildi — SEÇİLMEDİ)
+
+Phase 2 decomposition blueprint'i `project/docs/governance/OFFICE-PHASE2-DECOMPOSITION.md`'dedir (CANONICAL REFERENCE / NON-NORMATIVE / NON-AUTHORIZING; capability delivery map + current-to-target mimari + dependency/gate matrisi + 6 capability-bearing + 2 cross-cutting increment + 5 önerilen Wave kümesi + provisional workstream envanteri + decision queue + exit coverage + 3 first-unit seçeneği). **Decomposition canonicalization statüsü: COMPLETE / CANONICAL REFERENCE.**
+
+Önerilen Wave mimarisi (descriptive adlar — PROPOSED / NON-CANONICAL / NOT_SELECTED; hiçbiri seçilmedi):
+```text
+1. Enablement & Decision-Clearing
+2. Authorization Enforcement
+3. Lifecycle, Session & Privacy
+4. Identity & Approval Foundations
+5. Phase Exit & Reconciliation
+```
+Bu belge (Roadmap) NON-AUTHORIZING kalır; Wave/first-unit seçimi owner'ın ayrı kararıdır.
 
 ## 6. Son Hüküm
 
-Bu roadmap Phase 2'nin sıralama fiziğini (neyin neyi beklemek zorunda olduğunu) ve decomposition prosedürünü sabitler; ne bir işi başlatır, ne bir hattı seçer, ne bir tarihi taahhüt eder. Phase 1'in kapanmış durumundan (CLOSED / COMPLETE WITH RECORDED RESIDUALS, 2026-07-17; delivery register'ında NEXT ELIGIBLE UNIT = NONE) Phase 2'nin ilk iş birimine giden yolun HER adımı owner kapısındadır.
+Bu roadmap Phase 2'nin sıralama fiziğini (neyin neyi beklemek zorunda olduğunu) ve decomposition prosedürünü sabitler; ne bir işi başlatır, ne bir hattı seçer, ne bir tarihi taahhüt eder. Phase 1'in kapanmış durumundan (CLOSED / COMPLETE WITH RECORDED RESIDUALS) Phase 2'nin ilk iş birimine giden yolun HER adımı owner kapısındadır; decomposition analizi tamamlandı (ENTRY-03 PASS) ama ilk iş birimi seçimi ayrı owner **First-Unit Selection** kararına tabidir.
 
-**FOUNDATION STATUS: READY FOR PHASE 2 DECOMPOSITION** — ENTRY-01 PASS · ENTRY-02 PASS · ENTRY-03 OPEN (ayrı decomposition GO-ANALYZE gerekli).
+**FOUNDATION STATUS: PHASE 2 DECOMPOSITION ANALYZED / CANONICALIZED** — ENTRY-01 PASS · ENTRY-02 PASS · ENTRY-03 **PASS**. PROPOSED WAVE ARCHITECTURE: RECORDED / NONE SELECTED. NEXT OWNER-GATED UNIT: Phase 2 First-Unit Selection (ayrı owner kararı).
 
 ## 7. Document Self-Check
 
@@ -110,8 +124,11 @@ Bu roadmap Phase 2'nin sıralama fiziğini (neyin neyi beklemek zorunda olduğun
 - Authority/izin üreten hüküm var mı:                           NO (SYS-GOV-008; Hard Stop #13 uyumu)
 - Bir hat seçildi/öne alındı mı:                                NO (§3 envanter, sıra önerisi değil)
 - Açık kararlara ön-karar verildi mi:                           NO (yalnız gate kaydı)
-- Decomposition başlatıldı mı:                                  NO (ENTRY-01/02 PASS; ENTRY-03
-                                                                 OPEN — ayrı GO-ANALYZE gerekli)
+- Decomposition analiz edildi/canonicalize edildi mi:          YES (ENTRY-03 PASS; blueprint
+                                                                 OFFICE-PHASE2-DECOMPOSITION.md, §5a pointer)
+- Wave veya first-unit SEÇİLDİ/BAŞLATILDI mı:                   NO (PROPOSED/NOT_SELECTED; §5a +
+                                                                 NEXT OWNER-GATED = First-Unit Selection)
+- Bu belge mutable delivery statü taşıyor mu:                   NO (authority = OFFICE-DELIVERY-MANIFEST)
 - PUBLIC CONTENT RULE ihlali:                                   NO
 - Kimlik uzayı çakışması:                                       NO (yalnız OFF-P2-SEQ/ENTRY-*)
 ```

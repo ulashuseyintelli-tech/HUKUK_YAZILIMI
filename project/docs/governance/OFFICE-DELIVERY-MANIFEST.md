@@ -862,20 +862,24 @@ kalır** — K2 (toplu atama, ASSIGN-4d'ye bağlı) + K3 (legal-sorumlu terfi re
 rol/kapasite policy açık; finding KAPANMADI (bkz. §2/§7 + OFFICE-RISK-REGISTER.md). Önceki CANONICAL
 slice'lar (A/C/F1/H1/E1/I1/J1) + şimdi K1 değişmedi.
 
-FAZ-STATÜ KAYDI (owner ratification 2026-07-17; decision-log kayıtları: "OFFICE PHASE 1 CLOSURE
+FAZ-STATÜ KAYDI (owner ratification 2026-07-17/18; decision-log kayıtları: "OFFICE PHASE 1 CLOSURE
 WITH RECORDED RESIDUALS — OWNER RATIFIED" + "OFFICE PHASE 2 CONSTITUTIONAL FOUNDATION OWNER
-TEXT-RATIFICATION" + "TUR 2 CANONICAL EVIDENCE RECONCILIATION DISPOSITION"):
+TEXT-RATIFICATION" + "TUR 2 CANONICAL EVIDENCE RECONCILIATION DISPOSITION" + "OFFICE PHASE 2
+CONSTITUTIONAL DECOMPOSITION RATIFICATION"):
   PHASE 1                    : CLOSED / COMPLETE WITH RECORDED RESIDUALS (MILESTONE 01–09; §5 kaydı)
   PHASE 2 FOUNDATION         : RATIFIED / CANONICAL (4 belge, farklı authority rolleri —
                                OFFICE-PHASE2-{CONSTITUTION,MASTER-SYNTHESIS,PROGRAM-CHARTER,ROADMAP}.md)
   TUR 2 RECONCILIATION       : COMPLETE / CANONICAL EVIDENCE DISPOSITION (NON-NORMATIVE; kanıt
                                `OFFICE-PHASE2-MASTER-SYNTHESIS.md §5a`; finding/ID/karar/yetki ÜRETMEZ)
-  PHASE 2 DECOMPOSITION      : NOT STARTED (OFF-P2-ENTRY-03 OPEN — ayrı GO-ANALYZE gerekli)
+  PHASE 2 DECOMPOSITION      : COMPLETE / CANONICAL REFERENCE (blueprint
+                               `OFFICE-PHASE2-DECOMPOSITION.md`, NON-NORMATIVE / NON-AUTHORIZING;
+                               6 capability-bearing + 2 cross-cutting increment, 5 önerilen Wave)
+  PROPOSED WAVE ARCHITECTURE : RECORDED / NONE SELECTED
   CURRENT SELECTED WAVE      : NONE
-  CURRENT SELECTED CANDIDATE : NONE
+  CURRENT SELECTED DELIVERY UNIT: NONE
   IMPLEMENTATION AUTHORIZATION: NONE
-  NEXT OWNER-GATED UNIT      : Phase 2 Constitution Decomposition (ayrı owner GO-ANALYZE gerektirir;
-                               bu belge BAŞLATMAZ/SEÇMEZ/SIRALAMAZ)
+  NEXT OWNER-GATED UNIT      : Phase 2 First-Unit Selection (ayrı owner kararı gerektirir; bu belge
+                               ve decomposition blueprint hiçbir Wave/unit SEÇMEZ/BAŞLATMAZ/SIRALAMAZ)
 
 NEXT PROGRAM ACTION: OWNER SELECTION/DECISION REQUIRED — implementasyona hazır, owner-seçili bekleyen
 birim YOK; geriye kalan candidate'ların TÜMÜ hâlâ owner-gated; bu belge hiçbirini SEÇMEZ/başlatmaz/

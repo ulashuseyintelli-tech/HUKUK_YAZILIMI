@@ -19,6 +19,7 @@ GOVERNANCE-INDEX kaydı: COMPLETED — ratifikasyon PR'ıyla yapıldı (OFF-P2-E
 
 - Normatif çerçeve: `project/docs/governance/OFFICE-PHASE2-CONSTITUTION.md` · `project/docs/governance/OFFICE-GOVERNANCE.md` · `project/docs/governance/SYSTEM-CONSTITUTION.md`
 - Kardeşler: `project/docs/governance/OFFICE-PHASE2-PROGRAM-CHARTER.md` · `project/docs/governance/OFFICE-PHASE2-ROADMAP.md`
+- Delivery decomposition (bu sentezden türetilen blueprint): `project/docs/governance/OFFICE-PHASE2-DECOMPOSITION.md` (CANONICAL REFERENCE / NON-NORMATIVE / NON-AUTHORIZING; capability delivery map + increment/Wave mimarisi + decision queue + exit coverage + first-unit seçenekleri. Buradaki CAP-*/DEP-* tabloları ORADA çoğaltılmaz, pointer'la referanslanır; mutable delivery statü otoritesi `OFFICE-DELIVERY-MANIFEST.md`'dir)
 - Kanıt/kayıt tabanı: `project/docs/governance/OFFICE-MASTER-SYNTHESIS.md` (Phase 1 evidence baseline, LF/OP/PR-RT-*) · `project/docs/governance/OFFICE-RISK-REGISTER.md` (STF-PRD-*) · `project/docs/governance/OFFICE-OWNER-DECISIONS.md` (OFF/OD-*) · `project/docs/governance/OFFICE-DELIVERY-MANIFEST.md` (Phase 1 teslimat kayıtları) · `project/docs/governance/decision-log.md`
 
 ## 1. Phase 1 Delivered Foundation (repository-doğrulanmış zemin)
