@@ -16,6 +16,13 @@ import { AncillaryType } from '../interest-engine/types/domain.types';
 // G4a: sınıflandırma TEK OTORİTE (ikinci kopya yok). mapItemTypeToAncillary + masraf/fer'i kuralı buradan.
 import { mapItemTypeToAncillary as classifierMapAncillary, isCostItemType } from '../interest-engine/classification/claim-item-classifier';
 import { ClaimItemService } from '../claim-item/claim-item.service';
+import {
+  assertWriteTimeAllocationComparison,
+  buildAllocationComparisonContext,
+  classifyAllocationComparison,
+  reconcileLedgerAllocationWithCollectedAmountInTx,
+  type AllocationComparisonResult,
+} from './allocation-drift-baseline';
 
 // ============================================================
 // TYPES
@@ -165,15 +172,23 @@ export interface ClaimItemSummary {
   status: string;
 }
 
-export type LedgerAllocationDiagnosticCode = 'EXCLUDED_OUTSTANDING';
+export type LedgerAllocationDiagnosticCode =
+  | 'EXCLUDED_OUTSTANDING'
+  | 'LEGACY_ALLOCATOR_ACTIVE';
 
 export interface LedgerAllocationDiagnostic {
   code: LedgerAllocationDiagnosticCode;
   reason: string;
-  claimItemId: string;
-  itemType: string;
+  claimItemId?: string;
+  itemType?: string;
   amount: number;
   message: string;
+}
+
+export interface AllocationAuthorityEvidence {
+  allocatorMode: 'NONE' | 'TBK100' | 'LEGACY';
+  runtimePersisted: AllocationComparisonResult | null;
+  ledgerCollectedAmount: AllocationComparisonResult | null;
 }
 
 interface LedgerAllocationComputation {
@@ -576,6 +591,7 @@ export class SummaryEngineService implements OnModuleInit {
     diagnostics: LedgerAllocationDiagnostic[];
     excludedOutstanding: number;
     unsafeForOverpayment: boolean;
+    authorityEvidence: AllocationAuthorityEvidence;
   }> {
     if (!this.rules?.ledger_allocation?.enabled) {
       return {
@@ -586,6 +602,11 @@ export class SummaryEngineService implements OnModuleInit {
         diagnostics: [],
         excludedOutstanding: 0,
         unsafeForOverpayment: false,
+        authorityEvidence: {
+          allocatorMode: 'NONE',
+          runtimePersisted: null,
+          ledgerCollectedAmount: null,
+        },
       };
     }
 
@@ -615,12 +636,19 @@ export class SummaryEngineService implements OnModuleInit {
         diagnostics: [],
         excludedOutstanding: 0,
         unsafeForOverpayment: false,
+        authorityEvidence: {
+          allocatorMode: 'NONE',
+          runtimePersisted: null,
+          ledgerCollectedAmount: null,
+        },
       };
     }
 
     let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
     let diagnostics: LedgerAllocationDiagnostic[] = [];
     let excludedOutstanding = 0;
+    const allocatorMode: AllocationAuthorityEvidence['allocatorMode'] =
+      this.tbk100Allocator ? 'TBK100' : 'LEGACY';
     // TBK 100 Allocator varsa kullan (TEK KAYNAK). Sıra = allocator'ın mevcut hâli (PR-AO ayrı).
     if (this.tbk100Allocator) {
       const computation = this.allocateWithTBK100(items, amount);
@@ -631,6 +659,12 @@ export class SummaryEngineService implements OnModuleInit {
       // Legacy fallback (deprecated)
       this.logger.warn('⚠️ Using legacy allocation order. Inject TBK100AllocatorService for correct TBK 100.');
       allocations = this.allocateLegacy(items, amount);
+      diagnostics.push({
+        code: 'LEGACY_ALLOCATOR_ACTIVE',
+        reason: 'LEGACY_ALLOCATOR_FALLBACK',
+        amount,
+        message: 'Legacy allocation fallback is active; allocator disposition remains deferred under DA-4.',
+      });
     }
 
     const ledgerEntry = await tx.ledgerEntry.create({
@@ -663,6 +697,30 @@ export class SummaryEngineService implements OnModuleInit {
       include: { allocations: true },
     });
 
+    const frozenInputId = options.commandId || ledgerEntry.id;
+    const comparisonContext = buildAllocationComparisonContext({
+      tenantId,
+      caseId,
+      currency: ledgerEntry.currency || caseRecord.currency || 'TRY',
+      frozenInputId,
+    });
+    const runtimePersisted = classifyAllocationComparison({
+      canonical: allocations.map((allocation) => ({
+        key: `${allocation.allocationOrder}:${allocation.claimItemId}`,
+        amount: allocation.amount,
+      })),
+      candidate: (ledgerEntry.allocations || []).map((allocation: any) => ({
+        key: `${allocation.allocationOrder}:${allocation.claimItemId}`,
+        amount: allocation.amount,
+      })),
+      canonicalContext: comparisonContext,
+      candidateContext: comparisonContext,
+    });
+    assertWriteTimeAllocationComparison(
+      'RUNTIME_ALLOCATION_TO_PERSISTED_LEDGER_ALLOCATION',
+      runtimePersisted,
+    );
+
     // ClaimItem'ların collectedAmount'larını güncelle
     for (const allocation of allocations) {
       await tx.claimItem.update({
@@ -675,6 +733,18 @@ export class SummaryEngineService implements OnModuleInit {
       });
     }
 
+    const ledgerCollectedAmount = await reconcileLedgerAllocationWithCollectedAmountInTx(
+      tx,
+      {
+        tenantId,
+        caseId,
+        currency: ledgerEntry.currency || caseRecord.currency || 'TRY',
+        frozenInputId,
+        claimItemIds: allocations.map((allocation) => allocation.claimItemId),
+        failClosedBoundary: 'LEDGER_ALLOCATION_TO_CLAIM_ITEM_COLLECTED_AMOUNT',
+      },
+    );
+
     return {
       allocated: true,
       ledgerEntry,
@@ -682,6 +752,11 @@ export class SummaryEngineService implements OnModuleInit {
       diagnostics,
       excludedOutstanding,
       unsafeForOverpayment: excludedOutstanding > 0,
+      authorityEvidence: {
+        allocatorMode,
+        runtimePersisted,
+        ledgerCollectedAmount,
+      },
     };
   }
 

@@ -13,17 +13,57 @@ import { TBK100AllocatorService } from '../../interest-engine/allocation/tbk100-
 function buildService(opts: { enabled?: boolean; allocator?: any } = {}) {
   const svc = new SummaryEngineService({} as any, opts.allocator);
   // onModuleInit/YAML'a bağımlı olmadan kuralları doğrudan ver.
-  (svc as any).rules = { ledger_allocation: { enabled: opts.enabled ?? true } };
+  (svc as any).rules = {
+    ledger_allocation: { enabled: opts.enabled ?? true },
+    policies: { allocation_order: ['FEE', 'INTEREST', 'PRINCIPAL'] },
+  };
   return svc;
 }
 
-function mockTx(claimItems: any[]) {
+function mockTx(
+  claimItems: any[],
+  options: {
+    persistedAllocationTransform?: (row: any) => any;
+    existingLedgerAllocations?: Array<{ claimItemId: string; amount: number }>;
+  } = {},
+) {
+  const mutableClaimItems = claimItems.map((item) => ({ ...item }));
+  const persistedAllocations = [...(options.existingLedgerAllocations ?? [])];
   return {
-    case: { findFirst: jest.fn(async () => ({ id: 'c1', currency: 'TRY', claimItems })) },
+    case: { findFirst: jest.fn(async () => ({ id: 'c1', currency: 'TRY', claimItems: mutableClaimItems })) },
     ledgerEntry: {
-      create: jest.fn(async ({ data }: any) => ({ id: 'le1', allocations: data.allocations?.create ?? [] })),
+      create: jest.fn(async ({ data }: any) => {
+        const rows = (data.allocations?.create ?? []).map(
+          (row: any) => options.persistedAllocationTransform?.(row) ?? row,
+        );
+        persistedAllocations.push(
+          ...rows.map((row: any) => ({
+            claimItemId: row.claimItemId,
+            amount: row.amount,
+          })),
+        );
+        return { id: 'le1', currency: data.currency, allocations: rows };
+      }),
     },
-    claimItem: { update: jest.fn(async () => ({})) },
+    ledgerAllocation: {
+      findMany: jest.fn(async () => persistedAllocations),
+    },
+    claimItem: {
+      update: jest.fn(async ({ where, data }: any) => {
+        const item = mutableClaimItems.find((candidate) => candidate.id === where.id);
+        if (item && data.collectedAmount?.increment !== undefined) {
+          item.collectedAmount =
+            Number(item.collectedAmount ?? 0) + Number(data.collectedAmount.increment);
+        }
+        return item ?? {};
+      }),
+      findMany: jest.fn(async () =>
+        mutableClaimItems.map((item) => ({
+          id: item.id,
+          collectedAmount: item.collectedAmount,
+        })),
+      ),
+    },
   } as any;
 }
 
@@ -71,6 +111,11 @@ describe('SummaryEngineService.allocatePaymentToLedgerInTx (G3a)', () => {
     expect(tx.claimItem.update).toHaveBeenCalledWith({
       where: { id: 'ci1' },
       data: { collectedAmount: { increment: 1000 } },
+    });
+    expect(r.authorityEvidence).toMatchObject({
+      allocatorMode: 'TBK100',
+      runtimePersisted: { classification: 'EQUALITY' },
+      ledgerCollectedAmount: { classification: 'EQUALITY' },
     });
   });
 
@@ -165,5 +210,61 @@ describe('SummaryEngineService.allocatePaymentToLedgerInTx (G3a)', () => {
       where: { id: 'ci-principal' },
       data: { collectedAmount: { increment: 150 } },
     });
+  });
+
+  it('persisted LedgerAllocation runtime sonucundan saparsa write-time drift ile fail-closed kalır', async () => {
+    const svc = buildService({ enabled: true, allocator: new TBK100AllocatorService() });
+    const tx = mockTx(
+      [{ id: 'ci1', itemType: 'PRINCIPAL', demandedAmount: 1000, collectedAmount: 0, amount: 1000 }],
+      {
+        persistedAllocationTransform: (row) => ({ ...row, amount: row.amount - 0.01 }),
+      },
+    );
+
+    await expect(
+      svc.allocatePaymentToLedgerInTx(tx, 't1', 'c1', 1000, { collectionId: 'col-drift' }),
+    ).rejects.toMatchObject({
+      code: 'ALLOCATION_DRIFT_DETECTED',
+      boundary: 'RUNTIME_ALLOCATION_TO_PERSISTED_LEDGER_ALLOCATION',
+    });
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+  });
+
+  it('LedgerAllocation ile collectedAmount geçmişten drift ise yeni financial write fail-closed kalır', async () => {
+    const svc = buildService({ enabled: true, allocator: new TBK100AllocatorService() });
+    const tx = mockTx(
+      [{ id: 'ci1', itemType: 'PRINCIPAL', demandedAmount: 1000, collectedAmount: 0, amount: 1000 }],
+      {
+        existingLedgerAllocations: [{ claimItemId: 'ci1', amount: 100 }],
+      },
+    );
+
+    await expect(
+      svc.allocatePaymentToLedgerInTx(tx, 't1', 'c1', 100, { collectionId: 'col-cache-drift' }),
+    ).rejects.toMatchObject({
+      code: 'ALLOCATION_DRIFT_DETECTED',
+      boundary: 'LEDGER_ALLOCATION_TO_CLAIM_ITEM_COLLECTED_AMOUNT',
+    });
+  });
+
+  it('legacy allocator activation sessiz kalmaz ve explicit diagnostic üretir', async () => {
+    const svc = buildService({ enabled: true });
+    const tx = mockTx([
+      { id: 'ci1', itemType: 'PRINCIPAL', demandedAmount: 100, collectedAmount: 0, amount: 100 },
+    ]);
+
+    const result = await svc.allocatePaymentToLedgerInTx(
+      tx,
+      't1',
+      'c1',
+      100,
+      { collectionId: 'col-legacy' },
+    );
+
+    expect(result.authorityEvidence.allocatorMode).toBe('LEGACY');
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'LEGACY_ALLOCATOR_ACTIVE',
+      reason: 'LEGACY_ALLOCATOR_FALLBACK',
+    }));
   });
 });

@@ -33,7 +33,20 @@ function setup(opts: { summaryEngine?: any; caseRecord?: any; lockedDup?: any; p
       findFirst: jest.fn(),
       findUnique: jest.fn(async () => opts.lockedDup ?? null),
     },
-    collectionAllocation: { create: jest.fn() },
+    collectionAllocation: {
+      create: jest.fn(),
+      findMany: jest.fn(async () => [
+        { allocationType: 'PRINCIPAL', amount: 1000 },
+      ]),
+    },
+    ledgerAllocation: {
+      findMany: jest.fn(async () => [
+        {
+          amount: 1000,
+          claimItem: { itemType: 'PRINCIPAL', metadata: null },
+        },
+      ]),
+    },
     collectionOverpayment: { create: jest.fn(async () => ({ id: 'overpayment-1' })) },
     auditLog: { create: jest.fn() },
     // P0-1: advisory xact lock — mock no-op.
@@ -187,7 +200,39 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     ).toBe(false);
     expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
     expect(autoSpy).toHaveBeenCalled(); // S2 compat korunur
+    expect(tx.ledgerAllocation.findMany).toHaveBeenCalled();
+    expect(tx.collectionAllocation.findMany).toHaveBeenCalled();
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('not ledger-allocated'));
+  });
+
+  it('CollectionAllocation projection drift explicit diagnostic üretir fakat legal authority/write sonucunu değiştirmez', async () => {
+    const summaryEngine = {
+      allocatePaymentToLedgerInTx: jest.fn(async () => ({
+        allocated: true,
+        ledgerEntry: { id: 'le-drift', tenantId: 't1', caseId: 'c1', currency: 'TRY' },
+        allocations: [{ amount: 1000 }],
+      })),
+    };
+    const { svc, tx, warnSpy } = setup({ summaryEngine });
+    tx.ledgerAllocation.findMany.mockResolvedValueOnce([
+      {
+        amount: 1000,
+        claimItem: { itemType: 'INTEREST', metadata: null },
+      },
+    ]);
+    tx.collectionAllocation.findMany.mockResolvedValueOnce([
+      { allocationType: 'PRINCIPAL', amount: 1000 },
+    ]);
+
+    await expect(svc.create('t1', dto, 'u1')).resolves.toBeDefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"code":"COLLECTION_ALLOCATION_PROJECTION_DIAGNOSTIC"'),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"classification":"FAIL_CLOSED_DRIFT"'),
+    );
+    expect(tx.collection.create).toHaveBeenCalledTimes(1);
   });
 
   it('PAYMENT_RECEIVED payload kontratı client/disposition/accounting alanları olmadan korunur', async () => {

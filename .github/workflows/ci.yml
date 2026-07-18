@@ -479,6 +479,37 @@ jobs:
           awk '/^[[:space:]]*Tests:/ { seen = 1; passed = $2; total = $4 } END { exit !(seen && passed ~ /^[0-9]+$/ && total ~ /^[0-9]+$/ && passed == total && total > 0) }' "$output_file" || \
             { echo "BLOCKED: ADR-014 PR-1B DB tests did not complete with every discovered test passing"; exit 1; }
         working-directory: project
+      # RCV-P2-WS04-P01: ratified drift-baseline-only slice. The explicit unit/static
+      # gate locks authority roles, the four comparison classes, same-input parity,
+      # legacy activation diagnostics and the runtime allocator no-write inventory.
+      - name: RCV-P2-WS04-P01 allocation drift baseline unit and static tests
+        run: |
+          cd apps/api
+          for f in src/modules/summary-engine/__tests__/allocation-drift-baseline.spec.ts \
+                   src/modules/summary-engine/__tests__/allocation-authority.static-guard.spec.ts \
+                   src/modules/summary-engine/__tests__/allocate-payment-ledger-in-tx.spec.ts \
+                   src/modules/collection/__tests__/collection-ledger-forward.spec.ts; do
+            test -f "$f" || { echo "MISSING RCV-P2-WS04-P01 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/summary-engine/__tests__/allocation-drift-baseline.spec.ts \
+            src/modules/summary-engine/__tests__/allocation-authority.static-guard.spec.ts \
+            src/modules/summary-engine/__tests__/allocate-payment-ledger-in-tx.spec.ts \
+            src/modules/collection/__tests__/collection-ledger-forward.spec.ts
+        working-directory: project
+      # RCV-P2-WS04-P01 disposable-DB evidence: cent-exact LedgerAllocation/cache
+      # reconciliation plus injected-drift rollback. Skipped/zero-test is RED.
+      - name: RCV-P2-WS04-P01 allocation drift disposable DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/summary-engine/__tests__/allocation-drift-baseline.db-gated.integration.spec.ts || \
+            { echo "MISSING RCV-P2-WS04-P01 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/summary-engine/__tests__/allocation-drift-baseline.db-gated.integration.spec.ts
+        working-directory: project
       # TEST-INFRA-1: Gate-1 (tenant-boundary) + Gate-2 (passive-writer) güvenlik spec'leri yukarıdaki
       # dar pattern'lerin dışında kalıyordu → CI'da koşmuyordu. Ayrı/açık step ile koşturulur.
       # passWithNoTests YOK + önce dosya-varlığı pre-check: rename/silme veya 0-eşleşme → CI RED.
