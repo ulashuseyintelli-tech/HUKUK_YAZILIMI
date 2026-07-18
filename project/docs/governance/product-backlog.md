@@ -1907,8 +1907,8 @@ CANONICAL`; WS04 `OPEN` kalır. `dataAccess`, `evidenceExecution` ve
 REQUIRED`. Bu kayıt data access, replay, evidence acceptance, allocator/reader disposition,
 consumer switch, cutover, WS04-P04 veya WS05 authority üretmez.
 
-**RCV-P2-WS04-P03-A Replay Preflight / Launch-Package Formal Closure Reconciliation
-(2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Default-disabled launch-package
+**RCV-P2-WS04-P03-A Replay Preflight / Launch-Package Formal Closure — CLOSED / CANONICAL
+(2026-07-18):** Default-disabled launch-package
 implementation PR #1406 / squash `661f99079039d1026f17a26311727fc93c9b733d` ile
 canonical main'e merge edilmiş, required CI `4/4 SUCCESS` olmuş ve canonical ancestry
 doğrulanmıştır. Altı dosyalık bounded implementation yalnız local replay CLI/provider'ını,
@@ -1916,7 +1916,7 @@ dataset/access/session manifest şablonlarını, DB-enforced read-only ve extern
 no-egress preflight'ını, create-once owner-controlled output guard'ını ve PII-safe output
 kontrollerini synthetic/disposable characterization ile hazırlar.
 
-Approved governance merge'iyle P03-A launch package `FORMALLY CLOSED / CANONICAL`; WS04
+P03-A launch package `FORMALLY CLOSED / CANONICAL`; WS04
 `OPEN` kalır. Production call-site, gerçek veya representative data access, representative
 replay, evidence execution, production observation, runtime behavior, public API, governance
 implementation diff'i, historical mutation/backfill, schema veya migration değişikliği
