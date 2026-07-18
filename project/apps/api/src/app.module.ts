@@ -8,6 +8,7 @@ import { TenantModule } from "./modules/tenant/tenant.module";
 import { CaseModule } from "./modules/case/case.module";
 import { DebtorModule } from "./modules/debtor/debtor.module";
 import { TaskModule } from "./modules/task/task.module";
+import { ReportingLineModule } from "./modules/reporting-line/reporting-line.module";
 import { ClientModule } from "./modules/client/client.module";
 import { LawyerModule } from "./modules/lawyer/lawyer.module";
 import { FormTypeModule } from "./modules/form-type/form-type.module";
@@ -156,6 +157,7 @@ function getConditionalImports(): Type<unknown>[] {
     CaseModule,
     DebtorModule,
     TaskModule,
+    ReportingLineModule,
     ClientModule,
     LawyerModule,
     FormTypeModule,
