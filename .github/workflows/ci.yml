@@ -915,6 +915,20 @@ jobs:
             --testPathPattern="uyap-legacy-truthfulness\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # DBP-P2-UYAP-CONTRACT-A-P02A — official builder BOUNDARY (provenance + role-translation skeleton).
+      # Runtime-dışı, değer içermeyen, yalnız test-reachable iskelet; legacy builder ve wiring'e dokunmaz.
+      # Dar allowlist pattern'lerine girmez → ayrı/açık step; dosya-varlığı pre-check + passWithNoTests YOK.
+      - name: DBP-P2-UYAP-CONTRACT-A-P02A official role boundary + provenance tests
+        run: |
+          cd apps/api
+          for f in src/modules/uyap/official/__tests__/official-role-translator.spec.ts \
+                   src/modules/uyap/official/__tests__/official-contract-provenance.spec.ts; do
+            test -f "$f" || { echo "MISSING P02A spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="official-(role-translator|contract-provenance)\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
