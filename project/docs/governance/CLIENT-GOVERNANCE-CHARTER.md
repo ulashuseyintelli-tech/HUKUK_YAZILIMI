@@ -193,6 +193,52 @@ Bu bölüm CL-INV-007'yi (§5) **değiştirmez**; yalnız onun ilgili açık kar
 
 Bu disposition schema/enum/route/authentication implementation önermez; global provenance modeli C'dir, subject-level yeterlilik ayrıca belirlenecektir. Bu charter A/B/D seçeneklerini yasaklı subject-level sonuç olarak göstermez; D'nin subject-taxonomy kaygısı Option C içinde per-subject applicability olarak korunur.
 
+## 8.B POL-A — Client Financial Authority Disposition (OWNER RATIFIED)
+
+Bu bölüm CL-INV-007'yi (§5) ve §8.A POL-B disposition'ını **değiştirmez**; POL-A owner kararını disposition düzeyinde kaydeder (`decision-log.md` CLIENT-P1-POL-A-GOV).
+
+- **STATUS:** OWNER RATIFIED
+- **SELECTED MODEL:** SUBJECT-SPECIFIC EXISTING PREDICATE MATRIX (Model B)
+- **CORE RULE:** Client-side financial request, approval ve execution yetkisi **financial subject'e göre** belirlenir.
+- **NO SINGLE GLOBAL PREDICATE:** Tek bir predicate her Client financial yüzeyini yönetmez.
+- **NEW ROLE / CAPABILITY:** NONE (yalnız mevcut kanonik predicate'ler reuse edilir).
+- **PRODUCTION ENFORCEMENT:** AS-IS'in farklı olduğu yerlerde **ayrı bounded remediation gerektirir**; bu disposition production enforcement'ı tamamlanmış SAYMAZ.
+
+### 8.B.1 Canonical Subject Matrix
+- **CREDITOR DISPOSITION:** prepare → existing prepare eligibility; approve/post → existing approver eligibility; requester/approver ayrımı + existing four-eyes sınırı KORUNUR.
+- **PAYOUT:** request → existing prepare eligibility; approve/finalize → PayoutApprovalPolicy; existing DBIND self-approval disposition KORUNUR.
+- **OFFSET:** office-admin direct capability; existing OWN-29-A sınırı KORUNUR.
+- **MANUAL RECOVERY / REVERSAL CLOSURE:** office-admin direct capability.
+- **CLIENT FINANCIAL BALANCE / ADVANCE-CARI:** office-admin direct capability (PARTNER veya MANAGER); ek four-eyes YOK.
+- **EXPENSE:** request/create → existing case-scoped request authority; distribution approval → existing approver eligibility (requester ≠ approver ayrık); payment recording/reversal → office-admin execution authority.
+- **CLIENT STATEMENT ISSUE / VOID:** office-admin direct capability.
+- **FEE / CONTRACT CONTEXT:** existing approver eligibility; money-out authority ÜRETİLMEZ.
+
+### 8.B.2 Predicate Meanings
+- **OFFICE-ADMIN CAPACITY:** PARTNER veya MANAGER direct capability, yalnız açıkça adlandırılmış subject'ler için.
+- **APPROVER ELIGIBILITY:** mevcut OFFICE approver predicate; office-admin capacity ile birbirinin yerine geçmez.
+- **PAYOUT APPROVAL POLICY:** mevcut payout-specific predicate; diğer subject'lere genellenmez.
+- **PREPARE ELIGIBILITY:** request/preparation yetkisi; approval/execution/reversal yetkisi DEĞİL.
+
+### 8.B.3 POL-B Consumption
+- **AUTHENTICATED EXTERNAL-CLIENT DECISION:** subject-specific prerequisite fact OLABİLİR.
+- **STAFF-RECORDED CLIENT STATEMENT / INSTRUCTION:** subject-specific provenance fact OLABİLİR.
+- **İKİ FACT'İN HİÇBİRİ:** internal financial approval, execution veya target-domain mutation yetkisi VERMEZ.
+- **PER-SUBJECT CONSENT APPLICABILITY:** OPEN / OWNER-GATED (POL-B).
+
+### 8.B.4 Explicit Non-Selections
+- `canApproveFinance`: canonical financial authority olarak SEÇİLMEDİ.
+- CasePolicyEngine: ETKİNLEŞTİRİLMEDİ / SEÇİLMEDİ.
+- PermissionGrant: ETKİNLEŞTİRİLMEDİ / SEÇİLMEDİ.
+- UserRole: subject-specific matrix'in yerine geçmez.
+- CLIENT CONSENT: financial request/approval/execution/mutation predicate DEĞİL.
+- Bu non-selection'ların retirement/activation kararı bu disposition'da VERİLMEZ.
+
+### 8.B.5 MANAGER Asymmetry
+- **MANAGER AUTHORITY: SUBJECT-SPECIFIC / INTENTIONAL.** DAHİL: office-admin direct-capability subject'leri + payout-specific approval. OTOMATİK DAHİL DEĞİL: generic approver-eligibility subject'leri. **Global role normalization YETKİLENDİRİLMEDİ.**
+
+Bu disposition schema/enum/route/wiring implementation önermez; predicate map **reference-only**'dir; production enforcement ayrı owner-gated bounded remediation'a bağlıdır.
+
 ## 9. Upgrade Rule
 
 - **FULL CLIENT DOMAIN LAW:** Phase 0'da GEREKMEZ.
