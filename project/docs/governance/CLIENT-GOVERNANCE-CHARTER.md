@@ -248,3 +248,79 @@ Bu disposition schema/enum/route/wiring implementation önermez; predicate map *
 ## 10. Document Self-Check
 
 Bu belge: yalnız Client ownership / invariants / cross-domain contracts konsolide eder; kendini full Domain Law olarak tanımlamaz; mevcut Domain Law veya owner-decision otoritesini yeniden sahiplenmez / override etmez; hiçbir yeni ürün / finans / portal / KVKK politikası seçmez; teknik mekanizma / route / model / field / exploit detayı içermez; **IMPLEMENTATION AUTHORITY: NONE**.
+
+## 11. CLIENT-P1-BP-01 — Client Capability / Aggregate / Lifecycle Map (BOUNDED CONSOLIDATION — OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-BP-01` read-only analizinin **owner-ratified bounded consolidation**'ıdır (`decision-log.md` CLIENT-P1-BP-01-GOV; **MODEL 1 — BOUNDED CONSOLIDATION MAP**). Yalnız mevcut kanonik gerçekleri (AS-IS schema + charter §3–§8.B + XDC-A–E + POL-A + POL-B + SYSTEM-CONSTITUTION + DBIND) **konsolide eder**; yeni domain authority, policy, role, rank, predicate veya lifecycle mekanizması ÜRETMEZ. §5 `CL-INV-001..008`, §6 XDC-A–E, §8.A POL-B ve §8.B POL-A metinlerini **semantik olarak değiştirmez veya yeniden yorumlamaz**. Bu bölüm CLIENT domain kayıtlarını **yapısal/mimari konsolidasyon sözlüğü** olarak adlandırır (şema zaten repository'de kanoniktir); route/method/field-wiring/exploit/tenant-bypass mekanizma detayı İÇERMEZ (§10 self-check bu kapsamla geçerlidir). **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 11.1 Capability Boundary
+
+- **CLIENT-OWNED capabilities:** client identity/profile; representation & mandate; client instruction/declaration; client approval-**requirement/request** context; client-facing visibility **context** (policy OPEN); communication preferences; fee/contract **context** (money-out authority ÜRETMEZ); client-side creditor identity (creditor set); external-client onboarding intake; external-client portal identity (approval'a UNWIRED).
+- **CLIENT tarafından yalnız TÜKETİLEN (cross-domain; okuma; sahiplenilmez):** OFFICE internal approval kararı + actor identity (XDC-A); RECEIVABLE claim/receivable kompozisyonu (XDC-B); COLLECTION posted disposition → payable/payout/offset/statement (XDC-C); DEBTOR legal-status bağlamı (XDC-D); shared-kernel document/evidence + auth infrastructure (XDC-E); OFFICE financial predicate'leri (POL-A reuse).
+- **AUTHORITY SAHİPLERİ (yeniden sahiplenilmez):** OFFICE (`SYS-GOV-014`) · RECEIVABLE (`SYS-GOV-017`) · COLLECTION (`SYS-GOV-018`) · DEBTOR (`SYS-GOV-016`) · shared-kernel (`SYS-GOV-019`). **XDC-A–E TÜKETİLİR; YENİDEN SAHİPLENİLMEZ.**
+
+### 11.2 Structural Map (AS-IS records — precision preserved)
+
+`onDelete` / foreign-key / tenant-column yapıları **supporting evidence** olarak kullanılır; **tek başına normatif aggregate kanıtı değildir.**
+
+- **`Client`** — primary client identity/profile root.
+- **`ClientContact` / `ClientAddress` / `ClientBankAccount`** — Client-owned **component record**'lar (canonical VALUE OBJECT olarak KESİNLEŞTİRİLMEZ).
+- **`ClientPowerOfAttorney`** — identity-bearing **mandate record/entity**; client relationship bağlamında değerlendirilir.
+- **`ClientApprovalRequest` + `ClientApprovalEvent`** — ayrı **approval-request / provenance ledger** (staff-recorded provenance = POL-B FACT B).
+- **`ClientIntelStatement`** — ayrı **instruction/declaration evidence record**.
+- **`ClientIntakeLink` ve alt kayıtları** — ayrı **onboarding/intake process boundary**.
+- **`CaseClient`** — canonical **creditor-relationship record**; **AGGREGATE OWNERSHIP/TOPOLOGY NOT DECIDED → BP-02 OPEN SLOT**.
+- **`ClientPortalUser`** — linked **external-client identity**; **Client aggregate membership NOT DECIDED**; portal authority ve boundary **BP-05'e ertelenir**.
+
+### 11.3 Entity / Component / Evidence Classification
+
+Üç sınıf kullanılır; component record'lar için canonical **VALUE OBJECT hükmü KURULMAZ**:
+
+- **IDENTITY-BEARING ENTITY / RECORD:** `Client` · `CaseClient` · `ClientPortalUser` · `ClientApprovalRequest` · `ClientIntelStatement` · `ClientPowerOfAttorney` · `ClientIntakeLink` (+ intake submission kayıtları).
+- **CLIENT-OWNED COMPONENT RECORD:** `ClientContact` · `ClientAddress` · `ClientBankAccount` · `ClientStatementLine` (+ mandate flat capability alanları component attribute olarak).
+- **EVIDENCE / IMMUTABLE FACT / LEDGER:** `ClientApprovalEvent` (append-only geçiş defteri) · `ClientStatement` (immutable snapshot + `supersededById`) · `ClientIntelStatement` beyan değeri (immutable) · `ClientApprovalRequest` karar kaydı (staff-recorded = **POL-B FACT B**).
+- **NAMED GAP (doldurulmaz):** POL-B **FACT A** (authenticated external-client decision) için AS-IS bağımsız evidence kaydı YOK (PORTAL channel tanımlı, external-track UNWIRED / NOT AUTHORIZED). Adlandırılır, ÇÖZÜLMEZ.
+
+### 11.4 Lifecycle Precision (AS-IS STATE SET; TRANSITION CONTRACT NOT YET CANONICAL)
+
+**Mevcut state set'leri (yalnız kayıt; enum üyeliğinden transition legality ÇIKARILMAZ):**
+
+- `PoaStatus` = {PENDING, ACTIVE, EXPIRED, REVOKED}
+- `ClientApprovalStatus` = {DRAFT, SENT, APPROVED, REJECTED, EXPIRED, CANCELLED}
+- `ClientIntelStatus` = {ACTIVE, RETRACTED, SUPERSEDED, FALSE_POSITIVE}
+- `ClientContactFollowUpStatus` = {ACTIVE, WAIVED, COMPLETED}
+- `Client.isActive` = {true, false}
+
+**TRANSITION CONTRACT: NOT YET CANONICAL.** Bu bölüm yalnız state set'leri kaydeder; hangi geçişin meşru olduğu code/test/mevcut canonical evidence ile ayrıca doğrulanmadan transition olarak yazılmaz. Doğrulanmamış geçişler **AS-IS STATE SET / TRANSITION CONTRACT NOT YET CANONICAL** olarak işaretlidir. Lifecycle redesign/normalization bu görevde YAPILMAZ.
+
+**MANDATE DUAL-REPRESENTATION TENSION (kayıt):** mandate hem `Client` flat capability alanları (`canCollect` / `canWaive` / `canSettle` / `canRelease`; lifecycle'sız) hem de `ClientPowerOfAttorney` artifact'ı (`PoaStatus` + scope + validity) ile temsil edilir. Bu ikili temsil **tension olarak açıkça kaydedilir**; çözüm/normalization BP-02'ye aittir (OPEN SLOT).
+
+### 11.5 Authority & Invariant Mapping (YENİ INVARIANT ID YOK)
+
+BP-01 sonuçları mevcut otoritelere **map edilir** (yeni system/charter invariant ID üretilmez): `CL-INV-001..008` · §6 XDC-A–E · §8.B POL-A · §8.A POL-B · SYSTEM-CONSTITUTION · DBIND.
+
+Özellikle korunan ayrımlar:
+
+- **CONSENT ≠ INTERNAL APPROVAL** (`CL-INV-007`; ADR-009; §8.A).
+- **CONSENT ≠ FINANCIAL AUTHORITY** (§8.B.3; POL-A).
+- **STAFF-RECORDED FACT ≠ AUTHENTICATED EXTERNAL-CLIENT FACT** (`CL-INV-007`; §8.A dual-track).
+- **MANDATE SCOPE ≠ EXECUTION AUTHORITY** (§8.B POL-A; mandate capability = scope context).
+- **CLIENT SETTLEMENT ≠ LEGAL SETTLEMENT** (`CL-INV-004`; `SYS-LEGAL-009` / `SYS-LEGAL-010`; XDC-D).
+- **TENANT ISOLATION ≠ CLIENT-FACING VISIBILITY** (`CL-INV-006`; `SYS-AUTH-008`).
+- Creditor identity `CaseClient` / creditor set üzerinden belirlenir; `Case.clientId` finansal/party authority DEĞİL (`CL-INV-002` / `CL-INV-003`; DBIND §1).
+
+### 11.6 Open-Slot Register (yalnız pointer; ÇÖZÜLMEZ)
+
+- `CaseClient` aggregate topology → **BP-02**
+- Relationship / mandate lifecycle detail → **BP-02**
+- Per-subject consent sufficiency → **BP-04**
+- Portal / external-client authority ve identity boundary → **BP-05**
+- Portal / document RBAC → **BP-05 / POL-J**
+- Masking ve aggregate visibility → **BP-06**
+- KVKK retention / anonymization / legal hold → ilgili sonraki section
+- Financial enforcement delta → ayrı owner-gated remediation
+- Reversal / ledger reconciliation / ADR-013 / ADR-014 → ilgili diğer programlar
+
+### 11.7 BP-01 Self-Check
+
+Bu bölüm: yalnız mevcut kanonik gerçekleri konsolide eder; yeni authority/policy/role/rank/predicate/lifecycle mekanizması üretmez; `CaseClient` aggregate ownership/topology'sini SEÇMEZ; `ClientPortalUser`'ı Client aggregate'ine kesin dahil ETMEZ; component record'ları canonical value object İLAN ETMEZ; enum-only transition çıkarımı YAPMAZ; `CL-INV-001..008` / §6 / §8.A / §8.B'yi değiştirmez; portal / masking / KVKK / aggregate-visibility policy'si SEÇMEZ; financial remediation veya external-approval implementation AÇMAZ; route/field-wiring/exploit detayı İÇERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
