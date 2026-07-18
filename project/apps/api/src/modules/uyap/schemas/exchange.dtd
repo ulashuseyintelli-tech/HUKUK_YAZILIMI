@@ -1,7 +1,10 @@
 <!--
-  UYAP e-Takip XML DTD
-  Kaynak: https://uyap.gov.tr/e-takip-tanitimi-ve-programlari
-  Versiyon: 2024.03
+  LOCAL / LEGACY CONTRACT — NOT THE OFFICIAL UYAP exchange.dtd
+  Bu dosya resmî UYAP exchange.dtd DEĞİLDİR; resmî sözleşmeyle uyumlu olduğu KANITLANMAMIŞTIR
+  (NOT PROVEN CONTRACT-COMPLIANT). Yalnız yerel/legacy XML üretiminin yapısını tanımlar.
+  Tarihsel kaynak-notu (authority DEĞİL): resmî e-Takip paketi tarihsel olarak
+  https://uyap.gov.tr/e-takip-tanitimi-ve-programlari adresinde yayımlanmıştı; bu dosya onun
+  bire-bir kopyası DEĞİLDİR. Resmî sözleşme doğrulaması ve cutover: HOLD (DBP-P2-UYAP-CONTRACT-A).
   
   Bu DTD, icra takip sistemlerinden UYAP'a veri aktarımı için kullanılır.
 -->

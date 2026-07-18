@@ -274,7 +274,11 @@ export class UyapController {
     return {
       xml,
       validation,
-      version: '2024.03',
+      // F1 (DBP-P2-UYAP-CONTRACT-A-P01): legacy/local envelope — resmî sözleşme uyumluluğu İDDİA EDİLMEZ.
+      contractMode: 'LEGACY_LOCAL' as const,
+      officialContractCompliant: false as const,
+      officialContractVersion: null,
+      cutoverStatus: 'HOLD' as const,
       generatedAt: new Date().toISOString(),
     };
   }
@@ -374,13 +378,19 @@ export class UyapController {
       tenantId,
     }, tenantId);
 
+    // F3 (DBP-P2-UYAP-CONTRACT-A-P01): submitDocument STUB'tir; GERCEK UYAP ILETIMI YOKTUR.
+    // Response sahte resmi EVK veya UYAP-a-gonderildi izlenimi URETMEZ.
     return {
       success: result.success,
-      evkNo: result.evkNo,
-      message: result.success 
-        ? 'e-Takip XML UYAP kuyruğuna alındı' 
-        : result.errorMessage,
-      xml: xml.substring(0, 500) + '...', // İlk 500 karakter
+      mode: 'STUB' as const,
+      transmitted: false as const,
+      evkNo: null,
+      // Yerel simulasyon izleme referansi; resmi dis EVK/evrak numarasi DEGILDIR.
+      stubReference: result.evkNo ?? null,
+      message: result.success
+        ? 'Yerel simülasyon tamamlandı; UYAP sistemine herhangi bir iletim yapılmadı.'
+        : (result.errorMessage ?? 'Yerel simülasyon başarısız'),
+      xml: xml.substring(0, 500) + '...',
     };
   }
 

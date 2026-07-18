@@ -105,29 +105,10 @@ export const UYAP_MAHIYET_KODLARI = {
 
 // ==================== TARAF ROL TÜRLERİ ====================
 
-export const UYAP_ROL_TURLERI = {
-  // Alacaklı tarafı
-  ALACAKLI: { kod: '1', isim: 'Alacaklı', taraf: 'ALACAKLI' },
-  ALACAKLI_VEKILI: { kod: '11', isim: 'Alacaklı Vekili', taraf: 'ALACAKLI' },
-  
-  // Borçlu tarafı
-  BORCLU: { kod: '2', isim: 'Borçlu', taraf: 'BORCLU' },
-  KEFIL: { kod: '3', isim: 'Kefil', taraf: 'BORCLU' },
-  MUSTEREN_BORCLU: { kod: '4', isim: 'Müşterek Borçlu', taraf: 'BORCLU' },
-  MÜTESELSIL_BORCLU: { kod: '5', isim: 'Müteselsil Borçlu', taraf: 'BORCLU' },
-  MIRASCI: { kod: '6', isim: 'Mirasçı', taraf: 'BORCLU' },
-  
-  // Kambiyo senedi tarafları
-  KESIDECI: { kod: '10', isim: 'Keşideci', taraf: 'BORCLU' },
-  CIRANTA: { kod: '11', isim: 'Ciranta', taraf: 'BORCLU' },
-  AVALCI: { kod: '12', isim: 'Avalci', taraf: 'BORCLU' },
-  LEHTAR: { kod: '13', isim: 'Lehtar', taraf: 'ALACAKLI' },
-  MUHATAP: { kod: '14', isim: 'Muhatap', taraf: 'BORCLU' },
-  
-  // Diğer
-  UCUNCU_SAHIS: { kod: '20', isim: 'Üçüncü Şahıs', taraf: 'DIGER' },
-  MALIK: { kod: '21', isim: 'Malik', taraf: 'DIGER' },
-} as const;
+// F5 (DBP-P2-UYAP-CONTRACT-A-P01): duplicate/dead UYAP_ROL_TURLERI KALDIRILDI.
+// Importer yoktu ve aktif tabloyla (uyap-xml.service.ts, 10-kod) celisiyordu
+// (or. MIRASCI 6 vs 5; CIRANTA ve ALACAKLI_VEKILI ikisi de 11). Tek runtime rol
+// tablosu: UYAP_ROL_TURLERI @ uyap-xml.service.ts. Bu bolumden rol sabiti export EDILMEZ.
 
 // ==================== DOSYA TİPLERİ ====================
 
