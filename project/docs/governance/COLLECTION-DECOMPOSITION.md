@@ -28,7 +28,7 @@ diğer parantezli atamalar PROPOSED kalır.
 ```text
 PHASE 0 — CANONICALIZATION & HANDOFF          [CLOSED / CANONICAL UPON APPROVED MERGE]
 PHASE 1 — P0 FINANCIAL SAFETY                 [CLOSED / CANONICAL]
-PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4 CLOSED; W2.2C-5 CLOSED UPON APPROVED RECONCILIATION / CONFIRMATION BOUNDARY REVIEW REQUIRED]
+PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS      [ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4/W2.2C-5 CLOSED; W2.2D-0 CLOSED UPON APPROVED RECONCILIATION / W2.2D-1 OWNER GO REQUIRED]
 PHASE 3 — DOMAIN COMPLETENESS                 [owner-decision-gated]
 PHASE 4 — CONSUMER CUTOVER                    [cutover-gated — NOT AUTHORIZED]
 PHASE 5 — PLATFORM HARDENING                  [P4 sonrası]
@@ -86,12 +86,12 @@ disposition'ını, daha geniş `REC-AUTH-011/012` reconciliation'ı ise Phase 1 
 cross-domain authority çalışmasını açık tutar. Bu kapanış Phase 2'yi başlatmaz veya
 implementation authority üretmez.
 
-## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4 closed; W2.2C-5 closes upon approved reconciliation, confirmation boundary review required)
+## PHASE 2 — TEMPORAL & LIFECYCLE CONTRACTS (ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4/W2.2C-5 closed; W2.2D-0 closes upon approved reconciliation, W2.2D-1 owner GO required)
 
 | Wave | Workstream | Gate |
 |---|---|---|
 | W2.1 | Canonical effective-date policy | **CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE** — COL/OD-03 RECORDED; W2.1A PR #1315 / `1d5974e5` test-only evidence; precedence, fallback, provenance exclusion ve fail-closed confirmed |
-| W2.2 | confirmedAt / external settlement | **ACTIVE — W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4 CLOSED / CANONICAL; W2.2C-5 CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE** — COL/OD-06 Option A + COL/OD-06A Option C + COL/OD-03 RECORDED; PR #1332 / `88290071` additive candidate-status schema + PR #1347 / `61b49ce0` PENDING candidate ingress + PR #1353 / `758f6186` unsettled candidate admission guard + PR #1369 / `e7d2f11d` typed settlement evidence additive schema foundation + PR #1377 / `fcba6d98` candidate finality projection schema + PR #1382 / `be1771d3` dedicated settlement-verifier permission boundary + PR #1391 / `facc7789` immutable human evidence append + PR #1401 / `0452e836` candidate CAS transition; W2.2D/W2.2E confirmation-boundary review `OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED` |
+| W2.2 | confirmedAt / external settlement | **ACTIVE — W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4/W2.2C-5 CLOSED / CANONICAL; W2.2D-0 CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE** — COL/OD-06 Option A + COL/OD-06A Option C + COL/OD-03 RECORDED; PR #1332 / `88290071` additive candidate-status schema + PR #1347 / `61b49ce0` PENDING candidate ingress + PR #1353 / `758f6186` unsettled candidate admission guard + PR #1369 / `e7d2f11d` typed settlement evidence additive schema foundation + PR #1377 / `fcba6d98` candidate finality projection schema + PR #1382 / `be1771d3` dedicated settlement-verifier permission boundary + PR #1391 / `facc7789` immutable human evidence append + PR #1401 / `0452e836` candidate CAS transition + PR #1407 / `1156e4de` evidence-integrity admission guard; W2.2D-1 `OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED` |
 | W2.3 | Unapplied payment lifecycle | **BLOCKED — W2.2 BOUNDARY PENDING** — COL/OD-06 contract RECORDED; full runtime lifecycle incomplete |
 | W2.4 | Refund / downstream reversal | COL/OD-09/-10 OPEN (+COL/OD-01 RECORDED); partial/delta fail-closed; workstream NOT AUTHORIZED |
 | W2.5 | Claim satisfaction / re-open | COL/OD-07/-08 OPEN; workstream NOT AUTHORIZED |
@@ -385,11 +385,47 @@ W2.2C-5 candidate CAS transition exit criteria ve canonical kanıtı:
    ve `git diff --check` PASS'tir. Diff yalnız iki hedef test, transition service ve
    `BankModule` kaydıdır; dört dosya / 1.165 ekleme / 0 silmedir. Schema, migration, backfill,
    provider adapter, Collection admission veya finansal write yoktur.
-8. **Open-boundary preservation:** W2.2C-5 approved reconciliation merge'iyle
-   `CLOSED / CANONICAL` olur. COL-RISK-G03
+8. **Open-boundary preservation:** W2.2C-5 `CLOSED / CANONICAL`dır. W2.2D-0, PR #1407 /
+   `1156e4de` ile evidence-integrity admission guard sınırını kurmuş ve approved
+   reconciliation merge'iyle `CLOSED / CANONICAL` olur. COL-RISK-G03
    `PARTIALLY MITIGATED — CONFIRMATION BOUNDARY REMAINS` kalır. W2.2 ACTIVE;
-   sıradaki gate W2.2D/W2.2E confirmation-boundary review'dür ve implementation
-   yetkilendirilmemiştir. W2.3 `BLOCKED — W2.2 BOUNDARY PENDING` kalır.
+   sıradaki gate W2.2D-1'dir ve yalnız `OWNER GO REQUIRED / IMPLEMENTATION NOT
+   AUTHORIZED`dır. W2.3 `BLOCKED — W2.2 BOUNDARY PENDING` kalır.
+
+### W2.2D-0 Exit Evidence
+
+W2.2D-0 settled-candidate evidence-integrity admission guard exit criteria ve canonical kanıtı:
+
+1. **Repository evidence:** PR #1407, branch commit
+   `f12162d9eb714e424350520d72263d5e1269a922`, squash
+   `1156e4def38795f25b834ed46a1224ff4de12483`; required CI `4/4 SUCCESS` ve squash
+   SHA canonical main ancestry'sindedir.
+2. **Replay ordering:** Daha önce başarıyla eşleşmiş aynı-case transaction replay'i evidence
+   guard'dan önce değerlendirilir; mevcut canonical Collection döner ve ikinci
+   Collection/match-projection write'ı oluşmaz.
+3. **Admission tuple:** Yeni admission yalnız `INCOMING`, `candidateStatus=SETTLED` ve dolu
+   `settlementEvidenceId` ile ilerler. Evidence exact `tenantId + evidenceId` üzerinden aynı
+   tenant'ta okunur; `outcome=SETTLED` ve `source=SETTLEMENT_VERIFIER` zorunludur.
+4. **Temporal integrity:** `BankTransaction.externalSettledAt`, canonical evidence
+   `observedAt` değeriyle birebir eşleşir. Bu equality lifecycle/provenance bütünlüğüdür;
+   COL-TIME-001 `effectiveDate` authority'si üretmez veya değiştirmez.
+5. **Fail-closed boundary:** Eksik pointer, bulunamayan/cross-tenant evidence, deferred
+   provider source, non-SETTLED outcome, eksik veya uyuşmayan settlement zamanı açık hata ile
+   reddedilir.
+6. **Zero-write boundary:** Fail-closed yollarında Collection, Accounting Journal, domain
+   event, outbox, `LedgerEntry`, `LedgerAllocation`, `CollectionAllocation`,
+   `CollectionOverpayment`, ClaimItem ve bank-match projection write'ı oluşmaz.
+7. **Validation/scope:** Hedef bank-match suite `26/26`, ilgili bank lifecycle regression'ı
+   `4 suite / 62 test`, changed-file ESLint ve `git diff --check` PASS'tir. Repository-geneli
+   yerel API type-check kapsam dışı mevcut hatalar taşırken değişen iki dosyada hata yoktur;
+   required CI `4/4 SUCCESS`tır. Diff yalnız `bank.service.ts` ve hedef test dosyasıdır;
+   iki dosya / 175 ekleme / 1 silmedir.
+8. **Open-boundary preservation:** W2.2D-0 approved reconciliation merge'iyle
+   `CLOSED / CANONICAL` olur. `Collection.confirmedAt` ve match-projection hardening bu
+   patch'te yoktur. COL-RISK-G03
+   `PARTIALLY MITIGATED — CONFIRMEDAT / PROJECTION HARDENING REMAINS` kalır. W2.2 ACTIVE;
+   W2.2D-1 `OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED`, W2.3
+   `BLOCKED — W2.2 BOUNDARY PENDING` kalır.
 
 ## PHASE 3 — DOMAIN COMPLETENESS (tamamı owner-gated)
 
@@ -441,16 +477,18 @@ W2.1             : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR 
 W2.2A            : CLOSED / CANONICAL — PR #1332 @ 88290071
 W2.2B            : CLOSED / CANONICAL — PR #1347 @ 61b49ce0
 W2.2C-0          : CLOSED / CANONICAL — PR #1353 @ 758f6186 + reconciliation @ 77a83db3
-W2.2C            : DECISION GATE SATISFIED — COL/OD-06A Option C; evidence writer + candidate transition present, confirmation boundary pending
+W2.2C            : DECISION GATE SATISFIED — COL/OD-06A Option C; evidence writer + candidate transition present
 W2.2C-1          : CLOSED / CANONICAL — PR #1369 @ e7d2f11d + reconciliation @ c20425ea
 W2.2C-2          : CLOSED / CANONICAL — PR #1377 @ fcba6d98
 W2.2C-3          : CLOSED / CANONICAL — PR #1382 @ be1771d3
 W2.2C-4          : CLOSED / CANONICAL — PR #1391 @ facc7789
-W2.2C-5          : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR #1401 @ 0452e836
-W2.2D/W2.2E      : CONFIRMATION BOUNDARY REVIEW REQUIRED / IMPLEMENTATION NOT AUTHORIZED
-W2.2             : ACTIVE — W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4 closed; W2.2C-5 closes upon approved reconciliation; confirmation boundary review required
+W2.2C-5          : CLOSED / CANONICAL — PR #1401 @ 0452e836
+W2.2D-0          : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR #1407 @ 1156e4de
+W2.2D-1          : OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED — confirmedAt / projection hardening
+W2.2E            : NOT AUTHORIZED — W2.2D BOUNDARY PENDING
+W2.2             : ACTIVE — W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4/W2.2C-5 closed; W2.2D-0 closes upon approved reconciliation; W2.2D-1 owner-gated
 W2.3             : BLOCKED — W2.2 BOUNDARY PENDING
-PHASE 2          : ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4 closed; W2.2C-5 closes upon approved reconciliation; confirmation boundary review required; W2.3 blocked; W2.4–W2.5 owner-gated
+PHASE 2          : ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4/W2.2C-5 closed; W2.2D-0 closes upon approved reconciliation; W2.2D-1 owner-gated; W2.3 blocked; W2.4–W2.5 owner-gated
 PHASE 3    <── COL/OD-02, -14, -15, -17, -19, -20
 PHASE 4    <── PHASE 1 tamamı + COL/OD-11, -12, -13, -16 + CAN-CUT-01/02
 PHASE 5    <── PHASE 4
