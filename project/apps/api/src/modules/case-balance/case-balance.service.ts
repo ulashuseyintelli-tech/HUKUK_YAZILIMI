@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
@@ -88,20 +88,54 @@ export class CaseBalanceService {
   /**
    * Dosya bakiyesini getir veya oluştur
    */
+  /// <remarks>
+  /// Güvenlik sözleşmesi (CLIENT-P0-T04-C1 — tenant fail-closed containment):
+  /// - `tenantId` yalnız authenticated principal'dan gelir; body/query/path üzerinden tenant otoritesi kabul edilmez.
+  /// - `caseId`'nin authenticated tenant'a ait olduğu, herhangi bir bakiye/ledger/journal yan etkisinden ÖNCE burada doğrulanır.
+  /// - Route-erişilebilir tüm yollar (getBalance/getLedger/credit/debit) bu tek noktadan geçer → service-level fail-closed.
+  /// - Cross-tenant veya bilinmeyen dava aynı tenant-scoped NotFound yanıtını alır (existence oracle yok).
+  /// - Mevcut CaseBalance satırı authenticated tenant ile eşleşmezse fail-closed; historical mismatch auto-repair EDİLMEZ.
+  /// </remarks>
   async getOrCreateBalance(tenantId: string, caseId: string) {
-    // Önce upsert ile oluştur veya getir
-    const balance = await this.prisma.caseBalance.upsert({
-      where: { caseId },
-      update: {}, // Varsa güncelleme yapma
-      create: {
-        tenantId,
-        caseId,
-        balance: 0,
-        lowThreshold: 500, // Varsayılan düşük bakiye eşiği
-      },
+    // 1) Dava sahipliği: caseId authenticated tenant'a ait mi? Değilse tenant-scoped NotFound (existence oracle yok).
+    const ownedCase = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true },
     });
+    if (!ownedCase) {
+      throw new NotFoundException('Dava bulunamadı');
+    }
 
-    return balance;
+    // 2) Mevcut bakiye satırı varsa tenant eşleşmeli; eşleşmiyorsa fail-closed (mutasyon yok, auto-repair yok).
+    const existing = await this.prisma.caseBalance.findUnique({ where: { caseId } });
+    if (existing) {
+      if (existing.tenantId !== tenantId) {
+        throw new ForbiddenException('CaseBalance tenant uyuşmazlığı');
+      }
+      return existing;
+    }
+
+    // 3) Sahiplik doğrulandı → yeni bakiye oluştur. Concurrent create global `caseId @unique` fence'ine
+    //    düşerse yeniden okuyup tenant doğrula; idempotency/unique davranışı korunur.
+    try {
+      return await this.prisma.caseBalance.create({
+        data: {
+          tenantId,
+          caseId,
+          balance: 0,
+          lowThreshold: 500, // Varsayılan düşük bakiye eşiği
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const raced = await this.prisma.caseBalance.findUnique({ where: { caseId } });
+        if (raced && raced.tenantId === tenantId) {
+          return raced;
+        }
+        throw new ForbiddenException('CaseBalance tenant uyuşmazlığı');
+      }
+      throw error;
+    }
   }
 
   /**

@@ -142,6 +142,18 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="(esign-tenant-write-population|uyap-tenant-write-population|uyap-write-ownership-completion)\.spec\.ts$"
         working-directory: project
+      # CLIENT-P0-T04-C1: CaseBalance tenant fail-closed containment regression.
+      # getBalance/getLedger/credit/debit yollarının service-level ownership gate ile cross-tenant
+      # read/write reddi + zero side-effect (F-STOP-1 kod-yolu exposure containment kanıtı).
+      - name: CLIENT-P0-T04-C1 CaseBalance tenant containment regression
+        run: |
+          cd apps/api
+          for f in src/modules/case-balance/__tests__/case-balance-tenant-isolation.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-P0-T04-C1 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="case-balance-tenant-isolation\.spec\.ts$"
+        working-directory: project
       - name: Integration Tests (legal-kernel, real Postgres)
         run: |
           cd apps/api
