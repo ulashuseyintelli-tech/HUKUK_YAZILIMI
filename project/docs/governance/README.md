@@ -32,8 +32,9 @@ Dosyalar:
   WS04-P01 `DA-4`/`CA-1`/`CM-1` drift-baseline authority contract'ı ve P01 formal
   closure, WS04-P02 static/synthetic/disposable evidence-package formal closure kaydı,
   WS04-P03 representative replay package contract ratification'ı, default-disabled reader/adapter
-  implementation formal closure'ı ve ayrı data-access, evidence-execution,
-  production-observation ve disposition owner gate'leri.
+  implementation formal closure'ı, P03-A default-disabled replay preflight/launch-package
+  formal closure'ı ve ayrı data-access, evidence-execution, production-observation ve
+  disposition owner gate'leri.
 - `OFFICE-GOVERNANCE.md` - aday OFFICE Domain Law (DRAFT / OWNER REVIEW REQUIRED).
 - `OFFICE-MASTER-SYNTHESIS.md` - OFFICE kanıt/gerekçe/senaryo katmanı (NON-NORMATIVE).
 - `OFFICE-RISK-REGISTER.md` - OFFICE domain risk dossier'i (global triage otoritesi değil).
