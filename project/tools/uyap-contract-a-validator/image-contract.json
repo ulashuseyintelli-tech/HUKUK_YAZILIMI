@@ -1,0 +1,47 @@
+{
+  "workstream": "DBP-P2-UYAP-CONTRACT-A-P04B-VAL-I1",
+  "scope": "validator-image-foundation-only",
+  "purpose": "Local-only ISO-8859-9 Contract A DTD validator binary foundation (xmllint/libxml2). No DTD/XML/validation here (P04B-VAL-I2 scope).",
+  "base": {
+    "image": "alpine",
+    "version": "3.22.5",
+    "manifestDigest": "sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce",
+    "architecture": "linux/amd64",
+    "source": "Docker Official Images"
+  },
+  "validator": {
+    "package": "libxml2-utils",
+    "packageVersion": "2.13.9-r1",
+    "repository": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main",
+    "libxml2Version": "2.13.9",
+    "binary": "/usr/bin/xmllint",
+    "license": "MIT"
+  },
+  "runtime": {
+    "entrypoint": ["/usr/bin/xmllint"],
+    "user": "65532:65532",
+    "nonRoot": true,
+    "registryPush": "prohibited",
+    "usageReference": "local-image-id-sha256"
+  },
+  "capabilities": ["--dtdvalid", "--noout", "--nocatalogs", "--max-ampl", "--maxmem", "stdin-dash"],
+  "executionContract": {
+    "note": "NOT applied in I1; used by P04B-VAL-I2.",
+    "networkIsolation": "--network none (primary); xmllint --nonet is defense-in-depth only",
+    "hardening": ["--read-only", "--cap-drop ALL", "--security-opt no-new-privileges", "--user 65532:65532", "--pids-limit", "--memory", "--cpus", "--rm"]
+  },
+  "boundary": {
+    "dtdFileInImage": false,
+    "xmlInImage": false,
+    "dtdValidationInImage": false,
+    "hashGateInImage": false,
+    "resultUnionInImage": false,
+    "nodeRuntimeInImage": false,
+    "compilerInImage": false,
+    "runtimeWiring": "none",
+    "ciImageBuild": false,
+    "ciImagePull": false,
+    "ciContainerExecution": false,
+    "uyapCutover": "hard-hold"
+  }
+}
