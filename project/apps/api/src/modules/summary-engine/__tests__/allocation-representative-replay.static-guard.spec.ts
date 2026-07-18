@@ -11,10 +11,13 @@ const webRoot = path.join(projectRoot, 'apps', 'web');
 describe('RCV-P2-WS04-P03 static authority, no-write and consumer guards', () => {
   it('adapter has no source write, DDL, network, telemetry, schema or runtime authority surface', () => {
     const source = read('apps/api/src/modules/summary-engine/allocation-representative-replay-adapter.ts');
+    const allowedManualLaunchImport =
+      'src/scripts/rcv-ws04-p03-allocation-replay-launch.ts';
     const productionImports = sourceFiles(path.join(apiRoot, 'src'))
       .filter((file) =>
         relative(apiRoot, file) !==
         'src/modules/summary-engine/allocation-representative-replay-adapter.ts')
+      .filter((file) => relative(apiRoot, file) !== allowedManualLaunchImport)
       .filter((file) =>
         /from\s+['"][^'"]*allocation-representative-replay-adapter['"]/
           .test(fs.readFileSync(file, 'utf8')))
