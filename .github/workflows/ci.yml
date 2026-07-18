@@ -941,6 +941,20 @@ jobs:
             --testPathPattern="official-exchange-builder\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # DBP-P2-UYAP-CONTRACT-A-P04A-ENC — resmî ISO-8859-9 (Latin-5) GERÇEK BYTE ENCODING foundation.
+      # iconv-lite arkasında FAIL-CLOSED: yalnız SERIALIZED_DRAFT girdisi; encode→decode round-trip
+      # KAYNAKLA birebir + code-point representability; ikame/kayıp → ENCODING_REJECTED. Runtime-dışı,
+      # in-memory-only (persist/transmit/wire/raw-log YOK), legacy/serializer/schema'ya dokunmaz. Dar
+      # allowlist pattern'lerine girmez → ayrı/açık step; dosya-varlığı pre-check + passWithNoTests YOK.
+      - name: DBP-P2-UYAP-CONTRACT-A-P04A-ENC official ISO-8859-9 byte encoder tests
+        run: |
+          cd apps/api
+          test -f src/modules/uyap/official/__tests__/official-iso8859-9-encoder.spec.ts || \
+            { echo "MISSING P04A-ENC spec: official-iso8859-9-encoder.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="official-iso8859-9-encoder\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
