@@ -1884,6 +1884,27 @@ allocator/reader disposition ve cutover ayrı owner gate'leridir. `DA-4` / `CA-1
 **NEXT:** P03 reader/adapter implementation veya data-access request için ayrı owner GO
 gerekir; bu kayıt hiçbir implementation veya execution başlatmaz.
 
+**RCV-P2-WS04-P03 Reader/Adapter Formal Closure Reconciliation (2026-07-18;
+CANONICAL UPON APPROVED GOVERNANCE MERGE):** Ratified package contract PR #1389 / squash
+`07e91dfeab09a3ee3e42640546b7be4510133848` canonical main'dedir. Default-disabled,
+local-only ve read-only reader/adapter implementation PR #1394 / squash
+`6a19fef806980ab6d1a40dd0cf940f6a3918293b` ile canonical main'e merge edilmiş,
+required CI `4/4 SUCCESS` olmuş ve canonical ancestry doğrulanmıştır. Beş dosyalık bounded
+implementation yalnız `AllocationFrozenInputV1` reader/mapper, dataset-manifest validation
+adapter'ı, backend+web consumer manifesti, opaque-reference/PII-safe checksum evidence manifesti
+ve no-egress/read-only/default-disabled guard'ları ile synthetic/disposable characterization
+testlerini içerir. Production import/call-site, data access, replay execution, production
+observation, runtime behavior, allocator/reader authority, public API, governance implementation
+diff'i, historical mutation/backfill, schema veya migration değişikliği yoktur.
+
+Approved governance merge'iyle P03 reader/adapter implementation'ı `FORMALLY CLOSED /
+CANONICAL`; WS04 `OPEN` kalır. `dataAccess`, `evidenceExecution` ve
+`productionObservation` `NOT AUTHORIZED`; disposition readiness `NOT ASSESSED`; `DA-4` /
+`CA-1` / `CM-1` `ACTIVE SAFE-HOLD`; `ACT-28` ve `REC-AUTH-011/012` `OPEN` kalır.
+**CURRENT NEXT:** `P03 DATA-ACCESS / EVIDENCE-EXECUTION AUTHORIZATION REQUEST — OWNER GO
+REQUIRED`. Bu kayıt data access, replay, evidence acceptance, allocator/reader disposition,
+consumer switch, cutover, WS04-P04 veya WS05 authority üretmez.
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)
