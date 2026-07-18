@@ -84,6 +84,8 @@ export interface SyncResult {
 
 const BANK_CANDIDATE_PENDING = 'PENDING' as const;
 const BANK_CANDIDATE_SETTLED = 'SETTLED' as const;
+const BANK_SETTLEMENT_EVIDENCE_SOURCE = 'SETTLEMENT_VERIFIER' as const;
+const BANK_SETTLEMENT_EVIDENCE_OUTCOME = 'SETTLED' as const;
 
 @Injectable()
 export class BankService {
@@ -429,6 +431,67 @@ export class BankService {
       throw new ConflictException({
         code,
         message: 'Banka tahsilat adayı doğrulanmış settlement olmadan canonical Collection oluşturamaz.',
+      });
+    }
+
+    if (!transaction.settlementEvidenceId) {
+      throw new ConflictException({
+        code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_REQUIRED',
+        message: 'Canonical Collection admission için settlement evidence zorunludur.',
+      });
+    }
+
+    const settlementEvidence = await this.db.bankSettlementEvidence.findUnique({
+      where: {
+        tenantId_id: {
+          tenantId,
+          id: transaction.settlementEvidenceId,
+        },
+      },
+    });
+
+    if (
+      !settlementEvidence
+      || settlementEvidence.id !== transaction.settlementEvidenceId
+      || settlementEvidence.tenantId !== tenantId
+    ) {
+      throw new ConflictException({
+        code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_INVALID',
+        message: 'Settlement evidence banka adayıyla aynı tenant içinde doğrulanamadı.',
+      });
+    }
+
+    if (settlementEvidence.source !== BANK_SETTLEMENT_EVIDENCE_SOURCE) {
+      throw new ConflictException({
+        code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_SOURCE_UNSUPPORTED',
+        message: 'Yalnız yetkili settlement verifier evidence kaydı Collection admission sağlayabilir.',
+      });
+    }
+
+    if (settlementEvidence.outcome !== BANK_SETTLEMENT_EVIDENCE_OUTCOME) {
+      throw new ConflictException({
+        code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_OUTCOME_INVALID',
+        message: 'Settlement sonucu SETTLED olmayan evidence Collection admission sağlayamaz.',
+      });
+    }
+
+    if (!transaction.externalSettledAt) {
+      throw new ConflictException({
+        code: 'BANK_RECEIPT_EXTERNAL_SETTLED_AT_REQUIRED',
+        message: 'Canonical settlement zamanı olmadan Collection admission yapılamaz.',
+      });
+    }
+
+    const externalSettledAt = new Date(transaction.externalSettledAt).getTime();
+    const evidenceObservedAt = new Date(settlementEvidence.observedAt).getTime();
+    if (
+      !Number.isFinite(externalSettledAt)
+      || !Number.isFinite(evidenceObservedAt)
+      || externalSettledAt !== evidenceObservedAt
+    ) {
+      throw new ConflictException({
+        code: 'BANK_RECEIPT_SETTLEMENT_TIME_MISMATCH',
+        message: 'Banka adayı settlement zamanı canonical evidence zamanı ile eşleşmelidir.',
       });
     }
 

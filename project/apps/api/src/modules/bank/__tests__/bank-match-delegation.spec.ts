@@ -44,6 +44,8 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
         valueDate: new Date('2026-01-02'),
         transactionType: 'INCOMING',
         candidateStatus: 'SETTLED',
+        settlementEvidenceId: 'evidence-1',
+        externalSettledAt: new Date('2026-01-03T10:00:00.000Z'),
         description: 'EFT',
         referenceNo: 'REF-1',
         isMatched: false,
@@ -52,6 +54,16 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
       create: jest.fn(async ({ data }: any) => ({ id: 'tx-new', ...data })),
       update,
       ...(overrides.bankTransaction || {}),
+    },
+    bankSettlementEvidence: {
+      findUnique: jest.fn(async () => ({
+        id: 'evidence-1',
+        tenantId: 't1',
+        source: 'SETTLEMENT_VERIFIER',
+        outcome: 'SETTLED',
+        observedAt: new Date('2026-01-03T10:00:00.000Z'),
+      })),
+      ...(overrides.bankSettlementEvidence || {}),
     },
     bankIntegrationLog: {
       create: jest.fn(async () => ({ id: 'log1' })),
@@ -86,6 +98,9 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
     expect(prisma.bankTransaction.findFirst).toHaveBeenCalledWith({
       where: { id: 'tx1', tenantId: 't1' },
     });
+    expect(prisma.bankSettlementEvidence.findUnique).toHaveBeenCalledWith({
+      where: { tenantId_id: { tenantId: 't1', id: 'evidence-1' } },
+    });
     expect(coll.create).toHaveBeenCalledWith(
       't1',
       expect.objectContaining({
@@ -114,7 +129,7 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
   });
 
   it('retry: aynı canonical eşleşme Collection replay döndürür ve ikinci create/update yapmaz', async () => {
-    const { svc, coll, update } = buildService(undefined, {
+    const { svc, prisma, coll, update } = buildService(undefined, {
       bankTransaction: {
         findFirst: jest.fn(async () => ({
           id: 'tx1',
@@ -135,6 +150,7 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
     });
     expect(coll.findById).toHaveBeenCalledWith('t1', 'col1');
     expect(coll.create).not.toHaveBeenCalled();
+    expect(prisma.bankSettlementEvidence.findUnique).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -161,6 +177,8 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
         transactionDate: new Date('2026-01-01'),
         transactionType: 'INCOMING',
         candidateStatus: 'SETTLED',
+        settlementEvidenceId: 'evidence-1',
+        externalSettledAt: new Date('2026-01-03T10:00:00.000Z'),
         isMatched: matched,
         matchedCaseId: matched ? 'c1' : null,
         matchedCollectionId: matched ? 'col1' : null,
@@ -245,6 +263,99 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
       await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1')).rejects.toMatchObject({
         response: { code: errorCode },
       });
+      expect(coll.create).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+      for (const write of Object.values(financialWrites)) {
+        expect(write).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each([
+    {
+      name: 'settlement evidence pointer eksik',
+      transaction: { settlementEvidenceId: null },
+      evidence: undefined,
+      errorCode: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_REQUIRED',
+    },
+    {
+      name: 'evidence aynı tenant içinde bulunamıyor',
+      transaction: {},
+      evidence: null,
+      errorCode: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_INVALID',
+    },
+    {
+      name: 'evidence başka tenant kaydı döndürüyor',
+      transaction: {},
+      evidence: { tenantId: 't2' },
+      errorCode: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_INVALID',
+    },
+    {
+      name: 'provider evidence yolu deferred',
+      transaction: {},
+      evidence: { source: 'VALIDATED_PROVIDER_ATTESTATION' },
+      errorCode: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_SOURCE_UNSUPPORTED',
+    },
+    {
+      name: 'evidence sonucu SETTLED değil',
+      transaction: {},
+      evidence: { outcome: 'REJECTED' },
+      errorCode: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_OUTCOME_INVALID',
+    },
+    {
+      name: 'external settlement zamanı eksik',
+      transaction: { externalSettledAt: null },
+      evidence: {},
+      errorCode: 'BANK_RECEIPT_EXTERNAL_SETTLED_AT_REQUIRED',
+    },
+    {
+      name: 'external settlement zamanı evidence ile uyuşmuyor',
+      transaction: { externalSettledAt: new Date('2026-01-03T10:00:01.000Z') },
+      evidence: {},
+      errorCode: 'BANK_RECEIPT_SETTLEMENT_TIME_MISMATCH',
+    },
+  ])(
+    'fail-closed evidence tuple: $name ise sıfır write üretir',
+    async ({ transaction, evidence, errorCode }) => {
+      const canonicalEvidence = {
+        id: 'evidence-1',
+        tenantId: 't1',
+        source: 'SETTLEMENT_VERIFIER',
+        outcome: 'SETTLED',
+        observedAt: new Date('2026-01-03T10:00:00.000Z'),
+        ...evidence,
+      };
+      const { svc, prisma, coll, update, financialWrites } = buildService(undefined, {
+        bankTransaction: {
+          findFirst: jest.fn(async () => ({
+            id: 'tx1',
+            tenantId: 't1',
+            amount: 500,
+            currency: 'TRY',
+            transactionDate: new Date('2026-01-01'),
+            transactionType: 'INCOMING',
+            candidateStatus: 'SETTLED',
+            settlementEvidenceId: 'evidence-1',
+            externalSettledAt: new Date('2026-01-03T10:00:00.000Z'),
+            isMatched: false,
+            ...transaction,
+          })),
+        },
+        bankSettlementEvidence: {
+          findUnique: jest.fn(async () => evidence === null ? null : canonicalEvidence),
+        },
+      });
+
+      await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1')).rejects.toMatchObject({
+        response: { code: errorCode },
+      });
+      if (transaction.settlementEvidenceId === null) {
+        expect(prisma.bankSettlementEvidence.findUnique).not.toHaveBeenCalled();
+      } else {
+        expect(prisma.bankSettlementEvidence.findUnique).toHaveBeenCalledWith({
+          where: { tenantId_id: { tenantId: 't1', id: 'evidence-1' } },
+        });
+      }
       expect(coll.create).not.toHaveBeenCalled();
       expect(update).not.toHaveBeenCalled();
       for (const write of Object.values(financialWrites)) {
