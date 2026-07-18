@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -20,7 +20,7 @@ Consolidation               : COMPLETE (owner-supplied progression baseline)
 Target Architecture         : COMPLETE (owner-supplied progression baseline)
 Implementation Roadmap      : COMPLETE (owner-supplied progression baseline)
 Current phase               : RCV-P2 (planning label; no new Master Register identity)
-Current workstream          : WS04 — Allocation & Derived Payment State (OPEN; P01/P02 closed; P03 reader/adapter formally closed upon approved governance merge)
+Current workstream          : WS04 — Allocation & Derived Payment State (OPEN; P01/P02 closed; P03 reader/adapter closed; P03-A launch package formally closed upon approved governance merge)
 WS01 status                 : CLOSED
 WS01 historical status      : TECHNICALLY COMPLETE
 WS01 roadmap                : COMPLETE (P01–P04)
@@ -49,8 +49,10 @@ WS04-P01 implementation auth: CONSUMED / COMPLETE
 RCV-P2-WS04-P02             : FORMALLY CLOSED / CANONICAL (evidence PR #1378 / 34e43329)
 WS04-P02 evidence auth      : CONSUMED / COMPLETE — STATIC / SYNTHETIC / DISPOSABLE ONLY
 RCV-P2-WS04-P03 contract    : RATIFIED / CANONICAL (PR #1389 / 07e91dfe)
-RCV-P2-WS04-P03             : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE (implementation PR #1394 / 6a19fef8)
+RCV-P2-WS04-P03             : FORMALLY CLOSED / CANONICAL (implementation PR #1394 / 6a19fef8)
 WS04-P03 implementation auth: CONSUMED / COMPLETE — READER/ADAPTER ONLY
+RCV-P2-WS04-P03-A           : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE (implementation PR #1406 / 661f9907)
+WS04-P03-A authorization    : CONSUMED / COMPLETE — PREFLIGHT/LAUNCH PACKAGE ONLY
 WS04-P03 data access        : NOT AUTHORIZED
 WS04-P03 evidence execution : NOT AUTHORIZED
 Production observation      : NOT AUTHORIZED
@@ -977,6 +979,94 @@ EVIDENCE-EXECUTION AUTHORIZATION REQUEST — OWNER GO REQUIRED`dır. Bu kayıt d
 replay, evidence acceptance, allocator/reader disposition, consumer switch, WS04 closure,
 WS04-P04, WS05, PR-11 veya runtime cutover authority üretmez.
 
+### 1.17 RCV-P2-WS04-P03-A launch-package formal closure reconciliation
+
+Formal launch-package closure record:
+
+```text
+RCV-P2-WS04-P03-A:
+FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+
+IMPLEMENTATION PR:
+#1406
+
+IMPLEMENTATION SQUASH:
+661f99079039d1026f17a26311727fc93c9b733d
+
+REQUIRED CI:
+4/4 PASS
+
+PACKAGE:
+DEFAULT-DISABLED REPLAY PREFLIGHT / LAUNCH PACKAGE
+
+PRODUCTION CALL-SITE:
+NONE
+
+RUNTIME BEHAVIOR:
+NONE
+
+PUBLIC API / SCHEMA / MIGRATION:
+NONE
+
+DATA ACCESS:
+NOT AUTHORIZED
+
+REPRESENTATIVE REPLAY:
+NOT EXECUTED
+
+EVIDENCE EXECUTION:
+NOT AUTHORIZED
+
+PRODUCTION OBSERVATION:
+NOT AUTHORIZED
+
+DISPOSITION READINESS:
+NOT ASSESSED
+
+DA-4 / CA-1 / CM-1:
+ACTIVE SAFE-HOLD
+
+ACT-28 / REC-AUTH-011 / REC-AUTH-012:
+OPEN
+
+WS04:
+OPEN
+
+NEXT ELIGIBLE ACTION:
+P03 DATA-ACCESS / EVIDENCE-EXECUTION AUTHORIZATION REQUEST
+SEPARATE OWNER GO REQUIRED
+```
+
+P03-A implementation PR #1406 / squash
+`661f99079039d1026f17a26311727fc93c9b733d` canonical main'e merge edilmiş, required
+CI sonucu `4/4 SUCCESS` olmuş ve squash commit pre-closure canonical main'in atası olarak
+doğrulanmıştır.
+
+Altı dosyalık bounded implementation:
+
+- default-disabled local allocation replay CLI/provider'ını;
+- dataset, named/time-bounded access ve environment/session manifest şablonlarını;
+- DB-enforced read-only ve externally attested no-egress preflight'ını;
+- create-once owner-controlled output path guard'ını;
+- PII-safe output validation'ını;
+- synthetic ve disposable PostgreSQL launch characterization testlerini
+
+canonical hale getirir. Bu package yalnız execution öncesi fail-closed preflight ve launch
+yüzeyidir; production call-site veya veri/replay authority'si değildir.
+
+Bu approved governance merge'iyle yalnız P03-A launch package `FORMALLY CLOSED / CANONICAL`
+olur; WS04 workstream'i `OPEN` kalır. Gerçek veya representative data access, dataset
+seçimi, representative replay, evidence execution, production observation, runtime behavior,
+allocator/reader authority, public API, governance implementation yüzeyi, historical
+mutation/backfill, schema veya migration değişmemiştir.
+
+`dataAccess`, `evidenceExecution` ve `productionObservation` `NOT AUTHORIZED`; representative
+replay `NOT EXECUTED`; disposition readiness `NOT ASSESSED`; `DA-4` / `CA-1` / `CM-1`
+`ACTIVE SAFE-HOLD`; `ACT-28` ve `REC-AUTH-011/012` `OPEN` kalır. Next eligible action yalnız
+`P03 DATA-ACCESS / EVIDENCE-EXECUTION AUTHORIZATION REQUEST — SEPARATE OWNER GO REQUIRED`dır.
+Bu kayıt dataset seçimi, data access, replay, evidence acceptance, allocator/reader disposition,
+consumer switch, WS04 closure, WS04-P04, WS05, PR-11 veya runtime cutover authority üretmez.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
@@ -1068,8 +1158,8 @@ Initial authority: GO-PHASE-1 / WAVE 0 / RCV-P1-T15-A only
 Progression      : Subsequent tasks authorized by separate owner task briefs
 Decision date    : 2026-07-14
 Decision-log ref : RCV-GOV-002 progression reconciliation
-Current reconcile: RCV-P2-WS04-P03 reader/adapter formal closure / 2026-07-18
-Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 CLOSED / WS04 OPEN / WS04-P01 FORMALLY CLOSED / WS04-P02 FORMALLY CLOSED / WS04-P03 CONTRACT RATIFIED / WS04-P03 READER-ADAPTER FORMALLY CLOSED UPON APPROVED GOVERNANCE MERGE / DATA-ACCESS AND EVIDENCE-EXECUTION AUTHORIZATION NONE
+Current reconcile: RCV-P2-WS04-P03-A launch-package formal closure / 2026-07-18
+Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 CLOSED / WS04 OPEN / WS04-P01 FORMALLY CLOSED / WS04-P02 FORMALLY CLOSED / WS04-P03 CONTRACT RATIFIED / WS04-P03 READER-ADAPTER FORMALLY CLOSED / WS04-P03-A LAUNCH PACKAGE FORMALLY CLOSED UPON APPROVED GOVERNANCE MERGE / DATA-ACCESS AND EVIDENCE-EXECUTION AUTHORIZATION NONE
 ```
 
 Bu reconciliation geçmiş task brief'lerini tek ve genel bir Phase 1 authority'ye dönüştürmez.
@@ -1105,11 +1195,12 @@ owner GO gerektirir.
 | WS04-P01 implementation | PR merged + required CI PASS + governance reconciliation | FORMALLY CLOSED / CANONICAL — PR #1366 / `a3b9463a` |
 | WS04-P02 evidence package | Static/synthetic/disposable evidence PR merged + required CI PASS + governance reconciliation; representative/production evidence ve disposition hariç | FORMALLY CLOSED / CANONICAL — PR #1378 / `34e43329` |
 | WS04-P03 package contract | Owner-approved representative replay dataset/privacy/read-only/evidence/stop contract'ı + approved governance merge | RATIFIED / CANONICAL — PR #1389 / `07e91dfe` |
-| WS04-P03 reader/adapter implementation | PR merged + required CI PASS + governance reconciliation; production call-site/runtime/data execution hariç | FORMALLY CLOSED / CANONICAL upon approved governance merge — PR #1394 / `6a19fef8` |
+| WS04-P03 reader/adapter implementation | PR merged + required CI PASS + governance reconciliation; production call-site/runtime/data execution hariç | FORMALLY CLOSED / CANONICAL — PR #1394 / `6a19fef8` |
+| WS04-P03-A replay preflight/launch package | PR merged + required CI PASS + governance reconciliation; data access/replay/production call-site hariç | FORMALLY CLOSED / CANONICAL upon approved governance merge — PR #1406 / `661f9907` |
 | WS04-P03 data/evidence execution | Ayrı owner data-access ve evidence-execution authorization gate'leriyle | NOT AUTHORIZED / NOT STARTED |
 | WS05–WS09 | Açılmamış | NOT STARTED |
 
-## 7. Phase 2 WS04-P01/P02/P03 Closure and Successor Gate
+## 7. Phase 2 WS04-P01/P02/P03/P03-A Closure and Successor Gate
 
 ```text
 CURRENT IMPLEMENTATION STATUS:
@@ -1150,9 +1241,13 @@ WS04-P02 PACKAGE         : STATIC / SYNTHETIC / DISPOSABLE EVIDENCE ONLY
 WS04-P02 AUTHORIZATION   : CONSUMED / COMPLETE
 WS04-P03 CONTRACT        : RATIFIED / CANONICAL — PR #1389 / 07e91dfeab09a3ee3e42640546b7be4510133848
 WS04-P03 PACKAGE         : REPRESENTATIVE ALLOCATION REPLAY + BACKEND/WEB CONSUMER QUALIFICATION
-WS04-P03 IMPLEMENTATION  : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+WS04-P03 IMPLEMENTATION  : FORMALLY CLOSED / CANONICAL
 WS04-P03 EVIDENCE        : PR #1394 / 6a19fef806980ab6d1a40dd0cf940f6a3918293b / CI 4/4 PASS
 WS04-P03 AUTHORIZATION   : CONSUMED / COMPLETE — READER/ADAPTER ONLY
+WS04-P03-A               : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+WS04-P03-A EVIDENCE      : PR #1406 / 661f99079039d1026f17a26311727fc93c9b733d / CI 4/4 PASS
+WS04-P03-A PACKAGE       : DEFAULT-DISABLED REPLAY PREFLIGHT / LAUNCH PACKAGE
+WS04-P03-A AUTHORIZATION : CONSUMED / COMPLETE — PREFLIGHT/LAUNCH PACKAGE ONLY
 PRODUCTION CALL-SITE     : NONE
 RUNTIME BEHAVIOR         : NONE
 WS04-P03 DATA ACCESS     : NOT AUTHORIZED
@@ -1164,13 +1259,13 @@ DA-4 / CA-1 / CM-1      : ACTIVE SAFE-HOLD
 ACT-28 / REC-AUTH-011/012: OPEN
 NEXT ELIGIBLE ACTION     : P03 DATA-ACCESS / EVIDENCE-EXECUTION AUTHORIZATION REQUEST
 OWNER GO                 : REQUIRED
-OWNER / RATIFIER         : OWNER — WS04-P03 reader/adapter formal closure brief
+OWNER / RATIFIER         : OWNER — WS04-P03-A launch-package formal closure brief
 DECISION DATE            : 2026-07-18
-AUTHORITATIVE REF        : decision-log / WS04-P03 reader/adapter formal closure reconciliation
+AUTHORITATIVE REF        : decision-log / WS04-P03-A launch-package formal closure reconciliation
 ```
 
-WS04-P03 reader/adapter formal kapanışından sonra ayrı data-access veya evidence-execution owner
-GO verilmezse korunacak safe-hold:
+WS04-P03-A launch-package formal kapanışından sonra ayrı data-access veya evidence-execution
+owner GO verilmezse korunacak safe-hold:
 
 ```text
 RCV-P2-WS01-P01..P04 CLOSED
@@ -1188,8 +1283,10 @@ RCV-P2-WS04-P01 CONTRACT RATIFIED / CANONICAL — PR #1364 / e5b019ca
 RCV-P2-WS04-P01 FORMALLY CLOSED / CANONICAL — PR #1366 / a3b9463a
 RCV-P2-WS04-P02 EVIDENCE PACKAGE FORMALLY CLOSED / CANONICAL — PR #1378 / 34e43329
 RCV-P2-WS04-P03 PACKAGE CONTRACT RATIFIED / CANONICAL — PR #1389 / 07e91dfe
-RCV-P2-WS04-P03 READER/ADAPTER FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE — PR #1394 / 6a19fef8
+RCV-P2-WS04-P03 READER/ADAPTER FORMALLY CLOSED / CANONICAL — PR #1394 / 6a19fef8
 RCV-P2-WS04-P03 IMPLEMENTATION AUTHORIZATION CONSUMED / COMPLETE — READER/ADAPTER ONLY
+RCV-P2-WS04-P03-A LAUNCH PACKAGE FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE — PR #1406 / 661f9907
+RCV-P2-WS04-P03-A AUTHORIZATION CONSUMED / COMPLETE — PREFLIGHT/LAUNCH PACKAGE ONLY
 RCV-P2-WS04-P03 PRODUCTION CALL-SITE NONE
 RCV-P2-WS04-P03 RUNTIME BEHAVIOR NONE
 RCV-P2-WS04-P03 DATA ACCESS NOT AUTHORIZED
