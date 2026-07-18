@@ -158,6 +158,11 @@ export default function ReportingLinesPage() {
             value={recon.invalidTopLevelWithManager}
             warn
           />
+          <ReconCard
+            label="Geçersiz tarih aralığı"
+            value={recon.invalidDateRangeRelationships}
+            warn
+          />
         </div>
       )}
 
