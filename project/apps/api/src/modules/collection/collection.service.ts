@@ -60,6 +60,11 @@ import {
   executeCollectionCancelInTransaction,
 } from "./collection-cancel-executor";
 import { resolveCanonicalCollectionReceiptCommand } from "./collection-receipt-command";
+import {
+  buildAllocationComparisonContext,
+  diagnoseCollectionAllocationProjection,
+  type AllocationComparisonResult,
+} from "../summary-engine/allocation-drift-baseline";
 
 // ─── Source → Header Mapping ─────────────────────────────────────────────────
 
@@ -311,6 +316,87 @@ export class CollectionService {
     }
 
     return allocations;
+  }
+
+  private async diagnoseCollectionAllocationProjectionInTx(
+    tx: any,
+    input: {
+      tenantId: string;
+      caseId: string;
+      collectionId: string;
+      currency: string;
+      heldOverpaymentAmount: number;
+    },
+  ): Promise<AllocationComparisonResult> {
+    const [ledgerAllocations, collectionAllocations] = await Promise.all([
+      tx.ledgerAllocation.findMany({
+        where: {
+          ledgerEntry: {
+            tenantId: input.tenantId,
+            caseId: input.caseId,
+            collectionId: input.collectionId,
+            status: "CONFIRMED",
+          },
+        },
+        select: {
+          amount: true,
+          claimItem: {
+            select: {
+              itemType: true,
+              metadata: true,
+            },
+          },
+        },
+      }),
+      tx.collectionAllocation.findMany({
+        where: { collectionId: input.collectionId },
+        select: { allocationType: true, amount: true },
+      }),
+    ]);
+    const context = buildAllocationComparisonContext({
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      currency: input.currency,
+      frozenInputId: input.collectionId,
+    });
+    const diagnostic = diagnoseCollectionAllocationProjection({
+      ledgerAllocation: ledgerAllocations.map((allocation: any) => ({
+        key: mapClaimItemTypeToAllocationType(
+          allocation.claimItem.itemType,
+          allocation.claimItem.metadata,
+        ),
+        amount: allocation.amount,
+      })),
+      collectionAllocation: collectionAllocations.map((allocation: any) => ({
+        key: allocation.allocationType,
+        amount: allocation.amount,
+      })),
+      heldOverpayment: input.heldOverpaymentAmount > 0
+        ? [{ key: AllocationType.OTHER, amount: input.heldOverpaymentAmount }]
+        : undefined,
+      context,
+      comparisonContextComplete:
+        ledgerAllocations.length > 0 && collectionAllocations.length > 0,
+    });
+
+    const diagnosticMessage = JSON.stringify({
+      code: "COLLECTION_ALLOCATION_PROJECTION_DIAGNOSTIC",
+      collectionId: input.collectionId,
+      classification: diagnostic.classification,
+      reason: diagnostic.reason,
+      canonicalTotal: diagnostic.canonicalTotal,
+      projectionTotal: diagnostic.candidateTotal,
+      allowedDivergenceTotal: diagnostic.allowedDivergenceTotal,
+    });
+    if (
+      diagnostic.classification === "FAIL_CLOSED_DRIFT" ||
+      diagnostic.classification === "NOT_COMPARABLE"
+    ) {
+      this.logger.warn(diagnosticMessage);
+    } else {
+      this.logger.debug(diagnosticMessage);
+    }
+    return diagnostic;
   }
 
   /**
@@ -582,6 +668,7 @@ export class CollectionService {
 
       const ledgerEntryIds: string[] = [];
       let overpaymentId: string | undefined;
+      let heldOverpaymentAmount = 0;
       let ledgerAllocationCount = 0;
 
       // ── 5. G3a: KANONİK ledger forward write (LedgerAllocation = legal SoT) ──
@@ -701,6 +788,7 @@ export class CollectionService {
                 },
               });
               overpaymentId = overpayment.id;
+              heldOverpaymentAmount = overpaymentAmount;
 
               const overpaymentEventId = randomUUID();
               await this.domainEventIngestService.appendInTransaction(tx, {
@@ -765,6 +853,19 @@ export class CollectionService {
             },
           });
         }
+      }
+
+      if (
+        ledgerAllocationCount > 0 &&
+        (dto.autoAllocate !== false || (dto.allocations?.length ?? 0) > 0)
+      ) {
+        await this.diagnoseCollectionAllocationProjectionInTx(tx, {
+          tenantId,
+          caseId: dto.caseId,
+          collectionId: collection.id,
+          currency,
+          heldOverpaymentAmount,
+        });
       }
 
       await logCollectionMutationInTransaction(this.auditService, tx, {
