@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -46,10 +46,14 @@ WS04                        : OPEN
 RCV-P2-WS04-P01 contract    : RATIFIED / CANONICAL (PR #1364 / e5b019ca)
 RCV-P2-WS04-P01             : FORMALLY CLOSED / CANONICAL (PR #1366 / a3b9463a)
 WS04-P01 implementation auth: CONSUMED / COMPLETE
-RCV-P2-WS04-P02             : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE (evidence PR #1378 / 34e43329)
+RCV-P2-WS04-P02             : FORMALLY CLOSED / CANONICAL (evidence PR #1378 / 34e43329)
 WS04-P02 evidence auth      : CONSUMED / COMPLETE — STATIC / SYNTHETIC / DISPOSABLE ONLY
-RCV-P2-WS04-P03             : NOT AUTHORIZED / NOT STARTED
-Next eligible task          : UNSET — OWNER GO REQUIRED
+RCV-P2-WS04-P03 contract    : RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+WS04-P03 implementation auth: NONE
+WS04-P03 data access        : NOT AUTHORIZED
+WS04-P03 evidence execution : NOT AUTHORIZED
+Production observation      : NOT AUTHORIZED
+Next eligible action        : P03 READER/ADAPTER IMPLEMENTATION OR DATA-ACCESS REQUEST — SEPARATE OWNER GO REQUIRED
 ```
 
 Bu kayıt yalnız governance/register alignment, gerçekleşen phase/workstream progression ve bir
@@ -772,6 +776,118 @@ bu kayıt representative/production evidence, disposition, eligibility veya exec
 `CAN-CUT-02/ADR-014`, PR-11, consumer switch, runtime cutover, provider finality,
 refund/reversal ve owner/legal/evidence/acceptance gate'leri değişmez.
 
+### 1.15 RCV-P2-WS04-P03 representative replay package contract ratification
+
+Owner-ratified package contract:
+
+```text
+RCV-P2-WS04-P03:
+REPRESENTATIVE ALLOCATION REPLAY AND
+CONSUMER READ-AUTHORITY QUALIFICATION
+
+CONTRACT STATUS:
+RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+
+IMPLEMENTATION AUTHORIZATION:
+NONE
+
+DATA ACCESS:
+NOT AUTHORIZED
+
+EVIDENCE EXECUTION:
+NOT AUTHORIZED
+
+PRODUCTION OBSERVATION:
+NOT AUTHORIZED
+
+DA-4 / CA-1 / CM-1:
+ACTIVE SAFE-HOLD
+
+ACT-28 / REC-AUTH-011 / REC-AUTH-012:
+OPEN
+
+WS04:
+OPEN
+
+NEXT:
+P03 READER/ADAPTER IMPLEMENTATION OR DATA-ACCESS REQUEST
+SEPARATE OWNER GO REQUIRED
+```
+
+P03 yalnız representative replay paketinin bounded contract'ını tanımlar. Dataset seçmez,
+gerçek veya representative veriye erişmez, allocation-specific reader/adapter hazırlamaz ve
+evidence execution başlatmaz.
+
+#### Ratified dataset ve privacy contract
+
+- Representative selection, owner-approved purpose-bound local universe'den türetilen
+  **distributional base** ile ayrı raporlanan **edge-case supplement** katmanlarından oluşur.
+  Katmanlar prevalence iddiasında sessizce birleştirilemez; sample büyüklüğü veya oran bu
+  contract tarafından icat edilmez.
+- Source yalnız `LOCAL OWNER PC / LOCAL OFFICE ENVIRONMENT` sınırındadır. External access,
+  cloud, third-party veya external-AI transfer yoktur.
+- Canonical local evidence policy uyarınca gerçek yerel source veri gelecekte, ancak ayrı
+  data-access ve execution authorization ile doğrudan read-only okunabilir. “PII-safe /
+  redacted package” source kopyasını veya masking pipeline'ını değil; manifest, review ve
+  repository çıktılarında raw PII, business-visible identifier, credential, free text veya
+  case payload bulunmamasını ifade eder.
+- Evidence output yalnız numeric aggregate, typed classification, approved opaque reference
+  ve checksum/digest taşır. Raw working evidence yerel owner-controlled yüzeyden çıkamaz ve
+  repository/CI artefaktına yüklenemez.
+
+#### Ratified read-only ve comparison contract
+
+- Her run; canonical SHA, environment/session ID, approved dataset manifest/version,
+  selection reference, policy/schema/migration identity ve dedicated create-once output
+  yüzeyine bağlanır.
+- Database erişimi `REPEATABLE READ, READ ONLY` ile DB-enforced olmalıdır; write-capable
+  fallback, source mutation, DDL, migration, backfill, repair veya consumer switch yoktur.
+- P02 `RCV-WS04-P02-V1` frozen-input/fingerprint contract'ı değiştirilmeden yeniden kullanılır:
+  payment identity/amount/date, ClaimItem/bucket snapshot, currency, interest/accrual,
+  allocator policy/version ve rounding/minor-unit context'i eksiksiz olmalıdır.
+- Backend ve web production source universe'ündeki `collectedAmount` ve allocation reader/writer
+  referansları tek manifestte exact-match guard ile sınıflandırılır. Test/fixture/generated
+  yüzeyler ayrı tutulur; unmanifested veya authority-like consumer fail-closed blocker'dır.
+- `EQUALITY`, yalnız aynı tam fingerprint altında cent-exact equality'dir.
+- `ALLOWED_DIVERGENCE`, yalnız gross receipt ile allocated amount farkının tamamı explicit
+  `HELD` overpayment ile açıklanıyorsa geçerlidir.
+- `NOT_COMPARABLE` PASS değildir; eksik/farklı context reason-code ile kaydedilir ve disposition
+  readiness'i bloke eder.
+- `FAIL_CLOSED_DRIFT`, aynı frozen input altında cent-exact farktır; financial acceptance,
+  allocator/reader disposition ve cutover'ı bloke eder.
+
+#### Ratified evidence manifest ve lifecycle
+
+Evidence manifest en az task/package/version, canonical SHA, environment/session attestation,
+dataset manifest/version, selection universe/method/set references, access ve execution
+authorization references, P02 contract version, allocator/policy/schema/migration identities,
+backend+web consumer-manifest checksum'ı, scenario/result counts, frozen-input checksum seti,
+local artefact ve redacted-summary checksum'ları, incident/validation/review references ile
+owner acceptance reference'ını taşır.
+
+Approval zinciri `OWNER REQUEST → ACCESS APPROVAL → ENVIRONMENT + DATASET VERIFICATION →
+EXECUTION AUTHORIZATION → CAPTURE → VALIDATION → REVIEW → OWNER EVIDENCE ACCEPTANCE`
+biçimindedir. Access approval execution authorization değildir; capture acceptance değildir;
+evidence acceptance allocator/reader disposition veya cutover authority üretmez. Production
+observation ayrı runtime/production gate'inde ve `NOT AUTHORIZED` kalır.
+
+#### Ratified stop conditions
+
+Approved dataset/execution authorization yokluğu, read-only veya no-egress kontrolünün
+kanıtlanamaması, write/DDL/mutation teşebbüsü, SHA/session/manifest drift'i, raw PII veya
+business-visible identifier output'u, cross-tenant/cross-currency karışım, eksik provenance
+veya fingerprint, mandatory `NOT_COMPARABLE`, same-input cent-exact drift, LedgerAllocation
+varken `CollectionAllocation` legal fallback'i, sessiz legacy allocator activation,
+unmanifested consumer, unresolved selection bias/coverage gap ya da runtime/TBK100/schema/
+authority değişikliği ihtiyacı fail-closed stop condition'dır.
+
+Bu ratification `implementationAuthorization = NONE`, `dataAccess = NOT_AUTHORIZED`,
+`evidenceExecution = NOT_AUTHORIZED` ve `productionObservation = NOT_AUTHORIZED` sınırlarını
+korur. Allocation-specific reader/adapter implementation, data-access request, dataset seçimi,
+evidence run, evidence acceptance ve disposition birbirinden ayrı owner gate'leridir. `DA-4`,
+`CA-1`, `CM-1`, `ACT-28`, `REC-AUTH-011/012`, `CAN-CUT-01/VER-05`, `CAN-CUT-02/ADR-014`,
+PR-11, WS05 ve runtime cutover statüleri değişmez.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
@@ -863,8 +979,8 @@ Initial authority: GO-PHASE-1 / WAVE 0 / RCV-P1-T15-A only
 Progression      : Subsequent tasks authorized by separate owner task briefs
 Decision date    : 2026-07-14
 Decision-log ref : RCV-GOV-002 progression reconciliation
-Current reconcile: RCV-P2-WS04-P02 evidence-package formal closure / 2026-07-18
-Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 CLOSED / WS04 OPEN / WS04-P01 FORMALLY CLOSED / WS04-P02 FORMALLY CLOSED UPON APPROVED GOVERNANCE MERGE / WS04-P03 NOT AUTHORIZED
+Current reconcile: RCV-P2-WS04-P03 package contract ratification / 2026-07-18
+Status           : PHASE 1 CLOSED / WS01 CLOSED / WS02 CLOSED / WS03 CLOSED / WS04 OPEN / WS04-P01 FORMALLY CLOSED / WS04-P02 FORMALLY CLOSED / WS04-P03 CONTRACT RATIFIED UPON APPROVED GOVERNANCE MERGE / IMPLEMENTATION AUTHORIZATION NONE
 ```
 
 Bu reconciliation geçmiş task brief'lerini tek ve genel bir Phase 1 authority'ye dönüştürmez.
@@ -898,11 +1014,12 @@ owner GO gerektirir.
 | WS04-P01 authority contract | Owner `DA-4` / `CA-1` / `CM-1`, drift-class ratification ve approved governance merge | RATIFIED / CANONICAL upon approved merge |
 | ACT-28 / REC-AUTH-011/012 | Drift baseline first; allocator convergence disposition deferred | OPEN / reconciliation continues |
 | WS04-P01 implementation | PR merged + required CI PASS + governance reconciliation | FORMALLY CLOSED / CANONICAL — PR #1366 / `a3b9463a` |
-| WS04-P02 evidence package | Static/synthetic/disposable evidence PR merged + required CI PASS + governance reconciliation; representative/production evidence ve disposition hariç | FORMALLY CLOSED / CANONICAL upon approved governance merge — PR #1378 / `34e43329` |
-| WS04-P03 | Yalnız ayrı canonical assignment ve owner GO ile | NOT AUTHORIZED / NOT STARTED |
+| WS04-P02 evidence package | Static/synthetic/disposable evidence PR merged + required CI PASS + governance reconciliation; representative/production evidence ve disposition hariç | FORMALLY CLOSED / CANONICAL — PR #1378 / `34e43329` |
+| WS04-P03 package contract | Owner-approved representative replay dataset/privacy/read-only/evidence/stop contract'ı + approved governance merge | RATIFIED / CANONICAL upon approved governance merge; implementation/data/execution authority NONE |
+| WS04-P03 implementation/data | Reader/adapter implementation ve data-access/execution birbirinden ayrı owner gate'leriyle | NOT AUTHORIZED / NOT STARTED |
 | WS05–WS09 | Açılmamış | NOT STARTED |
 
-## 7. Phase 2 WS04-P01/P02 Formal Closure / Successor Gate
+## 7. Phase 2 WS04-P01/P02 Closure / P03 Contract and Successor Gate
 
 ```text
 CURRENT IMPLEMENTATION STATUS:
@@ -937,25 +1054,29 @@ WS04-P01 PACKAGE         : DRIFT BASELINE ONLY
 WS04-P01                 : FORMALLY CLOSED / CANONICAL
 WS04-P01 EVIDENCE        : PR #1366 / a3b9463ac81992130952060f48e5acfec1fcdbf2 / CI 4/4 PASS
 WS04-P01 AUTHORIZATION   : CONSUMED / COMPLETE
-WS04-P02                 : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+WS04-P02                 : FORMALLY CLOSED / CANONICAL
 WS04-P02 EVIDENCE        : PR #1378 / 34e43329bf2428cac609dfe3403d32db7cbcbdce / CI 4/4 PASS
 WS04-P02 PACKAGE         : STATIC / SYNTHETIC / DISPOSABLE EVIDENCE ONLY
 WS04-P02 AUTHORIZATION   : CONSUMED / COMPLETE
+WS04-P03 CONTRACT        : RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+WS04-P03 PACKAGE         : REPRESENTATIVE ALLOCATION REPLAY + BACKEND/WEB CONSUMER QUALIFICATION
+WS04-P03 IMPLEMENTATION  : NONE / NOT AUTHORIZED
+WS04-P03 DATA ACCESS     : NOT AUTHORIZED
+WS04-P03 EVIDENCE RUN    : NOT AUTHORIZED
 REPRESENTATIVE DATA      : NOT EXECUTED / NOT AUTHORIZED
 PRODUCTION OBSERVATION   : NOT EXECUTED / NOT AUTHORIZED
 DISPOSITION READINESS    : NOT ASSESSED
 DA-4 / CA-1 / CM-1      : ACTIVE SAFE-HOLD
 ACT-28 / REC-AUTH-011/012: OPEN
-WS04-P03                 : NOT AUTHORIZED / NOT STARTED
-NEXT ELIGIBLE TASK       : UNSET
+NEXT ELIGIBLE ACTION     : P03 READER/ADAPTER IMPLEMENTATION OR DATA-ACCESS REQUEST
 OWNER GO                 : REQUIRED
-OWNER / RATIFIER         : OWNER — WS04-P02 evidence-package formal closure brief
+OWNER / RATIFIER         : OWNER — WS04-P03 package contract ratification brief
 DECISION DATE            : 2026-07-18
-AUTHORITATIVE REF        : decision-log / WS04-P02 evidence-package formal closure reconciliation
+AUTHORITATIVE REF        : decision-log / WS04-P03 package contract ratification
 ```
 
-WS04-P02 evidence-package formal kapanışından sonra ayrı owner successor assignment verilmezse
-korunacak safe-hold:
+WS04-P03 package contract ratification'ından sonra ayrı implementation veya data-access owner GO
+verilmezse korunacak safe-hold:
 
 ```text
 RCV-P2-WS01-P01..P04 CLOSED
@@ -971,14 +1092,17 @@ RCV-P2-WS03-P04 NOT AUTHORIZED / NOT REQUIRED
 WS04 OPEN
 RCV-P2-WS04-P01 CONTRACT RATIFIED / CANONICAL — PR #1364 / e5b019ca
 RCV-P2-WS04-P01 FORMALLY CLOSED / CANONICAL — PR #1366 / a3b9463a
-RCV-P2-WS04-P02 EVIDENCE PACKAGE FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE — PR #1378 / 34e43329
+RCV-P2-WS04-P02 EVIDENCE PACKAGE FORMALLY CLOSED / CANONICAL — PR #1378 / 34e43329
+RCV-P2-WS04-P03 PACKAGE CONTRACT RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+RCV-P2-WS04-P03 IMPLEMENTATION AUTHORIZATION NONE
+RCV-P2-WS04-P03 DATA ACCESS NOT AUTHORIZED
+RCV-P2-WS04-P03 EVIDENCE EXECUTION NOT AUTHORIZED
 REPRESENTATIVE DATA NOT EXECUTED / NOT AUTHORIZED
 PRODUCTION OBSERVATION NOT EXECUTED / NOT AUTHORIZED
 DISPOSITION READINESS NOT ASSESSED
 DA-4 / CA-1 / CM-1 ACTIVE SAFE-HOLD
 ACT-28 / REC-AUTH-011 / REC-AUTH-012 OPEN
-RCV-P2-WS04-P03 NOT AUTHORIZED / NOT STARTED
-NEXT ELIGIBLE TASK UNSET / OWNER GO REQUIRED
+NEXT ACTION P03 READER/ADAPTER IMPLEMENTATION OR DATA-ACCESS REQUEST / SEPARATE OWNER GO REQUIRED
 WS05–WS09 NOT AUTHORIZED / NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN

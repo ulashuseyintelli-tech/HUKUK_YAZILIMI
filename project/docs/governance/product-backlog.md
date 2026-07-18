@@ -1859,6 +1859,32 @@ Status: OPEN / DOCUMENTED — runtime remediation NOT AUTHORIZED (owner-held). P
 
 ---
 
+## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
+
+**Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
+`RCV-P2-WS04-P03 — Representative Allocation Replay and Consumer Read-Authority Qualification`
+bounded package contract'ını ratifiye etmiştir. Contract; owner-approved distributional base +
+ayrı edge-case supplement dataset modelini, local owner/office source boundary'sini, no-egress
+ve DB-enforced `REPEATABLE READ, READ ONLY` execution'ı, P02 frozen-input/fingerprint reuse'ını,
+backend+web production consumer manifest exact-match guard'ını, `EQUALITY` / yalnız explicit
+`HELD` ile `ALLOWED_DIVERGENCE` / PASS olmayan `NOT_COMPARABLE` / `FAIL_CLOSED_DRIFT`
+sınıflarını ve PII-safe opaque-reference/checksum evidence zincirini tanımlar. Raw local source
+data repository/CI/cloud/third party/external AI'a çıkamaz; manifest/review/repository outputs
+raw PII, business-visible ID, credential, free text veya case payload taşıyamaz.
+
+`contractStatus = RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE`;
+`implementationAuthorization = NONE`, `dataAccess = NOT_AUTHORIZED`,
+`evidenceExecution = NOT_AUTHORIZED`, `productionObservation = NOT_AUTHORIZED`dır.
+Reader/adapter hazırlığı, dataset seçimi, data access, execution, evidence acceptance,
+allocator/reader disposition ve cutover ayrı owner gate'leridir. `DA-4` / `CA-1` / `CM-1`
+`ACTIVE SAFE-HOLD`; disposition readiness `NOT ASSESSED`; `ACT-28` ve `REC-AUTH-011/012`
+`OPEN`; WS04 `OPEN` kalır.
+
+**NEXT:** P03 reader/adapter implementation veya data-access request için ayrı owner GO
+gerekir; bu kayıt hiçbir implementation veya execution başlatmaz.
+
+---
+
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)
 
 ID: ADR-014-PR4-DEBT-B
