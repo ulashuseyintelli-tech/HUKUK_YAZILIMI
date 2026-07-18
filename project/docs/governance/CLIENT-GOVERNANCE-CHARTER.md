@@ -324,3 +324,62 @@ BP-01 sonuçları mevcut otoritelere **map edilir** (yeni system/charter invaria
 ### 11.7 BP-01 Self-Check
 
 Bu bölüm: yalnız mevcut kanonik gerçekleri konsolide eder; yeni authority/policy/role/rank/predicate/lifecycle mekanizması üretmez; `CaseClient` aggregate ownership/topology'sini SEÇMEZ; `ClientPortalUser`'ı Client aggregate'ine kesin dahil ETMEZ; component record'ları canonical value object İLAN ETMEZ; enum-only transition çıkarımı YAPMAZ; `CL-INV-001..008` / §6 / §8.A / §8.B'yi değiştirmez; portal / masking / KVKK / aggregate-visibility policy'si SEÇMEZ; financial remediation veya external-approval implementation AÇMAZ; route/field-wiring/exploit detayı İÇERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 12. CLIENT-P1-BP-02 — Client Relationship / Mandate Lifecycle Map (BOUNDED CONSOLIDATION — OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-BP-02` read-only analizinin **owner-ratified bounded consolidation**'ıdır (`decision-log.md` CLIENT-P1-BP-02-GOV; **MODEL 1 — BOUNDED RELATIONSHIP / MANDATE LIFECYCLE CONSOLIDATION**). Mevcut kanonik gerçekleri (AS-IS kod/schema + charter §3–§8.B + §11 + XDC-A–E + POL-A + POL-B + SYSTEM-CONSTITUTION + DBIND) ve owner topology / mandate-evidence kararlarını **konsolide eder**; yeni domain authority, policy, role, rank, predicate veya lifecycle mekanizması ÜRETMEZ. §5 `CL-INV-001..008`, §6 XDC-A–E, §8.A POL-B, §8.B POL-A ve §11 metinlerini **semantik olarak değiştirmez veya yeniden yorumlamaz**. CLIENT domain kayıtlarını **yapısal/mimari konsolidasyon sözlüğü** olarak adlandırır; route/method/field-wiring/exploit detayı İÇERMEZ. **IMPLEMENTATION AUTHORITY: NONE; runtime/schema/writer-routing değişikliği ÖNERMEZ.** Bu bölüm §11'in `CaseClient` aggregate-topology açık slotunu (§11.2) owner kararıyla **KAPATIR**.
+
+### 12.1 Relationship Vocabulary (kesin ayrım)
+
+Yedi ayrık kavram (birbirine indirgenemez): **client identity** (`Client`) · **creditor relationship** (`CaseClient` rol ALACAKLI/ORTAK_ALACAKLI — CANONICAL FACT, `CL-INV-003`) · **representation** (`PoaLawyer` / `CaseLawyer`) · **mandate** (yetki kapsamı) · **power of attorney** (`ClientPowerOfAttorney` artifact) · **instruction** (`ClientIntelStatement`) · **approval / provenance** (`ClientApprovalRequest`+`ClientApprovalEvent`; POL-B FACT A/B).
+
+### 12.2 CaseClient — Topology (OWNER RATIFIED)
+
+- **`CaseClient` = CLIENT-OWNED SEPARATE RELATIONSHIP AGGREGATE** (owner kararı). Canonical creditor-relationship fact'ini taşır (rol ALACAKLI/ORTAK_ALACAKLI; `CL-INV-003`).
+- **DEĞİL:** Case aggregate child DEĞİL · Client aggregate child DEĞİL · ayrı bounded context DEĞİL.
+- AS-IS yapı (case-create tx içinde create-only; `@@unique(caseId,clientId)`; kendi `tenantId` kolonu yok; Cascade FK) = **yalnız supporting evidence, normatif aggregate kanıtı DEĞİL**. **DATABASE RELATION ≠ DDD AGGREGATE OWNERSHIP.**
+- Bu karar §11.2'nin "`CaseClient` aggregate topology NOT DECIDED → BP-02 OPEN SLOT" ifadesini **RESOLVE eder**.
+- **IMPL NONE:** bu ownership kararı runtime/schema/writer-routing'i DEĞİŞTİRMEZ (AS-IS create-only davranış korunur; detach/role-change/archive AS-IS'te YOK).
+
+### 12.3 Mandate Canonical Evidence (OWNER RATIFIED)
+
+- **CANONICAL MANDATE EVIDENCE = `ClientPowerOfAttorney` artifact** (owner kararı): noter metadata + scope (`PoaScopeType`) + validity (`isLimited`/`validUntil`) + capability + `PoaStatus` lifecycle + `PoaLawyer`.
+- **`Client` flat mandate flag'leri (`canCollect`/`canWaive`/`canSettle`/`canRelease`) = LEGACY CLIENT-LEVEL CAPABILITY INDICATORS** — **legal mandate evidence DEĞİL · execution authority DEĞİL** (owner kararı).
+- **MANDATE SCOPE ≠ FINANCIAL EXECUTION AUTHORITY** (§8.B POL-A).
+- Dual-representation (aynı 4 boolean HEM Client-seviyesi indicator HEM PoA-seviyesi evidence) **tension olarak kaydedilir**; reconciliation bir runtime değişikliği DEĞİLDİR ve bu görevde YAPILMAZ (ayrı owner-gated).
+
+### 12.4 Lifecycle — AS-IS STATE SET + VERIFIED TRANSITIONS
+
+**ENUM VALUE SET ≠ LEGAL TRANSITION GRAPH.** Aşağıda yalnız kod-kanıtlı geçişler transition'dır.
+
+- **PoA state set:** {PENDING, ACTIVE, EXPIRED, REVOKED}.
+- **Verified transitions (kod-kanıtlı):** (create) → **ACTIVE**; **ACTIVE → REVOKED** (revoke; mevcut OFFICE approver-eligibility ile capability-gated — **mandate-lifecycle governance gate, POL-A finansal predicate DEĞİL**; audited); **ACTIVE → EXPIRED** (cron; `isLimited` + `validUntil<now`).
+- **PENDING:** state-set üyesi; doğrulanmış production transition YOK (create hep ACTIVE; portal-amaçlı, unwired) → **AS-IS STATE SET / TRANSITION CONTRACT NOT CANONICAL.**
+- Reactivation (REVOKED→\*, EXPIRED→ACTIVE): doğrulanmış kod yolu YOK.
+- **`CaseClient`:** create-only; creation ötesi doğrulanmış relationship-lifecycle transition YOK.
+- **`Client.isActive`:** client soft-state; relationship transition DEĞİL.
+- **CLIENT INACTIVE ≠ RELATIONSHIP TERMINATION · REVOKED/EXPIRED POA ≠ CLIENT RELATIONSHIP END** (kod-doğrulanmış: revoke yalnız PoA'ya dokunur, CaseClient'a değil; isActive CaseClient'a bağlı değil).
+
+### 12.5 Authority & Invariant Mapping (YENİ INVARIANT ID YOK)
+
+Mevcut otoritelere map edilir; yeni system/charter invariant ID üretilmez.
+
+- Creditor identity `CaseClient`/creditor set ile; `Case.clientId` creditor/finansal authority DEĞİL → `CL-INV-002`/`CL-INV-003`; DBIND §1.
+- Mandate scope ≠ execution authority → §8.B POL-A.
+- PoA revocation, mevcut OFFICE approver-eligibility ile gate'lenir (XDC-A actor/approval authority) — **mandate-lifecycle governance gate; POL-A finansal-predicate uygulaması DEĞİL.**
+- Relationship persistence (CLIENT INACTIVE / REVOKED-EXPIRED PoA ilişkiyi sonlandırmaz) → `CL-INV-001` + §11 lifecycle precision; relationship (`CaseClient`) / client-state (`isActive`) / mandate-state (`PoaStatus`) = ayrık fact'ler.
+- Consent/approval ≠ mandate ≠ financial authority → `CL-INV-007` / POL-B / POL-A (§11 altı non-equation korunur).
+- Tenant consistency (`CaseClient` parent'lar üzerinden) → `SYS-AUTH-008` / `CL-INV-006` (supporting evidence only).
+
+### 12.6 Open-Slot Register (yalnız pointer; ÇÖZÜLMEZ)
+
+- **Relationship termination → OPEN / NOT SELECTED** (owner).
+- KVKK retention / anonymization / legal hold → OPEN (ilgili sonraki section).
+- Historical evidence retention → OPEN.
+- External-client authority (PoA PENDING / portal) → **BP-05 / POL-C**.
+- Per-subject consent sufficiency → **BP-04**.
+- Mandate dual-representation reconciliation (runtime) → ayrı owner-gated (bu canonicalization DEĞİL).
+
+### 12.7 BP-02 Self-Check
+
+Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; `CaseClient`'ı **CLIENT-owned separate relationship aggregate** olarak kaydeder (Case/Client child DEĞİL, bounded context DEĞİL); `ClientPowerOfAttorney` artifact'ını **canonical mandate evidence** olarak kaydeder; flat flag'leri **legacy indicator** olarak sınırlar (evidence/authority DEĞİL); PoA revocation guard'ını **POL-A finansal predicate'i olarak GÖSTERMEZ**; relationship termination / KVKK / retention'ı **OPEN** bırakır; yeni authority/policy/role/rank/predicate/invariant-ID üretmez; `CL-INV-001..008` / §6 / §8.A / §8.B / §11'i değiştirmez; enum-only transition çıkarımı YAPMAZ; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
