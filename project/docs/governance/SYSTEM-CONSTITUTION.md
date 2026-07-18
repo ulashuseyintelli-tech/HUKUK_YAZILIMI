@@ -3,7 +3,7 @@
 ```text
 Belge kimliği           : SYS-CONST-001
 Canonical path          : project/docs/governance/SYSTEM-CONSTITUTION.md
-Version                 : 1.1
+Version                 : 1.2
 Owner status            : RATIFIED — BINDING
 Repository status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Canonical effective date: Approved merge date
@@ -14,7 +14,8 @@ Execution authority     : Ayrı eksen; AGENTS.md ve geçerli repository/tool pol
 
 Bu belge mevcut dosya yolunu koruyarak PR #1139 ile eklenen kısa governance çatısını
 Canonical System Governance v1.0 içinde reconcile eder; v1.1 allocation-authority
-amendment'ını aynı canonical path'te taşır. PR #1139 ve PR #1140 tarihsel
+amendment'ını ve v1.2 balance-exposure contract ratifikasyonunu aynı canonical path'te
+taşır. PR #1139 ve PR #1140 tarihsel
 olarak geçerli kayıtlardır; içerikleri veya o tarihlerdeki owner kararları geriye dönük
 olarak yanlışlanmaz. Bu sürüm, daha sonraki owner ratifikasyonunun bağlayıcı semantik
 sonucudur ve repository etkisini yalnız approved merge ile kazanır.
@@ -401,6 +402,31 @@ Takip tarihine kadar işlemiş ve tutarı belirli faiz `ACCRUED_INTEREST` sabit 
 borç bucket'ıdır. Takipten sonra işleyecek faiz `InterestPolicy` / calculation rule'dur;
 sabit tutarlı ClaimItem veya application target'ı olarak modellenemez. Faize faiz yalnız
 açık hukuki dayanakla uygulanabilir.
+
+### `SYS-FIN-012 — Legal Balance Exposure Context-Bound ve Fail-Closed'dur`
+`LegalCalculationBucket` kimliği iki düzeylidir: stable `bucketContextKey` hukuki
+category/subcategory, currency, legal basis, effective date/period, interest rule ve
+priority bağlamını; snapshot-specific `bucketInstanceId` ise tenant/case, canonical
+Receivable snapshot, as-of date ve calculation-rule version bağlamını sabitler. ClaimItem
+kimliği bu iki anahtarın yerine legal-application target'ı olamaz.
+
+Her currency ve canonical category için gross, legally applied ve remaining exposure
+minor-unit/exact-cent hassasiyetinde ayrı tutulur. MASRAF, FERİ, FAİZ ve ANA PARA
+bileşenleri total içinde gizlenemez; held/unapplied receipt legal exposure değildir.
+Missing, stale veya doğrulanamayan context `0` üretemez; typed `null` ve fail-closed
+availability sonucu üretir.
+
+`LegalApplication` stable bucket context'i, application-time snapshot'ı, rule version'ı
+ve effective time'ı referanslayan hukuki effect fact'idir. `ApplicationAttribution`
+source-lineage açıklamasıdır; non-authoritative'dir ve payment/application authority
+olamaz. Attribution eksikliği bucket-level application'ı kendiliğinden hükümsüz kılmaz;
+ancak zorunlu trace/provenance tamamlanmadan public projection primary-eligible olamaz.
+
+Public projection yalnız per-currency/category-level aggregate sunar. Sub-bucket ve source
+trace restricted diagnostic yüzeyinde kalır. Authority vocabulary
+`SHADOW_ONLY | CANONICAL | LEGACY_COMPATIBILITY`dir; current Balance Engine projection
+değeri yalnız `SHADOW_ONLY`dır. `CANONICAL` promotion, consumer switch ve cutover ayrı
+owner gate'i olmadan kullanılamaz.
 
 ### `SYS-FIN-004 — Disposition Creditor Kullanım Kararıdır`
 Creditor Disposition proceeds'in hak sahibi, amaç ve approval bağlamında ayrılmasıdır;
@@ -798,10 +824,11 @@ kanıtla güncellenir.
 | PR #1140, 2026-07-12 | Post-merge bookkeeping; Constitution/Index `PROPOSED` kaldı | O tarihteki owner kararını doğru yansıtan valid historical record |
 | v1.0, later owner decision | Canonical System Governance owner tarafından ratifiye edildi | `RATIFIED — BINDING`; repository effect approved merge ile başlar |
 | v1.1, 2026-07-18 | RCV-P2-WS04 allocation-authority amendment; PR #407 `HOLD / DO NOT MERGE` | ClaimItem source/input ile target `LegalCalculationBucket` application grain'i ayrıldı; `LegalApplication ≠ ApplicationAttribution`; current Ledger persistence ile target authority ayrıştırıldı. Runtime, schema/migration ve cutover yetkisi üretmez. |
+| v1.2, 2026-07-19 | RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratifikasyonu | Stable bucket context ile snapshot instance ayrıldı; per-currency/category gross-applied-remaining exposure, non-authoritative attribution, typed-null/fail-closed projection ve restricted trace sınırı canonical hale getirildi. Current authority `SHADOW_ONLY`; target persistence analysis yalnız read-only yetkilidir. |
 ---
 ## Son Hüküm
 
-Canonical System Governance v1.0 sistemin üst semantik yönetişim normudur. Domain Law'lar
+Canonical System Governance v1.2 sistemin üst semantik yönetişim normudur. Domain Law'lar
 onu ayrıntılandırır; ADR'lar teknik kararları kaydeder; implementation bu normları uygular.
 `AGENTS.md` ayrı execution/safety ekseninde bağlayıcıdır. Runtime compliance ayrı kanıt
 programıdır. Bu metin approved merge to main sonrasında repository-canonical olur; açık

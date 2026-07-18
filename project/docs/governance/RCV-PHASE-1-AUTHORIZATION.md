@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -61,8 +61,9 @@ WS04-P03-B disposition      : SUPERSEDED / DO NOT EXECUTE
 WS04-P03 data access        : NOT AUTHORIZED
 WS04-P03 evidence execution : NOT AUTHORIZED
 Production observation      : NOT AUTHORIZED
-PR #407                     : HOLD / DO NOT MERGE — POST-AMENDMENT READ-ONLY TRIAGE REQUIRED
-Next eligible action        : PR #407 POST-AMENDMENT SEMANTIC TRIAGE — SEPARATE OWNER GO REQUIRED
+PR #407                     : OPEN / HOLD / DO NOT MERGE / DO NOT REBASE / DO NOT CLOSE YET
+RD01 contract               : RATIFIED / CANONICAL UPON APPROVED MERGE
+Next eligible action        : TARGET PERSISTENCE READ-ONLY DESIGN ANALYSIS — SEPARATE OWNER GO REQUIRED
 ```
 
 Bu kayıt yalnız governance/register alignment, gerçekleşen phase/workstream progression ve bir
@@ -1162,6 +1163,72 @@ Target `LegalCalculationBucket`, `LegalApplication` ve `ApplicationAttribution` 
 modeli ayrı owner-gated architecture/schema analysis gerektirir. Bu kayıt schema, migration,
 runtime, data access, replay, cutover veya implementation authority üretmez.
 
+### 1.19 RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratifikasyonu
+
+```text
+PR #407 DISPOSITION:
+COORDINATED REDESIGN REQUIRED
+
+PR #407 CODE EXTRACTION:
+NONE
+
+REUSABLE INPUT:
+BUSINESS RULES / TEST SCENARIOS ONLY
+
+LEGALCALCULATIONBUCKET IDENTITY:
+STABLE bucketContextKey
++ SNAPSHOT-SPECIFIC bucketInstanceId
+
+LEGALAPPLICATION IDENTITY:
+bucketContextKey
++ application-time snapshot
++ rule version
++ effective time
+
+APPLICATIONATTRIBUTION:
+SEPARATE / NON-AUTHORITATIVE
+MISSING ATTRIBUTION DOES NOT AUTOMATICALLY VOID BUCKET-LEVEL APPLICATION
+
+PUBLIC PROJECTION:
+PER-CURRENCY / CATEGORY-LEVEL
+TYPED NULL / FAIL-CLOSED
+
+RESTRICTED PROJECTION:
+SUB-BUCKET / SOURCE TRACE
+
+AUTHORITY ENUM:
+SHADOW_ONLY / CANONICAL / LEGACY_COMPATIBILITY
+
+CURRENT AUTHORITY:
+SHADOW_ONLY
+
+TARGET PERSISTENCE ANALYSIS:
+READ-ONLY AUTHORIZED
+
+SCHEMA / MIGRATION DESIGN / IMPLEMENTATION:
+NOT AUTHORIZED
+
+PR #407:
+OPEN / HOLD / DO NOT MERGE / DO NOT REBASE / DO NOT CLOSE YET
+
+ACT-28 / REC-AUTH-011 / REC-AUTH-012:
+OPEN
+
+NEXT ELIGIBLE ACTION:
+TARGET PERSISTENCE READ-ONLY DESIGN ANALYSIS
+SEPARATE OWNER GO REQUIRED
+```
+
+Gross/applied/remaining exposure MASRAF, FERİ, FAİZ ve ANA PARA için her currency'de ayrı
+reconcile edilir. Pre/post-enforcement accrued interest ayrı tutulur; as-of sonrası
+işlememiş faiz yalnız policy'dir. `sourceLineageSetRef` zorunludur; public projection raw
+source/PII taşımaz. Legacy deprecation yalnız explicit cutover gate'iyle tamamlanabilir;
+shadow UI normal kullanıcıya kapalı restricted diagnostic olarak kalır.
+
+Bu ratifikasyon historical P01–P03-A closure kayıtlarını silmez; P01/P02 amendment ve P03
+redesign ihtiyacını kapatmaz. Runtime/API, data/replay, authority promotion, consumer
+switch, schema/migration veya cutover yetkisi üretmez.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
@@ -1362,12 +1429,13 @@ COLLECTIONALLOCATION     : COMPATIBILITY PROJECTION ONLY / NO LEGAL FALLBACK
 COLLECTEDAMOUNT          : DEPRECATED NON-AUTHORITATIVE DERIVED CACHE / NO NEW CONSUMERS
 BALANCE ENGINE           : TARGET / SHADOW_ONLY / CUTOVER NOT AUTHORIZED
 ACT-28 / REC-AUTH-011/012: OPEN
-PR #407                  : HOLD / DO NOT MERGE
-NEXT ELIGIBLE ACTION     : PR #407 POST-AMENDMENT SEMANTIC TRIAGE
+PR #407                  : OPEN / HOLD / DO NOT MERGE / DO NOT REBASE / DO NOT CLOSE YET
+RD01 CONTRACT            : RATIFIED / CANONICAL UPON APPROVED MERGE
+NEXT ELIGIBLE ACTION     : TARGET PERSISTENCE READ-ONLY DESIGN ANALYSIS
 OWNER GO                 : REQUIRED
-OWNER / RATIFIER         : OWNER — WS04 allocation-authority amendment + PR #407 coordination
-DECISION DATE            : 2026-07-18
-AUTHORITATIVE REF        : decision-log / RCV-P2-WS04 allocation-authority constitutional amendment
+OWNER / RATIFIER         : OWNER — RD01 balance-exposure contract ratification
+DECISION DATE            : 2026-07-19
+AUTHORITATIVE REF        : decision-log / RCV-P2-WS04-PR407-RD01-R01
 ```
 
 WS04-P03-A launch-package formal kapanışından sonra ayrı data-access veya evidence-execution
@@ -1410,9 +1478,11 @@ LEDGERALLOCATION CURRENT AS-IS / LEGACY PERSISTENCE
 COLLECTIONALLOCATION COMPATIBILITY PROJECTION ONLY / NO LEGAL FALLBACK
 CLAIMITEM.COLLECTEDAMOUNT DEPRECATED NON-AUTHORITATIVE CACHE / NO NEW CONSUMERS
 BALANCE ENGINE TARGET / SHADOW_ONLY
-PR #407 HOLD / DO NOT MERGE
+PR #407 OPEN / HOLD / DO NOT MERGE / DO NOT REBASE / DO NOT CLOSE YET
 ACT-28 / REC-AUTH-011 / REC-AUTH-012 OPEN
-NEXT ACTION PR #407 POST-AMENDMENT SEMANTIC TRIAGE / SEPARATE OWNER GO REQUIRED
+RD01 BALANCE-EXPOSURE CONTRACT RATIFIED / CANONICAL UPON APPROVED MERGE
+TARGET PERSISTENCE ANALYSIS READ-ONLY AUTHORIZED
+NEXT ACTION TARGET PERSISTENCE READ-ONLY DESIGN ANALYSIS / SEPARATE OWNER GO REQUIRED
 WS05–WS09 NOT AUTHORIZED / NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN
