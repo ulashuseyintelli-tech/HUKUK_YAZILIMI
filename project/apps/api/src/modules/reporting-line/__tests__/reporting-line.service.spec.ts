@@ -1,9 +1,10 @@
 /**
- * ReportingLine Population Core — CAP-02 object-scope enablement.
- * Doğrular: ADMIN kapısı, self-manager/cross-tenant/aktiflik reddi, direkt+dolaylı
- * döngü reddi, tekil-aktif-amir invariant'ı (concurrency), tarihsel kapatma
- * (validUntil), başarısız transaction'ın kısmi durum bırakmaması, top-level,
- * reconciliation anomali sınıfları. Object-scope FİLTRELEME test edilmez (yok).
+ * ReportingLine Population Core + Top-Level Disposition Persistence (CAP-02).
+ * App-seviyesi doğrular: ADMIN kapısı, self/cross-tenant/aktiflik/direkt+dolaylı-döngü
+ * reddi, MANAGED/TOP_LEVEL disposition create, MANAGED↔TOP_LEVEL atomik geçiş,
+ * end→UNCLASSIFIED, tekil-aktif (concurrency), disposition-tabanlı reconciliation.
+ * DB-level invariant'lar (CHECK + partial unique index + migration preflight)
+ * disposable-DB rehearsal'ında doğrulanır (bu unit onları test edemez).
  */
 
 import {
@@ -37,29 +38,23 @@ const userFindFirst = () =>
     ),
   );
 
-/**
- * chain: aktif amir haritası (actorUserId -> managerUserId). Hem döngü yürüyüşü
- * hem "previous" sorgusu bu haritayı kullanır. activeCountAfter: create sonrası
- * count (concurrency testi için). audit: mock AuditService.
- */
+// chain: aktif amir haritası (actorUserId -> managerUserId | null[TOP_LEVEL]).
 const buildTxPrisma = (opts: any = {}) => {
-  const chain: Record<string, string> = opts.chain ?? {};
+  const chain: Record<string, string | null> = opts.chain ?? {};
   const activeCountAfter = opts.activeCountAfter ?? 1;
+  const rowFor = (actor: string) =>
+    actor in chain
+      ? {
+          managerUserId: chain[actor],
+          disposition: chain[actor] ? "MANAGED" : "TOP_LEVEL",
+        }
+      : null;
   const rl = {
-    findFirst: jest.fn(({ where }: any) =>
-      Promise.resolve(
-        where.actorUserId in chain
-          ? { managerUserId: chain[where.actorUserId] }
-          : null,
-      ),
-    ),
-    findMany: jest.fn(({ where }: any) =>
-      Promise.resolve(
-        where.actorUserId in chain
-          ? [{ managerUserId: chain[where.actorUserId] }]
-          : [],
-      ),
-    ),
+    findFirst: jest.fn(({ where }: any) => Promise.resolve(rowFor(where.actorUserId))),
+    findMany: jest.fn(({ where }: any) => {
+      const r = rowFor(where.actorUserId);
+      return Promise.resolve(r ? [r] : []);
+    }),
     updateMany: jest.fn().mockResolvedValue({ count: opts.closedCount ?? 1 }),
     create: jest.fn().mockResolvedValue({ id: "rl-new" }),
     count: jest.fn().mockResolvedValue(activeCountAfter),
@@ -76,236 +71,157 @@ const buildAudit = () =>
   ({ logInTransaction: jest.fn().mockResolvedValue(undefined) }) as any;
 
 describe("ReportingLineService — ADMIN kapısı", () => {
-  it("non-ADMIN reddedilir (ForbiddenException)", async () => {
+  it("non-ADMIN tüm mutasyonlarda reddedilir", async () => {
     const svc = new ReportingLineService(buildTxPrisma(), buildAudit());
-    await expect(
-      svc.assignManager(TENANT, "admin", "USER", {
-        actorUserId: "a",
-        managerUserId: "b",
-      }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it("ADMIN atama yapabilir (başarı)", async () => {
-    const prisma = buildTxPrisma();
-    const audit = buildAudit();
-    const svc = new ReportingLineService(prisma, audit);
-    const res = await svc.assignManager(TENANT, "admin", "ADMIN", {
-      actorUserId: "a",
-      managerUserId: "b",
-    });
-    expect(res).toEqual({ actorUserId: "a", managerUserId: "b" });
-    expect(prisma.reportingLine.create).toHaveBeenCalled();
-    expect(audit.logInTransaction).toHaveBeenCalled();
+    await expect(svc.assignManager(TENANT, "u", "USER", { actorUserId: "a", managerUserId: "b" })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.endRelationship(TENANT, "u", "USER", { actorUserId: "a" })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.markTopLevel(TENANT, "u", "VIEWER", { actorUserId: "a" })).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 
-describe("ReportingLineService — invariant reddi", () => {
-  it("self-manager reddedilir", async () => {
-    const svc = new ReportingLineService(buildTxPrisma(), buildAudit());
-    await expect(
-      svc.assignManager(TENANT, "admin", "ADMIN", {
-        actorUserId: "a",
-        managerUserId: "a",
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it("cross-tenant amir reddedilir", async () => {
-    const svc = new ReportingLineService(buildTxPrisma(), buildAudit());
-    await expect(
-      svc.assignManager(TENANT, "admin", "ADMIN", {
-        actorUserId: "a",
-        managerUserId: "other",
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it("pasif actor reddedilir", async () => {
-    const svc = new ReportingLineService(buildTxPrisma(), buildAudit());
-    await expect(
-      svc.assignManager(TENANT, "admin", "ADMIN", {
-        actorUserId: "inactive",
-        managerUserId: "b",
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it("direkt döngü reddedilir (a→b varken b→a)", async () => {
-    const svc = new ReportingLineService(
-      buildTxPrisma({ chain: { a: "b" } }),
-      buildAudit(),
-    );
-    await expect(
-      svc.assignManager(TENANT, "admin", "ADMIN", {
-        actorUserId: "b",
-        managerUserId: "a",
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it("dolaylı döngü reddedilir (a→b→c varken c→a)", async () => {
-    const svc = new ReportingLineService(
-      buildTxPrisma({ chain: { a: "b", b: "c" } }),
-      buildAudit(),
-    );
-    await expect(
-      svc.assignManager(TENANT, "admin", "ADMIN", {
-        actorUserId: "c",
-        managerUserId: "a",
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-});
-
-describe("ReportingLineService — transaction/concurrency invariant", () => {
-  it("önceki aktif ilişki tarihsel kapatılır (updateMany validUntil)", async () => {
-    const prisma = buildTxPrisma({ chain: { a: "b" } });
-    const svc = new ReportingLineService(prisma, buildAudit());
-    await svc.assignManager(TENANT, "admin", "ADMIN", {
-      actorUserId: "a",
-      managerUserId: "c",
-    });
-    const call = prisma.reportingLine.updateMany.mock.calls[0][0];
-    expect(call.where.validUntil).toBeNull();
-    expect(call.data.validUntil).toBeInstanceOf(Date);
-    // create updateMany'den SONRA çağrılır (kapat→aç sırası)
-    expect(prisma.reportingLine.create).toHaveBeenCalled();
-  });
-
-  it("post-write aktif sayı 1 değilse ConflictException (ikinci aktif amir kalamaz)", async () => {
-    const prisma = buildTxPrisma({ activeCountAfter: 2 });
-    const svc = new ReportingLineService(prisma, buildAudit());
-    await expect(
-      svc.assignManager(TENANT, "admin", "ADMIN", {
-        actorUserId: "a",
-        managerUserId: "b",
-      }),
-    ).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it("Serializable izolasyon ile çalışır (concurrency güvenliği)", async () => {
-    const prisma = buildTxPrisma();
-    // $transaction'ı izolasyon opsiyonunu yakalayacak şekilde sar
-    const opts: any[] = [];
-    prisma.$transaction = jest.fn((cb: any, o: any) => {
-      opts.push(o);
-      return cb(prisma);
-    });
-    const svc = new ReportingLineService(prisma, buildAudit());
-    await svc.assignManager(TENANT, "admin", "ADMIN", {
-      actorUserId: "a",
-      managerUserId: "b",
-    });
-    expect(opts[0]?.isolationLevel).toBe("Serializable");
-  });
-
-  it("başarısız transaction reddeder (audit hatası → rollback)", async () => {
+describe("ReportingLineService — assignManager (MANAGED)", () => {
+  it("MANAGED disposition + manager ile create + audit", async () => {
     const prisma = buildTxPrisma();
     const audit = buildAudit();
-    audit.logInTransaction = jest
-      .fn()
-      .mockRejectedValue(new Error("audit-fail"));
     const svc = new ReportingLineService(prisma, audit);
-    await expect(
-      svc.assignManager(TENANT, "admin", "ADMIN", {
-        actorUserId: "a",
-        managerUserId: "b",
-      }),
-    ).rejects.toThrow();
-  });
-});
-
-describe("ReportingLineService — end + top-level", () => {
-  it("aktif ilişki yoksa end → NotFound", async () => {
-    const prisma = buildTxPrisma({ chain: {} });
-    const svc = new ReportingLineService(prisma, buildAudit());
-    await expect(
-      svc.endRelationship(TENANT, "admin", "ADMIN", { actorUserId: "a" }),
-    ).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it("end aktif ilişkiyi kapatır + audit", async () => {
-    const prisma = buildTxPrisma({ chain: { a: "b" } });
-    const audit = buildAudit();
-    const svc = new ReportingLineService(prisma, audit);
-    const res = await svc.endRelationship(TENANT, "admin", "ADMIN", {
-      actorUserId: "a",
-    });
-    expect(res.closed).toBe(1);
-    expect(prisma.reportingLine.updateMany).toHaveBeenCalled();
+    const res = await svc.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "a", managerUserId: "b" });
+    expect(res).toEqual({ actorUserId: "a", managerUserId: "b", disposition: "MANAGED" });
+    const data = prisma.reportingLine.create.mock.calls[0][0].data;
+    expect(data.disposition).toBe("MANAGED");
+    expect(data.managerUserId).toBe("b");
     expect(audit.logInTransaction).toHaveBeenCalled();
   });
 
-  it("markTopLevel self-row YAZMAZ (yalnız kapatır + audit)", async () => {
-    const prisma = buildTxPrisma({ chain: { a: "b" } });
+  it("self-manager / cross-tenant / pasif actor reddedilir", async () => {
+    const svc = new ReportingLineService(buildTxPrisma(), buildAudit());
+    await expect(svc.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "a", managerUserId: "a" })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "a", managerUserId: "other" })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "inactive", managerUserId: "b" })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("direkt + dolaylı döngü reddedilir", async () => {
+    const s1 = new ReportingLineService(buildTxPrisma({ chain: { a: "b" } }), buildAudit());
+    await expect(s1.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "b", managerUserId: "a" })).rejects.toBeInstanceOf(BadRequestException);
+    const s2 = new ReportingLineService(buildTxPrisma({ chain: { a: "b", b: "c" } }), buildAudit());
+    await expect(s2.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "c", managerUserId: "a" })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("TOP_LEVEL aktör → MANAGED atomik geçiş (kapat→aç)", async () => {
+    // a şu an TOP_LEVEL (chain[a]=null); assign a→b: TOP_LEVEL kapanır, MANAGED açılır.
+    const prisma = buildTxPrisma({ chain: { a: null } });
+    const svc = new ReportingLineService(prisma, buildAudit());
+    await svc.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "a", managerUserId: "b" });
+    expect(prisma.reportingLine.updateMany).toHaveBeenCalled();
+    expect(prisma.reportingLine.create.mock.calls[0][0].data.disposition).toBe("MANAGED");
+  });
+});
+
+describe("ReportingLineService — markTopLevel (TOP_LEVEL)", () => {
+  it("TOP_LEVEL disposition + managerUserId null ile KALICI create + audit", async () => {
+    const prisma = buildTxPrisma({ chain: { a: "b" } }); // a şu an MANAGED
     const audit = buildAudit();
     const svc = new ReportingLineService(prisma, audit);
-    await svc.markTopLevel(TENANT, "admin", "ADMIN", { actorUserId: "a" });
-    expect(prisma.reportingLine.create).not.toHaveBeenCalled();
-    expect(prisma.reportingLine.updateMany).toHaveBeenCalled();
+    const res = await svc.markTopLevel(TENANT, "admin", "ADMIN", { actorUserId: "a" });
+    expect(res).toEqual({ actorUserId: "a", disposition: "TOP_LEVEL" });
+    const data = prisma.reportingLine.create.mock.calls[0][0].data;
+    expect(data.disposition).toBe("TOP_LEVEL");
+    expect(data.managerUserId).toBeNull();
+    expect(prisma.reportingLine.updateMany).toHaveBeenCalled(); // MANAGED→TOP_LEVEL atomik
     expect(audit.logInTransaction).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ action: "REPORTING_LINE_TOP_LEVEL" }),
     );
   });
 
-  it("non-ADMIN end/top-level reddedilir", async () => {
+  it("pasif actor reddedilir", async () => {
     const svc = new ReportingLineService(buildTxPrisma(), buildAudit());
-    await expect(
-      svc.endRelationship(TENANT, "u", "USER", { actorUserId: "a" }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(
-      svc.markTopLevel(TENANT, "u", "VIEWER", { actorUserId: "a" }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.markTopLevel(TENANT, "admin", "ADMIN", { actorUserId: "inactive" })).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
-describe("ReportingLineService — reconciliation anomali sınıfları", () => {
-  // Senaryo: a→b (placed), b kök (a'yı yönetir, amiri yok), c disposition yok.
-  // self-manager: 0, duplicate: 0, cycle: 0. Ayrıca 1 self-manager anomali satırı ekle.
+describe("ReportingLineService — concurrency + end", () => {
+  it("post-write aktif sayı 1 değilse ConflictException (assign)", async () => {
+    const svc = new ReportingLineService(buildTxPrisma({ activeCountAfter: 2 }), buildAudit());
+    await expect(svc.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "a", managerUserId: "b" })).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("post-write aktif sayı 1 değilse ConflictException (markTopLevel)", async () => {
+    const svc = new ReportingLineService(buildTxPrisma({ activeCountAfter: 2 }), buildAudit());
+    await expect(svc.markTopLevel(TENANT, "admin", "ADMIN", { actorUserId: "a" })).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("Serializable izolasyon ile çalışır", async () => {
+    const prisma = buildTxPrisma();
+    const opts: any[] = [];
+    prisma.$transaction = jest.fn((cb: any, o: any) => { opts.push(o); return cb(prisma); });
+    const svc = new ReportingLineService(prisma, buildAudit());
+    await svc.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "a", managerUserId: "b" });
+    expect(opts[0]?.isolationLevel).toBe("Serializable");
+  });
+
+  it("end aktif disposition'ı kapatır → UNCLASSIFIED (yeni kayıt YOK)", async () => {
+    const prisma = buildTxPrisma({ chain: { a: "b" } });
+    const svc = new ReportingLineService(prisma, buildAudit());
+    const res = await svc.endRelationship(TENANT, "admin", "ADMIN", { actorUserId: "a" });
+    expect(res.closed).toBe(1);
+    expect(prisma.reportingLine.updateMany).toHaveBeenCalled();
+    expect(prisma.reportingLine.create).not.toHaveBeenCalled();
+  });
+
+  it("aktif disposition yoksa end → NotFound", async () => {
+    const svc = new ReportingLineService(buildTxPrisma({ chain: {} }), buildAudit());
+    await expect(svc.endRelationship(TENANT, "admin", "ADMIN", { actorUserId: "a" })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("başarısız transaction reddeder (audit hatası → rollback)", async () => {
+    const prisma = buildTxPrisma();
+    const audit = buildAudit();
+    audit.logInTransaction = jest.fn().mockRejectedValue(new Error("audit-fail"));
+    const svc = new ReportingLineService(prisma, audit);
+    await expect(svc.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "a", managerUserId: "b" })).rejects.toThrow();
+  });
+});
+
+describe("ReportingLineService — reconciliation (disposition-tabanlı)", () => {
   const buildReconPrisma = () => {
     const activeRows = [
-      { actorUserId: "a", managerUserId: "b" }, // placed
-      { actorUserId: "x", managerUserId: "x" }, // self-manager anomali
-      { actorUserId: "d", managerUserId: "e" }, // d placed
-      { actorUserId: "d", managerUserId: "f" }, // d duplicate aktif
+      { actorUserId: "a", managerUserId: "b", disposition: "MANAGED" },
+      { actorUserId: "b", managerUserId: null, disposition: "TOP_LEVEL" }, // explicit top-level
+      { actorUserId: "x", managerUserId: "x", disposition: "MANAGED" }, // self-manager anomali
+      { actorUserId: "m", managerUserId: null, disposition: "MANAGED" }, // invalid MANAGED-without-manager
+      { actorUserId: "n", managerUserId: "b", disposition: "TOP_LEVEL" }, // invalid TOP_LEVEL-with-manager
+      { actorUserId: "d", managerUserId: "e", disposition: "MANAGED" },
+      { actorUserId: "d", managerUserId: "f", disposition: "MANAGED" }, // duplicate active
     ];
     const personnelUsers = [
       { id: "a", staffMember: { id: "s1" }, lawyer: null },
       { id: "b", staffMember: null, lawyer: { id: "l1" } },
-      { id: "c", staffMember: { id: "s2" }, lawyer: null }, // disposition yok
-      { id: "amb", staffMember: { id: "s3" }, lawyer: { id: "l2" } }, // belirsiz
+      { id: "c", staffMember: { id: "s2" }, lawyer: null }, // UNCLASSIFIED (aktif kayıt yok)
+      { id: "amb", staffMember: { id: "s3" }, lawyer: { id: "l2" } }, // belirsiz profil
     ];
     return {
       lawyer: { count: jest.fn().mockResolvedValue(3) },
       staffMember: { count: jest.fn().mockResolvedValue(5) },
       user: {
-        findMany: jest
-          .fn()
-          // 1. çağrı: personnelUsers, 2. çağrı: assigneeUsers
-          .mockResolvedValueOnce(personnelUsers)
-          .mockResolvedValueOnce([{ id: "c" }]), // c task-assignee ama disposition yok
-        count: jest.fn().mockResolvedValue(0), // referans kontrolü: hepsi geçerli varsay
+        findMany: jest.fn().mockResolvedValueOnce(personnelUsers).mockResolvedValueOnce([{ id: "c" }]),
+        count: jest.fn().mockResolvedValue(0),
       },
-      reportingLine: {
-        findMany: jest.fn().mockResolvedValue(activeRows),
-      },
+      reportingLine: { findMany: jest.fn().mockResolvedValue(activeRows) },
     } as any;
   };
 
-  it("her anomali sınıfını sayar", async () => {
+  it("MANAGED / TOP_LEVEL / UNCLASSIFIED ayırır + invalid legacy + anomali sayar", async () => {
     const svc = new ReportingLineService(buildReconPrisma(), buildAudit());
     const r = await svc.reconciliation(TENANT);
-    expect(r.activeUserLinkedLawyers).toBe(3);
-    expect(r.activeUserLinkedStaff).toBe(5);
-    expect(r.selfManagerRelationships).toBe(1); // x→x
-    expect(r.duplicateActiveRelationships).toBe(1); // d (2 aktif)
+    expect(r.managedActors).toBe(5); // a, x, m, d, d (satır-bazlı)
+    expect(r.explicitTopLevelActors).toBe(2); // b, n
+    expect(r.unclassifiedActors).toBe(2); // c, amb (aktif kaydı yok)
+    expect(r.invalidManagedWithoutManager).toBe(1); // m
+    expect(r.invalidTopLevelWithManager).toBe(1); // n
+    expect(r.selfManagerRelationships).toBe(1); // x
+    expect(r.duplicateActiveDispositions).toBe(1); // d
     expect(r.usersLinkedToMultipleProfileTypes).toBe(1); // amb
-    expect(r.actorsPlaced).toBe(1); // a (b kök, c/amb değil)
-    expect(r.explicitTopLevelRoots).toBe(1); // b (a'yı yönetir, amiri yok)
-    expect(r.actorsWithNoDisposition).toBe(2); // c + amb
-    expect(r.unclassifiableTaskAssignees).toBe(1); // c
     expect(r.cycles).toBe(0);
+    expect(r.unclassifiableTaskAssignees).toBe(1); // c
   });
 });

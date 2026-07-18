@@ -8953,12 +8953,20 @@ model PermissionGrant {
 // (bu kavrama ait mevcut hiçbir alan yok). PermissionGrant'ın scope etiketinden AYRI, tamamlayıcı bir
 // katman: PermissionGrant "hangi kapsam" der, bu tablo "kim kimin amiri" sorusuna karşılık verir.
 
+// Top-Level Disposition Persistence: aktör başına tek aktif kayıt, current-state
+// otoritesi. disposition=MANAGED → managerUserId dolu; disposition=TOP_LEVEL →
+// managerUserId null (amir yok, açık kök); aktif kayıt yoksa UNCLASSIFIED. DB-level
+// CHECK constraint'ler (disposition↔manager nullability) + partial unique index
+// ("validUntil IS NULL"da tenant+actor tekil) migration'da; app-level sayım TEK
+// başına invariant sınırı DEĞİLDİR.
 model ReportingLine {
   id            String @id @default(cuid())
   tenantId      String
 
-  actorUserId   String // amiri bu satırla tanımlanan kişi
-  managerUserId String // amir/yönetici
+  actorUserId   String  // amiri bu satırla tanımlanan kişi
+  managerUserId String? // amir/yönetici; TOP_LEVEL disposition'da null
+
+  disposition ReportingLineDisposition @default(MANAGED)
 
   validFrom  DateTime  @default(now())
   validUntil DateTime? // null = güncel/aktif; reorg/offboarding'de eski kayıt kapanır
@@ -8969,4 +8977,11 @@ model ReportingLine {
   @@index([tenantId])
   @@index([tenantId, actorUserId])
   @@index([tenantId, managerUserId])
+}
+
+// Aktörün current hiyerarşi disposition'ı (TEK aktif ReportingLine kaydında).
+// UNCLASSIFIED bir enum değeri DEĞİL — aktif kayıt yokluğuyla temsil edilir.
+enum ReportingLineDisposition {
+  MANAGED
+  TOP_LEVEL
 }
