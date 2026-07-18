@@ -929,6 +929,18 @@ jobs:
             --testPathPattern="official-(role-translator|contract-provenance)\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # DBP-P2-UYAP-CONTRACT-A-P02B — official Contract A serializer SKELETON (contract-derived shape).
+      # Deterministik, SERIALIZED_DRAFT/REJECTED, unresolved-role rejection; runtime-dışı, değer içermez,
+      # legacy builder ve wiring'e dokunmaz. Ayrı/açık step; dosya-varlığı pre-check + passWithNoTests YOK.
+      - name: DBP-P2-UYAP-CONTRACT-A-P02B official serializer skeleton tests
+        run: |
+          cd apps/api
+          test -f src/modules/uyap/official/__tests__/official-exchange-builder.spec.ts || \
+            { echo "MISSING P02B spec: official-exchange-builder.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="official-exchange-builder\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
