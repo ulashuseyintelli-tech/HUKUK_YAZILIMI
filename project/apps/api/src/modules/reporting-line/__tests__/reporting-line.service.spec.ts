@@ -42,11 +42,13 @@ const userFindFirst = () =>
 const buildTxPrisma = (opts: any = {}) => {
   const chain: Record<string, string | null> = opts.chain ?? {};
   const activeCountAfter = opts.activeCountAfter ?? 1;
+  const validFrom: Date = opts.validFrom ?? new Date(0); // varsayılan geçmiş
   const rowFor = (actor: string) =>
     actor in chain
       ? {
           managerUserId: chain[actor],
           disposition: chain[actor] ? "MANAGED" : "TOP_LEVEL",
+          validFrom,
         }
       : null;
   const rl = {
@@ -182,6 +184,35 @@ describe("ReportingLineService — concurrency + end", () => {
   });
 });
 
+describe("ReportingLineService — date-range integrity (service guard)", () => {
+  it("validFrom gelecekte olan aktif kaydı kapatma → validFrom>validUntil reddi (assign)", async () => {
+    const future = new Date(Date.now() + 24 * 3600 * 1000);
+    const prisma = buildTxPrisma({ chain: { a: "b" }, validFrom: future });
+    const svc = new ReportingLineService(prisma, buildAudit());
+    await expect(
+      svc.assignManager(TENANT, "admin", "ADMIN", { actorUserId: "a", managerUserId: "c" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.reportingLine.updateMany).not.toHaveBeenCalled(); // kapatma yapılmadı
+  });
+
+  it("validFrom gelecekte olan aktif kaydı kapatma → reddi (end)", async () => {
+    const future = new Date(Date.now() + 24 * 3600 * 1000);
+    const prisma = buildTxPrisma({ chain: { a: "b" }, validFrom: future });
+    const svc = new ReportingLineService(prisma, buildAudit());
+    await expect(
+      svc.endRelationship(TENANT, "admin", "ADMIN", { actorUserId: "a" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("normal geçmiş validFrom → close geçerli (guard tetiklenmez)", async () => {
+    const prisma = buildTxPrisma({ chain: { a: "b" } }); // validFrom=epoch (geçmiş)
+    const svc = new ReportingLineService(prisma, buildAudit());
+    await expect(
+      svc.endRelationship(TENANT, "admin", "ADMIN", { actorUserId: "a" }),
+    ).resolves.toEqual({ actorUserId: "a", closed: 1 });
+  });
+});
+
 describe("ReportingLineService — reconciliation (disposition-tabanlı)", () => {
   const buildReconPrisma = () => {
     const activeRows = [
@@ -207,12 +238,15 @@ describe("ReportingLineService — reconciliation (disposition-tabanlı)", () =>
         count: jest.fn().mockResolvedValue(0),
       },
       reportingLine: { findMany: jest.fn().mockResolvedValue(activeRows) },
+      // invalid-date-range $queryRaw sayacı: 2 malformed kayıt döndür.
+      $queryRaw: jest.fn().mockResolvedValue([{ count: BigInt(2) }]),
     } as any;
   };
 
   it("MANAGED / TOP_LEVEL / UNCLASSIFIED ayırır + invalid legacy + anomali sayar", async () => {
     const svc = new ReportingLineService(buildReconPrisma(), buildAudit());
     const r = await svc.reconciliation(TENANT);
+    expect(r.invalidDateRangeRelationships).toBe(2); // $queryRaw sayacı, diğerlerinden bağımsız
     expect(r.managedActors).toBe(5); // a, x, m, d, d (satır-bazlı)
     expect(r.explicitTopLevelActors).toBe(2); // b, n
     expect(r.unclassifiedActors).toBe(2); // c, amb (aktif kaydı yok)

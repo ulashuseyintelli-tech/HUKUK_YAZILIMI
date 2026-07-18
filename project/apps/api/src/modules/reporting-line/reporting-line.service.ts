@@ -40,6 +40,20 @@ export class ReportingLineService {
   }
 
   /**
+   * Tarih-aralığı bütünlüğü: validUntil doluysa validFrom'dan önce olamaz.
+   * DB CHECK constraint (validUntil IS NULL OR validFrom <= validUntil) NİHAİ
+   * sınırdır; bu app-guard defense-in-depth + net hata + bozuk kaydı kapatırken
+   * yüzeye çıkarma (sessizce daha da bozmama). Tek başına yeterli sayılmaz.
+   */
+  private assertValidDateRange(validFrom: Date, validUntil: Date | null): void {
+    if (validUntil != null && validUntil < validFrom) {
+      throw new BadRequestException(
+        "Geçersiz tarih aralığı: bitiş (validUntil) başlangıçtan (validFrom) önce olamaz",
+      );
+    }
+  }
+
+  /**
    * Aktif, aynı-tenant User doğrular. Eksik/pasif/başka-tenant → BadRequest.
    */
   private async assertActiveTenantUser(
@@ -121,12 +135,15 @@ export class ReportingLineService {
 
         const previous = await tx.reportingLine.findFirst({
           where: { tenantId, actorUserId, validUntil: null },
-          select: { managerUserId: true, disposition: true },
+          select: { managerUserId: true, disposition: true, validFrom: true },
         });
+
+        const closeAt = new Date();
+        if (previous) this.assertValidDateRange(previous.validFrom, closeAt);
 
         await tx.reportingLine.updateMany({
           where: { tenantId, actorUserId, validUntil: null },
-          data: { validUntil: new Date() },
+          data: { validUntil: closeAt },
         });
 
         await tx.reportingLine.create({
@@ -188,12 +205,15 @@ export class ReportingLineService {
       async (tx) => {
         const previous = await tx.reportingLine.findFirst({
           where: { tenantId, actorUserId, validUntil: null },
-          select: { managerUserId: true, disposition: true },
+          select: { managerUserId: true, disposition: true, validFrom: true },
         });
+
+        const closeAt = new Date();
+        if (previous) this.assertValidDateRange(previous.validFrom, closeAt);
 
         await tx.reportingLine.updateMany({
           where: { tenantId, actorUserId, validUntil: null },
-          data: { validUntil: new Date() },
+          data: { validUntil: closeAt },
         });
 
         await tx.reportingLine.create({
@@ -253,15 +273,18 @@ export class ReportingLineService {
       async (tx) => {
         const active = await tx.reportingLine.findMany({
           where: { tenantId, actorUserId, validUntil: null },
-          select: { managerUserId: true, disposition: true },
+          select: { managerUserId: true, disposition: true, validFrom: true },
         });
         if (active.length === 0) {
           throw new NotFoundException("Kapatılacak aktif disposition yok");
         }
 
+        const closeAt = new Date();
+        for (const a of active) this.assertValidDateRange(a.validFrom, closeAt);
+
         const result = await tx.reportingLine.updateMany({
           where: { tenantId, actorUserId, validUntil: null },
-          data: { validUntil: new Date() },
+          data: { validUntil: closeAt },
         });
 
         await this.audit.logInTransaction(tx, {
@@ -480,6 +503,18 @@ export class ReportingLineService {
       (u) => !actorsWithActive.has(u.id),
     ).length;
 
+    // Geçersiz tarih-aralığı: validUntil dolu VE validFrom > validUntil. Prisma `where`
+    // iki kolonu karşılaştıramadığından parameterized $queryRaw; diğer anomalilerden
+    // (duplicate/self/disposition-mismatch/inactive/cross-tenant) BAĞIMSIZ sayılır.
+    const invalidDateRangeRows = await this.prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT COUNT(*)::bigint AS count FROM "ReportingLine"
+      WHERE "tenantId" = ${tenantId}
+        AND "validUntil" IS NOT NULL
+        AND "validFrom" > "validUntil"`;
+    const invalidDateRangeRelationships = Number(
+      invalidDateRangeRows[0]?.count ?? 0,
+    );
+
     return {
       activeUserLinkedLawyers: activeLinkedLawyers,
       activeUserLinkedStaff: activeLinkedStaff,
@@ -493,6 +528,7 @@ export class ReportingLineService {
       invalidManagedWithoutManager,
       invalidTopLevelWithManager,
       selfManagerRelationships,
+      invalidDateRangeRelationships,
       cycles: cyclicActors.size,
       unclassifiableTaskAssignees,
     };
