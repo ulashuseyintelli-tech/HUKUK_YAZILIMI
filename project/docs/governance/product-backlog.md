@@ -1931,6 +1931,45 @@ cutover başlatılmaz.
 
 ---
 
+## RCV-CLAIM-FORM-P02-S01 — Rule Engine Unsupported Component Batch Preflight
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+**Implementation evidence:** PR #1439 / squash
+`5cab26213fac935c3b905cec6b5e56fc2c8c7bd5` / required CI `4/4 PASS`; targeted
+`16/16`, writer/routing/provenance `69/69` ve ClaimItem regression `204/204` PASS.
+Canonical ancestry doğrulanmıştır.
+
+Rule Engine batch'indeki bütün ClaimItem adayları ilk writer/router çağrısından önce map ve
+validate edilir. Blank, `null`, `undefined`, unknown veya mapping dışı tek component
+deterministik `UNSUPPORTED_COMPONENT` ile bütün batch'i fail-closed durdurur. Invalid batch
+router, ClaimItem, audit veya event write üretmez ve partial batch write oluşmaz. Aktif fakat
+mapping dışı `EXPENSE`, `OTHER` veya `PRINCIPAL` olarak yazılmaz. Desteklenen mevcut mapping
+davranışı değişmemiştir.
+
+```text
+RUNTIME ENFORCEMENT         PARTIAL — P02-S01 ONLY
+SCHEMA / MIGRATION          NONE
+PUBLIC API                  NONE
+LEGACY DATA                 UNCHANGED
+COLLECTION / SHARED BOUNDARY UNCHANGED
+```
+
+P01-R01 tarihsel contract kapanışı korunur. `POST_INTEREST_RULE`, explicit `OTHER`,
+generic-document fallback, web `kalemTuru` fallback, human direct-entry ve formation
+snapshot/persistence residual gap'leri `OPEN` kalır. ACT-28 ve REC-AUTH-011/012
+`OPEN / UNCHANGED`dır. Sonraki Claim Formation task'ı canonical register tarafından
+atanmamıştır:
+
+```text
+NEXT ELIGIBLE TASK  UNSET — OWNER GO REQUIRED
+```
+
+Bu kayıt başka implementation, yeni workstream, schema/migration, legacy mutation/backfill,
+Collection/shared-boundary değişikliği, replay/data access veya cutover authority üretmez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
