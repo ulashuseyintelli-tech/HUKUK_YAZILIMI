@@ -870,9 +870,14 @@ export class ClaimItemService {
       wizardData,
     );
 
+    const preflightedItems = generatedItems.map((item, sourceIndex) => ({
+      item,
+      sourceIndex,
+      itemType: this.mapItemType(item.type),
+    }));
     const createdItems: any[] = [];
 
-    for (const [sourceIndex, item] of generatedItems.entries()) {
+    for (const { item, sourceIndex, itemType } of preflightedItems) {
       // Sadece zorunlu veya tutarı olan kalemleri oluştur
       if (!item.required && !item.amount) continue;
 
@@ -881,7 +886,7 @@ export class ClaimItemService {
       const data = {
         tenantId,
         caseId,
-        itemType: this.mapItemType(item.type),
+        itemType,
         ...claimItemCreationAmounts(amount),
         currency: item.currency || 'TRY',
         dueDate: item.dueDate ? new Date(item.dueDate) : null,
@@ -910,7 +915,7 @@ export class ClaimItemService {
   }
 
   // Item type mapping
-  private mapItemType(type: string): string {
+  private mapItemType(type: unknown): string {
     const mapping: Record<string, string> = {
       'PRINCIPAL': 'PRINCIPAL',
       'ACCRUED_INTEREST': 'PRE_INTEREST',
@@ -921,7 +926,13 @@ export class ClaimItemService {
       'ATTORNEY_FEE': 'ATTORNEY_FEE',
       'OTHER': 'OTHER',
     };
-    return mapping[type] || 'OTHER';
+    if (typeof type !== 'string' || type.trim().length === 0 || !mapping[type]) {
+      throw new BadRequestException({
+        code: 'UNSUPPORTED_COMPONENT',
+        message: 'Rule Engine component is not supported.',
+      });
+    }
+    return mapping[type];
   }
 
   // Dosyayı doğrula (kural motoru ile)
