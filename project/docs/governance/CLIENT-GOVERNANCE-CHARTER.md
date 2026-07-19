@@ -587,3 +587,80 @@ REVERSAL / MANUAL RECOVERY → **COLLECTION PROGRAM** · STORED-BALANCE RECONCIL
 ### 15.16 BP-07 Self-Check
 
 Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; `BalanceLedger`'ı tek canonical source-of-truth **İLAN ETMEZ**; `CaseBalance`'ı canonical collection ledger **İLAN ETMEZ**; `ClientStatement`'ı ledger **İLAN ETMEZ**; `ClientPayout`'u bank execution proof olarak **GÖSTERMEZ**; `OfficeApprovalRequest`'i execution authority olarak **GÖSTERMEZ**; Collection/Accounting authority'sini CLIENT'e **TAŞIMAZ**; per-subject consent **SEÇMEZ**; ledger-precedence / reconciliation / reversal / financial-remediation **SEÇMEZ**; teknik storage formatını normatif policy **YAPMAZ**; agent/lane bilgisi **İÇERMEZ**; yeni global financial predicate **ÜRETMEZ**; `CL-INV-001..008` / §6 / §8.A / §8.B / §11 / §12 / §13 / §14'ü değiştirmez; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 16. CLIENT-P1-BP-08 — Cross-Domain Contract Consumption Map (BOUNDED CONSOLIDATION — OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-BP-08` read-only analizinin **owner-ratified bounded consolidation**'ıdır (`decision-log.md` CLIENT-P1-BP-08-GOV; **MODEL 1 — BOUNDED CROSS-DOMAIN CONTRACT CONSUMPTION MAP**). Mevcut kanonik AS-IS gerçekleri (AS-IS kod + charter §6 XDC-A–E + reciprocal clause'lar + §11–§15 + POL-A + POL-B + DBIND + SYSTEM-CONSTITUTION) ve owner kararlarını **konsolide eder**; yeni contract, contract owner değişikliği, contract version, event/API mimarisi veya policy ÜRETMEZ. §5 `CL-INV-001..008`, §6 XDC-A–E, §8.A POL-B, §8.B POL-A, §11–§15 metinlerini **semantik olarak değiştirmez**. CLIENT domain kayıtlarını **yapısal/mimari konsolidasyon sözlüğü** olarak adlandırır; route/method/field-wiring/exploit/agent-lane detayı İÇERMEZ. **IMPLEMENTATION AUTHORITY: NONE.** **CONTRACT REDESIGN: NOT AUTHORIZED.** **CONTRACT VERSIONING MODEL: NOT SELECTED.** **EVENT / API ARCHITECTURE: NOT AUTHORIZED.**
+
+### 16.1 Core Consumption Rule
+
+`CONSUMING A FACT ≠ OWNING THE FACT` · `REFERENCING A RECORD ≠ OWNING THE AGGREGATE` · `SHARED WORKFLOW RECORD ≠ SHARED EXECUTION AUTHORITY` · `RECORD ≠ AUTHORITY` · `PROJECTION / SNAPSHOT ≠ SOURCE-OF-TRUTH` · `CONTRACT FAILURE ≠ PERMISSION TO USE LEGACY AUTHORITY`. **Authority yalnız şunlardan türer:** canonical domain ownership · canonical policy · actor eligibility · cross-domain contract · required approval gates.
+
+### 16.2 XDC-A — CLIENT ↔ OFFICE
+
+CLIENT PROVIDES: mandate context · declaration/instruction provenance · client-attributed approval/consent evidence. CLIENT CONSUMES: OFFICE actor identity · OFFICE internal approval decision evidence. **AUTHORITY OWNER: OFFICE. BUSINESS-EFFECT OWNER: ilgili target domain.** Precision: `OfficeApprovalRequest` internal approval workflow/evidence record'udur; record kendi başına authority ÜRETMEZ; OFFICE approval target-domain execution DEĞİL; gerekli approval yoksa **authority-critical command yolu fail-closed durur**; read-only görünüm approval durumunu unavailable/pending gösterebilir ama **işlem başlatamaz**.
+
+### 16.3 XDC-B — CLIENT ↔ RECEIVABLE
+
+CLIENT PROVIDES: canonical creditor relationship · creditor identity/context. CLIENT CONSUMES: claim/receivable composition · legal allocation results. **AUTHORITY OWNER: RECEIVABLE. BUSINESS-EFFECT OWNER: RECEIVABLE.** CLIENT ClaimItem authority KAZANMAZ · receivable mutation YAPAMAZ · legal allocation yeniden hesaplayamaz/override edemez. Required receivable fact yoksa: read-only presentation degraded/unknown olabilir; calculation/disposition/mutation fact'e bağımlıysa **işlem fail-closed durur**; `Case.clientId` veya legacy alan authority fallback'i OLAMAZ.
+
+### 16.4 XDC-C — CLIENT ↔ COLLECTION
+
+CLIENT PROVIDES: creditor relationship context · disposition scope · client-side provenance (when applicable). CLIENT CONSUMES: posted disposition/payable/payout-recording/offset results. **AUTHORITY OWNER: COLLECTION. BUSINESS-EFFECT OWNER: COLLECTION.** `CollectionDisposition` = **SHARED CONTRACT/WORKFLOW RECORD, NOT SHARED EXECUTION AUTHORITY**; CLIENT posting/payable/payout/offset/money-out authority SAHİPLENMEZ. Required posted result/financial state yoksa: client-facing read degraded olabilir; posting/financial-effect yolu **fallback YAPAMAZ**; projection/statement/legacy kayıt collection fact'i yerine GEÇEMEZ.
+
+### 16.5 XDC-D — CLIENT ↔ DEBTOR
+
+CLIENT PROVIDES: declaration/instruction provenance · client-side settlement/negotiation context. CLIENT CONSUMES: debtor legal-status context · debtor-side legal-effect results. **AUTHORITY OWNER: DEBTOR.** `CLIENT SETTLEMENT ≠ LEGAL SETTLEMENT` · `CLIENT DECLARATION ≠ DEBTOR LEGAL-STATUS AUTHORITY`. Required debtor legal-status yoksa: read-only unknown/degraded olabilir; legal-effect üreten işlem **fail-closed durur**; CLIENT debtor legal-status ÜRETMEZ/override etmez.
+
+### 16.6 XDC-E — DOCUMENT / PORTAL / SHARED INFRASTRUCTURE
+
+SHARED KERNEL ROLE: document/evidence/authentication infrastructure. **INDEPENDENT BUSINESS AUTHORITY: NONE.** CLIENT visibility/evidence/client-facing-document context sağlayabilir. Bu görevde SEÇİLMEZ: portal/external-client authority · masking · aggregate visibility · document/portal RBAC · KVKK retention/anonymization/legal-hold · authenticated external-client approval flow. Shared infrastructure bu policy'lerin authority owner'ı olarak GÖSTERİLMEZ.
+
+### 16.7 CLIENT-Provided Canonical Facts
+
+`CaseClient` = canonical creditor-relationship fact · `ClientPowerOfAttorney` = canonical mandate evidence · `ClientIntelStatement` = staff-recorded client-attributed declaration evidence (NOT automatically instruction) · `ClientApprovalRequest`/`Event` = FACT-B provenance ledger (NOT authenticated client consent) · creditor disposition context = shared contract input (NOT posting authority) · client-facing statement = CLIENT-owned immutable presentation/evidence artifact (NOT financial ledger).
+
+### 16.8 CLIENT-Consumed Facts
+
+OFFICE: internal approval decision evidence + actor identity · RECEIVABLE: claim composition + legal allocation · COLLECTION: posting/payable/payout/offset results · DEBTOR: legal-status + debtor-side legal-effect context · SHARED INFRASTRUCTURE: document/evidence/authentication facilities. **Consumption ownership veya mutation authority OLUŞTURMAZ.**
+
+### 16.9 Record / Evidence / Projection Precision
+
+- `OfficeApprovalRequest`: OFFICE-owned workflow/decision evidence; NOT self-creating authority; NOT target-domain execution.
+- `CollectionDisposition`: shared contract/workflow record; **COLLECTION owns financial effect**.
+- `ClientStatement`: **CLIENT-owned immutable client-facing statement/evidence artifact**; NOT live ledger / collection ledger / accounting journal / canonical balance source.
+- `CaseBalance` / `BalanceLedger`: BP-07 hükmü korunur — **DUAL AS-IS REPRESENTATION; SINGLE SOURCE-OF-TRUTH NOT SELECTED; RECONCILIATION CONTRACT NOT CANONICAL** (`CaseBalance` otomatik projection, `BalanceLedger` otomatik canonical SOT İLAN EDİLMEZ).
+
+### 16.10 Failure Semantics
+
+**READ / PRESENTATION PATH** (güvenli olduğu ölçüde): UNKNOWN / UNAVAILABLE / STALE / PARTIAL / DEGRADED READ gösterilebilir. Ancak degraded read: authority ÜRETMEZ · legacy fallback AÇMAZ · mutation BAŞLATMAZ · business effect YARATMAZ.
+
+**AUTHORITY / COMMAND / BUSINESS-EFFECT PATH** — şunlarda **FAIL-CLOSED** gerekir: required upstream fact absent · tenant mismatch · unknown authority source · unsupported required contract · required approval absent · contradictory fact with no precedence rule · upstream fact not trustworthy enough for the action. **FAIL-CLOSED = ZERO TARGET-DOMAIN SIDE EFFECT.**
+
+### 16.11 Legacy Fallback Ban
+
+`CANONICAL FACT ABSENT ≠ LEGACY FIELD BECOMES AUTHORITY` · `PROJECTION AVAILABLE ≠ PROJECTION MAY AUTHORIZE MUTATION`. Özellikle: `Case.clientId` creditor authority fallback'i OLAMAZ · `ClientStatement` Collection state fallback'i OLAMAZ · `CaseBalance`/`BalanceLedger` seçilmemiş precedence'i kendiliğinden KAZANAMAZ · staff-recorded FACT B, FACT A fallback'i OLAMAZ.
+
+### 16.12 Contradictory / Stale Facts
+
+Canonical precedence kuralı yoksa: **MULTIPLE RECORDS MAY COEXIST · COEXISTENCE ≠ EQUIVALENCE · NEWER ≠ AUTOMATIC LEGAL PRECEDENCE.** Authority-critical işlem: otomatik seçim YAPMAZ · sessiz fallback YAPMAZ · gerekli owner/policy veya reconciliation olmadan İLERLEMEZ. Read-only görünüm conflict/unknown gösterebilir.
+
+### 16.13 Consumption Pattern Precision
+
+Doğrulanan AS-IS pattern: **PREDOMINANTLY QUERY-DRIVEN / SYNCHRONOUS CONSUMPTION.** Bu: normatif architectural requirement DEĞİL · event-driven consumption yasağı DEĞİL · gelecekteki API/event tasarımını BELİRLEMEZ. Canonical kayıt yalnız **AS-IS gözlemi ve compatibility riskini** taşır.
+
+### 16.14 Versioning / Compatibility
+
+**EXPLICIT RUNTIME CONTRACT VERSIONING: AS-IS ABSENT. VERSIONING MODEL: NOT SELECTED.** Kaynak domain modelindeki değişiklikler consumer'ları etkileyebilir — yalnız **compatibility riski**. Bu görevde contract-version-format / negotiation / adapter / event-schema / API-contract TASARLANMAZ.
+
+### 16.15 Open-Slot Register (yalnız pointer; ÇÖZÜLMEZ)
+
+Portal/external-client authority → **BP-05 / POL-C** · Document/portal RBAC → **BP-05 / POL-J** · Masking + aggregate visibility → **BP-06** · KVKK retention/anonymization/legal-hold · Per-subject consent sufficiency → **BP-04 successor decision** · Balance reconciliation → ayrı owner-gated unit · Reversal/manual recovery → **COLLECTION** · Contract versioning/compatibility mechanism → implementation · Event-driven/API design → implementation · Stale/contradictory fact resolution policy → ilgili owner decision.
+
+### 16.16 Status Precision
+
+**CLIENT-P1-BP-08: BOUNDED CROSS-DOMAIN CONTRACT CONSUMPTION MAP** · **XDC-A–E OWNERSHIP: UNCHANGED** · **CONSUMPTION: DOES NOT TRANSFER AUTHORITY** · **AUTHORITY-CRITICAL FAILURE: FAIL-CLOSED** · **READ-ONLY PROJECTION FAILURE: MAY DEGRADE WITHOUT CREATING AUTHORITY** · **LEGACY AUTHORITY FALLBACK: PROHIBITED** · **CONTRACT REDESIGN: NOT AUTHORIZED** · **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 16.17 BP-08 Self-Check
+
+Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; XDC-A–E ownership'i **DEĞİŞTİRMEZ**; consumption'ı authority transfer olarak **GÖSTERMEZ**; approval-absence'ı command yolunda degraded-read olarak **GÖSTERMEZ** (authority-critical missing fact = **fail-closed**); shared-kernel'i bağımsız business authority **İLAN ETMEZ**; `CaseBalance`'ı otomatik projection **İLAN ETMEZ**; tek balance SOT **SEÇMEZ**; `ClientStatement`'ı yalnız consumed projection olarak **SINIFLANDIRMAZ** (CLIENT-owned immutable artifact); query-driven kullanımı normatif architecture **YAPMAZ**; legacy authority fallback'i **YASAKLAR**; yeni contract/version/event/API **TASARLAMAZ**; portal/masking/KVKK/RBAC policy **SEÇMEZ**; `CL-INV-001..008` / §6 / §8.A / §8.B / §11 / §12 / §13 / §14 / §15'i değiştirmez; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
