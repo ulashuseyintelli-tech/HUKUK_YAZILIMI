@@ -664,3 +664,104 @@ Portal/external-client authority → **BP-05 / POL-C** · Document/portal RBAC �
 ### 16.17 BP-08 Self-Check
 
 Bu bölüm: yalnız mevcut kanonik gerçekleri + owner kararlarını konsolide eder; XDC-A–E ownership'i **DEĞİŞTİRMEZ**; consumption'ı authority transfer olarak **GÖSTERMEZ**; approval-absence'ı command yolunda degraded-read olarak **GÖSTERMEZ** (authority-critical missing fact = **fail-closed**); shared-kernel'i bağımsız business authority **İLAN ETMEZ**; `CaseBalance`'ı otomatik projection **İLAN ETMEZ**; tek balance SOT **SEÇMEZ**; `ClientStatement`'ı yalnız consumed projection olarak **SINIFLANDIRMAZ** (CLIENT-owned immutable artifact); query-driven kullanımı normatif architecture **YAPMAZ**; legacy authority fallback'i **YASAKLAR**; yeni contract/version/event/API **TASARLAMAZ**; portal/masking/KVKK/RBAC policy **SEÇMEZ**; `CL-INV-001..008` / §6 / §8.A / §8.B / §11 / §12 / §13 / §14 / §15'i değiştirmez; runtime/schema/writer-routing değişikliği ÖNERMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 17. CLIENT-P1-BP-09 — Client Audit / Evidence Model (BOUNDED CONSOLIDATION — OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-BP-09` read-only analizinin **owner-ratified bounded consolidation**'ıdır (`decision-log.md` CLIENT-P1-BP-09-GOV; **MODEL 1 — BOUNDED AUDIT / EVIDENCE CONSOLIDATION MAP**). Mevcut kanonik AS-IS gerçekleri (AS-IS kod + charter §11–§16 + CL-INV-001..008 + XDC-A–E + POL-A + POL-B + SYSTEM-CONSTITUTION + DBIND) ve owner kararlarını **konsolide eder**; yeni policy, authority, role, predicate, invariant-ID veya **runtime evidence taxonomy** ÜRETMEZ. Aşağıdaki E1–E7 / Axis-A sınıfları **yalnız governance-seviyesi analitik sözlüktür — runtime enum, interface, tablo veya API sözleşmesi DEĞİLDİR.** §5 `CL-INV-001..008`, §6 XDC-A–E, §8.A POL-B, §8.B POL-A, §11–§16 metinlerini **semantik olarak değiştirmez.** **EVIDENCE TAXONOMY: GOVERNANCE-ONLY. RUNTIME TAXONOMY: NOT AUTHORIZED. RETENTION/KVKK/MASKING/RBAC: OPEN/NOT SELECTED. EVIDENCE REMEDIATION: NOT AUTHORIZED. IMPLEMENTATION AUTHORITY: NONE.**
+
+### 17.1 Two-Axis Classification Model
+
+Bir kaydın **business semantics**'i ile **evidence provenance sınıfı** birbirine karıştırılmaz.
+
+**Axis A — Record Semantics:** BUSINESS FACT · WORKFLOW/STATE RECORD · EVIDENCE ARTIFACT · AUDIT/TRANSITION EVENT · SOURCE/EXTERNAL DOCUMENT · SNAPSHOT/PROJECTION · PRE-CANONICAL EXTERNAL INPUT · COMMUNICATION RECORD.
+
+**Axis B — Evidence Provenance Class** (yalnız evidence niteliği taşıyan kayıtlara uygulanır): **E1** authenticated principal act · **E2** staff-recorded principal-attributed fact · **E3** internal office decision evidence · **E4** target-domain business-effect evidence · **E5** source document/external artifact · **E6** system-derived/snapshot/projected evidence · **E7** audit/transition event.
+
+Bir business fact E1–E7 içine **zorla yerleştirilmez**; uygun değilse kayıt `EVIDENCE CLASS: NOT APPLICABLE` veya `INSUFFICIENT EVIDENCE TO CLASSIFY` taşır.
+
+### 17.2 Core Non-Equations
+
+`EVIDENCE ≠ BUSINESS AUTHORITY` · `AUDIT EVENT ≠ BUSINESS FACT` · `WORKFLOW STATUS ≠ LEGAL OR FINANCIAL EFFECT` · `RECORDER ≠ PRINCIPAL` · `ATTRIBUTED CLIENT FACT ≠ AUTHENTICATED CLIENT ACT` · `SOURCE DOCUMENT PRESENT ≠ CONTENT VERIFIED` · `PROJECTION/SNAPSHOT ≠ LIVE SOURCE-OF-TRUTH` · `SUPERSESSION ≠ PHYSICAL DELETION` · `VOID ≠ UNDERLYING LEDGER REVERSAL` · `DOCUMENT ACCESS ≠ DOMAIN AUTHORITY` · `RECORD ≠ AUTHORITY`.
+
+### 17.3 Record-Specific Canonical Classification
+
+**`CaseClient`** — RECORD SEMANTICS: CLIENT-OWNED CANONICAL CREDITOR-RELATIONSHIP BUSINESS FACT. EVIDENCE CLASS: NOT FORCED. AUTHORITY OWNER: CLIENT. Case-creation transaction'ı yalnız AS-IS writer route'udur; authority ownership kanıtı DEĞİLDİR.
+
+**`ClientPowerOfAttorney`** — RECORD SEMANTICS: CANONICAL MANDATE EVIDENCE ARTIFACT. PROVENANCE: EXTERNAL SOURCE DOCUMENT + STAFF CAPTURE. EVIDENCE CLASS: **E5 + E2 capture layer**. Belgenin sistemde bulunması içeriğinin hukuken doğrulandığı anlamına GELMEZ; PoA mandate evidence'dır, finansal execution authority DEĞİLDİR; BP-02 mandate hierarchy korunur. AS-IS metadata/status update integrity kontrolü **PARTIAL / KNOWN GAP** olarak kaydedilir (bkz. §17.12) — bu gap PoA'nın canonical mandate evidence rolünü KALDIRMAZ; enforcement/remediation ayrı owner-gated'dir.
+
+**`ClientApprovalRequest`** — WORKFLOW + FACT-B PROVENANCE LEDGER, **E2**. **`ClientApprovalEvent`** — AUDIT/TRANSITION EVENT, **E7**. FACT B, FACT A'ya yükseltilemez; approval status target-domain execution DEĞİLDİR; event oluşması execution kanıtı DEĞİLDİR.
+
+**`ClientIntelStatement`** — RECORD SEMANTICS: STAFF-RECORDED CLIENT-ATTRIBUTED DECLARATION EVIDENCE. EVIDENCE CLASS: **E2**. DIRECT CLIENT PRINCIPAL ATTRIBUTION: **PARTIAL / GAP**. Otomatik instruction DEĞİLDİR; recorder staff'tır, principal DEĞİLDİR; Debtor subject ile client declarant birbirine EŞİTLENMEZ.
+
+**`ClientIntakeSubmission` / `ClientIntakeField`** — RECORD SEMANTICS: PRE-CANONICAL EXTERNAL INPUT / STAGING RECORD. AUTHENTICATED PRINCIPAL ACT: NOT PROVEN. EVIDENCE CLASS: INSUFFICIENT UNTIL REVIEW/PROMOTION. Token possession, principal authentication DEĞİLDİR. Promotion sonrası oluşan canonical record (`ClientIntelStatement`/`DebtorAddress`) kendi provenance sınıfıyla değerlendirilir.
+
+**`ClientStatement` / `ClientStatementLine`** — RECORD SEMANTICS: CLIENT-OWNED IMMUTABLE CLIENT-FACING SNAPSHOT/EVIDENCE ARTIFACT. EVIDENCE CLASS: **E6**. NOT: LEDGER · ACCOUNTING JOURNAL · CANONICAL BALANCE SOURCE. Supersession veya void, underlying financial reversal DEĞİLDİR.
+
+**`ClientOffset`** — RECORD SEMANTICS: COLLECTION-OWNED FINANCIAL-EFFECT / OFFSET RECORDING FACT. EVIDENCE CLASS: **E4**. AUTHORITY OWNER: COLLECTION. Kaydın CLIENT ilişkileri taşıması offset authority'sini CLIENT'e TAŞIMAZ; reversal ayrı kayıtla temsil edilir (AS-IS fact).
+
+**`ClientPayout` / `ClientPayoutAllocation` / `ClientPayoutManualReversal`** — RECORD SEMANTICS: COLLECTION-OWNED PAYOUT RECORDING/ALLOCATION EVIDENCE. EVIDENCE CLASS: **E4**. NOT: PROOF OF BANK EXECUTION. Request, approval, bank execution, recording ve recovery birbirinden AYRIDIR.
+
+**`OfficeApprovalRequest`** — RECORD SEMANTICS: OFFICE-OWNED INTERNAL APPROVAL WORKFLOW/DECISION EVIDENCE. EVIDENCE CLASS: **E3**. NOT: TARGET-DOMAIN EXECUTION. Record kendi başına authority OLUŞTURMAZ.
+
+**`CollectionDisposition`** — RECORD SEMANTICS: SHARED CLIENT/COLLECTION CONTRACT AND WORKFLOW RECORD; POSTED RESULT = COLLECTION BUSINESS-EFFECT EVIDENCE. EVIDENCE CLASS: **E4 (finansal etki doğrulandığında)**. Shared record, shared execution authority OLUŞTURMAZ.
+
+**`AccountingJournalEntry` / `AccountingJournalLine`** — RECORD SEMANTICS: ACCOUNTING-OWNED JOURNAL/BUSINESS RECORD. EVIDENCE CLASS: **E4 (accounting effect için)**. NOT: MERELY GENERIC AUDIT EVENT. Kaynak business effect'in authority'si ilgili source domain'de; accounting representation authority ACCOUNTING'dedir.
+
+**`AuditLog`** (generic) — RECORD SEMANTICS: GENERIC AUDIT/TRANSITION EVENT. EVIDENCE CLASS: **E7**. BUSINESS-EFFECT AUTHORITY: NONE.
+
+**`PortalDocument`** — RECORD SEMANTICS: CLIENT-FACING EXTERNAL DOCUMENT ARTIFACT. EVIDENCE CLASS: **E5**. CONTENT VERIFICATION: NOT IMPLIED BY UPLOAD OR REVIEW STATUS. Review status tek başına hukuki doğruluk veya domain authority ÜRETMEZ.
+
+**`PortalNotification` / `PortalMessage`** — İLETİŞİM KAYDI olarak sınıflandırılır. Otomatik **E7** veya legal evidence İLAN EDİLMEZ; evidence niteliği subject, provenance ve kullanım bağlamına göre AYRICA değerlendirilir.
+
+### 17.4 FACT A / FACT B
+
+BP-04 hükümleri **aynen korunur**: **FACT A** = authenticated external-client act, AS-IS ABSENT/UNWIRED. **FACT B** = staff-recorded client-attributed fact, AS-IS PRESENT. `FACT A ≠ FACT B`; **FACT B NON-CONVERTIBLE TO FACT A**. Token-gated intake submission, authenticated FACT A DEĞİLDİR.
+
+### 17.5 Audit Coverage Model
+
+AS-IS audit coverage **tek tip değildir**: DEDICATED DOMAIN EVENT LEDGER · GENERIC AUDITLOG · ENTITY-LIFECYCLE TIMESTAMPS ONLY · NO VERIFIED AUDIT TRAIL. **AUDIT COVERAGE: FRAGMENTED / NON-UNIFORM. UNIFORM AUDIT CONTRACT: NOT SELECTED. IMPLEMENTATION REMEDIATION: NOT AUTHORIZED.** Entity üzerindeki status/timestamp alanı **otomatik audit event DEĞİLDİR.**
+
+### 17.6 Verified Lifecycle Precision
+
+Yalnız kod/test ile doğrulanmış transition'lar canonical'dır. Enum üyesinden transition ÜRETİLMEZ; ölü veya çağrılmayan yollar canonical transition SAYILMAZ; workflow status ile business effect AYRILIR; update edilebilir metadata ile immutable source content BİRBİRİNE KARIŞTIRILMAZ; supersession, retraction, void ve reversal kavramları EŞİTLENMEZ. Dead-code/unused-enum/optionality ayrıntıları charter'a TAŞINMAZ; yalnız implementation-risk pointer'ı olabilir (bkz. §17.12).
+
+### 17.7 Evidence Chain
+
+Governance seviyesinde: `SOURCE → CAPTURE → PRINCIPAL ATTRIBUTION → RECORDER/ACTOR → REVIEW → DECISION → TARGET-DOMAIN EXECUTION → RESULTING BUSINESS-EFFECT EVIDENCE → AUDIT/TRANSITION TRAIL`. Her adım her yüzeyde bulunmayabilir. Eksik chain adımı **sessizce varsayılmaz**, sonraki adımdan **türetilmez**, authority **üretmez**, authenticated principal act yerine staff recording **kullanılmaz**.
+
+### 17.8 Evidence Sufficiency
+
+S0–S6 yalnız **analitik öneridir**; canonical policy YAPILMAZ. `CaseClient` business fact olduğu için otomatik S4 evidence sayılmaz. `OfficeApprovalRequest` S3 evidence olabilir; execution DEĞİLDİR. `AccountingJournalEntry` accounting effect evidence'dır; reconciliation sufficiency ayrı owner kararıdır. `PortalDocument` review status nedeniyle verified evidence kabul EDİLMEZ. `ClientIntelStatement` principal attribution gap nedeniyle authenticated evidence DEĞİLDİR. **PER-SUBJECT EVIDENCE SUFFICIENCY: OPEN / NOT SELECTED.**
+
+### 17.9 Reference Integrity
+
+Ayrı gösterilir: HARD FOREIGN KEY · SOFT POLYMORPHIC REFERENCE · SCALAR CROSS-MODULE REFERENCE · DOCUMENT PATH/EXTERNAL LOCATION · SELF-REFERENCE/SUPERSESSION LINK · NO DATABASE-LEVEL REFERENCE. Soft reference doğrulanmış source link DEĞİLDİR; FK bulunmaması otomatik security exploit DEĞİLDİR; document path document integrity kanıtı DEĞİLDİR; orphan ve broken-provenance riskleri ayrı kaydedilir; cross-domain FK eksikliği authority fallback izni VERMEZ.
+
+### 17.10 Cross-Domain Evidence Ownership
+
+**CLIENT:** client relationship, mandate evidence, client-attributed provenance, client-facing evidence artifacts. **OFFICE:** internal approval evidence. **RECEIVABLE:** claim/receivable evidence. **COLLECTION:** receipt, disposition, payout, offset ve money-out evidence. **DEBTOR:** debtor legal-status evidence. **ACCOUNTING:** accounting journal evidence. **SHARED INFRASTRUCTURE:** document, authentication ve evidence facilities — INDEPENDENT BUSINESS AUTHORITY NONE. CLIENT başka domain evidence ownership'ini SAHİPLENMEZ. **RECEIVABLE AS-IS CODE CONSUMPTION: NOT FULLY VERIFIED IN BP-09 — NO NEGATIVE CLAIM MAY BE CANONICALIZED.** XDC-B canonical authority sınırı aynen korunur.
+
+### 17.11 Failure Semantics
+
+**READ/PRESENTATION PATH** (güvenli olduğu ölçüde): UNKNOWN/PARTIAL/UNVERIFIED/STALE/BROKEN REFERENCE gösterilebilir. **AUTHORITY/LEGAL/FINANCIAL-EFFECT PATH:** gerekli evidence yoksa, principal attribution belirsizse, tenant mismatch varsa, çelişkili ve precedence'sizse veya güven seviyesi işlem için yetersizse — işlem **FAIL-CLOSED / ZERO TARGET-DOMAIN SIDE EFFECT** durumunda kalır.
+
+### 17.12 AS-IS Evidence-Integrity Deltas (pointer; record-only)
+
+Aşağıdaki dört bulgu `OFFICE-RISK-REGISTER.md`'ye record-only olarak eklenmiştir; yeni constitutional invariant veya implementation task OLUŞTURMAZ, task-scoped finding'dir; method/route/dosya-yolu/ajan-lane/exploit tarifi charter'a TAŞINMAZ:
+
+- **PoA evidence integrity** — AS-IS: mandate metadata/status update actor-eligibility ve audit coverage PARTIAL. IMPACT: mandate evidence integrity risk. REMEDIATION: NOT AUTHORIZED. BP-02 canonical mandate hierarchy korunur.
+- **Portal document decision integrity** — AS-IS: review decision precondition/audit history partial veya absent. CROSS-TENANT EXPLOIT: NOT ESTABLISHED. IMPACT: same-tenant evidence integrity / defense-in-depth gap. REMEDIATION: NOT AUTHORIZED.
+- **Intake review concurrency** — AS-IS: claim/review concurrency contract partial. IMPACT: double-claim / ownership consistency risk. REMEDIATION: NOT AUTHORIZED.
+- **Audit coverage fragmentation** — AS-IS: non-uniform audit coverage (bkz. §17.5). IMPACT: traceability ve evidence-chain gap. REMEDIATION: NOT AUTHORIZED.
+
+### 17.13 Retention / KVKK Open Slots (yalnız pointer; ÇÖZÜLMEZ)
+
+Retention süreleri · anonymization · physical deletion · legal/litigation hold · redaction/masking · portal visibility · subject access · evidence-copy policy · rejected/pending external document retention · promoted intake source retention · audit/event retention. **RETENTION / KVKK POLICY: OPEN / NOT SELECTED.**
+
+### 17.14 Status Precision
+
+**CLIENT-P1-BP-09: BOUNDED AUDIT / EVIDENCE MODEL.** **EVIDENCE TAXONOMY: GOVERNANCE-ONLY.** **FACT A: AS-IS ABSENT.** **AUDIT COVERAGE: FRAGMENTED / NON-UNIFORM.** **EVIDENCE-INTEGRITY DELTAS: KNOWN / NON-ZERO.** **RETENTION / KVKK: OPEN / NOT SELECTED.** **REMEDIATION: NOT AUTHORIZED.** **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 17.15 BP-09 Self-Check
+
+Bu bölüm: business fact'leri E1–E7'ye zorla sınıflandırmaz; `CaseClient` authority owner'ını CASE olarak GÖSTERMEZ; `ClientOffset` authority'sini CLIENT'e TAŞIMAZ; `AccountingJournalEntry`'yi yalnız E7 audit event İLAN ETMEZ; PoA'nın canonical mandate evidence rolünü korur, integrity gap'i ayrıca kaydeder; `PortalDocument` gap'i için cross-tenant exploit iddiası YAPMAZ; intake submission'ı FACT A İLAN ETMEZ; RECEIVABLE hakkında eksik aramaya dayalı negatif iddia YAZMAZ; audit event'i execution evidence olarak GÖSTERMEZ; retention/KVKK/masking/RBAC kararı VERMEZ; runtime taxonomy OLUŞTURMAZ; `CL-INV-001..008` / §6 / §8.A / §8.B / §11–§16'yı değiştirmez; kod/schema/migration/test-behavior DEĞİŞTİRMEZ; canonicalization'ı implementation ile KARIŞTIRMAZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
