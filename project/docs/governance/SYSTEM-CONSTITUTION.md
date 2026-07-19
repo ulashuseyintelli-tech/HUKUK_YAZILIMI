@@ -3,7 +3,7 @@
 ```text
 Belge kimliği           : SYS-CONST-001
 Canonical path          : project/docs/governance/SYSTEM-CONSTITUTION.md
-Version                 : 1.3
+Version                 : 1.4
 Owner status            : RATIFIED — BINDING
 Repository status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Canonical effective date: Approved merge date
@@ -14,8 +14,9 @@ Execution authority     : Ayrı eksen; AGENTS.md ve geçerli repository/tool pol
 
 Bu belge mevcut dosya yolunu koruyarak PR #1139 ile eklenen kısa governance çatısını
 Canonical System Governance v1.0 içinde reconcile eder; v1.1 allocation-authority
-amendment'ını, v1.2 balance-exposure contract ratifikasyonunu ve v1.3 cross-domain
-legal-application boundary kararını aynı canonical path'te taşır. PR #1139 ve PR #1140 tarihsel
+amendment'ını, v1.2 balance-exposure contract ratifikasyonunu, v1.3 cross-domain
+legal-application boundary kararını ve v1.4 ClaimItem formation-admission sözleşmesini aynı
+canonical path'te taşır. PR #1139 ve PR #1140 tarihsel
 olarak geçerli kayıtlardır; içerikleri veya o tarihlerdeki owner kararları geriye dönük
 olarak yanlışlanmaz. Bu sürüm, daha sonraki owner ratifikasyonunun bağlayıcı semantik
 sonucudur ve repository etkisini yalnız approved merge ile kazanır.
@@ -449,6 +450,100 @@ bütün fiziksel persistence alternatifleri `TPA-02 — Target Persistence Archi
 salt-okunur analizinde karşılaştırılacaktır; hiçbiri bu Constitution sürümüyle canonical
 aggregate veya implementation authority olmaz.
 
+### `SYS-FIN-014 — Claim Formation İki Seviyeli Taxonomy Kullanır`
+
+Yeni canonical ClaimItem formation yalnız şu canonical category'lerden birine bağlanır:
+
+```text
+PRINCIPAL
+COST
+ANCILLARY
+ACCRUED_INTEREST
+```
+
+Component subtype category'den ayrıdır; versioned classification registry, açık hukuki
+bağlam ve tek bir canonical category mapping'i taşır. `TAX`, `FEE`, `ATTORNEY_FEE` ve
+`PENALTY` tek başına yeni canonical application category değildir. `OTHER` catch-all,
+fallback veya bilinmeyen component karşılığı olamaz; yeni canonical write için yasaktır.
+Versioned taxonomy'de bulunmayan component `LEGAL_REVIEW_REQUIRED` sonucuyla önce açık
+classification code, category, legal basis ve formation context ratifikasyonu bekler.
+Mevcut `OTHER` kayıtları `LEGACY_ONLY`dır.
+
+### `SYS-FIN-015 — Claim Formation Unknown ve Future Interest İçin Fail-Closed'dur`
+
+Bilinmeyen, boş veya map edilmemiş component `UNSUPPORTED_COMPONENT` üretir; sessizce
+`PRINCIPAL`, `OTHER` veya başka bir default component'e dönüşemez. Bilinmeyen veya açık,
+exhaustive ve versioned mapping'i olmayan document type `PRINCIPAL` ClaimItem üretemez.
+Rule Engine bilinmeyen output'u ClaimItem'a çeviremez; monetary ClaimItem sıfır/negatif
+tutarla veya açık component mapping'i olmadan oluşamaz.
+
+Geçmiş dönemde işlemiş, as-of tarihinde belirli ve tutarı hesaplanmış faiz
+`ACCRUED_INTEREST` sabit hukuki borç bileşenidir. As-of tarihinden sonra işleyecek faiz
+yalnız `InterestPolicy` / calculation rule'dur; `POST_INTEREST_RULE` ClaimItem üretmez.
+Compatibility tipleri `INTEREST`, `PRE_INTEREST` ve `POST_INTEREST` yeni canonical write
+üretemez; mevcut kayıtlar `LEGACY_ONLY`dır. `PRE_INTEREST` yalnız
+`ACCRUED_INTEREST` compatibility alias'ıdır. Bu hüküm migration, normalization veya
+legacy mutation yetkisi vermez.
+
+### `SYS-FIN-016 — Canonical Formation Context ve Snapshot Zorunludur`
+
+Yeni canonical ClaimItem en az tenant/case, component category/subtype, exact
+original/demanded amount, currency, source type/id/slot/version, legal-basis
+reference/version, effective ve liability context, provenance, actor/authority,
+correlation/idempotency identity, normalized input checksum ve formation timestamp taşır.
+Faiz veya faiz doğurabilecek component ayrıca interest eligibility,
+`InterestPolicy` reference/version ve rule reference/version taşır.
+
+Mantıksal `ClaimFormationSnapshotV1` hukuki anlamı ve kaynak input'unu versioned ve yeniden
+üretilebilir biçimde sabitler. Hukuki anlamı veya kaynak verisini değiştiren güncelleme
+sessiz overwrite yapamaz; yeni source version/snapshot ve explicit supersession ilişkisi
+gerektirir. Version/checksum'sız mevcut kayıtlar `LEGACY_ONLY`dır. Bu logical contract
+fiziksel schema veya migration seçimi değildir.
+
+### `SYS-FIN-017 — Formation Admission ve Interest Hold Ayrı Sonuçlardır`
+
+Canonical admission sonuçları:
+
+```text
+ALLOWED
+ALLOWED_WITH_POLICY_HOLD
+DENIED
+LEGAL_REVIEW_REQUIRED
+POLICY_CONTEXT_REQUIRED
+SOURCE_CONTEXT_REQUIRED
+UNSUPPORTED_COMPONENT
+LEGACY_ONLY
+```
+
+`ALLOWED` tam formation ve gerekli policy context'in hazır olduğunu gösterir. Temel borç
+ve hukuki classification kesin, fakat interest eligibility `UNRESOLVED` ise
+`ALLOWED_WITH_POLICY_HOLD` kullanılabilir: ClaimItem oluşabilir; `InterestPolicy`
+bağlanamaz, faiz hesaplanamaz ve hiçbir consumer borcu faizsiz kabul edemez.
+`UNRESOLVED`, otomatik `NO_INTEREST` değildir. Diğer sonuçlar yeni canonical formation
+write üretemez.
+
+Source-less veya yalnız Office approval'a dayanan human direct ClaimItem write yasaktır.
+Human entry ancak explicit source/evidence, legal-basis/version, category/subtype, exact
+amount/currency, liability context ve gerekli Office approval birlikte mevcutsa admission
+değerlendirmesine girer. Office approval hukuki provenance yerine geçmez.
+
+Final hukuki classification ve faiz uygunluğu authority'si Ulaş Hüseyin Telli veya owner
+tarafından daha sonra açıkça atanmış yetkili avukattır. Personel/staff hazırlık, belge
+toplama ve classification önerisi yapabilir; final hukuki kararı veremez. Her cost/ancillary
+subtype ayrı legal basis, category, parent/base, interest eligibility, effective context,
+required evidence ve rule/version crosswalk'ı taşır. Mekanik `NO_INTEREST` varsayımı
+canonical hukuki karar değildir.
+
+### `SYS-FIN-018 — Formation Ratifikasyonu Execution Authority Değildir`
+
+Bu formation-admission contract'ı ratifiye semantik normdur; runtime enforcement
+`NOT_IMPLEMENTED`, implementation authority `NONE`, schema/migration ve legacy
+mutation/backfill `NOT_AUTHORIZED`dır. Receivable ClaimItem formation, component semantics,
+source admission, legal basis, interest-policy input, versioning/provenance ve formation
+snapshot sahibidir. Collection/shared-boundary authority değişmez; `LegalApplication`,
+`ApplicationBatch`, receipt lifecycle, payment orchestration ve allocation execution bu
+amendment kapsamında tasarlanmaz. ACT-28 ile REC-AUTH-011/012 `OPEN / UNCHANGED` kalır.
+
 ### `SYS-FIN-004 — Disposition Creditor Kullanım Kararıdır`
 Creditor Disposition proceeds'in hak sahibi, amaç ve approval bağlamında ayrılmasıdır;
 receipt, legal allocation veya para çıkışı değildir.
@@ -847,10 +942,11 @@ kanıtla güncellenir.
 | v1.1, 2026-07-18 | RCV-P2-WS04 allocation-authority amendment; PR #407 `HOLD / DO NOT MERGE` | ClaimItem source/input ile target `LegalCalculationBucket` application grain'i ayrıldı; `LegalApplication ≠ ApplicationAttribution`; current Ledger persistence ile target authority ayrıştırıldı. Runtime, schema/migration ve cutover yetkisi üretmez. |
 | v1.2, 2026-07-19 | RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratifikasyonu | Stable bucket context ile snapshot instance ayrıldı; per-currency/category gross-applied-remaining exposure, non-authoritative attribution, typed-null/fail-closed projection ve restricted trace sınırı canonical hale getirildi. Current authority `SHADOW_ONLY`; target persistence analysis yalnız read-only yetkilidir. |
 | v1.3, 2026-07-19 | RCV-COL-XD-001A legal-application boundary canonicalization | Receivable policy/bucket ownership, Collection receipt/execution orchestration ownership ve target persistence için tek-yazıcı cross-domain boundary ratifiye edildi. Physical persistence owner/aggregate seçilmedi; `ApplicationBatch` dahil alternatifler TPA-02 salt-okunur analizine bırakıldı. |
+| v1.4, 2026-07-19 | RCV-CLAIM-FORM-P01-R01 ClaimItem formation-admission canonicalization | İki seviyeli component taxonomy, `OTHER`/unknown/document fail-closed sınırı, accrued/future interest ayrımı, mandatory formation context, `ClaimFormationSnapshotV1`, policy-hold ve legal-review authority ratifiye edildi. Runtime enforcement, schema/migration ve implementation yetkisi üretmez. |
 ---
 ## Son Hüküm
 
-Canonical System Governance v1.3 sistemin üst semantik yönetişim normudur. Domain Law'lar
+Canonical System Governance v1.4 sistemin üst semantik yönetişim normudur. Domain Law'lar
 onu ayrıntılandırır; ADR'lar teknik kararları kaydeder; implementation bu normları uygular.
 `AGENTS.md` ayrı execution/safety ekseninde bağlayıcıdır. Runtime compliance ayrı kanıt
 programıdır. Bu metin approved merge to main sonrasında repository-canonical olur; açık
