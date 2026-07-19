@@ -7,6 +7,11 @@ import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "@/prisma/prisma.service";
 import { RegisterDto, LoginDto } from "./dto/auth.dto";
+
+export type FindTenantsResult =
+  | { status: "NONE" }
+  | { status: "SINGLE"; tenantSlug: string; tenantName: string }
+  | { status: "MULTIPLE"; tenants: { tenantSlug: string; tenantName: string }[] };
 import { seedLookupCatalog } from "../lookup/lookup-seed";
 
 @Injectable()
@@ -26,14 +31,10 @@ export class AuthService {
       throw new ConflictException("Bu firma adı zaten kullanılıyor");
     }
 
-    // Check if email exists
-    const existingUser = await this.prisma.user.findFirst({
-      where: { email: dto.email },
-    });
-
-    if (existingUser) {
-      throw new ConflictException("Bu e-posta adresi zaten kullanılıyor");
-    }
+    // AUTH-01: global (tenant-scope'suz) email-uniqueness kontrolü KALDIRILDI.
+    // register() her zaman YENİ bir tenant yaratır; aynı e-posta başka bir tenant'ta
+    // zaten var olabilir (@@unique([tenantId,email]) buna izin verir, bu doğru davranıştır —
+    // holding/franchise/aynı kişinin birden fazla firmada yer alması senaryoları).
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
@@ -76,12 +77,17 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    // AUTH-01: tenant-aware çözümleme — tenantSlug ZORUNLU girdi. Global (tenant-scope'suz)
+    // findFirst({email}) kaldırıldı; aynı e-posta farklı tenant'larda var olabileceği için
+    // (@@unique([tenantId,email])) tenantSlug olmadan kullanıcı tekil biçimde belirlenemez.
+    // Tenant seçici/keşif akışı burada YOK — bkz. findTenantsForEmail() (ayrı account-recovery ucu).
     const user = await this.prisma.user.findFirst({
-      where: { email: dto.email },
+      where: { email: dto.email, tenant: { slug: dto.tenantSlug } },
       include: { tenant: true },
     });
 
     if (!user) {
+      // Yanlış email / yanlış tenantSlug / hiç yok — hepsi AYNI generic mesaj (enumeration-safe).
       throw new UnauthorizedException("Geçersiz e-posta veya şifre");
     }
 
@@ -107,6 +113,34 @@ export class AuthService {
       token,
       user: this.sanitizeUser(user),
       tenant: user.tenant,
+    };
+  }
+
+  /**
+   * AUTH-01 — Account/Tenant Recovery akışı (LOGIN AKIŞININ PARÇASI DEĞİLDİR).
+   * Yalnız kullanıcı "kurumumu bilmiyorum" dediğinde, ayrı bir uçtan (find-tenants) çağrılır.
+   * Login sırasında ASLA otomatik tetiklenmez — normal girişte enumeration yüzeyi sıfırdır.
+   * Yalnız aktif (isActive) kullanıcıların tenant'ları döner (pending/deaktif hesap varlığı sızmaz).
+   */
+  async findTenantsForEmail(email: string): Promise<FindTenantsResult> {
+    const users = await this.prisma.user.findMany({
+      where: { email, isActive: true },
+      include: { tenant: true },
+    });
+
+    if (users.length === 0) {
+      return { status: "NONE" };
+    }
+    if (users.length === 1) {
+      return {
+        status: "SINGLE",
+        tenantSlug: users[0].tenant.slug,
+        tenantName: users[0].tenant.name,
+      };
+    }
+    return {
+      status: "MULTIPLE",
+      tenants: users.map((u) => ({ tenantSlug: u.tenant.slug, tenantName: u.tenant.name })),
     };
   }
 

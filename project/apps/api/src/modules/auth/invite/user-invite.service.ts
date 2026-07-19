@@ -63,12 +63,12 @@ export class UserInviteService {
       throw new BadRequestException("lawyerId ve staffMemberId aynı anda verilemez");
     }
 
-    // H3: global email-uniqueness ile hizalama. AuthService.register() (auth.service.ts) email'i
-    // ZATEN tenantId'siz/global kontrol ediyordu; bu kontrol önceden tenant-scopedy — Tenant A'da
-    // register olan bir email, Tenant B'nin davetiyle İKİNCİ bir User olarak oluşabiliyordu. Şema
-    // hâlâ @@unique([tenantId,email]) (migration YOK); bu YALNIZ uygulama-seviyesi sıkılaştırma.
+    // AUTH-01: tenant-scoped email-uniqueness kontrolü. Önceden global (H3) idi; artık
+    // AuthService.register()/login() ile hizalı — aynı e-posta farklı tenant'ta zaten var
+    // olabilir (@@unique([tenantId,email]) buna izin verir), yalnız AYNI tenant içinde ikinci
+    // bir User aynı e-postayla oluşturulamaz.
     const existing = await this.prisma.user.findFirst({
-      where: { email },
+      where: { email, tenantId: actor.tenantId },
     });
     if (existing) throw new ConflictException("Bu e-posta adresi zaten kullanılıyor");
 
