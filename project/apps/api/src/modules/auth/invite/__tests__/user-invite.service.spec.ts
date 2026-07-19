@@ -83,23 +83,22 @@ describe("UserInviteService", () => {
     expect(JSON.stringify(call)).not.toContain("ali@x.com"); // tam e-posta yok
   });
 
-  // ---- H3: global email-uniqueness (issue tenant-scoped değil, register ile hizalı) ----
-  it("[H3] issue email'i GLOBAL kontrol eder: findFirst({email}) — tenantId FİLTRESİ YOK", async () => {
+  // ---- AUTH-01: tenant-scoped email-uniqueness (önceki global "H3" davranışı SUPERSEDED) ----
+  it("[AUTH-01] issue email'i TENANT-SCOPED kontrol eder: findFirst({email, tenantId}) — actor.tenantId FİLTRESİ VAR", async () => {
     const { svc, user } = make();
     await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
-    expect(user.findFirst).toHaveBeenCalledWith({ where: { email: "a@x.com" } });
+    expect(user.findFirst).toHaveBeenCalledWith({ where: { email: "a@x.com", tenantId: ACTOR.tenantId } });
   });
 
-  it("[H3] email BAŞKA tenant'ta zaten var → 409, user/invite create ÇAĞRILMAZ, audit YOK", async () => {
-    const { svc, user, userInvite, audit } = make();
-    user.findFirst.mockResolvedValueOnce({ id: "u-other", email: "a@x.com", tenantId: "t-OTHER" });
-    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" })).rejects.toThrow(ConflictException);
-    expect(user.create).not.toHaveBeenCalled();
-    expect(userInvite.create).not.toHaveBeenCalled();
-    expect(audit.log).not.toHaveBeenCalled();
+  it("[AUTH-01] email BAŞKA tenant'ta zaten var → ARTIK ENGELLENMEZ (tenant-scoped sorgu bulmaz, invite devam eder)", async () => {
+    const { svc, user, userInvite } = make();
+    // findFirst({email, tenantId: ACTOR.tenantId}) başka tenant'taki kullanıcıyı hiç görmez → null döner (mock varsayılanı).
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" });
+    expect(user.create).toHaveBeenCalled();
+    expect(userInvite.create).toHaveBeenCalled();
   });
 
-  it("[H3] email AYNI tenant'ta zaten var → 409 (davranış korunur — global kontrol bunu da kapsar)", async () => {
+  it("[AUTH-01] email AYNI tenant'ta zaten var → 409 (davranış korunur — tenant-scoped kontrol bunu hâlâ yakalar)", async () => {
     const { svc, user } = make();
     user.findFirst.mockResolvedValueOnce({ id: "u-self", email: "a@x.com", tenantId: "t1" });
     await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" })).rejects.toThrow(ConflictException);

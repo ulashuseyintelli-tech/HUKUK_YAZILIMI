@@ -8,6 +8,7 @@ export interface ClientWorkspaceSmokeConfig {
   token: string;
   email: string;
   password: string;
+  tenantSlug: string;
 }
 
 function trimTrailingSlash(value: string): string {
@@ -23,6 +24,9 @@ export function readClientWorkspaceSmokeConfig(env: NodeJS.ProcessEnv = process.
     token: env.CLIENT_WORKSPACE_SMOKE_TOKEN ?? '',
     email: env.CLIENT_WORKSPACE_SMOKE_EMAIL ?? '',
     password: env.CLIENT_WORKSPACE_SMOKE_PASSWORD ?? '',
+    // AUTH-01: login artik tenantSlug zorunlu kiliyor; seed.ts'in seedDefaultUsers()
+    // fonksiyonu admin@hukuk.com / user@hukuk.com kullanicilarini hep "demo-firma" tenant'ina baglar.
+    tenantSlug: env.CLIENT_WORKSPACE_SMOKE_TENANT_SLUG ?? 'demo-firma',
   };
 }
 
@@ -44,7 +48,7 @@ export async function resolveClientWorkspaceSmokeToken(
   if (config.token) return config.token;
 
   const response = await request.post(`${config.apiBaseUrl}/api/auth/login`, {
-    data: { email: config.email, password: config.password },
+    data: { email: config.email, password: config.password, tenantSlug: config.tenantSlug },
   });
   if (!response.ok()) {
     throw new Error(`Client Workspace smoke login failed: ${response.status()} ${await response.text()}`);

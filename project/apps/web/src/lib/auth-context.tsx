@@ -23,14 +23,15 @@ interface AuthContextType {
   user: User | null;
   tenant: Tenant | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, tenantSlug: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const PUBLIC_PATHS = ["/", "/auth/login", "/auth/register"];
+// AUTH-01: /auth/account-recovery eklendi — girişsiz kullanıcı erişebilmeli.
+const PUBLIC_PATHS = ["/", "/auth/login", "/auth/register", "/auth/account-recovery"];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -67,8 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string) => {
-    const response = await api.login(email, password);
+  const login = async (email: string, password: string, tenantSlug: string) => {
+    const response = await api.login(email, password, tenantSlug);
     setUser(response.user);
     setTenant(response.tenant);
     router.push("/dashboard");

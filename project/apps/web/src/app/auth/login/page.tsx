@@ -1,14 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Scale } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  // AUTH-01: account-recovery akışından dönüşte tenantSlug prefill edilir.
+  const searchParams = useSearchParams();
+  const prefillTenantSlug = searchParams.get("tenantSlug") ?? "";
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -18,9 +30,10 @@ export default function LoginPage() {
     const formData = new FormData(e.currentTarget);
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
+    const tenantSlug = formData.get("tenantSlug") as string;
 
     try {
-      await login(email, password);
+      await login(email, password, tenantSlug);
     } catch (err: any) {
       // API bağlantı hatası için özel mesaj
       if (err.message?.includes('API sunucusuna bağlanılamıyor') || err.message?.includes('Failed to fetch')) {
@@ -57,6 +70,21 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="tenantSlug" className="block text-sm font-medium mb-2">
+                Kurum
+              </label>
+              <input
+                id="tenantSlug"
+                name="tenantSlug"
+                type="text"
+                required
+                defaultValue={prefillTenantSlug}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                placeholder="kurum-adi"
+              />
+            </div>
+
             <div>
               <label htmlFor="email" className="block text-sm font-medium mb-2">
                 E-posta
@@ -104,7 +132,14 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground mt-6">
+          {/* AUTH-01: kurum keşfi normal login akışının parçası değil, ayrı recovery sayfasına yönlendirir. */}
+          <p className="text-center text-sm text-muted-foreground mt-4">
+            <Link href="/auth/account-recovery" className="text-primary hover:underline">
+              Kurumunuzu bilmiyor musunuz?
+            </Link>
+          </p>
+
+          <p className="text-center text-sm text-muted-foreground mt-2">
             Hesabınız yok mu?{" "}
             <Link href="/auth/register" className="text-primary hover:underline">
               Kayıt olun

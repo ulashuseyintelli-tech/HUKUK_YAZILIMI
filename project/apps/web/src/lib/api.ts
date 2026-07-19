@@ -210,16 +210,30 @@ class ApiClient {
   }
 
   // Auth
-  async login(email: string, password: string) {
+  // AUTH-01: tenantSlug zorunlu — normal login akışı artık tenant-aware.
+  async login(email: string, password: string, tenantSlug: string) {
     const data = await this.request<{ token: string; user: any; tenant: any }>(
       "/auth/login",
       {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, tenantSlug }),
       }
     );
     this.setToken(data.token);
     return data;
+  }
+
+  // AUTH-01 — Account/Tenant Recovery: yalnız kullanıcı "kurumumu bilmiyorum" dediğinde
+  // çağrılır, normal login akışının parçası DEĞİLDİR.
+  async findTenantsForEmail(email: string) {
+    return this.request<
+      | { status: "NONE" }
+      | { status: "SINGLE"; tenantSlug: string; tenantName: string }
+      | { status: "MULTIPLE"; tenants: { tenantSlug: string; tenantName: string }[] }
+    >("/auth/account-recovery/find-tenants", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
   }
 
   async register(data: {
