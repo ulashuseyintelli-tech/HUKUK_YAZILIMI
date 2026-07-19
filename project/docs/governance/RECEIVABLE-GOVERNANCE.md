@@ -8,7 +8,7 @@
 Belge Durumu: CANONICAL
 Belge Sınıfı: DOMAIN GOVERNANCE
 Üst Otorite: SYSTEM-CONSTITUTION
-Version: 1.2
+Version: 1.3
 Canonical Path: project/docs/governance/RECEIVABLE-GOVERNANCE.md
 Owner Status: RATIFIED — BINDING
 Repository Status: CANONICAL UPON APPROVED MERGE TO MAIN
@@ -389,7 +389,7 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 | `REC-AUTH-001` — `ClaimItem.originalAmount` | Creation provenance; normal mutation ile değişmez | ClaimItem creation command | `CURRENT / NON_CANONICAL_PROVENANCE` | `CONFIRMED / RUNTIME CONTRACT IMPLEMENTED` |
 | `REC-AUTH-002` — `ClaimItem.demandedAmount` | Takipte talep edilen canonical alacak tutarı | Receivable/ClaimItem command owner | `CURRENT / CANONICAL_WITHIN_CLAIMITEM_SCOPE` | `CONFIRMED / RUNTIME IMPLEMENTED` |
 | `REC-AUTH-003` — `ClaimItem.amount` | Controlled compatibility mirror; canonical değeri override edemez | Compatibility writer, demandedAmount ile kontrollü aynı akış | `DEPRECATED / COMPATIBILITY_ONLY` | `CONFIRMED / TRANSITIONAL COMPLIANCE` |
-| `REC-AUTH-004` — `ClaimItem.collectedAmount` | Deprecated derived cache; tahsilat, legal application, legal balance veya display authority değildir | Yeni consumer açılamaz; legacy backward compatibility dışında authority üretmez | `DEPRECATED / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / AUTHORITY EXCLUSION IMPLEMENTED; MIGRATION/CUTOVER NOT AUTHORIZED` |
+| `REC-AUTH-004` — `ClaimItem.collectedAmount` | Deprecated derived cache; tahsilat, legal application, legal balance veya display authority değildir | Yeni reader veya writer açılamaz; legacy backward compatibility dışında authority üretmez | `DEPRECATED / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / AUTHORITY EXCLUSION IMPLEMENTED; MIGRATION/CUTOVER NOT AUTHORIZED` |
 | `REC-AUTH-005` — `ClaimItem.interestTypeCode` | Faiz hesaplama read authority | Receivable mapping/ClaimItem command owner | `CURRENT / CANONICAL_WITHIN_INTEREST_SCOPE` | `CONFIRMED / RUNTIME IMPLEMENTED` |
 | `REC-AUTH-006` — `Due.interestTypeCode` | Ingress ve kaynak provenance'ı; calculation authority değil | Due owner | `CURRENT / NON_CANONICAL_INPUT` | `CONFIRMED / RUNTIME IMPLEMENTED` |
 | `REC-AUTH-007` — legacy `interestType` | Sınırlı compatibility projection; yeni canonical karar kaynağı olamaz | Compatibility adapter | `DEPRECATED / COMPATIBILITY_ONLY` | `CONFIRMED / STRICT MAPPING ONLY` |
@@ -401,8 +401,8 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 | ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
 |---|---|---|---|---|
 | `REC-AUTH-010` — Payment/Collection receipt varlığı ve statüsü | Dosyaya bağlanan para giriş fact'i; ClaimItem cache alanından çıkarılamaz | COLLECTION owner; receivable yalnız yetkili fact'i tüketir | `CURRENT PARTIAL` | `CONFIRMED / IDEMPOTENCY CONFIRMED; CANONICAL PUBLIC RECEIPT TENANT / OBJECT-SCOPE GATES CONFIRMED; PROVIDER FINALITY OPEN UNDER RC-COL / W2.2` |
-| `REC-AUTH-011` — Tahsilatın alacağa etkisi | Receipt'in target `LegalCalculationBucket` üzerindeki `LegalApplication` etkisi; attribution ayrı fact'tir | RECEIVABLE calculation/policy + COLLECTION receipt execution boundary; target persistence design unassigned | `CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY / OPEN RECONCILIATION` | `TM3-ACT28-LEGAL RECONCILIATION OPEN; SCHEMA/MIGRATION LIKELY REQUIRED BUT UNAUTHORIZED` |
-| `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile `MASRAF → FERİ → FAİZ → ANA PARA` sırasındaki target legal-application sonucu | RECEIVABLE legal-calculation policy; COLLECTION yalnız yetkili receipt execution boundary'si | `CURRENT AS-IS CLAIMITEM-KEYED LEDGER / TARGET LEGALCALCULATIONBUCKET / OPEN RECONCILIATION` | `HISTORICAL: DA-4 drift baseline, WS04-P01/P02/P03/P03-A closure kayıtları korunur. AMENDMENT: P01/P02 AMENDMENT REQUIRED; P03 SUPERSEDED / REQUIRES REDESIGN; P03-A SAFETY INFRASTRUCTURE ONLY; P03-B SUPERSEDED / DO NOT EXECUTE; DATA/REPLAY/PRODUCTION OBSERVATION/CUTOVER NOT AUTHORIZED; ACT-28 / REC-AUTH-011/012 OPEN` |
+| `REC-AUTH-011` — Tahsilatın alacağa etkisi | Receipt'in target `LegalCalculationBucket` üzerindeki `LegalApplication` etkisi; attribution ayrı fact'tir | RECEIVABLE calculation/policy + COLLECTION receipt lifecycle/execution orchestration; target persistence tek-yazıcı cross-domain boundary, fiziksel owner/aggregate TPA-02'de açık | `AUTHORITY BOUNDARY CANONICAL / CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY / PHYSICAL PERSISTENCE OPEN` | `XD-001 RECORDED; ACT-28/REC-AUTH-011/012 OPEN; TPA-02 GO-ANALYZE REQUIRED; SCHEMA/MIGRATION UNAUTHORIZED` |
+| `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile `MASRAF → FERİ → FAİZ → ANA PARA` sırasındaki target legal-application sonucu | RECEIVABLE legal-calculation policy; COLLECTION yalnız yetkili receipt lifecycle/execution orchestration boundary'si; target persistence single-writer olmak zorundadır | `AUTHORITY BOUNDARY CANONICAL / CURRENT AS-IS CLAIMITEM-KEYED LEDGER / TARGET LEGALCALCULATIONBUCKET / PHYSICAL PERSISTENCE OPEN` | `HISTORICAL: DA-4 drift baseline, WS04-P01/P02/P03/P03-A closure kayıtları korunur. XD-001: dual authority yasak, fiziksel aggregate seçilmedi. TPA-02 READ-ONLY OWNER GATE; DATA/REPLAY/SCHEMA/IMPLEMENTATION/CUTOVER NOT AUTHORIZED; ACT-28 / REC-AUTH-011/012 OPEN` |
 | `REC-AUTH-013` — Overpayment / hold | Kapsamı belirlenmiş allocation/collection sonucu; principal'a sessiz yazılamaz | Allocation/Collection result owner | `CURRENT PARTIAL / SCOPE-BOUNDED` | `CONFIRMED WITHIN ADR-014 FIXTURE/ENGINE SCOPE; PRODUCTION REVALIDATION REQUIRED` |
 | `REC-AUTH-014` — Valid linked full reversal | Bağlı payment'ın canonical legal etkisini net-zero yapar | Reversal link + canonical allocation | `CURRENT / CANONICAL_WITHIN_LINKED_FULL_REVERSAL_SCOPE` | `CONFIRMED / UNIT + DISPOSABLE-DB + REAL CANCEL PATH` |
 | `REC-AUTH-015` — Partial reversal/refund | Ayrı ratifikasyon olmadan inference yapılamaz | Owner/contract henüz tanımlanmamış | `TARGET / PRODUCTION_NO_GO` | `NOT_IMPLEMENTED / OWNER DECISION REQUIRED` |
@@ -534,7 +534,9 @@ Principal yalnız allocation sonucu principal bucket'a ulaşan tutar kadar azal�
 Canonical Receivable snapshot, application öncesinde `LegalCalculationBucket` üretir.
 `LegalApplication` bu bucket'a uygulanır; `ApplicationAttribution` sonucu ClaimItem/source
 lineage'ına açıklar. ClaimItem-keyed `LedgerAllocation` current AS-IS/legacy persistence'tır
-ve target legal authority olarak yorumlanamaz.
+ve target legal authority olarak yorumlanamaz. ClaimItem payment-state, collected-balance
+veya allocation authority değildir; `ClaimItem.collectedAmount` için yeni reader veya writer
+açılamaz.
 
 **REC-ALLOC-006 — Sub-bucket context kaybı yasaktır.**
 Aynı kategori içinde currency, legal basis, effective date, interest rule veya priority
@@ -612,6 +614,19 @@ availability = AVAILABLE | UNAVAILABLE | NOT_COMPARABLE | STALE | FAIL_CLOSED
 authority    = SHADOW_ONLY | CANONICAL | LEGACY_COMPATIBILITY
 current      = SHADOW_ONLY
 ```
+
+**REC-ALLOC-011 — LegalApplication persistence tek-yazıcı cross-domain boundary'dir.**
+
+Receivable canonical bucket semantiği ile TBK100 application policy'sinin; Collection receipt
+lifecycle ve yetkili transaction içindeki deterministic execution orchestration'ının
+sahibidir. Target `LegalApplication` persistence tek bir logical writer ve tek bir canonical
+authority taşımak zorundadır. Permanent dual-write, iki domainin bağımsız application fact'i
+yazması veya legacy cache/projection'ın fallback authority olması yasaktır.
+
+Physical persistence owner'ı, aggregate, tablo/model, PK/FK, transaction/idempotency,
+immutability, exact-cent ve retention kontratı bu normla seçilmez. `ApplicationBatch` dahil
+alternatifler yalnız `TPA-02` salt-okunur analizinde karşılaştırılır; bu kayıt schema,
+migration, writer, consumer cutover veya retirement yetkisi üretmez.
 
 `AVAILABLE`, authority promotion anlamına gelmez. Legacy field'lar breaking rename olmadan
 korunur; deprecation yalnız explicit cutover gate'iyle tamamlanır. Shadow projection normal
@@ -1023,6 +1038,7 @@ fee/harç authority tamamlaması
 production empirical evidence
 LegalCalculationBucket target persistence design
 LegalApplication / ApplicationAttribution persistence separation
+TPA-02 single-writer physical persistence owner/aggregate analysis
 ```
 
 ## 18.4. OUT-OF-SCOPE / FUTURE
@@ -1396,6 +1412,24 @@ DO NOT REBASE / DO NOT CLOSE YET` kalır. Target persistence analysis yalnız
 `READ-ONLY AUTHORIZED`; schema/migration design veya implementation, runtime/API,
 consumer switch ve cutover `NOT AUTHORIZED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN` kalır.
 
+## 23.6. XD-001 legal-application boundary ratifikasyonu — 2026-07-19
+
+Owner, Receivable'ın canonical legal bucket ve allocation policy; Collection'ın receipt
+lifecycle ve execution orchestration sahibi olduğunu ratifiye etmiştir. Target
+`LegalApplication` persistence tek-yazıcı cross-domain boundary'dir; dual authority ve
+kalıcı dual-write yasaktır.
+
+`ClaimItem` application target, payment-state veya allocation authority değildir.
+`ClaimItem.collectedAmount` için yeni reader/writer açılamaz. `CollectionAllocation`
+bağımsız/fallback authority olamaz; yalnız canonical output'tan türetilen geçici compatibility
+projection olarak kalabilir.
+
+Bu karar fiziksel persistence owner'ı veya aggregate seçmez. `ApplicationBatch` dahil bütün
+alternatifler `TPA-02 — Target Persistence Architecture` salt-okunur analizinin konusudur.
+XD-001 authority boundary kararı canonicaldır; ACT-28 ve REC-AUTH-011/012 physical
+persistence, migration, writer, consumer cutover ve retirement kapanana kadar `OPEN` kalır.
+TPA-02 için `GO-ANALYZE REQUIRED`; implementation authority `NONE`dır.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
@@ -1563,6 +1597,7 @@ PR #1141 ratifikasyonu ve PR #1142 closure'ı canonical main'e merge edilmiştir
 - [x] TBK100 sıra invariantı kabul edildi.
 - [x] Principal/interest-base mutation kuralı kabul edildi.
 - [x] Negatif payment ve float-dust kuralları kabul edildi.
+- [x] Receivable policy / Collection orchestration / single-writer cross-domain boundary kabul edildi.
 
 ## D.4. Reversal / FX
 

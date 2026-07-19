@@ -1974,7 +1974,27 @@ PR #407 `OPEN / HOLD / DO NOT MERGE / DO NOT REBASE / DO NOT CLOSE YET` kalır. 
 P01–P03-A closure/amendment kayıtları korunur. Target persistence analysis yalnız
 `READ-ONLY AUTHORIZED`; schema/migration design/implementation, runtime/API, data/replay,
 consumer switch ve cutover `NOT AUTHORIZED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN` kalır.
-**NEXT ELIGIBLE ACTION: TARGET PERSISTENCE READ-ONLY DESIGN ANALYSIS — OWNER GO REQUIRED.**
+**Historical next pointer:** target-persistence read-only design analysis; XD-001 authority
+boundary kararı aşağıdaki kayıtla bu pointer'ı `TPA-02` olarak kesinleştirir.
+
+**RCV-COL-XD-001A Legal Application Boundary Canonicalization (2026-07-19; CANONICAL UPON
+APPROVED GOVERNANCE MERGE):** Owner, Receivable'ı canonical `LegalCalculationBucket`
+semantiği ve TBK100 application policy; Collection'ı receipt lifecycle ve yetkili transaction
+içindeki deterministic execution orchestration sahibi olarak ratifiye etmiştir. Target
+`LegalApplication` persistence tek-yazıcı cross-domain boundary'dir; permanent dual-write ve
+dual authority yasaktır.
+
+`ClaimItem` application target/payment-state/allocation authority değildir;
+`ClaimItem.collectedAmount` için yeni reader/writer açılamaz. `CollectionAllocation`
+bağımsız/fallback authority olamaz; yalnız canonical output-derived geçici compatibility
+projection olabilir. Current ClaimItem-keyed `LedgerAllocation` AS-IS/legacy persistence
+olarak kalır ve target authority değildir.
+
+Physical persistence owner'ı, aggregate, key/relation, transaction/idempotency, immutability,
+exact-cent ve retention kontratı seçilmemiştir. `ApplicationBatch` dahil alternatifler yalnız
+`TPA-02 — Target Persistence Architecture` salt-okunur analizinde karşılaştırılır. ACT-28 ve
+REC-AUTH-011/012 `OPEN`; schema/migration/writer/consumer cutover/legacy retirement
+`NOT AUTHORIZED`dır. **NEXT ELIGIBLE ACTION: TPA-02 — GO-ANALYZE REQUIRED.**
 
 ---
 

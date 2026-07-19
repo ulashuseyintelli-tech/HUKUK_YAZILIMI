@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE; target persistence design, PR-11 and runtime cutover remain unauthorized
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary ratified 2026-07-19; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE; TPA-02 physical persistence analysis, PR-11 and runtime cutover remain unauthorized until separate owner GO
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -135,6 +135,28 @@ cutover require explicit later gates.
 
 Target persistence analysis is read-only authorized. Persistence/schema/migration design
 and implementation remain unauthorized. ACT-28 and REC-AUTH-011/012 remain open.
+
+## XD-001 Legal Application Boundary Decision — 2026-07-19
+
+The owner-ratified constitutional boundary is:
+
+1. Receivable owns canonical bucket semantics and legal-application policy.
+2. Collection owns receipt lifecycle and deterministic execution orchestration inside the
+   authorized transaction boundary.
+3. Target legal-application persistence requires one logical writer and one canonical
+   authority across the boundary. Permanent dual write or dual authority is prohibited.
+4. `ClaimItem` is not an application target, payment-state source, or allocation authority.
+   No new `ClaimItem.collectedAmount` reader or writer may be introduced.
+5. `CollectionAllocation` cannot be an independent or fallback authority; it may survive
+   temporarily only as a canonical-output-derived compatibility projection.
+6. The physical persistence owner, aggregate, keys, relations, immutability, exact-cent
+   reconciliation, idempotency and retention contract are deliberately unselected.
+
+`TPA-02 — Target Persistence Architecture` is the next read-only owner-gated analysis.
+`ApplicationBatch` is only one alternative to compare there; it is not a ratified aggregate,
+canonical vocabulary requirement, schema direction, or implementation authorization.
+ACT-28 and REC-AUTH-011/012 remain open until the target persistence and later cutover gates
+are separately closed.
 
 ## Normative Rules
 
@@ -562,3 +584,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-12 | 2.4 | PR-10 governance closure: PR #1137 / squash `681203fad25ffd6e2e51f3c92e4656b0c853a6f8` adds a typed, additive, shadow-only calculation-summary compatibility adapter while preserving every legacy field. Canonical per-currency balance, fee status, blocker/readiness, trace and non-official snapshot evidence remain lossless; conflicts fail closed. Consumer switch, primary authority promotion and runtime cutover remain unauthorized. The next eligible step is the owner-gated cutover-authorization decision; PR-11 does not start automatically. |
 | 2026-07-18 | 2.5 | Allocation-authority amendment: ClaimItem source/input is separated from target `LegalCalculationBucket`; `LegalApplication` and `ApplicationAttribution` are distinct; current ClaimItem-keyed Ledger persistence is legacy AS-IS rather than target authority. Balance Engine remains TARGET/SHADOW_ONLY; P01/P02 require amendment, P03 is superseded/redesign-required, P03-A remains safety infrastructure only, P03-B must not execute. PR #407 is HOLD/DO NOT MERGE. Schema/migration design, data/replay, PR-11 and cutover remain unauthorized. |
 | 2026-07-19 | 2.6 | RD01 balance-exposure contract: stable bucket context and snapshot instance are separated; per-currency/category gross-applied-remaining amounts, LegalApplication identity, non-authoritative attribution, typed-null/fail-closed availability and restricted sub-bucket/source trace are ratified. PR #407 remains OPEN/HOLD; current authority remains SHADOW_ONLY; target persistence analysis is read-only authorized, design/implementation/cutover are not. |
+| 2026-07-19 | 2.7 | XD-001 legal-application boundary: Receivable owns bucket/policy, Collection owns receipt/execution orchestration, and target persistence is a single-writer cross-domain boundary. Physical persistence and aggregate selection remain open for TPA-02; `ApplicationBatch` is an unselected analysis alternative only. |

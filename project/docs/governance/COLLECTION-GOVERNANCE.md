@@ -9,8 +9,8 @@ Owner Status            : OWNER-APPROVED CANONICALIZATION (owner review tamamlan
                           canonicalization talimatı, 2026-07-13)
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Üst Otorite             : SYSTEM-CONSTITUTION (SYS-*) — bu belge system-wide normu yeniden tanımlamaz
-Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.0 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
-Sürüm                   : 1.1 (2026-07-18 — RCV-P2-WS04 legal-application boundary amendment)
+Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.3 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
+Sürüm                   : 1.2 (2026-07-19 — XD-001 single-writer cross-domain boundary)
 Kanıt tabanı            : repo main @ beb7d6735fb4002ad6169604531681414a17aa0e
                           + Handoff Acceptance Report (2026-07-13)
                           + TAHSILAT_BLOKU_CANONICAL_MIMARI v1.0 (Master Analysis damıtımı, Desktop 01)
@@ -70,7 +70,8 @@ KANIT: `CollectionService` tek otorite — TM3 §2, invariant 13):
 - idempotent command execution sağlamak,
 - Receivable'ın hukuki allocation politikasını deterministic olarak YÜRÜTMEK
   (politikanın sahibi değil, yürütücüsüdür — REC-AUTH-011/012),
-- ledger etkisini append-only kayıtlarla üretmek,
+- current AS-IS ledger etkisini append-only kayıtlarla üretmek; target persistence'ta
+  yalnız ratifiye tek-yazıcı cross-domain boundary içinde orchestration yapmak,
 - fazla ödeme (overpayment), refund ve reversal lifecycle'ını yönetmek,
 - downstream finansal dağıtım için güvenilir tahsilat fact'i üretmek,
 - audit, actor ve correlation bilgisini taşımak (bugün kısmi — bkz. COL-INV-037..043
@@ -100,7 +101,7 @@ REC-GOV §4'teki tanımlar esas alınır; aşağıdakiler Collection'a özgü ek
 | Collection | Receipt'in bağlam, statü, belge ve işlem taşıyıcısı | CURRENT |
 | Internal Confirmation | Sistem içi kayıt onayı; banka finality değildir | CURRENT |
 | External Settlement | Banka/sağlayıcı kesinleşmesi | TARGET — LIFECYCLE + HYBRID TYPED EVIDENCE CONTRACT RECORDED / PENDING CANDIDATE INGRESS + UNSETTLED ADMISSION GUARD + TYPED EVIDENCE + FINALITY PROJECTION SCHEMA FOUNDATIONS + DEDICATED VERIFIER PERMISSION BOUNDARY + IMMUTABLE HUMAN EVIDENCE WRITER + CANDIDATE CAS TRANSITION + EVIDENCE-INTEGRITY ADMISSION GUARD PRESENT / `confirmedAt` + PROJECTION HARDENING REMAIN (COL/OD-06 Option A + COL/OD-06A; W2.2A/B/C-0/C-1/C-2/C-3/C-4/C-5/D-0) |
-| Legal Allocation | Tahsilatın target `LegalCalculationBucket` üzerindeki hukuki etkisi (`LegalApplication`); ClaimItem/source açıklaması ayrı `ApplicationAttribution` fact'idir | CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY (REC-AUTH-011/012) |
+| Legal Allocation | Tahsilatın target `LegalCalculationBucket` üzerindeki hukuki etkisi (`LegalApplication`); ClaimItem/source açıklaması ayrı `ApplicationAttribution` fact'idir | AUTHORITY BOUNDARY CANONICAL / CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY / PHYSICAL PERSISTENCE OPEN (XD-001; REC-AUTH-011/012) |
 | TBK100 Allocation | Masraf→fer'i→işlemiş faiz→anapara deterministic mahsup | CURRENT (REC-GOV §9.2 — norm oradadır) |
 | Client Disposition | Tahsilatın müvekkil/ofis dağıtım kararı | CURRENT (TM3) |
 | Client Offset | Müvekkil finansal bakiyeleri arası settlement; debtor set-off DEĞİL | CURRENT (adr-client-offset) |
@@ -141,7 +142,7 @@ ratifiye belge referansı.)
 | Gerçek | Canonical authority | KANIT / statü |
 |---|---|---|
 | Receipt fact | `Collection` — tek yazım otoritesi `CollectionService` | collection.service.ts:393; TM3 inv-13 |
-| Hukuki para etkisi | Current AS-IS/legacy: `LedgerEntry` + ClaimItem-keyed `LedgerAllocation`, append-only; target: `LegalApplication` on `LegalCalculationBucket` | Current schema evidence: schema.prisma:5169-5217; target persistence design/schema/migration NOT AUTHORIZED |
+| Hukuki para etkisi | Current AS-IS/legacy: `LedgerEntry` + ClaimItem-keyed `LedgerAllocation`, append-only; target: single-writer cross-domain `LegalApplication` on `LegalCalculationBucket` | XD-001 authority boundary canonical; physical owner/aggregate TPA-02'de açık; schema/migration/writer NOT AUTHORIZED |
 | Claim amount/provenance | `ClaimItem` authority alanları | REC-AUTH-001..004 (collectedAmount NON-AUTHORITATIVE) |
 | Hukuki bakiye (hedef) | canonical computeBalance | REC-AUTH-021/022 — bugün SHADOW_ONLY (case-balance-display.ts:766) |
 | Hukuki bakiye (fiili bugün) | legacy calculation-summary | case.service.ts:4097-4101 primary; CUTOVER NOT AUTHORIZED |
@@ -164,9 +165,9 @@ ratifiye belge referansı.)
 - Legal allocation SONUCU ile bağlantı ve current AS-IS ledger yazımı (`SYS-GOV-018`
   dili): TBK100 politikasının (sahibi RECEIVABLE — REC-GOV §9.2) tek transaction içinde
   deterministic yürütülmesi ve mevcut LedgerEntry/LedgerAllocation üretimi. Bu persistence
-  target legal authority olarak ratifiye edilmemiştir. Yürütme REC-AUTH-011/012 ortak
-  legal-application boundary'sine tabidir (TM3-ACT28 reconciliation OPEN); bu belge tek
-  taraflı allocation sahipliği kurmaz.
+  target legal authority olarak ratifiye edilmemiştir. Target yürütme REC-AUTH-011/012
+  single-writer cross-domain legal-application boundary'sine tabidir; bu belge tek taraflı
+  policy, persistence veya allocation authority'si kurmaz.
 - CollectionOverpayment (yalnız borç-üstü tahsil; HELD emanet sınıfı).
 - Linked full reversal execution (compensating REVERSAL satırı + net-zero ayna).
 - PAYMENT_RECEIVED / PAYMENT_REVERSED / OVERPAYMENT_RECORDED domain event üretimi (same-tx).
@@ -261,7 +262,7 @@ korur ve her birine repo-kanıtlı lifecycle etiketi ekler:
 | COL-INV-009 | Refund ayrı para çıkış event'idir; Collection overwrite edilmez; chargeback otomatik refund/reversal değildir | CURRENT-PRINCIPLE (full) / TARGET (partial) | COL/OD-06 Option A; REC §11.3; REC-AUTH-015 |
 | COL-INV-010 | Reversal yalnız açık bağlı compensating event ile | CURRENT-CONFIRMED | COL/OD-01 Option A; cancel-executor.ts:137-145; reversesLedgerEntryId @unique |
 | COL-INV-011 | Posted/confirmed finansal kayıt fiziksel silinmez veya yerinde değiştirilmez | CURRENT-CONFIRMED | COL/OD-01 Option A; Ledger'da production update/delete yok; TM3-S1 hard-delete kapatıldı |
-| COL-INV-012 | collectedAmount/amount/display cache legal authority olamaz | CURRENT-CONFIRMED | REC-AUTH-003/004 |
+| COL-INV-012 | collectedAmount/amount/display cache legal authority olamaz; collectedAmount için yeni reader/writer açılamaz | CURRENT-CONFIRMED | REC-AUTH-003/004; XD-001 |
 | COL-INV-013 | Dosya kapanışı claim satisfaction değildir | CURRENT-PRINCIPLE | Satisfaction modeli yok; COL/OD-08 |
 | COL-INV-014 | Muhasebe kapanışı hukuki kapanış değildir | CURRENT-PRINCIPLE | ADR-010 yön sınırı |
 | COL-INV-015 | Hukuki politika/override yalnız yetkili actor + approval ile | CURRENT-PARTIAL | ADR-009 + OWN-29-B (void approval-gated); genel override matrisi COL/OD-07 |
@@ -693,3 +694,26 @@ legal-balance authority vermez.
 ACT-28 ve REC-AUTH-011/012 `OPEN` kalır. Target persistence için schema/migration likely
 required'dır; design ve implementation yetkili değildir. Bu amendment current Collection
 transaction davranışını, ledger writer'ını, runtime'ı, schema'yı veya migration'ı değiştirmez.
+
+## 9.2. XD-001 legal-application boundary canonicalization — 2026-07-19
+
+Receivable canonical `LegalCalculationBucket` semantiğinin ve TBK100 application policy'sinin
+sahibidir. Collection receipt lifecycle ve bu politikanın yetkili transaction içinde
+deterministic execution orchestration'ının sahibidir. Collection policy veya bucket
+authority'sini; Receivable receipt lifecycle authority'sini sahiplenemez.
+
+Target `LegalApplication` persistence tek bir logical writer ve tek canonical authority
+gerektirir. İki domainin aynı hukuki etkiyi bağımsız yazması, kalıcı dual-write veya legacy
+cache/projection fallback'i yasaktır.
+
+- `ClaimItem` application target, payment-state veya allocation authority değildir.
+- `ClaimItem.collectedAmount` için yeni reader veya writer açılamaz.
+- `CollectionAllocation` bağımsız/fallback authority olamaz; yalnız canonical output-derived
+  geçici compatibility projection olabilir.
+- Physical persistence owner'ı, aggregate, relation, key ve transaction contract'ı seçilmemiştir.
+- `ApplicationBatch` dahil alternatifler yalnız `TPA-02` salt-okunur analizinde karşılaştırılır.
+
+XD-001 authority boundary kararı canonicaldır. ACT-28 ve REC-AUTH-011/012 fiziksel persistence,
+writer, migration, consumer cutover ve legacy retirement kapanana kadar `OPEN` kalır.
+`TPA-02 — Target Persistence Architecture` için `GO-ANALYZE REQUIRED`; runtime/schema/migration
+ve implementation authority `NONE`dır.

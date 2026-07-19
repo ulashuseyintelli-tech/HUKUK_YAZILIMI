@@ -3,7 +3,7 @@
 ```text
 Belge kimliği           : SYS-CONST-001
 Canonical path          : project/docs/governance/SYSTEM-CONSTITUTION.md
-Version                 : 1.2
+Version                 : 1.3
 Owner status            : RATIFIED — BINDING
 Repository status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Canonical effective date: Approved merge date
@@ -14,8 +14,8 @@ Execution authority     : Ayrı eksen; AGENTS.md ve geçerli repository/tool pol
 
 Bu belge mevcut dosya yolunu koruyarak PR #1139 ile eklenen kısa governance çatısını
 Canonical System Governance v1.0 içinde reconcile eder; v1.1 allocation-authority
-amendment'ını ve v1.2 balance-exposure contract ratifikasyonunu aynı canonical path'te
-taşır. PR #1139 ve PR #1140 tarihsel
+amendment'ını, v1.2 balance-exposure contract ratifikasyonunu ve v1.3 cross-domain
+legal-application boundary kararını aynı canonical path'te taşır. PR #1139 ve PR #1140 tarihsel
 olarak geçerli kayıtlardır; içerikleri veya o tarihlerdeki owner kararları geriye dönük
 olarak yanlışlanmaz. Bu sürüm, daha sonraki owner ratifikasyonunun bağlayıcı semantik
 sonucudur ve repository etkisini yalnız approved merge ile kazanır.
@@ -359,7 +359,7 @@ yükümlülüğünü tek başına değiştirmez. `SettlementOffer` bağlamı aç
 |---|---|---|---|---|---|
 | Creditor authority | `CaseClient` / creditor set | CLIENT/creditor relation owner | Creditor/disposition views | `Case.clientId` financial authority olamaz | `CURRENT`; DBIND evidence; değişiklik açık supersession ister |
 | Collection Receipt | Current `Collection` receipt path | COLLECTION owner | Receipt/timeline/report views | Bank mock, event veya projection receipt yazamaz | `CURRENT PARTIAL`; idempotency+provider+tenant gates |
-| Legal Allocation / TBK 100 | Current AS-IS/legacy persistence: `LedgerEntry`/ClaimItem-keyed `LedgerAllocation`; target fact: `LegalApplication` on `LegalCalculationBucket` | RECEIVABLE calculation/policy owner + COLLECTION receipt execution boundary; target persistence owner not yet implemented | `ApplicationAttribution`, `CollectionAllocation` compatibility projection, deprecated `ClaimItem.collectedAmount` cache ve balance projections | ClaimItem, `LedgerAllocation`, `CollectionAllocation`, attribution, cache, disposition veya journal target legal-application authority olamaz | `CURRENT WITH OPEN RECONCILIATION / TARGET SHADOW_ONLY`; ACT-28, REC-AUTH-011/012; schema/migration likely required but unauthorized |
+| Legal Allocation / TBK 100 | Current AS-IS/legacy persistence: `LedgerEntry`/ClaimItem-keyed `LedgerAllocation`; target fact: `LegalApplication` on `LegalCalculationBucket` | RECEIVABLE calculation/policy owner + COLLECTION receipt lifecycle/execution orchestration owner; target persistence tek-yazıcı cross-domain boundary'dir, fiziksel owner/aggregate TPA-02'de açık | `ApplicationAttribution`, `CollectionAllocation` compatibility projection, deprecated `ClaimItem.collectedAmount` cache ve balance projections | ClaimItem, `LedgerAllocation`, `CollectionAllocation`, attribution, cache, disposition veya journal target legal-application authority olamaz; dual writer/dual authority yasaktır | `AUTHORITY BOUNDARY CANONICAL / TARGET SHADOW_ONLY / PHYSICAL PERSISTENCE OPEN`; XD-001, ACT-28, REC-AUTH-011/012; TPA-02 GO-ANALYZE required; schema/migration unauthorized |
 | Canonical receivable balance | Current legacy production views; target ADR-014 canonical core | Current owner until cutover; target calculation owner after gate | Shadow/compatibility/display DTO | Shadow adapter, frontend/report alternate calculation authority olamaz | `TARGET / SHADOW_ONLY`; ADR-014 owner-gated cutover |
 | Creditor Disposition | Current `CollectionDisposition` + lines | Approval-gated CLIENT/COLLECTION disposition owner | Client statement/disposition views | Receipt veya `clientId` entitlement/disposition authority olamaz | `CURRENT PARTIAL`; DBIND/TM3+reversal reconciliation |
 | Payout / Offset | Current payout/offset command paths | Authorized money-out/offset owner | Statement/payment views | Disposition draft veya journal line para çıkışı değildir | `CURRENT PARTIAL`; approval+idempotency+reversal gates |
@@ -427,6 +427,27 @@ trace restricted diagnostic yüzeyinde kalır. Authority vocabulary
 `SHADOW_ONLY | CANONICAL | LEGACY_COMPATIBILITY`dir; current Balance Engine projection
 değeri yalnız `SHADOW_ONLY`dır. `CANONICAL` promotion, consumer switch ve cutover ayrı
 owner gate'i olmadan kullanılamaz.
+
+### `SYS-FIN-013 — Legal Application Tek-Yazıcı Cross-Domain Boundary'dir`
+
+Receivable, canonical `LegalCalculationBucket` semantiğinin ve TBK100 legal-application
+politikasının sahibidir. Collection, receipt lifecycle'ının ve bu politikanın yetkili
+transaction içinde deterministic execution orchestration'ının sahibidir. Bu ayrım,
+Collection'a hukuki policy veya bucket authority; Receivable'a receipt lifecycle authority
+vermez.
+
+Target `LegalApplication` persistence tek bir logical writer ve tek bir canonical authority
+taşır. İki domainin aynı hukuki etkiyi bağımsız yazması, dual-write'ı kalıcı authority gibi
+kullanması veya legacy projection/cache'i fallback authority'ye yükseltmesi yasaktır.
+`ClaimItem` application target, payment-state veya allocation authority değildir.
+`ClaimItem.collectedAmount` için yeni reader veya writer açılamaz. `CollectionAllocation`
+yalnız canonical application sonucundan türetilen geçici compatibility projection olabilir.
+
+Physical persistence owner'ı, aggregate sınırı, tablo/model kimliği, transaction/idempotency
+kontratı ve retention/immutability ayrıntıları bu kararla seçilmez. `ApplicationBatch` dahil
+bütün fiziksel persistence alternatifleri `TPA-02 — Target Persistence Architecture`
+salt-okunur analizinde karşılaştırılacaktır; hiçbiri bu Constitution sürümüyle canonical
+aggregate veya implementation authority olmaz.
 
 ### `SYS-FIN-004 — Disposition Creditor Kullanım Kararıdır`
 Creditor Disposition proceeds'in hak sahibi, amaç ve approval bağlamında ayrılmasıdır;
@@ -825,10 +846,11 @@ kanıtla güncellenir.
 | v1.0, later owner decision | Canonical System Governance owner tarafından ratifiye edildi | `RATIFIED — BINDING`; repository effect approved merge ile başlar |
 | v1.1, 2026-07-18 | RCV-P2-WS04 allocation-authority amendment; PR #407 `HOLD / DO NOT MERGE` | ClaimItem source/input ile target `LegalCalculationBucket` application grain'i ayrıldı; `LegalApplication ≠ ApplicationAttribution`; current Ledger persistence ile target authority ayrıştırıldı. Runtime, schema/migration ve cutover yetkisi üretmez. |
 | v1.2, 2026-07-19 | RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratifikasyonu | Stable bucket context ile snapshot instance ayrıldı; per-currency/category gross-applied-remaining exposure, non-authoritative attribution, typed-null/fail-closed projection ve restricted trace sınırı canonical hale getirildi. Current authority `SHADOW_ONLY`; target persistence analysis yalnız read-only yetkilidir. |
+| v1.3, 2026-07-19 | RCV-COL-XD-001A legal-application boundary canonicalization | Receivable policy/bucket ownership, Collection receipt/execution orchestration ownership ve target persistence için tek-yazıcı cross-domain boundary ratifiye edildi. Physical persistence owner/aggregate seçilmedi; `ApplicationBatch` dahil alternatifler TPA-02 salt-okunur analizine bırakıldı. |
 ---
 ## Son Hüküm
 
-Canonical System Governance v1.2 sistemin üst semantik yönetişim normudur. Domain Law'lar
+Canonical System Governance v1.3 sistemin üst semantik yönetişim normudur. Domain Law'lar
 onu ayrıntılandırır; ADR'lar teknik kararları kaydeder; implementation bu normları uygular.
 `AGENTS.md` ayrı execution/safety ekseninde bağlayıcıdır. Runtime compliance ayrı kanıt
 programıdır. Bu metin approved merge to main sonrasında repository-canonical olur; açık
