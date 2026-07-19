@@ -1,7 +1,6 @@
 import { create } from 'xmlbuilder2';
 
 import type {
-  OfficialAlacakKalemi,
   OfficialExchangeInput,
   OfficialSerializationResult,
   OfficialTaraf,
@@ -17,8 +16,13 @@ import type {
  *   genelinde BENZERSİZ + BOŞ-OLMAYAN olmalı (official `id ID`). Boş/çift `id` → `REJECTED` (`idViolations`).
  * - UNRESOLVED-ROLE REJECTION: herhangi bir `taraf.roleResolution` `RESOLVED` değilse → `REJECTED`
  *   (XML ÜRETİLMEZ). Boş taraf listesi de `REJECTED`.
- * - Aksi hâlde official-shaped XML üretilir ve `SERIALIZED_DRAFT` döner (owner düzeltmesi: `EMITTED`
- *   YOK — bu XML resmî DTD ile DOĞRULANMAMIŞTIR).
+ * - CLAIM-WRAPPER AUTHORITY GUARD (P02B-R2): `alacakKalemleri` bir veya daha fazla kalem içeriyorsa
+ *   → `REJECTED` (`claimShapeViolations`, code=`UNAUTHORIZED_ALACAK_KALEMI_PARENT`). Resmî DTD'de
+ *   `alacakKalemi` yalnız cek/senet/police/kontrat/digerAlacak/ilam sarmalayıcıları altında geçerlidir;
+ *   `dosya`'nın DOĞRUDAN çocuğu OLAMAZ. Sarmalayıcı seçimi/otomatik sınıflandırma YAPILMAZ — bu guard
+ *   yalnız FAIL-CLOSED red üretir; hiçbir digerAlacak/ilam/cek/senet/police/kontrat emisyonu YOKTUR.
+ * - Aksi hâlde (taraf-only) official-shaped XML üretilir ve `SERIALIZED_DRAFT` döner (owner düzeltmesi:
+ *   `EMITTED` YOK — bu XML resmî DTD ile DOĞRULANMAMIŞTIR).
  * - ENCODING: yalnız XML deklarasyon etiketi `ISO-8859-9`; gerçek byte dönüşümü + Türkçe round-trip
  *   YAPILMAZ (`byteEncodingPerformed=false`, P04 kapsamı).
  * - DETERMİNİZM: girdi sırası korunur; `Date`/rastgelelik yoktur; aynı girdi aynı XML.
@@ -76,7 +80,28 @@ export function serializeOfficialExchange(
     };
   }
 
-  // 3) DETERMİNİSTİK official-shaped XML (resmî exchange.dtd v1.2).
+  // 4) CLAIM-WRAPPER AUTHORITY GUARD (P02B-R2) — resmi DTD'de alacakKalemi, dosya'nin dogrudan
+  //    cocugu olamaz (yalniz cek/senet/police/kontrat/digerAlacak/ilam sarmalayicilari altinda
+  //    gecerlidir). Sarmalayici secimi/otomatik siniflandirma icin owner/LDO yetkisi yok; bu guard
+  //    FAIL-CLOSED reddeder, hicbir wrapper/instrument otomatik secilmez veya varsayilmaz.
+  if (input.alacakKalemleri && input.alacakKalemleri.length > 0) {
+    return {
+      status: 'REJECTED',
+      reason:
+        'alacakKalemi icin resmi Contract A parent-wrapper authority bulunmuyor; ' +
+        'dosya/alacakKalemi dogrudan emisyonu yasaktir.',
+      unresolved: [],
+      claimShapeViolations: [
+        {
+          code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT',
+          path: 'dosya/alacakKalemi',
+          count: input.alacakKalemleri.length,
+        },
+      ],
+    };
+  }
+
+  // 5) DETERMİNİSTİK official-shaped XML (resmî exchange.dtd v1.2) — yalnız taraf-only dosya.
   const doc = create({ version: '1.0', encoding: 'ISO-8859-9' })
     .dtd({ name: 'exchangeData', sysID: 'exchange.dtd' })
     .ele('exchangeData');
@@ -101,10 +126,8 @@ export function serializeOfficialExchange(
     addOfficialTaraf(dosya, taraf);
   }
 
-  // Alacak kalemleri — deterministik (girdi sırası korunur).
-  for (const kalem of input.alacakKalemleri ?? []) {
-    addOfficialAlacakKalemi(dosya, kalem);
-  }
+  // NOT: alacakKalemi emisyonu YOK (P02B-R2). Yukarıdaki CLAIM-WRAPPER AUTHORITY GUARD garanti eder
+  // ki buraya yalnız boş/tanımsız `alacakKalemleri` ile ulaşılır.
 
   const xml = doc.end({ prettyPrint: true });
 
@@ -175,33 +198,6 @@ function addOfficialTaraf(parent: XmlNode, taraf: OfficialTaraf): void {
           postaKodu: taraf.adres.postaKodu,
           telefon: taraf.adres.telefon,
           elektronikPostaAdresi: taraf.adres.elektronikPostaAdresi,
-        }),
-      )
-      .up();
-  }
-}
-
-/** Resmî `alacakKalemi` (attribute) + opsiyonel `faiz` (EMPTY attribute). */
-function addOfficialAlacakKalemi(parent: XmlNode, kalem: OfficialAlacakKalemi): void {
-  const kalemEl = parent.ele(
-    'alacakKalemi',
-    pruneUndefined({
-      id: kalem.id,
-      alacakKalemAdi: kalem.alacakKalemAdi,
-      alacakKalemTutar: kalem.alacakKalemTutar,
-      tutarTur: kalem.tutarTur,
-    }),
-  );
-  if (kalem.faiz) {
-    kalemEl
-      .ele(
-        'faiz',
-        pruneUndefined({
-          baslangicTarihi: kalem.faiz.baslangicTarihi,
-          bitisTarihi: kalem.faiz.bitisTarihi,
-          faizOran: kalem.faiz.faizOran,
-          faizTipKod: kalem.faiz.faizTipKod,
-          faizTutar: kalem.faiz.faizTutar,
         }),
       )
       .up();

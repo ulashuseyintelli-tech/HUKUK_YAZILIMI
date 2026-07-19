@@ -135,4 +135,16 @@ export type OfficialSerializationResult =
         issue: 'EMPTY_ID' | 'DUPLICATE_ID';
         source: 'taraf' | 'alacakKalemi';
       }>;
+      /**
+       * CLAIM-WRAPPER AUTHORITY GUARD (P02B-R2): `alacakKalemleri` bir veya daha fazla kalem
+       * içeriyorsa doldurulur. Resmî DTD'de `alacakKalemi`, `dosya`'nın DOĞRUDAN çocuğu OLAMAZ —
+       * yalnız cek/senet/police/kontrat/digerAlacak/ilam sarmalayıcıları altında geçerlidir. Hangi
+       * sarmalayıcının doğru olduğuna dair owner/LDO yetkisi henüz verilmemiştir; bu alan yalnız
+       * FAIL-CLOSED reddi taşır — hiçbir wrapper/instrument otomatik seçilmez veya varsayılmaz.
+       */
+      claimShapeViolations?: Array<{
+        code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT';
+        path: 'dosya/alacakKalemi';
+        count: number;
+      }>;
     };
