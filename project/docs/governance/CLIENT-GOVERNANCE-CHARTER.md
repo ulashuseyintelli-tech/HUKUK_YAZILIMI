@@ -908,3 +908,93 @@ Canonical merge sonrasında: **POL-C: CLOSED/CANONICAL. POL-J: CLOSED/CANONICAL.
 ### 19.12 POL-J Self-Check
 
 Bu bölüm: OFF/OD-08'e rakip object-scope modeli ÜRETMEZ; portal account'u client principal İLAN ETMEZ; tenant match'i object authority SAYMAZ; staff JWT'yi review eligibility SAYMAZ; review'i OFFICE approval veya target execution SAYMAZ; presenter desenini zorunlu masking policy YAPMAZ; mevcut riskler için mükerrer risk kartı AÇMAZ; exact implementation-site sayısını normatif kayda TAŞIMAZ; POL-D/POL-F/BP-06 kararı VERMEZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 20. CLIENT-P1-BP-05 — Portal / External-Client Model (OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-BP-05` karar analizinin **owner-ratified policy**'sidir (`decision-log.md` CLIENT-P1-BP-05-GOV; **SELECTED MODEL: OPTION A — BOUNDED NON-AUTHORITATIVE PORTAL PROCESS MODEL**). Bu bölüm konsolide edici (foundational değil) bir blueprint birimidir: POL-C (§18), POL-J (§19) ve BP-09 (§17) sonuçlarını **tek bir bounded portal/external-client process modelinde birleştirir**; yeni authority, role, rank, predicate, object-scope modeli veya runtime taxonomy ÜRETMEZ. §5, §6, §8.A, §8.B, §11–§19 metinlerini semantik olarak değiştirmez. **PORTAL MODEL: BOUNDED NON-AUTHORITATIVE PROCESS SURFACE. PORTAL FACT A: NONE. PORTAL AUTHORITY: NONE. BP-06: OWNER-GATED. IMPLEMENTATION AUTHORITY: NONE.**
+
+### 20.1 Portal Model
+
+Portal ve public intake yüzeyi CLIENT domain'in **bounded interaction/process surface**'idir; authority-owning bağımsız bir aggregate veya domain DEĞİLDİR. Portal kendi başına hiçbir target-domain (OFFICE/RECEIVABLE/COLLECTION/DEBTOR/ACCOUNTING) business-effect'i ÜRETMEZ; yalnız input-alma/sunum/etkileşim yüzeyi olarak konumlanır. Bu model POL-C'nin NON-AUTHORITATIVE PORTAL INTERACTION kararıyla birebir tutarlıdır; onu genişletmez, daraltmaz veya yeniden yorumlamaz.
+
+### 20.2 Two External Channels
+
+CLIENT domain'in iki ayrı external channel'ı canonical olarak AYRI tutulur ve birbirine dönüştürülmez:
+
+- **SESSION-BASED PORTAL** — `ClientPortalUser` authenticated session; AS-IS bilinen linked-client bağlamı; POL-C/POL-J kapsamındaki bounded interaction rejimi.
+- **TOKEN-BASED PUBLIC INTAKE** — `client-intake-public` token-gated erişim; principal kimliği AS-IS kanıtlanmamış; PRE-CANONICAL EXTERNAL INPUT niteliği BP-09'dan korunur.
+
+Bu iki kanal ortak bir "external actor" soyutlamasına indirgenmez; her biri kendi capability/lifecycle/evidence sınırlarını korur.
+
+### 20.3 Actor Precision
+
+Dört katmanlı actor ayrımı canonical olarak sabitlenir: **PORTAL ACCOUNT** (teknik kimlik bilgisi) ≠ **CLIENT PRINCIPAL** (karar yetkisine sahip hukuki/gerçek kişi) ≠ **ACTING HUMAN** (fiilen input'u giren gerçek kişi) ≠ **CORPORATE REPRESENTATIVE** (tüzel kişi adına yetkili temsilci). Bu dört katmanlı ayrım **PERSON dahil TÜM client tiplerine** uygulanır: PERSON client için dahi "portal hesabı = o kişinin kendisi" varsayımı otomatik canonical fact DEĞİLDİR (kimlik bilgisi paylaşımı/hesap erişim devri yapısal olarak dışlanamaz). COMPANY/PUBLIC client'ta acting-human/corporate-representation POL-C'de zaten AS-IS KANITLANMIYOR olarak kaydedilmiştir; BP-05 bunu genişletmeden aynen devralır.
+
+### 20.4 Capability Map
+
+| Capability | Portal (session-based) | Public intake (token-based) |
+|---|---|---|
+| Case/PoA read (presentation) | Permitted, POL-J object-scope'a tabi | Yok |
+| Document upload/download | Non-authoritative external artifact | Yok |
+| Message exchange | Communication only | Yok |
+| Notification access | Presentation only | Yok |
+| Raw external input / intake submission | N/A | Pre-canonical, principal authentication NOT PROVEN |
+| Client instruction | Otomatik üretilmez | Otomatik üretilmez |
+| Client consent/decision | Yetkisiz | Yetkisiz |
+| Financial visibility | Ayrı BP-06 kararı | Yetkisiz |
+| Financial action / target-domain mutation | Yasak | Yasak |
+
+### 20.5 External-Input Lifecycle
+
+Beş aşamalı zincir canonical olarak sabitlenir: **EXTERNAL ACTION → RAW/PRE-CANONICAL INPUT → STAFF REVIEW → CANONICAL PROMOTION (yalnız destekleniyorsa) → TARGET-DOMAIN PROCESS (yalnız ayrıca yetkilendirilmişse).** Hiçbir adım atlanamaz; sonraki adımın varlığı önceki adımın otomatik tamamlandığı anlamına GELMEZ; canonical promotion, target-domain execution'ı OTOMATİK TETİKLEMEZ. Promotion sonrası üretilen kayıt FACT-B-benzeri olabilir, ancak kaynak external action'ı asla FACT A'ya YÜKSELTMEZ (bkz. §20.6).
+
+### 20.6 POL-C Consumption
+
+POL-C'nin (§18) core kararı DEĞİŞMEDEN tüketilir: **NON-AUTHORITATIVE PORTAL INTERACTION. PORTAL FACT A: NOT PRODUCED. PORTAL CLIENT-DECISION AUTHORITY: NONE. PORTAL BUSINESS-EFFECT AUTHORITY: NONE.** BP-05 bu kararı genişletmez, daraltmaz veya bir istisna eklemez.
+
+### 20.7 POL-J Consumption
+
+POL-J'nin (§19) core kararı DEĞİŞMEDEN tüketilir: **PORTAL REQUIRED SCOPE = tenant + linked client + object relation** (business-effect authority NONE). **STAFF REQUIRED SCOPE = tenant + OFF/OD-08 object scope + action-specific existing actor eligibility.** Non-equation zinciri korunur: `STAFF JWT ≠ OBJECT AUTHORIZATION` · `OBJECT AUTHORIZATION ≠ ELIGIBLE REVIEWER` · `ELIGIBLE REVIEWER ≠ OFFICE APPROVER` · `OFFICE APPROVER ≠ TARGET-DOMAIN EXECUTOR`. BP-05 yeni object-scope modeli veya predicate ÜRETMEZ.
+
+### 20.8 Portal Identity / Lifecycle
+
+AS-IS kayda alınabilir fact'ler: client-linked technical account · password authentication · active/disabled state · credential-change/recovery surface · mevcut session behavior (POL-C §18.6'dan korunur). Aşağıdakiler AS-IS **ABSENT veya PARTIAL/GAP** olarak sabitlenir; hiçbiri bu kayıtla ÇÖZÜLMEZ:
+
+- **Invitation ceremony** — ABSENT.
+- **Multi-user delegation** — ABSENT.
+- **Live session revocation** — PARTIAL/GAP (POL-C §18.7 session-invalidation bulgusu korunur).
+- **Credential recovery** — PARTIAL/GAP (POL-C §18.7 credential-recovery-delivery bulgusu korunur).
+- **Client-relationship-termination propagation** — UNVERIFIED/OPEN.
+
+### 20.9 Document and Intake Evidence
+
+BP-09 (§17) evidence sınıflandırması DEĞİŞTİRİLMEDEN tüketilir: **PortalDocument = external artifact (E5)** — içerik doğrulaması upload/review-status'tan TÜRETİLMEZ; review-status = workflow durumu, LEGAL VALIDITY DEĞİLDİR. **Intake submission = PRE-CANONICAL EXTERNAL INPUT** — principal authentication NOT PROVEN. **Promoted output** staff-review sonrası FACT-B-benzeri bir kayıt üretebilir, ancak kaynak external action bu promotion ile FACT A'ya asla ÇEVRİLMEZ (§20.5 zinciriyle tutarlı).
+
+### 20.10 Object Access / Field Visibility
+
+`OBJECT ACCESS ≠ FIELD VISIBILITY` (POL-J §19.5'ten korunur). Field-level kararlar bu kayıtla SEÇİLMEZ; routing: masking → **POL-D/BP-06**; aggregate visibility → **POL-F/BP-06**; financial visibility → **BP-06**. Mevcut viewer-aware presenter deseni (`office-approval-detail.presenter.ts` `toDetailDtoForViewer()`) yine **AS-IS ARCHITECTURAL EXEMPLAR** olarak kaydedilir; **mandatory masking policy olarak SEÇİLMEZ.**
+
+### 20.11 KVKK / Retention Routing
+
+Aşağıdaki dokuz alan yalnız **pointer** olarak kaydedilir; hiçbiri bu kayıtla karara bağlanmaz: retention · anonymization · deletion · legal hold · masking · portal visibility · subject access · evidence copy · audit retention. **ROUTING: POL-E. STATUS: OPEN/NOT SELECTED.**
+
+### 20.12 AS-IS Delta Pointers (mükerrer risk kartı YOK)
+
+BP-05 hiçbir yeni risk kartı AÇMAZ; yalnız mevcut kayıtlara bounded pointer eklenir:
+
+- Session invalidation / credential recovery / acting-human-representation → **POL-C risk disposition** (`OFFICE-RISK-REGISTER.md`, §18.7).
+- Object-scope enforcement / staff review authority delta → **POL-J disposition**, `STF-PRD-BOLA-001` / `STF-PRD-SCP-001` (§19.8).
+- Audit/evidence-integrity delta (PoA/PortalDocument/intake-concurrency/audit-fragmentation) → **BP-09 disposition** (§17, `OFFICE-RISK-REGISTER.md`).
+- Field-disclosure/masking gap → **POL-C → BP-06** routing (§18.7, §20.10).
+
+### 20.13 Canonical Non-Equations
+
+`PORTAL ACCOUNT ≠ CLIENT PRINCIPAL` · `CLIENT PRINCIPAL ≠ ACTING HUMAN` · `ACTING HUMAN ≠ CORPORATE REPRESENTATIVE` · `AUTHENTICATED SESSION ≠ PROVEN ACTING-HUMAN IDENTITY` · `AUTHENTICATED SESSION ≠ REPRESENTATION/DELEGATION BASIS` · `TOKEN POSSESSION ≠ PRINCIPAL AUTHENTICATION` · `EXTERNAL INPUT ≠ CANONICAL FACT` · `STAFF REVIEW ≠ TARGET-DOMAIN AUTHORIZATION` · `CANONICAL PROMOTION ≠ TARGET-DOMAIN EXECUTION` · `FACT B (staff-recorded) ≠ FACT A (authenticated external act)` · `OBJECT ACCESS ≠ FIELD VISIBILITY`.
+
+### 20.14 Status Precision
+
+**CLIENT-P1-BP-05: CLOSED/CANONICAL.** **MODEL: BOUNDED NON-AUTHORITATIVE PORTAL PROCESS MODEL.** **PORTAL FACT A: NONE.** **PORTAL AUTHORITY: NONE.** **TWO EXTERNAL CHANNELS: SESSION-BASED PORTAL + TOKEN-BASED PUBLIC INTAKE, CANONICALLY DISTINCT.** **ACTOR PRECISION: 4-LAYER, ALL CLIENT TYPES.** **POL-C + POL-J CONSUMPTION: UNCHANGED.** **FIELD VISIBILITY / KVKK: OPEN/ROUTED.** **BP-06: OWNER-GATED.** **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 20.15 BP-05 Self-Check
+
+Bu bölüm: POL-C/POL-J kararlarını GENİŞLETMEZ veya DARALTMAZ; portal/public-intake'e yeni authority, role, rank veya predicate KAZANDIRMAZ; external action'ı FACT A'ya YÜKSELTMEZ; iki external channel'ı BİRLEŞTİRMEZ; PERSON client için acting-human identity VARSAYMAZ; field-masking/aggregate-visibility/financial-visibility/KVKK policy'si SEÇMEZ; mevcut riskler için mükerrer risk kartı AÇMAZ; BP-06'yı BAŞLATMAZ; Phase 1 blueprint'i bütünüyle CLOSED İLAN ETMEZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
