@@ -840,3 +840,71 @@ Document/portal RBAC → **POL-J** · Field masking → **POL-D/BP-06** · Aggre
 ### 18.13 POL-C Self-Check
 
 Bu bölüm: portal modelini "view-only" olarak YANLIŞ ADLANDIRMAZ; portal upload/mesaj/intake'i FACT A İLAN ETMEZ; portal user'ı client principal İLAN ETMEZ; corporate representation VARSAYMAZ; FACT B'yi FACT A'ya YÜKSELTMEZ; portal'a OFFICE approval veya target-domain execution authority KAZANDIRMAZ; cross-tenant exploit iddiası YAPMAZ; field exposure'ı yalnız same-client presentation/masking gap olarak kaydeder; session/recovery/representation bulgularını record-only tutar; POL-J veya BP-06 policy'si SEÇMEZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 19. CLIENT-P1-POL-J — Document / Portal RBAC Policy (OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-POL-J` karar analizinin **owner-ratified policy**'sidir (`decision-log.md` CLIENT-P1-POL-J-GOV; **SELECTED MODEL: OPTION A — INHERITED OFFICE OBJECT-SCOPE + BOUNDED RESOURCE/ACTION MATRIX**). Mevcut kanonik AS-IS gerçekleri (AS-IS kod + charter §11–§18 + CL-INV-001..008 + XDC-A–E + POL-A + POL-B + POL-C) ve owner kararını **konsolide eder**; yeni role/rank/predicate, object-scope modeli, masking policy, aggregate-visibility policy veya predicate-wiring ÜRETMEZ. §5, §6, §8.A, §8.B, §11–§18 metinlerini **semantik olarak değiştirmez.** **OBJECT-SCOPE POLICY: INHERITS OFF/OD-08 — NO COMPETING POL-J MODEL. NEW ROLE/RANK/PREDICATE: NONE. MASKING/AGGREGATE VISIBILITY: OPEN/NOT SELECTED. IMPLEMENTATION AUTHORITY: NONE.**
+
+### 19.1 Core RBAC Model
+
+**Portal-side access:** ACTOR = portal technical account. MODEL = non-authoritative interaction (POL-C korunur). REQUIRED SCOPE = tenant + linked client + resource/object relation. BUSINESS-EFFECT AUTHORITY: NONE. Portal account kendi bağlı client context'i dışına çıkamaz; client relationship nedeniyle her client-related object'e otomatik erişemez; FACT A, OFFICE approval veya target-domain execution ÜRETEMEZ.
+
+**Staff-side access:** ACTOR = authenticated office actor. REQUIRED SCOPE = tenant + OFF/OD-08 object scope + action-specific existing actor eligibility. TARGET-DOMAIN AUTHORITY: UNCHANGED. Staff JWT tek başına review, approval veya bütün client/case nesnelerine erişim yetkisi DEĞİLDİR.
+
+### 19.2 OFF/OD-08 Inheritance
+
+Object-level authorization için yeni CLIENT-specific model OLUŞTURULMAZ. **OFFICE OBJECT-SCOPE AUTHORITY: OFF/OD-08.** **SELECTED DIRECTION: DIRECT-REPORT/TEAM-SCOPE DEFAULT.** **CURRENT ENFORCEMENT: PARTIAL/INCOMPLETE.** **POL-J ROLE: CONSUMER/POINTER — NOT COMPETING OWNER.** `STF-PRD-BOLA-001` ve `STF-PRD-SCP-001` mevcut risk kayıtları korunur ve bu disposition'a bağlanır (bkz. §19.8); aynı object-scope riski için mükerrer risk kartı AÇILMAZ.
+
+### 19.3 Resource / Action Boundary
+
+| Resource / action | Portal | Staff |
+|---|---|---|
+| Client-scoped presentation | Linked-client + object scope | OFF/OD-08 object scope |
+| Case list/detail | Creditor/client relationship scope | OFF/OD-08 scope |
+| PoA read | Linked-client scope | OFF/OD-08 scope |
+| Portal document upload/download/delete | Bounded non-authoritative interaction | Review ayrı authority |
+| Portal document review | Yok | Existing OFFICE eligibility + object scope |
+| Intake submit | Pre-canonical external input | Review/promotion ayrı authority |
+| Intake claim/review/promotion | Yok | Existing OFFICE eligibility + object scope |
+| Message/notification | Participant/recipient scope | Object/client scope |
+| Consent/decision | Yetkisiz | BP-04/OFFICE boundaries apply |
+| Financial action | Yetkisiz | İlgili target-domain authority |
+| Target-domain mutation | Yetkisiz | İlgili domain contract'ına bağlı |
+
+Yeni capability taxonomy, role veya predicate OLUŞTURULMAZ.
+
+### 19.4 Review Authority Precision
+
+`AUTHENTICATED STAFF ≠ ELIGIBLE REVIEWER` · `ELIGIBLE REVIEWER ≠ OFFICE APPROVER` · `OFFICE APPROVER ≠ TARGET-DOMAIN EXECUTOR`. Authoritative review/approval niteliğindeki action'lar mevcut OFFICE actor-eligibility modelini VE OFF/OD-08 object scope'unu **birlikte** tüketmelidir. POL-J bu görevde mevcut predicate'i GENİŞLETMEZ, yeni predicate ÜRETMEZ veya runtime'a BAĞLAMAZ. AS-IS'te yalnız tenant-JWT ile çalışan review yüzeyleri: **KNOWN/NON-ZERO AUTHORIZATION DELTA. REMEDIATION NOT AUTHORIZED.**
+
+### 19.5 Object Access ≠ Field Visibility
+
+`TENANT MATCH ≠ OBJECT AUTHORIZATION` · `OBJECT AUTHORIZATION ≠ FIELD VISIBILITY`. Bir case, document veya client nesnesine erişim; bütün alanların gösterilmesini, internal notes'un açıklanmasını veya finansal detayların sunulmasını otomatik MEŞRULAŞTIRMAZ. Mevcut viewer-aware presenter deseni: **AS-IS ARCHITECTURAL EXEMPLAR — NOT SELECTED POL-J POLICY.** Field-level kararlar: masking → **POL-D/BP-06**; aggregate visibility → **POL-F/BP-06**; financial visibility → **BP-06**.
+
+### 19.6 Document Precision
+
+`DOCUMENT OWNERSHIP ≠ DOCUMENT ACCESS TO ALL ACTORS` · `DOCUMENT ACCESS ≠ DOCUMENT REVIEW AUTHORITY` · `DOCUMENT REVIEW ≠ DOMAIN BUSINESS APPROVAL` · `DOCUMENT UPLOAD ≠ VERIFIED CONTENT` · `REVIEW STATUS ≠ LEGAL VALIDITY`. `PortalDocument`, intake evidence, case document ve PoA artifact sınırları birbirine DÖNÜŞTÜRÜLMEZ.
+
+### 19.7 Failure Semantics
+
+Fail-closed durumları: TENANT MISMATCH · CLIENT MISMATCH · OBJECT/RELATIONSHIP MISMATCH · OFF/OD-08 SCOPE FAILURE · UNKNOWN ACTOR ELIGIBILITY · UNSUPPORTED ACTION · MISSING REQUIRED REVIEW AUTHORITY → **DENY. ZERO WRITE. ZERO BUSINESS SIDE EFFECT.** Read/presentation yüzeyinde güvenli olduğu ölçüde NOT FOUND/NOT AVAILABLE/PARTIAL/MASKING REQUIRED/POLICY PENDING gösterilebilir. Legacy linkage veya tenant-flat fetch authority fallback'i OLAMAZ.
+
+### 19.8 AS-IS Risk Disposition (pointer; mevcut kayıtlara bağlı, mükerrer kart YOK)
+
+**OBJECT-SCOPE ENFORCEMENT: `STF-PRD-BOLA-001`/`STF-PRD-SCP-001` — OPEN/PARTIALLY MITIGATED.** **REPORTINGLINE: SCHEMA FOUNDATION PRESENT, ENFORCEMENT CONSUMPTION INCOMPLETE.** **STAFF REVIEW ROLE-TIER: INCONSISTENT/PARTIAL.** **FIELD VISIBILITY: OPEN/ROUTED TO POL-D/POL-F/BP-06.** **REMEDIATION: NOT AUTHORIZED.** Method, route, dosya adı veya kesin kullanım-site sayısı charter'a YAZILMAZ.
+
+### 19.9 POL-C Boundary
+
+**PORTAL MODEL: NON-AUTHORITATIVE INTERACTION. PORTAL FACT A: NONE. PORTAL CLIENT-DECISION AUTHORITY: NONE. PORTAL BUSINESS-EFFECT AUTHORITY: NONE.** POL-J, POL-C authority modelini GENİŞLETEMEZ.
+
+### 19.10 BP-05 Effect
+
+Canonical merge sonrasında: **POL-C: CLOSED/CANONICAL. POL-J: CLOSED/CANONICAL. BP-05 AUTHORITY/RBAC PREREQUISITES: SATISFIED. BP-05: NOT STARTED. BP-06: OWNER-GATED.** BP-05 bu governance görevi içinde BAŞLATILMAZ.
+
+### 19.11 Status Precision
+
+**CLIENT-P1-POL-J: CLOSED/CANONICAL.** **MODEL: INHERITED OFFICE OBJECT-SCOPE + BOUNDED RESOURCE/ACTION MATRIX.** **OBJECT-SCOPE OWNER: OFFICE/OFF-OD-08.** **PORTAL AUTHORITY: UNCHANGED/NON-AUTHORITATIVE.** **FIELD VISIBILITY: OPEN/ROUTED TO BP-06.** **RBAC ENFORCEMENT DELTA: KNOWN/NON-ZERO.** **BP-05 AUTHORITY/RBAC PREREQUISITES: SATISFIED.** **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 19.12 POL-J Self-Check
+
+Bu bölüm: OFF/OD-08'e rakip object-scope modeli ÜRETMEZ; portal account'u client principal İLAN ETMEZ; tenant match'i object authority SAYMAZ; staff JWT'yi review eligibility SAYMAZ; review'i OFFICE approval veya target execution SAYMAZ; presenter desenini zorunlu masking policy YAPMAZ; mevcut riskler için mükerrer risk kartı AÇMAZ; exact implementation-site sayısını normatif kayda TAŞIMAZ; POL-D/POL-F/BP-06 kararı VERMEZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
