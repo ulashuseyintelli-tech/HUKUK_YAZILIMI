@@ -2065,6 +2065,38 @@ exact-cent ve retention kontratı seçilmemiştir. `ApplicationBatch` dahil alte
 REC-AUTH-011/012 `OPEN`; schema/migration/writer/consumer cutover/legacy retirement
 `NOT AUTHORIZED`dır. **NEXT ELIGIBLE ACTION: TPA-02 — GO-ANALYZE REQUIRED.**
 
+**RCV-COL-TPA-02 Target Persistence Architecture Canonicalization (2026-07-19; CANONICAL
+UPON APPROVED GOVERNANCE MERGE):** Owner Option D'yi ratifiye etmiştir. Target physical model:
+
+```text
+LegalApplicationBatch
+  ├─ immutable LegalApplication[]
+  └─ non-authoritative ApplicationAttribution[]
+```
+
+Receivable bucket/context/snapshot semantiği ile TBK100 allocation policy'sinin; Collection
+receipt lifecycle, idempotency ve outer transaction orchestration'ın sahibidir. RCV-COL Legal
+Application Boundary aggregate persistence'ın sahibidir. Tek logical writer
+`LegalApplicationWriter`dır; yalnız canonical Collection transaction'ı içinde mevcut
+transaction client ile çağrılır. Bağımsız endpoint ve ayrı/nested transaction yasaktır.
+
+Bir APPLY batch'i tam olarak bir Collection receipt'ine karşılık gelir. Exact-cent conservation
+`receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority
+`tenantId + idempotencyKey + commandHash`; same key/hash existing batch/no side effect; same
+key/different hash fail-closed conflict'tir. Full reversal linked append-only REVERSAL batch'idir.
+Existing batch/application UPDATE/DELETE yasak; partial reversal ayrı owner-gated'dir.
+Tenant-safe composite FK, `ON DELETE RESTRICT`, no historical guessing/backfill ve no dual
+allocator/authority zorunludur.
+
+Legacy disposition: `ClaimItem.collectedAmount = FROZEN LEGACY CACHE / RETIREMENT REQUIRED`;
+`CollectionAllocation = CANONICAL-OUTPUT-DERIVED TRANSITIONAL PROJECTION / INDEPENDENT
+AUTHORITY PROHIBITED`; `LedgerAllocation = HISTORICAL LEGACY RECORD / TARGET-ERA AUTHORITY
+PROHIBITED`. ACT-28 ve REC-AUTH-011/012 `OPEN` kalır. `codex/rcv-ws04-p03-syn-01`
+disposition, PR #407 `HOLD / CONFLICTING / DO NOT MERGE`, deterministic bucket identity,
+representative replay/evidence ve consumer cutover authority açık blocker'lardır.
+Schema/migration/writer/replay/cutover/retirement `NOT AUTHORIZED`dır.
+**NEXT ELIGIBLE ACTION: TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

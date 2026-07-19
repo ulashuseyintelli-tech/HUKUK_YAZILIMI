@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary ratified 2026-07-19; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE; TPA-02 physical persistence analysis, PR-11 and runtime cutover remain unauthorized until separate owner GO
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE; schema/migration/writer/replay/cutover/retirement and PR-11 remain unauthorized until separate owner GO
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -133,8 +133,9 @@ zero. Projection authority vocabulary is
 remains only `SHADOW_ONLY`. Legacy deprecation, authority promotion, consumer switch and
 cutover require explicit later gates.
 
-Target persistence analysis is read-only authorized. Persistence/schema/migration design
-and implementation remain unauthorized. ACT-28 and REC-AUTH-011/012 remain open.
+TPA-02 target persistence analysis is owner-decided and recorded below. Schema/migration,
+writer, replay/evidence, consumer cutover and retirement remain unauthorized. ACT-28 and
+REC-AUTH-011/012 remain open.
 
 ## XD-001 Legal Application Boundary Decision — 2026-07-19
 
@@ -157,6 +158,52 @@ The owner-ratified constitutional boundary is:
 canonical vocabulary requirement, schema direction, or implementation authorization.
 ACT-28 and REC-AUTH-011/012 remain open until the target persistence and later cutover gates
 are separately closed.
+
+## TPA-02 Target Persistence Architecture Decision — 2026-07-19
+
+The owner-ratified physical target is an independent aggregate:
+
+```text
+LegalApplicationBatch
+  ├─ immutable LegalApplication[]
+  └─ non-authoritative ApplicationAttribution[]
+```
+
+Receivable owns bucket/context/snapshot semantics and TBK100 allocation policy. Collection
+owns receipt lifecycle, idempotency and outer transaction orchestration. The RCV-COL Legal
+Application Boundary owns aggregate persistence. Its single logical writer is
+`LegalApplicationWriter`, invoked only inside the canonical Collection transaction with the
+existing transaction client. An independent endpoint or a separate/nested transaction is
+prohibited.
+
+Each `APPLY` batch corresponds to exactly one Collection receipt and must conserve exact
+cents:
+
+```text
+receiptAmountMinor
+=
+Σ appliedAmountMinor
++ heldRemainderMinor
+```
+
+Replay authority is `tenantId + idempotencyKey + commandHash`. The same key/hash returns the
+existing batch without a new write, audit or event. The same key with a different hash fails
+closed. A full reversal is a linked append-only `REVERSAL` batch. Existing batches and
+applications are never updated or deleted; partial reversal remains owner-gated. Tenant-safe
+composite foreign keys and `ON DELETE RESTRICT` are mandatory. Historical guessing, silent
+backfill, dual allocators and dual authority are prohibited.
+
+Legacy disposition:
+
+- `ClaimItem.collectedAmount`: frozen legacy cache; retirement required; no new reader/writer.
+- `CollectionAllocation`: no independent authority; transitional projection derived only
+  from the canonical result.
+- `LedgerAllocation`: historical legacy record; prohibited as target-era authority.
+
+The `codex/rcv-ws04-p03-syn-01` disposition, PR #407 hold/conflict, deterministic bucket
+identity, representative replay/evidence and consumer-cutover authority remain blockers.
+ACT-28 and REC-AUTH-011/012 remain open. TPA-03 schema-foundation analysis requires separate
+owner `GO-ANALYZE`; implementation authority is `NONE`.
 
 ## Normative Rules
 
@@ -585,3 +632,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-18 | 2.5 | Allocation-authority amendment: ClaimItem source/input is separated from target `LegalCalculationBucket`; `LegalApplication` and `ApplicationAttribution` are distinct; current ClaimItem-keyed Ledger persistence is legacy AS-IS rather than target authority. Balance Engine remains TARGET/SHADOW_ONLY; P01/P02 require amendment, P03 is superseded/redesign-required, P03-A remains safety infrastructure only, P03-B must not execute. PR #407 is HOLD/DO NOT MERGE. Schema/migration design, data/replay, PR-11 and cutover remain unauthorized. |
 | 2026-07-19 | 2.6 | RD01 balance-exposure contract: stable bucket context and snapshot instance are separated; per-currency/category gross-applied-remaining amounts, LegalApplication identity, non-authoritative attribution, typed-null/fail-closed availability and restricted sub-bucket/source trace are ratified. PR #407 remains OPEN/HOLD; current authority remains SHADOW_ONLY; target persistence analysis is read-only authorized, design/implementation/cutover are not. |
 | 2026-07-19 | 2.7 | XD-001 legal-application boundary: Receivable owns bucket/policy, Collection owns receipt/execution orchestration, and target persistence is a single-writer cross-domain boundary. Physical persistence and aggregate selection remain open for TPA-02; `ApplicationBatch` is an unselected analysis alternative only. |
+| 2026-07-19 | 2.8 | TPA-02 target persistence architecture: independent `LegalApplicationBatch`, immutable bucket-effect `LegalApplication`, non-authoritative `ApplicationAttribution`, single `LegalApplicationWriter` inside the canonical Collection transaction, exact-cent conservation, key+hash replay, append-only full reversal, tenant-safe restrictive FK and legacy-disposition contract are ratified. ACT-28/REC-AUTH-011/012 remain open; implementation/cutover remain unauthorized. |

@@ -8,7 +8,7 @@
 Belge Durumu: CANONICAL
 Belge Sınıfı: DOMAIN GOVERNANCE
 Üst Otorite: SYSTEM-CONSTITUTION
-Version: 1.4
+Version: 1.5
 Canonical Path: project/docs/governance/RECEIVABLE-GOVERNANCE.md
 Owner Status: RATIFIED — BINDING
 Repository Status: CANONICAL UPON APPROVED MERGE TO MAIN
@@ -401,8 +401,8 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 | ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
 |---|---|---|---|---|
 | `REC-AUTH-010` — Payment/Collection receipt varlığı ve statüsü | Dosyaya bağlanan para giriş fact'i; ClaimItem cache alanından çıkarılamaz | COLLECTION owner; receivable yalnız yetkili fact'i tüketir | `CURRENT PARTIAL` | `CONFIRMED / IDEMPOTENCY CONFIRMED; CANONICAL PUBLIC RECEIPT TENANT / OBJECT-SCOPE GATES CONFIRMED; PROVIDER FINALITY OPEN UNDER RC-COL / W2.2` |
-| `REC-AUTH-011` — Tahsilatın alacağa etkisi | Receipt'in target `LegalCalculationBucket` üzerindeki `LegalApplication` etkisi; attribution ayrı fact'tir | RECEIVABLE calculation/policy + COLLECTION receipt lifecycle/execution orchestration; target persistence tek-yazıcı cross-domain boundary, fiziksel owner/aggregate TPA-02'de açık | `AUTHORITY BOUNDARY CANONICAL / CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY / PHYSICAL PERSISTENCE OPEN` | `XD-001 RECORDED; ACT-28/REC-AUTH-011/012 OPEN; TPA-02 GO-ANALYZE REQUIRED; SCHEMA/MIGRATION UNAUTHORIZED` |
-| `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile `MASRAF → FERİ → FAİZ → ANA PARA` sırasındaki target legal-application sonucu | RECEIVABLE legal-calculation policy; COLLECTION yalnız yetkili receipt lifecycle/execution orchestration boundary'si; target persistence single-writer olmak zorundadır | `AUTHORITY BOUNDARY CANONICAL / CURRENT AS-IS CLAIMITEM-KEYED LEDGER / TARGET LEGALCALCULATIONBUCKET / PHYSICAL PERSISTENCE OPEN` | `HISTORICAL: DA-4 drift baseline, WS04-P01/P02/P03/P03-A closure kayıtları korunur. XD-001: dual authority yasak, fiziksel aggregate seçilmedi. TPA-02 READ-ONLY OWNER GATE; DATA/REPLAY/SCHEMA/IMPLEMENTATION/CUTOVER NOT AUTHORIZED; ACT-28 / REC-AUTH-011/012 OPEN` |
+| `REC-AUTH-011` — Tahsilatın alacağa etkisi | Receipt'in target `LegalCalculationBucket` üzerindeki immutable `LegalApplication` etkisi; attribution ayrı ve non-authoritative fact'tir | RECEIVABLE bucket/context/snapshot semantics + policy; COLLECTION receipt/idempotency/outer transaction orchestration; RCV-COL boundary single writer `LegalApplicationWriter` | `TPA-02 PHYSICAL MODEL CANONICAL / CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY / IMPLEMENTATION ABSENT` | `Independent LegalApplicationBatch ratified; ACT-28/REC-AUTH-011/012 OPEN; TPA-03 OWNER GO-ANALYZE REQUIRED; SCHEMA/MIGRATION/WRITER/REPLAY/CUTOVER/RETIREMENT UNAUTHORIZED` |
+| `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile `MASRAF → FERİ → FAİZ → ANA PARA` sırasındaki exact-cent target legal-application sonucu | RECEIVABLE legal-calculation policy; COLLECTION canonical transaction orchestration; `LegalApplicationWriter` tek logical persistence writer'ıdır | `TARGET LEGALAPPLICATIONBATCH / CURRENT AS-IS CLAIMITEM-KEYED LEDGER HISTORICAL LEGACY / SHADOW_ONLY` | `HISTORICAL: DA-4 drift baseline ve WS04-P01/P02/P03/P03-A closure kayıtları korunur. TPA-02: dual authority yasak; ClaimItem target değil; replay/reversal/tenant contract ratified. DATA/REPLAY/SCHEMA/IMPLEMENTATION/CUTOVER NOT AUTHORIZED; ACT-28 / REC-AUTH-011/012 OPEN` |
 | `REC-AUTH-013` — Overpayment / hold | Kapsamı belirlenmiş allocation/collection sonucu; principal'a sessiz yazılamaz | Allocation/Collection result owner | `CURRENT PARTIAL / SCOPE-BOUNDED` | `CONFIRMED WITHIN ADR-014 FIXTURE/ENGINE SCOPE; PRODUCTION REVALIDATION REQUIRED` |
 | `REC-AUTH-014` — Valid linked full reversal | Bağlı payment'ın canonical legal etkisini net-zero yapar | Reversal link + canonical allocation | `CURRENT / CANONICAL_WITHIN_LINKED_FULL_REVERSAL_SCOPE` | `CONFIRMED / UNIT + DISPOSABLE-DB + REAL CANCEL PATH` |
 | `REC-AUTH-015` — Partial reversal/refund | Ayrı ratifikasyon olmadan inference yapılamaz | Owner/contract henüz tanımlanmamış | `TARGET / PRODUCTION_NO_GO` | `NOT_IMPLEMENTED / OWNER DECISION REQUIRED` |
@@ -623,10 +623,26 @@ sahibidir. Target `LegalApplication` persistence tek bir logical writer ve tek b
 authority taşımak zorundadır. Permanent dual-write, iki domainin bağımsız application fact'i
 yazması veya legacy cache/projection'ın fallback authority olması yasaktır.
 
-Physical persistence owner'ı, aggregate, tablo/model, PK/FK, transaction/idempotency,
-immutability, exact-cent ve retention kontratı bu normla seçilmez. `ApplicationBatch` dahil
-alternatifler yalnız `TPA-02` salt-okunur analizinde karşılaştırılır; bu kayıt schema,
-migration, writer, consumer cutover veya retirement yetkisi üretmez.
+XD-001 fiziksel persistence modelini seçmezdi. Sonraki TPA-02 owner kararı bağımsız
+`LegalApplicationBatch` aggregate'ini, tek logical writer'ı ve transaction/replay/reversal
+sınırlarını `REC-ALLOC-012` ile ratifiye eder. Bu seçim schema, migration, writer,
+consumer cutover veya retirement yetkisi üretmez.
+
+**REC-ALLOC-012 — LegalApplicationBatch target persistence aggregate'idir.**
+
+`LegalApplicationBatch`, immutable `LegalApplication` bucket-effect fact'lerini ve yalnız
+lineage/provenance taşıyan non-authoritative `ApplicationAttribution` fact'lerini kapsar.
+Aggregate'ın tek logical writer'ı `LegalApplicationWriter`dır ve yalnız canonical Collection
+transaction'ı içinde mevcut transaction client ile çağrılır. Bağımsız endpoint, ayrı/nested
+transaction veya ikinci allocator authority yasaktır.
+
+Her `APPLY` batch'i tam olarak bir Collection receipt'ine karşılık gelir ve
+`receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor` exact-cent conservation'ını
+sağlar. Replay authority `tenantId + idempotencyKey + commandHash`tır: aynı key/hash mevcut
+batch'i side-effect üretmeden döndürür; aynı key/farklı hash fail-closed conflict'tir.
+Full reversal linked append-only `REVERSAL` batch'idir; mevcut batch/application
+`UPDATE`/`DELETE` edilemez. Partial reversal ayrı owner gate'idir. Tenant-safe composite FK,
+`ON DELETE RESTRICT`, no historical guessing ve no silent backfill zorunludur.
 
 `AVAILABLE`, authority promotion anlamına gelmez. Legacy field'lar breaking rename olmadan
 korunur; deprecation yalnız explicit cutover gate'iyle tamamlanır. Shadow projection normal
@@ -1606,6 +1622,42 @@ REC-AUTH-012                OPEN / UNCHANGED
 Tarihsel closure kayıtları silinmez veya yeniden yazılmaz. Bu amendment yeni workstream,
 Collection/shared-boundary task'ı, Balance Engine, replay/data access veya cutover yetkisi
 üretmez.
+
+## 23.8. TPA-02 target persistence architecture ratifikasyonu — 2026-07-19
+
+Owner, physical target model olarak Option D'yi ratifiye etmiştir:
+
+```text
+LegalApplicationBatch
+  ├─ immutable LegalApplication[]
+  └─ non-authoritative ApplicationAttribution[]
+```
+
+Receivable bucket/context/snapshot semantiği ile TBK100 allocation policy'sinin; Collection
+receipt lifecycle, idempotency ve outer transaction orchestration'ın sahibidir. RCV-COL
+Legal Application Boundary aggregate persistence'ın sahibidir; tek logical writer
+`LegalApplicationWriter`dır. Invocation yalnız canonical Collection transaction'ı içinde,
+mevcut transaction client ile yapılır.
+
+Bir `APPLY` batch'i bir Collection receipt'ine karşılık gelir. Exact-cent conservation,
+tenant-scoped key+hash replay, linked append-only full reversal, immutable application,
+tenant-safe composite FK ve `ON DELETE RESTRICT` zorunludur. Partial reversal ayrı owner
+gate'idir. Historical tahmin, silent backfill, dual allocator ve dual authority yasaktır.
+
+Legacy disposition:
+
+```text
+ClaimItem.collectedAmount  FROZEN LEGACY CACHE / RETIREMENT REQUIRED
+CollectionAllocation      CANONICAL-OUTPUT-DERIVED TRANSITIONAL PROJECTION ONLY
+LedgerAllocation          HISTORICAL LEGACY RECORD / TARGET-ERA AUTHORITY PROHIBITED
+```
+
+ACT-28 ve REC-AUTH-011/012 `OPEN` kalır. `codex/rcv-ws04-p03-syn-01` disposition,
+PR #407 `HOLD / CONFLICTING / DO NOT MERGE`, deterministic bucket identity,
+representative replay/evidence ve consumer cutover authority açık blocker'lardır.
+TPA-03 schema-foundation analysis yalnız ayrı owner `GO-ANALYZE` ile başlayabilir.
+Schema, migration, writer, replay/evidence, cutover ve retirement implementation authority
+`NONE`dır.
 
 ---
 
