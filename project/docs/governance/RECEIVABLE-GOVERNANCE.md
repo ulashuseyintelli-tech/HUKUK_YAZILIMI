@@ -8,7 +8,7 @@
 Belge Durumu: CANONICAL
 Belge Sınıfı: DOMAIN GOVERNANCE
 Üst Otorite: SYSTEM-CONSTITUTION
-Version: 1.3
+Version: 1.4
 Canonical Path: project/docs/governance/RECEIVABLE-GOVERNANCE.md
 Owner Status: RATIFIED — BINDING
 Repository Status: CANONICAL UPON APPROVED MERGE TO MAIN
@@ -1429,6 +1429,183 @@ alternatifler `TPA-02 — Target Persistence Architecture` salt-okunur analizini
 XD-001 authority boundary kararı canonicaldır; ACT-28 ve REC-AUTH-011/012 physical
 persistence, migration, writer, consumer cutover ve retirement kapanana kadar `OPEN` kalır.
 TPA-02 için `GO-ANALYZE REQUIRED`; implementation authority `NONE`dır.
+
+## 23.7. RCV-CLAIM-FORM-P01-R01 formation-admission ratifikasyonu — 2026-07-19
+
+Owner, ClaimItem formation için iki seviyeli taxonomy ve fail-closed admission contract'ını
+ratifiye etmiştir. Bu amendment yalnız ClaimItem'ın **hangi hukuki borç bileşeni olarak,
+hangi source/rule/legal context ile oluşabileceğini** düzenler.
+
+### 23.7.1. İki seviyeli component taxonomy
+
+Canonical category:
+
+```text
+PRINCIPAL
+COST
+ANCILLARY
+ACCRUED_INTEREST
+```
+
+Component subtype category'den ayrı ve versioned classification registry'ye bağlıdır.
+Her subtype açık legal context ve tek bir canonical category mapping'i taşır. Örnek subtype
+vocabulary `TAX_KDV`, `TAX_BSMV`, `TAX_KKDF`, `COURT_FEE`, `ENFORCEMENT_FEE`,
+`ATTORNEY_FEE`, `CONTRACTUAL_PENALTY`, `CHECK_PENALTY`, `PRECAUTIONARY_COST` ve
+`DOCUMENTED_EXPENSE` içerir. `TAX`, `FEE`, `ATTORNEY_FEE` veya `PENALTY` tek başına yeni
+canonical application category üretmez.
+
+Her cost/ancillary subtype ayrı legal basis, canonical category, parent/base ilişkisi,
+interest eligibility, effective context, required evidence ve rule/version crosswalk'ı
+taşır. Mevcut mekanik `NO_INTEREST` varsayımı canonical hukuki karar değildir.
+
+### 23.7.2. `OTHER`, unknown ve generic-document sınırı
+
+`OTHER` yeni canonical ClaimItem write için `DENIED`dır; catch-all, fallback veya bilinmeyen
+component karşılığı olamaz. Mevcut `OTHER` kayıtları `LEGACY_ONLY`dır. Taxonomy'de olmayan
+yeni hukuki component önce açık classification code, canonical category, hukuki dayanak ve
+formation context için `LEGAL_REVIEW_REQUIRED` sonucu üretir; ratifikasyondan sonra subtype
+registry'ye eklenebilir.
+
+Bilinmeyen, boş veya map edilmemiş component `UNSUPPORTED_COMPONENT` üretir; sessizce
+`PRINCIPAL`, `OTHER` veya başka bir default component'e dönemez. Bilinmeyen/eşlemesiz
+document type `PRINCIPAL` ClaimItem üretemez. Document source yalnız explicit, exhaustive
+ve versioned document-type/component-subtype mapping ile admission'a girebilir.
+
+### 23.7.3. Interest semantics ve compatibility
+
+Geçmiş dönemde işlemiş, as-of tarihinde belirli ve tutarı hesaplanmış faiz
+`ACCRUED_INTEREST` sabit hukuki borç component'idir. En az `periodStart`, `periodEnd`,
+`asOf`, `principalBasisRef`, `interestPolicyRef`, policy/rule version, rate/legal source,
+legal-basis reference/version ve exact amount/currency context'i zorunludur.
+
+As-of tarihinden sonra işleyecek faiz sabit ClaimItem değildir; yalnız `InterestPolicy`,
+calculation rule ve rate/legal context olarak temsil edilir. `POST_INTEREST_RULE` ClaimItem
+üretmez.
+
+Compatibility disposition:
+
+```text
+INTEREST      DEPRECATED / NEW WRITE DENIED / LEGACY_ONLY
+PRE_INTEREST  ACCRUED_INTEREST COMPATIBILITY ALIAS /
+              NEW DIRECT WRITE DENIED / LEGACY_ONLY
+POST_INTEREST NEW CLAIMITEM ADMISSION DENIED / LEGACY_ONLY
+```
+
+Tam period/policy/legal context bulunması otomatik migration authority üretmez. Legacy
+`INTEREST`, `PRE_INTEREST`, `POST_INTEREST` ve `OTHER` kayıtları ayrı inventory ve migration
+kararı verilene kadar korunur; bu amendment mutation, normalization veya backfill yetkisi
+vermez.
+
+### 23.7.4. Rule Engine admission
+
+Unknown Rule Engine output `UNSUPPORTED_COMPONENT`dır. `POST_INTEREST_RULE` yalnız policy
+output'tur. Monetary ClaimItem sıfır/negatif amount, açık component mapping'i olmayan rule
+output veya version/checksum'sız input ile oluşamaz. Rule version ve normalized input
+checksum zorunludur.
+
+### 23.7.5. Mandatory formation context
+
+Her yeni canonical ClaimItem formation en az:
+
+```text
+tenantId / caseId
+componentCategory / componentSubtype
+exact originalAmount / exact demandedAmount / currency
+sourceType / sourceId / sourceSlot / sourceVersion
+legalBasisRef / legalBasisVersion
+effectiveAt / liabilityContext
+provenance / actor / authority
+correlation / idempotency identity
+normalizedInputChecksum / formationAt
+```
+
+taşır. Faiz veya faiz doğurabilecek component ayrıca `interestEligibility`,
+`interestPolicyRef/version` ve `ruleRef/version` taşır.
+
+### 23.7.6. `ClaimFormationSnapshotV1`
+
+`ClaimFormationSnapshotV1`, hukuki anlamı ve kaynak input'unu versioned, immutable ve
+yeniden üretilebilir mantıksal contract olarak sabitler. Hukuki anlamı veya kaynak verisini
+değiştiren güncelleme sessiz overwrite yapamaz; yeni source version/snapshot ve explicit
+supersession ilişkisi gerektirir. Version/checksum'sız mevcut kayıtlar `LEGACY_ONLY`dır.
+Bu logical contract fiziksel persistence, schema veya migration kararı değildir.
+
+### 23.7.7. Human direct entry
+
+Source-less veya yalnız Office approval'a dayanan direct ClaimItem write `PROHIBITED`dır.
+Human direct entry ancak explicit source/evidence, legal-basis/version, category/subtype,
+exact amount/currency, liability context ve gerekli Office approval birlikte mevcutsa
+admission değerlendirmesine girer. Office approval hukuki provenance yerine geçmez.
+
+### 23.7.8. Interest eligibility ve admission sonuçları
+
+Interest eligibility:
+
+```text
+ACCRUES
+NO_INTEREST
+UNRESOLVED
+```
+
+`UNRESOLVED` otomatik `NO_INTEREST` değildir. Temel alacak ve hukuki classification kesin
+ise `ALLOWED_WITH_POLICY_HOLD` mümkündür: ClaimItem oluşabilir; `InterestPolicy`
+bağlanamaz, faiz hesaplanamaz ve consumer borcu faizsiz kabul edemez.
+
+Canonical admission vocabulary:
+
+```text
+ALLOWED
+ALLOWED_WITH_POLICY_HOLD
+DENIED
+LEGAL_REVIEW_REQUIRED
+POLICY_CONTEXT_REQUIRED
+SOURCE_CONTEXT_REQUIRED
+UNSUPPORTED_COMPONENT
+LEGACY_ONLY
+```
+
+`ALLOWED`, tam formation ve gerekli policy context'in hazır olduğunu gösterir.
+`ALLOWED_WITH_POLICY_HOLD` dışındaki diğer non-`ALLOWED` sonuçlar yeni canonical formation
+write üretemez.
+
+### 23.7.9. Legal-review authority
+
+Final legal review authority Ulaş Hüseyin Telli veya owner tarafından daha sonra açıkça
+atanmış yetkili avukattır. Personel/staff yalnız hazırlık, belge toplama ve classification
+önerisi yapabilir; final hukuki classification veya faiz uygunluğu kararı veremez.
+
+### 23.7.10. Boundary ve status separation
+
+Receivable scope:
+
+```text
+ClaimItem formation
+component semantics
+source admission
+legal basis
+interest-policy input
+versioning/provenance
+formation snapshot
+```
+
+Collection/shared-boundary authority `UNCHANGED`dır. `LegalApplication`,
+`ApplicationBatch`, payment allocation orchestration, receipt lifecycle ve allocation
+execution bu amendment kapsamında tasarlanmaz.
+
+```text
+CONTRACT                    RATIFIED / CANONICAL UPON APPROVED MERGE
+RUNTIME ENFORCEMENT         NOT IMPLEMENTED
+IMPLEMENTATION AUTHORITY    NONE
+SCHEMA / MIGRATION          NOT AUTHORIZED
+LEGACY MUTATION / BACKFILL  NOT AUTHORIZED
+ACT-28                      OPEN / UNCHANGED
+REC-AUTH-011                OPEN / UNCHANGED
+REC-AUTH-012                OPEN / UNCHANGED
+```
+
+Tarihsel closure kayıtları silinmez veya yeniden yazılmaz. Bu amendment yeni workstream,
+Collection/shared-boundary task'ı, Balance Engine, replay/data access veya cutover yetkisi
+üretmez.
 
 ---
 

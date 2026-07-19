@@ -1,7 +1,7 @@
 # Canonicalization Register
 
 **Durum:** Living document — governance kaydı, implementasyon değil.
-**Son güncelleme:** 2026-07-18 (RCV-P2-WS04 allocation-authority constitutional amendment)
+**Son güncelleme:** 2026-07-19 (RCV-CLAIM-FORM-P01-R01 formation-admission canonicalization)
 **Kaynak:** `canonicalizationsiniflandirmaraporu.md` (kullanıcı tarafından sağlanan sınıflandırma raporu) + repo kodu doğrulaması, base commit `e65dc08564c09bfbe6db09a680606ac3d4b1f828`.
 **İlişkili dosya:** `canonicalization-policy.md` (sınıflandırma tanımları ve uygulama kuralları için bağlayıcı kaynak; bu register yalnız veri/kayıt tutar).
 
@@ -196,3 +196,35 @@ Tanımların ve uygulama kurallarının bağlayıcı metni `canonicalization-pol
 ---
 
 **Onay Bekleniyor: YES** — bu register GO-ANALYZE/dokümantasyon kapsamındadır; hiçbir maddenin implementasyonu bu kayıtla başlamış sayılmaz. Her madde ayrı GO-IMPLEMENT yetkisi gerektirir.
+
+---
+
+## 4. Governance Contract Canonicalization Records
+
+### RCV-CLAIM-FORM-P01-R01 — Claim Component Taxonomy and Formation Admission
+
+```text
+CONTRACT STATUS           RATIFIED / CLOSED / CANONICAL UPON APPROVED MERGE
+COMPONENT TAXONOMY        TWO-LEVEL
+CANONICAL CATEGORIES      PRINCIPAL / COST / ANCILLARY / ACCRUED_INTEREST
+OTHER                     NEW WRITE DENIED / LEGACY_ONLY
+UNKNOWN COMPONENT         UNSUPPORTED_COMPONENT / FAIL-CLOSED
+GENERIC DOCUMENT FALLBACK PROHIBITED
+FUTURE INTEREST           INTERESTPOLICY ONLY
+FORMATION SNAPSHOT        CLAIMFORMATIONSNAPSHOTV1
+RUNTIME ENFORCEMENT       NOT IMPLEMENTED
+IMPLEMENTATION AUTHORITY  NONE
+SCHEMA / MIGRATION        NOT AUTHORIZED
+LEGACY MUTATION / BACKFILL NOT AUTHORIZED
+ACT-28 / REC-AUTH-011/012 OPEN / UNCHANGED
+NEXT ELIGIBLE TASK        UNSET — OWNER GO REQUIRED
+```
+
+Bu kayıt yalnız `SYSTEM-CONSTITUTION` v1.4 ve `RECEIVABLE-GOVERNANCE` v1.4 içindeki
+owner-ratified ClaimItem formation normunu indeksler. Component subtype registry'nin
+runtime/persistence tasarımını seçmez; `INTEREST/PRE_INTEREST/POST_INTEREST/OTHER` legacy
+kayıtlarını değiştirmez; Collection/shared-boundary, `LegalApplication`, `ApplicationBatch`,
+payment orchestration, Balance Engine, replay/data access veya cutover authority üretmez.
+`ALLOWED_WITH_POLICY_HOLD`, yalnız temel alacak ve hukuki classification kesin olduğu halde
+interest eligibility `UNRESOLVED` olduğunda kullanılır; `UNRESOLVED` hiçbir zaman otomatik
+`NO_INTEREST` değildir.

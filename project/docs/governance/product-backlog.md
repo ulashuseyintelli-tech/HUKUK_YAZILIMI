@@ -1862,6 +1862,75 @@ Status: OPEN / DOCUMENTED — runtime remediation NOT AUTHORIZED (owner-held). P
 
 ---
 
+## RCV-CLAIM-FORM-P01-R01 — Claim Component Taxonomy and Formation Admission Canonicalization
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+Owner, ClaimItem formation için iki seviyeli taxonomy'yi ratifiye etmiştir. Canonical category
+yalnız `PRINCIPAL`, `COST`, `ANCILLARY` ve `ACCRUED_INTEREST`tır. Component subtype,
+category'den ayrı, versioned classification registry ve açık legal context taşır. `TAX`,
+`FEE`, `ATTORNEY_FEE` ve `PENALTY` yeni canonical application category değildir.
+
+`OTHER` yeni canonical write için `DENIED`; mevcut kayıtlar `LEGACY_ONLY`dır. Unknown, boş
+veya map edilmemiş component `UNSUPPORTED_COMPONENT` ve fail-closed'dur; `PRINCIPAL`,
+`OTHER` veya başka bir default'a dönüşemez. Generic document → `PRINCIPAL` fallback
+yasaktır. Rule Engine unknown output'u ClaimItem üretemez; `POST_INTEREST_RULE` yalnız policy
+output'tur; monetary ClaimItem sıfır/negatif amount, açık mapping'i olmayan output veya
+version/checksum'sız input ile oluşamaz.
+
+Geçmiş dönemde işlemiş, as-of tarihinde belirli ve tutarı hesaplanmış faiz
+`ACCRUED_INTEREST` sabit hukuki component'tir. Future interest yalnız `InterestPolicy` /
+calculation rule'dur. `INTEREST`, `PRE_INTEREST` ve `POST_INTEREST` existing kayıtları
+`LEGACY_ONLY`; yeni canonical write/admission kısıtlıdır ve bu kayıt migration authority
+üretmez.
+
+Yeni canonical ClaimItem; tenant/case, category/subtype, exact original/demanded amount,
+currency, source type/id/slot/version, legal-basis reference/version, effective/liability
+context, provenance, actor/authority, correlation/idempotency identity, normalized input
+checksum ve formation timestamp taşır. Faiz veya faiz doğurabilecek component ayrıca
+interest eligibility, `InterestPolicy` reference/version ve rule reference/version taşır.
+Logical `ClaimFormationSnapshotV1` semantic/source değişikliğinde yeni source
+version/snapshot ve explicit supersession gerektirir; sessiz overwrite yasaktır.
+
+Admission vocabulary:
+
+```text
+ALLOWED
+ALLOWED_WITH_POLICY_HOLD
+DENIED
+LEGAL_REVIEW_REQUIRED
+POLICY_CONTEXT_REQUIRED
+SOURCE_CONTEXT_REQUIRED
+UNSUPPORTED_COMPONENT
+LEGACY_ONLY
+```
+
+Temel borç ve classification kesin, interest eligibility `UNRESOLVED` ise
+`ALLOWED_WITH_POLICY_HOLD` ClaimItem formation'a izin verebilir; policy bağlanamaz, faiz
+hesaplanamaz ve consumer borcu faizsiz kabul edemez. Source-less/approval-only human direct
+write yasaktır; Office approval legal provenance yerine geçmez. Final legal-review authority
+Ulaş Hüseyin Telli veya owner'ın daha sonra açıkça atadığı yetkili avukattır; staff final
+classification/faiz uygunluğu kararı veremez.
+
+```text
+CONTRACT                    RATIFIED / CANONICAL UPON APPROVED MERGE
+RUNTIME ENFORCEMENT         NOT IMPLEMENTED
+IMPLEMENTATION AUTHORITY    NONE
+SCHEMA / MIGRATION          NOT AUTHORIZED
+LEGACY MUTATION / BACKFILL  NOT AUTHORIZED
+COLLECTION / SHARED BOUNDARY UNCHANGED
+ACT-28 / REC-AUTH-011/012   OPEN / UNCHANGED
+NEXT ELIGIBLE TASK          UNSET — OWNER GO REQUIRED
+```
+
+Bu closure yalnız governance contract'ını kapatır. Component subtype registry,
+formation-admission runtime enforcement, versioning/persistence analysis ve legacy
+interest/`OTHER` inventory ayrı owner-gated bounded task ister. Yeni workstream, Collection
+authority, `LegalApplication`, `ApplicationBatch`, Balance Engine, replay/data access veya
+cutover başlatılmaz.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
