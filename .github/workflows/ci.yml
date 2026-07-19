@@ -1034,6 +1034,7 @@ jobs:
       CLIENT_WORKSPACE_SMOKE_CLIENT_ID: client-workspace-live-smoke-v1-client
       CLIENT_WORKSPACE_SMOKE_EMAIL: admin@hukuk.com
       CLIENT_WORKSPACE_SMOKE_PASSWORD: admin123
+      CLIENT_WORKSPACE_SMOKE_TENANT_SLUG: demo-firma
       ALLOW_CLIENT_WORKSPACE_LIVE_SMOKE_SEED: "1"
     services:
       postgres:
