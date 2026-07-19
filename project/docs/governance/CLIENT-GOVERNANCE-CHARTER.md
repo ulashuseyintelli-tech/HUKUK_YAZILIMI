@@ -765,3 +765,78 @@ Retention süreleri · anonymization · physical deletion · legal/litigation ho
 ### 17.15 BP-09 Self-Check
 
 Bu bölüm: business fact'leri E1–E7'ye zorla sınıflandırmaz; `CaseClient` authority owner'ını CASE olarak GÖSTERMEZ; `ClientOffset` authority'sini CLIENT'e TAŞIMAZ; `AccountingJournalEntry`'yi yalnız E7 audit event İLAN ETMEZ; PoA'nın canonical mandate evidence rolünü korur, integrity gap'i ayrıca kaydeder; `PortalDocument` gap'i için cross-tenant exploit iddiası YAPMAZ; intake submission'ı FACT A İLAN ETMEZ; RECEIVABLE hakkında eksik aramaya dayalı negatif iddia YAZMAZ; audit event'i execution evidence olarak GÖSTERMEZ; retention/KVKK/masking/RBAC kararı VERMEZ; runtime taxonomy OLUŞTURMAZ; `CL-INV-001..008` / §6 / §8.A / §8.B / §11–§16'yı değiştirmez; kod/schema/migration/test-behavior DEĞİŞTİRMEZ; canonicalization'ı implementation ile KARIŞTIRMAZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 18. CLIENT-P1-POL-C — Portal / External-Client Authority Policy (OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-POL-C` karar analizinin **owner-ratified policy**'sidir (`decision-log.md` CLIENT-P1-POL-C-GOV; **SELECTED MODEL: NON-AUTHORITATIVE PORTAL INTERACTION**). Mevcut kanonik AS-IS gerçekleri (AS-IS kod + charter §11–§17 + CL-INV-001..008 + XDC-A–E + POL-A + POL-B) ve owner kararını **konsolide eder**; yeni role/rank/predicate, corporate-representative modeli, delegated-user modeli, session-revocation/2FA implementasyonu veya RBAC/masking/KVKK/financial-visibility policy'si ÜRETMEZ. §5, §6, §8.A, §8.B, §11–§17 metinlerini **semantik olarak değiştirmez.** **AUTHENTICATED EXTERNAL-CLIENT FACT A: NOT PRODUCED BY AS-IS PORTAL. PORTAL CLIENT-DECISION AUTHORITY: NONE. PORTAL BUSINESS-EFFECT AUTHORITY: NONE. PORTAL IMPLEMENTATION: NOT AUTHORIZED.**
+
+### 18.1 Portal Authority Model
+
+Portal yalnız **bounded interaction ve presentation yüzeyidir**. Permitted interaction classes: READ/PRESENTATION · DOCUMENT UPLOAD/DOWNLOAD · MESSAGE EXCHANGE · RAW EXTERNAL INPUT · INTAKE SUBMISSION · NOTIFICATION ACCESS. Bu işlemler FACT A ÜRETMEZ, internal OFFICE approval ÜRETMEZ, RECEIVABLE mutation YAPMAZ, COLLECTION posting veya money-out ÜRETMEZ, DEBTOR legal effect ÜRETMEZ, ACCOUNTING entry ÜRETMEZ. **"View-only" canonical model adı DEĞİLDİR** — portalın write niteliğinde fakat **non-authoritative** girdileri vardır (belge yükleme, mesaj, intake gönderimi).
+
+### 18.2 Portal Action Semantics
+
+PORTAL READ = client-facing presentation. PORTAL DOCUMENT UPLOAD = external document/raw input, NOT verified content. PORTAL MESSAGE = communication record, NOT client instruction by default. PORTAL INTAKE SUBMISSION = pre-canonical external input; token possession ≠ principal authentication. STAFF REVIEW/PROMOTION FACT-B-like record üretebilir; source action'ı asla FACT A'ya ÇEVİRMEZ. Portal-originated record: `≠ AUTHENTICATED PRINCIPAL ACT` · `≠ CLIENT CONSENT` · `≠ CLIENT DECISION` · `≠ OFFICE APPROVAL` · `≠ TARGET-DOMAIN EXECUTION`.
+
+### 18.3 Actor and Principal Boundary
+
+PORTAL USER = technical client-linked account. CLIENT PRINCIPAL = legal person or natural person with decision authority. ACTING HUMAN = the natural person using the account. Precision: `PORTAL USER ≠ CLIENT PRINCIPAL` · `AUTHENTICATED SESSION ≠ PROVEN ACTING-HUMAN IDENTITY` · `AUTHENTICATED SESSION ≠ REPRESENTATION/DELEGATION BASIS` · `CLIENT RELATIONSHIP ≠ PORTAL ACCESS AUTHORITY` · `MANDATE ≠ PORTAL CREDENTIAL`.
+
+**COMPANY/PUBLIC client'lar:** acting-human identity, corporate representation, delegation basis, term ve revocation AS-IS yapısal olarak kanıtlanmıyorsa portal act principal act SAYILAMAZ. Bu görev yeni representative/delegate modeli OLUŞTURMAZ.
+
+### 18.4 FACT-A Boundary
+
+POL-B korunur: **FACT A** = authenticated external-client act; **FACT B** = staff-recorded client-attributed fact; `FACT A ≠ FACT B`; **FACT B NON-CONVERTIBLE TO FACT A**. AS-IS portal şu minimum zinciri karşılamaz: ACTING-HUMAN IDENTITY · REPRESENTATION/DELEGATION BASIS · LIVE REVOCATION/SESSION INVALIDATION. Bu nedenle **AS-IS PORTAL FACT-A ELIGIBILITY: NONE.** `PORTAL` channel etiketi wired FACT-A hattı DEĞİLDİR.
+
+### 18.5 Portal Capability Boundary
+
+| Capability | POL-C disposition |
+|---|---|
+| Case / PoA read | Permitted presentation, subject to BP-06/POL-J |
+| Document upload/download | Non-authoritative external artifact interaction |
+| Message | Communication only |
+| Notification | Presentation only |
+| Intake submission | Pre-canonical input |
+| Client instruction | Not automatically produced |
+| Client consent/decision | Not authorized |
+| Financial visibility | Separate BP-06 decision |
+| Financial action | Prohibited |
+| Target-domain mutation | Prohibited |
+
+### 18.6 Portal Lifecycle Precision
+
+AS-IS lifecycle fact'leri kaydedilebilir: client-linked technical account · password authentication · active/disabled state · credential-change/recovery surfaces · existing session behavior. Canonical target policy bu aşamada SEÇİLMEZ: invitation · activation ceremony · multi-user delegation · 2FA requirement · credential assurance · token/session versioning · session revocation mechanism · relationship-termination propagation. **PORTAL LIFECYCLE POLICY: PARTIAL/OPEN. IMPLEMENTATION: NOT AUTHORIZED.**
+
+### 18.7 AS-IS Security/Integrity Deltas (pointer; record-only, `OFFICE-RISK-REGISTER.md`'ye eklendi)
+
+- **Session invalidation** — AS-IS: disable/password-change mevcut portal session'ı kanıtlanabilir şekilde revoke ETMİYOR. IMPACT: stale authenticated session risk. REMEDIATION: NOT AUTHORIZED.
+- **Credential recovery delivery** — AS-IS: reset mekanizması kodda var, teslimat kanalı eksik/doğrulanmamış. IMPACT: recovery capability gap. REMEDIATION: NOT AUTHORIZED.
+- **Case-detail field exposure** — AS-IS: portal detay sunumu client-sunumu için amaçlanmamış alanları içerebilir. CROSS-TENANT EXPOSURE: NOT ESTABLISHED. IMPACT: same-client field-level disclosure/masking gap. ROUTING: BP-06/POL-D. REMEDIATION: NOT AUTHORIZED.
+- **Corporate representation** — AS-IS: acting-human/corporate representation yapısal olarak KANITLANMIYOR. IMPACT: FACT-A ve legal-attribution gap. REMEDIATION: NOT AUTHORIZED.
+- **Document review authority** — BP-09'daki record korunur: AS-IS document review actor-eligibility/history coverage PARTIAL. ROUTING: POL-J. REMEDIATION: NOT AUTHORIZED.
+
+Charter'a somut field, route, method veya exploit ayrıntısı YAZILMAZ.
+
+### 18.8 Tenant / Object Access Precision
+
+**NEW CROSS-TENANT EXPLOIT: NOT ESTABLISHED. OBJECT-LEVEL CLIENT SCOPING: AS-IS PRESENT. DEFENSE-IN-DEPTH/FIELD VISIBILITY: PARTIAL/OPEN.** Bu sonuç tenant güvenliğinin kusursuz olduğu, field-level görünürlüğün doğru olduğu veya session revocation'ın yeterli olduğu anlamına GELMEZ.
+
+### 18.9 XDC-E Boundary
+
+SHARED INFRASTRUCTURE provides: authentication · document · evidence · delivery facilities. **INDEPENDENT BUSINESS AUTHORITY: NONE.** Portal CLIENT context tüketir, shared infrastructure kullanır; OFFICE/RECEIVABLE/COLLECTION/DEBTOR authority'sini KAZANMAZ.
+
+### 18.10 Open-Slot Register (yalnız pointer; ÇÖZÜLMEZ)
+
+Document/portal RBAC → **POL-J** · Field masking → **POL-D/BP-06** · Aggregate visibility → **POL-F/BP-06** · Financial visibility → **BP-06** · KVKK retention/anonymization/legal-hold → **POL-E** · Acting-human identity model · Corporate representation/delegation · Multi-user portal model · Session revocation · Credential assurance/2FA · Portal audit coverage · FACT-A implementation.
+
+### 18.11 BP-05 Effect
+
+**POL-C: DECIDED/CANONICALIZATION PENDING → bu kayıtla CANONICAL.** **BP-05 ENTRY: POL-C PREREQUISITE SATISFIED AFTER CANONICAL MERGE.** **BP-05 FINALIZATION: STILL REQUIRES POL-J.** **BP-06: STILL OWNER-GATED.** BP-05 bu governance kapanışı sırasında BAŞLATILMAZ.
+
+### 18.12 Status Precision
+
+**CLIENT-P1-POL-C: CLOSED/CANONICAL.** **MODEL: NON-AUTHORITATIVE PORTAL INTERACTION.** **PORTAL FACT A: NOT PRODUCED.** **PORTAL CLIENT-DECISION AUTHORITY: NONE.** **PORTAL BUSINESS-EFFECT AUTHORITY: NONE.** **BP-05 ENTRY PREREQUISITE: SATISFIED.** **POL-J: OPEN/REQUIRED FOR BP-05 FINALIZATION.** **PORTAL REMEDIATION: NOT AUTHORIZED.** **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 18.13 POL-C Self-Check
+
+Bu bölüm: portal modelini "view-only" olarak YANLIŞ ADLANDIRMAZ; portal upload/mesaj/intake'i FACT A İLAN ETMEZ; portal user'ı client principal İLAN ETMEZ; corporate representation VARSAYMAZ; FACT B'yi FACT A'ya YÜKSELTMEZ; portal'a OFFICE approval veya target-domain execution authority KAZANDIRMAZ; cross-tenant exploit iddiası YAPMAZ; field exposure'ı yalnız same-client presentation/masking gap olarak kaydeder; session/recovery/representation bulgularını record-only tutar; POL-J veya BP-06 policy'si SEÇMEZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
