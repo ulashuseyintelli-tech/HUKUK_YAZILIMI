@@ -86,23 +86,11 @@ describe('P02B — SERIALIZED_DRAFT + contract-derived official XML şekli', () 
     expect(r.xml).toMatch(/<kurum\s+kurumAdi="ACME A\.S\."\s+vergiNo="123"\s*\/>/);
   });
 
-  it('alacakKalemi + faiz → attribute modeli (faizTipKod değeri test-provided, kanonik değil)', () => {
-    const input: OfficialExchangeInput = {
-      ...baseInput([resolvedTaraf()]),
-      alacakKalemleri: [
-        {
-          id: 'AK1',
-          alacakKalemAdi: 'Asil Alacak',
-          alacakKalemTutar: '1000.00',
-          faiz: { baslangicTarihi: '2026-01-01', faizTipKod: 'FAIZT-TEST', faizOran: '10' },
-        },
-      ],
-    };
-    const r = serializeOfficialExchange(input);
-    if (r.status !== 'SERIALIZED_DRAFT') throw new Error('beklenen SERIALIZED_DRAFT');
-    expect(r.xml).toMatch(/<alacakKalemi[^>]*alacakKalemTutar="1000\.00"/);
-    expect(r.xml).toMatch(/<faiz[^>]*faizTipKod="FAIZT-TEST"/);
-  });
+  // NOT (P02B-R2, owner-ratified fail-closed karar): eski "alacakKalemi + faiz → attribute modeli"
+  // testi BURADAN KALDIRILMIŞTIR. Eski test yazıldığı an DÜRÜSTTÜ (yalnız string-shape kanıtlıyordu,
+  // hiçbir DTD-conformance iddiası taşımıyordu — bkz. GO-ANALYZE raporu §8). Kaldırma nedeni test'in
+  // yanlış olması DEĞİL, owner'ın YENİ fail-closed davranışı ratifiye etmesidir: `alacakKalemleri`
+  // artık dogrudan emisyon yerine REJECTED üretir (bkz. aşağıdaki 'P02B-R2' describe blokları).
 });
 
 describe('P02B — UNRESOLVED-ROLE REJECTION (gerçek P02A translator çıktısıyla)', () => {
@@ -284,6 +272,177 @@ describe('P02B — izolasyon / no-wiring / no domain→rolID mapping (kaynak-gre
   it('official/ yeni P02B dosyaları schema/migration yüzeyine dokunmaz', () => {
     for (const f of ['official-exchange-builder.ts', 'official-exchange.types.ts']) {
       const src = readOfficial(f);
+      expect(src).not.toContain('schema.prisma');
+      expect(src).not.toContain('migration');
+    }
+  });
+});
+
+describe('P02B-R2 — CLAIM-WRAPPER AUTHORITY GUARD (fail-closed, owner-ratified)', () => {
+  function inputWithClaim(count: 1 | 2 = 1): OfficialExchangeInput {
+    const alacakKalemleri =
+      count === 1
+        ? [{ id: 'AK1', alacakKalemTutar: '1000.00' }]
+        : [
+            { id: 'AK1', alacakKalemTutar: '10' },
+            { id: 'AK2', alacakKalemTutar: '20' },
+          ];
+    return { ...baseInput([resolvedTaraf()]), alacakKalemleri };
+  }
+
+  it('non-empty alacakKalemleri → REJECTED', () => {
+    const r = serializeOfficialExchange(inputWithClaim());
+    expect(r.status).toBe('REJECTED');
+  });
+
+  it('claimShapeViolations tam eşleşme: code/path/count', () => {
+    const r = serializeOfficialExchange(inputWithClaim());
+    expect(r.status).toBe('REJECTED');
+    if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
+    expect(r.claimShapeViolations).toEqual([
+      { code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT', path: 'dosya/alacakKalemi', count: 1 },
+    ]);
+  });
+
+  it('rejection sonucunda xml property yok', () => {
+    const r = serializeOfficialExchange(inputWithClaim());
+    expect((r as { xml?: string }).xml).toBeUndefined();
+  });
+
+  it('rejection sonucunda <alacakKalemi> hiçbir yerde yok', () => {
+    const r = serializeOfficialExchange(inputWithClaim());
+    expect(JSON.stringify(r)).not.toContain('<alacakKalemi');
+  });
+
+  it('otomatik <digerAlacak> üretilmez', () => {
+    const r = serializeOfficialExchange(inputWithClaim());
+    expect(JSON.stringify(r)).not.toContain('digerAlacak');
+  });
+
+  it('otomatik <ilam> üretilmez', () => {
+    const r = serializeOfficialExchange(inputWithClaim());
+    expect(JSON.stringify(r)).not.toContain('<ilam');
+  });
+
+  it('otomatik instrument sarmalayıcı (cek/senet/police/kontrat) üretilmez', () => {
+    const r = serializeOfficialExchange(inputWithClaim());
+    const json = JSON.stringify(r);
+    expect(json).not.toContain('<cek');
+    expect(json).not.toContain('<senet');
+    expect(json).not.toContain('<police');
+    expect(json).not.toContain('<kontrat');
+  });
+
+  it('alacakKalemleri undefined → SERIALIZED_DRAFT (taraf-only davranış değişmedi)', () => {
+    const r = serializeOfficialExchange(baseInput([resolvedTaraf()]));
+    expect(r.status).toBe('SERIALIZED_DRAFT');
+  });
+
+  it('alacakKalemleri [] → SERIALIZED_DRAFT (taraf-only davranış değişmedi)', () => {
+    const input: OfficialExchangeInput = { ...baseInput([resolvedTaraf()]), alacakKalemleri: [] };
+    const r = serializeOfficialExchange(input);
+    expect(r.status).toBe('SERIALIZED_DRAFT');
+  });
+
+  it('taraf-only owner-safe ASIL_BORCLU + ADI_KEFIL → SERIALIZED_DRAFT, rolID 22/33 korunur', () => {
+    const r = serializeOfficialExchange(
+      baseInput([
+        resolvedTaraf({ id: 'B1', roleResolution: resolveOfficialRole(DebtorRole.ASIL_BORCLU) }),
+        resolvedTaraf({ id: 'K1', roleResolution: resolveOfficialRole(DebtorRole.ADI_KEFIL) }),
+      ]),
+    );
+    expect(r.status).toBe('SERIALIZED_DRAFT');
+    if (r.status !== 'SERIALIZED_DRAFT') throw new Error('beklenen SERIALIZED_DRAFT');
+    expect(r.xml).toMatch(/<rolTur\s+rolID="22"\s+Rol="BORÇLU\/MÜFLİS"\s*\/>/);
+    expect(r.xml).toMatch(/<rolTur\s+rolID="33"\s+Rol="KEFİL"\s*\/>/);
+  });
+
+  it('unresolved role + claim item → mevcut unresolved-role rejection önceliği korunur', () => {
+    const taraf = resolvedTaraf({ roleResolution: resolveOfficialRole(DebtorRole.MIRASCI) });
+    const input: OfficialExchangeInput = { ...baseInput([taraf]), alacakKalemleri: [{ id: 'AK1', alacakKalemTutar: '10' }] };
+    const r = serializeOfficialExchange(input);
+    expect(r.status).toBe('REJECTED');
+    if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
+    expect(r.unresolved).toEqual([{ tarafId: 'T1', kind: 'UNRESOLVED_AUTHORITY_REQUIRED' }]);
+    expect(r.claimShapeViolations).toBeUndefined();
+  });
+
+  it('boş taraf listesi + claim item → mevcut empty-taraf rejection önceliği korunur', () => {
+    const input: OfficialExchangeInput = {
+      ...baseInput([]),
+      alacakKalemleri: [{ id: 'AK1', alacakKalemTutar: '10' }],
+    };
+    const r = serializeOfficialExchange(input);
+    expect(r.status).toBe('REJECTED');
+    if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
+    expect(r.reason).toBe('En az bir taraf zorunludur.');
+    expect(r.claimShapeViolations).toBeUndefined();
+  });
+
+  it('geçersiz/çift alacakKalemi ID → mevcut ID-integrity önceliği korunur (claim-wrapper değil)', () => {
+    const input: OfficialExchangeInput = {
+      ...baseInput([resolvedTaraf({ id: 'X1' })]),
+      alacakKalemleri: [{ id: 'X1', alacakKalemTutar: '10' }],
+    };
+    const r = serializeOfficialExchange(input);
+    expect(r.status).toBe('REJECTED');
+    if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
+    expect(r.idViolations).toEqual([{ id: 'X1', issue: 'DUPLICATE_ID', source: 'alacakKalemi' }]);
+    expect(r.claimShapeViolations).toBeUndefined();
+  });
+
+  it('iki alacak kalemi → violation count = 2', () => {
+    const r = serializeOfficialExchange(inputWithClaim(2));
+    expect(r.status).toBe('REJECTED');
+    if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
+    expect(r.claimShapeViolations).toEqual([
+      { code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT', path: 'dosya/alacakKalemi', count: 2 },
+    ]);
+  });
+
+  it('aynı girdi → aynı rejection sonucu (determinizm REJECTED yolunda da geçerli)', () => {
+    const input = inputWithClaim();
+    const a = serializeOfficialExchange(input);
+    const b = serializeOfficialExchange(input);
+    expect(a).toEqual(b);
+  });
+
+  it('sonuç union yalnız SERIALIZED_DRAFT / REJECTED (yeni statü yok)', () => {
+    const withClaim = serializeOfficialExchange(inputWithClaim());
+    const withoutClaim = serializeOfficialExchange(baseInput([resolvedTaraf()]));
+    expect(['SERIALIZED_DRAFT', 'REJECTED']).toContain(withClaim.status);
+    expect(['SERIALIZED_DRAFT', 'REJECTED']).toContain(withoutClaim.status);
+  });
+
+  it('officialDtdValidated=true hiçbir yerde üretilmez', () => {
+    expect(JSON.stringify(serializeOfficialExchange(inputWithClaim()))).not.toContain('"officialDtdValidated":true');
+    expect(JSON.stringify(serializeOfficialExchange(baseInput([resolvedTaraf()])))).not.toContain(
+      '"officialDtdValidated":true',
+    );
+  });
+});
+
+describe('P02B-R2 — static containment (kaynak-grep; runtime wiring / schema / migration YOK)', () => {
+  it('addOfficialAlacakKalemi(dosya çağrısı kaynakta yok (fonksiyon tamamen kaldırıldı)', () => {
+    const src = readOfficial('official-exchange-builder.ts');
+    expect(src).not.toContain('addOfficialAlacakKalemi');
+  });
+
+  it('doğrudan dosya/alacakKalemi emisyonu (.ele(\'alacakKalemi\')) kaynakta yok', () => {
+    const src = readOfficial('official-exchange-builder.ts');
+    expect(src).not.toMatch(/\.ele\(\s*['"`]alacakKalemi['"`]/);
+  });
+
+  it('otomatik digerAlacak/ilam/cek/senet/police/kontrat sarmalayıcı emisyonu kaynakta yok', () => {
+    const src = readOfficial('official-exchange-builder.ts');
+    expect(src).not.toMatch(/\.ele\(\s*['"`](digerAlacak|ilam|cek|senet|police|kontrat|kontratKefil)['"`]/);
+  });
+
+  it('runtime wiring / schema / migration bu değişiklikte de YOK (P02B izolasyon sınırı korunur)', () => {
+    for (const f of ['official-exchange-builder.ts', 'official-exchange.types.ts']) {
+      const src = readOfficial(f);
+      expect(src).not.toContain('@Injectable');
+      expect(src).not.toContain('@prisma/client');
       expect(src).not.toContain('schema.prisma');
       expect(src).not.toContain('migration');
     }
