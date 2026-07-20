@@ -782,6 +782,22 @@ jobs:
             --testPathPattern="credential-recovery.*\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # CLIENT-P2-U01-R1: credential-recovery.spec.ts (PR #1477) yalnız mocked-prisma unit
+      # seviyesindedir; forgot/reset-password akışının gerçek Postgres üzerinde tenant/client
+      # cross-account izolasyon kanıtı yoktu. Canonical PortalService davranışı DEĞİŞTİRİLMEDEN
+      # test edilir (gerçek Postgres, disposable service-container).
+      - name: CLIENT-P2-U01-R1 portal reset tenant-scope integration tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          for f in src/modules/portal/__tests__/portal-reset-tenant-scope.db-gated.integration.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-P2-U01-R1 integration spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="portal-reset-tenant-scope\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
       # MPB-028(a) PR-2: LegalDeadlineService (rejim hesaplama, snapshot immutable/supersede,
       # objectionPeriodDays validation) + TebligatService TK 21/2 correction / TK m.20 explicit-
       # override unit-static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç

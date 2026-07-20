@@ -47,7 +47,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!loading && !user && !PUBLIC_PATHS.includes(pathname)) {
+    // CLIENT-P2-U01-R1: /portal/* namespace staff-auth redirect katmanından muaf — kendi
+    // ayrı portal-specific auth katmanına (PortalLayout'un portal_token guard'ı) devredilir.
+    // Bütün portal route'ları public OLMAZ: private /portal/* route'ları PortalLayout'un
+    // kendi guard'ı korur (bkz. app/portal/layout.tsx).
+    const isPortalDelegated = pathname.startsWith("/portal");
+    if (!loading && !user && !PUBLIC_PATHS.includes(pathname) && !isPortalDelegated) {
       router.push("/auth/login");
     }
   }, [loading, user, pathname, router]);

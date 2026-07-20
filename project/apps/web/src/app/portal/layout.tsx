@@ -29,7 +29,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     const token = localStorage.getItem("portal_token");
     const userData = localStorage.getItem("portal_user");
     
-    if (!token && pathname !== "/portal/login" && pathname !== "/portal/forgot-password") {
+    if (!token && pathname !== "/portal/login" && pathname !== "/portal/forgot-password" && pathname !== "/portal/reset-password") {
       router.push("/portal/login");
       return;
     }
@@ -43,7 +43,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   // Bildirim sayısını çek
   useEffect(() => {
     const token = localStorage.getItem("portal_token");
-    if (!token || pathname === "/portal/login" || pathname === "/portal/forgot-password") return;
+    if (!token || pathname === "/portal/login" || pathname === "/portal/forgot-password" || pathname === "/portal/reset-password") return;
 
     const fetchUnreadCount = async () => {
       try {
@@ -126,8 +126,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     router.push("/portal/login");
   };
 
-  // Login ve forgot-password sayfaları için layout gösterme
-  if (pathname === "/portal/login" || pathname === "/portal/forgot-password") {
+  // Login, forgot-password ve reset-password sayfaları için layout gösterme
+  if (pathname === "/portal/login" || pathname === "/portal/forgot-password" || pathname === "/portal/reset-password") {
     return <>{children}</>;
   }
 
