@@ -83,6 +83,19 @@ export interface PoaValidationResult {
   poaId?: string;
 }
 
+/**
+ * TRANSPORT-CONTAIN-01: gerçek transport bulunmayan (REAL-TRANSPORT=0) tüm stub-success
+ * yollarının ortak doğruluk sözleşmesi. Yerel simülasyon başarısı; provider kabulü veya
+ * hukuki sonuç ASLA iddia edilmez. `evkNo` bu yollarda hiç doldurulmaz (gelecekte gerçek
+ * provider cevabı için ayrılır); yerine izlenebilir yerel referans `stubReference` kullanılır.
+ */
+const STUB_TRANSPORT_TRUTH = {
+  simulated: true,
+  dispatched: false,
+  providerAccepted: false,
+  legalEffectConfirmed: false,
+} as const;
+
 @Injectable()
 export class UyapService {
   private readonly logger = new Logger(UyapService.name);
@@ -187,41 +200,56 @@ export class UyapService {
     let cpeTraceId: string | undefined;
 
     // CPE Gate kontrolü (HIGH risk aksiyon)
-    if (this.casePolicyEngine) {
-      try {
-        const decision = await this.casePolicyEngine.canPerformAction(
-          request.caseId,
-          ActionCode.UYAP_SEND,
-          {
-            debtorId: request.debtor.identityNo,
-            userId: request.lawyerId,
-          },
-        );
+    // TRANSPORT-CONTAIN-01: action-matrix UYAP_SEND=failMode:'CLOSED' ile uzlaştırıldı —
+    // CasePolicyEngine yokluğu veya teknik hata artık fail-open DEĞİL, fail-closed'tır
+    // (pushHacizRequest zaten bu davranıştaydı; ödeme emri buna eşitlendi).
+    if (!this.casePolicyEngine) {
+      this.logger.error('UYAP ödeme emri engellendi: Policy engine kullanılamıyor');
+      throw new BadRequestException({
+        code: 'CPE_CHECK_FAILED',
+        message: 'UYAP işlemi yapılamaz: Güvenlik kontrolü kullanılamıyor',
+        details: 'Policy engine kullanılamıyor, güvenlik nedeniyle işlem engellendi',
+      });
+    }
 
-        cpeTraceId = decision.traceId;
+    try {
+      const decision = await this.casePolicyEngine.canPerformAction(
+        request.caseId,
+        ActionCode.UYAP_SEND,
+        {
+          debtorId: request.debtor.identityNo,
+          userId: request.lawyerId,
+        },
+      );
 
-        if (!decision.allowed) {
-          this.logger.error(`UYAP işlemi CPE tarafından engellendi: ${decision.reason}`);
-          throw new BadRequestException({
-            code: 'CPE_GATE_BLOCKED',
-            message: `UYAP işlemi yapılamaz: ${decision.reason}`,
-            details: 'Policy engine bu işleme izin vermiyor',
-            cpeTraceId,
-            cpeCode: decision.code,
-          });
-        }
+      cpeTraceId = decision.traceId;
 
-        // Soft warnings varsa logla
-        if (decision.warnings && decision.warnings.length > 0) {
-          this.logger.warn(`CPE warnings for UYAP_SEND:`, decision.warnings);
-        }
-      } catch (error: any) {
-        if (error.response?.code === 'CPE_GATE_BLOCKED') {
-          throw error;
-        }
-        // CPE hatası durumunda fail-open (logla ama devam et)
-        this.logger.error('CPE kontrolü başarısız, devam ediliyor:', error);
+      if (!decision.allowed) {
+        this.logger.error(`UYAP işlemi CPE tarafından engellendi: ${decision.reason}`);
+        throw new BadRequestException({
+          code: 'CPE_GATE_BLOCKED',
+          message: `UYAP işlemi yapılamaz: ${decision.reason}`,
+          details: 'Policy engine bu işleme izin vermiyor',
+          cpeTraceId,
+          cpeCode: decision.code,
+        });
       }
+
+      // Soft warnings varsa logla
+      if (decision.warnings && decision.warnings.length > 0) {
+        this.logger.warn(`CPE warnings for UYAP_SEND:`, decision.warnings);
+      }
+    } catch (error: any) {
+      if (error.response?.code === 'CPE_GATE_BLOCKED') {
+        throw error;
+      }
+      // TRANSPORT-CONTAIN-01: CPE teknik hatası artık fail-closed (önceden fail-open idi).
+      this.logger.error('CPE kontrolü başarısız, ödeme emri engelleniyor:', error);
+      throw new BadRequestException({
+        code: 'CPE_CHECK_FAILED',
+        message: 'UYAP işlemi yapılamaz: Güvenlik kontrolü başarısız',
+        details: 'Policy engine kontrolü yapılamadı, güvenlik nedeniyle işlem engellendi',
+      });
     }
 
     // Vekalet kontrolü
@@ -248,14 +276,15 @@ export class UyapService {
       // TODO: Gerçek UYAP SOAP çağrısı
       this.logger.log(`[STUB] Ödeme emri gönderiliyor: ${request.caseId}`);
 
-      // Simüle edilmiş başarılı yanıt
+      // Simüle edilmiş başarılı yanıt — TRANSPORT-CONTAIN-01: yerel simülasyon, gerçek gönderim DEĞİL.
       const response: UyapResponse = {
         success: true,
         requestId,
-        evkNo: `EVK-${Date.now()}`,
         cpeTraceId,
         data: {
-          message: 'Ödeme emri kuyruğa alındı (STUB)',
+          ...STUB_TRANSPORT_TRUTH,
+          stubReference: `EVK-${Date.now()}`,
+          message: 'Ödeme emri için yerel UYAP gönderim simülasyonu oluşturuldu; gerçek UYAP gönderimi yapılmadı.',
           estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         },
       };
@@ -399,13 +428,15 @@ export class UyapService {
       // TODO: Gerçek UYAP SOAP çağrısı
       this.logger.log(`[STUB] Haciz talebi gönderiliyor: ${request.caseId} - ${request.targetType}`);
 
+      // TRANSPORT-CONTAIN-01: yerel simülasyon, gerçek gönderim DEĞİL.
       const response: UyapResponse = {
         success: true,
         requestId,
         cpeTraceId,
-        evkNo: `HCZ-${Date.now()}`,
         data: {
-          message: `${request.targetType} haciz talebi kuyruğa alındı (STUB)`,
+          ...STUB_TRANSPORT_TRUTH,
+          stubReference: `HCZ-${Date.now()}`,
+          message: `${request.targetType} haczi için yerel UYAP gönderim simülasyonu oluşturuldu; gerçek UYAP gönderimi yapılmadı.`,
           targetType: request.targetType,
         },
       };
@@ -531,12 +562,14 @@ export class UyapService {
     try {
       this.logger.log(`[STUB] UYAP'a evrak gönderiliyor: ${request.documentType} - ${request.documentName}`);
 
+      // TRANSPORT-CONTAIN-01: yerel simülasyon, gerçek gönderim DEĞİL.
       const response: UyapResponse = {
         success: true,
         requestId,
-        evkNo: `DOC-${Date.now()}`,
         data: {
-          message: 'Evrak UYAP kuyruğuna alındı (STUB)',
+          ...STUB_TRANSPORT_TRUTH,
+          stubReference: `DOC-${Date.now()}`,
+          message: 'Evrak için yerel UYAP gönderim simülasyonu oluşturuldu; gerçek UYAP gönderimi yapılmadı.',
           documentType: request.documentType,
           documentName: request.documentName,
           submittedAt: new Date(),
@@ -775,7 +808,9 @@ export class UyapService {
           entityId: request.caseId,
           userId: request.userId ?? null,
           userName: request.userId ? null : 'SYSTEM',
-          description: `Haciz talebi gönderildi (${request.targetType}). Karar-anı risk: ${risk.overallLevel}.`,
+          // TRANSPORT-CONTAIN-01: yerel simülasyon; gerçek UYAP gönderimi/provider kabulü/hukuki
+          // sonuç iddia edilmez ("gönderildi" → "yerel simülasyon oluşturuldu").
+          description: `Haciz talebi için yerel simülasyon oluşturuldu (${request.targetType}); gerçek UYAP gönderimi yapılmadı. Karar-anı risk: ${risk.overallLevel}.`,
           metadata: {
             targetType: request.targetType,
             amount: request.amount,
@@ -789,6 +824,7 @@ export class UyapService {
               reasonIds: d.reasons.map((r) => r.id),
             })),
             cpeWarnings,
+            ...STUB_TRANSPORT_TRUTH,
           },
         },
       });
@@ -997,12 +1033,14 @@ export class UyapService {
         'RESMI_BELGEDE_SAHTECILIK': 'CEZA_SAHTECILIK',
       };
 
+      // TRANSPORT-CONTAIN-01: yerel simülasyon, gerçek gönderim DEĞİL.
       const response: UyapResponse = {
         success: true,
         requestId,
-        evkNo: `CEZA-${Date.now()}`,
         data: {
-          message: 'Ceza davası şikayeti UYAP kuyruğuna alındı (STUB)',
+          ...STUB_TRANSPORT_TRUTH,
+          stubReference: `CEZA-${Date.now()}`,
+          message: 'Ceza davası şikayeti için yerel UYAP gönderim simülasyonu oluşturuldu; gerçek UYAP gönderimi yapılmadı.',
           lawsuitType: request.lawsuitType,
           uyapDavaTuru: uyapCodes[request.lawsuitType] || request.uyapDavaTuru,
           courtType: request.courtType,
@@ -1023,11 +1061,13 @@ export class UyapService {
             caseId: request.caseId,
             stage: 'ENFORCEMENT',
             action: 'CRIMINAL_COMPLAINT_SUBMITTED',
-            description: `${request.lawsuitType} şikayeti UYAP'a gönderildi`,
+            // TRANSPORT-CONTAIN-01: "gönderildi" (koşulsuz) → "yerel simülasyon oluşturuldu".
+            description: `${request.lawsuitType} şikayeti için yerel UYAP gönderim simülasyonu oluşturuldu; gerçek UYAP gönderimi yapılmadı.`,
             metadata: {
               lawsuitType: request.lawsuitType,
-              evkNo: response.evkNo,
+              stubReference: response.data?.stubReference ?? null,
               courtType: request.courtType,
+              ...STUB_TRANSPORT_TRUTH,
             },
           },
         });
@@ -1110,12 +1150,14 @@ export class UyapService {
     try {
       this.logger.log(`[STUB] UYAP'a hukuk davası gönderiliyor: ${request.lawsuitType} - ${request.documentName}`);
 
+      // TRANSPORT-CONTAIN-01: yerel simülasyon, gerçek gönderim DEĞİL.
       const response: UyapResponse = {
         success: true,
         requestId,
-        evkNo: `HUKUK-${Date.now()}`,
         data: {
-          message: 'Hukuk davası dilekçesi UYAP kuyruğuna alındı (STUB)',
+          ...STUB_TRANSPORT_TRUTH,
+          stubReference: `HUKUK-${Date.now()}`,
+          message: 'Hukuk davası dilekçesi için yerel UYAP gönderim simülasyonu oluşturuldu; gerçek UYAP gönderimi yapılmadı.',
           lawsuitType: request.lawsuitType,
           uyapDavaTuru: request.uyapDavaTuru,
           courtType: request.courtType,
@@ -1134,12 +1176,14 @@ export class UyapService {
             caseId: request.caseId,
             stage: 'ENFORCEMENT',
             action: 'CIVIL_LAWSUIT_SUBMITTED',
-            description: `${request.lawsuitType} davası UYAP'a gönderildi`,
+            // TRANSPORT-CONTAIN-01: "gönderildi" (koşulsuz) → "yerel simülasyon oluşturuldu".
+            description: `${request.lawsuitType} davası için yerel UYAP gönderim simülasyonu oluşturuldu; gerçek UYAP gönderimi yapılmadı.`,
             metadata: {
               lawsuitType: request.lawsuitType,
-              evkNo: response.evkNo,
+              stubReference: response.data?.stubReference ?? null,
               courtType: request.courtType,
               claimAmount: request.claimAmount,
+              ...STUB_TRANSPORT_TRUTH,
             },
           },
         });
