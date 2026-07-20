@@ -2090,6 +2090,53 @@ Collection/shared-boundary değişikliği, replay/data access veya cutover autho
 
 ---
 
+## RCV-CLAIM-MASTER-TRIAGE-R01-GOV — Claim Formation Program Re-Anchor
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+Master-triage sonucu Claim Formation'ı ayrı canonical lane olarak yeniden sabitler:
+
+```text
+PROGRAM                     RECEIVABLE
+PHASE                       RCV-P2
+WORKSTREAM                  CLAIM FORMATION
+COMPLETED PACKAGES          P01-R01 / P02-S01 / P02-S02-I01 / P02-S03-I01 / P02-S04-I01
+RUNTIME ENFORCEMENT         PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 ONLY
+NEXT CLAIM-FORMATION TASK   RCV-CLAIM-FORM-P02-S05-I01
+S05-I01 DISPOSITION         SELECTED / NOT AUTHORIZED / RESUME CANDIDATE
+S05-I01 LOCAL PATCH         NON-CANONICAL / FROZEN
+IMPLEMENTATION AUTHORITY    NONE — SEPARATE OWNER GO REQUIRED
+```
+
+P01-R01 ve P02-S01..S04-I01 kapanışları PR #1433, #1439/#1441, #1444/#1448,
+#1454/#1457 ve #1460/#1463 ile canonicaldır. S05-I01 yalnız yeni `DueType.OTHER` create
+admission residual'ı için seçilmiş resume candidate'dır; mevcut local patch approved governance
+merge'ine ve ayrı owner GO'ya kadar çalıştırılamaz, değiştirilemez veya publish edilemez.
+
+Claim Formation phase exit; bütün writer admission guard'larının, no-default/no-fallback ve
+legacy-only new-write yasaklarının, future-interest policy sınırının, mandatory formation
+context'in, human-entry legal/provenance gate'inin, snapshot/subtype disposition'ın, legacy
+inventory kararının ve bütün governance closure'larının tamamlanmasını; runtime `PARTIAL`
+statüsünün kapanmasını gerektirir.
+
+S05-I01 dışında existing `OTHER` update/PATCH, web `kalemTuru`/nested-ilam/OCR fallback,
+precautionary `DIGER`/unknown, human direct-entry, mandatory context,
+`ClaimFormationSnapshotV1`, subtype registry/versioning ve legacy component inventory residual
+seti `OPEN / UNORDERED` kalır. Bu kayıt bunlardan hiçbirini otomatik seçmez.
+
+Boundary routing:
+
+```text
+TPA-04B / RCV-COL/*           COLLECTION
+LEGALAPPLICATION PERSISTENCE  SHARED BOUNDARY
+BALANCE / TBK100              RECEIVABLE CALCULATION
+```
+
+Bu kayıt S05-I01 implementation'ı, kod/test/schema/migration, legacy mutation, foreign task,
+Collection/shared-boundary işi, Balance/TBK100 implementation'ı veya cutover başlatmaz.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
