@@ -880,6 +880,16 @@ receipt/Collection ID, row ID, display text veya list index `bucketContextKey` g
 
 General presentation, Fee/Harç, Journal, consumer authority ve broader ADR-013 lifecycle açık
 kalır. Current Balance Engine `SHADOW_ONLY`; snapshot/hash implementation, schema amendment,
-writer, plan builder, production shadow ve cutover yetkisizdir. PR #407 hold/untouched;
+writer, plan builder, production shadow ve cutover yetkisizdir. PR #407 final disposition B ile
+closed/unmerged'dır; requirements RD01/TPA'da preserved, code discarded ve extraction/reuse yoktur;
 synthetic corpus writer/evidence/cutover için blocking; ACT-28 ve REC-AUTH-011/012 open'dır.
 Sonraki yalnız owner-gated `TPA-04B — Writer Evidence Schema Amendment Analysis`dır.
+
+### PR #407 final disposition B — Collection compliance pointer
+
+PR #407'nin eski keep-open/redesign lifecycle kararı superseded'dır. Korunan sekiz
+balance-exposure gereksiniminin canonical taşıyıcısı
+`RCV-PHASE-1-AUTHORIZATION.md §1.27`, `RECEIVABLE-GOVERNANCE.md §23.13` ve ADR-014'tür.
+Özellikle held receipt exposure reconciliation dışındadır; cost/ancillary exact-cent
+reconcile edilir ve principal+interest toplamı genel claim-remaining invariant'ı değildir.
+Bu pointer Collection runtime, writer, schema, migration veya cutover authority üretmez.

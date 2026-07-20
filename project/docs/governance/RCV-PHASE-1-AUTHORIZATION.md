@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -61,7 +61,7 @@ WS04-P03-B disposition      : SUPERSEDED / DO NOT EXECUTE
 WS04-P03 data access        : NOT AUTHORIZED
 WS04-P03 evidence execution : NOT AUTHORIZED
 Production observation      : NOT AUTHORIZED
-PR #407                     : OPEN / HOLD / DO NOT MERGE / DO NOT REBASE / DO NOT CLOSE YET
+PR #407                     : FINAL DISPOSITION B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED
 RD01 contract               : RATIFIED / CANONICAL UPON APPROVED MERGE
 XD-001 authority boundary   : RECORDED / CANONICAL UPON APPROVED MERGE
 TPA-02 physical architecture: OPTION D / RECORDED / CANONICAL UPON APPROVED MERGE
@@ -1725,7 +1725,7 @@ ONLY RECEIPT-BOUND SUBTYPE RATIFIED
 GENERAL PRESENTATION / FEE / HARC / JOURNAL / CONSUMER / LIFECYCLE OPEN
 
 BLOCKERS:
-PR #407 HOLD / UNTOUCHED
+PR #407 CLOSED UNMERGED / NOT A CODE SOURCE / REQUIREMENTS PRESERVED IN RD01
 PR #1460 ANCESTRY REVERIFIED BEFORE MERGE
 SYNTHETIC CORPUS WRITER / EVIDENCE / CUTOVER BLOCKING
 ACT-28 / REC-AUTH-011 / REC-AUTH-012 OPEN
@@ -1739,6 +1739,47 @@ IMPLEMENTATION NOT AUTHORIZED
 Bu karar yalnız receipt-bound snapshot/bucket identity kontratını canonical hale getirir;
 schema, migration, snapshot/hash implementation, plan builder, writer, feature flag,
 production shadow, replay/evidence, consumer cutover veya legacy retirement başlatmaz.
+
+### 1.27 RCV-PR407-CLOSE-B-GOV final disposition supersession
+
+```text
+PR #407 FINAL DISPOSITION:
+B — CLOSE / REQUIREMENTS PRESERVED / CODE DISCARDED
+
+SUPERSEDES:
+C — KEEP OPEN / COORDINATED REDESIGN REQUIRED
+
+MERGE / REBASE / CONFLICT RESOLUTION:
+PROHIBITED
+
+CODE EXTRACTION / REUSE:
+NO
+
+REQUIREMENT PRESERVATION:
+YES — RD01 / TPA CANONICAL CHAIN
+
+PRESERVED REQUIREMENTS:
+1. GROSS AND REMAINING PRINCIPAL / INTEREST ARE SEPARATELY VISIBLE.
+2. REMAINING PRINCIPAL IS NOT DERIVED AS TOTALDUE - TOTALINTEREST.
+3. INTEREST-ONLY APPLICATION DOES NOT REDUCE PRINCIPAL.
+4. WITH NO APPLICATION, GROSS = REMAINING IN THE SAME VALID CONTEXT.
+5. MISSING / STALE / UNVERIFIED EXPOSURE IS TYPED NULL AND FAIL-CLOSED, NEVER ZERO.
+6. RECONCILIATION INCLUDES COST / ANCILLARY AND IS EXACT-CENT.
+7. HELD RECEIPT IS OUTSIDE EXPOSURE RECONCILIATION.
+8. CLAIMREMAINING = REMAININGPRINCIPAL + REMAININGINTEREST IS NOT A GENERAL INVARIANT;
+   COST / ANCILLARY MAY ALSO REMAIN.
+
+IMPLEMENTATION / RUNTIME / SCHEMA / MIGRATION:
+NONE / NOT AUTHORIZED
+
+NEXT:
+TPA-04B REMAINS OWNER-GATED
+FUTURE DISPLAY / ENGINE WORK REQUIRES A SEPARATE TASK AND PR
+```
+
+Bu supersession yalnız PR #407'nin yaşam döngüsü ve reuse disposition'ını değiştirir.
+RD01/TPA semantiğini, ACT-28 veya REC-AUTH-011/012 durumunu, current `SHADOW_ONLY`
+authority'yi ya da cutover gate'lerini değiştirmez.
 
 ## 2. Program/Register Alignment Kaydı
 
@@ -1940,7 +1981,7 @@ COLLECTIONALLOCATION     : COMPATIBILITY PROJECTION ONLY / NO LEGAL FALLBACK
 COLLECTEDAMOUNT          : DEPRECATED NON-AUTHORITATIVE DERIVED CACHE / NO NEW CONSUMERS
 BALANCE ENGINE           : TARGET / SHADOW_ONLY / CUTOVER NOT AUTHORIZED
 ACT-28 / REC-AUTH-011/012: OPEN — TPA-04 WRITER CONTRACT CANONICAL; IMPLEMENTATION/CUTOVER/RETIREMENT REMAIN
-PR #407                  : OPEN / HOLD / DO NOT MERGE / DO NOT REBASE / DO NOT CLOSE YET
+PR #407                  : FINAL DISPOSITION B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED
 RD01 CONTRACT            : RATIFIED / CANONICAL UPON APPROVED MERGE
 XD-001                   : AUTHORITY BOUNDARY RECORDED / CANONICAL UPON APPROVED MERGE
 PHYSICAL PERSISTENCE     : OPTION D / INDEPENDENT LEGALAPPLICATIONBATCH
@@ -1953,7 +1994,7 @@ NEXT ELIGIBLE ACTION     : TPA-04B WRITER EVIDENCE SCHEMA AMENDMENT ANALYSIS —
 OWNER GO                 : REQUIRED
 OWNER / RATIFIER         : OWNER — RD01 balance-exposure contract ratification
 DECISION DATE            : 2026-07-19
-AUTHORITATIVE REF        : decision-log / RCV-P2-WS04-PR407-RD01-R01
+AUTHORITATIVE REF        : decision-log / RCV-PR407-CLOSE-B-GOV (supersedes prior PR disposition only)
 ```
 
 WS04-P03-A launch-package formal kapanışından sonra ayrı data-access veya evidence-execution
@@ -1996,7 +2037,7 @@ LEDGERALLOCATION CURRENT AS-IS / LEGACY PERSISTENCE
 COLLECTIONALLOCATION COMPATIBILITY PROJECTION ONLY / NO LEGAL FALLBACK
 CLAIMITEM.COLLECTEDAMOUNT DEPRECATED NON-AUTHORITATIVE CACHE / NO NEW CONSUMERS
 BALANCE ENGINE TARGET / SHADOW_ONLY
-PR #407 OPEN / HOLD / DO NOT MERGE / DO NOT REBASE / DO NOT CLOSE YET
+PR #407 FINAL DISPOSITION B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED
 ACT-28 / REC-AUTH-011 / REC-AUTH-012 OPEN — TPA-04 WRITER CONTRACT CANONICAL; IMPLEMENTATION/CUTOVER/RETIREMENT REMAIN
 RD01 BALANCE-EXPOSURE CONTRACT RATIFIED / CANONICAL UPON APPROVED MERGE
 XD-001 AUTHORITY BOUNDARY RECORDED / CANONICAL UPON APPROVED MERGE
