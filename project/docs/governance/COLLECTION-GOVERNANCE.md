@@ -9,8 +9,8 @@ Owner Status            : OWNER-APPROVED CANONICALIZATION (owner review tamamlan
                           canonicalization talimatı, 2026-07-13)
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Üst Otorite             : SYSTEM-CONSTITUTION (SYS-*) — bu belge system-wide normu yeniden tanımlamaz
-  Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.7 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
-  Sürüm                   : 1.5 (2026-07-20 — TPA-04 target-native dormant-writer contract)
+  Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.8 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
+  Sürüm                   : 1.6 (2026-07-20 — TPA-04A receipt-bound snapshot/bucket identity contract)
 Kanıt tabanı            : repo main @ beb7d6735fb4002ad6169604531681414a17aa0e
                           + Handoff Acceptance Report (2026-07-13)
                           + TAHSILAT_BLOKU_CANONICAL_MIMARI v1.0 (Master Analysis damıtımı, Desktop 01)
@@ -856,3 +856,30 @@ Successor sırası TPA-04A snapshot/bucket identity, TPA-04B writer-evidence sch
 TPA-04C pure plan builder, TPA-04D dormant writer, TPA-04E full reversal writer, TPA-04F
 representative replay/reconciliation evidence ve TPA-04G coordinated writer/consumer cutover
 decision'dır. Her biri `OWNER GO REQUIRED / NOT AUTHORIZED`dır.
+
+## 9.7. TPA-04A receipt-bound canonical snapshot boundary — 2026-07-20
+
+Owner, Option C — Receipt-Bound Embedded Canonical Snapshot Envelope kararını ratifiye
+etmiştir. `CanonicalReceivableApplicationSnapshotV1` yalnız target Collection receipt'ine
+bağlı LegalApplication planı için official snapshot alt türüdür. Receivable eligibility,
+bucket/context/snapshot semantiği, source-version completeness, COL/OD-03
+`applicationEffectiveDate`, RCV-CAS/v1 serialization/hash ve deterministic bucket identity
+sahibidir. RCV-COL boundary envelope'ı `LegalApplicationBatch` aggregate'inde persist eder.
+
+Collection yalnız canonical receipt lifecycle, admission/idempotency/finality gate'leri ve
+outer transaction orchestration sahibidir. Target receipt pre-application history'den hariç
+tutulur. `confirmedAt`, `valueDate` ve `externalSettledAt` legal effective-date authority
+değildir. Currency/minor-unit, evidence, staleness, duplicate/collision veya conservation
+tutarsızlığı fail-closed'dur ve HELD'e çevrilemez.
+
+Snapshot envelope'ı `tenantId`, `caseId`, `targetCollectionId`, currency/minor-unit,
+receipt amount, as-of/effective context, source/version set ve canonical buckets taşır.
+Repository-wide `minorUnit=2` varsayımı yasaktır. Snapshot ve bucket identity
+domain-separated SHA-256 + versioned canonical serialization kullanır; ClaimItem ID,
+receipt/Collection ID, row ID, display text veya list index `bucketContextKey` girdisi olamaz.
+
+General presentation, Fee/Harç, Journal, consumer authority ve broader ADR-013 lifecycle açık
+kalır. Current Balance Engine `SHADOW_ONLY`; snapshot/hash implementation, schema amendment,
+writer, plan builder, production shadow ve cutover yetkisizdir. PR #407 hold/untouched;
+synthetic corpus writer/evidence/cutover için blocking; ACT-28 ve REC-AUTH-011/012 open'dır.
+Sonraki yalnız owner-gated `TPA-04B — Writer Evidence Schema Amendment Analysis`dır.

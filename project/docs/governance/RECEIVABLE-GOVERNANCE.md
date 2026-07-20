@@ -8,7 +8,7 @@
 Belge Durumu: CANONICAL
 Belge Sınıfı: DOMAIN GOVERNANCE
 Üst Otorite: SYSTEM-CONSTITUTION
-Version: 1.7
+Version: 1.8
 Canonical Path: project/docs/governance/RECEIVABLE-GOVERNANCE.md
 Owner Status: RATIFIED — BINDING
 Repository Status: CANONICAL UPON APPROVED MERGE TO MAIN
@@ -425,7 +425,7 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 | `REC-AUTH-022` — Production receivable balance/display | Production consumer'ın yetkili legal-balance contract'ı | Current legacy owner until cutover; target canonical calculation owner after gate | `TARGET / SHADOW_ONLY / PRODUCTION_NO_GO` | `CONFIRMED / ADAPTER ADDITIVE; CUTOVER NOT AUTHORIZED` |
 | `REC-AUTH-023` — Calculation trace | Hesabı açıklayan derived evidence; financial event değildir | Explainability owner | `SHADOW_ONLY / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / NON-PERSISTED` |
 | `REC-AUTH-024` — Non-official snapshot | Request-time/non-official calculation evidence | Explainability evidence owner | `SHADOW_ONLY / DERIVED_NON_AUTHORITATIVE` | `CONFIRMED / authority=NONE; persisted=false` |
-| `REC-AUTH-025` — Official snapshot | Yalnız ratifiye lifecycle/hash/persistence contract sonrası official evidence | ADR-013 + future authority contract | `TARGET / PRODUCTION_NO_GO` | `NOT_IMPLEMENTED / OWNER DECISION REQUIRED` |
+| `REC-AUTH-025` — Official snapshot | Dar receipt-bound legal-application alt türü `CanonicalReceivableApplicationSnapshotV1`; broader presentation/Fee/Harç/Journal snapshot lifecycle ayrı açık kontrattır | RECEIVABLE subtype semantics; RCV-COL boundary embedded persistence; broader ADR-013 owner review | `TARGET / SHADOW_ONLY / PRODUCTION_NO_GO` | `NARROW SUBTYPE RATIFIED / RUNTIME NOT_IMPLEMENTED; BROADER ADR-013 OPEN` |
 | `REC-AUTH-026` — Financial posting | Muhasebe temsili; legal calculation sonucu posting authority değildir | Accounting Journal / ADR-010 | `TARGET / SHADOW-DIRECTION; STATUS PER ACCOUNTING OWNER` | `EXECUTION GATED / ADR-010 EVIDENCE REQUIRED` |
 
 ## 7.6. Presentation ve integration
@@ -732,6 +732,127 @@ Synthetic ClaimItem-grain corpus target writer için superseded legacy evidence 
 writer/evidence/cutover blocker'ıdır. PR #407 hold/untouched; ACT-28 ve REC-AUTH-011/012 open
 kalır. TPA-04A..TPA-04G sıralı successor'ların her biri ayrı owner GO gerektirir.
 
+**REC-ALLOC-016 — TPA-04A receipt-bound canonical snapshot ve bucket identity kontratıdır.**
+
+`CanonicalReceivableApplicationSnapshotV1`, tek canonical Collection receipt'i için
+Receivable-owned `LegalApplicationPlan` üretmeye özgü immutable snapshot envelope'udur.
+Snapshot owner Receivable; envelope persistence owner RCV-COL Legal Application Boundary'dir ve
+fiziksel yer `LegalApplicationBatch` aggregate'idir. General presentation, Fee/Harç, Journal,
+consumer authority ve broader snapshot lifecycle kapsam dışıdır.
+
+Eligibility şu koşulların tamamını ister:
+
+- trusted tenant, case, target Collection ve currency aynı authoritative context'te olmalıdır;
+- receipt canonical admission/idempotency/finality gate'lerini geçmiş olmalıdır;
+- target receipt, pre-application history ve bucket balance'larına dahil edilemez;
+- `applicationEffectiveDate` yalnız COL/OD-03 authority'sinden gelir;
+- `confirmedAt`, `valueDate`, `externalSettledAt` ve benzeri tarihler provenance/lifecycle'dır;
+- source/version set tam ve hash'lenebilir; engine, calculation rule, policy, rate table,
+  interpretation profile ve bucket identity version explicit'tir;
+- COST ve ANCILLARY dahil bütün canonical component'ler completeness sonucuna sahiptir;
+- historical input target-native veya ayrı owner-approved baseline'dır; tahmin/backfill yoktur;
+- bütün okuma tek transaction-consistent as-of context'ten gelir.
+
+Envelope alanları:
+
+```text
+contractVersion
+serializationVersion
+tenantId
+caseId
+targetCollectionId
+currency
+minorUnit
+receiptAmountMinor
+asOfDate
+applicationEffectiveDate
+historyBoundaryRef
+engineVersion
+calculationRuleVersion
+policyVersion
+rateTableVersion
+interpretationProfileId
+bucketIdentityVersion
+sourceVersionSet
+sourceVersionSetHash
+canonicalBuckets
+```
+
+`minorUnit` zorunlu semantik girdidir; repository genelinde `2` sabitlenemez. Writer aşaması
+currency/minor-unit uyumunu fail-closed doğrular. `snapshotHash`, `"RCV-CAS/v1\0"` domain
+separator'ı ile canonical semantic snapshot bytes üzerinde SHA-256; `snapshotRef`,
+`rcv-app-snapshot:v1:sha256:<64-lowercase-hex>` biçimindedir. Hash input'u generatedAt, actor,
+correlation, display/free text, raw bank/provider payload, IBAN veya açıklama içermez.
+
+Canonical serialization `RCV-CAS/v1` ve RFC 8785 temelli domain-restricted JSON'dır:
+UTF-8/no-BOM, Unicode NFC, locale-independent key/order, minor-unit integer string, no float,
+ISO `YYYY-MM-DD` date, explicit null/absent ve versioned list-order kuralları zorunludur.
+Application sırası `component order → priorityRank → bucketContextKey byte order`dır.
+
+`bucketContextKey = bctx:v1:sha256:<64-lowercase-hex>` ve yalnız şu canonical girdileri
+kullanır:
+
+```text
+componentType
+componentCode
+currency
+minorUnit
+legalBasisRef / version
+effective context
+interest rule / version
+priority policy / version / rank
+liability context
+```
+
+ClaimItem ID, tenantId/caseId, snapshotRef, target Collection ID, amount, sequence, actor,
+display label ve database insertion order context key için yasaktır.
+
+`bucketInstanceId = binst:v1:sha256:<64-lowercase-hex>` ve yalnız şu canonical girdileri
+kullanır:
+
+```text
+identityContractVersion
+tenantId
+caseId
+snapshotRef / snapshotHash
+asOfDate
+calculationRuleVersion
+bucketContextKey
+```
+
+Context key aynı hukuki bucket için snapshot'lar arasında stable kalabilir; instance ID snapshot
+değişince değişir. Collision, unsafe ordering, Unicode/date/minor-unit normalization veya unknown
+version fail-closed'dur.
+
+Typed fail-closed sonuç kümesi:
+
+```text
+SOURCE_VERSION_INCOMPLETE
+FORMATION_CONTEXT_INCOMPLETE
+POLICY_VERSION_MISSING
+FEE_AUTHORITY_UNRESOLVED
+BUCKET_CONTEXT_UNMAPPED
+CURRENCY_OR_MINOR_UNIT_INVALID
+HISTORY_BOUNDARY_UNAUTHORIZED
+DUPLICATE_BUCKET_CONTEXT
+SNAPSHOT_STALE
+HASH_MISMATCH
+SOURCE_CONCURRENCY_UNSAFE
+```
+
+`LegalApplicationPlan` pure Receivable output'udur; typed canonical bucket application'ları,
+`bigint` minor-unit applied amounts ve HELD remainder taşır. ClaimItem target, legacy
+`LedgerAllocation`, `CollectionAllocation` veya `collectedAmount` input'u yoktur. Plan,
+`receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` sağlanmadan üretilemez.
+
+TPA-04B yalnız şu persistence alanları ile deferred aggregate conservation enforcement'ı
+analiz edebilir: snapshot contract/serialization version, snapshotRef/hash, canonical snapshot
+payload, sourceVersionSetHash, asOfDate/applicationEffectiveDate, history boundary,
+engine/rule/policy/rate/interpretation versions, bucket identity version, minorUnit,
+componentCode, sourceLineageSetRef ve bucket before/after minor-unit state. Schema/migration,
+snapshot/hash implementation, writer, plan builder, production shadow, replay evidence,
+consumer cutover ve retirement bu ratifikasyonla yetkilendirilmez.
+
 `AVAILABLE`, authority promotion anlamına gelmez. Legacy field'lar breaking rename olmadan
 korunur; deprecation yalnız explicit cutover gate'iyle tamamlanır. Shadow projection normal
 kullanıcı primary display'ına açılamaz; restricted diagnostic olarak kalır.
@@ -951,11 +1072,14 @@ Balance Snapshot   = belirli input/policy/version ile ne sonuç çıktı?
 
 Stable invariant şudur:
 
-> ADR-013 ve ilgili authority contract ratifiye edilmeden durable official snapshot
-> oluşturulamaz veya production evidence authority'si olarak sunulamaz.
+> Yalnız TPA-04A ile ratifiye edilmiş receipt-bound
+> `CanonicalReceivableApplicationSnapshotV1`, LegalApplication plan/writer girdisi için
+> official snapshot alt türüdür. Daha geniş presentation, Fee/Harç, Journal ve consumer
+> snapshot lifecycle'ı ADR-013 altında açık kalır ve production authority üretmez.
 
-Lifecycle enum'u, hash sözleşmesi ve alan listesi bu stable gövdeyle ratifiye edilmez;
-Appendix A'da owner-gated candidate detail olarak tutulur.
+Bu dar alt türün eligibility, envelope, serialization/hash ve bucket identity sözleşmesi
+`REC-ALLOC-016` ile canonicaldır. Runtime writer, persistence amendment, production shadow,
+consumer authority ve cutover ayrıca owner-gated'dir.
 
 ---
 
@@ -1811,6 +1935,23 @@ Successor sırası:
 Tüm successor'lar `OWNER GO REQUIRED / NOT AUTHORIZED`dır. ACT-28 ve REC-AUTH-011/012
 `OPEN`; synthetic corpus writer/evidence/cutover için `BLOCKING`; PR #407
 `OPEN / HOLD / CONFLICTING / DO NOT MERGE / DO NOT REBASE` olarak korunur.
+
+## 23.12. TPA-04A canonical snapshot / bucket identity contract ratifikasyonu — 2026-07-20
+
+Owner, Option C — Receipt-Bound Embedded Canonical Snapshot Envelope kararını
+ratifiye etmiştir. `CanonicalReceivableApplicationSnapshotV1` yalnız LegalApplication
+plan/writer girdisi için official narrow subtype'tır; `REC-AUTH-025` ve `REC-ALLOC-016`
+eligibility, envelope, `RCV-CAS/v1` serialization/hash, deterministic bucket identity,
+fail-closed readiness ve pure plan sınırlarını tanımlar.
+
+ADR-013 yalnız bu dar alt tür bakımından ratifiye edilmiştir; general presentation,
+Fee/Harç, Journal, consumer authority ve broader lifecycle açık kalır. Current Balance Engine
+`SHADOW_ONLY`; production authority/writer/cutover `NOT AUTHORIZED`dır.
+
+PR #407 `HOLD / UNTOUCHED`; PR #1460 ancestry/collision merge öncesi yeniden doğrulanır;
+synthetic corpus writer/evidence/cutover için `BLOCKING`; ACT-28 ve REC-AUTH-011/012
+`OPEN` kalır. Sonraki yalnız `TPA-04B — WRITER EVIDENCE SCHEMA AMENDMENT ANALYSIS /
+OWNER GO-ANALYZE REQUIRED`; implementation `NOT AUTHORIZED`dır.
 
 ---
 

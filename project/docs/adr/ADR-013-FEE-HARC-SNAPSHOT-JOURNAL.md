@@ -294,8 +294,39 @@ Proposed read-only output:
 
 Fee implementation should remain blocked until that audit closes.
 
+## 15A. Narrow ratification — receipt-bound canonical application snapshot
+
+Owner, TPA-04A Option C kapsamında yalnız aşağıdaki dar alt türü ratifiye etmiştir:
+
+```text
+CanonicalReceivableApplicationSnapshotV1
+```
+
+Bu alt tür yalnız bir canonical Collection receipt'ine bağlı LegalApplication plan/writer
+girdisidir. Snapshot semantiği Receivable'a, embedded persistence RCV-COL Legal Application
+Boundary'ye ve fiziksel envelope `LegalApplicationBatch` aggregate'ine aittir. Current Balance
+Engine `SHADOW_ONLY`; production authority, writer ve cutover yoktur.
+
+Bu narrow ratification:
+
+- general presentation snapshot'ını,
+- Fee/Harç snapshot veya producer ownership'ini,
+- Journal snapshot/posting authority'sini,
+- consumer authority/cutover'ını,
+- broader snapshot lifecycle'ını
+
+karara bağlamaz. Bu alanlar ADR-013'ün draft/owner-review ve boundary-audit kapsamı olarak
+`OPEN` kalır. Belgenin genel `DRAFT / OWNER REVIEW REQUIRED` statüsü değişmez.
+
+Narrow subtype'ın canonical eligibility, envelope, RCV-CAS/v1 serialization/hash, deterministic
+bucket identity ve fail-closed plan kontratı `RECEIVABLE-GOVERNANCE.md` içindeki
+`REC-AUTH-025` ve `REC-ALLOC-016`, `SYSTEM-CONSTITUTION.md` içindeki `SYS-FIN-013D` ve
+ADR-014 TPA-04A kaydıyla birlikte okunur. Bu kayıt kod, test, schema, migration, snapshot
+writer, persistence amendment, feature flag veya runtime/cutover authority üretmez.
+
 ## Revision History
 
 | Date | Version | Change |
 |---|---|---|
 | 2026-07-10 | 0.1-draft | Initial owner-review draft created from merged PAC-001-A evidence gate (PR #1024, merge SHA `281befe70acbe585c2a1bb7640533e17e7c19a8d`). Docs-only; no implementation authorization. |
+| 2026-07-20 | 0.1-draft narrow amendment | TPA-04A Option C ile yalnız receipt-bound `CanonicalReceivableApplicationSnapshotV1` subtype'ı ratifiye edildi. General Fee/Harç/Journal/presentation snapshot ownership ve lifecycle DRAFT/OPEN; implementation authority NONE. |
