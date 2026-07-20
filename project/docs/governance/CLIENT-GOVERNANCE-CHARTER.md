@@ -998,3 +998,65 @@ BP-05 hiçbir yeni risk kartı AÇMAZ; yalnız mevcut kayıtlara bounded pointer
 ### 20.15 BP-05 Self-Check
 
 Bu bölüm: POL-C/POL-J kararlarını GENİŞLETMEZ veya DARALTMAZ; portal/public-intake'e yeni authority, role, rank veya predicate KAZANDIRMAZ; external action'ı FACT A'ya YÜKSELTMEZ; iki external channel'ı BİRLEŞTİRMEZ; PERSON client için acting-human identity VARSAYMAZ; field-masking/aggregate-visibility/financial-visibility/KVKK policy'si SEÇMEZ; mevcut riskler için mükerrer risk kartı AÇMAZ; BP-06'yı BAŞLATMAZ; Phase 1 blueprint'i bütünüyle CLOSED İLAN ETMEZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 21. CLIENT-P1-POL-D — Client-Facing Field Visibility / Masking Policy (OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-POL-D` karar analizinin **owner-ratified policy**'sidir (`decision-log.md` CLIENT-P1-POL-D-GOV; **SELECTED MODEL: OPTION B — VIEWER-AWARE EXPLICIT FIELD CONTRACT**). Mevcut kanonik AS-IS gerçekleri (AS-IS kod + charter §15 BP-07 + §17 BP-09 + §18 POL-C + §19 POL-J + §20 BP-05 + OFF/OD-08) ve owner kararını **konsolide eder**; yeni object-scope modeli, aggregate-visibility policy, financial-visibility policy, KVKK/retention policy, client-type-specific policy veya presenter/DTO implementasyonu ÜRETMEZ. §5, §6, §8.A, §8.B, §11–§20 metinlerini semantik olarak değiştirmez. **RAW CLIENT-FACING ENTITY RESPONSE: PROHIBITED. INTERNAL-ONLY/UNKNOWN FIELDS: OMIT. OBJECT AUTHORIZATION: UNCHANGED/POL-J. AGGREGATE VISIBILITY: OPEN/POL-F. FINANCIAL VISIBILITY: OPEN/BP-06. RETENTION/KVKK: OPEN/POL-E. IMPLEMENTATION AUTHORITY: NONE.**
+
+### 21.1 Selected Model
+
+**OPTION B — VIEWER-AWARE EXPLICIT FIELD CONTRACT.** Client-facing sunum, kaynak entity'nin (veya ORM sonucunun) doğrudan/geniş serileştirilmesi yerine, kaynak + viewer-context'e bağlı **açık bir field contract** (allowlist/projection) üzerinden yapılmalıdır. Bu bir runtime taxonomy, DTO sınıfı seçimi veya presenter implementasyonu DEĞİLDİR — canonical policy-yönü'dür.
+
+### 21.2 Raw Entity Response Prohibition
+
+**CLIENT-FACING RAW ENTITY VEYA BROAD ORM RESPONSE (select'siz `include`/tam model spread'i) YASAKTIR.** Client-facing her presentation, hangi alanların döneceğini açıkça tanımlayan bir allowlist/projection contract'a **gerektirir**. Bu hüküm mevcut AS-IS uygulamayı (bazı client-facing okuma yüzeylerinin select kullanmadan geniş fetch yaptığı) **retrospektif olarak PATCH ETMEZ** — yalnız ileri-dönük canonical policy yönünü sabitler; AS-IS delta §21.10'da record-only kaydedilmiştir.
+
+### 21.3 Field Classification Contract
+
+Üç kategori, canonical davranışıyla birlikte:
+
+- **CLIENT-SAFE** — açık allowlist'e dahil edilmiş, client-facing sunum için tasarlanmış alanlar. Yalnız bu kategori, projection contract'ında varsayılan olarak YER ALIR.
+- **INTERNAL-ONLY** — dahili personel/sistem/operasyon amaçlı alanlar. **MASKELENMEZ; TAMAMEN OMIT EDİLİR.** Masking bu kategori için yanlış mekanizmadır (maskeleme "alan var ama değeri gizli" anlamına gelir; internal-only alan client-facing contract'ta hiç YER ALMAMALIDIR).
+- **UNKNOWN / UNCLASSIFIED** — henüz sınıflandırılmamış herhangi bir alan. **VARSAYILAN: OMIT.** Yeni bir alan şemaya eklendiğinde, açıkça CLIENT-SAFE olarak allowlist'e alınana kadar client-facing contract'a otomatik GİRMEZ (fail-closed default).
+
+Bu üçlü sınıflandırma **canonical policy yönüdür**, ancak somut alan-alan (field-by-field) atama bu belgeye YAZILMAZ — yalnız §21.5'te kategorik, route/dosya/field-adı içermeyen bir AS-IS pointer kaydedilmiştir.
+
+### 21.4 Masking / Redaction Boundary
+
+**MASKING/REDACTION: CONTEXT-DEPENDENT.** Sensitive bir alan yalnız **açık bir client-facing amacı varsa** mask/redact edilerek allowlist'e girebilir (örn. bir kimlik numarasının kısmi gösterimi) — omission'ın alternatifi olarak değil, CLIENT-SAFE sınıflandırmasının bir alt-türü olarak. **MIXED-PURPOSE ALANLAR** (hem staff hem client tarafından farklı amaçlarla kullanılabilen tek bir serbest-metin alanı gibi) **doğrudan CLIENT-SAFE İLAN EDİLEMEZ** — böyle bir alan ya (a) amaç-bazlı ayrıştırılmalı (internal-only bileşen + ayrı client-facing bileşen) ya da (b) viewer-context'e bağlı koşullu allowlist'e girmelidir; hangisinin seçileceği bu kayıtla KARARLAŞTIRILMAZ, yalnız ilke sabitlenir.
+
+### 21.5 AS-IS Field-Exposure Findings (kategorik pointer; route/dosya/field-adı YOK)
+
+CLIENT-P1-POL-D read-only analizi, mevcut client-facing okuma yüzeylerinde şu kategorik AS-IS deseni doğruladı: bazı yüzeyler açık allowlist kullanıyor (CLIENT-SAFE, temiz); bazı yüzeyler select'siz geniş fetch kullanıyor ve bu yolla (a) staff'a-özel serbest-metin notların, (b) dahili sistem/otomasyon/tespit-pipeline durumunun, (c) dahili personel kimlik referanslarının, (d) sunucu-içi dosya yollarının, (e) dahili workflow/audit-trail kayıtlarının **same-client** (bkz. §21.10 — cross-tenant DEĞİL) sunuma karıştığı görüldü. Ayrıca en az bir **mixed-purpose** alan deseni (hem onay hem red durumunda aynı serbest-metin alanının koşulsuz döndüğü) tespit edildi — bu, §21.4'ün mixed-purpose hükmünün doğrudan gerekçesidir. Somut field/route/method/dosya-adı bu belgeye YAZILMAZ.
+
+### 21.6 Object Authorization Boundary
+
+**OBJECT AUTHORIZATION: UNCHANGED / POL-J.** POL-D yalnız object-access ZATEN verilmiş bir kaydın hangi alanlarının sunulacağını düzenler; hangi kaydın hangi viewer'a görünür olacağını (tenant/client/object-relation scope) DÜZENLEMEZ. `TENANT MATCH ≠ OBJECT AUTHORIZATION ≠ FIELD VISIBILITY` (POL-J §19.5) bu kayıtla AYNEN korunur. POL-D, POL-J'nin OFF/OD-08 inheritance modeline rakip veya ek bir object-scope modeli ÜRETMEZ.
+
+### 21.7 Presenter Pattern Boundary
+
+Mevcut viewer-context-aware presenter deseni (`office-approval-detail.presenter.ts` benzeri: viewer-ilişkisine bağlı seviye + masked-fields sidecar) **yalnız AS-IS ARCHITECTURAL EXEMPLAR olarak kaydedilir** — Option B'nin **zorunlu implementasyonu veya referans mimarisi olarak SEÇİLMEDİ.** Bu desenin CLIENT-facing yüzeylere uygulanıp uygulanmayacağı, hangi mekanizma ile (yeni presenter, DTO sınıfı, global interceptor, başka bir yaklaşım) uygulanacağı **implementation-zamanı kararıdır, bu blueprint kaydıyla SEÇİLMEZ.**
+
+### 21.8 Client-Type Neutrality
+
+**PERSON / COMPANY / PUBLIC client türleri için farklı bir visibility policy SEÇİLMEZ.** AS-IS analiz, client-type'ın herhangi bir field-visibility farkına neden olmadığını doğruladı; bu kayıt bunu DEĞİŞTİRMEZ, yeni bir client-type-conditional kural ÜRETMEZ.
+
+### 21.9 Open-Slot Routing (yalnız pointer; ÇÖZÜLMEZ)
+
+**AGGREGATE VISIBILITY → POL-F** (çoklu-kayıt rollup/istatistik sunumu; bu kayıt tek-kayıt field-visibility'sinden ayrıdır, hiç ele alınmadı). **FINANCIAL VISIBILITY → BP-06** (hangi finansal alanların/özetlerin portala açılacağı; POL-D yalnız mekanizma ilkesini sabitler, eşik/kapsam kararı vermez). **RETENTION/KVKK → POL-E** (BP-09'un `RETENTION/KVKK: OPEN/NOT SELECTED` dispozisyonu bu kayıtla DEĞİŞMEDİ; masking/omission bir alanın saklama/silme/anonimleştirme rejimini ETKİLEMEZ).
+
+### 21.10 AS-IS Risk Disposition (pointer; mükerrer kart YOK)
+
+Bu kaydın §21.5 bulguları, POL-C'nin (§18.7) zaten kaydettiği **case-detail field-exposure** delta'sına doğrudan bağlanır — o delta zaten "client-sunumu-amaçlanmamış alanlar; **cross-tenant NOT ESTABLISHED**, same-client field-level gap, BP-06/POL-D'ye routed" olarak kayıtlıydı; POL-D bu routing'i **tüketir ve kapatır** (artık POL-D'nin kendi disposition'ına bağlıdır), **yeni bir risk kartı AÇMAZ.** **SAME-CLIENT DISCLOSURE ≠ CROSS-TENANT EXPOSURE** — bu kayıt hiçbir yeni cross-tenant iddiası TAŞIMAZ. **REMEDIATION: NOT AUTHORIZED** (field-level select/allowlist uygulaması implementation'dır, bu blueprint kaydı bunu YETKİLENDİRMEZ).
+
+### 21.11 Canonical Non-Equations
+
+`RAW ENTITY RESPONSE ≠ CLIENT-FACING PRESENTATION` · `OBJECT ACCESS ≠ FIELD VISIBILITY` · `FIELD MASKING ≠ OBJECT AUTHORIZATION` · `MASKING ≠ DATA DELETION` · `MASKING ≠ ANONYMIZATION` · `MASKING ≠ RETENTION POLICY` · `CLIENT-SAFE PRESENTATION ≠ SOURCE-OF-TRUTH OWNERSHIP` · `DOCUMENT ACCESS ≠ ACCESS TO INTERNAL REVIEW METADATA` · `FINANCIAL VISIBILITY ≠ FINANCIAL AUTHORITY` · `SAME-CLIENT DISCLOSURE ≠ CROSS-TENANT EXPOSURE` · `MIXED-PURPOSE FIELD ≠ CLIENT-SAFE BY DEFAULT`.
+
+### 21.12 Status Precision
+
+**CLIENT-P1-POL-D: CLOSED/CANONICAL.** **MODEL: VIEWER-AWARE EXPLICIT FIELD CONTRACT.** **RAW CLIENT-FACING ENTITY RESPONSE: PROHIBITED.** **INTERNAL-ONLY / UNKNOWN FIELDS: OMIT.** **MASKING/REDACTION: CONTEXT-DEPENDENT, MIXED-PURPOSE-FIELD-EXEMPT.** **OBJECT AUTHORIZATION: UNCHANGED/POL-J.** **AGGREGATE VISIBILITY: OPEN/POL-F.** **FINANCIAL VISIBILITY: OPEN/BP-06.** **RETENTION/KVKK: OPEN/POL-E.** **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 21.13 POL-D Self-Check
+
+Bu bölüm: POL-J'nin object-scope modelini GENİŞLETMEZ veya rakip model ÜRETMEZ; POL-C'yi yeniden AÇMAZ; portal authority'yi GENİŞLETMEZ; presenter desenini zorunlu implementasyon YAPMAZ; PERSON/COMPANY/PUBLIC için farklı policy SEÇMEZ; mixed-purpose alanı doğrudan client-safe İLAN ETMEZ; same-client bulgusunu cross-tenant exploit olarak SUNMAZ; POL-F/BP-06/POL-E kararı VERMEZ; mevcut riskler için mükerrer risk kartı AÇMAZ; runtime field taxonomy/DTO/presenter seçimi YAPMAZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
