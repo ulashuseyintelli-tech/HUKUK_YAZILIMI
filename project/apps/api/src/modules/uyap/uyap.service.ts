@@ -941,17 +941,25 @@ export class UyapService {
   /**
    * İstatistikleri getir
    */
-  async getStats(): Promise<{
+  // SEC-XTEN-UYAP-STATS-01: tenantId zorunlu, authenticated principal'dan gelir (DTO/query/header
+  // DEĞİL). Eksik/boş/whitespace tenantId → fail-closed sıfır sonuç, Prisma'ya HİÇ ulaşılmaz;
+  // undefined tenant filtresinin Prisma tarafından sessizce yoksayılmasına güvenilmez. Tenant-scoped
+  // eşitlik filtresi legacy tenantId=NULL kayıtları doğal olarak dışlar (SQL NULL eşitlik semantiği).
+  async getStats(tenantId: string): Promise<{
     total: number;
     pending: number;
     success: number;
     failed: number;
   }> {
+    if (!tenantId || !tenantId.trim()) {
+      return { total: 0, pending: 0, success: 0, failed: 0 };
+    }
+
     const [total, pending, success, failed] = await Promise.all([
-      this.prisma.uyapRequestLog.count(),
-      this.prisma.uyapRequestLog.count({ where: { status: 'PENDING' } }),
-      this.prisma.uyapRequestLog.count({ where: { status: 'SUCCESS' } }),
-      this.prisma.uyapRequestLog.count({ where: { status: 'FAILED' } }),
+      this.prisma.uyapRequestLog.count({ where: { tenantId } }),
+      this.prisma.uyapRequestLog.count({ where: { tenantId, status: 'PENDING' } }),
+      this.prisma.uyapRequestLog.count({ where: { tenantId, status: 'SUCCESS' } }),
+      this.prisma.uyapRequestLog.count({ where: { tenantId, status: 'FAILED' } }),
     ]);
 
     return { total, pending, success, failed };

@@ -1003,6 +1003,34 @@ jobs:
             --testPathPattern="uyap-transport-truthfulness-containment\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # SEC-XTEN-UYAP-STATS-01: GET /uyap/status ve GET /uyap/stats cross-tenant aggregate leak
+      # containment (TRANSPORT-RISK-02) — getStats(tenantId) artık fail-closed tenant-scoped.
+      # Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyor → ayrı/açık step; dosya-varlığı
+      # pre-check + passWithNoTests YOK.
+      - name: SEC-XTEN-UYAP-STATS-01 tenant-scope tests
+        run: |
+          cd apps/api
+          test -f src/modules/uyap/__tests__/uyap-stats-tenant-scope.spec.ts || \
+            { echo "MISSING SEC-XTEN-UYAP-STATS-01 spec: uyap-stats-tenant-scope.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="uyap-stats-tenant-scope\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # SEC-XTEN-UYAP-STATS-01 disposable-DB kısmı: composite tenant-scoped where-clause'ın gerçek
+      # Postgres üzerinde doğru satırları eşleştirdiğini/reddettiğini ve legacy tenantId=NULL
+      # kayıtların dışlandığını kanıtlar. Mevcut job'ın Postgres service'i (yukarıdaki
+      # `services: postgres:`) reuse edilir — yeni container/job YOK.
+      - name: SEC-XTEN-UYAP-STATS-01 disposable-DB tenant-scope tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/uyap/__tests__/uyap-stats-tenant-scope.db-gated.integration.spec.ts || \
+            { echo "MISSING SEC-XTEN-UYAP-STATS-01 DB-gated spec: uyap-stats-tenant-scope.db-gated.integration.spec.ts"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="uyap-stats-tenant-scope\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
