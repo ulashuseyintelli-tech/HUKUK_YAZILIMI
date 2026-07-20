@@ -2216,6 +2216,29 @@ retirement bu kayıtla yetkilendirilmez.
 **NEXT ELIGIBLE ACTION: TPA-03A SCHEMA FOUNDATION — OWNER GO-IMPLEMENT REQUIRED /
 IMPLEMENTATION NOT AUTHORIZED.**
 
+**RCV-COL-TPA-03A Schema-Foundation Formal Closure Reconciliation (2026-07-20; CANONICAL
+UPON APPROVED GOVERNANCE MERGE):** TPA-03A implementation PR #1449 / squash
+`63f0b0ea2cbef3f5d106ae3dfd8be6b770b5229f`, required CI `4/4 SUCCESS` ile canonical
+main'e merge edilmiştir. Diff tam olarak `project/apps/api/prisma/schema.prisma` ve
+`project/apps/api/prisma/migrations/20260720174245_legal_application_batch_foundation/migration.sql`
+dosyalarıdır.
+
+Additive foundation; `LegalApplicationBatch`, immutable `LegalApplication` ve
+non-authoritative `ApplicationAttribution` modellerini, canonical enum'ları, tenant-safe
+composite FK + `ON DELETE RESTRICT`, `(tenantId, idempotencyKey)` replay unique sınırı,
+linked full-reversal/self-double-reversal kontrollerini, required/opaque/nonblank bucket
+identity'yi, positive minor-unit checks'i ve altı immutable UPDATE/DELETE trigger'ını kurmuştur.
+Existing rows değiştirilmemiş; backfill, runtime writer, feature flag, test, consumer veya
+legacy reader/writer değişikliği yapılmamıştır.
+
+Exact-cent conservation enforcement ve bucket-key generation writer-stage'e deferred'dır.
+ACT-28 ve REC-AUTH-011/012 `OPEN`; target authority `SHADOW_ONLY`; PR #407
+`HOLD / CONFLICTING / DO NOT MERGE / DO NOT REBASE / UNTOUCHED`; synthetic corpus schema
+foundation için blocker değil, writer/evidence/cutover için `BLOCKING`dir. Önceki implementation
+worktree'sinin unregistered fiziksel dizini Windows uzun-yol nedeniyle operational residue
+olarak korunur; recursive silme yapılmaz. **NEXT ELIGIBLE ACTION: TPA-04 —
+LEGALAPPLICATIONWRITER CONTRACT ANALYSIS — OWNER GO-ANALYZE REQUIRED / NOT AUTHORIZED.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

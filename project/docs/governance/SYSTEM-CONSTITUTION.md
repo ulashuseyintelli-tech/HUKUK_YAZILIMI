@@ -362,7 +362,7 @@ yükümlülüğünü tek başına değiştirmez. `SettlementOffer` bağlamı aç
 |---|---|---|---|---|---|
 | Creditor authority | `CaseClient` / creditor set | CLIENT/creditor relation owner | Creditor/disposition views | `Case.clientId` financial authority olamaz | `CURRENT`; DBIND evidence; değişiklik açık supersession ister |
 | Collection Receipt | Current `Collection` receipt path | COLLECTION owner | Receipt/timeline/report views | Bank mock, event veya projection receipt yazamaz | `CURRENT PARTIAL`; idempotency+provider+tenant gates |
-| Legal Allocation / TBK 100 | Target: independent `LegalApplicationBatch` aggregate + immutable `LegalApplication` bucket-effect facts; current AS-IS/legacy: `LedgerEntry`/ClaimItem-keyed `LedgerAllocation` | RECEIVABLE bucket/snapshot semantics + TBK100 policy; COLLECTION receipt lifecycle/idempotency/outer transaction orchestration; RCV-COL boundary single writer `LegalApplicationWriter`, yalnız canonical Collection transaction client ile | Non-authoritative `ApplicationAttribution`; canonical-output-derived transitional `CollectionAllocation`; frozen legacy `ClaimItem.collectedAmount`; balance projections | ClaimItem, historical `LedgerAllocation`, projection, attribution, cache, disposition veya journal target legal-application authority olamaz; bağımsız endpoint/nested transaction, dual writer/dual authority yasaktır | `TPA-03 OPTION B SCHEMA-FOUNDATION CONTRACT RATIFIED / TARGET SHADOW_ONLY / IMPLEMENTATION NOT AUTHORIZED`; exact foundation scope yalnız `schema.prisma` + tek `migration.sql`; ACT-28, REC-AUTH-011/012 OPEN; TPA-03A owner GO-IMPLEMENT required; writer/replay/cutover/retirement unauthorized |
+| Legal Allocation / TBK 100 | Target: independent `LegalApplicationBatch` aggregate + immutable `LegalApplication` bucket-effect facts; current AS-IS/legacy: `LedgerEntry`/ClaimItem-keyed `LedgerAllocation` | RECEIVABLE bucket/snapshot semantics + TBK100 policy; COLLECTION receipt lifecycle/idempotency/outer transaction orchestration; RCV-COL boundary single writer `LegalApplicationWriter`, yalnız canonical Collection transaction client ile | Non-authoritative `ApplicationAttribution`; canonical-output-derived transitional `CollectionAllocation`; frozen legacy `ClaimItem.collectedAmount`; balance projections | ClaimItem, historical `LedgerAllocation`, projection, attribution, cache, disposition veya journal target legal-application authority olamaz; bağımsız endpoint/nested transaction, dual writer/dual authority yasaktır | `TPA-03A SCHEMA FOUNDATION CLOSED / CANONICAL EVIDENCE / TARGET SHADOW_ONLY`; PR #1449 / `63f0b0ea2cbef3f5d106ae3dfd8be6b770b5229f`; exact two-file additive/writer-free/no-backfill foundation present; ACT-28, REC-AUTH-011/012 OPEN; writer/conservation enforcement/replay/cutover/retirement unauthorized |
 | Canonical receivable balance | Current legacy production views; target ADR-014 canonical core | Current owner until cutover; target calculation owner after gate | Shadow/compatibility/display DTO | Shadow adapter, frontend/report alternate calculation authority olamaz | `TARGET / SHADOW_ONLY`; ADR-014 owner-gated cutover |
 | Creditor Disposition | Current `CollectionDisposition` + lines | Approval-gated CLIENT/COLLECTION disposition owner | Client statement/disposition views | Receipt veya `clientId` entitlement/disposition authority olamaz | `CURRENT PARTIAL`; DBIND/TM3+reversal reconciliation |
 | Payout / Offset | Current payout/offset command paths | Authorized money-out/offset owner | Statement/payment views | Disposition draft veya journal line para çıkışı değildir | `CURRENT PARTIAL`; approval+idempotency+reversal gates |
@@ -547,6 +547,26 @@ ilişkisi yalnız optional lineage olabilir ve attributed amount optional'dır.
 için blocking'dir. PR #407 `HOLD / CONFLICTING / DO NOT MERGE / DO NOT REBASE` kalır.
 ACT-28 ve REC-AUTH-011/012 `OPEN`dır. TPA-03A schema foundation yalnız ayrı owner
 `GO-IMPLEMENT` ile başlayabilir; bu kayıt schema, migration veya implementation yetkisi üretmez.
+
+#### TPA-03A Schema Foundation Implementation Evidence — 2026-07-20
+
+TPA-03A, implementation PR #1449 ve squash
+`63f0b0ea2cbef3f5d106ae3dfd8be6b770b5229f` ile exact two-file kapsamda
+`CLOSED / CANONICAL EVIDENCE` durumundadır. Değişiklik yalnız
+`project/apps/api/prisma/schema.prisma` ile
+`project/apps/api/prisma/migrations/20260720174245_legal_application_batch_foundation/migration.sql`
+dosyalarını kapsar. `LegalApplicationBatch`, immutable `LegalApplication` ve
+non-authoritative `ApplicationAttribution` additive olarak kurulmuş; tenant-safe composite FK,
+`ON DELETE RESTRICT`, replay/reversal, nonblank bucket identity, positive minor-unit ve
+UPDATE/DELETE immutability kontrolleri uygulanmıştır.
+
+Foundation writer-free ve no-backfill'dir; runtime, test, consumer, legacy reader/writer veya
+historical data davranışı değiştirilmemiştir. Exact-cent conservation canonical kalır fakat
+aggregate-level enforcement ayrı owner-gated `LegalApplicationWriter` contract aşamasına
+deferred'dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; PR #407 `HOLD / UNTOUCHED`;
+`codex/rcv-ws04-p03-syn-01` writer/evidence/cutover için `BLOCKING` kalır. Bu compliance
+güncellemesi writer, replay/evidence, consumer cutover, retirement veya yeni runtime authority
+üretmez.
 
 ### `SYS-FIN-014 — Claim Formation İki Seviyeli Taxonomy Kullanır`
 
@@ -1043,6 +1063,7 @@ kanıtla güncellenir.
 | v1.4, 2026-07-19 | RCV-CLAIM-FORM-P01-R01 ClaimItem formation-admission canonicalization | İki seviyeli component taxonomy, `OTHER`/unknown/document fail-closed sınırı, accrued/future interest ayrımı, mandatory formation context, `ClaimFormationSnapshotV1`, policy-hold ve legal-review authority ratifiye edildi. Runtime enforcement, schema/migration ve implementation yetkisi üretmez. |
 | v1.5, 2026-07-19 | RCV-COL-TPA-02 target persistence architecture canonicalization | Independent `LegalApplicationBatch`, immutable `LegalApplication`, non-authoritative `ApplicationAttribution`, single writer/transaction, exact-cent, replay, reversal, tenant FK ve legacy-disposition contract'ı ratifiye edildi. Schema/migration/writer/replay/cutover/retirement yetkisi üretmez. |
 | v1.6, 2026-07-20 | RCV-COL-TPA-03 schema-foundation contract canonicalization | Option B two-file hybrid foundation; exact model/enum, positive minor-unit amount, replay/reversal, opaque bucket identity, composite tenant FK, restrictive delete ve immutability sınırları ratifiye edildi. Exact foundation patch `schema.prisma` + tek `migration.sql` ile owner-gated'dir; runtime writer/cutover yetkisi üretmez. |
+| v1.6 compliance update, 2026-07-20 | RCV-COL-TPA-03A schema-foundation closure reconciliation | PR #1449 / `63f0b0ea` exact two-file additive foundation evidence'ı kaydedildi. Schema/migration foundation CLOSED; writer/conservation enforcement/replay/cutover/retirement ve ACT-28/REC-AUTH-011/012 açık kaldı. Semantik kontrat veya Constitution version'ı değişmedi. |
 ---
 ## Son Hüküm
 
