@@ -163,17 +163,17 @@ Bu charter aşağıdaki otoriteleri **yeniden yazmadan referans verir**; çeliş
 
 ## 8. Open Owner Decisions
 
-Aşağıdaki karar aileleri AÇIK bırakılır; bu charter hiçbirini SEÇMEZ veya ratifiye etmez (her biri ayrı owner kararı gerektirir):
+Aşağıdaki karar aileleri, Phase 0 T05 ratifikasyonunda AÇIK bırakılmıştı; bu charter hiçbirini o zaman SEÇMEDİ veya ratifiye ETMEDİ (her biri ayrı owner kararı gerektirdi). **§25 (CLIENT Phase 1 — Blueprint/Policy Closure) bu listenin güncel disposition'ını kaydeder** — bu bölümün kendi tarihsel bağlamı korunur, yalnız her kalemin şimdiki durumu aşağıda işaretlenmiştir:
 
-- Portal / external-client authority
-- KVKK retention / anonymization / legal hold
-- Client-facing masking
-- Financial role / approval predicate
-- Aggregate visibility policy
-- External approval vs staff-proxy provenance — **POL-B RATIFIED: OPTION C — DUAL-TRACK PROVENANCE (bkz. §8.A)**; per-subject applicability + portal authority (POL-C) OPEN
-- Calculation cutover
-- Fee / harç producer ownership
-- Reversal / manual recovery policy
+- Portal / external-client authority — **CLOSED VIA POL-C (§18) + BP-05 (§20)**
+- KVKK retention / anonymization / legal-hold baseline — **CLOSED VIA POL-E (§24)**
+- Client-facing masking / field visibility — **CLOSED VIA POL-D (§21) + BP-06 (§23)**
+- Financial role / approval predicate — **CLOSED VIA POL-A (§8.B)**
+- Aggregate visibility policy — **CLOSED VIA POL-F (§22)**
+- External approval vs staff-proxy provenance — **PROVENANCE CORE MODEL CLOSED VIA POL-B (§8.A, OPTION C — DUAL-TRACK PROVENANCE); portal-authority alt-bileşeni CLOSED VIA POL-C (§18)**; **per-subject consent sufficiency: RESIDUAL / SEPARATE OWNER-GATED UNIT** (§25 residual register R2)
+- Calculation cutover — **ADR-014 OWNERSHIP / OUTSIDE CLIENT PHASE 1**
+- Fee / harç producer ownership — **ADR-013 OWNERSHIP / OUTSIDE CLIENT PHASE 1**
+- Reversal / manual recovery policy — **COLLECTION OWNERSHIP / OUTSIDE CLIENT PHASE 1**
 
 ## 8.A POL-B — Approval Provenance Disposition (OWNER RATIFIED)
 
@@ -1312,3 +1312,65 @@ Owner-gated önerilen sıra: (1) `CLIENT-P1-PHASE-1-CLOSURE-ANALYZE`, (2) `CLIEN
 ### 24.21 POL-E Self-Check
 
 Bu bölüm: fixed retention period SEÇMEZ; deletion trigger SEÇMEZ; anonymization method SEÇMEZ; legal-hold authority SEÇMEZ; VERBİS sonucu ÜRETMEZ; "süresiz saklama hukuken zorunlu" hükmü KURMAZ; mevcut no-delete davranışını tam compliance İLAN ETMEZ; business terminal event'i deletion trigger YAPMAZ; cross-domain retention ownership'i CLIENT'e TAŞIMAZ; financial/accounting period SEÇMEZ; database cascade'i legal policy SAYMAZ; portal visibility'yi retention ile EŞİTLEMEZ; gap register remediation'ı BAŞLATMAZ; POL-J/POL-D/POL-F/BP-06/BP-07/BP-08/BP-09'u yeniden AÇMAZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ; Phase 1'i CLOSED İLAN ETMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 25. CLIENT Phase 1 — Blueprint / Policy Closure (OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-PHASE-1-CLOSURE` karar analizinin **owner-ratified final closure kaydı**dır (`decision-log.md` CLIENT-P1-PHASE-1-CLOSURE-GOV; **SELECTED MODEL: OPTION A — PHASE 1 BLUEPRINT/POLICY CLOSED WITH RESIDUAL REGISTER**). Bu kayıt yalnız CLIENT Phase 1'in bounded blueprint, authority boundaries, lifecycle models, provenance policies, portal policy, visibility policy ve retention/data-lifecycle baseline katmanlarını kapatır. §5, §6, §8.A, §8.B, §11–§24 substantive hükümlerini DEĞİŞTİRMEZ (§8'in üst-seviye bullet listesi yalnız disposition annotation ile güncellendi, tarihsel bağlamı korunur). **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 25.1 Selected Model
+
+**OPTION A — PHASE 1 BLUEPRINT/POLICY CLOSED WITH RESIDUAL REGISTER.** Phase 1'in 20 canonical biriminin tamamı kapalı; hiçbir gerçek closure blocker bulunmadı; kalan tüm açık kalemler bir residual register'da (R2–R7) sınıflandırılıp routed edildi, hiçbiri "closure blocker" (R1) olarak işaretlenmedi.
+
+### 25.2 Closure Scope — Canonical Non-Equations
+
+`PHASE 1 CLOSED ≠ IMPLEMENTATION COMPLETE` · `PHASE 1 CLOSED ≠ SECURITY REMEDIATION COMPLETE` · `PHASE 1 CLOSED ≠ KVKK FULL COMPLIANCE CERTIFIED` · `PHASE 1 CLOSED ≠ FINANCIAL RECONCILIATION COMPLETE` · `PHASE 1 CLOSED ≠ PHASE 2 AUTHORIZED`.
+
+### 25.3 Canonical Set — 20/20
+
+CLIENT-P1-ENTRY-GOV · CLIENT-P1-XDC-01 · CLIENT-P1-POL-01-GOV · CLIENT-P1-POL-B-GOV (§8.A) · CLIENT-P1-POL-A-GOV (§8.B) · CLIENT-P1-BP-ENTRY-01-GOV · CLIENT-P1-BP-01-GOV (§11) · CLIENT-P1-BP-02-GOV (§12) · CLIENT-P1-BP-03-GOV (§13) · CLIENT-P1-BP-04-GOV (§14) · CLIENT-P1-BP-07-GOV (§15) · CLIENT-P1-BP-08-GOV (§16) · CLIENT-P1-BP-09-GOV (§17) · CLIENT-P1-POL-C-GOV (§18) · CLIENT-P1-POL-J-GOV (§19) · CLIENT-P1-BP-05-GOV (§20) · CLIENT-P1-POL-D-GOV (§21) · CLIENT-P1-POL-F-GOV (§22) · CLIENT-P1-BP-06-GOV (§23) · CLIENT-P1-POL-E-GOV (§24). **Tamamı CLOSED/CANONICAL, tekil, boşluk yok.** **Canonical conclusion:** FOUNDATIONAL BLUEPRINT: CLOSED/CANONICAL · PORTAL BLUEPRINT: CLOSED/CANONICAL · VISIBILITY BLUEPRINT: CLOSED/CANONICAL · POLICY FAMILY SET: CLOSED/CANONICAL · DATA-LIFECYCLE BASELINE: CLOSED/CANONICAL.
+
+### 25.4 Exit Gates
+
+**PASS.** Charter §8'in Phase 0 T05'te kaydedilen 9 orijinal açık karar ailesinden: 6'sı Phase 1'in kendi kapsamında tam kapandı (portal-authority/KVKK/masking/financial-predicate/aggregate-visibility/provenance-core-model); 1'inin dar bir alt-bileşeni (per-subject consent sufficiency) kasıtlı olarak ayrı, gelecekteki bir owner-gated birime routed edildi (blocker değil); 3'ü hiçbir zaman Client Phase 1'in kendi kararı değildi (calculation cutover→ADR-014, fee/harç→ADR-013, reversal/manual-recovery→COLLECTION) — bunlar §8'de artık "OUTSIDE CLIENT PHASE 1" olarak işaretlidir.
+
+### 25.5 §8 Reconciliation
+
+§8'in 9 bulleti güncel disposition ile annotate edildi (bkz. §8, üst-seviye metin); tarihsel çerçeve ("Phase 0 T05'te AÇIK bırakılmıştı") korundu, hiçbir substantive hüküm silinmedi/yeniden yazılmadı — yalnız her kalemin ŞİMDİKİ durumu eklendi.
+
+### 25.6 Residual Register (canonical, hiçbiri R1 değil)
+
+**R2 — Non-blocking policy residuals:** per-subject consent sufficiency · BP-03 subject-taxonomy refinement (yalnız gelecekte ihtiyaç doğarsa) · financial aggregate expansion beyond POL-F Option B.
+
+**R3 — Implementation/enforcement gaps:** POL-A implementation PARTIAL · POL-J object-scope enforcement PARTIAL/INCOMPLETE · POL-D field-visibility delta'ları (case detail, document review metadata, message sender ID) · POL-F presentation-accuracy delta'sı · BP-09 evidence-integrity delta'ları · ClientAddress.isCurrent behavior gap · portal JWT revocation gap · plaintext reset-token gap · portal account-history gap.
+
+**R4 — Cross-domain owner decisions:** single balance source-of-truth · balance reconciliation · Collection status-filter convention · reversal/manual recovery · accounting retention/reconciliation · calculation cutover · fee/harç producer ownership.
+
+**R5 — Legal/regulatory verification:** VERBİS applicability · law-office-specific retention periods · legal-hold authority/direct doctrine application · financial/accounting retention periods · per-record-family deletion/anonymization rules.
+
+**R6 — Phase 2 or later capability:** Phase 2 implementation plan · portal capability expansion · client-facing financial aggregates/statements · new operational aggregates · advanced subject/consent model.
+
+**R7 — Known risks/remediation candidates (dedup edilmiş, mevcut kayıtlara pointer, mükerrer kart YOK):** `STF-PRD-BOLA-001` · `STF-PRD-SCP-001` · POL-C security delta'ları · POL-D visibility delta'ları · POL-E retention/security gap'leri.
+
+### 25.7 R1 — Phase 1 Closure Blocker
+
+**R1: NONE IDENTIFIED.** Bu hüküm residual'lerin önemsiz olduğu, remediation gerektirmediği veya Phase 2'ye taşınmayacağı anlamına GELMEZ — yalnız hiçbirinin Phase 1'in KENDİ blueprint/policy canonicalization kapsamını kapatmayı ENGELLEMEDİĞİ anlamına gelir.
+
+### 25.8 Cross-Domain Boundary
+
+**CLIENT:** client relationship + client-side evidence. **OFFICE:** internal actor/approval. **RECEIVABLE:** claim authority. **COLLECTION:** receipt/payout/reversal authority. **DEBTOR:** debtor legal status. **ACCOUNTING:** accounting journal authority. **SHARED INFRASTRUCTURE:** independent business authority YOK. Phase 1 closure hiçbir cross-domain authority'yi CLIENT'e TAŞIMAZ.
+
+### 25.9 Phase 2 Entry Boundary
+
+**PHASE 2: NOT AUTHORIZED.** Phase 2 entry AYRI owner kararı gerektirir. İleride Phase 2 açılırsa: Phase 1 canonical setini consume eder; residual register'ı taşır; her implementation/remediation için ayrı authority ister; POL-J/POL-D/POL-F/POL-E sınırlarını yeniden AÇAMAZ; financial/accounting authority'yi CLIENT'e TAŞIYAMAZ. Bu kayıt Phase 2 roadmap veya task decomposition ÜRETMEZ.
+
+### 25.10 Final Program Status
+
+**CLIENT PHASE 0: CLOSED/CANONICAL.** **CLIENT PHASE 1: CLOSED/CANONICAL.** **PHASE 1 TYPE: BLUEPRINT + POLICY CLOSURE.** **IMPLEMENTATION COMPLETION: NOT CLAIMED.** **REMEDIATION COMPLETION: NOT CLAIMED.** **PHASE 2: NOT AUTHORIZED.** **POL-E-R1: RECOMMENDED/NOT STARTED.**
+
+### 25.11 Status Precision
+
+**CLIENT-P1-PHASE-1-CLOSURE: CLOSED/CANONICAL.** **CANONICAL SET: 20/20 CLOSED/CANONICAL.** **EXIT GATES: PASS.** **REAL CLOSURE BLOCKERS: NONE.** **RESIDUAL REGISTER: RECORDED/NON-BLOCKING.** **PHASE 1: CLOSED/CANONICAL.** **PHASE 2: NOT AUTHORIZED.** **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 25.12 Phase 1 Closure Self-Check
+
+Bu bölüm: implementation completion İDDİA ETMEZ; security remediation completion İDDİA ETMEZ; KVKK full compliance CERTIFY ETMEZ; financial reconciliation completion İDDİA ETMEZ; Phase 2'yi YETKİLENDİRMEZ veya roadmap ÜRETMEZ; POL-E-R1'i BAŞLATMAZ; VERBİS sonucu ÜRETMEZ; residual'leri CLOSED veya RESOLVED İLAN ETMEZ; cross-domain authority'yi CLIENT'e TAŞIMAZ; §5/§6/§8.A/§8.B/§11–§24 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT/POLICY CLOSURE ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
