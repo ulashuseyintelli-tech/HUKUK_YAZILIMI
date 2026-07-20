@@ -134,7 +134,7 @@ Owner Decision Package'da kapandı.)*
 | SLICE-02 | CANONICAL | — | OFF/OD-11 (CLOSED) | — | SELECTED | GO_IMPLEMENT_ISSUED (tamamlandı) | — | RATIFIED (tamamlandı) | T0.3.1 REV2, T0.3.3 REV2/3, T0.3.4 REV3, GO-IMPLEMENT | PR #1226, mergeSha `a3eee8b8` |
 | SLICE-03 | DEFERRED | NOT_READY | OFF/OD-18 (CLOSED) | STF-PRD-PRIV-001 | — | — | — | — | T0.3.1 REV2 | Karar kapalı; WAVE 3 Candidate Decomposition ile CANDIDATE-F1/F2/G/H'e ayrıldı (2026-07-15). bkz. §4d |
 | CANDIDATE-A | **CANONICAL** | — | OFF/OD-14 (CLOSED) | STF-PRD-SES-001 | SELECTED (2026-07-14) | **CONSUMED** (2026-07-14) | WIRING | RATIFIED (2026-07-14) | GO-ANALYZE + Contract Draft/Validation + GO-IMPLEMENT | Offboarding → User Deactivation Wiring — bkz. §4b. PR #1239, branch commit `55dc2374`, squash SHA `b0ce36db`, CI 4/4 PASS |
-| CANDIDATE-B | **DEFERRED** (2026-07-14) | NOT_READY | OFF/OD-15 (CLOSED) | STF-PRD-SES-002 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 1 decomposition) | JWT/Session Revocation Mechanism (tokenVersion) — bkz. §4b. DEFERRED gerekçesi: CANDIDATE-A ile WAVE 1'in acil offboarding riski kapatıldı; bu, geniş auth/session altyapısı gerektiren ayrı bir iş |
+| CANDIDATE-B | **PARTIALLY DELIVERED / OUT-OF-BAND** (delivered slice, 2026-07-20) — **remaining scope DEFERRED** (2026-07-14, unchanged) | NOT_READY | OFF/OD-15 (CLOSED) | STF-PRD-SES-002 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | NOT_DRAFTED | GO-ANALYZE (WAVE 1 decomposition) → owner arbitration R2 (2026-07-21) | JWT/Session Revocation Mechanism (tokenVersion) — bkz. §4b. PR #1466 (OFFICE-AUTH-P01) tokenVersion schema+JwtPayload/validateUser+tek tetikleyiciyi (parola değişimi) Contract Draft/Ratification zincirinden geçmeden teslim etti; kalan kapsam (offboarding-tetiklemeli revocation, kısa TTL, refresh-token) DEFERRED/OWNER-GATED kalır. `ownerSelectionStatus`/`contractStatus`/`implementationAuthorization` DEĞİŞMEDİ (SYS-DEC-008) |
 | CANDIDATE-C | **CANONICAL** | — | OFF/OD-05, OFF/OD-09 (ikisi de CLOSED) | STF-PRD-RBAC-001 | **SELECTED** (2026-07-14) | **CONSUMED** (2026-07-15) | **HARDENING** | **RATIFIED_WITH_RECORDED_LIMITATIONS** (2026-07-14) | GO-ANALYZE (WAVE 2 decomposition) + Owner Re-scope + Contract Draft/Validation/Ratification + GO-IMPLEMENT | Canonical Actor Capacity Read Consolidation — bkz. §4c. PR #1255, branch commit `33cc6710`, squash SHA `038dbbb9`, CI 4/4 PASS |
 | CANDIDATE-D | **PRODUCT_DECISION_REQUIRED** | NOT_READY | — | STF-PRD-RBAC-001 (dolaylı) | **NOT_A_SELECTABLE_SLICE** (2026-07-14) | NONE | — | — | GO-ANALYZE (WAVE 2 decomposition) | Ürün niyeti netleşmeden Contract açılamaz. Detay: private evidence (bkz. §4c) |
 | CANDIDATE-E | **DECOMPOSED** (2026-07-16) | NOT_READY | OFF/OD-05, OFF/OD-09, OFF/OD-08 (hepsi CLOSED) | STF-PRD-RBAC-001 | NOT_SELECTED | NONE | **NEW_SUBSYSTEM** | — | GO-ANALYZE (WAVE 2 decomposition) + CANDIDATE-E first-slice re-scope (2026-07-16) | Tam consumer-migration kapsamı (yaklaşık 20 sert yetkilendirme noktası + StaffMember izin bayrakları + auth çekirdeği) tek Contract için çok büyük/yüksek riskli bulundu (CANDIDATE-C'nin kendi re-scope emsaliyle aynı desen) → **CANDIDATE-E1** (additive-only şema temeli) SEÇİLDİ; kalan tam kapsam AYRI, HENÜZ candidate ID'si olmayan, owner-gated future scope olarak kalır. Bu satırın kendisi hiç seçilmedi. Detay: bkz. §4c |
@@ -224,6 +224,22 @@ NOT (2026-07-21, OFFICE-AUTH-P02-GOVERNANCE-ENTRY reconciliation): OFFICE-AUTH-P
   refresh-token akışı, kısa access TTL ve tam session-tazeliği mekanizması hâlâ YOKTUR.
   Yukarıdaki OWNER DISPOSITION: DEFERRED (2026-07-14) kararı DEĞİŞMEDİ ve CANDIDATE-B'nin kalan
   tam kapsamı için geçerliliğini korur. Bkz. `decision-log.md` § 2026-07-21.
+
+RECONCILIATION R2 (2026-07-21, OFFICE-AUTH-P01-RETROSPECTIVE-RECONCILIATION-R2, owner arbitration):
+Yukarıdaki NOT, "OWNER DISPOSITION: DEFERRED (2026-07-14) kararı DEĞİŞMEDİ" ifadesini
+  CANDIDATE-B'nin TAMAMI için kullanmıştı. Owner aynı gün ayrı bir arbitrasyon kararıyla bunu
+  netleştirmiştir: DEFERRED disposition yalnız TESLİM EDİLMEMİŞ kalan kapsam (offboarding-
+  tetiklemeli revocation, diğer parola-reset tetikleyicileri, kısa access-token TTL, refresh-
+  token lifecycle/revocation) için geçerliliğini korur. PR #1466 ile fiilen teslim edilen dilim
+  (`User.tokenVersion`+`passwordChangedAt` schema, `JwtPayload`/`validateUser` genişletmesi,
+  `changeOwnPassword` tetikleyicisi) CANDIDATE-B'nin genel statüsünü PARTIALLY DELIVERED /
+  OUT-OF-BAND olarak sınıflandırır (bkz. §4 Slice Register). Bu, ne CANDIDATE-B'nin tamamının
+  IMPLEMENTED/CLOSED sayılması ne de teslim edilen dilimin yok sayılıp tamamının hâlâ DEFERRED
+  gösterilmesidir — iki statü ayrı ayrı taşınır. Geriye dönük Contract ratifikasyonu YAPILMAZ;
+  `ownerSelectionStatus`/`contractStatus`/`implementationAuthorization` aşağıda DEĞİŞMEDEN kalır
+  (SYS-DEC-008). Detay: `decision-log.md` § 2026-07-21
+  OFFICE-AUTH-P01-RETROSPECTIVE-RECONCILIATION-R2; `OFFICE-RISK-REGISTER.md` STF-PRD-SES-002
+  kartı; `product-backlog.md` Closed Register OFFICE-AUTH-P01/-P01B satırları.
 ```
 
 ### 4c. WAVE 2 Candidate Detay (redakte — güvenlik containment, 2026-07-14)
@@ -914,6 +930,11 @@ NOT (2026-07-21): tokenVersion alanı ve password-change tetikleyicisi OFFICE-AU
   implementationAuthorization) CANDIDATE-B'nin TAM kapsamı (refresh-token akışı dahil) için
   değişmeden geçerlidir. Bkz. `decision-log.md` § 2026-07-21 OFFICE-AUTH-P01/OD-15/CANDIDATE-B/
   CAP-05 RECONCILIATION.
+R2 (2026-07-21, owner arbitration): yukarıdaki "değişmeden geçerlidir" ifadesi yalnız kalan/
+  teslim-edilmemiş kapsam için geçerlidir; delivered dilim §4 Slice Register'da PARTIALLY
+  DELIVERED / OUT-OF-BAND olarak ayrıca sınıflandırılmıştır (bkz. §4b RECONCILIATION R2). Dört
+  alan (status/ownerSelectionStatus/contractStatus/implementationAuthorization) burada
+  DEĞİŞMEDEN kalır.
 name (CANDIDATE-C)                        : Canonical Actor Capacity Read Consolidation
 status (CANDIDATE-C)                      : CANONICAL (2026-07-15, main @ 038dbbb9) — PHASE 1 MILESTONE 03
 implementationCategory (CANDIDATE-C)      : HARDENING

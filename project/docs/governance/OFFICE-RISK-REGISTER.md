@@ -175,8 +175,9 @@ PRIVATE EVIDENCE: RETAINED LOCALLY / NOT PUBLISHED
 CURRENT CANONICAL EVIDENCE: NOT PUBLICLY DISCLOSED / REVALIDATION REQUIRED
 TARGET CONTROL / DESIRED OUTCOME: Session/token revocation stratejisi uygulanır (OFF-INV-06)
 RELATED OFF-INV: OFF-INV-06 · RELATED OFF/OD: OFF/OD-15
-GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: NONE
-NOTES: SES-001 ile birlikte ele alınmalı.
+MITIGATION STATUS: OPEN / PARTIALLY MITIGATED (2026-07-21, owner arbitration R2) — CANDIDATE-B'nin tokenVersion schema + JwtPayload/validateUser temeli + tek tetikleyici (self-servis parola değişimi) PR #1466 ile teslim edildi; bkz. `OFFICE-DELIVERY-MANIFEST.md` §4b RECONCILIATION R2. RESIDUALS: offboarding-tetiklemeli revocation · diğer tetikleyiciler · kısa access-token TTL · refresh-token lifecycle — hepsi DEFERRED / OWNER-GATED FUTURE SCOPE. FINDING VERDICT: OPEN / NOT CLOSED — OFF-INV-06'nın hedef zinciri tam uygulanmadı. DOMAIN STATUS/EVIDENCE STATUS yukarıdaki satırlarda taşınır, bu kayıtla DEĞİŞMEDİ (ayrı otorite).
+GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: `OFFICE-AUTH-P01` (Closed Register, partial) · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: `468ddb9bd99d682b34a876ad3d7c32365c702762`
+NOTES: SES-001 ile birlikte ele alınmalı. Kısmi mitigasyon + owner arbitration R2 detayı: `decision-log.md` § 2026-07-21 OFFICE-AUTH-P01-RETROSPECTIVE-RECONCILIATION-R2 kaydı.
 
 ---
 
