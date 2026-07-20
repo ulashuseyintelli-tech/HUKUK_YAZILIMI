@@ -737,6 +737,35 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="auth-cross-tenant-email\.integration\.spec\.ts$"
         working-directory: project
+      # OFFICE-AUTH-P01: password visibility / gerçek Beni-hatırla / self-service parola
+      # değiştirme / tokenVersion session-revocation foundation. Dar allowlist dışında kalır
+      # → explicit step + test -f guard (ci-narrow-allowlist stale-test gap koruması).
+      - name: OFFICE-AUTH-P01 auth/user unit tests
+        run: |
+          cd apps/api
+          for f in src/modules/auth/__tests__/auth-tokenversion-revocation.spec.ts \
+                   src/modules/user/__tests__/change-password.service.spec.ts; do
+            test -f "$f" || { echo "MISSING OFFICE-AUTH-P01 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="(auth-tokenversion-revocation|change-password\.service)\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # OFFICE-AUTH-P01 integration: tenant-scoped self-service parola değişimi, eski JWT
+      # (tokenVersion mismatch) reddi, yeni login PASS, cross-tenant DENIED, migration
+      # default/nullable doğrulaması (gerçek Postgres, disposable service-container).
+      - name: OFFICE-AUTH-P01 change-password integration tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          for f in src/modules/user/__tests__/change-password.integration.spec.ts; do
+            test -f "$f" || { echo "MISSING OFFICE-AUTH-P01 integration spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="change-password\.integration\.spec\.ts$"
+        working-directory: project
       # MPB-028(a) PR-2: LegalDeadlineService (rejim hesaplama, snapshot immutable/supersede,
       # objectionPeriodDays validation) + TebligatService TK 21/2 correction / TK m.20 explicit-
       # override unit-static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç

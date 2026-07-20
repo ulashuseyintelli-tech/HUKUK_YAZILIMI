@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Scale } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 
 export default function LoginPage() {
   return (
@@ -18,6 +19,7 @@ function LoginForm() {
   const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   // AUTH-01: account-recovery akışından dönüşte tenantSlug prefill edilir.
   const searchParams = useSearchParams();
   const prefillTenantSlug = searchParams.get("tenantSlug") ?? "";
@@ -33,7 +35,7 @@ function LoginForm() {
     const tenantSlug = formData.get("tenantSlug") as string;
 
     try {
-      await login(email, password, tenantSlug);
+      await login(email, password, tenantSlug, rememberMe);
     } catch (err: any) {
       // API bağlantı hatası için özel mesaj
       if (err.message?.includes('API sunucusuna bağlanılamıyor') || err.message?.includes('Failed to fetch')) {
@@ -103,11 +105,11 @@ function LoginForm() {
               <label htmlFor="password" className="block text-sm font-medium mb-2">
                 Şifre
               </label>
-              <input
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 required
+                autoComplete="current-password"
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
                 placeholder="••••••••"
               />
@@ -115,7 +117,13 @@ function LoginForm() {
 
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2">
-                <input type="checkbox" className="rounded" />
+                <input
+                  type="checkbox"
+                  name="rememberMe"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded"
+                />
                 <span className="text-sm">Beni hatırla</span>
               </label>
               <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
@@ -139,12 +147,6 @@ function LoginForm() {
             </Link>
           </p>
 
-          <p className="text-center text-sm text-muted-foreground mt-2">
-            Hesabınız yok mu?{" "}
-            <Link href="/auth/register" className="text-primary hover:underline">
-              Kayıt olun
-            </Link>
-          </p>
         </div>
       </div>
     </div>

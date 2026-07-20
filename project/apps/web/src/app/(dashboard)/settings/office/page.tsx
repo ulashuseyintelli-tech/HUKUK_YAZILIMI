@@ -6,6 +6,7 @@ import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loa
 import { api } from "@/lib/api";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
 interface Lawyer { 
@@ -900,7 +901,7 @@ function OfficeSettingsInner() {
               </div>
               <div style={{ width: 200 }}>
                 <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Şifre</label>
-                <input type="password" value={smtpForm.smtpPass || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpPass: e.target.value })} placeholder="••••••••" className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+                <PasswordInput value={smtpForm.smtpPass || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpPass: e.target.value })} placeholder="••••••••" className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
               </div>
               <div style={{ width: 220 }}>
                 <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Gönderen Adı</label>
@@ -937,7 +938,7 @@ function OfficeSettingsInner() {
               </div>
               <div style={{ width: 240 }}>
                 <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">API Secret / Şifre</label>
-                <input type="password" value={smsForm.smsApiSecret} onChange={e => setSmsForm({ ...smsForm, smsApiSecret: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+                <PasswordInput value={smsForm.smsApiSecret} onChange={e => setSmsForm({ ...smsForm, smsApiSecret: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
               </div>
               <div style={{ width: 220 }}>
                 <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Gönderen Adı (Başlık)</label>

@@ -9,6 +9,9 @@ export interface JwtPayload {
   tenantId: string;
   email: string;
   role: string;
+  // OFFICE-AUTH-P01: eski (bu alandan önce imzalanmış) token'larda bu claim yok.
+  // AuthService.validateUser() bunu backward-compat için 0 kabul eder.
+  tokenVersion?: number;
 }
 
 @Injectable()
@@ -25,7 +28,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
-    const user = await this.authService.validateUser(payload.sub);
+    const user = await this.authService.validateUser(payload.sub, payload.tokenVersion);
     if (!user) {
       throw new UnauthorizedException();
     }

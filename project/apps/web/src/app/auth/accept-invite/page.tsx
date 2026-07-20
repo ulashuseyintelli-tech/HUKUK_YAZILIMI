@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Scale } from "lucide-react";
 import { api } from "@/lib/api";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 
 function AcceptInviteInner() {
   const router = useRouter();
@@ -67,17 +68,15 @@ function AcceptInviteInner() {
             <p className="text-sm text-muted-foreground">
               Hesabınızı etkinleştirmek için bir parola belirleyin.
             </p>
-            <input
+            <PasswordInput
               name="password"
-              type="password"
               placeholder="Yeni parola (en az 8 karakter)"
               autoComplete="new-password"
               required
               className="w-full border rounded px-3 py-2"
             />
-            <input
+            <PasswordInput
               name="confirm"
-              type="password"
               placeholder="Parola (tekrar)"
               autoComplete="new-password"
               required

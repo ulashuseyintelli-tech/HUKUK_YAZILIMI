@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Search, Menu, User, LogOut, X, Scale, LayoutDashboard, PlusCircle, FolderOpen, Sparkles, Users, Building2, CheckSquare, Settings, FileText, Loader2, Sun, Moon } from "lucide-react";
+import { Bell, Search, Menu, User, LogOut, X, Scale, LayoutDashboard, PlusCircle, FolderOpen, Sparkles, Users, Building2, CheckSquare, Settings, FileText, Loader2, Sun, Moon, KeyRound } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
@@ -264,6 +264,14 @@ export function Header() {
               <div className="px-4 py-2 border-b">
                 <p className="text-sm font-medium">{user?.email}</p>
               </div>
+              <Link
+                href="/settings/security"
+                onClick={() => setShowUserMenu(false)}
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-muted"
+              >
+                <KeyRound className="h-4 w-4" />
+                Parolamı Değiştir
+              </Link>
               <button
                 onClick={logout}
                 className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"

@@ -136,17 +136,30 @@ export interface ErrorLogQuery {
 class ApiClient {
   private token: string | null = null;
 
-  setToken(token: string) {
+  /**
+   * OFFICE-AUTH-P01: tek merkezi token yazım noktası. `persist=false` (Beni hatırla
+   * işaretsiz) → yalnız sessionStorage (tarayıcı kapanınca kaybolur). `persist=true`
+   * (varsayılan, Beni hatırla işaretli) → yalnız localStorage (mevcut 7 günlük JWT TTL).
+   * Aynı token iki storage'a birden yazılmaz — her yazımdan önce ikisi de temizlenir.
+   */
+  setToken(token: string, persist: boolean = true) {
     this.token = token;
     if (typeof window !== "undefined") {
-      localStorage.setItem("token", token);
+      sessionStorage.removeItem("token");
+      localStorage.removeItem("token");
+      if (persist) {
+        localStorage.setItem("token", token);
+      } else {
+        sessionStorage.setItem("token", token);
+      }
     }
   }
 
+  /** OFFICE-AUTH-P01: tek merkezi token çözümleme — hem sessionStorage hem localStorage kontrol edilir. */
   getToken(): string | null {
     if (this.token) return this.token;
     if (typeof window !== "undefined") {
-      return localStorage.getItem("token");
+      return sessionStorage.getItem("token") ?? localStorage.getItem("token");
     }
     return null;
   }
@@ -154,6 +167,7 @@ class ApiClient {
   clearToken() {
     this.token = null;
     if (typeof window !== "undefined") {
+      sessionStorage.removeItem("token");
       localStorage.removeItem("token");
     }
   }
@@ -211,7 +225,7 @@ class ApiClient {
 
   // Auth
   // AUTH-01: tenantSlug zorunlu — normal login akışı artık tenant-aware.
-  async login(email: string, password: string, tenantSlug: string) {
+  async login(email: string, password: string, tenantSlug: string, rememberMe: boolean = true) {
     const data = await this.request<{ token: string; user: any; tenant: any }>(
       "/auth/login",
       {
@@ -219,8 +233,16 @@ class ApiClient {
         body: JSON.stringify({ email, password, tenantSlug }),
       }
     );
-    this.setToken(data.token);
+    this.setToken(data.token, rememberMe);
     return data;
+  }
+
+  /** OFFICE-AUTH-P01: authenticated kullanıcının kendi parolasını değiştirmesi. */
+  async changeMyPassword(currentPassword: string, newPassword: string, newPasswordConfirmation: string) {
+    return this.request<{ ok: boolean }>("/users/me/password", {
+      method: "PATCH",
+      body: JSON.stringify({ currentPassword, newPassword, newPasswordConfirmation }),
+    });
   }
 
   // AUTH-01 — Account/Tenant Recovery: yalnız kullanıcı "kurumumu bilmiyorum" dediğinde
