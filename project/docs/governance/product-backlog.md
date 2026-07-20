@@ -2009,6 +2009,45 @@ Collection/shared-boundary değişikliği, replay/data access veya cutover autho
 
 ---
 
+## RCV-CLAIM-FORM-P02-S03-I01 — Generic Document ClaimItem Admission Guard
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+**Implementation evidence:** PR #1454 / squash
+`31f9309e87f50d0bd5717893c752ca11a1365cd6` / required CI `4/4 PASS`; targeted
+document admission `12/12`, ClaimItem regression `215/215`, Production TypeScript,
+Nest build, changed-file ESLint ve static fallback/scope/diff/secret audit `PASS`.
+Canonical ancestry doğrulanmıştır.
+
+`SOZLESME`, `BORC_SENEDI`, `KREDI` ve `DIGER` document type'larının generic
+`PRINCIPAL` ClaimItem üretmesine yol açan sessiz fallback kaldırılmıştır. Bu dört type,
+mevcut `UNSUPPORTED_COMPONENT` error contract'ıyla ilk writer/router çağrısından önce
+fail-closed reddedilir. Invalid request'te router, ClaimItem, audit, event veya outbox
+write sayısı sıfırdır. Desteklenen document mapping'leri ve `FATURA` davranışı değişmemiştir.
+
+```text
+RUNTIME ENFORCEMENT          PARTIAL — S01 + S02-I01 + S03-I01 ONLY
+SCHEMA / MIGRATION           NONE
+PUBLIC ENUM / API            UNCHANGED
+LEGACY DATA                  UNCHANGED
+COLLECTION / SHARED BOUNDARY UNCHANGED
+```
+
+P01-R01, P02-S01 ve P02-S02-I01 tarihsel contract kapanışları korunur. Generic-document
+fallback residual gap'i bu kayıtla kapanır; explicit `OTHER`, web `kalemTuru` fallback,
+human direct-entry ve formation snapshot/persistence residual gap'leri `OPEN` kalır.
+ACT-28 ve REC-AUTH-011/012 `OPEN / UNCHANGED`dır. Sonraki Claim Formation task'ı canonical
+register tarafından atanmamıştır:
+
+```text
+NEXT ELIGIBLE TASK  UNSET — OWNER GO REQUIRED
+```
+
+Bu kayıt başka implementation, yeni workstream, schema/migration, legacy mutation/backfill,
+Collection/shared-boundary değişikliği, replay/data access veya cutover authority üretmez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
