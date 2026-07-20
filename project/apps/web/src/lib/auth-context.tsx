@@ -45,7 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!loading && !user && !PUBLIC_PATHS.includes(pathname)) {
+    const isPublic = PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/portal");
+    if (!loading && !user && !isPublic) {
       router.push("/auth/login");
     }
   }, [loading, user, pathname, router]);

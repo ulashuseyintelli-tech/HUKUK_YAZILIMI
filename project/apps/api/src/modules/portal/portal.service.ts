@@ -1,24 +1,39 @@
 import { Injectable, Logger, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, ConflictException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
 import { maskEmail } from "../../common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { EmailProviderService } from "../notification/email-provider.service";
 import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-audit.util";
 import type { AuditActor } from "../client/client.service";
+import { generateRawResetToken, hashResetToken } from "./portal-reset-token.util";
 import * as bcrypt from "bcrypt";
-import * as crypto from "crypto";
 
 @Injectable()
 export class PortalService {
   private readonly logger = new Logger(PortalService.name);
 
+  // CLIENT-P2-U01: hardcoded literal yerine tek isimli sabit (test edilebilir, config-yüzeyi genişletmez).
+  private static readonly RESET_TOKEN_TTL_MS = 3600_000; // 1 saat
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
     private audit: AuditService,
-    private officeApproval: OfficeApprovalService
+    private officeApproval: OfficeApprovalService,
+    private config: ConfigService,
+    private emailProvider: EmailProviderService
   ) {}
+
+  /** user-invite.service.ts acceptUrl() ile AYNI canonical base-URL deseni. */
+  private buildResetUrl(rawToken: string): string {
+    const base = (this.config.get<string>("WEB_BASE_URL") || this.config.get<string>("APP_BASE_URL") || "")
+      .toString()
+      .replace(/\/+$/, "");
+    return `${base}/portal/reset-password?token=${encodeURIComponent(rawToken)}`;
+  }
 
   /**
    * Task 10-S (owner-locked 2026-07-02) — portal erişimi açma/kapatma mutasyon yetkisi.
@@ -329,56 +344,143 @@ export class PortalService {
   }
 
   /**
-   * Şifre sıfırlama token'ı oluştur
+   * Şifre sıfırlama token'ı oluştur ve e-posta ile gönder
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * /// - PortalController.forgotPassword() → POST /api/portal/forgot-password (LoginRateLimitGuard)
+   * /// CLIENT-P2-U01: token DB'de yalnız SHA-256 digest olarak saklanır; ham token yalnız e-posta
+   * /// linkinde. Bilinen/bilinmeyen hesap + delivery başarı/başarısızlığı AYNI generic {success:true}
+   * /// döner (account enumeration + undelivered-token farkı gözlemlenemez).
+   * /// </remarks>
    */
   async createResetToken(email: string) {
+    const normalizedEmail = email.trim().toLowerCase();
     const portalUser = await this.prisma.clientPortalUser.findFirst({
-      where: { email, isActive: true },
+      where: { email: normalizedEmail, isActive: true },
+      include: { client: { select: { tenantId: true } } },
     });
 
     if (!portalUser) {
-      // Güvenlik için hata verme
+      // Güvenlik için hata verme (account enumeration engeli)
       return { success: true };
     }
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    const resetTokenExp = new Date(Date.now() + 3600000); // 1 saat
+    const rawToken = generateRawResetToken();
+    const resetToken = hashResetToken(rawToken);
+    const resetTokenExp = new Date(Date.now() + PortalService.RESET_TOKEN_TTL_MS);
 
     await this.prisma.clientPortalUser.update({
       where: { id: portalUser.id },
       data: { resetToken, resetTokenExp },
     });
 
-    // TODO: E-posta gönder
-    this.logger.log(`Şifre sıfırlama token'ı oluşturuldu: ${maskEmail(email)}`);
+    const resetUrl = this.buildResetUrl(rawToken);
+    const ttlMinutes = Math.round(PortalService.RESET_TOKEN_TTL_MS / 60_000);
+    const emailResult = await this.emailProvider.send({
+      to: normalizedEmail,
+      subject: "Şifre sıfırlama talebi",
+      text:
+        `Şifrenizi sıfırlamak için: ${resetUrl}\n` +
+        `Bu bağlantı ${ttlMinutes} dakika içinde geçersiz olur. Bu talebi siz oluşturmadıysanız bu e-postayı yok sayabilirsiniz.`,
+      html:
+        `<p>Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:</p>` +
+        `<p><a href="${resetUrl}">Şifremi sıfırla</a></p>` +
+        `<p>Bu bağlantı ${ttlMinutes} dakika içinde geçersiz olur. Bu talebi siz oluşturmadıysanız bu e-postayı yok sayabilirsiniz.</p>`,
+    });
+
+    if (!emailResult.success) {
+      // Delivery başarısız: yalnız HÂLÂ aynı digest ise conditional temizle (kullanıcı hiç
+      // almadığı bir token'la kilitli kalmasın). Ham token hiçbir yere yazılmaz.
+      await this.prisma.clientPortalUser.updateMany({
+        where: { id: portalUser.id, resetToken },
+        data: { resetToken: null, resetTokenExp: null },
+      });
+      await this.audit.log({
+        tenantId: portalUser.client.tenantId,
+        action: "PORTAL_RESET_DELIVERY_FAILED",
+        entityType: "CLIENT_PORTAL_USER",
+        entityId: portalUser.id,
+        metadata: { errorCode: emailResult.errorCode ?? "UNKNOWN" },
+      });
+      this.logger.warn(`Şifre sıfırlama e-postası gönderilemedi: ${maskEmail(normalizedEmail)} (${emailResult.errorCode})`);
+      return { success: true };
+    }
+
+    await this.audit.log({
+      tenantId: portalUser.client.tenantId,
+      action: "PORTAL_RESET_REQUEST_CREATED",
+      entityType: "CLIENT_PORTAL_USER",
+      entityId: portalUser.id,
+    });
+
+    this.logger.log(`Şifre sıfırlama token'ı oluşturuldu: ${maskEmail(normalizedEmail)}`);
 
     return { success: true };
   }
 
   /**
-   * Şifre sıfırla
+   * Şifre sıfırla (tek kullanımlık token doğrulaması + atomic conditional update)
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * /// - PortalController.resetPassword() → POST /api/portal/reset-password (LoginRateLimitGuard)
+   * /// CLIENT-P2-U01: eski read-then-write TOCTOU deseni kaldırıldı. updateMany'nin WHERE koşulu
+   * /// (id+digest+expiry) tek atomic SQL UPDATE'tir — Postgres row-level lock eşzamanlı ikinci
+   * /// kullanımı count=0 ile serileştirir (replay/concurrent-replay reddi buradan gelir).
+   * /// </remarks>
    */
-  async resetPassword(token: string, newPassword: string) {
-    const portalUser = await this.prisma.clientPortalUser.findFirst({
-      where: {
-        resetToken: token,
-        resetTokenExp: { gt: new Date() },
-      },
+  async resetPassword(rawToken: string, newPassword: string) {
+    const digest = hashResetToken(rawToken);
+    const genericError = () => new BadRequestException("Geçersiz veya süresi dolmuş token");
+
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const candidate = await tx.clientPortalUser.findFirst({
+        where: { resetToken: digest, resetTokenExp: { gt: new Date() }, isActive: true },
+        select: { id: true, client: { select: { tenantId: true } } },
+      });
+
+      if (!candidate) {
+        return { status: "NOT_FOUND" as const };
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+
+      const updated = await tx.clientPortalUser.updateMany({
+        where: { id: candidate.id, resetToken: digest, resetTokenExp: { gt: new Date() } },
+        data: { passwordHash, resetToken: null, resetTokenExp: null },
+      });
+
+      if (updated.count !== 1) {
+        return { status: "RACE_LOST" as const, candidate };
+      }
+
+      return { status: "SUCCESS" as const, candidate };
     });
 
-    if (!portalUser) {
-      throw new BadRequestException("Geçersiz veya süresi dolmuş token");
+    if (outcome.status === "NOT_FOUND") {
+      // Tenant bilinmiyor (digest hiçbir satıra eşleşmedi) → user-invite.service.ts accept()
+      // NOT_FOUND deseniyle AYNI: sahte tenant'a AuditLog YAZILMAZ, yalnız best-effort log.
+      this.logger.warn("Geçersiz/süresi dolmuş portal reset token denemesi");
+      throw genericError();
     }
 
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    if (outcome.status === "RACE_LOST") {
+      await this.audit.log({
+        tenantId: outcome.candidate.client.tenantId,
+        action: "PORTAL_PASSWORD_RESET_REJECTED",
+        entityType: "CLIENT_PORTAL_USER",
+        entityId: outcome.candidate.id,
+        metadata: { reasonCode: "CONCURRENT_OR_EXPIRED" },
+      });
+      throw genericError();
+    }
 
-    await this.prisma.clientPortalUser.update({
-      where: { id: portalUser.id },
-      data: {
-        passwordHash,
-        resetToken: null,
-        resetTokenExp: null,
-      },
+    await this.audit.log({
+      tenantId: outcome.candidate.client.tenantId,
+      action: "PORTAL_PASSWORD_RESET_SUCCEEDED",
+      entityType: "CLIENT_PORTAL_USER",
+      entityId: outcome.candidate.id,
     });
 
     return { success: true };

@@ -21,6 +21,8 @@ import { PortalService } from "./portal.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { LoginRateLimitGuard } from "../auth/guards/login-rate-limit.guard";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 
 // Dosya yükleme ayarları
 const portalDocStorage = diskStorage({
@@ -58,7 +60,8 @@ export class PortalController {
    * POST /api/portal/forgot-password
    */
   @Post("forgot-password")
-  async forgotPassword(@Body() body: { email: string }) {
+  @UseGuards(LoginRateLimitGuard)
+  async forgotPassword(@Body() body: ForgotPasswordDto) {
     return this.portalService.createResetToken(body.email);
   }
 
@@ -67,8 +70,9 @@ export class PortalController {
    * POST /api/portal/reset-password
    */
   @Post("reset-password")
-  async resetPassword(@Body() body: { token: string; password: string }) {
-    return this.portalService.resetPassword(body.token, body.password);
+  @UseGuards(LoginRateLimitGuard)
+  async resetPassword(@Body() body: ResetPasswordDto) {
+    return this.portalService.resetPassword(body.token, body.newPassword);
   }
 
   // ==================== PROTECTED ENDPOINTS (Portal Kullanıcısı) ====================

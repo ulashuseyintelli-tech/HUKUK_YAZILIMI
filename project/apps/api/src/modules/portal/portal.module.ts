@@ -6,6 +6,7 @@ import { PortalAuthGuard } from "./portal-auth.guard";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { AuditModule } from "../audit/audit.module";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
+import { NotificationModule } from "../notification/notification.module";
 
 /**
  * H4: JWT_SECRET yoksa sessiz sabit fallback'e DÜŞMEZ — açık hata fırlatır (fail-closed).
@@ -30,6 +31,8 @@ export function portalJwtModuleOptions(): JwtModuleOptions {
     PrismaModule,
     AuditModule,
     OfficeApprovalModule,
+    // CLIENT-P2-U01: forgot-password reset-linki için EmailProviderService (NotificationModule export eder).
+    NotificationModule,
     JwtModule.registerAsync({
       useFactory: portalJwtModuleOptions,
     }),
