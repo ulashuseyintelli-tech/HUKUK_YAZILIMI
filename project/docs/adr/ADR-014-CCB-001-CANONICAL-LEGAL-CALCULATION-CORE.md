@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE; schema/migration/writer/replay/cutover/retirement and PR-11 remain unauthorized until separate owner GO
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified 2026-07-20; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE / DO NOT REBASE; TPA-03A schema/migration implementation, writer/replay/cutover/retirement and PR-11 remain unauthorized until separate owner GO
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -204,6 +204,54 @@ The `codex/rcv-ws04-p03-syn-01` disposition, PR #407 hold/conflict, deterministi
 identity, representative replay/evidence and consumer-cutover authority remain blockers.
 ACT-28 and REC-AUTH-011/012 remain open. TPA-03 schema-foundation analysis requires separate
 owner `GO-ANALYZE`; implementation authority is `NONE`.
+
+## TPA-03 Schema-Foundation Contract Decision — 2026-07-20
+
+The owner ratified Option B — Two-File Hybrid Schema Foundation. The additive foundation uses:
+
+```text
+LegalApplicationBatch
+  ├─ immutable LegalApplication[]
+  └─ non-authoritative ApplicationAttribution[]
+
+LegalApplicationBatchType:
+  APPLY | REVERSAL
+
+LegalApplicationComponentType:
+  COST | ANCILLARY | ACCRUED_INTEREST | PRINCIPAL
+```
+
+Its future implementation scope is exactly two files: `schema.prisma` and one additive
+`migration.sql`. It is writer-free, has no backfill, and cannot change runtime, consumer,
+historical-data or legacy reader/writer behavior. Tenant-safe composite foreign keys,
+`ON DELETE RESTRICT`, and UPDATE/DELETE immutability protection for batches/applications are
+mandatory.
+
+All amount fields contain positive minor-unit magnitudes; batch type carries direction.
+`receiptAmountMinor` is the canonical Collection receipt magnitude for APPLY and the linked
+original receipt magnitude for REVERSAL. The canonical conservation equation remains:
+
+```text
+receiptAmountMinor
+=
+SUM(appliedAmountMinor)
++ heldRemainderMinor
+```
+
+Foundation does not weaken this invariant, but aggregate-level enforcement is deferred to the
+separate writer-stage contract. Replay uniqueness is `(tenantId, idempotencyKey)`. Same key and
+same `commandHash` returns the existing batch with no new write; same key and different hash
+fails closed. Full reversal is a linked append-only REVERSAL batch. Self-reversal and double
+reversal are prohibited; partial reversal is not authorized.
+
+`bucketContextKey` and `bucketInstanceId` are required, opaque and nonblank. Their generation
+algorithm is a writer-stage decision. `ApplicationAttribution` remains non-authoritative; its
+ClaimItem link and attributed amount are optional lineage/provenance only.
+
+The `codex/rcv-ws04-p03-syn-01` worktree is non-blocking for TPA-03A schema foundation but
+blocking for writer/evidence/cutover. PR #407 remains `HOLD / CONFLICTING / DO NOT MERGE /
+DO NOT REBASE`. ACT-28 and REC-AUTH-011/012 remain open. TPA-03A requires separate owner
+`GO-IMPLEMENT`; this decision does not authorize schema, migration or implementation.
 
 ## Normative Rules
 
@@ -633,3 +681,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-19 | 2.6 | RD01 balance-exposure contract: stable bucket context and snapshot instance are separated; per-currency/category gross-applied-remaining amounts, LegalApplication identity, non-authoritative attribution, typed-null/fail-closed availability and restricted sub-bucket/source trace are ratified. PR #407 remains OPEN/HOLD; current authority remains SHADOW_ONLY; target persistence analysis is read-only authorized, design/implementation/cutover are not. |
 | 2026-07-19 | 2.7 | XD-001 legal-application boundary: Receivable owns bucket/policy, Collection owns receipt/execution orchestration, and target persistence is a single-writer cross-domain boundary. Physical persistence and aggregate selection remain open for TPA-02; `ApplicationBatch` is an unselected analysis alternative only. |
 | 2026-07-19 | 2.8 | TPA-02 target persistence architecture: independent `LegalApplicationBatch`, immutable bucket-effect `LegalApplication`, non-authoritative `ApplicationAttribution`, single `LegalApplicationWriter` inside the canonical Collection transaction, exact-cent conservation, key+hash replay, append-only full reversal, tenant-safe restrictive FK and legacy-disposition contract are ratified. ACT-28/REC-AUTH-011/012 remain open; implementation/cutover remain unauthorized. |
+| 2026-07-20 | 2.9 | TPA-03 Option B schema-foundation contract: exact two-file additive/writer-free/no-backfill scope, model/enum names, positive minor-unit amount semantics, tenant-safe restrictive FK, immutability, replay/reversal and opaque bucket-identity boundaries are ratified. Exact-cent enforcement remains deferred to the writer stage; TPA-03A requires separate owner GO-IMPLEMENT. |
