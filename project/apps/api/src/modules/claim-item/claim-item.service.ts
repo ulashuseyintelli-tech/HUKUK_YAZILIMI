@@ -919,7 +919,6 @@ export class ClaimItemService {
     const mapping: Record<string, string> = {
       'PRINCIPAL': 'PRINCIPAL',
       'ACCRUED_INTEREST': 'PRE_INTEREST',
-      'POST_INTEREST_RULE': 'POST_INTEREST',
       'PENALTY': 'PENALTY',
       'COMMISSION': 'EXPENSE',
       'FEE': 'FEE',
