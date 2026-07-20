@@ -1,13 +1,15 @@
 import { Injectable, Logger, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, ConflictException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
 import { maskEmail } from "../../common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { EmailProviderService } from "../notification/email-provider.service";
 import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-audit.util";
 import type { AuditActor } from "../client/client.service";
+import { generateRawInviteToken, hashInviteToken } from "../auth/invite/user-invite-token.util";
 import * as bcrypt from "bcrypt";
-import * as crypto from "crypto";
 
 @Injectable()
 export class PortalService {
@@ -17,7 +19,9 @@ export class PortalService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private audit: AuditService,
-    private officeApproval: OfficeApprovalService
+    private officeApproval: OfficeApprovalService,
+    private config: ConfigService,
+    private emailProvider: EmailProviderService
   ) {}
 
   /**
@@ -329,7 +333,12 @@ export class PortalService {
   }
 
   /**
-   * Şifre sıfırlama token'ı oluştur
+   * Şifre sıfırlama token'ı oluştur + e-posta gönder
+   *
+   * CLIENT-P2-CREDENTIAL-RECOVERY-P01: ham token yalnız e-postadaki URL'de görünür;
+   * DB'de yalnız sha256 hash saklanır (user-invite-token.util.ts deseniyle aynı).
+   * Kullanıcı bulunamasa da AYNI {success:true} döner (enumeration-safe) — e-posta
+   * gönderim sonucu bu dış cevabı ASLA değiştirmez.
    */
   async createResetToken(email: string) {
     const portalUser = await this.prisma.clientPortalUser.findFirst({
@@ -337,11 +346,12 @@ export class PortalService {
     });
 
     if (!portalUser) {
-      // Güvenlik için hata verme
+      // Güvenlik için hata verme (enumeration-safe)
       return { success: true };
     }
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
+    const rawToken = generateRawInviteToken();
+    const resetToken = hashInviteToken(rawToken);
     const resetTokenExp = new Date(Date.now() + 3600000); // 1 saat
 
     await this.prisma.clientPortalUser.update({
@@ -349,37 +359,70 @@ export class PortalService {
       data: { resetToken, resetTokenExp },
     });
 
-    // TODO: E-posta gönder
+    await this.sendResetEmail(email, rawToken);
+
     this.logger.log(`Şifre sıfırlama token'ı oluşturuldu: ${maskEmail(email)}`);
 
     return { success: true };
   }
 
+  private resetPasswordUrl(rawToken: string): string {
+    const base = (this.config.get("WEB_BASE_URL") || this.config.get("APP_BASE_URL") || "")
+      .toString()
+      .replace(/\/+$/, "");
+    return `${base}/portal/reset-password?token=${encodeURIComponent(rawToken)}`;
+  }
+
+  private async sendResetEmail(email: string, rawToken: string): Promise<void> {
+    const url = this.resetPasswordUrl(rawToken);
+    try {
+      const result = await this.emailProvider.send({
+        to: email,
+        subject: "Şifre sıfırlama talebiniz",
+        text: `Şifrenizi sıfırlamak için: ${url}\nBu bağlantı 1 saat geçerlidir ve tek kullanımlıktır.`,
+        html:
+          `<p>Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:</p>` +
+          `<p><a href="${url}">Şifremi sıfırla</a></p>` +
+          `<p>Bu bağlantı 1 saat geçerlidir ve tek kullanımlıktır.</p>`,
+      });
+      // Token/URL log'a YAZILMAZ — yalnız maskeli e-posta + errorCode (teşhis için yeterli).
+      if (!result.success) {
+        this.logger.warn(`Şifre sıfırlama e-postası gönderilemedi: ${maskEmail(email)} (${result.errorCode})`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Şifre sıfırlama e-postası gönderilirken hata: ${maskEmail(email)} (${err?.message || "unknown"})`);
+    }
+  }
+
   /**
    * Şifre sıfırla
+   *
+   * CLIENT-P2-CREDENTIAL-RECOVERY-P01: token tüketimi tek bir koşullu `updateMany` ile
+   * atomik yapılır (findFirst+update AYRI adımlar DEĞİL) — aynı token'la eşzamanlı iki
+   * istek gelirse WHERE koşulu (resetToken=hash) yalnız BİRİNİN update'i tarafından
+   * karşılanabilir; ilk update resetToken'ı null'a çektiği an ikinci update'in WHERE'i
+   * artık hiçbir satırla eşleşmez (0 satır → ret). user-invite.service.ts'teki
+   * race-safe `updateMany(...userId:null)` deseniyle aynı ilke.
    */
   async resetPassword(token: string, newPassword: string) {
-    const portalUser = await this.prisma.clientPortalUser.findFirst({
-      where: {
-        resetToken: token,
-        resetTokenExp: { gt: new Date() },
-      },
-    });
-
-    if (!portalUser) {
-      throw new BadRequestException("Geçersiz veya süresi dolmuş token");
-    }
-
+    const tokenHash = hashInviteToken(token);
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
-    await this.prisma.clientPortalUser.update({
-      where: { id: portalUser.id },
+    const result = await this.prisma.clientPortalUser.updateMany({
+      where: {
+        resetToken: tokenHash,
+        resetTokenExp: { gt: new Date() },
+      },
       data: {
         passwordHash,
         resetToken: null,
         resetTokenExp: null,
       },
     });
+
+    if (result.count === 0) {
+      throw new BadRequestException("Geçersiz veya süresi dolmuş token");
+    }
 
     return { success: true };
   }
