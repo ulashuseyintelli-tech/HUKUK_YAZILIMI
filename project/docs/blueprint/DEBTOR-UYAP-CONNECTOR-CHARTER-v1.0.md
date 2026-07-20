@@ -380,7 +380,7 @@ CI'ye eklenen yeni exact test step'inin nedeni: mevcut dar allowlist yeni spec'i
 
 ```text
 TRANSPORT-RISK-02    : CLOSED — bkz. §15.6 (SEC-XTEN-UYAP-STATS-01)
-TRANSPORT-RISK-07    : POST /uyap/retry-failed global trigger / operator-authority gap — OPEN (gelecekteki birim: UYAP-RETRY-AUTH-01)
+TRANSPORT-RISK-07    : ACTIVE EXPOSURE CLOSED, SAFE RETRY CONTRACT OPEN — bkz. §15.7 (UYAP-RETRY-CONTAIN-01)
 TRANSPORT-RISK-05    : UyapRequestLog.status local-stub-success ile provider-confirmed'i çökertiyor — OPEN, EVIDENCE-01'e devredilir
 Lawsuit CPE gates    : ABSENT / OPEN
 verifyUserEsignature : always-true dead stub — OPEN
@@ -424,6 +424,82 @@ Write side effect                : 0
 Real network call                : 0
 ```
 Disposable-DB fixture (Tenant A + Tenant B + legacy `tenantId=NULL`) ile doğrulandı: A, B'yi göremez; B, A'yı göremez; NULL-owned satırlar hiçbirinde görünmez; status alt-toplamları (`pending`/`success`/`failed`) tenant-local kalır. CI'ye eklenen iki yeni exact test step'inin nedeni: mevcut dar allowlist yeni spec'leri aksi hâlde hiç çalıştırmazdı.
+
+### 15.7 UYAP-RETRY-CONTAIN-01 Closure (TRANSPORT-RISK-07 — Active Exposure Contained)
+
+```text
+UYAP-RETRY-AUTH-01 (GO-ANALYZE, owner-corrected)      : CLOSED / OWNER-CORRECTED CANONICAL ANALYSIS BASIS
+UYAP-RETRY-CONTAIN-01 (GO-IMPLEMENT + IF GO-COMPLETE) : CLOSED / CANONICAL
+OWNER SELECTED MODEL                                   : MODEL D — HARD DISABLE UNTIL RETRY CONTRACT
+IMPLEMENTATION PR                                      : #1475
+IMPLEMENTATION SHA                                     : 0b8d05479ed1ca58c4039da70aec3434b34b7769
+CI                                                      : 4/4 SUCCESS
+REAL TRANSPORT                                         : 0
+UYAP CUTOVER                                           : HARD HOLD
+```
+
+**Owner-corrected analysis precision** (UYAP-RETRY-AUTH-01 GO-ANALYZE raporunda owner tarafından düzeltilen iki teknik bulgu, canonical kayda bu haliyle geçirilir):
+
+*POA:* `sendPaymentOrder` ve `pushHacizRequest`'te vekâlet kontrolü MEVCUTTUR, ancak KOŞULLUDUR — yalnız `skipPoaCheck=false` VE ilgili müvekkil/alacaklı kimliği VE `lawyerId` VE `tenantId` alanlarının TAMAMI doluyken çalışır; bu alanlardan biri eksikse kontrol sessizce atlanır (missing-input bypass riski). "POA kontrolü hiç yoktur" ifadesi YANLIŞTIR ve canonicalize edilmez.
+
+*CPE:* `sendPaymentOrder` hem CPE engine yokluğunda hem CPE teknik hatasında fail-closed'tır. `pushHacizRequest` CPE teknik hatasında fail-closed'tır, ANCAK engine hiç enjekte edilmemişse (`this.casePolicyEngine` falsy) CPE bloğunun tamamı atlanır — bu bir GATE SKIPPED / OPEN GAP'tir, fail-closed DEĞİLDİR.
+
+*Hukukî kaynak sınırı:* UYAP Avukat Portal kullanım sözleşmesi ≠ BİGM system-to-system connector sözleşmesi (ayrı, henüz mevcut olmayan bir yetkilendirme kanalı). KVKK'nın 20/05/2021 tarihli 2021/511-512-513 sayılı kararı retry authority'si ÜRETMEZ — yalnız vekâletsiz dosya incelemesinin (Avukatlık Kanunu m.46 + İİK m.85) hukuka uygunluğunu değerlendirir. "İnceleme ile işlem farklı yetki eşiği taşımalıdır" sonucu owner/mimari çıkarımı olarak kaydedilir; mevzuatın doğrudan hükmü olarak SUNULMAZ.
+
+**Previous behavior:** `POST /uyap/retry-failed` yalnız sınıf-seviyesi `JwtAuthGuard` taşıyordu; caller tenant/user/role hiç propagate edilmiyordu; `retryFailedRequests()` TÜM tenant'ların `FAILED` `UyapRequestLog` kayıtları arasından global (tenant-filtresiz) seçim yapıyor, operatör yetkisi/kimlik doğrulaması olmadan `sendPaymentOrder`/`pushHacizRequest`'i yeniden tetikleyebiliyordu.
+
+**Closed behavior:** `retryFailed()` artık `UyapService.retryFailedRequests()`'e hiç ulaşmadan `503 Service Unavailable` (`UYAP_RETRY_TEMPORARILY_UNAVAILABLE`) fırlatır; bu davranış authenticated rolden (ADMIN/USER/VIEWER) bağımsızdır — hiçbir rol retry'yi tetikleyemez. `retryFailedRequests()`'in kendisi DEĞİŞMEMİŞTİR; yalnız production route'tan erişilemez hâle getirilmiştir.
+
+Evidence:
+```text
+New containment tests             : 11/11 PASS
+Full bounded UYAP regression      : 268/271 PASS, 3 SKIP, 0 FAIL
+TRANSPORT-CONTAIN-01 regression   : PASS
+SEC-XTEN-UYAP-STATS-01 regression : PASS
+New changed-file TS errors        : 0
+Changed-file ESLint               : PASS
+git diff --check                  : PASS
+Required CI                       : 4/4 SUCCESS
+Schema/migration                  : 0
+UyapService.retryFailedRequests() call count from route : 0
+Prisma read/write from route      : 0
+Real network call                 : 0
+uyap.service.ts                   : UNCHANGED
+```
+
+**Risk disposition** (precise — "TRANSPORT-RISK-07 CLOSED" tek başına YAZILMAZ, retry capability'nin tamamlandığı izlenimini doğurur):
+
+```text
+TRANSPORT-RISK-07         : ACTIVE PRODUCTION EXPOSURE CLOSED / CONTAINED
+RETRY ENDPOINT             : DISABLED
+SAFE RETRY CAPABILITY     : NOT IMPLEMENTED
+RETRY AUTHORITY CONTRACT  : OPEN
+TENANT-SCOPED RETRY       : NOT STARTED
+LAWYER/OPERATOR AUTHORITY : NOT SELECTED
+ATTEMPT/EVIDENCE MODEL    : NOT IMPLEMENTED
+IDEMPOTENCY / OUTCOME_UNKNOWN CONTRACT : NOT IMPLEMENTED
+```
+
+**Açık residual register (bu birimle kapatılmamış):**
+
+```text
+UYAP-RETRY-AUTH-02        : operator/lawyer/manager authority contract — NOT STARTED
+Lawyer ↔ JWT identity bridge : OPEN
+POA                       : conditional gate / missing-input bypass riski — OPEN
+Haciz CPE absence         : OPEN (engine-absent gate-skip gap)
+TRANSPORT-RISK-05         : status collapse — OPEN, EVIDENCE-01'e devredilir
+TRANSPORT-RISK-01         : checkConnection hardcoded true — OPEN
+Retry state model         : OPEN
+Attempt lineage           : OPEN
+OUTCOME_UNKNOWN           : NOT REPRESENTED
+Provider idempotency      : UNKNOWN
+Provider status query     : NOT IMPLEMENTED
+UYAP-MASTER-SYNTHESIS-01  : NOT STARTED
+EVIDENCE-01               : NOT STARTED
+CREDENTIAL-CUSTODY-01     : NOT STARTED
+TRANSPORT-PORT-01         : NOT STARTED
+SIMULATOR-01              : NOT STARTED
+```
 
 ## Owner Approval Record
 
