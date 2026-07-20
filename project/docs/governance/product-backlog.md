@@ -2380,6 +2380,26 @@ traceable'dır. Bu closure yeni backlog/implementation kimliği açmaz; runtime,
 migration, display, writer, consumer veya cutover authority üretmez. ACT-28, REC-AUTH-011/012,
 CAN-CUT-02 ve TPA-04B+ açık ve ayrı owner-gated kalır.
 
+**RCV-COL-TPA-04B Writer Evidence Schema Amendment Contract Canonicalization (2026-07-20;
+CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner, Two-File Required-Evidence Schema
+Amendment kontratını ratifiye etmiştir. Gelecekteki exact patch yalnız
+`project/apps/api/prisma/schema.prisma` ve tek yeni `migration.sql` dosyasını kapsar.
+`LegalApplicationBatch` snapshot/version/effective-history kanıtını; `LegalApplication`
+component/lineage/bucket-before-after kanıtını required, default-free ve no-backfill alanlarla
+taşır. `ApplicationAttribution` unchanged/non-authoritative kalır. Canonical payload exact bytes
+için `TEXT`tir; JSONB yasaktır. Foundation tabloları lock sonrasında doluysa migration hard-stop
+verir; nullable transition veya historical inference yoktur.
+
+TPA-04A identity/format contract'ı, aynı batch içinde bucket context/instance uniqueness,
+`receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor`, APPLY/REVERSAL bucket
+before-after arithmetic ve tamamen HELD batch DB invariant'ıdır. Canonical serialization/hash
+recomputation writer-stage'e; full-reversal exact-inverse TPA-04E'ye deferred'dır. Bu kayıt
+runtime, test, schema/migration implementation, writer, replay, evidence execution, consumer
+cutover veya legacy retirement yetkisi üretmez. ACT-28 ve REC-AUTH-011/012 `OPEN`; PR #407
+`CLOSED / UNMERGED / NO FURTHER ACTION`; synthetic corpus schema amendment için non-blocking,
+writer/evidence/cutover için blocking kalır. **NEXT ELIGIBLE ACTION: TPA-04B-ENTRY — OWNER
+GO-VERIFY REQUIRED / IMPLEMENTATION NOT AUTHORIZED.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

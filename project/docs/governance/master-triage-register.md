@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-20 (RCV-PR407-CLOSE-B-GOV final disposition supersession)
+**Son güncelleme:** 2026-07-20 (RCV-COL / TPA-04B writer-evidence schema-amendment contract)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -27,7 +27,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 |---|---|---|---|---|
 | **ACT-24** | UI | Approval Inbox'a CLIENT_PAYOUT_POST summary projector eklenmesi | Low | 3. batch (PAYOUT-CPB-01), henüz ele alınmadı |
 | **ACT-25** | Accounting | ClientPayoutService.create() dead-code kararı + test suite finalize()'a taşıma | Low | 3. batch (PAYOUT-CPB-02), henüz ele alınmadı |
-| **ACT-28** | RCV-COL Cross-Domain | Receipt, legal application, attribution, compatibility projection, derived cache ve legal balance fact-authority reconciliation | Orta-Yüksek | **OPEN / XD-001 + TPA-02 + TPA-03/03A + TPA-04 + TPA-04A CANONICAL / IMPLEMENTATION + EVIDENCE + CUTOVER + RETIREMENT REMAIN.** ClaimItem legal source/input/lineage'dır, application target değildir. Receivable official snapshot/bucket/TBK100/target-native plan; Collection receipt lifecycle ve outer transaction orchestration sahibidir. TPA-04A Option C, receipt-bound `CanonicalReceivableApplicationSnapshotV1` exact eligibility/envelope, RCV-CAS/v1 identity, deterministic bucket key ve fail-closed pure-plan contract'ını ratifiye eder. Balance Engine SHADOW_ONLY; DB conservation/evidence amendment, hash/snapshot runtime, plan builder ve writer yoktur. Legacy surfaces frozen/transitional; synthetic corpus writer/evidence/cutover blocker; PR #407 final disposition B ile CLOSED/UNMERGED, requirements preserved, code discarded. REC-AUTH-011/012 OPEN. Next: `TPA-04B — Writer Evidence Schema Amendment Analysis` — OWNER GO-ANALYZE REQUIRED / IMPLEMENTATION NOT AUTHORIZED. |
+| **ACT-28** | RCV-COL Cross-Domain | Receipt, legal application, attribution, compatibility projection, derived cache ve legal balance fact-authority reconciliation | Orta-Yüksek | **OPEN / XD-001 + TPA-02 + TPA-03/03A + TPA-04 + TPA-04A + TPA-04B CONTRACT CANONICAL / IMPLEMENTATION + EVIDENCE + CUTOVER + RETIREMENT REMAIN.** ClaimItem legal source/input/lineage'dır, application target değildir. Receivable official snapshot/bucket/TBK100/target-native plan; Collection receipt lifecycle ve outer transaction orchestration sahibidir. TPA-04B required/default-free/no-backfill snapshot ve bucket evidence, canonical TEXT payload, per-batch identity uniqueness, plus conservation ve APPLY/REVERSAL arithmetic DB contract'ını ratifiye eder; schema implementation henüz yoktur. Balance Engine SHADOW_ONLY; hash/snapshot runtime, plan builder ve writer yoktur. Legacy surfaces frozen/transitional; synthetic corpus schema amendment için non-blocking, writer/evidence/cutover için blocking; PR #407 CLOSED/UNMERGED/NO FURTHER ACTION. REC-AUTH-011/012 OPEN. Next: `TPA-04B-ENTRY` — OWNER GO-VERIFY REQUIRED / IMPLEMENTATION NOT AUTHORIZED. |
 
 ### Owner-Gated / Future / Decision-Split
 
