@@ -137,6 +137,106 @@ describe('RCV-CLAIM-FORM-P02-S01/S02-I01 Rule Engine formation admission', () =>
     expectNoWrites(surface);
   });
 
+  it('rejects an explicit OTHER before writing a valid preceding component', async () => {
+    const surface = makeService([
+      { type: 'PRINCIPAL', amount: 100, required: true, label: 'Asıl alacak' },
+      { type: 'OTHER', amount: 10, required: true, label: 'Diğer' },
+    ]);
+
+    await expectUnsupportedComponent(
+      surface.service.generateFromRuleEngine(
+        'tenant-1',
+        'user-1',
+        'case-1',
+        'SUB',
+        {},
+        {},
+      ),
+    );
+
+    expectNoWrites(surface);
+  });
+
+  it.each([
+    ['required', true, 10],
+    ['optional and amountless', false, undefined],
+  ])('rejects %s explicit OTHER with zero writes', async (_name, required, amount) => {
+    const surface = makeService([
+      { type: 'OTHER', amount, required, label: 'Diğer' },
+    ]);
+
+    await expectUnsupportedComponent(
+      surface.service.generateFromRuleEngine(
+        'tenant-1',
+        'user-1',
+        'case-1',
+        'SUB',
+        {},
+        {},
+      ),
+    );
+
+    expectNoWrites(surface);
+  });
+
+  it('returns the same unsupported result for repeated explicit OTHER admission', async () => {
+    const surface = makeService([
+      { type: 'OTHER', amount: 10, required: true, label: 'Diğer' },
+    ]);
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expectUnsupportedComponent(
+        surface.service.generateFromRuleEngine(
+          'tenant-1',
+          'user-1',
+          'case-1',
+          'SUB',
+          {},
+          {},
+        ),
+      );
+    }
+
+    expectNoWrites(surface);
+  });
+
+  it('rejects all active explicit OTHER templates before writes', async () => {
+    const rules = yaml.load(
+      readFileSync(
+        join(__dirname, '..', '..', '..', 'config', 'claim-engine-rules.yaml'),
+        'utf8',
+      ),
+    ) as {
+      claim_item_sets: {
+        templates: Record<string, { items: any[] }>;
+      };
+    };
+    const activeOtherTemplates = Object.entries(rules.claim_item_sets.templates)
+      .filter(([, template]) => template.items.some((item) => item.type === 'OTHER'));
+
+    expect(activeOtherTemplates.map(([subCategory]) => subCategory)).toEqual([
+      'TAHLIYE_KIRA',
+      'ILAMLI_DOVIZ',
+    ]);
+
+    for (const [subCategory, template] of activeOtherTemplates) {
+      const surface = makeService(template.items);
+
+      await expectUnsupportedComponent(
+        surface.service.generateFromRuleEngine(
+          'tenant-1',
+          'user-1',
+          'case-1',
+          subCategory,
+          {},
+          {},
+        ),
+      );
+
+      expectNoWrites(surface);
+    }
+  });
+
   it('rejects a required POST_INTEREST_RULE with zero writes', async () => {
     const surface = makeService([
       {
@@ -273,7 +373,6 @@ describe('RCV-CLAIM-FORM-P02-S01/S02-I01 Rule Engine formation admission', () =>
     ['COMMISSION', 'EXPENSE'],
     ['FEE', 'FEE'],
     ['ATTORNEY_FEE', 'ATTORNEY_FEE'],
-    ['OTHER', 'OTHER'],
   ])('preserves supported mapping %s -> %s', async (type, expectedItemType) => {
     const { service, writerRouter } = makeService([
       { type, amount: 10, required: true, label: type },
@@ -298,6 +397,7 @@ describe('RCV-CLAIM-FORM-P02-S01/S02-I01 Rule Engine formation admission', () =>
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     expect(method).not.toMatch(/(?:\|\||\?\?)\s*['"]OTHER['"]/);
+    expect(method).not.toMatch(/['"]OTHER['"]\s*:\s*['"]OTHER['"]/);
     expect(method).not.toMatch(
       /['"]POST_INTEREST_RULE['"]\s*:\s*['"]POST_INTEREST['"]/,
     );
