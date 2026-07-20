@@ -702,7 +702,7 @@ Tamamen HELD batch geçerlidir. APPLY satırında
 exact-inverse eşleşmesi TPA-04E'ye deferred'dır. DB JSON syntax/unique-key ve format/arithmetic
 kontrollerini yapar; canonical serialization ile hash recomputation future writer sorumluluğudur.
 
-Bu owner kararı implementation authority üretmez. PR #1466 merge edilmiştir ve blocker değildir.
+Bu owner kararı implementation authority üretmez. PR #1469 merge edilmiştir ve blocker değildir.
 Schema implementation girişi yalnız `TPA-04B-ENTRY — OWNER GO-VERIFY REQUIRED`dır. Synthetic
 corpus schema amendment için non-blocking, writer/evidence/cutover için blocking; ACT-28 ve
 REC-AUTH-011/012 open kalır.

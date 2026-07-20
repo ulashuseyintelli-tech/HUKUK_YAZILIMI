@@ -2014,7 +2014,7 @@ TPA-04A identity formatları, per-batch bucket uniqueness, APPLY/REVERSAL before
 ve `receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` DB contract'ı zorunludur.
 Tamamen HELD batch geçerlidir; exact-inverse full reversal TPA-04E'ye deferred kalır.
 
-PR #1466 merged/non-blocking'dir; PR #407 closed/unmerged/no-further-action'dır. Synthetic corpus
+PR #1469 merged/non-blocking'dir; PR #407 closed/unmerged/no-further-action'dır. Synthetic corpus
 schema amendment için non-blocking, writer/evidence/cutover için blocking kalır. ACT-28 ve
 REC-AUTH-011/012 `OPEN`; runtime/schema implementation bu canonicalization ile yetkili değildir.
 Sonraki yalnız `TPA-04B-ENTRY — OWNER GO-VERIFY REQUIRED`dır.

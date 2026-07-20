@@ -525,7 +525,7 @@ A fully HELD batch is valid with zero applications and
 matching remains deferred to TPA-04E.
 
 This ratification creates no schema, migration, runtime writer, plan builder, feature flag,
-replay execution, consumer cutover or legacy-remediation authority. PR #1466 is merged and is
+replay execution, consumer cutover or legacy-remediation authority. PR #1469 is merged and is
 not a schema-writer blocker. The physical synthetic-corpus worktree is non-blocking for the
 schema amendment and remains blocking for writer/evidence/cutover. The next task is only
 `TPA-04B-ENTRY — OWNER GO-VERIFY REQUIRED`; ACT-28 and REC-AUTH-011/012 remain open.
