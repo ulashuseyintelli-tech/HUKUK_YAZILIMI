@@ -313,6 +313,86 @@ Transport/Auth, Evidence ve Simulator'ın ileride PARALEL çalışabilmesi kabul
 
 Bu belge: yeni invariant/ID uzayı AÇMAZ; P01-P02B-R2 arasındaki hiçbir CLOSED/CANONICAL görevi REOPEN ETMEZ veya yeniden analiz ETMEZ; typed-wrapper/P04D/P03B/Contract B/P04C/P05 için implementasyon veya karar SEÇMEZ; P04B-EXT-01/02/03'ün gönderildiğini veya UYAP'tan cevap alındığını İDDİA ETMEZ; tenant-specific credential varsayımını doğrulanmış gerçek olarak SUNMAZ; kill-switch'in kesin implementasyonunu SEÇMEZ; production kod/test/schema/migration DEĞİŞTİRMEZ; **UYAP CUTOVER HARD HOLD'u DEĞİŞTİRMEZ.** **IMPLEMENTATION AUTHORITY: NONE.**
 
+## 15. WS-B Transport & Authentication — TRANSPORT-AUTH-01 / TRANSPORT-CONTAIN-01 Closure
+
+```text
+TRANSPORT-AUTH-01 (GO-ANALYZE, read-only)            : ANALYSIS COMPLETE / OWNER ACCEPTED / CANONICAL ANALYSIS BASIS
+TRANSPORT-CONTAIN-01 (GO-IMPLEMENT + IF GO-COMPLETE) : CLOSED / CANONICAL
+IMPLEMENTATION PR                                     : #1450
+IMPLEMENTATION SHA                                    : a6ab97e47df9ed8c83f7e6210f57b12f16656385
+CI                                                     : 4/4 SUCCESS
+REAL TRANSPORT                                         : 0
+UYAP CUTOVER                                           : HARD HOLD
+```
+
+### 15.1 AS-IS Bulgusu (TRANSPORT-AUTH-01)
+
+`uyap.controller.ts` + `uyap.service.ts` tam okuması (410+1206 satır) 23 operasyonu envanterledi; **REAL-TRANSPORT=0 doğrulandı** — hiçbir operasyon gerçek bir dış UYAP çağrısı yapmıyor. Sekiz somut bulgu (TRANSPORT-RISK-01..08) tespit edildi; en kritik ikisi (RISK-03, RISK-06) bu birimde kapatıldı, kalanı §15.5'te residual olarak kaydedilir.
+
+### 15.2 Owner Kararları
+
+```text
+IMMEDIATE CONTAINMENT       : OPTION B — TRUTHFULNESS CONTAINMENT
+TARGET TRANSPORT DIRECTION  : MODEL B — PORT / ADAPTER (DIRECTION ONLY / NO IMPLEMENTATION AUTHORITY)
+PORT/ADAPTER IMPLEMENTATION : NOT STARTED
+```
+
+Model B, mevcut `UyapModule`'ün temiz DI sınırlarıyla en uyumlu hedef mimari yönü olarak kaydedilir; bu kayıt TypeScript port/adapter/DI implementasyonu ÜRETMEZ, yalnız gelecekteki `TRANSPORT-PORT-01` biriminin başlangıç yönünü belirler.
+
+### 15.3 Kapanan Bulgular
+
+**TRANSPORT-RISK-03 (CLOSED):** Stub lawsuit işlemleri (`submitCriminalComplaint`/`submitCivilLawsuit`) `CaseLifecycle` kaydında artık koşulsuz "UYAP'a gönderildi" semantiği üretmiyor; yerel simülasyon olduğu açıkça kaydediliyor, gerçek dispatch/provider-acceptance/hukuki-sonuç iddia edilmiyor.
+
+**TRANSPORT-RISK-06 (CLOSED):** `sendPaymentOrder`'ın CPE teknik-hata/`CasePolicyEngine`-yokluğu dalı fail-open'dan fail-closed'a çekildi — `CPE_CHECK_FAILED`, zero request-log/lifecycle/audit/simulated-response write. `UYAP_SEND = FAIL_CLOSED` action-matrix sınırıyla uyum sağlandı; `pushHacizRequest` zaten fail-closed'tı, değişmedi.
+
+### 15.4 Canonical Stub Truthfulness Contract
+
+`sendPaymentOrder`/`pushHacizRequest`/`submitDocument`/`submitCriminalComplaint`/`submitCivilLawsuit` ve gelecekteki her stub-success genişlemesi için bağlayıcı:
+
+```text
+success                   : true — yalnız local simulation completed
+data.simulated            : true
+data.dispatched           : false
+data.providerAccepted     : false
+data.legalEffectConfirmed : false
+data.stubReference        : local-only reference
+top-level evkNo           : ABSENT (UyapResponse.evkNo? tipi gelecekteki gerçek provider cevabı için korunur)
+```
+
+Canonical non-equations: `LOCAL SIMULATION COMPLETED ≠ DISPATCHED TO UYAP ≠ PROVIDER ACCEPTED ≠ LEGAL EFFECT CONFIRMED`. Mevcut action taxonomy (`CRIMINAL_COMPLAINT_SUBMITTED`/`CIVIL_LAWSUIT_SUBMITTED`/`HACIZ_REQUEST_SUBMITTED`) korunmuştur; bu isimlerin korunması gerçek external dispatch kanıtı OLUŞTURMAZ.
+
+Evidence:
+```text
+New containment spec          : 15/15 PASS
+Full UYAP module regression   : 468/471 PASS, 3 SKIP, 0 FAIL
+P01/P02A/P02B/P02B-R2/P04A-ENC: PASS (regresyona dahil)
+Changed-file ESLint           : PASS
+New changed-file TS errors    : 0
+git diff --check              : PASS
+Required CI                   : 4/4 SUCCESS
+Schema/migration              : 0
+Real network call             : 0
+Secret/credential             : 0
+```
+CI'ye eklenen yeni exact test step'inin nedeni: mevcut dar allowlist yeni spec'i aksi hâlde hiç çalıştırmazdı.
+
+### 15.5 Açık Residual Register (bu birimle kapatılmamış)
+
+```text
+TRANSPORT-RISK-02    : GET /uyap/stats tenant-scope gap — OPEN
+TRANSPORT-RISK-07    : POST /uyap/retry-failed global trigger / operator-authority gap — OPEN
+TRANSPORT-RISK-05    : UyapRequestLog.status local-stub-success ile provider-confirmed'i çökertiyor — OPEN, EVIDENCE-01'e devredilir
+Lawsuit CPE gates    : ABSENT / OPEN
+verifyUserEsignature : always-true dead stub — OPEN
+checkConnection      : hardcoded true — OPEN
+TRANSPORT-PORT-01    : NOT STARTED
+CREDENTIAL-CUSTODY-01: NOT STARTED
+EVIDENCE-01          : NOT STARTED
+SIMULATOR-01         : NOT STARTED
+```
+
+`UyapRequestLog.status = SUCCESS` hâlen provider-confirmed dispatch evidence DEĞİLDİR.
+
 ## Owner Approval Record
 
 ```text
