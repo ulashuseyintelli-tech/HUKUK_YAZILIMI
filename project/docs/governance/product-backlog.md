@@ -2309,6 +2309,25 @@ TPA-04E full reversal writer; TPA-04F representative replay/reconciliation evide
 coordinated writer/consumer cutover decision. **NEXT ELIGIBLE ACTION: TPA-04A — OWNER
 GO-ANALYZE REQUIRED.** Runtime/test/schema/migration/feature/replay/cutover change NONE.
 
+**RCV-COL-TPA-04A Canonical Snapshot / Bucket Identity Contract Canonicalization (2026-07-20;
+CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner Option C — Receipt-Bound Embedded
+Canonical Snapshot Envelope kararını ratifiye etmiştir.
+`CanonicalReceivableApplicationSnapshotV1` yalnız canonical Collection receipt-bound
+LegalApplication plan/writer input'udur. Snapshot owner Receivable; embedded persistence owner
+RCV-COL boundary; location `LegalApplicationBatch` aggregate'idir. Eligibility; receipt history
+exclusion; COL/OD-03 effective-date authority; provenance-date exclusion; complete source/version
+set; explicit engine/rule/policy/rate/profile versions; COST/ANCILLARY completeness;
+transaction-consistent target-native/approved history; exact envelope; required/non-hardcoded
+minorUnit; RCV-CAS/v1 canonical JSON/SHA-256; stable `bucketContextKey`; snapshot-specific
+`bucketInstanceId`; ClaimItem/receipt/row/display/index exclusion; fail-closed readiness ve pure
+bigint plan contract'ı canonicaldır.
+
+General presentation/Fee/Harç/Journal/consumer snapshot lifecycle ADR-013 altında OPEN;
+Balance Engine SHADOW_ONLY. Schema/migration/hash implementation/snapshot writer/plan builder/
+production shadow/cutover NONE. PR #407 HOLD/UNTOUCHED; synthetic corpus writer/evidence/cutover
+BLOCKING; ACT-28 ve REC-AUTH-011/012 OPEN. **NEXT ELIGIBLE ACTION: TPA-04B — WRITER EVIDENCE
+SCHEMA AMENDMENT ANALYSIS — OWNER GO-ANALYZE REQUIRED / IMPLEMENTATION NOT AUTHORIZED.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

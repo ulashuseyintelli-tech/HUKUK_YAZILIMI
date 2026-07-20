@@ -3,7 +3,7 @@
 ```text
 Belge kimliği           : SYS-CONST-001
 Canonical path          : project/docs/governance/SYSTEM-CONSTITUTION.md
-Version                 : 1.7
+Version                 : 1.8
 Owner status            : RATIFIED — BINDING
 Repository status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Canonical effective date: Approved merge date
@@ -17,7 +17,8 @@ Canonical System Governance v1.0 içinde reconcile eder; v1.1 allocation-authori
 amendment'ını, v1.2 balance-exposure contract ratifikasyonunu, v1.3 cross-domain
 legal-application boundary kararını, v1.4 ClaimItem formation-admission sözleşmesini,
 v1.5 TPA-02 target persistence architecture kararını, v1.6 TPA-03 two-file hybrid
-schema-foundation kontratını ve v1.7 TPA-04 target-native dormant single-writer kontratını
+schema-foundation kontratını, v1.7 TPA-04 target-native dormant single-writer kontratını
+ve v1.8 TPA-04A receipt-bound canonical snapshot/bucket identity kontratını
 aynı canonical path'te taşır.
 PR #1139 ve PR #1140 tarihsel
 olarak geçerli kayıtlardır; içerikleri veya o tarihlerdeki owner kararları geriye dönük
@@ -368,7 +369,7 @@ yükümlülüğünü tek başına değiştirmez. `SettlementOffer` bağlamı aç
 | Creditor Disposition | Current `CollectionDisposition` + lines | Approval-gated CLIENT/COLLECTION disposition owner | Client statement/disposition views | Receipt veya `clientId` entitlement/disposition authority olamaz | `CURRENT PARTIAL`; DBIND/TM3+reversal reconciliation |
 | Payout / Offset | Current payout/offset command paths | Authorized money-out/offset owner | Statement/payment views | Disposition draft veya journal line para çıkışı değildir | `CURRENT PARTIAL`; approval+idempotency+reversal gates |
 | Accounting Journal Posting | Current additive/journal paths do not supersede legal ledger; target ADR-010 | Accounting owner after explicit cutover | Trial balance/financial statements | Journal legal rule, receipt veya payout authority olamaz | `TARGET / SHADOW-DIRECTION`; shadow→prove→sign-off→owner cutover |
-| Fee/harç/snapshot | Current producer candidates; target ADR-013 owner decision | Unassigned pending ADR-013 | Projection/readiness views | Candidate producer veya non-official snapshot authority olamaz | `OWNER DECISION / NOT_IMPLEMENTED`; boundary audit+sign-off |
+| Fee/harç/snapshot | Receipt-bound legal-application snapshot subtype: `CanonicalReceivableApplicationSnapshotV1`; broader Fee/Harç/Journal snapshot family remains ADR-013 owner review | RECEIVABLE owns the narrow subtype semantics; RCV-COL boundary persists its envelope inside `LegalApplicationBatch`; broader ADR-013 owner remains unassigned | Legal-application plan/writer input; projection/readiness views remain non-authoritative | Presentation snapshot, Fee/Harç snapshot, Journal snapshot, non-official DTO veya candidate producer receipt-bound subtype authority olamaz | `NARROW SUBTYPE RATIFIED / RUNTIME NOT_IMPLEMENTED / SHADOW_ONLY`; broader ADR-013 OPEN |
 
 ### `SYS-FIN-001 — Beş Finansal Kavram Ayrıdır`
 ```text
@@ -611,6 +612,59 @@ TPA-04A snapshot/bucket identity, TPA-04B writer-evidence schema amendment, TPA-
 builder, TPA-04D dormant writer, TPA-04E full reversal writer, TPA-04F representative
 replay/reconciliation evidence ve TPA-04G coordinated writer/consumer cutover decision sıralı
 owner gate'leridir; hiçbiri bu kayıtla yetkilendirilmez.
+
+### `SYS-FIN-013D — TPA-04A Receipt-Bound Canonical Snapshot ve Bucket Identity`
+
+Owner, Option C — Receipt-Bound Embedded Canonical Snapshot Envelope kararını ratifiye
+etmiştir. `CanonicalReceivableApplicationSnapshotV1`, yalnız bir canonical Collection receipt'i
+için LegalApplication planı üretmeye yarayan immutable, receipt-bound Receivable snapshot
+envelope'udur. Snapshot semantiğinin sahibi Receivable; envelope persistence'ının sahibi
+RCV-COL Legal Application Boundary'dir ve kayıt `LegalApplicationBatch` aggregate'i içinde
+kalır. General presentation snapshot, Fee/Harç snapshot, Journal snapshot, consumer authority
+ve daha geniş snapshot lifecycle bu dar ratifikasyonla kapanmaz. Current Balance Engine
+`SHADOW_ONLY`; production authority, writer ve cutover `NOT AUTHORIZED`dır.
+
+Eligibility tenant/case/target Collection/currency bütünlüğü, canonical receipt admission
+gate'leri, target receipt'in pre-application history'den exclusion'ı, COL/OD-03 kaynaklı tek
+`applicationEffectiveDate`, tam source/version set'i, explicit engine/rule/policy/rate/
+interpretation version'ları, COST/ANCILLARY completeness, target-native veya owner-approved
+historical baseline ve transaction-consistent read ister. `confirmedAt`, `valueDate` ve
+`externalSettledAt` yalnız provenance'dır. `authority=NONE`, unavailable, stale, incomplete,
+unsafe, currency/minor-unit mismatch, unmapped/duplicate bucket veya conservation failure
+fail-closed'dur.
+
+Envelope; identity/version alanlarını, receipt amount ve time context'ini, source/version
+fingerprint'lerini ve canonical bucket'ları taşır. `minorUnit` zorunlu semantik girdidir;
+repository-wide sabit `2` varsayımı yasaktır. Snapshot reference ve hash:
+
+```text
+snapshotHash = SHA-256("RCV-CAS/v1\0" + canonicalEnvelopeBytes)
+snapshotRef  = "rcv-app-snapshot:v1:sha256:" + lowercaseHex(snapshotHash)
+```
+
+Canonical serialization `RCV-CAS/v1`, UTF-8/no-BOM, Unicode NFC, locale-independent ordering,
+minor-unit integer strings, floating-point yasağı, ISO date normalization ve explicit
+null/absent kurallarıyla RFC 8785 temelli domain-restricted JSON'dır. Generated time, actor,
+correlation, display/free text ve raw bank/provider payload hash input'u değildir.
+
+`bucketContextKey = bctx:v1:sha256:<64-lowercase-hex>`; componentType, componentCode,
+currency, minorUnit, versioned legal basis, effective context, versioned interest rule,
+priority policy/version/rank ve liability context'ten üretilir. ClaimItem ID, tenant/case,
+snapshotRef, target Collection, amount, sequence, actor, display label ve insertion order
+yasaktır. `bucketInstanceId = binst:v1:sha256:<64-lowercase-hex>`; identityContractVersion,
+tenantId, caseId, snapshotRef/hash, asOfDate, calculationRuleVersion ve bucketContextKey
+girdilerinden üretilir.
+
+Source/version, formation context, policy version, fee authority, bucket mapping,
+currency/minor-unit, history boundary, duplicate context, staleness, hash ve source concurrency
+kusurları typed fail-closed sonuç üretir. Plan output Receivable-owned saf
+`LegalApplicationPlan`dır; `bigint` minor-unit taşır, ClaimItem target veya legacy
+allocation/cache input'u kullanmaz ve conservation sağlanmadan üretilemez.
+
+TPA-04B yalnız writer-evidence/conservation persistence amendment'ının owner-gated analizidir.
+Bu kayıt schema, migration, hash implementation, snapshot writer, plan builder, production
+shadow, consumer authority veya cutover yetkisi üretmez. PR #407 hold/untouched; synthetic
+corpus writer/evidence/cutover için blocking; ACT-28 ve REC-AUTH-011/012 open kalır.
 
 ### `SYS-FIN-014 — Claim Formation İki Seviyeli Taxonomy Kullanır`
 
@@ -1109,10 +1163,11 @@ kanıtla güncellenir.
 | v1.6, 2026-07-20 | RCV-COL-TPA-03 schema-foundation contract canonicalization | Option B two-file hybrid foundation; exact model/enum, positive minor-unit amount, replay/reversal, opaque bucket identity, composite tenant FK, restrictive delete ve immutability sınırları ratifiye edildi. Exact foundation patch `schema.prisma` + tek `migration.sql` ile owner-gated'dir; runtime writer/cutover yetkisi üretmez. |
 | v1.6 compliance update, 2026-07-20 | RCV-COL-TPA-03A schema-foundation closure reconciliation | PR #1449 / `63f0b0ea` exact two-file additive foundation evidence'ı kaydedildi. Schema/migration foundation CLOSED; writer/conservation enforcement/replay/cutover/retirement ve ACT-28/REC-AUTH-011/012 açık kaldı. Semantik kontrat veya Constitution version'ı değişmedi. |
 | v1.7, 2026-07-20 | RCV-COL-TPA-04 LegalApplicationWriter contract canonicalization | Option C target-native plan-then-persist / dormant-first single writer ratifiye edildi. Official Receivable snapshot + target-native plan input'u, snapshot/bucket hash identity, pre-writer DB conservation, replay, APPLY/full-reversal, transaction-bound audit ve fail-closed legacy coexistence sınırları bağlayıcıdır. TPA-04A..G ayrı owner gate'leridir; implementation yetkisi yoktur. |
+| v1.8, 2026-07-20 | RCV-COL-TPA-04A canonical snapshot / bucket identity contract canonicalization | Option C receipt-bound embedded `CanonicalReceivableApplicationSnapshotV1` ratifiye edildi. Narrow application-snapshot eligibility, envelope, RCV-CAS/v1 serialization/hash, bucket identity, fail-closed readiness ve pure plan sınırları canonicaldır. Broader ADR-013, schema/writer/production/cutover yetkileri açık kaldı. |
 ---
 ## Son Hüküm
 
-Canonical System Governance v1.7 sistemin üst semantik yönetişim normudur. Domain Law'lar
+Canonical System Governance v1.8 sistemin üst semantik yönetişim normudur. Domain Law'lar
 onu ayrıntılandırır; ADR'lar teknik kararları kaydeder; implementation bu normları uygular.
 `AGENTS.md` ayrı execution/safety ekseninde bağlayıcıdır. Runtime compliance ayrı kanıt
 programıdır. Bu metin approved merge to main sonrasında repository-canonical olur; açık
