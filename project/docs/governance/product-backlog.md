@@ -2136,6 +2136,47 @@ representative replay/evidence ve consumer cutover authority açık blocker'lard
 Schema/migration/writer/replay/cutover/retirement `NOT AUTHORIZED`dır.
 **NEXT ELIGIBLE ACTION: TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED.**
 
+**RCV-COL-TPA-03 Schema-Foundation Contract Canonicalization (2026-07-20; CANONICAL
+UPON APPROVED GOVERNANCE MERGE):** Owner Option B — Two-File Hybrid Schema Foundation
+kararını ratifiye etmiştir.
+
+```text
+LegalApplicationBatch
+  ├─ immutable LegalApplication[]
+  └─ non-authoritative ApplicationAttribution[]
+
+LegalApplicationBatchType:
+  APPLY | REVERSAL
+
+LegalApplicationComponentType:
+  COST | ANCILLARY | ACCRUED_INTEREST | PRINCIPAL
+```
+
+Future implementation exact scope'u yalnız `project/apps/api/prisma/schema.prisma` ve tek
+additive `migration.sql` dosyasıdır. Foundation writer-free, no-backfill ve mevcut
+runtime/consumer/historical-data davranışına etkisiz olmak zorundadır. Tenant-safe composite
+FK, `ON DELETE RESTRICT` ve batch/application UPDATE/DELETE immutability protection zorunludur.
+
+Amount alanları positive minor-unit magnitude taşır; direction batch type'tır.
+`receiptAmountMinor`, APPLY için canonical Collection receipt, REVERSAL için linked original
+receipt magnitude'ıdır. Canonical conservation
+`receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` korunur; aggregate-level
+enforcement foundation sonrası writer-stage kontratına bırakılır.
+
+Replay unique sınırı `(tenantId, idempotencyKey)`dir. Same key/same `commandHash` existing
+batch/no new write; same key/different hash fail-closed conflict'tir. Full reversal linked
+append-only REVERSAL batch'idir; self-reversal ve double reversal yasak, partial reversal
+yetkisizdir. `bucketContextKey` ve `bucketInstanceId` required/opaque/nonblank'tir; generation
+algoritması writer-stage owner kararına bırakılır. Attribution non-authoritative'tir; optional
+ClaimItem lineage ve optional amount taşıyabilir.
+
+`codex/rcv-ws04-p03-syn-01`, TPA-03A schema foundation için `NON-BLOCKING`, writer/evidence/
+cutover için `BLOCKING`dir. PR #407 `HOLD / CONFLICTING / DO NOT MERGE / DO NOT REBASE` kalır.
+ACT-28 ve REC-AUTH-011/012 `OPEN`dır. Schema/migration/runtime writer/backfill/replay/cutover/
+retirement bu kayıtla yetkilendirilmez.
+**NEXT ELIGIBLE ACTION: TPA-03A SCHEMA FOUNDATION — OWNER GO-IMPLEMENT REQUIRED /
+IMPLEMENTATION NOT AUTHORIZED.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)
