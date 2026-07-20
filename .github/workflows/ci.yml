@@ -586,11 +586,12 @@ jobs:
                    src/modules/automation/__tests__/enforcement-action-guarded-write-path.db-gated.integration.spec.ts \
                    src/modules/automation/__tests__/enforcement-action-tenant-case-debtor-fk.db-gated.integration.spec.ts \
                    src/modules/automation/__tests__/all-passive-case-automation-stop.db-gated.integration.spec.ts \
+                   src/modules/automation/__tests__/automation-stats-tenant-scope.db-gated.integration.spec.ts \
                    src/scripts/__tests__/enforcement-action-backfill-profiler.db-gated.integration.spec.ts; do
             test -f "$f" || { echo "MISSING Wave 0 tenant DB-gated spec: $f"; exit 1; }
           done
           npx jest --ci --forceExit --runInBand \
-            --testPathPattern="(workflow-engine-build-context-tenant-guard|workflow-engine-remaining-tenant-boundaries|enforcement-action-guarded-write-path|enforcement-action-tenant-case-debtor-fk|all-passive-case-automation-stop|enforcement-action-backfill-profiler)\.db-gated\.integration\.spec\.ts$"
+            --testPathPattern="(workflow-engine-build-context-tenant-guard|workflow-engine-remaining-tenant-boundaries|enforcement-action-guarded-write-path|enforcement-action-tenant-case-debtor-fk|all-passive-case-automation-stop|automation-stats-tenant-scope|enforcement-action-backfill-profiler)\.db-gated\.integration\.spec\.ts$"
         working-directory: project
       # LRV-03A / DBP-P2-SEC-P03A: CaseDebtor.lifecycleStatus guard'ı createEnforcementAction'ın
       # caseDebtorId dalına eklendi (DBP-07 §11 "Passivation Guard Is Universal"). Yeni dosya —

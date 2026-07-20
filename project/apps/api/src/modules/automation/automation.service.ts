@@ -348,12 +348,17 @@ export class AutomationService {
   }
 
   // İstatistikler
-  async getAutomationStats(): Promise<any> {
+  async getAutomationStats(tenantId: string): Promise<any> {
+    // SEC-XTEN-AUTOMATION-STATS-01: tenant context yoksa fail-closed (sorgu hiç çalışmaz).
+    if (!tenantId) {
+      return { totalAutoCases: 0, totalAutoActions: 0, recentActions: [] };
+    }
+
     const [totalAuto, totalProcessed, recentActions] = await Promise.all([
-      this.prisma.case.count({ where: { isAutoMode: true } }),
-      this.prisma.decisionLog.count({ where: { isAutomatic: true } }),
+      this.prisma.case.count({ where: { isAutoMode: true, tenantId } }),
+      this.prisma.decisionLog.count({ where: { isAutomatic: true, case: { tenantId } } }),
       this.prisma.decisionLog.findMany({
-        where: { isAutomatic: true },
+        where: { isAutomatic: true, case: { tenantId } },
         orderBy: { createdAt: "desc" },
         take: 10,
         include: { case: { select: { fileNumber: true } } },
