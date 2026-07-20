@@ -914,7 +914,7 @@ canonical serialization/hash recomputation future writer'a aittir. Full reversal
 TPA-04E'ye deferred'dır.
 
 Bu karar runtime writer, plan builder, feature flag, replay, consumer cutover veya legacy
-remediation yetkisi üretmez. PR #1466 merged/non-blocking, PR #407 closed/unmerged/no-further-
+remediation yetkisi üretmez. PR #1469 merged/non-blocking, PR #407 closed/unmerged/no-further-
 action'dır. Synthetic corpus schema amendment için non-blocking, writer/evidence/cutover için
 blocking; ACT-28 ve REC-AUTH-011/012 open'dır. Sonraki yalnız `TPA-04B-ENTRY — OWNER GO-VERIFY
 REQUIRED`dır.
