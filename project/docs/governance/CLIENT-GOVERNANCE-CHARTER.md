@@ -1140,3 +1140,87 @@ Canonical merge sonrasında: **POL-D: CLOSED/CANONICAL. POL-F: CLOSED/CANONICAL.
 ### 22.19 POL-F Self-Check
 
 Bu bölüm: POL-J object authorization modelini GENİŞLETMEZ veya rakip model ÜRETMEZ; OFF/OD-08'i DEĞİŞTİRMEZ; POL-D field contract'ını yeniden AÇMAZ; filtered list'i aggregate SAYMAZ; pagination total'ı business summary YAPMAZ; client-side reduce'ı canonical aggregate İLAN ETMEZ; multi-client portal aggregation YETKİLENDİRMEZ; financial aggregate visibility AÇMAZ; staff aggregate authority GENİŞLETMEZ; BP-07 SOT/reconciliation boşluklarını OVERRIDE ETMEZ; POL-E/KVKK kararı VERMEZ; yeni aggregate endpoint/dashboard/query/cache/materialized-view TASARLAMAZ; mevcut riskler için mükerrer risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 23. CLIENT-P1-BP-06 — Client-Facing Visibility Model (OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-BP-06` karar analizinin **owner-ratified consolidating blueprint**'idir (`decision-log.md` CLIENT-P1-BP-06-GOV; **SELECTED MODEL: OPTION B — BOUNDED CLIENT-FACING VISIBILITY MAP**). BP-06, foundational değil **consolidating** bir blueprint birimidir: POL-J(§19)+POL-D(§21)+POL-F(§22) sonuçlarını, BP-07(§15)+BP-08(§16)+BP-09(§17) sınırlarını koruyarak **tek bounded resource-bazlı client-facing visibility map'inde birleştirir**; yeni object-scope modeli, field-contract modeli, aggregate-visibility modeli, financial-authority veya KVKK/retention policy ÜRETMEZ. §5, §6, §8.A, §8.B, §11–§22 metinlerini semantik olarak değiştirmez. **FINANCIAL AGGREGATES: NOT AUTHORIZED. CLIENT STATEMENT PORTAL VISIBILITY: NOT AUTHORIZED. IMPLEMENTATION AUTHORITY: NONE.**
+
+### 23.1 Selected Model
+
+**OPTION B — BOUNDED CLIENT-FACING VISIBILITY MAP.** Client-facing visibility, POL-J+POL-D+POL-F'yi resource-bazlı tek bir haritada konsolide eder; field-by-field allowlist tasarımı (Option C) veya implementation-oriented mimari (Option D) SEÇİLMEDİ.
+
+### 23.2 Visibility Layering
+
+Client-facing visibility şu sırayla değerlendirilir: **1. OBJECT AUTHORIZATION → 2. FIELD VISIBILITY CONTRACT → 3. AGGREGATE VISIBILITY POLICY → 4. SOURCE CONFIDENCE/FRESHNESS → 5. PRESENTATION RESULT.** Object authorization başarısızsa field veya aggregate değerlendirmesi YAPILMAZ. **Canonical non-equations:** `OBJECT ACCESS≠FIELD VISIBILITY` · `FIELD VISIBILITY≠AGGREGATE VISIBILITY` · `VISIBLE VALUE≠SOURCE-OF-TRUTH OWNERSHIP` · `FINANCIAL VISIBILITY≠FINANCIAL AUTHORITY` · `LIST≠AGGREGATE` · `CLIENT-SIDE REDUCE≠AUTHORITATIVE TOTAL`.
+
+### 23.3 POL-J Consumption
+
+**CONSUMED/UNCHANGED.** Portal viewer: TENANT+LINKED CLIENT+RESOURCE/OBJECT RELATION. Staff viewer: TENANT+OFF/OD-08 OBJECT SCOPE+action-specific actor eligibility (gerektiğinde). BP-06 yeni object-scope modeli OLUŞTURMAZ, OFF/OD-08'i DEĞİŞTİRMEZ, portal account'a client-related tüm nesnelere erişim VERMEZ, staff JWT'yi sınırsız object authority SAYMAZ.
+
+### 23.4 POL-D Consumption
+
+**CONSUMED/UNCHANGED.** Raw entity/ORM response PROHIBITED. Internal-only ve unknown/unclassified alan: OMIT. Context-dependent alan: gerekli context yoksa OMIT. Sensitive alan: yalnız açık client-facing amaç varsa mask/redact. Client-safe alan: açık contract üzerinden present. Masking/omission/redaction object authority OLUŞTURMAZ. Mevcut viewer-aware presenter deseni yalnız **AS-IS ARCHITECTURAL EXEMPLAR**, SEÇİLMİŞ implementasyon DEĞİL.
+
+### 23.5 POL-F Consumption
+
+**CONSUMED/UNCHANGED.** Permitted aggregate class: CLIENT-SCOPED NON-FINANCIAL OPERATIONAL AGGREGATES — AS-IS doğrulanmış örnekler: unread notification count, unread message count. Yasak kalan: total claimed/collected/outstanding/advance-cari/payable/payout, accounting totals, financial trends. Cross-client/tenant-wide/office-wide/team-wide aggregate'ler BP-06 authority'sine GİRMEZ.
+
+### 23.6 Resource Visibility Map
+
+**Client profile:** BOUNDED CLIENT-SAFE PRESENTATION; raw client record PROHIBITED; portal account client principal veya acting-human identity olarak SUNULMAZ. **Case list:** PERMITTED, curated list presentation, aggregate DEĞİL; POL-J object scope + POL-D field contract'ına tabi; pagination/kayıt-sayısı business aggregate DEĞİLDİR. **Case detail:** yalnız açık case-detail contract üzerinden PERMITTED; broad entity include CANONICAL DEĞİL; internal notes, internal personnel references, automation/workflow state, internal risk/detection data, OCR/technical processing data, internal audit trail, technical metadata, internal financial engine details client-facing response'ta YER ALAMAZ; case list ve detail aynı presentation-policy ailesine bağlıdır. **Debtor-related context:** case erişimi tüm debtor-side çalışma alanını GÖRÜNÜR YAPMAZ; client-safe legal context PRESENTED OLABİLİR, internal case/debtor work notes OMIT, belirsiz representative/legal-context alanları sınıflandırılana kadar OMIT; DEBTOR legal-status authority CLIENT'e TAŞINMAZ. **Power of attorney:** mandate metadata context/legal-basis dependent; storage location/file path internal-only/OMIT; mandate display execution authority'ye EŞİT DEĞİLDİR. **Portal documents:** dört katman ayrı korunur — document metadata (client-safe, object contract) · document content (client-safe, object contract) · review status (workflow presentation, content verification DEĞİL) · internal review metadata (reviewer identity/internal review data: OMIT); mixed-purpose review text varsayılan OMIT, client-facing rejection reason yalnız ayrı açık projection contract ile var OLABİLİR — bir red gerekçesinin ileride sunulması internal review note'u görünür YAPMAZ, aynı storage alanını otomatik client-safe YAPMAZ, hukuki doğruluk veya target-domain approval ÜRETMEZ. **Messages:** message content client-facing communication; sender presentation name/type client-safe OLABİLİR; internal staff identifier OMIT; PORTAL MESSAGE≠CLIENT INSTRUCTION. **Notifications:** yalnız client-facing oluşturulan içerik PERMITTED; notification legal fact/business authority/approval/instruction ÜRETMEZ. **Approval/provenance evidence:** POL-B+BP-04+BP-09 korunur — FACT A AS-IS ABSENT; FACT B staff-recorded, FACT A'ya NON-CONVERTIBLE; audit event business authority DEĞİL; bu ledger'ların portal görünürlüğü BU GÖREVLE AÇILMAZ (AS-IS yapısal olarak erişilemez kalır).
+
+### 23.7 Non-Financial Aggregate Visibility
+
+Permitted mevcut operational aggregate'ler: unread notification count, unread message count — tek linked-client scope, viewer-authorized object/recipient set, açık response contract, internal dimension YOK, financial/legal authority ÜRETMEZ koşullarına tabidir. Yeni operational count ayrı açık aggregate contract GEREKTİRİR; BP-06 yeni aggregate endpoint YETKİLENDİRMEZ.
+
+### 23.8 Client-Side Derived Values
+
+Tarayıcı tarafında hesaplanan count/sum/total/dashboard-card canonical aggregate DEĞİLDİR; partial/limited-input reduce TOTAL/COMPLETE/AUTHORITATIVE/CURRENT BALANCE/CURRENT FINANCIAL FACT olarak ETİKETLENEMEZ. Eksik/kısıtlı collection listesi üzerinden hesaplanan mevcut financial card: **KNOWN PRESENTATION-ACCURACY DELTA, CANONICAL AGGREGATE: NO, REMEDIATION: NOT AUTHORIZED** — mevcut risk kaydına pointer (POL-F disposition), mükerrer kart AÇILMAZ.
+
+### 23.9 Single-Object Financial Presentation
+
+**Claimed amount:** partial case-level context olarak PRESENTED OLABİLİR; authoritative current claim ESTABLISHED DEĞİL; source confidence'ı aşan etiket ("KESİN ALACAK", "GÜNCEL TOPLAM ALACAK", "CANONICAL CLAIM BALANCE") YASAKTIR. **Collection records:** curated single-case collection-event listesi PRESENTED OLABİLİR (list presentation); collected total NOT AUTHORIZED; full collection record varsayılan client-safe DEĞİL; status-filter semantiği canonical olmadığı için liste "tam tahsilat toplamı" olarak YORUMLANAMAZ. **Outstanding amount:** AS-IS portal visibility ABSENT; BP-06 bunu YETKİLENDİRMEZ; source semantics + collection-filter bağımlılığı nedeniyle ayrı owner kararı GEREKİR. **Advance/cari:** authoritative client-facing değer NOT AUTHORIZED; single SOT NOT SELECTED; reconciliation NOT CANONICAL; "güncel bakiye" olarak SUNULAMAZ. **Payable:** payable≠paid; client-facing visibility BP-06'da NOT AUTHORIZED. **Payout recording:** payout recorded≠bank execution≠money transferred; client-facing visibility BP-06'da NOT AUTHORIZED. **Accounting representation:** authority owner ACCOUNTING; client-facing BP-06 scope'unun DIŞINDA.
+
+### 23.10 Client Statement Decision
+
+`ClientStatement` CLIENT-owned immutable artifact, belirli zamanda oluşturulmuş snapshot, live ledger DEĞİL, canonical current balance DEĞİL, çoklu finansal kayıttan üretilen client-level financial rollup taşır. POL-F Option B nedeniyle: **CLIENT STATEMENT PORTAL/CLIENT-FACING VISIBILITY: NOT AUTHORIZED** — gerekçe: client-facing financial aggregate visibility PROHIBITED. Statement'ın "client-facing artifact" olarak modellenmiş olması görünürlük yetkisi OLUŞTURMAZ. Gelecekte açılması ayrı owner policy kararı + POL-F expansion + source/reconciliation review GEREKTİRİR. Supersession veya void, underlying financial reversal DEĞİLDİR.
+
+### 23.11 Financial Confidence Map
+
+Claimed amount: PARTIAL/source confidence non-uniform. Collection context: PARTIAL/status-filter policy open. Outstanding: source-dependent/not portal-authorized. Advance/cari: unavailable as authoritative. Payable: not payment. Payout recorded: not bank execution. Accounting: outside client authority. BP-06 bu source/reconciliation boşluklarını ÇÖZMEZ.
+
+### 23.12 Failure Semantics
+
+Object authorization belirsizliği: DENY/ZERO DATA. Field contract eksikliği: OMIT. Aggregate scope belirsizliği: DO NOT AGGREGATE/NO TENANT-WIDE FALLBACK. Source güvenilirliği yetersizliği: AUTHORITATIVE/CURRENT/COMPLETE/LEGAL-FINANCIAL FACT olarak SUNULAMAZ; uygunsa PARTIAL/STALE/UNAVAILABLE/NOT COMPUTED/POLICY PENDING kullanılabilir — bu statüler authority ÜRETMEZ, legacy fallback AÇMAZ, business effect DOĞURMAZ.
+
+### 23.13 Drill-Down / Inference
+
+Aggregate görünür olsa dahi viewer'ın underlying records'a erişim yetkisi otomatik OLUŞMAZ. Küçük grup/nadir kategori/tek kayda indirgenebilen aggregate disclosure, policy ABSENT ise OMIT/WITHHOLD. Mevcut iki unread count'ta hassas category veya staff identity disclosure BULUNMAMALIDIR.
+
+### 23.14 Portal / Staff Presentation Separation
+
+Staff-facing reports/dashboards/accounting summaries/statement generation/office-wide aggregates client-facing BP-06 authority'sine DÖNÜŞMEZ. **STAFF VISIBILITY≠PORTAL VISIBILITY. STAFF AGGREGATE≠CLIENT-FACING AGGREGATE AUTHORITY.** OFF/OD-08 staff object scope'u DEĞİŞMEDEN kalır.
+
+### 23.15 POL-E / KVKK Routing
+
+BP-06 dışında açık kalır: retention · anonymization · physical deletion · legal/litigation hold · subject-access response · document retention · message retention · notification retention · audit/event retention · portal account history. Visibility veya omission: DATA DELETION/ANONYMIZATION/RETENTION POLICY/SUBJECT-ACCESS RESPONSE'a EŞİT DEĞİLDİR.
+
+### 23.16 AS-IS Delta Pointers (mükerrer kart YOK)
+
+Field disclosure→POL-C/POL-D. Object scope→POL-J/`STF-PRD-BOLA-001`/`STF-PRD-SCP-001`. Portal process→BP-05. Audit/evidence→BP-09. Client-side financial card accuracy→POL-F disposition. **VISIBILITY ENFORCEMENT DELTA: KNOWN/NON-ZERO. REMEDIATION: NOT AUTHORIZED.**
+
+### 23.17 Canonical Non-Equations
+
+`OBJECT ACCESS≠FIELD VISIBILITY` · `FIELD VISIBILITY≠AGGREGATE VISIBILITY` · `SINGLE-OBJECT FINANCIAL CONTEXT≠FINANCIAL AGGREGATE` · `FINANCIAL VISIBILITY≠FINANCIAL AUTHORITY` · `VISIBLE VALUE≠SOURCE-OF-TRUTH OWNERSHIP` · `STATEMENT≠LIVE LEDGER` · `PAYOUT RECORDING≠BANK EXECUTION` · `REVIEW STATUS≠VERIFIED DOCUMENT CONTENT` · `FACT B≠AUTHENTICATED CLIENT ACT` · `LIST≠AGGREGATE` · `CLIENT-SIDE REDUCE≠AUTHORITATIVE TOTAL`.
+
+### 23.18 Phase 1 Remaining Slots
+
+Foundational blueprint: COMPLETE/CANONICAL. Portal blueprint: COMPLETE/CANONICAL. Visibility blueprint: COMPLETE/CANONICAL (bu kayıtla). POL-E/KVKK: OPEN/NOT SELECTED. **PHASE 1 BLUEPRINT: OPEN** — per-subject consent sufficiency, reconciliation, implementation/remediation slotları da ilgili owner-gated kayıtlar olarak açık kalır, BP-06 modelini BLOKE ETMEZ. Phase 1 bu kayıtla CLOSED İLAN EDİLMEZ.
+
+### 23.19 Status Precision
+
+**CLIENT-P1-BP-06: CLOSED/CANONICAL.** **MODEL: BOUNDED CLIENT-FACING VISIBILITY MAP.** **POL-J/POL-D/POL-F: CONSUMED/UNCHANGED.** **FINANCIAL AGGREGATES: NOT AUTHORIZED.** **CLIENT STATEMENT VISIBILITY: NOT AUTHORIZED.** **SINGLE-OBJECT FINANCIAL CONTEXT: PARTIAL/EXPLICITLY LABELED ONLY.** **VISIBILITY ENFORCEMENT DELTA: KNOWN/NON-ZERO.** **POL-E/KVKK: OPEN.** **PHASE 1 BLUEPRINT: OPEN.** **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 23.20 BP-06 Self-Check
+
+Bu bölüm: POL-J object-scope modelini GENİŞLETMEZ veya rakip model ÜRETMEZ; POL-D field contract'ını yeniden AÇMAZ; POL-F aggregate policy'sini yeniden AÇMAZ; BP-07 SOT/reconciliation boşluklarını OVERRIDE ETMEZ; BP-08 authority map'ini DEĞİŞTİRMEZ; BP-09 evidence taxonomy'sini DEĞİŞTİRMEZ; financial aggregate visibility YETKİLENDİRMEZ; ClientStatement portal visibility YETKİLENDİRMEZ; advance/cari'yi authoritative current balance YAPMAZ; payout recording'i bank execution YAPMAZ; mixed-purpose review note'u client-safe İLAN ETMEZ; staff visibility'yi portal authority'sine DÖNÜŞTÜRMEZ; POL-E/KVKK kararı VERMEZ; yeni risk kartı AÇMAZ; DTO/presenter/masking implementasyonu YAPMAZ; kod/schema/migration DEĞİŞTİRMEZ; Phase 1'i CLOSED İLAN ETMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
