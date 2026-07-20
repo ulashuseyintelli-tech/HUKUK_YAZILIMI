@@ -906,7 +906,6 @@ export class ClaimItemService {
       'COMMISSION': 'EXPENSE',
       'FEE': 'FEE',
       'ATTORNEY_FEE': 'ATTORNEY_FEE',
-      'OTHER': 'OTHER',
     };
     if (typeof type !== 'string' || type.trim().length === 0 || !mapping[type]) {
       throw new BadRequestException({
