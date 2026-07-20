@@ -278,3 +278,25 @@ OWNER DISPOSITION (permanent retirement, 2026-07-17, RATIFIED): **LIVE EXPOSURE:
 RATIFIED DIRECTION (2026-07-16): Nullable tenant ownership kolonu + index — additive-only, sıfır davranış değişikliği; sistem-içi tenant-nötr tüketicinin korunması ratifikasyonda açıkça belirtildi. Backfill/hardening/endpoint-restoration bu ratifikasyonla YETKİLENDİRİLMEDİ.
 IMPLEMENTATION AUTHORITY: NONE — production backfill, NOT NULL/FK hardening veya endpoint restoration için hiçbir yetki bu kartla verilmez.
 NOTES: H2A containment MANDATORY — yapısal çözüm + owner-onaylı temsili-veri backfill kanıtı olmadan KALDIRILAMAZ. İki owner rotası açık: P03-R1 (representative data evidence) veya permanent endpoint retirement. Detaylı backfill/cutover analizi ve owner karar listesi: `decision-log.md` CLIENT-SEC-H2 + CLIENT-SEC-H2C-P03 kayıtları.
+
+---
+
+## SEC-XTEN Cross-Cutting Tenant-Isolation Findings (SYSTEM SECURITY / MULTITENANCY program; ne CLIENT domain ne OFFICE `OFF/OD` karar setine bağlı)
+
+Aşağıdaki kart, CLIENT-P1-POL-F'nin (MÜVEKKİL Canonical Analysis programı, aggregate-visibility sweep) read-only araştırması sırasında **tesadüfen** keşfedilen, ama etkilenen yüzeyin kendisi OFFICE/automation modülüne ait olan ve CLIENT domain kapsamına girmeyen bağımsız bir bulguyu taşır. Owner bunu ayrı bir **SYSTEM SECURITY / MULTITENANCY** programı olarak açtı; ne `CLIENT-GOVERNANCE-CHARTER.md`'ye ne OFFICE'in kendi `OFF/OD` karar setine bağlıdır. Bu dosyanın "Statü otoritesi ayrımı" kuralı (yukarıda) bu karta da aynen uygulanır.
+
+**SEC-XTEN-AUTOMATION-STATS-01** — Cross-tenant automation aggregate/recent-action exposure (`GET /automation/stats`) — TECHNICAL CONTAINMENT CLOSED
+SEVERITY: P1 · DOMAIN STATUS: CANDIDATE / NOT YET TRIAGED · EVIDENCE STATUS: CONFIRMED
+FINDING: Live cross-tenant aggregate ve recent-action exposure — automation-enabled case count, automatic decision count ve en son 10 automatic decision-log kaydı (diğer tenant'ların dosya numaraları dahil) herhangi bir authenticated staff JWT'ye, tenant'tan bağımsız olarak dönüyordu.
+ROOT CAUSE: Tenant context automation-stats kök sorgularına (`case.count`, `decisionLog.count`, `decisionLog.findMany`) hiç propagate edilmiyordu; hiçbiri tenant filtresi taşımıyordu.
+RELATED OFF-INV: — (SYSTEM SECURITY / MULTITENANCY bulgusu, CLIENT-P1-POL-F sırasında keşfedildi; OFF-INV/OFF-OD setine bağlı DEĞİL) · RELATED OFF/OD: —
+GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: SEC-XTEN-AUTOMATION-STATS-01 CANONICAL · LAST VERIFIED SHA: `6865201a`
+CONTAINMENT: Authenticated tenant, controller'dan service'e mevcut `@CurrentUser` deseniyle (aynı controller'daki 3 kardeş metodun zaten kullandığı desen) taşındı; üç kök sorgu da tenant-scoped hale getirildi (`Case.tenantId` doğrudan; `DecisionLog`'un kendi tenantId kolonu YOK — `case: { tenantId }` relation-filter ile); tenant context eksikse FAIL-CLOSED (sıfır-değer response, sorgu hiç çalışmaz).
+REGRESSION EVIDENCE: Two-tenant disposable-Postgres entegrasyon testi — foreign-tenant count'lar ve foreign-tenant dosya numaraları hiçbir koşulda dönmediği kanıtlandı — + mock-based controller/service propagation unit testi; ikisi de mevcut automation-module tenant-boundary CI step'ine (allowlist genişletildi) bağlandı, CI 4/4 SUCCESS.
+RESPONSE CONTRACT: PRESERVED (şekil/sıralama/`take:10` değişmedi).
+WRITE / BUSINESS SIDE EFFECT: NONE (read-only endpoint önce de sonra da).
+IMPLEMENTATION: PR #1446, squash SHA `6865201ae50d54606e545386e122b3ad1cf390a6`, CI 4/4 SUCCESS.
+STATUS: TECHNICAL CONTAINMENT CLOSED / CANONICAL.
+OWNER DISPOSITION (2026-07-20): **STATUS: CONTAINED / TECHNICALLY CLOSED.** **RESIDUAL: NO SYSTEM-WIDE AUTOMATION TENANT-SCOPE AUDIT PERFORMED** — bu kart yalnız doğrulanan `GET /automation/stats` yüzeyini kapsar; automation modülünün geri kalanının veya başka herhangi bir modülün tenant-safe olduğu iddiasını KURMAZ. **FOLLOW-UP: SEPARATE OWNER-GATED ANALYSIS ONLY** (bu kart hiçbir sweep yetkilendirmez).
+IMPLEMENTATION AUTHORITY: NONE — bu kart yalnız zaten-merge-edilmiş, tek yüzeyle sınırlı düzeltmeyi kaydeder; başka hiçbir automation-modülü remediation'ı için yetki VERMEZ.
+NOTES: CLIENT-P1-POL-F'nin aggregate-visibility sweep'i sırasında tesadüfen keşfedildi — kendisi CLIENT domain bulgusu DEĞİLDİR (OFFICE/automation modülü), bu yüzden owner CLIENT canonical analysis programına katmadan ayrı bir SYSTEM SECURITY / MULTITENANCY programı olarak açtı. **CLIENT-P1-POL-F: PAUSED/RESUME READY, bu kart tarafından SÜRDÜRÜLMEDİ.** Detay: `decision-log.md` SEC-XTEN-AUTOMATION-STATS-01-GOV kaydı.
