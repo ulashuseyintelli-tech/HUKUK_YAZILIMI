@@ -23,7 +23,7 @@ interface AuthContextType {
   user: User | null;
   tenant: Tenant | null;
   loading: boolean;
-  login: (email: string, password: string, tenantSlug: string) => Promise<void>;
+  login: (email: string, password: string, tenantSlug: string, rememberMe: boolean) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -68,8 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string, tenantSlug: string) => {
-    const response = await api.login(email, password, tenantSlug);
+  const login = async (email: string, password: string, tenantSlug: string, rememberMe: boolean) => {
+    const response = await api.login(email, password, tenantSlug, rememberMe);
     setUser(response.user);
     setTenant(response.tenant);
     router.push("/dashboard");

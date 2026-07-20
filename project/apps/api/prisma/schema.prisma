@@ -306,6 +306,11 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // OFFICE-AUTH-P01: parola değişince eski JWT'ler geçersiz olsun diye artan sayaç.
+  // Claim içermeyen (eski) token 0 kabul edilir; DB varsayılanı da 0 (backward-compat).
+  tokenVersion      Int       @default(0)
+  passwordChangedAt DateTime?
+
   assignedTasks  Task[] @relation("AssignedTasks")
   createdTasks   Task[] @relation("CreatedTasks")
   completedTasks Task[] @relation("CompletedTasks")

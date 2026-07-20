@@ -144,7 +144,7 @@ export class AuthService {
     };
   }
 
-  async validateUser(userId: string) {
+  async validateUser(userId: string, tokenVersion?: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { tenant: true },
@@ -154,15 +154,22 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
+    // OFFICE-AUTH-P01: parola değişince tokenVersion artar; claim içermeyen (eski) token
+    // 0 kabul edilir. Eşleşmezse önceden geçerli token da artık reddedilir (session revocation).
+    if ((tokenVersion ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException();
+    }
+
     return user;
   }
 
-  private generateToken(user: { id: string; tenantId: string; email: string; role: string }) {
+  private generateToken(user: { id: string; tenantId: string; email: string; role: string; tokenVersion: number }) {
     return this.jwtService.sign({
       sub: user.id,
       tenantId: user.tenantId,
       email: user.email,
       role: user.role,
+      tokenVersion: user.tokenVersion,
     });
   }
 
