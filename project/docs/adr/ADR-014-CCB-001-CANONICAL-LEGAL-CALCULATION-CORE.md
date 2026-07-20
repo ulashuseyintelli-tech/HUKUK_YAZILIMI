@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified and TPA-03A foundation closed 2026-07-20; TPA-04 Option C target-native plan-then-persist / dormant-first single-writer contract ratified 2026-07-20; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE / DO NOT REBASE; snapshot, writer, conservation enforcement, replay, cutover, retirement and PR-11 remain unauthorized until separate owner GO
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified and TPA-03A foundation closed 2026-07-20; TPA-04 Option C target-native plan-then-persist / dormant-first single-writer contract ratified 2026-07-20; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 final disposition B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED; snapshot, writer, conservation enforcement, replay, cutover, retirement and PR-11 remain unauthorized until separate owner GO
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -454,10 +454,29 @@ payload, sourceVersionSetHash, asOfDate/applicationEffectiveDate, history bounda
 engine/rule/policy/rate/interpretation versions, bucket identity version, minorUnit,
 componentCode, sourceLineageSetRef, bucket before/after minor-unit state and deferred aggregate
 conservation enforcement. No schema, migration, snapshot/hash implementation, writer, feature
-flag, production shadow, consumer promotion or cutover is authorized here. PR #407 remains
-hold and untouched; PR #1460 source-admission semantics require implementation-entry
+flag, production shadow, consumer promotion or cutover is authorized here. PR #407 is closed
+unmerged under final disposition B and is not a code source; PR #1460 source-admission semantics require implementation-entry
 reverification; the synthetic corpus remains blocking for writer/evidence/cutover; ACT-28 and
 REC-AUTH-011/012 remain open.
+
+## PR #407 Final Disposition B — 2026-07-20
+
+Owner supersedes the prior `COORDINATED REDESIGN REQUIRED / KEEP OPEN` lifecycle decision:
+PR #407 is closed unmerged, its code is discarded, and no hunk may be extracted or reused.
+The requirements survive independently in RD01/TPA:
+
+1. expose gross and remaining principal/interest separately;
+2. never derive remaining principal as `totalDue - totalInterest`;
+3. interest-only application does not reduce principal;
+4. with no application, gross equals remaining in the same valid context;
+5. missing, stale or unverified exposure is typed null and fail-closed, never zero;
+6. exact-cent reconciliation includes cost and ancillary components;
+7. held receipt remains outside exposure reconciliation; and
+8. `claimRemaining = remainingPrincipal + remainingInterest` is not a general invariant,
+   because cost and ancillary amounts may remain.
+
+This disposition authorizes no runtime, test, schema, migration, writer, consumer or cutover
+change. ACT-28, REC-AUTH-011/012, CAN-CUT-02 and TPA-04B+ remain open and owner-gated.
 
 ## Normative Rules
 
@@ -891,3 +910,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-20 | 3.0 | TPA-03A schema-foundation closure: PR #1449 / `63f0b0ea` establishes the exact two-file additive/writer-free/no-backfill persistence foundation. Runtime writer, conservation enforcement, replay/evidence, cutover and retirement remain unauthorized; ACT-28/REC-AUTH-011/012 remain open. |
 | 2026-07-20 | 3.1 | TPA-04 Option C writer contract: official canonical Receivable snapshot plus target-native `LegalApplicationPlan` is the sole writer input; `LegalApplicationWriter` is dormant-first and transaction-bound. Snapshot/bucket SHA-256 identity, bigint conservation, replay, APPLY/full reversal, audit and fail-closed legacy coexistence are ratified. TPA-04A..G remain separately owner-gated and implementation is not authorized. |
 | 2026-07-20 | 3.2 | TPA-04A Option C receipt-bound embedded `CanonicalReceivableApplicationSnapshotV1`: exact eligibility/envelope, RCV-CAS/v1 serialization/hash, deterministic bucket identities, fail-closed readiness and pure `LegalApplicationPlan` input are ratified. Broader ADR-013 and TPA-04B+ implementation remain owner-gated. |
+| 2026-07-20 | 3.2 compliance update | PR #407 final disposition B supersedes its prior keep-open lifecycle decision: CLOSED UNMERGED, requirements preserved in RD01/TPA, code discarded, extraction/reuse prohibited. No architecture version or implementation authority changes. |

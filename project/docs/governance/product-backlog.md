@@ -2324,9 +2324,20 @@ bigint plan contract'ı canonicaldır.
 
 General presentation/Fee/Harç/Journal/consumer snapshot lifecycle ADR-013 altında OPEN;
 Balance Engine SHADOW_ONLY. Schema/migration/hash implementation/snapshot writer/plan builder/
-production shadow/cutover NONE. PR #407 HOLD/UNTOUCHED; synthetic corpus writer/evidence/cutover
+production shadow/cutover NONE. PR #407 final disposition B ile CLOSED/UNMERGED, requirements
+preserved, code discarded ve extraction/reuse yoktur; synthetic corpus writer/evidence/cutover
 BLOCKING; ACT-28 ve REC-AUTH-011/012 OPEN. **NEXT ELIGIBLE ACTION: TPA-04B — WRITER EVIDENCE
 SCHEMA AMENDMENT ANALYSIS — OWNER GO-ANALYZE REQUIRED / IMPLEMENTATION NOT AUTHORIZED.**
+
+**RCV-PR407-CLOSE-B-GOV Final Disposition Supersession (2026-07-20;
+CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner, PR #407 için önceki
+`C — KEEP OPEN / COORDINATED REDESIGN REQUIRED` kararını supersede ederek
+`B — CLOSE / REQUIREMENTS PRESERVED / CODE DISCARDED` kararını ratifiye etmiştir.
+PR unmerged kapatılır; code extraction/reuse yoktur. Korunan sekiz gereksinim
+`RCV-PHASE-1-AUTHORIZATION.md §1.27`, `RECEIVABLE-GOVERNANCE.md §23.13` ve ADR-014'te
+traceable'dır. Bu closure yeni backlog/implementation kimliği açmaz; runtime, test, schema,
+migration, display, writer, consumer veya cutover authority üretmez. ACT-28, REC-AUTH-011/012,
+CAN-CUT-02 ve TPA-04B+ açık ve ayrı owner-gated kalır.
 
 ---
 

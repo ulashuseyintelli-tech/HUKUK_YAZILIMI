@@ -663,7 +663,8 @@ allocation/cache input'u kullanmaz ve conservation sağlanmadan üretilemez.
 
 TPA-04B yalnız writer-evidence/conservation persistence amendment'ının owner-gated analizidir.
 Bu kayıt schema, migration, hash implementation, snapshot writer, plan builder, production
-shadow, consumer authority veya cutover yetkisi üretmez. PR #407 hold/untouched; synthetic
+shadow, consumer authority veya cutover yetkisi üretmez. PR #407 final disposition B ile
+closed/unmerged, requirements preserved ve code discarded'dır; extraction/reuse yasaktır. Synthetic
 corpus writer/evidence/cutover için blocking; ACT-28 ve REC-AUTH-011/012 open kalır.
 
 ### `SYS-FIN-014 — Claim Formation İki Seviyeli Taxonomy Kullanır`
@@ -1164,6 +1165,7 @@ kanıtla güncellenir.
 | v1.6 compliance update, 2026-07-20 | RCV-COL-TPA-03A schema-foundation closure reconciliation | PR #1449 / `63f0b0ea` exact two-file additive foundation evidence'ı kaydedildi. Schema/migration foundation CLOSED; writer/conservation enforcement/replay/cutover/retirement ve ACT-28/REC-AUTH-011/012 açık kaldı. Semantik kontrat veya Constitution version'ı değişmedi. |
 | v1.7, 2026-07-20 | RCV-COL-TPA-04 LegalApplicationWriter contract canonicalization | Option C target-native plan-then-persist / dormant-first single writer ratifiye edildi. Official Receivable snapshot + target-native plan input'u, snapshot/bucket hash identity, pre-writer DB conservation, replay, APPLY/full-reversal, transaction-bound audit ve fail-closed legacy coexistence sınırları bağlayıcıdır. TPA-04A..G ayrı owner gate'leridir; implementation yetkisi yoktur. |
 | v1.8, 2026-07-20 | RCV-COL-TPA-04A canonical snapshot / bucket identity contract canonicalization | Option C receipt-bound embedded `CanonicalReceivableApplicationSnapshotV1` ratifiye edildi. Narrow application-snapshot eligibility, envelope, RCV-CAS/v1 serialization/hash, bucket identity, fail-closed readiness ve pure plan sınırları canonicaldır. Broader ADR-013, schema/writer/production/cutover yetkileri açık kaldı. |
+| v1.8 compliance update, 2026-07-20 | RCV-PR407-CLOSE-B-GOV final disposition supersession | PR #407'nin eski keep-open kararı superseded; PR CLOSED UNMERGED, requirements RD01/TPA'da preserved, code discarded ve extraction/reuse prohibited. Constitution semantiği/version'ı, runtime veya implementation authority değişmedi. |
 ---
 ## Son Hüküm
 

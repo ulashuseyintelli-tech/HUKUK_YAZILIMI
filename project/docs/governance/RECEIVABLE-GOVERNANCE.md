@@ -1948,10 +1948,30 @@ ADR-013 yalnız bu dar alt tür bakımından ratifiye edilmiştir; general prese
 Fee/Harç, Journal, consumer authority ve broader lifecycle açık kalır. Current Balance Engine
 `SHADOW_ONLY`; production authority/writer/cutover `NOT AUTHORIZED`dır.
 
-PR #407 `HOLD / UNTOUCHED`; PR #1460 ancestry/collision merge öncesi yeniden doğrulanır;
+PR #407 final disposition B ile `CLOSED / UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED`;
+PR #1460 ancestry/collision implementation girişi öncesi yeniden doğrulanır;
 synthetic corpus writer/evidence/cutover için `BLOCKING`; ACT-28 ve REC-AUTH-011/012
 `OPEN` kalır. Sonraki yalnız `TPA-04B — WRITER EVIDENCE SCHEMA AMENDMENT ANALYSIS /
 OWNER GO-ANALYZE REQUIRED`; implementation `NOT AUTHORIZED`dır.
+
+## 23.13. PR #407 final disposition B supersession — 2026-07-20
+
+Owner, önceki `COORDINATED REDESIGN REQUIRED / KEEP OPEN` yaşam döngüsü kararını
+supersede etmiştir. PR #407 birleşmeden kapatılır; kodu discard edilir ve hiçbir hunk
+extract/reuse edilmez. Gereksinimler bağımsız olarak korunur:
+
+1. gross ve remaining principal/interest ayrı görünür;
+2. remaining principal `totalDue - totalInterest` ile türetilmez;
+3. interest-only application principal'ı azaltmaz;
+4. application yoksa aynı valid context'te gross=remaining;
+5. missing/stale/unverified exposure `0` değil typed `null` ve fail-closed'dur;
+6. exact-cent reconcile cost/ancillary bileşenleri içerir;
+7. held receipt exposure reconciliation dışındadır; ve
+8. cost/ancillary nedeniyle `claimRemaining = remainingPrincipal + remainingInterest`
+   genel invariant değildir.
+
+Bu kayıt runtime, schema, migration, snapshot, writer, display, API, consumer veya cutover
+yetkisi üretmez. RD01/TPA contract'ları, ACT-28, REC-AUTH-011/012 ve TPA-04B+ gate'leri korunur.
 
 ---
 

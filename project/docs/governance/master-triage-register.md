@@ -1,7 +1,7 @@
 # Master Triage — Canonical Register
 
 **Durum:** Living document — kanonik, tekilleştirilmiş, çok-turlu konsolidasyon.
-**Son güncelleme:** 2026-07-13 (PR-A4-N2 shared numeric XML projection activation)
+**Son güncelleme:** 2026-07-20 (RCV-PR407-CLOSE-B-GOV final disposition supersession)
 **Kaynak birleştirmeler:**
 1. Orijinal Master Triage (25 export, ~343 ham kayıt) — 2026-07-04 GO-ANALYZE konsolidasyonu
 2. PB-01..09 / VR-01..14 / WQ-01..07 batch (kalan ~6 sayfa konsolidasyonu)
@@ -27,7 +27,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 |---|---|---|---|---|
 | **ACT-24** | UI | Approval Inbox'a CLIENT_PAYOUT_POST summary projector eklenmesi | Low | 3. batch (PAYOUT-CPB-01), henüz ele alınmadı |
 | **ACT-25** | Accounting | ClientPayoutService.create() dead-code kararı + test suite finalize()'a taşıma | Low | 3. batch (PAYOUT-CPB-02), henüz ele alınmadı |
-| **ACT-28** | RCV-COL Cross-Domain | Receipt, legal application, attribution, compatibility projection, derived cache ve legal balance fact-authority reconciliation | Orta-Yüksek | **OPEN / XD-001 + TPA-02 + TPA-03/03A + TPA-04 + TPA-04A CANONICAL / IMPLEMENTATION + EVIDENCE + CUTOVER + RETIREMENT REMAIN.** ClaimItem legal source/input/lineage'dır, application target değildir. Receivable official snapshot/bucket/TBK100/target-native plan; Collection receipt lifecycle ve outer transaction orchestration sahibidir. TPA-04A Option C, receipt-bound `CanonicalReceivableApplicationSnapshotV1` exact eligibility/envelope, RCV-CAS/v1 identity, deterministic bucket key ve fail-closed pure-plan contract'ını ratifiye eder. Balance Engine SHADOW_ONLY; DB conservation/evidence amendment, hash/snapshot runtime, plan builder ve writer yoktur. Legacy surfaces frozen/transitional; synthetic corpus writer/evidence/cutover blocker; PR #407 HOLD/UNTOUCHED. REC-AUTH-011/012 OPEN. Next: `TPA-04B — Writer Evidence Schema Amendment Analysis` — OWNER GO-ANALYZE REQUIRED / IMPLEMENTATION NOT AUTHORIZED. |
+| **ACT-28** | RCV-COL Cross-Domain | Receipt, legal application, attribution, compatibility projection, derived cache ve legal balance fact-authority reconciliation | Orta-Yüksek | **OPEN / XD-001 + TPA-02 + TPA-03/03A + TPA-04 + TPA-04A CANONICAL / IMPLEMENTATION + EVIDENCE + CUTOVER + RETIREMENT REMAIN.** ClaimItem legal source/input/lineage'dır, application target değildir. Receivable official snapshot/bucket/TBK100/target-native plan; Collection receipt lifecycle ve outer transaction orchestration sahibidir. TPA-04A Option C, receipt-bound `CanonicalReceivableApplicationSnapshotV1` exact eligibility/envelope, RCV-CAS/v1 identity, deterministic bucket key ve fail-closed pure-plan contract'ını ratifiye eder. Balance Engine SHADOW_ONLY; DB conservation/evidence amendment, hash/snapshot runtime, plan builder ve writer yoktur. Legacy surfaces frozen/transitional; synthetic corpus writer/evidence/cutover blocker; PR #407 final disposition B ile CLOSED/UNMERGED, requirements preserved, code discarded. REC-AUTH-011/012 OPEN. Next: `TPA-04B — Writer Evidence Schema Amendment Analysis` — OWNER GO-ANALYZE REQUIRED / IMPLEMENTATION NOT AUTHORIZED. |
 
 ### Owner-Gated / Future / Decision-Split
 
@@ -56,7 +56,6 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | VER-09 | Escalation FOUNDER/MANAGER fallback bug'ının resmî backlog kaydı var mı | Orta | Henüz doğrulanmadı — bu kayıt "MVR-009 Route Drift" alias'ı değildir; route-drift/P2 observe bookkeeping düzeltmesi ayrı governance-only remediation olarak kapatıldı |
 | VER-10 | Senet/bono arka-yüz OCR endorsement canlı doğrulama | Düşük-Orta | Açık — PR/merge zinciri mevcut olsa da kayıt "canlı doğrulama" istiyor; canlı dataset/evidence olmadan kapatılmaz |
 | VER-12 | 3 duplike `nest start --watch` süreci kasıtlı mı terkedilmiş mi | Düşük | Açık — process command-line incelemesi güvenlik/owner izni gerektirir; repo ağacından kapanmaz |
-| VER-13 | PR #406/#407 mergeStateStatus canlı teyidi | Orta | Kısmen kapandı — PR #406 güncel metadata ile `DIRTY / CONFLICTING` doğrulandı ve owner kararıyla `CLOSED / UNMERGED` kapatıldı. PR #407 `OPEN / DIRTY / CONFLICTING` olarak doğrulandı; disposition kararı ayrı açık kapsam olarak korunur. |
 | VER-14 | Journal migration #645 + FAZ-1b migration 20260630120000 DB apply durumu | Yüksek | Açık — migration dosyaları repo'da var; DB apply durumu repo ağacından kanıtlanamaz |
 | VER-16 | 6 codex/* local branch stale/aktif durumu | Düşük | Açık — branch/worktree hijyeni ayrı bakım/owner-local context gerektirir |
 | **VER-20** | pnpm store diğer paketler content-eksikliği | — | 2. batch (eski VR-01) |
@@ -101,6 +100,7 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 
 | Kayıt | Kapanış Kanıtı |
 |---|---|
+| **VER-13 / RCV-PR407-CLOSE-B-GOV (PR #406/#407 disposition verification)** | **CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE.** PR #406 daha önce CLOSED/UNMERGED kapatılmıştır. PR #407 fresh truth'te `OPEN / DIRTY / CONFLICTING`, head `4f35e49e` olarak doğrulanmış; owner final disposition B ile `CLOSE / REQUIREMENTS PRESERVED / CODE DISCARDED` kararını ratifiye etmiştir. Merge/rebase/conflict-resolution/extraction/reuse yoktur. Sekiz requirement RD01/TPA'da korunur; runtime/schema/migration/display/cutover authority üretilmez. |
 | **RC-COL / PHASE 0 — CANONICALIZATION & HANDOFF** | **CLOSED / CANONICAL UPON APPROVED MERGE OF THE FINAL CLOSURE RECONCILIATION.** W0.1 repository acceptance: `ACCEPTED_WITH_DELTA @ beb7d673`; W0.2 suite: PR #1209 (`c36fa47b`) + MPB-030 closure PR #1210 (`25db930c`); W0.3 root decisions: COL/OD-18A #1257 (`c4ee2332`), COL/OD-05 #1242 (`6e154c68`), COL/OD-21 #1295 (`a6372cca`), COL/OD-03 #1303 (`539fd9e5`), COL/OD-01 #1307 (`a3729d9c`); W0.4: Governance Index, Decomposition, Decision Log, this Master Triage pointer and Product Backlog `MPB-033` aligned. COL/OD-01/-03/-21 are `RECORDED / CANONICAL`; remaining later-phase decisions/risks stay open in their own scope. Phase 2 **NOT AUTHORIZED — ENTRY REVIEW OWNER GO REQUIRED**. |
 | **RC-COL / PHASE 1 — P0 FINANCIAL SAFETY** | **CLOSED / CANONICAL after approved merge of the closure reconciliation.** W1.1: deterministic EOL PR #1214 (`bb9c1973`) + cent-remainder PR #1223 (`5fe5f0eb`); W1.2: real-DB allocation race evidence PR #1217 (`4e8243e5`) + COL/OD-04 contract PR #1275 (`762837d1`) + secondary write-path closure PR #1279 (`6c2329dc`); W1.3 payout replay PR #1265 (`081bd961`) + reconciliation PR #1269 (`ebd89af2`); W1.4 multi-instrument integrity PR #1229 (`4c1968ce`); W1.5 legacy UYAP fail-closed containment PR #1236 (`fbef6915`); W1.6 transaction-bound audit capture PR #1246 (`c7f55da4`). Required CI for every technical PR: 4/4 SUCCESS; all squash SHAs are ancestors of canonical main. Mutable workstream/risk status authority remains `COLLECTION-DECOMPOSITION.md` and `COLLECTION-RISK-REGISTER.md`; this row is the mandatory Master Register closure pointer. `COL/OD-21` is RECORDED / CANONICAL; open `COL/OD-11`, broader REC-AUTH-011/012 reconciliation, cutover and later-phase risks are preserved and do not reopen Phase 1. Phase 2 **NOT STARTED / NOT AUTHORIZED**. |
 | **RC-COL / PHASE 2 / W2.1 — CANONICAL EFFECTIVE-DATE POLICY** | **CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE.** COL/OD-03 Option A + COL-TIME-001 contract; W2.1A PR #1315 / squash `1d5974e5`, required CI 4/4 SUCCESS, tek test dosyası. Explicit effectiveDate precedence, entryDate/Collection.date fallback, provenance exclusion ve invalid-date fail-closed confirmed. Mutable status authority Decomposition + Risk Register'dır; Product Backlog pointer'ı `MPB-034`. Phase 2 ACTIVE kalır; COL/OD-06 Option A RECORDED, W2.2 `DECISION GATE SATISFIED / IMPLEMENTATION NOT AUTHORIZED`, W2.3 `BLOCKED — W2.2 BOUNDARY PENDING`dır. W2.4–W2.5 ve COL/OD-07/-08/-09/-10 owner-gated / NOT AUTHORIZED; snapshot/backfill/cutover kapsam dışıdır. |
@@ -300,10 +300,10 @@ Bu dosya `CLAUDE.md`'nin governance akışına (`Yeni fikir → Triage → Produ
 | Kategori | Sayı |
 |---|---|
 | Master Product Backlog (ACTIVE) | 3 (ACT-24, ACT-25, ACT-28; ACT-20→OWNER-GATED/FUTURE/HOLD, ACT-23→OWNER_DECISION_REQUIRED, ACT-27→DECISION_CLOSED/IMPLEMENTATION_NEEDED) |
-| Master Verification Required | 14 (VER-02, VER-05, VER-07, VER-09, VER-10, VER-12, VER-13, VER-14, VER-16, VER-20, VER-21, VER-22, VER-29, VER-33) |
+| Master Verification Required | 13 (VER-02, VER-05, VER-07, VER-09, VER-10, VER-12, VER-14, VER-16, VER-20, VER-21, VER-22, VER-29, VER-33) |
 | Master Workflow Queue — PENDING | 6 grup |
 | Master Workflow Queue — DONE | 7 zincir/kayıt |
-| Closed Register | 59 (PR-A5-1 dormant canonical FAIZT relation/projection contract closure eklendi) |
+| Closed Register | 60 (VER-13 / RCV-PR407-CLOSE-B-GOV closure eklendi) |
 | Archived Register | 7 (ARC-05 split sonrası tek satır, A parçası Closed'a gitti) |
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |
