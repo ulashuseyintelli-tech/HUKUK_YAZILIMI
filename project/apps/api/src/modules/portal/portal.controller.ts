@@ -21,6 +21,7 @@ import { PortalService } from "./portal.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { LoginRateLimitGuard } from "../auth/guards/login-rate-limit.guard";
+import { CredentialRecoveryRateLimitGuard } from "../auth/guards/credential-recovery-rate-limit.guard";
 
 // Dosya yükleme ayarları
 const portalDocStorage = diskStorage({
@@ -58,6 +59,7 @@ export class PortalController {
    * POST /api/portal/forgot-password
    */
   @Post("forgot-password")
+  @UseGuards(CredentialRecoveryRateLimitGuard)
   async forgotPassword(@Body() body: { email: string }) {
     return this.portalService.createResetToken(body.email);
   }
@@ -67,6 +69,7 @@ export class PortalController {
    * POST /api/portal/reset-password
    */
   @Post("reset-password")
+  @UseGuards(CredentialRecoveryRateLimitGuard)
   async resetPassword(@Body() body: { token: string; password: string }) {
     return this.portalService.resetPassword(body.token, body.password);
   }

@@ -39,7 +39,7 @@ function build(over: any = {}) {
   // Task 10-S: bu dosya createPortalUser'ı gerçekten çağırıyor → officeApproval eligible:true olmalı
   // (bu testler dup/reactivate/conflict mantığını doğruluyor, capability'yi DEĞİL).
   const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
-  const svc = new PortalService(prisma as any, {} as any, audit as any, officeApproval as any);
+  const svc = new PortalService(prisma as any, {} as any, audit as any, officeApproval as any, {} as any, {} as any);
   return { svc, prisma, tx, audit };
 }
 

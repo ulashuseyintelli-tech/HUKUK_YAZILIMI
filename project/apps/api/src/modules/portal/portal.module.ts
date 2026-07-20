@@ -6,6 +6,9 @@ import { PortalAuthGuard } from "./portal-auth.guard";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { AuditModule } from "../audit/audit.module";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
+// CLIENT-P2-CREDENTIAL-RECOVERY-P01: reset-token e-postası için EmailProviderService
+// (NotificationModule export eder) — AuthModule'ün K1-7 invite akışıyla aynı desen.
+import { NotificationModule } from "../notification/notification.module";
 
 /**
  * H4: JWT_SECRET yoksa sessiz sabit fallback'e DÜŞMEZ — açık hata fırlatır (fail-closed).
@@ -30,6 +33,7 @@ export function portalJwtModuleOptions(): JwtModuleOptions {
     PrismaModule,
     AuditModule,
     OfficeApprovalModule,
+    NotificationModule,
     JwtModule.registerAsync({
       useFactory: portalJwtModuleOptions,
     }),
