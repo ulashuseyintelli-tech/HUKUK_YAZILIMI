@@ -17,6 +17,15 @@ const H2A_CONTAINMENT_ERROR = {
   message: 'Bu uç nokta güvenlik incelemesi nedeniyle geçici olarak kullanılamıyor.',
 };
 
+// UYAP-RETRY-CONTAIN-01: fail-closed — retryFailedRequests() hiç çağrılmaz, Prisma'ya hiç
+// ulaşılmaz. Önceki hâl global (tenant-scope'suz) seçim + kimliksiz çağıran + POA/CPE
+// re-doğrulaması olmadan re-dispatch yapıyordu (TRANSPORT-RISK-07). Owner Model D (hard disable)
+// seçimiyle kapatıldı; yeniden açılış ayrı bir retry-contract birimine bağlıdır.
+const RETRY_CONTAINMENT_ERROR = {
+  error: 'UYAP_RETRY_TEMPORARILY_UNAVAILABLE',
+  message: 'UYAP yeniden deneme işlemi, tenant ve hukukî yetki doğrulaması tamamlanana kadar kullanılamıyor.',
+};
+
 @Controller('uyap')
 @UseGuards(JwtAuthGuard)
 export class UyapController {
@@ -125,11 +134,8 @@ export class UyapController {
    */
   @Post('retry-failed')
   async retryFailed() {
-    const count = await this.uyapService.retryFailedRequests();
-    return {
-      message: `${count} istek yeniden denendi`,
-      retriedCount: count,
-    };
+    // UYAP-RETRY-CONTAIN-01: fail-closed — service çağrılmaz, Prisma'ya ulaşılmaz.
+    throw new ServiceUnavailableException(RETRY_CONTAINMENT_ERROR);
   }
 
   /**
