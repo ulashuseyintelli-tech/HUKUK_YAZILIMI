@@ -52,3 +52,4 @@ OFFICE Canonical Architecture Transformation programı Phase 0'ı (WS0.1-WS0.4, 
 |---|---|---|
 | SLICE-02 | CANONICAL | main @ `a3eee8b8`, PR #1226 |
 | NEXT ELIGIBLE UNIT | WAVE 1 — Candidate Inventory and Slice Decomposition | Owner selection/GO bekliyor → bkz. `OFFICE-DELIVERY-MANIFEST.md` §7-8 |
+| OFFICE-AUTH-P02 | GOVERNANCE-REGISTERED (docs-only, IMPLEMENTATION NOT AUTHORIZED) | Credential-recovery mimari kararı `decision-log.md` § 2026-07-21 "OFFICE-AUTH-P02-GOVERNANCE-ENTRY"'de canonicalize edildi; bkz. `product-backlog.md` § OFFICE-AUTH-P02 |
