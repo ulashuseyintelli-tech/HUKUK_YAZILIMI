@@ -1224,3 +1224,91 @@ Foundational blueprint: COMPLETE/CANONICAL. Portal blueprint: COMPLETE/CANONICAL
 ### 23.20 BP-06 Self-Check
 
 Bu bölüm: POL-J object-scope modelini GENİŞLETMEZ veya rakip model ÜRETMEZ; POL-D field contract'ını yeniden AÇMAZ; POL-F aggregate policy'sini yeniden AÇMAZ; BP-07 SOT/reconciliation boşluklarını OVERRIDE ETMEZ; BP-08 authority map'ini DEĞİŞTİRMEZ; BP-09 evidence taxonomy'sini DEĞİŞTİRMEZ; financial aggregate visibility YETKİLENDİRMEZ; ClientStatement portal visibility YETKİLENDİRMEZ; advance/cari'yi authoritative current balance YAPMAZ; payout recording'i bank execution YAPMAZ; mixed-purpose review note'u client-safe İLAN ETMEZ; staff visibility'yi portal authority'sine DÖNÜŞTÜRMEZ; POL-E/KVKK kararı VERMEZ; yeni risk kartı AÇMAZ; DTO/presenter/masking implementasyonu YAPMAZ; kod/schema/migration DEĞİŞTİRMEZ; Phase 1'i CLOSED İLAN ETMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 24. CLIENT-P1-POL-E — Retention / Anonymization / Evidence-Preservation Baseline (OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-POL-E` karar analizinin **owner-ratified data-lifecycle policy**'sidir (`decision-log.md` CLIENT-P1-POL-E-GOV; **SELECTED MODEL: OPTION A — MINIMUM EVIDENCE-PRESERVING BASELINE**). Fixed retention period, otomatik silme/anonimleştirme tetikleyicisi, legal-hold authority modeli **SEÇİLMEDİ**. §5, §6, §8.A, §8.B, §11–§23 metinlerini semantik olarak değiştirmez. **DESTRUCTIVE DATA-LIFECYCLE ACTION: FAIL-CLOSED. IMPLEMENTATION AUTHORITY: NONE.**
+
+### 24.1 Selected Model
+
+**OPTION A — MINIMUM EVIDENCE-PRESERVING BASELINE.** Sabit süre veya otomatik tetikleyici seçmeden, destructive işlemi 8-koşullu fail-closed kapıya bağlayan bir başlangıç duruşu.
+
+### 24.2 Core Policy
+
+Hiçbir kayıt **fiziksel olarak silinemez, anonimleştirilemez, geri döndürülemez şekilde redakte edilemez veya destructive biçimde dönüştürülemez**, şu 8 koşulun TÜMÜ açıkça belirlenmeden: (1) record-family owner, (2) business terminal event, (3) retention/legal basis, (4) evidence dependency, (5) cross-domain dependency, (6) active hold status, (7) reference-integrity impact, (8) authorized deletion method. Bu koşullardan biri belirsizse: **DO NOT DELETE. DO NOT ANONYMIZE. DO NOT CASCADE. DO NOT PURGE. CLASSIFY: OWNER/LEGAL/CROSS-DOMAIN DECISION REQUIRED.**
+
+### 24.3 Baseline Nature
+
+Option A: sabit saklama süresi SEÇMEZ; tüm kayıtları süresiz saklama yükümlülüğü KURMAZ; mevcut fiziksel veriyi hukuken gerekli İLAN ETMEZ; mevcut kod davranışını KVKK'ya tam uyumlu İLAN ETMEZ; ileride record-family bazlı retention matrisi kurulmasını ENGELLEMEZ. **Canonical precision:** `EVIDENCE-PRESERVING BASELINE≠PERMANENT RETENTION POLICY` · `NO AUTHORIZED DELETION≠LEGAL REQUIREMENT TO KEEP FOREVER` · `POLICY GAP≠DELETE AUTHORITY` · `CURRENT TECHNICAL BEHAVIOR≠VERIFIED LEGAL COMPLIANCE`.
+
+### 24.4 Business Lifecycle ≠ Data Lifecycle
+
+Şu iş olayları kendiliğinden veri silme/anonimleştirme tetikleyicisi DEĞİLDİR: client inactive · client relationship terminated · case closed · PoA expired · PoA revoked · declaration retracted · declaration false-positive · approval rejected/cancelled/expired · statement void/superseded · portal account disabled · intake promoted/rejected · document rejected. **Canonical non-equations:** `BUSINESS TERMINATION≠DATA DELETION` · `CLIENT INACTIVE≠DELETE CLIENT DATA` · `POA EXPIRED/REVOKED≠DELETE MANDATE EVIDENCE` · `RETRACTION/FALSE-POSITIVE≠PHYSICAL DELETION` · `VOID/SUPERSESSION≠UNDERLYING RECORD DELETION` · `PORTAL DISABLEMENT≠DELETE PORTAL HISTORY` · `CASE CLOSURE≠AUTOMATIC CLIENT-RECORD PURGE`.
+
+### 24.5 Record-Family Classification
+
+Şu 18 record ailesi bağımsız retention/deletion sınıfı olarak korunur: client identity/profile · client contact · client address · client bank component · CaseClient relationship · client power of attorney · client approval request/event · client intel statement · client intake link/submission/field · portal user/credential metadata · portal document · portal message · portal notification · client statement/line · client payout/offset references · generic AuditLog · document/source artifact · cross-domain references. **ONE RECORD-FAMILY DECISION≠ENTERPRISE-WIDE RETENTION RULE.**
+
+### 24.6 Evidence-Preservation Classes
+
+Ayrı değerlendirilir: business record · workflow record · audit/transition event · source document · staff-recorded attributed fact · authenticated principal act · financial/legal-effect evidence · pre-canonical external input · snapshot/projection. Destructive işlemden önce doğrulanmalı: denetim zinciri · hukuki ispat değeri · finansal mutabakat · supersession/reversal zinciri · kaynak belgenin doğrulanabilirliği · cross-domain referans bütünlüğü · actor/principal provenance.
+
+### 24.7 Evidence-Critical Families
+
+Ayrı owner ve gerekiyorsa hukuk değerlendirmesi olmadan deletion-safe SAYILAMAZ: CaseClient · power of attorney · approval request/event · client intel statement · client statement/line · portal document · portal message · payout/offset references · AuditLog · financial/accounting references. **Status değişikliği evidence değerini otomatik ortadan kaldırmaz:** `REJECTED/RETRACTED/FALSE-POSITIVE/EXPIRED/CANCELLED/VOID/SUPERSEDED ≠ NO EVIDENCE VALUE`.
+
+### 24.8 Cross-Domain Ownership
+
+**CLIENT:** client relationship + client-side evidence. **OFFICE:** internal approval + staff-actor evidence. **RECEIVABLE:** claim/receivable evidence. **COLLECTION:** receipt/disposition/payout/offset/money-out evidence. **DEBTOR:** debtor legal-status evidence. **ACCOUNTING:** accounting journal evidence. **SHARED INFRASTRUCTURE:** storage/authentication/generic-audit facilities, INDEPENDENT BUSINESS AUTHORITY YOK. CLIENT: COLLECTION kayıtlarının retention owner'ı DEĞİLDİR; ACCOUNTING kayıtlarının retention owner'ı DEĞİLDİR; RECEIVABLE/DEBTOR delillerinin retention süresini tek başına BELİRLEYEMEZ; shared infrastructure kayıtlarına business-authority ATFEDEMEZ. `CLIENT REFERENCE≠CLIENT RETENTION OWNERSHIP`.
+
+### 24.9 Financial Record Boundary
+
+BP-07/BP-08 hükümleri korunur: `CLIENT STATEMENT≠LIVE LEDGER` · `PAYOUT RECORDING≠BANK EXECUTION` · `VOID/SUPERSESSION≠FINANCIAL REVERSAL`. Şu kayıtlar için retention/deletion kararı ayrı COLLECTION ve/veya ACCOUNTING girdisi GEREKTİRİR: client statement/line · payout · offset · collection disposition · balance/ledger references · accounting journal references. **POL-E bunlar için sabit süre veya imha tetikleyicisi SEÇMEZ.**
+
+### 24.10 Legal / Evidence Hold Baseline
+
+Destructive işlemi durdurabilecek hold/review adayları: active litigation · potential dispute · regulatory/audit review · financial reconciliation · evidence preservation · security incident · data-subject request review. **Canonical baseline:** `ACTIVE DOCUMENTED HOLD/REVIEW OVERRIDES SCHEDULED DESTRUCTIVE PROCESSING` · `HOLD RELEASE DOES NOT AUTOMATICALLY REQUIRE IMMEDIATE DELETION`. Bu hüküm spesifik hold authority SEÇMEZ, litigation-hold doktrininin tüm ayrıntılarını canonical hukuk sonucu İLAN ETMEZ, tüm uyuşmazlık ihtimallerinde sınırsız saklama KURMAZ. Hukukî dayanak veya hold applicability belirsizse: **LEGAL REVIEW REQUIRED, NO AUTOMATIC DELETION.**
+
+### 24.11 Subject-Access / Deletion Request Routing
+
+`ROUTINE PORTAL VISIBILITY≠DATA-SUBJECT ACCESS RESPONSE` · `MASKING/OMISSION≠DATA DELETION` · `MASKING≠ANONYMIZATION` · `ANONYMIZATION≠PHYSICAL DELETION` · `RETENTION≠PORTAL VISIBILITY`. İlgili kişi talebi doğrudan purge job'a DÖNÜŞMEZ; aktif hukuki dayanak+evidence dependency incelemesi olmadan otomatik silme OLUŞTURMAZ; subject-access response'u normal portal görünürlüğüyle BİRLEŞTİRMEZ. Bu görev subject-access response kapsamını veya yetkili actor'ünü SEÇMEZ.
+
+### 24.12 Technical Reference Safety
+
+Ayrı değerlendirilir: hard foreign key · on-delete restrict · on-delete cascade · on-delete set-null · soft polymorphic reference · scalar cross-module reference · file path/external location · supersession link · audit entity-type/entity-id. **Canonical precision:** `DATABASE CASCADE≠LEGAL RETENTION RULE` · `DATABASE RESTRICT≠LEGAL REQUIREMENT TO KEEP` · `NO FOREIGN KEY≠SAFE TO DELETE` · `SUCCESSFUL DELETE≠EVIDENCE-SAFE DELETE`. Cascade/SetNull/soft-reference davranışları yalnız teknik gerçek olarak kaydedilir.
+
+### 24.13 Portal / Intake Baseline
+
+Şu kayıtlar için otomatik retention/deletion kararı VERİLMEDİ: rejected/pending document · raw intake field · promoted intake source · rejected intake source · portal message · portal notification · account/credential history · reset-token metadata · session/login evidence. `INTAKE PROMOTION≠SOURCE DELETION` · `DOCUMENT REJECTION≠DOCUMENT DELETION` · `MESSAGE READ≠MESSAGE DELETION` · `NOTIFICATION READ≠NOTIFICATION DELETION` · `ACCOUNT DISABLEMENT≠ACCOUNT-HISTORY DELETION`. Filesystem artifact ile database metadata'sı aynı transaction veya aynı retention birimi SAYILMAZ.
+
+### 24.14 AS-IS Gap Register (record-only, mükerrer kart YOK)
+
+Owner-listelenen 11 gap ailesi record-only kaydedildi: no unified retention contract · no unified legal-hold contract · non-uniform audit coverage · physical file/database lifecycle separation · soft-reference orphan risk · superseded/retracted record permanence · portal account history gap · raw intake source retention gap · message/notification retention gap · document review history gap · cross-domain copy/duplication gap. **Ek 3 doğrulanan gap:** `ClientAddress.isCurrent` AS-IS pasif/tutarsız (şema yorumu "arşiv, silinmez" ile şu an hiç uyuşmuyor — kod hiçbir yerde `false` atamıyor); **portal JWT revocation AS-IS ABSENT** (POL-C §18'in mevcut "session-invalidation yok" bulgusuyla AYNI kök-neden, mükerrer kart DEĞİL, ek teknik teyit); **password-reset token plaintext storage** (POL-C §18'in "credential-recovery-delivery eksik" bulgusuyla ilişkili aynı özellik alanı, ek teknik detay). Bu kayıt remediation AÇMAZ, güvenlik düzeltmesi YAPMAZ, schema/kod değişikliği BAŞLATMAZ, yeni workstream otomatik AÇMAZ.
+
+### 24.15 Current Behavior Disposition
+
+Repository'de AS-IS destructive data-lifecycle mekanizmasının büyük ölçüde bulunmaması: **EVIDENCE-PRESERVING EFFECT: YES. FORMAL RETENTION COMPLIANCE: NOT ESTABLISHED. FORMAL DELETION COMPLIANCE: NOT ESTABLISHED. INTENTIONAL POLICY: NOT PROVEN.** Mevcut "silinmiyor" davranışı yalnız baseline ile uyumlu bir teknik durumdur; tamamlanmış KVKK saklama-imha politikası DEĞİLDİR.
+
+### 24.16 Legal-Source Precision
+
+Hukukî kanıt seviyeleri ayrıştırılır: OFFICIAL-TEXT VERIFIED · OFFICIAL-GUIDANCE VERIFIED · COULD-NOT-VERIFY/LEGAL REVIEW REQUIRED. Doğrulanamayan hususlar kesin hukuk hükmü olarak YAZILMAZ. Özellikle açık bırakılır: law-office-specific retention periods · professional-liability/malpractice periods · financial/accounting retention periods · direct litigation-hold doctrine application · VERBİS status and policy obligation applicability · technical destruction method catalogue.
+
+### 24.17 Open Decision Register
+
+Seçilmemiş olarak kaydedilir: per-record-family retention periods · per-record-family deletion triggers · per-record-family anonymization method · legal-hold authority · hold creation/release workflow · VERBİS applicability · periodic destruction schedule · subject-access response scope · cross-domain financial retention periods.
+
+### 24.18 Phase 1 Effect
+
+Foundational blueprint set: COMPLETE/CANONICAL. Portal blueprint: COMPLETE/CANONICAL. Visibility blueprint: COMPLETE/CANONICAL. **Data-lifecycle baseline: COMPLETE/CANONICAL (bu kayıtla). Policy family set: COMPLETE/CANONICAL.** **PHASE 1: CLOSURE REVIEW READY, NOT CLOSED.** Phase 1 bu kayıtla CLOSED İLAN EDİLMEZ; ayrı closure/synthesis kararı GEREKİR.
+
+### 24.19 Recommended Future Sequence (başlatılmadı)
+
+Owner-gated önerilen sıra: (1) `CLIENT-P1-PHASE-1-CLOSURE-ANALYZE`, (2) `CLIENT-P1-POL-E-R1` (VERBİS status + legal-verification + AS-IS gap triage), (3) ayrı yetkilendirilmiş implementation/remediation birimleri. Bu kayıt sırasında sonraki birim BAŞLATILMADI.
+
+### 24.20 Status Precision
+
+**CLIENT-P1-POL-E: CLOSED/CANONICAL.** **MODEL: MINIMUM EVIDENCE-PRESERVING BASELINE.** **FIXED RETENTION PERIODS: NOT SELECTED.** **AUTOMATIC DELETION: NOT AUTHORIZED.** **AUTOMATIC ANONYMIZATION: NOT AUTHORIZED.** **LEGAL-HOLD CONTRACT: OPEN/NOT IMPLEMENTED.** **CROSS-DOMAIN RETENTION: OWNER-GATED.** **POL-E-R1: RECOMMENDED/NOT STARTED.** **PHASE 1: CLOSURE REVIEW READY, NOT CLOSED.** **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 24.21 POL-E Self-Check
+
+Bu bölüm: fixed retention period SEÇMEZ; deletion trigger SEÇMEZ; anonymization method SEÇMEZ; legal-hold authority SEÇMEZ; VERBİS sonucu ÜRETMEZ; "süresiz saklama hukuken zorunlu" hükmü KURMAZ; mevcut no-delete davranışını tam compliance İLAN ETMEZ; business terminal event'i deletion trigger YAPMAZ; cross-domain retention ownership'i CLIENT'e TAŞIMAZ; financial/accounting period SEÇMEZ; database cascade'i legal policy SAYMAZ; portal visibility'yi retention ile EŞİTLEMEZ; gap register remediation'ı BAŞLATMAZ; POL-J/POL-D/POL-F/BP-06/BP-07/BP-08/BP-09'u yeniden AÇMAZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ; Phase 1'i CLOSED İLAN ETMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
