@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../../prisma/prisma.service";
 import { WorkflowEngine } from "./workflow-engine.service";
@@ -337,14 +337,39 @@ export class AutomationService {
   }
 
   // Otomatik modu aç/kapat
-  async toggleAutoMode(caseId: string, enabled: boolean): Promise<void> {
-    await this.prisma.case.update({
-      where: { id: caseId },
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AutomationController.toggleAutoMode() -> POST /automation/cases/:id/toggle-auto
+  /// </remarks>
+  async toggleAutoMode(caseId: string, enabled: boolean, tenantId: string): Promise<void> {
+    // AUTOMATION-TOGGLE-TENANT-GUARD-R01: tenant context yoksa fail-closed, sorgu hiç çalışmaz
+    // (SEC-TENANT-HARDEN-P01 / address-task.service.ts ile aynı desen).
+    if (!tenantId) {
+      throw new ForbiddenException("Tenant context required");
+    }
+
+    // Atomic tenant-scoped write: check-then-write TOCTOU'dan kaçınmak için tek updateMany.
+    const result = await this.prisma.case.updateMany({
+      where: {
+        id: caseId,
+        tenantId,
+      },
       data: {
         isAutoMode: enabled,
         nextActionAt: enabled ? new Date() : null,
       },
     });
+
+    if (result.count === 0) {
+      // Var olmayan dosya ile başka tenant'a ait dosya aynı generic hatayı üretir (enumeration yok).
+      throw new NotFoundException("Dosya bulunamadı");
+    }
+    if (result.count > 1) {
+      // id primary key olduğundan yapısal olarak imkansız; sessizce başarı sayılmaz.
+      throw new InternalServerErrorException(
+        `toggleAutoMode: beklenmeyen updateMany count=${result.count} (caseId=${caseId})`
+      );
+    }
   }
 
   // İstatistikler

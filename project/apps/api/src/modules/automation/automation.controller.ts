@@ -19,12 +19,17 @@ export class AutomationController {
   }
 
   // Dosya için otomatik modu aç/kapat
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - Nest Router -> POST /automation/cases/:id/toggle-auto (JWT kullanıcısının tenantId'si zorunlu geçer)
+  /// </remarks>
   @Post("cases/:id/toggle-auto")
   async toggleAutoMode(
+    @CurrentUser("tenantId") tenantId: string,
     @Param("id") caseId: string,
     @Body() body: { enabled: boolean }
   ) {
-    await this.automationService.toggleAutoMode(caseId, body.enabled);
+    await this.automationService.toggleAutoMode(caseId, body.enabled, tenantId);
     return { success: true, isAutoMode: body.enabled };
   }
 
