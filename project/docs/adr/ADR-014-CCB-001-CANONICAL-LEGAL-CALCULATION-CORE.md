@@ -343,6 +343,122 @@ The ordered successor gates are:
 Each successor is `OWNER GO REQUIRED / NOT AUTHORIZED`. This ratification changes no code,
 test, schema, migration, runtime, feature flag, replay evidence, consumer or legacy surface.
 
+## TPA-04A Canonical Snapshot / Bucket Identity Contract — 2026-07-20
+
+Owner ratifies **Option C — Receipt-Bound Embedded Canonical Snapshot Envelope**.
+`CanonicalReceivableApplicationSnapshotV1` is the only official narrow snapshot subtype
+eligible as input to the target-native `LegalApplicationPlan`. Receivable owns its semantics;
+the RCV-COL Legal Application Boundary owns embedded persistence in the
+`LegalApplicationBatch` aggregate. General presentation, Fee/Harç, Journal and consumer
+snapshot authority remain outside this ratification and open under ADR-013.
+
+Snapshot eligibility requires all of the following:
+
+1. tenant, case, target Collection and currency resolve to one trusted context;
+2. the target receipt has passed canonical admission, idempotency and finality gates;
+3. the target receipt is excluded from pre-application history and bucket balances;
+4. `applicationEffectiveDate` comes only from COL/OD-03;
+5. `confirmedAt`, `valueDate` and `externalSettledAt` remain provenance/lifecycle timestamps;
+6. source/version set and hash are complete;
+7. engine, rule, policy, rate, interpretation and bucket-identity versions are explicit;
+8. COST, ANCILLARY, ACCRUED_INTEREST and PRINCIPAL completeness is explicit;
+9. history is target-native or an owner-approved baseline, never guessed or silently backfilled;
+10. the read is transaction-consistent for one as-of context.
+
+The immutable envelope contains:
+
+```text
+contractVersion
+serializationVersion
+tenantId
+caseId
+targetCollectionId
+currency
+minorUnit
+receiptAmountMinor
+asOfDate
+applicationEffectiveDate
+historyBoundaryRef
+engineVersion
+calculationRuleVersion
+policyVersion
+rateTableVersion
+interpretationProfileId
+bucketIdentityVersion
+sourceVersionSet
+sourceVersionSetHash
+canonicalBuckets
+```
+
+`minorUnit` is a required semantic input. A repository-wide hard-coded value of `2` is
+prohibited unless a separately ratified single-currency contract proves it; writer-stage
+currency/minor-unit validation must fail closed.
+
+Snapshot identity is:
+
+```text
+canonicalEnvelopeBytes = RCV-CAS/v1 domain-restricted canonical JSON
+snapshotHash = SHA-256("RCV-CAS/v1\0" + canonicalEnvelopeBytes)
+snapshotRef  = "rcv-app-snapshot:v1:sha256:" + lowercaseHex(snapshotHash)
+```
+
+Serialization is RFC 8785-based, domain-restricted canonical JSON: UTF-8 without BOM, Unicode
+NFC, no locale-dependent ordering, minor-unit integers serialized without floating point,
+ISO `YYYY-MM-DD` dates, explicit null/absent rules and application ordering
+`component order → priorityRank → bucketContextKey byte order`.
+`generatedAt`, actor, correlation, display/free text, raw provider/bank payload, IBAN and
+description are excluded from the hash.
+
+`bucketContextKey = bctx:v1:sha256:<64-lowercase-hex>`. Its canonical inputs are
+componentType, componentCode, currency, minorUnit, legalBasisRef/version, effective context,
+interest rule/version, priority policy/version/rank and liability context. ClaimItem ID,
+tenantId, caseId, snapshotRef, targetCollectionId, amount, sequence, actor, display label and
+database insertion order are forbidden.
+
+`bucketInstanceId = binst:v1:sha256:<64-lowercase-hex>`. Its canonical inputs are
+identityContractVersion, tenantId, caseId, snapshotRef/hash, asOfDate,
+calculationRuleVersion and `bucketContextKey`. Stable context identity may persist across
+snapshots; instance identity changes with snapshot context. Both identities use versioned,
+domain-separated SHA-256.
+
+The Receivable-owned `LegalApplicationPlan` is a pure typed output using `bigint` minor units.
+It contains no ClaimItem target and consumes no legacy allocation/cache authority. No plan is
+emitted unless:
+
+```text
+receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor
+```
+
+Canonical typed fail-closed states are:
+
+```text
+SOURCE_VERSION_INCOMPLETE
+FORMATION_CONTEXT_INCOMPLETE
+POLICY_VERSION_MISSING
+FEE_AUTHORITY_UNRESOLVED
+BUCKET_CONTEXT_UNMAPPED
+CURRENCY_OR_MINOR_UNIT_INVALID
+HISTORY_BOUNDARY_UNAUTHORIZED
+DUPLICATE_BUCKET_CONTEXT
+SNAPSHOT_STALE
+HASH_MISMATCH
+SOURCE_CONCURRENCY_UNSAFE
+```
+
+Availability `NONE`, target-receipt inclusion, negative/float amount or conservation failure
+also fails closed and is not converted to HELD.
+
+TPA-04B may analyze only the writer-evidence/conservation persistence amendment required by
+this contract: snapshot contract/serialization version, snapshotRef/hash, canonical snapshot
+payload, sourceVersionSetHash, asOfDate/applicationEffectiveDate, history boundary,
+engine/rule/policy/rate/interpretation versions, bucket identity version, minorUnit,
+componentCode, sourceLineageSetRef, bucket before/after minor-unit state and deferred aggregate
+conservation enforcement. No schema, migration, snapshot/hash implementation, writer, feature
+flag, production shadow, consumer promotion or cutover is authorized here. PR #407 remains
+hold and untouched; PR #1460 source-admission semantics require implementation-entry
+reverification; the synthetic corpus remains blocking for writer/evidence/cutover; ACT-28 and
+REC-AUTH-011/012 remain open.
+
 ## Normative Rules
 
 ### MUST
@@ -774,3 +890,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-20 | 2.9 | TPA-03 Option B schema-foundation contract: exact two-file additive/writer-free/no-backfill scope, model/enum names, positive minor-unit amount semantics, tenant-safe restrictive FK, immutability, replay/reversal and opaque bucket-identity boundaries are ratified. Exact-cent enforcement remains deferred to the writer stage; TPA-03A requires separate owner GO-IMPLEMENT. |
 | 2026-07-20 | 3.0 | TPA-03A schema-foundation closure: PR #1449 / `63f0b0ea` establishes the exact two-file additive/writer-free/no-backfill persistence foundation. Runtime writer, conservation enforcement, replay/evidence, cutover and retirement remain unauthorized; ACT-28/REC-AUTH-011/012 remain open. |
 | 2026-07-20 | 3.1 | TPA-04 Option C writer contract: official canonical Receivable snapshot plus target-native `LegalApplicationPlan` is the sole writer input; `LegalApplicationWriter` is dormant-first and transaction-bound. Snapshot/bucket SHA-256 identity, bigint conservation, replay, APPLY/full reversal, audit and fail-closed legacy coexistence are ratified. TPA-04A..G remain separately owner-gated and implementation is not authorized. |
+| 2026-07-20 | 3.2 | TPA-04A Option C receipt-bound embedded `CanonicalReceivableApplicationSnapshotV1`: exact eligibility/envelope, RCV-CAS/v1 serialization/hash, deterministic bucket identities, fail-closed readiness and pure `LegalApplicationPlan` input are ratified. Broader ADR-013 and TPA-04B+ implementation remain owner-gated. |
