@@ -10,6 +10,8 @@ import { TenantModule } from "../tenant/tenant.module";
 import { NotificationModule } from "../notification/notification.module";
 import { UserInviteService } from "./invite/user-invite.service";
 import { UserInviteController } from "./invite/user-invite.controller";
+import { PasswordResetService } from "./password-reset/password-reset.service";
+import { PasswordResetController } from "./password-reset/password-reset.controller";
 
 @Module({
   imports: [
@@ -26,11 +28,12 @@ import { UserInviteController } from "./invite/user-invite.controller";
     UserModule,
     TenantModule,
     // K1-7: invite e-postası için EmailProviderService (NotificationModule export eder).
+    // OFFICE-AUTH-P02: credential-recovery e-postası için de aynı servis kullanılır.
     // AuditService global (AuditModule @Global), ConfigService global → ek import gerekmez.
     NotificationModule,
   ],
-  controllers: [AuthController, UserInviteController],
-  providers: [AuthService, JwtStrategy, UserInviteService],
+  controllers: [AuthController, UserInviteController, PasswordResetController],
+  providers: [AuthService, JwtStrategy, UserInviteService, PasswordResetService],
   exports: [AuthService],
 })
 export class AuthModule {}
