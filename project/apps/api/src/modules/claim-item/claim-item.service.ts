@@ -410,7 +410,10 @@ export class ClaimItemService {
         items.push(...this.generateFromIlam(tenantId, dto));
         break;
       default:
-        items.push(...this.generateDefault(tenantId, dto));
+        throw new BadRequestException({
+          code: 'UNSUPPORTED_COMPONENT',
+          message: 'Document component is not supported.',
+        });
     }
 
     // Toplu oluştur
@@ -550,26 +553,6 @@ export class ClaimItemService {
     });
 
     return items;
-  }
-
-  // Varsayılan alacak kalemi
-  private generateDefault(tenantId: string, dto: AutoGenerateClaimItemsDto): any[] {
-    return [{
-      tenantId,
-      caseId: dto.caseId,
-      itemType: ClaimItemType.PRINCIPAL,
-      amount: dto.totalAmount || 0,
-      currency: dto.currency || 'TRY',
-      sourceDocumentId: dto.documentId,
-      sourceDocumentType: dto.documentType,
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-      issueDate: dto.issueDate ? new Date(dto.issueDate) : null,
-      referenceNo: dto.referenceNo,
-      description: 'Alacak',
-      isCalculated: true,
-      calculatedAt: new Date(),
-      sortOrder: 1,
-    }];
   }
 
   // ==================== FAİZ HESAPLAMA ====================
