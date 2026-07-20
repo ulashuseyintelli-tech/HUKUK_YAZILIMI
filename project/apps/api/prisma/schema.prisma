@@ -211,6 +211,7 @@ model Tenant {
   debtorCrossCaseNotifications DebtorCrossCaseNotification[]
   courts                       Court[]
   collections                  Collection[]
+  legalApplicationBatches      LegalApplicationBatch[]
   collectionOverpayments       CollectionOverpayment[]
   lawyers                      Lawyer[]
   workflowTemplates            WorkflowTemplate[]
@@ -1171,6 +1172,7 @@ model Case {
   tasks                         Task[]
   debtorIntelligence            DebtorIntelligence[]
   collections                   Collection[]
+  legalApplicationBatches       LegalApplicationBatch[]
   collectionOverpayments        CollectionOverpayment[]
   dues                          Due[]
   caseInstruments               CaseInstrument[]
@@ -1241,6 +1243,7 @@ model Case {
   // D-G3a: dosya görevi eskalasyon izleri (case düzeyi gözlemlenebilirlik)
   caseTaskEscalationEvents CaseTaskEscalationEvent[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
   @@index([tenantId, caseStatus])
@@ -2333,6 +2336,7 @@ model Collection {
   clientPayoutAllocations     ClientPayoutAllocation[]
   clientPayoutManualReversals ClientPayoutManualReversal[]
   overpayment                 CollectionOverpayment?
+  legalApplicationBatches     LegalApplicationBatch[]
 
   // Açıklama ve Notlar
   description String?
@@ -2351,6 +2355,7 @@ model Collection {
   updatedAt   DateTime @updatedAt
   createdById String?
 
+  @@unique([tenantId, id])
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId])
   @@index([caseId])
@@ -2406,6 +2411,101 @@ model CollectionOverpayment {
   @@index([tenantId, caseId, status])
   @@index([tenantId, status])
   @@index([sourceLedgerEntryId])
+}
+
+enum LegalApplicationBatchType {
+  APPLY
+  REVERSAL
+}
+
+enum LegalApplicationComponentType {
+  COST
+  ANCILLARY
+  ACCRUED_INTEREST
+  PRINCIPAL
+}
+
+/// Additive, writer-free foundation for canonical legal-application persistence.
+/// Aggregate conservation is a writer-stage contract and is intentionally not
+/// enforced by this foundation schema.
+model LegalApplicationBatch {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  caseId String
+  case   Case   @relation(fields: [tenantId, caseId], references: [tenantId, id], onDelete: Restrict)
+
+  collectionId String
+  collection   Collection @relation(fields: [tenantId, collectionId], references: [tenantId, id], onDelete: Restrict)
+
+  batchType          LegalApplicationBatchType
+  currency           String
+  receiptAmountMinor BigInt
+  heldRemainderMinor BigInt
+  idempotencyKey     String
+  commandHash        String
+  reversesBatchId    String?
+  reversesBatch      LegalApplicationBatch?    @relation("LegalApplicationBatchReversal", fields: [tenantId, reversesBatchId], references: [tenantId, id], onDelete: Restrict)
+  reversedByBatch    LegalApplicationBatch?    @relation("LegalApplicationBatchReversal")
+  createdAt          DateTime
+
+  applications LegalApplication[]
+  attributions ApplicationAttribution[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, reversesBatchId])
+  @@index([tenantId, caseId])
+  @@index([tenantId, collectionId])
+  @@index([batchType])
+  @@index([createdAt])
+}
+
+/// Immutable bucket-effect fact. ClaimItem is deliberately absent as a target.
+model LegalApplication {
+  id       String                @id @default(cuid())
+  tenantId String
+  batchId  String
+  batch    LegalApplicationBatch @relation(fields: [tenantId, batchId], references: [tenantId, id], onDelete: Restrict)
+
+  componentType      LegalApplicationComponentType
+  bucketContextKey   String
+  bucketInstanceId   String
+  sequence           Int
+  appliedAmountMinor BigInt
+  createdAt          DateTime
+
+  attributions ApplicationAttribution[]
+
+  @@unique([tenantId, batchId, id])
+  @@unique([tenantId, batchId, sequence])
+  @@index([tenantId, batchId])
+  @@index([componentType])
+  @@index([bucketContextKey])
+  @@index([bucketInstanceId])
+}
+
+/// Non-authoritative lineage/provenance fact. Optional ClaimItem linkage never
+/// becomes an application target or balance authority.
+model ApplicationAttribution {
+  id       String                @id @default(cuid())
+  tenantId String
+  batchId  String
+  batch    LegalApplicationBatch @relation(fields: [tenantId, batchId], references: [tenantId, id], onDelete: Restrict)
+
+  applicationId String
+  application   LegalApplication @relation(fields: [tenantId, batchId, applicationId], references: [tenantId, batchId, id], onDelete: Restrict)
+
+  claimItemId           String?
+  claimItem             ClaimItem? @relation(fields: [tenantId, claimItemId], references: [tenantId, id], onDelete: Restrict)
+  attributedAmountMinor BigInt?
+  createdAt             DateTime
+
+  @@unique([tenantId, id])
+  @@index([tenantId, batchId])
+  @@index([tenantId, batchId, applicationId])
+  @@index([tenantId, claimItemId])
 }
 
 // Tahsilat Kanalı
@@ -5277,7 +5377,9 @@ model ClaimItem {
 
   // İlişkiler
   ledgerAllocations LedgerAllocation[]
+  applicationAttributions ApplicationAttribution[]
 
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@index([caseId])
   @@index([itemType])
