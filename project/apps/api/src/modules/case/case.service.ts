@@ -486,6 +486,15 @@ export class CaseService {
     return this.claimItemWriterRouter;
   }
 
+  private assertDueCreationAdmission(dues: ReadonlyArray<Pick<DueDto, "type">>): void {
+    if (dues.some((due) => due.type === DueType.OTHER)) {
+      throw new BadRequestException({
+        code: "UNSUPPORTED_COMPONENT",
+        message: "Due component is not supported for new ClaimItem formation.",
+      });
+    }
+  }
+
   /**
    * RFA-016: case.create içindeki inline-yeni taraflar (id YOK) için guard'lı resolve/create.
    * Transaction ÖNCESİ çağrılır (Tasarım A): guard mantığı tek-kaynak kalır (replike edilmez),
@@ -1608,6 +1617,11 @@ export class CaseService {
         "Case oluşturmak için kullanıcı kimliği (userId) zorunludur (faiz politikası ataması audit'i)."
       );
     }
+
+    // Claim Formation: bütün Due batch'ini herhangi bir query, inline taraf oluşturma veya
+    // transaction başlamadan önce doğrula. Legacy DueType.OTHER kayıtlarının read/update/
+    // lifecycle yüzeyleri korunur; yalnız yeni formation admission fail-closed'dur.
+    this.assertDueCreationAdmission(dto.dues ?? []);
 
     // B.5: Başlangıç statüsü validasyonu
     if (dto.caseStatus && !isInitialStatus(dto.caseStatus as LegalCaseStatus)) {
@@ -3498,6 +3512,9 @@ export class CaseService {
     data: CreateDueDto,
     actorUserId: string,
   ) {
+    // Yeni Due admission, faiz normalizasyonu ve transaction dahil bütün yan etkilerden önce
+    // fail-closed çalışır. Shared legacy mapper bilinçli olarak değiştirilmez.
+    this.assertDueCreationAdmission([data]);
     const normalizedInterest = this.normalizeDueInterestForWrite(data, actorUserId);
     return this.prisma.$transaction(async (tx) => {
       const caseExists = await tx.case.findFirst({

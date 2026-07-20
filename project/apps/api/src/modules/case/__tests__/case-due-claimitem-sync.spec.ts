@@ -8,6 +8,8 @@
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ClaimItemType } from '@prisma/client';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ClaimItemSourceIntegrityException } from '../../claim-item/claim-item-source-integrity.guard';
 import { CaseService } from '../case.service';
 import { DueType, InterestType } from '../dto/case.dto';
@@ -33,6 +35,97 @@ function makeService(tx: any) {
     prisma,
     writerRouter,
   };
+}
+
+function makeAdmissionHarness() {
+  const transaction = jest.fn(async () => {
+    throw new Error('REACHED_TRANSACTION');
+  });
+  const caseFindFirst = jest.fn();
+  const dueFindMany = jest.fn();
+  const prisma = {
+    $transaction: transaction,
+    case: {
+      findFirst: caseFindFirst,
+      create: jest.fn(),
+    },
+    due: {
+      create: jest.fn(),
+      findMany: dueFindMany,
+    },
+  } as any;
+  const auditLog = jest.fn();
+  const auditLogInTransaction = jest.fn();
+  const eventAppendInTransaction = jest.fn();
+  const clientCreate = jest.fn();
+  const lawyerCreate = jest.fn();
+  const debtorCreate = jest.fn();
+  const claimItemWrite = jest.fn();
+
+  const service = new CaseService(
+    prisma,
+    { log: auditLog, logInTransaction: auditLogInTransaction } as any,
+    stub,
+    stub,
+    stub,
+    { appendInTransaction: eventAppendInTransaction } as any,
+    stub,
+    { create: clientCreate } as any,
+    { create: lawyerCreate } as any,
+    { create: debtorCreate } as any,
+    undefined,
+    { createSystemClaimItem: claimItemWrite } as any,
+  );
+
+  return {
+    auditLog,
+    auditLogInTransaction,
+    caseFindFirst,
+    claimItemWrite,
+    clientCreate,
+    debtorCreate,
+    dueFindMany,
+    eventAppendInTransaction,
+    lawyerCreate,
+    prisma,
+    service,
+    transaction,
+  };
+}
+
+function admissionDue(type: DueType) {
+  return {
+    type,
+    amount: 100,
+    dueDate: '2026-07-20',
+    currency: 'TRY',
+  };
+}
+
+async function expectUnsupportedComponent(promise: Promise<unknown>) {
+  try {
+    await promise;
+    throw new Error('Expected UNSUPPORTED_COMPONENT');
+  } catch (error) {
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toEqual({
+      code: 'UNSUPPORTED_COMPONENT',
+      message: 'Due component is not supported for new ClaimItem formation.',
+    });
+  }
+}
+
+function expectNoFormationWrites(harness: ReturnType<typeof makeAdmissionHarness>) {
+  expect(harness.transaction).not.toHaveBeenCalled();
+  expect(harness.prisma.case.create).not.toHaveBeenCalled();
+  expect(harness.prisma.due.create).not.toHaveBeenCalled();
+  expect(harness.clientCreate).not.toHaveBeenCalled();
+  expect(harness.lawyerCreate).not.toHaveBeenCalled();
+  expect(harness.debtorCreate).not.toHaveBeenCalled();
+  expect(harness.claimItemWrite).not.toHaveBeenCalled();
+  expect(harness.auditLog).not.toHaveBeenCalled();
+  expect(harness.auditLogInTransaction).not.toHaveBeenCalled();
+  expect(harness.eventAppendInTransaction).not.toHaveBeenCalled();
 }
 
 function makeDue(overrides: Record<string, any> = {}) {
@@ -75,6 +168,118 @@ function makeTx(overrides: Record<string, any> = {}) {
 }
 
 describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
+  describe('new Due formation admission', () => {
+    it.each([
+      ['only', [admissionDue(DueType.OTHER)]],
+      ['first', [
+        admissionDue(DueType.OTHER),
+        admissionDue(DueType.PRINCIPAL),
+        admissionDue(DueType.EXPENSE),
+      ]],
+      ['middle', [
+        admissionDue(DueType.PRINCIPAL),
+        admissionDue(DueType.OTHER),
+        admissionDue(DueType.EXPENSE),
+      ]],
+      ['last', [
+        admissionDue(DueType.PRINCIPAL),
+        admissionDue(DueType.EXPENSE),
+        admissionDue(DueType.OTHER),
+      ]],
+    ])('POST /cases rejects OTHER in %s position before all writes', async (_position, dues) => {
+      const harness = makeAdmissionHarness();
+
+      await expectUnsupportedComponent(
+        harness.service.create('tenant-1', { dues } as any, 'user-1'),
+      );
+
+      expect(harness.caseFindFirst).not.toHaveBeenCalled();
+      expectNoFormationWrites(harness);
+    });
+
+    it('POST /cases/:id/dues rejects OTHER before normalization and transaction', async () => {
+      const harness = makeAdmissionHarness();
+
+      await expectUnsupportedComponent(
+        harness.service.createDue(
+          'tenant-1',
+          'case-1',
+          admissionDue(DueType.OTHER) as any,
+          'user-1',
+        ),
+      );
+
+      expectNoFormationWrites(harness);
+    });
+
+    it('returns the same deterministic error for repeated OTHER admission attempts', async () => {
+      const harness = makeAdmissionHarness();
+
+      await expectUnsupportedComponent(
+        harness.service.createDue(
+          'tenant-1',
+          'case-1',
+          admissionDue(DueType.OTHER) as any,
+          'user-1',
+        ),
+      );
+      await expectUnsupportedComponent(
+        harness.service.createDue(
+          'tenant-1',
+          'case-1',
+          admissionDue(DueType.OTHER) as any,
+          'user-1',
+        ),
+      );
+
+      expectNoFormationWrites(harness);
+    });
+
+    it('keeps every existing non-OTHER admission component supported by the preflight', () => {
+      const harness = makeAdmissionHarness();
+      const supported = Object.values(DueType).filter((type) => type !== DueType.OTHER);
+
+      expect(() =>
+        (harness.service as any).assertDueCreationAdmission(
+          supported.map((type) => admissionDue(type)),
+        ),
+      ).not.toThrow();
+    });
+
+    it('keeps legacy OTHER records readable', async () => {
+      const harness = makeAdmissionHarness();
+      harness.caseFindFirst.mockResolvedValue({ id: 'case-1', tenantId: 'tenant-1' });
+      harness.dueFindMany.mockResolvedValue([
+        { id: 'due-legacy', ...admissionDue(DueType.OTHER) },
+      ]);
+
+      await expect(harness.service.getCaseDues('tenant-1', 'case-1')).resolves.toEqual([
+        expect.objectContaining({ id: 'due-legacy', type: DueType.OTHER }),
+      ]);
+      expect(harness.dueFindMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps both public create guards before normalization, queries, inline writers and transactions', () => {
+      const source = readFileSync(join(__dirname, '..', 'case.service.ts'), 'utf8');
+      const createStart = source.indexOf('  async create(');
+      const createBody = source.slice(createStart, source.indexOf('  async update(', createStart));
+      const createDueBody = source.slice(
+        source.indexOf('  async createDue('),
+        source.indexOf('  async updateDue('),
+      );
+      const createGuard = createBody.indexOf('this.assertDueCreationAdmission(dto.dues ?? [])');
+      const createDueGuard = createDueBody.indexOf('this.assertDueCreationAdmission([data])');
+
+      expect(createGuard).toBeGreaterThanOrEqual(0);
+      expect(createGuard).toBeLessThan(createBody.indexOf('this.prisma.user.findFirst'));
+      expect(createGuard).toBeLessThan(createBody.indexOf('this.resolveInlinePartiesBeforeTx'));
+      expect(createGuard).toBeLessThan(createBody.indexOf('this.prisma.$transaction'));
+      expect(createDueGuard).toBeGreaterThanOrEqual(0);
+      expect(createDueGuard).toBeLessThan(createDueBody.indexOf('this.normalizeDueInterestForWrite'));
+      expect(createDueGuard).toBeLessThan(createDueBody.indexOf('this.prisma.$transaction'));
+    });
+  });
+
   it('createDue PRINCIPAL → markerlı ClaimItem.PRINCIPAL oluşturur', async () => {
     const tx = makeTx();
     const { service } = makeService(tx);
