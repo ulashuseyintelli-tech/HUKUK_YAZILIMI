@@ -1733,6 +1733,7 @@ Depends On: CAN-P0-002-A (parent, NO_SAFE_PATCH/VERIFICATION_REQUIRED)
 Unlock Condition: Owner GO-ANALYZE (tasarım kararı) + ayrı GO-FIX onayı.
 Estimated Size: M (BE — tasarım kararı + audit/tenant-guard ekleme, hangi serviste netleşecek)
 Related Modules: icrabot.service.ts, automation.service.ts, automation.controller.ts
+Status: **PARTIALLY MITIGATED (2026-07-20).** Tenant-isolation bileşeni CLOSED/CANONICAL — `AutomationController.toggleAutoMode()` artık `@CurrentUser("tenantId")` ile authenticated tenantId zorunlu alıyor, `AutomationService.toggleAutoMode()` atomic `case.updateMany({ where: { id, tenantId } })` ile tenant-scoped yazıyor (PR #1453, squash SHA `703405ca10da0de647f51d583a30252fbb7869b6`, CI 4/4 SUCCESS). **Auditability/ownership tasarım kararı (audit event/DecisionLog/outbox/actor attribution/`nextActionAt` side-effect'inin icrabot akışına eklenmesinin kabul edilebilirliği) HÂLÂ OPEN** — bu kayıt TAM CLOSED değildir, yalnız tenant-guard bileşenini kapatır. Further implementation authority: NONE. Detay: `decision-log.md` AUTOMATION-TOGGLE-TENANT-GUARD-R01-GOV kaydı.
 Status: **VERIFICATION_REQUIRED** — implemente EDİLMEDİ, tasarım kararı bekliyor.
 
 ## CAN-P0-002-A3 — AutomationService notification path kill-switch bypass (yeni bulgu, CAN-P0-002-A GO-ANALYZE sırasında keşfedildi)
