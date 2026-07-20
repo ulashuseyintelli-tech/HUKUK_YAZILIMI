@@ -8,6 +8,7 @@
  * geçerse etkisiz kalır.
  */
 
+import { ForbiddenException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { AutomationController } from '../automation.controller';
 import { AutomationService } from '../automation.service';
 
@@ -50,6 +51,112 @@ describe('AutomationController tenant guard propagation (OD-3)', () => {
     await controller.getNextAction({ tenantId: 'tenant1' }, 'case1');
 
     expect(workflowEngine.calculateNextActionTime).toHaveBeenCalledWith('case1', 'tenant1');
+  });
+});
+
+describe('AutomationController.toggleAutoMode tenant guard propagation (AUTOMATION-TOGGLE-TENANT-GUARD-R01)', () => {
+  it('POST /automation/cases/:id/toggle-auto (enabled=true) — JWT tenantId\'si service\'e aktarılır, caseId/enabled değişmeden geçer, body\'den tenantId ALINMAZ', async () => {
+    const automationService: any = {
+      toggleAutoMode: jest.fn().mockResolvedValue(undefined),
+    };
+    const controller = new AutomationController(automationService, {} as any);
+
+    const result = await controller.toggleAutoMode('tenant-from-jwt', 'case1', { enabled: true });
+
+    expect(automationService.toggleAutoMode).toHaveBeenCalledWith('case1', true, 'tenant-from-jwt');
+    expect(result).toEqual({ success: true, isAutoMode: true });
+  });
+
+  it('POST /automation/cases/:id/toggle-auto (enabled=false) — aynı propagation, ters yön', async () => {
+    const automationService: any = {
+      toggleAutoMode: jest.fn().mockResolvedValue(undefined),
+    };
+    const controller = new AutomationController(automationService, {} as any);
+
+    const result = await controller.toggleAutoMode('tenant-from-jwt', 'case2', { enabled: false });
+
+    expect(automationService.toggleAutoMode).toHaveBeenCalledWith('case2', false, 'tenant-from-jwt');
+    expect(result).toEqual({ success: true, isAutoMode: false });
+  });
+});
+
+describe('AutomationService.toggleAutoMode tenant isolation (AUTOMATION-TOGGLE-TENANT-GUARD-R01)', () => {
+  const FIXED_NOW = new Date('2026-07-20T12:00:00.000Z');
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(FIXED_NOW);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('tenantId eksikse (falsy) ForbiddenException fırlatır, hiçbir prisma sorgusu ÇALIŞTIRILMAZ', async () => {
+    const prisma: any = {
+      case: { updateMany: jest.fn(), update: jest.fn() },
+    };
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+
+    await expect(svc.toggleAutoMode('case1', true, undefined as any)).rejects.toThrow(ForbiddenException);
+
+    expect(prisma.case.updateMany).not.toHaveBeenCalled();
+    expect(prisma.case.update).not.toHaveBeenCalled();
+  });
+
+  it('enabled=true: updateMany doğru {id,tenantId} where + isAutoMode:true + nextActionAt:Date ile çağrılır (case.update KULLANILMAZ)', async () => {
+    const prisma: any = {
+      case: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), update: jest.fn() },
+    };
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+
+    await svc.toggleAutoMode('case1', true, 'tenantA');
+
+    expect(prisma.case.updateMany).toHaveBeenCalledWith({
+      where: { id: 'case1', tenantId: 'tenantA' },
+      data: { isAutoMode: true, nextActionAt: FIXED_NOW },
+    });
+    expect(prisma.case.update).not.toHaveBeenCalled();
+  });
+
+  it('enabled=false: nextActionAt null olarak set edilir', async () => {
+    const prisma: any = {
+      case: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+
+    await svc.toggleAutoMode('case1', false, 'tenantA');
+
+    expect(prisma.case.updateMany).toHaveBeenCalledWith({
+      where: { id: 'case1', tenantId: 'tenantA' },
+      data: { isAutoMode: false, nextActionAt: null },
+    });
+  });
+
+  it('updateMany count=0 (var olmayan VEYA başka tenant\'a ait dosya) → generic NotFoundException, ayrım yapılmaz', async () => {
+    const prisma: any = {
+      case: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    };
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+
+    await expect(svc.toggleAutoMode('foreign-or-missing-case', true, 'tenantA')).rejects.toThrow(NotFoundException);
+  });
+
+  it('updateMany count=1 → başarıyla resolve olur (hata fırlatmaz)', async () => {
+    const prisma: any = {
+      case: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+
+    await expect(svc.toggleAutoMode('case1', true, 'tenantA')).resolves.toBeUndefined();
+  });
+
+  it('updateMany count>1 (id primary key olduğundan yapısal olarak imkansız) → hard invariant hatası, sessizce başarı sayılmaz', async () => {
+    const prisma: any = {
+      case: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
+    };
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+
+    await expect(svc.toggleAutoMode('case1', true, 'tenantA')).rejects.toThrow(InternalServerErrorException);
   });
 });
 
