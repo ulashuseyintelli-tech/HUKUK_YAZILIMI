@@ -216,6 +216,14 @@ REASON: CANDIDATE-A ile WAVE 1'in acil offboarding riski kapatıldı. CANDIDATE-
   auth/session altyapısı gerektiren ayrı bir iştir.
 Contract başlatılmadı, implementationAuthorization NONE — DEFERRED, iptal DEĞİLDİR; owner'ın
   ayrı, açık bir GO'suyla ileride yeniden ele alınabilir.
+
+NOT (2026-07-21, OFFICE-AUTH-P02-GOVERNANCE-ENTRY reconciliation): OFFICE-AUTH-P01 (PR #1466,
+  merged 2026-07-20) `User.tokenVersion`/`passwordChangedAt` alanlarını ve tek bir increment
+  tetikleyicisini (self-service `changeOwnPassword`) ayrıca IMPLEMENTED/CANONICAL hale getirdi.
+  Bu, CANDIDATE-B'nin YALNIZ küçük bir dilimidir (tokenVersion alanı + tek tetikleyici) —
+  refresh-token akışı, kısa access TTL ve tam session-tazeliği mekanizması hâlâ YOKTUR.
+  Yukarıdaki OWNER DISPOSITION: DEFERRED (2026-07-14) kararı DEĞİŞMEDİ ve CANDIDATE-B'nin kalan
+  tam kapsamı için geçerliliğini korur. Bkz. `decision-log.md` § 2026-07-21.
 ```
 
 ### 4c. WAVE 2 Candidate Detay (redakte — güvenlik containment, 2026-07-14)
@@ -901,6 +909,11 @@ status (CANDIDATE-B)                      : DEFERRED (2026-07-14) — bkz. §4b 
 ownerSelectionStatus (CANDIDATE-B)        : NOT_SELECTED (değişmedi)
 contractStatus (CANDIDATE-B)              : NOT_DRAFTED (değişmedi)
 implementationAuthorization (CANDIDATE-B) : NONE (değişmedi)
+NOT (2026-07-21): tokenVersion alanı ve password-change tetikleyicisi OFFICE-AUTH-P01 (PR #1466)
+  ile ayrıca IMPLEMENTED — yukarıdaki dört durum (status/ownerSelectionStatus/contractStatus/
+  implementationAuthorization) CANDIDATE-B'nin TAM kapsamı (refresh-token akışı dahil) için
+  değişmeden geçerlidir. Bkz. `decision-log.md` § 2026-07-21 OFFICE-AUTH-P01/OD-15/CANDIDATE-B/
+  CAP-05 RECONCILIATION.
 name (CANDIDATE-C)                        : Canonical Actor Capacity Read Consolidation
 status (CANDIDATE-C)                      : CANONICAL (2026-07-15, main @ 038dbbb9) — PHASE 1 MILESTONE 03
 implementationCategory (CANDIDATE-C)      : HARDENING
