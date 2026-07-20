@@ -2049,6 +2049,47 @@ Collection/shared-boundary değişikliği, replay/data access veya cutover autho
 
 ---
 
+## RCV-CLAIM-FORM-P02-S04-I01 — Direct Rule Engine Explicit OTHER ClaimItem Admission Guard
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+**Implementation evidence:** PR #1460 / squash
+`3f9204d022af4320b1319adf1c8e62d06f903226` / required CI `4/4 PASS`; targeted
+admission `23/23`, ClaimItem regression `219/219`, Production TypeScript, Nest build,
+changed-file ESLint ve static/scope/diff kontrolleri `PASS`. Canonical ancestry
+doğrulanmıştır.
+
+Direct Rule Engine ClaimItem batch'inde explicit `OTHER` admission'ı kaldırılmıştır.
+Required ve optional `OTHER` ile `TAHLIYE_KIRA` ve `ILAMLI_DOVIZ`, mevcut
+`UNSUPPORTED_COMPONENT` error contract'ıyla ilk writer/router çağrısından önce fail-closed
+reddedilir. Invalid batch'te router, ClaimItem, audit, event veya outbox write sayısı
+sıfırdır. Desteklenen mapping'ler değişmemiştir.
+
+```text
+RUNTIME ENFORCEMENT          PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 ONLY
+SCHEMA / MIGRATION           NONE
+PUBLIC ENUM / API            UNCHANGED
+LEGACY OTHER                 UNCHANGED / LEGACY_ONLY
+LEGACY DATA                  UNCHANGED
+COLLECTION / SHARED BOUNDARY UNCHANGED
+```
+
+P01-R01, P02-S01, P02-S02-I01 ve P02-S03-I01 tarihsel contract kapanışları korunur.
+Explicit `OTHER` direct Rule Engine residual gap'i bu kayıtla kapanır; Due explicit `OTHER`
+/ web fallback, Precautionary `DIGER` / unknown, human direct-entry ve formation
+snapshot/subtype registry residual gap'leri `OPEN` kalır. ACT-28 ve REC-AUTH-011/012
+`OPEN / UNCHANGED`dır. Sonraki Claim Formation task'ı canonical register tarafından
+atanmamıştır:
+
+```text
+NEXT ELIGIBLE TASK  UNSET — OWNER GO REQUIRED
+```
+
+Bu kayıt başka implementation, yeni workstream, schema/migration, legacy mutation/backfill,
+Collection/shared-boundary değişikliği, replay/data access veya cutover authority üretmez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
