@@ -32,6 +32,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // AUTH-01: /auth/account-recovery eklendi — girişsiz kullanıcı erişebilmeli.
 const PUBLIC_PATHS = ["/", "/auth/login", "/auth/register", "/auth/account-recovery"];
+// Girişli kullanıcı bu sayfalara düşerse panele yönlendirilir (pazarlama/login sayfasında kalmamalı).
+const REDIRECT_WHEN_AUTHENTICATED_PATHS = ["/", "/auth/login"];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -48,6 +50,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isPublic = PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/portal");
     if (!loading && !user && !isPublic) {
       router.push("/auth/login");
+    }
+  }, [loading, user, pathname, router]);
+
+  useEffect(() => {
+    if (!loading && user && REDIRECT_WHEN_AUTHENTICATED_PATHS.includes(pathname)) {
+      router.push("/dashboard");
     }
   }, [loading, user, pathname, router]);
 

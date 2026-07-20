@@ -9,8 +9,8 @@ Owner Status            : OWNER-APPROVED CANONICALIZATION (owner review tamamlan
                           canonicalization talimatı, 2026-07-13)
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Üst Otorite             : SYSTEM-CONSTITUTION (SYS-*) — bu belge system-wide normu yeniden tanımlamaz
-  Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.8 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
-  Sürüm                   : 1.6 (2026-07-20 — TPA-04A receipt-bound snapshot/bucket identity contract)
+  Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.9 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
+  Sürüm                   : 1.7 (2026-07-20 — TPA-04B required-evidence schema-amendment contract)
 Kanıt tabanı            : repo main @ beb7d6735fb4002ad6169604531681414a17aa0e
                           + Handoff Acceptance Report (2026-07-13)
                           + TAHSILAT_BLOKU_CANONICAL_MIMARI v1.0 (Master Analysis damıtımı, Desktop 01)
@@ -883,7 +883,41 @@ kalır. Current Balance Engine `SHADOW_ONLY`; snapshot/hash implementation, sche
 writer, plan builder, production shadow ve cutover yetkisizdir. PR #407 final disposition B ile
 closed/unmerged'dır; requirements RD01/TPA'da preserved, code discarded ve extraction/reuse yoktur;
 synthetic corpus writer/evidence/cutover için blocking; ACT-28 ve REC-AUTH-011/012 open'dır.
-Sonraki yalnız owner-gated `TPA-04B — Writer Evidence Schema Amendment Analysis`dır.
+Sonraki yalnız owner-gated `TPA-04B-ENTRY — Writer Evidence Schema Amendment Entry
+Verification`dır; implementation henüz yetkili değildir.
+
+## 9.8. TPA-04B required-evidence schema-amendment boundary — 2026-07-20
+
+Owner, exact iki dosyalık writer-evidence schema-amendment kontratını ratifiye etmiştir.
+Gelecekteki patch yalnız Prisma schema ve tek yeni migration dosyası olabilir. Bütün yeni
+snapshot/version/bucket evidence alanları required, default-free ve backfill-free'dir; mevcut
+foundation row'u migration lock'u sonrasında fail-closed hard-stop'tur.
+
+Collection, canonical receipt amount/currency/idempotency ve outer transaction orchestration
+sahipliğini korur; Receivable snapshot/bucket/policy/plan semantiğinin sahibidir. Amendment
+`LegalApplicationBatch` üzerinde canonical snapshot/version envelope'ını ve
+`LegalApplication` üzerinde component/source-lineage/before-after bucket evidence'ını taşır.
+`ApplicationAttribution` değişmez ve non-authoritative'dir. Canonical snapshot payload exact
+PostgreSQL `TEXT` bytes'tır; JSONB storage yasaktır.
+
+DB contract'ı şu exact-cent conservation ve arithmetic sınırını enforce etmelidir:
+
+```text
+receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor
+APPLY:    bucketBeforeMinor - bucketAfterMinor = appliedAmountMinor
+REVERSAL: bucketAfterMinor - bucketBeforeMinor = appliedAmountMinor
+```
+
+Tamamen HELD batch geçerlidir. Snapshot/bucket identity formatları TPA-04A ile exact uyumludur;
+`minorUnit` required ve currency-specific'tir. DB syntax/format/arithmetic guard'larını taşır;
+canonical serialization/hash recomputation future writer'a aittir. Full reversal exact-inverse
+TPA-04E'ye deferred'dır.
+
+Bu karar runtime writer, plan builder, feature flag, replay, consumer cutover veya legacy
+remediation yetkisi üretmez. PR #1469 merged/non-blocking, PR #407 closed/unmerged/no-further-
+action'dır. Synthetic corpus schema amendment için non-blocking, writer/evidence/cutover için
+blocking; ACT-28 ve REC-AUTH-011/012 open'dır. Sonraki yalnız `TPA-04B-ENTRY — OWNER GO-VERIFY
+REQUIRED`dır.
 
 ### PR #407 final disposition B — Collection compliance pointer
 

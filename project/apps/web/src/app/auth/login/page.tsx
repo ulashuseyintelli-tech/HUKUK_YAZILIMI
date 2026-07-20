@@ -1,11 +1,23 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Scale } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { PasswordInput } from "@/components/ui/PasswordInput";
+
+const REMEMBERED_LOGIN_KEY = "rememberedLogin";
+
+function readRememberedLogin(): { tenantSlug: string; email: string } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(REMEMBERED_LOGIN_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function LoginPage() {
   return (
@@ -23,6 +35,20 @@ function LoginForm() {
   // AUTH-01: account-recovery akışından dönüşte tenantSlug prefill edilir.
   const searchParams = useSearchParams();
   const prefillTenantSlug = searchParams.get("tenantSlug") ?? "";
+  const [tenantSlug, setTenantSlug] = useState(prefillTenantSlug);
+  const [email, setEmail] = useState("");
+
+  // Beni hatırla ile önceki ziyarette kaydedilmiş kurum/e-posta varsa doldur.
+  // URL'den gelen açık tenantSlug (account-recovery dönüşü) önceliklidir.
+  useEffect(() => {
+    if (prefillTenantSlug) return;
+    const remembered = readRememberedLogin();
+    if (remembered) {
+      setTenantSlug(remembered.tenantSlug);
+      setEmail(remembered.email);
+      setRememberMe(true);
+    }
+  }, [prefillTenantSlug]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -30,12 +56,17 @@ function LoginForm() {
     setError("");
 
     const formData = new FormData(e.currentTarget);
-    const email = formData.get("email") as string;
     const password = formData.get("password") as string;
-    const tenantSlug = formData.get("tenantSlug") as string;
 
     try {
       await login(email, password, tenantSlug, rememberMe);
+      if (typeof window !== "undefined") {
+        if (rememberMe) {
+          localStorage.setItem(REMEMBERED_LOGIN_KEY, JSON.stringify({ tenantSlug, email }));
+        } else {
+          localStorage.removeItem(REMEMBERED_LOGIN_KEY);
+        }
+      }
     } catch (err: any) {
       // API bağlantı hatası için özel mesaj
       if (err.message?.includes('API sunucusuna bağlanılamıyor') || err.message?.includes('Failed to fetch')) {
@@ -81,7 +112,8 @@ function LoginForm() {
                 name="tenantSlug"
                 type="text"
                 required
-                defaultValue={prefillTenantSlug}
+                value={tenantSlug}
+                onChange={(e) => setTenantSlug(e.target.value)}
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
                 placeholder="kurum-adi"
               />
@@ -96,6 +128,8 @@ function LoginForm() {
                 name="email"
                 type="email"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
                 placeholder="ornek@email.com"
               />

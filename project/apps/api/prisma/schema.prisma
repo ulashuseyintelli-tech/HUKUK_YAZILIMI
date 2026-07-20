@@ -2444,16 +2444,32 @@ model LegalApplicationBatch {
   collectionId String
   collection   Collection @relation(fields: [tenantId, collectionId], references: [tenantId, id], onDelete: Restrict)
 
-  batchType          LegalApplicationBatchType
-  currency           String
-  receiptAmountMinor BigInt
-  heldRemainderMinor BigInt
-  idempotencyKey     String
-  commandHash        String
-  reversesBatchId    String?
-  reversesBatch      LegalApplicationBatch?    @relation("LegalApplicationBatchReversal", fields: [tenantId, reversesBatchId], references: [tenantId, id], onDelete: Restrict)
-  reversedByBatch    LegalApplicationBatch?    @relation("LegalApplicationBatchReversal")
-  createdAt          DateTime
+  batchType                    LegalApplicationBatchType
+  currency                     String
+  receiptAmountMinor           BigInt
+  heldRemainderMinor           BigInt
+  snapshotContractVersion      String
+  snapshotSerializationVersion String
+  snapshotRef                  String
+  snapshotHash                 String
+  snapshotCanonicalPayload     String                    @db.Text
+  sourceVersionSetHash         String
+  snapshotAsOfDate             DateTime                  @db.Date
+  applicationEffectiveDate     DateTime                  @db.Date
+  historyBoundaryRef           String
+  engineVersion                String
+  calculationRuleVersion       String
+  policyVersion                String
+  rateTableVersion             String
+  interpretationProfileId      String
+  bucketIdentityVersion        String
+  minorUnit                    Int
+  idempotencyKey               String
+  commandHash                  String
+  reversesBatchId              String?
+  reversesBatch                LegalApplicationBatch?    @relation("LegalApplicationBatchReversal", fields: [tenantId, reversesBatchId], references: [tenantId, id], onDelete: Restrict)
+  reversedByBatch              LegalApplicationBatch?    @relation("LegalApplicationBatchReversal")
+  createdAt                    DateTime
 
   applications LegalApplication[]
   attributions ApplicationAttribution[]
@@ -2474,17 +2490,23 @@ model LegalApplication {
   batchId  String
   batch    LegalApplicationBatch @relation(fields: [tenantId, batchId], references: [tenantId, id], onDelete: Restrict)
 
-  componentType      LegalApplicationComponentType
-  bucketContextKey   String
-  bucketInstanceId   String
-  sequence           Int
-  appliedAmountMinor BigInt
-  createdAt          DateTime
+  componentType       LegalApplicationComponentType
+  componentCode       String
+  sourceLineageSetRef String
+  bucketContextKey    String
+  bucketInstanceId    String
+  sequence            Int
+  appliedAmountMinor  BigInt
+  bucketBeforeMinor   BigInt
+  bucketAfterMinor    BigInt
+  createdAt           DateTime
 
   attributions ApplicationAttribution[]
 
   @@unique([tenantId, batchId, id])
   @@unique([tenantId, batchId, sequence])
+  @@unique([tenantId, batchId, bucketContextKey])
+  @@unique([tenantId, batchId, bucketInstanceId])
   @@index([tenantId, batchId])
   @@index([componentType])
   @@index([bucketContextKey])
