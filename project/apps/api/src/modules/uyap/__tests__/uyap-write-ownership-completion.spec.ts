@@ -89,7 +89,12 @@ describe('CLIENT-SEC-H2C-P02-R1 — UYAP write-ownership completion', () => {
         auditLog: { create: jest.fn().mockResolvedValue({}) },
       };
       const validationGate: any = { checkPreHacizIntelligence: jest.fn().mockResolvedValue({ isValid: true, warnings: [], debtors: [] }) };
-      const service = new UyapService(prisma, {} as any, validationGate, { report: jest.fn() } as any, undefined);
+      // TRANSPORT-CONTAIN-01: sendPaymentOrder artık CasePolicyEngine yokluğunda fail-closed'tır;
+      // bu blok retry'in tenant-ownership propagation'ını test ettiğinden CPE-allow sağlanır.
+      const casePolicyEngine: any = {
+        canPerformAction: jest.fn().mockResolvedValue({ allowed: true, traceId: 'trace-allow' }),
+      };
+      const service = new UyapService(prisma, {} as any, validationGate, { report: jest.fn() } as any, casePolicyEngine);
       return { service, prisma };
     };
 
@@ -98,8 +103,16 @@ describe('CLIENT-SEC-H2C-P02-R1 — UYAP write-ownership completion', () => {
         {
           id: 'failed-1',
           requestType: 'sendPaymentOrder',
-          // requestData içindeki tenantId KASITLI olarak farklı — güvenilmemeli:
-          requestData: { caseId: 'c1', skipPoaCheck: true, tenantId: 'STALE-BODY-TENANT' },
+          // requestData içindeki tenantId KASITLI olarak farklı — güvenilmemeli; creditor/debtor
+          // gerçek bir sendPaymentOrder çağrısının logRequest'e yazdığı şekli yansıtır (CPE context
+          // bu alanları okur — TRANSPORT-CONTAIN-01 ile CPE artık koşulsuz devrede).
+          requestData: {
+            caseId: 'c1',
+            skipPoaCheck: true,
+            tenantId: 'STALE-BODY-TENANT',
+            creditor: { name: 'Alacaklı' },
+            debtor: { name: 'Borçlu' },
+          },
           tenantId: 'tenant-owner', // log satırının KENDİ ownership'i
           retryCount: 0,
         },

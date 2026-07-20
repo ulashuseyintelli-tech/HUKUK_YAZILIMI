@@ -29,7 +29,15 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
     const poaService: any = {};
     const validationGate: any = { checkPreHacizIntelligence: jest.fn().mockResolvedValue({ isValid: true, warnings: [], debtors: [] }) };
     const errorReporter: any = { report: jest.fn() };
-    const service = new UyapService(prisma, poaService, validationGate, errorReporter, undefined);
+    // TRANSPORT-CONTAIN-01: sendPaymentOrder artık CasePolicyEngine yokluğunda fail-closed'tır
+    // (action-matrix UYAP_SEND=failMode:'CLOSED' ile uzlaştırıldı). Bu dosyanın amacı CPE
+    // davranışını değil tenant-ownership yazımını test etmek olduğundan CPE-allow sağlanır;
+    // haciz-decision-audit.spec.ts'in kendi CPE-yok senaryosu ayrı ve DEĞİŞMEDİ (pushHacizRequest
+    // CasePolicyEngine yokluğunda hâlâ gate'i tamamen atlar — bu birim onu değiştirmedi).
+    const casePolicyEngine: any = {
+      canPerformAction: jest.fn().mockResolvedValue({ allowed: true, traceId: 'trace-allow' }),
+    };
+    const service = new UyapService(prisma, poaService, validationGate, errorReporter, casePolicyEngine);
     return { service, prisma };
   };
 

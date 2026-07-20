@@ -987,6 +987,21 @@ jobs:
             --testPathPattern="official-iso8859-9-encoder\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # DBP-P2-UYAP-CONNECTOR-TRANSPORT-CONTAIN-01: stub gönderim yollarının (sendPaymentOrder/
+      # pushHacizRequest/submitDocument/submitCriminalComplaint/submitCivilLawsuit) truthfulness
+      # containment'ı — REAL-TRANSPORT=0 iken hiçbiri provider kabulü/gerçek gönderim/hukuki sonuç
+      # iddia edemez; sendPaymentOrder CPE teknik-hatası action-matrix UYAP_SEND=failMode:'CLOSED'
+      # ile uzlaştırıldı (fail-open→fail-closed). Yukarıdaki dar allowlist pattern'lerinin hiçbirine
+      # girmiyor → ayrı/açık step; dosya-varlığı pre-check + passWithNoTests YOK.
+      - name: DBP-P2-UYAP-CONNECTOR-TRANSPORT-CONTAIN-01 truthfulness containment tests
+        run: |
+          cd apps/api
+          test -f src/modules/uyap/__tests__/uyap-transport-truthfulness-containment.spec.ts || \
+            { echo "MISSING TRANSPORT-CONTAIN-01 spec: uyap-transport-truthfulness-containment.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="uyap-transport-truthfulness-containment\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
