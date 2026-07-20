@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified 2026-07-20; TPA-03A exact two-file additive schema foundation closed/canonical via PR #1449 / `63f0b0ea`; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE / DO NOT REBASE; writer/conservation enforcement/replay/cutover/retirement and PR-11 remain unauthorized until separate owner GO
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified and TPA-03A foundation closed 2026-07-20; TPA-04 Option C target-native plan-then-persist / dormant-first single-writer contract ratified 2026-07-20; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE / DO NOT REBASE; snapshot, writer, conservation enforcement, replay, cutover, retirement and PR-11 remain unauthorized until separate owner GO
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -270,6 +270,78 @@ remain deferred to the separately owner-gated writer contract. ACT-28 and REC-AU
 remain open; PR #407 remains on hold and untouched; the synthetic-corpus worktree remains
 blocking for writer/evidence/cutover. The next task is analysis-only
 `TPA-04 — LegalApplicationWriter Contract Analysis`, requiring separate owner `GO-ANALYZE`.
+
+## TPA-04 LegalApplicationWriter Contract — 2026-07-20
+
+Owner ratifies **Option C — Target-Native Plan-Then-Persist / Dormant-First Single Writer**.
+`LegalApplicationWriter` is the sole target persistence writer. Its only authoritative input is
+an official canonical Receivable snapshot plus a Receivable-owned, target-native
+`LegalApplicationPlan`. The writer does not calculate TBK100 policy and must not derive a target
+plan from ClaimItem, `ClaimItem.collectedAmount`, `LedgerAllocation` or
+`CollectionAllocation`.
+
+The writer may be called only with the existing Prisma transaction client inside the canonical
+Collection transaction. It has no independent endpoint, nested transaction or second writer,
+and is not yet connected to the production Collection call chain. Production shadow persistence,
+legacy-derived targets, dual authority and long-lived dual-write are prohibited.
+
+An official canonical snapshot is required. `authority=NONE`, `snapshotAvailable=false`,
+unavailable or stale snapshots, and unmapped components fail closed; none may be converted to
+HELD. `bucketContextKey` identifies stable legal context and `bucketInstanceId` identifies the
+snapshot-specific instance. Both are generated from versioned canonical serialization plus
+SHA-256; ClaimItem identity is not a key input.
+
+All amounts are `bigint` minor-unit magnitudes with one currency and minor-unit contract across
+the batch. The invariant is:
+
+```text
+receiptAmountMinor
+=
+SUM(appliedAmountMinor)
++
+heldRemainderMinor
+```
+
+Database aggregate-conservation enforcement must be installed by an owner-gated schema
+amendment before the writer can persist. Replay authority is `tenantId + idempotencyKey`, with
+`commandHash` comparison: same key/hash returns the existing batch with no new write, audit or
+event; same key/different hash fails closed. A second APPLY for the same Collection under
+another key is prohibited.
+
+One APPLY batch corresponds to one Collection receipt and consumes only a target-native bucket
+plan. It creates no ClaimItem-keyed allocation and does not mutate `collectedAmount`. Full
+reversal is a separate owner-gated package: linked append-only REVERSAL, same-case advisory
+lock and exact inverse of the original APPLY are required. Partial reversal remains
+unauthorized.
+
+Audit is transaction-bound and allowlist-only; replay emits no new audit/event/outbox. The
+current `PAYMENT_RECEIVED` / `PAYMENT_REVERSED` chain is preserved. A public
+`LEGAL_APPLICATION` event contract requires a separate owner gate.
+
+Legacy runtime remains temporary authority until coordinated cutover. No new legacy reader or
+writer may be opened; target persistence may not be derived from legacy `LedgerAllocation`.
+`CollectionAllocation` may later exist only as a canonical-output-derived compatibility
+projection, and `ClaimItem.collectedAmount` remains a frozen legacy cache. Consumer cutover is
+a separate owner decision.
+
+The physical `codex/rcv-ws04-p03-syn-01` worktree is preserved. Its ClaimItem-grain corpus is
+legacy evidence only and is superseded for the target writer; it remains blocking for
+writer/evidence/cutover until owner-gated redesign or retirement. PR #407 remains
+`OPEN / HOLD / CONFLICTING / DO NOT MERGE / DO NOT REBASE`; code extraction is not authorized.
+ACT-28 and REC-AUTH-011/012 remain open.
+
+The ordered successor gates are:
+
+1. `TPA-04A — Canonical Snapshot / Bucket Identity Contract`
+2. `TPA-04B — Writer Evidence Schema Amendment`
+3. `TPA-04C — Pure LegalApplicationPlan Builder`
+4. `TPA-04D — Dormant LegalApplicationWriter`
+5. `TPA-04E — Full Reversal Writer`
+6. `TPA-04F — Representative Replay / Reconciliation Evidence`
+7. `TPA-04G — Coordinated Writer / Consumer Cutover Decision`
+
+Each successor is `OWNER GO REQUIRED / NOT AUTHORIZED`. This ratification changes no code,
+test, schema, migration, runtime, feature flag, replay evidence, consumer or legacy surface.
 
 ## Normative Rules
 
@@ -701,3 +773,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-19 | 2.8 | TPA-02 target persistence architecture: independent `LegalApplicationBatch`, immutable bucket-effect `LegalApplication`, non-authoritative `ApplicationAttribution`, single `LegalApplicationWriter` inside the canonical Collection transaction, exact-cent conservation, key+hash replay, append-only full reversal, tenant-safe restrictive FK and legacy-disposition contract are ratified. ACT-28/REC-AUTH-011/012 remain open; implementation/cutover remain unauthorized. |
 | 2026-07-20 | 2.9 | TPA-03 Option B schema-foundation contract: exact two-file additive/writer-free/no-backfill scope, model/enum names, positive minor-unit amount semantics, tenant-safe restrictive FK, immutability, replay/reversal and opaque bucket-identity boundaries are ratified. Exact-cent enforcement remains deferred to the writer stage; TPA-03A requires separate owner GO-IMPLEMENT. |
 | 2026-07-20 | 3.0 | TPA-03A schema-foundation closure: PR #1449 / `63f0b0ea` establishes the exact two-file additive/writer-free/no-backfill persistence foundation. Runtime writer, conservation enforcement, replay/evidence, cutover and retirement remain unauthorized; ACT-28/REC-AUTH-011/012 remain open. |
+| 2026-07-20 | 3.1 | TPA-04 Option C writer contract: official canonical Receivable snapshot plus target-native `LegalApplicationPlan` is the sole writer input; `LegalApplicationWriter` is dormant-first and transaction-bound. Snapshot/bucket SHA-256 identity, bigint conservation, replay, APPLY/full reversal, audit and fail-closed legacy coexistence are ratified. TPA-04A..G remain separately owner-gated and implementation is not authorized. |

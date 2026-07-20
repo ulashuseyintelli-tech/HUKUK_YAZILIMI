@@ -2278,6 +2278,36 @@ worktree'sinin unregistered fiziksel dizini Windows uzun-yol nedeniyle operation
 olarak korunur; recursive silme yapılmaz. **NEXT ELIGIBLE ACTION: TPA-04 —
 LEGALAPPLICATIONWRITER CONTRACT ANALYSIS — OWNER GO-ANALYZE REQUIRED / NOT AUTHORIZED.**
 
+**RCV-COL-TPA-04 LegalApplicationWriter Contract Canonicalization (2026-07-20; CANONICAL
+UPON APPROVED GOVERNANCE MERGE):** Owner Option C — Target-Native Plan-Then-Persist /
+Dormant-First Single Writer kararını ratifiye etmiştir. `LegalApplicationWriter` yalnız official
+canonical Receivable snapshot + Receivable-owned target-native `LegalApplicationPlan` tüketen
+tek target persistence writer'dır. TBK100 policy hesaplamaz; ClaimItem, collectedAmount,
+LedgerAllocation veya CollectionAllocation üzerinden target üretmez. Yalnız canonical
+Collection outer transaction'ında existing Prisma transaction client ile çağrılır; endpoint,
+nested transaction, second writer, production wiring/shadow persistence veya legacy-derived
+target yoktur.
+
+Snapshot authority/availability fail-closed; stale/unavailable/unmapped HELD değildir.
+`bucketContextKey` stable legal context, `bucketInstanceId` snapshot-specific identity olup
+versioned canonical serialization + SHA-256 ile üretilir; ClaimItem ID excluded'dır. Amount'lar
+same-currency/minor-unit `bigint`; aggregate conservation DB'de writer öncesi ayrı schema
+amendment ister. Replay tenant/key/hash fail-closed, same Collection'a ikinci APPLY yasaktır.
+APPLY ClaimItem-keyed allocation/collectedAmount mutation üretmez. Full reversal ayrı
+owner-gated linked append-only batch + same-case lock + exact inverse; partial reversal
+unauthorized. Audit transaction-bound/allowlist-only; replay side-effect-free; PAYMENT event
+chain preserved, public LEGAL_APPLICATION event separately gated'dir.
+
+Legacy runtime geçici authority olarak korunur ancak yeni legacy reader/writer açılamaz.
+Synthetic corpus target writer için superseded legacy evidence ve writer/evidence/cutover
+blocker'dır. PR #407 hold/untouched; ACT-28 ve REC-AUTH-011/012 open'dır.
+
+**ORDERED SUCCESSORS — ALL OWNER-GATED / NOT AUTHORIZED:** TPA-04A snapshot/bucket identity;
+TPA-04B writer evidence schema amendment; TPA-04C pure plan builder; TPA-04D dormant writer;
+TPA-04E full reversal writer; TPA-04F representative replay/reconciliation evidence; TPA-04G
+coordinated writer/consumer cutover decision. **NEXT ELIGIBLE ACTION: TPA-04A — OWNER
+GO-ANALYZE REQUIRED.** Runtime/test/schema/migration/feature/replay/cutover change NONE.
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

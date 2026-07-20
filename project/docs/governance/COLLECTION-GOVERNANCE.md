@@ -9,8 +9,8 @@ Owner Status            : OWNER-APPROVED CANONICALIZATION (owner review tamamlan
                           canonicalization talimatı, 2026-07-13)
 Repository Status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Üst Otorite             : SYSTEM-CONSTITUTION (SYS-*) — bu belge system-wide normu yeniden tanımlamaz
-  Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.6 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
-  Sürüm                   : 1.4 (2026-07-20 — TPA-03 contract + TPA-03A foundation evidence)
+  Kardeş Domain Law       : RECEIVABLE-GOVERNANCE v1.7 (RATIFIED) — ikinci Receivable anayasası DEĞİLDİR
+  Sürüm                   : 1.5 (2026-07-20 — TPA-04 target-native dormant-writer contract)
 Kanıt tabanı            : repo main @ beb7d6735fb4002ad6169604531681414a17aa0e
                           + Handoff Acceptance Report (2026-07-13)
                           + TAHSILAT_BLOKU_CANONICAL_MIMARI v1.0 (Master Analysis damıtımı, Desktop 01)
@@ -812,3 +812,47 @@ reader/writer veya historical data etkisi `NONE`dır. Exact-cent conservation en
 writer-stage'e deferred kalır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus
 writer/evidence/cutover için `BLOCKING`; PR #407 `HOLD / UNTOUCHED`dur. Sonraki görev yalnız
 `TPA-04 — LEGALAPPLICATIONWRITER CONTRACT ANALYSIS / OWNER GO-ANALYZE REQUIRED`dır.
+
+## 9.6. TPA-04 target-native dormant-writer contract — 2026-07-20
+
+Owner, Option C — Target-Native Plan-Then-Persist / Dormant-First Single Writer kararını
+ratifiye etmiştir. `LegalApplicationWriter`, yalnız official canonical Receivable snapshot ve
+Receivable-owned target-native `LegalApplicationPlan` tüketen tek persistence writer'dır.
+TBK100 policy hesaplamaz; ClaimItem, `collectedAmount`, `LedgerAllocation` veya
+`CollectionAllocation` üzerinden hedef plan üretmez.
+
+Writer yalnız canonical Collection outer transaction'ı içinde mevcut Prisma transaction client
+ile çağrılabilir. Independent endpoint, nested transaction, ikinci writer, production call-chain
+wiring, production shadow persistence, legacy-derived target ve long-lived dual-write yasaktır.
+Collection receipt lifecycle ve outer transaction orchestration sahibidir; Receivable snapshot,
+bucket semantiği, TBK100 policy ve plan sahibidir.
+
+Official snapshot zorunludur. `authority=NONE`, `snapshotAvailable=false`, stale/unavailable
+snapshot ve unmapped component fail-closed'dur; HELD değildir. `bucketContextKey` stable legal
+context'i, `bucketInstanceId` snapshot-specific identity'yi versioned canonical serialization +
+SHA-256 ile taşır; ClaimItem ID key input olamaz.
+
+Batch amount'ları aynı currency/minor-unit contract'ında `bigint` minor-unit'tir ve
+`receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` zorunludur. DB aggregate
+conservation writer öncesi ayrı owner-gated schema amendment ile kurulmalıdır. Replay
+`tenantId + idempotencyKey + commandHash` kuralındadır; same key/hash side-effect-free existing
+batch, different hash fail-closed conflict'tir; farklı key ile aynı Collection'a ikinci APPLY
+yasaktır.
+
+APPLY tek Collection receipt'i ve target-native bucket planı içindir; ClaimItem-keyed allocation
+ve `collectedAmount` mutation üretmez. Full reversal ayrı owner-gated linked append-only
+REVERSAL paketidir; same-case advisory lock ve exact inverse gerekir; partial reversal
+yetkisizdir. Audit transaction-bound/allowlist-only'dir; replay yeni audit/event/outbox üretmez.
+Mevcut `PAYMENT_RECEIVED` / `PAYMENT_REVERSED` zinciri korunur; public
+`LEGAL_APPLICATION` event'i ayrıca owner-gated'dir.
+
+Legacy runtime geçici authority olarak korunur ancak yeni legacy reader/writer açılamaz.
+`CollectionAllocation` yalnız gelecekte canonical-output-derived projection olabilir;
+`ClaimItem.collectedAmount` frozen cache ve `LedgerAllocation` historical legacy'dir. Synthetic
+corpus target writer için superseded legacy evidence'dır ve writer/evidence/cutover için
+blocking kalır. PR #407 hold/untouched; ACT-28 ve REC-AUTH-011/012 open'dır.
+
+Successor sırası TPA-04A snapshot/bucket identity, TPA-04B writer-evidence schema amendment,
+TPA-04C pure plan builder, TPA-04D dormant writer, TPA-04E full reversal writer, TPA-04F
+representative replay/reconciliation evidence ve TPA-04G coordinated writer/consumer cutover
+decision'dır. Her biri `OWNER GO REQUIRED / NOT AUTHORIZED`dır.
