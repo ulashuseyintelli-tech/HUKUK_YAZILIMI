@@ -1060,3 +1060,83 @@ Bu kaydın §21.5 bulguları, POL-C'nin (§18.7) zaten kaydettiği **case-detail
 ### 21.13 POL-D Self-Check
 
 Bu bölüm: POL-J'nin object-scope modelini GENİŞLETMEZ veya rakip model ÜRETMEZ; POL-C'yi yeniden AÇMAZ; portal authority'yi GENİŞLETMEZ; presenter desenini zorunlu implementasyon YAPMAZ; PERSON/COMPANY/PUBLIC için farklı policy SEÇMEZ; mixed-purpose alanı doğrudan client-safe İLAN ETMEZ; same-client bulgusunu cross-tenant exploit olarak SUNMAZ; POL-F/BP-06/POL-E kararı VERMEZ; mevcut riskler için mükerrer risk kartı AÇMAZ; runtime field taxonomy/DTO/presenter seçimi YAPMAZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 22. CLIENT-P1-POL-F — Client-Facing Aggregate Visibility Policy (OWNER RATIFIED)
+
+Bu bölüm `CLIENT-P1-POL-F` karar analizinin **owner-ratified policy**'sidir (`decision-log.md` CLIENT-P1-POL-F-GOV; **SELECTED MODEL: OPTION B — CLIENT-SCOPED NON-FINANCIAL AGGREGATE VISIBILITY**). Mevcut kanonik AS-IS gerçekleri (AS-IS kod + charter §15 BP-07 + §19 POL-J + §21 POL-D + SEC-XTEN-AUTOMATION-STATS-01 kapanışı) ve owner kararını **konsolide eder**; yeni object-scope modeli, financial-visibility policy, KVKK/retention policy, staff aggregate authority veya dashboard/query implementasyonu ÜRETMEZ. §5, §6, §8.A, §8.B, §11–§21 metinlerini semantik olarak değiştirmez. **CLIENT-FACING FINANCIAL AGGREGATES: NOT AUTHORIZED. CROSS-CLIENT PORTAL AGGREGATION: PROHIBITED. OFFICE/TEAM AGGREGATES: OUTSIDE CLIENT-FACING POL-F SCOPE. IMPLEMENTATION AUTHORITY: NONE.**
+
+### 22.1 Selected Model
+
+**OPTION B — CLIENT-SCOPED NON-FINANCIAL AGGREGATE VISIBILITY.** Client-facing aggregate görünürlüğü yalnız **tek linked client + viewer-authorized object set + explicit non-financial aggregate contract** sınırında mümkündür.
+
+### 22.2 Core Policy
+
+**Canonical rule: AGGREGATE CALCULATION SET MUST BE A SUBSET OF VIEWER-AUTHORIZED OBJECT SET.** Viewer'ın erişemediği kayıtlar count, total, category, trend, distribution veya drill-down yoluyla dolaylı olarak ifşa edilemez.
+
+### 22.3 Definitions
+
+`FILTERED RECORD LIST ≠ AGGREGATE` · `PAGINATION TOTAL ≠ BUSINESS SUMMARY` · `CLIENT-SIDE REDUCE/LENGTH ≠ AUTHORITATIVE SERVER AGGREGATE` · `SINGLE-OBJECT PRESENTATION ≠ CROSS-CASE AGGREGATE` · `VISIBLE AGGREGATE ≠ ACCESS TO UNDERLYING RECORDS` · `ACCESS TO UNDERLYING RECORDS ≠ PERMISSION TO AGGREGATE`. Bir listenin tarayıcıda toplanması veya sayılması canonical aggregate contract OLUŞTURMAZ.
+
+### 22.4 Allowed Aggregate Class
+
+**Permitted class: CLIENT-SCOPED NON-FINANCIAL OPERATIONAL AGGREGATES.** Örnek semantic family: unread message count · unread notification count · explicitly approved operational record counts. **Mevcut AS-IS ve doğrulanmış iki aggregate:** portal notification unread count · portal message unread count — bunlar linked-client scoped olmalı, object/recipient relation'ını korumalı, business authority ÜRETMEMELİ ve POL-D explicit response contract'ına tabi OLMALIDIR. Başka operational count veya summary yalnız ayrı ve açık aggregate contract ile eklenebilir; bu kayıt yeni aggregate endpoint veya liste TASARLAMAZ.
+
+### 22.5 Prohibited Aggregate Classes
+
+Mevcut POL-F kararı altında client-facing olarak yetkilendirilmez: cross-client aggregates · tenant-wide aggregates · office-wide aggregates · team/direct-report aggregates · financial totals · financial balances · financial trends · financial category distributions · accounting aggregates. **Portal hesabının tek Client bağlantısı multi-client aggregation authority OLUŞTURMAZ.**
+
+### 22.6 Cross-Case Scope
+
+Tek client'ın birden fazla case'i üzerinden non-financial aggregation, yalnız şu koşullarla policy bakımından **mümkün olabilir**: tüm dahil edilen case'ler linked client'a ait · tüm case'ler POL-J object authorization'ından geçer · aggregate dimension explicit olarak client-safe · hiçbir internal/unknown dimension ifşa edilmez. **Bu kayıt belirli bir cross-case aggregate'i yetkilendirmez veya oluşturmaz.**
+
+### 22.7 POL-J Consumption
+
+**PORTAL SCOPE: TENANT + LINKED CLIENT + OBJECT RELATION. STAFF SCOPE: TENANT + OFF/OD-08 OBJECT SCOPE.** POL-F object authorization KURMAZ, OFF/OD-08'i DEĞİŞTİRMEZ, tenant-wide veriye fallback YAPMAZ. **SCOPE UNKNOWN: DO NOT AGGREGATE. CLIENT SCOPE ABSENT: DO NOT FALL BACK TO TENANT-WIDE DATA.**
+
+### 22.8 POL-D Consumption
+
+Aggregate response'ları da POL-D'ye tabidir: **RAW AGGREGATE RESPONSE: NOT AUTOMATICALLY CLIENT-SAFE. INTERNAL-ONLY DIMENSIONS: OMIT. UNKNOWN/UNCLASSIFIED DIMENSIONS: OMIT. DRILL-DOWN IDENTIFIERS: EXPLICIT CLIENT-FACING CONTRACT REQUIRED.** Aggregate internal status, internal category, personel kimliği, teknik tanımlayıcı veya workflow metadata üzerinden dolaylı disclosure YAPAMAZ.
+
+### 22.9 Client-Side Derived Cards (AS-IS delta, record-only)
+
+Tarayıcıda mevcut liste üzerinden hesaplanan kartlar **PRESENTATION-DERIVED VALUE**'dur, canonical aggregate DEĞİLDİR. Eksik, kısıtlı veya `take`-uygulanmış bir alt küme üzerinden hesaplanan değer TOTAL/COMPLETE/AUTHORITATIVE/CURRENT FINANCIAL FACT olarak ETİKETLENEMEZ. AS-IS'te eksik veri üzerinden düşük hesaplanabilen finansal kart: **KNOWN PRESENTATION-ACCURACY DELTA — REMEDIATION: NOT AUTHORIZED** (bu bölümün kendisinde record-only kaydedilir; ayrı risk kartı AÇILMADI, repository'nin mevcut deseninde eşdeğer kayıt gerektirmiyor).
+
+### 22.10 Financial Aggregate Decision
+
+**CLIENT-FACING FINANCIAL AGGREGATES: NOT AUTHORIZED UNDER POL-F OPTION B.** Portala aggregate olarak sunulamaz: claimed amount total · collected amount total · outstanding amount total · advance/cari total · payable total · payout total · accounting total. **Gerekçeler:** `principalAmount` canonical aggregate source DEĞİLDİR · Collection status-filter convention canonical DEĞİLDİR · advance/cari single source-of-truth SEÇİLMEMİŞTİR · reconciliation contract canonical DEĞİLDİR · payout recording bank execution DEĞİLDİR · accounting representation CLIENT authority'sinde DEĞİLDİR. `AGGREGATE ≠ SOURCE-OF-TRUTH` · `SUMMARY ≠ RECONCILIATION` · `FINANCIAL VISIBILITY ≠ FINANCIAL AUTHORITY`.
+
+### 22.11 BP-06 Financial Boundary
+
+POL-F kararı bütün finansal alan görünürlüğünü YASAKLAMAZ. BP-06 ayrı olarak değerlendirebilir: single-object client-safe financial fields · explicitly curated case-level financial context. Ancak BP-06 bu alanları aggregate total'a DÖNÜŞTÜREMEZ, BP-07 source/reconciliation boşluklarını OVERRIDE EDEMEZ, CLIENT'e financial authority VEREMEZ. **SINGLE-OBJECT FINANCIAL VISIBILITY: BP-06 OWNER-GATED. FINANCIAL AGGREGATE VISIBILITY: NOT AUTHORIZED.**
+
+### 22.12 Confidence / Source Precision (pointer; POL-F içinde çözülmez)
+
+Claimed amount: source confidence NON-UNIFORM · collected amount: status-filter semantics NOT CANONICAL · outstanding amount: source-dependent · advance/cari: SOT NOT SELECTED, reconciliation OPEN · payable: NOT PAYMENT · payout recorded: NOT BANK EXECUTION · accounting representation: ACCOUNTING AUTHORITY.
+
+### 22.13 Failure Semantics
+
+**Scope belirsizliği:** DO NOT AGGREGATE, NO TENANT-WIDE FALLBACK. **Source eksikliği/stale veri:** güvenli read yüzeyinde PARTIAL/STALE/UNAVAILABLE/NOT COMPUTED gösterilebilir; ancak COMPLETE/CURRENT/AUTHORITATIVE/LEGAL-FINANCIAL FACT iddiası YAPILAMAZ. **Inference riski:** küçük grup/tek kayıt/nadir kategori üzerinden hassas bilgi çıkarılabiliyorsa ve açık disclosure policy yoksa OMIT/WITHHOLD.
+
+### 22.14 AS-IS Staff Aggregates
+
+Staff-facing client/office/tenant aggregate'leri **OUTSIDE CLIENT-FACING POL-F AUTHORIZATION**'dır. Bu kayıt mevcut staff reports/dashboard'larını YETKİLENDİRMEZ, OFF/OD-08 rollout'u YAPMAZ, staff aggregate scope'unu DEĞİŞTİRMEZ, mevcut staff financial summaries'i portala AÇMAZ. Staff-side AS-IS mekanizmaları yalnız evidence/input olarak referanslanır.
+
+### 22.15 Open-Slot Register (yalnız pointer; ÇÖZÜLMEZ)
+
+Single balance source-of-truth · balance reconciliation · Collection status-filter convention · principal-amount source hardening · financial aggregate expansion · small-group inference thresholds · client-facing trend policy · aggregate drill-down policy. **Option C'ye gelecekte geçiş ayrı owner policy kararı gerektirir.**
+
+### 22.16 BP-06 Effect
+
+Canonical merge sonrasında: **POL-D: CLOSED/CANONICAL. POL-F: CLOSED/CANONICAL. BP-06 VISIBILITY PREREQUISITES: SATISFIED. BP-06: READY/NOT STARTED. POL-E/KVKK: OPEN.** BP-06 bu görev sırasında BAŞLATILMAZ.
+
+### 22.17 Canonical Non-Equations
+
+`FILTERED RECORD LIST ≠ AGGREGATE` · `PAGINATION TOTAL ≠ BUSINESS SUMMARY` · `CLIENT-SIDE REDUCE/LENGTH ≠ AUTHORITATIVE SERVER AGGREGATE` · `SINGLE-OBJECT PRESENTATION ≠ CROSS-CASE AGGREGATE` · `VISIBLE AGGREGATE ≠ ACCESS TO UNDERLYING RECORDS` · `ACCESS TO UNDERLYING RECORDS ≠ PERMISSION TO AGGREGATE` · `AGGREGATE ≠ SOURCE-OF-TRUTH` · `SUMMARY ≠ RECONCILIATION` · `FINANCIAL VISIBILITY ≠ FINANCIAL AUTHORITY` · `CLIENT-SCOPED ≠ TENANT-WIDE`.
+
+### 22.18 Status Precision
+
+**CLIENT-P1-POL-F: CLOSED/CANONICAL.** **MODEL: CLIENT-SCOPED NON-FINANCIAL AGGREGATE VISIBILITY.** **FINANCIAL AGGREGATES: NOT AUTHORIZED.** **CROSS-CLIENT AGGREGATES: PROHIBITED.** **POL-D: CONSUMED/UNCHANGED.** **BP-06: READY/NOT STARTED.** **RECONCILIATION: OPEN.** **IMPLEMENTATION AUTHORITY: NONE.**
+
+### 22.19 POL-F Self-Check
+
+Bu bölüm: POL-J object authorization modelini GENİŞLETMEZ veya rakip model ÜRETMEZ; OFF/OD-08'i DEĞİŞTİRMEZ; POL-D field contract'ını yeniden AÇMAZ; filtered list'i aggregate SAYMAZ; pagination total'ı business summary YAPMAZ; client-side reduce'ı canonical aggregate İLAN ETMEZ; multi-client portal aggregation YETKİLENDİRMEZ; financial aggregate visibility AÇMAZ; staff aggregate authority GENİŞLETMEZ; BP-07 SOT/reconciliation boşluklarını OVERRIDE ETMEZ; POL-E/KVKK kararı VERMEZ; yeni aggregate endpoint/dashboard/query/cache/materialized-view TASARLAMAZ; mevcut riskler için mükerrer risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT CANONICALIZATION ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
