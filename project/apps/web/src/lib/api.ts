@@ -258,6 +258,23 @@ class ApiClient {
     });
   }
 
+  // OFFICE-AUTH-P02 — credential-recovery (şifremi unuttum). Normal login akışının parçası
+  // DEĞİLDİR. tenantSlug zorunlu (User @@unique([tenantId,email])). Backend her zaman generic
+  // yanıt döner (enumeration-safe) — burada da özel bir dallanma yapılmaz.
+  async forgotPassword(email: string, tenantSlug: string) {
+    return this.request<{ success: true }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email, tenantSlug }),
+    });
+  }
+
+  async resetPassword(token: string, password: string, passwordConfirmation: string) {
+    return this.request<{ ok: true }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, password, passwordConfirmation }),
+    });
+  }
+
   async register(data: {
     firmName: string;
     name: string;
