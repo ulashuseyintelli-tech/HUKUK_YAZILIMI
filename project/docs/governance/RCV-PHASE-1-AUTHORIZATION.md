@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -72,7 +72,8 @@ TPA-03A implementation      : OWNER GO-IMPLEMENT REQUIRED / NOT AUTHORIZED
 Claim Formation lane        : RULE ENGINE FORMATION ADMISSION
 RCV-CLAIM-FORM-P01-R01      : CONTRACT RATIFIED / FORMALLY CLOSED / CANONICAL
 RCV-CLAIM-FORM-P02-S01      : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
-Claim Formation runtime     : PARTIAL — P02-S01 ONLY
+RCV-CLAIM-FORM-P02-S02-I01  : FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+Claim Formation runtime     : PARTIAL — S01 + S02-I01 ONLY
 Claim Formation next task   : UNSET — OWNER GO REQUIRED
 Next eligible action        : TPA-03A SCHEMA FOUNDATION — OWNER GO-IMPLEMENT REQUIRED
 ```

@@ -1970,6 +1970,45 @@ Collection/shared-boundary değişikliği, replay/data access veya cutover autho
 
 ---
 
+## RCV-CLAIM-FORM-P02-S02-I01 — Rule Engine POST_INTEREST_RULE ClaimItem Admission Denial
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+**Implementation evidence:** PR #1444 / squash
+`6565190e34080578b15a9bd87d50439f7bdc68f6` / required CI `4/4 PASS`; targeted
+`19/19`, ClaimItem regression `207/207` ve yedi aktif şablon `PASS`. Canonical ancestry
+doğrulanmıştır.
+
+Rule Engine component-mapping tablosundaki `POST_INTEREST_RULE` girdisi kaldırılmıştır; bu
+component artık P02-S01'in mevcut fail-closed batch-preflight ve `UNSUPPORTED_COMPONENT`
+sözleşmesine düşer. Required veya optional fark etmeksizin `POST_INTEREST_RULE` adayı içeren
+batch ilk writer/router çağrısından önce deterministik olarak reddedilir. Router, ClaimItem,
+audit, event veya outbox write sayısı sıfırdır; partial batch write oluşmaz. Desteklenen
+mevcut mapping davranışı (yedi aktif şablon dahil) değişmemiştir.
+
+```text
+RUNTIME ENFORCEMENT         PARTIAL — S01 + S02-I01 ONLY
+SCHEMA / MIGRATION          NONE
+PUBLIC API                  NONE
+LEGACY DATA                 UNCHANGED
+COLLECTION / SHARED BOUNDARY UNCHANGED
+```
+
+P01-R01 ve P02-S01 tarihsel contract kapanışları korunur. `POST_INTEREST_RULE` residual gap'i
+bu kayıtla kapanır; explicit `OTHER`, generic-document fallback, web `kalemTuru` fallback,
+human direct-entry ve formation snapshot/persistence residual gap'leri `OPEN` kalır. ACT-28 ve
+REC-AUTH-011/012 `OPEN / UNCHANGED`dır. Sonraki Claim Formation task'ı canonical register
+tarafından atanmamıştır:
+
+```text
+NEXT ELIGIBLE TASK  UNSET — OWNER GO REQUIRED
+```
+
+Bu kayıt başka implementation, yeni workstream, schema/migration, legacy mutation/backfill,
+Collection/shared-boundary değişikliği, replay/data access veya cutover authority üretmez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,

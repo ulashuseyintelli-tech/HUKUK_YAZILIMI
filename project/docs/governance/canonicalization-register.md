@@ -1,7 +1,7 @@
 # Canonicalization Register
 
 **Durum:** Living document — governance kaydı, implementasyon değil.
-**Son güncelleme:** 2026-07-19 (RCV-CLAIM-FORM-P02-S01 Rule Engine batch-preflight formal closure reconciliation)
+**Son güncelleme:** 2026-07-20 (RCV-CLAIM-FORM-P02-S02-I01 direct POST_INTEREST_RULE admission-guard formal closure reconciliation)
 **Kaynak:** `canonicalizationsiniflandirmaraporu.md` (kullanıcı tarafından sağlanan sınıflandırma raporu) + repo kodu doğrulaması, base commit `e65dc08564c09bfbe6db09a680606ac3d4b1f828`.
 **İlişkili dosya:** `canonicalization-policy.md` (sınıflandırma tanımları ve uygulama kuralları için bağlayıcı kaynak; bu register yalnız veri/kayıt tutar).
 
@@ -259,6 +259,42 @@ olarak kaydeder. `POST_INTEREST_RULE`, explicit `OTHER`, generic-document fallba
 `OPEN` kalır. ACT-28 ve REC-AUTH-011/012 `OPEN / UNCHANGED`dır. Bu closure başka
 implementation, schema/migration, legacy mutation, Collection/shared-boundary task'ı, replay,
 data access veya cutover authority üretmez.
+
+### RCV-CLAIM-FORM-P02-S02-I01-GOV — Direct POST_INTEREST_RULE ClaimItem Admission Guard Closure
+
+```text
+IMPLEMENTATION             FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+IMPLEMENTATION PR          #1444
+IMPLEMENTATION SQUASH      6565190e34080578b15a9bd87d50439f7bdc68f6
+REQUIRED CI                4/4 PASS
+TARGETED TESTS             19/19 PASS
+CLAIMITEM REGRESSION       207/207 PASS
+ACTIVE TEMPLATE COVERAGE   7/7 PASS
+POST_INTEREST_RULE         DIRECT CLAIMITEM ADMISSION DENIED
+ERROR CONTRACT             UNSUPPORTED_COMPONENT
+REQUIRED / OPTIONAL        BOTH FAIL-CLOSED
+INVALID BATCH WRITES       ROUTER / CLAIMITEM / AUDIT / EVENT / OUTBOX = 0
+PARTIAL BATCH WRITE        0
+SUPPORTED MAPPINGS         UNCHANGED
+PREVIEW / YAML / POLICY    UNCHANGED
+LEGACY POST_INTEREST       UNCHANGED / LEGACY_ONLY
+RUNTIME ENFORCEMENT        PARTIAL — S01 + S02-I01 ONLY
+SCHEMA / MIGRATION         NONE
+PUBLIC API                 NONE
+COLLECTION/SHARED BOUNDARY UNCHANGED
+NEXT CLAIM-FORMATION TASK  UNSET — OWNER GO REQUIRED
+```
+
+Bu kayıt P01-R01 ve P02-S01 tarihsel kapanışlarını silmez veya yeniden yazmaz. PR #1444,
+direct Rule Engine ClaimItem admission map'indeki `POST_INTEREST_RULE → POST_INTEREST`
+yolunu kaldırmış ve required/optional ayrımı olmadan mevcut batch-preflight ile ilk writer
+çağrısından önce fail-closed durdurmuştur. Preview endpoint'i, YAML template'leri,
+`INTEREST_POLICY_ASSIGNED` yolu ve tarihsel `POST_INTEREST` kayıtları değişmemiştir.
+Explicit `OTHER`, generic-document fallback, web `kalemTuru` fallback, human direct-entry
+ve formation snapshot/persistence residual gap'leri `OPEN` kalır. ACT-28 ve
+REC-AUTH-011/012 `OPEN / UNCHANGED`dır. Bu closure başka implementation, schema/migration,
+legacy mutation, Collection/shared-boundary task'ı, replay, data access veya cutover
+authority üretmez.
 
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 
