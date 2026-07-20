@@ -8,7 +8,7 @@
 Belge Durumu: CANONICAL
 Belge Sınıfı: DOMAIN GOVERNANCE
 Üst Otorite: SYSTEM-CONSTITUTION
-Version: 1.6
+Version: 1.7
 Canonical Path: project/docs/governance/RECEIVABLE-GOVERNANCE.md
 Owner Status: RATIFIED — BINDING
 Repository Status: CANONICAL UPON APPROVED MERGE TO MAIN
@@ -696,6 +696,41 @@ Aggregate exact-cent conservation enforcement ve bucket key generation
 `LegalApplicationWriter` contract aşamasına deferred'dır. ACT-28 ve REC-AUTH-011/012 `OPEN`;
 target authority `SHADOW_ONLY`; representative replay/evidence, consumer cutover ve retirement
 yetkisizdir.
+
+**REC-ALLOC-015 — TPA-04 Option C target-native dormant single-writer kontratıdır.**
+
+`LegalApplicationWriter` yalnız official canonical Receivable snapshot ve Receivable-owned
+target-native `LegalApplicationPlan` tüketir. Writer TBK100 policy hesaplamaz; ClaimItem,
+`ClaimItem.collectedAmount`, `LedgerAllocation` veya `CollectionAllocation` üzerinden hedef
+plan üretmez. ClaimItem application target değildir ve bucket identity ClaimItem ID'den
+üretilemez.
+
+Writer yalnız canonical Collection outer transaction'ı içinde existing Prisma transaction client
+ile çağrılır; independent endpoint, nested transaction, second writer ve production Collection
+wiring yetkisizdir. Legacy-derived target, production shadow persistence, dual authority ve
+long-lived dual-write yasaktır.
+
+Official snapshot zorunludur; `authority=NONE`, `snapshotAvailable=false`, unavailable/stale
+snapshot ve unmapped component fail-closed'dur ve HELD'e çevrilemez. `bucketContextKey` stable
+legal context, `bucketInstanceId` snapshot-specific identity'dir; ikisi versioned canonical
+serialization + SHA-256 ile üretilir.
+
+Tüm tutarlar batch boyunca aynı currency/minor-unit sözleşmesinde `bigint` minor-unit'tir.
+`receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` aggregate invariant'ı DB'de
+writer'dan önce ayrı owner-gated schema amendment ile enforce edilmelidir. Replay
+`tenantId + idempotencyKey + commandHash` ile fail-closed'dur; farklı idempotency key ile aynı
+Collection'a ikinci APPLY yasaktır.
+
+APPLY tek Collection receipt'i ve target-native plan içindir; ClaimItem-keyed allocation veya
+`collectedAmount` mutation yoktur. Full reversal ayrı owner-gated linked append-only REVERSAL,
+same-case advisory lock ve exact inverse gerektirir; partial reversal yetkisizdir. Audit
+transaction-bound/allowlist-only; replay side-effect-free'dir. Existing PAYMENT event chain'i
+korunur; public LEGAL_APPLICATION event kontratı ayrı owner gate'idir.
+
+Legacy runtime cutover'a kadar geçici authority'dir fakat yeni legacy reader/writer açılamaz.
+Synthetic ClaimItem-grain corpus target writer için superseded legacy evidence ve
+writer/evidence/cutover blocker'ıdır. PR #407 hold/untouched; ACT-28 ve REC-AUTH-011/012 open
+kalır. TPA-04A..TPA-04G sıralı successor'ların her biri ayrı owner GO gerektirir.
 
 `AVAILABLE`, authority promotion anlamına gelmez. Legacy field'lar breaking rename olmadan
 korunur; deprecation yalnız explicit cutover gate'iyle tamamlanır. Shadow projection normal
@@ -1754,6 +1789,28 @@ Exact-cent conservation enforcement writer-stage'e deferred kalır. ACT-28 ve
 REC-AUTH-011/012 `OPEN`; synthetic corpus writer/evidence/cutover için `BLOCKING`; PR #407
 `HOLD / UNTOUCHED`dur. Sonraki yalnız owner-gated görev `TPA-04 —
 LEGALAPPLICATIONWRITER CONTRACT ANALYSIS`; authority `OWNER GO-ANALYZE REQUIRED`dır.
+
+## 23.11. TPA-04 LegalApplicationWriter contract ratifikasyonu — 2026-07-20
+
+Owner, Option C — Target-Native Plan-Then-Persist / Dormant-First Single Writer kararını
+ratifiye etmiştir. Canonical writer ve domain sınırları `REC-ALLOC-015`te tanımlıdır.
+Contract production wiring veya shadow execution açmaz; DB conservation amendment, snapshot
+identity, plan builder, dormant writer, reversal writer, evidence ve cutover ayrı sıralı
+owner gate'leridir.
+
+Successor sırası:
+
+1. TPA-04A Canonical Snapshot / Bucket Identity Contract
+2. TPA-04B Writer Evidence Schema Amendment
+3. TPA-04C Pure LegalApplicationPlan Builder
+4. TPA-04D Dormant LegalApplicationWriter
+5. TPA-04E Full Reversal Writer
+6. TPA-04F Representative Replay / Reconciliation Evidence
+7. TPA-04G Coordinated Writer / Consumer Cutover Decision
+
+Tüm successor'lar `OWNER GO REQUIRED / NOT AUTHORIZED`dır. ACT-28 ve REC-AUTH-011/012
+`OPEN`; synthetic corpus writer/evidence/cutover için `BLOCKING`; PR #407
+`OPEN / HOLD / CONFLICTING / DO NOT MERGE / DO NOT REBASE` olarak korunur.
 
 ---
 

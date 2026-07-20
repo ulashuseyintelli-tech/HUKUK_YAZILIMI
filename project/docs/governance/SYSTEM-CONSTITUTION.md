@@ -3,7 +3,7 @@
 ```text
 Belge kimliği           : SYS-CONST-001
 Canonical path          : project/docs/governance/SYSTEM-CONSTITUTION.md
-Version                 : 1.6
+Version                 : 1.7
 Owner status            : RATIFIED — BINDING
 Repository status       : CANONICAL UPON APPROVED MERGE TO MAIN
 Canonical effective date: Approved merge date
@@ -16,8 +16,9 @@ Bu belge mevcut dosya yolunu koruyarak PR #1139 ile eklenen kısa governance ça
 Canonical System Governance v1.0 içinde reconcile eder; v1.1 allocation-authority
 amendment'ını, v1.2 balance-exposure contract ratifikasyonunu, v1.3 cross-domain
 legal-application boundary kararını, v1.4 ClaimItem formation-admission sözleşmesini,
-v1.5 TPA-02 target persistence architecture kararını ve v1.6 TPA-03 two-file hybrid
-schema-foundation kontratını aynı canonical path'te taşır.
+v1.5 TPA-02 target persistence architecture kararını, v1.6 TPA-03 two-file hybrid
+schema-foundation kontratını ve v1.7 TPA-04 target-native dormant single-writer kontratını
+aynı canonical path'te taşır.
 PR #1139 ve PR #1140 tarihsel
 olarak geçerli kayıtlardır; içerikleri veya o tarihlerdeki owner kararları geriye dönük
 olarak yanlışlanmaz. Bu sürüm, daha sonraki owner ratifikasyonunun bağlayıcı semantik
@@ -568,6 +569,49 @@ deferred'dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; PR #407 `HOLD / UNTOUCHED`;
 güncellemesi writer, replay/evidence, consumer cutover, retirement veya yeni runtime authority
 üretmez.
 
+### `SYS-FIN-013C — TPA-04 Target-Native Dormant Single-Writer Kontratı`
+
+Owner, Option C — Target-Native Plan-Then-Persist / Dormant-First Single Writer kararını
+ratifiye etmiştir. `LegalApplicationWriter` tek target persistence writer'dır ve yalnız official
+canonical Receivable snapshot ile Receivable-owned target-native `LegalApplicationPlan`
+tüketir. TBK100 policy hesaplamaz; ClaimItem, `ClaimItem.collectedAmount`,
+`LedgerAllocation` veya `CollectionAllocation` üzerinden hedef plan türetemez. ClaimItem
+application target değildir ve bucket identity ClaimItem ID'den üretilemez.
+
+Writer yalnız canonical Collection outer transaction'ında mevcut Prisma transaction client ile
+çağrılır. Independent endpoint, nested transaction, second writer, production call-chain
+wiring, production shadow persistence, legacy-derived target, dual authority ve long-lived
+dual-write yasaktır.
+
+Official snapshot zorunludur. `authority=NONE`, `snapshotAvailable=false`, unavailable/stale
+snapshot ve unmapped component fail-closed'dur; HELD'e çevrilemez. `bucketContextKey` stable
+legal context, `bucketInstanceId` snapshot-specific identity taşır; ikisi versioned canonical
+serialization + SHA-256 ile üretilir.
+
+Tüm tutarlar batch boyunca aynı currency/minor-unit kontratında `bigint` minor-unit'tir.
+`receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` aggregate conservation
+DB'de writer'dan önce ayrı owner-gated schema amendment ile enforce edilmelidir. Replay
+`tenantId + idempotencyKey + commandHash` ile fail-closed'dur; different key ile aynı
+Collection'a ikinci APPLY yasaktır.
+
+APPLY tek Collection receipt'ine ve target-native plana bağlıdır; ClaimItem-keyed allocation
+ve collectedAmount mutation yoktur. Full reversal ayrı owner-gated linked append-only
+REVERSAL, same-case advisory lock ve exact inverse gerektirir; partial reversal yetkisizdir.
+Audit transaction-bound ve allowlist-only'dir; replay yeni audit/event/outbox üretmez. Existing
+PAYMENT event chain'i korunur; public LEGAL_APPLICATION event'i ayrı owner gate'idir.
+
+Legacy runtime coordinated cutover'a kadar geçici authority olarak korunur; yeni legacy
+reader/writer açılamaz. `CollectionAllocation` yalnız canonical-output-derived transitional
+projection olabilir; `ClaimItem.collectedAmount` frozen cache, `LedgerAllocation` historical
+legacy record'dur. Synthetic ClaimItem-grain corpus target writer için superseded legacy
+evidence ve writer/evidence/cutover blocker'ıdır. PR #407 hold/untouched; ACT-28 ve
+REC-AUTH-011/012 open kalır.
+
+TPA-04A snapshot/bucket identity, TPA-04B writer-evidence schema amendment, TPA-04C pure plan
+builder, TPA-04D dormant writer, TPA-04E full reversal writer, TPA-04F representative
+replay/reconciliation evidence ve TPA-04G coordinated writer/consumer cutover decision sıralı
+owner gate'leridir; hiçbiri bu kayıtla yetkilendirilmez.
+
 ### `SYS-FIN-014 — Claim Formation İki Seviyeli Taxonomy Kullanır`
 
 Yeni canonical ClaimItem formation yalnız şu canonical category'lerden birine bağlanır:
@@ -1064,10 +1108,11 @@ kanıtla güncellenir.
 | v1.5, 2026-07-19 | RCV-COL-TPA-02 target persistence architecture canonicalization | Independent `LegalApplicationBatch`, immutable `LegalApplication`, non-authoritative `ApplicationAttribution`, single writer/transaction, exact-cent, replay, reversal, tenant FK ve legacy-disposition contract'ı ratifiye edildi. Schema/migration/writer/replay/cutover/retirement yetkisi üretmez. |
 | v1.6, 2026-07-20 | RCV-COL-TPA-03 schema-foundation contract canonicalization | Option B two-file hybrid foundation; exact model/enum, positive minor-unit amount, replay/reversal, opaque bucket identity, composite tenant FK, restrictive delete ve immutability sınırları ratifiye edildi. Exact foundation patch `schema.prisma` + tek `migration.sql` ile owner-gated'dir; runtime writer/cutover yetkisi üretmez. |
 | v1.6 compliance update, 2026-07-20 | RCV-COL-TPA-03A schema-foundation closure reconciliation | PR #1449 / `63f0b0ea` exact two-file additive foundation evidence'ı kaydedildi. Schema/migration foundation CLOSED; writer/conservation enforcement/replay/cutover/retirement ve ACT-28/REC-AUTH-011/012 açık kaldı. Semantik kontrat veya Constitution version'ı değişmedi. |
+| v1.7, 2026-07-20 | RCV-COL-TPA-04 LegalApplicationWriter contract canonicalization | Option C target-native plan-then-persist / dormant-first single writer ratifiye edildi. Official Receivable snapshot + target-native plan input'u, snapshot/bucket hash identity, pre-writer DB conservation, replay, APPLY/full-reversal, transaction-bound audit ve fail-closed legacy coexistence sınırları bağlayıcıdır. TPA-04A..G ayrı owner gate'leridir; implementation yetkisi yoktur. |
 ---
 ## Son Hüküm
 
-Canonical System Governance v1.6 sistemin üst semantik yönetişim normudur. Domain Law'lar
+Canonical System Governance v1.7 sistemin üst semantik yönetişim normudur. Domain Law'lar
 onu ayrıntılandırır; ADR'lar teknik kararları kaydeder; implementation bu normları uygular.
 `AGENTS.md` ayrı execution/safety ekseninde bağlayıcıdır. Runtime compliance ayrı kanıt
 programıdır. Bu metin approved merge to main sonrasında repository-canonical olur; açık
