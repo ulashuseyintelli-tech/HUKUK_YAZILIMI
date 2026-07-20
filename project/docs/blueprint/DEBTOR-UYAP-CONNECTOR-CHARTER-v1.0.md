@@ -379,8 +379,8 @@ CI'ye eklenen yeni exact test step'inin nedeni: mevcut dar allowlist yeni spec'i
 ### 15.5 Açık Residual Register (bu birimle kapatılmamış)
 
 ```text
-TRANSPORT-RISK-02    : GET /uyap/stats tenant-scope gap — OPEN
-TRANSPORT-RISK-07    : POST /uyap/retry-failed global trigger / operator-authority gap — OPEN
+TRANSPORT-RISK-02    : CLOSED — bkz. §15.6 (SEC-XTEN-UYAP-STATS-01)
+TRANSPORT-RISK-07    : POST /uyap/retry-failed global trigger / operator-authority gap — OPEN (gelecekteki birim: UYAP-RETRY-AUTH-01)
 TRANSPORT-RISK-05    : UyapRequestLog.status local-stub-success ile provider-confirmed'i çökertiyor — OPEN, EVIDENCE-01'e devredilir
 Lawsuit CPE gates    : ABSENT / OPEN
 verifyUserEsignature : always-true dead stub — OPEN
@@ -392,6 +392,38 @@ SIMULATOR-01         : NOT STARTED
 ```
 
 `UyapRequestLog.status = SUCCESS` hâlen provider-confirmed dispatch evidence DEĞİLDİR.
+
+### 15.6 SEC-XTEN-UYAP-STATS-01 Closure (TRANSPORT-RISK-02)
+
+```text
+SEC-XTEN-UYAP-STATS-01 (GO-IMPLEMENT + IF GO-COMPLETE) : CLOSED / CANONICAL
+IMPLEMENTATION PR                                       : #1461
+IMPLEMENTATION SHA                                      : 64c091acba96d0bb1e0a6f429bb6800dffe4cddc
+CI                                                       : 4/4 SUCCESS
+TRANSPORT-RISK-02                                       : CLOSED / TECHNICALLY CONTAINED
+REAL TRANSPORT                                          : 0
+UYAP CUTOVER                                            : HARD HOLD
+```
+
+**Previous behavior:** `GET /uyap/status` ve `GET /uyap/stats`, JWT-authenticated her tenant'a, tenant propagation olmadan, tüm tenant'lar üzerindeki `UyapRequestLog` toplam/pending/success/failed sayılarını gösteriyordu. Kayıt içeriği (case/document detayı) dönmese dahi bu, cross-tenant işlem hacmi ve sonuç istatistiği sızıntısıydı.
+
+**Closed behavior:** `UyapService.getStats(tenantId)` artık `@CurrentUser('tenantId')`'dan gelen authenticated tenant ile sınırlıdır; body/query/header üzerinden tenant otoritesi kabul edilmez. Dört sorgu (`total`/`pending`/`success`/`failed`) `where tenantId = caller tenant` ile scope edilir; legacy `tenantId = NULL` kayıtları her sonuçtan hariç tutulur (tenant filtresiz fallback yoktur). Missing/empty/whitespace tenant → zero response, sıfır Prisma çağrısı (fail-closed). `checkConnection()` UNCHANGED — hâlâ hardcoded `true`, stub, gerçek bağlantı iddiası yok (TRANSPORT-RISK-01, ayrı OPEN). Route response şekilleri (`GET /uyap/status`: `connected/mode/message/stats`; `GET /uyap/stats`: `{total,pending,success,failed}`) değişmemiştir; yeni public field/error contract eklenmemiştir.
+
+Evidence:
+```text
+Unit/static tests                : 8/8 PASS
+Disposable PostgreSQL (2-tenant) : 3/3 PASS
+Full bounded UYAP regression     : 257/260 PASS, 3 SKIP, 0 FAIL
+TRANSPORT-CONTAIN-01/P01/P02A/P02B/P02B-R2/P04A regression : PASS
+New changed-file TS errors       : 0
+Changed-file ESLint              : PASS
+git diff --check                 : PASS
+Required CI                      : 4/4 SUCCESS
+Schema/migration                 : 0
+Write side effect                : 0
+Real network call                : 0
+```
+Disposable-DB fixture (Tenant A + Tenant B + legacy `tenantId=NULL`) ile doğrulandı: A, B'yi göremez; B, A'yı göremez; NULL-owned satırlar hiçbirinde görünmez; status alt-toplamları (`pending`/`success`/`failed`) tenant-local kalır. CI'ye eklenen iki yeni exact test step'inin nedeni: mevcut dar allowlist yeni spec'leri aksi hâlde hiç çalıştırmazdı.
 
 ## Owner Approval Record
 
