@@ -64,10 +64,12 @@ export class UyapController {
   /**
    * UYAP bağlantı durumu
    */
+  // SEC-XTEN-UYAP-STATS-01: tenantId authenticated principal'dan (@CurrentUser) gelir; body/query
+  // tenant authority DEĞİLDİR. Aggregate sayılar artık cross-tenant sızdırılmaz.
   @Get('status')
-  async getStatus() {
+  async getStatus(@CurrentUser('tenantId') tenantId: string) {
     const isConnected = await this.uyapService.checkConnection();
-    const stats = await this.uyapService.getStats();
+    const stats = await this.uyapService.getStats(tenantId);
 
     return {
       connected: isConnected,
@@ -80,9 +82,10 @@ export class UyapController {
   /**
    * İstek istatistikleri
    */
+  // SEC-XTEN-UYAP-STATS-01: tenantId authenticated principal'dan (@CurrentUser) gelir.
   @Get('stats')
-  async getStats() {
-    return this.uyapService.getStats();
+  async getStats(@CurrentUser('tenantId') tenantId: string) {
+    return this.uyapService.getStats(tenantId);
   }
 
   /**
