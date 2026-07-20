@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified 2026-07-20; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE / DO NOT REBASE; TPA-03A schema/migration implementation, writer/replay/cutover/retirement and PR-11 remain unauthorized until separate owner GO
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified 2026-07-20; TPA-03A exact two-file additive schema foundation closed/canonical via PR #1449 / `63f0b0ea`; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 HOLD / DO NOT MERGE / DO NOT REBASE; writer/conservation enforcement/replay/cutover/retirement and PR-11 remain unauthorized until separate owner GO
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -252,6 +252,24 @@ The `codex/rcv-ws04-p03-syn-01` worktree is non-blocking for TPA-03A schema foun
 blocking for writer/evidence/cutover. PR #407 remains `HOLD / CONFLICTING / DO NOT MERGE /
 DO NOT REBASE`. ACT-28 and REC-AUTH-011/012 remain open. TPA-03A requires separate owner
 `GO-IMPLEMENT`; this decision does not authorize schema, migration or implementation.
+
+## TPA-03A Schema-Foundation Implementation Evidence — 2026-07-20
+
+Implementation PR #1449 / squash
+`63f0b0ea2cbef3f5d106ae3dfd8be6b770b5229f` is `CLOSED / CANONICAL EVIDENCE`.
+Its exact two-file diff is `project/apps/api/prisma/schema.prisma` plus
+`project/apps/api/prisma/migrations/20260720174245_legal_application_batch_foundation/migration.sql`.
+The additive, writer-free and no-backfill foundation creates `LegalApplicationBatch`,
+immutable `LegalApplication` and non-authoritative `ApplicationAttribution` with tenant-safe
+composite foreign keys, restrictive deletes, replay/reversal/nonblank-bucket/minor-unit row
+guards and UPDATE/DELETE immutability triggers.
+
+No runtime writer, feature flag, test, consumer, legacy-reader/writer or historical-data
+behavior changed. Aggregate exact-cent conservation enforcement and bucket-key generation
+remain deferred to the separately owner-gated writer contract. ACT-28 and REC-AUTH-011/012
+remain open; PR #407 remains on hold and untouched; the synthetic-corpus worktree remains
+blocking for writer/evidence/cutover. The next task is analysis-only
+`TPA-04 — LegalApplicationWriter Contract Analysis`, requiring separate owner `GO-ANALYZE`.
 
 ## Normative Rules
 
@@ -682,3 +700,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-19 | 2.7 | XD-001 legal-application boundary: Receivable owns bucket/policy, Collection owns receipt/execution orchestration, and target persistence is a single-writer cross-domain boundary. Physical persistence and aggregate selection remain open for TPA-02; `ApplicationBatch` is an unselected analysis alternative only. |
 | 2026-07-19 | 2.8 | TPA-02 target persistence architecture: independent `LegalApplicationBatch`, immutable bucket-effect `LegalApplication`, non-authoritative `ApplicationAttribution`, single `LegalApplicationWriter` inside the canonical Collection transaction, exact-cent conservation, key+hash replay, append-only full reversal, tenant-safe restrictive FK and legacy-disposition contract are ratified. ACT-28/REC-AUTH-011/012 remain open; implementation/cutover remain unauthorized. |
 | 2026-07-20 | 2.9 | TPA-03 Option B schema-foundation contract: exact two-file additive/writer-free/no-backfill scope, model/enum names, positive minor-unit amount semantics, tenant-safe restrictive FK, immutability, replay/reversal and opaque bucket-identity boundaries are ratified. Exact-cent enforcement remains deferred to the writer stage; TPA-03A requires separate owner GO-IMPLEMENT. |
+| 2026-07-20 | 3.0 | TPA-03A schema-foundation closure: PR #1449 / `63f0b0ea` establishes the exact two-file additive/writer-free/no-backfill persistence foundation. Runtime writer, conservation enforcement, replay/evidence, cutover and retirement remain unauthorized; ACT-28/REC-AUTH-011/012 remain open. |
