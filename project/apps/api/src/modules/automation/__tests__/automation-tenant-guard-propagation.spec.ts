@@ -12,6 +12,17 @@ import { AutomationController } from '../automation.controller';
 import { AutomationService } from '../automation.service';
 
 describe('AutomationController tenant guard propagation (OD-3)', () => {
+  it('GET /automation/stats — JWT kullanıcısının tenantId\'si getAutomationStats\'a aktarılır (SEC-XTEN-AUTOMATION-STATS-01)', async () => {
+    const automationService: any = {
+      getAutomationStats: jest.fn().mockResolvedValue({ totalAutoCases: 0, totalAutoActions: 0, recentActions: [] }),
+    };
+    const controller = new AutomationController(automationService, {} as any);
+
+    await controller.getStats({ tenantId: 'tenant1' });
+
+    expect(automationService.getAutomationStats).toHaveBeenCalledWith('tenant1');
+  });
+
   it('POST /automation/cases/:id/process — JWT kullanıcısının tenantId\'si processCaseManually\'e aktarılır', async () => {
     const automationService: any = {
       processCaseManually: jest.fn().mockResolvedValue(undefined),
@@ -39,6 +50,47 @@ describe('AutomationController tenant guard propagation (OD-3)', () => {
     await controller.getNextAction({ tenantId: 'tenant1' }, 'case1');
 
     expect(workflowEngine.calculateNextActionTime).toHaveBeenCalledWith('case1', 'tenant1');
+  });
+});
+
+describe('AutomationService.getAutomationStats tenant scope (SEC-XTEN-AUTOMATION-STATS-01)', () => {
+  it('tenantId verildiğinde her root sorgu tenantId ile filtrelenir', async () => {
+    const prisma: any = {
+      case: { count: jest.fn().mockResolvedValue(3) },
+      decisionLog: {
+        count: jest.fn().mockResolvedValue(7),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+
+    const result = await svc.getAutomationStats('tenantA');
+
+    expect(prisma.case.count).toHaveBeenCalledWith({ where: { isAutoMode: true, tenantId: 'tenantA' } });
+    expect(prisma.decisionLog.count).toHaveBeenCalledWith({
+      where: { isAutomatic: true, case: { tenantId: 'tenantA' } },
+    });
+    expect(prisma.decisionLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { isAutomatic: true, case: { tenantId: 'tenantA' } },
+      }),
+    );
+    expect(result).toEqual({ totalAutoCases: 3, totalAutoActions: 7, recentActions: [] });
+  });
+
+  it('tenantId eksikse (falsy) fail-closed: sıfır sonuç döner, hiçbir prisma sorgusu ÇALIŞTIRILMAZ', async () => {
+    const prisma: any = {
+      case: { count: jest.fn() },
+      decisionLog: { count: jest.fn(), findMany: jest.fn() },
+    };
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+
+    const result = await svc.getAutomationStats(undefined as any);
+
+    expect(result).toEqual({ totalAutoCases: 0, totalAutoActions: 0, recentActions: [] });
+    expect(prisma.case.count).not.toHaveBeenCalled();
+    expect(prisma.decisionLog.count).not.toHaveBeenCalled();
+    expect(prisma.decisionLog.findMany).not.toHaveBeenCalled();
   });
 });
 

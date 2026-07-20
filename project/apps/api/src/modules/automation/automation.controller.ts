@@ -14,8 +14,8 @@ export class AutomationController {
 
   // Otomasyon istatistikleri
   @Get("stats")
-  async getStats() {
-    return this.automationService.getAutomationStats();
+  async getStats(@CurrentUser() user: any) {
+    return this.automationService.getAutomationStats(user.tenantId);
   }
 
   // Dosya için otomatik modu aç/kapat
