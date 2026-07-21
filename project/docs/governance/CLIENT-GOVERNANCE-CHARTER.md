@@ -1374,3 +1374,51 @@ CLIENT-P1-ENTRY-GOV · CLIENT-P1-XDC-01 · CLIENT-P1-POL-01-GOV · CLIENT-P1-POL
 ### 25.12 Phase 1 Closure Self-Check
 
 Bu bölüm: implementation completion İDDİA ETMEZ; security remediation completion İDDİA ETMEZ; KVKK full compliance CERTIFY ETMEZ; financial reconciliation completion İDDİA ETMEZ; Phase 2'yi YETKİLENDİRMEZ veya roadmap ÜRETMEZ; POL-E-R1'i BAŞLATMAZ; VERBİS sonucu ÜRETMEZ; residual'leri CLOSED veya RESOLVED İLAN ETMEZ; cross-domain authority'yi CLIENT'e TAŞIMAZ; §5/§6/§8.A/§8.B/§11–§24 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ. **BLUEPRINT/POLICY CLOSURE ≠ IMPLEMENTATION AUTHORITY; IMPLEMENTATION AUTHORITY: NONE.**
+
+## 26. CLIENT Phase 2 U01 — Portal Credential-Recovery Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, Phase 1 kapanışından (§25) sonra owner-authorized **CLIENT-P2-U01 — Portal Credential-Recovery Hardening** biriminin teknik implementasyon kapanış kaydıdır (`decision-log.md` CLIENT-P2-U01-GOV). Bu, Phase 1'in §25.9'da bıraktığı "PHASE 2: NOT AUTHORIZED" durumunu, yalnız U01 birimi için, owner'ın ayrı ve açık GO-IMPLEMENT kararıyla açar — Phase 2'nin geri kalanı hâlâ **OPEN**'dır, bu kayıtla genel bir Phase 2 roadmap'i ÜRETİLMEZ. §5, §6, §8.A, §8.B, §11–§25 substantive hükümlerini DEĞİŞTİRMEZ.
+
+### 26.1 Technical Lineage
+
+**CORE IMPLEMENTATION:** PR #1477 (task: `CLIENT-P2-CREDENTIAL-RECOVERY-P01`, squash SHA `d46ebdb54e442569a0a6ea794f032880eb998f4a`, merged `origin/main` 2026-07-20). **UNIQUE COMPLEMENT:** PR #1483 (task: `CLIENT-P2-U01-R1`, squash SHA `68d41e17e124ae34c808c8b27c3983fd4aea7009`, merged `origin/main` 2026-07-21). **SUPERSEDED PR:** #1478 — **CLOSED / UNMERGED / PARTIALLY EXTRACTED.**
+
+### 26.2 Duplicate Reconciliation Record
+
+Aynı gün, `CLIENT-P2-U01` adı altında bağımsız bir owner-authorized görev (bu kaydın kaynağı), PR #1477'nin varlığından habersiz olarak (task-start dedup taraması o anda temiz döndü), aynı çekirdek işlevi baştan implement etti ve PR #1478 olarak açtı — gerçek bir eşzamanlı iki-oturum çakışması, süreç hatası değil. Owner GO-RECONCILE ile hunk-seviyesi sınıflandırma yapıldı: PR #1477'nin çekirdek tasarım kararları (token formatı, rate-limit guard, atomic reset, e-posta teslimatı, reset-password sayfası) **canonical** ilan edildi ve **değiştirilmeden korundu**; PR #1478'in bu alanlardaki alternatif implementasyonu **wholesale iptal edildi, hiç merge edilmedi**. Tek gerçek unique complement (D3) bulundu: `/portal/*` recovery route'larının staff-auth katmanı tarafından `/auth/login`'e yanlış yönlendirilmesi — PR #1477'nin kendi yeni `reset-password` sayfası dahil, canlı tarayıcıda doğrulanmış gerçek bir açık kalan boşluktu. Bu complement ayrı, bounded bir dala (`claude/client-p2-u01-r1`) çıkarılıp PR #1483 olarak merge edildi; `portal.service.ts`/`.controller.ts`/`.module.ts` bu reconciliation'ın hiçbir aşamasında değiştirilmedi. **PR #1478'in kendi CI'ının PASS olması canonical implementasyon olduğu anlamına GELMEZ** — merge edilmeden kapatıldı.
+
+### 26.3 Technical Outcome
+
+**CREDENTIAL-RECOVERY: FUNCTIONAL END TO END.** Forgot-password delivery `EmailProviderService` üzerinden wired. Reset token DB'de yalnız SHA-256 digest olarak saklanır; ham token yalnız teslimat linkinde bulunur, DB'ye asla yazılmaz. Token tüketimi atomic/tek-kullanımlıktır; replay reddedilir. Credential-recovery'ye özel, login bucket'ından bağımsız rate-limit guard uygulanır. Reset-password web sayfası mevcuttur. Public recovery route'lar staff-auth olmadan erişilebilirdir. Private portal route'lar `portal_token` korumasında kalır. Tenant/client izolasyonu gerçek Postgres'e karşı (db-gated) test edilmiştir. **SCHEMA / MIGRATION / BACKFILL: NONE** (bu kayda kadarki tüm implementasyon — çekirdek + complement — mevcut `resetToken`/`resetTokenExp` kolonlarını kullanır, hiçbir migration üretmedi).
+
+### 26.4 Canonical Precision — Non-Equations
+
+`PASSWORD-RESET TOKEN ≠ PORTAL SESSION` · `PASSWORD RESET ≠ EXISTING JWT REVOCATION` · `PUBLIC RECOVERY ROUTE ≠ PUBLIC PORTAL NAMESPACE` · `STAFF-AUTH DELEGATION ≠ PORTAL-AUTH REMOVAL` · `HASHED RESET TOKEN ≠ PASSWORD HASH` · `EMAIL PROVIDER ACCEPTANCE ≠ GUARANTEED FINAL DELIVERY` · `TECHNICAL IMPLEMENTATION CLOSED ≠ ALL PORTAL SECURITY GAPS CLOSED`.
+
+### 26.5 Route-Auth Boundary
+
+**PUBLIC PORTAL RECOVERY ROUTES:** `/portal/login`, `/portal/forgot-password`, `/portal/reset-password` — staff-auth context bu route'ları `/auth/login`'e YÖNLENDİRMEZ. **PRIVATE PORTAL ROUTES:** `portal_token` gerektirir, korumaları DEĞİŞMEDİ. `/portal/*` namespace'inin staff-auth katmanından (`AuthProvider`) portal'ın kendi auth katmanına (`PortalLayout`'un `portal_token` guard'ı) devredilmesi, **bütün portal route'larını public YAPMAZ** — yalnız staff-auth redirect-layer'ının bu namespace'te devre dışı kalmasıdır; private route koruması ayrı, bağımsız bir mekanizmadır ve değişmemiştir.
+
+### 26.6 Phase 1 Policy Consumption
+
+U01, aşağıdaki Phase 1 canonical sınırlarını **consume eder, değiştirmez, yeniden AÇMAZ:** POL-C (§18, non-authoritative portal process) · POL-D (§21, explicit client-facing presentation) · POL-J (§19, portal object-scope boundary) · POL-E (§24, credential/retention gap recording — bu birim POL-E'nin kaydettiği "plaintext reset-token gap" ve "portal JWT revocation gap"ından ilkini KAPATIR, ikincisini AÇIK bırakır, bkz. §26.8) · BP-05 (§20, bounded portal process) · BP-06 (§23, client-facing visibility model).
+
+### 26.7 Gap Disposition — Closed / Implemented
+
+**CREDENTIAL-RECOVERY DELIVERY GAP:** CLOSED/IMPLEMENTED. **PLAINTEXT RESET-TOKEN GAP (POL-E §24, R3):** CLOSED/IMPLEMENTED. **MISSING RESET-PASSWORD PAGE:** CLOSED/IMPLEMENTED. **PUBLIC RECOVERY ROUTE STAFF-AUTH REDIRECT GAP:** CLOSED/IMPLEMENTED. **CREDENTIAL-RECOVERY RATE-LIMIT GAP:** CLOSED/IMPLEMENTED. **RESET TOKEN REPLAY / TOCTOU GAP:** CLOSED/IMPLEMENTED. **TENANT / CLIENT ISOLATION EVIDENCE GAP:** CLOSED/DB-GATED (PR #1477'nin kendi testleri mocked-prisma unit seviyesindeydi; PR #1483 gerçek Postgres'e karşı tenant/client cross-account izolasyon kanıtını ekledi).
+
+### 26.8 Gap Disposition — Open Residuals
+
+**PORTAL JWT / SESSION REVOCATION (POL-E §24, R3):** OPEN/NOT IMPLEMENTED — `PortalAuthGuard` tamamen stateless kalır, bir şifre sıfırlama mevcut portal JWT'lerini geçersiz KILMAZ. **PORTAL ACCOUNT / LOGIN HISTORY:** OPEN. **MFA:** NOT SELECTED. **GENERAL SESSION MANAGEMENT:** U01 dışında. **PASSWORD-RESET DELIVERY BOUNCE / FİNALİTE:** U01 dışında (mail provider mesajı kabul ettiyse sonraki bounce bu birimin kapsamı dışındadır). **POL-E-R1:** NOT STARTED. Bu residual'ler U01 kapanışını BLOKE ETMEZ ve otomatik successor authority ÜRETMEZ.
+
+### 26.9 Final Program Status
+
+**CLIENT-P2-U01: CLOSED/CANONICAL.** **TECHNICAL CORE: PR #1477.** **TECHNICAL COMPLEMENT: PR #1483.** **PR #1478: CLOSED/UNMERGED/SUPERSEDED AND PARTIALLY EXTRACTED.** **PORTAL JWT REVOCATION: OPEN/NOT AUTHORIZED.** **PHASE 2 (genel): OPEN.** **NEXT UNIT: OWNER-GATED/NOT AUTO-STARTED.**
+
+### 26.10 Status Precision
+
+**CREDENTIAL-RECOVERY: FUNCTIONAL END TO END.** **RESET TOKEN: SHA-256 DIGEST ONLY.** **PUBLIC RECOVERY ROUTES: ACCESSIBLE.** **PRIVATE PORTAL ROUTES: PORTAL-AUTH PROTECTED.** **SCHEMA/MIGRATION: NONE.** **DUPLICATE IMPLEMENTATION: RESOLVED (PR #1478 CLOSED/UNMERGED).** **IMPLEMENTATION AUTHORITY: U01 ONLY / CONSUMED.**
+
+### 26.11 U01 Self-Check
+
+Bu bölüm: CLIENT-P2-U02'yi BAŞLATMAZ; portal JWT/session revocation implementasyonu YAPMAZ; `tokenVersion`/login-history modeli/MFA ÜRETMEZ; POL-E-R1'i BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ veya YETKİLENDİRMEZ; PR #1477 veya #1478'i yeniden AÇMAZ; §5/§6/§8.A/§8.B/§11–§25 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ (implementasyon zaten PR #1477/#1483 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL PORTAL SECURITY GAPS CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
