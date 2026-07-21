@@ -340,6 +340,45 @@ register seçimi bekliyor; B = DBP-05 §12/Owner Approval Record, LDO/KVKK sign-
 
 Bu seçim yukarıdaki §10 aday listesini reopen etmez veya yeniden değerlendirmez — yalnız owner'ın Option C'yi ilk core Debtor verification/reconciliation workstream'i olarak seçtiğini kaydeder (kaynak: `DEBTOR-P1-IMPLEMENTATION-ENTRY-R01` GO-VERIFY + bu GOV kaydı). DBP-04 §12 ve DBP-05 §14'teki güncel AS-IS bulguları (OF-01/AE-CpeExecutionRecord/HD-OfficeApprovalRequest = MUTABLE VERIFIED; LegalTimeShadowDiff = code-level create-only/DB-level unenforced) bu seçimin kanıt tabanıdır. Bu kayıt remediation modeli SEÇMEZ, kod/schema/migration/test/CI DEĞİŞTİRMEZ, program-geneli Implementation Entry HOLD'unu KALDIRMAZ.
 
+### 10.2 Owner Decision Package Canonicalization — DBP-04-05-LIFECYCLE-REMEDIATION-DECISION-01-GOV
+
+```text
+KAYNAK: DBP-04-05-LIFECYCLE-REMEDIATION-DECISION-01 GO-ANALYZE raporu (LC-OD-01..08),
+        owner-korumalı/düzeltilmiş sonuç.
+
+LC-OD-01 — OF-01/Tebligat lifecycle target model
+  CANONICAL TARGET: Tebligat (mutable process, mevcut) + ServiceOccurrence (immutable
+  fact katmanı, YENİ — henüz repository'de YOK) + LegalDeadlineSnapshot (derived
+  assessment katmanı, MEVCUT ama disconnected). Üç ayrı katman — bkz. DBP-04 §12.1.
+  IMPLEMENTATION AUTHORITY: NONE (bu kayıt ServiceOccurrence şemasını ÜRETMEZ).
+
+LC-OD-02 / LC-OD-03 — CPE (CpeDecisionLog arşiv-bütünlüğü / CpeExecutionRecord korelasyonu)
+  DISPOSITION: SHARED POLICY-ENGINE HANDOFF — Core Debtor implementasyonu/kararı DEĞİLDİR.
+  Canonical çözüm ayrı, gelecekteki bir Policy-Engine-owned göreve devredilir; bu kayıt
+  o görevi açmaz, adlandırmaz veya önceden kapsamlandırmaz.
+
+LC-OD-04 — OfficeApproval boundary disposition
+  DISPOSITION: NO ACTION (Core Debtor tarafı) — KAPALI. Core Debtor OfficeApprovalRequest'in
+  hiçbir alanını tüketmiyor; yalnız User/Lawyer-kaynaklı isApproverEligible() bağımsız
+  prediktörünü kullanıyor. Office'in kendi lifecycle kararı bu kayıtla ÜRETİLMEZ.
+
+LC-OD-05 — LegalTimeShadowDiff DB immutability model
+  DISPOSITION: mevcut local-only/flag-default-off/manuel-tek-kayıt modu KABUL EDİLDİ.
+  "PII yok" iddiası KAPATICI FACT olarak YAZILMAZ — PRODUCTION PROMOTION GATE AÇIK
+  bırakılır (ileride production-yolu kullanımı düşünülürse ayrı owner kararı gerekir).
+
+LC-OD-06/07/08 — shared lifecycle contract / retention-legal-hold / migration sıralaması
+  DISPOSITION: GO-ANALYZE raporundaki öneriler (dar korelasyon-alanı kuralı;
+  occurredAt≠recordedAt ayrımı; LC-OD-02 önce/LC-OD-03 sonra/LC-OD-01 en son sıralaması)
+  KAYDA GEÇİRİLDİ — bu kayıt onları ayrıca YETKİLENDİRMEZ, yalnız owner-gated adaylar
+  olarak korunur.
+
+PROGRAM IMPLEMENTATION ENTRY: HOLD (değişmedi)
+IMPLEMENTATION AUTHORITY: NONE
+```
+
+Bu bölüm §10.1'i reopen etmez; yalnız GO-ANALYZE raporunun owner-düzeltilmiş sonucunu canonical kayda ekler. Hiçbir decomposition adayı (`ServiceOccurrence` şema tasarımı, Policy-Engine handoff görevi, LegalTimeShadowDiff production-promotion kararı dahil) bu kayıtla başlatılmaz.
+
 ---
 
 ## 11. Owner Ratification Status
