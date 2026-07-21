@@ -379,6 +379,21 @@ IMPLEMENTATION AUTHORITY: NONE
 
 Bu bölüm §10.1'i reopen etmez; yalnız GO-ANALYZE raporunun owner-düzeltilmiş sonucunu canonical kayda ekler. Hiçbir decomposition adayı (`ServiceOccurrence` şema tasarımı, Policy-Engine handoff görevi, LegalTimeShadowDiff production-promotion kararı dahil) bu kayıtla başlatılmaz.
 
+### 10.3 ServiceOccurrence Contract Ratification Pointer — DEBTOR-OF01-SERVICE-OCCURRENCE-CONTRACT-01-GOV
+
+```text
+TASK: DEBTOR-OF01-SERVICE-OCCURRENCE-CONTRACT-01
+STATUS: OWNER-RATIFIED / CONTRACT DECISIONS CLOSED
+CANONICAL HOME: DEBTOR-DBP-04-LEGAL-STATE-LEGALGUARD-v1.0.md §12.2 (OD-SO-01..05 + legal-basis
+                düzeltmesi + ek owner kısıtları)
+PROGRAM IMPLEMENTATION ENTRY: HOLD (değişmedi)
+IMPLEMENTATION AUTHORITY: NONE
+NEXT ELIGIBLE TASK: DEBTOR-OF01-HISTORY-P01 — ADDITIVE SERVICE-OCCURRENCE SCHEMA FOUNDATION,
+                    AUTHORITY NOT GRANTED, ayrı owner GO-IMPLEMENT gerektirir
+```
+
+Bu pointer §10.1/§10.2'yi reopen etmez; DBP-04 §12.2'nin detaylı içeriğini burada TEKRARLAMAZ, yalnız ratifikasyon durumunu ve canonical konumunu kaydeder.
+
 ---
 
 ## 11. Owner Ratification Status

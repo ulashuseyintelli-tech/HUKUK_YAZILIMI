@@ -328,6 +328,120 @@ IMPLEMENTATION AUTHORITY: NONE (bu bölüm hedef modeli kaydeder, kod/schema/mig
 
 Yukarıdaki hedef model kararları `DBP-04-05-LIFECYCLE-REMEDIATION-DECISION-01` GO-ANALYZE raporunun (LC-OD-01/02/03/04/05) owner-düzeltilmiş sonucudur; bu bölüm implementasyon başlatmaz — `ServiceOccurrence` şeması, CPE Policy-Engine handoff'unun kendi görevi ve LegalTimeShadowDiff production-promotion kararı hâlâ ayrı, gelecekteki owner-gated adımlardır.
 
+### 12.2 ServiceOccurrence Owner-Ratified Contract — OWNER-DECIDED (DEBTOR-OF01-SERVICE-OCCURRENCE-CONTRACT-01-GOV)
+
+```text
+TASK: DEBTOR-OF01-SERVICE-OCCURRENCE-CONTRACT-01
+OWNER DECISION: APPROVED WITH CORRECTIONS
+FINAL STATUS: OWNER-RATIFIED / CONTRACT DECISIONS CLOSED
+IMPLEMENTATION AUTHORITY: NONE
+PROGRAM IMPLEMENTATION ENTRY: HOLD
+```
+
+`DEBTOR-OF01-SERVICE-OCCURRENCE-CONTRACT-01` GO-ANALYZE raporunun (Option A — ServiceOccurrence ayrı immutable child model) owner tarafından **düzeltmelerle onaylanmış** nihai sözleşmesi. Aşağıdaki kararlar GO-ANALYZE taslağının YERİNE geçer; taslakla çelişen hiçbir ifade (bkz. §12.2.1-.6) artık canonical DEĞİLDİR.
+
+#### 12.2.1 Hukukî Dayanak Düzeltmesi
+
+```text
+HMK m.76: SERVICE-OCCURRENCE VERİ İŞLEME DAYANAĞI DEĞİLDİR — canonical rationale'dan
+          ÇIKARILDI (GO-ANALYZE taslağının §13'teki HMK m.76 atfı artık canonical DEĞİL).
+PRIMARY KVKK BASIS: CASE-SPECIFIC (evrensel/tek bir dayanak İDDİA EDİLMEZ).
+EXPECTED BASES: hukukî yükümlülük (legal obligation) · bir hakkın tesisi/kullanılması/korunması
+                için zorunlu olma (establishment, exercise or protection of a right).
+OPEN CONSENT: VARSAYILAN DAYANAK DEĞİLDİR.
+```
+
+#### 12.2.2 OD-SO-01 — Retention / Legal Hold
+
+```text
+EVRENSEL RETENTION SÜRESİ: YOK.
+RETENTION MODEL: POLICY-BASED / MATTER-SPECIFIC.
+RETENTION YALNIZ ŞUNLARIN TAMAMI SAĞLANINCA SONA ERER:
+  - ilgili hukukî meselenin (matter) gereksinimleri sona erdiğinde
+  - geçerli kanuni veya savunma süreleri sona erdiğinde
+  - meslekî sorumluluk (professional-liability) delil ihtiyacı sona erdiğinde
+  - tüm legal hold'lar kaldırıldığında
+LEGAL HOLD: silme veya anonimleştirmenin ÖNÜNE GEÇER.
+IMMUTABLE ≠ SÜRESİZ SAKLANIR — factual alanların değiştirilemez olması, kaydın SÜRESİZ
+  saklanacağı anlamına GELMEZ; retention/legal-hold, ServiceOccurrence'ın factual alanlarının
+  DIŞINDA, ayrı bir yaşam-döngüsü katmanı olarak yönetilir.
+```
+
+#### 12.2.3 OD-SO-02 — Temporal Semantics (GO-ANALYZE taslağının tek-alanlı `occurredAt`'ının YERİNE geçer)
+
+```text
+occurredOn      : REQUIRED / DATE-ONLY
+occurredAt      : OPTIONAL / EXACT UTC TIMESTAMP
+timePrecision   : DATE_ONLY | EXACT_TIME (enum — hangi alanın otoriter olduğunu işaretler)
+recordedAt      : REQUIRED / SYSTEM UTC
+receivedAt      : OPTIONAL / yalnız gerçek dış-sistem entegrasyonunda anlamlı
+legalServiceDate: ServiceOccurrence ALANI DEĞİLDİR — LegalDeadlineSnapshot'ta DERIVE edilir
+```
+
+Bilinmeyen saat için yapay/varsayılan timestamp ÜRETİLEMEZ — yalnız `occurredOn` biliniyorsa `timePrecision=DATE_ONLY` kalır, `occurredAt` null bırakılır.
+
+#### 12.2.4 OD-SO-03 — Historical Attribution (GO-ANALYZE taslağının "UNKNOWN" genel ifadesini kesinleştirir)
+
+```text
+UNKNOWN HISTORICAL ACTOR    : UNKNOWN KALIR — türetilmiş veya sentetik kullanıcı ataması YOK.
+LEGACY RECORD TYPE          : LEGACY_BASELINE (occurrenceType değeri — bkz. §12.2.6).
+PROVENANCE                  : LEGACY_CURRENT_STATE.
+recordedBySystem            : LEGACY_MIGRATION (sabit canonical değer).
+recordedByUserId            : NULL, yalnız deterministik olarak kanıtlanabiliyorsa doldurulur.
+
+P01 (schema+migration+invariants): BACKFILL PROHIBITED.
+P05 (historical baseline/controlled backfill): AYRI, bağımsız bir owner GO gerektirir.
+```
+
+#### 12.2.5 OD-SO-04 — Deadline Recalculation (GO-ANALYZE taslağının açık bıraktığı INV-OF01-06 tetikleyicisini karara bağlar)
+
+```text
+PRIMARY MODE      : AUTOMATIC / EVENT-DRIVEN.
+ATOMIC WRITE      : ServiceOccurrence create/supersede + outbox event AYNI transaction'da.
+CALCULATION       : ASYNC / IDEMPOTENT / RETRYABLE (mevcut `calculateDeadline()`'ın idempotent-
+                    supersede mantığıyla uyumlu).
+MANUAL RECALCULATION: yalnız yetkilendirilmiş FALLBACK yolu — birincil mekanizma DEĞİLDİR.
+STALE SNAPSHOT    : bir occurrence supersede edildiğinde, henüz yeniden hesaplanmamış
+                    LegalDeadlineSnapshot SESSİZCE güncel olarak TÜKETİLEMEZ.
+```
+
+Occurrence supersession, ayrı ve açık bir LegalDeadlineSnapshot recalculation sürecini ZORUNLU olarak tetikler. Bu sürecin somut implementasyonu (outbox şeması, consumer, staleness-işaretleme mekanizması) bu kayıtla ÜRETİLMEZ — ayrı bir gelecekteki implementation diliminin (bkz. GO-ANALYZE raporu §17 P04) kapsamındadır.
+
+#### 12.2.6 OD-SO-05 — Source Taxonomy (GO-ANALYZE taslağının `PTT_RESULT`/`ELECTRONIC_RESULT`/`MANUAL` adlarının YERİNE geçer)
+
+```text
+occurrenceType   : SEMANTIC / CLOSED DOMAIN ENUM
+  Değerler: POSTAL_DELIVERY_RESULT · ELECTRONIC_DELIVERY_RESULT · MANUAL_ATTESTATION ·
+            LEGACY_BASELINE
+sourceSystemCode : EXTENSIBLE INTEGRATION CATALOG — occurrenceType'tan AYRI, hangi somut
+                   entegrasyonun/sağlayıcının occurrence'ı ürettiğini taşır.
+```
+
+UYAP, icrabot veya başka bir gelecekteki adaptörün varlığı occurrence semantiğini DEĞİŞTİRMEZ — bu adaptörler için `occurrenceType`'a PREMATURE yeni değer EKLENMEZ; gerekirse yalnız `sourceSystemCode` kataloğuna eklenir.
+
+#### 12.2.7 Ek Owner Kısıtları
+
+```text
+TENANT ISOLATION      : DATABASE-ENFORCED — yalnız index YETERSİZDİR (GO-ANALYZE taslağının
+                        "tenantId: index" alan-matrisi kararı bu maddeyle DÜZELTİLİR; gerçek
+                        bir DB-seviyesi kısıt/FK gerekir, LegalDeadlineSnapshot/Tebligat'ın
+                        kendi tenant-index-only deseninden DAHA GÜÇLÜ).
+RAW EXTERNAL PAYLOAD  : VARSAYILAN OLARAK SAKLANMAZ (GO-ANALYZE taslağının ret kararı teyit edildi).
+FREE-TEXT SOURCE NOTE : OPSİYONEL / UZUNLUK-SINIRLI / SANITIZE EDİLMİŞ / ERİŞİM-KONTROLLÜ.
+GENERIC LEGAL EVENT ABSTRACTION: REDDEDİLDİ (GO-ANALYZE taslağının Option C reddi teyit edildi).
+
+ServiceOccurrence     : AYRI IMMUTABLE CHILD MODEL (Option A teyit edildi).
+Tebligat              : MUTABLE PROCESS AGGREGATE (değişmedi).
+LegalDeadlineSnapshot : DERIVED LEGAL ASSESSMENT (değişmedi).
+```
+
+```text
+CODE / SCHEMA / MIGRATION: bu kayıtla ÜRETİLMEZ.
+NEXT ELIGIBLE TASK: DEBTOR-OF01-HISTORY-P01 — ADDITIVE SERVICE-OCCURRENCE SCHEMA FOUNDATION.
+AUTHORITY: NOT GRANTED — ayrı, bağımsız bir owner GO-IMPLEMENT gerektirir.
+PROGRAM IMPLEMENTATION ENTRY: HOLD (değişmedi).
+```
+
 ---
 
 ## 13. Eligibility & Enforcement Capability Architecture
