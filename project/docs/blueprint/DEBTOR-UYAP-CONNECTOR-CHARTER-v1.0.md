@@ -522,6 +522,10 @@ Bu bölüm bu charter'ı **reopen etmez** — §1-15 tüm kapanmış birimleriyl
 
 Merkezi UYAP Anayasası **v1.1** olarak genişletilmiştir: kanonik kök `UYAP-CONNECTOR-MASTER-SYNTHESIS-v1.0.md` §19 + tek subordinate normatif annex `UYAP-CONNECTOR-NORMATIVE-ANNEX-v1.0.md` (`UYAP-CONST-001..010`, RATIFIED; kuruluş `decision-log.md` `UYAP-CONSTITUTION-V11-01`, 2026-07-21). Bu Charter'ın §1-16 substantive metni **reopen edilmez**; roadmap kimlikleri değişmez. F3 (MODULE-BASED UYAP BOUNDARY CONTRACTS) SELECTED/NOT STARTED (≈ WAVE 5); F4-b NOT AUTHORIZED. UYAP CUTOVER HARD HOLD korunur.
 
+## 18. Module Boundary Contracts Pointer (UYAP-MODULE-BOUNDARY-CONTRACTS-01)
+
+F3 (MODULE-BASED UYAP BOUNDARY CONTRACTS) canonical contract pack olarak canonicalize edilmiştir: `UYAP-CONNECTOR-MODULE-BOUNDARY-CONTRACTS-v1.0.md` (`UYAP-BC-OFFICE-001` / `-CLIENT-001` / `-DEBTOR-001` / `-RECEIVABLE-001` / `-COLLECTION-001`, CANONICAL CONTRACT / IMPLEMENTATION AUTHORITY NONE; kuruluş `decision-log.md` `UYAP-MODULE-BOUNDARY-CONTRACTS-01`, 2026-07-21). Contract pack synthesis §20 + normatif annex tarafından yetkilendirilir; bu Charter'ın §1-17 substantive metnini reopen ETMEZ; domain ownership değişmez. F4-b NOT AUTHORIZED. UYAP CUTOVER HARD HOLD korunur.
+
 ## Owner Approval Record
 
 ```text
