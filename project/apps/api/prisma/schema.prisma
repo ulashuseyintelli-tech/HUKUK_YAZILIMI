@@ -534,6 +534,9 @@ model ClientPortalUser {
   lastLoginAt  DateTime?
   loginCount   Int       @default(0)
 
+  // Kimlik doğrulama sürüm sayacı (JWT revocation)
+  tokenVersion Int @default(0)
+
   // Şifre sıfırlama
   resetToken    String?
   resetTokenExp DateTime?

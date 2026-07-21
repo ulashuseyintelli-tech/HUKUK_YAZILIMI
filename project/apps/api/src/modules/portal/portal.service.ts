@@ -97,9 +97,18 @@ export class PortalService {
           where: { id: clientId },
           select: { id: true, hasPortalAccess: true, portalUserId: true },
         });
+        // CLIENT-P2-U02: reaktivasyon öncesi (disable-öncesi) JWT'ler yeniden canlanmasın —
+        // aynı update içinde tokenVersion artışı.
         await tx.clientPortalUser.update({
           where: { id: existing.id },
-          data: { isActive: true, email, passwordHash, resetToken: null, resetTokenExp: null },
+          data: {
+            isActive: true,
+            email,
+            passwordHash,
+            resetToken: null,
+            resetTokenExp: null,
+            tokenVersion: { increment: 1 },
+          },
         });
         const after = await tx.client.update({
           where: { id: clientId },
@@ -197,6 +206,7 @@ export class PortalService {
       clientId: portalUser.clientId,
       tenantId: portalUser.client.tenantId,
       type: "portal",
+      tokenVersion: portalUser.tokenVersion,
     };
 
     const token = this.jwtService.sign(payload);
@@ -311,6 +321,7 @@ export class PortalService {
   async changePassword(portalUserId: string, oldPassword: string, newPassword: string) {
     const portalUser = await this.prisma.clientPortalUser.findUnique({
       where: { id: portalUserId },
+      include: { client: { select: { tenantId: true } } },
     });
 
     if (!portalUser) {
@@ -324,9 +335,18 @@ export class PortalService {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
+    // CLIENT-P2-U02: tokenVersion artışı AYNI atomic write içinde — başarılı şifre
+    // değişimi öncesinde verilmiş tüm portal JWT'lerini geçersiz kılar.
     await this.prisma.clientPortalUser.update({
       where: { id: portalUserId },
-      data: { passwordHash },
+      data: { passwordHash, tokenVersion: { increment: 1 } },
+    });
+
+    await this.audit.log({
+      tenantId: portalUser.client.tenantId,
+      action: "PORTAL_PASSWORD_CHANGED",
+      entityType: "CLIENT_PORTAL_USER",
+      entityId: portalUserId,
     });
 
     return { success: true };
@@ -408,6 +428,11 @@ export class PortalService {
     const tokenHash = hashInviteToken(token);
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
+    // CLIENT-P2-U02: tokenVersion artışı AYNI atomic updateMany içinde — başarılı sıfırlama
+    // öncesinde verilmiş tüm portal JWT'lerini geçersiz kılar. Ayrı bir ön-okuma EKLENMEZ:
+    // findFirst+updateMany iki adıma bölünseydi atomik token-tüketim garantisi bozulurdu
+    // (bkz. yukarıdaki tek-updateMany rationale) — bu nedenle bu olay için ayrıca
+    // entity-attributed audit satırı YAZILMAZ (mevcut atomic-only tasarım korunur).
     const result = await this.prisma.clientPortalUser.updateMany({
       where: {
         resetToken: tokenHash,
@@ -417,6 +442,7 @@ export class PortalService {
         passwordHash,
         resetToken: null,
         resetTokenExp: null,
+        tokenVersion: { increment: 1 },
       },
     });
 
@@ -455,9 +481,11 @@ export class PortalService {
         where: { id: clientId },
         select: { id: true, hasPortalAccess: true, portalUserId: true },
       });
+      // CLIENT-P2-U02: isActive:false ile AYNI update içinde tokenVersion artışı —
+      // guard'ın stale-version kontrolü da devre dışı bırakmayı bağımsız olarak kapsar.
       await tx.clientPortalUser.updateMany({
         where: { clientId },
-        data: { isActive: false },
+        data: { isActive: false, tokenVersion: { increment: 1 } },
       });
       const after = await tx.client.update({
         where: { id: clientId },
