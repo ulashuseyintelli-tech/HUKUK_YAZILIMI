@@ -452,6 +452,35 @@ supersede edilmiştir; cleanup ayrı owner GO bekler. Bu closure başka implemen
 schema/migration, legacy mutation, Collection/shared-boundary task'ı, TPA-04B, Balance/TBK100,
 replay/data access, cutover veya foreign task authority'si üretmez.
 
+### RCV-CLAIM-MASTER-TRIAGE-R02-GOV — Post-S05 Residual Priority Selection
+
+```text
+PROGRAM                     RECEIVABLE / CLAIM FORMATION
+PHASE                       RCV-P2 / RUNTIME PARTIAL
+R02 ANALYSIS                OWNER ACCEPTED
+COMPLETED PACKAGES          P01-R01 / P02-S01 / P02-S02-I01 /
+                            P02-S03-I01 / P02-S04-I01 / P02-S05-I01
+RUNTIME ENFORCEMENT         PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 ONLY
+SELECTED NEXT TASK          RCV-CLAIM-FORM-P02-S06-I01
+TASK TITLE                  PRECAUTIONARY CLAIMED-COST OTHER / UNKNOWN ADMISSION GUARD
+S06-I01 STATUS              SELECTED / NOT AUTHORIZED
+IMPLEMENTATION AUTHORITY    NONE — SEPARATE OWNER GO REQUIRED
+OLD FROZEN PATCH            SUPERSEDED / CLEANUP PENDING SEPARATE OWNER GO
+```
+
+Residual priority append-only olarak şöyledir: (1) Precautionary `DIGER`/unknown admission,
+(2) existing `OTHER` update / `PRINCIPAL → OTHER`, (3) human direct-entry, (4) web
+`kalemTuru`/nested-ilam, (5) OCR generic `PRINCIPAL`, (6) mandatory formation context,
+(7) `ClaimFormationSnapshotV1`, (8) subtype registry/versioning ve (9) legacy component
+inventory. S06-I01 yalnız `POST /precautionary-orders/:id/costs` ile
+`isClaimedInEnforcement !== false` yolunu kapsar; `DIGER`/blank/null/unknown/unmapped component
+`UNSUPPORTED_COMPONENT` ile transaction ve bütün writer çağrılarından önce fail-closed
+durmalıdır. Valid mapped cost türleri ve non-claimed cost yolu değişmez.
+
+Bu selection kaydı kod/test, implementation, schema/migration, taxonomy, historical mutation,
+existing cost update/delete, diğer residual'lar, Collection/shared-boundary, TPA-04B,
+Balance/TBK100, replay veya cutover authority'si üretmez. Phase-exit kriterleri değişmez.
+
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 
 - **RCV-COL-TPA-03 schema-foundation contract canonicalization (2026-07-20; canonical upon approved governance merge):** Owner Option B — Two-File Hybrid Schema Foundation kararını ratifiye etmiştir. Foundation `LegalApplicationBatch`, immutable `LegalApplication`, non-authoritative `ApplicationAttribution`; `LegalApplicationBatchType = APPLY / REVERSAL`; `LegalApplicationComponentType = COST / ANCILLARY / ACCRUED_INTEREST / PRINCIPAL` adlarını kullanır. Future implementation exact scope'u yalnız `schema.prisma` + tek additive `migration.sql`; writer-free, no-backfill ve runtime/consumer etkisi yoktur. Tenant-safe composite FK, `ON DELETE RESTRICT`, batch/application immutability, positive minor-unit amount, `(tenantId, idempotencyKey)` replay unique sınırı, commandHash conflict, linked append-only full reversal ve required/opaque/nonblank bucket identity ratifiye edilmiştir. Canonical exact-cent conservation korunur; aggregate-level enforcement ve bucket key generation writer-stage contract'a bırakılmıştır. `codex/rcv-ws04-p03-syn-01` TPA-03A schema foundation için non-blocking, writer/evidence/cutover için blocking; PR #407 HOLD/CONFLICTING/DO NOT MERGE/DO NOT REBASE; ACT-28 ve REC-AUTH-011/012 OPEN kalır. TPA-03A `OWNER GO-IMPLEMENT REQUIRED / NOT AUTHORIZED`; runtime/test/schema/migration/backfill/replay/cutover/retirement change NONE.
