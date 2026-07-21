@@ -1478,3 +1478,43 @@ U02, aşağıdaki canonical sınırları **consume eder, değiştirmez, yeniden 
 ### 27.13 U02 Self-Check
 
 Bu bölüm: CLIENT-P2-U03'ü BAŞLATMAZ; session table/refresh-token/JTI-denylist/remote-single-session-logout/login-history/admin-force-logout/MFA implementasyonu YAPMAZ; POL-E-R1'i BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ veya YETKİLENDİRMEZ; OFFICE/staff authentication modelini veya CANDIDATE-B'yi DEĞİŞTİRMEZ; PR #1493'ü yeniden AÇMAZ; §5/§6/§8.A/§8.B/§11–§26 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ (implementasyon zaten PR #1493 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL PORTAL SESSION-MANAGEMENT CAPABILITY CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 28. CLIENT Phase 2 U03-I01 — Case Detail Field-Visibility Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, POL-D (§21) / BP-06 (§23) politikalarının `getCaseDetail()` yüzeyindeki ilk somut enforcement diliminin (`CLIENT-P2-U03-I01`) teknik kapanış kaydıdır (`decision-log.md` CLIENT-P2-U03-I01-GOV). §5, §6, §8.A, §8.B, §11–§27 substantive hükümlerini DEĞİŞTİRMEZ. **CLIENT-P2-U03 (genel POL-D/BP-06 enforcement programı) BU KAYITLA CLOSED İLAN EDİLMEZ — yalnız case-detail dilimi kapanır, documents/messages/PoA/notifications yüzeyleri OPEN kalır.**
+
+### 28.1 Technical Lineage
+
+**IMPLEMENTATION:** PR #1499 (task: `CLIENT-P2-U03-I01`, squash SHA `ad6a3fdfb539bf634e080a7063bb4f69ceafe7f8`, merged `origin/main` 2026-07-21). Bu birim, `CLIENT-P2-U03-ANALYZE`'ın (GO-ANALYZE-only, önceki tur) getCaseDetail() için tespit ettiği somut POL-D/BP-06 delta'sının bounded implementasyonudur; `CLIENT-P2-NEXT-UNIT-SELECTION-01`'in H2 (field-visibility) hipotezinin ilk dilimidir.
+
+### 28.2 Selected Enforcement Model
+
+**OPTION A — PRISMA-LEVEL EXPLICIT NESTED SELECT.** `PortalService.getCaseDetail()`'daki select'siz `include`, `Case`/`CaseDebtor`/`Collection`/`Due` seviyelerinde açık, nested bir `select` (`CASE_DETAIL_SELECT`, tek dosyada, yalnız bu yüzeye özgü) ile değiştirildi. Yeni web-shared response-type katmanı, DTO sınıfı veya global serializer/interceptor **ÜRETİLMEDİ** — mevcut kod-tabanı deseniyle (`getClientCases`'in kendi curated select'i) tutarlı, en dar müdahale.
+
+### 28.3 Approved Response Contract
+
+**Case top-level:** `id, fileNumber, executionFileNumber, type, caseStatus, workflowStage, caseDate, principalAmount`. **Debtor:** `debtors[].debtor.{name,type}` (CaseDebtor'un kendi `id`'si dahil hiçbir başka alanı YOK — web tarafı React key için array index kullanır). **Collection:** `collections[].{id,date,type,amount}`. **Due:** `dues[].{id,type,amount,dueDate,currency}`.
+
+### 28.4 Explicitly Omitted Field Families
+
+`Case.dahiliNot` (şemanın kendi yorumu: "Müvekkile gitmez") · `Case.muvekkilNotu` (owner-decision-required, implementasyona dahil edilmedi) · staff/personel referansları (`sorumluPersonelId`/`responsibleLawyerId`/`responsibleStaffId`/`createdById`) · otomasyon/risk/OCR alanları (`automationConfig`/`isAutoMode`/`riskScore`/`ocrText`/`detectionKeywords` vd.) · `Case.metadata` · `Case.showToClient` (erişim-gate bayrağının kendisi) · `CaseDebtor`'un quick-note/passivation/tebligat-takip alanları · `Collection.idempotencyKey` · `Collection.description` · `Due.description` · `Due.finalizationNote` + vergi alanları (`hasKdv`/`kdvRate`/`hasBsmv`/`hasKkdf`) · lookup-relation ID'leri. Hepsi **UNKNOWN/UNCLASSIFIED veya INTERNAL-ONLY → varsayılan OMIT** ilkesiyle dışarıda; owner sınıflandırması gelmeden implementasyona dahil EDİLMEDİ.
+
+### 28.5 Raw Lifecycle Disposition
+
+**RAW `CaseLifecycle` (lifecycleEvents): TAMAMEN KALDIRILDI** — BP-06 §23.6'nın açıkça yasakladığı "internal audit trail" kategorisi. Web sayfasındaki raw "İşlem Geçmişi" bölümü kaldırıldı; yerine yeni bir timeline/event-mapping/derived presentation **ÜRETİLMEDİ**. **RAW LIFECYCLE REMOVED ≠ FUTURE CURATED CLIENT TIMELINE PROHIBITED** — ileride ayrı, açık bir contract ile curated bir timeline sunulması bu kayıtla ne yetkilendirilir ne de yasaklanır.
+
+### 28.6 Non-Equations / Precision
+
+`SAME-CLIENT FIELD EXPOSURE ≠ CROSS-TENANT INCIDENT` · `FIELD VISIBILITY ≠ OBJECT AUTHORIZATION` · `VALID OBJECT ACCESS ≠ ALL ENTITY FIELDS CLIENT-SAFE` · `RAW LIFECYCLE REMOVED ≠ FUTURE CURATED CLIENT TIMELINE PROHIBITED` · `TECHNICAL I01 CLOSED ≠ CLIENT-P2-U03 FULLY CLOSED` · `TYPE-SAFE WEB INTERFACE ≠ SECURITY BOUNDARY` · `EXPLICIT BACKEND SELECT = FAIL-CLOSED FIELD PROJECTION`. **Doğru ifade: "CLIENT-FACING BROAD RESPONSE / INTERNAL-FIELD EXPOSURE CONTAINED"** — "cross-tenant vulnerability fixed" iddiası bu kayıtla KURULMAZ (bulgu her zaman same-client'tı, §21.10/BP-06 ile tutarlı).
+
+### 28.7 Open Residual Surfaces
+
+**DOCUMENT FIELD VISIBILITY: OPEN/NOT STARTED** (`getDocuments` — `filePath`/`reviewedBy`/`reviewNote` mixed-purpose). **MESSAGE FIELD VISIBILITY: OPEN/NOT STARTED** (`getMessages` — `senderId` staff-identity). **POA FIELD VISIBILITY: OPEN/NOT STARTED** (`getClientPoas` — `filePath`/`fileSize`/`mimeType`, hiç consumer'ı yok). **NOTIFICATION FAIL-CLOSED PROJECTION: OPEN/NOT STARTED** (`getNotifications` — bugün select'siz ama model'de internal alan yok; mekanizma fail-closed DEĞİL). **OWNER-DECISION-REQUIRED CASE FIELDS: OPEN** (`muvekkilNotu`, CaseDebtor debtor-adjacent alanlar, Due vergi alanları — `CLIENT-P2-U03-ANALYZE`'ın madde 8'i). **CURATED CLIENT TIMELINE: NOT SELECTED. `CLIENT-P2-U03-I02`: NOT AUTHORIZED.** Object-scope (`STF-PRD-BOLA-001`/`STF-PRD-SCP-001`/OFF/OD-08/CAP-02) ve OFFICE authority'si bu kayıtla **DEĞİŞMEDİ**.
+
+### 28.8 Final Unit Status
+
+**CLIENT-P2-U03-I01: TECHNICAL + GOVERNANCE CLOSED/CANONICAL.** **CLIENT-P2-U03 (genel): PARTIAL — I01 ONLY.** **PR #1499, squash `ad6a3fdf`.** **SCHEMA/MIGRATION: NONE. OBJECT-SCOPE: UNCHANGED. FINANCIAL AUTHORITY: UNCHANGED.** **NEXT UNIT: OWNER-GATED/NOT AUTO-STARTED.**
+
+### 28.9 U03-I01 Self-Check
+
+Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; POL-D/BP-06 enforcement'ının TAMAMLANDIĞINI iddia ETMEZ; `CLIENT-P2-U03-I02`'yi BAŞLATMAZ; documents/messages/PoA/notifications yüzeylerine dokunmaz veya bunları CLOSED İLAN ETMEZ; curated client timeline SEÇMEZ veya YETKİLENDİRMEZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ; §5/§6/§8.A/§8.B/§11–§27 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ (implementasyon zaten PR #1499 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL FIELD-VISIBILITY SURFACES CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
