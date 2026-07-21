@@ -148,8 +148,12 @@ describe('C0 bypass — disablePortalUser audit', () => {
     const hpa = input.metadata.fieldDiff.find((e: any) => e.field === 'hasPortalAccess');
     expect(hpa.old).toBe(true);
     expect(hpa.new).toBe(false);
-    // portal kullanıcıları da pasifleniyor (aynı tx)
-    expect(tx.clientPortalUser.updateMany).toHaveBeenCalledWith({ where: { clientId: 'c1' }, data: { isActive: false } });
+    // portal kullanıcıları da pasifleniyor (aynı tx); CLIENT-P2-U02: AYNI update içinde
+    // tokenVersion artışı — mevcut JWT'ler anında geçersiz kılınır.
+    expect(tx.clientPortalUser.updateMany).toHaveBeenCalledWith({
+      where: { clientId: 'c1' },
+      data: { isActive: false, tokenVersion: { increment: 1 } },
+    });
   });
 
   it('audit THROW → disablePortalUser reject (audit fail = rollback)', async () => {

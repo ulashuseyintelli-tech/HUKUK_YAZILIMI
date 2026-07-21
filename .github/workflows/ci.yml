@@ -829,6 +829,39 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="portal-reset-tenant-scope\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # CLIENT-P2-U02: portal JWT/session revocation — ClientPortalUser.tokenVersion
+      # (OFFICE-AUTH-P01/P02 emsali), PortalAuthGuard artık request-time'da DB-backed
+      # fail-closed doğrulama yapar (not-found/disabled/clientId-tenantId-mismatch/stale-
+      # version/geçersiz-version-tipi/DB-hatası → hepsi aynı genel ret). Dar allowlist
+      # dışında kalır → explicit step + test -f guard (ci-narrow-allowlist stale-test gap
+      # koruması).
+      - name: CLIENT-P2-U02 portal tokenVersion unit tests
+        run: |
+          cd apps/api
+          for f in src/modules/portal/__tests__/portal-auth-guard-token-version.spec.ts \
+                   src/modules/portal/__tests__/portal-token-version-revocation.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-P2-U02 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="(portal-auth-guard-token-version|portal-token-version-revocation)\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # CLIENT-P2-U02 integration: reset/change/disable/reactivate sonrası eski portal JWT'nin
+      # gerçek Postgres üzerinde GERÇEKTEN reddedildiğini, ilgisiz hesap/tenant'ların
+      # etkilenmediğini, tenant/client claim-substitution'ın reddedildiğini, legacy (claim'siz)
+      # token cutover'ının ve eşzamanlı atomic increment'in kayıpsız olduğunu kanıtlar.
+      - name: CLIENT-P2-U02 portal tokenVersion integration tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          for f in src/modules/portal/__tests__/portal-token-version-revocation.db-gated.integration.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-P2-U02 integration spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="portal-token-version-revocation\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
       # MPB-028(a) PR-2: LegalDeadlineService (rejim hesaplama, snapshot immutable/supersede,
       # objectionPeriodDays validation) + TebligatService TK 21/2 correction / TK m.20 explicit-
       # override unit-static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç
