@@ -2,7 +2,7 @@
 // Fake Prisma: gerçek atomic updateMany/count-guard ve $transaction rollback semantiğini
 // simüle eden hafif in-memory tablo (disposable-DB entegrasyon testi ayrıca vardır —
 // bkz. password-reset.db-gated.integration.spec.ts).
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, Logger } from "@nestjs/common";
 import * as bcrypt from "bcrypt";
 import { PasswordResetService } from "../password-reset.service";
 import { hashInviteToken } from "../../invite/user-invite-token.util";
@@ -122,7 +122,7 @@ function makeFakePrisma(seedUsers: FakeUser[], tenantSlugs: Record<string, strin
   return { prisma, getUsers: () => users, getTokens: () => tokens };
 }
 
-function makeSvc(overrides: { users?: FakeUser[]; tenantSlugs?: Record<string, string>; emailSuccess?: boolean } = {}) {
+function makeSvc(overrides: { users?: FakeUser[]; tenantSlugs?: Record<string, string>; emailSuccess?: boolean; passwordRecoveryEnabled?: boolean } = {}) {
   const users = overrides.users ?? [
     {
       id: "u1",
@@ -158,7 +158,14 @@ function makeSvc(overrides: { users?: FakeUser[]; tenantSlugs?: Record<string, s
     }),
   } as any;
 
-  const config = { get: jest.fn(() => undefined) } as any;
+  // OFFICE-AUTH-P02-HARDENING-R01: varsayılan ENABLED — mevcut testler flag'i "açık" varsayarak
+  // yazılmıştır; flag=false davranışı ayrı, özel testlerde override edilir.
+  const passwordRecoveryEnabled = overrides.passwordRecoveryEnabled ?? true;
+  const config = {
+    get: jest.fn((key: string) =>
+      key === "OFFICE_PASSWORD_RECOVERY_ENABLED" ? String(passwordRecoveryEnabled) : undefined,
+    ),
+  } as any;
 
   const svc = new PasswordResetService(prisma, audit, email, config);
   return { svc, prisma, getUsers, getTokens, auditLogs, sentEmails, audit, email };
@@ -259,11 +266,36 @@ describe("PasswordResetService — OFFICE-AUTH-P02", () => {
     it("[8] audit PASSWORD_RESET_REQUESTED yazılır, metadata ham token/e-posta İÇERMEZ", async () => {
       const { svc, auditLogs } = makeSvc();
       await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
-      expect(auditLogs).toHaveLength(1);
-      expect(auditLogs[0].action).toBe("PASSWORD_RESET_REQUESTED");
-      expect(auditLogs[0].tenantId).toBe("t1");
-      const serialized = JSON.stringify(auditLogs[0]);
+      const requested = auditLogs.find((a) => a.action === "PASSWORD_RESET_REQUESTED");
+      expect(requested).toBeDefined();
+      expect(requested.tenantId).toBe("t1");
+      const serialized = JSON.stringify(requested);
       expect(serialized).not.toContain("user@example.com");
+    });
+
+    it("[8c] e-posta BAŞARILI → PASSWORD_RESET_EMAIL_DISPATCHED audit yazılır, metadata yalnız outcome içerir", async () => {
+      const { svc, auditLogs } = makeSvc();
+      await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
+      const dispatched = auditLogs.find((a) => a.action === "PASSWORD_RESET_EMAIL_DISPATCHED");
+      expect(dispatched).toBeDefined();
+      expect(dispatched.metadata).toEqual({ outcome: "DISPATCHED" });
+    });
+
+    it("[8d] e-posta BAŞARISIZ → PASSWORD_RESET_EMAIL_FAILED audit yazılır, metadata yalnız outcome içerir (emailRedacted YOK)", async () => {
+      const { svc, auditLogs } = makeSvc({ emailSuccess: false });
+      await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
+      const failed = auditLogs.find((a) => a.action === "PASSWORD_RESET_EMAIL_FAILED");
+      expect(failed).toBeDefined();
+      expect(failed.metadata).toEqual({ outcome: "EMAIL_FAILED" });
+    });
+
+    it("[21] flag KAPALI → generic {success:true} döner, hiçbir DB/e-posta/audit işlemi yapılmaz", async () => {
+      const { svc, getTokens, sentEmails, auditLogs } = makeSvc({ passwordRecoveryEnabled: false });
+      const res = await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
+      expect(res).toEqual({ success: true });
+      expect(getTokens()).toHaveLength(0);
+      expect(sentEmails).toHaveLength(0);
+      expect(auditLogs).toHaveLength(0);
     });
 
     it("[8b] bilinmeyen kullanıcı için audit YAZILMAZ (tenant/user bilinmiyorken sahte kayıt açılmaz)", async () => {
@@ -293,6 +325,13 @@ describe("PasswordResetService — OFFICE-AUTH-P02", () => {
       await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
       return extractRawTokenFromEmail(sentEmails);
     }
+
+    it("[22] flag KAPALI → generic ret hatası fırlatır, token/DB kontrolüne gidilmeden", async () => {
+      const { svc } = makeSvc({ passwordRecoveryEnabled: false });
+      await expect(
+        svc.resetPassword({ token: "her-hangi-bir-token", password: "brand-new-password-2026", passwordConfirmation: "brand-new-password-2026" }),
+      ).rejects.toThrow("Geçersiz veya süresi dolmuş token");
+    });
 
     it("[10] geçerli token → başarı; password/tokenVersion/passwordChangedAt güncellenir, token consumed olur, audit yazılır", async () => {
       const { svc, sentEmails, getUsers, getTokens, auditLogs } = makeSvc();
@@ -413,6 +452,148 @@ describe("PasswordResetService — OFFICE-AUTH-P02", () => {
       const oldTokenVersion = getUsers()[0].tokenVersion;
       await svc.resetPassword({ token: raw, password: "brand-new-password-2026", passwordConfirmation: "brand-new-password-2026" });
       expect(getUsers()[0].tokenVersion).toBe(oldTokenVersion + 1);
+    });
+  });
+
+  // OFFICE-AUTH-P02-HARDENING-R01: yukarıdaki stateful fake, $transaction'ı asla fırlatmayacak
+  // şekilde tasarlanmıştır (gerçek Serializable/P2034/P2002 çakışması gerçek Postgres gerektirir —
+  // bkz. password-reset.db-gated.integration.spec.ts). Retry/compensation KONTROL AKIŞINI izole
+  // biçimde doğrulamak için burada ayrı, minimal jest.fn() tabanlı mock'lar kullanılır.
+  describe("createResetTokenWithRetry / dispatchResetEmailOrCompensate (mock-based control flow)", () => {
+    function p2034() {
+      const e: any = new Error("Transaction conflict/serialization failure");
+      e.code = "P2034";
+      return e;
+    }
+    function p2002(target: string[]) {
+      const e: any = new Error("Unique constraint failed");
+      e.code = "P2002";
+      e.meta = { target };
+      return e;
+    }
+
+    function makeMockSvc() {
+      const config = { get: jest.fn(() => "true") } as any;
+      const userRow = { id: "u1", tenantId: "t1", email: "user@example.com", isActive: true, passwordHash: "x" };
+      const user = { findFirst: jest.fn(async () => ({ ...userRow })) };
+      const createdHashes: string[] = [];
+      const passwordResetToken = {
+        updateMany: jest.fn(async () => ({ count: 0 })),
+        create: jest.fn(async ({ data }: any) => {
+          createdHashes.push(data.tokenHash);
+          return { ...data };
+        }),
+      };
+      const auditLogs: any[] = [];
+      const audit = {
+        log: jest.fn(async (input: any) => { auditLogs.push(input); }),
+        logInTransaction: jest.fn(async (_tx: any, input: any) => { auditLogs.push(input); }),
+      } as any;
+      const email = { send: jest.fn() } as any;
+      const prisma: any = { user, passwordResetToken };
+      return { prisma, audit, email, config, auditLogs, createdHashes, passwordResetToken };
+    }
+
+    it("[R1] P2034 bir kez fırlar, ikinci denemede başarılı olur (retry çalışır)", async () => {
+      const { prisma, audit, email, config, auditLogs } = makeMockSvc();
+      let attempt = 0;
+      prisma.$transaction = jest.fn(async (cb: any) => {
+        attempt++;
+        const result = await cb(prisma);
+        if (attempt === 1) throw p2034();
+        return result;
+      });
+      email.send.mockResolvedValue({ success: true, provider: "mock" });
+      const svc = new PasswordResetService(prisma, audit, email, config);
+      const res = await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
+      expect(res).toEqual({ success: true });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(auditLogs.some((a) => a.action === "PASSWORD_RESET_REQUESTED")).toBe(true);
+    });
+
+    it("[R2] retryable P2002 (tenantId+userId) bir kez fırlar, ikinci denemede başarılı olur", async () => {
+      const { prisma, audit, email, config } = makeMockSvc();
+      let attempt = 0;
+      prisma.$transaction = jest.fn(async (cb: any) => {
+        attempt++;
+        const result = await cb(prisma);
+        if (attempt === 1) throw p2002(["tenantId", "userId"]);
+        return result;
+      });
+      email.send.mockResolvedValue({ success: true, provider: "mock" });
+      const svc = new PasswordResetService(prisma, audit, email, config);
+      const res = await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
+      expect(res).toEqual({ success: true });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it("[R3] İLGİSİZ P2002 (tokenHash) asla retry edilmez — ilk denemede fırlar", async () => {
+      const { prisma, audit, email, config } = makeMockSvc();
+      prisma.$transaction = jest.fn(async () => {
+        throw p2002(["tokenHash"]);
+      });
+      const svc = new PasswordResetService(prisma, audit, email, config);
+      await expect(svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" })).rejects.toThrow();
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("[R4] sürekli P2034 → sınırlı deneme sayısından sonra fırlar (sonsuz döngü YOK)", async () => {
+      const { prisma, audit, email, config } = makeMockSvc();
+      prisma.$transaction = jest.fn(async () => {
+        throw p2034();
+      });
+      const svc = new PasswordResetService(prisma, audit, email, config);
+      await expect(svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" })).rejects.toThrow();
+      expect(prisma.$transaction).toHaveBeenCalledTimes(3);
+    });
+
+    it("[R5] her retry denemesinde TAZE ham token üretilir (aynı tokenHash iki kez create edilmez)", async () => {
+      const { prisma, audit, email, config, createdHashes } = makeMockSvc();
+      let attempt = 0;
+      prisma.$transaction = jest.fn(async (cb: any) => {
+        attempt++;
+        const result = await cb(prisma);
+        if (attempt === 1) throw p2034();
+        return result;
+      });
+      email.send.mockResolvedValue({ success: true, provider: "mock" });
+      const svc = new PasswordResetService(prisma, audit, email, config);
+      await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
+      expect(createdHashes).toHaveLength(2);
+      expect(createdHashes[0]).not.toBe(createdHashes[1]);
+    });
+
+    it("[R6] e-posta gönderimi THROW eder → aynı compensation yolu (revoke + EMAIL_FAILED audit) tetiklenir, secret-free alarm", async () => {
+      const { prisma, audit, email, config, auditLogs, passwordResetToken } = makeMockSvc();
+      prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
+      email.send.mockRejectedValue(new Error("SMTP connection refused: internal-host-secret-detail"));
+      const loggerErrorSpy = jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined as any);
+      const svc = new PasswordResetService(prisma, audit, email, config);
+      const res = await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
+      expect(res).toEqual({ success: true });
+      expect(passwordResetToken.updateMany).toHaveBeenCalled();
+      const failedAudit = auditLogs.find((a) => a.action === "PASSWORD_RESET_EMAIL_FAILED");
+      expect(failedAudit).toBeDefined();
+      expect(failedAudit.metadata).toEqual({ outcome: "EMAIL_FAILED" });
+      const loggedMessages = loggerErrorSpy.mock.calls.map((c) => String(c[0]));
+      expect(loggedMessages.some((m) => m.includes("internal-host-secret-detail"))).toBe(false);
+      loggerErrorSpy.mockRestore();
+    });
+
+    it("[R7] compensation transaction'ın KENDİSİ başarısız olsa bile forgotPassword yine de {success:true} döner (throw etmez)", async () => {
+      const { prisma, audit, email, config } = makeMockSvc();
+      let txCall = 0;
+      prisma.$transaction = jest.fn(async (cb: any) => {
+        txCall++;
+        if (txCall === 1) return cb(prisma);
+        throw new Error("DB unreachable during compensation");
+      });
+      email.send.mockResolvedValue({ success: false, errorCode: "SMTP_ERROR", provider: "mock" });
+      const loggerErrorSpy = jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined as any);
+      const svc = new PasswordResetService(prisma, audit, email, config);
+      const res = await svc.forgotPassword({ email: "user@example.com", tenantSlug: "acme" });
+      expect(res).toEqual({ success: true });
+      loggerErrorSpy.mockRestore();
     });
   });
 });

@@ -4,10 +4,24 @@ import { RegisterDto, LoginDto, FindTenantsForEmailDto } from "./dto/auth.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { LoginRateLimitGuard } from "./guards/login-rate-limit.guard";
 import { CurrentUser } from "./decorators/current-user.decorator";
+import { PasswordResetService } from "./password-reset/password-reset.service";
 
 @Controller("auth")
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
+
+  /**
+   * OFFICE-AUTH-P02-HARDENING-R01: public capability query — web login sayfası
+   * "Şifremi unuttum" linkini bu flag'e göre gösterir/gizler. Auth gerektirmez,
+   * hassas veri döndürmez (yalnız statik bir feature-flag durumu).
+   */
+  @Get("capabilities")
+  capabilities() {
+    return { passwordRecoveryEnabled: this.passwordReset.isPasswordRecoveryEnabled() };
+  }
 
   @Post("register")
   register(@Body() dto: RegisterDto) {

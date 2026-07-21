@@ -1,28 +1,35 @@
 "use client";
 
 // OFFICE-AUTH-P02: office/staff credential-recovery — token ile yeni parola belirleme.
-// Normal login akışının PARÇASI DEĞİLDİR. Token URL query'den okunur, hiçbir yerde
-// loglanmaz/persist edilmez.
+// Normal login akışının PARÇASI DEĞİLDİR.
+// OFFICE-AUTH-P02-HARDENING-R01: token artık URL FRAGMENT'ından (#token=...) okunur —
+// query string değil, çünkü query string sunucu/proxy access log'larına yazılabilir,
+// fragment ise tarayıcı dışına asla gönderilmez. Okunduktan hemen sonra history.replaceState
+// ile URL'den temizlenir (tarayıcı geçmişinde/paylaşılan linklerde ham token kalmasın diye);
+// hiçbir yerde loglanmaz/persist edilmez.
 
-import { Suspense, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Scale, ArrowLeft } from "lucide-react";
 import { api } from "@/lib/api";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 
 export default function ResetPasswordPage() {
-  return (
-    <Suspense>
-      <ResetPasswordForm />
-    </Suspense>
-  );
-}
-
-function ResetPasswordForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const token = searchParams.get("token") ?? "";
+  const [token, setToken] = useState("");
+  const [tokenChecked, setTokenChecked] = useState(false);
+
+  useEffect(() => {
+    const rawHash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+    const fragmentParams = new URLSearchParams(rawHash);
+    setToken(fragmentParams.get("token") ?? "");
+    setTokenChecked(true);
+    if (window.location.hash) {
+      // Ham token adres çubuğunda/tarayıcı geçmişinde kalmasın.
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, []);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -79,7 +86,7 @@ function ResetPasswordForm() {
             </div>
           )}
 
-          {!token && !error && (
+          {tokenChecked && !token && !error && (
             <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg mb-4">
               Geçersiz bağlantı — token bulunamadı.
             </div>

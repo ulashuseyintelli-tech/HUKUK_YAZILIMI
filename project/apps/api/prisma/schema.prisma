@@ -343,16 +343,21 @@ model User {
   passwordResetTokens PasswordResetToken[]
 
   @@unique([tenantId, email])
+  @@unique([tenantId, id])
   @@index([tenantId])
 }
 
 /// OFFICE-AUTH-P02: tenant-scoped, tek-kullanımlık parola sıfırlama token'ı (UserInvite emsali).
 /// Ham token YALNIZ bir kez e-posta linkinde görünür; DB'de yalnız SHA256 tokenHash saklanır.
+/// OFFICE-AUTH-P02-HARDENING-R01: userId FK, User'ın (tenantId,id) bileşik anahtarına karşı
+/// tenant-scoped kurulur — cross-tenant userId ataması artık DB seviyesinde reddedilir.
+/// Ayrıca "kullanıcı başına en fazla bir çözülmemiş token" invariant'ı, Prisma DSL'in ifade
+/// edemediği bir partial unique index ile migration.sql'e elle eklenir (bkz. o migration).
 model PasswordResetToken {
   id         String    @id @default(cuid())
   tenantId   String
   userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Cascade)
   tokenHash  String    @unique
   expiresAt  DateTime
   consumedAt DateTime?

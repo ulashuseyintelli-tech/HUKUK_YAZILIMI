@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ResetPasswordPage from "@/app/auth/reset-password/page";
 
 const resetPasswordMock = vi.fn().mockResolvedValue({ ok: true });
@@ -11,14 +11,23 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
-  useSearchParams: () => new URLSearchParams("token=raw-test-token"),
 }));
+
+/**
+ * OFFICE-AUTH-P02-HARDENING-R01: token artık URL query'den değil, FRAGMENT'tan (#token=...)
+ * okunur. jsdom'da window.location.hash'i ayarlayıp history.replaceState sonrası pathname'in
+ * korunduğunu varsayarız (jsdom bunu native destekler).
+ */
+function setLocationHash(hash: string) {
+  window.history.pushState(null, "", `/auth/reset-password${hash}`);
+}
 
 /** OFFICE-AUTH-P02 — reset-password formu: token aktarımı, confirmation, generic hata, yönlendirme. */
 describe("ResetPasswordPage — OFFICE-AUTH-P02", () => {
   beforeEach(() => {
     resetPasswordMock.mockClear();
     pushMock.mockClear();
+    setLocationHash("#token=raw-test-token");
   });
 
   function fillPasswords(password: string, confirmation: string) {
@@ -47,12 +56,18 @@ describe("ResetPasswordPage — OFFICE-AUTH-P02", () => {
 
   it("[3] başarılı reset sonrası login sayfasına yönlendirilir", async () => {
     vi.useFakeTimers();
-    render(<ResetPasswordPage />);
+    // OFFICE-AUTH-P02-HARDENING-R01: fragment-okuma useEffect'i fake-timer penceresinde mount
+    // olduğu için act() ile sarılır (auth-context-redirect.spec.tsx ile aynı desen).
+    act(() => {
+      render(<ResetPasswordPage />);
+    });
     fillPasswords("brand-new-password-2026", "brand-new-password-2026");
     fireEvent.click(screen.getByRole("button", { name: /Parolayı Güncelle/i }));
 
     await vi.waitFor(() => expect(screen.getByText(/Parolanız güncellendi/i)).toBeTruthy());
-    vi.advanceTimersByTime(1600);
+    act(() => {
+      vi.advanceTimersByTime(1600);
+    });
     expect(pushMock).toHaveBeenCalledWith("/auth/login");
     vi.useRealTimers();
   });
@@ -67,5 +82,18 @@ describe("ResetPasswordPage — OFFICE-AUTH-P02", () => {
       expect(screen.getByText(/Bu bağlantı geçersiz veya süresi dolmuş\. Yeni bir sıfırlama bağlantısı isteyin\./i)).toBeTruthy()
     );
     expect(screen.getByRole("link", { name: /Yeni bağlantı iste/i })).toBeTruthy();
+  });
+
+  it("[5] OFFICE-AUTH-P02-HARDENING-R01: token okunduktan sonra fragment URL'den temizlenir (history.replaceState)", async () => {
+    render(<ResetPasswordPage />);
+    await waitFor(() => expect(window.location.hash).toBe(""));
+    expect(window.location.pathname).toBe("/auth/reset-password");
+  });
+
+  it("[6] OFFICE-AUTH-P02-HARDENING-R01: fragment'ta token YOK → 'token bulunamadı' mesajı gösterilir, submit devre dışı", async () => {
+    setLocationHash("");
+    render(<ResetPasswordPage />);
+    await waitFor(() => expect(screen.getByText(/Geçersiz bağlantı — token bulunamadı\./i)).toBeTruthy());
+    expect(screen.getByRole("button", { name: /Parolayı Güncelle/i })).toBeDisabled();
   });
 });

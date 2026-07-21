@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Scale } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { api } from "@/lib/api";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 
 const REMEMBERED_LOGIN_KEY = "rememberedLogin";
@@ -37,6 +38,9 @@ function LoginForm() {
   const prefillTenantSlug = searchParams.get("tenantSlug") ?? "";
   const [tenantSlug, setTenantSlug] = useState(prefillTenantSlug);
   const [email, setEmail] = useState("");
+  // OFFICE-AUTH-P02-HARDENING-R01: varsayılan false (fail-closed) — capability fetch
+  // başarısız olursa veya flag kapalıysa link hiç gösterilmez.
+  const [passwordRecoveryEnabled, setPasswordRecoveryEnabled] = useState(false);
 
   // Beni hatırla ile önceki ziyarette kaydedilmiş kurum/e-posta varsa doldur.
   // URL'den gelen açık tenantSlug (account-recovery dönüşü) önceliklidir.
@@ -49,6 +53,21 @@ function LoginForm() {
       setRememberMe(true);
     }
   }, [prefillTenantSlug]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getAuthCapabilities()
+      .then((capabilities) => {
+        if (!cancelled) setPasswordRecoveryEnabled(capabilities.passwordRecoveryEnabled);
+      })
+      .catch(() => {
+        // Fail-closed: fetch hatasında link gösterilmez (varsayılan false zaten korunur).
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -160,9 +179,11 @@ function LoginForm() {
                 />
                 <span className="text-sm">Beni hatırla</span>
               </label>
-              <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
-                Şifremi unuttum
-              </Link>
+              {passwordRecoveryEnabled && (
+                <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
+                  Şifremi unuttum
+                </Link>
+              )}
             </div>
 
             <button
