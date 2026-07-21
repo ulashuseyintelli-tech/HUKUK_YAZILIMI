@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-CLAIM-FORM-P02-S05-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -78,9 +78,10 @@ RCV-CLAIM-FORM-P02-S01      : FORMALLY CLOSED / CANONICAL
 RCV-CLAIM-FORM-P02-S02-I01  : FORMALLY CLOSED / CANONICAL
 RCV-CLAIM-FORM-P02-S03-I01  : FORMALLY CLOSED / CANONICAL
 RCV-CLAIM-FORM-P02-S04-I01  : FORMALLY CLOSED / CANONICAL
-Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 ONLY
-RCV-CLAIM-FORM-P02-S05-I01  : SELECTED / NOT AUTHORIZED / LOCAL PATCH NON-CANONICAL AND FROZEN / RESUME CANDIDATE
-Claim Formation next task   : RCV-CLAIM-FORM-P02-S05-I01 — OWNER GO REQUIRED
+RCV-CLAIM-FORM-P02-S05-I01  : FORMALLY CLOSED / CANONICAL (implementation PR #1479 / 4947da38)
+Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 ONLY
+S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
+Claim Formation next task   : UNSET — OWNER GO REQUIRED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 Next eligible action        : TPA-04B-ENTRY SCHEMA-AMENDMENT IMPLEMENTATION ENTRY GATE — OWNER GO-VERIFY REQUIRED
 ```
@@ -1936,6 +1937,87 @@ bu kayıt başka residual task, kod/test/schema/migration, legacy mutation, Coll
 boundary işi, Balance/TBK100 implementation'ı veya cutover authority üretmez. Mevcut S05-I01
 local patch'i approved governance merge'ine ve ayrı owner implementation GO'suna kadar frozen,
 non-canonical ve execution dışıdır.
+
+### 1.30 RCV-CLAIM-FORM-P02-S05-I01 formal closure reconciliation
+
+```text
+RCV-CLAIM-FORM-P02-S05-I01:
+FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+
+IMPLEMENTATION PR:
+#1479
+
+IMPLEMENTATION SQUASH:
+4947da38277fa2fde8d46d3b51e3aa31e6d98c2e
+
+REQUIRED CI:
+4/4 PASS
+
+VALIDATION:
+TARGETED ADMISSION 29/29 PASS
+CASE/DUE + CLAIMITEM REGRESSION 295 PASS / 10 SKIP
+PRODUCTION TYPESCRIPT PASS
+NEST BUILD PASS
+DIFF-AWARE ESLINT PASS
+STATIC WRITE-ORDER / SCOPE GUARD PASS
+DIFF / SECRET / GENERATED-ARTIFACT AUDIT PASS
+
+NEW DUETYPE.OTHER CREATE:
+DENIED
+
+ERROR CONTRACT:
+UNSUPPORTED_COMPONENT
+
+POST /cases MIXED BATCH:
+TRANSACTION / CASE / DUE / PARTY / CLAIMITEM /
+AUDIT / EVENT / OUTBOX WRITE = 0
+
+POST /cases/:id/dues:
+TRANSACTION / DUE / CLAIMITEM /
+AUDIT / EVENT / OUTBOX WRITE = 0
+
+SUPPORTED DUE TYPES:
+UNCHANGED
+
+EXISTING OTHER READ / UPDATE / LIFECYCLE:
+UNCHANGED / LEGACY_ONLY
+
+PUBLIC DUETYPE.OTHER ENUM / PUBLIC API:
+UNCHANGED
+
+WEB / NESTED ILAM / OCR / OPERATIONAL BACKFILL:
+UNCHANGED
+
+RUNTIME ENFORCEMENT:
+PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 ONLY
+
+SCHEMA / MIGRATION:
+NONE
+
+COLLECTION / SHARED BOUNDARY:
+UNCHANGED
+
+OLD FROZEN PATCH:
+SUPERSEDED BY MERGED IMPLEMENTATION
+CLEANUP PENDING SEPARATE OWNER GO
+
+ACT-28 / REC-AUTH-011 / REC-AUTH-012:
+OPEN / UNCHANGED
+
+NEXT CLAIM-FORMATION TASK:
+UNSET — OWNER GO REQUIRED
+```
+
+Bu reconciliation, P01-R01 ile P02-S01/S02-I01/S03-I01/S04-I01 tarihsel kapanışlarını
+silmez veya yeniden yazmaz. PR #1479 yalnız yeni `DueType.OTHER` create admission'ını iki
+public create yüzeyinde ilk transaction/write öncesinde fail-closed kapatmıştır. Existing
+`OTHER` update veya `PRINCIPAL → OTHER` PATCH; web `kalemTuru`/nested-ilam/OCR fallback;
+Precautionary `DIGER`/unknown; human direct-entry; mandatory formation context;
+`ClaimFormationSnapshotV1`; subtype registry/versioning ve legacy component inventory
+residual gap'leri `OPEN` kalır. Eski frozen S05 patch'i merged implementation tarafından
+supersede edilmiştir; cleanup ayrı owner GO bekler ve bu görevde yapılmaz. Bu kayıt kod/test,
+schema/migration, legacy mutation/backfill, Collection/shared-boundary, TPA-04B, Balance/TBK100,
+replay/data access, cutover veya başka residual/foreign task authority'si üretmez.
 
 ## 2. Program/Register Alignment Kaydı
 

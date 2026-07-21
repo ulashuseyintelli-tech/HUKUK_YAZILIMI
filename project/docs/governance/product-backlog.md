@@ -2137,6 +2137,48 @@ Collection/shared-boundary işi, Balance/TBK100 implementation'ı veya cutover b
 
 ---
 
+## RCV-CLAIM-FORM-P02-S05-I01 — New DueType.OTHER Create Admission Guard
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+**Implementation evidence:** PR #1479 / squash
+`4947da38277fa2fde8d46d3b51e3aa31e6d98c2e` / required CI `4/4 PASS`; targeted
+admission `29/29`, Case/Due + ClaimItem regression `295 PASS / 10 SKIP`, Production
+TypeScript, Nest build, diff-aware ESLint, static write-order/scope guard ve
+diff/secret/generated-artifact audit `PASS`. Canonical ancestry doğrulanmıştır.
+
+New `DueType.OTHER` create admission iki public create yüzeyinde deterministik
+`UNSUPPORTED_COMPONENT` ile fail-closed reddedilir. `POST /cases` mixed batch'inde
+transaction, Case, Due, party, ClaimItem, audit, event ve outbox write sayısı sıfırdır.
+`POST /cases/:id/dues` doğrudan create yüzeyinde transaction, Due, ClaimItem, audit, event
+ve outbox write sayısı sıfırdır.
+
+```text
+NEW DUETYPE.OTHER CREATE     DENIED
+ERROR CONTRACT               UNSUPPORTED_COMPONENT
+SUPPORTED DUE TYPES          UNCHANGED
+EXISTING OTHER               READ / UPDATE / LIFECYCLE UNCHANGED / LEGACY_ONLY
+PUBLIC DUETYPE.OTHER / API   UNCHANGED
+WEB / ILAM / OCR / BACKFILL  UNCHANGED
+RUNTIME ENFORCEMENT          PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 ONLY
+SCHEMA / MIGRATION           NONE
+COLLECTION / SHARED BOUNDARY UNCHANGED
+OLD FROZEN PATCH             SUPERSEDED / CLEANUP PENDING SEPARATE OWNER GO
+NEXT ELIGIBLE TASK           UNSET — OWNER GO REQUIRED
+```
+
+P01-R01 ve P02-S01/S02-I01/S03-I01/S04-I01 tarihsel contract kapanışları korunur. Existing
+`OTHER` update/`PRINCIPAL → OTHER` PATCH, web `kalemTuru`/nested-ilam/OCR fallback,
+Precautionary `DIGER`/unknown, human direct-entry, mandatory formation context,
+`ClaimFormationSnapshotV1`, subtype registry/versioning ve legacy component inventory
+residual gap'leri `OPEN` kalır. ACT-28 ve REC-AUTH-011/012 `OPEN / UNCHANGED`dır. Frozen
+S05 patch'i merged implementation tarafından supersede edilmiştir ve cleanup ayrı owner GO
+bekler. Bu kayıt başka implementation, new workstream, schema/migration, legacy mutation,
+Collection/shared-boundary change, TPA-04B, Balance/TBK100, replay/data access veya cutover
+authority'si üretmez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,

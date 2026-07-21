@@ -1,7 +1,7 @@
 # Canonicalization Register
 
 **Durum:** Living document — governance kaydı, implementasyon değil.
-**Son güncelleme:** 2026-07-21 (RCV-CLAIM-MASTER-TRIAGE-R01-GOV Claim Formation program re-anchor and S05-I01 selection)
+**Son güncelleme:** 2026-07-21 (RCV-CLAIM-FORM-P02-S05-I01 formal closure)
 **Kaynak:** `canonicalizationsiniflandirmaraporu.md` (kullanıcı tarafından sağlanan sınıflandırma raporu) + repo kodu doğrulaması, base commit `e65dc08564c09bfbe6db09a680606ac3d4b1f828`.
 **İlişkili dosya:** `canonicalization-policy.md` (sınıflandırma tanımları ve uygulama kuralları için bağlayıcı kaynak; bu register yalnız veri/kayıt tutar).
 
@@ -411,6 +411,46 @@ S05-I01 dışında açık residual sıralaması seçilmemiştir. Existing `OTHER
 mandatory context, `ClaimFormationSnapshotV1`, subtype registry/versioning ve legacy component
 inventory `OPEN` kalır. Bu kayıt S05-I01 implementation'ını, local patch mutation'ını veya
 başka residual/foreign task'ı başlatmaz.
+
+### RCV-CLAIM-FORM-P02-S05-I01-GOV — New DueType.OTHER Create Admission Guard Closure
+
+```text
+IMPLEMENTATION             FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+IMPLEMENTATION PR          #1479
+IMPLEMENTATION SQUASH      4947da38277fa2fde8d46d3b51e3aa31e6d98c2e
+REQUIRED CI                4/4 PASS
+TARGETED ADMISSION TESTS   29/29 PASS
+CASE/DUE+CLAIMITEM TESTS   295 PASS / 10 SKIP
+PRODUCTION TYPESCRIPT      PASS
+NEST BUILD                 PASS
+DIFF-AWARE ESLINT          PASS
+STATIC WRITE-ORDER/SCOPE   PASS
+DIFF/SECRET/GENERATED      PASS
+NEW DUETYPE.OTHER CREATE   DENIED
+ERROR CONTRACT             UNSUPPORTED_COMPONENT
+POST /cases WRITES         TRANSACTION / CASE / DUE / PARTY / CLAIMITEM / AUDIT / EVENT / OUTBOX = 0
+POST /cases/:id/dues       TRANSACTION / DUE / CLAIMITEM / AUDIT / EVENT / OUTBOX = 0
+SUPPORTED DUE TYPES        UNCHANGED
+EXISTING OTHER             READ / UPDATE / LIFECYCLE UNCHANGED / LEGACY_ONLY
+PUBLIC ENUM / API          UNCHANGED
+WEB/ILAM/OCR/BACKFILL      UNCHANGED
+RUNTIME ENFORCEMENT        PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 ONLY
+SCHEMA / MIGRATION         NONE
+COLLECTION/SHARED BOUNDARY UNCHANGED
+OLD FROZEN PATCH           SUPERSEDED / CLEANUP PENDING SEPARATE OWNER GO
+NEXT CLAIM-FORMATION TASK  UNSET — OWNER GO REQUIRED
+```
+
+Bu kayıt P01-R01 ile P02-S01/S02-I01/S03-I01/S04-I01 tarihsel kapanışlarını silmez veya
+yeniden yazmaz. PR #1479 yalnız yeni `DueType.OTHER` create admission'ını iki public create
+yüzeyinde ilk transaction/write öncesinde fail-closed kapatmıştır. Existing `OTHER`
+update/`PRINCIPAL → OTHER` PATCH, web `kalemTuru`/nested-ilam/OCR fallback, Precautionary
+`DIGER`/unknown, human direct-entry, mandatory formation context, `ClaimFormationSnapshotV1`,
+subtype registry/versioning ve legacy component inventory `OPEN` kalır. ACT-28 ve
+REC-AUTH-011/012 `OPEN / UNCHANGED`dır. Frozen S05 patch'i merged implementation tarafından
+supersede edilmiştir; cleanup ayrı owner GO bekler. Bu closure başka implementation,
+schema/migration, legacy mutation, Collection/shared-boundary task'ı, TPA-04B, Balance/TBK100,
+replay/data access, cutover veya foreign task authority'si üretmez.
 
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 
