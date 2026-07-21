@@ -318,6 +318,28 @@ HER ADAY İÇİN: Blueprint bu belgeyle IMPLEMENTATION AUTHORITY VERMEZ; seçim 
 aittir; seçilen aday kendi ayrı Execution Plan/PR zincirini gerektirir.
 ```
 
+### 10.1 Owner Selection Record — DBP-04-05-LIFECYCLE-VR-RECONCILE-01-GOV
+
+```text
+FIRST SELECTED CORE DEBTOR WORKSTREAM
+OPTION C — RECORD-LIFECYCLE VERIFICATION / RECONCILIATION
+
+SELECTION TYPE
+GOVERNANCE / VERIFICATION
+
+GO-IMPLEMENT
+NOT AUTHORIZED
+
+PROGRAM IMPLEMENTATION ENTRY
+HOLD
+
+OPTIONS A / B
+NOT SELECTED / existing statuses preserved (A = DBP-11 §7 owner-ratified istisna, owner-local
+register seçimi bekliyor; B = DBP-05 §12/Owner Approval Record, LDO/KVKK sign-off pending / OPEN-ODR)
+```
+
+Bu seçim yukarıdaki §10 aday listesini reopen etmez veya yeniden değerlendirmez — yalnız owner'ın Option C'yi ilk core Debtor verification/reconciliation workstream'i olarak seçtiğini kaydeder (kaynak: `DEBTOR-P1-IMPLEMENTATION-ENTRY-R01` GO-VERIFY + bu GOV kaydı). DBP-04 §12 ve DBP-05 §14'teki güncel AS-IS bulguları (OF-01/AE-CpeExecutionRecord/HD-OfficeApprovalRequest = MUTABLE VERIFIED; LegalTimeShadowDiff = code-level create-only/DB-level unenforced) bu seçimin kanıt tabanıdır. Bu kayıt remediation modeli SEÇMEZ, kod/schema/migration/test/CI DEĞİŞTİRMEZ, program-geneli Implementation Entry HOLD'unu KALDIRMAZ.
+
 ---
 
 ## 11. Owner Ratification Status
