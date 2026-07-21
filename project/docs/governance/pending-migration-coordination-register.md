@@ -110,6 +110,19 @@ sorguları ve **disposable** (izole, tek-kullanımlık, bu görevle birlikte imh
 edilen) Postgres konteynerleri üzerindeki rehearsal/backup-restore-doğrulama
 kanıtını kaydeder.
 
+**Owner review düzeltmesi (2026-07-21):** Owner bu bölümün ilk taslağını inceledi
+ve 4 madde düzeltme istedi: (1) M4'ün "herhangi bir noktada icra edilebilir"
+ifadesi yanlıştı — M4 şema-bağımsız ama SHA-anchored icra sırası bakımından
+bağımsız DEĞİL; (2) "Prisma her migration'ı kendi transaction'ında uygular"
+iddiası doğrulanmadan yazılmıştı; (3) backup-restore doğrulamasındaki "birebir
+eşleşme" ifadesi kanıtın kapsamını aşıyordu; (4) M2'nin "zararsız" nitelemesi
+kendi ACCESS EXCLUSIVE lock + fail-closed guard + çok sayıda constraint/trigger
+ekleyen doğasını hafife alıyordu. Aşağıdaki §7.2/§7.5/§7.8/§7.9/§7.10 bu 4
+düzeltmeyi yansıtacak şekilde güncellenmiştir; (2) numaralı madde için AYRICA
+yeni bir empirik doğrulama yapılmış ve sonucu (owner'ın genel iddiasıyla kısmen
+farklı, ama bu repo'nun gerçek stack'i için empirik olarak doğrulanmış bir
+bulgu) §7.8'de kaydedilmiştir.
+
 ### 7.1 Owner/PR/SHA tablosu
 
 | Gate | Migration | Domain | PR | Squash/Merge SHA | Merged At (UTC) |
@@ -146,20 +159,34 @@ ziyaret edilirse, GATE M1'in `migrate deploy`'u M2'yi de sessizce uygular —
 PROHIBITED listesinde yasakladığı "dört migration'ı tek bir domain yetkisi altında
 topluca uygulama" durumunun sessizce gerçekleşmesi anlamına gelir.
 
+**ÖNEMLİ — bu bağımlılık M4'ü de kapsar:** M4'ün anchor'ı (`289068f1`) M3'ün
+(`b9916f5b`) DOĞRUDAN descendant'ıdır (log'da M3'ün bir sonraki commit'i) ve bu
+nedenle M1+M2+M3'ün migration dosyalarının TAMAMINI zaten İÇERİR. M4 şema
+düzeyinde (paylaşılan tablo/constraint/trigger yok) diğer üçünden bağımsızdır —
+ama SHA-anchored icra modelinde bu ayrı bir eksendir: M4'ün anchor'ında
+`prisma migrate deploy` çalıştırılırsa, M1/M2/M3 ÖNCEDEN ayrı ayrı uygulanmamışsa
+DÖRDÜ DE BİRDEN uygulanır. Yani M4 "herhangi bir noktada tek başına" icra
+edilemez; yalnız M2+M1+M3'ün ÜÇÜ DE önceden uygulanmışsa tek başına uygulanır.
+
 **Bu register hiçbir gate sırasını SEÇMEZ** (owner kararı); yalnız iki seçeneği
 ve sonuçlarını kaydeder:
 
 - **Seçenek A (önerilir):** Gate'ler GERÇEK kronolojik sırayla icra edilir:
-  **GATE M2 önce, sonra GATE M1, sonra GATE M3, sonra GATE M4.** Gate NUMARALARI
+  **GATE M2 → GATE M1 → GATE M3 → GATE M4** (bu TEK sıra). Gate NUMARALARI
   (M1/M2/M3/M4 etiketleri, owner'ın brief'indeki isimlendirme) DEĞİŞMEZ; yalnız
   icra SIRASI gerçek tarihe uyar. Bu, "her adım yalnız bir sonraki migration'ı
   uygular" gereksinimini harfiyen sağlayan TEK yoldur (aşağıda §7.4'te empirik
-  kanıtlanmıştır).
+  kanıtlanmıştır) — dördü de bu sırayla, birbiri ardınca, her biri kendi ayrı
+  owner GO-MIGRATE'i ile.
 - **Seçenek B:** Owner GATE M1'in GATE M2'den önce icra edilmesinde ısrar eder.
-  Bu durumda GATE M1'in `migrate deploy`'u teknik olarak M2'yi de uygular (M2
-  bağımsız/additive olduğu için ZARARSIZDIR — ama LEGAL APPLICATION'ın kendi ayrı
-  GO-MIGRATE yetkisi bu adımdan ÖNCE alınmalıdır, aksi halde M2 kendi owner'ının
-  açık onayı olmadan canlıya gitmiş olur).
+  Bu durumda GATE M1'in `migrate deploy`'u teknik olarak M2'yi de uygular. M2
+  diğer üçünden şema BAĞIMSIZDIR (ortak tablo/constraint yok) — ama "zararsız"
+  DEĞİLDİR: kendi başına üç tabloya `ACCESS EXCLUSIVE` lock alır, fail-closed
+  boşluk kontrolü yapar ve çok sayıda `NOT NULL` kolon/constraint/trigger ekler
+  (bkz. §7.3). Bu risk değerlendirmesi LEGAL APPLICATION'ın kendi owner'ına
+  aittir; Seçenek B'de bu değerlendirme GATE M1'den ÖNCE, LEGAL APPLICATION'ın
+  kendi ayrı GO-MIGRATE yetkisiyle yapılmış OLMALIDIR — aksi halde M2 kendi
+  owner'ının açık onayı olmadan canlıya gitmiş olur.
 
 ### 7.3 Migration'lar arası teknik bağımlılıklar
 
@@ -210,9 +237,13 @@ ile geri yüklendi:
 
 - Yedek boyutu: ~900 KB (custom-format, `-Fc`).
 - SHA-256: `985da5bf0f39c158c123f4cbbc824d0fc469766ec5aaf328e955ed3eb47439b3`
-- Restore sonrası doğrulama — **kaynakla birebir eşleşme:** `Tenant` 3, `User` 7,
-  `ClientPortalUser` 3, en son uygulanmış migration
-  `20260720184418_office_auth_p01_token_version` (kaynakla aynı).
+- Restore başarıyla tamamlandı; **seçilmiş kritik invariant'lar ve row-count
+  kontrolleri** kaynakla eşleşti: `Tenant` 3, `User` 7, `ClientPortalUser` 3,
+  en son uygulanmış migration `20260720184418_office_auth_p01_token_version`
+  (kaynakla aynı). **Bu, database-wide tam eşdeğerlik İDDİASI DEĞİLDİR** — dört
+  tablonun satır sayısı + bir metadata alanı kontrol edildi, 167+ tablonun
+  tamamının sayımı, şema parmak izi karşılaştırması veya deterministik veri
+  checksum'ı ALINMADI. Tam eşdeğerlik iddiası için bunlar ayrıca gerekir.
 
 Bu, gerçek GO-MIGRATE gate'lerinden HERHANGİ biri ateşlendiğinde kullanılacak
 backup+restore mekanizmasının çalıştığını kanıtlar. Her gate kendi anındaki fresh
@@ -254,18 +285,55 @@ closure YOKTUR (owner PROHIBITED listesiyle tutarlı).
 
 ### 7.8 STOP / partial-success recovery prosedürü
 
-Prisma her migration.sql'i KENDİ transaction'ında uygular (varsayılan davranış;
-M2'nin kendi içindeki `BEGIN;...COMMIT;` de bu davranışla tutarlıdır). Bu nedenle
-4-gate zincirinde KISMİ başarı DAİMA güvenli bir ara durumdur — önceki gate'lerin
-DDL'si geri alınmaz, başarısız gate'in DDL'si de KENDİ transaction'ı içinde tam
-geri alınır (yarım kalan DDL yoktur):
+**Düzeltme notu:** bu alt bölümün ilk taslağı "Prisma her migration.sql'i KENDİ
+transaction'ında uygular" iddiasını DOĞRULAMADAN yazmıştı — owner haklı olarak
+bunu işaretledi (Prisma'nın migration dosyasını varsayılan olarak transaction'a
+sarmadığı, transaction isteniyorsa dosyanın kendisine açık `BEGIN`/`COMMIT`
+eklenmesi gerektiği genel bir teknik referansla belirtildi). Bu iddiayı
+disposable Postgres'te AYRICA, üç bağımsız testle empirik olarak doğruladım:
+
+1. Jenerik bir bare (BEGIN/COMMIT'siz) çok-statement'lı test migration'ı: geçerli
+   ilk iki statement + kasıtlı bozuk üçüncü statement.
+2. **M1'in gerçek migration.sql içeriğinin BİREBİR KOPYASI** (yalnız kasıtlı bir
+   bozuk statement CREATE TABLE ile CREATE UNIQUE INDEX arasına eklendi; `diff`
+   ile doğrulandı — tek fark enjekte edilen 2 satır).
+3. **M3'ün gerçek migration.sql içeriğinin BİREBİR KOPYASI** (aynı yöntem, DROP
+   CONSTRAINT + CREATE UNIQUE INDEX'ten sonra, AddForeignKey'den önce).
+
+**Empirik sonuç (üçünde de aynı):** `prisma migrate deploy` (v5.22.0, Postgres
+16, bu repo'nun gerçek stack'i) bir migration.sql'in İÇİNDE AÇIK BEGIN/COMMIT
+OLMASA BİLE, dosyayı TEK ATOMİK BİRİM olarak uyguluyor. M1-kopyası testinde
+`CREATE TABLE "PasswordResetToken"` (geçerli, hatadan ÖNCE) statement'i sonraki
+statement başarısız olunca KALICI OLMADI; M3-kopyası testinde `DROP CONSTRAINT`
++ `CREATE UNIQUE INDEX` (ikisi de geçerli, hatadan önce) AYNI ŞEKİLDE geri alındı.
+Her üç testte de `_prisma_migrations.applied_steps_count = 0` ve
+`finished_at = NULL` kaydedildi — Prisma'nın schema-engine'i (`apply_script`)
+başarısız bir migration'ı sıfır-adım-uygulanmış olarak işaretliyor, statement
+bazında değil.
+
+**Bu bulgunun statüsü:** version/engine'e özgü empirik bir gözlemdir, Prisma'nın
+genel/eternal bir garantisi olarak İDDİA EDİLMEZ — farklı bir Prisma/Postgres
+sürümünde farklı davranabilir ve gelecekte yeniden doğrulanmalıdır. Owner'ın
+genel teknik referansıyla (Prisma dokümantasyonu/blog) yüzeysel bir çelişki gibi
+görünse de, bu repo'nun GERÇEK ve GÜNCEL stack'inde (5.22.0/Postgres 16),
+gerçek M1 ve M3 içeriğiyle, tekrarlanabilir biçimde doğrulanmıştır.
+
+**Recovery prosedürü (owner'ın önerdiği ihtiyatlı çerçeveye göre, empirik bulgu
+IŞIĞINDA ama ona KÖRÜ KÖRÜNE güvenmeden):**
 
 - Herhangi bir gate başarısız olursa: **DUR.** `migrate resolve`, manuel DDL veya
-  dosya değişikliği YAPMA (owner PROHIBITED). Prisma'nın hata çıktısını ve
-  `prisma migrate status`'u kaydet, owner'a raporla.
-- Önceki (başarılı) gate'lerin hiçbiri geri alınmaz veya dokunulmaz — her biri
-  bağımsız/additive olduğu için (M3→M1 dışında hiçbir cross-dependency yok)
-  kısmi tamamlanmış zincir kendi başına tutarlı bir durumdur.
+  dosya değişikliği YAPMA (owner PROHIBITED).
+- DB ve `_prisma_migrations` durumunu SALT-OKUNUR kaydet (`prisma migrate status`
+  + başarısız migration'ın `_prisma_migrations` satırı + hedef tablo/kolonların
+  fiilen var olup olmadığının doğrudan SQL kontrolü — empirik bulguya göre
+  BEKLENEN sonuç "hiçbiri kalıcı olmadı" ama HER gate'te AYRICA doğrulanmalı,
+  varsayılmamalıdır).
+- Canlı servisleri tekrar yazmaya AÇMA.
+- Owner'a raporla; önceki (başarılı) gate'lerin DDL'sine dokunma veya geri alma
+  girişiminde bulunma — her biri bağımsız/additive olduğu için (M3→M1 dışında
+  cross-dependency yok) zaten kendi başına tutarlı bir durumdur.
+- Gate öncesi doğrulanmış full backup'tan tam restore, yalnız ayrı bir owner
+  kararıyla yapılır (bu register'ın kendisi bu kararı ÜRETMEZ).
 - Yeniden deneme, yalnız başarısız olan SPESİFİK gate için, kök neden giderildikten
   sonra ve yalnız o gate'in kendi owner'ının onayıyla yapılır.
 
@@ -277,11 +345,13 @@ GO-ANALYZE + GO-DOCS COMPLETE / COORDINATION REPORT DELIVERED
 
 LIVE DB MUTATION PERFORMED: 0
 
-READY FOR OWNER GATE AUTHORIZATION (her biri AYRI, sırayla):
-GATE M2 (LEGAL APPLICATION) — READY, önerilen ilk icra (gerçek kronolojik sıra)
-GATE M1 (OFFICE baseline)   — READY, GATE M2'den SONRA icra edilmeli (Seçenek A)
-GATE M3 (OFFICE hardening)  — READY, yalnız GATE M1 sonrası icra edilebilir (zorunlu bağımlılık)
-GATE M4 (CLIENT P2-U02)     — READY, bağımsız, herhangi bir noktada icra edilebilir
+READY FOR OWNER GATE AUTHORIZATION (her biri AYRI, KESİN SIRAYLA — Seçenek A):
+GATE M2 (LEGAL APPLICATION) — READY, ZORUNLU İLK icra (gerçek kronolojik sıra)
+GATE M1 (OFFICE baseline)   — READY, YALNIZ GATE M2 sonrası (Seçenek A sırası)
+GATE M3 (OFFICE hardening)  — READY, YALNIZ GATE M1 sonrası (zorunlu şema bağımlılığı)
+GATE M4 (CLIENT P2-U02)     — READY, YALNIZ GATE M2+M1+M3'ün ÜÇÜ DE uygulanmışsa
+                              (şema-bağımsız ama SHA-anchored icra sırası bakımından
+                              BAĞIMSIZ DEĞİL — anchor'ı M3'ün doğrudan descendant'ı)
 
 IMPLEMENTATION AUTHORITY: NONE — hiçbir gate bu raporla yetkilendirilmemiştir.
 Her gate kendi ayrı OWNER GO-MIGRATE brief'ini bekler (bkz. §7.10).
@@ -343,8 +413,12 @@ PROHIBITED: OFFICE_PASSWORD_RECOVERY_ENABLED=true, SMTP/live reset-token test,
 OWNER GO-MIGRATE — CLIENT-P2-U02 PORTAL USER TOKEN VERSION
 AUTHORITY BASIS: PR #1493, merge SHA 289068f17319c58400d3ce80770f23612b50eaa3
 TARGET MIGRATION: 20260721063256_client_p2_u02_portal_user_token_version
+PRECONDITION: GATE M2 + GATE M1 + GATE M3 already applied (hard SHA-anchored
+  deploy-order dependency — this anchor's tree contains all three prior
+  migrations, NOT an independent/any-point gate).
 ANCHOR: isolated worktree pinned to 289068f17319c58400d3ce80770f23612b50eaa3
-PREFLIGHT: fresh backup + restore-verify; disposable rehearsal from this anchor.
+PREFLIGHT: fresh backup + restore-verify; disposable rehearsal from this anchor
+  (on top of a disposable DB that already has M2+M1+M3 applied).
 EXECUTION: prisma migrate deploy only.
 POST-VALIDATION: ClientPortalUser.tokenVersion column + default per §7.7;
   API health smoke; existing 3 portal users show tokenVersion=0.
