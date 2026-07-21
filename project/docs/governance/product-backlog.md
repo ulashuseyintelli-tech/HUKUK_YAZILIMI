@@ -2212,6 +2212,48 @@ değildir. Phase-exit kriterleri ve diğer residual'ların `OPEN` statüsü değ
 
 ---
 
+## RCV-CLAIM-FORM-P02-S06-I01 — Precautionary Claimed-Cost OTHER / Unknown Admission Guard
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+**Implementation evidence:** PR #1491 / squash
+`8995aecc9bc59f282d0d7971d1d88ff941868470` / required CI `4/4 PASS`; targeted tests
+`20/20`, ClaimItem regression `219 PASS / 10 SKIPPED`, Production TypeScript, Nest build,
+ESLint `0 error`, scope allowlist `2/2`, static fallback/no-write ve diff checks `PASS`.
+Canonical ancestry doğrulanmıştır.
+
+Claimed precautionary cost admission'da `DIGER`, null, undefined, blank/whitespace, unknown ve
+unmapped runtime value deterministik `UNSUPPORTED_COMPONENT` ile lookup, transaction ve bütün
+business writer çağrılarından önce fail-closed reddedilir. Invalid claimed cost için transaction,
+PrecautionaryCost, router, ClaimItem, audit, event ve outbox write sayısı sıfırdır.
+
+```text
+CLAIMED DIGER / UNKNOWN      DENIED
+ERROR CONTRACT               UNSUPPORTED_COMPONENT
+SUPPORTED CLAIMED TYPES      HARC / POSTA / VEKALET / TEMINAT /
+                             YEDIEMIN / BILIRKISI / MUHAFAZA — UNCHANGED
+NON-CLAIMED DIGER            OPERATIONAL COST UNCHANGED / ROUTER WRITE = 0
+EXISTING RECORDS/LIFECYCLE   UNCHANGED
+PUBLIC API                   UNCHANGED
+SCHEMA / MIGRATION           NONE
+COLLECTION / SHARED BOUNDARY UNCHANGED
+RUNTIME ENFORCEMENT          PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 +
+                             S05-I01 + S06-I01 ONLY
+OLD FROZEN S05 PATCH         SUPERSEDED / CLEANUP PENDING / UNTOUCHED
+REMAINING GAPS               OPEN / UNSELECTED
+NEXT ELIGIBLE TASK           UNSET — OWNER GO REQUIRED
+```
+
+P01-R01 ve S01-S05 tarihsel closure kayıtları ile R02 selection kaydı korunur. Existing `OTHER`
+update / `PRINCIPAL → OTHER` PATCH, human direct-entry, web `kalemTuru`/nested-ilam, OCR generic
+`PRINCIPAL`, mandatory formation context, `ClaimFormationSnapshotV1`, subtype
+registry/versioning ve legacy component inventory residual gap'leri `OPEN / UNSELECTED` kalır.
+ACT-28 ve REC-AUTH-011/012 değişmez. Bu kayıt başka implementation, schema/migration,
+historical mutation/backfill, Collection/shared-boundary change, TPA, Balance/TBK100, replay,
+data access veya cutover authority'si üretmez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
