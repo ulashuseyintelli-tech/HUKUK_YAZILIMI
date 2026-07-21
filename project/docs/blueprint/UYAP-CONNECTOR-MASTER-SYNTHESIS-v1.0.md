@@ -309,6 +309,43 @@ WAVE 8  Owner + external authority cutover decision (P05)
 ```
 Her wave ayrı owner GO gerektirir; mevcut canonical ID'ler yok sayılmaz.
 
+### 18.1 Program Crosswalk (UYAP-PROGRAM-BACKBONE-01)
+
+Bu alt-bölüm ADDITIVE'dir; `decision-log.md` `UYAP-PROGRAM-BACKBONE-01` (2026-07-21) kaydıyla AYNEN tescil edilen owner kararı "UYAP CONNECTOR PROGRAM OMURGASI"nın (KARARLAR 1-11) program-planlama görünümünü taşır. KARAR 3 gereği: **F0-F8 ifadeleri yalnız program planlama ve crosswalk görünümüdür; yeni governance, Charter, WAVE veya roadmap kimliği oluşturmaz; kanonik roadmap otoritesi bu belgenin §18 gövdesinde kalır.** Bu alt-bölüm §1-17'yi, §18 wave listesini ve Owner Approval Record'u değiştirmez.
+
+**F0-F8 ↔ WAVE 0-8 / Charter eşleme tablosu** (F4-a/b, F5-a/b/c, F6-a/b ayrımları owner-kabul edilen program omurgasından gelir; içerik çapaları KARARLAR 1-11 ve F0 görev emrinden türetilmiştir; alt-etiket eşlemesi planlama görünümüdür, normatif kimlik oluşturmaz):
+
+| Faz (planlama görünümü) | İçerik çapası (kaynak) | §18 WAVE / Charter karşılığı | Durum (2026-07-21) |
+|---|---|---|---|
+| F0 | Karar kilidi ve kapsam dondurma: KARARLAR 1-11 kanonik tescili + bu crosswalk (`UYAP-PROGRAM-BACKBONE-01`) | WAVE 0 üzerine governance kilidi (yeni wave DEĞİL) | CLOSED/CANONICAL (bu kayıtla) |
+| F1 | `UYAP-MASTER-ANALIZ-02` delta-analiz (KARAR 4/6: capability kataloğu, resmî kaynak/Tier A-B-C, source ledger + source-conflict register, aktör/yetki/vekâlet modeli, UDF/imza yaşam döngüsü, ödeme/harç/tahsilat/mutabakat, provider state/UNKNOWN_OUTCOME, A0-A5 ANALYSIS_CANDIDATE, observability/incident/cutover gereksinimleri, iki katmanlı tehdit modeli); OD-UYAP-03..10 karar girdilerini üretir | Tek wave'e eşlenmez — WAVE 1-5 içeriklerinin analiz öncülüdür; repo mutation YOK | GO-ANALYZE (Ultra) AUTHORIZED / NOT STARTED |
+| F2 | UYAP-CONST-* madde içeriklerinin yazılması ve ratifikasyonu (kimlik uzayı kuralları KARAR 2) + convergence-matrix ratifikasyonu + registry/A0-A5 statü kararları | Governance katmanı — kanonik wave karşılığı YOK | NOT STARTED (F1 çıktısına bağlı) |
+| F3 | Bu kayıtla SABİTLENMEZ — tanımı ve eşlemesi owner faz atamasında netleşir | — | UNDEFINED IN THIS RECORD |
+| F4-a | `EVIDENCE-01` analiz hattı (KARAR 9) | WAVE 1 | GO-ANALYZE AUTHORIZED / NOT STARTED |
+| F4-b | Evidence hattının devam birimi; tanımı ve yetkisi bu kayıtla VERİLMEZ | WAVE 1 devamı | NOT DEFINED / NOT AUTHORIZED |
+| F5-a | Capability registry (KARAR 10'un bloklamadığı çalışma; icrabot kalıcı archive/simulator disposition kararı F5 capability değerlendirmesinde — KARAR 8) | Doğrudan tek wave karşılığı YOK (WAVE 2-5 kesişimi) | NOT STARTED |
+| F5-b | Simulator (KARAR 10'un bloklamadığı çalışma) | WAVE 4 (`SIMULATOR-01` + contract tests) | NOT STARTED |
+| F5-c | Resmî provider adapter (KARAR 10) | WAVE 3 (`TRANSPORT-PORT-01` + official adapter contract) | NOT STARTED / P04B-EXT ÖNKOŞUL |
+| F6-a | Offline shadow (KARAR 10'un bloklamadığı çalışma) | WAVE 6 (`P04C-SHADOW`/observation) offline kolu | NOT STARTED |
+| F6-b | Provider-linked shadow (KARAR 10) | WAVE 6 provider-linked kolu | NOT STARTED / P04B-EXT ÖNKOŞUL |
+| F7 | Controlled cutover → insan kontrollü steady state; birçok capability için kalıcı son durum olabilir (KARAR 11) | WAVE 7 + WAVE 8 (P05 owner + external authority kararı) | NOT AUTHORIZED / P04B-EXT ÖNKOŞUL / CUTOVER HARD HOLD |
+| F8 | Capability bazlı otonomi (A5) — KOŞULLU UZANTI, kanonik wave DEĞİL; ayrı eligibility + resmî izin + owner kararı gerektirir (KARAR 5/11) | §18 wave karşılığı YOK | CONDITIONAL / NOT AUTHORIZED |
+
+**Birim-bazlı convergence ilkesi (KARAR 4):** Eşleme faz-bazlı toptan değil, çalışma birimi bazındadır. Her yeni birim mevcut kanonik ID'lere tek tek yakınsar: ya mevcut bir canonical workstream'i REUSE eder, ya sentezin karşılamadığı/eksik bıraktığı/çelişkili/güncelliği doğrulanmamış alanda DELTA olarak tanımlanır, ya da hiçbir mevcut kaydın karşılamadığı GAP-NEW birimidir. Tamamlanmış workstream'ler reopen edilmez; mevcut canonical ID'ler yok sayılmaz (§18 kuralı aynen korunur).
+
+**Convergence-matrix alan şeması — DRAFT (NORMATİF DEĞİL; ratifikasyon F2'de):**
+
+```text
+unit_id · faz-görünümü (F*) · §18 wave · mevcut canonical ID (varsa) ·
+convergence tipi (REUSE / DELTA / GAP-NEW) · owner gate · status · decision basis
+```
+
+Alan adları ve statü değerleri ANALYSIS_CANDIDATE statüsündedir; F2 ratifikasyonuna kadar hiçbir registry durum adı, metrik sınıfı veya A0-A5 tanımı bu şemayla dondurulmaz.
+
+**P04B-EXT kritik yol notu (KARAR 10):** P04B-EXT ve ilgili dış otorite cevabı YALNIZ F5-c (resmî provider adapter), F6-b (provider-linked shadow) ve F7 (cutover) için bloklayıcı önkoşuldur; capability registry, simulator ve offline shadow çalışmalarını BLOKLAMAZ.
+
+**Yürürlük durumu (2026-07-21):** F1 (`UYAP-MASTER-ANALIZ-02`) ve F4-a (`EVIDENCE-01`) GO-ANALYZE yetkileri tescillidir, ikisi de NOT STARTED; fiilî başlatma owner faz atamasına bağlıdır (tek-faz işletim kuralı; KARAR 9 paralelliği ratifiye eder, otomatik başlatma doğurmaz). DEVAM EDEN HOLD'LAR DEĞİŞMEDİ: IMPLEMENTATION AUTHORITY NONE · REAL TRANSPORT 0 · UYAP CUTOVER HARD HOLD · PRODUCTION ADAPTER NOT AUTHORIZED · PORTAL AUTOMATION PROHIBITED · CREDENTIAL/PIN/PRIVATE-KEY CUSTODY PROHIBITED.
+
 ## Owner Approval Record
 
 ```text
