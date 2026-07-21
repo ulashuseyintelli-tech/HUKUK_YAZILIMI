@@ -281,6 +281,53 @@ AE-01/02 (decision) · HD-01..04 (human) — üç sınıf AYNI listede birleşti
 
 Statü yükseltme yalnız repository kanıtıyla yapılır; isim/niyetten immutability türetilmez. **Yukarıdaki "AS-IS MUTABLE VERIFIED" bulguları, bu satırların TARGET (INTENDED LIFECYCLE) sütunundaki APPEND-NEW-REVISION modelini henüz karşılamadığının kanıtıdır — bu bir remediation seçimi veya implementasyon yetkisi DEĞİLDİR; gelecekteki ayrı bir owner-gated remediation kararının girdisidir.**
 
+### 12.1 Record Lifecycle Target Model — OWNER-DECIDED (DBP-04-05-LIFECYCLE-REMEDIATION-DECISION-01-GOV)
+
+```text
+OF-01 / TEBLİGAT TARGET MODEL — ÜÇ AYRI KATMAN (tek katmana indirgenmez):
+
+  Tebligat (MUTABLE PROCESS AGGREGATE, mevcut, değişmez)
+    │  hazırlama/gönderme/nextAction işlem durumu — remediation bu katmanı immutable YAPMAZ
+    ▼
+  ServiceOccurrence (IMMUTABLE FACT LAYER — YENİ, henüz repository'de YOK)
+    │  her PTT/electronic/MERNİS sonucu için ayrı, append-only bir "olgu" kaydı
+    │  (teslim/muhtar/iade/tebliğ-sayılma) — yanlış sonuç düzeltmesi burada supersede ile yapılır
+    ▼
+  LegalDeadlineSnapshot (DERIVED IMMUTABLE ASSESSMENT — MEVCUT, repository'de zaten var, DISCONNECTED)
+       ServiceOccurrence'tan türetilen hukukî süre/deadline sonucu; supersede-zinciri zaten
+       tasarlanmış ama hiçbir production çağıranı yok
+```
+
+**Owner düzeltmesi (kesin):** `ServiceOccurrence` ve `LegalDeadlineSnapshot` **AYNI katman DEĞİLDİR** — `LegalDeadlineSnapshot`'ı tek başına "devreye almak" yeterli TARGET modeli KARŞILAMAZ. `ServiceOccurrence` (olgu/fact katmanı) henüz repository'de YOK ve ayrıca inşa edilmesi gerekir; `LegalDeadlineSnapshot` (türetilmiş hukukî değerlendirme katmanı) zaten mevcuttur ama `ServiceOccurrence`'a değil, bugün hiçbir şeye bağlı değildir. Doğru hedef zinciri: **mutable Tebligat process + immutable ServiceOccurrence (yeni) + derived LegalDeadlineSnapshot (mevcut)** — üç ayrı, art arda katman.
+
+```text
+CPE (CpeDecisionLog arşiv-bütünlüğü + CpeExecutionRecord korelasyon bulguları)
+  DISPOSITION: SHARED POLICY-ENGINE HANDOFF
+  CORE DEBTOR IMPLEMENTATION: NONE — bu bulgular Core Debtor'ın kendi kararı/implementasyonu
+  DEĞİLDİR; CasePolicyEngine paylaşılan/cross-cutting bir motordur. Canonical çözüm ayrı,
+  gelecekteki bir Policy-Engine-owned governance görevine devredilir (bu belge o görevi
+  AÇMAZ, kapsamını/kararını ÜRETMEZ).
+
+OfficeApproval (HD-01..04 ↔ OfficeApprovalRequest)
+  CORE DEBTOR DISPOSITION: NO ACTION — Core Debtor OfficeApprovalRequest'in hiçbir alanını
+  tüketmiyor (yalnız User/Lawyer-kaynaklı, request-bağımsız isApproverEligible() prediktörü).
+  Bu kalem Core Debtor tarafında KAPALI sayılır; Office'in kendi lifecycle kararı bu belgeyle
+  ÜRETİLMEZ veya ÖNGÖRÜLMEZ.
+
+LegalTimeShadowDiff
+  DISPOSITION: mevcut local-only/flag-default-off/manuel-tek-kayıt modu KABUL EDİLDİ.
+  "PII yok" gibi kapatıcı bir iddia YAPILMAZ — PRODUCTION PROMOTION GATE AÇIK bırakılır:
+  bu tablo/servis ileride herhangi bir production-yolu kullanımı için değerlendirilirse
+  bu, ayrı ve bağımsız bir owner kararı gerektirir; bu belge o kararı ÖNCEDEN VERMEZ.
+```
+
+```text
+PROGRAM IMPLEMENTATION ENTRY: HOLD (değişmedi)
+IMPLEMENTATION AUTHORITY: NONE (bu bölüm hedef modeli kaydeder, kod/schema/migration ÜRETMEZ)
+```
+
+Yukarıdaki hedef model kararları `DBP-04-05-LIFECYCLE-REMEDIATION-DECISION-01` GO-ANALYZE raporunun (LC-OD-01/02/03/04/05) owner-düzeltilmiş sonucudur; bu bölüm implementasyon başlatmaz — `ServiceOccurrence` şeması, CPE Policy-Engine handoff'unun kendi görevi ve LegalTimeShadowDiff production-promotion kararı hâlâ ayrı, gelecekteki owner-gated adımlardır.
+
 ---
 
 ## 13. Eligibility & Enforcement Capability Architecture
