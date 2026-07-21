@@ -376,6 +376,30 @@ D1 document architecture (tek annex) · D2 evidence target (`UyapOperation` 1→
 
 **DEVAM EDEN HOLD'LAR DEĞİŞMEDİ:** IMPLEMENTATION AUTHORITY NONE · REAL TRANSPORT 0 · UYAP CUTOVER HARD HOLD · PRODUCTION ADAPTER NOT AUTHORIZED · PORTAL AUTOMATION PROHIBITED · CREDENTIAL/PIN/PRIVATE-KEY CUSTODY PROHIBITED. `OD-UYAP-08` EXTERNAL-AUTHORITY-BLOCKED · `OD-UYAP-10` HARD HOLD.
 
+## 20. Module Boundary Contracts (UYAP-MODULE-BOUNDARY-CONTRACTS-01)
+
+Bu bölüm ADDITIVE'dir; §1-19 substantive metni reopen edilmez veya değiştirilmez. F2/D12 gereği ratifiye edilen **F3 (MODULE-BASED UYAP BOUNDARY CONTRACTS)** bir canonical contract pack olarak canonicalize edilmiştir:
+
+```text
+project/docs/blueprint/UYAP-CONNECTOR-MODULE-BOUNDARY-CONTRACTS-v1.0.md
+  Durum   : CANONICAL CONTRACT PACK (subordinate normative annex DEĞİL, yeni constitution DEĞİL)
+  İşlev   : mevcut anayasayı (bu §19 + normatif annex UYAP-CONST-001..010) CONSUME eder
+  İçerik  : 5 dar modül boundary kontratı + shared envelope + cross-module matrix
+```
+
+**Ratifiye kontratlar (tam 20-alan şema + BOUNDARIES/PROHIBITED contract pack'te):**
+```text
+UYAP-BC-OFFICE-001      — Office / Avukat-Personel     (actor/lawyer/approval/signature authority)
+UYAP-BC-CLIENT-001      — Client / Müvekkil            (represented-party/POA/representation scope)
+UYAP-BC-DEBTOR-001      — Debtor / Borçlu              (identity/role/address/asset + ServiceOccurrence precision)
+UYAP-BC-RECEIVABLE-001  — Receivable / Alacak          (canonical snapshot/hash/amount, ADR-014 calc authority sınırı)
+UYAP-BC-COLLECTION-001  — Collection / Tahsilat        (receipt lifecycle owner, provider makbuz correlation)
+```
+
+**Kurallar:** merkezi UYAP kuralları modül kontratlarına KOPYALANMAZ (yalnız referans, OD-UYAP-02); domain ownership DEĞİŞMEZ; connector hiçbir bounded context'in domain owner'ı DEĞİLDİR; her kontrat REUSE/DELTA/GAP-NEW sınıflanır; runtime/schema/migration/transport/credential kararı YOK. ServiceOccurrence (PR #1503) schema foundation olarak REUSE edilir; UYAP result → ServiceOccurrence automatic write YOK, runtime wiring F3 tarafından YETKİLENDİRİLMEZ.
+
+**Faz durumu (bu ratifikasyonla):** F3 `UYAP-MODULE-BOUNDARY-CONTRACTS-01` CLOSED/CANONICAL · **F4-b: NOT AUTHORIZED / NOT STARTED.** HOLD'lar 6/6 DEĞİŞMEDİ; OD-UYAP-08 EXTERNAL-AUTHORITY-BLOCKED · OD-UYAP-10 HARD HOLD.
+
 ## Owner Approval Record
 
 ```text
