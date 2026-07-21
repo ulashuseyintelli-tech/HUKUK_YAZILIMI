@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClaimItemWriterRouterService } from '../claim-item/claim-item-writer-router.service';
@@ -30,6 +30,18 @@ export interface CreatePrecautionaryCostDto {
   label?: string;
   isClaimedInEnforcement?: boolean;
 }
+
+const CLAIMED_COST_TYPE_TO_CLAIM_ITEM_TYPE = {
+  HARC: 'FEE',
+  POSTA: 'EXPENSE',
+  VEKALET: 'ATTORNEY_FEE',
+  TEMINAT: 'EXPENSE',
+  YEDIEMIN: 'EXPENSE',
+  BILIRKISI: 'EXPENSE',
+  MUHAFAZA: 'EXPENSE',
+} as const;
+
+type SupportedClaimedCostType = keyof typeof CLAIMED_COST_TYPE_TO_CLAIM_ITEM_TYPE;
 
 @Injectable()
 export class PrecautionaryOrderService {
@@ -234,6 +246,10 @@ export class PrecautionaryOrderService {
    * İhtiyati haciz masraf kalemi ekle
    */
   async addCost(tenantId: string, dto: CreatePrecautionaryCostDto, userId: string) {
+    if (dto.isClaimedInEnforcement !== false) {
+      this.assertSupportedClaimedCostType(dto.costType);
+    }
+
     // Kararı kontrol et
     const order = await this.findOne(tenantId, dto.precautionaryOrderId);
 
@@ -433,17 +449,23 @@ export class PrecautionaryOrderService {
   /**
    * Masraf türünü ClaimItemType'a dönüştür
    */
-  private mapCostTypeToClaimItemType(costType: string): string {
-    const mapping: Record<string, string> = {
-      HARC: 'FEE',
-      POSTA: 'EXPENSE',
-      VEKALET: 'ATTORNEY_FEE',
-      TEMINAT: 'EXPENSE',
-      YEDIEMIN: 'EXPENSE',
-      BILIRKISI: 'EXPENSE',
-      MUHAFAZA: 'EXPENSE',
-      DIGER: 'OTHER',
-    };
-    return mapping[costType] || 'OTHER';
+  private mapCostTypeToClaimItemType(costType: unknown): string {
+    this.assertSupportedClaimedCostType(costType);
+    return CLAIMED_COST_TYPE_TO_CLAIM_ITEM_TYPE[costType];
+  }
+
+  private assertSupportedClaimedCostType(
+    costType: unknown,
+  ): asserts costType is SupportedClaimedCostType {
+    if (
+      typeof costType !== 'string'
+      || costType.trim().length === 0
+      || !Object.prototype.hasOwnProperty.call(CLAIMED_COST_TYPE_TO_CLAIM_ITEM_TYPE, costType)
+    ) {
+      throw new BadRequestException({
+        code: 'UNSUPPORTED_COMPONENT',
+        message: 'Precautionary cost component is not supported.',
+      });
+    }
   }
 }
