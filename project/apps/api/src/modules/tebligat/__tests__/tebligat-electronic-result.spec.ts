@@ -54,20 +54,39 @@ describe("TebligatService.recordPttResult passive guard scope", () => {
     const caseDebtorLifecycleGuard: any = {
       assertActiveByCaseDebtorId: jest.fn(),
     };
+    // DEBTOR-OF01-HISTORY-P03: recordPttResult artık ServiceOccurrence + outbox event yazıyor
+    // (aynı transaction). Bu testin odağı (passive guard scope) etkilenmez; yalnız DI mock'u
+    // yeni bağımlılıkları karşılamalıdır.
+    const serviceOccurrenceService: any = {
+      createWithinTransaction: jest.fn().mockResolvedValue({
+        occurrence: { id: "occ-1", recordedAt: new Date("2026-07-22T00:00:00Z") },
+        created: true,
+      }),
+    };
+    const domainEventIngestService: any = {
+      appendInTransaction: jest.fn().mockResolvedValue({ aggregateVersion: BigInt(1) }),
+    };
     const svc = new TebligatService(
       prisma,
       debtorService,
       {} as any,
-      caseDebtorLifecycleGuard
+      caseDebtorLifecycleGuard,
+      serviceOccurrenceService,
+      domainEventIngestService
     );
 
-    await svc.recordPttResult("t1", "tb-ptt-1", {
-      pttResult: TebligatPttResult.TESLIM_EDILDI,
-    } as any);
+    await svc.recordPttResult(
+      "t1",
+      "tb-ptt-1",
+      { pttResult: TebligatPttResult.TESLIM_EDILDI } as any,
+      "user-1"
+    );
 
     expect(prisma.tebligat.update).toHaveBeenCalled();
     expect(debtorService.syncServiceStatusInTx).toHaveBeenCalled();
     expect(caseDebtorLifecycleGuard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
+    expect(serviceOccurrenceService.createWithinTransaction).toHaveBeenCalled();
+    expect(domainEventIngestService.appendInTransaction).toHaveBeenCalled();
   });
 });
 
@@ -90,7 +109,9 @@ describe("TebligatService.recordElectronicResult", () => {
       prisma,
       debtorService,
       uetsService,
-      caseDebtorLifecycleGuard
+      caseDebtorLifecycleGuard,
+      {} as any,
+      {} as any
     );
     return { svc, prisma, debtorService, uetsService, caseDebtorLifecycleGuard };
   };

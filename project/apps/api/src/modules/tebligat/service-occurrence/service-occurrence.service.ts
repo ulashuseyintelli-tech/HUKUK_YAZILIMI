@@ -65,6 +65,46 @@ export class ServiceOccurrenceService {
     return this.createWithStrongSourceHash(command, data);
   }
 
+  /**
+   * DEBTOR-OF01-HISTORY-P03 — caller-supplied transaction içinde create.
+   * Nested Prisma transaction AÇMAZ; kilit/idempotency mantığı createStrongSourceHashCore ile
+   * standalone createOccurrence ile TEK bir internal primitive'i paylaşır (owner brief §6).
+   * Retry burada YAPILMAZ — transaction'ın sahibi çağırandır, retry kararı da onundur.
+   */
+  async createWithinTransaction(
+    tx: Prisma.TransactionClient,
+    command: CreateServiceOccurrenceCommand,
+  ): Promise<CreateServiceOccurrenceResult> {
+    this.validateFactualFields(
+      command.occurrenceType,
+      command.timePrecision,
+      command.occurredAt,
+      command.actor,
+      command.sourceSystemCode,
+      command.sourceCode,
+      command.sourceNote,
+    );
+    if (!command.idempotencyMode) {
+      throw new ServiceOccurrenceValidationError("idempotencyMode zorunludur, örtük NONE varsayılamaz");
+    }
+    if (command.idempotencyMode === IdempotencyMode.STRONG_SOURCE_HASH && !command.sourcePayloadHash?.trim()) {
+      throw new ServiceOccurrenceValidationError("STRONG_SOURCE_HASH modu sourcePayloadHash gerektirir");
+    }
+
+    const parent = await this.loadParentTebligat(command.tenantId, command.sourceTebligatId, tx);
+    const data = this.buildCreateData(command, parent);
+
+    try {
+      if (command.idempotencyMode === IdempotencyMode.NONE) {
+        const occurrence = await tx.serviceOccurrence.create({ data });
+        return { occurrence, created: true };
+      }
+      return await this.createStrongSourceHashCore(tx, command, data);
+    } catch (error) {
+      throw this.mapWriteError(error);
+    }
+  }
+
   async supersedeOccurrence(command: SupersedeServiceOccurrenceCommand): Promise<SupersedeServiceOccurrenceResult> {
     this.validateFactualFields(
       command.replacement.occurrenceType,
@@ -176,8 +216,12 @@ export class ServiceOccurrenceService {
     }
   }
 
-  private async loadParentTebligat(tenantId: string, sourceTebligatId: string) {
-    const parent = await this.prisma.tebligat.findFirst({
+  private async loadParentTebligat(
+    tenantId: string,
+    sourceTebligatId: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
+    const parent = await client.tebligat.findFirst({
       where: { id: sourceTebligatId, tenantId },
       select: { id: true, caseId: true, caseDebtorId: true },
     });
@@ -217,6 +261,16 @@ export class ServiceOccurrenceService {
     command: CreateServiceOccurrenceCommand,
     data: Prisma.ServiceOccurrenceUncheckedCreateInput,
   ): Promise<CreateServiceOccurrenceResult> {
+    return this.withRetryableTransaction((tx) => this.createStrongSourceHashCore(tx, command, data));
+  }
+
+  /** createWithStrongSourceHash (standalone+retry) ile createWithinTransaction (caller-tx) arasında
+   * paylaşılan TEK internal primitive — owner brief §6 "duplicate validation logic oluşturulmaz". */
+  private async createStrongSourceHashCore(
+    tx: Prisma.TransactionClient,
+    command: CreateServiceOccurrenceCommand,
+    data: Prisma.ServiceOccurrenceUncheckedCreateInput,
+  ): Promise<CreateServiceOccurrenceResult> {
     const sourcePayloadHash = command.sourcePayloadHash as string; // validated non-empty önce
     const lockKey = serviceOccurrenceCreateLockKey(
       command.tenantId,
@@ -225,28 +279,26 @@ export class ServiceOccurrenceService {
       sourcePayloadHash,
     );
 
-    return this.withRetryableTransaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-      const existing = await tx.serviceOccurrence.findFirst({
-        where: {
-          tenantId: command.tenantId,
-          sourceTebligatId: command.sourceTebligatId,
-          sourceSystemCode: command.sourceSystemCode,
-          sourcePayloadHash,
-        },
-      });
-
-      if (existing) {
-        if (this.isFactualPayloadEqual(existing, command)) {
-          return { occurrence: existing, created: false, reason: "IDEMPOTENT_REUSE" as const };
-        }
-        throw new ServiceOccurrenceIdempotencyConflictError();
-      }
-
-      const occurrence = await tx.serviceOccurrence.create({ data });
-      return { occurrence, created: true as const };
+    const existing = await tx.serviceOccurrence.findFirst({
+      where: {
+        tenantId: command.tenantId,
+        sourceTebligatId: command.sourceTebligatId,
+        sourceSystemCode: command.sourceSystemCode,
+        sourcePayloadHash,
+      },
     });
+
+    if (existing) {
+      if (this.isFactualPayloadEqual(existing, command)) {
+        return { occurrence: existing, created: false, reason: "IDEMPOTENT_REUSE" as const };
+      }
+      throw new ServiceOccurrenceIdempotencyConflictError();
+    }
+
+    const occurrence = await tx.serviceOccurrence.create({ data });
+    return { occurrence, created: true as const };
   }
 
   private isFactualPayloadEqual(existing: ServiceOccurrence, command: CreateServiceOccurrenceCommand): boolean {

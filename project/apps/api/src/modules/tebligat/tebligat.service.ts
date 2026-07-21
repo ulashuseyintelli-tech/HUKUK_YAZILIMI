@@ -5,10 +5,15 @@ import {
   Logger,
 } from "@nestjs/common";
 import { DebtorType } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { DebtorService } from "../debtor/debtor.service";
 import { UetsService } from "./uets.service"; // PR-S1: UETS/KEP teslim durumu sorgulama
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
+import { ServiceOccurrenceService } from "./service-occurrence/service-occurrence.service";
+import { IdempotencyMode } from "./service-occurrence/service-occurrence.types";
+import { DomainEventIngestService } from "../icrabot/domain-event-ingest/domain-event-ingest.service";
+import { DomainEvent } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
 import {
   CreateTebligatDto,
   RecordPttResultDto,
@@ -69,7 +74,9 @@ export class TebligatService {
     private prisma: PrismaService,
     private debtorService: DebtorService, // PR-D5-b-1: CaseDebtor senkronu
     private uetsService: UetsService, // PR-S1: UETS/KEP teslim durumu
-    private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService
+    private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
+    private serviceOccurrenceService: ServiceOccurrenceService, // DEBTOR-OF01-HISTORY-P03
+    private domainEventIngestService: DomainEventIngestService // DEBTOR-OF01-HISTORY-P03
   ) {}
 
   /// <remarks>
@@ -374,7 +381,7 @@ export class TebligatService {
   /**
    * PTT sonucunu kaydet ve sonraki adımı belirle
    */
-  async recordPttResult(tenantId: string, id: string, dto: RecordPttResultDto) {
+  async recordPttResult(tenantId: string, id: string, dto: RecordPttResultDto, actorUserId: string) {
     const tebligat = await this.findById(tenantId, id);
 
     const updateData: any = {
@@ -426,6 +433,12 @@ export class TebligatService {
 
     let syncResult: { debtorId: string; addressId: string | null; newStatus: string; channel: string | null; returnReason: string | null } | null = null;
 
+    // DEBTOR-OF01-HISTORY-P03: manuel PTT sonucu = USER_DECLARED occurredAtConfidence (operatör elle
+    // giriyor; SYSTEM_VERIFIED/EXTERNAL_SIGNED değil — bkz. owner brief §7-8). sourceNote bounded
+    // (500 karakter — ServiceOccurrence şema/CHECK sınırı) ve sanitize edilmiş (raw payload/PII yok).
+    const resolvedBarcodeNo: string | null = dto.barcodeNo || tebligat.barcodeNo || null;
+    const boundedSourceNote: string | null = dto.pttResultNote ? dto.pttResultNote.slice(0, 500) : null;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const upd = await (tx as any).tebligat.update({ where: { id }, data: updateData });
       if (shouldSync) {
@@ -439,6 +452,52 @@ export class TebligatService {
           actionDate,
         });
       }
+
+      // DEBTOR-OF01-HISTORY-P03: immutable ServiceOccurrence + outbox event AYNI transaction'da
+      // (owner brief §5 — atomik: Tebligat + CaseDebtor + ServiceOccurrence + outbox). Herhangi bir
+      // adım başarısız olursa TÜM transaction rollback olur (Tebligat de yazılmaz).
+      const occurrenceResult = await this.serviceOccurrenceService.createWithinTransaction(tx, {
+        tenantId,
+        sourceTebligatId: tebligat.id,
+        occurrenceType: "POSTAL_DELIVERY_RESULT",
+        sourceSystemCode: "MANUAL", // owner brief §7: canlı PTT entegrasyonu gelmeden sourceSystemCode=PTT YAZILMAZ
+        sourceCode: dto.pttResult,
+        occurredOn: actionDate,
+        occurredAt: null,
+        timePrecision: "DATE_ONLY",
+        barcodeNo: resolvedBarcodeNo,
+        sourceNote: boundedSourceNote,
+        evidenceReference: null,
+        actor: { userId: actorUserId },
+        idempotencyMode: IdempotencyMode.NONE, // owner brief §8: güçlü dış-kaynak anahtarı yok, heuristic dedup YASAK
+      });
+
+      // owner brief §10: aggregateType kapalı union'da ('Case'|'Debtor'|'Client'|'Lawyer'|'Tenant')
+      // ServiceOccurrence YOK; bu paylaşılan tipi genişletmek Collection/Bank modüllerini de etkiler
+      // (bounded-context dışı). Repository'nin KENDİ konvansiyonuna uyulur: tüm case-scoped event'ler
+      // aggregateType='Case'+aggregateId=caseId kullanır (bkz. PAYMENT_REVERSED emsali); occurrence'a
+      // özgü alanlar (serviceOccurrenceId dahil) payload'da taşınır.
+      const event: DomainEvent = {
+        header: {
+          eventId: randomUUID(),
+          aggregateType: "Case",
+          aggregateId: tebligat.caseId,
+          eventType: "SERVICE_OCCURRENCE_RECORDED",
+          occurredAt: actionDate.toISOString(),
+          occurredAtConfidence: "USER_DECLARED",
+          actor: { type: "HUMAN", userId: actorUserId },
+          tenantId,
+        },
+        payload: {
+          serviceOccurrenceId: occurrenceResult.occurrence.id,
+          sourceTebligatId: tebligat.id,
+          occurrenceType: "POSTAL_DELIVERY_RESULT",
+          occurredOn: actionDate.toISOString(),
+          recordedAt: occurrenceResult.occurrence.recordedAt.toISOString(),
+        },
+      };
+      await this.domainEventIngestService.appendInTransaction(tx, event);
+
       return upd;
     });
 
