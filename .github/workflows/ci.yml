@@ -862,6 +862,22 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="portal-token-version-revocation\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # CLIENT-P2-U03-I01: getCaseDetail() explicit nested-select projeksiyonu (POL-D §21/
+      # BP-06 §23) — internal-only alanlar (dahiliNot, staff/personel referansları, otomasyon/
+      # OCR/risk durumu, CaseDebtor.quickNote/passivatedById, Collection.idempotencyKey,
+      # Due.finalizationNote/vergi alanları) ve raw lifecycleEvents artık select'te hiç yok;
+      # exact select shape + bounded response shape + mevcut tenant/client-scope ve
+      # NotFoundException semantics regresyonu kanıtlanır.
+      - name: CLIENT-P2-U03-I01 case-detail projection tests
+        run: |
+          cd apps/api
+          for f in src/modules/portal/__tests__/case-detail-projection.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-P2-U03-I01 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="case-detail-projection\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
       # MPB-028(a) PR-2: LegalDeadlineService (rejim hesaplama, snapshot immutable/supersede,
       # objectionPeriodDays validation) + TebligatService TK 21/2 correction / TK m.20 explicit-
       # override unit-static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç

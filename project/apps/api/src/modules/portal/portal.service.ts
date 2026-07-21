@@ -1,6 +1,7 @@
 import { Injectable, Logger, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, ConflictException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { maskEmail } from "../../common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
@@ -10,6 +11,36 @@ import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-aud
 import type { AuditActor } from "../client/client.service";
 import { generateRawInviteToken, hashInviteToken } from "../auth/invite/user-invite-token.util";
 import * as bcrypt from "bcrypt";
+
+/**
+ * CLIENT-P2-U03-I01: getCaseDetail() client-facing response contract (POL-D §21/BP-06 §23).
+ * Yalnız bu select'in kapsadığı alanlar client'a döner; CaseDebtor.id, dahiliNot, staff/personel
+ * referansları, otomasyon/OCR/risk alanları, lifecycleEvents ve description'lar KASITLI olarak
+ * DIŞARIDA — bu sabit yalnız getCaseDetail() tarafından kullanılır, başka portal endpoint'ine
+ * yayılmaz.
+ */
+const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
+  id: true,
+  fileNumber: true,
+  executionFileNumber: true,
+  type: true,
+  caseStatus: true,
+  workflowStage: true,
+  caseDate: true,
+  principalAmount: true,
+  debtors: {
+    select: {
+      debtor: { select: { name: true, type: true } },
+    },
+  },
+  collections: {
+    select: { id: true, date: true, type: true, amount: true },
+    orderBy: { date: "desc" },
+  },
+  dues: {
+    select: { id: true, type: true, amount: true, dueDate: true, currency: true },
+  },
+});
 
 @Injectable()
 export class PortalService {
@@ -264,6 +295,11 @@ export class PortalService {
 
   /**
    * Tek dosya detayı
+   *
+   * CLIENT-P2-U03-I01 (POL-D §21/BP-06 §23): raw `include` yerine explicit `select`
+   * (CASE_DETAIL_SELECT) — internal-only alanlar (dahiliNot, staff/personel referansları,
+   * otomasyon/OCR/risk durumu) ve raw lifecycleEvents (internal audit trail) response'a
+   * hiç girmez; description alanları (collection/due) mixed-purpose riskiyle dışarıda.
    */
   async getCaseDetail(caseId: string, clientId: string, tenantId: string) {
     const caseData = await this.prisma.case.findFirst({
@@ -276,19 +312,7 @@ export class PortalService {
           { caseClients: { some: { clientId } } },
         ],
       },
-      include: {
-        debtors: {
-          include: { debtor: { select: { name: true, type: true } } },
-        },
-        collections: {
-          orderBy: { date: "desc" },
-        },
-        dues: true,
-        lifecycleEvents: {
-          orderBy: { createdAt: "desc" },
-          take: 20,
-        },
-      },
+      select: CASE_DETAIL_SELECT,
     });
 
     if (!caseData) {

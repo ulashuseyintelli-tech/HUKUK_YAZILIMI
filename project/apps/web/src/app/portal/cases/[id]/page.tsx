@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, User, DollarSign, Calendar, Loader2, TrendingUp, Clock, CheckCircle } from "lucide-react";
+import { ArrowLeft, FileText, User, DollarSign, Loader2, TrendingUp, Clock, CheckCircle } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -163,8 +163,8 @@ export default function PortalCaseDetailPage() {
           <div className="p-4">
             {caseData.debtors?.length > 0 ? (
               <div className="space-y-3">
-                {caseData.debtors.map((d: any) => (
-                  <div key={d.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                {caseData.debtors.map((d: any, idx: number) => (
+                  <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
                       <User className="h-5 w-5 text-gray-500" />
                     </div>
@@ -193,7 +193,7 @@ export default function PortalCaseDetailPage() {
               <div className="space-y-2">
                 {caseData.dues.map((d: any) => (
                   <div key={d.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                    <span className="text-sm">{d.description || d.type}</span>
+                    <span className="text-sm">{d.type}</span>
                     <span className="font-medium">{Number(d.amount).toLocaleString("tr-TR")} ₺</span>
                   </div>
                 ))}
@@ -218,7 +218,7 @@ export default function PortalCaseDetailPage() {
               <thead>
                 <tr className="border-b">
                   <th className="text-left py-2">Tarih</th>
-                  <th className="text-left py-2">Açıklama</th>
+                  <th className="text-left py-2">Tür</th>
                   <th className="text-right py-2">Tutar</th>
                 </tr>
               </thead>
@@ -226,7 +226,7 @@ export default function PortalCaseDetailPage() {
                 {caseData.collections.map((c: any) => (
                   <tr key={c.id} className="border-b last:border-0">
                     <td className="py-2">{new Date(c.date).toLocaleDateString("tr-TR")}</td>
-                    <td className="py-2 text-gray-600">{c.description || c.type}</td>
+                    <td className="py-2 text-gray-600">{c.type}</td>
                     <td className="py-2 text-right font-medium text-green-600">
                       +{Number(c.amount).toLocaleString("tr-TR")} ₺
                     </td>
@@ -236,34 +236,6 @@ export default function PortalCaseDetailPage() {
             </table>
           ) : (
             <p className="text-gray-500 text-sm text-center py-4">Henüz tahsilat yok</p>
-          )}
-        </div>
-      </div>
-
-      {/* İşlem Geçmişi */}
-      <div className="bg-white rounded-lg border">
-        <div className="p-4 border-b">
-          <h2 className="font-semibold flex items-center gap-2">
-            <Calendar className="h-4 w-4" /> İşlem Geçmişi
-          </h2>
-        </div>
-        <div className="p-4">
-          {caseData.lifecycleEvents?.length > 0 ? (
-            <div className="space-y-3">
-              {caseData.lifecycleEvents.map((event: any) => (
-                <div key={event.id} className="flex gap-3">
-                  <div className="w-2 h-2 mt-2 bg-blue-500 rounded-full flex-shrink-0"></div>
-                  <div>
-                    <p className="font-medium text-sm">{event.action}</p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(event.createdAt).toLocaleDateString("tr-TR")} - {event.description}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 text-sm text-center py-4">İşlem geçmişi yok</p>
           )}
         </div>
       </div>
