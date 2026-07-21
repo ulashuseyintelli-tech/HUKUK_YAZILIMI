@@ -275,6 +275,11 @@ class ApiClient {
     });
   }
 
+  /** OFFICE-AUTH-P02-HARDENING-R01: auth gerektirmeyen public capability sorgusu. */
+  async getAuthCapabilities() {
+    return this.request<{ passwordRecoveryEnabled: boolean }>("/auth/capabilities");
+  }
+
   async register(data: {
     firmName: string;
     name: string;

@@ -3,9 +3,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import LoginPage from "@/app/auth/login/page";
 
 const loginMock = vi.fn().mockResolvedValue(undefined);
+const getAuthCapabilitiesMock = vi.fn().mockResolvedValue({ passwordRecoveryEnabled: false });
 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({ login: loginMock }),
+}));
+
+vi.mock("@/lib/api", () => ({
+  api: { getAuthCapabilities: (...args: any[]) => getAuthCapabilitiesMock(...args) },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -19,6 +24,8 @@ vi.mock("next/navigation", () => ({
 describe("LoginPage — OFFICE-AUTH-P01", () => {
   beforeEach(() => {
     loginMock.mockClear();
+    getAuthCapabilitiesMock.mockClear();
+    getAuthCapabilitiesMock.mockResolvedValue({ passwordRecoveryEnabled: false });
     localStorage.clear();
   });
 
@@ -94,5 +101,33 @@ describe("LoginPage — OFFICE-AUTH-P01", () => {
 
     await waitFor(() => expect(loginMock).toHaveBeenCalledWith("a@x.com", "sifre123456", "telli-hukuk", false));
     expect(localStorage.getItem("rememberedLogin")).toBeNull();
+  });
+
+  describe("OFFICE-AUTH-P02-HARDENING-R01 — capability-gated 'Şifremi unuttum' linki", () => {
+    it("[8] varsayılan (fetch tamamlanmadan/false) → link gösterilmez (fail-closed)", () => {
+      getAuthCapabilitiesMock.mockImplementation(() => new Promise(() => {})); // asla çözülmez
+      render(<LoginPage />);
+      expect(screen.queryByRole("link", { name: /Şifremi unuttum/i })).toBeNull();
+    });
+
+    it("[9] capability passwordRecoveryEnabled=true → link gösterilir", async () => {
+      getAuthCapabilitiesMock.mockResolvedValue({ passwordRecoveryEnabled: true });
+      render(<LoginPage />);
+      await waitFor(() => expect(screen.getByRole("link", { name: /Şifremi unuttum/i })).toBeTruthy());
+    });
+
+    it("[10] capability passwordRecoveryEnabled=false → link gösterilmez", async () => {
+      getAuthCapabilitiesMock.mockResolvedValue({ passwordRecoveryEnabled: false });
+      render(<LoginPage />);
+      await waitFor(() => expect(getAuthCapabilitiesMock).toHaveBeenCalled());
+      expect(screen.queryByRole("link", { name: /Şifremi unuttum/i })).toBeNull();
+    });
+
+    it("[11] capability fetch HATA verirse → link gösterilmez (fail-closed)", async () => {
+      getAuthCapabilitiesMock.mockRejectedValue(new Error("network error"));
+      render(<LoginPage />);
+      await waitFor(() => expect(getAuthCapabilitiesMock).toHaveBeenCalled());
+      expect(screen.queryByRole("link", { name: /Şifremi unuttum/i })).toBeNull();
+    });
   });
 });
