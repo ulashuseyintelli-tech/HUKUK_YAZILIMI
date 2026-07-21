@@ -224,6 +224,15 @@ NOT (2026-07-21, OFFICE-AUTH-P02-GOVERNANCE-ENTRY reconciliation): OFFICE-AUTH-P
   refresh-token akışı, kısa access TTL ve tam session-tazeliği mekanizması hâlâ YOKTUR.
   Yukarıdaki OWNER DISPOSITION: DEFERRED (2026-07-14) kararı DEĞİŞMEDİ ve CANDIDATE-B'nin kalan
   tam kapsamı için geçerliliğini korur. Bkz. `decision-log.md` § 2026-07-21.
+
+NOT (2026-07-21, CLIENT-P2-U02-GOV reconciliation): CLIENT-P2-U02 (PR #1493, merged 2026-07-21)
+  `ClientPortalUser.tokenVersion` alanını ve 4 increment tetikleyicisini (password reset/change/
+  disable/reactivate) ayrıca IMPLEMENTED/CANONICAL hale getirdi — ancak bu AYRI bir programdadır
+  (CLIENT, bu OFFICE'in kendi CANDIDATE-B'si DEĞİL), AYRI bir modeldir (`ClientPortalUser`, `User`
+  DEĞİL) ve AYRI bir implementasyondur. CANDIDATE-B'nin OFFICE/staff-side kapsamı (refresh-token
+  akışı, kısa access TTL, tam session-tazeliği) BU KAYITLA HİÇ ETKİLENMEDİ/KAPATILMADI. Yukarıdaki
+  OWNER DISPOSITION: DEFERRED (2026-07-14) kararı DEĞİŞMEDİ. Detay: `decision-log.md`
+  CLIENT-P2-U02-GOV kaydı + `CLIENT-GOVERNANCE-CHARTER.md` §27.
 ```
 
 ### 4c. WAVE 2 Candidate Detay (redakte — güvenlik containment, 2026-07-14)
