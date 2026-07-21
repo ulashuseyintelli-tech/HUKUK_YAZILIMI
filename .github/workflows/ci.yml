@@ -1200,6 +1200,19 @@ jobs:
             --testPathPattern="uyap-retry-containment\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # UYAP-EVIDENCE-PII-PERSISTENCE-P01: CAP-11 queryDebtorAssets durable PII containment —
+      # ham debtorIdentityNo artık UyapRequestLog.requestData/responseData'ya YAZILMAZ (UYAP-CONST-007
+      # / UYAP-BC-DEBTOR-001). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyor → ayrı/açık
+      # step; dosya-varlığı pre-check (false-green guard) + passWithNoTests YOK.
+      - name: UYAP-EVIDENCE-PII-PERSISTENCE-P01 debtor-assets durable PII tests
+        run: |
+          cd apps/api
+          test -f src/modules/uyap/__tests__/uyap-debtor-assets-pii-persistence.spec.ts || \
+            { echo "MISSING UYAP-EVIDENCE-PII-PERSISTENCE-P01 spec: uyap-debtor-assets-pii-persistence.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="uyap-debtor-assets-pii-persistence\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
