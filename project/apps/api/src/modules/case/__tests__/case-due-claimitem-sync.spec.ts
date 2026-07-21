@@ -427,6 +427,101 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     expect(tx.claimItem.update).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [DueType.PRINCIPAL, DueType.OTHER],
+    [DueType.EXPENSE, DueType.OTHER],
+    [DueType.HARC, DueType.OTHER],
+    [DueType.OTHER, DueType.PRINCIPAL],
+  ])('updateDue %s -> %s OTHER admission/reclassification talebini business write oncesi reddeder', async (current, requested) => {
+    const tx = makeTx({
+      due: {
+        findFirst: jest.fn(async () => makeDue({ type: current })),
+        update: jest.fn(),
+      },
+      claimItem: {
+        findMany: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+    });
+    const { service, writerRouter } = makeService(tx);
+
+    await expectUnsupportedComponent(
+      service.updateDue('tenant-1', 'case-1', 'due-1', { type: requested }, 'requester-1'),
+    );
+
+    expect(tx.due.update).not.toHaveBeenCalled();
+    expect(tx.claimItem.findMany).not.toHaveBeenCalled();
+    expect(tx.claimItem.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+    expect(writerRouter.createSystemClaimItem).not.toHaveBeenCalled();
+    expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
+    expect(writerRouter.cancelSystemClaimItem).not.toHaveBeenCalled();
+  });
+
+  it.each([null, '', '   ', '___UNKNOWN___'])(
+    'updateDue runtime invalid requested type %p talebini fail-closed reddeder',
+    async (requested) => {
+      const tx = makeTx({
+        due: {
+          findFirst: jest.fn(async () => makeDue({ type: DueType.PRINCIPAL })),
+          update: jest.fn(),
+        },
+        claimItem: {
+          findMany: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+        },
+      });
+      const { service, writerRouter } = makeService(tx);
+
+      await expectUnsupportedComponent(
+        service.updateDue('tenant-1', 'case-1', 'due-1', { type: requested } as any, 'requester-1'),
+      );
+
+      expect(tx.due.update).not.toHaveBeenCalled();
+      expect(tx.claimItem.findMany).not.toHaveBeenCalled();
+      expect(tx.claimItem.create).not.toHaveBeenCalled();
+      expect(tx.claimItem.update).not.toHaveBeenCalled();
+      expect(writerRouter.createSystemClaimItem).not.toHaveBeenCalled();
+      expect(writerRouter.updateSystemClaimItem).not.toHaveBeenCalled();
+      expect(writerRouter.cancelSystemClaimItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it('legacy OTHER Due kaydinda type omitted update davranisini korur', async () => {
+    const tx = makeTx({
+      due: {
+        findFirst: jest.fn(async () => makeDue({ type: DueType.OTHER })),
+        update: jest.fn(async ({ data }: any) => {
+          const persisted = { ...data };
+          if (persisted.type === undefined) delete persisted.type;
+          return makeDue({ type: DueType.OTHER, ...persisted });
+        }),
+      },
+      claimItem: {
+        findMany: jest.fn(async () => [{ id: 'claim-legacy-other' }]),
+        update: jest.fn(async ({ data }: any) => ({ id: 'claim-legacy-other', ...data })),
+      },
+    });
+    const { service } = makeService(tx);
+
+    await service.updateDue('tenant-1', 'case-1', 'due-1', {
+      amount: 1250,
+      description: 'Legacy OTHER metadata',
+      dueDate: '2026-02-01',
+    }, 'requester-1');
+
+    expect(tx.due.update).toHaveBeenCalled();
+    expect(tx.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'claim-legacy-other' },
+      data: expect.objectContaining({
+        itemType: ClaimItemType.OTHER,
+        description: 'Legacy OTHER metadata',
+      }),
+    });
+  });
+
   it('updateDue NAFAKA -> NAFAKA same-side güncellemeye izin verir', async () => {
     const tx = makeTx({
       due: {

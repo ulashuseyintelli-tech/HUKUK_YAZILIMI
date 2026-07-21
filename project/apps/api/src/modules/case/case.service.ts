@@ -495,6 +495,22 @@ export class CaseService {
     }
   }
 
+  private assertDuePatchAdmission(current: DueType, requested?: DueType): void {
+    if (requested === undefined) return;
+    if (
+      requested === null ||
+      (typeof requested === "string" && requested.trim() === "") ||
+      !Object.values(DueType).includes(requested as DueType) ||
+      requested === DueType.OTHER ||
+      current === DueType.OTHER
+    ) {
+      throw new BadRequestException({
+        code: "UNSUPPORTED_COMPONENT",
+        message: "Due component is not supported for new ClaimItem formation.",
+      });
+    }
+  }
+
   /**
    * RFA-016: case.create içindeki inline-yeni taraflar (id YOK) için guard'lı resolve/create.
    * Transaction ÖNCESİ çağrılır (Tasarım A): guard mantığı tek-kaynak kalır (replike edilmez),
@@ -3596,6 +3612,7 @@ export class CaseService {
       });
       if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
 
+      this.assertDuePatchAdmission(due.type as DueType, data.type);
       assertGenericDueTypeTransition(due.type as DueType, data.type);
       const normalizedInterest = this.normalizeDueInterestForWrite(data, actorUserId, due);
 
