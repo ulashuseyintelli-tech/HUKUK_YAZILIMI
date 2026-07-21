@@ -653,7 +653,15 @@ export class UyapService {
     if (!tenantId) {
       throw new ForbiddenException('Tenant context required');
     }
-    const requestId = await this.logRequest('queryDebtorAssets', { debtorIdentityNo, caseId }, tenantId);
+    // UYAP-EVIDENCE-PII-PERSISTENCE-P01 (UYAP-CONST-007 / UYAP-BC-DEBTOR-001): ham debtorIdentityNo
+    // durable UyapRequestLog.requestData'ya YAZILMAZ; yalnız non-sensitive envelope tutulur
+    // (caseId + identityProvided). Gerçek sorgu girdisi (debtorIdentityNo) aşağıda kullanılmaya
+    // devam eder; masked stdout log ve caller'a dönen response DEĞİŞMEZ.
+    const requestId = await this.logRequest(
+      'queryDebtorAssets',
+      { caseId, identityProvided: Boolean(debtorIdentityNo) },
+      tenantId,
+    );
 
     try {
       this.logger.log(`[STUB] Borçlu mal varlığı sorgulanıyor: ${maskIdentity(debtorIdentityNo)}`);
@@ -674,7 +682,12 @@ export class UyapService {
         },
       };
 
-      await this.logResponse(requestId, response);
+      // Durable responseData ham debtorIdentityNo taşımamalı: caller'a dönen `response` DEĞİŞMEZ,
+      // yalnız log kopyası sanitize edilir (public/runtime response ile durable-log kopyası ayrılır).
+      const safeData = { ...(response.data as Record<string, unknown>) };
+      delete safeData.debtorIdentityNo;
+      const responseForLog: UyapResponse = { ...response, data: safeData };
+      await this.logResponse(requestId, responseForLog);
       return response;
     } catch (error: any) {
       const errorResponse: UyapResponse = {
