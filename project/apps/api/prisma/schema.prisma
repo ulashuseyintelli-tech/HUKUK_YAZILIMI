@@ -1222,6 +1222,7 @@ model Case {
   tebligatlar                   Tebligat[]
   legalDeadlineSnapshots        LegalDeadlineSnapshot[]
   legalTimeShadowDiffs          LegalTimeShadowDiff[]
+  serviceOccurrences            ServiceOccurrence[]
   claimItems                    ClaimItem[]
   ledgerEntries                 LedgerEntry[] // Tahsilat/düzeltme kayıtları
   precautionaryOrders           PrecautionaryOrder[] // İhtiyati haciz kararları
@@ -1440,6 +1441,9 @@ model CaseDebtor {
 
   // MPB-028(a) PR-2: LegalDeadlineSnapshot.caseDebtorId FK karsi iliskisi
   legalDeadlineSnapshots LegalDeadlineSnapshot[]
+
+  // DEBTOR-OF01-HISTORY-P01: ServiceOccurrence.caseDebtorId FK karsi iliskisi
+  serviceOccurrences ServiceOccurrence[]
 
   @@unique([caseId, debtorId, role])
   @@index([caseId])
@@ -2822,7 +2826,12 @@ model Tebligat {
   legalDeadlineSnapshots LegalDeadlineSnapshot[]
   // MPB-028(a) PR-3: LegalTimeShadowDiff.sourceTebligatId FK karsi iliskisi
   legalTimeShadowDiffs   LegalTimeShadowDiff[]
+  // DEBTOR-OF01-HISTORY-P01: ServiceOccurrence.sourceTebligatId FK karsi iliskisi
+  serviceOccurrences     ServiceOccurrence[]
 
+  @@unique([tenantId, id]) // DEBTOR-OF01-HISTORY-P01: ServiceOccurrence'in tenant-scoped
+  // composite FK hedefi (PasswordResetToken/User(tenantId,id) emsali) — id zaten globalde
+  // benzersiz, bu index yalnizca composite FK'nin referans alabilecegi bir hedef uretir.
   @@index([tenantId])
   @@index([caseId])
   @@index([caseDebtorId])
@@ -2895,6 +2904,93 @@ enum Tk21Type {
   TK_21_2 // MERNİS adresi (kapıya yapıştırma tarihi = tebliğ tarihi, gecikmesiz — TK m.21/2,
   // MPB-028(a) düzeltmesi: önceki "+15 gün" yorumu hatalıydı, bkz. legal-time-authority-rebase.md §1)
   TK_20 // Muvakkaten başka yere gitme (kapıya yapıştırma + 15 gün, TK m.20 — MPB-028(a) PR-2, additive)
+}
+
+// DEBTOR-OF01-HISTORY-P01: ServiceOccurrence — immutable/supersedable observed legal fact katmanı.
+// Canonical authority: DEBTOR-DBP-04-LEGAL-STATE-LEGALGUARD-v1.0.md §12.2 (owner-ratified,
+// DEBTOR-OF01-SERVICE-OCCURRENCE-CONTRACT-01-GOV, PR #1498 / fee56c1e). Tebligat (mutable process)
+// ile LegalDeadlineSnapshot (derived legal assessment) arasındaki üçüncü, ayrı katman. Bu model
+// hiçbir production code path tarafından yazılmaz/okunmaz (P01 = yalnız foundation).
+model ServiceOccurrence {
+  id           String      @id @default(cuid())
+  tenantId     String
+  caseId       String
+  case         Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  caseDebtorId String?
+  caseDebtor   CaseDebtor? @relation(fields: [caseDebtorId], references: [id], onDelete: Restrict)
+
+  // Tenant-scoped composite FK — ServiceOccurrence.tenantId'nin parent Tebligat.tenantId'den
+  // sapmasını DB seviyesinde engeller (PasswordResetToken→User(tenantId,id) emsali; bkz.
+  // Tebligat modelindeki @@unique([tenantId, id])). Index-only çözüme düşülmedi.
+  sourceTebligatId String
+  sourceTebligat   Tebligat @relation(fields: [tenantId, sourceTebligatId], references: [tenantId, id], onDelete: Restrict)
+
+  occurrenceType   ServiceOccurrenceType
+  sourceSystemCode String // extensible integration catalog — occurrenceType'tan AYRI (owner OD-SO-05)
+  sourceCode       String // pttResult veya electronic-delivery-status kodu (dış kaynak/operatör girdisi)
+
+  occurredOn    DateTime                       @db.Date // REQUIRED / DATE-ONLY (owner OD-SO-02)
+  occurredAt    DateTime? // OPTIONAL / EXACT UTC TIMESTAMP
+  timePrecision ServiceOccurrenceTimePrecision
+
+  recordedAt DateTime  @default(now()) // REQUIRED / SYSTEM UTC
+  receivedAt DateTime? // OPTIONAL / yalnız gerçek dış-sistem entegrasyonunda anlamlı
+
+  recordedByUserId String? // NULL unless deterministically proven (owner OD-SO-03)
+  recordedBySystem String? // LEGACY_BASELINE için sabit "LEGACY_MIGRATION"
+
+  barcodeNo         String?
+  sourceNote        String? @db.VarChar(500) // uzunluk-sınırlı (owner ek kısıt)
+  sourcePayloadHash String?
+  evidenceReference String?
+
+  // Supersession zinciri — LegalDeadlineSnapshot.supersedesSnapshotId emsali.
+  supersedesOccurrenceId String?            @unique
+  supersedesOccurrence   ServiceOccurrence? @relation("ServiceOccurrenceSupersession", fields: [supersedesOccurrenceId], references: [id], onDelete: Restrict)
+  supersededBy           ServiceOccurrence? @relation("ServiceOccurrenceSupersession")
+
+  status ServiceOccurrenceStatus @default(ACTIVE)
+
+  correctionReasonCode String? // yalnız supersede eden kayıtta REQUIRED (DB CHECK — bkz. migration)
+  provenanceStatus     ServiceOccurrenceProvenanceStatus? // yalnız LEGACY_BASELINE için LEGACY_CURRENT_STATE
+
+  createdAt DateTime @default(now())
+  // NOT: genel amaçlı updatedAt YOK (owner brief §5) — mutasyon yalnız DB trigger'ının izin
+  // verdiği tek dar ACTIVE→SUPERSEDED geçişidir, "son güncelleme zamanı" kavramı üretilmez.
+
+  @@index([tenantId, sourceTebligatId])
+  @@index([tenantId, caseId])
+  @@index([tenantId, caseDebtorId])
+  @@index([tenantId, occurredOn])
+  @@index([sourceTebligatId, status])
+  @@index([barcodeNo])
+}
+
+enum ServiceOccurrenceType {
+  POSTAL_DELIVERY_RESULT
+  ELECTRONIC_DELIVERY_RESULT
+  MANUAL_ATTESTATION
+  LEGACY_BASELINE
+}
+
+enum ServiceOccurrenceTimePrecision {
+  DATE_ONLY
+  EXACT_TIME
+}
+
+enum ServiceOccurrenceStatus {
+  ACTIVE
+  SUPERSEDED
+}
+
+// Owner brief §6: "Canonical doküman tam enum sözleşmesi vermiyorsa yeni ve geniş bir taxonomy
+// uydurulmayacaktır." Canonical (DBP-04 §12.2.4/OD-SO-03) yalnız TEK provenance değeri
+// (LEGACY_CURRENT_STATE) adlandırır — o da yalnız LEGACY_BASELINE kayıtları için. Bu yüzden
+// bilinçli olarak en dar temsil seçildi: tek-değerli enum, nullable, yalnız LEGACY_BASELINE
+// occurrence'larda doldurulur; gerçek-zamanlı occurrence'larda null kalır (provenance niteleyicisi
+// gerektirmezler). Genel/geniş bir provenance taxonomy'si bu görevle İCAT EDİLMEDİ.
+enum ServiceOccurrenceProvenanceStatus {
+  LEGACY_CURRENT_STATE
 }
 
 // MPB-028(a) PR-2: kanonik hukuki süre türü (bu PR yalnız OBJECTION_PERIOD kapsar)
