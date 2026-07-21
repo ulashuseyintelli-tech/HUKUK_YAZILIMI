@@ -401,8 +401,8 @@ lifecycle/compliance statüsü birbirinin yerine kullanılmaz (`SYS-COMP-002`).
 | ID / semantik | Semantic Role | Authority / Owner | System Lifecycle Status | Evidence / Compliance Status |
 |---|---|---|---|---|
 | `REC-AUTH-010` — Payment/Collection receipt varlığı ve statüsü | Dosyaya bağlanan para giriş fact'i; ClaimItem cache alanından çıkarılamaz | COLLECTION owner; receivable yalnız yetkili fact'i tüketir | `CURRENT PARTIAL` | `CONFIRMED / IDEMPOTENCY CONFIRMED; CANONICAL PUBLIC RECEIPT TENANT / OBJECT-SCOPE GATES CONFIRMED; PROVIDER FINALITY OPEN UNDER RC-COL / W2.2` |
-| `REC-AUTH-011` — Tahsilatın alacağa etkisi | Receipt'in target `LegalCalculationBucket` üzerindeki immutable `LegalApplication` etkisi; attribution ayrı ve non-authoritative fact'tir | RECEIVABLE bucket/context/snapshot semantics + policy; COLLECTION receipt/idempotency/outer transaction orchestration; RCV-COL boundary single writer `LegalApplicationWriter` | `TPA-03A FOUNDATION CLOSED / TPA-04B REQUIRED-EVIDENCE AMENDMENT CONTRACT RATIFIED / CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY / WRITER ABSENT` | `ACT-28/REC-AUTH-011/012 OPEN; TPA-04B implementation requires separate entry verification; writer/replay/cutover/retirement UNAUTHORIZED` |
-| `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile `MASRAF → FERİ → FAİZ → ANA PARA` sırasındaki exact-cent target legal-application sonucu | RECEIVABLE legal-calculation policy; COLLECTION canonical transaction orchestration; `LegalApplicationWriter` tek logical persistence writer'ıdır | `TARGET LEGALAPPLICATIONBATCH FOUNDATION PRESENT / WRITER-EVIDENCE CONTRACT RATIFIED / CURRENT AS-IS CLAIMITEM-KEYED LEDGER HISTORICAL LEGACY / SHADOW_ONLY` | `TPA-04B future amendment requires canonical TEXT snapshot evidence, bucket arithmetic and aggregate conservation; implementation/data/replay/writer/cutover NOT AUTHORIZED; ACT-28 / REC-AUTH-011/012 OPEN` |
+| `REC-AUTH-011` — Tahsilatın alacağa etkisi | Receipt'in target `LegalCalculationBucket` üzerindeki immutable `LegalApplication` etkisi; attribution ayrı ve non-authoritative fact'tir | RECEIVABLE bucket/context/snapshot semantics + policy; COLLECTION receipt/idempotency/outer transaction orchestration; RCV-COL boundary single writer `LegalApplicationWriter` | `TPA-03A FOUNDATION + TPA-04B REQUIRED-EVIDENCE SCHEMA AMENDMENT CLOSED / CURRENT AS-IS LEGACY PERSISTENCE / TARGET SHADOW_ONLY / WRITER ABSENT` | `ACT-28/REC-AUTH-011/012 OPEN; plan/writer/replay/cutover/retirement UNAUTHORIZED; next TPA-04C analysis owner-gated` |
+| `REC-AUTH-012` — Payment allocation | TBK100 ve geçerli validation ile `MASRAF → FERİ → FAİZ → ANA PARA` sırasındaki exact-cent target legal-application sonucu | RECEIVABLE legal-calculation policy; COLLECTION canonical transaction orchestration; `LegalApplicationWriter` tek logical persistence writer'ıdır | `TARGET LEGALAPPLICATIONBATCH FOUNDATION + REQUIRED-EVIDENCE PERSISTENCE PRESENT / CURRENT AS-IS CLAIMITEM-KEYED LEDGER HISTORICAL LEGACY / SHADOW_ONLY` | `Canonical TEXT snapshot evidence, bucket arithmetic and aggregate conservation PR #1470 ile present; data/replay/writer/cutover NOT AUTHORIZED; ACT-28 / REC-AUTH-011/012 OPEN` |
 | `REC-AUTH-013` — Overpayment / hold | Kapsamı belirlenmiş allocation/collection sonucu; principal'a sessiz yazılamaz | Allocation/Collection result owner | `CURRENT PARTIAL / SCOPE-BOUNDED` | `CONFIRMED WITHIN ADR-014 FIXTURE/ENGINE SCOPE; PRODUCTION REVALIDATION REQUIRED` |
 | `REC-AUTH-014` — Valid linked full reversal | Bağlı payment'ın canonical legal etkisini net-zero yapar | Reversal link + canonical allocation | `CURRENT / CANONICAL_WITHIN_LINKED_FULL_REVERSAL_SCOPE` | `CONFIRMED / UNIT + DISPOSABLE-DB + REAL CANCEL PATH` |
 | `REC-AUTH-015` — Partial reversal/refund | Ayrı ratifikasyon olmadan inference yapılamaz | Owner/contract henüz tanımlanmamış | `TARGET / PRODUCTION_NO_GO` | `NOT_IMPLEMENTED / OWNER DECISION REQUIRED` |
@@ -2018,6 +2018,25 @@ PR #1469 merged/non-blocking'dir; PR #407 closed/unmerged/no-further-action'dır
 schema amendment için non-blocking, writer/evidence/cutover için blocking kalır. ACT-28 ve
 REC-AUTH-011/012 `OPEN`; runtime/schema implementation bu canonicalization ile yetkili değildir.
 Sonraki yalnız `TPA-04B-ENTRY — OWNER GO-VERIFY REQUIRED`dır.
+
+## 23.15. TPA-04B required-evidence schema-amendment closure reconciliation — 2026-07-21
+
+Implementation PR #1470 / squash
+`9dabe8dbddecafad49dbe58958ef2c3642d14a01`, exact iki dosyalık amendment'ı canonical
+main'e taşımıştır: `schema.prisma` ve
+`20260721002219_legal_application_writer_evidence/migration.sql`.
+
+Required/default-free/no-backfill evidence alanları ve exact canonical snapshot `TEXT` payload'ı;
+snapshot/hash/ref/minorUnit/nonblank guard'ları; per-batch bucket uniqueness; APPLY/REVERSAL
+bucket arithmetic; immutable UPDATE/DELETE protection; nonempty-foundation fail-closed gate ve
+`receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` transaction-end
+conservation'ı kurulmuştur. PostgreSQL 16 apply/rollback/re-apply ile seeded hard-stop/unchanged
+row evidence'ı PASS'tir. `ApplicationAttribution` unchanged/non-authoritative kalır.
+
+Runtime writer ve backfill `NONE`; live/production DB apply `NOT AUTHORIZED / NOT PERFORMED`dır.
+ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus schema amendment için non-blocking,
+TPA-04C writer/evidence/cutover için `BLOCKING`dir. Sonraki yalnız `TPA-04C — PURE
+LEGALAPPLICATIONPLAN BUILDER ANALYSIS / OWNER GO-ANALYZE REQUIRED`; implementation yetkisi yoktur.
 
 ---
 

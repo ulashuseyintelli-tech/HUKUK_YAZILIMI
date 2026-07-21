@@ -19,7 +19,8 @@ legal-application boundary kararını, v1.4 ClaimItem formation-admission sözle
 v1.5 TPA-02 target persistence architecture kararını, v1.6 TPA-03 two-file hybrid
 schema-foundation kontratını, v1.7 TPA-04 target-native dormant single-writer kontratını
   v1.8 TPA-04A receipt-bound canonical snapshot/bucket identity kontratını ve
-  v1.9 TPA-04B required-evidence schema-amendment kontratını
+  v1.9 TPA-04B required-evidence schema-amendment kontratını ve PR #1470 / `9dabe8db`
+  implementation evidence'ını
 aynı canonical path'te taşır.
 PR #1139 ve PR #1140 tarihsel
 olarak geçerli kayıtlardır; içerikleri veya o tarihlerdeki owner kararları geriye dönük
@@ -365,7 +366,7 @@ yükümlülüğünü tek başına değiştirmez. `SettlementOffer` bağlamı aç
 |---|---|---|---|---|---|
 | Creditor authority | `CaseClient` / creditor set | CLIENT/creditor relation owner | Creditor/disposition views | `Case.clientId` financial authority olamaz | `CURRENT`; DBIND evidence; değişiklik açık supersession ister |
 | Collection Receipt | Current `Collection` receipt path | COLLECTION owner | Receipt/timeline/report views | Bank mock, event veya projection receipt yazamaz | `CURRENT PARTIAL`; idempotency+provider+tenant gates |
-| Legal Allocation / TBK 100 | Target: independent `LegalApplicationBatch` aggregate + immutable `LegalApplication` bucket-effect facts; current AS-IS/legacy: `LedgerEntry`/ClaimItem-keyed `LedgerAllocation` | RECEIVABLE bucket/snapshot semantics + TBK100 policy; COLLECTION receipt lifecycle/idempotency/outer transaction orchestration; RCV-COL boundary single writer `LegalApplicationWriter`, yalnız canonical Collection transaction client ile | Non-authoritative `ApplicationAttribution`; canonical-output-derived transitional `CollectionAllocation`; frozen legacy `ClaimItem.collectedAmount`; balance projections | ClaimItem, historical `LedgerAllocation`, projection, attribution, cache, disposition veya journal target legal-application authority olamaz; bağımsız endpoint/nested transaction, dual writer/dual authority yasaktır | `TPA-03A SCHEMA FOUNDATION CLOSED / TPA-04B REQUIRED-EVIDENCE AMENDMENT CONTRACT RATIFIED / TARGET SHADOW_ONLY`; implementation yalnız TPA-04B-ENTRY owner gate'inden sonra mümkündür; ACT-28, REC-AUTH-011/012 OPEN; writer/replay/cutover/retirement unauthorized |
+| Legal Allocation / TBK 100 | Target: independent `LegalApplicationBatch` aggregate + immutable `LegalApplication` bucket-effect facts; current AS-IS/legacy: `LedgerEntry`/ClaimItem-keyed `LedgerAllocation` | RECEIVABLE bucket/snapshot semantics + TBK100 policy; COLLECTION receipt lifecycle/idempotency/outer transaction orchestration; RCV-COL boundary single writer `LegalApplicationWriter`, yalnız canonical Collection transaction client ile | Non-authoritative `ApplicationAttribution`; canonical-output-derived transitional `CollectionAllocation`; frozen legacy `ClaimItem.collectedAmount`; balance projections | ClaimItem, historical `LedgerAllocation`, projection, attribution, cache, disposition veya journal target legal-application authority olamaz; bağımsız endpoint/nested transaction, dual writer/dual authority yasaktır | `TPA-03A FOUNDATION + TPA-04B REQUIRED-EVIDENCE SCHEMA AMENDMENT CLOSED / CANONICAL; TARGET SHADOW_ONLY`; ACT-28, REC-AUTH-011/012 OPEN; plan/writer/replay/cutover/retirement unauthorized |
 | Canonical receivable balance | Current legacy production views; target ADR-014 canonical core | Current owner until cutover; target calculation owner after gate | Shadow/compatibility/display DTO | Shadow adapter, frontend/report alternate calculation authority olamaz | `TARGET / SHADOW_ONLY`; ADR-014 owner-gated cutover |
 | Creditor Disposition | Current `CollectionDisposition` + lines | Approval-gated CLIENT/COLLECTION disposition owner | Client statement/disposition views | Receipt veya `clientId` entitlement/disposition authority olamaz | `CURRENT PARTIAL`; DBIND/TM3+reversal reconciliation |
 | Payout / Offset | Current payout/offset command paths | Authorized money-out/offset owner | Statement/payment views | Disposition draft veya journal line para çıkışı değildir | `CURRENT PARTIAL`; approval+idempotency+reversal gates |
@@ -663,7 +664,7 @@ kusurları typed fail-closed sonuç üretir. Plan output Receivable-owned saf
 allocation/cache input'u kullanmaz ve conservation sağlanmadan üretilemez.
 
 TPA-04B, writer-evidence/conservation persistence amendment'ının ratified contract'ıdır;
-implementation yalnız ayrı TPA-04B-ENTRY owner gate'inden sonra değerlendirilebilir. Bu kayıt
+exact iki dosyalık implementation PR #1470 / `9dabe8db` ile canonicaldır. Bu kayıt
 schema, migration, hash implementation, snapshot writer, plan builder, production shadow,
 consumer authority veya cutover yetkisi üretmez. PR #407 final disposition B ile
 closed/unmerged, requirements preserved ve code discarded'dır; extraction/reuse yasaktır. Synthetic
@@ -703,9 +704,26 @@ exact-inverse eşleşmesi TPA-04E'ye deferred'dır. DB JSON syntax/unique-key ve
 kontrollerini yapar; canonical serialization ile hash recomputation future writer sorumluluğudur.
 
 Bu owner kararı implementation authority üretmez. PR #1469 merge edilmiştir ve blocker değildir.
-Schema implementation girişi yalnız `TPA-04B-ENTRY — OWNER GO-VERIFY REQUIRED`dır. Synthetic
+Schema implementation closure evidence'ı aşağıdaki compliance hükmünde kayıtlıdır. Synthetic
 corpus schema amendment için non-blocking, writer/evidence/cutover için blocking; ACT-28 ve
 REC-AUTH-011/012 open kalır.
+
+### `SYS-FIN-013F — TPA-04B Required-Evidence Schema Amendment Evidence`
+
+TPA-04B implementation PR #1470 / squash
+`9dabe8dbddecafad49dbe58958ef2c3642d14a01`, exact `schema.prisma` + tek
+`20260721002219_legal_application_writer_evidence/migration.sql` scope'unda canonicaldır.
+Required/default-free/no-backfill alanlar; exact canonical snapshot `TEXT` payload'ı;
+snapshot/hash/ref/minorUnit/nonblank guard'ları; per-batch bucket uniqueness; APPLY/REVERSAL
+arithmetic; immutable UPDATE/DELETE protection; nonempty-foundation hard stop ve
+`receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` transaction-end
+conservation'ı kurulmuştur. PostgreSQL 16 apply/rollback/re-apply kanıtı PASS'tir;
+`ApplicationAttribution` unchanged/non-authoritative kalır.
+
+Runtime writer/backfill `NONE`; live/production DB apply `NOT AUTHORIZED / NOT PERFORMED`dır.
+Synthetic corpus TPA-04C writer/evidence/cutover için blocking; ACT-28 ve REC-AUTH-011/012 open
+kalır. Sonraki yalnız `TPA-04C — PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS / OWNER GO-ANALYZE
+REQUIRED`; implementation yetkisi yoktur.
 
 ### `SYS-FIN-014 — Claim Formation İki Seviyeli Taxonomy Kullanır`
 
@@ -1207,6 +1225,7 @@ kanıtla güncellenir.
 | v1.8, 2026-07-20 | RCV-COL-TPA-04A canonical snapshot / bucket identity contract canonicalization | Option C receipt-bound embedded `CanonicalReceivableApplicationSnapshotV1` ratifiye edildi. Narrow application-snapshot eligibility, envelope, RCV-CAS/v1 serialization/hash, bucket identity, fail-closed readiness ve pure plan sınırları canonicaldır. Broader ADR-013, schema/writer/production/cutover yetkileri açık kaldı. |
 | v1.8 compliance update, 2026-07-20 | RCV-PR407-CLOSE-B-GOV final disposition supersession | PR #407'nin eski keep-open kararı superseded; PR CLOSED UNMERGED, requirements RD01/TPA'da preserved, code discarded ve extraction/reuse prohibited. Constitution semantiği/version'ı, runtime veya implementation authority değişmedi. |
 | v1.9, 2026-07-20 | RCV-COL-TPA-04B writer-evidence schema-amendment contract canonicalization | Required/default-free/no-backfill snapshot and bucket evidence, canonical TEXT payload, exact identity constraints, per-batch uniqueness, arithmetic checks and aggregate exact-cent conservation ratified. Exact two-file implementation remains owner-gated; runtime writer/cutover authority yoktur. |
+| v1.9 compliance update, 2026-07-21 | RCV-COL-TPA-04B schema-amendment closure reconciliation | PR #1470 / `9dabe8db` exact two-file required-evidence amendment'ı ve PostgreSQL 16 apply/rollback/re-apply evidence'ı canonicaldır. Runtime writer/live DB apply/cutover authority yoktur; ACT-28/REC-AUTH-011/012 open kalır. |
 ---
 ## Son Hüküm
 

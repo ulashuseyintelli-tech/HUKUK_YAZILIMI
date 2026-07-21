@@ -2522,6 +2522,26 @@ cutover veya legacy retirement yetkisi üretmez. ACT-28 ve REC-AUTH-011/012 `OPE
 writer/evidence/cutover için blocking kalır. **NEXT ELIGIBLE ACTION: TPA-04B-ENTRY — OWNER
 GO-VERIFY REQUIRED / IMPLEMENTATION NOT AUTHORIZED.**
 
+**RCV-COL-TPA-04B Writer Evidence Schema Amendment Formal Closure Reconciliation (2026-07-21;
+CANONICAL UPON APPROVED GOVERNANCE MERGE):** Implementation PR #1470 / squash
+`9dabe8dbddecafad49dbe58958ef2c3642d14a01`, required CI `4/4 SUCCESS` ile canonical
+main'dedir. Exact diff yalnız `project/apps/api/prisma/schema.prisma` ve
+`project/apps/api/prisma/migrations/20260721002219_legal_application_writer_evidence/migration.sql`
+dosyalarıdır.
+
+Required/default-free/no-backfill evidence alanları, canonical snapshot `TEXT` payload'ı,
+snapshot/hash/ref/minorUnit/nonblank guards, per-batch bucket uniqueness, APPLY/REVERSAL
+arithmetic, immutable UPDATE/DELETE protection, nonempty-foundation hard stop ve
+`receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` transaction-end
+conservation kurulmuştur. PostgreSQL 16 apply/rollback/re-apply ve seeded hard-stop/unchanged-row
+evidence'ı PASS'tir. `ApplicationAttribution` unchanged/non-authoritative; runtime writer/backfill
+NONE; live/production DB apply NOT AUTHORIZED/NOT PERFORMED'dır.
+
+ACT-28 ve REC-AUTH-011/012 `OPEN`; PR #407 `CLOSED / UNMERGED / NO FURTHER ACTION`; synthetic
+corpus schema amendment için non-blocking, TPA-04C writer/evidence/cutover için `BLOCKING`dir.
+**NEXT ELIGIBLE ACTION: TPA-04C — PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS — OWNER
+GO-ANALYZE REQUIRED / IMPLEMENTATION NOT AUTHORIZED.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

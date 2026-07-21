@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-CLAIM-FORM-P02-S05-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor / RCV-CLAIM-MASTER-TRIAGE-R02-GOV post-S05 residual priority canonicalization
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-CLAIM-FORM-P02-S05-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-COL-TPA-04B schema-amendment formal closure / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor / RCV-CLAIM-MASTER-TRIAGE-R02-GOV post-S05 residual priority canonicalization
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -71,7 +71,7 @@ Single writer               : LEGALAPPLICATIONWRITER / CANONICAL COLLECTION TRAN
 TPA-03A implementation      : FORMALLY CLOSED / CANONICAL (PR #1449 / 63f0b0ea)
 TPA-04 writer contract      : OPTION C / RECORDED / CANONICAL UPON APPROVED MERGE
 TPA-04A snapshot contract   : OPTION C / RECEIPT-BOUND EMBEDDED CANONICAL SNAPSHOT / CANONICAL UPON APPROVED MERGE
-TPA-04B evidence contract   : TWO-FILE REQUIRED-EVIDENCE SCHEMA AMENDMENT / CANONICAL UPON APPROVED MERGE
+TPA-04B evidence amendment  : FORMALLY CLOSED / CANONICAL (PR #1470 / 9dabe8db)
 Claim Formation lane        : RECEIVABLE / CLAIM FORMATION
 RCV-CLAIM-FORM-P01-R01      : CONTRACT RATIFIED / FORMALLY CLOSED / CANONICAL
 RCV-CLAIM-FORM-P02-S01      : FORMALLY CLOSED / CANONICAL
@@ -83,7 +83,7 @@ Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S0
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
 Claim Formation next task   : RCV-CLAIM-FORM-P02-S06-I01 — SELECTED / NOT AUTHORIZED / SEPARATE OWNER GO REQUIRED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
-Next eligible action        : TPA-04B-ENTRY SCHEMA-AMENDMENT IMPLEMENTATION ENTRY GATE — OWNER GO-VERIFY REQUIRED
+Next eligible action        : TPA-04C PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS — OWNER GO-ANALYZE REQUIRED
 ```
 
 Bu kayıt yalnız governance/register alignment, gerçekleşen phase/workstream progression ve bir
@@ -2057,6 +2057,45 @@ değişmez. Bu kayıt implementation, kod/test, schema/migration, taxonomy/subty
 historical mutation, existing cost update/delete, human/web/OCR işi, Collection/shared-boundary,
 TPA-04B, Balance/TBK100, replay/data access veya cutover authority'si üretmez.
 
+### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
+
+```text
+IMPLEMENTATION PR           : #1470 / MERGED
+FINAL SHA                   : 9dabe8dbddecafad49dbe58958ef2c3642d14a01
+EXACT FILE SCOPE            : schema.prisma + 20260721002219_legal_application_writer_evidence/migration.sql
+REQUIRED / DEFAULT-FREE     : PASS
+NO BACKFILL                 : PASS
+SNAPSHOT PAYLOAD            : POSTGRESQL TEXT / JSONB PROHIBITED
+IDENTITY / FORMAT GUARDS    : SNAPSHOT HASH + REF + MINOR UNIT + NONBLANK PASS
+BUCKET GUARDS               : PER-BATCH UNIQUENESS + APPLY/REVERSAL ARITHMETIC PASS
+IMMUTABILITY                : UPDATE / DELETE PROTECTED
+FOUNDATION NONEMPTY GATE    : FAIL-CLOSED PASS
+POSTGRESQL 16               : APPLY / ROLLBACK / RE-APPLY PASS
+APPLICATIONATTRIBUTION      : UNCHANGED / NON-AUTHORITATIVE
+RUNTIME WRITER              : NONE
+BACKFILL                    : NONE
+LIVE / PRODUCTION DB APPLY  : NOT AUTHORIZED / NOT PERFORMED
+ACT-28 / REC-AUTH-011/012   : OPEN
+SYNTHETIC CORPUS            : SCHEMA AMENDMENT NON-BLOCKING; TPA-04C WRITER/EVIDENCE/CUTOVER BLOCKING
+NEXT                        : TPA-04C PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS
+NEXT AUTHORITY              : OWNER GO-ANALYZE REQUIRED / IMPLEMENTATION NOT AUTHORIZED
+```
+
+Canonical aggregate conservation guard'ı transaction sonunda yalnız şu exact formda uygulanır:
+
+```text
+receiptAmountMinor
+=
+SUM(appliedAmountMinor)
++ heldRemainderMinor
+```
+
+Required CI `4/4 SUCCESS`tır. Genel local test-inclusive type-check'in clean canonical main'de
+aynı şekilde yeniden üretilen tarihsel baseline hataları bu dar amendment'ın kapsamı dışındadır;
+required production type-check ve CI PASS kanıtı esastır. Bu reconciliation runtime writer,
+live DB apply, replay/evidence execution, consumer cutover, legacy retirement veya TPA-04C
+implementation authority'si üretmez.
+
 ## 2. Program/Register Alignment Kaydı
 
 | RCV kimliği | Canonical bağ | Yetki etkisi |
@@ -2256,7 +2295,7 @@ LEDGERALLOCATION         : CURRENT AS-IS / LEGACY PERSISTENCE
 COLLECTIONALLOCATION     : COMPATIBILITY PROJECTION ONLY / NO LEGAL FALLBACK
 COLLECTEDAMOUNT          : DEPRECATED NON-AUTHORITATIVE DERIVED CACHE / NO NEW CONSUMERS
 BALANCE ENGINE           : TARGET / SHADOW_ONLY / CUTOVER NOT AUTHORIZED
-ACT-28 / REC-AUTH-011/012: OPEN — TPA-04A/04B CONTRACTS CANONICAL; IMPLEMENTATION/CUTOVER/RETIREMENT REMAIN
+ACT-28 / REC-AUTH-011/012: OPEN — TPA-04B SCHEMA AMENDMENT CLOSED; PLAN/WRITER/EVIDENCE/CUTOVER/RETIREMENT REMAIN
 PR #407                  : FINAL DISPOSITION B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED
 RD01 CONTRACT            : RATIFIED / CANONICAL UPON APPROVED MERGE
 XD-001                   : AUTHORITY BOUNDARY RECORDED / CANONICAL UPON APPROVED MERGE
@@ -2266,8 +2305,8 @@ TPA-03 FOUNDATION        : OPTION B / TWO-FILE HYBRID CONTRACT CANONICAL
 TPA-03A FOUNDATION       : CLOSED / CANONICAL — PR #1449 / 63f0b0ea
 TPA-04 WRITER CONTRACT   : OPTION C / TARGET-NATIVE DORMANT SINGLE WRITER / CANONICAL
 TPA-04A SNAPSHOT CONTRACT: OPTION C / RECEIPT-BOUND EMBEDDED ENVELOPE / CANONICAL
-TPA-04B EVIDENCE CONTRACT: TWO-FILE REQUIRED-EVIDENCE AMENDMENT / CANONICAL UPON APPROVED MERGE
-NEXT ELIGIBLE ACTION     : TPA-04B-ENTRY — OWNER GO-VERIFY REQUIRED / IMPLEMENTATION NOT AUTHORIZED
+TPA-04B EVIDENCE AMENDMENT: CLOSED / CANONICAL — PR #1470 / 9dabe8db
+NEXT ELIGIBLE ACTION     : TPA-04C PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS / OWNER GO-ANALYZE REQUIRED
 OWNER GO                 : REQUIRED
 OWNER / RATIFIER         : OWNER — RD01 balance-exposure contract ratification
 DECISION DATE            : 2026-07-19
@@ -2315,7 +2354,7 @@ COLLECTIONALLOCATION COMPATIBILITY PROJECTION ONLY / NO LEGAL FALLBACK
 CLAIMITEM.COLLECTEDAMOUNT DEPRECATED NON-AUTHORITATIVE CACHE / NO NEW CONSUMERS
 BALANCE ENGINE TARGET / SHADOW_ONLY
 PR #407 FINAL DISPOSITION B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED
-ACT-28 / REC-AUTH-011 / REC-AUTH-012 OPEN — TPA-04A/04B CONTRACTS CANONICAL; IMPLEMENTATION/CUTOVER/RETIREMENT REMAIN
+ACT-28 / REC-AUTH-011 / REC-AUTH-012 OPEN — TPA-04B SCHEMA AMENDMENT CLOSED; PLAN/WRITER/EVIDENCE/CUTOVER/RETIREMENT REMAIN
 RD01 BALANCE-EXPOSURE CONTRACT RATIFIED / CANONICAL UPON APPROVED MERGE
 XD-001 AUTHORITY BOUNDARY RECORDED / CANONICAL UPON APPROVED MERGE
 TARGET PHYSICAL PERSISTENCE OPTION D / INDEPENDENT LEGALAPPLICATIONBATCH
@@ -2324,8 +2363,8 @@ TPA-03 OPTION B TWO-FILE HYBRID FOUNDATION CONTRACT
 TPA-03A CLOSED / CANONICAL — PR #1449 / 63f0b0ea
 TPA-04 OPTION C / TARGET-NATIVE DORMANT SINGLE-WRITER CONTRACT CANONICAL
 TPA-04A OPTION C / RECEIPT-BOUND SNAPSHOT + BUCKET IDENTITY CONTRACT CANONICAL
-TPA-04B REQUIRED-EVIDENCE SCHEMA AMENDMENT CONTRACT CANONICAL UPON APPROVED MERGE
-TPA-04B-ENTRY NEXT / OWNER GO-VERIFY REQUIRED / IMPLEMENTATION NOT AUTHORIZED
+TPA-04B REQUIRED-EVIDENCE SCHEMA AMENDMENT CLOSED / CANONICAL — PR #1470 / 9dabe8db
+TPA-04C PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS NEXT / OWNER GO-ANALYZE REQUIRED / IMPLEMENTATION NOT AUTHORIZED
 WS05–WS09 NOT AUTHORIZED / NOT STARTED
 CAN-CUT-01 / VER-05 OPEN
 CAN-CUT-02 OPEN
