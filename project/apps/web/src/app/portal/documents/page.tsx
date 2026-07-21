@@ -11,7 +11,6 @@ interface Document {
   fileName: string;
   fileSize: number;
   status: string;
-  reviewNote?: string;
   createdAt: string;
 }
 
@@ -218,7 +217,6 @@ export default function PortalDocumentsPage() {
                     <div className="font-medium">{doc.title}</div>
                     <div className="text-xs text-gray-500">{doc.fileName}</div>
                     {doc.description && <div className="text-xs text-gray-400 mt-1">{doc.description}</div>}
-                    {doc.reviewNote && doc.status === "REJECTED" && <div className="text-xs text-red-500 mt-1">Not: {doc.reviewNote}</div>}
                   </td>
                   <td className="px-4 py-3">{DOC_TYPES.find(t => t.value === doc.type)?.label || doc.type}</td>
                   <td className="px-4 py-3 text-gray-600">{formatFileSize(doc.fileSize)}</td>

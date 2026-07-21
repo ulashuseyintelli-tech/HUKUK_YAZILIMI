@@ -878,6 +878,21 @@ jobs:
             --testPathPattern="case-detail-projection\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # CLIENT-P2-U03-I02: getDocuments()/uploadDocument() explicit select projeksiyonu (POL-D
+      # §21/BP-06 §23) — filePath (internal storage location), reviewedBy/reviewedAt/reviewNote
+      # (internal review workflow), clientId/tenantId (authorization context) ve updatedAt artık
+      # select'te hiç yok; exact select shape + bounded response shape + getDocument()/
+      # deleteDocument()/getPendingDocuments() (internal/admin, select'siz) regresyonu kanıtlanır.
+      - name: CLIENT-P2-U03-I02 portal-document projection tests
+        run: |
+          cd apps/api
+          for f in src/modules/portal/__tests__/portal-document-projection.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-P2-U03-I02 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="portal-document-projection\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
       # MPB-028(a) PR-2: LegalDeadlineService (rejim hesaplama, snapshot immutable/supersede,
       # objectionPeriodDays validation) + TebligatService TK 21/2 correction / TK m.20 explicit-
       # override unit-static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç

@@ -42,6 +42,26 @@ const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
   },
 });
 
+/**
+ * CLIENT-P2-U03-I02: portal document client-facing response contract (POL-D §21/BP-06 §23).
+ * getDocuments() ve uploadDocument() ORTAK kullanır. filePath (internal storage location),
+ * reviewedBy/reviewedAt/reviewNote (internal review workflow), clientId/tenantId (authorization
+ * context) ve updatedAt KASITLI olarak DIŞARIDA — getDocument()/deleteDocument() (internal
+ * download/delete helper) ve admin document metodları bu sabiti kullanmaz, kendi raw doc
+ * erişimlerini korur.
+ */
+const PORTAL_DOCUMENT_CLIENT_SELECT = Prisma.validator<Prisma.PortalDocumentSelect>()({
+  id: true,
+  type: true,
+  title: true,
+  description: true,
+  fileName: true,
+  fileSize: true,
+  mimeType: true,
+  status: true,
+  createdAt: true,
+});
+
 @Injectable()
 export class PortalService {
   private readonly logger = new Logger(PortalService.name);
@@ -618,6 +638,7 @@ export class PortalService {
     return this.prisma.portalDocument.findMany({
       where: { clientId, tenantId },
       orderBy: { createdAt: "desc" },
+      select: PORTAL_DOCUMENT_CLIENT_SELECT,
     });
   }
 
@@ -649,6 +670,7 @@ export class PortalService {
         fileSize: data.fileSize,
         mimeType: data.mimeType,
       },
+      select: PORTAL_DOCUMENT_CLIENT_SELECT,
     });
 
     this.logger.log(`Portal belgesi yüklendi: ${data.fileName} (Client: ${data.clientId})`);
