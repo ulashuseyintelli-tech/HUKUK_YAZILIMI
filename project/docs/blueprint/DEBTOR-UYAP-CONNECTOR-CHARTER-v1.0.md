@@ -494,12 +494,29 @@ Attempt lineage           : OPEN
 OUTCOME_UNKNOWN           : NOT REPRESENTED
 Provider idempotency      : UNKNOWN
 Provider status query     : NOT IMPLEMENTED
-UYAP-MASTER-SYNTHESIS-01  : NOT STARTED
+UYAP-MASTER-SYNTHESIS-01  : CLOSED — bkz. §16
 EVIDENCE-01               : NOT STARTED
 CREDENTIAL-CUSTODY-01     : NOT STARTED
 TRANSPORT-PORT-01         : NOT STARTED
 SIMULATOR-01              : NOT STARTED
 ```
+
+## 16. UYAP-MASTER-SYNTHESIS-01 Closure — Central Connector Constitution
+
+```text
+UYAP-MASTER-SYNTHESIS-01 (GO-ANALYZE, owner-corrected, ULTRA)     : CLOSED / OWNER-CORRECTED CANONICAL ANALYSIS BASIS
+UYAP-MASTER-SYNTHESIS-01-GOV (GO-DOCS + IF GO-COMPLETE)           : CLOSED / CANONICAL
+CANONICAL CONSTITUTION HOME : project/docs/blueprint/UYAP-CONNECTOR-MASTER-SYNTHESIS-v1.0.md
+RATIFIED                    : OD-UYAP-01 (program home), OD-UYAP-02 (document architecture),
+                              OD-UYAP-07 (retry safety baseline)
+NOT SELECTED (bu görevle)   : OD-UYAP-03/04/05/06/08/09/10 — hepsi AÇIK
+REAL TRANSPORT              : 0
+IMPLEMENTATION AUTHORITY    : NONE
+UYAP CUTOVER                : HARD HOLD
+NEXT ELIGIBLE TASK          : EVIDENCE-01 — OWNER GO-ANALYZE REQUIRED
+```
+
+Bu bölüm bu charter'ı **reopen etmez** — §1-15 tüm kapanmış birimleriyle olduğu gibi kalır. `UYAP-CONNECTOR-MASTER-SYNTHESIS-v1.0.md`, connector-geneli kalıcı anayasal kuralların (State/Evidence/KVKK-retention/Credential/Transport/Retry/Simulator Constitution'ları, official-source Tier A/B/C sınıflandırması, risk register, A2Z roadmap) TEK merkezi kaynağıdır; bu Charter kronolojik kapanış kaydı olarak kalmaya devam eder, merkezi kural metni ORAYA taşınmamıştır ve buraya kopyalanmaz.
 
 ## Owner Approval Record
 
@@ -508,6 +525,6 @@ DBP-P2-UYAP-CONNECTOR-CHARTER-01-GOV — OWNER GO-DOCS + IF GO-COMPLETE
 Kaynak: DBP-P2-UYAP-CONNECTOR-MASTER-01 GO-ANALYZE (owner-accepted) sonucu.
 Canonical home: bu belge (project/docs/blueprint/DEBTOR-UYAP-CONNECTOR-CHARTER-v1.0.md).
 NORTH STAR: production-grade, çalışan, güvenli, denetlenebilir, controlled-cutover UYAP connector.
-NEXT ELIGIBLE TASK (bu belge tarafından seçilmez): TRANSPORT-AUTH-01 / EVIDENCE-01 / SIMULATOR-01
-GO-ANALYZE adaylarından owner seçimi.
+NEXT ELIGIBLE TASK (bu belge tarafından seçilmez): EVIDENCE-01 — OWNER GO-ANALYZE REQUIRED
+(bkz. §16).
 ```
