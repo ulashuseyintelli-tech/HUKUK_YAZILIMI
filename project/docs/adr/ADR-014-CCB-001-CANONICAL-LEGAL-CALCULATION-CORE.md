@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified and TPA-03A foundation closed 2026-07-20; TPA-04 Option C target-native plan-then-persist / dormant-first single-writer contract, TPA-04A receipt-bound snapshot/bucket identity contract and TPA-04B required-evidence schema-amendment contract ratified 2026-07-20; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 final disposition B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED; TPA-04B implementation, snapshot/plan/writer runtime, replay, cutover, retirement and PR-11 remain unauthorized until separate owner GO
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified and TPA-03A foundation closed 2026-07-20; TPA-04 Option C target-native plan-then-persist / dormant-first single-writer contract and TPA-04A receipt-bound snapshot/bucket identity contract ratified 2026-07-20; TPA-04B required-evidence schema-amendment contract ratified and exact two-file amendment closed/canonical via PR #1470 / `9dabe8db` 2026-07-21; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 final disposition B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED; snapshot/plan/writer runtime, replay, cutover, retirement and PR-11 remain unauthorized until separate owner GO
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -450,10 +450,11 @@ also fails closed and is not converted to HELD.
 
 TPA-04B required-evidence schema-amendment contract is ratified below. It is limited to the
 snapshot/version evidence, canonical payload, bucket arithmetic evidence and aggregate
-conservation constraints needed before any writer can exist. The implementation remains a
-separate owner-gated exact two-file task. PR #407 is closed unmerged under final disposition B
-and is not a code source; the synthetic corpus remains blocking for writer/evidence/cutover;
-ACT-28 and REC-AUTH-011/012 remain open.
+conservation constraints needed before any writer can exist. Its exact two-file implementation
+is closed/canonical via PR #1470 / `9dabe8db`; no runtime writer or live-database apply was
+authorized. PR #407 is closed unmerged under final disposition B and is not a code source; the
+synthetic corpus remains blocking for writer/evidence/cutover; ACT-28 and REC-AUTH-011/012
+remain open.
 
 ## TPA-04B Writer Evidence Schema Amendment Contract — 2026-07-20
 
@@ -529,6 +530,31 @@ replay execution, consumer cutover or legacy-remediation authority. PR #1469 is 
 not a schema-writer blocker. The physical synthetic-corpus worktree is non-blocking for the
 schema amendment and remains blocking for writer/evidence/cutover. The next task is only
 `TPA-04B-ENTRY — OWNER GO-VERIFY REQUIRED`; ACT-28 and REC-AUTH-011/012 remain open.
+
+## TPA-04B Schema-Amendment Implementation Evidence — 2026-07-21
+
+Implementation PR #1470 / squash
+`9dabe8dbddecafad49dbe58958ef2c3642d14a01` is `CLOSED / CANONICAL EVIDENCE`.
+Its exact two-file diff is `project/apps/api/prisma/schema.prisma` plus
+`project/apps/api/prisma/migrations/20260721002219_legal_application_writer_evidence/migration.sql`.
+The required, default-free and no-backfill evidence fields preserve canonical snapshot bytes as
+PostgreSQL `TEXT`; enforce snapshot/hash/ref/minor-unit/nonblank formats, per-batch bucket
+uniqueness, APPLY/REVERSAL bucket arithmetic, immutable UPDATE/DELETE protection and deferred
+transaction-end conservation:
+
+```text
+receiptAmountMinor
+=
+SUM(appliedAmountMinor)
++ heldRemainderMinor
+```
+
+PostgreSQL 16 disposable-database apply, rollback and re-apply evidence passed, including the
+nonempty-foundation hard stop and unchanged seeded-row hash. `ApplicationAttribution` is
+unchanged. Runtime writer and backfill are absent; live/production database apply was neither
+authorized nor performed. ACT-28 and REC-AUTH-011/012 remain open; the synthetic corpus remains
+blocking for writer/evidence/cutover. The next task is analysis-only `TPA-04C — Pure
+LegalApplicationPlan Builder Analysis`, requiring separate owner `GO-ANALYZE`.
 
 ## PR #407 Final Disposition B — 2026-07-20
 
@@ -983,3 +1009,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-20 | 3.2 | TPA-04A Option C receipt-bound embedded `CanonicalReceivableApplicationSnapshotV1`: exact eligibility/envelope, RCV-CAS/v1 serialization/hash, deterministic bucket identities, fail-closed readiness and pure `LegalApplicationPlan` input are ratified. Broader ADR-013 and TPA-04B+ implementation remain owner-gated. |
 | 2026-07-20 | 3.2 compliance update | PR #407 final disposition B supersedes its prior keep-open lifecycle decision: CLOSED UNMERGED, requirements preserved in RD01/TPA, code discarded, extraction/reuse prohibited. No architecture version or implementation authority changes. |
 | 2026-07-20 | 3.3 | TPA-04B required-evidence schema-amendment contract: required/default-free/no-backfill snapshot and bucket evidence fields, canonical TEXT payload, exact identity formats, per-batch bucket uniqueness, arithmetic checks and DB aggregate conservation are ratified. Implementation remains exact-two-file and owner-gated through TPA-04B-ENTRY. |
+| 2026-07-21 | 3.3 compliance update | TPA-04B schema-amendment closure: PR #1470 / `9dabe8db` establishes the exact two-file required-evidence amendment with PostgreSQL 16 apply/rollback/re-apply evidence. Runtime writer, live DB apply, replay, cutover and retirement remain unauthorized; ACT-28/REC-AUTH-011/012 remain open. |
