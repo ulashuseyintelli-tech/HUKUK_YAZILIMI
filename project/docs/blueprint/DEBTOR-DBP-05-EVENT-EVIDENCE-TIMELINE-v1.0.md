@@ -309,11 +309,13 @@ classification taksonomisi **LSO**.
 |---|---|
 | DA-02 lifecycle VR | **ÇÖZÜLDÜ: SUPERSESSION VERIFIED** — idempotent no-op → eski kayıt yalnız `status: ACTIVE→SUPERSEDED` → yeni create (payload alanları mutate edilmez); "immutable" DEĞİL (status alanı mutable) |
 | EventOutbox mutable-state VR | **ÇÖZÜLDÜ: MUTABLE VERIFIED** (iki outbox ailesi; şema + tek mutasyon yazarı) |
-| LegalTimeShadowDiff VR | kod-düzeyi create-only VERIFIED (yazar-yokluğu); DB-düzeyi immutability AÇIK |
-| OF-01 (Tebligat) davranışı | VR KALIYOR (update path'leri taranmadı) |
-| AE ↔ CPE DecisionLog/ExecutionRecord eşlemesi | VR KALIYOR (spec VERIFIED; runtime eşleme taranmadı) |
-| HD ↔ OfficeApproval eşlemesi | VR KALIYOR |
+| LegalTimeShadowDiff VR | **CODE-LEVEL CREATE-ONLY VERIFIED** (yazar-yokluğu, `.create()`/`.findMany()` dışında yazma yok); **DB-LEVEL IMMUTABILITY VR REMAINS OPEN** (migration'da enforcement mekanizması yok) |
+| OF-01 (Tebligat) davranışı | **VR CLOSED** (DBP-04-05-LIFECYCLE-VR-RECONCILE-01-GOV) — **AS-IS MUTABLE VERIFIED** (`TebligatService.update()`/`markAsSent()`/`recordPttResult()`/`recordElectronicResult()`); TARGET REMEDIATION OPEN / NOT SELECTED |
+| AE ↔ CPE DecisionLog/ExecutionRecord eşlemesi | **VR CLOSED** (DBP-04-05-LIFECYCLE-VR-RECONCILE-01-GOV) — **`CpeExecutionRecord` mapping VERIFIED / MUTABLE** (create→update lifecycle); **`CpeDecisionLog` residual PRESERVED** (yalnız ayrıca doğrulanan kapsam kadar: create-only + retention `deleteMany`, tüm lifecycle davranışı otomatik çözülmüş SAYILMAZ) |
+| HD ↔ OfficeApproval eşlemesi | **VR CLOSED** (DBP-04-05-LIFECYCLE-VR-RECONCILE-01-GOV) — **mapping VERIFIED / MUTABLE** (`OfficeApprovalRequest`, CAS-guard'lı state-machine, orijinal `savedIntent` korunur ama satır tekrar tekrar mutasyona uğrar); **APPEND-ONLY TARGET NOT IMPLEMENTED** |
 | EV kaydı | YENİ BULGU: iki-yazarlı, çift-rollü tablo (§4) — OBD-07 girdisi |
+
+**Precision (owner-mandated):** yukarıdaki kapanışlar record sınıflarının MEVCUT çalışma biçimini (AS-IS) doğrular; DBP-04'ün öngördüğü APPEND-NEW-REVISION/immutable TARGET modeliyle aralarındaki fark kapanmamış, remediation SEÇİLMEMİŞTİR. "Tüm record-lifecycle VR kalemleri kapandı" gibi genel bir ifade bu tabloyla İDDİA EDİLMEZ — `OF-02/03/04`/`DA-01`/`DA-03..07` hâlâ `VR — DBP-05`/ABSENT kalır (DBP-04 §12).
 
 ---
 

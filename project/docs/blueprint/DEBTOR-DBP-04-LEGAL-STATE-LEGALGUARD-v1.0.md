@@ -270,15 +270,16 @@ AE-01/02 (decision) · HD-01..04 (human) — üç sınıf AYNI listede birleşti
 
 | Record sınıfı | RECORD MODEL | INTENDED LIFECYCLE | IMMUTABILITY | EXISTING IMPLEMENTATION EVIDENCE |
 |---|---|---|---|---|
-| OF-01 | PROPOSED | APPEND-NEW-REVISION / SUPERSESSION CANDIDATE | VR — DBP-05 | CURRENT (Tebligat/ServiceAttempt mevcut; davranış incelemesi DBP-05) |
+| OF-01 | PROPOSED | APPEND-NEW-REVISION / SUPERSESSION CANDIDATE | **AS-IS MUTABLE VERIFIED** (DBP-04-05-LIFECYCLE-VR-RECONCILE-01-GOV): `TebligatService.update()`/`markAsSent()`/`recordPttResult()`/`recordElectronicResult()` aynı kaydı yerinde değiştiriyor (örn. MERNİS-retry akışında eski kaydın `nextAction` alanı). AS-IS MUTABLE ≠ TARGET APPEND-NEW-REVISION/SUPERSESSION. REMEDIATION OPEN / NOT SELECTED. | CURRENT (Tebligat/ServiceAttempt mevcut; davranış doğrulandı) |
 | OF-02/03/04 | PROPOSED | APPEND-NEW-REVISION / SUPERSESSION CANDIDATE | VR — DBP-05 | ABSENT |
 | DA-01 | PROPOSED | SUPERSESSION CANDIDATE (calculationVersion mevcut tasarımda) | VR — DBP-05 | CURRENT (persist alanları) |
-| DA-02 (`LegalDeadlineSnapshot`) | PROPOSED | APPEND-NEW-REVISION | VR — DBP-05 | CURRENT (tablo main'de) |
+| DA-02 (`LegalDeadlineSnapshot`) | PROPOSED | APPEND-NEW-REVISION | ÇÖZÜLDÜ: SUPERSESSION VERIFIED (DBP-05 §14) — idempotent no-op → eski kayıt yalnız `status: ACTIVE→SUPERSEDED`, yeni create; "immutable" DEĞİL (status alanı mutable). | CURRENT (tablo main'de) |
+| `LegalTimeShadowDiff` (DBP-05-introduced, DA-02-adjacent) | PROPOSED | CREATE-ONLY (tasarım niyeti) | **SERVICE LEVEL: CREATE-ONLY VERIFIED** (`LegalTimeShadowService` yalnız `.create()`/`.findMany()`; testte açık "update/delete asla tanımlanmadı" notu). **DATABASE LEVEL: IMMUTABILITY UNENFORCED** (migration'da update/delete-prohibition trigger/rule/constraint YOK). CODE-LEVEL CREATE-ONLY VR CLOSED; DB-LEVEL IMMUTABILITY VR OPEN. | CURRENT (tablo main'de) |
 | DA-03..07 | PROPOSED | APPEND-NEW-REVISION | VR — DBP-05 | ABSENT |
-| AE-01/02 | PROPOSED | APPEND-NEW-REVISION | VR — DBP-05 | ABSENT (CPE DecisionLog mevcut; eşleme DBP-05) |
-| HD-01..04 | PROPOSED | APPEND-NEW-REVISION | VR — DBP-05 | PARTIAL/UNKNOWN (OfficeApproval altyapısı mevcut; eşleme DBP-05) |
+| AE-01/02 | PROPOSED | APPEND-NEW-REVISION | **`CpeExecutionRecord` MUTABLE VERIFIED** (DBP-04-05-LIFECYCLE-VR-RECONCILE-01-GOV): create PENDING → `completeExecution`/`markAsNoop` update SUCCESS/FAILED/NOOP → `cleanupStaleExecutions` updateMany. **Precision:** bu bulgu `CpeDecisionLog`'un TÜM lifecycle davranışının otomatik çözüldüğü anlamına GELMEZ — `CpeDecisionLog` yalnız ayrıca doğrulanan kapsam kadar kaydedilir (create-only + retention `deleteMany`; süresiz-immutable DEĞİL), çözülmemiş residual korunur. REMEDIATION OPEN / NOT SELECTED. | CURRENT (CPE DecisionLog/ExecutionRecord mevcut; eşleme doğrulandı) |
+| HD-01..04 | PROPOSED | APPEND-NEW-REVISION | **`OfficeApprovalRequest` MUTABLE VERIFIED** (DBP-04-05-LIFECYCLE-VR-RECONCILE-01-GOV): PENDING_APPROVAL create → APPROVED/APPROVED_WITH_CHANGES/REJECTED/REVISION_REQUESTED/CANCELLED + `executionStatus` update'leri. CAS/conditional `updateMany` race-protection VAR; orijinal `savedIntent` ASLA ezilmez (approver değişikliği yalnız `replacementSavedIntent` ile gelir). RACE-SAFE MUTATION ≠ APPEND-ONLY IMMUTABILITY. REMEDIATION OPEN / NOT SELECTED. | CURRENT (OfficeApproval altyapısı mevcut; eşleme doğrulandı) |
 
-Statü yükseltme yalnız repository kanıtıyla yapılır; isim/niyetten immutability türetilmez.
+Statü yükseltme yalnız repository kanıtıyla yapılır; isim/niyetten immutability türetilmez. **Yukarıdaki "AS-IS MUTABLE VERIFIED" bulguları, bu satırların TARGET (INTENDED LIFECYCLE) sütunundaki APPEND-NEW-REVISION modelini henüz karşılamadığının kanıtıdır — bu bir remediation seçimi veya implementasyon yetkisi DEĞİLDİR; gelecekteki ayrı bir owner-gated remediation kararının girdisidir.**
 
 ---
 
