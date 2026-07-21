@@ -2254,6 +2254,55 @@ data access veya cutover authority'si üretmez.
 
 ---
 
+## RCV-CLAIM-FORM-P02-S07-I01 — Existing OTHER / Due PATCH OTHER Admission Guard
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+**Implementation evidence:** PR #1505 / squash
+`fea4d9778535fa4a512830fed6e0a54a19672d75` / required CI `4/4 PASS`.
+Canonical ancestry doğrulanmıştır.
+
+`PUT /claim-items/:id` yüzeyinde existing non-OTHER ClaimItem'ın yeni semantic `OTHER`
+classification'a geçirilmesi ve `PATCH /cases/:id/dues/:dueId` Due PATCH/sync yolunda
+DueType.OTHER üzerinden yeni ClaimItemType.OTHER admission veya canonical ClaimItem'ın OTHER'a
+çevrilmesi deterministik `UNSUPPORTED_COMPONENT` ile fail-closed reddedilir. Invalid admission
+için ClaimItem create/update, Due mutation, audit, domain event, outbox ve secondary
+writer/router mutation sayısı sıfırdır.
+
+```text
+PUT /claim-items/:id OTHER      DENIED
+PATCH DUE OTHER SYNC            DENIED
+ERROR CONTRACT                  UNSUPPORTED_COMPONENT
+NO-WRITE                        CLAIMITEM CREATE/UPDATE / DUE MUTATION /
+                                AUDIT / EVENT / OUTBOX / ROUTER MUTATION = 0
+LEGACY OTHER                    READ / HISTORICAL VISIBILITY /
+                                TRUE NO-OP COMPATIBILITY PRESERVED
+NEW SEMANTIC OTHER ADMISSION    DENIED
+HISTORICAL DATA                 UNTOUCHED
+BACKFILL / RECLASSIFICATION     NOT PERFORMED
+TAXONOMY                        UNCHANGED
+PUBLIC API                      UNCHANGED
+SCHEMA / MIGRATION              NONE
+COLLECTION / SHARED BOUNDARY    UNCHANGED
+BALANCE / TBK100                UNCHANGED
+RUNTIME ENFORCEMENT             PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 +
+                                S05-I01 + S06-I01 + S07-I01 ONLY
+OLD FROZEN S05 PATCH            SUPERSEDED / CLEANUP PENDING / UNTOUCHED
+REMAINING GAPS                  OPEN / UNSELECTED
+NEXT ELIGIBLE TASK              UNSET — OWNER GO REQUIRED
+```
+
+R03 analysis sonucu, S07'nin implementation öncesi selected/owner-gated durumu ve P01-R01/S01-S06
+tarihsel closure kayıtları korunur. Human direct-entry admission context, web `kalemTuru` /
+nested-ilam fallback, OCR generic `PRINCIPAL` fallback, mandatory formation context enforcement,
+`ClaimFormationSnapshotV1` persistence, component subtype registry/versioning ve legacy component
+inventory residual gap'leri `OPEN / UNSELECTED` kalır. ACT-28 ve REC-AUTH-011/012 değişmez. Bu
+kayıt başka implementation, schema/migration, historical mutation/backfill, Collection/shared
+boundary change, TPA, Balance/TBK100, replay, data access, cutover veya başka residual/foreign
+task authority'si üretmez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
