@@ -782,6 +782,37 @@ jobs:
             --testPathPattern="credential-recovery.*\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # OFFICE-AUTH-P02: office/staff credential-recovery (şifremi unuttum) — tenant-scoped
+      # PasswordResetToken (hash-only, single-use), forgot/reset-password uçları, atomik
+      # tek-kullanımlık tüketim + tokenVersion session-invalidation + sibling-token revoke,
+      # e-posta-hatasında-token-kalmaz politikası, request/consume için ayrı rate-limit
+      # bucket'ları. Dar allowlist dışında kalır → explicit step + test -f guard
+      # (ci-narrow-allowlist stale-test gap koruması).
+      - name: OFFICE-AUTH-P02 password-reset unit tests
+        run: |
+          cd apps/api
+          for f in src/modules/auth/password-reset/__tests__/password-reset.service.spec.ts; do
+            test -f "$f" || { echo "MISSING OFFICE-AUTH-P02 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="password-reset\.service\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # OFFICE-AUTH-P02 integration: cross-tenant izolasyon, ham-token-DB'de-yok/yalnız-hash,
+      # eski JWT (tokenVersion mismatch) reddi + yeni login PASS, migration additive doğrulaması
+      # (gerçek Postgres, disposable service-container — change-password.integration emsali).
+      - name: OFFICE-AUTH-P02 password-reset integration tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          for f in src/modules/auth/password-reset/__tests__/password-reset.db-gated.integration.spec.ts; do
+            test -f "$f" || { echo "MISSING OFFICE-AUTH-P02 integration spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="password-reset\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
       # CLIENT-P2-U01-R1: credential-recovery.spec.ts (PR #1477) yalnız mocked-prisma unit
       # seviyesindedir; forgot/reset-password akışının gerçek Postgres üzerinde tenant/client
       # cross-account izolasyon kanıtı yoktu. Canonical PortalService davranışı DEĞİŞTİRİLMEDEN

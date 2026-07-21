@@ -339,8 +339,28 @@ model User {
   userInvites UserInvite[] @relation("UserInviteTarget")
   invitesSent UserInvite[] @relation("UserInviteIssuer")
 
+  // OFFICE-AUTH-P02: credential-recovery (şifremi unuttum) reset token'ları
+  passwordResetTokens PasswordResetToken[]
+
   @@unique([tenantId, email])
   @@index([tenantId])
+}
+
+/// OFFICE-AUTH-P02: tenant-scoped, tek-kullanımlık parola sıfırlama token'ı (UserInvite emsali).
+/// Ham token YALNIZ bir kez e-posta linkinde görünür; DB'de yalnız SHA256 tokenHash saklanır.
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  tenantId   String
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([tenantId, userId])
+  @@index([expiresAt])
 }
 
 /// K1-7: Güvenli login provisioning daveti. Pending User + tek-kullanımlık SHA256-hashed token.
