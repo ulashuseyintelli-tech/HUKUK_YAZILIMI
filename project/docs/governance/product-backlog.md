@@ -2179,6 +2179,39 @@ authority'si üretmez.
 
 ---
 
+## RCV-CLAIM-MASTER-TRIAGE-R02-GOV — Post-S05 Residual Priority Selection
+
+**Status:** `FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE`
+
+Owner, R02 read-only master-triage sonucunu kabul etmiş ve yalnız bir sonraki bounded Claim
+Formation adayını seçmiştir:
+
+```text
+PROGRAM                     RECEIVABLE / CLAIM FORMATION
+PHASE                       RCV-P2 / RUNTIME PARTIAL
+SELECTED NEXT TASK          RCV-CLAIM-FORM-P02-S06-I01
+TITLE                       PRECAUTIONARY CLAIMED-COST OTHER / UNKNOWN ADMISSION GUARD
+STATUS                      SELECTED / NOT AUTHORIZED
+IMPLEMENTATION GO           REQUIRED SEPARATELY
+RUNTIME ENFORCEMENT         PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 ONLY
+OLD FROZEN S05 PATCH        SUPERSEDED / CLEANUP PENDING SEPARATE OWNER GO
+```
+
+Residual priority: (1) Precautionary `DIGER`/unknown admission, (2) existing `OTHER` update /
+`PRINCIPAL → OTHER`, (3) human direct-entry, (4) web `kalemTuru`/nested-ilam, (5) OCR generic
+`PRINCIPAL`, (6) mandatory formation context, (7) `ClaimFormationSnapshotV1`, (8) subtype
+registry/versioning ve (9) legacy component inventory.
+
+S06-I01 yalnız `POST /precautionary-orders/:id/costs` ve
+`isClaimedInEnforcement !== false` yolunu kapsar. `DIGER`, blank, null, unknown veya unmapped
+component `UNSUPPORTED_COMPONENT` ile transaction ve bütün writer çağrılarından önce fail-closed
+durmalıdır. Valid mapped cost türleri ve non-claimed cost yolu değişmez. Kod/test implementation,
+schema/migration, taxonomy/subtype replacement, historical mutation, existing cost update/delete,
+human/web/OCR işi, Collection/shared-boundary, TPA-04B, Balance/TBK100, replay ve cutover yetkili
+değildir. Phase-exit kriterleri ve diğer residual'ların `OPEN` statüsü değişmez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
