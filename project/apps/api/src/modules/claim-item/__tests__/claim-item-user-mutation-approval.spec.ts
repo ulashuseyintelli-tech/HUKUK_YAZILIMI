@@ -302,6 +302,91 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
     expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
   });
 
+  it.each(['PRINCIPAL', 'FEE', 'EXPENSE', 'ATTORNEY_FEE'])(
+    '%s -> OTHER update admission talebini approval ve write oncesi reddeder',
+    async (currentType) => {
+      const { svc, prisma, tx, officeApproval, writerRouter, domainEventIngest } = makeSvc({
+        item: { ...baseItem, itemType: currentType },
+      });
+
+      await expect(
+        svc.updateFromUser('t1', 'requester-u', 'ci-1', { itemType: 'OTHER' } as any),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'UNSUPPORTED_COMPONENT',
+          message: 'Claim component is not supported.',
+        },
+      });
+
+      expect(writerRouter.evaluateHuman).not.toHaveBeenCalled();
+      expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+      expect(prisma.claimItem.update).not.toHaveBeenCalled();
+      expect(tx.claimItem.update).not.toHaveBeenCalled();
+      expect(tx.auditLog.create).not.toHaveBeenCalled();
+      expect(domainEventIngest.appendInTransaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([null, '', '   ', '___UNKNOWN___'])(
+    'runtime invalid itemType %p update admission talebini fail-closed reddeder',
+    async (itemType) => {
+      const { svc, prisma, tx, officeApproval, writerRouter, domainEventIngest } = makeSvc();
+
+      await expect(
+        svc.updateFromUser('t1', 'requester-u', 'ci-1', { itemType } as any),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'UNSUPPORTED_COMPONENT',
+          message: 'Claim component is not supported.',
+        },
+      });
+
+      expect(writerRouter.evaluateHuman).not.toHaveBeenCalled();
+      expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+      expect(prisma.claimItem.update).not.toHaveBeenCalled();
+      expect(tx.claimItem.update).not.toHaveBeenCalled();
+      expect(tx.auditLog.create).not.toHaveBeenCalled();
+      expect(domainEventIngest.appendInTransaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it('legacy OTHER kaydinda itemType disi metadata editini korur', async () => {
+    const { svc, tx } = makeSvc({
+      item: { ...baseItem, itemType: 'OTHER' },
+    });
+
+    await expect(
+      svc.updateFromUser('t1', 'u1', 'ci-1', { description: 'new' } as any),
+    ).resolves.toMatchObject({ applied: true, approvalRequired: false });
+
+    expect(tx.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: { description: 'new' },
+    });
+  });
+
+  it('legacy OTHER kaydinin itemType reclassification talebini fail-closed reddeder', async () => {
+    const { svc, prisma, tx, officeApproval, writerRouter, domainEventIngest } = makeSvc({
+      item: { ...baseItem, itemType: 'OTHER' },
+    });
+
+    await expect(
+      svc.updateFromUser('t1', 'requester-u', 'ci-1', { itemType: 'PRINCIPAL' } as any),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'UNSUPPORTED_COMPONENT',
+        message: 'Claim component is not supported.',
+      },
+    });
+
+    expect(writerRouter.evaluateHuman).not.toHaveBeenCalled();
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+    expect(prisma.claimItem.update).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+    expect(domainEventIngest.appendInTransaction).not.toHaveBeenCalled();
+  });
+
   it('tarihsel FATURA + TAX_KDV kaydinin normal metadata editini engellemez', async () => {
     const { svc, tx } = makeSvc({
       item: { ...baseItem, itemType: 'TAX_KDV', sourceDocumentType: 'FATURA' },
@@ -355,6 +440,22 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
       where: { id: 'ci-1' },
       data: { demandedAmount: 1200, amount: 1200 },
     });
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('system/internal update yolu OTHER admission talebini write oncesi reddeder', async () => {
+    const { svc, prisma, officeApproval } = makeSvc();
+
+    await expect(
+      svc.update('t1', 'ci-1', { itemType: 'OTHER' } as any),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'UNSUPPORTED_COMPONENT',
+        message: 'Claim component is not supported.',
+      },
+    });
+
+    expect(prisma.claimItem.update).not.toHaveBeenCalled();
     expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
   });
 });

@@ -203,6 +203,7 @@ export class ClaimItemService {
   // Alacak kalemi güncelle
   async update(tenantId: string, id: string, dto: UpdateClaimItemDto, actorUserId?: string) {
     const existing = await this.findOne(tenantId, id);
+    this.assertNoNewOtherAdmission(existing, dto.itemType);
     const normalizedPatch = this.normalizeInterestPatch(
       this.stripUndefined({ ...dto }),
       existing,
@@ -1219,12 +1220,29 @@ export class ClaimItemService {
   }
 
   private assertUpdateInvariants(existing: any, dto: Partial<UpdateClaimItemDto>): void {
+    this.assertNoNewOtherAdmission(existing, dto.itemType);
     const collected = Number(existing.collectedAmount) || 0;
     if (dto.amount !== undefined && Number(dto.amount) < collected) {
       throw new BadRequestException(`Tutar tahsil edilen tutardan (${collected}) düşük olamaz.`);
     }
     if (collected > 0 && dto.itemType && dto.itemType !== existing.itemType) {
       throw new BadRequestException('Tahsilat yapılmış kalemde kalem tipi (itemType) değiştirilemez.');
+    }
+  }
+
+  private assertNoNewOtherAdmission(existing: any, requestedItemType: unknown): void {
+    if (requestedItemType === undefined) return;
+    if (
+      requestedItemType === null ||
+      (typeof requestedItemType === 'string' && requestedItemType.trim() === '') ||
+      !Object.values(ClaimItemType).includes(requestedItemType as ClaimItemType) ||
+      requestedItemType === ClaimItemType.OTHER ||
+      existing.itemType === ClaimItemType.OTHER
+    ) {
+      throw new BadRequestException({
+        code: 'UNSUPPORTED_COMPONENT',
+        message: 'Claim component is not supported.',
+      });
     }
   }
 
