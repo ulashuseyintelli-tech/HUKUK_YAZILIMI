@@ -346,6 +346,36 @@ Alan adları ve statü değerleri ANALYSIS_CANDIDATE statüsündedir; F2 ratifik
 
 **Yürürlük durumu (2026-07-21):** F1 (`UYAP-MASTER-ANALIZ-02`) ve F4-a (`EVIDENCE-01`) GO-ANALYZE yetkileri tescillidir, ikisi de NOT STARTED; fiilî başlatma owner faz atamasına bağlıdır (tek-faz işletim kuralı; KARAR 9 paralelliği ratifiye eder, otomatik başlatma doğurmaz). DEVAM EDEN HOLD'LAR DEĞİŞMEDİ: IMPLEMENTATION AUTHORITY NONE · REAL TRANSPORT 0 · UYAP CUTOVER HARD HOLD · PRODUCTION ADAPTER NOT AUTHORIZED · PORTAL AUTOMATION PROHIBITED · CREDENTIAL/PIN/PRIVATE-KEY CUSTODY PROHIBITED.
 
+## 19. Constitution v1.1 Ratification (UYAP-CONSTITUTION-V11-01)
+
+Bu bölüm ADDITIVE'dir; §1-18.1 substantive metni reopen edilmez veya değiştirilmez. `decision-log.md` `UYAP-CONSTITUTION-V11-01` (2026-07-21) kaydıyla F1 (UYAP-MASTER-ANALIZ-02 R1+R2) ve F4-a (EVIDENCE-01 R1) owner-accepted analiz temeli, owner-ratified normatif hükümlere (D1-D12) dönüştürülmüştür.
+
+**Constitution v1.1 = bu belge (kanonik kök, DEĞİŞMEZ) + tek subordinate normatif annex.** Yeni annex:
+
+```text
+UYAP-CONNECTOR-NORMATIVE-ANNEX-v1.0.md
+  Durum   : CANONICAL SUBORDINATE ANNEX (bağımsız anayasa DEĞİL)
+  Otorite : yalnız bu synthesis kökü tarafından yetkilendirilir
+  İçerik  : UYAP-CONST-001..010 (RATIFIED)
+  Kural   : modül belgeleri bu kuralları KOPYALAYAMAZ; çelişkide synthesis kök + owner karar kaydı üstündür
+```
+
+**Ratifiye normatif maddeler (tam metin annex'te):**
+```text
+UYAP-CONST-001 — Official Channel and Authority          UYAP-CONST-006 — Idempotency, Retry and OUTCOME_UNKNOWN
+UYAP-CONST-002 — Tenant, Actor, Lawyer and Repr. Authority UYAP-CONST-007 — PII Minimization, Evidence and Retention
+UYAP-CONST-003 — Credential and Signature Custody         UYAP-CONST-008 — Simulator and Shadow Truthfulness
+UYAP-CONST-004 — Operation, Attempt and Evidence Identity UYAP-CONST-009 — Metrics, Incident and Cutover Gates
+UYAP-CONST-005 — Three-State Constitution and Non-Equations UYAP-CONST-010 — Capability Autonomy and A0-A5
+```
+
+**Owner kararları (D1-D12) özet pointer** (bağlayıcı metin `decision-log.md` `UYAP-CONSTITUTION-V11-01`):
+D1 document architecture (tek annex) · D2 evidence target (`UyapOperation` 1→N `UyapAttempt`, TARGET-only) · D3 identity model (operationId/attemptId/idempotencyKey server-controlled; clientRequestId correlation-only) · D4 three-state constitution + non-equations · D5 actor/lawyer/authority · D6 credential/signature · D7 UNKNOWN_OUTCOME/retry · D8 PII/evidence minimization + retention · D9 autonomy A0-A5 · D10 metrics 3-sınıf · D11 simulator/shadow/cutover · D12 F3 tanımı.
+
+**Faz durumu (bu ratifikasyonla):** F2 `UYAP-CONSTITUTION-V11-01` CLOSED/CANONICAL · **F3 (MODULE-BASED UYAP BOUNDARY CONTRACTS): SELECTED / NOT STARTED** (F2 handoff bağımsız doğrulanmadan başlatılmaz; ≈ WAVE 5 governance birimi) · **F4-b: NOT AUTHORIZED / NOT STARTED.** Schema/migration/runtime enum/Prisma model bu ratifikasyonla ÜRETİLMEZ; TARGET mimari kararları implementation authority doğurmaz.
+
+**DEVAM EDEN HOLD'LAR DEĞİŞMEDİ:** IMPLEMENTATION AUTHORITY NONE · REAL TRANSPORT 0 · UYAP CUTOVER HARD HOLD · PRODUCTION ADAPTER NOT AUTHORIZED · PORTAL AUTOMATION PROHIBITED · CREDENTIAL/PIN/PRIVATE-KEY CUSTODY PROHIBITED. `OD-UYAP-08` EXTERNAL-AUTHORITY-BLOCKED · `OD-UYAP-10` HARD HOLD.
+
 ## Owner Approval Record
 
 ```text

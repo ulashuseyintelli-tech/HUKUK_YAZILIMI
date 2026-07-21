@@ -518,6 +518,10 @@ NEXT ELIGIBLE TASK          : EVIDENCE-01 — OWNER GO-ANALYZE REQUIRED
 
 Bu bölüm bu charter'ı **reopen etmez** — §1-15 tüm kapanmış birimleriyle olduğu gibi kalır. `UYAP-CONNECTOR-MASTER-SYNTHESIS-v1.0.md`, connector-geneli kalıcı anayasal kuralların (State/Evidence/KVKK-retention/Credential/Transport/Retry/Simulator Constitution'ları, official-source Tier A/B/C sınıflandırması, risk register, A2Z roadmap) TEK merkezi kaynağıdır; bu Charter kronolojik kapanış kaydı olarak kalmaya devam eder, merkezi kural metni ORAYA taşınmamıştır ve buraya kopyalanmaz.
 
+## 17. Constitution v1.1 Pointer (UYAP-CONSTITUTION-V11-01)
+
+Merkezi UYAP Anayasası **v1.1** olarak genişletilmiştir: kanonik kök `UYAP-CONNECTOR-MASTER-SYNTHESIS-v1.0.md` §19 + tek subordinate normatif annex `UYAP-CONNECTOR-NORMATIVE-ANNEX-v1.0.md` (`UYAP-CONST-001..010`, RATIFIED; kuruluş `decision-log.md` `UYAP-CONSTITUTION-V11-01`, 2026-07-21). Bu Charter'ın §1-16 substantive metni **reopen edilmez**; roadmap kimlikleri değişmez. F3 (MODULE-BASED UYAP BOUNDARY CONTRACTS) SELECTED/NOT STARTED (≈ WAVE 5); F4-b NOT AUTHORIZED. UYAP CUTOVER HARD HOLD korunur.
+
 ## Owner Approval Record
 
 ```text
