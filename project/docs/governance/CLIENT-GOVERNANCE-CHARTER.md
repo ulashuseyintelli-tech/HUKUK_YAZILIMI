@@ -1422,3 +1422,59 @@ U01, aşağıdaki Phase 1 canonical sınırlarını **consume eder, değiştirme
 ### 26.11 U01 Self-Check
 
 Bu bölüm: CLIENT-P2-U02'yi BAŞLATMAZ; portal JWT/session revocation implementasyonu YAPMAZ; `tokenVersion`/login-history modeli/MFA ÜRETMEZ; POL-E-R1'i BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ veya YETKİLENDİRMEZ; PR #1477 veya #1478'i yeniden AÇMAZ; §5/§6/§8.A/§8.B/§11–§25 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ (implementasyon zaten PR #1477/#1483 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL PORTAL SECURITY GAPS CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 27. CLIENT Phase 2 U02 — Portal Session Revocation Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, §26'nın (CLIENT-P2-U01) açık bıraktığı "portal JWT revocation gap" successor candidate'ini kapatan, owner-authorized **CLIENT-P2-U02 — Portal Session Revocation / Credential-State Enforcement** biriminin teknik implementasyon kapanış kaydıdır (`decision-log.md` CLIENT-P2-U02-GOV). §5, §6, §8.A, §8.B, §11–§26 substantive hükümlerini DEĞİŞTİRMEZ; Phase 2'nin geri kalanı hâlâ **OPEN**'dır, bu kayıtla genel bir Phase 2 roadmap'i ÜRETİLMEZ.
+
+### 27.1 Technical Lineage
+
+**IMPLEMENTATION:** PR #1493 (task: `CLIENT-P2-U02`, squash SHA `289068f17319c58400d3ce80770f23612b50eaa3`, merged `origin/main` 2026-07-21). Tek implementasyon zinciri — mükerrer/rakip PR yok, dedup taraması hem task-start'ta hem merge öncesinde temiz döndü.
+
+### 27.2 Selected Model
+
+**OPTION A — `ClientPortalUser.tokenVersion`** (database-backed monotonic counter), OFFICE-AUTH-P01'in (`User.tokenVersion`) kanıtlanmış deseninin portal'a bounded uyarlaması. Owner, GO-ANALYZE'de karşılaştırılan 6 seçenekten (A: tokenVersion · B: credentialsChangedAt/iat cutoff · C: server-side session table · D: revocation denylist/cache · E: short-lived-access+refresh-token · F: hold/browser-only-logout) Option A'yı **SEÇTİ**; C/D/E owner'ın kendi STOP CONDITION/yasak listesiyle bounded scope dışında bırakıldı.
+
+### 27.3 Login / Guard / Revocation-Trigger Contract
+
+**LOGIN:** `PortalService.login()` JWT payload'ına DB'deki güncel `tokenVersion`'ı claim olarak ekler (`{sub,clientId,tenantId,type,tokenVersion}`). **GUARD:** `PortalAuthGuard`, imza+type doğrulamasından SONRA `clientPortalUser` PK lookup yapar (SIGNATURE+TYPE → DATABASE USER LOOKUP → ACTIVE-STATE CHECK → CLIENT/TENANT CLAIM CHECK → VERSION CHECK); §26.8'de kaydedilen önceki AS-IS tamamen-stateless guard davranışı **SONA ERDİ.** **REVOCATION TRIGGERS (4, hepsi kendi AYNI atomic write'ı içinde `tokenVersion:{increment:1}`):** password reset success (`resetPassword`) · password change success (`changePassword`) · account disable (`disablePortalUser`, `isActive:false` ile AYNI update) · account reactivate (`createPortalUser` reactivate dalı, yeni password/`isActive:true` ile AYNI update). Başarısız reset/password-change version ARTIRMAZ.
+
+### 27.4 Legacy JWT Cutover
+
+**MISSING tokenVersion CLAIM:** yalnız claim HİÇ YOKSA 0 kabul edilir (deploy-öncesi token'lar için backward-compat). **KABUL KOŞULU:** DB `tokenVersion==0` olduğu SÜRECE. **GEÇERSİZ TİP/NEGATİF/NON-INTEGER CLAIM:** DENY (0'a normalize edilmez, doğrudan reddedilir). **DEPLOY ANINDA ZORLA TOPLU LOGOUT: YOK** — ilk credential-state değişikliğinden (reset/change/disable/reactivate) SONRA eski/claim'siz token reddedilir. **CUTOVER: ZERO-IMMEDIATE-DISRUPTION** (OFFICE-AUTH-P01'in kendi kanıtlanmış cutover davranışıyla birebir).
+
+### 27.5 Fail-Closed Contract
+
+`PORTAL USER NOT FOUND` · `PORTAL USER DISABLED` · `CLIENT CLAIM MISMATCH` · `TENANT CLAIM MISMATCH` · `STALE / FUTURE VERSION` · `INVALID VERSION TYPE` · `DATABASE LOOKUP FAILURE` — hepsi **DENY**, hepsi AYNI genel `UnauthorizedException` mesajına düşer (ret nedeni response'ta AYRIŞTIRILMAZ). Ham JWT, parola, password hash, reset token, token digest veya signing secret hiçbir audit/log kaydına YAZILMAZ.
+
+### 27.6 Canonical Precision — Non-Equations
+
+`MISSING VERSION COMPATIBILITY ≠ PERMANENT VERSION BYPASS` · `VALID SIGNATURE ≠ CURRENT CREDENTIAL STATE` · `VALID PORTAL JWT ≠ CLIENT BUSINESS AUTHORITY` · `VALID PORTAL SESSION ≠ FACT A` · `PASSWORD RESET ≠ AUTHENTICATED CLIENT INSTRUCTION` (POL-C, §18, DEĞİŞMEDİ).
+
+### 27.7 OFFICE Precedent Boundary
+
+**OFFICE `User.tokenVersion`:** REFERENCE PRECEDENT ONLY. **PORTAL `ClientPortalUser.tokenVersion`:** SEPARATE, INDEPENDENT CLIENT IMPLEMENTATION — ayrı model, ayrı guard, ayrı migration. **OFFICE User modeli, staff JWT pipeline'ı, staff authentication authority'si BU KAYITLA DEĞİŞMEDİ.** Aynı teknik örüntünün (monotonic version counter) iki farklı bounded-context'te bağımsız kullanılması, authentication authority birleşmesi veya bounded-context birleşmesi ANLAMINA GELMEZ. (Ayrıca bkz. `OFFICE-DELIVERY-MANIFEST.md` CANDIDATE-B — OFFICE'in kendi ayrı, DEFERRED, refresh-token içeren staff-side session-revocation adayı; CLIENT-P2-U02 bu adayı KAPATMAZ, ONUNLA İLGİLİ DEĞİLDİR.)
+
+### 27.8 Phase 1 / U01 Policy Consumption
+
+U02, aşağıdaki canonical sınırları **consume eder, değiştirmez, yeniden AÇMAZ:** POL-C (§18, portal non-authoritative — password reset authenticated client instruction'a DÖNÜŞMEDİ) · POL-J (§19, object access boundary) · BP-05 (§20, bounded portal process) · BP-06 (§23, visibility boundary) · POL-E (§24, evidence-preserving baseline) · CLIENT-P2-U01 (§26, credential-recovery core ve public/private route boundary — route sınırı DEĞİŞMEDİ, staff/Office authentication modeli DEĞİŞMEDİ).
+
+### 27.9 Migration Precision
+
+**ALTERED MODEL:** `ClientPortalUser` YALNIZ. **ADDED FIELD:** `tokenVersion Int @default(0)` (additive, NOT NULL DEFAULT 0). **DROP/RENAME/DATA UPDATE/FK CHANGE/UNRELATED INDEX-CONSTRAINT CHANGE: NONE. BACKFILL SCRIPT: NONE** (mevcut satırlar migration'ın kendi `DEFAULT 0`'ı ile otomatik dolar). Implementasyon sırasında görülen, bu migration'la İLGİSİZ, önceden var olan RC-COL kaynaklı bir FK-rename schema-drift'i (`BankSettlementEvidence`/`BankTransaction`) tespit edilip **U02 migration'ına dahil EDİLMEDİ** — bu drift'in kendisi ayrı, RC-COL'a ait, bu kayıtla açılmayan bir gözlemdir.
+
+### 27.10 Gap Disposition — Closed / Implemented
+
+**PORTAL JWT / SESSION REVOCATION (POL-E §24 / §26.8'in "portal JWT revocation gap" kaleminin successor'ı): CLOSED/IMPLEMENTED.** Post-password-reset old JWT continuation · post-password-change old JWT continuation · disabled-account existing-JWT continuation · reactivated-account pre-disable-JWT revival · portal JWT database-state validation gap · tenant/client claim revalidation gap — **hepsi CLOSED/IMPLEMENTED.**
+
+### 27.11 Gap Disposition — Open Residuals
+
+**PER-DEVICE SESSION MANAGEMENT: OPEN/NOT SELECTED. SERVER-SIDE SESSION TABLE / REFRESH-TOKEN ARCHITECTURE / REMOTE SINGLE-SESSION LOGOUT / ADMIN FORCE-LOGOUT ENDPOINT: NOT IMPLEMENTED. LOGIN HISTORY: OPEN. MFA / TWO-FACTOR ACTIVATION: NOT SELECTED. SECURITY-INCIDENT SESSION CONSOLE: NOT IMPLEMENTED.** Bu residual'ler U02 kapanışını BLOKE ETMEZ, otomatik CLIENT-P2-U03 authority ÜRETMEZ.
+
+### 27.12 Final Program Status
+
+**CLIENT-P2-U02: TECHNICAL + GOVERNANCE CLOSED/CANONICAL.** **PR #1493, squash `289068f1`.** **MODEL: `ClientPortalUser.tokenVersion`.** **CREDENTIAL-STATE REVOCATION: ENFORCED.** **PHASE 2 (genel): OPEN.** **NEXT UNIT: OWNER-GATED/NOT AUTO-STARTED.**
+
+### 27.13 U02 Self-Check
+
+Bu bölüm: CLIENT-P2-U03'ü BAŞLATMAZ; session table/refresh-token/JTI-denylist/remote-single-session-logout/login-history/admin-force-logout/MFA implementasyonu YAPMAZ; POL-E-R1'i BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ veya YETKİLENDİRMEZ; OFFICE/staff authentication modelini veya CANDIDATE-B'yi DEĞİŞTİRMEZ; PR #1493'ü yeniden AÇMAZ; §5/§6/§8.A/§8.B/§11–§26 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ (implementasyon zaten PR #1493 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL PORTAL SESSION-MANAGEMENT CAPABILITY CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
