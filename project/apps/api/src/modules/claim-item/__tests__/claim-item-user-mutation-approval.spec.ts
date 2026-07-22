@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { OfficeApprovalStatus } from '@prisma/client';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import {
@@ -6,6 +6,7 @@ import {
   CLAIM_ITEM_INTENT_VERSION,
   CLAIM_ITEM_TARGET_TYPE,
 } from '../claim-item-approval.constants';
+import { ClaimItemController } from '../claim-item.controller';
 import { ClaimItemService } from '../claim-item.service';
 
 const baseItem = {
@@ -143,25 +144,117 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
     expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
   });
 
-  it('non-FATURA TAX_KDV create talebini mevcut approval hattinda korur', async () => {
-    const { svc, officeApproval } = makeSvc();
+  it.each([
+    ['source-less', {}],
+    ['CASE_DOCUMENT adayi', { sourceDocumentId: 'doc-1', sourceDocumentType: 'DIGER' }],
+  ])('%s human create talebini authorization sonrasinda deterministic fail-closed durdurur', async (_name, source) => {
+    const { svc, prisma, tx, officeApproval, writerRouter, domainEventIngest } = makeSvc();
 
     await expect(svc.createFromUser('t1', 'requester-u', {
       caseId: 'case-1',
-      itemType: 'TAX_KDV',
-      sourceDocumentType: 'DIGER',
+      itemType: 'PRINCIPAL',
       amount: 180,
-    } as any)).resolves.toMatchObject({ applied: false, approvalRequired: true });
+      ...source,
+    } as any)).rejects.toMatchObject({
+      response: {
+        code: 'FORMATION_CONTEXT_REQUIRED',
+        message: 'Complete claim formation context is required.',
+      },
+      status: 400,
+    });
 
-    expect(officeApproval.createPendingRequest).toHaveBeenCalledWith(expect.objectContaining({
-      savedIntent: expect.objectContaining({
-        operation: 'CREATE',
-        proposedPatch: expect.objectContaining({
-          itemType: 'TAX_KDV',
-          sourceDocumentType: 'DIGER',
-        }),
-      }),
-    }));
+    expect(prisma.case.findFirst).toHaveBeenCalledWith({
+      where: { id: 'case-1', tenantId: 't1' },
+      select: { id: true },
+    });
+    expect(writerRouter.evaluateHuman).toHaveBeenCalledTimes(1);
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+    expect(prisma.claimItem.create).not.toHaveBeenCalled();
+    expect(prisma.claimItem.update).not.toHaveBeenCalled();
+    expect(tx.claimItem.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+    expect(domainEventIngest.appendInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('identical human create retry ayni deterministic error contractini uretir', async () => {
+    const { svc, officeApproval } = makeSvc();
+    const command = {
+      caseId: 'case-1',
+      itemType: 'PRINCIPAL',
+      amount: 180,
+    } as any;
+
+    const responses: unknown[] = [];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await svc.createFromUser('t1', 'requester-u', command);
+      } catch (error) {
+        responses.push((error as BadRequestException).getResponse());
+      }
+    }
+
+    expect(responses).toEqual([
+      { code: 'FORMATION_CONTEXT_REQUIRED', message: 'Complete claim formation context is required.' },
+      { code: 'FORMATION_CONTEXT_REQUIRED', message: 'Complete claim formation context is required.' },
+    ]);
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('unauthorized human create mevcut permission sonucunu formation guard oncesinde korur', async () => {
+    const { svc, officeApproval, writerRouter } = makeSvc({ gateDenied: true });
+
+    await expect(svc.createFromUser('t1', 'requester-u', {
+      caseId: 'case-1',
+      itemType: 'PRINCIPAL',
+      amount: 180,
+    } as any)).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(writerRouter.evaluateHuman).toHaveBeenCalledTimes(1);
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('missing veya cross-tenant case mevcut not-found contractini formation guard oncesinde korur', async () => {
+    const { svc, prisma, officeApproval, writerRouter } = makeSvc();
+    prisma.case.findFirst.mockResolvedValueOnce(null);
+
+    await expect(svc.createFromUser('t1', 'requester-u', {
+      caseId: 'foreign-case',
+      itemType: 'PRINCIPAL',
+      amount: 180,
+    } as any)).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(writerRouter.evaluateHuman).not.toHaveBeenCalled();
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['add-expense', (controller: ClaimItemController) => controller.addExpense(
+      't1', 'requester-u', 'case-1', { amount: 10, description: 'Masraf' },
+    )],
+    ['add-fee', (controller: ClaimItemController) => controller.addFee(
+      't1', 'requester-u', 'case-1', { amount: 20, description: 'Harc' },
+    )],
+    ['add-attorney-fee', (controller: ClaimItemController) => controller.addAttorneyFee(
+      't1', 'requester-u', 'case-1', { amount: 30 },
+    )],
+  ])('%s convenience route ortak containment boundarysinde write uretmez', async (_name, invoke) => {
+    const { svc, prisma, tx, officeApproval, writerRouter, domainEventIngest } = makeSvc();
+    const controller = new ClaimItemController(svc);
+
+    await expect(invoke(controller)).rejects.toMatchObject({
+      response: {
+        code: 'FORMATION_CONTEXT_REQUIRED',
+        message: 'Complete claim formation context is required.',
+      },
+      status: 400,
+    });
+
+    expect(writerRouter.evaluateHuman).toHaveBeenCalledTimes(1);
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+    expect(prisma.claimItem.create).not.toHaveBeenCalled();
+    expect(prisma.claimItem.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+    expect(domainEventIngest.appendInTransaction).not.toHaveBeenCalled();
   });
 
   it('metadata edit capability sahibi aktorce transaction icinde uygulanir ve immutable audit yazar', async () => {
