@@ -2349,6 +2349,43 @@ formation context, component subtype registry/versioning ve legacy component inv
 owner-gated kalır. Frozen S05 patch `SUPERSEDED / CLEANUP PENDING SEPARATE OWNER GO /
 UNTOUCHED`dur. Bu kayıt successor seçmez veya yetkilendirmez.
 
+## RCV-CLAIM-FORM-P02-S08-D01A-GOV-R01 — Shared Document Source Authority Canonicalization
+
+```text
+PROGRAM LOCK                    RECEIVABLE / CLAIM FORMATION
+OWNER DECISION                  OPTION D — SHARED EVIDENCE / DOCUMENT PLATFORM
+AUTHORITY CONTRACT              FORMALLY RATIFIED / CANONICAL UPON APPROVED MERGE
+CANONICAL CONTRACT              DOCUMENT-SOURCE-GOVERNANCE.md
+DOCUMENT SOURCE OWNER           SHARED EVIDENCE / DOCUMENT PLATFORM
+VERSION / LIFECYCLE OWNER       SHARED EVIDENCE / DOCUMENT PLATFORM
+STORAGE / HASH OWNER            DOCUMENT PLATFORM CANONICAL WRITER /
+                                 TRUSTED STORAGE ADAPTER
+OCR STATUS                      O1 — DERIVED / NON-AUTHORITATIVE
+VERSION MODEL                   V4 — IMMUTABLE VERSION ENTITY + VERSIONED FINGERPRINT
+RECEIVABLE ROLE                 READ-ONLY VERSIONED SOURCE CONSUMER
+EXISTING CASEDOCUMENT           LEGACY / INCOMPLETE PROJECTION
+LEGACY DISPOSITION              LEGACY_SOURCE_VERSION_UNRESOLVED
+DOCUMENT WRITER / RESOLVER      CONTRACT DEFINED / IMPLEMENTATION NOT STARTED
+SCHEMA / MIGRATION              NOT AUTHORIZED
+S08-D01 DOCUMENT BLOCKER        CONTRACTUALLY CLOSED
+LEGAL-BASIS VERSION AUTHORITY   STILL OPEN
+RUNTIME                         UNCHANGED — PARTIAL THROUGH S08-I01 ONLY
+CLAIM FORMATION PHASE           OPEN
+NEXT ELIGIBLE TASK              UNSET — OWNER GO REQUIRED
+```
+
+Bu kayıt yeni primary domain, program veya register identity oluşturmaz. Constitution'ın
+shared/supporting-context yönünü bounded authority contract ile canonicalize eder. Document
+classification ile Claim component classification ayrıdır; unknown/generic document için
+sessiz `PRINCIPAL`/`OTHER` fallback yasaktır. Raw OCR legal source değildir. Existing legacy
+rows için `updatedAt`, storage path, fake version veya tahmini fingerprint kullanılamaz.
+
+S08-D01'in yalnız Document owner/source-version blocker'ı contract düzeyinde kapanır. Legal
+Basis Registry/version authority, retention/KVKK period/policy kararları, writer/resolver,
+schema/migration, storage/live-data access, legacy hashing/bootstrap/backfill, OCR persistence,
+formation intent/snapshot, S08-I02A, client cutover ve production deployment açık ve owner-gated
+kalır. Runtime, historical records, Office/Collection authority ve frozen S05 değişmez.
+
 ---
 
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification

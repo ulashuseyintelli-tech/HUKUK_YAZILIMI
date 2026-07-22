@@ -2074,6 +2074,39 @@ limitleri ve error surface ADR-014 OD-TPA-04C-21..36'dadır. I02 `NEXT / NOT STA
 AUTHORIZED`; ayrı owner GO-IMPLEMENT gerektirir. I03-I07, runtime writer, allocation, replay,
 cutover ve retirement yetkisiz; ACT-28 ve REC-AUTH-011/012 `OPEN` kalır.
 
+## 23.20. S08-D01A shared document-source authority contract — 2026-07-22
+
+Owner, `RCV-CLAIM-FORM-P02-S08-D01A-OWNER-DECISION` ile `OPTION D — SHARED
+EVIDENCE / DOCUMENT PLATFORM` modelini ratifiye etmiştir. Contract'ın canonical home'u
+`DOCUMENT-SOURCE-GOVERNANCE.md`dir. Bu kayıt yeni primary domain, program veya Master
+Register identity üretmez; `SYSTEM-CONSTITUTION` `SYS-GOV-019` shared/supporting-context
+sınırını consume eder.
+
+Shared Evidence / Document Platform; logical document/source identity, document version ve
+lifecycle, storage object, binary/content integrity, document-classification version,
+versioned source fingerprint, OCR/extraction evidence, reviewed-evidence lifecycle,
+revocation/tombstone ve retention/legal-hold linkage sahibidir. Version modeli `V4 —
+IMMUTABLE VERSION ENTITY + VERSIONED FINGERPRINT`; OCR statüsü `O1 — DERIVED /
+NON-AUTHORITATIVE`dır. Mevcut `CaseDocument`, canonical versioned aggregate kurulana kadar
+`LEGACY / INCOMPLETE PROJECTION`; legacy rows `LEGACY_SOURCE_VERSION_UNRESOLVED`dır.
+
+RECEIVABLE yalnız read-only, deterministic, tenant/case-scoped ve exact-version capable
+document-source resolver tüketir; document lifecycle, storage/hash veya OCR lifecycle sahibi
+değildir. Document classification ile Claim component classification aynı değildir. Unknown
+veya generic document sessizce `PRINCIPAL`/`OTHER` üretemez; deterministic classification
+yoksa `LEGAL_REVIEW_REQUIRED` korunur. OFFICE actor/permission/approval sahibi olarak kalır;
+approval legal source/basis/classification/snapshot değildir. DEBTOR/CASE yalnız case identity
+ve access boundary sahibidir. COLLECTION değişmez.
+
+Bu ratifikasyon yalnız S08-D01'in Document authority tarafındaki owner/program blocker'ını
+`CONTRACTUALLY CLOSED` yapar. Legal-basis/version authority blocker'ı `OPEN`; S08-D01'in
+implementation/persistence tarafı `NOT STARTED / NOT AUTHORIZED`dır. Document writer/resolver,
+schema/migration, storage/live-data access, legacy hashing/bootstrap, OCR persistence,
+`ClaimItemFormationIntentV1`, `ClaimFormationSnapshotV1`, S08-I02A ve client cutover
+yetkilendirilmez. Runtime `PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 +
+S06-I01 + S07-I01 + S08-I01 ONLY`; Claim Formation phase `OPEN`; next task `UNSET — OWNER
+GO REQUIRED` kalır.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
@@ -2084,6 +2117,7 @@ Canonical repository'de en az şu pointer'lar bulunmalıdır:
 SYSTEM-CONSTITUTION.md
 GOVERNANCE-INDEX.md
 DEBTOR-GOVERNANCE.md
+DOCUMENT-SOURCE-GOVERNANCE.md
 ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md
 ADR-013-FEE-HARC-SNAPSHOT-JOURNAL.md
 ADR-010-ACCOUNTING-JOURNAL-SOT-NORTH-STAR.md

@@ -1,7 +1,7 @@
 # Canonicalization Register
 
 **Durum:** Living document — governance kaydı, implementasyon değil.
-**Son güncelleme:** 2026-07-22 (RCV-CLAIM-FORM-P02-S08-I01 formal closure)
+**Son güncelleme:** 2026-07-22 (RCV-CLAIM-FORM-P02-S08-D01A-GOV-R01 authority canonicalization)
 **Kaynak:** `canonicalizationsiniflandirmaraporu.md` (kullanıcı tarafından sağlanan sınıflandırma raporu) + repo kodu doğrulaması, base commit `e65dc08564c09bfbe6db09a680606ac3d4b1f828`.
 **İlişkili dosya:** `canonicalization-policy.md` (sınıflandırma tanımları ve uygulama kuralları için bağlayıcı kaynak; bu register yalnız veri/kayıt tutar).
 
@@ -602,6 +602,47 @@ değildir. İlk canonical human-entry source yönü `CASE_DOCUMENT`; canonical m
 minor-unit integer; target intent expiry 24 saat ve snapshot yönü dedicated immutable entity'dir.
 Bu target yönler implementation değildir. S08-D01/I02/I03/I04 ile genel Claim Formation
 residual'ları owner-gated kalır; hiçbir successor seçilmez veya yetkilendirilmez.
+
+### RCV-CLAIM-FORM-P02-S08-D01A-GOV-R01 — Shared Document Source Authority Canonicalization
+
+```text
+STATUS                         FORMALLY RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+OWNER DECISION                 OPTION D — SHARED EVIDENCE / DOCUMENT PLATFORM
+DOCUMENT SOURCE AUTHORITY      SHARED EVIDENCE / DOCUMENT PLATFORM
+VERSION / LIFECYCLE AUTHORITY  SHARED EVIDENCE / DOCUMENT PLATFORM
+STORAGE OBJECT AUTHORITY       SHARED EVIDENCE / DOCUMENT PLATFORM
+CONTENT-HASH ATTESTATION       DOCUMENT PLATFORM CANONICAL WRITER /
+                               TRUSTED STORAGE ADAPTER
+OCR AUTHORITY                  SHARED EVIDENCE / DOCUMENT PLATFORM
+OCR STATUS                     O1 — DERIVED / NON-AUTHORITATIVE
+VERSION MODEL                  V4 — IMMUTABLE VERSION ENTITY + VERSIONED FINGERPRINT
+RECEIVABLE ROLE                READ-ONLY VERSIONED SOURCE CONSUMER
+OFFICE ROLE                    ACTOR / PERMISSION / APPROVAL ONLY
+DEBTOR / CASE ROLE             CASE IDENTITY / CASE ACCESS BOUNDARY ONLY
+EXISTING CASEDOCUMENT          LEGACY / INCOMPLETE PROJECTION
+LEGACY DISPOSITION             LEGACY_SOURCE_VERSION_UNRESOLVED
+DOCUMENT WRITER / RESOLVER     CONTRACT DEFINED / IMPLEMENTATION NOT STARTED
+SCHEMA / MIGRATION             NOT AUTHORIZED
+S08-D01 DOCUMENT BLOCKER       CONTRACTUALLY CLOSED
+LEGAL-BASIS VERSION AUTHORITY  STILL OPEN
+CLAIM FORMATION RUNTIME        UNCHANGED — PARTIAL THROUGH S08-I01 ONLY
+CLAIM FORMATION PHASE          OPEN
+NEXT ELIGIBLE TASK             UNSET — OWNER GO REQUIRED
+```
+
+Canonical contract `DOCUMENT-SOURCE-GOVERNANCE.md` içinde tutulur ve
+`SYSTEM-CONSTITUTION` `SYS-GOV-019` shared/supporting-context sınırını consume eder; yeni primary
+domain, program veya register identity oluşturmaz. Document classification, Claim component
+classification değildir. Raw OCR legal source veya formation authority değildir. `updatedAt`,
+storage path ve tahmini/fake version fingerprint authority olamaz; existing legacy rows
+otomatik canonical version'a yükseltilmez.
+
+Bu closure yalnız owner/program ve document source-version authority blocker'ını kapatır.
+Writer/resolver, schema/migration, storage/live-data access, legacy hashing/backfill, OCR
+persistence, retention/KVKK policy selection, Legal Basis Registry/version authority,
+`ClaimItemFormationIntentV1`, `ClaimFormationSnapshotV1`, S08-I02A, client cutover ve production
+deployment yetkilendirilmez. Historical S08-I01 kaydı, runtime `PARTIAL` durumu, frozen S05 ve
+Collection/shared-boundary kayıtları korunur.
 
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 

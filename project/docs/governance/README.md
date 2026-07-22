@@ -25,6 +25,9 @@ Dosyalar:
 - `DEBTOR-GOVERNANCE.md` - ratifiye Debtor Domain Law (RATIFIED v1.0, 2026-07-12).
 - `RECEIVABLE-GOVERNANCE.md` - ratifiye Receivable Domain Governance ve alacak hattının
   tek domain giriş noktası (RATIFIED v1.0; repository-canonical upon approved merge).
+- `DOCUMENT-SOURCE-GOVERNANCE.md` - Shared Evidence / Document Platform için bounded
+  document-source identity/version/integrity/fingerprint/OCR-evidence authority contract'ı;
+  yeni primary domain/program/register değildir ve implementation authority üretmez.
 - `RCV-PHASE-1-AUTHORIZATION.md` - RCV program/register cross-pointer'ı, DEC-0030
   disposition'ı, gerçekleşen phase/workstream progression, Phase 1 ile WS01/WS02 formal
   closure, `RCV-P2-WS03-P01/P02/P03` formal closure, P03 için ratified

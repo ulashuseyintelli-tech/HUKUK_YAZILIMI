@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-CLAIM-FORM-P02-S05-I01 formal closure / RCV-CLAIM-FORM-P02-S06-I01 formal closure / RCV-CLAIM-FORM-P02-S07-I01 formal closure / RCV-CLAIM-FORM-P02-S08-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-COL-TPA-04B schema-amendment formal closure / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor / RCV-CLAIM-MASTER-TRIAGE-R02-GOV post-S05 residual priority canonicalization
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-CLAIM-FORM-P02-S05-I01 formal closure / RCV-CLAIM-FORM-P02-S06-I01 formal closure / RCV-CLAIM-FORM-P02-S07-I01 formal closure / RCV-CLAIM-FORM-P02-S08-I01 formal closure / RCV-CLAIM-FORM-P02-S08-D01A-GOV-R01 authority canonicalization / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-COL-TPA-04B schema-amendment formal closure / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor / RCV-CLAIM-MASTER-TRIAGE-R02-GOV post-S05 residual priority canonicalization
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -84,7 +84,8 @@ RCV-CLAIM-FORM-P02-S07-I01  : FORMALLY CLOSED / CANONICAL (implementation PR #15
 RCV-CLAIM-FORM-P02-S08-A01  : ANALYSIS COMPLETE
 RCV-CLAIM-FORM-P02-S08-C01  : CONTRACT COMPLETE / OWNER RATIFIED
 RCV-CLAIM-FORM-P02-S08-I01  : FORMALLY CLOSED / CANONICAL (implementation PR #1515 / 5cbfc8e3)
-RCV-CLAIM-FORM-P02-S08-D01  : NOT STARTED / OWNER GO REQUIRED
+RCV-CLAIM-FORM-P02-S08-D01A : DOCUMENT AUTHORITY CONTRACT FORMALLY RATIFIED / CANONICAL UPON APPROVED MERGE
+RCV-CLAIM-FORM-P02-S08-D01  : PARTIAL — DOCUMENT AUTHORITY CONTRACT CLOSED / LEGAL-BASIS AUTHORITY OPEN / IMPLEMENTATION NOT STARTED
 RCV-CLAIM-FORM-P02-S08-I02  : NOT STARTED / NOT AUTHORIZED
 RCV-CLAIM-FORM-P02-S08-I03  : NOT STARTED / NOT AUTHORIZED
 RCV-CLAIM-FORM-P02-S08-I04  : NOT STARTED / NOT AUTHORIZED
@@ -2346,6 +2347,87 @@ context, component subtype registry/versioning ve legacy component inventory res
 `OPEN / UNSELECTED`dır. Bu kayıt yeni task seçmez; schema/migration, runtime, client cutover,
 historical mutation, Office authority, Collection/shared-boundary veya foreign program
 authority'si üretmez.
+
+### 1.31C RCV-CLAIM-FORM-P02-S08-D01A shared document-source authority canonicalization
+
+Owner, thread içindeki `RCV-CLAIM-FORM-P02-S08-D01A-OWNER-DECISION` ile `OPTION D —
+SHARED EVIDENCE / DOCUMENT PLATFORM` modelini ratifiye etmiştir. Minimum canonical authority
+contract'ı `DOCUMENT-SOURCE-GOVERNANCE.md` içinde tutulur; yeni primary domain, program veya
+Master Register identity oluşturulmaz.
+
+```text
+RCV-CLAIM-FORM-P02-S08-D01A-GOV-R01:
+FORMALLY RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+
+DOCUMENT SOURCE AUTHORITY:
+SHARED EVIDENCE / DOCUMENT PLATFORM
+
+DOCUMENT VERSION / LIFECYCLE AUTHORITY:
+SHARED EVIDENCE / DOCUMENT PLATFORM
+
+STORAGE OBJECT + CONTENT-HASH AUTHORITY:
+SHARED EVIDENCE / DOCUMENT PLATFORM
+DOCUMENT PLATFORM CANONICAL WRITER OR TRUSTED STORAGE ADAPTER
+
+OCR RESULT AUTHORITY:
+SHARED EVIDENCE / DOCUMENT PLATFORM
+
+OCR STATUS:
+O1 — DERIVED / NON-AUTHORITATIVE
+
+VERSION MODEL:
+V4 — IMMUTABLE VERSION ENTITY + VERSIONED FINGERPRINT
+
+RECEIVABLE:
+READ-ONLY VERSIONED SOURCE CONSUMER
+
+OFFICE:
+ACTOR / PERMISSION / APPROVAL ONLY
+
+DEBTOR / CASE:
+CASE IDENTITY AND CASE ACCESS BOUNDARY ONLY
+
+EXISTING CASEDOCUMENT:
+LEGACY / INCOMPLETE PROJECTION
+
+LEGACY DISPOSITION:
+LEGACY_SOURCE_VERSION_UNRESOLVED
+
+DOCUMENT WRITER / RESOLVER:
+CONTRACT DEFINED / IMPLEMENTATION NOT STARTED
+
+DOCUMENT SCHEMA / MIGRATION:
+NOT AUTHORIZED
+
+RECEIVABLE S08-D01 DOCUMENT BLOCKER:
+CONTRACTUALLY CLOSED
+
+LEGAL-BASIS VERSION AUTHORITY BLOCKER:
+STILL OPEN
+
+CLAIM FORMATION RUNTIME:
+UNCHANGED — PARTIAL THROUGH S08-I01 ONLY
+
+CLAIM FORMATION PHASE:
+OPEN
+
+NEXT ELIGIBLE TASK:
+UNSET — OWNER GO REQUIRED
+```
+
+Document classification ile Claim component classification eşit değildir. Unknown/generic
+document sessiz `PRINCIPAL` veya `OTHER` üretmez. Existing version mutate/hard-delete edilmez;
+semantic veya binary change yeni immutable version üretir. `updatedAt` version, storage path
+identity veya OCR legal source sayılamaz. Verified content hash olmayan legacy rows için version
+ve fingerprint tahmin edilmez.
+
+Bu kayıt yalnız Document owner/program ve source-version/fingerprint contract blocker'ını
+kapatır. Retention period, destruction trigger, anonymization ve legal-hold authority seçilmez;
+Legal Basis Registry/version authority açık kalır. Document writer/resolver, schema/migration,
+storage/live-data access, legacy hash/bootstrap/backfill, OCR persistence,
+`ClaimItemFormationIntentV1`, `ClaimFormationSnapshotV1`, S08-I02A, client cutover ve production
+deployment yetkilendirilmez. S08-D01'in implementation/persistence tarafı `NOT STARTED /
+NOT AUTHORIZED`dır; runtime ve historical records değişmez.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 
