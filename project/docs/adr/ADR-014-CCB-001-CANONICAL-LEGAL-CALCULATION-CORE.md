@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified and TPA-03A foundation closed 2026-07-20; TPA-04 Option C target-native plan-then-persist / dormant-first single-writer contract and TPA-04A receipt-bound snapshot/bucket identity contract ratified 2026-07-20; TPA-04B required-evidence schema-amendment contract ratified and exact two-file amendment closed/canonical via PR #1470 / `9dabe8db` 2026-07-21; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 final disposition B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED; snapshot/plan/writer runtime, replay, cutover, retirement and PR-11 remain unauthorized until separate owner GO
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified and TPA-03A foundation closed 2026-07-20; TPA-04 Option C target-native plan-then-persist / dormant-first single-writer contract and TPA-04A receipt-bound snapshot/bucket identity contract ratified 2026-07-20; TPA-04B required-evidence schema-amendment contract ratified and exact two-file amendment closed/canonical via PR #1470 / `9dabe8db` 2026-07-21; TPA-04C pure `LegalApplicationPlan` builder contract OD-TPA-04C-01..20 ratified 2026-07-22; M2 live DB apply/post-validation completed with empty target tables and no runtime writer; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 final disposition B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED; builder/writer runtime, replay, cutover, retirement and PR-11 remain unauthorized until separate owner GO
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -946,6 +946,173 @@ H. Next action
 Recommend only the next approved PR in sequence.
 ```
 
+## TPA-04C Pure LegalApplicationPlan Builder Contract — 2026-07-22
+
+Owner, TPA-04C analizinin `A — READY FOR OWNER CONTRACT RATIFICATION` önerisini
+`OD-TPA-04C-01..20` kararlarıyla ratifiye etmiştir. Bu bölüm pure plan-builder
+sözleşmesinin tek tam canonical kaydıdır; aşağıdaki pointer kayıtları bu sözleşmeyi
+genişletemez.
+
+### OD-TPA-04C-01 — Builder ownership
+
+Pure `LegalApplicationPlan` builder, Receivable-owned legal calculation authority ile
+RCV-COL Legal Application Boundary içinde konumlanır. Collection receipt lifecycle,
+admission, idempotency, outer transaction, actor/correlation ve audit/event/outbox
+owner'ıdır. Builder DB/Prisma kullanmaz, transaction açmaz, persistence yapmaz ve
+audit/event/outbox yazmaz.
+
+### OD-TPA-04C-02 — Official snapshot producer
+
+Official snapshot producer ayrı bir Receivable-owned component olacaktır. Current
+`CaseBalanceService` DB/clock dependency, preview/shadow authority, number arithmetic ve
+canonical-snapshot eksikliği nedeniyle doğrudan official producer olarak reddedilmiştir.
+Snapshot producer implementation future owner-gated package'tır ve yetkili değildir.
+
+### OD-TPA-04C-03 — Preview engine reuse
+
+Existing Balance Engine, `CaseBalanceService` ve `ClaimBucketAssembler` doğrudan TPA-04C
+builder olarak reuse edilmez. Yalnız policy intent, component-ordering semantics ve isolated
+domain rules kanıt olarak incelenebilir. ClaimItem-grain allocation, ClaimItem-ID bucket
+identity, DB/clock dependency, number/fixed-cent arithmetic ve preview-projection authority
+yeni builder'a taşınamaz.
+
+### OD-TPA-04C-04 — Component set
+
+Closed component set ve canonical rank şudur: `COST=10`, `ANCILLARY=20`,
+`ACCRUED_INTEREST=30`, `PRINCIPAL=40`. Unknown/unmapped component fail-closed'dur; skip,
+fallback veya HELD dönüşümü yasaktır.
+
+### OD-TPA-04C-05 — Exact money model
+
+Arithmetic yalnız bigint-safe integer minor unit kullanır. Floating point ve implicit
+`minorUnit=2` yasaktır. Persistence-compatible aralık `0..9223372036854775807`; JSON
+boundary unsigned decimal integer string'dir. Leading plus, decimal, exponent, whitespace
+ve leading-zero ambiguity reddedilir.
+
+### OD-TPA-04C-06 — Application order
+
+Deterministic sıra `component rank -> priorityRank -> bucketContextKey UTF-8 byte order`dır.
+Locale-aware sort, ClaimItem-ID tie-break, insertion order ve DB-row order yasaktır.
+Duplicate canonical identity tie-break değil hatadır.
+
+### OD-TPA-04C-07 — Snapshot staleness
+
+Staleness wall-clock tolerance ile belirlenmez. Expected `snapshotRef`, `snapshotHash`,
+`sourceVersionSetHash`, `historyBoundary` ve `effectiveDate` değerlerinin exact equality'si
+zorunludur. Mismatch `SNAPSHOT_STALE` veya ilgili deterministic error ile plan üretmeden
+sonlanır. Arbitrary N-minute validity reddedilmiştir.
+
+### OD-TPA-04C-08 — Effective date
+
+Application effective date command ile canonical snapshot arasında exact equality taşır.
+Timezone dönüşümü ve implicit today yasaktır; representation canonical ISO date contract'tır.
+
+### OD-TPA-04C-09 — Cost/fee authority
+
+`COST` yalnız official Receivable snapshot evidence'ından gelebilir. Builder fee tahmin
+edemez; ClaimItem metninden, legacy allocation'dan veya default fee authority'den fee
+türetemez. Eksik/belirsiz authority `FEE_AUTHORITY_UNRESOLVED` ile fail-closed'dur.
+
+### OD-TPA-04C-10 — HELD semantics
+
+Permitted closed reasons yalnız `NO_ELIGIBLE_OUTSTANDING` ve
+`EXCESS_OVER_ELIGIBLE_OUTSTANDING`dır. HELD, valid snapshot ve authority sonrasında
+uygulanabilir bucket bulunmayan gerçek remainder'dır. Snapshot unavailable/stale,
+hash/ref mismatch, unsupported component, currency/minor-unit mismatch, missing fee authority,
+duplicate identity, arithmetic veya policy/version mismatch HELD değildir; bunlar no-plan /
+fail-closed sonucudur.
+
+### OD-TPA-04C-11 — Zero receipt / zero buckets
+
+`receiptAmountMinor <= 0` fail-closed'dur. Valid snapshot ile zero eligible positive bucket
+full HELD (`NO_ELIGIBLE_OUTSTANDING`) üretebilir. Zero-balance bucket application row üretmez.
+
+### OD-TPA-04C-12 — Plan identity
+
+Builder deterministic `planFingerprint` üretir. `LegalApplicationBatch.id`,
+`LegalApplication.id` ve `ApplicationAttribution.id` writer/orchestrator sorumluluğudur.
+Fingerprint yalnız canonical authoritative plan facts'ten oluşur; actor, correlation ID,
+generated DB ID, current time, runtime environment ve non-authoritative attribution ordering
+girdi değildir.
+
+### OD-TPA-04C-13 — Attribution
+
+`ApplicationAttribution` optional ve non-authoritative'dir; yalnız legal source lineage
+açıklayabilir. Amount, order, balance authority veya plan-success şartı olamaz.
+`sourceLineageSetRef` Receivable-owned producer tarafından üretilir ve her
+`LegalApplication` row'unda required evidence field'dır; attribution row'u optional kalır.
+
+### OD-TPA-04C-14 — Canonical serialization
+
+Current generic canonical-JSON helper doğrudan RCV-CAS/v1 authority değildir. Implementation
+domain-restricted RCV-CAS/v1 serializer/validator kullanmalıdır: UTF-8, no BOM, Unicode NFC,
+deterministic object-key order, duplicate-key rejection, strict integer-string profile,
+explicit null-vs-absent, locale independence ve exact payload/hash/ref validation. Generic
+helper yalnız bunların tamamı kanıtlanırsa reuse edilebilir.
+
+### OD-TPA-04C-15 — Error model
+
+Builder discriminated machine-readable union döndürür. Minimum canonical set:
+`SNAPSHOT_UNAVAILABLE`, `SNAPSHOT_CONTRACT_UNSUPPORTED`,
+`SNAPSHOT_SERIALIZATION_INVALID`, `SNAPSHOT_HASH_MISMATCH`, `SNAPSHOT_REF_MISMATCH`,
+`SOURCE_VERSION_INCOMPLETE`, `FORMATION_CONTEXT_INCOMPLETE`, `POLICY_VERSION_MISSING`,
+`FEE_AUTHORITY_UNRESOLVED`, `BUCKET_CONTEXT_UNMAPPED`, `BUCKET_IDENTITY_INVALID`,
+`DUPLICATE_BUCKET_CONTEXT`, `CURRENCY_OR_MINOR_UNIT_INVALID`,
+`EFFECTIVE_DATE_MISMATCH`, `HISTORY_BOUNDARY_UNAUTHORIZED`, `SNAPSHOT_STALE`,
+`SOURCE_CONCURRENCY_UNSAFE`, `RECEIPT_AMOUNT_INVALID`, `AMOUNT_OUT_OF_RANGE`,
+`CONSERVATION_FAILURE`, `DIRECTION_NOT_AUTHORIZED`, `TENANT_CONTEXT_MISMATCH` ve
+`CASE_CONTEXT_MISMATCH`. Builder audit yazmaz. Orchestrator yalnız allowlisted error code ve
+evidence reference taşır; raw canonical payload ve PII audit/log'a yazılmaz.
+
+### OD-TPA-04C-16 — Reversal
+
+Initial builder contract `APPLY ONLY`dir. Full reversal TPA-04E'ye deferred, partial reversal
+yetkisizdir. Current legacy cancellation/reversal değişmez.
+
+### OD-TPA-04C-17 — ClaimItem / legacy prohibition
+
+Builder `ClaimItem.collectedAmount`, `LedgerAllocation`, `CollectionAllocation`, legacy
+allocator output, legacy balance reconstruction, ClaimItem-targeted application veya
+ClaimItem-ID bucket identity okuyamaz/üretemez. Legacy model unchanged/quarantined'dır;
+cutover ve retirement ayrı owner-gated work'tür.
+
+### OD-TPA-04C-18 — Input size guards
+
+Canonical payload byte size, bucket/attribution count, `componentCode` length ve lineage-ref
+length için explicit upper limits gerekir. Exact sayılar implementation öncesi repository
+constraints ve operational evidence ile ayrı teknik öneride pinlenecektir. Pinlenene kadar
+production-ready sayılamaz; bu implementation-detail gate'tir, architectural blocker değildir.
+
+### OD-TPA-04C-19 — Implementation slices
+
+Ratified sıra: `I01` contracts/branded types/money primitives; `I02` snapshot validation and
+deterministic errors; `I03` pure APPLY ordering/exact-minor-unit allocation; `I04` HELD,
+fingerprint and attribution isolation; `I05` unit/property/security tests; `I06` TPA-04B
+persistence-compatibility contract tests; `I07` dormant integration seam. I01-I06 planned but
+not implementation-authorized; I07 writer contract implementation, snapshot producer,
+synthetic-corpus disposition ve writer/cutover gate'leri nedeniyle blocked'dır. Hiçbir slice
+self-start edemez.
+
+### OD-TPA-04C-20 — M2 live state
+
+TPA-04B migration `20260721002219_legal_application_writer_evidence`, execution anchor
+`9dabe8dbddecafad49dbe58958ef2c3642d14a01` ile live DB'ye uygulanmış ve post-validate
+edilmiştir. Data/backfill `NONE`; `LegalApplicationBatch`, `LegalApplication` ve
+`ApplicationAttribution` hedef tabloları `EMPTY`; runtime writer `NOT IMPLEMENTED / NOT
+ACTIVATED`dır. Önceki “live DB apply NOT AUTHORIZED / NOT PERFORMED” ifadesi tarihsel
+pre-apply durumudur ve bu kayıtla superseded'dır.
+
+M2 live apply, ACT-28 veya REC-AUTH-011/012'yi kapatmaz; builder, writer, cutover veya legacy
+retirement yetkisi vermez. Exact-cent persistence invariant'ı değişmez:
+
+```text
+receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor
+```
+
+TPA-04C contract ratified/canonical'dır; implementation `NOT STARTED / NOT AUTHORIZED`.
+Sıradaki tek owner-gated görev `TPA-04C-I01 — CONTRACT TYPES / BRANDED MONEY PRIMITIVES
+IMPLEMENTATION`; ayrı `OWNER GO-IMPLEMENT REQUIRED`dır.
+
 ## Consequences
 
 ### Positive
@@ -1010,3 +1177,4 @@ Recommend only the next approved PR in sequence.
 | 2026-07-20 | 3.2 compliance update | PR #407 final disposition B supersedes its prior keep-open lifecycle decision: CLOSED UNMERGED, requirements preserved in RD01/TPA, code discarded, extraction/reuse prohibited. No architecture version or implementation authority changes. |
 | 2026-07-20 | 3.3 | TPA-04B required-evidence schema-amendment contract: required/default-free/no-backfill snapshot and bucket evidence fields, canonical TEXT payload, exact identity formats, per-batch bucket uniqueness, arithmetic checks and DB aggregate conservation are ratified. Implementation remains exact-two-file and owner-gated through TPA-04B-ENTRY. |
 | 2026-07-21 | 3.3 compliance update | TPA-04B schema-amendment closure: PR #1470 / `9dabe8db` establishes the exact two-file required-evidence amendment with PostgreSQL 16 apply/rollback/re-apply evidence. Runtime writer, live DB apply, replay, cutover and retirement remain unauthorized; ACT-28/REC-AUTH-011/012 remain open. |
+| 2026-07-22 | 3.4 | TPA-04C pure LegalApplicationPlan builder contract ratified through OD-TPA-04C-01..20. Builder is Receivable-owned, pure/APPLY-only, deterministic and exact-minor-unit; legacy allocation and ClaimItem payment-state dependencies are prohibited. M2 live apply/post-validation is recorded with empty target tables and no runtime writer. I01 is owner-gated and not authorized. |

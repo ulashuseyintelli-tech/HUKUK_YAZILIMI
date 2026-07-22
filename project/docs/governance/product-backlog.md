@@ -2626,12 +2626,15 @@ arithmetic, immutable UPDATE/DELETE protection, nonempty-foundation hard stop ve
 `receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` transaction-end
 conservation kurulmuştur. PostgreSQL 16 apply/rollback/re-apply ve seeded hard-stop/unchanged-row
 evidence'ı PASS'tir. `ApplicationAttribution` unchanged/non-authoritative; runtime writer/backfill
-NONE; live/production DB apply NOT AUTHORIZED/NOT PERFORMED'dır.
+NONE'dır. Bu closure anındaki live/production DB apply NOT AUTHORIZED/NOT PERFORMED kaydı,
+2026-07-22 M2 live-apply canonical kaydıyla superseded'dır.
 
 ACT-28 ve REC-AUTH-011/012 `OPEN`; PR #407 `CLOSED / UNMERGED / NO FURTHER ACTION`; synthetic
 corpus schema amendment için non-blocking, TPA-04C writer/evidence/cutover için `BLOCKING`dir.
-**NEXT ELIGIBLE ACTION: TPA-04C — PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS — OWNER
-GO-ANALYZE REQUIRED / IMPLEMENTATION NOT AUTHORIZED.**
+TPA-04C pure-plan contract OD-TPA-04C-01..20 ile ratified/canonical'dır. M2 migration live
+DB'de applied/post-validated; target tables empty, data/backfill none ve runtime writer inactive
+kalır. **NEXT ELIGIBLE ACTION: TPA-04C-I01 — CONTRACT TYPES / BRANDED MONEY PRIMITIVES — OWNER
+GO-IMPLEMENT REQUIRED / IMPLEMENTATION NOT AUTHORIZED.**
 
 ---
 

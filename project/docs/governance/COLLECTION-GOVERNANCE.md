@@ -933,8 +933,9 @@ bucket arithmetic, immutable UPDATE/DELETE koruması, nonempty-foundation hard s
 conservation guard'ı kurulmuştur. PostgreSQL 16 disposable DB apply/rollback/re-apply kanıtı
 PASS'tir; `ApplicationAttribution` değişmemiştir.
 
-Runtime writer/backfill etkisi `NONE`; live/production DB apply `NOT AUTHORIZED / NOT
-PERFORMED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus schema amendment için
+Runtime writer/backfill etkisi `NONE`dir. Closure anındaki live/production DB apply
+`NOT AUTHORIZED / NOT PERFORMED` kaydı, 2026-07-22 M2 live-apply kaydıyla superseded'dır.
+ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus schema amendment için
 non-blocking, TPA-04C writer/evidence/cutover için `BLOCKING` kalır. Sonraki görev yalnız
 `TPA-04C — PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS / OWNER GO-ANALYZE REQUIRED`dır.
 
@@ -946,3 +947,25 @@ balance-exposure gereksiniminin canonical taşıyıcısı
 Özellikle held receipt exposure reconciliation dışındadır; cost/ancillary exact-cent
 reconcile edilir ve principal+interest toplamı genel claim-remaining invariant'ı değildir.
 Bu pointer Collection runtime, writer, schema, migration veya cutover authority üretmez.
+
+## 9.10. TPA-04C pure LegalApplicationPlan builder contract — 2026-07-22
+
+Owner `OD-TPA-04C-01..20` kararlarını ADR-014'te tek tam authority kaydı olarak ratifiye
+etmiştir. Receivable official snapshot, component/bucket semantics, TBK100 policy ve pure
+exact-minor-unit plan authority'sini; Collection receipt lifecycle, admission, idempotency ve
+outer transaction orchestration'ı korur. Builder DB/Prisma/clock/transaction/persistence,
+audit/event/outbox veya legacy allocator yüzeyi kullanamaz. ClaimItem application target ve
+payment-state authority değildir.
+
+Plan APPLY-only, deterministic ve fail-closed'dur. Closed order COST→ANCILLARY→
+ACCRUED_INTEREST→PRINCIPAL; HELD yalnız valid-authority remainder'dır. Exact persistence
+conservation `receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor` kalır.
+Attribution optional/non-authoritative; partial reversal unauthorized'dır.
+
+M2 migration `20260721002219_legal_application_writer_evidence`, execution anchor
+`9dabe8dbddecafad49dbe58958ef2c3642d14a01` ile live DB'de applied/post-validated'dır.
+Backfill/data `NONE`; üç target table `EMPTY`; runtime writer `NOT IMPLEMENTED / NOT
+ACTIVATED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus TPA-04C
+writer/evidence/cutover için `BLOCKING` kalır. TPA-04C implementation yetkisizdir; next yalnız
+`TPA-04C-I01 — CONTRACT TYPES / BRANDED MONEY PRIMITIVES IMPLEMENTATION / OWNER
+GO-IMPLEMENT REQUIRED`dır.

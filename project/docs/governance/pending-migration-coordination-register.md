@@ -343,7 +343,8 @@ IŞIĞINDA ama ona KÖRÜ KÖRÜNE güvenmeden):**
 CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R01:
 GO-ANALYZE + GO-DOCS COMPLETE / COORDINATION REPORT DELIVERED
 
-LIVE DB MUTATION PERFORMED: 0
+LIVE DB MUTATION PERFORMED AT R01 ANALYSIS TIME: 0
+HISTORICAL STATUS: SUPERSEDED FOR M2 ONLY BY §8 LIVE-APPLY RECORD
 
 READY FOR OWNER GATE AUTHORIZATION (her biri AYRI, KESİN SIRAYLA — Seçenek A):
 GATE M2 (LEGAL APPLICATION) — READY, ZORUNLU İLK icra (gerçek kronolojik sıra)
@@ -423,4 +424,44 @@ EXECUTION: prisma migrate deploy only.
 POST-VALIDATION: ClientPortalUser.tokenVersion column + default per §7.7;
   API health smoke; existing 3 portal users show tokenVersion=0.
 PROHIBITED: portal session-revocation functional/live testing, governance closure.
+```
+
+## 8. M2 live-apply execution result — 2026-07-22
+
+Bu bölüm §7'deki preflight/coordination geçmişini silmez. §7.9'daki sıfır-mutation
+ifadesi R01 analiz anının tarihsel durumudur ve yalnız M2 bakımından aşağıdaki fiilî
+owner-authorized execution kaydıyla superseded'dır.
+
+```text
+GATE:
+M2 — LEGAL-APPLICATION-WRITER-EVIDENCE
+
+MIGRATION:
+20260721002219_legal_application_writer_evidence
+
+EXECUTION ANCHOR:
+9dabe8dbddecafad49dbe58958ef2c3642d14a01
+
+LIVE DB APPLY:
+SUCCESSFULLY APPLIED / POST-VALIDATED
+
+DATA / BACKFILL:
+NONE
+
+TARGET TABLE ROW COUNTS:
+LegalApplicationBatch = 0
+LegalApplication = 0
+ApplicationAttribution = 0
+
+RUNTIME WRITER:
+NOT IMPLEMENTED / NOT ACTIVATED
+```
+
+M2'nin uygulanmış olması yalnız physical evidence-schema foundation'ını hazırlar. ACT-28,
+REC-AUTH-011 ve REC-AUTH-012 `OPEN` kalır; snapshot producer, plan builder, writer, replay,
+consumer cutover, legacy retirement, M1/M3/M4 veya başka migration yetkisi üretmez. Exact-cent
+invariant'ı şöyledir:
+
+```text
+receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor
 ```
