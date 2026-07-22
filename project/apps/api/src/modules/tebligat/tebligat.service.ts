@@ -13,6 +13,7 @@ import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/
 import { ServiceOccurrenceService } from "./service-occurrence/service-occurrence.service";
 import { IdempotencyMode } from "./service-occurrence/service-occurrence.types";
 import { ServiceOccurrenceServiceDateRole } from "@prisma/client"; // DEBTOR-OF01-HISTORY-P04-A1
+import { ServiceOccurrenceRegimeCode } from "@prisma/client"; // DEBTOR-OF01-HISTORY-P04-A1-R1
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest/domain-event-ingest.service";
 import { DomainEvent } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
 import {
@@ -393,7 +394,7 @@ export class TebligatService {
     };
 
     // PTT sonucuna göre durum ve sonraki adım belirle
-    const { status, nextAction, tk21Type, tebligSayilmaDate } = 
+    const { status, nextAction, tk21Type, tebligSayilmaDate, serviceRegimeCode } =
       this.determinePttResultAction(tebligat, dto);
 
     updateData.status = status;
@@ -476,6 +477,7 @@ export class TebligatService {
         timePrecision: "DATE_ONLY",
         addressTypeAtOccurrence,
         serviceDateRole,
+        serviceRegimeCode,
         barcodeNo: resolvedBarcodeNo,
         sourceNote: boundedSourceNote,
         evidenceReference: null,
@@ -608,6 +610,13 @@ export class TebligatService {
     nextAction: TebligatNextAction;
     tk21Type?: Tk21Type;
     tebligSayilmaDate?: Date;
+    /**
+     * DEBTOR-OF01-HISTORY-P04-A1-R1: bu metodun ZATEN hesapladığı hukukî rejim sonucunun
+     * (tk21Type ile aynı dallarda, İKİNCİ bir yorumlama yapmadan) typed, immutable-persist
+     * edilebilir kopyası. serviceDateRole (deriveServiceDateRole) ile AYNI amaç için
+     * kullanılmaz — bkz. schema.prisma ServiceOccurrence.serviceRegimeCode yorumu.
+     */
+    serviceRegimeCode?: ServiceOccurrenceRegimeCode;
   } {
     const { pttResult, tk21Type, muhtarlikDate, ilanDate } = dto;
 
@@ -632,6 +641,7 @@ export class TebligatService {
         nextAction: TebligatNextAction.BEKLE,
         tk21Type: Tk21Type.TK_20,
         tebligSayilmaDate,
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20,
       };
     }
 
@@ -644,6 +654,7 @@ export class TebligatService {
       return {
         status: TebligatStatus.TESLIM_EDILDI,
         nextAction: TebligatNextAction.TEBLIG_TAMAMLANDI,
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY,
       };
     }
 
@@ -656,6 +667,7 @@ export class TebligatService {
           nextAction: TebligatNextAction.TEBLIG_TAMAMLANDI,
           tk21Type: Tk21Type.TK_21_1,
           tebligSayilmaDate: muhtarlikDate ? new Date(muhtarlikDate) : new Date(),
+          serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_1,
         };
       }
     }
@@ -673,6 +685,7 @@ export class TebligatService {
           nextAction: TebligatNextAction.BEKLE,
           tk21Type: Tk21Type.TK_21_2,
           tebligSayilmaDate: ilanTarihi,
+          serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_2,
         };
       }
 
@@ -682,6 +695,7 @@ export class TebligatService {
         nextAction: TebligatNextAction.TEBLIG_TAMAMLANDI,
         tk21Type: Tk21Type.TK_21_1,
         tebligSayilmaDate: muhtarlikDate ? new Date(muhtarlikDate) : new Date(),
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_1,
       };
     }
 

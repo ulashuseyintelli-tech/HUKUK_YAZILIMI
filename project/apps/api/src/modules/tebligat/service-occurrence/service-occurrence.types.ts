@@ -4,6 +4,7 @@ import {
   ServiceOccurrenceTimePrecision,
   TebligatAddressType,
   ServiceOccurrenceServiceDateRole,
+  ServiceOccurrenceRegimeCode,
 } from "@prisma/client";
 
 /**
@@ -45,6 +46,12 @@ export interface CreateServiceOccurrenceCommand {
    */
   addressTypeAtOccurrence: TebligatAddressType;
   serviceDateRole?: ServiceOccurrenceServiceDateRole | null;
+  /**
+   * DEBTOR-OF01-HISTORY-P04-A1-R1: hangi hukukî tebliğ rejimi uygulanacak (serviceDateRole'den
+   * AYRI kavram — bkz. schema.prisma ServiceOccurrence.serviceRegimeCode yorumu). serviceDateRole
+   * ile BİRLİKTE dolu ya da BİRLİKTE null olmalıdır (bkz. validateFactualFields + DB CHECK).
+   */
+  serviceRegimeCode?: ServiceOccurrenceRegimeCode | null;
   receivedAt?: Date | null;
   barcodeNo?: string | null;
   sourceNote?: string | null;
@@ -90,4 +97,5 @@ export const FACTUAL_PAYLOAD_FIELDS = [
   "evidenceReference",
   "addressTypeAtOccurrence", // DEBTOR-OF01-HISTORY-P04-A1
   "serviceDateRole", // DEBTOR-OF01-HISTORY-P04-A1
+  "serviceRegimeCode", // DEBTOR-OF01-HISTORY-P04-A1-R1
 ] as const;

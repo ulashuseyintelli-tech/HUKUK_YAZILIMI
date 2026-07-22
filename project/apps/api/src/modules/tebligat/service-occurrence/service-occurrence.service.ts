@@ -47,6 +47,8 @@ export class ServiceOccurrenceService {
       command.sourceCode,
       command.sourceNote,
       command.addressTypeAtOccurrence,
+      command.serviceDateRole,
+      command.serviceRegimeCode,
     );
     if (!command.idempotencyMode) {
       throw new ServiceOccurrenceValidationError("idempotencyMode zorunludur, örtük NONE varsayılamaz");
@@ -85,6 +87,8 @@ export class ServiceOccurrenceService {
       command.sourceCode,
       command.sourceNote,
       command.addressTypeAtOccurrence,
+      command.serviceDateRole,
+      command.serviceRegimeCode,
     );
     if (!command.idempotencyMode) {
       throw new ServiceOccurrenceValidationError("idempotencyMode zorunludur, örtük NONE varsayılamaz");
@@ -117,6 +121,8 @@ export class ServiceOccurrenceService {
       command.replacement.sourceCode,
       command.replacement.sourceNote,
       command.replacement.addressTypeAtOccurrence,
+      command.replacement.serviceDateRole,
+      command.replacement.serviceRegimeCode,
     );
     if (!command.correctionReasonCode?.trim()) {
       throw new ServiceOccurrenceValidationError("correctionReasonCode zorunludur");
@@ -166,6 +172,7 @@ export class ServiceOccurrenceService {
         timePrecision: command.replacement.timePrecision,
         addressTypeAtOccurrence: command.replacement.addressTypeAtOccurrence,
         serviceDateRole: command.replacement.serviceDateRole ?? null,
+        serviceRegimeCode: command.replacement.serviceRegimeCode ?? null,
         receivedAt: command.replacement.receivedAt ?? null,
         recordedByUserId: command.actor.userId ?? null,
         recordedBySystem: command.actor.systemCode ?? null,
@@ -198,6 +205,8 @@ export class ServiceOccurrenceService {
     sourceCode: string,
     sourceNote: string | null | undefined,
     addressTypeAtOccurrence: string | null | undefined,
+    serviceDateRole?: string | null,
+    serviceRegimeCode?: string | null,
   ): void {
     if (isLegacyBaselineType(occurrenceType)) {
       throw new ServiceOccurrenceValidationError("occurrenceType=LEGACY_BASELINE normal create/supersede metodunda kullanılamaz");
@@ -211,6 +220,16 @@ export class ServiceOccurrenceService {
     // olduğu için ayrı bir "pairing" kontrolüne gerek yoktur.
     if (!addressTypeAtOccurrence) {
       throw new ServiceOccurrenceValidationError("addressTypeAtOccurrence zorunludur (yalnız LEGACY_BASELINE'da null olabilir, bu yol LEGACY_BASELINE kabul etmez)");
+    }
+    // DEBTOR-OF01-HISTORY-P04-A1-R1: serviceRegimeCode serviceDateRole ile BİRLİKTE dolu ya da
+    // BİRLİKTE null olmalıdır (DB CHECK occ_p04a1r1_regime_code_pairs_with_date_role_check ile
+    // birebir, uygulama seviyesinde erken/net hata mesajı için tekrarlanır).
+    const isServiceDateRoleNull = (serviceDateRole ?? null) === null;
+    const isServiceRegimeCodeNull = (serviceRegimeCode ?? null) === null;
+    if (isServiceDateRoleNull !== isServiceRegimeCodeNull) {
+      throw new ServiceOccurrenceValidationError(
+        "serviceRegimeCode ve serviceDateRole birlikte dolu ya da birlikte null olmalıdır",
+      );
     }
     if (timePrecision === "DATE_ONLY" && occurredAt != null) {
       throw new ServiceOccurrenceValidationError("timePrecision=DATE_ONLY iken occurredAt dolu olamaz");
@@ -265,6 +284,7 @@ export class ServiceOccurrenceService {
       timePrecision: command.timePrecision,
       addressTypeAtOccurrence: command.addressTypeAtOccurrence,
       serviceDateRole: command.serviceDateRole ?? null,
+      serviceRegimeCode: command.serviceRegimeCode ?? null,
       receivedAt: command.receivedAt ?? null,
       recordedByUserId: command.actor.userId ?? null,
       recordedBySystem: command.actor.systemCode ?? null,
@@ -328,6 +348,7 @@ export class ServiceOccurrenceService {
       existing.timePrecision === command.timePrecision &&
       existing.addressTypeAtOccurrence === command.addressTypeAtOccurrence &&
       (existing.serviceDateRole ?? null) === (command.serviceDateRole ?? null) &&
+      (existing.serviceRegimeCode ?? null) === (command.serviceRegimeCode ?? null) &&
       this.datesEqual(existing.receivedAt, command.receivedAt) &&
       (existing.barcodeNo ?? null) === (command.barcodeNo ?? null) &&
       (existing.evidenceReference ?? null) === (command.evidenceReference ?? null)

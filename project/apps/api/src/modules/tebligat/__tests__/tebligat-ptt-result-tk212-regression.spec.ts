@@ -13,6 +13,7 @@
  * fail-closed.
  */
 import { BadRequestException } from "@nestjs/common";
+import { ServiceOccurrenceRegimeCode } from "@prisma/client";
 import { TebligatService } from "../tebligat.service";
 import { TebligatAddressType, TebligatPttResult, Tk21Type } from "../dto/tebligat.dto";
 
@@ -36,6 +37,8 @@ describe("TebligatService.determinePttResultAction — TK 21/1 ve TK 21/2 (regre
     expect(result.tk21Type).toBe(Tk21Type.TK_21_2);
     // Önceki hatalı davranışta bu değer 2026-01-25 (ilanDate + 15) olurdu.
     expect(result.tebligSayilmaDate).toEqual(new Date(ilanDate));
+    // TEST-04 (DEBTOR-OF01-HISTORY-P04-A1-R1): MERNİS + normal muhtar yolu → TK_21_2 serviceRegimeCode.
+    expect(result.serviceRegimeCode).toBe(ServiceOccurrenceRegimeCode.TK_21_2);
   });
 
   it("MUHTARLIGA_BIRAKILDI + BİLİNEN adres (TK 21/1): tebligSayilmaDate = muhtarlikDate, gecikmesiz", () => {
@@ -50,6 +53,8 @@ describe("TebligatService.determinePttResultAction — TK 21/1 ve TK 21/2 (regre
 
     expect(result.tk21Type).toBe(Tk21Type.TK_21_1);
     expect(result.tebligSayilmaDate).toEqual(new Date(muhtarlikDate));
+    // TEST-03 (DEBTOR-OF01-HISTORY-P04-A1-R1): bilinen adres + normal muhtar yolu → TK_21_1.
+    expect(result.serviceRegimeCode).toBe(ServiceOccurrenceRegimeCode.TK_21_1);
   });
 
   it("IMTINA + BİLİNEN adres (TK 21/1): tebligSayilmaDate = muhtarlikDate, gecikmesiz", () => {
@@ -64,19 +69,40 @@ describe("TebligatService.determinePttResultAction — TK 21/1 ve TK 21/2 (regre
 
     expect(result.tk21Type).toBe(Tk21Type.TK_21_1);
     expect(result.tebligSayilmaDate).toEqual(new Date(muhtarlikDate));
+    expect(result.serviceRegimeCode).toBe(ServiceOccurrenceRegimeCode.TK_21_1);
   });
 
+  // TEST-01/02 (DEBTOR-OF01-HISTORY-P04-A1-R1): doğrudan teslim + yakın/yetkili teslim (repository'de
+  // ayrı bir sınıf yok — üçü de status/nextAction bakımından aynı işlenir) → DIRECT_DELIVERY.
   it.each([
     TebligatPttResult.TESLIM_EDILDI,
     TebligatPttResult.AYNI_KONUTTA_TESLIM,
     TebligatPttResult.ISYERINDE_TESLIM,
-  ])("%s → doğrudan teslim, tk21Type YOK (rejim dışı)", (pttResult) => {
+  ])("%s → doğrudan teslim, tk21Type YOK (rejim dışı), serviceRegimeCode=DIRECT_DELIVERY", (pttResult) => {
     const svc = buildService();
     const tebligat = { addressType: TebligatAddressType.BILINEN };
 
     const result = callDeterminePttResultAction(svc, tebligat, { pttResult });
 
     expect(result.tk21Type).toBeUndefined();
+    expect(result.serviceRegimeCode).toBe(ServiceOccurrenceRegimeCode.DIRECT_DELIVERY);
+  });
+
+  // TEST-08 (DEBTOR-OF01-HISTORY-P04-A1-R1): başarısız/yönlendirme sonuçlarında (hiçbir teslim/tevdi
+  // mekanizması gerçekleşmedi) serviceRegimeCode uydurma üretilmez, undefined kalır — tk21Type ile
+  // birebir aynı semantik.
+  it.each([
+    TebligatPttResult.ADRESTE_BULUNAMADI,
+    TebligatPttResult.TASINMIS,
+    TebligatPttResult.VEFAT,
+  ])("%s → hiçbir mekanizma gerçekleşmedi, serviceRegimeCode uydurma üretilmez (undefined)", (pttResult) => {
+    const svc = buildService();
+    const tebligat = { addressType: TebligatAddressType.BILINEN };
+
+    const result = callDeterminePttResultAction(svc, tebligat, { pttResult });
+
+    expect(result.tk21Type).toBeUndefined();
+    expect(result.serviceRegimeCode).toBeUndefined();
   });
 });
 
@@ -100,6 +126,7 @@ describe("TebligatService.determinePttResultAction — TK m.20 explicit override
     expect(result.tk21Type).toBe(Tk21Type.TK_20);
     expect(result.tebligSayilmaDate).toEqual(new Date("2026-01-25T00:00:00.000Z"));
     expect(result.status).toBe("MUHTARLIGA_BIRAKILDI");
+    expect(result.serviceRegimeCode).toBe(ServiceOccurrenceRegimeCode.TK_20);
   });
 
   it("explicit TK_20 + yalnız muhtarlikDate (ilanDate yok) → PASS, muhtarlikDate + 15 gün kaynak alınır", () => {
@@ -114,7 +141,29 @@ describe("TebligatService.determinePttResultAction — TK m.20 explicit override
 
     expect(result.tk21Type).toBe(Tk21Type.TK_20);
     expect(result.tebligSayilmaDate).toEqual(new Date("2026-01-25T00:00:00.000Z"));
+    expect(result.serviceRegimeCode).toBe(ServiceOccurrenceRegimeCode.TK_20);
   });
+
+  // TEST-05 (DEBTOR-OF01-HISTORY-P04-A1-R1, P04-B STOP-02'nin kök nedeni): explicit TK_20 override
+  // adres türünden (BILINEN/MERNIS) TAMAMEN BAĞIMSIZ olarak serviceRegimeCode=TK_20 üretir — TK_20,
+  // addressTypeAtOccurrence'a bakılarak TK_21_1/TK_21_2 olarak YANLIŞLIKLA yeniden sınıflandırılamaz.
+  it.each([TebligatAddressType.BILINEN, TebligatAddressType.MERNIS])(
+    "explicit TK_20 override, addressType=%s olsa dahi serviceRegimeCode=TK_20 (adres türünden bağımsız)",
+    (addressType) => {
+      const svc = buildService();
+      const tebligat = { addressType };
+
+      const result = callDeterminePttResultAction(svc, tebligat, {
+        pttResult: TebligatPttResult.MUHTARLIGA_BIRAKILDI,
+        tk21Type: Tk21Type.TK_20,
+        ilanDate: "2026-01-10",
+      });
+
+      expect(result.serviceRegimeCode).toBe(ServiceOccurrenceRegimeCode.TK_20);
+      expect(result.serviceRegimeCode).not.toBe(ServiceOccurrenceRegimeCode.TK_21_1);
+      expect(result.serviceRegimeCode).not.toBe(ServiceOccurrenceRegimeCode.TK_21_2);
+    },
+  );
 
   it("explicit TK_20 + kanıt tarihi YOK (ne ilanDate ne muhtarlikDate) → FAIL CLOSED", () => {
     const svc = buildService();
@@ -140,8 +189,12 @@ describe("TebligatService.determinePttResultAction — TK m.20 explicit override
 
     expect(result.tk21Type).toBe(Tk21Type.TK_20);
     expect(result.status).toBe("MUHTARLIGA_BIRAKILDI"); // TESLIM_EDILDI'nin normal dalı DEĞİL
+    expect(result.serviceRegimeCode).toBe(ServiceOccurrenceRegimeCode.TK_20);
   });
 
+  // TEST-06 (DEBTOR-OF01-HISTORY-P04-A1-R1): explicit override yokken serviceRegimeCode asla
+  // sessizce TK_20'ye yeniden sınıflandırılmaz — mevcut adres-türü tabanlı TK_21_1/TK_21_2
+  // davranışı, tk21Type ile birebir aynı şekilde korunur.
   it("PTT sonucu TEK BAŞINA (explicit tk21Type olmadan) TK_20 olarak asla tahmin edilmez", () => {
     const svc = buildService();
     // MUHTARLIGA_BIRAKILDI + MERNIS: dto.tk21Type gönderilmedi → mevcut TK_21_2 (gecikmesiz)
@@ -155,5 +208,7 @@ describe("TebligatService.determinePttResultAction — TK m.20 explicit override
 
     expect(result.tk21Type).toBe(Tk21Type.TK_21_2);
     expect(result.tk21Type).not.toBe(Tk21Type.TK_20);
+    expect(result.serviceRegimeCode).toBe(ServiceOccurrenceRegimeCode.TK_21_2);
+    expect(result.serviceRegimeCode).not.toBe(ServiceOccurrenceRegimeCode.TK_20);
   });
 });
