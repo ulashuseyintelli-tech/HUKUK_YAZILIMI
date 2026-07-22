@@ -543,3 +543,52 @@ GOVERNANCE RECONCILED (REGULARIZE, salt-okuma DB kanıtıyla)
 
 IMPLEMENTATION AUTHORITY: NONE — bu kapanış kaydı hiçbir yeni yetki üretmez.
 ```
+
+## 10. UYAP-OPERATION-ATTEMPT-SCHEMA-FOUNDATION-P05A-R1 — yeni pending migration (2026-07-22)
+
+Bu bölüm, F4-b/P-E5A-R1 (UYAP CONNECTOR) kapsamında **üretilmiş ancak canlı
+`hukuk_db`'ye HİÇ uygulanmamış** yeni bir migration'ı cross-workstream görünür
+kılar. §7-9'daki train ile ilişkisi YOKTUR (o kuyruk DRAINED); bu ayrı, tek
+migration'lık yeni bir pending giriştir. Bu kayıt canlı DB mutation'ı İÇERMEZ.
+
+### 10.1 Migration kimliği ve durum
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260722170000_uyap_operation_attempt_schema_foundation_r1` |
+| Domain | UYAP CONNECTOR (F4-b / P-E5A-R1) |
+| Authority basis | GO-IMPLEMENT — UYAP-OPERATION-ATTEMPT-SCHEMA-FOUNDATION-P05A-R1 |
+| İçerik | ADDITIVE-ONLY: 3 yeni enum (`UyapInternalOperationState`/`UyapProviderState`/`UyapLegalEffectState`), 2 yeni tablo (`UyapOperation`/`UyapAttempt`), 10 tenant-safe composite FK, 4 structural CHECK, yeni index + 4 parent (`User`/`Client`/`Case`/`Lawyer`) `@@unique([id, tenantId])` |
+| Legacy etkisi | `UyapRequestLog`/`CpeDecisionLog`/`CpeExecutionRecord` DEĞİŞMEZ; hiçbir UPDATE/INSERT/DELETE/DROP/TRUNCATE veya backfill YOK |
+| Doğrulama | Disposable `postgres:16` üzerinde `prisma migrate deploy` + 9 static + 18 db-gated test PASS; blocking CI 2 step (static+additive guard / disposable-DB acceptance) |
+| **LIVE DB APPLY** | **NOT APPLIED** — gerçek `hukuk_db`'ye uygulanmadı |
+| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** — ayrı owner GO-MIGRATE brief'i bekler |
+
+### 10.2 Disposition
+
+- IMPLEMENTATION AUTHORITY: schema + migration + test + CI **CANONICAL**; live-apply
+  ve runtime wiring **NONE**. Bu migration merge edilmiş/CI-geçmiş olsa bile canlıya
+  hiç uygulanmamış olarak KALIR; `prisma migrate deploy` DAİMA tüm pending
+  migration'ları uygular, dolayısıyla bu giriş başka bir workstream'in GO-MIGRATE
+  penceresinde istemeden canlıya taşınabilir — o yüzden burada görünür kılınır.
+- CPE-link (`UyapAttemptCpeDecisionLink`) ve CPE-evaluation enum'ları bu migration'da
+  YOKTUR; P-E5C'ye ertelenmiştir (CpeDecisionLog'un `tenantId` kolonu olmadığından
+  tenant-safe composite FK additive olarak eklenemez — Policy Engine tenant-plane ön
+  koşulu bekler).
+- Sonraki adım: ayrı OWNER GO-MIGRATE brief'i (aşağıdaki şablon). Bu register
+  şablonu SEÇMEZ/yetkilendirmez.
+
+**GATE UYAP-P05A-R1 — OWNER GO-MIGRATE — UYAP OPERATION/ATTEMPT SCHEMA FOUNDATION**
+```text
+OWNER GO-MIGRATE — UYAP-OPERATION-ATTEMPT-SCHEMA-FOUNDATION-P05A-R1
+AUTHORITY BASIS: P-E5A-R1 GO-IMPLEMENT merge SHA (PR merge sonrası doldurulur)
+TARGET MIGRATION: 20260722170000_uyap_operation_attempt_schema_foundation_r1
+ANCHOR: isolated worktree pinned to the P-E5A-R1 merge SHA
+PREFLIGHT: fresh backup + restore-verify; disposable rehearsal from this anchor;
+  confirm UyapOperation/UyapAttempt tabloları canlı DB'de YOK.
+EXECUTION: prisma migrate deploy only (no resolve, no manual DDL).
+POST-VALIDATION: 2 tablo + 3 enum + 10 composite FK + 4 CHECK + parent unique
+  index'ler; UyapRequestLog/CpeDecisionLog DEĞİŞMEMİŞ; API health smoke.
+PROHIBITED: runtime writer/service wiring, CPE-link, data backfill, GO-OPERATE,
+  governance closure beyond schema foundation.
+```

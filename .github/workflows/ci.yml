@@ -1371,6 +1371,41 @@ jobs:
           pnpm exec jest --ci --forceExit --runInBand --runTestsByPath \
             src/modules/icrabot/__tests__/icrabot-governance-guard.spec.ts
         working-directory: project/apps/api
+      # UYAP-OPERATION-ATTEMPT-SCHEMA-FOUNDATION-P05A-R1 (F4-b/P-E5A-R1; UYAP-CONST-004/005/006): UyapOperation +
+      # UyapAttempt hedef sema temeli (CPE-link P-E5C'ye ertelendi — CpeDecisionLog.tenantId YOK). STEP 1 statik
+      # kontrat + migration additive-only guard: tam 3 enum / 2 model, CPE-link/enum YOK, canonical id == PK,
+      # legacy UyapRequestLog/CpeDecisionLog DEGISMEZ; migration.sql'de UPDATE/INSERT/DELETE/DROP/TRUNCATE veya
+      # ALTER ... DROP/RENAME (backfill/veri DML) YASAK. STEP 2 disposable PostgreSQL 16 uzerinde tenant-safe
+      # composite FK + structural CHECK + uniqueness kisitlarini DB-seviyesinde (owner D6) dogrular.
+      - name: UYAP-P05A-R1 operation/attempt schema static contract
+        run: |
+          spec=src/modules/uyap/__tests__/uyap-operation-attempt-schema.static.spec.ts
+          migration=prisma/migrations/20260722170000_uyap_operation_attempt_schema_foundation_r1/migration.sql
+          test -f "$spec" || { echo "MISSING P05A-R1 static spec: $spec"; exit 1; }
+          test -f "$migration" || { echo "MISSING P05A-R1 migration: $migration"; exit 1; }
+          if grep -inE '^[[:space:]]*(update|insert|delete|truncate|drop)[[:space:]]' "$migration"; then
+            echo "FORBIDDEN P05A-R1 non-additive DML statement in migration"; exit 1
+          fi
+          if grep -inE '^[[:space:]]*alter[[:space:]].*(drop|rename)' "$migration"; then
+            echo "FORBIDDEN P05A-R1 destructive ALTER (drop/rename) in migration"; exit 1
+          fi
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath "$spec"
+        working-directory: project/apps/api
+      - name: UYAP-P05A-R1 operation/attempt schema disposable DB acceptance
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          spec=src/modules/uyap/__tests__/uyap-operation-attempt-schema.db-gated.integration.spec.ts
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f "$spec" || { echo "MISSING P05A-R1 DB-gated spec: $spec"; exit 1; }
+          set -o pipefail
+          output_file="$(mktemp)"
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath "$spec" 2>&1 | tee "$output_file"
+          grep -Eq "Test Suites:[[:space:]]+1 passed, 1 total" "$output_file" || \
+            { echo "BLOCKED: P05A-R1 DB suite did not execute exactly once"; exit 1; }
+          awk '/^[[:space:]]*Tests:/ { seen=1; passed=$2; total=$4 } END { exit !(seen && passed ~ /^[0-9]+$/ && total ~ /^[0-9]+$/ && passed==total && total>0) }' "$output_file" || \
+            { echo "BLOCKED: P05A-R1 DB tests did not complete with every discovered test passing"; exit 1; }
+        working-directory: project/apps/api
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
