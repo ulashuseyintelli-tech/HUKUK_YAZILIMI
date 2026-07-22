@@ -99,7 +99,10 @@ export class DomainEventIngestService {
 
     // ── 6. Write timeline entry (event record) ──────────────────────────────
     // HR-29: recorded_at is server-side (createdAt @default(now()))
-    await (tx as any).icrabotTimelineEntry.create({
+    // DEBTOR-OF01-HISTORY-P04-A2: bu satırın id'si outbox payload'ına stable reference olarak
+    // taşınır (bkz. asağıda timelineEntryId) — timeline entry'nin body.header+body.payload'ı TEK
+    // canonical event kopyasıdır; outbox asla ikinci bağımsız kopya tutmaz (Option A).
+    const timelineEntry = await (tx as any).icrabotTimelineEntry.create({
       data: {
         caseId: event.header.aggregateId,
         // Writer A (spec-15 §1): canonical path — tenantId header'da hazır, doğrudan yaz.
@@ -150,6 +153,10 @@ export class DomainEventIngestService {
           aggregateVersion: Number(nextVersion),
           occurredAt: event.header.occurredAt,
           tenantId: event.header.tenantId,
+          // DEBTOR-OF01-HISTORY-P04-A2: stable reference to the SAME-tx IcrabotTimelineEntry —
+          // consumers load the canonical (single-source-of-truth) event payload from THAT row
+          // instead of the outbox row carrying its own independent copy of domain-specific fields.
+          timelineEntryId: timelineEntry.id,
           ...(event.header.correlationId ? { correlationId: event.header.correlationId } : {}),
           ...(event.header.commandId ? { commandId: event.header.commandId } : {}),
           ...(event.header.causationId ? { causationId: event.header.causationId } : {}),
