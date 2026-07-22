@@ -262,6 +262,9 @@ model Tenant {
   // PR-EA-2: EnforcementAction.tenantId FK karsi iliskisi
   enforcementActions EnforcementAction[]
 
+  uyapOperations UyapOperation[] @relation("UyapOperationTenant")
+  uyapAttempts   UyapAttempt[]   @relation("UyapAttemptTenant")
+
   @@index([slug])
   @@index([accountType])
 }
@@ -342,6 +345,10 @@ model User {
   // OFFICE-AUTH-P02: credential-recovery (şifremi unuttum) reset token'ları
   passwordResetTokens PasswordResetToken[]
 
+  uyapOperationsAsActor    UyapOperation[] @relation("UyapOperationActor")
+  uyapOperationsAsApprover UyapOperation[] @relation("UyapOperationApprover")
+
+  @@unique([id, tenantId])
   @@unique([tenantId, email])
   @@unique([tenantId, id])
   @@index([tenantId])
@@ -519,6 +526,9 @@ model Client {
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
 
+  uyapOperations UyapOperation[] @relation("UyapOperationRepresentedParty")
+
+  @@unique([id, tenantId])
   @@index([tenantId])
   @@index([tenantId, tckn])
   @@index([tenantId, vkn])
@@ -1277,6 +1287,9 @@ model Case {
   // D-G3a: dosya görevi eskalasyon izleri (case düzeyi gözlemlenebilirlik)
   caseTaskEscalationEvents CaseTaskEscalationEvent[]
 
+  uyapOperations UyapOperation[] @relation("UyapOperationCase")
+
+  @@unique([id, tenantId])
   @@unique([tenantId, id])
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -2180,6 +2193,10 @@ model Lawyer {
   powerOfAttorneys    PowerOfAttorney[] // Eski vekalet modeli ilişkisi
   responsibleForCases Case[]            @relation("CaseResponsibleLawyer") // M2-G1: Dosya Sorumlusu olduğu davalar
 
+  uyapOperationsAsActingLawyer   UyapOperation[] @relation("UyapOperationActingLawyer")
+  uyapOperationsAsSignatureOwner UyapOperation[] @relation("UyapOperationSignatureOwner")
+
+  @@unique([id, tenantId])
   @@unique([userId])
   @@index([tenantId])
   @@index([officeId])
@@ -9278,4 +9295,118 @@ model ReportingLine {
 enum ReportingLineDisposition {
   MANAGED
   TOP_LEVEL
+}
+
+// ==================== UYAP OPERATION / ATTEMPT (P-E5A-R1) ====================
+// UYAP-CONST-004/005 target evidence foundation. UYAP-OPERATION-ATTEMPT-SCHEMA-FOUNDATION-P05A-R1.
+// Yalniz repository schema foundation; runtime writer/dual-write/backfill YOK; legacy UyapRequestLog
+// DEGISMEZ. CPE linkage (UyapAttemptCpeDecisionLink) P-E5C'ye ertelendi (CpeDecisionLog tenant-plane
+// onkosulu). id = canonical operationId/attemptId (ayri kolon YOK).
+
+enum UyapInternalOperationState {
+  DRAFT
+  VALIDATED
+  AWAITING_APPROVAL
+  APPROVED
+  AWAITING_SIGNATURE
+  SIGNED
+  ATTEMPT_IN_PROGRESS
+  MANUAL_REVIEW_REQUIRED
+  CANCELLED
+}
+
+enum UyapProviderState {
+  NOT_DISPATCHED
+  DISPATCH_IN_PROGRESS
+  RECEIVED
+  ACCEPTED
+  REJECTED
+  OUTCOME_UNKNOWN
+}
+
+enum UyapLegalEffectState {
+  NONE
+  PENDING_CONFIRMATION
+  CONFIRMED
+}
+
+/// UYAP operation — canonical operation identity (id == operationId). UYAP-CONST-004.
+model UyapOperation {
+  id       String @id @default(cuid()) // canonical operationId (ayri kolon YOK)
+  tenantId String
+
+  caseId             String? // dis-referans sorgulari icin nullable
+  operationType      String  @db.VarChar(128)
+  actorUserId        String
+  actingLawyerId     String? // P-E6 authority workstream placeholder; client-population yetkisi URETMEZ
+  representedPartyId String?
+  approverId         String? // approval != signature (UYAP-CONST-002)
+  signatureOwnerId   String?
+
+  clientRequestId   String? @db.VarChar(256) // correlation-only, NOT authority/idempotency (UYAP-CONST-004)
+  httpCorrelationId String? @db.VarChar(256) // trusted middleware correlation, NOT authority
+  idempotencyKey    String  @db.VarChar(256) // server-controlled versioned; raw-payload-hash'ine esitlenemez
+
+  internalState UyapInternalOperationState @default(DRAFT)
+  version       Int                        @default(1)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  cancelledAt DateTime?
+
+  attempts UyapAttempt[]
+
+  tenant           Tenant  @relation("UyapOperationTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  case             Case?   @relation("UyapOperationCase", fields: [caseId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  actor            User    @relation("UyapOperationActor", fields: [actorUserId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  actingLawyer     Lawyer? @relation("UyapOperationActingLawyer", fields: [actingLawyerId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  representedParty Client? @relation("UyapOperationRepresentedParty", fields: [representedPartyId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  approver         User?   @relation("UyapOperationApprover", fields: [approverId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  signatureOwner   Lawyer? @relation("UyapOperationSignatureOwner", fields: [signatureOwnerId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId])
+  @@index([tenantId, caseId])
+  @@index([operationType])
+  @@index([clientRequestId])
+  @@index([httpCorrelationId])
+  @@index([internalState])
+}
+
+/// UYAP attempt — canonical attempt identity (id == attemptId). UYAP-CONST-004/005. Append-only per operation.
+model UyapAttempt {
+  id       String @id @default(cuid()) // canonical attemptId (ayri kolon YOK)
+  tenantId String
+
+  operationId       String
+  attemptNumber     Int
+  previousAttemptId String?
+
+  internalState    UyapInternalOperationState @default(ATTEMPT_IN_PROGRESS)
+  providerState    UyapProviderState          @default(NOT_DISPATCHED)
+  legalEffectState UyapLegalEffectState       @default(NONE)
+
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  failureCode String?
+
+  providerTransactionId  String? // provider-verified only; legal-effect confirmation DEGILDIR
+  providerIdempotencyKey String? // provider-verified only
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant          Tenant        @relation("UyapAttemptTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  operation       UyapOperation @relation(fields: [operationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  previousAttempt UyapAttempt?  @relation("UyapAttemptChain", fields: [previousAttemptId, operationId, tenantId], references: [id, operationId, tenantId], onDelete: Restrict)
+  nextAttempts    UyapAttempt[] @relation("UyapAttemptChain")
+
+  @@unique([id, tenantId])
+  @@unique([id, operationId, tenantId])
+  @@unique([operationId, attemptNumber])
+  @@index([tenantId])
+  @@index([operationId])
+  @@index([providerState])
+  @@index([legalEffectState])
 }
