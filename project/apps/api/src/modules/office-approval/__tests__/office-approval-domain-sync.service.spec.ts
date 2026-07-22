@@ -608,41 +608,19 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     });
   });
 
-  it('APPROVED create executor original, demanded ve mirror alanlarini esit yazar', async () => {
-    const svc = claimItemService();
-    const db = claimItemTx();
-    const request = claimItemReq({
-      operation: 'CREATE',
-      claimItemId: undefined,
-      proposedPatch: {
-        caseId: 'case-1',
-        itemType: 'PRINCIPAL',
-        amount: 0,
-      },
-      currentSnapshot: undefined,
-      currentSnapshotHash: undefined,
-    }, {
-      targetType: 'CLAIM_ITEM_CASE',
-      targetRef: 'case-1',
-    });
-
-    await svc.syncAfterDecision(db as any, request as any);
-
-    expect(db.claimItem.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ originalAmount: 0, demandedAmount: 0, amount: 0 }),
-    });
-  });
-
-  it('APPROVED document create kaynagini case scope icinde kilitler ve canonical marker yazar', async () => {
-    const svc = claimItemService();
+  it.each([
+    ['USER_COMMAND source', {}],
+    ['caseId-as-source', { sourceId: 'case-1' }],
+    ['document without V1 checksum/version/legal basis', {
+      sourceDocumentId: 'doc-1',
+      sourceDocumentType: 'SOZLESME',
+    }],
+  ])('legacy CREATE intent (%s) execution lock veya business write uretmeden fail-closed kalir', async (_name, source) => {
+    const domainEventIngest = { appendInTransaction: jest.fn() };
+    const svc = new OfficeApprovalDomainSyncService(domainEventIngest as any);
     const db = claimItemTx({
-      $executeRaw: jest.fn().mockResolvedValue(1),
-      caseDocument: { findFirst: jest.fn().mockResolvedValue({ id: 'doc-1' }) },
-      claimItem: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        update: jest.fn(),
-        create: jest.fn().mockResolvedValue(item),
-      },
+      $executeRaw: jest.fn(),
+      caseDocument: { findFirst: jest.fn() },
     });
     const request = claimItemReq({
       operation: 'CREATE',
@@ -650,9 +628,8 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
       proposedPatch: {
         caseId: 'case-1',
         itemType: 'PRINCIPAL',
-        sourceDocumentId: 'doc-1',
-        sourceDocumentType: 'SOZLESME',
         amount: 1000,
+        ...source,
       },
       currentSnapshot: undefined,
       currentSnapshotHash: undefined,
@@ -661,67 +638,23 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
       targetRef: 'case-1',
     });
 
-    await svc.syncAfterDecision(db as any, request as any);
-
-    expect(db.$executeRaw).toHaveBeenCalledTimes(1);
-    expect(db.caseDocument.findFirst).toHaveBeenCalledWith({
-      where: { id: 'doc-1', caseId: 'case-1' },
-      select: { id: true },
-    });
-    expect(db.claimItem.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        sourceDocumentId: 'doc-1',
-        metadata: expect.objectContaining({
-          canonicalWriterSource: expect.objectContaining({
-            authority: 'HUMAN_DOCUMENT',
-            sourceId: 'doc-1',
-            sourceSlot: 'SOZLESME:PRINCIPAL',
-          }),
-          canonicalSourceProvenance: expect.objectContaining({
-            sourceIdentity: expect.objectContaining({
-              sourceType: 'CASE_DOCUMENT',
-              sourceId: 'doc-1',
-              sourceSlot: 'SOZLESME:PRINCIPAL',
-            }),
-            provenance: expect.objectContaining({
-              ingress: 'CASE_DOCUMENT',
-              generationClass: 'HUMAN_GENERATED_CLAIM_ITEM',
-            }),
-            createdByAuthority: expect.objectContaining({
-              actorRef: 'user:requester-u',
-              approvalRequestId: 'claim-appr-1',
-            }),
-            correlationId: 'claim-item-approval:claim-appr-1',
-            causationId: 'office-approval:claim-appr-1',
-          }),
-        }),
-      }),
-    });
-  });
-
-  it('APPROVED create executor FATURA + TAX_KDV invariantini uygular', async () => {
-    const svc = claimItemService();
-    const db = claimItemTx();
-    const request = claimItemReq({
-      operation: 'CREATE',
-      claimItemId: undefined,
-      proposedPatch: {
-        caseId: 'case-1',
-        itemType: 'TAX_KDV',
-        sourceDocumentType: 'FATURA',
-        amount: 180,
+    await expect(svc.syncAfterDecision(db as any, request as any)).rejects.toMatchObject({
+      response: {
+        code: 'FORMATION_CONTEXT_REQUIRED',
+        message: 'Complete claim formation context is required.',
       },
-      currentSnapshot: undefined,
-      currentSnapshotHash: undefined,
-    }, {
-      targetType: 'CLAIM_ITEM_CASE',
-      targetRef: 'case-1',
+      status: 400,
     });
 
-    await expect(svc.syncAfterDecision(db as any, request as any)).rejects.toBeInstanceOf(BadRequestException);
-
+    expect(db.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
     expect(db.case.findFirst).not.toHaveBeenCalled();
+    expect(db.caseDocument.findFirst).not.toHaveBeenCalled();
+    expect(db.claimItem.findFirst).not.toHaveBeenCalled();
     expect(db.claimItem.create).not.toHaveBeenCalled();
+    expect(db.claimItem.update).not.toHaveBeenCalled();
+    expect(db.auditLog.create).not.toHaveBeenCalled();
+    expect(db.$executeRaw).not.toHaveBeenCalled();
+    expect(domainEventIngest.appendInTransaction).not.toHaveBeenCalled();
   });
 
   it('APPROVED amount=0 update mirrorlar ve originalAmount alanini yazmaz', async () => {

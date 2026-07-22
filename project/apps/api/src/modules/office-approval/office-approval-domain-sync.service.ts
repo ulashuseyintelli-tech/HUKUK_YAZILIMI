@@ -28,6 +28,7 @@ import {
 } from '../claim-item/claim-item-amount-contract';
 import { ClaimItemSourceIntegrityGuard } from '../claim-item/claim-item-source-integrity.guard';
 import { CLAIM_ITEM_HUMAN_WRITE_POLICY_REF } from '../claim-item/claim-item-writer-routes';
+import { throwClaimItemFormationContextRequired } from '../claim-item/claim-item-formation-containment';
 import {
   assertInvoiceClaimItemCreateAllowed,
   assertInvoiceClaimItemTypeTransitionAllowed,
@@ -403,7 +404,10 @@ export class OfficeApprovalDomainSyncService {
     if (!['CREATE', 'UPDATE', 'DELETE'].includes(String(value.operation))) {
       throw new ConflictException('CLAIM_ITEM savedIntent operation gecersiz.');
     }
-    if (value.operation !== 'CREATE' && (!value.claimItemId || value.claimItemId !== req.targetRef)) {
+    if (value.operation === 'CREATE') {
+      throwClaimItemFormationContextRequired();
+    }
+    if (!value.claimItemId || value.claimItemId !== req.targetRef) {
       throw new ConflictException('CLAIM_ITEM savedIntent hedef bilgisi gecersiz.');
     }
     return value as ClaimItemHighImpactSavedIntent;

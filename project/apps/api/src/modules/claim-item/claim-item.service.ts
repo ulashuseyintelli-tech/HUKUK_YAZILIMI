@@ -18,7 +18,6 @@ import {
 import { ClaimEngineService } from '../claim-engine/claim-engine.service';
 import { defaultInterestAccrualStatusForItemType, validateInterestAccrualState } from './interest-accrual-policy';
 import {
-  CLAIM_ITEM_CASE_TARGET_TYPE,
   CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
   CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS,
   CLAIM_ITEM_INTENT_VERSION,
@@ -47,6 +46,7 @@ import {
   assertClaimItemLifecycleMutation,
   type ClaimItemLifecycleRecord,
 } from './claim-item-lifecycle-contract';
+import { throwClaimItemFormationContextRequired } from './claim-item-formation-containment';
 
 export interface ClaimItemMutationResult {
   applied: boolean;
@@ -156,28 +156,7 @@ export class ClaimItemService {
       currency: dto.currency ?? 'TRY',
     });
     this.assertApprovalRequired(gateResult);
-    const request = await this.createHighImpactApprovalRequest({
-      tenantId,
-      actorUserId,
-      targetType: CLAIM_ITEM_CASE_TARGET_TYPE,
-      targetRef: dto.caseId,
-      intent: {
-        version: CLAIM_ITEM_INTENT_VERSION,
-        operation: 'CREATE',
-        caseId: dto.caseId,
-        proposedPatch,
-        currentSnapshot: null,
-        currentSnapshotHash: null,
-        reason: 'ClaimItem create requires K4 four-eyes approval.',
-      },
-      idempotencyKey: `claim-item-create:${dto.caseId}:${stableJsonHash(proposedPatch)}`,
-    });
-    return {
-      applied: false,
-      approvalRequired: true,
-      approvalRequestId: request.id,
-      data: request,
-    };
+    throwClaimItemFormationContextRequired();
   }
 
 

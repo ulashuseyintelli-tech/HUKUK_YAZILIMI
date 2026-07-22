@@ -20,6 +20,11 @@ describe('RCV-P2-WS01-P03 static ClaimItem direct-write absence', () => {
     join(__dirname, '..', '..', 'case', 'backfill', 'due-to-claimitem-backfill.core.ts'),
     'utf8',
   );
+  const claimItemController = readFileSync(join(__dirname, '..', 'claim-item.controller.ts'), 'utf8');
+  const officeApprovalDomainSync = readFileSync(
+    join(__dirname, '..', '..', 'office-approval', 'office-approval-domain-sync.service.ts'),
+    'utf8',
+  );
 
   it('CaseService Due and instrument production paths contain no direct ClaimItem mutation', () => {
     expect(caseService).not.toMatch(/claimItem\.(create|update|delete)\s*\(/);
@@ -66,5 +71,39 @@ describe('RCV-P2-WS01-P03 static ClaimItem direct-write absence', () => {
     const rollback = backfillCore.slice(rollbackStart);
     expect(rollback).toContain('assertBackfillRollbackCandidate');
     expect(rollback).toContain('tx.claimItem.delete');
+  });
+
+  it('S08 human create routes converge on the guarded service boundary', () => {
+    expect(claimItemController.match(/this\.service\.createFromUser\s*\(/g)).toHaveLength(4);
+    expect(claimItemController).not.toMatch(/this\.service\.(create|addExpenseItem|addFeeItem|addAttorneyFeeItem)\s*\(/);
+
+    const createFromUser = methodSlice(
+      claimItemService,
+      'async createFromUser(',
+      'async findByCaseId(',
+    );
+    expect(createFromUser).toContain('this.assertApprovalRequired(gateResult)');
+    expect(createFromUser).toContain('throwClaimItemFormationContextRequired()');
+    expect(createFromUser).not.toContain('createHighImpactApprovalRequest');
+    expect(createFromUser.indexOf('this.assertApprovalRequired(gateResult)'))
+      .toBeLessThan(createFromUser.indexOf('throwClaimItemFormationContextRequired()'));
+  });
+
+  it('S08 legacy CREATE approval is rejected before the execution lock', () => {
+    const readIntent = methodSlice(
+      officeApprovalDomainSync,
+      'private readClaimItemIntent(',
+      'private async applyClaimItemCreate(',
+    );
+    const approve = methodSlice(
+      officeApprovalDomainSync,
+      'private async approveClaimItemHighImpact(',
+      'private readClaimItemIntent(',
+    );
+
+    expect(readIntent).toContain("if (value.operation === 'CREATE')");
+    expect(readIntent).toContain('throwClaimItemFormationContextRequired()');
+    expect(approve.indexOf('this.readClaimItemIntent(req)'))
+      .toBeLessThan(approve.indexOf('tx.officeApprovalRequest.updateMany'));
   });
 });
