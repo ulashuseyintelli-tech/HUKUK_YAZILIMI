@@ -2736,6 +2736,19 @@ reasons. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus writer/evidence/cut
 TPA-04C-I02 — CANONICAL SNAPSHOT VALIDATION / DETERMINISTIC ERRORS — OWNER GO-IMPLEMENT
 REQUIRED / IMPLEMENTATION NOT AUTHORIZED.** I03-I07 self-start edemez.
 
+**RCV-COL-TPA-04C-I02 Closure Reconciliation (2026-07-22; CANONICAL UPON APPROVED
+GOVERNANCE MERGE):** I02 implementation PR #1520 / squash
+`d46df4cec753b03bebcaefd07e5540dcb2b97709`, exact authorized seven-file scope, I01+I02
+`113/113` targeted tests ve required CI `4/4 PASS` ile `CLOSED / CANONICAL EVIDENCE`dır.
+Implementation; opaque/non-forgeable `ValidatedCanonicalSnapshotV1` boundary'sini, strict
+duplicate-key-safe JSON parsing'i, deterministic bounded validation error'larını ve
+domain-separated SHA-256 binding'ini kurmuştur. Runtime writer, schema, migration, backfill,
+live-DB action ve consumer cutover etkisi `NONE`; existing M2 foundation ve empty target-table
+durumu değişmemiştir. ACT-28 ve REC-AUTH-011/012 `OPEN`; runtime writer `NOT IMPLEMENTED /
+NOT ACTIVATED` kalır. **NEXT ELIGIBLE ACTION: TPA-04C-I03 — PURE APPLY ORDERING /
+EXACT-MINOR-UNIT ALLOCATION CORE — OWNER GO-IMPLEMENT REQUIRED / NOT YET AUTHORIZED.**
+I04-I07 self-start edemez.
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

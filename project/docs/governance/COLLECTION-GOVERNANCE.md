@@ -980,3 +980,22 @@ first-error sırası ADR-014 OD-TPA-04C-21..36'dadır. Bu kayıt Collection admi
 allocation, HELD, writer, transaction, audit/event/outbox, persistence veya runtime wiring
 yetkisi üretmez. Collection receipt lifecycle ve outer transaction authority'si değişmez;
 ACT-28 ve REC-AUTH-011/012 `OPEN` kalır.
+
+## 9.12. TPA-04C-I02 snapshot-validation implementation closure — 2026-07-22
+
+TPA-04C-I02 implementation PR #1520 / squash
+`d46df4cec753b03bebcaefd07e5540dcb2b97709`, exact seven-file scope ve required CI
+`4/4 PASS` ile canonical main'dedir. I02, strict duplicate-key-safe JSON parser,
+domain-restricted canonical serializer, domain-separated snapshot hash binding'i, deterministic
+fail-closed errors ve yalnız validator tarafından üretilebilen opaque/non-forgeable
+`ValidatedCanonicalSnapshotV1` boundary'sini kurmuştur. I01+I02 targeted testleri
+`113/113 PASS`tır.
+
+Bu closure Collection admission, allocation, HELD reason, fingerprint, attribution, writer,
+transaction, audit/event/outbox, persistence veya runtime wiring yetkisi üretmez. Schema,
+migration, backfill ve live-DB action `NONE`; M2 live foundation, boş target tablolar ve
+Collection receipt/outer-transaction authority'si değişmemiştir. Runtime writer `NOT
+IMPLEMENTED / NOT ACTIVATED`; ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus
+writer/evidence/cutover için `BLOCKING` kalır. Sonraki tek owner-gated birim
+`TPA-04C-I03 — PURE APPLY ORDERING / EXACT-MINOR-UNIT ALLOCATION CORE`; ayrı owner
+`GO-IMPLEMENT REQUIRED / NOT YET AUTHORIZED`dır. I04-I07 self-start etmez.
