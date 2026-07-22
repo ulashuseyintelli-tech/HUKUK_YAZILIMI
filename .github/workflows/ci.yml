@@ -1325,6 +1325,21 @@ jobs:
             src/modules/uyap-export/projection/__tests__/faizt-interest-projection.adapter.spec.ts \
             src/modules/address-discovery/uyap-query.service.spec.ts
         working-directory: project/apps/api
+      # UYAP-ICRABOT-GOVERNANCE-GUARD-P03 (KARAR 8 / F4-a WP-E11 / DP-10): owner governance GO olmadan
+      # IcrabotModule aktivasyonu + apps/api'ye RPA dependency/import eklenmesi blocking CI ile engellenir.
+      # AST tabanli (raw grep DEGIL); V28EngineModule + apps/web @playwright/test smoke KORUNUR; env-bypass
+      # YOK. STEP 1 gercek tree uzerinde guard'i calistirir; STEP 2 acceptance matrisini dogrular.
+      - name: CI-8 Icrabot governance guard
+        run: |
+          test -f scripts/ci-8-icrabot-governance-guard.cjs || { echo "MISSING CI-8 guard script: scripts/ci-8-icrabot-governance-guard.cjs"; exit 1; }
+          node scripts/ci-8-icrabot-governance-guard.cjs
+        working-directory: project/apps/api
+      - name: UYAP-ICRABOT-GOVERNANCE-GUARD-P03 acceptance tests
+        run: |
+          test -f src/modules/icrabot/__tests__/icrabot-governance-guard.spec.ts || { echo "MISSING UYAP-ICRABOT-GOVERNANCE-GUARD-P03 spec: icrabot-governance-guard.spec.ts"; exit 1; }
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/icrabot/__tests__/icrabot-governance-guard.spec.ts
+        working-directory: project/apps/api
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
