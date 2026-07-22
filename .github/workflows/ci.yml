@@ -1437,6 +1437,46 @@ jobs:
           awk '/^[[:space:]]*Tests:/ { seen=1; passed=$2; total=$4 } END { exit !(seen && passed ~ /^[0-9]+$/ && total ~ /^[0-9]+$/ && passed==total && total>0) }' "$output_file" || \
             { echo "BLOCKED: P05A-R1 DB tests did not complete with every discovered test passing"; exit 1; }
         working-directory: project/apps/api
+      # UYAP-OPERATION-ATTEMPT-WRITER-P05B (F4-b/P-E5B): dormant internal writer foundation.
+      # STEP 1 unit + DORMANCY/BOUNDARY guard: UyapModule writer'i KAYDETMEZ, UyapService import ETMEZ,
+      # writer UyapRequestLog'a dokunmaz, state mutation (internalState/provider/legal-effect) YAPMAZ,
+      # controller/DTO/schema dosyasi yoktur; branded idempotency key client string'inden uretilemez.
+      # Dosya-varligi guard'ina EK olarak grep tabanli dormancy kontrolu: kayit/injection eklenirse RED.
+      # STEP 2 disposable PostgreSQL 16'da esszamanli advisory-lock serilestirmesi, gap-free attempt
+      # lineage'i ve optimistic compare-and-bump'i dogrular; skipped/zero-test RED.
+      - name: UYAP-P05B operation writer unit and dormancy guard
+        run: |
+          spec=src/modules/uyap/operation-writer/uyap-operation-writer.service.spec.ts
+          writer=src/modules/uyap/operation-writer/uyap-operation-writer.service.ts
+          for f in "$spec" "$writer" \
+                   src/modules/uyap/operation-writer/uyap-operation-writer.types.ts \
+                   src/modules/uyap/operation-writer/uyap-operation-writer.errors.ts \
+                   src/modules/uyap/operation-writer/uyap-operation-writer-lock.ts; do
+            test -f "$f" || { echo "MISSING P05B file: $f"; exit 1; }
+          done
+          if grep -nE 'UyapOperationWriterService|operation-writer' src/modules/uyap/uyap.module.ts src/modules/uyap/uyap.service.ts; then
+            echo "FORBIDDEN P05B wiring: writer is dormant (no module registration / no UyapService injection)"; exit 1
+          fi
+          if grep -nE '\.uyapRequestLog|Controller|CasePolicyEngine|cpeDecisionLog' "$writer"; then
+            echo "FORBIDDEN P05B surface: dual-write / controller / CPE linkage"; exit 1
+          fi
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath "$spec"
+        working-directory: project/apps/api
+      - name: UYAP-P05B operation writer disposable DB acceptance
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          spec=src/modules/uyap/operation-writer/uyap-operation-writer.db-gated.integration.spec.ts
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f "$spec" || { echo "MISSING P05B DB-gated spec: $spec"; exit 1; }
+          set -o pipefail
+          output_file="$(mktemp)"
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath "$spec" 2>&1 | tee "$output_file"
+          grep -Eq "Test Suites:[[:space:]]+1 passed, 1 total" "$output_file" || \
+            { echo "BLOCKED: P05B DB suite did not execute exactly once"; exit 1; }
+          awk '/^[[:space:]]*Tests:/ { seen=1; passed=$2; total=$4 } END { exit !(seen && passed ~ /^[0-9]+$/ && total ~ /^[0-9]+$/ && passed==total && total>0) }' "$output_file" || \
+            { echo "BLOCKED: P05B DB tests did not complete with every discovered test passing"; exit 1; }
+        working-directory: project/apps/api
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
