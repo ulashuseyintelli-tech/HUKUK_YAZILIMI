@@ -344,7 +344,8 @@ CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R01:
 GO-ANALYZE + GO-DOCS COMPLETE / COORDINATION REPORT DELIVERED
 
 LIVE DB MUTATION PERFORMED AT R01 ANALYSIS TIME: 0
-HISTORICAL STATUS: SUPERSEDED FOR M2 ONLY BY §8 LIVE-APPLY RECORD
+HISTORICAL STATUS: SUPERSEDED — §8 (M2) ve §9 (M1/M3/M4 + train kapanışı)
+live-apply kayıtlarıyla; dört gate de uygulanmıştır
 
 READY FOR OWNER GATE AUTHORIZATION (her biri AYRI, KESİN SIRAYLA — Seçenek A):
 GATE M2 (LEGAL APPLICATION) — READY, ZORUNLU İLK icra (gerçek kronolojik sıra)
@@ -464,4 +465,81 @@ invariant'ı şöyledir:
 
 ```text
 receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor
+```
+
+## 9. M1/M3/M4 live-apply + train drain — governance kapanış kaydı (2026-07-22, REGULARIZE)
+
+Bu bölüm, `CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R01-CLOSE-GOV` görevi kapsamında
+**REGULARIZE** protokolüyle yazılmıştır: M1/M3/M4 gate icraları 2026-07-21 (UTC)
+tarihinde gerçekleşmiş ancak bu register'a eş zamanlı işlenmemişti. Bu kayıt,
+icra sonuçlarını canlı `hukuk_db` üzerinde 2026-07-22 tarihinde çalıştırılan
+**salt-okuma** sorgulardan (record-of-fact) türetir; bu kayıt sırasında canlı
+DB'de HİÇBİR mutation yapılmamıştır.
+
+### 9.1 `_prisma_migrations` icra kanıtı (VERIFIED, salt-okuma, 2026-07-22)
+
+| Gate | Migration | started_at (UTC) | finished_at (UTC) | applied_steps_count |
+|---|---|---|---|---|
+| M2 | `20260721002219_legal_application_writer_evidence` | 2026-07-21 21:08:44 | 2026-07-21 21:08:44 | 1 |
+| M1 | `20260720225814_office_auth_p02_password_reset_token` | 2026-07-21 22:02:36 | 2026-07-21 22:02:36 | 1 |
+| M3 | `20260721010000_office_auth_p02_hardening_r01_composite_fk` | 2026-07-21 22:26:32 | 2026-07-21 22:26:32 | 1 |
+| M4 | `20260721063256_client_p2_u02_portal_user_token_version` | 2026-07-21 23:24:13 | 2026-07-21 23:24:13 | 1 |
+
+**Gerçekleşen icra sırası, §7.2'deki zorunlu tek sırayla (Seçenek A: M2 → M1 →
+M3 → M4) BİREBİR aynıdır.** `_prisma_migrations` tablosunda `finished_at IS NULL`
+veya `rolled_back_at IS NOT NULL` satır sayısı 0'dır (başarısız/yarım/geri
+alınmış migration yok).
+
+### 9.2 Şema parmak izi doğrulaması (VERIFIED, salt-okuma, 2026-07-22)
+
+| Gate | Kontrol | Sonuç |
+|---|---|---|
+| M1 | `to_regclass('public."PasswordResetToken"')` | tablo VAR |
+| M3 | `PasswordResetToken_tenantId_userId_fkey` composite FK | VAR (1) |
+| M3 | `PasswordResetToken_one_unresolved_per_user` partial unique index | VAR (1) |
+| M4 | `ClientPortalUser.tokenVersion` | `NOT NULL DEFAULT 0` |
+| M4 | Mevcut portal kullanıcıları `tokenVersion=0` | 3/3 |
+
+M2'nin kendi post-validation kaydı §8'dedir (hedef tablolar 0 satır, backfill yok).
+
+### 9.3 Kayıt sınırları (dürüstlük beyanı)
+
+- Bu bölümdeki kanıtlar yalnız canlı DB'den bugün türetilebilenlerdir. M1/M3/M4
+  icra oturumlarının kendi session-level detayları (her gate'in fresh backup
+  SHA-256'sı, anchor checkout kanıtı, icra anındaki post-validation çıktıları)
+  bu register'a eş zamanlı yazılmamıştır ve burada RETROAKTİF olarak İCAT
+  EDİLMEZ — `UNRECORDED` statüsündedir. `_prisma_migrations` checksum'ları
+  migration içeriğini canonical dosyalara bağladığı için uygulanan DDL'in
+  kimliği yine de VERIFIED'dır.
+- 2026-07-22 salt-okuma kontrolünde en son uygulanmış migration
+  `20260721210134_of01_history_p01_service_occurrence`'tır (DEBTOR OF01 —
+  ayrı workstream, kendi governance kaydı kendi hattında). Bu register'ın
+  2026-07-21'de tespit ettiği 4-migration kuyruğu bakımından pending migration
+  KALMAMIŞTIR.
+
+### 9.4 Disposition güncellemeleri
+
+- §2 tespiti, §3 owner suspend kararı ve §4 workstream disposition tablosu
+  TARİHSEL kayıtlardır; bu bölümle superseded'dırlar.
+- OFFICE'in `SUSPENDED / BLOCKED AT PREFLIGHT` durumu **RESOLVED**'dır (M1+M3
+  applied). §3'teki DO-NOT listesi bu train'e özgüydü ve train'in
+  tamamlanmasıyla tüketilmiştir; gelecekteki her migration kuyruğu kendi owner
+  kararlarını gerektirir.
+- Bu kayıt hiçbir yeni migration, feature-flag, GO-OPERATE veya runtime
+  aktivasyon yetkisi ÜRETMEZ. `OFFICE_PASSWORD_RECOVERY_ENABLED` code-level
+  false kalır; OFFICE-AUTH-P02 runtime aktivasyonu, CLIENT-P2-U02 revocation
+  fonksiyonel testi ve LEGAL APPLICATION runtime writer'ı kendi
+  workstream'lerinin ayrı owner GO'larını bekler.
+- Register `LIVING / NON-NORMATIVE COORDINATION SURFACE` olarak AÇIK kalır:
+  gelecekte gerçek `hukuk_db`'de yeni bir çok-workstream'li pending-migration
+  kuyruğu tespit edilirse yeni bölüm burada açılır.
+
+### 9.5 Kapanış verdict'i
+
+```text
+CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R01:
+CLOSED — 4/4 GATE APPLIED (M2→M1→M3→M4, zorunlu sırayla) / QUEUE DRAINED /
+GOVERNANCE RECONCILED (REGULARIZE, salt-okuma DB kanıtıyla)
+
+IMPLEMENTATION AUTHORITY: NONE — bu kapanış kaydı hiçbir yeni yetki üretmez.
 ```
