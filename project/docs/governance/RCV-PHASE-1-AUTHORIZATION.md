@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-CLAIM-FORM-P02-S05-I01 formal closure / RCV-CLAIM-FORM-P02-S06-I01 formal closure / RCV-CLAIM-FORM-P02-S07-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-COL-TPA-04B schema-amendment formal closure / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor / RCV-CLAIM-MASTER-TRIAGE-R02-GOV post-S05 residual priority canonicalization
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-CLAIM-FORM-P02-S05-I01 formal closure / RCV-CLAIM-FORM-P02-S06-I01 formal closure / RCV-CLAIM-FORM-P02-S07-I01 formal closure / RCV-CLAIM-FORM-P02-S08-I01 formal closure / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-COL-TPA-04B schema-amendment formal closure / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor / RCV-CLAIM-MASTER-TRIAGE-R02-GOV post-S05 residual priority canonicalization
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -81,7 +81,14 @@ RCV-CLAIM-FORM-P02-S04-I01  : FORMALLY CLOSED / CANONICAL
 RCV-CLAIM-FORM-P02-S05-I01  : FORMALLY CLOSED / CANONICAL (implementation PR #1479 / 4947da38)
 RCV-CLAIM-FORM-P02-S06-I01  : FORMALLY CLOSED / CANONICAL (implementation PR #1491 / 8995aecc)
 RCV-CLAIM-FORM-P02-S07-I01  : FORMALLY CLOSED / CANONICAL (implementation PR #1505 / fea4d977)
-Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 ONLY
+RCV-CLAIM-FORM-P02-S08-A01  : ANALYSIS COMPLETE
+RCV-CLAIM-FORM-P02-S08-C01  : CONTRACT COMPLETE / OWNER RATIFIED
+RCV-CLAIM-FORM-P02-S08-I01  : FORMALLY CLOSED / CANONICAL (implementation PR #1515 / 5cbfc8e3)
+RCV-CLAIM-FORM-P02-S08-D01  : NOT STARTED / OWNER GO REQUIRED
+RCV-CLAIM-FORM-P02-S08-I02  : NOT STARTED / NOT AUTHORIZED
+RCV-CLAIM-FORM-P02-S08-I03  : NOT STARTED / NOT AUTHORIZED
+RCV-CLAIM-FORM-P02-S08-I04  : NOT STARTED / NOT AUTHORIZED
+Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
 Claim Formation next task   : UNSET — OWNER GO REQUIRED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
@@ -2215,6 +2222,129 @@ implementation tarafından supersede edilmiştir; cleanup ayrı owner GO bekler 
 yapılmaz. ACT-28 ve REC-AUTH-011/012 değişmez. Bu kayıt kod/test, runtime, schema/migration,
 historical mutation/backfill, Collection/shared-boundary, TPA, Balance/TBK100, replay/data
 access, cutover veya başka residual/foreign task authority'si üretmez.
+
+### 1.31B RCV-CLAIM-FORM-P02-S08-I01 formal closure reconciliation
+
+Owner-ratified S08-C01 direct-entry contract'ı:
+
+```text
+DIRECT-ENTRY MODEL:
+OPTION C — APPROVAL-GATED IMMUTABLE FORMATION INTENT
+
+OFFICE APPROVAL                 ≠ LEGAL SOURCE
+OFFICE APPROVAL                 ≠ LEGAL BASIS
+OFFICE APPROVAL                 ≠ COMPONENT CLASSIFICATION
+OFFICE APPROVAL                 ≠ CLAIM FORMATION SNAPSHOT
+USER COMMAND                    ≠ SUFFICIENT LEGAL PROVENANCE
+CASE ID                         ≠ SOURCE IDENTITY
+METADATA                        ≠ VERSIONED FORMATION CONTEXT
+
+FIRST CANONICAL SOURCE DIRECTION:
+CASE_DOCUMENT
+
+CANONICAL MONEY DIRECTION:
+MINOR-UNIT INTEGER / NO FLOAT / NO SILENT ROUNDING
+
+INTENT EXPIRY TARGET:
+24 HOURS
+
+SNAPSHOT PERSISTENCE DIRECTION:
+DEDICATED IMMUTABLE SNAPSHOT ENTITY
+```
+
+Human kullanıcı doğrudan ClaimItem yazamaz. Complete formation context olmadan create
+fail-closed olur; OfficeApproval eksik hukuki context'i tamamlayamaz ve
+`APPROVED_WITH_CHANGES` ClaimItem formation için kullanılamaz. Değişiklik yeni intent ve yeni
+approval gerektirir. Source-less create, `USER_COMMAND`-only source ve caseId-as-source
+yasaktır. Bu ratifikasyon typed intent, snapshot entity, schema, migration veya client cutover
+implementation authority'si üretmez.
+
+```text
+RCV-CLAIM-FORM-P02-S08-I01:
+FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+
+IMPLEMENTATION PR:
+#1515
+
+IMPLEMENTATION SQUASH:
+5cbfc8e334d1ae680bf8e8d55d436dd59797f34b
+
+REQUIRED CI:
+4/4 PASS
+
+TARGETED VALIDATION:
+69/69 PASS
+
+RELATED REGRESSION:
+327/327 PASS
+
+CONTAINED SURFACES:
+POST /claim-items
+POST /claim-items/case/:caseId/add-expense
+POST /claim-items/case/:caseId/add-fee
+POST /claim-items/case/:caseId/add-attorney-fee
+LEGACY NON-CANONICAL CLAIMITEM CREATE APPROVAL FINALIZATION
+
+ERROR CONTRACT:
+FORMATION_CONTEXT_REQUIRED
+
+NO-WRITE CONTRACT:
+CLAIMITEM CREATE / CLAIMITEM UPDATE / OFFICEAPPROVAL CREATE /
+OFFICEAPPROVAL UPDATE / SAVED INTENT / AUDIT / DOMAIN EVENT /
+OUTBOX / SECONDARY WRITER-ROUTER MUTATION = 0
+
+LEGACY PENDING CREATE APPROVALS:
+NON-CANONICAL / NOT EXECUTABLE / HISTORICAL RECORDS PRESERVED /
+NO AUTO-UPGRADE / NO AUTO-CONSUME / NO BULK MUTATION /
+NEW INTENT AND NEW APPROVAL REQUIRED
+
+SYSTEM-GENERATED CLAIMITEM PATHS:
+UNCHANGED
+
+NOT IMPLEMENTED:
+CLAIMITEMFORMATIONINTENTV1 / CLAIMFORMATIONSNAPSHOTV1 /
+SNAPSHOT PERSISTENCE / TYPED OFFICEAPPROVAL INTENT /
+CLIENT CUTOVER / SOURCE-VERSION-FINGERPRINT PERSISTENCE
+
+UNCHANGED:
+SCHEMA / MIGRATION / WEB-CLIENT / PUBLIC ROUTE SHAPE /
+OFFICE AUTHORITY-LIFECYCLE / COLLECTION / SHARED BOUNDARY /
+HISTORICAL DATA
+
+RUNTIME ENFORCEMENT:
+PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 +
+S07-I01 + S08-I01 ONLY
+
+CLAIM FORMATION PHASE:
+OPEN
+
+S08-D01:
+NOT STARTED / OWNER GO REQUIRED
+
+S08-I02 / S08-I03 / S08-I04:
+NOT STARTED / NOT AUTHORIZED
+
+REMAINING CLAIM FORMATION GAPS:
+OPEN / UNSELECTED
+
+NEXT CLAIM-FORMATION TASK:
+UNSET — OWNER GO REQUIRED
+
+OLD FROZEN S05 PATCH:
+SUPERSEDED BY MERGED IMPLEMENTATION
+CLEANUP PENDING SEPARATE OWNER GO
+UNTOUCHED
+```
+
+Bu reconciliation S08-A01 analysis sonucunu, S08-C01 contract-first disposition'ını ve
+P01-R01/S01-S07 tarihsel kapanışlarını silmez veya yeniden yazmaz. S08-D01 formation snapshot
+ve source-version persistence design'i; S08-I02 typed intent admission; S08-I03 transactional
+formation finalizer; S08-I04 client/convenience route migration olarak açık ve owner-gated
+kalır. Web `kalemTuru`/nested-ilam fallback, OCR generic `PRINCIPAL`, mandatory formation
+context, component subtype registry/versioning ve legacy component inventory residual'ları
+`OPEN / UNSELECTED`dır. Bu kayıt yeni task seçmez; schema/migration, runtime, client cutover,
+historical mutation, Office authority, Collection/shared-boundary veya foreign program
+authority'si üretmez.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 

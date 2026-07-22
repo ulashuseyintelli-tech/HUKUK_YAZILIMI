@@ -1,7 +1,7 @@
 # Canonicalization Register
 
 **Durum:** Living document — governance kaydı, implementasyon değil.
-**Son güncelleme:** 2026-07-21 (RCV-CLAIM-FORM-P02-S07-I01 formal closure)
+**Son güncelleme:** 2026-07-22 (RCV-CLAIM-FORM-P02-S08-I01 formal closure)
 **Kaynak:** `canonicalizationsiniflandirmaraporu.md` (kullanıcı tarafından sağlanan sınıflandırma raporu) + repo kodu doğrulaması, base commit `e65dc08564c09bfbe6db09a680606ac3d4b1f828`.
 **İlişkili dosya:** `canonicalization-policy.md` (sınıflandırma tanımları ve uygulama kuralları için bağlayıcı kaynak; bu register yalnız veri/kayıt tutar).
 
@@ -560,6 +560,48 @@ registry/versioning ve legacy component inventory `OPEN / UNSELECTED` kalır. AC
 REC-AUTH-011/012 değişmez. Bu kayıt kod/test, runtime, schema/migration, data/backfill,
 Collection/shared-boundary, TPA, Balance/TBK100, replay, cutover veya başka residual/foreign
 task authority'si üretmez.
+
+### RCV-CLAIM-FORM-P02-S08-I01-GOV — Human Direct-Entry Fail-Closed Containment Closure
+
+```text
+CONTRACT MODEL             OPTION C — APPROVAL-GATED IMMUTABLE FORMATION INTENT
+CONTRACT STATUS            S08-C01 OWNER RATIFIED
+IMPLEMENTATION             FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+IMPLEMENTATION PR          #1515
+IMPLEMENTATION SQUASH      5cbfc8e334d1ae680bf8e8d55d436dd59797f34b
+REQUIRED CI                4/4 PASS
+TARGETED VALIDATION        69/69 PASS
+RELATED REGRESSION         327/327 PASS
+CONTAINED SURFACES         POST /claim-items / add-expense / add-fee /
+                           add-attorney-fee / legacy non-canonical CREATE finalizer
+ERROR CONTRACT             FORMATION_CONTEXT_REQUIRED
+NO-WRITE CONTRACT          CLAIMITEM CREATE-UPDATE / OFFICEAPPROVAL CREATE-UPDATE /
+                           SAVED INTENT / AUDIT / DOMAIN EVENT / OUTBOX /
+                           SECONDARY WRITER-ROUTER MUTATION = 0
+LEGACY CREATE APPROVALS    NON-CANONICAL / NOT EXECUTABLE / HISTORICAL RECORDS PRESERVED
+SYSTEM WRITERS             UNCHANGED
+TYPED INTENT / SNAPSHOT    NOT IMPLEMENTED
+SCHEMA / MIGRATION         NONE
+WEB / CLIENT CUTOVER       NOT AUTHORIZED / NOT STARTED
+OFFICE AUTHORITY           UNCHANGED
+COLLECTION/SHARED BOUNDARY UNCHANGED
+RUNTIME ENFORCEMENT        PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 +
+                           S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
+CLAIM FORMATION PHASE      OPEN
+S08-D01                    NOT STARTED / OWNER GO REQUIRED
+S08-I02 / I03 / I04       NOT STARTED / NOT AUTHORIZED
+OLD FROZEN S05 PATCH       SUPERSEDED / CLEANUP PENDING SEPARATE OWNER GO / UNTOUCHED
+REMAINING GAPS             OPEN / UNSELECTED
+NEXT CLAIM-FORMATION TASK  UNSET — OWNER GO REQUIRED
+```
+
+S08-C01'in ratified non-equation'ları korunur: OfficeApproval legal source, legal basis,
+component classification veya formation snapshot değildir; `USER_COMMAND` yeterli legal
+provenance değildir; caseId source identity değildir; metadata versioned formation context
+değildir. İlk canonical human-entry source yönü `CASE_DOCUMENT`; canonical money yönü exact
+minor-unit integer; target intent expiry 24 saat ve snapshot yönü dedicated immutable entity'dir.
+Bu target yönler implementation değildir. S08-D01/I02/I03/I04 ile genel Claim Formation
+residual'ları owner-gated kalır; hiçbir successor seçilmez veya yetkilendirilmez.
 
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 
