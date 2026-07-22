@@ -1261,6 +1261,24 @@ TPA-04C-I01 `CLOSED / CANONICAL EVIDENCE`; sıradaki tek owner-gated görev
 `TPA-04C-I02 — CANONICAL SNAPSHOT VALIDATION / DETERMINISTIC ERRORS`dır. I02
 `NOT STARTED / NOT AUTHORIZED`; ayrı `OWNER GO-IMPLEMENT REQUIRED`dır.
 
+### TPA-04C-I02 implementation closure evidence — 2026-07-22
+
+TPA-04C-I02 implementation PR #1520 / squash
+`d46df4cec753b03bebcaefd07e5540dcb2b97709`, exact seven-file scope, I01+I02
+`113/113` targeted test ve required CI `4/4 PASS` ile canonical main'dedir. Implementation;
+strict duplicate-key-safe parsing, domain-restricted canonical serialization, exact
+`SHA-256(UTF8("RCV-CAS/v1") || 0x00 || canonicalEnvelopeBytes)` binding'i, bounded deterministic
+first-error validation ve opaque/non-forgeable `ValidatedCanonicalSnapshotV1` boundary'sini
+OD-TPA-04C-21..36 ile uyumlu biçimde kurmuştur.
+
+Bu compliance evidence yeni owner kararı değildir ve OD-TPA-04C-01..36'yı değiştirmez.
+Allocation, HELD reason, plan fingerprint, attribution, writer, persistence, runtime wiring,
+schema, migration, backfill veya live-DB action yoktur. ACT-28 ve REC-AUTH-011/012 `OPEN`;
+runtime writer `NOT IMPLEMENTED / NOT ACTIVATED`; synthetic corpus writer/evidence/cutover için
+`BLOCKING` kalır. Sonraki owner-gated slice `TPA-04C-I03 — PURE APPLY ORDERING /
+EXACT-MINOR-UNIT ALLOCATION CORE`; ayrı owner `GO-IMPLEMENT REQUIRED / NOT YET AUTHORIZED`dır.
+I04-I07 self-start etmez.
+
 ## Consequences
 
 ### Positive
@@ -1327,3 +1345,4 @@ TPA-04C-I01 `CLOSED / CANONICAL EVIDENCE`; sıradaki tek owner-gated görev
 | 2026-07-21 | 3.3 compliance update | TPA-04B schema-amendment closure: PR #1470 / `9dabe8db` establishes the exact two-file required-evidence amendment with PostgreSQL 16 apply/rollback/re-apply evidence. Runtime writer, live DB apply, replay, cutover and retirement remain unauthorized; ACT-28/REC-AUTH-011/012 remain open. |
 | 2026-07-22 | 3.4 | TPA-04C pure LegalApplicationPlan builder contract ratified through OD-TPA-04C-01..20. Builder is Receivable-owned, pure/APPLY-only, deterministic and exact-minor-unit; legacy allocation and ClaimItem payment-state dependencies are prohibited. M2 live apply/post-validation is recorded with empty target tables and no runtime writer. I01 is owner-gated and not authorized. |
 | 2026-07-22 | 3.5 | TPA-04C-I01 closure evidence (PR #1517 / `568f76e`) and OD-TPA-04C-21..36 I02 technical amendment are ratified. Domain-separated envelope hash, explicit input limits, null/absent and deterministic validation precedence are canonical; I02 remains separately owner-gated and not authorized. |
+| 2026-07-22 | 3.6 compliance update | TPA-04C-I02 implementation closure: PR #1520 / `d46df4ce` establishes the exact seven-file strict snapshot-validation boundary with 113/113 targeted tests and CI 4/4 PASS. Runtime/schema/migration/live-DB impact is none; I03 becomes the next separately owner-gated slice. |
