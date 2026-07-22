@@ -2333,11 +2333,11 @@ enum PowerOfAttorneyType {
 }
 
 model Collection {
-  id           String  @id @default(cuid())
+  id           String      @id @default(cuid())
   tenantId     String
-  tenant       Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   caseId       String
-  case         Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case         Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
   caseDebtorId String? // Hangi borçludan tahsil edildi
   // DBND-D5B: gercek FK (bkz. D5/D5A analiz+trial). onDelete=Restrict BILINCLI (SetNull/Cascade
   // DEGIL) — finansal kayit sessizce bag koparmasin/silinmesin; CaseDebtor bugun zaten hard-delete
@@ -2759,10 +2759,10 @@ model NotificationQueue {
 
 // Tebligat Kaydı - İcra tebligatları için özel model
 model Tebligat {
-  id           String  @id @default(cuid())
+  id           String      @id @default(cuid())
   tenantId     String
   caseId       String
-  case         Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case         Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
   caseDebtorId String? // Hangi borçluya
   // DBND-D5C: gercek FK (bkz. D5/D5A/D5B analiz+trial). onDelete=Restrict BILINCLI (SetNull/Cascade
   // DEGIL) — tebligat usul kaydi sessizce bag koparmasin/silinmesin; CaseDebtor bugun zaten hard-delete
@@ -2933,6 +2933,16 @@ model ServiceOccurrence {
   occurredAt    DateTime? // OPTIONAL / EXACT UTC TIMESTAMP
   timePrecision ServiceOccurrenceTimePrecision
 
+  // DEBTOR-OF01-HISTORY-P04-A1: deadline-hesabı için gerekli immutable raw/context fact'ler.
+  // Legal CONCLUSION (tk21Type, legalServiceDate, dueDate) DEĞİLDİR — yalnız occurrence anındaki
+  // gözlemlenen context (hangi adres türü) + hangi teslim/tevdi MEKANİZMASI gerçekleşti (varsa).
+  // Non-legacy occurrence'larda addressTypeAtOccurrence HER ZAMAN doldurulur (Tebligat.addressType
+  // her zaman mevcuttur); serviceDateRole yalnız gerçek bir teslim/tevdi mekanizması varsa doldurulur
+  // — başarısız/yönlendirme sonuçlarında (ör. adres bulunamadı) hiçbir mekanizma gerçekleşmediği için
+  // bilinçli olarak NULL kalır (bkz. migration CHECK — bu "eksik veri" değil, "uygulanamaz" durumudur).
+  addressTypeAtOccurrence TebligatAddressType?
+  serviceDateRole         ServiceOccurrenceServiceDateRole?
+
   recordedAt DateTime  @default(now()) // REQUIRED / SYSTEM UTC
   receivedAt DateTime? // OPTIONAL / yalnız gerçek dış-sistem entegrasyonunda anlamlı
 
@@ -2955,15 +2965,33 @@ model ServiceOccurrence {
   provenanceStatus     ServiceOccurrenceProvenanceStatus? // yalnız LEGACY_BASELINE için LEGACY_CURRENT_STATE
 
   createdAt DateTime @default(now())
+
+  // DEBTOR-OF01-HISTORY-P04-A1: LegalDeadlineSnapshot.sourceServiceOccurrenceId'nin ters ilişkisi.
+  legalDeadlineSnapshots LegalDeadlineSnapshot[]
   // NOT: genel amaçlı updatedAt YOK (owner brief §5) — mutasyon yalnız DB trigger'ının izin
   // verdiği tek dar ACTIVE→SUPERSEDED geçişidir, "son güncelleme zamanı" kavramı üretilmez.
 
+  @@unique([tenantId, id, sourceTebligatId]) // DEBTOR-OF01-HISTORY-P04-A1: LegalDeadlineSnapshot'ın
+  // tenant-safe composite FK hedefi — id zaten globally-unique olduğu için bu ek kısıtlama yeni bir
+  // çakışma riski YARATMAZ, yalnız (tenantId,sourceTebligatId) tutarlılığını FK seviyesinde ifade eder.
   @@index([tenantId, sourceTebligatId])
   @@index([tenantId, caseId])
   @@index([tenantId, caseDebtorId])
   @@index([tenantId, occurredOn])
   @@index([sourceTebligatId, status])
   @@index([barcodeNo])
+}
+
+// DEBTOR-OF01-HISTORY-P04-A1: hangi teslim/tevdi MEKANİZMASI gözlemlendi (dar, yalnız repository'de
+// gerçekten ayrıştırılan 3 sınıf — bkz. TebligatService.determinePttResultAction). Legal rejim
+// (Tk21Type) veya kanal (TebligatChannel) DEĞİLDİR; ikisinden BAĞIMSIZ, daha kaba bir mekanizma
+// sınıflandırmasıdır. Yeni bir dördüncü sınıf yalnız repository'de gerçekten ayrıştırılan yeni bir
+// mekanizma bulunursa eklenir — speculative değer YOK.
+enum ServiceOccurrenceServiceDateRole {
+  DIRECT_DELIVERY // Doğrudan teslim (TESLIM_EDILDI/AYNI_KONUTTA_TESLIM/ISYERINDE_TESLIM)
+  MUHTAR_DELIVERY // Muhtarlığa/zabıtaya tevdi (MUHTARLIGA_BIRAKILDI veya bilinen adreste IMTINA)
+  PUBLICATION // İlan yoluyla tebliğ (TK m.31 ILANEN kanalı — recordPttResult bu rolü ÜRETMEZ,
+  // yalnız ilanen kanalının kendi tamamlanma yolu için rezerve edilmiştir)
 }
 
 enum ServiceOccurrenceType {
@@ -3009,15 +3037,26 @@ enum LegalDeadlineSnapshotStatus {
 // üretir (owner Decision 5). NotificationQueue bu modelin hiçbir girdisi değildir (owner Decision 4).
 // finalizationDate legalServiceDate'ten bağımsız, bu PR'da otomatik doldurulmaz (owner Decision 6).
 model LegalDeadlineSnapshot {
-  id           String  @id @default(cuid())
+  id           String      @id @default(cuid())
   tenantId     String
   caseId       String
-  case         Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case         Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
   caseDebtorId String? // Tebligat.caseDebtorId emsali — bazı tebligatlar dosyaya bağlı, belirli bir borçluya değil
   caseDebtor   CaseDebtor? @relation(fields: [caseDebtorId], references: [id], onDelete: Restrict)
 
+  // DEBTOR-OF01-HISTORY-P04-A1: tek-kolon FK, tenant-scoped composite'e yükseltildi (ServiceOccurrence
+  // →Tebligat / PasswordResetToken→User emsali; Tebligat'ın @@unique([tenantId,id]) hedefi P01'den beri var).
   sourceTebligatId String
-  sourceTebligat   Tebligat @relation(fields: [sourceTebligatId], references: [id], onDelete: Restrict)
+  sourceTebligat   Tebligat @relation(fields: [tenantId, sourceTebligatId], references: [tenantId, id], onDelete: Restrict)
+
+  // DEBTOR-OF01-HISTORY-P04-A1: additive occurrence-binding — nullable (legacy snapshot'lar için NULL
+  // kalır), @unique DEĞİL (bir occurrence, calculationVersion değiştikçe birden fazla snapshot'a
+  // kaynaklık edebilir — 1:MANY). Composite FK (tenantId,sourceServiceOccurrenceId,sourceTebligatId)→
+  // ServiceOccurrence(tenantId,id,sourceTebligatId) hem cross-tenant hem "occurrence ve snapshot farklı
+  // Tebligat'a ait" durumunu DB seviyesinde tek constraint'le reddeder (P04-B application-contract'ı
+  // bu alanın NE ZAMAN zorunlu olacağını ayrıca belirler — bu görev yalnız şema/binding'dir).
+  sourceServiceOccurrenceId String?
+  sourceServiceOccurrence   ServiceOccurrence? @relation(fields: [tenantId, sourceServiceOccurrenceId, sourceTebligatId], references: [tenantId, id, sourceTebligatId], onDelete: Restrict)
 
   deadlineType LegalDeadlineType
 
@@ -3045,9 +3084,9 @@ model LegalDeadlineSnapshot {
 
   calculatedAt DateTime @default(now())
 
-  supersedesSnapshotId String?                 @unique
-  supersedesSnapshot   LegalDeadlineSnapshot?  @relation("SnapshotSupersession", fields: [supersedesSnapshotId], references: [id], onDelete: SetNull)
-  supersededBy         LegalDeadlineSnapshot?  @relation("SnapshotSupersession")
+  supersedesSnapshotId String?                @unique
+  supersedesSnapshot   LegalDeadlineSnapshot? @relation("SnapshotSupersession", fields: [supersedesSnapshotId], references: [id], onDelete: SetNull)
+  supersededBy         LegalDeadlineSnapshot? @relation("SnapshotSupersession")
 
   status LegalDeadlineSnapshotStatus @default(ACTIVE)
 
@@ -3058,6 +3097,7 @@ model LegalDeadlineSnapshot {
   @@index([sourceTebligatId])
   @@index([status])
   @@index([tenantId, sourceTebligatId, status])
+  @@index([tenantId, sourceServiceOccurrenceId])
 }
 
 // MPB-028(a) PR-3: shadow-read + diff evidence. Tamamen read-only/immutable — hiçbir
@@ -3866,15 +3906,15 @@ model StaffMember {
   staffType StaffType
 
   // Genel Yetkiler (büro genelinde varsayılan)
-  canCreateCase        Boolean @default(false) // Dosya oluşturabilir
-  canEditCase          Boolean @default(false) // Dosya düzenleyebilir
-  canGenerateDocuments Boolean @default(false) // Belge taslağı hazırlayabilir
-  canApproveDocuments  Boolean @default(false) // Belge onaylayabilir
-  canSeeFinance        Boolean @default(false) // Muhasebe modülünü görebilir
-  canApproveFinance    Boolean @default(false) // Muhasebe işlemi onaylayabilir — ACT-21 (2026-07-05): şu an backend'de HİÇBİR yerde enforce edilmiyor (yalnız persist edilir); Staff final approver olamaz (kilitli politika, bkz. p4-approval-engine)
+  canCreateCase                   Boolean @default(false) // Dosya oluşturabilir
+  canEditCase                     Boolean @default(false) // Dosya düzenleyebilir
+  canGenerateDocuments            Boolean @default(false) // Belge taslağı hazırlayabilir
+  canApproveDocuments             Boolean @default(false) // Belge onaylayabilir
+  canSeeFinance                   Boolean @default(false) // Muhasebe modülünü görebilir
+  canApproveFinance               Boolean @default(false) // Muhasebe işlemi onaylayabilir — ACT-21 (2026-07-05): şu an backend'de HİÇBİR yerde enforce edilmiyor (yalnız persist edilir); Staff final approver olamaz (kilitli politika, bkz. p4-approval-engine)
   canPrepareCollectionDisposition Boolean @default(false) // Tahsilat dağıtımı hazırlayabilir (recommend/preview); final approval DEĞİL
-  canSendNotifications Boolean @default(false) // Tebligat gönderebilir
-  isDefaultForNewCases Boolean @default(false) // Yeni dosyalarda otomatik seç
+  canSendNotifications            Boolean @default(false) // Tebligat gönderebilir
+  isDefaultForNewCases            Boolean @default(false) // Yeni dosyalarda otomatik seç
 
   isActive  Boolean @default(true)
   sortOrder Int     @default(0)
@@ -5527,7 +5567,7 @@ model ClaimItem {
   createdById String?
 
   // İlişkiler
-  ledgerAllocations LedgerAllocation[]
+  ledgerAllocations       LedgerAllocation[]
   applicationAttributions ApplicationAttribution[]
 
   @@unique([tenantId, id])
@@ -9214,10 +9254,10 @@ model PermissionGrant {
 // ("validUntil IS NULL"da tenant+actor tekil) migration'da; app-level sayım TEK
 // başına invariant sınırı DEĞİLDİR.
 model ReportingLine {
-  id            String @id @default(cuid())
-  tenantId      String
+  id       String @id @default(cuid())
+  tenantId String
 
-  actorUserId   String  // amiri bu satırla tanımlanan kişi
+  actorUserId   String // amiri bu satırla tanımlanan kişi
   managerUserId String? // amir/yönetici; TOP_LEVEL disposition'da null
 
   disposition ReportingLineDisposition @default(MANAGED)

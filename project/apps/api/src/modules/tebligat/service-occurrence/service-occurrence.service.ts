@@ -46,6 +46,7 @@ export class ServiceOccurrenceService {
       command.sourceSystemCode,
       command.sourceCode,
       command.sourceNote,
+      command.addressTypeAtOccurrence,
     );
     if (!command.idempotencyMode) {
       throw new ServiceOccurrenceValidationError("idempotencyMode zorunludur, örtük NONE varsayılamaz");
@@ -83,6 +84,7 @@ export class ServiceOccurrenceService {
       command.sourceSystemCode,
       command.sourceCode,
       command.sourceNote,
+      command.addressTypeAtOccurrence,
     );
     if (!command.idempotencyMode) {
       throw new ServiceOccurrenceValidationError("idempotencyMode zorunludur, örtük NONE varsayılamaz");
@@ -114,6 +116,7 @@ export class ServiceOccurrenceService {
       command.replacement.sourceSystemCode,
       command.replacement.sourceCode,
       command.replacement.sourceNote,
+      command.replacement.addressTypeAtOccurrence,
     );
     if (!command.correctionReasonCode?.trim()) {
       throw new ServiceOccurrenceValidationError("correctionReasonCode zorunludur");
@@ -161,6 +164,8 @@ export class ServiceOccurrenceService {
         occurredOn: command.replacement.occurredOn,
         occurredAt: command.replacement.occurredAt ?? null,
         timePrecision: command.replacement.timePrecision,
+        addressTypeAtOccurrence: command.replacement.addressTypeAtOccurrence,
+        serviceDateRole: command.replacement.serviceDateRole ?? null,
         receivedAt: command.replacement.receivedAt ?? null,
         recordedByUserId: command.actor.userId ?? null,
         recordedBySystem: command.actor.systemCode ?? null,
@@ -192,9 +197,20 @@ export class ServiceOccurrenceService {
     sourceSystemCode: string,
     sourceCode: string,
     sourceNote: string | null | undefined,
+    addressTypeAtOccurrence: string | null | undefined,
   ): void {
     if (isLegacyBaselineType(occurrenceType)) {
       throw new ServiceOccurrenceValidationError("occurrenceType=LEGACY_BASELINE normal create/supersede metodunda kullanılamaz");
+    }
+    // DEBTOR-OF01-HISTORY-P04-A1: bu servisin normal create/supersede yolu LEGACY_BASELINE'ı
+    // yukarıda zaten reddeder — dolayısıyla addressTypeAtOccurrence BU YOLDA her zaman zorunludur
+    // (DB CHECK occ_p04a1_address_type_required_for_nonlegacy_check ile birebir, uygulama
+    // seviyesinde erken/net hata mesajı için tekrarlanır). serviceDateRole OPSİYONELDİR —
+    // başarısız/yönlendirme sonuçlarında (hiçbir teslim/tevdi mekanizması gerçekleşmedi)
+    // bilinçli olarak null geçilebilir; ancak doluysa addressTypeAtOccurrence zaten zorunlu
+    // olduğu için ayrı bir "pairing" kontrolüne gerek yoktur.
+    if (!addressTypeAtOccurrence) {
+      throw new ServiceOccurrenceValidationError("addressTypeAtOccurrence zorunludur (yalnız LEGACY_BASELINE'da null olabilir, bu yol LEGACY_BASELINE kabul etmez)");
     }
     if (timePrecision === "DATE_ONLY" && occurredAt != null) {
       throw new ServiceOccurrenceValidationError("timePrecision=DATE_ONLY iken occurredAt dolu olamaz");
@@ -247,6 +263,8 @@ export class ServiceOccurrenceService {
       occurredOn: command.occurredOn,
       occurredAt: command.occurredAt ?? null,
       timePrecision: command.timePrecision,
+      addressTypeAtOccurrence: command.addressTypeAtOccurrence,
+      serviceDateRole: command.serviceDateRole ?? null,
       receivedAt: command.receivedAt ?? null,
       recordedByUserId: command.actor.userId ?? null,
       recordedBySystem: command.actor.systemCode ?? null,
@@ -308,6 +326,8 @@ export class ServiceOccurrenceService {
       existing.occurredOn.getTime() === command.occurredOn.getTime() &&
       this.datesEqual(existing.occurredAt, command.occurredAt) &&
       existing.timePrecision === command.timePrecision &&
+      existing.addressTypeAtOccurrence === command.addressTypeAtOccurrence &&
+      (existing.serviceDateRole ?? null) === (command.serviceDateRole ?? null) &&
       this.datesEqual(existing.receivedAt, command.receivedAt) &&
       (existing.barcodeNo ?? null) === (command.barcodeNo ?? null) &&
       (existing.evidenceReference ?? null) === (command.evidenceReference ?? null)

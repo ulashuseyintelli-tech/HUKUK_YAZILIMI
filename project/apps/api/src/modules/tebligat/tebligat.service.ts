@@ -12,6 +12,7 @@ import { UetsService } from "./uets.service"; // PR-S1: UETS/KEP teslim durumu s
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import { ServiceOccurrenceService } from "./service-occurrence/service-occurrence.service";
 import { IdempotencyMode } from "./service-occurrence/service-occurrence.types";
+import { ServiceOccurrenceServiceDateRole } from "@prisma/client"; // DEBTOR-OF01-HISTORY-P04-A1
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest/domain-event-ingest.service";
 import { DomainEvent } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
 import {
@@ -439,6 +440,14 @@ export class TebligatService {
     const resolvedBarcodeNo: string | null = dto.barcodeNo || tebligat.barcodeNo || null;
     const boundedSourceNote: string | null = dto.pttResultNote ? dto.pttResultNote.slice(0, 500) : null;
 
+    // DEBTOR-OF01-HISTORY-P04-A1: deadline-hesabı için gerekli immutable context/raw fact'ler.
+    // addressTypeAtOccurrence Tebligat'ın (transaction-öncesi, doğrulanmış) addressType'ından
+    // HER ZAMAN türetilir — mutable Tebligat'a deadline-consumer aşamasında GERİ DÖNMEYE gerek
+    // bırakmaz (owner brief §7). serviceDateRole belirsiz/desteklenmeyen bir pttResult için
+    // uydurma üretilmez — deriveServiceDateRole fail-closed throw eder (owner brief §7/STOP-03).
+    const addressTypeAtOccurrence = tebligat.addressType as any;
+    const serviceDateRole = this.deriveServiceDateRole(dto.pttResult, addressTypeAtOccurrence, dto.tk21Type);
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const upd = await (tx as any).tebligat.update({ where: { id }, data: updateData });
       if (shouldSync) {
@@ -465,6 +474,8 @@ export class TebligatService {
         occurredOn: actionDate,
         occurredAt: null,
         timePrecision: "DATE_ONLY",
+        addressTypeAtOccurrence,
+        serviceDateRole,
         barcodeNo: resolvedBarcodeNo,
         sourceNote: boundedSourceNote,
         evidenceReference: null,
@@ -713,6 +724,69 @@ export class TebligatService {
       status: TebligatStatus.IADE_GELDI,
       nextAction: TebligatNextAction.YENI_ADRES_ARA,
     };
+  }
+
+  /**
+   * DEBTOR-OF01-HISTORY-P04-A1: pttResult + addressType (+ operatörün açıkça seçtiği TK m.20
+   * override'ı) konfigürasyonundan deterministik serviceDateRole türetir. determinePttResultAction'ın
+   * KENDİ dallanma mantığıyla (input sinyalleri üzerinden, tk21Type ÇIKTISI üzerinden DEĞİL)
+   * birebir hizalıdır — yeni bir hukuki sınıflandırma İCAT ETMEZ, yalnız "hangi teslim/tevdi
+   * MEKANİZMASI gözlemlendi" sorusuna cevap verir. Gerçek bir mekanizma gerçekleşmediği
+   * durumlarda (başarısız/yönlendirme sonuçları — ör. adres bulunamadı, vefat) bilinçli olarak
+   * null döner; bu "eksik veri" DEĞİLDİR (bkz. ServiceOccurrence migration CHECK constraint'i).
+   * TypeScript'in kapalı pttResult enum'u normal koşullarda tüm dalları zorunlu kılar; ileride
+   * enum'a yeni bir değer eklenip bu eşleme güncellenmezse fail-closed durur — belirsiz/
+   * desteklenmeyen sonuç için uydurma role ÜRETİLMEZ (owner brief §7, TEST-14).
+   */
+  private deriveServiceDateRole(
+    pttResult: TebligatPttResult,
+    addressType: TebligatAddressType,
+    explicitTk21Type?: Tk21Type,
+  ): ServiceOccurrenceServiceDateRole | null {
+    if (explicitTk21Type === Tk21Type.TK_20) {
+      // TK m.20 override, pttResult'tan BAĞIMSIZ önceliklidir (determinePttResultAction ile
+      // aynı öncelik sırası) — status her zaman MUHTARLIGA_BIRAKILDI.
+      return ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY;
+    }
+
+    switch (pttResult) {
+      case TebligatPttResult.TESLIM_EDILDI:
+      case TebligatPttResult.AYNI_KONUTTA_TESLIM:
+      case TebligatPttResult.ISYERINDE_TESLIM:
+        return ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY;
+
+      case TebligatPttResult.MUHTARLIGA_BIRAKILDI:
+        // TK 21/1 (bilinen adres) veya TK 21/2 (MERNİS) — ikisi de fiziksel olarak muhtara
+        // tevdi'dir (status=MUHTARLIGA_BIRAKILDI, determinePttResultAction'da her iki dal da).
+        return ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY;
+
+      case TebligatPttResult.IMTINA:
+        // Yalnız bilinen adreste imtina TK 21/1 (muhtar tevdi) sayılır — MERNİS'te imtina
+        // determinePttResultAction'da hiçbir özel dala girmez, generic İADE_GELDI'ye düşer.
+        return addressType === TebligatAddressType.BILINEN
+          ? ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY
+          : null;
+
+      // Başarısız/yönlendirme sonuçları (İADE_GELDI ailesi) — hiçbir teslim/tevdi mekanizması
+      // GERÇEKLEŞMEDİ; addressTypeAtOccurrence yine de dolar (context fact, sonuçtan bağımsız
+      // her zaman gözlemlenebilir), serviceDateRole bilinçli olarak null kalır.
+      case TebligatPttResult.ADRESTE_BULUNAMADI:
+      case TebligatPttResult.TASINMIS:
+      case TebligatPttResult.ADRES_YETERSIZ:
+      case TebligatPttResult.BINA_YIKILMIS:
+      case TebligatPttResult.ADRES_KAPALI:
+      case TebligatPttResult.TANIMIYOR:
+      case TebligatPttResult.VEFAT:
+      case TebligatPttResult.DIGER:
+        return null;
+
+      default: {
+        const exhaustiveCheck: never = pttResult;
+        throw new BadRequestException(
+          `serviceDateRole belirlenemedi: bilinmeyen/desteklenmeyen pttResult (${String(exhaustiveCheck)})`,
+        );
+      }
+    }
   }
 
   /**

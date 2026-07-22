@@ -95,6 +95,7 @@ describeWithDisposableDb("ServiceOccurrenceService — disposable DB (write-side
       sourceCode: "TESLIM_EDILDI",
       occurredOn: new Date("2026-07-20T00:00:00Z"),
       timePrecision: ServiceOccurrenceTimePrecision.DATE_ONLY,
+      addressTypeAtOccurrence: "BILINEN" as any, // DEBTOR-OF01-HISTORY-P04-A1
       actor: { systemCode: "TEST_HARNESS" },
       idempotencyMode: IdempotencyMode.NONE,
       ...overrides,
@@ -216,6 +217,7 @@ describeWithDisposableDb("ServiceOccurrenceService — disposable DB (write-side
         sourceCode: "ADRESTE_BULUNAMADI",
         occurredOn: new Date("2026-07-21T00:00:00Z"),
         timePrecision: ServiceOccurrenceTimePrecision.DATE_ONLY,
+        addressTypeAtOccurrence: "BILINEN" as any, // DEBTOR-OF01-HISTORY-P04-A1
       },
       correctionReasonCode: "DATA_ENTRY_ERROR",
       actor: { systemCode: "TEST_HARNESS" },

@@ -1,4 +1,10 @@
-import { ServiceOccurrence, ServiceOccurrenceType, ServiceOccurrenceTimePrecision } from "@prisma/client";
+import {
+  ServiceOccurrence,
+  ServiceOccurrenceType,
+  ServiceOccurrenceTimePrecision,
+  TebligatAddressType,
+  ServiceOccurrenceServiceDateRole,
+} from "@prisma/client";
 
 /**
  * DEBTOR-OF01-HISTORY-P02 — ServiceOccurrence write-side command/result sözleşmesi.
@@ -30,6 +36,15 @@ export interface CreateServiceOccurrenceCommand {
   occurredOn: Date;
   occurredAt?: Date | null;
   timePrecision: ServiceOccurrenceTimePrecision;
+  /**
+   * DEBTOR-OF01-HISTORY-P04-A1: deadline-hesabı için gerekli immutable context/raw fact'ler.
+   * addressTypeAtOccurrence bu servisin normal create/supersede yolunda HER ZAMAN zorunludur
+   * (occurrenceType=LEGACY_BASELINE zaten ayrı guard'la reddedilir — bkz. isLegacyBaselineType).
+   * serviceDateRole yalnız gerçek bir teslim/tevdi MEKANİZMASI varsa doldurulur; başarısız/
+   * yönlendirme sonuçlarında (hiçbir mekanizma gerçekleşmedi) bilinçli olarak null kalabilir.
+   */
+  addressTypeAtOccurrence: TebligatAddressType;
+  serviceDateRole?: ServiceOccurrenceServiceDateRole | null;
   receivedAt?: Date | null;
   barcodeNo?: string | null;
   sourceNote?: string | null;
@@ -73,4 +88,6 @@ export const FACTUAL_PAYLOAD_FIELDS = [
   "receivedAt",
   "barcodeNo",
   "evidenceReference",
+  "addressTypeAtOccurrence", // DEBTOR-OF01-HISTORY-P04-A1
+  "serviceDateRole", // DEBTOR-OF01-HISTORY-P04-A1
 ] as const;
