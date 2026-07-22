@@ -2,7 +2,7 @@
 
 ```text
 Program                     : RECEIVABLE (RCV)
-Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-CLAIM-FORM-P02-S05-I01 formal closure / RCV-CLAIM-FORM-P02-S06-I01 formal closure / RCV-CLAIM-FORM-P02-S07-I01 formal closure / RCV-CLAIM-FORM-P02-S08-I01 formal closure / RCV-CLAIM-FORM-P02-S08-D01A-GOV-R01 authority canonicalization / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-COL-TPA-04B schema-amendment formal closure / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor / RCV-CLAIM-MASTER-TRIAGE-R02-GOV post-S05 residual priority canonicalization
+Governance tasks            : RCV-GOV-001 / RCV-GOV-002 / RCV-GOV-003 / RCV-GOV-004-R01 / RCV-P2-WS03-P01 formal closure / RCV-P2-WS03-P02 formal closure / RCV-P2-WS03-P03 contract ratification / RCV-P2-WS03-P03 formal closure / RCV-P2-WS03 formal closure / RCV-P2-WS04-P01 authority contract ratification / RCV-P2-WS04-P01 formal closure / RCV-P2-WS04-P02 formal closure / RCV-P2-WS04-P03 package contract ratification / RCV-P2-WS04-P03 reader-adapter formal closure / RCV-P2-WS04-P03-A launch-package formal closure / RCV-P2-WS04 allocation-authority amendment / RCV-P2-WS04-PR407-RD01-R01 balance-exposure contract ratification / RCV-PR407-CLOSE-B-GOV final disposition supersession / RCV-COL-XD-001A legal-application boundary canonicalization / RCV-COL-TPA-02 target persistence architecture canonicalization / RCV-CLAIM-FORM-P02-S01 formal closure / RCV-CLAIM-FORM-P02-S02-I01 formal closure / RCV-CLAIM-FORM-P02-S03-I01 formal closure / RCV-CLAIM-FORM-P02-S04-I01 formal closure / RCV-CLAIM-FORM-P02-S05-I01 formal closure / RCV-CLAIM-FORM-P02-S06-I01 formal closure / RCV-CLAIM-FORM-P02-S07-I01 formal closure / RCV-CLAIM-FORM-P02-S08-I01 formal closure / RCV-CLAIM-FORM-P02-S08-D01A-GOV-R01 authority canonicalization / RCV-CLAIM-FORM-P02-S08-D01B-GOV-R01 authority canonicalization / RCV-COL-TPA-03 schema-foundation contract canonicalization / RCV-COL-TPA-03A schema-foundation formal closure / RCV-COL-TPA-04 writer-contract canonicalization / RCV-COL-TPA-04A snapshot-bucket identity canonicalization / RCV-COL-TPA-04B writer-evidence schema contract canonicalization / RCV-COL-TPA-04B schema-amendment formal closure / RCV-CLAIM-MASTER-TRIAGE-R01-GOV program re-anchor / RCV-CLAIM-MASTER-TRIAGE-R02-GOV post-S05 residual priority canonicalization
 Decision                    : DEC-0030
 Master Register owner       : CCB-001
 Canonicalization milestone  : CAN-CUT-02
@@ -85,13 +85,15 @@ RCV-CLAIM-FORM-P02-S08-A01  : ANALYSIS COMPLETE
 RCV-CLAIM-FORM-P02-S08-C01  : CONTRACT COMPLETE / OWNER RATIFIED
 RCV-CLAIM-FORM-P02-S08-I01  : FORMALLY CLOSED / CANONICAL (implementation PR #1515 / 5cbfc8e3)
 RCV-CLAIM-FORM-P02-S08-D01A : DOCUMENT AUTHORITY CONTRACT FORMALLY RATIFIED / CANONICAL UPON APPROVED MERGE
-RCV-CLAIM-FORM-P02-S08-D01  : PARTIAL — DOCUMENT AUTHORITY CONTRACT CLOSED / LEGAL-BASIS AUTHORITY OPEN / IMPLEMENTATION NOT STARTED
+RCV-CLAIM-FORM-P02-S08-D01B : LEGAL BASIS AUTHORITY CONTRACT FORMALLY RATIFIED / CANONICAL UPON APPROVED MERGE
+RCV-CLAIM-FORM-P02-S08-D01  : READY FOR FINAL DESIGN RECONCILIATION — DOCUMENT + LEGAL-BASIS CONTRACT BLOCKERS CLOSED / IMPLEMENTATION NOT STARTED
 RCV-CLAIM-FORM-P02-S08-I02  : NOT STARTED / NOT AUTHORIZED
+RCV-CLAIM-FORM-P02-S08-I02A : NOT STARTED / NOT AUTHORIZED
 RCV-CLAIM-FORM-P02-S08-I03  : NOT STARTED / NOT AUTHORIZED
 RCV-CLAIM-FORM-P02-S08-I04  : NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : UNSET — OWNER GO REQUIRED
+Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D01-FINAL-RECONCILE — SEPARATE OWNER GO REQUIRED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -2429,6 +2431,79 @@ storage/live-data access, legacy hash/bootstrap/backfill, OCR persistence,
 `ClaimItemFormationIntentV1`, `ClaimFormationSnapshotV1`, S08-I02A, client cutover ve production
 deployment yetkilendirilmez. S08-D01'in implementation/persistence tarafı `NOT STARTED /
 NOT AUTHORIZED`dır; runtime ve historical records değişmez.
+
+### 1.31D RCV-CLAIM-FORM-P02-S08-D01B legal-basis authority canonicalization
+
+Owner, `RCV-CLAIM-FORM-P02-S08-D01B-OWNER-DECISION` ile D01B contract analizini kabul etmiş ve
+Legal Basis Registry/version authority'si için aşağıdaki bounded disposition'ı ratifiye etmiştir.
+Bu kayıt yeni primary Legal Policy domain, program veya Master Register identity oluşturmaz;
+`SYSTEM-CONSTITUTION` `SYS-GOV-017` RECEIVABLE sınırını uygular.
+
+```text
+RCV-CLAIM-FORM-P02-S08-D01B-GOV-R01:
+FORMALLY RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+
+LEGAL BASIS SEMANTIC OWNER:
+RECEIVABLE
+
+AUTHORITY MODEL:
+L1 — RECEIVABLE-OWNED LEGAL BASIS REGISTRY
+
+FINAL LEGAL RATIFIER:
+ULAŞ HÜSEYİN TELLİ OR EXPLICITLY OWNER-AUTHORIZED LAWYER
+
+TARGET PERSISTENCE:
+P3 — VERSIONED ARTIFACT SOURCE OF TRUTH + COMPILED READ-ONLY DB PROJECTION
+
+TRANSITIONAL MODEL:
+P1 / L3 — SIGNED VERSIONED REPOSITORY RELEASE + PURE EXACT-VERSION RESOLVER
+
+IDENTITY:
+STABLE legalBasisCode + SEPARATE IMMUTABLE legalBasisVersion
+
+TENANT MODEL:
+GLOBAL VERSIONED BASIS + OPTIONAL STRICTER OPERATIONAL OVERLAY
+
+SUBTYPE LINKAGE:
+SEPARATE BUT VERSION-BOUND REGISTRIES
+
+LEGACY DISPOSITION:
+LEGACY_LEGAL_BASIS_UNRESOLVED
+
+DOCUMENT SOURCE BLOCKER:
+CONTRACTUALLY CLOSED
+
+LEGAL-BASIS OWNER / AUTHORITY BLOCKER:
+CONTRACTUALLY CLOSED
+
+S08-D01:
+READY FOR FINAL DESIGN RECONCILIATION
+
+S08-I02A:
+NOT STARTED / NOT AUTHORIZED
+
+IMPLEMENTATION / SCHEMA / MIGRATION:
+NONE / NOT AUTHORIZED
+
+NEXT ELIGIBLE TASK:
+RCV-CLAIM-FORM-P02-S08-D01-FINAL-RECONCILE
+SEPARATE OWNER GO REQUIRED
+```
+
+Ratified version contract exact code/version/checksum/registry release binding'ini; explicit
+`effectiveDateRule`; component category/subtype, source/evidence, liability ve interest-eligibility
+compatibility'sini; finalization anında exact-version revalidation'ı ve global activation için
+four-eyes legal review'u zorunlu kılar. Staff, developer, system administrator, runtime service ve
+OfficeApproval hukuki authority üretemez. Automatic version upgrade, current basis'in historical
+ClaimItem'a atanması, inferred legal basis ve automatic backfill yasaktır. Existing ClaimItem ve
+historical snapshot mutate edilmez; correction/supersession/revocation append-only ve exact-version
+referanslıdır.
+
+Bu canonicalization registry artifact, DB projection, resolver, subtype contents, ilk Legal Basis
+listesi, `ClaimItemFormationIntentV1`, `ClaimFormationSnapshotV1`, S08-I02A, client cutover, legacy
+inventory/backfill veya production activation yetkisi üretmez. Document authority contract'ı,
+Claim Formation runtime `PARTIAL THROUGH S08-I01 ONLY` durumu ve Collection/shared-boundary
+ayrımı değişmez.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 
