@@ -32,6 +32,7 @@ import type {
   SourceVersionSetHash,
   TenantId,
 } from './primitives';
+import type { CanonicalSnapshotValidationReason } from './validation-constants';
 
 export const LEGAL_APPLICATION_COMPONENT_TYPES = [
   'COST',
@@ -206,6 +207,11 @@ export interface LegalApplicationPlan {
 
 /** Allowlist-only metadata; raw payload, free text, PII and runtime details have no type slot. */
 export interface LegalApplicationPlanErrorMetadata {
+  readonly reason?: CanonicalSnapshotValidationReason;
+  /** Static schema path only; untrusted field names and values are never copied here. */
+  readonly path?: string;
+  readonly configuredMaximum?: number;
+  readonly actual?: number;
   readonly snapshotRef?: SnapshotRef;
   readonly expectedSnapshotRef?: SnapshotRef;
   readonly snapshotHash?: SnapshotHash;
