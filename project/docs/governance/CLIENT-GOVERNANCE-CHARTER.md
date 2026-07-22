@@ -1558,3 +1558,43 @@ Hem liste hem upload response'unda yalnız: `id, type, title, description, fileN
 ### 29.9 U03-I02 Self-Check
 
 Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; POL-D/BP-06 enforcement'ının TAMAMLANDIĞINI iddia ETMEZ; `CLIENT-P2-U03-I03`'ü BAŞLATMAZ; messages/PoA/notifications yüzeylerine dokunmaz veya bunları CLOSED İLAN ETMEZ; client-safe rejection-reason contract SEÇMEZ veya YETKİLENDİRMEZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; M4 live migration veya OF01 migration gate'ine dokunmaz (ayrı, operasyonel bir bulgudur, bu CLIENT docs-only kayıtla canonicalize EDİLMEZ); session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ; §5/§6/§8.A/§8.B/§11–§28 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ (implementasyon zaten PR #1506 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL FIELD-VISIBILITY SURFACES CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 30. CLIENT Phase 2 U03-I03 — Portal Message Field-Visibility Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, POL-D (§21) / BP-06 (§23) politikalarının portal message yüzeyindeki enforcement diliminin (`CLIENT-P2-U03-I03`) teknik kapanış kaydıdır (`decision-log.md` CLIENT-P2-U03-I03-GOV). §5, §6, §8.A, §8.B, §11–§29 substantive hükümlerini DEĞİŞTİRMEZ. §29.7'nin "`CLIENT-P2-U03-I03`: NOT AUTHORIZED" ifadesi bu kayıtla owner tarafından ayrıca yetkilendirilip kapatılmıştır — §29'un kendi metni DEĞİŞTİRİLMEMİŞTİR. **CLIENT-P2-U03 (genel POL-D/BP-06 enforcement programı) BU KAYITLA CLOSED İLAN EDİLMEZ — yalnız case-detail (I01) + document (I02) + message (I03) dilimleri kapanır, PoA/notifications yüzeyleri OPEN kalır.**
+
+### 30.1 Technical Lineage
+
+**IMPLEMENTATION:** PR #1524 (task: `CLIENT-P2-U03-I03`, squash SHA `802f5d75dfbc3dc498d4fda50a4de290c6b38c28`, merged `origin/main` 2026-07-22). Bu birim, §29.7'nin (`CLIENT-P2-U03-I02`) açık bıraktığı "MESSAGE FIELD VISIBILITY: OPEN/NOT STARTED" bulgusunun bounded implementasyonudur; `getMessages()` (liste) ve `sendMessageFromClient()` (client-send response'u) aynı slice altında ele alınmıştır — aynı kaynak model, aynı client sayfası, aynı response contract, aynı field-exposure kök nedeni.
+
+### 30.2 Selected Enforcement Model
+
+**PRISMA-LEVEL EXPLICIT SELECT — §28.2/§29.2 ile aynı desen.** `PortalService.getMessages()`'ın select'siz `findMany()`'ı ve `sendMessageFromClient()`'ın select'siz `create()`'i, ortak, tek bir typed sabit (`PORTAL_MESSAGE_CLIENT_SELECT`) ile değiştirildi. Yeni DTO sınıfı, class-transformer, global interceptor veya web-shared response-type katmanı **ÜRETİLMEDİ**. Mesaj write-contract'ı (`senderId: clientId` dahil) DEĞİŞMEDİ — yalnız `create()`/`findMany()`'ın döndürdüğü response daraltıldı. Web production sayfası (`portal/messages`) zaten yalnız onaylı 6 alanı tüketiyordu; production kodda değişiklik gerekmedi, yalnız focused test eklendi.
+
+### 30.3 Approved Client Response Contract
+
+Hem liste hem client-send response'unda yalnız: `id, content, senderType, senderName, isRead, createdAt`.
+
+### 30.4 Explicitly Omitted Field Families
+
+`senderId` (internal technical actor identifier — OFFICE mesajlarında staff `User.id`, CLIENT mesajlarında clientId) · `clientId`/`tenantId` (authorization context, presentation data DEĞİL) · `caseId` (bu dilimde client response'ta authorize edilmedi) · `readAt` (mevcut client presentation için gerekmiyor). Hepsi **UNKNOWN/UNCLASSIFIED veya INTERNAL-ONLY → varsayılan OMIT** ilkesiyle dışarıda. **`senderName` CLIENT-SAFE ≠ `senderId` CLIENT-SAFE.**
+
+### 30.5 Message Write and Admin Boundary Preservation
+
+`sendMessageFromClient()`'ın write-contract'ı (`senderId: clientId` dahil) **DEĞİŞMEDİ** — actor/representation modeli bu kayıtla yeniden AÇILMADI. `sendMessageFromOffice()`/`getClientMessages()`/`getClientsWithMessages()`/`getUnreadMessageCount()`/`markMessagesAsRead()` (staff/admin yüzeyi) **DEĞİŞMEDİ** — kendi raw, select'siz erişimlerini korur; OFFICE-originated mesajlar client listesinde görünmeye devam eder (content/senderType=OFFICE/senderName/isRead/createdAt ile), yalnız `senderId` (staff `User.id`) artık client response'una hiç dönmez. **CLIENT FIELD OMISSION ≠ DATABASE FIELD REMOVAL. CLIENT FIELD OMISSION ≠ ADMIN RESPONSE CHANGE. CLIENT FIELD OMISSION ≠ MESSAGE ACTOR MODEL CHANGE.**
+
+### 30.6 Non-Equations / Precision
+
+`SAME-CLIENT FIELD EXPOSURE ≠ CROSS-TENANT INCIDENT` · `FIELD VISIBILITY ≠ OBJECT AUTHORIZATION` · `MESSAGE RESPONSE PROJECTION ≠ MESSAGE ACCESS MODEL REDESIGN` · `STAFF senderId OMITTED ≠ STAFF IDENTITY MODEL REDESIGNED` · `MESSAGE WRITE SEMANTICS PRESERVED ≠ ACTOR MODEL APPROVED` · `TECHNICAL I03 CLOSED ≠ CLIENT-P2-U03 FULLY CLOSED` · `EXPLICIT BACKEND SELECT = FAIL-CLOSED FIELD PROJECTION`. **Doğru ifade: "PORTAL MESSAGE BROAD RESPONSE / INTERNAL SENDER-IDENTIFIER EXPOSURE CONTAINED"** — "cross-tenant vulnerability fixed" veya "message authorization redesigned" iddiaları bu kayıtla KURULMAZ.
+
+### 30.7 Open Residual Surfaces
+
+**POA FIELD VISIBILITY: OPEN/NOT STARTED** (`getClientPoas` — `filePath`/`fileSize`/`mimeType`, hiç consumer'ı yok). **NOTIFICATION FAIL-CLOSED PROJECTION: OPEN/NOT STARTED** (`getNotifications` — bugün select'siz ama model'de internal alan yok; mekanizma fail-closed DEĞİL). **`CLIENT-P2-U03-I04`: NOT AUTHORIZED.** Message retention, message encryption, message actor/representation model, client-safe case-link presentation ve admin message field visibility bu kayıtla ÇÖZÜLMÜŞ SAYILMAZ. **CASE DETAIL (I01) + DOCUMENT (I02) FIELD VISIBILITY: CLOSED/CANONICAL, bu kayıtla DEĞİŞMEDİ.** Object-scope (`STF-PRD-BOLA-001`/`STF-PRD-SCP-001`/OFF/OD-08/CAP-02) ve OFFICE authority'si bu kayıtla **DEĞİŞMEDİ**.
+
+### 30.8 Final Unit Status
+
+**CLIENT-P2-U03-I03: TECHNICAL + GOVERNANCE CLOSED/CANONICAL.** **CLIENT-P2-U03 (genel): PARTIAL — I01 + I02 + I03 ONLY.** **PR #1524, squash `802f5d75`.** **SCHEMA/MIGRATION: NONE. OBJECT-SCOPE: UNCHANGED. FINANCIAL AUTHORITY: UNCHANGED. MESSAGE WRITE SEMANTICS: UNCHANGED. ADMIN MESSAGE SURFACES: UNCHANGED.** **NEXT UNIT: OWNER-GATED/NOT AUTO-STARTED.**
+
+### 30.9 U03-I03 Self-Check
+
+Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; POL-D/BP-06 enforcement'ının TAMAMLANDIĞINI iddia ETMEZ; `CLIENT-P2-U03-I04`'ü BAŞLATMAZ; PoA/notifications yüzeylerine dokunmaz veya bunları CLOSED İLAN ETMEZ; message actor/representation modelini yeniden AÇMAZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; M4 live migration veya OF01 migration gate'ine dokunmaz; session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ; §5/§6/§8.A/§8.B/§11–§29 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ (implementasyon zaten PR #1524 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL FIELD-VISIBILITY SURFACES CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
