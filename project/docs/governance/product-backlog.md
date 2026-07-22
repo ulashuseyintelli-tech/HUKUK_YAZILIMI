@@ -2386,6 +2386,46 @@ schema/migration, storage/live-data access, legacy hashing/bootstrap/backfill, O
 formation intent/snapshot, S08-I02A, client cutover ve production deployment açık ve owner-gated
 kalır. Runtime, historical records, Office/Collection authority ve frozen S05 değişmez.
 
+## RCV-CLAIM-FORM-P02-S08-D01B-GOV-R01 — Legal Basis Authority Canonicalization
+
+```text
+PROGRAM LOCK                     RECEIVABLE / CLAIM FORMATION
+AUTHORITY CONTRACT               FORMALLY RATIFIED / CANONICAL UPON APPROVED MERGE
+SEMANTIC OWNER                   RECEIVABLE
+AUTHORITY MODEL                  L1 — RECEIVABLE-OWNED LEGAL BASIS REGISTRY
+FINAL LEGAL RATIFIER             ULAŞ HÜSEYİN TELLİ OR EXPLICITLY OWNER-AUTHORIZED LAWYER
+FOUR-EYES                        REQUIRED FOR GLOBAL ACTIVATION
+TARGET PERSISTENCE               P3 — VERSIONED ARTIFACT SOURCE OF TRUTH +
+                                 COMPILED READ-ONLY DB PROJECTION
+TRANSITIONAL MODEL               P1/L3 — SIGNED VERSIONED REPOSITORY RELEASE +
+                                 PURE EXACT-VERSION RESOLVER
+IDENTITY                         STABLE legalBasisCode + IMMUTABLE legalBasisVersion
+TENANT MODEL                     GLOBAL BASIS + STRICTER OPERATIONAL/EVIDENCE OVERLAY ONLY
+SUBTYPE LINKAGE                  SEPARATE BUT VERSION-BOUND
+EXACT BINDING                    VERSION/CHECKSUM/RELEASE/EFFECTIVE CONTEXT REQUIRED
+SOURCE/EVIDENCE COMPATIBILITY    REQUIRED / FAIL-CLOSED
+AUTOMATIC UPGRADE/BACKFILL       PROHIBITED
+LEGACY DISPOSITION               LEGACY_LEGAL_BASIS_UNRESOLVED
+DOCUMENT SOURCE BLOCKER          CONTRACTUALLY CLOSED
+LEGAL-BASIS AUTHORITY BLOCKER    CONTRACTUALLY CLOSED
+S08-D01                          READY FOR FINAL DESIGN RECONCILIATION
+S08-I02A                         NOT STARTED / NOT AUTHORIZED
+RUNTIME                          UNCHANGED — PARTIAL THROUGH S08-I01 ONLY
+IMPLEMENTATION/SCHEMA/MIGRATION  NONE / NOT AUTHORIZED
+NEXT ELIGIBLE TASK               RCV-CLAIM-FORM-P02-S08-D01-FINAL-RECONCILE —
+                                 SEPARATE OWNER GO REQUIRED
+```
+
+Bu backlog kaydı yeni primary Legal Policy program/register identity oluşturmaz. Staff,
+developer, administrator, runtime service ve OfficeApproval hukuki authority değildir. Ratified
+version immutable; correction yeni version; revoke/supersession append-only'dir. Historical
+ClaimItem veya snapshot'a metadata/document type/current version üzerinden basis atfedilmez.
+
+Registry artifact, DB projection, resolver, Legal Basis/subtype contents, intent/snapshot
+persistence, S08-I02A, client cutover, legacy inventory/backfill ve production activation bu
+görevde uygulanmaz veya yetkilendirilmez. Document authority contract, historical records,
+Collection/shared boundary ve frozen S05 değişmez.
+
 ---
 
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification

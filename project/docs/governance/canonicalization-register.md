@@ -1,7 +1,7 @@
 # Canonicalization Register
 
 **Durum:** Living document — governance kaydı, implementasyon değil.
-**Son güncelleme:** 2026-07-22 (RCV-CLAIM-FORM-P02-S08-D01A-GOV-R01 authority canonicalization)
+**Son güncelleme:** 2026-07-23 (RCV-CLAIM-FORM-P02-S08-D01B-GOV-R01 authority canonicalization)
 **Kaynak:** `canonicalizationsiniflandirmaraporu.md` (kullanıcı tarafından sağlanan sınıflandırma raporu) + repo kodu doğrulaması, base commit `e65dc08564c09bfbe6db09a680606ac3d4b1f828`.
 **İlişkili dosya:** `canonicalization-policy.md` (sınıflandırma tanımları ve uygulama kuralları için bağlayıcı kaynak; bu register yalnız veri/kayıt tutar).
 
@@ -643,6 +643,42 @@ persistence, retention/KVKK policy selection, Legal Basis Registry/version autho
 `ClaimItemFormationIntentV1`, `ClaimFormationSnapshotV1`, S08-I02A, client cutover ve production
 deployment yetkilendirilmez. Historical S08-I01 kaydı, runtime `PARTIAL` durumu, frozen S05 ve
 Collection/shared-boundary kayıtları korunur.
+
+### RCV-CLAIM-FORM-P02-S08-D01B-GOV-R01 — Legal Basis Authority Canonicalization
+
+```text
+STATUS                          FORMALLY RATIFIED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+SEMANTIC OWNER                  RECEIVABLE
+AUTHORITY MODEL                 L1 — RECEIVABLE-OWNED LEGAL BASIS REGISTRY
+FINAL LEGAL RATIFIER            ULAŞ HÜSEYİN TELLİ OR EXPLICITLY OWNER-AUTHORIZED LAWYER
+GLOBAL ACTIVATION REVIEW        FOUR-EYES REQUIRED
+TARGET PERSISTENCE              P3 — VERSIONED ARTIFACT SOURCE OF TRUTH +
+                                COMPILED READ-ONLY DB PROJECTION
+TRANSITIONAL MODEL              P1/L3 — SIGNED VERSIONED REPOSITORY RELEASE +
+                                PURE EXACT-VERSION RESOLVER
+IDENTITY                        STABLE legalBasisCode + IMMUTABLE legalBasisVersion
+TENANT MODEL                    GLOBAL BASIS + STRICTER OPERATIONAL/EVIDENCE OVERLAY ONLY
+SUBTYPE LINKAGE                 SEPARATE BUT VERSION-BOUND
+EXACT BINDING                   VERSION + CHECKSUM + REGISTRY RELEASE + EFFECTIVE CONTEXT
+SOURCE/EVIDENCE COMPATIBILITY   REQUIRED / FAIL-CLOSED
+AUTOMATIC UPGRADE/BACKFILL      PROHIBITED
+LEGACY DISPOSITION              LEGACY_LEGAL_BASIS_UNRESOLVED
+DOCUMENT SOURCE BLOCKER         CONTRACTUALLY CLOSED
+LEGAL-BASIS AUTHORITY BLOCKER   CONTRACTUALLY CLOSED
+S08-D01                         READY FOR FINAL DESIGN RECONCILIATION
+S08-I02A                        NOT STARTED / NOT AUTHORIZED
+IMPLEMENTATION/SCHEMA/MIGRATION NONE / NOT AUTHORIZED
+NEXT ELIGIBLE TASK              RCV-CLAIM-FORM-P02-S08-D01-FINAL-RECONCILE —
+                                SEPARATE OWNER GO REQUIRED
+```
+
+Staff, developer, administrator, runtime service ve OfficeApproval hukuki authority üretemez.
+Correction yeni immutable version, revoke/supersession append-only lifecycle event'tir; pending
+intent revoked/stale version ile finalize olamaz. Historical ClaimItem ve snapshot mutate edilmez;
+metadata/document type/current version üzerinden basis tahmini yapılmaz. Bu kayıt registry
+artifact, DB projection, resolver, Legal Basis/subtype contents, intent/snapshot persistence,
+client cutover, legacy inventory/backfill veya production activation yetkisi üretmez; yeni primary
+Legal Policy program/register identity oluşturmaz.
 
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 

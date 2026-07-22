@@ -2126,6 +2126,55 @@ synthetic corpus writer/evidence/cutover için `BLOCKING` kalır. Sonraki owner-
 `TPA-04C-I03 — PURE APPLY ORDERING / EXACT-MINOR-UNIT ALLOCATION CORE`; ayrı owner
 `GO-IMPLEMENT REQUIRED / NOT YET AUTHORIZED`dır. I04-I07 self-start edemez.
 
+## 23.22. S08-D01B Legal Basis Registry/version authority contract — 2026-07-23
+
+Owner, `RCV-CLAIM-FORM-P02-S08-D01B-OWNER-DECISION` ile D01B contract analizini kabul etmiş ve
+`L1 — RECEIVABLE-OWNED LEGAL BASIS REGISTRY` modelini ratifiye etmiştir. RECEIVABLE stable
+legal-basis identity, immutable version consumption, formation compatibility, effective-date ve
+liability-context validation, exact-version/checksum binding, deterministic resolver ve admission
+result semantiğinin sahibidir. Bu kayıt yeni primary Legal Policy domain veya program identity
+oluşturmaz.
+
+Final `LegalBasisVersion` ratifier'ı Ulaş Hüseyin Telli veya owner tarafından açıkça
+yetkilendirilmiş avukattır. Staff/personel candidate data hazırlayabilir; final legal
+classification, version ratification, revoke/retroactivity veya case-specific legal-review
+authority'si üretemez. Developer, system administrator, runtime enablement ve OfficeApproval
+workflow'u da hukuki ratifikasyon değildir. Global activation four-eyes legal review gerektirir;
+legal draft/review ile final authorized ratifier ayrıdır.
+
+Canonical identity stable internal `legalBasisCode` + separate immutable `legalBasisVersion`dır.
+Statute/article, contract clause ve official publication version payload'ındaki reference'lardır;
+DB UUID varsa yalnız storage identity'sidir. Ratified payload mutate veya hard-delete edilmez;
+correction yeni immutable version, revoke/supersession append-only lifecycle event'tir. Formation
+intent exact code/version/checksum/registry release bağlar; finalizer aynı exact version'ı status,
+effective interval, checksum ve compatibility yönlerinden yeniden doğrular. Automatic version
+upgrade yasaktır; ex nunc/ex tunc ve retroactivity runtime tarafından çıkarılamaz.
+
+Subtype Registry ve Legal Basis Registry ayrı fakat version-bound'dur. Subtype version tam bir
+canonical category'ye bağlanır; LegalBasisVersion allowed exact category/subtype combinations,
+required source/evidence classes, evidence combination, liability requirements ve interest
+eligibility taşır. Resolver exact DocumentSourceVersion ve EvidenceBundle ile birlikte bu
+compatibility'yi fail-closed doğrular. Document Platform evidence identity/version sahibidir;
+RECEIVABLE compatibility evaluation sahibidir. Generic/unresolved evidence silent admission
+üretemez.
+
+Tenant modeli global versioned legal basis + yalnız daha sıkı operational/evidence overlay'dir.
+Overlay legal meaning, category/subtype mapping, effective interval veya interest eligibility'yi
+değiştiremez ve global guard'ı zayıflatamaz. Target persistence `P3 — VERSIONED ARTIFACT SOURCE OF
+TRUTH + COMPILED READ-ONLY DB PROJECTION`; transitional model `P1/L3 — SIGNED VERSIONED
+REPOSITORY RELEASE + PURE EXACT-VERSION RESOLVER`dır. Bunlar architecture disposition'dır;
+artifact, resolver, DB projection, schema veya migration implementation authority'si değildir.
+
+Version/checksum'sız legacy rows `LEGACY_LEGAL_BASIS_UNRESOLVED`dır. Metadata, document type veya
+current registry version üzerinden historical basis tahmini; automatic backfill/reclassification;
+existing ClaimItem/snapshot mutation yasaktır. D01B owner/authority blocker'ı bu approved
+governance merge ile `CONTRACTUALLY CLOSED`; D01A Document blocker'ı `CONTRACTUALLY CLOSED` kalır.
+S08-D01 yalnız `READY FOR FINAL DESIGN RECONCILIATION`; S08-I02A `NOT STARTED / NOT AUTHORIZED`dır.
+Runtime `PARTIAL THROUGH S08-I01 ONLY`; code/test/schema/migration, basis contents, subtype
+contents, intent/snapshot persistence, client cutover, Collection/shared-boundary veya historical
+data değişikliği yoktur. Next yalnız `RCV-CLAIM-FORM-P02-S08-D01-FINAL-RECONCILE — SEPARATE OWNER
+GO REQUIRED`dır.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
