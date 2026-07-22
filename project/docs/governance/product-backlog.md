@@ -2303,6 +2303,54 @@ task authority'si üretmez.
 
 ---
 
+## RCV-CLAIM-FORM-P02-S08-I01 — Human Direct-Entry Fail-Closed Containment
+
+```text
+PROGRAM LOCK                  RECEIVABLE / CLAIM FORMATION
+S08-A01                       ANALYSIS COMPLETE
+S08-C01                       CONTRACT COMPLETE / OWNER RATIFIED
+DIRECT-ENTRY MODEL            OPTION C — APPROVAL-GATED IMMUTABLE FORMATION INTENT
+IMPLEMENTATION                FORMALLY CLOSED / CANONICAL UPON APPROVED GOVERNANCE MERGE
+IMPLEMENTATION PR             #1515
+IMPLEMENTATION SQUASH         5cbfc8e334d1ae680bf8e8d55d436dd59797f34b
+REQUIRED CI                   4/4 PASS
+TARGETED VALIDATION           69/69 PASS
+RELATED REGRESSION            327/327 PASS
+ERROR CONTRACT                FORMATION_CONTEXT_REQUIRED
+RUNTIME ENFORCEMENT           PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 +
+                              S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
+CLAIM FORMATION PHASE         OPEN
+S08-D01                       NOT STARTED / OWNER GO REQUIRED
+S08-I02 / S08-I03 / S08-I04 NOT STARTED / NOT AUTHORIZED
+REMAINING RESIDUALS           OPEN / UNSELECTED
+NEXT CLAIM-FORMATION TASK     UNSET — OWNER GO REQUIRED
+```
+
+Ratified contract, OfficeApproval'ın legal source, legal basis, component classification veya
+formation snapshot olmadığını; `USER_COMMAND`ın yeterli legal provenance, caseId'nin source
+identity ve metadata'nın versioned formation context olmadığını sabitler. Human direct write
+yasaktır; complete formation context olmadan create fail-closed olur; approval eksik hukuki
+context'i tamamlayamaz; `APPROVED_WITH_CHANGES` kullanılamaz. İlk canonical source yönü
+`CASE_DOCUMENT`, money yönü exact minor-unit integer, target intent expiry 24 saat ve snapshot
+yönü dedicated immutable entity'dir. Bunlar bu closure ile implementation authority üretmez.
+
+PR #1515 generic `POST /claim-items`, add-expense, add-fee, add-attorney-fee ve legacy
+non-canonical ClaimItem CREATE approval finalization yüzeylerini fail-closed kapatmıştır.
+Invalid human create için ClaimItem create/update, OfficeApproval create/update, saved-intent,
+audit, domain event, outbox ve secondary writer/router mutation sayısı `0`dır. Legacy pending
+CREATE approval'ları non-canonical/not executable kalır; historical records, system-generated
+ClaimItem paths, schema/migration, public route shape, web/client, Office authority/lifecycle ve
+Collection/shared boundary değişmez.
+
+`ClaimItemFormationIntentV1`, `ClaimFormationSnapshotV1`, snapshot persistence, typed
+OfficeApproval intent, source-version/fingerprint persistence ve client cutover uygulanmamıştır.
+S08-D01/I02/I03/I04 ile web `kalemTuru`/nested-ilam fallback, OCR generic `PRINCIPAL`, mandatory
+formation context, component subtype registry/versioning ve legacy component inventory açık ve
+owner-gated kalır. Frozen S05 patch `SUPERSEDED / CLEANUP PENDING SEPARATE OWNER GO /
+UNTOUCHED`dur. Bu kayıt successor seçmez veya yetkilendirmez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
