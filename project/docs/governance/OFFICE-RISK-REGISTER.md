@@ -178,9 +178,21 @@ RELATED OFF-INV: OFF-INV-06 · RELATED OFF/OD: OFF/OD-15
 GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: NOT YET ASSIGNED · LAST VERIFIED SHA: NONE
 NOTES: SES-001 ile birlikte ele alınmalı.
 
+**STF-PRD-AUDIT-001** — Audit atıf/kapsam tutarsızlığı (personel yaşam-döngüsü ve dosya-ekibi atama)
+SEVERITY: P2 · DOMAIN STATUS: CANDIDATE / NOT YET TRIAGED · EVIDENCE STATUS: CONFIRMED
+PUBLIC SUMMARY: Personel yaşam-döngüsü ve dosya-ekibi atama yüzeylerinde audit-izi kapsamının tutarsız olduğu, kod-seviyesinde doğrulanmış bir bulgu — aynı kategori işlemler arasında audit-üretimi farklılaşıyor: Lawyer sil/deaktive et = AUDITED; Personel (StaffMember) sil/deaktive et = NOT AUDITED; Dosya-avukat ekle/çıkar = AUDITED; Dosya-personel ekle/çıkar = PARTIALLY OR NOT AUDITED. Bu bir yetkilendirme-bypass yolu değildir (mevcut erişim yetkileri değişmez); denetim izi/izlenebilirlik boşluğudur. Etkilenen dosya:satır düzeyinde teknik detay kasıtlı olarak public repository dışında tutulur.
+PRIVATE EVIDENCE: RETAINED LOCALLY / NOT PUBLISHED (dosya:satır kanıtı owner-local session kaydında)
+CURRENT CANONICAL EVIDENCE: CODE-LEVEL FINDING — OWNER ACCEPTED (2026-07-22, `decision-log.md` § OFFICE PHASE 2 / W-P2-α — CAP-09 AUDIT-ATTRIBUTION-STANDARD OWNER GO-DECIDE)
+TARGET CONTROL / DESIRED OUTCOME: Domain audit, acting Person/tenant/context/before-after/reason/timestamp/outcome/correlation'ı açıklar (OFF-INV-08 / OFF-P2-CAP-09A)
+RELATED OFF-INV: OFF-INV-08 · RELATED OFF/OD: — (karar-bağımsız, soft enabler — CAP-09A alt-kapsamı)
+GLOBAL TRIAGE REGISTER ID: NOT YET ASSIGNED · PRODUCT BACKLOG ID: NOT YET ASSIGNED · IMPLEMENTATION WORKSTREAM: OFFICE PHASE 2 / W-P2-α — Enablement & Decision-Clearing / CAP-09A · LAST VERIFIED SHA: `802f5d75`
+MITIGATION STATUS: OPEN / NOT MITIGATED
+FINDING VERDICT: OPEN / NOT CLOSED — owner CAP-09A-CONSUMER-01 dilimini (yalnız `StaffService.remove()`'u `LawyerService.delete()` ile eşdeğer transactional audit güvencesine getirmek) SLICE 3 olarak yetkilendirmiştir, ancak implementasyon HENÜZ yapılmamıştır. CaseStaff add/remove ve diğer tüketiciler bu ilk diliminin OTOMATİK kapsamında DEĞİLDİR — ayrı/HENÜZ candidate olmayan future scope.
+NOTES: Bu bulgu `OFFICE-DELIVERY-MANIFEST.md` §2b'de "register-intake bekleyen yeni bulgu" (WAVE 1 decomposition sırasında keşfedilmiş, OFF-INV-08 etiketli, `staff.service.ts:remove()`'un hiç audit log yazmadığı) olarak zaten kayıtlıydı; bu kart o bekleyen bulguyu resmi STF-PRD-* register'ına taşır. Ayrıca SeedService (LawyerService/StaffService bypass, doğrudan Prisma yazımı) ve AuditController RBAC eksikliği CAP-09 analizinde gözlemlendi ama bu karta veya başka bir finding'e DAHİL EDİLMEDİ — owner tarafından ayrı, henüz triage yetkisi verilmemiş gözlemler olarak sınıflandırıldı (bkz. `decision-log.md` aynı kayıt).
+
 ---
 
-**STF-PRD-* toplam: 12.** Bu dosya hiçbir riski kendiliğinden global backlog'a eklemez, yetkilendirmez veya kapatmaz.
+**STF-PRD-* toplam: 13.** Bu dosya hiçbir riski kendiliğinden global backlog'a eklemez, yetkilendirmez veya kapatmaz.
 
 ---
 

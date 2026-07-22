@@ -243,6 +243,18 @@ Takvim tarihi / sprint taahhüdü / otomatik-öncelik ÜRETİLMEDİ. NON-AUTHORI
 
 **Non-binding öneri: ② audit-attribution standard (CAP-09)** — gerekçe: en düşük blast-radius (additive, karar-bağımsız, kapısı yok); sonraki enforcement dilimlerinin atıf izini standartlaştıran **SOFT enabler**; register-intake pending audit-evidence'ı yoluna koyar; CAP-12 preserve-class'a regresyon riski minimum. **Bu bir SOFT enabler'dır, hard prerequisite DEĞİLDİR** — yokluğu ① object-scope P1 dilimini otomatik bloke etmez. **Alternatif eşit-savunulabilir seçenekler:** ① object-scope (en yüksek güvenlik değeri, P1) veya ③ decision-package-batch (tıkanıklık-açıcı, sıfır-risk). **Üç seçenek ayrı bir owner kararıyla karşılaştırılıp seçilmelidir; bu belge hiçbirini seçmez; öneri otomatik seçim haline gelmez.**
 
+```text
+DECOMPOSITION-TIME STATUS: NO SELECTION HAD BEEN MADE (bu bölüm 2026-07-18'de, henüz hiçbir
+  First-Unit seçilmeden yazıldı — başlıktaki "SEÇİM YAPILMADI" o tarihli, tarihsel bir gerçektir)
+CURRENT OWNER SELECTION: RECORDED IN decision-log.md (§ CAP-09 OWNER GO-DECIDE, 2026-07-22) —
+  owner ②'yi (audit-attribution standard / CAP-09) First-Unit olarak seçmiş, CAP-09A/B/C olarak
+  alt-ayrıştırmış, yalnız CAP-09A için delivery sırası (SLICE 1 GOV → 2 FOUNDATION → 3 CONSUMER-01)
+  yetkilendirmiştir; ① ve ③ hâlâ NOT SELECTED
+THIS DOCUMENT: NON-AUTHORIZING DECOMPOSITION / PROPOSAL SOURCE — bu belgenin kendisi hiçbir zaman
+  seçim yapmaz/yapamaz; güncel seçim durumu yalnız decision-log.md'de otoritedir, bu blok yalnız o
+  otoriteye işaret eder ve bu bölümün 2026-07-18 tarihli önerisini (③ tarihsel gerekçe metni) DEĞİŞTİRMEZ
+```
+
 ## 13. Residual and Evidence Qualifications
 
 - Hiçbir STF-PRD bulgusu kapanmadı; Phase 1 CLOSED / COMPLETE WITH RECORDED RESIDUALS statüsü finding-kapanışı DEĞİLDİR (delivery closure ≠ finding closure).
