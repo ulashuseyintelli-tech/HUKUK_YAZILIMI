@@ -2684,6 +2684,21 @@ DB'de applied/post-validated; target tables empty, data/backfill none ve runtime
 kalır. **NEXT ELIGIBLE ACTION: TPA-04C-I01 — CONTRACT TYPES / BRANDED MONEY PRIMITIVES — OWNER
 GO-IMPLEMENT REQUIRED / IMPLEMENTATION NOT AUTHORIZED.**
 
+**RCV-COL-TPA-04C-I01 Closure / I02 Technical Contract Amendment (2026-07-22; CANONICAL UPON
+APPROVED GOVERNANCE MERGE):** I01 implementation PR #1517 / squash
+`568f76e1847d5ee0060e81d76996f8e2177bada1`, exact four-file scope, `57/57` targeted tests,
+production type-check, API build ve required CI `4/4 PASS` ile `CLOSED / CANONICAL EVIDENCE`dır;
+runtime change NONE. ADR-014 OD-TPA-04C-21..36, I02 RCV-CAS/v1 validation contract'ını
+ratifiye eder: exact preimage `UTF8("RCV-CAS/v1") || 0x00 || canonicalEnvelopeBytes`; payload-only
+hash superseded; max envelope `1,048,576` UTF-8 byte, max bucket `10,000`, applicable max
+attribution `50,000`, max depth `32`; Unicode code-point string limits; duplicate-key/unknown/
+missing/unexpected-null fail-closed; optional absent/null-prohibited; unsigned decimal minor-unit;
+NFC-prevalidated input; deterministic 24-step first-error precedence ve safe allowlisted limit
+reasons. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus writer/evidence/cutover için
+`BLOCKING`; runtime writer `NOT IMPLEMENTED / NOT ACTIVATED`. **NEXT ELIGIBLE ACTION:
+TPA-04C-I02 — CANONICAL SNAPSHOT VALIDATION / DETERMINISTIC ERRORS — OWNER GO-IMPLEMENT
+REQUIRED / IMPLEMENTATION NOT AUTHORIZED.** I03-I07 self-start edemez.
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

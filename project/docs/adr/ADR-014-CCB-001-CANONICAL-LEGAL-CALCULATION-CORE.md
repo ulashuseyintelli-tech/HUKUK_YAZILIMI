@@ -1109,9 +1109,157 @@ retirement yetkisi vermez. Exact-cent persistence invariant'ı değişmez:
 receiptAmountMinor = SUM(appliedAmountMinor) + heldRemainderMinor
 ```
 
-TPA-04C contract ratified/canonical'dır; implementation `NOT STARTED / NOT AUTHORIZED`.
-Sıradaki tek owner-gated görev `TPA-04C-I01 — CONTRACT TYPES / BRANDED MONEY PRIMITIVES
-IMPLEMENTATION`; ayrı `OWNER GO-IMPLEMENT REQUIRED`dır.
+### OD-TPA-04C-21 — I01 closure
+
+`TPA-04C-I01 — CONTRACT TYPES / BRANDED MONEY PRIMITIVES`, implementation PR #1517 / squash
+`568f76e1847d5ee0060e81d76996f8e2177bada1` ile `CLOSED / CANONICAL EVIDENCE`dır. Exact
+four-file implementation scope, `57/57` targeted test, production type-check, API build ve
+required CI `4/4 PASS` kanıtlanmıştır. Runtime davranışı değişmemiştir. Sonraki task yalnız
+`TPA-04C-I02 — CANONICAL SNAPSHOT VALIDATION / DETERMINISTIC ERRORS`dır; bu docs kaydı I02
+implementation yetkisi üretmez.
+
+### OD-TPA-04C-22 — Hash preimage contract
+
+RCV-CAS/v1 canonical hash preimage'ı korunur:
+
+```text
+UTF8("RCV-CAS/v1") || 0x00 || canonicalEnvelopeBytes
+```
+
+Hash exact preimage bytes üzerinde SHA-256'dır; çıktı 64 lowercase hexadecimal karakterdir.
+Payload-only, parsed-object, pretty-printed, kabul sonrası normalize edilmiş, UTF-16,
+platform-newline-dependent veya BOM-bearing hash reddedilir. Önceki/draft
+`SHA-256(exact canonical payload bytes)` ifadesi bu kararla superseded'dır.
+
+### OD-TPA-04C-23 — Hashed object boundary
+
+Hash'e giren JSON bytes `canonicalEnvelopeBytes`tır; parse sonrası çıkarılan nested payload
+değildir. Versioned canonical snapshot envelope, `CanonicalReceivableApplicationSnapshotV1`
+tarafından tanımlanan bütün authoritative snapshot facts'i taşır. HTTP/transport metadata,
+correlation/actor/generated IDs ve canonical snapshot fact'i olmayan timestamps hash'e girmez.
+
+### OD-TPA-04C-24 — Domain separator
+
+Domain separator ASCII/UTF-8 `RCV-CAS/v1` bytes'ı ve hemen ardından tam bir NUL byte `0x00`dır.
+Trailing newline, BOM, farklı casing, whitespace, length prefix veya locale conversion yasaktır.
+
+### OD-TPA-04C-25 — Snapshot payload size limit
+
+`canonicalEnvelopeBytes` UTF-8 uzunluğu domain separator eklenmeden önce ölçülür. `0` byte
+invalid; `1..1,048,576` byte geçerli; daha büyük değer
+`SNAPSHOT_SERIALIZATION_INVALID / PAYLOAD_LIMIT_EXCEEDED`dır. Limit ortam değişkeni değildir;
+gelecekteki artış versioned owner amendment gerektirir.
+
+### OD-TPA-04C-26 — Bucket count limit
+
+Canonical snapshot başına en fazla `10,000` bucket kabul edilir. Zero bucket, snapshot
+readiness/evidence aksi halde geçerliyse mümkündür. Limit aşımı
+`SNAPSHOT_SERIALIZATION_INVALID / BUCKET_LIMIT_EXCEEDED`dır.
+
+### OD-TPA-04C-27 — Attribution count limit
+
+Attribution evidence canonical snapshot envelope içindeyse üst sınır `50,000` entry'dir.
+Attribution snapshot contract'ının parçası değilse bu limit yalnız sonraki attribution-specific
+input contract'ına uygulanır. Attribution non-authoritative kalır; legal amount, component order,
+bucket balance veya plan validity authority'si olamaz.
+
+### OD-TPA-04C-28 — String length limits
+
+NFC olduğu doğrulanmış input üzerinde Unicode code-point sayısıyla şu üst sınırlar uygulanır:
+
+| Alan | Maksimum |
+|---|---:|
+| `componentCode` | 128 |
+| `sourceLineageSetRef` | 512 |
+| `historyBoundaryRef` | 512 |
+| `legalBasisRef` | 512 |
+| `effectivePeriodRef` | 256 |
+| `interestRuleRef` | 256 |
+| version identifier alanları | 128 |
+| `tenantId` / `caseId` / `collectionId` / `idempotencyKey` | I01 daha strict değilse 256 |
+
+Free text canonical authority field'larında yasaktır. JavaScript UTF-16 code-unit length hukuki
+ölçüm değildir; ayrıca bütün envelope için 1 MiB UTF-8 byte sınırı uygulanır.
+
+### OD-TPA-04C-29 — Nesting depth limit
+
+Canonical JSON maksimum nesting depth `32`dir. Aşım
+`SNAPSHOT_SERIALIZATION_INVALID / MAX_DEPTH_EXCEEDED` üretir.
+
+### OD-TPA-04C-30 — JSON member / array safety
+
+Duplicate object member names reddedilir. Versioned contract object'lerinde unknown fields,
+missing required fields ve contract'ın açıkça izin vermediği null reddedilir. Optional field
+yalnız contract optional işaretliyorsa absent olabilir. Branded evidence/reference/version
+alanlarında empty string yasaktır; empty array yalnız domain contract izin veriyorsa mümkündür.
+
+### OD-TPA-04C-31 — Null vs absent
+
+Required property mevcut ve non-null olmalıdır. Optional property değeri yoksa property absent
+olmalıdır; optional property için null placeholder yasaktır. Böylece aynı logical state için
+birden fazla canonical encoding oluşamaz.
+
+### OD-TPA-04C-32 — Integer representation
+
+Bütün minor-unit integer değerleri canonical JSON'da unsigned decimal string'dir. `0`, `1`,
+`10` ve `9223372036854775807` kabul edilir. `-0`, `+1`, leading zero, decimal, exponent,
+whitespace, empty, negative veya PostgreSQL signed BIGINT maksimumunu aşan değer reddedilir.
+
+### OD-TPA-04C-33 — Unicode policy
+
+Canonical input object property adları ve string değerleri önceden Unicode NFC olmalıdır.
+Non-NFC input reddedilir; sessiz normalize edip kabul etmek yasaktır.
+
+### OD-TPA-04C-34 — Validation error precedence
+
+I02 deterministic first-error contract'ı dışarıdan gözlemlenebilir ve şu sırayı izler:
+
+```text
+01 envelope presence/basic type
+02 payload byte limit
+03 JSON syntax/duplicate keys/depth
+04 contract version
+05 serialization version
+06 command direction
+07 primitive formats
+08 tenant/case binding
+09 currency/minorUnit binding
+10 effective-date binding
+11 history-boundary binding
+12 source-version binding
+13 schema/unknown/missing/null validation
+14 Unicode NFC
+15 integer-string rules
+16 bucket count
+17 bucket structural validation
+18 duplicate bucket identities
+19 canonical envelope reserialization
+20 exact byte equality
+21 domain-separated hash computation
+22 snapshotHash equality
+23 snapshotRef/hash equality
+24 success
+```
+
+### OD-TPA-04C-35 — Limit error surface
+
+Yeni broad public error-code family eklenmez. Limit hataları
+`SNAPSHOT_SERIALIZATION_INVALID` altında şu allowlisted machine-readable reason'lara map edilir:
+`PAYLOAD_LIMIT_EXCEEDED`, `BUCKET_LIMIT_EXCEEDED`, `ATTRIBUTION_LIMIT_EXCEEDED`,
+`STRING_LIMIT_EXCEEDED`, `MAX_DEPTH_EXCEEDED`. Safe metadata yalnız field/path, configured
+maximum ve actual numeric size/count taşıyabilir; payload, free text, PII, ClaimItem açıklaması
+ve raw serialized fragment taşıyamaz.
+
+### OD-TPA-04C-36 — I02 entry gate
+
+I02 yalnız I01 closure, next-task transition, OD-TPA-04C-22..35 ratification, stale hash
+ifadelerinin supersession'ı, explicit limitlerin docs-only merge'i, fresh collision check ve
+ayrı owner `GO-IMPLEMENT` sonrasında implementation-eligible olur. I03-I07, runtime writer,
+snapshot producer, allocation, persistence, replay, cutover ve retirement yetkisiz kalır.
+
+TPA-04C-I01 `CLOSED / CANONICAL EVIDENCE`; sıradaki tek owner-gated görev
+`TPA-04C-I02 — CANONICAL SNAPSHOT VALIDATION / DETERMINISTIC ERRORS`dır. I02
+`NOT STARTED / NOT AUTHORIZED`; ayrı `OWNER GO-IMPLEMENT REQUIRED`dır.
 
 ## Consequences
 
@@ -1178,3 +1326,4 @@ IMPLEMENTATION`; ayrı `OWNER GO-IMPLEMENT REQUIRED`dır.
 | 2026-07-20 | 3.3 | TPA-04B required-evidence schema-amendment contract: required/default-free/no-backfill snapshot and bucket evidence fields, canonical TEXT payload, exact identity formats, per-batch bucket uniqueness, arithmetic checks and DB aggregate conservation are ratified. Implementation remains exact-two-file and owner-gated through TPA-04B-ENTRY. |
 | 2026-07-21 | 3.3 compliance update | TPA-04B schema-amendment closure: PR #1470 / `9dabe8db` establishes the exact two-file required-evidence amendment with PostgreSQL 16 apply/rollback/re-apply evidence. Runtime writer, live DB apply, replay, cutover and retirement remain unauthorized; ACT-28/REC-AUTH-011/012 remain open. |
 | 2026-07-22 | 3.4 | TPA-04C pure LegalApplicationPlan builder contract ratified through OD-TPA-04C-01..20. Builder is Receivable-owned, pure/APPLY-only, deterministic and exact-minor-unit; legacy allocation and ClaimItem payment-state dependencies are prohibited. M2 live apply/post-validation is recorded with empty target tables and no runtime writer. I01 is owner-gated and not authorized. |
+| 2026-07-22 | 3.5 | TPA-04C-I01 closure evidence (PR #1517 / `568f76e`) and OD-TPA-04C-21..36 I02 technical amendment are ratified. Domain-separated envelope hash, explicit input limits, null/absent and deterministic validation precedence are canonical; I02 remains separately owner-gated and not authorized. |
