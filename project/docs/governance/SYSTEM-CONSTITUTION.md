@@ -723,9 +723,21 @@ conservation'ı kurulmuştur. PostgreSQL 16 apply/rollback/re-apply kanıtı PAS
 Runtime writer/backfill `NONE`dir. Closure anındaki live/production DB apply
 `NOT AUTHORIZED / NOT PERFORMED` kaydı 2026-07-22 M2 live-apply kaydıyla superseded'dır.
 Synthetic corpus TPA-04C writer/evidence/cutover için blocking; ACT-28 ve REC-AUTH-011/012 open
-kalır. TPA-04C pure-plan contract OD-TPA-04C-01..20 ile ratified'dır. Sonraki yalnız
-`TPA-04C-I01 — CONTRACT TYPES / BRANDED MONEY PRIMITIVES / OWNER GO-IMPLEMENT REQUIRED`;
-implementation yetkisi yoktur.
+kalır. TPA-04C pure-plan contract OD-TPA-04C-01..36 ile ratified'dır. I01, PR #1517 / squash
+`568f76e1847d5ee0060e81d76996f8e2177bada1` ile `CLOSED / CANONICAL EVIDENCE`dır. Sonraki
+yalnız `TPA-04C-I02 — CANONICAL SNAPSHOT VALIDATION / DETERMINISTIC ERRORS / OWNER
+GO-IMPLEMENT REQUIRED`; implementation yetkisi yoktur.
+
+### `SYS-FIN-013G — RCV-CAS/v1 Validation Contractı Domain-Ayrımlı ve Bounded'dır`
+
+RCV-CAS/v1 snapshot identity, exact
+`SHA-256(UTF8("RCV-CAS/v1") || 0x00 || canonicalEnvelopeBytes)` preimage'ını kullanır;
+payload-only veya parse/normalize sonrası hash yasaktır. Canonical envelope UTF-8/no-BOM,
+duplicate-key-safe, unknown-field-closed, explicit null-vs-absent ve NFC-prevalidated'dır.
+Üst sınırlar envelope `1,048,576` byte, bucket `10,000`, envelope içi attribution `50,000`
+ve nesting depth `32`dir. Minor-unit integer'lar unsigned decimal string'dir. Exact string
+limitleri ve deterministic first-error sırası ADR-014 OD-TPA-04C-21..36'dadır. Bu hüküm
+I02 kodunu, runtime writer'ı veya sonraki slice'ları kendiliğinden yetkilendirmez.
 
 ### `SYS-FIN-014 — Claim Formation İki Seviyeli Taxonomy Kullanır`
 
@@ -1229,6 +1241,7 @@ kanıtla güncellenir.
 | v1.9, 2026-07-20 | RCV-COL-TPA-04B writer-evidence schema-amendment contract canonicalization | Required/default-free/no-backfill snapshot and bucket evidence, canonical TEXT payload, exact identity constraints, per-batch uniqueness, arithmetic checks and aggregate exact-cent conservation ratified. Exact two-file implementation remains owner-gated; runtime writer/cutover authority yoktur. |
 | v1.9 compliance update, 2026-07-21 | RCV-COL-TPA-04B schema-amendment closure reconciliation | PR #1470 / `9dabe8db` exact two-file required-evidence amendment'ı ve PostgreSQL 16 apply/rollback/re-apply evidence'ı canonicaldır. Runtime writer/live DB apply/cutover authority yoktur; ACT-28/REC-AUTH-011/012 open kalır. |
 | v1.10 compliance update, 2026-07-22 | RCV-COL-TPA-04C pure-plan contract ratification | OD-TPA-04C-01..20 ADR-014'te ratified; M2 live DB applied/post-validated, target tables empty ve runtime writer inactive. Builder/writer/cutover implementation authority verilmedi; ACT-28/REC-AUTH-011/012 open kalır. |
+| v1.11 compliance update, 2026-07-22 | RCV-COL-TPA-04C-I01 closure / I02 technical contract amendment | PR #1517 / `568f76e` I01 closure evidence'ı ve ADR-014 OD-TPA-04C-21..36 domain-separated hash, explicit limits, null/absent ve deterministic error precedence contract'ı canonicaldır. I02 ayrı owner GO-IMPLEMENT bekler; ACT-28/REC-AUTH-011/012 open kalır. |
 ---
 ## Son Hüküm
 

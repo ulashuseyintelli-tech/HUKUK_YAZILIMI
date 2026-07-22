@@ -967,5 +967,16 @@ M2 migration `20260721002219_legal_application_writer_evidence`, execution ancho
 Backfill/data `NONE`; üç target table `EMPTY`; runtime writer `NOT IMPLEMENTED / NOT
 ACTIVATED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus TPA-04C
 writer/evidence/cutover için `BLOCKING` kalır. TPA-04C implementation yetkisizdir; next yalnız
-`TPA-04C-I01 — CONTRACT TYPES / BRANDED MONEY PRIMITIVES IMPLEMENTATION / OWNER
-GO-IMPLEMENT REQUIRED`dır.
+`TPA-04C-I02 — CANONICAL SNAPSHOT VALIDATION / DETERMINISTIC ERRORS / OWNER GO-IMPLEMENT
+REQUIRED`dır. I01 PR #1517 / squash `568f76e1847d5ee0060e81d76996f8e2177bada1` ile
+`CLOSED / CANONICAL EVIDENCE`; I02 henüz `NOT STARTED / NOT AUTHORIZED`dır.
+
+## 9.11. TPA-04C-I02 snapshot-validation boundary — 2026-07-22
+
+I02 yalnız Receivable-owned canonical snapshot envelope validation'ıdır. RCV-CAS/v1 hash
+preimage'ı `UTF8("RCV-CAS/v1") || 0x00 || canonicalEnvelopeBytes`; payload-only hash
+yasaktır. Explicit byte/count/depth/string limitleri, null-vs-absent ve deterministic
+first-error sırası ADR-014 OD-TPA-04C-21..36'dadır. Bu kayıt Collection admission,
+allocation, HELD, writer, transaction, audit/event/outbox, persistence veya runtime wiring
+yetkisi üretmez. Collection receipt lifecycle ve outer transaction authority'si değişmez;
+ACT-28 ve REC-AUTH-011/012 `OPEN` kalır.

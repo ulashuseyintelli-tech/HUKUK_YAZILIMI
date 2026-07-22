@@ -2037,12 +2037,14 @@ Runtime writer ve backfill `NONE`dir. Closure anındaki live/production DB apply
 `NOT AUTHORIZED / NOT PERFORMED` kaydı 2026-07-22 M2 live-apply kaydıyla superseded'dır.
 ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus schema amendment için non-blocking,
 TPA-04C writer/evidence/cutover için `BLOCKING`dir. TPA-04C pure-plan contract'ı
-OD-TPA-04C-01..20 ile ratified'dır; sonraki yalnız `TPA-04C-I01 — CONTRACT TYPES / BRANDED
-MONEY PRIMITIVES / OWNER GO-IMPLEMENT REQUIRED`dır ve implementation henüz yetkili değildir.
+OD-TPA-04C-01..36 ile ratified'dır. I01, PR #1517 / squash
+`568f76e1847d5ee0060e81d76996f8e2177bada1` ile `CLOSED / CANONICAL EVIDENCE`dır; sonraki
+yalnız `TPA-04C-I02 — CANONICAL SNAPSHOT VALIDATION / DETERMINISTIC ERRORS / OWNER
+GO-IMPLEMENT REQUIRED`dır ve implementation henüz yetkili değildir.
 
 ## 23.18. TPA-04C pure-plan authority pointer — 2026-07-22
 
-TPA-04C'nin tek tam contract authority kaydı ADR-014 `OD-TPA-04C-01..20` bölümüdür.
+TPA-04C'nin tek tam contract authority kaydı ADR-014 `OD-TPA-04C-01..36` bölümüdür.
 Receivable official snapshot producer, closed component semantics, TBK100 policy,
 deterministic bucket order, exact-minor-unit arithmetic ve pure plan authority'sini korur.
 Collection receipt/admission/idempotency/outer-transaction owner'ıdır; builder hiçbir DB,
@@ -2056,6 +2058,21 @@ reversal TPA-04E'ye deferred ve partial reversal unauthorized'dır.
 M2 live DB applied/post-validated, target tables empty, data/backfill none ve runtime writer
 not implemented/not activated'dır. ACT-28 ile REC-AUTH-011/012 open; implementation slices
 self-start edemez.
+
+## 23.19. TPA-04C-I01 closure / I02 validation contract — 2026-07-22
+
+I01 exact four-file contract/primitives implementation'ı PR #1517 / squash `568f76e1847d5ee0`
+ile canonical main'dedir; `57/57` targeted test, production type-check, API build ve required
+CI `4/4 PASS`tır. Runtime değişmemiştir.
+
+I02 için RCV-CAS/v1 hash preimage'ı exact
+`UTF8("RCV-CAS/v1") || 0x00 || canonicalEnvelopeBytes` olarak korunur. Envelope maksimum
+`1,048,576` UTF-8 byte, bucket `10,000`, applicable attribution `50,000`, nesting depth `32`dir.
+Duplicate key, unknown field, unexpected null, non-NFC, ambiguous integer ve canonical-byte
+mismatch fail-closed'dur; validation deterministic first-error sırasını izler. Exact string
+limitleri ve error surface ADR-014 OD-TPA-04C-21..36'dadır. I02 `NEXT / NOT STARTED / NOT
+AUTHORIZED`; ayrı owner GO-IMPLEMENT gerektirir. I03-I07, runtime writer, allocation, replay,
+cutover ve retirement yetkisiz; ACT-28 ve REC-AUTH-011/012 `OPEN` kalır.
 
 ---
 
