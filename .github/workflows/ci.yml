@@ -1213,6 +1213,24 @@ jobs:
             --testPathPattern="uyap-debtor-assets-pii-persistence\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # UYAP-EVIDENCE-CI-P02A: mevcut fakat explicit blocking step'i olmayan beş trust-plane spec'ini
+      # (F4-a/R1 DP-8 / P-E2A) blocking CI kapsamına alır. Testler DEĞİŞMEZ; yalnız CI'da gerçekten ve
+      # sürekli çalışması sağlanır. 5× test -f false-green guard + exact --runTestsByPath (broad
+      # wildcard YOK, passWithNoTests YOK). Ölçüm: 5 suite / 120 test, 3/3 PASS, batch ~17s (<180s).
+      - name: UYAP-EVIDENCE-CI-P02A blocking trust-plane specs
+        run: |
+          test -f src/modules/uyap/__tests__/haciz-decision-audit.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A spec: haciz-decision-audit.spec.ts"; exit 1; }
+          test -f src/config/uyap-interest-crosswalk.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A spec: uyap-interest-crosswalk.spec.ts"; exit 1; }
+          test -f src/modules/uyap/__tests__/uyap-xml.numeric-interest-projection.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A spec: uyap-xml.numeric-interest-projection.spec.ts"; exit 1; }
+          test -f src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.core.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A spec: rich-interest-uyap-readiness.core.spec.ts"; exit 1; }
+          test -f src/modules/policy-engine/gate-checker/__tests__/uyap-temporary-outage.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A spec: uyap-temporary-outage.spec.ts"; exit 1; }
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/uyap/__tests__/haciz-decision-audit.spec.ts \
+            src/config/uyap-interest-crosswalk.spec.ts \
+            src/modules/uyap/__tests__/uyap-xml.numeric-interest-projection.spec.ts \
+            src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.core.spec.ts \
+            src/modules/policy-engine/gate-checker/__tests__/uyap-temporary-outage.spec.ts
+        working-directory: project/apps/api
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
