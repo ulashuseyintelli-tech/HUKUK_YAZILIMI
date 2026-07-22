@@ -909,6 +909,22 @@ jobs:
             --testPathPattern="portal-message-projection\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # CLIENT-P2-U03-I04: getClientPoas() explicit select projeksiyonu (POL-D §21/BP-06 §23) —
+      # approved contract gerçek consumer'a (portal/poas/page.tsx) göre doğrulanmıştır; brief'in
+      # taslak varsayımından KASITLI sapar (isActive: unused + WHERE'de zaten sabit true; scope:
+      # deprecated). filePath/fileSize/mimeType/clientId/scopeType/scopeDescription/createdAt/
+      # updatedAt/poaDate + join-metadata artık select'te hiç yok; exact select shape + bounded
+      # response shape kanıtlanır. poa.service.ts (staff/admin) DEĞİŞMEDİ, dokunulmadı.
+      - name: CLIENT-P2-U03-I04 portal-poa projection tests
+        run: |
+          cd apps/api
+          for f in src/modules/portal/__tests__/portal-poa-projection.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-P2-U03-I04 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="portal-poa-projection\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
       # MPB-028(a) PR-2: LegalDeadlineService (rejim hesaplama, snapshot immutable/supersede,
       # objectionPeriodDays validation) + TebligatService TK 21/2 correction / TK m.20 explicit-
       # override unit-static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç
