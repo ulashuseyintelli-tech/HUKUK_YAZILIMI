@@ -2033,10 +2033,29 @@ bucket arithmetic; immutable UPDATE/DELETE protection; nonempty-foundation fail-
 conservation'ı kurulmuştur. PostgreSQL 16 apply/rollback/re-apply ile seeded hard-stop/unchanged
 row evidence'ı PASS'tir. `ApplicationAttribution` unchanged/non-authoritative kalır.
 
-Runtime writer ve backfill `NONE`; live/production DB apply `NOT AUTHORIZED / NOT PERFORMED`dır.
+Runtime writer ve backfill `NONE`dir. Closure anındaki live/production DB apply
+`NOT AUTHORIZED / NOT PERFORMED` kaydı 2026-07-22 M2 live-apply kaydıyla superseded'dır.
 ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus schema amendment için non-blocking,
-TPA-04C writer/evidence/cutover için `BLOCKING`dir. Sonraki yalnız `TPA-04C — PURE
-LEGALAPPLICATIONPLAN BUILDER ANALYSIS / OWNER GO-ANALYZE REQUIRED`; implementation yetkisi yoktur.
+TPA-04C writer/evidence/cutover için `BLOCKING`dir. TPA-04C pure-plan contract'ı
+OD-TPA-04C-01..20 ile ratified'dır; sonraki yalnız `TPA-04C-I01 — CONTRACT TYPES / BRANDED
+MONEY PRIMITIVES / OWNER GO-IMPLEMENT REQUIRED`dır ve implementation henüz yetkili değildir.
+
+## 23.18. TPA-04C pure-plan authority pointer — 2026-07-22
+
+TPA-04C'nin tek tam contract authority kaydı ADR-014 `OD-TPA-04C-01..20` bölümüdür.
+Receivable official snapshot producer, closed component semantics, TBK100 policy,
+deterministic bucket order, exact-minor-unit arithmetic ve pure plan authority'sini korur.
+Collection receipt/admission/idempotency/outer-transaction owner'ıdır; builder hiçbir DB,
+Prisma, transaction, persistence, audit/event/outbox veya legacy allocator dependency taşımaz.
+
+ClaimItem hukuki source/input/lineage olabilir fakat application target veya payment-state
+authority değildir. Attribution optional/non-authoritative; COST yalnız official snapshot
+evidence'ından gelir; invalid authority HELD'e dönüştürülemez. TPA-04C APPLY-only'dir; full
+reversal TPA-04E'ye deferred ve partial reversal unauthorized'dır.
+
+M2 live DB applied/post-validated, target tables empty, data/backfill none ve runtime writer
+not implemented/not activated'dır. ACT-28 ile REC-AUTH-011/012 open; implementation slices
+self-start edemez.
 
 ---
 

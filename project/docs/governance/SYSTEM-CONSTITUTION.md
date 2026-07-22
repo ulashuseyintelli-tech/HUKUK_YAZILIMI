@@ -720,10 +720,12 @@ arithmetic; immutable UPDATE/DELETE protection; nonempty-foundation hard stop ve
 conservation'ı kurulmuştur. PostgreSQL 16 apply/rollback/re-apply kanıtı PASS'tir;
 `ApplicationAttribution` unchanged/non-authoritative kalır.
 
-Runtime writer/backfill `NONE`; live/production DB apply `NOT AUTHORIZED / NOT PERFORMED`dır.
+Runtime writer/backfill `NONE`dir. Closure anındaki live/production DB apply
+`NOT AUTHORIZED / NOT PERFORMED` kaydı 2026-07-22 M2 live-apply kaydıyla superseded'dır.
 Synthetic corpus TPA-04C writer/evidence/cutover için blocking; ACT-28 ve REC-AUTH-011/012 open
-kalır. Sonraki yalnız `TPA-04C — PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS / OWNER GO-ANALYZE
-REQUIRED`; implementation yetkisi yoktur.
+kalır. TPA-04C pure-plan contract OD-TPA-04C-01..20 ile ratified'dır. Sonraki yalnız
+`TPA-04C-I01 — CONTRACT TYPES / BRANDED MONEY PRIMITIVES / OWNER GO-IMPLEMENT REQUIRED`;
+implementation yetkisi yoktur.
 
 ### `SYS-FIN-014 — Claim Formation İki Seviyeli Taxonomy Kullanır`
 
@@ -1226,6 +1228,7 @@ kanıtla güncellenir.
 | v1.8 compliance update, 2026-07-20 | RCV-PR407-CLOSE-B-GOV final disposition supersession | PR #407'nin eski keep-open kararı superseded; PR CLOSED UNMERGED, requirements RD01/TPA'da preserved, code discarded ve extraction/reuse prohibited. Constitution semantiği/version'ı, runtime veya implementation authority değişmedi. |
 | v1.9, 2026-07-20 | RCV-COL-TPA-04B writer-evidence schema-amendment contract canonicalization | Required/default-free/no-backfill snapshot and bucket evidence, canonical TEXT payload, exact identity constraints, per-batch uniqueness, arithmetic checks and aggregate exact-cent conservation ratified. Exact two-file implementation remains owner-gated; runtime writer/cutover authority yoktur. |
 | v1.9 compliance update, 2026-07-21 | RCV-COL-TPA-04B schema-amendment closure reconciliation | PR #1470 / `9dabe8db` exact two-file required-evidence amendment'ı ve PostgreSQL 16 apply/rollback/re-apply evidence'ı canonicaldır. Runtime writer/live DB apply/cutover authority yoktur; ACT-28/REC-AUTH-011/012 open kalır. |
+| v1.10 compliance update, 2026-07-22 | RCV-COL-TPA-04C pure-plan contract ratification | OD-TPA-04C-01..20 ADR-014'te ratified; M2 live DB applied/post-validated, target tables empty ve runtime writer inactive. Builder/writer/cutover implementation authority verilmedi; ACT-28/REC-AUTH-011/012 open kalır. |
 ---
 ## Son Hüküm
 
