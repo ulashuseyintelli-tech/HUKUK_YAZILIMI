@@ -212,6 +212,8 @@ model Tenant {
   courts                       Court[]
   collections                  Collection[]
   legalApplicationBatches      LegalApplicationBatch[]
+  claimItemFormationIntents    ClaimItemFormationIntent[]
+  claimFormationSnapshots      ClaimFormationSnapshot[]
   collectionOverpayments       CollectionOverpayment[]
   lawyers                      Lawyer[]
   workflowTemplates            WorkflowTemplate[]
@@ -345,8 +347,11 @@ model User {
   // OFFICE-AUTH-P02: credential-recovery (şifremi unuttum) reset token'ları
   passwordResetTokens PasswordResetToken[]
 
-  uyapOperationsAsActor    UyapOperation[] @relation("UyapOperationActor")
-  uyapOperationsAsApprover UyapOperation[] @relation("UyapOperationApprover")
+  uyapOperationsAsActor              UyapOperation[]            @relation("UyapOperationActor")
+  uyapOperationsAsApprover           UyapOperation[]            @relation("UyapOperationApprover")
+  claimItemFormationIntentsRequested ClaimItemFormationIntent[] @relation("ClaimItemFormationIntentRequester")
+  claimFormationSnapshotsRequested   ClaimFormationSnapshot[]   @relation("ClaimFormationSnapshotRequester")
+  claimFormationSnapshotsApproved    ClaimFormationSnapshot[]   @relation("ClaimFormationSnapshotApprover")
 
   @@unique([id, tenantId])
   @@unique([tenantId, email])
@@ -1234,6 +1239,8 @@ model Case {
   legalTimeShadowDiffs          LegalTimeShadowDiff[]
   serviceOccurrences            ServiceOccurrence[]
   claimItems                    ClaimItem[]
+  claimItemFormationIntents     ClaimItemFormationIntent[]
+  claimFormationSnapshots       ClaimFormationSnapshot[]
   ledgerEntries                 LedgerEntry[] // Tahsilat/düzeltme kayıtları
   precautionaryOrders           PrecautionaryOrder[] // İhtiyati haciz kararları
   expenseRequests               ExpenseRequest[] // Masraf talepleri
@@ -5595,14 +5602,210 @@ model ClaimItem {
   // İlişkiler
   ledgerAllocations       LedgerAllocation[]
   applicationAttributions ApplicationAttribution[]
+  formationSnapshots      ClaimFormationSnapshot[]
 
   @@unique([tenantId, id])
+  @@unique([tenantId, caseId, id])
   @@index([tenantId])
   @@index([caseId])
   @@index([itemType])
   @@index([status])
   @@index([bucket])
   @@index([instrumentId])
+}
+
+/// RCV-CLAIM-FORM-P02-S08-I02A — writer-disabled, immutable human-formation intent.
+/// Office approval, document and Legal Basis references remain exact scalar bindings;
+/// this foundation does not make their generic schemas RECEIVABLE-owned.
+model ClaimItemFormationIntent {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  caseId   String
+  case     Case   @relation(fields: [tenantId, caseId], references: [tenantId, id], onDelete: Restrict)
+
+  contractVersion String
+  createdAt       DateTime
+  expiresAt       DateTime
+
+  idempotencyKey                 String
+  normalizedInputChecksum        String
+  normalizedInputContractVersion String
+  intentChecksum                 String
+  checksumAlgorithm              String
+  canonicalSerializationVersion  String
+
+  approvalRequestId        String
+  approvalReferenceVersion String
+  approvalReferenceHash    String
+  requesterUserId          String
+  requester                User   @relation("ClaimItemFormationIntentRequester", fields: [tenantId, requesterUserId], references: [tenantId, id], onDelete: Restrict)
+
+  correlationId String
+  causationId   String?
+
+  sourceIdentityVersion String
+  sourceType            String
+  sourceId              String
+  sourceSlot            String
+  sourceIdentityHash    String
+
+  sourceVersionId                 String
+  sourceVersion                   String
+  canonicalSourceFingerprint      String
+  fingerprintAlgorithm            String
+  fingerprintVersion              String
+  sourceResolutionContractVersion String
+  sourceResolutionHash            String
+
+  componentCategory        String
+  componentSubtypeCode     String
+  componentSubtypeVersion  String
+  componentSubtypeChecksum String
+
+  legalBasisCode                      String
+  legalBasisVersion                   String
+  legalBasisChecksum                  String
+  legalBasisRegistryReleaseId         String
+  legalBasisRegistryReleaseChecksum   String
+  legalBasisResolutionContractVersion String
+  legalBasisResolutionHash            String
+
+  originalAmountMinor              BigInt
+  demandedAmountMinor              BigInt
+  currency                         String
+  minorUnit                        Int
+  effectiveAt                      DateTime
+  liabilityContextVersion          String
+  liabilityContextCanonicalPayload String   @db.Text
+  liabilityContextHash             String
+
+  interestEligibility   String
+  interestPolicyRef     String?
+  interestPolicyVersion String?
+  ruleRef               String?
+  ruleVersion           String?
+
+  evidenceRefsContractVersion  String
+  evidenceRefsCanonicalPayload String @db.Text
+  evidenceRefsHash             String
+  provenanceContractVersion    String
+  provenanceCanonicalPayload   String @db.Text
+  provenanceHash               String
+
+  formationSnapshot ClaimFormationSnapshot?
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, caseId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, approvalRequestId])
+  @@index([tenantId, caseId])
+  @@index([tenantId, sourceIdentityHash])
+  @@index([expiresAt])
+}
+
+/// Immutable proof of the exact formation context that produced one ClaimItem.
+/// A corrected semantic/source version is a new snapshot linked by supersedesSnapshotId;
+/// existing snapshots are never overwritten.
+model ClaimFormationSnapshot {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  caseId   String
+  case     Case   @relation(fields: [tenantId, caseId], references: [tenantId, id], onDelete: Restrict)
+
+  claimItemId String
+  claimItem   ClaimItem @relation(fields: [tenantId, caseId, claimItemId], references: [tenantId, caseId, id], onDelete: Restrict)
+
+  formationIntentId String
+  formationIntent   ClaimItemFormationIntent @relation(fields: [tenantId, caseId, formationIntentId], references: [tenantId, caseId, id], onDelete: Restrict)
+
+  approvalRequestId String
+
+  snapshotContractVersion      String
+  snapshotSerializationVersion String
+  snapshotVersion              Int
+  supersedesSnapshotId         String?
+  supersedesSnapshot           ClaimFormationSnapshot? @relation("ClaimFormationSnapshotSupersession", fields: [tenantId, supersedesSnapshotId], references: [tenantId, id], onDelete: Restrict)
+  supersededBySnapshot         ClaimFormationSnapshot? @relation("ClaimFormationSnapshotSupersession")
+
+  intentChecksum           String
+  approvalReferenceHash    String
+  normalizedInputChecksum  String
+  snapshotCanonicalPayload String @db.Text
+  snapshotHash             String
+
+  sourceIdentityVersion String
+  sourceType            String
+  sourceId              String
+  sourceSlot            String
+  sourceIdentityHash    String
+
+  sourceVersionId                 String
+  sourceVersion                   String
+  canonicalSourceFingerprint      String
+  fingerprintAlgorithm            String
+  fingerprintVersion              String
+  sourceResolutionContractVersion String
+  sourceResolutionHash            String
+
+  componentCategory        String
+  componentSubtypeCode     String
+  componentSubtypeVersion  String
+  componentSubtypeChecksum String
+
+  legalBasisCode                      String
+  legalBasisVersion                   String
+  legalBasisChecksum                  String
+  legalBasisRegistryReleaseId         String
+  legalBasisRegistryReleaseChecksum   String
+  legalBasisResolutionContractVersion String
+  legalBasisResolutionHash            String
+
+  originalAmountMinor              BigInt
+  demandedAmountMinor              BigInt
+  currency                         String
+  minorUnit                        Int
+  effectiveAt                      DateTime
+  liabilityContextVersion          String
+  liabilityContextCanonicalPayload String   @db.Text
+  liabilityContextHash             String
+
+  interestEligibility   String
+  interestPolicyRef     String?
+  interestPolicyVersion String?
+  ruleRef               String?
+  ruleVersion           String?
+
+  evidenceRefsContractVersion  String
+  evidenceRefsCanonicalPayload String @db.Text
+  evidenceRefsHash             String
+  provenanceContractVersion    String
+  provenanceCanonicalPayload   String @db.Text
+  provenanceHash               String
+
+  admissionResult      String
+  claimItemPayloadHash String
+  requesterUserId      String
+  requester            User     @relation("ClaimFormationSnapshotRequester", fields: [tenantId, requesterUserId], references: [tenantId, id], onDelete: Restrict)
+  approverUserId       String
+  approver             User     @relation("ClaimFormationSnapshotApprover", fields: [tenantId, approverUserId], references: [tenantId, id], onDelete: Restrict)
+  approvalDecidedAt    DateTime
+  commandId            String
+  correlationId        String
+  causationId          String?
+  formationAt          DateTime
+  createdAt            DateTime
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, caseId, formationIntentId])
+  @@unique([tenantId, approvalRequestId])
+  @@unique([tenantId, claimItemId, snapshotVersion])
+  @@unique([tenantId, sourceIdentityHash, snapshotVersion], map: "claim_formation_snapshot_source_version_unique")
+  @@unique([tenantId, supersedesSnapshotId])
+  @@index([tenantId, caseId, claimItemId])
+  @@index([tenantId, sourceIdentityHash])
+  @@index([formationAt])
 }
 
 // ⭐ TAKİP DEFTERİ - Tahsilat ve Düzeltme Kayıtları (TBK 100 / BK 84)
