@@ -1151,6 +1151,21 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="tebligat-service-occurrence-write\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # OF01-HISTORY-P04-A1: ServiceOccurrence.addressTypeAtOccurrence/serviceDateRole (immutable
+      # deadline-fact kolonları) + LegalDeadlineSnapshot.sourceServiceOccurrenceId (tenant-safe
+      # composite FK binding) doğrular. Yukarıdaki dar allowlist pattern'lerinin hiçbirine
+      # girmiyor (dosya adı hiçbirini eşlemiyor) → narrow named step olmadan CI'da hiç koşmaz.
+      - name: OF01-HISTORY-P04-A1 deadline-facts and snapshot-binding disposable-DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/tebligat/__tests__/service-occurrence-deadline-facts.db-gated.integration.spec.ts || \
+            { echo "MISSING OF01-HISTORY-P04-A1 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="service-occurrence-deadline-facts\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
       # LRV-02 / DBP-P2-SEC-P01: UyapXmlService.mapDebtorRoleToUyapKod DebtorRole->UYAP rol-kodu
       # mapping regresyonu (PR #1322). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyordu
       # → CI'da hiç koşmuyordu (yalnız o merge'in GO-IMPLEMENT'inde local `npx jest` ile doğrulandı).
