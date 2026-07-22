@@ -1598,3 +1598,45 @@ Hem liste hem client-send response'unda yalnız: `id, content, senderType, sende
 ### 30.9 U03-I03 Self-Check
 
 Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; POL-D/BP-06 enforcement'ının TAMAMLANDIĞINI iddia ETMEZ; `CLIENT-P2-U03-I04`'ü BAŞLATMAZ; PoA/notifications yüzeylerine dokunmaz veya bunları CLOSED İLAN ETMEZ; message actor/representation modelini yeniden AÇMAZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; M4 live migration veya OF01 migration gate'ine dokunmaz; session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ; §5/§6/§8.A/§8.B/§11–§29 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ (implementasyon zaten PR #1524 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL FIELD-VISIBILITY SURFACES CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 31. CLIENT Phase 2 U03-I04 — Portal PoA Field-Visibility Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, POL-D (§21) / BP-06 (§23) politikalarının portal PoA yüzeyindeki enforcement diliminin (`CLIENT-P2-U03-I04`) teknik kapanış kaydıdır (`decision-log.md` CLIENT-P2-U03-I04-GOV). §5, §6, §8.A, §8.B, §11–§30 substantive hükümlerini DEĞİŞTİRMEZ. §30.7'nin "`CLIENT-P2-U03-I04`: NOT AUTHORIZED" ifadesi bu kayıtla owner tarafından ayrıca yetkilendirilip kapatılmıştır — §30'un kendi metni DEĞİŞTİRİLMEMİŞTİR. **CLIENT-P2-U03 (genel POL-D/BP-06 enforcement programı) BU KAYITLA CLOSED İLAN EDİLMEZ — yalnız case-detail (I01) + document (I02) + message (I03) + PoA (I04) dilimleri kapanır, notifications yüzeyi OPEN kalır.**
+
+### 31.1 Technical Lineage
+
+**IMPLEMENTATION:** PR #1529 (task: `CLIENT-P2-U03-I04`, squash SHA `e7f1894cf3c11c67ac28b8c984329f9080b7a61b`, merged `origin/main` 2026-07-22). Bu birim, §30.7'nin (`CLIENT-P2-U03-I03`) açık bıraktığı "POA FIELD VISIBILITY: OPEN/NOT STARTED" bulgusunun bounded implementasyonudur; `getClientPoas()`'ın top-level raw `include`'ını hedef alır. **Consumer FOUND:** `apps/web/src/app/portal/poas/page.tsx` gerçekten `/api/portal/poas`'ı çağırır, `portal/layout.tsx`'te navigasyon linki mevcuttur.
+
+### 31.2 Selected Enforcement Model
+
+**PRISMA-LEVEL EXPLICIT SELECT — §28.2/§29.2/§30.2 ile aynı desen.** `PortalService.getClientPoas()`'ın top-level raw `include`'ı, tek bir typed sabit (`PORTAL_POA_CLIENT_SELECT`) ile değiştirildi. Yeni DTO sınıfı, class-transformer veya global interceptor **ÜRETİLMEDİ**. Web production sayfası (`portal/poas`) zaten yalnız approved alanları tüketiyordu; production kodda değişiklik gerekmedi, yalnız focused test eklendi.
+
+**Brief'ten kasıtlı sapma (gerçek consumer + şemaya göre doğrulandı):** Owner talimatının taslak alan listesi (`isActive`/`scope`/`createdAt`) gerçek koda uymuyordu ve KULLANILMADI — `isActive` şemada var ama sayfa hiç kullanmıyor (WHERE zaten `isActive:true` dayattığından response'ta hep sabit `true` olurdu, bilgi taşımaz); `scope` şemanın kendi yorumuyla `@deprecated - scopeDescription kullan`; `createdAt` sayfa tarafından hiç tüketilmiyor. Buna karşılık owner talimatının taslağında YER ALMAYAN ama sayfanın OLMADAN render edilemediği `status`, `isLimited`, `journalNo`, `notaryName`, `notaryCity` alanları contract'a DAHIL EDİLDİ. Bu sapma PR #1529 açıklamasında gerekçeli olarak belgelenmiştir.
+
+### 31.3 Approved Client Response Contract
+
+**Top-level:** `id, notaryName, notaryCity, journalNo, poaNumber, dateIssued, isLimited, validUntil, status, canCollect, canWaive, canSettle, canRelease`. **Nested:** `lawyers[].lawyer.{name, surname, barNumber}` — `barNumber` sayfa tarafından görsel render edilmiyor ama mevcut kodda zaten curated seçiliydi, korundu (I03'teki `isRead` emsaliyle aynı gerekçe).
+
+### 31.4 Explicitly Omitted Field Families
+
+`clientId` (authorization context) · `filePath` (internal-only server storage location) · `fileSize`/`mimeType` (download contract'ı seçilmediği sürece client presentation'a girmez) · `scopeType`/`scopeDescription` (sayfa tarafından tüketilmiyor) · `isActive` (WHERE'de zaten sabit true, presentation'a gerek yok) · `createdAt`/`updatedAt` (sayfa tüketmiyor) · deprecated `poaDate` · join-metadata (`PoaLawyer.id`/`poaId`/`lawyerId`/`isPrimary`/`createdAt`). Hepsi **UNKNOWN/UNCLASSIFIED veya INTERNAL-ONLY → varsayılan OMIT** ilkesiyle dışarıda.
+
+### 31.5 PoA Business Logic and Admin Boundary Preservation
+
+`poa.service.ts` (staff/admin PoA yüzeyi), PoA lifecycle/expiry/delivery mekanizmaları **DEĞİŞMEDİ** — dokunulmadı. Object/tenant authorization modeli **DEĞİŞMEDİ**: `ClientPowerOfAttorney` modelinde `tenantId` alanı hiç yoktur; mevcut `clientId` + `Client` ilişkisi üzerinden auth modeli sessizce değiştirilmedi. **CLIENT FIELD OMISSION ≠ DATABASE FIELD REMOVAL. CLIENT FIELD OMISSION ≠ POA LIFECYCLE/ADMIN CHANGE. CLIENT FIELD OMISSION ≠ POA DOCUMENT DOWNLOAD CONTRACT CREATED.**
+
+### 31.6 Non-Equations / Precision
+
+`SAME-CLIENT FIELD EXPOSURE ≠ CROSS-TENANT INCIDENT` · `FIELD VISIBILITY ≠ OBJECT AUTHORIZATION` · `POA RESPONSE PROJECTION ≠ POA DOCUMENT DOWNLOAD CONTRACT` · `filePath OMITTED ≠ FILE STORAGE ARCHITECTURE SECURED` · `fileSize/mimeType OMITTED ≠ FUTURE DOWNLOAD FEATURE PROHIBITED` · `TECHNICAL I04 CLOSED ≠ CLIENT-P2-U03 FULLY CLOSED` · `EXPLICIT BACKEND SELECT = FAIL-CLOSED FIELD PROJECTION`. **Doğru ifade: "PORTAL POA BROAD RESPONSE / INTERNAL POA METADATA EXPOSURE CONTAINED"** — "cross-tenant vulnerability fixed" veya "PoA document storage secured" iddiaları bu kayıtla KURULMAZ.
+
+### 31.7 Open Residual Surfaces
+
+**NOTIFICATION FAIL-CLOSED PROJECTION: OPEN/NOT STARTED** (`getNotifications` — bugün select'siz ama model'de internal alan yok; mekanizma fail-closed DEĞİL). **`CLIENT-P2-U03-I05`: NOT AUTHORIZED.** PoA belge indirme/görüntüleme contract'ı, PoA lifecycle authority'si bu kayıtla ÇÖZÜLMÜŞ SAYILMAZ. **CASE DETAIL (I01) + DOCUMENT (I02) + MESSAGE (I03) FIELD VISIBILITY: CLOSED/CANONICAL, bu kayıtla DEĞİŞMEDİ.** Object-scope (`STF-PRD-BOLA-001`/`STF-PRD-SCP-001`/OFF/OD-08/CAP-02) ve OFFICE authority'si bu kayıtla **DEĞİŞMEDİ**.
+
+### 31.8 Final Unit Status
+
+**CLIENT-P2-U03-I04: TECHNICAL + GOVERNANCE CLOSED/CANONICAL.** **CLIENT-P2-U03 (genel): PARTIAL — I01 + I02 + I03 + I04 ONLY.** **PR #1529, squash `e7f1894c`.** **SCHEMA/MIGRATION: NONE. OBJECT-SCOPE: UNCHANGED. FINANCIAL AUTHORITY: UNCHANGED. POA LIFECYCLE: UNCHANGED. ADMIN POA SERVICES: UNCHANGED.** **NEXT UNIT: OWNER-GATED/NOT AUTO-STARTED.**
+
+### 31.9 U03-I04 Self-Check
+
+Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; POL-D/BP-06 enforcement'ının TAMAMLANDIĞINI iddia ETMEZ; `CLIENT-P2-U03-I05`'i BAŞLATMAZ; notifications yüzeyine dokunmaz veya CLOSED İLAN ETMEZ; PoA download/storage/lifecycle authority'si ÜRETMEZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ; §5/§6/§8.A/§8.B/§11–§30 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ (implementasyon zaten PR #1529 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL FIELD-VISIBILITY SURFACES CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
