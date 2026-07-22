@@ -62,6 +62,23 @@ const PORTAL_DOCUMENT_CLIENT_SELECT = Prisma.validator<Prisma.PortalDocumentSele
   createdAt: true,
 });
 
+/**
+ * CLIENT-P2-U03-I03: portal message client-facing response contract (POL-D §21/BP-06 §23).
+ * getMessages() ve sendMessageFromClient() ORTAK kullanır. senderId (internal technical actor
+ * identifier — OFFICE mesajlarında staff User.id, CLIENT mesajlarında clientId), clientId/
+ * tenantId (authorization context) ve readAt KASITLI olarak DIŞARIDA — sendMessageFromOffice()/
+ * getClientMessages()/getClientsWithMessages()/getUnreadMessageCount()/markMessagesAsRead()
+ * (staff-facing) bu sabiti kullanmaz, kendi raw erişimlerini korur.
+ */
+const PORTAL_MESSAGE_CLIENT_SELECT = Prisma.validator<Prisma.PortalMessageSelect>()({
+  id: true,
+  content: true,
+  senderType: true,
+  senderName: true,
+  isRead: true,
+  createdAt: true,
+});
+
 @Injectable()
 export class PortalService {
   private readonly logger = new Logger(PortalService.name);
@@ -773,6 +790,7 @@ export class PortalService {
       where: { clientId, tenantId },
       orderBy: { createdAt: "asc" },
       take: limit,
+      select: PORTAL_MESSAGE_CLIENT_SELECT,
     });
   }
 
@@ -790,6 +808,7 @@ export class PortalService {
         senderId: clientId,
         senderName,
       },
+      select: PORTAL_MESSAGE_CLIENT_SELECT,
     });
 
     this.logger.log(`Portal mesajı gönderildi (müvekkil): ${clientId}`);
