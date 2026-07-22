@@ -142,4 +142,59 @@ describe("TebligatService.recordPttResult — ServiceOccurrence/outbox entegrasy
     expect(serviceOccurrenceService.createWithinTransaction).not.toHaveBeenCalled();
     expect(domainEventIngestService.appendInTransaction).not.toHaveBeenCalled();
   });
+
+  // DEBTOR-OF01-HISTORY-P04-A1
+  it("TEST-12: recordPttResult doğru addressTypeAtOccurrence yazar (Tebligat.addressType'tan türetilir)", async () => {
+    const { svc, serviceOccurrenceService } = buildHarness();
+
+    await svc.recordPttResult("t1", "tb-1", { pttResult: TebligatPttResult.TESLIM_EDILDI } as any, "user-1");
+
+    const [, command] = serviceOccurrenceService.createWithinTransaction.mock.calls[0];
+    expect(command.addressTypeAtOccurrence).toBe("BILINEN"); // buildHarness fixture'ının tebligat.addressType'ı
+  });
+
+  it("TEST-13: recordPttResult doğru serviceDateRole üretir (DIRECT_DELIVERY/MUHTAR_DELIVERY/null)", async () => {
+    // DIRECT_DELIVERY — başarılı teslim.
+    {
+      const { svc, serviceOccurrenceService } = buildHarness();
+      await svc.recordPttResult("t1", "tb-1", { pttResult: TebligatPttResult.TESLIM_EDILDI } as any, "user-1");
+      const [, command] = serviceOccurrenceService.createWithinTransaction.mock.calls[0];
+      expect(command.serviceDateRole).toBe("DIRECT_DELIVERY");
+    }
+    // MUHTAR_DELIVERY — muhtarlığa bırakıldı (bilinen adres).
+    {
+      const { svc, serviceOccurrenceService } = buildHarness();
+      await svc.recordPttResult("t1", "tb-1", { pttResult: TebligatPttResult.MUHTARLIGA_BIRAKILDI } as any, "user-1");
+      const [, command] = serviceOccurrenceService.createWithinTransaction.mock.calls[0];
+      expect(command.serviceDateRole).toBe("MUHTAR_DELIVERY");
+    }
+    // null — başarısız/yönlendirme sonucu (hiçbir teslim/tevdi mekanizması gerçekleşmedi).
+    {
+      const { svc, serviceOccurrenceService } = buildHarness();
+      await svc.recordPttResult("t1", "tb-1", { pttResult: TebligatPttResult.ADRESTE_BULUNAMADI } as any, "user-1");
+      const [, command] = serviceOccurrenceService.createWithinTransaction.mock.calls[0];
+      expect(command.serviceDateRole).toBeNull();
+      expect(command.addressTypeAtOccurrence).toBe("BILINEN"); // context fact yine de dolu
+    }
+    // Operatörün açıkça seçtiği TK m.20 override — pttResult'tan BAĞIMSIZ MUHTAR_DELIVERY.
+    {
+      const { svc, serviceOccurrenceService } = buildHarness();
+      await svc.recordPttResult(
+        "t1",
+        "tb-1",
+        { pttResult: TebligatPttResult.ADRESTE_BULUNAMADI, tk21Type: "TK_20", ilanDate: "2026-07-15" } as any,
+        "user-1",
+      );
+      const [, command] = serviceOccurrenceService.createWithinTransaction.mock.calls[0];
+      expect(command.serviceDateRole).toBe("MUHTAR_DELIVERY");
+    }
+  });
+
+  it("TEST-14: belirsiz/desteklenmeyen pttResult uydurma serviceDateRole üretmeden fail eder", async () => {
+    const { svc } = buildHarness();
+
+    await expect(
+      svc.recordPttResult("t1", "tb-1", { pttResult: "TAMAMEN_BILINMEYEN_DEGER" } as any, "user-1"),
+    ).rejects.toThrow(/serviceDateRole belirlenemedi/);
+  });
 });

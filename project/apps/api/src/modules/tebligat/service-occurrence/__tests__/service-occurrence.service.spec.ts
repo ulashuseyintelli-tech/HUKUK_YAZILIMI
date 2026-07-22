@@ -48,6 +48,7 @@ function baseCommand(overrides: Partial<CreateServiceOccurrenceCommand> = {}): C
     sourceCode: "TESLIM_EDILDI",
     occurredOn: new Date("2026-07-20T00:00:00Z"),
     timePrecision: ServiceOccurrenceTimePrecision.DATE_ONLY,
+    addressTypeAtOccurrence: "BILINEN" as any, // DEBTOR-OF01-HISTORY-P04-A1
     actor: { systemCode: "TEST_SYSTEM" },
     idempotencyMode: IdempotencyMode.NONE,
     ...overrides,

@@ -92,6 +92,7 @@ describeWithDisposableDb("ServiceOccurrence schema — disposable DB", () => {
       occurredOn: new Date("2026-07-18T00:00:00Z"),
       timePrecision: ServiceOccurrenceTimePrecision.DATE_ONLY,
       recordedBySystem: "TEST_HARNESS",
+      addressTypeAtOccurrence: "BILINEN", // DEBTOR-OF01-HISTORY-P04-A1
       ...overrides,
     };
   }
