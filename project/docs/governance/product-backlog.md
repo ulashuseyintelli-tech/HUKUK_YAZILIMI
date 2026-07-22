@@ -2789,6 +2789,23 @@ NOT ACTIVATED` kalır. **NEXT ELIGIBLE ACTION: TPA-04C-I03 — PURE APPLY ORDERI
 EXACT-MINOR-UNIT ALLOCATION CORE — OWNER GO-IMPLEMENT REQUIRED / NOT YET AUTHORIZED.**
 I04-I07 self-start edemez.
 
+**RCV-COL-TPA-04C-I03 Closure / I04 Plan-Fingerprint Contract (2026-07-23; CANONICAL UPON
+APPROVED GOVERNANCE MERGE):** I03 implementation PR #1535 / squash
+`719e6898a6e967ba824a69aeadbf716e55c3056d`, exact four-file scope; I03 `24/24`, I01-I03
+`137/137`, property/determinism, type-check/build/ESLint ve required CI `4/4 PASS` ile
+`CLOSED / CANONICAL EVIDENCE`dır. Runtime ve legacy allocator değişmemiştir.
+
+ADR-014 OD-TPA-04C-37..56; independent `RCV-LAP/v1` protocolünü, exact
+`SHA-256(UTF8("RCV-LAP/v1") || 0x00 || canonicalPlanIdentityBytes)` preimage'ını,
+`rcv-legal-application-plan:v1:sha256:<64-lowercase-hex>` formatını, explicit versioned
+property order'ını, I03 sequence'ini, unsigned money encoding'i, `heldReason=NONE` absence
+sentinel'ını, attribution exclusion'ı, tenant/case/collection + snapshot-evidence binding'i ve
+pre-fingerprint conservation'ı ratifiye eder. Persistence/replay/actor/transport ID'leri
+fingerprint dışındadır. ACT-28 ve REC-AUTH-011/012 `OPEN`; runtime writer `NOT IMPLEMENTED / NOT
+ACTIVATED`; synthetic corpus writer/evidence/cutover için `BLOCKING` kalır. **NEXT ELIGIBLE
+ACTION: TPA-04C-I04 — HELD SEMANTICS / PLAN FINGERPRINT / ATTRIBUTION ISOLATION — OWNER
+GO-IMPLEMENT REQUIRED / NOT STARTED / NOT AUTHORIZED.** I05-I07 self-start edemez.
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)

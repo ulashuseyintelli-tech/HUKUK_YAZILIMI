@@ -999,3 +999,34 @@ IMPLEMENTED / NOT ACTIVATED`; ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpu
 writer/evidence/cutover için `BLOCKING` kalır. Sonraki tek owner-gated birim
 `TPA-04C-I03 — PURE APPLY ORDERING / EXACT-MINOR-UNIT ALLOCATION CORE`; ayrı owner
 `GO-IMPLEMENT REQUIRED / NOT YET AUTHORIZED`dır. I04-I07 self-start etmez.
+
+## 9.13. TPA-04C-I03 closure / I04 plan-fingerprint contract — 2026-07-23
+
+TPA-04C-I03 implementation PR #1535 / squash
+`719e6898a6e967ba824a69aeadbf716e55c3056d`, exact four-file scope ile
+`CLOSED / CANONICAL EVIDENCE`dır. I03 `24/24`, I01-I03 `137/137`, bounded property ve
+determinism/permutation/repetition testleri; production/strict type-check, API build, exact-file
+ESLint ve required CI `4/4 PASS`tır. Runtime ve legacy allocator değişmemiştir.
+
+Owner, ADR-014 OD-TPA-04C-37..56 ile bağımsız plan-fingerprint protocolü `RCV-LAP/v1`ı
+ratifiye etmiştir. Exact hash:
+
+```text
+SHA-256(UTF8("RCV-LAP/v1") || 0x00 || canonicalPlanIdentityBytes)
+rcv-legal-application-plan:v1:sha256:<64-lowercase-hex>
+```
+
+Identity; tenant/case/Collection receipt context'i, currency/minorUnit/effectiveDate/direction ve
+snapshotRef/hash/sourceVersionSetHash/historyBoundaryRef evidence'ını bağlar. Runtime object
+order veya generic key sorting authority değildir; exact top-level/application property order ve
+I03 `COST → ANCILLARY → ACCRUED_INTEREST → PRINCIPAL` sequence'i ADR-014'te kapalıdır.
+`heldReason` daima bulunur ve no-remainder absence encoding'i `NONE`dır. Attribution optional,
+non-authoritative ve fingerprint-excluded'dır; persistence ID, `idempotencyKey`, `commandHash`,
+actor ve request/correlation/transaction ID fingerprint'e katılmaz.
+
+Fingerprint yalnız exact-cent conservation doğrulandıktan sonra üretilebilir. Bu kayıt I04 kodu,
+fingerprint helper'ı, writer, runtime wiring, schema/migration, consumer cutover veya legacy
+retirement yetkisi üretmez. I04 `NEXT / NOT STARTED / NOT AUTHORIZED`; ayrı owner
+`GO-IMPLEMENT` gerekir. I05-I07 self-start edemez. Runtime writer `NOT IMPLEMENTED / NOT
+ACTIVATED`; ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus writer/evidence/cutover için
+`BLOCKING` kalır.

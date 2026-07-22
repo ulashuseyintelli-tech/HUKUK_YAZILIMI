@@ -1,6 +1,6 @@
 # ADR-014: CCB-001 Canonical Legal Calculation Core
 
-**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified and TPA-03A foundation closed 2026-07-20; TPA-04 Option C target-native plan-then-persist / dormant-first single-writer contract and TPA-04A receipt-bound snapshot/bucket identity contract ratified 2026-07-20; TPA-04B required-evidence schema-amendment contract ratified and exact two-file amendment closed/canonical via PR #1470 / `9dabe8db` 2026-07-21; TPA-04C pure `LegalApplicationPlan` builder contract OD-TPA-04C-01..20 ratified 2026-07-22; M2 live DB apply/post-validation completed with empty target tables and no runtime writer; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 final disposition B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED; builder/writer runtime, replay, cutover, retirement and PR-11 remain unauthorized until separate owner GO
+**Status:** Accepted as binding direction; allocation-authority target amended 2026-07-18; legal-application cross-domain single-writer boundary and TPA-02 independent LegalApplicationBatch target persistence architecture ratified 2026-07-19; TPA-03 Option B two-file hybrid schema-foundation contract ratified and TPA-03A foundation closed 2026-07-20; TPA-04 Option C target-native plan-then-persist / dormant-first single-writer contract and TPA-04A receipt-bound snapshot/bucket identity contract ratified 2026-07-20; TPA-04B required-evidence schema-amendment contract ratified and exact two-file amendment closed/canonical via PR #1470 / `9dabe8db` 2026-07-21; TPA-04C pure `LegalApplicationPlan` builder contract OD-TPA-04C-01..20, I02 amendment OD-TPA-04C-21..36 and I04 fingerprint contract OD-TPA-04C-37..56 ratified; I01-I03 closed/canonical evidence through PR #1535 / `719e6898` 2026-07-23; M2 live DB apply/post-validation completed with empty target tables and no runtime writer; Wave 0 and PR-1A/PR-1B/PR-2/PR-3h/PR-4/PR-5/PR-6/PR-7/PR-8a/PR-8b/PR-9/PR-10 historical closures preserved; Balance Engine target remains SHADOW_ONLY; PR #407 final disposition B / CLOSED UNMERGED / REQUIREMENTS PRESERVED / CODE DISCARDED; I04-I07, builder/writer runtime, replay, cutover, retirement and PR-11 remain unauthorized until separate owner GO
 **Date:** 2026-07-05 (original direction); final numbering settled on `main` 2026-07-10 via owner arbitration (see Revision History for the full renumbering history — this document was briefly `ADR-013` for part of 2026-07-10)
 **Deciders:** Owner - Ulas
 **Related:** CCB-001, MPB-011, GOV-ADR-NAMING-000, ADR-010, ADR-012 (Waiting & Progress Policy — unrelated, no naming overlap), ADR-013 (Fee / Harç / Snapshot / Journal draft owner-review ADR; a related but separate architecture line, not a sub-component of this document), `balance-display-shadow-diff`, `balance-shadow-compare`, `InterestEngineService.computeBalance`, `ClaimItem`, `LedgerEntry`, `LedgerAllocation`, `CaseService.getCalculationSummary`
@@ -1279,6 +1279,170 @@ runtime writer `NOT IMPLEMENTED / NOT ACTIVATED`; synthetic corpus writer/eviden
 EXACT-MINOR-UNIT ALLOCATION CORE`; ayrı owner `GO-IMPLEMENT REQUIRED / NOT YET AUTHORIZED`dır.
 I04-I07 self-start etmez.
 
+### OD-TPA-04C-37 — I03 closure
+
+TPA-04C-I03 `CLOSED / CANONICAL EVIDENCE`dır. Implementation PR #1535 / squash
+`719e6898a6e967ba824a69aeadbf716e55c3056d`, exact four-file scope ile canonical
+main'dedir. I03 testleri `24/24`, I01-I03 regression `137/137`, bounded property,
+determinism/permutation/repetition, production type-check, target/test strict TypeScript, API
+build, exact-file ESLint ve required CI `4/4 PASS`tır. Runtime ve legacy allocator değişmemiştir.
+Sonraki owner-gated birim TPA-04C-I04'tür.
+
+### OD-TPA-04C-38 — Plan fingerprint contract identity
+
+Canonical plan fingerprint protocolü `RCV-LAP/v1`dır ve snapshot protocolü
+`RCV-CAS/v1`dan bağımsızdır. Unversioned, raw runtime-object, generic `JSON.stringify` veya
+snapshot-domain plan hash'leri reddedilir.
+
+### OD-TPA-04C-39 — Plan fingerprint hash preimage
+
+Exact preimage ve çıktı:
+
+```text
+UTF8("RCV-LAP/v1") || 0x00 || canonicalPlanIdentityBytes
+SHA-256(exact preimage bytes)
+rcv-legal-application-plan:v1:sha256:<64-lowercase-hex>
+```
+
+Domain separator olmadan, snapshot payload/hash'ten, parsed/pretty JSON'dan,
+attribution-inclusive payload'dan, UTF-16/BOM/platform-newline ile hash üretmek yasaktır.
+
+### OD-TPA-04C-40 — Domain separator bytes
+
+Domain bytes exact ASCII/UTF-8 `RCV-LAP/v1` ve ardından tam bir NUL byte `0x00`dır. BOM,
+whitespace, newline, length prefix, trailing delimiter ve alternate casing yasaktır.
+
+### OD-TPA-04C-41 — Authoritative plan identity schema
+
+`canonicalPlanIdentityBytes`, exact property order ile tek
+`CanonicalLegalApplicationPlanIdentityV1` nesnesini encode eder:
+
+```text
+1  contractVersion          10 snapshotHash
+2  direction                11 sourceVersionSetHash
+3  tenantId                 12 historyBoundaryRef
+4  caseId                   13 receiptAmountMinor
+5  collectionId             14 appliedAmountMinor
+6  currency                 15 heldRemainderMinor
+7  minorUnit                16 heldReason
+8  effectiveDate            17 applications
+9  snapshotRef
+```
+
+Başka alan katılmaz. `contractVersion = RCV-LAP/v1`; `direction = APPLY`dır.
+
+### OD-TPA-04C-42 — Held reason encoding
+
+`heldReason` identity'de daima bulunur: remainder `0` ise `NONE`; remainder pozitif ve applied
+`0` ise `NO_ELIGIBLE_OUTSTANDING`; remainder ve applied pozitif ise
+`EXCESS_OVER_ELIGIBLE_OUTSTANDING`. `NONE` business HELD reason değil, yalnız absence için
+fingerprint-only canonical sentinel'dır.
+
+### OD-TPA-04C-43 — Application identity schema
+
+Her application exact property order ile `CanonicalPlannedApplicationIdentityV1` kullanır:
+
+```text
+1 component                 6 sourceLineageSetRef
+2 componentCode             7 bucketBeforeMinor
+3 priorityRank              8 appliedAmountMinor
+4 bucketContextKey          9 bucketAfterMinor
+5 bucketInstanceId
+```
+
+Persistence ID, actor, timestamp, audit metadata, ClaimItem ID veya free text katılmaz.
+
+### OD-TPA-04C-44 — Canonical application sequence
+
+Applications, I03 sırasını aynen korur: component rank
+`COST → ANCILLARY → ACCRUED_INTEREST → PRINCIPAL`, ardından `priorityRank` ascending, ardından
+`bucketContextKey` UTF-8 byte order ascending. Insertion order, `localeCompare`,
+`bucketInstanceId`, attribution veya persistence identity ile yeniden sıralama yasaktır.
+
+### OD-TPA-04C-45 — Money encoding
+
+Plan ve application minor-unit tutarları unsigned decimal string'dir. `0`, `1`, `10` ve
+`9223372036854775807` kabul; `-0`, sign, leading zero, decimal, exponent, whitespace, negative
+ve PostgreSQL signed BIGINT maksimumunu aşan değer reddedilir. `minorUnit` bounded integer'dır,
+money string değildir.
+
+### OD-TPA-04C-46 — Priority rank encoding
+
+`priorityRank`, canonical snapshot contract'ını sağlayan JSON integer number'dır; string, float,
+exponent veya coercion kabul edilmez. I04 bunu yeniden tanımlamaz veya normalize etmez.
+
+### OD-TPA-04C-47 — Attribution exclusion
+
+`PlannedApplicationAttribution` optional ve non-authoritative'dir. Attribution satırı, sayısı,
+sırası, projection key'i, ayrıntılı ClaimItem/source üyeleri ve evidence text fingerprint'e
+katılmaz. Attribution yokluğu, varlığı veya permutation'ı application order/amount,
+before-after balance, held result, plan success veya fingerprint'i değiştiremez.
+
+### OD-TPA-04C-48 — Attribution source
+
+Attribution yalnız canonical snapshot'taki doğrulanmış lineage fact'lerinden türetilebilir. DB
+lookup, ClaimItem/legacy allocation inference, historical guessing ve generated provenance
+yasaktır. Ayrıntılı lineage yoksa `attributions = []` geçerlidir; authoritative application'da
+`sourceLineageSetRef` yine required'dır.
+
+### OD-TPA-04C-49 — Snapshot binding
+
+Identity `snapshotRef`, `snapshotHash`, `sourceVersionSetHash` ve `historyBoundaryRef` alanlarını
+içerir. Monetary result aynı olsa bile farklı snapshot evidence farklı fingerprint üretir. Raw
+snapshot payload identity'ye gömülmez.
+
+### OD-TPA-04C-50 — Command/context binding
+
+Identity `tenantId`, `caseId`, `collectionId`, `currency`, `minorUnit`, `effectiveDate` ve
+`direction` içerir; `idempotencyKey`, `commandHash`, actor, correlation/request/transaction ID
+içermez. Replay authority Collection-owned kalır.
+
+### OD-TPA-04C-51 — Fingerprint property order
+
+Serializer OD-TPA-04C-41 ve -43 sırasını explicit schema construction ile üretir. Runtime object
+insertion order ve generic recursive key sorting authority değildir. Applications I03 canonical
+sequence'indedir; attribution excluded'dır.
+
+### OD-TPA-04C-52 — String/Unicode policy
+
+Bütün identity string'leri önceden NFC olmalıdır; non-NFC reddedilir ve silent normalization
+yasaktır. Optional null, unknown field ve free text yoktur. Encoding UTF-8; BOM yasaktır.
+
+### OD-TPA-04C-53 — Fingerprint error behavior
+
+Serialization veya identity inconsistency deterministic typed failure üretir ve daha specific
+canonical error yoksa `FORMATION_CONTEXT_INCOMPLETE` olarak map edilir. Applicable specific
+errors: `CONSERVATION_FAILURE`, `AMOUNT_OUT_OF_RANGE`, `DIRECTION_NOT_AUTHORIZED`,
+`SOURCE_VERSION_INCOMPLETE`. Metadata yalnız safe field/path, reason code, expected fact ve safe
+primitive/hash/ref taşıyabilir; raw payload, attribution content, free text, ClaimItem açıklaması,
+PII, stack veya runtime exception taşıyamaz.
+
+### OD-TPA-04C-54 — Fingerprint conservation binding
+
+Fingerprint yalnız aşağıdaki kontrollerden sonra üretilebilir:
+
+```text
+receiptAmountMinor = appliedAmountMinor + heldRemainderMinor
+appliedAmountMinor = SUM(applications.appliedAmountMinor)
+bucketBeforeMinor = appliedAmountMinor + bucketAfterMinor  (her application)
+```
+
+İhlal `CONSERVATION_FAILURE`dır ve fingerprint döndürülmez.
+
+### OD-TPA-04C-55 — Plan fingerprint vs persistence identity
+
+`planFingerprint`, deterministic economic/legal plan identity'dir. `LegalApplicationBatch.id`,
+`LegalApplication.id`, `ApplicationAttribution.id`, `idempotencyKey` ve `commandHash` ile eşdeğer
+değildir; hiçbir persistence ID fingerprint'e katılmaz.
+
+### OD-TPA-04C-56 — I04 entry gate
+
+I04 yalnız I03 closure ve next-task transition kayıtları, OD-TPA-04C-38..55 ratification,
+exact `RCV-LAP/v1` protocolü, attribution exclusion, explicit `NONE` encoding, exact property
+order, bu docs-only amendment merge'i, fresh collision check ve ayrı owner `GO-IMPLEMENT`
+sonrasında implementation-eligible olur. I04 `NOT STARTED / NOT AUTHORIZED`; I05-I07 self-start
+edemez. Runtime writer `NOT IMPLEMENTED / NOT ACTIVATED`; ACT-28 ve REC-AUTH-011/012 `OPEN`dır.
+
 ## Consequences
 
 ### Positive
@@ -1346,3 +1510,4 @@ I04-I07 self-start etmez.
 | 2026-07-22 | 3.4 | TPA-04C pure LegalApplicationPlan builder contract ratified through OD-TPA-04C-01..20. Builder is Receivable-owned, pure/APPLY-only, deterministic and exact-minor-unit; legacy allocation and ClaimItem payment-state dependencies are prohibited. M2 live apply/post-validation is recorded with empty target tables and no runtime writer. I01 is owner-gated and not authorized. |
 | 2026-07-22 | 3.5 | TPA-04C-I01 closure evidence (PR #1517 / `568f76e`) and OD-TPA-04C-21..36 I02 technical amendment are ratified. Domain-separated envelope hash, explicit input limits, null/absent and deterministic validation precedence are canonical; I02 remains separately owner-gated and not authorized. |
 | 2026-07-22 | 3.6 compliance update | TPA-04C-I02 implementation closure: PR #1520 / `d46df4ce` establishes the exact seven-file strict snapshot-validation boundary with 113/113 targeted tests and CI 4/4 PASS. Runtime/schema/migration/live-DB impact is none; I03 becomes the next separately owner-gated slice. |
+| 2026-07-23 | 3.7 | TPA-04C-I03 implementation closure (PR #1535 / `719e6898`) and OD-TPA-04C-37..56 ratify the independent `RCV-LAP/v1` plan-fingerprint protocol, exact identity/property order, HELD absence sentinel and attribution exclusion. I04 remains separately owner-gated and unauthorized. |
