@@ -1302,6 +1302,29 @@ jobs:
             src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.core.spec.ts \
             src/modules/policy-engine/gate-checker/__tests__/uyap-temporary-outage.spec.ts
         working-directory: project/apps/api
+      # UYAP-EVIDENCE-CI-P02A-R1: P-E2B-R0 reconciliation sonrasi owner promote karari — alti mevcut
+      # trust-plane spec'ini blocking CI kapsamina alir (F4-a/R1 P-E2B adaylari; P2B-06
+      # interest-projection.mapping.spec.ts INVALID INVENTORY / NEVER EXISTED, dahil EDILMEDI). Gercek
+      # 6. aday address-discovery/uyap-query.service.spec.ts. Testler DEGISMEZ; yalniz CI'da gercekten+
+      # surekli calismasi saglanir. 6x test -f false-green guard + exact --runTestsByPath (broad
+      # wildcard YOK, passWithNoTests YOK, scheduled workflow YOK). Olcum: 6 suite / 103 test, 3/3 PASS,
+      # batch max 17s (<180s).
+      - name: UYAP-EVIDENCE-CI-P02A-R1 additional blocking trust-plane specs
+        run: |
+          test -f src/modules/uyap/__tests__/numeric-interest-projection.adapter.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A-R1 spec: numeric-interest-projection.adapter.spec.ts"; exit 1; }
+          test -f src/modules/uyap-export/__tests__/uyap-export-passive-policy.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A-R1 spec: uyap-export-passive-policy.spec.ts"; exit 1; }
+          test -f src/modules/uyap-export/projection/__tests__/batch-faizt-readiness.contract.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A-R1 spec: batch-faizt-readiness.contract.spec.ts"; exit 1; }
+          test -f src/modules/uyap-export/projection/__tests__/due-claimitem-relation.classifier.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A-R1 spec: due-claimitem-relation.classifier.spec.ts"; exit 1; }
+          test -f src/modules/uyap-export/projection/__tests__/faizt-interest-projection.adapter.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A-R1 spec: faizt-interest-projection.adapter.spec.ts"; exit 1; }
+          test -f src/modules/address-discovery/uyap-query.service.spec.ts || { echo "MISSING UYAP-EVIDENCE-CI-P02A-R1 spec: uyap-query.service.spec.ts"; exit 1; }
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/uyap/__tests__/numeric-interest-projection.adapter.spec.ts \
+            src/modules/uyap-export/__tests__/uyap-export-passive-policy.spec.ts \
+            src/modules/uyap-export/projection/__tests__/batch-faizt-readiness.contract.spec.ts \
+            src/modules/uyap-export/projection/__tests__/due-claimitem-relation.classifier.spec.ts \
+            src/modules/uyap-export/projection/__tests__/faizt-interest-projection.adapter.spec.ts \
+            src/modules/address-discovery/uyap-query.service.spec.ts
+        working-directory: project/apps/api
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
