@@ -592,3 +592,51 @@ POST-VALIDATION: 2 tablo + 3 enum + 10 composite FK + 4 CHECK + parent unique
 PROHIBITED: runtime writer/service wiring, CPE-link, data backfill, GO-OPERATE,
   governance closure beyond schema foundation.
 ```
+
+## 11. POLICY-CPE-DECISION-COMPOSITE-KEY-P05C-P01 — yeni pending migration (2026-07-23)
+
+Policy Engine bounded-context'ine ait **additive-only tek index** migration'ı; üretildi ancak
+canlı `hukuk_db`'ye **hiç uygulanmadı**. §7-9 train'den ve §10 girişinden bağımsız, ayrı bir
+pending giriştir. Bu kayıt canlı DB mutation'ı İÇERMEZ.
+
+### 11.1 Migration kimliği ve durum
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260722230000_cpe_decision_composite_reference_key` |
+| Domain | **POLICY ENGINE** (CpeDecisionLog sahibi) — tüketici: UYAP F4-b/P-E5C |
+| Authority basis | GO-IMPLEMENT — POLICY-CPE-DECISION-COMPOSITE-KEY-P05C-P01 |
+| İçerik | **TEK statement**: `CREATE UNIQUE INDEX "CpeDecisionLog_id_caseId_key" ON "CpeDecisionLog"("id","caseId")` |
+| Amaç | CpeDecisionLog'u gelecekteki tenant-safe UYAP evidence linkage için **composite FK hedefi** yapmak (P-E5C-R0 seçenek O2′) |
+| Kolon / veri | **tenantId kolonu YOK · backfill YOK · DML YOK · link tablosu YOK · write-path değişmedi** |
+| Veri riski | **YOK** — `id` zaten PK olduğundan `(id, caseId)` süper-küme anahtardır; hiçbir veri durumu kısıtı ihlal edemez, index teklik nedeniyle kurulamama durumuna düşemez |
+| Doğrulama | 11 static + 7 db-gated PASS (disposable `postgres:16`); blocking CI 2 step |
+| **LIVE DB APPLY** | **NOT APPLIED** |
+| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** — ayrı owner GO-MIGRATE brief'i bekler |
+
+### 11.2 Disposition
+
+- IMPLEMENTATION AUTHORITY: schema + migration + test + CI **CANONICAL**; live-apply ve
+  P-E5C link tablosu/runtime linkage **NONE** (ayrı owner GO).
+- Bu giriş `prisma migrate deploy`'un sıralı-toplu davranışı nedeniyle başka bir
+  workstream'in GO-MIGRATE penceresinde istemeden canlıya taşınabilir; §10 girişiyle
+  birlikte kuyrukta **2 pending migration** bulunduğu burada görünür kılınır.
+- Operasyonel not: veri riski olmasa da `CREATE UNIQUE INDEX` (non-CONCURRENT) hedef tablo
+  üzerinde yazma kilidi alır; canlı pencerede satır sayısına bağlı kısa bir kilit süresi
+  beklenir. Satır sayısı bu kayıtta **UNKNOWN** (analiz salt-okuma yapıldı, canlı DB'ye
+  bakılmadı) — GO-MIGRATE preflight'inde ölçülmelidir.
+
+**GATE P05C-P01 — OWNER GO-MIGRATE — CPE DECISION COMPOSITE REFERENCE KEY**
+```text
+OWNER GO-MIGRATE — POLICY-CPE-DECISION-COMPOSITE-KEY-P05C-P01
+AUTHORITY BASIS: P05C-P01 GO-IMPLEMENT merge SHA (PR merge sonrası doldurulur)
+TARGET MIGRATION: 20260722230000_cpe_decision_composite_reference_key
+ANCHOR: isolated worktree pinned to the P05C-P01 merge SHA
+PREFLIGHT: fresh backup + restore-verify; disposable rehearsal from this anchor;
+  CpeDecisionLog satır sayısını ölç (index kilit süresi tahmini için).
+EXECUTION: prisma migrate deploy only (no resolve, no manual DDL).
+POST-VALIDATION: CpeDecisionLog_id_caseId_key UNIQUE index mevcut; PK + caseId FK
+  korunmuş; tenantId kolonu YOK; satır sayısı değişmemiş; API health smoke.
+PROHIBITED: UyapAttemptCpeDecisionLink, runtime linkage, tenantId kolonu,
+  backfill, CpeExecutionRecord değişikliği, governance closure beyond this index.
+```

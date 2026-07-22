@@ -8325,6 +8325,10 @@ model CpeDecisionLog {
 
   case Case @relation("CpeDecisionLogs", fields: [caseId], references: [id], onDelete: Cascade)
 
+  // P05C-P01: gelecekteki tenant-safe UYAP evidence linkage icin composite FK HEDEFI.
+  // `id` zaten PK oldugundan bu kisit mantiken ihlal EDILEMEZ (superset key) — veri
+  // nedeniyle index kurulumu basarisiz olamaz. tenantId kolonu YOK, backfill YOK.
+  @@unique([id, caseId])
   @@index([caseId])
   @@index([actionCode])
   @@index([allowed])
