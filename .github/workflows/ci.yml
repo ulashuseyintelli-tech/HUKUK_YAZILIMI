@@ -1064,6 +1064,77 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="workflow-engine-legal-time-cutover\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # OF01-HISTORY-P01 (PR #1503, retroactif eklendi — bkz. GATE-1/PR-2/PR-3/LRV-02/DBP-P2-SEC-P02
+      # emsali "CI-coverage silent-skip riski"): ServiceOccurrence Prisma modeli (Tebligat/
+      # LegalDeadlineSnapshot arasında immutable/supersedable "gözlemlenen hukuki olgu" katmanı) —
+      # composite tenant-scoped FK, 7 CHECK constraint, 2 immutability trigger. Yukarıdaki dar
+      # allowlist pattern'lerinin hiçbirine girmiyordu → CI'da hiç koşmuyordu (yalnız P01'in kendi
+      # GO-IMPLEMENT'inde local `npx jest` ile doğrulandı). Dosya-varlığı pre-check + passWithNoTests YOK.
+      - name: OF01-HISTORY-P01 ServiceOccurrence schema disposable-DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/tebligat/__tests__/service-occurrence.db-gated.integration.spec.ts || \
+            { echo "MISSING OF01-HISTORY-P01 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="service-occurrence\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
+      # OF01-HISTORY-P02 (PR #1507, retroactif eklendi — aynı silent-skip riski): ServiceOccurrenceService
+      # (create/supersede, IdempotencyMode.STRONG_SOURCE_HASH/NONE, pg_advisory_xact_lock ile
+      # concurrency-safe idempotency + atomik supersession) — internal application service,
+      # controller/DTO/endpoint YOK.
+      - name: OF01-HISTORY-P02 ServiceOccurrenceService unit tests
+        run: |
+          cd apps/api
+          test -f src/modules/tebligat/service-occurrence/__tests__/service-occurrence.service.spec.ts || \
+            { echo "MISSING OF01-HISTORY-P02 spec: service-occurrence.service.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="service-occurrence\.service\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      # OF01-HISTORY-P02 (disposable-DB kısmı): gerçek Postgres'te atomik create/supersede +
+      # concurrency race testleri (advisory-lock kanıtı dahil) doğrular.
+      - name: OF01-HISTORY-P02 ServiceOccurrenceService disposable-DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/tebligat/service-occurrence/__tests__/service-occurrence-write.db-gated.integration.spec.ts || \
+            { echo "MISSING OF01-HISTORY-P02 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="(?<!tebligat-)service-occurrence-write\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
+      # OF01-HISTORY-P03 (PR #1510): TebligatService.recordPttResult() → ServiceOccurrence +
+      # outbox event (DomainEventIngestService.appendInTransaction, aynı transaction) atomik
+      # dual-write. recordElectronicResult (mock UETS/KEP) bu kapsamın DIŞINDADIR — dokunulmadı.
+      # Dosya adı "integration" içerdiği için genel "|integration" ignore-pattern'i BURADA
+      # kullanılmaz (kendi dosyasını dışlar) — testPathPattern zaten tam dosya adına özgüdür.
+      - name: OF01-HISTORY-P03 Tebligat/ServiceOccurrence atomic integration unit tests
+        run: |
+          cd apps/api
+          test -f src/modules/tebligat/__tests__/tebligat-service-occurrence-integration.spec.ts || \
+            { echo "MISSING OF01-HISTORY-P03 spec: tebligat-service-occurrence-integration.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="tebligat-service-occurrence-integration\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist"
+        working-directory: project
+      # OF01-HISTORY-P03 (disposable-DB kısmı): gerçek Postgres'te Tebligat+CaseDebtor+
+      # ServiceOccurrence+outbox 4 yazımın tek transaction'da atomik olduğunu (occurrence veya
+      # outbox append başarısızsa TÜM yazımların rollback edildiğini) doğrular.
+      - name: OF01-HISTORY-P03 Tebligat/ServiceOccurrence atomic integration disposable-DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/tebligat/__tests__/tebligat-service-occurrence-write.db-gated.integration.spec.ts || \
+            { echo "MISSING OF01-HISTORY-P03 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="tebligat-service-occurrence-write\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
       # LRV-02 / DBP-P2-SEC-P01: UyapXmlService.mapDebtorRoleToUyapKod DebtorRole->UYAP rol-kodu
       # mapping regresyonu (PR #1322). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyordu
       # → CI'da hiç koşmuyordu (yalnız o merge'in GO-IMPLEMENT'inde local `npx jest` ile doğrulandı).
