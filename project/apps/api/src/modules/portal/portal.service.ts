@@ -114,6 +114,28 @@ const PORTAL_POA_CLIENT_SELECT = Prisma.validator<Prisma.ClientPowerOfAttorneySe
   },
 });
 
+/**
+ * CLIENT-P2-U03-I05: portal notification client-facing response contract (POL-D §21/BP-06 §23).
+ * getNotifications() KULLANIR. Alanlar hem şemaya hem gerçek consumer'a (apps/web/.../
+ * portal/layout.tsx'in kendi `interface Notification`'ı) göre doğrulanmıştır — bu birimde
+ * brief'in taslağı gerçek koda birebir uyuyor, sapma YOK. `clientId`/`caseId` (authorization
+ * context) ve `readAt` KASITLI olarak DIŞARIDA. `linkUrl` consumer tarafında yalnız Next.js
+ * client-side `router.push()` ile tüketilir; producer tarafında (`createNotification()`)
+ * TEK çağrı yeri (`sendMessageFromOffice()`) bu alanı set eder ve değeri her zaman hardcoded
+ * literal `"/portal/messages"`dir — kullanıcı girdisinden türetilmez, güvenli. getUnreadCount()/
+ * markAsRead()/markAllAsRead()/createNotification() bu sabiti kullanmaz, kendi raw erişimlerini
+ * korur.
+ */
+const PORTAL_NOTIFICATION_CLIENT_SELECT = Prisma.validator<Prisma.PortalNotificationSelect>()({
+  id: true,
+  type: true,
+  title: true,
+  message: true,
+  linkUrl: true,
+  isRead: true,
+  createdAt: true,
+});
+
 @Injectable()
 export class PortalService {
   private readonly logger = new Logger(PortalService.name);
@@ -607,6 +629,7 @@ export class PortalService {
       where: { clientId },
       orderBy: { createdAt: "desc" },
       take: limit,
+      select: PORTAL_NOTIFICATION_CLIENT_SELECT,
     });
   }
 
