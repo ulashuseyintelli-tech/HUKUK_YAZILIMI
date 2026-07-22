@@ -114,10 +114,11 @@ export class TebligatController {
   @Post(":id/ptt-result")
   recordPttResult(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
     @Body() dto: RecordPttResultDto
   ) {
-    return this.tebligatService.recordPttResult(tenantId, id, dto);
+    return this.tebligatService.recordPttResult(tenantId, id, dto, actorUserId);
   }
 
   /**

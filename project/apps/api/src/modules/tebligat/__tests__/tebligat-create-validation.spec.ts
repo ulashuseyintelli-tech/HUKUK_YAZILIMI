@@ -86,7 +86,9 @@ describe("PR-2b TebligatService.create() create validation", () => {
       prisma,
       {} as any,
       {} as any,
-      new CaseDebtorLifecycleGuardService(prisma)
+      new CaseDebtorLifecycleGuardService(prisma),
+      {} as any,
+      {} as any
     );
     return { svc, prisma };
   };

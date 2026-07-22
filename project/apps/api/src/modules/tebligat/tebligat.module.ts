@@ -7,9 +7,10 @@ import { PrismaModule } from "../../prisma/prisma.module";
 import { DebtorModule } from "../debtor/debtor.module"; // PR-D5-b-1: Tebligat→CaseDebtor senkronu
 import { CaseDebtorLifecycleGuardModule } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module";
 import { ServiceOccurrenceService } from "./service-occurrence/service-occurrence.service";
+import { DomainEventIngestModule } from "../icrabot/domain-event-ingest/domain-event-ingest.module"; // DEBTOR-OF01-HISTORY-P03
 
 @Module({
-  imports: [PrismaModule, DebtorModule, CaseDebtorLifecycleGuardModule],
+  imports: [PrismaModule, DebtorModule, CaseDebtorLifecycleGuardModule, DomainEventIngestModule],
   controllers: [TebligatController],
   providers: [TebligatService, PttTrackingService, UetsService, ServiceOccurrenceService],
   exports: [TebligatService, PttTrackingService, UetsService, ServiceOccurrenceService],
