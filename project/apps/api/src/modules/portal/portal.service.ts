@@ -79,6 +79,41 @@ const PORTAL_MESSAGE_CLIENT_SELECT = Prisma.validator<Prisma.PortalMessageSelect
   createdAt: true,
 });
 
+/**
+ * CLIENT-P2-U03-I04: portal PoA client-facing response contract (POL-D §21/BP-06 §23).
+ * getClientPoas() KULLANIR. Alanlar gerçek consumer'a (apps/web/.../portal/poas/page.tsx)
+ * göre doğrulanmıştır — brief'in taslak varsayımından KASITLI olarak sapar: `isActive`
+ * (şemada var ama sayfa hiç kullanmıyor, WHERE zaten isActive:true dayattığından response'ta
+ * hep sabit true olur) ve `scope` (şemanın kendi yorumu: "@deprecated - scopeDescription
+ * kullan") select'e DAHIL EDİLMEMİŞTİR; `status`/`isLimited`/`journalNo`/`notaryName`/
+ * `notaryCity` ise brief'in taslağında yoktu ama sayfa bunlar OLMADAN render edilemez.
+ * `clientId`, `filePath`, `fileSize`, `mimeType`, `scopeType`, `scopeDescription`,
+ * `createdAt`, `updatedAt`, deprecated `poaDate` KASITLI olarak DIŞARIDA. Nested
+ * `lawyers[].lawyer.barNumber` sayfa tarafından render edilmiyor ama mevcut kodda zaten
+ * curated şekilde seçiliydi (I03'teki isRead emsaliyle aynı gerekçeyle korunmuştur).
+ * poa.service.ts (staff/admin) bu sabiti kullanmaz.
+ */
+const PORTAL_POA_CLIENT_SELECT = Prisma.validator<Prisma.ClientPowerOfAttorneySelect>()({
+  id: true,
+  notaryName: true,
+  notaryCity: true,
+  journalNo: true,
+  poaNumber: true,
+  dateIssued: true,
+  isLimited: true,
+  validUntil: true,
+  status: true,
+  canCollect: true,
+  canWaive: true,
+  canSettle: true,
+  canRelease: true,
+  lawyers: {
+    select: {
+      lawyer: { select: { name: true, surname: true, barNumber: true } },
+    },
+  },
+});
+
 @Injectable()
 export class PortalService {
   private readonly logger = new Logger(PortalService.name);
@@ -365,14 +400,8 @@ export class PortalService {
   async getClientPoas(clientId: string) {
     return this.prisma.clientPowerOfAttorney.findMany({
       where: { clientId, isActive: true },
-      include: {
-        lawyers: {
-          include: {
-            lawyer: { select: { name: true, surname: true, barNumber: true } },
-          },
-        },
-      },
       orderBy: { dateIssued: "desc" },
+      select: PORTAL_POA_CLIENT_SELECT,
     });
   }
 
