@@ -1518,3 +1518,43 @@ Bu bölüm, POL-D (§21) / BP-06 (§23) politikalarının `getCaseDetail()` yüz
 ### 28.9 U03-I01 Self-Check
 
 Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; POL-D/BP-06 enforcement'ının TAMAMLANDIĞINI iddia ETMEZ; `CLIENT-P2-U03-I02`'yi BAŞLATMAZ; documents/messages/PoA/notifications yüzeylerine dokunmaz veya bunları CLOSED İLAN ETMEZ; curated client timeline SEÇMEZ veya YETKİLENDİRMEZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ; §5/§6/§8.A/§8.B/§11–§27 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration DEĞİŞTİRMEZ (implementasyon zaten PR #1499 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL FIELD-VISIBILITY SURFACES CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 29. CLIENT Phase 2 U03-I02 — Portal Document Field-Visibility Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, POL-D (§21) / BP-06 (§23) politikalarının portal document yüzeyindeki enforcement diliminin (`CLIENT-P2-U03-I02`) teknik kapanış kaydıdır (`decision-log.md` CLIENT-P2-U03-I02-GOV). §5, §6, §8.A, §8.B, §11–§28 substantive hükümlerini DEĞİŞTİRMEZ. §28.7'nin "`CLIENT-P2-U03-I02`: NOT AUTHORIZED" ifadesi bu kayıtla owner tarafından ayrıca yetkilendirilip kapatılmıştır — §28'in kendi metni DEĞİŞTİRİLMEMİŞTİR. **CLIENT-P2-U03 (genel POL-D/BP-06 enforcement programı) BU KAYITLA CLOSED İLAN EDİLMEZ — yalnız case-detail (I01) + document (I02) dilimleri kapanır, messages/PoA/notifications yüzeyleri OPEN kalır.**
+
+### 29.1 Technical Lineage
+
+**IMPLEMENTATION:** PR #1506 (task: `CLIENT-P2-U03-I02`, squash SHA `0becb12afb33584b71f05d4902ef6cd733e0e57e`, merged `origin/main` 2026-07-21). Bu birim, §28.7'nin (`CLIENT-P2-U03-I01`) açık bıraktığı "DOCUMENT FIELD VISIBILITY: OPEN/NOT STARTED" bulgusunun bounded implementasyonudur; `getDocuments()` (liste) ve `uploadDocument()` (yükleme response'u) aynı slice altında ele alınmıştır — aynı kaynak model, aynı client sayfası, aynı response contract, aynı field-exposure kök nedeni.
+
+### 29.2 Selected Enforcement Model
+
+**PRISMA-LEVEL EXPLICIT SELECT — §28.2 ile aynı desen.** `PortalService.getDocuments()`'ın select'siz `findMany()`'ı ve `uploadDocument()`'ın select'siz `create()`'i, ortak, tek bir typed sabit (`PORTAL_DOCUMENT_CLIENT_SELECT`) ile değiştirildi. Yeni DTO sınıfı, class-transformer, global interceptor veya web-shared response-type katmanı **ÜRETİLMEDİ**. Upload'ın write-contract'ı (`filePath` dahil DB'ye yazılan alanlar) DEĞİŞMEDİ — yalnız `create()`'in döndürdüğü response daraltıldı.
+
+### 29.3 Approved Client Response Contract
+
+Hem liste hem upload response'unda yalnız: `id, type, title, description, fileName, fileSize, mimeType, status, createdAt`.
+
+### 29.4 Explicitly Omitted Field Families
+
+`filePath` (internal-only server storage location) · `reviewedBy` (internal staff user identifier) · `reviewedAt` (client presentation için seçilmedi) · `reviewNote` (mixed-purpose internal review text — REJECTED status'un kendisi client'a döner, ancak raw internal review metni DEĞİL) · `clientId`/`tenantId` (authorization context, presentation data DEĞİL) · `caseId` (bu dilimde authorize edilmedi) · `updatedAt` (mevcut client presentation için gerekmiyor). Hepsi **UNKNOWN/UNCLASSIFIED veya INTERNAL-ONLY → varsayılan OMIT** ilkesiyle dışarıda.
+
+### 29.5 Internal/Admin Boundary Preservation
+
+`getPendingDocuments()`/`reviewDocument()` (staff/admin yüzeyi) **DEĞİŞMEDİ** — `reviewedBy`/`reviewedAt`/`reviewNote`/`filePath` veritabanında ve staff workflow'unda **KORUNUR**, hiçbiri silinmedi. `getDocument()` (internal download helper) ve `deleteDocument()` (internal file-deletion helper) kendi raw, select'siz `doc` erişimlerini korur; `filePath` bu iki metotta hâlâ internal olarak kullanılır (dosya sistemi okuma/silme için) ve **hiçbir zaman client JSON response'una dönmez** — `deleteDocument()`'ın controller'a döndürdüğü `filePath` zaten yalnız internal `unlinkSync` çağrısı için kullanılıyordu, controller client'a yalnız `{success:true}` döndürüyordu (bu davranış I02 öncesinde de böyleydi, I02 bunu DEĞİŞTİRMEDİ). **CLIENT FIELD OMISSION ≠ DATABASE FIELD REMOVAL. CLIENT FIELD OMISSION ≠ ADMIN WORKFLOW REMOVAL.**
+
+### 29.6 Non-Equations / Precision
+
+`SAME-CLIENT FIELD EXPOSURE ≠ CROSS-TENANT INCIDENT` · `FIELD VISIBILITY ≠ OBJECT AUTHORIZATION` · `DOCUMENT RESPONSE PROJECTION ≠ DOCUMENT ACCESS MODEL REDESIGN` · `FILE PATH OMITTED ≠ FILE STORAGE ARCHITECTURE SECURED` · `RAW REVIEW NOTE OMITTED ≠ CLIENT-SAFE REJECTION-REASON CONTRACT CREATED` · `TECHNICAL I02 CLOSED ≠ CLIENT-P2-U03 FULLY CLOSED` · `TYPE-SAFE INTERFACE ≠ SECURITY BOUNDARY` · `EXPLICIT BACKEND SELECT = FAIL-CLOSED FIELD PROJECTION`. **Doğru ifade: "PORTAL DOCUMENT BROAD RESPONSE / INTERNAL DOCUMENT-METADATA EXPOSURE CONTAINED"** — "cross-tenant vulnerability fixed" iddiası bu kayıtla KURULMAZ.
+
+### 29.7 Open Residual Surfaces
+
+**MESSAGE FIELD VISIBILITY: OPEN/NOT STARTED** (`getMessages` — `senderId` staff-identity). **POA FIELD VISIBILITY: OPEN/NOT STARTED** (`getClientPoas` — `filePath`/`fileSize`/`mimeType`, hiç consumer'ı yok). **NOTIFICATION FAIL-CLOSED PROJECTION: OPEN/NOT STARTED** (`getNotifications` — bugün select'siz ama model'de internal alan yok; mekanizma fail-closed DEĞİL). **CLIENT-SAFE DOCUMENT REJECTION-REASON CONTRACT: NOT SELECTED** — mevcut ret notification mesajı bu kayıtla yeniden tasarlanmadı. **`CLIENT-P2-U03-I03`: NOT AUTHORIZED.** **CASE DETAIL FIELD VISIBILITY (I01): CLOSED/CANONICAL, bu kayıtla DEĞİŞMEDİ.** Object-scope (`STF-PRD-BOLA-001`/`STF-PRD-SCP-001`/OFF/OD-08/CAP-02) ve OFFICE authority'si bu kayıtla **DEĞİŞMEDİ**.
+
+### 29.8 Final Unit Status
+
+**CLIENT-P2-U03-I02: TECHNICAL + GOVERNANCE CLOSED/CANONICAL.** **CLIENT-P2-U03 (genel): PARTIAL — I01 + I02 ONLY.** **PR #1506, squash `0becb12a`.** **SCHEMA/MIGRATION: NONE. OBJECT-SCOPE: UNCHANGED. FINANCIAL AUTHORITY: UNCHANGED. ADMIN WORKFLOW: UNCHANGED. FILE STORAGE: UNCHANGED.** **NEXT UNIT: OWNER-GATED/NOT AUTO-STARTED.**
+
+### 29.9 U03-I02 Self-Check
+
+Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; POL-D/BP-06 enforcement'ının TAMAMLANDIĞINI iddia ETMEZ; `CLIENT-P2-U03-I03`'ü BAŞLATMAZ; messages/PoA/notifications yüzeylerine dokunmaz veya bunları CLOSED İLAN ETMEZ; client-safe rejection-reason contract SEÇMEZ veya YETKİLENDİRMEZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; M4 live migration veya OF01 migration gate'ine dokunmaz (ayrı, operasyonel bir bulgudur, bu CLIENT docs-only kayıtla canonicalize EDİLMEZ); session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ; §5/§6/§8.A/§8.B/§11–§28 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ (implementasyon zaten PR #1506 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL FIELD-VISIBILITY SURFACES CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
