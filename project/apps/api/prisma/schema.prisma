@@ -5375,6 +5375,15 @@ model AuditLog {
   description String?
   metadata    Json?
 
+  // CAP-09A Audit Attribution Foundation (additive, nullable, index yok — bu slice'ta yalnız kolon eklenir)
+  actorType      String? // HUMAN, SYSTEM, EXTERNAL, vb. (audit-types.ts AuditActorType)
+  decisionResult String? // ALLOWED, DENIED, ERROR, vb. (audit-types.ts AuditDecisionResult)
+  reasonCode     String? // Karar/aksiyon gerekçe kodu (serbest metin değil, kod)
+  correlationId  String? // İlişkili işlem zinciri kimliği
+  requestId      String? // HTTP request kimliği (RequestIdMiddleware)
+  policyRef      String? // Uygulanan policy/kural referansı
+  policyVersion  String? // policyRef'in versiyonu
+
   createdAt DateTime @default(now())
 
   @@index([tenantId])

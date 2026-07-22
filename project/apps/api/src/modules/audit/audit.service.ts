@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { projectAuditLogSafe } from './audit-safe-projection';
+import { AuditActorType, AuditDecisionResult } from './audit-types';
 
 export interface AuditLogInput {
   tenantId: string;
@@ -16,6 +17,14 @@ export interface AuditLogInput {
   newValues?: Record<string, any>;
   description?: string;
   metadata?: Record<string, any>;
+  // CAP-09A Audit Attribution Foundation (additive, opsiyonel — mevcut çağıranlar etkilenmez)
+  actorType?: AuditActorType;
+  decisionResult?: AuditDecisionResult;
+  reasonCode?: string;
+  correlationId?: string;
+  requestId?: string;
+  policyRef?: string;
+  policyVersion?: string;
 }
 
 @Injectable()
@@ -40,6 +49,13 @@ export class AuditService {
           newValues: input.newValues,
           description: input.description,
           metadata: input.metadata,
+          actorType: input.actorType,
+          decisionResult: input.decisionResult,
+          reasonCode: input.reasonCode,
+          correlationId: input.correlationId,
+          requestId: input.requestId,
+          policyRef: input.policyRef,
+          policyVersion: input.policyVersion,
         },
       });
     } catch (error) {
@@ -71,6 +87,13 @@ export class AuditService {
         newValues: input.newValues,
         description: input.description,
         metadata: input.metadata,
+        actorType: input.actorType,
+        decisionResult: input.decisionResult,
+        reasonCode: input.reasonCode,
+        correlationId: input.correlationId,
+        requestId: input.requestId,
+        policyRef: input.policyRef,
+        policyVersion: input.policyVersion,
       },
     });
   }
