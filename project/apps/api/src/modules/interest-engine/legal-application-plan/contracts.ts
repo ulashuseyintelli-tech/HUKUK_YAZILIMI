@@ -172,6 +172,7 @@ export interface PlannedLegalApplication {
   readonly sourceLineageSetRef: SourceLineageSetRef;
   readonly bucketContextKey: BucketContextKey;
   readonly bucketInstanceId: BucketInstanceId;
+  readonly priorityRank: number;
   readonly sequence: number;
   readonly appliedAmountMinor: AppliedAmountMinor;
   readonly bucketBeforeMinor: BucketBalanceMinor;
@@ -193,9 +194,15 @@ export interface HeldRemainder {
 export interface LegalApplicationPlan {
   readonly direction: LegalApplicationDirection;
   readonly planFingerprint: PlanFingerprint;
+  readonly tenantId: TenantId;
+  readonly caseId: CaseId;
+  readonly collectionId: CollectionId;
+  readonly currency: CurrencyCode;
+  readonly minorUnit: MinorUnit;
   readonly snapshotRef: SnapshotRef;
   readonly snapshotHash: SnapshotHash;
   readonly sourceVersionSetHash: SourceVersionSetHash;
+  readonly historyBoundaryRef: HistoryBoundaryRef;
   readonly applicationEffectiveDate: EffectiveDate;
   readonly receiptAmountMinor: ReceiptAmountMinor;
   readonly appliedAmountMinor: AppliedAmountMinor;
