@@ -11,6 +11,7 @@ import {
   ServiceOccurrenceType,
   ServiceOccurrenceTimePrecision,
   ServiceOccurrenceServiceDateRole,
+  ServiceOccurrenceRegimeCode,
   TebligatAddressType,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
@@ -187,7 +188,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
   it("TEST-03: DIRECT_DELIVERY occurrence oluşturulabilir", async () => {
     const fx = await buildFixture("t03");
     const result = await service.createOccurrence(
-      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY }) as any,
+      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
     );
     expect(result.occurrence.addressTypeAtOccurrence).toBe(TebligatAddressType.BILINEN);
     expect(result.occurrence.serviceDateRole).toBe(ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY);
@@ -200,6 +201,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
       baseCommand(fx, {
         sourceCode: "MUHTARLIGA_BIRAKILDI",
         serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY,
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_1,
       }) as any,
     );
     expect(result.occurrence.serviceDateRole).toBe(ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY);
@@ -213,6 +215,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
         addressTypeAtOccurrence: TebligatAddressType.MERNIS,
         sourceCode: "ILANEN_TAMAMLANDI",
         serviceDateRole: ServiceOccurrenceServiceDateRole.PUBLICATION,
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.PUBLICATION,
       }) as any,
     );
     expect(result.occurrence.serviceDateRole).toBe(ServiceOccurrenceServiceDateRole.PUBLICATION);
@@ -222,7 +225,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
   it("TEST-06: immutable facts (addressTypeAtOccurrence/serviceDateRole) update edilemez", async () => {
     const fx = await buildFixture("t06");
     const result = await service.createOccurrence(
-      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY }) as any,
+      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
     );
 
     await expect(
@@ -253,7 +256,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
   it("TEST-08: bir occurrence birden fazla snapshot'a bağlanabilir", async () => {
     const fx = await buildFixture("t08");
     const occ = await service.createOccurrence(
-      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY }) as any,
+      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
     );
 
     const snap1 = await prisma.legalDeadlineSnapshot.create({
@@ -273,7 +276,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
     const fxA = await buildFixture("t09a");
     const fxB = await buildFixture("t09b");
     const occA = await service.createOccurrence(
-      baseCommand(fxA, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY }) as any,
+      baseCommand(fxA, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
     );
 
     await expect(
@@ -288,7 +291,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
     const fx = await buildFixture("t10");
     const otherTebligat = await createSecondTebligat(fx);
     const occ = await service.createOccurrence(
-      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY }) as any,
+      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
     );
 
     await expect(

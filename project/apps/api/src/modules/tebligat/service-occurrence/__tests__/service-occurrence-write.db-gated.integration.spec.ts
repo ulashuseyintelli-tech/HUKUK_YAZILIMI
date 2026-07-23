@@ -3,7 +3,7 @@
  * Unit testler (service-occurrence.service.spec.ts) Prisma'yı mock'lar; bu dosya gerçek bir Postgres
  * üzerinde tenant-isolation, idempotency (STRONG_SOURCE_HASH) ve supersede concurrency'sini kanıtlar.
  */
-import { PrismaClient, ServiceOccurrenceTimePrecision } from "@prisma/client";
+import { PrismaClient, ServiceOccurrenceTimePrecision, ServiceOccurrenceServiceDateRole, ServiceOccurrenceRegimeCode } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { resolveTestDatabaseUrl } from "../../../../../test/test-db-env";
 import { ServiceOccurrenceService } from "../service-occurrence.service";
@@ -295,5 +295,100 @@ describeWithDisposableDb("ServiceOccurrenceService — disposable DB (write-side
 
     const snapshotCount = await prisma.legalDeadlineSnapshot.count({ where: { tenantId: fx.tenantId } });
     expect(snapshotCount).toBe(0);
+  });
+
+  // DEBTOR-OF01-HISTORY-P04-A1-R1: serviceRegimeCode — enum/kolon/CHECK/immutability disposable-DB kanıtı.
+  describe("serviceRegimeCode (DEBTOR-OF01-HISTORY-P04-A1-R1)", () => {
+    // TEST-09
+    it("TEST-09: yeni enum ve kolon migration ile oluşur — gerçek Postgres'te create+read çalışır", async () => {
+      const fx = await buildFixture("regime-code-column-exists");
+      const result = await service.createOccurrence(
+        baseCreateCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_1 }),
+      );
+
+      const row = await prisma.serviceOccurrence.findUniqueOrThrow({ where: { id: result.occurrence.id } });
+      expect((row as any).serviceRegimeCode).toBe("TK_21_1");
+    });
+
+    // TEST-13
+    it("TEST-13: TK_20 occurrence doğru immutable rejimle saklanır", async () => {
+      const fx = await buildFixture("regime-code-tk20");
+      const result = await service.createOccurrence(
+        baseCreateCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20 }),
+      );
+
+      const row = await prisma.serviceOccurrence.findUniqueOrThrow({ where: { id: result.occurrence.id } });
+      expect((row as any).serviceRegimeCode).toBe("TK_20");
+      expect(row.serviceDateRole).toBe("MUHTAR_DELIVERY");
+    });
+
+    // TEST-14
+    it("TEST-14: TK_21_1 ve TK_21_2 ayrı satır değerleri olarak saklanır (aynı MUHTAR_DELIVERY serviceDateRole altında)", async () => {
+      const fxA = await buildFixture("regime-code-tk211");
+      const fxB = await buildFixture("regime-code-tk212");
+
+      const resultA = await service.createOccurrence(
+        baseCreateCommand(fxA, { serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_1 }),
+      );
+      const resultB = await service.createOccurrence(
+        baseCreateCommand(fxB, { serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_2 }),
+      );
+
+      const rowA = await prisma.serviceOccurrence.findUniqueOrThrow({ where: { id: resultA.occurrence.id } });
+      const rowB = await prisma.serviceOccurrence.findUniqueOrThrow({ where: { id: resultB.occurrence.id } });
+      expect((rowA as any).serviceRegimeCode).toBe("TK_21_1");
+      expect((rowB as any).serviceRegimeCode).toBe("TK_21_2");
+    });
+
+    // TEST-10
+    it("TEST-10: non-legacy occurrence serviceRegimeCode olmadan (serviceDateRole doluyken) DB CHECK ile reddedilir", async () => {
+      const fx = await buildFixture("regime-code-check-reject");
+      const client = await prisma.tebligat.findUniqueOrThrow({ where: { id: fx.tebligatId } });
+
+      // Servis validasyonunu BYPASS ederek doğrudan raw insert — DB CHECK constraint'in KENDİSİNİ
+      // (occ_p04a1r1_regime_code_pairs_with_date_role_check) kanıtlamak için (owner brief §18 TEST-10:
+      // disposable Postgres testi, yalnız app-level validasyon değil).
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO "ServiceOccurrence"
+            ("id","tenantId","caseId","caseDebtorId","sourceTebligatId","occurrenceType","sourceSystemCode","sourceCode",
+             "occurredOn","timePrecision","addressTypeAtOccurrence","serviceDateRole","serviceRegimeCode","recordedBySystem")
+          VALUES
+            (gen_random_uuid()::text, ${fx.tenantId}, ${client.caseId}, ${fx.caseDebtorId}, ${fx.tebligatId},
+             'POSTAL_DELIVERY_RESULT', 'TEST_HARNESS', 'TESLIM_EDILDI',
+             '2026-01-10'::date, 'DATE_ONLY', 'BILINEN', 'DIRECT_DELIVERY', NULL, 'TEST_HARNESS')
+        `,
+      ).rejects.toThrow(/occ_p04a1r1_regime_code_pairs_with_date_role_check/);
+    });
+
+    // TEST-11
+    it("TEST-11: LEGACY_BASELINE serviceRegimeCode=NULL ile kabul edilir (CHECK'ten muaf)", async () => {
+      const fx = await buildFixture("regime-code-legacy-baseline");
+      const client = await prisma.tebligat.findUniqueOrThrow({ where: { id: fx.tebligatId } });
+
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO "ServiceOccurrence"
+            ("id","tenantId","caseId","caseDebtorId","sourceTebligatId","occurrenceType","sourceSystemCode","sourceCode",
+             "occurredOn","timePrecision","serviceRegimeCode","recordedBySystem","provenanceStatus")
+          VALUES
+            (gen_random_uuid()::text, ${fx.tenantId}, ${client.caseId}, ${fx.caseDebtorId}, ${fx.tebligatId},
+             'LEGACY_BASELINE', 'LEGACY_MIGRATION', 'LEGACY',
+             '2026-01-10'::date, 'DATE_ONLY', NULL, 'LEGACY_MIGRATION', 'LEGACY_CURRENT_STATE')
+        `,
+      ).resolves.toBeDefined();
+    });
+
+    // TEST-12
+    it("TEST-12: serviceRegimeCode factual update immutability trigger ile reddedilir", async () => {
+      const fx = await buildFixture("regime-code-immutable");
+      const result = await service.createOccurrence(
+        baseCreateCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_1 }),
+      );
+
+      await expect(
+        prisma.$executeRaw`UPDATE "ServiceOccurrence" SET "serviceRegimeCode" = 'TK_20' WHERE "id" = ${result.occurrence.id}`,
+      ).rejects.toThrow(/service_occurrence_immutable_violation/);
+    });
   });
 });

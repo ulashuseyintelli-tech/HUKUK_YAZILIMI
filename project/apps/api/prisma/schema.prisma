@@ -2960,6 +2960,18 @@ model ServiceOccurrence {
   addressTypeAtOccurrence TebligatAddressType?
   serviceDateRole         ServiceOccurrenceServiceDateRole?
 
+  // DEBTOR-OF01-HISTORY-P04-A1-R1: hangi hukukî tebliğ REJİMİ uygulanacak — serviceDateRole'den
+  // (fiziksel/tarihsel olay rolü, "ne oldu") AYRI bir kavram ("hangi hukukî hesap kuralı
+  // uygulanacak"). serviceDateRole=MUHTAR_DELIVERY üç ayrı rejimi (TK_21_1/TK_21_2/TK_20)
+  // birbirine karıştırdığı için (P04-B'nin kendi STOP-02 bulgusu) ayrı, kendi başına bir alan
+  // olarak eklenmiştir; serviceDateRole'ün YERİNE GEÇMEZ, onunla BİRLİKTE var olur.
+  // determinePttResultAction()'ın ZATEN doğru hesapladığı tk21Type/rejim sonucundan (aynı
+  // transaction, aynı çağrı) türetilir — ikinci bir hukuki yorumlama YAPILMAZ (bkz.
+  // tebligat.service.ts determinePttResultAction). Non-legacy occurrence'larda serviceDateRole
+  // dolu olduğunda bu alan da DOLU olmalıdır (bkz. migration CHECK); serviceDateRole null
+  // olduğunda (hiçbir teslim/tevdi mekanizması gerçekleşmedi) bu alan da null kalır.
+  serviceRegimeCode ServiceOccurrenceRegimeCode?
+
   recordedAt DateTime  @default(now()) // REQUIRED / SYSTEM UTC
   receivedAt DateTime? // OPTIONAL / yalnız gerçek dış-sistem entegrasyonunda anlamlı
 
@@ -3009,6 +3021,24 @@ enum ServiceOccurrenceServiceDateRole {
   MUHTAR_DELIVERY // Muhtarlığa/zabıtaya tevdi (MUHTARLIGA_BIRAKILDI veya bilinen adreste IMTINA)
   PUBLICATION // İlan yoluyla tebliğ (TK m.31 ILANEN kanalı — recordPttResult bu rolü ÜRETMEZ,
   // yalnız ilanen kanalının kendi tamamlanma yolu için rezerve edilmiştir)
+}
+
+// DEBTOR-OF01-HISTORY-P04-A1-R1: hangi hukukî tebliğ rejimi uygulanacak (owner P04-B STOP-02
+// remediation'ı). serviceDateRole=MUHTAR_DELIVERY'nin kendi içinde ayırt EDEMEDİĞİ üç ayrı rejim
+// (TK_21_1/TK_21_2/TK_20) burada AÇIKÇA ayrılır. determinePttResultAction()'ın halihazırda
+// hesapladığı tk21Type ile birebir aynı repository-truth kaynağından türetilir — yeni bir
+// taksonomi İCAT EDİLMEZ. AUTHORIZED_RECIPIENT_DELIVERY gibi bir ayrı sınıf BİLİNÇLİ OLARAK
+// eklenmedi: repository'de AYNI_KONUTTA_TESLIM/ISYERINDE_TESLIM, TESLIM_EDILDI ile tamamen aynı
+// şekilde (aynı status/nextAction, ayrı bir tk21Type üretmeden) işlenir — mevcut kodda gerçekten
+// ayrıştırılan bir sınıf olmadığı için speculative bir değer eklenmedi (owner brief §6).
+enum ServiceOccurrenceRegimeCode {
+  DIRECT_DELIVERY // Doğrudan teslim (TESLIM_EDILDI/AYNI_KONUTTA_TESLIM/ISYERINDE_TESLIM) — +gün YOK
+  TK_21_1 // Bilinen adreste imtina veya muhtarlığa bırakma — +gün YOK
+  TK_21_2 // MERNİS adresi nedeniyle muhtarlığa bırakma — +gün YOK
+  TK_20 // Muvakkaten başka yere gitme, operatörün AÇIKÇA seçtiği override — ayrı hukukî rejim,
+  // kendi +15 gün kuralı LegalDeadlineService.determineLegalServiceDate()'te zaten var
+  PUBLICATION // İlan yoluyla tebliğ (TK m.31) — recordPttResult bu değeri bugün ÜRETMEZ (P04-A1
+  // bulgusu), yalnız ilanen kanalının gelecekteki kendi tamamlanma yolu için rezerve edilmiştir
 }
 
 enum ServiceOccurrenceType {
