@@ -1640,3 +1640,85 @@ Bu bölüm, POL-D (§21) / BP-06 (§23) politikalarının portal PoA yüzeyindek
 ### 31.9 U03-I04 Self-Check
 
 Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; POL-D/BP-06 enforcement'ının TAMAMLANDIĞINI iddia ETMEZ; `CLIENT-P2-U03-I05`'i BAŞLATMAZ; notifications yüzeyine dokunmaz veya CLOSED İLAN ETMEZ; PoA download/storage/lifecycle authority'si ÜRETMEZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; genel Phase 2 roadmap'i ÜRETMEZ; §5/§6/§8.A/§8.B/§11–§30 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ (implementasyon zaten PR #1529 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ ALL FIELD-VISIBILITY SURFACES CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 32. CLIENT Phase 2 U03-I05 — Portal Notification Field-Visibility Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, POL-D (§21) / BP-06 (§23) politikalarının portal notification yüzeyindeki enforcement diliminin (`CLIENT-P2-U03-I05`) teknik kapanış kaydıdır (`decision-log.md` CLIENT-P2-U03-I05-GOV). §5, §6, §8.A, §8.B, §11–§31 substantive hükümlerini DEĞİŞTİRMEZ. §31.7'nin "`CLIENT-P2-U03-I05`: NOT AUTHORIZED" ifadesi bu kayıtla owner tarafından ayrıca yetkilendirilip kapatılmıştır — §31'in kendi metni DEĞİŞTİRİLMEMİŞTİR. **`CLIENT-P2-U03-ANALYZE`'ın (18 bölüm) tespit ettiği beş somut field-visibility yüzeyi (case-detail/document/message/PoA/notification) bu kayıtla TAMAMLANMIŞTIR. Ancak §32.7'de kaydedilen bir residual nedeniyle CLIENT-P2-U03 (genel POL-D/BP-06 enforcement programı) BU KAYITLA CLOSED İLAN EDİLMEZ.**
+
+### 32.1 Technical Lineage
+
+**IMPLEMENTATION:** PR #1538 (task: `CLIENT-P2-U03-I05`, squash SHA `bb54478aee885a96cfc654af8ab1ec31a3ab9015`, merged `origin/main` 2026-07-22). Bu birim, §31.7'nin (`CLIENT-P2-U03-I04`) açık bıraktığı "NOTIFICATION FAIL-CLOSED PROJECTION: OPEN/NOT STARTED" bulgusunun bounded implementasyonudur; `getNotifications()`'ın select'siz `findMany()`'ını hedef alır. **Consumer FOUND:** `apps/web/src/app/portal/layout.tsx`'in bell-icon dropdown'ı gerçekten `/api/portal/notifications`'ı çağırır, kendi `interface Notification` tanımına sahiptir.
+
+### 32.2 Selected Enforcement Model
+
+**PRISMA-LEVEL EXPLICIT SELECT — §28.2/§29.2/§30.2/§31.2 ile aynı desen.** `PortalService.getNotifications()`'ın select'siz `findMany()`'ı, tek bir typed sabit (`PORTAL_NOTIFICATION_CLIENT_SELECT`) ile değiştirildi. Yeni DTO sınıfı, class-transformer veya global interceptor **ÜRETİLMEDİ**. **Brief'ten sapma YOK** — bu birimde owner talimatının taslak alan listesi hem şemaya hem gerçek consumer'ın kendi `interface Notification`'ına birebir uydu. Web production sayfası zaten yalnız approved alanları tüketiyordu; production kodda değişiklik gerekmedi, yalnız focused test eklendi.
+
+**linkUrl güvenlik incelemesi (brief'in açık talebi üzerine yapıldı):** consumer tarafında yalnız Next.js client-side `router.push(n.linkUrl)` ile tüketilir; producer tarafında (`createNotification()`) TEK çağrı yeri (`sendMessageFromOffice()`) bu alanı set eder ve değeri her zaman hardcoded literal `"/portal/messages"`dir — kullanıcı girdisinden türetilmez. Güvenli, STOP condition tetiklenmedi.
+
+### 32.3 Approved Client Response Contract
+
+`id, type, title, message, linkUrl, isRead, createdAt`.
+
+### 32.4 Explicitly Omitted Field Families
+
+`clientId`/`caseId` (authorization context, presentation data DEĞİL) · `readAt` (mevcut client presentation için gerekmiyor). Hepsi **UNKNOWN/UNCLASSIFIED veya INTERNAL-ONLY → varsayılan OMIT** ilkesiyle dışarıda.
+
+### 32.5 Staff-Facing/Internal Boundary Preservation
+
+`getUnreadCount()`/`markAsRead()`/`markAllAsRead()`/`createNotification()` **DEĞİŞMEDİ** — kendi raw, select'siz erişimlerini korur. `createNotification()`'ın write-contract'ı DEĞİŞMEDİ. **CLIENT FIELD OMISSION ≠ DATABASE FIELD REMOVAL. CLIENT FIELD OMISSION ≠ NOTIFICATION PRODUCER/LINK CONTRACT CHANGE.**
+
+### 32.6 Non-Equations / Precision
+
+`SAME-CLIENT FIELD EXPOSURE ≠ CROSS-TENANT INCIDENT` · `FIELD VISIBILITY ≠ OBJECT AUTHORIZATION` · `EXPLICIT SELECT = FAIL-CLOSED FIELD PROJECTION` (bu birimin kendi amacı: gelecekte modele eklenecek bilinmeyen bir alan artık otomatik olarak client response'una GİRMEZ) · `TECHNICAL I05 CLOSED ≠ CLIENT-P2-U03 FULLY CLOSED`. **Doğru ifade: "PORTAL NOTIFICATION BROAD RESPONSE / FUTURE-FIELD AUTO-LEAK RISK CONTAINED."**
+
+### 32.7 CLIENT-P2-U03 Program-Wide Residual Audit (owner talimatı üzerine, taze yapıldı)
+
+Owner, I05-GOV talimatında §29–§31'in ve ilgili risk/synthesis kayıtlarının taze kontrol edilmesini ve I01–I05 dışında açık bir U03 field-visibility residual'i varsa U03'ün CLOSED ilan edilmemesini talep etmiştir. Bu denetim §28.7/§29.7/§30.7/§31.7'nin tam metni fresh `origin/main` üzerinden okunarak yapılmıştır.
+
+**Bulgu — BLOCKING residual (U03'ün kendi orijinal analiz kapsamının parçası, hiç kapatılmamış):**
+
+**OWNER-DECISION-REQUIRED CASE FIELDS** — `Case.muvekkilNotu`, `CaseDebtor` debtor-adjacent alanlar, `Due` vergi alanları (`CLIENT-P2-U03-ANALYZE`'ın madde 8'i). Bu kalem §28.7'de (I01 kapanışı) açıkça `OPEN` olarak kaydedilmiş, ancak §29.7/§30.7/§31.7'nin hiçbirine taşınmamıştır — yani hiçbir zaman ayrı bir I-birimine atanmamış, owner tarafından karara bağlanmamış ve hiçbir kayıtta "çözüldü" veya "ayrı programa ertelendi" DENMEMİŞTİR. Bu, `CLIENT-P2-U03-ANALYZE`'ın kendi orijinal kapsamının (case-detail field-visibility analizinin bir alt-parçası) bugün hâlâ sessizce açık kalan bir dilimidir. **Bu residual CLIENT-P2-U03'ün CLOSED ilanını BLOKLAR.**
+
+**Bulgu — NON-BLOCKING, ayrı gelecek programlara açıkça ertelenmiş kalemler (U03'ün kendi kapanışını bloklamaz):**
+
+Aşağıdaki kalemler her kendi biriminin metninde AÇIKÇA "ayrı, owner-gated contract/karar gerekir" dille ertelenmiştir — U03'ün ölçülebilir teslim kapsamının (I01–I05, beş somut field-visibility yüzeyi) bir parçası DEĞİLDİR, kendi başlarına ayrı, henüz yetkilendirilmemiş gelecek programlardır:
+
+```text
+CURATED CLIENT TIMELINE:
+NOT SELECTED (§28.7) — case-detail lifecycle'ın yerine curated
+sunum; I01'in kendi metninde "ne yetkilendirilir ne yasaklanır" dendi.
+
+CLIENT-SAFE DOCUMENT REJECTION-REASON CONTRACT:
+NOT SELECTED (§29.7) — reviewNote'un yerine geçecek client-safe
+ret-gerekçesi; I02'nin kendi metninde ayrı contract gerektiği belirtildi.
+
+MESSAGE ACTOR/REPRESENTATION MODEL REOPEN,
+MESSAGE RETENTION, MESSAGE ENCRYPTION,
+CLIENT-SAFE CASE-LINK PRESENTATION,
+ADMIN MESSAGE FIELD VISIBILITY:
+ÇÖZÜLMÜŞ SAYILMAZ (§30.7) — I03'ün kendi metninde bunların field-
+visibility'nin ÖTESİNDE ayrı kategoriler (actor model/retention/
+encryption/admin-scope) olduğu ve reopen edilmediği belirtildi.
+
+POA DOCUMENT DOWNLOAD/VIEW CONTRACT,
+POA LIFECYCLE AUTHORITY:
+ÇÖZÜLMÜŞ SAYILMAZ (§31.7) — I04'ün kendi metninde "İleride PoA
+belgesi client'a sunulacaksa ayrı owner-gated contract gerekir"
+dendi; lifecycle authority zaten hiç CLIENT field-visibility
+kapsamında DEĞİLDİ.
+
+NOTIFICATION FAIL-CLOSED PROJECTION:
+BU KAYITLA (I05) ÇÖZÜLDÜ — mekanizma artık explicit select
+kullandığından, modele eklenecek gelecekteki bilinmeyen bir alan
+otomatik olarak client response'una GİRMEZ.
+```
+
+**Sonuç:** U03'ün beş numaralı teknik dilimi (I01–I05) tamamlanmıştır. Ancak `CLIENT-P2-U03-ANALYZE`'ın kendi kapsamından kaynaklanan OWNER-DECISION-REQUIRED CASE FIELDS kalemi hiçbir zaman ayrı bir birime atanmadan veya karara bağlanmadan açık kalmıştır. Bu nedenle **CLIENT-P2-U03: PARTIAL** statüsü korunur; CLOSED ilan edilmesi için ya bu kalem ayrı bir `CLIENT-P2-U03-I06` (veya eşdeğer) birimi olarak ele alınmalı ya da owner bu alanlar için doğrudan bir CLIENT-SAFE/OMIT kararı vermelidir.
+
+### 32.8 Final Unit Status
+
+**CLIENT-P2-U03-I05: TECHNICAL + GOVERNANCE CLOSED/CANONICAL.** **CLIENT-P2-U03-I01/I02/I03/I04/I05 (beş teknik dilim): TÜMÜ CLOSED/CANONICAL.** **CLIENT-P2-U03 (genel program): PARTIAL — §32.7'deki OWNER-DECISION-REQUIRED CASE FIELDS residual'i nedeniyle CLOSED İLAN EDİLEMEZ.** **PR #1538, squash `bb54478a`.** **SCHEMA/MIGRATION: NONE. OBJECT-SCOPE: UNCHANGED. FINANCIAL AUTHORITY: UNCHANGED.** **NEXT: OWNER-GATED/NOT AUTO-STARTED** — `CLIENT-P2-U03-I06` (case fields residual) veya owner'ın doğrudan bu alanlar için karar vermesi.
+
+### 32.9 U03-I05 Self-Check
+
+Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ (residual nedeniyle PARTIAL korunur); yeni teknik unit BAŞLATMAZ; yeni runtime/code/test/CI/schema/migration değişikliği YAPMAZ; notification producer/link contract'ını GENİŞLETMEZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; §32.7'de listelenen non-blocking kalemleri (curated timeline, rejection-reason contract, message actor model, PoA download contract) SEÇMEZ veya YETKİLENDİRMEZ; session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; §5/§6/§8.A/§8.B/§11–§31 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ (implementasyon zaten PR #1538 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ PROGRAM CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
