@@ -66,6 +66,7 @@ export interface ClaimItemHumanDocumentCreateInput {
   readonly caseId: string;
   readonly data: Record<string, unknown>;
   readonly envelope: CanonicalWriteEnvelopeV1<'ClaimItem'>;
+  readonly sourceSlot?: string;
 }
 
 export interface ClaimItemBackfillSourceCreateInput {
@@ -196,7 +197,8 @@ export class ClaimItemSourceIntegrityGuard {
 
     this.assertPayloadScope(input.tenantId, input.caseId, input.data);
     const sourceSlot = this.normalizeSourceSlot(
-      `${String(input.data.sourceDocumentType ?? 'UNSPECIFIED')}:${String(input.data.itemType ?? 'UNSPECIFIED')}`,
+      input.sourceSlot ??
+        `${String(input.data.sourceDocumentType ?? 'UNSPECIFIED')}:${String(input.data.itemType ?? 'UNSPECIFIED')}`,
     );
     const context = this.context({
       authority: 'HUMAN_DOCUMENT',

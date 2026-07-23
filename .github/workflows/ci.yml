@@ -110,6 +110,29 @@ jobs:
           npx jest --ci --forceExit --runInBand --runTestsByPath \
             src/modules/claim-item/__tests__/claim-item-formation-intent.db-gated.integration.spec.ts
         working-directory: project
+      # RCV-CLAIM-FORM-P02-S08-I03: the finalizer remains dormant/default-disabled.
+      # These gates prove exact-version revalidation, atomic rollback and
+      # concurrent idempotency without adding a production call-site.
+      - name: RCV Claim Formation I03 finalizer boundary tests
+        run: |
+          cd apps/api
+          for f in src/modules/claim-item/__tests__/claim-item-formation-finalizer.static.spec.ts; do
+            test -f "$f" || { echo "MISSING RCV Claim Formation I03 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/claim-item/__tests__/claim-item-formation-finalizer.static.spec.ts
+        working-directory: project
+      - name: RCV Claim Formation I03 transactional disposable DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/claim-item/__tests__/claim-item-formation-finalizer.db-gated.integration.spec.ts || \
+            { echo "MISSING RCV Claim Formation I03 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/claim-item/__tests__/claim-item-formation-finalizer.db-gated.integration.spec.ts
+        working-directory: project
       - name: Tests
         run: |
           cd apps/api

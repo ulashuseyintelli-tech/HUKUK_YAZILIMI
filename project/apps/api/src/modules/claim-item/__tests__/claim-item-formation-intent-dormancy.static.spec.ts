@@ -4,6 +4,10 @@ import * as path from 'node:path';
 const API_ROOT = path.resolve(__dirname, '../../../..');
 const CLAIM_ITEM_ROOT = path.join(API_ROOT, 'src/modules/claim-item');
 const PACKAGE_ROOT = path.join(CLAIM_ITEM_ROOT, 'formation-intent');
+const DORMANT_FINALIZER = path.join(
+  CLAIM_ITEM_ROOT,
+  'formation-finalizer/transactional-claim-item-formation-finalizer.service.ts',
+);
 
 function read(relativePath: string): string {
   return fs.readFileSync(path.join(API_ROOT, relativePath), 'utf8');
@@ -41,6 +45,7 @@ describe('RCV-CLAIM-FORM-P02-S08-I02B dormancy and boundary guard', () => {
 
     const importers = productionTypeScriptFiles(path.join(API_ROOT, 'src'))
       .filter((file) => !file.startsWith(PACKAGE_ROOT))
+      .filter((file) => path.resolve(file) !== path.resolve(DORMANT_FINALIZER))
       .filter((file) => fs.readFileSync(file, 'utf8').includes('formation-intent'))
       .map((file) => path.relative(API_ROOT, file));
     expect(importers).toEqual([]);

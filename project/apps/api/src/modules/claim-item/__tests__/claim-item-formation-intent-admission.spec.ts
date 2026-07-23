@@ -67,6 +67,7 @@ function source(overrides: Partial<ExactCaseDocumentSourceV1> = {}): ExactCaseDo
     fingerprintVersion: 'DocumentFingerprintV1',
     fingerprintVerified: true,
     documentType: 'CONTRACT',
+    claimItemDocumentSourceType: 'SOZLESME',
     documentClassificationVersion: 'DocumentClassificationV1',
     lifecycleStatus: 'ACTIVE',
     availabilityStatus: 'AVAILABLE',
@@ -107,6 +108,16 @@ function legalBasis(
     legalReviewRequired: false,
     resolutionContractVersion: 'LegalBasisResolutionV1',
     resolutionHash: HASH('legal-basis-resolution'),
+    claimItemProjection: {
+      itemType: 'PRINCIPAL',
+      interestAccrualStatus: 'NO_INTEREST',
+      interestType: null,
+      interestRate: null,
+      interestStartDate: null,
+      interestStartDateProvenance: null,
+      isAllDebtorsLiable: false,
+      liableDebtorIds: ['debtor:opaque-1'],
+    },
     ...overrides,
   };
 }
