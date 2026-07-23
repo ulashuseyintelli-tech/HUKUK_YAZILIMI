@@ -2175,6 +2175,33 @@ contents, intent/snapshot persistence, client cutover, Collection/shared-boundar
 data değişikliği yoktur. Next yalnız `RCV-CLAIM-FORM-P02-S08-D01-FINAL-RECONCILE — SEPARATE OWNER
 GO REQUIRED`dır.
 
+## 23.23. TPA-04C-I03 closure / I04 plan-fingerprint contract — 2026-07-23
+
+TPA-04C-I03, PR #1535 / squash
+`719e6898a6e967ba824a69aeadbf716e55c3056d` ve exact four-file implementation ile
+`CLOSED / CANONICAL EVIDENCE`dır. I03 `24/24`, I01-I03 `137/137`, property ve deterministic
+ordering/repetition kontrolleri; production/strict type-check, API build, exact-file ESLint ve CI
+`4/4 PASS`tır. Runtime ve legacy allocator unchanged'dır.
+
+ADR-014 OD-TPA-04C-37..56, `RCV-CAS/v1`dan bağımsız `RCV-LAP/v1` plan-fingerprint
+protocolünü ratifiye eder. Preimage exact
+`UTF8("RCV-LAP/v1") || 0x00 || canonicalPlanIdentityBytes`; output
+`rcv-legal-application-plan:v1:sha256:<64-lowercase-hex>`dir. Exact versioned schema, property
+order, unsigned minor-unit strings, JSON-integer priority, NFC/UTF-8 policy ve I03 application
+sequence'i authority'dir. Generic object/key ordering authority değildir.
+
+Identity tenant/case/Collection receipt context'i ile snapshot evidence set'ini bağlar. `NONE`,
+zero-remainder için yalnız fingerprint absence sentinel'dır. Attribution optional,
+non-authoritative ve fingerprint-excluded; detailed lineage yoksa boş olabilir, fakat
+`sourceLineageSetRef` application'da required kalır. Persistence ID'leri, replay identifiers,
+actor ve transport/transaction provenance fingerprint'e katılmaz. Conservation veya identity
+inconsistency fail-closed typed error üretir ve fingerprint dönmez.
+
+I04 yalnız bu docs amendment merge'i, fresh collision check ve ayrı owner `GO-IMPLEMENT`
+sonrasında eligible olabilir. Şu anda `NEXT / NOT STARTED / NOT AUTHORIZED`; I05-I07 de
+yetkisizdir. Runtime writer `NOT IMPLEMENTED / NOT ACTIVATED`; ACT-28 ve REC-AUTH-011/012
+`OPEN`; synthetic corpus writer/evidence/cutover için `BLOCKING` kalır.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
