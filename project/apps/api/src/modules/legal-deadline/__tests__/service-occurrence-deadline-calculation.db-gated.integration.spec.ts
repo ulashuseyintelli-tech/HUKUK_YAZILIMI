@@ -5,7 +5,11 @@
  * zincirinin gerçek tabloda beklendiği gibi oluştuğunu kanıtlar. Fixture-building convention
  * service-occurrence-write.db-gated.integration.spec.ts'ten izlenir.
  */
-import { PrismaClient, ServiceOccurrenceServiceDateRole } from "@prisma/client";
+import {
+  PrismaClient,
+  ServiceOccurrenceRegimeCode,
+  ServiceOccurrenceServiceDateRole,
+} from "@prisma/client";
 import { randomUUID } from "crypto";
 import { resolveTestDatabaseUrl } from "../../../../test/test-db-env";
 import { ServiceOccurrenceDeadlineCalculationService } from "../service-occurrence-deadline-calculation.service";
@@ -101,6 +105,7 @@ describeWithDisposableDb("ServiceOccurrenceDeadlineCalculationService — dispos
         timePrecision: "DATE_ONLY",
         addressTypeAtOccurrence: "BILINEN",
         serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY,
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY,
         recordedBySystem: "TEST_HARNESS",
         status: "ACTIVE",
         ...overrides,
@@ -245,6 +250,7 @@ describeWithDisposableDb("ServiceOccurrenceDeadlineCalculationService — dispos
 
     const brokenOccurrence = await createOccurrence(fx, {
       serviceDateRole: null,
+      serviceRegimeCode: null,
       sourceTebligatId: fx.tebligatId,
     });
 
