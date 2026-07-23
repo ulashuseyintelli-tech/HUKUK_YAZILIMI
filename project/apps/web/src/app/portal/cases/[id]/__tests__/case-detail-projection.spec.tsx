@@ -3,11 +3,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import PortalCaseDetailPage from "@/app/portal/cases/[id]/page";
 
 /**
- * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 — case-detail sayfasının, backend'in artık
- * explicit-select ile döndüğü daraltılmış response şekline uyumunu doğrular: onaylı alanlar
- * render edilir, kaldırılan description/lifecycle alanları sayfayı ÇÖKERTMEZ ve hiç render
- * edilmez, mevcut loading/404/hata davranışı DEĞİŞMEDİ. Track-A-I01: muvekkilNotu, 12-değerli
- * DebtorRole label-map (+ unexpected-value fallback), debtor lawyer name/barNo render.
+ * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 — case-detail
+ * sayfasının, backend'in artık explicit-select ile döndüğü daraltılmış response şekline
+ * uyumunu doğrular: onaylı alanlar render edilir, kaldırılan description/lifecycle alanları
+ * sayfayı ÇÖKERTMEZ ve hiç render edilmez, mevcut loading/404/hata davranışı DEĞİŞMEDİ.
+ * Track-A-I01: muvekkilNotu, 12-değerli DebtorRole label-map (+ unexpected-value fallback),
+ * debtor lawyer name/barNo render. Track-A-I02: curated `assetQuery` (4 kategori × 5 durum)
+ * render — web yalnız curated durum → Türkçe etiket eşlemesi yapar, ham AssetQueryStatus
+ * enum'unu hiç görmez.
  */
 const pushMock = vi.fn();
 const routerMock = { push: pushMock };
@@ -32,6 +35,13 @@ const APPROVED_CASE_DETAIL = {
       role: "ASIL_BORCLU",
       debtorLawyerName: "Ayşe Vekil",
       debtorLawyerBarNo: "34567",
+      assetQuery: {
+        vehicle: "FOUND",
+        realEstate: "NOT_FOUND",
+        bank: "RESULT_PENDING",
+        sgkWage: "RESULT_UNAVAILABLE",
+        lastQueryAt: "2026-06-15T10:00:00.000Z",
+      },
       debtor: { name: "Ahmet Yılmaz", type: "PERSON" },
     },
   ],
@@ -162,6 +172,90 @@ describe("Portal case detail page — CLIENT-P2-U03-I01 explicit projection", ()
     await waitFor(() => expect(screen.getByText("Test Borçlu")).toBeTruthy());
     expect(screen.queryByText(/^Av\./)).toBeNull();
     expect(screen.queryByText(/^Baro No:/)).toBeNull();
+  });
+
+  it("[2i] TRACK-A-I02: 4 kategori de (Araç/Gayrimenkul/Banka/SGK Maaşı) render edilir", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Malvarlığı Sorguları")).toBeTruthy());
+    expect(screen.getByText("Araç: Bulgu Var")).toBeTruthy();
+    expect(screen.getByText("Gayrimenkul: Bulgu Yok")).toBeTruthy();
+    expect(screen.getByText("Banka: Sonuç Bekleniyor")).toBeTruthy();
+    expect(screen.getByText("SGK Maaşı: Sonuç Şu An Belirlenemedi")).toBeTruthy();
+  });
+
+  it.each([
+    ["NOT_QUERIED", "Sorgu Yapılmadı"],
+    ["FOUND", "Bulgu Var"],
+    ["NOT_FOUND", "Bulgu Yok"],
+    ["RESULT_PENDING", "Sonuç Bekleniyor"],
+    ["RESULT_UNAVAILABLE", "Sonuç Şu An Belirlenemedi"],
+  ])("[2j-%s] TRACK-A-I02: curated durum '%s' → '%s' Türkçe etiketiyle render edilir", async (state, label) => {
+    stubFetch({
+      ok: true,
+      json: async () => ({
+        ...APPROVED_CASE_DETAIL,
+        debtors: [
+          {
+            role: "ASIL_BORCLU",
+            assetQuery: { vehicle: state, realEstate: "NOT_QUERIED", bank: "NOT_QUERIED", sgkWage: "NOT_QUERIED", lastQueryAt: null },
+            debtor: { name: "Test Borçlu", type: "PERSON" },
+          },
+        ],
+      }),
+    });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Test Borçlu")).toBeTruthy());
+    expect(screen.getByText(`Araç: ${label}`)).toBeTruthy();
+  });
+
+  it("[2k] TRACK-A-I02: lastQueryAt doluyken 'Son Malvarlığı Sorgu Güncellemesi' tam olarak bir kez render edilir", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Malvarlığı Sorguları")).toBeTruthy());
+    expect(screen.getAllByText(/Son Malvarlığı Sorgu Güncellemesi:/)).toHaveLength(1);
+  });
+
+  it("[2l] TRACK-A-I02: lastQueryAt null iken timestamp satırı hiç render edilmez", async () => {
+    stubFetch({
+      ok: true,
+      json: async () => ({
+        ...APPROVED_CASE_DETAIL,
+        debtors: [
+          {
+            role: "ASIL_BORCLU",
+            assetQuery: { vehicle: "NOT_QUERIED", realEstate: "NOT_QUERIED", bank: "NOT_QUERIED", sgkWage: "NOT_QUERIED", lastQueryAt: null },
+            debtor: { name: "Test Borçlu", type: "PERSON" },
+          },
+        ],
+      }),
+    });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Test Borçlu")).toBeTruthy());
+    expect(screen.queryByText(/Son Malvarlığı Sorgu Güncellemesi:/)).toBeNull();
+  });
+
+  it("[2m] TRACK-A-I02: ham enum string'leri (YES/UNKNOWN/ERROR) hiç render edilmez", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Malvarlığı Sorguları")).toBeTruthy());
+    expect(screen.queryByText(/^YES$/)).toBeNull();
+    expect(screen.queryByText(/^UNKNOWN$/)).toBeNull();
+    expect(screen.queryByText(/^ERROR$/)).toBeNull();
+    expect(screen.queryByText(/^PENDING$/)).toBeNull();
+  });
+
+  it("[2n] TRACK-A-I02: assetQuery yokken (I01-only fixture) sayfa ÇÖKMEZ, bölüm render edilmez", async () => {
+    stubFetch({
+      ok: true,
+      json: async () => ({
+        ...APPROVED_CASE_DETAIL,
+        debtors: [{ role: "ASIL_BORCLU", debtor: { name: "Test Borçlu", type: "PERSON" } }],
+      }),
+    });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Test Borçlu")).toBeTruthy());
+    expect(screen.queryByText("Malvarlığı Sorguları")).toBeNull();
   });
 
   it("[3] collection satırları type/amount/date ile render edilir, description sütunu YOK", async () => {

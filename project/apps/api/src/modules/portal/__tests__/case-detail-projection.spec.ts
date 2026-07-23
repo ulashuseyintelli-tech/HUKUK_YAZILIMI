@@ -1,12 +1,14 @@
 /**
- * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 — getCaseDetail() explicit projection
- * (POL-D §21/BP-06 §23; I06 ratified transparency policy §33.5).
+ * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 — getCaseDetail()
+ * explicit projection (POL-D §21/BP-06 §23; I06 ratified transparency policy §33.5).
  *
  * Yapısal kanıt Prisma çağrısındaki EXACT `select` şeklinden gelir (mock'a "fazladan alan"
  * besleyip sonra "filtrelendiğini" test etmek YANLIŞTIR — gerçek Prisma zaten select'te
  * olmayanı hiç döndürmez). Bu yüzden testler: (a) select'in tam olarak onaylı şekilde
  * olduğunu, (b) service'in Prisma'dan gelen bounded satırı OLDUĞU GİBİ döndürdüğünü (üstüne
- * bir şey eklemediğini) doğrular.
+ * bir şey eklemediğini) doğrular. TRACK-A-I02 istisnası: asset-query alanları için service
+ * artık post-processing yapıyor (ham alanlar → curated `assetQuery`), bu yüzden o alanlar
+ * için hem select hem response ayrı ayrı doğrulanır.
  */
 import { NotFoundException } from "@nestjs/common";
 import { PortalService } from "../portal.service";
@@ -30,6 +32,11 @@ const CASE_DETAIL_SELECT_SHAPE = {
       role: true,
       debtorLawyerName: true,
       debtorLawyerBarNo: true,
+      assetVehicle: true,
+      assetRealEstate: true,
+      assetBank: true,
+      assetSgkWage: true,
+      assetLastQueryAt: true,
       debtor: { select: { name: true, type: true } },
     },
   },
@@ -41,6 +48,8 @@ const CASE_DETAIL_SELECT_SHAPE = {
     select: { id: true, type: true, amount: true, dueDate: true, currency: true },
   },
 };
+
+const ASSET_LAST_QUERY_AT = new Date("2026-06-15T10:00:00.000Z");
 
 const BOUNDED_CASE_ROW = {
   id: CASE_ID,
@@ -57,6 +66,11 @@ const BOUNDED_CASE_ROW = {
       role: "ASIL_BORCLU",
       debtorLawyerName: "Ayşe Vekil",
       debtorLawyerBarNo: "34567",
+      assetVehicle: "YES",
+      assetRealEstate: "NO",
+      assetBank: "PENDING",
+      assetSgkWage: "ERROR",
+      assetLastQueryAt: ASSET_LAST_QUERY_AT,
       debtor: { name: "Test Borçlu", type: "PERSON" },
     },
   ],
@@ -139,6 +153,85 @@ describe("PortalService.getCaseDetail — CLIENT-P2-U03-I01 explicit projection"
     expect(result.debtors[0].debtorLawyerName).toBe("Ayşe Vekil");
     expect(result.debtors[0].debtorLawyerBarNo).toBe("34567");
     expect(result.debtors[0]).not.toHaveProperty("debtorLawyerId");
+  });
+
+  it("[3d] TRACK-A-I02: 5 ham asset-query alanı select'te VAR (debtors seviyesinde)", async () => {
+    const { svc, prisma } = buildService();
+    await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const call = prisma.case.findFirst.mock.calls[0][0];
+    const debtorsSelect = call.select.debtors.select;
+    expect(debtorsSelect).toHaveProperty("assetVehicle", true);
+    expect(debtorsSelect).toHaveProperty("assetRealEstate", true);
+    expect(debtorsSelect).toHaveProperty("assetBank", true);
+    expect(debtorsSelect).toHaveProperty("assetSgkWage", true);
+    expect(debtorsSelect).toHaveProperty("assetLastQueryAt", true);
+  });
+
+  it("[3e] TRACK-A-I02: AssetQuery/EnforcementAction relation'ları select'te KESİNLİKLE YOK", async () => {
+    const { svc, prisma } = buildService();
+    await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const call = prisma.case.findFirst.mock.calls[0][0];
+    const debtorsSelect = call.select.debtors.select;
+    expect(debtorsSelect).not.toHaveProperty("assetQueries");
+    expect(debtorsSelect).not.toHaveProperty("enforcementActions");
+  });
+
+  it("[3f] TRACK-A-I02: response'ta yalnız curated `assetQuery` objesi var, 5 ham alan KESİNLİKLE YOK", async () => {
+    const { svc } = buildService();
+    const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const d = result.debtors[0];
+    expect(d).toHaveProperty("assetQuery");
+    for (const f of ["assetVehicle", "assetRealEstate", "assetBank", "assetSgkWage", "assetLastQueryAt"]) {
+      expect(d).not.toHaveProperty(f);
+    }
+  });
+
+  it("[3g] TRACK-A-I02: curated assetQuery — 4 kategori doğru ve bağımsız map edilir, lastQueryAt korunur", async () => {
+    const { svc } = buildService();
+    const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    expect(result.debtors[0].assetQuery).toEqual({
+      vehicle: "FOUND",
+      realEstate: "NOT_FOUND",
+      bank: "RESULT_PENDING",
+      sgkWage: "RESULT_UNAVAILABLE",
+      lastQueryAt: ASSET_LAST_QUERY_AT,
+    });
+  });
+
+  it("[3h] TRACK-A-I02: UNKNOWN → NOT_QUERIED, lastQueryAt null → null kalır", async () => {
+    const { svc } = buildService({
+      findFirstResult: {
+        ...BOUNDED_CASE_ROW,
+        debtors: [
+          {
+            ...BOUNDED_CASE_ROW.debtors[0],
+            assetVehicle: "UNKNOWN",
+            assetRealEstate: "UNKNOWN",
+            assetBank: "UNKNOWN",
+            assetSgkWage: "UNKNOWN",
+            assetLastQueryAt: null,
+          },
+        ],
+      },
+    });
+    const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    expect(result.debtors[0].assetQuery).toEqual({
+      vehicle: "NOT_QUERIED",
+      realEstate: "NOT_QUERIED",
+      bank: "NOT_QUERIED",
+      sgkWage: "NOT_QUERIED",
+      lastQueryAt: null,
+    });
+  });
+
+  it("[3i] TRACK-A-I02: `resultData`/`errorMessage`/`requestedBy`/`reason`/`idempotencyKey` response'ta hiç YOK", async () => {
+    const { svc } = buildService();
+    const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const d = result.debtors[0];
+    for (const f of ["resultData", "errorMessage", "requestedBy", "reason", "idempotencyKey"]) {
+      expect(d).not.toHaveProperty(f);
+      expect(d.assetQuery).not.toHaveProperty(f);
+    }
   });
 
   it("[4] collection nested anahtarları yalnız id/date/type/amount'tır", async () => {

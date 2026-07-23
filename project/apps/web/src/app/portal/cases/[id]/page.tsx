@@ -43,6 +43,24 @@ const debtorRoleLabels: Record<string, string> = {
 };
 const DEBTOR_ROLE_FALLBACK_LABEL = "Hukuki Taraf";
 
+// CLIENT-P2-U03-TRACK-A-I02: API zaten ham AssetQueryStatus enum'unu curated 5-duruma
+// indirger (asset-query-projection.ts); web yalnız bu curated durumu Türkçe'ye çevirir,
+// ham Prisma enum değerini hiç görmez/yorumlamaz.
+const assetQueryStateLabels: Record<string, string> = {
+  NOT_QUERIED: "Sorgu Yapılmadı",
+  FOUND: "Bulgu Var",
+  NOT_FOUND: "Bulgu Yok",
+  RESULT_PENDING: "Sonuç Bekleniyor",
+  RESULT_UNAVAILABLE: "Sonuç Şu An Belirlenemedi",
+};
+const ASSET_QUERY_STATE_FALLBACK_LABEL = assetQueryStateLabels.RESULT_UNAVAILABLE;
+const ASSET_QUERY_CATEGORIES: { key: "vehicle" | "realEstate" | "bank" | "sgkWage"; label: string }[] = [
+  { key: "vehicle", label: "Araç" },
+  { key: "realEstate", label: "Gayrimenkul" },
+  { key: "bank", label: "Banka" },
+  { key: "sgkWage", label: "SGK Maaşı" },
+];
+
 export default function PortalCaseDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -192,11 +210,11 @@ export default function PortalCaseDetailPage() {
             {caseData.debtors?.length > 0 ? (
               <div className="space-y-3">
                 {caseData.debtors.map((d: any, idx: number) => (
-                  <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                    <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                  <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
                       <User className="h-5 w-5 text-gray-500" />
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <p className="font-medium">{d.debtor?.name}</p>
                       <p className="text-sm text-gray-500">{d.debtor?.type === "PERSON" ? "Şahıs" : "Kurum"}</p>
                       {d.role && (
@@ -210,6 +228,23 @@ export default function PortalCaseDetailPage() {
                               ? `Av. ${d.debtorLawyerName}`
                               : `Baro No: ${d.debtorLawyerBarNo}`}
                         </p>
+                      )}
+                      {d.assetQuery && (
+                        <div className="mt-2 pt-2 border-t border-gray-200">
+                          <p className="text-xs font-semibold text-gray-600 mb-1">Malvarlığı Sorguları</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {ASSET_QUERY_CATEGORIES.map(({ key, label }) => (
+                              <span key={key} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
+                                {`${label}: ${assetQueryStateLabels[d.assetQuery[key]] || ASSET_QUERY_STATE_FALLBACK_LABEL}`}
+                              </span>
+                            ))}
+                          </div>
+                          {d.assetQuery.lastQueryAt && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              Son Malvarlığı Sorgu Güncellemesi: {new Date(d.assetQuery.lastQueryAt).toLocaleDateString("tr-TR")}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
