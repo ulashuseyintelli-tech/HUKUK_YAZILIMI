@@ -1,7 +1,7 @@
 # Canonicalization Register
 
 **Durum:** Living document — governance kaydı, implementasyon değil.
-**Son güncelleme:** 2026-07-23 (RCV-CLAIM-FORM-P02-S08-D01B-GOV-R01 authority canonicalization)
+**Son güncelleme:** 2026-07-23 (RCV-CLAIM-FORM-P02-S08-I02A-GOV technical-foundation closure)
 **Kaynak:** `canonicalizationsiniflandirmaraporu.md` (kullanıcı tarafından sağlanan sınıflandırma raporu) + repo kodu doğrulaması, base commit `e65dc08564c09bfbe6db09a680606ac3d4b1f828`.
 **İlişkili dosya:** `canonicalization-policy.md` (sınıflandırma tanımları ve uygulama kuralları için bağlayıcı kaynak; bu register yalnız veri/kayıt tutar).
 
@@ -679,6 +679,35 @@ metadata/document type/current version üzerinden basis tahmini yapılmaz. Bu ka
 artifact, DB projection, resolver, Legal Basis/subtype contents, intent/snapshot persistence,
 client cutover, legacy inventory/backfill veya production activation yetkisi üretmez; yeni primary
 Legal Policy program/register identity oluşturmaz.
+
+### RCV-CLAIM-FORM-P02-S08-I02A-GOV — Intent/Snapshot Technical-Foundation Closure
+
+```text
+STATUS                          FORMALLY CLOSED / CANONICAL TECHNICAL FOUNDATION
+IMPLEMENTATION PR               #1541
+IMPLEMENTATION SHA              3ba17a0a8cf1210afc38613943c83d7c1a6efe49
+IMPLEMENTATION CI               4/4 PASS
+SCHEMA                          ADDITIVE ClaimItemFormationIntent +
+                                ClaimFormationSnapshot FOUNDATION
+MIGRATION                       20260723100000_claim_formation_intent_snapshot_foundation
+MIGRATION STATE                 MERGED / LIVE APPLY NOT AUTHORIZED / NOT PERFORMED
+DISPOSABLE POSTGRESQL           98 MIGRATIONS CLEAN DEPLOY
+FOUNDATION TESTS                18/18 PASS
+CLAIMITEM REGRESSION            267/267 PASS
+PRODUCTION WRITER               NONE
+RUNTIME ACTIVATION              NONE
+HISTORICAL BACKFILL             NONE
+S08-I01 CONTAINMENT             ACTIVE / UNCHANGED
+CLAIM FORMATION RUNTIME         PARTIAL — THROUGH S08-I01 ONLY
+S08-I02B / S08-I03 / S08-I04   NOT AUTHORIZED / NOT STARTED
+NEXT ELIGIBLE TASK              UNSET — OWNER GO REQUIRED
+```
+
+Bu kayıt yalnız merged physical foundation ve doğrulama kanıtını canonicalize eder. Typed
+intent/admission, OfficeApproval runtime binding, Document/Legal Basis resolver, transactional
+finalizer, production writer, feature activation, client cutover, historical mutation/backfill ve
+live migration apply yetkisi üretmez. Migration'ın pending coordination kaydı normatif authority
+değildir; yalnız cross-workstream apply riskini görünür tutar. Collection/shared boundary değişmez.
 
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 

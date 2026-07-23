@@ -688,3 +688,36 @@ POST-VALIDATION: link tablosu + 3 FK (confdeltype='r') + @@unique([cpeDecisionLo
 PROHIBITED: link writer/runtime linkage, role/disposition, backfill, retention süresinin
   genel değişimi, gerçek archive tablosu, P-E5D/P-E5E/P-E6.
 ```
+
+## 13. RCV-CLAIM-FORM-P02-S08-I02A — yeni pending migration (2026-07-23)
+
+Receivable / Claim Formation bounded-context'ine ait additive intent/snapshot foundation
+migration'ı merge edilmiş, ancak canlı `hukuk_db`ye uygulanmamıştır. Bu bölüm I02A formal
+closure'ın normatif olmayan coordination referansıdır; canlı DB mutation'ı, GO-MIGRATE veya
+runtime activation yetkisi içermez.
+
+### 13.1 Migration kimliği ve durum
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260723100000_claim_formation_intent_snapshot_foundation` |
+| Domain | RECEIVABLE / CLAIM FORMATION |
+| Authority basis | RCV-CLAIM-FORM-P02-S08-I02A implementation PR #1541 / squash `3ba17a0a8cf1210afc38613943c83d7c1a6efe49` |
+| İçerik | Additive `ClaimItemFormationIntent` + `ClaimFormationSnapshot` physical foundation |
+| Historical data | Backfill/mutation `NONE`; existing rows unchanged |
+| Doğrulama | Disposable PostgreSQL 98 migrations clean deploy; foundation `18/18`; ClaimItem regression `267/267`; required CI `4/4 PASS` |
+| **LIVE DB APPLY** | **NOT APPLIED / NOT PERFORMED** |
+| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** — ayrı owner gate gerekir |
+
+### 13.2 Disposition
+
+- Schema + migration + test technical foundation canonical main'dedir; production writer,
+  runtime activation, typed intent/admission, OfficeApproval binding ve ClaimItem/snapshot
+  production finalizer `NONE / NOT AUTHORIZED`dır.
+- S08-I01 fail-closed containment `ACTIVE / UNCHANGED`; Claim Formation runtime
+  `PARTIAL — THROUGH S08-I01 ONLY`dır.
+- I02A migration'ı §10, §11 ve §12 ile birlikte güncel pending queue'da görünür tutulur. Prisma'nın
+  sıralı-toplu deploy davranışı nedeniyle herhangi bir live-apply penceresi bütün pending
+  migration'lar için fresh status ve ilgili owner yetkilerini birlikte doğrulamalıdır.
+- Bu kayıt S08-I02B, S08-I03 veya S08-I04 authority'si; historical inventory/backfill;
+  Collection/shared-boundary değişikliği veya successor task seçimi üretmez.

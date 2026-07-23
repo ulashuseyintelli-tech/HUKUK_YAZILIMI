@@ -2202,6 +2202,28 @@ sonrasında eligible olabilir. Şu anda `NEXT / NOT STARTED / NOT AUTHORIZED`; I
 yetkisizdir. Runtime writer `NOT IMPLEMENTED / NOT ACTIVATED`; ACT-28 ve REC-AUTH-011/012
 `OPEN`; synthetic corpus writer/evidence/cutover için `BLOCKING` kalır.
 
+## 23.24. S08-I02A intent/snapshot technical-foundation closure — 2026-07-23
+
+RCV-CLAIM-FORM-P02-S08-I02A implementation PR #1541 / squash
+`3ba17a0a8cf1210afc38613943c83d7c1a6efe49`, required CI `4/4 PASS` ile
+`FORMALLY CLOSED / CANONICAL TECHNICAL FOUNDATION`dır. Additive
+`ClaimItemFormationIntent` + `ClaimFormationSnapshot` schema foundation'ı ve
+`20260723100000_claim_formation_intent_snapshot_foundation` migration'ı merge edilmiştir.
+Disposable PostgreSQL üzerinde 98 migration clean deploy, foundation testleri `18/18` ve
+ClaimItem regresyonu `267/267 PASS`tır.
+
+Bu teknik foundation production writer veya runtime activation değildir. Typed intent
+writer/admission, OfficeApproval binding, Document/Legal Basis resolver, transactional finalizer,
+ClaimItem/snapshot production writer, feature/capability activation ve web/client cutover
+`NONE / NOT AUTHORIZED` kalır. Migration gerçek `hukuk_db`ye uygulanmamıştır; live apply ayrı
+owner `GO-MIGRATE` gerektirir. Historical inventory, backfill veya mevcut veri mutation'ı yoktur.
+S08-I01 containment `ACTIVE / UNCHANGED`; Claim Formation runtime
+`PARTIAL — THROUGH S08-I01 ONLY`dır.
+
+S08-I02B, S08-I03 ve S08-I04 `NOT AUTHORIZED / NOT STARTED` kalır. Bu closure successor seçmez:
+`NEXT ELIGIBLE TASK = UNSET — OWNER GO REQUIRED`. Collection/shared-boundary authority ve mevcut
+Document/Legal Basis authority contract'ları değişmez.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
