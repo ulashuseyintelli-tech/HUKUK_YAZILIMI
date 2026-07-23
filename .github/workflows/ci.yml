@@ -928,6 +928,20 @@ jobs:
             --testPathPattern="case-detail-projection\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # CLIENT-P2-U03-TRACK-A-I02: toCuratedAssetQuery() pure mapper — raw CaseDebtor
+      # AssetQueryStatus (UNKNOWN/YES/NO/PENDING/ERROR) → curated client-facing 5-durum
+      # (NOT_QUERIED/FOUND/NOT_FOUND/RESULT_PENDING/RESULT_UNAVAILABLE) exhaustive dönüşüm
+      # + tanınmayan/gelecek değer için fail-safe RESULT_UNAVAILABLE regresyonu.
+      - name: CLIENT-P2-U03-TRACK-A-I02 asset-query projection mapper tests
+        run: |
+          cd apps/api
+          for f in src/modules/portal/__tests__/asset-query-projection.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-P2-U03-TRACK-A-I02 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="asset-query-projection\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
       # CLIENT-P2-U03-I02: getDocuments()/uploadDocument() explicit select projeksiyonu (POL-D
       # §21/BP-06 §23) — filePath (internal storage location), reviewedBy/reviewedAt/reviewNote
       # (internal review workflow), clientId/tenantId (authorization context) ve updatedAt artık

@@ -11,15 +11,21 @@ import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-aud
 import type { AuditActor } from "../client/client.service";
 import { generateRawInviteToken, hashInviteToken } from "../auth/invite/user-invite-token.util";
 import * as bcrypt from "bcrypt";
+import { toCuratedAssetQuery } from "./asset-query-projection";
 
 /**
- * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01: getCaseDetail() client-facing response
- * contract (POL-D §21/BP-06 §23; I06 ratified transparency policy §33.5). Yalnız bu select'in
- * kapsadığı alanlar client'a döner; CaseDebtor.id/debtorLawyerId, dahiliNot, staff/personel
- * referansları, otomasyon/OCR/risk alanları, lifecycleEvents ve description'lar KASITLI olarak
- * DIŞARIDA — bu sabit yalnız getCaseDetail() tarafından kullanılır, başka portal endpoint'ine
- * yayılmaz. `muvekkilNotu` `dahiliNot`'tan yapısal olarak bağımsız, ayrı bir alandır (I06
- * invariant) — birleştirilmez, aynı semantikte kullanılmaz.
+ * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02: getCaseDetail()
+ * client-facing response contract (POL-D §21/BP-06 §23; I06 ratified transparency policy
+ * §33.5). Yalnız bu select'in kapsadığı alanlar client'a döner; CaseDebtor.id/debtorLawyerId,
+ * dahiliNot, staff/personel referansları, otomasyon/OCR/risk alanları, lifecycleEvents ve
+ * description'lar KASITLI olarak DIŞARIDA — bu sabit yalnız getCaseDetail() tarafından
+ * kullanılır, başka portal endpoint'ine yayılmaz. `muvekkilNotu` `dahiliNot`'tan yapısal
+ * olarak bağımsız, ayrı bir alandır (I06 invariant) — birleştirilmez, aynı semantikte
+ * kullanılmaz. `assetVehicle`/`assetRealEstate`/`assetBank`/`assetSgkWage`/`assetLastQueryAt`
+ * yalnız `getCaseDetail()` içinde `toCuratedAssetQuery()` ile dönüştürüldükten sonra `debtors[].
+ * assetQuery` olarak döner — HAM enum değerleri response'ta HİÇ KALMAZ (aşağıya bkz).
+ * `AssetQuery` modeli (staff-only, resultData/errorMessage/requestedBy/reason/idempotencyKey/
+ * job status) bu select'e KESİNLİKLE dahil edilmez.
  */
 const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
   id: true,
@@ -36,6 +42,11 @@ const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
       role: true,
       debtorLawyerName: true,
       debtorLawyerBarNo: true,
+      assetVehicle: true,
+      assetRealEstate: true,
+      assetBank: true,
+      assetSgkWage: true,
+      assetLastQueryAt: true,
       debtor: { select: { name: true, type: true } },
     },
   },
@@ -419,7 +430,25 @@ export class PortalService {
       throw new NotFoundException("Dosya bulunamadı");
     }
 
-    return caseData;
+    // CLIENT-P2-U03-TRACK-A-I02: ham asset-query alanları curated assetQuery objesine
+    // dönüştürülür ve response'tan çıkarılır — assetVehicle/assetRealEstate/assetBank/
+    // assetSgkWage/assetLastQueryAt hiçbir koşulda client response'unda KALMAZ.
+    return {
+      ...caseData,
+      debtors: caseData.debtors.map((d) => {
+        const { assetVehicle, assetRealEstate, assetBank, assetSgkWage, assetLastQueryAt, ...rest } = d;
+        return {
+          ...rest,
+          assetQuery: toCuratedAssetQuery({
+            assetVehicle,
+            assetRealEstate,
+            assetBank,
+            assetSgkWage,
+            assetLastQueryAt,
+          }),
+        };
+      }),
+    };
   }
 
   /**
