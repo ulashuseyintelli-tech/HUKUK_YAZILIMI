@@ -1722,3 +1722,112 @@ otomatik olarak client response'una GİRMEZ.
 ### 32.9 U03-I05 Self-Check
 
 Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ (residual nedeniyle PARTIAL korunur); yeni teknik unit BAŞLATMAZ; yeni runtime/code/test/CI/schema/migration değişikliği YAPMAZ; notification producer/link contract'ını GENİŞLETMEZ; POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ; §32.7'de listelenen non-blocking kalemleri (curated timeline, rejection-reason contract, message actor model, PoA download contract) SEÇMEZ veya YETKİLENDİRMEZ; session/MFA/finansal-model/POL-E-R1 işini BAŞLATMAZ; §5/§6/§8.A/§8.B/§11–§31 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ (implementasyon zaten PR #1538 ile ayrı merge edildi, bu kayıt yalnız governance closure'dır). **TECHNICAL IMPLEMENTATION CLOSED ≠ PROGRAM CLOSED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 33. CLIENT Phase 2 U03-I06 — Client Transparency and Financial Disclosure Policy (OWNER RATIFIED, GOVERNANCE-ONLY)
+
+Bu bölüm, §28.7'nin (I01) açtığı ve §32.7'nin (I05 program-wide residual audit) `CLIENT-P2-U03`'ün CLOSED ilanını BLOKE eden tek kalem olarak doğruladığı **OWNER-DECISION-REQUIRED CASE FIELDS** residual'inin **politika seviyesinde** kapanış kaydıdır (`decision-log.md` CLIENT-P2-U03-I06-GOV). Chat-level `CLIENT-P2-U03-I06-ANALYZE` (bu session, read-only alan-bazlı karar matrisi) owner tarafından incelenmiş, üst-politika owner tarafından yeniden çerçevelenmiş ve owner tarafından RATIFİYE edilmiştir. **Bu kayıt GOVERNANCE-ONLY'dir — hiçbir kod/schema/migration/test/CI/runtime değişikliği İÇERMEZ, hiçbir implementasyon yetkisi VERMEZ.** §5, §6, §8.A, §8.B, §11–§32 substantive hükümlerini DEĞİŞTİRMEZ.
+
+### 33.1 Policy Lineage
+
+`CLIENT-P2-U03-ANALYZE`'ın madde 8'i → §28.7 (I01, OPEN kaydı) → §32.7 (I05, program-wide residual audit, BLOCKING tespiti) → chat-level `CLIENT-P2-U03-I06-ANALYZE` (alan-bazlı karar matrisi, GO-ANALYZE, read-only) → **owner'ın üst-politika reframe'i** (saf "parasal alanlar hariç her şey görünür" kuralının fazla geniş olduğu, güvenlik verisi/ham otomasyon/iç not/gereksiz üçüncü-kişi verisini istemeden kapsayacağı gerekçesiyle reddi) → bu kayıt (`CLIENT-P2-U03-I06-GOV`).
+
+### 33.2 Core Visibility Principle — Transparency by Default, Financial Disclosure by Gate
+
+**Müvekkil, kendi dosyasındaki gerçekleşmiş ve doğrulanmış tüm hukuki ve operasyonel işlemleri görür.** Temel ayrım: **gerçekleşmiş işlem → CLIENT-VISIBLE; henüz gerçekleşmemiş, doğrulanmamış veya taslak işlem → NOT CLIENT-VISIBLE.** **Parasal sonuçlar ise ancak ofis tarafından müvekkile açıklanması onaylandıktan ve bildirim gönderildikten sonra görünür hâle gelir** (bkz. §33.4). Şeffaflık ana kuraldır; gizlilik dar ve açıkça tanımlanmış bir istisnadır — **bir alan yalnız "internal" adı taşıdığı için gizlenemez; gizleme açık veri sınıflandırması ve hukuki/operasyonel gerekçe gerektirir.**
+
+**Client-visible bilgi sınıfları (genel, non-financial):** dosyanın tarafları ve hukuki sıfatları · borçlu ve karşı taraf avukatı bilgileri · dosyada yapılan hukuki işlemler · tebligat süreçleri ve sonuçları · başvurular/talepler/hacizler/sorgular · duruşmalar/süreler/takvim olayları · belgeler ve müvekkile açıklanabilir dosya içerikleri · dosyanın güncel işlem/ilerleme durumu · gerçekleşmiş ve doğrulanmış operasyonel işlem geçmişi.
+
+### 33.3 Never-Raw-Exposed Categories (Dar İstisna, Geniş Yorumlanamaz)
+
+İç avukat çalışma notları · personel değerlendirmeleri · taslak hukuki strateji · yetki/rol/güvenlik kayıtları · sistem içi teknik kimlikler · audit altyapısının ham teknik kayıtları · şifre/token/erişim/entegrasyon verileri · üçüncü kişilere ait gereksiz kişisel veriler · doğrulanmamış veya iptal edilmiş taslak işlemler · müvekkile açıklanması mesleki sır veya dosya güvenliği bakımından sakıncalı kayıtlar. **Bu istisnalar geniş yorumlanamaz.**
+
+### 33.4 Financial Disclosure Gate — FAIL-CLOSED
+
+Dosyaya giren para/tahsilat/mahsup/masraf/vekâlet ücreti gibi parasal bilgiler müvekkile **varsayılan olarak doğrudan açılmaz.** Bir parasal kayıt ancak aşağıdaki **5 koşulun TAMAMI** gerçekleştiğinde görünür olur: **(1)** tahsilat/parasal işlem kesinleşmiş · **(2)** ofis tarafından müvekkile açıklanması onaylanmış · **(3)** müvekkile gönderilecek parasal bilgilendirme içeriği onaylanmış · **(4)** bilgilendirme bildirimi başarıyla gönderilmiş · **(5)** onay ve gönderim olayı sistemde immutable/auditable biçimde kayıtlı. **FAIL-CLOSED RULE: No approval or no successful notification = no client financial visibility.**
+
+**Onay sonrası gösterilecek kırılım (örnek şekil, bu kayıtla schema/implementasyon SEÇİLMEZ):** toplam tahsilat · masrafa mahsup · vekâlet ücretine mahsup · müvekkile ödenecek · onay tarihi · bildirim tarihi · ödeme durumu (onaylandı/ödendi/bekliyor). Taslak hesaplamalar, henüz onaylanmamış dağıtımlar, banka mutabakatı tamamlanmamış hareketler ve iç muhasebe çalışma kayıtları **hiçbir koşulda** gösterilmez.
+
+### 33.5 Exact Field Dispositions (I06 Residual Closure — §28.7 + §32.7 Kapatılır)
+
+Bu tablo, `CLIENT-P2-U03-ANALYZE`'ın madde 8'inin ve §28.7/§32.7'nin isimlendirdiği **OWNER-DECISION-REQUIRED CASE FIELDS** kaleminin tamamını kapatır:
+
+```text
+Case.muvekkilNotu:
+CLIENT-SAFE PROJECTION
+INVARIANT: yalnız müvekkile yönelik not semantiği; dahiliNot ile
+birleştirilemez/aynı semantikte kullanılamaz (şema düzeyinde zaten
+ayrı, bağımsız kolon — invariant yapısal olarak sağlanmış durumda).
+
+CaseDebtor.role:
+CLIENT-SAFE PROJECTION
+
+CaseDebtor.liabilityAmount + CaseDebtor.liabilityType:
+SEPARATE CURATED FINANCIAL CONTRACT
+Doğrudan açılmaz; yalnız Track B (financial disclosure contract)
+kapsamında, office-approval + notification gate sonrasında gösterilebilir.
+
+CaseDebtor.debtorLawyerName + CaseDebtor.debtorLawyerBarNo:
+CLIENT-SAFE PROJECTION
+
+CaseDebtor.debtorLawyerId:
+OMIT (teknik/internal kimlik)
+
+CaseDebtor asset-query alanları
+(assetVehicle, assetRealEstate, assetBank, assetSgkWage, assetLastQueryAt):
+CLIENT-SAFE CURATED PROJECTION
+RAW VALUES: NOT CLIENT-FACING. Curated şekil: sorgu türü, sorgu tarihi,
+sonuç durumu, bulgu var/yok/işlem sürüyor, varsa gerçekleştirilen takip işlemi.
+
+CaseDebtor.caseNote:
+OMIT (client-facing olduğu ayrıca sınıflandırılmadıkça iç not kabul edilir)
+
+Due vergi alanları (hasKdv, kdvRate, hasBsmv, hasKkdf):
+CLIENT-SAFE CURATED PROJECTION
+Teknik boolean seti olarak DEĞİL, anlaşılır hesap dökümü içinde: ana
+alacak, KDV, BSMV, KKDF, faiz, masraf, toplam. Tahsil edilmiş tutarla
+veya mahsup dağılımıyla ilişkili kısım, Track B financial disclosure
+gate tamamlanmadan gösterilmez.
+
+Mevcut OMIT kalan gruplar (I01'den beri karara bağlanmış, YENİDEN AÇILMAZ):
+lifecycle/passivation · ham tebligat-takip internal alanları · quickNote ·
+ham otomasyon/provider verisi · internal identifier'lar · taslak/doğrulanmamış işlemler.
+```
+
+### 33.6 Track Separation — Non-Financial Transparency vs. Financial Disclosure Contract
+
+**TRACK B, TRACK A içine veya tek bir implementation unit'e SIKIŞTIRILAMAZ** — onay, bildirim teslimi, idempotency, immutable audit ve düzeltme/iptal semantiği nedeniyle ayrı, bounded bir sözleşme gerektirir. Bu kayıt yalnız ayrımı ve kapsamı kaydeder; **Track A veya Track B'nin herhangi bir implementasyon veya ANALYZE detayını AÇMAZ.**
+
+```text
+TRACK A — NON-FINANCIAL TRANSPARENCY PROJECTION:
+- Case.muvekkilNotu
+- CaseDebtor.role
+- curated debtor-lawyer identity (Name + BarNo)
+- curated asset-query status
+- non-disbursed Due tax presentation (yapısal hesap dökümü şekli;
+  tahsil edilmiş tutarla ilişkili kısım hariç)
+
+TRACK B — FINANCIAL DISCLOSURE CONTRACT:
+- tahsilat
+- masrafa mahsup
+- vekâlet ücretine mahsup
+- müvekkile gönderilecek net tutar
+- office approval
+- notification-content approval
+- successful notification delivery
+- immutable/auditable disclosure event
+- idempotency
+- correction / reversal semantics
+- CaseDebtor.liabilityAmount / liabilityType (curated financial contract parçası)
+```
+
+### 33.7 Non-Equations / Precision
+
+`POLICY RATIFIED ≠ IMPLEMENTED` · `FIELD DISPOSITION DECIDED ≠ CASE_DETAIL_SELECT DEĞİŞTİRİLDİ` · `TRACK A/B SCOPE DEFINED ≠ TRACK A/B AUTHORIZED FOR ANALYSIS VEYA IMPLEMENTATION` · `GOVERNANCE-ONLY CLOSURE ≠ U03 FINAL CLOSURE` · `TRANSPARENCY BY DEFAULT ≠ UNBOUNDED DISCLOSURE` (dar istisnalar §33.3 ile sınırlı kalır) · `CLIENT-SAFE CURATED PROJECTION ≠ RAW FIELD EXPOSURE` (asset-query ve Due vergi alanları için curated şekil zorunlu, ham select değil) · `FINANCIAL GATE PASSED (gelecekte) ≠ RETROACTIVE DISCLOSURE OF PRE-GATE RECORDS` (gate yalnız ileri-dönük gösterim kuralıdır, geçmiş kayıtların otomatik yeniden-sınıflandırılması bu kayıtla KURULMAZ). **Doğru ifade: "CASE FIELDS VISIBILITY POLICY RATIFIED / TRACK A+B SCOPE BOUNDED / ZERO IMPLEMENTATION AUTHORITY GRANTED."**
+
+### 33.8 Final Status
+
+**CLIENT-P2-U03-I06 (POLICY): RATIFIED/CANONICAL.** **CLIENT-P2-U03 (genel program): PARTIAL — NOT READY FOR FINAL CLOSURE** (policy resolved, implementation units remain: Track A + Track B). **TRACK A: NOT AUTHORIZED. TRACK B: NOT AUTHORIZED.** **SCHEMA/MIGRATION: NONE. RUNTIME: UNCHANGED. OBJECT-SCOPE: UNCHANGED.** **IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).** **NEXT: OWNER-GATED/NOT AUTO-STARTED** — Track A için GO-ANALYZE (owner'ın kendi önerdiği sıra: önce Track A ANALYZE, sonra Track A IMPLEMENT, sonra Track B ANALYZE, sonra Track B IMPLEMENT, ancak ikisinin canonical kapanışından sonra U03 final closure).
+
+### 33.9 U03-I06 Self-Check
+
+Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ (PARTIAL korunur, gerekçe artık "policy resolved, implementation units remain"); Track A veya Track B'nin herhangi bir ANALYZE veya IMPLEMENT işini BAŞLATMAZ; production kod/schema/migration/test/CI/runtime DEĞİŞTİRMEZ; portal projection'ı (`CASE_DETAIL_SELECT` dahil) GENİŞLETMEZ; mail/notification implementasyonu KURMAZ; approval workflow implementasyonu KURMAZ; finansal ledger DEĞİŞTİRMEZ; `CLIENT-P2-U03-I07` veya başka yeni unit AÇMAZ; §32.7'de listelenen non-blocking kalemleri (curated timeline, rejection-reason contract, message actor model, PoA download contract) SEÇMEZ veya YETKİLENDİRMEZ; §5/§6/§8.A/§8.B/§11–§32 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ. **POLICY RATIFIED ≠ PROGRAM CLOSED; POLICY RATIFIED ≠ IMPLEMENTATION AUTHORIZED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
