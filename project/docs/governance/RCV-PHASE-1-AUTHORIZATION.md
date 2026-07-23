@@ -87,16 +87,17 @@ RCV-CLAIM-FORM-P02-S08-I01  : FORMALLY CLOSED / CANONICAL (implementation PR #15
 RCV-CLAIM-FORM-P02-S08-D01A : DOCUMENT AUTHORITY CONTRACT FORMALLY RATIFIED / CANONICAL UPON APPROVED MERGE
 RCV-CLAIM-FORM-P02-S08-D01B : LEGAL BASIS AUTHORITY CONTRACT FORMALLY RATIFIED / CANONICAL UPON APPROVED MERGE
 RCV-CLAIM-FORM-P02-S08-D01  : READY FOR FINAL DESIGN RECONCILIATION — DOCUMENT + LEGAL-BASIS CONTRACT BLOCKERS CLOSED / IMPLEMENTATION NOT STARTED
-RCV-CLAIM-FORM-P02-S08-I02  : PARTIAL — I02A + I02B FORMALLY CLOSED; I03 NOT STARTED
+RCV-CLAIM-FORM-P02-S08-I02  : I02A + I02B FORMALLY CLOSED / CANONICAL
 RCV-CLAIM-FORM-P02-S08-I02A : FORMALLY CLOSED / CANONICAL TECHNICAL FOUNDATION (implementation PR #1541 / 3ba17a0a)
 RCV-CLAIM-FORM-P02-S08-I02B : FORMALLY CLOSED / CANONICAL TECHNICAL IMPLEMENTATION (implementation PR #1549 / e0db42d2)
 RCV-CLAIM-FORM-P02-S08-I02B-I01 : CLOSED / FULLY SUPERSEDED (local commit 89c16e9b430269268e0783ea0bfa70fed2436f57 — CODE DISCARDED / NOT MERGED; requirements PRESERVED / SATISFIED BY PR #1556 / 1d47fef64e66b01561c12dc2717a63e7262dcfca)
-RCV-CLAIM-FORM-P02-S08-I03  : NOT STARTED / NOT AUTHORIZED
-RCV-CLAIM-FORM-P02-S08-I04  : NOT STARTED / NOT AUTHORIZED
+RCV-CLAIM-FORM-P02-S08-I03  : FORMALLY CLOSED / CANONICAL TECHNICAL IMPLEMENTATION (implementation PR #1556 / 1d47fef6)
+RCV-CLAIM-FORM-P02-S08-I04  : NEXT ELIGIBLE / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
+I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : UNSET — OWNER GO REQUIRED
+Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-I04 — OWNER GO REQUIRED / NOT AUTHORIZED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -2687,6 +2688,82 @@ kendi canonical `S08-I03` kimliği, statüsü veya teknik kayıtları bu kayıtl
 yeniden yazılmaz — ayrı, owner-gated bir `RCV-CLAIM-FORM-P02-S08-I03-GOV` kapanışının konusudur.
 D01B legal-basis resolver contract'ı, S08-I04 veya sonraki herhangi bir slice bu kayıtla değişmez
 veya yetkilendirilmez.
+
+### 1.31H RCV-CLAIM-FORM-P02-S08-I03 formal governance closure
+
+```text
+RCV-CLAIM-FORM-P02-S08-I03:
+FORMALLY CLOSED / CANONICAL
+
+IMPLEMENTATION:
+IMPLEMENTED / MERGED
+
+IMPLEMENTATION PR:
+#1556
+
+IMPLEMENTATION SHA:
+1d47fef64e66b01561c12dc2717a63e7262dcfca
+
+IMPLEMENTATION CI:
+4/4 PASS
+
+CLAIMITEM + CLAIMFORMATIONSNAPSHOT:
+ATOMIC / SAME TRANSACTION
+
+AUDIT / DOMAIN EVENT / OUTBOX / COMPLETION STATE:
+ATOMIC / SAME TRANSACTION
+
+EXECUTION:
+IDEMPOTENT / DUPLICATE CLAIMITEM PREVENTED
+
+MONEY:
+EXACT BIGINT PRESERVED
+
+AUTHORITY BINDING:
+EXACT DOCUMENT + LEGAL BASIS + CHECKSUM + VERSION / FAIL-CLOSED
+
+PRODUCTION CALL-SITE:
+NONE
+
+PRODUCTION RUNTIME:
+DEFAULT DISABLED
+
+HUMAN CREATE CONTAINMENT:
+ACTIVE / UNCHANGED
+
+LIVE MIGRATION:
+NOT AUTHORIZED / NOT APPLIED
+
+HISTORICAL BACKFILL:
+NONE
+
+I02B-I01 DISPOSITION:
+CLOSED / FULLY SUPERSEDED / CODE DISCARDED / NOT MERGED
+
+CLAIM FORMATION PHASE / S08:
+OPEN / OPEN
+
+NEXT ELIGIBLE TASK:
+RCV-CLAIM-FORM-P02-S08-I04
+
+I04 AUTHORITY:
+NOT GRANTED / OWNER GO REQUIRED
+```
+
+PR #1556, approved immutable formation intent'in exact authority bağlarını final fail-closed
+revalidation'dan sonra canonical `ClaimItem`, immutable `ClaimFormationSnapshot`,
+audit/domain-event/outbox continuity ve OfficeApproval execution completion state'i tek
+transaction içinde üretir. Deterministic execution identity, PostgreSQL advisory lock ve
+same-intent replay davranışı ikinci ClaimItem oluşumunu engeller; money değerleri BigInt
+hassasiyetinde korunur. Herhangi bir revalidation veya write hatasında partial write yoktur.
+
+Bu formal closure production activation değildir. Nest provider, route veya production call-site
+yoktur; runtime `DEFAULT DISABLED`, S08-I01 human-create containment `ACTIVE / UNCHANGED` kalır.
+I02A migration'ının live apply'ı, historical backfill, web/client ve Collection/shared-boundary
+değişikliği yoktur. `89c16e9b` local I02B-I01 writer-foundation commit'inin canonical disposition'ı
+`CLOSED / FULLY SUPERSEDED / CODE DISCARDED / NOT MERGED` olarak korunur; gereksinimleri PR #1556
+tarafından karşılanmıştır. Fiziksel owner worktree/branch'i bu closure sırasında değiştirilmez veya
+temizlenmez. I04 yalnız next eligible task'tır; ayrı owner GO olmadan başlamaz.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 
