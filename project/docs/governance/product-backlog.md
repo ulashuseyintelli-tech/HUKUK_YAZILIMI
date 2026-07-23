@@ -2836,6 +2836,25 @@ ACTIVATED`; synthetic corpus writer/evidence/cutover için `BLOCKING` kalır. **
 ACTION: TPA-04C-I04 — HELD SEMANTICS / PLAN FINGERPRINT / ATTRIBUTION ISOLATION — OWNER
 GO-IMPLEMENT REQUIRED / NOT STARTED / NOT AUTHORIZED.** I05-I07 self-start edemez.
 
+**RCV-COL-TPA-04C-I04 Formal Closure Reconciliation (2026-07-23; CANONICAL UPON APPROVED
+GOVERNANCE MERGE):** I04 implementation PR #1546 / squash
+`b3b0fa5b8183fa7e75ba4341be60dbdcfb524c69`, exact six-file scope ve required CI `4/4 PASS`
+ile `CLOSED / CANONICAL EVIDENCE`dır. I04, I03 allocation sonucunu kayıpsız ve immutable
+`LegalApplicationPlan` olarak assemble eder; canonical HELD nedenlerini
+`NO_ELIGIBLE_OUTSTANDING` / `EXCESS_OVER_ELIGIBLE_OUTSTANDING` olarak üretir; zero-remainder
+fingerprint identity'sinde `NONE` sentinel'ını korur; exact
+`SHA-256(UTF8("RCV-LAP/v1") || 0x00 || canonicalPlanIdentityBytes)` protokolüyle
+`rcv-legal-application-plan:v1:sha256:<64-lowercase-hex>` fingerprint'ini üretir ve optional
+`ApplicationAttribution` verisini non-authoritative/fingerprint-excluded tutar. Exact-cent
+conservation plan/fingerprint öncesinde fail-closed doğrulanır. I01-I04 targeted test sonucu
+`168/168 PASS`, I04 targeted sonuç `31/31 PASS`; property, strict production/test type-check, API
+build, ESLint ve required CI `4/4 PASS`tır. Runtime writer, Nest/runtime wiring, Prisma, schema,
+migration, live DB action, legacy allocator ve consumer cutover etkisi `NONE`; runtime writer
+`NOT IMPLEMENTED / NOT ACTIVATED` kalır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus
+writer/evidence/cutover için `BLOCKING` kalır. **NEXT ELIGIBLE ACTION: TPA-04C-I05 — UNIT /
+PROPERTY / SECURITY TEST EXPANSION — OWNER GO-IMPLEMENT REQUIRED / NOT YET AUTHORIZED.**
+I05-I07 self-start edemez; I06/I07 ve TPA-04D `NOT AUTHORIZED`dır.
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)
