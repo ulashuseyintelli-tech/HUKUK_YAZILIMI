@@ -83,6 +83,33 @@ jobs:
       - name: Type check
         run: pnpm --filter @hukuk/api exec tsc --noEmit -p tsconfig.prod.json
         working-directory: project
+      # RCV-CLAIM-FORM-P02-S08-I02B: typed human-formation admission stays
+      # dormant/default-disabled; only intent + OfficeApproval + request audit
+      # may be created atomically. Exact resolver ports have no production adapter.
+      - name: RCV Claim Formation I02B typed admission and dormancy tests
+        run: |
+          cd apps/api
+          for f in src/modules/claim-item/__tests__/claim-item-formation-intent-admission.spec.ts \
+                   src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spec.ts \
+                   src/modules/claim-item/__tests__/claim-formation-persistence-foundation.static.spec.ts; do
+            test -f "$f" || { echo "MISSING RCV Claim Formation I02B spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/claim-item/__tests__/claim-item-formation-intent-admission.spec.ts \
+            src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spec.ts \
+            src/modules/claim-item/__tests__/claim-formation-persistence-foundation.static.spec.ts
+        working-directory: project
+      - name: RCV Claim Formation I02B atomic disposable DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/claim-item/__tests__/claim-item-formation-intent.db-gated.integration.spec.ts || \
+            { echo "MISSING RCV Claim Formation I02B DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/claim-item/__tests__/claim-item-formation-intent.db-gated.integration.spec.ts
+        working-directory: project
       - name: Tests
         run: |
           cd apps/api

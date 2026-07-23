@@ -124,11 +124,30 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
     expect(MIGRATION).not.toMatch(/DELETE\s+FROM\s+"(?:ClaimItem|OfficeApprovalRequest)"/);
   });
 
-  it('has no production writer, service, controller or call-site', () => {
+  it('allows only the owner-gated dormant I02B intent adapter and no snapshot or production call-site', () => {
     const offenders = productionTypeScriptFiles(path.join(API_ROOT, 'src'))
       .filter((file) => /claimItemFormationIntent|claimFormationSnapshot/.test(fs.readFileSync(file, 'utf8')))
       .map((file) => path.relative(API_ROOT, file));
 
-    expect(offenders).toEqual([]);
+    expect(offenders).toEqual([
+      path.normalize(
+        'src/modules/claim-item/formation-intent/claim-item-formation-office-approval.adapter.ts',
+      ),
+    ]);
+
+    const adapter = fs.readFileSync(path.join(API_ROOT, offenders[0]), 'utf8');
+    expect(adapter).toContain('claimItemFormationIntent.create');
+    expect(adapter).not.toContain('claimFormationSnapshot.create');
+
+    const moduleSource = fs.readFileSync(
+      path.join(API_ROOT, 'src/modules/claim-item/claim-item.module.ts'),
+      'utf8',
+    );
+    const serviceSource = fs.readFileSync(
+      path.join(API_ROOT, 'src/modules/claim-item/claim-item.service.ts'),
+      'utf8',
+    );
+    expect(moduleSource).not.toContain('formation-intent');
+    expect(serviceSource).not.toContain('HumanClaimItemFormationAdmissionService');
   });
 });
