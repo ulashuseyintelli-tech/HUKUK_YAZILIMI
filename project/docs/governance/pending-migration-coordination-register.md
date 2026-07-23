@@ -721,3 +721,210 @@ runtime activation yetkisi içermez.
   migration'lar için fresh status ve ilgili owner yetkilerini birlikte doğrulamalıdır.
 - Bu kayıt S08-I02B, S08-I03 veya S08-I04 authority'si; historical inventory/backfill;
   Collection/shared-boundary değişikliği veya successor task seçimi üretmez.
+
+## 14. OFFICE-PHASE2-CAP09A-FOUNDATION-I01 — yeni pending migration (2026-07-23)
+
+Bu bölüm, OFFICE Phase 2 / CAP-09 Audit-Attribution Standard kapsamında **üretilmiş ancak
+canlı `hukuk_db`'ye HİÇ uygulanmamış** bir migration'ı cross-workstream görünür kılar.
+§10-13'ten bağımsız, ayrı bir pending giriştir. Bu kayıt canlı DB mutation'ı İÇERMEZ.
+Bu giriş CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R02 (§15) analizi sırasında eklenmiştir —
+migration merge edildiğinde (2026-07-23) bu register'a hiç işlenmemiş olduğu tespit edildi.
+
+### 14.1 Migration kimliği ve durum
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260722213239_office_phase2_cap09a_foundation_audit_attribution` |
+| Domain | OFFICE Phase 2, W-P2-α / CAP-09A (Audit Attribution Foundation, SLICE 2/3) |
+| Authority basis | PR #1536, squash `580edd8efb10c92de45f6c94bc0f6ca7c388df43`, merged 2026-07-23T01:48:40+03:00 |
+| İçerik | ADDITIVE-ONLY: `AuditLog` tablosuna 7 nullable TEXT kolon (`actorType`/`correlationId`/`decisionResult`/`policyRef`/`policyVersion`/`reasonCode`/`requestId`). Index/enum/FK/trigger YOK. |
+| Kolon / veri | Backfill/DML YOK; mevcut satırlar 7 yeni kolonda NULL alır |
+| Veri riski | **YOK** — nullable, default yok, hiçbir CHECK yok |
+| Doğrulama | `decision-log.md` (2026-07-22 GO-DECIDE) SLICE 1 (governance) canonik, SLICE 2 (bu migration) için "ayrı owner GO-ANALYZE + GO-IMPLEMENT bekler" diyor; PR aynı gün merge edilmiş — belgelenmiş yetki ile fiili merge arasında iz sürülebilir bir boşluk var (owner dikkatine) |
+| **LIVE DB APPLY** | **NOT APPLIED** — gerçek `hukuk_db`'ye uygulanmadı |
+| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** — ayrı owner GO-MIGRATE brief'i bekler |
+
+### 14.2 Disposition
+
+- IMPLEMENTATION AUTHORITY: schema + migration **CANONICAL** (main'de); live-apply **NONE**.
+- Operasyonel not: `ALTER TABLE ADD COLUMN` (7 kolon, tek statement) `ACCESS EXCLUSIVE` alır
+  ama nullable/default'suz olduğu için metadata-only hızlı yoldur; `AuditLog` canlıda 313 satır
+  (TRAIN-R02 sırasında taze ölçüldü) — pratikte önemsiz sürede tamamlanır.
+- Yazma tarafı **TAMAMEN DORMANT**: repo genelinde hiçbir gerçek caller yeni 7 alanı
+  doldurmuyor (SLICE 3 tüketici kablolaması ayrı, henüz implement edilmemiş).
+- CI KAPSAM BOŞLUĞU: bu migration'ın 2 yeni test dosyası (`audit-metadata-builder.spec.ts`,
+  `audit.service.attribution.spec.ts`) `ci.yml`'de HİÇBİR `testPathPattern`'e denk gelmiyor —
+  CI'da hiç çalışmıyorlar (bu repo'nun bilinen "CI narrow-allowlist stale-test-gap" deseni).
+- Sonraki adım: ayrı OWNER GO-MIGRATE brief'i (aşağıdaki şablon). Bu register şablonu
+  SEÇMEZ/yetkilendirmez.
+
+**GATE CAP09A-I01 — OWNER GO-MIGRATE — OFFICE AUDIT ATTRIBUTION FOUNDATION**
+```text
+OWNER GO-MIGRATE — OFFICE-PHASE2-CAP09A-FOUNDATION-I01
+AUTHORITY BASIS: PR #1536 merge SHA 580edd8efb10c92de45f6c94bc0f6ca7c388df43
+TARGET MIGRATION: 20260722213239_office_phase2_cap09a_foundation_audit_attribution
+ANCHOR: isolated worktree pinned to 580edd8efb10c92de45f6c94bc0f6ca7c388df43
+PREFLIGHT: fresh backup + restore-verify; disposable rehearsal from this anchor;
+  AuditLog satır sayısını ölç (taze, bu kayıttan bağımsız).
+EXECUTION: prisma migrate deploy only (no resolve, no manual DDL).
+POST-VALIDATION: AuditLog 7 yeni nullable kolon mevcut; mevcut 6 index değişmemiş;
+  satır sayısı değişmemiş; API health smoke.
+PROHIBITED: SLICE 3 consumer wiring (StaffService.remove()), CHECK/enum/index ekleme,
+  backfill, governance closure beyond this column-set.
+```
+
+## 15. CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R02 — GO-ANALYZE freshness-check + tam zincir rehearsal (2026-07-23)
+
+**Mode:** READ-ONLY MIGRATION COORDINATION (§7 ile aynı disiplin). Gerçek `hukuk_db`'de
+HİÇBİR mutation yapılmadı; bu bölüm yalnız salt-okuma SQL sorguları, salt-okuma git/gh
+doğrulaması ve **disposable** (izole, bu görevle imha edilen) Postgres 16 konteyneri
+üzerindeki tam-zincir rehearsal kanıtını kaydeder. §10-14'ün hiçbiri bu bölümde
+YENİDEN YAZILMADI — yalnız ek bulgular kaydedilir (append-only, §7→§8/§9 emsali).
+
+### 15.1 Pending queue — tam liste (M1-M8, folder-order = Prisma apply sırası)
+
+| # | Migration | Program | Register | GO-MIGRATE |
+|---|---|---|---|---|
+| M1 | `20260722170000_uyap_operation_attempt_schema_foundation_r1` | UYAP F4-b/P-E5A-R1 | §10 | NOT AUTHORIZED |
+| M2 | `20260722213239_office_phase2_cap09a_foundation_audit_attribution` | OFFICE Phase 2 CAP-09A | §14 (bu görevde eklendi) | NOT AUTHORIZED |
+| M3 | `20260722224901_of01_history_p04a1_r1_service_regime_code` | CORE DEBTOR OF-01 P04-A1-R1 | **YOK — bkz. 15.4** | NOT AUTHORIZED |
+| M4 | `20260722230000_cpe_decision_composite_reference_key` | POLICY ENGINE P05C-P01 | §11 | NOT AUTHORIZED |
+| M5 | `20260723010000_uyap_attempt_cpe_decision_link` | UYAP+POLICY ENGINE P05C-P02 | §12 | NOT AUTHORIZED |
+| M6 | `20260723100000_claim_formation_intent_snapshot_foundation` | RECEIVABLE P02-S08-I02A | §13 (freshness-confirmed, doğru) | NOT AUTHORIZED |
+| M7 | `20260723120000_of01_history_p04a1_r2_completion_mode_schema` | CORE DEBTOR OF-01 P04-A1-R2 (1/2) | **YOK — bkz. 15.4** | NOT AUTHORIZED |
+| M8 | `20260723120100_of01_history_p04a1_r2_completion_mode_constraints` | CORE DEBTOR OF-01 P04-A1-R2 (2/2) | **YOK — bkz. 15.4** | NOT AUTHORIZED |
+
+**Sonuç: 8/8 migration BLOCKED.** Hiçbirinin owner GO-MIGRATE yetkisi yok; disposition
+tamamı için aynı: teknik hazırlık büyük ölçüde CANONICAL/hazır, canlı-apply yetkisi NONE.
+
+### 15.2 KRİTİK BULGU — gerçek kronolojik merge sırası ≠ klasör (apply) sırası
+
+`git log`/`git merge-base --is-ancestor` ile doğrudan doğrulandı (§7.2'nin orijinal
+train'inde tespit edilen AYNI desenin, bu kez M1-M8 kuyruğunda YENİDEN gerçekleştiği
+somut bir örneği):
+
+| Migration | Klasör ts (apply sırası) | Gerçek merge zamanı |
+|---|---|---|
+| M3 (DEBTOR) | `224901` | 2026-07-23T03:06:47+03:00 |
+| M4 (POLICY-ENGINE) | `230000` | **2026-07-23T02:20:20+03:00** ← M3'ten ÖNCE merge edildi |
+| M5 (UYAP-link) | `010000` (23 Tem) | **2026-07-23T12:35:27+03:00** |
+| M6 (RECEIVABLE) | `100000` (23 Tem) | **2026-07-23T03:12:59+03:00** ← M5'ten ÖNCE merge edildi |
+
+Doğrulama: `git merge-base --is-ancestor c81bb2e4 5e2f613d` = YES (M4, M3'ün atasıdır);
+`git merge-base --is-ancestor 3ba17a0a 40c1ab1e` = YES (M6, M5'in atasıdır).
+
+**Etki:** eğer eventual GO-MIGRATE icrası her migration'ı KENDİ ilk-merge SHA'sına
+anchor'layıp o checkout'ta `migrate deploy` çalıştırma yöntemini (§7.3/§7.4'ün orijinal
+train'de kullandığı yöntem) kullanırsa: M3'ün anchor'ı M4'ü de sessizce içerir; M5'in
+anchor'ı M6'yı da sessizce içerir. **Şema güvenliği açısından zararsız** (M3↔M4 ve
+M5↔M6 arasında hiçbir ortak tablo/FK/trigger yok — ayrı ayrı doğrulandı), ama
+ATTRIBUTION/YETKİ seviyesinde §7.2 ile birebir aynı risk sınıfı: "yalnız X'i onayladım"
+diyen bir owner, anchor-SHA yöntemiyle istemeden Y'yi de uygulamış olabilir. Eventual
+icra planı ya TAM kronolojik sırayla (M1→M2→M4→M3→M6→M5→M7/M8) anchor'lanmalı, ya da
+tüm 8'i TOPLU yetkilendirip mevcut-main-tabanlı tek bir `prisma migrate deploy` (klasör
+sırası, teknik olarak eşdeğer güvenli) ile uygulanmalı — ikinci durumda "ayrı onay"
+yanılsaması verilmemeli, hepsi zaten aynı anda uygulanacaktır.
+
+### 15.3 Tam zincir disposable rehearsal — EMPİRİK KANIT
+
+Fresh disposable Postgres (`postgres:16-alpine`, geçici konteyner, port 5433, iş
+bitince imha edildi), mevcut `main`'in `prisma/migrations` dizini (102 klasör, M1-M8
+dahil son 8'i) üzerinden, tek bir `prisma migrate deploy` ile:
+
+- **Sonuç: "All migrations have been successfully applied."** 102/102, 0 hata.
+- `_prisma_migrations` doğrulaması: `count(*)=102`, `rolled_back_at IS NOT NULL` = 0,
+  `finished_at IS NULL` = 0 (hiçbiri yarım kalmamış).
+- M1→M8 sekiz migration'ın tamamı `started_at`/`finished_at` ile ayrı ayrı doğrulandı,
+  hepsi milisaniyeler içinde tamamlandı (boş/küçük tablolar üzerinde, gerçek `hukuk_db`
+  satır sayılarıyla tutarlı — bkz. 15.5).
+- Bu, M4-önce-M5 (FK bağımlılığı) ve M3/M7-önce-M8 (enum ADD VALUE + CHECK referansı,
+  ayrı transaction gerekliliği) sıralamalarının PRATİKTE hatasız çalıştığının ampirik
+  kanıtıdır — herhangi bir sıralama ihlali olsaydı Postgres FK/enum hatasıyla dururdu.
+- `migrate resolve`, manuel DDL veya migration dosyası değişikliği KULLANILMADI —
+  yalnız plain `prisma migrate deploy`, mevcut `main` checkout'undan.
+- Bu rehearsal M1-M8'i TEK toplu adımda test etti (owner'ın 15.2'de tarif edilen "toplu
+  mu, anchor-sıralı mı" sorusuna doğrudan pratik cevap: toplu/klasör-sıralı çalışıyor).
+  Her migration'ın KENDİ SQL dosyası ayrıca tek tek okunarak (M1-M8 hepsi) statement
+  seviyesinde doğrulandı — ayrı 8 konteynerli anchor-SHA rehearsal'ı bu görevde
+  YAPILMADI (gerekçe: tek-atım ampirik PASS + statement-seviyesi tam okuma, aynı
+  güvenceyi daha düşük maliyetle sağladı); eventual GERÇEK GO-MIGRATE icrasında
+  §7.3/§7.4 emsali per-anchor rehearsal'ın tekrarlanması ÖNERİLİR, atlanmamalıdır.
+
+### 15.4 M3/M7/M8 (CORE DEBTOR) — register'da YENİ tespit edilen eksik kapsam
+
+§10-13 hiçbiri DEBTOR programının kendi M3/M7/M8 migration'larını kapsamıyordu (bu
+görevden önce register bunları hiç anmıyordu — DEBTOR'ın kendi ardışık migration'ları
+şimdiye kadar yalnız kendi program-içi sıra sorunu sayılmıştı, artık M1-M8 kuyruğunun
+GENELİ nedeniyle cross-program görünürlük gerektiriyor). Özet (detaylı sınıflandırma bu
+görevin final raporunda/oturum kaydında mevcuttur, owner talebi üzerine ayrı bir §16/17/18
+olarak da eklenebilir):
+- M3 (`of01_history_p04a1_r1_service_regime_code`, PR #1542, `5e2f613d`): additive enum+
+  kolon+CHECK; M7/M8'in DOĞRUDAN ön koşulu (enum/CHECK genişletmesi).
+- M7 (`of01_history_p04a1_r2_completion_mode_schema`, PR #1548, `40a91e8d`, 1/2): 2 yeni
+  enum + 3 enum ADD VALUE (M3'ün enum'una) + 2 nullable kolon.
+- M8 (aynı PR/commit, 2/2): eski CHECK drop + 5 yeni CHECK + trigger genişletme; M7'ye
+  transaction-sınırı nedeniyle HARD bağımlı (ADD VALUE aynı transaction'da referans
+  edilemez — Postgres kısıtı).
+- Üçü de BLOCKED: owner GO-MIGRATE yetkisi yok (DEBTOR-OF01-HISTORY-P04-A1-R2-CUTOVER-R01
+  görevi tam da bu nedenle SUSPENDED durumdadır).
+
+### 15.5 Taze canlı satır sayıları (bu görevde, salt-okuma, hukuk_db üzerinde ölçüldü)
+
+| Tablo | Satır | İlgili migration |
+|---|---|---|
+| ServiceOccurrence | 0 | M3, M7, M8 |
+| Tebligat | 0 | (P01, zaten uygulanmış) |
+| AuditLog | 313 | M2 |
+| CpeDecisionLog | 0 | M4, M5 (§11'in "UNKNOWN" kaydını ÇÖZER) |
+| User | 7 | M1 |
+| Client | 15 | M1 |
+| Case | 8 | M1 |
+| Lawyer | 9 | M1 |
+| CaseDebtor | 7 | (bağlam) |
+| ClaimItem | 6 | M6 |
+| UyapAttempt (tablo) | YOK | M1 henüz uygulanmadığını doğrular |
+
+Sonuç: 8 migration'ın dokunduğu HİÇBİR tablo üç haneli rakamı geçmiyor (AuditLog
+hariç, o da 313) — tüm lock-süresi endişeleri (§10/§11/§12'de "UNKNOWN" veya
+"satır sayısına bağlı" olarak işaretlenmiş olanlar dahil) bugünkü veri hacmiyle
+PRATİKTE önemsizdir. Bu, GO-MIGRATE anında YİNE TAZE ölçülmelidir (bu kayıt bir
+snapshot'tır, yetki değildir).
+
+### 15.6 Sistemik discrepancy — "blocking CI" karakterizasyonu abartılı (§10/§11/§12/§13/§14'ün TAMAMINI etkiler)
+
+Üç bağımsız alt-analiz (M4, M5, M6) birbirinden habersiz olarak AYNI bulguyu
+doğruladı: `gh api repos/.../branches/main/protection` → `required_status_checks.
+contexts = ["Web Tests (vitest)"]` — TEK GEREKLİ CHECK budur. `gh api .../rulesets`
+→ `[]` (ruleset yok). `enforce_admins.enabled = false`. Bu migration'ların
+guard'larını barındıran `test-suite` job'u ("Test Suite") GitHub tarafından
+ZORUNLU KILINAN bir merge gate'i DEĞİLDİR — script seviyesinde `exit 1` yapar ve
+her push/PR'da koşulsuz çalışır (bu ölçüde gerçek), ama platformun kendisi bunu
+main'e merge için şart koşmaz. §10/§11/§12/§13/§14'ün "blocking CI N step" ifadesi
+iş-seviyesinde doğru, platform-seviyesinde YANILTICI — owner dikkatine kaydedilir,
+mevcut disposition'lar (hepsi zaten BLOCKED/NOT AUTHORIZED) DEĞİŞTİRİLMEDİ.
+
+### 15.7 M5-özel bulgu — retention cron canlı kodu M5'i ÖNCEDEN talep ediyor
+
+`DecisionLogRetentionService.archiveOldRecords()` (@Cron 3am, `AppModule`'de kayıtlı,
+main'de CANLI kod) M5'in `uyapAttemptLinks` ilişkisini ZATEN sorguluyor. Taze
+doğrulandı: RUNTIME worktree'nin pinlendiği `200fb26b` (2026-07-22T22:26:11+03:00),
+M5'in merge zamanından (`40c1ab1e`, 2026-07-23T12:35:27+03:00) ÖNCE — yani RUNTIME şu an
+bu koda sahip DEĞİL, risk BUGÜN aktif değil (`git merge-base --is-ancestor 40c1ab1e
+200fb26b` = NO). ANCAK: RUNTIME gelecekte main HEAD'e (veya `40c1ab1e`'den sonraki
+herhangi bir noktaya) çekilirse VE M5 aynı pencerede canlı DB'ye uygulanmazsa, günlük
+KVKK retention/purge cron'u "relation does not exist" hatasıyla SESSİZCE (try/catch,
+crash yok, log var) no-op olur. Öneri (karar değil): gelecekteki herhangi bir
+RUNTIME→main-HEAD cutover'ı, M5'in DB-migration durumunu ayrıca kontrol etmeli.
+
+### 15.8 Bu bölümün ürettiği/ürtemediği
+
+- ÜRETİLDİ: §14 (M2 eksik girişi), bu §15 (freshness-check + rehearsal + kronolojik
+  sıra bulgusu + CI-enforcement netleştirmesi + M5 retention-cron bulgusu).
+  Yalnız CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R02 görev talimatının açıkça izin
+  verdiği kapsamda: eksik giriş ekleme, bayat durum düzeltmesi (CpeDecisionLog satır
+  sayısı), bağımlılık/yetki kaydı (M1→M5, kronolojik sıra).
+- ÜRETİLMEDİ: hiçbir migration için READY/GO kaydı; hiçbir program kapanış durumu
+  değişikliği; hiçbir APPLIED işareti; §10/§11/§12/§13'ün mevcut metninde HİÇBİR
+  DEĞİŞİKLİK (yalnız ek, append-only — §7→§8/§9 emsali).
+- Bu bölüm hiçbir migration'ı SEÇMEZ/yetkilendirmez. Sonraki adım owner'ın 8 ayrı
+  GO-MIGRATE kararı (veya toplu bir karar) vermesidir — bkz. final rapor.
