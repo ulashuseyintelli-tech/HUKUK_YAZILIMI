@@ -3,6 +3,7 @@ import { PrismaModule } from "../../prisma/prisma.module";
 import { LegalDeadlineService } from "./legal-deadline.service";
 import { ProceedingClassificationService } from "./proceeding-classification.service";
 import { LegalPeriodCalculationService } from "./legal-period-calculation.service";
+import { ServiceOccurrenceDeadlineCalculationService } from "./service-occurrence-deadline-calculation.service"; // DEBTOR-OF01-HISTORY-P04-B
 
 /**
  * MPB-028(a) PR-2/PR-3C/PR-4/PR-5 — kanonik hukuki süre hesabı foundation modülü.
@@ -17,7 +18,7 @@ import { LegalPeriodCalculationService } from "./legal-period-calculation.servic
  */
 @Module({
   imports: [PrismaModule],
-  providers: [LegalDeadlineService, ProceedingClassificationService, LegalPeriodCalculationService],
-  exports: [LegalDeadlineService, ProceedingClassificationService, LegalPeriodCalculationService],
+  providers: [LegalDeadlineService, ProceedingClassificationService, LegalPeriodCalculationService, ServiceOccurrenceDeadlineCalculationService],
+  exports: [LegalDeadlineService, ProceedingClassificationService, LegalPeriodCalculationService, ServiceOccurrenceDeadlineCalculationService],
 })
 export class LegalDeadlineModule {}
