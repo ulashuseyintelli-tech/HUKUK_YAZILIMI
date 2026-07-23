@@ -1541,6 +1541,44 @@ jobs:
           awk '/^[[:space:]]*Tests:/ { seen=1; passed=$2; total=$4 } END { exit !(seen && passed ~ /^[0-9]+$/ && total ~ /^[0-9]+$/ && passed==total && total>0) }' "$output_file" || \
             { echo "BLOCKED: P05B DB tests did not complete with every discovered test passing"; exit 1; }
         working-directory: project/apps/api
+      # UYAP-CPE-DECISION-LINK-WRITER-P05C-P03 (Karar C): DORMANT UyapAttemptCpeDecisionLink writer.
+      # Actor/lawyer/signer input ALMAZ; M5 composite FK + @@unique([cpeDecisionLogId]) authoritative;
+      # schema/migration EKLEMEZ. Duplicate semantics: exact replay=IDEMPOTENT, farkli iliski=CONFLICT,
+      # FK uyusmazligi=INTEGRITY error (fail-closed). STEP 1 unit + dormancy/boundary guard: module
+      # kaydi, actor input, controller/DTO gorulurse RED. STEP 2 disposable PostgreSQL 16'da idempotent
+      # replay, conflict reddi, esszamanli race, cross-tenant/case/attempt reddi, rollback dogrulanir.
+      - name: UYAP-P05C-P03 link writer unit and dormancy guard
+        run: |
+          spec=src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.service.spec.ts
+          writer=src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.service.ts
+          for f in "$spec" "$writer" \
+                   src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.types.ts \
+                   src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.errors.ts; do
+            test -f "$f" || { echo "MISSING P05C-P03 file: $f"; exit 1; }
+          done
+          if grep -nE 'UyapCpeDecisionLinkWriterService|cpe-decision-link-writer' src/modules/uyap/uyap.module.ts src/modules/uyap/uyap.service.ts; then
+            echo "FORBIDDEN P05C-P03 wiring: link writer is dormant (no module registration / no injection)"; exit 1
+          fi
+          if grep -nE 'actorUserId|actingLawyerId|signatureOwnerId|approverId|canPerformAction|Controller' "$writer"; then
+            echo "FORBIDDEN P05C-P03 surface: actor/lawyer/signer input, CPE decision or controller"; exit 1
+          fi
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath "$spec"
+        working-directory: project/apps/api
+      - name: UYAP-P05C-P03 link writer disposable DB acceptance
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          spec=src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.db-gated.integration.spec.ts
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f "$spec" || { echo "MISSING P05C-P03 DB-gated spec: $spec"; exit 1; }
+          set -o pipefail
+          output_file="$(mktemp)"
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath "$spec" 2>&1 | tee "$output_file"
+          grep -Eq "Test Suites:[[:space:]]+1 passed, 1 total" "$output_file" || \
+            { echo "BLOCKED: P05C-P03 DB suite did not execute exactly once"; exit 1; }
+          awk '/^[[:space:]]*Tests:/ { seen=1; passed=$2; total=$4 } END { exit !(seen && passed ~ /^[0-9]+$/ && total ~ /^[0-9]+$/ && passed==total && total>0) }' "$output_file" || \
+            { echo "BLOCKED: P05C-P03 DB tests did not complete with every discovered test passing"; exit 1; }
+        working-directory: project/apps/api
       # POLICY-CPE-DECISION-COMPOSITE-KEY-P05C-P01: CpeDecisionLog'u gelecekteki tenant-safe UYAP
       # evidence linkage icin composite FK HEDEFI yapar. Kapsam BILINCLI olarak tek additive unique
       # index: tenantId kolonu YOK, backfill YOK, link tablosu YOK, write-path DEGISMEZ.
