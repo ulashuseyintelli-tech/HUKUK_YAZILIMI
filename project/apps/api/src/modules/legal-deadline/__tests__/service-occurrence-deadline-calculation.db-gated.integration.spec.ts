@@ -5,7 +5,11 @@
  * zincirinin gerçek tabloda beklendiği gibi oluştuğunu kanıtlar. Fixture-building convention
  * service-occurrence-write.db-gated.integration.spec.ts'ten izlenir.
  */
-import { PrismaClient, ServiceOccurrenceServiceDateRole } from "@prisma/client";
+import {
+  PrismaClient,
+  ServiceOccurrenceRegimeCode,
+  ServiceOccurrenceServiceDateRole,
+} from "@prisma/client";
 import { randomUUID } from "crypto";
 import { resolveTestDatabaseUrl } from "../../../../test/test-db-env";
 import { ServiceOccurrenceDeadlineCalculationService } from "../service-occurrence-deadline-calculation.service";
@@ -101,6 +105,12 @@ describeWithDisposableDb("ServiceOccurrenceDeadlineCalculationService — dispos
         timePrecision: "DATE_ONLY",
         addressTypeAtOccurrence: "BILINEN",
         serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY,
+        // DEBTOR-OF01-HISTORY-P04-A1-R2: PR #1547 (merged as #02108e02) independently reconciled
+        // this SAME fixture against origin/main's THEN-current enum name (DIRECT_DELIVERY). This
+        // PR renames that value to IMMEDIATE_SERVICE (owner decision after duplicate-verification:
+        // "keep IMMEDIATE_SERVICE, don't revert to DIRECT_DELIVERY") — DIRECT_DELIVERY is now a
+        // dead, never-written enum member (bkz. schema.prisma yorumu).
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE,
         recordedBySystem: "TEST_HARNESS",
         status: "ACTIVE",
         ...overrides,
@@ -245,6 +255,10 @@ describeWithDisposableDb("ServiceOccurrenceDeadlineCalculationService — dispos
 
     const brokenOccurrence = await createOccurrence(fx, {
       serviceDateRole: null,
+      // DEBTOR-OF01-HISTORY-P04-A1-R2: serviceRegimeCode de birlikte null olmalı (bkz.
+      // occ_p04a1r2_regime_code_pairs_with_date_role_check pairing invariant'ı) — "eksik fact"
+      // senaryosunun kendisi bunu gerektiriyor, serviceDateRole TEK BAŞINA null bırakılamaz.
+      serviceRegimeCode: null,
       sourceTebligatId: fx.tebligatId,
     });
 

@@ -3,7 +3,14 @@
  * Unit testler (service-occurrence.service.spec.ts) Prisma'yı mock'lar; bu dosya gerçek bir Postgres
  * üzerinde tenant-isolation, idempotency (STRONG_SOURCE_HASH) ve supersede concurrency'sini kanıtlar.
  */
-import { PrismaClient, ServiceOccurrenceTimePrecision, ServiceOccurrenceServiceDateRole, ServiceOccurrenceRegimeCode } from "@prisma/client";
+import {
+  PrismaClient,
+  ServiceOccurrenceTimePrecision,
+  ServiceOccurrenceServiceDateRole,
+  ServiceOccurrenceRegimeCode,
+  ServiceCompletionMode,
+  SubstituteRecipientBasis,
+} from "@prisma/client";
 import { randomUUID } from "crypto";
 import { resolveTestDatabaseUrl } from "../../../../../test/test-db-env";
 import { ServiceOccurrenceService } from "../service-occurrence.service";
@@ -310,16 +317,22 @@ describeWithDisposableDb("ServiceOccurrenceService — disposable DB (write-side
       expect((row as any).serviceRegimeCode).toBe("TK_21_1");
     });
 
-    // TEST-13
-    it("TEST-13: TK_20 occurrence doğru immutable rejimle saklanır", async () => {
+    // TEST-13 (DEBTOR-OF01-HISTORY-P04-A1-R2: TK_20 → TK_20_TEMPORARY_ABSENCE yeniden adlandırıldı,
+    // artık serviceCompletionMode zorunlu — bkz. occ_p04a1r2_tk20_requires_completion_mode_check).
+    it("TEST-13: TK_20_TEMPORARY_ABSENCE occurrence doğru immutable rejimle saklanır", async () => {
       const fx = await buildFixture("regime-code-tk20");
       const result = await service.createOccurrence(
-        baseCreateCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20 }),
+        baseCreateCommand(fx, {
+          serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY,
+          serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+          serviceCompletionMode: ServiceCompletionMode.NOTICE_POSTED,
+        }),
       );
 
       const row = await prisma.serviceOccurrence.findUniqueOrThrow({ where: { id: result.occurrence.id } });
-      expect((row as any).serviceRegimeCode).toBe("TK_20");
+      expect((row as any).serviceRegimeCode).toBe("TK_20_TEMPORARY_ABSENCE");
       expect(row.serviceDateRole).toBe("MUHTAR_DELIVERY");
+      expect((row as any).serviceCompletionMode).toBe("NOTICE_POSTED");
     });
 
     // TEST-14
@@ -346,8 +359,9 @@ describeWithDisposableDb("ServiceOccurrenceService — disposable DB (write-side
       const client = await prisma.tebligat.findUniqueOrThrow({ where: { id: fx.tebligatId } });
 
       // Servis validasyonunu BYPASS ederek doğrudan raw insert — DB CHECK constraint'in KENDİSİNİ
-      // (occ_p04a1r1_regime_code_pairs_with_date_role_check) kanıtlamak için (owner brief §18 TEST-10:
-      // disposable Postgres testi, yalnız app-level validasyon değil).
+      // kanıtlamak için (owner brief §18 TEST-10: disposable Postgres testi, yalnız app-level
+      // validasyon değil). DEBTOR-OF01-HISTORY-P04-A1-R2: constraint DROP+RECREATE edildi
+      // (occ_p04a1r1_... -> occ_p04a1r2_regime_code_pairs_with_date_role_check), mantık AYNI.
       await expect(
         prisma.$executeRaw`
           INSERT INTO "ServiceOccurrence"
@@ -358,7 +372,7 @@ describeWithDisposableDb("ServiceOccurrenceService — disposable DB (write-side
              'POSTAL_DELIVERY_RESULT', 'TEST_HARNESS', 'TESLIM_EDILDI',
              '2026-01-10'::date, 'DATE_ONLY', 'BILINEN', 'DIRECT_DELIVERY', NULL, 'TEST_HARNESS')
         `,
-      ).rejects.toThrow(/occ_p04a1r1_regime_code_pairs_with_date_role_check/);
+      ).rejects.toThrow(/occ_p04a1r2_regime_code_pairs_with_date_role_check/);
     });
 
     // TEST-11
@@ -387,7 +401,114 @@ describeWithDisposableDb("ServiceOccurrenceService — disposable DB (write-side
       );
 
       await expect(
-        prisma.$executeRaw`UPDATE "ServiceOccurrence" SET "serviceRegimeCode" = 'TK_20' WHERE "id" = ${result.occurrence.id}`,
+        prisma.$executeRaw`UPDATE "ServiceOccurrence" SET "serviceRegimeCode" = 'TK_20_TEMPORARY_ABSENCE' WHERE "id" = ${result.occurrence.id}`,
+      ).rejects.toThrow(/service_occurrence_immutable_violation/);
+    });
+  });
+
+  // DEBTOR-OF01-HISTORY-P04-A1-R2: serviceCompletionMode/substituteRecipientBasis — owner
+  // "STOP-03 RESOLUTION" — enum/kolon/CHECK/immutability disposable-DB kanıtı.
+  describe("serviceCompletionMode + substituteRecipientBasis (DEBTOR-OF01-HISTORY-P04-A1-R2)", () => {
+    // TEST-22 (owner): DELIVERED_TO_AUTHORIZED_PERSON immutable occurrence'a aynen yazılır.
+    it("TEST-22: TK_20_TEMPORARY_ABSENCE + DELIVERED_TO_AUTHORIZED_PERSON + substituteRecipientBasis gerçek Postgres'te create+read çalışır", async () => {
+      const fx = await buildFixture("completion-mode-authorized-person");
+      const result = await service.createOccurrence(
+        baseCreateCommand(fx, {
+          serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY,
+          serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+          serviceCompletionMode: ServiceCompletionMode.DELIVERED_TO_AUTHORIZED_PERSON,
+          substituteRecipientBasis: SubstituteRecipientBasis.ARTICLE_16,
+        } as any),
+      );
+
+      const row = await prisma.serviceOccurrence.findUniqueOrThrow({ where: { id: result.occurrence.id } });
+      expect((row as any).serviceCompletionMode).toBe("DELIVERED_TO_AUTHORIZED_PERSON");
+      expect((row as any).substituteRecipientBasis).toBe("ARTICLE_16");
+    });
+
+    // TEST-23 (owner): NOTICE_POSTED immutable occurrence'a aynen yazılır.
+    it("TEST-23: TK_20_TEMPORARY_ABSENCE + NOTICE_POSTED (substituteRecipientBasis YOK) gerçek Postgres'te create+read çalışır", async () => {
+      const fx = await buildFixture("completion-mode-notice-posted");
+      const result = await service.createOccurrence(
+        baseCreateCommand(fx, {
+          serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY,
+          serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+          serviceCompletionMode: ServiceCompletionMode.NOTICE_POSTED,
+        } as any),
+      );
+
+      const row = await prisma.serviceOccurrence.findUniqueOrThrow({ where: { id: result.occurrence.id } });
+      expect((row as any).serviceCompletionMode).toBe("NOTICE_POSTED");
+      expect((row as any).substituteRecipientBasis).toBeNull();
+    });
+
+    // TEST-18/DB seviyesi: TK_20_TEMPORARY_ABSENCE + serviceCompletionMode=NULL → DB CHECK ile reddedilir
+    // (occ_p04a1r2_tk20_requires_completion_mode_check) — servis validasyonunu BYPASS eden raw insert.
+    it("TEST-18-DB: TK_20_TEMPORARY_ABSENCE + serviceCompletionMode NULL → occ_p04a1r2_tk20_requires_completion_mode_check ile reddedilir", async () => {
+      const fx = await buildFixture("completion-mode-tk20-required-reject");
+      const client = await prisma.tebligat.findUniqueOrThrow({ where: { id: fx.tebligatId } });
+
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO "ServiceOccurrence"
+            ("id","tenantId","caseId","caseDebtorId","sourceTebligatId","occurrenceType","sourceSystemCode","sourceCode",
+             "occurredOn","timePrecision","addressTypeAtOccurrence","serviceDateRole","serviceRegimeCode","serviceCompletionMode","recordedBySystem")
+          VALUES
+            (gen_random_uuid()::text, ${fx.tenantId}, ${client.caseId}, ${fx.caseDebtorId}, ${fx.tebligatId},
+             'POSTAL_DELIVERY_RESULT', 'TEST_HARNESS', 'MUHTARLIGA_BIRAKILDI',
+             '2026-01-10'::date, 'DATE_ONLY', 'BILINEN', 'MUHTAR_DELIVERY', 'TK_20_TEMPORARY_ABSENCE', NULL, 'TEST_HARNESS')
+        `,
+      ).rejects.toThrow(/occ_p04a1r2_tk20_requires_completion_mode_check/);
+    });
+
+    // TEST-26/DB seviyesi (owner): DELIVERED_TO_AUTHORIZED_PERSON + substituteRecipientBasis NULL
+    // → occ_p04a1r2_tk20_authorized_person_requires_basis_check ile reddedilir.
+    it("TEST-26-DB: TK_20_TEMPORARY_ABSENCE + DELIVERED_TO_AUTHORIZED_PERSON + substituteRecipientBasis NULL → reddedilir", async () => {
+      const fx = await buildFixture("completion-mode-basis-required-reject");
+      const client = await prisma.tebligat.findUniqueOrThrow({ where: { id: fx.tebligatId } });
+
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO "ServiceOccurrence"
+            ("id","tenantId","caseId","caseDebtorId","sourceTebligatId","occurrenceType","sourceSystemCode","sourceCode",
+             "occurredOn","timePrecision","addressTypeAtOccurrence","serviceDateRole","serviceRegimeCode","serviceCompletionMode","substituteRecipientBasis","recordedBySystem")
+          VALUES
+            (gen_random_uuid()::text, ${fx.tenantId}, ${client.caseId}, ${fx.caseDebtorId}, ${fx.tebligatId},
+             'POSTAL_DELIVERY_RESULT', 'TEST_HARNESS', 'MUHTARLIGA_BIRAKILDI',
+             '2026-01-10'::date, 'DATE_ONLY', 'BILINEN', 'MUHTAR_DELIVERY', 'TK_20_TEMPORARY_ABSENCE', 'DELIVERED_TO_AUTHORIZED_PERSON', NULL, 'TEST_HARNESS')
+        `,
+      ).rejects.toThrow(/occ_p04a1r2_tk20_authorized_person_requires_basis_check/);
+    });
+
+    // Regresyon: TK_21_1 serviceCompletionMode=NULL ile HÂLÂ kabul edilir (bugün deterministik değil,
+    // owner "STOP-03 RESOLUTION" TK 21/1-21/2 notu — R1'in kendi çalışan davranışı BOZULMADI).
+    it("REGRESYON: TK_21_1 + serviceCompletionMode NULL hâlâ kabul edilir (R1 davranışı korunur)", async () => {
+      const fx = await buildFixture("completion-mode-tk211-no-regression");
+      const result = await service.createOccurrence(
+        baseCreateCommand(fx, {
+          serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY,
+          serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_1,
+        }),
+      );
+
+      const row = await prisma.serviceOccurrence.findUniqueOrThrow({ where: { id: result.occurrence.id } });
+      expect((row as any).serviceRegimeCode).toBe("TK_21_1");
+      expect((row as any).serviceCompletionMode).toBeNull();
+    });
+
+    // Immutability: serviceCompletionMode/substituteRecipientBasis de trigger'a dahil (R1 emsali).
+    it("serviceCompletionMode/substituteRecipientBasis immutability trigger ile reddedilir", async () => {
+      const fx = await buildFixture("completion-mode-immutable");
+      const result = await service.createOccurrence(
+        baseCreateCommand(fx, {
+          serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY,
+          serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+          serviceCompletionMode: ServiceCompletionMode.NOTICE_POSTED,
+        } as any),
+      );
+
+      await expect(
+        prisma.$executeRaw`UPDATE "ServiceOccurrence" SET "serviceCompletionMode" = 'DELIVERED_TO_AUTHORIZED_PERSON' WHERE "id" = ${result.occurrence.id}`,
       ).rejects.toThrow(/service_occurrence_immutable_violation/);
     });
   });

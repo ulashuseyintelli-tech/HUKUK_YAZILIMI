@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { Prisma, ServiceOccurrence, ServiceOccurrenceType } from "@prisma/client";
+import { Prisma, ServiceOccurrence, ServiceOccurrenceType, ServiceOccurrenceRegimeCode, ServiceCompletionMode } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import {
   CreateServiceOccurrenceCommand,
@@ -26,6 +26,29 @@ function isLegacyBaselineType(value: ServiceOccurrenceType): boolean {
   return value === ServiceOccurrenceType.LEGACY_BASELINE;
 }
 
+/**
+ * DEBTOR-OF01-HISTORY-P04-A1-R2: serviceRegimeCode -> izin verilen serviceCompletionMode kümesi.
+ * DB CHECK occ_p04a1r2_completion_mode_consistent_with_regime_check ile birebir — uygulama
+ * seviyesinde erken/net hata mesajı için tekrarlanır. TK_21_1/TK_21_2'nin NOTICE_POSTED'ı bugün
+ * write-path tarafından hiç ÜRETİLMEZ (bkz. determinePttResultAction yorumu, owner "STOP-03
+ * RESOLUTION" — deterministik değilse HARD STOP) ama gelecekte determinist bir kaynak bulunursa
+ * yazılabilmesi için burada (ve DB'de) BİLE İZİN VERİLİR — bu bir speculative genelleme DEĞİLDİR,
+ * yalnız "bu değer YAZILIRSA tutarlı olmalı" invariant'ıdır.
+ */
+const REGIME_TO_ALLOWED_COMPLETION_MODES: Partial<Record<ServiceOccurrenceRegimeCode, ServiceCompletionMode[]>> = {
+  [ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE]: [
+    ServiceCompletionMode.DIRECT_RECIPIENT_DELIVERY,
+    ServiceCompletionMode.DELIVERED_TO_AUTHORIZED_PERSON,
+  ],
+  [ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE]: [
+    ServiceCompletionMode.DELIVERED_TO_AUTHORIZED_PERSON,
+    ServiceCompletionMode.NOTICE_POSTED,
+  ],
+  [ServiceOccurrenceRegimeCode.TK_21_1]: [ServiceCompletionMode.NOTICE_POSTED],
+  [ServiceOccurrenceRegimeCode.TK_21_2]: [ServiceCompletionMode.NOTICE_POSTED],
+  [ServiceOccurrenceRegimeCode.PUBLICATION]: [ServiceCompletionMode.PUBLICATION],
+};
+
 const MAX_TRANSACTION_ATTEMPTS = 3;
 
 /**
@@ -49,6 +72,8 @@ export class ServiceOccurrenceService {
       command.addressTypeAtOccurrence,
       command.serviceDateRole,
       command.serviceRegimeCode,
+      command.serviceCompletionMode,
+      command.substituteRecipientBasis,
     );
     if (!command.idempotencyMode) {
       throw new ServiceOccurrenceValidationError("idempotencyMode zorunludur, örtük NONE varsayılamaz");
@@ -89,6 +114,8 @@ export class ServiceOccurrenceService {
       command.addressTypeAtOccurrence,
       command.serviceDateRole,
       command.serviceRegimeCode,
+      command.serviceCompletionMode,
+      command.substituteRecipientBasis,
     );
     if (!command.idempotencyMode) {
       throw new ServiceOccurrenceValidationError("idempotencyMode zorunludur, örtük NONE varsayılamaz");
@@ -123,6 +150,8 @@ export class ServiceOccurrenceService {
       command.replacement.addressTypeAtOccurrence,
       command.replacement.serviceDateRole,
       command.replacement.serviceRegimeCode,
+      command.replacement.serviceCompletionMode,
+      command.replacement.substituteRecipientBasis,
     );
     if (!command.correctionReasonCode?.trim()) {
       throw new ServiceOccurrenceValidationError("correctionReasonCode zorunludur");
@@ -173,6 +202,8 @@ export class ServiceOccurrenceService {
         addressTypeAtOccurrence: command.replacement.addressTypeAtOccurrence,
         serviceDateRole: command.replacement.serviceDateRole ?? null,
         serviceRegimeCode: command.replacement.serviceRegimeCode ?? null,
+        serviceCompletionMode: command.replacement.serviceCompletionMode ?? null,
+        substituteRecipientBasis: command.replacement.substituteRecipientBasis ?? null,
         receivedAt: command.replacement.receivedAt ?? null,
         recordedByUserId: command.actor.userId ?? null,
         recordedBySystem: command.actor.systemCode ?? null,
@@ -207,6 +238,8 @@ export class ServiceOccurrenceService {
     addressTypeAtOccurrence: string | null | undefined,
     serviceDateRole?: string | null,
     serviceRegimeCode?: string | null,
+    serviceCompletionMode?: string | null,
+    substituteRecipientBasis?: string | null,
   ): void {
     if (isLegacyBaselineType(occurrenceType)) {
       throw new ServiceOccurrenceValidationError("occurrenceType=LEGACY_BASELINE normal create/supersede metodunda kullanılamaz");
@@ -229,6 +262,45 @@ export class ServiceOccurrenceService {
     if (isServiceDateRoleNull !== isServiceRegimeCodeNull) {
       throw new ServiceOccurrenceValidationError(
         "serviceRegimeCode ve serviceDateRole birlikte dolu ya da birlikte null olmalıdır",
+      );
+    }
+    // DEBTOR-OF01-HISTORY-P04-A1-R2 (owner "STOP-03 RESOLUTION"): serviceCompletionMode
+    // serviceRegimeCode/serviceDateRole'ün AKSİNE bağımsız nullable'dır (TK_21_1/TK_21_2 bugün
+    // deterministik değil) — yalnız DOLU olduğunda regime ile TUTARLI olmalı (DB CHECK
+    // occ_p04a1r2_completion_mode_consistent_with_regime_check ile birebir).
+    if (serviceCompletionMode != null) {
+      const allowed = serviceRegimeCode
+        ? REGIME_TO_ALLOWED_COMPLETION_MODES[serviceRegimeCode as ServiceOccurrenceRegimeCode]
+        : undefined;
+      if (!allowed || !allowed.includes(serviceCompletionMode as ServiceCompletionMode)) {
+        throw new ServiceOccurrenceValidationError(
+          `serviceCompletionMode (${serviceCompletionMode}) serviceRegimeCode (${serviceRegimeCode ?? "null"}) ile tutarsız`,
+        );
+      }
+    }
+    // DB CHECK occ_p04a1r2_tk20_requires_completion_mode_check ile birebir: TK_20_TEMPORARY_ABSENCE
+    // için owner kararı gereği tk20CompletionMode operatör-zorunlu girdi, serviceCompletionMode
+    // ASLA null kalamaz.
+    if (serviceRegimeCode === ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE && serviceCompletionMode == null) {
+      throw new ServiceOccurrenceValidationError(
+        "serviceRegimeCode=TK_20_TEMPORARY_ABSENCE için serviceCompletionMode zorunludur",
+      );
+    }
+    // DB CHECK occ_p04a1r2_substitute_recipient_basis_requires_authorized_person_check ile birebir.
+    if (substituteRecipientBasis != null && serviceCompletionMode !== ServiceCompletionMode.DELIVERED_TO_AUTHORIZED_PERSON) {
+      throw new ServiceOccurrenceValidationError(
+        "substituteRecipientBasis yalnız serviceCompletionMode=DELIVERED_TO_AUTHORIZED_PERSON olduğunda dolu olabilir",
+      );
+    }
+    // DB CHECK occ_p04a1r2_tk20_authorized_person_requires_basis_check ile birebir: owner kararı
+    // gereği TK_20 + DELIVERED_TO_AUTHORIZED_PERSON için substituteRecipientBasis zorunlu.
+    if (
+      serviceRegimeCode === ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE &&
+      serviceCompletionMode === ServiceCompletionMode.DELIVERED_TO_AUTHORIZED_PERSON &&
+      substituteRecipientBasis == null
+    ) {
+      throw new ServiceOccurrenceValidationError(
+        "TK_20_TEMPORARY_ABSENCE + DELIVERED_TO_AUTHORIZED_PERSON için substituteRecipientBasis zorunludur",
       );
     }
     if (timePrecision === "DATE_ONLY" && occurredAt != null) {
@@ -285,6 +357,8 @@ export class ServiceOccurrenceService {
       addressTypeAtOccurrence: command.addressTypeAtOccurrence,
       serviceDateRole: command.serviceDateRole ?? null,
       serviceRegimeCode: command.serviceRegimeCode ?? null,
+      serviceCompletionMode: command.serviceCompletionMode ?? null,
+      substituteRecipientBasis: command.substituteRecipientBasis ?? null,
       receivedAt: command.receivedAt ?? null,
       recordedByUserId: command.actor.userId ?? null,
       recordedBySystem: command.actor.systemCode ?? null,
@@ -349,6 +423,8 @@ export class ServiceOccurrenceService {
       existing.addressTypeAtOccurrence === command.addressTypeAtOccurrence &&
       (existing.serviceDateRole ?? null) === (command.serviceDateRole ?? null) &&
       (existing.serviceRegimeCode ?? null) === (command.serviceRegimeCode ?? null) &&
+      (existing.serviceCompletionMode ?? null) === (command.serviceCompletionMode ?? null) &&
+      (existing.substituteRecipientBasis ?? null) === (command.substituteRecipientBasis ?? null) &&
       this.datesEqual(existing.receivedAt, command.receivedAt) &&
       (existing.barcodeNo ?? null) === (command.barcodeNo ?? null) &&
       (existing.evidenceReference ?? null) === (command.evidenceReference ?? null)

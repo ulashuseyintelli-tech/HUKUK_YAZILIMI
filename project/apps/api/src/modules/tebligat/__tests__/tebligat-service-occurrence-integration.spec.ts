@@ -182,7 +182,14 @@ describe("TebligatService.recordPttResult — ServiceOccurrence/outbox entegrasy
       await svc.recordPttResult(
         "t1",
         "tb-1",
-        { pttResult: TebligatPttResult.ADRESTE_BULUNAMADI, tk21Type: "TK_20", ilanDate: "2026-07-15" } as any,
+        {
+          pttResult: TebligatPttResult.ADRESTE_BULUNAMADI,
+          tk21Type: "TK_20",
+          ilanDate: "2026-07-15",
+          // DEBTOR-OF01-HISTORY-P04-A1-R2 STOP-03 çözümü: artık zorunlu operatör girdisi.
+          tk20CompletionMode: "NOTICE_POSTED",
+          tk20CompletionDate: "2026-07-15",
+        } as any,
         "user-1",
       );
       const [, command] = serviceOccurrenceService.createWithinTransaction.mock.calls[0];
