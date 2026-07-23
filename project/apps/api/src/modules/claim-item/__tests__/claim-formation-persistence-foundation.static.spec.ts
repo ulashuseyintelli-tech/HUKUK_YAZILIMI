@@ -124,20 +124,27 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
     expect(MIGRATION).not.toMatch(/DELETE\s+FROM\s+"(?:ClaimItem|OfficeApprovalRequest)"/);
   });
 
-  it('allows only the owner-gated dormant I02B intent adapter and no snapshot or production call-site', () => {
+  it('allows only the owner-gated dormant intent adapter/finalizer and no production call-site', () => {
     const offenders = productionTypeScriptFiles(path.join(API_ROOT, 'src'))
       .filter((file) => /claimItemFormationIntent|claimFormationSnapshot/.test(fs.readFileSync(file, 'utf8')))
-      .map((file) => path.relative(API_ROOT, file));
+      .map((file) => path.relative(API_ROOT, file))
+      .sort();
 
     expect(offenders).toEqual([
+      path.normalize(
+        'src/modules/claim-item/formation-finalizer/transactional-claim-item-formation-finalizer.service.ts',
+      ),
       path.normalize(
         'src/modules/claim-item/formation-intent/claim-item-formation-office-approval.adapter.ts',
       ),
     ]);
 
-    const adapter = fs.readFileSync(path.join(API_ROOT, offenders[0]), 'utf8');
+    const finalizer = fs.readFileSync(path.join(API_ROOT, offenders[0]), 'utf8');
+    const adapter = fs.readFileSync(path.join(API_ROOT, offenders[1]), 'utf8');
     expect(adapter).toContain('claimItemFormationIntent.create');
     expect(adapter).not.toContain('claimFormationSnapshot.create');
+    expect(finalizer).toContain('claimFormationSnapshot.create');
+    expect(finalizer).toContain('claimItem.create');
 
     const moduleSource = fs.readFileSync(
       path.join(API_ROOT, 'src/modules/claim-item/claim-item.module.ts'),

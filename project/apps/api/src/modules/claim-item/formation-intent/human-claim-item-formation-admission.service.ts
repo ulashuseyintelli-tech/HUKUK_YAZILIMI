@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import {
   CLAIM_ITEM_FORMATION_CANONICAL_SERIALIZATION_VERSION,
   CLAIM_ITEM_FORMATION_EXPIRY_MS,
@@ -14,6 +15,7 @@ import {
 } from './claim-item-formation-intent.contract';
 import {
   buildCaseDocumentSourceIdentityHash,
+  buildClaimItemFormationIntentChecksum,
   canonicalFormationPayload,
   domainSeparatedFormationHash,
   isSha256Hex,
@@ -163,32 +165,31 @@ export class HumanClaimItemFormationAdmissionService {
       CLAIM_ITEM_FORMATION_NORMALIZED_INPUT_VERSION,
       normalizedInput,
     );
-    const intentPayload = Object.freeze({
-      normalizedInputChecksum,
-      sourceIdentityHash,
-      sourceVersionId: source.versionId,
-      canonicalSourceFingerprint: source.canonicalSourceFingerprint,
-      sourceResolutionHash: source.resolutionHash,
-      componentCategory: legalBasis.componentCategory,
-      componentSubtypeCode: legalBasis.componentSubtypeCode,
-      componentSubtypeVersion: legalBasis.componentSubtypeVersion,
-      componentSubtypeChecksum: legalBasis.componentSubtypeChecksum,
-      legalBasisCode: legalBasis.legalBasisCode,
-      legalBasisVersion: legalBasis.legalBasisVersion,
-      legalBasisChecksum: legalBasis.legalBasisChecksum,
-      legalBasisResolutionHash: legalBasis.resolutionHash,
-      originalAmountMinor: command.money.originalAmountMinor.toString(),
-      demandedAmountMinor: command.money.demandedAmountMinor.toString(),
-      currency: command.money.currency,
-      minorUnit: command.money.minorUnit,
-      effectiveAt: command.effectiveAt,
-      liabilityContextHash: liability.hash,
-      evidenceRefsHash: evidence.hash,
-      provenanceHash: provenance.hash,
-    }) as ClaimFormationJsonValue;
-    const intentChecksum = domainSeparatedFormationHash(
+    const intentChecksum = buildClaimItemFormationIntentChecksum(
       CLAIM_ITEM_FORMATION_INTENT_CONTRACT_VERSION,
-      intentPayload,
+      {
+        normalizedInputChecksum,
+        sourceIdentityHash,
+        sourceVersionId: source.versionId,
+        canonicalSourceFingerprint: source.canonicalSourceFingerprint,
+        sourceResolutionHash: source.resolutionHash,
+        componentCategory: legalBasis.componentCategory,
+        componentSubtypeCode: legalBasis.componentSubtypeCode,
+        componentSubtypeVersion: legalBasis.componentSubtypeVersion,
+        componentSubtypeChecksum: legalBasis.componentSubtypeChecksum,
+        legalBasisCode: legalBasis.legalBasisCode,
+        legalBasisVersion: legalBasis.legalBasisVersion,
+        legalBasisChecksum: legalBasis.legalBasisChecksum,
+        legalBasisResolutionHash: legalBasis.resolutionHash,
+        originalAmountMinor: command.money.originalAmountMinor,
+        demandedAmountMinor: command.money.demandedAmountMinor,
+        currency: command.money.currency,
+        minorUnit: command.money.minorUnit,
+        effectiveAt: command.effectiveAt,
+        liabilityContextHash: liability.hash,
+        evidenceRefsHash: evidence.hash,
+        provenanceHash: provenance.hash,
+      },
     );
 
     const persistence: PersistClaimItemFormationIntentInput = {
@@ -281,6 +282,7 @@ export class HumanClaimItemFormationAdmissionService {
     }
     if (
       !source.version ||
+      !source.claimItemDocumentSourceType ||
       !source.fingerprintVersion ||
       !source.documentType ||
       !source.documentClassificationVersion ||
@@ -373,6 +375,63 @@ export class HumanClaimItemFormationAdmissionService {
       (legalBasis.interestEligibility !== 'ACCRUES' && policyFields.some((value) => value !== null))
     ) {
       throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
+    }
+    this.assertClaimItemProjection(legalBasis);
+  }
+
+  private assertClaimItemProjection(legalBasis: ExactLegalBasisBindingV1): void {
+    const projection = legalBasis.claimItemProjection;
+    const interestStartDate =
+      projection?.interestStartDate == null
+        ? null
+        : new Date(projection.interestStartDate);
+    const interestRate =
+      projection?.interestRate == null
+        ? null
+        : this.parseInterestRate(projection.interestRate);
+    if (
+      !projection ||
+      !projection.itemType ||
+      !projection.interestAccrualStatus ||
+      !Array.isArray(projection.liableDebtorIds) ||
+      !this.isOpaqueReferenceList(projection.liableDebtorIds)
+    ) {
+      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
+    }
+    if (
+      (legalBasis.interestEligibility === 'ACCRUES' &&
+        (projection.interestAccrualStatus !== 'ACCRUES' ||
+          !projection.interestType ||
+          !projection.interestStartDateProvenance ||
+          (projection.interestStartDateProvenance !==
+            'ENFORCEMENT_PROCEEDING_DATE' &&
+            interestStartDate === null) ||
+          (interestStartDate !== null &&
+            !Number.isFinite(interestStartDate.getTime())) ||
+          (interestRate !== null &&
+            (!interestRate.isFinite() ||
+              interestRate.decimalPlaces() > 2 ||
+              interestRate.abs().greaterThan('999.99'))))) ||
+      (legalBasis.interestEligibility === 'NO_INTEREST' &&
+        (projection.interestAccrualStatus !== 'NO_INTEREST' ||
+          projection.interestType !== null ||
+          projection.interestRate !== null ||
+          projection.interestStartDate !== null ||
+          projection.interestStartDateProvenance !== null)) ||
+      (legalBasis.interestEligibility === 'UNRESOLVED' &&
+        projection.interestAccrualStatus !== 'UNKNOWN')
+    ) {
+      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
+    }
+  }
+
+  private parseInterestRate(value: string): Prisma.Decimal {
+    try {
+      return new Prisma.Decimal(value);
+    } catch {
+      throw new ClaimItemFormationAdmissionError(
+        'INVALID_FORMATION_CONTEXT',
+      );
     }
   }
 

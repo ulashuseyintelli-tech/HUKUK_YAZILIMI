@@ -1,4 +1,11 @@
 import {
+  ClaimItemType,
+  DocumentSourceType,
+  InterestAccrualStatus,
+  InterestStartDateProvenance,
+  InterestType,
+} from '@prisma/client';
+import {
   type ClaimFormationJsonValue,
   type ClaimItemFormationComponentCategory,
 } from './claim-item-formation-intent.contract';
@@ -35,6 +42,7 @@ export interface ExactCaseDocumentSourceV1 {
   readonly fingerprintVersion: string;
   readonly fingerprintVerified: boolean;
   readonly documentType: string;
+  readonly claimItemDocumentSourceType: DocumentSourceType;
   readonly documentClassificationVersion: string;
   readonly lifecycleStatus: string;
   readonly availabilityStatus: string;
@@ -91,6 +99,21 @@ export interface ExactLegalBasisBindingV1 {
   readonly legalReviewRequired: boolean;
   readonly resolutionContractVersion: string;
   readonly resolutionHash: string;
+  /**
+   * Exact, version-bound projection into the existing ClaimItem persistence
+   * vocabulary. The dormant finalizer must never infer these legal semantics
+   * from component labels or use a current/latest fallback.
+   */
+  readonly claimItemProjection: Readonly<{
+    itemType: ClaimItemType;
+    interestAccrualStatus: InterestAccrualStatus;
+    interestType: InterestType | null;
+    interestRate: string | null;
+    interestStartDate: string | null;
+    interestStartDateProvenance: InterestStartDateProvenance | null;
+    isAllDebtorsLiable: boolean;
+    liableDebtorIds: readonly string[];
+  }>;
 }
 
 export abstract class LegalBasisExactVersionResolverPort {

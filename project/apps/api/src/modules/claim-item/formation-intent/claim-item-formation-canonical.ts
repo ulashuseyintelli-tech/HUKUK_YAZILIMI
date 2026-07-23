@@ -51,3 +51,59 @@ export function buildCaseDocumentSourceIdentityHash(input: {
 export function isSha256Hex(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 }
+
+export interface ClaimItemFormationIntentChecksumInput {
+  readonly normalizedInputChecksum: string;
+  readonly sourceIdentityHash: string;
+  readonly sourceVersionId: string;
+  readonly canonicalSourceFingerprint: string;
+  readonly sourceResolutionHash: string;
+  readonly componentCategory: string;
+  readonly componentSubtypeCode: string;
+  readonly componentSubtypeVersion: string;
+  readonly componentSubtypeChecksum: string;
+  readonly legalBasisCode: string;
+  readonly legalBasisVersion: string;
+  readonly legalBasisChecksum: string;
+  readonly legalBasisResolutionHash: string;
+  readonly originalAmountMinor: bigint;
+  readonly demandedAmountMinor: bigint;
+  readonly currency: string;
+  readonly minorUnit: number;
+  readonly effectiveAt: Date | string;
+  readonly liabilityContextHash: string;
+  readonly evidenceRefsHash: string;
+  readonly provenanceHash: string;
+}
+
+export function buildClaimItemFormationIntentChecksum(
+  contractVersion: string,
+  input: ClaimItemFormationIntentChecksumInput,
+): string {
+  return domainSeparatedFormationHash(contractVersion, {
+    normalizedInputChecksum: input.normalizedInputChecksum,
+    sourceIdentityHash: input.sourceIdentityHash,
+    sourceVersionId: input.sourceVersionId,
+    canonicalSourceFingerprint: input.canonicalSourceFingerprint,
+    sourceResolutionHash: input.sourceResolutionHash,
+    componentCategory: input.componentCategory,
+    componentSubtypeCode: input.componentSubtypeCode,
+    componentSubtypeVersion: input.componentSubtypeVersion,
+    componentSubtypeChecksum: input.componentSubtypeChecksum,
+    legalBasisCode: input.legalBasisCode,
+    legalBasisVersion: input.legalBasisVersion,
+    legalBasisChecksum: input.legalBasisChecksum,
+    legalBasisResolutionHash: input.legalBasisResolutionHash,
+    originalAmountMinor: input.originalAmountMinor.toString(),
+    demandedAmountMinor: input.demandedAmountMinor.toString(),
+    currency: input.currency,
+    minorUnit: input.minorUnit,
+    effectiveAt:
+      input.effectiveAt instanceof Date
+        ? input.effectiveAt.toISOString()
+        : input.effectiveAt,
+    liabilityContextHash: input.liabilityContextHash,
+    evidenceRefsHash: input.evidenceRefsHash,
+    provenanceHash: input.provenanceHash,
+  });
+}
