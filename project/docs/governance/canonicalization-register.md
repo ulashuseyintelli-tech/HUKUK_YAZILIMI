@@ -741,31 +741,35 @@ ClaimItem/ClaimFormationSnapshot finalizer, OfficeApproval execution, human-crea
 historical mutation/backfill ve Collection/shared-boundary değişikliği yoktur. I03 yalnız
 owner-gated next eligible task'tır; implementation authority bu kayıtla verilmez.
 
-### RCV-CLAIM-FORM-P02-S08-I02B-I01-GOV — Writer Foundation (Owner-Authorized, Merge Pending)
+### RCV-CLAIM-FORM-P02-S08-I02B-I01-GOV — Writer Foundation (Closed, Fully Superseded by PR #1556 / S08-I03)
 
 ```text
-STATUS                          AUTHORIZED / IMPLEMENTED LOCALLY / MERGE PENDING
-IMPLEMENTATION COMMIT           89c16e9b430269268e0783ea0bfa70fed2436f57
-IMPLEMENTATION BRANCH           claude/rcv-claim-form-p02-s08-i02b-i01-writer-foundation
-RUNTIME                         NOT ACTIVATED
-PRODUCTION CONSUMER             NONE
-SCHEMA / MIGRATION              NONE
-S08-I02B REMAINING SLICES       NOT AUTHORIZED
-S08-I03                         NOT AUTHORIZED / NOT STARTED
-S08-I04                         NOT AUTHORIZED / NOT STARTED
-NEXT ELIGIBLE TASK              RCV-CLAIM-FORM-P02-S08-I02B-I01 GO-COMPLETE —
-                                OWNER-AUTHORIZED IMPLEMENTATION MERGE/CLOSURE ONLY
+STATUS                          CLOSED / FULLY SUPERSEDED
+LOCAL IMPLEMENTATION COMMIT      89c16e9b430269268e0783ea0bfa70fed2436f57
+LOCAL IMPLEMENTATION BRANCH      claude/rcv-claim-form-p02-s08-i02b-i01-writer-foundation
+LOCAL CODE DISPOSITION           DISCARDED / NOT MERGED
+REQUIREMENTS DISPOSITION         PRESERVED / SATISFIED BY PR #1556
+SUPERSEDING IMPLEMENTATION       PR #1556 / 1d47fef64e66b01561c12dc2717a63e7262dcfca
+SUPERSEDING CANONICAL UNIT       RCV-CLAIM-FORM-P02-S08-I03 — TRANSACTIONAL CLAIM
+                                 FORMATION FINALIZER (UNCHANGED BY THIS RECORD)
+RUNTIME ACTIVATION               NOT AUTHORIZED BY THIS RECORD; UNCHANGED FROM
+                                 PR #1556'S OWN CANONICAL STATUS
+NEXT ELIGIBLE TASK               UNSET — OWNER GO REQUIRED
 ```
 
-Bu kayıt, owner tarafından chat-level GO-IMPLEMENT ve GO-COMPLETE talimatlarıyla doğrudan
-yetkilendirilen `ClaimFormationWriterService` (Intent → ClaimItem → Snapshot atomic finalizer)
-implementasyonunun local commit gerçeğini kaydeder. PR #1554 (`0fef0743`), bu commit'ten yaklaşık
-24 dakika sonra ve bu iş henüz push edilmediği için ondan habersiz şekilde merge olmuş, S08-I02B/
-I03/I04 kaydını bu implementasyondan bağımsız bırakmıştı. Bu kayıt yalnız o gap'i düzeltir;
-S08-I02B-I01'in kendisi bu kayıtla FORMALLY CLOSED sayılmaz — closure ayrı, merge-sonrası bir
-governance adımıdır. S08-I02B'nin (PR #1549) mevcut kapanışı, S08-I03/I04'ün NOT AUTHORIZED
-durumu, D01B legal-basis resolver contract'ı, runtime activation, production call-site veya
-sonraki herhangi bir slice bu kayıtla değişmez veya yetkilendirilmez.
+Bu kaydın ilk yazımı (`ClaimFormationWriterService` implementasyonunun local commit gerçeğini
+"MERGE PENDING" olarak kaydetmişti) artık stale'dir ve bu revizyonla düzeltilir: main sync
+sırasında, bu local implementasyondan HEMEN ÖNCE (`1d47fef6`, PR #1556) aynı işlevsel alanı —
+Intent → ClaimItem → Snapshot atomic finalization, OfficeApproval execution completion,
+audit/outbox continuity dahil — eşdeğer veya daha güçlü bir mimariyle canonical main'e taşıyan bir
+implementasyon zaten merge edilmiş olduğu tespit edilmiştir. Owner, on maddelik bir karşılaştırma
+incelemesi sonrasında bu durumu "Fully Superseded" olarak kabul etmiş; local kodun main'e
+taşınmamasına, `89c16e9b`'nin discard edilmesine ve gereksinimlerin PR #1556 tarafından zaten
+karşılandığının idari olarak kaydedilmesine karar vermiştir. Bu kayıt yalnız o idari düzeltmeyi
+yapar: PR #1556'nın kendi canonical `S08-I03` kimliği, statüsü veya teknik kayıtları bu kayıtla
+değiştirilmez veya yeniden yazılmaz — ayrı, owner-gated bir `RCV-CLAIM-FORM-P02-S08-I03-GOV`
+kapanışının konusudur. D01B legal-basis resolver contract'ı, S08-I04 veya sonraki herhangi bir
+slice bu kayıtla değişmez veya yetkilendirilmez.
 
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 

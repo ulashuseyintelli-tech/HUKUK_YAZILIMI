@@ -90,14 +90,13 @@ RCV-CLAIM-FORM-P02-S08-D01  : READY FOR FINAL DESIGN RECONCILIATION — DOCUMENT
 RCV-CLAIM-FORM-P02-S08-I02  : PARTIAL — I02A + I02B FORMALLY CLOSED; I03 NOT STARTED
 RCV-CLAIM-FORM-P02-S08-I02A : FORMALLY CLOSED / CANONICAL TECHNICAL FOUNDATION (implementation PR #1541 / 3ba17a0a)
 RCV-CLAIM-FORM-P02-S08-I02B : FORMALLY CLOSED / CANONICAL TECHNICAL IMPLEMENTATION (implementation PR #1549 / e0db42d2)
-RCV-CLAIM-FORM-P02-S08-I02B-I01 : AUTHORIZED / IMPLEMENTED LOCALLY / MERGE PENDING (commit 89c16e9b430269268e0783ea0bfa70fed2436f57 / branch claude/rcv-claim-form-p02-s08-i02b-i01-writer-foundation)
+RCV-CLAIM-FORM-P02-S08-I02B-I01 : CLOSED / FULLY SUPERSEDED (local commit 89c16e9b430269268e0783ea0bfa70fed2436f57 — CODE DISCARDED / NOT MERGED; requirements PRESERVED / SATISFIED BY PR #1556 / 1d47fef64e66b01561c12dc2717a63e7262dcfca)
 RCV-CLAIM-FORM-P02-S08-I03  : NOT STARTED / NOT AUTHORIZED
 RCV-CLAIM-FORM-P02-S08-I04  : NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
-I02B-I01 runtime            : NOT ACTIVATED / NO PRODUCTION CONSUMER
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-I02B-I01 GO-COMPLETE — owner-authorized implementation merge/closure only; S08-I03 remains NOT STARTED / OWNER GO REQUIRED
+Claim Formation next task   : UNSET — OWNER GO REQUIRED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -2646,49 +2645,48 @@ human-create re-enable, live migration apply ve historical backfill yetkilendiri
 merged fakat live-unapplied migration durumu, S08-I01 containment'ı ve Collection/shared-boundary
 ayrımı değişmez. I03 yalnız next eligible task'tır; bu kayıt I03 implementation authority üretmez.
 
-### 1.31G RCV-CLAIM-FORM-P02-S08-I02B-I01 writer foundation — owner-authorized, merge pending
+### 1.31G RCV-CLAIM-FORM-P02-S08-I02B-I01 writer foundation — closed, fully superseded by PR #1556 (S08-I03)
 
 ```text
 RCV-CLAIM-FORM-P02-S08-I02B-I01 WRITER FOUNDATION:
-AUTHORIZED / IMPLEMENTED LOCALLY / MERGE PENDING
+CLOSED / FULLY SUPERSEDED
 
-IMPLEMENTATION COMMIT:
-89c16e9b430269268e0783ea0bfa70fed2436f57
+LOCAL IMPLEMENTATION COMMIT:
+89c16e9b430269268e0783ea0bfa70fed2436f57 (branch claude/rcv-claim-form-p02-s08-i02b-i01-writer-foundation)
 
-IMPLEMENTATION BRANCH:
-claude/rcv-claim-form-p02-s08-i02b-i01-writer-foundation
+LOCAL CODE DISPOSITION:
+DISCARDED / NOT MERGED
 
-RUNTIME:
-NOT ACTIVATED
+REQUIREMENTS DISPOSITION:
+PRESERVED / SATISFIED BY PR #1556
 
-PRODUCTION CONSUMER:
-NONE
+SUPERSEDING IMPLEMENTATION:
+PR #1556 / 1d47fef64e66b01561c12dc2717a63e7262dcfca
 
-SCHEMA / MIGRATION:
-NONE
+SUPERSEDING CANONICAL UNIT:
+RCV-CLAIM-FORM-P02-S08-I03 — TRANSACTIONAL CLAIM FORMATION FINALIZER (UNCHANGED BY THIS RECORD)
 
-S08-I02B REMAINING SLICES:
-NOT AUTHORIZED
-
-S08-I03:
-NOT AUTHORIZED / NOT STARTED
-
-S08-I04:
-NOT AUTHORIZED / NOT STARTED
+RUNTIME ACTIVATION:
+NOT AUTHORIZED BY THIS RECORD; UNCHANGED FROM PR #1556'S OWN CANONICAL STATUS
 
 NEXT ELIGIBLE TASK:
-RCV-CLAIM-FORM-P02-S08-I02B-I01 GO-COMPLETE — OWNER-AUTHORIZED IMPLEMENTATION MERGE/CLOSURE ONLY
+UNSET — OWNER GO REQUIRED
 ```
 
-Bu kayıt, owner tarafından chat-level GO-IMPLEMENT ve GO-COMPLETE talimatlarıyla doğrudan
-yetkilendirilen `ClaimFormationWriterService` (Intent → ClaimItem → Snapshot atomic finalizer)
-implementasyonunun local commit gerçeğini kaydeder. PR #1554 (`0fef0743`), bu commit'ten yaklaşık
-24 dakika sonra ve bu iş henüz push edilmediği için ondan habersiz şekilde merge olmuş, S08-I02B/
-I03/I04 kaydını bu implementasyondan bağımsız bırakmıştı. Bu kayıt yalnız o gap'i düzeltir;
-S08-I02B-I01'in kendisi bu kayıtla FORMALLY CLOSED sayılmaz — closure ayrı, merge-sonrası bir
-governance adımıdır. S08-I02B'nin (PR #1549) mevcut kapanışı, S08-I03/I04'ün NOT AUTHORIZED
-durumu, D01B legal-basis resolver contract'ı, runtime activation, production call-site veya
-sonraki herhangi bir slice bu kayıtla değişmez veya yetkilendirilmez.
+1.31G ilk yazımı (owner tarafından chat-level GO-IMPLEMENT/GO-COMPLETE talimatlarıyla doğrudan
+yetkilendirilen `ClaimFormationWriterService` implementasyonunun local commit gerçeğini "MERGE
+PENDING" olarak kaydetmişti) artık stale'dir ve bu revizyonla düzeltilir: main sync sırasında,
+bu local implementasyondan HEMEN ÖNCE (`1d47fef6`, PR #1556) aynı işlevsel alanı — Intent →
+ClaimItem → Snapshot atomic finalization, OfficeApproval execution completion, audit/outbox
+continuity dahil — eşdeğer veya daha güçlü bir mimariyle canonical main'e taşıyan bir implementasyon
+zaten merge edilmiş olduğu tespit edilmiştir. Owner, on maddelik bir karşılaştırma incelemesi
+sonrasında bu durumu "Fully Superseded" olarak kabul etmiş; local kodun main'e taşınmamasına,
+`89c16e9b`'nin discard edilmesine ve gereksinimlerin PR #1556 tarafından zaten karşılandığının
+idari olarak kaydedilmesine karar vermiştir. Bu kayıt yalnız o idari düzeltmeyi yapar: PR #1556'nın
+kendi canonical `S08-I03` kimliği, statüsü veya teknik kayıtları bu kayıtla değiştirilmez veya
+yeniden yazılmaz — ayrı, owner-gated bir `RCV-CLAIM-FORM-P02-S08-I03-GOV` kapanışının konusudur.
+D01B legal-basis resolver contract'ı, S08-I04 veya sonraki herhangi bir slice bu kayıtla değişmez
+veya yetkilendirilmez.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 
