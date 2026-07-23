@@ -69,10 +69,20 @@ export class DecisionLogRetentionService {
     // Find old records - use any cast for Prisma client compatibility
     const prismaAny = this.prisma as any;
     
+    // P05C-P02 REFERENTIAL LEGAL HOLD (owner O-A): bir `UyapAttemptCpeDecisionLink` satırı
+    // tarafından UYAP hukuki delili olarak tutulan karar retention'dan MUAFTIR. Bu genel bir
+    // "CPE kayıtlarını süresiz sakla" kararı DEĞİLDİR — link ortadan kalkarsa kayıt yeniden
+    // normal 90 günlük rejime girer. Filtre hem seçimde hem SİLMEDE uygulanır; böylece seçim
+    // ile silme arasında oluşabilecek yeni link yarışı da kapanır. Link FK'sindeki
+    // ON DELETE RESTRICT yalnız son savunma hattıdır; asıl filtre BURADIR — cron'un bağlı
+    // satır yüzünden topluca hata vermesi kabul edilemez.
+    const retentionEligibleWhere = {
+      createdAt: { lt: cutoffDate },
+      uyapAttemptLinks: { none: {} },
+    };
+
     const oldRecords = await prismaAny.cpeDecisionLog.findMany({
-      where: {
-        createdAt: { lt: cutoffDate },
-      },
+      where: retentionEligibleWhere,
       take: RETENTION_CONFIG.BATCH_SIZE,
       orderBy: { createdAt: 'asc' },
     });
@@ -83,13 +93,12 @@ export class DecisionLogRetentionService {
 
     const ids = oldRecords.map((r: { id: string }) => r.id);
 
-    // Transaction: Archive then delete
     await this.prisma.$transaction(async (tx: any) => {
-      this.logger.debug(`Archiving ${ids.length} records: ${ids.slice(0, 5).join(', ')}...`);
+      this.logger.debug(`Deleting ${ids.length} unlinked records: ${ids.slice(0, 5).join(', ')}...`);
 
-      // Delete from main table
+      // Legal-hold filtresi silmede de tekrarlanır (atomik güvence).
       await tx.cpeDecisionLog.deleteMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, ...retentionEligibleWhere },
       });
     });
 

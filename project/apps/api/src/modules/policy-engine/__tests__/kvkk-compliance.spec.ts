@@ -6,6 +6,8 @@
  * @see Requirements 7.3
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DecisionLoggerService } from '../decision-logger/decision-logger.service';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -329,10 +331,22 @@ describe('KVKK Compliance - Retention Policy', () => {
     expect(RETENTION_DAYS).toBe(90);
   });
 
-  it('should archive old records, not delete', () => {
-    // This is a documentation test
-    // Actual implementation should move records to archive table, not delete
-    const ARCHIVE_TABLE = 'CpeDecisionLogArchive';
-    expect(ARCHIVE_TABLE).toBeDefined();
+  // P05C-P02 DÜZELTME: bu test daha önce "arşivlenir, silinmez" varsayımını taşıyordu ve
+  // yalnız yerel bir string sabitinin tanımlı olduğunu iddia ediyordu (totolojik assertion).
+  // Gerçek implementasyon arşiv YAZMAZ; cutoff'tan eski kayıtları HARD DELETE eder —
+  // `CpeDecisionLogArchive` tablosu hiç var olmamıştır ve bu faz onu ÜRETMEZ. Test artık
+  // uydurma arşiv yerine yürürlükteki owner-ratifiye politikayı doğrular.
+  it('retention hard-delete uygular; korunan tek istisna referential legal-hold’dur', () => {
+    const retentionSrc = fs.readFileSync(
+      path.join(__dirname, '../decision-logger/decision-log-retention.service.ts'),
+      'utf8',
+    );
+
+    // Gerçek davranış: silme (arşiv yazımı YOK)
+    expect(retentionSrc).toContain('deleteMany');
+    expect(retentionSrc).not.toMatch(/cpeDecisionLogArchive\s*\.\s*create/i);
+
+    // Tek istisna: UyapAttemptCpeDecisionLink tarafından tutulan kararlar (owner O-A)
+    expect(retentionSrc).toContain('uyapAttemptLinks: { none: {} }');
   });
 });

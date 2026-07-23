@@ -640,3 +640,51 @@ POST-VALIDATION: CpeDecisionLog_id_caseId_key UNIQUE index mevcut; PK + caseId F
 PROHIBITED: UyapAttemptCpeDecisionLink, runtime linkage, tenantId kolonu,
   backfill, CpeExecutionRecord değişikliği, governance closure beyond this index.
 ```
+
+## 12. UYAP-ATTEMPT-CPE-DECISION-LINK-P05C-P02 — yeni pending migration (2026-07-23)
+
+Link schema foundation + Policy Engine referential legal-hold. Üretildi, canlı `hukuk_db`'ye
+**hiç uygulanmadı**. §10 ve §11'den bağımsız üçüncü pending giriştir. Canlı DB mutation YOK.
+
+### 12.1 Migration kimliği ve durum
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260723010000_uyap_attempt_cpe_decision_link` |
+| Domain | UYAP (link tablosu) + POLICY ENGINE (retention filtresi, kod tarafı) |
+| Authority basis | GO-IMPLEMENT — UYAP-ATTEMPT-CPE-DECISION-LINK-P05C-P02 |
+| İçerik | 1 `CREATE TABLE "UyapAttemptCpeDecisionLink"` + 4 index + 2 unique index (`cpeDecisionLogId`, `UyapOperation(id,caseId,tenantId)`) + **3 FK, üçü de ON DELETE RESTRICT** |
+| Kardinalite | 1 attempt → N karar; aynı kararın başka attempt'e bağlanması **DB'de reddedilir** (UYAP-CONST-002) |
+| Kolon / veri | `role`/`disposition` YOK · `CpeDecisionLog.tenantId` YOK · backfill/DML YOK · `CpeExecutionRecord` değişmedi |
+| Veri riski | **YOK** — yeni tablo boş oluşturulur; `UyapOperation` unique'i `id` PK süper-kümesi olduğundan ihlal edilemez |
+| Doğrulama | 18 static + 12 db-gated + uyarlanan 10 kvkk testi PASS (disposable `postgres:16`); blocking CI 2 step |
+| **LIVE DB APPLY** | **NOT APPLIED** |
+| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** |
+
+### 12.2 Disposition
+
+- Link tablosu **DORMANT**: yazan üretim kodu YOK (CI grep guard'ı ile korunuyor); runtime
+  linkage **ayrı owner GO** gerektirir.
+- Retention davranışı değişti (kod tarafı, migration değil): `DecisionLogRetentionService`
+  artık yalnız **linklenmemiş** ve cutoff'tan eski kararları siler. Genel 90 günlük süre
+  DEĞİŞMEDİ; bu süresiz saklama kararı DEĞİLDİR — link kalkarsa kayıt normal rejime döner.
+  `ON DELETE RESTRICT` yalnız son savunma hattıdır; asıl filtre retention sorgusundadır.
+- Kuyrukta artık **3 pending migration** var (§10, §11, §12). `prisma migrate deploy` daima
+  tümünü uygular — herhangi bir workstream'in GO-MIGRATE penceresi diğerlerini de taşır.
+  **Sıralama bağımlılığı:** §12, §11'in ürettiği `CpeDecisionLog(id, caseId)` unique'ine FK ile
+  bağımlıdır; §11 uygulanmadan §12 uygulanamaz (doğal migration sırası bunu zaten sağlar).
+
+**GATE P05C-P02 — OWNER GO-MIGRATE — UYAP ATTEMPT/CPE DECISION LINK**
+```text
+OWNER GO-MIGRATE — UYAP-ATTEMPT-CPE-DECISION-LINK-P05C-P02
+AUTHORITY BASIS: P05C-P02 GO-IMPLEMENT merge SHA (PR merge sonrası doldurulur)
+TARGET MIGRATION: 20260723010000_uyap_attempt_cpe_decision_link
+PRECONDITION: §11 (20260722230000_cpe_decision_composite_reference_key) uygulanmış olmalı.
+ANCHOR: isolated worktree pinned to the P05C-P02 merge SHA
+PREFLIGHT: fresh backup + restore-verify; disposable rehearsal from this anchor.
+EXECUTION: prisma migrate deploy only (no resolve, no manual DDL).
+POST-VALIDATION: link tablosu + 3 FK (confdeltype='r') + @@unique([cpeDecisionLogId]) +
+  UyapOperation_id_caseId_tenantId_key mevcut; tablo BOŞ; CpeDecisionLog kolonları değişmemiş.
+PROHIBITED: link writer/runtime linkage, role/disposition, backfill, retention süresinin
+  genel değişimi, gerçek archive tablosu, P-E5D/P-E5E/P-E6.
+```

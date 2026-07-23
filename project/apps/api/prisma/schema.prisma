@@ -8556,6 +8556,10 @@ model CpeDecisionLog {
 
   createdAt DateTime @default(now())
 
+  // P05C-P02: referential legal-hold. Bu VIRTUAL relation alanidir — DB kolonu URETMEZ.
+  // Baglanan karar, link sürdügü müddetçe retention'dan MUAFTIR (owner O-A).
+  uyapAttemptLinks UyapAttemptCpeDecisionLink[]
+
   case Case @relation("CpeDecisionLogs", fields: [caseId], references: [id], onDelete: Cascade)
 
   // P05C-P01: gelecekteki tenant-safe UYAP evidence linkage icin composite FK HEDEFI.
@@ -9601,6 +9605,7 @@ model UyapOperation {
   cancelledAt DateTime?
 
   attempts UyapAttempt[]
+  cpeDecisionLinks UyapAttemptCpeDecisionLink[]
 
   tenant           Tenant  @relation("UyapOperationTenant", fields: [tenantId], references: [id], onDelete: Cascade)
   case             Case?   @relation("UyapOperationCase", fields: [caseId, tenantId], references: [id, tenantId], onDelete: Restrict)
@@ -9611,6 +9616,9 @@ model UyapOperation {
   signatureOwner   Lawyer? @relation("UyapOperationSignatureOwner", fields: [signatureOwnerId, tenantId], references: [id, tenantId], onDelete: Restrict)
 
   @@unique([id, tenantId])
+  // P05C-P02: link tablosunun (operationId, caseId, tenantId) composite FK hedefi.
+  // `id` PK oldugundan superset key — ihlal edilemez, veri riski yok.
+  @@unique([id, caseId, tenantId])
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId])
   @@index([tenantId, caseId])
@@ -9647,6 +9655,7 @@ model UyapAttempt {
   operation       UyapOperation @relation(fields: [operationId, tenantId], references: [id, tenantId], onDelete: Cascade)
   previousAttempt UyapAttempt?  @relation("UyapAttemptChain", fields: [previousAttemptId, operationId, tenantId], references: [id, operationId, tenantId], onDelete: Restrict)
   nextAttempts    UyapAttempt[] @relation("UyapAttemptChain")
+  cpeDecisionLinks UyapAttemptCpeDecisionLink[]
 
   @@unique([id, tenantId])
   @@unique([id, operationId, tenantId])
@@ -9655,4 +9664,43 @@ model UyapAttempt {
   @@index([operationId])
   @@index([providerState])
   @@index([legalEffectState])
+}
+
+/// UYAP-ATTEMPT-CPE-DECISION-LINK-P05C-P02 — attempt basina CPE karar delili (append-only referans).
+///
+/// KARDINALITE (owner-ratified): 1 UyapAttempt -> N CpeDecisionLog. Ayni kararin BASKA bir
+/// attempt'e baglanmasi YASAK — UYAP-CONST-002 "PRIOR ATTEMPT AUTHORITY != CURRENT ATTEMPT
+/// AUTHORITY" (her yeni attempt'te POA/authority/CPE yeniden degerlendirilir). Bu yasak
+/// @@unique([cpeDecisionLogId]) ile DB seviyesinde uygulanir.
+///
+/// role/disposition kolonu YOKTUR: ayirt edici bilgi referans satirinin kendisindedir
+/// (CpeDecisionLog.actionCode / scope / gateCode / gateSeverity / allowed / code / reason).
+/// Bu, "CPE karar kaydini kopyalamayan referans modeli" sartinin geregidir.
+///
+/// CASE ATTRIBUTION: attempt -> operation -> case zinciri UC composite FK ile DB seviyesinde
+/// kapatilir; link.caseId serbest degildir, attempt'in kendi operation'inin case'ine baglidir.
+///
+/// DELETE: uc FK de RESTRICT — fail-closed. UyapAttempt->UyapOperation Cascade oldugundan,
+/// RESTRICT olmasaydi bir operation silmesi delil baglarini sessizce yok ederdi.
+model UyapAttemptCpeDecisionLink {
+  id       String @id @default(cuid())
+  tenantId String
+
+  caseId           String
+  operationId      String
+  attemptId        String
+  cpeDecisionLogId String
+
+  linkedAt DateTime @default(now())
+
+  attempt        UyapAttempt    @relation(fields: [attemptId, operationId, tenantId], references: [id, operationId, tenantId], onDelete: Restrict)
+  operation      UyapOperation  @relation(fields: [operationId, caseId, tenantId], references: [id, caseId, tenantId], onDelete: Restrict)
+  cpeDecisionLog CpeDecisionLog @relation(fields: [cpeDecisionLogId, caseId], references: [id, caseId], onDelete: Restrict)
+
+  /// Ayni karar EN FAZLA bir attempt'e baglanir (UYAP-CONST-002 tasima yasagi).
+  @@unique([cpeDecisionLogId])
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([attemptId])
+  @@index([operationId])
 }
