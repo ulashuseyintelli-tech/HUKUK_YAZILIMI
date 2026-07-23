@@ -741,6 +741,32 @@ ClaimItem/ClaimFormationSnapshot finalizer, OfficeApproval execution, human-crea
 historical mutation/backfill ve Collection/shared-boundary değişikliği yoktur. I03 yalnız
 owner-gated next eligible task'tır; implementation authority bu kayıtla verilmez.
 
+### RCV-CLAIM-FORM-P02-S08-I02B-I01-GOV — Writer Foundation (Owner-Authorized, Merge Pending)
+
+```text
+STATUS                          AUTHORIZED / IMPLEMENTED LOCALLY / MERGE PENDING
+IMPLEMENTATION COMMIT           89c16e9b430269268e0783ea0bfa70fed2436f57
+IMPLEMENTATION BRANCH           claude/rcv-claim-form-p02-s08-i02b-i01-writer-foundation
+RUNTIME                         NOT ACTIVATED
+PRODUCTION CONSUMER             NONE
+SCHEMA / MIGRATION              NONE
+S08-I02B REMAINING SLICES       NOT AUTHORIZED
+S08-I03                         NOT AUTHORIZED / NOT STARTED
+S08-I04                         NOT AUTHORIZED / NOT STARTED
+NEXT ELIGIBLE TASK              RCV-CLAIM-FORM-P02-S08-I02B-I01 GO-COMPLETE —
+                                OWNER-AUTHORIZED IMPLEMENTATION MERGE/CLOSURE ONLY
+```
+
+Bu kayıt, owner tarafından chat-level GO-IMPLEMENT ve GO-COMPLETE talimatlarıyla doğrudan
+yetkilendirilen `ClaimFormationWriterService` (Intent → ClaimItem → Snapshot atomic finalizer)
+implementasyonunun local commit gerçeğini kaydeder. PR #1554 (`0fef0743`), bu commit'ten yaklaşık
+24 dakika sonra ve bu iş henüz push edilmediği için ondan habersiz şekilde merge olmuş, S08-I02B/
+I03/I04 kaydını bu implementasyondan bağımsız bırakmıştı. Bu kayıt yalnız o gap'i düzeltir;
+S08-I02B-I01'in kendisi bu kayıtla FORMALLY CLOSED sayılmaz — closure ayrı, merge-sonrası bir
+governance adımıdır. S08-I02B'nin (PR #1549) mevcut kapanışı, S08-I03/I04'ün NOT AUTHORIZED
+durumu, D01B legal-basis resolver contract'ı, runtime activation, production call-site veya
+sonraki herhangi bir slice bu kayıtla değişmez veya yetkilendirilmez.
+
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 
 - **RCV-COL-TPA-03 schema-foundation contract canonicalization (2026-07-20; canonical upon approved governance merge):** Owner Option B — Two-File Hybrid Schema Foundation kararını ratifiye etmiştir. Foundation `LegalApplicationBatch`, immutable `LegalApplication`, non-authoritative `ApplicationAttribution`; `LegalApplicationBatchType = APPLY / REVERSAL`; `LegalApplicationComponentType = COST / ANCILLARY / ACCRUED_INTEREST / PRINCIPAL` adlarını kullanır. Future implementation exact scope'u yalnız `schema.prisma` + tek additive `migration.sql`; writer-free, no-backfill ve runtime/consumer etkisi yoktur. Tenant-safe composite FK, `ON DELETE RESTRICT`, batch/application immutability, positive minor-unit amount, `(tenantId, idempotencyKey)` replay unique sınırı, commandHash conflict, linked append-only full reversal ve required/opaque/nonblank bucket identity ratifiye edilmiştir. Canonical exact-cent conservation korunur; aggregate-level enforcement ve bucket key generation writer-stage contract'a bırakılmıştır. `codex/rcv-ws04-p03-syn-01` TPA-03A schema foundation için non-blocking, writer/evidence/cutover için blocking; PR #407 HOLD/CONFLICTING/DO NOT MERGE/DO NOT REBASE; ACT-28 ve REC-AUTH-011/012 OPEN kalır. TPA-03A `OWNER GO-IMPLEMENT REQUIRED / NOT AUTHORIZED`; runtime/test/schema/migration/backfill/replay/cutover/retirement change NONE.
