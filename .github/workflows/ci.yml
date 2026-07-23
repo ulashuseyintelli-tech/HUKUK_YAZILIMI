@@ -1635,8 +1635,12 @@ jobs:
           if grep -nE 'ON DELETE (CASCADE|SET NULL)|ADD COLUMN|^[[:space:]]*(UPDATE|INSERT|DELETE|TRUNCATE|DROP)[[:space:]]' "$migration"; then
             echo "FORBIDDEN P05C-P02: destructive delete action, column change or DML in migration"; exit 1
           fi
-          if grep -rnE 'uyapAttemptCpeDecisionLink[[:space:]]*\.[[:space:]]*(create|createMany|upsert)' src --include='*.ts' | grep -v '__tests__'; then
-            echo "FORBIDDEN P05C-P02: link writer is NOT authorized (runtime linkage requires separate owner GO)"; exit 1
+          # P05C-P03 UYARLAMASI: yetkili link writer (uyap-cpe-decision-link-writer.service.ts, Karar C)
+          # link tablosuna yazar. Guard DARALTILIR: yetkili writer ve testler HARIC baska hicbir
+          # uretim kodu link tablosuna YAZMAMALI (yetkisiz ikinci writer / sizinti hala RED).
+          if grep -rnE 'uyapAttemptCpeDecisionLink[[:space:]]*\.[[:space:]]*(create|createMany|upsert)' src --include='*.ts' \
+               | grep -vE '__tests__|\.spec\.ts' | grep -v 'uyap-cpe-decision-link-writer.service.ts'; then
+            echo "FORBIDDEN P05C-P02: yetkisiz link writer (yalnizca P05C-P03 uyap-cpe-decision-link-writer yazabilir)"; exit 1
           fi
           pnpm exec jest --ci --forceExit --runInBand --runTestsByPath "$spec"
         working-directory: project/apps/api

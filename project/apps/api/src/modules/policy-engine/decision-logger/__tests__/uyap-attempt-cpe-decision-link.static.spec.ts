@@ -135,9 +135,20 @@ describe('P05C-P02 — DORMANCY: runtime linkage YOK', () => {
     return acc;
   }
 
-  it('link tablosuna YAZAN hicbir uretim kodu yok (writer ayri owner GO)', () => {
-    const writers = walk(dir).filter((f) =>
-      /uyapAttemptCpeDecisionLink\s*\.\s*(create|createMany|upsert)/.test(stripComments(fs.readFileSync(f, 'utf8'))),
+  // P05C-P03 UYARLAMASI: bu guard P05C-P02'de "link tablosuna YAZAN uretim kodu YOK, writer
+  // ayri owner GO bekler" demek icindi. O GO verildi (Karar C) ve tek YETKILI writer
+  // `uyap-cpe-decision-link-writer.service.ts` ile geldi (kendi dormancy guard'lari var).
+  // Guard emekliye ayrilmaz, DARALTILIR: yetkili writer disinda link tablosuna yazan BASKA
+  // hicbir uretim kodu olmamali (yetkisiz ikinci writer / sizinti hala RED).
+  it('link tablosuna yalnizca YETKILI P05C-P03 writer yazar; baska uretim yazici YOK', () => {
+    const AUTHORIZED = path.join(
+      API_ROOT,
+      'src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.service.ts',
+    );
+    const writers = walk(dir).filter(
+      (f) =>
+        path.resolve(f) !== path.resolve(AUTHORIZED) &&
+        /uyapAttemptCpeDecisionLink\s*\.\s*(create|createMany|upsert)/.test(stripComments(fs.readFileSync(f, 'utf8'))),
     );
     expect(writers).toEqual([]);
   });
