@@ -2224,6 +2224,28 @@ S08-I02B, S08-I03 ve S08-I04 `NOT AUTHORIZED / NOT STARTED` kalır. Bu closure s
 `NEXT ELIGIBLE TASK = UNSET — OWNER GO REQUIRED`. Collection/shared-boundary authority ve mevcut
 Document/Legal Basis authority contract'ları değişmez.
 
+## 23.25. S08-I02B typed formation-intent admission formal closure — 2026-07-23
+
+RCV-CLAIM-FORM-P02-S08-I02B implementation PR #1549 / squash
+`e0db42d283520448066124c611217544bb62cce7`, required CI `4/4 PASS` ile
+`FORMALLY CLOSED / CANONICAL`dır. Target unit/static `27/27`, broad ClaimItem regression
+`266/266` ve disposable PostgreSQL `3/3 PASS`; Production TypeScript, Nest build,
+changed-file ESLint ile static/scope/diff kontrolleri PASS'tır.
+
+Typed `ClaimItemFormationIntentV1` admission implemented fakat `DORMANT / DEFAULT DISABLED`dır.
+Intent + pending OfficeApproval + request audit tek transaction içinde atomic ve doğrulanmıştır.
+Document ile Legal Basis resolver'ları yalnız port'tur; production adapter ve production call-site
+`NONE`dır. ClaimItem veya ClaimFormationSnapshot finalizer, OfficeApproval execution flow,
+production activation, human-create re-enable ve historical backfill yoktur. I02B implementation
+schema veya migration değiştirmemiştir; I02A migration'ının live apply durumu
+`NOT AUTHORIZED / NOT APPLIED` kalır. S08-I01 containment `ACTIVE / UNCHANGED`; production Claim
+Formation runtime `PARTIAL — THROUGH S08-I01 ONLY` kalır.
+
+Claim Formation phase ve S08 workstream `OPEN`dır. Yalnız
+`RCV-CLAIM-FORM-P02-S08-I03 — Transactional Claim Formation Finalizer` next eligible olur;
+`NOT STARTED / OWNER GO REQUIRED`dır. Bu closure I03, I04, production resolver, runtime,
+schema/migration apply veya Collection/shared-boundary authority'si üretmez.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
