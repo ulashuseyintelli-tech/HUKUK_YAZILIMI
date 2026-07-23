@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, User, DollarSign, Loader2, TrendingUp, Clock, CheckCircle } from "lucide-react";
+import { ArrowLeft, FileText, User, DollarSign, Loader2, TrendingUp, Clock, CheckCircle, StickyNote } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -24,6 +24,24 @@ const stageLabels: Record<string, string> = {
   SALE: "Satış",
   COMPLETED: "Tamamlandı",
 };
+
+// CLIENT-P2-U03-TRACK-A-I01: DebtorRole canonical 12 değer (schema.prisma) — exhaustive.
+// Beklenmeyen/gelecekteki bir değer ham enum token'ı göstermeden nötr fallback'e düşer.
+const debtorRoleLabels: Record<string, string> = {
+  ASIL_BORCLU: "Asıl Borçlu",
+  MUSETEREK_BORCLU: "Müşterek Borçlu",
+  ADI_KEFIL: "Adi Kefil",
+  MUTESELSIL_KEFIL: "Müteselsil Kefil",
+  AVAL: "Aval Veren",
+  CIRANTA: "Ciranta",
+  LEHDAR: "Lehdar",
+  KESIDECI: "Keşideci",
+  MUHATAP: "Muhatap",
+  MIRASCI: "Mirasçı",
+  TASFIYE_MEMURU: "Tasfiye Memuru",
+  IFLAS_MASASI: "İflas Masası",
+};
+const DEBTOR_ROLE_FALLBACK_LABEL = "Hukuki Taraf";
 
 export default function PortalCaseDetailPage() {
   const params = useParams();
@@ -104,6 +122,16 @@ export default function PortalCaseDetailPage() {
         </span>
       </div>
 
+      {/* Müvekkil Notu — yalnız değer varsa render edilir, dahiliNot ile birleştirilmez/karıştırılmaz */}
+      {caseData.muvekkilNotu && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h2 className="font-semibold text-blue-900 flex items-center gap-2 mb-2">
+            <StickyNote className="h-4 w-4" /> Müvekkil Notu
+          </h2>
+          <p className="text-sm text-blue-800 whitespace-pre-wrap">{caseData.muvekkilNotu}</p>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-white rounded-lg border p-4">
@@ -171,6 +199,18 @@ export default function PortalCaseDetailPage() {
                     <div>
                       <p className="font-medium">{d.debtor?.name}</p>
                       <p className="text-sm text-gray-500">{d.debtor?.type === "PERSON" ? "Şahıs" : "Kurum"}</p>
+                      {d.role && (
+                        <p className="text-sm text-gray-500">{debtorRoleLabels[d.role] || DEBTOR_ROLE_FALLBACK_LABEL}</p>
+                      )}
+                      {(d.debtorLawyerName || d.debtorLawyerBarNo) && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {d.debtorLawyerName && d.debtorLawyerBarNo
+                            ? `Av. ${d.debtorLawyerName} (Baro No: ${d.debtorLawyerBarNo})`
+                            : d.debtorLawyerName
+                              ? `Av. ${d.debtorLawyerName}`
+                              : `Baro No: ${d.debtorLawyerBarNo}`}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}

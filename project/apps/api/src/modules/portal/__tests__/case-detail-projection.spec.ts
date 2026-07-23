@@ -1,5 +1,6 @@
 /**
- * CLIENT-P2-U03-I01 — getCaseDetail() explicit projection (POL-D §21/BP-06 §23).
+ * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 — getCaseDetail() explicit projection
+ * (POL-D §21/BP-06 §23; I06 ratified transparency policy §33.5).
  *
  * Yapısal kanıt Prisma çağrısındaki EXACT `select` şeklinden gelir (mock'a "fazladan alan"
  * besleyip sonra "filtrelendiğini" test etmek YANLIŞTIR — gerçek Prisma zaten select'te
@@ -23,8 +24,12 @@ const CASE_DETAIL_SELECT_SHAPE = {
   workflowStage: true,
   caseDate: true,
   principalAmount: true,
+  muvekkilNotu: true,
   debtors: {
     select: {
+      role: true,
+      debtorLawyerName: true,
+      debtorLawyerBarNo: true,
       debtor: { select: { name: true, type: true } },
     },
   },
@@ -46,7 +51,15 @@ const BOUNDED_CASE_ROW = {
   workflowStage: "SEIZURE",
   caseDate: new Date("2026-01-01"),
   principalAmount: "1000",
-  debtors: [{ debtor: { name: "Test Borçlu", type: "PERSON" } }],
+  muvekkilNotu: "Dosyanız aktif olarak takip edilmektedir.",
+  debtors: [
+    {
+      role: "ASIL_BORCLU",
+      debtorLawyerName: "Ayşe Vekil",
+      debtorLawyerBarNo: "34567",
+      debtor: { name: "Test Borçlu", type: "PERSON" },
+    },
+  ],
   collections: [{ id: "col-1", date: new Date("2026-02-01"), type: "BANKA", amount: "500" }],
   dues: [{ id: "due-1", type: "ASIL_ALACAK", amount: "1000", dueDate: new Date("2026-01-01"), currency: "TRY" }],
 };
@@ -84,6 +97,7 @@ describe("PortalService.getCaseDetail — CLIENT-P2-U03-I01 explicit projection"
         "workflowStage",
         "caseDate",
         "principalAmount",
+        "muvekkilNotu",
         "debtors",
         "collections",
         "dues",
@@ -96,6 +110,35 @@ describe("PortalService.getCaseDetail — CLIENT-P2-U03-I01 explicit projection"
     const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
     expect(Object.keys(result.debtors[0].debtor).sort()).toEqual(["name", "type"]);
     expect(result.debtors[0]).not.toHaveProperty("id");
+  });
+
+  it("[3a] CLIENT-P2-U03-TRACK-A-I01: Case.muvekkilNotu select'te VAR ve response'ta OLDUĞU GİBİ döner", async () => {
+    const { svc, prisma } = buildService();
+    const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const call = prisma.case.findFirst.mock.calls[0][0];
+    expect(call.select).toHaveProperty("muvekkilNotu", true);
+    expect(result.muvekkilNotu).toBe("Dosyanız aktif olarak takip edilmektedir.");
+  });
+
+  it("[3b] CLIENT-P2-U03-TRACK-A-I01: CaseDebtor.role select'te VAR ve response'ta OLDUĞU GİBİ döner", async () => {
+    const { svc, prisma } = buildService();
+    const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const call = prisma.case.findFirst.mock.calls[0][0];
+    expect(call.select.debtors.select).toHaveProperty("role", true);
+    expect(result.debtors[0].role).toBe("ASIL_BORCLU");
+  });
+
+  it("[3c] CLIENT-P2-U03-TRACK-A-I01: debtorLawyerName/debtorLawyerBarNo select'te VAR, debtorLawyerId KESİNLİKLE YOK", async () => {
+    const { svc, prisma } = buildService();
+    const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const call = prisma.case.findFirst.mock.calls[0][0];
+    const debtorsSelect = call.select.debtors.select;
+    expect(debtorsSelect).toHaveProperty("debtorLawyerName", true);
+    expect(debtorsSelect).toHaveProperty("debtorLawyerBarNo", true);
+    expect(debtorsSelect).not.toHaveProperty("debtorLawyerId");
+    expect(result.debtors[0].debtorLawyerName).toBe("Ayşe Vekil");
+    expect(result.debtors[0].debtorLawyerBarNo).toBe("34567");
+    expect(result.debtors[0]).not.toHaveProperty("debtorLawyerId");
   });
 
   it("[4] collection nested anahtarları yalnız id/date/type/amount'tır", async () => {
@@ -116,12 +159,11 @@ describe("PortalService.getCaseDetail — CLIENT-P2-U03-I01 explicit projection"
     expect(result).not.toHaveProperty("lifecycleEvents");
   });
 
-  it("[7] dahiliNot select'te YOK", async () => {
+  it("[7] dahiliNot select'te YOK (muvekkilNotu'ndan yapısal olarak bağımsız kalır — I06 invariant)", async () => {
     const { svc, prisma } = buildService();
     await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
     const call = prisma.case.findFirst.mock.calls[0][0];
     expect(call.select).not.toHaveProperty("dahiliNot");
-    expect(call.select).not.toHaveProperty("muvekkilNotu");
     expect(call.select).not.toHaveProperty("showToClient");
   });
 

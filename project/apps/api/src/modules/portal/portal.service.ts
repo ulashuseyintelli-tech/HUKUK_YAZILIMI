@@ -13,11 +13,13 @@ import { generateRawInviteToken, hashInviteToken } from "../auth/invite/user-inv
 import * as bcrypt from "bcrypt";
 
 /**
- * CLIENT-P2-U03-I01: getCaseDetail() client-facing response contract (POL-D §21/BP-06 §23).
- * Yalnız bu select'in kapsadığı alanlar client'a döner; CaseDebtor.id, dahiliNot, staff/personel
+ * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01: getCaseDetail() client-facing response
+ * contract (POL-D §21/BP-06 §23; I06 ratified transparency policy §33.5). Yalnız bu select'in
+ * kapsadığı alanlar client'a döner; CaseDebtor.id/debtorLawyerId, dahiliNot, staff/personel
  * referansları, otomasyon/OCR/risk alanları, lifecycleEvents ve description'lar KASITLI olarak
  * DIŞARIDA — bu sabit yalnız getCaseDetail() tarafından kullanılır, başka portal endpoint'ine
- * yayılmaz.
+ * yayılmaz. `muvekkilNotu` `dahiliNot`'tan yapısal olarak bağımsız, ayrı bir alandır (I06
+ * invariant) — birleştirilmez, aynı semantikte kullanılmaz.
  */
 const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
   id: true,
@@ -28,8 +30,12 @@ const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
   workflowStage: true,
   caseDate: true,
   principalAmount: true,
+  muvekkilNotu: true,
   debtors: {
     select: {
+      role: true,
+      debtorLawyerName: true,
+      debtorLawyerBarNo: true,
       debtor: { select: { name: true, type: true } },
     },
   },
