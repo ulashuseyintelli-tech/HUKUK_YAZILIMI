@@ -2956,6 +2956,27 @@ writer/evidence/cutover için `BLOCKING` kalır. **NEXT ELIGIBLE ACTION: TPA-04C
 PROPERTY / SECURITY TEST EXPANSION — OWNER GO-IMPLEMENT REQUIRED / NOT YET AUTHORIZED.**
 I05-I07 self-start edemez; I06/I07 ve TPA-04D `NOT AUTHORIZED`dır.
 
+**RCV-COL-TPA-04C-I05 Formal Closure Reconciliation (2026-07-24; CANONICAL UPON APPROVED
+GOVERNANCE MERGE):** I05 test-only implementation PR #1558 / squash
+`be60c1493c36b075d81d99bca5ba85d8fee15ff1`, exact authorized
+`apps/api/src/modules/interest-engine/legal-application-plan/__tests__/i05-unit-property-security.spec.ts`
+scope'u ve required CI `4/4 PASS` ile `CLOSED / CANONICAL EVIDENCE`dır. I05; I01-I04
+primitive, snapshot, allocation ve plan-builder kontratları için adversarial parser,
+duplicate-key/depth/size/Unicode güvenliği, `RCV-CAS/v1` ve `RCV-LAP/v1` golden vector'ları,
+deterministic validation-error precedence, allocation ordering, exact-cent conservation,
+HELD equivalence, authoritative fingerprint sensitivity/exclusion, attribution
+non-authority, immutability, deterministic replay, forged-boundary rejection,
+resource/regex safety, cross-protocol domain separation, legacy-import isolation ve
+mutation-resistance kanıtını genişletmiştir. I05 targeted `17/17`, I01-I05 aggregate
+`185/185`, property/security/golden/replay, strict test type-check, production type-check,
+API build ve ESLint `PASS`tır.
+
+Production/runtime, Prisma/schema/migration/live DB ve consumer etkisi `NONE`; runtime writer
+`NOT IMPLEMENTED / NOT ACTIVATED` kalır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus
+writer/evidence/cutover için korunmuş future blocker'dır. **NEXT ELIGIBLE ACTION:
+TPA-04C-I06 — WRITER COMPATIBILITY CONTRACT TESTS — OWNER GO-IMPLEMENT REQUIRED / NOT
+STARTED.** I06 otomatik başlamaz; I07 ve TPA-04D `NOT AUTHORIZED`dır.
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)
