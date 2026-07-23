@@ -16,7 +16,7 @@
  *      satırından geri kazanır (keyfi string kabul etmez), böylece replay'de aynı key
  *      yeniden kullanılabilir ama client string'i "aklanamaz".
  */
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { UyapAttempt, UyapOperation } from '@prisma/client';
 import { UyapOperationWriterValidationError } from './uyap-operation-writer.errors';
 
@@ -30,13 +30,66 @@ export type UyapOperationIdempotencyKey = string & {
 
 export const UYAP_OPERATION_IDEMPOTENCY_KEY_PREFIX = 'UYAP-OP/v1:';
 
-/** Prefix + RFC-4122 UUID; başka hiçbir biçim kabul edilmez. */
-const UYAP_OPERATION_IDEMPOTENCY_KEY_PATTERN =
+/** Prefix + RFC-4122 UUID. */
+const UYAP_OPERATION_IDEMPOTENCY_KEY_UUID_PATTERN =
   /^UYAP-OP\/v1:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/** P05C-P04 (OPTION B): opaque HTTP retry-token'ının server-side canonical digest'i. */
+const UYAP_OPERATION_IDEMPOTENCY_KEY_HTTP_PATTERN = /^UYAP-OP\/v1:HTTP:[0-9a-f]{64}$/;
+
+/** Her iki kanonik biçim (UUID veya HTTP-digest) kabul edilir; başka hiçbir biçim kabul edilmez. */
+const UYAP_OPERATION_IDEMPOTENCY_KEY_PATTERN = new RegExp(
+  `(${UYAP_OPERATION_IDEMPOTENCY_KEY_UUID_PATTERN.source})|(${UYAP_OPERATION_IDEMPOTENCY_KEY_HTTP_PATTERN.source})`,
+);
 
 /** Yeni logical create için anahtar üretir. Aynı logical create'in replay'inde AYNI değer taşınmalıdır. */
 export function newUyapOperationIdempotencyKey(): UyapOperationIdempotencyKey {
   return `${UYAP_OPERATION_IDEMPOTENCY_KEY_PREFIX}${randomUUID()}` as UyapOperationIdempotencyKey;
+}
+
+/** HTTP retry-token izinli aralığı: trim sonrası 8..200, yalnız görünür ASCII (whitespace/control yok). */
+const HTTP_TOKEN_MIN_LEN = 8;
+const HTTP_TOKEN_MAX_LEN = 200;
+const HTTP_TOKEN_CHARSET = /^[\x21-\x7E]+$/;
+
+/**
+ * P05C-P04 (OPTION B + BOUNDED A): doğrulanmış opaque HTTP `Idempotency-Key` header'ından
+ * versioned/branded, deterministik, sabit-uzunluklu key üretir.
+ *
+ * - `namespace`: tenant + action izolasyonu (ör. `<tenantId>:<action>`) — aynı token farklı
+ *   tenant/action için FARKLI key üretir.
+ * - Yalnız çevresel whitespace normalize edilir; case-sensitive (lowercase YOK).
+ * - Trim sonrası boş / aralık-dışı / yasak-karakter reddedilir (typed hata; RAW TOKEN mesaja YAZILMAZ).
+ * - `sha256(namespace + "\n" + normalizedToken)` — RAW TOKEN persist/log EDİLMEZ; payload hash'i
+ *   DEĞİL, opaque retry-token'ının server-side canonicalizasyonudur. Secret/HMAC YOK.
+ */
+export function deriveUyapOperationIdempotencyKeyFromHttpToken(
+  namespace: string,
+  rawToken: string,
+): UyapOperationIdempotencyKey {
+  if (typeof namespace !== 'string' || !namespace.trim()) {
+    throw new UyapOperationWriterValidationError('idempotency namespace zorunludur');
+  }
+  if (typeof rawToken !== 'string') {
+    throw new UyapOperationWriterValidationError('Idempotency-Key header zorunludur');
+  }
+  const normalized = rawToken.trim();
+  if (!normalized) {
+    throw new UyapOperationWriterValidationError('Idempotency-Key boş olamaz');
+  }
+  if (normalized.length < HTTP_TOKEN_MIN_LEN || normalized.length > HTTP_TOKEN_MAX_LEN) {
+    // RAW TOKEN mesaja yazılmaz; yalnız uzunluk sınırı bildirilir.
+    throw new UyapOperationWriterValidationError(
+      `Idempotency-Key uzunluğu ${HTTP_TOKEN_MIN_LEN}..${HTTP_TOKEN_MAX_LEN} olmalıdır`,
+    );
+  }
+  if (!HTTP_TOKEN_CHARSET.test(normalized)) {
+    throw new UyapOperationWriterValidationError('Idempotency-Key yalnız görünür ASCII içerebilir');
+  }
+  // newline ayraç: token charset [\x21-\x7E] newline'ı DIŞLAR → ("a","bc") ile ("ab","c")
+  // gibi namespace/token karışmaları imkânsızdır.
+  const digest = createHash('sha256').update(`${namespace}\n${normalized}`, 'utf8').digest('hex');
+  return `${UYAP_OPERATION_IDEMPOTENCY_KEY_PREFIX}HTTP:${digest}` as UyapOperationIdempotencyKey;
 }
 
 /**

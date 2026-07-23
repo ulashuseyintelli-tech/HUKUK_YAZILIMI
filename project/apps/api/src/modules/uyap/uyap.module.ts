@@ -7,6 +7,11 @@ import { PermissionDiagnosticsModule } from '../permission-diagnostics/permissio
 import { UyapService } from './uyap.service';
 import { UyapXmlService } from './uyap-xml.service';
 import { UyapController } from './uyap.controller';
+// P05C-P04: dormant P-E5B + P05C-P03 writer'ları + ince evidence orchestrator RUNTIME'a bağlanır.
+// Yalnız UYAP_SEND/TRIGGER_HACIZ, flag-gated (default-OFF). ConfigService global.
+import { UyapOperationWriterService } from './operation-writer/uyap-operation-writer.service';
+import { UyapCpeDecisionLinkWriterService } from './operation-writer/uyap-cpe-decision-link-writer.service';
+import { UyapOperationEvidenceOrchestrator } from './operation-writer/uyap-operation-evidence.orchestrator';
 
 // Re-export UYAP codes for external use
 export * from './uyap-codes';
@@ -20,7 +25,13 @@ export * from './uyap-codes';
     PermissionDiagnosticsModule, // P2b-2: UYAP_SEND observe hook için GuidedOpenObserveService
   ],
   controllers: [UyapController],
-  providers: [UyapService, UyapXmlService],
+  providers: [
+    UyapService,
+    UyapXmlService,
+    UyapOperationWriterService,
+    UyapCpeDecisionLinkWriterService,
+    UyapOperationEvidenceOrchestrator,
+  ],
   exports: [UyapService, UyapXmlService],
 })
 export class UyapModule {}

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Res, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Res, Headers, ServiceUnavailableException } from '@nestjs/common';
 import { Response } from 'express';
 import { UyapService } from './uyap.service';
 import { UyapXmlService } from './uyap-xml.service';
@@ -101,16 +101,27 @@ export class UyapController {
    * Ödeme emri gönder (test)
    */
   @Post('test/payment-order')
-  async testPaymentOrder(@Body() body: any, @CurrentUser('tenantId') tenantId: string) {
-    return this.uyapService.sendPaymentOrder({
-      caseId: body.caseId || 'test-case',
-      executionOfficeCode: body.executionOfficeCode || 'TEST-001',
-      creditor: body.creditor || { name: 'Test Alacaklı' },
-      debtor: body.debtor || { name: 'Test Borçlu' },
-      amount: body.amount || 10000,
-      currency: body.currency || 'TRY',
+  async testPaymentOrder(
+    @Body() body: any,
+    @CurrentUser('tenantId') tenantId: string,
+    @Req() req: any,
+    // P05C-P04: opaque retry-token; yalnız evidence flag ON iken kullanılır (default-OFF → yok sayılır).
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.uyapService.sendPaymentOrder(
+      {
+        caseId: body.caseId || 'test-case',
+        executionOfficeCode: body.executionOfficeCode || 'TEST-001',
+        creditor: body.creditor || { name: 'Test Alacaklı' },
+        debtor: body.debtor || { name: 'Test Borçlu' },
+        amount: body.amount || 10000,
+        currency: body.currency || 'TRY',
+        tenantId,
+      },
       tenantId,
-    }, tenantId);
+      req?.user?.id, // actorUserId = authenticated principal (server-authoritative)
+      idempotencyKey,
+    );
   }
 
   /**
@@ -193,17 +204,28 @@ export class UyapController {
    */
   @Post('haciz')
   @CpeRequired(ActionCode.TRIGGER_HACIZ, ScopeResolvers.fromBody)
-  async pushHacizRequest(@Body() body: any, @CurrentUser('tenantId') tenantId: string, @Req() req: any) {
-    return this.uyapService.pushHacizRequest({
-      caseId: body.caseId,
-      targetType: body.targetType,
-      targetDetails: body.targetDetails,
-      amount: body.amount,
-      clientId: body.clientId,
-      lawyerId: body.lawyerId,
+  async pushHacizRequest(
+    @Body() body: any,
+    @CurrentUser('tenantId') tenantId: string,
+    @Req() req: any,
+    // P05C-P04: opaque retry-token; yalnız evidence flag ON iken kullanılır (default-OFF → yok sayılır).
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.uyapService.pushHacizRequest(
+      {
+        caseId: body.caseId,
+        targetType: body.targetType,
+        targetDetails: body.targetDetails,
+        amount: body.amount,
+        clientId: body.clientId,
+        lawyerId: body.lawyerId,
+        tenantId,
+        userId: req.user?.id, // PR-D4e-6: karar-anı audit aktörü
+      },
       tenantId,
-      userId: req.user?.id, // PR-D4e-6: karar-anı audit aktörü
-    }, tenantId);
+      req?.user?.id, // P05C-P04: actorUserId = authenticated principal (server-authoritative)
+      idempotencyKey,
+    );
   }
 
   // ==================== İLGİLİ DAVA AÇMA ENDPOINT'LERİ ====================

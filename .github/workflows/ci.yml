@@ -1541,8 +1541,10 @@ jobs:
                    src/modules/uyap/operation-writer/uyap-operation-writer-lock.ts; do
             test -f "$f" || { echo "MISSING P05B file: $f"; exit 1; }
           done
-          if grep -nE 'UyapOperationWriterService|operation-writer' src/modules/uyap/uyap.module.ts src/modules/uyap/uyap.service.ts; then
-            echo "FORBIDDEN P05B wiring: writer is dormant (no module registration / no UyapService injection)"; exit 1
+          # P05C-P04 UYARLAMASI: writer artık YETKİLİ (module kaydı + orchestrator). Guard DARALTILDI:
+          # UyapService raw operation-writer'ı DOĞRUDAN kullanamaz (yalnız orchestrator yoluyla).
+          if grep -nE 'UyapOperationWriterService' src/modules/uyap/uyap.service.ts; then
+            echo "FORBIDDEN P05C-P04: UyapService raw operation-writer'i DOGRUDAN kullanamaz (yalniz orchestrator)"; exit 1
           fi
           if grep -nE '\.uyapRequestLog|Controller|CasePolicyEngine|cpeDecisionLog' "$writer"; then
             echo "FORBIDDEN P05B surface: dual-write / controller / CPE linkage"; exit 1
@@ -1579,8 +1581,10 @@ jobs:
                    src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.errors.ts; do
             test -f "$f" || { echo "MISSING P05C-P03 file: $f"; exit 1; }
           done
-          if grep -nE 'UyapCpeDecisionLinkWriterService|cpe-decision-link-writer' src/modules/uyap/uyap.module.ts src/modules/uyap/uyap.service.ts; then
-            echo "FORBIDDEN P05C-P03 wiring: link writer is dormant (no module registration / no injection)"; exit 1
+          # P05C-P04 UYARLAMASI: link writer artık YETKİLİ (module kaydı + orchestrator). Guard DARALTILDI:
+          # UyapService raw link-writer'ı DOĞRUDAN kullanamaz (yalnız orchestrator yoluyla).
+          if grep -nE 'UyapCpeDecisionLinkWriterService' src/modules/uyap/uyap.service.ts; then
+            echo "FORBIDDEN P05C-P04: UyapService raw link-writer'i DOGRUDAN kullanamaz (yalniz orchestrator)"; exit 1
           fi
           if grep -nE 'actorUserId|actingLawyerId|signatureOwnerId|approverId|canPerformAction|Controller' "$writer"; then
             echo "FORBIDDEN P05C-P03 surface: actor/lawyer/signer input, CPE decision or controller"; exit 1
@@ -1700,6 +1704,44 @@ jobs:
             --testPathPattern="(audit-metadata-builder|audit\.service\.attribution)\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # UYAP-OPERATION-EVIDENCE-ACTIVATION-P05C-P04: dormant P-E5B + P05C-P03 writer'ları CPE akışına
+      # bağlar (yalnız UYAP_SEND/TRIGGER_HACIZ, flag-gated default-OFF). STEP 1 unit: idempotency-key
+      # factory (HTTP-token → branded, deterministik, opaque; raw token log/persist EDİLMEZ) + orchestrator
+      # flag-matrix + UyapService flag-OFF parity/fail-closed/actorUserId-provenance. STEP 2 disposable
+      # PostgreSQL 16: TX-1 atomik operation+attempt+link, exact/concurrent replay reuse, cross-tenant
+      # izolasyon, atomik rollback. skipped/zero-test RED.
+      - name: UYAP-P05C-P04 evidence activation unit
+        run: |
+          for f in src/modules/uyap/operation-writer/uyap-operation-idempotency-key.factory.spec.ts \
+                   src/modules/uyap/operation-writer/uyap-operation-evidence.orchestrator.spec.ts \
+                   src/modules/uyap/__tests__/uyap-operation-evidence-activation.spec.ts \
+                   src/modules/uyap/operation-writer/uyap-operation-evidence.orchestrator.ts; do
+            test -f "$f" || { echo "MISSING P05C-P04 file: $f"; exit 1; }
+          done
+          # raw Idempotency-Key digest'lenir; hiçbir uretim kodu ham header'ı persist/log ETMEZ.
+          if grep -rnE "logger\.(log|warn|error|debug).*idempotencyToken|console\..*idempotencyToken" src/modules/uyap; then
+            echo "FORBIDDEN P05C-P04: raw Idempotency-Key log/persist edilemez"; exit 1
+          fi
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath \
+            src/modules/uyap/operation-writer/uyap-operation-idempotency-key.factory.spec.ts \
+            src/modules/uyap/operation-writer/uyap-operation-evidence.orchestrator.spec.ts \
+            src/modules/uyap/__tests__/uyap-operation-evidence-activation.spec.ts
+        working-directory: project/apps/api
+      - name: UYAP-P05C-P04 evidence activation disposable DB acceptance
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          spec=src/modules/uyap/operation-writer/uyap-operation-evidence.orchestrator.db-gated.integration.spec.ts
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f "$spec" || { echo "MISSING P05C-P04 DB-gated spec: $spec"; exit 1; }
+          set -o pipefail
+          output_file="$(mktemp)"
+          pnpm exec jest --ci --forceExit --runInBand --runTestsByPath "$spec" 2>&1 | tee "$output_file"
+          grep -Eq "Test Suites:[[:space:]]+1 passed, 1 total" "$output_file" || \
+            { echo "BLOCKED: P05C-P04 DB suite did not execute exactly once"; exit 1; }
+          awk '/^[[:space:]]*Tests:/ { seen=1; passed=$2; total=$4 } END { exit !(seen && passed ~ /^[0-9]+$/ && total ~ /^[0-9]+$/ && passed==total && total>0) }' "$output_file" || \
+            { echo "BLOCKED: P05C-P04 DB tests did not complete with every discovered test passing"; exit 1; }
+        working-directory: project/apps/api
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
