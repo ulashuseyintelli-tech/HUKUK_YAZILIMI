@@ -167,7 +167,7 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
     const admission = new HumanClaimItemFormationAdmissionService(
       { assertAuthorized: jest.fn(async () => undefined) } as unknown as HumanClaimItemFormationAuthorizationPort,
       { resolveExactVersion: jest.fn(async () => sourceBinding) } as unknown as CaseDocumentExactVersionResolverPort,
-      { resolveExactVersion: jest.fn(async () => basisBinding) } as unknown as LegalBasisExactVersionResolverPort,
+      { resolveExactVersion: jest.fn(async () => ({ ok: true, value: basisBinding })) } as unknown as LegalBasisExactVersionResolverPort,
       atomicWriter,
       { enabled: true, clock: () => new Date(CREATED_AT) },
     );
@@ -220,7 +220,7 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
       audit,
       domainEvent,
       { resolveExactVersion: jest.fn(async () => document) } as unknown as CaseDocumentExactVersionResolverPort,
-      { resolveExactVersion: jest.fn(async () => basis) } as unknown as LegalBasisExactVersionResolverPort,
+      { resolveExactVersion: jest.fn(async () => ({ ok: true, value: basis })) } as unknown as LegalBasisExactVersionResolverPort,
       { enabled: true, clock: () => new Date(EXECUTION_AT) },
     );
   }
@@ -389,6 +389,31 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
     ).toBe(0);
   });
 
+  it('parity fix (D1): rejects a REVOKED legal basis at finalization time — previously unenforced', async () => {
+    const { intent, source } = await approvedIntent('legal-basis-revoked');
+    await expect(
+      finalizer(source, { ...basisBinding, status: 'REVOKED' }).finalize({
+        tenantId,
+        formationIntentId: intent.id,
+      }),
+    ).rejects.toMatchObject({ code: 'FORMATION_LEGAL_BASIS_MISMATCH' });
+    expect(
+      await prisma.claimFormationSnapshot.count({
+        where: { tenantId, formationIntentId: intent.id },
+      }),
+    ).toBe(0);
+  });
+
+  it('D1: accepts a SUPERSEDED legal basis at finalization when the exact bound version/checksum still matches', async () => {
+    const { intent, source } = await approvedIntent('legal-basis-superseded');
+    const result = await finalizer(source, { ...basisBinding, status: 'SUPERSEDED' }).finalize({
+      tenantId,
+      formationIntentId: intent.id,
+    });
+    expect(result.replayed).toBe(false);
+    expect(await prisma.claimItem.findUnique({ where: { id: result.claimItemId } })).not.toBeNull();
+  });
+
   it('fails before writes when approval target binding is not exact', async () => {
     const { intent, source } = await approvedIntent('approval-drift');
     await prisma.officeApprovalRequest.update({
@@ -418,7 +443,7 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
       audit,
       new DomainEventIngestService(),
       { resolveExactVersion: jest.fn(async () => source) } as unknown as CaseDocumentExactVersionResolverPort,
-      { resolveExactVersion: jest.fn(async () => basisBinding) } as unknown as LegalBasisExactVersionResolverPort,
+      { resolveExactVersion: jest.fn(async () => ({ ok: true, value: basisBinding })) } as unknown as LegalBasisExactVersionResolverPort,
       {
         enabled: true,
         clock: () => new Date(intent.expiresAt.getTime() + 1),

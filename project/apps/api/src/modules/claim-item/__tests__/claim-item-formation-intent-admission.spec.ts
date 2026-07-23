@@ -142,7 +142,10 @@ function buildHarness(options: {
   const basisResolver = {
     resolveExactVersion: jest.fn(async () => {
       order.push('legal-basis');
-      return options.legalBasis === undefined ? legalBasis() : options.legalBasis;
+      const value = options.legalBasis === undefined ? legalBasis() : options.legalBasis;
+      return value === null
+        ? { ok: false as const, failure: { code: 'NOT_FOUND' as const } }
+        : { ok: true as const, value };
     }),
   } as unknown as LegalBasisExactVersionResolverPort;
   const result = {
@@ -288,11 +291,21 @@ describe('RCV-CLAIM-FORM-P02-S08-I02B typed formation intent admission', () => {
   it.each([
     [null, 'LEGAL_BASIS_VERSION_NOT_FOUND'],
     [legalBasis({ status: 'REVOKED' }), 'LEGAL_BASIS_NOT_EFFECTIVE'],
+    // D1: SUPERSEDED is admissible at FINALIZATION but never at ADMISSION.
+    [legalBasis({ status: 'SUPERSEDED' }), 'LEGAL_BASIS_NOT_EFFECTIVE'],
     [legalBasis({ subtypeRecognized: false }), 'UNSUPPORTED_COMPONENT'],
     [legalBasis({ componentCategory: 'COST' }), 'LEGAL_BASIS_COMPONENT_MISMATCH'],
     [legalBasis({ requiredEvidenceClasses: ['COURT_ORDER'] }), 'LEGAL_BASIS_EVIDENCE_MISMATCH'],
     [legalBasis({ legalReviewRequired: true }), 'LEGAL_REVIEW_REQUIRED'],
     [legalBasis({ liabilityCompatible: false }), 'INVALID_FORMATION_CONTEXT'],
+    // Parity fix: itemType OTHER is now rejected at admission time too, so it
+    // can never reach finalization as an unfinalizable dead end.
+    [
+      legalBasis({
+        claimItemProjection: { ...legalBasis().claimItemProjection, itemType: 'OTHER' as any },
+      }),
+      'INVALID_FORMATION_CONTEXT',
+    ],
   ])('fails closed for unresolved or incompatible legal basis', async (resolved, code) => {
     const harness = buildHarness({ legalBasis: resolved as ExactLegalBasisBindingV1 | null });
     await expect(

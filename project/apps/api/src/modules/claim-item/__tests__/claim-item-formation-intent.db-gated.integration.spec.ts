@@ -183,7 +183,7 @@ describeWithDisposableDb(
         ),
       } as unknown as CaseDocumentExactVersionResolverPort;
       const basisResolver = {
-        resolveExactVersion: jest.fn().mockResolvedValue(legalBasis()),
+        resolveExactVersion: jest.fn().mockResolvedValue({ ok: true, value: legalBasis() }),
       } as unknown as LegalBasisExactVersionResolverPort;
       const writer = new ClaimItemFormationOfficeApprovalAdapter(
         prisma,

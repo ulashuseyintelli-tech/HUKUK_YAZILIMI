@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import {
   CLAIM_ITEM_FORMATION_CANONICAL_SERIALIZATION_VERSION,
   CLAIM_ITEM_FORMATION_EXPIRY_MS,
@@ -11,6 +10,7 @@ import {
   readFormationCaseId,
   validateHumanClaimItemFormationContext,
   type ClaimFormationJsonValue,
+  type ClaimItemFormationAdmissionErrorCode,
   type HumanClaimItemFormationAdmissionContext,
 } from './claim-item-formation-intent.contract';
 import {
@@ -26,7 +26,13 @@ import {
   LegalBasisExactVersionResolverPort,
   type ExactCaseDocumentSourceV1,
   type ExactLegalBasisBindingV1,
+  type ResolveExactLegalBasisFailureCode,
+  type ResolveExactLegalBasisResult,
 } from './claim-item-formation-resolver.ports';
+import {
+  assertLegalBasisEligible,
+  type LegalBasisEligibilityFailureCode,
+} from './claim-item-formation-legal-basis-eligibility';
 import {
   ClaimItemFormationOfficeApprovalAdapter,
   type ClaimItemFormationAdmissionResult,
@@ -87,7 +93,7 @@ export class HumanClaimItemFormationAdmissionService {
     });
     this.assertSourceBinding(source, context.tenantId, command.caseId, command.source);
 
-    const legalBasis = await this.legalBasisResolver.resolveExactVersion({
+    const legalBasisResolution = await this.legalBasisResolver.resolveExactVersion({
       tenantId: context.tenantId,
       caseId: command.caseId,
       legalBasisCode: command.legalBasis.code,
@@ -99,7 +105,7 @@ export class HumanClaimItemFormationAdmissionService {
       evidenceClasses: source.evidenceClasses,
       liabilityContext: command.liabilityContext.payload,
     });
-    this.assertLegalBasisBinding(legalBasis, command, source);
+    const legalBasis = this.resolveLegalBasis(legalBasisResolution, command, source);
 
     const createdAt = this.clock();
     if (!Number.isFinite(createdAt.getTime())) {
@@ -296,142 +302,69 @@ export class HumanClaimItemFormationAdmissionService {
     }
   }
 
-  private assertLegalBasisBinding(
-    legalBasis: ExactLegalBasisBindingV1 | null,
+  private resolveLegalBasis(
+    resolution: ResolveExactLegalBasisResult,
     command: ReturnType<typeof parseHumanClaimItemFormationCommand>,
     source: ExactCaseDocumentSourceV1,
-  ): asserts legalBasis is ExactLegalBasisBindingV1 {
-    if (!legalBasis) {
-      throw new ClaimItemFormationAdmissionError('LEGAL_BASIS_VERSION_NOT_FOUND');
+  ): ExactLegalBasisBindingV1 {
+    if (!resolution.ok) {
+      throw new ClaimItemFormationAdmissionError(this.mapLegalBasisFailure(resolution.failure.code));
     }
-    if (
-      legalBasis.legalBasisCode !== command.legalBasis.code ||
-      legalBasis.legalBasisVersion !== command.legalBasis.requestedVersion
-    ) {
-      throw new ClaimItemFormationAdmissionError('LEGAL_BASIS_VERSION_NOT_FOUND');
+    const eligibility = assertLegalBasisEligible({
+      mode: 'ADMISSION',
+      legalBasis: resolution.value,
+      requestedIdentity: {
+        legalBasisCode: command.legalBasis.code,
+        legalBasisVersion: command.legalBasis.requestedVersion,
+      },
+      requestedComponent: {
+        category: command.component.category,
+        subtypeCode: command.component.subtypeCode,
+      },
+      documentType: source.documentType,
+      evidenceClasses: source.evidenceClasses,
+      effectiveAt: command.effectiveAt,
+    });
+    if (!eligibility.ok) {
+      throw new ClaimItemFormationAdmissionError(this.mapLegalBasisFailure(eligibility.failure.code));
     }
-    if (
-      !isSha256Hex(legalBasis.legalBasisChecksum) ||
-      !isSha256Hex(legalBasis.registryReleaseChecksum) ||
-      !isSha256Hex(legalBasis.componentSubtypeChecksum) ||
-      !isSha256Hex(legalBasis.resolutionHash)
-    ) {
-      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
-    }
-    if (!legalBasis.subtypeRecognized) {
-      throw new ClaimItemFormationAdmissionError('UNSUPPORTED_COMPONENT');
-    }
-
-    const effectiveAt = new Date(command.effectiveAt).getTime();
-    const effectiveFrom = new Date(legalBasis.effectiveFrom).getTime();
-    const effectiveTo =
-      legalBasis.effectiveTo === null ? null : new Date(legalBasis.effectiveTo).getTime();
-    if (
-      legalBasis.status !== 'ACTIVE' ||
-      !Number.isFinite(effectiveFrom) ||
-      (effectiveTo !== null && !Number.isFinite(effectiveTo)) ||
-      effectiveAt < effectiveFrom ||
-      (effectiveTo !== null && effectiveAt >= effectiveTo)
-    ) {
-      throw new ClaimItemFormationAdmissionError('LEGAL_BASIS_NOT_EFFECTIVE');
-    }
-    if (
-      legalBasis.componentCategory !== command.component.category ||
-      legalBasis.componentSubtypeCode !== command.component.subtypeCode
-    ) {
-      throw new ClaimItemFormationAdmissionError('LEGAL_BASIS_COMPONENT_MISMATCH');
-    }
-    if (
-      !legalBasis.allowedDocumentTypes.includes(source.documentType) ||
-      legalBasis.requiredEvidenceClasses.some(
-        (requiredClass) => !source.evidenceClasses.includes(requiredClass),
-      )
-    ) {
-      throw new ClaimItemFormationAdmissionError('LEGAL_BASIS_EVIDENCE_MISMATCH');
-    }
-    if (!legalBasis.liabilityCompatible) {
-      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
-    }
-    if (legalBasis.legalReviewRequired) {
-      throw new ClaimItemFormationAdmissionError('LEGAL_REVIEW_REQUIRED');
-    }
-    if (
-      !legalBasis.componentSubtypeVersion ||
-      !legalBasis.registryReleaseId ||
-      !legalBasis.resolutionContractVersion ||
-      !this.isOpaqueReferenceList(legalBasis.allowedDocumentTypes) ||
-      !this.isOpaqueReferenceList(legalBasis.requiredEvidenceClasses)
-    ) {
-      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
-    }
-    const policyFields = [
-      legalBasis.interestPolicyRef,
-      legalBasis.interestPolicyVersion,
-      legalBasis.ruleRef,
-      legalBasis.ruleVersion,
-    ];
-    if (
-      (legalBasis.interestEligibility === 'ACCRUES' && policyFields.some((value) => !value)) ||
-      (legalBasis.interestEligibility !== 'ACCRUES' && policyFields.some((value) => value !== null))
-    ) {
-      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
-    }
-    this.assertClaimItemProjection(legalBasis);
+    return eligibility.legalBasis;
   }
 
-  private assertClaimItemProjection(legalBasis: ExactLegalBasisBindingV1): void {
-    const projection = legalBasis.claimItemProjection;
-    const interestStartDate =
-      projection?.interestStartDate == null
-        ? null
-        : new Date(projection.interestStartDate);
-    const interestRate =
-      projection?.interestRate == null
-        ? null
-        : this.parseInterestRate(projection.interestRate);
-    if (
-      !projection ||
-      !projection.itemType ||
-      !projection.interestAccrualStatus ||
-      !Array.isArray(projection.liableDebtorIds) ||
-      !this.isOpaqueReferenceList(projection.liableDebtorIds)
-    ) {
-      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
-    }
-    if (
-      (legalBasis.interestEligibility === 'ACCRUES' &&
-        (projection.interestAccrualStatus !== 'ACCRUES' ||
-          !projection.interestType ||
-          !projection.interestStartDateProvenance ||
-          (projection.interestStartDateProvenance !==
-            'ENFORCEMENT_PROCEEDING_DATE' &&
-            interestStartDate === null) ||
-          (interestStartDate !== null &&
-            !Number.isFinite(interestStartDate.getTime())) ||
-          (interestRate !== null &&
-            (!interestRate.isFinite() ||
-              interestRate.decimalPlaces() > 2 ||
-              interestRate.abs().greaterThan('999.99'))))) ||
-      (legalBasis.interestEligibility === 'NO_INTEREST' &&
-        (projection.interestAccrualStatus !== 'NO_INTEREST' ||
-          projection.interestType !== null ||
-          projection.interestRate !== null ||
-          projection.interestStartDate !== null ||
-          projection.interestStartDateProvenance !== null)) ||
-      (legalBasis.interestEligibility === 'UNRESOLVED' &&
-        projection.interestAccrualStatus !== 'UNKNOWN')
-    ) {
-      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
-    }
-  }
-
-  private parseInterestRate(value: string): Prisma.Decimal {
-    try {
-      return new Prisma.Decimal(value);
-    } catch {
-      throw new ClaimItemFormationAdmissionError(
-        'INVALID_FORMATION_CONTEXT',
-      );
+  /**
+   * Maps the shared resolver/eligibility failure vocabularies onto this
+   * consumer's pre-existing, unrenamed `ClaimItemFormationAdmissionErrorCode`
+   * (owner-ratified D3/parity requirement: consumer-facing codes are
+   * preserved, not renamed, even though the underlying check now runs
+   * through `assertLegalBasisEligible` shared with the finalizer).
+   */
+  private mapLegalBasisFailure(
+    code: ResolveExactLegalBasisFailureCode | LegalBasisEligibilityFailureCode,
+  ): ClaimItemFormationAdmissionErrorCode {
+    switch (code) {
+      case 'NOT_FOUND':
+      case 'IDENTITY_MISMATCH':
+      case 'STATUS_NOT_ELIGIBLE':
+        return 'LEGAL_BASIS_VERSION_NOT_FOUND';
+      case 'LIFECYCLE_NOT_ELIGIBLE':
+      case 'NOT_EFFECTIVE_AT_DATE':
+        return 'LEGAL_BASIS_NOT_EFFECTIVE';
+      case 'COMPONENT_UNSUPPORTED':
+        return 'UNSUPPORTED_COMPONENT';
+      case 'COMPONENT_MISMATCH':
+        return 'LEGAL_BASIS_COMPONENT_MISMATCH';
+      case 'DOCUMENT_EVIDENCE_INCOMPATIBLE':
+        return 'LEGAL_BASIS_EVIDENCE_MISMATCH';
+      case 'LEGAL_REVIEW_REQUIRED':
+        return 'LEGAL_REVIEW_REQUIRED';
+      case 'REGISTRY_RELEASE_INVALID':
+      case 'RESOLUTION_CONTRACT_INVALID':
+      case 'LIABILITY_INCOMPATIBLE':
+      case 'INTEREST_POLICY_INVALID':
+      case 'PROJECTION_UNSUPPORTED':
+      case 'BINDING_DRIFT':
+      case 'RESOLUTION_UNAVAILABLE':
+        return 'INVALID_FORMATION_CONTEXT';
     }
   }
 
