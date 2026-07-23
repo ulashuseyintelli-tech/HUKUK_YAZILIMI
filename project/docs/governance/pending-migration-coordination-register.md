@@ -561,8 +561,8 @@ migration'lık yeni bir pending giriştir. Bu kayıt canlı DB mutation'ı İÇE
 | İçerik | ADDITIVE-ONLY: 3 yeni enum (`UyapInternalOperationState`/`UyapProviderState`/`UyapLegalEffectState`), 2 yeni tablo (`UyapOperation`/`UyapAttempt`), 10 tenant-safe composite FK, 4 structural CHECK, yeni index + 4 parent (`User`/`Client`/`Case`/`Lawyer`) `@@unique([id, tenantId])` |
 | Legacy etkisi | `UyapRequestLog`/`CpeDecisionLog`/`CpeExecutionRecord` DEĞİŞMEZ; hiçbir UPDATE/INSERT/DELETE/DROP/TRUNCATE veya backfill YOK |
 | Doğrulama | Disposable `postgres:16` üzerinde `prisma migrate deploy` + 9 static + 18 db-gated test PASS; blocking CI 2 step (static+additive guard / disposable-DB acceptance) |
-| **LIVE DB APPLY** | **NOT APPLIED** — gerçek `hukuk_db`'ye uygulanmadı |
-| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** — ayrı owner GO-MIGRATE brief'i bekler |
+| **LIVE DB APPLY** | **APPLIED — TRAIN-R02, 2026-07-23, exec SHA `b3b0fa5b8183`** (bkz. §16) |
+| **GO-MIGRATE** | **CONSUMED — owner ratified M1-M8, TRAIN-R02** (bkz. §16) |
 
 ### 10.2 Disposition
 
@@ -611,8 +611,8 @@ pending giriştir. Bu kayıt canlı DB mutation'ı İÇERMEZ.
 | Kolon / veri | **tenantId kolonu YOK · backfill YOK · DML YOK · link tablosu YOK · write-path değişmedi** |
 | Veri riski | **YOK** — `id` zaten PK olduğundan `(id, caseId)` süper-küme anahtardır; hiçbir veri durumu kısıtı ihlal edemez, index teklik nedeniyle kurulamama durumuna düşemez |
 | Doğrulama | 11 static + 7 db-gated PASS (disposable `postgres:16`); blocking CI 2 step |
-| **LIVE DB APPLY** | **NOT APPLIED** |
-| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** — ayrı owner GO-MIGRATE brief'i bekler |
+| **LIVE DB APPLY** | **APPLIED — TRAIN-R02, 2026-07-23, exec SHA `b3b0fa5b8183`** (bkz. §16) |
+| **GO-MIGRATE** | **CONSUMED — owner ratified M1-M8, TRAIN-R02** (bkz. §16) |
 
 ### 11.2 Disposition
 
@@ -658,8 +658,8 @@ Link schema foundation + Policy Engine referential legal-hold. Üretildi, canlı
 | Kolon / veri | `role`/`disposition` YOK · `CpeDecisionLog.tenantId` YOK · backfill/DML YOK · `CpeExecutionRecord` değişmedi |
 | Veri riski | **YOK** — yeni tablo boş oluşturulur; `UyapOperation` unique'i `id` PK süper-kümesi olduğundan ihlal edilemez |
 | Doğrulama | 18 static + 12 db-gated + uyarlanan 10 kvkk testi PASS (disposable `postgres:16`); blocking CI 2 step |
-| **LIVE DB APPLY** | **NOT APPLIED** |
-| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** |
+| **LIVE DB APPLY** | **APPLIED — TRAIN-R02, 2026-07-23, exec SHA `b3b0fa5b8183`** (bkz. §16) |
+| **GO-MIGRATE** | **CONSUMED — owner ratified M1-M8, TRAIN-R02** (bkz. §16) |
 
 ### 12.2 Disposition
 
@@ -706,8 +706,8 @@ runtime activation yetkisi içermez.
 | İçerik | Additive `ClaimItemFormationIntent` + `ClaimFormationSnapshot` physical foundation |
 | Historical data | Backfill/mutation `NONE`; existing rows unchanged |
 | Doğrulama | Disposable PostgreSQL 98 migrations clean deploy; foundation `18/18`; ClaimItem regression `267/267`; required CI `4/4 PASS` |
-| **LIVE DB APPLY** | **NOT APPLIED / NOT PERFORMED** |
-| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** — ayrı owner gate gerekir |
+| **LIVE DB APPLY** | **APPLIED — TRAIN-R02, 2026-07-23, exec SHA `b3b0fa5b8183`** (bkz. §16) |
+| **GO-MIGRATE** | **CONSUMED — owner ratified M1-M8, TRAIN-R02** (bkz. §16) |
 
 ### 13.2 Disposition
 
@@ -741,8 +741,8 @@ migration merge edildiğinde (2026-07-23) bu register'a hiç işlenmemiş olduğ
 | Kolon / veri | Backfill/DML YOK; mevcut satırlar 7 yeni kolonda NULL alır |
 | Veri riski | **YOK** — nullable, default yok, hiçbir CHECK yok |
 | Doğrulama | `decision-log.md` (2026-07-22 GO-DECIDE) SLICE 1 (governance) canonik, SLICE 2 (bu migration) için "ayrı owner GO-ANALYZE + GO-IMPLEMENT bekler" diyor; PR aynı gün merge edilmiş — belgelenmiş yetki ile fiili merge arasında iz sürülebilir bir boşluk var (owner dikkatine) |
-| **LIVE DB APPLY** | **NOT APPLIED** — gerçek `hukuk_db`'ye uygulanmadı |
-| **GO-MIGRATE** | **REQUIRED / NOT AUTHORIZED** — ayrı owner GO-MIGRATE brief'i bekler |
+| **LIVE DB APPLY** | **APPLIED — TRAIN-R02, 2026-07-23, exec SHA `b3b0fa5b8183`** (bkz. §16) |
+| **GO-MIGRATE** | **CONSUMED — owner ratified M1-M8, TRAIN-R02** (bkz. §16) |
 
 ### 14.2 Disposition
 
@@ -928,3 +928,103 @@ RUNTIME→main-HEAD cutover'ı, M5'in DB-migration durumunu ayrıca kontrol etme
   DEĞİŞİKLİK (yalnız ek, append-only — §7→§8/§9 emsali).
 - Bu bölüm hiçbir migration'ı SEÇMEZ/yetkilendirmez. Sonraki adım owner'ın 8 ayrı
   GO-MIGRATE kararı (veya toplu bir karar) vermesidir — bkz. final rapor.
+---
+
+## 16. CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R02 — canlı icra kapanışı (2026-07-23)
+
+Bu bölüm **fiilî canlı icrayı** kaydeder. §10–§14'teki migration girişlerinin `LIVE DB APPLY`
+hücreleri bu icra ile **APPLIED — TRAIN-R02** durumuna alınmıştır; kuyruk **DRAINED**'dır.
+§15, aynı train'in **GO-ANALYZE freshness-check + tam zincir rehearsal** kaydıdır (ayrı oturum,
+PR #1550); bu bölüm o analiz/rehearsal zincirinin **icra ayağını** tamamlar ve §15'i
+**silmez/yeniden yazmaz** — analiz→rehearsal→icra hattı bütün olarak okunur.
+
+### 16.1 Yetki ve icra
+
+Owner, Gate 0'ın bulduğu **gerçek** pending kümenin tamamını (8 migration) tek koordineli
+pencerede ratifiye etti (`TRAIN-R02 — M1-M8 RATIFICATION + EXECUTION`). Register'daki girişler
+tek başına icra edilemezdi: `prisma migrate deploy` belirli migration seçemez ve M2/M3
+ratifiye M1 ile M4'ün **arasında** duruyordu.
+
+```text
+EXECUTION SHA (FROZEN): b3b0fa5b8183fa7e75ba4341be60dbdcfb524c69
+TARGET DB             : hukuk_db @ localhost:5432 (container hukuk-postgres, postgres:16-alpine)
+DEPLOY                : tek `prisma migrate deploy` (prisma 5.22.0)
+DEPLOY WINDOW (UTC)   : 2026-07-23T16:44:15Z → 2026-07-23T16:44:19Z
+RESULT                : All migrations have been successfully applied. (exit 0)
+```
+
+### 16.2 Uygulanan küme (M1–M8, kronolojik) — §15 rehearsal zinciriyle birebir
+
+| # | Migration | Domain | Register girişi |
+|---|---|---|---|
+| M1 | `20260722170000_uyap_operation_attempt_schema_foundation_r1` | UYAP | §10 |
+| M2 | `20260722213239_office_phase2_cap09a_foundation_audit_attribution` | OFFICE | §14 |
+| M3 | `20260722224901_of01_history_p04a1_r1_service_regime_code` | DEBTOR | (kayıtsızdı) |
+| M4 | `20260722230000_cpe_decision_composite_reference_key` | POLICY ENGINE | §11 |
+| M5 | `20260723010000_uyap_attempt_cpe_decision_link` | UYAP | §12 |
+| M6 | `20260723100000_claim_formation_intent_snapshot_foundation` | RECEIVABLE | §13 |
+| M7 | `20260723120000_of01_history_p04a1_r2_completion_mode_schema` | DEBTOR | (kayıtsızdı) |
+| M8 | `20260723120100_of01_history_p04a1_r2_completion_mode_constraints` | DEBTOR | (kayıtsızdı) |
+
+İcra sırası, §15'te rehearsal edilen zincirle **birebir aynıdır**.
+
+### 16.3 Gate kanıtları (hepsi PASS)
+
+| Gate | Kanıt |
+|---|---|
+| **Gate 0** | Canlı pending = **exact M1–M8** (programatik `diff`, sıra artan) |
+| **SHA freeze** | `b3b0fa5b8183…`; deploy anında drift **yok** (yeniden doğrulandı) |
+| **Backup** | `pg_dump -Fc`, **950 378 bayt**, SHA-256 `ebd4f79be98f90153e59d7b73fb55dbab02c61841b15e2adefa52cef72f603be` |
+| **Restore verify** | Disposable `postgres:16-alpine`, **7/7 invariant** eşleşti (Tenant 3, User 7, Case 8, CpeDecisionLog 0, ServiceOccurrence 0, `_prisma_migrations` 94, tablo 192) |
+| **Writer quiescence** | Tek DB yazıcısı (RUNTIME worktree API + `@Cron`) durduruldu → application writer **0**, bekleyen lock **0**, host→5432 TCP **0** |
+| **Rehearsal** | §15 tam zincir rehearsal + bu icrada canlının **birebir kopyasında** 8/8 tekrar; "up to date"; başarısız/yarım **0** |
+| **Domain tests** | **122 PASS** — 49 (UYAP/CPE db-gated) + 73 (DEBTOR ServiceOccurrence, RCV claim-formation, OFFICE audit) |
+
+### 16.4 Post-validation (canlı, M1–M8 ayrı ayrı)
+
+| Migration | Doğrulama | Sonuç |
+|---|---|---|
+| M1 | 2 tablo · 3 enum · 10 composite FK · 4 CHECK | ✓ |
+| M2 | `AuditLog` 7 yeni kolon (`actorType`/`correlationId`/`decisionResult`/`policyRef`/`policyVersion`/`reasonCode`/`requestId`) | ✓ |
+| M3 | `ServiceOccurrence.serviceRegimeCode` kolonu | ✓ |
+| M4 | `CpeDecisionLog_id_caseId_key` UNIQUE index | ✓ |
+| M5 | link tablosu · 3 FK `confdeltype='r'` · `..._cpeDecisionLogId_key` · `UyapOperation_id_caseId_tenantId_key` | ✓ |
+| M6 | `ClaimItemFormationIntent` + `ClaimFormationSnapshot` | ✓ |
+| M7/M8 | `serviceCompletionMode` + `substituteRecipientBasis` · 2 completion constraint | ✓ |
+
+**M3 constraint notu:** M3'ün eklediği `occ_p04a1r1_regime_code_pairs_with_date_role_check` canlıda
+**yoktur** ve bu **doğru nihai durumdur** — M8 aynı pencere içinde onu `DROP CONSTRAINT` edip
+`occ_p04a1r2_regime_code_pairs_with_date_role_check` ile değiştirir (DEBTOR R2 supersede'i).
+Deploy'daki tek yıkıcı ifade budur ve kendi migration'ının kapsamındadır.
+
+### 16.5 Canlı son durum — çifte uygulama YOK
+
+```text
+prisma migrate status : "Database schema is up to date!" (102/102 canonical)
+_prisma_migrations    : M1-M8'in her biri TEK satır, applied_steps_count=1,
+                        rolled_back_at yok, hepsi 2026-07-23T16:44:18Z
+                        → çifte uygulama YOK, kısmi hata YOK
+finished_at IS NULL / rolled_back_at IS NOT NULL : 0
+DATA / BACKFILL       : NONE — satır sayıları deploy öncesi backup ile birebir aynı
+YENİ TABLOLAR         : UyapOperation / UyapAttempt / UyapAttemptCpeDecisionLink /
+                        ClaimItemFormationIntent / ClaimFormationSnapshot → toplam 0 satır
+API                   : yeniden başlatıldı, DB'ye bağlandı, HTTP yanıt veriyor (:8080)
+```
+
+### 16.6 Disposition
+
+- §10/§11/§12/§13/§14 **APPLIED / TRAIN-R02**; bu register bakımından pending migration **KALMAMIŞTIR**.
+- §15 (freshness-check + rehearsal) **korunur**; bu bölüm onun icra tamamlayıcısıdır.
+- Bu kayıt hiçbir yeni migration, feature-flag, runtime aktivasyon veya GO-OPERATE yetkisi
+  **ÜRETMEZ**. UYAP link writer / module registration / gerçek transport, P-E5D/P-E5E/P-E6 ve
+  diğer residual işler **HOLD**'da kalır.
+
+### 16.7 Kapanış verdict'i
+
+```text
+CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R02:
+CLOSED — 8/8 APPLIED (tek koordineli pencere) / QUEUE DRAINED /
+POST-VALIDATED / DATA MUTATION 0 / DOUBLE-APPLY 0
+
+IMPLEMENTATION AUTHORITY: NONE — bu kapanış kaydı hiçbir yeni yetki üretmez.
+```
