@@ -1028,3 +1028,48 @@ POST-VALIDATED / DATA MUTATION 0 / DOUBLE-APPLY 0
 
 IMPLEMENTATION AUTHORITY: NONE — bu kapanış kaydı hiçbir yeni yetki üretmez.
 ```
+
+## 17. OFFICE-CAP09A-MIGRATION-CI-COVERAGE-R01 — governance kapanışı (2026-07-23)
+
+Bu bölüm, §14/§16'da `APPLIED — TRAIN-R02` olarak kaydedilen M2
+(`office_phase2_cap09a_foundation_audit_attribution`) migration'ının kendi
+readiness-debt'ini — repository'de var olan ama required CI'da hiç
+çalışmayan 2 test dosyasını — kapatır. §14/§16'nın metnini **değiştirmez**;
+yalnız ek bir kapanış kaydıdır (append-only, §7→§8/§9 ve §15→§16 emsali).
+
+### 17.1 Root cause
+
+`ci.yml`'in `test-suite` job'ı yalnız dar, açık `--testPathPattern`/
+`--runTestsByPath` adımlarından oluşur, catch-all adım yoktur. M2'nin
+`AuditLog` attribution alanlarını (`actorType`/`correlationId`/
+`decisionResult`/`policyRef`/`policyVersion`/`reasonCode`/`requestId`)
+doğrulayan 2 test dosyası için hiçbir adım açılmamıştı — bu, §15
+freshness-check sırasında tespit edilmiştir.
+
+### 17.2 Kapanış kaydı
+
+| Alan | Değer |
+|---|---|
+| Kapsam | Yalnız `.github/workflows/ci.yml`; migration/schema/runtime **YOK** |
+| Eklenen adım | `test-suite` job → "OFFICE-CAP09A-FOUNDATION-I01 audit attribution unit tests" |
+| Kapsadığı testler | `audit-metadata-builder.spec.ts` (23 test) + `audit.service.attribution.spec.ts` (3 test) |
+| PR / squash SHA | PR #1560 / `a72031c03dcb68c3e69408e54d8fe17e5fe137e4` |
+| CI kanıtı (gerçek GitHub Actions log) | `PASS ...audit.service.attribution.spec.ts` + `PASS ...audit-metadata-builder.spec.ts`; `Test Suites: 2 passed, 2 total`; `Tests: 26 passed, 26 total` |
+| Required CI | Architectural Guardrails / Test Suite / Web Tests (vitest) / Client Workspace Live Smoke — **4/4 PASS** |
+| **LIVE DB MUTATION** | **NONE** |
+| **RUNTIME CHANGE** | **NONE** |
+
+### 17.3 Disposition
+
+- M2'nin kendisi (şema) zaten §16 kapsamında canlıya **APPLIED**'dır — bu
+  kayıt yeni bir migration icrası **DEĞİLDİR**, yalnız o migration'ın test
+  kapsamı borcunu kapatır.
+- Bu kapanış hiçbir yeni migration, runtime aktivasyon veya GO-OPERATE
+  yetkisi **ÜRETMEZ**.
+
+```text
+OFFICE-CAP09A-MIGRATION-CI-COVERAGE-R01:
+CLOSED / CANONICAL
+
+IMPLEMENTATION AUTHORITY: NONE — bu kapanış kaydı hiçbir yeni yetki üretmez.
+```
