@@ -2246,6 +2246,34 @@ Claim Formation phase ve S08 workstream `OPEN`dır. Yalnız
 `NOT STARTED / OWNER GO REQUIRED`dır. Bu closure I03, I04, production resolver, runtime,
 schema/migration apply veya Collection/shared-boundary authority'si üretmez.
 
+## 23.26. S08-I03 transactional Claim Formation finalizer formal closure — 2026-07-24
+
+RCV-CLAIM-FORM-P02-S08-I03 implementation PR #1556 / squash
+`1d47fef64e66b01561c12dc2717a63e7262dcfca`, required CI `4/4 PASS` ile
+`FORMALLY CLOSED / CANONICAL`dır. Approved immutable formation intent; exact
+Document/Legal Basis version, fingerprint/checksum, source/evidence, subtype ve liability
+compatibility bağları yeniden doğrulandıktan sonra canonical `ClaimItem`, immutable
+`ClaimFormationSnapshot`, audit/domain-event/outbox continuity ve OfficeApproval execution
+completion state'i aynı transaction içinde üretir.
+
+Execution deterministic ve idempotent'tir: intent-scoped advisory lock ile aynı tamamlanmış
+intent replay'i mevcut canonical sonucu döndürür, ikinci ClaimItem üretmez; bozuk veya çelişkili
+execution state fail-closed durur. Amount değerleri BigInt olarak exact korunur. Revalidation
+veya write aşamalarından herhangi biri başarısızsa ClaimItem, snapshot, audit/event/outbox ya da
+completion state bakımından partial write oluşmaz.
+
+Bu teknik finalizer production runtime authority'si değildir. Nest provider, route veya
+production call-site `NONE`; runtime `DEFAULT DISABLED`dır. S08-I01 human-create containment
+`ACTIVE / UNCHANGED`, I02A live migration apply `NOT AUTHORIZED / NOT APPLIED`, historical
+backfill `NONE` kalır. Web/client ve Collection/shared-boundary değişmez. Claim Formation phase
+ile S08 `OPEN`dır. `RCV-CLAIM-FORM-P02-S08-I04` yalnız next eligible task'tır; `NOT AUTHORIZED /
+OWNER GO REQUIRED`dır.
+
+Current-state reconciliation: `89c16e9b` local I02B-I01 writer-foundation commit'inin canonical
+disposition'ı `CLOSED / FULLY SUPERSEDED / CODE DISCARDED / NOT MERGED` olarak korunur;
+gereksinimleri merged I03 tarafından karşılanmıştır. Tarihsel I02B-I01 kaydı korunur; fiziksel
+branch/worktree bu closure kapsamında değiştirilmez veya temizlenmez.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
