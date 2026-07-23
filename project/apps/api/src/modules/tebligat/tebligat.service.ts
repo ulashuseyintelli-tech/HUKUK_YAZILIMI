@@ -14,6 +14,8 @@ import { ServiceOccurrenceService } from "./service-occurrence/service-occurrenc
 import { IdempotencyMode } from "./service-occurrence/service-occurrence.types";
 import { ServiceOccurrenceServiceDateRole } from "@prisma/client"; // DEBTOR-OF01-HISTORY-P04-A1
 import { ServiceOccurrenceRegimeCode } from "@prisma/client"; // DEBTOR-OF01-HISTORY-P04-A1-R1
+import { ServiceCompletionMode } from "@prisma/client"; // DEBTOR-OF01-HISTORY-P04-A1-R2
+import { SubstituteRecipientBasis as PrismaSubstituteRecipientBasis } from "@prisma/client"; // DEBTOR-OF01-HISTORY-P04-A1-R2
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest/domain-event-ingest.service";
 import { DomainEvent } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
 import {
@@ -25,6 +27,7 @@ import {
   TebligatPttResult,
   TebligatNextAction,
   Tk21Type,
+  Tk20CompletionMode,
   AddressPriorityCheck,
   TebligatSummary,
 } from "./dto/tebligat.dto";
@@ -394,8 +397,16 @@ export class TebligatService {
     };
 
     // PTT sonucuna göre durum ve sonraki adım belirle
-    const { status, nextAction, tk21Type, tebligSayilmaDate, serviceRegimeCode } =
-      this.determinePttResultAction(tebligat, dto);
+    const {
+      status,
+      nextAction,
+      tk21Type,
+      tebligSayilmaDate,
+      serviceRegimeCode,
+      serviceCompletionMode,
+      substituteRecipientBasis,
+      serviceOccurredOnOverride,
+    } = this.determinePttResultAction(tebligat, dto);
 
     updateData.status = status;
     updateData.nextAction = nextAction;
@@ -449,6 +460,13 @@ export class TebligatService {
     const addressTypeAtOccurrence = tebligat.addressType as any;
     const serviceDateRole = this.deriveServiceDateRole(dto.pttResult, addressTypeAtOccurrence, dto.tk21Type);
 
+    // DEBTOR-OF01-HISTORY-P04-A1-R2 (owner "STOP-03 RESOLUTION": "tk20CompletionDate
+    // occurrence.occurredOn'a taşınmalı"): yalnız ServiceOccurrence.occurredOn için geçerlidir —
+    // actionDate'in DİĞER kullanımları (CaseDebtor senkronu, DomainEvent occurredAt/payload)
+    // BİLİNÇLİ OLARAK dokunulmadan actionDate/pttResultDate kullanmaya devam eder (owner brief:
+    // "NARROW ... WRITE-PATH ONLY" — yalnız ServiceOccurrence yazım yolu kapsamı).
+    const serviceOccurrenceOccurredOn = serviceOccurredOnOverride ?? actionDate;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const upd = await (tx as any).tebligat.update({ where: { id }, data: updateData });
       if (shouldSync) {
@@ -472,12 +490,14 @@ export class TebligatService {
         occurrenceType: "POSTAL_DELIVERY_RESULT",
         sourceSystemCode: "MANUAL", // owner brief §7: canlı PTT entegrasyonu gelmeden sourceSystemCode=PTT YAZILMAZ
         sourceCode: dto.pttResult,
-        occurredOn: actionDate,
+        occurredOn: serviceOccurrenceOccurredOn,
         occurredAt: null,
         timePrecision: "DATE_ONLY",
         addressTypeAtOccurrence,
         serviceDateRole,
         serviceRegimeCode,
+        serviceCompletionMode,
+        substituteRecipientBasis,
         barcodeNo: resolvedBarcodeNo,
         sourceNote: boundedSourceNote,
         evidenceReference: null,
@@ -617,8 +637,61 @@ export class TebligatService {
      * kullanılmaz — bkz. schema.prisma ServiceOccurrence.serviceRegimeCode yorumu.
      */
     serviceRegimeCode?: ServiceOccurrenceRegimeCode;
+    /**
+     * DEBTOR-OF01-HISTORY-P04-A1-R2 (owner "STOP-03 RESOLUTION"): serviceRegimeCode'dan
+     * BAĞIMSIZ ikinci boyut — fiilen hangi teslim/tevdi TAMAMLANMA mekanizması gerçekleşti.
+     * TK_20 için operatörün AÇIKÇA seçtiği tk20CompletionMode'dan, IMMEDIATE_SERVICE için
+     * mevcut pttResult ayrımından (TESLIM_EDILDI vs AYNI_KONUTTA_TESLIM/ISYERINDE_TESLIM)
+     * türetilir. TK_21_1/TK_21_2 için BİLİNÇLİ OLARAK undefined bırakılır — bkz. ilgili dal
+     * yorumu (owner: "Sırf tk21Type değerinden completion mode uydurulmayacak").
+     */
+    serviceCompletionMode?: ServiceCompletionMode;
+    /**
+     * Yalnız serviceCompletionMode=DELIVERED_TO_AUTHORIZED_PERSON olduğunda anlamlıdır.
+     * Bu görevde YALNIZ TK_20 dalı için doldurulur (owner brief: "NARROW ... ONLY") —
+     * IMMEDIATE_SERVICE'in kendi DELIVERED_TO_AUTHORIZED_PERSON alt durumu (AYNI_KONUTTA_TESLIM/
+     * ISYERINDE_TESLIM) için bilinçli olarak undefined bırakılır (kapsam genişletmesi YOK).
+     */
+    substituteRecipientBasis?: PrismaSubstituteRecipientBasis;
+    /**
+     * DEBTOR-OF01-HISTORY-P04-A1-R2 (owner "STOP-03 RESOLUTION": "tk20CompletionDate
+     * occurrence.occurredOn'a taşınmalı"): yalnız TK_20 dalı için dolar ve recordPttResult'ta
+     * ServiceOccurrence.occurredOn'un actionDate (pttResultDate) yerine BU değeri kullanmasını
+     * sağlar. tebligSayilmaDate (LEGACY, hâlâ ilanDate??muhtarlikDate kullanır, hâlâ koşulsuz
+     * +15 gün) BİLİNÇLİ OLARAK bu görevde DOKUNULMAZ — o P04-B-R2'nin (ortak hesap çekirdeği)
+     * kapsamıdır; bu iki tarih kaynağının GEÇİCİ olarak ayrışması beklenen bir sonuçtur.
+     */
+    serviceOccurredOnOverride?: Date;
   } {
-    const { pttResult, tk21Type, muhtarlikDate, ilanDate } = dto;
+    const {
+      pttResult,
+      tk21Type,
+      muhtarlikDate,
+      ilanDate,
+      tk20CompletionMode,
+      tk20CompletionDate,
+      substituteRecipientBasis: dtoSubstituteRecipientBasis,
+    } = dto;
+
+    // DEBTOR-OF01-HISTORY-P04-A1-R2 (owner "STOP-03 RESOLUTION" — "Kesin yasaklar"): TK_20'ye
+    // özgü alanlar başka hiçbir rejimde GÖNDERİLEMEZ — sessizce yok sayılmaz, fail-closed reddedilir.
+    if (tk21Type !== Tk21Type.TK_20) {
+      if (tk20CompletionMode !== undefined) {
+        throw new BadRequestException(
+          "tk20CompletionMode yalnız tk21Type=TK_20 olduğunda gönderilebilir"
+        );
+      }
+      if (tk20CompletionDate !== undefined) {
+        throw new BadRequestException(
+          "tk20CompletionDate yalnız tk21Type=TK_20 olduğunda gönderilebilir"
+        );
+      }
+      if (dtoSubstituteRecipientBasis !== undefined) {
+        throw new BadRequestException(
+          "substituteRecipientBasis yalnız TK m.20 + tk20CompletionMode=DELIVERED_TO_AUTHORIZED_PERSON için gönderilebilir"
+        );
+      }
+    }
 
     // MPB-028(a) PR-2 blocker resolution (Decision B): TK m.20 yalnız operatörün AÇIKÇA
     // seçtiği bir hukuki rejimdir; PTT sonucundan (pttResult) hiçbir zaman otomatik
@@ -633,6 +706,32 @@ export class TebligatService {
         );
       }
 
+      // DEBTOR-OF01-HISTORY-P04-A1-R2 STOP-03 çözümü (owner "STOP-03 RESOLUTION"): m.20'nin
+      // hangi alt-sonuçla tamamlandığı hiçbir mevcut PTT sinyalinden türetilemez — operatörün
+      // AÇIKÇA seçtiği tk20CompletionMode ZORUNLUDUR. pttResultNote/muhtarlikDate/ilanDate'ten
+      // TAHMİN edilmez (owner "Kesin yasaklar").
+      if (!tk20CompletionMode) {
+        throw new BadRequestException(
+          "TK m.20 (muvakkaten başka yere gitme) seçimi için tk20CompletionMode zorunludur"
+        );
+      }
+      if (!tk20CompletionDate) {
+        throw new BadRequestException(
+          "TK m.20 (muvakkaten başka yere gitme) seçimi için tk20CompletionDate zorunludur"
+        );
+      }
+      if (
+        tk20CompletionMode === Tk20CompletionMode.DELIVERED_TO_AUTHORIZED_PERSON &&
+        !dtoSubstituteRecipientBasis
+      ) {
+        throw new BadRequestException(
+          "tk20CompletionMode=DELIVERED_TO_AUTHORIZED_PERSON için substituteRecipientBasis zorunludur"
+        );
+      }
+
+      // tebligSayilmaDate: LEGACY alan, BİLİNÇLİ OLARAK dokunulmadı (bkz. serviceOccurredOnOverride
+      // yorumu) — hâlâ ilanDate??muhtarlikDate kullanır, hâlâ koşulsuz +15 gün ekler. Bu davranış
+      // P04-B-R2'nin (ortak hesap çekirdeği) kapsamındadır, bu görevde DEĞİŞTİRİLMEZ.
       const tebligSayilmaDate = new Date(evidenceDateRaw);
       tebligSayilmaDate.setDate(tebligSayilmaDate.getDate() + this.TK_20_DAYS);
 
@@ -641,7 +740,15 @@ export class TebligatService {
         nextAction: TebligatNextAction.BEKLE,
         tk21Type: Tk21Type.TK_20,
         tebligSayilmaDate,
-        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20,
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+        serviceCompletionMode:
+          tk20CompletionMode === Tk20CompletionMode.NOTICE_POSTED
+            ? ServiceCompletionMode.NOTICE_POSTED
+            : ServiceCompletionMode.DELIVERED_TO_AUTHORIZED_PERSON,
+        substituteRecipientBasis: dtoSubstituteRecipientBasis
+          ? (dtoSubstituteRecipientBasis as unknown as PrismaSubstituteRecipientBasis)
+          : undefined,
+        serviceOccurredOnOverride: new Date(tk20CompletionDate),
       };
     }
 
@@ -654,10 +761,27 @@ export class TebligatService {
       return {
         status: TebligatStatus.TESLIM_EDILDI,
         nextAction: TebligatNextAction.TEBLIG_TAMAMLANDI,
-        serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY,
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE,
+        // DEBTOR-OF01-HISTORY-P04-A1-R2: bu ayrım YENİ bir yorumlama DEĞİLDİR — TESLIM_EDILDI
+        // (bizzat muhataba) ile AYNI_KONUTTA_TESLIM/ISYERINDE_TESLIM (yetkili/aynı konuttaki
+        // kişiye) arasındaki fark zaten pttResult enum'unun kendi anlamıdır.
+        serviceCompletionMode:
+          pttResult === TebligatPttResult.TESLIM_EDILDI
+            ? ServiceCompletionMode.DIRECT_RECIPIENT_DELIVERY
+            : ServiceCompletionMode.DELIVERED_TO_AUTHORIZED_PERSON,
       };
     }
 
+    // DEBTOR-OF01-HISTORY-P04-A1-R2 (owner "STOP-03 RESOLUTION" — TK 21/1 ve TK 21/2 notu):
+    // serviceCompletionMode aşağıdaki TK_21_1/TK_21_2 dallarında BİLİNÇLİ OLARAK undefined
+    // bırakılır. TK m.21 prosedürü fiziksel olarak muhtara tevdi + kapıya ihbarname yapıştırma
+    // gerektirir, ancak mevcut pttResult=MUHTARLIGA_BIRAKILDI/IMTINA sinyali bunu AYRICA
+    // doğrulayan bağımsız bir veri TAŞIMAZ — yalnız genel hukuki bilgiden (tk21Type değerinin
+    // KENDİSİNDEN) çıkarım yapmak owner'ın açıkça yasakladığı bir uydurmadır ("Sırf tk21Type
+    // değerinden completion mode uydurulmayacak"). Bu HARD STOP, işlemi durdurmaz (CHECK
+    // constraint serviceCompletionMode=NULL'ı bu iki rejim için kabul eder, bkz. migration
+    // occ_p04a1r2_completion_mode_consistent_with_regime_check) — yalnız bu alanı doldurmaz;
+    // bulgu final raporda ayrıca owner'a bildirilir.
     // İmtina durumu (21/1)
     if (pttResult === TebligatPttResult.IMTINA) {
       // Bilinen adreste imtina = 21/1 (aynı gün tebliğ)

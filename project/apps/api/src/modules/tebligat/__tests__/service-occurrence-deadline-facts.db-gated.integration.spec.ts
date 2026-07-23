@@ -185,10 +185,10 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
   });
 
   // TEST-03
-  it("TEST-03: DIRECT_DELIVERY occurrence oluşturulabilir", async () => {
+  it("TEST-03: IMMEDIATE_SERVICE occurrence oluşturulabilir (DEBTOR-OF01-HISTORY-P04-A1-R2: DIRECT_DELIVERY'den yeniden adlandırıldı)", async () => {
     const fx = await buildFixture("t03");
     const result = await service.createOccurrence(
-      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
+      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE }) as any,
     );
     expect(result.occurrence.addressTypeAtOccurrence).toBe(TebligatAddressType.BILINEN);
     expect(result.occurrence.serviceDateRole).toBe(ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY);
@@ -225,7 +225,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
   it("TEST-06: immutable facts (addressTypeAtOccurrence/serviceDateRole) update edilemez", async () => {
     const fx = await buildFixture("t06");
     const result = await service.createOccurrence(
-      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
+      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE }) as any,
     );
 
     await expect(
@@ -256,7 +256,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
   it("TEST-08: bir occurrence birden fazla snapshot'a bağlanabilir", async () => {
     const fx = await buildFixture("t08");
     const occ = await service.createOccurrence(
-      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
+      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE }) as any,
     );
 
     const snap1 = await prisma.legalDeadlineSnapshot.create({
@@ -276,7 +276,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
     const fxA = await buildFixture("t09a");
     const fxB = await buildFixture("t09b");
     const occA = await service.createOccurrence(
-      baseCommand(fxA, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
+      baseCommand(fxA, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE }) as any,
     );
 
     await expect(
@@ -291,7 +291,7 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
     const fx = await buildFixture("t10");
     const otherTebligat = await createSecondTebligat(fx);
     const occ = await service.createOccurrence(
-      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.DIRECT_DELIVERY }) as any,
+      baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE }) as any,
     );
 
     await expect(

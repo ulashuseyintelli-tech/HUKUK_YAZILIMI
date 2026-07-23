@@ -2979,6 +2979,22 @@ model ServiceOccurrence {
   // olduğunda (hiçbir teslim/tevdi mekanizması gerçekleşmedi) bu alan da null kalır.
   serviceRegimeCode ServiceOccurrenceRegimeCode?
 
+  // DEBTOR-OF01-HISTORY-P04-A1-R2 (owner "P04 DEADLINE REGIME CONTRACT" correction): serviceRegimeCode
+  // TEK BAŞINA yeterli değildi — TK m.20 kendi içinde iki farklı hukukî sonuca ayrılıyor (evrak
+  // m.13/14/16/17/18 kapsamındaki yetkili kişiye teslim edildiyse gecikme YOK; beyan imzalanmadıysa/
+  // evrak kabul edilmediyse ve ihbarname kapıya yapıştırıldıysa +15 gün). serviceCompletionMode bu
+  // İKİNCİ, ORTOGONAL boyutu ("fiilen hangi tamamlama mekanizması gerçekleşti") immutable olarak taşır.
+  // serviceRegimeCode/serviceDateRole ile BİRLİKTE dolu ya da BİRLİKTE null olmalıdır (bkz. migration
+  // CHECK) — üçü de AYNI "teslim/tevdi mekanizması gerçekleşti mi" olgusunun farklı yüzleridir.
+  serviceCompletionMode ServiceCompletionMode?
+
+  // Yalnız serviceCompletionMode=DELIVERED_TO_AUTHORIZED_PERSON olduğunda anlamlıdır — evrakın
+  // hangi madde (m.13/14/16/17/18) kapsamındaki yetkili kişiye teslim edildiğini kaydeder. Repository
+  // truth şu an HANGİ spesifik maddeye karşılık geldiğini her durumda kesin ayırt edemediği için
+  // (bkz. DEBTOR-OF01-HISTORY-P04-A1-R2 STOP raporu) uygulanamayan/bilinmeyen durumlarda NULL kalır
+  // — speculative madde ataması YAPILMAZ.
+  substituteRecipientBasis SubstituteRecipientBasis?
+
   recordedAt DateTime  @default(now()) // REQUIRED / SYSTEM UTC
   receivedAt DateTime? // OPTIONAL / yalnız gerçek dış-sistem entegrasyonunda anlamlı
 
@@ -3038,14 +3054,57 @@ enum ServiceOccurrenceServiceDateRole {
 // eklenmedi: repository'de AYNI_KONUTTA_TESLIM/ISYERINDE_TESLIM, TESLIM_EDILDI ile tamamen aynı
 // şekilde (aynı status/nextAction, ayrı bir tk21Type üretmeden) işlenir — mevcut kodda gerçekten
 // ayrıştırılan bir sınıf olmadığı için speculative bir değer eklenmedi (owner brief §6).
+// DEBTOR-OF01-HISTORY-P04-A1-R2 (owner "P04 DEADLINE REGIME CONTRACT" düzeltmesi): TK m.20'nin
+// KENDİ İÇİNDE iki ayrı hukukî sonuca ayrıldığı netleşince DIRECT_DELIVERY/TK_20 adları, hangi
+// serviceCompletionMode ile eşleştiklerini karıştırmaya elverişli hale geldi — IMMEDIATE_SERVICE/
+// TK_20_TEMPORARY_ABSENCE bu netliği taşır. Postgres enum değerleri RENAME/DROP edilemediği ve
+// owner brief bunu açıkça yasakladığı için ESKİ DIRECT_DELIVERY/TK_20 üyeleri KALDIRILMADI — hiçbir
+// canlı satırda hiç yazılmadılar (R1 migration'ı hukuk_db'ye hiç uygulanmadı) ve artık yalnız ölü,
+// bir daha asla yazılmayacak enum üyeleridir (bkz. migration dosyası). ELECTRONIC bugün hiçbir
+// write-path tarafından üretilmez (recordElectronicResult ServiceOccurrence satırı yaratmıyor) —
+// yalnız owner brief'in adlandırdığı gelecekteki elektronik tebligat kanalı için rezervedir.
 enum ServiceOccurrenceRegimeCode {
-  DIRECT_DELIVERY // Doğrudan teslim (TESLIM_EDILDI/AYNI_KONUTTA_TESLIM/ISYERINDE_TESLIM) — +gün YOK
+  DIRECT_DELIVERY // DEPRECATED (P04-A1-R2) — bkz. IMMEDIATE_SERVICE, hiçbir satırda kullanılmadı
   TK_21_1 // Bilinen adreste imtina veya muhtarlığa bırakma — +gün YOK
   TK_21_2 // MERNİS adresi nedeniyle muhtarlığa bırakma — +gün YOK
-  TK_20 // Muvakkaten başka yere gitme, operatörün AÇIKÇA seçtiği override — ayrı hukukî rejim,
-  // kendi +15 gün kuralı LegalDeadlineService.determineLegalServiceDate()'te zaten var
+  TK_20 // DEPRECATED (P04-A1-R2) — bkz. TK_20_TEMPORARY_ABSENCE, hiçbir satırda kullanılmadı
   PUBLICATION // İlan yoluyla tebliğ (TK m.31) — recordPttResult bu değeri bugün ÜRETMEZ (P04-A1
   // bulgusu), yalnız ilanen kanalının gelecekteki kendi tamamlanma yolu için rezerve edilmiştir
+  IMMEDIATE_SERVICE // Doğrudan teslim (TESLIM_EDILDI/AYNI_KONUTTA_TESLIM/ISYERINDE_TESLIM) — DIRECT_DELIVERY'nin
+  // yerini alır; serviceCompletionMode DIRECT_RECIPIENT_DELIVERY/DELIVERED_TO_AUTHORIZED_PERSON
+  // ayrımını taşır, regime kodu tek başına +gün doğurmaz
+  TK_20_TEMPORARY_ABSENCE // Muvakkaten başka yere gitme (TK m.20) — TK_20'nin yerini alır; KENDİ
+  // İÇİNDE serviceCompletionMode=DELIVERED_TO_AUTHORIZED_PERSON (+gün YOK) ile
+  // NOTICE_POSTED (+15 gün) olarak ikiye ayrılır — regime kodu TEK BAŞINA yeterli değildir
+  ELECTRONIC // UETS/KEP elektronik tebligat — bugün hiçbir write-path tarafından üretilmez,
+  // yalnız gelecekteki elektronik kanal için rezerve edilmiştir (owner brief §model sözleşmesi)
+}
+
+// DEBTOR-OF01-HISTORY-P04-A1-R2: serviceRegimeCode'dan BAĞIMSIZ, ikinci boyut — fiilen hangi
+// teslim/tevdi TAMAMLANMA mekanizması gerçekleşti. TK_20_TEMPORARY_ABSENCE ve IMMEDIATE_SERVICE
+// gibi regime kodları TEK BAŞINA hukukî sonucu (+15 gün var mı yok mu) belirlemez — belirleyen
+// budur (owner "P04 DEADLINE REGIME CONTRACT" düzeltmesi, m.20 iki alt sonuç ayrımı).
+enum ServiceCompletionMode {
+  DIRECT_RECIPIENT_DELIVERY // Muhataba bizzat teslim — +gün YOK
+  DELIVERED_TO_AUTHORIZED_PERSON // TK m.13/14/16/17/18 kapsamında yetkili kişiye teslim — +gün YOK
+  NOTICE_POSTED // Beyan imzalanmadı/evrak kabul edilmedi ve ihbarname kapıya yapıştırıldı — +15 gün
+  ELECTRONIC_DELIVERY // UETS/KEP elektronik teslim — bugün hiçbir write-path tarafından üretilmez,
+  // ServiceOccurrenceRegimeCode.ELECTRONIC ile aynı gerekçeyle rezerve edilmiştir
+  PUBLICATION // İlan yoluyla tamamlanma — ServiceOccurrenceRegimeCode.PUBLICATION ile aynı
+  // gerekçeyle rezerve edilmiştir, recordPttResult bugün üretmez
+}
+
+// Yalnız serviceCompletionMode=DELIVERED_TO_AUTHORIZED_PERSON olduğunda anlamlıdır (bkz. migration
+// CHECK). Repository truth bugün AYNI_KONUTTA_TESLIM/ISYERINDE_TESLIM ile TK_20'nin yetkili-kişi
+// alt durumu arasında hangi maddenin uygulandığını her zaman kesin ayırt edemediği için (bkz.
+// DEBTOR-OF01-HISTORY-P04-A1-R2 STOP raporu) uygulanamayan/bilinmeyen durumlarda NULL bırakılır —
+// speculative madde ataması YAPILMAZ.
+enum SubstituteRecipientBasis {
+  ARTICLE_13 // İşyerinde bulunan kişi veya çalışana teslim
+  ARTICLE_14 // Aynı konutta oturan kişi veya hizmetçiye teslim
+  ARTICLE_16 // Muvakkaten başka yere gitme — muhtar/ihtiyar heyeti/zabıta teslimi (TK m.20 ile atıf)
+  ARTICLE_17 // Tüzel kişilere teslim
+  ARTICLE_18 // Kamu kurum ve kuruluşlarına teslim
 }
 
 enum ServiceOccurrenceType {

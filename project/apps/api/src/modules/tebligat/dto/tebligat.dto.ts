@@ -73,6 +73,26 @@ export enum Tk21Type {
   TK_20 = "TK_20",
 }
 
+// DEBTOR-OF01-HISTORY-P04-A1-R2 STOP-03 çözümü (owner "STOP-03 RESOLUTION"): TK m.20'nin
+// hangi alt-sonuçla tamamlandığını (yetkili kişiye teslim mi, ihbarname mi yapıştırıldı)
+// hiçbir mevcut PTT sinyalinden türetilemez — operatörün AÇIKÇA seçtiği bu alan ZORUNLUDUR.
+// Yalnız TK_20'ye özgüdür (Prisma ServiceCompletionMode'un dar bir alt kümesi) — serbest
+// metin (pttResultNote) parse edilmez, muhtarlikDate/ilanDate'ten tahmin YAPILMAZ.
+export enum Tk20CompletionMode {
+  DELIVERED_TO_AUTHORIZED_PERSON = "DELIVERED_TO_AUTHORIZED_PERSON",
+  NOTICE_POSTED = "NOTICE_POSTED",
+}
+
+// Yetkili kişiye teslimin hangi madde (TK m.13/14/16/17/18) kapsamında olduğunu taşır —
+// yalnız operatör bu dayanağı gerçekten sağladığında doldurulur, tahmin YASAK.
+export enum SubstituteRecipientBasis {
+  ARTICLE_13 = "ARTICLE_13",
+  ARTICLE_14 = "ARTICLE_14",
+  ARTICLE_16 = "ARTICLE_16",
+  ARTICLE_17 = "ARTICLE_17",
+  ARTICLE_18 = "ARTICLE_18",
+}
+
 // Sonraki Adım
 export enum TebligatNextAction {
   MERNIS_TEBLIGAT = "MERNIS_TEBLIGAT",
@@ -156,6 +176,23 @@ export class RecordPttResultDto {
   @IsOptional()
   @IsDateString()
   ilanDate?: string;
+
+  // DEBTOR-OF01-HISTORY-P04-A1-R2 STOP-03 çözümü: tk21Type=TK_20 olduğunda ZORUNLU, aksi
+  // halde GÖNDERİLEMEZ (bkz. TebligatService.determinePttResultAction fail-closed kontrolü —
+  // sınıf-seviyesi @ValidateIf yerine mevcut kod tabanının kendi konvansiyonu izlenir: tk21Type=TK_20
+  // evidence-date zorunluluğu da aynı şekilde serviste kontrol edilir, DTO'da yalnız tip/şekil).
+  @IsOptional()
+  @IsEnum(Tk20CompletionMode)
+  tk20CompletionMode?: Tk20CompletionMode;
+
+  @IsOptional()
+  @IsDateString()
+  tk20CompletionDate?: string;
+
+  // Yalnız tk20CompletionMode=DELIVERED_TO_AUTHORIZED_PERSON için ZORUNLU (bkz. determinePttResultAction).
+  @IsOptional()
+  @IsEnum(SubstituteRecipientBasis)
+  substituteRecipientBasis?: SubstituteRecipientBasis;
 }
 
 // Tebligat Güncelleme DTO

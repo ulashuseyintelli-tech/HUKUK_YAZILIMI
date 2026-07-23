@@ -5,6 +5,8 @@ import {
   TebligatAddressType,
   ServiceOccurrenceServiceDateRole,
   ServiceOccurrenceRegimeCode,
+  ServiceCompletionMode,
+  SubstituteRecipientBasis,
 } from "@prisma/client";
 
 /**
@@ -52,6 +54,19 @@ export interface CreateServiceOccurrenceCommand {
    * ile BİRLİKTE dolu ya da BİRLİKTE null olmalıdır (bkz. validateFactualFields + DB CHECK).
    */
   serviceRegimeCode?: ServiceOccurrenceRegimeCode | null;
+  /**
+   * DEBTOR-OF01-HISTORY-P04-A1-R2 (owner "STOP-03 RESOLUTION"): serviceRegimeCode'dan BAĞIMSIZ
+   * nullable üçüncü boyut — fiilen hangi teslim/tevdi TAMAMLANMA mekanizması gerçekleşti.
+   * TK_21_1/TK_21_2 için bugün deterministik değildir, bilinçli olarak null kalabilir (bkz.
+   * TebligatService.determinePttResultAction) — serviceRegimeCode/serviceDateRole'ün aksine
+   * "birlikte dolu/null" kuralına TABİ DEĞİLDİR (bkz. DB CHECK constraint'leri).
+   */
+  serviceCompletionMode?: ServiceCompletionMode | null;
+  /**
+   * Yalnız serviceCompletionMode=DELIVERED_TO_AUTHORIZED_PERSON olduğunda anlamlıdır — evrakın
+   * hangi madde (m.13/14/16/17/18) kapsamındaki yetkili kişiye teslim edildiğini taşır.
+   */
+  substituteRecipientBasis?: SubstituteRecipientBasis | null;
   receivedAt?: Date | null;
   barcodeNo?: string | null;
   sourceNote?: string | null;
@@ -98,4 +113,6 @@ export const FACTUAL_PAYLOAD_FIELDS = [
   "addressTypeAtOccurrence", // DEBTOR-OF01-HISTORY-P04-A1
   "serviceDateRole", // DEBTOR-OF01-HISTORY-P04-A1
   "serviceRegimeCode", // DEBTOR-OF01-HISTORY-P04-A1-R1
+  "serviceCompletionMode", // DEBTOR-OF01-HISTORY-P04-A1-R2
+  "substituteRecipientBasis", // DEBTOR-OF01-HISTORY-P04-A1-R2
 ] as const;
