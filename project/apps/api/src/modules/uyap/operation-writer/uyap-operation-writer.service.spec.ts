@@ -267,14 +267,17 @@ describe('UYAP-P05B — DORMANCY + BOUNDARY static guard', () => {
   const moduleSrc = read(path.resolve(dir, '../uyap.module.ts'));
   const uyapServiceSrc = read(path.resolve(dir, '../uyap.service.ts'));
 
-  it('UyapModule writer’ı KAYDETMEZ (dormant: provider/export yok)', () => {
-    expect(moduleSrc).not.toContain('UyapOperationWriterService');
-    expect(moduleSrc).not.toContain('operation-writer');
+  // P05C-P04 UYARLAMASI: writer artık RUNTIME'a bağlı (yetkili aktivasyon). Guard EMEKLİYE
+  // AYRILMAZ, DARALTILIR: writer yalnız P05C-P04 orchestrator YOLUYLA bağlanır — UyapService raw
+  // writer'ı DOĞRUDAN kullanamaz; module writer'ı orchestrator ile BİRLİKTE kaydeder.
+  it('UyapModule writer’ı P05C-P04 orchestrator ile birlikte YETKİLİ kaydeder', () => {
+    expect(moduleSrc).toContain('UyapOperationWriterService');
+    expect(moduleSrc).toContain('UyapOperationEvidenceOrchestrator'); // yetkili aktivasyon yolu
   });
 
-  it('UyapService writer’ı import ETMEZ (injection yok)', () => {
-    expect(uyapServiceSrc).not.toContain('operation-writer');
+  it('UyapService raw writer’ı DOĞRUDAN kullanmaz; yalnız orchestrator', () => {
     expect(uyapServiceSrc).not.toContain('UyapOperationWriterService');
+    expect(uyapServiceSrc).toContain('UyapOperationEvidenceOrchestrator');
   });
 
   it('writer UyapRequestLog’a HİÇ dokunmaz (dual-write yok)', () => {

@@ -6,6 +6,11 @@ import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { maskIdentity } from '../../common/pii-mask.util';
 import { ValidationGateService } from '../validation-gate/validation-gate.service'; // PR-D4e-6: karar-anı risk snapshot
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter'; // PR-3: UYAP hataları → ErrorLog
+// P05C-P04: dormant operation/attempt + link writer'larını CPE akışına bağlayan orchestrator.
+import {
+  UyapEvidenceAction,
+  UyapOperationEvidenceOrchestrator,
+} from './operation-writer/uyap-operation-evidence.orchestrator';
 
 /**
  * UYAP Entegrasyon Servisi
@@ -108,7 +113,67 @@ export class UyapService {
     private readonly errorReporter: IntegrationErrorReporter, // PR-3: UYAP hataları → ErrorLog (source=UYAP)
     @Optional() @Inject(forwardRef(() => CasePolicyEngine))
     private casePolicyEngine?: CasePolicyEngine,
+    // P05C-P04: opsiyonel — yoksa/flag OFF ise mevcut legacy davranış BİREBİR korunur.
+    @Optional() private readonly evidenceOrchestrator?: UyapOperationEvidenceOrchestrator,
   ) {}
+
+  /**
+   * P05C-P04: CPE allowed sonrası, dispatch/logRequest ÖNCESİNDE flag-gated evidence kaydı.
+   * Flag OFF / not-allowlisted → no-op (legacy parity). Flag ON → Idempotency-Key + actorUserId +
+   * cpeDecisionId zorunlu; eksik/geçersiz veya TX-1 hatası → dispatch başlamadan FAIL-CLOSED throw.
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - UyapService.sendPaymentOrder() → CPE allowed sonrası (UYAP_SEND)
+   * - UyapService.pushHacizRequest() → CPE allowed sonrası (TRIGGER_HACIZ)
+   * </remarks>
+   */
+  private async recordOperationEvidenceIfEnabled(params: {
+    action: UyapEvidenceAction;
+    tenantId: string;
+    caseId: string;
+    actorUserId?: string;
+    idempotencyToken?: string;
+    cpeDecisionId?: string;
+  }): Promise<void> {
+    const { action, tenantId, caseId, actorUserId, idempotencyToken, cpeDecisionId } = params;
+    if (!this.evidenceOrchestrator || !this.evidenceOrchestrator.isEnabled(tenantId, action)) {
+      return; // legacy parity — evidence yazılmaz
+    }
+    // Flag ON + allowlisted: aşağıdakiler ZORUNLU; eksikse fail-closed (dispatch başlamaz).
+    if (!idempotencyToken) {
+      throw new BadRequestException({
+        code: 'UYAP_IDEMPOTENCY_KEY_REQUIRED',
+        message: 'UYAP işlemi yapılamaz: Idempotency-Key başlığı zorunludur',
+        details: 'Evidence aktifken retry-stable Idempotency-Key başlığı gereklidir',
+      });
+    }
+    if (!actorUserId || !cpeDecisionId) {
+      // Sunucu-tarafı beklenmeyen durum; fail-closed.
+      throw new BadRequestException({
+        code: 'UYAP_EVIDENCE_CONTEXT_MISSING',
+        message: 'UYAP işlemi yapılamaz: evidence bağlamı eksik',
+        details: 'actorUserId (authenticated) ve CPE decision bağlamı zorunludur',
+      });
+    }
+    try {
+      await this.evidenceOrchestrator.recordEvidence({
+        action,
+        tenantId,
+        caseId,
+        actorUserId,
+        idempotencyToken,
+        cpeDecisionLogId: cpeDecisionId,
+      });
+    } catch (error: any) {
+      // TX-1 failure → dispatch/logRequest başlamaz (fail-closed). RAW token loglanmaz.
+      this.logger.error(`UYAP evidence kaydı başarısız (${action}), işlem engellendi: ${error?.name ?? 'error'}`);
+      throw new BadRequestException({
+        code: 'UYAP_EVIDENCE_WRITE_FAILED',
+        message: 'UYAP işlemi yapılamaz: işlem kanıtı yazılamadı',
+        details: 'Operation/attempt/link kaydı başarısız; güvenlik nedeniyle işlem engellendi',
+      });
+    }
+  }
 
   /**
    * Vekalet geçerliliğini kontrol et (UYAP işlemlerinden önce)
@@ -196,8 +261,15 @@ export class UyapService {
   // CLIENT-SEC-H2C-P02-R1: `tenantId` trusted execution context (authenticated principal,
   // controller @CurrentUser) — business DTO'nun opsiyonel `request.tenantId` (POA) alanından
   // AYRI ve zorunludur; log ownership yalnız buradan gelir. Business/POA davranışı DEĞİŞMEZ.
-  async sendPaymentOrder(request: PaymentOrderRequest, tenantId: string): Promise<UyapResponse> {
+  async sendPaymentOrder(
+    request: PaymentOrderRequest,
+    tenantId: string,
+    // P05C-P04: yalnız evidence flag ON iken kullanılır. actorUserId = authenticated req.user.id.
+    actorUserId?: string,
+    idempotencyToken?: string,
+  ): Promise<UyapResponse> {
     let cpeTraceId: string | undefined;
+    let cpeDecisionId: string | undefined;
 
     // CPE Gate kontrolü (HIGH risk aksiyon)
     // TRANSPORT-CONTAIN-01: action-matrix UYAP_SEND=failMode:'CLOSED' ile uzlaştırıldı —
@@ -223,6 +295,7 @@ export class UyapService {
       );
 
       cpeTraceId = decision.traceId;
+      cpeDecisionId = decision.decisionId; // P05C-P04: link için CpeDecisionLog.id
 
       if (!decision.allowed) {
         this.logger.error(`UYAP işlemi CPE tarafından engellendi: ${decision.reason}`);
@@ -269,6 +342,16 @@ export class UyapService {
         });
       }
     }
+
+    // P05C-P04: CPE+POA geçti; dispatch/logRequest ÖNCESİNDE flag-gated evidence (fail-closed).
+    await this.recordOperationEvidenceIfEnabled({
+      action: 'UYAP_SEND',
+      tenantId,
+      caseId: request.caseId,
+      actorUserId,
+      idempotencyToken,
+      cpeDecisionId,
+    });
 
     const requestId = await this.logRequest('sendPaymentOrder', request, tenantId);
 
@@ -353,8 +436,15 @@ export class UyapService {
   // CLIENT-SEC-H2C-P02-R1: `tenantId` trusted execution context (authenticated principal) —
   // business DTO'nun opsiyonel `request.tenantId` (POA + D4e-6 audit) alanından AYRI ve zorunludur;
   // log ownership yalnız buradan gelir. POA/audit davranışı request.tenantId'yi kullanmaya devam eder.
-  async pushHacizRequest(request: HacizRequest, tenantId: string): Promise<UyapResponse> {
+  async pushHacizRequest(
+    request: HacizRequest,
+    tenantId: string,
+    // P05C-P04: yalnız evidence flag ON iken kullanılır. actorUserId = authenticated req.user.id.
+    actorUserId?: string,
+    idempotencyToken?: string,
+  ): Promise<UyapResponse> {
     let cpeTraceId: string | undefined;
+    let cpeDecisionId: string | undefined; // P05C-P04: link için CpeDecisionLog.id
     let cpeWarnings: any[] = []; // PR-D4e-6: CPE soft warnings audit metadata'sına eklenecek
 
     // CPE Gate kontrolü (HIGH risk aksiyon)
@@ -370,6 +460,7 @@ export class UyapService {
         );
 
         cpeTraceId = decision.traceId;
+        cpeDecisionId = decision.decisionId; // P05C-P04: link için CpeDecisionLog.id
 
         if (!decision.allowed) {
           this.logger.error(`Haciz işlemi CPE tarafından engellendi: ${decision.reason}`);
@@ -418,6 +509,16 @@ export class UyapService {
         });
       }
     }
+
+    // P05C-P04: CPE+POA geçti; dispatch/logRequest ÖNCESİNDE flag-gated evidence (fail-closed).
+    await this.recordOperationEvidenceIfEnabled({
+      action: 'TRIGGER_HACIZ',
+      tenantId,
+      caseId: request.caseId,
+      actorUserId,
+      idempotencyToken,
+      cpeDecisionId,
+    });
 
     const requestId = await this.logRequest('pushHacizRequest', request, tenantId);
 

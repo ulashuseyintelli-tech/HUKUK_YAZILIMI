@@ -105,9 +105,13 @@ describe('UYAP-P05C-P03 — DORMANCY + BOUNDARY static guard', () => {
   const types = stripComments(fs.readFileSync(path.join(dir, 'uyap-cpe-decision-link-writer.types.ts'), 'utf8'));
   const moduleSrc = fs.readFileSync(path.resolve(dir, '../uyap.module.ts'), 'utf8');
 
-  it('UyapModule link writer’i KAYDETMEZ (dormant)', () => {
-    expect(moduleSrc).not.toContain('UyapCpeDecisionLinkWriterService');
-    expect(moduleSrc).not.toContain('cpe-decision-link-writer');
+  // P05C-P04 UYARLAMASI: link writer artık RUNTIME'a bağlı (yetkili aktivasyon). Guard DARALTILIR:
+  // link writer yalnız orchestrator ile BİRLİKTE kaydedilir ve UyapService onu DOĞRUDAN kullanamaz.
+  it('UyapModule link writer’i orchestrator ile birlikte YETKİLİ kaydeder; UyapService DOĞRUDAN kullanmaz', () => {
+    expect(moduleSrc).toContain('UyapCpeDecisionLinkWriterService');
+    expect(moduleSrc).toContain('UyapOperationEvidenceOrchestrator');
+    const uyapServiceSrc = fs.readFileSync(path.resolve(dir, '../uyap.service.ts'), 'utf8');
+    expect(uyapServiceSrc).not.toContain('UyapCpeDecisionLinkWriterService');
   });
 
   it('actor/lawyer/signer input ALMAZ (Karar C)', () => {

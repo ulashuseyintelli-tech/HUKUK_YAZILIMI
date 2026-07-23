@@ -31,22 +31,25 @@ describe('CLIENT-SEC-H2C-P02-R1 — UYAP write-ownership completion', () => {
       return { controller, uyapService };
     };
 
-    it('POST /uyap/test/payment-order → sendPaymentOrder(dto, trustedTenant)', async () => {
+    // P05C-P04 UYARLAMASI: imza (dto, trustedTenant, actorUserId?, idempotencyKey?) oldu.
+    // Güvenlik değişmezi KORUNUR: 1. arg dto (trusted tenant), 2. arg trusted tenant.
+    // actorUserId = req.user.id (server-authoritative); ek arg'lar sızıntı değil.
+    it('POST /uyap/test/payment-order → sendPaymentOrder(dto, trustedTenant, req.user.id, ...)', async () => {
       const { controller, uyapService } = buildController();
-      await controller.testPaymentOrder({ caseId: 'c1' }, 'tenant-A');
-      expect(uyapService.sendPaymentOrder).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId: 'tenant-A' }),
-        'tenant-A',
-      );
+      await controller.testPaymentOrder({ caseId: 'c1' }, 'tenant-A', { user: { id: 'u1' } });
+      const call = uyapService.sendPaymentOrder.mock.calls[0];
+      expect(call[0]).toEqual(expect.objectContaining({ tenantId: 'tenant-A' }));
+      expect(call[1]).toBe('tenant-A'); // trusted tenant (güvenlik değişmezi)
+      expect(call[2]).toBe('u1'); // actorUserId = req.user.id (body'den DEĞİL)
     });
 
-    it('POST /uyap/haciz → pushHacizRequest(dto, trustedTenant)', async () => {
+    it('POST /uyap/haciz → pushHacizRequest(dto, trustedTenant, req.user.id, ...)', async () => {
       const { controller, uyapService } = buildController();
       await controller.pushHacizRequest({ caseId: 'c1' }, 'tenant-A', { user: { id: 'u1' } });
-      expect(uyapService.pushHacizRequest).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId: 'tenant-A' }),
-        'tenant-A',
-      );
+      const call = uyapService.pushHacizRequest.mock.calls[0];
+      expect(call[0]).toEqual(expect.objectContaining({ tenantId: 'tenant-A' }));
+      expect(call[1]).toBe('tenant-A'); // trusted tenant (güvenlik değişmezi)
+      expect(call[2]).toBe('u1'); // actorUserId = req.user.id (client lawyerId DEĞİL)
     });
 
     it('POST /uyap/document/submit → submitDocument(dto, trustedTenant)', async () => {
