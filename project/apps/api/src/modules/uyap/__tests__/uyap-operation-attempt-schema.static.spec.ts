@@ -39,10 +39,16 @@ describe('UYAP-OPERATION-ATTEMPT-SCHEMA-P05A-R1 — static contract', () => {
     expect(enumBlock('UyapCpeEvaluationDisposition')).toBeNull();
   });
 
-  it('exact 2 target models exist; CPE-link model absent', () => {
+  // P05C-P02 UYARLAMASI: bu assertion P-E5A-R1'in kapsam guard'iydi ve "CPE-link P-E5C'ye
+  // ERTELENDI" demek icin link modelinin YOKLUGUNU dogruluyordu. Erteleme, bu modeli kendi
+  // sozlesmesiyle (kardinalite + uc composite FK + RESTRICT) getiren P05C-P02 ile YERINE
+  // GETIRILMISTIR; guard amacina ulastigi icin emekliye ayrilir. P-E5A-R1'in KENDI kapsami
+  // degismeden korunur: hedef 2 model hala mevcut ve CPE-evaluation ENUM'lari hala YOK
+  // (bkz. bir ustteki test) — yani P-E5A-R1 link'i getirmemistir, P05C-P02 getirmistir.
+  it('exact 2 target models exist; CPE-link artik P05C-P02 tarafindan saglanir', () => {
     expect(modelBlock('UyapOperation')).not.toBeNull();
     expect(modelBlock('UyapAttempt')).not.toBeNull();
-    expect(modelBlock('UyapAttemptCpeDecisionLink')).toBeNull();
+    expect(modelBlock('UyapAttemptCpeDecisionLink')).not.toBeNull();
   });
 
   it('canonical id is the PK; no duplicate operationId/attemptId columns', () => {

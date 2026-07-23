@@ -47,8 +47,15 @@ describe('P05C-P01 — CpeDecisionLog composite reference key (schema)', () => {
     expect(block).not.toMatch(/\n\s+tenantId\s+String/);
   });
 
-  it('link tablosu URETILMEDI (P-E5C ayri owner GO)', () => {
-    expect(modelBlock('UyapAttemptCpeDecisionLink')).toBeNull();
+  // P05C-P02 UYARLAMASI: bu assertion P05C-P01'in kapsam guard'iydi ("link tablosu bu fazda
+  // URETILMEDI, ayri owner GO bekler"). O GO verildi ve link tablosu P05C-P02 ile geldi;
+  // guard amacina ulastigi icin emekliye ayrilir. P05C-P01'in KENDI kapsami degismeden
+  // korunur: composite key hala tek additive index, CpeDecisionLog'a kolon EKLENMEMISTIR.
+  it('link tablosu artik P05C-P02 tarafindan saglanir; P05C-P01 kapsami degismedi', () => {
+    expect(modelBlock('UyapAttemptCpeDecisionLink')).not.toBeNull();
+    // P05C-P01'in kendi katkisi: yalnizca composite unique — kolon YOK
+    expect(modelBlock('CpeDecisionLog')).toContain('@@unique([id, caseId])');
+    expect(modelBlock('CpeDecisionLog')).not.toMatch(/\n\s+tenantId\s+String/);
   });
 });
 
