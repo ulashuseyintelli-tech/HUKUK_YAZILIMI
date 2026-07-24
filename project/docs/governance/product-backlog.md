@@ -2728,6 +2728,43 @@ Bu input pack production entry, reviewer, key, signature veya artifact üretmez.
 ratification, reviewer appointment ve production public-key inputs tamamlanmadan D02-F01
 implementation tekrar yetkilendirilemez.
 
+## RCV-CLAIM-FORM-P02-S08-D02-R01A — Release Identity Amendment
+
+```text
+PROGRAM LOCK                       RECEIVABLE / CLAIM FORMATION
+STATUS                             RATIFIED / CANONICAL
+RELEASE ID                         RCV-LB-R<releaseVersion>
+RELEASE IDENTITY                   DETERMINISTIC / HUMAN-STABLE /
+                                   NOT CHECKSUM-DERIVED
+UNSIGNED PAYLOAD                   RELEASE ID INCLUDED
+RELEASE CODE                       NON-AUTHORITATIVE METADATA OUTSIDE
+                                   UNSIGNED PAYLOAD OR OMITTED
+CHECKSUM                           SHA-256 OVER COMPLETE CANONICAL UNSIGNED
+                                   PAYLOAD INCLUDING RELEASE ID
+SIGNATURE MODEL                    UNCHANGED
+BACKWARD COMPATIBILITY             PRESERVED
+AUTHORITY CHAIN                    RELEASE ID → PAYLOAD → CHECKSUM → SIGNATURES
+D02-F01 IDENTITY BLOCKER           CLOSED
+SUBTYPE REGISTRY                   BLOCKING
+LEGAL REVIEWER EVIDENCE            BLOCKING
+PRODUCTION PUBLIC KEYS             BLOCKING
+SIGNED RELEASE                     NONE
+CODE / SCHEMA / MIGRATION          NONE
+RUNTIME                            DORMANT / DEFAULT DISABLED
+S08-I04                            BLOCKED / NOT AUTHORIZED
+NEXT                               D02-F01-R03 / SEPARATE OWNER GO REQUIRED
+```
+
+Bu amendment checksum'un release identity üretmesini yasaklar. `releaseId`, version-based canonical
+identity olarak unsigned payload'a girer; complete payload checksum'u ve checksum canonical
+signature preimage'ini belirler. R01'in yalnız release identity generation hükmü supersede edilmiş,
+diğer serialization/checksum/signature/trust-root/four-eyes/fail-closed hükümleri ve R02
+three-role signature order'ı korunmuştur.
+
+Identity blocker kapanmıştır; fakat D02-F01 signed release veya implementation readiness'i
+oluşmamıştır. Subtype Registry, checksum-bound legal reviewer evidence ve production public keys
+ayrı owner inputs olarak tamamlanmadan sonraki implementation başlamaz.
+
 ---
 
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification

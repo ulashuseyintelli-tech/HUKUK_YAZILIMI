@@ -2952,6 +2952,55 @@ Bu input pack; production implementation, actual key/signature, signed artifact,
 resolver/provider wiring, runtime activation, Document authority, I04/I05 veya historical data
 değişikliği üretmez.
 
+## 23.30. Release identity amendment
+
+`RCV-CLAIM-FORM-P02-S08-D02-R01A`, release identity ile checksum arasında reverse dependency
+kurulmasını yasaklar ve R01 identity hükmünü şu exact contract olarak açıklığa kavuşturur:
+
+```text
+releaseVersion = positive decimal string / no leading zero
+releaseId      = "RCV-LB-R" + releaseVersion
+
+releaseId
+→ complete canonical unsigned payload
+→ SHA-256 releaseChecksum
+→ LEGAL_REVIEWER signature
+→ FINAL_LEGAL_RATIFIER signature
+→ PRODUCTION_RELEASE_SIGNER signature
+```
+
+`releaseId` checksum-derived değildir; deterministic, human-stable release identity'sidir ve
+canonical unsigned payload'ın required alanıdır. `releaseChecksum`, `releaseId` dahil complete
+canonical unsigned payload bytes üzerinden SHA-256 ile üretilir ve lowercase hexadecimal olarak
+temsil edilir. Signature contract değişmez: her signature exact
+`UTF8("RECEIVABLE_LEGAL_BASIS_RELEASE_V1") + LF + ASCII(releaseChecksum)` preimage'ini imzalar.
+
+`releaseCode` authoritative payload alanı değildir. Tutulursa canonical unsigned payload dışında
+yalnız non-authoritative metadata'dır; checksum, signature, authority veya version identity hesabına
+girmez. Omit edilmesi de geçerlidir.
+
+Bu amendment R01'i yalnız release identity generation konusunda supersede eder. R01'in deterministic
+serialization, checksum algorithm, signature/preimage, trust-root, four-eyes, lifecycle ve
+fail-closed hükümleri ile R02'nin canonical three-role signature order'ı değişmez.
+
+```text
+TASK                                RCV-CLAIM-FORM-P02-S08-D02-R01A
+STATUS                              RATIFIED / CANONICAL
+RELEASE IDENTITY                    NON-CIRCULAR
+CHECKSUM MODEL                      CANONICAL
+SIGNATURE MODEL                     UNCHANGED
+BACKWARD COMPATIBILITY              PRESERVED
+D02-F01 IDENTITY BLOCKER            CLOSED
+SUBTYPE REGISTRY                    BLOCKING / OWNER INPUT REQUIRED
+LEGAL REVIEWER EVIDENCE             BLOCKING / INPUT REQUIRED
+PRODUCTION PUBLIC KEYS              BLOCKING / INPUT REQUIRED
+SIGNED RELEASE                      NONE
+CODE / SCHEMA / MIGRATION           NONE
+RUNTIME                             DORMANT / DEFAULT DISABLED
+I04                                 BLOCKED / NOT AUTHORIZED
+NEXT                                D02-F01-R03 / SEPARATE OWNER GO REQUIRED
+```
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
