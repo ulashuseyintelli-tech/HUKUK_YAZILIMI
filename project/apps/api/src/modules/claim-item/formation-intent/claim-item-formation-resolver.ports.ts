@@ -74,13 +74,31 @@ export interface ResolveExactLegalBasisInput {
 
 export type ClaimItemFormationInterestEligibility = 'ACCRUES' | 'NO_INTEREST' | 'UNRESOLVED';
 
+/**
+ * RCV-CLAIM-FORM-P02-S08-D01B-CONTRACT-PARITY-I01 (owner-ratified D1).
+ * ACTIVE and SUPERSEDED remain admissible in specific, mode-dependent
+ * circumstances (see LegalBasisEligibilityContext / assertLegalBasisEligible
+ * in claim-item-formation-legal-basis-eligibility.ts); REVOKED and ARCHIVED
+ * are unconditionally rejected in this slice. This is the application-level
+ * canonical vocabulary — it does not create or alter a Prisma enum, and it
+ * is not sourced from any existing canonical Legal Basis registry vocabulary
+ * (none exists in this repository as of this slice).
+ */
+export const LEGAL_BASIS_LIFECYCLE_STATUSES = [
+  'ACTIVE',
+  'SUPERSEDED',
+  'REVOKED',
+  'ARCHIVED',
+] as const;
+export type LegalBasisLifecycleStatus = (typeof LEGAL_BASIS_LIFECYCLE_STATUSES)[number];
+
 export interface ExactLegalBasisBindingV1 {
   readonly legalBasisCode: string;
   readonly legalBasisVersion: string;
   readonly legalBasisChecksum: string;
   readonly registryReleaseId: string;
   readonly registryReleaseChecksum: string;
-  readonly status: string;
+  readonly status: LegalBasisLifecycleStatus;
   readonly effectiveFrom: string;
   readonly effectiveTo: string | null;
   readonly subtypeRecognized: boolean;
@@ -116,8 +134,54 @@ export interface ExactLegalBasisBindingV1 {
   }>;
 }
 
+/**
+ * RCV-CLAIM-FORM-P02-S08-D01B-CONTRACT-PARITY-I01 (owner-ratified D3):
+ * deliberately excludes a `retryability` classification — whether a failed
+ * resolution should be retried is an orchestration/application-policy
+ * decision, out of scope for this resolver contract.
+ *
+ * Canonical resolver-level disposition union, aligned with the S08-D02-R01
+ * exact-version source readiness contract ratified in
+ * RECEIVABLE-GOVERNANCE.md §23.27.5 (PR #1570). This is exact-version/
+ * release/authority resolution failure only — a binding this port
+ * successfully resolves is separately subject to application-eligibility
+ * validation (lifecycle status × mode, temporal validity, etc.) in
+ * `claim-item-formation-legal-basis-eligibility.ts`, which has its own,
+ * unrelated failure vocabulary. Only `AUTHORITY_UNAVAILABLE` is
+ * retryable (transient); the other eight are not.
+ */
+export const EXACT_LEGAL_BASIS_RESOLUTION_FAILURE_CODES = [
+  'VERSION_NOT_FOUND',
+  'RELEASE_NOT_FOUND',
+  'AUTHORITY_UNAVAILABLE',
+  'REVOKED',
+  'SUPERSEDED',
+  'CHECKSUM_MISMATCH',
+  'FINGERPRINT_MISMATCH',
+  'SCOPE_MISMATCH',
+  'LEGACY_UNRESOLVED',
+] as const;
+export type ResolveExactLegalBasisFailureCode =
+  (typeof EXACT_LEGAL_BASIS_RESOLUTION_FAILURE_CODES)[number];
+
+export type ResolveExactLegalBasisResult =
+  | { readonly ok: true; readonly value: ExactLegalBasisBindingV1 }
+  | {
+      readonly ok: false;
+      readonly failure: { readonly code: ResolveExactLegalBasisFailureCode };
+    };
+
+/**
+ * RCV-CLAIM-FORM-P02-S08-D01B-CONTRACT-PARITY-I01 (owner-ratified D4).
+ * Implementations must be pure and deterministic: the same exact input
+ * against the same registry release state must always resolve to the same
+ * result. No implicit current-time, randomness, or nondeterministic
+ * fallback. Implementations resolve an already-adapter-verified registry
+ * release and carry its identity/checksum — they do not perform
+ * signature/certificate/key verification themselves.
+ */
 export abstract class LegalBasisExactVersionResolverPort {
   abstract resolveExactVersion(
     input: ResolveExactLegalBasisInput,
-  ): Promise<ExactLegalBasisBindingV1 | null>;
+  ): Promise<ResolveExactLegalBasisResult>;
 }

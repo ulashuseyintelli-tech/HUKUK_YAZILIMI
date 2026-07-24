@@ -40,9 +40,11 @@ import {
 import {
   CaseDocumentExactVersionResolverPort,
   LegalBasisExactVersionResolverPort,
+  type ClaimItemFormationInterestEligibility,
   type ExactCaseDocumentSourceV1,
   type ExactLegalBasisBindingV1,
 } from '../formation-intent/claim-item-formation-resolver.ports';
+import { assertLegalBasisEligible } from '../formation-intent/claim-item-formation-legal-basis-eligibility';
 import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE } from '../claim-item-approval.constants';
 import {
   ClaimItemFormationFinalizationError,
@@ -473,7 +475,7 @@ export class TransactionalClaimItemFormationFinalizerService {
     source: ExactCaseDocumentSourceV1,
   ): Promise<ExactLegalBasisBindingV1> {
     const liabilityContext = JSON.parse(intent.liabilityContextCanonicalPayload) as ClaimFormationJsonValue;
-    const legalBasis = await this.legalBasisResolver.resolveExactVersion({
+    const resolution = await this.legalBasisResolver.resolveExactVersion({
       tenantId: intent.tenantId,
       caseId: intent.caseId,
       legalBasisCode: intent.legalBasisCode,
@@ -485,74 +487,47 @@ export class TransactionalClaimItemFormationFinalizerService {
       evidenceClasses: source.evidenceClasses,
       liabilityContext,
     });
-    if (
-      !legalBasis ||
-      legalBasis.legalBasisCode !== intent.legalBasisCode ||
-      legalBasis.legalBasisVersion !== intent.legalBasisVersion ||
-      legalBasis.legalBasisChecksum !== intent.legalBasisChecksum ||
-      legalBasis.registryReleaseId !== intent.legalBasisRegistryReleaseId ||
-      legalBasis.registryReleaseChecksum !== intent.legalBasisRegistryReleaseChecksum ||
-      legalBasis.componentCategory !== intent.componentCategory ||
-      legalBasis.componentSubtypeCode !== intent.componentSubtypeCode ||
-      legalBasis.componentSubtypeVersion !== intent.componentSubtypeVersion ||
-      legalBasis.componentSubtypeChecksum !== intent.componentSubtypeChecksum ||
-      legalBasis.interestEligibility !== intent.interestEligibility ||
-      legalBasis.interestPolicyRef !== intent.interestPolicyRef ||
-      legalBasis.interestPolicyVersion !== intent.interestPolicyVersion ||
-      legalBasis.ruleRef !== intent.ruleRef ||
-      legalBasis.ruleVersion !== intent.ruleVersion ||
-      legalBasis.resolutionContractVersion !== intent.legalBasisResolutionContractVersion ||
-      legalBasis.resolutionHash !== intent.legalBasisResolutionHash ||
-      !legalBasis.subtypeRecognized ||
-      !legalBasis.liabilityCompatible ||
-      legalBasis.legalReviewRequired ||
-      !legalBasis.allowedDocumentTypes.includes(source.documentType) ||
-      legalBasis.requiredEvidenceClasses.some((entry) => !source.evidenceClasses.includes(entry))
-    ) {
-      this.fail('FORMATION_LEGAL_BASIS_MISMATCH');
-    }
-    this.assertProjection(legalBasis);
-    return legalBasis;
-  }
+    if (!resolution.ok) this.fail('FORMATION_LEGAL_BASIS_MISMATCH');
 
-  private assertProjection(legalBasis: ExactLegalBasisBindingV1): void {
-    const projection = legalBasis.claimItemProjection;
-    const interestStartDate =
-      projection?.interestStartDate == null
-        ? null
-        : new Date(projection.interestStartDate);
-    const interestRate =
-      projection?.interestRate == null
-        ? null
-        : this.parseInterestRate(projection.interestRate);
-    const compatible =
-      projection &&
-      projection.itemType !== 'OTHER' &&
-      Array.isArray(projection.liableDebtorIds) &&
-      new Set(projection.liableDebtorIds).size === projection.liableDebtorIds.length &&
-      projection.liableDebtorIds.every((id) => /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(id)) &&
-      ((legalBasis.interestEligibility === 'ACCRUES' &&
-        projection.interestAccrualStatus === 'ACCRUES' &&
-        projection.interestType !== null &&
-        projection.interestStartDateProvenance !== null &&
-        (projection.interestStartDateProvenance ===
-          'ENFORCEMENT_PROCEEDING_DATE' ||
-          interestStartDate !== null) &&
-        (interestStartDate === null ||
-          Number.isFinite(interestStartDate.getTime())) &&
-        (interestRate === null ||
-          (interestRate.isFinite() &&
-            interestRate.decimalPlaces() <= 2 &&
-            interestRate.abs().lessThanOrEqualTo('999.99')))) ||
-        (legalBasis.interestEligibility === 'NO_INTEREST' &&
-          projection.interestAccrualStatus === 'NO_INTEREST' &&
-          projection.interestType === null &&
-          projection.interestRate === null &&
-          projection.interestStartDate === null &&
-          projection.interestStartDateProvenance === null) ||
-        (legalBasis.interestEligibility === 'UNRESOLVED' &&
-          projection.interestAccrualStatus === 'UNKNOWN'));
-    if (!compatible) this.fail('FORMATION_PROJECTION_INVALID');
+    // Owner-ratified D2: legal applicability time is the persisted Intent's
+    // own `effectiveAt` — never `approval.decidedAt`, never system time.
+    const eligibility = assertLegalBasisEligible({
+      mode: 'FINALIZATION',
+      legalBasis: resolution.value,
+      requestedIdentity: {
+        legalBasisCode: intent.legalBasisCode,
+        legalBasisVersion: intent.legalBasisVersion,
+      },
+      requestedComponent: {
+        category: intent.componentCategory as any,
+        subtypeCode: intent.componentSubtypeCode,
+      },
+      documentType: source.documentType,
+      evidenceClasses: source.evidenceClasses,
+      effectiveAt: intent.effectiveAt.toISOString(),
+      expectedBinding: {
+        legalBasisChecksum: intent.legalBasisChecksum,
+        registryReleaseId: intent.legalBasisRegistryReleaseId,
+        registryReleaseChecksum: intent.legalBasisRegistryReleaseChecksum,
+        componentSubtypeVersion: intent.componentSubtypeVersion,
+        componentSubtypeChecksum: intent.componentSubtypeChecksum,
+        interestEligibility: intent.interestEligibility as ClaimItemFormationInterestEligibility,
+        interestPolicyRef: intent.interestPolicyRef,
+        interestPolicyVersion: intent.interestPolicyVersion,
+        ruleRef: intent.ruleRef,
+        ruleVersion: intent.ruleVersion,
+        resolutionContractVersion: intent.legalBasisResolutionContractVersion,
+        resolutionHash: intent.legalBasisResolutionHash,
+      },
+    });
+    if (!eligibility.ok) {
+      this.fail(
+        eligibility.failure.code === 'PROJECTION_UNSUPPORTED'
+          ? 'FORMATION_PROJECTION_INVALID'
+          : 'FORMATION_LEGAL_BASIS_MISMATCH',
+      );
+    }
+    return eligibility.legalBasis;
   }
 
   private buildClaimItemData(
