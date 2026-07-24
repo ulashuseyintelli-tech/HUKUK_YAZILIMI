@@ -2792,6 +2792,166 @@ Bu task docs-only contract ratification'dır. Production code, key generation/pr
 handling, artifact, schema/migration, projection, resolver/provider, runtime activation, Document
 authority, I04/I05 veya historical data değişikliği yoktur.
 
+## 23.29. S08-D02-F01-R02 Initial Legal Basis release content and signer input pack — 2026-07-24
+
+Owner, `RCV-CLAIM-FORM-P02-S08-D02-F01-R02` ile ilk production Legal Basis release'ini
+oluşturmaz; repository'deki ratified Receivable hükümlerinden çıkarılabilen candidate family
+setini, owner/legal-review girdilerini ve üç aşamalı signature/publication prosedürünü canonical
+input pack olarak ratifiye eder. Bir `candidateRef`, `legalBasisCode` değildir ve production
+authority üretmez.
+
+### 23.29.1. Initial release candidate set
+
+| candidateRef | legalBasisCode / legalBasisVersion | Başlık | Normatif dayanak | İzin verilen component / subtype | Zorunlu belge / evidence | Liability compatibility | effectiveFrom / supersedes | Owner review |
+|---|---|---|---|---|---|---|---|---|
+| `R02-CAND-PRINCIPAL-SOURCE-SPECIFIC` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | Source-specific principal legal basis family | `SYSTEM-CONSTITUTION.md` `SYS-FIN-014..016`; `RECEIVABLE-GOVERNANCE.md` §23.7 | `PRINCIPAL`; exact version-bound subtype list `OWNER DECISION REQUIRED` | Exact source identity/version, source document/evidence, legal-basis evidence, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-ACCRUED-INTEREST-FIXED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | Fixed accrued-interest legal basis family | `SYSTEM-CONSTITUTION.md` `SYS-FIN-014..016`; `RECEIVABLE-GOVERNANCE.md` §23.7.3 | `ACCRUED_INTEREST`; exact version-bound subtype list `OWNER DECISION REQUIRED` | Period, as-of date, principal basis, exact InterestPolicy/rule/legal source, exact amount/currency, source evidence ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-TAX-KDV` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `TAX_KDV` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-TAX-BSMV` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `TAX_BSMV` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-TAX-KKDF` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `TAX_KKDF` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-COURT-FEE` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `COURT_FEE` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-ENFORCEMENT-FEE` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `ENFORCEMENT_FEE` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-ATTORNEY-FEE` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `ATTORNEY_FEE` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-CONTRACTUAL-PENALTY` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CONTRACTUAL_PENALTY` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-CHECK-PENALTY` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CHECK_PENALTY` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-PRECAUTIONARY-COST` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `PRECAUTIONARY_COST` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+| `R02-CAND-DOCUMENTED-EXPENSE` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `DOCUMENTED_EXPENSE` subtype vocabulary candidate | `RECEIVABLE-GOVERNANCE.md` §23.7.1 example vocabulary only | `COST` veya `ANCILLARY` mapping ve exact subtype binding `OWNER DECISION REQUIRED` | Subtype-specific legal source, document/evidence, base/parent rule, exact amount/currency ve liability binding | `OWNER DECISION REQUIRED` | `OWNER DECISION REQUIRED` / `OWNER DECISION REQUIRED` | `CANDIDATE ONLY / NOT RATIFIED` |
+
+Bu tablo production `legalBases[]` değildir. §23.7.1'deki subtype adları açıkça example
+vocabulary'dir; kategori eşlemesi, hukuki kaynak, evidence, liability, interest eligibility,
+effective interval, Subtype Registry identity/version/checksum ve release entry code/version
+owner ile ayrı legal reviewer tarafından exact biçimde ratifiye edilmeden payload'a giremez.
+
+`LEGAL_3095`, `COMMERCIAL_AVANS_3095_2_2`, `TTK_1530` ve `CONTRACTUAL` mevcut
+InterestPolicy/UYAP crosswalk identity'leridir. Bu R02 görevi onları Legal Basis release entry'sine
+dönüştürmez. Böyle bir ilişki ancak ayrı, explicit owner/legal ratification ile kurulabilir.
+`OTHER`, generic principal, future-interest ClaimItem veya source-less/context-light entry
+production candidate değildir.
+
+### 23.29.2. Initial release owner-decision table
+
+```text
+releaseId                         OWNER DECISION REQUIRED
+releaseVersion                    OWNER DECISION REQUIRED
+effectiveAt                       OWNER DECISION REQUIRED
+production legalBases[]           NOT FORMED / NO ENTRY RATIFIED
+entry order                       DETERMINED AFTER EXACT ENTRY RATIFICATION
+initial release checksum          NOT AVAILABLE / PAYLOAD NOT RATIFIED
+first authorized release          NOT CREATED / NOT SIGNED / NOT PUBLISHED
+```
+
+Owner, her production entry için tablodaki bütün alanları ve §23.28 payload alanlarını doldurup
+exact entry setini ratifiye etmelidir. Eksik alan `null`, default, current/latest veya inferred
+değerle tamamlanamaz.
+
+### 23.29.3. Separate legal-review input contract
+
+```text
+reviewerIdentity                  OWNER INPUT REQUIRED
+professionalAuthority            OWNER INPUT REQUIRED
+professionalAuthorityEvidenceRef OWNER INPUT REQUIRED
+disposition                      APPROVE / REJECT / REVISION_REQUIRED
+reviewedReleaseId                 EXACT RELEASE ID
+reviewedReleaseVersion            EXACT RELEASE VERSION
+reviewedReleaseChecksum           EXACT 64-CHAR LOWERCASE SHA-256
+reviewedAt                        UTC RFC3339 / SECOND PRECISION
+reviewStatement                   EXPLICIT / IMMUTABLE
+evidenceSignatureOrReference      EXACT-CHECKSUM-BOUND
+```
+
+Reviewer, final legal ratifier Ulaş Hüseyin Telli'den ayrı, owner-authorized avukat olmalıdır.
+Kimlik, professional-authority evidence, timestamp ve exact checksum olmadan review geçerli
+değildir. `APPROVE` disposition'ı final ratifier kararının yerine geçmez; `REJECT` veya
+`REVISION_REQUIRED` fail-closed yayın yasağıdır. Kişi bu görevde atanmaz.
+
+### 23.29.4. Production public-key onboarding
+
+Her production signer için aşağıdaki owner-controlled input zorunludur:
+
+```text
+signerId                         OWNER INPUT REQUIRED
+role                             LEGAL_REVIEWER /
+                                 FINAL_LEGAL_RATIFIER /
+                                 PRODUCTION_RELEASE_SIGNER
+publicKeyAlgorithm               Ed25519
+publicKey                        RAW 32 BYTE / UNPADDED BASE64URL
+keyId                            rcv-lb-ed25519-<sha256(raw-public-key)>
+fingerprint                      SHA-256(raw-public-key) / LOWERCASE HEX
+validFrom                        UTC RFC3339 / SECOND PRECISION
+validUntil                       OPTIONAL / UTC RFC3339 / SECOND PRECISION
+revokedAt                        OPTIONAL / UTC RFC3339 / SECOND PRECISION
+replacementSignerId              OPTIONAL / APPEND-ONLY ROTATION REFERENCE
+custodyOwner                     OWNER INPUT REQUIRED
+authorityEvidenceRef             OWNER INPUT REQUIRED / ROLE-SPECIFIC
+environment                      production
+```
+
+Production onboarding üç ayrı role ait üç ayrı signer identity ve key gerektirir. Test trust-root
+farklı dosya/config/provider/allowlist'te kalır. Private key istenmez, üretilmez, taşınmaz,
+repository/database/log/fixture'a yazılmaz.
+
+`PRODUCTION_RELEASE_SIGNER`, yalnız verified release'in immutable publication/authenticity
+zincirini imzalar; hukuki içerik inceleme veya final ratification authority'si değildir ve iki
+legal signature'dan birinin yerine geçemez. Legal rollerin `authorityEvidenceRef` değeri
+professional-authority evidence'a; operational signer'ın değeri owner-approved release-custody
+ve publication authorization evidence'ına bağlanır. Operational evidence hukuki authority
+üretmez. Bu R02 kaydı, §23.28'deki “iki legal signature global activation için yeterlidir” ve
+`signatures[]` iki-elemanlı sıra hükümlerini yalnız şu dar noktada amend eder:
+
+```text
+signatures[] canonical role order:
+1. LEGAL_REVIEWER
+2. FINAL_LEGAL_RATIFIER
+3. PRODUCTION_RELEASE_SIGNER
+```
+
+Diğer §23.28 serialization, checksum, preimage, key lifecycle, four-eyes ve fail-closed hükümleri
+değişmez.
+
+### 23.29.5. Release production and signature procedure
+
+1. Owner exact release identity, effective time ve bütün Legal Basis entry'lerini release draft
+   olarak dondurur; bu adım tek başına final legal ratification değildir.
+2. Unsigned payload §23.28 canonical serialization sözleşmesiyle deterministik üretilir.
+3. Entry ve release checksums canonical unsigned bytes üzerinden üretilip pinlenir.
+4. Ayrı legal reviewer exact payload/checksum'u inceler; `APPROVE` ise aynı exact checksum
+   preimage'ini imzalar ve checksum-bound evidence verir. Eksik/ret/revision kararı fail-closed'dur.
+5. Final legal ratifier Ulaş Hüseyin Telli aynı exact checksum'u ayrıca ratify edip imzalar.
+6. Distinct `PRODUCTION_RELEASE_SIGNER`, iki legal signature ve evidence doğrulandıktan sonra aynı
+   exact checksum preimage'i üzerinde operational publication signature üretir.
+7. Üç signer'ın trust-root state/validity/role/key ayrımı, payload/entry checksums, ratification
+   evidence ve release lifecycle fail-closed doğrulanır.
+8. Başarılı verified artifact immutable ve append-only release source'una publish edilir.
+
+Her content değişikliği yeni payload ve checksum üretir; önceki review/signatures geçersiz olur.
+Eksik reviewer, key, evidence, checksum veya owner content ile signed/demo release üretilemez.
+
+### 23.29.6. Readiness
+
+```text
+TASK                                RCV-CLAIM-FORM-P02-S08-D02-F01-R02
+STATUS                              OWNER INPUT PACK READY / CANONICAL
+INITIAL LEGAL CONTENT               CANDIDATE SET PREPARED /
+                                    OWNER RATIFICATION REQUIRED
+PRODUCTION-RATIFIED ENTRY COUNT     0
+LEGAL REVIEWER                      INPUT REQUIRED
+FINAL RATIFIER                      ULAŞ HÜSEYİN TELLİ / KEY INPUT REQUIRED
+PRODUCTION RELEASE SIGNER           INPUT REQUIRED
+PRODUCTION PUBLIC KEYS              INPUT REQUIRED
+SIGNED RELEASE                      NOT CREATED
+D02-F01 IMPLEMENTATION              BLOCKED UNTIL OWNER INPUTS COMPLETE
+PRODUCTION RESOLVER / PROVIDER      NOT IMPLEMENTED
+SCHEMA / MIGRATION                  NONE
+RUNTIME                             DORMANT / DEFAULT DISABLED
+I04                                 BLOCKED / NOT AUTHORIZED
+NEXT                                OWNER CONTENT RATIFICATION + REVIEWER +
+                                    PRODUCTION PUBLIC-KEY INPUTS
+```
+
+Bu input pack; production implementation, actual key/signature, signed artifact, schema/migration,
+resolver/provider wiring, runtime activation, Document authority, I04/I05 veya historical data
+değişikliği üretmez.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar

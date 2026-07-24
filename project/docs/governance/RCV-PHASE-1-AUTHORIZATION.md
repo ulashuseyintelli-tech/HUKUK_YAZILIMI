@@ -94,6 +94,7 @@ RCV-CLAIM-FORM-P02-S08-I02B-I01 : CLOSED / FULLY SUPERSEDED (local commit 89c16e
 RCV-CLAIM-FORM-P02-S08-I03  : FORMALLY CLOSED / CANONICAL TECHNICAL IMPLEMENTATION (implementation PR #1556 / 1d47fef6)
 RCV-CLAIM-FORM-P02-S08-D02-R01 : RATIFIED DESIGN / CANONICAL — IMPLEMENTATION BLOCKERS REGISTERED
 RCV-CLAIM-FORM-P02-S08-D02-F01-R01 : RATIFIED DESIGN / CANONICAL — RELEASE + TRUST CONTRACT READY / CONTENT + KEYS MISSING
+RCV-CLAIM-FORM-P02-S08-D02-F01-R02 : OWNER INPUT PACK READY / CANONICAL — CONTENT RATIFICATION + REVIEWER + KEYS MISSING
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
@@ -2972,6 +2973,81 @@ authority olarak üretilemez.
 Bu kayıt production code, key generation/private-key handling, signed artifact, schema/migration,
 resolver/provider wiring, runtime activation, Document authority değişikliği veya I04/I05
 authority'si üretmez.
+
+### 1.31K RCV-CLAIM-FORM-P02-S08-D02-F01-R02 initial release input pack
+
+```text
+TASK:
+RCV-CLAIM-FORM-P02-S08-D02-F01-R02
+
+STATUS:
+OWNER INPUT PACK READY / CANONICAL
+
+INITIAL LEGAL CONTENT:
+CANDIDATE SET PREPARED / OWNER RATIFICATION REQUIRED
+
+PRODUCTION-RATIFIED ENTRY COUNT:
+0
+
+LEGAL REVIEWER:
+INPUT REQUIRED / NOT APPOINTED
+
+FINAL LEGAL RATIFIER:
+ULAŞ HÜSEYİN TELLİ / PRODUCTION PUBLIC-KEY INPUT REQUIRED
+
+PRODUCTION RELEASE SIGNER:
+INPUT REQUIRED / OPERATIONAL PUBLICATION ROLE ONLY
+
+PRODUCTION PUBLIC KEYS:
+INPUT REQUIRED / NO PLACEHOLDER / NO PRIVATE KEY
+
+RELEASE PROCEDURE:
+CONTENT APPROVAL
+→ CANONICAL SERIALIZATION
+→ CHECKSUM
+→ LEGAL REVIEWER SIGNATURE
+→ FINAL LEGAL RATIFIER SIGNATURE
+→ PRODUCTION RELEASE SIGNER SIGNATURE
+→ FAIL-CLOSED VERIFICATION
+→ IMMUTABLE PUBLICATION
+
+SIGNED RELEASE:
+NOT CREATED / NOT PUBLISHED
+
+D02-F01:
+BLOCKED UNTIL OWNER CONTENT + REVIEWER + PUBLIC-KEY INPUTS COMPLETE
+
+CODE / SCHEMA / MIGRATION / RUNTIME:
+NONE
+
+I04:
+BLOCKED / NOT AUTHORIZED
+
+NEXT:
+OWNER CONTENT RATIFICATION + REVIEWER + PRODUCTION PUBLIC-KEY INPUTS
+```
+
+Repository truth yalnız `PRINCIPAL` ve fixed `ACCRUED_INTEREST` basis family'lerini ve §23.7.1
+example subtype vocabulary'sini candidate extraction için destekler. Bunlar production
+`legalBasisCode` veya release entry değildir. Exact code/version/title/legal source/category,
+Subtype Registry binding, evidence, liability, effective interval ve supersession owner/legal
+review bekler. InterestPolicy/UYAP crosswalk identity'leri Legal Basis entry'sine otomatik
+dönüştürülemez.
+
+Legal reviewer, final ratifier'dan ayrı owner-authorized avukattır. Reviewer identity,
+professional-authority evidence, disposition/timestamp ve exact release checksum binding
+zorunludur. Production public-key onboarding; `signerId`, Ed25519 raw public key, derived
+fingerprint/keyId, validity/revocation/replacement, custody owner ve `environment=production`
+alanlarını taşır. Test root production'dan ayrıdır; private key istenmez veya saklanmaz.
+
+R01'in distinct `LEGAL_REVIEWER` + `FINAL_LEGAL_RATIFIER` hukuki four-eyes şartı korunur. R02,
+immutable publication authenticity için üçüncü distinct `PRODUCTION_RELEASE_SIGNER` signature'ını
+ekler; bu operational rol hukuki authority değildir. Canonical `signatures[]` sırası reviewer,
+final ratifier, production release signer'dır.
+
+Bu görev production entry/content ratification'ı, reviewer ataması, public-key sağlanması,
+signature/artifact üretimi, code/schema/migration, resolver/provider veya runtime authority'si
+üretmez.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 
