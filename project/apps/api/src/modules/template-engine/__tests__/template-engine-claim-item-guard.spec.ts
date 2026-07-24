@@ -53,7 +53,7 @@ describe('TemplateEngineService.getCaseData — ClaimItem itemType guard (G1)', 
       ],
     });
 
-    const data: any = await (svc as any).getCaseData('case-1');
+    const data: any = await (svc as any).getCaseData('case-1', 'tenant-1');
 
     expect(data.totals.principal).toBe(1000);
     expect(data.totals.interest).toBe(200);
@@ -69,7 +69,7 @@ describe('TemplateEngineService.getCaseData — ClaimItem itemType guard (G1)', 
       ],
     });
 
-    const data: any = await (svc as any).getCaseData('case-1');
+    const data: any = await (svc as any).getCaseData('case-1', 'tenant-1');
 
     expect(data.totals.principal).toBe(800);
     expect(data.totals.interest).toBe(120);
