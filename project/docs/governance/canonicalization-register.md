@@ -1048,6 +1048,54 @@ final ratifier / production release signer rolleri, four-eyes ve fail-closed hü
 D02-F01 identity bakımından unblocked olsa da signed release ve production implementation, Subtype
 Registry, reviewer evidence ve production public keys tamamlanmadan başlayamaz.
 
+### RCV-CLAIM-FORM-P02-S08-D02-CR01 — Legal Basis Component Category Binding Ratification
+
+```text
+STATUS                              RATIFIED / CANONICAL
+PROGRAM / WORKSTREAM                RECEIVABLE / CLAIM FORMATION / S08
+NEW FIELD                           allowedComponentCategories[]
+FIELD SOURCE                        EXISTING D01B ClaimItemFormationComponentCategory UNION
+FIELD VALUES                        PRINCIPAL | COST | ANCILLARY | ACCRUED_INTEREST
+REQUIRED / MIN ITEMS                YES / 1
+DUPLICATE / UNKNOWN / NULL / OMIT   YASAK
+CANONICAL ORDER                     LEXICOGRAPHIC ASCENDING
+REQUEST VALIDATION                  componentCategory ∈ allowedComponentCategories, ELSE SCOPE_MISMATCH
+ECHO CONTRACT                       D01B componentCategory = REQUESTED VALUE
+SUBTYPE PARITY                      CLARIFIED / UNCHANGED (allowedSubtypeCodes aynı ilke)
+CANDIDATE TABLE (R02 §23.29.1)      CANDIDATE ONLY / NOT RATIFIED — UNCHANGED
+SCHEMA VERSION                      RECEIVABLE_LEGAL_BASIS_RELEASE_V1 — UNCHANGED (ADDITIVE)
+PUBLIC KEY / SIGNATURE MODEL        UNCHANGED (R01/R02/R01A PRESERVED)
+D02-F01 IMPLEMENTATION              BLOCKED / OWNER CONTENT + REVIEWER + KEYS REQUIRED
+R03                                 NOT STARTED / BLOCKED / OWNER GO REQUIRED
+D02-I01                             NOT AUTHORIZED
+CODE / SCHEMA / MIGRATION           NONE
+RUNTIME                             DORMANT / DEFAULT DISABLED
+I04                                 BLOCKED / NOT AUTHORIZED
+NEXT                                D02-F01-R03 — BLOCKED / OWNER GO REQUIRED
+```
+
+CR01, §23.28.1'in ratifiye ettiği minimum `legalBases[]` entry alan listesine
+`allowedComponentCategories[]` alanını additive olarak ekler; bir entry'nin hangi Claim Formation
+`componentCategory` değer(ler)i için kullanılabileceğini machine-readable ve fail-closed biçimde
+belirler. Yeni enum veya paralel taxonomy oluşturulmaz — yalnız mevcut D01B union reuse edilir.
+Bir entry birden fazla category taşıyabilir.
+
+Future D02-I01 adapter requested `componentCategory`'nin `allowedComponentCategories` içinde olup
+olmadığını doğrular; değilse `SCOPE_MISMATCH` ile fail-closed sonuç üretir, başarılı halde requested
+değeri echo eder — keyfi seçim, mapping icadı veya default/fallback davranışı yoktur. Aynı ilke
+mevcut `allowedSubtypeCodes` için zaten geçerlidir; bu amendment yalnız component-category
+seviyesinde açık kayda geçirir. R02 §23.29.1 candidate tablosu bu alanın owner tarafından nasıl
+doldurulacağına dair hazırlık rehberidir; otomatik olarak ratifiye edilmiş değere dönüşmez.
+
+Bu ratification R01'in "en az" (minimum) alan listesi çerçevesinde additive'dir; henüz imzalanmış bir
+release artifact'ı olmadığından mevcut `RECEIVABLE_LEGAL_BASIS_RELEASE_V1` schemaVersion'ını
+değiştirmeden geriye dönük uyumluluk risksiz biçimde eklenebilir. Production Legal Basis içeriğini
+veya altı Legal Basis entry'sini ratify etmez; subtype registry içeriğini veya exact subtype
+binding'lerini tamamlamaz; per-subtype versioning, conflict-of-interest evidence, entry-level
+lifecycle/revocation evidence, trust-root history modeli, public-key encoding/onboarding, key
+ceremony, signature veya signed release üretmez/değiştirmez. Bunlar ayrı, açık gap'ler olarak
+kalır; R03 ayrı owner GO olmadan başlamaz.
+
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 
 - **RCV-COL-TPA-03 schema-foundation contract canonicalization (2026-07-20; canonical upon approved governance merge):** Owner Option B — Two-File Hybrid Schema Foundation kararını ratifiye etmiştir. Foundation `LegalApplicationBatch`, immutable `LegalApplication`, non-authoritative `ApplicationAttribution`; `LegalApplicationBatchType = APPLY / REVERSAL`; `LegalApplicationComponentType = COST / ANCILLARY / ACCRUED_INTEREST / PRINCIPAL` adlarını kullanır. Future implementation exact scope'u yalnız `schema.prisma` + tek additive `migration.sql`; writer-free, no-backfill ve runtime/consumer etkisi yoktur. Tenant-safe composite FK, `ON DELETE RESTRICT`, batch/application immutability, positive minor-unit amount, `(tenantId, idempotencyKey)` replay unique sınırı, commandHash conflict, linked append-only full reversal ve required/opaque/nonblank bucket identity ratifiye edilmiştir. Canonical exact-cent conservation korunur; aggregate-level enforcement ve bucket key generation writer-stage contract'a bırakılmıştır. `codex/rcv-ws04-p03-syn-01` TPA-03A schema foundation için non-blocking, writer/evidence/cutover için blocking; PR #407 HOLD/CONFLICTING/DO NOT MERGE/DO NOT REBASE; ACT-28 ve REC-AUTH-011/012 OPEN kalır. TPA-03A `OWNER GO-IMPLEMENT REQUIRED / NOT AUTHORIZED`; runtime/test/schema/migration/backfill/replay/cutover/retirement change NONE.
