@@ -95,13 +95,14 @@ RCV-CLAIM-FORM-P02-S08-I03  : FORMALLY CLOSED / CANONICAL TECHNICAL IMPLEMENTATI
 RCV-CLAIM-FORM-P02-S08-D02-R01 : RATIFIED DESIGN / CANONICAL — IMPLEMENTATION BLOCKERS REGISTERED
 RCV-CLAIM-FORM-P02-S08-D02-F01-R01 : RATIFIED DESIGN / CANONICAL — RELEASE + TRUST CONTRACT READY / CONTENT + KEYS MISSING
 RCV-CLAIM-FORM-P02-S08-D02-F01-R02 : OWNER INPUT PACK READY / CANONICAL — CONTENT RATIFICATION + REVIEWER + KEYS MISSING
+RCV-CLAIM-FORM-P02-S08-D02-R01A : RELEASE IDENTITY AMENDMENT RATIFIED / CANONICAL — NON-CIRCULAR IDENTITY CHAIN
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : OWNER LEGAL CONTENT + REVIEWER + PRODUCTION PUBLIC-KEY INPUT REQUIRED
+Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-F01-R03 — OWNER GO REQUIRED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -3048,6 +3049,85 @@ final ratifier, production release signer'dır.
 Bu görev production entry/content ratification'ı, reviewer ataması, public-key sağlanması,
 signature/artifact üretimi, code/schema/migration, resolver/provider veya runtime authority'si
 üretmez.
+
+### 1.31L RCV-CLAIM-FORM-P02-S08-D02-R01A release identity amendment
+
+```text
+TASK:
+RCV-CLAIM-FORM-P02-S08-D02-R01A
+
+STATUS:
+RELEASE IDENTITY AMENDMENT RATIFIED / CANONICAL
+
+RELEASE VERSION:
+POSITIVE DECIMAL STRING / NO LEADING ZERO
+
+RELEASE ID:
+RCV-LB-R<releaseVersion>
+
+IDENTITY SOURCE:
+RELEASE VERSION / DETERMINISTIC / HUMAN-STABLE
+
+CHECKSUM-DERIVED IDENTITY:
+PROHIBITED
+
+CANONICAL UNSIGNED PAYLOAD:
+INCLUDES RELEASE ID
+
+RELEASE CODE:
+NON-AUTHORITATIVE METADATA OUTSIDE UNSIGNED PAYLOAD OR OMITTED
+
+RELEASE CHECKSUM:
+SHA-256(COMPLETE CANONICAL UNSIGNED PAYLOAD INCLUDING RELEASE ID)
+
+SIGNATURE PREIMAGE:
+UNCHANGED / DOMAIN PREFIX + LF + RELEASE CHECKSUM
+
+BACKWARD COMPATIBILITY:
+PRESERVED
+
+AUTHORITY CHAIN:
+RELEASE ID → PAYLOAD → CHECKSUM → SIGNATURES
+
+REVERSE DEPENDENCY:
+NONE / PROHIBITED
+
+D02-F01 IDENTITY BLOCKER:
+CONTRACTUALLY CLOSED
+
+REMAINING BLOCKERS:
+- SUBTYPE REGISTRY
+- LEGAL REVIEWER EVIDENCE
+- PRODUCTION PUBLIC KEYS
+
+SIGNED RELEASE:
+NONE
+
+RUNTIME:
+DORMANT / DEFAULT DISABLED
+
+I04:
+BLOCKED / NOT AUTHORIZED
+
+NEXT:
+RCV-CLAIM-FORM-P02-S08-D02-F01-R03 — SEPARATE OWNER GO REQUIRED
+```
+
+`releaseId`, checksum veya signature'dan türetilmez. Canonical identity yalnız immutable
+`releaseVersion` üzerinden `RCV-LB-R<releaseVersion>` formülüyle üretilir ve canonical unsigned
+payload'ın required alanı olarak checksum preimage'ine girer. Böylece dependency graph tek yönlüdür:
+identity payload'ı belirler; payload checksum'u, checksum da üç canonical signature'ın exact
+domain-separated preimage'ini belirler.
+
+`releaseCode` Legal Basis release authority'si, version identity'si veya signed payload fact'i
+değildir. Tutulursa canonical unsigned payload dışında yalnız non-authoritative metadata'dır;
+checksum/signature/authority/version identity hesaplarına girmez. Tamamen omit edilebilir.
+
+Bu amendment R01'i yalnız release identity generation konusunda dar biçimde supersede eder.
+R01/R02'nin canonical serialization, SHA-256 checksum algorithm, exact domain-separated Ed25519
+preimage, trust-root lifecycle, distinct reviewer/final-ratifier/production-release-signer rolleri,
+four-eyes ve fail-closed hükümleri değişmez. Code, test, artifact, key, signature, schema, migration,
+resolver/provider, runtime, Document authority, I04/I05 veya historical data değişikliği üretmez.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 
