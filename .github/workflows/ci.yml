@@ -728,6 +728,40 @@ jobs:
           npx jest --ci --forceExit \
             --testPathPattern="src/modules/icrabot/__tests__/icrabot-(digital-twin-tenant-guard|queue-stats-tenant-scope)\.spec\.ts$"
         working-directory: project
+      # DEBTOR-OF01-HISTORY-P04-C-I02 CI step ekleme sırasında fark edildi: icrabot v28-engine
+      # modülündeki 5 unit spec (tenant boundary hardening, outbox-tenancy Phase 1, v28 platform
+      # outbox cron+retry, CAN-P0-001 notification truth, TimelineService aggregateVersion) hiçbir
+      # dar allowlist pattern'ine girmiyordu (v28-engine/__tests__/ hiçbir step'te referans
+      # edilmiyordu) → CI'da hiç koşmuyordu. Hepsi DB-free (mock prisma). Dosya-varlığı pre-check
+      # (rename/silme veya 0-eşleşme → CI RED) + passWithNoTests YOK.
+      - name: Icrabot v28-engine unit tests (CI wiring gap)
+        run: |
+          cd apps/api
+          for f in src/modules/icrabot/v28-engine/__tests__/tenant-boundary-hardening.spec.ts \
+                   src/modules/icrabot/v28-engine/__tests__/outbox-tenancy.spec.ts \
+                   src/modules/icrabot/v28-engine/__tests__/outbox-platform-cron.spec.ts \
+                   src/modules/icrabot/v28-engine/__tests__/action-handler-notification-truth.spec.ts \
+                   src/modules/icrabot/v28-engine/__tests__/timeline-aggregate-version.spec.ts; do
+            test -f "$f" || { echo "MISSING icrabot v28-engine spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="src/modules/icrabot/v28-engine/__tests__/(tenant-boundary-hardening|outbox-tenancy|outbox-platform-cron|action-handler-notification-truth|timeline-aggregate-version)\.spec\.ts$"
+        working-directory: project
+      # Aynı taramada bulunan tek DB-gated dosya: uyap-event-ingest.boundary.integration.spec.ts
+      # (spec-15 boundary tenant resolution). DATABASE_URL set edilmezse describe.skip ile otomatik
+      # atlanır; kendi disposable-DB step'i burada eklenir. Dosya-varlığı pre-check +
+      # passWithNoTests YOK.
+      - name: Icrabot v28-engine boundary tenant resolution disposable DB tests (CI wiring gap)
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/icrabot/v28-engine/__tests__/uyap-event-ingest.boundary.integration.spec.ts || \
+            { echo "MISSING icrabot v28-engine DB-gated spec: uyap-event-ingest.boundary.integration.spec.ts"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="src/modules/icrabot/v28-engine/__tests__/uyap-event-ingest\.boundary\.integration\.spec\.ts$"
+        working-directory: project
       # CLIENT-LANE-1: client modülü saf unit spec'leri (mock prisma, DB GEREKMEZ) yukarıdaki dar
       # pattern'lerin dışında kalıyordu → CI'da koşmuyordu (#656 client-update-duplicate-guard false-green
       # ile merge oldu; #661 harness'i düzeltti). Ayrı/açık step ile koşturulur.
