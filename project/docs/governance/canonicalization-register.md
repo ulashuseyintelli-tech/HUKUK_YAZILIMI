@@ -900,6 +900,64 @@ bağlamında korunur. Güncel canonical migration truth, pending-migration coord
 TRAIN-R02 ile `APPLIED` olduğudur; bu live schema gerçeği runtime activation veya writer
 authority üretmez.
 
+### RCV-CLAIM-FORM-P02-S08-D02-F01-R01 — Legal Basis Release and Trust-Root Contract
+
+```text
+STATUS                              RATIFIED DESIGN / CANONICAL
+PROGRAM / WORKSTREAM                RECEIVABLE / CLAIM FORMATION / S08
+FINAL LEGAL RATIFIER                ULAŞ HÜSEYİN TELLİ
+RELEASE IDENTITY FORMAT             RCV-LB-R<positive-decimal-releaseVersion>
+UNSIGNED PAYLOAD SCHEMA             RATIFIED
+CANONICAL SERIALIZATION             UTF-8 / NFC / LEXICOGRAPHIC KEYS /
+                                     CONTRACT-ORDERED ARRAYS
+RELEASE CHECKSUM                    SHA-256 / LOWERCASE HEX / PAYLOAD ONLY
+PRODUCTION SIGNATURE                ED25519 / BASE64URL NO PADDING
+SIGNED PREIMAGE                     RECEIVABLE_LEGAL_BASIS_RELEASE_V1 + LF +
+                                     64-CHAR RELEASE CHECKSUM
+PRODUCTION MULTI-SIGNATURE          REQUIRED — DISTINCT REVIEWER + FINAL RATIFIER
+TRUST-ROOT LIFECYCLE                RATIFIED
+RATIFICATION EVIDENCE               EXACT RELEASE ID/VERSION/CHECKSUM-BOUND
+INITIAL LEGAL CONTENT               MISSING — OWNER CONTENT REQUIRED
+LEGAL REVIEWER                      MISSING — OWNER APPOINTMENT REQUIRED
+PRODUCTION PUBLIC KEYS              MISSING — OWNER INPUT REQUIRED
+FIRST AUTHORIZED RELEASE            NOT CREATED / NOT RATIFIED
+PRIVATE KEY                         NOT STORED / NOT REQUESTED / NOT GENERATED
+D02-F01 IMPLEMENTATION              BLOCKED PENDING OWNER INPUTS
+PRODUCTION RESOLVER / PROVIDER      NOT IMPLEMENTED
+RUNTIME                             DORMANT / DEFAULT DISABLED
+I04                                 BLOCKED / NOT AUTHORIZED
+CODE / SCHEMA / MIGRATION           NONE
+NEXT                                OWNER LEGAL CONTENT + REVIEWER +
+                                     PRODUCTION PUBLIC-KEY INPUT REQUIRED
+```
+
+Canonical unsigned payload, immutable `releaseId`/`releaseVersion`, UTC effective time ve
+non-empty `legalBases[]` içerir. Her entry stable code + immutable version, effective interval,
+legal authority/source evidence, exact version-bound Subtype Registry reference ve formation
+compatibility taşır. Initial code list/content sağlanmadığından boş veya demo production release
+oluşturulamaz.
+
+Serialization UTF-8/BOM-free/NFC, lexicographic object keys, contract-ordered arrays, UTC
+second-precision RFC3339, LF-only ve no-trailing-whitespace kurallarına tabidir. Float/exponent,
+duplicate/unknown keys ve implicit sorting yasaktır. Null yalnız schema izin veriyorsa anlamlıdır;
+omit ile eşit değildir.
+
+`releaseChecksum`, canonical unsigned payload bytes üzerinde SHA-256 lowercase hex'tir; manifest,
+signature, ratification evidence ve lifecycle metadata preimage'e girmez. Ed25519 exact signed
+preimage'i domain prefix + tek LF + 64-character lowercase checksum'dur; trailing LF/NUL yoktur.
+Signature raw 64-byte value'nun unpadded base64url encoding'i; key ID raw 32-byte public key
+SHA-256 fingerprint'ine bağlı `rcv-lb-ed25519-<64-lowercase-hex>` değeridir.
+
+Global activation aynı preimage'i imzalayan distinct `LEGAL_REVIEWER` ve
+`FINAL_LEGAL_RATIFIER` gerektirir. Aynı kişi/signer/key iki rolü karşılayamaz. Production/test
+trust roots fiziksel ve mantıksal olarak ayrıdır. ACTIVE/RETIRED/REVOKED/COMPROMISED lifecycle,
+append-only rotation ve historical-verification kuralları `RECEIVABLE-GOVERNANCE.md §23.28`de
+normatiftir. Private key hiçbir repository/database/log/fixture yüzeyinde tutulamaz.
+
+Initial legal content, separate legal reviewer ve production public keys sağlanmadığından contract
+ratified olsa da first authorized release ve D02-F01 implementation başlamaz. I04 blocker'ı ve
+default-disabled containment korunur.
+
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 
 - **RCV-COL-TPA-03 schema-foundation contract canonicalization (2026-07-20; canonical upon approved governance merge):** Owner Option B — Two-File Hybrid Schema Foundation kararını ratifiye etmiştir. Foundation `LegalApplicationBatch`, immutable `LegalApplication`, non-authoritative `ApplicationAttribution`; `LegalApplicationBatchType = APPLY / REVERSAL`; `LegalApplicationComponentType = COST / ANCILLARY / ACCRUED_INTEREST / PRINCIPAL` adlarını kullanır. Future implementation exact scope'u yalnız `schema.prisma` + tek additive `migration.sql`; writer-free, no-backfill ve runtime/consumer etkisi yoktur. Tenant-safe composite FK, `ON DELETE RESTRICT`, batch/application immutability, positive minor-unit amount, `(tenantId, idempotencyKey)` replay unique sınırı, commandHash conflict, linked append-only full reversal ve required/opaque/nonblank bucket identity ratifiye edilmiştir. Canonical exact-cent conservation korunur; aggregate-level enforcement ve bucket key generation writer-stage contract'a bırakılmıştır. `codex/rcv-ws04-p03-syn-01` TPA-03A schema foundation için non-blocking, writer/evidence/cutover için blocking; PR #407 HOLD/CONFLICTING/DO NOT MERGE/DO NOT REBASE; ACT-28 ve REC-AUTH-011/012 OPEN kalır. TPA-03A `OWNER GO-IMPLEMENT REQUIRED / NOT AUTHORIZED`; runtime/test/schema/migration/backfill/replay/cutover/retirement change NONE.

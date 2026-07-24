@@ -2576,6 +2576,222 @@ NEXT ELIGIBLE TASK              RCV-CLAIM-FORM-P02-S08-D02-F01
 NEXT TASK AUTHORITY             OWNER GO REQUIRED
 ```
 
+## 23.28. S08-D02-F01-R01 Legal Basis release ve trust-root contract — 2026-07-24
+
+Owner ve final legal ratifier Ulaş Hüseyin Telli,
+`RCV-CLAIM-FORM-P02-S08-D02-F01-R01` ile D02-F01 implementation'ının ihtiyaç duyduğu
+release-format, canonical serialization, checksum, signature, trust-root ve legal-ratification
+evidence contract'ını ratifiye etmiştir. Bu kayıt production artifact veya key üretmez; ilk
+hukuki içerik, ayrı legal reviewer ve production public keys sağlanmadığı için first authorized
+release hâlâ yoktur.
+
+### 23.28.1. Release identity ve unsigned payload
+
+```text
+schemaVersion       RECEIVABLE_LEGAL_BASIS_RELEASE_V1
+releaseVersion      POSITIVE DECIMAL STRING / NO LEADING ZERO
+releaseId           RCV-LB-R<releaseVersion>
+effectiveAt         UTC RFC3339 / YYYY-MM-DDTHH:mm:ssZ
+legalBases          NON-EMPTY FOR PRODUCTION
+```
+
+`releaseId` ve `releaseVersion` global release identity'sidir; artifact oluşturulduktan sonra
+değiştirilemez veya yeniden kullanılamaz. `legalBasisCode` formatı
+`^[A-Z][A-Z0-9_]{2,63}$`; `releaseVersion` ve `legalBasisVersion` formatı leading-zero içermeyen
+pozitif decimal string'dir. Runtime version sırasından current/latest çıkaramaz; yalnız exact
+requested identity çözülebilir.
+
+Her `legalBases[]` entry'si en az:
+
+```text
+legalBasisCode
+legalBasisVersion
+effectiveFrom
+effectiveUntil
+legalAuthorityReferences[]
+subtypeRegistryBinding {
+  registryId
+  registryVersion
+  registryChecksum
+  allowedSubtypeCodes[]
+}
+sourceEvidenceCompatibility
+liabilityCompatibility
+interestEligibility
+legalContent
+```
+
+taşır. `legalBasisCode` stable uppercase domain code; `legalBasisVersion` pozitif decimal string
+ve immutable semantic version'dır. `effectiveUntil` yalnız açık-ended değilse bulunur; omit ile
+`null` eşit değildir. Subtype Registry ayrı authority olarak kalır fakat exact
+registryId/version/checksum ve açık allowed subtype listesiyle version-bound tüketilir. Tenant
+overlay yalnız daha sıkı operational/evidence kısıtı ekleyebilir; legal content, category/subtype
+mapping, effective interval, liability veya interest semantics'i gevşetemez/değiştiremez.
+
+Initial release'in releaseId/version/effectiveAt değeri ve `legalBasisCode` listesi owner
+tarafından sağlanmamıştır. Schema production'da non-empty liste ister; boş/demo/test payload
+production release sayılamaz.
+
+### 23.28.2. Canonical serialization ve checksum
+
+Canonical unsigned release payload için:
+
+1. Encoding UTF-8, BOM yasak; bütün string'ler Unicode NFC'dir.
+2. Object key'leri Unicode code-point lexicographic sıradadır; duplicate/unknown key yasaktır.
+3. Array'ler contract-defined sırada sağlanır: `legalBases[]` ve `entryChecksums[]`
+   `(legalBasisCode, legalBasisVersion)` lexicographic; `allowedSubtypeCodes[]` lexicographic;
+   `signatures[]` önce `LEGAL_REVIEWER`, sonra `FINAL_LEGAL_RATIFIER` sırasındadır.
+   `legalAuthorityReferences[]` ratified author order'ını korur ve bu sıra signed content'tir.
+   Serializer implicit sort yapmaz; yanlış sıra reddedilir, sıra değişikliği payload/checksum
+   değişikliğidir.
+4. Timestamp yalnız UTC, saniye hassasiyetli `YYYY-MM-DDTHH:mm:ssZ`dir; offset/fraction yasaktır.
+5. Integer JSON integer veya canonical decimal string olabilir; leading plus/zero yoktur. Para
+   değeri decimal string; float, exponent, `NaN` ve infinity yasaktır.
+6. Optional alan yoksa omit edilir. Schema açıkça izin vermedikçe `null` yasaktır; null/omit
+   birbirine dönüştürülemez.
+7. Line ending LF; trailing whitespace ve terminal normalization side-effect'i yasaktır.
+
+Her Legal Basis entry checksum'u entry'nin canonical byte'larının SHA-256 digest'idir.
+`releaseChecksum`, canonical unsigned release payload byte'larının SHA-256 digest'inin
+64-karakter lowercase hexadecimal gösterimidir. Signed manifest, signatures, ratification
+evidence ve append-only lifecycle metadata checksum preimage'ine girmez. Checksum alanı payload'a
+geri yazılıp circular hash üretilemez.
+
+### 23.28.3. Signed manifest ve exact preimage
+
+Signed release manifest en az:
+
+```text
+manifestSchemaVersion = RECEIVABLE_LEGAL_BASIS_RELEASE_MANIFEST_V1
+releaseId
+releaseVersion
+payloadChecksum
+entryChecksums[] { legalBasisCode, legalBasisVersion, checksum }
+signatures[] {
+  role
+  signerId
+  keyId
+  algorithm
+  signature
+  signedAt
+  authorityEvidenceRef
+}
+ratificationEvidence[] {
+  evidenceSchemaVersion = RECEIVABLE_LEGAL_BASIS_RATIFICATION_EVIDENCE_V1
+  ...
+}
+lifecycleEvidenceRefs[] {
+  lifecycleSchemaVersion = RECEIVABLE_LEGAL_BASIS_RELEASE_LIFECYCLE_V1
+  ...
+}
+```
+
+taşır. Production algorithm yalnız `Ed25519`dır. Exact signed preimage byte dizisi:
+
+```text
+UTF8("RECEIVABLE_LEGAL_BASIS_RELEASE_V1")
++ 0x0A
++ ASCII(releaseChecksum)
+```
+
+olup sonunda newline/NUL yoktur. Signature, raw 64-byte Ed25519 çıktısının unpadded base64url
+encoding'idir. `keyId`, raw 32-byte public key'in SHA-256 fingerprint'inden türeyen
+`rcv-lb-ed25519-<64-lowercase-hex>` değeridir.
+
+Production global activation iki farklı cryptographic signature gerektirir:
+
+1. `LEGAL_REVIEWER`
+2. `FINAL_LEGAL_RATIFIER`
+
+Roller aynı signer identity, kişi veya key ile birleştirilemez. Final legal ratifier Ulaş Hüseyin
+Telli'dir; reviewer ayrı ve owner-authorized legal professional olmalıdır. Developer, staff,
+administrator, OfficeApproval veya runtime service bu rollerden birini üstlenemez. Eksik imza,
+signature mismatch veya role/key reuse fail-closed'dur.
+
+### 23.28.4. Production trust-root lifecycle
+
+Production trusted-signer allowlist entry'si `keyId`, Ed25519 public key, signer identity,
+professional authority evidence reference, allowed role, `validFrom`, optional `validUntil` ve
+`ACTIVE / RETIRED / REVOKED / COMPROMISED` lifecycle state taşır.
+
+- `ACTIVE`: geçerli interval içinde yeni ve historical verification.
+- `RETIRED`: yeni signature yasak; yalnız kendi geçerli interval'indeki historical verification.
+- `REVOKED`: yeni admission/finalization yok; disposition `REVOKED`.
+- `COMPROMISED`: known cutoff sonrası bütün signatures reddedilir; cutoff güvenilir değilse key'in
+  bütün release'leri fail-closed bloke edilir.
+
+Rotation yeni append-only key entry'sidir; eski key, manifest, signature veya release mutate
+edilemez. Historical verification, signing time + key validity + release lifecycle evidence'ını
+birlikte doğrular. Production ve test trust roots farklı dosya/config/provider/allowlist
+yüzeyleridir; test key'i production verifier tarafından yüklenemez. Private key repository,
+database, logs, fixtures veya bu governance task'ında bulunamaz/üretilemez.
+
+Production public keys henüz owner tarafından sağlanmamıştır. Bu nedenle trust-root contract
+`RATIFIED`, trust-root key material ise `MISSING / OWNER PUBLIC-KEY INPUT REQUIRED`dır.
+
+### 23.28.5. Legal-ratification evidence
+
+Her release için checksum-bound evidence:
+
+```text
+ratifierIdentity
+professionalAuthority
+role
+releaseId
+releaseVersion
+releaseChecksum
+ratifiedAt
+approvalStatement
+evidenceSignatureOrReference
+```
+
+taşır. Legal reviewer ve final legal ratifier evidence'ı aynı exact checksum'a bağlanır.
+Checksum'sız, başka checksum'a bağlı, mutable veya yalnız OfficeApproval içeren evidence geçersizdir.
+Initial content için böyle bir evidence sağlanmadığından first release ratified değildir.
+
+### 23.28.6. Verification dispositions ve lifecycle
+
+```text
+PAYLOAD / ENTRY CHECKSUM MISMATCH     CHECKSUM_MISMATCH
+MALFORMED OR INVALID SIGNATURE        AUTHORITY_UNAVAILABLE / NON-RETRYABLE
+MISSING SECOND SIGNATURE              AUTHORITY_UNAVAILABLE / NON-RETRYABLE
+UNKNOWN / UNTRUSTED KEY               AUTHORITY_UNAVAILABLE / NON-RETRYABLE
+TRANSIENT TRUST SOURCE OUTAGE         AUTHORITY_UNAVAILABLE / BOUNDED RETRY
+REVOKED / COMPROMISED KEY             REVOKED / NON-RETRYABLE
+SIGNED RELEASE SUPERSESSION           SUPERSEDED / NON-RETRYABLE
+MISSING EXACT RELEASE                 RELEASE_NOT_FOUND / NON-RETRYABLE
+```
+
+Lifecycle release payload'ını mutate etmez. Activation, revoke ve supersession kararları exact
+releaseId/checksum'a bağlı append-only, signed lifecycle evidence'dır. Automatic replacement,
+current/latest fallback, historical inference, ClaimItem/snapshot mutation veya backfill
+yasaktır.
+
+### 23.28.7. Readiness ve implementation input checklist
+
+```text
+RELEASE ID / PAYLOAD SCHEMA            RATIFIED
+CANONICAL SERIALIZATION                RATIFIED
+SHA-256 CHECKSUM CONTRACT              RATIFIED
+ED25519 PREIMAGE / ENCODING            RATIFIED
+TWO-SIGNATURE / FOUR-EYES CONTRACT      RATIFIED
+TRUST-ROOT LIFECYCLE CONTRACT           RATIFIED
+RATIFICATION EVIDENCE CONTRACT          RATIFIED
+INITIAL LEGAL CONTENT                   MISSING — OWNER CONTENT REQUIRED
+INITIAL RELEASE ID / VERSION / DATE     MISSING — CONTENT NOT RATIFIED
+LEGAL REVIEWER                          MISSING — OWNER APPOINTMENT REQUIRED
+PRODUCTION PUBLIC KEYS                  MISSING — OWNER INPUT REQUIRED
+FIRST AUTHORIZED RELEASE                NOT CREATED / NOT RATIFIED
+D02-F01 IMPLEMENTATION                  BLOCKED
+PRODUCTION RESOLVER / PROVIDER          NOT IMPLEMENTED
+RUNTIME                                 DORMANT / DEFAULT DISABLED
+I04                                     BLOCKED / NOT AUTHORIZED
+```
+
+Bu task docs-only contract ratification'dır. Production code, key generation/private-key
+handling, artifact, schema/migration, projection, resolver/provider, runtime activation, Document
+authority, I04/I05 veya historical data değişikliği yoktur.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
