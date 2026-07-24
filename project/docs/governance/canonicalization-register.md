@@ -1096,6 +1096,49 @@ lifecycle/revocation evidence, trust-root history modeli, public-key encoding/on
 ceremony, signature veya signed release üretmez/değiştirmez. Bunlar ayrı, açık gap'ler olarak
 kalır; R03 ayrı owner GO olmadan başlamaz.
 
+### RCV-CLAIM-FORM-P02-S08-D02-F01-R03 — Legal Basis Release Input Reconciliation
+
+```text
+STATUS                              RATIFIED / CANONICAL
+PROGRAM / WORKSTREAM                RECEIVABLE / CLAIM FORMATION / S08
+EFFECTIVE-TIME MODEL                SCHEDULED / EXACT effectiveAt PENDING
+RELEASE VERSION / ID                "1" / RCV-LB-R1
+RELEASE CODE                        OMIT / NOT AUTHORITATIVE
+LEGAL BASIS VERSION / SUPERSEDES    "1" / NONE
+LEGAL BASIS CODES                   KANUN_3095_1 / KANUN_3095_2 /
+                                    TBK_117 / TBK_118 / TBK_120 / TTK_1530
+LEGAL CONTENT SEMANTICS             RATIFIED
+COMPONENT CATEGORY CONTRACT         CR01'E BAĞLI / CLOSED
+SUBTYPE BINDINGS                    NOT RATIFIED / VERSIONED REGISTRY MISSING
+LEGAL REVIEWER                      AV. FATMA ULUCA TELLİ /
+                                    İSTANBUL 1 NO'LU BAROSU / SİCİL 36582
+FINAL LEGAL RATIFIER                AV. ULAŞ HÜSEYİN TELLİ
+PRODUCTION RELEASE SIGNER           TELLI-PROD-LEGAL-01 / OPERATIONAL ONLY
+PUBLIC KEYS                         MISSING
+CHECKSUM-BOUND DECISIONS            PENDING
+SIGNED RELEASE                      NOT CREATED
+D02-F01 IMPLEMENTATION              STILL BLOCKED
+D02-I01                             NOT AUTHORIZED
+CODE / SCHEMA / MIGRATION           NONE
+RUNTIME                             DORMANT / DEFAULT DISABLED
+I04                                 BLOCKED / NOT AUTHORIZED
+NEXT                                RCV-CLAIM-FORM-P02-S08-D02-SR01 /
+                                    OWNER GO REQUIRED / NOT STARTED
+```
+
+R03, R01A release identity zincirini ve CR01 `allowedComponentCategories[]` contract'ını aynen
+korur. Altı Legal Basis için legal role/use, source-evidence, same-liability ve interest-eligibility
+semantics ratifiye edilmiştir. `TTK_1530` yalnız kapsama giren ticari mal/hizmet tedariki
+borcunda kullanılabilir; consumer, employment ve unrelated commercial debt yasaktır. Exact
+Document version/fingerprint her entry için zorunludur.
+
+Candidate subtype isimleri production authority değildir. Canonical versioned Subtype Registry,
+exact registry version/checksum ve `allowedSubtypeCodes[]` için
+`RCV-CLAIM-FORM-P02-S08-D02-SR01` ayrı prerequisite'tir. Reviewer/final-ratifier kararları exact
+checksum'a bağlı değildir ve üç production public key/lifecycle input'u yoktur; bu nedenle payload
+tamamlanamaz, signature/signed release üretilemez ve D02-F01 başlayamaz. SR01 yalnız ayrı owner GO
+ile yürütülebilir.
+
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 
 - **RCV-COL-TPA-03 schema-foundation contract canonicalization (2026-07-20; canonical upon approved governance merge):** Owner Option B — Two-File Hybrid Schema Foundation kararını ratifiye etmiştir. Foundation `LegalApplicationBatch`, immutable `LegalApplication`, non-authoritative `ApplicationAttribution`; `LegalApplicationBatchType = APPLY / REVERSAL`; `LegalApplicationComponentType = COST / ANCILLARY / ACCRUED_INTEREST / PRINCIPAL` adlarını kullanır. Future implementation exact scope'u yalnız `schema.prisma` + tek additive `migration.sql`; writer-free, no-backfill ve runtime/consumer etkisi yoktur. Tenant-safe composite FK, `ON DELETE RESTRICT`, batch/application immutability, positive minor-unit amount, `(tenantId, idempotencyKey)` replay unique sınırı, commandHash conflict, linked append-only full reversal ve required/opaque/nonblank bucket identity ratifiye edilmiştir. Canonical exact-cent conservation korunur; aggregate-level enforcement ve bucket key generation writer-stage contract'a bırakılmıştır. `codex/rcv-ws04-p03-syn-01` TPA-03A schema foundation için non-blocking, writer/evidence/cutover için blocking; PR #407 HOLD/CONFLICTING/DO NOT MERGE/DO NOT REBASE; ACT-28 ve REC-AUTH-011/012 OPEN kalır. TPA-03A `OWNER GO-IMPLEMENT REQUIRED / NOT AUTHORIZED`; runtime/test/schema/migration/backfill/replay/cutover/retirement change NONE.

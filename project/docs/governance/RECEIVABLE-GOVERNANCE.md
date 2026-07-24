@@ -3084,6 +3084,152 @@ public-key encoding/onboarding, key ceremony, signature veya signed release üre
 Code, test, artifact, schema, migration, resolver/provider, runtime, Document authority, I04/I05
 veya historical data değişikliği üretmez. R03 ayrı owner GO olmadan başlamaz.
 
+## 23.32. Initial Legal Basis release input reconciliation
+
+`RCV-CLAIM-FORM-P02-S08-D02-F01-R03`, R01/R02/R01A/CR01 zincirini yeniden açmadan
+ilk release'in identity, legal-content semantics, authority-role ve kalan input blocker'larını
+uzlaştırır. Bu kayıt complete canonical unsigned payload, checksum, public key, signature,
+signed release veya production implementation üretmez.
+
+### 23.32.1. Release identity ve effective-time modeli
+
+```text
+effective-time model                SCHEDULED
+releaseVersion                      "1"
+releaseId                           RCV-LB-R1
+releaseCode                         OMIT / AUTHORITATIVE PAYLOAD'DA YOK
+legalBasisVersion                   "1" / HER ENTRY İÇİN
+supersedes                          NONE / HER ENTRY İÇİN
+releaseChecksum                     NOT AVAILABLE / PAYLOAD INCOMPLETE
+signed release                      NOT CREATED
+```
+
+`effectiveAt`, imzalama öncesinde kesinleştirilen UTC, saniye hassasiyetli RFC3339 timestamp'tir
+ve canonical unsigned payload'a girer. Geçmiş tarih yasaktır. Registry publication
+`effectiveAt`'ten önce authority üretmez; `effectiveAt` sonrasında publication ise deployment
+failure'dır ve kendiliğinden geriye etkili activation üretmez. Exact initial `effectiveAt` release
+üretim aşamasında owner tarafından sağlanacaktır.
+
+R01A authority chain'i değişmez:
+
+```text
+RCV-LB-R1
+→ complete canonical unsigned payload
+→ SHA-256 releaseChecksum
+→ LEGAL_REVIEWER signature
+→ FINAL_LEGAL_RATIFIER signature
+→ PRODUCTION_RELEASE_SIGNER signature
+```
+
+Checksum identity üretmez; `releaseCode` checksum/signature/authority/version identity dışında
+kalır ve initial authoritative payload'dan omit edilir.
+
+### 23.32.2. Ratified release-input semantics
+
+Altı entry, payload'da `(legalBasisCode, legalBasisVersion)` lexicographic sırasında yer alacaktır.
+Bu sıra hukuki öncelik değildir. `allowedComponentCategories[]`, CR01'in mevcut D01B category
+union'ını reuse eden exact sözleşmesidir:
+
+| legalBasisCode | allowedComponentCategories[] | Legal role ve kullanım sınırı | Required source / evidence |
+|---|---|---|---|
+| `KANUN_3095_1` | `ACCRUED_INTEREST` | `RATE_AUTHORITY`; kanuni faiz. Temerrüt şartı authority'si değildir. | Faiz talebinin asıl hukuki kaynağı, faiz başlangıç tarihi, dönemsel oran kaydı ve exact Document version/fingerprint |
+| `KANUN_3095_2` | `ACCRUED_INTEREST` | `RATE_AUTHORITY`; şartları oluştuğunda kanuni temerrüt faizi ve ticari temerrüt faizi. Temerrüt oluşmadan kullanılamaz. | Para borcu, temerrüt başlangıcı, sözleşmesel oran bulunup bulunmadığı, ticari nitelik iddiası varsa buna ilişkin source ve exact Document version/fingerprint |
+| `TBK_117` | `ACCRUED_INTEREST` | `FORMATION_CONDITION`; temerrüt ve ticari temerrüt faizinin başlangıç şartı. Rate authority `NONE`; principal, cost veya ancillary kalemi doğrudan oluşturamaz. | Muacceliyet kaynağı, ihtar veya ihtarsız temerrüt sebebi, temerrüt başlangıç tarihi ve exact Document version/fingerprint |
+| `TBK_118` | `ANCILLARY` | `CONSEQUENCE_AUTHORITY`; temerrüdün doğurduğu zarar ve genişletilmiş sorumluluk. Otomatik faiz veya penalty authority değildir. | Temerrüt olgusu, zarar iddiası, illiyet ve sorumluluk kaynağı ile exact Document version/fingerprint |
+| `TBK_120` | `ACCRUED_INTEREST` | `RATE_CONSTRAINT / CONTRACTUAL_RATE_AUTHORITY`; para borcunda sözleşmesel temerrüt faizi ve sınırları. | Para borcu, sözleşmedeki exact faiz hükmü, temerrüt başlangıç tarihi ve exact Document version/fingerprint |
+| `TTK_1530` | `ACCRUED_INTEREST`, `COST` | `FORMATION_CONDITION / RATE_AUTHORITY / COST_AUTHORITY`; yalnız kapsama giren ticari mal/hizmet tedarikinde geç ödeme, ticari temerrüt faizi ve kanunen izin verilen tahsil gideri. Category'ler birbirine dönüştürülemez. | Kapsama giren ticari mal/hizmet tedariki, fatura veya eşdeğer ödeme talebi, teslim/ifa tarihi, vade ve ödeme süresi, tarafların ticari sıfatını gösteren source ve exact Document version/fingerprint |
+
+Her entry ClaimItem debtor/liability scope'u ile aynı borç ilişkisine bağlanır. Başka borçluya
+veya başka hukuki ilişkiye ait Legal Basis kullanılamaz. `TTK_1530` consumer, employment veya
+ilgisiz ticari borçta yasaktır. `ACCRUED_INTEREST` ancak faiz doğum şartları ayrıca doğrulanmışsa
+kullanılabilir; `TBK_120` sözleşmesel oran ve yasal sınır kontrolü gerektirir; `TTK_1530` ticari
+ilişkiyi tek başına varsayamaz. Bu hükümler tenant overlay ile gevşetilemez.
+
+Bu tablo complete production `legalBases[]` değildir: required exact
+`subtypeRegistryBinding{registryId,registryVersion,registryChecksum,allowedSubtypeCodes[]}` alanı
+SR01 tamamlanmadan üretilemez. Buna rağmen burada kaydedilen code/version, component-category,
+legal role, usage, source/evidence, liability ve interest-eligibility semantics owner-ratified
+release input'udur; candidate statüsünden çıkarılmıştır.
+
+### 23.32.3. Subtype Registry prerequisite
+
+Şu isimler yalnız owner-supplied candidate semantics'tir; production subtype authority veya
+`allowedSubtypeCodes[]` değildir:
+
+```text
+DEFAULT_INTEREST
+DELAY_DAMAGE
+CONTRACTUAL_DEFAULT_INTEREST
+STATUTORY_INTEREST
+STATUTORY_DEFAULT_INTEREST
+COMMERCIAL_DEFAULT_INTEREST
+COMMERCIAL_COLLECTION_COST
+```
+
+Canonical versioned Subtype Registry bulunmadığından exact registry identity/version/checksum,
+per-subtype versioning ve Legal Basis entry binding'i şu ayrı prerequisite altında ratify
+edilecektir:
+
+```text
+RCV-CLAIM-FORM-P02-S08-D02-SR01
+Versioned Legal Subtype Registry Ratification
+```
+
+SR01 code/schema/migration/runtime veya subtype-registry implementation yetkisi değildir ve ayrı
+owner GO gerektirir. SR01 kapanmadan D02-F01 signed release veya resolver implementation'ı
+başlayamaz.
+
+### 23.32.4. Authority roles, keys ve checksum-bound decisions
+
+```text
+LEGAL_REVIEWER
+  identity                         Av. Fatma Uluca Telli
+  professional authority          İstanbul 1 No'lu Barosu / Sicil No: 36582
+
+FINAL_LEGAL_RATIFIER
+  identity                         Av. Ulaş Hüseyin Telli
+
+PRODUCTION_RELEASE_SIGNER
+  signerId                         TELLI-PROD-LEGAL-01
+  authority                        OPERATIONAL PUBLICATION ONLY / NO LEGAL AUTHORITY
+```
+
+Üç rol aynı kişi/signer/key ile birleştirilemez. Reviewer'ın immutable
+`professionalAuthorityEvidenceRef` değeri ile üç role ait ayrı Ed25519 public key,
+fingerprint/keyId, `validFrom`, custody owner ve revoke/rotation evidence hâlâ eksiktir.
+Private key istenmez, üretilmez veya repository/database/log/fixture'a yazılmaz.
+
+Reviewer `APPROVED` kararı ve final ratifier `APPROVED_FOR_PRODUCTION_FOUNDATION` kararı ancak
+complete payload checksum'u üretildikten sonra aynı exact `releaseId`, `releaseVersion` ve
+`releaseChecksum` değerlerine bağlanarak verilebilir. Bu görev o kararları veya signature'ları
+üretmez; production signer hukuki review veya final ratification yerine geçmez.
+
+### 23.32.5. Readiness
+
+```text
+TASK                                RCV-CLAIM-FORM-P02-S08-D02-F01-R03
+STATUS                              RATIFIED / CANONICAL
+RELEASE IDENTITY                    NON-CIRCULAR / CLOSED
+EFFECTIVE-TIME MODEL                SCHEDULED / EXACT effectiveAt PENDING
+COMPONENT CATEGORY CONTRACT         CR01'E BAĞLI / CLOSED
+LEGAL CONTENT SEMANTICS             RATIFIED
+SUBTYPE REGISTRY                    MISSING / D02-SR01 REQUIRED
+PUBLIC KEYS                         MISSING
+CHECKSUM-BOUND LEGAL DECISIONS      PENDING
+SIGNED RELEASE                      NOT CREATED
+D02-F01 IMPLEMENTATION              STILL BLOCKED
+D02-I01                             NOT AUTHORIZED
+CODE / SCHEMA / MIGRATION           NONE
+RUNTIME                             DORMANT / DEFAULT DISABLED
+I04                                 BLOCKED / NOT AUTHORIZED
+NEXT                                RCV-CLAIM-FORM-P02-S08-D02-SR01 /
+                                    SEPARATE OWNER GO REQUIRED
+```
+
+Bu ratification subtype registry, key onboarding, signature execution, signed artifact,
+code/test/schema/migration, resolver/provider wiring, runtime activation, Document authority,
+I04/I05 veya historical data değişikliği üretmez.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar
