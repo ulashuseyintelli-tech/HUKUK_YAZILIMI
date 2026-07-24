@@ -3148,6 +3148,28 @@ writer/evidence/cutover için korunmuş future blocker'dır. **NEXT ELIGIBLE ACT
 TPA-04C-I06 — WRITER COMPATIBILITY CONTRACT TESTS — OWNER GO-IMPLEMENT REQUIRED / NOT
 STARTED.** I06 otomatik başlamaz; I07 ve TPA-04D `NOT AUTHORIZED`dır.
 
+**RCV-COL-TPA-04C-I06 Formal Closure Reconciliation (2026-07-24; CANONICAL UPON APPROVED
+GOVERNANCE MERGE):** I06 test-only implementation PR #1571 / squash
+`1d0422800245ff133176e664d1ea96949b4e26e5`, exact authorized
+`apps/api/src/modules/interest-engine/legal-application-plan/__tests__/i06-writer-compatibility-contract.spec.ts`
+scope'u ve required CI `4/4 PASS` ile `CLOSED / CANONICAL EVIDENCE`dır. I06 targeted `9/9`,
+I01-I06 aggregate `194/194`; scoped strict type-check, ESLint ve API build `PASS`tır. General
+type-check yalnız pre-existing unrelated baseline errors taşır ve I06 diagnostic yoktur.
+
+LegalApplicationPlan çıktısının ratified writer input contract'ını karşılayabildiği; required
+TPA-04B evidence alanlarının plan/snapshot facts'ten temsil edilebildiği; money değerlerinin exact
+minor-unit bigint-safe kaldığı; application sırası, bucket identity ve explicit HELD conservation'ın
+korunduğu; attribution'ın optional/non-authoritative ve persistence ID'lerinin
+writer/orchestrator-owned olduğu kanıtlanmıştır. Bu evidence writer davranışı veya persistence
+authority üretmez. Bu docs-only reconciliation'ın production/test/runtime,
+Prisma/schema/migration/live DB ve consumer etkisi `NONE`; runtime writer
+`NOT IMPLEMENTED / NOT ACTIVATED` kalır. ACT-28 ve REC-AUTH-011/012
+`OPEN`; synthetic corpus writer/evidence/cutover için korunmuş blocker'dır. **NEXT ELIGIBLE ACTION:
+TPA-04C PROGRAM CLOSURE / I07 DISPOSITION ANALYSIS — OWNER GO-ANALYZE veya GO-DECIDE
+REQUIRED.** I07 `NOT STARTED / NOT AUTHORIZED`; exact seam ownership, TPA-04C/TPA-04D
+yerleşimi, snapshot producer, writer dependency, synthetic-corpus disposition ve runtime
+activation yasağı owner gate'i olmadan değişmez.
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)
