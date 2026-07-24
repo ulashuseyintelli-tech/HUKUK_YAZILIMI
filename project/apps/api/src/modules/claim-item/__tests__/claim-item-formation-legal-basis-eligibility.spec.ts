@@ -4,7 +4,10 @@ import {
   type LegalBasisEligibilityExpectedBinding,
   type LegalBasisEligibilityInput,
 } from '../formation-intent/claim-item-formation-legal-basis-eligibility';
-import { type ExactLegalBasisBindingV1 } from '../formation-intent/claim-item-formation-resolver.ports';
+import {
+  EXACT_LEGAL_BASIS_RESOLUTION_FAILURE_CODES,
+  type ExactLegalBasisBindingV1,
+} from '../formation-intent/claim-item-formation-resolver.ports';
 
 const HASH = (value: string) => stableJsonHash({ value });
 
@@ -276,6 +279,29 @@ describe('RCV-CLAIM-FORM-P02-S08-D01B-CONTRACT-PARITY-I01 assertLegalBasisEligib
       const basis = legalBasis({ legalBasisChecksum: 'not-a-valid-checksum' });
       const result = assertLegalBasisEligible(baseInput({ legalBasis: basis }));
       expect(result).toMatchObject({ ok: false, failure: { code: 'IDENTITY_MISMATCH' } });
+    });
+  });
+
+  describe('S08-D02-R01 resolver failure vocabulary reconciliation (RECEIVABLE-GOVERNANCE.md §23.27.5)', () => {
+    it('is exactly the nine canonical dispositions, in the ratified order', () => {
+      expect(EXACT_LEGAL_BASIS_RESOLUTION_FAILURE_CODES).toEqual([
+        'VERSION_NOT_FOUND',
+        'RELEASE_NOT_FOUND',
+        'AUTHORITY_UNAVAILABLE',
+        'REVOKED',
+        'SUPERSEDED',
+        'CHECKSUM_MISMATCH',
+        'FINGERPRINT_MISMATCH',
+        'SCOPE_MISMATCH',
+        'LEGACY_UNRESOLVED',
+      ]);
+    });
+
+    it('no longer contains the pre-reconciliation four-code resolver vocabulary', () => {
+      const superseded = ['NOT_FOUND', 'STATUS_NOT_ELIGIBLE', 'NOT_EFFECTIVE_AT_DATE', 'RESOLUTION_UNAVAILABLE'];
+      for (const code of superseded) {
+        expect(EXACT_LEGAL_BASIS_RESOLUTION_FAILURE_CODES as readonly string[]).not.toContain(code);
+      }
     });
   });
 });

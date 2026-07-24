@@ -86,18 +86,23 @@ jobs:
       # RCV-CLAIM-FORM-P02-S08-I02B: typed human-formation admission stays
       # dormant/default-disabled; only intent + OfficeApproval + request audit
       # may be created atomically. Exact resolver ports have no production adapter.
+      # D01B-CONTRACT-PARITY-I01: the shared Legal Basis eligibility validator
+      # (used by both admission and the dormant finalizer) is unit-tested here
+      # too — no DB dependency, same non-DB-gated group.
       - name: RCV Claim Formation I02B typed admission and dormancy tests
         run: |
           cd apps/api
           for f in src/modules/claim-item/__tests__/claim-item-formation-intent-admission.spec.ts \
                    src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spec.ts \
-                   src/modules/claim-item/__tests__/claim-formation-persistence-foundation.static.spec.ts; do
+                   src/modules/claim-item/__tests__/claim-formation-persistence-foundation.static.spec.ts \
+                   src/modules/claim-item/__tests__/claim-item-formation-legal-basis-eligibility.spec.ts; do
             test -f "$f" || { echo "MISSING RCV Claim Formation I02B spec: $f"; exit 1; }
           done
           npx jest --ci --forceExit --runInBand --runTestsByPath \
             src/modules/claim-item/__tests__/claim-item-formation-intent-admission.spec.ts \
             src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spec.ts \
-            src/modules/claim-item/__tests__/claim-formation-persistence-foundation.static.spec.ts
+            src/modules/claim-item/__tests__/claim-formation-persistence-foundation.static.spec.ts \
+            src/modules/claim-item/__tests__/claim-item-formation-legal-basis-eligibility.spec.ts
         working-directory: project
       - name: RCV Claim Formation I02B atomic disposable DB tests
         env:

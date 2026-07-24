@@ -135,16 +135,34 @@ export interface ExactLegalBasisBindingV1 {
 }
 
 /**
- * RCV-CLAIM-FORM-P02-S08-D01B-CONTRACT-PARITY-I01 (owner-ratified D3).
- * Deliberately excludes a `retryability` classification: whether a failed
+ * RCV-CLAIM-FORM-P02-S08-D01B-CONTRACT-PARITY-I01 (owner-ratified D3):
+ * deliberately excludes a `retryability` classification — whether a failed
  * resolution should be retried is an orchestration/application-policy
  * decision, out of scope for this resolver contract.
+ *
+ * Canonical resolver-level disposition union, aligned with the S08-D02-R01
+ * exact-version source readiness contract ratified in
+ * RECEIVABLE-GOVERNANCE.md §23.27.5 (PR #1570). This is exact-version/
+ * release/authority resolution failure only — a binding this port
+ * successfully resolves is separately subject to application-eligibility
+ * validation (lifecycle status × mode, temporal validity, etc.) in
+ * `claim-item-formation-legal-basis-eligibility.ts`, which has its own,
+ * unrelated failure vocabulary. Only `AUTHORITY_UNAVAILABLE` is
+ * retryable (transient); the other eight are not.
  */
+export const EXACT_LEGAL_BASIS_RESOLUTION_FAILURE_CODES = [
+  'VERSION_NOT_FOUND',
+  'RELEASE_NOT_FOUND',
+  'AUTHORITY_UNAVAILABLE',
+  'REVOKED',
+  'SUPERSEDED',
+  'CHECKSUM_MISMATCH',
+  'FINGERPRINT_MISMATCH',
+  'SCOPE_MISMATCH',
+  'LEGACY_UNRESOLVED',
+] as const;
 export type ResolveExactLegalBasisFailureCode =
-  | 'NOT_FOUND'
-  | 'STATUS_NOT_ELIGIBLE'
-  | 'NOT_EFFECTIVE_AT_DATE'
-  | 'RESOLUTION_UNAVAILABLE';
+  (typeof EXACT_LEGAL_BASIS_RESOLUTION_FAILURE_CODES)[number];
 
 export type ResolveExactLegalBasisResult =
   | { readonly ok: true; readonly value: ExactLegalBasisBindingV1 }

@@ -11,6 +11,7 @@ import {
   LegalBasisExactVersionResolverPort,
   type ExactCaseDocumentSourceV1,
   type ExactLegalBasisBindingV1,
+  type ResolveExactLegalBasisFailureCode,
 } from '../formation-intent/claim-item-formation-resolver.ports';
 import { ClaimItemFormationOfficeApprovalAdapter } from '../formation-intent/claim-item-formation-office-approval.adapter';
 import { HumanClaimItemFormationAdmissionService } from '../formation-intent/human-claim-item-formation-admission.service';
@@ -126,6 +127,7 @@ function buildHarness(options: {
   enabled?: boolean;
   source?: ExactCaseDocumentSourceV1 | null;
   legalBasis?: ExactLegalBasisBindingV1 | null;
+  legalBasisResolverFailureCode?: ResolveExactLegalBasisFailureCode;
 } = {}) {
   const order: string[] = [];
   const authorization = {
@@ -142,9 +144,12 @@ function buildHarness(options: {
   const basisResolver = {
     resolveExactVersion: jest.fn(async () => {
       order.push('legal-basis');
+      if (options.legalBasisResolverFailureCode !== undefined) {
+        return { ok: false as const, failure: { code: options.legalBasisResolverFailureCode } };
+      }
       const value = options.legalBasis === undefined ? legalBasis() : options.legalBasis;
       return value === null
-        ? { ok: false as const, failure: { code: 'NOT_FOUND' as const } }
+        ? { ok: false as const, failure: { code: 'VERSION_NOT_FOUND' as const } }
         : { ok: true as const, value };
     }),
   } as unknown as LegalBasisExactVersionResolverPort;
@@ -316,6 +321,33 @@ describe('RCV-CLAIM-FORM-P02-S08-I02B typed formation intent admission', () => {
     ).rejects.toMatchObject({ code });
     expect(harness.atomicWriter.createAtomic).not.toHaveBeenCalled();
   });
+
+  // S08-D02-R01 (RECEIVABLE-GOVERNANCE.md §23.27.5, PR #1570): canonical
+  // resolver-level disposition contract for the Legal Basis exact-version
+  // source, exhaustively mapped onto this consumer's pre-existing codes.
+  it.each([
+    ['VERSION_NOT_FOUND', 'LEGAL_BASIS_VERSION_NOT_FOUND'],
+    ['RELEASE_NOT_FOUND', 'LEGAL_BASIS_VERSION_NOT_FOUND'],
+    ['AUTHORITY_UNAVAILABLE', 'FORMATION_SOURCE_UNAVAILABLE'],
+    ['REVOKED', 'LEGAL_BASIS_NOT_EFFECTIVE'],
+    ['SUPERSEDED', 'LEGAL_BASIS_NOT_EFFECTIVE'],
+    ['CHECKSUM_MISMATCH', 'INVALID_FORMATION_CONTEXT'],
+    ['FINGERPRINT_MISMATCH', 'SOURCE_FINGERPRINT_MISMATCH'],
+    ['SCOPE_MISMATCH', 'FORMATION_SOURCE_UNAVAILABLE'],
+    ['LEGACY_UNRESOLVED', 'FORMATION_SOURCE_UNAVAILABLE'],
+  ] as const)(
+    'fails closed for resolver-level disposition %s',
+    async (failureCode, code) => {
+      const harness = buildHarness({ legalBasisResolverFailureCode: failureCode });
+      await expect(
+        harness.service.admit(
+          { tenantId: TENANT, actorUserId: ACTOR, correlationId: 'correlation-1' },
+          command(),
+        ),
+      ).rejects.toMatchObject({ code });
+      expect(harness.atomicWriter.createAtomic).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects client-supplied server authority/version/checksum fields', () => {
     expect(() =>

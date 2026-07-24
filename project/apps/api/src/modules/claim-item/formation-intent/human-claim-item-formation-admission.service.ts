@@ -337,14 +337,35 @@ export class HumanClaimItemFormationAdmissionService {
    * (owner-ratified D3/parity requirement: consumer-facing codes are
    * preserved, not renamed, even though the underlying check now runs
    * through `assertLegalBasisEligible` shared with the finalizer).
+   *
+   * Resolver-level cases (the nine `ResolveExactLegalBasisFailureCode`
+   * values) follow the exact per-disposition mapping ratified in
+   * RECEIVABLE-GOVERNANCE.md §23.27.5 (S08-D02-R01, PR #1570) for the
+   * Legal Basis source; eligibility-level cases are this task's own,
+   * unrelated application-validation vocabulary and are unchanged.
    */
   private mapLegalBasisFailure(
     code: ResolveExactLegalBasisFailureCode | LegalBasisEligibilityFailureCode,
   ): ClaimItemFormationAdmissionErrorCode {
     switch (code) {
+      // Resolver-level (S08-D02-R01 §23.27.5 canonical disposition contract).
+      case 'VERSION_NOT_FOUND':
+      case 'RELEASE_NOT_FOUND':
+        return 'LEGAL_BASIS_VERSION_NOT_FOUND';
+      case 'REVOKED':
+      case 'SUPERSEDED':
+        return 'LEGAL_BASIS_NOT_EFFECTIVE';
+      case 'CHECKSUM_MISMATCH':
+        return 'INVALID_FORMATION_CONTEXT';
+      case 'FINGERPRINT_MISMATCH':
+        return 'SOURCE_FINGERPRINT_MISMATCH';
+      case 'AUTHORITY_UNAVAILABLE':
+      case 'SCOPE_MISMATCH':
+      case 'LEGACY_UNRESOLVED':
+        return 'FORMATION_SOURCE_UNAVAILABLE';
+      // Eligibility-level (this task's own common-validator vocabulary).
       case 'NOT_FOUND':
       case 'IDENTITY_MISMATCH':
-      case 'STATUS_NOT_ELIGIBLE':
         return 'LEGAL_BASIS_VERSION_NOT_FOUND';
       case 'LIFECYCLE_NOT_ELIGIBLE':
       case 'NOT_EFFECTIVE_AT_DATE':
@@ -363,7 +384,6 @@ export class HumanClaimItemFormationAdmissionService {
       case 'INTEREST_POLICY_INVALID':
       case 'PROJECTION_UNSUPPORTED':
       case 'BINDING_DRIFT':
-      case 'RESOLUTION_UNAVAILABLE':
         return 'INVALID_FORMATION_CONTEXT';
     }
   }
