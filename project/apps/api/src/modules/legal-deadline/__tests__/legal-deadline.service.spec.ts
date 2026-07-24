@@ -60,7 +60,9 @@ describe("LegalDeadlineService — hukuki rejim hesaplaması", () => {
     const created = tx.legalDeadlineSnapshot.create.mock.calls[0][0].data;
     expect(created.legalServiceDate).toEqual(new Date("2026-01-10T00:00:00Z"));
     expect(created.deadlineReasonCode).toBe("DIRECT_DELIVERY");
-    expect(created.calculationRule).toBe("DIRECT_NO_DELAY");
+    // calculationRule artık LegalServiceDateRuleCore'un IMMEDIATE_SERVICE rejim adını
+    // yansıtır (I02 delegasyonu) — deadlineReasonCode (dış/public alan) değişmedi.
+    expect(created.calculationRule).toBe("IMMEDIATE_SERVICE_NO_DELAY");
   });
 
   it("TK 21/1 (bilinen adreste imtina): legalServiceDate = muhtarlikDate, gecikmesiz", async () => {
@@ -89,28 +91,26 @@ describe("LegalDeadlineService — hukuki rejim hesaplaması", () => {
     expect(created.calculationRule).toBe("TK_21_2_NO_DELAY");
   });
 
-  it("TK m.20 (muvakkaten başka yere gitme): legalServiceDate = ilanDate + 15 gün", async () => {
+  it("DEBTOR-OF01-HISTORY-P04-B-R2-I02 — TK m.20: Tebligat'ta güvenilir completion mode kaynağı yok → fail-closed (eski koşulsuz +15 gün davranışı KALDIRILDI)", async () => {
     const tebligat = buildTebligat({ tk21Type: "TK_20", ilanDate: new Date("2026-01-10T00:00:00Z") });
     const { prisma, tx } = buildPrisma(tebligat);
     const svc = new LegalDeadlineService(prisma);
 
-    await svc.calculateDeadline({ tenantId: "tenant-a", tebligatId: "teb-1", objectionPeriodDays: 7 });
-
-    const created = tx.legalDeadlineSnapshot.create.mock.calls[0][0].data;
-    expect(created.legalServiceDate).toEqual(new Date("2026-01-25T00:00:00Z"));
-    expect(created.deadlineReasonCode).toBe("TK_20");
-    expect(created.calculationRule).toBe("TK_20_PLUS_15_DAYS");
+    await expect(
+      svc.calculateDeadline({ tenantId: "tenant-a", tebligatId: "teb-1", objectionPeriodDays: 7 }),
+    ).rejects.toThrow(BadRequestException);
+    expect(tx.legalDeadlineSnapshot.create).not.toHaveBeenCalled();
   });
 
-  it("TK m.20 fallback: ilanDate yoksa muhtarlikDate kaynak alınır", async () => {
-    const tebligat = buildTebligat({ tk21Type: "TK_20", ilanDate: null, muhtarlikDate: new Date("2026-01-10T00:00:00Z") });
+  it("TK m.20: hem ilanDate hem muhtarlikDate yoksa → fail-closed (tarih kaynağı eksik)", async () => {
+    const tebligat = buildTebligat({ tk21Type: "TK_20", ilanDate: null, muhtarlikDate: null });
     const { prisma, tx } = buildPrisma(tebligat);
     const svc = new LegalDeadlineService(prisma);
 
-    await svc.calculateDeadline({ tenantId: "tenant-a", tebligatId: "teb-1", objectionPeriodDays: 7 });
-
-    const created = tx.legalDeadlineSnapshot.create.mock.calls[0][0].data;
-    expect(created.legalServiceDate).toEqual(new Date("2026-01-25T00:00:00Z"));
+    await expect(
+      svc.calculateDeadline({ tenantId: "tenant-a", tebligatId: "teb-1", objectionPeriodDays: 7 }),
+    ).rejects.toThrow(BadRequestException);
+    expect(tx.legalDeadlineSnapshot.create).not.toHaveBeenCalled();
   });
 
   it("ilanen tebliğ (m.31): legalServiceDate = ilanDate + 7 gün", async () => {
