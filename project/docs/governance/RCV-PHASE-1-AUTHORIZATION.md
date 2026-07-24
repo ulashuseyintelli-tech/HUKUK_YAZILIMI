@@ -93,13 +93,14 @@ RCV-CLAIM-FORM-P02-S08-I02B : FORMALLY CLOSED / CANONICAL TECHNICAL IMPLEMENTATI
 RCV-CLAIM-FORM-P02-S08-I02B-I01 : CLOSED / FULLY SUPERSEDED (local commit 89c16e9b430269268e0783ea0bfa70fed2436f57 — CODE DISCARDED / NOT MERGED; requirements PRESERVED / SATISFIED BY PR #1556 / 1d47fef64e66b01561c12dc2717a63e7262dcfca)
 RCV-CLAIM-FORM-P02-S08-I03  : FORMALLY CLOSED / CANONICAL TECHNICAL IMPLEMENTATION (implementation PR #1556 / 1d47fef6)
 RCV-CLAIM-FORM-P02-S08-D02-R01 : RATIFIED DESIGN / CANONICAL — IMPLEMENTATION BLOCKERS REGISTERED
+RCV-CLAIM-FORM-P02-S08-D02-F01-R01 : RATIFIED DESIGN / CANONICAL — RELEASE + TRUST CONTRACT READY / CONTENT + KEYS MISSING
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-F01 — OWNER GO REQUIRED / NOT AUTHORIZED
+Claim Formation next task   : OWNER LEGAL CONTENT + REVIEWER + PRODUCTION PUBLIC-KEY INPUT REQUIRED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -2860,6 +2861,117 @@ canlıya uygulandığını gösterir; güncel current-state `APPLIED`, runtime y
 `DEFAULT DISABLED`dır. Bu kayıt kod, schema/migration, provider wiring, runtime activation,
 web/client, I04/I05, historical backfill veya başka bounded-context implementation authority'si
 üretmez.
+
+### 1.31J RCV-CLAIM-FORM-P02-S08-D02-F01-R01 release ve trust-root contract ratification
+
+```text
+TASK:
+RCV-CLAIM-FORM-P02-S08-D02-F01-R01
+
+STATUS:
+RATIFIED DESIGN / CANONICAL
+
+FINAL LEGAL RATIFIER:
+ULAŞ HÜSEYİN TELLİ
+
+RELEASE ID FORMAT:
+RCV-LB-R<positive-decimal-releaseVersion>
+
+CANONICAL SERIALIZATION:
+UTF-8 / NFC / LEXICOGRAPHIC OBJECT KEYS / CONTRACT-ORDERED ARRAYS
+
+RELEASE CHECKSUM:
+SHA-256 / LOWERCASE HEX / CANONICAL UNSIGNED PAYLOAD ONLY
+
+PRODUCTION SIGNATURE:
+ED25519 / BASE64URL WITHOUT PADDING
+
+SIGNED PREIMAGE:
+UTF8("RECEIVABLE_LEGAL_BASIS_RELEASE_V1") + LF + ASCII(releaseChecksum)
+
+PRODUCTION MULTI-SIGNATURE:
+REQUIRED — DISTINCT LEGAL_REVIEWER + FINAL_LEGAL_RATIFIER
+
+TRUST-ROOT CONTRACT:
+RATIFIED
+
+PRODUCTION PUBLIC KEYS:
+MISSING — OWNER INPUT REQUIRED / NO PLACEHOLDER
+
+INITIAL LEGAL CONTENT:
+MISSING — OWNER CONTENT REQUIRED / NO EMPTY OR DEMO PRODUCTION RELEASE
+
+FIRST AUTHORIZED RELEASE:
+NOT CREATED / NOT RATIFIED
+
+PRIVATE KEY:
+NOT STORED / NOT REQUESTED / NOT GENERATED
+
+CODE / SCHEMA / MIGRATION / RUNTIME:
+NONE
+
+D02-F01:
+BLOCKED PENDING CONTENT + REVIEWER + PRODUCTION PUBLIC KEYS
+
+I04:
+BLOCKED / NOT AUTHORIZED
+
+NEXT:
+OWNER LEGAL CONTENT + REVIEWER + PRODUCTION PUBLIC-KEY INPUT REQUIRED
+```
+
+Canonical unsigned payload; `schemaVersion`, `releaseId`, `releaseVersion`, `effectiveAt` ve
+non-empty `legalBases[]` alanlarını taşır. Her Legal Basis kaydı stable
+`legalBasisCode`, immutable `legalBasisVersion`, effective interval, legal authority/source
+evidence, exact version-bound Subtype Registry reference ve formation compatibility hükümlerini
+taşır. Production payload'da float, duplicate key, unknown field, implicit array sorting,
+automatic current/latest upgrade veya unresolved reference kabul edilmez.
+
+Object key'leri Unicode code-point lexicographic sıradadır. Diziler serializer tarafından
+yeniden sıralanmaz; sözleşmenin belirlediği sırada sağlanır ve farklı sıra farklı payload sayılır.
+Timestamp yalnız UTC `YYYY-MM-DDTHH:mm:ssZ`; integer değerler JSON integer veya canonical
+decimal string, para değerleri decimal string olarak taşınır; float yasaktır. String'ler NFC'dir,
+line ending yalnız LF, trailing whitespace ve UTF-8 BOM yasaktır. `null` yalnız schema açıkça
+izin veriyorsa anlamlıdır; optional alan yoksa omit edilir, `null` ile omit eşit değildir.
+
+`releaseChecksum`, canonical unsigned payload byte'larının SHA-256 digest'inin 64 karakterli
+lowercase hexadecimal gösterimidir. Manifest, signatures, ratification evidence ve lifecycle
+metadata checksum preimage'ine girmez. İmza preimage'i tam olarak UTF-8/ASCII
+`RECEIVABLE_LEGAL_BASIS_RELEASE_V1`, tek LF byte'ı ve 64 lowercase checksum karakteridir; sonunda
+LF veya NUL yoktur.
+
+Production global activation, aynı preimage üzerinde iki farklı Ed25519 anahtarından iki geçerli
+imza ister: `LEGAL_REVIEWER` ve `FINAL_LEGAL_RATIFIER`. İki rol aynı kişi, signer identity veya
+key ile karşılanamaz. Final ratifier Ulaş Hüseyin Telli'dir; reviewer ayrıca owner-authorized
+legal professional olmalıdır. Signature raw 64 byte Ed25519 çıktısının unpadded base64url
+encoding'idir. `keyId`, raw 32-byte public key'in SHA-256 fingerprint'ine bağlı
+`rcv-lb-ed25519-<64-lowercase-hex>` formatındadır.
+
+Production trust root yalnız owner-approved public keys, signer identity, professional-authority
+evidence reference, role, validity interval ve lifecycle state taşır. Test keys/config production
+bundle, provider ve allowlist'ten fiziksel ve mantıksal olarak ayrıdır. `ACTIVE` key yeni ve
+historical doğrulamada kullanılabilir; `RETIRED` key yalnız kendi geçerli dönemindeki historical
+artifact'ları doğrular; `REVOKED`/`COMPROMISED` key yeni admission üretemez. Compromise cutoff
+bilinmiyorsa etkilenen bütün release'ler fail-closed bloke edilir. Rotation yeni append-only trust
+entry üretir; key replacement eski imzayı veya release'i mutate etmez.
+
+Payload checksum uyuşmazlığı `CHECKSUM_MISMATCH`; malformed/invalid signature, eksik ikinci imza,
+unknown/untrusted key veya trust source yokluğu `AUTHORITY_UNAVAILABLE`; revoked/compromised key
+`REVOKED`; signed supersession lifecycle'ı `SUPERSEDED` üretir. Yalnız gerçekten transient trust
+source unavailability bounded retryable'dır; invalid signature veya eksik authority input
+retryable değildir. Existing ClaimItem/snapshot mutate veya backfill edilmez.
+
+Legal-ratification evidence exact `releaseId`, `releaseVersion` ve `releaseChecksum`a bağlı
+ratifier identity, professional authority, role, UTC ratification timestamp, explicit approval
+statement ve immutable evidence signature/reference taşır. OfficeApproval, developer, staff,
+administrator veya runtime service bu evidence'ın yerine geçemez. Initial legalBasis listesi,
+effectiveAt, reviewer ataması ve production public keys bu görevde sağlanmadığı için first
+release `MISSING / OWNER CONTENT REQUIRED` kalır; boş, örnek veya test release production
+authority olarak üretilemez.
+
+Bu kayıt production code, key generation/private-key handling, signed artifact, schema/migration,
+resolver/provider wiring, runtime activation, Document authority değişikliği veya I04/I05
+authority'si üretmez.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 

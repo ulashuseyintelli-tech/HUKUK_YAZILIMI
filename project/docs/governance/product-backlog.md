@@ -2622,6 +2622,59 @@ Bu design ratification kod, test, schema, migration, provider wiring, runtime ac
 web/client veya I04/I05 implementation'ı başlatmaz. Shared Evidence owner'ı adına authority
 üretmez.
 
+## RCV-CLAIM-FORM-P02-S08-D02-F01-R01 — Legal Basis Release and Trust-Root Contract
+
+```text
+PROGRAM LOCK                       RECEIVABLE / CLAIM FORMATION
+STATUS                             RATIFIED DESIGN / CANONICAL
+FINAL LEGAL RATIFIER               ULAŞ HÜSEYİN TELLİ
+SERIALIZATION / CHECKSUM           RATIFIED
+SIGNATURE / PREIMAGE               ED25519 / RATIFIED
+FOUR-EYES MULTI-SIGNATURE          DISTINCT REVIEWER + FINAL RATIFIER / REQUIRED
+TRUST-ROOT LIFECYCLE               RATIFIED
+INITIAL LEGAL CONTENT              MISSING / OWNER CONTENT REQUIRED
+INITIAL RELEASE ID/VERSION/DATE    MISSING / CONTENT NOT RATIFIED
+LEGAL REVIEWER                     MISSING / OWNER APPOINTMENT REQUIRED
+PRODUCTION PUBLIC KEYS             MISSING / OWNER INPUT REQUIRED
+FIRST AUTHORIZED RELEASE           NOT CREATED / NOT RATIFIED
+D02-F01 IMPLEMENTATION             BLOCKED
+PRODUCTION RESOLVER / PROVIDER     NOT IMPLEMENTED
+RUNTIME                            DORMANT / DEFAULT DISABLED
+S08-I04                            BLOCKED / NOT AUTHORIZED
+NEXT                               OWNER LEGAL CONTENT + REVIEWER +
+                                   PRODUCTION PUBLIC-KEY INPUT REQUIRED
+```
+
+### Ratified contract
+
+- Release identity `releaseVersion` pozitif decimal string ve
+  `releaseId = RCV-LB-R<releaseVersion>`dır.
+- Unsigned payload UTF-8/BOM-free/NFC, lexicographic object keys, contract-ordered arrays,
+  UTC second-precision RFC3339 timestamps, LF-only ve no-trailing-whitespace ile canonicalize
+  edilir. Float, duplicate/unknown keys ve implicit array sorting yasaktır.
+- Release checksum canonical unsigned payload bytes üzerinde SHA-256 lowercase hex'tir.
+  Manifest/signature/ratification/lifecycle metadata checksum preimage'ine girmez.
+- Production signatures Ed25519 ve unpadded base64url'dur. Exact preimage
+  `RECEIVABLE_LEGAL_BASIS_RELEASE_V1 + LF + releaseChecksum`, trailing LF/NUL olmadan imzalanır.
+- Production activation iki distinct signature ister: `LEGAL_REVIEWER` ve
+  `FINAL_LEGAL_RATIFIER`. Aynı kişi/signer/key iki rolü karşılayamaz.
+- Trust root append-only ACTIVE/RETIRED/REVOKED/COMPROMISED lifecycle, rotation ve historical
+  verification kuralları taşır. Production/test roots fiziksel ve mantıksal ayrıdır.
+- Ratification evidence exact releaseId/version/checksum'a bağlıdır. OfficeApproval/developer/
+  staff hukuki ratification evidence değildir.
+- Global Legal Basis + yalnız daha sıkı tenant operational/evidence overlay ve exact
+  version-bound Subtype Registry ilişkisi korunur.
+
+### Open owner inputs
+
+İlk hukuki release içeriği/code listesi, effectiveAt, ayrı legal reviewer ve production public
+keys sağlanmamıştır. Private key istenmez, üretilmez veya saklanmaz. Bu girdiler tamamlanmadan
+empty/demo/test release production authority olarak işaretlenemez; artifact, resolver/provider,
+schema/migration veya runtime activation başlatılamaz.
+
+Bu docs-only ratification Document authority, I02B/I03, I04/I05, historical data veya başka
+bounded-context davranışını değiştirmez.
+
 ---
 
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
