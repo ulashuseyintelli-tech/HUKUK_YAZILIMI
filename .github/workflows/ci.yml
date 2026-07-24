@@ -1295,6 +1295,19 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="service-occurrence-recorded-event\.accessor\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # OF01-HISTORY-P04-B-R2-I01 (PR #1568, merged af1ec181): LegalServiceDateRuleCore — legacy
+      # Tebligat-tabanlı ve ServiceOccurrence-tabanlı adapter'ların TK-rejim → hukuki tebliğ tarihi
+      # hesaplamasını ortaklaştıracak saf, deterministik hesap çekirdeği (bu dilimde hiçbir adapter
+      # buraya yönlendirilmez, DB erişimi yok). Yukarıdaki dar allowlist pattern'lerinin hiçbirine
+      # girmiyor (dosya adı hiçbirini eşlemiyor) → narrow named step olmadan CI'da hiç koşmaz.
+      - name: OF01-HISTORY-P04-B-R2-I01 LegalServiceDateRuleCore unit tests
+        run: |
+          cd apps/api
+          test -f src/modules/legal-deadline/__tests__/legal-service-date-rule-core.spec.ts || \
+            { echo "MISSING OF01-HISTORY-P04-B-R2-I01 unit spec"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="legal-service-date-rule-core\.spec\.ts$"
+        working-directory: project
       # OF01-HISTORY-P04-B: occurrence-driven idempotent legal deadline calculation
       # (ServiceOccurrenceDeadlineCalculationService). Yukarıdaki dar allowlist pattern'lerinin
       # hiçbirine girmiyor (dosya adı hiçbirini eşlemiyor) → narrow named step olmadan CI'da hiç koşmaz.
