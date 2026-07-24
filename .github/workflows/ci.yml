@@ -933,6 +933,20 @@ jobs:
             --testPathPattern="case-detail-projection\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # CLIENT-P2-U03-TRACK-B-U00B: getClientCases() (case-liste endpoint) — §33.4 Financial
+      # Disclosure Gate ile çelişen ham `collections` (Collection.amount/date) select'ten ve
+      # response'tan tamamen kaldırıldı (U00'ın case-detail kapsamındaki aynı kaldırmasının
+      # case-list ikizi); principalAmount (Dosya Alacağı) bilerek korundu.
+      - name: CLIENT-P2-U03-TRACK-B-U00B case-list projection tests
+        run: |
+          cd apps/api
+          for f in src/modules/portal/__tests__/case-list-projection.spec.ts; do
+            test -f "$f" || { echo "MISSING CLIENT-P2-U03-TRACK-B-U00B spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="case-list-projection\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
       # CLIENT-P2-U03-TRACK-A-I02: toCuratedAssetQuery() pure mapper — raw CaseDebtor
       # AssetQueryStatus (UNKNOWN/YES/NO/PENDING/ERROR) → curated client-facing 5-durum
       # (NOT_QUERIED/FOUND/NOT_FOUND/RESULT_PENDING/RESULT_UNAVAILABLE) exhaustive dönüşüm

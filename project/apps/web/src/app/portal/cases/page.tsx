@@ -83,14 +83,12 @@ export default function PortalCasesPage() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Borçlu</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Durum</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600">Alacak</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">Tahsilat</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Tarih</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {filtered.map((c) => {
-              const totalCollected = c.collections?.reduce((s: number, col: any) => s + Number(col.amount || 0), 0) || 0;
               return (
                 <tr key={c.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium">{c.fileNumber}</td>
@@ -104,9 +102,6 @@ export default function PortalCasesPage() {
                   </td>
                   <td className="px-4 py-3 text-right font-medium">
                     {Number(c.principalAmount || 0).toLocaleString("tr-TR")} ₺
-                  </td>
-                  <td className="px-4 py-3 text-right text-green-600">
-                    {totalCollected.toLocaleString("tr-TR")} ₺
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(c.caseDate).toLocaleDateString("tr-TR")}

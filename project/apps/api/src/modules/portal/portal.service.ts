@@ -401,6 +401,15 @@ export class PortalService {
 
   /**
    * Müvekkilin dosyalarını getir
+   *
+   * CLIENT-P2-U03-TRACK-B-U00B: `collections` (Collection.amount/date) select'ten TAMAMEN
+   * KALDIRILDI — §33.4 Financial Disclosure Gate ile çelişen, onaysız/bildirimsiz ham
+   * tahsilat ifşasıydı (owner ruling, 2026-07-24; U00'ın case-detail kapsamındaki aynı
+   * kaldırmasının case-list ikizi). `principalAmount` (Dosya Alacağı — statik, orijinal
+   * hukuki alacak) BİLEREK KORUNDU; bu metodun gerçek consumer'ı (`apps/web/src/app/portal/
+   * cases/page.tsx`) bu alanı doğrudan "Alacak" kolonunda render eder. Hiçbir
+   * `Collection`/`CollectionAllocation`/`CollectionDisposition`/`ClientPayout`/`LedgerEntry`/
+   * finansal model bu select'e EKLENMEDİ.
    */
   async getClientCases(clientId: string, tenantId: string) {
     return this.prisma.case.findMany({
@@ -426,11 +435,6 @@ export class PortalService {
           select: {
             debtor: { select: { name: true } },
           },
-        },
-        collections: {
-          select: { amount: true, date: true },
-          orderBy: { date: "desc" },
-          take: 5,
         },
       },
       orderBy: { createdAt: "desc" },
