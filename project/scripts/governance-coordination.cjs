@@ -37,6 +37,8 @@ const REQUEST_KEYS = [
   'declaredTargetAllowlist',
 ];
 const AUTHORITY_REF_KEYS = ['kind', 'path', 'recordId', 'evidenceSha'];
+const AUTHORITY_KINDS = new Set(['SEMANTIC_AUTHORITY', 'EXECUTION_GRANT']);
+const AUTHORITY_RECORD_ID_PATTERN = /^[A-Z0-9][A-Z0-9-]*$/;
 const OPERATION_KEYS = [
   'type',
   'changeClass',
@@ -138,6 +140,17 @@ function assertNonEmptyString(value, label, template = false) {
   }
   if (!template && value.startsWith('TEMPLATE_')) {
     reject('TEMPLATE_VALUE_FORBIDDEN', `${label} contains an unresolved template value`);
+  }
+}
+
+function assertAuthorityRecordId(value, label, template = false) {
+  assertNonEmptyString(value, label, template);
+  if (template && value.startsWith('TEMPLATE_')) return;
+  if (!AUTHORITY_RECORD_ID_PATTERN.test(value)) {
+    reject(
+      'AUTHORITY_RECORD_ID_INVALID',
+      `${label} must contain only uppercase ASCII letters, digits, and hyphens`,
+    );
   }
 }
 
@@ -297,7 +310,7 @@ function validateAuthorityRef(ref, expectedKind, label, template) {
     reject('AUTHORITY_KIND_INVALID', `${label}.kind must be ${expectedKind}`);
   }
   ref.path = normalizeRepoPath(ref.path, `${label}.path`);
-  assertNonEmptyString(ref.recordId, `${label}.recordId`, template);
+  assertAuthorityRecordId(ref.recordId, `${label}.recordId`, template);
   assertSha(ref.evidenceSha, `${label}.evidenceSha`, template);
 }
 
@@ -591,13 +604,31 @@ function assertGitFileNotSymlink(ref, repoPath, cwd = REPO_ROOT) {
   assertNotSymlink(mode === '120000', `${ref}:${repoPath}`);
 }
 
+function buildAuthorityMarker(authorityRef) {
+  if (!AUTHORITY_KINDS.has(authorityRef.kind)) {
+    reject(
+      'AUTHORITY_KIND_INVALID',
+      `authorityRef.kind must be one of ${[...AUTHORITY_KINDS].join(', ')}`,
+    );
+  }
+  assertAuthorityRecordId(authorityRef.recordId, 'authorityRef.recordId');
+  return `<!-- GOV-COORD-AUTHORITY kind=${authorityRef.kind} recordId=${authorityRef.recordId} -->`;
+}
+
 function validateAuthorityRecordAtRef(ref, authorityRef, cwd = REPO_ROOT) {
   const content = gitShow(ref, authorityRef.path, cwd);
-  const matches = countOccurrences(content, authorityRef.recordId);
-  if (matches !== 1) {
+  const marker = buildAuthorityMarker(authorityRef);
+  const matches = countOccurrences(content, marker);
+  if (matches === 0) {
     reject(
-      'AUTHORITY_RECORD_MATCH_INVALID',
-      `${authorityRef.path}#${authorityRef.recordId} matched ${matches} times at ${ref}`,
+      'AUTHORITY_RECORD_MARKER_MISSING',
+      `${authorityRef.path}#${authorityRef.recordId} has no exact authority marker at ${ref}`,
+    );
+  }
+  if (matches > 1) {
+    reject(
+      'AUTHORITY_RECORD_MARKER_DUPLICATE',
+      `${authorityRef.path}#${authorityRef.recordId} has ${matches} exact authority markers at ${ref}`,
     );
   }
   if (!gitIsAncestor(authorityRef.evidenceSha, ref, cwd)) {
@@ -1152,6 +1183,7 @@ module.exports = {
   REGISTER_REPO_PATH,
   applyMechanicalOperation,
   assertNotSymlink,
+  buildAuthorityMarker,
   canonicalize,
   classifyPrChangeSet,
   computeRequestFingerprint,
@@ -1167,6 +1199,7 @@ module.exports = {
   sha256,
   validateRequestObject,
   validateBootstrapWorktree,
+  validateAuthorityRecordAtRef,
   validateResultObject,
   validateTargetPolicy,
   verifyRegister,

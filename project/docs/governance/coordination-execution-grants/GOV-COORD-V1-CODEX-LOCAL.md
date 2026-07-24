@@ -1,5 +1,7 @@
 # GOV-COORD-V1-CODEX-LOCAL — Standing Execution Grant
 
+<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=GOV-COORD-V1-CODEX-LOCAL -->
+
 ```text
 Grant ID              : GOV-COORD-V1-CODEX-LOCAL
 Executor              : CODEX_LOCAL

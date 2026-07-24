@@ -51,6 +51,28 @@ Request authority üretmez. Governance Index routing/authority discovery sağlar
 ama semantic veya execution authority üretmez. Generated register da authority
 değildir.
 
+### 2.1 Exact authority locator
+
+Her canonical authority kaydı aşağıdaki machine-readable marker'ın authority
+reference ile birebir eşleşen tek bir örneğini taşır:
+
+```text
+<!-- GOV-COORD-AUTHORITY kind=<KIND> recordId=<RECORD_ID> -->
+```
+
+- `<KIND>` yalnız `SEMANTIC_AUTHORITY` veya `EXECUTION_GRANT` olabilir.
+- Marker `kind` ve `recordId` değerleri authority reference ile exact eşleşir.
+- Aynı exact marker'ın olmaması veya birden fazla bulunması fail-closed
+  validation failure üretir.
+- `recordId` değerinin prose, başlık, tablo veya code block içinde tekrarlanması
+  authority resolution sonucunu etkilemez.
+- Raw `recordId`, fuzzy match, regex veya heading-based compatibility fallback
+  kullanılmaz.
+- Marker authority üretmez; yalnız mevcut canonical authority kaydının
+  deterministic machine locator'ıdır.
+- Marker eklemek semantic authority veya execution capability kapsamını
+  genişletmez.
+
 ## 3. Capability matrix
 
 | Capability | V1 durumu | Sınır |
