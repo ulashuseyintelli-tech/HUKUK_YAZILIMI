@@ -46,7 +46,6 @@ const APPROVED_CASE_DETAIL = {
       debtor: { name: "Ahmet Yılmaz", type: "PERSON" },
     },
   ],
-  collections: [{ id: "col-1", date: "2026-02-01T00:00:00.000Z", type: "BANKA", amount: "500" }],
   dues: [
     {
       id: "due-1",
@@ -99,6 +98,69 @@ describe("Portal case detail page — CLIENT-P2-U03-I01 explicit projection", ()
     await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
     expect(screen.getByText(/İcra No: 2026\/456/)).toBeTruthy();
     expect(screen.getByText("Derdest")).toBeTruthy();
+  });
+
+  it("[1a] TRACK-B-U00: 'Toplam Alacak' (Dosya Alacağı, Due toplamı) render edilir", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Toplam Alacak")).toBeTruthy());
+    // Not: tutar metni ("1.000 ₺") fixture'da tek Due kalemiyle çakışabildiğinden
+    // (aynı toplam), yalnız etiketin render edildiği kontrol edilir — kart varlığı yeterli kanıt.
+  });
+
+  it("[1b] TRACK-B-U00: 'Tahsil Edilen' kartı artık hiç render edilmez", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    expect(screen.queryByText("Tahsil Edilen")).toBeNull();
+  });
+
+  it("[1c] TRACK-B-U00: 'Tahsilat Oranı' kartı artık hiç render edilmez", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    expect(screen.queryByText("Tahsilat Oranı")).toBeNull();
+  });
+
+  it("[1d] TRACK-B-U00: 'Tahsilatlar' ham tahsilat listesi bölümü artık hiç render edilmez", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    expect(screen.queryByText("Tahsilatlar")).toBeNull();
+    expect(screen.queryByText("Henüz tahsilat yok")).toBeNull();
+  });
+
+  it("[1e] TRACK-B-U00: response'ta eski/yabancı bir `collections` alanı olsa bile hiçbir tahsilat tutarı/oranı render edilmez (defansif — API artık göndermiyor, ama sayfa da hiç okumuyor)", async () => {
+    stubFetch({
+      ok: true,
+      json: async () => ({
+        ...APPROVED_CASE_DETAIL,
+        collections: [{ id: "col-legacy", date: "2026-02-01T00:00:00.000Z", type: "BANKA", amount: "999999" }],
+      }),
+    });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    expect(screen.queryByText(/999999/)).toBeNull();
+    expect(screen.queryByText("Tahsil Edilen")).toBeNull();
+    expect(screen.queryByText("Tahsilat Oranı")).toBeNull();
+    expect(screen.queryByText("BANKA")).toBeNull();
+  });
+
+  it("[1f] TRACK-B-U00: `collections` alanı response'ta hiç yokken (yeni gerçek sözleşme) sayfa güvenle render edilir, çökmez", async () => {
+    const { collections: _removed, ...withoutCollections } = APPROVED_CASE_DETAIL as any;
+    stubFetch({ ok: true, json: async () => withoutCollections });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    expect(screen.getByText("Toplam Alacak")).toBeTruthy();
+  });
+
+  it("[1g] TRACK-B-U00: iki kart kaldırıldıktan sonra boş placeholder kart render edilmez (yalnız 'Toplam Alacak' ve 'Aşama' kalır)", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    const { container } = render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    const statCards = container.querySelectorAll(".grid.grid-cols-2.gap-4 > div");
+    expect(statCards.length).toBe(2);
+    expect(screen.getByText("Aşama")).toBeTruthy();
   });
 
   it("[2] onaylı debtor alanları render edilir (debtor.name, debtor.type)", async () => {
@@ -288,10 +350,11 @@ describe("Portal case detail page — CLIENT-P2-U03-I01 explicit projection", ()
     expect(screen.queryByText("Malvarlığı Sorguları")).toBeNull();
   });
 
-  it("[3] collection satırları type/amount/date ile render edilir, description sütunu YOK", async () => {
+  it("[3] TRACK-B-U00: ham collection satırları (type/amount/date tablosu) artık hiç render edilmez — önceki 'collection satırları render edilir' testi negatife çevrildi", async () => {
     stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
     render(<PortalCaseDetailPage />);
-    await waitFor(() => expect(screen.getByText("BANKA")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    expect(screen.queryByText("Tahsilatlar")).toBeNull();
     expect(screen.queryByText("Açıklama")).toBeNull();
   });
 
@@ -474,7 +537,6 @@ describe("Portal case detail page — CLIENT-P2-U03-I01 explicit projection", ()
       caseStatus: "ISLEMDE",
       workflowStage: "INITIAL",
       debtors: [],
-      collections: [],
       dues: [],
     };
     stubFetch({ ok: true, json: async () => minimalResponse });
