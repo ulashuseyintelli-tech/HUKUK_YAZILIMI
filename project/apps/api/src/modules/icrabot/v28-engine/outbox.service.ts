@@ -300,19 +300,41 @@ export class OutboxService {
   /**
    * Action'ı terminal dead-letter durumuna alır.
    *
+   * @remarks
+   * `options.incrementAttempt` varsayılan `false`'tur — mevcut MISSING_TENANT_ID çağıranı
+   * (attemptCount hiç dokunulmadan tenantId eksikliği daha handler'a ulaşmadan tespit edilir,
+   * bu bir gerçek "dispatch denemesi" sayılmaz) davranışsız DEĞİŞMEDEN kalır. DEBTOR-OF01-
+   * HISTORY-P04-C-I02 (NonRetryableOutboxError yolu) `incrementAttempt: true` geçer — o yolda
+   * handler GERÇEKTEN çağrılmış ve başarısız olmuştur (markFailed/markDone ile aynı "her
+   * dispatch denemesi +1" sözleşmesiyle tutarlı).
+   *
    * /// <remarks>
    * /// Çağrıldığı yerler:
    * /// - ActionHandlerService.dispatch() → tenantId eksik action fail-closed terminal kapatma
+   * /// - ActionHandlerService.dispatch() → NonRetryableOutboxError fail-closed terminal kapatma (P04-C-I02, incrementAttempt:true)
    * /// </remarks>
    */
-  async markDeadLetter(actionId: string, error: Record<string, any>): Promise<void> {
+  async markDeadLetter(
+    actionId: string,
+    error: Record<string, any>,
+    options?: { incrementAttempt?: boolean },
+  ): Promise<void> {
+    const data: Record<string, unknown> = {
+      status: 'dead',
+      lastError: { ...error, timestamp: new Date().toISOString() },
+      nextRetryAt: null,
+    };
+
+    if (options?.incrementAttempt) {
+      const action = await (this.prisma as any).icrabotOutboxAction.findUnique({
+        where: { id: actionId },
+      });
+      data.attemptCount = (action?.attemptCount || 0) + 1;
+    }
+
     await (this.prisma as any).icrabotOutboxAction.update({
       where: { id: actionId },
-      data: {
-        status: 'dead',
-        lastError: { ...error, timestamp: new Date().toISOString() },
-        nextRetryAt: null,
-      },
+      data,
     });
   }
   /**

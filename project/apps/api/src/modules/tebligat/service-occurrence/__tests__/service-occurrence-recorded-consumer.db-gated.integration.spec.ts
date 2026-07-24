@@ -19,7 +19,7 @@ import { FactStoreService } from "../../../icrabot/v28-engine/factstore.service"
 import { ServiceOccurrenceRecordedEventAccessor } from "../service-occurrence-recorded-event.accessor";
 import { ServiceOccurrenceRecordedConsumerService } from "../service-occurrence-recorded.consumer";
 import { ServiceOccurrenceRecordedRegistrar } from "../service-occurrence-recorded.registrar";
-import { ObjectionPeriodDaysUnresolvedError } from "../service-occurrence-recorded-consumer.errors";
+import { NonRetryableOutboxError } from "../../../icrabot/v28-engine/non-retryable-outbox.error";
 import { ProceedingClassificationService } from "../../../legal-deadline/proceeding-classification.service";
 import {
   ServiceOccurrenceDeadlineCalculationService,
@@ -230,7 +230,7 @@ describeWithDisposableDb("ServiceOccurrenceRecordedConsumerService — disposabl
     expect(allSnapshots).toHaveLength(1); // supersede zinciri de oluşmadı — gerçek no-op
   });
 
-  it("Case.proceedingType boş (sınıflandırılmamış dosya) — ObjectionPeriodDaysUnresolvedError fail-closed, hiçbir LegalDeadlineSnapshot yazılmaz", async () => {
+  it("Case.proceedingType boş (sınıflandırılmamış dosya) — NonRetryableOutboxError fail-closed, hiçbir LegalDeadlineSnapshot yazılmaz", async () => {
     const fx = await buildFixture("unresolved", null);
     const occurrence = await createOccurrence(fx);
     const event = serviceOccurrenceRecordedEvent(fx.tenantId, fx.caseId, {
@@ -246,8 +246,42 @@ describeWithDisposableDb("ServiceOccurrenceRecordedConsumerService — disposabl
     const ctx = { actionId: outboxRow.id, tenantId: fx.tenantId, actionType: outboxRow.actionType };
 
     await expect(consumerService.handle(outboxPayload, fx.caseId, ctx)).rejects.toThrow(
-      ObjectionPeriodDaysUnresolvedError,
+      NonRetryableOutboxError,
     );
+
+    const snapshots = await prisma.legalDeadlineSnapshot.findMany({
+      where: { tenantId: fx.tenantId, sourceServiceOccurrenceId: occurrence.id },
+    });
+    expect(snapshots).toHaveLength(0);
+  });
+
+  it("DEBTOR-OF01-HISTORY-P04-C-I02: Case.proceedingType boş + GERÇEK ActionHandlerService.dispatch → outbox action GERÇEK Postgres'te ilk denemede status=dead (attemptCount=1, güvenli lastError)", async () => {
+    const fx = await buildFixture("nonretryable-dispatch", null);
+    const occurrence = await createOccurrence(fx);
+    const event = serviceOccurrenceRecordedEvent(fx.tenantId, fx.caseId, {
+      id: occurrence.id,
+      sourceTebligatId: fx.tebligatId,
+      occurrenceType: "POSTAL_DELIVERY_RESULT",
+      occurredOn: occurrence.occurredOn,
+      recordedAt: occurrence.recordedAt,
+    });
+    const outboxRow = await appendAndGetOutboxRow(fx.tenantId, fx.caseId, event);
+
+    const consumerService = buildRealConsumer();
+    const handlerService = buildRealActionHandler();
+    new ServiceOccurrenceRecordedRegistrar(handlerService, consumerService).onModuleInit();
+
+    const result = await handlerService.dispatch(outboxRow.id);
+
+    expect(result.success).toBe(false);
+    expect(result.deadLettered).toBe(true);
+    const dispatchedRow = await (prisma as any).icrabotOutboxAction.findUniqueOrThrow({ where: { id: outboxRow.id } });
+    expect(dispatchedRow.status).toBe("dead");
+    expect(dispatchedRow.attemptCount).toBe(1); // ilk ve tek deneme — max-attempt (8) beklenmedi
+    expect(dispatchedRow.nextRetryAt).toBeNull();
+    expect(dispatchedRow.lastError.reasonCode).toBe("OBJECTION_PERIOD_DAYS_UNRESOLVED");
+    expect(dispatchedRow.lastError.securityRelevant).toBe(false);
+    expect(JSON.stringify(dispatchedRow.lastError)).not.toMatch(/prisma|postgres|stack/i);
 
     const snapshots = await prisma.legalDeadlineSnapshot.findMany({
       where: { tenantId: fx.tenantId, sourceServiceOccurrenceId: occurrence.id },

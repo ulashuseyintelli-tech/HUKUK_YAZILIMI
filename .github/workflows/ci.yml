@@ -1354,6 +1354,20 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="service-occurrence-recorded-consumer\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # DEBTOR-OF01-HISTORY-P04-C-I02: NonRetryableOutboxError dar, domain-agnostik non-retryable
+      # outbox contract'ı (ActionHandlerService.dispatch minimal değişiklik + ServiceOccurrenceRecorded
+      # ConsumerService error mapping). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyor
+      # (dosya adı hiçbirini eşlemiyor) → narrow named step olmadan CI'da hiç koşmaz. DB-free unit —
+      # disposable-DB kanıtı zaten yukarıdaki service-occurrence-recorded-consumer.db-gated
+      # integration step'i içinde (aynı dosya, yeni test case'ler eklendi, dosya adı değişmedi).
+      - name: OF01-HISTORY-P04-C-I02 NonRetryableOutboxError shared-infrastructure tests
+        run: |
+          cd apps/api
+          test -f src/modules/icrabot/v28-engine/__tests__/non-retryable-outbox.spec.ts || \
+            { echo "MISSING OF01-HISTORY-P04-C-I02 spec: non-retryable-outbox.spec.ts"; exit 1; }
+          npx jest --ci --forceExit \
+            --testPathPattern="non-retryable-outbox\.spec\.ts$"
+        working-directory: project
       # LRV-02 / DBP-P2-SEC-P01: UyapXmlService.mapDebtorRoleToUyapKod DebtorRole->UYAP rol-kodu
       # mapping regresyonu (PR #1322). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyordu
       # → CI'da hiç koşmuyordu (yalnız o merge'in GO-IMPLEMENT'inde local `npx jest` ile doğrulandı).
