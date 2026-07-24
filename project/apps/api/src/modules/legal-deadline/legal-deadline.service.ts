@@ -1,6 +1,12 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { Tk21Type, TebligatChannel, LegalDeadlineType } from "@prisma/client";
+import { Tk21Type, TebligatChannel, LegalDeadlineType, ServiceOccurrenceRegimeCode } from "@prisma/client";
+import {
+  resolveLegalServiceDate,
+  IncompatibleCompletionModeError,
+  UnsupportedServiceRegimeCodeError,
+  LegalServiceDateFacts,
+} from "./legal-service-date-rule-core";
 
 /**
  * MPB-028(a) PR-2 — kanonik hukuki süre hesabı foundation'ı.
@@ -189,10 +195,20 @@ export class LegalDeadlineService {
   }
 
   /**
-   * Bölüm 3 rejim tablosu (legal-time-authority-rebase.md): tebligat kaydının rejim
-   * sinyallerinden (tk21Type/channel/deliveredAt) hukuken doğru tebliğ/tebliğ-sayılma
-   * tarihini üretir. Hiçbir dal eşleşmezse null döner (fail-closed — çağıran
-   * BadRequestException fırlatır, tahmin YAPILMAZ).
+   * DEBTOR-OF01-HISTORY-P04-B-R2-I02: hesap artık `LegalServiceDateRuleCore`'a delege
+   * edilir (bkz. `buildLegalServiceDateFacts`). Bu metodun dış sözleşmesi (girdi şekli,
+   * `LegalServiceDateResult | null` dönüşü, `null` = "fail-closed, tahmin yok") AYNEN
+   * korunur — `calculateDeadline`/`resolveLegalServiceDateForTebligat` bu metodu hiç
+   * değişmemiş gibi çağırmaya devam eder.
+   *
+   * TK m.20 için ÖNEMLİ DAVRANIŞ DEĞİŞİKLİĞİ (owner brief P04-B-R2-I02): Tebligat
+   * modelinde `serviceCompletionMode`'u (NOTICE_POSTED vs DELIVERED_TO_AUTHORIZED_PERSON)
+   * karşılayan HİÇBİR güvenilir kolon yok — yalnız ServiceOccurrence'da var. Bağlı
+   * ServiceOccurrence kayıtları arasından seçim yapmak veya `ilanDate ?? muhtarlikDate`
+   * varlığından completion mode'u ÖRTÜLÜ ÇIKARSAMAK owner tarafından açıkça yasaklandı
+   * (ikisi de "tahmin" sayılır). Bu yüzden legacy TK m.20 yolu ARTIK HER ZAMAN fail-closed
+   * olur (eski, her zaman +15 gün ekleyen davranış YANLIŞTI ve kaldırıldı) — çekirdeğin
+   * kendi `IncompatibleCompletionModeError`'ı bunu üretir, biz onu `null`'a çeviririz.
    */
   private determineLegalServiceDate(tebligat: {
     tk21Type: Tk21Type | null;
@@ -201,16 +217,47 @@ export class LegalDeadlineService {
     ilanDate: Date | null;
     deliveredAt: Date | null;
   }): LegalServiceDateResult | null {
-    // TK m.20 — muvakkaten başka yere gitme (+15 gün). Kaynak tarih: ilanDate öncelikli,
-    // yoksa muhtarlikDate (tasarım belgesi "kapıya yapıştırma / muhtar-zabıtaya teslim"
-    // ifadesiyle iki olası kaynağı ayırt etmiyor — bkz. final rapor NEW FINDING).
+    const facts = this.buildLegalServiceDateFacts(tebligat);
+    if (!facts) {
+      return null;
+    }
+    try {
+      return resolveLegalServiceDate(facts);
+    } catch (error) {
+      if (
+        error instanceof IncompatibleCompletionModeError ||
+        error instanceof UnsupportedServiceRegimeCodeError
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Tebligat'ın kendi rejim sinyallerini (tk21Type/channel/tarih alanları)
+   * `LegalServiceDateRuleCore`'un ortak `LegalServiceDateFacts` girdisine eşler. Gün
+   * hesabının kendisi burada YAPILMAZ — yalnız hangi rejimin geçerli olduğu ve hangi
+   * ham tarihin `baseDate` olacağı belirlenir; +15/+7/+5/gecikmesiz kararı çekirdekte.
+   */
+  private buildLegalServiceDateFacts(tebligat: {
+    tk21Type: Tk21Type | null;
+    channel: TebligatChannel;
+    muhtarlikDate: Date | null;
+    ilanDate: Date | null;
+    deliveredAt: Date | null;
+  }): LegalServiceDateFacts | null {
+    // TK m.20 — muvakkaten başka yere gitme. `ilanDate ?? muhtarlikDate` burada YALNIZ
+    // "en az bir olay tarihi var mı" kontrolüdür (tarih kaynağı eksikse fail-closed) —
+    // hangi tarihin dolu olduğu completion mode'u İMA ETMEZ; serviceCompletionMode Tebligat
+    // modelinde yok, bu yüzden her zaman null geçilir ve çekirdek kendi fail-closed'ını üretir.
     if (tebligat.tk21Type === Tk21Type.TK_20) {
       const baseDate = tebligat.ilanDate ?? tebligat.muhtarlikDate;
       if (!baseDate) return null;
       return {
-        legalServiceDate: addDays(baseDate, 15),
-        deadlineReasonCode: "TK_20",
-        calculationRule: "TK_20_PLUS_15_DAYS",
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+        serviceCompletionMode: null,
+        baseDate,
       };
     }
 
@@ -218,9 +265,8 @@ export class LegalDeadlineService {
     if (tebligat.tk21Type === Tk21Type.TK_21_2) {
       if (!tebligat.ilanDate) return null;
       return {
-        legalServiceDate: tebligat.ilanDate,
-        deadlineReasonCode: "TK_21_2",
-        calculationRule: "TK_21_2_NO_DELAY",
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_2,
+        baseDate: tebligat.ilanDate,
       };
     }
 
@@ -228,38 +274,34 @@ export class LegalDeadlineService {
     if (tebligat.tk21Type === Tk21Type.TK_21_1) {
       if (!tebligat.muhtarlikDate) return null;
       return {
-        legalServiceDate: tebligat.muhtarlikDate,
-        deadlineReasonCode: "TK_21_1",
-        calculationRule: "TK_21_1_NO_DELAY",
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_1,
+        baseDate: tebligat.muhtarlikDate,
       };
     }
 
-    // İlanen tebliğ (+7 gün, TK m.31).
+    // İlanen tebliğ (TK m.31) → PUBLICATION.
     if (tebligat.channel === TebligatChannel.ILANEN) {
       if (!tebligat.ilanDate) return null;
       return {
-        legalServiceDate: addDays(tebligat.ilanDate, 7),
-        deadlineReasonCode: "ILANEN_M31",
-        calculationRule: "ILANEN_PLUS_7_DAYS",
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.PUBLICATION,
+        baseDate: tebligat.ilanDate,
       };
     }
 
-    // E-tebligat/UETS/KEP (+5 gün, TK m.7/a + Elektronik Tebligat Yönetmeliği m.9/6).
+    // E-tebligat/UETS/KEP (TK m.7/a + Elektronik Tebligat Yönetmeliği m.9/6) → ELECTRONIC.
     if (tebligat.channel === TebligatChannel.UETS || tebligat.channel === TebligatChannel.KEP) {
       if (!tebligat.deliveredAt) return null;
       return {
-        legalServiceDate: addDays(tebligat.deliveredAt, 5),
-        deadlineReasonCode: "UETS_M7A",
-        calculationRule: "UETS_PLUS_5_DAYS",
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.ELECTRONIC,
+        baseDate: tebligat.deliveredAt,
       };
     }
 
-    // Doğrudan/elden teslim (gecikmesiz).
+    // Doğrudan/elden teslim → IMMEDIATE_SERVICE.
     if (tebligat.deliveredAt) {
       return {
-        legalServiceDate: tebligat.deliveredAt,
-        deadlineReasonCode: "DIRECT_DELIVERY",
-        calculationRule: "DIRECT_NO_DELAY",
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE,
+        baseDate: tebligat.deliveredAt,
       };
     }
 
