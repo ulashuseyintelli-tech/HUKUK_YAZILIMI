@@ -1,6 +1,7 @@
 /**
- * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 — getCaseDetail()
- * explicit projection (POL-D §21/BP-06 §23; I06 ratified transparency policy §33.5).
+ * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 +
+ * CLIENT-P2-U03-TRACK-B-U00 — getCaseDetail() explicit projection (POL-D §21/BP-06 §23;
+ * I06 ratified transparency policy §33.5).
  *
  * Yapısal kanıt Prisma çağrısındaki EXACT `select` şeklinden gelir (mock'a "fazladan alan"
  * besleyip sonra "filtrelendiğini" test etmek YANLIŞTIR — gerçek Prisma zaten select'te
@@ -9,6 +10,12 @@
  * bir şey eklemediğini) doğrular. TRACK-A-I02 istisnası: asset-query alanları için service
  * artık post-processing yapıyor (ham alanlar → curated `assetQuery`), bu yüzden o alanlar
  * için hem select hem response ayrı ayrı doğrulanır.
+ *
+ * TRACK-B-U00: `collections` (Collection.id/date/type/amount) select'ten ve response'tan
+ * TAMAMEN KALDIRILDI (§33.4 Financial Disclosure Gate ile çelişen, onaysız ham tahsilat
+ * ifşasıydı — owner ruling, 2026-07-24). `principalAmount` bilerek KORUNDU (Dosya Alacağı,
+ * statik/orijinal hukuki alacak — tahsilat sonrası azalmaz, schema.prisma:1187-1188 +
+ * collection.service.ts'te yalnız OKUNMASI ile doğrulandı).
  */
 import { NotFoundException } from "@nestjs/common";
 import { PortalService } from "../portal.service";
@@ -39,10 +46,6 @@ const CASE_DETAIL_SELECT_SHAPE = {
       assetLastQueryAt: true,
       debtor: { select: { name: true, type: true } },
     },
-  },
-  collections: {
-    select: { id: true, date: true, type: true, amount: true },
-    orderBy: { date: "desc" },
   },
   dues: {
     select: {
@@ -97,7 +100,6 @@ const BOUNDED_CASE_ROW = {
       debtor: { name: "Test Borçlu", type: "PERSON" },
     },
   ],
-  collections: [{ id: "col-1", date: new Date("2026-02-01"), type: "BANKA", amount: "500" }],
   dues: [
     {
       id: "due-1",
@@ -158,7 +160,6 @@ describe("PortalService.getCaseDetail — CLIENT-P2-U03-I01 explicit projection"
         "principalAmount",
         "muvekkilNotu",
         "debtors",
-        "collections",
         "dues",
       ].sort()
     );
@@ -279,10 +280,34 @@ describe("PortalService.getCaseDetail — CLIENT-P2-U03-I01 explicit projection"
     }
   });
 
-  it("[4] collection nested anahtarları yalnız id/date/type/amount'tır", async () => {
+  it("[4] TRACK-B-U00: collections response'ta hiç YOK (§33.4 Financial Disclosure Gate ile çelişen ham tahsilat ifşası kaldırıldı)", async () => {
     const { svc } = buildService();
     const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
-    expect(Object.keys(result.collections[0]).sort()).toEqual(["amount", "date", "id", "type"]);
+    expect(result).not.toHaveProperty("collections");
+  });
+
+  it("[4a] TRACK-B-U00: collections nested select'te hiç YOK", async () => {
+    const { svc, prisma } = buildService();
+    await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const call = prisma.case.findFirst.mock.calls[0][0];
+    expect(call.select).not.toHaveProperty("collections");
+  });
+
+  it("[4b] TRACK-B-U00: hiçbir finansal ikame ilişki select edilmiyor (Case model'inde doğrudan erişilebilen tek ek finansal relation `ledgerEntries`tir; `financialDisclosures` henüz Prisma'da yok, ileriye dönük guard)", async () => {
+    const { svc, prisma } = buildService();
+    await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const call = prisma.case.findFirst.mock.calls[0][0];
+    for (const f of ["ledgerEntries", "collectionOverpayments", "financialDisclosures"]) {
+      expect(call.select).not.toHaveProperty(f);
+    }
+  });
+
+  it("[4c] TRACK-B-U00: principalAmount (Dosya Alacağı) select'te VE response'ta korunur", async () => {
+    const { svc, prisma } = buildService();
+    const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const call = prisma.case.findFirst.mock.calls[0][0];
+    expect(call.select).toHaveProperty("principalAmount", true);
+    expect(result).toHaveProperty("principalAmount", "1000");
   });
 
   it("[5] due nested anahtarları yalnız onaylı 19 alandır (5 mevcut + 14 TRACK-A-I03)", async () => {
@@ -413,12 +438,11 @@ describe("PortalService.getCaseDetail — CLIENT-P2-U03-I01 explicit projection"
     expect(debtorsSelect).not.toHaveProperty("id");
   });
 
-  it("[11] Collection.idempotencyKey nested select'te YOK", async () => {
+  it("[11] TRACK-B-U00: collections nested select'i tamamen kaldırıldığından Collection.idempotencyKey/description'a erişim yolu hiç YOK", async () => {
     const { svc, prisma } = buildService();
     await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
     const call = prisma.case.findFirst.mock.calls[0][0];
-    expect(call.select.collections.select).not.toHaveProperty("idempotencyKey");
-    expect(call.select.collections.select).not.toHaveProperty("description");
+    expect(call.select).not.toHaveProperty("collections");
   });
 
   it("[12] Due.finalizationNote/description/interestTypeCode nested select'te YOK (TRACK-A-I03 sonrası da OMIT korunur)", async () => {

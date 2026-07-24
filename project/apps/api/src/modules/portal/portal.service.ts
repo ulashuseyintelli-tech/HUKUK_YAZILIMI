@@ -15,17 +15,18 @@ import { toCuratedAssetQuery } from "./asset-query-projection";
 
 /**
  * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 +
- * CLIENT-P2-U03-TRACK-A-I03: getCaseDetail() client-facing response contract (POL-D §21/
- * BP-06 §23; I06 ratified transparency policy §33.5). Yalnız bu select'in kapsadığı alanlar
- * client'a döner; CaseDebtor.id/debtorLawyerId, dahiliNot, staff/personel referansları,
- * otomasyon/OCR/risk alanları, lifecycleEvents ve description'lar KASITLI olarak DIŞARIDA —
- * bu sabit yalnız getCaseDetail() tarafından kullanılır, başka portal endpoint'ine yayılmaz.
- * `muvekkilNotu` `dahiliNot`'tan yapısal olarak bağımsız, ayrı bir alandır (I06 invariant) —
- * birleştirilmez, aynı semantikte kullanılmaz. `assetVehicle`/`assetRealEstate`/`assetBank`/
- * `assetSgkWage`/`assetLastQueryAt` yalnız `getCaseDetail()` içinde `toCuratedAssetQuery()` ile
- * dönüştürüldükten sonra `debtors[].assetQuery` olarak döner — HAM enum değerleri response'ta
- * HİÇ KALMAZ. `AssetQuery` modeli (staff-only, resultData/errorMessage/requestedBy/reason/
- * idempotencyKey/job status) bu select'e KESİNLİKLE dahil edilmez.
+ * CLIENT-P2-U03-TRACK-A-I03 + CLIENT-P2-U03-TRACK-B-U00: getCaseDetail() client-facing
+ * response contract (POL-D §21/BP-06 §23; I06 ratified transparency policy §33.5). Yalnız
+ * bu select'in kapsadığı alanlar client'a döner; CaseDebtor.id/debtorLawyerId, dahiliNot,
+ * staff/personel referansları, otomasyon/OCR/risk alanları, lifecycleEvents ve
+ * description'lar KASITLI olarak DIŞARIDA — bu sabit yalnız getCaseDetail() tarafından
+ * kullanılır, başka portal endpoint'ine yayılmaz. `muvekkilNotu` `dahiliNot`'tan yapısal
+ * olarak bağımsız, ayrı bir alandır (I06 invariant) — birleştirilmez, aynı semantikte
+ * kullanılmaz. `assetVehicle`/`assetRealEstate`/`assetBank`/`assetSgkWage`/
+ * `assetLastQueryAt` yalnız `getCaseDetail()` içinde `toCuratedAssetQuery()` ile
+ * dönüştürüldükten sonra `debtors[].assetQuery` olarak döner — HAM enum değerleri
+ * response'ta HİÇ KALMAZ. `AssetQuery` modeli (staff-only, resultData/errorMessage/
+ * requestedBy/reason/idempotencyKey/job status) bu select'e KESİNLİKLE dahil edilmez.
  *
  * TRACK-A-I03: `Due`'nun 14 saklı alanı (Track-A-A03 field-visibility disposition) doğrudan
  * select edilir — hiçbiri hesaplanmaz/dönüştürülmez (KDV/BSMV/KKDF/faiz TUTARI hesaplama
@@ -33,6 +34,15 @@ import { toCuratedAssetQuery } from "./asset-query-projection";
  * `caseId`/`description`/`interestTypeCode`/`interestDays`/`sourceDocumentId`/
  * `finalizationNote`/`sortOrder`/`createdAt`/`updatedAt` KASITLI olarak DIŞARIDA (`description`
  * ve `finalizationNote` zaten I01 §28.4'te karara bağlanmış, burada yeniden AÇILMADI).
+ *
+ * TRACK-B-U00: `collections` (Collection.id/date/type/amount) bu select'ten KALDIRILDI —
+ * §33.4 Financial Disclosure Gate ile çelişen, onaysız/bildirimsiz ham tahsilat ifşasıydı
+ * (owner ruling, 2026-07-24). `principalAmount` (Dosya Alacağı — statik, orijinal hukuki
+ * alacak; tahsilat sonrası azalmaz, schema.prisma:1187-1188 "@deprecated denormalize legacy
+ * toplam" yorumu ve collection.service.ts'te yalnız OKUNMASI ile doğrulandı) BİLEREK
+ * KORUNDU — Track A kapsamında kalır. Hiçbir `Collection`/`CollectionAllocation`/
+ * `CollectionDisposition`/`ClientPayout`/`LedgerEntry`/finansal model bu select'e
+ * EKLENMEDİ — Track B (financialDisclosures) ayrı, henüz yetkilendirilmemiş bir contract'tır.
  */
 const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
   id: true,
@@ -56,10 +66,6 @@ const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
       assetLastQueryAt: true,
       debtor: { select: { name: true, type: true } },
     },
-  },
-  collections: {
-    select: { id: true, date: true, type: true, amount: true },
-    orderBy: { date: "desc" },
   },
   dues: {
     select: {

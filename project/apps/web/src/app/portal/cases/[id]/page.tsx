@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, User, DollarSign, Loader2, TrendingUp, Clock, CheckCircle, StickyNote } from "lucide-react";
+import { ArrowLeft, FileText, User, DollarSign, Loader2, Clock, StickyNote } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -133,8 +133,6 @@ export default function PortalCaseDetailPage() {
   }
 
   const totalDue = caseData.dues?.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0) || 0;
-  const totalCollected = caseData.collections?.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0) || 0;
-  const collectionRate = totalDue > 0 ? Math.round((totalCollected / totalDue) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -168,8 +166,10 @@ export default function PortalCaseDetailPage() {
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* Stats — CLIENT-P2-U03-TRACK-B-U00: "Tahsil Edilen"/"Tahsilat Oranı" kaldırıldı
+          (§33.4 Financial Disclosure Gate ile çelişen, onaysız ham tahsilat türetmesiydi).
+          Kalan 2 kart için grid 4→2 koloona indirildi; boş placeholder EKLENMEDİ. */}
+      <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-lg border p-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -183,34 +183,12 @@ export default function PortalCaseDetailPage() {
         </div>
         <div className="bg-white rounded-lg border p-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <TrendingUp className="h-5 w-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Tahsil Edilen</p>
-              <p className="text-xl font-bold">{totalCollected.toLocaleString("tr-TR")} ₺</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg border p-4">
-          <div className="flex items-center gap-3">
             <div className="p-2 bg-amber-100 rounded-lg">
               <Clock className="h-5 w-5 text-amber-600" />
             </div>
             <div>
               <p className="text-sm text-gray-500">Aşama</p>
               <p className="text-xl font-bold">{stageLabels[caseData.workflowStage] || "-"}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <CheckCircle className="h-5 w-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Tahsilat Oranı</p>
-              <p className="text-xl font-bold">%{collectionRate}</p>
             </div>
           </div>
         </div>
@@ -345,40 +323,11 @@ export default function PortalCaseDetailPage() {
         </div>
       </div>
 
-      {/* Tahsilatlar */}
-      <div className="bg-white rounded-lg border">
-        <div className="p-4 border-b">
-          <h2 className="font-semibold flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" /> Tahsilatlar
-          </h2>
-        </div>
-        <div className="p-4">
-          {caseData.collections?.length > 0 ? (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2">Tarih</th>
-                  <th className="text-left py-2">Tür</th>
-                  <th className="text-right py-2">Tutar</th>
-                </tr>
-              </thead>
-              <tbody>
-                {caseData.collections.map((c: any) => (
-                  <tr key={c.id} className="border-b last:border-0">
-                    <td className="py-2">{new Date(c.date).toLocaleDateString("tr-TR")}</td>
-                    <td className="py-2 text-gray-600">{c.type}</td>
-                    <td className="py-2 text-right font-medium text-green-600">
-                      +{Number(c.amount).toLocaleString("tr-TR")} ₺
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-gray-500 text-sm text-center py-4">Henüz tahsilat yok</p>
-          )}
-        </div>
-      </div>
+      {/* CLIENT-P2-U03-TRACK-B-U00: "Tahsilatlar" ham tahsilat listesi (date/type/amount)
+          KALDIRILDI — §33.4 Financial Disclosure Gate ile çelişen, onaysız/bildirimsiz ham
+          tahsilat ifşasıydı (owner ruling, 2026-07-24). Yerine boş placeholder EKLENMEDİ;
+          gelecekte yalnız ayrı yetkilendirilmiş Track B (financialDisclosures) contract'ı
+          bu alanı doldurabilir. */}
     </div>
   );
 }
