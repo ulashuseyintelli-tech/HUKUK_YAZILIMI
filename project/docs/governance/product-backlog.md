@@ -2767,6 +2767,54 @@ ayrı owner inputs olarak tamamlanmadan sonraki implementation başlamaz.
 
 ---
 
+## RCV-CLAIM-FORM-P02-S08-D02-CR01 — Legal Basis Component Category Binding Ratification
+
+```text
+PROGRAM LOCK                       RECEIVABLE / CLAIM FORMATION
+STATUS                             RATIFIED / CANONICAL
+NEW FIELD                          allowedComponentCategories[]
+FIELD SOURCE                       EXISTING D01B ClaimItemFormationComponentCategory UNION
+FIELD VALUES                       PRINCIPAL | COST | ANCILLARY | ACCRUED_INTEREST
+REQUIRED / MIN ITEMS               YES / 1
+CANONICAL ORDER                    LEXICOGRAPHIC ASCENDING
+REQUEST VALIDATION                 componentCategory ∈ allowedComponentCategories,
+                                   ELSE SCOPE_MISMATCH
+ECHO CONTRACT                      D01B componentCategory = REQUESTED VALUE
+SUBTYPE PARITY                     CLARIFIED / UNCHANGED
+CANDIDATE TABLE (R02 §23.29.1)     CANDIDATE ONLY / NOT RATIFIED — UNCHANGED
+SCHEMA VERSION                     RECEIVABLE_LEGAL_BASIS_RELEASE_V1 — UNCHANGED (ADDITIVE)
+PUBLIC KEY / SIGNATURE MODEL       UNCHANGED (R01/R02/R01A PRESERVED)
+D02-F01 IMPLEMENTATION             BLOCKED / OWNER CONTENT + REVIEWER + KEYS REQUIRED
+R03                                NOT STARTED / BLOCKED / OWNER GO REQUIRED
+D02-I01                            NOT AUTHORIZED
+CODE / SCHEMA / MIGRATION          NONE
+RUNTIME                            DORMANT / DEFAULT DISABLED
+S08-I04                            BLOCKED / NOT AUTHORIZED
+NEXT                               D02-F01-R03 — BLOCKED / OWNER GO REQUIRED
+```
+
+### Scope boundary
+
+- `allowedComponentCategories[]`, §23.28.1'in minimum entry alan listesine additive eklenir;
+  yeni enum veya paralel taxonomy oluşturmaz — yalnız mevcut D01B union reuse edilir.
+- Future D02-I01 adapter yalnız membership doğrulaması yapar (`SCOPE_MISMATCH` fail-closed) ve
+  requested değeri echo eder; keyfi seçim, mapping icadı veya default/fallback davranışı yoktur.
+- Aynı validation-and-echo ilkesi mevcut `allowedSubtypeCodes` için zaten geçerlidir; bu ratification
+  yalnız component-category seviyesinde açık kayda geçirir.
+- R02 §23.29.1 candidate tablosu owner-hazırlık rehberliğidir; bu ratification onu otomatik olarak
+  ratifiye edilmiş değere dönüştürmez.
+- G1 (per-subtype versioning), G2 (evidence AND/OR semantics), G3 (conflict-of-interest evidence),
+  G4 (trust-root flat-record vs append-only history), G5 (entry-level lifecycle/revocation
+  evidence), G6 (legalReviewRequired semantic ambiguity) açık gap olarak kalır; bu ratification
+  bunları çözmez.
+
+Bu ratification production Legal Basis içeriğini veya altı Legal Basis entry'sini ratify etmez;
+subtype registry içeriğini ya da exact subtype binding'lerini tamamlamaz; reviewer/final-ratifier
+checksum kararları, production public key kabulü, key ceremony, signature veya signed release
+üretmez. D02-F01 implementation, D02-I01, R03 ve S08-I04 otomatik başlamaz.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,

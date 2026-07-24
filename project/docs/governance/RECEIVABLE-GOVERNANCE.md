@@ -2609,6 +2609,7 @@ legalBasisVersion
 effectiveFrom
 effectiveUntil
 legalAuthorityReferences[]
+allowedComponentCategories[]
 subtypeRegistryBinding {
   registryId
   registryVersion
@@ -2623,10 +2624,13 @@ legalContent
 
 taşır. `legalBasisCode` stable uppercase domain code; `legalBasisVersion` pozitif decimal string
 ve immutable semantic version'dır. `effectiveUntil` yalnız açık-ended değilse bulunur; omit ile
-`null` eşit değildir. Subtype Registry ayrı authority olarak kalır fakat exact
-registryId/version/checksum ve açık allowed subtype listesiyle version-bound tüketilir. Tenant
-overlay yalnız daha sıkı operational/evidence kısıtı ekleyebilir; legal content, category/subtype
-mapping, effective interval, liability veya interest semantics'i gevşetemez/değiştiremez.
+`null` eşit değildir. `allowedComponentCategories[]` (S08-D02-CR01, bkz. §23.31) bu entry'nin
+hangi Claim Formation component category değer(ler)i için kullanılabileceğini belirler; en az bir
+değer zorunludur, duplicate/unknown değer yasaktır, entry birden fazla category taşıyabilir. Subtype
+Registry ayrı authority olarak kalır fakat exact registryId/version/checksum ve açık allowed subtype
+listesiyle version-bound tüketilir. Tenant overlay yalnız daha sıkı operational/evidence kısıtı
+ekleyebilir; legal content, category/subtype mapping, effective interval, liability veya interest
+semantics'i gevşetemez/değiştiremez.
 
 Initial release'in releaseId/version/effectiveAt değeri ve `legalBasisCode` listesi owner
 tarafından sağlanmamıştır. Schema production'da non-empty liste ister; boş/demo/test payload
@@ -2640,7 +2644,8 @@ Canonical unsigned release payload için:
 2. Object key'leri Unicode code-point lexicographic sıradadır; duplicate/unknown key yasaktır.
 3. Array'ler contract-defined sırada sağlanır: `legalBases[]` ve `entryChecksums[]`
    `(legalBasisCode, legalBasisVersion)` lexicographic; `allowedSubtypeCodes[]` lexicographic;
-   `signatures[]` önce `LEGAL_REVIEWER`, sonra `FINAL_LEGAL_RATIFIER` sırasındadır.
+   `allowedComponentCategories[]` (S08-D02-CR01) lexicographic ascending; `signatures[]` önce
+   `LEGAL_REVIEWER`, sonra `FINAL_LEGAL_RATIFIER` sırasındadır.
    `legalAuthorityReferences[]` ratified author order'ını korur ve bu sıra signed content'tir.
    Serializer implicit sort yapmaz; yanlış sıra reddedilir, sıra değişikliği payload/checksum
    değişikliğidir.
@@ -3000,6 +3005,84 @@ RUNTIME                             DORMANT / DEFAULT DISABLED
 I04                                 BLOCKED / NOT AUTHORIZED
 NEXT                                D02-F01-R03 / SEPARATE OWNER GO REQUIRED
 ```
+
+## 23.31. Component category binding ratification
+
+`RCV-CLAIM-FORM-P02-S08-D02-CR01`, §23.28.1'in ratifiye ettiği minimum `legalBases[]` entry
+alan listesine `allowedComponentCategories[]` alanını ekler; bu entry'nin hangi Claim Formation
+`componentCategory` değer(ler)i için kullanılabileceğini machine-readable ve fail-closed biçimde
+belirler.
+
+```text
+allowedComponentCategories[]:
+  TYPE            readonly array of ClaimItemFormationComponentCategory
+  VALUES          PRINCIPAL | COST | ANCILLARY | ACCRUED_INTEREST (mevcut D01B union — reuse)
+  REQUIRED        YES
+  MIN ITEMS       1
+  DUPLICATE       YASAK
+  UNKNOWN VALUE   YASAK
+  NULL            YASAK
+  OMIT            YASAK
+  CANONICAL ORDER lexicographic ascending (§23.28.2 kural-3 ile tutarlı)
+```
+
+Örnek canonical sıra: `ACCRUED_INTEREST, ANCILLARY, COST, PRINCIPAL`. Bir entry birden fazla
+category taşıyabilir; tek category'ye indirgenmez. Yeni bir enum veya paralel taxonomy
+oluşturulmaz — yalnız mevcut D01B `ClaimItemFormationComponentCategory` union'ı reuse edilir.
+
+### 23.31.1. Request-validation-and-echo contract
+
+```text
+requested componentCategory ∈ releaseEntry.allowedComponentCategories
+  → EVET: D01B binding componentCategory = requested componentCategory (echo)
+  → HAYIR: SCOPE_MISMATCH (fail-closed)
+```
+
+Future D02-I01 adapter release entry'den keyfi bir category seçmez, category mapping üretmez,
+listedeki ilk değeri default kabul etmez, component subtype'tan category türetmez ve
+current/latest/fallback davranışı uygulamaz — yalnız membership doğrulaması yapar ve requested
+değeri echo eder.
+
+Aynı validation-and-echo ilkesi mevcut `subtypeRegistryBinding.allowedSubtypeCodes` için zaten
+geçerlidir (requested `componentSubtypeCode` ∈ `allowedSubtypeCodes`, başarılı halde echo edilir);
+bu amendment yalnız bu mevcut ilkeyi component-category seviyesinde açık biçimde kayda geçirir ve
+subtype seviyesinde netleştirir — subtype registry içeriği veya subtype→category mapping'i
+oluşturmaz.
+
+### 23.31.2. Candidate table boundary
+
+R02 §23.29.1'deki candidate tablosunun component/subtype sütunları (`COST veya ANCILLARY` gibi)
+owner-hazırlık rehberliğidir, machine-readable category assignment değildir — tüm satırlar
+`CANDIDATE ONLY / NOT RATIFIED` kalır. Bu amendment o tabloyu otomatik olarak
+`allowedComponentCategories` değerine dönüştürmez; her production entry için exact category
+seti owner/legal ratification ile ayrıca belirlenmelidir.
+
+```text
+TASK                                RCV-CLAIM-FORM-P02-S08-D02-CR01
+STATUS                              RATIFIED / CANONICAL
+NEW FIELD                           allowedComponentCategories[]
+FIELD VALUES                        REUSED FROM EXISTING D01B UNION
+SCHEMA VERSION                      RECEIVABLE_LEGAL_BASIS_RELEASE_V1 — UNCHANGED (ADDITIVE)
+REQUEST VALIDATION                  MEMBERSHIP CHECK, ELSE SCOPE_MISMATCH
+ECHO CONTRACT                       REQUESTED VALUE, NOT ADAPTER-SELECTED
+SUBTYPE PARITY                      CLARIFIED / UNCHANGED BEHAVIOR
+CANDIDATE TABLE (R02 §23.29.1)      CANDIDATE ONLY / NOT RATIFIED — UNCHANGED
+PUBLIC KEY / SIGNATURE MODEL        UNCHANGED (R01/R02/R01A PRESERVED)
+D02-F01 IMPLEMENTATION              BLOCKED / OWNER CONTENT + REVIEWER + KEYS REQUIRED
+R03                                 NOT STARTED / BLOCKED / OWNER GO REQUIRED
+D02-I01                             NOT AUTHORIZED
+CODE / SCHEMA / MIGRATION           NONE
+RUNTIME                             DORMANT / DEFAULT DISABLED
+I04                                 BLOCKED / NOT AUTHORIZED
+NEXT                                D02-F01-R03 — BLOCKED / OWNER GO REQUIRED
+```
+
+Bu ratification production Legal Basis içeriğini veya altı Legal Basis entry'sini ratify etmez;
+subtype registry içeriğini veya exact subtype binding'lerini tamamlamaz; per-subtype versioning,
+conflict-of-interest evidence, entry-level lifecycle/revocation evidence, trust-root history modeli,
+public-key encoding/onboarding, key ceremony, signature veya signed release üretmez/değiştirmez.
+Code, test, artifact, schema, migration, resolver/provider, runtime, Document authority, I04/I05
+veya historical data değişikliği üretmez. R03 ayrı owner GO olmadan başlamaz.
 
 ---
 

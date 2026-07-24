@@ -96,13 +96,14 @@ RCV-CLAIM-FORM-P02-S08-D02-R01 : RATIFIED DESIGN / CANONICAL — IMPLEMENTATION 
 RCV-CLAIM-FORM-P02-S08-D02-F01-R01 : RATIFIED DESIGN / CANONICAL — RELEASE + TRUST CONTRACT READY / CONTENT + KEYS MISSING
 RCV-CLAIM-FORM-P02-S08-D02-F01-R02 : OWNER INPUT PACK READY / CANONICAL — CONTENT RATIFICATION + REVIEWER + KEYS MISSING
 RCV-CLAIM-FORM-P02-S08-D02-R01A : RELEASE IDENTITY AMENDMENT RATIFIED / CANONICAL — NON-CIRCULAR IDENTITY CHAIN
+RCV-CLAIM-FORM-P02-S08-D02-CR01 : COMPONENT CATEGORY BINDING RATIFIED / CANONICAL — SCOPE VALIDATION-AND-ECHO
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-F01-R03 — OWNER GO REQUIRED
+Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-F01-R03 — BLOCKED / OWNER GO REQUIRED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -3128,6 +3129,84 @@ R01/R02'nin canonical serialization, SHA-256 checksum algorithm, exact domain-se
 preimage, trust-root lifecycle, distinct reviewer/final-ratifier/production-release-signer rolleri,
 four-eyes ve fail-closed hükümleri değişmez. Code, test, artifact, key, signature, schema, migration,
 resolver/provider, runtime, Document authority, I04/I05 veya historical data değişikliği üretmez.
+
+### 1.31M RCV-CLAIM-FORM-P02-S08-D02-CR01 component category binding ratification
+
+```text
+TASK:
+RCV-CLAIM-FORM-P02-S08-D02-CR01
+
+STATUS:
+COMPONENT CATEGORY BINDING RATIFIED / CANONICAL
+
+NEW FIELD:
+allowedComponentCategories
+
+FIELD SOURCE:
+EXISTING D01B ClaimItemFormationComponentCategory UNION (REUSED, NOT NEW)
+
+REQUEST VALIDATION:
+componentCategory ∈ allowedComponentCategories, ELSE SCOPE_MISMATCH
+
+ECHO CONTRACT:
+D01B componentCategory = REQUESTED VALUE (NOT SELECTED FROM LIST)
+
+SUBTYPE PARITY:
+CLARIFIED, NOT CHANGED — componentSubtypeCode AYNI VALIDATION-AND-ECHO İLKESİYLE ZATEN ÇALIŞIR
+
+CANDIDATE TABLE (R02 §23.29.1):
+CANDIDATE ONLY / NOT RATIFIED — DEĞİŞMEDİ
+
+SCHEMA VERSION:
+RECEIVABLE_LEGAL_BASIS_RELEASE_V1 — UNCHANGED (ADDITIVE, MINIMUM-FIELD-LIST FRAMEWORK)
+
+PUBLIC KEY / SIGNATURE MODEL:
+UNCHANGED (R01/R02/R01A HÜKÜMLERİ AYNEN KORUNUR)
+
+D02-F01 IMPLEMENTATION:
+BLOCKED / OWNER CONTENT + REVIEWER + PRODUCTION PUBLIC-KEY INPUT REQUIRED
+
+R03:
+NOT STARTED / BLOCKED / OWNER GO REQUIRED
+
+D02-I01:
+NOT AUTHORIZED
+
+I04:
+BLOCKED / NOT AUTHORIZED
+
+NEXT:
+RCV-CLAIM-FORM-P02-S08-D02-F01-R03 — BLOCKED / OWNER GO REQUIRED
+```
+
+`allowedComponentCategories`, bir Legal Basis release entry'sinin hangi Claim Formation
+`componentCategory` değer(ler)i için kullanılabileceğini machine-readable ve fail-closed biçimde
+belirler. Yeni bir enum veya paralel taxonomy oluşturmaz; yalnız mevcut D01B
+`ClaimItemFormationComponentCategory` union'ını (`PRINCIPAL`, `COST`, `ANCILLARY`,
+`ACCRUED_INTEREST`) reuse eder. Bir entry birden fazla category taşıyabilir; bu alan tek bir
+category'ye indirgenmez.
+
+Future D02-I01 adapter, requested `componentCategory`'nin `allowedComponentCategories` içinde olup
+olmadığını doğrular; değilse `SCOPE_MISMATCH` ile fail-closed sonuç üretir. Başarılı resolution
+halinde D01B binding'indeki `componentCategory`, adapter tarafından seçilmiş bir değer değil,
+requested değerin echo'sudur. Aynı validation-and-echo ilkesi mevcut
+`subtypeRegistryBinding.allowedSubtypeCodes` için zaten geçerlidir ve bu amendment'la yalnız
+kayda geçirilmiştir — davranış değişmemiştir.
+
+R02 §23.29.1'deki candidate tablosunun "İzin verilen component / subtype" sütunu bu alanın owner
+tarafından nasıl doldurulacağına dair bir hazırlık rehberidir; bu amendment o tabloyu otomatik
+olarak `allowedComponentCategories` değerine dönüştürmez — tablo `CANDIDATE ONLY / NOT RATIFIED`
+kalır.
+
+Bu ratification, R01'in "en az" (minimum) alan listesi çerçevesinde additive'dir; mevcut
+`RECEIVABLE_LEGAL_BASIS_RELEASE_V1` schemaVersion'ını değiştirmez, çünkü henüz imzalanmış bir
+release artifact'ı yoktur ve bu nedenle geriye dönük uyumluluk kırılması riski yoktur. Bu görev
+production Legal Basis içeriğini veya altı Legal Basis entry'sini ratify etmez; subtype registry
+içeriğini tamamlamaz; per-subtype versioning, conflict-of-interest evidence, entry-level
+lifecycle/revocation evidence, trust-root history modeli, public-key encoding, key onboarding,
+signature-role veya signed release üretmez/değiştirmez. Bunlar ayrı, açık gap'ler olarak kalır.
+`RCV-CLAIM-FORM-P02-S08-D02-F01-R03` bu görevle başlamaz ve yalnız ayrı owner GO sonrasında
+yürütülebilir.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 
