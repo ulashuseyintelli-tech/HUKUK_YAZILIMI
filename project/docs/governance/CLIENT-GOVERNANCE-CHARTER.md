@@ -1905,3 +1905,135 @@ Track A'nın üç unit'i de (I01/I02/I03) şunları YAPMAZ: KDV/BSMV/KKDF tutar�
 ### 34.7 Track A Self-Check
 
 Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ (PARTIAL korunur, gerekçe "Track A closed, Track B implementation units remain"); Track B'nin herhangi bir ANALYZE veya IMPLEMENT işini BAŞLATMAZ; production kod/schema/migration/test/CI/runtime DEĞİŞTİRMEZ (I01/I02/I03 zaten ayrı PR'larla merge edilmiş, bu kayıt yalnız canonicalize eder); §33.5/§33.6'nın metnini SİLMEZ/EDİT ETMEZ (yalnız §34.3 ile çapraz-referanslı kesinlik notu ekler); §5/§6/§8.A/§8.B/§11–§33 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; `CLIENT-P2-U03-I07` veya başka yeni unit AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ. **TRACK A CLOSED ≠ PROGRAM CLOSED; TRACK A CLOSED ≠ TRACK B AUTHORIZED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 35. CLIENT Phase 2 Track B — Financial Disclosure Architecture Canonicalization (OWNER RATIFIED, GOVERNANCE-ONLY)
+
+Bu bölüm, §34'ün (Track A kapanışı) sıraya koyduğu **TRACK B — FINANCIAL DISCLOSURE CONTRACT**'ın mimari tasarımını ve owner'ın verdiği altı karar noktasını canonicalize eder (`decision-log.md` CLIENT-P2-U03-TRACK-B-D01-GOV). Mimari, chat-level `CLIENT-P2-U03-TRACK-B-A01` (read-only envanter) ve `CLIENT-P2-U03-TRACK-B-D01` (read-only GO-DESIGN) turlarında hazırlanmış, owner tarafından incelenip altı açık karar noktasında ratifiye edilmiştir. **Bu kayıt GOVERNANCE-ONLY'dir — hiçbir kod/schema/migration/test/CI/runtime değişikliği İÇERMEZ, hiçbir implementasyon yetkisi VERMEZ.**
+
+### 35.1 Lineage
+
+§33 (I06, transparency-by-default + financial-disclosure-gate ratifikasyonu + Track A/B ayrımı) → §34 (Track A teknik kapanışı, PR #1559/#1564/#1569) → owner'ın canlı politika ihlali tespiti (`CASE_DETAIL_SELECT`/`getClientCases()`'in ham `collections` ifşası, §33.4 ile çelişki) → `CLIENT-P2-U03-TRACK-B-U00` (case-detay remediation, PR #1582) → `CLIENT-P2-U03-TRACK-B-U00B` (case-liste remediation, PR #1584) → chat-level `CLIENT-P2-U03-TRACK-B-A01` (read-only envanter: money model'leri, allocation semantics, approval authority, notification/delivery, idempotency/correction precedent) → chat-level `CLIENT-P2-U03-TRACK-B-D01` (read-only GO-DESIGN, 21 karar alanı) → owner'ın altı owner-kararı ratifikasyonu → bu kayıt (`CLIENT-P2-U03-TRACK-B-D01-GOV`, GOVERNANCE-ONLY).
+
+### 35.2 Bounded-Context Ownership & Non-Recalculation İlkesi
+
+Track B, tahsilat/dağıtım/muhasebe hesaplamalarını **sahiplenmez** — bunlar RECEIVABLE/client-settlement/ledger bounded-context'lerinin zaten olgun, reconciliation-doğrulanmış sorumluluğudur. Track B, yalnız yetkili sonuçları **tüketir**: snapshot, onay bağlama, içerik onayı, bildirim gönderim bağlama, yayınlama durumu, curated okuma sözleşmesi, düzeltme/supersession/reversal sunumu. Track B şunları YAPMAZ ve yapamaz: tahsilat oluşturma, tahsis hesaplama, ledger hesaplama, banka mutabakatı, muhasebe politikası kuralları, ödeme icrası, müvekkile fiili para transferi.
+
+### 35.3 Aggregate Root & V1 Kapsam Sınırı
+
+**Birincil kaynak aggregate: `CollectionDisposition`, zorunlu kaynak durumu: `POSTED`.** Gerekçe: bu model zaten tam gereken şekli taşıyor — tutar, kalem kırılımı, onay bağlantısı, POSTED zaman damgası; `Collection` ile `collectionId @unique` üzerinden doğal 1:1 idempotent ilişkisi var (`CollectionDisposition.collectionId String @unique`). **V1 desteklenen kapsam: yalnız `beneficiaryScope = SINGLE_CASE_CLIENT`.**
+
+**`CASE_CREDITOR_CLUSTER` (çoklu-alacaklı, `caseClientId` null) — OWNER KARARI: V1 KAPSAMI DIŞI.** Sessizce atlanamaz: bu scope'ta bir disclosure oluşturma girişimi **fail-closed `UNSUPPORTED_SCOPE` sonucu üretmelidir** — disclosure oluşturulmaz, sessizce atlanmaz, bir client sahibi çıkarsanmaz (varsayım yapılmaz).
+
+### 35.4 Yetkili Kaynak Bağlama
+
+Yetkilendirilmiş yetkili kaynaklar: `Collection` (status=CONFIRMED, amount/currency/date kopyalanır) · `CollectionDisposition` (status=POSTED, totalAmount/currency/postedAt kopyalanır) · `CollectionDispositionLine` (type+amount KOPYALANIR, referans değil). `ClientPayout` yalnız ileride **kayıt-edilmiş-ödeme kanıtı** sağlayabilir (§35.15). `LedgerEntry`/`LedgerAllocation` **V1 disclosure kaynağı DEĞİLDİR** (§35.17). Disclosure snapshot'ı onaylanan kaynak değerlerini kopyalar; yayınlanmış disclosure'lar kaynak kayıtlar sonradan değişse/reversed olsa/superseded olsa da **yeniden yazılmaz** — değişikliği yansıtmak yeni bir düzeltme versiyonu gerektirir (§35.13).
+
+### 35.5 Model Kararı & Disclosure Kalem Taksonomisi
+
+**Canonical model: `ClientFinancialDisclosure` (kök) → `ClientFinancialDisclosureVersion` (immutable finansal snapshot) → `ClientFinancialDisclosureLine` (normalize dağıtım satırları).**
+
+```text
+ClientFinancialDisclosure:
+- kararlı aggregate kimliği
+- tenant/case/case-client sahipliği
+- CollectionDisposition idempotency anchor'ı
+- current-effective versiyon işaretçisi
+
+ClientFinancialDisclosureVersion:
+- immutable finansal snapshot
+- versiyon yaşam döngüsü
+- ofis onayı bağlaması
+- içerik onayı bağlaması
+- bildirim kanıtı
+- yayınlama kanıtı
+- düzeltme/supersession/reversal bağlantıları
+
+ClientFinancialDisclosureLine:
+- normalize dağıtım satırları
+- mevcut CollectionDispositionLineType taksonomisi (YENİDEN KULLANILIR)
+- kesin Decimal tutar
+- kaynak-satır izlenebilirliği
+```
+
+**Disclosure kalem taksonomisi yeni bir finansal tahsis taksonomisi İCAT ETMEZ** — mevcut `CollectionDispositionLineType` evreni doğrudan yeniden kullanılır. V1 client sunumu, mevcut olduğunda şu dispozisyon satırları için curated etiket içerir: `CLIENT_PAYABLE` · `CONTRACTUAL_FEE_WITHHELD` · `FIRM_EXPENSE_REIMBURSEMENT` · `CLIENT_EXPENSE_REIMBURSEMENT` · `OFFSET_CLIENT_ADVANCE` · `OTHER`. `HELD_PENDING_DISTRIBUTION` asla client-görünür DEĞİLDİR — yalnız POSTED kaynak dispozisyonlar disclosure oluşturabildiğinden yapısal olarak imkânsızdır.
+
+### 35.6 Immutability & Versiyonlama Sözleşmesi
+
+Yayınlanmış finansal değerler yerinde asla mutasyona uğramaz. Yayınlanmış bildirim içeriği yerinde asla mutasyona uğramaz. Düzeltmeler yeni versiyon yaratır; supersession eski versiyonu korur; reversal orijinal versiyonu korur. Zorunlu bağlamalar: `snapshotHash` · `sourceFingerprint` · `notificationContentHash` · disclosure versiyonu · alıcı kimliği. **Yayınlama, onaylanmış fingerprint'i yeniden doğrulamalıdır** — stale onay veya TOCTOU yayınlamasını önlemek için.
+
+### 35.7 Durum Makinesi
+
+Canonical minimum yaşam döngüsü: `DRAFT → OFFICE_APPROVAL_PENDING → OFFICE_APPROVED → CONTENT_APPROVAL_PENDING → CONTENT_APPROVED → SEND_PENDING → (SEND_FAILED ⟲) → PUBLISHED`, ayrıca `CANCELLED` (finansal taahhüt öncesi) ve yalnız PUBLISHED'ten ulaşılabilir `SUPERSEDED`/`REVERSED`. **Yalnız `PUBLISHED` client-görünürdür.** **OWNER KARARI (§35.11 ile birlikte):** provider-acceptance bir `SENT` audit olayı üretebilir, ama `SENT` ayrı, kalıcı bir client-facing durum olarak GEREKMEZ — durum satırı `SEND_PENDING`'ten doğrudan `PUBLISHED`'e, tek guarded geçişte ilerler.
+
+### 35.8 Ofis Disclosure Onayı
+
+Mevcut `OfficeApprovalRequest` substrate'i disclosure-özel bir sözleşmeyle yeniden kullanılır. **Canonical `actionCode`: `CLIENT_FINANCIAL_DISCLOSURE_APPROVE`** (yeni migration gerekmez — substrate'in kendi tasarımı: actionCode string, tek modüle bağımlı değil). Onay, tam olarak disclosure versiyonuna ve `snapshotHash`'e bağlanmalıdır. Mevcut onaylayıcı yetkinlik kuralları, repository truth doğruladığı ölçüde yeniden kullanılır: bugün doğrulanmış substrate `isApproverEligible()` (PARTNER veya `canApproveOfficeActions=true`); owner'ın işaret ettiği daha geniş rol kümesi (MANAGER/SUPER ADMIN/yetkilendirilmiş avukat) **implementasyon aşamasında (I01/I03) mevcut yetkinlik modeliyle doğrulanacak/genişletilecek bir kapsam olarak kaydedilir — bugün var olduğu iddia edilmez.** Bu yetkinliğe sahip olmayan staff hiçbir koşulda nihai finansal-disclosure onaylayıcısı OLAMAZ. Requester/approver ayrımı ve stale-onay reddi zorunlu kalır. İç dağıtım onayı (`DISTRIBUTION_APPROVED`), müvekkile-açıklama onayına EŞDEĞER DEĞİLDİR.
+
+### 35.9 İçerik Onayı (Owner Kararı)
+
+**OWNER KARARI: Ayrı bir ikinci `OfficeApprovalRequest` OLUŞTURULMAYACAK.** Disclosure versiyonu üzerinde ayrı, auditable bir durum geçişi kullanılır — finansal onaydan bağımsız bir onay olayıdır, ancak ikinci bir genel onay kaydı gereksiz karmaşıklık yaratacağından reddedilmiştir. Zorunlu alanlar/kanıt: `notificationContent` · `notificationContentHash` · `contentApprovedAt`/`By` · onaylanmış alıcı kimliği · disclosure versiyonu · finansal `snapshotHash`. İçerik onayından sonra: içerik düzenlenemez, alıcı değiştirilemez, tutarlar değiştirilemez, kalem taksonomisi değiştirilemez, para birimi değiştirilemez — herhangi biri değişirse onaylanmış versiyon geçersiz kalır.
+
+### 35.10 Teslimat Kanıtı & Mock-Provider Yasağı
+
+Canonical başarı eşiği: **gerçek SMTP/provider kabulü + kalıcı provider message ID.** Bu yalnız "provider mesajı kabul etti"yi kanıtlar — inbox teslimatını, okunmayı veya alıcı eylemini KANITLAMAZ. Eksik message ID → `SEND_FAILED`. **Mock provider production yayınlamayı ASLA yetkilendiremez** — zorunlu production invariant'ı: `EMAIL_PROVIDER` onaylı gerçek bir provider olarak yapılandırılmamışsa yayınlama yasaktır; sessiz mock fallback'i Financial Disclosure gate'ini tatmin edemez.
+
+### 35.11 Gönderim / Yayınlama Sırası (Owner Kararı)
+
+**OWNER KARARI: Başarılı gönderim sonrası ek bir insan-kontrollü yayınlama onayı GEREKMEZ.** Zorunlu sıra: (1) `SEND_PENDING`'i kalıcı commit et · (2) provider çağrısını DB transaction'ı DIŞINDA yap · (3) gerçek-provider kabulü + message ID zorunlu tut · (4) snapshot/içerik/alıcı bağlamalarını yeniden doğrula · (5) `PUBLISHED`'e tek idempotent, guarded DB geçişi tamamla · (6) provider-kabul/`SENT` audit olayını ve yayınlama olayını kaydet. Sistem şunları ÖNLEMELİDİR: gönderim kanıtı olmadan portal yayınlaması · kalıcı disclosure versiyonu olmadan bildirim gönderimi · çift gönderim · çift yayınlama · stale onay yayınlaması · değişmiş-alıcı yayınlaması.
+
+### 35.12 Idempotency / Concurrency
+
+Zorunlu doğal constraint'ler: `@@unique([tenantId, collectionDispositionId])` (kök) · `@@unique([tenantId, disclosureId, version])` · disclosure-versiyonu gönderim idempotency anahtarı. Repository-native desenler yeniden kullanılır: advisory lock · transaction-içi re-check · doğal unique constraint · P2002 replay · compare-and-swap durum geçişi · snapshot/içerik hash yeniden-doğrulaması.
+
+### 35.13 Düzeltme / Supersession / Reversal
+
+Yayınlanmış disclosure geçmişi **asla silinmez veya sessizce yeniden yazılmaz.** Finansal değişiklik (toplam tutar/para birimi/satır tipi/satır tutarı/müvekkil net tutarı/alıcı sahipliği/kaynak dispozisyon bağlaması dahil herhangi biri) → yeni versiyon + yeni finansal ofis onayı + yeni içerik onayı + yeni bildirim + yeni yayınlama, kısayol YOK.
+
+**OWNER KARARI (yazım/sunum düzeltmesi):** yazım-only düzeltme her zaman yeni versiyon + yeni içerik onayı + yeni bildirim + yeni yayınlama gerektirir. Finansal ofis onayı yalnız şu KOŞULLARIN TAMAMI sağlanırsa yeniden kullanılabilir: `snapshotHash` değişmemiş · `sourceFingerprint` değişmemiş · para birimi değişmemiş · tüm finansal satırlar/tutarlar değişmemiş · müvekkil alıcı kimliği değişmemiş. Bunlardan herhangi biri değişmişse tam finansal yeniden-onay ZORUNLUDUR.
+
+### 35.14 Client Portal Sözleşmesi & Disclosure Geçmişi (Owner Kararı)
+
+Client API yalnız tenant+client+case object-scope içindeki `PUBLISHED` disclosure'ları taşır. **OWNER KARARI: Varsayılan yüzey current-effective disclosure'ı gösterir; müvekkil ayrıca düzeltme/reversal geçmişine erişebilir — eski kayıtlar gizlenmez, ancak normal ekranda gürültü yaratmayacak AYRI bir "Bildirim Geçmişi" yüzeyinde sunulur** (tek, birleşik bir liste değil). İzin verilen alanlar: opaque disclosure ID · versiyon · para birimi · totalCollected · curated satırlar · clientNetAmount · approvedAt/notifiedAt/publishedAt · current/effective işareti · supersession/reversal ilişkisi · client-safe düzeltme gerekçesi · kanıt-desteklenen remittance durumu. **Gösterilmez:** internal approver ID · onay yorumları · provider hata detayı · idempotency anahtarları · hash'ler · ham ledger ID'leri · banka bilgisi · yayınlanmamış değerler · taslak workflow durumları.
+
+### 35.15 Remittance Etiketleme Kısıtı
+
+Disclosure şu dördü ayırt etmelidir: Müvekkile Aktarılacak / Ödeme Kaydedildi / Ödeme Gerçekleşti / Banka Mutabakatı Tamamlandı. **Mevcut `ClientPayout` mimarisi yalnız "Ödeme Kaydedildi"yi kanıtlar** (`ClientPayoutStatus` tek değer: `RECORDED`). Bu nedenle **V1, gelecekte yetkili bir banka-icra/mutabakat sözleşmesi kurulmadıkça "Ödeme Gerçekleşti" veya "Banka Mutabakatı Tamamlandı" İDDİA EDEMEZ.**
+
+### 35.16 Çoklu Para Birimi & Hassasiyet
+
+Bir disclosure tam olarak bir para birimi taşır; farklı para birimleri ayrı disclosure gerektirir; cross-currency agregasyon YOK; otomatik FX YOK. Canonical V1 hassasiyeti: `Decimal(15,2)` (mevcut `Collection`/`CollectionDisposition`/`CollectionDispositionLine`/`ClientPayout` ile tam tutarlı). Zorunlu kesin reconciliation: `Σ satırlar = totalCollected`, `CLIENT_PAYABLE satırı = clientNetAmount`, tolerans YOK. Yuvarlama artıkları Track B tarafından sessizce atanamaz.
+
+### 35.17 Ledger-Seviyeli Kırılım Hariç Tutulması (Owner Kararı)
+
+**OWNER KARARI: Ana para/faiz/vergi gibi ledger-seviyeli kırılım V1 DIŞINDADIR.** V1 yalnız mevcut `CollectionDispositionLineType` dağıtım taksonomisini tüketir. Gelecekteki herhangi bir ledger-seviyeli kırılım, ayrı, owner-gated bir curated contract gerektirir — bu kayıtla YETKİLENDİRİLMEZ.
+
+### 35.18 Güvenlik & Audit
+
+Zorunlu invariant'lar: tenant izolasyonu · case/client object-scope · yayınlanmamış disclosure'ın DB sorgusu SEVİYESİNDE dışlanması · yetkinliksiz staff'ın nihai onaylayıcı olma yasağı · stale onay reddi · onaydan önce alıcı bağlaması · replay-safe gönderim/yayınlama · cross-client disclosure numaralandırması YOK · mock-provider production yayınlaması YOK · client-side filtreleme birincil disclosure sınırı OLARAK KULLANILMAZ. Append-only audit kanıtı zorunlu: disclosure yaratma · kaynak bağlama · ofis onayı talep/karar · içerik onayı/red · gönderim talebi · provider kabulü · gönderim hatası · yayınlama · düzeltme versiyonu · supersession · reversal.
+
+### 35.19 Implementasyon Treni (yetkilendirilmedi)
+
+```text
+D01-GOV: mimari canonicalization (bu kayıt)
+I01: schema + migration + model-seviyesi constraint'ler
+I02: snapshot yaratma, kaynak bağlama, reconciliation
+I03: ofis onayı + aggregate içerik onayı
+I04: provider dispatch + mock-provider production guard'ı + yayınlama durum makinesi
+I05: client portal API projeksiyonu
+I06: client portal web sunumu + disclosure geçmişi
+I07: düzeltme, supersession, reversal
+I08: Track B governance kapanışı
+```
+`I01`–`I08`'in HİÇBİRİ bu GO-DOCS kaydıyla otomatik yetkilendirilmez.
+
+### 35.20 Non-Equations / Precision
+
+`ARCHITECTURE RATIFIED ≠ IMPLEMENTATION AUTHORIZED` · `TRACK B ARCHITECTURE CANONICAL ≠ TRACK B CLOSED` · `SIX OWNER DECISIONS RATIFIED ≠ SCHEMA CREATED` · `POSTED CollectionDisposition AGGREGATE ROOT ≠ CLIENT TRACK B RECALCULATES ALLOCATION` (Track B yalnız TÜKETİR) · `CollectionDispositionLineType YENİDEN KULLANILDI ≠ YENİ FİNANSAL TAKSONOMİ İCAT EDİLDİ` · `PROVIDER-ACCEPTED KANIT EŞİĞİ ≠ INBOX TESLİMATI KANITLANDI` · `"ÖDEME KAYDEDİLDİ" KANITLANDI ≠ "ÖDEME GERÇEKLEŞTİ"/"BANKA MUTABAKATI TAMAMLANDI" KANITLANDI` (§35.15, sert kısıt) · `CASE_CREDITOR_CLUSTER V1 DIŞI ≠ SESSİZCE ATLANIR` (fail-closed `UNSUPPORTED_SCOPE` zorunlu) · `LEDGER-SEVİYELİ KIRILIM HARİÇ ≠ 4-KATEGORİLİ DAĞITIM EKSİK`. **Doğru ifade: "TRACK B ARCHITECTURE RATIFIED/CANONICAL — ALTI OWNER KARARI DAHİL / TRACK B IMPLEMENTATION NOT AUTHORIZED / CLIENT-P2-U03 PARTIAL."**
+
+### 35.21 Final Status
+
+**TRACK A: CLOSED/CANONICAL** (değişmedi). **TRACK B LIVE REMEDIATION: COMPLETE** (case-detay PR #1582 + case-liste PR #1584, ikisi de ayrı merge edildi). **TRACK B ARCHITECTURE: RATIFIED/CANONICAL** (bu kayıtla — 21 karar alanı + altı owner kararı). **TRACK B IMPLEMENTATION: NOT AUTHORIZED/NOT STARTED.** **CLIENT-P2-U03 (genel program): PARTIAL — NOT READY FOR FINAL CLOSURE.** **SCHEMA/MIGRATION: NONE. RUNTIME: UNCHANGED. IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).** **NEXT: OWNER-GATED/NOT AUTO-STARTED** — `CLIENT-P2-U03-TRACK-B-I01` (schema + migration + model-seviyesi constraint'ler), otomatik başlatılmaz.
+
+### 35.22 Track B Architecture Self-Check
+
+Bu bölüm: `CLIENT-P2-U03`'ü veya Track B'yi CLOSED İLAN ETMEZ; `I01`–`I08`'in hiçbirini BAŞLATMAZ; production kod/schema/migration/test/API/portal DEĞİŞTİRMEZ; yeni migration OLUŞTURMAZ; §5/§6/§8.A/§8.B/§11–§34 substantive hükümlerini DEĞİŞTİRMEZ; `CollectionDisposition`/`CollectionDispositionLine`/`OfficeApprovalRequest`/`EmailProviderService`/ledger modellerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; hesaplama/tahsis/muhasebe/ödeme icrası yetkisi VERMEZ. **ARCHITECTURE RATIFIED ≠ IMPLEMENTATION AUTHORIZED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
