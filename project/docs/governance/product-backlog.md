@@ -2815,6 +2815,50 @@ checksum kararları, production public key kabulü, key ceremony, signature veya
 
 ---
 
+## RCV-CLAIM-FORM-P02-S08-D02-F01-R03 — Legal Basis Release Input Reconciliation
+
+```text
+PROGRAM LOCK                       RECEIVABLE / CLAIM FORMATION
+STATUS                             RATIFIED / CANONICAL
+EFFECTIVE-TIME MODEL               SCHEDULED / EXACT effectiveAt PENDING
+RELEASE VERSION / ID               "1" / RCV-LB-R1
+RELEASE CODE                       OMIT / NOT AUTHORITATIVE
+LEGAL BASIS VERSION / SUPERSEDES   "1" / NONE
+LEGAL BASIS CODES                  KANUN_3095_1 / KANUN_3095_2 /
+                                   TBK_117 / TBK_118 / TBK_120 / TTK_1530
+LEGAL CONTENT SEMANTICS            RATIFIED
+COMPONENT CATEGORY CONTRACT        CR01'E BAĞLI / CLOSED
+SUBTYPE REGISTRY                   MISSING / D02-SR01 REQUIRED
+PUBLIC KEYS                        MISSING
+CHECKSUM-BOUND DECISIONS           PENDING
+SIGNED RELEASE                     NOT CREATED
+D02-F01 IMPLEMENTATION             STILL BLOCKED
+D02-I01                            NOT AUTHORIZED
+CODE / SCHEMA / MIGRATION          NONE
+RUNTIME                            DORMANT / DEFAULT DISABLED
+S08-I04                            BLOCKED / NOT AUTHORIZED
+NEXT                               RCV-CLAIM-FORM-P02-S08-D02-SR01 —
+                                   OWNER GO REQUIRED / NOT STARTED
+```
+
+### Ratified input boundary
+
+- R01A'nın `releaseId → payload → checksum → signatures` zinciri ve CR01'in
+  `allowedComponentCategories[]` membership/echo contract'ı değişmez.
+- Altı Legal Basis entry'sinin legal role/use, exact source/evidence, same-liability ve
+  interest-eligibility semantics release input'u olarak ratifiye edilmiştir.
+- Legal reviewer Av. Fatma Uluca Telli (İstanbul 1 No'lu Barosu, Sicil 36582), final legal
+  ratifier Av. Ulaş Hüseyin Telli ve operational production signer `TELLI-PROD-LEGAL-01`
+  birbirinden ayrı rollerdir.
+- Candidate subtype isimleri production authority değildir. Exact versioned Subtype Registry,
+  registry checksum ve `allowedSubtypeCodes[]` için D02-SR01 ayrı owner-gated prerequisite'tir.
+- Üç role ait public keys/lifecycle input'ları ile exact checksum-bound reviewer/final-ratifier
+  kararları eksiktir. Signed release ve D02-F01 implementation başlayamaz.
+- Key generation/onboarding, signature, artifact, code/test/schema/migration, resolver/provider,
+  runtime, Document authority, I04/I05 ve historical data change `NONE`dır.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,

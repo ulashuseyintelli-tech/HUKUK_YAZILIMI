@@ -97,13 +97,15 @@ RCV-CLAIM-FORM-P02-S08-D02-F01-R01 : RATIFIED DESIGN / CANONICAL — RELEASE + T
 RCV-CLAIM-FORM-P02-S08-D02-F01-R02 : OWNER INPUT PACK READY / CANONICAL — CONTENT RATIFICATION + REVIEWER + KEYS MISSING
 RCV-CLAIM-FORM-P02-S08-D02-R01A : RELEASE IDENTITY AMENDMENT RATIFIED / CANONICAL — NON-CIRCULAR IDENTITY CHAIN
 RCV-CLAIM-FORM-P02-S08-D02-CR01 : COMPONENT CATEGORY BINDING RATIFIED / CANONICAL — SCOPE VALIDATION-AND-ECHO
+RCV-CLAIM-FORM-P02-S08-D02-F01-R03 : LEGAL BASIS RELEASE INPUTS RATIFIED / CANONICAL — SR01 + KEYS + CHECKSUM DECISIONS MISSING
+RCV-CLAIM-FORM-P02-S08-D02-SR01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-F01-R03 — BLOCKED / OWNER GO REQUIRED
+Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-SR01 — OWNER GO REQUIRED / NOT STARTED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -3207,6 +3209,98 @@ lifecycle/revocation evidence, trust-root history modeli, public-key encoding, k
 signature-role veya signed release üretmez/değiştirmez. Bunlar ayrı, açık gap'ler olarak kalır.
 `RCV-CLAIM-FORM-P02-S08-D02-F01-R03` bu görevle başlamaz ve yalnız ayrı owner GO sonrasında
 yürütülebilir.
+
+### 1.31N RCV-CLAIM-FORM-P02-S08-D02-F01-R03 Legal Basis release input reconciliation
+
+```text
+TASK:
+RCV-CLAIM-FORM-P02-S08-D02-F01-R03
+
+STATUS:
+RATIFIED / CANONICAL
+
+EFFECTIVE-TIME MODEL:
+SCHEDULED / EXACT effectiveAt PENDING / RETROACTIVE ACTIVATION PROHIBITED
+
+RELEASE:
+releaseVersion = "1"
+releaseId = RCV-LB-R1
+releaseCode = OMIT
+legalBasisVersion = "1"
+supersedes = NONE
+
+LEGAL BASIS CODES:
+KANUN_3095_1
+KANUN_3095_2
+TBK_117
+TBK_118
+TBK_120
+TTK_1530
+
+LEGAL CONTENT SEMANTICS:
+RATIFIED — ROLE / USE / SOURCE-EVIDENCE /
+LIABILITY / INTEREST ELIGIBILITY
+
+COMPONENT CATEGORIES:
+CR01 allowedComponentCategories[] / RATIFIED PER ENTRY
+
+SUBTYPE NAMES:
+CANDIDATE ONLY / NOT PRODUCTION AUTHORITY
+
+SUBTYPE REGISTRY:
+MISSING / RCV-CLAIM-FORM-P02-S08-D02-SR01 REQUIRED
+
+LEGAL REVIEWER:
+AV. FATMA ULUCA TELLİ /
+İSTANBUL 1 NO'LU BAROSU / SİCİL 36582
+
+FINAL LEGAL RATIFIER:
+AV. ULAŞ HÜSEYİN TELLİ
+
+PRODUCTION RELEASE SIGNER:
+TELLI-PROD-LEGAL-01 / OPERATIONAL ONLY
+
+PUBLIC KEYS / KEY LIFECYCLE INPUTS:
+MISSING
+
+EXACT CHECKSUM-BOUND REVIEW / RATIFICATION:
+PENDING
+
+SIGNED RELEASE:
+NOT CREATED
+
+D02-F01:
+STILL BLOCKED
+
+D02-I01 / I04:
+NOT AUTHORIZED / BLOCKED
+
+CODE / SCHEMA / MIGRATION / RUNTIME:
+NONE
+
+NEXT:
+RCV-CLAIM-FORM-P02-S08-D02-SR01 —
+SEPARATE OWNER GO REQUIRED / NOT STARTED
+```
+
+R03, R01A'nın non-circular `releaseId → payload → checksum → signatures` zincirini ve CR01'in
+request-validation-and-echo component-category sözleşmesini tüketir; ikisini yeniden açmaz.
+`KANUN_3095_1`, `KANUN_3095_2`, `TBK_117`, `TBK_118`, `TBK_120` ve `TTK_1530` için
+code/version, legal role/use, exact source/evidence requirements, liability ve interest
+eligibility semantics owner-ratified release input'udur. Exact Document version/fingerprint ve
+aynı debtor/liability relationship zorunludur; `TTK_1530` consumer, employment veya unrelated
+commercial debt'te yasaktır.
+
+`DEFAULT_INTEREST`, `DELAY_DAMAGE`, `CONTRACTUAL_DEFAULT_INTEREST`, `STATUTORY_INTEREST`,
+`STATUTORY_DEFAULT_INTEREST`, `COMMERCIAL_DEFAULT_INTEREST` ve
+`COMMERCIAL_COLLECTION_COST` production subtype authority değildir. Exact registry
+identity/version/checksum ve `allowedSubtypeCodes[]` yalnız ayrı SR01 ratification'ıyla oluşabilir.
+
+Reviewer ve final ratifier decision/signature kayıtları complete payload'ın exact checksum'una
+bağlanmadan geçerli değildir. Üç ayrı Ed25519 public key, fingerprint/keyId, validity, custody ve
+revoke/rotation evidence sağlanmamıştır. Private key, signature, signed artifact, key onboarding,
+code/test/schema/migration, resolver/provider, runtime activation, Document authority, I04/I05
+ve historical data değişikliği bu görevde yoktur.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 
