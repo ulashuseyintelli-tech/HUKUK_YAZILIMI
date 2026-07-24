@@ -17,8 +17,10 @@ import {
 /**
  * DEBTOR-OF01-HISTORY-P04-B — occurrence-driven, idempotent legal deadline calculation.
  *
- * Reads ONLY immutable ServiceOccurrence facts (serviceDateRole, addressTypeAtOccurrence,
- * occurredOn) — never re-reads mutable Tebligat fields (tk21Type, muhtarlikDate, ilanDate,
+ * Reads ONLY immutable ServiceOccurrence facts (serviceRegimeCode, serviceCompletionMode,
+ * substituteRecipientBasis, addressTypeAtOccurrence, occurredOn — DEBTOR-OF01-HISTORY-P04-B-R2-I03
+ * itibarıyla serviceDateRole yerine bunlar okunur, bkz. service-occurrence-deadline-rule.ts) —
+ * never re-reads mutable Tebligat fields (tk21Type, muhtarlikDate, ilanDate,
  * deliveredAt, pttResult, pttResultDate, addressType). Does not register with
  * ActionHandlerService, does not consume the outbox, does not touch the read-path — a future
  * consumer (P04-C, NOT this task) will call `calculateForOccurrence` given a resolved
@@ -97,7 +99,9 @@ export class ServiceOccurrenceDeadlineCalculationService {
       }
 
       const regime = determineOccurrenceLegalServiceDate({
-        serviceDateRole: occurrence.serviceDateRole,
+        serviceRegimeCode: occurrence.serviceRegimeCode,
+        serviceCompletionMode: occurrence.serviceCompletionMode,
+        substituteRecipientBasis: occurrence.substituteRecipientBasis,
         addressTypeAtOccurrence: occurrence.addressTypeAtOccurrence,
         occurredOn: occurrence.occurredOn,
       });

@@ -3,7 +3,11 @@
  * (Prisma mock). Disposable-DB kanıtı için bkz.
  * service-occurrence-deadline-calculation.db-gated.integration.spec.ts.
  */
-import { ServiceOccurrenceServiceDateRole } from "@prisma/client";
+import {
+  ServiceOccurrenceRegimeCode,
+  ServiceCompletionMode,
+  SubstituteRecipientBasis,
+} from "@prisma/client";
 import { determineOccurrenceLegalServiceDate } from "../service-occurrence-deadline-rule";
 import { ServiceOccurrenceDeadlineCalculationService } from "../service-occurrence-deadline-calculation.service";
 import {
@@ -14,75 +18,150 @@ import {
 
 const BASE_OCCURRED_ON = new Date("2026-01-10T00:00:00.000Z");
 
-describe("determineOccurrenceLegalServiceDate (pure rule function)", () => {
-  // TEST-01
-  it("TEST-01: DIRECT_DELIVERY doğru legal service date üretir (occurredOn, gecikmesiz)", () => {
-    const result = determineOccurrenceLegalServiceDate({
-      serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY,
-      addressTypeAtOccurrence: "BILINEN",
-      occurredOn: BASE_OCCURRED_ON,
-    });
+function occurrenceFacts(overrides: Partial<{
+  serviceRegimeCode: ServiceOccurrenceRegimeCode | null;
+  serviceCompletionMode: ServiceCompletionMode | null;
+  substituteRecipientBasis: SubstituteRecipientBasis | null;
+  addressTypeAtOccurrence: string | null;
+  occurredOn: Date;
+}> = {}) {
+  return {
+    serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE,
+    serviceCompletionMode: null,
+    substituteRecipientBasis: null,
+    addressTypeAtOccurrence: "BILINEN",
+    occurredOn: BASE_OCCURRED_ON,
+    ...overrides,
+  };
+}
 
+describe("determineOccurrenceLegalServiceDate (LegalServiceDateRuleCore'a delege eder — I03)", () => {
+  it("IMMEDIATE_SERVICE + DIRECT_RECIPIENT_DELIVERY: gecikmesiz", () => {
+    const result = determineOccurrenceLegalServiceDate(
+      occurrenceFacts({
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE,
+        serviceCompletionMode: ServiceCompletionMode.DIRECT_RECIPIENT_DELIVERY,
+      }),
+    );
     expect(result.legalServiceDate).toEqual(BASE_OCCURRED_ON);
-    expect(result.calculationRule).toBe("OCCURRENCE_DIRECT_DELIVERY_NO_DELAY");
     expect(result.deadlineReasonCode).toBe("DIRECT_DELIVERY");
   });
 
-  // TEST-02
-  it("TEST-02: MUHTAR_DELIVERY doğru rule path kullanır (occurredOn, TK 20/21 ayrımı YOK — owner kararı)", () => {
-    const result = determineOccurrenceLegalServiceDate({
-      serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY,
-      addressTypeAtOccurrence: "MERNIS",
-      occurredOn: BASE_OCCURRED_ON,
-    });
-
-    expect(result.legalServiceDate).toEqual(BASE_OCCURRED_ON);
-    expect(result.calculationRule).toBe("OCCURRENCE_MUHTAR_DELIVERY_NO_DELAY");
-    expect(result.deadlineReasonCode).toBe("MUHTAR_DELIVERY");
-    // addressTypeAtOccurrence (BILINEN vs MERNIS) rejim seçimini ETKİLEMEZ — owner kararı.
-    const resultBilinen = determineOccurrenceLegalServiceDate({
-      serviceDateRole: ServiceOccurrenceServiceDateRole.MUHTAR_DELIVERY,
-      addressTypeAtOccurrence: "BILINEN",
-      occurredOn: BASE_OCCURRED_ON,
-    });
-    expect(resultBilinen.deadlineReasonCode).toBe("MUHTAR_DELIVERY");
-    expect(resultBilinen.legalServiceDate).toEqual(result.legalServiceDate);
-  });
-
-  // TEST-03
-  it("TEST-03: PUBLICATION doğru rule path kullanır (occurredOn + 7 gün, TK m.31)", () => {
-    const result = determineOccurrenceLegalServiceDate({
-      serviceDateRole: ServiceOccurrenceServiceDateRole.PUBLICATION,
-      addressTypeAtOccurrence: "MERNIS",
-      occurredOn: BASE_OCCURRED_ON,
-    });
-
-    const expected = new Date(BASE_OCCURRED_ON);
-    expected.setDate(expected.getDate() + 7);
-    expect(result.legalServiceDate).toEqual(expected);
-    expect(result.calculationRule).toBe("OCCURRENCE_PUBLICATION_PLUS_7_DAYS");
-    expect(result.deadlineReasonCode).toBe("ILANEN_M31");
-  });
-
-  // TEST-04
-  it("TEST-04: null serviceDateRole fail-closed DeadlineInputIncompleteError fırlatır", () => {
-    expect(() =>
-      determineOccurrenceLegalServiceDate({
-        serviceDateRole: null,
-        addressTypeAtOccurrence: "BILINEN",
-        occurredOn: BASE_OCCURRED_ON,
+  it("IMMEDIATE_SERVICE + DELIVERED_TO_AUTHORIZED_PERSON: gecikmesiz", () => {
+    const result = determineOccurrenceLegalServiceDate(
+      occurrenceFacts({
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE,
+        serviceCompletionMode: ServiceCompletionMode.DELIVERED_TO_AUTHORIZED_PERSON,
       }),
+    );
+    expect(result.legalServiceDate).toEqual(BASE_OCCURRED_ON);
+    expect(result.deadlineReasonCode).toBe("DIRECT_DELIVERY");
+  });
+
+  it("TK_21_1: completion mode olmadan gecikmesiz", () => {
+    const result = determineOccurrenceLegalServiceDate(
+      occurrenceFacts({ serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_1 }),
+    );
+    expect(result.legalServiceDate).toEqual(BASE_OCCURRED_ON);
+    expect(result.deadlineReasonCode).toBe("TK_21_1");
+  });
+
+  it("TK_21_2: completion mode olmadan gecikmesiz", () => {
+    const result = determineOccurrenceLegalServiceDate(
+      occurrenceFacts({ serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_21_2 }),
+    );
+    expect(result.legalServiceDate).toEqual(BASE_OCCURRED_ON);
+    expect(result.deadlineReasonCode).toBe("TK_21_2");
+  });
+
+  it("DEBTOR-OF01-HISTORY-P04-B-R2-I03 — TK_20_TEMPORARY_ABSENCE + NOTICE_POSTED: +15 gün (STOP-02'nin çözümü)", () => {
+    const result = determineOccurrenceLegalServiceDate(
+      occurrenceFacts({
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+        serviceCompletionMode: ServiceCompletionMode.NOTICE_POSTED,
+      }),
+    );
+    const expected = new Date(BASE_OCCURRED_ON);
+    expected.setDate(expected.getDate() + 15);
+    expect(result.legalServiceDate).toEqual(expected);
+    expect(result.deadlineReasonCode).toBe("TK_20");
+  });
+
+  it("TK_20_TEMPORARY_ABSENCE + DELIVERED_TO_AUTHORIZED_PERSON: gecikmesiz", () => {
+    const result = determineOccurrenceLegalServiceDate(
+      occurrenceFacts({
+        serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+        serviceCompletionMode: ServiceCompletionMode.DELIVERED_TO_AUTHORIZED_PERSON,
+      }),
+    );
+    expect(result.legalServiceDate).toEqual(BASE_OCCURRED_ON);
+    expect(result.deadlineReasonCode).toBe("TK_20");
+  });
+
+  it("TK_20_TEMPORARY_ABSENCE + completion mode eksik: fail-closed DeadlineInputIncompleteError", () => {
+    expect(() =>
+      determineOccurrenceLegalServiceDate(
+        occurrenceFacts({ serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE }),
+      ),
     ).toThrow(DeadlineInputIncompleteError);
   });
 
-  // TEST-05
-  it("TEST-05: addressTypeAtOccurrence eksikse fail-closed DeadlineInputIncompleteError fırlatır", () => {
+  it("TK_20_TEMPORARY_ABSENCE + geçersiz completion mode: fail-closed DeadlineInputIncompleteError", () => {
     expect(() =>
-      determineOccurrenceLegalServiceDate({
-        serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY,
-        addressTypeAtOccurrence: null,
-        occurredOn: BASE_OCCURRED_ON,
-      }),
+      determineOccurrenceLegalServiceDate(
+        occurrenceFacts({
+          serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+          serviceCompletionMode: ServiceCompletionMode.ELECTRONIC_DELIVERY,
+        }),
+      ),
+    ).toThrow(DeadlineInputIncompleteError);
+  });
+
+  it("PUBLICATION: +7 gün (TK m.31)", () => {
+    const result = determineOccurrenceLegalServiceDate(
+      occurrenceFacts({ serviceRegimeCode: ServiceOccurrenceRegimeCode.PUBLICATION }),
+    );
+    const expected = new Date(BASE_OCCURRED_ON);
+    expected.setDate(expected.getDate() + 7);
+    expect(result.legalServiceDate).toEqual(expected);
+    expect(result.deadlineReasonCode).toBe("ILANEN_M31");
+  });
+
+  it("ELECTRONIC: +5 gün", () => {
+    const result = determineOccurrenceLegalServiceDate(
+      occurrenceFacts({ serviceRegimeCode: ServiceOccurrenceRegimeCode.ELECTRONIC }),
+    );
+    const expected = new Date(BASE_OCCURRED_ON);
+    expected.setDate(expected.getDate() + 5);
+    expect(result.legalServiceDate).toEqual(expected);
+    expect(result.deadlineReasonCode).toBe("UETS_M7A");
+  });
+
+  it.each([SubstituteRecipientBasis.ARTICLE_13, SubstituteRecipientBasis.ARTICLE_16])(
+    "substituteRecipientBasis=%s sonucu etkilemez (TK_20+NOTICE_POSTED hâlâ +15 gün)",
+    (basis) => {
+      const result = determineOccurrenceLegalServiceDate(
+        occurrenceFacts({
+          serviceRegimeCode: ServiceOccurrenceRegimeCode.TK_20_TEMPORARY_ABSENCE,
+          serviceCompletionMode: ServiceCompletionMode.NOTICE_POSTED,
+          substituteRecipientBasis: basis,
+        }),
+      );
+      const expected = new Date(BASE_OCCURRED_ON);
+      expected.setDate(expected.getDate() + 15);
+      expect(result.legalServiceDate).toEqual(expected);
+    },
+  );
+
+  it("serviceRegimeCode null: fail-closed DeadlineInputIncompleteError", () => {
+    expect(() =>
+      determineOccurrenceLegalServiceDate(occurrenceFacts({ serviceRegimeCode: null })),
+    ).toThrow(DeadlineInputIncompleteError);
+  });
+
+  it("addressTypeAtOccurrence eksikse fail-closed DeadlineInputIncompleteError", () => {
+    expect(() =>
+      determineOccurrenceLegalServiceDate(occurrenceFacts({ addressTypeAtOccurrence: null })),
     ).toThrow(DeadlineInputIncompleteError);
   });
 });
@@ -96,7 +175,9 @@ describe("ServiceOccurrenceDeadlineCalculationService (mocked Prisma)", () => {
       caseDebtorId: "cd-1",
       sourceTebligatId: "tb-1",
       status: "ACTIVE",
-      serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY,
+      serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE,
+      serviceCompletionMode: null,
+      substituteRecipientBasis: null,
       addressTypeAtOccurrence: "BILINEN",
       occurredOn: BASE_OCCURRED_ON,
       ...overrides,
