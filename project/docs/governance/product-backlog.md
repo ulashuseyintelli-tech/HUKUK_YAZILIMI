@@ -2557,6 +2557,71 @@ I02A migration live-unapplied, S08-I01 containment active ve historical data unt
 merged I03 tarafından karşılanmıştır. Fiziksel owner branch/worktree değiştirilmez. Claim
 Formation phase ile S08 kapanmaz. I04 yalnız next eligible, owner-gated ve not-authorized task'tır.
 
+## RCV-CLAIM-FORM-P02-S08-D02-R01 — Exact-Version Source Readiness and Deferred Execution
+
+```text
+PROGRAM LOCK                     RECEIVABLE / CLAIM FORMATION
+STATUS                           RATIFIED DESIGN / CANONICAL
+DOCUMENT AUTHORITY               SHARED EVIDENCE / DOCUMENT PLATFORM
+LEGAL BASIS AUTHORITY            RECEIVABLE
+APPROVAL AUTHORITY               OFFICE
+FORMATION TRANSACTION OWNER      RECEIVABLE
+I02B / I03                       READY / DORMANT / DEFAULT DISABLED
+DOCUMENT SOURCE FOUNDATION       MISSING / SHARED-OWNER GO REQUIRED
+LEGAL BASIS RELEASE FOUNDATION   MISSING / RECEIVABLE OWNER GO REQUIRED
+PRODUCTION ADAPTER / PROVIDER    MISSING
+DEFERRED EXECUTOR                PARTIAL / MISSING PRODUCTION WIRING
+I02A MIGRATION CURRENT STATE     APPLIED BY TRAIN-R02 / RUNTIME AUTHORITY NONE
+S08-I04                          BLOCKED / NOT AUTHORIZED
+NEXT ELIGIBLE TASK               RCV-CLAIM-FORM-P02-S08-D02-F01
+NEXT TASK AUTHORITY              OWNER GO REQUIRED
+IMPLEMENTATION IN THIS TASK      NONE
+```
+
+### Canonical dependency plan
+
+1. **D02-F01 — Legal Basis Signed Release Foundation (RECEIVABLE):** immutable signed release,
+   stable code/version, checksum/trust evidence, lifecycle ve exact-version read modelini
+   üretir. Bu task ilk owner-gated prerequisite'tir.
+2. **Shared Document V4 Source Foundation (SHARED EVIDENCE / DOCUMENT PLATFORM):** immutable
+   document version persistence, writer/lifecycle, fingerprint authority ve exact-version read
+   interface'i shared owner tarafından sağlanır. Receivable bu foundation'ı implement etmez.
+3. **D02-I01 — Legal Basis exact-version resolver + provider wiring:** yalnız D02-F01 hazır
+   olduktan sonra açılabilir.
+4. **D02-I02 — Document exact-version consumer adapter integration:** yalnız Shared Document
+   source foundation canonical olduktan sonra açılabilir.
+5. **D02-I03 — Dormant production composition + deferred executor wiring:** D02-I01, D02-I02,
+   canonical I02B ve canonical I03 birlikte hazır olmadan açılamaz.
+6. **S08-I04:** yalnız D02-I03 kapanıp ayrı owner GO verildiğinde yeniden ele alınabilir.
+
+### Deferred execution contract
+
+I02B admission transaction'ı immutable intent + pending approval + request audit ile sınırlıdır.
+OfficeApproval karar transaction'ı approval state'ini kapatır; ClaimItem finalization bu
+transaction'ın nested domain-sync'i içinde çalışmaz. Committed `APPROVED` kararı RECEIVABLE-owned
+deferred executor'a iletilir. I03 finalizer kendi transaction'ında ClaimItem, immutable snapshot,
+audit/domain event/outbox ve intent completion üretir. At-least-once delivery deterministic
+execution identity ve idempotency ile karşılanır; ikinci ClaimItem yasaktır. Authority
+revalidation başarısızsa hiçbir business write oluşmaz.
+
+### Blocker and disposition baseline
+
+- Document exact-version source: `MISSING`; current/latest/legacy projection fallback yasak.
+- Legal Basis signed release/projection/resolver: `MISSING`; current/latest/replacement-release
+  fallback yasak.
+- Module/provider composition, deferred executor ve iki ayrı default-off capability gate:
+  `PARTIAL / MISSING`.
+- Canonical fail-closed union:
+  `VERSION_NOT_FOUND`, `RELEASE_NOT_FOUND`, `AUTHORITY_UNAVAILABLE`, `REVOKED`, `SUPERSEDED`,
+  `CHECKSUM_MISMATCH`, `FINGERPRINT_MISMATCH`, `SCOPE_MISMATCH`, `LEGACY_UNRESOLVED`.
+- Yalnız transient `AUTHORITY_UNAVAILABLE` retryable'dır. Public errors typed ve PII-safe'tir.
+- Historical I02A/I02B/I03 pre-apply kayıtları silinmez. Current migration state TRAIN-R02
+  sonrası `APPLIED`; runtime activation ve production writer authority `NONE`dır.
+
+Bu design ratification kod, test, schema, migration, provider wiring, runtime activation,
+web/client veya I04/I05 implementation'ı başlatmaz. Shared Evidence owner'ı adına authority
+üretmez.
+
 ---
 
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification

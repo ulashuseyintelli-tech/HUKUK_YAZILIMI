@@ -2274,6 +2274,308 @@ disposition'ı `CLOSED / FULLY SUPERSEDED / CODE DISCARDED / NOT MERGED` olarak 
 gereksinimleri merged I03 tarafından karşılanmıştır. Tarihsel I02B-I01 kaydı korunur; fiziksel
 branch/worktree bu closure kapsamında değiştirilmez veya temizlenmez.
 
+## 23.27. S08-D02-R01 exact-version source readiness ve deferred-execution contract — 2026-07-24
+
+Owner, `RCV-CLAIM-FORM-P02-S08-D02-R01` kapsamında aşağıdaki production-readiness ve
+execution-boundary sözleşmesini ratifiye etmiştir. Bu kayıt production implementation,
+schema/migration, provider wiring, runtime activation, web/client veya I04 authority'si
+değildir. I02B ve I03'ün dormant/default-disabled canonical davranışını değiştirmez.
+
+### 23.27.1. Authority ownership matrix
+
+| Fact / capability | Canonical owner | Receivable consumer boundary |
+|---|---|---|
+| Logical document, immutable document version, storage/content integrity, fingerprint, classification ve lifecycle | Shared Evidence / Document Platform | Exact-version, tenant/case-scoped, read-only result tüketir; Document authority üretmez |
+| Legal Basis Registry, immutable LegalBasisVersion, release, checksum, lifecycle ve formation compatibility | RECEIVABLE | Exact code/version/release binding'ini üretir ve doğrular |
+| Actor, permission ve approval decision | OFFICE | Claim Formation business effect veya legal source authority üretmez |
+| Case identity ve object-scope access | DEBTOR / CASE + OFFICE authorization | Document version veya Legal Basis authority üretmez |
+| Formation admission, immutable intent binding ve ClaimItem/Snapshot finalization | RECEIVABLE / CLAIM FORMATION | I02B admission ve I03 finalizer sınırı |
+| Audit, DomainEvent ve Outbox transport | Shared infrastructure | Claim Formation transaction'ına katılır; business authority değildir |
+
+Authority ownership açık ve çelişkisizdir. Document Platform'ın shared authority'si
+`DOCUMENT-SOURCE-GOVERNANCE.md`; Legal Basis authority'si bu belgenin §23.22 hükmüdür.
+RECEIVABLE, Document lifecycle/storage/hash/classification kararını yeniden tanımlayamaz.
+OFFICE approval kararı da Document, Legal Basis, ClaimItem veya Snapshot hukuki anlamını
+tek başına üretemez.
+
+### 23.27.2. Exact-Version Source Readiness Contract
+
+#### Document source
+
+Canonical target; stable `CaseDocument` identity, immutable `CaseDocumentVersion`,
+trusted `StorageObject`, versioned classification/integrity ve append-only lifecycle
+durumundan oluşur. Exact identity en az:
+
+```text
+tenantId
+caseId
+documentId
+versionId
+version
+```
+
+taşır. `binaryContentHash`, `documentEnvelopeHash`, `classificationHash`,
+`fingerprintAlgorithm`, `fingerprintVersion` ve bunlardan üretilen
+`canonicalSourceFingerprint` Shared Evidence / Document Platform authority'sidir.
+
+Production read interface:
+
+```text
+resolveExactDocumentVersion({
+  tenantId,
+  caseId,
+  documentId,
+  requestedVersionId,
+  expectedFingerprint?
+})
+```
+
+yalnız immutable exact version döndürür. `current`, `latest`, version'sız lookup,
+`updatedAt`, storage path, OCR text, current-version pointer veya legacy `CaseDocument`
+üzerinden fallback yasaktır. Existing `CaseDocument` modeli
+`LEGACY / INCOMPLETE PROJECTION`; disposition
+`LEGACY_SOURCE_VERSION_UNRESOLVED`dır.
+
+Current readiness:
+
+```text
+DOCUMENT AUTHORITY CONTRACT          READY
+IMMUTABLE VERSION PERSISTENCE        MISSING
+CANONICAL WRITER                     MISSING
+EXACT-VERSION READ INTERFACE         MISSING
+PRODUCTION PROVIDER                  MISSING
+DOCUMENT SCHEMA / MIGRATION GO       MISSING / SHARED OWNER REQUIRED
+```
+
+Document V4 persistence/writer/read foundation RECEIVABLE paketi değildir. Ayrı Shared
+Evidence / Document Platform owner GO'su, schema/migration authority'si ve disposable/live
+execution kapıları gerektirir. RECEIVABLE yalnız bu foundation sonrasında kendi consumer
+adapter'ını implemente edebilir.
+
+#### Legal Basis source
+
+Canonical identity:
+
+```text
+legalBasisCode
+legalBasisVersion
+legalBasisChecksum
+registryReleaseId
+registryReleaseChecksum
+```
+
+olarak korunur. `legalBasisCode` stable identity, `legalBasisVersion` immutable semantic
+version'dır. Release immutable, versioned ve final legal ratifier tarafından onaylanmış
+olmalıdır; canonical bytes/checksum, signature/ratifier evidence, effective interval ve
+append-only revoke/supersession lifecycle'ı taşır. Automatic current/latest upgrade,
+release substitution, metadata inference ve historical backfill yasaktır.
+
+Target P3 modeli versioned artifact source of truth + compiled read-only DB projection;
+ilk geçiş P1/L3 modeli signed versioned repository release + pure exact-version
+resolver'dır. Signed release serialization, checksum/signature algorithmı, trust root ve ilk
+authorized release manifest'i `D02-F01` içinde owner + final legal ratifier tarafından ayrıca
+ratifiye edilmeden production resolver başlatılamaz.
+
+Admission resolver exact requested version'ı çözer. Finalizer revalidation ise intent'te
+pinlenmiş code/version/checksum/release ID/release checksum'u birebir hedefler; başka release
+veya current registry görünümüne fallback yapamaz.
+
+Current readiness:
+
+```text
+LEGAL BASIS AUTHORITY MODEL          READY
+VERSION / RELEASE IDENTITY CONTRACT  READY
+SIGNED RELEASE ARTIFACT              MISSING
+SIGNATURE / TRUST ROOT CONTRACT      MISSING
+FIRST AUTHORIZED RELEASE             MISSING
+READ-ONLY PROJECTION                 MISSING
+PRODUCTION RESOLVER / PROVIDER       MISSING
+```
+
+### 23.27.3. Deferred Formation Execution Contract
+
+Canonical transaction ownership:
+
+1. I02B admission; authorization ve exact-source resolution sonrası
+   `ClaimItemFormationIntent + PENDING OfficeApproval + request audit` transaction'ının
+   sahibidir. Admission ClaimItem üretmez.
+2. OFFICE, approval decision transaction'ının sahibidir. Decision business effect değildir.
+3. Yalnız committed `APPROVED` karar ayrı deferred Claim Formation executor'ına adaydır.
+   `APPROVED_WITH_CHANGES`, rejected, cancelled, revision-requested veya expired karar
+   fail-closed'dur.
+4. RECEIVABLE I03 finalizer; ClaimItem, immutable ClaimFormationSnapshot, audit,
+   DomainEvent/outbox ve OfficeApproval execution completion state'inin tek transaction
+   sahibidir.
+5. Finalizer `OfficeApprovalDomainSyncService.syncAfterDecision()` içinde nested transaction
+   olarak çağrılamaz. Approval transaction'ı ile finalizer transaction'ı ayrı, sıralı ve
+   idempotent'tir.
+
+Finalizer intent-scoped advisory lock ve intent checksum'u ile duplicate execution'ı
+önler. Aynı completed intent mevcut canonical ClaimItem/Snapshot sonucunu döndürür; farklı
+checksum, bozuk completion state veya ikinci ClaimItem denemesi fail-closed'dur. Retry aynı
+tenant + formationIntentId + intentChecksum identity'sini korur ve yeni audit/event/outbox
+üretmez.
+
+Final execution'daki exact authority revalidation, lock sonrasında açılan tek bir
+transaction-consistent authority-read context kullanmalıdır. V1 production adapter:
+
+- immutable exact-version payload'ı,
+- execution anındaki lifecycle/effective durumunu,
+- checksum/fingerprint ve resolution hash'ini
+
+aynı bounded read context'te doğrular. Local read-only projection bu transaction context'ine
+katılabilir. Remote provider, aynı consistency'yi kanıtlayan versioned CAS/lease veya eşdeğer
+owner-ratified protocol olmadan kullanılamaz. Transaction dışı lifecycle read'i ile ardından
+canonical write yapılması TOCTOU nedeniyle yasaktır.
+
+I02B'nin admission-time read'i intent'e exact fingerprint/checksum/release bağlar; aradaki
+değişiklik ClaimItem etkisi üretmez. I03 finalizer aynı bağları execution anında yeniden
+doğrulamadıkça write yapamaz.
+
+### 23.27.4. Nest composition ve capability strategy
+
+Logical provider sınırları:
+
+```text
+Shared Document read module
+  -> Shared exact-version read port
+
+RECEIVABLE Legal Basis Registry module
+  -> Legal Basis exact-version resolver
+
+RECEIVABLE Claim Formation runtime module
+  -> human authorization adapter
+  -> Document consumer adapter
+  -> Legal Basis resolver
+  -> I02B admission service
+  -> I03 finalizer
+  -> deferred execution adapter
+```
+
+OFFICE generic module Claim Formation business effect'inin owner'ı olmaz; Claim Formation
+runtime module da OfficeApproval engine/schema'sını yeniden tasarlamaz. Test adapters yalnız
+test scope'unda kalır; production module graph'ına export veya silent fallback edilemez.
+
+Admission ve execution için ayrı default-off capability gate gerekir. Eksik, blank, invalid
+veya tanınmayan flag değeri `false` sayılır. Flag `true` iken required production provider
+eksikse startup veya ilk invocation deterministic fail-closed olur; mock/test/default provider
+kullanılmaz. D02-I03 yalnız dormant composition kurabilir. Public route, web/client migration,
+human-create containment retirement ve gerçek runtime enablement sırasıyla I04/I05 ve ayrı
+owner gates altında kalır.
+
+### 23.27.5. Canonical error/disposition contract
+
+Internal disposition public response'tan daha ayrıntılı olabilir; raw source identity,
+tenant/case existence, checksum veya evidence payload public response/log'a sızdırılmaz.
+Public mapping mevcut typed Claim Formation error shape'ini korur.
+
+| Disposition | Admission | Finalizer | Retryability | Public exposure |
+|---|---|---|---|---|
+| `VERSION_NOT_FOUND` | No intent/write | No ClaimItem/Snapshot/write | Hayır; yeni valid input gerekir | Document için `FORMATION_SOURCE_UNAVAILABLE`, Legal Basis için `LEGAL_BASIS_VERSION_NOT_FOUND` |
+| `RELEASE_NOT_FOUND` | No intent/write | No ClaimItem/Snapshot/write | Hayır; exact release düzeltilmelidir | `LEGAL_BASIS_VERSION_NOT_FOUND` |
+| `AUTHORITY_UNAVAILABLE` | Fail-closed, no write | Fail-closed, no partial write | Evet; bounded retry, aynı idempotency identity | Generic `FORMATION_SOURCE_UNAVAILABLE`; altyapı detayı gizli |
+| `REVOKED` | Yeni admission reddedilir | Existing intent stale/fail-closed | Hayır | Source unavailable veya legal basis not-effective |
+| `SUPERSEDED` | Yeni admission exact superseded source ile reddedilir | Automatic upgrade yok; stale/fail-closed | Hayır; yeni intent gerekir | Generic unavailable/not-effective |
+| `CHECKSUM_MISMATCH` | No intent/write | Integrity mismatch, no partial write | Hayır | `INVALID_FORMATION_CONTEXT`; checksum değeri gizli |
+| `FINGERPRINT_MISMATCH` | No intent/write | Source mismatch, no partial write | Hayır | `SOURCE_FINGERPRINT_MISMATCH`; fingerprint değeri gizli |
+| `SCOPE_MISMATCH` | No intent/write | No partial write | Hayır | Cross-tenant existence sızdırmayan generic unavailable |
+| `LEGACY_UNRESOLVED` | Canonical admission yok | Canonical finalization yok | Hayır; ayrı migration/ratification gerekir | Generic unavailable; legacy row detayı gizli |
+
+Provider/read timeout, temporary connection failure veya projection freshness failure
+`AUTHORITY_UNAVAILABLE`dır. Missing/revoked/superseded/integrity/scope durumları retry ile
+başka authority sonucu üretemez.
+
+### 23.27.6. Security invariants
+
+- Tenant ve actor trusted JWT/session context'inden gelir; request body/header authority olamaz.
+- Document resolver tenant + case + object scope'u server-side doğrular; scope mismatch
+  version existence'ını açıklamaz.
+- Exact input'in version/release/fingerprint/checksum alanları request retry sırasında
+  değiştirilemez; değişiklik duplicate conflict veya yeni intent gerektirir.
+- Admission idempotency'si ile finalizer execution idempotency'si ayrı fakat intent checksum'u
+  üzerinden bağlıdır.
+- Revoked/superseded/stale authority silent current/latest upgrade üretmez.
+- Test/mock adapter, legacy model veya missing provider fallback'i production legal state'e
+  yazamaz.
+- Capability flag tek başına activation authority değildir; provider readiness, migration
+  readiness, I04 route contract ve ayrı owner runtime GO birlikte gerekir.
+- Error/audit metadata PII-safe ve allowlist-only kalır.
+
+### 23.27.7. Readiness ve canonical blocker register
+
+| ID | Prerequisite | Readiness | Owner / disposition |
+|---|---|---|---|
+| `D02-BLK-DOC-01` | Document V4 immutable persistence + canonical writer + exact reader | `MISSING` | Shared Evidence / Document Platform; Receivable dışı owner GO + schema/migration gate |
+| `D02-BLK-LB-01` | Signed Legal Basis release foundation, trust root ve first authorized release | `MISSING` | RECEIVABLE + final legal ratifier |
+| `D02-BLK-PORT-01` | Admission/finalizer exact disposition ve pinned-release port alignment | `PARTIAL` | RECEIVABLE D02-I01/I02 |
+| `D02-BLK-EXEC-01` | Deferred executor + transaction-consistent authority read context | `PARTIAL` | RECEIVABLE; OFFICE decision-only boundary preserved |
+| `D02-BLK-NEST-01` | Production module/provider composition ve test-adapter isolation | `MISSING` | RECEIVABLE D02-I03 |
+| `D02-GATE-FLAG-01` | Separate default-off admission/execution gates | `MISSING` | RECEIVABLE D02-I03; activation separately owner-gated |
+| `D02-GATE-MIG-01` | I02A intent/snapshot physical foundation | `READY / LIVE APPLIED` | TRAIN-R02 ile applied; runtime authority üretmez |
+| `D02-FOUND-I02B` | Typed admission core | `READY / DORMANT` | Formally closed |
+| `D02-FOUND-I03` | Atomic/idempotent finalizer core | `READY / DORMANT` | Formally closed |
+
+`D02-GATE-MIG-01` güncel current-state reconciliation'dır:
+`pending-migration-coordination-register.md` §16, M6
+`20260723100000_claim_formation_intent_snapshot_foundation` migration'ının TRAIN-R02 ile
+2026-07-23'te canlıya uygulandığını kaydeder. I02A/I02B/I03 kapanış metinlerindeki
+`NOT APPLIED` ifadeleri kendi pre-TRAIN-R02 tarihsel bağlamlarında korunur; güncel live state
+`APPLIED`, runtime ise hâlâ `DEFAULT DISABLED`dır.
+
+### 23.27.8. Dependency graph ve package plan
+
+```text
+RCV-CLAIM-FORM-P02-S08-D02-R01
+  |
+  +--> D02-F01 — Legal Basis Signed Release Foundation
+  |      OWNER: RECEIVABLE + FINAL LEGAL RATIFIER
+  |      SCHEMA: NONE for transitional P1/L3 artifact foundation
+  |
+  +--> SHARED-DOCUMENT-V4-FOUNDATION
+         OWNER: SHARED EVIDENCE / DOCUMENT PLATFORM
+         RECEIVABLE DIŞI
+         SCHEMA / MIGRATION: SEPARATE OWNER GO REQUIRED
+
+D02-F01
+  -> D02-I01 — Legal Basis production resolver + provider
+
+SHARED-DOCUMENT-V4-FOUNDATION
+  -> D02-I02 — Receivable Document exact-version consumer adapter
+
+D02-I01 + D02-I02 + I02B + I03
+  -> D02-I03 — dormant Nest composition, authorization adapter,
+                transaction-consistent deferred executor, default-off gates
+
+D02-I03
+  -> S08-I04 — web / convenience route migration
+
+S08-I04
+  -> S08-I05 — containment retirement, separately owner-gated
+```
+
+İlk bounded prerequisite `RCV-CLAIM-FORM-P02-S08-D02-F01 — Legal Basis Signed
+Release Foundation`dır. Bu yalnız ayrı owner GO ile başlar; artifact formatı, deterministic
+serialization/checksum, signature/trust-root, legal-ratifier evidence ve first authorized
+release gate'ini kapatmalıdır. Shared Document V4 foundation paralel bir dependency olabilir,
+fakat RECEIVABLE kendi adına başlatamaz.
+
+### 23.27.9. Ratification ve non-authorizations
+
+```text
+RCV-CLAIM-FORM-P02-S08-D02-R01  RATIFIED DESIGN / CANONICAL
+D02 IMPLEMENTATION              NOT STARTED / NOT AUTHORIZED
+I04                             BLOCKED BY D02-BLK-DOC-01 + D02-BLK-LB-01 +
+                                D02-BLK-PORT-01 + D02-BLK-EXEC-01 +
+                                D02-BLK-NEST-01
+PRODUCTION CALL-SITE            NONE
+RUNTIME                         DEFAULT DISABLED
+HUMAN CREATE CONTAINMENT        ACTIVE / UNCHANGED
+SCHEMA / MIGRATION CHANGE       NONE
+HISTORICAL BACKFILL             NONE
+NEXT ELIGIBLE TASK              RCV-CLAIM-FORM-P02-S08-D02-F01
+NEXT TASK AUTHORITY             OWNER GO REQUIRED
+```
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar

@@ -92,12 +92,14 @@ RCV-CLAIM-FORM-P02-S08-I02A : FORMALLY CLOSED / CANONICAL TECHNICAL FOUNDATION (
 RCV-CLAIM-FORM-P02-S08-I02B : FORMALLY CLOSED / CANONICAL TECHNICAL IMPLEMENTATION (implementation PR #1549 / e0db42d2)
 RCV-CLAIM-FORM-P02-S08-I02B-I01 : CLOSED / FULLY SUPERSEDED (local commit 89c16e9b430269268e0783ea0bfa70fed2436f57 — CODE DISCARDED / NOT MERGED; requirements PRESERVED / SATISFIED BY PR #1556 / 1d47fef64e66b01561c12dc2717a63e7262dcfca)
 RCV-CLAIM-FORM-P02-S08-I03  : FORMALLY CLOSED / CANONICAL TECHNICAL IMPLEMENTATION (implementation PR #1556 / 1d47fef6)
-RCV-CLAIM-FORM-P02-S08-I04  : NEXT ELIGIBLE / NOT STARTED / NOT AUTHORIZED
+RCV-CLAIM-FORM-P02-S08-D02-R01 : RATIFIED DESIGN / CANONICAL — IMPLEMENTATION BLOCKERS REGISTERED
+RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
+I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-I04 — OWNER GO REQUIRED / NOT AUTHORIZED
+Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-F01 — OWNER GO REQUIRED / NOT AUTHORIZED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -2764,6 +2766,100 @@ değişikliği yoktur. `89c16e9b` local I02B-I01 writer-foundation commit'inin c
 `CLOSED / FULLY SUPERSEDED / CODE DISCARDED / NOT MERGED` olarak korunur; gereksinimleri PR #1556
 tarafından karşılanmıştır. Fiziksel owner worktree/branch'i bu closure sırasında değiştirilmez veya
 temizlenmez. I04 yalnız next eligible task'tır; ayrı owner GO olmadan başlamaz.
+
+### 1.31I RCV-CLAIM-FORM-P02-S08-D02-R01 exact-version readiness contract ratification
+
+```text
+TASK:
+RCV-CLAIM-FORM-P02-S08-D02-R01
+
+STATUS:
+RATIFIED DESIGN / CANONICAL
+
+DOCUMENT AUTHORITY:
+SHARED EVIDENCE / DOCUMENT PLATFORM
+
+DOCUMENT AUTHORITY CONTRACT:
+READY
+
+DOCUMENT V4 PERSISTENCE / WRITER / EXACT READER:
+MISSING — RECEIVABLE DIŞI OWNER GO + SCHEMA/MIGRATION GATE REQUIRED
+
+LEGAL BASIS AUTHORITY:
+RECEIVABLE
+
+LEGAL BASIS AUTHORITY / VERSION MODEL:
+READY
+
+SIGNED RELEASE / TRUST ROOT / FIRST AUTHORIZED RELEASE:
+MISSING — RECEIVABLE + FINAL LEGAL RATIFIER GO REQUIRED
+
+I02A PHYSICAL FOUNDATION:
+READY / LIVE APPLIED BY TRAIN-R02
+
+I02B ADMISSION:
+READY / DORMANT / DEFAULT DISABLED
+
+I03 FINALIZER:
+READY / DORMANT / DEFAULT DISABLED
+
+DEFERRED EXECUTION:
+OFFICE DECISION COMMIT -> SEPARATE RECEIVABLE FINALIZER TRANSACTION
+
+NESTED DOMAIN-SYNC FINALIZATION:
+PROHIBITED
+
+PRODUCTION RESOLVERS / PROVIDERS / CALL-SITE:
+NONE
+
+HUMAN CREATE CONTAINMENT:
+ACTIVE / UNCHANGED
+
+I04:
+BLOCKED / NOT AUTHORIZED
+
+SCHEMA / MIGRATION CHANGE:
+NONE
+
+NEXT ELIGIBLE TASK:
+RCV-CLAIM-FORM-P02-S08-D02-F01
+
+NEXT TASK AUTHORITY:
+OWNER GO REQUIRED
+```
+
+Normative contract `RECEIVABLE-GOVERNANCE.md` §23.27'dedir. Document exact-version
+source Shared Evidence / Document Platform'ta; Legal Basis release/version/compatibility
+RECEIVABLE'da; actor/approval OFFICE'te; admission ve business-effect finalization
+RECEIVABLE Claim Formation'da kalır. OfficeApproval yalnız decision transaction'ını,
+I03 finalizer ise committed `APPROVED` karar sonrasında ClaimItem + Snapshot +
+audit/event/outbox + completion transaction'ını sahiplenir. Finalizer
+`OfficeApprovalDomainSyncService.syncAfterDecision()` içinde nested çalıştırılamaz.
+
+Canonical dispositions `VERSION_NOT_FOUND`, `RELEASE_NOT_FOUND`,
+`AUTHORITY_UNAVAILABLE`, `REVOKED`, `SUPERSEDED`, `CHECKSUM_MISMATCH`,
+`FINGERPRINT_MISMATCH`, `SCOPE_MISMATCH` ve `LEGACY_UNRESOLVED`dır. Yalnız
+`AUTHORITY_UNAVAILABLE` aynı idempotency identity ile bounded retry edilebilir; diğerleri
+fail-closed ve non-retryable'dır. Public response cross-tenant existence, raw identifier,
+checksum/fingerprint veya evidence payload sızdırmaz.
+
+Current blocker set:
+
+```text
+D02-BLK-DOC-01   MISSING — Shared Document V4 foundation
+D02-BLK-LB-01    MISSING — signed Legal Basis release foundation
+D02-BLK-PORT-01  PARTIAL — pinned exact-version/disposition port alignment
+D02-BLK-EXEC-01  PARTIAL — deferred executor + transaction-consistent authority read
+D02-BLK-NEST-01  MISSING — production module/provider composition
+D02-GATE-FLAG-01 MISSING — separate default-off admission/execution gates
+```
+
+I02A/I02B/I03 tarihsel kapanış metinleri silinmez. Daha yeni canonical
+`pending-migration-coordination-register.md` §16, I02A M6 migration'ının TRAIN-R02 ile
+canlıya uygulandığını gösterir; güncel current-state `APPLIED`, runtime yine
+`DEFAULT DISABLED`dır. Bu kayıt kod, schema/migration, provider wiring, runtime activation,
+web/client, I04/I05, historical backfill veya başka bounded-context implementation authority'si
+üretmez.
 
 ### 1.32 RCV-COL-TPA-04B writer-evidence schema-amendment formal closure
 
