@@ -2677,6 +2677,59 @@ bounded-context davranışını değiştirmez.
 
 ---
 
+## RCV-CLAIM-FORM-P02-S08-D02-F01-R02 — Initial Legal Basis Release Content and Signer Input Pack
+
+```text
+PROGRAM LOCK                       RECEIVABLE / CLAIM FORMATION
+STATUS                             OWNER INPUT PACK READY / CANONICAL
+INITIAL LEGAL CONTENT              CANDIDATE SET PREPARED /
+                                   OWNER RATIFICATION REQUIRED
+PRODUCTION-RATIFIED ENTRY COUNT    0
+INITIAL RELEASE ID/VERSION/DATE    OWNER DECISION REQUIRED
+INITIAL RELEASE CHECKSUM           NOT AVAILABLE
+LEGAL REVIEWER                     INPUT REQUIRED / NOT APPOINTED
+FINAL LEGAL RATIFIER               ULAŞ HÜSEYİN TELLİ / KEY INPUT REQUIRED
+PRODUCTION RELEASE SIGNER          INPUT REQUIRED / OPERATIONAL ROLE ONLY
+PRODUCTION PUBLIC KEYS             INPUT REQUIRED
+PRIVATE KEY                        NOT REQUESTED / NOT GENERATED / NOT STORED
+SIGNED RELEASE                     NOT CREATED / NOT PUBLISHED
+D02-F01 IMPLEMENTATION             BLOCKED
+PRODUCTION RESOLVER / PROVIDER     NOT IMPLEMENTED
+RUNTIME                            DORMANT / DEFAULT DISABLED
+S08-I04                            BLOCKED / NOT AUTHORIZED
+NEXT                               OWNER CONTENT RATIFICATION + REVIEWER +
+                                   PRODUCTION PUBLIC-KEY INPUTS
+```
+
+### Candidate content boundary
+
+Repository'den yalnız source-specific `PRINCIPAL`, fixed `ACCRUED_INTEREST` ve §23.7.1 example
+subtype vocabulary candidate family'leri çıkarılabilmiştir. Candidate identity production
+`legalBasisCode` değildir. Her entry'nin exact code/version/title/normative source/category,
+Subtype Registry binding, evidence, liability, effective interval ve supersession alanı owner/legal
+review bekler. InterestPolicy/UYAP crosswalk identities Legal Basis entry değildir. `OTHER`,
+generic principal, future-interest ClaimItem ve context-light source production adayı değildir.
+
+### Reviewer, signer and procedure boundary
+
+- Reviewer final ratifier'dan ayrı, owner-authorized avukattır; identity/professional-authority
+  evidence/disposition/timestamp/exact-checksum binding zorunludur.
+- Her production role için signerId, raw Ed25519 public key, SHA-256 fingerprint/derived keyId,
+  validity/revocation/replacement, custody owner ve production environment input'u zorunludur.
+- Test trust-root production'dan ayrıdır; private key bu task'ta istenmez, üretilmez veya tutulmaz.
+- R01'in distinct `LEGAL_REVIEWER` + `FINAL_LEGAL_RATIFIER` hukuki four-eyes şartı korunur.
+  Bunları izleyen distinct `PRODUCTION_RELEASE_SIGNER` yalnız immutable publication authenticity
+  sağlar; hukuki authority değildir.
+- Procedure: exact content approval → canonical serialization → checksum → reviewer signature →
+  final-ratifier signature → production-release-signer signature → fail-closed verification →
+  immutable publication.
+
+Bu input pack production entry, reviewer, key, signature veya artifact üretmez. Owner content
+ratification, reviewer appointment ve production public-key inputs tamamlanmadan D02-F01
+implementation tekrar yetkilendirilemez.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,
