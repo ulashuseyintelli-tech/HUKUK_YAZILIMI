@@ -26,10 +26,11 @@
  */
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { OutboxService } from './outbox.service';
+import { OutboxService, OutboxFailureMarkResult } from './outbox.service';
 import { TimelineService } from './timeline.service';
 import { FactStoreService } from './factstore.service';
 import { maskPhone } from '../../../common/pii-mask.util';
+import { NonRetryableOutboxError } from './non-retryable-outbox.error';
 import {
   getIcrabotOutboxMaxAttempts,
   getIcrabotOutboxRetryBaseMs,
@@ -239,7 +240,14 @@ export class ActionHandlerService {
         where: { id: actionId },
       });
       const fallbackAttemptCount = (updatedAction?.attemptCount || 0) + 1;
-      const failure = await this.outbox.markFailed(actionId, error.message, this.retryBaseMs);
+      // DEBTOR-OF01-HISTORY-P04-C-I02: NonRetryableOutboxError marker'ı taşıyan hatalar ilk
+      // denemede dead-letter'a düşer (mevcut max-attempt eşiği beklenmez). Marker taşımayan
+      // TÜM hatalar (bilinmeyenler dahil) mevcut markFailed exponential retry yoluna aynen gider
+      // — default davranış değişmez, string/message eşleştirmesi YAPILMAZ.
+      const failure: OutboxFailureMarkResult =
+        error instanceof NonRetryableOutboxError
+          ? await this.markNonRetryableDeadLetter(actionId, error, fallbackAttemptCount)
+          : await this.outbox.markFailed(actionId, error.message, this.retryBaseMs);
       const newAttemptCount = failure?.attemptCount ?? fallbackAttemptCount;
       const isDead = failure?.status === 'dead' || newAttemptCount >= this.maxAttempts;
       if (isDead) {
@@ -323,6 +331,30 @@ export class ActionHandlerService {
         };
       }
     }
+  }
+
+  /**
+   * DEBTOR-OF01-HISTORY-P04-C-I02: NonRetryableOutboxError'ı ilk denemede terminal dead-letter'a
+   * çevirir. `error.message` HER ZAMAN güvenli/PII-free'dir (marker'ın kendi sözleşmesi) — lastError'a
+   * yalnız bu güvenli metin + reasonCode + securityRelevant yazılır, `error.cause` (ham/iç hata)
+   * ASLA yazılmaz. attemptCount markFailed/markDone ile aynı "her dispatch denemesi +1" sözleşmesiyle
+   * tutarlı biçimde artırılır (bu yol yalnız handler GERÇEKTEN çağrılıp başarısız olduğunda girilir).
+   */
+  private async markNonRetryableDeadLetter(
+    actionId: string,
+    error: NonRetryableOutboxError,
+    fallbackAttemptCount: number,
+  ): Promise<OutboxFailureMarkResult> {
+    await this.outbox.markDeadLetter(
+      actionId,
+      {
+        error: error.message,
+        reasonCode: error.reasonCode,
+        securityRelevant: error.securityRelevant,
+      },
+      { incrementAttempt: true },
+    );
+    return { status: 'dead', attemptCount: fallbackAttemptCount, nextRetryAt: null };
   }
 
   /**

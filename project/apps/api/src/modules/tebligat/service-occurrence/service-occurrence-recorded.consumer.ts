@@ -18,9 +18,20 @@
  * bağımlılık eklemek yanlış-UNRESOLVED riski taşır. Bunun yerine ProceedingClassificationService +
  * resolveLegalPeriodRule() doğrudan compose edilir (owner brief §PRECONDITION, §PROHIBITED —
  * duplicate lookup değil, farklı amaçlı ikinci bir okuma).
+ *
+ * DEBTOR-OF01-HISTORY-P04-C-I02: kalıcı/asla-retry-ile-düzelmeyecek hatalar
+ * (ObjectionPeriodDaysUnresolvedError, DeadlineInputIncompleteError, OccurrenceSupersededError,
+ * OccurrenceTenantMismatchError, SnapshotIdempotencyConflictError) NonRetryableOutboxError'a
+ * SARILIR — ActionHandlerService.dispatch() bunu ilk denemede dead-letter'a çevirir (bkz.
+ * non-retryable-outbox.error.ts). Bu 5 tür DIŞINDAKİ HER ŞEY (OccurrenceNotFoundError,
+ * RuleVersionUnavailableError, ConcurrentRecalculationConflictError, SnapshotWriteFailedError,
+ * ServiceOccurrenceRecordedEventNotFoundError, bilinmeyen/beklenmeyen hatalar) BİLİNÇLİ OLARAK
+ * SARILMAZ — mevcut exponential retry/backoff yoluna DEĞİŞMEDEN gider (owner brief IMPORTANT:
+ * "bilinmeyen hata güvenlik amacıyla non-retryable sayılmamalı").
  */
 import { Injectable, Logger } from "@nestjs/common";
 import type { ActionHandlerContext } from "../../icrabot/v28-engine/action-handler.service";
+import { NonRetryableOutboxError } from "../../icrabot/v28-engine/non-retryable-outbox.error";
 import { ServiceOccurrenceRecordedEventAccessor } from "./service-occurrence-recorded-event.accessor";
 import { ObjectionPeriodDaysUnresolvedError } from "./service-occurrence-recorded-consumer.errors";
 import {
@@ -32,6 +43,12 @@ import {
   ServiceOccurrenceDeadlineCalculationService,
   CALCULATION_VERSION,
 } from "../../legal-deadline/service-occurrence-deadline-calculation.service";
+import {
+  DeadlineInputIncompleteError,
+  OccurrenceSupersededError,
+  OccurrenceTenantMismatchError,
+  SnapshotIdempotencyConflictError,
+} from "../../legal-deadline/service-occurrence-deadline-calculation.errors";
 
 @Injectable()
 export class ServiceOccurrenceRecordedConsumerService {
@@ -58,18 +75,50 @@ export class ServiceOccurrenceRecordedConsumerService {
     }
 
     const canonicalPayload = await this.accessor.loadCanonicalPayload(payload, tenantId);
-    const objectionPeriodDays = await this.resolveObjectionPeriodDays(tenantId, caseId);
 
-    await this.calculationService.calculateForOccurrence({
-      tenantId,
-      serviceOccurrenceId: canonicalPayload.serviceOccurrenceId,
-      calculationVersion: CALCULATION_VERSION,
-      objectionPeriodDays,
-    });
+    try {
+      const objectionPeriodDays = await this.resolveObjectionPeriodDays(tenantId, caseId);
+
+      await this.calculationService.calculateForOccurrence({
+        tenantId,
+        serviceOccurrenceId: canonicalPayload.serviceOccurrenceId,
+        calculationVersion: CALCULATION_VERSION,
+        objectionPeriodDays,
+      });
+    } catch (error) {
+      throw this.toNonRetryableIfApplicable(error);
+    }
 
     this.logger.log(
       `ServiceOccurrenceRecorded consumed: serviceOccurrenceId=${canonicalPayload.serviceOccurrenceId} tenantId=${tenantId}`,
     );
+  }
+
+  /**
+   * DEBTOR-OF01-HISTORY-P04-C-I02: kalıcı/asla-retry-ile-düzelmeyecek 5 hata türünü
+   * NonRetryableOutboxError'a sarar (reasonCode = domain hatanın kendi `.code`'u, cause = orijinal
+   * hata — yalnız iç loglama için, lastError/timeline'a asla yazılmaz). Bu 5 tür DIŞINDAKİ HER ŞEY
+   * DEĞİŞMEDEN propagate edilir (bilinmeyen hata asla non-retryable sayılmaz).
+   */
+  private toNonRetryableIfApplicable(error: unknown): unknown {
+    const isNonRetryable =
+      error instanceof ObjectionPeriodDaysUnresolvedError ||
+      error instanceof DeadlineInputIncompleteError ||
+      error instanceof OccurrenceSupersededError ||
+      error instanceof OccurrenceTenantMismatchError ||
+      error instanceof SnapshotIdempotencyConflictError;
+
+    if (!isNonRetryable) {
+      return error;
+    }
+
+    const domainError = error as Error & { code: string };
+    return new NonRetryableOutboxError({
+      reasonCode: domainError.code,
+      message: domainError.message,
+      securityRelevant: error instanceof OccurrenceTenantMismatchError,
+      cause: error,
+    });
   }
 
   /**
