@@ -394,6 +394,43 @@ NEXT ELIGIBLE TASK: DEBTOR-OF01-HISTORY-P01 — ADDITIVE SERVICE-OCCURRENCE SCHE
 
 Bu pointer §10.1/§10.2'yi reopen etmez; DBP-04 §12.2'nin detaylı içeriğini burada TEKRARLAMAZ, yalnız ratifikasyon durumunu ve canonical konumunu kaydeder.
 
+### 10.4 P04-B-R2 Core Consolidation Closure Pointer — DEBTOR-OF01-HISTORY-P04-B-R2-GOV-CLOSURE
+
+```text
+TASK: DEBTOR-OF01-HISTORY-P04-B-R2 (I01 LegalServiceDateRuleCore + I02 legacy adapter +
+      I03 occurrence adapter)
+STATUS: CLOSED / CANONICAL
+
+IMPLEMENTATION EVIDENCE
+  I01 — PR #1568, SHA af1ec1818363494b6f86c5aca2da1d46dfea7ceb, CI 4/4
+  I02 — PR #1573, SHA 31a2261331166d0840e2baa638f21b8c428c3bbc, CI 4/4
+  I03 — PR #1577, SHA 0a60607c537094d7bac37a6a8d5b2af7a040ba43, CI 4/4
+
+CANONICAL RULE (TK m.20, ServiceOccurrence.serviceCompletionMode ile beslenir)
+  NOTICE_POSTED                  → occurredOn + 15 gün
+  DELIVERED_TO_AUTHORIZED_PERSON  → occurredOn (gecikmesiz)
+  completion mode yok/uyumsuz    → typed fail-closed
+
+serviceDateRole      : fiziksel olay rolüdür, hukukî rejim kaynağı DEĞİLDİR (MUHTAR_DELIVERY
+                       adından artık hiçbir hukukî sonuç çıkarılmıyor — DBP-04 §12.2'nin kendi
+                       ServiceOccurrence sözleşmesinin ilk tam implementasyonu).
+substituteRecipientBasis: tarih sonucunu hiçbir zaman etkilemez (context fact).
+Legacy Tebligat      : TK_20 completion mode kaynağı YOK → HER ZAMAN fail-closed
+                       (BadRequestException).
+
+CONSUMER WIRING: NONE
+SNAPSHOT WRITER PRODUCTION CONSUMER: NONE
+FEATURE FLAGS (LEGAL_TIME_CUTOVER / LEGAL_TIME_SHADOW_ENABLED): UNCHANGED
+LIVE DB / RUNTIME: UNCHANGED
+
+PROGRAM IMPLEMENTATION ENTRY: HOLD (değişmedi)
+IMPLEMENTATION AUTHORITY: NONE (bu kayıt yeni implementasyon üretmez, yalnız I01-I03'ü kapatır)
+NEXT ELIGIBLE TASK: DEBTOR-OF01-HISTORY-P04-C-READINESS — occurrence-driven consumer wiring
+                    analizi, AUTHORITY NOT GRANTED, ayrı owner GO-ANALYZE/GO-IMPLEMENT gerektirir
+```
+
+Bu pointer §10.1/§10.2/§10.3'ü reopen etmez; DBP-04 §12.2'nin ServiceOccurrence sözleşmesini (OD-SO-01..05) DEĞİŞTİRMEZ — yalnız o sözleşmenin TK m.20 completion-mode ayrımının artık gerçek koda taşındığını ve I01-I03 implementasyon zincirinin kapandığını kaydeder. P04-C (consumer wiring) bu kayıtla AÇILMAZ, ADLANDIRILMAZ veya ÖNCEDEN KAPSAMLANDIRILMAZ.
+
 ---
 
 ## 11. Owner Ratification Status
