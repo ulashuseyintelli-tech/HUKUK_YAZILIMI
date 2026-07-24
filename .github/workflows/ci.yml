@@ -22,6 +22,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Governance writer coordination V1 guard
+        env:
+          GOV_COORD_EVENT_NAME: ${{ github.event_name }}
+          GOV_COORD_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          GOV_COORD_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          GOV_COORD_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          node scripts/governance-coordination.cjs self-test
+          node --test scripts/governance-coordination.test.cjs
+          node scripts/governance-coordination.cjs validate-template request docs/governance/coordination-requests/_template/request.md
+          node scripts/governance-coordination.cjs validate-template result docs/governance/coordination-results/_template/result.md
+          node scripts/governance-coordination.cjs verify-register
+          if [ "$GOV_COORD_EVENT_NAME" = "pull_request" ]; then
+            node scripts/governance-coordination.cjs validate-pr-scope \
+              --base "$GOV_COORD_BASE_SHA" \
+              --head "$GOV_COORD_HEAD_SHA" \
+              --head-ref "$GOV_COORD_HEAD_REF"
+          else
+            node scripts/governance-coordination.cjs validate-repository
+          fi
       - name: ADR-007 check
         run: |
           if grep -r "req\.idempotencyContext\s*=" apps/api/src/; then

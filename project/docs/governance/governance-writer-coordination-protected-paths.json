@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "effectiveFromMainSha": "c046819b968d16f20cf2834ba805beb22e4aa488",
+  "primaryExecutor": "CODEX_LOCAL",
+  "canonicalSemanticGovernance": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "project/docs/governance/**",
+    "project/docs/adr/**",
+    "project/docs/blueprint/**",
+    "project/docs/design/**",
+    "project/docs/runbooks/**"
+  ],
+  "coordinationControlPlane": [
+    ".github/workflows/ci.yml",
+    "project/scripts/governance-coordination.cjs",
+    "project/scripts/governance-coordination.test.cjs",
+    "project/docs/governance/governance-writer-coordination-*",
+    "project/docs/governance/coordination-execution-grants/**",
+    "project/docs/governance/coordination-requests/**",
+    "project/docs/governance/coordination-results/**",
+    ".agents/skills/**",
+    ".claude/**",
+    ".codex/**"
+  ],
+  "queueExceptions": [
+    "project/docs/governance/coordination-requests/<requestId>/request.md",
+    "project/docs/governance/coordination-results/<requestId>/result.md"
+  ],
+  "level2Operations": [
+    "EXACT_APPEND_AT_DECLARED_ANCHOR",
+    "EXACT_LITERAL_REPLACEMENT",
+    "EXACT_REFERENCE_REWRITE",
+    "DETERMINISTIC_REGISTER_REGENERATION"
+  ],
+  "deniedCapabilities": [
+    "AUTO_MERGE",
+    "RECONCILIATION",
+    "POLICY_CHANGE",
+    "PROGRAM_SEQUENCE_CHANGE",
+    "PRODUCTION_SCHEMA_MIGRATION_RUNTIME",
+    "OWNER_WIP_MUTATION",
+    "FAILOVER_WITHOUT_OWNER_ACTIVATION",
+    "FREE_FORM_GOVERNANCE_EDIT"
+  ],
+  "deniedTargetPrefixes": [
+    "project/apps/",
+    "project/packages/",
+    "project/prisma/",
+    "project/deploy/",
+    "project/ops/",
+    "project/node_modules/"
+  ],
+  "grandfatheredOwnerWipExactPaths": [
+    ".claude/launch.json",
+    ".claude/settings.json",
+    ".codex/hooks.json",
+    ".codex/hooks/notify-stop.ps1",
+    "CLAUDE.md",
+    "project/docs/adr/ADR-012-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md",
+    "project/docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md",
+    "project/docs/governance/COLLECTION-GOVERNANCE.md",
+    "project/docs/governance/COLLECTION-RISK-REGISTER.md",
+    "project/docs/governance/RECEIVABLE-GOVERNANCE.md",
+    "project/docs/governance/SYSTEM-CONSTITUTION.md",
+    "project/docs/governance/architecture-index.md",
+    "project/docs/governance/canonicalization-register.md",
+    "project/docs/governance/decision-log.md",
+    "project/docs/governance/maintenance-register.md",
+    "project/docs/governance/master-triage-register.md",
+    "project/docs/governance/product-backlog.md"
+  ],
+  "grandfatheredOwnerWipPrefixes": [
+    ".worktrees/",
+    ".claude/",
+    ".codex/"
+  ]
+}
