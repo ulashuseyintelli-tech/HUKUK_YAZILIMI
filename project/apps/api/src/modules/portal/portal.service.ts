@@ -14,18 +14,25 @@ import * as bcrypt from "bcrypt";
 import { toCuratedAssetQuery } from "./asset-query-projection";
 
 /**
- * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02: getCaseDetail()
- * client-facing response contract (POL-D §21/BP-06 §23; I06 ratified transparency policy
- * §33.5). Yalnız bu select'in kapsadığı alanlar client'a döner; CaseDebtor.id/debtorLawyerId,
- * dahiliNot, staff/personel referansları, otomasyon/OCR/risk alanları, lifecycleEvents ve
- * description'lar KASITLI olarak DIŞARIDA — bu sabit yalnız getCaseDetail() tarafından
- * kullanılır, başka portal endpoint'ine yayılmaz. `muvekkilNotu` `dahiliNot`'tan yapısal
- * olarak bağımsız, ayrı bir alandır (I06 invariant) — birleştirilmez, aynı semantikte
- * kullanılmaz. `assetVehicle`/`assetRealEstate`/`assetBank`/`assetSgkWage`/`assetLastQueryAt`
- * yalnız `getCaseDetail()` içinde `toCuratedAssetQuery()` ile dönüştürüldükten sonra `debtors[].
- * assetQuery` olarak döner — HAM enum değerleri response'ta HİÇ KALMAZ (aşağıya bkz).
- * `AssetQuery` modeli (staff-only, resultData/errorMessage/requestedBy/reason/idempotencyKey/
- * job status) bu select'e KESİNLİKLE dahil edilmez.
+ * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 +
+ * CLIENT-P2-U03-TRACK-A-I03: getCaseDetail() client-facing response contract (POL-D §21/
+ * BP-06 §23; I06 ratified transparency policy §33.5). Yalnız bu select'in kapsadığı alanlar
+ * client'a döner; CaseDebtor.id/debtorLawyerId, dahiliNot, staff/personel referansları,
+ * otomasyon/OCR/risk alanları, lifecycleEvents ve description'lar KASITLI olarak DIŞARIDA —
+ * bu sabit yalnız getCaseDetail() tarafından kullanılır, başka portal endpoint'ine yayılmaz.
+ * `muvekkilNotu` `dahiliNot`'tan yapısal olarak bağımsız, ayrı bir alandır (I06 invariant) —
+ * birleştirilmez, aynı semantikte kullanılmaz. `assetVehicle`/`assetRealEstate`/`assetBank`/
+ * `assetSgkWage`/`assetLastQueryAt` yalnız `getCaseDetail()` içinde `toCuratedAssetQuery()` ile
+ * dönüştürüldükten sonra `debtors[].assetQuery` olarak döner — HAM enum değerleri response'ta
+ * HİÇ KALMAZ. `AssetQuery` modeli (staff-only, resultData/errorMessage/requestedBy/reason/
+ * idempotencyKey/job status) bu select'e KESİNLİKLE dahil edilmez.
+ *
+ * TRACK-A-I03: `Due`'nun 14 saklı alanı (Track-A-A03 field-visibility disposition) doğrudan
+ * select edilir — hiçbiri hesaplanmaz/dönüştürülmez (KDV/BSMV/KKDF/faiz TUTARI hesaplama
+ * BURADA YAPILMAZ, yalnız zaten saklı olan bayrak/oran/tarih değerleri OLDUĞU GİBİ döner).
+ * `caseId`/`description`/`interestTypeCode`/`interestDays`/`sourceDocumentId`/
+ * `finalizationNote`/`sortOrder`/`createdAt`/`updatedAt` KASITLI olarak DIŞARIDA (`description`
+ * ve `finalizationNote` zaten I01 §28.4'te karara bağlanmış, burada yeniden AÇILMADI).
  */
 const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
   id: true,
@@ -55,7 +62,27 @@ const CASE_DETAIL_SELECT = Prisma.validator<Prisma.CaseSelect>()({
     orderBy: { date: "desc" },
   },
   dues: {
-    select: { id: true, type: true, amount: true, dueDate: true, currency: true },
+    select: {
+      id: true,
+      type: true,
+      amount: true,
+      dueDate: true,
+      currency: true,
+      interestType: true,
+      interestRate: true,
+      interestStartDate: true,
+      interestEndDate: true,
+      accruesInterest: true,
+      sourceDocumentNo: true,
+      hasKdv: true,
+      kdvRate: true,
+      hasBsmv: true,
+      hasKkdf: true,
+      requiresFinalization: true,
+      isFinalized: true,
+      finalizationDate: true,
+      isPrimary: true,
+    },
   },
 });
 

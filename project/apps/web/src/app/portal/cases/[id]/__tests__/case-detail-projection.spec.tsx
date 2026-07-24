@@ -3,14 +3,15 @@ import { render, screen, waitFor } from "@testing-library/react";
 import PortalCaseDetailPage from "@/app/portal/cases/[id]/page";
 
 /**
- * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 — case-detail
- * sayfasının, backend'in artık explicit-select ile döndüğü daraltılmış response şekline
- * uyumunu doğrular: onaylı alanlar render edilir, kaldırılan description/lifecycle alanları
- * sayfayı ÇÖKERTMEZ ve hiç render edilmez, mevcut loading/404/hata davranışı DEĞİŞMEDİ.
- * Track-A-I01: muvekkilNotu, 12-değerli DebtorRole label-map (+ unexpected-value fallback),
- * debtor lawyer name/barNo render. Track-A-I02: curated `assetQuery` (4 kategori × 5 durum)
- * render — web yalnız curated durum → Türkçe etiket eşlemesi yapar, ham AssetQueryStatus
- * enum'unu hiç görmez.
+ * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 +
+ * CLIENT-P2-U03-TRACK-A-I03 — case-detail sayfasının, backend'in artık explicit-select ile
+ * döndüğü daraltılmış response şekline uyumunu doğrular: onaylı alanlar render edilir,
+ * kaldırılan description/lifecycle alanları sayfayı ÇÖKERTMEZ ve hiç render edilmez, mevcut
+ * loading/404/hata davranışı DEĞİŞMEDİ. Track-A-I01: muvekkilNotu, 12-değerli DebtorRole
+ * label-map (+ unexpected-value fallback), debtor lawyer name/barNo render. Track-A-I02:
+ * curated `assetQuery` (4 kategori × 5 durum) render. Track-A-I03: Due'nun 14 onaylı alanı —
+ * ana alacak işareti, dayanak belge, faiz bilgisi (yalnız saklı alanlar, hesaplama YOK),
+ * KDV/BSMV/KKDF göstergeleri, kesinleşme bilgisi (inconsistent-state fail-closed).
  */
 const pushMock = vi.fn();
 const routerMock = { push: pushMock };
@@ -46,8 +47,37 @@ const APPROVED_CASE_DETAIL = {
     },
   ],
   collections: [{ id: "col-1", date: "2026-02-01T00:00:00.000Z", type: "BANKA", amount: "500" }],
-  dues: [{ id: "due-1", type: "ASIL_ALACAK", amount: "1000", dueDate: "2026-01-01T00:00:00.000Z", currency: "TRY" }],
+  dues: [
+    {
+      id: "due-1",
+      type: "ASIL_ALACAK",
+      amount: "1000",
+      dueDate: "2026-01-01T00:00:00.000Z",
+      currency: "TRY",
+      interestType: "YASAL",
+      interestRate: "9.5",
+      interestStartDate: "2026-01-01T00:00:00.000Z",
+      interestEndDate: "2026-06-01T00:00:00.000Z",
+      accruesInterest: true,
+      sourceDocumentNo: "FTR-2026-001",
+      hasKdv: true,
+      kdvRate: "20",
+      hasBsmv: false,
+      hasKkdf: false,
+      requiresFinalization: true,
+      isFinalized: false,
+      finalizationDate: null,
+      isPrimary: true,
+    },
+  ],
 };
+
+function dueFixture(overrides: any = {}) {
+  return {
+    ...APPROVED_CASE_DETAIL,
+    dues: [{ ...APPROVED_CASE_DETAIL.dues[0], ...overrides }],
+  };
+}
 
 function stubFetch(response: any) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
@@ -269,6 +299,166 @@ describe("Portal case detail page — CLIENT-P2-U03-I01 explicit projection", ()
     stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
     render(<PortalCaseDetailPage />);
     await waitFor(() => expect(screen.getByText("ASIL_ALACAK")).toBeTruthy());
+  });
+
+  it("[4a] TRACK-A-I03: isPrimary=true → 'Ana Alacak Kalemi' işareti render edilir", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Ana Alacak Kalemi")).toBeTruthy());
+  });
+
+  it("[4b] TRACK-A-I03: isPrimary=false → işaret render edilmez", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ isPrimary: false }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("ASIL_ALACAK")).toBeTruthy());
+    expect(screen.queryByText("Ana Alacak Kalemi")).toBeNull();
+  });
+
+  it("[4c] TRACK-A-I03: sourceDocumentNo doluyken 'Dayanak Belge' render edilir", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Dayanak Belge: FTR-2026-001")).toBeTruthy());
+  });
+
+  it("[4d] TRACK-A-I03: sourceDocumentNo yokken 'Dayanak Belge' hiç render edilmez", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ sourceDocumentNo: null }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("ASIL_ALACAK")).toBeTruthy());
+    expect(screen.queryByText(/^Dayanak Belge:/)).toBeNull();
+  });
+
+  it.each([
+    ["YASAL", "Yasal Faiz"],
+    ["SABIT", "Sabit Faiz"],
+    ["AVANS", "Avans Faizi"],
+    ["TEMERRUT", "Temerrüt Faizi"],
+    ["YOKSUN", "Yoksun Kalınan Faiz"],
+    ["TICARI", "Ticari Faiz"],
+  ])("[4e-%s] TRACK-A-I03: interestType '%s' → 'Faiz Türü: %s' render edilir", async (raw, label) => {
+    stubFetch({ ok: true, json: async () => dueFixture({ interestType: raw }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText(`Faiz Türü: ${label}`)).toBeTruthy());
+  });
+
+  it("[4f] TRACK-A-I03: beklenmeyen/gelecek bir interestType değeri sayfayı ÇÖKERTMEZ, nötr fallback gösterir", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ interestType: "FUTURE_UNKNOWN_TYPE_X" }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Faiz Türü: Faiz Türü Belirtilmemiş")).toBeTruthy());
+    expect(screen.queryByText(/FUTURE_UNKNOWN_TYPE_X/)).toBeNull();
+  });
+
+  it("[4g] TRACK-A-I03: accruesInterest=true + tam saklı terimler (tür/oran/başlangıç/bitiş) hepsi render edilir", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Faiz Türü: Yasal Faiz")).toBeTruthy());
+    expect(screen.getByText("Faiz Oranı: %9.5")).toBeTruthy();
+    expect(screen.getByText(/Faiz Başlangıç Tarihi:/)).toBeTruthy();
+    expect(screen.getByText(/Faiz Bitiş Tarihi:/)).toBeTruthy();
+  });
+
+  it("[4h] TRACK-A-I03: accruesInterest=true + kısmi/null terimler yalnız var olanlar render edilir, sayfa ÇÖKMEZ", async () => {
+    stubFetch({
+      ok: true,
+      json: async () =>
+        dueFixture({
+          interestType: null,
+          interestRate: null,
+          interestStartDate: null,
+          interestEndDate: null,
+        }),
+    });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("ASIL_ALACAK")).toBeTruthy());
+    expect(screen.queryByText(/^Faiz Türü:/)).toBeNull();
+    expect(screen.queryByText(/^Faiz Oranı:/)).toBeNull();
+    expect(screen.queryByText(/^Faiz Başlangıç Tarihi:/)).toBeNull();
+    expect(screen.queryByText(/^Faiz Bitiş Tarihi:/)).toBeNull();
+    expect(screen.queryByText("Faiz Uygulanmıyor")).toBeNull();
+  });
+
+  it("[4i] TRACK-A-I03: accruesInterest=false → 'Faiz Uygulanmıyor', saklı terimler (varsa) gösterilmez", async () => {
+    stubFetch({
+      ok: true,
+      json: async () => dueFixture({ accruesInterest: false, interestType: "YASAL", interestRate: "9.5" }),
+    });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Faiz Uygulanmıyor")).toBeTruthy());
+    expect(screen.queryByText(/^Faiz Türü:/)).toBeNull();
+    expect(screen.queryByText(/^Faiz Oranı:/)).toBeNull();
+  });
+
+  it("[4j] TRACK-A-I03: hiçbir faiz hesaplanan tutarı (tahakkuk eden faiz/güncel faiz/gün sayısı) hiç render edilmez", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Faiz Türü: Yasal Faiz")).toBeTruthy());
+    expect(screen.queryByText(/[Tt]ahakkuk/)).toBeNull();
+    expect(screen.queryByText(/gün say/i)).toBeNull();
+  });
+
+  it("[4k] TRACK-A-I03: KDV dahil + oran doluyken 'KDV Dahil (%oran)' render edilir", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("KDV Dahil (%20)")).toBeTruthy());
+  });
+
+  it("[4l] TRACK-A-I03: KDV dahil + oran yokken yalnız 'KDV Dahil' render edilir, hiçbir hesaplanan KDV tutarı gösterilmez", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ hasKdv: true, kdvRate: null }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("KDV Dahil")).toBeTruthy());
+    expect(screen.queryByText(/^KDV Dahil \(/)).toBeNull();
+  });
+
+  it("[4m] TRACK-A-I03: hasBsmv=true → 'BSMV Uygulanıyor' render edilir", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ hasBsmv: true }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("BSMV Uygulanıyor")).toBeTruthy());
+  });
+
+  it("[4n] TRACK-A-I03: hasKkdf=true → 'KKDF Uygulanıyor' render edilir", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ hasKkdf: true }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("KKDF Uygulanıyor")).toBeTruthy());
+  });
+
+  it("[4o] TRACK-A-I03: hasKdv/hasBsmv/hasKkdf hepsi false → hiçbir vergi göstergesi render edilmez", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ hasKdv: false, kdvRate: null, hasBsmv: false, hasKkdf: false }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("ASIL_ALACAK")).toBeTruthy());
+    expect(screen.queryByText(/^KDV/)).toBeNull();
+    expect(screen.queryByText("BSMV Uygulanıyor")).toBeNull();
+    expect(screen.queryByText("KKDF Uygulanıyor")).toBeNull();
+  });
+
+  it("[4p] TRACK-A-I03: kesinleşme gerekiyor + henüz kesinleşmemiş → 'Kesinleşme Gerekiyor'", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ requiresFinalization: true, isFinalized: false, finalizationDate: null }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Kesinleşme Gerekiyor")).toBeTruthy());
+  });
+
+  it("[4q] TRACK-A-I03: kesinleşti + tarih doluyken 'Kesinleşti (tarih)' render edilir", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ requiresFinalization: true, isFinalized: true, finalizationDate: "2026-05-01T00:00:00.000Z" }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText(/^Kesinleşti \(/)).toBeTruthy());
+  });
+
+  it("[4r] TRACK-A-I03: tutarsız kayıt (isFinalized=false + finalizationDate dolu) fail-closed nötr metin gösterir, 'Kesinleşti' İDDİA ETMEZ", async () => {
+    stubFetch({
+      ok: true,
+      json: async () => dueFixture({ requiresFinalization: true, isFinalized: false, finalizationDate: "2026-05-01T00:00:00.000Z" }),
+    });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Kesinleşme Bilgisi Kontrol Ediliyor")).toBeTruthy());
+    expect(screen.queryByText(/^Kesinleşti/)).toBeNull();
+    expect(screen.queryByText("Kesinleşme Gerekiyor")).toBeNull();
+  });
+
+  it("[4s] TRACK-A-I03: requiresFinalization=false + isFinalized=false + tarih yok → hiçbir kesinleşme satırı render edilmez", async () => {
+    stubFetch({ ok: true, json: async () => dueFixture({ requiresFinalization: false, isFinalized: false, finalizationDate: null }) });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("ASIL_ALACAK")).toBeTruthy());
+    expect(screen.queryByText("Kesinleşme Gerekiyor")).toBeNull();
+    expect(screen.queryByText(/^Kesinleşti/)).toBeNull();
+    expect(screen.queryByText("Kesinleşme Bilgisi Kontrol Ediliyor")).toBeNull();
   });
 
   it("[5] raw lifecycle timeline bölümü YOK (\"İşlem Geçmişi\" başlığı render edilmez)", async () => {

@@ -45,11 +45,34 @@ const CASE_DETAIL_SELECT_SHAPE = {
     orderBy: { date: "desc" },
   },
   dues: {
-    select: { id: true, type: true, amount: true, dueDate: true, currency: true },
+    select: {
+      id: true,
+      type: true,
+      amount: true,
+      dueDate: true,
+      currency: true,
+      interestType: true,
+      interestRate: true,
+      interestStartDate: true,
+      interestEndDate: true,
+      accruesInterest: true,
+      sourceDocumentNo: true,
+      hasKdv: true,
+      kdvRate: true,
+      hasBsmv: true,
+      hasKkdf: true,
+      requiresFinalization: true,
+      isFinalized: true,
+      finalizationDate: true,
+      isPrimary: true,
+    },
   },
 };
 
 const ASSET_LAST_QUERY_AT = new Date("2026-06-15T10:00:00.000Z");
+const INTEREST_START_DATE = new Date("2026-01-01");
+const INTEREST_END_DATE = new Date("2026-06-01");
+const FINALIZATION_DATE = new Date("2026-05-01");
 
 const BOUNDED_CASE_ROW = {
   id: CASE_ID,
@@ -75,7 +98,29 @@ const BOUNDED_CASE_ROW = {
     },
   ],
   collections: [{ id: "col-1", date: new Date("2026-02-01"), type: "BANKA", amount: "500" }],
-  dues: [{ id: "due-1", type: "ASIL_ALACAK", amount: "1000", dueDate: new Date("2026-01-01"), currency: "TRY" }],
+  dues: [
+    {
+      id: "due-1",
+      type: "ASIL_ALACAK",
+      amount: "1000",
+      dueDate: new Date("2026-01-01"),
+      currency: "TRY",
+      interestType: "YASAL",
+      interestRate: "9.5",
+      interestStartDate: INTEREST_START_DATE,
+      interestEndDate: INTEREST_END_DATE,
+      accruesInterest: true,
+      sourceDocumentNo: "FTR-2026-001",
+      hasKdv: true,
+      kdvRate: "20",
+      hasBsmv: false,
+      hasKkdf: false,
+      requiresFinalization: true,
+      isFinalized: false,
+      finalizationDate: null,
+      isPrimary: true,
+    },
+  ],
 };
 
 function buildService(over: any = {}) {
@@ -240,10 +285,80 @@ describe("PortalService.getCaseDetail — CLIENT-P2-U03-I01 explicit projection"
     expect(Object.keys(result.collections[0]).sort()).toEqual(["amount", "date", "id", "type"]);
   });
 
-  it("[5] due nested anahtarları yalnız id/type/amount/dueDate/currency'dir", async () => {
+  it("[5] due nested anahtarları yalnız onaylı 19 alandır (5 mevcut + 14 TRACK-A-I03)", async () => {
     const { svc } = buildService();
     const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
-    expect(Object.keys(result.dues[0]).sort()).toEqual(["amount", "currency", "dueDate", "id", "type"]);
+    expect(Object.keys(result.dues[0]).sort()).toEqual(
+      [
+        "id",
+        "type",
+        "amount",
+        "dueDate",
+        "currency",
+        "interestType",
+        "interestRate",
+        "interestStartDate",
+        "interestEndDate",
+        "accruesInterest",
+        "sourceDocumentNo",
+        "hasKdv",
+        "kdvRate",
+        "hasBsmv",
+        "hasKkdf",
+        "requiresFinalization",
+        "isFinalized",
+        "finalizationDate",
+        "isPrimary",
+      ].sort()
+    );
+  });
+
+  it("[5a] TRACK-A-I03: 14 onaylı Due alanı select'te VAR ve response'ta OLDUĞU GİBİ döner", async () => {
+    const { svc, prisma } = buildService();
+    const result: any = await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const duesSelect = prisma.case.findFirst.mock.calls[0][0].select.dues.select;
+    for (const f of [
+      "interestType",
+      "interestRate",
+      "interestStartDate",
+      "interestEndDate",
+      "accruesInterest",
+      "sourceDocumentNo",
+      "hasKdv",
+      "kdvRate",
+      "hasBsmv",
+      "hasKkdf",
+      "requiresFinalization",
+      "isFinalized",
+      "finalizationDate",
+      "isPrimary",
+    ]) {
+      expect(duesSelect).toHaveProperty(f, true);
+    }
+    const due = result.dues[0];
+    expect(due.interestType).toBe("YASAL");
+    expect(due.interestRate).toBe("9.5");
+    expect(due.interestStartDate).toBe(INTEREST_START_DATE);
+    expect(due.interestEndDate).toBe(INTEREST_END_DATE);
+    expect(due.accruesInterest).toBe(true);
+    expect(due.sourceDocumentNo).toBe("FTR-2026-001");
+    expect(due.hasKdv).toBe(true);
+    expect(due.kdvRate).toBe("20");
+    expect(due.hasBsmv).toBe(false);
+    expect(due.hasKkdf).toBe(false);
+    expect(due.requiresFinalization).toBe(true);
+    expect(due.isFinalized).toBe(false);
+    expect(due.finalizationDate).toBeNull();
+    expect(due.isPrimary).toBe(true);
+  });
+
+  it("[5b] TRACK-A-I03: caseId/interestDays/sourceDocumentId/sortOrder/createdAt/updatedAt Due select'te KESİNLİKLE YOK", async () => {
+    const { svc, prisma } = buildService();
+    await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
+    const duesSelect = prisma.case.findFirst.mock.calls[0][0].select.dues.select;
+    for (const f of ["caseId", "interestDays", "sourceDocumentId", "sortOrder", "createdAt", "updatedAt"]) {
+      expect(duesSelect).not.toHaveProperty(f);
+    }
   });
 
   it("[6] lifecycleEvents response'ta hiç YOK", async () => {
@@ -306,12 +421,12 @@ describe("PortalService.getCaseDetail — CLIENT-P2-U03-I01 explicit projection"
     expect(call.select.collections.select).not.toHaveProperty("description");
   });
 
-  it("[12] Due.finalizationNote/vergi alanları/description nested select'te YOK", async () => {
+  it("[12] Due.finalizationNote/description/interestTypeCode nested select'te YOK (TRACK-A-I03 sonrası da OMIT korunur)", async () => {
     const { svc, prisma } = buildService();
     await svc.getCaseDetail(CASE_ID, CLIENT_ID, TENANT_ID);
     const call = prisma.case.findFirst.mock.calls[0][0];
     const duesSelect = call.select.dues.select;
-    for (const f of ["finalizationNote", "hasKdv", "kdvRate", "hasBsmv", "hasKkdf", "interestTypeCode", "description"]) {
+    for (const f of ["finalizationNote", "interestTypeCode", "description"]) {
       expect(duesSelect).not.toHaveProperty(f);
     }
   });
