@@ -807,6 +807,99 @@ Production adapter/provider/route/call-site ve runtime activation yoktur.
 merged I03 tarafından karşılanmıştır. Owner branch/worktree'si fiziksel olarak untouched kalır.
 I04 yalnız owner-gated next eligible task'tır ve bu kayıt implementation authority üretmez.
 
+### RCV-CLAIM-FORM-P02-S08-D02-R01 — Exact-Version Readiness and Deferred Execution Contract
+
+```text
+STATUS                           RATIFIED DESIGN / CANONICAL
+PROGRAM / WORKSTREAM             RECEIVABLE / CLAIM FORMATION / S08
+DOCUMENT SEMANTIC OWNER          SHARED EVIDENCE / DOCUMENT PLATFORM
+LEGAL BASIS SEMANTIC OWNER       RECEIVABLE
+APPROVAL DECISION OWNER          OFFICE
+FORMATION TRANSACTION OWNER      RECEIVABLE
+I02B ADMISSION                   READY / DORMANT / DEFAULT DISABLED
+I03 FINALIZER                    READY / DORMANT / DEFAULT DISABLED
+DOCUMENT EXACT-VERSION SOURCE    MISSING — SHARED-OWNER PREREQUISITE
+LEGAL BASIS SIGNED RELEASE       MISSING — RECEIVABLE PREREQUISITE
+PRODUCTION ADAPTER / PROVIDER    MISSING
+I02A MIGRATION CURRENT STATE     APPLIED BY TRAIN-R02 / RUNTIME AUTHORITY NONE
+I04                              BLOCKED BY D02 PREREQUISITES / NOT AUTHORIZED
+NEXT ELIGIBLE TASK               RCV-CLAIM-FORM-P02-S08-D02-F01
+NEXT TASK AUTHORITY              OWNER GO REQUIRED
+CODE / SCHEMA / MIGRATION        NONE
+RUNTIME ACTIVATION               NONE
+```
+
+Owner, exact-version kaynak hazırlığını ve approval sonrası deferred execution sınırını tek
+kontratta ratifiye etmiştir:
+
+- Document exact-version authority Shared Evidence / Document Platform'dadır. Canonical V4
+  source; immutable document identity + version identity + authority-owned fingerprint/hash +
+  lifecycle state sağlamalıdır. Mevcut legacy `CaseDocument` projection'ı, storage metadata'sı,
+  OCR çıktısı, `updatedAt`, `current` veya `latest` exact-version authority değildir.
+- Legal Basis authority RECEIVABLE'dadır. Stable `legalBasisCode` + immutable
+  `legalBasisVersion`, signed release identity/checksum, effective-date ve lifecycle state exact
+  çözülmelidir. P3 target artifact/projection ile P1/L3 transitional signed-release modeli
+  korunur; current/latest/default veya replacement-release fallback'i yasaktır.
+- I02B admission transaction'ı yalnız immutable intent + pending OfficeApproval + request audit
+  üretir. OFFICE karar transaction'ı approval state'inin sahibidir. Committed `APPROVED` kararı,
+  nested domain-sync içinde finalizer çalıştırmadan, ayrı RECEIVABLE deferred executor'a teslim
+  edilir. I03 transaction'ı ClaimItem + immutable ClaimFormationSnapshot + audit/domain
+  event/outbox + intent completion'ın tek sahibidir.
+- Deferred executor at-least-once teslimatı deterministic execution identity ve I03
+  idempotency'siyle karşılar. Aynı intent ikinci ClaimItem üretemez. Finalizer authority'leri
+  admission anındaki exact binding'lerden yeniden doğrular; değişmiş, eksik veya tutarsız
+  authority partial write üretmeden fail-closed durur.
+- Production ve test adapter'ları ayrıdır. Provider yokken veya capability flag kapalıyken
+  production composition fail-closed'dur. Admission ve execution aktivasyonu ayrı, default-off
+  gate'lerdir.
+
+Canonical error union:
+`VERSION_NOT_FOUND`, `RELEASE_NOT_FOUND`, `AUTHORITY_UNAVAILABLE`, `REVOKED`, `SUPERSEDED`,
+`CHECKSUM_MISMATCH`, `FINGERPRINT_MISMATCH`, `SCOPE_MISMATCH`, `LEGACY_UNRESOLVED`.
+Admission'da bu sonuçlar intent yaratmaz; finalizer'da ClaimItem/snapshot/completion write'ı
+yaratmaz. Yalnız transient `AUTHORITY_UNAVAILABLE` retryable'dır. Public surface yalnız typed,
+PII-safe disposition taşır; internal identity/hash veya authority payload'ı açığa çıkarılmaz.
+
+Canonical blockers:
+
+1. `D02-BLK-DOC-01` — immutable Document V4 persistence/writer/exact-version read port ve
+   production provider `MISSING`; ayrı Shared Evidence / Document Platform owner GO gerekir.
+2. `D02-BLK-LB-01` — signed Legal Basis release artifact, trust/ratification evidence,
+   first release, read projection ve exact resolver `MISSING`; RECEIVABLE owner GO gerekir.
+3. `D02-BLK-PORT-01` — I02B/I03 exact-version ports ve fail-closed checks `PARTIAL`; production
+   adapters yoktur.
+4. `D02-BLK-EXEC-01` — I03 finalizer hazırdır; committed approval sonrası durable deferred
+   handoff/executor `PARTIAL / MISSING`.
+5. `D02-BLK-NEST-01` — production module/provider composition `MISSING`.
+6. `D02-GATE-FLAG-01` — ayrı default-off admission/execution capability gates'i `MISSING`.
+
+Implementation dependency graph:
+
+```text
+D02-R01
+├─ D02-F01 — Legal Basis Signed Release Foundation (RECEIVABLE)
+│  └─ D02-I01 — Legal Basis exact-version resolver + provider wiring
+└─ Shared Document V4 Source Foundation (SHARED EVIDENCE / DOCUMENT PLATFORM)
+   └─ D02-I02 — Document exact-version consumer adapter integration
+
+D02-I01 + D02-I02 + canonical I02B + canonical I03
+└─ D02-I03 — dormant production composition + deferred executor wiring
+   └─ S08-I04 — human-facing route migration
+      └─ S08-I05 — containment retirement
+```
+
+Bu kaydın ilk owner-gated implementation prerequisite'i
+`RCV-CLAIM-FORM-P02-S08-D02-F01 — Legal Basis Signed Release Foundation`dır. Shared Document V4
+foundation ayrı bounded-context owner yetkisi bekler; bu kayıt Shared Evidence için
+implementation authority üretmez. I04/I05, resolver/provider wiring, schema/migration,
+production activation ve web/client değişikliği yetkilendirilmez.
+
+Historical I02A/I02B/I03 closure metinlerindeki pre-apply `NOT APPLIED` ifadeleri kendi tarihsel
+bağlamında korunur. Güncel canonical migration truth, pending-migration coordination register
+§16 uyarınca `20260723100000_claim_formation_intent_snapshot_foundation` migration'ının
+TRAIN-R02 ile `APPLIED` olduğudur; bu live schema gerçeği runtime activation veya writer
+authority üretmez.
+
 - **RCV-COL-TPA-02 target persistence architecture canonicalization (2026-07-19; canonical upon approved governance merge):** Owner Option D'yi ratifiye etmiştir. Target physical model independent `LegalApplicationBatch` aggregate'i; children immutable `LegalApplication[]` bucket-effect facts ve non-authoritative `ApplicationAttribution[]` lineage/provenance facts'tir. Receivable bucket/context/snapshot semantiği + TBK100 policy; Collection receipt lifecycle/idempotency/outer transaction orchestration sahibidir. RCV-COL Legal Application Boundary aggregate persistence'ın, `LegalApplicationWriter` ise yalnız canonical Collection transaction client ile çalışan tek logical writer'ın sahibidir. Bir APPLY batch'i bir Collection receipt'ine karşılık gelir; exact-cent conservation `receiptAmountMinor = Σ appliedAmountMinor + heldRemainderMinor`; replay authority `tenantId + idempotencyKey + commandHash`; same key/hash side-effect-free existing batch; different hash fail-closed conflict; full reversal linked append-only REVERSAL batch; UPDATE/DELETE yasak; partial reversal owner-gated; tenant-safe composite FK + `ON DELETE RESTRICT`; historical guessing/backfill ve dual authority yasaktır. `ClaimItem.collectedAmount` frozen legacy cache/retirement required; `CollectionAllocation` canonical-output-derived transitional projection only; `LedgerAllocation` historical legacy record/target-era authority prohibited. ACT-28 ve REC-AUTH-011/012 OPEN; `codex/rcv-ws04-p03-syn-01` disposition, PR #407 HOLD/conflicting, deterministic bucket identity, representative replay/evidence ve consumer-cutover authority blocker'ları açık kalır. Runtime/test/schema/migration/writer/replay/cutover/retirement change NONE; next `TPA-03 / SCHEMA-FOUNDATION ANALYSIS — OWNER GO-ANALYZE REQUIRED`.
 
 - **RCV-COL-TPA-03 schema-foundation contract canonicalization (2026-07-20; canonical upon approved governance merge):** Owner Option B — Two-File Hybrid Schema Foundation kararını ratifiye etmiştir. Foundation `LegalApplicationBatch`, immutable `LegalApplication`, non-authoritative `ApplicationAttribution`; `LegalApplicationBatchType = APPLY / REVERSAL`; `LegalApplicationComponentType = COST / ANCILLARY / ACCRUED_INTEREST / PRINCIPAL` adlarını kullanır. Future implementation exact scope'u yalnız `schema.prisma` + tek additive `migration.sql`; writer-free, no-backfill ve runtime/consumer etkisi yoktur. Tenant-safe composite FK, `ON DELETE RESTRICT`, batch/application immutability, positive minor-unit amount, `(tenantId, idempotencyKey)` replay unique sınırı, commandHash conflict, linked append-only full reversal ve required/opaque/nonblank bucket identity ratifiye edilmiştir. Canonical exact-cent conservation korunur; aggregate-level enforcement ve bucket key generation writer-stage contract'a bırakılmıştır. `codex/rcv-ws04-p03-syn-01` TPA-03A schema foundation için non-blocking, writer/evidence/cutover için blocking; PR #407 HOLD/CONFLICTING/DO NOT MERGE/DO NOT REBASE; ACT-28 ve REC-AUTH-011/012 OPEN kalır. TPA-03A `OWNER GO-IMPLEMENT REQUIRED / NOT AUTHORIZED`; runtime/test/schema/migration/backfill/replay/cutover/retirement change NONE.
