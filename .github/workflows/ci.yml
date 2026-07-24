@@ -1317,6 +1317,30 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="service-occurrence-deadline-calculation\.db-gated\.integration\.spec\.ts$"
         working-directory: project
+      # DEBTOR-OF01-HISTORY-P04-C-I01: EVENT_PUBLISHED:SERVICE_OCCURRENCE_RECORDED outbox consumer
+      # (ServiceOccurrenceRecordedConsumerService/Registrar). Yukarıdaki dar allowlist pattern'lerinin
+      # hiçbirine girmiyor (dosya adı hiçbirini eşlemiyor) → narrow named step olmadan CI'da hiç koşmaz.
+      - name: OF01-HISTORY-P04-C-I01 service-occurrence-recorded consumer unit tests
+        run: |
+          cd apps/api
+          for f in src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.consumer.spec.ts \
+                   src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.registrar.spec.ts; do
+            test -f "$f" || { echo "MISSING OF01-HISTORY-P04-C-I01 spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="(service-occurrence-recorded\.consumer|service-occurrence-recorded\.registrar)\.spec\.ts$"
+        working-directory: project
+      - name: OF01-HISTORY-P04-C-I01 service-occurrence-recorded consumer disposable-DB tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+        run: |
+          cd apps/api
+          test -n "$TEST_DATABASE_URL" || { echo "BLOCKED: TEST_DATABASE_URL is required"; exit 1; }
+          test -f src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded-consumer.db-gated.integration.spec.ts || \
+            { echo "MISSING OF01-HISTORY-P04-C-I01 DB-gated spec"; exit 1; }
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="service-occurrence-recorded-consumer\.db-gated\.integration\.spec\.ts$"
+        working-directory: project
       # LRV-02 / DBP-P2-SEC-P01: UyapXmlService.mapDebtorRoleToUyapKod DebtorRole->UYAP rol-kodu
       # mapping regresyonu (PR #1322). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyordu
       # → CI'da hiç koşmuyordu (yalnız o merge'in GO-IMPLEMENT'inde local `npx jest` ile doğrulandı).

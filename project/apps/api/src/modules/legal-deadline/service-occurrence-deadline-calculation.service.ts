@@ -22,12 +22,15 @@ import {
  * itibarıyla serviceDateRole yerine bunlar okunur, bkz. service-occurrence-deadline-rule.ts) —
  * never re-reads mutable Tebligat fields (tk21Type, muhtarlikDate, ilanDate,
  * deliveredAt, pttResult, pttResultDate, addressType). Does not register with
- * ActionHandlerService, does not consume the outbox, does not touch the read-path — a future
- * consumer (P04-C, NOT this task) will call `calculateForOccurrence` given a resolved
- * serviceOccurrenceId (e.g. via ServiceOccurrenceRecordedEventAccessor, P04-A2).
+ * ActionHandlerService, does not consume the outbox, does not touch the read-path itself.
+ *
+ * Çağrıldığı yerler:
+ * - ServiceOccurrenceRecordedConsumerService.handle() (DEBTOR-OF01-HISTORY-P04-C-I01) ->
+ *   EVENT_PUBLISHED:SERVICE_OCCURRENCE_RECORDED outbox handler'ından, ServiceOccurrenceRecordedEventAccessor
+ *   (P04-A2) ile çözülen serviceOccurrenceId ve canonical objectionPeriodDays kaynağıyla.
  */
 
-const CALCULATION_VERSION = "occurrence-deadline-v1";
+export const CALCULATION_VERSION = "occurrence-deadline-v1";
 const MAX_TRANSACTION_ATTEMPTS = 3;
 const MAX_OBJECTION_PERIOD_DAYS = 365;
 
