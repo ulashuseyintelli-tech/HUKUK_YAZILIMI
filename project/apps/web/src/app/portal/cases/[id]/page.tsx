@@ -61,6 +61,24 @@ const ASSET_QUERY_CATEGORIES: { key: "vehicle" | "realEstate" | "bank" | "sgkWag
   { key: "sgkWage", label: "SGK Maaşı" },
 ];
 
+// CLIENT-P2-U03-TRACK-A-I03: Due.interestType canonical 6 değer — Track-A-I03'ün kendi
+// runtime-writer envanterinden doğrulandı (schema.prisma:1589'daki yorum [YASAL/TICARI/
+// AVANS/TEMERRUT/OZEL] GÜNCEL DEĞİL — gerçek DTO-doğrulanmış küme case.dto.ts InterestType
+// enum'udur). Beklenmeyen/gelecekteki bir değer ham token göstermeden nötr fallback'e düşer.
+const interestTypeLabels: Record<string, string> = {
+  YASAL: "Yasal Faiz",
+  SABIT: "Sabit Faiz",
+  AVANS: "Avans Faizi",
+  TEMERRUT: "Temerrüt Faizi",
+  YOKSUN: "Yoksun Kalınan Faiz",
+  TICARI: "Ticari Faiz",
+};
+const INTEREST_TYPE_FALLBACK_LABEL = "Faiz Türü Belirtilmemiş";
+
+function formatTrDate(value: string | Date): string {
+  return new Date(value).toLocaleDateString("tr-TR");
+}
+
 export default function PortalCaseDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -267,9 +285,56 @@ export default function PortalCaseDetailPage() {
             {caseData.dues?.length > 0 ? (
               <div className="space-y-2">
                 {caseData.dues.map((d: any) => (
-                  <div key={d.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                    <span className="text-sm">{d.type}</span>
-                    <span className="font-medium">{Number(d.amount).toLocaleString("tr-TR")} ₺</span>
+                  <div key={d.id} className="p-2 bg-gray-50 rounded">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">{d.type}</span>
+                      <span className="font-medium">{Number(d.amount).toLocaleString("tr-TR")} ₺</span>
+                    </div>
+
+                    {d.isPrimary && (
+                      <span className="inline-block mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                        Ana Alacak Kalemi
+                      </span>
+                    )}
+
+                    {d.sourceDocumentNo && (
+                      <p className="text-xs text-gray-500 mt-1">{`Dayanak Belge: ${d.sourceDocumentNo}`}</p>
+                    )}
+
+                    {d.accruesInterest === true ? (
+                      <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                        {d.interestType && (
+                          <p>{`Faiz Türü: ${interestTypeLabels[d.interestType] || INTEREST_TYPE_FALLBACK_LABEL}`}</p>
+                        )}
+                        {d.interestRate != null && <p>{`Faiz Oranı: %${d.interestRate}`}</p>}
+                        {d.interestStartDate && <p>{`Faiz Başlangıç Tarihi: ${formatTrDate(d.interestStartDate)}`}</p>}
+                        {d.interestEndDate && <p>{`Faiz Bitiş Tarihi: ${formatTrDate(d.interestEndDate)}`}</p>}
+                      </div>
+                    ) : d.accruesInterest === false ? (
+                      <p className="text-xs text-gray-400 mt-1">Faiz Uygulanmıyor</p>
+                    ) : null}
+
+                    {(d.hasKdv || d.hasBsmv || d.hasKkdf) && (
+                      <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                        {d.hasKdv && (
+                          <p>{d.kdvRate != null ? `KDV Dahil (%${d.kdvRate})` : "KDV Dahil"}</p>
+                        )}
+                        {d.hasBsmv && <p>BSMV Uygulanıyor</p>}
+                        {d.hasKkdf && <p>KKDF Uygulanıyor</p>}
+                      </div>
+                    )}
+
+                    {(d.requiresFinalization || d.isFinalized || d.finalizationDate) && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {d.isFinalized === false && d.finalizationDate
+                          ? "Kesinleşme Bilgisi Kontrol Ediliyor"
+                          : d.isFinalized
+                            ? `Kesinleşti${d.finalizationDate ? ` (${formatTrDate(d.finalizationDate)})` : ""}`
+                            : d.requiresFinalization
+                              ? "Kesinleşme Gerekiyor"
+                              : null}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
