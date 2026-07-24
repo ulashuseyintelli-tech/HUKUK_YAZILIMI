@@ -1831,3 +1831,77 @@ TRACK B — FINANCIAL DISCLOSURE CONTRACT:
 ### 33.9 U03-I06 Self-Check
 
 Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ (PARTIAL korunur, gerekçe artık "policy resolved, implementation units remain"); Track A veya Track B'nin herhangi bir ANALYZE veya IMPLEMENT işini BAŞLATMAZ; production kod/schema/migration/test/CI/runtime DEĞİŞTİRMEZ; portal projection'ı (`CASE_DETAIL_SELECT` dahil) GENİŞLETMEZ; mail/notification implementasyonu KURMAZ; approval workflow implementasyonu KURMAZ; finansal ledger DEĞİŞTİRMEZ; `CLIENT-P2-U03-I07` veya başka yeni unit AÇMAZ; §32.7'de listelenen non-blocking kalemleri (curated timeline, rejection-reason contract, message actor model, PoA download contract) SEÇMEZ veya YETKİLENDİRMEZ; §5/§6/§8.A/§8.B/§11–§32 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ. **POLICY RATIFIED ≠ PROGRAM CLOSED; POLICY RATIFIED ≠ IMPLEMENTATION AUTHORIZED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 34. CLIENT Phase 2 Track A — Non-Financial Transparency Projection Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, §33'ün (I06 policy ratifikasyonu) yetkilendirdiği ve §33.8/§33.9'un "Track A için GO-ANALYZE" olarak sıraya koyduğu **TRACK A — NON-FINANCIAL TRANSPARENCY PROJECTION**'ın üç bounded implementation unit'inin (I01/I02/I03) **teknik kapanışını canonicalize eder** (`decision-log.md` CLIENT-P2-U03-TRACK-A-GOV). Implementasyon zaten üç ayrı owner GO-IMPLEMENT + IF GO-COMPLETE zinciriyle, üç ayrı PR ile, CI 4/4 PASS doğrulanarak merge edilmiştir; **bu kayıt yalnız governance closure'dır, yeni kod/schema/migration/test/CI/runtime değişikliği İÇERMEZ.**
+
+### 34.1 Technical Lineage
+
+§33 (I06, transparency-by-default + financial-disclosure-gate ratifikasyonu + Track A/B ayrımı) → owner `CLIENT-P2-U03-TRACK-A-A01` GO-ANALYZE (read-only design, muvekkilNotu/role/debtor-lawyer identity) → `CLIENT-P2-U03-TRACK-A-I01` GO-IMPLEMENT (PR #1559, squash `eeba1e8f`) → owner `CLIENT-P2-U03-TRACK-A-A02` GO-ANALYZE (read-only design, asset-query curated contract) → `CLIENT-P2-U03-TRACK-A-I02` GO-IMPLEMENT (PR #1564, squash `1540bd06`) → **owner'ın mimari kapsam düzeltmesi** ("Burada bence kapsam kayması oluşmuş" — Due tax/interest için önerilen "hesap dökümü" çerçevesinin hesaplama motoru bounded-context'ine kaydığının tespiti, bkz. §34.3) → owner `CLIENT-P2-U03-TRACK-A-A03` GO-ANALYZE (read-only, daraltılmış Due field-visibility disposition) → `CLIENT-P2-U03-TRACK-A-I03` GO-IMPLEMENT (PR #1569, squash `774bdc63`) → bu kayıt (`CLIENT-P2-U03-TRACK-A-GOV`, GOVERNANCE-ONLY).
+
+### 34.2 Approved Client Response Contracts (I01 + I02 + I03)
+
+```text
+TRACK-A-I01 (PR #1559, squash eeba1e8f):
+Case.muvekkilNotu → CLIENT-SAFE (dahiliNot'tan yapısal/bağımsız kolon, invariant korunur)
+CaseDebtor.role → CLIENT-SAFE, 12 değerli exhaustive Türkçe label-map + nötr
+  "Hukuki Taraf" fallback (ASIL_BORCLU/MUTESELSIL_KEFIL/CIRANTA/KESIDECI/MUHATAP/
+  MIRASCI/TASFIYE_MEMURU/IFLAS_MASASI dahil tam 12 değer — önceki GO-ANALYZE'ın
+  8-değer yanlış sayımı owner stop-condition'ıyla düzeltildi)
+CaseDebtor.debtorLawyerName + debtorLawyerBarNo → CLIENT-SAFE
+CaseDebtor.debtorLawyerId → OMIT (teknik/internal kimlik)
+Test: API 19/19 + web 23/23; tam portal regresyon API 139/139 (12 suite) + web 82/82 (7 dosya)
+
+TRACK-A-I02 (PR #1564, squash 1540bd06):
+CaseDebtor asset-query alanları (assetVehicle/assetRealEstate/assetBank/
+  assetSgkWage/assetLastQueryAt) → RAW DEĞER CLIENT'A HİÇ DÖNMEZ.
+Curated contract: debtors[].assetQuery { vehicle, realEstate, bank, sgkWage,
+  lastQueryAt }, 5 curated durum (NOT_QUERIED/FOUND/NOT_FOUND/RESULT_PENDING/
+  RESULT_UNAVAILABLE), ham AssetQueryStatus (UNKNOWN/YES/NO/PENDING/ERROR) API
+  tarafında pure mapper (asset-query-projection.ts) ile dönüştürülür; tanınmayan/
+  gelecek ham değer fail-safe RESULT_UNAVAILABLE'a düşer. Web yalnız curated
+  durum → Türkçe etiket çevirisi yapar, ham enum'u hiç görmez.
+AssetQuery/EnforcementAction modelleri (resultData/errorMessage/requestedBy/
+  reason/idempotencyKey) select'e hiç dahil değil.
+Test: mapper 10/10 + API 25/25 + web 33/33; tam portal regresyon API 155/155
+  (13 suite) + web 92/92 (7 dosya)
+
+TRACK-A-I03 (PR #1569, squash 774bdc63):
+Due alanları (14): interestType, interestRate, interestStartDate, interestEndDate,
+  accruesInterest, sourceDocumentNo, hasKdv, kdvRate, hasBsmv, hasKkdf,
+  requiresFinalization, isFinalized, finalizationDate, isPrimary → CLIENT-SAFE,
+  SAKLI DEĞER AS-IS (sıfır hesaplama/türetme).
+interestType doğrulanmış 6-değerli evren (YASAL/SABIT/AVANS/TEMERRUT/YOKSUN/
+  TICARI, DTO @IsEnum(InterestType) ile sınırlı, DB kolonu constraint'siz TEXT);
+  web-side basit label-map + nötr "Faiz Türü Belirtilmemiş" fallback.
+Hâlâ OMIT: caseId, interestDays, sourceDocumentId, finalizationNote, sortOrder,
+  createdAt, updatedAt, description.
+Fail-closed tutarsız veri: isFinalized=false + finalizationDate dolu → nötr
+  "Kesinleşme Bilgisi Kontrol Ediliyor" (ne "Kesinleşti" ne "Kesinleşme Gerekiyor"
+  iddia edilir).
+Test: API 27/27 + web 57/57; tam portal regresyon API 157/174 (13/15 suite,
+  17 skipped) + web 116/116 (7 dosya)
+```
+
+### 34.3 Scope Precision — Due Tax/Interest Presentation, §33.5/§33.6 Ön-Çerçevesinin Daraltılması (Owner-Ratified, Track-A-A03)
+
+§33.5'in "Due vergi alanları... teknik boolean seti olarak DEĞİL, anlaşılır **hesap dökümü** içinde: ana alacak, KDV, BSMV, KKDF, faiz, masraf, toplam" ifadesi ve §33.6'nın Track A kapsamına yazdığı "non-disbursed Due tax presentation (**yapısal hesap dökümü şekli**)" ifadesi, I06 karar anında henüz bounded bir implementation unit'e ayrıştırılmamış bir **ön-çerçeve**dir. `CLIENT-P2-U03-TRACK-A-A03` GO-ANALYZE hazırlığı sırasında owner bu çerçevenin CLIENT'ın bounded-context'i dışına — hesaplama motoruna (KDV/BSMV/KKDF oranı uygulanması, faiz hesaplama formülleri, güncel bakiye/toplam türetimi, Interest Engine/Claim Formation/Accounting alanı) — kaydığını tespit etmiş ve REDDETMİŞTİR: *"Burada bence kapsam kayması (scope creep) oluşmuş... Bu noktada kapsamı yeniden daraltmak daha doğru yaklaşım."* Owner "hesap dökümü/toplam" kavramını **tamamen Track B'ye (Financial Disclosure)** devretmiş, Track A'yı yalnız **saklı değerlerin AS-IS gösterimiyle** (hiçbir hesaplama/türetme/formül olmadan) sınırlamıştır — bir "hesap dökümü" veya "hesaplanan tutar" değil, bağımsız ham gösterge kümesi (`KDV Dahil (%20)`, `BSMV Uygulanıyor`, `Faiz Oranı: %9.5` gibi ayrık satırlar).
+
+**Bu kayıt §33.5/§33.6'nın metnini DEĞİŞTİRMEZ/SİLMEZ** (geriye dönük edit yapılmaz, append-only ilke korunur) — yalnız hangi TARAFıN (Track A mı Track B mi) hesap dökümünü/toplamı üreteceğini netleştiren, çapraz-referanslı bir **kesinlik notu**dur: **Track A** ham flag/oran/tarihi AS-IS gösterir (bu §34.2'de listelenen 14 Due alanı); **Track B** (hâlâ NOT AUTHORIZED) ileride, onay-sonrası financial disclosure gate kapsamında, "ana alacak/KDV/BSMV/KKDF/faiz/masraf/toplam" hesap dökümünü üretebilir. §33'e bakan gelecekteki bir okuyucu bu §34.3'ü zorunlu çapraz referans olarak okumalıdır.
+
+### 34.4 Non-Financial / Non-Calculation Boundary Preservation
+
+Track A'nın üç unit'i de (I01/I02/I03) şunları YAPMAZ: KDV/BSMV/KKDF tutarı hesaplama · faiz tutarı/güncel bakiye hesaplama · tahsilat/mahsup/vekâlet ücreti kesintisi · müvekkile net ödeme hesabı · onay/bildirim/mail workflow'u · financial disclosure event/audit/immutable snapshot · `AssetQuery`/`EnforcementAction` ham teknik/provider/job verisi client'a sızıntısı. Bunların TAMAMI Track B (Financial Disclosure Contract) kapsamındadır ve **NOT AUTHORIZED** kalır. Object-scope (`STF-PRD-BOLA-001`/`STF-PRD-SCP-001`/OFF/OD-08/CAP-02) bu kayıtla DEĞİŞMEDİ, dokunulmadı — **SAME-CLIENT FIELD EXPOSURE ≠ CROSS-TENANT INCIDENT.**
+
+### 34.5 Non-Equations / Precision
+
+`TRACK A TECHNICALLY CLOSED ≠ CLIENT-P2-U03 CLOSED` · `TRACK A CLOSED ≠ TRACK B AUTHORIZED` · `DUE ALANLARI AS-IS GÖSTERİLİR ≠ HESAP DÖKÜMÜ/TOPLAM ÜRETİLDİ` (bkz. §34.3) · `CURATED ASSET-QUERY PROJECTION ≠ RAW AssetQueryStatus/AssetQuery MODEL EXPOSURE` · `12-DEĞERLİ DebtorRole LABEL-MAP ≠ YENİ ROL/YETKİ TAKSONOMİSİ` (yalnız sunum çevirisi, yetki modeli DEĞİŞMEDİ) · `interestType 6-DEĞERLİ DOĞRULANMIŞ EVREN ≠ ENUM DB-SEVİYESİNDE CONSTRAINT'Lİ` (DTO `@IsEnum` ile sınırlı, DB kolonu `TEXT`; bilinmeyen değer nötr fallback'e düşer, hata FIRLATMAZ). **Doğru ifade: "TRACK A (I01+I02+I03) TECHNICALLY + GOVERNANCE CLOSED/CANONICAL / TRACK B NOT AUTHORIZED / CLIENT-P2-U03 PARTIAL."**
+
+### 34.6 Final Status
+
+**TRACK A (NON-FINANCIAL TRANSPARENCY PROJECTION): CLOSED/CANONICAL** — I01 (PR #1559) + I02 (PR #1564) + I03 (PR #1569) tümü TECHNICAL + GOVERNANCE CLOSED/CANONICAL. **TRACK B (FINANCIAL DISCLOSURE CONTRACT): NOT AUTHORIZED / NOT STARTED.** **CLIENT-P2-U03 (genel program): PARTIAL — NOT READY FOR FINAL CLOSURE** (Track A implementation tamamlandı; Track B implementation units eksik; U03 final closure ikisinin de canonical kapanışını gerektirir). **SCHEMA/MIGRATION: NONE (üç unit'in de). RUNTIME: UNCHANGED (yalnız select/response projection genişletildi). OBJECT-SCOPE: UNCHANGED. IMPLEMENTATION AUTHORITY: NONE (implementasyon üç ayrı PR ile ayrı merge edildi, bu kayıt yalnız governance closure'dır).** **NEXT: OWNER-GATED/NOT AUTO-STARTED** — Track B için GO-ANALYZE, veya owner'ın doğrudan farklı bir sıra tercih etmesi; `CLIENT-P2-U03-I07` veya CLIENT-P2-U03 final closure hiçbiri bu kayıtla otomatik başlatılmaz.
+
+### 34.7 Track A Self-Check
+
+Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ (PARTIAL korunur, gerekçe "Track A closed, Track B implementation units remain"); Track B'nin herhangi bir ANALYZE veya IMPLEMENT işini BAŞLATMAZ; production kod/schema/migration/test/CI/runtime DEĞİŞTİRMEZ (I01/I02/I03 zaten ayrı PR'larla merge edilmiş, bu kayıt yalnız canonicalize eder); §33.5/§33.6'nın metnini SİLMEZ/EDİT ETMEZ (yalnız §34.3 ile çapraz-referanslı kesinlik notu ekler); §5/§6/§8.A/§8.B/§11–§33 substantive hükümlerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; `CLIENT-P2-U03-I07` veya başka yeni unit AÇMAZ; OFFICE CAP-02/OFF-OD-08/STF-PRD-BOLA-001/SCP-001 statülerini DEĞİŞTİRMEZ. **TRACK A CLOSED ≠ PROGRAM CLOSED; TRACK A CLOSED ≠ TRACK B AUTHORIZED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
