@@ -39,20 +39,24 @@ export interface LegalBasisEligibilityRequestedComponent {
  * so the component-binding check (category 6) already covers them
  * uniformly for both modes.
  *
- * Owner-ratified D6: `resolutionHash` MUST be computed by the resolver
- * implementation as a content hash over the COMPLETE resolved binding,
- * including `claimItemProjection` (itemType, interest fields,
- * isAllDebtorsLiable, liableDebtorIds) — this is this task's explicit
- * tightening of the resolver's D4 purity/determinism contract (see
- * `ResolveExactLegalBasisResult` in claim-item-formation-resolver.ports.ts).
- * Given that, `resolutionHash` equality below is the authoritative
- * mechanism for detecting ANY drift in the bound legal basis since
- * admission-time resolution, including liability-projection drift —
- * there is no separate persisted Intent field for
- * `isAllDebtorsLiable`/`liableDebtorIds` to compare against directly
- * (confirmed absent from the Prisma schema), so this hash-equality is not
- * a partial/indirect proxy but the ratified, exact drift-detection
- * mechanism for this slice.
+ * D6 PROJECTION DRIFT COVERAGE: PARTIAL (owner-confirmed, not silently
+ * assumed). Every field below is exactly what the persisted
+ * `ClaimItemFormationIntent` schema actually stores and can be compared
+ * for exact equality — identity/version/checksum fields only.
+ * `resolutionHash` is one such existing field, compared here like any
+ * other; this file makes NO claim that it additionally covers
+ * `claimItemProjection`'s content. No canonical evidence establishes what
+ * a concrete resolver adapter's `resolutionHash` computation covers (the
+ * resolver is dormant/abstract in this slice — no concrete adapter exists
+ * to inspect), and the Intent schema does not persist any of the 8
+ * `claimItemProjection` fields (itemType, interestAccrualStatus,
+ * interestType, interestRate, interestStartDate,
+ * interestStartDateProvenance, isAllDebtorsLiable, liableDebtorIds)
+ * directly. Drift in those 8 fields between admission-time and
+ * finalization-time re-resolution is therefore NOT detected by this
+ * validator — a reported gap. Closing it fully would need either a schema
+ * change (deferred, out of scope here per D5) or canonical evidence of
+ * what a real resolver adapter's `resolutionHash` actually covers.
  */
 export interface LegalBasisEligibilityExpectedBinding {
   readonly legalBasisChecksum: string;
@@ -296,8 +300,11 @@ export function assertLegalBasisEligible(
     return reject('DOCUMENT_EVIDENCE_INCOMPATIBLE');
   }
 
-  // Category: liability compatibility (D6). Drift beyond this boolean is
-  // covered by the resolution-contract hash-equality check above.
+  // Category: liability compatibility (D6): `liabilityCompatible` is a
+  // real, comparable field, checked directly. Drift in the underlying
+  // liability projection (`isAllDebtorsLiable`, `liableDebtorIds`) is NOT
+  // covered here — see the PARTIAL coverage note on
+  // `LegalBasisEligibilityExpectedBinding` above.
   if (!legalBasis.liabilityCompatible) return reject('LIABILITY_INCOMPATIBLE');
 
   // Category: legal review — required in BOTH modes (parity already held

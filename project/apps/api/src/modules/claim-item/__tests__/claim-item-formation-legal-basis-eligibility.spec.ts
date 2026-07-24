@@ -214,7 +214,7 @@ describe('RCV-CLAIM-FORM-P02-S08-D01B-CONTRACT-PARITY-I01 assertLegalBasisEligib
       expect(result).toMatchObject({ ok: false, failure: { code: 'BINDING_DRIFT' } });
     });
 
-    it('rejects when the resolution hash drifts (D6 liability-projection coverage)', () => {
+    it('rejects when the resolution hash no longer matches the persisted binding', () => {
       const original = legalBasis();
       const drifted = legalBasis({ resolutionHash: HASH('drifted-resolution') });
       const result = assertLegalBasisEligible(
