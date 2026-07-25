@@ -129,6 +129,18 @@ const REGISTER_TEST_FIXTURE_REPAIR_I01 = Object.freeze({
 const REGISTER_TEST_FIXTURE_REPAIR_I01_PATHS = new Set(
   REGISTER_TEST_FIXTURE_REPAIR_I01.changedPaths,
 );
+const EXECUTION_BASE_ANCESTRY_REPAIR_I01 = Object.freeze({
+  mode: 'EXECUTION_BASE_ANCESTRY_REPAIR_I01',
+  baseSha: 'c714769b10a60152b14c61b7fd75e76386fedfb9',
+  headRef: 'codex/gov-coord-v1-execution-base-ancestry-repair-i01',
+  changedPaths: Object.freeze([
+    'project/scripts/governance-coordination.cjs',
+    'project/scripts/governance-coordination.test.cjs',
+  ]),
+});
+const EXECUTION_BASE_ANCESTRY_REPAIR_I01_PATHS = new Set(
+  EXECUTION_BASE_ANCESTRY_REPAIR_I01.changedPaths,
+);
 const REGISTER_REPO_PATH =
   'project/docs/governance/governance-writer-coordination-register.md';
 
@@ -523,14 +535,20 @@ function extractStructuredJson(markdown, kind) {
   }
 }
 
-function parseRequestFile(filePath, options = {}) {
-  const markdown = fs.readFileSync(filePath, 'utf8');
+function parseRequestMarkdown(markdown, options = {}) {
   return validateRequestObject(extractStructuredJson(markdown, 'request'), options);
 }
 
-function parseResultFile(filePath, options = {}) {
-  const markdown = fs.readFileSync(filePath, 'utf8');
+function parseRequestFile(filePath, options = {}) {
+  return parseRequestMarkdown(fs.readFileSync(filePath, 'utf8'), options);
+}
+
+function parseResultMarkdown(markdown, options = {}) {
   return validateResultObject(extractStructuredJson(markdown, 'result'), options);
+}
+
+function parseResultFile(filePath, options = {}) {
+  return parseResultMarkdown(fs.readFileSync(filePath, 'utf8'), options);
 }
 
 function countOccurrences(content, needle) {
@@ -634,9 +652,12 @@ function gitShow(ref, repoPath, cwd = REPO_ROOT) {
   return runGit(['show', `${ref}:${repoPath}`], cwd).stdout;
 }
 
+function gitTreeEntry(ref, repoPath, cwd = REPO_ROOT) {
+  return runGit(['ls-tree', ref, '--', repoPath], cwd).stdout.trim();
+}
+
 function assertGitFileNotSymlink(ref, repoPath, cwd = REPO_ROOT) {
-  const result = runGit(['ls-tree', ref, '--', repoPath], cwd);
-  const line = result.stdout.trim();
+  const line = gitTreeEntry(ref, repoPath, cwd);
   if (!line) reject('TARGET_NOT_FOUND', `${repoPath} does not exist at ${ref}`);
   const mode = line.split(/\s+/)[0];
   assertNotSymlink(mode === '120000', `${ref}:${repoPath}`);
@@ -688,9 +709,28 @@ function validateAuthorityRecordAtRef(ref, authorityRef, cwd = REPO_ROOT) {
   }
 }
 
+function assertRequestBaseAncestor(requestBaseRef, executionBaseRef, cwd = REPO_ROOT) {
+  const result = runGit(
+    ['merge-base', '--is-ancestor', requestBaseRef, executionBaseRef],
+    cwd,
+    { allowFailure: true },
+  );
+  if (result.status !== 0) {
+    reject(
+      'REQUEST_BASE_NOT_ANCESTOR',
+      `${requestBaseRef} is not an ancestor of execution base ${executionBaseRef}`,
+    );
+  }
+  return true;
+}
+
 function validateRequestAgainstGit(request, baseRef, headRef = null, cwd = REPO_ROOT) {
-  if (request.baseMainSha !== baseRef) {
-    reject('REQUEST_BASE_MISMATCH', `request base ${request.baseMainSha} != PR base ${baseRef}`);
+  assertRequestBaseAncestor(request.baseMainSha, baseRef, cwd);
+  if (!gitIsAncestor(EFFECTIVE_FROM_MAIN_SHA, request.baseMainSha, cwd)) {
+    reject(
+      'EFFECTIVE_FROM_ANCESTRY_FAILED',
+      `${EFFECTIVE_FROM_MAIN_SHA} is not ancestor of request base`,
+    );
   }
   if (!gitIsAncestor(EFFECTIVE_FROM_MAIN_SHA, baseRef, cwd)) {
     reject('EFFECTIVE_FROM_ANCESTRY_FAILED', `${EFFECTIVE_FROM_MAIN_SHA} is not ancestor of base`);
@@ -714,6 +754,76 @@ function validateRequestAgainstGit(request, baseRef, headRef = null, cwd = REPO_
   return expectedContent;
 }
 
+function validateCanonicalRequestAtExecutionBase(
+  requestId,
+  baseRef,
+  headRef,
+  cwd = REPO_ROOT,
+) {
+  const requestPath =
+    `project/docs/governance/coordination-requests/${requestId}/request.md`;
+  const baseEntry = gitTreeEntry(baseRef, requestPath, cwd);
+  if (!baseEntry) {
+    reject(
+      'CANONICAL_REQUEST_MISSING_AT_PR_BASE',
+      `${requestPath} does not exist at ${baseRef}`,
+    );
+  }
+  const baseMode = baseEntry.split(/\s+/)[0];
+  assertNotSymlink(baseMode === '120000', `${baseRef}:${requestPath}`);
+
+  const baseMarkdown = gitShow(baseRef, requestPath, cwd);
+  const request = parseRequestMarkdown(baseMarkdown);
+  if (request.requestId !== requestId) {
+    reject(
+      'CANONICAL_REQUEST_MISMATCH',
+      `${requestPath} contains requestId ${request.requestId}`,
+    );
+  }
+
+  const headEntry = gitTreeEntry(headRef, requestPath, cwd);
+  if (!headEntry || gitShow(headRef, requestPath, cwd) !== baseMarkdown) {
+    reject(
+      'CANONICAL_REQUEST_MISMATCH',
+      `${requestPath} is not byte-identical between execution base and head`,
+    );
+  }
+  const headMode = headEntry.split(/\s+/)[0];
+  assertNotSymlink(headMode === '120000', `${headRef}:${requestPath}`);
+
+  const resultPath =
+    `project/docs/governance/coordination-results/${requestId}/result.md`;
+  if (gitTreeEntry(baseRef, resultPath, cwd)) {
+    reject('RESULT_ALREADY_EXISTS', `${resultPath} exists at ${baseRef}`);
+  }
+
+  const instances = loadRepositoryInstancesAtGitRef(baseRef, cwd);
+  const canonicalRequest = instances.requests.find(
+    ({ value }) => value.requestId === requestId,
+  );
+  if (
+    !canonicalRequest ||
+    canonicalize(canonicalRequest.value) !== canonicalize(request)
+  ) {
+    reject(
+      'CANONICAL_REQUEST_MISMATCH',
+      `${requestId} does not resolve uniquely from execution base`,
+    );
+  }
+  const expectedRegister = generateRegisterContent(instances);
+  const actualRegister = gitShow(baseRef, REGISTER_REPO_PATH, cwd).replace(
+    /\r\n/g,
+    '\n',
+  );
+  if (actualRegister !== expectedRegister) {
+    reject(
+      'REQUEST_NOT_PENDING',
+      `${requestId} is not represented by the current PENDING register at ${baseRef}`,
+    );
+  }
+  return request;
+}
+
 function walkInstanceFiles(root, filename) {
   if (!fs.existsSync(root)) return [];
   const results = [];
@@ -725,19 +835,7 @@ function walkInstanceFiles(root, filename) {
   return results.sort((a, b) => a.localeCompare(b));
 }
 
-function loadRepositoryInstances(options = {}) {
-  const requestsRoot = options.requestsRoot || REQUESTS_ROOT;
-  const resultsRoot = options.resultsRoot || RESULTS_ROOT;
-  const policy = options.policy || loadPolicy();
-  const requests = walkInstanceFiles(requestsRoot, 'request.md').map((file) => ({
-    file,
-    value: parseRequestFile(file, { policy }),
-  }));
-  const results = walkInstanceFiles(resultsRoot, 'result.md').map((file) => ({
-    file,
-    value: parseResultFile(file),
-  }));
-
+function validateLoadedInstances(requests, results) {
   const requestIds = new Set();
   const fingerprints = new Set();
   for (const { value } of requests) {
@@ -765,6 +863,60 @@ function loadRepositoryInstances(options = {}) {
     resultIds.add(value.requestId);
   }
   return { requests, results };
+}
+
+function loadRepositoryInstances(options = {}) {
+  const requestsRoot = options.requestsRoot || REQUESTS_ROOT;
+  const resultsRoot = options.resultsRoot || RESULTS_ROOT;
+  const policy = options.policy || loadPolicy();
+  const requests = walkInstanceFiles(requestsRoot, 'request.md').map((file) => ({
+    file,
+    value: parseRequestFile(file, { policy }),
+  }));
+  const results = walkInstanceFiles(resultsRoot, 'result.md').map((file) => ({
+    file,
+    value: parseResultFile(file),
+  }));
+  return validateLoadedInstances(requests, results);
+}
+
+function gitListFiles(ref, repoPath, cwd = REPO_ROOT) {
+  const output = runGit(
+    ['ls-tree', '-r', '--name-only', ref, '--', repoPath],
+    cwd,
+  ).stdout.trim();
+  if (!output) return [];
+  return output.split(/\r?\n/).map((candidate) => normalizeRepoPath(candidate));
+}
+
+function loadRepositoryInstancesAtGitRef(ref, cwd = REPO_ROOT) {
+  const requestFiles = gitListFiles(
+    ref,
+    'project/docs/governance/coordination-requests',
+    cwd,
+  ).filter(
+    (file) =>
+      isRequestInstancePath(file) &&
+      !file.includes('/coordination-requests/_template/'),
+  );
+  const resultFiles = gitListFiles(
+    ref,
+    'project/docs/governance/coordination-results',
+    cwd,
+  ).filter(
+    (file) =>
+      isResultInstancePath(file) &&
+      !file.includes('/coordination-results/_template/'),
+  );
+  const requests = requestFiles.map((file) => ({
+    file,
+    value: parseRequestMarkdown(gitShow(ref, file, cwd)),
+  }));
+  const results = resultFiles.map((file) => ({
+    file,
+    value: parseResultMarkdown(gitShow(ref, file, cwd)),
+  }));
+  return validateLoadedInstances(requests, results);
 }
 
 function escapeTable(value) {
@@ -933,6 +1085,14 @@ function classifyPrChangeSet(changes, context = {}) {
     hasExactModifiedPathSet(changes, AUTHORITY_LOCATOR_REPAIR_I01_PATHS)
   ) {
     return { mode: AUTHORITY_LOCATOR_REPAIR_I01.mode };
+  }
+
+  if (
+    context.base === EXECUTION_BASE_ANCESTRY_REPAIR_I01.baseSha &&
+    context.headRef === EXECUTION_BASE_ANCESTRY_REPAIR_I01.headRef &&
+    hasExactModifiedPathSet(changes, EXECUTION_BASE_ANCESTRY_REPAIR_I01_PATHS)
+  ) {
+    return { mode: EXECUTION_BASE_ANCESTRY_REPAIR_I01.mode };
   }
 
   if (
@@ -1163,6 +1323,21 @@ function validateRegisterTestFixtureRepairScope(options) {
   return { mode: REGISTER_TEST_FIXTURE_REPAIR_I01.mode };
 }
 
+function validateExecutionBaseAncestryRepairScope(options) {
+  const { base, headRef, changes } = options;
+  if (
+    base !== EXECUTION_BASE_ANCESTRY_REPAIR_I01.baseSha ||
+    headRef !== EXECUTION_BASE_ANCESTRY_REPAIR_I01.headRef ||
+    !hasExactModifiedPathSet(changes, EXECUTION_BASE_ANCESTRY_REPAIR_I01_PATHS)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'execution base ancestry repair binding mismatch',
+    );
+  }
+  return { mode: EXECUTION_BASE_ANCESTRY_REPAIR_I01.mode };
+}
+
 function repoPathToAbsolute(repoPath, repoRoot = REPO_ROOT) {
   return path.join(repoRoot, ...normalizeRepoPath(repoPath).split('/'));
 }
@@ -1186,6 +1361,16 @@ function validatePrScope(options) {
 
   if (classification.mode === AUTHORITY_LOCATOR_REPAIR_I01.mode) {
     return validateAuthorityLocatorRepairScope({
+      base,
+      head,
+      headRef,
+      changes,
+      cwd,
+    });
+  }
+
+  if (classification.mode === EXECUTION_BASE_ANCESTRY_REPAIR_I01.mode) {
+    return validateExecutionBaseAncestryRepairScope({
       base,
       head,
       headRef,
@@ -1250,16 +1435,12 @@ function validatePrScope(options) {
     reject('EXECUTION_BRANCH_INVALID', 'execution branch must bind an exact requestId');
   }
   const requestId = branchMatch[1];
-  const requestPath = path.join(
-    cwd,
-    'project',
-    'docs',
-    'governance',
-    'coordination-requests',
+  const request = validateCanonicalRequestAtExecutionBase(
     requestId,
-    'request.md',
+    base,
+    head,
+    cwd,
   );
-  const request = parseRequestFile(requestPath);
   const changedPaths = changes.map((change) => change.path).sort();
   const allowedPaths = [...request.declaredTargetAllowlist].sort();
   if (
@@ -1267,7 +1448,7 @@ function validatePrScope(options) {
     changedPaths.some((candidate, index) => candidate !== allowedPaths[index])
   ) {
     reject(
-      'EXECUTION_TARGET_ALLOWLIST_MISMATCH',
+      'EXECUTION_TARGET_SCOPE_INVALID',
       `changed=[${changedPaths}] allowed=[${allowedPaths}]`,
     );
   }
@@ -1451,6 +1632,7 @@ module.exports = {
   BOOTSTRAP_MODIFY,
   CoordinationError,
   EFFECTIVE_FROM_MAIN_SHA,
+  EXECUTION_BASE_ANCESTRY_REPAIR_I01,
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   REGISTER_REPO_PATH,
@@ -1466,15 +1648,22 @@ module.exports = {
   extractStructuredJson,
   generateRegisterContent,
   loadRepositoryInstances,
+  loadRepositoryInstancesAtGitRef,
   makeSelfTestRequest,
   normalizeRepoPath,
   parseRequestFile,
+  parseRequestMarkdown,
   parseResultFile,
+  parseResultMarkdown,
   runSelfTest,
   sha256,
   validateRequestObject,
   validateBootstrapWorktree,
   validateAuthorityRecordAtRef,
+  validateCanonicalRequestAtExecutionBase,
+  validatePrScope,
+  validateRequestAgainstGit,
+  assertRequestBaseAncestor,
   validateResultObject,
   validateTargetPolicy,
   verifyRegister,

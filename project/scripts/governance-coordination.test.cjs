@@ -40,6 +40,19 @@ const REGISTER_PATH = path.join(
   'governance',
   'governance-writer-coordination-register.md',
 );
+const REPO_ROOT = path.resolve(PROJECT_ROOT, '..');
+const PILOT_REQUEST_ID = 'GOV-REQ-20260725-PILOT-001';
+const PILOT_REQUEST_BASE = 'f1fa3a2e17653727a2f1098ecb0afbcdc6488a15';
+const PILOT_EXECUTION_BASE = 'c714769b10a60152b14c61b7fd75e76386fedfb9';
+const PILOT_EXECUTION_HEAD = 'a1142086323233ffec723e4ac8ce284707bc8fa1';
+const PILOT_EXECUTION_BRANCH =
+  'codex/gov-exec/GOV-REQ-20260725-PILOT-001';
+const PILOT_REQUEST_PATH =
+  'project/docs/governance/coordination-requests/GOV-REQ-20260725-PILOT-001/request.md';
+const PILOT_RESULT_PATH =
+  'project/docs/governance/coordination-results/GOV-REQ-20260725-PILOT-001/result.md';
+const PILOT_TARGET_PATH =
+  'project/docs/governance/OFFICE-MASTER-SYNTHESIS.md';
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -187,6 +200,74 @@ function classifyRegisterTestFixtureRepair(changes, overrides = {}) {
     headRef: coordination.REGISTER_TEST_FIXTURE_REPAIR_I01.headRef,
     ...overrides,
   });
+}
+
+function executionBaseAncestryRepairChanges() {
+  return coordination.EXECUTION_BASE_ANCESTRY_REPAIR_I01.changedPaths.map(
+    (repoPath) => ({
+      status: 'M',
+      path: repoPath,
+    }),
+  );
+}
+
+function classifyExecutionBaseAncestryRepair(changes, overrides = {}) {
+  return coordination.classifyPrChangeSet(changes, {
+    base: coordination.EXECUTION_BASE_ANCESTRY_REPAIR_I01.baseSha,
+    headRef: coordination.EXECUTION_BASE_ANCESTRY_REPAIR_I01.headRef,
+    ...overrides,
+  });
+}
+
+function createPilotGitFixture(t) {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-execution-base-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  runFixtureGit(
+    ['clone', '--quiet', '--shared', '--no-checkout', REPO_ROOT, root],
+    parent,
+  );
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['checkout', '--quiet', '--detach', PILOT_EXECUTION_BASE], root);
+  return root;
+}
+
+function fixturePath(root, repoPath) {
+  return path.join(root, ...repoPath.split('/'));
+}
+
+function commitFixture(root, message) {
+  runFixtureGit(['add', '-A'], root);
+  runFixtureGit(['commit', '--quiet', '-m', message], root);
+  return runFixtureGit(['rev-parse', 'HEAD'], root);
+}
+
+function mutateFixtureRequest(root, mutator, refingerprintAfter = false) {
+  const requestFile = fixturePath(root, PILOT_REQUEST_PATH);
+  const request = coordination.parseRequestFile(requestFile);
+  mutator(request);
+  if (refingerprintAfter) refingerprint(request);
+  fs.writeFileSync(requestFile, requestMarkdown(request), 'utf8');
+  return request;
+}
+
+function createFixtureExecutionHead(root, extraMutation = null) {
+  const request = coordination.parseRequestFile(
+    fixturePath(root, PILOT_REQUEST_PATH),
+  );
+  const targetPath = fixturePath(root, request.operation.targetFile);
+  const targetContent = fs.readFileSync(targetPath, 'utf8');
+  fs.writeFileSync(
+    targetPath,
+    coordination.applyMechanicalOperation(targetContent, request.operation),
+    'utf8',
+  );
+  if (extraMutation) extraMutation(root);
+  return commitFixture(root, 'execution fixture');
 }
 
 function validResult(request = validRequest()) {
@@ -839,6 +920,334 @@ test('register test fixture repair rejects a similarly named branch', () => {
         headRef: `${coordination.REGISTER_TEST_FIXTURE_REPAIR_I01.headRef}-copy`,
       }),
     'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('execution base ancestry repair requires exact base, head ref, and two paths', () => {
+  const result = classifyExecutionBaseAncestryRepair(
+    executionBaseAncestryRepairChanges(),
+  );
+  assert.equal(result.mode, 'EXECUTION_BASE_ANCESTRY_REPAIR_I01');
+});
+
+test('execution base ancestry repair rejects the wrong base', () => {
+  expectCode(
+    () =>
+      classifyExecutionBaseAncestryRepair(
+        executionBaseAncestryRepairChanges(),
+        { base: '0'.repeat(40) },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('execution base ancestry repair rejects the wrong head ref', () => {
+  expectCode(
+    () =>
+      classifyExecutionBaseAncestryRepair(
+        executionBaseAncestryRepairChanges(),
+        {
+          headRef:
+            'codex/gov-coord-v1-execution-base-ancestry-repair-i01-copy',
+        },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('execution base ancestry repair rejects one missing path', () => {
+  expectCode(
+    () =>
+      classifyExecutionBaseAncestryRepair(
+        executionBaseAncestryRepairChanges().slice(1),
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('execution base ancestry repair rejects one extra path', () => {
+  const changes = executionBaseAncestryRepairChanges();
+  changes.push({
+    status: 'M',
+    path: 'project/docs/governance/governance-writer-coordination-contract.md',
+  });
+  expectCode(
+    () => classifyExecutionBaseAncestryRepair(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('request base equal to execution base satisfies ancestry', () => {
+  assert.equal(
+    coordination.assertRequestBaseAncestor(
+      PILOT_EXECUTION_BASE,
+      PILOT_EXECUTION_BASE,
+      REPO_ROOT,
+    ),
+    true,
+  );
+});
+
+test('request base ancestor of execution base satisfies ancestry', () => {
+  assert.equal(
+    coordination.assertRequestBaseAncestor(
+      PILOT_REQUEST_BASE,
+      PILOT_EXECUTION_BASE,
+      REPO_ROOT,
+    ),
+    true,
+  );
+});
+
+test('request base descendant of execution base is rejected', () => {
+  expectCode(
+    () =>
+      coordination.assertRequestBaseAncestor(
+        PILOT_EXECUTION_BASE,
+        PILOT_REQUEST_BASE,
+        REPO_ROOT,
+      ),
+    'REQUEST_BASE_NOT_ANCESTOR',
+  );
+});
+
+test('unrelated request base is rejected', (t) => {
+  const root = createPilotGitFixture(t);
+  const tree = runFixtureGit(
+    ['rev-parse', `${PILOT_EXECUTION_BASE}^{tree}`],
+    root,
+  );
+  const unrelated = runFixtureGit(
+    ['commit-tree', tree, '-m', 'unrelated request base'],
+    root,
+  );
+  expectCode(
+    () =>
+      coordination.assertRequestBaseAncestor(
+        unrelated,
+        PILOT_EXECUTION_BASE,
+        root,
+      ),
+    'REQUEST_BASE_NOT_ANCESTOR',
+  );
+});
+
+test('unknown request base SHA is rejected fail-closed', () => {
+  expectCode(
+    () =>
+      coordination.assertRequestBaseAncestor(
+        '0'.repeat(40),
+        PILOT_EXECUTION_BASE,
+        REPO_ROOT,
+      ),
+    'REQUEST_BASE_NOT_ANCESTOR',
+  );
+});
+
+test('real pilot execution chain validates against canonical PR base', () => {
+  const result = coordination.validatePrScope({
+    base: PILOT_EXECUTION_BASE,
+    head: PILOT_EXECUTION_HEAD,
+    headRef: PILOT_EXECUTION_BRANCH,
+    cwd: REPO_ROOT,
+  });
+  assert.equal(result.mode, 'EXECUTION');
+});
+
+test('real pilot execution rejects a non-canonical branch', () => {
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: PILOT_EXECUTION_BASE,
+        head: PILOT_EXECUTION_HEAD,
+        headRef: 'codex/gov-coord-v1-pilot-001-execution-r01',
+        cwd: REPO_ROOT,
+      }),
+    'EXECUTION_BRANCH_INVALID',
+  );
+});
+
+test('canonical request resolves only from PR base and remains PENDING', () => {
+  const request = coordination.validateCanonicalRequestAtExecutionBase(
+    PILOT_REQUEST_ID,
+    PILOT_EXECUTION_BASE,
+    PILOT_EXECUTION_HEAD,
+    REPO_ROOT,
+  );
+  assert.equal(request.requestId, PILOT_REQUEST_ID);
+  assert.equal(request.baseMainSha, PILOT_REQUEST_BASE);
+});
+
+test('missing canonical request at PR base is rejected', (t) => {
+  const root = createPilotGitFixture(t);
+  fs.rmSync(fixturePath(root, PILOT_REQUEST_PATH));
+  const base = commitFixture(root, 'remove canonical request');
+  expectCode(
+    () =>
+      coordination.validateCanonicalRequestAtExecutionBase(
+        PILOT_REQUEST_ID,
+        base,
+        base,
+        root,
+      ),
+    'CANONICAL_REQUEST_MISSING_AT_PR_BASE',
+  );
+});
+
+test('canonical request path with a different requestId is rejected', (t) => {
+  const root = createPilotGitFixture(t);
+  mutateFixtureRequest(
+    root,
+    (request) => {
+      request.requestId = 'GOV-REQ-20260725-PILOT-OTHER';
+    },
+    true,
+  );
+  const base = commitFixture(root, 'change canonical request id');
+  expectCode(
+    () =>
+      coordination.validateCanonicalRequestAtExecutionBase(
+        PILOT_REQUEST_ID,
+        base,
+        base,
+        root,
+      ),
+    'CANONICAL_REQUEST_MISMATCH',
+  );
+});
+
+test('canonical request with a mismatched fingerprint is rejected', (t) => {
+  const root = createPilotGitFixture(t);
+  mutateFixtureRequest(root, (request) => {
+    request.createdAt = '2026-07-25T12:00:00Z';
+  });
+  const base = commitFixture(root, 'corrupt canonical request fingerprint');
+  expectCode(
+    () =>
+      coordination.validateCanonicalRequestAtExecutionBase(
+        PILOT_REQUEST_ID,
+        base,
+        base,
+        root,
+      ),
+    'REQUEST_FINGERPRINT_MISMATCH',
+  );
+});
+
+test('request mutation between execution base and head is rejected', (t) => {
+  const root = createPilotGitFixture(t);
+  fs.appendFileSync(
+    fixturePath(root, PILOT_REQUEST_PATH),
+    '\nmutated outside structured payload\n',
+    'utf8',
+  );
+  const head = commitFixture(root, 'mutate request at execution head');
+  expectCode(
+    () =>
+      coordination.validateCanonicalRequestAtExecutionBase(
+        PILOT_REQUEST_ID,
+        PILOT_EXECUTION_BASE,
+        head,
+        root,
+      ),
+    'CANONICAL_REQUEST_MISMATCH',
+  );
+});
+
+test('existing result at execution base is rejected', (t) => {
+  const root = createPilotGitFixture(t);
+  const resultPath = fixturePath(root, PILOT_RESULT_PATH);
+  fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+  fs.writeFileSync(resultPath, '# Existing result\n', 'utf8');
+  const base = commitFixture(root, 'add existing result');
+  expectCode(
+    () =>
+      coordination.validateCanonicalRequestAtExecutionBase(
+        PILOT_REQUEST_ID,
+        base,
+        base,
+        root,
+      ),
+    'RESULT_ALREADY_EXISTS',
+  );
+});
+
+test('non-PENDING canonical register state is rejected', (t) => {
+  const root = createPilotGitFixture(t);
+  const registerPath = fixturePath(root, coordination.REGISTER_REPO_PATH);
+  const register = fs.readFileSync(registerPath, 'utf8');
+  fs.writeFileSync(
+    registerPath,
+    register.replace('| PENDING | _none_ |', '| FAILED | _none_ |'),
+    'utf8',
+  );
+  const base = commitFixture(root, 'change request status');
+  expectCode(
+    () =>
+      coordination.validateCanonicalRequestAtExecutionBase(
+        PILOT_REQUEST_ID,
+        base,
+        base,
+        root,
+      ),
+    'REQUEST_NOT_PENDING',
+  );
+});
+
+test('execution diff containing request.md is rejected', () => {
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet([
+        { status: 'M', path: PILOT_TARGET_PATH },
+        { status: 'M', path: PILOT_REQUEST_PATH },
+      ]),
+    'IMMUTABLE_REQUEST_MODIFIED',
+  );
+});
+
+test('execution diff containing generated register is rejected', () => {
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet([
+        { status: 'M', path: PILOT_TARGET_PATH },
+        { status: 'M', path: coordination.REGISTER_REPO_PATH },
+      ]),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('execution diff containing a result instance is rejected', () => {
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet([
+        { status: 'M', path: PILOT_TARGET_PATH },
+        { status: 'A', path: PILOT_RESULT_PATH },
+      ]),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('execution diff outside the declared target allowlist is rejected', (t) => {
+  const root = createPilotGitFixture(t);
+  const head = createFixtureExecutionHead(root, (fixtureRoot) => {
+    fs.appendFileSync(
+      fixturePath(
+        fixtureRoot,
+        'project/docs/governance/GOVERNANCE-INDEX.md',
+      ),
+      '\nextra execution target\n',
+      'utf8',
+    );
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: PILOT_EXECUTION_BASE,
+        head,
+        headRef: PILOT_EXECUTION_BRANCH,
+        cwd: root,
+      }),
+    'EXECUTION_TARGET_SCOPE_INVALID',
   );
 });
 
