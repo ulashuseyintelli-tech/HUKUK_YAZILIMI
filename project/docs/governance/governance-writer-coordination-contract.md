@@ -198,6 +198,29 @@ Path set :
 - Gelecekteki control-plane değişiklikleri ayrı owner authority ve ayrı exact
   classifier gerektirir.
 
+### REGISTER_TEST_FIXTURE_REPAIR_I01 — tek kullanımlık register test repair
+
+Bu sınıflandırma yalnız bootstrap-only boş-register varsayımını fixture'a taşır
+ve aşağıdaki exact binding ile kullanılabilir:
+
+```text
+Base SHA : a02498dfd50e349b2cb1eddfbde0561ece30fba6
+Head ref : codex/gov-coord-v1-register-test-fixture-repair-i01
+Path set :
+  - project/scripts/governance-coordination.cjs
+  - project/scripts/governance-coordination.test.cjs
+  - project/docs/governance/governance-writer-coordination-contract.md
+```
+
+- Empty-register assertion yalnız izole fixture'da uygulanır.
+- Live repository request sayısı sabit değildir.
+- Canonical invariant register'ın immutable instance'lardan deterministik,
+  byte-stable ve current türetilmesidir.
+- Yanlış base, head ref veya complete path set
+  `CONTROL_PLANE_SCOPE_FORBIDDEN` üretir.
+- Bu tek-kullanımlık mod request/result/execution veya semantic governance
+  authority üretmez; main ilerlediğinde kendiliğinden sona erer.
+
 ## 7. Generated register
 
 Register immutable request/result instance'larından deterministik üretilir.
