@@ -3,6 +3,24 @@ export const DEFAULT_ICRABOT_OUTBOX_BATCH_SIZE = 50;
 export const DEFAULT_ICRABOT_OUTBOX_RETRY_BASE_MS = 60_000;
 export const DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS = 600_000;
 
+export const ICRABOT_V28_DEV_SURFACE_ENABLED =
+  'ICRABOT_V28_DEV_SURFACE_ENABLED';
+export const ICRABOT_V28_UNSAFE_MUTATION_ENABLED =
+  'ICRABOT_V28_UNSAFE_MUTATION_ENABLED';
+export const ICRABOT_V28_EXTERNAL_INGEST_ENABLED =
+  'ICRABOT_V28_EXTERNAL_INGEST_ENABLED';
+
+export type IcrabotV28SurfaceFlag =
+  | typeof ICRABOT_V28_DEV_SURFACE_ENABLED
+  | typeof ICRABOT_V28_UNSAFE_MUTATION_ENABLED
+  | typeof ICRABOT_V28_EXTERNAL_INGEST_ENABLED;
+
+export function isIcrabotV28SurfaceEnabled(
+  flag: IcrabotV28SurfaceFlag,
+): boolean {
+  return process.env[flag]?.toLowerCase() === 'true';
+}
+
 function parsePositiveIntegerEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
