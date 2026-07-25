@@ -141,8 +141,26 @@ const EXECUTION_BASE_ANCESTRY_REPAIR_I01 = Object.freeze({
 const EXECUTION_BASE_ANCESTRY_REPAIR_I01_PATHS = new Set(
   EXECUTION_BASE_ANCESTRY_REPAIR_I01.changedPaths,
 );
+const NONCOORD_PR_CLASSIFIER_REPAIR_R01 = Object.freeze({
+  mode: 'NONCOORD_PR_CLASSIFIER_REPAIR_R01',
+  baseSha: 'ba26f6adb98e3c1a7687f025e6d7dcd470e3fb6b',
+  headRef: 'codex/gov-coord-noncoord-classifier-repair-r01',
+  changedPaths: Object.freeze([
+    'project/scripts/governance-coordination.cjs',
+    'project/scripts/governance-coordination.test.cjs',
+  ]),
+});
+const NONCOORD_PR_CLASSIFIER_REPAIR_R01_PATHS = new Set(
+  NONCOORD_PR_CLASSIFIER_REPAIR_R01.changedPaths,
+);
 const REGISTER_REPO_PATH =
   'project/docs/governance/governance-writer-coordination-register.md';
+const REQUEST_ONLY_BRANCH_PATTERN =
+  /^codex\/gov-coord-(?:[a-z0-9]+-)*request-only(?:-[a-z0-9]+)*$/;
+const EXECUTION_BRANCH_PATTERN =
+  /^codex\/gov-exec\/(GOV-REQ-\d{8}-[A-Z0-9][A-Z0-9-]*)$/;
+const RESULT_ONLY_BRANCH_PATTERN =
+  /^codex\/gov-result\/(GOV-REQ-\d{8}-[A-Z0-9][A-Z0-9-]*)$/;
 
 class CoordinationError extends Error {
   constructor(code, message) {
@@ -1096,6 +1114,14 @@ function classifyPrChangeSet(changes, context = {}) {
   }
 
   if (
+    context.base === NONCOORD_PR_CLASSIFIER_REPAIR_R01.baseSha &&
+    context.headRef === NONCOORD_PR_CLASSIFIER_REPAIR_R01.headRef &&
+    hasExactModifiedPathSet(changes, NONCOORD_PR_CLASSIFIER_REPAIR_R01_PATHS)
+  ) {
+    return { mode: NONCOORD_PR_CLASSIFIER_REPAIR_R01.mode };
+  }
+
+  if (
     paths.size === BOOTSTRAP_ALL.size &&
     [...paths].every((candidate) => BOOTSTRAP_ALL.has(candidate)) &&
     changes.every((change) => {
@@ -1106,30 +1132,74 @@ function classifyPrChangeSet(changes, context = {}) {
     return { mode: 'BOOTSTRAP' };
   }
 
+  if (
+    [
+      REGISTER_TEST_FIXTURE_REPAIR_I01.headRef,
+      AUTHORITY_LOCATOR_REPAIR_I01.headRef,
+      EXECUTION_BASE_ANCESTRY_REPAIR_I01.headRef,
+      NONCOORD_PR_CLASSIFIER_REPAIR_R01.headRef,
+    ].includes(context.headRef) ||
+    /^codex\/gov-coord-(?:v1-)?(?:authority-locator|register-test-fixture|execution-base-ancestry|noncoord-classifier)-repair-/.test(
+      context.headRef || '',
+    )
+  ) {
+    reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'control-plane repair binding mismatch');
+  }
+
   const newRequests = changes.filter(
     (change) => change.status === 'A' && isRequestInstancePath(change.path),
   );
-  if (
-    changes.length === 2 &&
-    newRequests.length === 1 &&
-    changes.some(
-      (change) => change.status === 'M' && change.path === REGISTER_REPO_PATH,
-    )
-  ) {
-    return { mode: 'REQUEST_ONLY', instancePath: newRequests[0].path };
-  }
-
   const newResults = changes.filter(
     (change) => change.status === 'A' && isResultInstancePath(change.path),
   );
-  if (
-    changes.length === 2 &&
-    newResults.length === 1 &&
-    changes.some(
-      (change) => change.status === 'M' && change.path === REGISTER_REPO_PATH,
-    )
-  ) {
-    return { mode: 'RESULT_ONLY', instancePath: newResults[0].path };
+  const requestBranchMatches = REQUEST_ONLY_BRANCH_PATTERN.test(context.headRef || '');
+  const executionBranchMatch = EXECUTION_BRANCH_PATTERN.exec(context.headRef || '');
+  const resultBranchMatch = RESULT_ONLY_BRANCH_PATTERN.exec(context.headRef || '');
+  const executionBranchIntent =
+    (context.headRef || '').startsWith('codex/gov-exec/') ||
+    /^codex\/gov-coord-(?:[a-z0-9]+-)*execution(?:-[a-z0-9]+)*$/.test(
+      context.headRef || '',
+    );
+  const resultBranchIntent = (context.headRef || '').startsWith('codex/gov-result/');
+
+  if (executionBranchIntent && !executionBranchMatch) {
+    reject('EXECUTION_BRANCH_INVALID', 'execution branch must bind an exact requestId');
+  }
+  if (resultBranchIntent && !resultBranchMatch) {
+    reject('RESULT_BRANCH_INVALID', 'result branch must bind an exact requestId');
+  }
+  if (newRequests.length > 0 && newResults.length > 0) {
+    reject(
+      'COORDINATION_CLASS_AMBIGUOUS',
+      'PR cannot contain both request and result instances',
+    );
+  }
+
+  const registerRegenerated = changes.some(
+    (change) => change.status === 'M' && change.path === REGISTER_REPO_PATH,
+  );
+  if (newRequests.length > 0 || requestBranchMatches) {
+    if (!requestBranchMatches) {
+      reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'request path requires a request-only branch');
+    }
+    if (changes.length !== 2 || newRequests.length !== 1 || !registerRegenerated) {
+      reject('REQUEST_SCOPE_INVALID', 'request-only PR requires one new request and register');
+    }
+    return { mode: 'REQUEST_ONLY', instancePath: newRequests[0].path };
+  }
+
+  if (newResults.length > 0 || resultBranchMatch) {
+    if (!resultBranchMatch) {
+      reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'result path requires an exact result branch');
+    }
+    if (changes.length !== 2 || newResults.length !== 1 || !registerRegenerated) {
+      reject('RESULT_SCOPE_INVALID', 'result-only PR requires one new result and register');
+    }
+    return {
+      mode: 'RESULT_ONLY',
+      instancePath: newResults[0].path,
+      requestId: resultBranchMatch[1],
+    };
   }
 
   if (
@@ -1143,10 +1213,13 @@ function classifyPrChangeSet(changes, context = {}) {
   ) {
     reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'non-bootstrap control-plane diff');
   }
-  if (changes.some((change) => change.status !== 'M')) {
-    reject('EXECUTION_SCOPE_INVALID', 'execution PR may only modify declared target files');
+  if (executionBranchMatch) {
+    if (changes.some((change) => change.status !== 'M')) {
+      reject('EXECUTION_SCOPE_INVALID', 'execution PR may only modify declared target files');
+    }
+    return { mode: 'EXECUTION', requestId: executionBranchMatch[1] };
   }
-  return { mode: 'EXECUTION' };
+  return { mode: 'NON_COORDINATION_PR' };
 }
 
 function validateAuthorityLocatorRepairScope(options) {
@@ -1338,6 +1411,21 @@ function validateExecutionBaseAncestryRepairScope(options) {
   return { mode: EXECUTION_BASE_ANCESTRY_REPAIR_I01.mode };
 }
 
+function validateNoncoordPrClassifierRepairScope(options) {
+  const { base, headRef, changes } = options;
+  if (
+    base !== NONCOORD_PR_CLASSIFIER_REPAIR_R01.baseSha ||
+    headRef !== NONCOORD_PR_CLASSIFIER_REPAIR_R01.headRef ||
+    !hasExactModifiedPathSet(changes, NONCOORD_PR_CLASSIFIER_REPAIR_R01_PATHS)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'non-coordination PR classifier repair binding mismatch',
+    );
+  }
+  return { mode: NONCOORD_PR_CLASSIFIER_REPAIR_R01.mode };
+}
+
 function repoPathToAbsolute(repoPath, repoRoot = REPO_ROOT) {
   return path.join(repoRoot, ...normalizeRepoPath(repoPath).split('/'));
 }
@@ -1348,6 +1436,10 @@ function validatePrScope(options) {
   assertSha(head, 'head');
   const changes = parseGitChanges(base, head, cwd);
   const classification = classifyPrChangeSet(changes, { base, headRef });
+
+  if (classification.mode === 'NON_COORDINATION_PR') {
+    return classification;
+  }
 
   if (classification.mode === REGISTER_TEST_FIXTURE_REPAIR_I01.mode) {
     return validateRegisterTestFixtureRepairScope({
@@ -1379,6 +1471,16 @@ function validatePrScope(options) {
     });
   }
 
+  if (classification.mode === NONCOORD_PR_CLASSIFIER_REPAIR_R01.mode) {
+    return validateNoncoordPrClassifierRepairScope({
+      base,
+      head,
+      headRef,
+      changes,
+      cwd,
+    });
+  }
+
   if (classification.mode === 'BOOTSTRAP') {
     if (base !== EFFECTIVE_FROM_MAIN_SHA) {
       reject('BOOTSTRAP_BASE_INVALID', `bootstrap base must be ${EFFECTIVE_FROM_MAIN_SHA}`);
@@ -1402,6 +1504,12 @@ function validatePrScope(options) {
     assertGitFileNotSymlink(head, classification.instancePath, cwd);
     const result = parseResultFile(repoPathToAbsolute(classification.instancePath, cwd));
     const folderRequestId = classification.instancePath.split('/').at(-2);
+    if (folderRequestId !== classification.requestId) {
+      reject(
+        'RESULT_BRANCH_REQUEST_MISMATCH',
+        `${classification.requestId} != ${folderRequestId}`,
+      );
+    }
     if (folderRequestId !== result.requestId) {
       reject('RESULT_PATH_ID_MISMATCH', `${folderRequestId} != ${result.requestId}`);
     }
@@ -1428,13 +1536,7 @@ function validatePrScope(options) {
     return classification;
   }
 
-  const branchMatch = /^codex\/gov-exec\/(GOV-REQ-\d{8}-[A-Z0-9][A-Z0-9-]*)$/.exec(
-    headRef,
-  );
-  if (!branchMatch) {
-    reject('EXECUTION_BRANCH_INVALID', 'execution branch must bind an exact requestId');
-  }
-  const requestId = branchMatch[1];
+  const requestId = classification.requestId;
   const request = validateCanonicalRequestAtExecutionBase(
     requestId,
     base,
@@ -1606,12 +1708,18 @@ function main(argv = process.argv.slice(2)) {
       console.log('GOV_COORD_REPOSITORY_VALID');
       break;
     case 'validate-pr-scope':
-      validatePrScope({
-        base: args.base,
-        head: args.head,
-        headRef: args['head-ref'] || '',
-      });
-      console.log('GOV_COORD_PR_SCOPE_VALID');
+      {
+        const classification = validatePrScope({
+          base: args.base,
+          head: args.head,
+          headRef: args['head-ref'] || '',
+        });
+        console.log(
+          classification.mode === 'NON_COORDINATION_PR'
+            ? 'GOV_COORD_NON_COORDINATION_PR'
+            : 'GOV_COORD_PR_SCOPE_VALID',
+        );
+      }
       break;
     case 'validate-bootstrap-worktree':
       validateBootstrapWorktree();
@@ -1635,6 +1743,7 @@ module.exports = {
   EXECUTION_BASE_ANCESTRY_REPAIR_I01,
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
+  NONCOORD_PR_CLASSIFIER_REPAIR_R01,
   REGISTER_REPO_PATH,
   REGISTER_TEST_FIXTURE_REPAIR_I01,
   applyMechanicalOperation,
