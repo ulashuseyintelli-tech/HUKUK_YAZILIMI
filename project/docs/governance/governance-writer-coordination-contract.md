@@ -172,6 +172,32 @@ execution PR merge edilmeden authoritative sonuç sayılmaz.
 
 Existing result modification, rename veya deletion yasaktır.
 
+### AUTHORITY_LOCATOR_REPAIR_I01 — tek kullanımlık bootstrap repair
+
+Bu sınıflandırma yalnız authority-locator bootstrap repair PR'ı için geçerlidir
+ve aşağıdaki üç exact değere birlikte bağlıdır:
+
+```text
+Base SHA : feadf408e9b6d02738d43a0ae78e38f75e594996
+Head ref : codex/gov-coord-v1-authority-locator-repair-i01
+Path set :
+  - project/scripts/governance-coordination.cjs
+  - project/scripts/governance-coordination.test.cjs
+  - project/docs/governance/governance-writer-coordination-contract.md
+  - project/docs/governance/decision-log.md
+  - project/docs/governance/coordination-execution-grants/GOV-COORD-V1-CODEX-LOCAL.md
+```
+
+- Base SHA, head ref veya complete changed-path setinden herhangi biri farklıysa
+  mevcut `CONTROL_PLANE_SCOPE_FORBIDDEN` sonucu korunur.
+- Branch prefix, substring, wildcard, PR title veya PR body authority değildir.
+- Bu sınıflandırma request-only, execution veya result-only modu üretmez.
+- Genel veya reusable control-plane mutation authority değildir.
+- Repair merge edilip main base ilerlediğinde exact base bağı nedeniyle
+  kendiliğinden yeniden kullanılamaz.
+- Gelecekteki control-plane değişiklikleri ayrı owner authority ve ayrı exact
+  classifier gerektirir.
+
 ## 7. Generated register
 
 Register immutable request/result instance'larından deterministik üretilir.

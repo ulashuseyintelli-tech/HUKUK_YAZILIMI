@@ -109,6 +109,21 @@ function authorityRef(kind, repoPath, recordId) {
   };
 }
 
+function authorityLocatorRepairChanges() {
+  return coordination.AUTHORITY_LOCATOR_REPAIR_I01.changedPaths.map((repoPath) => ({
+    status: 'M',
+    path: repoPath,
+  }));
+}
+
+function classifyAuthorityLocatorRepair(changes, overrides = {}) {
+  return coordination.classifyPrChangeSet(changes, {
+    base: coordination.AUTHORITY_LOCATOR_REPAIR_I01.baseSha,
+    headRef: coordination.AUTHORITY_LOCATOR_REPAIR_I01.headRef,
+    ...overrides,
+  });
+}
+
 function validResult(request = validRequest()) {
   return {
     schemaVersion: 1,
@@ -313,6 +328,84 @@ test('authority marker with the wrong recordId is rejected', () => {
   expectCode(
     () => coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
     'AUTHORITY_RECORD_MARKER_MISSING',
+  );
+});
+
+test('semantic row association accepts an exact recordId with an em dash title', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **${recordId} — Canonical Title**`,
+      marker,
+      recordId,
+    ),
+    true,
+  );
+});
+
+test('semantic row association accepts an exact recordId with a colon title', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **${recordId}: Canonical Title**`,
+      marker,
+      recordId,
+    ),
+    true,
+  );
+});
+
+test('semantic row association accepts an immediately closed bold recordId', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **${recordId}**`,
+      marker,
+      recordId,
+    ),
+    true,
+  );
+});
+
+test('semantic row association rejects a recordId prefix match', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **${recordId}-EXTRA — Wrong Row**`,
+      marker,
+      recordId,
+    ),
+    false,
+  );
+});
+
+test('semantic row association rejects a heading on another line', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker}\n**${recordId} — Separate Heading**`,
+      marker,
+      recordId,
+    ),
+    false,
+  );
+});
+
+test('semantic row association rejects the wrong heading recordId', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **GOV-TEST-OTHER — Wrong Row**`,
+      marker,
+      recordId,
+    ),
+    false,
   );
 });
 
@@ -565,6 +658,71 @@ test('bootstrap PR requires the exact fifteen-file mode scope', () => {
   );
   assert.equal(changes.length, 15);
   assert.equal(coordination.classifyPrChangeSet(changes).mode, 'BOOTSTRAP');
+});
+
+test('authority locator repair requires exact base, head ref, and five paths', () => {
+  const result = classifyAuthorityLocatorRepair(authorityLocatorRepairChanges());
+  assert.equal(result.mode, 'AUTHORITY_LOCATOR_REPAIR_I01');
+});
+
+test('authority locator repair rejects the wrong base', () => {
+  expectCode(
+    () =>
+      classifyAuthorityLocatorRepair(authorityLocatorRepairChanges(), {
+        base: '0'.repeat(40),
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects the wrong head ref', () => {
+  expectCode(
+    () =>
+      classifyAuthorityLocatorRepair(authorityLocatorRepairChanges(), {
+        headRef: 'codex/gov-coord-v1-authority-locator-repair-i02',
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects one missing path', () => {
+  expectCode(
+    () => classifyAuthorityLocatorRepair(authorityLocatorRepairChanges().slice(1)),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects one extra path', () => {
+  const changes = authorityLocatorRepairChanges();
+  changes.push({ status: 'M', path: 'project/docs/governance/GOVERNANCE-INDEX.md' });
+  expectCode(
+    () => classifyAuthorityLocatorRepair(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects a similarly named branch', () => {
+  expectCode(
+    () =>
+      classifyAuthorityLocatorRepair(authorityLocatorRepairChanges(), {
+        headRef: `${coordination.AUTHORITY_LOCATOR_REPAIR_I01.headRef}-copy`,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects request or result instance additions', () => {
+  for (const instancePath of [
+    'project/docs/governance/coordination-requests/GOV-REQ-20260725-X/request.md',
+    'project/docs/governance/coordination-results/GOV-REQ-20260725-X/result.md',
+  ]) {
+    const changes = authorityLocatorRepairChanges();
+    changes.push({ status: 'A', path: instancePath });
+    expectCode(
+      () => classifyAuthorityLocatorRepair(changes),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
 });
 
 test('result schema validates observed evidence', () => {

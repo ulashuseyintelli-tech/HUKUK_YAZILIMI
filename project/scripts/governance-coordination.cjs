@@ -91,6 +91,31 @@ const BOOTSTRAP_ADD = new Set([
   'project/scripts/governance-coordination.test.cjs',
 ]);
 const BOOTSTRAP_ALL = new Set([...BOOTSTRAP_MODIFY, ...BOOTSTRAP_ADD]);
+const AUTHORITY_LOCATOR_REPAIR_I01 = Object.freeze({
+  mode: 'AUTHORITY_LOCATOR_REPAIR_I01',
+  baseSha: 'feadf408e9b6d02738d43a0ae78e38f75e594996',
+  headRef: 'codex/gov-coord-v1-authority-locator-repair-i01',
+  changedPaths: Object.freeze([
+    'project/scripts/governance-coordination.cjs',
+    'project/scripts/governance-coordination.test.cjs',
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    'project/docs/governance/decision-log.md',
+    GRANT_REPO_PATH,
+  ]),
+  semanticAuthority: Object.freeze({
+    kind: 'SEMANTIC_AUTHORITY',
+    path: 'project/docs/governance/decision-log.md',
+    recordId: 'CLIENT-P2-U03-TRACK-B-D01-GOV',
+  }),
+  executionGrant: Object.freeze({
+    kind: 'EXECUTION_GRANT',
+    path: GRANT_REPO_PATH,
+    recordId: 'GOV-COORD-V1-CODEX-LOCAL',
+  }),
+});
+const AUTHORITY_LOCATOR_REPAIR_I01_PATHS = new Set(
+  AUTHORITY_LOCATOR_REPAIR_I01.changedPaths,
+);
 const REGISTER_REPO_PATH =
   'project/docs/governance/governance-writer-coordination-register.md';
 
@@ -615,6 +640,20 @@ function buildAuthorityMarker(authorityRef) {
   return `<!-- GOV-COORD-AUTHORITY kind=${authorityRef.kind} recordId=${authorityRef.recordId} -->`;
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function authorityMarkerLocatesSemanticRow(line, marker, recordId) {
+  const markerIndex = line.indexOf(marker);
+  if (markerIndex === -1) return false;
+  const afterMarker = line.slice(markerIndex + marker.length);
+  const headingPattern = new RegExp(
+    `^[\\t ]*\\*\\*${escapeRegExp(recordId)}(?=[\\t ]|—|–|:|\\*\\*)`,
+  );
+  return headingPattern.test(afterMarker);
+}
+
 function validateAuthorityRecordAtRef(ref, authorityRef, cwd = REPO_ROOT) {
   const content = gitShow(ref, authorityRef.path, cwd);
   const marker = buildAuthorityMarker(authorityRef);
@@ -837,7 +876,17 @@ function parseWorktreeChanges(cwd = REPO_ROOT) {
     });
 }
 
-function classifyPrChangeSet(changes) {
+function hasExactModifiedPathSet(changes, expectedPaths) {
+  const paths = new Set(changes.map((change) => change.path));
+  return (
+    changes.length === expectedPaths.size &&
+    paths.size === expectedPaths.size &&
+    [...paths].every((candidate) => expectedPaths.has(candidate)) &&
+    changes.every((change) => change.status === 'M' && !change.oldPath)
+  );
+}
+
+function classifyPrChangeSet(changes, context = {}) {
   if (changes.length === 0) reject('EMPTY_PR_SCOPE', 'PR has no changes');
 
   for (const change of changes) {
@@ -857,6 +906,14 @@ function classifyPrChangeSet(changes) {
   }
 
   const paths = new Set(changes.map((change) => change.path));
+  if (
+    context.base === AUTHORITY_LOCATOR_REPAIR_I01.baseSha &&
+    context.headRef === AUTHORITY_LOCATOR_REPAIR_I01.headRef &&
+    hasExactModifiedPathSet(changes, AUTHORITY_LOCATOR_REPAIR_I01_PATHS)
+  ) {
+    return { mode: AUTHORITY_LOCATOR_REPAIR_I01.mode };
+  }
+
   if (
     paths.size === BOOTSTRAP_ALL.size &&
     [...paths].every((candidate) => BOOTSTRAP_ALL.has(candidate)) &&
@@ -911,6 +968,131 @@ function classifyPrChangeSet(changes) {
   return { mode: 'EXECUTION' };
 }
 
+function validateAuthorityLocatorRepairScope(options) {
+  const { base, head, headRef, changes, cwd = REPO_ROOT } = options;
+  if (
+    base !== AUTHORITY_LOCATOR_REPAIR_I01.baseSha ||
+    headRef !== AUTHORITY_LOCATOR_REPAIR_I01.headRef ||
+    !hasExactModifiedPathSet(changes, AUTHORITY_LOCATOR_REPAIR_I01_PATHS)
+  ) {
+    reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'authority locator repair binding mismatch');
+  }
+
+  if (
+    changes.some(
+      (change) =>
+        isRequestInstancePath(change.path) ||
+        isResultInstancePath(change.path) ||
+        change.path === 'project/docs/governance/OFFICE-MASTER-SYNTHESIS.md',
+    )
+  ) {
+    reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'authority locator repair contains forbidden paths');
+  }
+
+  const semanticAuthority = {
+    ...AUTHORITY_LOCATOR_REPAIR_I01.semanticAuthority,
+    evidenceSha: base,
+  };
+  const executionGrant = {
+    ...AUTHORITY_LOCATOR_REPAIR_I01.executionGrant,
+    evidenceSha: base,
+  };
+  validateAuthorityRecordAtRef(head, semanticAuthority, cwd);
+  validateAuthorityRecordAtRef(head, executionGrant, cwd);
+
+  let rawIdFallbackRejected = false;
+  try {
+    validateAuthorityRecordAtRef(base, semanticAuthority, cwd);
+  } catch (error) {
+    if (
+      error instanceof CoordinationError &&
+      error.code === 'AUTHORITY_RECORD_MARKER_MISSING'
+    ) {
+      rawIdFallbackRejected = true;
+    } else {
+      throw error;
+    }
+  }
+  if (!rawIdFallbackRejected) {
+    reject(
+      'AUTHORITY_REPAIR_RAW_ID_FALLBACK_PRESENT',
+      'base semantic authority resolved without an exact marker',
+    );
+  }
+
+  const semanticMarker = buildAuthorityMarker(semanticAuthority);
+  const baseDecisionLog = gitShow(base, semanticAuthority.path, cwd);
+  const headDecisionLog = gitShow(head, semanticAuthority.path, cwd);
+  const markerLine = headDecisionLog
+    .split(/\r?\n/)
+    .find((line) => line.includes(semanticMarker));
+  if (
+    !markerLine ||
+    !authorityMarkerLocatesSemanticRow(
+      markerLine,
+      semanticMarker,
+      semanticAuthority.recordId,
+    )
+  ) {
+    reject(
+      'AUTHORITY_REPAIR_SEMANTIC_MARKER_INVALID',
+      'semantic marker must locate the expected decision row',
+    );
+  }
+  const normalizedDecisionLog = headDecisionLog.replace(`${semanticMarker} `, '');
+  if (!normalizedDecisionLog.startsWith(baseDecisionLog)) {
+    reject(
+      'AUTHORITY_REPAIR_DECISION_LOG_NOT_ADDITIVE',
+      'existing decision-log content must remain byte-preserved after marker normalization',
+    );
+  }
+  const appendedDecisionLines = normalizedDecisionLog
+    .slice(baseDecisionLog.length)
+    .split(/\r?\n/)
+    .filter(Boolean);
+  if (
+    appendedDecisionLines.length !== 1 ||
+    !appendedDecisionLines[0].startsWith(
+      '| 2026-07-25 | **GOV-COORD-V1-AUTHORITY-LOCATOR-REPAIR-I01',
+    )
+  ) {
+    reject(
+      'AUTHORITY_REPAIR_DECISION_LOG_NOT_ADDITIVE',
+      'decision-log may only append the exact repair record',
+    );
+  }
+
+  const grantMarker = buildAuthorityMarker(executionGrant);
+  const baseGrant = gitShow(base, executionGrant.path, cwd);
+  const headGrant = gitShow(head, executionGrant.path, cwd);
+  if (headGrant.replace(`${grantMarker}\n\n`, '') !== baseGrant) {
+    reject(
+      'AUTHORITY_REPAIR_GRANT_CHANGED',
+      'execution grant must remain byte-equivalent after marker removal',
+    );
+  }
+
+  const contract = gitShow(
+    head,
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    cwd,
+  );
+  for (const expectedLiteral of [
+    AUTHORITY_LOCATOR_REPAIR_I01.mode,
+    AUTHORITY_LOCATOR_REPAIR_I01.baseSha,
+    AUTHORITY_LOCATOR_REPAIR_I01.headRef,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'AUTHORITY_REPAIR_CONTRACT_INVALID',
+        `contract is missing exact repair binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: AUTHORITY_LOCATOR_REPAIR_I01.mode };
+}
+
 function repoPathToAbsolute(repoPath, repoRoot = REPO_ROOT) {
   return path.join(repoRoot, ...normalizeRepoPath(repoPath).split('/'));
 }
@@ -920,7 +1102,17 @@ function validatePrScope(options) {
   assertSha(base, 'base');
   assertSha(head, 'head');
   const changes = parseGitChanges(base, head, cwd);
-  const classification = classifyPrChangeSet(changes);
+  const classification = classifyPrChangeSet(changes, { base, headRef });
+
+  if (classification.mode === AUTHORITY_LOCATOR_REPAIR_I01.mode) {
+    return validateAuthorityLocatorRepairScope({
+      base,
+      head,
+      headRef,
+      changes,
+      cwd,
+    });
+  }
 
   if (classification.mode === 'BOOTSTRAP') {
     if (base !== EFFECTIVE_FROM_MAIN_SHA) {
@@ -1173,6 +1365,7 @@ function main(argv = process.argv.slice(2)) {
 }
 
 module.exports = {
+  AUTHORITY_LOCATOR_REPAIR_I01,
   BOOTSTRAP_ADD,
   BOOTSTRAP_ALL,
   BOOTSTRAP_MODIFY,
@@ -1183,6 +1376,7 @@ module.exports = {
   REGISTER_REPO_PATH,
   applyMechanicalOperation,
   assertNotSymlink,
+  authorityMarkerLocatesSemanticRow,
   buildAuthorityMarker,
   canonicalize,
   classifyPrChangeSet,
