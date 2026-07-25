@@ -46,6 +46,10 @@ const PILOT_REQUEST_BASE = 'f1fa3a2e17653727a2f1098ecb0afbcdc6488a15';
 const PILOT_EXECUTION_BASE = 'c714769b10a60152b14c61b7fd75e76386fedfb9';
 const PILOT_EXECUTION_BRANCH =
   'codex/gov-exec/GOV-REQ-20260725-PILOT-001';
+const PILOT_REQUEST_BRANCH =
+  'codex/gov-coord-v1-pilot-001-request-only-r03';
+const PILOT_RESULT_BRANCH =
+  'codex/gov-result/GOV-REQ-20260725-PILOT-001';
 const PILOT_REQUEST_PATH =
   'project/docs/governance/coordination-requests/GOV-REQ-20260725-PILOT-001/request.md';
 const PILOT_RESULT_PATH =
@@ -218,6 +222,23 @@ function classifyExecutionBaseAncestryRepair(changes, overrides = {}) {
   });
 }
 
+function noncoordPrClassifierRepairChanges() {
+  return coordination.NONCOORD_PR_CLASSIFIER_REPAIR_R01.changedPaths.map(
+    (repoPath) => ({
+      status: 'M',
+      path: repoPath,
+    }),
+  );
+}
+
+function classifyNoncoordPrClassifierRepair(changes, overrides = {}) {
+  return coordination.classifyPrChangeSet(changes, {
+    base: coordination.NONCOORD_PR_CLASSIFIER_REPAIR_R01.baseSha,
+    headRef: coordination.NONCOORD_PR_CLASSIFIER_REPAIR_R01.headRef,
+    ...overrides,
+  });
+}
+
 function createDetachedGitFixture(t, startRef) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-execution-base-'));
   const root = path.join(parent, 'repo');
@@ -247,6 +268,36 @@ function writeFixtureRepoFile(root, repoPath, content) {
   const filePath = fixturePath(root, repoPath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf8');
+}
+
+function createOrdinaryPrCliFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-noncoord-cli-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+
+  const scriptPath = 'project/scripts/governance-coordination.cjs';
+  const policyPath =
+    'project/docs/governance/governance-writer-coordination-protected-paths.json';
+  writeFixtureRepoFile(
+    root,
+    scriptPath,
+    fs.readFileSync(path.join(__dirname, 'governance-coordination.cjs'), 'utf8'),
+  );
+  writeFixtureRepoFile(
+    root,
+    policyPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, policyPath), 'utf8'),
+  );
+  const base = commitFixture(root, 'classifier fixture base');
+  writeFixtureRepoFile(root, 'project/apps/api/src/ordinary.ts', 'export const ordinary = true;\n');
+  const head = commitFixture(root, 'ordinary PR fixture');
+  return { root, scriptPath, base, head };
 }
 
 function createSelfContainedPilotExecutionFixture(t) {
@@ -879,7 +930,7 @@ test('valid request-only PR scope is classified exactly', () => {
       path: 'project/docs/governance/coordination-requests/GOV-REQ-20260724-X/request.md',
     },
     { status: 'M', path: coordination.REGISTER_REPO_PATH },
-  ]);
+  ], { headRef: PILOT_REQUEST_BRANCH });
   assert.equal(result.mode, 'REQUEST_ONLY');
 });
 
@@ -890,15 +941,190 @@ test('valid result-only PR scope is classified exactly', () => {
       path: 'project/docs/governance/coordination-results/GOV-REQ-20260724-X/result.md',
     },
     { status: 'M', path: coordination.REGISTER_REPO_PATH },
-  ]);
+  ], { headRef: 'codex/gov-result/GOV-REQ-20260724-X' });
   assert.equal(result.mode, 'RESULT_ONLY');
 });
 
 test('valid mechanical execution scope is classified separately', () => {
   const result = coordination.classifyPrChangeSet([
     { status: 'M', path: 'project/docs/governance/GOVERNANCE-INDEX.md' },
-  ]);
+  ], { headRef: PILOT_EXECUTION_BRANCH });
   assert.equal(result.mode, 'EXECUTION');
+});
+
+test('ordinary production modification is non-coordination', () => {
+  const result = coordination.classifyPrChangeSet(
+    [{ status: 'M', path: 'project/apps/api/src/ordinary.ts' }],
+    { headRef: 'codex/ordinary-production-change' },
+  );
+  assert.equal(result.mode, 'NON_COORDINATION_PR');
+});
+
+test('ordinary new production and test files are non-coordination', () => {
+  const result = coordination.classifyPrChangeSet(
+    [
+      { status: 'A', path: 'project/apps/api/src/new-production.ts' },
+      { status: 'A', path: 'project/apps/api/src/new-production.spec.ts' },
+    ],
+    { headRef: 'codex/ordinary-new-files' },
+  );
+  assert.equal(result.mode, 'NON_COORDINATION_PR');
+});
+
+test('multiple ordinary production docs and test files are non-coordination', () => {
+  const result = coordination.classifyPrChangeSet(
+    [
+      { status: 'M', path: 'project/apps/api/src/ordinary.ts' },
+      { status: 'A', path: 'project/apps/api/src/ordinary.test.ts' },
+      { status: 'M', path: 'project/docs/ordinary.md' },
+    ],
+    { headRef: 'codex/ordinary-mixed-files' },
+  );
+  assert.equal(result.mode, 'NON_COORDINATION_PR');
+});
+
+test('PR 1598 exact four-file diff is non-coordination', () => {
+  const result = coordination.classifyPrChangeSet(
+    [
+      {
+        status: 'A',
+        path: 'project/apps/api/src/modules/icrabot/v28-engine/__tests__/v28-surface-containment.spec.ts',
+      },
+      {
+        status: 'A',
+        path: 'project/apps/api/src/modules/icrabot/v28-engine/guards/v28-surface.guard.ts',
+      },
+      {
+        status: 'M',
+        path: 'project/apps/api/src/modules/icrabot/v28-engine/outbox.constants.ts',
+      },
+      {
+        status: 'M',
+        path: 'project/apps/api/src/modules/icrabot/v28-engine/v28-engine.controller.ts',
+      },
+    ],
+    { headRef: 'codex/v28-xten-sec-p0-01b-containment-r01' },
+  );
+  assert.equal(result.mode, 'NON_COORDINATION_PR');
+});
+
+test('ordinary filenames containing coordination words do not create false positives', () => {
+  const result = coordination.classifyPrChangeSet(
+    [
+      { status: 'A', path: 'project/apps/api/src/request-handler.ts' },
+      { status: 'M', path: 'project/apps/api/src/result-execution.service.ts' },
+    ],
+    { headRef: 'codex/request-result-execution-feature' },
+  );
+  assert.equal(result.mode, 'NON_COORDINATION_PR');
+});
+
+test('malformed execution branch is rejected fail-closed', () => {
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        [{ status: 'M', path: PILOT_TARGET_PATH }],
+        { headRef: 'codex/gov-exec/not-a-request-id' },
+      ),
+    'EXECUTION_BRANCH_INVALID',
+  );
+});
+
+test('malformed result branch is rejected fail-closed', () => {
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        [{ status: 'M', path: 'project/docs/ordinary.md' }],
+        { headRef: 'codex/gov-result/not-a-request-id' },
+      ),
+    'RESULT_BRANCH_INVALID',
+  );
+});
+
+test('request coordination path on an ordinary branch is rejected fail-closed', () => {
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        [
+          { status: 'A', path: PILOT_REQUEST_PATH },
+          { status: 'M', path: coordination.REGISTER_REPO_PATH },
+        ],
+        { headRef: 'codex/ordinary-docs-change' },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('result coordination path on an ordinary branch is rejected fail-closed', () => {
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        [
+          { status: 'A', path: PILOT_RESULT_PATH },
+          { status: 'M', path: coordination.REGISTER_REPO_PATH },
+        ],
+        { headRef: 'codex/ordinary-docs-change' },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('mixed request and result coordination classes are rejected fail-closed', () => {
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        [
+          { status: 'A', path: PILOT_REQUEST_PATH },
+          { status: 'A', path: PILOT_RESULT_PATH },
+          { status: 'M', path: coordination.REGISTER_REPO_PATH },
+        ],
+        { headRef: PILOT_REQUEST_BRANCH },
+      ),
+    'COORDINATION_CLASS_AMBIGUOUS',
+  );
+});
+
+test('non-coordination CLI exits zero with deterministic marker', (t) => {
+  const fixture = createOrdinaryPrCliFixture(t);
+  const result = spawnSync(
+    process.execPath,
+    [
+      fixture.scriptPath,
+      'validate-pr-scope',
+      '--base',
+      fixture.base,
+      '--head',
+      fixture.head,
+      '--head-ref',
+      'codex/ordinary-production-change',
+    ],
+    {
+      cwd: fixture.root,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      windowsHide: true,
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'GOV_COORD_NON_COORDINATION_PR');
+});
+
+test('non-coordination classifier repair requires exact base head ref and paths', () => {
+  const result = classifyNoncoordPrClassifierRepair(
+    noncoordPrClassifierRepairChanges(),
+  );
+  assert.equal(result.mode, 'NONCOORD_PR_CLASSIFIER_REPAIR_R01');
+});
+
+test('non-coordination classifier repair rejects a scope mismatch', () => {
+  expectCode(
+    () =>
+      classifyNoncoordPrClassifierRepair([
+        ...noncoordPrClassifierRepairChanges(),
+        { status: 'M', path: 'project/docs/ordinary.md' },
+      ]),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
 });
 
 test('bootstrap PR requires the exact fifteen-file mode scope', () => {
