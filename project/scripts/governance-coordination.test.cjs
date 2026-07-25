@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 
 const coordination = require('./governance-coordination.cjs');
@@ -64,6 +65,63 @@ function requestMarkdown(request) {
     '<!-- GOV_COORD_REQUEST_JSON_END -->',
     '',
   ].join('\n');
+}
+
+function runFixtureGit(args, cwd) {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    windowsHide: true,
+  });
+  assert.equal(
+    result.status,
+    0,
+    `git ${args.join(' ')} failed: ${(result.stderr || result.stdout).trim()}`,
+  );
+  return result.stdout.trim();
+}
+
+function createAuthorityGitFixture(repoPath, content) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-authority-'));
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(['config', 'user.email', 'governance-coordination@example.invalid'], root);
+
+  const filePath = path.join(root, ...repoPath.split('/'));
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, 'utf8');
+  runFixtureGit(['add', '--', repoPath], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'authority fixture'], root);
+
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  const tree = runFixtureGit(['rev-parse', 'HEAD^{tree}'], root);
+  const unrelated = runFixtureGit(['commit-tree', tree, '-m', 'unrelated evidence'], root);
+  return { root, head, unrelated };
+}
+
+function authorityRef(kind, repoPath, recordId) {
+  return {
+    kind,
+    path: repoPath,
+    recordId,
+    evidenceSha: '0'.repeat(40),
+  };
+}
+
+function authorityLocatorRepairChanges() {
+  return coordination.AUTHORITY_LOCATOR_REPAIR_I01.changedPaths.map((repoPath) => ({
+    status: 'M',
+    path: repoPath,
+  }));
+}
+
+function classifyAuthorityLocatorRepair(changes, overrides = {}) {
+  return coordination.classifyPrChangeSet(changes, {
+    base: coordination.AUTHORITY_LOCATOR_REPAIR_I01.baseSha,
+    headRef: coordination.AUTHORITY_LOCATOR_REPAIR_I01.headRef,
+    ...overrides,
+  });
 }
 
 function validResult(request = validRequest()) {
@@ -190,6 +248,240 @@ test('semantic authority must be a canonical governance path', () => {
   expectCode(
     () => coordination.validateRequestObject(request),
     'SEMANTIC_AUTHORITY_PATH_INVALID',
+  );
+});
+
+test('authority marker resolves when recordId repeats in prose', () => {
+  const ref = authorityRef(
+    'SEMANTIC_AUTHORITY',
+    'project/docs/governance/decision-log.md',
+    'GOV-TEST-SEMANTIC',
+  );
+  const marker = coordination.buildAuthorityMarker(ref);
+  const fixture = createAuthorityGitFixture(
+    ref.path,
+    `${marker}\nGOV-TEST-SEMANTIC heading\nGOV-TEST-SEMANTIC prose\n`,
+  );
+  ref.evidenceSha = fixture.head;
+  assert.doesNotThrow(() =>
+    coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
+  );
+});
+
+test('missing exact authority marker is rejected', () => {
+  const ref = authorityRef(
+    'SEMANTIC_AUTHORITY',
+    'project/docs/governance/decision-log.md',
+    'GOV-TEST-MISSING',
+  );
+  const fixture = createAuthorityGitFixture(ref.path, 'GOV-TEST-MISSING prose only\n');
+  ref.evidenceSha = fixture.head;
+  expectCode(
+    () => coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
+    'AUTHORITY_RECORD_MARKER_MISSING',
+  );
+});
+
+test('duplicate exact authority marker is rejected', () => {
+  const ref = authorityRef(
+    'SEMANTIC_AUTHORITY',
+    'project/docs/governance/decision-log.md',
+    'GOV-TEST-DUPLICATE',
+  );
+  const marker = coordination.buildAuthorityMarker(ref);
+  const fixture = createAuthorityGitFixture(ref.path, `${marker}\n${marker}\n`);
+  ref.evidenceSha = fixture.head;
+  expectCode(
+    () => coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
+    'AUTHORITY_RECORD_MARKER_DUPLICATE',
+  );
+});
+
+test('authority marker with the wrong kind is rejected', () => {
+  const ref = authorityRef(
+    'SEMANTIC_AUTHORITY',
+    'project/docs/governance/decision-log.md',
+    'GOV-TEST-WRONG-KIND',
+  );
+  const fixture = createAuthorityGitFixture(
+    ref.path,
+    '<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=GOV-TEST-WRONG-KIND -->\n',
+  );
+  ref.evidenceSha = fixture.head;
+  expectCode(
+    () => coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
+    'AUTHORITY_RECORD_MARKER_MISSING',
+  );
+});
+
+test('authority marker with the wrong recordId is rejected', () => {
+  const ref = authorityRef(
+    'SEMANTIC_AUTHORITY',
+    'project/docs/governance/decision-log.md',
+    'GOV-TEST-EXPECTED',
+  );
+  const fixture = createAuthorityGitFixture(
+    ref.path,
+    '<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=GOV-TEST-OTHER -->\n',
+  );
+  ref.evidenceSha = fixture.head;
+  expectCode(
+    () => coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
+    'AUTHORITY_RECORD_MARKER_MISSING',
+  );
+});
+
+test('semantic row association accepts an exact recordId with an em dash title', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **${recordId} — Canonical Title**`,
+      marker,
+      recordId,
+    ),
+    true,
+  );
+});
+
+test('semantic row association accepts an exact recordId with a colon title', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **${recordId}: Canonical Title**`,
+      marker,
+      recordId,
+    ),
+    true,
+  );
+});
+
+test('semantic row association accepts an immediately closed bold recordId', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **${recordId}**`,
+      marker,
+      recordId,
+    ),
+    true,
+  );
+});
+
+test('semantic row association rejects a recordId prefix match', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **${recordId}-EXTRA — Wrong Row**`,
+      marker,
+      recordId,
+    ),
+    false,
+  );
+});
+
+test('semantic row association rejects a heading on another line', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker}\n**${recordId} — Separate Heading**`,
+      marker,
+      recordId,
+    ),
+    false,
+  );
+});
+
+test('semantic row association rejects the wrong heading recordId', () => {
+  const recordId = 'GOV-TEST-ROW';
+  const marker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${recordId} -->`;
+  assert.equal(
+    coordination.authorityMarkerLocatesSemanticRow(
+      `${marker} **GOV-TEST-OTHER — Wrong Row**`,
+      marker,
+      recordId,
+    ),
+    false,
+  );
+});
+
+test('execution grant marker ignores heading and Grant ID repetitions', () => {
+  const ref = authorityRef(
+    'EXECUTION_GRANT',
+    'project/docs/governance/coordination-execution-grants/GOV-TEST-GRANT.md',
+    'GOV-TEST-GRANT',
+  );
+  const marker = coordination.buildAuthorityMarker(ref);
+  const fixture = createAuthorityGitFixture(
+    ref.path,
+    `# GOV-TEST-GRANT — Standing Execution Grant\n${marker}\nGrant ID: GOV-TEST-GRANT\n`,
+  );
+  ref.evidenceSha = fixture.head;
+  assert.doesNotThrow(() =>
+    coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
+  );
+});
+
+test('semantic marker resolves a long decision row with repeated recordId', () => {
+  const ref = authorityRef(
+    'SEMANTIC_AUTHORITY',
+    'project/docs/governance/decision-log.md',
+    'CLIENT-P2-U03-TRACK-B-D01-GOV',
+  );
+  const marker = coordination.buildAuthorityMarker(ref);
+  const fixture = createAuthorityGitFixture(
+    ref.path,
+    `| 2026-07-24 | ${marker} **CLIENT-P2-U03-TRACK-B-D01-GOV** | owner CLIENT-P2-U03-TRACK-B-D01-GOV brief | detail CLIENT-P2-U03-TRACK-B-D01-GOV |\n`,
+  );
+  ref.evidenceSha = fixture.head;
+  assert.doesNotThrow(() =>
+    coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
+  );
+});
+
+test('authority evidence must remain in validated ref ancestry', () => {
+  const ref = authorityRef(
+    'SEMANTIC_AUTHORITY',
+    'project/docs/governance/decision-log.md',
+    'GOV-TEST-ANCESTRY',
+  );
+  const marker = coordination.buildAuthorityMarker(ref);
+  const fixture = createAuthorityGitFixture(ref.path, `${marker}\n`);
+  ref.evidenceSha = fixture.unrelated;
+  expectCode(
+    () => coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
+    'AUTHORITY_EVIDENCE_NOT_IN_MAIN',
+  );
+});
+
+test('raw recordId-only legacy authority content has no fallback', () => {
+  const ref = authorityRef(
+    'SEMANTIC_AUTHORITY',
+    'project/docs/governance/decision-log.md',
+    'GOV-TEST-LEGACY',
+  );
+  const fixture = createAuthorityGitFixture(
+    ref.path,
+    '# GOV-TEST-LEGACY\nrecordId: GOV-TEST-LEGACY\n',
+  );
+  ref.evidenceSha = fixture.head;
+  expectCode(
+    () => coordination.validateAuthorityRecordAtRef(fixture.head, ref, fixture.root),
+    'AUTHORITY_RECORD_MARKER_MISSING',
+  );
+});
+
+test('unsafe authority recordId characters are rejected fail-closed', () => {
+  const request = validRequest();
+  request.semanticAuthorityRef.recordId = 'GOV-TEST -->';
+  refingerprint(request);
+  expectCode(
+    () => coordination.validateRequestObject(request),
+    'AUTHORITY_RECORD_ID_INVALID',
   );
 });
 
@@ -366,6 +658,71 @@ test('bootstrap PR requires the exact fifteen-file mode scope', () => {
   );
   assert.equal(changes.length, 15);
   assert.equal(coordination.classifyPrChangeSet(changes).mode, 'BOOTSTRAP');
+});
+
+test('authority locator repair requires exact base, head ref, and five paths', () => {
+  const result = classifyAuthorityLocatorRepair(authorityLocatorRepairChanges());
+  assert.equal(result.mode, 'AUTHORITY_LOCATOR_REPAIR_I01');
+});
+
+test('authority locator repair rejects the wrong base', () => {
+  expectCode(
+    () =>
+      classifyAuthorityLocatorRepair(authorityLocatorRepairChanges(), {
+        base: '0'.repeat(40),
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects the wrong head ref', () => {
+  expectCode(
+    () =>
+      classifyAuthorityLocatorRepair(authorityLocatorRepairChanges(), {
+        headRef: 'codex/gov-coord-v1-authority-locator-repair-i02',
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects one missing path', () => {
+  expectCode(
+    () => classifyAuthorityLocatorRepair(authorityLocatorRepairChanges().slice(1)),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects one extra path', () => {
+  const changes = authorityLocatorRepairChanges();
+  changes.push({ status: 'M', path: 'project/docs/governance/GOVERNANCE-INDEX.md' });
+  expectCode(
+    () => classifyAuthorityLocatorRepair(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects a similarly named branch', () => {
+  expectCode(
+    () =>
+      classifyAuthorityLocatorRepair(authorityLocatorRepairChanges(), {
+        headRef: `${coordination.AUTHORITY_LOCATOR_REPAIR_I01.headRef}-copy`,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('authority locator repair rejects request or result instance additions', () => {
+  for (const instancePath of [
+    'project/docs/governance/coordination-requests/GOV-REQ-20260725-X/request.md',
+    'project/docs/governance/coordination-results/GOV-REQ-20260725-X/result.md',
+  ]) {
+    const changes = authorityLocatorRepairChanges();
+    changes.push({ status: 'A', path: instancePath });
+    expectCode(
+      () => classifyAuthorityLocatorRepair(changes),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
 });
 
 test('result schema validates observed evidence', () => {

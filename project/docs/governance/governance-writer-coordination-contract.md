@@ -51,6 +51,28 @@ Request authority üretmez. Governance Index routing/authority discovery sağlar
 ama semantic veya execution authority üretmez. Generated register da authority
 değildir.
 
+### 2.1 Exact authority locator
+
+Her canonical authority kaydı aşağıdaki machine-readable marker'ın authority
+reference ile birebir eşleşen tek bir örneğini taşır:
+
+```text
+<!-- GOV-COORD-AUTHORITY kind=<KIND> recordId=<RECORD_ID> -->
+```
+
+- `<KIND>` yalnız `SEMANTIC_AUTHORITY` veya `EXECUTION_GRANT` olabilir.
+- Marker `kind` ve `recordId` değerleri authority reference ile exact eşleşir.
+- Aynı exact marker'ın olmaması veya birden fazla bulunması fail-closed
+  validation failure üretir.
+- `recordId` değerinin prose, başlık, tablo veya code block içinde tekrarlanması
+  authority resolution sonucunu etkilemez.
+- Raw `recordId`, fuzzy match, regex veya heading-based compatibility fallback
+  kullanılmaz.
+- Marker authority üretmez; yalnız mevcut canonical authority kaydının
+  deterministic machine locator'ıdır.
+- Marker eklemek semantic authority veya execution capability kapsamını
+  genişletmez.
+
 ## 3. Capability matrix
 
 | Capability | V1 durumu | Sınır |
@@ -149,6 +171,32 @@ execution PR merge edilmeden authoritative sonuç sayılmaz.
 2. Deterministik generated register regeneration.
 
 Existing result modification, rename veya deletion yasaktır.
+
+### AUTHORITY_LOCATOR_REPAIR_I01 — tek kullanımlık bootstrap repair
+
+Bu sınıflandırma yalnız authority-locator bootstrap repair PR'ı için geçerlidir
+ve aşağıdaki üç exact değere birlikte bağlıdır:
+
+```text
+Base SHA : feadf408e9b6d02738d43a0ae78e38f75e594996
+Head ref : codex/gov-coord-v1-authority-locator-repair-i01
+Path set :
+  - project/scripts/governance-coordination.cjs
+  - project/scripts/governance-coordination.test.cjs
+  - project/docs/governance/governance-writer-coordination-contract.md
+  - project/docs/governance/decision-log.md
+  - project/docs/governance/coordination-execution-grants/GOV-COORD-V1-CODEX-LOCAL.md
+```
+
+- Base SHA, head ref veya complete changed-path setinden herhangi biri farklıysa
+  mevcut `CONTROL_PLANE_SCOPE_FORBIDDEN` sonucu korunur.
+- Branch prefix, substring, wildcard, PR title veya PR body authority değildir.
+- Bu sınıflandırma request-only, execution veya result-only modu üretmez.
+- Genel veya reusable control-plane mutation authority değildir.
+- Repair merge edilip main base ilerlediğinde exact base bağı nedeniyle
+  kendiliğinden yeniden kullanılamaz.
+- Gelecekteki control-plane değişiklikleri ayrı owner authority ve ayrı exact
+  classifier gerektirir.
 
 ## 7. Generated register
 
