@@ -44,7 +44,6 @@ const REPO_ROOT = path.resolve(PROJECT_ROOT, '..');
 const PILOT_REQUEST_ID = 'GOV-REQ-20260725-PILOT-001';
 const PILOT_REQUEST_BASE = 'f1fa3a2e17653727a2f1098ecb0afbcdc6488a15';
 const PILOT_EXECUTION_BASE = 'c714769b10a60152b14c61b7fd75e76386fedfb9';
-const PILOT_EXECUTION_HEAD = 'a1142086323233ffec723e4ac8ce284707bc8fa1';
 const PILOT_EXECUTION_BRANCH =
   'codex/gov-exec/GOV-REQ-20260725-PILOT-001';
 const PILOT_REQUEST_PATH =
@@ -219,25 +218,132 @@ function classifyExecutionBaseAncestryRepair(changes, overrides = {}) {
   });
 }
 
-function createPilotGitFixture(t) {
+function createDetachedGitFixture(t, startRef) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-execution-base-'));
   const root = path.join(parent, 'repo');
   t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
-  runFixtureGit(
-    ['clone', '--quiet', '--shared', '--no-checkout', REPO_ROOT, root],
-    parent,
-  );
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
   runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
   runFixtureGit(
     ['config', 'user.email', 'governance-coordination@example.invalid'],
     root,
   );
-  runFixtureGit(['checkout', '--quiet', '--detach', PILOT_EXECUTION_BASE], root);
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+  runFixtureGit(['fetch', '--quiet', '--no-tags', REPO_ROOT, 'HEAD'], root);
+  runFixtureGit(['checkout', '--quiet', '--detach', startRef], root);
   return root;
+}
+
+function createPilotGitFixture(t) {
+  return createDetachedGitFixture(t, PILOT_EXECUTION_BASE);
 }
 
 function fixturePath(root, repoPath) {
   return path.join(root, ...repoPath.split('/'));
+}
+
+function writeFixtureRepoFile(root, repoPath, content) {
+  const filePath = fixturePath(root, repoPath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, 'utf8');
+}
+
+function createSelfContainedPilotExecutionFixture(t) {
+  const root = createDetachedGitFixture(t, coordination.EFFECTIVE_FROM_MAIN_SHA);
+  const requestBase = runFixtureGit(['rev-parse', 'HEAD'], root);
+  runFixtureGit(['rm', '-r', '--quiet', '--ignore-unmatch', '.'], root);
+
+  const semanticRecordId = 'CLIENT-P2-U03-TRACK-B-D01-GOV';
+  const executionRecordId = 'GOV-COORD-V1-CODEX-LOCAL';
+  const semanticPath = 'project/docs/governance/decision-log.md';
+  const executionPath =
+    'project/docs/governance/coordination-execution-grants/GOV-COORD-V1-CODEX-LOCAL.md';
+  const recordIdentity =
+    'CLIENT PHASE 2 — TRACK B FINANCIAL DISCLOSURE ARCHITECTURE (CLIENT-P2-U03-TRACK-B-D01) — OWNER RATIFIED, GOVERNANCE-ONLY (2026-07-24)';
+  const anchor = `**${recordIdentity}:**`;
+  const expectedOldValue =
+    'Detay: `decision-log.md` CLIENT-P2-U03-TRACK-B-D01-GOV kaydı.';
+  const newValue =
+    'Detay: `decision-log.md` CLIENT-P2-U03-TRACK-B-D01-GOV kaydı; fixture evidence.';
+  const targetContent = `${anchor}\n${expectedOldValue}\n`;
+  const expectedContent = targetContent.replace(expectedOldValue, newValue);
+  const operation = {
+    type: 'EXACT_REFERENCE_REWRITE',
+    changeClass: 'LEVEL_2_MECHANICAL',
+    targetFile: PILOT_TARGET_PATH,
+    recordIdentity,
+    anchor,
+    expectedOldValue,
+    newValue,
+    evidenceSha: requestBase,
+    expectedResultSha256: coordination.sha256(expectedContent),
+  };
+  const request = {
+    schemaVersion: 1,
+    requestId: PILOT_REQUEST_ID,
+    requestFingerprint: '',
+    requestedBy: 'OWNER',
+    createdAt: '2026-07-25T00:00:00Z',
+    baseMainSha: requestBase,
+    semanticAuthorityRef: {
+      kind: 'SEMANTIC_AUTHORITY',
+      path: semanticPath,
+      recordId: semanticRecordId,
+      evidenceSha: requestBase,
+    },
+    executionGrantRef: {
+      kind: 'EXECUTION_GRANT',
+      path: executionPath,
+      recordId: executionRecordId,
+      evidenceSha: requestBase,
+    },
+    operation,
+    declaredTargetAllowlist: [PILOT_TARGET_PATH],
+  };
+  refingerprint(request);
+  coordination.validateRequestObject(request);
+
+  writeFixtureRepoFile(
+    root,
+    semanticPath,
+    `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${semanticRecordId} --> **${semanticRecordId} — Fixture authority**\n`,
+  );
+  writeFixtureRepoFile(
+    root,
+    executionPath,
+    `<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=${executionRecordId} -->\n`,
+  );
+  writeFixtureRepoFile(root, PILOT_TARGET_PATH, targetContent);
+  writeFixtureRepoFile(root, PILOT_REQUEST_PATH, requestMarkdown(request));
+  writeFixtureRepoFile(
+    root,
+    'project/docs/governance/coordination-requests/_template/request.md',
+    '# Request template fixture\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    'project/docs/governance/coordination-results/_template/result.md',
+    '# Result template fixture\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    coordination.REGISTER_REPO_PATH,
+    coordination.generateRegisterContent({
+      requests: [{ file: PILOT_REQUEST_PATH, value: request }],
+      results: [],
+    }),
+  );
+
+  const executionBase = commitFixture(root, 'request-only fixture');
+  const executionHead = createFixtureExecutionHead(root);
+  return {
+    root,
+    request,
+    requestBase,
+    executionBase,
+    executionHead,
+  };
 }
 
 function commitFixture(root, message) {
@@ -1044,38 +1150,61 @@ test('unknown request base SHA is rejected fail-closed', () => {
   );
 });
 
-test('real pilot execution chain validates against canonical PR base', () => {
+test('real pilot execution chain validates against canonical PR base', (t) => {
+  const fixture = createSelfContainedPilotExecutionFixture(t);
   const result = coordination.validatePrScope({
-    base: PILOT_EXECUTION_BASE,
-    head: PILOT_EXECUTION_HEAD,
+    base: fixture.executionBase,
+    head: fixture.executionHead,
     headRef: PILOT_EXECUTION_BRANCH,
-    cwd: REPO_ROOT,
+    cwd: fixture.root,
   });
   assert.equal(result.mode, 'EXECUTION');
 });
 
-test('real pilot execution rejects a non-canonical branch', () => {
+test('real pilot execution rejects a non-canonical branch', (t) => {
+  const fixture = createSelfContainedPilotExecutionFixture(t);
   expectCode(
     () =>
       coordination.validatePrScope({
-        base: PILOT_EXECUTION_BASE,
-        head: PILOT_EXECUTION_HEAD,
+        base: fixture.executionBase,
+        head: fixture.executionHead,
         headRef: 'codex/gov-coord-v1-pilot-001-execution-r01',
-        cwd: REPO_ROOT,
+        cwd: fixture.root,
       }),
     'EXECUTION_BRANCH_INVALID',
   );
 });
 
-test('canonical request resolves only from PR base and remains PENDING', () => {
+test('canonical request resolves only from PR base and remains PENDING', (t) => {
+  const fixture = createSelfContainedPilotExecutionFixture(t);
+  fs.writeFileSync(
+    fixturePath(fixture.root, PILOT_REQUEST_PATH),
+    '# Working-tree request must not be used\n',
+    'utf8',
+  );
   const request = coordination.validateCanonicalRequestAtExecutionBase(
     PILOT_REQUEST_ID,
-    PILOT_EXECUTION_BASE,
-    PILOT_EXECUTION_HEAD,
-    REPO_ROOT,
+    fixture.executionBase,
+    fixture.executionHead,
+    fixture.root,
   );
   assert.equal(request.requestId, PILOT_REQUEST_ID);
-  assert.equal(request.baseMainSha, PILOT_REQUEST_BASE);
+  assert.equal(request.baseMainSha, fixture.requestBase);
+  assert.equal(request.requestFingerprint, fixture.request.requestFingerprint);
+  assert.match(
+    runFixtureGit(
+      ['show', `${fixture.executionBase}:${coordination.REGISTER_REPO_PATH}`],
+      fixture.root,
+    ),
+    /\| PENDING \| _none_ \|/,
+  );
+  assert.equal(
+    runFixtureGit(
+      ['ls-tree', fixture.executionBase, '--', PILOT_RESULT_PATH],
+      fixture.root,
+    ),
+    '',
+  );
 });
 
 test('missing canonical request at PR base is rejected', (t) => {
