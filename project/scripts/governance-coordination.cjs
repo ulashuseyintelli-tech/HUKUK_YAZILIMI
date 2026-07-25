@@ -116,6 +116,19 @@ const AUTHORITY_LOCATOR_REPAIR_I01 = Object.freeze({
 const AUTHORITY_LOCATOR_REPAIR_I01_PATHS = new Set(
   AUTHORITY_LOCATOR_REPAIR_I01.changedPaths,
 );
+const REGISTER_TEST_FIXTURE_REPAIR_I01 = Object.freeze({
+  mode: 'REGISTER_TEST_FIXTURE_REPAIR_I01',
+  baseSha: 'a02498dfd50e349b2cb1eddfbde0561ece30fba6',
+  headRef: 'codex/gov-coord-v1-register-test-fixture-repair-i01',
+  changedPaths: Object.freeze([
+    'project/scripts/governance-coordination.cjs',
+    'project/scripts/governance-coordination.test.cjs',
+    'project/docs/governance/governance-writer-coordination-contract.md',
+  ]),
+});
+const REGISTER_TEST_FIXTURE_REPAIR_I01_PATHS = new Set(
+  REGISTER_TEST_FIXTURE_REPAIR_I01.changedPaths,
+);
 const REGISTER_REPO_PATH =
   'project/docs/governance/governance-writer-coordination-register.md';
 
@@ -907,6 +920,14 @@ function classifyPrChangeSet(changes, context = {}) {
 
   const paths = new Set(changes.map((change) => change.path));
   if (
+    context.base === REGISTER_TEST_FIXTURE_REPAIR_I01.baseSha &&
+    context.headRef === REGISTER_TEST_FIXTURE_REPAIR_I01.headRef &&
+    hasExactModifiedPathSet(changes, REGISTER_TEST_FIXTURE_REPAIR_I01_PATHS)
+  ) {
+    return { mode: REGISTER_TEST_FIXTURE_REPAIR_I01.mode };
+  }
+
+  if (
     context.base === AUTHORITY_LOCATOR_REPAIR_I01.baseSha &&
     context.headRef === AUTHORITY_LOCATOR_REPAIR_I01.headRef &&
     hasExactModifiedPathSet(changes, AUTHORITY_LOCATOR_REPAIR_I01_PATHS)
@@ -1093,6 +1114,55 @@ function validateAuthorityLocatorRepairScope(options) {
   return { mode: AUTHORITY_LOCATOR_REPAIR_I01.mode };
 }
 
+function validateRegisterTestFixtureRepairScope(options) {
+  const { base, head, headRef, changes, cwd = REPO_ROOT } = options;
+  if (
+    base !== REGISTER_TEST_FIXTURE_REPAIR_I01.baseSha ||
+    headRef !== REGISTER_TEST_FIXTURE_REPAIR_I01.headRef ||
+    !hasExactModifiedPathSet(changes, REGISTER_TEST_FIXTURE_REPAIR_I01_PATHS)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'register test fixture repair binding mismatch',
+    );
+  }
+
+  if (
+    changes.some(
+      (change) =>
+        isRequestInstancePath(change.path) ||
+        isResultInstancePath(change.path) ||
+        change.path === REGISTER_REPO_PATH ||
+        change.path === 'project/docs/governance/OFFICE-MASTER-SYNTHESIS.md',
+    )
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'register test fixture repair contains forbidden paths',
+    );
+  }
+
+  const contract = gitShow(
+    head,
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    cwd,
+  );
+  for (const expectedLiteral of [
+    REGISTER_TEST_FIXTURE_REPAIR_I01.mode,
+    REGISTER_TEST_FIXTURE_REPAIR_I01.baseSha,
+    REGISTER_TEST_FIXTURE_REPAIR_I01.headRef,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'REGISTER_TEST_FIXTURE_REPAIR_CONTRACT_INVALID',
+        `contract is missing exact repair binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: REGISTER_TEST_FIXTURE_REPAIR_I01.mode };
+}
+
 function repoPathToAbsolute(repoPath, repoRoot = REPO_ROOT) {
   return path.join(repoRoot, ...normalizeRepoPath(repoPath).split('/'));
 }
@@ -1103,6 +1173,16 @@ function validatePrScope(options) {
   assertSha(head, 'head');
   const changes = parseGitChanges(base, head, cwd);
   const classification = classifyPrChangeSet(changes, { base, headRef });
+
+  if (classification.mode === REGISTER_TEST_FIXTURE_REPAIR_I01.mode) {
+    return validateRegisterTestFixtureRepairScope({
+      base,
+      head,
+      headRef,
+      changes,
+      cwd,
+    });
+  }
 
   if (classification.mode === AUTHORITY_LOCATOR_REPAIR_I01.mode) {
     return validateAuthorityLocatorRepairScope({
@@ -1374,6 +1454,7 @@ module.exports = {
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   REGISTER_REPO_PATH,
+  REGISTER_TEST_FIXTURE_REPAIR_I01,
   applyMechanicalOperation,
   assertNotSymlink,
   authorityMarkerLocatesSemanticRow,

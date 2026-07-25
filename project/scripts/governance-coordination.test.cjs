@@ -9,20 +9,28 @@ const test = require('node:test');
 
 const coordination = require('./governance-coordination.cjs');
 
-const PROJECT_ROOT = path.resolve(__dirname, '..');
-const REQUEST_TEMPLATE = path.join(
+const PROJECT_ROOT = process.env.GOV_COORD_TEST_PROJECT_ROOT
+  ? path.resolve(process.env.GOV_COORD_TEST_PROJECT_ROOT)
+  : path.resolve(__dirname, '..');
+const REQUESTS_ROOT = path.join(
   PROJECT_ROOT,
   'docs',
   'governance',
   'coordination-requests',
-  '_template',
-  'request.md',
 );
-const RESULT_TEMPLATE = path.join(
+const RESULTS_ROOT = path.join(
   PROJECT_ROOT,
   'docs',
   'governance',
   'coordination-results',
+);
+const REQUEST_TEMPLATE = path.join(
+  REQUESTS_ROOT,
+  '_template',
+  'request.md',
+);
+const RESULT_TEMPLATE = path.join(
+  RESULTS_ROOT,
   '_template',
   'result.md',
 );
@@ -65,6 +73,46 @@ function requestMarkdown(request) {
     '<!-- GOV_COORD_REQUEST_JSON_END -->',
     '',
   ].join('\n');
+}
+
+function createRegisterFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-register-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const requestsRoot = path.join(root, 'requests');
+  const resultsRoot = path.join(root, 'results');
+  const requestTemplateRoot = path.join(requestsRoot, '_template');
+  const resultTemplateRoot = path.join(resultsRoot, '_template');
+  const registerPath = path.join(root, 'register.md');
+
+  fs.mkdirSync(requestTemplateRoot, { recursive: true });
+  fs.mkdirSync(resultTemplateRoot, { recursive: true });
+  fs.copyFileSync(REQUEST_TEMPLATE, path.join(requestTemplateRoot, 'request.md'));
+  fs.copyFileSync(RESULT_TEMPLATE, path.join(resultTemplateRoot, 'result.md'));
+  fs.writeFileSync(path.join(requestsRoot, 'README.md'), '# Requests\n', 'utf8');
+  fs.writeFileSync(path.join(resultsRoot, 'README.md'), '# Results\n', 'utf8');
+
+  return { requestsRoot, resultsRoot, registerPath };
+}
+
+function writeFixtureRequest(fixture, request, directory = request.requestId) {
+  const requestRoot = path.join(fixture.requestsRoot, directory);
+  fs.mkdirSync(requestRoot, { recursive: true });
+  fs.writeFileSync(path.join(requestRoot, 'request.md'), requestMarkdown(request), 'utf8');
+}
+
+function loadFixtureInstances(fixture) {
+  return coordination.loadRepositoryInstances({
+    requestsRoot: fixture.requestsRoot,
+    resultsRoot: fixture.resultsRoot,
+  });
+}
+
+function materializeFixtureRegister(fixture) {
+  const instances = loadFixtureInstances(fixture);
+  const content = coordination.generateRegisterContent(instances);
+  fs.writeFileSync(fixture.registerPath, content, 'utf8');
+  return { instances, content };
 }
 
 function runFixtureGit(args, cwd) {
@@ -120,6 +168,23 @@ function classifyAuthorityLocatorRepair(changes, overrides = {}) {
   return coordination.classifyPrChangeSet(changes, {
     base: coordination.AUTHORITY_LOCATOR_REPAIR_I01.baseSha,
     headRef: coordination.AUTHORITY_LOCATOR_REPAIR_I01.headRef,
+    ...overrides,
+  });
+}
+
+function registerTestFixtureRepairChanges() {
+  return coordination.REGISTER_TEST_FIXTURE_REPAIR_I01.changedPaths.map(
+    (repoPath) => ({
+      status: 'M',
+      path: repoPath,
+    }),
+  );
+}
+
+function classifyRegisterTestFixtureRepair(changes, overrides = {}) {
+  return coordination.classifyPrChangeSet(changes, {
+    base: coordination.REGISTER_TEST_FIXTURE_REPAIR_I01.baseSha,
+    headRef: coordination.REGISTER_TEST_FIXTURE_REPAIR_I01.headRef,
     ...overrides,
   });
 }
@@ -725,6 +790,58 @@ test('authority locator repair rejects request or result instance additions', ()
   }
 });
 
+test('register test fixture repair requires exact base, head ref, and three paths', () => {
+  const result = classifyRegisterTestFixtureRepair(registerTestFixtureRepairChanges());
+  assert.equal(result.mode, 'REGISTER_TEST_FIXTURE_REPAIR_I01');
+});
+
+test('register test fixture repair rejects the wrong base', () => {
+  expectCode(
+    () =>
+      classifyRegisterTestFixtureRepair(registerTestFixtureRepairChanges(), {
+        base: '0'.repeat(40),
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('register test fixture repair rejects the wrong head ref', () => {
+  expectCode(
+    () =>
+      classifyRegisterTestFixtureRepair(registerTestFixtureRepairChanges(), {
+        headRef: 'codex/gov-coord-v1-register-test-fixture-repair-i02',
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('register test fixture repair rejects one missing path', () => {
+  expectCode(
+    () =>
+      classifyRegisterTestFixtureRepair(registerTestFixtureRepairChanges().slice(1)),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('register test fixture repair rejects one extra path', () => {
+  const changes = registerTestFixtureRepairChanges();
+  changes.push({ status: 'M', path: 'project/docs/governance/GOVERNANCE-INDEX.md' });
+  expectCode(
+    () => classifyRegisterTestFixtureRepair(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('register test fixture repair rejects a similarly named branch', () => {
+  expectCode(
+    () =>
+      classifyRegisterTestFixtureRepair(registerTestFixtureRepairChanges(), {
+        headRef: `${coordination.REGISTER_TEST_FIXTURE_REPAIR_I01.headRef}-copy`,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
 test('result schema validates observed evidence', () => {
   const result = validResult();
   assert.equal(coordination.validateResultObject(result), result);
@@ -753,6 +870,45 @@ test('generated register is deterministic and byte-stable', () => {
   assert.match(first, /DERIVED \/ NON-AUTHORITATIVE/);
 });
 
+test('empty isolated fixture generates and verifies the empty register row', (t) => {
+  const fixture = createRegisterFixture(t);
+  const { instances, content } = materializeFixtureRegister(fixture);
+  assert.match(content, /^\| _none_ \| _none_ \|/m);
+  assert.equal(coordination.verifyRegister(fixture.registerPath, instances), true);
+});
+
+test('one-request isolated fixture generates exact pending request identity', (t) => {
+  const fixture = createRegisterFixture(t);
+  const request = validRequest();
+  writeFixtureRequest(fixture, request);
+  const { instances, content } = materializeFixtureRegister(fixture);
+
+  assert.match(content, new RegExp(`\\| ${request.requestId} \\|`));
+  assert.match(content, new RegExp(`\\| ${request.requestFingerprint} \\|`));
+  assert.match(content, new RegExp(`\\| ${request.baseMainSha} \\|`));
+  assert.match(content, /\| PENDING \| _none_ \|/);
+  assert.doesNotMatch(content, /^\| _none_ \| _none_ \|/m);
+  assert.equal(coordination.verifyRegister(fixture.registerPath, instances), true);
+});
+
+test('stale isolated fixture register fails closed', (t) => {
+  const fixture = createRegisterFixture(t);
+  const { instances } = materializeFixtureRegister(fixture);
+  fs.appendFileSync(fixture.registerPath, 'stale\n', 'utf8');
+  expectCode(
+    () => coordination.verifyRegister(fixture.registerPath, instances),
+    'GENERATED_REGISTER_STALE',
+  );
+});
+
+test('malformed isolated request fails before register generation', (t) => {
+  const fixture = createRegisterFixture(t);
+  const request = validRequest();
+  delete request.requestId;
+  writeFixtureRequest(fixture, request, 'malformed');
+  expectCode(() => loadFixtureInstances(fixture), 'UNKNOWN_OR_MISSING_FIELD');
+});
+
 test('duplicate request fingerprint is rejected deterministically', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-'));
   const requestsRoot = path.join(tempRoot, 'requests');
@@ -773,10 +929,15 @@ test('duplicate request fingerprint is rejected deterministically', () => {
   );
 });
 
-test('bootstrap register is current and contains no real request', () => {
-  assert.equal(coordination.verifyRegister(REGISTER_PATH), true);
-  const content = fs.readFileSync(REGISTER_PATH, 'utf8');
-  assert.match(content, /\| _none_ \| _none_ \|/);
+test('current repository register matches deterministic generated output', () => {
+  const instances = coordination.loadRepositoryInstances({
+    requestsRoot: REQUESTS_ROOT,
+    resultsRoot: RESULTS_ROOT,
+  });
+  const expected = coordination.generateRegisterContent(instances);
+  const actual = fs.readFileSync(REGISTER_PATH, 'utf8').replace(/\r\n/g, '\n');
+  assert.equal(actual, expected);
+  assert.equal(coordination.verifyRegister(REGISTER_PATH, instances), true);
 });
 
 test('CLI self-test core passes', () => {
