@@ -15,7 +15,7 @@ Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar ici
 - Ground Truth First: Repository gercek durumunu dosya, komut ciktisi veya resmi kaynakla dogrula; repository state uydurma.
 - Repository-wide AI ground-truth rule: Sohbet gecmisi yalniz niyet ve karar tasir; mevcut gercekler her gorevde repository state, git state, dosya icerigi, governance kayitlari, PR/CI durumu ve komut ciktilarindan yeniden dogrulanir.
 - Buyuk veya uzun omurlu workstream'lerde ise baslamadan once Session Initialization ozeti uretilir: Repository State, Execution Context, Context Drift, Concurrent Activity ve Ready/Not Ready.
-- Varsayilan mod read-only'dir. Dosya degisikligi yalniz kullanici `GO-IMPLEMENT` veya `GO-COMPLETE` verdiginde yapilir.
+- Unknown/ambiguous veya acikca salt-okunur gorevlerde varsayilan mod read-only'dir. Dosya degisikligi yalniz kullanici `GO-IMPLEMENT` veya `GO-COMPLETE` verdiginde yapilir. Implementation-eligible remediation/geliştirme brief'lerinde tercih edilen tam model `GO-COMPLETE — ANALYZE-FIRST CONDITIONAL EXECUTION`dir.
 - Implementation default: canonical project root icinde implementasyon yapilmaz. Her `GO-IMPLEMENT`, `GO-HOTFIX` veya `GO-COMPLETE` dosya degisikliginden once current directory ve branch dogrulanir; ajan canonical root icindeyse durur, `origin/main` tabanli fresh isolated worktree olusturur ve yalniz o worktree icinde calisir.
 - Canonical project root yalniz read-only dogrulama, final main sync ve register verification icin kullanilir; PR branch'i canonical root icinde acilmaz ve canonical root'ta dosya editlenmez.
 - Spekulatif refactor yapma.
@@ -26,9 +26,35 @@ Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar ici
 
 ## Calisma Modlari
 
-- `GO-ANALYZE`: Salt-okunur analiz ve rapor. Dosya degisikligi, stage, commit, push veya merge yok.
-- `GO-IMPLEMENT`: Kapsam icinde degisiklik, ilgili validation ve rapor. Commit, push veya merge yok.
-- `GO-COMPLETE`: Kullanici acikca verdiyse implementasyon ve tamamlanma zinciri. Commit, push, PR, CI, merge, main sync veya branch/worktree cleanup yalniz gorev brief'i acik `IF GO-COMPLETE` owner yetkisi iceriyorsa zincire dahildir. Tool/system guardrail veya PR'a ozgu yetki gereksinimi varsa dur ve owner'dan acik yetki iste; aksi halde CI PASS ve `mergeStateStatus` CLEAN sonrasi zincir icinde tekrar onay isteme.
+- `UNKNOWN / AMBIGUOUS`: Read-only kalir; mutation yapilmaz.
+- `GO-ANALYZE`: Explicit salt-okunur analizdir. Analiz, rapor ve stop; dosya degisikligi, stage, commit, push, PR veya merge yoktur.
+- `GO-IMPLEMENT`: Bilincli olarak local patch + validation ile sinirli moddur. Commit, push, PR veya merge yalniz task brief ayrica kapsiyorsa yapilir.
+- `GO-COMPLETE — ANALYZE-FIRST CONDITIONAL EXECUTION`: Implementation-eligible gorevler icin tercih edilen tam yurutme modelidir. Analiz ayri bir teslim veya zorunlu owner turu degildir:
+
+```text
+ANALYZE
+→ IF IMPLEMENT
+→ IMPLEMENT
+→ VERIFY
+→ COMMIT
+→ PUSH
+→ PR
+→ CI
+→ IF GO-COMPLETE
+→ SQUASH-MERGE
+→ MAIN SYNC
+→ CLEANUP
+→ FINAL VERIFICATION
+→ CLOSE
+```
+
+`IF IMPLEMENT` ancak root cause dogrulanmis, cozum ayni task objective ve bounded context icinde, canonical governance ile uyumlu, yeni owner semantigi gerektirmeyen, task brief disinda production/destructive islem istemeyen, owner WIP/competing writer collision'i olmayan ve minimum guvenli patch ile validation'i belirlenebilen durumda PASS olur. Aksi halde yalniz exact blocker icin durulur.
+
+`IF GO-COMPLETE` ancak local validation ve required CI PASS, changed paths authorized exact scope, PR CLEAN/MERGEABLE, semantic/merge conflict ve active writer collision NONE ise PASS olur. Task brief'te ex-ante `IF GO-COMPLETE` owner yetkisi varsa bu merge authority icin yeterlidir; CI sonrasinda ikinci owner mesaji istenmez. Standing/unattended GitHub auto-merge, scheduler veya reusable merge grant'i uretilmez.
+
+Owner karari yalniz yeni hukuki/finansal/domain/product semantigi, davranissal olarak farkli birden fazla makul secenek, bounded-context/temel mimari degisikligi, task disi schema/migration/backfill/live DB/production/cutover, destructive/data-loss/legacy removal, owner WIP mutation, canonical/semantic conflict, gercek task-objective disi scope expansion veya cozulemeyen CI/security/technical risk icin istenir.
+
+Ayni root cause ve bounded context icindeki supporting dosya, focused test/fixture/mock, mevcut mimari icindeki minimum tercih, kendi patch'inin validation duzeltmesi ve task'e dogrudan bagli documentation/reference alignment scope expansion degildir. Ilgisiz finding immediate security/data-loss/corruption riski tasimiyorsa evidence ile backlog adayi olarak ayrilir; mevcut task'e gizlice eklenmez ve mevcut task'i durdurmaz.
 
 ## Governance Writer Coordination V1
 
@@ -48,7 +74,7 @@ aktif sayilmaz.
 - Level 2 yalniz contract'taki deterministic mechanical operation enum'lariyla
   sinirlidir. Reconciliation, policy/program-sequence degisikligi, production,
   schema, migration, runtime ve owner WIP mutation standing grant disidir.
-- Request, execution ve result PR'larinin tamami manuel merge edilir.
+- Request, execution ve result PR'larinda standing/unattended auto-merge yoktur; owner authority zorunludur. Exact task brief'inde ex-ante `GO-COMPLETE` + `IF GO-COMPLETE` verilmis ve tum gate'ler PASS ise owner-authorized conditional merge ayni task icinde yapilabilir; bu standing auto-merge degildir.
 - Generated coordination register derived/non-authoritative'dir.
 - Grandfathered owner WIP stash, reset, clean, delete, reconcile, overwrite veya
   baska sekilde mutate edilemez.

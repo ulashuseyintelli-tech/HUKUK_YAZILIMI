@@ -239,6 +239,20 @@ function classifyNoncoordPrClassifierRepair(changes, overrides = {}) {
   });
 }
 
+function analyzeFirstConditionalExecutionR02Changes() {
+  return coordination.ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function classifyAnalyzeFirstConditionalExecutionR02(changes, overrides = {}) {
+  return coordination.classifyPrChangeSet(changes, {
+    base: coordination.ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.baseSha,
+    headRef: coordination.ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef,
+    ...overrides,
+  });
+}
+
 function createDetachedGitFixture(t, startRef) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-execution-base-'));
   const root = path.join(parent, 'repo');
@@ -1125,6 +1139,149 @@ test('non-coordination classifier repair rejects a scope mismatch', () => {
       ]),
     'CONTROL_PLANE_SCOPE_FORBIDDEN',
   );
+});
+
+test('analyze-first R02 requires exact base branch and A/M change set', () => {
+  const result = classifyAnalyzeFirstConditionalExecutionR02(
+    analyzeFirstConditionalExecutionR02Changes(),
+  );
+  assert.equal(result.mode, 'ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02');
+});
+
+test('analyze-first R02 rejects the wrong base', () => {
+  expectCode(
+    () =>
+      classifyAnalyzeFirstConditionalExecutionR02(
+        analyzeFirstConditionalExecutionR02Changes(),
+        { base: '0'.repeat(40) },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('analyze-first R02 rejects the wrong or similar branch', () => {
+  for (const headRef of [
+    'codex/dx-006-analyze-first-conditional-execution-r01',
+    `${coordination.ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef}-copy`,
+    'codex/dx-006-analyze-first-conditional-execution-*',
+  ]) {
+    expectCode(
+      () =>
+        classifyAnalyzeFirstConditionalExecutionR02(
+          analyzeFirstConditionalExecutionR02Changes(),
+          { headRef },
+        ),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('analyze-first R02 rejects a missing or extra path', () => {
+  expectCode(
+    () =>
+      classifyAnalyzeFirstConditionalExecutionR02(
+        analyzeFirstConditionalExecutionR02Changes().slice(1),
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+
+  const changes = analyzeFirstConditionalExecutionR02Changes();
+  changes.push({
+    status: 'M',
+    path: 'project/docs/governance/GOVERNANCE-INDEX.md',
+  });
+  expectCode(
+    () => classifyAnalyzeFirstConditionalExecutionR02(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('analyze-first R02 rejects an A/M status mismatch', () => {
+  const changes = analyzeFirstConditionalExecutionR02Changes();
+  const grant = changes.find((change) => change.status === 'A');
+  grant.status = 'M';
+  expectCode(
+    () => classifyAnalyzeFirstConditionalExecutionR02(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('analyze-first R02 rejects an arbitrary control-plane path', () => {
+  const changes = analyzeFirstConditionalExecutionR02Changes().filter(
+    (change) => change.path !== 'AGENTS.md',
+  );
+  changes.push({
+    status: 'M',
+    path: 'project/docs/governance/governance-writer-coordination-protected-paths.json',
+  });
+  expectCode(
+    () => classifyAnalyzeFirstConditionalExecutionR02(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('analyze-first R02 authority markers are exact unique and distinct', () => {
+  const { semanticAuthority, executionGrant } =
+    coordination.ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02;
+  assert.notEqual(semanticAuthority.recordId, executionGrant.recordId);
+
+  for (const authority of [semanticAuthority, executionGrant]) {
+    const marker = coordination.buildAuthorityMarker(authority);
+    const content = fs.readFileSync(
+      path.join(REPO_ROOT, ...authority.path.split('/')),
+      'utf8',
+    );
+    assert.equal(coordination.countOccurrences(content, marker), 1);
+    const markerLine = content.split(/\r?\n/).find((line) => line.includes(marker));
+    assert.ok(markerLine);
+    assert.equal(
+      coordination.authorityMarkerLocatesSemanticRow(
+        markerLine,
+        marker,
+        authority.recordId,
+      ),
+      true,
+    );
+  }
+});
+
+test('active execution policy docs align on analyze-first continuation', () => {
+  const policyPaths = [
+    'AGENTS.md',
+    'CLAUDE.md',
+    '.claude/CLAUDE.md',
+    'project/docs/governance/process-rules.md',
+    'project/PROJECT_MEMORY_PACK/03_OPERATING_MODEL.md',
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    'project/docs/governance/coordination-v2/governance-orchestration-contract-v2.md',
+  ];
+  const policyText = policyPaths
+    .map((repoPath) =>
+      fs.readFileSync(path.join(REPO_ROOT, ...repoPath.split('/')), 'utf8'),
+    )
+    .join('\n');
+
+  assert.doesNotMatch(policyText, /GO-ANALYZE sonunda .*kullanici karari beklenir/i);
+  assert.doesNotMatch(policyText, /GO-IMPLEMENT sonunda .*kullanici karari beklenir/i);
+  assert.doesNotMatch(policyText, /Onay almadan kodlamaya gecme/i);
+  assert.doesNotMatch(policyText, /MERGE_READY\s*→\s*OWNER MERGE/);
+  assert.doesNotMatch(policyText, /owner manuel merge/i);
+
+  assert.match(policyText, /GO-COMPLETE — ANALYZE-FIRST CONDITIONAL EXECUTION/);
+  assert.match(policyText, /IF IMPLEMENT/);
+  assert.match(policyText, /IF GO-COMPLETE/);
+  assert.match(policyText, /STANDING \/ UNATTENDED AUTO-MERGE/);
+});
+
+test('explicit GO-ANALYZE remains read-only after policy alignment', () => {
+  const agents = fs.readFileSync(path.join(REPO_ROOT, 'AGENTS.md'), 'utf8');
+  const processRules = fs.readFileSync(
+    path.join(REPO_ROOT, 'project', 'docs', 'governance', 'process-rules.md'),
+    'utf8',
+  );
+  assert.match(agents, /`GO-ANALYZE`: Explicit salt-okunur analizdir/);
+  assert.match(processRules, /Explicit read-only moddur/);
+  assert.match(processRules, /dosya değişikliği, commit, PR veya merge yoktur/i);
 });
 
 test('bootstrap PR requires the exact fifteen-file mode scope', () => {

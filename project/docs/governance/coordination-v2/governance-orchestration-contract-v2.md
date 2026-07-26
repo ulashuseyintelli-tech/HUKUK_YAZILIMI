@@ -94,7 +94,7 @@ grantId · workstream · expiresAt · revocationPath
 | `PR_OPEN` | boundary + test PASS | orchestrator | PR no + head SHA | — | H |
 | `CI_PENDING` | PR açık | orchestrator | check run id'leri | — | H |
 | `MERGE_READY` | §5 konjonksiyonu TAM | orchestrator | attestation (§5) | — | H |
-| `MERGED` | owner manuel merge | OWNER only | merge SHA | — | H |
+| `MERGED` | task-specific owner-authorized merge (manual veya ex-ante `IF GO-COMPLETE`) | OWNER-authorized executor | merge SHA | — | H |
 | `CLOSED` | result yayımlandı | orchestrator | result record | — | E |
 | `BLOCKED` | herhangi bir gate fail | orchestrator | blocker enum | — | H |
 | `CANCELLED` | owner iptali / timeout | owner / orchestrator | reason | — | E |
@@ -121,8 +121,10 @@ Lease `CLAIMED`'de edinilir ve şunlardan biri tamamlanana dek **korunur**:
 - terminal `BLOCKED` disposition yayımlandı
 - owner explicit release
 
-`MERGE_READY` lease'i **otomatik serbest bırakmaz**. Owner merge kararı
-beklenirken orchestrator heartbeat/renewal **sürdürür**.
+`MERGE_READY` lease'i **otomatik serbest bırakmaz**. Task-specific merge
+authority yoksa veya merge gate'leri henüz tamamlanmadıysa orchestrator
+heartbeat/renewal **sürdürür**. Ex-ante `IF GO-COMPLETE` authority ve bütün
+gate'ler mevcutsa ikinci owner mesajı beklenmez.
 
 `CANCELLED`'e ancak şunların tamamı sağlanmışsa girilir: executor process tree
 sonlandırıldı · state/result yayımlandı · geçici kaynaklar disposition edildi ·
@@ -169,15 +171,19 @@ target branch SHA · merge base · CI check sonucu · blocking review ·
 mergeability · `leaseEpoch`/`holderToken` · grant expiry/revocation · task spec
 hash.
 
-Owner manuel merge işleminden **hemen önce** orchestrator fresh revalidation
-çalıştırır. Fresh attestation olmadan gerçekleşen harici merge `CLOSED`
-sayılamaz:
+Task-specific owner-authorized merge işleminden (manual action veya ex-ante
+`IF GO-COMPLETE`) **hemen önce** orchestrator fresh revalidation çalıştırır.
+Fresh attestation olmadan gerçekleşen harici merge `CLOSED` sayılamaz:
 
 ```text
 UNVERIFIED_EXTERNAL_MERGE_OWNER_REVIEW_REQUIRED
 ```
 
-**AUTO-MERGE HER DURUMDA YASAKTIR.** Bu bölüm yalnız merge öncesi doğrulamadır.
+**STANDING / UNATTENDED AUTO-MERGE HER DURUMDA YASAKTIR.** GitHub auto-merge,
+scheduler merge'i veya task-specific owner authority olmadan merge yapılamaz.
+Owner'ın exact task başında verdiği `GO-COMPLETE` + `IF GO-COMPLETE` authority
+altında, bu bölümdeki bütün gate'ler PASS ise aynı task içindeki conditional
+merge standing auto-merge sayılmaz ve ikinci owner mesajı gerektirmez.
 
 ### 5.1 Effective required CI set
 
@@ -366,7 +372,8 @@ normal parallel success · duplicate task claim · shared-path conflict
 ### `LIVE_TWO_PROGRAM` (T5)
 
 İki farklı program · iki immutable grant · conflict-free positive boundary ·
-forbidden shared path yok · required CI mevcut · manual merge.
+forbidden shared path yok · required CI mevcut · task-specific owner-authorized
+merge (manual veya ex-ante `IF GO-COMPLETE`).
 
 Uygun görev yoksa disposition:
 
@@ -483,7 +490,7 @@ Workstream
   → STANDING GRANT (coordination-execution-grants/<grantId>.md)
       grant planı HASH ile referanslar; task ADIYLA referanslamaz
   → ORCHESTRATOR: yalnız hash'i eşleşen spec'i yürütür
-  → MERGE_READY → OWNER MERGE
+  → MERGE_READY → OWNER-AUTHORIZED MERGE
 ```
 
 ### 15.3 Reviewability kısıtları
