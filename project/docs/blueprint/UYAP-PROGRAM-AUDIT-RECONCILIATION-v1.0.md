@@ -270,6 +270,21 @@ NEXT TASK AUTHORIZATION   : NOT GRANTED / NOT STARTED
 Bu kayıt otomatik `GO-DESIGN` veya `GO-IMPLEMENT` **SAYILMAZ**; owner authorization beklenir.
 Zincirin 2-9 arası hiçbir kalemi kendiliğinden başlamaz.
 
+> **DURUM NOTU (2026-07-26, append-only — yukarıdaki zincir metni DEĞİŞMEDİ):** Zincirin **1. kalemi**
+> owner `GO-DESIGN` ile yürütülmüş ve **CANONICAL DESIGN COMPLETE — OWNER DECISION GATE** ile
+> sonuçlanmıştır. Tasarım belgesi:
+> `project/docs/blueprint/UYAP-CPE-POA-ACTING-LAWYER-AUTHORITY-DESIGN-v1.0.md`
+> (kayıt: `decision-log.md` `UYAP-CPE-POA-AND-ACTING-LAWYER-AUTHORITY-DESIGN-01`).
+> Seçilen model **MODEL B — acting-lawyer matched POA**; §8 residual'ları **R-01** (POA→CPE fact
+> derivation) ve **R-02** (user→acting lawyer authority) bu tasarımla **ÇÖZÜM YOLU TANIMLANDI** —
+> ancak **implementasyon YAPILMADIĞI için ikisi de AÇIK kalır**. Tasarım iki owner kararı bekler
+> (`DECISION-1` delegation, `DECISION-2` POA lifecycle şema kapsamı); her ikisinin default'u
+> **FAIL-CLOSED / NO IMPLEMENTATION**'dır. Zincirin **2. kalemi** artık tasarımın ürettiği
+> sıralı paketlerdir: `I01` → `I02` → `I03` → `I04` → `I05` → `I06` → `I07`; zincirin **3. kalemi**
+> (`UYAP-SEND-HARD-GATE-PREFLIGHT-R01`) için **I01+I03+I04**, **6. kalemi**
+> (`UYAP-OPERATION-EVIDENCE-CANARY-R02`) için ek olarak **I05** zorunludur.
+> **NEXT ELIGIBLE TASK bu notla `UYAP-ACTING-LAWYER-RESOLVER-I01` olur — NOT GRANTED / NOT STARTED.**
+
 ## 10. Non-Authorization Clause
 
 Bu belge aşağıdakiler için **örtülü veya açık hiçbir yetki oluşturmaz**:
