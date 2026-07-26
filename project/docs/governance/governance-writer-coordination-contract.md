@@ -224,6 +224,56 @@ Path set :
 - Bu tek-kullanımlık mod request/result/execution veya semantic governance
   authority üretmez; main ilerlediğinde kendiliğinden sona erer.
 
+### GITHUB-PLATFORM-BASELINE GH-02 — exact control-plane authority binding
+
+`GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-BINDING-R01` yalnız mevcut
+GH-02 workflow-hardening değişikliğini classifier'a bağlayan iki aşamalı,
+tek-görevlik authority'dir.
+
+Authority-binding PR'ı yalnız aşağıdaki exact kombinasyonla tanınır:
+
+```text
+Mode     : GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01
+Base SHA : ad7e00a85be748dcfc5a8b5049e13d3744a3e15e
+Head ref : codex/github-platform-gh02-control-plane-binding-r01
+Path set :
+  - project/scripts/governance-coordination.cjs
+  - project/scripts/governance-coordination.test.cjs
+  - project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Bounded production PR'ı yalnız aşağıdaki exact task identity ve target ile
+tanınır:
+
+```text
+Mode                 : GITHUB_PLATFORM_GH02_WORKFLOW_HARDENING_R01
+Existing PR          : #1622
+Original base SHA    : 1b682a9a0474d9c94b6a98fc8251ca92fea48766
+Authorized patch SHA : cc6dfba9d0ae2fb5dcfddeb022ad94659d7d406f
+Head ref             : codex/github-platform-gh02-workflow-hardening-r01
+Target               : .github/workflows/ci.yml
+Change               : M (exactly one path)
+```
+
+Runtime validation ayrıca şunların tamamını zorunlu tutar:
+
+- Authorized patch commit'inin parent'ı exact original base SHA'dır.
+- Current PR base original base'in descendant'ıdır.
+- Base ilerlemişse bu binding current base'te canonical olarak bulunur.
+- Current PR head hem current base'in hem authorized patch SHA'nın descendant'ıdır.
+- Current base'teki `ci.yml` bytes original base ile; current head'teki
+  `ci.yml` bytes authorized patch SHA ile exact eşittir.
+- Başka production/control-plane path, başka workflow, rename/delete/add,
+  wildcard/similar branch veya task identity mismatch fail-closed reddedilir.
+
+Bu binding yalnız workflow-level `contents: read`, 11 external action
+invocation'ının doğrulanmış full commit SHA'lara pinlenmesi ve dört checkout
+invocation'ında `persist-credentials: false` hardening'ini taşır. Trigger,
+concurrency, job/check adı, test komutu/seçimi, artifact davranışı, project Node
+20, pnpm 8.15.0 ve PostgreSQL 16 semantiğini değiştirme authority'si değildir.
+Başka workflow veya control-plane görevi için wildcard, prefix veya reusable
+authority üretmez.
+
 ## 7. Generated register
 
 Register immutable request/result instance'larından deterministik üretilir.
