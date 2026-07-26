@@ -10,11 +10,27 @@
  *  - resetPassword tek bir atomik `updateMany` ile tüketir (findFirst+update AYRI DEĞİL)
  *  - aynı token'la eşzamanlı iki istek → en fazla biri başarılı (atomik updateMany simülasyonu)
  *  - geçersiz/süresi geçmiş/tüketilmiş token → BadRequestException
+ *
+ * CLIENT-SEC-P01 (reset-token transport hardening) ek olarak doğrular:
+ *  - reset linki ham token'ı URL FRAGMENT'ında taşır; `?token=` query parametresi YOKTUR
+ *  - e-posta gövdesinin (text + html) hiçbir yerinde `?token=` biçimi geçmez
+ *  - üretim → fragment'tan çıkarım → backend doğrulama zinciri uçtan uca tutarlıdır
  */
 import * as crypto from 'crypto';
 import { BadRequestException } from '@nestjs/common';
 import { PortalService } from '../portal.service';
 import { hashInviteToken } from '../../auth/invite/user-invite-token.util';
+
+/**
+ * CLIENT-SEC-P01: frontend'in (app/portal/reset-password/page.tsx) ham token'ı URL
+ * fragment'ından çıkarma mantığının birebir aynısı. Kasıtlı olarak burada tekrar edilir:
+ * bu sayede backend'in ÜRETTİĞİ link ile frontend'in OKUDUĞU biçim arasındaki sözleşme
+ * API testinde de kilitlenir (biri değişip diğeri değişmezse bu test kırılır).
+ */
+function extractTokenFromFragment(url: URL): string | null {
+  const rawHash = url.hash.startsWith('#') ? url.hash.slice(1) : '';
+  return new URLSearchParams(rawHash).get('token');
+}
 
 function buildService(over: any = {}) {
   const prisma = {
@@ -61,12 +77,59 @@ describe('createResetToken', () => {
     expect(url.origin).toBe('https://portal.example.com'); // yalnız allowlisted WEB_BASE_URL, request-host DEĞİL
     expect(url.pathname).toBe('/portal/reset-password');
 
-    const rawTokenInUrl = url.searchParams.get('token');
+    // CLIENT-SEC-P01: ham token FRAGMENT'ta taşınır (query string DEĞİL).
+    const rawTokenInUrl = extractTokenFromFragment(url);
     expect(rawTokenInUrl).toBeTruthy();
     // DB'ye yazılan değer ham token DEĞİL — ham token'ın sha256 hash'i
     expect(updateData.resetToken).not.toBe(rawTokenInUrl);
     expect(updateData.resetToken).toBe(crypto.createHash('sha256').update(rawTokenInUrl!, 'utf8').digest('hex'));
     expect(updateData.resetToken).toBe(hashInviteToken(rawTokenInUrl!));
+  });
+
+  it('[1a] CLIENT-SEC-P01: reset linkinde `?token=` query parametresi YOK, token yalnız fragment\'ta', async () => {
+    const { svc, emailProvider } = buildService({ foundUser: { id: 'PU1', email: 'a@x.com' } });
+    await svc.createResetToken('a@x.com');
+
+    const emailArg = emailProvider.send.mock.calls[0][0];
+    const url = new URL(String(emailArg.text).match(/https?:\/\/\S+/)![0]);
+
+    // Query yüzeyi tamamen boş: access log / Referer / analytics token'ı GÖREMEZ.
+    expect(url.search).toBe('');
+    expect(url.searchParams.get('token')).toBeNull();
+    // Fragment gerçekten token taşıyor.
+    expect(url.hash.startsWith('#token=')).toBe(true);
+
+    // E-postanın HER İKİ gövdesinde de query-string biçimi hiç geçmemeli (html linki dahil).
+    for (const body of [String(emailArg.text), String(emailArg.html)]) {
+      expect(body).not.toMatch(/reset-password\?/);
+      expect(body).not.toMatch(/[?&]token=/);
+      expect(body).toContain('/portal/reset-password#token=');
+    }
+  });
+
+  it('[1b] CLIENT-SEC-P01 chain: link üretimi → fragment\'tan çıkarım → backend doğrulama uçtan uca tutarlı', async () => {
+    // Bu test üç halkayı TEK akışta bağlar: (1) servis linki üretir, (2) frontend'in
+    // yaptığı fragment-parse işlemi birebir tekrarlanır, (3) çıkarılan ham token
+    // resetPassword()'a verilir ve backend'in beklediği hash ile eşleşir.
+    const { svc, prisma, emailProvider } = buildService({
+      foundUser: { id: 'PU1', email: 'a@x.com' },
+      updateManyResult: { count: 1 },
+    });
+
+    await svc.createResetToken('a@x.com');
+    const persistedHash = prisma.clientPortalUser.update.mock.calls[0][0].data.resetToken;
+
+    const url = new URL(String(emailProvider.send.mock.calls[0][0].text).match(/https?:\/\/\S+/)![0]);
+    const tokenFromFragment = extractTokenFromFragment(url);
+    expect(tokenFromFragment).toBeTruthy();
+
+    const res = await svc.resetPassword(tokenFromFragment!, 'YeniSifre123');
+    expect(res).toEqual({ success: true });
+
+    // Backend'in aradığı hash, üretim anında DB'ye yazılan hash ile AYNI olmalı.
+    const consumeWhere = prisma.clientPortalUser.updateMany.mock.calls[0][0].where;
+    expect(consumeWhere.resetToken).toBe(persistedHash);
+    expect(consumeWhere.resetTokenExp).toEqual({ gt: expect.any(Date) });
   });
 
   it('[2] kullanıcı yok → aynı başarı cevabı, e-posta YOK, DB yazımı YOK (enumeration-safe)', async () => {

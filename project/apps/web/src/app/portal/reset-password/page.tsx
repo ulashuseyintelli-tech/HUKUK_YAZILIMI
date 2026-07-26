@@ -1,16 +1,35 @@
 "use client";
 
-import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+// CLIENT-SEC-P01: ham reset token artık URL FRAGMENT'ından (#token=...) okunur — query
+// string DEĞİL. Fragment tarayıcı dışına asla gönderilmez (sunucu/proxy access log'u,
+// `Referer` header'ı ve `location.search` okuyan analytics yüzeyleri token'ı GÖRMEZ).
+// Okunduktan hemen sonra `history.replaceState` ile adres çubuğundan/geçmişten temizlenir;
+// token yalnız request BODY ile backend'e gider, local/sessionStorage'a ASLA yazılmaz.
+// Eski `?token=` linkleri KABUL EDİLMEZ (fallback yok) — kullanıcı yeni link ister.
+// OFFICE emsali: app/auth/reset-password/page.tsx (OFFICE-AUTH-P02-HARDENING-R01, PR #1494).
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Scale, Loader2, Lock, Eye, EyeOff, ArrowLeft, CheckCircle } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-function ResetPasswordInner() {
+export default function ResetPasswordPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const token = searchParams.get("token") || "";
+  const [token, setToken] = useState("");
+  const [tokenChecked, setTokenChecked] = useState(false);
+
+  useEffect(() => {
+    const rawHash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+    const fragmentParams = new URLSearchParams(rawHash);
+    setToken(fragmentParams.get("token") ?? "");
+    setTokenChecked(true);
+    if (window.location.hash) {
+      // Ham token adres çubuğunda/tarayıcı geçmişinde kalmasın.
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, []);
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -50,6 +69,8 @@ function ResetPasswordInner() {
       }
 
       setDone(true);
+      // CLIENT-SEC-P01: tüketilen ham token client belleğinde gereksiz tutulmaz.
+      setToken("");
       setTimeout(() => router.push("/portal/login"), 1500);
     } catch (err: any) {
       setError(err.message || "Bir hata oluştu");
@@ -82,12 +103,24 @@ function ResetPasswordInner() {
             {error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
                 {error}
+                <div className="mt-2">
+                  <Link href="/portal/forgot-password" className="text-blue-600 hover:underline">
+                    Yeni bağlantı iste
+                  </Link>
+                </div>
               </div>
             )}
 
-            {!token && (
+            {/* tokenChecked: fragment ancak mount sonrası okunabildiği için ilk render'da
+                token her zaman boştur — uyarı yalnız okuma tamamlandıktan sonra gösterilir. */}
+            {tokenChecked && !token && !error && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
                 Bağlantı geçersiz görünüyor. Lütfen e-postanızdaki bağlantıyı kullanın.
+                <div className="mt-2">
+                  <Link href="/portal/forgot-password" className="text-blue-600 hover:underline">
+                    Yeni bağlantı iste
+                  </Link>
+                </div>
               </div>
             )}
 
@@ -154,19 +187,5 @@ function ResetPasswordInner() {
         )}
       </div>
     </div>
-  );
-}
-
-export default function ResetPasswordPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-        </div>
-      }
-    >
-      <ResetPasswordInner />
-    </Suspense>
   );
 }
