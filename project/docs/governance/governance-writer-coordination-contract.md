@@ -9,8 +9,8 @@ Secondary executor     : DISABLED
 Failover               : OWNER-ACTIVATED ONLY
 Lease                  : NONE
 Trigger                : MANUAL_QUEUE_RUN
-Merge                  : MANUAL / OWNER AUTHORITY
-Auto-merge             : OFF
+Merge                  : OWNER AUTHORITY REQUIRED; EX-ANTE TASK-SPECIFIC GO-COMPLETE ALLOWED
+Standing auto-merge    : OFF
 Register authority     : DERIVED / NON-AUTHORITATIVE
 ```
 
@@ -25,10 +25,13 @@ V1 tek executor modelidir:
 
 - `CODEX_LOCAL` tek `PRIMARY_EXECUTOR`dır.
 - Secondary executor disabled'dır.
-- Dynamic Claude/Codex lease, scheduler ve auto-merge yoktur.
+- Dynamic Claude/Codex lease, scheduler ve standing/unattended auto-merge yoktur.
 - Failover yalnız ayrı, açık ve canonical owner activation kaydıyla kurulabilir.
-- Request, execution ve result PR'larının tamamı owner-controlled manual merge
-  bekler.
+- Request, execution ve result PR'larının tamamı owner-controlled merge ister.
+  Owner authority exact task başında `GO-COMPLETE` + `IF GO-COMPLETE` olarak
+  ex-ante verilebilir; tüm validation/CI/scope/mergeability/conflict gate'leri
+  PASS ise CI sonrasında ikinci owner mesajı gerekmez. Bu standing auto-merge
+  veya reusable merge authority değildir.
 - Modül çalışma sayfası protected governance dosyasını doğrudan değiştiremez.
   İhtiyaç, immutable request olarak queue'ya taşınır.
 
@@ -82,7 +85,7 @@ reference ile birebir eşleşen tek bir örneğini taşır:
 | `CREATE_EXECUTION_PR` | ALLOWED | Validated request'in exact target allowlist'i |
 | `RUN_VALIDATION` | ALLOWED | Deterministic local/CI checks |
 | `CREATE_RESULT_ONLY_PR` | ALLOWED | Bir yeni immutable result + generated register |
-| `AUTO_MERGE` | DENIED | Tüm merge'ler owner-controlled manual |
+| `AUTO_MERGE` | DENIED | Standing/unattended GitHub auto-merge, scheduler merge'i ve owner authority olmadan merge yasak; exact task-specific ex-ante `GO-COMPLETE` conditional merge bu capability değildir |
 | `RECONCILIATION` | DENIED | Ayrı owner görevi gerekir |
 | `POLICY_CHANGE` | DENIED | Standing grant kapsamında değildir |
 | `PROGRAM_SEQUENCE_CHANGE` | DENIED | Standing grant kapsamında değildir |
@@ -277,4 +280,17 @@ canonical hale getirir. Yine de:
 - Queue yalnız manual run ile işlenir.
 - Pilot ayrı owner kararıdır.
 - Required branch check/ruleset aktivasyonu ayrı admin action'dır.
-- Auto-merge, scheduler, lease veya failover kendiliğinden açılmaz.
+- Standing/unattended auto-merge, scheduler, lease veya failover kendiliğinden açılmaz.
+
+## 12. Owner-authorized conditional merge ayrımı
+
+`MANUAL / OWNER AUTHORITY`, owner'ın CI sonrasında ikinci kez mesaj yazması veya
+GitHub butonuna bizzat basması zorunluluğu değildir. Zorunlu olan owner
+authority'sidir. Exact task scope'u ve `IF GO-COMPLETE` kapanış gate'leri task
+başında açıkça yetkilendirilmişse ajan validation/required CI PASS, exact scope,
+`CLEAN / MERGEABLE` ve conflict/collision `NONE` doğrulamasından sonra aynı task
+içinde squash-merge, main sync ve cleanup yapabilir.
+
+Bu ayrım V1 standing grant'ini genişletmez: request kendi başına merge authority
+üretmez; GitHub auto-merge açılmaz; scheduler, lease, failover veya reusable
+merge grant'i oluşmaz.
