@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "grantId": "GRANT-OFFICE-CAP-09A-CONSUMER-01-R01",
+  "workstream": "OFFICE-CAP-09A-CONSUMER-01",
+  "semanticAuthorityRef": {
+    "kind": "SEMANTIC_AUTHORITY",
+    "recordId": "STF-PRD-AUDIT-001",
+    "sourcePath": "project/docs/governance/OFFICE-RISK-REGISTER.md"
+  },
+  "executionGrantRef": {
+    "kind": "EXECUTION_GRANT",
+    "recordId": "<OWNER-FILLS>",
+    "sourcePath": "<OWNER-FILLS>"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "<OWNER-FILLS>",
+    "sourceCommitSha": "<OWNER-FILLS>",
+    "exactExcerpt": "<OWNER-FILLS>",
+    "excerptSha256": "<OWNER-FILLS>"
+  },
+  "authorizedTasks": [
+    {
+      "taskId": "OFFICE-CAP-09A-CONSUMER-01-R01",
+      "taskSpecVersion": 1,
+      "taskSpecSha256": "c337cae59c0a28da4018d7666e64701881bc4fc5892098428fd572eea3af3b27",
+      "declaredIntentSha256": "f6e51c9b7b15427e7a283c5bcdbc703967c9ed8632cb0e1bdd003ff6733ce187",
+      "boundaryPolicySha256": "aab953f983981e9dfff765d87e26cce5ad6d60c3e7c65e2db1bc7956bd683835",
+      "requiredTestsSha256": "383610b727863c82c6b1939b5cff74b351b1cfca3c389a192f51c0b1e4c7892a"
+    }
+  ],
+  "allowedModuleRoots": [
+    "project/apps/api/src/modules/"
+  ],
+  "expiresAt": "<OWNER-FILLS>",
+  "revocationPath": "project/docs/governance/coordination-v2/task-plans/OFFICE/REVOKED",
+  "manualMergeRequired": true
+}
