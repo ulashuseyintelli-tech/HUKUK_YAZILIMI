@@ -1115,7 +1115,7 @@ export class ClientNotificationService {
           from: smtpSettings.smtpFromEmail || smtpSettings.smtpUser,
           to: recipient.email!,
           subject: subject,
-          html: `<p>Sayın ${recipient.name},</p>${message.replace(/\n/g, "<br>")}`,
+          text: `Sayın ${recipient.name},\n\n${message}`,
         });
 
         // Bildirim kaydı oluştur
