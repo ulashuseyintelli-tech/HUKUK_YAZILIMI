@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hukuk-yazilimi:coordination-v2:result.schema.json",
+  "title": "GOV-COORD-V2 Task Result / MERGE_READY Attestation",
+  "description": "Append-only task sonucu. MERGE_READY revocable ve SHA-bound bir attestation'dir; kalici statu DEGILDIR. Bkz. governance-orchestration-contract-v2.md SS5.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "taskId",
+    "taskAttemptId",
+    "terminalState",
+    "taskSpecSha256",
+    "grantId",
+    "grantSha256",
+    "leaseEpoch",
+    "holderToken",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "taskId": { "$ref": "#/$defs/identifier" },
+    "taskAttemptId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "terminalState": {
+      "enum": [
+        "MERGE_READY",
+        "MERGED",
+        "CLOSED",
+        "BLOCKED",
+        "CANCELLED",
+        "UNVERIFIED_EXTERNAL_MERGE_OWNER_REVIEW_REQUIRED"
+      ]
+    },
+    "taskSpecSha256": { "$ref": "#/$defs/sha256" },
+    "grantId": { "$ref": "#/$defs/identifier" },
+    "grantSha256": { "$ref": "#/$defs/sha256" },
+    "leaseEpoch": { "type": "integer", "minimum": 1 },
+    "holderToken": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "attestation": { "$ref": "#/$defs/mergeReadyAttestation" },
+    "actualDiff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changes", "withinBoundary", "forbiddenPathsUntouched"],
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/changeEntry" }
+        },
+        "withinBoundary": { "type": "boolean" },
+        "forbiddenPathsUntouched": { "type": "boolean" }
+      }
+    },
+    "blockerCode": {
+      "enum": [
+        "BLOCKED_BASE_SHA_DRIFT",
+        "CLAIM_CONFLICT",
+        "FENCING_FAILURE",
+        "BOUNDARY_ESCAPE",
+        "FORBIDDEN_PATH_TOUCHED",
+        "REQUIRED_TEST_FAILED",
+        "REQUIRED_CI_FAILED",
+        "GRANT_EXPIRED_OR_REVOKED",
+        "TASK_SPEC_HASH_MISMATCH",
+        "COMPETING_WRITER",
+        "EXECUTOR_UNAVAILABLE",
+        "EXECUTOR_TIMEOUT",
+        "ORPHAN_PROCESS_DETECTED",
+        "ATTESTATION_EXPIRED",
+        "OWNER_DECISION_REQUIRED"
+      ]
+    },
+    "successorDisposition": {
+      "enum": [
+        "DECLARED_SUCCESSOR",
+        "DISCOVERED_FOLLOW_UP",
+        "OWNER_AUTHORIZATION_REQUIRED",
+        "NO_SUCCESSOR"
+      ]
+    },
+    "discoveredFollowUps": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Kaydedilir, ELIGIBLE OLMAZ (SS4)."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "terminalState": { "const": "MERGE_READY" } } },
+      "then": { "required": ["attestation", "expiresAt"] }
+    },
+    {
+      "if": { "properties": { "terminalState": { "const": "BLOCKED" } } },
+      "then": { "required": ["blockerCode"] }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitObjectId": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "identifier": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9._-]{2,63}$" },
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "pattern": "^(?!/)(?!.*//)(?!.*(^|/)\\.\\.(/|$))[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$"
+    },
+    "changeEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changeClass", "path"],
+      "properties": {
+        "changeClass": {
+          "enum": [
+            "ADD",
+            "MODIFY",
+            "DELETE",
+            "RENAME",
+            "COPY",
+            "TYPE_CHANGE",
+            "SYMLINK",
+            "GITLINK",
+            "BINARY",
+            "MODE_CHANGE",
+            "UNTRACKED"
+          ]
+        },
+        "path": { "$ref": "#/$defs/repoPath" },
+        "originalPath": {
+          "$ref": "#/$defs/repoPath",
+          "description": "RENAME/COPY icin kaynak yol; allowed->forbidden rename tespiti icin zorunlu."
+        }
+      }
+    },
+    "mergeReadyAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prNumber",
+        "prHeadSha",
+        "targetBranch",
+        "targetBranchObservedSha",
+        "mergeBaseSha",
+        "requiredCiResultSetSha256",
+        "conjunction"
+      ],
+      "properties": {
+        "prNumber": { "type": "integer", "minimum": 1 },
+        "prHeadSha": { "$ref": "#/$defs/gitObjectId" },
+        "targetBranch": { "type": "string", "minLength": 1 },
+        "targetBranchObservedSha": { "$ref": "#/$defs/gitObjectId" },
+        "mergeBaseSha": { "$ref": "#/$defs/gitObjectId" },
+        "requiredCiResultSetSha256": { "$ref": "#/$defs/sha256" },
+        "conjunction": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "SS5 konjonksiyonu. HEPSI true olmadan MERGE_READY uretilemez.",
+          "required": [
+            "executorExitSuccess",
+            "currentLeaseEpochConfirmed",
+            "holderTokenConfirmed",
+            "taskSpecHashMatchesGrant",
+            "actualDiffWithinBoundary",
+            "immutableForbiddenPathsUntouched",
+            "requiredInvariantsPass",
+            "requiredTestsPass",
+            "requiredCiChecksPass",
+            "prOpen",
+            "prMergeable",
+            "noBlockingReview",
+            "noCompetingWriter",
+            "baseDriftPolicySatisfied",
+            "worktreeStateValid"
+          ],
+          "properties": {
+            "executorExitSuccess": { "const": true },
+            "currentLeaseEpochConfirmed": { "const": true },
+            "holderTokenConfirmed": { "const": true },
+            "taskSpecHashMatchesGrant": { "const": true },
+            "actualDiffWithinBoundary": { "const": true },
+            "immutableForbiddenPathsUntouched": { "const": true },
+            "requiredInvariantsPass": { "const": true },
+            "requiredTestsPass": { "const": true },
+            "requiredCiChecksPass": { "const": true },
+            "prOpen": { "const": true },
+            "prMergeable": { "const": true },
+            "noBlockingReview": { "const": true },
+            "noCompetingWriter": { "const": true },
+            "baseDriftPolicySatisfied": { "const": true },
+            "worktreeStateValid": { "const": true }
+          }
+        },
+        "freshRevalidatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Owner merge oncesi zorunlu fresh revalidation zamani (SS5)."
+        }
+      }
+    }
+  }
+}

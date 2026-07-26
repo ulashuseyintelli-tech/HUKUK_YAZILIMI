@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hukuk-yazilimi:coordination-v2:task.schema.json",
+  "title": "GOV-COORD-V2 Task Specification",
+  "description": "Immutable task specification. Authority uretmez; grant tarafindan hash ile pinlenir. Bkz. governance-orchestration-contract-v2.md SS2, SS13, SS15.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "taskId",
+    "taskSpecVersion",
+    "profile",
+    "declaredIntent",
+    "boundaryPolicy",
+    "requiredTests",
+    "predecessorTaskIds",
+    "baseDriftPolicy",
+    "successorDisposition",
+    "declaredIntentSha256",
+    "boundaryPolicySha256",
+    "requiredTestsSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "taskId": { "$ref": "#/$defs/identifier" },
+    "taskSpecVersion": { "type": "integer", "minimum": 1 },
+    "profile": {
+      "enum": ["MECHANICAL_GOVERNANCE", "BOUNDED_CODE_TASK"]
+    },
+    "declaredIntent": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 300,
+      "description": "Tek cumle, insan-okunur. Owner review edilebilirligi icin zorunlu (SS15.3)."
+    },
+    "boundaryPolicy": { "$ref": "#/$defs/boundaryPolicy" },
+    "requiredTests": {
+      "type": "array",
+      "minItems": 0,
+      "items": { "$ref": "#/$defs/argvCommand" },
+      "description": "Ordered argv-object listesi. Shell command string YASAK (SS12)."
+    },
+    "predecessorTaskIds": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/identifier" },
+      "uniqueItems": true
+    },
+    "baseDriftPolicy": {
+      "enum": [
+        "STRICT_PINNED_BASE",
+        "REBASE_AND_REVALIDATE",
+        "REFRESH_BEFORE_EXECUTION"
+      ],
+      "default": "STRICT_PINNED_BASE"
+    },
+    "baseSha": { "$ref": "#/$defs/gitObjectId" },
+    "successorDisposition": {
+      "enum": [
+        "DECLARED_SUCCESSOR",
+        "DISCOVERED_FOLLOW_UP",
+        "OWNER_AUTHORIZATION_REQUIRED",
+        "NO_SUCCESSOR"
+      ]
+    },
+    "mechanicalOperation": {
+      "$ref": "#/$defs/mechanicalOperation",
+      "description": "Yalniz profile=MECHANICAL_GOVERNANCE icin."
+    },
+    "declaredIntentSha256": { "$ref": "#/$defs/sha256" },
+    "boundaryPolicySha256": { "$ref": "#/$defs/sha256" },
+    "requiredTestsSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "profile": { "const": "BOUNDED_CODE_TASK" } } },
+      "then": {
+        "required": ["requiredTests"],
+        "properties": {
+          "boundaryPolicy": {
+            "properties": {
+              "allowedRoots": { "minItems": 1 }
+            },
+            "required": ["allowedRoots"]
+          },
+          "requiredTests": { "minItems": 1 }
+        },
+        "not": { "required": ["mechanicalOperation"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "profile": { "const": "MECHANICAL_GOVERNANCE" } }
+      },
+      "then": {
+        "required": ["mechanicalOperation"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "baseDriftPolicy": { "const": "STRICT_PINNED_BASE" }
+        }
+      },
+      "then": { "required": ["baseSha"] }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "gitObjectId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9._-]{2,63}$"
+    },
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "pattern": "^(?!/)(?!.*//)(?!.*(^|/)\\.\\.(/|$))[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$",
+      "description": "Git canonical forward-slash relative path. Backslash, absolute path, '..' ve bos segment reddedilir."
+    },
+    "repoRoot": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "pattern": "^(?!/)(?!.*//)(?!.*(^|/)\\.\\.(/|$))[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/$",
+      "description": "Positive allowed root. Sonu '/' ile biter; prefix semantigi tasir."
+    },
+    "boundaryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedRoots"],
+      "properties": {
+        "allowedRoots": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repoRoot" },
+          "uniqueItems": true,
+          "description": "Task-specific POSITIVE allowlist. Bos liste = hicbir yol (SS1). Immutable global forbidden ile kesisim fail-closed reddedilir."
+        },
+        "exactTargets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repoPath" },
+          "uniqueItems": true,
+          "description": "MECHANICAL_GOVERNANCE icin exact declared target allowlist."
+        },
+        "maxChangedFiles": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "argvCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv"],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "cwd": { "$ref": "#/$defs/repoPath" },
+        "timeoutMs": { "type": "integer", "minimum": 1000 }
+      }
+    },
+    "mechanicalOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationType", "targetFile", "expectedResultSha256"],
+      "properties": {
+        "operationType": {
+          "enum": [
+            "EXACT_APPEND_AT_DECLARED_ANCHOR",
+            "EXACT_LITERAL_REPLACEMENT",
+            "EXACT_REFERENCE_REWRITE",
+            "DETERMINISTIC_REGISTER_REGENERATION"
+          ]
+        },
+        "targetFile": { "$ref": "#/$defs/repoPath" },
+        "declaredAnchor": { "type": "string", "minLength": 1 },
+        "expectedOldValue": { "type": "string" },
+        "expectedNewValue": { "type": "string" },
+        "expectedResultSha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "generatedFromMainSha": "0b289ef0aa3a2932e8137c7685e96b8cc632b392",
+  "authority": "DERIVED / NON-AUTHORITATIVE",
+  "taxonomyQuestionOpen": {
+    "question": "Kayitli program sayisi 5 mi 6 mi? Iki yapisal asimetri tespit edildi; bu manifest KARARA BAGLAMAZ (SS9).",
+    "resolved": false,
+    "candidateFoldings": [
+      "UYAP_CONNECTOR, DEBTOR alt-track olabilir: UYAP artefaktlarinin bir kismi DEBTOR- prefix altinda (DEBTOR-UYAP-CONNECTOR-CHARTER-v1.0.md, DEBTOR-DBP-P2-UYAP-PACKAGE-PROCUREMENT-REQUEST-v1.0.md).",
+      "RECEIVABLE (Alacak Kalemleri), kendi adiyla ayri governance dosya ailesine sahip degil; RECEIVABLE-GOVERNANCE.md / RCV-PHASE-1-AUTHORIZATION.md icinde tasinir. COLLECTION ise 5 ayri COLLECTION-*.md dosyasina sahiptir."
+    ]
+  },
+  "programs": [
+    {
+      "programId": "UYAP_CONNECTOR",
+      "canonicalName": "UYAP Connector",
+      "taxonomyLevel": "UNKNOWN",
+      "governanceSourceFiles": [
+        "project/docs/blueprint/DEBTOR-UYAP-CONNECTOR-CHARTER-v1.0.md",
+        "project/docs/blueprint/UYAP-CONNECTOR-MASTER-SYNTHESIS-v1.0.md",
+        "project/docs/blueprint/UYAP-CONNECTOR-MODULE-BOUNDARY-CONTRACTS-v1.0.md",
+        "project/docs/blueprint/UYAP-CONNECTOR-NORMATIVE-ANNEX-v1.0.md"
+      ],
+      "activeStatus": "NOT_ON_ACTIVE_ROADMAP",
+      "authorizationState": "NOT_AUTHORIZED",
+      "authorizationEvidence": {
+        "sourcePath": "project/docs/blueprint/UYAP-CONNECTOR-MASTER-SYNTHESIS-v1.0.md",
+        "sourceCommitSha": "0b289ef0aa3a2932e8137c7685e96b8cc632b392",
+        "startLine": 411,
+        "endLine": 411,
+        "exactExcerpt": "IMPLEMENTATION AUTHORITY: NONE. UYAP CUTOVER: HARD HOLD.",
+        "excerptSha256": "c6d5e4b35246d65f94153334342bdeb197894d323cbf17c41291707ec1e52195"
+      },
+      "liveExecutionEligibility": "DENIED",
+      "notes": "Taksonomi acik: UYAP artefaktlarinin bir kismi DEBTOR- prefix altinda yer alir; PROGRAM mi DEBTOR alt-track mi KARARA BAGLANMADI."
+    },
+    {
+      "programId": "CLIENT",
+      "canonicalName": "Muvekkil Mimarisi",
+      "taxonomyLevel": "PROGRAM",
+      "governanceSourceFiles": [
+        "project/docs/governance/CLIENT-GOVERNANCE-CHARTER.md"
+      ],
+      "activeStatus": "NOT_ON_ACTIVE_ROADMAP",
+      "authorizationState": "NOT_AUTHORIZED",
+      "authorizationEvidence": {
+        "sourcePath": "project/docs/governance/CLIENT-GOVERNANCE-CHARTER.md",
+        "sourceCommitSha": "0b289ef0aa3a2932e8137c7685e96b8cc632b392",
+        "startLine": 191,
+        "endLine": 191,
+        "exactExcerpt": "- **EXTERNAL-TRACK IMPLEMENTATION:** NOT AUTHORIZED.",
+        "excerptSha256": "9d883a01d3d7b61937855870390276f74f7c98ba3cebda2a45eadfb786e29600"
+      },
+      "liveExecutionEligibility": "DENIED",
+      "notes": "Charter bounded normative baseline; FULL DOMAIN LAW degildir."
+    },
+    {
+      "programId": "OFFICE",
+      "canonicalName": "Avukat / Personel (OFFICE)",
+      "taxonomyLevel": "PROGRAM",
+      "governanceSourceFiles": [
+        "project/docs/governance/OFFICE-DELIVERY-MANIFEST.md",
+        "project/docs/governance/OFFICE-GOVERNANCE.md",
+        "project/docs/governance/OFFICE-PHASE2-CONSTITUTION.md"
+      ],
+      "activeStatus": "ACTIVE_ROADMAP_TRACK",
+      "authorizationState": "OWNER_GATED",
+      "authorizationEvidence": {
+        "sourcePath": "project/docs/governance/active-roadmap.md",
+        "sourceCommitSha": "0b289ef0aa3a2932e8137c7685e96b8cc632b392",
+        "startLine": 54,
+        "endLine": 54,
+        "exactExcerpt": "| NEXT ELIGIBLE UNIT | WAVE 1 — Candidate Inventory and Slice Decomposition | Owner selection/GO bekliyor → bkz. `OFFICE-DELIVERY-MANIFEST.md` §7-8 |",
+        "excerptSha256": "8580d6503031ea4b539f48d0a728b86f03f5e9910f80b3c6a922efb001847870"
+      },
+      "liveExecutionEligibility": "DENIED",
+      "notes": "Phase 1 aktif; siradaki unit owner selection/GO bekliyor. Statu authority: OFFICE-DELIVERY-MANIFEST.md."
+    },
+    {
+      "programId": "DEBTOR",
+      "canonicalName": "Borclu Modulu",
+      "taxonomyLevel": "PROGRAM",
+      "governanceSourceFiles": [
+        "project/docs/governance/DEBTOR-GOVERNANCE.md",
+        "project/docs/governance/DEBTOR-PHASE-0-COMPLETION-ROADMAP.md"
+      ],
+      "activeStatus": "NOT_ON_ACTIVE_ROADMAP",
+      "authorizationState": "NOT_AUTHORIZED",
+      "authorizationEvidence": {
+        "sourcePath": "project/docs/governance/DEBTOR-PHASE-0-COMPLETION-ROADMAP.md",
+        "sourceCommitSha": "0b289ef0aa3a2932e8137c7685e96b8cc632b392",
+        "startLine": 153,
+        "endLine": 153,
+        "exactExcerpt": "- **PR-6 (backfill)** — NOT AUTHORIZED, ayrı owner onayı ister.",
+        "excerptSha256": "95435c261f433a3fac812fee323372a0c97dd977a9281681bc357296d5cbd7ca"
+      },
+      "liveExecutionEligibility": "DENIED",
+      "notes": "Phase 0 CLOSED; PR-6 backfill ayri owner onayi ister."
+    },
+    {
+      "programId": "COLLECTION",
+      "canonicalName": "Tahsilat Modulu",
+      "taxonomyLevel": "PROGRAM",
+      "governanceSourceFiles": [
+        "project/docs/governance/COLLECTION-DECOMPOSITION.md",
+        "project/docs/governance/COLLECTION-GOVERNANCE.md",
+        "project/docs/governance/COLLECTION-OWNER-DECISIONS.md",
+        "project/docs/governance/COLLECTION-RISK-REGISTER.md"
+      ],
+      "activeStatus": "NOT_ON_ACTIVE_ROADMAP",
+      "authorizationState": "OWNER_GATED",
+      "authorizationEvidence": {
+        "sourcePath": "project/docs/governance/COLLECTION-DECOMPOSITION.md",
+        "sourceCommitSha": "0b289ef0aa3a2932e8137c7685e96b8cc632b392",
+        "startLine": 487,
+        "endLine": 487,
+        "exactExcerpt": "W2.2D-1          : OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED — confirmedAt / projection hardening",
+        "excerptSha256": "35efc02a1e125929ab26267640d2f50757b9e4248bf6c8d8e5e813b160413973"
+      },
+      "liveExecutionEligibility": "DENIED",
+      "notes": "PHASE 2 ACTIVE ama siradaki gate W2.2D-1 owner-gated; W2.3 BLOCKED. active-roadmap.md track olarak listelemez."
+    },
+    {
+      "programId": "RECEIVABLE",
+      "canonicalName": "Alacak Kalemleri (Receivable)",
+      "taxonomyLevel": "UNKNOWN",
+      "governanceSourceFiles": [
+        "project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md",
+        "project/docs/governance/RECEIVABLE-GOVERNANCE.md"
+      ],
+      "activeStatus": "ACTIVE_ROADMAP_TRACK",
+      "authorizationState": "NOT_AUTHORIZED",
+      "authorizationEvidence": {
+        "sourcePath": "project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md",
+        "sourceCommitSha": "0b289ef0aa3a2932e8137c7685e96b8cc632b392",
+        "startLine": 61,
+        "endLine": 61,
+        "exactExcerpt": "WS04-P03 data access        : NOT AUTHORIZED",
+        "excerptSha256": "5f453be56921bbcf242a17679dbfd31115d444b62010c1231929e5a462b687a7"
+      },
+      "liveExecutionEligibility": "DENIED",
+      "notes": "Taksonomi acik: kendi adiyla ayri governance dosya ailesi YOK; RECEIVABLE/Accounting altinda alt-track olabilir. KARARA BAGLANMADI."
+    }
+  ]
+}
