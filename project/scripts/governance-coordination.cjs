@@ -193,6 +193,33 @@ const ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02 = Object.freeze({
     recordId: 'DX-006-ANALYZE-FIRST-CONDITIONAL-EXECUTION-R02-GRANT',
   }),
 });
+const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
+  taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-BINDING-R01',
+  bindingPr: Object.freeze({
+    mode: 'GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01',
+    baseSha: 'ad7e00a85be748dcfc5a8b5049e13d3744a3e15e',
+    headRef: 'codex/github-platform-gh02-control-plane-binding-r01',
+    changedPaths: Object.freeze([
+      'project/scripts/governance-coordination.cjs',
+      'project/scripts/governance-coordination.test.cjs',
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    ]),
+  }),
+  workflowPr: Object.freeze({
+    mode: 'GITHUB_PLATFORM_GH02_WORKFLOW_HARDENING_R01',
+    pullRequestNumber: 1622,
+    originalBaseSha: '1b682a9a0474d9c94b6a98fc8251ca92fea48766',
+    authorizedPatchSha: 'cc6dfba9d0ae2fb5dcfddeb022ad94659d7d406f',
+    headRef: 'codex/github-platform-gh02-workflow-hardening-r01',
+    targetPath: '.github/workflows/ci.yml',
+    changedPaths: Object.freeze([
+      Object.freeze({ status: 'M', path: '.github/workflows/ci.yml' }),
+    ]),
+  }),
+});
+const GITHUB_PLATFORM_GH02_BINDING_PATHS = new Set(
+  GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths,
+);
 const REGISTER_REPO_PATH =
   'project/docs/governance/governance-writer-coordination-register.md';
 const REQUEST_ONLY_BRANCH_PATTERN =
@@ -1184,6 +1211,22 @@ function classifyPrChangeSet(changes, context = {}) {
     return { mode: ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.mode };
   }
 
+  const gh02Binding = GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  if (
+    context.base === gh02Binding.bindingPr.baseSha &&
+    context.headRef === gh02Binding.bindingPr.headRef &&
+    hasExactModifiedPathSet(changes, GITHUB_PLATFORM_GH02_BINDING_PATHS)
+  ) {
+    return { mode: gh02Binding.bindingPr.mode, taskId: gh02Binding.taskId };
+  }
+
+  if (
+    context.headRef === gh02Binding.workflowPr.headRef &&
+    hasExactChangeSet(changes, gh02Binding.workflowPr.changedPaths)
+  ) {
+    return { mode: gh02Binding.workflowPr.mode, taskId: gh02Binding.taskId };
+  }
+
   if (
     paths.size === BOOTSTRAP_ALL.size &&
     [...paths].every((candidate) => BOOTSTRAP_ALL.has(candidate)) &&
@@ -1202,11 +1245,14 @@ function classifyPrChangeSet(changes, context = {}) {
       EXECUTION_BASE_ANCESTRY_REPAIR_I01.headRef,
       NONCOORD_PR_CLASSIFIER_REPAIR_R01.headRef,
       ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef,
+      gh02Binding.bindingPr.headRef,
+      gh02Binding.workflowPr.headRef,
     ].includes(context.headRef) ||
     /^codex\/gov-coord-(?:v1-)?(?:authority-locator|register-test-fixture|execution-base-ancestry|noncoord-classifier)-repair-/.test(
       context.headRef || '',
     ) ||
-    /^codex\/dx-006-analyze-first-conditional-execution-/.test(context.headRef || '')
+    /^codex\/dx-006-analyze-first-conditional-execution-/.test(context.headRef || '') ||
+    /^codex\/github-platform-gh02-/.test(context.headRef || '')
   ) {
     reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'control-plane repair binding mismatch');
   }
@@ -1641,6 +1687,117 @@ function validateNoncoordPrClassifierRepairScope(options) {
   return { mode: NONCOORD_PR_CLASSIFIER_REPAIR_R01.mode };
 }
 
+function validateGithubPlatformGh02BindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding = GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  if (
+    taskId !== binding.taskId ||
+    base !== binding.bindingPr.baseSha ||
+    headRef !== binding.bindingPr.headRef ||
+    !hasExactModifiedPathSet(changes, GITHUB_PLATFORM_GH02_BINDING_PATHS)
+  ) {
+    reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'GH-02 authority binding mismatch');
+  }
+
+  const contract = gitShow(
+    head,
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    cwd,
+  );
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    binding.workflowPr.mode,
+    String(binding.workflowPr.pullRequestNumber),
+    binding.workflowPr.authorizedPatchSha,
+    binding.workflowPr.headRef,
+    binding.workflowPr.targetPath,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'GH02_BINDING_CONTRACT_INVALID',
+        `contract is missing exact GH-02 binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: binding.bindingPr.mode, taskId: binding.taskId };
+}
+
+function validateGithubPlatformGh02WorkflowScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding = GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  const workflow = binding.workflowPr;
+  if (
+    taskId !== binding.taskId ||
+    headRef !== workflow.headRef ||
+    !hasExactChangeSet(changes, workflow.changedPaths)
+  ) {
+    reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'GH-02 workflow binding mismatch');
+  }
+
+  if (!gitIsAncestor(workflow.originalBaseSha, base, cwd)) {
+    reject(
+      'GH02_BASE_ANCESTRY_INVALID',
+      `PR base must descend from ${workflow.originalBaseSha}`,
+    );
+  }
+  const patchParent = runGit(
+    ['rev-parse', `${workflow.authorizedPatchSha}^`],
+    cwd,
+  ).stdout.trim();
+  if (patchParent !== workflow.originalBaseSha) {
+    reject(
+      'GH02_AUTHORIZED_PATCH_PARENT_INVALID',
+      `authorized patch parent must be ${workflow.originalBaseSha}`,
+    );
+  }
+  if (
+    !gitIsAncestor(workflow.authorizedPatchSha, head, cwd) ||
+    !gitIsAncestor(base, head, cwd)
+  ) {
+    reject(
+      'GH02_HEAD_ANCESTRY_INVALID',
+      'PR head must descend from both the authorized GH-02 patch and current PR base',
+    );
+  }
+
+  if (base !== workflow.originalBaseSha) {
+    const baseContract = gitShow(
+      base,
+      'project/docs/governance/governance-writer-coordination-contract.md',
+      cwd,
+    );
+    for (const expectedLiteral of [binding.taskId, workflow.mode]) {
+      if (!baseContract.includes(expectedLiteral)) {
+        reject(
+          'GH02_CANONICAL_BINDING_MISSING',
+          `current PR base is missing canonical GH-02 binding ${expectedLiteral}`,
+        );
+      }
+    }
+  }
+
+  const originalTarget = gitShow(workflow.originalBaseSha, workflow.targetPath, cwd);
+  const authorizedTarget = gitShow(workflow.authorizedPatchSha, workflow.targetPath, cwd);
+  if (gitShow(base, workflow.targetPath, cwd) !== originalTarget) {
+    reject(
+      'GH02_BASE_TARGET_DRIFT',
+      `${workflow.targetPath} changed on main after the authorized GH-02 base`,
+    );
+  }
+  if (gitShow(head, workflow.targetPath, cwd) !== authorizedTarget) {
+    reject(
+      'GH02_WORKFLOW_CONTENT_DRIFT',
+      `${workflow.targetPath} differs from authorized patch ${workflow.authorizedPatchSha}`,
+    );
+  }
+
+  return { mode: workflow.mode, taskId: binding.taskId };
+}
+
 function repoPathToAbsolute(repoPath, repoRoot = REPO_ROOT) {
   return path.join(repoRoot, ...normalizeRepoPath(repoPath).split('/'));
 }
@@ -1702,6 +1859,34 @@ function validatePrScope(options) {
       head,
       headRef,
       changes,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01.bindingPr.mode
+  ) {
+    return validateGithubPlatformGh02BindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01.workflowPr.mode
+  ) {
+    return validateGithubPlatformGh02WorkflowScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
       cwd,
     });
   }
@@ -1967,6 +2152,7 @@ module.exports = {
   CoordinationError,
   EFFECTIVE_FROM_MAIN_SHA,
   EXECUTION_BASE_ANCESTRY_REPAIR_I01,
+  GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01,
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
@@ -1996,6 +2182,7 @@ module.exports = {
   validateBootstrapWorktree,
   validateAuthorityRecordAtRef,
   validateCanonicalRequestAtExecutionBase,
+  validateGithubPlatformGh02WorkflowScope,
   validatePrScope,
   validateRequestAgainstGit,
   assertRequestBaseAncestor,

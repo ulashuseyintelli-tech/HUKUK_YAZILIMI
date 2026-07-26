@@ -253,6 +253,86 @@ function classifyAnalyzeFirstConditionalExecutionR02(changes, overrides = {}) {
   });
 }
 
+function gh02BindingChanges() {
+  return coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    (repoPath) => ({ status: 'M', path: repoPath }),
+  );
+}
+
+function classifyGh02Binding(changes, overrides = {}) {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  return coordination.classifyPrChangeSet(changes, {
+    base: binding.bindingPr.baseSha,
+    headRef: binding.bindingPr.headRef,
+    ...overrides,
+  });
+}
+
+function gh02WorkflowChanges() {
+  return coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01.workflowPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function classifyGh02Workflow(changes, overrides = {}) {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  return coordination.classifyPrChangeSet(changes, {
+    base: binding.workflowPr.originalBaseSha,
+    headRef: binding.workflowPr.headRef,
+    ...overrides,
+  });
+}
+
+function createGh02SyncedGitFixture(t) {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-gh02-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+  runFixtureGit(
+    ['fetch', '--quiet', '--no-tags', REPO_ROOT, binding.workflowPr.authorizedPatchSha],
+    root,
+  );
+
+  runFixtureGit(
+    ['checkout', '--quiet', '-b', 'binding-base', binding.workflowPr.originalBaseSha],
+    root,
+  );
+  const contractPath = path.join(
+    root,
+    'project',
+    'docs',
+    'governance',
+    'governance-writer-coordination-contract.md',
+  );
+  fs.appendFileSync(
+    contractPath,
+    `\n${binding.taskId}\n${binding.workflowPr.mode}\n`,
+    'utf8',
+  );
+  runFixtureGit(
+    ['add', '--', 'project/docs/governance/governance-writer-coordination-contract.md'],
+    root,
+  );
+  runFixtureGit(['commit', '--quiet', '-m', 'canonical GH-02 binding'], root);
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  runFixtureGit(
+    ['checkout', '--quiet', '-b', 'workflow-head', binding.workflowPr.authorizedPatchSha],
+    root,
+  );
+  runFixtureGit(['merge', '--quiet', '--no-ff', base, '-m', 'sync binding base'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, base, head };
+}
+
 function createDetachedGitFixture(t, startRef) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-execution-base-'));
   const root = path.join(parent, 'repo');
@@ -1282,6 +1362,175 @@ test('explicit GO-ANALYZE remains read-only after policy alignment', () => {
   assert.match(agents, /`GO-ANALYZE`: Explicit salt-okunur analizdir/);
   assert.match(processRules, /Explicit read-only moddur/);
   assert.match(processRules, /dosya değişikliği, commit, PR veya merge yoktur/i);
+});
+
+test('GH-02 authority binding requires exact base branch and three-file scope', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  const result = classifyGh02Binding(gh02BindingChanges());
+  assert.equal(result.mode, binding.bindingPr.mode);
+  assert.equal(result.taskId, binding.taskId);
+});
+
+test('GH-02 authority binding rejects base drift and scope expansion', () => {
+  expectCode(
+    () => classifyGh02Binding(gh02BindingChanges(), { base: '0'.repeat(40) }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  const changes = gh02BindingChanges();
+  changes.push({ status: 'M', path: '.github/workflows/ci.yml' });
+  expectCode(
+    () => classifyGh02Binding(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-02 workflow recognizes only the exact task branch and ci.yml change', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  const result = classifyGh02Workflow(gh02WorkflowChanges());
+  assert.equal(result.mode, binding.workflowPr.mode);
+  assert.equal(result.taskId, binding.taskId);
+});
+
+test('GH-02 workflow rejects a second production file', () => {
+  const changes = gh02WorkflowChanges();
+  changes.push({ status: 'M', path: 'project/apps/api/src/main.ts' });
+  expectCode(
+    () => classifyGh02Workflow(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-02 workflow rejects wrong, similar, and wildcard-like branches', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  for (const headRef of [
+    'codex/github-platform-gh03-workflow-hardening-r01',
+    `${binding.workflowPr.headRef}-copy`,
+    'codex/github-platform-gh02-*',
+  ]) {
+    expectCode(
+      () => classifyGh02Workflow(gh02WorkflowChanges(), { headRef }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('GH-02 workflow rejects a wrong task identity', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  expectCode(
+    () =>
+      coordination.validateGithubPlatformGh02WorkflowScope({
+        base: binding.workflowPr.originalBaseSha,
+        head: binding.workflowPr.authorizedPatchSha,
+        headRef: binding.workflowPr.headRef,
+        changes: gh02WorkflowChanges(),
+        taskId: 'GITHUB-PLATFORM-BASELINE-GH03',
+        cwd: REPO_ROOT,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-02 workflow rejects another workflow file', () => {
+  const changes = [
+    { status: 'M', path: '.github/workflows/gov-coord-v2-tests.yml' },
+  ];
+  expectCode(
+    () => classifyGh02Workflow(changes),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-02 workflow rejects classifier or control-plane scope expansion', () => {
+  for (const extraPath of [
+    'project/scripts/governance-coordination.cjs',
+    'project/docs/governance/governance-writer-coordination-contract.md',
+  ]) {
+    const changes = gh02WorkflowChanges();
+    changes.push({ status: 'M', path: extraPath });
+    expectCode(
+      () => classifyGh02Workflow(changes),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('GH-02 workflow rejects base and head ancestry mismatches', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  const parentOfOriginalBase = runFixtureGit(
+    ['rev-parse', `${binding.workflowPr.originalBaseSha}^`],
+    REPO_ROOT,
+  );
+  expectCode(
+    () =>
+      coordination.validateGithubPlatformGh02WorkflowScope({
+        base: parentOfOriginalBase,
+        head: binding.workflowPr.authorizedPatchSha,
+        headRef: binding.workflowPr.headRef,
+        changes: gh02WorkflowChanges(),
+        taskId: binding.taskId,
+        cwd: REPO_ROOT,
+      }),
+    'GH02_BASE_ANCESTRY_INVALID',
+  );
+  expectCode(
+    () =>
+      coordination.validateGithubPlatformGh02WorkflowScope({
+        base: binding.workflowPr.originalBaseSha,
+        head: binding.workflowPr.originalBaseSha,
+        headRef: binding.workflowPr.headRef,
+        changes: gh02WorkflowChanges(),
+        taskId: binding.taskId,
+        cwd: REPO_ROOT,
+      }),
+    'GH02_HEAD_ANCESTRY_INVALID',
+  );
+});
+
+test('GH-02 original authorized patch validates Git-backed', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.validatePrScope({
+    base: binding.workflowPr.originalBaseSha,
+    head: binding.workflowPr.authorizedPatchSha,
+    headRef: binding.workflowPr.headRef,
+    cwd: REPO_ROOT,
+  });
+  assert.equal(result.mode, binding.workflowPr.mode);
+  assert.equal(result.taskId, binding.taskId);
+});
+
+test('GH-02 accepts a canonical binding base only after non-rewriting branch sync', (t) => {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  const fixture = createGh02SyncedGitFixture(t);
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: binding.workflowPr.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.workflowPr.mode);
+});
+
+test('GH-02 rejects workflow content outside the authorized patch semantics', (t) => {
+  const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  const fixture = createGh02SyncedGitFixture(t);
+  const targetPath = path.join(
+    fixture.root,
+    ...binding.workflowPr.targetPath.split('/'),
+  );
+  fs.appendFileSync(targetPath, '\n# unauthorized GH-02 semantic drift\n', 'utf8');
+  runFixtureGit(['add', '--', binding.workflowPr.targetPath], fixture.root);
+  runFixtureGit(['commit', '--quiet', '-m', 'unauthorized workflow mutation'], fixture.root);
+  const driftedHead = runFixtureGit(['rev-parse', 'HEAD'], fixture.root);
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: driftedHead,
+        headRef: binding.workflowPr.headRef,
+        cwd: fixture.root,
+      }),
+    'GH02_WORKFLOW_CONTENT_DRIFT',
+  );
 });
 
 test('bootstrap PR requires the exact fifteen-file mode scope', () => {

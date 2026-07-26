@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "taskId": "OFFICE-CAP-09A-CONSUMER-01-R01",
+  "taskSpecVersion": 1,
+  "profile": "BOUNDED_CODE_TASK",
+  "declaredIntent": "StaffService.remove() LawyerService.delete() ile aynı transactional audit attribution paritesine getirilir: aktör controller katmanından taşınır, kayıt AuditService.logInTransaction ile LAWYER_DEACTIVATE/LAWYER aynası STAFF_DEACTIVATE/STAFF olarak yazılır.",
+  "boundaryPolicy": {
+    "allowedRoots": [
+      "project/apps/api/src/modules/audit/__tests__/audit.service.attribution.spec.ts/",
+      "project/apps/api/src/modules/staff/__tests__/staff-deactivate-lifecycle.spec.ts/",
+      "project/apps/api/src/modules/staff/staff.controller.ts/",
+      "project/apps/api/src/modules/staff/staff.service.ts/"
+    ],
+    "maxChangedFiles": 4
+  },
+  "requiredTests": [
+    {
+      "argv": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "cwd": "project",
+      "timeoutMs": 1800000
+    },
+    {
+      "argv": [
+        "pnpm",
+        "--filter",
+        "@hukuk/api",
+        "exec",
+        "prisma",
+        "generate"
+      ],
+      "cwd": "project",
+      "timeoutMs": 600000
+    },
+    {
+      "argv": [
+        "pnpm",
+        "exec",
+        "jest",
+        "--ci",
+        "--forceExit",
+        "--runInBand",
+        "--runTestsByPath",
+        "src/modules/audit/__tests__/audit-metadata-builder.spec.ts",
+        "src/modules/audit/__tests__/audit.service.attribution.spec.ts"
+      ],
+      "cwd": "project/apps/api",
+      "timeoutMs": 900000
+    },
+    {
+      "argv": [
+        "pnpm",
+        "exec",
+        "jest",
+        "--ci",
+        "--forceExit",
+        "--runInBand",
+        "--runTestsByPath",
+        "src/modules/staff/__tests__/staff-deactivate-lifecycle.spec.ts",
+        "src/modules/staff/__tests__/staff-duplicate-guard.spec.ts",
+        "src/modules/staff/__tests__/staff-list-masking.spec.ts",
+        "src/modules/staff/__tests__/staff-update-duplicate-guard.spec.ts"
+      ],
+      "cwd": "project/apps/api",
+      "timeoutMs": 900000
+    }
+  ],
+  "predecessorTaskIds": [],
+  "baseDriftPolicy": "STRICT_PINNED_BASE",
+  "successorDisposition": "OWNER_AUTHORIZATION_REQUIRED",
+  "baseSha": "64d54732ffffc3246ac03af242e0ec9611fc0222",
+  "declaredIntentSha256": "f6e51c9b7b15427e7a283c5bcdbc703967c9ed8632cb0e1bdd003ff6733ce187",
+  "boundaryPolicySha256": "aab953f983981e9dfff765d87e26cce5ad6d60c3e7c65e2db1bc7956bd683835",
+  "requiredTestsSha256": "383610b727863c82c6b1939b5cff74b351b1cfca3c389a192f51c0b1e4c7892a"
+}
