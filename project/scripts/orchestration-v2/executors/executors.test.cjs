@@ -557,6 +557,43 @@ test('T3 GATE: lease-epoch loss freezes mutation and terminates the process tree
   );
 });
 
+test('spawn: descendantPids finds a child that escaped into its own group', async () => {
+  if (WIN) {
+    // Windows delegates to `taskkill /T`, which walks the tree itself, so this
+    // enumeration is only exercised on POSIX.
+    assert.equal(typeof spawnMod.descendantPids, 'function');
+    return;
+  }
+  const child = require('child_process').spawn(
+    process.execPath,
+    [FAKE, '--mode', 'spawn-child-hang'],
+    { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
+  );
+  try {
+    const grandchildPid = await new Promise((res, rej) => {
+      let buf = '';
+      const t = setTimeout(() => rej(new Error('fixture never reported a grandchild')), 10000);
+      child.stdout.on('data', (d) => {
+        buf += d;
+        const m = /grandchild=(\d+)/.exec(buf);
+        if (m) {
+          clearTimeout(t);
+          res(Number(m[1]));
+        }
+      });
+    });
+    // The grandchild detaches into its own process group, so kill(-childPid)
+    // cannot reach it. Walking parent-child links must still find it.
+    const found = spawnMod.descendantPids(child.pid);
+    assert.ok(
+      found.includes(grandchildPid),
+      'grandchild ' + grandchildPid + ' not enumerated; got ' + found.join(','),
+    );
+  } finally {
+    spawnMod.killProcessTree(child.pid, true);
+  }
+});
+
 test('T3 GATE: a whole process tree is terminated, not just the direct child', async () => {
   const r = await run(['--mode', 'spawn-child-hang'], {
     limits: { timeoutMs: 1200, gracePeriodMs: 500 },

@@ -170,26 +170,93 @@ function collectLimited(cap) {
   };
 }
 
-/** Kill an entire process tree. Never leaves orphans behind silently. */
+/**
+ * Enumerate every descendant of a pid, deepest first.
+ *
+ * A process-group signal is not sufficient on POSIX: a grandchild spawned with
+ * `detached` becomes its own group leader and escapes `kill(-pid)` entirely.
+ * Linux CI proved this — the tree-kill gate observed a surviving grandchild
+ * while the same test passed on Windows, where `taskkill /T` walks the real
+ * parent-child tree. The actual tree is therefore walked here, not assumed.
+ *
+ * `ps -A -o pid=,ppid=` is POSIX-specified, so this covers Linux and macOS
+ * without reading /proc directly.
+ */
+function descendantPids(rootPid) {
+  const r = spawnSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' });
+  if (r.status !== 0 || !r.stdout) return [];
+  const children = new Map();
+  for (const line of r.stdout.split('\n')) {
+    const m = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+    if (!m) continue;
+    const pid = Number(m[1]);
+    const ppid = Number(m[2]);
+    if (!children.has(ppid)) children.set(ppid, []);
+    children.get(ppid).push(pid);
+  }
+  const out = [];
+  const visit = (p, depth) => {
+    if (depth > 32) return; // defensive: never follow a cycle
+    for (const c of children.get(p) || []) {
+      visit(c, depth + 1);
+      out.push(c); // post-order, so descendants precede their parent
+    }
+  };
+  visit(rootPid, 0);
+  return out;
+}
+
+/**
+ * Kill an entire process tree. Never leaves orphans behind silently.
+ *
+ * Windows delegates to `taskkill /T`, which already walks the tree. POSIX
+ * signals enumerated descendants first, then the process group, then the pid
+ * itself, so a detached grandchild cannot survive by leaving its parent's group.
+ */
 function killProcessTree(pid, force) {
   if (!pid) return { attempted: false, ok: false };
+  const sig = force ? 'SIGKILL' : 'SIGTERM';
+
   if (process.platform === 'win32') {
     const args = ['/PID', String(pid), '/T'];
     if (force) args.push('/F');
     const r = spawnSync('taskkill', args, { encoding: 'utf8', windowsHide: true });
     return { attempted: true, ok: r.status === 0, detail: String(r.stderr || r.stdout || '').trim() };
   }
-  try {
-    process.kill(-pid, force ? 'SIGKILL' : 'SIGTERM');
-    return { attempted: true, ok: true };
-  } catch (e) {
+
+  const signalled = [];
+  const failed = [];
+  for (const child of descendantPids(pid)) {
     try {
-      process.kill(pid, force ? 'SIGKILL' : 'SIGTERM');
-      return { attempted: true, ok: true };
-    } catch (e2) {
-      return { attempted: true, ok: false, detail: String(e2.message) };
+      process.kill(child, sig);
+      signalled.push(child);
+    } catch (e) {
+      // ESRCH just means it exited between listing and signalling.
+      if (!e || e.code !== 'ESRCH') failed.push(child + ':' + (e && e.code));
     }
   }
+
+  let groupOk = false;
+  try {
+    process.kill(-pid, sig);
+    groupOk = true;
+  } catch (e) {
+    /* not a group leader; the direct signal below covers it */
+  }
+  let directOk = false;
+  try {
+    process.kill(pid, sig);
+    directOk = true;
+  } catch (e) {
+    if (e && e.code === 'ESRCH') directOk = true;
+  }
+
+  return {
+    attempted: true,
+    ok: (groupOk || directOk) && failed.length === 0,
+    descendantsSignalled: signalled,
+    detail: failed.length ? 'could not signal ' + failed.join(', ') : null,
+  };
 }
 
 function processAlive(pid) {
@@ -411,6 +478,7 @@ module.exports = {
   DEFAULTS,
   SpawnError,
   buildChildEnv,
+  descendantPids,
   killProcessTree,
   processAlive,
   extractJson,
