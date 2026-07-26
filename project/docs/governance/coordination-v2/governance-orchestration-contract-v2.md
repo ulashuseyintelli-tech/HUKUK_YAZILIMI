@@ -3,14 +3,40 @@
 ```text
 Belge yolu : project/docs/governance/coordination-v2/governance-orchestration-contract-v2.md
 Contract ID: GOV-COORD-V2
-Durum      : PROPOSED / OWNER REVIEW REQUIRED — ratifiye DEĞİLDİR
-Rol        : Bounded code task ve mechanical governance işlerinin tek
-             orchestrator üzerinden, immutable authorization altında,
-             fail-closed sınırlarla yürütülmesi için execution contract'ı.
+Durum      : RATIFIED WITH LIMITATION — 2026-07-26
+             BOUNDED_CODE_TASK       : RATIFIED FOR USE
+             MECHANICAL_GOVERNANCE   : NON-ELIGIBLE / KULLANILAMAZ (§1.2)
+             AUTO-MERGE              : OFF · MANUAL OWNER MERGE REQUIRED
+Rol        : Bounded code task işlerinin tek orchestrator üzerinden, immutable
+             authorization altında, fail-closed sınırlarla yürütülmesi için
+             execution contract'ı.
 Üst norm   : AGENTS.md · SYSTEM-CONSTITUTION.md · GOV-COORD-V1 contract
 IMPLEMENTATION AUTHORITY: NONE — bu belge hiçbir task, grant, migration,
-runtime veya merge yetkisi ÜRETMEZ.
+runtime veya merge yetkisi ÜRETMEZ. Ratifikasyon, contract'ın yürürlüğe
+girmesidir; tek tek task'lar ayrıca ratifiye plan + execution grant ister.
 ```
+
+## 0.0 Ratifikasyon kaydı
+
+```text
+RATIFIED           : 2026-07-26
+KAPSAM             : BOUNDED_CODE_TASK profili
+KAPSAM DIŞI        : MECHANICAL_GOVERNANCE profili — NON-ELIGIBLE (§1.2)
+AUTO-MERGE         : OFF
+MANUAL OWNER MERGE : REQUIRED
+KAYDEDEN           : agent, owner GO-COMPLETE altında
+                     (T5-LIVE-PILOT-OWNER-DECISIONS-AND-PLAN-AUTHORING-R01)
+RATİFİKASYON KANITI: owner'ın ilgili brief'i — bu commit DEĞİLDİR
+```
+
+`MECHANICAL_GOVERNANCE` açığı bu ratifikasyonla **kapatılmamış**, açıkça
+`NON-ELIGIBLE` işaretlenerek dondurulmuştur. Düzeltmesi ayrı bir contract
+follow-up candidate'ıdır ve bu turda uygulanmamıştır. Governance kaydı yazımı
+gerektiğinde yürürlükteki **V1 mekanizması** kullanılır.
+
+`decision-log.md` owner-WIP (`grandfatheredOwnerWipExactPaths`) olduğundan
+otoritatif ratifikasyon girdisi agent tarafından yazılamaz; owner tarafından
+ayrıca kaydedilmesi gerekir.
 
 ## 0. V1 ile ilişki
 
@@ -19,7 +45,9 @@ belge onu **supersede ETMEZ**. V1 §3 capability matrix'indeki hiçbir `DENIED`
 satırı bu belgeyle `ALLOWED` yapılmaz. V2, V1'in güvenlik çekirdeğini korur ve
 üzerine ikinci bir execution profile ekler.
 
-V2 ratifiye edilene kadar V1 tek yürürlükteki koordinasyon contract'ıdır.
+V2 2026-07-26'da `BOUNDED_CODE_TASK` profiliyle sınırlı olarak ratifiye
+edilmiştir (§0.0). Governance yazımı için V1 tek yürürlükteki mekanizmadır ve
+öyle kalır — V2'nin mechanical profili `NON-ELIGIBLE`'dır (§1.2).
 
 ## 1. Profile policy ayrımı
 
