@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/security/advisories/new
+    about: Never disclose secrets, exploit details, client data, or legal data in a public issue.
+  - name: Security policy
+    url: https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/security/policy
+    about: Review the supported reporting and coordinated-disclosure rules.

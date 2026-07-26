@@ -1,0 +1,18 @@
+# Repository ownership discovery for the current single-owner model.
+# Required Code Owner review is intentionally not enabled until a separate
+# GitHub App can author pull requests without creating a self-review deadlock.
+
+* @ulashuseyintelli-tech
+
+# Control-plane and governance surfaces
+/.github/ @ulashuseyintelli-tech
+/AGENTS.md @ulashuseyintelli-tech
+/CLAUDE.md @ulashuseyintelli-tech
+/project/docs/governance/ @ulashuseyintelli-tech
+/project/docs/adr/ @ulashuseyintelli-tech
+/project/scripts/orchestration-v2/ @ulashuseyintelli-tech
+
+# Shared schema and authentication boundaries
+/project/apps/api/prisma/ @ulashuseyintelli-tech
+/project/apps/api/src/modules/auth/ @ulashuseyintelli-tech
+/project/apps/api/src/modules/portal/ @ulashuseyintelli-tech

@@ -1,0 +1,61 @@
+name: Security hardening finding (non-sensitive)
+description: Track a security finding only when no secret, exploit detail, PII, client data, or legal data will be disclosed.
+title: "[SECURITY] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not use this public form for an exploitable vulnerability, credential,
+        secret, client data, legal data, or sensitive reproduction details.** Use
+        [Private Vulnerability Reporting](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/security/advisories/new)
+        instead. If a credential may be exposed, revoke or rotate it first.
+  - type: checkboxes
+    id: public_safety
+    attributes:
+      label: Public-report safety
+      options:
+        - label: This report contains no secrets, exploit payloads, PII, client data, or confidential legal information.
+          required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Preliminary severity
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+        - Unknown
+    validations:
+      required: true
+  - type: input
+    id: affected_surface
+    attributes:
+      label: Affected component or path
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Provide metadata and safe observations only; do not paste sensitive values or working exploit payloads.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Security, tenant, PII, or legal-data impact
+    validations:
+      required: true
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Existing mitigation and proposed bounded remediation
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Proposed validation and closure evidence
+    validations:
+      required: true

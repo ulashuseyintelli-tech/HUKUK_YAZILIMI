@@ -1,0 +1,66 @@
+name: Owner decision
+description: Record a bounded decision request without creating authority by itself.
+title: "[OWNER DECISION] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is a non-authoritative decision packet. Only an explicit owner
+        decision recorded through the canonical governance process can ratify policy
+        or authorize execution.
+  - type: input
+    id: program_id
+    attributes:
+      label: Program ID
+      placeholder: PROGRAM-ID
+    validations:
+      required: true
+  - type: input
+    id: task_id
+    attributes:
+      label: Decision or task ID
+      placeholder: TASK-ID
+    validations:
+      required: true
+  - type: textarea
+    id: decision_question
+    attributes:
+      label: Exact decision question
+      description: State one bounded question that requires owner authority.
+    validations:
+      required: true
+  - type: textarea
+    id: canonical_context
+    attributes:
+      label: Canonical context and evidence
+      description: Cite repository paths, record IDs, PRs, SHAs, or external evidence without including secrets or PII.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Mutually exclusive options
+      description: Include security, product, compatibility, and operational trade-offs.
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation
+      description: Separate verified facts, assumptions, and the recommended option.
+    validations:
+      required: true
+  - type: textarea
+    id: effects
+    attributes:
+      label: Expected effects and downstream dependencies
+      description: Identify policy, implementation, migration, runtime, and follow-up effects.
+    validations:
+      required: true
+  - type: checkboxes
+    id: authority_acknowledgement
+    attributes:
+      label: Authority acknowledgement
+      options:
+        - label: I understand that creating or editing this issue does not ratify a decision or authorize implementation.
+          required: true

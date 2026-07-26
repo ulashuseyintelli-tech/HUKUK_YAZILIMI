@@ -1,0 +1,90 @@
+name: Bounded implementation task
+description: Prepare an implementation packet with explicit scope and validation gates.
+title: "[IMPLEMENTATION] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is task metadata, not execution authority. Implementation starts
+        only under the repository's explicit owner mode and canonical safety rules.
+  - type: input
+    id: program_id
+    attributes:
+      label: Program ID
+      placeholder: PROGRAM-ID
+    validations:
+      required: true
+  - type: input
+    id: task_id
+    attributes:
+      label: Task ID
+      placeholder: TASK-ID
+    validations:
+      required: true
+  - type: textarea
+    id: predecessors
+    attributes:
+      label: Predecessors and current status
+      description: List required predecessor IDs and canonical closure evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: authority_refs
+    attributes:
+      label: Semantic and execution authority references
+      description: Keep semantic authority and execution authority distinct.
+    validations:
+      required: true
+  - type: input
+    id: base_sha
+    attributes:
+      label: Expected base SHA
+      placeholder: 40-character Git SHA
+    validations:
+      required: true
+  - type: textarea
+    id: allowed_roots
+    attributes:
+      label: Allowed roots or exact file allowlist
+    validations:
+      required: true
+  - type: textarea
+    id: forbidden_paths
+    attributes:
+      label: Forbidden paths and explicit exclusions
+    validations:
+      required: true
+  - type: textarea
+    id: required_tests
+    attributes:
+      label: Required validation
+      description: List exact tests, type-checks, lint, builds, and repository guards.
+    validations:
+      required: true
+  - type: dropdown
+    id: schema_impact
+    attributes:
+      label: Schema or migration impact
+      options:
+        - NONE
+        - AUTHORIZED_SCHEMA_ONLY
+        - AUTHORIZED_MIGRATION
+        - OWNER_DECISION_REQUIRED
+    validations:
+      required: true
+  - type: dropdown
+    id: owner_decision_required
+    attributes:
+      label: Additional owner decision required
+      options:
+        - "NO"
+        - "YES"
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety_acknowledgement
+    attributes:
+      label: Safety acknowledgement
+      options:
+        - label: I understand that this issue does not grant execution, merge, production, or destructive authority.
+          required: true
