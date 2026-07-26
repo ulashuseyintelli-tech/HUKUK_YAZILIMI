@@ -1,5 +1,11 @@
 Bu dosya yerel Claude/Claude Code uyumlulugu icin stub'dir.
 
-Kanonik ve guncel agent talimatlari repo kokundeki `CLAUDE.md` dosyasindadir.
-Calismaya baslamadan repo kokundeki `CLAUDE.md` okunmalidir.
-Bir celiski gorulurse repo kokundeki `CLAUDE.md` takip edilir.
+Calismaya baslamadan once authority sirasi izlenir:
+
+```text
+AGENTS.md
+→ repo kokundeki CLAUDE.md
+```
+
+`AGENTS.md` repository-level zorunlu baseline, root `CLAUDE.md` Claude'a ozgu
+operasyonel supplement'tir. Celiskide `AGENTS.md` uygulanir.

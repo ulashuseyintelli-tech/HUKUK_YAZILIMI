@@ -297,7 +297,13 @@ export class ConfirmationTokenService {
 // ───────────────────────── module-private helpers ─────────────────────────
 
 function toBase64Url(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  const base64 = buf.toString('base64');
+  const withoutPadding = base64.endsWith('==')
+    ? base64.slice(0, -2)
+    : base64.endsWith('=')
+      ? base64.slice(0, -1)
+      : base64;
+  return withoutPadding.replace(/\+/g, '-').replace(/\//g, '_');
 }
 
 function fromBase64Url(s: string): Buffer {

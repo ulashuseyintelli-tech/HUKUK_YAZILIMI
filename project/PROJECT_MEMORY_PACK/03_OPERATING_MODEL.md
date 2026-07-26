@@ -24,16 +24,18 @@ Büyük/uzun-ömürlü işlerde Session Initialization: Repository State · Exec
 
 ## Çalışma modları
 
-- **GO-ANALYZE:** salt-okuma analiz + rapor. Dosya değişikliği/commit/push/merge YOK.
+- **UNKNOWN / AMBIGUOUS:** read-only kalır; mutation YOK.
+- **GO-ANALYZE:** explicit salt-okuma `ANALYZE → REPORT → STOP`. Dosya değişikliği/commit/push/PR/merge YOK.
 - **GO-DOCS:** yalnız dokümantasyon değişikliği (+ ilgili validation). Merge yalnız açıkça istenirse.
-- **GO-IMPLEMENT:** kapsam içinde kod/doküman değişikliği + validation + rapor. Commit/push/merge YOK (ayrıca istenmedikçe).
-- **GO-COMPLETE:** kod/doküman + test + CI + merge + remote/local branch cleanup + worktree cleanup + main sync + final verification + checkpoint = tek operasyonel bütün. Stop condition yoksa zincir içinde tekrar onay istenmez (`Onay Bekleniyor: NO`).
+- **GO-IMPLEMENT:** `ANALYZE → IMPLEMENT → VERIFY → REPORT → STOP`; local patch + validation. Commit/push/PR/merge yalnız brief ayrıca kapsıyorsa.
+- **GO-COMPLETE — ANALYZE-FIRST:** implementation-eligible görevlerde tercih edilen tam model: `ANALYZE → IF IMPLEMENT → IMPLEMENT → VERIFY → COMMIT → PUSH → PR → CI → IF GO-COMPLETE → SQUASH-MERGE → MAIN SYNC → CLEANUP → FINAL VERIFICATION → CLOSE`. Ex-ante `IF GO-COMPLETE` owner authority varsa ve gate'ler PASS ise CI sonrası ikinci onay istenmez (`Onay Bekleniyor: NO`).
 
 ## Yürütme disiplini
 
 - **Owner workstream seçer.** Ajan sonraki işi kendiliğinden SEÇMEZ ve açık owner GO olmadan açmaz.
 - **Active task kapanmadan sonraki task açılmaz.**
-- **Bounded-context sınırı:** ajan yalnız yetkilendirilen domain/task kapsamında çalışır; sınır dışına çıkmaz.
+- **Bounded-context sınırı:** ajan yalnız yetkilendirilen domain/task kapsamında çalışır; sınır dışına çıkmaz. Aynı root cause için doğrudan gerekli supporting dosya/test/fixture/mock ve validation düzeltmesi scope expansion değildir; farklı product outcome/domain/architecture/migration/production/destructive iş gerçek scope expansion'dır.
+- **Owner gate:** yeni hukuki/finansal/domain/product semantiği, davranışsal seçenek, architecture/bounded-context değişimi, task dışı production/data/destructive işlem, owner WIP mutation, semantic conflict veya çözülemeyen risk için durulur. İlgisiz finding acil security/data-loss/corruption riski yoksa backlog adayı olarak ayrılır ve aktif task'i durdurmaz.
 - **Isolated worktree:** her implementasyon origin/main tabanlı ayrı worktree+branch'te; canonical root'ta implementasyon yapılmaz (bkz [06_IMPLEMENTATION_POLICY.md](06_IMPLEMENTATION_POLICY.md)).
 
 ## Stop conditions (process-rules)
@@ -48,4 +50,4 @@ CI başarısız · merge conflict · scope değişti · mimari değişti · bekl
 
 ## IF GO-COMPLETE otomatik zinciri
 
-commit → push → PR → CI izleme → (SUCCESS + CLEAN) squash merge → canonical main sync → 4-way SHA doğrulama → remote+local branch cleanup → worktree cleanup → canonical integrity check → checkpoint. Tek operasyonel bütün; stop condition yoksa tekrar onay istenmez.
+ANALYZE → IF IMPLEMENT → IMPLEMENT → VERIFY → commit → push → PR → CI izleme → IF GO-COMPLETE → (SUCCESS + CLEAN + exact scope + no conflict) squash merge → canonical main sync → 4-way SHA doğrulama → remote+local branch cleanup → worktree cleanup → canonical integrity check → CLOSE. Bu task-specific owner-authorized conditional merge'dir; standing GitHub auto-merge/scheduler/reusable grant değildir. Stop condition yoksa tekrar onay istenmez.

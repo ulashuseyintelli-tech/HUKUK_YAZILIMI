@@ -313,8 +313,18 @@ export class EmailProviderService {
    * E-posta adresini doğrula
    */
   private isValidEmail(email: string): boolean {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+    if (typeof email !== 'string' || email.length === 0 || /\s/u.test(email)) {
+      return false;
+    }
+
+    const atIndex = email.indexOf('@');
+    if (atIndex <= 0 || atIndex !== email.lastIndexOf('@')) {
+      return false;
+    }
+
+    const domainStart = atIndex + 1;
+    const separatorDotIndex = email.indexOf('.', domainStart + 1);
+    return separatorDotIndex !== -1 && separatorDotIndex < email.length - 1;
   }
 
   /**

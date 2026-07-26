@@ -34,7 +34,7 @@ Bir gozlemin bu belgede yer almasi, onu contract hukmu haline GETIRMEZ.
 | Resolved absolute path | `C:\Users\ulastelli\.local\bin\claude.exe` | ajan tarafindan dogrudan dogrulandi (dosya mevcut, 265 MB) |
 | Version | `2.1.220 (Claude Code)` | ajan tarafindan mutlak yolla `--version` cagrisi |
 | Headless invocation | `claude -p "<prompt>"` | owner-reported |
-| Child-process smoke | `exitCode = 0`, stdout `CLAUDE_HEADLESS_OK` | **owner-reported** (ajan bu smoke'u kendisi calistirmadi) |
+| Child-process smoke | `exitCode = 0`, sentinel stdout'ta, `state: AVAILABLE` | **ajan tarafindan calistirildi** (2026-07-26, `verify-executors.cjs`) — onceki `owner-reported` kaydi bu satirla yukseltilmistir |
 | PATH resolution (owner ortami) | PASS (`Get-Command claude -CommandType Application`) | owner-reported |
 | PATH resolution (ajan Bash-tool shell) | **FAIL** (`command -v claude` -> bulunamadi) | ajan tarafindan iki kez dogrulandi |
 
@@ -58,6 +58,20 @@ hataydi.
 | Resolved path | `/c/Users/ulastelli/AppData/Local/Volta/bin/codex` | ajan tarafindan dogrulandi |
 | Version | `codex-cli 0.144.5` | ajan tarafindan `--version` cagrisi |
 | Headless invocation | `codex exec` | resmi OpenAI dokumantasyonu |
+| Child-process smoke (git repo cwd) | `exitCode = 0`, `state: AVAILABLE` | ajan tarafindan calistirildi (2026-07-26, disposable git repo icinde) |
+| Child-process smoke (git repo DISI cwd) | **FAIL** — `Not inside a trusted directory and --skip-git-repo-check was not specified` | ajan tarafindan calistirildi (2026-07-26, plain temp dizin) |
+
+**Bu iki satir bir kusuru ortaya cikardi ve duzeltildi.** `codex exec` guvenilir
+(git repository) olmayan bir working directory'de calismayi reddediyor.
+Resolution bunu `SMOKE_FAILED` olarak raporluyordu — bozuk bir CLI'dan
+ayirt edilemez, ve orchestrator bunu `EXECUTOR_UNAVAILABLE` -> `BLOCKED` task'a
+ceviriyordu. Yani dogru kurulmus bir Codex, yalnizca resolution'in nerede
+kostuguna bagli olarak isi bloklayabilirdi. Uretim yolu zaten dogruydu
+(resolution izole worktree'yi cwd olarak kullanir), fakat hata modu sessiz ve
+yaniltciydi. Artik kosul lane uzerinde belgelenmis ve `SMOKE_PRECONDITION_UNMET`
+olarak ayri raporlanir. `--skip-git-repo-check` bilincli olarak EKLENMEDI:
+CLI'nin kendi guvenlik kontrolunu smoke'u gecirmek icin baypas etmek, acik bir
+basarisizligi sessiz bir basarisizlikla degistirmek olurdu.
 
 ## 3. Repository topolojisi
 
@@ -91,18 +105,28 @@ durumdadir.
 
 ## 4. CI / branch protection gozlemi
 
+Ayni gun icinde IKI KEZ degisti:
+
 ```text
-required_status_checks.contexts : ["Web Tests (vitest)"]
-required_status_checks.strict   : false
+gozlem 1 (sabah) : ["Web Tests (vitest)"]                              strict=false
+gozlem 2 (aksam) : ["Web Tests (vitest)", "Architectural Guardrails"]  strict=false
 ```
 
-`gh api repos/<owner>/<repo>/branches/main/protection` ile dogrulandi.
+Ayrica PR-seviyesindeki check kumesi de degisti: ayni gun bir push'ta 4 check
+gorulurken sonraki push'ta 8 check gorunmustur (uc `Analyze (...)` CodeQL job'i
+ve toplayici `CodeQL` check'i eklendi). Toplayici `CodeQL` check'i, alt Analyze
+job'lari surerken gecici olarak `NEUTRAL` raporlar; bu bir basarisizlik degil,
+ara durumdur — terminal durum ayrica okunmalidir.
 
-**Onemli:** bu, platform seviyesinde zorunlu kilinan TEK check'tir. Contract
-SS5.1'deki `effectiveRequiredCiChecks` birlesimi tam olarak bu yuzden vardir —
-orchestrator yalnizca GitHub'in `mergeable` sinyaline guvenemez; owner-tanimli
-ve governance-tanimli kapilari **ayrica** dogrulamak zorundadir. Bu gozlem
-degisebilir; SS5.1 kural olarak kalir.
+`gh api repos/<owner>/<repo>/branches/main/protection` ile her iki gozlem de
+dogrulandi.
+
+**Onemli:** kume hem platform seviyesinde (1 -> 2) hem de kosu bazinda (4 -> 8)
+degisti. Contract SS5.1'deki `effectiveRequiredCiChecks` birlesimi tam olarak bu
+yuzden vardir — orchestrator yalnizca GitHub'in `mergeable` sinyaline guvenemez,
+ve hicbir check adi contract'a sabitlenemez. Bu gozlem yine degisebilir;
+SS5.1 kural olarak kalir. Buradaki degerlerin yaslandigi bu bolumun kendi
+tarihcesiyle kanitlanmistir.
 
 ## 5. Base drift gozlemi (SS13 gerekcesi)
 

@@ -14,9 +14,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
 
 const lease = require('../safety/lease.cjs');
 const resolveMod = require('../executors/resolve.cjs');
@@ -26,189 +24,18 @@ const mergeready = require('./mergeready.cjs');
 const orch = require('./orchestrator.cjs');
 
 const FAKE = path.join(__dirname, '..', 'executors', 'fake-executor.cjs');
-const WORKER = path.join(__dirname, 'pilot-worker.cjs');
-const NODE = process.execPath;
-const SHA0 = '0'.repeat(40);
 
-const temps = [];
-function git(a, cwd) {
-  return execFileSync('git', a, { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim();
-}
+// Fixtures live in pilot-fixtures.cjs so the pilot and these unit tests
+// cannot drift apart. This file previously carried its own copies of six
+// helpers plus a trailing module.exports; only fixtureRepo and specAndGrant
+// were ever called by a test, and nothing imported the export.
+const F = require('./pilot-fixtures.cjs');
 
-/** Disposable fixture repository — never the real one. */
-function fixtureRepo() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'govv2-t4-'));
-  temps.push(dir);
-  git(['init', '--initial-branch=main', '-q'], dir);
-  git(['config', 'user.email', 't@example.invalid'], dir);
-  git(['config', 'user.name', 'T4 Fixture'], dir);
-  git(['config', 'commit.gpgsign', 'false'], dir);
-  for (const rel of ['fixture/lane-a', 'fixture/lane-b', 'fixture/shared']) {
-    fs.mkdirSync(path.join(dir, rel), { recursive: true });
-    fs.writeFileSync(path.join(dir, rel, 'seed.txt'), 'seed\n');
-  }
-  fs.mkdirSync(path.join(dir, 'project/docs/governance'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'project/docs/governance/decision-log.md'), '# fixture\n');
-  git(['add', '-A'], dir);
-  git(['commit', '-q', '-m', 'fixture base'], dir);
-  return dir;
-}
+const fixtureRepo = F.fixtureRepo;
+const specAndGrant = F.specAndGrant;
+const NODE = F.NODE;
 
-test.after(() => {
-  for (const d of temps) {
-    try {
-      fs.rmSync(d, { recursive: true, force: true, maxRetries: 3 });
-    } catch (e) {
-      /* disposable */
-    }
-  }
-});
-
-function fakeResolved(lane) {
-  return {
-    schemaVersion: 1,
-    executorLane: lane,
-    state: 'AVAILABLE',
-    resolutionSource: 'EXPLICIT_CONFIGURED_PATH',
-    resolvedAbsolutePath: NODE,
-    version: 'stand-in ' + process.version,
-    launchPrefixArgv: [],
-    smokeExitCode: 0,
-    smokeResult: 'PASS',
-  };
-}
-
-/** Build a spec + a grant that pins it by the four digests (§2). */
-function specAndGrant(over) {
-  const o = over || {};
-  const spec = Object.assign(
-    {
-      schemaVersion: 1,
-      taskId: o.taskId || 'PILOT-A',
-      taskSpecVersion: 1,
-      profile: 'BOUNDED_CODE_TASK',
-      declaredIntent: o.declaredIntent || 'Write one fixture file inside the declared lane root.',
-      boundaryPolicy: { allowedRoots: o.allowedRoots || ['fixture/lane-a/'] },
-      requiredTests: o.requiredTests || [{ argv: [NODE, '-e', 'process.exit(0)'] }],
-      predecessorTaskIds: o.predecessorTaskIds || [],
-      baseDriftPolicy: o.baseDriftPolicy || 'REFRESH_BEFORE_EXECUTION',
-      successorDisposition: o.successorDisposition || 'NO_SUCCESSOR',
-    },
-    o.specExtra || {},
-  );
-  const d = authority.specDigests(spec);
-  const grant = Object.assign(
-    {
-      schemaVersion: 1,
-      grantId: 'PILOT-GRANT-01',
-      workstream: 'PILOT-WS',
-      semanticAuthorityRef: {
-        kind: 'SEMANTIC_AUTHORITY',
-        recordId: 'PILOT-SEMANTIC-01',
-        sourcePath: 'project/docs/governance/decision-log.md',
-      },
-      executionGrantRef: {
-        kind: 'EXECUTION_GRANT',
-        recordId: 'PILOT-EXEC-01',
-        sourcePath: 'project/docs/governance/coordination-execution-grants/PILOT.md',
-      },
-      ownerRatificationEvidence: {
-        sourcePath: 'project/docs/governance/decision-log.md',
-        sourceCommitSha: 'a'.repeat(40),
-        exactExcerpt: 'fixture owner ratification',
-        excerptSha256: 'b'.repeat(64),
-      },
-      expiresAt: new Date(Date.now() + 3600000).toISOString(),
-      revocationPath: 'project/docs/governance/coordination-execution-grants/PILOT.md',
-      manualMergeRequired: true,
-      allowedModuleRoots: o.grantRoots || ['fixture/'],
-      authorizedTasks: [
-        {
-          taskId: spec.taskId,
-          taskSpecVersion: spec.taskSpecVersion,
-          taskSpecSha256: d.taskSpecSha256,
-          declaredIntentSha256: d.declaredIntentSha256,
-          boundaryPolicySha256: d.boundaryPolicySha256,
-          requiredTestsSha256: d.requiredTestsSha256,
-          predecessorTaskIds: spec.predecessorTaskIds,
-        },
-      ].concat(o.extraAuthorizedTasks || []),
-    },
-    o.grantExtra || {},
-  );
-  return { spec, grant, digests: d };
-}
-
-/** Fake PR/CI providers — a synthetic pilot must never open a real PR. */
-function providers(over) {
-  const o = over || {};
-  return {
-    prProvider: {
-      open: async () => ({ number: o.prNumber || 4242, headSha: o.prHeadSha || 'c'.repeat(40) }),
-      state: async () => ({
-        headSha: o.prHeadSha || 'c'.repeat(40),
-        targetBranch: 'main',
-        targetBranchSha: o.targetBranchSha || 'd'.repeat(40),
-        mergeBaseSha: o.mergeBaseSha || 'e'.repeat(40),
-        open: o.prOpen !== false,
-        mergeable: o.prMergeable !== false,
-        blockingReview: o.blockingReview === true,
-        competingWriter: o.competingWriter === true,
-        baseDriftSatisfied: o.baseDriftSatisfied !== false,
-      }),
-    },
-    ciProvider: {
-      requiredSources: async () => ({
-        taskSpecRequired: o.taskSpecRequired || ['Test Suite'],
-        platformRequired: o.platformRequired || ['Web Tests (vitest)'],
-        governanceRequired: o.governanceRequired || [],
-      }),
-      observe: async () =>
-        o.observedCi || [
-          { name: 'Test Suite', status: 'COMPLETED', conclusion: 'SUCCESS' },
-          { name: 'Web Tests (vitest)', status: 'COMPLETED', conclusion: 'SUCCESS' },
-        ],
-    },
-  };
-}
-
-/** A stand-in worktree: the fixture repo itself, so no nested git is created. */
-function inlineWorktree(repo) {
-  return ({ pinnedBase }) => ({ path: repo, pinnedBaseSha: pinnedBase, branch: 'fixture' });
-}
-
-function baseCtx(repo, over) {
-  const o = over || {};
-  const sg = o.sg || specAndGrant(o.specOver);
-  return Object.assign(
-    {
-      store: stateMod.createStore(stateMod.defaultStateDir(repo)),
-      repoCwd: repo,
-      spec: sg.spec,
-      grant: sg.grant,
-      holder: o.holder || 'CLAUDE_LOCAL',
-      baseRef: 'HEAD',
-      worktreeFactory: inlineWorktree(repo),
-      executorOverride: fakeResolved(o.holder || 'CLAUDE_LOCAL'),
-      executorArgv: o.executorArgv || [FAKE, '--mode', 'ok'],
-      testRunner: o.testRunner,
-      limits: o.limits,
-      cancellationSignal: o.cancellationSignal,
-      grantRevoked: o.grantRevoked,
-    },
-    providers(o.providerOver),
-    o.ctxExtra || {},
-  );
-}
-
-/** Write a file inside the fixture so a real diff exists. */
-function seedChange(repo, rel, content) {
-  const abs = path.join(repo, rel);
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, content || 'changed\n');
-  git(['add', '-A'], repo);
-  git(['commit', '-q', '-m', 'work: ' + rel], repo);
-}
+test.after(F.cleanupTemps);
 
 // ------------------------------------------------------- §12 canonicalization
 
@@ -499,5 +326,3 @@ test('mergeready: a merge without a fresh attestation is not a clean closure', (
   const dirty = mergeready.classifyExternalMerge({ attestation: a, observed: { prHeadSha: '9'.repeat(40) } });
   assert.equal(dirty.disposition, 'UNVERIFIED_EXTERNAL_MERGE_OWNER_REVIEW_REQUIRED');
 });
-
-module.exports = { fixtureRepo, specAndGrant, providers, baseCtx, seedChange, fakeResolved, inlineWorktree, temps, git };
