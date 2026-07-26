@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hukuk-yazilimi:coordination-v2:lease.schema.json",
+  "title": "GOV-COORD-V2 Lease Record",
+  "description": "Atomic CAS lease record. refs/governance-coordination/leases/<task-id> altinda canonical JSON olarak tutulur. Bkz. governance-orchestration-contract-v2.md SS6.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "leaseId",
+    "taskId",
+    "taskAttemptId",
+    "leaseEpoch",
+    "state",
+    "holder",
+    "holderToken",
+    "acquiredAt",
+    "heartbeatAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "leaseId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "Mantiksal claim kimligi."
+    },
+    "taskId": { "$ref": "#/$defs/identifier" },
+    "taskAttemptId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "Retry kimligi. Her yeni attempt yeni deger alir."
+    },
+    "leaseEpoch": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monoton fencing generation. HICBIR ZAMAN sifirlanmaz; yeni claim = onceki + 1."
+    },
+    "state": {
+      "enum": ["HELD", "RELEASED"],
+      "description": "RELEASED bir tombstone'dur; ref SILINMEZ."
+    },
+    "holder": {
+      "enum": ["CLAUDE_LOCAL", "CODEX_LOCAL"],
+      "description": "Executor lane kimligi."
+    },
+    "holderToken": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "Process-instance kimligi. Her mutation oncesi leaseEpoch ile BIRLIKTE dogrulanir."
+    },
+    "acquiredAt": { "type": "string", "format": "date-time" },
+    "heartbeatAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "previousStateHash": {
+      "oneOf": [
+        { "$ref": "#/$defs/sha256" },
+        { "type": "null" }
+      ],
+      "description": "Ilk claim'de null."
+    },
+    "releasedAt": { "type": "string", "format": "date-time" },
+    "releaseReason": {
+      "enum": [
+        "CLOSED",
+        "CANCELLED_CLEANUP_COMPLETE",
+        "TERMINAL_BLOCKED_PUBLISHED",
+        "OWNER_EXPLICIT_RELEASE"
+      ],
+      "description": "MERGE_READY lease'i otomatik serbest BIRAKMAZ (SS3.2)."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "RELEASED" } } },
+      "then": { "required": ["releasedAt", "releaseReason"] }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "identifier": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9._-]{2,63}$" }
+  }
+}
