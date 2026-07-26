@@ -1,8 +1,24 @@
 "use client";
 
+// CLIENT-POL-F-R01: müvekkile dönük CROSS-CASE FİNANSAL AGGREGATE gösterimi kaldırıldı.
+// Charter §22.10 "CLIENT-FACING FINANCIAL AGGREGATES: NOT AUTHORIZED UNDER POL-F OPTION B —
+// portala aggregate olarak sunulamaz: claimed amount total · collected amount total ...
+// `principalAmount` canonical aggregate source DEĞİLDİR" ve §22.11 "BP-06 bu alanları aggregate
+// total'a DÖNÜŞTÜREMEZ ... FINANCIAL AGGREGATE VISIBILITY: NOT AUTHORIZED" hükümleri gereği:
+//  - "Toplam Alacak" (cross-case Σ principalAmount) kaldırıldı,
+//  - "Tahsil Edilen" (Σ collections; TRACK-B-U00B'de API'den kaldırılan alana bağlı ölü kod)
+//    türetmesiyle birlikte tamamen kaldırıldı.
+// Yerine BAŞKA finansal aggregate/placeholder KONULMADI (§22.5 financial totals yasağı).
+// KORUNAN: tekil case bazında `principalAmount` gösterimi ("Son Dosyalar" satırları) — §23.9
+// "claimed amount partial case-level context olarak PRESENTED OLABİLİR" (single-object).
+// KORUNAN: "Toplam Dosya"/"Aktif Dosya" — §23.6 "pagination/kayıt-sayısı business aggregate
+// DEĞİLDİR" + §22.4 non-financial operational count.
+// Emsal: TRACK-B-U00 (PR #1582) aynı deseni case-detail'de uygulamıştı (kart kaldır, grid'i
+// kalan kart sayısına indir, boş placeholder EKLEME).
+
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { FileText, DollarSign, Clock, TrendingUp, Loader2 } from "lucide-react";
+import { FileText, Clock, Loader2 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -32,10 +48,6 @@ export default function PortalHomePage() {
     }
   };
 
-  const totalPrincipal = cases.reduce((sum, c) => sum + Number(c.principalAmount || 0), 0);
-  const totalCollected = cases.reduce((sum, c) => 
-    sum + c.collections?.reduce((s: number, col: any) => s + Number(col.amount || 0), 0) || 0, 0
-  );
   const activeCases = cases.filter(c => c.caseStatus === "DERDEST" || c.caseStatus === "ISLEMDE").length;
 
   if (loading) {
@@ -53,8 +65,11 @@ export default function PortalHomePage() {
         <p className="text-gray-500">Dosyalarınızın özet durumu</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* Stats — CLIENT-POL-F-R01: "Toplam Alacak" (cross-case Σ principalAmount) ve
+          "Tahsil Edilen" (Σ collections, ölü referans) kartları §22.10/§22.11 gereği
+          kaldırıldı. Kalan 2 non-financial kart için grid 4→2 koloona indirildi;
+          boş placeholder veya ikame finansal değer EKLENMEDİ. */}
+      <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-lg border p-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -74,28 +89,6 @@ export default function PortalHomePage() {
             <div>
               <p className="text-sm text-gray-500">Aktif Dosya</p>
               <p className="text-2xl font-bold">{activeCases}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-lg">
-              <DollarSign className="h-5 w-5 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Toplam Alacak</p>
-              <p className="text-2xl font-bold">{totalPrincipal.toLocaleString("tr-TR")} ₺</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-100 rounded-lg">
-              <TrendingUp className="h-5 w-5 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Tahsil Edilen</p>
-              <p className="text-2xl font-bold">{totalCollected.toLocaleString("tr-TR")} ₺</p>
             </div>
           </div>
         </div>
