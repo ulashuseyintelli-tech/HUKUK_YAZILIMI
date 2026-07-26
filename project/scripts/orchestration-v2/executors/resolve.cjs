@@ -168,9 +168,18 @@ function scanPath(name, env) {
     process.platform === 'win32'
       ? (env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
       : [''];
+  // The extension-less name is always a candidate, but on POSIX `exts` is [''],
+  // so `name + ext` already IS the bare name and the concat below would offer
+  // the same path twice — resolving one file into two hits. Dedupe by absolute
+  // candidate path: two identical PATH entries collapse, while the same command
+  // found in two different directories is legitimately reported twice, because
+  // resolution order is what the caller needs to see.
+  const seen = new Set();
   for (const dir of pathValue.split(sep).filter(Boolean)) {
     const candidates = exts.map((e) => path.join(dir, name + e)).concat([path.join(dir, name)]);
     for (const candidate of candidates) {
+      if (seen.has(candidate)) continue;
+      seen.add(candidate);
       if (!isExecutableFile(candidate)) continue;
       (isDirectlySpawnable(candidate) ? direct : shims).push(candidate);
     }
