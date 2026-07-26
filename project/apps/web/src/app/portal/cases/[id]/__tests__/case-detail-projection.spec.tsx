@@ -100,12 +100,40 @@ describe("Portal case detail page — CLIENT-P2-U03-I01 explicit projection", ()
     expect(screen.getByText("Derdest")).toBeTruthy();
   });
 
-  it("[1a] TRACK-B-U00: 'Toplam Alacak' (Dosya Alacağı, Due toplamı) render edilir", async () => {
+  it("[1a] CLIENT-POL-F-R01: 'Toplam Alacak' (Σ Due.amount) kartı artık hiç render EDİLMEZ", async () => {
+    // ÖNCEKİ HALİ POZİTİFTİ ("...render edilir") — CLIENT-POL-F-R01 ile negatife çevrildi.
+    // §34.3 Track A'yı "yalnız SAKLI DEĞERLERİN AS-IS gösterimi (hiçbir hesaplama/türetme/
+    // formül olmadan)" ile sınırlar; `dues.reduce(...)` ile üretilen toplam tam olarak
+    // §34.3/§34.4'ün Track B'ye devrettiği "hesap dökümü/toplam"dır. §22.11 ayrıca
+    // single-object finansal alanların aggregate total'a DÖNÜŞTÜRÜLMESİNİ yasaklar.
     stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
     render(<PortalCaseDetailPage />);
-    await waitFor(() => expect(screen.getByText("Toplam Alacak")).toBeTruthy());
-    // Not: tutar metni ("1.000 ₺") fixture'da tek Due kalemiyle çakışabildiğinden
-    // (aynı toplam), yalnız etiketin render edildiği kontrol edilir — kart varlığı yeterli kanıt.
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    expect(screen.queryByText("Toplam Alacak")).toBeNull();
+  });
+
+  it("[1a2] CLIENT-POL-F-R01: çoklu Due kaleminin TOPLAMI hiçbir yerde görünmez (1000+2500=3500 sızmıyor)", async () => {
+    // Fixture'ın tek Due'su ile toplam çakışmasın diye ikinci bir kalem eklenir:
+    // böylece "toplam" değeri (3.500) tekil kalemlerin hiçbirine eşit olmaz.
+    stubFetch({
+      ok: true,
+      json: async () => ({
+        ...APPROVED_CASE_DETAIL,
+        dues: [
+          APPROVED_CASE_DETAIL.dues[0],
+          { ...APPROVED_CASE_DETAIL.dues[0], id: "due-2", type: "FAIZ", amount: "2500" },
+        ],
+      }),
+    });
+    const { container } = render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+
+    const text = container.textContent ?? "";
+    expect(text).not.toContain("3.500");
+    expect(text).not.toContain("3500");
+    // KORUNAN: tekil kalemler AS-IS görünmeye devam eder (§34.2 onaylı Due contract).
+    expect(text).toContain("1.000");
+    expect(text).toContain("2.500");
   });
 
   it("[1b] TRACK-B-U00: 'Tahsil Edilen' kartı artık hiç render edilmez", async () => {
@@ -151,16 +179,22 @@ describe("Portal case detail page — CLIENT-P2-U03-I01 explicit projection", ()
     stubFetch({ ok: true, json: async () => withoutCollections });
     render(<PortalCaseDetailPage />);
     await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
-    expect(screen.getByText("Toplam Alacak")).toBeTruthy();
+    // CLIENT-POL-F-R01: eskiden burada 'Toplam Alacak' varlığı doğrulanıyordu; o kart
+    // kaldırıldığı için artık kalan non-financial kart ('Aşama') üzerinden doğrulanır.
+    expect(screen.getByText("Aşama")).toBeTruthy();
   });
 
-  it("[1g] TRACK-B-U00: iki kart kaldırıldıktan sonra boş placeholder kart render edilmez (yalnız 'Toplam Alacak' ve 'Aşama' kalır)", async () => {
+  it("[1g] CLIENT-POL-F-R01: finansal kartlar kaldırıldıktan sonra boş placeholder render edilmez (yalnız 'Aşama' kalır)", async () => {
+    // TRACK-B-U00 4→2, CLIENT-POL-F-R01 2→1 koloona indirdi; ikame değer/placeholder yok.
     stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
     const { container } = render(<PortalCaseDetailPage />);
     await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
-    const statCards = container.querySelectorAll(".grid.grid-cols-2.gap-4 > div");
-    expect(statCards.length).toBe(2);
+    const statCards = container.querySelectorAll(".grid.grid-cols-1.gap-4 > div");
+    expect(statCards.length).toBe(1);
     expect(screen.getByText("Aşama")).toBeTruthy();
+    // Yanıltıcı sahte finansal değer de gösterilmemeli.
+    expect(screen.queryByText("—")).toBeNull();
+    expect(screen.queryByText("hesaplanamadı")).toBeNull();
   });
 
   it("[2] onaylı debtor alanları render edilir (debtor.name, debtor.type)", async () => {

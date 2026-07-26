@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, User, DollarSign, Loader2, Clock, StickyNote } from "lucide-react";
+import { ArrowLeft, FileText, User, Loader2, Clock, StickyNote } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -132,8 +132,6 @@ export default function PortalCaseDetailPage() {
     );
   }
 
-  const totalDue = caseData.dues?.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0) || 0;
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -168,19 +166,15 @@ export default function PortalCaseDetailPage() {
 
       {/* Stats — CLIENT-P2-U03-TRACK-B-U00: "Tahsil Edilen"/"Tahsilat Oranı" kaldırıldı
           (§33.4 Financial Disclosure Gate ile çelişen, onaysız ham tahsilat türetmesiydi).
-          Kalan 2 kart için grid 4→2 koloona indirildi; boş placeholder EKLENMEDİ. */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded-lg border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <DollarSign className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Toplam Alacak</p>
-              <p className="text-xl font-bold">{totalDue.toLocaleString("tr-TR")} ₺</p>
-            </div>
-          </div>
-        </div>
+          CLIENT-POL-F-R01: "Toplam Alacak" (Σ Due.amount) da kaldırıldı — §34.3 Track A'yı
+          "yalnız SAKLI DEĞERLERİN AS-IS gösterimi (hiçbir hesaplama/türetme/formül olmadan)"
+          ile sınırlar; `reduce` ile üretilip "Toplam Alacak" etiketlenen değer tam olarak
+          §34.3/§34.4'ün Track B'ye devrettiği "hesap dökümü/toplam"dır. §22.11 ayrıca
+          single-object finansal alanların aggregate total'a DÖNÜŞTÜRÜLMESİNİ yasaklar.
+          Kalan tek non-financial kart için grid 2→1 koloona indirildi; ikame finansal değer
+          veya boş placeholder EKLENMEDİ. Tekil Due kalemleri (aşağıdaki "Alacak Kalemleri")
+          AS-IS gösterimle KORUNDU. */}
+      <div className="grid grid-cols-1 gap-4">
         <div className="bg-white rounded-lg border p-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-amber-100 rounded-lg">
