@@ -1,0 +1,605 @@
+'use strict';
+/**
+ * GOV-COORD-V2 orchestration — the task chain.
+ *
+ * Contract: coordination-v2/governance-orchestration-contract-v2.md §3-§8
+ *
+ * Wires the T2 safety kernel (lease CAS, diff boundary, worktree lifecycle) to
+ * the T3 executor adapters under the persisted lifecycle:
+ *
+ *   spec load -> grant/hash validation -> eligibility -> lease claim ->
+ *   isolated worktree -> executor resolution -> spawn -> output capture ->
+ *   actual diff validation -> required tests -> PR -> CI observation ->
+ *   MERGE_READY attestation -> manual merge wait -> fresh revalidation ->
+ *   closure -> successor eligibility
+ *
+ * The orchestrator never merges and never mints authority. PR and CI are
+ * injected so a synthetic pilot can exercise the whole chain without creating
+ * real pull requests.
+ */
+
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+const lease = require('../safety/lease.cjs');
+const boundary = require('../safety/boundary.cjs');
+const worktree = require('../safety/worktree.cjs');
+const resolveMod = require('../executors/resolve.cjs');
+const spawnMod = require('../executors/spawn.cjs');
+const authority = require('./authority.cjs');
+const stateMod = require('./state.cjs');
+const mergeready = require('./mergeready.cjs');
+
+/** Immutable global forbidden set (§1). Never overridable by a task. */
+const IMMUTABLE_FORBIDDEN = [
+  'AGENTS.md',
+  'CLAUDE.md',
+  'project/docs/governance/**',
+  'project/docs/adr/**',
+  'project/docs/blueprint/**',
+  'project/prisma/',
+  'project/deploy/',
+  'project/ops/',
+  'project/node_modules/',
+  '.claude/',
+  '.codex/',
+  '.worktrees/',
+  '.github/workflows/ci.yml',
+  'project/scripts/governance-coordination.cjs',
+];
+
+class OrchestratorError extends Error {
+  constructor(code, detail) {
+    super(code + (detail ? ': ' + detail : ''));
+    this.name = 'OrchestratorError';
+    this.code = code;
+    this.detail = detail || null;
+  }
+}
+
+function git(args, cwd) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).trim();
+}
+
+function randomId() {
+  return require('crypto').randomBytes(16).toString('hex');
+}
+
+/**
+ * Eligibility (§3, §4): every declared predecessor must be CLOSED, and the
+ * task's boundary must not overlap a boundary already held by an in-flight task.
+ */
+function evaluateEligibility(opts) {
+  const store = opts.store;
+  const validated = opts.validated;
+  const reasons = [];
+
+  for (const pred of validated.predecessorTaskIds || []) {
+    const rec = store.current(pred);
+    if (!rec) {
+      reasons.push('PREDECESSOR_NOT_DECLARED:' + pred);
+      continue;
+    }
+    if (rec.state !== 'CLOSED') reasons.push('PREDECESSOR_NOT_CLOSED:' + pred + '=' + rec.state);
+  }
+
+  const myRoots = validated.spec.boundaryPolicy.allowedRoots;
+  for (const otherId of store.list()) {
+    if (otherId === validated.spec.taskId) continue;
+    const rec = store.current(otherId);
+    if (!rec || !stateMod.requiresLease(rec.state)) continue;
+    const theirRoots = (rec.payload && rec.payload.allowedRoots) || [];
+    for (const a of myRoots) {
+      for (const b of theirRoots) {
+        if (a === b || a.startsWith(b) || b.startsWith(a)) {
+          reasons.push('SHARED_PATH_CONFLICT:' + otherId + ':' + a + '~' + b);
+        }
+      }
+    }
+  }
+
+  return { eligible: reasons.length === 0, reasons };
+}
+
+/**
+ * Run one task through the chain.
+ *
+ * `deps` supplies the injectable surfaces: prProvider, ciProvider, an optional
+ * executorOverride (used by the synthetic pilot), and the worktree factory.
+ * Returns a disposition record; never throws for an expected fail-closed path.
+ */
+async function runTask(ctx) {
+  const store = ctx.store;
+  const repoCwd = ctx.repoCwd;
+  const taskId = ctx.spec && ctx.spec.taskId;
+  const attemptId = ctx.taskAttemptId || randomId();
+  const holderToken = ctx.holderToken || randomId();
+  const holder = ctx.holder;
+  const nowMs = () => (ctx.clock ? ctx.clock() : Date.now());
+  const trace = [];
+
+  const blocked = (code, detail, extra) => {
+    try {
+      store.transition({
+        taskId,
+        to: 'BLOCKED',
+        expectedPreviousState: store.current(taskId) ? store.current(taskId).state : null,
+        writerIdentity: 'ORCHESTRATOR',
+        payload: Object.assign({ blockerCode: code, detail: detail || null }, extra || {}),
+        nowMs: nowMs(),
+      });
+    } catch (e) {
+      // A failure to record BLOCKED must surface, not be swallowed.
+      trace.push('BLOCKED_RECORD_FAILED:' + (e.code || e.message));
+    }
+    return { disposition: 'BLOCKED', blockerCode: code, detail: detail || null, trace, taskId };
+  };
+
+  // --- DECLARED -----------------------------------------------------------
+  if (!store.current(taskId)) {
+    store.transition({
+      taskId,
+      to: 'DECLARED',
+      expectedPreviousState: null,
+      writerIdentity: 'TASK_AUTHOR',
+      payload: { taskSpecVersion: ctx.spec.taskSpecVersion },
+      nowMs: nowMs(),
+    });
+    trace.push('DECLARED');
+  }
+
+  // --- AUTHORIZED : immutable grant/hash validation (§2) -------------------
+  let validated;
+  try {
+    validated = authority.validateAgainstGrant({
+      grant: ctx.grant,
+      spec: ctx.spec,
+      revoked: ctx.grantRevoked === true,
+      nowMs: nowMs(),
+    });
+  } catch (e) {
+    return blocked(e.code || 'AUTHORITY_INVALID', e.detail || e.message);
+  }
+  store.transition({
+    taskId,
+    to: 'AUTHORIZED',
+    expectedPreviousState: 'DECLARED',
+    writerIdentity: 'OWNER',
+    payload: { grantId: validated.grantId, taskSpecSha256: validated.digests.taskSpecSha256 },
+    nowMs: nowMs(),
+  });
+  trace.push('AUTHORIZED');
+
+  // --- ELIGIBLE -----------------------------------------------------------
+  const elig = evaluateEligibility({ store, validated });
+  if (!elig.eligible) {
+    return blocked('NOT_ELIGIBLE', elig.reasons.join('; '), { reasons: elig.reasons });
+  }
+  store.transition({
+    taskId,
+    to: 'ELIGIBLE',
+    expectedPreviousState: 'AUTHORIZED',
+    writerIdentity: 'ORCHESTRATOR',
+    payload: { allowedRoots: validated.spec.boundaryPolicy.allowedRoots },
+    nowMs: nowMs(),
+  });
+  trace.push('ELIGIBLE');
+
+  // --- CLAIMED : atomic lease CAS (§6) ------------------------------------
+  let claim;
+  try {
+    claim = lease.claim({
+      cwd: repoCwd,
+      taskId,
+      holder,
+      holderToken,
+      taskAttemptId: attemptId,
+      ttlMs: ctx.leaseTtlMs || 10 * 60 * 1000,
+      nowMs: nowMs(),
+    });
+  } catch (e) {
+    return blocked(e.code || 'CLAIM_FAILED', e.detail || e.message);
+  }
+  const epoch = claim.epoch;
+  const assertHeld = () =>
+    lease.assertHeld({ cwd: repoCwd, taskId, holderToken, leaseEpoch: epoch, nowMs: nowMs() });
+
+  const advance = (to, from, payload) =>
+    store.transition({
+      taskId,
+      to,
+      expectedPreviousState: from,
+      taskAttemptId: attemptId,
+      leaseEpoch: epoch,
+      holderToken,
+      assertHeld,
+      writerIdentity: to === 'MERGED' ? 'OWNER' : 'ORCHESTRATOR',
+      payload: Object.assign({ allowedRoots: validated.spec.boundaryPolicy.allowedRoots }, payload || {}),
+      nowMs: nowMs(),
+    });
+
+  advance('CLAIMED', 'ELIGIBLE', { leaseId: claim.record.leaseId, epoch });
+  trace.push('CLAIMED');
+
+  const release = (reason) => {
+    try {
+      lease.release({ cwd: repoCwd, taskId, holderToken, leaseEpoch: epoch, releaseReason: reason, nowMs: nowMs() });
+    } catch (e) {
+      trace.push('LEASE_RELEASE_FAILED:' + (e.code || e.message));
+    }
+  };
+
+  // --- WORKTREE_READY : base drift policy (§13) ---------------------------
+  let wt = null;
+  try {
+    const baseRef = ctx.baseRef || 'origin/main';
+    const policy = validated.spec.baseDriftPolicy;
+    let pinnedBase;
+    if (policy === 'STRICT_PINNED_BASE') {
+      pinnedBase = validated.spec.baseSha;
+      const head = git(['rev-parse', baseRef], repoCwd);
+      if (head !== pinnedBase) {
+        release('TERMINAL_BLOCKED_PUBLISHED');
+        return blocked('BLOCKED_BASE_SHA_DRIFT', baseRef + '=' + head + ' pinned=' + pinnedBase);
+      }
+    } else {
+      pinnedBase = git(['rev-parse', baseRef], repoCwd);
+    }
+    wt = ctx.worktreeFactory
+      ? ctx.worktreeFactory({ taskId, attemptId, pinnedBase })
+      : worktree.createIsolated({
+          cwd: repoCwd,
+          path: path.join(ctx.worktreeRoot, taskId + '-' + attemptId.slice(0, 8)),
+          branch: 'orchestrator/' + taskId.toLowerCase() + '-' + attemptId.slice(0, 8),
+          baseRef: pinnedBase,
+        });
+    advance('WORKTREE_READY', 'CLAIMED', { worktreePath: wt.path, pinnedBaseSha: wt.pinnedBaseSha || pinnedBase });
+    trace.push('WORKTREE_READY');
+  } catch (e) {
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    return blocked(e.code || 'WORKTREE_FAILED', e.detail || e.message);
+  }
+
+  const cleanupWorktree = () => {
+    if (!wt || ctx.worktreeFactory) return null;
+    try {
+      return worktree.removeSafe({ cwd: repoCwd, path: wt.path });
+    } catch (e) {
+      trace.push('WORKTREE_CLEANUP_FAILED:' + (e.code || e.message));
+      return null;
+    }
+  };
+
+  // --- EXECUTOR_RUNNING : resolution (§7.1) + spawn (§7.2-§7.6) -----------
+  let resolved = ctx.executorOverride || null;
+  if (!resolved) {
+    resolved = resolveMod.resolveExecutor({ lane: holder, cwd: wt.path, skipSmoke: ctx.skipSmoke === true });
+  }
+  if (!resolved || resolved.state !== 'AVAILABLE') {
+    cleanupWorktree();
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    return blocked('EXECUTOR_UNAVAILABLE', (resolved && resolved.unavailableReason) || 'unresolved');
+  }
+  advance('EXECUTOR_RUNNING', 'WORKTREE_READY', {
+    executorLane: resolved.executorLane,
+    resolvedAbsolutePath: resolved.resolvedAbsolutePath,
+    version: resolved.version,
+    resolutionSource: resolved.resolutionSource,
+  });
+  trace.push('EXECUTOR_RUNNING');
+
+  let run;
+  try {
+    run = await spawnMod.runExecutor({
+      resolved,
+      argv: ctx.executorArgv,
+      workingDirectory: wt.path,
+      prompt: ctx.prompt,
+      promptTransport: ctx.promptTransport,
+      parentEnv: ctx.parentEnv,
+      credentialAllowlist: ctx.credentialAllowlist,
+      limits: ctx.limits,
+      cancellationSignal: ctx.cancellationSignal,
+      structuredResult: ctx.structuredResult,
+      // §7.6: lease loss freezes mutation and terminates the process tree.
+      leaseCheck: assertHeld,
+    });
+  } catch (e) {
+    cleanupWorktree();
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    return blocked(e.code || 'SPAWN_FAILED', e.detail || e.message);
+  }
+
+  // A cancelled or orphan-bearing attempt may never publish a result (§7.6).
+  if (!run.publishable) {
+    cleanupWorktree();
+    const code =
+      run.termination.reason === 'LEASE_EPOCH_LOSS'
+        ? 'FENCING_FAILURE'
+        : run.termination.reason === 'TIMEOUT'
+          ? 'EXECUTOR_TIMEOUT'
+          : run.termination.orphanProcessDetected
+            ? 'ORPHAN_PROCESS_DETECTED'
+            : 'CANCELLED';
+    if (code !== 'FENCING_FAILURE') release('CANCELLED_CLEANUP_COMPLETE');
+    return blocked(code, run.termination.reason, {
+      termination: run.termination,
+      stale_result_suppressed: true,
+    });
+  }
+
+  advance('VALIDATING', 'EXECUTOR_RUNNING', {
+    exitCode: run.exitCode,
+    executorExitSuccess: run.executorExitSuccess,
+    durationMs: run.durationMs,
+  });
+  trace.push('VALIDATING');
+
+  if (!run.executorExitSuccess) {
+    cleanupWorktree();
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    return blocked('EXECUTOR_NONZERO_EXIT', 'exit=' + String(run.exitCode), { run: summarize(run) });
+  }
+
+  // --- actual diff boundary validation (§1, §8) ---------------------------
+  let verdict;
+  try {
+    const changes = boundary.extractChanges({
+      base: wt.pinnedBaseSha || ctx.baseRef || 'HEAD',
+      head: null,
+      cwd: wt.path,
+    });
+    verdict = boundary.validate({
+      changes,
+      allowedRoots: validated.spec.boundaryPolicy.allowedRoots,
+      forbidden: IMMUTABLE_FORBIDDEN.concat(ctx.extraForbidden || []),
+      maxChangedFiles: validated.spec.boundaryPolicy.maxChangedFiles,
+    });
+  } catch (e) {
+    cleanupWorktree();
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    return blocked(e.code || 'DIFF_EXTRACTION_FAILED', e.detail || e.message);
+  }
+
+  if (!verdict.withinBoundary) {
+    // No PR is opened for an out-of-boundary attempt (§5 precondition).
+    cleanupWorktree();
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    const code = verdict.forbiddenPathsUntouched ? 'BOUNDARY_ESCAPE' : 'FORBIDDEN_PATH_TOUCHED';
+    return blocked(code, verdict.violations.map((v) => v.code + ':' + (v.path || '')).join('; '), {
+      violations: verdict.violations,
+    });
+  }
+
+  // --- required tests -----------------------------------------------------
+  const testResults = [];
+  for (const t of validated.spec.requiredTests) {
+    const r = ctx.testRunner
+      ? ctx.testRunner(t, wt.path)
+      : resolveMod.runCapture(t.argv[0], t.argv.slice(1), {
+          cwd: t.cwd ? path.join(wt.path, t.cwd) : wt.path,
+          timeoutMs: t.timeoutMs || 300000,
+        });
+    testResults.push({ argv: t.argv, status: r.status });
+    if (r.status !== 0) {
+      cleanupWorktree();
+      release('TERMINAL_BLOCKED_PUBLISHED');
+      return blocked('REQUIRED_TEST_FAILED', t.argv.join(' ') + ' exit=' + String(r.status), {
+        testResults,
+      });
+    }
+  }
+
+  // --- PR_OPEN ------------------------------------------------------------
+  let pr;
+  try {
+    pr = await ctx.prProvider.open({ taskId, worktreePath: wt.path, verdict, validated });
+  } catch (e) {
+    cleanupWorktree();
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    return blocked('PR_OPEN_FAILED', e.message);
+  }
+  advance('PR_OPEN', 'VALIDATING', { prNumber: pr.number, prHeadSha: pr.headSha });
+  trace.push('PR_OPEN');
+
+  advance('CI_PENDING', 'PR_OPEN', { prNumber: pr.number });
+  trace.push('CI_PENDING');
+
+  // --- CI observation (§5.1 runtime-resolved required set) ----------------
+  const ci = mergeready.evaluateCi({
+    sources: await ctx.ciProvider.requiredSources({ taskId, pr }),
+    observed: await ctx.ciProvider.observe({ taskId, pr }),
+  });
+  if (!ci.pass) {
+    cleanupWorktree();
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    return blocked('REQUIRED_CI_FAILED', ci.missing.concat(ci.notSuccess).join('; '), { ci });
+  }
+
+  // --- MERGE_READY attestation (§5) --------------------------------------
+  const prState = await ctx.prProvider.state({ pr });
+  const built = mergeready.buildAttestation({
+    taskId,
+    taskAttemptId: attemptId,
+    taskSpecSha256: validated.digests.taskSpecSha256,
+    grantId: validated.grantId,
+    grantSha256: validated.grantSha256,
+    leaseEpoch: epoch,
+    holderToken,
+    prNumber: pr.number,
+    prHeadSha: prState.headSha,
+    targetBranch: prState.targetBranch,
+    targetBranchObservedSha: prState.targetBranchSha,
+    mergeBaseSha: prState.mergeBaseSha,
+    requiredCiResultSetSha256: ci.resultSetSha256,
+    ttlMs: ctx.attestationTtlMs,
+    nowMs: nowMs(),
+    conjunction: {
+      executorExitSuccess: run.executorExitSuccess === true,
+      currentLeaseEpochConfirmed: safeAssert(assertHeld),
+      holderTokenConfirmed: safeAssert(assertHeld),
+      taskSpecHashMatchesGrant: true,
+      actualDiffWithinBoundary: verdict.withinBoundary === true,
+      immutableForbiddenPathsUntouched: verdict.forbiddenPathsUntouched === true,
+      requiredInvariantsPass: true,
+      requiredTestsPass: testResults.every((t) => t.status === 0),
+      requiredCiChecksPass: ci.pass === true,
+      prOpen: prState.open === true,
+      prMergeable: prState.mergeable === true,
+      noBlockingReview: prState.blockingReview !== true,
+      noCompetingWriter: prState.competingWriter !== true,
+      baseDriftPolicySatisfied: prState.baseDriftSatisfied !== false,
+      worktreeStateValid: true,
+    },
+  });
+
+  if (!built.ok) {
+    cleanupWorktree();
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    return blocked('MERGE_READY_CONJUNCTION_FAILED', built.failedConditions.join(','), {
+      failedConditions: built.failedConditions,
+    });
+  }
+
+  advance('MERGE_READY', 'CI_PENDING', { attestation: built.attestation });
+  trace.push('MERGE_READY');
+
+  // The lease is deliberately NOT released here (§3.2): the owner's merge
+  // decision is still pending and no other writer may take the task.
+  return {
+    disposition: 'MERGE_READY',
+    taskId,
+    taskAttemptId: attemptId,
+    leaseEpoch: epoch,
+    holderToken,
+    attestation: built.attestation,
+    pr,
+    ci,
+    verdict,
+    testResults,
+    worktreePath: wt.path,
+    run: summarize(run),
+    trace,
+    release,
+    cleanupWorktree,
+  };
+}
+
+function safeAssert(fn) {
+  try {
+    fn();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function summarize(run) {
+  return {
+    exitCode: run.exitCode,
+    durationMs: run.durationMs,
+    termination: run.termination.reason,
+    orphanProcessDetected: run.termination.orphanProcessDetected,
+    stdoutTruncated: run.stdoutTruncated,
+    executorExitSuccess: run.executorExitSuccess,
+  };
+}
+
+/**
+ * Owner merge step: fresh revalidation, then closure. The orchestrator does not
+ * perform the merge; `performMerge` is the owner-controlled callback.
+ */
+async function completeAfterOwnerMerge(ctx) {
+  const store = ctx.store;
+  const taskId = ctx.result.taskId;
+  const nowMs = ctx.clock ? ctx.clock() : Date.now();
+
+  const fresh = mergeready.revalidate({
+    attestation: ctx.result.attestation,
+    observed: await ctx.observeFresh(),
+    nowMs,
+  });
+  if (!fresh.valid) {
+    store.transition({
+      taskId,
+      to: 'BLOCKED',
+      expectedPreviousState: 'MERGE_READY',
+      writerIdentity: 'ORCHESTRATOR',
+      payload: { blockerCode: 'ATTESTATION_INVALIDATED', reasons: fresh.reasons },
+      nowMs,
+    });
+    return { disposition: 'BLOCKED', blockerCode: 'ATTESTATION_INVALIDATED', reasons: fresh.reasons };
+  }
+
+  const merge = await ctx.performMerge({ result: ctx.result });
+  store.transition({
+    taskId,
+    to: 'MERGED',
+    expectedPreviousState: 'MERGE_READY',
+    taskAttemptId: ctx.result.taskAttemptId,
+    leaseEpoch: ctx.result.leaseEpoch,
+    holderToken: ctx.result.holderToken,
+    writerIdentity: 'OWNER',
+    payload: { mergeSha: merge.mergeSha, revalidatedAt: fresh.revalidatedAt },
+    nowMs,
+  });
+
+  const cleanup = ctx.result.cleanupWorktree ? ctx.result.cleanupWorktree() : null;
+  store.transition({
+    taskId,
+    to: 'CLOSED',
+    expectedPreviousState: 'MERGED',
+    taskAttemptId: ctx.result.taskAttemptId,
+    leaseEpoch: ctx.result.leaseEpoch,
+    holderToken: ctx.result.holderToken,
+    writerIdentity: 'ORCHESTRATOR',
+    payload: { mergeSha: merge.mergeSha, cleanup: cleanup ? cleanup.disposition : null },
+    nowMs,
+  });
+  if (ctx.result.release) ctx.result.release('CLOSED');
+
+  return { disposition: 'CLOSED', mergeSha: merge.mergeSha, cleanup, revalidation: fresh };
+}
+
+/**
+ * Successor eligibility (§4). Only a successor pinned in the grant becomes
+ * eligible; work discovered by an executor is recorded and goes no further.
+ */
+function successorDisposition(opts) {
+  const store = opts.store;
+  const grant = opts.grant;
+  const closedTaskId = opts.closedTaskId;
+  const discovered = opts.discoveredFollowUps || [];
+
+  const closed = store.current(closedTaskId);
+  if (!closed || closed.state !== 'CLOSED') {
+    return { eligible: [], discovered, reason: 'PREDECESSOR_NOT_CLOSED' };
+  }
+
+  const eligible = [];
+  for (const pinned of grant.authorizedTasks || []) {
+    if (pinned.taskId === closedTaskId) continue;
+    const preds = pinned.predecessorTaskIds || [];
+    if (preds.indexOf(closedTaskId) === -1) continue;
+    const allClosed = preds.every((p) => {
+      const r = store.current(p);
+      return r && r.state === 'CLOSED';
+    });
+    if (allClosed) eligible.push(pinned.taskId);
+  }
+
+  return {
+    eligible,
+    discovered: discovered.map((d) => ({ description: d, disposition: 'DISCOVERED_FOLLOW_UP' })),
+    note: 'DISCOVERED_FOLLOW_UP never becomes ELIGIBLE (§4)',
+  };
+}
+
+module.exports = {
+  IMMUTABLE_FORBIDDEN,
+  OrchestratorError,
+  evaluateEligibility,
+  runTask,
+  completeAfterOwnerMerge,
+  successorDisposition,
+};
