@@ -2,6 +2,12 @@
 
 import { useEffect, useState, useRef } from "react";
 import { FileText, Upload, Download, Trash2, Clock, CheckCircle, XCircle, File } from "lucide-react";
+// CLIENT-CONFIG-P01: belge çağrıları `NEXT_PUBLIC_API_URL`'i hiç okumayan sabit
+// `http://localhost:8080` adresine gidiyordu — farklı origin'li dağıtımlarda belge
+// listeleme/yükleme/indirme/silme sessizce çalışmıyordu. İndirme akışında yalnız API
+// ENDPOINT'i bu helper'dan gelir; `URL.createObjectURL` ile üretilen yerel blob URL'i
+// API base URL ile BİRLEŞTİRİLMEZ (mevcut davranış korundu).
+import { portalApiUrl } from "@/lib/config/portal-api-url";
 
 interface Document {
   id: string;
@@ -38,7 +44,7 @@ export default function PortalDocumentsPage() {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     try {
-      const res = await fetch("http://localhost:8080/api/portal/documents", {
+      const res = await fetch(portalApiUrl("/api/portal/documents"), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -65,7 +71,7 @@ export default function PortalDocumentsPage() {
       formData.append("title", uploadForm.title);
       if (uploadForm.description) formData.append("description", uploadForm.description);
 
-      const res = await fetch("http://localhost:8080/api/portal/documents/upload", {
+      const res = await fetch(portalApiUrl("/api/portal/documents/upload"), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -88,7 +94,7 @@ export default function PortalDocumentsPage() {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     try {
-      const res = await fetch(`http://localhost:8080/api/portal/documents/${doc.id}/download`, {
+      const res = await fetch(portalApiUrl(`/api/portal/documents/${doc.id}/download`), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -110,7 +116,7 @@ export default function PortalDocumentsPage() {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     try {
-      const res = await fetch(`http://localhost:8080/api/portal/documents/${id}`, {
+      const res = await fetch(portalApiUrl(`/api/portal/documents/${id}`), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

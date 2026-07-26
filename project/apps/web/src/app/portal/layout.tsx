@@ -4,6 +4,10 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { Scale, FileText, FileCheck, LogOut, User, Home, Bell, Check, FolderOpen, MessageCircle } from "lucide-react";
+// CLIENT-CONFIG-P01: bildirim çağrıları `NEXT_PUBLIC_API_URL`'i hiç okumayan sabit
+// `http://localhost:8080` adresine gidiyordu — web ile API farklı origin'deyse (staging/
+// production) bildirim zili sessizce çalışmıyordu (catch blokları hatayı yutuyor).
+import { portalApiUrl } from "@/lib/config/portal-api-url";
 
 interface Notification {
   id: string;
@@ -47,7 +51,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
     const fetchUnreadCount = async () => {
       try {
-        const res = await fetch("http://localhost:8080/api/portal/notifications/unread-count", {
+        const res = await fetch(portalApiUrl("/api/portal/notifications/unread-count"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
@@ -77,7 +81,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     try {
-      const res = await fetch("http://localhost:8080/api/portal/notifications", {
+      const res = await fetch(portalApiUrl("/api/portal/notifications"), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -98,7 +102,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     try {
-      await fetch(`http://localhost:8080/api/portal/notifications/${id}/read`, {
+      await fetch(portalApiUrl(`/api/portal/notifications/${id}/read`), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -111,7 +115,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     try {
-      await fetch("http://localhost:8080/api/portal/notifications/read-all", {
+      await fetch(portalApiUrl("/api/portal/notifications/read-all"), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

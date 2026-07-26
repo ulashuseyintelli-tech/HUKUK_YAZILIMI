@@ -2,6 +2,10 @@
 
 import { useEffect, useState, useRef } from "react";
 import { MessageCircle, Send, User, Building2 } from "lucide-react";
+// CLIENT-CONFIG-P01: mesaj çağrıları `NEXT_PUBLIC_API_URL`'i hiç okumayan sabit
+// `http://localhost:8080` adresine gidiyordu — farklı origin'li dağıtımlarda mesajlaşma
+// (listeleme/okundu-işaretleme/gönderme) sessizce çalışmıyordu.
+import { portalApiUrl } from "@/lib/config/portal-api-url";
 
 interface Message {
   id: string;
@@ -39,7 +43,7 @@ export default function PortalMessagesPage() {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     try {
-      const res = await fetch("http://localhost:8080/api/portal/messages", {
+      const res = await fetch(portalApiUrl("/api/portal/messages"), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -57,7 +61,7 @@ export default function PortalMessagesPage() {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     try {
-      await fetch("http://localhost:8080/api/portal/messages/mark-read", {
+      await fetch(portalApiUrl("/api/portal/messages/mark-read"), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -71,7 +75,7 @@ export default function PortalMessagesPage() {
 
     setSending(true);
     try {
-      const res = await fetch("http://localhost:8080/api/portal/messages", {
+      const res = await fetch(portalApiUrl("/api/portal/messages"), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
