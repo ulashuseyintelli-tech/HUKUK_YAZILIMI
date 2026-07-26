@@ -153,6 +153,46 @@ const NONCOORD_PR_CLASSIFIER_REPAIR_R01 = Object.freeze({
 const NONCOORD_PR_CLASSIFIER_REPAIR_R01_PATHS = new Set(
   NONCOORD_PR_CLASSIFIER_REPAIR_R01.changedPaths,
 );
+const ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02 = Object.freeze({
+  mode: 'ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02',
+  baseSha: '344259a80ce790c9c09455b978ff124ced54bf63',
+  headRef: 'codex/dx-006-analyze-first-conditional-execution-r02',
+  changedPaths: Object.freeze([
+    Object.freeze({ status: 'M', path: 'AGENTS.md' }),
+    Object.freeze({ status: 'M', path: 'CLAUDE.md' }),
+    Object.freeze({ status: 'M', path: '.claude/CLAUDE.md' }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/PROJECT_MEMORY_PACK/03_OPERATING_MODEL.md',
+    }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/docs/governance/coordination-v2/governance-orchestration-contract-v2.md',
+    }),
+    Object.freeze({
+      status: 'A',
+      path: 'project/docs/governance/coordination-execution-grants/DX-006-ANALYZE-FIRST-CONDITIONAL-EXECUTION-R02.md',
+    }),
+    Object.freeze({ status: 'M', path: 'project/docs/governance/decision-log.md' }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/docs/governance/governance-writer-coordination-contract.md',
+    }),
+    Object.freeze({ status: 'M', path: 'project/docs/governance/process-rules.md' }),
+    Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.cjs' }),
+    Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.test.cjs' }),
+  ]),
+  semanticAuthority: Object.freeze({
+    kind: 'SEMANTIC_AUTHORITY',
+    path: 'project/docs/governance/decision-log.md',
+    recordId: 'DX-006-ANALYZE-FIRST-CONDITIONAL-EXECUTION-R02',
+  }),
+  executionGrant: Object.freeze({
+    kind: 'EXECUTION_GRANT',
+    path: 'project/docs/governance/coordination-execution-grants/DX-006-ANALYZE-FIRST-CONDITIONAL-EXECUTION-R02.md',
+    recordId: 'DX-006-ANALYZE-FIRST-CONDITIONAL-EXECUTION-R02-GRANT',
+  }),
+});
 const REGISTER_REPO_PATH =
   'project/docs/governance/governance-writer-coordination-register.md';
 const REQUEST_ONLY_BRANCH_PATTERN =
@@ -1069,6 +1109,21 @@ function hasExactModifiedPathSet(changes, expectedPaths) {
   );
 }
 
+function hasExactChangeSet(changes, expectedChanges) {
+  const expectedByPath = new Map(
+    expectedChanges.map((change) => [change.path, change.status]),
+  );
+  const actualPaths = new Set(changes.map((change) => change.path));
+  return (
+    changes.length === expectedByPath.size &&
+    actualPaths.size === expectedByPath.size &&
+    changes.every(
+      (change) =>
+        !change.oldPath && expectedByPath.get(change.path) === change.status,
+    )
+  );
+}
+
 function classifyPrChangeSet(changes, context = {}) {
   if (changes.length === 0) reject('EMPTY_PR_SCOPE', 'PR has no changes');
 
@@ -1122,6 +1177,14 @@ function classifyPrChangeSet(changes, context = {}) {
   }
 
   if (
+    context.base === ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.baseSha &&
+    context.headRef === ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef &&
+    hasExactChangeSet(changes, ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.changedPaths)
+  ) {
+    return { mode: ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.mode };
+  }
+
+  if (
     paths.size === BOOTSTRAP_ALL.size &&
     [...paths].every((candidate) => BOOTSTRAP_ALL.has(candidate)) &&
     changes.every((change) => {
@@ -1138,10 +1201,12 @@ function classifyPrChangeSet(changes, context = {}) {
       AUTHORITY_LOCATOR_REPAIR_I01.headRef,
       EXECUTION_BASE_ANCESTRY_REPAIR_I01.headRef,
       NONCOORD_PR_CLASSIFIER_REPAIR_R01.headRef,
+      ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef,
     ].includes(context.headRef) ||
     /^codex\/gov-coord-(?:v1-)?(?:authority-locator|register-test-fixture|execution-base-ancestry|noncoord-classifier)-repair-/.test(
       context.headRef || '',
-    )
+    ) ||
+    /^codex\/dx-006-analyze-first-conditional-execution-/.test(context.headRef || '')
   ) {
     reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'control-plane repair binding mismatch');
   }
@@ -1347,6 +1412,156 @@ function validateAuthorityLocatorRepairScope(options) {
   return { mode: AUTHORITY_LOCATOR_REPAIR_I01.mode };
 }
 
+function validateAnalyzeFirstConditionalExecutionR02Scope(options) {
+  const { base, head, headRef, changes, cwd = REPO_ROOT } = options;
+  if (
+    base !== ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.baseSha ||
+    headRef !== ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef ||
+    !hasExactChangeSet(changes, ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'analyze-first conditional execution R02 binding mismatch',
+    );
+  }
+
+  if (
+    changes.some(
+      (change) =>
+        isRequestInstancePath(change.path) ||
+        isResultInstancePath(change.path) ||
+        change.path === REGISTER_REPO_PATH,
+    )
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'analyze-first conditional execution R02 contains forbidden coordination instances',
+    );
+  }
+
+  const semanticAuthority = {
+    ...ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.semanticAuthority,
+    evidenceSha: base,
+  };
+  const executionGrant = {
+    ...ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.executionGrant,
+    evidenceSha: base,
+  };
+  if (semanticAuthority.recordId === executionGrant.recordId) {
+    reject(
+      'AUTHORITY_IDENTITY_COLLISION',
+      'semantic authority and execution grant must use distinct record identities',
+    );
+  }
+  validateAuthorityRecordAtRef(head, semanticAuthority, cwd);
+  validateAuthorityRecordAtRef(head, executionGrant, cwd);
+
+  for (const authorityRef of [semanticAuthority, executionGrant]) {
+    const marker = buildAuthorityMarker(authorityRef);
+    const content = gitShow(head, authorityRef.path, cwd);
+    const markerLine = content.split(/\r?\n/).find((line) => line.includes(marker));
+    if (
+      !markerLine ||
+      !authorityMarkerLocatesSemanticRow(
+        markerLine,
+        marker,
+        authorityRef.recordId,
+      )
+    ) {
+      reject(
+        'AUTHORITY_RECORD_MARKER_INVALID',
+        `${authorityRef.path} marker must locate ${authorityRef.recordId}`,
+      );
+    }
+  }
+
+  let rawIdFallbackRejected = false;
+  try {
+    validateAuthorityRecordAtRef(base, semanticAuthority, cwd);
+  } catch (error) {
+    if (
+      error instanceof CoordinationError &&
+      error.code === 'AUTHORITY_RECORD_MARKER_MISSING'
+    ) {
+      rawIdFallbackRejected = true;
+    } else {
+      throw error;
+    }
+  }
+  if (!rawIdFallbackRejected) {
+    reject(
+      'AUTHORITY_RAW_ID_FALLBACK_PRESENT',
+      'base resolved the R02 semantic authority without its exact marker',
+    );
+  }
+
+  const baseDecisionLog = gitShow(base, semanticAuthority.path, cwd);
+  const headDecisionLog = gitShow(head, semanticAuthority.path, cwd);
+  if (!headDecisionLog.startsWith(baseDecisionLog)) {
+    reject(
+      'ANALYZE_FIRST_DECISION_LOG_NOT_APPEND_ONLY',
+      'existing decision-log bytes must be preserved',
+    );
+  }
+  const appendedDecisionLines = headDecisionLog
+    .slice(baseDecisionLog.length)
+    .split(/\r?\n/)
+    .filter(Boolean);
+  const semanticMarker = buildAuthorityMarker(semanticAuthority);
+  if (
+    appendedDecisionLines.length !== 1 ||
+    !appendedDecisionLines[0].startsWith(
+      `| 2026-07-26 | ${semanticMarker} **${semanticAuthority.recordId}`,
+    )
+  ) {
+    reject(
+      'ANALYZE_FIRST_DECISION_LOG_SCOPE_INVALID',
+      'decision-log may only append the exact R02 semantic record',
+    );
+  }
+
+  const grant = gitShow(head, executionGrant.path, cwd);
+  for (const expectedLiteral of [
+    ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.mode,
+    ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.baseSha,
+    ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef,
+    'Standing/unattended GitHub',
+  ]) {
+    if (!grant.includes(expectedLiteral)) {
+      reject(
+        'ANALYZE_FIRST_GRANT_INVALID',
+        `execution grant is missing exact binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  const agents = gitShow(head, 'AGENTS.md', cwd);
+  const v1Contract = gitShow(
+    head,
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    cwd,
+  );
+  const v2Contract = gitShow(
+    head,
+    'project/docs/governance/coordination-v2/governance-orchestration-contract-v2.md',
+    cwd,
+  );
+  for (const [label, content, literal] of [
+    ['AGENTS.md', agents, 'GO-COMPLETE — ANALYZE-FIRST CONDITIONAL EXECUTION'],
+    ['V1 contract', v1Contract, 'Owner-authorized conditional merge ayrımı'],
+    ['V2 contract', v2Contract, 'STANDING / UNATTENDED AUTO-MERGE'],
+  ]) {
+    if (!content.includes(literal)) {
+      reject(
+        'ANALYZE_FIRST_POLICY_ALIGNMENT_INVALID',
+        `${label} is missing ${literal}`,
+      );
+    }
+  }
+
+  return { mode: ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.mode };
+}
+
 function validateRegisterTestFixtureRepairScope(options) {
   const { base, head, headRef, changes, cwd = REPO_ROOT } = options;
   if (
@@ -1439,6 +1654,16 @@ function validatePrScope(options) {
 
   if (classification.mode === 'NON_COORDINATION_PR') {
     return classification;
+  }
+
+  if (classification.mode === ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.mode) {
+    return validateAnalyzeFirstConditionalExecutionR02Scope({
+      base,
+      head,
+      headRef,
+      changes,
+      cwd,
+    });
   }
 
   if (classification.mode === REGISTER_TEST_FIXTURE_REPAIR_I01.mode) {
@@ -1734,6 +1959,7 @@ function main(argv = process.argv.slice(2)) {
 }
 
 module.exports = {
+  ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02,
   AUTHORITY_LOCATOR_REPAIR_I01,
   BOOTSTRAP_ADD,
   BOOTSTRAP_ALL,
