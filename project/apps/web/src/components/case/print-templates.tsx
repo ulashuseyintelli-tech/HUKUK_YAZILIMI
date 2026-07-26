@@ -24,6 +24,69 @@ interface PrintTemplatesProps {
 
 const STORAGE_KEY = 'printTemplates';
 
+const PAGE_SIZES: PrintTemplate['pageSize'][] = ['A4', 'A5', 'Letter'];
+const ORIENTATIONS: PrintTemplate['orientation'][] = ['portrait', 'landscape'];
+
+function boundedNumber(value: unknown, fallback: number, min: number, max: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(max, Math.max(min, value))
+    : fallback;
+}
+
+function renderPreviewDocument(previewDocument: Document, template: PrintTemplate): void {
+  const pageSize = PAGE_SIZES.includes(template.pageSize) ? template.pageSize : 'A4';
+  const orientation = ORIENTATIONS.includes(template.orientation) ? template.orientation : 'portrait';
+  const margins = {
+    top: boundedNumber(template.margins?.top, 20, 0, 100),
+    right: boundedNumber(template.margins?.right, 15, 0, 100),
+    bottom: boundedNumber(template.margins?.bottom, 20, 0, 100),
+    left: boundedNumber(template.margins?.left, 15, 0, 100),
+  };
+  const fontSize = boundedNumber(template.fontSize, 12, 8, 18);
+
+  previewDocument.head.replaceChildren();
+  previewDocument.body.replaceChildren();
+
+  const title = previewDocument.createElement('title');
+  title.textContent = `${template.name} - Önizleme`;
+  previewDocument.head.append(title);
+
+  const style = previewDocument.createElement('style');
+  style.textContent = `
+    @page { size: ${pageSize} ${orientation}; margin: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm; }
+    body { font-family: Arial, sans-serif; font-size: ${fontSize}pt; }
+    .header { text-align: center; font-weight: bold; font-size: 16pt; margin-bottom: 20px; }
+    .footer { text-align: center; font-size: 10pt; color: #666; margin-top: 30px; }
+  `;
+  previewDocument.head.append(style);
+
+  if (template.showHeader) {
+    const header = previewDocument.createElement('div');
+    header.className = 'header';
+    header.textContent = template.headerText;
+    previewDocument.body.append(header);
+  }
+
+  const content = previewDocument.createElement('div');
+  content.className = 'content';
+
+  const previewNotice = previewDocument.createElement('p');
+  previewNotice.textContent = 'Bu bir önizleme sayfasıdır.';
+  content.append(previewNotice);
+
+  const dataNotice = previewDocument.createElement('p');
+  dataNotice.textContent = 'Gerçek yazdırma işleminde dosya verileri burada görünecektir.';
+  content.append(dataNotice);
+  previewDocument.body.append(content);
+
+  if (template.footerText) {
+    const footer = previewDocument.createElement('div');
+    footer.className = 'footer';
+    footer.textContent = template.footerText;
+    previewDocument.body.append(footer);
+  }
+}
+
 const DEFAULT_TEMPLATES: PrintTemplate[] = [
   {
     id: 'default-summary',
@@ -128,27 +191,7 @@ export function PrintTemplates({ onPrint }: PrintTemplatesProps) {
     // Open print preview
     const previewWindow = window.open('', '_blank');
     if (previewWindow) {
-      previewWindow.document.write(`
-        <html>
-          <head>
-            <title>${template.name} - Önizleme</title>
-            <style>
-              @page { size: ${template.pageSize} ${template.orientation}; margin: ${template.margins.top}mm ${template.margins.right}mm ${template.margins.bottom}mm ${template.margins.left}mm; }
-              body { font-family: Arial, sans-serif; font-size: ${template.fontSize}pt; }
-              .header { text-align: center; font-weight: bold; font-size: 16pt; margin-bottom: 20px; }
-              .footer { text-align: center; font-size: 10pt; color: #666; margin-top: 30px; }
-            </style>
-          </head>
-          <body>
-            ${template.showHeader ? `<div class="header">${template.headerText}</div>` : ''}
-            <div class="content">
-              <p>Bu bir önizleme sayfasıdır.</p>
-              <p>Gerçek yazdırma işleminde dosya verileri burada görünecektir.</p>
-            </div>
-            ${template.footerText ? `<div class="footer">${template.footerText}</div>` : ''}
-          </body>
-        </html>
-      `);
+      renderPreviewDocument(previewWindow.document, template);
       previewWindow.document.close();
       previewWindow.print();
     }
