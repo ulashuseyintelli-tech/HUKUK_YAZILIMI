@@ -483,16 +483,34 @@ test('PILOT: no production root is ever touched by this pilot', () => {
   assert.ok(F.temps.length > 0, 'the pilot must actually have created fixtures');
 });
 
-test('PILOT: both real executor lanes resolve on this machine (evidence)', () => {
-  const out = {};
+test('PILOT: resolution reports a well-formed verdict for both lanes', () => {
+  // This previously asserted that both executors resolve "on this machine" —
+  // a developer-workstation fact that fails on a CI runner where neither CLI is
+  // installed. What must hold everywhere is that resolution returns a coherent
+  // manifest either way: a resolvable lane names its source and version, and an
+  // unresolvable one says why without ever claiming AVAILABLE.
   for (const lane of resolveMod.LANES) {
     const m = resolveMod.resolveExecutor({ lane, skipSmoke: true });
-    out[lane] = { source: m.resolutionSource, version: m.version, reason: m.unavailableReason };
-    assert.ok(m.resolutionSource, lane + ' produced no resolution source');
-    assert.ok(m.version, lane + ' produced no version');
-    // skipSmoke keeps state UNAVAILABLE by contract §7.1; resolution+version is
-    // what this evidence assertion covers.
+    assert.equal(m.schemaVersion, 1, lane);
+    assert.equal(m.executorLane, lane);
+    assert.equal(m.state, 'UNAVAILABLE', 'skipSmoke keeps state UNAVAILABLE by §7.1');
+    assert.ok(m.unavailableReason, lane + ' must always give a reason');
+
+    if (!m.resolutionSource) {
+      // Not resolvable from this process environment — an environmental fact,
+      // never a claim that the executor is broken or absent (§7.1).
+      assert.equal(m.unavailableReason, 'NOT_RESOLVABLE_FROM_THIS_PROCESS_ENVIRONMENT', lane);
+      assert.equal(m.version, null, lane);
+      assert.equal(m.smokeResult, 'FAIL', lane);
+      continue;
+    }
+    assert.ok(m.version, lane + ' resolved but reported no version');
+    assert.ok(
+      resolveMod.LANE_SPEC[lane].versionPattern.test(m.version),
+      lane + ' version does not match its lane pattern: ' + m.version,
+    );
+    // Resolvable here, so the version gate ran and the only thing missing is
+    // the smoke step this call deliberately skips (§7.1).
     assert.equal(m.unavailableReason, 'SMOKE_SKIPPED', lane + ': ' + m.unavailableReason);
   }
-  assert.equal(Object.keys(out).length, 2);
 });
