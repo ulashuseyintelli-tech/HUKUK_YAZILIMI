@@ -267,6 +267,11 @@ model Tenant {
   uyapOperations UyapOperation[] @relation("UyapOperationTenant")
   uyapAttempts   UyapAttempt[]   @relation("UyapAttemptTenant")
 
+  // CLIENT-P2-U03-TRACK-B-I01 (§35) — Financial Disclosure back-relations (additive).
+  clientFinancialDisclosures        ClientFinancialDisclosure[]
+  clientFinancialDisclosureVersions ClientFinancialDisclosureVersion[]
+  clientFinancialDisclosureLines    ClientFinancialDisclosureLine[]
+
   @@index([slug])
   @@index([accountType])
 }
@@ -799,6 +804,9 @@ model CaseClient {
   clientPayoutAllocations     ClientPayoutAllocation[]
   clientPayoutManualReversals ClientPayoutManualReversal[]
 
+  // CLIENT-P2-U03-TRACK-B-I01 (§35.3) — V1 yalnız SINGLE_CASE_CLIENT (additive).
+  clientFinancialDisclosures ClientFinancialDisclosure[]
+
   @@unique([caseId, clientId])
   @@index([caseId])
   @@index([clientId])
@@ -1295,6 +1303,9 @@ model Case {
   caseTaskEscalationEvents CaseTaskEscalationEvent[]
 
   uyapOperations UyapOperation[] @relation("UyapOperationCase")
+
+  // CLIENT-P2-U03-TRACK-B-I01 (§35.5) — Financial Disclosure kökleri (additive).
+  clientFinancialDisclosures ClientFinancialDisclosure[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, id])
@@ -9172,6 +9183,9 @@ model CollectionDisposition {
   clientPayoutManualReversals ClientPayoutManualReversal[]
   expenseApplications         CollectionDispositionExpenseApplication[]
 
+  // CLIENT-P2-U03-TRACK-B-I01 (§35.3) — POSTED dispozisyon disclosure anchor'ı (additive).
+  clientFinancialDisclosures ClientFinancialDisclosure[]
+
   @@index([tenantId, caseId])
   @@index([tenantId, status])
   @@index([caseClientId])
@@ -9202,6 +9216,9 @@ model CollectionDispositionLine {
   clientPayoutAllocations     ClientPayoutAllocation[]
   clientPayoutManualReversals ClientPayoutManualReversal[]
   expenseApplications         CollectionDispositionExpenseApplication[]
+
+  // CLIENT-P2-U03-TRACK-B-I01 (§35.5) — disclosure satır izlenebilirliği (additive).
+  clientFinancialDisclosureLines ClientFinancialDisclosureLine[]
 
   @@index([dispositionId])
   @@index([type])
@@ -9663,7 +9680,7 @@ model UyapOperation {
   updatedAt   DateTime  @updatedAt
   cancelledAt DateTime?
 
-  attempts UyapAttempt[]
+  attempts         UyapAttempt[]
   cpeDecisionLinks UyapAttemptCpeDecisionLink[]
 
   tenant           Tenant  @relation("UyapOperationTenant", fields: [tenantId], references: [id], onDelete: Cascade)
@@ -9710,10 +9727,10 @@ model UyapAttempt {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant          Tenant        @relation("UyapAttemptTenant", fields: [tenantId], references: [id], onDelete: Cascade)
-  operation       UyapOperation @relation(fields: [operationId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  previousAttempt UyapAttempt?  @relation("UyapAttemptChain", fields: [previousAttemptId, operationId, tenantId], references: [id, operationId, tenantId], onDelete: Restrict)
-  nextAttempts    UyapAttempt[] @relation("UyapAttemptChain")
+  tenant           Tenant                       @relation("UyapAttemptTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  operation        UyapOperation                @relation(fields: [operationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  previousAttempt  UyapAttempt?                 @relation("UyapAttemptChain", fields: [previousAttemptId, operationId, tenantId], references: [id, operationId, tenantId], onDelete: Restrict)
+  nextAttempts     UyapAttempt[]                @relation("UyapAttemptChain")
   cpeDecisionLinks UyapAttemptCpeDecisionLink[]
 
   @@unique([id, tenantId])
@@ -9762,4 +9779,255 @@ model UyapAttemptCpeDecisionLink {
   @@index([caseId])
   @@index([attemptId])
   @@index([operationId])
+}
+
+// ============================================================================
+// CLIENT-P2-U03-TRACK-B-I01 — Financial Disclosure veri temeli
+// ----------------------------------------------------------------------------
+// Canonical tasarım: CLIENT-GOVERNANCE-CHARTER.md §35 (owner-ratified, altı owner
+// kararı dahil). Bu blok YALNIZ veri temelidir: hiçbir API/service/UI/aggregate
+// hesaplama İÇERMEZ. Aşağıdaki invariant'lar bu görevde geçerlidir:
+//
+//   SCHEMA EXISTS        ≠ DATA MAY BE DISCLOSED
+//   DATA EXISTS          ≠ CLIENT IS AUTHORIZED TO VIEW IT
+//   I01 SCHEMA READY     ≠ CLIENT DISCLOSURE AUTHORIZED
+//
+// Track B tahsilat/dağıtım/muhasebe HESAPLAMAZ (§35.2) — yalnız RECEIVABLE/
+// client-settlement/ledger bounded-context'lerinin yetkili sonuçlarını TÜKETİR.
+// ============================================================================
+
+/// CLIENT-P2-U03-TRACK-B-I01 (§35.7) — disclosure versiyonu yaşam döngüsü.
+/// §35.7'nin AÇIKÇA saydığı canonical minimum durum kümesi; başka durum İCAT EDİLMEDİ.
+/// Yalnız `PUBLISHED` client-görünürdür (§35.7/§35.14). `SUPERSEDED`/`REVERSED` yalnız
+/// `PUBLISHED`'ten ulaşılabilir; `CANCELLED` yalnız finansal taahhüt öncesi.
+/// OWNER KARARI (§35.7 + §35.11): ayrı kalıcı `SENT` durumu YOK — provider-acceptance
+/// bir audit olayı üretir, durum satırı `SEND_PENDING` → `PUBLISHED` tek guarded geçişle
+/// ilerler. §35.3'ün `UNSUPPORTED_SCOPE` sonucu bir DURUM DEĞİLDİR (disclosure hiç
+/// oluşturulmaz) — bu nedenle burada temsil EDİLMEZ.
+enum ClientFinancialDisclosureStatus {
+  DRAFT
+  OFFICE_APPROVAL_PENDING
+  OFFICE_APPROVED
+  CONTENT_APPROVAL_PENDING
+  CONTENT_APPROVED
+  SEND_PENDING
+  SEND_FAILED
+  PUBLISHED
+  CANCELLED
+  SUPERSEDED
+  REVERSED
+}
+
+/// CLIENT-P2-U03-TRACK-B-I01 (§35.5 kök) — kararlı aggregate kimliği, tenant/case/
+/// case-client sahipliği, `CollectionDisposition` idempotency anchor'ı ve current-effective
+/// versiyon işaretçisi.
+///
+/// TENANT İZOLASYONU: `Case` bağlaması tenant-scoped BİLEŞİK FK ile kurulur
+/// (`[tenantId, caseId] → Case[tenantId, id]`) — cross-tenant caseId ataması DB
+/// seviyesinde reddedilir (`ClaimFormationSnapshot`/`PasswordResetToken`/`Collection` ile
+/// aynı canonical desen). `CaseClient` modelinde `tenantId` kolonu YOKTUR (tenant
+/// `case` üzerinden türetilir), bu nedenle oraya plain FK + `Restrict` kullanılır
+/// (`ClientPayoutAllocation` emsali).
+///
+/// V1 KAPSAM ENFORCEMENT (§35.3): `caseClientId` ZORUNLUDUR (NOT NULL). V1 yalnız
+/// `beneficiaryScope = SINGLE_CASE_CLIENT` destekler; `CASE_CREDITOR_CLUSTER`
+/// dispozisyonlarının `caseClientId`'si null olduğundan cluster kapsamı için disclosure
+/// oluşturmak YAPISAL OLARAK İMKÂNSIZDIR — §35.3'ün fail-closed `UNSUPPORTED_SCOPE`
+/// şartı böylece model seviyesinde desteklenir (bir client sahibi ASLA çıkarsanmaz).
+///
+/// REFERENTIAL ACTION: finansal/denetlenebilir kayıt olduğu için tüm parent bağları
+/// `Restrict`'tir (§35.18 audit zorunluluğu + repository precedent) — cascade ile
+/// disclosure geçmişinin silinmesi ENGELLENIR.
+model ClientFinancialDisclosure {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  caseId String
+  case   Case   @relation(fields: [tenantId, caseId], references: [tenantId, id], onDelete: Restrict)
+
+  /// §35.3: V1 yalnız SINGLE_CASE_CLIENT — bu nedenle NOT NULL.
+  caseClientId String
+  caseClient   CaseClient @relation(fields: [caseClientId], references: [id], onDelete: Restrict)
+
+  /// §35.3/§35.12 idempotency anchor: bir POSTED dispozisyon için en fazla bir disclosure kökü.
+  collectionDispositionId String
+  collectionDisposition   CollectionDisposition @relation(fields: [collectionDispositionId], references: [id], onDelete: Restrict)
+
+  /// §35.16: bir disclosure TAM OLARAK bir para birimi taşır; cross-currency agregasyon YOK.
+  currency String @default("TRY")
+
+  /// §35.5: current-effective versiyon işaretçisi. Nullable — kök, ilk versiyon
+  /// yazılmadan önce (aynı transaction içinde) var olabilir.
+  currentVersionId String?                           @unique
+  currentVersion   ClientFinancialDisclosureVersion? @relation("ClientFinancialDisclosureCurrentVersion", fields: [currentVersionId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions ClientFinancialDisclosureVersion[] @relation("ClientFinancialDisclosureVersions")
+
+  /// Bileşik tenant FK'lerin hedefi olabilmesi için (ClaimFormationSnapshot emsali).
+  @@unique([tenantId, id])
+  /// §35.12 ZORUNLU: kök idempotency — tenant başına dispozisyon tekliği.
+  @@unique([tenantId, collectionDispositionId])
+  @@index([tenantId, caseId])
+  @@index([tenantId, caseClientId])
+  @@index([collectionDispositionId])
+}
+
+/// CLIENT-P2-U03-TRACK-B-I01 (§35.5) — immutable finansal snapshot + versiyon yaşam
+/// döngüsü + ofis onayı bağlaması + içerik onayı bağlaması + bildirim kanıtı + yayınlama
+/// kanıtı + düzeltme/supersession/reversal bağlantıları.
+///
+/// IMMUTABILITY KAPSAMI (§35.6) — DÜRÜST SINIR: finansal snapshot alanları (kaynak
+/// kopyaları, tutarlar, para birimi, hash'ler) yaratıldıktan sonra DEĞİŞMEZ; ancak
+/// yaşam döngüsü damgaları (status/onay/gönderim/yayınlama) iş akışı boyunca aynı satıra
+/// yazılır. Bu nedenle satır DB seviyesinde tamamen immutable DEĞİLDİR: finansal alanların
+/// değişmezliği ve stale-onay/TOCTOU reddi `snapshotHash`/`sourceFingerprint` yeniden
+/// doğrulamasıyla SERVİS katmanında (I02/I03/I04) enforce edilir. I01 bunu iddia etmez.
+/// Yayınlanmış değerlerin yerinde mutasyonu yasaktır (§35.6); finansal değişiklik YENİ
+/// versiyon gerektirir (§35.13).
+///
+/// GÜVENLİ VARSAYILAN: `status` varsayılanı `DRAFT` — yeni kayıt ASLA yayınlanmış veya
+/// client-görünür değildir (§20 güvenli-varsayılan zorunluluğu).
+model ClientFinancialDisclosureVersion {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  disclosureId String
+  disclosure   ClientFinancialDisclosure @relation("ClientFinancialDisclosureVersions", fields: [tenantId, disclosureId], references: [tenantId, id], onDelete: Restrict)
+
+  /// §35.12 ZORUNLU: `@@unique([tenantId, disclosureId, version])`.
+  version Int
+
+  status ClientFinancialDisclosureStatus @default(DRAFT)
+
+  // --- §35.4 yetkili kaynak bağlama (DEĞERLER KOPYALANIR, referans üzerinden okunmaz) ---
+  /// Kaynak `Collection` (status=CONFIRMED) — cross-module scalar (FK YOK; repository'nin
+  /// "cross-module FK kurmaz" sınırı, `CollectionDisposition.sourcePaymentEventId` emsali).
+  sourceCollectionId     String
+  sourceCollectionAmount Decimal  @db.Decimal(15, 2)
+  sourceCollectionDate   DateTime
+  /// Kaynak `CollectionDisposition` (status=POSTED) kopyaları.
+  dispositionTotalAmount Decimal  @db.Decimal(15, 2)
+  dispositionPostedAt    DateTime
+
+  // --- §35.16 finansal snapshot + kesin reconciliation (tolerans YOK) ---
+  /// §35.16: bir disclosure tam olarak bir para birimi taşır.
+  currency        String  @default("TRY")
+  /// §35.14 izinli client alanı; §35.16: `Σ satırlar = totalCollected`.
+  totalCollected  Decimal @db.Decimal(15, 2)
+  /// §35.16: `CLIENT_PAYABLE satırı = clientNetAmount`.
+  clientNetAmount Decimal @db.Decimal(15, 2)
+
+  // --- §35.6 zorunlu bağlamalar ---
+  snapshotHash      String
+  sourceFingerprint String
+
+  // --- §35.8 ofis disclosure onayı (actionCode CLIENT_FINANCIAL_DISCLOSURE_APPROVE) ---
+  /// `OfficeApprovalRequest` substrate'i scalar ile bağlanır (FK YOK) — `ClaimFormationSnapshot.
+  /// approvalRequestId` ve `CollectionDisposition.approvalRequestId` ile aynı canonical desen.
+  /// Onay TAM OLARAK bu versiyona ve `snapshotHash`'e bağlanır (§35.8).
+  officeApprovalRequestId String?
+  officeApprovedAt        DateTime?
+  officeApprovedById      String?
+
+  // --- §35.9 içerik onayı (OWNER KARARI: ikinci OfficeApprovalRequest OLUŞTURULMAZ) ---
+  notificationContent           String?
+  notificationContentHash       String?
+  contentApprovedAt             DateTime?
+  contentApprovedById           String?
+  /// §35.6/§35.9: onaylanmış alıcı kimliği — onaydan SONRA değişirse versiyon geçersizdir.
+  approvedRecipientEmail        String?
+  approvedRecipientPortalUserId String?
+
+  // --- §35.10/§35.11 gönderim & yayınlama kanıtı ---
+  /// §35.12 ZORUNLU: disclosure-versiyonu gönderim idempotency anahtarı (çift gönderim engeli).
+  sendIdempotencyKey String
+  sendRequestedAt    DateTime?
+  /// §35.10 canonical başarı eşiği: gerçek provider kabulü + KALICI provider message ID.
+  /// Eksik message ID → SEND_FAILED. Mock provider production yayınlamayı ASLA yetkilendirmez.
+  providerMessageId  String?
+  providerAcceptedAt DateTime?
+  sendFailureCode    String?
+  /// §35.14: provider hata DETAYI client'a gösterilmez (yalnız internal teşhis).
+  sendFailureDetail  String?
+  /// §35.7: yalnız `PUBLISHED` client-görünür.
+  publishedAt        DateTime?
+
+  // --- §35.13 düzeltme / supersession / reversal (geçmiş ASLA silinmez) ---
+  supersedesVersionId String?
+  supersedesVersion   ClientFinancialDisclosureVersion? @relation("ClientFinancialDisclosureVersionSupersession", fields: [tenantId, supersedesVersionId], references: [tenantId, id], onDelete: Restrict)
+  supersededByVersion ClientFinancialDisclosureVersion? @relation("ClientFinancialDisclosureVersionSupersession")
+  supersededAt        DateTime?
+  reversedAt          DateTime?
+  /// §35.14 izinli client alanı: client-safe düzeltme gerekçesi.
+  correctionReason    String?
+  cancelledAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines         ClientFinancialDisclosureLine[]
+  currentOfRoot ClientFinancialDisclosure?      @relation("ClientFinancialDisclosureCurrentVersion")
+
+  /// Bileşik tenant FK'lerin hedefi olabilmesi için.
+  @@unique([tenantId, id])
+  /// §35.12 ZORUNLU: versiyon tekliği.
+  @@unique([tenantId, disclosureId, version])
+  /// §35.12 ZORUNLU: gönderim idempotency (replay-safe dispatch).
+  @@unique([tenantId, sendIdempotencyKey])
+  /// §35.13: bir versiyon en fazla BİR kez supersede edilebilir (ClaimFormationSnapshot emsali).
+  @@unique([tenantId, supersedesVersionId])
+  /// §35.8: bir ofis onay talebi en fazla bir disclosure versiyonuna bağlanır.
+  @@unique([tenantId, officeApprovalRequestId])
+  @@index([tenantId, disclosureId])
+  @@index([tenantId, status])
+  @@index([sourceCollectionId])
+  @@index([publishedAt])
+}
+
+/// CLIENT-P2-U03-TRACK-B-I01 (§35.5) — normalize dağıtım satırları.
+///
+/// TAKSONOMİ: mevcut `CollectionDispositionLineType` evreni DOĞRUDAN YENİDEN KULLANILIR
+/// (§35.5) — yeni finansal tahsis taksonomisi İCAT EDİLMEZ. `HELD_PENDING_DISTRIBUTION`
+/// asla client-görünür değildir; yalnız POSTED kaynak dispozisyonlar disclosure
+/// oluşturabildiğinden yapısal olarak imkânsızdır (§35.5).
+///
+/// §35.4: `type` + `amount` KOPYALANIR (referans üzerinden okunmaz). Ek olarak §35.5'in
+/// talep ettiği "kaynak-satır izlenebilirliği" için kaynak satıra `Restrict` FK tutulur —
+/// böylece kaynak satır, disclosure yaşadığı sürece silinemez.
+///
+/// §35.17 (OWNER KARARI): ana para/faiz/vergi gibi LEDGER-SEVİYELİ kırılım V1 DIŞINDADIR;
+/// bu model yalnız dağıtım taksonomisini taşır.
+model ClientFinancialDisclosureLine {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  disclosureVersionId String
+  disclosureVersion   ClientFinancialDisclosureVersion @relation(fields: [tenantId, disclosureVersionId], references: [tenantId, id], onDelete: Restrict)
+
+  /// §35.5: mevcut taksonomi yeniden kullanılır.
+  type   CollectionDispositionLineType
+  /// §35.16: canonical V1 hassasiyeti Decimal(15,2).
+  amount Decimal                       @db.Decimal(15, 2)
+
+  /// §35.5 kaynak-satır izlenebilirliği (değerler yine de KOPYALANMIŞTIR, §35.4).
+  sourceDispositionLineId String
+  sourceDispositionLine   CollectionDispositionLine @relation(fields: [sourceDispositionLineId], references: [id], onDelete: Restrict)
+
+  /// Sunum sırası — finansal anlam taşımaz.
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, id])
+  /// Aynı kaynak dispozisyon satırı bir disclosure versiyonunda en fazla bir kez temsil edilir.
+  @@unique([tenantId, disclosureVersionId, sourceDispositionLineId])
+  @@index([tenantId, disclosureVersionId])
+  @@index([sourceDispositionLineId])
+  @@index([type])
 }
