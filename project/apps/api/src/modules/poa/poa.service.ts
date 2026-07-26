@@ -226,7 +226,10 @@ export class PoaService {
     const poa = await this.prisma.clientPowerOfAttorney.create({
       data: {
         ...poaData,
-        client: { connect: { id: dto.clientId } },
+        // UYAP-POA-TENANT-SAFETY-I01: tenant server-authoritative parametreden gelir; client
+        // composite (id, tenantId) ile bağlanır → cross-tenant POA↔Client bağı DB'de imkânsız.
+        tenant: { connect: { id: tenantId } },
+        client: { connect: { id_tenantId: { id: dto.clientId, tenantId } } },
         status: PoaStatus.ACTIVE,
       },
       include: {
@@ -360,7 +363,9 @@ export class PoaService {
     }
 
     // İlk avukat primary olsun
+    // UYAP-POA-TENANT-SAFETY-I01: tenantId zorunlu; composite FK POA ve Lawyer'ı aynı tenant'a kilitler.
     const data = lawyerIds.map((lawyerId, index) => ({
+      tenantId,
       poaId,
       lawyerId,
       isPrimary: index === 0,
@@ -413,7 +418,9 @@ export class PoaService {
 
     // POA'da primary yoksa ilk eklenen primary olsun; varsa yeni primary OLMASIN
     const hasPrimaryAlready = existingLinks.some((l) => l.isPrimary);
+    // UYAP-POA-TENANT-SAFETY-I01: tenantId zorunlu (validLawyers zaten tenant-scoped sorgudan gelir).
     const data = validLawyers.map((l, index) => ({
+      tenantId,
       poaId,
       lawyerId: l.id,
       isPrimary: !hasPrimaryAlready && index === 0,

@@ -149,9 +149,10 @@ describe("PoaService.create — suppress lawyer reconcile (Fix E)", () => {
     expect(prisma.poaLawyer.createMany).toHaveBeenCalledTimes(1);
     const arg = prisma.poaLawyer.createMany.mock.calls[0][0];
     expect(arg.skipDuplicates).toBe(true);
+    // UYAP-POA-TENANT-SAFETY-I01: reconcile edilen PoaLawyer satirlari canonical tenantId tasir.
     expect(arg.data).toEqual([
-      { poaId: "poa-existing", lawyerId: "law1", isPrimary: true },
-      { poaId: "poa-existing", lawyerId: "law2", isPrimary: false },
+      { tenantId: "t1", poaId: "poa-existing", lawyerId: "law1", isPrimary: true },
+      { tenantId: "t1", poaId: "poa-existing", lawyerId: "law2", isPrimary: false },
     ]);
   });
 
@@ -181,7 +182,7 @@ describe("PoaService.create — suppress lawyer reconcile (Fix E)", () => {
     const res = await svc.create({ ...dupDto, lawyerIds: ["law1", "foreign"] }, "t1");
     expect(res._suppressedDuplicate).toBe(true);
     const arg = prisma.poaLawyer.createMany.mock.calls[0][0];
-    expect(arg.data).toEqual([{ poaId: "poa-existing", lawyerId: "law1", isPrimary: true }]);
+    expect(arg.data).toEqual([{ tenantId: "t1", poaId: "poa-existing", lawyerId: "law1", isPrimary: true }]);
   });
 
   it("4b) hepsi cross-tenant → createMany çağrılmaz, suppress döner (throw yok)", async () => {
@@ -195,6 +196,6 @@ describe("PoaService.create — suppress lawyer reconcile (Fix E)", () => {
     const { svc, prisma } = build(activeMatch, { existingLinks: [{ lawyerId: "lawX", isPrimary: true }], validLawyers: [{ id: "law2" }] });
     await svc.create({ ...dupDto, lawyerIds: ["law2"] }, "t1");
     const arg = prisma.poaLawyer.createMany.mock.calls[0][0];
-    expect(arg.data).toEqual([{ poaId: "poa-existing", lawyerId: "law2", isPrimary: false }]);
+    expect(arg.data).toEqual([{ tenantId: "t1", poaId: "poa-existing", lawyerId: "law2", isPrimary: false }]);
   });
 });

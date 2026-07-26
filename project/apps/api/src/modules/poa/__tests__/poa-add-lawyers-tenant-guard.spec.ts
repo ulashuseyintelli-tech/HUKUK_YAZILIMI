@@ -44,10 +44,11 @@ describe("CBND-2 (H6) PoaService.addLawyers() — poaId tenant guard", () => {
     expect(clientPowerOfAttorneyFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: POA_ID, client: { tenantId: TENANT } } }),
     );
+    // UYAP-POA-TENANT-SAFETY-I01: PoaLawyer artik canonical tenantId tasir (composite tenant-safe FK).
     expect(poaLawyerCreateMany).toHaveBeenCalledWith({
       data: [
-        { poaId: POA_ID, lawyerId: "law-1", isPrimary: true },
-        { poaId: POA_ID, lawyerId: "law-2", isPrimary: false },
+        { tenantId: TENANT, poaId: POA_ID, lawyerId: "law-1", isPrimary: true },
+        { tenantId: TENANT, poaId: POA_ID, lawyerId: "law-2", isPrimary: false },
       ],
     });
     expect(result).toEqual({ success: true, count: 2 });

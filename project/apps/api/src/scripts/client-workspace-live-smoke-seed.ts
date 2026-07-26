@@ -247,6 +247,8 @@ export async function seedClientWorkspaceLiveSmokeFixture(
     },
     create: {
       id: ids.poaId,
+      // UYAP-POA-TENANT-SAFETY-I01: POA artik canonical tenantId tasir (composite tenant-safe FK).
+      tenantId: ids.tenantId,
       clientId: ids.clientId,
       notaryName: 'Smoke Noterligi',
       notaryCity: 'Istanbul',

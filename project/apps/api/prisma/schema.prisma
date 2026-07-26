@@ -272,6 +272,10 @@ model Tenant {
   clientFinancialDisclosureVersions ClientFinancialDisclosureVersion[]
   clientFinancialDisclosureLines    ClientFinancialDisclosureLine[]
 
+  // UYAP-POA-TENANT-SAFETY-I01 (D-1/D-2): POA zincirinin canonical tenant karşı ilişkileri
+  clientPowerOfAttorneys ClientPowerOfAttorney[] @relation("ClientPoaTenant")
+  poaLawyers             PoaLawyer[]             @relation("PoaLawyerTenant")
+
   @@index([slug])
   @@index([accountType])
 }
@@ -668,9 +672,16 @@ enum PoaScopeType {
 
 // Müvekkil Vekaletnamesi
 model ClientPowerOfAttorney {
-  id       String @id @default(cuid())
+  id String @id @default(cuid())
+
+  /// UYAP-POA-TENANT-SAFETY-I01 (D-1): canonical tenant kolonu. Daha önce tenant YALNIZ
+  /// `client` üzerinden dolaylı türetilebiliyordu; authority zinciri (INV-07) tenant kanıtını
+  /// DB seviyesinde ister. Composite FK ile cross-tenant POA↔Client bağı imkânsızdır.
+  tenantId String
+  tenant   Tenant @relation("ClientPoaTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
   clientId String
-  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client   Client @relation(fields: [clientId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   // Temel Bilgiler
   notaryName String? // Noter Adı
@@ -712,6 +723,11 @@ model ClientPowerOfAttorney {
   lawyers          PoaLawyer[]
   expiryDeliveries PoaExpiryNotificationDelivery[]
 
+  /// UYAP-POA-TENANT-SAFETY-I01: `PoaLawyer` composite tenant-safe FK hedefi.
+  /// `id` PK olduğundan superset key — ihlal edilemez, veri riski yok.
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, clientId])
   @@index([clientId])
   @@index([isActive])
   @@index([status])
@@ -768,15 +784,24 @@ model PoaExpiryNotificationDelivery {
 
 // Vekalet-Avukat İlişkisi (Bir vekalette birden fazla avukat olabilir)
 model PoaLawyer {
-  id        String                @id @default(cuid())
+  id String @id @default(cuid())
+
+  /// UYAP-POA-TENANT-SAFETY-I01 (D-2): canonical tenant kolonu. Hem POA hem Lawyer tarafı
+  /// composite FK ile AYNI tenant'a kilitlenir → cross-tenant vekâlet-avukat bağı DB
+  /// seviyesinde imkânsızdır (INV-08).
+  tenantId String
+  tenant   Tenant @relation("PoaLawyerTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
   poaId     String
-  poa       ClientPowerOfAttorney @relation(fields: [poaId], references: [id], onDelete: Cascade)
+  poa       ClientPowerOfAttorney @relation(fields: [poaId, tenantId], references: [id, tenantId], onDelete: Cascade)
   lawyerId  String
-  lawyer    Lawyer                @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  lawyer    Lawyer                @relation(fields: [lawyerId, tenantId], references: [id, tenantId], onDelete: Cascade)
   isPrimary Boolean               @default(false) // Ana vekil mi?
   createdAt DateTime              @default(now())
 
   @@unique([poaId, lawyerId])
+  @@index([tenantId])
+  @@index([tenantId, lawyerId])
   @@index([poaId])
   @@index([lawyerId])
 }
