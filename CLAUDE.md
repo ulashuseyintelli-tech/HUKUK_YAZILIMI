@@ -43,9 +43,14 @@ Slider/Ultracode kullanicinin oturum ayaridir; ajan degistirmez ve kullanicidan 
 
 Gorev yetkileri:
 
-- `GO-ANALYZE`: yalniz analiz ve rapor; degisiklik yok. Sonunda kullanici karari beklenir.
-- `GO-IMPLEMENT`: degisiklik, test ve validation yapilir; merge yok. Commit/PR yalniz ayrica istenirse yapilir. Sonunda kullanici karari beklenir.
-- `GO-COMPLETE`: implementasyon ve validation zinciridir. Commit, push, PR, CI, merge, branch/worktree cleanup, main sync, final verification, checkpoint ve sonraki adim yalniz gorev brief'i acik `IF GO-COMPLETE` owner yetkisi iceriyorsa tek zincire dahildir. Tool/system guardrail veya PR'a ozgu yetki gereksinimi varsa dur ve owner'dan acik yetki iste; aksi halde CI PASS ve `mergeStateStatus` CLEAN sonrasi zincir icinde tekrar onay istenmez.
+- `UNKNOWN / AMBIGUOUS`: read-only kalir; mutation yoktur.
+- `GO-ANALYZE`: explicit read-only analizdir; `ANALYZE → REPORT → STOP`. Dosya degisikligi, commit, PR veya merge yoktur.
+- `GO-IMPLEMENT`: `ANALYZE → IMPLEMENT → VERIFY → REPORT → STOP`; local patch ve validation ile sinirlidir. Commit/push/PR/merge yalniz task brief ayrica kapsiyorsa yapilir.
+- `GO-COMPLETE — ANALYZE-FIRST CONDITIONAL EXECUTION`: implementation-eligible gorevler icin tercih edilen tam modeldir. Analiz ayri teslim veya zorunlu owner turu degildir: `ANALYZE → IF IMPLEMENT → IMPLEMENT → VERIFY → COMMIT → PUSH → PR → CI → IF GO-COMPLETE → SQUASH-MERGE → MAIN SYNC → CLEANUP → FINAL VERIFICATION → CLOSE`.
+
+`IF IMPLEMENT`, root cause + bounded objective + canonical uyum + minimum guvenli patch/validation + no owner-WIP/competing-writer + no task-disi production/destructive islem kosullarinin tamamina baglidir. `IF GO-COMPLETE`, validation/required CI PASS + exact authorized scope + CLEAN/MERGEABLE + no semantic/merge/writer conflict kosullarinin tamamina baglidir. Ex-ante `IF GO-COMPLETE` owner yetkisi merge icin yeterlidir; CI sonrasinda ikinci owner mesaji istenmez. Bu GitHub standing auto-merge, scheduler veya reusable merge grant'i degildir.
+
+Owner karari yalniz `AGENTS.md`'deki gercek semantic/architecture/production/data/destructive/scope/conflict/risk gate'lerinde istenir. Ayni root cause ve bounded context icindeki supporting dosya/test/fixture/mock/validation duzeltmesi scope expansion degildir. Ilgisiz finding immediate security/data-loss/corruption riski yoksa evidence ile backlog adayi olarak ayrilir; mevcut task'e eklenmez ve task'i durdurmaz.
 
 Repository root sabit bir Windows path'inden varsayilmaz; her oturumda guncel Git/repository state ile dogrulanir. Bagimsiz ikinci clone veya root belirsizligi tespit edilirse kodlamadan once dur ve raporla.
 
@@ -69,7 +74,7 @@ Tablo uzerinde islem yapacaksan iliskili tablolari ve yan etkileri incele. Yeni 
 
 ## 5. Development Rules
 
-Onay almadan kodlamaya gecme: ne yapacagini, nedenini ve beklenen etki alanini soyle; kullanici yetkisi geldikten sonra ilerle.
+Acik execution authority olmadan kodlamaya gecme. `GO-COMPLETE — ANALYZE-FIRST` verilmis ve `IF IMPLEMENT` PASS ise ayrica analiz onayi istemeden ayni task icinde ilerle; ne yaptigini, nedenini ve beklenen etki alanini gorunur tut.
 
 Dosya editinden once hard gate: current directory, current branch ve worktree izolasyonu dogrulanir. Canonical root icindeysen edit yapma; isolated worktree'e gecmeden implementation baslatma.
 
@@ -89,7 +94,7 @@ Degisiklikleri mevcut modul sinirlari ve yerel pattern'ler icinde tut. Yeni abst
 
 Test seviyesi riskle orantili secilir. Docs-only degisikliklerde diff, kapsam ve uzunluk kontrolu yeterlidir. Kod veya davranis degisikliginde ilgili unit/integration/e2e veya smoke validation calistirilir.
 
-`GO-IMPLEMENT` sonunda validation sonucu raporlanir; merge yapilmaz. `IF GO-COMPLETE` owner yetkisi varsa CI takip edilir: `IN_PROGRESS` ise yaklasik 60 saniyede bir, en fazla 20 dakika kontrol et; `SUCCESS` olursa merge ve cleanup zinciri devam eder; `FAIL` veya timeout olursa dur. CI bitmeden gelen `mergeStateStatus: BLOCKED` tek basina stop condition degildir; CI bitince yeniden kontrol edilir. CI sonrasi `mergeStateStatus` `CLEAN` degilse dur.
+`GO-IMPLEMENT` task brief'i commit/PR/merge kapsamiyorsa validation sonucu raporlanir ve durulur. `IF GO-COMPLETE` owner yetkisi varsa CI takip edilir: `IN_PROGRESS` ise yaklasik 60 saniyede bir, en fazla 20 dakika kontrol et; `SUCCESS` olursa merge ve cleanup zinciri devam eder; `FAIL` veya timeout olursa dur. CI bitmeden gelen `mergeStateStatus: BLOCKED` tek basina stop condition degildir; CI bitince yeniden kontrol edilir. CI sonrasi `mergeStateStatus` `CLEAN` degilse dur.
 
 DB-gated integration test gerektiren gorevlerde production veya local development veritabanina karsi test kosulmaz. Guvenli sira:
 
@@ -105,7 +110,7 @@ test tamamlaninca container istege bagli silinebilir
 
 Raporlar kisa, karar odakli ve kapsama uygun olsun. Docs-only islerde tekrarlayan "schema yok/migration yok/runtime yok" boilerplate'i yazma.
 
-Onay semantigi: `GO-ANALYZE` ve `GO-IMPLEMENT` sonunda `Onay Bekleniyor: YES`; acik `IF GO-COMPLETE` owner yetkisiyle tamamlanan zincirde stop condition yoksa `NO`, varsa `YES`.
+Onay semantigi: `GO-ANALYZE` ve bounded `GO-IMPLEMENT` kendi tesliminde durur; yalniz yeni owner karari/authority gerekiyorsa `Onay Bekleniyor: YES` yazilir. Acik `IF GO-COMPLETE` owner yetkisiyle tamamlanan zincirde stop condition yoksa `NO`, varsa `YES`.
 
 Kapanista is gerektiriyorsa su bilgileri ver: degisen dosyalar, ozet, kaldirilan veya yeniden ifade edilen kural gruplari, verification, kalan risk, sonraki adim. Backlog veya mimari karar yoksa sabit blok uretme.
 

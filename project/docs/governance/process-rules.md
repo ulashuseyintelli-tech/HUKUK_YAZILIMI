@@ -94,42 +94,63 @@ Kod yazmadan önce en az şu başlıklar değerlendirilir:
 ## Authority Modes
 
 ```text
+UNKNOWN / AMBIGUOUS
+↓
+Read-only kal
+Mutation yapma
+```
+
+```text
 GO-ANALYZE
 ↓
-Yalnız analiz
-Yalnız rapor
-Kod yok
+ANALYZE
+REPORT
+STOP
 ```
+
+Explicit read-only moddur; dosya değişikliği, commit, PR veya merge yoktur.
 
 ```text
 GO-IMPLEMENT
 ↓
-Kod / dokümantasyon değişikliği
-Test / validation
-CI gerekiyorsa çalıştır
-Dur
-Merge yok
-Commit/PR yalnız ayrıca istenirse yapılır
+ANALYZE
+IMPLEMENT
+VERIFY
+REPORT
+STOP
 ```
+
+Local patch + validation ile sınırlıdır. Commit, push, PR ve merge yalnız task
+brief ayrıca kapsıyorsa yapılır.
 
 ```text
-GO-COMPLETE
+GO-COMPLETE — ANALYZE-FIRST CONDITIONAL EXECUTION
 ↓
-Kod / dokümantasyon değişikliği
-Test
+ANALYZE
+IF IMPLEMENT
+IMPLEMENT
+VERIFY
+COMMIT
+PUSH
+PR
 CI
-Merge
-Remote Branch Cleanup
-Local Branch Cleanup
-Worktree Cleanup
-Main Sync
-Final Verification
-Checkpoint
-NEXT RECOMMENDED STEP
-Dur
+IF GO-COMPLETE
+SQUASH-MERGE
+MAIN SYNC
+CLEANUP
+FINAL VERIFICATION
+CLOSE
 ```
 
-GO-COMPLETE implementasyon ve validation zinciridir. Commit, push, PR, CI, merge, main sync, remote branch cleanup, local branch cleanup, worktree cleanup, final verification ve checkpoint yalnız görev brief'i açık `IF GO-COMPLETE` owner yetkisi içeriyorsa tek operasyon sayılır. Tool/system guardrail merge'i bloklarsa veya PR'a özgü açık yetki gerektirirse ajan durur ve owner'dan açık yetki ister. Aksi halde CI PASS ve `mergeStateStatus` CLEAN sonrası stop condition oluşmadıysa ajan zincir içinde tekrar onay istemez. Bu zincirde `Onay Bekleniyor: YES` yazılmaz. Yalnız stop condition oluşursa ajan durur, sebebi raporlar ve `Onay Bekleniyor: YES` yazar.
+Implementation-eligible görevlerde tercih edilen brief biçimi `GO-COMPLETE — ANALYZE-FIRST`tır. Analiz ayrı teslim veya zorunlu owner turu değildir.
+
+`IF IMPLEMENT` yalnız root cause doğrulanmış, çözüm aynı task objective ve bounded context içinde, canonical governance ile uyumlu, yeni owner semantiği gerektirmeyen, minimum güvenli patch/validation belirlenmiş, owner WIP/competing writer collision olmayan ve task brief dışında production/destructive işlem gerektirmeyen durumda PASS olur. Gate fail ise yalnız exact blocker için durulur.
+
+`IF GO-COMPLETE` yalnız local validation ve required CI PASS, changed paths exact authorized scope, PR CLEAN/MERGEABLE, unexpected file/semantic conflict/merge conflict/active writer collision NONE ise PASS olur. Ex-ante `IF GO-COMPLETE` owner authority merge için yeterlidir; CI sonrasında ikinci owner mesajı istenmez. Bu standing/unattended GitHub auto-merge, scheduler veya reusable merge grant'i değildir.
+
+Owner kararı yalnız yeni hukuki/finansal/domain/product semantiği, farklı davranış üreten birden çok makul seçenek, bounded-context/temel mimari değişikliği, task dışı schema/migration/backfill/live DB/production/cutover, destructive/data-loss/legacy removal, owner WIP mutation, canonical/semantic conflict, gerçek task-objective dışı scope expansion veya çözülemeyen CI/security/technical risk için istenir.
+
+Aynı root cause ve bounded context içindeki supporting dosya, focused test/fixture/mock, mevcut mimarideki minimum tercih, kendi patch'inin validation düzeltmesi ve task'e doğrudan bağlı documentation/reference alignment ayrıca owner onayı gerektirmez. İlgisiz finding immediate security/data-loss/corruption riski taşımıyorsa evidence ile backlog adayı olarak ayrılır; task'e gizlice eklenmez ve task'i durdurmaz.
 
 ## Lane Ownership: Analysis Owner ≠ Implementation Owner
 
@@ -153,8 +174,7 @@ Kaynak: COL/OD-18A (`decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18A`).
 
 ## Approval Reporting Semantics
 
-- `GO-ANALYZE` sonunda `Onay Bekleniyor: YES` yazılır; çünkü analizden sonra kullanıcı karar verir.
-- `GO-IMPLEMENT` sonunda `Onay Bekleniyor: YES` yazılır; çünkü commit / PR / merge için kullanıcı karar verir.
+- `GO-ANALYZE` ve bounded `GO-IMPLEMENT` kendi tesliminde durur; yalnız yeni owner kararı veya authority gerekiyorsa `Onay Bekleniyor: YES` yazılır.
 - Açık `IF GO-COMPLETE` owner yetkisiyle yürüyen zincirin sonunda stop condition yoksa `Onay Bekleniyor: NO` yazılır; çünkü kullanıcı baştan operasyon zincirini tamamlama yetkisi vermiştir.
 - `GO-COMPLETE` sırasında stop condition varsa `Onay Bekleniyor: YES` yazılır; çünkü kullanıcı kararı gerekir.
 
@@ -164,7 +184,7 @@ Bir görev dışsal bir bağımlılıkla (CI, başka worktree'nin WIP'i, PR revi
 
 ## CI WAIT / POLLING RULE
 
-Bu kural yalnız açık `IF GO-COMPLETE` owner yetkisi içeren görevler için geçerlidir. `GO-ANALYZE` ve `GO-IMPLEMENT` sonunda ajan kullanıcıya rapor verir; CI bekleme zinciri otomatik merge anlamına gelmez.
+Bu kural yalnız açık `IF GO-COMPLETE` owner yetkisi içeren görevler için geçerlidir. `GO-ANALYZE` ve bounded `GO-IMPLEMENT` kendi tesliminde durur. CI bekleme zinciri standing/unattended auto-merge anlamına gelmez; task-specific owner-authorized conditional merge, gate'ler PASS olduğunda zincirin yetkili parçasıdır.
 
 `IF GO-COMPLETE` sırasında CI durumu `IN_PROGRESS` ise ajan hemen kullanıcıya dönmez. CI durumunu otomatik olarak belirli aralıklarla yeniden kontrol eder.
 
