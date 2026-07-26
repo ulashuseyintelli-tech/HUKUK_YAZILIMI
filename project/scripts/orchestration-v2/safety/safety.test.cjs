@@ -392,6 +392,38 @@ test('boundary: forbidden glob matching covers prefix, dir and ** forms', () => 
   assert.equal(boundary.matchesForbidden('project/apps/api/src/a.ts', FORBIDDEN), null);
 });
 
+test('boundary: a forbidden subsurface beats the allowed root containing it', () => {
+  // The precedence §1 depends on, and the exact shape of the defect the §1.1
+  // correction closes: a BOUNDED_CODE_TASK must be able to work under
+  // project/apps/api/, so the allowed root necessarily contains the Prisma
+  // schema/migration surface. Being inside an allowed root must not make a
+  // forbidden path writable — otherwise PRODUCTION_SCHEMA_MIGRATION_RUNTIME is
+  // denied by the contract and permitted by the validator. Nothing asserted
+  // FORBIDDEN_PATH_TOUCHED at validate() level before this.
+  const forbidden = FORBIDDEN.concat(['project/apps/api/prisma/']);
+  for (const p of [
+    'project/apps/api/prisma/schema.prisma',
+    'project/apps/api/prisma/migrations/20260718210000_x/migration.sql',
+  ]) {
+    const v = boundary.validate({ changes: [ch({ path: p })], allowedRoots: ALLOWED, forbidden });
+    assert.equal(v.withinBoundary, false, p);
+    assert.equal(v.forbiddenPathsUntouched, false, p);
+    assert.ok(
+      v.violations.some((x) => x.code === 'FORBIDDEN_PATH_TOUCHED'),
+      p + ' must raise FORBIDDEN_PATH_TOUCHED',
+    );
+  }
+
+  // Sibling application code under the same allowed root stays writable, so the
+  // fix does not over-tighten the profile out of usefulness.
+  const ok = boundary.validate({
+    changes: [ch({ path: 'project/apps/api/src/prisma/prisma.service.ts' })],
+    allowedRoots: ALLOWED,
+    forbidden,
+  });
+  assert.equal(ok.withinBoundary, true);
+});
+
 // ------------------------------------------------------------- WORKTREE GATE
 
 test('worktree: owner WIP prefixes are recognised', () => {

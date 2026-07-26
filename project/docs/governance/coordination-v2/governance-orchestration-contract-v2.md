@@ -44,11 +44,38 @@ Immutable global forbidden (task-bazlı override **EDİLEMEZ**), kaynak
 
 - `canonicalSemanticGovernance[*]`
 - `coordinationControlPlane[*]`
-- `grandfatheredOwnerWipPrefixes[*]`
-- `project/prisma/` · `project/deploy/` · `project/ops/` · `project/node_modules/`
+- `grandfatheredOwnerWipPrefixes[*]` · `grandfatheredOwnerWipExactPaths[*]`
+- `project/apps/api/prisma/` · `project/ops/` · `project/node_modules/`
+- `project/prisma/` · `project/deploy/` — DEFENSIVE, ağaçta karşılığı YOK (§1.1)
 
-Gerekçe: `prisma`/`deploy`/`ops` = `PRODUCTION_SCHEMA_MIGRATION_RUNTIME`, V1
-§3'te `DENIED`. V2 bunu gevşetmez; ayrı owner gate gerektirir.
+Gerekçe: bu yollar `PRODUCTION_SCHEMA_MIGRATION_RUNTIME`'dır ve V1 §3'te
+`DENIED`'dır. V2 bunu gevşetmez; ayrı owner gate gerektirir.
+
+### 1.1 `project/apps/api/prisma/` neden ayrıca sayılır
+
+V1 `deniedTargetPrefixes` altı giriş taşır; bunlardan `project/apps/` tüm
+uygulama yüzeyini, dolayısıyla `project/apps/api/prisma/`'yı da kapsar.
+`BOUNDED_CODE_TASK` profili tanım gereği `project/apps/` altında çalışmak
+zorundadır, bu yüzden V2 `project/apps/` ve `project/packages/` prefix'lerini
+immutable listeden çıkarır. İlk yazımda bu çıkarma yapılırken schema/migration
+**alt-yüzeyi oyulmamıştı**, dolayısıyla `PRODUCTION_SCHEMA_MIGRATION_RUNTIME:
+DENIED` hükmü onu uygulaması gereken liste tarafından uygulanmıyordu:
+`allowedRoots: ['project/apps/api/']` olan bir task
+`project/apps/api/prisma/migrations/` altına production migration ekleyebilir ve
+§15.2'nin mekanik kontrolü (`boundary ∩ immutable global forbidden = ∅`) buna
+PASS verirdi. Ağaçtaki tek schema/migration yüzeyi `project/apps/api/prisma/`
+olduğu için (104 tracked dosya: `schema.prisma` + tüm migration'lar) burada
+açıkça sayılır. Deny modeli gevşetilmez; gerçek yüzeye bağlanır.
+
+`project/apps/api/src/prisma/` KAPSAM DIŞIDIR — NestJS `PrismaModule`/
+`PrismaService` kodudur, schema/migration yüzeyi değildir; onu da kapatmak
+`BOUNDED_CODE_TASK`'i gereksiz daraltırdı.
+
+`project/prisma/` ve `project/deploy/` V1'den devralınmıştır ve ağaçta
+**yoktur**. Listede DEFENSIVE olarak kalırlar: maliyeti sıfırdır ve ileride bir
+üst-düzey `project/prisma/` açılırsa kendiliğinden kapsar. Ancak tek başlarına
+`PRODUCTION_SCHEMA_MIGRATION_RUNTIME` kapsamını KARŞILAMAZLAR; o kapsamı
+karşılayan giriş `project/apps/api/prisma/`'dır.
 
 ## 2. Immutable authorization
 

@@ -30,22 +30,48 @@ const authority = require('./authority.cjs');
 const stateMod = require('./state.cjs');
 const mergeready = require('./mergeready.cjs');
 
-/** Immutable global forbidden set (§1). Never overridable by a task. */
+/**
+ * Immutable global forbidden set (§1). Never overridable by a task.
+ *
+ * This is a hand-written list, not a read of
+ * `governance-writer-coordination-protected-paths.json`, so that the set is
+ * greppable and needs no I/O at require time. That transcription had drifted
+ * from its source — `project/docs/design/**`, `project/docs/runbooks/**`,
+ * `.agents/skills/**` and the coordination guard's own test file were all
+ * missing, and the schema/migration surface was named by two paths that do not
+ * exist in the tree instead of the one that does. `orchestrator.test.cjs` now
+ * asserts semantic coverage of every protected entry and of every tracked
+ * schema/migration path, so a future drift fails a test rather than silently
+ * widening what a task may touch.
+ */
 const IMMUTABLE_FORBIDDEN = [
+  // canonicalSemanticGovernance
   'AGENTS.md',
   'CLAUDE.md',
   'project/docs/governance/**',
   'project/docs/adr/**',
   'project/docs/blueprint/**',
-  'project/prisma/',
-  'project/deploy/',
-  'project/ops/',
-  'project/node_modules/',
+  'project/docs/design/**',
+  'project/docs/runbooks/**',
+  // coordinationControlPlane
+  '.github/workflows/ci.yml',
+  'project/scripts/governance-coordination.cjs',
+  'project/scripts/governance-coordination.test.cjs',
+  '.agents/skills/**',
+  // grandfatheredOwnerWip (prefixes + every exact path falls under these)
   '.claude/',
   '.codex/',
   '.worktrees/',
-  '.github/workflows/ci.yml',
-  'project/scripts/governance-coordination.cjs',
+  // PRODUCTION_SCHEMA_MIGRATION_RUNTIME — V1 §3 DENIED.
+  // The tree's only schema/migration surface is project/apps/api/prisma/;
+  // project/apps/api/src/prisma/ is PrismaModule/PrismaService code and stays
+  // reachable. project/prisma/ and project/deploy/ are inherited from V1 and
+  // have no counterpart in the tree — kept as defensive prefixes only (§1.1).
+  'project/apps/api/prisma/',
+  'project/ops/',
+  'project/node_modules/',
+  'project/prisma/',
+  'project/deploy/',
 ];
 
 class OrchestratorError extends Error {
