@@ -2859,6 +2859,51 @@ NEXT                               RCV-CLAIM-FORM-P02-S08-D02-SR01 —
 
 ---
 
+## RCV-CLAIM-FORM-P02-S08-D02-SR01 — Versioned Legal Subtype Registry V1
+
+```text
+PROGRAM LOCK                       RECEIVABLE / CLAIM FORMATION
+STATUS                             RATIFIED / CANONICAL UPON APPROVED MERGE
+REGISTRY ID / VERSION              RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY / 1
+REGISTRY STATUS / RUNTIME          RATIFIED / DORMANT
+ENTRY COUNT                        7
+REGISTRY CHECKSUM                  320f671ed2262314a560703bc8f15f9cd8b5e0743d8dfa4e5ce49b1e62c26e64
+ARTIFACT / SCHEMA / VALIDATOR      AVAILABLE / CHECKSUM-PINNED / PASS
+PRODUCTION PROVIDER / RESOLVER     NONE
+KEY / SIGNATURE / SIGNED RELEASE   NONE / NOT CREATED
+SCHEMA / MIGRATION                 NONE
+HISTORICAL MUTATION                NONE
+D02-F01                            STILL BLOCKED
+S08-I04                            BLOCKED / NOT AUTHORIZED
+NEXT                               RCV-CLAIM-FORM-P02-S08-D02-PB01 —
+                                   OWNER GO REQUIRED / NOT STARTED
+```
+
+### Closed capability
+
+- Exact seven subtype code/version inventory, category/Legal Basis crosswalk ve per-entry legal,
+  source/evidence, liability, interest, amount/currency, calculation, admission/finalization/
+  snapshot ve lifecycle semantics ratified'dır.
+- Closed JSON Schema unknown alanı, duplicate/invalid version'ı ve unratified code/category/basis'i
+  reddeder.
+- Canonical UTF-8/NFC serialization ve SHA-256 checksum manifest deterministiktir; formatting,
+  key-source order ve CRLF/LF farkları checksum'u değiştirmez, semantic mutation değiştirir.
+- `DEFAULT_INTEREST` TBK_117 formation-condition'a daraltılmıştır; separate exact rate authority
+  zorunludur ve catch-all değildir. Generic fallback, implicit alias ve historical reclassification
+  yoktur.
+- Existing Claim Formation dormancy suite validator self-test'i çalıştırır; production wiring yoktur.
+
+### Open gates
+
+`D02-PB01 — Exact Legal Basis Projection Binding Contract`, Legal Basis payload'ının exact registry
+identity/version/checksum ve `allowedSubtypeCodes[]` bağını ratify edecek tek sonraki bounded
+task'tır. Shared Document V4 exact-version adapter paralel dış bağımlılıktır. Production public-key
+ceremony/trust-root onboarding, complete Legal Basis payload checksum, checksum-bound reviewer ve
+final-ratifier approvals, signed release, provider/resolver wiring ve runtime activation ayrıca
+owner-gated kalır. D02-F01 ve I04 otomatik başlamaz.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,

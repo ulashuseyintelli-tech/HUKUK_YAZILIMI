@@ -3230,6 +3230,105 @@ Bu ratification subtype registry, key onboarding, signature execution, signed ar
 code/test/schema/migration, resolver/provider wiring, runtime activation, Document authority,
 I04/I05 veya historical data değişikliği üretmez.
 
+## 23.33. Versioned Legal Subtype Registry V1 ratification
+
+`RCV-CLAIM-FORM-P02-S08-D02-SR01`, §23.32.3'te candidate kalan yedi subtype'ı exact
+versioned registry, closed schema ve checksum authority'siyle ratify eder:
+
+```text
+registryId                 RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY
+registryVersion            1
+registryStatus             RATIFIED
+runtimeStatus              DORMANT
+entryCount                 7
+serializationAlgorithm     RCV-LEGAL-SUBTYPE-REGISTRY-CANONICAL-JSON-V1
+checksumAlgorithm          SHA-256
+registryChecksum           320f671ed2262314a560703bc8f15f9cd8b5e0743d8dfa4e5ce49b1e62c26e64
+```
+
+### 23.33.1. Exact subtype/category/Legal Basis map
+
+| subtypeCode | subtypeVersion | category | exact Legal Basis binding |
+|---|---:|---|---|
+| `COMMERCIAL_COLLECTION_COST` | 1 | `COST` | `TTK_1530` |
+| `COMMERCIAL_DEFAULT_INTEREST` | 1 | `ACCRUED_INTEREST` | exactly one of `KANUN_3095_2`, `TTK_1530` |
+| `CONTRACTUAL_DEFAULT_INTEREST` | 1 | `ACCRUED_INTEREST` | `TBK_120` |
+| `DEFAULT_INTEREST` | 1 | `ACCRUED_INTEREST` | `TBK_117`; separate exact rate authority required |
+| `DELAY_DAMAGE` | 1 | `ANCILLARY` | `TBK_118` |
+| `STATUTORY_DEFAULT_INTEREST` | 1 | `ACCRUED_INTEREST` | `KANUN_3095_2` |
+| `STATUTORY_INTEREST` | 1 | `ACCRUED_INTEREST` | `KANUN_3095_1` |
+
+Sıra Unicode code-point lexicographic canonical sıradır, hukuki öncelik değildir.
+`COMMERCIAL_DEFAULT_INTEREST` için iki code exactly-one-of alternatiflerdir ve sıra fallback
+üretmez. `DEFAULT_INTEREST`, TBK_117'nin yalnız formation-condition rolünü taşır; rate authority
+üretmez ve catch-all değildir. `DELAY_DAMAGE` otomatik faiz/penalty değildir. `TTK_1530`
+subtype'ları consumer, employment veya unrelated commercial debt'te kullanılamaz.
+
+### 23.33.2. Exact-version, source/evidence ve snapshot contract
+
+Her entry immutable code/version; legal meaning/character; exact canonical category; exact Legal
+Basis allowlist; required source/evidence; same-debtor/same-liability binding; interest, amount,
+currency ve calculation semantics; allowed/forbidden formation paths; admission/finalization/
+snapshot requirements; effective interval ve lifecycle taşır. Unknown field, duplicate code,
+unratified category/basis, boş evidence, invalid version, implicit alias ve fallback fail-closed'dur.
+
+Consumer yalnız şu exact tuple ile authority kullanabilir:
+
+```text
+registryId + registryVersion + registryChecksum
++ subtypeCode + subtypeVersion
++ Legal Basis code/version/checksum/release identity
++ Document version/fingerprint
++ liability-context hash
++ amount/currency/minor-unit/effective-date inputs
+```
+
+Current/latest/default resolution, direct ClaimItem write, generic component fallback, future
+interest'i fixed ClaimItem'a çevirme, automatic version upgrade, backfill ve historical
+reclassification yasaktır. Interest entry'leri yalnız effective date'e kadar işlemiş exact amount
+taşır; future interest InterestPolicy/calculation rule olarak kalır. V1, ayrıca açık authority
+olmadan faize faiz üretmez.
+
+### 23.33.3. Canonical artifacts ve deterministic checksum
+
+- `receivable-legal-subtype-registry-v1.json`: canonical semantic payload;
+- `receivable-legal-subtype-registry-v1.schema.json`: required-field ve unknown-field-closed schema;
+- `receivable-legal-subtype-registry-v1.checksum.json`: self-reference içermeyen checksum manifest;
+- `receivable-legal-subtype-registry-v1.md`: ratification ve boundary record;
+- `receivable-legal-subtype-registry-v1-crosswalk.md`: Legal Basis/evidence traceability;
+- `project/scripts/governance/validate-receivable-legal-subtype-registry.cjs`: deterministic validator.
+
+Serialization UTF-8/NFC, code-point lexicographic object key order ve contract-defined array order
+kullanır. Whitespace, object source order, CRLF/LF, environment, absolute path ve execution time
+checksum'a etki etmez. Checksum lowercase hexadecimal SHA-256'dır ve checksum manifest canonical
+payload dışında tutulur.
+
+### 23.33.4. Readiness ve kalan gate'ler
+
+```text
+TASK                               RCV-CLAIM-FORM-P02-S08-D02-SR01
+STATUS                             RATIFIED / CANONICAL UPON APPROVED MERGE
+REGISTRY ARTIFACT                  AVAILABLE / CHECKSUM-PINNED
+PRODUCTION PROVIDER / RESOLVER     NONE
+RUNTIME                            DORMANT / DEFAULT DISABLED
+PUBLIC KEYS / KEY CEREMONY         PENDING / SEPARATE OWNER GATE
+CHECKSUM-BOUND LEGAL APPROVALS      PENDING / SEPARATE OWNER GATE
+SIGNED RELEASE                     NOT CREATED
+SCHEMA / MIGRATION                 NONE
+HISTORICAL DATA MUTATION           NONE
+I04                                BLOCKED / NOT AUTHORIZED
+NEXT                               RCV-CLAIM-FORM-P02-S08-D02-PB01 —
+                                   OWNER GO REQUIRED / NOT STARTED
+```
+
+`D02-PB01 — Exact Legal Basis Projection Binding Contract`, Legal Basis release payload'ını exact
+registry identity/version/checksum ve `allowedSubtypeCodes[]` ile bağlayacak sonraki bounded
+contract'tır. Shared Document V4 exact-version consumer adapter işi paralel dış bağımlılıktır.
+D02-F01; PB01, production trust-root/key onboarding, complete payload checksum ve checksum-bound
+reviewer/final-ratifier approvals tamamlanmadan başlayamaz. Bu ratification code/runtime provider,
+resolver, key/signature, signed release, schema/migration, I04/I05 veya historical-data authority
+üretmez.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar

@@ -98,14 +98,15 @@ RCV-CLAIM-FORM-P02-S08-D02-F01-R02 : OWNER INPUT PACK READY / CANONICAL — CONT
 RCV-CLAIM-FORM-P02-S08-D02-R01A : RELEASE IDENTITY AMENDMENT RATIFIED / CANONICAL — NON-CIRCULAR IDENTITY CHAIN
 RCV-CLAIM-FORM-P02-S08-D02-CR01 : COMPONENT CATEGORY BINDING RATIFIED / CANONICAL — SCOPE VALIDATION-AND-ECHO
 RCV-CLAIM-FORM-P02-S08-D02-F01-R03 : LEGAL BASIS RELEASE INPUTS RATIFIED / CANONICAL — SR01 + KEYS + CHECKSUM DECISIONS MISSING
-RCV-CLAIM-FORM-P02-S08-D02-SR01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
+RCV-CLAIM-FORM-P02-S08-D02-SR01 : RATIFIED / CANONICAL — VERSIONED LEGAL SUBTYPE REGISTRY V1
+RCV-CLAIM-FORM-P02-S08-D02-PB01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-SR01 — OWNER GO REQUIRED / NOT STARTED
+Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-PB01 — OWNER GO REQUIRED / NOT STARTED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -3732,3 +3733,36 @@ OWNER GO-IMPLEMENT REQUIRED / NOT STARTED / NOT AUTHORIZED
 TPA-04C-I05..I07:
 NOT AUTHORIZED / NO SELF-START
 ```
+
+## 10. Versioned Legal Subtype Registry V1 Ratification — 2026-07-26
+
+```text
+TASK                               RCV-CLAIM-FORM-P02-S08-D02-SR01
+STATUS                             RATIFIED / CANONICAL UPON APPROVED MERGE
+REGISTRY ID                        RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY
+REGISTRY VERSION                   1
+REGISTRY STATUS                    RATIFIED
+RUNTIME STATUS                     DORMANT
+ENTRY COUNT                        7
+CHECKSUM                           320f671ed2262314a560703bc8f15f9cd8b5e0743d8dfa4e5ce49b1e62c26e64
+PRODUCTION PROVIDER / RESOLVER     NONE
+SCHEMA / MIGRATION                 NONE
+SIGNED LEGAL BASIS RELEASE         NOT CREATED
+I04                                BLOCKED / NOT AUTHORIZED
+NEXT ELIGIBLE TASK                 RCV-CLAIM-FORM-P02-S08-D02-PB01
+NEXT TASK AUTHORITY                OWNER GO REQUIRED / NOT STARTED
+```
+
+Exact seven-code machine registry, closed JSON Schema, SHA-256 checksum manifest, Legal Basis
+crosswalk ve deterministic validator canonical artifact pack'i oluşturulmuştur. `DEFAULT_INTEREST`
+dar `TBK_117` formation-condition subtype'ıdır; rate authority ayrıca exact source/policy ister ve
+generic fallback değildir. `OTHER`, `PRINCIPAL`, current/latest/default ve historical
+reclassification fallback'ları yasaktır. Her subtype exact category, Legal Basis allowlist,
+source/evidence, same-liability, amount/currency/calculation, admission/finalization/snapshot ve
+dormant lifecycle contract'ına bağlıdır.
+
+Bu kayıt production provider/resolver/call-site, runtime activation, public key, signature, signed
+release, schema/migration veya historical mutation authority üretmez. `D02-PB01 — Exact Legal
+Basis Projection Binding Contract` ayrı owner GO gerektirir. Shared Document V4 exact-version
+consumer adapter işi paralel dış bağımlılıktır. PB01, key ceremony/trust-root onboarding, complete
+payload checksum ve checksum-bound legal approvals tamamlanmadan D02-F01 başlamaz.

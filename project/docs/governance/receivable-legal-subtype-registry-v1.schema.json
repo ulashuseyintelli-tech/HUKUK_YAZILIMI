@@ -1,0 +1,383 @@
+{
+  "$id": "https://hukuk-yazilimi.local/schemas/receivable-legal-subtype-registry-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/entry"
+      },
+      "maxItems": 7,
+      "minItems": 7,
+      "type": "array"
+    },
+    "registryId": {
+      "const": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY"
+    },
+    "registryStatus": {
+      "const": "RATIFIED"
+    },
+    "registryVersion": {
+      "const": 1
+    },
+    "runtimeStatus": {
+      "const": "DORMANT"
+    },
+    "serializationAlgorithm": {
+      "const": "RCV-LEGAL-SUBTYPE-REGISTRY-CANONICAL-JSON-V1"
+    }
+  },
+  "required": [
+    "entries",
+    "registryId",
+    "registryStatus",
+    "registryVersion",
+    "runtimeStatus",
+    "serializationAlgorithm"
+  ],
+  "title": "Receivable Legal Subtype Registry V1",
+  "type": "object",
+  "$defs": {
+    "amountSemantics": {
+      "additionalProperties": false,
+      "properties": {
+        "fixedAtFormation": {
+          "type": "boolean"
+        },
+        "minorUnitRepresentation": {
+          "const": "POSITIVE_INTEGER_STRING"
+        },
+        "roundingFallback": {
+          "const": "PROHIBITED"
+        },
+        "semanticAuthority": {
+          "$ref": "#/$defs/nonBlankString"
+        }
+      },
+      "required": [
+        "fixedAtFormation",
+        "minorUnitRepresentation",
+        "roundingFallback",
+        "semanticAuthority"
+      ],
+      "type": "object"
+    },
+    "calculationSemantics": {
+      "additionalProperties": false,
+      "properties": {
+        "futureAccrual": {
+          "enum": [
+            "INTEREST_POLICY_ONLY",
+            "PROHIBITED"
+          ]
+        },
+        "rule": {
+          "$ref": "#/$defs/nonBlankString"
+        },
+        "sourceAmountDerivation": {
+          "$ref": "#/$defs/nonBlankString"
+        }
+      },
+      "required": [
+        "futureAccrual",
+        "rule",
+        "sourceAmountDerivation"
+      ],
+      "type": "object"
+    },
+    "currencySemantics": {
+      "additionalProperties": false,
+      "properties": {
+        "conversion": {
+          "const": "PROHIBITED"
+        },
+        "currencyAuthority": {
+          "$ref": "#/$defs/nonBlankString"
+        },
+        "minorUnitAuthority": {
+          "const": "ISO_CURRENCY_MINOR_UNIT"
+        }
+      },
+      "required": [
+        "conversion",
+        "currencyAuthority",
+        "minorUnitAuthority"
+      ],
+      "type": "object"
+    },
+    "entry": {
+      "additionalProperties": false,
+      "properties": {
+        "admissionRequirements": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "allowedFormationPaths": {
+          "const": [
+            "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+          ]
+        },
+        "amountSemantics": {
+          "$ref": "#/$defs/amountSemantics"
+        },
+        "calculationSemantics": {
+          "$ref": "#/$defs/calculationSemantics"
+        },
+        "canonicalComponentCategory": {
+          "enum": [
+            "PRINCIPAL",
+            "COST",
+            "ANCILLARY",
+            "ACCRUED_INTEREST"
+          ]
+        },
+        "currencySemantics": {
+          "$ref": "#/$defs/currencySemantics"
+        },
+        "displayName": {
+          "$ref": "#/$defs/nonBlankString"
+        },
+        "effectiveFrom": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "effectiveUntil": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finalizationRequirements": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "forbiddenFormationPaths": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "interestEligibility": {
+          "$ref": "#/$defs/interestEligibility"
+        },
+        "legalBasisBindings": {
+          "$ref": "#/$defs/legalBasisBindings"
+        },
+        "legalCharacter": {
+          "$ref": "#/$defs/nonBlankString"
+        },
+        "legalMeaning": {
+          "$ref": "#/$defs/nonBlankString"
+        },
+        "liabilityCompatibility": {
+          "$ref": "#/$defs/liabilityCompatibility"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle"
+        },
+        "notes": {
+          "$ref": "#/$defs/nonBlankString"
+        },
+        "requiredEvidenceTypes": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "requiredSourceTypes": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "snapshotRequirements": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "status": {
+          "const": "RATIFIED"
+        },
+        "subtypeCode": {
+          "enum": [
+            "COMMERCIAL_COLLECTION_COST",
+            "COMMERCIAL_DEFAULT_INTEREST",
+            "CONTRACTUAL_DEFAULT_INTEREST",
+            "DEFAULT_INTEREST",
+            "DELAY_DAMAGE",
+            "STATUTORY_DEFAULT_INTEREST",
+            "STATUTORY_INTEREST"
+          ]
+        },
+        "subtypeVersion": {
+          "const": 1
+        },
+        "supersededBy": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonBlankString"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supersedes": {
+          "items": {
+            "$ref": "#/$defs/nonBlankString"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "subtypeCode",
+        "subtypeVersion",
+        "status",
+        "displayName",
+        "canonicalComponentCategory",
+        "legalMeaning",
+        "legalCharacter",
+        "legalBasisBindings",
+        "requiredSourceTypes",
+        "requiredEvidenceTypes",
+        "liabilityCompatibility",
+        "interestEligibility",
+        "amountSemantics",
+        "currencySemantics",
+        "calculationSemantics",
+        "allowedFormationPaths",
+        "forbiddenFormationPaths",
+        "admissionRequirements",
+        "finalizationRequirements",
+        "snapshotRequirements",
+        "lifecycle",
+        "supersedes",
+        "supersededBy",
+        "effectiveFrom",
+        "effectiveUntil",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "interestEligibility": {
+      "additionalProperties": false,
+      "properties": {
+        "componentAccruesFurtherInterest": {
+          "const": false
+        },
+        "eligibilityRule": {
+          "$ref": "#/$defs/nonBlankString"
+        },
+        "requiresExactInterestPolicy": {
+          "type": "boolean"
+        },
+        "requiresExactRateAuthority": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "componentAccruesFurtherInterest",
+        "eligibilityRule",
+        "requiresExactInterestPolicy",
+        "requiresExactRateAuthority"
+      ],
+      "type": "object"
+    },
+    "legalBasisBindings": {
+      "additionalProperties": false,
+      "properties": {
+        "allowedLegalBasisCodes": {
+          "items": {
+            "enum": [
+              "KANUN_3095_1",
+              "KANUN_3095_2",
+              "TBK_117",
+              "TBK_118",
+              "TBK_120",
+              "TTK_1530"
+            ]
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "bindingMode": {
+          "enum": [
+            "EXACTLY_ONE",
+            "EXACTLY_ONE_OF"
+          ]
+        },
+        "requiredLegalBasisCodes": {
+          "items": {
+            "enum": [
+              "KANUN_3095_1",
+              "KANUN_3095_2",
+              "TBK_117",
+              "TBK_118",
+              "TBK_120",
+              "TTK_1530"
+            ]
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "allowedLegalBasisCodes",
+        "bindingMode",
+        "requiredLegalBasisCodes"
+      ],
+      "type": "object"
+    },
+    "liabilityCompatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "allowedLiabilityTypes": {
+          "const": [
+            "KISMI",
+            "SINIRLI",
+            "TAM"
+          ]
+        },
+        "crossLiabilityUse": {
+          "const": "PROHIBITED"
+        },
+        "scope": {
+          "const": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+        }
+      },
+      "required": [
+        "allowedLiabilityTypes",
+        "crossLiabilityUse",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "lifecycle": {
+      "additionalProperties": false,
+      "properties": {
+        "activation": {
+          "const": "RATIFIED_BUT_RUNTIME_DORMANT"
+        },
+        "revocationBehavior": {
+          "const": "FAIL_CLOSED_FOR_NEW_FORMATION"
+        },
+        "versionUpgrade": {
+          "const": "EXPLICIT_NEW_VERSION_ONLY"
+        }
+      },
+      "required": [
+        "activation",
+        "revocationBehavior",
+        "versionUpgrade"
+      ],
+      "type": "object"
+    },
+    "nonBlankString": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "nonEmptyStringArray": {
+      "items": {
+        "$ref": "#/$defs/nonBlankString"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    }
+  }
+}

@@ -1,7 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const API_ROOT = path.resolve(__dirname, '../../../..');
+const PROJECT_ROOT = path.resolve(API_ROOT, '../..');
 const CLAIM_ITEM_ROOT = path.join(API_ROOT, 'src/modules/claim-item');
 const PACKAGE_ROOT = path.join(CLAIM_ITEM_ROOT, 'formation-intent');
 const DORMANT_FINALIZER = path.join(
@@ -76,5 +78,26 @@ describe('RCV-CLAIM-FORM-P02-S08-I02B dormancy and boundary guard', () => {
       /createPendingRequest\([^)]*Prisma\.TransactionClient/,
     );
     expect(schema).not.toContain('CLAIM_ITEM_FORMATION_APPROVAL_REF_V1');
+  });
+
+  it('validates the ratified legal subtype registry without production wiring', () => {
+    const validator = path.join(
+      PROJECT_ROOT,
+      'scripts/governance/validate-receivable-legal-subtype-registry.cjs',
+    );
+    const result = spawnSync(process.execPath, [validator, '--self-test'], {
+      cwd: PROJECT_ROOT,
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toMatch(
+      /^LEGAL_SUBTYPE_REGISTRY_VALID entryCount=7 checksum=[0-9a-f]{64}\r?\n$/,
+    );
+
+    const moduleSource = read('src/modules/claim-item/claim-item.module.ts');
+    expect(moduleSource).not.toContain('receivable-legal-subtype-registry');
+    expect(moduleSource).not.toContain('LegalSubtypeRegistry');
   });
 });
