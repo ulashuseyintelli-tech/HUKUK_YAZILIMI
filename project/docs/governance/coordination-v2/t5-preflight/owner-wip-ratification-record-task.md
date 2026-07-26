@@ -54,6 +54,8 @@ kalır. | ... | ... | ... |
 
 ### 2.2 OFFICE
 
+> **SUPERSEDED — BU TASLAĞI `decision-log.md`'YE OLDUĞU GİBİ YAZMAYIN (2026-07-26).** Aşağıdaki taslak `T5-LIVE-PILOT-OWNER-DECISIONS-AND-PLAN-AUTHORING-R01` (PR #1619 / `64d54732`) tarihlidir ve `CAP-09A-CONSUMER-01 / SLICE 3: OWNER-AUTHORIZED` der. Owner aynı gün verdiği `OFFICE-P2-CAP09A-TO-CAP02-SEQUENCE-SUPERSESSION-R01` kararıyla (PR #1628 / `627c76e4`) bu yetkilendirmeyi current ve future OFFICE execution sequence bakımından **supersede etmiştir**: SLICE 3 `NOT CURRENTLY AUTHORIZED / NOT STARTED`; current first/primary executable workstream `CAP-02 — OBJECT-SCOPE / REPORTINGLINE`; delivery strategy `POPULATION-FIRST`. Taslak **tarihsel kayıt olarak korunur**, fakat olduğu gibi yapıştırılırsa supersede edilmiş bir yetki otoritatif `decision-log.md`'ye girer. Güncel durum yüzeyi: `OFFICE-DELIVERY-MANIFEST.md` §10 ve `OFFICE-RISK-REGISTER.md` STF-PRD-AUDIT-001 AUTHORITY SUPERSESSION bloğu.
+
 ```text
 | 2026-07-26 | **OFFICE PHASE 2 / CAP-09A — AUTHORITY RECONCILIATION + SLICE 3
 AUTHORIZATION:** `decision-log.md` 2026-07-22 CAP-09 GO-DECIDE kaydı ("SLICE 1 bu kayıtla
