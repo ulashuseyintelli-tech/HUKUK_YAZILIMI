@@ -249,7 +249,9 @@ tanınır:
 Mode                 : GITHUB_PLATFORM_GH02_WORKFLOW_HARDENING_R01
 Existing PR          : #1622
 Original base SHA    : 1b682a9a0474d9c94b6a98fc8251ca92fea48766
-Authorized patch SHA : cc6dfba9d0ae2fb5dcfddeb022ad94659d7d406f
+Historical first patch SHA : cc6dfba9d0ae2fb5dcfddeb022ad94659d7d406f (record only; runtime input değildir)
+Canonical squash SHA : ea84c9f5b71716588ac06933ee30b3b72dc52395
+Canonical target blob : 5644cf69ce5d43a5a63fd1d796cf4cdfc8dccf00
 Head ref             : codex/github-platform-gh02-workflow-hardening-r01
 Target               : .github/workflows/ci.yml
 Change               : M (exactly one path)
@@ -257,12 +259,11 @@ Change               : M (exactly one path)
 
 Runtime validation ayrıca şunların tamamını zorunlu tutar:
 
-- Authorized patch commit'inin parent'ı exact original base SHA'dır.
-- Current PR base original base'in descendant'ıdır.
+- Canonical squash commit Git object'i erişilebilirdir; yoksa raw Git hatası yerine
+  `CONTROL_PLANE_BINDING_OBJECT_UNAVAILABLE` üretilir.
+- Canonical squash commit'teki target blob exact canonical blob SHA ile eşittir.
 - Base ilerlemişse bu binding current base'te canonical olarak bulunur.
-- Current PR head hem current base'in hem authorized patch SHA'nın descendant'ıdır.
-- Current base'teki `ci.yml` bytes original base ile; current head'teki
-  `ci.yml` bytes authorized patch SHA ile exact eşittir.
+- Current PR head'teki `ci.yml` blob'u canonical target blob ile exact eşittir.
 - Başka production/control-plane path, başka workflow, rename/delete/add,
   wildcard/similar branch veya task identity mismatch fail-closed reddedilir.
 
@@ -273,6 +274,27 @@ concurrency, job/check adı, test komutu/seçimi, artifact davranışı, project
 20, pnpm 8.15.0 ve PostgreSQL 16 semantiğini değiştirme authority'si değildir.
 Başka workflow veya control-plane görevi için wildcard, prefix veya reusable
 authority üretmez.
+
+#### GH-02 control-plane recovery R02
+
+`GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-RECOVERY-R02`, transient PR-head
+bağımlılığını yukarıdaki canonical squash + target blob modeline dönüştürmek için
+owner-authorized, tek-görevlik ve main ilerlediğinde inert olan repair binding'idir:
+
+```text
+Mode     : GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02
+Base SHA : 627c76e4549196153da0cf2401ed706047ca38c9
+Head ref : codex/github-platform-gh02-control-plane-recovery-r02
+Path set :
+  - project/scripts/governance-coordination.cjs
+  - project/scripts/governance-coordination.test.cjs
+  - project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Bu binding `.github/workflows/ci.yml` değişikliği, başka protected path,
+request/result/execution authority, wildcard/prefix eşleşmesi veya reusable grant
+üretmez. Exact base, branch ya da üç dosyalık modified path setinden sapma
+`CONTROL_PLANE_SCOPE_FORBIDDEN` ile fail-closed reddedilir.
 
 ## 7. Generated register
 
