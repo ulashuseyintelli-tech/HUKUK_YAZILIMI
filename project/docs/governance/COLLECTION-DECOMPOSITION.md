@@ -427,6 +427,63 @@ W2.2D-0 settled-candidate evidence-integrity admission guard exit criteria ve ca
    W2.2D-1 `OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED`, W2.3
    `BLOCKED — W2.2 BOUNDARY PENDING` kalır.
 
+### W2.2D-1R — schema-foundation gerçekleşmesinin tescili (2026-07-26)
+
+```text
+DISPOSITION       : MERGED_WITHOUT_MATCHING_GOVERNANCE_RECORD
+RETROACTIVE AUTH  : ÜRETİLMEZ
+KAYDEDEN          : agent, owner GO-COMPLETE altında
+                    (T5-LIVE-PILOT-OWNER-DECISIONS-AND-PLAN-AUTHORING-R01)
+```
+
+`Collection.confirmedAt` kolonu ve migration'ı W2.2D-1 kapsamında **zaten icra
+edilmiştir**:
+
+```text
+PR #1415 · squash 80a11c2a4dff047e86879d8628cdb090fae66743
+merged   2026-07-18T18:35:53Z · branch codex/rc-col-w2-2d1-confirmed-at
+migration 20260718210000_rc_col_w2_2d1_collection_confirmed_at_foundation
+diff      schema.prisma +1 / migration.sql +3 — ADDITIVE, nullable, default yok
+```
+
+Merge anında yürürlükteki kayıt (`COLLECTION-GOVERNANCE.md §7.9`, commit
+`1c73b7d9`, merge'den 85 dakika önce ve merge commit'inin **atası**) W2.2D-1'i
+açıkça yetkilendirmiyordu. Bu kayıt o gerçeği değiştirmez.
+
+**Bu tescil geçmişe dönük execution authority ÜRETMEZ.** Yalnız canonical
+gerçekleşmeyi görünür kılar ve successor planlamasını açar (contract §15.4:
+hesabı verilmemiş bir merge'in üzerine plan pinlenemez).
+
+Kalan W2.2D-1 kapsamı — `confirmedAt` yazım semantiği, `status=CONFIRMED` iken
+null olmasının anlamı, unapplied remainder/overpayment etkileşimi, projection
+açığa çıkarma kuralları — **hâlâ owner gate'indedir**. `COL-RISK-G03`
+`PARTIALLY MITIGATED` kalır.
+
+### W2.2D-1A — CONFIRMED-AT CHARACTERIZATION (owner-authorized, test-only)
+
+```text
+STATUS            : OWNER-AUTHORIZED
+PROFILE           : test-only successor
+PRODUCTION MUT.   : YOK
+SCHEMA/MIGRATION  : YOK
+YENİ SEMANTİK     : ÜRETMEZ
+```
+
+Amaç, mevcut Collection confirmation davranışını **testlerle karakterize
+etmektir**; yeni bir `confirmedAt` semantiği üretmek değildir. Karakterize
+edilen mevcut gerçekler:
+
+```text
+"confirmed" kararı YALNIZ status üzerinden verilir (isConfirmedCollection)
+admission confirmedAt yazmaz — kolon null kalır
+status @default(CONFIRMED) ile confirmedAt=null birlikte var olabilir
+confirmedAt effective-date authority DEĞİLDİR
+```
+
+**W2.2D-1A, W2.2D-1'in kalan semantik kararlarını KAPATMAZ** ve onun yerine
+geçmez. W2.2D-1 gate'i açık kalır; W2.2E ve W2.3 statüleri bu kayıtla
+değişmez.
+
 ## PHASE 3 — DOMAIN COMPLETENESS (tamamı owner-gated)
 
 | Wave | Workstream | Gate |
@@ -484,7 +541,9 @@ W2.2C-3          : CLOSED / CANONICAL — PR #1382 @ be1771d3
 W2.2C-4          : CLOSED / CANONICAL — PR #1391 @ facc7789
 W2.2C-5          : CLOSED / CANONICAL — PR #1401 @ 0452e836
 W2.2D-0          : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR #1407 @ 1156e4de
-W2.2D-1          : OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED — confirmedAt / projection hardening
+W2.2D-1          : PARTIALLY EXECUTED — schema foundation tescil edildi (PR #1415 @ 80a11c2a, bkz. §W2.2D-1R);
+                   kalan semantik kapsam OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED
+W2.2D-1A         : OWNER-AUTHORIZED — CONFIRMED-AT CHARACTERIZATION, test-only successor (bkz. §W2.2D-1A)
 W2.2E            : NOT AUTHORIZED — W2.2D BOUNDARY PENDING
 W2.2             : ACTIVE — W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4/W2.2C-5 closed; W2.2D-0 closes upon approved reconciliation; W2.2D-1 owner-gated
 W2.3             : BLOCKED — W2.2 BOUNDARY PENDING
