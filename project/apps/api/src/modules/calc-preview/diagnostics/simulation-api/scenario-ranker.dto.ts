@@ -40,7 +40,7 @@ export interface ScenarioRankerResponseDto {
 // Validation
 // ============================================================================
 
-const MAX_SCENARIOS = 100;
+export const MAX_SCENARIOS = 100;
 
 export interface ValidationError {
   field: string;

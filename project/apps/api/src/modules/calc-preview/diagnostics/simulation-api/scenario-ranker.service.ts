@@ -16,6 +16,7 @@ import {
   RankedResult,
   TradeoffExplanation,
 } from './scenario-ranker.types';
+import { MAX_SCENARIOS } from './scenario-ranker.dto';
 
 @Injectable()
 export class ScenarioRankerService {
@@ -26,6 +27,10 @@ export class ScenarioRankerService {
    * @param _seed - Reserved for future stochastic tie-break (unused in Sprint 3)
    */
   rank(scenarios: ScenarioResult[], _seed: number): RankedResult {
+    if (scenarios.length > MAX_SCENARIOS) {
+      throw new RangeError(`scenarios must contain at most ${MAX_SCENARIOS} items`);
+    }
+
     if (scenarios.length === 0) {
       return { scenarios: [], fronts: [], tradeoffs: [] };
     }
