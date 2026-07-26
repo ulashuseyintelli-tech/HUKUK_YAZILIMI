@@ -400,6 +400,35 @@ UYAP-BC-COLLECTION-001  — Collection / Tahsilat        (receipt lifecycle owne
 
 **Faz durumu (bu ratifikasyonla):** F3 `UYAP-MODULE-BOUNDARY-CONTRACTS-01` CLOSED/CANONICAL · **F4-b: NOT AUTHORIZED / NOT STARTED.** HOLD'lar 6/6 DEĞİŞMEDİ; OD-UYAP-08 EXTERNAL-AUTHORITY-BLOCKED · OD-UYAP-10 HARD HOLD.
 
+> **NOT (2026-07-26, `UYAP-AUDIT-GOVERNANCE-CLOSURE-R01`):** Yukarıdaki F4-b hükmü
+> **2026-07-21 ratifikasyon anını** yansıtır ve metni DEĞİŞTİRİLMEZ. F4-b evidence zinciri
+> (`P05A-R1` → `P05C-P04`) sonraki ayrı named `GO-IMPLEMENT` yetkileriyle yürütülmüştür;
+> güncel canonical statü §21'e bağlıdır.
+
+## 21. Program Audit Reconciliation (UYAP-AUDIT-GOVERNANCE-CLOSURE-R01)
+
+Bu bölüm ADDITIVE'dir; §1-20 substantive metni reopen edilmez veya değiştirilmez. UYAP programının
+audit sonucu ve geçmiş statü çelişkilerinin append-only uzlaştırması ayrı canonical kayda alınmıştır:
+
+```text
+Belge   : project/docs/blueprint/UYAP-PROGRAM-AUDIT-RECONCILIATION-v1.0.md
+Durum   : CANONICAL AUDIT RECONCILIATION RECORD (yeni constitution DEĞİL, annex DEĞİL)
+Kaynak  : decision-log.md `UYAP-AUDIT-GOVERNANCE-CLOSURE-R01` (2026-07-26)
+Kapsam  : canonical verdict · F4-a reconciliation · P05 status/closure tablosu ·
+          alias/supersession crosswalk (iki ayrı `P05` namespace) · CI test disposition ·
+          historical canary izi · open residual listesi · canonical NEXT zinciri
+```
+
+**Canonical verdict:** `FOUNDATION COMPLETE / RUNTIME OBJECTIVE NOT ACHIEVED` — evidence modelleri
+IMPLEMENTED (schema live-applied), evidence writer'ları CI-PROVEN + DEFAULT-OFF, runtime canary
+NOT SUCCESSFULLY COMPLETED, operation/attempt/link live proof ABSENT.
+
+**Bu bölüm yetki üretmez:** §18 roadmap otoritesi, §19 Constitution v1.1, §20 contract pack ve
+`UYAP-CONST-001..010` byte-DEĞİŞMEZ. IMPLEMENTATION AUTHORITY NONE · REAL TRANSPORT 0 ·
+UYAP CUTOVER HARD HOLD · PRODUCTION ADAPTER NOT AUTHORIZED · PORTAL AUTOMATION PROHIBITED ·
+CREDENTIAL/PIN/PRIVATE-KEY CUSTODY PROHIBITED korunur. **NEXT ELIGIBLE TASK (bu bölüm tarafından
+başlatılmaz): `UYAP-CPE-POA-AND-ACTING-LAWYER-AUTHORITY-DESIGN-01` — OWNER AUTHORIZATION REQUIRED.**
+
 ## Owner Approval Record
 
 ```text
