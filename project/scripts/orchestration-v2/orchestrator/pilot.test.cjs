@@ -514,3 +514,84 @@ test('PILOT: resolution reports a well-formed verdict for both lanes', () => {
     assert.equal(m.unavailableReason, 'SMOKE_SKIPPED', lane + ': ' + m.unavailableReason);
   }
 });
+
+// -------------------------------------------------- ENVIRONMENT PREPARATION
+//
+// The orchestrator creates an isolated worktree and, until this hook existed,
+// installed nothing into it. node_modules is gitignored, so `git worktree add`
+// does not carry it, and both the executor and every requiredTests entry then
+// ran against an unprepared tree. That is not a test failure; it is a gate that
+// cannot go green. These tests pin the hook's contract, not the commands —
+// those belong to the runtime adapter.
+
+test('PILOT: prepareEnvironment runs before the executor and is traced', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/prep/out.txt', 'prep\n');
+  const order = [];
+  const ctx = ctxFor(repo, {
+    specOver: { taskId: 'PILOT-PREP-OK', allowedRoots: ['fixture/prep/'] },
+    ctxExtra: {
+      prepareEnvironment: (a) => {
+        order.push(a.worktreePath ? 'prepare:has-worktree' : 'prepare:no-worktree');
+        return { ok: true };
+      },
+    },
+  });
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'MERGE_READY', JSON.stringify(r.blockerCode || r.detail));
+  assert.ok(r.trace.includes('ENVIRONMENT_PREPARED'));
+  // It received the worktree path, so it can install into the right tree.
+  assert.deepEqual(order, ['prepare:has-worktree']);
+  assert.ok(r.trace.indexOf('ENVIRONMENT_PREPARED') < r.trace.indexOf('EXECUTOR_RUNNING'));
+});
+
+test('PILOT: a preparation failure blocks before any test runs', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/prep/out.txt', 'prep\n');
+  let testsRan = false;
+  const ctx = ctxFor(repo, {
+    specOver: { taskId: 'PILOT-PREP-FAIL', allowedRoots: ['fixture/prep/'] },
+    testRunner: () => {
+      testsRan = true;
+      return { status: 0 };
+    },
+    ctxExtra: {
+      prepareEnvironment: () => ({ ok: false, detail: 'pnpm install --frozen-lockfile exit=1' }),
+    },
+  });
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'BLOCKED');
+  // result.schema.json pins blockerCode to a fixed enum, so the precise cause
+  // travels in detail rather than as a code the result record could not carry.
+  assert.equal(r.blockerCode, 'EXECUTOR_UNAVAILABLE');
+  assert.match(r.detail, /^ENVIRONMENT_PREPARATION_FAILED: /);
+  assert.match(r.detail, /frozen-lockfile/);
+  assert.equal(testsRan, false, 'requiredTests must not run on an unprepared tree');
+  assert.ok(!r.trace.includes('ENVIRONMENT_PREPARED'));
+});
+
+test('PILOT: a throwing preparation adapter blocks the same way', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/prep/out.txt', 'prep\n');
+  const ctx = ctxFor(repo, {
+    specOver: { taskId: 'PILOT-PREP-THROW', allowedRoots: ['fixture/prep/'] },
+    ctxExtra: {
+      prepareEnvironment: () => {
+        throw Object.assign(new Error('spawn ENOENT'), { detail: 'pnpm not on PATH' });
+      },
+    },
+  });
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.equal(r.blockerCode, 'EXECUTOR_UNAVAILABLE');
+  assert.match(r.detail, /ENVIRONMENT_PREPARATION_FAILED: pnpm not on PATH/);
+});
+
+test('PILOT: without the hook the flow is unchanged', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/prep/out.txt', 'prep\n');
+  const ctx = ctxFor(repo, { specOver: { taskId: 'PILOT-PREP-ABSENT', allowedRoots: ['fixture/prep/'] } });
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'MERGE_READY', JSON.stringify(r.blockerCode || r.detail));
+  assert.ok(!r.trace.includes('ENVIRONMENT_PREPARED'), 'no hook, no trace entry');
+});

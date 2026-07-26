@@ -1,0 +1,130 @@
+'use strict';
+/**
+ * GOV-COORD-V2 runtime — prProvider backed by the gh CLI.
+ *
+ * runTask calls ctx.prProvider.open() and .state() with no fallback, so until
+ * this existed the orchestrator could not complete a task no matter what
+ * authority was in place.
+ *
+ * open() creates the pull request from the isolated worktree's branch.
+ * state() supplies the four values the MERGE_READY attestation pins: the PR
+ * head, the target branch, that branch's observed tip, and the merge base.
+ * Those are read at attestation time precisely so head drift and target-branch
+ * drift invalidate the attestation rather than being assumed stable.
+ *
+ * Deliberately absent: anything that merges. Merge is owner authority under
+ * both V1 and V2, and this adapter must not be able to perform one.
+ */
+
+const { execFileSync, spawnSync } = require('child_process');
+
+class PrProviderError extends Error {
+  constructor(code, detail) {
+    super(code + (detail ? ': ' + detail : ''));
+    this.code = code;
+    this.detail = detail || null;
+  }
+}
+
+function gh(args, cwd) {
+  const r = spawnSync('gh', args, { cwd, encoding: 'utf8', shell: process.platform === 'win32' });
+  if (r.status !== 0) {
+    throw new PrProviderError('GH_COMMAND_FAILED', args.join(' ') + ' :: ' + ((r.stderr || r.stdout || '').trim().slice(-400)));
+  }
+  return (r.stdout || '').trim();
+}
+
+function git(args, cwd) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+}
+
+/**
+ * @param {object} cfg
+ * @param {string} cfg.repoCwd       canonical repository root
+ * @param {string} cfg.targetBranch  branch the PR targets (e.g. 'main')
+ * @param {function} [cfg.ghRunner]  injection point for tests
+ */
+function createGhPrProvider(cfg) {
+  const repoCwd = cfg.repoCwd;
+  const targetBranch = cfg.targetBranch || 'main';
+  const runGh = cfg.ghRunner || gh;
+  const runGit = cfg.gitRunner || git;
+
+  return {
+    /**
+     * Push the worktree branch and open the PR. The body deliberately records
+     * the immutable identity the reviewer needs — task id, spec hash, grant —
+     * so a human looking at the PR can tell which ratified plan produced it.
+     */
+    async open(args) {
+      const wt = args.worktreePath;
+      const branch = runGit(['rev-parse', '--abbrev-ref', 'HEAD'], wt);
+      if (!branch || branch === 'HEAD') throw new PrProviderError('DETACHED_HEAD', branch || '(none)');
+
+      runGit(['push', '-u', 'origin', branch], wt);
+
+      const v = args.validated || {};
+      const body = [
+        'Orchestrated under GOV-COORD-V2. Auto-merge is OFF; this PR requires owner merge.',
+        '',
+        '```text',
+        'taskId          : ' + (args.taskId || ''),
+        'taskSpecSha256  : ' + ((v.digests && v.digests.taskSpecSha256) || ''),
+        'grantId         : ' + (v.grantId || ''),
+        'grantSha256     : ' + (v.grantSha256 || ''),
+        'changedFiles    : ' + (((args.verdict || {}).changes || []).length),
+        '```',
+      ].join('\n');
+
+      const out = runGh(
+        ['pr', 'create', '--base', targetBranch, '--head', branch, '--title',
+          'orchestrated: ' + (args.taskId || branch), '--body', body],
+        wt,
+      );
+      const m = /\/pull\/(\d+)\s*$/.exec(out) || /(\d+)\s*$/.exec(out);
+      if (!m) throw new PrProviderError('PR_NUMBER_UNPARSEABLE', out.slice(-200));
+      return { number: Number(m[1]), branch: branch, url: out };
+    },
+
+    /**
+     * Read the four drift-sensitive values at attestation time. The target
+     * branch tip is read from the remote, not from a local ref, because a local
+     * ref can be stale and would make a drifted attestation look clean.
+     */
+    async state(args) {
+      const n = String(args.pr.number);
+      const json = runGh(['pr', 'view', n, '--json', 'headRefOid,baseRefName,state,mergeStateStatus,mergeable'], repoCwd);
+      let parsed;
+      try {
+        parsed = JSON.parse(json);
+      } catch (e) {
+        throw new PrProviderError('PR_VIEW_UNPARSEABLE', json.slice(0, 200));
+      }
+      const base = parsed.baseRefName || targetBranch;
+      const remote = runGit(['ls-remote', 'origin', 'refs/heads/' + base], repoCwd).split(/\s+/)[0];
+      if (!remote) throw new PrProviderError('TARGET_BRANCH_TIP_UNRESOLVED', base);
+
+      let mergeBase = null;
+      try {
+        runGit(['fetch', 'origin', parsed.headRefOid, base], repoCwd);
+        mergeBase = runGit(['merge-base', parsed.headRefOid, remote], repoCwd);
+      } catch (e) {
+        // Leave null rather than guess; the attestation conjunction treats a
+        // missing merge base as a failed condition, which is the safe reading.
+        mergeBase = null;
+      }
+
+      return {
+        headSha: parsed.headRefOid,
+        targetBranch: base,
+        targetBranchSha: remote,
+        mergeBaseSha: mergeBase,
+        prState: parsed.state,
+        mergeStateStatus: parsed.mergeStateStatus,
+        mergeable: parsed.mergeable,
+      };
+    },
+  };
+}
+
+module.exports = { createGhPrProvider, PrProviderError };

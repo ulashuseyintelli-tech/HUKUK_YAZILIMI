@@ -296,6 +296,51 @@ async function runTask(ctx) {
     }
   };
 
+  // --- environment preparation -------------------------------------------
+  //
+  // A fresh worktree has no node_modules: it is gitignored, so `git worktree
+  // add` does not carry it, and nothing here installed it. Without preparation
+  // both the executor and every requiredTests entry fail on an unprepared tree
+  // — not a test failure, an unrunnable gate.
+  //
+  // This belongs to the orchestrator, not to each task spec. Putting it in
+  // requiredTests made every plan re-declare the same two commands and muddied
+  // the attestation, which then reported "4/4 requiredTests" for two setup
+  // steps plus two actual test runs.
+  //
+  // It runs AFTER the worktree exists and BEFORE the executor, so the executor
+  // can run tests itself. It is deliberately NOT part of the boundary verdict:
+  // the diff gate reads tracked paths, and preparation writes only into
+  // gitignored directories. A preparation step that dirtied a tracked file
+  // would be a defect in the adapter, not something to tolerate here — so the
+  // adapter is expected to fail closed rather than mutate the tree.
+  // The blocker code is EXECUTOR_UNAVAILABLE, not a new ENVIRONMENT_* value:
+  // result.schema.json pins blockerCode to a 15-value enum and the contract is
+  // now ratified, so adding a value is an owner amendment. The precise cause is
+  // carried in `detail`. (orchestrator.cjs already emits four codes outside that
+  // enum — EXECUTOR_NONZERO_EXIT, MERGE_READY_CONJUNCTION_FAILED, NOT_ELIGIBLE,
+  // PR_OPEN_FAILED — which is a pre-existing divergence reported separately, not
+  // a licence to add a fifth.)
+  if (ctx.prepareEnvironment) {
+    let prep;
+    try {
+      prep = await ctx.prepareEnvironment({ taskId, worktreePath: wt.path, spec: validated.spec });
+    } catch (e) {
+      cleanupWorktree();
+      release('TERMINAL_BLOCKED_PUBLISHED');
+      return blocked('EXECUTOR_UNAVAILABLE', 'ENVIRONMENT_PREPARATION_FAILED: ' + (e.detail || e.message));
+    }
+    if (prep && prep.ok === false) {
+      cleanupWorktree();
+      release('TERMINAL_BLOCKED_PUBLISHED');
+      return blocked(
+        'EXECUTOR_UNAVAILABLE',
+        'ENVIRONMENT_PREPARATION_FAILED: ' + (prep.detail || 'adapter reported failure'),
+      );
+    }
+    trace.push('ENVIRONMENT_PREPARED');
+  }
+
   // --- EXECUTOR_RUNNING : resolution (§7.1) + spawn (§7.2-§7.6) -----------
   let resolved = ctx.executorOverride || null;
   if (!resolved) {
