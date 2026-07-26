@@ -574,7 +574,13 @@ export class PortalService {
     const base = (this.config.get("WEB_BASE_URL") || this.config.get("APP_BASE_URL") || "")
       .toString()
       .replace(/\/+$/, "");
-    return `${base}/portal/reset-password?token=${encodeURIComponent(rawToken)}`;
+    // CLIENT-SEC-P01: ham token URL FRAGMENT'ında (#) taşınır — query string DEĞİL.
+    // Fragment tarayıcı dışına asla gönderilmez: sunucu/proxy/CDN access log'larına yazılmaz,
+    // `Referer` header'ına sızmaz, `location.search` okuyan analytics'e görünmez. Query-string
+    // fallback BIRAKILMAZ (eski `?token=` linkleri kabul edilmez; kullanıcı yeni link ister).
+    // OFFICE emsali: auth/password-reset/password-reset.service.ts resetUrl()
+    // (OFFICE-AUTH-P02-HARDENING-R01, PR #1494 / b9916f5b) ile aynı transport modeli.
+    return `${base}/portal/reset-password#token=${encodeURIComponent(rawToken)}`;
   }
 
   private async sendResetEmail(email: string, rawToken: string): Promise<void> {
