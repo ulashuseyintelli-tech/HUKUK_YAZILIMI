@@ -237,16 +237,16 @@ describe("PortalDocumentsPage — configured base URL (CLIENT-CONFIG-P01)", () =
     await waitFor(() => expect(screen.getByText("Henüz belge yüklemediniz")).toBeTruthy());
   });
 
-  it("[13] token YOKSA hiç istek atılmaz (mevcut guard AYNEN korunur)", async () => {
+  it("[13] token YOKSA istek atılmaz VE loading kapanır (CLIENT-REMEDIATION-CLOSEOUT-R01 R1)", async () => {
+    // CLIENT-CONFIG-P01'de bu test, o zamanki PRE-EXISTING kusuru (kalıcı spinner) olduğu gibi
+    // kilitliyordu. CLIENT-REMEDIATION-CLOSEOUT-R01 R1 o kusuru kapattı (`setLoading(false)`
+    // erken dönüşten önce çağrılıyor), bu yüzden assertion DOĞRU davranışa çevrildi.
     localStorage.removeItem("portal_token");
     const { container } = render(<PortalDocumentsPage />);
 
-    // Mevcut (PRE-EXISTING) davranış: `if (!token) return;` try/finally'den ÖNCE olduğu için
-    // `setLoading(false)` hiç çalışmaz ve spinner kalıcı olur. Bu, CLIENT-CONFIG-P01'in kök
-    // nedeniyle (hardcoded base URL) İLGİSİZ bir UX detayıdır ve bu görevde DEĞİŞTİRİLMEDİ —
-    // burada yalnız mevcut davranış olduğu gibi kilitlenir (regresyon koruması).
-    await waitFor(() => expect(container.querySelector(".animate-spin")).toBeTruthy());
-    // Asıl kanıt: token yoksa hiçbir ağ isteği yapılmaz.
+    // Kullanıcı sonsuz spinner'da KALMAZ — loading kesin olarak kapanır.
+    await waitFor(() => expect(container.querySelector(".animate-spin")).toBeNull());
+    // Guard aynen korunur: token yoksa hiçbir ağ isteği yapılmaz.
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
