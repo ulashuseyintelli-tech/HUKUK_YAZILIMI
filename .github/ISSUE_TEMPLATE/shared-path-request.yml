@@ -1,0 +1,62 @@
+name: Shared path or migration request
+description: Request coordinated access to a shared governance, schema, migration, workflow, or control-plane path.
+title: "[SHARED PATH] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form records a coordination request only. It does not create a lease,
+        semantic authority, execution authority, migration approval, or merge permission.
+  - type: input
+    id: program_id
+    attributes:
+      label: Program ID
+    validations:
+      required: true
+  - type: input
+    id: task_id
+    attributes:
+      label: Task ID
+    validations:
+      required: true
+  - type: textarea
+    id: requested_paths
+    attributes:
+      label: Exact requested paths
+      description: Use repository-relative paths or a narrow glob.
+    validations:
+      required: true
+  - type: textarea
+    id: operation
+    attributes:
+      label: Requested operation and objective
+      description: State whether the operation is governance, workflow, schema, migration, shared code, or another bounded class.
+    validations:
+      required: true
+  - type: textarea
+    id: writer_inventory
+    attributes:
+      label: Current writer and collision inventory
+      description: List open PRs, branches, worktrees, owner WIP, and path overlap evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: authority_refs
+    attributes:
+      label: Authority references and required owner gates
+    validations:
+      required: true
+  - type: textarea
+    id: sequencing
+    attributes:
+      label: Proposed non-destructive sequencing
+      description: Explain how existing WIP will be preserved and how competing writers will be serialized.
+    validations:
+      required: true
+  - type: checkboxes
+    id: preservation
+    attributes:
+      label: Preservation acknowledgement
+      options:
+        - label: Existing owner WIP will not be stashed, reset, cleaned, discarded, overwritten, or deleted by this request.
+          required: true
