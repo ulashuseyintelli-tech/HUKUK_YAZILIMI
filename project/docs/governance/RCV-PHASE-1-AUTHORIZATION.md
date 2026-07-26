@@ -99,14 +99,16 @@ RCV-CLAIM-FORM-P02-S08-D02-R01A : RELEASE IDENTITY AMENDMENT RATIFIED / CANONICA
 RCV-CLAIM-FORM-P02-S08-D02-CR01 : COMPONENT CATEGORY BINDING RATIFIED / CANONICAL — SCOPE VALIDATION-AND-ECHO
 RCV-CLAIM-FORM-P02-S08-D02-F01-R03 : LEGAL BASIS RELEASE INPUTS RATIFIED / CANONICAL — SR01 + KEYS + CHECKSUM DECISIONS MISSING
 RCV-CLAIM-FORM-P02-S08-D02-SR01 : RATIFIED / CANONICAL — VERSIONED LEGAL SUBTYPE REGISTRY V1
-RCV-CLAIM-FORM-P02-S08-D02-PB01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
+RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION : COMPLETE / CANONICAL UPON APPROVED MERGE — ADDITIVE / DORMANT / LIVE APPLY NONE
+RCV-CLAIM-FORM-P02-S08-D02-PB01 : OWNER-AUTHORIZED PREDECESSOR COMPLETE / NEXT ELIGIBLE / NOT STARTED
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
+PB01 foundation migration  : MERGED UPON APPROVED MERGE / LIVE APPLY NOT AUTHORIZED / NOT PERFORMED
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
-Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-PB01 — OWNER GO REQUIRED / NOT STARTED
+Claim Formation next task   : RCV-CLAIM-FORM-P02-S08-D02-PB01 — PREDECESSOR COMPLETE / NOT STARTED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -3766,3 +3768,60 @@ release, schema/migration veya historical mutation authority üretmez. `D02-PB01
 Basis Projection Binding Contract` ayrı owner GO gerektirir. Shared Document V4 exact-version
 consumer adapter işi paralel dış bağımlılıktır. PB01, key ceremony/trust-root onboarding, complete
 payload checksum ve checksum-bound legal approvals tamamlanmadan D02-F01 başlamaz.
+
+## 11. Immutable Legal Basis Projection Binding Persistence Foundation — 2026-07-26
+
+```text
+TASK                               RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION
+STATUS                             COMPLETE / CANONICAL UPON APPROVED MERGE
+AFFECTED FACTS                     ClaimItemFormationIntent + ClaimFormationSnapshot
+CONTRACT VERSION                   "1"
+NULLABILITY                        ALL NULL (LEGACY/UNBOUND) OR ALL PRESENT (BOUND)
+CANONICAL PAYLOAD                  NONEMPTY CANONICAL JSON OBJECT / EXACT UTF-8 BYTES
+CHECKSUM                           LOWERCASE SHA-256 / 64 HEX
+INTENT IMMUTABILITY                DATABASE-ENFORCED
+SNAPSHOT IMMUTABILITY              DATABASE-ENFORCED
+SNAPSHOT ↔ INTENT EQUALITY         DATABASE-ENFORCED / EXACT THREE-FIELD PARITY
+MIGRATION                          20260726120000_claim_formation_projection_binding_persistence
+LIVE / STAGING / PRODUCTION APPLY NOT AUTHORIZED / NOT PERFORMED
+BACKFILL / HISTORICAL INFERENCE    NONE / PROHIBITED
+RUNTIME                            DORMANT / EXISTING CALLERS UNCHANGED
+NEXT                               RCV-CLAIM-FORM-P02-S08-D02-PB01 —
+                                   PREDECESSOR COMPLETE / NOT STARTED
+```
+
+Her iki immutable fact'e nullable ve defaultsuz aynı üç alan eklenmiştir:
+`legalBasisProjectionBindingContractVersion`,
+`legalBasisProjectionBindingCanonicalPayload` ve
+`legalBasisProjectionBindingChecksum`. Application boundary canonical JSON object'i ve exact
+checksum'u create işleminden önce doğrular; intent create mapping'i üç alanı atomik yazar ve I03
+finalizer snapshot'a aynı değerleri kayıpsız taşır. Existing full-row immutability trigger'ları
+binding update/clear/backfill denemelerini reddeder. Existing snapshot validation trigger'ı aynı
+transaction içindeki tenant/case/intent foreign-key lookup'ıyla unbound↔unbound veya bound↔exact
+bound dışında bütün kombinasyonları reddeder; yeni index veya ikinci trigger eklenmemiştir.
+
+Migration additive'dir: altı nullable/defaultsuz column, tablo başına dört CHECK constraint ve
+existing `validate_claim_formation_snapshot()` function extension'ı. Existing migration dosyaları
+değişmemiş, historical satırlar mutate edilmemiş ve table rewrite gözlenmemiştir. CHECK validation
+existing row scan/lock gerektirir; deployment ayrı owner-authorized maintenance penceresi ister.
+Canonical payload iki immutable fact'te tutulduğu için storage iki kez taşınır; payload sınırsız
+kullanıcı içeriği veya raw personal/document data taşıyamaz. Equality lookup existing indexed
+tenant/case/intent key'ini kullanır.
+
+Rollback yalnız runtime inactive iken ve iki tabloda da binding alanlarından herhangi biri dolu
+satır sayısı sıfırken güvenlidir. Non-null binding legal/audit evidence bulunduğunda rollback
+fail-closed hard stop'tur; canonical down migration veya bypass yoktur. Legacy unbound pending
+intent PB01 canonical finalizer için uygun değildir ve otomatik backfill edilemez; yalnız ayrı
+owner-authorized re-admission veya migration kararıyla ele alınabilir.
+
+Disposable PostgreSQL kanıtı: clean/upgrade deploy 103/103 migration PASS; no-rewrite relfilenode
+parity PASS; rollback/reapply rehearsal PASS; non-null evidence rollback hard-stop PASS. Focused
+static `6/6`, non-DB Claim Formation `72/72`, DB-gated persistence/finalizer `31/31` ve broad
+ClaimItem `352/352` PASS; production TypeScript, Nest build ve changed-file ESLint PASS. Genel
+test-inclusive type-check yalnız canonical main'de aynı olan unrelated baseline diagnostics taşır;
+bu patch yeni diagnostic üretmez.
+
+Bu foundation PB01 semantic projection alanlarını ratify etmez; production resolver, Legal Basis
+signed release, key/signature/trust-root, Shared Document V4, OfficeApproval/deferred-executor
+activation, API/web migration, live DB apply veya historical backfill authority üretmez.
+`D02-KC01`, `D02-F01`, `S08-I04` ve `S08-I05` eligible değildir.

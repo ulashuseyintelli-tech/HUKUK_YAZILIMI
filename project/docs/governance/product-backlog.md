@@ -2904,6 +2904,33 @@ owner-gated kalır. D02-F01 ve I04 otomatik başlamaz.
 
 ---
 
+## RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION — Immutable projection-binding persistence
+
+```text
+STATUS                             COMPLETE / CANONICAL UPON APPROVED MERGE
+BLOCKER CLOSED                     ADMISSION-TIME BINDING PERSISTENCE ABSENT
+SCHEMA                             ADDITIVE / TWO ENTITIES / SIX NULLABLE COLUMNS
+MIGRATION                          MERGED UPON APPROVED MERGE / NOT LIVE-APPLIED
+RUNTIME                            DORMANT / EXISTING FLOW UNCHANGED
+LEGACY                             UNBOUND / UNCHANGED / NO BACKFILL
+NEXT                               RCV-CLAIM-FORM-P02-S08-D02-PB01 —
+                                   PREDECESSOR COMPLETE / NOT STARTED
+```
+
+Intent ve snapshot exact contract-version/canonical-payload/checksum binding'ini ayrı immutable
+legal/audit evidence olarak saklayabilir. Database all-null/all-present, version `"1"`, nonempty
+payload, lowercase SHA-256, full immutability ve snapshot-intent exact equality'yi enforce eder.
+Optional application envelope legacy caller compatibility'sini korur; present binding create'den
+önce canonical JSON/checksum açısından doğrulanır. Disposable PostgreSQL clean/upgrade deploy,
+rollback/reapply, hard-stop, constraint/immutability/equality testleri PASS'tır.
+
+Bu foundation PB01 decision-projection field list'ini ratify etmez. Live apply, historical
+re-admission/backfill, production resolver, trust-root/key/signature, signed release, Shared
+Document V4, runtime activation, API/web ve containment change yoktur. `D02-KC01`, `D02-F01`,
+`S08-I04` ve `S08-I05` not eligible kalır.
+
+---
+
 ## RCV-P2-WS04-P03 — Representative Replay Package Contract Ratification
 
 **Status (2026-07-18; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Owner,

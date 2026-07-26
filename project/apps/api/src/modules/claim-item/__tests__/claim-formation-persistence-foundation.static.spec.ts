@@ -1,5 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import {
+  buildLegalBasisProjectionBindingPersistenceEnvelope,
+  validateLegalBasisProjectionBindingPersistenceEnvelope,
+} from '../formation-intent/legal-basis-projection-binding-persistence';
 
 const API_ROOT = path.resolve(__dirname, '../../../..');
 const SCHEMA = fs.readFileSync(path.join(API_ROOT, 'prisma/schema.prisma'), 'utf8');
@@ -7,6 +11,13 @@ const MIGRATION = fs.readFileSync(
   path.join(
     API_ROOT,
     'prisma/migrations/20260723100000_claim_formation_intent_snapshot_foundation/migration.sql',
+  ),
+  'utf8',
+);
+const PROJECTION_BINDING_MIGRATION = fs.readFileSync(
+  path.join(
+    API_ROOT,
+    'prisma/migrations/20260726120000_claim_formation_projection_binding_persistence/migration.sql',
   ),
   'utf8',
 );
@@ -45,7 +56,9 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
       'componentSubtypeCode', 'componentSubtypeVersion', 'componentSubtypeChecksum',
       'legalBasisCode', 'legalBasisVersion', 'legalBasisChecksum', 'legalBasisRegistryReleaseId',
       'legalBasisRegistryReleaseChecksum', 'legalBasisResolutionContractVersion',
-      'legalBasisResolutionHash', 'originalAmountMinor', 'demandedAmountMinor', 'currency',
+      'legalBasisResolutionHash', 'legalBasisProjectionBindingContractVersion',
+      'legalBasisProjectionBindingCanonicalPayload', 'legalBasisProjectionBindingChecksum',
+      'originalAmountMinor', 'demandedAmountMinor', 'currency',
       'minorUnit', 'effectiveAt', 'liabilityContextVersion',
       'liabilityContextCanonicalPayload', 'liabilityContextHash', 'interestEligibility',
       'interestPolicyRef', 'interestPolicyVersion', 'ruleRef', 'ruleVersion',
@@ -64,6 +77,8 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
       'componentCategory', 'componentSubtypeCode', 'componentSubtypeVersion',
       'componentSubtypeChecksum', 'legalBasisCode', 'legalBasisVersion', 'legalBasisChecksum',
       'legalBasisRegistryReleaseId', 'legalBasisRegistryReleaseChecksum',
+      'legalBasisProjectionBindingContractVersion',
+      'legalBasisProjectionBindingCanonicalPayload', 'legalBasisProjectionBindingChecksum',
       'originalAmountMinor', 'demandedAmountMinor', 'currency', 'minorUnit', 'effectiveAt',
       'liabilityContextCanonicalPayload', 'interestEligibility', 'admissionResult',
       'claimItemPayloadHash', 'requesterUserId', 'approverUserId', 'approvalDecidedAt',
@@ -122,6 +137,82 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
     expect(MIGRATION).not.toMatch(/ALTER TABLE "OfficeApprovalRequest"/);
     expect(MIGRATION).not.toMatch(/UPDATE\s+"(?:ClaimItem|OfficeApprovalRequest)"/);
     expect(MIGRATION).not.toMatch(/DELETE\s+FROM\s+"(?:ClaimItem|OfficeApprovalRequest)"/);
+  });
+
+  it('adds nullable projection-binding triples and extends the single snapshot validator', () => {
+    for (const required of [
+      'claim_intent_projection_binding_all_or_none',
+      'claim_intent_projection_binding_version',
+      'claim_intent_projection_binding_payload',
+      'claim_intent_projection_binding_checksum',
+      'claim_snapshot_projection_binding_all_or_none',
+      'claim_snapshot_projection_binding_version',
+      'claim_snapshot_projection_binding_payload',
+      'claim_snapshot_projection_binding_checksum',
+      'CREATE OR REPLACE FUNCTION validate_claim_formation_snapshot()',
+      'bound_intent."legalBasisProjectionBindingContractVersion"',
+      'bound_intent."legalBasisProjectionBindingCanonicalPayload"',
+      'bound_intent."legalBasisProjectionBindingChecksum"',
+    ]) {
+      expect(PROJECTION_BINDING_MIGRATION).toContain(required);
+    }
+    expect(PROJECTION_BINDING_MIGRATION).not.toMatch(/\bDEFAULT\b/);
+    for (const column of [
+      'legalBasisProjectionBindingContractVersion',
+      'legalBasisProjectionBindingCanonicalPayload',
+      'legalBasisProjectionBindingChecksum',
+    ]) {
+      expect(PROJECTION_BINDING_MIGRATION).toMatch(
+        new RegExp(`ADD COLUMN "${column}" TEXT[,;]`),
+      );
+      expect(PROJECTION_BINDING_MIGRATION).not.toMatch(
+        new RegExp(`ADD COLUMN "${column}" TEXT NOT NULL`),
+      );
+    }
+    expect(PROJECTION_BINDING_MIGRATION).not.toMatch(/\b(?:UPDATE|DELETE|TRUNCATE)\b/);
+    expect(PROJECTION_BINDING_MIGRATION).not.toMatch(/CREATE\s+(?:UNIQUE\s+)?INDEX/);
+    expect(PROJECTION_BINDING_MIGRATION).not.toMatch(/CREATE\s+TRIGGER/);
+  });
+
+  it('validates the optional V1 envelope deterministically and with exact error semantics', () => {
+    const payload = {
+      legalBasisCode: 'TBK_117',
+      projection: { itemType: 'INTEREST', nullable: null },
+      allowedComponentCategories: ['INTEREST'],
+    };
+    const envelope = buildLegalBasisProjectionBindingPersistenceEnvelope(payload);
+    expect(validateLegalBasisProjectionBindingPersistenceEnvelope(undefined)).toBeUndefined();
+    expect(validateLegalBasisProjectionBindingPersistenceEnvelope(envelope)).toEqual(envelope);
+
+    const formattedLf = '{\n  "b": 2,\n  "a": 1\n}';
+    const formattedCrlf = formattedLf.replace(/\n/g, '\r\n');
+    expect(
+      buildLegalBasisProjectionBindingPersistenceEnvelope(JSON.parse(formattedLf)),
+    ).toEqual(
+      buildLegalBasisProjectionBindingPersistenceEnvelope(JSON.parse(formattedCrlf)),
+    );
+    expect(
+      buildLegalBasisProjectionBindingPersistenceEnvelope({ ...payload, legalBasisCode: 'TBK_118' })
+        .checksum,
+    ).not.toBe(envelope.checksum);
+
+    const failures: Array<[Record<string, unknown>, string]> = [
+      [{ ...envelope, contractVersion: '2' }, 'PROJECTION_BINDING_VERSION_UNSUPPORTED'],
+      [{ ...envelope, canonicalPayload: '   ' }, 'PROJECTION_BINDING_PAYLOAD_EMPTY'],
+      [{ ...envelope, canonicalPayload: '{' }, 'PROJECTION_BINDING_PAYLOAD_INVALID_JSON'],
+      [{ ...envelope, canonicalPayload: '[]' }, 'PROJECTION_BINDING_PAYLOAD_NOT_OBJECT'],
+      [
+        { ...envelope, canonicalPayload: '{"projection":{},"legalBasisCode":"TBK_117"}' },
+        'PROJECTION_BINDING_PAYLOAD_NON_CANONICAL',
+      ],
+      [{ ...envelope, checksum: envelope.checksum.toUpperCase() }, 'PROJECTION_BINDING_CHECKSUM_INVALID_FORMAT'],
+      [{ ...envelope, checksum: '0'.repeat(64) }, 'PROJECTION_BINDING_CHECKSUM_MISMATCH'],
+    ];
+    for (const [candidate, code] of failures) {
+      expect(() =>
+        validateLegalBasisProjectionBindingPersistenceEnvelope(candidate as any),
+      ).toThrow(code);
+    }
   });
 
   it('allows only the owner-gated dormant intent adapter/finalizer and no production call-site', () => {

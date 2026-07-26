@@ -45,6 +45,10 @@ import {
   type ExactLegalBasisBindingV1,
 } from '../formation-intent/claim-item-formation-resolver.ports';
 import { assertLegalBasisEligible } from '../formation-intent/claim-item-formation-legal-basis-eligibility';
+import {
+  validateLegalBasisProjectionBindingPersistenceEnvelope,
+  type LegalBasisProjectionBindingPersistenceEnvelopeV1,
+} from '../formation-intent/legal-basis-projection-binding-persistence';
 import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE } from '../claim-item-approval.constants';
 import {
   ClaimItemFormationFinalizationError,
@@ -233,6 +237,12 @@ export class TransactionalClaimItemFormationFinalizerService {
             legalBasisRegistryReleaseChecksum: intent.legalBasisRegistryReleaseChecksum,
             legalBasisResolutionContractVersion: intent.legalBasisResolutionContractVersion,
             legalBasisResolutionHash: intent.legalBasisResolutionHash,
+            legalBasisProjectionBindingContractVersion:
+              intent.legalBasisProjectionBindingContractVersion,
+            legalBasisProjectionBindingCanonicalPayload:
+              intent.legalBasisProjectionBindingCanonicalPayload,
+            legalBasisProjectionBindingChecksum:
+              intent.legalBasisProjectionBindingChecksum,
             originalAmountMinor: intent.originalAmountMinor,
             demandedAmountMinor: intent.demandedAmountMinor,
             currency: intent.currency,
@@ -365,6 +375,11 @@ export class TransactionalClaimItemFormationFinalizerService {
   }
 
   private assertIntentIntegrity(intent: ClaimItemFormationIntent): void {
+    try {
+      this.readProjectionBinding(intent);
+    } catch {
+      this.fail('FORMATION_INTENT_INTEGRITY_MISMATCH');
+    }
     const checksum = buildClaimItemFormationIntentChecksum(intent.contractVersion, intent);
     if (
       intent.contractVersion !== CLAIM_ITEM_FORMATION_INTENT_CONTRACT_VERSION ||
@@ -386,6 +401,25 @@ export class TransactionalClaimItemFormationFinalizerService {
     ) {
       this.fail('FORMATION_INTENT_INTEGRITY_MISMATCH');
     }
+  }
+
+  private readProjectionBinding(
+    intent: ClaimItemFormationIntent,
+  ): LegalBasisProjectionBindingPersistenceEnvelopeV1 | undefined {
+    const values = [
+      intent.legalBasisProjectionBindingContractVersion,
+      intent.legalBasisProjectionBindingCanonicalPayload,
+      intent.legalBasisProjectionBindingChecksum,
+    ];
+    if (values.every((value) => value === null)) return undefined;
+    if (values.some((value) => value === null)) {
+      throw new Error('PROJECTION_BINDING_INCOMPLETE');
+    }
+    return validateLegalBasisProjectionBindingPersistenceEnvelope({
+      contractVersion: intent.legalBasisProjectionBindingContractVersion as '1',
+      canonicalPayload: intent.legalBasisProjectionBindingCanonicalPayload as string,
+      checksum: intent.legalBasisProjectionBindingChecksum as string,
+    });
   }
 
   private assertApprovalBinding(

@@ -5771,6 +5771,10 @@ model ClaimItemFormationIntent {
   legalBasisResolutionContractVersion String
   legalBasisResolutionHash            String
 
+  legalBasisProjectionBindingContractVersion  String?
+  legalBasisProjectionBindingCanonicalPayload String? @db.Text
+  legalBasisProjectionBindingChecksum         String?
+
   originalAmountMinor              BigInt
   demandedAmountMinor              BigInt
   currency                         String
@@ -5861,6 +5865,10 @@ model ClaimFormationSnapshot {
   legalBasisRegistryReleaseChecksum   String
   legalBasisResolutionContractVersion String
   legalBasisResolutionHash            String
+
+  legalBasisProjectionBindingContractVersion  String?
+  legalBasisProjectionBindingCanonicalPayload String? @db.Text
+  legalBasisProjectionBindingChecksum         String?
 
   originalAmountMinor              BigInt
   demandedAmountMinor              BigInt
