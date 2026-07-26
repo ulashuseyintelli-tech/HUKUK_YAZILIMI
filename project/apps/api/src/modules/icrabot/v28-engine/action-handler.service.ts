@@ -27,6 +27,7 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboxService, OutboxFailureMarkResult } from './outbox.service';
+import { OutboxScope, outboxRowInScope } from './outbox-scope';
 import { TimelineService } from './timeline.service';
 import { FactStoreService } from './factstore.service';
 import { maskPhone } from '../../../common/pii-mask.util';
@@ -110,12 +111,26 @@ export class ActionHandlerService {
   /**
    * Action'ı dispatch eder (Python router.dispatch pattern + feedback)
    */
-  async dispatch(actionId: string): Promise<ActionDispatchResult> {
+  async dispatch(actionId: string, scope: OutboxScope): Promise<ActionDispatchResult> {
     const action = await (this.prisma as any).icrabotOutboxAction.findUnique({
       where: { id: actionId },
     });
 
     if (!action) {
+      return {
+        success: false,
+        actionId,
+        actionType: 'unknown',
+        error: `Action not found: ${actionId}`,
+      };
+    }
+
+    // OUTBOX-F2/F3: satir-seviyesi kapsam dogrulamasi (defense-in-depth).
+    // Controller guard'i TEK guvenlik siniri degildir; dispatch her cagirida
+    // satirin tenant'inin cagiranin kapsamiyla esleştigini yeniden dogrular.
+    // Kapsam disi satir "bulunamadi" ile AYNI sekilde doner (varlik sizintisi yok)
+    // ve HICBIR state mutation (claim/attempt/timeline/feedback) uretilmez.
+    if (!outboxRowInScope(action, scope)) {
       return {
         success: false,
         actionId,
@@ -436,14 +451,14 @@ export class ActionHandlerService {
    * /// - OutboxCronService.processOutboxActions() → @Cron(EVERY_MINUTE) platform pending tüketim
    * /// </remarks>
    */
-  async processPendingActions(limit = 10): Promise<ActionDispatchResult[]> {
-    const actions = await this.outbox.getPendingActions(limit);
+  async processPendingActions(scope: OutboxScope, limit = 10): Promise<ActionDispatchResult[]> {
+    const actions = await this.outbox.getPendingActions(scope, limit);
     const results: ActionDispatchResult[] = [];
 
     for (const action of actions) {
-      const result = await this.dispatch(action.id);
+      const result = await this.dispatch(action.id, scope);
       results.push(result);
-      
+
       if (!result.success) {
         this.logger.error(`Failed to process action ${action.id}: ${result.error}`);
       }
@@ -460,12 +475,12 @@ export class ActionHandlerService {
    * /// - OutboxCronService.processOutboxActions() → @Cron(EVERY_MINUTE) platform retry tüketim
    * /// </remarks>
    */
-  async processRetryableActions(limit = 10): Promise<ActionDispatchResult[]> {
-    const actions = await this.outbox.getRetryableActions(limit);
+  async processRetryableActions(scope: OutboxScope, limit = 10): Promise<ActionDispatchResult[]> {
+    const actions = await this.outbox.getRetryableActions(scope, limit);
     const results: ActionDispatchResult[] = [];
 
     for (const action of actions) {
-      const result = await this.dispatch(action.id);
+      const result = await this.dispatch(action.id, scope);
       results.push(result);
     }
 
@@ -795,7 +810,26 @@ export class ActionHandlerService {
   /**
    * Action'ı doğrudan çalıştırır (outbox'a eklemeden)
    */
-  async executeDirectly(actionType: string, payload: Record<string, any>, caseId: string): Promise<void> {
+  async executeDirectly(
+    actionType: string,
+    payload: Record<string, any>,
+    caseId: string,
+    scope: OutboxScope,
+  ): Promise<void> {
+    // OUTBOX-F1: caseId cagiran tarafindan serbestce verilir; outbox satiri yoktur,
+    // dolayisiyla satir-tenant'i uzerinden dogrulama YAPILAMAZ. Tek guvenli bagimlilik
+    // hedef Case'in cagiranin tenant'ina ait oldugunun DOGRUDAN dogrulanmasidir.
+    // Bulunamayan/baska tenant'a ait case ayni sekilde reddedilir (varlik sizintisi yok).
+    if (scope.kind === 'tenant') {
+      const owned = await (this.prisma as any).case.findFirst({
+        where: { id: caseId, tenantId: scope.tenantId },
+        select: { id: true },
+      });
+      if (!owned) {
+        throw new Error(`Case not found: ${caseId}`);
+      }
+    }
+
     const handler = this.handlers.get(actionType);
     if (!handler) {
       throw new Error(`No handler for action type: ${actionType}`);
@@ -806,14 +840,14 @@ export class ActionHandlerService {
   /**
    * Batch action dispatch
    */
-  async dispatchBatch(actionIds: string[]): Promise<ActionDispatchResult[]> {
+  async dispatchBatch(actionIds: string[], scope: OutboxScope): Promise<ActionDispatchResult[]> {
     const results: ActionDispatchResult[] = [];
-    
+
     for (const actionId of actionIds) {
-      const result = await this.dispatch(actionId);
+      const result = await this.dispatch(actionId, scope);
       results.push(result);
     }
-    
+
     return results;
   }
 

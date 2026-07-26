@@ -12,8 +12,9 @@
  * - uyap_submit: UYAP'a belge gönderme
  * - notify_client: Müvekkile bildirim
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { OutboxScope, outboxScopeWhere } from './outbox-scope';
 import {
   getIcrabotOutboxMaxAttempts,
   getIcrabotOutboxRetryBaseMs,
@@ -130,9 +131,10 @@ export class OutboxService {
    * /// - OutboxController.getPending() → GET /icrabot/v28/outbox/pending (operasyonel görünürlük)
    * /// </remarks>
    */
-  async getPendingActions(limit = 100): Promise<any[]> {
+  async getPendingActions(scope: OutboxScope, limit = 100): Promise<any[]> {
     return (this.prisma as any).icrabotOutboxAction.findMany({
       where: {
+        ...outboxScopeWhere(scope),
         status: 'pending',
         OR: [
           { nextRetryAt: null },
@@ -151,9 +153,10 @@ export class OutboxService {
    * /// - ActionHandlerService.processRetryableActions() → failed + due action retry dispatch listesi
    * /// </remarks>
    */
-  async getRetryableActions(limit = 100): Promise<any[]> {
+  async getRetryableActions(scope: OutboxScope, limit = 100): Promise<any[]> {
     return (this.prisma as any).icrabotOutboxAction.findMany({
       where: {
+        ...outboxScopeWhere(scope),
         status: 'failed',
         nextRetryAt: { lte: new Date() },
         attemptCount: { lt: this.maxAttempts },
@@ -351,6 +354,7 @@ export class OutboxService {
    * Dosya için outbox action'larını döner
    */
   async getActionsByCaseId(
+    scope: OutboxScope,
     caseId: string,
     options?: {
       status?: OutboxStatus;
@@ -358,7 +362,7 @@ export class OutboxService {
       limit?: number;
     },
   ): Promise<any[]> {
-    const where: any = { caseId };
+    const where: any = { ...outboxScopeWhere(scope), caseId };
     if (options?.status) where.status = options.status;
     if (options?.actionType) where.actionType = options.actionType;
 
@@ -372,9 +376,10 @@ export class OutboxService {
   /**
    * Outbox istatistiklerini döner
    */
-  async getStats(): Promise<Record<OutboxStatus, number>> {
+  async getStats(scope: OutboxScope): Promise<Record<OutboxStatus, number>> {
     const stats = await (this.prisma as any).icrabotOutboxAction.groupBy({
       by: ['status'],
+      where: outboxScopeWhere(scope),
       _count: true,
     });
 
@@ -396,20 +401,34 @@ export class OutboxService {
   /**
    * Dead letter queue'daki action'ları döner
    */
-  async getDeadLetterQueue(limit = 100): Promise<any[]> {
+  async getDeadLetterQueue(scope: OutboxScope, limit = 100): Promise<any[]> {
     return (this.prisma as any).icrabotOutboxAction.findMany({
-      where: { status: 'dead' },
+      where: { ...outboxScopeWhere(scope), status: 'dead' },
       orderBy: { updatedAt: 'desc' },
       take: limit,
     });
   }
 
   /**
-   * Dead action'ı retry için pending'e çevir
+   * Dead action'i retry icin pending'e cevirir.
+   *
+   * OUTBOX-F3: Onceki hali kosulsuz `update({where:{id}})` idi; bu, ZATEN
+   * `done`/`sent` olan bir action'i da pending'e dusurup gercek yan etkinin
+   * tekrar calismasina (replay) izin veriyordu. Artik gecis ATOMIK ve
+   * on-kosulludur: yalniz `status='dead'` VE kapsam icindeki satir donusur.
+   * Read-then-update (TOCTOU) deseni bilincli olarak kullanilmaz — kosul
+   * `updateMany` where'inin kendisindedir, dolayisiyla ayni dead action icin
+   * es zamanli iki retry'dan en fazla biri basarili olur.
+   *
+   * `count !== 1` => fail-closed hata (baska tenant / bulunamayan / dead olmayan).
    */
-  async retryDeadAction(actionId: string): Promise<void> {
-    await (this.prisma as any).icrabotOutboxAction.update({
-      where: { id: actionId },
+  async retryDeadAction(scope: OutboxScope, actionId: string): Promise<void> {
+    const result = await (this.prisma as any).icrabotOutboxAction.updateMany({
+      where: {
+        ...outboxScopeWhere(scope),
+        id: actionId,
+        status: 'dead',
+      },
       data: {
         status: 'pending',
         attemptCount: 0,
@@ -417,15 +436,24 @@ export class OutboxService {
         nextRetryAt: null,
       },
     });
+
+    if (result.count !== 1) {
+      throw new NotFoundException(
+        'Retry edilebilir dead action bulunamadi',
+      );
+    }
   }
 
   /**
    * Tek bir action döner
    * OpenAPI spec: GET /actions/{action_id}
+   *
+   * OUTBOX-F4: findUnique yerine findFirst + scope where — baska tenant'in
+   * action'i "bulunamadi" olarak doner (varlik sizintisi da yok).
    */
-  async getAction(actionId: string): Promise<OutboxActionResponse | null> {
-    const action = await (this.prisma as any).icrabotOutboxAction.findUnique({
-      where: { id: actionId },
+  async getAction(scope: OutboxScope, actionId: string): Promise<OutboxActionResponse | null> {
+    const action = await (this.prisma as any).icrabotOutboxAction.findFirst({
+      where: { ...outboxScopeWhere(scope), id: actionId },
     });
     return action ? this.toApiFormat(action) : null;
   }

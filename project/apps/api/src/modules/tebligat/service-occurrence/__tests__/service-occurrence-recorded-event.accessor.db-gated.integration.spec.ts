@@ -206,7 +206,7 @@ describeWithDisposableDb("ServiceOccurrenceRecordedEventAccessor — disposable 
       return { serviceOccurrenceId: resolvedCanonicalPayload.serviceOccurrenceId };
     });
 
-    const result = await handlerService.dispatch(outboxRow.id);
+    const result = await handlerService.dispatch(outboxRow.id, { kind: 'platform' } as const);
 
     expect(result.success).toBe(true);
     expect(receivedPayload).toBeDefined();

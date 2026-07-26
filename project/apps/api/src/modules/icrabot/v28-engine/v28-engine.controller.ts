@@ -15,8 +15,10 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import { tenantScopeFromRequestUser } from './outbox-scope';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../auth/guards/admin.guard';
 import { UyapEventIngestService, UyapEvent } from './uyap-event-ingest.service';
@@ -292,28 +294,35 @@ export class OutboxController {
   ) {}
 
   @Get('stats')
-  async getStats() {
-    return this.outbox.getStats();
+  async getStats(@Req() req: any) {
+    return this.outbox.getStats(tenantScopeFromRequestUser(req.user));
   }
 
   @Get('pending')
-  async getPending(@Query('limit') limit?: string) {
-    return this.outbox.getPendingActions(limit ? parseInt(limit) : 100);
+  async getPending(@Req() req: any, @Query('limit') limit?: string) {
+    return this.outbox.getPendingActions(
+      tenantScopeFromRequestUser(req.user),
+      limit ? parseInt(limit) : 100,
+    );
   }
 
   @Get('dead-letter')
-  async getDeadLetter(@Query('limit') limit?: string) {
-    return this.outbox.getDeadLetterQueue(limit ? parseInt(limit) : 100);
+  async getDeadLetter(@Req() req: any, @Query('limit') limit?: string) {
+    return this.outbox.getDeadLetterQueue(
+      tenantScopeFromRequestUser(req.user),
+      limit ? parseInt(limit) : 100,
+    );
   }
 
   @Get('case/:caseId')
   async getActionsByCaseId(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Query('status') status?: string,
     @Query('actionType') actionType?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.outbox.getActionsByCaseId(caseId, {
+    return this.outbox.getActionsByCaseId(tenantScopeFromRequestUser(req.user), caseId, {
       status: status as any,
       actionType,
       limit: limit ? parseInt(limit) : 50,
@@ -323,8 +332,9 @@ export class OutboxController {
   @Post('process')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AdminGuard)
-  async processPending(@Query('limit') limit?: string) {
+  async processPending(@Req() req: any, @Query('limit') limit?: string) {
     const processed = await this.actionHandler.processPendingActions(
+      tenantScopeFromRequestUser(req.user),
       limit ? parseInt(limit) : 10,
     );
     return { processed };
@@ -333,8 +343,8 @@ export class OutboxController {
   @Post(':actionId/retry')
   @HttpCode(HttpStatus.OK)
   @UseGuards(IcrabotV28UnsafeMutationGuard)
-  async retryAction(@Param('actionId') actionId: string) {
-    await this.outbox.retryDeadAction(actionId);
+  async retryAction(@Req() req: any, @Param('actionId') actionId: string) {
+    await this.outbox.retryDeadAction(tenantScopeFromRequestUser(req.user), actionId);
     return { success: true };
   }
 
@@ -343,11 +353,12 @@ export class OutboxController {
   @Post('process-retryable')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AdminGuard)
-  async processRetryable(@Query('limit') limit?: string) {
+  async processRetryable(@Req() req: any, @Query('limit') limit?: string) {
     const results = await this.actionHandler.processRetryableActions(
+      tenantScopeFromRequestUser(req.user),
       limit ? parseInt(limit) : 10,
     );
-    return { 
+    return {
       processed: results.length,
       success: results.filter(r => r.success).length,
       failed: results.filter(r => !r.success).length,
@@ -374,17 +385,26 @@ export class OutboxController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(IcrabotV28UnsafeMutationGuard)
   async executeDirect(
+    @Req() req: any,
     @Body() body: { actionType: string; payload: Record<string, any>; caseId: string },
   ) {
-    await this.actionHandler.executeDirectly(body.actionType, body.payload, body.caseId);
+    await this.actionHandler.executeDirectly(
+      body.actionType,
+      body.payload,
+      body.caseId,
+      tenantScopeFromRequestUser(req.user),
+    );
     return { ok: true, actionType: body.actionType, caseId: body.caseId };
   }
 
   @Post('dispatch-batch')
   @HttpCode(HttpStatus.OK)
   @UseGuards(IcrabotV28UnsafeMutationGuard)
-  async dispatchBatch(@Body() body: { actionIds: string[] }) {
-    const results = await this.actionHandler.dispatchBatch(body.actionIds);
+  async dispatchBatch(@Req() req: any, @Body() body: { actionIds: string[] }) {
+    const results = await this.actionHandler.dispatchBatch(
+      body.actionIds,
+      tenantScopeFromRequestUser(req.user),
+    );
     return {
       processed: results.length,
       success: results.filter(r => r.success).length,
@@ -404,8 +424,8 @@ export class ActionsController {
    * OpenAPI spec: GET /actions/{action_id}
    */
   @Get(':actionId')
-  async getAction(@Param('actionId') actionId: string) {
-    const action = await this.outbox.getAction(actionId);
+  async getAction(@Req() req: any, @Param('actionId') actionId: string) {
+    const action = await this.outbox.getAction(tenantScopeFromRequestUser(req.user), actionId);
     if (!action) throw new NotFoundException(`Action not found: ${actionId}`);
     return action;
   }

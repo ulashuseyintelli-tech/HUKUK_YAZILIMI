@@ -67,7 +67,7 @@ describe('outbox-tenancy Phase 1 (decision C)', () => {
       const svc = new ActionHandlerService(prisma as any, outbox as any, timeline as any, factStore as any);
       svc.register('unit_test_action', handler);
 
-      await svc.dispatch('a1');
+      await svc.dispatch('a1', { kind: 'platform' } as const);
 
       expect(timeline.addEntry).toHaveBeenCalled();
       // OUTCOME(done) + feedback FACT_WRITE — hepsi tenantId taşımalı

@@ -62,7 +62,7 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
       const prisma = { icrabotOutboxAction: { findMany } };
       const service = new OutboxService(prisma as any);
 
-      await service.getRetryableActions(25);
+      await service.getRetryableActions({ kind: 'platform' } as const, 25);
 
       expect(findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -276,9 +276,9 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
       });
       service.register('unit_retry', handler);
 
-      const results = await service.processRetryableActions(5);
+      const results = await service.processRetryableActions({ kind: 'platform' } as const, 5);
 
-      expect(outbox.getRetryableActions).toHaveBeenCalledWith(5);
+      expect(outbox.getRetryableActions).toHaveBeenCalledWith({ kind: 'platform' }, 5);
       expect(outbox.claimForProcessing).toHaveBeenCalledWith('a-retry');
       expect(handler).toHaveBeenCalledWith(
         actionRow.payload,
@@ -313,8 +313,8 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
       service.register('unit_parallel_claim', handler);
 
       const results = await Promise.all([
-        service.processPendingActions(1),
-        service.processPendingActions(1),
+        service.processPendingActions({ kind: 'platform' } as const, 1),
+        service.processPendingActions({ kind: 'platform' } as const, 1),
       ]);
 
       expect(outbox.getPendingActions).toHaveBeenCalledTimes(2);
@@ -341,7 +341,7 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
       });
       service.register('unit_missing_tenant', handler);
 
-      const result = await service.dispatch('a-null-tenant');
+      const result = await service.dispatch('a-null-tenant', { kind: 'platform' } as const);
 
       expect(outbox.claimForProcessing).toHaveBeenCalledWith('a-null-tenant');
       expect(outbox.markDeadLetter).toHaveBeenCalledWith(
@@ -370,7 +370,7 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
       );
       service.register('unit_claim', handler);
 
-      const result = await service.dispatch('a-already-claimed');
+      const result = await service.dispatch('a-already-claimed', { kind: 'platform' } as const);
 
       expect(outbox.claimForProcessing).toHaveBeenCalledWith('a-already-claimed');
       expect(handler).not.toHaveBeenCalled();
@@ -435,8 +435,8 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
       await service.processOutboxActions();
 
       expect(calls).toEqual(['recover', 'pending', 'retryable']);
-      expect(actionHandler.processPendingActions).toHaveBeenCalledWith(3);
-      expect(actionHandler.processRetryableActions).toHaveBeenCalledWith(3);
+      expect(actionHandler.processPendingActions).toHaveBeenCalledWith({ kind: 'platform' }, 3);
+      expect(actionHandler.processRetryableActions).toHaveBeenCalledWith({ kind: 'platform' }, 3);
     });
 
     it('onceki run bitmeden ikinci run baslamaz', async () => {
