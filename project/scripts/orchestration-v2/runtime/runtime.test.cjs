@@ -280,3 +280,84 @@ test('runner: the governance floor names checks, and they reach the required set
     assert.ok(sources.governanceRequired.indexOf(c) >= 0, c);
   }
 });
+
+// --------------------------------------------------------------- SPAWN MODE
+//
+// These tests exercise the REAL spawn path. The adapters above inject a fake gh
+// runner, which is why they all passed while the live ciProvider returned an
+// empty platform-required set: the defect lived in exactly the layer the tests
+// mocked out. A live preflight found it, not the suite.
+
+const spawnMode = require('./spawn-mode.cjs');
+
+test('spawn mode: the decision follows the resolved file, not the platform', () => {
+  const m = spawnMode.spawnModeFor('node');
+  // node resolves to a real image everywhere this runs.
+  assert.equal(m.shell, false);
+  assert.ok(['DIRECTLY_SPAWNABLE', 'POSIX_NEVER_NEEDS_SHELL'].includes(m.reason), m.reason);
+});
+
+test('spawn mode: an unresolvable command does not silently get a shell', () => {
+  const m = spawnMode.spawnModeFor('definitely-not-a-real-command-x9z');
+  assert.equal(m.shell, false);
+  assert.ok(['UNRESOLVED', 'POSIX_NEVER_NEEDS_SHELL'].includes(m.reason), m.reason);
+});
+
+test('spawn mode: whitespace in an argument is unsafe under a shell', () => {
+  assert.equal(spawnMode.quotingIsSafe(['api', 'repos/x/y']), true);
+  assert.equal(spawnMode.quotingIsSafe(['--jq', '.contexts // []']), false);
+  assert.equal(spawnMode.quotingIsSafe(['--title', 'orchestrated: TASK-1']), false);
+  assert.equal(spawnMode.quotingIsSafe(['--body', 'a&b']), false);
+});
+
+test('spawn mode: a real .cmd shim takes the shell branch, and an unsafe argv there fails closed', (t) => {
+  if (process.platform !== 'win32') return t.skip('shim semantics are Windows-only');
+  // A real shim on a real PATH — not a stub, because the defect this guards
+  // against lived precisely in the layer a stub would replace.
+  const dir = tmp('gov-shim-');
+  fs.writeFileSync(path.join(dir, 'toolshim.cmd'), '@echo off\r\necho ok\r\n');
+  const env = { PATH: dir, PATHEXT: '.COM;.EXE;.BAT;.CMD' };
+
+  const mode = spawnMode.spawnModeFor('toolshim', env);
+  assert.equal(mode.shell, true, 'a .cmd cannot be spawned with shell:false on Windows');
+  assert.equal(mode.reason, 'SHIM_REQUIRES_SHELL');
+
+  // Safe argv: it runs, and it runs under a shell.
+  let sawShell = null;
+  const okRun = spawnMode.safeSpawn(
+    (c, a, o) => {
+      sawShell = o.shell;
+      return { status: 0, stdout: '', stderr: '' };
+    },
+    'toolshim',
+    ['--flag', 'value'],
+    { env },
+  );
+  assert.equal(okRun.status, 0);
+  assert.equal(sawShell, true);
+
+  // Unsafe argv: refused rather than handed to cmd.exe to re-split.
+  let called = false;
+  const refused = spawnMode.safeSpawn(
+    () => {
+      called = true;
+      return { status: 0 };
+    },
+    'toolshim',
+    ['--jq', '.contexts // []'],
+    { env },
+  );
+  assert.equal(called, false, 'the corrupting call must not be made at all');
+  assert.equal(refused.status, null);
+  assert.equal(refused.error.code, 'SPAWN_UNSAFE_UNDER_SHELL');
+  assert.match(refused.stderr, /re-split/);
+});
+
+test('spawn mode: the real gh argv that broke the preflight now survives', () => {
+  const argv = ['api', 'repos/{owner}/{repo}/branches/main/protection/required_status_checks', '--jq', '.contexts // []'];
+  const mode = spawnMode.spawnModeFor('gh');
+  if (mode.reason === 'UNRESOLVED') return; // gh not installed in this environment
+  // The whole point: gh is a real image, so this argv is delivered intact.
+  assert.equal(mode.shell, false, 'gh resolved to ' + mode.resolvedPath + ' and must not go through cmd.exe');
+  assert.equal(spawnMode.quotingIsSafe(argv), false, 'the argv is genuinely shell-unsafe, which is why shell:false matters');
+});

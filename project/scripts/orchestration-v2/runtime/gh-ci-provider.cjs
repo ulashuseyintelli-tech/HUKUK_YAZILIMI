@@ -19,6 +19,7 @@
  */
 
 const { spawnSync } = require('child_process');
+const { safeSpawn } = require('./spawn-mode.cjs');
 
 class CiProviderError extends Error {
   constructor(code, detail) {
@@ -29,7 +30,12 @@ class CiProviderError extends Error {
 }
 
 function gh(args, cwd) {
-  const r = spawnSync('gh', args, { cwd, encoding: 'utf8', shell: process.platform === 'win32' });
+  // Not shell:true. `--jq '.contexts // []'` is one argument; cmd.exe re-splits
+  // it into three, gh answers "accepts 1 arg(s), received 3", and this function
+  // then reports an EMPTY platform-required set — a silent under-requirement in
+  // the exact place §5.1 exists to prevent one. spawnMode decides by the
+  // resolved file, so a .cmd shim still gets a shell and a .exe never does.
+  const r = safeSpawn(spawnSync, 'gh', args, { cwd, encoding: 'utf8' });
   if (r.status !== 0) {
     return { ok: false, out: (r.stderr || r.stdout || '').trim() };
   }
