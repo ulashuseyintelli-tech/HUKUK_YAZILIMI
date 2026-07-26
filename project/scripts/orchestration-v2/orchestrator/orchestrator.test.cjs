@@ -326,3 +326,71 @@ test('mergeready: a merge without a fresh attestation is not a clean closure', (
   const dirty = mergeready.classifyExternalMerge({ attestation: a, observed: { prHeadSha: '9'.repeat(40) } });
   assert.equal(dirty.disposition, 'UNVERIFIED_EXTERNAL_MERGE_OWNER_REVIEW_REQUIRED');
 });
+
+// ------------------------------------------- §1 IMMUTABLE FORBIDDEN COVERAGE
+//
+// IMMUTABLE_FORBIDDEN is transcribed by hand from the V1 protected-path source.
+// A transcription drifts silently: the missing entry does not throw, it simply
+// stops protecting something. These two tests turn each drift into a failure.
+//
+// Coverage is asserted semantically, not by string equality, because one broad
+// pattern legitimately covers several source entries — `project/docs/governance/**`
+// subsumes the coordination-request/result/grant directories, `.codex/` subsumes
+// every grandfathered exact path beneath it.
+
+const boundaryMod = require('../safety/boundary.cjs');
+const { execFileSync } = require('child_process');
+
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+
+/** A concrete path that must be caught if `entry` is genuinely protected. */
+function probeFor(entry) {
+  if (entry.endsWith('/**')) return entry.slice(0, -3) + '/probe-file.md';
+  if (entry.endsWith('*')) return entry.slice(0, -1) + 'probe-file.json';
+  if (entry.endsWith('/')) return entry + 'probe-file';
+  return entry;
+}
+
+test('§1: every V1 protected-path entry is covered by IMMUTABLE_FORBIDDEN', () => {
+  const src = JSON.parse(
+    fs.readFileSync(
+      path.join(REPO_ROOT, 'project/docs/governance/governance-writer-coordination-protected-paths.json'),
+      'utf8',
+    ),
+  );
+  // queueExceptions is an exception list carrying <requestId> placeholders, not
+  // a protected set, so it is deliberately not asserted here.
+  const groups = [
+    'canonicalSemanticGovernance',
+    'coordinationControlPlane',
+    'grandfatheredOwnerWipPrefixes',
+    'grandfatheredOwnerWipExactPaths',
+  ];
+  const uncovered = [];
+  for (const g of groups) {
+    for (const entry of src[g] || []) {
+      const probe = probeFor(entry);
+      if (!boundaryMod.matchesForbidden(probe, orch.IMMUTABLE_FORBIDDEN)) uncovered.push(g + ' :: ' + entry);
+    }
+  }
+  assert.deepEqual(uncovered, [], 'protected-path entries not covered by §1');
+});
+
+test('§1: every tracked schema/migration path is covered by IMMUTABLE_FORBIDDEN', () => {
+  // PRODUCTION_SCHEMA_MIGRATION_RUNTIME is DENIED in V1 §3, and §15.2 enforces
+  // it only through this list. A second Prisma surface added anywhere in the
+  // tree must therefore fail here rather than become quietly writable.
+  const tracked = execFileSync('git', ['ls-files'], { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    .split('\n')
+    .filter((p) => /(^|\/)schema\.prisma$|\/prisma\/migrations\//.test(p));
+  assert.ok(tracked.length > 0, 'expected to find the schema/migration surface');
+  const uncovered = tracked.filter((p) => !boundaryMod.matchesForbidden(p, orch.IMMUTABLE_FORBIDDEN));
+  assert.deepEqual(uncovered, [], 'schema/migration paths reachable by a bounded task');
+
+  // The Prisma *module* is application code and must stay reachable, otherwise
+  // the fix would over-tighten BOUNDED_CODE_TASK out of usefulness.
+  assert.equal(
+    boundaryMod.matchesForbidden('project/apps/api/src/prisma/prisma.service.ts', orch.IMMUTABLE_FORBIDDEN),
+    null,
+  );
+});

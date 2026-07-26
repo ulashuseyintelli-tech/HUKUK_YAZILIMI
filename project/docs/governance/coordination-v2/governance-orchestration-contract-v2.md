@@ -30,10 +30,10 @@ path normalization · diff extraction · deny evaluation
 · invariant enforcement · result generation
 ```
 
-| Profil | Policy | Validation |
-|---|---|---|
-| `MECHANICAL_GOVERNANCE` | exact declared target allowlist | expected exact content/hash |
-| `BOUNDED_CODE_TASK` | task-specific **positive** allowed roots | actual diff boundary + invariant/test |
+| Profil | Policy | Validation | Kullanılabilirlik |
+|---|---|---|---|
+| `MECHANICAL_GOVERNANCE` | exact declared target allowlist | expected exact content/hash | **KULLANILAMAZ — §1.2** |
+| `BOUNDED_CODE_TASK` | task-specific **positive** allowed roots | actual diff boundary + invariant/test | kullanılabilir |
 
 **KURAL:** Global denylist dışında kalan hiçbir yol kendiliğinden izinli
 sayılmaz. `BOUNDED_CODE_TASK`, V1 `deniedTargetPrefixes` listesinin inverse'i
@@ -44,11 +44,90 @@ Immutable global forbidden (task-bazlı override **EDİLEMEZ**), kaynak
 
 - `canonicalSemanticGovernance[*]`
 - `coordinationControlPlane[*]`
-- `grandfatheredOwnerWipPrefixes[*]`
-- `project/prisma/` · `project/deploy/` · `project/ops/` · `project/node_modules/`
+- `grandfatheredOwnerWipPrefixes[*]` · `grandfatheredOwnerWipExactPaths[*]`
+- `project/apps/api/prisma/` · `project/ops/` · `project/node_modules/`
+- `project/prisma/` · `project/deploy/` — DEFENSIVE, ağaçta karşılığı YOK (§1.1)
 
-Gerekçe: `prisma`/`deploy`/`ops` = `PRODUCTION_SCHEMA_MIGRATION_RUNTIME`, V1
-§3'te `DENIED`. V2 bunu gevşetmez; ayrı owner gate gerektirir.
+Gerekçe: bu yollar `PRODUCTION_SCHEMA_MIGRATION_RUNTIME`'dır ve V1 §3'te
+`DENIED`'dır. V2 bunu gevşetmez; ayrı owner gate gerektirir.
+
+### 1.1 `project/apps/api/prisma/` neden ayrıca sayılır
+
+V1 `deniedTargetPrefixes` altı giriş taşır; bunlardan `project/apps/` tüm
+uygulama yüzeyini, dolayısıyla `project/apps/api/prisma/`'yı da kapsar.
+`BOUNDED_CODE_TASK` profili tanım gereği `project/apps/` altında çalışmak
+zorundadır, bu yüzden V2 `project/apps/` ve `project/packages/` prefix'lerini
+immutable listeden çıkarır. İlk yazımda bu çıkarma yapılırken schema/migration
+**alt-yüzeyi oyulmamıştı**, dolayısıyla `PRODUCTION_SCHEMA_MIGRATION_RUNTIME:
+DENIED` hükmü onu uygulaması gereken liste tarafından uygulanmıyordu:
+`allowedRoots: ['project/apps/api/']` olan bir task
+`project/apps/api/prisma/migrations/` altına production migration ekleyebilir ve
+§15.2'nin mekanik kontrolü (`boundary ∩ immutable global forbidden = ∅`) buna
+PASS verirdi. Ağaçtaki tek schema/migration yüzeyi `project/apps/api/prisma/`
+olduğu için (104 tracked dosya: `schema.prisma` + tüm migration'lar) burada
+açıkça sayılır. Deny modeli gevşetilmez; gerçek yüzeye bağlanır.
+
+`project/apps/api/src/prisma/` KAPSAM DIŞIDIR — NestJS `PrismaModule`/
+`PrismaService` kodudur, schema/migration yüzeyi değildir; onu da kapatmak
+`BOUNDED_CODE_TASK`'i gereksiz daraltırdı.
+
+`project/prisma/` ve `project/deploy/` V1'den devralınmıştır ve ağaçta
+**yoktur**. Listede DEFENSIVE olarak kalırlar: maliyeti sıfırdır ve ileride bir
+üst-düzey `project/prisma/` açılırsa kendiliğinden kapsar. Ancak tek başlarına
+`PRODUCTION_SCHEMA_MIGRATION_RUNTIME` kapsamını KARŞILAMAZLAR; o kapsamı
+karşılayan giriş `project/apps/api/prisma/`'dır.
+
+### 1.2 `MECHANICAL_GOVERNANCE` profilinin ulaşılabilir hedef yüzeyi YOKTUR
+
+**CANONICAL GAP — OWNER TRIAGE REQUIRED. Bu profil bu contract altında
+kullanılamaz.**
+
+Profil §1 tablosunda ilan edilmiştir ve bu belgede **başka hiçbir yerde
+geçmez**. Hedef yüzeyi ise şu üç hükmün kesişiminde boş kalır:
+
+```text
+profil policy'si : "exact declared target allowlist" — kanonik governance
+                   belgeleri üzerinde exact-content/hash yazımı
+§1 forbidden     : canonicalSemanticGovernance[*] immutable global forbidden
+                   = project/docs/governance/** · adr/** · blueprint/**
+                   · design/** · runbooks/** · AGENTS.md · CLAUDE.md
+§1 override      : "task-bazlı override EDİLEMEZ"
+§15.2 mekanik    : boundary ∩ immutable global forbidden = ∅
+```
+
+Yani `decision-log.md`, `active-roadmap.md`, `product-backlog.md`, risk
+register'lar, ADR'ler — mekanik governance yazımının bütün gerçek hedefleri —
+istisnasız forbidden'dır ve override yolu yoktur. Profil ilan edilmiş, ama
+tanımı gereği yapması gereken işi yapamaz.
+
+V1 bu iş için zaten ratifiye edilmiş bir mekanizma taşır ve bu contract ona
+**hiç atıf yapmaz** (`level2Operations` ve `queueExceptions` bu belgede sıfır
+kez geçer):
+
+```text
+V1 level2Operations   EXACT_APPEND_AT_DECLARED_ANCHOR · EXACT_LITERAL_REPLACEMENT
+                      EXACT_REFERENCE_REWRITE · DETERMINISTIC_REGISTER_REGENERATION
+V1 queueExceptions    coordination-requests/<requestId>/request.md
+                      coordination-results/<requestId>/result.md
+```
+
+Boşluğun kapatılması bir **owner kararıdır** ve bu düzeltme turunda
+yapılmamıştır: profile bir yüzey vermek, §1'in "override EDİLEMEZ" hükmüne bir
+istisna sınıfı eklemek anlamına gelir — bu policy'dir, mekanik düzeltme
+değildir. Kanonik olarak tutarlı tek aday, V1'in yukarıdaki ratifiye
+mekanizmasını V2'ye taşımaktır; başka her şekil yeni authority modeli üretir ve
+§15'in "yeni authority modeli ÜRETMEZ" hükmünü ihlal eder.
+
+**T5 ile ilişkisi YOKTUR.** `LIVE_TWO_PROGRAM` pilotu iki canlı
+`BOUNDED_CODE_TASK` ister; pilot yuvası governance işiyle doldurulmaz, aksi
+hâlde pilotun kanıt değeri düşer. Bu açık T5'i bloke etmez ve T5 bu açığın
+kapanmasını beklemez.
+
+**Aciliyeti ratifikasyondandır:** governance kaydı yazılması gerekiyorsa
+yürürlükteki V1 mekanizması zaten kullanılabilir, dolayısıyla acil bir
+operasyonel boşluk yoktur. Ancak bu boşluk kapanmadan V2 ratifiye edilirse ölü
+bir profil sabitlenir ve sonraki düzeltme amendment olur. Bu nedenle
+ratifikasyonun ön koşuludur, T5'in değil.
 
 ## 2. Immutable authorization
 
