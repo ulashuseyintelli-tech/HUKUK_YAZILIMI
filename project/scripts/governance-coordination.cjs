@@ -209,7 +209,8 @@ const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
     mode: 'GITHUB_PLATFORM_GH02_WORKFLOW_HARDENING_R01',
     pullRequestNumber: 1622,
     originalBaseSha: '1b682a9a0474d9c94b6a98fc8251ca92fea48766',
-    authorizedPatchSha: 'cc6dfba9d0ae2fb5dcfddeb022ad94659d7d406f',
+    canonicalMergeSha: 'ea84c9f5b71716588ac06933ee30b3b72dc52395',
+    expectedTargetBlobSha: '5644cf69ce5d43a5a63fd1d796cf4cdfc8dccf00',
     headRef: 'codex/github-platform-gh02-workflow-hardening-r01',
     targetPath: '.github/workflows/ci.yml',
     changedPaths: Object.freeze([
@@ -219,6 +220,20 @@ const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
 });
 const GITHUB_PLATFORM_GH02_BINDING_PATHS = new Set(
   GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths,
+);
+const GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02 = Object.freeze({
+  taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-RECOVERY-R02',
+  mode: 'GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02',
+  baseSha: '627c76e4549196153da0cf2401ed706047ca38c9',
+  headRef: 'codex/github-platform-gh02-control-plane-recovery-r02',
+  changedPaths: Object.freeze([
+    'project/scripts/governance-coordination.cjs',
+    'project/scripts/governance-coordination.test.cjs',
+    'project/docs/governance/governance-writer-coordination-contract.md',
+  ]),
+});
+const GITHUB_PLATFORM_GH02_RECOVERY_PATHS = new Set(
+  GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02.changedPaths,
 );
 const REGISTER_REPO_PATH =
   'project/docs/governance/governance-writer-coordination-register.md';
@@ -737,6 +752,19 @@ function gitShow(ref, repoPath, cwd = REPO_ROOT) {
   return runGit(['show', `${ref}:${repoPath}`], cwd).stdout;
 }
 
+function requireGitCommit(ref, code, cwd = REPO_ROOT) {
+  const result = runGit(['cat-file', '-e', `${ref}^{commit}`], cwd, {
+    allowFailure: true,
+  });
+  if (result.status !== 0) reject(code, `required canonical commit is unavailable: ${ref}`);
+}
+
+function gitBlobSha(ref, repoPath, code, cwd = REPO_ROOT) {
+  const result = runGit(['rev-parse', `${ref}:${repoPath}`], cwd, { allowFailure: true });
+  if (result.status !== 0) reject(code, `cannot resolve canonical blob ${ref}:${repoPath}`);
+  return result.stdout.trim();
+}
+
 function gitTreeEntry(ref, repoPath, cwd = REPO_ROOT) {
   return runGit(['ls-tree', ref, '--', repoPath], cwd).stdout.trim();
 }
@@ -1209,6 +1237,17 @@ function classifyPrChangeSet(changes, context = {}) {
     hasExactChangeSet(changes, ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.changedPaths)
   ) {
     return { mode: ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.mode };
+  }
+
+  if (
+    context.base === GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02.baseSha &&
+    context.headRef === GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02.headRef &&
+    hasExactModifiedPathSet(changes, GITHUB_PLATFORM_GH02_RECOVERY_PATHS)
+  ) {
+    return {
+      mode: GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02.mode,
+      taskId: GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02.taskId,
+    };
   }
 
   const gh02Binding = GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
@@ -1711,7 +1750,8 @@ function validateGithubPlatformGh02BindingScope(options) {
     binding.bindingPr.headRef,
     binding.workflowPr.mode,
     String(binding.workflowPr.pullRequestNumber),
-    binding.workflowPr.authorizedPatchSha,
+    binding.workflowPr.canonicalMergeSha,
+    binding.workflowPr.expectedTargetBlobSha,
     binding.workflowPr.headRef,
     binding.workflowPr.targetPath,
   ]) {
@@ -1726,6 +1766,34 @@ function validateGithubPlatformGh02BindingScope(options) {
   return { mode: binding.bindingPr.mode, taskId: binding.taskId };
 }
 
+function validateGithubPlatformGh02RecoveryScope(options) {
+  const { base, head, headRef, changes, cwd = REPO_ROOT } = options;
+  const recovery = GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02;
+  if (
+    base !== recovery.baseSha ||
+    headRef !== recovery.headRef ||
+    !hasExactModifiedPathSet(changes, GITHUB_PLATFORM_GH02_RECOVERY_PATHS)
+  ) {
+    reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'GH-02 recovery binding mismatch');
+  }
+  const contract = gitShow(
+    head,
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    cwd,
+  );
+  for (const expectedLiteral of [
+    recovery.taskId,
+    recovery.mode,
+    recovery.baseSha,
+    recovery.headRef,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject('GH02_RECOVERY_CONTRACT_INVALID', `contract is missing exact recovery binding ${expectedLiteral}`);
+    }
+  }
+  return { mode: recovery.mode, taskId: recovery.taskId };
+}
+
 function validateGithubPlatformGh02WorkflowScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding = GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
@@ -1738,29 +1806,21 @@ function validateGithubPlatformGh02WorkflowScope(options) {
     reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'GH-02 workflow binding mismatch');
   }
 
-  if (!gitIsAncestor(workflow.originalBaseSha, base, cwd)) {
-    reject(
-      'GH02_BASE_ANCESTRY_INVALID',
-      `PR base must descend from ${workflow.originalBaseSha}`,
-    );
-  }
-  const patchParent = runGit(
-    ['rev-parse', `${workflow.authorizedPatchSha}^`],
+  requireGitCommit(
+    workflow.canonicalMergeSha,
+    'CONTROL_PLANE_BINDING_OBJECT_UNAVAILABLE',
     cwd,
-  ).stdout.trim();
-  if (patchParent !== workflow.originalBaseSha) {
+  );
+  const canonicalBlob = gitBlobSha(
+    workflow.canonicalMergeSha,
+    workflow.targetPath,
+    'CANONICAL_BINDING_INTEGRITY_FAILED',
+    cwd,
+  );
+  if (canonicalBlob !== workflow.expectedTargetBlobSha) {
     reject(
-      'GH02_AUTHORIZED_PATCH_PARENT_INVALID',
-      `authorized patch parent must be ${workflow.originalBaseSha}`,
-    );
-  }
-  if (
-    !gitIsAncestor(workflow.authorizedPatchSha, head, cwd) ||
-    !gitIsAncestor(base, head, cwd)
-  ) {
-    reject(
-      'GH02_HEAD_ANCESTRY_INVALID',
-      'PR head must descend from both the authorized GH-02 patch and current PR base',
+      'CANONICAL_BINDING_INTEGRITY_FAILED',
+      `canonical ${workflow.targetPath} blob differs from ${workflow.expectedTargetBlobSha}`,
     );
   }
 
@@ -1780,18 +1840,16 @@ function validateGithubPlatformGh02WorkflowScope(options) {
     }
   }
 
-  const originalTarget = gitShow(workflow.originalBaseSha, workflow.targetPath, cwd);
-  const authorizedTarget = gitShow(workflow.authorizedPatchSha, workflow.targetPath, cwd);
-  if (gitShow(base, workflow.targetPath, cwd) !== originalTarget) {
-    reject(
-      'GH02_BASE_TARGET_DRIFT',
-      `${workflow.targetPath} changed on main after the authorized GH-02 base`,
-    );
-  }
-  if (gitShow(head, workflow.targetPath, cwd) !== authorizedTarget) {
+  const headBlob = gitBlobSha(
+    head,
+    workflow.targetPath,
+    'GH02_WORKFLOW_CONTENT_DRIFT',
+    cwd,
+  );
+  if (headBlob !== workflow.expectedTargetBlobSha) {
     reject(
       'GH02_WORKFLOW_CONTENT_DRIFT',
-      `${workflow.targetPath} differs from authorized patch ${workflow.authorizedPatchSha}`,
+      `${workflow.targetPath} differs from canonical blob ${workflow.expectedTargetBlobSha}`,
     );
   }
 
@@ -1815,6 +1873,16 @@ function validatePrScope(options) {
 
   if (classification.mode === ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.mode) {
     return validateAnalyzeFirstConditionalExecutionR02Scope({
+      base,
+      head,
+      headRef,
+      changes,
+      cwd,
+    });
+  }
+
+  if (classification.mode === GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02.mode) {
+    return validateGithubPlatformGh02RecoveryScope({
       base,
       head,
       headRef,
@@ -2153,6 +2221,7 @@ module.exports = {
   EFFECTIVE_FROM_MAIN_SHA,
   EXECUTION_BASE_ANCESTRY_REPAIR_I01,
   GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01,
+  GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02,
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
