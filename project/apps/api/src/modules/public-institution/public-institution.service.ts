@@ -8,7 +8,7 @@ export class PublicInstitutionService {
 
   // Autocomplete arama - isim veya DETSİS no ile
   async search(query: string, limit = 20) {
-    if (!query || query.length < 2) {
+    if (typeof query !== 'string' || query.length < 2) {
       return [];
     }
 

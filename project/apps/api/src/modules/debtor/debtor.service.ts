@@ -2233,8 +2233,13 @@ export class DebtorService {
       { expectedCaseId: caseId }
     );
 
+    // Preserve the existing empty/null clear behavior, but reject non-scalar payloads.
+    if (text !== null && text !== undefined && typeof text !== "string") {
+      throw new BadRequestException("Not metin olmalıdır");
+    }
+
     // Validate length
-    if (text && text.length > 240) {
+    if (typeof text === "string" && text.length > 240) {
       throw new BadRequestException("Not en fazla 240 karakter olabilir");
     }
 
