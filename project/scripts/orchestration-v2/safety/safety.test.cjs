@@ -300,6 +300,40 @@ test('boundary: unsafe path shapes are rejected at normalization', () => {
   }
 });
 
+test('boundary: control characters in a path are rejected', () => {
+  // Guards the PATH_CONTROL_CHAR rule explicitly. The regex is written with
+  // escape sequences rather than literal control bytes: embedding a raw NUL in
+  // the source made git classify this whole validator as binary, which would
+  // leave a safety-critical file permanently unreviewable in diffs.
+  const cases = ['a/\u0000b', 'a/\u001fb', 'a/\u0007b', 'a/\u007fb', 'a/\u001bb'];
+  for (const p of cases) {
+    assert.throws(
+      () => boundary.normalizeRepoPath(p, 'test'),
+      (e) => e.code === 'PATH_CONTROL_CHAR',
+      'must reject control char in ' + JSON.stringify(p),
+    );
+  }
+  // A NUL-bearing path must never survive into a boundary verdict either.
+  const v = boundary.validate({
+    changes: [],
+    allowedRoots: ['project/apps/api/'],
+    forbidden: [],
+  });
+  assert.equal(v.withinBoundary, true);
+});
+
+test('boundary: this module contains no raw control bytes', () => {
+  // Regression guard for the defect above: a raw control byte in the source
+  // makes git treat the file as binary and silently unreviewable.
+  const raw = fs.readFileSync(path.join(__dirname, 'boundary.cjs'));
+  const offenders = [];
+  for (const b of raw) {
+    if (b < 9 || (b > 10 && b < 32 && b !== 13)) offenders.push(b);
+  }
+  assert.deepEqual(offenders, [], 'raw control bytes present in boundary.cjs');
+  assert.equal(raw.includes(0), false, 'NUL byte present in boundary.cjs');
+});
+
 test('boundary: maxChangedFiles is enforced', () => {
   const many = [ch({ path: 'project/apps/api/src/a.ts' }), ch({ path: 'project/apps/api/src/b.ts' })];
   const v = verdictFor(many, { maxChangedFiles: 1 });
