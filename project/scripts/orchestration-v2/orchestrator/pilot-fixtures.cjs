@@ -124,7 +124,7 @@ function specAndGrant(over) {
       revocationPath: 'project/docs/governance/coordination-execution-grants/PILOT.md',
       manualMergeRequired: true,
       allowedModuleRoots: o.grantRoots || ['fixture/'],
-      authorizedTasks: [pin(spec)].concat((o.alsoAuthorize || []).map(pin)),
+      authorizedTasks: [pin(spec)].concat((o.additionalTaskSpecs || []).map(pin)),
     },
     o.grantExtra || {},
   );

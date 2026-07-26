@@ -401,7 +401,7 @@ test('PILOT 15-16: only a pinned successor becomes eligible; discovered work doe
   const sg = F.specAndGrant({
     taskId: 'PILOT-PRED',
     successorDisposition: 'DECLARED_SUCCESSOR',
-    alsoAuthorize: [successor],
+    additionalTaskSpecs: [successor],
   });
 
   const c = ctxFor(repo, { sg });

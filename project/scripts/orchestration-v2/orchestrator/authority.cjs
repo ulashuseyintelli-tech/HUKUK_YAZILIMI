@@ -79,7 +79,20 @@ function canonicalize(value, at) {
   return fail('CANON_UNSUPPORTED_TYPE', where + ' is ' + t);
 }
 
-/** SHA-256 over the canonical byte sequence, lowercase hex (§12). */
+/**
+ * SHA-256 over the canonical byte sequence, lowercase hex (§12).
+ *
+ * This is a content-integrity digest for task specifications, grants and state
+ * payloads — it is a deterministic identifier, never a credential hash. No
+ * secret, password or token is ever passed to it: the inputs are task metadata
+ * that a grant pins by value so a spec edited after ratification produces a
+ * different identifier.
+ *
+ * A password-strength KDF would be actively wrong here. Contract §12 mandates
+ * RFC 8785 canonicalization plus SHA-256 precisely because the digest must be
+ * reproducible byte-for-byte across machines and runs; a salted, deliberately
+ * slow hash cannot satisfy that.
+ */
 function digest(value) {
   return crypto.createHash('sha256').update(canonicalize(value), 'utf8').digest('hex');
 }
