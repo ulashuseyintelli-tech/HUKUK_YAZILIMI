@@ -59,7 +59,25 @@ Hepsi owner işlemidir; hiçbirine dokunulmadı.
 7. MECHANICAL_GOVERNANCE profilinin ulaşılabilir hedef yüzeyi YOK — contract
    §1.2 CANONICAL GAP olarak kaydedildi. Profil tabloda KULLANILAMAZ
    işaretlendi; yüzey verilmesi policy kararıdır, bu turda YAPILMADI.
-   Ratifikasyondan önce çözülmezse ölü profil sabitlenir.
+   RATİFİKASYON ön koşuludur, T5'in değil — T5 iki BOUNDED_CODE_TASK ister ve
+   pilot yuvası governance işiyle doldurulmaz. Governance kaydı gerekiyorsa
+   yürürlükteki V1 mekanizması kullanılır.
+```
+
+## Owner düzeltmeleri (2026-07-26) — uygulandı
+
+İlk `t5-route.md` sürümündeki iki kavram hatası owner tarafından düzeltildi:
+
+```text
+1. "manifest → ELIGIBLE" bir owner işlemi olarak listelenmişti. YANLIŞ.
+   Manifest türetilmiş ve non-authoritative kayıttır (kendi authority alanı
+   bunu yazar); ELIGIBLE §3'te orchestrator'ın yazdığı bir lifecycle state'tir
+   ve §9'un alan listesinde liveExecutionEligibility hiç yer almaz.
+   Eligibility zincirin SONUCUDUR, yetki kaynağı değildir.
+
+2. MECHANICAL_GOVERNANCE açığı üçüncü bir T5 blocker'ı (G2) sayılmıştı. YANLIŞ
+   sınıflandırma. Gerçek bir T1 açığıdır ama T5'i bloke etmez; ayrı bir
+   pre-ratification düzeltmesidir. Bloke eden yalnız G0 ve G1'dir.
 ```
 
 ## T5 durumu

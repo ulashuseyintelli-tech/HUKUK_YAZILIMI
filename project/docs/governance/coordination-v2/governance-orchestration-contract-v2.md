@@ -118,9 +118,16 @@ değildir. Kanonik olarak tutarlı tek aday, V1'in yukarıdaki ratifiye
 mekanizmasını V2'ye taşımaktır; başka her şekil yeni authority modeli üretir ve
 §15'in "yeni authority modeli ÜRETMEZ" hükmünü ihlal eder.
 
-**T5 etkisi:** `LIVE_TWO_PROGRAM` pilotu, program authority'si beklemeyen ikinci
-bir görevi bu profilden **alamaz**. Ratifikasyondan önce çözülmezse, ratifikasyon
-ölü bir profili sabitler ve sonraki düzeltme amendment olur.
+**T5 ile ilişkisi YOKTUR.** `LIVE_TWO_PROGRAM` pilotu iki canlı
+`BOUNDED_CODE_TASK` ister; pilot yuvası governance işiyle doldurulmaz, aksi
+hâlde pilotun kanıt değeri düşer. Bu açık T5'i bloke etmez ve T5 bu açığın
+kapanmasını beklemez.
+
+**Aciliyeti ratifikasyondandır:** governance kaydı yazılması gerekiyorsa
+yürürlükteki V1 mekanizması zaten kullanılabilir, dolayısıyla acil bir
+operasyonel boşluk yoktur. Ancak bu boşluk kapanmadan V2 ratifiye edilirse ölü
+bir profil sabitlenir ve sonraki düzeltme amendment olur. Bu nedenle
+ratifikasyonun ön koşuludur, T5'in değil.
 
 ## 2. Immutable authorization
 
