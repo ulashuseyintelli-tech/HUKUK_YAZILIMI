@@ -1555,6 +1555,81 @@ test('GH-02 recovery requires exact base branch and three-file scope', () => {
   );
 });
 
+test('GH-03 binding requires exact base, head ref, and four modified paths', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01;
+  const changes = binding.changedPaths.map((repoPath) => ({ status: 'M', path: repoPath }));
+  const result = coordination.classifyPrChangeSet(changes, {
+    base: binding.baseSha,
+    headRef: binding.headRef,
+  });
+  assert.equal(result.mode, binding.mode);
+  assert.equal(result.taskId, binding.taskId);
+});
+
+test('GH-03 binding rejects the wrong base', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01;
+  const changes = binding.changedPaths.map((repoPath) => ({ status: 'M', path: repoPath }));
+  expectCode(
+    () => coordination.classifyPrChangeSet(changes, {
+      base: '0'.repeat(40),
+      headRef: binding.headRef,
+    }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-03 binding rejects the wrong head ref', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01;
+  const changes = binding.changedPaths.map((repoPath) => ({ status: 'M', path: repoPath }));
+  expectCode(
+    () => coordination.classifyPrChangeSet(changes, {
+      base: binding.baseSha,
+      headRef: 'codex/gh03-control-plane-binding-r02',
+    }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-03 binding rejects a missing path', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01;
+  const changes = binding.changedPaths
+    .slice(1)
+    .map((repoPath) => ({ status: 'M', path: repoPath }));
+  expectCode(
+    () => coordination.classifyPrChangeSet(changes, {
+      base: binding.baseSha,
+      headRef: binding.headRef,
+    }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-03 binding rejects an added path in place of a modified one', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01;
+  const changes = binding.changedPaths.map((repoPath, index) => ({
+    status: index === 0 ? 'A' : 'M',
+    path: repoPath,
+  }));
+  expectCode(
+    () => coordination.classifyPrChangeSet(changes, {
+      base: binding.baseSha,
+      headRef: binding.headRef,
+    }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-03 binding pins ci.yml by blob sha, never by commit sha', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01;
+  assert.equal(binding.targetPath, '.github/workflows/ci.yml');
+  assert.match(binding.expectedTargetBlobSha, /^[0-9a-f]{40}$/);
+  // GH-02 regression guard: a commit-sha pin can be deleted, a blob pin cannot.
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(binding, 'canonicalMergeSha'),
+    false,
+  );
+});
+
 test('bootstrap PR requires the exact fifteen-file mode scope', () => {
   const changes = [
     ...coordination.BOOTSTRAP_MODIFY,
