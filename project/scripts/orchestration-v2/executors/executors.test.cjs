@@ -145,6 +145,44 @@ test('resolve: smoke without the sentinel FAILS closed even on exit 0', () => {
   assert.equal(m.unavailableReason, 'SMOKE_FAILED');
 });
 
+test('resolve: an unmet smoke precondition is distinguished from a real failure', () => {
+  // A lane whose CLI refuses to run in an untrusted cwd must not be reported as
+  // unavailable — that would block tasks for a working installation. Driven here
+  // through a stand-in that emits the real CODEX_LOCAL message.
+  const msg = 'Not inside a trusted directory and --skip-git-repo-check was not specified.';
+  const precondition = resolve.resolveExecutor({
+    lane: 'CODEX_LOCAL',
+    configuredPath: NODE,
+    versionArgs: ['--version'],
+    smokeArgs: ['-e', 'process.stderr.write(' + JSON.stringify(msg) + ');process.exit(1)'],
+    sentinel: SENTINEL,
+  });
+  assert.equal(precondition.state, 'UNAVAILABLE');
+  assert.equal(precondition.unavailableReason, 'SMOKE_PRECONDITION_UNMET');
+  assert.match(precondition.smokePreconditionHint, /trusted \(git repository\) working directory/);
+
+  // An ordinary smoke failure keeps the plain reason.
+  const genuine = resolve.resolveExecutor({
+    lane: 'CODEX_LOCAL',
+    configuredPath: NODE,
+    versionArgs: ['--version'],
+    smokeArgs: ['-e', 'process.stderr.write("boom");process.exit(1)'],
+    sentinel: SENTINEL,
+  });
+  assert.equal(genuine.unavailableReason, 'SMOKE_FAILED');
+  assert.equal(genuine.smokePreconditionHint, null);
+
+  // The lane that carries no precondition pattern never reports one.
+  const claude = resolve.resolveExecutor({
+    lane: 'CLAUDE_LOCAL',
+    configuredPath: NODE,
+    versionArgs: ['--version'],
+    smokeArgs: ['-e', 'process.stderr.write(' + JSON.stringify(msg) + ');process.exit(1)'],
+    sentinel: SENTINEL,
+  });
+  assert.equal(claude.unavailableReason, 'SMOKE_FAILED');
+});
+
 test('resolve: skipping the smoke keeps the executor UNAVAILABLE by contract', () => {
   const m = resolve.resolveExecutor({
     lane: 'CLAUDE_LOCAL', configuredPath: NODE, versionArgs: ['--version'], skipSmoke: true,
@@ -171,33 +209,71 @@ test('resolve: both lanes have known-installation candidates and no pinned versi
   assert.equal(/2\.1\.220|0\.144\.5/.test(src), false, 'no observed version may be pinned in code');
 });
 
-test('resolve: a shell-requiring shim is never treated as a usable executable', () => {
-  const dir = tempDir('govv2-shim-');
-  for (const name of ['tool.cmd', 'tool.bat', 'tool.ps1']) {
-    fs.writeFileSync(path.join(dir, name), '@echo off\n');
-    assert.equal(resolve.isDirectlySpawnable(path.join(dir, name)), false, name);
-    assert.equal(resolve.isShim(path.join(dir, name)), true, name);
-  }
-  const exe = path.join(dir, 'tool.exe');
-  fs.writeFileSync(exe, 'MZ');
-  assert.equal(resolve.isDirectlySpawnable(exe), true);
+/**
+ * The shim concept is Windows-specific.
+ *
+ * On Windows, CreateProcess cannot run .cmd/.bat/.ps1 without a shell, so those
+ * extensions are shims no matter what permission bits they carry, and an
+ * extensionless file is the npm `sh` shim. On POSIX the extension carries no
+ * execution meaning at all — the exec bit decides, and an executable file with
+ * a .cmd name would be run through its shebang like anything else.
+ *
+ * These tests therefore assert the correct model for the platform they run on
+ * rather than skipping: CI is ubuntu-latest while development is Windows, and a
+ * test that only holds on one of them is a false green on the other.
+ */
+const WIN = process.platform === 'win32';
 
-  if (process.platform === 'win32') {
-    // An extensionless file here is an sh shim; CreateProcess cannot run it.
-    const bare = path.join(dir, 'tool');
-    fs.writeFileSync(bare, '#!/bin/sh\n');
-    assert.equal(resolve.isDirectlySpawnable(bare), false);
+function writeExec(p, content) {
+  fs.writeFileSync(p, content, { mode: 0o755 });
+  return p;
+}
+
+test('resolve: shim classification follows the platform execution model', () => {
+  const dir = tempDir('govv2-shim-');
+  const exe = writeExec(path.join(dir, 'tool.exe'), 'MZ');
+  const cmd = writeExec(path.join(dir, 'tool.cmd'), '@echo off\n');
+
+  if (WIN) {
+    for (const name of ['tool.cmd', 'tool.bat', 'tool.ps1']) {
+      const p = writeExec(path.join(dir, name), '@echo off\n');
+      assert.equal(resolve.isDirectlySpawnable(p), false, name + ' needs a shell');
+      assert.equal(resolve.isShim(p), true, name);
+    }
+    assert.equal(resolve.isDirectlySpawnable(exe), true);
+    const bare = writeExec(path.join(dir, 'tool'), '#!/bin/sh\n');
+    assert.equal(resolve.isDirectlySpawnable(bare), false, 'extensionless is an sh shim on Windows');
+    assert.equal(resolve.isShim(bare), true);
+  } else {
+    assert.equal(resolve.isDirectlySpawnable(cmd), true, 'exec bit is what matters on POSIX');
+    assert.equal(resolve.isShim(cmd), false, 'extension carries no execution meaning');
+    assert.equal(resolve.isDirectlySpawnable(exe), true);
+    const notExec = path.join(dir, 'tool.noexec');
+    fs.writeFileSync(notExec, 'x', { mode: 0o644 });
+    assert.equal(resolve.isDirectlySpawnable(notExec), false, 'no exec bit, not spawnable');
+    assert.equal(resolve.isShim(notExec), false, 'a non-executable file is neither direct nor shim');
   }
 });
 
-test('resolve: scanPath separates direct images from shims', () => {
+test('resolve: scanPath applies the platform candidate model', () => {
   const dir = tempDir('govv2-scan-');
-  fs.writeFileSync(path.join(dir, 'thing.cmd'), '@echo off\n');
-  fs.writeFileSync(path.join(dir, 'thing.exe'), 'MZ');
+  writeExec(path.join(dir, 'thing.cmd'), '@echo off\n');
+  writeExec(path.join(dir, 'thing.exe'), 'MZ');
   const scan = resolve.scanPath('thing', { PATH: dir, PATHEXT: '.EXE;.CMD' });
-  assert.equal(scan.direct.length, 1);
-  assert.ok(scan.direct[0].toUpperCase().endsWith('.EXE'));
-  assert.ok(scan.shims.some((s) => s.toUpperCase().endsWith('.CMD')));
+
+  if (WIN) {
+    assert.equal(scan.direct.length, 1);
+    assert.ok(scan.direct[0].toUpperCase().endsWith('.EXE'));
+    assert.ok(scan.shims.some((s) => s.toUpperCase().endsWith('.CMD')));
+  } else {
+    // PATHEXT has no meaning on POSIX, so only the bare name is a candidate.
+    assert.deepEqual(scan.direct, [], 'PATHEXT must not be applied on POSIX');
+    assert.deepEqual(scan.shims, []);
+    writeExec(path.join(dir, 'thing'), '#!/bin/sh\nexit 0\n');
+    const again = resolve.scanPath('thing', { PATH: dir });
+    assert.equal(again.direct.length, 1, 'the bare name resolves once it exists');
+    assert.equal(path.basename(again.direct[0]), 'thing');
+  }
 });
 
 test('resolve: an npm shim yields its JS entry point for node-hosted launch', () => {
@@ -214,36 +290,65 @@ test('resolve: an npm shim yields its JS entry point for node-hosted launch', ()
   assert.equal(path.basename(entry), 'tool.js');
 });
 
-test('resolve: shim-only lane resolves via NODE_HOSTED_SHIM_RESOLUTION', () => {
+test('resolve: shim-only lane reaches its entry point on either platform', () => {
   const dir = tempDir('govv2-hosted-');
   const entryDir = path.join(dir, 'node_modules', '@vendor', 'codex', 'bin');
   fs.mkdirSync(entryDir, { recursive: true });
   fs.writeFileSync(path.join(entryDir, 'codex.js'), 'process.stdout.write("codex-cli 1.2.3\\n");\n');
-  fs.writeFileSync(
-    path.join(dir, 'codex.cmd'),
-    '@ECHO off\r\n"%_prog%"  "%dp0%\\node_modules\\@vendor\\codex\\bin\\codex.js" %*\r\n',
-  );
-  const located = resolve.locate({ lane: 'CODEX_LOCAL', env: { PATH: dir, PATHEXT: '.CMD' }, knownInstallations: [] });
-  assert.equal(located.resolutionSource, 'NODE_HOSTED_SHIM_RESOLUTION');
-  assert.equal(located.resolvedAbsolutePath, NODE);
-  assert.equal(path.basename(located.hostedEntryScript), 'codex.js');
-  assert.deepEqual(located.launchPrefixArgv, [located.hostedEntryScript]);
 
-  // ...and the hosted entry is actually runnable through the version gate.
-  const m = resolve.resolveExecutor({
-    lane: 'CODEX_LOCAL', env: { PATH: dir, PATHEXT: '.CMD' }, knownInstallations: [], skipSmoke: true,
-  });
-  assert.match(m.version, /1\.2\.3/);
-  assert.equal(m.resolutionSource, 'NODE_HOSTED_SHIM_RESOLUTION');
+  if (WIN) {
+    // Only a .cmd exists, so resolution must go through it to the JS entry.
+    writeExec(
+      path.join(dir, 'codex.cmd'),
+      '@ECHO off\r\n"%_prog%"  "%dp0%\\node_modules\\@vendor\\codex\\bin\\codex.js" %*\r\n',
+    );
+    const located = resolve.locate({ lane: 'CODEX_LOCAL', env: { PATH: dir, PATHEXT: '.CMD' }, knownInstallations: [] });
+    assert.equal(located.resolutionSource, 'NODE_HOSTED_SHIM_RESOLUTION');
+    assert.equal(located.resolvedAbsolutePath, NODE);
+    assert.equal(path.basename(located.hostedEntryScript), 'codex.js');
+    assert.deepEqual(located.launchPrefixArgv, [located.hostedEntryScript]);
+
+    const m = resolve.resolveExecutor({
+      lane: 'CODEX_LOCAL', env: { PATH: dir, PATHEXT: '.CMD' }, knownInstallations: [], skipSmoke: true,
+    });
+    assert.match(m.version, /1\.2\.3/);
+    assert.equal(m.resolutionSource, 'NODE_HOSTED_SHIM_RESOLUTION');
+  } else {
+    // npm also writes an executable POSIX shim next to the .cmd. That one runs
+    // directly, so node-hosted resolution is not needed and must not engage.
+    writeExec(
+      path.join(dir, 'codex'),
+      '#!/bin/sh\nexec "' + NODE + '" "$(dirname "$0")/node_modules/@vendor/codex/bin/codex.js" "$@"\n',
+    );
+    const located = resolve.locate({ lane: 'CODEX_LOCAL', env: { PATH: dir }, knownInstallations: [] });
+    assert.equal(located.resolutionSource, 'PATH_RESOLUTION');
+    assert.deepEqual(located.launchPrefixArgv, [], 'no host prefix is needed for a directly-runnable shim');
+
+    const m = resolve.resolveExecutor({
+      lane: 'CODEX_LOCAL', env: { PATH: dir }, knownInstallations: [], skipSmoke: true,
+    });
+    assert.match(m.version, /1\.2\.3/, 'the POSIX shim still reports the CLI version');
+  }
 });
 
-test('resolve: an unparseable shim fails closed rather than being spawned', () => {
+test('resolve: a shim that names no entry point fails closed rather than being spawned', () => {
   const dir = tempDir('govv2-badshim-');
-  fs.writeFileSync(path.join(dir, 'codex.cmd'), '@echo off\nvolta run %~n0 %*\n');
-  assert.throws(
-    () => resolve.locate({ lane: 'CODEX_LOCAL', env: { PATH: dir, PATHEXT: '.CMD' }, knownInstallations: [] }),
-    (e) => e.code === 'ONLY_SHELL_REQUIRING_SHIM_FOUND',
-  );
+  if (WIN) {
+    // A Volta-style .cmd names no JS entry, and running it would need a shell.
+    writeExec(path.join(dir, 'codex.cmd'), '@echo off\nvolta run %~n0 %*\n');
+    assert.throws(
+      () => resolve.locate({ lane: 'CODEX_LOCAL', env: { PATH: dir, PATHEXT: '.CMD' }, knownInstallations: [] }),
+      (e) => e.code === 'ONLY_SHELL_REQUIRING_SHIM_FOUND',
+    );
+  } else {
+    // On POSIX nothing is spawnable without the exec bit, so the same file is
+    // simply not a candidate and resolution reports "not resolvable here".
+    fs.writeFileSync(path.join(dir, 'codex.cmd'), '@echo off\nvolta run %~n0 %*\n', { mode: 0o644 });
+    assert.equal(resolve.locate({ lane: 'CODEX_LOCAL', env: { PATH: dir }, knownInstallations: [] }), null);
+    const m = resolve.resolveExecutor({ lane: 'CODEX_LOCAL', env: { PATH: dir }, knownInstallations: [] });
+    assert.equal(m.state, 'UNAVAILABLE');
+    assert.equal(m.unavailableReason, 'NOT_RESOLVABLE_FROM_THIS_PROCESS_ENVIRONMENT');
+  }
 });
 
 // ------------------------------------------------------------ PROCESS CONTRACT

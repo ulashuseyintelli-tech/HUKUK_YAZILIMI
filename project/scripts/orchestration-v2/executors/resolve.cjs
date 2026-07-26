@@ -76,6 +76,24 @@ const LANE_SPEC = {
         env.HOME && path.join(env.HOME, '.local', 'bin', 'codex'),
       ].filter(Boolean),
     smokeArgs: (sentinel) => ['exec', 'Reply with exactly this token and nothing else: ' + sentinel],
+    /**
+     * `codex exec` refuses to run unless its working directory is a trusted
+     * directory — in practice a git repository — reporting "Not inside a
+     * trusted directory and --skip-git-repo-check was not specified".
+     *
+     * Verified on this machine: the identical smoke fails from a plain temp
+     * directory and passes from inside a git repository.
+     *
+     * The orchestrator satisfies this naturally because it resolves with the
+     * isolated worktree as cwd. Resolving from anywhere else would otherwise
+     * report a misleading UNAVAILABLE for an installed, working CLI, so the
+     * condition is surfaced as its own reason code below.
+     *
+     * `--skip-git-repo-check` is deliberately NOT added: bypassing the CLI's
+     * own safety check to make a smoke pass would trade a clear failure for a
+     * silent one.
+     */
+    smokePreconditionPattern: /not inside a trusted directory|--skip-git-repo-check/i,
   },
 };
 
@@ -401,10 +419,24 @@ function resolveExecutor(opts) {
     manifest.smokeResult = 'PASS';
     return manifest;
   }
+  // Distinguish "the executor cannot run here" from "the executor is broken".
+  // A precondition miss (e.g. a cwd the CLI does not trust) is an environmental
+  // fact about where resolution ran, not evidence that the CLI is unusable —
+  // conflating them would block tasks for a perfectly good installation.
+  const smokeText = (smoke.stderr || '') + '\n' + (smoke.stdout || '');
+  const preconditionUnmet =
+    spec.smokePreconditionPattern && spec.smokePreconditionPattern.test(smokeText);
   return Object.assign({}, manifest, {
     state: 'UNAVAILABLE',
     smokeResult: 'FAIL',
-    unavailableReason: smoke.timedOut ? 'SMOKE_TIMEOUT' : 'SMOKE_FAILED',
+    unavailableReason: smoke.timedOut
+      ? 'SMOKE_TIMEOUT'
+      : preconditionUnmet
+        ? 'SMOKE_PRECONDITION_UNMET'
+        : 'SMOKE_FAILED',
+    smokePreconditionHint: preconditionUnmet
+      ? 'This lane requires a trusted (git repository) working directory; resolve with the isolated worktree as cwd.'
+      : null,
     detail: (smoke.stderr || smoke.stdout || smoke.error || '').slice(0, 200),
   });
 }
