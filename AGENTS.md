@@ -10,6 +10,22 @@ Bu dosya repository-level ajan talimatidir. Bu repository'de calisan ajanlar ici
 4. Gelecekteki repo-local skill'ler resmi Codex scan yuzeyi olan `.agents/skills/` altinda tanimlanir.
 5. `.codex/` Codex operasyonel config, hooks ve project-scoped custom agents yuzeyidir; mevcut owner/user WIP sayilir ve acik yetki olmadan degistirilmez.
 
+## Beş Modül Çalışma Routing'i
+
+Her yeni görevde `project/docs/governance/CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md`
+okunur ve Session Initialization içinde `WORKSPACE MODULE(S)` kanıtla sınıflandırılır.
+Canonical çalışma modülleri `OFFICE`, `CLIENT`, `DEBTOR`, `RECEIVABLE` ve
+`COLLECTION`dır. UYAP Connector, GitHub/CI/governance control-plane, shared evidence ve
+cross-workstream migration işleri otomatik olarak altıncı hukuk modülü sayılmaz; haritadaki
+`CROSS_MODULE / SHARED` routing'i uygulanır.
+
+Kullanıcının her talimatta beş modülü yeniden yazması gerekmez. Task/path/governance kanıtı
+tek eşleşme üretiyorsa ajan modülü kendisi seçer. Birden fazla ilgili modül varsa tümü okunur;
+kanıtla sınıflandırılamayan veya birden fazla makul ownership seçeneği taşıyan görev
+`UNKNOWN / OWNER REVIEW` kalır ve mutation başlamaz. Modül sınıflandırması semantic veya
+execution authority değildir; aktif task, owner mode, competing writer ve exact scope ayrıca
+doğrulanır.
+
 ## Ilkeler
 
 - Ground Truth First: Repository gercek durumunu dosya, komut ciktisi veya resmi kaynakla dogrula; repository state uydurma.
@@ -131,6 +147,7 @@ asagidaki routing ve compliance sirasi izlenir:
 ```text
 AGENTS.md
 → project/docs/governance/GOVERNANCE-INDEX.md
+→ project/docs/governance/CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md
 → project/docs/governance/SYSTEM-CONSTITUTION.md
 → gorevle ilgili tum RATIFIED / CANONICAL domain governance belgeleri
 → ilgili contract / implementation standard

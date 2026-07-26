@@ -8,11 +8,19 @@ Her zaman Turkce konus ve Turkce yorum yap. Ana ilke: mevcut davranisi koru, tek
 
 Governance kayitlari `project/docs/governance/` altindadir; roadmap, backlog, mimari karar ve surec kayitlari burada tutulur.
 
+Her yeni görevde `project/docs/governance/CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md`
+okunur. Claude, kullanıcıdan beş modülü tekrar yazmasını istemeden task/path/governance
+kanıtından `WORKSPACE MODULE(S)` alanını sınıflandırır. Tek modül bulunursa ilgili canonical
+governance'e; birden çok modül bulunursa `CROSS_MODULE` olarak ilgili tüm governance
+kaynaklarına gider. UYAP veya shared control-plane işi altıncı hukuk modülü varsayılmaz.
+Sınıflandırma kanıtla yapılamıyorsa `UNKNOWN / OWNER REVIEW` denir ve mutation başlamaz.
+Bu routing semantic authority veya execution izni üretmez.
+
 Repo-local uzmanlik skill'leri resmi Codex scan yuzeyi olan `.agents/skills/` altinda tanimlanir. `.codex/` Codex operasyonel config, hooks ve project-scoped custom agents yuzeyidir; mevcut owner/user WIP sayilir ve acik yetki olmadan degistirilmez.
 
 Repository-wide AI ground-truth rule: Sohbet gecmisi yalniz niyet ve karar tasir; mevcut gercekler her gorevde repository state, git state, dosya icerigi, governance kayitlari, PR/CI durumu ve komut ciktilarindan yeniden dogrulanir. Claude oturum hafizasi veya onceki konusma, guncel branch/HEAD/dosya/PR/CI/governance durumu icin otorite degildir.
 
-Buyuk veya uzun omurlu workstream'lerde Claude, ise baslamadan once Session Initialization ozeti uretir: Repository State, Execution Context, Context Drift, Concurrent Activity ve Ready/Not Ready. Bu ozet onceki konusmayi degil, guncel repository gercegini esas alir.
+Buyuk veya uzun omurlu workstream'lerde Claude, ise baslamadan once Session Initialization ozeti uretir: Workspace Module(s), Repository State, Execution Context, Context Drift, Concurrent Activity ve Ready/Not Ready. Bu ozet onceki konusmayi degil, guncel repository gercegini esas alir.
 
 ## 2. Architecture Principles
 
