@@ -23,6 +23,7 @@ başlatmaz, execution grant üretmez.
 | `office-stale-register-reconciliation.md` | 3 — OFFICE bayat kayıtlar | **STALE — DOĞRULANDI** (5/5 residual icra edilmiş) |
 | `collection-test-only-decision-pack.md` | 4 — test-only characterization | **READY** — owner seçimi bekliyor |
 | `office-owner-decision-pack.md` | 5 — CAP-09A SLICE sıralaması | **READY** — OPTION A / OPTION B |
+| `t5-route.md` | T5 kapı zinciri ve ulaşılabilir yol | **SYSTEM_READY / LIVE_PILOT_BLOCKED_NO_AUTHORIZED_TASKS** |
 
 ## Önceki turla ilişki
 
@@ -55,6 +56,10 @@ Hepsi owner işlemidir; hiçbirine dokunulmadı.
 6. collection-confirmed.util.spec.ts CI allowlist'inde yok; 8 testi CI'da hiç
    koşmuyor. ci.yml control plane olduğu için hiçbir task boundary'sine
    giremez → ayrı owner işlemi
+7. MECHANICAL_GOVERNANCE profilinin ulaşılabilir hedef yüzeyi YOK — contract
+   §1.2 CANONICAL GAP olarak kaydedildi. Profil tabloda KULLANILAMAZ
+   işaretlendi; yüzey verilmesi policy kararıdır, bu turda YAPILMADI.
+   Ratifikasyondan önce çözülmezse ölü profil sabitlenir.
 ```
 
 ## T5 durumu

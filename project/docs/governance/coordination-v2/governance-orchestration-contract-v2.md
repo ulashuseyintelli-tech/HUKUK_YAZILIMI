@@ -30,10 +30,10 @@ path normalization · diff extraction · deny evaluation
 · invariant enforcement · result generation
 ```
 
-| Profil | Policy | Validation |
-|---|---|---|
-| `MECHANICAL_GOVERNANCE` | exact declared target allowlist | expected exact content/hash |
-| `BOUNDED_CODE_TASK` | task-specific **positive** allowed roots | actual diff boundary + invariant/test |
+| Profil | Policy | Validation | Kullanılabilirlik |
+|---|---|---|---|
+| `MECHANICAL_GOVERNANCE` | exact declared target allowlist | expected exact content/hash | **KULLANILAMAZ — §1.2** |
+| `BOUNDED_CODE_TASK` | task-specific **positive** allowed roots | actual diff boundary + invariant/test | kullanılabilir |
 
 **KURAL:** Global denylist dışında kalan hiçbir yol kendiliğinden izinli
 sayılmaz. `BOUNDED_CODE_TASK`, V1 `deniedTargetPrefixes` listesinin inverse'i
@@ -76,6 +76,51 @@ açıkça sayılır. Deny modeli gevşetilmez; gerçek yüzeye bağlanır.
 üst-düzey `project/prisma/` açılırsa kendiliğinden kapsar. Ancak tek başlarına
 `PRODUCTION_SCHEMA_MIGRATION_RUNTIME` kapsamını KARŞILAMAZLAR; o kapsamı
 karşılayan giriş `project/apps/api/prisma/`'dır.
+
+### 1.2 `MECHANICAL_GOVERNANCE` profilinin ulaşılabilir hedef yüzeyi YOKTUR
+
+**CANONICAL GAP — OWNER TRIAGE REQUIRED. Bu profil bu contract altında
+kullanılamaz.**
+
+Profil §1 tablosunda ilan edilmiştir ve bu belgede **başka hiçbir yerde
+geçmez**. Hedef yüzeyi ise şu üç hükmün kesişiminde boş kalır:
+
+```text
+profil policy'si : "exact declared target allowlist" — kanonik governance
+                   belgeleri üzerinde exact-content/hash yazımı
+§1 forbidden     : canonicalSemanticGovernance[*] immutable global forbidden
+                   = project/docs/governance/** · adr/** · blueprint/**
+                   · design/** · runbooks/** · AGENTS.md · CLAUDE.md
+§1 override      : "task-bazlı override EDİLEMEZ"
+§15.2 mekanik    : boundary ∩ immutable global forbidden = ∅
+```
+
+Yani `decision-log.md`, `active-roadmap.md`, `product-backlog.md`, risk
+register'lar, ADR'ler — mekanik governance yazımının bütün gerçek hedefleri —
+istisnasız forbidden'dır ve override yolu yoktur. Profil ilan edilmiş, ama
+tanımı gereği yapması gereken işi yapamaz.
+
+V1 bu iş için zaten ratifiye edilmiş bir mekanizma taşır ve bu contract ona
+**hiç atıf yapmaz** (`level2Operations` ve `queueExceptions` bu belgede sıfır
+kez geçer):
+
+```text
+V1 level2Operations   EXACT_APPEND_AT_DECLARED_ANCHOR · EXACT_LITERAL_REPLACEMENT
+                      EXACT_REFERENCE_REWRITE · DETERMINISTIC_REGISTER_REGENERATION
+V1 queueExceptions    coordination-requests/<requestId>/request.md
+                      coordination-results/<requestId>/result.md
+```
+
+Boşluğun kapatılması bir **owner kararıdır** ve bu düzeltme turunda
+yapılmamıştır: profile bir yüzey vermek, §1'in "override EDİLEMEZ" hükmüne bir
+istisna sınıfı eklemek anlamına gelir — bu policy'dir, mekanik düzeltme
+değildir. Kanonik olarak tutarlı tek aday, V1'in yukarıdaki ratifiye
+mekanizmasını V2'ye taşımaktır; başka her şekil yeni authority modeli üretir ve
+§15'in "yeni authority modeli ÜRETMEZ" hükmünü ihlal eder.
+
+**T5 etkisi:** `LIVE_TWO_PROGRAM` pilotu, program authority'si beklemeyen ikinci
+bir görevi bu profilden **alamaz**. Ratifikasyondan önce çözülmezse, ratifikasyon
+ölü bir profili sabitler ve sonraki düzeltme amendment olur.
 
 ## 2. Immutable authorization
 
