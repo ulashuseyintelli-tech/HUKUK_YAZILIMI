@@ -42,7 +42,14 @@ export default function PortalDocumentsPage() {
 
   const fetchDocuments = async () => {
     const token = localStorage.getItem("portal_token");
-    if (!token) return;
+    // CLIENT-REMEDIATION-CLOSEOUT-R01: erken dönüşte de loading KESİN olarak kapatılır.
+    // Önceki halde `return` ifadesi aşağıdaki try/finally'den ÖNCE çalıştığı için
+    // `setLoading(false)` hiç çağrılmıyor ve token yokken kullanıcı KALICI spinner
+    // görüyordu. API çağrısı yine yapılmaz (mevcut guard aynen korunur).
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     try {
       const res = await fetch(portalApiUrl("/api/portal/documents"), {
         headers: { Authorization: `Bearer ${token}` },

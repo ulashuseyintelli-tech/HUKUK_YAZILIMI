@@ -2,8 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { FileCheck, Loader2, CheckCircle, AlertTriangle, Clock, X } from "lucide-react";
+// CLIENT-REMEDIATION-CLOSEOUT-R01: module-level `NEXT_PUBLIC_API_URL || "http://localhost:8080"
+// fallback'i kaldırıldı — production'da env eksikse sessizce kullanıcının localhost'una
+// düşüyordu. Base URL artık canonical config katmanından gelir (dev fallback yalnız orada,
+// production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
+import { portalApiUrl } from "@/lib/config/portal-api-url";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 export default function PortalPoasPage() {
   const [poas, setPoas] = useState<any[]>([]);
@@ -16,7 +20,7 @@ export default function PortalPoasPage() {
   const loadPoas = async () => {
     try {
       const token = localStorage.getItem("portal_token");
-      const res = await fetch(`${API_URL}/api/portal/poas`, {
+      const res = await fetch(portalApiUrl("/api/portal/poas"), {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
