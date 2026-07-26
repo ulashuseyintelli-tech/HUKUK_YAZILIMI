@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "grantId": "GRANT-RCV-COL-W2.2D-1A-R01",
+  "workstream": "RCV-COL-W2.2D-1A",
+  "semanticAuthorityRef": {
+    "kind": "SEMANTIC_AUTHORITY",
+    "recordId": "RCV-COL-W2.2D-1A",
+    "sourcePath": "project/docs/governance/COLLECTION-DECOMPOSITION.md"
+  },
+  "executionGrantRef": {
+    "kind": "EXECUTION_GRANT",
+    "recordId": "<OWNER-FILLS>",
+    "sourcePath": "<OWNER-FILLS>"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "<OWNER-FILLS>",
+    "sourceCommitSha": "<OWNER-FILLS>",
+    "exactExcerpt": "<OWNER-FILLS>",
+    "excerptSha256": "<OWNER-FILLS>"
+  },
+  "authorizedTasks": [
+    {
+      "taskId": "RCV-COL-W2.2D-1A-CHARACTERIZATION-R01",
+      "taskSpecVersion": 1,
+      "taskSpecSha256": "4a84fe4c658d0370219840bbc4fc9af29b1fe5747e9be9494fd43c5586bd407e",
+      "declaredIntentSha256": "988a37755026d24c2e002236e9bb4532ab8c9ad95488e24d75eef93f33d99264",
+      "boundaryPolicySha256": "6e7cb3dca041716810ba8040286e1b9a18c218230100d3978e971bac7292ad85",
+      "requiredTestsSha256": "c49f9dc21e8f38d4037a70ba4da7d6989c7d021c413221d5d2560c3ce15fdc5c"
+    }
+  ],
+  "allowedModuleRoots": [
+    "project/apps/api/src/modules/interest-engine/"
+  ],
+  "expiresAt": "<OWNER-FILLS>",
+  "revocationPath": "project/docs/governance/coordination-v2/task-plans/COLLECTION/REVOKED",
+  "manualMergeRequired": true
+}
