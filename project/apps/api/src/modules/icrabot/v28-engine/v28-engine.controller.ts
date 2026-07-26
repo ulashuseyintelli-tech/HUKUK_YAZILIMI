@@ -18,6 +18,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../../auth/guards/admin.guard';
 import { UyapEventIngestService, UyapEvent } from './uyap-event-ingest.service';
 import { FactStoreService } from './factstore.service';
 import { TimelineService, TimelineEntryType, TimelineSeverity, TimelineSource } from './timeline.service';
@@ -28,10 +29,15 @@ import { ComputeRegistryService } from './compute-registry.service';
 import { EngineRunService } from './engine-run.service';
 import { ScenarioHarnessService, BUILT_IN_SCENARIOS } from './scenario-harness.service';
 import { ActionFeedbackService } from './action-feedback.service';
+import {
+  IcrabotV28DevSurfaceGuard,
+  IcrabotV28ExternalIngestGuard,
+  IcrabotV28UnsafeMutationGuard,
+} from './guards/v28-surface.guard';
 
 // ============ UYAP Event Ingest Controller ============
 @Controller('icrabot/v28/events')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, IcrabotV28ExternalIngestGuard)
 export class UyapEventController {
   constructor(private readonly ingestService: UyapEventIngestService) {}
 
@@ -316,6 +322,7 @@ export class OutboxController {
 
   @Post('process')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminGuard)
   async processPending(@Query('limit') limit?: string) {
     const processed = await this.actionHandler.processPendingActions(
       limit ? parseInt(limit) : 10,
@@ -325,6 +332,7 @@ export class OutboxController {
 
   @Post(':actionId/retry')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(IcrabotV28UnsafeMutationGuard)
   async retryAction(@Param('actionId') actionId: string) {
     await this.outbox.retryDeadAction(actionId);
     return { success: true };
@@ -334,6 +342,7 @@ export class OutboxController {
 
   @Post('process-retryable')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminGuard)
   async processRetryable(@Query('limit') limit?: string) {
     const results = await this.actionHandler.processRetryableActions(
       limit ? parseInt(limit) : 10,
@@ -363,6 +372,7 @@ export class OutboxController {
 
   @Post('execute-direct')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(IcrabotV28UnsafeMutationGuard)
   async executeDirect(
     @Body() body: { actionType: string; payload: Record<string, any>; caseId: string },
   ) {
@@ -372,6 +382,7 @@ export class OutboxController {
 
   @Post('dispatch-batch')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(IcrabotV28UnsafeMutationGuard)
   async dispatchBatch(@Body() body: { actionIds: string[] }) {
     const results = await this.actionHandler.dispatchBatch(body.actionIds);
     return {
@@ -444,6 +455,7 @@ export class RulesController {
 
   @Post('reload')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminGuard)
   async reloadRules(@Body() body?: { pack?: string }) {
     this.ruleLoader.invalidateCache(body?.pack);
     
@@ -458,6 +470,7 @@ export class RulesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(AdminGuard)
   async addRule(
     @Body() body: { 
       packName: string; 
@@ -485,6 +498,7 @@ export class RulesController {
    */
   @Post('disable-revision')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminGuard)
   async disableRevision(@Body() body: { revisionId: string }) {
     const result = await this.ruleLoader.disableRevision(body.revisionId);
     return { ok: true, ...result, revisionId: body.revisionId };
@@ -496,6 +510,7 @@ export class RulesController {
    */
   @Post('disable-rule')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminGuard)
   async disableRule(@Body() body: { packName: string; ruleKey: string }) {
     await this.ruleLoader.disableRule(body.packName, body.ruleKey);
     return { ok: true, packName: body.packName, ruleKey: body.ruleKey, disabled: true };
@@ -507,6 +522,7 @@ export class RulesController {
    */
   @Post('enable-rule')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminGuard)
   async enableRule(@Body() body: { packName: string; ruleKey: string }) {
     await this.ruleLoader.enableRule(body.packName, body.ruleKey);
     return { ok: true, packName: body.packName, ruleKey: body.ruleKey, enabled: true };
@@ -518,6 +534,7 @@ export class RulesController {
    */
   @Post('pin-version')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(AdminGuard)
   async pinVersion(@Body() body: { packName: string; ruleKey: string; version: number }) {
     await this.ruleLoader.pinVersion(body.packName, body.ruleKey, body.version);
     return { ok: true, packName: body.packName, ruleKey: body.ruleKey, pinnedVersion: body.version };
@@ -563,7 +580,7 @@ export class ComputeController {
 import { SeedService } from './seed.service';
 
 @Controller('icrabot/v28/seed')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, IcrabotV28DevSurfaceGuard)
 export class SeedController {
   constructor(private readonly seed: SeedService) {}
 
@@ -603,6 +620,7 @@ export class ScenarioHarnessController {
 
   @Post('run/:scenarioKey')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(IcrabotV28DevSurfaceGuard)
   async runBuiltInScenario(@Param('scenarioKey') scenarioKey: string) {
     const key = scenarioKey as keyof typeof BUILT_IN_SCENARIOS;
     if (!BUILT_IN_SCENARIOS[key]) {
@@ -613,12 +631,14 @@ export class ScenarioHarnessController {
 
   @Post('run-all')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(IcrabotV28DevSurfaceGuard)
   async runAllScenarios() {
     return this.harness.runAllBuiltInScenarios();
   }
 
   @Post('run-custom')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(IcrabotV28DevSurfaceGuard)
   async runCustomScenario(
     @Body() body: {
       name: string;
@@ -652,6 +672,7 @@ export class ActionFeedbackController {
    */
   @Post('callback')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(IcrabotV28ExternalIngestGuard)
   async processCallback(
     @Body() body: { case_id: string; kind: string; data?: Record<string, any> },
   ) {
