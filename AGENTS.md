@@ -56,6 +56,31 @@ Owner karari yalniz yeni hukuki/finansal/domain/product semantigi, davranissal o
 
 Ayni root cause ve bounded context icindeki supporting dosya, focused test/fixture/mock, mevcut mimari icindeki minimum tercih, kendi patch'inin validation duzeltmesi ve task'e dogrudan bagli documentation/reference alignment scope expansion degildir. Ilgisiz finding immediate security/data-loss/corruption riski tasimiyorsa evidence ile backlog adayi olarak ayrilir; mevcut task'e gizlice eklenmez ve mevcut task'i durdurmaz.
 
+## Orkestrasyon ve Yurutucu Ayrimi
+
+`ORCHESTRATION IS NOT HANDOFF.`
+
+Bir gorevi alan ajan o gorevin PRIMARY EXECUTOR / TASK OWNER / ORCHESTRATOR'udur
+ve gorevi uctan uca sahiplenir. Baska bir ajan veya arac yalniz BOUNDED CAPABILITY
+EXECUTOR olarak cagrilir.
+
+- Protected-path writer capability (`CODEX_LOCAL`) bir executor ROLU degil, primary
+  orchestrator tarafindan belirli bir islem icin cagrilan bounded capability'dir.
+- Bounded capability executor kullanmak task ownership'i, program lock'u, current
+  active unit'i ve final accountability'yi DEGISTIRMEZ.
+- Primary orchestrator alt gorevi hazirlar, cagirir, sonucu toplar, dogrular,
+  gerekiyorsa duzeltir, ana zincire entegre eder ve gorevi terminal sonuca ulastirir.
+- Kullanici ajanlar arasinda gorev tasiyan dispatcher DEGILDIR.
+
+Gercek executor handoff yalniz su dort istisnada yapilir:
+
+1. Primary executor gerekli araci teknik olarak cagiramiyor.
+2. Guvenlik veya platform siniri bagimsiz bir oturum gerektiriyor.
+3. Owner acikca executor degisikligi istiyor.
+4. Mevcut executor gorevi surduremeyecek durumda.
+
+Bunlar normal akis degil istisnadir; her biri raporlanir.
+
 ## Governance Writer Coordination V1
 
 `project/docs/governance/governance-writer-coordination-contract.md`, governance
@@ -65,6 +90,7 @@ aktif sayilmaz.
 
 - Protected governance yollarina modul calisma sayfalarindan dogrudan yazilmaz.
 - V1 primary executor yalniz `CODEX_LOCAL`dir; secondary executor disabled'dir.
+- Bu bolumdeki "primary executor" ifadesi yalniz protected-path WRITER capability'sini tanimlar; task ownership, program lock veya orchestration authority tanimlamaz (bkz. Orkestrasyon ve Yurutucu Ayrimi).
 - Failover, lease, scheduler ve auto-merge yoktur. Failover ancak ayri ve acik
   owner activation kaydiyla kurulabilir.
 - Request yalniz request-only PR ile main'e tasinir; `request.md` immutable ve
