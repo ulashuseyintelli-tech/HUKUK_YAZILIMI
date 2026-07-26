@@ -194,6 +194,10 @@ describe("R2 config migration — sekiz sayfa canonical helper kullanır", () =>
 
     // Sabit localhost yeniden eklenirse bu assertion FAIL eder.
     expect(calledUrls().every((u) => !u.includes("localhost"))).toBe(true);
-    expect(calledUrls().every((u) => u.startsWith(CONFIGURED_BASE))).toBe(true);
+    // ORIGIN karşılaştırması (prefix/substring DEĞİL): `startsWith(base)` deseni
+    // `https://api.closeout.example.evil.com` gibi bir host'u da eşleştirirdi
+    // (CodeQL js/incomplete-url-substring-sanitization). Origin eşitliği kesin kontroldür.
+    const expectedOrigin = new URL(CONFIGURED_BASE).origin;
+    expect(calledUrls().every((u) => new URL(u).origin === expectedOrigin)).toBe(true);
   });
 });
