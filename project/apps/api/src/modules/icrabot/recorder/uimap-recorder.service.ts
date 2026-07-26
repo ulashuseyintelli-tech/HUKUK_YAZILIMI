@@ -44,6 +44,32 @@ export interface RecordingResult {
 
 export type SelectorKind = 'button' | 'field' | 'table' | 'table_column' | 'action' | 'unknown';
 
+function copyJsonRecord(value: unknown): Record<string, any> {
+  const copy: Record<string, any> = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return copy;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    Object.defineProperty(copy, key, {
+      value: entry,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return copy;
+}
+
+function setOwnJsonProperty(target: Record<string, any>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+}
+
 @Injectable()
 export class UiMapRecorderService {
   private readonly logger = new Logger(UiMapRecorderService.name);
@@ -297,10 +323,13 @@ export class UiMapRecorderService {
 
     // Parse content and add new binding
     const content = bundle.content as Record<string, any>;
-    const locatorBindings = content.locator_bindings || {};
-    const sectionBindings = locatorBindings[finalSection] || {};
-    sectionBindings[recording.label] = finalSelector;
-    locatorBindings[finalSection] = sectionBindings;
+    const locatorBindings = copyJsonRecord(content.locator_bindings);
+    const currentSection = Object.prototype.hasOwnProperty.call(locatorBindings, finalSection)
+      ? locatorBindings[finalSection]
+      : undefined;
+    const sectionBindings = copyJsonRecord(currentSection);
+    setOwnJsonProperty(sectionBindings, recording.label, finalSelector);
+    setOwnJsonProperty(locatorBindings, finalSection, sectionBindings);
     content.locator_bindings = locatorBindings;
 
     // Update bundle
