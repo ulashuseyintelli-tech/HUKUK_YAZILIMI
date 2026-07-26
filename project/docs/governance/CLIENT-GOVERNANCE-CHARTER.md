@@ -2037,3 +2037,102 @@ I08: Track B governance kapanışı
 ### 35.22 Track B Architecture Self-Check
 
 Bu bölüm: `CLIENT-P2-U03`'ü veya Track B'yi CLOSED İLAN ETMEZ; `I01`–`I08`'in hiçbirini BAŞLATMAZ; production kod/schema/migration/test/API/portal DEĞİŞTİRMEZ; yeni migration OLUŞTURMAZ; §5/§6/§8.A/§8.B/§11–§34 substantive hükümlerini DEĞİŞTİRMEZ; `CollectionDisposition`/`CollectionDispositionLine`/`OfficeApprovalRequest`/`EmailProviderService`/ledger modellerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; hesaplama/tahsis/muhasebe/ödeme icrası yetkisi VERMEZ. **ARCHITECTURE RATIFIED ≠ IMPLEMENTATION AUTHORIZED; IMPLEMENTATION AUTHORITY: NONE (bu kayıtla).**
+
+## 36. CLIENT / MÜVEKKİL MİMARİSİ — SPRING CLEANING PROGRAM CLOSURE (OWNER RATIFIED)
+
+Bu bölüm, owner'ın dört paketlik `CLIENT / MÜVEKKİL MİMARİSİ — SPRING CLEANING` programının canonical kapanışını kaydeder. Program, `CLIENT-PROGRAM-FULL-AUDIT-R01` policy-fidelity ve cross-cutting risk taramasında tespit edilen **geçmiş** (legacy) CLIENT residual'larının bounded remediation'ıdır; yeni yetenek geliştirmez, Track B'yi başlatmaz.
+
+### 36.1 Program Yapısı ve Canonical SHA'lar
+
+```text
+1. CLIENT-SEC-P01 — PORTAL RESET-TOKEN TRANSPORT HARDENING
+   CLOSED / CANONICAL / PASS · PR #1613 · squash 7fcd3b98
+
+2. CLIENT-POL-F-R01 — FINANCIAL AGGREGATE POLICY REMEDIATION
+   CLOSED / CANONICAL / PASS · PR #1614 · squash 771425d6
+
+3. CLIENT-CONFIG-P01 — HARDCODED LOCALHOST CONFIGURATION REMEDIATION
+   CLOSED / CANONICAL / PASS · PR #1617 · squash 24852ac1
+
+4. CLIENT-REMEDIATION-CLOSEOUT-R01 — FINAL RECONCILIATION AND CLOSURE
+   bu kayıt
+```
+
+### 36.2 Paket 1 — Reset-Token Transport (CLIENT-SEC-P01)
+
+Portal parola sıfırlama token'ı URL **query string**'inde (`?token=`) taşınıyordu: sunucu/proxy/CDN access log'larına yazılır, `Referer` ile dışa sızar, `location.search` okuyan analytics'e görünür; landing page URL'i hiç temizlemediği için ham token tarayıcı geçmişinde de kalıyordu (1 saat TTL penceresi). Aynı sınıf zafiyet OFFICE tarafında `OFFICE-AUTH-P02-HARDENING-R01` (PR #1494, `b9916f5b`) ile fragment'a taşınarak kapatılmış; portal hattı o hardening'in kapsamı dışında kaldığı için güncellenmemişti. **Çözüm:** canonical OFFICE emsalinin en küçük uyarlaması — `#token=` fragment transport, `history.replaceState` ile okuma-sonrası URL temizliği, `useSearchParams` kaldırıldı, query-string fallback BIRAKILMADI, eski `?token=` linkleri kabul edilmez, `/portal/forgot-password` "yeni bağlantı iste" affordance'ı eklendi. Token üretimi/sha256-hash-only persistence/1 saat expiry/tek-kullanımlık atomik tüketim/`tokenVersion` artışı/enumeration-safe generic mesajlar DEĞİŞMEDİ. Schema/migration YOK.
+
+### 36.3 Paket 2 — Financial Aggregate Policy (CLIENT-POL-F-R01)
+
+Üç kalıntı §22.10 ("CLIENT-FACING FINANCIAL AGGREGATES: NOT AUTHORIZED … claimed amount total · collected amount total … `principalAmount` canonical aggregate source DEĞİLDİR"), §22.11 ("BP-06 bu alanları aggregate total'a DÖNÜŞTÜREMEZ … FINANCIAL AGGREGATE VISIBILITY: NOT AUTHORIZED") ve §34.3/§34.4 (Track A yalnız AS-IS gösterim; hesap dökümü/toplam Track B'ye devredilmiştir) ile çelişiyordu: (a) dashboard "Toplam Alacak" = cross-case `Σ principalAmount`, CANLI ve sıfır olmayan; (b) dashboard "Tahsil Edilen" = `Σ collections`, TRACK-B-U00B'de API'den kaldırılan alana bağlı ölü kod (kalıcı yanıltıcı "0 ₺"); (c) case-detail "Toplam Alacak" = `Σ Due.amount`, tek case içinde olsa da türetilmiş toplam. **Üçü de kaldırıldı**; ikame finansal değer/placeholder/tooltip-taşıma/isim-değiştirme YAPILMADI. **Korunanlar:** tekil case `principalAmount` gösterimi (§23.9 single-object PRESENTED OLABİLİR), tekil Due kalemleri AS-IS (§34.2 onaylı 14-alan contract), "Toplam Dosya"/"Aktif Dosya" non-financial sayaçlar (§23.6 "kayıt-sayısı business aggregate DEĞİLDİR"). API/DTO/schema/migration DEĞİŞMEDİ (`principalAmount` ve `dues[].amount` izinli tekil gösterimler ve staff-side tüketiciler için korundu).
+
+### 36.4 Paket 3 — API Base URL Configuration (CLIENT-CONFIG-P01)
+
+Portal bildirim/mesaj/belge yüzeylerindeki **11 çağrı** `NEXT_PUBLIC_API_URL`'i HİÇ okumadan literal `http://localhost:8080` adresine gidiyordu; web ile API farklı origin'deyse istekler kullanıcının kendi localhost'una gidiyor ve `catch` blokları hatayı yutuyordu (sessiz işlevsizlik). **Çözüm:** canonical config katmanı `apps/web/src/lib/config/portal-api-url.ts` (mevcut `lib/config/feature-flags.ts` fail-fast emsali) — env okur + `new URL()` ile doğrular + yalnız http/https kabul eder + trailing slash normalize eder; **development/test:** açık localhost fallback YALNIZ bu katmanda; **production:** env yok/geçersizse sessiz fallback YOK, `console.error` + `throw` ile fail-fast. Relative `/api` modeli elendi (`next.config.js`'de rewrites/proxy YOK, farklı origin → absolute base URL zorunlu). Endpoint path/method/body/`Authorization: Bearer`/blob indirme akışı DEĞİŞMEDİ.
+
+### 36.5 Paket 4 — Closeout Remediation (bu kayıt)
+
+**R1 — token-yokluğu kalıcı spinner (2 dosya).** `messages/page.tsx` ve `documents/page.tsx` içinde `if (!token) return;` ifadesi `try/finally`'den ÖNCE çalıştığı için `setLoading(false)` hiç çağrılmıyor, `loading` başlangıçta `true` olduğundan kullanıcı KALICI spinner görüyordu. `layout.tsx` bu kusurdan muaftır (loading kapanışı ayrı effect'te koşulsuz). **Çözüm:** erken dönüşte de `setLoading(false)` çağrılır; API çağrısı yapılmaması guard'ı AYNEN korunur. Genel auth hook veya loading-state abstraction OLUŞTURULMADI.
+
+**R2 — sekiz portal sayfasında sessiz production localhost fallback.** Module-level `const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"` deseni (cases · cases/[id] · forgot-password · login · portal ana sayfa · poas · profile · reset-password) env'i okuduğu için Paket 3'ün 11 literal çağrısı kadar ağır DEĞİLDİ, ancak production env eksikse sessizce kullanıcının localhost'una düşüyordu ve Paket 3'ün config sözleşmesiyle tutarsızdı. Fresh main taraması sekiz dosyanın **tamamının** `"use client"` (aynı browser-only sözleşme, 1 fetch/dosya, query param yok) olduğunu doğruladı → tek bounded migration olarak Paket 3'ün canonical `portalApiUrl()` helper'ına taşındı. **İkinci config helper OLUŞTURULMADI; helper sözleşmesi DEĞİŞTİRİLMEDİ.** Böylece portal production çağrılarının tamamı (11 + 8 = 19) canonical config katmanından geçer.
+
+### 36.6 Residual Disposition Register
+
+```text
+R1 Token-yokluğu kalıcı spinner (messages + documents)
+   → CLOSED_BY_IMPLEMENTATION (bu kayıt)
+
+R2 Sekiz portal sayfasında sessiz localhost fallback
+   → CLOSED_BY_IMPLEMENTATION (bu kayıt)
+
+R3 Governance/audit reconciliation (üç paketin canonical kaydı yoktu)
+   → CLOSED_BY_IMPLEMENTATION (bu §36 + decision-log kayıtları)
+
+R4 Üç orphaned fiziksel worktree dizini
+   (HUKUK_client_sec_p01, HUKUK_client_pol_f_r01, HUKUK_client_config_p01)
+   git registry temiz; fiziksel silme "Filename too long" ile başarısız
+   → ACCEPTED_NON_BLOCKING_RESIDUAL (local hygiene; CLIENT/repository blocker DEĞİL)
+
+R5a 515 pre-existing apps/api tsc --noEmit hatası
+   (uyap/** + scripts/** test dosyaları; fresh main'de birebir aynı,
+    kanonik build gate `nest build` PASS)
+   → TRANSFERRED_TO_SEPARATE_BACKLOG (repository-geneli, CLIENT DIŞI)
+
+R5b 19 staff-side dosyada env + localhost fallback deseni
+   → TRANSFERRED_TO_SEPARATE_BACKLOG / OUTSIDE CLIENT PROGRAM
+
+R5c cases/[id]/page.tsx:90 exhaustive-deps lint warning (pre-existing)
+   → TRANSFERRED_TO_SEPARATE_BACKLOG (küçük teknik borç, CLIENT blocker DEĞİL)
+
+GOV-REQ-20260725-PILOT-001 mekanik governance rewrite'ı
+   (başka bir ajan tarafından yürütüldü: 33af46ea request, ba26f6ad result)
+   → CLOSED_BY_CANONICAL_EVIDENCE (bu programın bulgusu DEĞİL)
+```
+
+### 36.7 Program Statüsü
+
+**CLIENT / MÜVEKKİL MİMARİSİ — SPRING CLEANING: CLOSED / CANONICAL / PASS.** Dört paketin tamamı merge edildi ve canonical main üzerinde doğrulandı. **Açık CLIENT blocker YOKTUR.** Kalan residual'ların tamamı yukarıda kesin disposition almıştır (`ACCEPTED_NON_BLOCKING_RESIDUAL` veya `TRANSFERRED_TO_SEPARATE_BACKLOG`); hiçbiri `BLOCKING_OPEN` değildir.
+
+### 36.8 Track B Readiness
+
+```text
+1.  Açık CLIENT P0/P1 security blocker           : YOK (SEC-P01 kapandı)
+2.  Açık Track A financial aggregate ihlali      : YOK (POL-F-R01 kapandı)
+3.  Portal production API config blocker         : YOK (CONFIG-P01 + R2 kapandı)
+4.  Açık bounded runtime residual                : YOK (R1 kapandı)
+5.  Canonical governance kayıtları güncel        : EVET (bu §36 + decision-log)
+6.  Track A / Track B sınırı korunuyor           : EVET (§34.3/§34.4 dokunulmadı)
+7.  Schema / migration drift                     : YOK (dört pakette de sıfır)
+8.  Competing program writer                     : YOK
+9.  Canonical main temiz, testler PASS           : EVET
+10. Track B'yi engelleyen owner kararı           : §35 "IMPLEMENTATION: NOT
+    AUTHORIZED/NOT STARTED" — mimari ratifiye, implementasyon owner-gated
+
+TRACK_B_READY
+```
+
+Track B Financial Disclosure implementasyonu **bu kayıtla YETKİLENDİRİLMEZ**. §35'in `IMPLEMENTATION AUTHORITY: NONE` hükmü ve `CLIENT-P2-U03-TRACK-B-I01`'in owner-gated statüsü DEĞİŞMEZ; readiness yalnız "engelleyici CLIENT residual kalmadı" tespitidir.
+
+### 36.9 Closure Self-Check
+
+Bu bölüm: yeni yetenek EKLEMEZ; Track B'yi BAŞLATMAZ veya yetkilendirmez; §5/§6/§8.A/§8.B/§11–§35 substantive hükümlerini DEĞİŞTİRMEZ; geçmiş kanıtı yeniden yazmaz veya silmez (append-only); schema/migration OLUŞTURMAZ; backend endpoint contract'ı DEĞİŞTİRMEZ; auth/tenant mimarisini DEĞİŞTİRMEZ; `CLIENT-P2-U03` programını (§34/§35'te PARTIAL kalan) CLOSED İLAN ETMEZ — kapatılan yalnız **Spring Cleaning remediation programıdır**. **SPRING CLEANING CLOSED ≠ CLIENT-P2-U03 CLOSED · TRACK_B_READY ≠ TRACK B AUTHORIZED · RESIDUAL TRANSFERRED ≠ RESIDUAL FIXED.**

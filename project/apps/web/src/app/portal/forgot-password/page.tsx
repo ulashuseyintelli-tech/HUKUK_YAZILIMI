@@ -3,8 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Scale, Loader2, Mail, ArrowLeft, CheckCircle } from "lucide-react";
+// CLIENT-REMEDIATION-CLOSEOUT-R01: module-level `NEXT_PUBLIC_API_URL || "http://localhost:8080"
+// fallback'i kaldırıldı — production'da env eksikse sessizce kullanıcının localhost'una
+// düşüyordu. Base URL artık canonical config katmanından gelir (dev fallback yalnız orada,
+// production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
+import { portalApiUrl } from "@/lib/config/portal-api-url";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -18,7 +22,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/portal/forgot-password`, {
+      const res = await fetch(portalApiUrl("/api/portal/forgot-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
