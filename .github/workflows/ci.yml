@@ -44,31 +44,6 @@ jobs:
           else
             node scripts/governance-coordination.cjs validate-repository
           fi
-      # GOV-COORD-V2 orchestration suites (safety kernel / executor adapters /
-      # orchestration). These landed with PR #1601 and #1602 but no CI step ran
-      # them: the only `node --test` above names V1's file explicitly and every
-      # other test step is a hand-curated jest pattern, so 100+ tests were
-      # passing locally and never executed here. Same failure mode already
-      # annotated elsewhere in this file.
-      #
-      # Deliberately a shell-expanded glob, not `node --test "**/*.test.cjs"`:
-      # glob expansion inside `node --test` needs Node 21+, this repo pins
-      # Node 20 and this job uses the runner default, so the pattern is expanded
-      # by bash and node receives explicit paths — the same mechanism already
-      # proven by the `node --test` line above. New test files under an existing
-      # subdirectory are picked up automatically; a zero-match fails the step so
-      # the guard can never silently pass and rot.
-      - name: GOV-COORD-V2 orchestration tests
-        run: |
-          shopt -s nullglob
-          files=(scripts/orchestration-v2/*/*.test.cjs)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No orchestration-v2 test file matched — refusing to pass silently."
-            exit 1
-          fi
-          echo "node $(node --version) running ${#files[@]} orchestration-v2 test file(s):"
-          printf '  %s\n' "${files[@]}"
-          node --test "${files[@]}"
       - name: ADR-007 check
         run: |
           if grep -r "req\.idempotencyContext\s*=" apps/api/src/; then

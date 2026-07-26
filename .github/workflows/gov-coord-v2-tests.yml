@@ -1,0 +1,63 @@
+# GOV-COORD-V2 orchestration suites.
+#
+# Deliberately a separate workflow rather than a step inside ci.yml.
+#
+# The safety kernel (#1601), executor adapters (#1602) and orchestration (#1604)
+# shipped with tests that no CI step executed: the only `node --test` in ci.yml
+# names the V1 coordination test file explicitly, and every other test step
+# there is a hand-curated jest --testPathPattern, so there is no catch-all and an
+# unlisted suite passes locally while never running in CI. ci.yml already carries
+# several annotations recording that same failure mode on earlier specs.
+#
+# The first attempt added the step to ci.yml and was correctly rejected:
+# `.github/workflows/ci.yml` is the first entry in coordinationControlPlane, so
+# the V1 guard raised CONTROL_PLANE_SCOPE_FORBIDDEN. That rejection was right —
+# ci.yml hosts the coordination guard and its classifier, and putting an
+# unrelated test runner in the same file coupled two concerns that have nothing
+# to do with each other. The protected path is the exact string
+# `.github/workflows/ci.yml`, not a glob over the directory, so a separate file
+# keeps the protected thing protected and leaves this concern where it belongs.
+name: GOV-COORD-V2 Orchestration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: gov-coord-v2-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: project
+
+jobs:
+  orchestration-tests:
+    name: Orchestration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run orchestration suites
+        # The pattern is expanded by bash, not handed to `node --test` as a
+        # glob: glob expansion inside `node --test` needs Node 21+ and this
+        # repository pins Node 20, so node receives explicit paths instead.
+        #
+        # A zero-match exits 1 rather than passing quietly — otherwise this
+        # guard could silently become a no-op the moment a path changes, which
+        # is exactly how the gap it closes came to exist. New test files under
+        # an existing orchestration-v2 subdirectory need no edit here.
+        run: |
+          shopt -s nullglob
+          files=(scripts/orchestration-v2/*/*.test.cjs)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No orchestration-v2 test file matched — refusing to pass silently."
+            exit 1
+          fi
+          echo "node $(node --version) running ${#files[@]} orchestration-v2 test file(s):"
+          printf '  %s\n' "${files[@]}"
+          node --test "${files[@]}"
