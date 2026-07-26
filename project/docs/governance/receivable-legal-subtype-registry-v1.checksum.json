@@ -1,0 +1,9 @@
+{
+  "checksumAlgorithm": "SHA-256",
+  "entryCount": 7,
+  "generatedFromCanonicalPayload": "receivable-legal-subtype-registry-v1.json",
+  "registryChecksum": "320f671ed2262314a560703bc8f15f9cd8b5e0743d8dfa4e5ce49b1e62c26e64",
+  "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+  "registryVersion": 1,
+  "serializationAlgorithm": "RCV-LEGAL-SUBTYPE-REGISTRY-CANONICAL-JSON-V1"
+}

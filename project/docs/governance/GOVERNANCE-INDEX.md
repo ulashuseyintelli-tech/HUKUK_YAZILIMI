@@ -13,6 +13,9 @@ Rol        : Routing/discovery katmanıdır; semantic veya execution authority �
 - Ajan baseline: `AGENTS.md` (repo kökü) + `CLAUDE.md` (Claude supplement)
 - Ratifiye domain governance: `project/docs/governance/DEBTOR-GOVERNANCE.md` ve
   `project/docs/governance/RECEIVABLE-GOVERNANCE.md`
+- Receivable Legal Subtype Registry V1 artifact pack:
+  `project/docs/governance/receivable-legal-subtype-registry-v1.md`,
+  `receivable-legal-subtype-registry-v1.json`, `.schema.json`, `.checksum.json` ve `-crosswalk.md`
 - Shared document-source authority contract:
   `project/docs/governance/DOCUMENT-SOURCE-GOVERNANCE.md`
 - Collection domain governance: `project/docs/governance/COLLECTION-GOVERNANCE.md`
@@ -73,6 +76,7 @@ commit, merge, release veya runtime authority yetkisi oluşturmaz.
 | `project/docs/governance/GOVERNANCE-INDEX.md` | routing/discovery ve okuma sırası; authority değildir | RATIFIED / CANONICAL |
 | `project/docs/governance/DEBTOR-GOVERNANCE.md` | ratifiye Debtor Domain Law | RATIFIED / BINDING / CANONICAL v1.0 (2026-07-12; PR #1139 MERGED) |
 | `project/docs/governance/RECEIVABLE-GOVERNANCE.md` | ratifiye Receivable Domain Governance ve tek domain giriş noktası | RATIFIED / BINDING / CANONICAL v1.9; ClaimItem source/input ≠ application target; TPA-02/03/03A, TPA-04, TPA-04A ve TPA-04B contract canonicaldır. TPA-04B exact two-file amendment PR #1470 / `9dabe8db` ile CLOSED / CANONICAL; plan/writer/evidence/cutover/retirement NOT AUTHORIZED |
+| `project/docs/governance/receivable-legal-subtype-registry-v1.md` + `receivable-legal-subtype-registry-v1.json` + `.schema.json` + `.checksum.json` + `-crosswalk.md` | Receivable Claim Formation için exact seven-code, versioned Legal Subtype Registry V1 ratification, machine payload, closed schema, deterministic checksum ve Legal Basis/evidence crosswalk pack'i | `RCV-CLAIM-FORM-P02-S08-D02-SR01` RATIFIED / CANONICAL UPON APPROVED MERGE; registry `RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY@1`, checksum `320f671e…c26e64`, runtime DORMANT; provider/resolver/key/signature/signed release/schema/migration authority NONE; next D02-PB01 owner-gated |
 | `project/docs/governance/DOCUMENT-SOURCE-GOVERNANCE.md` | Shared Evidence / Document Platform için bounded document-source identity, immutable version, integrity/fingerprint, OCR-evidence ve lifecycle authority contract'ı; yeni primary domain/program/register değildir | OWNER-RATIFIED OPTION D / CANONICAL UPON APPROVED MERGE; V4 immutable versioned fingerprint; OCR O1 derived/non-authoritative; writer/resolver/schema/migration NOT AUTHORIZED |
 | `project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md` | RCV → CCB-001 identity-only program/register cross-pointer'ı, DEC-0030 disposition'ı, formal phase/workstream/package closure ve owner gate kaydı | CANONICAL / DEC-0030 CLOSED; PHASE 1 CLOSED; WS01–WS03 CLOSED; WS04 OPEN. TPA-02/03/03A, TPA-04/04A ve TPA-04B schema amendment canonical; ACT-28 / REC-AUTH-011/012 OPEN; PR #407 CLOSED/UNMERGED/NO FURTHER ACTION. Next `TPA-04C — PURE LEGALAPPLICATIONPLAN BUILDER ANALYSIS`; owner GO-ANALYZE required, implementation NOT AUTHORIZED. |
 | `project/docs/governance/OFFICE-GOVERNANCE.md` | ratifiye OFFICE Domain Law — vocabulary/ownership/boundaries/invariants/contracts | RATIFIED / CANONICAL DOMAIN LAW v1.0 (2026-07-13; PR #1177 MERGED, SHA `6fa8395d`) |
