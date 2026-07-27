@@ -652,15 +652,161 @@ function validateAgainstStandingGrant(opts) {
   return { ok: true, program: g.program.programId, taskClass: cls };
 }
 
+/**
+ * The delivery contract, canonicalized — the identity of a delivery CLAIM.
+ *
+ * This lives here, beside specDigests, rather than in the delivery package, and
+ * that placement is the point. manifest.cjs shipped its own canonicalJson and
+ * its own sha256, so the repository had two independent answers to "what is the
+ * canonical form of this object?" — and #1696 is the record of what that costs:
+ * a generator hashed raw text while a validator hashed canonical JSON, and the
+ * two disagreed silently until a human noticed. One canonicalization, one
+ * digest function, every caller.
+ *
+ * What is IN the digest is a semantic decision, not a convenience:
+ *
+ *   capabilityId            which claim this is
+ *   targetState             what "delivered" means for it
+ *   probeId, probeClass     what will be asked
+ *   probeDefinitionSha256   what the probe actually checks
+ *   publicEntrypoint        the door the probe must use
+ *   the policy flags        whether it may be proved internally, whether it
+ *                           must be re-proved after merge, its time bound
+ *
+ * Change any of those and the claim has changed, so the digest must change. A
+ * grant that pinned the old digest must stop matching — that is the whole
+ * mechanism.
+ *
+ * What is OUT: title and rationale. They are for the reader of the panel. If
+ * editing a sentence invalidated a ratified grant, nobody would ever improve
+ * one.
+ *
+ * @param {object} input
+ * @returns {object} the canonical contract, key order irrelevant to the digest
+ */
+const DELIVERY_CONTRACT_FIELDS = [
+  'schemaVersion',
+  'capabilityId',
+  'deliveryClass',
+  'targetState',
+  'probeId',
+  'probeClass',
+  'probeDefinitionSha256',
+  'publicEntrypoint',
+  'publicEntrypointOnly',
+  'nonDestructivePulse',
+  'postMergeRequired',
+  'timeoutMs',
+  'evidencePolicy',
+];
+
+/** Fields a contract may carry for humans, which never reach the digest. */
+const DELIVERY_CONTRACT_PRESENTATION_FIELDS = ['title', 'rationale'];
+
+const DELIVERY_TARGET_STATES = ['OPERABLE', 'ENFORCED', 'ROUTABLE', 'WIRED_DISABLED', 'NOT_APPLICABLE'];
+const DELIVERY_PROBE_CLASSES = ['PROBE_DRY', 'PROBE_SEALED', 'PROBE_CERTIFY'];
+const DELIVERY_EVIDENCE_POLICIES = ['MERGE_SHA_BOUND', 'BRANCH_HEAD_ONLY', 'NOT_APPLICABLE'];
+
+function normalizeDeliveryContract(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    fail('DELIVERY_CONTRACT_INVALID', 'not an object');
+  }
+  // Unknown fields are refused rather than dropped. Dropping them would let a
+  // contract carry a term the digest does not cover, which is the same failure
+  // as not hashing it at all — except quieter.
+  for (const k of Object.keys(input)) {
+    if (DELIVERY_CONTRACT_FIELDS.indexOf(k) === -1 && DELIVERY_CONTRACT_PRESENTATION_FIELDS.indexOf(k) === -1) {
+      fail('DELIVERY_CONTRACT_FIELD_UNKNOWN', k);
+    }
+  }
+
+  const out = {
+    // Defaulted deterministically: an absent version is v2, never "whatever the
+    // reader assumes". A v1 contract does not exist — v1 tasks carry no
+    // contract at all, which is what LEGACY_UNVERIFIED means.
+    schemaVersion: input.schemaVersion === undefined ? 2 : input.schemaVersion,
+    capabilityId: input.capabilityId,
+    deliveryClass: input.deliveryClass,
+    targetState: input.targetState,
+    probeId: input.probeId,
+    probeClass: input.probeClass,
+    probeDefinitionSha256: input.probeDefinitionSha256,
+    publicEntrypoint: input.publicEntrypoint,
+    publicEntrypointOnly: input.publicEntrypointOnly === undefined ? true : input.publicEntrypointOnly,
+    nonDestructivePulse: input.nonDestructivePulse === undefined ? false : input.nonDestructivePulse,
+    postMergeRequired: input.postMergeRequired === undefined ? true : input.postMergeRequired,
+    timeoutMs: input.timeoutMs,
+    evidencePolicy: input.evidencePolicy === undefined ? 'MERGE_SHA_BOUND' : input.evidencePolicy,
+  };
+
+  if (out.schemaVersion !== 2) fail('DELIVERY_CONTRACT_SCHEMA_VERSION', String(out.schemaVersion));
+  if (typeof out.capabilityId !== 'string' || !/^[A-Z][A-Z0-9_]{2,63}$/.test(out.capabilityId)) {
+    fail('DELIVERY_CONTRACT_CAPABILITY_ID_INVALID', String(out.capabilityId));
+  }
+  if (typeof out.deliveryClass !== 'string' || !out.deliveryClass) {
+    fail('DELIVERY_CONTRACT_DELIVERY_CLASS_INVALID', String(out.deliveryClass));
+  }
+  if (DELIVERY_TARGET_STATES.indexOf(out.targetState) === -1) {
+    fail('DELIVERY_CONTRACT_TARGET_STATE_INVALID', String(out.targetState));
+  }
+  if (typeof out.probeId !== 'string' || !out.probeId) {
+    fail('DELIVERY_CONTRACT_PROBE_ID_INVALID', String(out.probeId));
+  }
+  if (DELIVERY_PROBE_CLASSES.indexOf(out.probeClass) === -1) {
+    fail('DELIVERY_CONTRACT_PROBE_CLASS_INVALID', String(out.probeClass));
+  }
+  // The probe's own identity is part of the contract's identity. Without it a
+  // contract could keep its digest while the check behind it was rewritten,
+  // and "the verifier was not weakened between the red run and the green one"
+  // would stop being provable.
+  if (!/^[0-9a-f]{64}$/.test(String(out.probeDefinitionSha256))) {
+    fail('DELIVERY_CONTRACT_PROBE_DIGEST_INVALID', String(out.probeDefinitionSha256));
+  }
+  if (typeof out.publicEntrypoint !== 'string' || !out.publicEntrypoint) {
+    fail('DELIVERY_CONTRACT_PUBLIC_ENTRYPOINT_MISSING', String(out.capabilityId));
+  }
+  for (const flag of ['publicEntrypointOnly', 'nonDestructivePulse', 'postMergeRequired']) {
+    if (typeof out[flag] !== 'boolean') fail('DELIVERY_CONTRACT_FLAG_INVALID', flag);
+  }
+  // A contract that permits proof by internal call is not a delivery contract.
+  // It is a field rather than an assumption so that relaxing it has to be
+  // written down and reviewed.
+  if (out.publicEntrypointOnly !== true) {
+    fail('DELIVERY_CONTRACT_PUBLIC_ENTRYPOINT_ONLY_REQUIRED', out.capabilityId);
+  }
+  if (!Number.isInteger(out.timeoutMs) || out.timeoutMs < 1000 || out.timeoutMs > 900000) {
+    fail('DELIVERY_CONTRACT_TIMEOUT_INVALID', String(out.timeoutMs));
+  }
+  if (DELIVERY_EVIDENCE_POLICIES.indexOf(out.evidencePolicy) === -1) {
+    fail('DELIVERY_CONTRACT_EVIDENCE_POLICY_INVALID', String(out.evidencePolicy));
+  }
+  if (out.targetState === 'NOT_APPLICABLE' && out.evidencePolicy !== 'NOT_APPLICABLE') {
+    fail('DELIVERY_CONTRACT_NOT_APPLICABLE_POLICY_MISMATCH', out.capabilityId);
+  }
+  return out;
+}
+
+/** SHA-256 of the canonical delivery contract. One implementation, everywhere. */
+function deliveryContractDigest(input) {
+  return digest(normalizeDeliveryContract(input));
+}
+
 module.exports = {
   PROFILES,
   BASE_DRIFT_POLICIES,
   SUCCESSOR_DISPOSITIONS,
   MECHANICAL_OPERATIONS,
   TASK_CLASSES,
+  DELIVERY_CONTRACT_FIELDS,
+  DELIVERY_CONTRACT_PRESENTATION_FIELDS,
+  DELIVERY_TARGET_STATES,
+  DELIVERY_PROBE_CLASSES,
+  DELIVERY_EVIDENCE_POLICIES,
   AuthorityError,
   canonicalize,
   digest,
+  normalizeDeliveryContract,
+  deliveryContractDigest,
   canonicalPathList,
   canonicalRequiredTests,
   normalizeTaskSpec,

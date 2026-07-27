@@ -23,7 +23,7 @@
  * same word. Collapsing them is how "merged" came to read as "delivered".
  */
 
-const crypto = require('crypto');
+const authority = require('../orchestrator/authority.cjs');
 
 /** Where a capability lives, as far as a caller is concerned. */
 const DELIVERY_CLASSES = [
@@ -200,22 +200,54 @@ const CAPABILITIES = [
   },
 ];
 
-/** Stable digest of any JSON-able value. Key order never affects the result. */
-function canonicalJson(value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
-  return (
-    '{' +
-    Object.keys(value)
-      .sort()
-      .map((k) => JSON.stringify(k) + ':' + canonicalJson(value[k]))
-      .join(',') +
-    '}'
-  );
+/**
+ * Canonicalization and digests come from authority.cjs. There is one answer in
+ * this repository to "what is the canonical form of this object?", and it is
+ * not this file's.
+ *
+ * This module used to carry its own canonicalJson and its own sha256. Two
+ * independent canonicalizations is the shape of #1696, where a generator hashed
+ * raw text and a validator hashed canonical JSON and the disagreement was
+ * silent until a human noticed. They also differed here in a way that would
+ * have bitten eventually: authority's canonicalizer REFUSES non-integer and
+ * non-finite numbers rather than emitting whatever JSON.stringify produces.
+ */
+const canonicalJson = (value) => authority.canonicalize(value);
+const digest = (value) => authority.digest(value);
+
+/**
+ * The full delivery contract for a capability — its identity as a CLAIM.
+ *
+ * Assembled from the capability AND its probe, because the probe's definition
+ * digest is part of what is being promised: a contract that kept its digest
+ * while the check behind it was rewritten would make "the verifier was not
+ * weakened between the red run and the green one" unprovable.
+ *
+ * Presentation fields (title, rationale) are deliberately not passed through.
+ * If editing a sentence invalidated a ratified grant, nobody would ever improve
+ * one.
+ */
+function contractFor(capability, probe) {
+  return authority.normalizeDeliveryContract({
+    schemaVersion: 2,
+    capabilityId: capability.capabilityId,
+    deliveryClass: capability.deliveryClass,
+    targetState: capability.targetState,
+    probeId: capability.probeId,
+    probeClass: capability.probeClass,
+    probeDefinitionSha256: authority.digest(probe.definition),
+    publicEntrypoint: capability.publicEntrypoint,
+    publicEntrypointOnly: capability.contract.publicEntrypointOnly,
+    nonDestructivePulse: capability.contract.nonDestructivePulse,
+    postMergeRequired: capability.contract.postMergeRequired,
+    timeoutMs: capability.contract.timeoutMs,
+    evidencePolicy: capability.contract.evidencePolicy,
+  });
 }
 
-function digest(value) {
-  return crypto.createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
+/** The digest of that contract. The value a grant pins. */
+function contractDigest(capability, probe) {
+  return authority.digest(contractFor(capability, probe));
 }
 
 /**
@@ -342,6 +374,8 @@ module.exports = {
   ManifestError,
   canonicalJson,
   digest,
+  contractFor,
+  contractDigest,
   validateManifest,
   validateProbeDefinition,
   capability,

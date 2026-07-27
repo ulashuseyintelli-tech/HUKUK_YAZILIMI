@@ -117,10 +117,16 @@ function build(o) {
     deliveryClass: cap.deliveryClass,
     probeId: probe.probeId,
     probeClass: probe.probeClass,
-    // In WP03 this becomes the digest of the task's hash-pinned deliveryContract.
-    // Today it is the digest of the manifest's declaration of the same thing, so
-    // the field is populated by the same rule from the first record onward.
-    deliveryContractSha256: manifestMod.digest(cap.contract),
+    // The digest of the FULL canonical contract — capability identity, target
+    // state, probe identity, probe definition digest and public entrypoint —
+    // not just the policy flags.
+    //
+    // It used to hash `cap.contract` alone, which meant three of the four
+    // shipped capabilities produced the SAME digest: their flag blocks were
+    // identical, so the value a grant would have pinned did not identify which
+    // claim it was pinning. Changing the target state from OPERABLE to
+    // WIRED_DISABLED left the digest untouched.
+    deliveryContractSha256: manifestMod.contractDigest(cap, probe),
     probeDefinitionSha256: manifestMod.digest(probe.definition),
     targetState: cap.targetState,
     observedState: result.observedState,
