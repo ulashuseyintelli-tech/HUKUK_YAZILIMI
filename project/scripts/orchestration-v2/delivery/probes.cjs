@@ -223,7 +223,7 @@ const requestExecutorProbe = {
   definition: {
     entrypoint: 'service/orch-service.cjs enqueue → run-once',
     positive: 'a request is admitted, lands in a real on-disk queue, and run-once carries it through dispatch into a real executor',
-    evidence: 'the service audit log must show TASK_ADMITTED followed by EXECUTOR_STARTED',
+    evidence: 'the durable queue log must record the entry passing through EXECUTING, and the audit log must record a dispatch',
     negatives: [{ case: 'boundary outside the standing grant roots', expect: 'BOUNDARY_EXCEEDS_STANDING_GRANT' }],
     sideEffects: 'disposable repository and queue only; the executor is a fake on a temporary PATH',
   },
@@ -314,7 +314,30 @@ const requestExecutorProbe = {
       : [];
     const events = trail.map((t) => t.event);
     const admitted = events.indexOf('TASK_ADMITTED');
-    const started = events.indexOf('EXECUTOR_STARTED');
+
+    // The proof that an executor was reached is the entry's own STATE HISTORY,
+    // read from the append-only queue log — not an audit event name.
+    //
+    // The first version of this probe looked for EXECUTOR_STARTED and broke the
+    // day #1694 renamed it to TASK_DISPATCHED for a good reason (at that point
+    // runTask has not yet spawned anything). The rename was correct and the
+    // probe was measuring the wrong surface: an event name is prose the adapter
+    // may improve at any time, while QUEUE_STATES is the system's own contract
+    // and cannot change without the queue's transition table changing with it.
+    //
+    // The audit event is still checked, because a state written with no audit
+    // record would mean the two logs disagree — but it is checked as a SET, so
+    // the next justified rename does not read as a broken chain.
+    const DISPATCH_EVENTS = ['TASK_DISPATCHED', 'EXECUTOR_STARTED'];
+    const queueLog = path.join(world.queueDir, 'queue.jsonl');
+    const states = fs.existsSync(queueLog)
+      ? fs.readFileSync(queueLog, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
+          // Filter by entry when the CLI gave us one; a probe that silently
+          // matched every entry would pass on someone else's history.
+          .filter((r) => (entryId ? r.entryId === entryId : true)).map((r) => r.state)
+      : [];
+    const reachedExecuting = states.indexOf('EXECUTING') !== -1;
+    const dispatched = events.some((e) => DISPATCH_EVENTS.indexOf(e) !== -1);
 
     if (admitted === -1) {
       // Dispatch refused before the executor. That is a real answer, and which
@@ -331,15 +354,17 @@ const requestExecutorProbe = {
     }
     steps.push(step('run-once dispatch', 'PASS', 'TASK_ADMITTED'));
 
-    if (started === -1 || started < admitted) {
+    if (!reachedExecuting || !dispatched) {
       return {
         observedState: 'UNWIRED',
         failureCode: 'DELIVERY_PROBE_FAILED',
-        detail: 'the chain stopped before an executor started; audit events: ' + events.join(','),
-        steps: steps.concat([step('executor reached', 'FAIL', events.join(','))]),
+        detail:
+          'the chain stopped before an executor was reached; queue states: ' +
+          (states.join('→') || '(none)') + '; audit events: ' + events.join(','),
+        steps: steps.concat([step('executor reached', 'FAIL', states.join('→'))]),
       };
     }
-    steps.push(step('executor reached', 'PASS', 'EXECUTOR_STARTED'));
+    steps.push(step('executor reached', 'PASS', 'queue reached EXECUTING'));
 
     return {
       observedState: 'OPERABLE',
