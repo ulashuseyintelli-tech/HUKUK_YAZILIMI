@@ -151,6 +151,11 @@ async function runEntry(o) {
     autoMerge: resolved.request.autoMerge === true,
     lane: entry.executorLane || resolved.request.executorLane,
     targetBranch: resolved.request.targetBranch,
+    // Carried from the queue entry, where an authorized resume recorded it.
+    // runTask owns the task-store BLOCKED -> ELIGIBLE edge; this is the flag
+    // that tells it the resume was authorized, and without it a resumed entry
+    // is refused with BLOCKED_RESUME_NOT_AUTHORIZED — correctly.
+    resumeFromBlocked: entry.resumeFromBlocked === true,
     prompt: o.prompt || '',
     expectedHeadBranch: o.expectedHeadBranch || null,
     isRevoked: o.isRevoked ? () => o.isRevoked(resolved.standingGrant) === true : undefined,

@@ -176,7 +176,12 @@ test('intent: resume moves BOTH stores, and the pair is recoverable', () => {
 
   assert.equal(r.authorized, true);
   assert.equal(queue.get(e.entryId).state, 'QUEUED');
-  assert.equal(store.current('T-1').state, 'ELIGIBLE');
+  // The task store is NOT moved here. runTask owns BLOCKED -> ELIGIBLE, and
+  // this module doing it too produced STATE_CAS_MISMATCH: expected DECLARED but
+  // store holds ELIGIBLE. It authorizes the resume instead.
+  assert.equal(store.current('T-1').state, 'BLOCKED', 'the task-store edge has one owner, and it is not this');
+  assert.equal(queue.get(e.entryId).resumeFromBlocked, true, 'and the authorization travels on the entry');
+  assert.equal(queue.get(e.entryId).resumeAuthorizedBy, 'OWNER-R02');
   assert.equal(R.pendingIntents(dir).length, 0, 'the intent was committed');
 });
 
@@ -257,4 +262,49 @@ test('resume: an unauthorized resume moves neither store', () => {
   assert.equal(queue.get(e.entryId).state, 'BLOCKED');
   assert.equal(store.current('T-1').state, 'BLOCKED');
   assert.equal(R.pendingIntents(dir).length, 0, 'and no intent was left behind');
+});
+
+test('resume: the authorization travels to runTask, which owns the edge', () => {
+  // The collision this replaced: the reconciler moved the task store to
+  // ELIGIBLE, then runTask found neither "no record" nor BLOCKED and died with
+  // STATE_CAS_MISMATCH: expected DECLARED but store holds ELIGIBLE. One edge,
+  // one writer.
+  const { queue, store, dir } = bothStores();
+  const e = queue.enqueue({ programId: 'OFFICE', taskId: 'T-1', taskClass: 'TEST_ONLY_CHARACTERIZATION', parentAuthorizationId: 'OWNER-R02', taskSpecSha256: 'a'.repeat(64) });
+  queue.transition({ entryId: e.entryId, to: 'BLOCKED', expectedPreviousState: 'QUEUED', patch: { blockerCode: 'EXECUTOR_NONZERO_EXIT' } });
+  blockedTask(store, 'T-1');
+
+  R.resumeBoth({
+    queue, store, dir,
+    entry: queue.get(e.entryId),
+    standingGrant: GRANT,
+    parentAuthorizationId: 'OWNER-R02',
+    taskSpecSha256: 'a'.repeat(64),
+    reason: 'blocker fixed at source',
+  });
+
+  const after = queue.get(e.entryId);
+  assert.equal(after.state, 'QUEUED');
+  assert.equal(after.resumeFromBlocked, true);
+  assert.equal(after.resumeReason, 'blocker fixed at source');
+  assert.equal(store.current('T-1').state, 'BLOCKED', 'the task store makes its own transition');
+});
+
+test('resume: a queue entry blocked with no task-store record needs no resume flag', () => {
+  // Nothing to resume in the task store means nothing to authorize there. The
+  // flag says what is true rather than being set unconditionally.
+  const { queue, store, dir } = bothStores();
+  const e = queue.enqueue({ programId: 'OFFICE', taskId: 'T-NONE', taskClass: 'TEST_ONLY_CHARACTERIZATION', parentAuthorizationId: 'OWNER-R02', taskSpecSha256: 'a'.repeat(64) });
+  queue.transition({ entryId: e.entryId, to: 'BLOCKED', expectedPreviousState: 'QUEUED', patch: { blockerCode: 'DISPATCH_PLAN_HASH_CHANGED' } });
+
+  R.resumeBoth({
+    queue, store, dir,
+    entry: queue.get(e.entryId),
+    standingGrant: GRANT,
+    parentAuthorizationId: 'OWNER-R02',
+    taskSpecSha256: 'a'.repeat(64),
+    reason: 'plan corrected',
+  });
+  assert.equal(queue.get(e.entryId).state, 'QUEUED');
+  assert.equal(queue.get(e.entryId).resumeFromBlocked, false);
 });

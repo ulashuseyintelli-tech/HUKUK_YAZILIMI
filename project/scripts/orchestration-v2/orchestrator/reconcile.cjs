@@ -283,20 +283,31 @@ function recoverIntents(o) {
 }
 
 /**
- * Resume a blocked task in BOTH stores, or in neither.
+ * Authorize a resume. ONE writer per edge.
  *
- * The write-ahead intent is what makes "or in neither" achievable without a
- * transaction: if this process dies between the two writes, recoverIntents
- * finishes the pair from the record rather than leaving the stores disagreeing
- * — which is the precise condition that let a resumed queue entry sit beside a
- * BLOCKED task.
+ * The task store's BLOCKED -> ELIGIBLE edge already has an owner: runTask does
+ * it, having checked ctx.resumeFromBlocked, and records which blocker it
+ * resumed from. This module performing that transition as well produced exactly
+ * the collision it exists to prevent — the store was moved to ELIGIBLE, then
+ * runTask found neither "no record" nor BLOCKED and died on
+ * STATE_CAS_MISMATCH: expected DECLARED but store holds ELIGIBLE.
+ *
+ * So the reconciler AUTHORIZES the resume and does not perform it. It unblocks
+ * the queue entry and marks it resumeFromBlocked, which the executor adapter
+ * passes through; runTask then makes its own transition, as it always did.
+ *
+ * A happy consequence: resume is now a SINGLE queue write, so there is no
+ * cross-store window to be atomic about. The write-ahead intent still records
+ * it — the log should show who authorized what — but recovery has nothing to
+ * roll forward, which is the strongest form of "or in neither".
  */
 function resumeBoth(o) {
   const auth = authorizeResume(o);
   if (!auth.authorized) fail(auth.refusal, o.entry && o.entry.entryId);
 
   const entry = o.queue.get(o.entry.entryId);
-  const task = o.store.current(o.entry.taskId);
+  const task = o.store ? o.store.current(o.entry.taskId) : null;
+  const taskIsBlocked = Boolean(task) && task.state === 'BLOCKED';
   const nowMs = o.nowMs || Date.now();
 
   const intent = beginIntent(o.dir, {
@@ -306,11 +317,26 @@ function resumeBoth(o) {
     reason: o.reason || null,
     nowMs,
     queue: entry && entry.state === 'BLOCKED'
-      ? { from: 'BLOCKED', to: 'QUEUED', resumeAuthorized: true, patch: { blockerCode: null, owner: null } }
+      ? {
+          from: 'BLOCKED',
+          to: 'QUEUED',
+          resumeAuthorized: true,
+          patch: {
+            blockerCode: null,
+            owner: null,
+            // What the adapter passes to runTask, which owns the task-store
+            // edge. Carried on the entry rather than held in memory so a
+            // restart between the authorization and the dispatch does not
+            // silently downgrade an authorized resume into a refused one.
+            resumeFromBlocked: taskIsBlocked,
+            resumeAuthorizedBy: o.parentAuthorizationId,
+            resumeReason: o.reason || null,
+          },
+        }
       : null,
-    task: task && task.state === 'BLOCKED'
-      ? { from: 'BLOCKED', to: 'ELIGIBLE', writerIdentity: 'ORCHESTRATOR', payload: { resumedBy: o.parentAuthorizationId, reason: o.reason || null } }
-      : null,
+    // Deliberately null: runTask owns BLOCKED -> ELIGIBLE. Writing it here too
+    // is what produced STATE_CAS_MISMATCH.
+    task: null,
   });
 
   const applied = recoverIntents({ queue: o.queue, store: o.store, dir: o.dir });
