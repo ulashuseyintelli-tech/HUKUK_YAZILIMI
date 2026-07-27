@@ -99,6 +99,16 @@
 #     entegrasyon testleri de aynı nedenle CI'da hiç koşmuyordu. Mevcut job'ın Postgres service'i
 #     (yukarıdaki `services: postgres:`) reuse edilir — yeni container/job YOK.
 #
+#   collection-payment-received.integration.spec.ts (moved from pure/claim-collection-finance.txt)
+#     PR #1590 sonrasi GO-ANALYZE bulgusu: bu spec pure manifest'te DATABASE_URL/
+#     TEST_DATABASE_URL set edilmediginden describeIf(DATABASE_URL) ile her zaman
+#     kendini atliyordu (23 test / 0 calisma, yesil gorunuyordu). CollectionService +
+#     DomainEventIngestService + CaseDebtorLifecycleGuard + SummaryEngine +
+#     AccountingJournalWriterService'in gercek Postgres'e karsi PAYMENT_RECEIVED
+#     akisini (idempotency, cent-remainder allocation, mid-tx rollback, advisory-lock
+#     concurrency) dogru davrandigini kanitlar. Disposable Postgres 16 ile dogrulandi.
+#
+src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/proceeding-classification.db-gated.integration.spec.ts

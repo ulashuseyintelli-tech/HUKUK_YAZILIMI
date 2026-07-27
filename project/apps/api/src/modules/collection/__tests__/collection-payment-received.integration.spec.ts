@@ -476,9 +476,14 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       const dto = buildDto();
       delete (dto as any).idempotencyKey;
 
+      // RCV-P2-WS03-P01 (#1300) sonrası tüm canonical command doğrulama hataları
+      // aynı jenerik mesajı paylaşır (collection-receipt-command.ts:commandError);
+      // ayırt edici alan message metni değil, machine-readable `code`.
       await expect(
         service.create(testTenantId, dto, 'test-user-1'),
-      ).rejects.toThrow(/idempotencyKey/);
+      ).rejects.toMatchObject({
+        response: { code: 'COLLECTION_COMMAND_IDEMPOTENCY_KEY_REQUIRED' },
+      });
     });
 
     it('paralel AYNI idempotencyKey (race) → tek tahsilat', async () => {
