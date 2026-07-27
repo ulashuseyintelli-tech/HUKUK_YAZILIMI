@@ -27,7 +27,7 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboxService, OutboxFailureMarkResult } from './outbox.service';
-import { OutboxScope, outboxRowInScope } from './outbox-scope';
+import { OutboxScope, outboxRowInScope, outboxScopeWhere } from './outbox-scope';
 import { TimelineService } from './timeline.service';
 import { FactStoreService } from './factstore.service';
 import { maskPhone } from '../../../common/pii-mask.util';
@@ -68,7 +68,7 @@ export interface ActionHandlerContext {
 function scopeFromHandlerContext(
   actionType: string,
   context: ActionHandlerContext | undefined,
-): OutboxScope {
+): Extract<OutboxScope, { kind: 'tenant' }> {
   const tenantId = context?.tenantId;
   if (typeof tenantId !== 'string' || tenantId.length === 0) {
     throw new Error(
@@ -100,6 +100,13 @@ export interface LockInfo {
   key: string;
   expiresAt: number;
   owner?: string;
+  /**
+   * V28-XTEN-I03: lock anahtari `${caseId}:${key}` formatinda oldugu icin lock
+   * listesi caseId sizdirir. Sahibi tenant lock olusturulurken kaydedilir; listeleme
+   * kapsam disi lock'lari gostermez. Tenant'i bilinmeyen (legacy/in-memory) lock
+   * tenant kapsaminda ASLA gorunmez (fail-closed).
+   */
+  tenantId?: string;
 }
 
 @Injectable()
@@ -512,13 +519,18 @@ export class ActionHandlerService {
    */
   private registerDefaultHandlers(): void {
     // Open Lock Handler (Python handle_open_lock)
-    this.register('open_lock', async (payload, caseId) => {
+    this.register('open_lock', async (payload, caseId, context) => {
       const { key, ttl_sec = 3600, owner } = payload;
       if (!key) throw new Error('open_lock requires payload.key');
 
+      // V28-XTEN-I03: lock sahibi tenant kaydedilir; listeleme kapsam disi
+      // lock'lari (ve dolayisiyla yabanci caseId'leri) gostermez. Kapsam yalniz
+      // outbox satirindan gelen context'ten kurulur — payload'dan ASLA.
+      const { tenantId } = scopeFromHandlerContext('open_lock', context);
+
       const lockKey = `${caseId}:${key}`;
       const expiresAt = Date.now() + ttl_sec * 1000;
-      
+
       if (this.locks.has(lockKey)) {
         const existing = this.locks.get(lockKey)!;
         if (existing.expiresAt > Date.now()) {
@@ -527,7 +539,7 @@ export class ActionHandlerService {
         }
       }
 
-      this.locks.set(lockKey, { key: lockKey, expiresAt, owner });
+      this.locks.set(lockKey, { key: lockKey, expiresAt, owner, tenantId });
       this.logger.debug(`Lock acquired: ${lockKey} (expires in ${ttl_sec}s)`);
     });
 
@@ -780,16 +792,17 @@ export class ActionHandlerService {
   /**
    * Tüm aktif lock'ları listeler
    */
-  getActiveLocks(): LockInfo[] {
+  getActiveLocks(scope: OutboxScope): LockInfo[] {
     const now = Date.now();
     const active: LockInfo[] = [];
-    
-    for (const [key, lock] of this.locks.entries()) {
-      if (lock.expiresAt > now) {
-        active.push(lock);
-      }
+
+    for (const [, lock] of this.locks.entries()) {
+      if (lock.expiresAt <= now) continue;
+      // Fail-closed: tenant kapsaminda yalniz sahibi dogrulanmis lock'lar gorunur.
+      if (scope.kind === 'tenant' && lock.tenantId !== scope.tenantId) continue;
+      active.push(lock);
     }
-    
+
     return active;
   }
 
@@ -893,19 +906,26 @@ export class ActionHandlerService {
   /**
    * Action istatistiklerini döner
    */
-  async getHandlerStats(): Promise<Record<string, { total: number; success: number; failed: number }>> {
+  async getHandlerStats(
+    scope: OutboxScope,
+  ): Promise<Record<string, { total: number; success: number; failed: number }>> {
     const stats: Record<string, { total: number; success: number; failed: number }> = {};
-    
+
+    // V28-XTEN-I03: onceki hali TUM tenant'larin outbox sayimlarini donen global
+    // aggregate'ti. `IcrabotOutboxAction.tenantId` NOT NULL oldugu icin burada
+    // gercek kolon predicate'i kullanilabilir (OUTBOX-F4 ile ayni kapsam sozlesmesi).
+    const scoped = outboxScopeWhere(scope);
+
     for (const actionType of this.handlers.keys()) {
       const [total, success, failed] = await Promise.all([
-        (this.prisma as any).icrabotOutboxAction.count({ where: { actionType } }),
-        (this.prisma as any).icrabotOutboxAction.count({ where: { actionType, status: 'done' } }),
-        (this.prisma as any).icrabotOutboxAction.count({ where: { actionType, status: 'dead' } }),
+        (this.prisma as any).icrabotOutboxAction.count({ where: { ...scoped, actionType } }),
+        (this.prisma as any).icrabotOutboxAction.count({ where: { ...scoped, actionType, status: 'done' } }),
+        (this.prisma as any).icrabotOutboxAction.count({ where: { ...scoped, actionType, status: 'dead' } }),
       ]);
-      
+
       stats[actionType] = { total, success, failed };
     }
-    
+
     return stats;
   }
 }
