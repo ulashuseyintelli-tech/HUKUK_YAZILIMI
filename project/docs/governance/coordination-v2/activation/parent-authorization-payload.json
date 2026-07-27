@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
+  "owner": "Ulas Huseyin Telli",
+  "decisions": [
+    "OFFICE program opened to controlled live execution",
+    "COLLECTION program opened to controlled live execution",
+    "the other four programs remain DENIED",
+    "program-scoped standing grant model established for OFFICE and COLLECTION",
+    "standing grants are bounded, not general authority",
+    "MECHANICAL_GOVERNANCE opened for a restricted, pre-defined governance task set",
+    "governance tasks may not alter the authorization engine, standing grant rules, branch protection, required-check policy, secret handling, auto-merge gates, program eligibility authority or control-plane security boundaries",
+    "this activation program may change the control plane under this envelope",
+    "PRs produced by this program auto-squash-merge once every merge gate holds",
+    "repository-wide auto-merge is never enabled",
+    "auto-merge applies only to orchestration-owned PRs under this envelope or under the OFFICE/COLLECTION standing grants",
+    "no intermediate owner confirmation is required inside these bounds"
+  ],
+  "serialExecution": true,
+  "maxConcurrency": 1,
+  "autoMergeAuthorized": true,
+  "repositoryWideAutoMerge": false,
+  "programsOpened": [
+    "OFFICE",
+    "COLLECTION"
+  ],
+  "programsUnchanged": [
+    "UYAP_CONNECTOR",
+    "CLIENT",
+    "DEBTOR",
+    "RECEIVABLE"
+  ],
+  "validity": "until program closure, explicit owner revocation, kill switch, or scope violation",
+  "nonTransferable": "not to another program, repository or owner workstream"
+}

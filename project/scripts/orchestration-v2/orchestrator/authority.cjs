@@ -504,11 +504,142 @@ function isGrantRevoked(opts) {
   return { revoked: true, path: p, reason: String(body || '').trim().slice(0, 300) || 'revocation marker present' };
 }
 
+/**
+ * Task classes a standing grant may admit. Mirrors standing-grant.schema.json;
+ * kept here so the validator needs no I/O and the vocabulary stays greppable.
+ */
+const TASK_CLASSES = [
+  'TEST_ONLY_CHARACTERIZATION',
+  'BOUNDED_CODE_FIX',
+  'CANONICAL_STATUS_UPDATE',
+  'DECISION_LOG_APPEND',
+  'CLOSURE_EVIDENCE',
+  'GENERATED_MANIFEST_REFRESH',
+  'PROGRAM_POINTER_UPDATE',
+  'DOCUMENTATION_SYNCHRONIZATION',
+  'OPERATOR_RUNBOOK_UPDATE',
+  'AUDIT_RECORD_MATERIALIZATION',
+];
+
+/** A path sits under a root when the root is a directory prefix, or names it. */
+function underRoot(p, root) {
+  const c = String(p);
+  const r = String(root);
+  return c === r || c === r.slice(0, -1) || c.startsWith(r);
+}
+
+/**
+ * Is this child plan inside its standing grant?
+ *
+ * A standing grant removes the per-task owner ratification round. What replaces
+ * it is this function: every limit the grant states is enforced mechanically,
+ * on the plan, before anything runs. Nothing in the grant is advisory.
+ *
+ * Deterministic and total on purpose — it reads only the grant and the spec,
+ * performs no I/O, and returns the same verdict for the same inputs — so queue
+ * admission, preflight and attestation can all call it without the three
+ * drifting apart.
+ *
+ * @param {object} opts
+ * @param {object} opts.standingGrant
+ * @param {object} opts.spec              child task spec
+ * @param {string} opts.taskClass
+ * @param {string} [opts.executorLane]
+ * @param {boolean} [opts.revoked]        from isGrantRevoked(), read at the tip
+ * @param {boolean} [opts.killSwitchEngaged]
+ * @param {number} [opts.nowMs]
+ * @returns {{ok: true, program: string, taskClass: string}} or throws
+ */
+function validateAgainstStandingGrant(opts) {
+  const g = opts && opts.standingGrant;
+  const spec = opts && opts.spec;
+  if (!g) fail('STANDING_GRANT_INVALID', 'missing');
+  if (!spec) fail('TASK_SPEC_INVALID', 'missing');
+  if (g.schemaVersion !== 1) fail('STANDING_GRANT_SCHEMA_VERSION', String(g.schemaVersion));
+
+  // A revoked or killed grant authorizes nothing, whatever else holds.
+  if (opts.revoked === true) fail('STANDING_GRANT_REVOKED', g.standingGrantId);
+  if (opts.killSwitchEngaged === true) fail('KILL_SWITCH_ENGAGED', g.killSwitchPath || '(unset)');
+
+  if (g.expiresAt) {
+    const t = Date.parse(g.expiresAt);
+    if (!Number.isFinite(t)) fail('STANDING_GRANT_EXPIRY_INVALID', String(g.expiresAt));
+    if ((opts.nowMs || Date.now()) >= t) fail('STANDING_GRANT_EXPIRED', g.expiresAt);
+  }
+
+  // The grant must be anchored to an owner decision. One that cites no parent
+  // is self-authorizing, which is the single thing it may never be.
+  const parent = g.parentAuthorizationRef;
+  if (
+    !parent ||
+    !parent.authorizationId ||
+    !parent.sourcePath ||
+    !/^[0-9a-f]{64}$/.test(String(parent.payloadSha256 || ''))
+  ) {
+    fail('STANDING_GRANT_PARENT_REF_INVALID', JSON.stringify(parent || null).slice(0, 120));
+  }
+
+  // Task class must be admitted explicitly. Anything unlisted is refused,
+  // including classes that exist in the vocabulary but were not granted.
+  const cls = String(opts.taskClass || '');
+  if (TASK_CLASSES.indexOf(cls) === -1) fail('TASK_CLASS_UNKNOWN', cls || '(none)');
+  if ((g.allowedTaskClasses || []).indexOf(cls) === -1) {
+    fail('TASK_CLASS_NOT_GRANTED', cls + ' not in ' + JSON.stringify(g.allowedTaskClasses));
+  }
+
+  if (opts.executorLane && (g.allowedExecutorLanes || []).indexOf(opts.executorLane) === -1) {
+    fail('EXECUTOR_LANE_NOT_GRANTED', String(opts.executorLane));
+  }
+
+  // Boundary: every root the plan asks for must sit under a granted root, and
+  // none may touch a prohibited one. Subset, not intersection — a plan that
+  // reaches one path outside the grant is outside the grant.
+  const asked = (spec.boundaryPolicy && spec.boundaryPolicy.allowedRoots) || [];
+  if (asked.length === 0) fail('BOUNDARY_EMPTY', spec.taskId || '(no taskId)');
+  for (const root of asked) {
+    if (!(g.allowedPathRoots || []).some((allowed) => underRoot(root, allowed))) {
+      fail('BOUNDARY_EXCEEDS_STANDING_GRANT', root);
+    }
+    for (const banned of g.prohibitedPathRoots || []) {
+      if (underRoot(root, banned) || underRoot(banned, root)) {
+        fail('BOUNDARY_TOUCHES_PROHIBITED_SURFACE', root + ' ~ ' + banned);
+      }
+    }
+  }
+
+  // Serial execution, independent review and bounded merge are properties of
+  // the grant, not runtime preferences that a caller may soften.
+  if (g.maxConcurrency !== 1) fail('STANDING_GRANT_CONCURRENCY_INVALID', String(g.maxConcurrency));
+  if (g.requiredIndependentReview !== true) fail('INDEPENDENT_REVIEW_NOT_REQUIRED', g.standingGrantId);
+  if (!g.mergePolicy || g.mergePolicy.repositoryWideAutoMerge !== false) {
+    fail('REPOSITORY_WIDE_AUTO_MERGE_FORBIDDEN', g.standingGrantId);
+  }
+  if (!g.ciPolicy || g.ciPolicy.requireTerminalSuccess !== true) {
+    fail('CI_TERMINAL_SUCCESS_NOT_REQUIRED', g.standingGrantId);
+  }
+
+  // The self-modification bar. A grant whose prohibitions are not all asserted
+  // is malformed rather than permissive.
+  const pro = g.prohibitions || {};
+  for (const k of [
+    'noPrivilegeDelegation',
+    'noSecretAccessExpansion',
+    'noProductionDataMutation',
+    'noCrossProgramMutation',
+    'noSelfAuthorizationChange',
+  ]) {
+    if (pro[k] !== true) fail('STANDING_GRANT_PROHIBITION_MISSING', k);
+  }
+
+  return { ok: true, program: g.program.programId, taskClass: cls };
+}
+
 module.exports = {
   PROFILES,
   BASE_DRIFT_POLICIES,
   SUCCESSOR_DISPOSITIONS,
   MECHANICAL_OPERATIONS,
+  TASK_CLASSES,
   AuthorityError,
   canonicalize,
   digest,
@@ -517,6 +648,7 @@ module.exports = {
   normalizeTaskSpec,
   specDigests,
   validateAgainstGrant,
+  validateAgainstStandingGrant,
   verifyRatificationEvidence,
   verifyAuthorityRefs,
   isGrantRevoked,

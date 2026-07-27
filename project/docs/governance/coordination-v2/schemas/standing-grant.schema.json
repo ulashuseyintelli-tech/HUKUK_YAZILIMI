@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hukuk-yazilimi:coordination-v2:standing-grant.schema.json",
+  "title": "GOV-COORD-V2 Program-Scoped Standing Grant",
+  "description": "Program seviyesinde, surekli gecerli fakat SINIRLI execution grant. Task-scoped grant.schema.json'i supersede ETMEZ; yaninda durur ve eski kayitlar calismaya devam eder. Bir standing grant 'her seyi yapabilirsin' yetkisi DEGILDIR: her child plan, asagidaki sinirlar icinde oldugunu deterministic validator'a kanitlamak zorundadir. Orchestrator bu kaydi URETEMEZ; yalniz dogrular.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "standingGrantId",
+    "parentAuthorizationRef",
+    "program",
+    "allowedTaskClasses",
+    "allowedPathRoots",
+    "prohibitedPathRoots",
+    "allowedExecutorLanes",
+    "requiredIndependentReview",
+    "ciPolicy",
+    "mergePolicy",
+    "maxConcurrency",
+    "revocationPath",
+    "killSwitchPath",
+    "ownerRatificationEvidence",
+    "auditLogPath",
+    "childPlanDerivation",
+    "prohibitions"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "standingGrantId": { "$ref": "#/$defs/identifier" },
+
+    "parentAuthorizationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorizationId", "sourcePath", "payloadSha256"],
+      "properties": {
+        "authorizationId": { "$ref": "#/$defs/identifier" },
+        "sourcePath": { "$ref": "#/$defs/repoPath" },
+        "sourceCommitSha": { "$ref": "#/$defs/gitObjectId" },
+        "payloadSha256": { "$ref": "#/$defs/sha256" }
+      },
+      "description": "Owner'in program-seviyesi kararina baglar. Standing grant kendi kendini yetkilendiremez."
+    },
+
+    "program": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["programId", "eligibilityAuthorityRef"],
+      "properties": {
+        "programId": { "$ref": "#/$defs/identifier" },
+        "eligibilityAuthorityRef": { "$ref": "#/$defs/repoPath" }
+      },
+      "description": "Tek program. Cross-program mutation varsayilan olarak yasak; bu alan tekildir, dizi degildir."
+    },
+
+    "allowedTaskClasses": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/taskClass" },
+      "description": "Bu grant altinda kabul edilebilecek is siniflari. Listede olmayan sinif otomatik reddedilir."
+    },
+
+    "allowedPathRoots": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/repoRoot" },
+      "description": "Child plan'in boundaryPolicy.allowedRoots'u bunun alt kumesi olmalidir."
+    },
+
+    "prohibitedPathRoots": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/repoRoot" },
+      "description": "allowedPathRoots icinde kalsa bile dokunulamayacak paylasili yuzeyler."
+    },
+
+    "allowedExecutorLanes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["CLAUDE_LOCAL", "CODEX_LOCAL"] }
+    },
+
+    "requiredIndependentReview": {
+      "const": true,
+      "description": "Plan uretimi otomatik olabilir; bagimsiz review zorunludur ve kapatilamaz."
+    },
+
+    "ciPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requireTerminalSuccess", "allowSkipped", "allowNeutral"],
+      "properties": {
+        "requireTerminalSuccess": { "const": true },
+        "allowSkipped": { "type": "boolean" },
+        "allowNeutral": { "type": "boolean" }
+      }
+    },
+
+    "mergePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "autoMergeAuthorized", "repositoryWideAutoMerge"],
+      "properties": {
+        "method": { "const": "SQUASH" },
+        "autoMergeAuthorized": { "type": "boolean" },
+        "repositoryWideAutoMerge": {
+          "const": false,
+          "description": "GitHub genelinde auto-merge acilmaz. Merge yalniz orchestrator-controlled ve bounded'dir."
+        }
+      }
+    },
+
+    "maxConcurrency": {
+      "const": 1,
+      "description": "Seri calisma. Ayni anda tek mutation-producing executor."
+    },
+
+    "revocationPath": {
+      "$ref": "#/$defs/repoPath",
+      "description": "Bu dosya varsa grant olu. authority.isGrantRevoked() guncel tepede okur."
+    },
+    "killSwitchPath": {
+      "$ref": "#/$defs/repoPath",
+      "description": "Bu dosya varsa yeni task kabul edilmez, yeni executor baslamaz, merge yapilmaz."
+    },
+
+    "ownerRatificationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourcePath", "sourceCommitSha", "exactExcerpt", "excerptSha256"],
+      "properties": {
+        "sourcePath": { "$ref": "#/$defs/repoPath" },
+        "sourceCommitSha": { "$ref": "#/$defs/gitObjectId" },
+        "exactExcerpt": { "type": "string", "minLength": 1 },
+        "excerptSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+
+    "auditLogPath": { "$ref": "#/$defs/repoPath" },
+
+    "childPlanDerivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirePlanHash", "requireParentRef", "requireBoundarySubset", "requireTaskClassMatch"],
+      "properties": {
+        "requirePlanHash": { "const": true },
+        "requireParentRef": { "const": true },
+        "requireBoundarySubset": { "const": true },
+        "requireTaskClassMatch": { "const": true }
+      },
+      "description": "Child plan hash'i owner'a tekrar gonderilmez; bunun karsiligi, her kuralin mekanik olarak zorunlu olmasidir."
+    },
+
+    "prohibitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "noPrivilegeDelegation",
+        "noSecretAccessExpansion",
+        "noProductionDataMutation",
+        "noCrossProgramMutation",
+        "noSelfAuthorizationChange"
+      ],
+      "properties": {
+        "noPrivilegeDelegation": { "const": true },
+        "noSecretAccessExpansion": { "const": true },
+        "noProductionDataMutation": { "const": true },
+        "noCrossProgramMutation": { "const": true },
+        "noSelfAuthorizationChange": {
+          "const": true,
+          "description": "Bu grant altindaki hicbir task authorization engine'i, validator'i, branch protection'i, required-check politikasini veya eligibility otoritesini degistiremez."
+        }
+      }
+    },
+
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "notes": { "type": "string" }
+  },
+
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitObjectId": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "identifier": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9._-]{2,79}$" },
+    "taskClass": {
+      "enum": [
+        "TEST_ONLY_CHARACTERIZATION",
+        "BOUNDED_CODE_FIX",
+        "CANONICAL_STATUS_UPDATE",
+        "DECISION_LOG_APPEND",
+        "CLOSURE_EVIDENCE",
+        "GENERATED_MANIFEST_REFRESH",
+        "PROGRAM_POINTER_UPDATE",
+        "DOCUMENTATION_SYNCHRONIZATION",
+        "OPERATOR_RUNBOOK_UPDATE",
+        "AUDIT_RECORD_MATERIALIZATION"
+      ]
+    },
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "pattern": "^(?!/)(?!.*//)(?!.*(^|/)\\.\\.(/|$))[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$"
+    },
+    "repoRoot": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "pattern": "^(?!/)(?!.*//)(?!.*(^|/)\\.\\.(/|$))[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/$"
+    }
+  }
+}

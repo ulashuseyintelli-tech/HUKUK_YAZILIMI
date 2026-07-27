@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "parentAuthorizationRef": {
+    "authorizationId": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/PARENT-AUTHORIZATION-ENVELOPE.md",
+    "payloadSha256": "5b7c8f9523c8fed93b2b15c47b51a157ed366941f224742dd3dd2b4a26d0adab"
+  },
+  "requiredIndependentReview": true,
+  "ciPolicy": {
+    "requireTerminalSuccess": true,
+    "allowSkipped": false,
+    "allowNeutral": true
+  },
+  "mergePolicy": {
+    "method": "SQUASH",
+    "autoMergeAuthorized": true,
+    "repositoryWideAutoMerge": false
+  },
+  "maxConcurrency": 1,
+  "childPlanDerivation": {
+    "requirePlanHash": true,
+    "requireParentRef": true,
+    "requireBoundarySubset": true,
+    "requireTaskClassMatch": true
+  },
+  "prohibitions": {
+    "noPrivilegeDelegation": true,
+    "noSecretAccessExpansion": true,
+    "noProductionDataMutation": true,
+    "noCrossProgramMutation": true,
+    "noSelfAuthorizationChange": true
+  },
+  "standingGrantId": "STANDING-GRANT-OFFICE-LIVE-R01",
+  "program": {
+    "programId": "OFFICE",
+    "eligibilityAuthorityRef": "project/docs/governance/coordination-v2/activation/PROGRAM-ELIGIBILITY-AUTHORITY.md"
+  },
+  "allowedTaskClasses": [
+    "TEST_ONLY_CHARACTERIZATION",
+    "BOUNDED_CODE_FIX"
+  ],
+  "allowedPathRoots": [
+    "project/apps/api/src/modules/office/",
+    "project/apps/api/src/modules/reporting-line/"
+  ],
+  "prohibitedPathRoots": [
+    "project/docs/governance/coordination-v2/schemas/",
+    "project/docs/governance/coordination-v2/activation/",
+    "project/scripts/orchestration-v2/",
+    "project/apps/api/prisma/",
+    ".github/"
+  ],
+  "allowedExecutorLanes": [
+    "CLAUDE_LOCAL",
+    "CODEX_LOCAL"
+  ],
+  "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-OFFICE",
+  "killSwitchPath": "project/docs/governance/coordination-v2/activation/KILL-SWITCH",
+  "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/office.jsonl",
+  "notes": "Test-only characterization ve bounded code fix. Production davranis degisikligi bu grant altinda YOK; her plan yine bagimsiz review ve tam CI gorur."
+}
