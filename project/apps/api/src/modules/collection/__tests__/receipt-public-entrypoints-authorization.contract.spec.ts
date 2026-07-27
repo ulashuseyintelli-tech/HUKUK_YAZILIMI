@@ -1,3 +1,19 @@
+// CaseController -> OcrService -> `require('pdf-poppler')`. pdf-poppler bir Windows
+// odakli optional native pakettir ve Linux'ta poppler binary'sini bulamayinca
+// index.js icinde DOGRUDAN process.exit(1) cagirir — yani jest worker'i olur ve
+// manifest'in tamami duser. Bu spec Windows'ta gecip Linux CI'da kiriliyordu.
+//
+// Ayni sorun repo'da zaten biliniyor: client-workspace-live-smoke job'i
+// "Disable optional pdf-poppler ..." adiyla paketi runtime'da stub'liyor.
+//
+// Factory'li jest.mock hoist edilir ve gercek modulun require edilmesini tamamen
+// engeller. pdf-poppler bu spec'in dogruladigi yetkilendirme sozlesmesiyle ilgisizdir.
+jest.mock('pdf-poppler', () => ({
+  convert: async () => {
+    throw new Error('pdf-poppler is stubbed in unit tests');
+  },
+}));
+
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CollectionController } from '../collection.controller';

@@ -39,3 +39,9 @@ src/modules/auth/guards/__tests__/credential-recovery-rate-limit.guard.spec.ts
 src/modules/auth/invite/__tests__/user-invite.service.spec.ts
 src/modules/auth/password-reset/__tests__/password-reset.service.spec.ts
 src/modules/user/__tests__/change-password.service.spec.ts
+
+# ── GH-04 BATCH A — Priority 0 (guvenlik / tenant sinir / yetkilendirme) ──
+# Bu spec'ler daha once hicbir CI step'ine bagli degildi. Admission oncesi
+# 3 ardisik lokal kosu ile deterministik dogrulandi (425/425), tracked dosya
+# yazmadiklari ve askida kalmadiklari teyit edildi.
+src/modules/office/__tests__/office-settings-security.spec.ts
