@@ -4,7 +4,7 @@
   "taskSpecVersion": 1,
   "profile": "BOUNDED_CODE_TASK",
   "declaredIntent": "Mevcut office-credential-encryption.util davranisini, yeni production semantigi uretmeden, characterization testiyle sabitle. Yalniz test dosyasi eklenir; util dosyasina dokunulmaz. Bu bir OPERATIONAL CANARY gorevidir: amaci orkestrasyon zincirinin ucdan uca calistigini kanitlamaktir.",
-  "declaredIntentSha256": "9c073204c158fa6bc6a9daea0f6b99488613439ee91cbecdab443599f1fa46ed",
+  "declaredIntentSha256": "fa648c98ff9d0d538a8a8d12dffa040fb03bb150ac6b086277594c36d03340b1",
   "boundaryPolicy": {
     "allowedRoots": [
       "project/apps/api/src/modules/office/__tests__/office-credential-encryption.characterization.spec.ts/"
