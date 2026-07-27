@@ -259,3 +259,198 @@ describe("ReportingLineService — reconciliation (disposition-tabanlı)", () =>
     expect(r.unclassifiableTaskAssignees).toBe(1); // c
   });
 });
+
+/* ---------------------------------------------------------------------------
+ * listActive / listEligible — CHARACTERIZATION (test-only)
+ *
+ * Bu blok iki okuma metodunun BUGÜNKÜ davranışını olduğu gibi çiviler; davranış
+ * üretmez, düzeltmez, iyileştirmez. Prisma mock'ları where/select/orderBy'ı
+ * gerçekten uygular (filtre + projeksiyon + sıralama), böylece dışlama davranışı
+ * yalnız argüman şeklinden değil dönen veriden de doğrulanır.
+ *
+ * BİLİNEN SAPMA — listEligible.profileType (test YAZILMADI, bilinçli):
+ *   where  → OR [ staffMember.is.isActive:true , lawyer.is.isActive:true ]  (isActive FİLTRELİ)
+ *   select → staffMember:{id} · lawyer:{id}                                 (isActive FİLTRESİZ)
+ *   map    → profileType = u.lawyer ? "LAWYER" : u.staffMember ? "STAFF" : null
+ * User hem staffMember hem lawyer taşıyabilir (schema: her ikisi de opsiyonel).
+ * Aktif StaffMember + PASİF Lawyer taşıyan kullanıcı listeye doğru girer ama
+ * "LAWYER" etiketlenir: etiket profilin VARLIĞINDAN türetiliyor, AKTİFLİĞİNDEN
+ * değil. Owner invariant'ı etiketin aktif profili yansıtmasını bekler.
+ * → CURRENT_BEHAVIOR_CONFLICTS_WITH_OWNER_INVARIANT olarak raporlandı; production
+ *   kodu düzeltilmedi ve test beklenen sonuca zorlanmadı. Aşağıdaki precedence
+ *   testi bu yüzden yalnız her iki profili de AKTİF olan kullanıcıyı kapsar.
+ * ------------------------------------------------------------------------- */
+
+/** Prisma `select` semantiğini taklit eder: düz alanlar + iç içe relation select. */
+const project = (row: any, select: any): any => {
+  const out: any = {};
+  for (const [key, value] of Object.entries<any>(select)) {
+    if (value === true) out[key] = row[key];
+    else if (value && value.select) out[key] = row[key] ? project(row[key], value.select) : null;
+  }
+  return out;
+};
+
+// validFrom'lar bilerek karışık sırada: orderBy desc gerçekten gözlemlenebilsin.
+const RL_ROWS: any[] = [
+  { id: "rl-active-old", tenantId: TENANT, actorUserId: "a", managerUserId: "b", disposition: "MANAGED", validFrom: new Date("2026-01-01"), validUntil: null },
+  { id: "rl-active-new", tenantId: TENANT, actorUserId: "b", managerUserId: null, disposition: "TOP_LEVEL", validFrom: new Date("2026-03-01"), validUntil: null },
+  { id: "rl-closed", tenantId: TENANT, actorUserId: "c", managerUserId: "a", disposition: "MANAGED", validFrom: new Date("2026-02-01"), validUntil: new Date("2026-04-01") },
+  { id: "rl-other-tenant", tenantId: OTHER, actorUserId: "other", managerUserId: null, disposition: "TOP_LEVEL", validFrom: new Date("2026-05-01"), validUntil: null },
+];
+
+const buildListActivePrisma = (rows: any[] = RL_ROWS) => {
+  const findMany = jest.fn(({ where, select, orderBy }: any) =>
+    Promise.resolve(
+      rows
+        .filter((r) => r.tenantId === where.tenantId)
+        .filter((r) => (where.validUntil === null ? r.validUntil === null : true))
+        .slice()
+        .sort((x, y) =>
+          orderBy?.validFrom === "desc" ? y.validFrom.getTime() - x.validFrom.getTime() : 0,
+        )
+        .map((r) => project(r, select)),
+    ),
+  );
+  return { reportingLine: { findMany } } as any;
+};
+
+describe("ReportingLineService — listActive (characterization)", () => {
+  it("tenant-scoped + yalnız validUntil=null sorgular (validFrom desc)", async () => {
+    const prisma = buildListActivePrisma();
+    const svc = new ReportingLineService(prisma, buildAudit());
+    await svc.listActive(TENANT);
+    const args = prisma.reportingLine.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ tenantId: TENANT, validUntil: null });
+    expect(args.orderBy).toEqual({ validFrom: "desc" });
+  });
+
+  it("yalnız aktif ilişkiler döner: kapanmış ve başka-tenant kayıtlar listede yok", async () => {
+    const svc = new ReportingLineService(buildListActivePrisma(), buildAudit());
+    const res = await svc.listActive(TENANT);
+    // { relationships: [...] } zarfı + validFrom desc sırası.
+    expect(res.relationships.map((r: any) => r.id)).toEqual(["rl-active-new", "rl-active-old"]);
+    expect(res.relationships.map((r: any) => r.id)).not.toContain("rl-closed");
+    expect(res.relationships.map((r: any) => r.id)).not.toContain("rl-other-tenant");
+  });
+
+  it("projection kapalı-ilişki detayını sızdırmaz: validUntil select edilmez", async () => {
+    const prisma = buildListActivePrisma();
+    const svc = new ReportingLineService(prisma, buildAudit());
+    const res = await svc.listActive(TENANT);
+    // Otoriter assertion: servisin Prisma'ya verdiği select (tenantId/validUntil YOK).
+    const select = prisma.reportingLine.findMany.mock.calls[0][0].select;
+    expect(select).toEqual({
+      id: true,
+      actorUserId: true,
+      managerUserId: true,
+      disposition: true,
+      validFrom: true,
+    });
+    expect(Object.keys(res.relationships[0])).toEqual([
+      "id",
+      "actorUserId",
+      "managerUserId",
+      "disposition",
+      "validFrom",
+    ]);
+  });
+
+  it("aktif kayıt yoksa boş liste döner (kapanmış kayıtlar sayılmaz)", async () => {
+    const closedOnly = RL_ROWS.filter((r) => r.id === "rl-closed");
+    const svc = new ReportingLineService(buildListActivePrisma(closedOnly), buildAudit());
+    await expect(svc.listActive(TENANT)).resolves.toEqual({ relationships: [] });
+  });
+});
+
+// name'ler ASCII ve alfabetik ayırt edilebilir: orderBy name asc gözlemlenebilsin.
+const ELIGIBLE_USERS: any[] = [
+  { id: "u-lawyer", tenantId: TENANT, isActive: true, name: "Ada", email: "ada@t1", staffMember: null, lawyer: { id: "l1", isActive: true } },
+  { id: "u-staff", tenantId: TENANT, isActive: true, name: "Berk", email: "berk@t1", staffMember: { id: "s1", isActive: true }, lawyer: null },
+  { id: "u-both-active", tenantId: TENANT, isActive: true, name: "Cem", email: "cem@t1", staffMember: { id: "s2", isActive: true }, lawyer: { id: "l2", isActive: true } },
+  { id: "u-passive-user", tenantId: TENANT, isActive: false, name: "Deniz", email: "deniz@t1", staffMember: { id: "s3", isActive: true }, lawyer: null },
+  { id: "u-no-profile", tenantId: TENANT, isActive: true, name: "Ege", email: "ege@t1", staffMember: null, lawyer: null },
+  { id: "u-passive-profile", tenantId: TENANT, isActive: true, name: "Faruk", email: "faruk@t1", staffMember: { id: "s4", isActive: false }, lawyer: null },
+  { id: "u-cross-tenant", tenantId: OTHER, isActive: true, name: "Gizem", email: "gizem@t2", staffMember: { id: "s5", isActive: true }, lawyer: null },
+];
+
+/** where.OR: [{ staffMember: { is: { isActive } } }, { lawyer: { is: { isActive } } }] */
+const matchesProfileOr = (user: any, or: any[]) =>
+  or.some((cond) => {
+    if (cond.staffMember) return !!user.staffMember && user.staffMember.isActive === cond.staffMember.is.isActive;
+    if (cond.lawyer) return !!user.lawyer && user.lawyer.isActive === cond.lawyer.is.isActive;
+    return false;
+  });
+
+const buildEligiblePrisma = (rows: any[] = ELIGIBLE_USERS) => {
+  const findMany = jest.fn(({ where, select, orderBy }: any) =>
+    Promise.resolve(
+      rows
+        .filter((u) => u.tenantId === where.tenantId)
+        .filter((u) => where.isActive === undefined || u.isActive === where.isActive)
+        .filter((u) => !where.OR || matchesProfileOr(u, where.OR))
+        .slice()
+        .sort((x, y) =>
+          orderBy?.name === "asc" ? (x.name < y.name ? -1 : x.name > y.name ? 1 : 0) : 0,
+        )
+        .map((u) => project(u, select)),
+    ),
+  );
+  return { user: { findMany } } as any;
+};
+
+describe("ReportingLineService — listEligible (characterization)", () => {
+  it("tenant-scoped + aktif kullanıcı + aktif profil (staff VEYA lawyer) sorgular", async () => {
+    const prisma = buildEligiblePrisma();
+    const svc = new ReportingLineService(prisma, buildAudit());
+    await svc.listEligible(TENANT);
+    const args = prisma.user.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({
+      tenantId: TENANT,
+      isActive: true,
+      OR: [
+        { staffMember: { is: { isActive: true } } },
+        { lawyer: { is: { isActive: true } } },
+      ],
+    });
+    expect(args.orderBy).toEqual({ name: "asc" });
+  });
+
+  it("pasif kullanıcı, cross-tenant, profilsiz ve pasif-profilli kullanıcılar dışlanır", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma(), buildAudit());
+    const res = await svc.listEligible(TENANT);
+    // name asc sırası: Ada, Berk, Cem.
+    expect(res.eligible.map((e: any) => e.userId)).toEqual([
+      "u-lawyer",
+      "u-staff",
+      "u-both-active",
+    ]);
+    for (const excluded of ["u-passive-user", "u-cross-tenant", "u-no-profile", "u-passive-profile"]) {
+      expect(res.eligible.map((e: any) => e.userId)).not.toContain(excluded);
+    }
+  });
+
+  it("her satır { userId, name, email, profileType } olarak eşlenir", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma(), buildAudit());
+    const res = await svc.listEligible(TENANT);
+    expect(res.eligible[1]).toEqual({
+      userId: "u-staff",
+      name: "Berk",
+      email: "berk@t1",
+      profileType: "STAFF",
+    });
+    expect(Object.keys(res.eligible[1])).toEqual(["userId", "name", "email", "profileType"]);
+  });
+
+  it("profileType: tek aktif profil kendi tipini verir; İKİ AKTİF profilde lawyer önceliklidir", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma(), buildAudit());
+    const res = await svc.listEligible(TENANT);
+    const typeOf = (userId: string) =>
+      res.eligible.find((e: any) => e.userId === userId)?.profileType;
+    expect(typeOf("u-lawyer")).toBe("LAWYER");
+    expect(typeOf("u-staff")).toBe("STAFF");
+    // Yalnız her iki profil de AKTİF olan hâl: precedence lawyer > staffMember.
+    // Aktif-staff + PASİF-lawyer hâli bilinçli olarak KAPSAM DIŞI (bkz. blok başı sapma notu).
+    expect(typeOf("u-both-active")).toBe("LAWYER");
+  });
+});
