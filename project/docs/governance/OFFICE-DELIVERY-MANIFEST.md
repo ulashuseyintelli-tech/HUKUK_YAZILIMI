@@ -1698,3 +1698,121 @@ AUTHORIZATION ENFORCEMENT            NOT STARTED
 Bu bölüm implementasyon, population, SHADOW veya enforcement yetkisi ÜRETMEZ.
 Production personel population ayrı `GO-OPERATE`, authorization enforcement
 runtime activation ayrı `GO-ACTIVATE` owner kararı gerektirir.
+
+---
+
+## 11. CAP-02 OWNER DISPOSITIONS (2026-07-28)
+
+`OFFICE-P2-CAP02-OWNER-DISPOSITIONS-CANONICALIZATION-R01`. Bu bölüm implementasyon,
+population, SHADOW veya enforcement yetkisi ÜRETMEZ.
+
+### 11.1 RES-5 — OFFICE grant template
+
+```text
+ARTIFACT                 project/docs/governance/coordination-v2/task-plans/OFFICE/grant.template.json
+DISPOSITION              SUPERSEDED / NON-EXECUTABLE
+CURRENT AUTHORITY        NONE
+REACTIVATION             PROHIBITED
+USE AS EXECUTION GRANT   PROHIBITED
+FILE MUTATION            NONE — JSON bu görevde DEĞİŞTİRİLMEDİ
+RETENTION                Historical/provenance amacıyla korunur
+```
+
+Bu template current authority olarak güncellenmeyecek, yeni CAP-02 görevine
+taşınmayacak, expiry değeri doldurularak aktive edilmeyecek ve sessizce yeni bir
+semantic authority'ye bağlanmayacaktır. Gelecekteki her grant yeni ve göreve özgü
+bir authority kaydı gerektirir.
+
+### 11.2 RES-6 — CAP-02 ↔ CAP-09A bağımlılığı
+
+```text
+CAP-02 POPULATION                    DOES NOT REQUIRE CAP-09 OR CAP-09A
+CAP-02 SHADOW                        DOES NOT REQUIRE CAP-09 OR CAP-09A
+CAP-02 ENFORCEMENT IMPLEMENTATION    DOES NOT REQUIRE CAP-09A SLICE 3
+CAP-02 RUNTIME ACTIVATION            REQUIRES provider-neutral, deterministic and
+                                     reviewable authorization-decision audit evidence
+                                     DOES NOT REQUIRE a specific audit implementation
+                                     DOES NOT REQUIRE CAP-09A-CONSUMER-01
+```
+
+Kanonik kaynak `OFFICE-PHASE2-MASTER-SYNTHESIS.md` `OFF-P2-DEP-03` daraltma notudur.
+
+### 11.3 ReportingLine mimari hükmü
+
+```text
+REPORTINGLINE                        USER-PRINCIPAL AUTHORIZATION GRAPH
+CANONICAL PERSON PROFILES            Lawyer + StaffMember
+ACCESS IDENTITY                      User
+MOVE TO Lawyer/StaffMember ID SPACE  NOT AUTHORIZED
+POLYMORPHIC PERSONNEL GRAPH          NOT AUTHORIZED
+LARGE SCHEMA REFACTOR                NOT AUTHORIZED
+
+AUTHORIZABLE PERSONNEL
+  aktif Lawyer veya StaffMember
+  + aktif same-tenant User binding
+  + sistem erişimi ya da authorization-scope iş gereksinimi
+
+MANAGER KURALI                       manager da aktif same-tenant User binding'i taşımalıdır
+DUMMY USER CREATION                  PROHIBITED
+AUTOMATIC/BULK USER CREATION         PROHIBITED
+```
+
+Sisteme giriş yapmayan bir kişinin organizasyonel yönetici olarak gösterilmesi
+gerekiyorsa bu, authorization graph'tan ayrı bir organizasyon modeli ihtiyacıdır;
+ReportingLine bu amaçla zorlanmaz.
+
+### 11.4 Population-First exact sırası
+
+```text
+STEP 0   Personnel identity-binding plan            ZORUNLU ÖNKOŞUL
+STEP 1   Owner-approved profile <-> User mapping
+STEP 2   Tenant-safe ReportingLine/User integrity hardening
+STEP 3   Authorizable-personnel population input pack
+STEP 4   Dry-run validator
+STEP 5   Owner GO-OPERATE
+STEP 6   Transactional service-path population
+STEP 7   Reconciliation and completeness gate
+STEP 8   SHADOW authorization
+STEP 9   Runtime evidence and owner disposition
+STEP 10  Authorization enforcement implementation
+STEP 11  Owner GO-ACTIVATE
+```
+
+Bu sıra POPULATION-FIRST yönünü DEĞİŞTİRMEZ; identity binding onun zorunlu
+`STEP 0` önkoşuludur.
+
+### 11.5 Completeness gate (düzeltilmiş)
+
+```text
+UYGULAMA EVRENİ                      YALNIZ AUTHORIZABLE PERSONNEL
+
+MANAGED + TOP_LEVEL                  = TOTAL AUTHORIZABLE PERSONNEL
+UNCLASSIFIED                         aktif ReportingLine kaydı olmayan authorizable personel
+                                     için TÜRETİLİR — persist edilen enum değeri DEĞİLDİR
+NON_AUTHORIZABLE / NO USER BINDING   authorization graph DIŞINDA açıkça listelenir;
+                                     sessizce UNCLASSIFIED SAYILMAZ
+
+DUPLICATE ACTIVE MANAGER             0
+CYCLE                                0
+SELF-MANAGER                         0
+CROSS-TENANT RELATION                0
+INVALID DATE RANGE                   0
+UNRESOLVED AUTHORIZABLE PERSONNEL    0
+```
+
+Eski gate ifadesi ("tüm aktif Lawyer + StaffMember kayıtları ReportingLine
+disposition'ı taşımalıdır") **UYGULANMAZ**.
+
+### 11.6 Sıradaki birimler
+
+```text
+OFFICE-P2-CAP02-PERSONNEL-IDENTITY-BINDING-PLAN-R01        GO-ANALYZE / READ-ONLY
+OFFICE-P2-CAP02-REPORTINGLINE-USER-FK-HARDENING-PLAN-R01   GO-ANALYZE / READ-ONLY
+
+CREATE OR MODIFY PRODUCTION USERS                          NOT AUTHORIZED
+WRITE Lawyer.userId / StaffMember.userId IN PRODUCTION     NOT AUTHORIZED
+APPLY REPORTINGLINE MIGRATION                              NOT AUTHORIZED
+POPULATE PRODUCTION REPORTINGLINE                          NOT AUTHORIZED
+ENABLE SHADOW                                              NOT AUTHORIZED
+ACTIVATE ENFORCEMENT                                       NOT AUTHORIZED
+```
