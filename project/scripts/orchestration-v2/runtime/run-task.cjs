@@ -25,6 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const orchestrator = require('../orchestrator/orchestrator.cjs');
 const stateMod = require('../orchestrator/state.cjs');
@@ -32,6 +33,52 @@ const { createGhPrProvider } = require('./gh-pr-provider.cjs');
 const { createGhCiProvider } = require('./gh-ci-provider.cjs');
 const { prepareEnvironment } = require('./prepare-environment.cjs');
 const envPolicy = require('./env-policy.cjs');
+
+/**
+ * Resolve the grant's authority references and owner ratification against the
+ * repository, not merely against the grant's own shape.
+ *
+ * authority.cjs has carried both halves since PR #1644/#1645 and neither was
+ * ever called outside its tests: the live path (orch:run -> runTask ->
+ * validateAgainstGrant) checks that the two refs exist and are distinct, and
+ * that ownerRatificationEvidence is well formed and not a placeholder — but it
+ * never opens the files they name. A grant citing a recordId that appears
+ * nowhere passed every live gate. That is not hypothetical: a plan in this
+ * repository cited a fabricated semanticAuthorityRef and only human review
+ * caught it, which is precisely what #1645 was written to prevent.
+ *
+ * Both records are read at the CURRENT target tip, not at the ratification
+ * commit: an authority that has since been removed is not in force, and this is
+ * the last moment before an executor is spawned.
+ *
+ * @param {object} opts
+ * @param {string} opts.repoCwd
+ * @param {object} opts.grant
+ * @param {string} opts.baseRef  remote ref the task targets, e.g. origin/main
+ * @returns {{atCommit: string}}  throws AuthorityError on any failure
+ */
+function verifyAuthorityAgainstRepo(opts) {
+  const authority = require('../orchestrator/authority.cjs');
+  const cwd = opts.repoCwd;
+  const git = (args) =>
+    execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();
+
+  const atCommit = git(['rev-parse', opts.baseRef]);
+
+  const readAtCommit = (sourcePath, sha) => git(['show', sha + ':' + sourcePath]);
+  const isAncestor = (sha) => {
+    try {
+      execFileSync('git', ['merge-base', '--is-ancestor', sha, atCommit], { cwd, stdio: 'ignore' });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  authority.verifyRatificationEvidence({ grant: opts.grant, readAtCommit, isAncestor });
+  authority.verifyAuthorityRefs({ grant: opts.grant, readAtCommit, atCommit });
+  return { atCommit };
+}
 
 /**
  * Governance-mandated checks. These are required regardless of what branch
@@ -226,6 +273,18 @@ async function main(argv) {
     ].join('\n'),
   );
 
+  // Before anything else: do the grant's authority references and owner
+  // ratification actually resolve in the repository? runTask's own
+  // validateAgainstGrant only checks their shape, so this is the only place a
+  // fabricated recordId or a ratification that never landed in main is caught.
+  // It runs for the dry run too — a preflight that skips it would report a
+  // clean bill of health the real run does not have.
+  const authorityAt = verifyAuthorityAgainstRepo({
+    repoCwd,
+    grant,
+    baseRef: ctx.baseRef,
+  });
+
   if (args.dryRun) {
     // Validate authority and eligibility without creating a worktree, spawning
     // an executor or opening a PR. This is the safe preflight an operator runs
@@ -237,6 +296,7 @@ async function main(argv) {
         'DRY RUN — authority validated, nothing executed',
         '  taskSpecSha256 : ' + validated.digests.taskSpecSha256,
         '  grantSha256    : ' + validated.grantSha256,
+        '  authority refs : resolved at ' + authorityAt.atCommit,
         '  allowedRoots   :',
         ...validated.spec.boundaryPolicy.allowedRoots.map((r) => '    ' + r),
         '',
@@ -260,4 +320,12 @@ if (require.main === module) {
   );
 }
 
-module.exports = { buildContext, parseArgs, GOVERNANCE_REQUIRED_CHECKS, LANE_ARGV, RunnerError, main };
+module.exports = {
+  buildContext,
+  parseArgs,
+  verifyAuthorityAgainstRepo,
+  GOVERNANCE_REQUIRED_CHECKS,
+  LANE_ARGV,
+  RunnerError,
+  main,
+};

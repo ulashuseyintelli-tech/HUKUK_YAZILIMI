@@ -1,5 +1,24 @@
 # COLLECTION Execution Grant — OWNER DRAFT
 
+> **SUPERSEDED — BU TASLAKTAN GRANT ÜRETMEYİN.**
+>
+> Belge `taskSpecSha256 4a84fe4c…` / `baseSha 64d54732…` pinleyen paste-ready
+> bir grant metni ve çalıştırılabilir bir `orch:run` satırı içerir. O hash
+> `T5-PLAN-BASE-POLICY-REFRESH-R01` ile `SUPERSEDED_BY_BASE_REFRESH`
+> işaretlenmiştir. Yerine geçen: `plan.v2.json` (`f5c11d0b…`) ve
+> `T5-COLLECTION-EXECUTION-GRANT-R02`.
+>
+> §3'teki `semanticAuthorityRef` ayrıca **bozuktur**: `recordId`
+> `RCV-COL-W2.2D-1A` dizgisi `COLLECTION-DECOMPOSITION.md` içinde **sıfır kez**
+> geçer (ölçüldü) — `verifyAuthorityRefs` bunu `AUTHORITY_RECORD_ID_ABSENT` ile
+> reddeder. Doğru yetki `decision-log.md`'dedir ve onarılmış atıf R02
+> grant'ındadır.
+>
+> Andığı `grant.template.json` / `grant.json` dosyaları `*.SUPERSEDED.json`
+> olarak yeniden adlandırılmıştır; bu taslağın adımları artık dosya bulamaz.
+>
+> Tarihsel kanıt olarak korunur. Bkz. `../task-plans/SUPERSEDED-PLAN-HASHES.md`.
+
 ```text
 DURUM      : TASLAK — owner tarafından yazılmayı bekliyor
 YAZAN      : agent (hazırlık); bu belge bir grant DEĞİLDİR

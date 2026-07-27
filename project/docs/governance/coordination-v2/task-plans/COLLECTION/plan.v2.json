@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "taskId": "RCV-COL-W2.2D-1A-CHARACTERIZATION-R01",
+  "taskSpecVersion": 1,
+  "profile": "BOUNDED_CODE_TASK",
+  "declaredIntent": "Mevcut Collection confirmation davranışını, yeni production semantiği üretmeden, CI kapsamındaki payment-mapper test yüzeyinde karakterize etmek.",
+  "boundaryPolicy": {
+    "allowedRoots": [
+      "project/apps/api/src/modules/interest-engine/calc-prep/__tests__/payment-mapper.spec.ts/"
+    ],
+    "maxChangedFiles": 1
+  },
+  "requiredTests": [
+    {
+      "argv": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "cwd": "project",
+      "timeoutMs": 1800000
+    },
+    {
+      "argv": [
+        "pnpm",
+        "--filter",
+        "@hukuk/api",
+        "exec",
+        "prisma",
+        "generate"
+      ],
+      "cwd": "project",
+      "timeoutMs": 600000
+    },
+    {
+      "argv": [
+        "pnpm",
+        "exec",
+        "jest",
+        "--ci",
+        "--forceExit",
+        "--runInBand",
+        "--runTestsByPath",
+        "src/modules/interest-engine/calc-prep/__tests__/payment-mapper.spec.ts"
+      ],
+      "cwd": "project/apps/api",
+      "timeoutMs": 900000
+    }
+  ],
+  "predecessorTaskIds": [],
+  "baseDriftPolicy": "REFRESH_BEFORE_EXECUTION",
+  "successorDisposition": "OWNER_AUTHORIZATION_REQUIRED",
+  "baseSha": "5e35db28903a538784d264a7919e32c0bd2b7c9f",
+  "declaredIntentSha256": "988a37755026d24c2e002236e9bb4532ab8c9ad95488e24d75eef93f33d99264",
+  "boundaryPolicySha256": "6e7cb3dca041716810ba8040286e1b9a18c218230100d3978e971bac7292ad85",
+  "requiredTestsSha256": "c49f9dc21e8f38d4037a70ba4da7d6989c7d021c413221d5d2560c3ce15fdc5c"
+}
