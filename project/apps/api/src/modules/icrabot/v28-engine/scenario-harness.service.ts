@@ -18,6 +18,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UyapEventIngestService } from './uyap-event-ingest.service';
 import { FactStoreService } from './factstore.service';
+import { OutboxScope, outboxScopeWhere } from './outbox-scope';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -89,14 +90,20 @@ export class ScenarioHarnessService {
   ) {}
 
   /**
-   * Tek senaryo çalıştırır
+   * Tek senaryo çalıştırır.
+   *
+   * V28-FACTSTORE-SECURITY-P0-I01: `caseId` cagiran tarafindan serbestce verilebildigi
+   * icin harness de yikici temizleme yoluna kapsam TASIMAK ZORUNDADIR. Kapsam
+   * `clearTestData` -> `FactStoreService.clearCase` zincirine aynen gecirilir; kapsam
+   * disi bir gercek case icin temizleme YAPILAMAZ.
    */
   async runScenario(
     scenarioName: string,
     events: ScenarioEvent[],
-    expectedTimeline: any[] = [],
-    expectedActions: any[] = [],
-    caseId?: string,
+    expectedTimeline: any[],
+    expectedActions: any[],
+    caseId: string | undefined,
+    scope: OutboxScope,
   ): Promise<ScenarioResult> {
     const startTime = Date.now();
     const testCaseId = caseId || `test-${scenarioName}-${Date.now()}`;
@@ -104,7 +111,7 @@ export class ScenarioHarnessService {
 
     try {
       // Clear previous test data
-      await this.clearTestData(testCaseId);
+      await this.clearTestData(testCaseId, scope);
 
       // Process events
       let eventsProcessed = 0;
@@ -164,19 +171,22 @@ export class ScenarioHarnessService {
   /**
    * Built-in senaryo çalıştırır
    */
-  async runBuiltInScenario(scenarioKey: keyof typeof BUILT_IN_SCENARIOS): Promise<ScenarioResult> {
+  async runBuiltInScenario(
+    scenarioKey: keyof typeof BUILT_IN_SCENARIOS,
+    scope: OutboxScope,
+  ): Promise<ScenarioResult> {
     const scenario = BUILT_IN_SCENARIOS[scenarioKey];
-    return this.runScenario(scenario.name, scenario.events);
+    return this.runScenario(scenario.name, scenario.events, [], [], undefined, scope);
   }
 
   /**
    * Tüm built-in senaryoları çalıştırır
    */
-  async runAllBuiltInScenarios(): Promise<ScenarioSummary> {
+  async runAllBuiltInScenarios(scope: OutboxScope): Promise<ScenarioSummary> {
     const results: ScenarioResult[] = [];
 
     for (const key of Object.keys(BUILT_IN_SCENARIOS) as Array<keyof typeof BUILT_IN_SCENARIOS>) {
-      const result = await this.runBuiltInScenario(key);
+      const result = await this.runBuiltInScenario(key, scope);
       results.push(result);
     }
 
@@ -191,7 +201,11 @@ export class ScenarioHarnessService {
   /**
    * Dosya sisteminden senaryo çalıştırır
    */
-  async runScenarioFromDir(scenarioDir: string, caseId?: string): Promise<ScenarioResult> {
+  async runScenarioFromDir(
+    scenarioDir: string,
+    caseId: string | undefined,
+    scope: OutboxScope,
+  ): Promise<ScenarioResult> {
     const scenarioName = path.basename(scenarioDir);
     
     // Load events
@@ -221,14 +235,25 @@ export class ScenarioHarnessService {
       ? JSON.parse(fs.readFileSync(expectedActionsPath, 'utf-8'))
       : [];
 
-    return this.runScenario(scenarioName, events, expectedTimeline, expectedActions, caseId);
+    return this.runScenario(
+      scenarioName,
+      events,
+      expectedTimeline,
+      expectedActions,
+      caseId,
+      scope,
+    );
   }
 
   /**
    * Golden file'ları günceller
    */
-  async updateGolden(scenarioDir: string, caseId?: string): Promise<{ timeline: number; actions: number }> {
-    const result = await this.runScenarioFromDir(scenarioDir, caseId);
+  async updateGolden(
+    scenarioDir: string,
+    caseId: string | undefined,
+    scope: OutboxScope,
+  ): Promise<{ timeline: number; actions: number }> {
+    const result = await this.runScenarioFromDir(scenarioDir, caseId, scope);
 
     const expectedTimelinePath = path.join(scenarioDir, 'expected_timeline.json');
     const expectedActionsPath = path.join(scenarioDir, 'expected_actions.json');
@@ -243,20 +268,26 @@ export class ScenarioHarnessService {
   }
 
   /**
-   * Test verilerini temizler
+   * Test verilerini temizler.
+   *
+   * V28-FACTSTORE-SECURITY-P0-I01: kapsam kapisi ONCE ve genel `catch` DISINDA
+   * calisir. Onceki halinde `clearCase` hatasi da yutuluyordu; bu, kapsam reddinden
+   * SONRA timeline/outbox silmelerinin yine de kosmasi anlamina gelirdi. Artik kapsam
+   * disi bir case icin hicbir silme calismaz. Genel `catch` yalnizca "tablo yok" turu
+   * ortam hatalarini yutar; kapsam reddi cagirana yukselir.
    */
-  private async clearTestData(caseId: string): Promise<void> {
+  private async clearTestData(caseId: string, scope: OutboxScope): Promise<void> {
+    await this.factStore.clearCase(caseId, { source: 'test_harness' }, scope);
+
     try {
-      await this.factStore.clearCase(caseId, { source: 'test_harness' });
-      
-      // Clear timeline
+      // Clear timeline (kapsam-filtreli)
       await (this.prisma as any).icrabotTimelineEntry?.deleteMany({
-        where: { caseId },
+        where: { caseId, ...outboxScopeWhere(scope) },
       });
 
-      // Clear outbox
+      // Clear outbox (kapsam-filtreli)
       await (this.prisma as any).icrabotOutboxAction?.deleteMany({
-        where: { caseId },
+        where: { caseId, ...outboxScopeWhere(scope) },
       });
     } catch {
       // Tables may not exist

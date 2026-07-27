@@ -159,23 +159,38 @@ export class FactStoreController {
     return { ok: true, key, value: newArray };
   }
 
+  // V28-FACTSTORE-SECURITY-P0-I01: yikici temizleme yuzeyleri fail-closed flag ile
+  // kapali ve tenant-scoped'dir. Kapsam authority'si YALNIZ dogrulanmis
+  // `req.user.tenantId`; body/query/param'daki tenant iddiasi yok sayilir.
   @Delete(':caseId')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(IcrabotV28UnsafeMutationGuard)
   async clearCase(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Body() body: { meta?: any },
   ) {
-    await this.factStore.clearCase(caseId, body?.meta || {});
+    await this.factStore.clearCase(
+      caseId,
+      body?.meta || {},
+      tenantScopeFromRequestUser(req.user),
+    );
     return { ok: true, caseId };
   }
 
   @Post(':caseId/clear')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(IcrabotV28UnsafeMutationGuard)
   async clearCasePost(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Body() body: { meta?: any },
   ) {
-    await this.factStore.clearCase(caseId, body?.meta || {});
+    await this.factStore.clearCase(
+      caseId,
+      body?.meta || {},
+      tenantScopeFromRequestUser(req.user),
+    );
     return { ok: true, caseId };
   }
 
@@ -641,25 +656,31 @@ export class ScenarioHarnessController {
   @Post('run/:scenarioKey')
   @HttpCode(HttpStatus.OK)
   @UseGuards(IcrabotV28DevSurfaceGuard)
-  async runBuiltInScenario(@Param('scenarioKey') scenarioKey: string) {
+  async runBuiltInScenario(
+    @Req() req: any,
+    @Param('scenarioKey') scenarioKey: string,
+  ) {
     const key = scenarioKey as keyof typeof BUILT_IN_SCENARIOS;
     if (!BUILT_IN_SCENARIOS[key]) {
       throw new NotFoundException(`Scenario not found: ${scenarioKey}`);
     }
-    return this.harness.runBuiltInScenario(key);
+    return this.harness.runBuiltInScenario(key, tenantScopeFromRequestUser(req.user));
   }
 
   @Post('run-all')
   @HttpCode(HttpStatus.OK)
   @UseGuards(IcrabotV28DevSurfaceGuard)
-  async runAllScenarios() {
-    return this.harness.runAllBuiltInScenarios();
+  async runAllScenarios(@Req() req: any) {
+    return this.harness.runAllBuiltInScenarios(tenantScopeFromRequestUser(req.user));
   }
 
+  // V28-FACTSTORE-SECURITY-P0-I01: `caseId` cagiran-kontrollu oldugu icin senaryo
+  // temizligi de tenant-scoped'dir; kapsam disi gercek bir dosya temizlenemez.
   @Post('run-custom')
   @HttpCode(HttpStatus.OK)
   @UseGuards(IcrabotV28DevSurfaceGuard)
   async runCustomScenario(
+    @Req() req: any,
     @Body() body: {
       name: string;
       events: Array<{ event_id: string; type: string; [key: string]: any }>;
@@ -674,6 +695,7 @@ export class ScenarioHarnessController {
       body.expectedTimeline || [],
       body.expectedActions || [],
       body.caseId,
+      tenantScopeFromRequestUser(req.user),
     );
   }
 }
