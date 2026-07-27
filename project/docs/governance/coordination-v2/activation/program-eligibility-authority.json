@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
+  "ownerDecisionEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/activation/PARENT-AUTHORIZATION-ENVELOPE.md",
+    "exactExcerpt": "OFFICE      kontrollu canli calistirmaya acilir\nCOLLECTION  kontrollu canli calistirmaya acilir\ndiger dort program  DENIED kalir",
+    "excerptSha256": "b077de2eb68e7f1e0971a86b9f32df53a7615114d67aaf94cfea64e4180b19e9"
+  },
+  "eligiblePrograms": [
+    {
+      "programId": "OFFICE",
+      "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-OFFICE-LIVE-R01.json"
+    },
+    {
+      "programId": "COLLECTION",
+      "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-COLLECTION-LIVE-R01.json"
+    }
+  ]
+}
