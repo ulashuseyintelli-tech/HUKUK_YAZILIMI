@@ -1,5 +1,38 @@
 # EXECUTOR BRIEF — OFFICE-CAP-09A-CONSUMER-01-R01
 
+> **SUPERSEDED — BU BRIEF'İ ÇALIŞTIRMAYIN (2026-07-26).**
+>
+> Bu brief `CAP-09A-CONSUMER-01 / SLICE 3` için yazıldı. Owner o yetkiyi
+> `OFFICE-P2-CAP09A-TO-CAP02-SEQUENCE-SUPERSESSION-R01` kararıyla
+> (PR #1628 / `627c76e4`) supersede etmiştir. Canonical current durum:
+>
+> ```text
+> CAP-09A SLICE 3   SUPERSEDED / NOT CURRENTLY AUTHORIZED / NOT STARTED
+> CAP-09A CONSUMER  ABSENT
+> CAP-09A           PARALLEL / SOFT / NON-BLOCKING ENABLER — first-unit DEĞİL
+> FIRST/PRIMARY     CAP-02 — OBJECT-SCOPE / REPORTINGLINE
+> DELIVERY STRATEGY POPULATION-FIRST
+> ```
+>
+> Kaynak: `OFFICE-DELIVERY-MANIFEST.md` §10, `OFFICE-RISK-REGISTER.md`
+> STF-PRD-AUDIT-001 AUTHORITY SUPERSESSION bloğu.
+>
+> Bunun iki somut sonucu var:
+>
+> 1. `task-plans/OFFICE/plan.v1.json` (`taskSpecSha256 c337cae5…`) **ratifiye
+>    EDİLMEMELİDİR.** `grant.template.json`'daki `semanticAuthorityRef`
+>    `STF-PRD-AUDIT-001`'i gösteriyor ve o kayıt artık SLICE 3'ü
+>    `NOT CURRENTLY AUTHORIZED` diyor. Hash'i onaylamak, geri çekilmiş bir
+>    birime execution grant vermek olurdu.
+> 2. T5'in OFFICE ayağı yeni bir plan ister. `CAP-02 — OBJECT-SCOPE /
+>    REPORTINGLINE` bounded bir task'a indirgenebilirse, o plan sıfırdan
+>    yazılır ve yeniden adversarial review'dan geçer.
+>
+> Belge **tarihsel kayıt olarak korunur** — silinmedi, yeniden yorumlanmadı.
+> Supersession'dan önceki teknik içeriği (parite hedefi, dosya listesi, taksonomi
+> aynası) doğruydu ve SLICE 3 ileride yeniden yetkilendirilirse başlangıç
+> noktasıdır.
+
 Bu dosya orchestrator tarafından executor'a **stdin'den** verilir
 (`run-task.cjs --prompt <bu dosya>`). Bir insan tarafından yapıştırılmaz.
 
