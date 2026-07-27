@@ -11,6 +11,9 @@ Rol        : Routing/discovery katmanıdır; semantic veya execution authority �
 
 - Üst çatı: `project/docs/governance/SYSTEM-CONSTITUTION.md`
 - Ajan baseline: `AGENTS.md` (repo kökü) + `CLAUDE.md` (Claude supplement)
+- Beş modül çalışma routing'i:
+  `project/docs/governance/CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md`
+  (OFFICE/CLIENT/DEBTOR/RECEIVABLE/COLLECTION; non-authorizing discovery map)
 - Ratifiye domain governance: `project/docs/governance/DEBTOR-GOVERNANCE.md` ve
   `project/docs/governance/RECEIVABLE-GOVERNANCE.md`
 - Receivable Legal Subtype Registry V1 artifact pack:
@@ -35,6 +38,7 @@ Rol        : Routing/discovery katmanıdır; semantic veya execution authority �
 Yeni görev
 → AGENTS.md                                   (execution ve repository-safety authority)
 → GOVERNANCE-INDEX.md                         (routing/discovery; authority değildir)
+→ CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md      (workspace module routing; authority değildir)
 → SYSTEM-CONSTITUTION.md                      (system-wide semantic authority)
 → İlgili TÜM RATIFIED / CANONICAL             (cross-domain görevde tek belge seçilmez;
   Domain Law / domain governance               ilgili bütün domain belgeleri okunur)
@@ -74,6 +78,7 @@ commit, merge, release veya runtime authority yetkisi oluşturmaz.
 | `AGENTS.md` (repo kökü) | agent execution ve repository-safety authority | AKTİF |
 | `project/docs/governance/SYSTEM-CONSTITUTION.md` | system-wide semantic authority | RATIFIED / BINDING / CANONICAL v1.9; v1.1 allocation authority + v1.2 RD01 + v1.3 XD-001 + v1.4 ClaimItem formation + v1.5 TPA-02 + v1.6 TPA-03/03A + v1.7 TPA-04 + v1.8 TPA-04A + v1.9 TPA-04B contract. TPA-04B exact two-file amendment PR #1470 / `9dabe8db` ile CLOSED / CANONICAL EVIDENCE; TPA-04C..G ayrı owner gate, runtime/cutover unauthorized |
 | `project/docs/governance/GOVERNANCE-INDEX.md` | routing/discovery ve okuma sırası; authority değildir | RATIFIED / CANONICAL |
+| `project/docs/governance/CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md` | OFFICE/CLIENT/DEBTOR/RECEIVABLE/COLLECTION çalışma modüllerine ve cross-module/shared hatlara başlangıç routing'i; living status veya authority kopyalamaz | CANONICAL ROUTING MAP / NON-AUTHORIZING; Coordination V2 5-vs-6 program taksonomisini çözmez |
 | `project/docs/governance/DEBTOR-GOVERNANCE.md` | ratifiye Debtor Domain Law | RATIFIED / BINDING / CANONICAL v1.0 (2026-07-12; PR #1139 MERGED) |
 | `project/docs/governance/RECEIVABLE-GOVERNANCE.md` | ratifiye Receivable Domain Governance ve tek domain giriş noktası | RATIFIED / BINDING / CANONICAL v1.9; ClaimItem source/input ≠ application target; TPA-02/03/03A, TPA-04, TPA-04A ve TPA-04B contract canonicaldır. TPA-04B exact two-file amendment PR #1470 / `9dabe8db` ile CLOSED / CANONICAL; plan/writer/evidence/cutover/retirement NOT AUTHORIZED |
 | `project/docs/governance/receivable-legal-subtype-registry-v1.md` + `receivable-legal-subtype-registry-v1.json` + `.schema.json` + `.checksum.json` + `-crosswalk.md` | Receivable Claim Formation için exact seven-code, versioned Legal Subtype Registry V1 ratification, machine payload, closed schema, deterministic checksum ve Legal Basis/evidence crosswalk pack'i | `RCV-CLAIM-FORM-P02-S08-D02-SR01` RATIFIED / CANONICAL UPON APPROVED MERGE; registry `RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY@1`, checksum `320f671e…c26e64`, runtime DORMANT; provider/resolver/key/signature/signed release/schema/migration authority NONE; next D02-PB01 owner-gated |
