@@ -417,6 +417,148 @@ test('DV25  the panel prints every selected capability, green ones included', ()
   assert.match(text, /OVERALL: FAIL/);
 });
 
+// ───────────────────────────────────── SCHEMA V2 (DV40–DV45)
+
+const authority = require('../orchestrator/authority.cjs');
+
+const V2_CONTRACT = {
+  capabilityId: 'TEST_CAPABILITY',
+  deliveryClass: 'OPERATOR_CLI',
+  targetState: 'OPERABLE',
+  probeId: 'PROBE_X',
+  probeClass: 'PROBE_DRY',
+  probeDefinitionSha256: 'a'.repeat(64),
+  publicEntrypoint: 'node x.cjs',
+  timeoutMs: 60000,
+};
+const SPEC_V1 = {
+  schemaVersion: 1,
+  taskId: 'T-1',
+  taskSpecVersion: 1,
+  profile: 'BOUNDED_CODE_TASK',
+  declaredIntent: 'A schema v1 task, unchanged in meaning.',
+  boundaryPolicy: { allowedRoots: ['fixture/a/'] },
+  requiredTests: [{ argv: ['node', '-e', '0'] }],
+  predecessorTaskIds: [],
+  baseDriftPolicy: 'REFRESH_BEFORE_EXECUTION',
+  successorDisposition: 'NO_SUCCESSOR',
+};
+const SPEC_V2 = Object.assign({}, SPEC_V1, { schemaVersion: 2, deliveryContract: V2_CONTRACT });
+
+function pinFor(spec, over) {
+  const d = authority.specDigests(spec);
+  return Object.assign(
+    {
+      taskId: spec.taskId,
+      taskSpecVersion: spec.taskSpecVersion,
+      taskSpecSha256: d.taskSpecSha256,
+      declaredIntentSha256: d.declaredIntentSha256,
+      boundaryPolicySha256: d.boundaryPolicySha256,
+      requiredTestsSha256: d.requiredTestsSha256,
+      predecessorTaskIds: [],
+    },
+    spec.schemaVersion === 2 ? { taskSchemaVersion: 2, deliveryContractSha256: d.deliveryContractSha256 } : {},
+    over || {},
+  );
+}
+function grantFor(spec, over) {
+  const excerpt = 'owner ratification';
+  return {
+    schemaVersion: 1,
+    grantId: 'G-1',
+    semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'S1', sourcePath: 'a.md' },
+    executionGrantRef: { kind: 'EXECUTION_GRANT', recordId: 'E1', sourcePath: 'b.md' },
+    ownerRatificationEvidence: {
+      sourcePath: 'a.md',
+      sourceCommitSha: 'c'.repeat(40),
+      exactExcerpt: excerpt,
+      excerptSha256: require('crypto').createHash('sha256').update(excerpt, 'utf8').digest('hex'),
+    },
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    revocationPath: 'r.md',
+    manualMergeRequired: true,
+    allowedModuleRoots: ['fixture/'],
+    authorizedTasks: [pinFor(spec, over)],
+  };
+}
+
+test('DV40  schema v1 keeps its exact meaning and its exact digests', () => {
+  const d = authority.specDigests(SPEC_V1);
+  assert.equal(d.canonical.schemaVersion, 1);
+  // A v1 task has no delivery digest at all — not a null, not an empty string.
+  // Every historical grant pins four values and must keep matching.
+  assert.equal(d.deliveryContractSha256, undefined);
+  assert.equal(d.canonical.deliveryContract, undefined);
+  assert.ok(authority.validateAgainstGrant({ grant: grantFor(SPEC_V1), spec: SPEC_V1 }).grantId);
+});
+
+test('DV41  a schema v2 task carries its delivery contract inside the canonical spec', () => {
+  const d = authority.specDigests(SPEC_V2);
+  assert.equal(d.canonical.schemaVersion, 2);
+  assert.match(d.deliveryContractSha256, /^[0-9a-f]{64}$/);
+  // Inside, not referenced. A contract hashed separately could drift from the
+  // spec the grant pinned; inside taskSpecSha256, it cannot.
+  assert.ok(d.canonical.deliveryContract);
+  assert.notEqual(d.taskSpecSha256, authority.specDigests(SPEC_V1).taskSpecSha256);
+
+  // The evidence policy is expanded to its fields, never left as a name: a
+  // policy name is a promise nobody can check.
+  for (const f of authority.DELIVERY_EVIDENCE_POLICY_FIELDS) {
+    assert.equal(typeof d.canonical.deliveryContract.evidencePolicy[f], 'boolean', f);
+  }
+});
+
+test('DV42  digests are settled — materializing them does not move them', () => {
+  const d = authority.specDigests(SPEC_V2);
+  const materialized = Object.assign({}, SPEC_V2, { deliveryContractSha256: d.deliveryContractSha256 });
+  const again = authority.specDigests(materialized);
+  assert.equal(again.taskSpecSha256, d.taskSpecSha256);
+  assert.equal(again.deliveryContractSha256, d.deliveryContractSha256);
+});
+
+test('DV43  a mixed-version or self-contradicting task fails closed', () => {
+  const bad = (spec, code) => assert.throws(() => authority.specDigests(spec), (e) => e.code === code, code);
+  bad(Object.assign({}, SPEC_V2, { deliveryContract: undefined }), 'TASK_SPEC_DELIVERY_CONTRACT_REQUIRED');
+  bad(Object.assign({}, SPEC_V1, { deliveryContract: V2_CONTRACT }), 'TASK_SPEC_MIXED_VERSION');
+  bad(Object.assign({}, SPEC_V1, { schemaVersion: 3 }), 'TASK_SPEC_SCHEMA_VERSION');
+  // A self-declared digest is a claim, not evidence: it is recomputed. This is
+  // the #1696 defect in one assertion.
+  bad(Object.assign({}, SPEC_V2, { deliveryContractSha256: 'b'.repeat(64) }), 'DELIVERY_CONTRACT_HASH_MISMATCH');
+});
+
+test('DV44  a grant must pin the delivery claim it ratified', () => {
+  assert.ok(authority.validateAgainstGrant({ grant: grantFor(SPEC_V2), spec: SPEC_V2 }).grantId);
+
+  const reject = (grant, spec, code) =>
+    assert.throws(() => authority.validateAgainstGrant({ grant, spec }), (e) => e.code === code, code);
+
+  // A v1 entry has no delivery digest, so authorizing a v2 task would be
+  // authorizing a delivery claim it never saw.
+  reject(grantFor(SPEC_V2, { taskSchemaVersion: undefined, deliveryContractSha256: undefined }), SPEC_V2, 'GRANT_TASK_SCHEMA_VERSION_MISMATCH');
+  reject(grantFor(SPEC_V2, { deliveryContractSha256: undefined }), SPEC_V2, 'GRANT_DELIVERY_CONTRACT_DIGEST_MISSING');
+  reject(grantFor(SPEC_V2, { deliveryContractSha256: 'd'.repeat(64) }), SPEC_V2, 'DELIVERY_CONTRACT_HASH_MISMATCH');
+});
+
+test('DV45  changing the claim breaks the grant; changing the prose does not', () => {
+  const g = grantFor(SPEC_V2);
+
+  const retargeted = Object.assign({}, SPEC_V2, {
+    deliveryContract: Object.assign({}, V2_CONTRACT, { targetState: 'WIRED_DISABLED' }),
+  });
+  assert.throws(
+    () => authority.validateAgainstGrant({ grant: g, spec: retargeted }),
+    (e) => e.code === 'DELIVERY_CONTRACT_HASH_MISMATCH',
+    'a changed target state must be reported as a changed delivery claim, not a generic spec drift',
+  );
+
+  // If editing a sentence invalidated a ratified grant, nobody would ever
+  // improve one.
+  const retitled = Object.assign({}, SPEC_V2, {
+    deliveryContract: Object.assign({}, V2_CONTRACT, { title: 'nicer words', rationale: 'because' }),
+  });
+  assert.ok(authority.validateAgainstGrant({ grant: g, spec: retitled }).grantId);
+});
+
 // ───────────────────────────────────── COMMAND DIGEST (DV30–DV34)
 
 const CMD_CTX = { repoRoot: 'C:/repo', fixtureRoot: 'C:/tmp/fx-123' };
