@@ -5,8 +5,11 @@ Belge yolu : project/docs/governance/coordination-v2/governance-orchestration-co
 Contract ID: GOV-COORD-V2
 Durum      : RATIFIED WITH LIMITATION — 2026-07-26
              BOUNDED_CODE_TASK       : RATIFIED FOR USE
-             MECHANICAL_GOVERNANCE   : NON-ELIGIBLE / KULLANILAMAZ (§1.2)
-             AUTO-MERGE              : OFF · MANUAL OWNER MERGE REQUIRED
+             MECHANICAL_GOVERNANCE   : KISITLI — owner kararıyla açıldı (§1.2-A)
+             AUTO-MERGE              : VARSAYILAN OFF · standing grant +
+                                       --auto-merge birlikteyse SINIRLI AÇIK
+                                       (OWNER-GRANT-ORCHESTRA-PRODUCTION-
+                                        ACTIVATION-R01)
 Rol        : Bounded code task işlerinin tek orchestrator üzerinden, immutable
              authorization altında, fail-closed sınırlarla yürütülmesi için
              execution contract'ı.
@@ -21,18 +24,22 @@ girmesidir; tek tek task'lar ayrıca ratifiye plan + execution grant ister.
 ```text
 RATIFIED           : 2026-07-26
 KAPSAM             : BOUNDED_CODE_TASK profili
-KAPSAM DIŞI        : MECHANICAL_GOVERNANCE profili — NON-ELIGIBLE (§1.2)
-AUTO-MERGE         : OFF
-MANUAL OWNER MERGE : REQUIRED
+KISITLI KAPSAM     : MECHANICAL_GOVERNANCE profili — §1.2-A ile açıldı;
+                     yüzeyi V1 queueExceptions, auto-merge YOK
+AUTO-MERGE         : bu ratifikasyonda OFF idi; §1.2-A ile aynı owner
+                     envelope altında BOUNDED_CODE_TASK için standing grant
+                     kapsamında açıldı — governance işleri için KAPALI kalır
+MANUAL OWNER MERGE : standing grant yoksa REQUIRED
 KAYDEDEN           : agent, owner GO-COMPLETE altında
                      (T5-LIVE-PILOT-OWNER-DECISIONS-AND-PLAN-AUTHORING-R01)
 RATİFİKASYON KANITI: owner'ın ilgili brief'i — bu commit DEĞİLDİR
 ```
 
-`MECHANICAL_GOVERNANCE` açığı bu ratifikasyonla **kapatılmamış**, açıkça
-`NON-ELIGIBLE` işaretlenerek dondurulmuştur. Düzeltmesi ayrı bir contract
-follow-up candidate'ıdır ve bu turda uygulanmamıştır. Governance kaydı yazımı
-gerektiğinde yürürlükteki **V1 mekanizması** kullanılır.
+`MECHANICAL_GOVERNANCE` açığı bu ratifikasyonda kapatılmamış, açıkça
+`NON-ELIGIBLE` işaretlenerek dondurulmuştu. **§1.2-A ile owner kararına
+dayanarak kapatılmıştır**; kapatma şekli §1.2'nin kendi işaret ettiği tek
+kanonik adaydır — V1 mekanizmasının V2'ye taşınması. Kanonik governance
+belgeleri profilden hala ULAŞILAMAZ; yazımı yürürlükteki **V1 akışı** yapar.
 
 `decision-log.md` owner-WIP (`grandfatheredOwnerWipExactPaths`) olduğundan
 otoritatif ratifikasyon girdisi agent tarafından yazılamaz; owner tarafından
@@ -60,7 +67,7 @@ path normalization · diff extraction · deny evaluation
 
 | Profil | Policy | Validation | Kullanılabilirlik |
 |---|---|---|---|
-| `MECHANICAL_GOVERNANCE` | exact declared target allowlist | expected exact content/hash | **KULLANILAMAZ — §1.2** |
+| `MECHANICAL_GOVERNANCE` | V1 queueExceptions | V1 level2Operations | **KISITLI — §1.2-A** |
 | `BOUNDED_CODE_TASK` | task-specific **positive** allowed roots | actual diff boundary + invariant/test | kullanılabilir |
 
 **KURAL:** Global denylist dışında kalan hiçbir yol kendiliğinden izinli
@@ -156,6 +163,49 @@ yürürlükteki V1 mekanizması zaten kullanılabilir, dolayısıyla acil bir
 operasyonel boşluk yoktur. Ancak bu boşluk kapanmadan V2 ratifiye edilirse ölü
 bir profil sabitlenir ve sonraki düzeltme amendment olur. Bu nedenle
 ratifikasyonun ön koşuludur, T5'in değil.
+
+
+### 1.2-A AMENDMENT — bosluk owner karariyla kapatildi
+
+`OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01`
+
+Yukaridaki §1.2 analizi **gecerli kalir** ve silinmemistir: profil ilan edildigi
+haliyle ulasilabilir bir yuzeye sahip degildi, ve ona yuzey vermek §1'in
+"override EDILEMEZ" hukmune bir istisna sinifi eklemek anlamina geliyordu. §1.2
+bunun bir **owner karari** oldugunu, mekanik duzeltme olmadigini soyluyordu.
+
+O karar verilmistir. Parent authorization envelope:
+
+```text
+MECHANICAL_GOVERNANCE profili yalniz onceden tanimlanmis governance isleri
+icin acilir.
+```
+
+Kapatma sekli, §1.2'nin kendi isaret ettigi tek kanonik adaydir — yeni bir
+allowlist icat edilmemis, V1'in ratifiye mekanizmasi V2'ye tasinmistir:
+
+```text
+level2Operations   EXACT_APPEND_AT_DECLARED_ANCHOR · EXACT_LITERAL_REPLACEMENT
+                   EXACT_REFERENCE_REWRITE · DETERMINISTIC_REGISTER_REGENERATION
+queueExceptions    coordination-requests/<requestId>/request.md
+                   coordination-results/<requestId>/result.md
+```
+
+**Sonucu yanlis okumamak onemlidir.** Bu amendment kanonik governance
+belgelerini profile acmaz. `decision-log.md`, `active-roadmap.md`,
+`product-backlog.md`, register'lar ve ADR'ler bu profilden **ULASILAMAZ**
+kalmaya devam eder; §1 forbidden seti degismemistir. Profil bir request/result
+artefakti uretir, uygulamayi yururlukteki V1 governance-writer akisi yapar.
+
+`AUTO_MERGE` V1'in `deniedCapabilities` listesindedir ve orada kalir. Envelope
+auto-merge'u yalniz kendi PR'lari ve OFFICE/COLLECTION standing grant'lari icin
+yetkilendirir; bir governance gorevi bunlarin hicbiri degildir, dolayisiyla bu
+profilin grant'i `autoMergeAuthorized: false` tasir ve PR'lari insan merge eder.
+
+Mekanik zorlama: `project/scripts/orchestration-v2/orchestrator/governance-profile.cjs`.
+Grant: `coordination-v2/activation/STANDING-GRANT-MECHANICAL-GOVERNANCE-R01.json`.
+Testler, dort operasyonun ve iki yolun V1 JSON'undan **turetildigini** — burada
+yeniden yazilmadigini — dogrular.
 
 ## 2. Immutable authorization
 
