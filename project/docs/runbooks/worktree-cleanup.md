@@ -2,7 +2,7 @@
 
 **Status:** Active · **Owner:** Platform · **Son güncelleme:** 2026-07-05 (ACT-17)
 
-Bu runbook HUKUK_YAZILIMI repo'sunda biriken git worktree'lerinin ve merged branch'lerin GÜVENLİ temizliği için bağlayıcı operasyon prosedürüdür. Windows junction + pnpm hardlink/store yapısı ve çoklu Claude/Codex oturumu nedeniyle naif recursive silme canonical repoyu sessizce bozabilir. Normatif özet `process-rules.md`'dedir; bağlayıcı kaynak AGENTS.md.
+Bu runbook HUKUK_YAZILIMI repo'sunda biriken git worktree'lerinin ve merged branch'lerin GÜVENLİ temizliği için bağlayıcı operasyon prosedürüdür. Windows junction + pnpm hardlink/store yapısı ve çoklu Claude/Codex oturumu nedeniyle naif recursive silme canonical repoyu sessizce bozabilir. Normatif çekirdek `AGENTS.md` §6'dadır; bu runbook bağlayıcı mekanik prosedürdür. `process-rules.md` yalnız açıklama/şablon katmanıdır.
 
 ## Neden bu runbook var (incident geçmişi)
 
@@ -138,4 +138,4 @@ Bozulma → `pnpm install --force` (relink). Store dosyaları eksikse → owner-
 ```
 
 ## Referanslar
-- `process-rules.md` (normatif özet) · `decision-log.md` · `architecture-index.md` · AGENTS.md (Repository discipline / Worktree Isolation Protocol) · `maintenance-register.md` (MR-001 uncommitted WIP, MR-004 committed divergence).
+- `process-rules.md` (açıklama/şablon katmanı) · `decision-log.md` · `architecture-index.md` · AGENTS.md (Repository discipline / Worktree Isolation Protocol) · `maintenance-register.md` (MR-001 uncommitted WIP, MR-004 committed divergence).
