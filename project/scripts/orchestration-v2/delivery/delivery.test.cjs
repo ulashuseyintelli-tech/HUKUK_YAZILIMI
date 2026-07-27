@@ -417,6 +417,78 @@ test('DV25  the panel prints every selected capability, green ones included', ()
   assert.match(text, /OVERALL: FAIL/);
 });
 
+// ───────────────────────────────────── RUNTIME IMPACT (DV60–DV63)
+
+const impactMod = require('./runtime-impact.cjs');
+
+test('DV60  a diff that touches anything executable is runtime-impacting', () => {
+  const runtime = [
+    'project/apps/api/src/modules/office/x.ts',
+    'project/packages/shared/y.ts',
+    'project/scripts/orchestration-v2/service/finalize.cjs',
+    'project/prisma/schema.prisma',
+    '.github/workflows/ci.yml',
+    'project/package.json',
+    'AGENTS.md',
+    'some/other/place/tool.sh',
+  ];
+  for (const p of runtime) {
+    assert.equal(impactMod.classifyPath(p).runtime, true, p);
+    assert.equal(impactMod.classify([p]).runtimeImpact, true, p);
+  }
+});
+
+test('DV61  documentation is not automatically non-runtime', () => {
+  // Each of these is a text file that decides what the system does. A CI
+  // manifest chooses which specs execute; a coordination-v2 record decides what
+  // may run at all. Calling them "docs" is how a runtime change gets a
+  // NOT_APPLICABLE.
+  const deceptive = [
+    'project/apps/api/ci-manifests/pure/platform-scripts-shared.txt',
+    'project/docs/governance/coordination-v2/programs.manifest.json',
+    'project/docs/governance/coordination-v2/activation/STANDING-GRANT-OFFICE-LIVE-R01.json',
+    'project/docs/governance/coordination-v2/task-plans/CANARY/plan.v2.json',
+    'project/docs/governance/governance-writer-coordination-protected-paths.json',
+  ];
+  for (const p of deceptive) assert.equal(impactMod.classifyPath(p).runtime, true, p);
+});
+
+test('DV62  genuinely inert files classify as non-runtime', () => {
+  const inert = [
+    'project/docs/governance/decision-log.md',
+    'project/docs/adr/ADR-014.md',
+    'README.md',
+    'project/docs/design/diagram.png',
+  ];
+  for (const p of inert) assert.equal(impactMod.classifyPath(p).runtime, false, p);
+  const v = impactMod.classify(inert);
+  assert.equal(v.runtimeImpact, false);
+  assert.equal(v.classifiedPaths.length, inert.length);
+
+  // A markdown file beside the code it documents is still documentation.
+  assert.equal(impactMod.classifyPath('project/scripts/orchestration-v2/delivery/evidence/README.md').runtime, false);
+});
+
+test('DV63  the unknown case and the empty case both fail towards runtime', () => {
+  // A classifier whose unknown case is "harmless" will one day be handed
+  // something that is not. Being wrong in this direction costs a probe that ran
+  // unnecessarily.
+  assert.equal(impactMod.classifyPath('weird/thing.unknownext').runtime, true);
+  assert.equal(impactMod.classifyPath('no-extension-file').runtime, true);
+
+  // A task that changed nothing did not deliver anything either; calling that
+  // NOT_APPLICABLE would let a no-op close a chain.
+  const empty = impactMod.classify([]);
+  assert.equal(empty.runtimeImpact, true);
+  assert.deepEqual(empty.reasons, ['EMPTY_DIFF_IS_NOT_PROOF']);
+
+  assert.throws(
+    () => impactMod.assertNotApplicableAllowed(['project/apps/api/src/x.ts']),
+    (e) => e.code === 'DELIVERY_NOT_APPLICABLE_FOR_RUNTIME_DIFF',
+  );
+  assert.ok(impactMod.assertNotApplicableAllowed(['project/docs/governance/decision-log.md']));
+});
+
 // ───────────────────────────────────── SUCCESSOR GATE (DV50–DV53)
 
 const successorMod = require('../orchestrator/successor.cjs');
