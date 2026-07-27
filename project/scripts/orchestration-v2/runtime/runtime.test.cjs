@@ -393,6 +393,53 @@ test('pr provider: state reads the target tip from the remote, not a local ref',
   assert.ok(gitCalls.some((c) => c.startsWith('ls-remote origin refs/heads/main')));
 });
 
+// The executor may not commit, so it leaves its work uncommitted. Nothing
+// turned that into a commit: `push` alone produced a branch identical to main
+// and PR creation failed with "No commits between main and ...", on a live run
+// where the file had been written correctly and every required test had passed.
+test('pr provider: the validated worktree is committed before it is pushed', async () => {
+  const calls = [];
+  const p = createGhPrProvider({
+    repoCwd: '/repo',
+    ghRunner: () => 'https://github.com/o/r/pull/42',
+    gitRunner: (args) => {
+      calls.push(args.join(' '));
+      if (args[0] === 'rev-parse') return 'orchestrator/task-abc';
+      return '';
+    },
+  });
+  const pr = await p.open({ taskId: 'T-1', worktreePath: '/wt', verdict: { changeCount: 1 }, validated: {} });
+  assert.equal(pr.number, 42);
+
+  const add = calls.findIndex((c) => c.startsWith('add -A'));
+  const commit = calls.findIndex((c) => c.startsWith('commit '));
+  const push = calls.findIndex((c) => c.startsWith('push '));
+  assert.ok(add >= 0 && commit >= 0 && push >= 0, JSON.stringify(calls));
+  assert.ok(add < commit && commit < push, 'must add, then commit, then push: ' + JSON.stringify(calls));
+});
+
+// boundary.validate returns changeCount and has never returned `changes`, so
+// reading `.changes.length` rendered "changedFiles : 0" on every PR — including
+// the one whose executor had done the work correctly.
+test('pr provider: the PR body reports the real change count', async () => {
+  let body = '';
+  const p = createGhPrProvider({
+    repoCwd: '/repo',
+    ghRunner: (args) => {
+      const i = args.indexOf('--body');
+      if (i >= 0) body = args[i + 1];
+      return 'https://github.com/o/r/pull/9';
+    },
+    gitRunner: (args) => (args[0] === 'rev-parse' ? 'orchestrator/task-xyz' : ''),
+  });
+  await p.open({ taskId: 'T-2', worktreePath: '/wt', verdict: { changeCount: 3 }, validated: {} });
+  assert.match(body, /changedFiles\s+: 3/);
+
+  // An absent count must not silently read as zero work.
+  await p.open({ taskId: 'T-3', worktreePath: '/wt', verdict: {}, validated: {} });
+  assert.match(body, /changedFiles\s+: unknown/);
+});
+
 test('pr provider: a detached worktree HEAD refuses to open a PR', async () => {
   const p = createGhPrProvider({
     repoCwd: '/repo',
