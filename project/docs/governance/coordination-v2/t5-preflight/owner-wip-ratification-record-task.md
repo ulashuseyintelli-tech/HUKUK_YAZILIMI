@@ -1,109 +1,109 @@
-# Owner-WIP Blocker — Exact Minimal Ratification-Record Task
+# T5 Owner-WIP Ratification Record Reconciliation
 
 ```text
-Task        : T5-LIVE-PILOT-OWNER-DECISIONS-AND-PLAN-AUTHORING-R01, PHASE B
-Base        : origin/main @ 2f309e83
-BLOCKER     : decision-log.md agent tarafından yazılamaz (owner WIP)
-DURUM       : atlanmadı — exact metin aşağıda, owner'ın yazması gerekiyor
+Task          : T5-OWNER-WIP-RATIFICATION-RECORD-RECONCILIATION-R02
+Current base  : fresh origin/main
+Disposition   : canonical reconciliation authorized
+Auto-merge    : OFF
 ```
 
-## 1. Neden agent yazamıyor
+## 1. Exact owner override
 
-`governance-writer-coordination-protected-paths.json` →
-`grandfatheredOwnerWipExactPaths` şunları içerir:
+Bu görev için owner, `decision-log.md` üzerindeki `OWNER_WIP_MUTATION` yasağına tek seferlik
+exact-path override vermiştir.
+
+Global owner-WIP koruması kaldırılmamıştır. Override yalnız aşağıdaki exact dosyalarda bu
+reconciliation görevine uygulanır:
 
 ```text
-project/docs/governance/decision-log.md          ← otoritatif kapanış kaynağı
-project/docs/governance/product-backlog.md
-project/docs/governance/COLLECTION-GOVERNANCE.md
-project/docs/governance/COLLECTION-RISK-REGISTER.md
+project/docs/governance/decision-log.md
+project/docs/governance/coordination-v2/t5-preflight/owner-wip-ratification-record-task.md
 ```
 
-V1 `deniedCapabilities` → `OWNER_WIP_MUTATION` `DENIED`; `CLAUDE.md` §8
-"kullanıcıya ait WIP'e dokunma". Bu dört dosyaya **dokunulmadı**.
+## 2. Current record disposition
 
-Bunun somut sonucu: `OFFICE-OWNER-DECISIONS.md:9`'a göre otoritatif kapanış
-kaynağı `decision-log.md`'dir. Bu turda yazılan kayıtlar
-(`COLLECTION-DECOMPOSITION.md`, `OFFICE-RISK-REGISTER.md`,
-`active-roadmap.md`, contract §0.0) gerçek ve doğrulanabilir, ancak
-**otoritatif kapanış girdisi değildir**. Plan'ların `semanticAuthorityRef`'i
-bu boşluğu taşır.
+| Program | Current disposition |
+|---|---|
+| COLLECTION | Canonical execution/authorization record reconciliation authorized. COLLECTION plan hash ratification **NOT INCLUDED**; hash ayrıca owner-gated'dir. |
+| OFFICE | Eski §2.2 authorization **SUPERSEDED**. Eski OFFICE plan hash'i **MUST NOT BE RATIFIED**. Yeni bounded OFFICE task `NONE`; CAP-02 yalnız analysis/read-only. |
+| GOV-COORD-V2 | Canonical limitation record reconciliation authorized. Execution grant **NOT INCLUDED**; auto-merge `OFF`. |
 
-## 2. Yazılması gereken exact minimal girdiler
+Decision-log reconciliation tamamlandığında bu tablo kayıtların canonical log'a taşındığını
+gösterir; plan, grant, lease veya execution readiness üretmez.
 
-Aşağıdaki üç satır `decision-log.md`'ye eklenirse blocker kapanır. Metin
-owner'ın kendi kararlarının transkripsiyonudur; agent yeni bir karar
-önermemektedir.
+## 3. OFFICE historical draft
 
-### 2.1 COLLECTION
+### HISTORICAL / SUPERSEDED / DO NOT APPEND / DO NOT RATIFY
+
+Önceki task metni `CAP-09A-CONSUMER-01 / SLICE 3: OWNER-AUTHORIZED` diyordu. Bu metin current
+authority değildir ve `decision-log.md`'ye taşınamaz. Current disposition:
 
 ```text
-| 2026-07-26 | **RC-COL / W2.2D-1 — SCHEMA FOUNDATION EXECUTION RECONCILIATION +
-W2.2D-1A OWNER AUTHORIZATION:** PR #1415 (squash `80a11c2a4dff047e86879d8628cdb090fae66743`,
-merged 2026-07-18T18:35:53Z, migration `20260718210000_rc_col_w2_2d1_collection_confirmed_at_foundation`)
-W2.2D-1'in icra edilmiş schema-foundation dilimi olarak TESCİL EDİLİR.
-**DISPOSITION: MERGED_WITHOUT_MATCHING_GOVERNANCE_RECORD.** Bu tescil geçmişe dönük
-execution authority ÜRETMEZ; yalnız canonical gerçekleşmeyi kaydeder ve successor
-planlamasını açar. **W2.2D-1A — CONFIRMED-AT CHARACTERIZATION** owner-authorized
-test-only successor olarak kaydedilir: amaç mevcut Collection confirmation davranışını
-testlerle karakterize etmektir; yeni confirmedAt semantiği, production kod değişikliği,
-schema/migration değişikliği ve lifecycle davranışı YASAKTIR. W2.2D-1'in kalan semantik
-kapsamı OWNER GO REQUIRED kalır; W2.2D-1A onu KAPATMAZ. COL-RISK-G03 PARTIALLY MITIGATED
-kalır. | ... | ... | ... |
+CAP-09A-CONSUMER-01 / SLICE 3:
+SUPERSEDED / WITHDRAWN
+NOT CURRENTLY AUTHORIZED
+NOT STARTED
+NOT IMPLEMENTED
+
+CAP-09A consumer:
+ABSENT
+
+CAP-09A current role:
+PARALLEL / SOFT / NON-BLOCKING ENABLER
+
+CURRENT FIRST / PRIMARY:
+CAP-02 — OBJECT-SCOPE / REPORTINGLINE
+
+DELIVERY STRATEGY:
+POPULATION-FIRST
+
+CAP-02 CURRENT TECHNICAL AUTHORITY:
+GO-ANALYZE / READ-ONLY
 ```
 
-### 2.2 OFFICE
-
-> **SUPERSEDED — BU TASLAĞI `decision-log.md`'YE OLDUĞU GİBİ YAZMAYIN (2026-07-26).** Aşağıdaki taslak `T5-LIVE-PILOT-OWNER-DECISIONS-AND-PLAN-AUTHORING-R01` (PR #1619 / `64d54732`) tarihlidir ve `CAP-09A-CONSUMER-01 / SLICE 3: OWNER-AUTHORIZED` der. Owner aynı gün verdiği `OFFICE-P2-CAP09A-TO-CAP02-SEQUENCE-SUPERSESSION-R01` kararıyla (PR #1628 / `627c76e4`) bu yetkilendirmeyi current ve future OFFICE execution sequence bakımından **supersede etmiştir**: SLICE 3 `NOT CURRENTLY AUTHORIZED / NOT STARTED`; current first/primary executable workstream `CAP-02 — OBJECT-SCOPE / REPORTINGLINE`; delivery strategy `POPULATION-FIRST`. Taslak **tarihsel kayıt olarak korunur**, fakat olduğu gibi yapıştırılırsa supersede edilmiş bir yetki otoritatif `decision-log.md`'ye girer. Güncel durum yüzeyi: `OFFICE-DELIVERY-MANIFEST.md` §10 ve `OFFICE-RISK-REGISTER.md` STF-PRD-AUDIT-001 AUTHORITY SUPERSESSION bloğu.
+Eski OFFICE plan hash'i:
 
 ```text
-| 2026-07-26 | **OFFICE PHASE 2 / CAP-09A — AUTHORITY RECONCILIATION + SLICE 3
-AUTHORIZATION:** `decision-log.md` 2026-07-22 CAP-09 GO-DECIDE kaydı ("SLICE 1 bu kayıtla
-yetkilendirilir") ile `OFFICE-RISK-REGISTER.md` STF-PRD-AUDIT-001 satırı ("SLICE 3 olarak
-yetkilendirmiştir") arasındaki çelişki **risk register esas alınarak** çözülür.
-**CAP-09A-CONSUMER-01 / SLICE 3: OWNER-AUTHORIZED.** Kapsam yalnız `StaffService.remove()`'u
-`LawyerService.delete()` ile transactional audit attribution paritesine getirmektir.
-YASAK: AuditLog şeması değiştirmek, yeni audit taksonomisi üretmek, SLICE 2 kapsamını örtük
-uygulamak, başka staff lifecycle davranışlarını değiştirmek. **SLICE 2 (`CAP-09A-FOUNDATION`
-= `OFFICE-PHASE2-CAP09A-FOUNDATION-I01`) İPTAL EDİLMEMİŞTİR** ve kalan tüketici kapsamı ayrı
-ve sonraki unit olarak durur. REPOSITORY GERÇEĞİ: SLICE 2'nin foundation'ı zaten icra
-edilmiştir — PR #1536 / `580edd8e`, migration `20260722213239_office_phase2_cap09a_foundation_audit_attribution`,
-canlı DB APPLIED (TRAIN-R02 2026-07-23, exec `b3b0fa5b8183`); dolayısıyla "SLICE 3'ü SLICE 2
-öncesine alma" fiilen konusuzdur. | ... | ... | ... |
+c337cae59c0a28da4018d7666e64701881bc4fc5892098428fd572eea3af3b27
+NOT RATIFIABLE UNDER CURRENT AUTHORITY
 ```
 
-### 2.3 GOV-COORD-V2
+## 4. T5 readiness
 
 ```text
-| 2026-07-26 | **GOV-COORD-V2 — RATIFIED WITH LIMITATION:** `BOUNDED_CODE_TASK` profili
-RATIFIED FOR USE. `MECHANICAL_GOVERNANCE` profili, ulaşılabilir hedef yüzeyi bulunmadığı
-için (contract §1.2) **NON-ELIGIBLE / KULLANILAMAZ** işaretlenir; bu açık T5 bounded-code
-pilotunu BLOKE ETMEZ ve ayrı bir contract follow-up candidate'ı olarak kaydedilir.
-Governance kaydı yazımı için yürürlükteki V1 mekanizması kullanılır. AUTO-MERGE: OFF.
-MANUAL OWNER MERGE: REQUIRED. Manifest elle ELIGIBLE yapılmaz; eligibility, ratifiye plan
-ve execution grant sonrasında orchestrator tarafından hesaplanır. | ... | ... | ... |
+COLLECTION:
+plan exists / review PASS
+owner hash ratification still required
+execution grant not created
+
+OFFICE:
+old plan invalid under current authority
+new candidate not yet designed
+CAP-02 bounded-task eligibility not proven
+execution grant prohibited
+
+T5 LIVE_TWO_PROGRAM:
+NOT READY
+
+T5 LIVE_ONE_PROGRAM:
+NOT AUTHORIZED
+contract change would require separate owner decision
 ```
 
-## 3. Ayrıca owner düzeltmesi bekleyen bayat satırlar
+COLLECTION plan hash `4a84fe4c658d0370219840bbc4fc9af29b1fe5747e9be9494fd43c5586bd407e`
+bu görevle ratifiye edilmez.
 
-Bunlar `product-backlog.md` içindedir (owner WIP) ve doğrulanmış biçimde
-yanlıştır:
+## 5. Authority boundary
 
-```text
-:3327  "(2026-07-21; REGISTERED / NOT IMPLEMENTED)"
-:3338  "Status: OPEN / NOT IMPLEMENTED — ... YETKİLENDİRİLMEMİŞTİR."
-:3342  "NEXT ELIGIBLE ACTION: OFFICE-AUTH-P02-HARDENING-R01 — ayrı GO-IMPLEMENT gerektirir"
-```
+Bu reconciliation görevi `decision-log.md` yazımına tek seferlik owner mutation authority taşır.
 
-Gerçek: 5/5 residual kodda mevcut; kod PR #1494 / `b9916f5b`; canlı DB GATE M3
-+ TRAIN-R02 exec `b3b0fa5b8183`. Kanıt tablosu
-`t5-preflight/office-stale-register-reconciliation.md §2`'dedir.
+Bu belge veya bu PR:
 
-`:3330-3334`'teki "Mevcut kod:" tespitleri **tarihsel kayıttır ve
-silinmemelidir**; yalnız statü satırları düzeltilmelidir.
+- plan hash ratification,
+- execution grant,
+- lease,
+- T5 run,
+- program-count change,
+- production mutation
 
----
-
-**AUTHORITY: NONE.** Bu belge bir owner kararı üretmez; owner'ın verdiği
-kararların, agent'ın yazamadığı dosyalar için hazırlanmış exact
-transkripsiyonudur.
+yetkisi üretmez.
