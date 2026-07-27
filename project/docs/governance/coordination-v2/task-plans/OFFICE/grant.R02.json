@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "grantId": "T5-OFFICE-CAP02-EXECUTION-GRANT-R02",
+  "workstream": "OFFICE-CAP-02",
+  "semanticAuthorityRef": {
+    "kind": "SEMANTIC_AUTHORITY",
+    "recordId": "OFFICE-CAP02-REPORTINGLINE-READ-CHARACTERIZATION-R01-AUTHORITY",
+    "sourcePath": "project/docs/governance/decision-log.md"
+  },
+  "executionGrantRef": {
+    "kind": "EXECUTION_GRANT",
+    "recordId": "T5-OFFICE-CAP02-EXECUTION-GRANT-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/OFFICE/execution-grant.R02.md"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/OFFICE/plan-ratification.R02.md",
+    "sourceCommitSha": "49ddb7fdf42d75767d81030b830bd5ed630f296b",
+    "exactExcerpt": "taskId               OFFICE-CAP-02-REPORTINGLINE-READ-CHARACTERIZATION-R01\ntaskSpecVersion      1\ntaskSpecSha256       bbf1d6a2cfaf20363c7a7bb9077ec6654baeea5b7a860db18fd9c8d4aa4d3acd\ndeclaredIntentSha256 f261c215698eba9fe110f2ccd12c0edba4753eb4bd91876705d99b7a689e52d1\nboundaryPolicySha256 f906133efb25f7476bf883d9a9b60cc1faa712199ab1e5e4e647f771fac63d8f\nrequiredTestsSha256  0b6493fedea46b6c942343f92b594dd85ca6e015e49e5ff8dae83b223e87f01f\nbasePolicy           REFRESH_BEFORE_EXECUTION\nbaseSha              5e35db28903a538784d264a7919e32c0bd2b7c9f\nplanRef              project/docs/governance/coordination-v2/task-plans/OFFICE/plan.v3.json\n",
+    "excerptSha256": "f9fd1f06eb690d7a34c775974002064381efba2d0b9bc82cd4c775d41e06efc6"
+  },
+  "authorizedTasks": [
+    {
+      "taskId": "OFFICE-CAP-02-REPORTINGLINE-READ-CHARACTERIZATION-R01",
+      "taskSpecVersion": 1,
+      "taskSpecSha256": "bbf1d6a2cfaf20363c7a7bb9077ec6654baeea5b7a860db18fd9c8d4aa4d3acd",
+      "declaredIntentSha256": "f261c215698eba9fe110f2ccd12c0edba4753eb4bd91876705d99b7a689e52d1",
+      "boundaryPolicySha256": "f906133efb25f7476bf883d9a9b60cc1faa712199ab1e5e4e647f771fac63d8f",
+      "requiredTestsSha256": "0b6493fedea46b6c942343f92b594dd85ca6e015e49e5ff8dae83b223e87f01f"
+    }
+  ],
+  "allowedModuleRoots": [
+    "project/apps/api/src/modules/reporting-line/__tests__/reporting-line.service.spec.ts/"
+  ],
+  "expiresAt": "2026-07-28T07:56:54Z",
+  "revocationPath": "project/docs/governance/coordination-v2/task-plans/OFFICE/REVOKED",
+  "manualMergeRequired": true
+}
