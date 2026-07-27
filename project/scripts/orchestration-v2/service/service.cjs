@@ -29,6 +29,7 @@ const path = require('path');
 
 const queueMod = require('../orchestrator/queue.cjs');
 const recoveryMod = require('../orchestrator/recovery.cjs');
+const dispatchMod = require('../orchestrator/dispatch.cjs');
 
 /**
  * Control files, relative to the repository root.
@@ -44,6 +45,17 @@ const PAUSE_MARKER = CONTROL_DIR + '/PAUSED';
 
 /** Reasons the service will not admit new work. Ordered by precedence. */
 const ADMISSION_BLOCKERS = ['KILL_SWITCH_ENGAGED', 'PAUSED', 'SLOT_OCCUPIED', 'QUEUE_EMPTY'];
+
+/**
+ * A service with no dispatch guard cannot verify authority at the moment work
+ * leaves the queue — only that it was verified when it entered. Since the queue
+ * is durable, that gap can be arbitrarily long, so the default is to REFUSE.
+ *
+ * Passing allowUnguardedDispatch is deliberately verbose and greppable: the
+ * places that do it are testing slot and audit mechanics, not authority, and
+ * anything else passing it is a bug worth finding by name.
+ */
+const DISPATCH_GUARD_ABSENT = 'DISPATCH_GUARD_ABSENT';
 
 class ServiceError extends Error {
   constructor(code, detail) {
@@ -69,6 +81,8 @@ function createService(cfg) {
   const killSwitchPath = cfg.killSwitchPath || path.join(repoCwd, KILL_SWITCH);
   const pausePath = cfg.pausePath || path.join(repoCwd, PAUSE_MARKER);
   const exists = cfg.exists || ((p) => fs.existsSync(p));
+  const dispatchGuard = cfg.dispatchGuard || null;
+  const allowUnguarded = cfg.allowUnguardedDispatch === true;
 
   /**
    * Append one audit record.
@@ -239,6 +253,37 @@ function createService(cfg) {
       if (!adm.admits) return { acted: 'IDLE', reason: adm.reason, entryId: null, reclaimed: reclaimed.length };
 
       const head = queue.head();
+
+      // The gate runs a second time here, and not because the first run was
+      // wrong. Admission proved this task was allowed to ENTER the queue; the
+      // queue is durable, so between then and now a grant can be revoked, a
+      // program made ineligible, or a grant file edited under the same id.
+      // Trusting the admission verdict at dispatch is the same mistake WP05
+      // removed from the merge gate.
+      if (dispatchGuard) {
+        const verdict = dispatchMod.revalidate(
+          Object.assign({}, dispatchGuard, {
+            entry: head,
+            killSwitchEngaged: service.killSwitchEngaged(),
+            nowMs: clock(),
+          }),
+        );
+        if (!verdict.dispatchable) {
+          audit('DISPATCH_REFUSED', { entryId: head.entryId, refusal: verdict.refusal, detail: verdict.detail });
+          queue.transition({
+            entryId: head.entryId,
+            to: 'BLOCKED',
+            expectedPreviousState: head.state,
+            nowMs: clock(),
+            patch: { blockerCode: verdict.refusal, owner: null },
+          });
+          return { acted: 'BLOCKED', reason: verdict.refusal, entryId: head.entryId, reclaimed: reclaimed.length };
+        }
+      } else if (!allowUnguarded) {
+        audit('DISPATCH_REFUSED', { entryId: head.entryId, refusal: DISPATCH_GUARD_ABSENT, detail: null });
+        return { acted: 'IDLE', reason: DISPATCH_GUARD_ABSENT, entryId: null, reclaimed: reclaimed.length };
+      }
+
       audit('TASK_ADMITTED', { entryId: head.entryId, taskId: head.taskId, programId: head.programId });
       recoveryMod.takeOwnership(queue, head.entryId, { pid: process.pid, nowMs: clock() });
 
@@ -282,6 +327,7 @@ module.exports = {
   KILL_SWITCH,
   PAUSE_MARKER,
   ADMISSION_BLOCKERS,
+  DISPATCH_GUARD_ABSENT,
   ServiceError,
   createService,
 };

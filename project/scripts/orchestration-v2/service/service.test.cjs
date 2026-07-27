@@ -41,7 +41,10 @@ const REQ = {
 function svc(over) {
   const root = tmpdir();
   const queue = Q.createQueue(path.join(root, 'queue'));
-  const s = S.createService(Object.assign({ repoCwd: root, queue }, over || {}));
+  // These tests exercise slot, audit and recovery mechanics, not authority, so
+  // they say so out loud rather than carrying a dispatch guard they do not use.
+  // A service without one refuses to dispatch by default; see dispatch.cjs.
+  const s = S.createService(Object.assign({ repoCwd: root, queue, allowUnguardedDispatch: true }, over || {}));
   return { root, queue, service: s };
 }
 
@@ -155,7 +158,9 @@ test('service: recovery runs before admission, so a stranded slot is freed not q
 
   // Far past the stale window, with a dead pid.
   const late = 1000 + R.DEFAULT_STALE_AFTER_MS + 60000;
-  const { service: s2 } = { service: S.createService({ repoCwd: path.dirname(queue.dir), queue, clock: () => late }) };
+  const { service: s2 } = {
+    service: S.createService({ repoCwd: path.dirname(queue.dir), queue, clock: () => late, allowUnguardedDispatch: true }),
+  };
 
   const r = await s2.step(async () => ({ disposition: 'CLOSED' }));
   assert.ok(r.reclaimed >= 1, 'the dead entry was reclaimed in the same step');
@@ -243,4 +248,67 @@ test('service: the audit log is append-only across service instances', () => {
   S.createService({ repoCwd: root, queue, auditPath }).audit('SECOND', null);
   const trail = S.createService({ repoCwd: root, queue, auditPath }).auditTrail();
   assert.deepEqual(trail.map((t) => t.event), ['FIRST', 'SECOND']);
+});
+
+// ─────────────────────────────────────────────── DISPATCH GUARD (WP08)
+
+test('service: a service with no dispatch guard refuses to dispatch at all', async () => {
+  // Admission proved the task could ENTER the queue. Without a guard nothing
+  // re-checks that at the moment it leaves, and the queue is durable — so the
+  // safe default is to refuse rather than to run on a stale verdict.
+  const root = tmpdir();
+  const queue = Q.createQueue(path.join(root, 'queue'));
+  const service = S.createService({ repoCwd: root, queue });
+  queue.enqueue(REQ);
+
+  let ran = false;
+  const r = await service.step(async () => {
+    ran = true;
+  });
+  assert.equal(r.acted, 'IDLE');
+  assert.equal(r.reason, S.DISPATCH_GUARD_ABSENT);
+  assert.equal(ran, false);
+  assert.ok(service.auditTrail().some((t) => t.event === 'DISPATCH_REFUSED'), 'and it says so in the audit log');
+});
+
+test('service: a grant revoked while the task sat in the queue stops it at dispatch', async () => {
+  const root = tmpdir();
+  const queue = Q.createQueue(path.join(root, 'queue'));
+  const grant = { standingGrantId: 'SG-1', program: { programId: 'OFFICE' } };
+  const service = S.createService({
+    repoCwd: root,
+    queue,
+    dispatchGuard: {
+      resolveGrant: () => grant,
+      resolveSpec: () => ({ taskId: 'X' }),
+      resolveManifest: () => ({ programs: [], eligibilityDerivedFrom: { authorizationId: 'A' } }),
+      isRevoked: () => true,
+    },
+  });
+  const e = queue.enqueue(Object.assign({}, REQ, { standingGrantId: 'SG-1' }));
+
+  let ran = false;
+  const r = await service.step(async () => {
+    ran = true;
+  });
+  assert.equal(ran, false, 'the executor never started');
+  assert.equal(r.acted, 'BLOCKED');
+  assert.equal(queue.get(e.entryId).state, 'BLOCKED');
+  assert.equal(queue.get(e.entryId).owner, null, 'and the slot is free');
+});
+
+test('service: a guard that passes lets the task through unchanged', async () => {
+  const root = tmpdir();
+  const queue = Q.createQueue(path.join(root, 'queue'));
+  const service = S.createService({
+    repoCwd: root,
+    queue,
+    dispatchGuard: { resolveGrant: () => ({}), resolveSpec: () => ({}), resolveManifest: () => ({}) },
+  });
+  queue.enqueue(REQ);
+  // The stub grant carries no programId, so the gate refuses on that rather
+  // than silently passing — which is the honest verdict for an empty grant.
+  const r = await service.step(async () => ({ disposition: 'CLOSED' }));
+  assert.equal(r.acted, 'BLOCKED');
+  assert.equal(r.reason, 'STANDING_GRANT_PROGRAM_MISSING');
 });
