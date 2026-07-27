@@ -107,11 +107,22 @@ function evaluateCi(opts) {
     missing,
     notSuccess,
     pending,
-    // Only a check that EXISTS and is running is worth waiting for. A required
-    // check absent from the observed set stays fail-closed exactly as before —
-    // that is a ratified property, and softening it into "maybe it will show
-    // up" would turn a missing required check into a twenty-minute wait.
+    // Two different kinds of "not yet", and collapsing either into the other is
+    // wrong — both mistakes have now been made in turn.
+    //
+    // A check that EXISTS and is running is worth waiting a long time for.
+    //
+    // A check that is ABSENT from the observed set is usually a required check
+    // that will never appear — the fail-closed case PILOT 10b pins. But for the
+    // first moments after a push it is simply GitHub not having registered the
+    // run yet, which is what actually happened to the OFFICE lane: the
+    // orchestrator observed seconds after pushing, found nothing registered,
+    // and failed closed on checks that appeared shortly afterwards and passed.
+    //
+    // So they are reported separately and the caller gives absence a short
+    // grace instead of the full wait.
     settling: pending.length > 0,
+    settlingMissing: missing.length > 0,
     failed: notSuccess.filter((n) => pending.indexOf(n) === -1),
     resultSetSha256: digest(
       required.map((n) => ({
