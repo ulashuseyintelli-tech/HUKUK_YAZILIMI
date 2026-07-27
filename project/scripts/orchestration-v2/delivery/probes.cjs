@@ -117,6 +117,7 @@ const runnerAuthorityProbe = {
         ].concat(extraArgv),
         cwd: world.root,
         timeoutMs,
+        recorder: ctx.recorder,
       });
 
     // --dev-direct is required and deliberately loud. #1687 closed this path as
@@ -240,6 +241,7 @@ const requestExecutorProbe = {
         cwd: world.root,
         timeoutMs,
         env: env || {},
+        recorder: ctx.recorder,
       });
 
     // ── admission through the real CLI ──────────────────────────────────────
@@ -402,6 +404,7 @@ const governanceGateProbe = {
         argv: [process.execPath, ORCH_SERVICE_CLI].concat(args, ['--repo', world.root, '--queue-dir', world.queueDir]),
         cwd: world.root,
         timeoutMs: ctx.timeoutMs,
+        recorder: ctx.recorder,
       });
 
     // ── positive: the one shape the profile is allowed to write ─────────────
@@ -542,6 +545,7 @@ const postMergeClosureProbe = {
         cwd: world.root,
         timeoutMs: ctx.timeoutMs,
         env: { PATH: fixtures.pathWithout(world.gh.dir, 'gh') },
+        recorder: ctx.recorder,
       });
 
     const stateOf = (world) => queueMod.createQueue(world.queueDir).get(world.entryId);

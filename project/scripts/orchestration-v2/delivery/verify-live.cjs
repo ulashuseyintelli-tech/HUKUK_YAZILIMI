@@ -27,6 +27,7 @@
 const path = require('path');
 
 const manifestMod = require('./manifest.cjs');
+const commandMod = require('./command.cjs');
 const evidenceMod = require('./evidence.cjs');
 const renderMod = require('./render.cjs');
 const probesMod = require('./probes.cjs');
@@ -123,9 +124,14 @@ async function verify(opts) {
     manifestMod.validateProbeDefinition(cap, probe);
 
     const startedAt = new Date().toISOString();
+    // One recorder per capability. It collects what the probe actually
+    // executed, so the evidence record's commandDigest describes the run rather
+    // than the manifest's description of it — including the case where a probe
+    // returned early and ran only two of its seven commands.
+    const recorder = commandMod.createRecorder(probe.probeId, opts.mode, { repoRoot: repoCwd });
     let result;
     try {
-      result = await probe.run({ timeoutMs: cap.contract.timeoutMs, repoCwd });
+      result = await probe.run({ timeoutMs: cap.contract.timeoutMs, repoCwd, recorder });
     } catch (e) {
       // An exception from the harness is not a verdict about the system. It is
       // reported as a failed capability with an infrastructure code so the
@@ -146,6 +152,8 @@ async function verify(opts) {
         repoState: state,
         startedAt,
         finishedAt,
+        commandDigest: recorder.digest(),
+        commandCount: recorder.count,
       }),
     );
   }

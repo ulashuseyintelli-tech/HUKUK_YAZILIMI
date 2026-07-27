@@ -140,7 +140,11 @@ function build(o) {
     startedAt: o.startedAt,
     finishedAt: o.finishedAt,
     durationMs: o.finishedAt && o.startedAt ? Date.parse(o.finishedAt) - Date.parse(o.startedAt) : null,
+    // What was actually executed, canonicalized. Null only when the probe ran
+    // nothing at all — an infrastructure error before the first command — and
+    // that null is a fact worth keeping distinguishable from "it ran".
     commandDigest: o.commandDigest || null,
+    commandCount: Number.isInteger(o.commandCount) ? o.commandCount : null,
     failureCode: result.failureCode || null,
     detail: result.detail ? String(result.detail).slice(0, 600) : null,
     steps: (result.steps || []).map((s) => ({ name: s.name, verdict: s.verdict, detail: s.detail })),

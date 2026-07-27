@@ -238,6 +238,12 @@ function run(o) {
   const timeoutMs = Number.isInteger(o.timeoutMs) && o.timeoutMs > 0 ? o.timeoutMs : 60000;
   const startedAtMs = Date.now();
 
+  // Recorded HERE rather than at each call site, so a probe cannot execute
+  // something the command digest does not describe. Every invocation goes
+  // through this function; recording anywhere else would be a list of what a
+  // probe INTENDED to run.
+  if (o.recorder) o.recorder.record(o.argv, o.cwd, timeoutMs, o.executionPolicy);
+
   return new Promise((resolve, reject) => {
     let child;
     try {

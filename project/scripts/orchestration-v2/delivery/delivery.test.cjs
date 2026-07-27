@@ -24,6 +24,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const manifestMod = require('./manifest.cjs');
+const commandMod = require('./command.cjs');
 const evidenceMod = require('./evidence.cjs');
 const execMod = require('./exec.cjs');
 const probesMod = require('./probes.cjs');
@@ -347,12 +348,20 @@ test('DV22  a sealed capability cannot be smuggled into pulse mode', () => {
   assert.match(r.stderr, /CAPABILITY_NOT_IN_MODE/);
 });
 
+// DV23/DV24 use the DRY capability deliberately.
+//
+// Their subject is the panel's SHAPE and its persistence, not any particular
+// capability. Pointing them at the closure probe made each one build seven
+// disposable git repositories with bare remotes, and under the parallel load of
+// the full suite that was slow enough to flake — a test that fails for load
+// reasons teaches nobody anything and eventually gets ignored. DV20 remains the
+// one that exercises all four probes for real.
 test('DV23  --json emits the panel as data with the fields a machine needs', { timeout: 600000 }, () => {
-  const r = cli(['--capability', 'GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE', '--mode', 'sealed', '--json']);
+  const r = cli(['--capability', 'GOV_COORD_V2_RUNNER_AUTHORITY', '--mode', 'pulse', '--json']);
   const panel = JSON.parse(r.stdout);
   assert.equal(panel.capabilities.length, 1);
   const rec = panel.capabilities[0];
-  assert.equal(rec.observedState, 'ENFORCED', rec.detail);
+  assert.equal(rec.observedState, 'OPERABLE', rec.detail);
   assert.match(panel.evidenceDigest, /^[0-9a-f]{64}$/);
   assert.match(rec.probeDefinitionSha256, /^[0-9a-f]{64}$/);
   assert.match(rec.deliveryContractSha256, /^[0-9a-f]{64}$/);
@@ -368,7 +377,7 @@ test('DV23  --json emits the panel as data with the fields a machine needs', { t
 
 test('DV24  --evidence-dir persists a panel bound to the SHA it was taken at', { timeout: 600000 }, () => {
   const dir = tmpdir();
-  const r = cli(['--capability', 'GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE', '--mode', 'sealed', '--evidence-dir', dir]);
+  const r = cli(['--capability', 'GOV_COORD_V2_RUNNER_AUTHORITY', '--mode', 'pulse', '--evidence-dir', dir]);
   // Either exit is legitimate and which one is not this test's subject: on a
   // clean tree the capability passes (0), and from a working tree with edits in
   // it the verdict is STALE (1). What IS the subject is that a record was
@@ -406,6 +415,133 @@ test('DV25  the panel prints every selected capability, green ones included', ()
   assert.match(text, /NOT DELIVERED/);
   assert.match(text, /DELIVERY_PROBE_MISSING/);
   assert.match(text, /OVERALL: FAIL/);
+});
+
+// ───────────────────────────────────── COMMAND DIGEST (DV30–DV34)
+
+const CMD_CTX = { repoRoot: 'C:/repo', fixtureRoot: 'C:/tmp/fx-123' };
+function cmdDef(over) {
+  return Object.assign(
+    {
+      probeId: 'P1',
+      mode: 'sealed',
+      commands: [
+        { argv: [process.execPath, 'C:/repo/a.cjs', '--x', 'C:/tmp/fx-123/plan.json'], cwd: 'C:/tmp/fx-123', timeoutMs: 60000 },
+        { argv: [process.execPath, 'C:/repo/b.cjs'], cwd: 'C:/tmp/fx-123', timeoutMs: 60000 },
+      ],
+    },
+    over || {},
+  );
+}
+const cmdDigest = (d) => commandMod.commandDigest(d, CMD_CTX);
+
+test('DV30  every part of an invocation that changes its meaning changes the digest', () => {
+  const base = cmdDigest(cmdDef());
+  const clone = () => JSON.parse(JSON.stringify(cmdDef()));
+
+  const argvOrder = clone();
+  argvOrder.commands[0].argv = [process.execPath, 'C:/repo/a.cjs', 'C:/tmp/fx-123/plan.json', '--x'];
+  assert.notEqual(cmdDigest(argvOrder), base, 'argument order');
+
+  const cmdOrder = clone();
+  cmdOrder.commands.reverse();
+  assert.notEqual(cmdDigest(cmdOrder), base, 'command order');
+
+  const cwd = clone();
+  cwd.commands[0].cwd = 'C:/repo';
+  assert.notEqual(cmdDigest(cwd), base, 'cwd');
+
+  const timeout = clone();
+  timeout.commands[0].timeoutMs = 61000;
+  assert.notEqual(cmdDigest(timeout), base, 'timeout');
+
+  assert.notEqual(cmdDigest(cmdDef({ mode: 'pulse' })), base, 'probe mode');
+  assert.notEqual(cmdDigest(cmdDef({ probeId: 'P2' })), base, 'probe id');
+
+  // A run that could reach the network is making a weaker claim with the same
+  // argv, and the digest has to notice.
+  const policy = clone();
+  policy.commands[0].executionPolicy = { networkExpected: true };
+  assert.notEqual(cmdDigest(policy), base, 'execution policy');
+});
+
+test('DV31  the digest is stable across platforms and across fixtures', () => {
+  const base = cmdDigest(cmdDef());
+
+  // The same invocation expressed with POSIX paths must produce the same
+  // digest, or the field could never be compared between a developer's machine
+  // and CI.
+  const posix = {
+    probeId: 'P1',
+    mode: 'sealed',
+    commands: [
+      { argv: [process.execPath, '/repo/a.cjs', '--x', '/tmp/fx-123/plan.json'], cwd: '/tmp/fx-123', timeoutMs: 60000 },
+      { argv: [process.execPath, '/repo/b.cjs'], cwd: '/tmp/fx-123', timeoutMs: 60000 },
+    ],
+  };
+  assert.equal(commandMod.commandDigest(posix, { repoRoot: '/repo', fixtureRoot: '/tmp/fx-123' }), base);
+
+  // Every sealed probe runs in a fresh mkdtemp directory. If that path reached
+  // the digest, the field would differ on every run and prove nothing.
+  const other = JSON.parse(JSON.stringify(cmdDef()));
+  other.commands[0].argv[3] = 'C:/tmp/fx-999/plan.json';
+  other.commands[0].cwd = 'C:/tmp/fx-999';
+  other.commands[1].cwd = 'C:/tmp/fx-999';
+  assert.equal(commandMod.commandDigest(other, { repoRoot: 'C:/repo', fixtureRoot: 'C:/tmp/fx-999' }), base);
+});
+
+test('DV32  a command definition that cannot be trusted fails closed', () => {
+  const bad = (cmd, code) =>
+    assert.throws(() => commandMod.normalizeCommand(cmd, CMD_CTX), (e) => e.code === code, code);
+
+  // The single most dangerous shape here: a shell string is not a command
+  // definition, it is an invitation to re-split on whitespace.
+  bad({ argv: 'echo hi', timeoutMs: 5000 }, 'COMMAND_ARGV_INVALID');
+  bad({ argv: [], timeoutMs: 5000 }, 'COMMAND_ARGV_INVALID');
+  bad({ argv: [process.execPath, 42], timeoutMs: 5000 }, 'COMMAND_ARGV_INVALID');
+  bad({ argv: ['x'], timeoutMs: 10 }, 'COMMAND_TIMEOUT_INVALID');
+  bad({ argv: ['x'] }, 'COMMAND_TIMEOUT_INVALID');
+  bad({ argv: ['x'], timeoutMs: 5000, cwd: 7 }, 'COMMAND_CWD_INVALID');
+  bad({ argv: ['x'], timeoutMs: 5000, executionPolicy: { shell: true } }, 'COMMAND_DEFINITION_INVALID');
+  assert.throws(
+    () => commandMod.normalizeCommandDefinition({ probeId: 'p', mode: 'm', commands: [] }, CMD_CTX),
+    (e) => e.code === 'COMMAND_DEFINITION_INVALID',
+  );
+});
+
+test('DV33  a recorder digests what ran, not what was declared', () => {
+  const rec = commandMod.createRecorder('P1', 'sealed', CMD_CTX);
+  // A probe that ran nothing has no invocation to digest, and a digest of an
+  // empty list would make "it ran" and "it did not" agree.
+  assert.equal(rec.digest(), null);
+  assert.equal(rec.count, 0);
+
+  rec.record([process.execPath, 'C:/repo/a.cjs'], 'C:/tmp/fx-123', 60000);
+  const one = rec.digest();
+  assert.match(one, /^[0-9a-f]{64}$/);
+  assert.equal(rec.count, 1);
+
+  rec.record([process.execPath, 'C:/repo/b.cjs'], 'C:/tmp/fx-123', 60000);
+  assert.notEqual(rec.digest(), one, 'a second command must change the digest');
+  assert.equal(rec.count, 2);
+});
+
+test('DV34  real probes record a real invocation, and no secret enters it', { timeout: 600000 }, async () => {
+  const panel = await verifyMod.verify({ mode: 'pulse', repo: REPO_ROOT });
+  const rec = panel.capabilities[0];
+  assert.match(rec.commandDigest, /^[0-9a-f]{64}$/, 'a probe that ran must carry a command digest');
+  assert.ok(rec.commandCount >= 1);
+
+  // The canonical form must contain no machine-specific absolute path and no
+  // environment value. Asserted on the normalized shape rather than trusting
+  // the redactor, because the redactor is the second line of defence.
+  const def = commandMod.normalizeCommandDefinition(
+    { probeId: 'P', mode: 'pulse', commands: [{ argv: [process.execPath, 'C:/Users/someone/secret-token-dir/x.cjs'], cwd: 'C:/Users/someone', timeoutMs: 5000 }] },
+    { repoRoot: REPO_ROOT },
+  );
+  assert.equal(def.commands[0].argv[0], '<node>');
+  assert.equal(def.commands[0].argv[1], commandMod.VARIABLE, 'an unrecognised absolute path must not enter the digest');
+  assert.equal(def.commands[0].cwd, commandMod.VARIABLE);
 });
 
 // ─────────────────────────────────────────── PUBLIC ENTRYPOINT BINDING (DV26)
