@@ -65,9 +65,42 @@ function createGhPrProvider(cfg) {
       const branch = runGit(['rev-parse', '--abbrev-ref', 'HEAD'], wt);
       if (!branch || branch === 'HEAD') throw new PrProviderError('DETACHED_HEAD', branch || '(none)');
 
+      // The executor is forbidden to commit — a deliberate boundary — so it
+      // leaves its work uncommitted in the worktree. Something has to turn that
+      // into a commit before a branch can be pushed, and nothing did: `push`
+      // alone produced a branch identical to main, and PR creation failed with
+      // "No commits between main and ...". Measured on a live run where the
+      // executor had written the file correctly and every required test had
+      // passed. The work was real; it simply was never published.
+      //
+      // The commit is authored here, at the publish boundary, because this is
+      // the step that turns a validated worktree into something reviewable. It
+      // runs AFTER boundary validation and the required tests, so what is
+      // committed is exactly what was judged.
+      //
+      // `add -A` is safe here: an untracked file is itself a boundary violation
+      // (UNTRACKED_FILE_PRESENT), so a diff that reached this point has none.
+      runGit(['add', '-A'], wt);
+      runGit(
+        [
+          'commit',
+          '-m',
+          'orchestrated: ' + (args.taskId || branch),
+          '-m',
+          'Produced by a GOV-COORD-V2 executor inside a validated boundary. ' +
+            'Auto-merge is OFF; this requires owner merge.',
+        ],
+        wt,
+      );
+
       runGit(['push', '-u', 'origin', branch], wt);
 
       const v = args.validated || {};
+      // changeCount, not `changes`: boundary.validate has never returned a
+      // `changes` array, so this line rendered "changedFiles : 0" on every PR
+      // regardless of what the executor did — including the run that produced a
+      // correct file and passed every test.
+      const verdict = args.verdict || {};
       const body = [
         'Orchestrated under GOV-COORD-V2. Auto-merge is OFF; this PR requires owner merge.',
         '',
@@ -76,7 +109,7 @@ function createGhPrProvider(cfg) {
         'taskSpecSha256  : ' + ((v.digests && v.digests.taskSpecSha256) || ''),
         'grantId         : ' + (v.grantId || ''),
         'grantSha256     : ' + (v.grantSha256 || ''),
-        'changedFiles    : ' + (((args.verdict || {}).changes || []).length),
+        'changedFiles    : ' + (verdict.changeCount === undefined ? 'unknown' : verdict.changeCount),
         '```',
       ].join('\n');
 
