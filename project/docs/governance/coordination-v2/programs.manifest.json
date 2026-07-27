@@ -31,12 +31,14 @@
         "exactExcerpt": "IMPLEMENTATION AUTHORITY: NONE. UYAP CUTOVER: HARD HOLD.",
         "excerptSha256": "c6d5e4b35246d65f94153334342bdeb197894d323cbf17c41291707ec1e52195"
       },
-      "liveExecutionEligibility": "DENIED",
+      "liveExecutionEligibility": "ELIGIBLE",
       "notes": "Taksonomi acik: UYAP artefaktlarinin bir kismi DEBTOR- prefix altinda yer alir; PROGRAM mi DEBTOR alt-track mi KARARA BAGLANMADI.",
       "liveExecutionEligibilityDerivation": {
-        "reason": "NOT_NAMED_BY_AUTHORITY",
-        "authorityRef": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
-        "standingGrantRef": null
+        "reason": "OWNER_OVERRIDE_OF_NOT_AUTHORIZED",
+        "authorityRef": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+        "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-UYAP-CONNECTOR-LIVE-R01.json",
+        "taxonomyUnresolved": true,
+        "overrideReason": "R02 owner karari: program kontrollu canli calistirmaya acildi. Serit acilir; programin kendi governance kaydinda reddedilmis birimler bu grant disinda kalir."
       }
     },
     {
@@ -56,12 +58,14 @@
         "exactExcerpt": "- **EXTERNAL-TRACK IMPLEMENTATION:** NOT AUTHORIZED.",
         "excerptSha256": "9d883a01d3d7b61937855870390276f74f7c98ba3cebda2a45eadfb786e29600"
       },
-      "liveExecutionEligibility": "DENIED",
+      "liveExecutionEligibility": "ELIGIBLE",
       "notes": "Charter bounded normative baseline; FULL DOMAIN LAW degildir.",
       "liveExecutionEligibilityDerivation": {
-        "reason": "NOT_NAMED_BY_AUTHORITY",
-        "authorityRef": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
-        "standingGrantRef": null
+        "reason": "OWNER_OVERRIDE_OF_NOT_AUTHORIZED",
+        "authorityRef": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+        "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-CLIENT-LIVE-R01.json",
+        "taxonomyUnresolved": false,
+        "overrideReason": "R02 owner karari: program kontrollu canli calistirmaya acildi. Serit acilir; programin kendi governance kaydinda reddedilmis birimler bu grant disinda kalir."
       }
     },
     {
@@ -87,8 +91,10 @@
       "notes": "Phase 1 aktif; siradaki unit owner selection/GO bekliyor. Statu authority: OFFICE-DELIVERY-MANIFEST.md.",
       "liveExecutionEligibilityDerivation": {
         "reason": "AUTHORITY_NAMES_PROGRAM_AND_GOVERNANCE_PERMITS",
-        "authorityRef": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
-        "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-OFFICE-LIVE-R01.json"
+        "authorityRef": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+        "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-OFFICE-LIVE-R01.json",
+        "taxonomyUnresolved": false,
+        "overrideReason": null
       }
     },
     {
@@ -109,12 +115,14 @@
         "exactExcerpt": "- **PR-6 (backfill)** — NOT AUTHORIZED, ayrı owner onayı ister.",
         "excerptSha256": "95435c261f433a3fac812fee323372a0c97dd977a9281681bc357296d5cbd7ca"
       },
-      "liveExecutionEligibility": "DENIED",
+      "liveExecutionEligibility": "ELIGIBLE",
       "notes": "Phase 0 CLOSED; PR-6 backfill ayri owner onayi ister.",
       "liveExecutionEligibilityDerivation": {
-        "reason": "NOT_NAMED_BY_AUTHORITY",
-        "authorityRef": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
-        "standingGrantRef": null
+        "reason": "OWNER_OVERRIDE_OF_NOT_AUTHORIZED",
+        "authorityRef": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+        "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-DEBTOR-LIVE-R01.json",
+        "taxonomyUnresolved": false,
+        "overrideReason": "R02 owner karari: program kontrollu canli calistirmaya acildi. Serit acilir; programin kendi governance kaydinda reddedilmis birimler bu grant disinda kalir."
       }
     },
     {
@@ -141,8 +149,10 @@
       "notes": "PHASE 2 ACTIVE ama siradaki gate W2.2D-1 owner-gated; W2.3 BLOCKED. active-roadmap.md track olarak listelemez.",
       "liveExecutionEligibilityDerivation": {
         "reason": "AUTHORITY_NAMES_PROGRAM_AND_GOVERNANCE_PERMITS",
-        "authorityRef": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
-        "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-COLLECTION-LIVE-R01.json"
+        "authorityRef": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+        "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-COLLECTION-LIVE-R01.json",
+        "taxonomyUnresolved": false,
+        "overrideReason": null
       }
     },
     {
@@ -163,17 +173,19 @@
         "exactExcerpt": "WS04-P03 data access        : NOT AUTHORIZED",
         "excerptSha256": "5f453be56921bbcf242a17679dbfd31115d444b62010c1231929e5a462b687a7"
       },
-      "liveExecutionEligibility": "DENIED",
+      "liveExecutionEligibility": "ELIGIBLE",
       "notes": "Taksonomi acik: kendi adiyla ayri governance dosya ailesi YOK; RECEIVABLE/Accounting altinda alt-track olabilir. KARARA BAGLANMADI.",
       "liveExecutionEligibilityDerivation": {
-        "reason": "NOT_NAMED_BY_AUTHORITY",
-        "authorityRef": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
-        "standingGrantRef": null
+        "reason": "OWNER_OVERRIDE_OF_NOT_AUTHORIZED",
+        "authorityRef": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+        "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-RECEIVABLE-LIVE-R01.json",
+        "taxonomyUnresolved": true,
+        "overrideReason": "R02 owner karari: program kontrollu canli calistirmaya acildi. Serit acilir; programin kendi governance kaydinda reddedilmis birimler bu grant disinda kalir."
       }
     }
   ],
   "eligibilityDerivedFrom": {
-    "authorizationId": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
+    "authorizationId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
     "sourcePath": "project/docs/governance/coordination-v2/activation/PROGRAM-ELIGIBILITY-AUTHORITY.md"
   }
 }

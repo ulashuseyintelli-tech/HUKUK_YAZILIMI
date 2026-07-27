@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
-  "authorizationId": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
+  "authorizationId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+  "supersededAuthorizationId": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
   "ownerDecisionEvidence": {
     "sourcePath": "project/docs/governance/coordination-v2/activation/PARENT-AUTHORIZATION-ENVELOPE.md",
     "exactExcerpt": "OFFICE      kontrollu canli calistirmaya acilir\nCOLLECTION  kontrollu canli calistirmaya acilir\ndiger dort program  DENIED kalir",
@@ -14,6 +15,54 @@
     {
       "programId": "COLLECTION",
       "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-COLLECTION-LIVE-R01.json"
+    },
+    {
+      "programId": "CLIENT",
+      "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-CLIENT-LIVE-R01.json",
+      "governanceOverride": {
+        "reason": "R02 owner karari: program kontrollu canli calistirmaya acildi. Serit acilir; programin kendi governance kaydinda reddedilmis birimler bu grant disinda kalir.",
+        "evidence": {
+          "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+          "exactExcerpt": "CLIENT      kontrollu canli calistirmaya acilir",
+          "excerptSha256": "eaa9c4667f46110ad78a7d6faf17aa26b86e757da341b26e050458ec0a84fad0"
+        }
+      }
+    },
+    {
+      "programId": "DEBTOR",
+      "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-DEBTOR-LIVE-R01.json",
+      "governanceOverride": {
+        "reason": "R02 owner karari: program kontrollu canli calistirmaya acildi. Serit acilir; programin kendi governance kaydinda reddedilmis birimler bu grant disinda kalir.",
+        "evidence": {
+          "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+          "exactExcerpt": "DEBTOR      kontrollu canli calistirmaya acilir",
+          "excerptSha256": "70c0f7132e6f002ea4248a757f94795539f83d400ee96ee578597c9eea7e13dd"
+        }
+      }
+    },
+    {
+      "programId": "RECEIVABLE",
+      "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-RECEIVABLE-LIVE-R01.json",
+      "governanceOverride": {
+        "reason": "R02 owner karari: program kontrollu canli calistirmaya acildi. Serit acilir; programin kendi governance kaydinda reddedilmis birimler bu grant disinda kalir.",
+        "evidence": {
+          "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+          "exactExcerpt": "RECEIVABLE  kontrollu canli calistirmaya acilir",
+          "excerptSha256": "4e1b837600fd352a18ebe3a6b0c97cf0a119be6c2a3fbb09690b0343a2e830d1"
+        }
+      }
+    },
+    {
+      "programId": "UYAP_CONNECTOR",
+      "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-UYAP-CONNECTOR-LIVE-R01.json",
+      "governanceOverride": {
+        "reason": "R02 owner karari: program kontrollu canli calistirmaya acildi. Serit acilir; programin kendi governance kaydinda reddedilmis birimler bu grant disinda kalir.",
+        "evidence": {
+          "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+          "exactExcerpt": "UYAP_CONNECTOR  yalniz TEKNIK is icin canli calistirmaya acilir",
+          "excerptSha256": "96405f142819b9369fd9f7b0bf871377fc259b151a8726531f13f34c6f52984d"
+        }
+      }
     }
   ]
 }

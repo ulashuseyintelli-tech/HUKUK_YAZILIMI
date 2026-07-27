@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "parentAuthorizationRef": {
+    "authorizationId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+    "payloadSha256": "06da65660dad523c18ee3bafce130996e849462cf3275a953d84b6866ae4e240"
+  },
+  "allowedTaskClasses": [
+    "TEST_ONLY_CHARACTERIZATION",
+    "BOUNDED_CODE_FIX"
+  ],
+  "allowedExecutorLanes": [
+    "CLAUDE_LOCAL",
+    "CODEX_LOCAL"
+  ],
+  "requiredIndependentReview": true,
+  "ciPolicy": {
+    "requireTerminalSuccess": true,
+    "allowSkipped": false,
+    "allowNeutral": true
+  },
+  "mergePolicy": {
+    "method": "SQUASH",
+    "autoMergeAuthorized": true,
+    "repositoryWideAutoMerge": false
+  },
+  "maxConcurrency": 1,
+  "killSwitchPath": "project/docs/governance/coordination-v2/activation/KILL-SWITCH",
+  "childPlanDerivation": {
+    "requirePlanHash": true,
+    "requireParentRef": true,
+    "requireBoundarySubset": true,
+    "requireTaskClassMatch": true
+  },
+  "prohibitions": {
+    "noPrivilegeDelegation": true,
+    "noSecretAccessExpansion": true,
+    "noProductionDataMutation": true,
+    "noCrossProgramMutation": true,
+    "noSelfAuthorizationChange": true
+  },
+  "standingGrantId": "STANDING-GRANT-DEBTOR-LIVE-R01",
+  "program": {
+    "programId": "DEBTOR",
+    "eligibilityAuthorityRef": "project/docs/governance/coordination-v2/activation/PROGRAM-ELIGIBILITY-AUTHORITY.md"
+  },
+  "allowedPathRoots": [
+    "project/apps/api/src/modules/debtor/",
+    "project/apps/api/src/modules/debtor-scoring/"
+  ],
+  "prohibitedPathRoots": [
+    "project/docs/governance/coordination-v2/schemas/",
+    "project/docs/governance/coordination-v2/activation/",
+    "project/scripts/orchestration-v2/",
+    "project/apps/api/prisma/",
+    ".github/",
+    "project/apps/api/src/modules/case-debtor-lifecycle-guard/"
+  ],
+  "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-DEBTOR",
+  "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/debtor.jsonl",
+  "notes": "Tenant isolation, kimlik/iliski modeli ve API authorization yuzeyi. PR-6 backfill ayri owner onayi ister ve bu grant altinda YOKTUR. Global debtor identity veya tenantlar arasi eslestirme politikasi icat edilmez."
+}
