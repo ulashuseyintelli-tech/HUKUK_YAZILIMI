@@ -250,6 +250,18 @@ CURRENT OWNER SELECTION: RECORDED IN decision-log.md (§ CAP-09 OWNER GO-DECIDE,
   owner ②'yi (audit-attribution standard / CAP-09) First-Unit olarak seçmiş, CAP-09A/B/C olarak
   alt-ayrıştırmış, yalnız CAP-09A için delivery sırası (SLICE 1 GOV → 2 FOUNDATION → 3 CONSUMER-01)
   yetkilendirmiştir; ① ve ③ hâlâ NOT SELECTED
+SUPERSEDED (2026-07-26, owner GO-COMPLETE — OFFICE-P2-CAP09A-TO-CAP02-SEQUENCE-SUPERSESSION-R01):
+  yukarıdaki "CURRENT OWNER SELECTION" bloğu 2026-07-22 tarihli durumu yansıtır, TARİHSEL KAYIT
+  olarak korunur ve current state DEĞİLDİR. Owner 2026-07-26'da CAP-09'u current first-unit
+  olmaktan çıkarmış; current first/primary executable workstream CAP-02 — OBJECT-SCOPE /
+  REPORTINGLINE, delivery strategy POPULATION-FIRST'tür. CAP-09A PARALLEL / SOFT / NON-BLOCKING
+  ENABLER'dır; CAP-09A SLICE 3 NOT CURRENTLY AUTHORIZED / NOT STARTED'dır.
+AYRICA DÜZELTME: yukarıdaki satırın "yalnız CAP-09A için delivery sırası (SLICE 1 GOV → 2
+  FOUNDATION → 3 CONSUMER-01) yetkilendirmiştir" ifadesi decision-log.md'yi FAZLA OKUMAKTADIR —
+  o kayıt açıkça "yalnız SLICE 1 bu kayıtla yetkilendirilir" der; SLICE 2 ve SLICE 3 orada
+  yalnız ADLANDIRILMIŞTIR, yetkilendirilmemiştir.
+CURRENT DURUM YÜZEYİ: OFFICE-DELIVERY-MANIFEST.md §10 + active-roadmap.md
+  "NEXT ELIGIBLE UNIT (CURRENT)" satırı. Bu blok yetki ÜRETMEZ.
 THIS DOCUMENT: NON-AUTHORIZING DECOMPOSITION / PROPOSAL SOURCE — bu belgenin kendisi hiçbir zaman
   seçim yapmaz/yapamaz; güncel seçim durumu yalnız decision-log.md'de otoritedir, bu blok yalnız o
   otoriteye işaret eder ve bu bölümün 2026-07-18 tarihli önerisini (③ tarihsel gerekçe metni) DEĞİŞTİRMEZ

@@ -1177,6 +1177,8 @@ CONSUMED durumunu + STF-PRD-BOLA-002'nin OPEN/PARTIALLY MITIGATED kalan finding 
 kod/schema/migration/yeni candidate seçimi başlatmaz.
 ```
 
+**SUPERSESSION NOTICE (2026-07-26 — `OFFICE-P2-CAP02-WORKSTREAM-CANONICALIZATION-RESIDUAL-CHECK-R01`):** Yukarıdaki §8 bloğu 2026-07-17/21 tarihlidir ve CAP-09 / CAP-09A / CAP-02 sekansını hiç bilmez. `NEXT ELIGIBLE UNIT: NONE`, `CURRENT SELECTED DELIVERY UNIT: NONE` ve `NEXT OWNER-GATED UNIT: Phase 2 First-Unit Selection` ifadeleri o tarihler için doğru **tarihsel kayıttır** ve korunur; current state DEĞİLDİR. Güncel Phase 2 yönü, current first/primary executable workstream'i ve next-eligible unit'ler için tek geçerli yüzey **§10 CURRENT PHASE 2 DIRECTION**'dır. Bu not yeni yetki ÜRETMEZ; yalnız okuma önceliğini bağlar.
+
 ## 9. Document Self-Check
 
 ```text
@@ -1640,7 +1642,7 @@ kod/schema/migration/yeni candidate seçimi başlatmaz.
 
 ---
 
-## 9. CURRENT PHASE 2 DIRECTION (2026-07-26 owner supersession)
+## 10. CURRENT PHASE 2 DIRECTION (2026-07-26 owner supersession)
 
 ```text
 PROGRAM                              OFFICE — AVUKAT / PERSONEL / OFİS
@@ -1661,7 +1663,7 @@ NEXT ELIGIBLE TECHNICAL UNIT         OFFICE-P2-CAP02-REPRESENTATIVE-PERSONNEL-DA
 TECHNICAL UNIT AUTHORITY             GO-ANALYZE / READ-ONLY
 ```
 
-### 9.1 Supersession provenance
+### 10.1 Supersession provenance
 
 ```text
 SUPERSEDED AUTHORITY    T5-LIVE-PILOT-OWNER-DECISIONS-AND-PLAN-AUTHORING-R01
@@ -1673,7 +1675,7 @@ SUPERSESSION SCOPE      CURRENT AND FUTURE OFFICE EXECUTION SEQUENCE
 HISTORICAL RECORD       PRESERVED — silinmedi, yeniden yorumlanmadı
 ```
 
-### 9.2 ReportingLine capability current state (kod-doğrulanmış, 2026-07-26)
+### 10.2 ReportingLine capability current state (kod-doğrulanmış, 2026-07-26)
 
 ```text
 ADMIN CRUD                           IMPLEMENTED
