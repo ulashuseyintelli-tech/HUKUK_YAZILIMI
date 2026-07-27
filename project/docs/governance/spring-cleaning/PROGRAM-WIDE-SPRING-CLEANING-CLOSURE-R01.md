@@ -14,9 +14,21 @@ Tarih      : 2026-07-27
 ## 1. Program statüsü
 
 ```text
-PROGRAM STATUS:
+PROGRAM STATUS (ana kuyruk):
 CLOSED / CANONICAL / PASS WITH OWNER-GATED RESIDUALS
+
+PROGRAM STATUS (ADDENDUM — activation audit):
+CLOSED / CANONICAL / PASS WITH OWNER-GATED ACTIVATIONS
 ```
+
+**ADDENDUM eki:** `WRITTEN-BUT-NOT-OPERATIONAL ACTIVATION AUDIT` bu programın ayrılmaz
+parçası olarak yürütülmüştür; 5 ek register üretilmiş, 0 flag açılmış, 0 binding onarılmış
+ve 4 aktivasyon kararı owner'a bırakılmıştır. Ayrıntı:
+`PROGRAM-WIDE-WRITTEN-BUT-NOT-OPERATIONAL-REGISTER-R01.md`,
+`PROGRAM-WIDE-RUNTIME-BINDING-GAP-REGISTER-R01.md`,
+`PROGRAM-WIDE-DORMANT-DEFAULT-OFF-REGISTER-R01.md`,
+`PROGRAM-WIDE-ACTIVATION-OWNER-DECISION-REGISTER-R01.md`,
+`PROGRAM-WIDE-OPERATIONAL-VERIFICATION-REGISTER-R01.md`.
 
 `PASS WITH OWNER-GATED RESIDUALS` seçilmiştir çünkü **yapılabilir teknik iş kalmamıştır**;
 kalan 5 kalemin tamamı yalnız owner kararıyla ilerleyebilir
