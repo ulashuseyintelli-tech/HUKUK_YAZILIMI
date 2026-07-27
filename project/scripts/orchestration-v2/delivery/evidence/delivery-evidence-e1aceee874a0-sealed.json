@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-07-27T21:50:35.661Z",
+  "mode": "sealed",
+  "verifiedAtSha": "e1aceee874a019cd5617b33d7e05a4b7f45ee9a5",
+  "sourceBranch": "claude/gov-coord-dtv-wp01-live-verifier-r01",
+  "dirtyTree": false,
+  "expectedMergeSha": null,
+  "selected": [
+    "GOV_COORD_V2_RUNNER_AUTHORITY",
+    "GOV_COORD_V2_REQUEST_EXECUTOR_PATH",
+    "MECHANICAL_GOVERNANCE_GATE",
+    "GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE"
+  ],
+  "counts": {
+    "PASS": 3,
+    "FAIL": 1,
+    "STALE": 0,
+    "LEGACY_UNVERIFIED": 0,
+    "NOT_APPLICABLE": 0
+  },
+  "overall": "FAIL",
+  "capabilities": [
+    {
+      "schemaVersion": 1,
+      "capabilityId": "GOV_COORD_V2_RUNNER_AUTHORITY",
+      "deliveryClass": "OPERATOR_CLI",
+      "probeId": "PROBE_RUNNER_AUTHORITY_DRY",
+      "probeClass": "PROBE_DRY",
+      "deliveryContractSha256": "ff1711303b818f51b350bf2e44e449b4ba8de309941dd953ed88135b75cafab6",
+      "probeDefinitionSha256": "1f263939c0227af3bdca3aa567000c53c0ccbea0152c9de6e4c07481cee976c8",
+      "targetState": "OPERABLE",
+      "observedState": "OPERABLE",
+      "verdict": "PASS",
+      "verifiedAtSha": "e1aceee874a019cd5617b33d7e05a4b7f45ee9a5",
+      "expectedMergeSha": null,
+      "sourceBranch": "claude/gov-coord-dtv-wp01-live-verifier-r01",
+      "dirtyTree": false,
+      "startedAt": "2026-07-27T21:50:35.663Z",
+      "finishedAt": "2026-07-27T21:50:38.752Z",
+      "durationMs": 3089,
+      "commandDigest": null,
+      "failureCode": null,
+      "detail": "authority resolved; three fabrications refused",
+      "steps": [
+        {
+          "name": "direct path without --dev-direct",
+          "verdict": "REFUSED",
+          "detail": "ORCH_RUN_DIRECT_PATH_NOT_PERMITTED"
+        },
+        {
+          "name": "positive dry run",
+          "verdict": "PASS",
+          "detail": "resolved at e87644fb2604565fb3fcac8265d50ee7d1128e52"
+        },
+        {
+          "name": "fabricated semantic recordId",
+          "verdict": "REFUSED",
+          "detail": "AUTHORITY_RECORD_ID_ABSENT"
+        },
+        {
+          "name": "missing execution-grant marker",
+          "verdict": "REFUSED",
+          "detail": "AUTHORITY_RECORD_MARKER_MISSING"
+        },
+        {
+          "name": "revoked grant",
+          "verdict": "REFUSED",
+          "detail": "GRANT_REVOKED"
+        }
+      ],
+      "evidenceDigest": "f2412d51551d15f0b192e44dfa768a4e99c23814fdd3ed0c835440af896e496c"
+    },
+    {
+      "schemaVersion": 1,
+      "capabilityId": "GOV_COORD_V2_REQUEST_EXECUTOR_PATH",
+      "deliveryClass": "SERVICE_PATH",
+      "probeId": "PROBE_REQUEST_EXECUTOR_SEALED",
+      "probeClass": "PROBE_SEALED",
+      "deliveryContractSha256": "938033aaf2bfcaced09d10ae11d4eb08c5434e2d0ee568c68b9cfc5298abe7f4",
+      "probeDefinitionSha256": "7e10da04eb2efe113d050b093d246e7229676948d733301cbaa5306633df446f",
+      "targetState": "OPERABLE",
+      "observedState": "OPERABLE",
+      "verdict": "PASS",
+      "verifiedAtSha": "e1aceee874a019cd5617b33d7e05a4b7f45ee9a5",
+      "expectedMergeSha": null,
+      "sourceBranch": "claude/gov-coord-dtv-wp01-live-verifier-r01",
+      "dirtyTree": false,
+      "startedAt": "2026-07-27T21:50:38.752Z",
+      "finishedAt": "2026-07-27T21:50:39.511Z",
+      "durationMs": 759,
+      "commandDigest": null,
+      "failureCode": null,
+      "detail": "request → admission → queue → dispatch → executor, through the shipped CLI",
+      "steps": [
+        {
+          "name": "enqueue valid request",
+          "verdict": "ADMITTED",
+          "detail": "f0551e294ff0092f6b7dea8a"
+        },
+        {
+          "name": "queue listing",
+          "verdict": "PASS",
+          "detail": "entry present and QUEUED"
+        },
+        {
+          "name": "out-of-boundary request",
+          "verdict": "REFUSED",
+          "detail": "BOUNDARY_EXCEEDS_STANDING_GRANT"
+        },
+        {
+          "name": "run-once dispatch",
+          "verdict": "PASS",
+          "detail": "TASK_ADMITTED"
+        },
+        {
+          "name": "executor reached",
+          "verdict": "PASS",
+          "detail": "EXECUTOR_STARTED"
+        }
+      ],
+      "evidenceDigest": "ac340f4976c909c853e8802bd91970c35094b624b859ee832782653be75b09e9"
+    },
+    {
+      "schemaVersion": 1,
+      "capabilityId": "MECHANICAL_GOVERNANCE_GATE",
+      "deliveryClass": "INTERNAL_ENFORCEMENT_REACHED_THROUGH_PUBLIC_PATH",
+      "probeId": "PROBE_GOVERNANCE_GATE_SEALED",
+      "probeClass": "PROBE_SEALED",
+      "deliveryContractSha256": "33c052f07c72efccd0830677d540d5a8b5adc13704d74cb3ddb08d20cf0eb125",
+      "probeDefinitionSha256": "6aa691f70069a7bf6d17b4c2b18960e480556e198a0da67a9233748b328192ee",
+      "targetState": "ENFORCED",
+      "observedState": "ENFORCED",
+      "verdict": "PASS",
+      "verifiedAtSha": "e1aceee874a019cd5617b33d7e05a4b7f45ee9a5",
+      "expectedMergeSha": null,
+      "sourceBranch": "claude/gov-coord-dtv-wp01-live-verifier-r01",
+      "dirtyTree": false,
+      "startedAt": "2026-07-27T21:50:39.511Z",
+      "finishedAt": "2026-07-27T21:50:40.327Z",
+      "durationMs": 816,
+      "commandDigest": null,
+      "failureCode": null,
+      "detail": "the governance profile admitted one bounded write and refused five forbidden ones",
+      "steps": [
+        {
+          "name": "valid governance request",
+          "verdict": "ADMITTED",
+          "detail": "EXACT_APPEND_AT_DECLARED_ANCHOR"
+        },
+        {
+          "name": "prohibited orchestration surface",
+          "verdict": "REFUSED",
+          "detail": "GOVERNANCE_TOUCHES_PROHIBITED_SURFACE"
+        },
+        {
+          "name": "canonical governance off the queue surface",
+          "verdict": "REFUSED",
+          "detail": "GOVERNANCE_TARGET_OFF_QUEUE_SURFACE"
+        },
+        {
+          "name": "free-form operation",
+          "verdict": "REFUSED",
+          "detail": "GOVERNANCE_OPERATION_NOT_LEVEL2"
+        },
+        {
+          "name": "governance class under a code grant",
+          "verdict": "REFUSED",
+          "detail": "GOVERNANCE_PROFILE_MISMATCH"
+        },
+        {
+          "name": "code class under the governance grant",
+          "verdict": "REFUSED",
+          "detail": "GOVERNANCE_GRANT_CANNOT_RUN_CODE"
+        }
+      ],
+      "evidenceDigest": "d1ba7d744ae73ca72b654d5294566800d78f70af970f95f57f2a1e1348707e86"
+    },
+    {
+      "schemaVersion": 1,
+      "capabilityId": "GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE",
+      "deliveryClass": "SERVICE_FINALIZATION",
+      "probeId": "PROBE_POST_MERGE_CLOSURE_SEALED",
+      "probeClass": "PROBE_SEALED",
+      "deliveryContractSha256": "33c052f07c72efccd0830677d540d5a8b5adc13704d74cb3ddb08d20cf0eb125",
+      "probeDefinitionSha256": "bb2f9589faaf2f454da73ad791ff440619d9c35b86045de2754ec9a0debe38f6",
+      "targetState": "ENFORCED",
+      "observedState": "UNWIRED",
+      "verdict": "FAIL",
+      "verifiedAtSha": "e1aceee874a019cd5617b33d7e05a4b7f45ee9a5",
+      "expectedMergeSha": null,
+      "sourceBranch": "claude/gov-coord-dtv-wp01-live-verifier-r01",
+      "dirtyTree": false,
+      "startedAt": "2026-07-27T21:50:40.327Z",
+      "finishedAt": "2026-07-27T21:50:40.929Z",
+      "durationMs": 602,
+      "commandDigest": null,
+      "failureCode": "DELIVERY_PROBE_MISSING",
+      "detail": "the operator console has no finalize command: a MERGE_READY entry cannot be carried to CLOSED by any public path, and completeAfterOwnerMerge has no caller on any executable path",
+      "steps": [
+        {
+          "name": "build MERGE_READY handoff",
+          "verdict": "PASS",
+          "detail": "53c140f0c706 in MERGE_READY"
+        },
+        {
+          "name": "finalize --entry",
+          "verdict": "NO_SUCH_COMMAND",
+          "detail": "exit 2"
+        }
+      ],
+      "evidenceDigest": "f28230812c878d83b6f489c5171d68bc65f9ec1662fcdd9f0c3f6b8011504a88"
+    }
+  ],
+  "evidenceDigest": "6fd064c4a6f87d1965dd9eae7177a58a5e775bc0f5cd2b211ac266560e107198"
+}
