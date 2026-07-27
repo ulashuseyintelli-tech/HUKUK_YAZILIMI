@@ -91,3 +91,39 @@ açmak" gibi görünen bir işlem bile aslında kör bir production mutasyonu ol
 `DEFAULT_OFF != COMPLETE` — fakat `DEFAULT_OFF != DEFECT` de değildir. Bu register 17 flag'in
 hiçbirini defekt olarak işaretlememektedir; yalnız **operasyonel durumlarının bilinmediğini**
 ve karar yüzeyinin owner'da olduğunu kayıt altına alır.
+
+---
+
+## 5. DÜZELTME (2026-07-27) — §1 sayımı yanlıştı
+
+`PROGRAM-WIDE-SPRING-CLEANING-OWNER-RESIDUALS-FULL-EXECUTION-R01` / ITEM-A03 kapsamında
+fresh main `26c42b69` üzerinde her flag'in tanım yeri tek tek doğrulandı. §1'in
+*"17 kod-default KAPALI, 1 AÇIK"* sayımı **YANLIŞTIR**. Doğru dağılım:
+
+```text
+14  runtime feature flag  — kod default KAPALI
+ 2  runtime feature flag  — kod default AÇIK
+                            (SIMULATION_API_ENABLED, PHASE7_ENABLED — her ikisi de
+                             `!== 'false'` deseni: hiçbir env tanımlanmazsa AÇIK)
+ 2  test-only env switch  — production feature flag DEĞİL
+                            (ADR014_OBSERVATION_ENABLED,
+                             ADR014_LOCAL_EVIDENCE_HARNESS_ENABLED —
+                             yalnız scripts/__tests__/ altında geçer)
+```
+
+İki düzeltme:
+
+- **`PHASE7_ENABLED` default-OFF DEĞİL, default-ON'dur.** §1 tablosunda F-16 olarak
+  default-OFF listelenmişti. Gerçek kod:
+  `phase7-config.ts:54` → `process.env[PHASE7_ENV_KEYS.PHASE7_ENABLED] !== 'false'`.
+  Yani `SIMULATION_API_ENABLED` ile aynı desendedir: **hiçbir env tanımlanmazsa AÇIK.**
+- **İki `ADR014_*` tanımlayıcısı runtime feature flag değildir.** Yalnız
+  `scripts/__tests__/` altındaki spec dosyalarında geçerler; production tüketicileri yoktur.
+  Bunları feature-flag envanterinde saymak yanıltıcıydı.
+
+Tam düzeltilmiş envanter (tanım yeri + kod default + spec sayısı):
+`PROGRAM-WIDE-OWNER-RESIDUALS-EXECUTION-REGISTER-R01.md` §3.2.
+
+§1 tablosu tarihsel kayıt olarak **silinmeden** korunur; bu bölüm onu supersede eder.
+Her iki flag için `DEPLOYED_VALUE` hâlâ `UNKNOWN`'dır — düzeltme yalnız kod default'una
+ilişkindir.
