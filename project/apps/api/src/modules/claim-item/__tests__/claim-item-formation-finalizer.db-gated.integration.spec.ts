@@ -21,6 +21,10 @@ import {
 } from '../formation-intent/claim-item-formation-resolver.ports';
 import { HumanClaimItemFormationAdmissionService } from '../formation-intent/human-claim-item-formation-admission.service';
 import { domainSeparatedFormationHash } from '../formation-intent/claim-item-formation-canonical';
+import {
+  buildLegalBasisProjectionBindingPersistenceEnvelope,
+  type LegalBasisProjectionBindingPersistenceEnvelopeV1,
+} from '../formation-intent/legal-basis-projection-binding-persistence';
 import { TransactionalClaimItemFormationFinalizerService } from '../formation-finalizer/transactional-claim-item-formation-finalizer.service';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
@@ -163,13 +167,25 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
     };
   }
 
-  async function approvedIntent(label: string) {
+  async function approvedIntent(
+    label: string,
+    projectionBinding?: LegalBasisProjectionBindingPersistenceEnvelopeV1,
+  ) {
     const sourceBinding = await createSource(label);
+    const writer = projectionBinding
+      ? ({
+          createAtomic: (input: Parameters<typeof atomicWriter.createAtomic>[0]) =>
+            atomicWriter.createAtomic({
+              ...input,
+              legalBasisProjectionBinding: projectionBinding,
+            }),
+        } as unknown as ClaimItemFormationOfficeApprovalAdapter)
+      : atomicWriter;
     const admission = new HumanClaimItemFormationAdmissionService(
       { assertAuthorized: jest.fn(async () => undefined) } as unknown as HumanClaimItemFormationAuthorizationPort,
       { resolveExactVersion: jest.fn(async () => sourceBinding) } as unknown as CaseDocumentExactVersionResolverPort,
       { resolveExactVersion: jest.fn(async () => ({ ok: true, value: basisBinding })) } as unknown as LegalBasisExactVersionResolverPort,
-      atomicWriter,
+      writer,
       { enabled: true, clock: () => new Date(CREATED_AT) },
     );
     const result = await admission.admit(
@@ -292,11 +308,177 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
       claimItemId: result.claimItemId,
       intentChecksum: intent.intentChecksum,
       snapshotVersion: 1,
+      legalBasisProjectionBindingContractVersion: null,
+      legalBasisProjectionBindingCanonicalPayload: null,
+      legalBasisProjectionBindingChecksum: null,
     });
     expect(approval?.executionStatus).toBe(OfficeApprovalExecutionStatus.SUCCEEDED);
     expect(auditCount).toBe(2);
     expect(timelineCount).toBeGreaterThanOrEqual(1);
     expect(outboxCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('persists an exact bound snapshot and rejects every intent/snapshot binding mismatch', async () => {
+    const binding = buildLegalBasisProjectionBindingPersistenceEnvelope({
+      legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
+      legalBasisVersion: '1',
+      projection: { itemType: 'PRINCIPAL' },
+    });
+    const { intent, source } = await approvedIntent('projection-binding', binding);
+    const result = await finalizer(source).finalize({
+      tenantId,
+      formationIntentId: intent.id,
+    });
+    const sourceSnapshot = await prisma.claimFormationSnapshot.findUniqueOrThrow({
+      where: { id: result.snapshotId },
+    });
+    expect(sourceSnapshot).toMatchObject({
+      legalBasisProjectionBindingContractVersion: binding.contractVersion,
+      legalBasisProjectionBindingCanonicalPayload: binding.canonicalPayload,
+      legalBasisProjectionBindingChecksum: binding.checksum,
+    });
+    await expect(
+      prisma.$executeRawUnsafe(
+        `UPDATE "ClaimFormationSnapshot" SET "legalBasisProjectionBindingCanonicalPayload" = '{}' WHERE "id" = '${sourceSnapshot.id}'`,
+      ),
+    ).rejects.toThrow(/immutable_violation/);
+
+    const createTarget = async (
+      label: string,
+      intentBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1 | undefined,
+    ) => {
+      const suffix = randomUUID();
+      const sourceIdentityHash = hash(`pb01-source-identity-${label}-${suffix}`);
+      const targetIntent = await prisma.claimItemFormationIntent.create({
+        data: {
+          ...intent,
+          id: `pb01-intent-${suffix}`,
+          idempotencyKey: `pb01-idempotency-${suffix}`,
+          approvalRequestId: `pb01-approval-${suffix}`,
+          sourceId: `pb01-document-${suffix}`,
+          sourceVersionId: `pb01-document-version-${suffix}`,
+          sourceIdentityHash,
+          canonicalSourceFingerprint: hash(`pb01-fingerprint-${suffix}`),
+          sourceResolutionHash: hash(`pb01-source-resolution-${suffix}`),
+          correlationId: `pb01-correlation-${suffix}`,
+          legalBasisProjectionBindingContractVersion:
+            intentBinding?.contractVersion ?? null,
+          legalBasisProjectionBindingCanonicalPayload:
+            intentBinding?.canonicalPayload ?? null,
+          legalBasisProjectionBindingChecksum: intentBinding?.checksum ?? null,
+        } as any,
+      });
+      const claimItem = await prisma.claimItem.create({
+        data: {
+          tenantId,
+          caseId,
+          itemType: 'PRINCIPAL',
+          originalAmount: 100,
+          demandedAmount: 80,
+          amount: 80,
+          currency: 'TRY',
+          liableDebtorIds: [],
+        },
+      });
+      return { targetIntent, claimItem };
+    };
+
+    const insertSnapshot = async (
+      label: string,
+      target: Awaited<ReturnType<typeof createTarget>>,
+      overrides: Record<string, unknown>,
+    ) =>
+      prisma.claimFormationSnapshot.create({
+        data: {
+          ...sourceSnapshot,
+          id: `pb01-snapshot-${label}-${randomUUID()}`,
+          claimItemId: target.claimItem.id,
+          formationIntentId: target.targetIntent.id,
+          approvalRequestId: target.targetIntent.approvalRequestId,
+          sourceId: target.targetIntent.sourceId,
+          sourceVersionId: target.targetIntent.sourceVersionId,
+          sourceIdentityHash: target.targetIntent.sourceIdentityHash,
+          canonicalSourceFingerprint: target.targetIntent.canonicalSourceFingerprint,
+          sourceResolutionHash: target.targetIntent.sourceResolutionHash,
+          correlationId: target.targetIntent.correlationId,
+          commandId: `pb01-command-${randomUUID()}`,
+          ...overrides,
+        } as any,
+      });
+
+    const exactTarget = await createTarget('exact', binding);
+    await expect(
+      insertSnapshot('exact', exactTarget, {}),
+    ).resolves.toBeDefined();
+
+    const mismatchCases: Array<[
+      string,
+      LegalBasisProjectionBindingPersistenceEnvelopeV1 | undefined,
+      Record<string, unknown>,
+    ]> = [
+      [
+        'bound-to-unbound',
+        binding,
+        {
+          legalBasisProjectionBindingContractVersion: null,
+          legalBasisProjectionBindingCanonicalPayload: null,
+          legalBasisProjectionBindingChecksum: null,
+        },
+      ],
+      [
+        'unbound-to-bound',
+        undefined,
+        {
+          legalBasisProjectionBindingContractVersion: binding.contractVersion,
+          legalBasisProjectionBindingCanonicalPayload: binding.canonicalPayload,
+          legalBasisProjectionBindingChecksum: binding.checksum,
+        },
+      ],
+      [
+        'version',
+        binding,
+        { legalBasisProjectionBindingContractVersion: '2' },
+      ],
+      [
+        'partial',
+        binding,
+        {
+          legalBasisProjectionBindingCanonicalPayload: null,
+          legalBasisProjectionBindingChecksum: null,
+        },
+      ],
+      [
+        'blank-payload',
+        binding,
+        { legalBasisProjectionBindingCanonicalPayload: '   ' },
+      ],
+      [
+        'bad-checksum-format',
+        binding,
+        { legalBasisProjectionBindingChecksum: binding.checksum.toUpperCase() },
+      ],
+      [
+        'payload',
+        binding,
+        { legalBasisProjectionBindingCanonicalPayload: '{}' },
+      ],
+      [
+        'checksum',
+        binding,
+        { legalBasisProjectionBindingChecksum: '0'.repeat(64) },
+      ],
+    ];
+    for (const [label, intentBinding, overrides] of mismatchCases) {
+      const target = await createTarget(label, intentBinding);
+      await expect(insertSnapshot(label, target, overrides)).rejects.toThrow(
+        /intent_mismatch|projection_binding/,
+      );
+      expect(
+        await prisma.claimFormationSnapshot.count({
+          where: { formationIntentId: target.targetIntent.id },
+        }),
+      ).toBe(0);
+    }
   });
 
   it('serializes concurrent retries and returns one canonical ClaimItem/snapshot', async () => {

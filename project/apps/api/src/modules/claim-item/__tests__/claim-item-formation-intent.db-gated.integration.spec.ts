@@ -12,6 +12,10 @@ import {
   type ExactLegalBasisBindingV1,
 } from '../formation-intent/claim-item-formation-resolver.ports';
 import { HumanClaimItemFormationAdmissionService } from '../formation-intent/human-claim-item-formation-admission.service';
+import {
+  buildLegalBasisProjectionBindingPersistenceEnvelope,
+  type LegalBasisProjectionBindingPersistenceEnvelopeV1,
+} from '../formation-intent/legal-basis-projection-binding-persistence';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
@@ -173,6 +177,7 @@ describeWithDisposableDb(
     function service(options: {
       source?: ExactCaseDocumentSourceV1 | null;
       audit?: AuditService;
+      projectionBinding?: LegalBasisProjectionBindingPersistenceEnvelopeV1;
     } = {}) {
       const authorization = {
         assertAuthorized: jest.fn().mockResolvedValue(undefined),
@@ -185,10 +190,19 @@ describeWithDisposableDb(
       const basisResolver = {
         resolveExactVersion: jest.fn().mockResolvedValue({ ok: true, value: legalBasis() }),
       } as unknown as LegalBasisExactVersionResolverPort;
-      const writer = new ClaimItemFormationOfficeApprovalAdapter(
+      const adapter = new ClaimItemFormationOfficeApprovalAdapter(
         prisma,
         options.audit ?? new AuditService(prisma),
       );
+      const writer = options.projectionBinding
+        ? ({
+            createAtomic: (input: Parameters<typeof adapter.createAtomic>[0]) =>
+              adapter.createAtomic({
+                ...input,
+                legalBasisProjectionBinding: options.projectionBinding,
+              }),
+          } as ClaimItemFormationOfficeApprovalAdapter)
+        : adapter;
       return new HumanClaimItemFormationAdmissionService(
         authorization,
         documentResolver,
@@ -263,6 +277,103 @@ describeWithDisposableDb(
         'audit unavailable',
       );
       expect(await counts(idempotencyKey)).toEqual(before);
+    });
+
+    it('atomically persists a valid binding envelope and rejects binding drift on replay', async () => {
+      const idempotencyKey = `pb01-binding-${randomUUID()}`;
+      const projectionBinding = buildLegalBasisProjectionBindingPersistenceEnvelope({
+        legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
+        legalBasisVersion: '1',
+        projection: { itemType: 'PRINCIPAL' },
+      });
+      const admission = service({ projectionBinding });
+      const first = await admission.admit(context(), command(idempotencyKey));
+
+      expect(first.intent).toMatchObject({
+        legalBasisProjectionBindingContractVersion: projectionBinding.contractVersion,
+        legalBasisProjectionBindingCanonicalPayload: projectionBinding.canonicalPayload,
+        legalBasisProjectionBindingChecksum: projectionBinding.checksum,
+      });
+      expect((await admission.admit(context(), command(idempotencyKey))).replayed).toBe(true);
+      await expect(
+        service().admit(context(), command(idempotencyKey)),
+      ).rejects.toMatchObject({ code: 'DUPLICATE_FORMATION_CONFLICT' });
+
+      await expect(
+        prisma.$executeRawUnsafe(
+          `UPDATE "ClaimItemFormationIntent" SET "legalBasisProjectionBindingChecksum" = '${'0'.repeat(64)}' WHERE "id" = '${first.intent.id}'`,
+        ),
+      ).rejects.toThrow(/immutable_violation/);
+    });
+
+    it('rejects invalid envelopes before every database write', async () => {
+      const idempotencyKey = `pb01-invalid-envelope-${randomUUID()}`;
+      const invalid = {
+        contractVersion: '1',
+        canonicalPayload: '{"legalBasisCode":"CONTRACTUAL_RECEIVABLE"}',
+        checksum: '0'.repeat(64),
+      } as LegalBasisProjectionBindingPersistenceEnvelopeV1;
+      const before = await counts(idempotencyKey);
+
+      await expect(
+        service({ projectionBinding: invalid }).admit(context(), command(idempotencyKey)),
+      ).rejects.toMatchObject({ code: 'PROJECTION_BINDING_CHECKSUM_MISMATCH' });
+      expect(await counts(idempotencyKey)).toEqual(before);
+    });
+
+    it('enforces all-or-none, exact V1, nonblank payload and lowercase checksum in PostgreSQL', async () => {
+      const idempotencyKey = `pb01-db-constraints-${randomUUID()}`;
+      const template = (await service().admit(context(), command(idempotencyKey))).intent;
+      const valid = buildLegalBasisProjectionBindingPersistenceEnvelope({
+        legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
+        projection: { itemType: 'PRINCIPAL' },
+      });
+      const insertClone = (label: string, overrides: Record<string, unknown>) =>
+        prisma.claimItemFormationIntent.create({
+          data: {
+            ...template,
+            id: `pb01-clone-${label}-${randomUUID()}`,
+            idempotencyKey: `pb01-clone-${label}-${randomUUID()}`,
+            approvalRequestId: `pb01-approval-${label}-${randomUUID()}`,
+            ...overrides,
+          } as any,
+        });
+
+      await expect(
+        insertClone('all-present', {
+          legalBasisProjectionBindingContractVersion: valid.contractVersion,
+          legalBasisProjectionBindingCanonicalPayload: valid.canonicalPayload,
+          legalBasisProjectionBindingChecksum: valid.checksum,
+        }),
+      ).resolves.toBeDefined();
+      await expect(
+        insertClone('partial', {
+          legalBasisProjectionBindingContractVersion: valid.contractVersion,
+          legalBasisProjectionBindingCanonicalPayload: null,
+          legalBasisProjectionBindingChecksum: null,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        insertClone('bad-version', {
+          legalBasisProjectionBindingContractVersion: '2',
+          legalBasisProjectionBindingCanonicalPayload: valid.canonicalPayload,
+          legalBasisProjectionBindingChecksum: valid.checksum,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        insertClone('blank-payload', {
+          legalBasisProjectionBindingContractVersion: '1',
+          legalBasisProjectionBindingCanonicalPayload: '   ',
+          legalBasisProjectionBindingChecksum: valid.checksum,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        insertClone('bad-checksum', {
+          legalBasisProjectionBindingContractVersion: '1',
+          legalBasisProjectionBindingCanonicalPayload: valid.canonicalPayload,
+          legalBasisProjectionBindingChecksum: valid.checksum.toUpperCase(),
+        }),
+      ).rejects.toThrow();
     });
 
     async function counts(idempotencyKey: string) {

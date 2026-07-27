@@ -3329,6 +3329,55 @@ reviewer/final-ratifier approvals tamamlanmadan başlayamaz. Bu ratification cod
 resolver, key/signature, signed release, schema/migration, I04/I05 veya historical-data authority
 üretmez.
 
+## 23.34. Immutable Legal Basis projection-binding persistence foundation
+
+`RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION`, PB01'in semantic projection
+contract'ını seçmeden admission anındaki exact binding'in intent'te ve finalization anında aynı
+binding'in snapshot'ta immutable kanıt olarak tutulabilmesini sağlar.
+
+```text
+contractVersion        "1"
+canonicalPayload       canonical UTF-8 JSON object / nonempty
+checksum               SHA-256(canonicalPayload exact bytes) / lowercase 64 hex
+legacy state           all three NULL / UNBOUND
+bound state            all three PRESENT
+partial state          PROHIBITED / DATABASE-REJECTED
+intent mutation        PROHIBITED / DATABASE-REJECTED
+snapshot mutation      PROHIBITED / DATABASE-REJECTED
+snapshot-intent drift  PROHIBITED / DATABASE-REJECTED
+```
+
+Application validator unknown version, invalid/non-object/non-canonical JSON, blank payload,
+invalid checksum format ve checksum mismatch'i fail-closed reddeder. Optional envelope legacy
+caller compatibility'sini korur; present envelope intent insert'inde atomik map edilir. I03
+finalizer, stored envelope'ın integrity'sini yeniden doğrular ve exact üçlüyü snapshot insert'ine
+taşır. Bu foundation projection'ın hangi semantic alanları içereceğini veya hangi Legal Basis
+release'inin yetkili olduğunu belirlemez.
+
+Database migration `20260726120000_claim_formation_projection_binding_persistence` her tabloya
+aynı üç nullable/defaultsuz alanı, all-or-none/version/nonempty/checksum CHECK'lerini ekler. Existing
+intent/snapshot full immutability trigger'ları yeni alanları da kapsar; existing snapshot validation
+function'ı tenant/case/intent relation'ı üzerinden exact equality ile genişletilir. New index,
+duplicate trigger, default, backfill, historical inference veya row rewrite yoktur.
+
+```text
+TASK                               RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION
+STATUS                             COMPLETE / CANONICAL UPON APPROVED MERGE
+SCHEMA                             ADDITIVE / NULLABLE / DEFAULT-FREE
+MIGRATION                          MERGED UPON APPROVED MERGE
+LIVE APPLY                         NOT AUTHORIZED / NOT PERFORMED
+RUNTIME                            DORMANT / EXISTING PRODUCTION FLOW UNCHANGED
+LEGACY DATA                        UNBOUND / UNCHANGED
+ROLLBACK                           ZERO-BOUND-ROW + RUNTIME-INACTIVE ONLY
+NEXT                               RCV-CLAIM-FORM-P02-S08-D02-PB01 —
+                                   PREDECESSOR COMPLETE / NOT STARTED
+```
+
+Bound row oluşmuşsa binding legal/audit evidence'dır; kolon veya constraint rollback'i hard-stop'tur.
+Legacy unbound pending intent'e binding tahmin edilemez, current/latest/default fallback uygulanamaz
+ve otomatik backfill yapılamaz. PB01, D02-KC01, D02-F01, I04/I05, Shared Document V4, key ceremony,
+signed release ve runtime activation ayrı gate'lerde kalır.
+
 ---
 
 # 24. Related documents ve zorunlu pointer'lar

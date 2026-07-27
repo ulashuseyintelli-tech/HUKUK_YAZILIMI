@@ -18,6 +18,10 @@ import {
   type ClaimFormationJsonValue,
   type ClaimItemFormationApprovalRefV1,
 } from './claim-item-formation-intent.contract';
+import {
+  validateLegalBasisProjectionBindingPersistenceEnvelope,
+  type LegalBasisProjectionBindingPersistenceEnvelopeV1,
+} from './legal-basis-projection-binding-persistence';
 
 export interface PersistClaimItemFormationIntentInput {
   readonly tenantId: string;
@@ -56,6 +60,7 @@ export interface PersistClaimItemFormationIntentInput {
   readonly legalBasisRegistryReleaseChecksum: string;
   readonly legalBasisResolutionContractVersion: string;
   readonly legalBasisResolutionHash: string;
+  readonly legalBasisProjectionBinding?: LegalBasisProjectionBindingPersistenceEnvelopeV1;
   readonly originalAmountMinor: bigint;
   readonly demandedAmountMinor: bigint;
   readonly currency: string;
@@ -100,19 +105,25 @@ export class ClaimItemFormationOfficeApprovalAdapter {
   async createAtomic(
     input: PersistClaimItemFormationIntentInput,
   ): Promise<ClaimItemFormationAdmissionResult> {
+    const projectionBinding = validateLegalBasisProjectionBindingPersistenceEnvelope(
+      input.legalBasisProjectionBinding,
+    );
     try {
-      return await this.prisma.$transaction(async (tx) => this.createInTransaction(tx, input));
+      return await this.prisma.$transaction(async (tx) =>
+        this.createInTransaction(tx, input, projectionBinding),
+      );
     } catch (error) {
       if (!this.isUniqueConflict(error)) throw error;
       const existing = await this.findExisting(input.tenantId, input.idempotencyKey);
       if (!existing) throw error;
-      return this.reconcileExisting(existing, input.intentChecksum);
+      return this.reconcileExisting(existing, input.intentChecksum, projectionBinding);
     }
   }
 
   private async createInTransaction(
     tx: Prisma.TransactionClient,
     input: PersistClaimItemFormationIntentInput,
+    projectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1 | undefined,
   ): Promise<ClaimItemFormationAdmissionResult> {
     const existing = await tx.claimItemFormationIntent.findUnique({
       where: {
@@ -126,7 +137,11 @@ export class ClaimItemFormationOfficeApprovalAdapter {
       const approval = await tx.officeApprovalRequest.findFirst({
         where: { id: existing.approvalRequestId, tenantId: input.tenantId },
       });
-      return this.reconcileExisting({ intent: existing, approval }, input.intentChecksum);
+      return this.reconcileExisting(
+        { intent: existing, approval },
+        input.intentChecksum,
+        projectionBinding,
+      );
     }
 
     const formationIntentId = randomUUID();
@@ -202,6 +217,11 @@ export class ClaimItemFormationOfficeApprovalAdapter {
         legalBasisRegistryReleaseChecksum: input.legalBasisRegistryReleaseChecksum,
         legalBasisResolutionContractVersion: input.legalBasisResolutionContractVersion,
         legalBasisResolutionHash: input.legalBasisResolutionHash,
+        legalBasisProjectionBindingContractVersion:
+          projectionBinding?.contractVersion ?? null,
+        legalBasisProjectionBindingCanonicalPayload:
+          projectionBinding?.canonicalPayload ?? null,
+        legalBasisProjectionBindingChecksum: projectionBinding?.checksum ?? null,
         originalAmountMinor: input.originalAmountMinor,
         demandedAmountMinor: input.demandedAmountMinor,
         currency: input.currency,
@@ -265,9 +285,16 @@ export class ClaimItemFormationOfficeApprovalAdapter {
       approval: OfficeApprovalRequest | null;
     },
     requestedIntentChecksum: string,
+    requestedProjectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1 | undefined,
   ): ClaimItemFormationAdmissionResult {
     if (
       existing.intent.intentChecksum !== requestedIntentChecksum ||
+      existing.intent.legalBasisProjectionBindingContractVersion !==
+        (requestedProjectionBinding?.contractVersion ?? null) ||
+      existing.intent.legalBasisProjectionBindingCanonicalPayload !==
+        (requestedProjectionBinding?.canonicalPayload ?? null) ||
+      existing.intent.legalBasisProjectionBindingChecksum !==
+        (requestedProjectionBinding?.checksum ?? null) ||
       !existing.approval ||
       existing.approval.targetType !== CLAIM_ITEM_FORMATION_APPROVAL_TARGET_TYPE ||
       existing.approval.targetRef !== existing.intent.id ||

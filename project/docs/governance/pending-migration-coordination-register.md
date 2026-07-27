@@ -1073,3 +1073,46 @@ CLOSED / CANONICAL
 
 IMPLEMENTATION AUTHORITY: NONE — bu kapanış kaydı hiçbir yeni yetki üretmez.
 ```
+
+## 18. RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION — pending migration (2026-07-26)
+
+Bu bölüm, legal/audit projection-binding persistence foundation migration'ını koordinasyon
+kuyruğunda görünür kılar. Migration'ın merge edilmesi canlı uygulama yetkisi değildir.
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260726120000_claim_formation_projection_binding_persistence` |
+| Program / task | RECEIVABLE / `RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION` |
+| İçerik | `ClaimItemFormationIntent` + `ClaimFormationSnapshot` için nullable exact binding triple, 8 CHECK ve existing snapshot-validation function extension |
+| Existing migration mutation | NONE |
+| Default / backfill / data mutation | NONE |
+| Index / duplicate trigger | NONE |
+| Runtime activation | NONE / DORMANT |
+| Live apply | **NOT AUTHORIZED / NOT PERFORMED** |
+| Disposable evidence | clean + upgrade 103/103; rollback/reapply + non-null hard-stop PASS |
+
+### 18.1 Apply öncesi zorunlu gate
+
+- Fresh canonical SHA ve migration queue tekrar pinlenir; `prisma migrate status` sonucu bu eski
+  snapshot'tan türetilmez.
+- Ayrı ve explicit owner `GO-MIGRATE` olmadan development/live/staging/production DB'ye apply yoktur.
+- Backup/restore verification, writer quiescence, maintenance window ve post-validation planı ayrı
+  execution kaydında tamamlanır.
+- Existing Claim Formation runtime dormant kalır; migration apply runtime activation değildir.
+
+### 18.2 Rollback hard-stop
+
+Rollback yalnız runtime inactive iken ve hem `ClaimItemFormationIntent` hem
+`ClaimFormationSnapshot` üzerinde üç binding alanından herhangi biri non-null olan satır sayısı
+**sıfır** ise güvenlidir. Herhangi bir bound row legal/audit evidence sayılır; bu durumda columns,
+constraints veya function rollback'i **PROHIBITED / HARD STOP**tur. Otomatik nulling, backfill,
+historical inference, re-admission veya bypass yoktur. Repository'de canonical down migration
+eklenmemiştir.
+
+```text
+RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION MIGRATION:
+MERGED UPON APPROVED MERGE / PENDING LIVE APPLY
+
+LIVE APPLY AUTHORITY:
+NONE
+```
