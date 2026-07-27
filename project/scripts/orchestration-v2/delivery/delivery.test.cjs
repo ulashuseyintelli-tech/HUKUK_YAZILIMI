@@ -297,15 +297,22 @@ test('DV20  the real probes tell a wired capability from an unwired one', { time
   assert.equal(by.GOV_COORD_V2_REQUEST_EXECUTOR_PATH.observedState, 'OPERABLE', by.GOV_COORD_V2_REQUEST_EXECUTOR_PATH.detail);
   assert.equal(by.MECHANICAL_GOVERNANCE_GATE.observedState, 'ENFORCED', by.MECHANICAL_GOVERNANCE_GATE.detail);
 
-  // The red. WP02 replaces this assertion with ENFORCED; until it does, a green
-  // panel here would mean the probe stopped asking the question.
+  // The capability that was RED at WP01 and is repaired here.
+  //
+  // The assertion moved from UNWIRED to ENFORCED because the SYSTEM changed, not
+  // the probe's standard: the probe now performs a real merge against a local
+  // remote and refuses in six ways before it will do so, which is a strictly
+  // harder question than "does a finalize command exist?". WP01's RED evidence
+  // is preserved unchanged as the record of what was true before.
   const closure = by.GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE;
-  assert.equal(closure.observedState, 'UNWIRED', closure.detail);
-  assert.equal(closure.failureCode, 'DELIVERY_PROBE_MISSING');
-  assert.equal(closure.verdict === 'PASS', false, 'an unwired capability must never report PASS');
+  assert.equal(closure.observedState, 'ENFORCED', closure.detail);
+  assert.equal(closure.failureCode, null);
 
-  // And the panel as a whole must refuse to call this delivered.
-  assert.equal(panel.overall, 'FAIL');
+  // Every capability must match its declared target. Asserted per-capability
+  // rather than only on the summary so a regression names itself.
+  for (const r of panel.capabilities) {
+    assert.equal(r.observedState, r.targetState, r.capabilityId + ': ' + (r.detail || ''));
+  }
 });
 
 // ───────────────────────────────────────────────────────── THE CLI (DV21–DV25)
@@ -344,17 +351,32 @@ test('DV23  --json emits the panel as data with the fields a machine needs', { t
   const r = cli(['--capability', 'GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE', '--mode', 'sealed', '--json']);
   const panel = JSON.parse(r.stdout);
   assert.equal(panel.capabilities.length, 1);
-  assert.equal(panel.capabilities[0].observedState, 'UNWIRED');
-  assert.equal(panel.overall, 'FAIL');
+  const rec = panel.capabilities[0];
+  assert.equal(rec.observedState, 'ENFORCED', rec.detail);
   assert.match(panel.evidenceDigest, /^[0-9a-f]{64}$/);
-  // Exit 1 = not delivered. Not 0, and not 2.
-  assert.equal(r.status, verifyMod.EXIT_NOT_DELIVERED);
+  assert.match(rec.probeDefinitionSha256, /^[0-9a-f]{64}$/);
+  assert.match(rec.deliveryContractSha256, /^[0-9a-f]{64}$/);
+
+  // The exit code is the contract, and it follows the verdict rather than the
+  // observation: on a clean tree this is PASS and exit 0; run from a working
+  // tree with edits in it the verdict is STALE and exit 1, because evidence
+  // taken with uncommitted changes is not evidence for this SHA.
+  const expected = rec.verdict === 'PASS' ? verifyMod.EXIT_OK : verifyMod.EXIT_NOT_DELIVERED;
+  assert.equal(r.status, expected, 'verdict ' + rec.verdict + ' must map to exit ' + expected);
+  assert.equal(panel.overall, rec.verdict === 'PASS' ? 'PASS' : 'FAIL');
 });
 
 test('DV24  --evidence-dir persists a panel bound to the SHA it was taken at', { timeout: 600000 }, () => {
   const dir = tmpdir();
   const r = cli(['--capability', 'GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE', '--mode', 'sealed', '--evidence-dir', dir]);
-  assert.equal(r.status, verifyMod.EXIT_NOT_DELIVERED);
+  // Either exit is legitimate and which one is not this test's subject: on a
+  // clean tree the capability passes (0), and from a working tree with edits in
+  // it the verdict is STALE (1). What IS the subject is that a record was
+  // written and that it names the commit it was taken at.
+  assert.ok(
+    r.status === verifyMod.EXIT_OK || r.status === verifyMod.EXIT_NOT_DELIVERED,
+    'a verifier error (2) means no evidence was produced: ' + r.stderr.slice(0, 200),
+  );
   const files = fs.readdirSync(dir);
   assert.equal(files.length, 1);
   const panel = JSON.parse(fs.readFileSync(path.join(dir, files[0]), 'utf8'));

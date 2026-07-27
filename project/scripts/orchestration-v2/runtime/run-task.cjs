@@ -37,6 +37,8 @@ const { execFileSync } = require('child_process');
 
 const orchestrator = require('../orchestrator/orchestrator.cjs');
 const stateMod = require('../orchestrator/state.cjs');
+const mergeready = require('../orchestrator/mergeready.cjs');
+const { digest: authorityDigest } = require('../orchestrator/authority.cjs');
 const { createGhPrProvider } = require('./gh-pr-provider.cjs');
 const { createGhCiProvider } = require('./gh-ci-provider.cjs');
 const { createGhMergeProvider } = require('./gh-merge-provider.cjs');
@@ -265,7 +267,10 @@ function buildContext(opts) {
       taskSpecRequired: opts.taskSpecRequired || [],
     });
 
-  return {
+  // Named rather than returned as a literal: observeFresh below reaches back
+  // into the providers this same object carries, so the merge gate and the CI
+  // gate cannot end up observing through two differently-configured clients.
+  const ctx = {
     repoCwd,
     spec,
     grant,
@@ -314,6 +319,68 @@ function buildContext(opts) {
     // completeAfterOwnerMerge().
     performMerge: opts.performMerge || buildMergeStep(opts, repoCwd, ciProvider),
 
+    /**
+     * Freshly observed reality, for the revalidation that gates the merge.
+     *
+     * completeAfterOwnerMerge has called ctx.observeFresh() since it was
+     * written, and NOTHING outside pilot.test.cjs ever supplied it. The tests
+     * injected a fake and passed; the live composition root did not define the
+     * field at all, so `typeof ctx.observeFresh` was `undefined` on every real
+     * run. #1694 then wired the adapter to call completeAfterOwnerMerge — and
+     * the first thing that function does is call this. The auto-merge path
+     * therefore threw TypeError on its first step, was caught by the adapter's
+     * MERGE_THREW handler, and parked the entry at BLOCKED.
+     *
+     * That is the same class of defect as every other one this program is
+     * about: a function with a caller in tests and none in production, green
+     * the whole time. It is fixed here rather than in the adapter because the
+     * composition root is where a context's fields belong — an adapter that
+     * patched in a missing collaborator would leave the next caller of
+     * buildContext with the same hole.
+     *
+     * Takes its subject as an argument rather than closing over ctx.result:
+     * the result does not exist when the context is built, and the caller
+     * already has it.
+     */
+    observeFresh:
+      opts.observeFresh ||
+      (async (a) => {
+        const result = (a && a.result) || {};
+        const pr = result.pr || {};
+        if (!pr.number) throw new RunnerError('OBSERVE_FRESH_PR_UNKNOWN', 'the result carries no pr.number');
+
+        const st = await ctx.prProvider.state({ pr });
+        const sources = await ctx.ciProvider.requiredSources();
+        const ci = mergeready.evaluateCi({
+          sources,
+          observed: await ctx.ciProvider.observe({ pr }),
+        });
+
+        return {
+          prHeadSha: st.headSha,
+          targetBranchObservedSha: st.targetBranchSha,
+          mergeBaseSha: st.mergeBaseSha,
+          prOpen: st.open,
+          prMergeable: st.mergeable,
+          blockingReview: st.blockingReview === true,
+          competingWriter: st.competingWriter === true,
+          requiredCiResultSetSha256: ci.resultSetSha256,
+          // Re-read now, not carried from the attestation: a grant pulled while
+          // CI was running must stop the merge it was pulled to stop.
+          grantRevoked: opts.isRevoked ? opts.isRevoked() === true : false,
+          grantExpired:
+            grant && grant.expiresAt ? Date.parse(grant.expiresAt) <= Date.now() : false,
+          // Recomputed from the spec rather than echoed from the attestation.
+          // Echoing it would compare a value with itself and always agree,
+          // which is worse than not checking it — it would look checked.
+          taskSpecSha256: spec ? authorityDigest(spec) : undefined,
+          // leaseEpoch and holderToken are deliberately absent. On this path the
+          // lease is held by THIS process, so re-reading it here would compare
+          // the holder against itself. The durable finalizer, which runs in a
+          // process that may not hold it, reads the lease for real.
+        };
+      }),
+
     prompt: opts.prompt,
     // 'STDIN_PAYLOAD', not 'STDIN'. spawn.cjs accepts exactly two values and
     // fails PROMPT_TRANSPORT_INVALID on anything else, so the earlier spelling
@@ -326,6 +393,8 @@ function buildContext(opts) {
     attestationTtlMs: opts.attestationTtlMs || 30 * 60 * 1000,
     leaseTtlMs: opts.leaseTtlMs || 60 * 60 * 1000,
   };
+
+  return ctx;
 }
 
 async function main(argv) {

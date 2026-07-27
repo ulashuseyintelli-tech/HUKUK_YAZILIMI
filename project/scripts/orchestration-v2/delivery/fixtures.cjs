@@ -392,6 +392,436 @@ function prependPath(dir) {
   return dir + sep + current;
 }
 
+/**
+ * PATH with `dir` in front and every directory containing a real `name`
+ * removed.
+ *
+ * Prepending is not enough, and the reason is worth stating because it cost an
+ * hour: spawn-mode.cjs prefers a DIRECTLY SPAWNABLE image found anywhere on
+ * PATH over a shim found first. On Windows a fake can only be a `.cmd`, so the
+ * real `gh.exe` — however far down PATH it sits — wins, and the probe silently
+ * talks to GitHub instead of to its fixture. It failed loudly here only because
+ * the real gh demanded authentication; with a logged-in shell it would have
+ * reached the network from a probe whose whole contract is that it does not.
+ *
+ * So the sealed world does not contain the real binary at all. That is also the
+ * more honest fixture: "no gh is reachable except this one" is exactly the
+ * property a sealed probe should be able to state.
+ */
+function pathWithout(dir, name) {
+  const sep = os.platform() === 'win32' ? ';' : ':';
+  const exts = os.platform() === 'win32' ? ['.exe', '.cmd', '.bat', '.com'] : [''];
+  const current = (process.env.PATH || process.env.Path || '').split(sep);
+  const kept = current.filter((entry) => {
+    if (!entry) return false;
+    return !exts.some((e) => {
+      try {
+        return fs.existsSync(path.join(entry, name + e));
+      } catch (err) {
+        return false;
+      }
+    });
+  });
+  return [dir].concat(kept).join(sep);
+}
+
+/**
+ * A `gh` that answers from a file instead of from GitHub.
+ *
+ * The owner decision allows a fake executable at the process boundary, and this
+ * is the case it exists for: the finalizer's whole subject is a real merge, and
+ * a merge cannot be proved by a probe that never performs one. So the merge IS
+ * real — `git merge --squash` against a local bare remote, producing a genuine
+ * commit and a genuine SHA — and only GitHub's answers about pull-request state
+ * are substituted.
+ *
+ * What this deliberately does NOT substitute: the merge provider, the CI gate,
+ * the attestation revalidation, the queue transitions, the finalizer, or the
+ * service CLI. All of those are the shipped code, running for real. A probe that
+ * faked any of them would be proving its own fixture.
+ *
+ * State lives in `state.json` so it survives between the several `gh`
+ * invocations one finalize makes — `pr view` before the merge, `pr merge`, then
+ * `pr view` again to read the resulting SHA, which is exactly the sequence the
+ * provider's idempotency depends on.
+ *
+ * @param {object} o
+ * @param {string} o.repoDir     working repository the merge lands in
+ * @param {number} o.prNumber
+ * @param {string} o.headBranch  branch the provider is allowed to merge
+ * @param {string[]} [o.requiredChecks]
+ * @param {boolean} [o.alreadyMerged]  start in the merged state (idempotency case B)
+ * @param {string} [o.mergeStateStatus]
+ */
+function fakeGhDir(o) {
+  const dir = tmpdir('gh');
+  const statePath = path.join(dir, 'state.json');
+  const checks = o.requiredChecks || ['Test Suite'];
+
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify(
+      {
+        prNumber: o.prNumber,
+        headBranch: o.headBranch,
+        headSha: o.headSha || null,
+        baseBranch: o.baseBranch || 'main',
+        state: o.alreadyMerged ? 'MERGED' : 'OPEN',
+        mergeable: o.mergeable || 'MERGEABLE',
+        mergeStateStatus: o.mergeStateStatus || 'CLEAN',
+        reviewDecision: o.reviewDecision || 'APPROVED',
+        mergeCommitOid: o.mergeCommitOid || null,
+        requiredChecks: checks,
+        repoDir: o.repoDir,
+        calls: [],
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+
+  // A Node script rather than a shell script: the same file drives both
+  // platforms, and the merge it performs is real git either way.
+  const js = path.join(dir, 'gh-impl.cjs');
+  fs.writeFileSync(js, FAKE_GH_SOURCE, 'utf8');
+
+  if (os.platform() === 'win32') {
+    fs.writeFileSync(
+      path.join(dir, 'gh.cmd'),
+      ['@echo off', '"' + process.execPath + '" "' + js + '" %*', 'exit /b %errorlevel%', ''].join('\r\n'),
+      'utf8',
+    );
+  } else {
+    const p = path.join(dir, 'gh');
+    fs.writeFileSync(
+      p,
+      ['#!/bin/sh', 'exec "' + process.execPath + '" "' + js + '" "$@"', ''].join('\n'),
+      'utf8',
+    );
+    fs.chmodSync(p, 0o755);
+  }
+  return {
+    dir,
+    statePath,
+    read: () => JSON.parse(fs.readFileSync(statePath, 'utf8')),
+  };
+}
+
+/**
+ * The fake gh, as source. Kept as a string so the fixture writes ONE file and
+ * there is no question of it accidentally being resolved as a module of this
+ * package.
+ *
+ * It implements exactly the three calls the shipped providers make:
+ *
+ *   gh pr view <n> --json ...      state, mergeability, head, merge commit
+ *   gh pr merge <n> --squash ...   a real squash merge into the base branch
+ *   gh api .../required_status_checks --jq ...   the platform-required set
+ *   gh pr view <n> --json statusCheckRollup      the observed conclusions
+ *
+ * Anything else exits non-zero, so a provider that starts making a call this
+ * does not model fails loudly rather than silently reading an empty answer.
+ */
+const FAKE_GH_SOURCE = `'use strict';
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+const statePath = path.join(__dirname, 'state.json');
+const S = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+const argv = process.argv.slice(2);
+const save = () => fs.writeFileSync(statePath, JSON.stringify(S, null, 2), 'utf8');
+const git = (a) => execFileSync('git', a, { cwd: S.repoDir, encoding: 'utf8' }).trim();
+S.calls.push(argv.join(' '));
+
+function out(s) { process.stdout.write(s + '\\n'); save(); process.exit(0); }
+function die(s) { process.stderr.write(s + '\\n'); save(); process.exit(1); }
+
+const headSha = () => { try { return git(['rev-parse', S.headBranch]); } catch (e) { return S.headSha || null; } };
+
+if (argv[0] === 'pr' && argv[1] === 'view') {
+  const wants = argv[argv.indexOf('--json') + 1] || '';
+  if (wants.indexOf('statusCheckRollup') !== -1) {
+    out(JSON.stringify({
+      statusCheckRollup: S.requiredChecks.map((n) => ({ name: n, status: 'COMPLETED', conclusion: 'SUCCESS' })),
+    }));
+  }
+  out(JSON.stringify({
+    state: S.state,
+    mergeable: S.mergeable,
+    mergeStateStatus: S.mergeStateStatus,
+    reviewDecision: S.reviewDecision,
+    headRefName: S.headBranch,
+    headRefOid: headSha(),
+    baseRefName: S.baseBranch,
+    mergeCommit: S.mergeCommitOid ? { oid: S.mergeCommitOid } : null,
+  }));
+}
+
+if (argv[0] === 'pr' && argv[1] === 'merge') {
+  if (S.state === 'MERGED') die('already merged');
+  // A real squash merge. The SHA the finalizer records is a commit that exists.
+  const before = git(['rev-parse', 'HEAD']);
+  git(['checkout', '-q', S.baseBranch]);
+  git(['merge', '--squash', S.headBranch]);
+  git(['-c', 'user.email=probe@example.invalid', '-c', 'user.name=fake-gh',
+       'commit', '-q', '-m', 'squash merge of ' + S.headBranch]);
+  S.mergeCommitOid = git(['rev-parse', 'HEAD']);
+  S.state = 'MERGED';
+  S.beforeSha = before;
+  out('merged ' + S.mergeCommitOid);
+}
+
+if (argv[0] === 'api') {
+  // The platform-required check set.
+  out(JSON.stringify(S.requiredChecks));
+}
+
+die('fake gh: unmodelled call: ' + argv.join(' '));
+`;
+
+/**
+ * A world in which a real merge can happen.
+ *
+ * Everything the finalizer touches is genuine: a bare remote, a working clone,
+ * a feature branch carrying an actual diff, a real queue with a real durable
+ * handoff, and the real standing grant. The only substitution is `gh`, and even
+ * that performs a real `git merge --squash` — so the merge SHA the finalizer
+ * records is a commit that exists and can be checked out.
+ *
+ * This is what makes capability D provable without a network: the claim is
+ * "a stranded MERGE_READY entry can be carried to CLOSED by a public command",
+ * and every link in that chain here is the shipped code.
+ *
+ * @param {object} [over]
+ * @param {boolean} [over.autoMerge]        request asks for auto-merge (default true)
+ * @param {boolean} [over.omitHandoff]      leave the entry with no durable handoff
+ * @param {object}  [over.corruptHandoff]   replace the handoff with this
+ * @param {boolean} [over.alreadyMerged]    the PR is already merged (idempotency B)
+ * @param {boolean} [over.expireAttestation]  attestation is already expired
+ * @param {boolean} [over.revokeGrant]      write the grant's revocation marker
+ */
+function mergeWorld(over) {
+  const o = over || {};
+  const authority = require('../orchestrator/authority.cjs');
+  const mergeready = require('../orchestrator/mergeready.cjs');
+  const queueMod = require('../orchestrator/queue.cjs');
+
+  // ── the remote ──────────────────────────────────────────────────────────
+  const remote = tmpdir('remote');
+  git(['init', '--bare', '--initial-branch=main', '-q'], remote);
+  // gh-pr-provider fetches the PR head by SHA, which a bare repo refuses unless
+  // it is told to serve arbitrary objects.
+  git(['config', 'uploadpack.allowAnySHA1InWant', 'true'], remote);
+  git(['config', 'uploadpack.allowReachableSHA1InWant', 'true'], remote);
+
+  // ── the working repository ──────────────────────────────────────────────
+  const root = bareGitRepo('merge');
+  git(['remote', 'add', 'origin', remote], root);
+
+  const copy = (rel) => {
+    const src = path.join(REPO_ROOT, rel);
+    if (!fs.existsSync(src)) throw new FixtureError('FIXTURE_SOURCE_MISSING', rel);
+    const dst = exec.assertContained(path.join(root, rel), root);
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.copyFileSync(src, dst);
+  };
+  fs.mkdirSync(path.join(root, ACT), { recursive: true });
+  copy(MANIFEST_REL);
+  copy(OFFICE_GRANT);
+  copy(GOV_GRANT);
+
+  const g = readRepoGrant(OFFICE_GRANT);
+  const taskId = o.taskId || 'PROBE-FINALIZE-01';
+  const spec = {
+    taskId,
+    boundaryPolicy: { allowedRoots: [g.allowedPathRoots[0] + '__tests__/'], maxChangedFiles: 2 },
+  };
+  const planPath = writePlan(root, spec);
+  const requestPath = writeRequest(root, {
+    programId: 'OFFICE',
+    taskId,
+    taskClass: 'TEST_ONLY_CHARACTERIZATION',
+    planPath,
+    standingGrantPath: OFFICE_GRANT,
+    executorLane: 'CLAUDE_LOCAL',
+    autoMerge: o.autoMerge !== false,
+  });
+
+  git(['add', '-A'], root);
+  git(['commit', '-q', '-m', 'merge world base'], root);
+  git(['push', '-q', 'origin', 'main'], root);
+  const baseSha = git(['rev-parse', 'HEAD'], root);
+  git(['update-ref', 'refs/remotes/origin/main', baseSha], root);
+
+  // ── the feature branch, with an actual change ───────────────────────────
+  const headBranch = 'probe/finalize-' + taskId.toLowerCase();
+  git(['checkout', '-q', '-b', headBranch], root);
+  write(root, g.allowedPathRoots[0] + '__tests__/probe-delivery.spec.ts', '// probe fixture change\n');
+  git(['add', '-A'], root);
+  git(['commit', '-q', '-m', 'probe: bounded fixture change'], root);
+  git(['push', '-q', 'origin', headBranch], root);
+  const headSha = git(['rev-parse', 'HEAD'], root);
+  git(['checkout', '-q', 'main'], root);
+
+  const prNumber = 4242;
+  const gh = fakeGhDir({
+    repoDir: root,
+    prNumber,
+    headBranch,
+    headSha,
+    baseBranch: 'main',
+    alreadyMerged: o.alreadyMerged === true,
+    mergeCommitOid: o.alreadyMerged ? headSha : null,
+    requiredChecks: ['Test Suite', 'Architectural Guardrails'],
+  });
+
+  if (o.revokeGrant) {
+    write(root, g.revocationPath, 'revoked by the probe fixture\n');
+  }
+
+  // ── the queue entry, walked to MERGE_READY with a durable handoff ───────
+  const queueDir = path.join(root, '.probe-queue');
+  const queue = queueMod.createQueue(queueDir);
+  const entry = queue.enqueue({
+    programId: 'OFFICE',
+    taskId,
+    taskClass: 'TEST_ONLY_CHARACTERIZATION',
+    parentAuthorizationId: (g.parentAuthorizationRef && g.parentAuthorizationRef.authorizationId) || '',
+    taskSpecSha256: authority.digest(spec),
+    standingGrantId: g.standingGrantId,
+    priority: 100,
+    dependsOn: [],
+    requestPath,
+    executorLane: 'CLAUDE_LOCAL',
+  });
+
+  // The required-CI digest is computed by the SAME function the finalizer's
+  // fresh observation will use, over the SAME set the fake gh reports. Anything
+  // else would make the attestation disagree with reality for a reason that has
+  // nothing to do with the property under test.
+  const required = ['Test Suite', 'Architectural Guardrails'];
+  const ciEval = mergeready.evaluateCi({
+    sources: { platformRequired: required, governanceRequired: [], taskSpecRequired: [] },
+    observed: required.map((n) => ({ name: n, status: 'COMPLETED', conclusion: 'SUCCESS' })),
+  });
+  const mergeBase = git(['merge-base', headSha, baseSha], root);
+  const nowMs = Date.now();
+  const built = mergeready.buildAttestation({
+    taskId,
+    taskAttemptId: 'a'.repeat(32),
+    taskSpecSha256: authority.digest(spec),
+    grantId: g.standingGrantId,
+    grantSha256: authority.digest(g),
+    leaseEpoch: 1,
+    holderToken: 'b'.repeat(32),
+    prNumber,
+    prHeadSha: headSha,
+    targetBranch: 'main',
+    targetBranchObservedSha: baseSha,
+    mergeBaseSha: mergeBase,
+    requiredCiResultSetSha256: ciEval.resultSetSha256,
+    nowMs: o.expireAttestation ? nowMs - 7200000 : nowMs,
+    ttlMs: 30 * 60 * 1000,
+    conjunction: require('../orchestrator/mergeready.cjs').CONJUNCTION_KEYS.reduce((acc, k) => {
+      acc[k] = true;
+      return acc;
+    }, {}),
+  });
+  if (!built.ok) throw new FixtureError('FIXTURE_ATTESTATION_INVALID', built.failedConditions.join(','));
+
+  const handoff = o.corruptHandoff !== undefined
+    ? o.corruptHandoff
+    : {
+        schemaVersion: 1,
+        entryId: entry.entryId,
+        taskId,
+        taskAttemptId: 'a'.repeat(32),
+        taskSpecSha256: authority.digest(spec),
+        grantId: g.standingGrantId,
+        grantSha256: authority.digest(g),
+        standingGrantId: g.standingGrantId,
+        requestPath,
+        prNumber,
+        prHeadSha: headSha,
+        branch: headBranch,
+        worktreePath: null,
+        targetBranch: 'main',
+        targetBranchObservedSha: baseSha,
+        mergeBaseSha: mergeBase,
+        requiredCiResultSetSha256: ciEval.resultSetSha256,
+        leaseEpoch: 1,
+        holderToken: 'b'.repeat(32),
+        executorLane: 'CLAUDE_LOCAL',
+        attestation: built.attestation,
+        createdAt: built.attestation.createdAt,
+        expiresAt: built.attestation.expiresAt,
+      };
+
+  const route = ['PLANNING', 'REVIEWING', 'AUTHORIZED', 'PREFLIGHT', 'EXECUTING', 'VALIDATING', 'PR_OPEN', 'CI_WAITING', 'MERGE_READY'];
+  for (const to of route) {
+    queue.transition({
+      entryId: entry.entryId,
+      to,
+      expectedPreviousState: queue.get(entry.entryId).state,
+      nowMs,
+      patch:
+        to === 'PR_OPEN'
+          ? { prNumber, prHeadSha: headSha, branch: headBranch }
+          : to === 'MERGE_READY'
+            ? (o.omitHandoff ? { attestationAt: built.attestation.createdAt } : { attestationAt: built.attestation.createdAt, handoff })
+            : {},
+    });
+  }
+
+  // ── the orchestrator's OWN task store ───────────────────────────────────
+  //
+  // Two durable stores hold the same task: the queue (service-level) and the
+  // task store (orchestrator-level). A real run writes both, and a crash after
+  // MERGE_READY leaves both at MERGE_READY. Seeding only the queue would build
+  // a world no crash can produce — and the finalizer would fail on a CAS
+  // mismatch for a reason the probe invented.
+  //
+  // So the fixture walks the task store through the same lifecycle a real run
+  // does, with the same lease identity the handoff carries.
+  const stateMod = require('../orchestrator/state.cjs');
+  if (o.omitTaskStore !== true) {
+    const store = stateMod.createStore(stateMod.defaultStateDir(root));
+    const lease = { leaseEpoch: 1, holderToken: 'b'.repeat(32) };
+    const chain = [
+      ['DECLARED', 'TASK_AUTHOR'],
+      ['AUTHORIZED', 'OWNER'],
+      ['ELIGIBLE', 'ORCHESTRATOR'],
+      ['CLAIMED', 'ORCHESTRATOR'],
+      ['WORKTREE_READY', 'ORCHESTRATOR'],
+      ['EXECUTOR_RUNNING', 'ORCHESTRATOR'],
+      ['VALIDATING', 'ORCHESTRATOR'],
+      ['PR_OPEN', 'ORCHESTRATOR'],
+      ['CI_PENDING', 'ORCHESTRATOR'],
+      ['MERGE_READY', 'ORCHESTRATOR'],
+    ];
+    let from = null;
+    for (const [to, writer] of chain) {
+      store.transition(Object.assign(
+        {
+          taskId,
+          to,
+          expectedPreviousState: from,
+          writerIdentity: writer,
+          taskAttemptId: 'a'.repeat(32),
+          nowMs,
+          payload: to === 'MERGE_READY' ? { attestation: built.attestation } : {},
+        },
+        stateMod.requiresLease(to) ? lease : {},
+      ));
+      from = to;
+    }
+  }
+
+  return { root, remote, queueDir, entryId: entry.entryId, taskId, prNumber, headBranch, headSha, baseSha, gh, requestPath };
+}
+
 module.exports = {
   REPO_ROOT,
   ACT,
@@ -415,5 +845,8 @@ module.exports = {
   officeRequest,
   governanceRequest,
   fakeExecutorDir,
+  fakeGhDir,
+  pathWithout,
+  mergeWorld,
   prependPath,
 };

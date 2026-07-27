@@ -930,7 +930,11 @@ async function completeAfterOwnerMerge(ctx) {
 
   const fresh = mergeready.revalidate({
     attestation: ctx.result.attestation,
-    observed: await ctx.observeFresh(),
+    // The subject is passed rather than closed over. observeFresh is built by
+    // the composition root, where the result does not yet exist; asking it to
+    // reach ctx.result would make the context depend on a field added to a COPY
+    // of itself later, which is how it came to be undefined on the live path.
+    observed: await ctx.observeFresh({ result: ctx.result }),
     nowMs,
   });
   if (!fresh.valid) {

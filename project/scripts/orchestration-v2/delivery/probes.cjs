@@ -506,105 +506,279 @@ const postMergeClosureProbe = {
   probeId: 'PROBE_POST_MERGE_CLOSURE_SEALED',
   probeClass: 'PROBE_SEALED',
   definition: {
-    entrypoint: 'service/orch-service.cjs finalize (expected to exist)',
+    entrypoint: 'service/orch-service.cjs finalize --entry <entryId>',
     positive:
-      'a durably persisted MERGE_READY entry can be carried through fresh revalidation, merge, ' +
-      'merge-SHA-bound delivery verification and CLOSED, by a public operator command',
-    observedToday: 'no such command exists; the queue declares five states past MERGE_READY that nothing public can reach',
-    sideEffects: 'disposable repository and queue only',
+      'a durably persisted MERGE_READY entry is carried through fresh revalidation, a real merge ' +
+      'and the full queue walk to CLOSED by a public operator command, in a process that did not ' +
+      'create it',
+    negatives: [
+      { case: 'no durable handoff', expect: 'FINALIZATION_CONTEXT_MISSING' },
+      { case: 'malformed handoff', expect: 'FINALIZATION_CONTEXT_INCOMPLETE' },
+      { case: 'kill switch engaged', expect: 'KILL_SWITCH_ENGAGED' },
+      { case: 'standing grant revoked', expect: 'no merge' },
+      { case: 'attestation expired', expect: 'no merge' },
+      { case: 'request does not ask for auto-merge', expect: 'MERGE_NOT_AUTHORIZED' },
+    ],
+    proof:
+      'the merge is real: a local bare remote, a real feature branch and a real git squash. ' +
+      'Only GitHub\'s answers about PR state are substituted, at the process boundary.',
+    sideEffects: 'disposable repository, remote and queue only; no network, no real PR',
   },
 
   async run(ctx) {
     const steps = [];
-    const world = fixtures.serviceWorld();
-    const { requestPath } = fixtures.officeRequest(world.root, { taskId: 'PROBE-CLOSURE-01' });
 
-    const cli = (args) =>
+    /**
+     * Run the shipped operator console against one disposable world.
+     *
+     * The PATH is built so the real `gh` is not reachable at all — prepending a
+     * fake is not enough, because spawn-mode prefers a directly spawnable image
+     * anywhere on PATH over a shim found first, and a sealed probe that could
+     * reach GitHub is not sealed.
+     */
+    const cli = (world, args) =>
       exec.run({
         argv: [process.execPath, ORCH_SERVICE_CLI].concat(args, ['--repo', world.root, '--queue-dir', world.queueDir]),
         cwd: world.root,
         timeoutMs: ctx.timeoutMs,
+        env: { PATH: fixtures.pathWithout(world.gh.dir, 'gh') },
       });
 
-    // Build the handoff through the real CLI, then walk it to MERGE_READY with
-    // the real queue. Creating the state to be finalized is fixture work; the
-    // claim under test is only whether a public command can finalize it.
-    const enq = await cli(['enqueue', '--request', requestPath]);
-    if (enq.code !== 0) {
-      return {
-        observedState: 'FAILED',
-        failureCode: 'FINALIZATION_CONTEXT_MISSING',
-        detail: 'could not build a MERGE_READY fixture: enqueue exited ' + enq.code,
-        steps: [step('build handoff', 'FAIL', (enq.stderr || enq.stdout).slice(0, 200))],
-      };
-    }
-    const queue = queueMod.createQueue(world.queueDir);
-    const entry = queue.list()[0];
-    const route = routeBetween(entry.state, 'MERGE_READY');
-    if (!route) {
-      return {
-        observedState: 'FAILED',
-        failureCode: 'FINALIZATION_CONTEXT_MISSING',
-        detail: 'the queue table has no route from ' + entry.state + ' to MERGE_READY',
-        steps: [step('build handoff', 'FAIL', entry.state)],
-      };
-    }
-    for (const to of route) {
-      queue.transition({
-        entryId: entry.entryId,
-        to,
-        expectedPreviousState: queue.get(entry.entryId).state,
-        nowMs: Date.now(),
-        patch:
-          to === 'PR_OPEN'
-            ? { prNumber: 999999, prHeadSha: 'f'.repeat(40), branch: 'probe/closure' }
-            : to === 'MERGE_READY'
-              ? { attestationAt: new Date().toISOString() }
-              : {},
-      });
-    }
-    steps.push(step('build MERGE_READY handoff', 'PASS', entry.entryId.slice(0, 12) + ' in MERGE_READY'));
+    const stateOf = (world) => queueMod.createQueue(world.queueDir).get(world.entryId);
 
-    // ── the actual question ─────────────────────────────────────────────────
-    const fin = await cli(['finalize', '--entry', entry.entryId]);
-    const unknownCommand = fin.code === 2 && mentions(fin, 'unknown command');
-    if (unknownCommand) {
+    // ── the negatives, first ────────────────────────────────────────────────
+    //
+    // Before proving the command CAN close an entry, prove it REFUSES to when
+    // it must. A finalizer that merges whatever it is pointed at would pass the
+    // positive case just as readily, and the positive case is the one everybody
+    // writes.
+    const refusals = [
+      {
+        name: 'no durable handoff',
+        over: { omitHandoff: true },
+        expect: 'FINALIZATION_CONTEXT_MISSING',
+      },
+      {
+        name: 'malformed handoff',
+        over: { corruptHandoff: { schemaVersion: 1, entryId: 'x', taskId: 'y' } },
+        expect: 'FINALIZATION_CONTEXT_INCOMPLETE',
+      },
+      {
+        name: 'request does not ask for auto-merge',
+        over: { autoMerge: false },
+        expect: 'MERGE_NOT_AUTHORIZED',
+      },
+      {
+        name: 'attestation expired',
+        over: { expireAttestation: true },
+        expect: 'ATTESTATION_EXPIRED',
+      },
+      {
+        name: 'standing grant revoked',
+        over: { revokeGrant: true },
+        expect: 'REVOKED',
+      },
+    ];
+
+    for (const neg of refusals) {
+      const world = fixtures.mergeWorld(neg.over);
+      const res = await cli(world, ['finalize', '--entry', world.entryId]);
+      const merged = world.gh.read().state === 'MERGED';
+      const after = stateOf(world);
+
+      if (merged) {
+        return {
+          observedState: 'UNWIRED',
+          failureCode: 'DELIVERY_PUBLIC_ENTRYPOINT_BYPASSED',
+          detail: neg.name + ': the finalizer merged anyway — the gate is not on the public path',
+          steps: steps.concat([step(neg.name, 'MERGED_ANYWAY', 'exit ' + res.code)]),
+        };
+      }
+      if (after.state === 'CLOSED') {
+        return {
+          observedState: 'FAILED',
+          failureCode: 'POST_MERGE_DELIVERY_FAILED',
+          detail: neg.name + ': the entry reached CLOSED without a merge',
+          steps: steps.concat([step(neg.name, 'FALSE_CLOSED', after.state)]),
+        };
+      }
+      if (!mentions(res, neg.expect)) {
+        return {
+          observedState: 'FAILED',
+          failureCode: 'DELIVERY_PROBE_FAILED',
+          detail:
+            neg.name + ': refused, but not by ' + neg.expect + ' — ' +
+            (res.stdout + res.stderr).replace(/\s+/g, ' ').slice(0, 240),
+          steps: steps.concat([step(neg.name, 'WRONG_CODE', res.stdout.slice(0, 160))]),
+        };
+      }
+      steps.push(step(neg.name, 'REFUSED', neg.expect + ', entry left in ' + after.state));
+    }
+
+    // ── the kill switch, which must stop a merge that would otherwise happen ─
+    {
+      const world = fixtures.mergeWorld();
+      const engage = await cli(world, ['stop', '--reason', 'delivery probe']);
+      if (engage.code !== 0) {
+        return {
+          observedState: 'FAILED',
+          failureCode: 'DELIVERY_PROBE_INFRASTRUCTURE_ERROR',
+          detail: 'could not engage the kill switch: ' + engage.stderr.slice(0, 200),
+          steps: steps.concat([step('kill switch', 'SETUP_FAILED', 'exit ' + engage.code)]),
+        };
+      }
+      const res = await cli(world, ['finalize', '--entry', world.entryId]);
+      if (world.gh.read().state === 'MERGED') {
+        return {
+          observedState: 'UNWIRED',
+          failureCode: 'DELIVERY_PUBLIC_ENTRYPOINT_BYPASSED',
+          detail: 'the kill switch was engaged and the finalizer merged anyway',
+          steps: steps.concat([step('kill switch engaged', 'MERGED_ANYWAY', 'exit ' + res.code)]),
+        };
+      }
+      const after = stateOf(world);
+      // Transient, so it must not strand the entry: BLOCKED goes only to QUEUED,
+      // and QUEUED re-runs the executor — a second PR for an open one.
+      if (after.state !== 'MERGE_READY') {
+        return {
+          observedState: 'FAILED',
+          failureCode: 'DELIVERY_PROBE_FAILED',
+          detail: 'a transient kill switch left the entry in ' + after.state + ' rather than MERGE_READY',
+          steps: steps.concat([step('kill switch engaged', 'STRANDED', after.state)]),
+        };
+      }
+      steps.push(step('kill switch engaged', 'REFUSED', 'no merge; entry still finalizable'));
+    }
+
+    // ── the positive: a real merge, from a process that did not create it ────
+    const world = fixtures.mergeWorld();
+    const before = stateOf(world);
+    if (before.state !== 'MERGE_READY') {
+      return {
+        observedState: 'FAILED',
+        failureCode: 'DELIVERY_PROBE_INFRASTRUCTURE_ERROR',
+        detail: 'the fixture did not reach MERGE_READY: ' + before.state,
+        steps: steps.concat([step('build handoff', 'FAIL', before.state)]),
+      };
+    }
+    steps.push(step('durable MERGE_READY handoff', 'PASS', world.entryId.slice(0, 12)));
+
+    // The question, asked of a process that did not produce the attestation and
+    // holds nothing in memory: everything it needs it must read from the queue.
+    const fin = await cli(world, ['finalize', '--entry', world.entryId]);
+    if (fin.timedOut) {
+      return {
+        observedState: 'FAILED',
+        failureCode: 'DELIVERY_PROBE_TIMEOUT',
+        detail: 'finalize did not finish within ' + ctx.timeoutMs + 'ms',
+        steps: steps.concat([step('finalize --entry', 'TIMEOUT', fin.killMethod)]),
+      };
+    }
+    if (fin.code === 2 && mentions(fin, 'unknown command')) {
       return {
         observedState: 'UNWIRED',
         failureCode: 'DELIVERY_PROBE_MISSING',
-        detail:
-          'the operator console has no finalize command: a MERGE_READY entry cannot be carried to CLOSED ' +
-          'by any public path, and completeAfterOwnerMerge has no caller on any executable path',
+        detail: 'the operator console has no finalize command; a stranded MERGE_READY entry cannot be advanced by any public path',
         steps: steps.concat([step('finalize --entry', 'NO_SUCH_COMMAND', 'exit 2')]),
       };
     }
 
-    // If a finalize command DOES exist, the capability is judged on whether it
-    // actually reaches CLOSED with delivery evidence — which is WP02/WP03's
-    // subject. Until then this branch is unreachable, and it is written now so
-    // that the probe does not need weakening later to notice the repair.
-    const after = queueMod.createQueue(world.queueDir).get(entry.entryId);
-    if (fin.code !== 0) {
+    const after = stateOf(world);
+    const gh = world.gh.read();
+    if (fin.code !== 0 || after.state !== 'CLOSED') {
       return {
         observedState: 'FAILED',
         failureCode: 'POST_MERGE_DELIVERY_FAILED',
-        detail: 'finalize exists but exited ' + fin.code + ': ' + (fin.stderr || fin.stdout).slice(0, 200),
-        steps: steps.concat([step('finalize --entry', 'FAIL', 'exit ' + fin.code)]),
+        detail:
+          'finalize exited ' + fin.code + ' and the entry is ' + after.state + ': ' +
+          (fin.stdout + fin.stderr).replace(/\s+/g, ' ').slice(0, 240),
+        steps: steps.concat([step('finalize --entry', 'FAIL', after.state)]),
       };
     }
-    if (after.state !== 'CLOSED') {
+
+    // A merge SHA that is merely recorded proves nothing. It has to name a
+    // commit that exists in the repository the merge was performed in —
+    // otherwise a finalizer could write a plausible forty-character string and
+    // everything downstream would believe it.
+    if (!/^[0-9a-f]{40}$/.test(String(after.mergeSha)) || after.mergeSha !== gh.mergeCommitOid) {
+      return {
+        observedState: 'FAILED',
+        failureCode: 'DELIVERY_SHA_MISMATCH',
+        detail: 'recorded merge sha ' + after.mergeSha + ' is not the commit the merge produced (' + gh.mergeCommitOid + ')',
+        steps: steps.concat([step('merge sha', 'MISMATCH', String(after.mergeSha))]),
+      };
+    }
+    let isCommit = false;
+    try {
+      isCommit = fixtures.git(['cat-file', '-t', after.mergeSha], world.root) === 'commit';
+    } catch (e) {
+      isCommit = false;
+    }
+    if (!isCommit) {
+      return {
+        observedState: 'FAILED',
+        failureCode: 'DELIVERY_SHA_MISMATCH',
+        detail: 'the recorded merge sha names no commit in the repository',
+        steps: steps.concat([step('merge sha', 'NOT_A_COMMIT', after.mergeSha)]),
+      };
+    }
+    steps.push(step('real merge', 'PASS', after.mergeSha.slice(0, 12) + ' exists as a commit'));
+
+    // Every state between MERGE_READY and CLOSED must appear in the durable
+    // log. A finalizer that teleported would leave a history from which no
+    // reader could reconstruct what happened — and a crash mid-way would land
+    // in a state recovery has no rule for.
+    const history = fs
+      .readFileSync(queueMod.createQueue(world.queueDir).logFile, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+      .filter((r) => r.entryId === world.entryId)
+      .map((r) => r.state);
+    for (const stage of ['MERGE_READY', 'MERGING', 'MERGED', 'SYNCING', 'CLEANING', 'CLOSED']) {
+      if (history.indexOf(stage) === -1) {
+        return {
+          observedState: 'FAILED',
+          failureCode: 'POST_MERGE_DELIVERY_FAILED',
+          detail: 'the queue walk skipped ' + stage + '; recorded: ' + history.join(' -> '),
+          steps: steps.concat([step('queue walk', 'TELEPORTED', history.join('>'))]),
+        };
+      }
+    }
+    steps.push(step('queue walk', 'PASS', 'MERGE_READY -> MERGING -> MERGED -> SYNCING -> CLEANING -> CLOSED'));
+
+    // Idempotency, case J: a second finalize must not merge again and must
+    // reach the same disposition. This is the crash-after-merge case, which an
+    // operator reproduces by simply running the command twice.
+    const shaBefore = after.mergeSha;
+    const again = await cli(world, ['finalize', '--entry', world.entryId]);
+    const mergeCalls = world.gh.read().calls.filter((c) => c.indexOf('pr merge') === 0).length;
+    if (mergeCalls !== 1) {
       return {
         observedState: 'FAILED',
         failureCode: 'POST_MERGE_DELIVERY_FAILED',
-        detail: 'finalize succeeded but the entry is ' + after.state + ', not CLOSED',
-        steps: steps.concat([step('finalize --entry', 'INCOMPLETE', after.state)]),
+        detail: 'a second finalize performed ' + mergeCalls + ' merges; exactly one is permitted',
+        steps: steps.concat([step('second finalize', 'DOUBLE_MERGE', String(mergeCalls))]),
       };
     }
-    steps.push(step('finalize --entry', 'PASS', 'CLOSED'));
+    const finalState = stateOf(world);
+    if (finalState.state !== 'CLOSED' || finalState.mergeSha !== shaBefore) {
+      return {
+        observedState: 'FAILED',
+        failureCode: 'POST_MERGE_DELIVERY_FAILED',
+        detail: 'a second finalize changed the outcome: ' + finalState.state + ' / ' + finalState.mergeSha,
+        steps: steps.concat([step('second finalize', 'NOT_IDEMPOTENT', finalState.state)]),
+      };
+    }
+    steps.push(step('second finalize', 'PASS', 'exit ' + again.code + ', one merge, same sha'));
+
     return {
       observedState: 'ENFORCED',
       failureCode: null,
-      detail: 'a MERGE_READY handoff was finalized to CLOSED through the operator console',
+      detail:
+        'a durable MERGE_READY handoff was carried to CLOSED by the public finalize command in a ' +
+        'separate process: six refusals held, the merge is a real commit, the queue walk is complete ' +
+        'and a second invocation merged nothing',
       steps,
     };
   },

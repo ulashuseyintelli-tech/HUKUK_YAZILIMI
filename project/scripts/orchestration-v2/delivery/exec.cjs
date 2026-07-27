@@ -120,6 +120,18 @@ function buildEnv(extra) {
     if (ENV_FORBIDDEN_SUBSTRINGS.some((f) => upper.indexOf(f) !== -1)) {
       throw new ExecError('PROBE_ENV_FORBIDDEN_NAME', k);
     }
+    // Windows environment names are case-insensitive; a JS object's keys are
+    // not. Copying both `PATH` and `Path` from process.env and then overriding
+    // only one of them leaves TWO entries in the block, and the child gets
+    // whichever the runtime happens to emit last — which was the original.
+    //
+    // Measured, not theorised: a probe that prepended a directory of fake
+    // executables to PATH resolved the REAL binary instead, silently, and the
+    // substitution the whole sealed model depends on had no effect at all.
+    // Every override therefore removes the other casings of the same name.
+    for (const existing of Object.keys(out)) {
+      if (existing !== k && existing.toUpperCase() === upper) delete out[existing];
+    }
     out[k] = extra[k];
   }
   // git must not be able to reach a credential helper, an askpass prompt or a

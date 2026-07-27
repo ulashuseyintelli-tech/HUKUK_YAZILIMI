@@ -35,6 +35,7 @@ const stateMod = require('../orchestrator/state.cjs');
 const admissionMod = require('../orchestrator/admission.cjs');
 const requestMod = require('./request.cjs');
 const adapterMod = require('./executor-adapter.cjs');
+const finalizeMod = require('./finalize.cjs');
 
 /**
  * Control files, relative to the repository root.
@@ -355,9 +356,71 @@ function createService(cfg) {
           audit,
           clock,
           isKillSwitchEngaged: () => service.killSwitchEngaged(),
-          isRevoked: o.isRevoked,
+          // Same repo-backed default as finalizeEntry, and for the same reason:
+          // the CLI supplies no options, so an undefined here means the merge
+          // gate never asks whether the grant was withdrawn.
+          isRevoked: o.isRevoked || service.grantRevoked,
         }),
       );
+    },
+
+    /**
+     * Finish an entry that is sitting in MERGE_READY — or stranded past it.
+     *
+     * The command that did not exist. runOnce could take a task to MERGE_READY
+     * and, since #1694, straight on to CLOSED in the same call; but if that call
+     * died anywhere in between, the entry stayed in MERGE_READY with a real open
+     * PR and nothing could advance it. The queue's recovery table rewinds
+     * MERGE_READY to MERGE_READY — correct, and inert, because there was no
+     * consumer.
+     *
+     * Reads the durable handoff, re-resolves authority from disk and finishes.
+     * Safe to run twice: an already-merged PR returns its existing sha and an
+     * entry past the step it is asked to take is skipped rather than repeated.
+     */
+    async finalizeEntry(entryId, opts) {
+      const o = opts || {};
+      return finalizeMod.finalizeEntry({
+        queue,
+        entryId,
+        repoCwd,
+        buildContext: o.buildContext || require('../runtime/run-task.cjs').buildContext,
+        completeAfterOwnerMerge:
+          o.completeAfterOwnerMerge || require('../orchestrator/orchestrator.cjs').completeAfterOwnerMerge,
+        isKillSwitchEngaged: () => service.killSwitchEngaged(),
+        // A repo-backed default, not an undefined the caller may forget to fill.
+        //
+        // This was `o.isRevoked` alone, and every public caller left it
+        // undefined: the CLI passes no options, so `finalize --entry` and the
+        // run-until-idle drain both merged with the revocation check switched
+        // off. `revocationPath` is a REQUIRED field of every standing grant, and
+        // creating the file it names did nothing — the same defect #1685 fixed
+        // for task grants, alive again one layer up, and found by the delivery
+        // probe rather than by review.
+        //
+        // A grant that cannot be withdrawn is worse than no grant at all, so the
+        // default reads the file and only an explicit override replaces it.
+        isRevoked: o.isRevoked || service.grantRevoked,
+        audit,
+        clock,
+      });
+    },
+
+    /**
+     * Is this standing grant revoked, according to the repository right now?
+     *
+     * Read at the moment it is asked, never cached: a revocation written while
+     * a task sat in the queue is the case the field exists for.
+     */
+    grantRevoked(standingGrant) {
+      const p = standingGrant && standingGrant.revocationPath;
+      if (typeof p !== 'string' || !p) return false;
+      return exists(path.join(repoCwd, p));
+    },
+
+    /** Entries a finalize pass would act on, without acting on them. */
+    finalizable() {
+      return finalizeMod.finalizable(queue);
     },
 
     /**
@@ -379,6 +442,36 @@ function createService(cfg) {
       for (let i = 0; i < max; i++) {
         if (service.killSwitchEngaged()) return { stopped: 'KILL_SWITCH_ENGAGED', ran };
         if (service.paused()) return { stopped: 'PAUSED', ran };
+
+        // A stranded MERGE_READY entry holds the single slot, so admission
+        // reports SLOT_OCCUPIED and the drain stops — forever, with an open PR
+        // nobody finishes. Finishing it IS draining the queue, so it happens
+        // here, before admission is consulted.
+        //
+        // Only entries carrying a durable handoff are touched. One without is
+        // pre-WP02 and needs an operator; silently skipping it is right, and
+        // status() reports it so the skip is not silent.
+        const pending = finalizeMod.finalizable(queue).filter((f) => f.hasHandoff);
+        if (pending.length) {
+          const fin = await service.finalizeEntry(pending[0].entryId, o);
+          // MERGE_NOT_AUTHORIZED is not a stop reason and not an action. The
+          // entry is parked for a human by design, so the drain has nothing it
+          // MAY do with it — and reporting "MERGE_NOT_AUTHORIZED" as why the
+          // drain ended would name the entry's policy rather than the operator's
+          // actual situation, which is that the single slot is held. Fall
+          // through to admission and let it say so.
+          //
+          // No spin: admission answers SLOT_OCCUPIED for exactly this entry and
+          // returns.
+          if (fin.disposition !== 'MERGE_NOT_AUTHORIZED') {
+            ran.push({ acted: 'FINALIZED', entryId: pending[0].entryId, outcome: fin });
+            if (fin.disposition === 'BLOCKED') {
+              return { stopped: fin.blockerCode || fin.disposition, ran };
+            }
+            continue;
+          }
+        }
+
         const adm = service.admission();
         if (!adm.admits) return { stopped: adm.reason, ran };
         const r = await service.runOnce(o);
