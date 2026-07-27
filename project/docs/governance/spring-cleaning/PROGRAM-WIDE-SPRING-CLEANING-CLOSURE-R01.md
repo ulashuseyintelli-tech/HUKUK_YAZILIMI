@@ -157,3 +157,21 @@ NEXT ELIGIBLE PROGRAM: NONE — bu programdan doğan hiçbir yeni workstream YOK
 
 Kalan beş kalem owner kararıdır, program değildir. Bu belge hiçbir gate açmaz, hiçbir statü
 değiştirmez ve implementation yetkisi ÜRETMEZ.
+
+---
+
+## 10. Owner residual programi (2026-07-27)
+
+Bu kapanışın bıraktığı dokuz owner kararı (ITEM-01..05, ITEM-A01..A04), aynı gün owner
+tarafından peşinen ratifiye edildi ve
+`PROGRAM-WIDE-SPRING-CLEANING-OWNER-RESIDUALS-FULL-EXECUTION-R01` ile uçtan uca uygulandı.
+
+```text
+Sonuç     : CLOSED / CANONICAL / PASS WITH PROTECTED RESIDUALS
+Tam kanıt : PROGRAM-WIDE-OWNER-RESIDUALS-CLOSURE-R01.md
+```
+
+Bu belgedeki `NEXT ELIGIBLE PROGRAM: NONE` ifadesi **otomatik olarak uygun bir sonraki program
+bulunmadığı** anlamındaydı; owner tarafından ratifiye edilen residual programı dışlamıyordu.
+Netleştirilmiş dil `PROGRAM-WIDE-DISPOSITION-ARITHMETIC-RECONCILIATION-R01.md` §5'tedir.
+Eski ifade tarihsel kayıt olarak **silinmemiştir**.
