@@ -78,7 +78,15 @@ function verifyAuthorityAgainstRepo(opts) {
 
   authority.verifyRatificationEvidence({ grant: opts.grant, readAtCommit, isAncestor });
   authority.verifyAuthorityRefs({ grant: opts.grant, readAtCommit, atCommit });
-  return { atCommit };
+
+  // Read the revocation marker at the CURRENT tip. Nothing did this before, so
+  // `revocationPath` — a required grant field — was decorative: creating the
+  // file it names had no effect, because validateAgainstGrant honours only a
+  // `revoked` boolean and nothing on the live path ever computed one. A
+  // revocation written AFTER the grant was issued is the whole point, which is
+  // why it is read at the tip rather than at the grant's own commit.
+  const revocation = authority.isGrantRevoked({ grant: opts.grant, readAtCommit, atCommit });
+  return { atCommit, revocation };
 }
 
 /**
@@ -310,18 +318,29 @@ async function main(argv) {
     baseRef: ctx.baseRef,
   });
 
+  // The revocation verdict reaches runTask, which passes it to
+  // validateAgainstGrant as `revoked`. Without this the grant's own escape
+  // hatch did nothing.
+  ctx.grantRevoked = authorityAt.revocation.revoked;
+
   if (args.dryRun) {
     // Validate authority and eligibility without creating a worktree, spawning
     // an executor or opening a PR. This is the safe preflight an operator runs
     // before committing a real attempt.
     const authority = require('../orchestrator/authority.cjs');
-    const validated = authority.validateAgainstGrant({ grant, spec, nowMs: Date.now() });
+    const validated = authority.validateAgainstGrant({
+      grant,
+      spec,
+      revoked: ctx.grantRevoked,
+      nowMs: Date.now(),
+    });
     process.stdout.write(
       [
         'DRY RUN — authority validated, nothing executed',
         '  taskSpecSha256 : ' + validated.digests.taskSpecSha256,
         '  grantSha256    : ' + validated.grantSha256,
         '  authority refs : resolved at ' + authorityAt.atCommit,
+        '  revocation     : ' + (authorityAt.revocation.revoked ? 'REVOKED — ' + authorityAt.revocation.reason : 'none at ' + authorityAt.revocation.path),
         '  allowedRoots   :',
         ...validated.spec.boundaryPolicy.allowedRoots.map((r) => '    ' + r),
         '',

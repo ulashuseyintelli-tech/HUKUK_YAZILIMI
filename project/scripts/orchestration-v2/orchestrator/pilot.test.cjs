@@ -842,3 +842,76 @@ test('PILOT: a check that never registers fails closed once the grace is spent',
   assert.equal(r.blockerCode, 'REQUIRED_CI_FAILED');
   assert.match(r.detail, /Web Tests \(vitest\)/);
 });
+
+// ------------------------------------------- ATTESTATION TERMS ARE MEASURED
+
+// Three conjunction terms were the literal `true`: taskSpecHashMatchesGrant,
+// requiredInvariantsPass and worktreeStateValid. The attestation reported
+// "15/15" while three of the fifteen asserted nothing at all.
+test('PILOT: requiredInvariantsPass fails when the gates that ran are not the ratified ones', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/inv/out.txt', 'x');
+  const ctx = ctxFor(repo, { specOver: { taskId: 'PILOT-INVARIANT', allowedRoots: ['fixture/inv/'] } });
+  // A runner that reports success for a DIFFERENT command than the plan pinned.
+  // requiredTestsPass still reports true — every result is status 0 — which is
+  // exactly why the gate set has to be re-digested rather than counted.
+  ctx.testRunner = (t) => {
+    t.argv = ['pnpm', 'exec', 'something-else'];
+    return { status: 0 };
+  };
+
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.equal(r.blockerCode, 'MERGE_READY_CONJUNCTION_FAILED');
+  assert.match(r.detail, /requiredInvariantsPass/);
+});
+
+test('PILOT: worktreeStateValid fails when the validated tree is gone', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/wtv/out.txt', 'x\n');
+  const ctx = ctxFor(repo, { specOver: { taskId: 'PILOT-WTVALID', allowedRoots: ['fixture/wtv/'] } });
+  // A worktree whose path does not exist: the diff's provenance is unprovable.
+  ctx.worktreeFactory = ({ pinnedBase }) => ({
+    path: path.join(repo, 'no-such-worktree'),
+    pinnedBaseSha: pinnedBase,
+    branch: 'fixture',
+  });
+
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.notEqual(r.blockerCode, undefined);
+});
+
+test('PILOT: a healthy run reports every conjunction term as measured, none constant', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/allterms/out.txt', 'x\n');
+  const ctx = ctxFor(repo, { specOver: { taskId: 'PILOT-ALLTERMS', allowedRoots: ['fixture/allterms/'] } });
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'MERGE_READY', JSON.stringify(r.blockerCode || r.detail));
+  const c = r.attestation.conjunction;
+  for (const k of ['taskSpecHashMatchesGrant', 'requiredInvariantsPass', 'worktreeStateValid']) {
+    assert.equal(c[k], true, k);
+  }
+});
+
+// --------------------------------------------------- WORKTREE PATH BUDGET
+
+// Windows MAX_PATH is 260 and this repository's longest tracked path is 163.
+// A full taskId plus attempt suffix was 62 characters, which left no headroom:
+// `git worktree add` half-populated the tree AND `git worktree remove` then
+// could not delete it, stranding directories the cleanup policy forbids
+// removing recursively. Three such directories exist in this repository today.
+test('PILOT: the worktree directory name stays inside the path budget', () => {
+  const longest = 163; // measured: the longest tracked path in this repository
+  const worstTask = 'OFFICE-CAP-02-REPORTINGLINE-READ-CHARACTERIZATION-R01';
+  const name = orch.worktreeDirName(worstTask, 'deadbeefcafebabe');
+
+  assert.ok(name.length <= orch.WORKTREE_DIR_TASK_CHARS + 9, 'dir name is bounded: ' + name);
+  // Under a short root, the deepest file must still fit with room to spare.
+  const total = 'C:/HY_ORCH/'.length + name.length + 1 + longest;
+  assert.ok(total < 260, 'deepest path would be ' + total);
+
+  // Still recognisable, and two truncations of different attempts stay apart.
+  assert.ok(name.startsWith('OFFICE-CAP-02'), name);
+  assert.notEqual(orch.worktreeDirName(worstTask, 'aaaaaaaa11'), orch.worktreeDirName(worstTask, 'bbbbbbbb22'));
+});

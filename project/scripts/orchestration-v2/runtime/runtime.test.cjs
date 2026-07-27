@@ -95,6 +95,9 @@ function evidence(sha, excerpt) {
 function authGrant(repo, over) {
   return Object.assign(
     {
+      // Every grant carries a revocationPath; isGrantRevoked treats an absent
+      // one as a malformed grant rather than 'not revoked'.
+      revocationPath: 'docs/REVOKED',
       semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'SEM-REC-01', sourcePath: AUTH_DOC },
       executionGrantRef: { kind: 'EXECUTION_GRANT', recordId: 'EXE-REC-01', sourcePath: GRANT_DOC },
       ownerRatificationEvidence: evidence(repo.sha, EXCERPT),
@@ -792,4 +795,75 @@ test('pr provider: UNKNOWN mergeability is re-read, not taken as a refusal', asy
   // Still UNKNOWN when the retries run out stays false — fail-closed.
   const stuck = await h.p.state({ pr: { number: 1 } });
   assert.equal(stuck.mergeable, false);
+});
+
+// ------------------------------------------------------ GRANT REVOCATION
+
+// `revocationPath` is a REQUIRED grant field that no code read. Creating the
+// file it names did nothing: validateAgainstGrant honours only a `revoked`
+// boolean and nothing on the live path ever computed one. A standing grant
+// that cannot be withdrawn is worse than no standing grant, so this had to
+// close before program-level authorization exists.
+const authorityMod = require('../orchestrator/authority.cjs');
+
+test('authority: an absent revocation marker leaves the grant live', () => {
+  const r = authorityMod.isGrantRevoked({
+    grant: { revocationPath: 'docs/REVOKED' },
+    readAtCommit: () => { throw new Error('ENOENT'); },
+    atCommit: 'a'.repeat(40),
+  });
+  assert.equal(r.revoked, false);
+  assert.equal(r.path, 'docs/REVOKED');
+});
+
+test('authority: a present revocation marker revokes the grant, with its reason', () => {
+  const r = authorityMod.isGrantRevoked({
+    grant: { revocationPath: 'docs/REVOKED' },
+    readAtCommit: () => 'withdrawn by owner: scope changed\n',
+    atCommit: 'a'.repeat(40),
+  });
+  assert.equal(r.revoked, true);
+  assert.match(r.reason, /withdrawn by owner/);
+});
+
+test('authority: a grant with no revocationPath is malformed, not "not revoked"', () => {
+  assert.throws(
+    () => authorityMod.isGrantRevoked({ grant: {}, readAtCommit: () => '', atCommit: 'a'.repeat(40) }),
+    (e) => e.code === 'GRANT_REVOCATION_PATH_MISSING',
+  );
+});
+
+test('authority: a revoked grant cannot authorize a task', () => {
+  const spec = {
+    schemaVersion: 1, taskId: 'REV-TEST-01', taskSpecVersion: 1, profile: 'BOUNDED_CODE_TASK',
+    declaredIntent: 'Revocation gate regression fixture for the authority module.',
+    boundaryPolicy: { allowedRoots: ['a/'], maxChangedFiles: 1 },
+    requiredTests: [{ cwd: 'a', argv: ['pnpm', 'exec', 'jest'] }],
+    predecessorTaskIds: [], baseDriftPolicy: 'REFRESH_BEFORE_EXECUTION',
+    successorDisposition: 'NO_SUCCESSOR',
+  };
+  const d = authorityMod.specDigests(spec);
+  const grant = {
+    schemaVersion: 1, grantId: 'G-REV-01', workstream: 'W',
+    semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'S', sourcePath: 'a.md' },
+    executionGrantRef: { kind: 'EXECUTION_GRANT', recordId: 'E', sourcePath: 'b.md' },
+    ownerRatificationEvidence: {
+      sourcePath: 'a.md', sourceCommitSha: 'b'.repeat(40), exactExcerpt: 'ok',
+      excerptSha256: require('crypto').createHash('sha256').update('ok', 'utf8').digest('hex'),
+    },
+    authorizedTasks: [{
+      taskId: 'REV-TEST-01', taskSpecVersion: 1, taskSpecSha256: d.taskSpecSha256,
+      declaredIntentSha256: d.declaredIntentSha256, boundaryPolicySha256: d.boundaryPolicySha256,
+      requiredTestsSha256: d.requiredTestsSha256,
+    }],
+    allowedModuleRoots: ['a/'], expiresAt: '2099-01-01T00:00:00Z',
+    revocationPath: 'docs/REVOKED', manualMergeRequired: true,
+  };
+  // Live while the marker is absent.
+  assert.ok(authorityMod.validateAgainstGrant({ grant, spec, revoked: false, nowMs: Date.now() }));
+  // Dead once it is present.
+  assert.throws(
+    () => authorityMod.validateAgainstGrant({ grant, spec, revoked: true, nowMs: Date.now() }),
+    (e) => e.code === 'GRANT_REVOKED',
+  );
 });

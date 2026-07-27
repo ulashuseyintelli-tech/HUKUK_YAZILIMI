@@ -458,6 +458,52 @@ function verifyAuthorityRefs(opts) {
   return { ok: true, checked };
 }
 
+/**
+ * Is this grant revoked, according to the repository?
+ *
+ * `revocationPath` is a REQUIRED field of every grant and no code read it.
+ * Creating the file it names did nothing: validateAgainstGrant honours only a
+ * `revoked` boolean, and nothing on the live path ever computed one. So a
+ * grant could not actually be revoked — the owner's stated escape hatch was
+ * decorative.
+ *
+ * That matters more once grants become standing rather than task-scoped: a
+ * standing authority that cannot be withdrawn is worse than no standing
+ * authority at all, which is why this gates the standing-grant work.
+ *
+ * Revocation is read at the CURRENT tip, not at the grant's own commit — a
+ * revocation written after the grant was issued is exactly the case that has
+ * to work.
+ *
+ * @param {object} opts
+ * @param {object} opts.grant
+ * @param {function} opts.readAtCommit (sourcePath, commitSha) => string; must
+ *        throw when the path does not exist at that commit.
+ * @param {string} opts.atCommit
+ * @returns {{revoked: boolean, path: string, reason: string|null}}
+ */
+function isGrantRevoked(opts) {
+  const grant = opts && opts.grant;
+  if (!grant) fail('GRANT_INVALID', 'missing');
+  const p = grant.revocationPath;
+  if (typeof p !== 'string' || p.length === 0) {
+    // The schema makes it required; an absent one is a malformed grant, not an
+    // invitation to assume "not revoked".
+    fail('GRANT_REVOCATION_PATH_MISSING', String(p));
+  }
+  if (typeof opts.readAtCommit !== 'function') {
+    fail('EVIDENCE_READER_REQUIRED', 'readAtCommit is required to read the revocation path');
+  }
+  let body = null;
+  try {
+    body = opts.readAtCommit(p, opts.atCommit);
+  } catch (e) {
+    // Absent file is the normal, healthy case: the grant is live.
+    return { revoked: false, path: p, reason: null };
+  }
+  return { revoked: true, path: p, reason: String(body || '').trim().slice(0, 300) || 'revocation marker present' };
+}
+
 module.exports = {
   PROFILES,
   BASE_DRIFT_POLICIES,
@@ -473,4 +519,5 @@ module.exports = {
   validateAgainstGrant,
   verifyRatificationEvidence,
   verifyAuthorityRefs,
+  isGrantRevoked,
 };

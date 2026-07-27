@@ -18,6 +18,7 @@
  * real pull requests.
  */
 
+const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
@@ -318,7 +319,19 @@ async function runTask(ctx) {
       ? ctx.worktreeFactory({ taskId, attemptId, pinnedBase })
       : worktree.createIsolated({
           cwd: repoCwd,
-          path: path.join(ctx.worktreeRoot, taskId + '-' + attemptId.slice(0, 8)),
+          // The directory name is TRUNCATED; the branch name is not.
+          //
+          // Windows MAX_PATH is 260 and this repository's longest tracked path
+          // is 163 characters. A full taskId plus attempt suffix is 62, which
+          // left no room: `git worktree add` half-populated the tree and then
+          // `git worktree remove` could not delete it either, stranding
+          // directories that no recursive-delete policy permits cleaning up.
+          // Three such directories exist today, and MAX_PATH — not orphan
+          // detection — is why.
+          //
+          // 24 characters keep the task recognisable to an operator; the
+          // attempt suffix keeps two truncations of different tasks distinct.
+          path: path.join(ctx.worktreeRoot, worktreeDirName(taskId, attemptId)),
           branch: 'orchestrator/' + taskId.toLowerCase() + '-' + attemptId.slice(0, 8),
           baseRef: pinnedBase,
         });
@@ -512,7 +525,10 @@ async function runTask(ctx) {
           cwd: t.cwd ? path.join(wt.path, t.cwd) : wt.path,
           timeoutMs: t.timeoutMs || 300000,
         });
-    testResults.push({ argv: t.argv, status: r.status });
+    // The whole entry, not just argv. The attestation re-derives the gate set's
+    // digest from what actually ran and compares it to the ratified one, which
+    // is only possible if cwd and timeoutMs are recorded alongside.
+    testResults.push({ cwd: t.cwd, argv: t.argv, timeoutMs: t.timeoutMs, status: r.status });
     if (r.status !== 0) {
       cleanupWorktree();
       release('TERMINAL_BLOCKED_PUBLISHED');
@@ -602,6 +618,60 @@ async function runTask(ctx) {
   }
 
   // --- MERGE_READY attestation (§5) --------------------------------------
+  // The hash the grant actually pinned for this task, so the attestation term
+  // states an observation rather than an inference from an earlier throw.
+  const grantPinnedTaskSpecSha = (validated.pinned || {}).taskSpecSha256 || null;
+
+  // Re-digest the gates that actually executed and compare to the ratified
+  // requiredTestsSha256. This is the honest version of "required invariants
+  // pass": there is no separate invariant list in the task schema, and the
+  // strongest real statement available is that the gate set which ran is
+  // byte-identical to the gate set the owner ratified.
+  const executedGateSetMatchesRatified = () => {
+    try {
+      const ran = testResults.map((t) => ({ cwd: t.cwd, argv: t.argv, timeoutMs: t.timeoutMs }));
+      return (
+        authority.digest(authority.canonicalRequiredTests(ran)) ===
+        validated.digests.requiredTestsSha256
+      );
+    } catch (e) {
+      return false;
+    }
+  };
+
+  // The tree the validated diff came from must STILL be there, and must still
+  // be the root of a working tree, at attestation time. A worktree removed by a
+  // partial cleanup, or a path swapped underneath the run, makes the diff's
+  // provenance unprovable — and the attestation should say so rather than
+  // asserting a constant.
+  //
+  // Deliberately not "must not be the canonical root": createIsolated already
+  // refuses that at creation (TARGET_IS_CANONICAL_ROOT), so re-litigating it
+  // here would only encode an assumption about how the worktree was made.
+  // Both sides go through realpath before comparison. Windows hands back 8.3
+  // short names (ULASTE~1) where git reports the long form, and a junction
+  // resolves differently again — comparing the raw strings would report a
+  // perfectly healthy worktree as invalid, which is the failure mode a
+  // constant `true` was hiding in the first place.
+  const realOrNull = (p) => {
+    try {
+      return fs.realpathSync.native(p).replace(/\\/g, '/').replace(/\/+$/, '');
+    } catch (e) {
+      return null;
+    }
+  };
+  const worktreeStillValid = () => {
+    if (!wt || !wt.path) return false;
+    const want = realOrNull(wt.path);
+    if (!want) return false;
+    try {
+      const top = git(['rev-parse', '--path-format=absolute', '--show-toplevel'], wt.path);
+      return realOrNull(top) === want;
+    } catch (e) {
+      return false;
+    }
+  };
+
   const prState = await ctx.prProvider.state({ pr });
   const built = mergeready.buildAttestation({
     taskId,
@@ -619,14 +689,27 @@ async function runTask(ctx) {
     requiredCiResultSetSha256: ci.resultSetSha256,
     ttlMs: ctx.attestationTtlMs,
     nowMs: nowMs(),
+    // Three of these were the literal `true`. An attestation that reports
+    // "15/15" while three terms assert nothing is worth less than it looks, so
+    // each now reads something the run actually observed.
     conjunction: {
       executorExitSuccess: run.executorExitSuccess === true,
       currentLeaseEpochConfirmed: safeAssert(assertHeld),
       holderTokenConfirmed: safeAssert(assertHeld),
-      taskSpecHashMatchesGrant: true,
+      // Re-derived from the grant here rather than trusted from the earlier
+      // throw. validateAgainstGrant already refuses a mismatch, so this was
+      // "true" by inference — but an attestation term should state what was
+      // observed, not what would have thrown.
+      taskSpecHashMatchesGrant: grantPinnedTaskSpecSha === validated.digests.taskSpecSha256,
       actualDiffWithinBoundary: verdict.withinBoundary === true,
       immutableForbiddenPathsUntouched: verdict.forbiddenPathsUntouched === true,
-      requiredInvariantsPass: true,
+      // The gate set that RAN, re-digested and compared to the one the grant
+      // ratified. Comparing counts would have been a tautology — the loop
+      // returns REQUIRED_TEST_FAILED before the lengths can diverge — so this
+      // compares content: a spec mutated in memory after validation, or a
+      // substituted test runner executing different argv, breaks it while
+      // requiredTestsPass would still report true over whatever did run.
+      requiredInvariantsPass: executedGateSetMatchesRatified(),
       requiredTestsPass: testResults.every((t) => t.status === 0),
       requiredCiChecksPass: ci.pass === true,
       prOpen: prState.open === true,
@@ -634,7 +717,10 @@ async function runTask(ctx) {
       noBlockingReview: prState.blockingReview !== true,
       noCompetingWriter: prState.competingWriter !== true,
       baseDriftPolicySatisfied: prState.baseDriftSatisfied !== false,
-      worktreeStateValid: true,
+      // The worktree the diff came from must still be the isolated one this
+      // attempt created, registered under the expected branch — not the
+      // canonical root, and not something a partial cleanup left behind.
+      worktreeStateValid: worktreeStillValid(),
     },
   });
 
@@ -677,6 +763,25 @@ function safeAssert(fn) {
   } catch (e) {
     return false;
   }
+}
+
+/**
+ * Directory name for an attempt's isolated worktree.
+ *
+ * Bounded on purpose. Windows MAX_PATH is 260, this repository's longest
+ * tracked path is 163, and a full taskId plus attempt suffix was 62 — leaving
+ * no headroom under any reasonable worktree root. When it overflowed, `git
+ * worktree add` half-populated the tree AND `git worktree remove` could not
+ * delete it, stranding directories that the repository's own cleanup policy
+ * forbids removing recursively.
+ *
+ * The branch name is deliberately left full: it lives in refs, not on the
+ * filesystem, and readability there is worth more than the bytes.
+ */
+const WORKTREE_DIR_TASK_CHARS = 24;
+function worktreeDirName(taskId, attemptId) {
+  const short = String(taskId).slice(0, WORKTREE_DIR_TASK_CHARS).replace(/[^A-Za-z0-9._-]/g, '-');
+  return short + '-' + String(attemptId).slice(0, 8);
 }
 
 function summarize(run) {
@@ -782,6 +887,8 @@ function successorDisposition(opts) {
 
 module.exports = {
   IMMUTABLE_FORBIDDEN,
+  WORKTREE_DIR_TASK_CHARS,
+  worktreeDirName,
   OrchestratorError,
   evaluateEligibility,
   runTask,
