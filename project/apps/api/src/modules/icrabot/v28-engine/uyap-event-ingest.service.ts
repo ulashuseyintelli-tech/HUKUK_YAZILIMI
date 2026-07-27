@@ -78,11 +78,17 @@ export class UyapEventIngestService {
     // 2. Normalize event → facts/flags
     const { facts, flags } = this.normalizeEvent(event);
 
-    // 3. Write to FactStore
-    await this.factStore.write(caseId, facts, flags, {
-      source: 'uyap_ingest',
-      eventId,
-    });
+    // 3. Write to FactStore (kapsam: boundary'de resolve edilmis tenant)
+    await this.factStore.write(
+      caseId,
+      facts,
+      flags,
+      {
+        source: 'uyap_ingest',
+        eventId,
+      },
+      { kind: 'tenant', tenantId },
+    );
 
     await this.timeline.addEntry({
       caseId,

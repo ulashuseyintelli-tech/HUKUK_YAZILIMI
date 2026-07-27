@@ -13,9 +13,10 @@
  * - Batch operations for performance
  * - Diff/compare utilities
  */
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboxScope } from './outbox-scope';
+import { assertCaseInScope, filterCaseIdsInScope } from './case-scope';
 
 export interface FactSnapshot {
   facts: Record<string, any>;
@@ -56,9 +57,14 @@ export class FactStoreService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Dosya için mevcut fact/flag snapshot'ını döner
+   * Dosya için mevcut fact/flag snapshot'ını döner.
+   *
+   * V28-TENANT-ISOLATION-CLOSEOUT-R01: kapsam ZORUNLU. Kapsam disi case icin
+   * fail-closed `NotFoundException` (yabanci ve olmayan case ayni yanit).
    */
-  async getSnapshot(caseId: string): Promise<FactSnapshot> {
+  async getSnapshot(caseId: string, scope: OutboxScope): Promise<FactSnapshot> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const [facts, flags] = await Promise.all([
       (this.prisma as any).icrabotCaseFact.findMany({
         where: { caseId },
@@ -84,8 +90,12 @@ export class FactStoreService {
     facts: Record<string, any>,
     flags: Record<string, boolean>,
     meta: WriteMetadata,
+    scope: OutboxScope,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx: any) => {
+      // Kapsam kapisi mutation ile AYNI transaction icinde (TOCTOU yok).
+      await assertCaseInScope(tx, caseId, scope);
+
       // Facts
       for (const [key, newValue] of Object.entries(facts || {})) {
         const existing = await tx.icrabotCaseFact.findUnique({
@@ -176,7 +186,9 @@ export class FactStoreService {
   /**
    * Belirli bir fact değerini döner
    */
-  async getFact(caseId: string, key: string): Promise<any> {
+  async getFact(caseId: string, key: string, scope: OutboxScope): Promise<any> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const fact = await (this.prisma as any).icrabotCaseFact.findUnique({
       where: { caseId_key: { caseId, key } },
     });
@@ -186,7 +198,9 @@ export class FactStoreService {
   /**
    * Belirli bir flag değerini döner
    */
-  async getFlag(caseId: string, key: string): Promise<boolean> {
+  async getFlag(caseId: string, key: string, scope: OutboxScope): Promise<boolean> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const flag = await (this.prisma as any).icrabotCaseFlag.findUnique({
       where: { caseId_key: { caseId, key } },
     });
@@ -196,7 +210,9 @@ export class FactStoreService {
   /**
    * Fact audit geçmişini döner
    */
-  async getAuditHistory(caseId: string, limit = 100): Promise<any[]> {
+  async getAuditHistory(caseId: string, scope: OutboxScope, limit = 100): Promise<any[]> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     return (this.prisma as any).icrabotFactAudit.findMany({
       where: { caseId },
       orderBy: { createdAt: 'desc' },
@@ -215,6 +231,7 @@ export class FactStoreService {
     facts: Record<string, any>,
     flags: Record<string, boolean>,
     meta: WriteMetadata,
+    scope: OutboxScope,
   ): Promise<BatchWriteResult> {
     const result: BatchWriteResult = {
       factsWritten: 0,
@@ -223,6 +240,9 @@ export class FactStoreService {
     };
 
     await this.prisma.$transaction(async (tx: any) => {
+      // Kapsam kapisi mutation ile AYNI transaction icinde (TOCTOU yok).
+      await assertCaseInScope(tx, caseId, scope);
+
       // Batch upsert facts
       for (const [key, newValue] of Object.entries(facts || {})) {
         // Get existing for audit
@@ -317,38 +337,6 @@ export class FactStoreService {
   }
 
   /**
-   * Hedef case'in cagiranin kapsaminda oldugunu dogrular; degilse fail-closed reddeder.
-   *
-   * NEDEN CASE UZERINDEN: `IcrabotCaseFact`/`IcrabotCaseFlag` satirlari `tenantId`
-   * TASIMAZ ve `Case`'e Prisma relation'i YOKTUR (schema.prisma). Bu yuzden silme
-   * sorgusu kendi basina bir tenant predicate'i tasiyamaz; tenant kapsami, hedef
-   * Case'in sahipligi DOGRUDAN dogrulanarak saglanir — `ActionHandlerService.
-   * executeDirectly` (OUTBOX-F1) ile ayni desen.
-   *
-   * Cagiran transaction client'i gecer: dogrulama ve silme AYNI transaction icinde
-   * olur, boylece check-then-delete (TOCTOU) penceresi yoktur.
-   *
-   * Bulunamayan ve baska tenant'a ait case AYNI genel hatayla reddedilir — varlik
-   * sizintisi (enumeration oracle) uretmez.
-   */
-  private async assertCaseInScope(
-    tx: any,
-    caseId: string,
-    scope: OutboxScope,
-  ): Promise<void> {
-    if (scope.kind === 'platform') return;
-
-    const owned = await tx.case.findFirst({
-      where: { id: caseId, tenantId: scope.tenantId },
-      select: { id: true },
-    });
-
-    if (!owned) {
-      throw new NotFoundException(`Case not found: ${caseId}`);
-    }
-  }
-
-  /**
    * Deletes all facts and flags for a case (with audit).
    *
    * V28-FACTSTORE-SECURITY-P0-I01: yikici yol artik tenant kapsami ZORUNLU. Kapsam
@@ -369,7 +357,7 @@ export class FactStoreService {
   ): Promise<void> {
     await this.prisma.$transaction(async (tx: any) => {
       // Kapsam kapisi: silmeden ONCE, ayni transaction icinde (TOCTOU'suz).
-      await this.assertCaseInScope(tx, caseId, scope);
+      await assertCaseInScope(tx, caseId, scope);
 
       // Snapshot da transaction icinde okunur: audit edilen deger ile silinen deger ayni.
       const [facts, flags] = await Promise.all([
@@ -406,26 +394,42 @@ export class FactStoreService {
   /**
    * Sets multiple facts atomically
    */
-  async setFacts(caseId: string, facts: Record<string, any>, meta: WriteMetadata): Promise<void> {
-    await this.batchWrite(caseId, facts, {}, meta);
+  async setFacts(
+    caseId: string,
+    facts: Record<string, any>,
+    meta: WriteMetadata,
+    scope: OutboxScope,
+  ): Promise<void> {
+    await this.batchWrite(caseId, facts, {}, meta, scope);
   }
 
   /**
    * Sets multiple flags atomically
    */
-  async setFlags(caseId: string, flags: Record<string, boolean>, meta: WriteMetadata): Promise<void> {
-    await this.batchWrite(caseId, {}, flags, meta);
+  async setFlags(
+    caseId: string,
+    flags: Record<string, boolean>,
+    meta: WriteMetadata,
+    scope: OutboxScope,
+  ): Promise<void> {
+    await this.batchWrite(caseId, {}, flags, meta, scope);
   }
 
   /**
    * Gets facts matching a key pattern (e.g., "assets.*")
    */
-  async getFactsByPattern(caseId: string, pattern: string): Promise<Record<string, any>> {
+  async getFactsByPattern(
+    caseId: string,
+    pattern: string,
+    scope: OutboxScope,
+  ): Promise<Record<string, any>> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     // Convert glob pattern to SQL LIKE
     const likePattern = pattern.replace(/\*/g, '%').replace(/\?/g, '_');
 
     const facts = await (this.prisma as any).$queryRaw`
-      SELECT key, value FROM icrabot_case_facts 
+      SELECT key, value FROM icrabot_case_facts
       WHERE case_id = ${caseId} AND key LIKE ${likePattern}
     `;
 
@@ -435,7 +439,9 @@ export class FactStoreService {
   /**
    * Checks if a fact exists
    */
-  async hasFact(caseId: string, key: string): Promise<boolean> {
+  async hasFact(caseId: string, key: string, scope: OutboxScope): Promise<boolean> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const count = await (this.prisma as any).icrabotCaseFact.count({
       where: { caseId, key },
     });
@@ -445,7 +451,9 @@ export class FactStoreService {
   /**
    * Checks if a flag is set (true)
    */
-  async isFlagSet(caseId: string, key: string): Promise<boolean> {
+  async isFlagSet(caseId: string, key: string, scope: OutboxScope): Promise<boolean> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const flag = await (this.prisma as any).icrabotCaseFlag.findUnique({
       where: { caseId_key: { caseId, key } },
     });
@@ -455,31 +463,50 @@ export class FactStoreService {
   /**
    * Increments a numeric fact value
    */
-  async incrementFact(caseId: string, key: string, delta: number, meta: WriteMetadata): Promise<number> {
-    const current = await this.getFact(caseId, key);
+  async incrementFact(
+    caseId: string,
+    key: string,
+    delta: number,
+    meta: WriteMetadata,
+    scope: OutboxScope,
+  ): Promise<number> {
+    const current = await this.getFact(caseId, key, scope);
     const oldValue = typeof current === 'number' ? current : 0;
     const newValue = oldValue + delta;
 
-    await this.write(caseId, { [key]: newValue }, {}, meta);
+    await this.write(caseId, { [key]: newValue }, {}, meta, scope);
     return newValue;
   }
 
   /**
    * Appends to an array fact
    */
-  async appendToFact(caseId: string, key: string, item: any, meta: WriteMetadata): Promise<any[]> {
-    const current = await this.getFact(caseId, key);
+  async appendToFact(
+    caseId: string,
+    key: string,
+    item: any,
+    meta: WriteMetadata,
+    scope: OutboxScope,
+  ): Promise<any[]> {
+    const current = await this.getFact(caseId, key, scope);
     const oldArray = Array.isArray(current) ? current : [];
     const newArray = [...oldArray, item];
 
-    await this.write(caseId, { [key]: newArray }, {}, meta);
+    await this.write(caseId, { [key]: newArray }, {}, meta, scope);
     return newArray;
   }
 
   /**
    * Gets audit history for a specific key
    */
-  async getKeyAuditHistory(caseId: string, key: string, limit = 50): Promise<any[]> {
+  async getKeyAuditHistory(
+    caseId: string,
+    key: string,
+    scope: OutboxScope,
+    limit = 50,
+  ): Promise<any[]> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     return (this.prisma as any).icrabotFactAudit.findMany({
       where: { caseId, key },
       orderBy: { createdAt: 'desc' },
@@ -488,35 +515,57 @@ export class FactStoreService {
   }
 
   /**
-   * Gets all cases with a specific flag set
+   * Gets all cases with a specific flag set.
+   *
+   * V28-TENANT-ISOLATION-CLOSEOUT-R01 — GLOBAL ENUMERATION KAPATILDI. Onceki hali
+   * `key`/`value` ile TUM tenant'lardaki case kimliklerini donduruyordu; artik
+   * sonuc kumesi cagiranin kapsamina indirgenir. `IcrabotCaseFlag` tenantId
+   * TASIMADIGI icin filtre `Case` uzerinden kurulur.
    */
-  async getCasesWithFlag(key: string, value = true): Promise<string[]> {
+  async getCasesWithFlag(
+    key: string,
+    value = true,
+    scope: OutboxScope,
+  ): Promise<string[]> {
     const flags = await (this.prisma as any).icrabotCaseFlag.findMany({
       where: { key, value },
       select: { caseId: true },
     });
-    return flags.map((f: any) => f.caseId);
+
+    const caseIds = flags.map((f: any) => f.caseId as string);
+    return filterCaseIdsInScope(this.prisma as any, caseIds, scope);
   }
 
   /**
-   * Bulk snapshot for multiple cases
+   * Bulk snapshot for multiple cases.
+   *
+   * V28-TENANT-ISOLATION-CLOSEOUT-R01: kapsam disi kimlikler DB'ye hic sorulmadan
+   * elenir. Sonuc haritasi yalnizca kapsamdaki case'leri icerir — kapsam disi bir
+   * kimlik icin bos snapshot bile DONMEZ (aksi halde "bu case var mi" sorusuna
+   * dolayli yanit verilmis olurdu).
    */
-  async getBulkSnapshots(caseIds: string[]): Promise<Map<string, FactSnapshot>> {
+  async getBulkSnapshots(
+    caseIds: string[],
+    scope: OutboxScope,
+  ): Promise<Map<string, FactSnapshot>> {
+    const scopedIds = await filterCaseIdsInScope(this.prisma as any, caseIds, scope);
+
+    const result = new Map<string, FactSnapshot>();
+    if (scopedIds.length === 0) return result;
+
     const [facts, flags] = await Promise.all([
       (this.prisma as any).icrabotCaseFact.findMany({
-        where: { caseId: { in: caseIds } },
+        where: { caseId: { in: scopedIds } },
         select: { caseId: true, key: true, value: true },
       }),
       (this.prisma as any).icrabotCaseFlag.findMany({
-        where: { caseId: { in: caseIds } },
+        where: { caseId: { in: scopedIds } },
         select: { caseId: true, key: true, value: true },
       }),
     ]);
 
-    const result = new Map<string, FactSnapshot>();
-
-    // Initialize empty snapshots
-    for (const caseId of caseIds) {
+    // Initialize empty snapshots (yalniz kapsamdakiler)
+    for (const caseId of scopedIds) {
       result.set(caseId, { facts: {}, flags: {} });
     }
 

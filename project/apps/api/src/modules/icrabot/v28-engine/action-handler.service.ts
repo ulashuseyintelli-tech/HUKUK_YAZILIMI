@@ -58,6 +58,26 @@ export interface ActionHandlerContext {
   idempotencyKey?: string;
 }
 
+/**
+ * V28-TENANT-ISOLATION-CLOSEOUT-R01: dahili handler'lar FactStore'a yazarken kapsam
+ * TASIMAK ZORUNDA. Kapsam yalnizca outbox satirindan thread'lenen `context.tenantId`
+ * ile kurulur; payload/caseId gibi cagiran-kontrollu alanlardan ASLA turetilemez.
+ *
+ * Fail-closed: context veya tenantId yoksa yazim yapilmaz, hata firlatilir.
+ */
+function scopeFromHandlerContext(
+  actionType: string,
+  context: ActionHandlerContext | undefined,
+): OutboxScope {
+  const tenantId = context?.tenantId;
+  if (typeof tenantId !== 'string' || tenantId.length === 0) {
+    throw new Error(
+      `handler_scope_missing_tenant: ${actionType} handler'i tenant context olmadan cagrildi`,
+    );
+  }
+  return { kind: 'tenant', tenantId };
+}
+
 export type ActionHandler = (
   payload: Record<string, any>,
   caseId: string,
@@ -421,6 +441,7 @@ export class ActionHandlerService {
           action_type: actionType,
           status,
         },
+        { kind: 'tenant', tenantId },
       );
 
       // Timeline entry for feedback write
@@ -667,28 +688,46 @@ export class ActionHandlerService {
     });
 
     // Set Fact Handler (FactStore integration)
-    this.register('set_fact', async (payload, caseId) => {
+    this.register('set_fact', async (payload, caseId, context) => {
       const { key, value, meta } = payload;
       if (!key) throw new Error('set_fact requires payload.key');
 
-      await this.factStore.write(caseId, { [key]: value }, {}, meta || { source: 'action' });
+      await this.factStore.write(
+        caseId,
+        { [key]: value },
+        {},
+        meta || { source: 'action' },
+        scopeFromHandlerContext('set_fact', context),
+      );
       this.logger.debug(`Fact set: ${key} for case ${caseId}`);
     });
 
     // Set Flag Handler (FactStore integration)
-    this.register('set_flag', async (payload, caseId) => {
+    this.register('set_flag', async (payload, caseId, context) => {
       const { key, value, meta } = payload;
       if (!key) throw new Error('set_flag requires payload.key');
 
-      await this.factStore.write(caseId, {}, { [key]: Boolean(value) }, meta || { source: 'action' });
+      await this.factStore.write(
+        caseId,
+        {},
+        { [key]: Boolean(value) },
+        meta || { source: 'action' },
+        scopeFromHandlerContext('set_flag', context),
+      );
       this.logger.debug(`Flag set: ${key}=${value} for case ${caseId}`);
     });
 
     // Batch Set Facts Handler
-    this.register('batch_set_facts', async (payload, caseId) => {
+    this.register('batch_set_facts', async (payload, caseId, context) => {
       const { facts, flags, meta } = payload;
 
-      await this.factStore.batchWrite(caseId, facts || {}, flags || {}, meta || { source: 'action' });
+      await this.factStore.batchWrite(
+        caseId,
+        facts || {},
+        flags || {},
+        meta || { source: 'action' },
+        scopeFromHandlerContext('batch_set_facts', context),
+      );
       this.logger.debug(`Batch facts/flags set for case ${caseId}`);
     });
 

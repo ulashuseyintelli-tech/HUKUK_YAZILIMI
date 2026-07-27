@@ -20,6 +20,7 @@ import { TimelineService } from './timeline.service';
 import { OutboxService } from './outbox.service';
 import { ExpressionEvaluatorService, EvaluationContext, WhenClause } from './expression-evaluator.service';
 import { ComputeRegistryService } from './compute-registry.service';
+import { OutboxScope } from './outbox-scope';
 import * as crypto from 'crypto';
 
 export interface RuleDefinition {
@@ -91,8 +92,9 @@ export class EngineRunnerService {
     rule: RuleDefinition,
     tenantId: string, // fail-closed: uyap boundary'de resolve edilmiş non-null tenant
   ): Promise<RunResult> {
-    // 1. Get fact snapshot
-    const snapshot = await this.factStore.getSnapshot(caseId);
+    // 1. Get fact snapshot (kapsam: boundary'de resolve edilmis tenant)
+    const scope: OutboxScope = { kind: 'tenant', tenantId };
+    const snapshot = await this.factStore.getSnapshot(caseId, scope);
 
     // 2. Build context
     const ctx: EvaluationContext = {
@@ -165,10 +167,16 @@ export class EngineRunnerService {
         flagsToWrite[fl.key] = value;
       }
 
-      await this.factStore.write(caseId, factsToWrite, flagsToWrite, {
-        runId: run.id,
-        ruleId: rule.rule_id,
-      });
+      await this.factStore.write(
+        caseId,
+        factsToWrite,
+        flagsToWrite,
+        {
+          runId: run.id,
+          ruleId: rule.rule_id,
+        },
+        scope,
+      );
 
       await this.timeline.addEntry({
         caseId,

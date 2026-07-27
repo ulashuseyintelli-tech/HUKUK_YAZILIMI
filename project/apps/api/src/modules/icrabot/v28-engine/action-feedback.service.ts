@@ -20,6 +20,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { FactStoreService } from './factstore.service';
 import { TimelineService } from './timeline.service';
 import { resolveTenantIdOrThrow } from './tenant-resolver';
+import { OutboxScope } from './outbox-scope';
 
 export interface CallbackPayload {
   case_id: string;
@@ -69,6 +70,7 @@ export class ActionFeedbackService {
       facts,
       {},
       { source: 'callback', kind },
+      { kind: 'tenant', tenantId },
     );
 
     this.logger.log(`Callback processed: ${kind} for case ${case_id}`);
@@ -79,14 +81,14 @@ export class ActionFeedbackService {
   /**
    * Belirli bir action type için son feedback'i getirir
    */
-  async getLastFeedback(caseId: string, actionType: string): Promise<{
+  async getLastFeedback(caseId: string, actionType: string, scope: OutboxScope): Promise<{
     status: string | null;
     actionId: string | null;
     result: any;
     successAt: string | null;
     failAt: string | null;
   }> {
-    const snapshot = await this.factStore.getSnapshot(caseId);
+    const snapshot = await this.factStore.getSnapshot(caseId, scope);
     const { facts } = snapshot;
 
     return {
@@ -101,14 +103,14 @@ export class ActionFeedbackService {
   /**
    * Tüm action feedback'lerini getirir
    */
-  async getAllFeedbacks(caseId: string): Promise<Record<string, {
+  async getAllFeedbacks(caseId: string, scope: OutboxScope): Promise<Record<string, {
     status: string | null;
     actionId: string | null;
     result: any;
     successAt: string | null;
     failAt: string | null;
   }>> {
-    const snapshot = await this.factStore.getSnapshot(caseId);
+    const snapshot = await this.factStore.getSnapshot(caseId, scope);
     const { facts } = snapshot;
 
     const feedbacks: Record<string, any> = {};
@@ -141,8 +143,8 @@ export class ActionFeedbackService {
   /**
    * Callback geçmişini getirir
    */
-  async getCallbackHistory(caseId: string): Promise<Record<string, any>> {
-    const snapshot = await this.factStore.getSnapshot(caseId);
+  async getCallbackHistory(caseId: string, scope: OutboxScope): Promise<Record<string, any>> {
+    const snapshot = await this.factStore.getSnapshot(caseId, scope);
     const { facts } = snapshot;
 
     const callbacks: Record<string, any> = {};
@@ -163,12 +165,12 @@ export class ActionFeedbackService {
   /**
    * Son global action durumunu getirir
    */
-  async getLastGlobalStatus(caseId: string): Promise<{
+  async getLastGlobalStatus(caseId: string, scope: OutboxScope): Promise<{
     status: string | null;
     successAt: string | null;
     failAt: string | null;
   }> {
-    const snapshot = await this.factStore.getSnapshot(caseId);
+    const snapshot = await this.factStore.getSnapshot(caseId, scope);
     const { facts } = snapshot;
 
     return {

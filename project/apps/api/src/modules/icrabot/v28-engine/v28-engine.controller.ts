@@ -62,29 +62,44 @@ export class UyapEventController {
 export class FactStoreController {
   constructor(private readonly factStore: FactStoreService) {}
 
+  // V28-TENANT-ISOLATION-CLOSEOUT-R01: FactStore'un TUM yuzeyleri tenant-scoped.
+  // Kapsam authority'si YALNIZ dogrulanmis `req.user.tenantId`.
   @Get(':caseId')
-  async getSnapshot(@Param('caseId') caseId: string) {
-    return this.factStore.getSnapshot(caseId);
+  async getSnapshot(@Req() req: any, @Param('caseId') caseId: string) {
+    return this.factStore.getSnapshot(caseId, tenantScopeFromRequestUser(req.user));
   }
 
   @Get(':caseId/fact/:key')
-  async getFact(@Param('caseId') caseId: string, @Param('key') key: string) {
-    const value = await this.factStore.getFact(caseId, key);
+  async getFact(
+    @Req() req: any,
+    @Param('caseId') caseId: string,
+    @Param('key') key: string,
+  ) {
+    const value = await this.factStore.getFact(caseId, key, tenantScopeFromRequestUser(req.user));
     return { key, value };
   }
 
   @Get(':caseId/flag/:key')
-  async getFlag(@Param('caseId') caseId: string, @Param('key') key: string) {
-    const value = await this.factStore.getFlag(caseId, key);
+  async getFlag(
+    @Req() req: any,
+    @Param('caseId') caseId: string,
+    @Param('key') key: string,
+  ) {
+    const value = await this.factStore.getFlag(caseId, key, tenantScopeFromRequestUser(req.user));
     return { key, value };
   }
 
   @Get(':caseId/audit')
   async getAuditHistory(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Query('limit') limit?: string,
   ) {
-    return this.factStore.getAuditHistory(caseId, limit ? parseInt(limit) : 100);
+    return this.factStore.getAuditHistory(
+      caseId,
+      tenantScopeFromRequestUser(req.user),
+      limit ? parseInt(limit) : 100,
+    );
   }
 
   // ==================== v28_factstore_actions EXTENSIONS ====================
@@ -92,70 +107,114 @@ export class FactStoreController {
   @Post(':caseId/batch')
   @HttpCode(HttpStatus.OK)
   async batchWrite(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Body() body: { facts?: Record<string, any>; flags?: Record<string, boolean>; meta?: any },
   ) {
-    return this.factStore.batchWrite(caseId, body.facts || {}, body.flags || {}, body.meta || {});
+    return this.factStore.batchWrite(
+      caseId,
+      body.facts || {},
+      body.flags || {},
+      body.meta || {},
+      tenantScopeFromRequestUser(req.user),
+    );
   }
 
   @Post(':caseId/fact/:key')
   @HttpCode(HttpStatus.OK)
   async setFact(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Param('key') key: string,
     @Body() body: { value: any; meta?: any },
   ) {
-    await this.factStore.setFacts(caseId, { [key]: body.value }, body.meta || {});
+    await this.factStore.setFacts(
+      caseId,
+      { [key]: body.value },
+      body.meta || {},
+      tenantScopeFromRequestUser(req.user),
+    );
     return { ok: true, key, value: body.value };
   }
 
   @Post(':caseId/flag/:key')
   @HttpCode(HttpStatus.OK)
   async setFlag(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Param('key') key: string,
     @Body() body: { value: boolean; meta?: any },
   ) {
-    await this.factStore.setFlags(caseId, { [key]: body.value }, body.meta || {});
+    await this.factStore.setFlags(
+      caseId,
+      { [key]: body.value },
+      body.meta || {},
+      tenantScopeFromRequestUser(req.user),
+    );
     return { ok: true, key, value: body.value };
   }
 
   @Get(':caseId/pattern/:pattern')
   async getFactsByPattern(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Param('pattern') pattern: string,
   ) {
-    return this.factStore.getFactsByPattern(caseId, pattern);
+    return this.factStore.getFactsByPattern(
+      caseId,
+      pattern,
+      tenantScopeFromRequestUser(req.user),
+    );
   }
 
   @Get(':caseId/audit/:key')
   async getKeyAuditHistory(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Param('key') key: string,
     @Query('limit') limit?: string,
   ) {
-    return this.factStore.getKeyAuditHistory(caseId, key, limit ? parseInt(limit) : 50);
+    return this.factStore.getKeyAuditHistory(
+      caseId,
+      key,
+      tenantScopeFromRequestUser(req.user),
+      limit ? parseInt(limit) : 50,
+    );
   }
 
   @Post(':caseId/increment/:key')
   @HttpCode(HttpStatus.OK)
   async incrementFact(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Param('key') key: string,
     @Body() body: { delta: number; meta?: any },
   ) {
-    const newValue = await this.factStore.incrementFact(caseId, key, body.delta, body.meta || {});
+    const newValue = await this.factStore.incrementFact(
+      caseId,
+      key,
+      body.delta,
+      body.meta || {},
+      tenantScopeFromRequestUser(req.user),
+    );
     return { ok: true, key, value: newValue };
   }
 
   @Post(':caseId/append/:key')
   @HttpCode(HttpStatus.OK)
   async appendToFact(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Param('key') key: string,
     @Body() body: { item: any; meta?: any },
   ) {
-    const newArray = await this.factStore.appendToFact(caseId, key, body.item, body.meta || {});
+    const newArray = await this.factStore.appendToFact(
+      caseId,
+      key,
+      body.item,
+      body.meta || {},
+      tenantScopeFromRequestUser(req.user),
+    );
     return { ok: true, key, value: newArray };
   }
 
@@ -194,20 +253,29 @@ export class FactStoreController {
     return { ok: true, caseId };
   }
 
+  // GLOBAL ENUMERATION KAPATILDI: sonuc kumesi cagiranin tenant'ina indirgenir.
   @Get('by-flag/:key')
   async getCasesWithFlag(
+    @Req() req: any,
     @Param('key') key: string,
     @Query('value') value?: string,
   ) {
     const boolValue = value !== 'false';
-    const caseIds = await this.factStore.getCasesWithFlag(key, boolValue);
+    const caseIds = await this.factStore.getCasesWithFlag(
+      key,
+      boolValue,
+      tenantScopeFromRequestUser(req.user),
+    );
     return { key, value: boolValue, caseIds, count: caseIds.length };
   }
 
   @Post('bulk-snapshot')
   @HttpCode(HttpStatus.OK)
-  async getBulkSnapshots(@Body() body: { caseIds: string[] }) {
-    const snapshots = await this.factStore.getBulkSnapshots(body.caseIds);
+  async getBulkSnapshots(@Req() req: any, @Body() body: { caseIds: string[] }) {
+    const snapshots = await this.factStore.getBulkSnapshots(
+      body.caseIds ?? [],
+      tenantScopeFromRequestUser(req.user),
+    );
     return Object.fromEntries(snapshots);
   }
 }
@@ -729,33 +797,38 @@ export class ActionFeedbackController {
    */
   @Get(':caseId/:actionType')
   async getLastFeedback(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Param('actionType') actionType: string,
   ) {
-    return this.feedback.getLastFeedback(caseId, actionType);
+    return this.feedback.getLastFeedback(
+      caseId,
+      actionType,
+      tenantScopeFromRequestUser(req.user),
+    );
   }
 
   /**
    * Get all feedbacks for a case
    */
   @Get(':caseId')
-  async getAllFeedbacks(@Param('caseId') caseId: string) {
-    return this.feedback.getAllFeedbacks(caseId);
+  async getAllFeedbacks(@Req() req: any, @Param('caseId') caseId: string) {
+    return this.feedback.getAllFeedbacks(caseId, tenantScopeFromRequestUser(req.user));
   }
 
   /**
    * Get callback history for a case
    */
   @Get(':caseId/callbacks')
-  async getCallbackHistory(@Param('caseId') caseId: string) {
-    return this.feedback.getCallbackHistory(caseId);
+  async getCallbackHistory(@Req() req: any, @Param('caseId') caseId: string) {
+    return this.feedback.getCallbackHistory(caseId, tenantScopeFromRequestUser(req.user));
   }
 
   /**
    * Get last global action status
    */
   @Get(':caseId/last')
-  async getLastGlobalStatus(@Param('caseId') caseId: string) {
-    return this.feedback.getLastGlobalStatus(caseId);
+  async getLastGlobalStatus(@Req() req: any, @Param('caseId') caseId: string) {
+    return this.feedback.getLastGlobalStatus(caseId, tenantScopeFromRequestUser(req.user));
   }
 }
