@@ -14,8 +14,8 @@
  *   - canonical equality (main == origin/main)
  *
  * Cagrildigi yerler:
- * - scripts/instruction-policy.test.cjs -> guard davranis testleri
- * - scripts/governance-coordination.test.cjs -> testleri CI'a baglayan require
+ * - apps/api/src/common/__tests__/instruction-policy.spec.ts -> guard davranis testleri
+ *   (CI baglantisi: apps/api/ci-manifests/pure/platform-scripts-shared.txt)
  * - CLI: node scripts/instruction-policy.cjs verify [--head-ref <ref>] [--changed-paths a,b]
  */
 

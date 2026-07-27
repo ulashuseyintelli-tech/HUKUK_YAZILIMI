@@ -2336,8 +2336,3 @@ test('current repository register matches deterministic generated output', () =>
 test('CLI self-test core passes', () => {
   assert.equal(coordination.runSelfTest(), true);
 });
-
-// Instruction policy guard'i ayni CI adimina baglar: ci.yml'e yeni step eklenmez,
-// mevcut `node --test scripts/governance-coordination.test.cjs` cagrisi bu testleri
-// de kosar. Guard tanimi: scripts/instruction-policy.cjs
-require('./instruction-policy.test.cjs');
