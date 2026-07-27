@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+  "owner": "Ulas Huseyin Telli",
+  "supersedes": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01 (extends, does not revoke)",
+  "decisions": [
+    "the live execution path runs through queue, admission, dispatch and service",
+    "no second production path may reach an executor",
+    "orch:run is an adapter or a development-only path, never a production bypass",
+    "CLIENT opened to controlled live execution",
+    "DEBTOR opened to controlled live execution",
+    "RECEIVABLE opened to controlled live execution",
+    "UYAP_CONNECTOR opened to controlled live execution for technical work only",
+    "OFFICE and COLLECTION keep their existing eligibility and grants",
+    "each program receives its own standing grant",
+    "no single unbounded grant covers several programs",
+    "eligibility opens a lane, never a mandate over units the program denied",
+    "UYAP production external activation remains a separate owner decision",
+    "no per-child-task owner ratification is required inside these bounds",
+    "orchestration-owned PRs auto-squash-merge once every merge gate holds",
+    "repository-wide auto-merge is never enabled"
+  ],
+  "serialExecution": true,
+  "maxConcurrency": 1,
+  "autoMergeAuthorized": true,
+  "repositoryWideAutoMerge": false,
+  "programsOpened": [
+    "OFFICE",
+    "COLLECTION",
+    "CLIENT",
+    "DEBTOR",
+    "RECEIVABLE",
+    "UYAP_CONNECTOR"
+  ],
+  "programsUnchanged": [],
+  "validity": "until program completion, explicit owner revocation, kill switch, or scope violation",
+  "nonTransferable": "not to another program, repository or owner workstream"
+}

@@ -155,12 +155,76 @@ test('eligibility: OWNER_GATED is not a denial — it is what a standing grant i
   assert.equal(E.deriveForProgram(PROGRAM.OFFICE, authorityRecord()).eligibility, 'ELIGIBLE');
 });
 
-test('eligibility: an unresolved taxonomy is UNKNOWN, not resolved by omission', () => {
+test('eligibility: an unresolved taxonomy is carried, not used as a gate', () => {
+  // "Is RECEIVABLE a top-level program or a sub-track?" and "may the
+  // orchestrator run work under this id?" are different questions. Conflating
+  // them silently withheld a lane the owner had opened, so the open question is
+  // now reported BESIDE the verdict rather than instead of one.
   const a = authorityRecord({ eligiblePrograms: [{ programId: 'RECEIVABLE', standingGrantRef: 'x.json' }] });
   const permissive = Object.assign({}, PROGRAM.RECEIVABLE, { authorizationState: 'OWNER_GATED' });
   const d = E.deriveForProgram(permissive, a);
-  assert.equal(d.eligibility, 'UNKNOWN');
-  assert.equal(d.reason, 'TAXONOMY_UNRESOLVED');
+  assert.equal(d.eligibility, 'ELIGIBLE');
+  assert.equal(d.taxonomyUnresolved, true, 'and the question stays visible');
+});
+
+test('eligibility: a governance denial still blocks WITHOUT an override', () => {
+  // The conjunction is intact. An override is the only thing that changes it,
+  // and it has to be present to do so.
+  const a = authorityRecord({ eligiblePrograms: [{ programId: 'CLIENT', standingGrantRef: 'x.json' }] });
+  const d = E.deriveForProgram(PROGRAM.CLIENT, a);
+  assert.equal(d.eligibility, 'DENIED');
+  assert.equal(d.reason, 'PROGRAM_GOVERNANCE_NOT_AUTHORIZED');
+});
+
+test('eligibility: an evidenced override opens the lane and says so', () => {
+  const a = authorityRecord({
+    eligiblePrograms: [{
+      programId: 'CLIENT',
+      standingGrantRef: 'x.json',
+      governanceOverride: {
+        reason: 'R02 owner karari',
+        evidence: { sourcePath: ENVELOPE, exactExcerpt: EXCERPT, excerptSha256: E.sha256(EXCERPT) },
+      },
+    }],
+  });
+  const d = E.deriveForProgram(PROGRAM.CLIENT, a);
+  assert.equal(d.eligibility, 'ELIGIBLE');
+  assert.equal(d.reason, 'OWNER_OVERRIDE_OF_NOT_AUTHORIZED', 'the reason names what was overridden');
+  assert.match(d.overrideReason, /R02/);
+});
+
+test('eligibility: an override without evidence is not an override', () => {
+  // The whole danger of an override is that it is the one thing that can turn a
+  // denial into a permission. It is held to the same standard as the top-level
+  // decision: quoted, digest-matched, and present in the cited file.
+  const bad = (over) =>
+    authorityRecord({
+      eligiblePrograms: [{ programId: 'CLIENT', standingGrantRef: 'x.json', governanceOverride: over }],
+    });
+
+  throwsWith(
+    () => E.verifyAuthorityRecord({ authority: bad({ reason: 'because' }), readFile: readFromRepo }),
+    'ELIGIBILITY_EVIDENCE_INCOMPLETE',
+  );
+  throwsWith(
+    () => E.verifyAuthorityRecord({
+      authority: bad({ reason: 'x', evidence: { sourcePath: ENVELOPE, exactExcerpt: EXCERPT, excerptSha256: 'f'.repeat(64) } }),
+      readFile: readFromRepo,
+    }),
+    'ELIGIBILITY_EXCERPT_DIGEST_MISMATCH',
+  );
+  const invented = 'DEBTOR sinirsiz yetkiyle acilir';
+  throwsWith(
+    () => E.verifyAuthorityRecord({
+      authority: bad({ reason: 'x', evidence: { sourcePath: ENVELOPE, exactExcerpt: invented, excerptSha256: E.sha256(invented) } }),
+      readFile: readFromRepo,
+    }),
+    'ELIGIBILITY_EXCERPT_NOT_FOUND',
+  );
+  throwsWith(
+    () => E.verifyAuthorityRecord({ authority: bad({ evidence: { sourcePath: ENVELOPE, exactExcerpt: EXCERPT, excerptSha256: E.sha256(EXCERPT) } }), readFile: readFromRepo }),
+    'ELIGIBILITY_OVERRIDE_REASON_MISSING',
+  );
 });
 
 // -------------------------------------------------------------- MANIFEST
@@ -217,11 +281,49 @@ test('eligibility: the committed manifest is exactly what the deriver produces',
   assert.deepEqual(derived, committed, 'programs.manifest.json is not the derivation of its own authority');
 });
 
-test('eligibility: exactly the two opened programs are eligible, and the other four are not', () => {
+test('eligibility: all six programs are eligible, each with a stated reason', () => {
   const committed = JSON.parse(readFromRepo('project/docs/governance/coordination-v2/programs.manifest.json'));
-  const eligible = committed.programs.filter((p) => p.liveExecutionEligibility === 'ELIGIBLE').map((p) => p.programId);
-  assert.deepEqual(eligible.sort(), ['COLLECTION', 'OFFICE']);
   assert.equal(committed.programs.length, 6);
+  assert.deepEqual(
+    committed.programs.filter((p) => p.liveExecutionEligibility === 'ELIGIBLE').map((p) => p.programId).sort(),
+    ['CLIENT', 'COLLECTION', 'DEBTOR', 'OFFICE', 'RECEIVABLE', 'UYAP_CONNECTOR'],
+  );
+
+  // Two got there through the plain conjunction and four through an evidenced
+  // owner override. Which is which must be readable from the manifest, or the
+  // difference between "governance permits" and "the owner overrode governance"
+  // disappears into a single word.
+  const by = (id) => committed.programs.filter((p) => p.programId === id)[0].liveExecutionEligibilityDerivation;
+  for (const id of ['OFFICE', 'COLLECTION']) {
+    assert.equal(by(id).reason, 'AUTHORITY_NAMES_PROGRAM_AND_GOVERNANCE_PERMITS');
+    assert.equal(by(id).overrideReason, null);
+  }
+  for (const id of ['CLIENT', 'DEBTOR', 'RECEIVABLE', 'UYAP_CONNECTOR']) {
+    assert.equal(by(id).reason, 'OWNER_OVERRIDE_OF_NOT_AUTHORIZED');
+    assert.ok(by(id).overrideReason, id + ' overrode governance without saying why');
+  }
+});
+
+test('eligibility: every eligible program has its OWN grant — no shared blanket', () => {
+  const record = JSON.parse(readFromRepo(ACT + '/program-eligibility-authority.json'));
+  const refs = record.eligiblePrograms.map((p) => p.standingGrantRef);
+  assert.equal(new Set(refs).size, refs.length, 'two programs share a standing grant');
+  assert.equal(refs.length, 6);
+  for (const p of record.eligiblePrograms) {
+    const g = JSON.parse(readFromRepo(p.standingGrantRef));
+    assert.equal(g.program.programId, p.programId);
+    assert.equal(g.maxConcurrency, 1);
+    assert.equal(g.mergePolicy.repositoryWideAutoMerge, false);
+  }
+});
+
+test('eligibility: the UYAP grant does not authorize production external activation', () => {
+  // Eligibility is technical permission to run work. It is not permission to
+  // talk to the real UYAP, and the grant has to say so rather than leave it to
+  // be inferred.
+  const g = JSON.parse(readFromRepo(ACT + '/STANDING-GRANT-UYAP-CONNECTOR-LIVE-R01.json'));
+  assert.equal(g.externalActivation.permitted, false);
+  assert.equal(g.externalActivation.requiresSeparateOwnerDecision, true);
 });
 
 // ------------------------------------------------------- ADMISSION (WP07)

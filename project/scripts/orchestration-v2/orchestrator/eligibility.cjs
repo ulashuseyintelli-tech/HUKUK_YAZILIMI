@@ -77,22 +77,32 @@ function verifyAuthorityRecord(opts) {
   if (a.schemaVersion !== 1) fail('ELIGIBILITY_AUTHORITY_SCHEMA_UNKNOWN', String(a.schemaVersion));
   if (!a.authorizationId) fail('ELIGIBILITY_AUTHORITY_ID_MISSING');
 
-  const ev = a.ownerDecisionEvidence;
-  if (!ev || !ev.sourcePath || !ev.exactExcerpt || !ev.excerptSha256) {
-    fail('ELIGIBILITY_EVIDENCE_INCOMPLETE', a.authorizationId);
-  }
-  // The record must not be its own evidence.
-  if (ev.sourcePath.indexOf('PROGRAM-ELIGIBILITY-AUTHORITY') !== -1) {
-    fail('ELIGIBILITY_EVIDENCE_SELF_REFERENTIAL', ev.sourcePath);
-  }
-  if (sha256(ev.exactExcerpt) !== ev.excerptSha256) {
-    fail('ELIGIBILITY_EXCERPT_DIGEST_MISMATCH', ev.sourcePath);
-  }
+  // One evidence standard, applied everywhere. The top-level owner decision and
+  // a per-program override are the same kind of claim — "the owner said this" —
+  // so they are checked identically, rather than the override getting an easier
+  // path precisely because it is the more dangerous one.
+  const checkExcerpt = (ev, label) => {
+    if (!ev || !ev.sourcePath || !ev.exactExcerpt || !ev.excerptSha256) {
+      fail('ELIGIBILITY_EVIDENCE_INCOMPLETE', label);
+    }
+    // The record must not be its own evidence.
+    if (ev.sourcePath.indexOf('PROGRAM-ELIGIBILITY-AUTHORITY') !== -1) {
+      fail('ELIGIBILITY_EVIDENCE_SELF_REFERENTIAL', label + ' ' + ev.sourcePath);
+    }
+    // Digest before file read: a quote that does not match its own digest is
+    // already wrong, and reading the file would say the same thing later and
+    // less precisely.
+    if (sha256(ev.exactExcerpt) !== ev.excerptSha256) {
+      fail('ELIGIBILITY_EXCERPT_DIGEST_MISMATCH', label + ' ' + ev.sourcePath);
+    }
+    const source = opts.readFile(ev.sourcePath);
+    if (typeof source !== 'string' || source.indexOf(ev.exactExcerpt) === -1) {
+      fail('ELIGIBILITY_EXCERPT_NOT_FOUND', label + ' ' + ev.sourcePath);
+    }
+  };
 
-  const source = opts.readFile(ev.sourcePath);
-  if (typeof source !== 'string' || source.indexOf(ev.exactExcerpt) === -1) {
-    fail('ELIGIBILITY_EXCERPT_NOT_FOUND', ev.sourcePath);
-  }
+  const ev = a.ownerDecisionEvidence;
+  checkExcerpt(ev, a.authorizationId);
 
   if (!Array.isArray(a.eligiblePrograms)) fail('ELIGIBILITY_PROGRAM_LIST_INVALID');
   for (const p of a.eligiblePrograms) {
@@ -101,6 +111,12 @@ function verifyAuthorityRecord(opts) {
       // An eligible program with no standing grant is an open door with no
       // frame: nothing would bound what runs inside it.
       fail('ELIGIBILITY_PROGRAM_WITHOUT_GRANT', p.programId);
+    }
+    // An override is the ONLY thing here that turns a governance denial into a
+    // permission. An unevidenced one is not an override; it is a claim.
+    if (p.governanceOverride) {
+      checkExcerpt(p.governanceOverride.evidence, 'override ' + p.programId);
+      if (!p.governanceOverride.reason) fail('ELIGIBILITY_OVERRIDE_REASON_MISSING', p.programId);
     }
   }
   return { verified: true, authorizationId: a.authorizationId, at: ev.sourcePath };
@@ -125,27 +141,38 @@ function deriveForProgram(program, authority) {
       standingGrantRef: null,
     };
   }
+  // Carried, never used as a gate. Whether RECEIVABLE is a top-level program or
+  // a sub-track is a real open question (the manifest's taxonomyQuestionOpen)
+  // and a DIFFERENT question from "may the orchestrator run work under this
+  // id?". Conflating them meant an unresolved taxonomy silently withheld a lane
+  // the owner had opened, so it is reported beside the verdict, not instead of
+  // one.
+  const taxonomyUnresolved = program.taxonomyLevel !== 'PROGRAM';
+
   if (BLOCKING_AUTHORIZATION_STATES.indexOf(program.authorizationState) !== -1) {
-    // The envelope grants a lane, not a mandate. A program whose own governance
-    // says NOT AUTHORIZED is not opened by being named.
+    if (!named.governanceOverride) {
+      // The envelope grants a lane, not a mandate. A program whose own
+      // governance says NOT AUTHORIZED is not opened merely by being named.
+      return {
+        programId: id,
+        eligibility: 'DENIED',
+        reason: 'PROGRAM_GOVERNANCE_' + program.authorizationState,
+        authorityRef: authority.authorizationId,
+        standingGrantRef: named.standingGrantRef,
+        taxonomyUnresolved,
+      };
+    }
+    // A later owner decision, quoted and digest-verified, opens the lane. The
+    // units that governance denied remain unauthorized: they sit outside the
+    // standing grant, which is where task-level authority actually lives.
     return {
       programId: id,
-      eligibility: 'DENIED',
-      reason: 'PROGRAM_GOVERNANCE_' + program.authorizationState,
+      eligibility: 'ELIGIBLE',
+      reason: 'OWNER_OVERRIDE_OF_' + program.authorizationState,
+      overrideReason: named.governanceOverride.reason,
       authorityRef: authority.authorizationId,
       standingGrantRef: named.standingGrantRef,
-    };
-  }
-  if (program.taxonomyLevel !== 'PROGRAM') {
-    // An unresolved taxonomy is not a denial and not an approval. Reporting
-    // UNKNOWN keeps the open question visible instead of resolving it by
-    // omission — which the manifest's own §SS9 says must not happen here.
-    return {
-      programId: id,
-      eligibility: 'UNKNOWN',
-      reason: 'TAXONOMY_UNRESOLVED',
-      authorityRef: authority.authorizationId,
-      standingGrantRef: named.standingGrantRef,
+      taxonomyUnresolved,
     };
   }
   return {
@@ -154,6 +181,7 @@ function deriveForProgram(program, authority) {
     reason: 'AUTHORITY_NAMES_PROGRAM_AND_GOVERNANCE_PERMITS',
     authorityRef: authority.authorizationId,
     standingGrantRef: named.standingGrantRef,
+    taxonomyUnresolved,
   };
 }
 
@@ -179,6 +207,8 @@ function deriveManifest(opts) {
         reason: d.reason,
         authorityRef: d.authorityRef,
         standingGrantRef: d.standingGrantRef,
+        taxonomyUnresolved: d.taxonomyUnresolved === true,
+        overrideReason: d.overrideReason || null,
       },
     });
   });

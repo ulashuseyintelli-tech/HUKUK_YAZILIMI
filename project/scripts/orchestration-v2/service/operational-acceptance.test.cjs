@@ -106,13 +106,20 @@ test('AC-03  the manifest is exactly the derivation of its authority — no hand
   assert.deepEqual(derived, committed);
 });
 
-test('AC-04  exactly two programs are ELIGIBLE and the other four are not', () => {
+test('AC-04  all six programs are ELIGIBLE, and each says how it got there', () => {
   const m = MANIFEST();
   assert.equal(m.programs.length, 6);
   assert.deepEqual(
     m.programs.filter((p) => p.liveExecutionEligibility === 'ELIGIBLE').map((p) => p.programId).sort(),
-    ['COLLECTION', 'OFFICE'],
+    ['CLIENT', 'COLLECTION', 'DEBTOR', 'OFFICE', 'RECEIVABLE', 'UYAP_CONNECTOR'],
   );
+  for (const p of m.programs) {
+    const d = p.liveExecutionEligibilityDerivation;
+    assert.ok(d && d.reason, p.programId + ' has no stated reason');
+    // An override must name itself. "ELIGIBLE" alone would hide the difference
+    // between governance permitting and the owner overriding governance.
+    if (d.reason.indexOf('OWNER_OVERRIDE') === 0) assert.ok(d.overrideReason, p.programId);
+  }
 });
 
 test('AC-05  every eligible program is bound to a standing grant that exists on disk', () => {
