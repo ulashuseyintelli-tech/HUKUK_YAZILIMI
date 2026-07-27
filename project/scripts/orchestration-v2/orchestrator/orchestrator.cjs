@@ -538,14 +538,55 @@ async function runTask(ctx) {
   trace.push('CI_PENDING');
 
   // --- CI observation (§5.1 runtime-resolved required set) ----------------
-  const ci = mergeready.evaluateCi({
-    sources: await ctx.ciProvider.requiredSources({ taskId, pr }),
-    observed: await ctx.ciProvider.observe({ taskId, pr }),
-  });
-  if (!ci.pass) {
-    cleanupWorktree();
-    release('TERMINAL_BLOCKED_PUBLISHED');
-    return blocked('REQUIRED_CI_FAILED', ci.missing.concat(ci.notSuccess).join('; '), { ci });
+  //
+  // CI is observed until it settles, not once. The previous version asked
+  // exactly once — seconds after the push, while every check was still queued —
+  // and returned REQUIRED_CI_FAILED naming checks that were merely running. A
+  // correct attempt could not reach MERGE_READY no matter what CI later said.
+  //
+  // A real failure is NOT waited on: once a required check has completed
+  // non-successfully, waiting cannot change it, so the run stops immediately.
+  // Waiting happens only while checks are pending or not yet registered.
+  //
+  // "We stopped looking" and "CI said no" are different facts, and the result
+  // record must not blur them — but result.schema.json pins blockerCode to a
+  // fixed enum and adding a value is an owner amendment, so the distinction
+  // rides in the detail prefix and in the structured `ci` payload
+  // (ci.pending / ci.missing / ci.failed) rather than in a new code.
+  const ciWaitMs = Number.isFinite(ctx.ciWaitMs) ? ctx.ciWaitMs : 20 * 60 * 1000;
+  const ciPollMs = Number.isFinite(ctx.ciPollMs) ? ctx.ciPollMs : 60 * 1000;
+  const sleep = ctx.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const ciDeadline = nowMs() + ciWaitMs;
+
+  let ci;
+  for (;;) {
+    ci = mergeready.evaluateCi({
+      sources: await ctx.ciProvider.requiredSources({ taskId, pr }),
+      observed: await ctx.ciProvider.observe({ taskId, pr }),
+    });
+    if (ci.pass) break;
+    if ((ci.failed || []).length > 0) {
+      cleanupWorktree();
+      release('TERMINAL_BLOCKED_PUBLISHED');
+      return blocked('REQUIRED_CI_FAILED', ci.failed.join('; '), { ci });
+    }
+    if (!ci.settling) {
+      // Not running and not passing: a required check is absent from the
+      // observed set. Fail-closed, unchanged from before the wait existed.
+      cleanupWorktree();
+      release('TERMINAL_BLOCKED_PUBLISHED');
+      return blocked('REQUIRED_CI_FAILED', ci.missing.concat(ci.notSuccess).join('; '), { ci });
+    }
+    if (nowMs() >= ciDeadline) {
+      cleanupWorktree();
+      release('TERMINAL_BLOCKED_PUBLISHED');
+      return blocked(
+        'REQUIRED_CI_FAILED',
+        'CI_STILL_PENDING_AT_DEADLINE: ' + (ci.pending || []).join('; '),
+        { ci },
+      );
+    }
+    await sleep(ciPollMs);
   }
 
   // --- MERGE_READY attestation (§5) --------------------------------------

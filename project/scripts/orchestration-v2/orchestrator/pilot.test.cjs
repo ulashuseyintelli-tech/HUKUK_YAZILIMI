@@ -724,3 +724,78 @@ test('PILOT: an executor that changes nothing is blocked before anything is push
   assert.ok(r.trace.includes('VALIDATING'), JSON.stringify(r.trace));
   assert.ok(!r.trace.includes('PR_OPEN'), 'PR must not be opened');
 });
+
+// ------------------------------------------------------------- CI WAITING
+
+const CI_NAMES = ['Test Suite', 'Web Tests (vitest)'];
+const ciPending = () => CI_NAMES.map((name) => ({ name, status: 'PENDING', conclusion: null }));
+const ciGreen = () => CI_NAMES.map((name) => ({ name, status: 'COMPLETED', conclusion: 'SUCCESS' }));
+
+// CI used to be observed exactly once, seconds after the push, while every
+// check was still queued — and a pending check was reported as
+// REQUIRED_CI_FAILED. A correct attempt could not reach MERGE_READY whatever CI
+// later said. Measured on a live run: PR opened, seven checks IN_PROGRESS, run
+// blocked naming three of them.
+test('PILOT: pending CI is waited on, not called a failure', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/ciwait/out.txt', 'x\n');
+  let look = 0;
+  const slept = [];
+  const ctx = ctxFor(repo, { specOver: { taskId: 'PILOT-CI-WAIT', allowedRoots: ['fixture/ciwait/'] } });
+  ctx.ciProvider = {
+    requiredSources: async () => ({ taskSpecRequired: ['Test Suite'], platformRequired: ['Web Tests (vitest)'], governanceRequired: [] }),
+    observe: async () => (++look < 3 ? ciPending() : ciGreen()),
+  };
+  ctx.ciWaitMs = 60000;
+  ctx.ciPollMs = 5;
+  ctx.sleep = async (ms) => { slept.push(ms); };
+
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'MERGE_READY', JSON.stringify(r.blockerCode || r.detail));
+  assert.equal(look, 3, 'must keep observing until CI settles');
+  assert.deepEqual(slept, [5, 5], 'must sleep between observations');
+});
+
+test('PILOT: a genuinely failed required check is not waited on', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/cifail/out.txt', 'x\n');
+  let look = 0;
+  const ctx = ctxFor(repo, { specOver: { taskId: 'PILOT-CI-FAIL', allowedRoots: ['fixture/cifail/'] } });
+  ctx.ciProvider = {
+    requiredSources: async () => ({ taskSpecRequired: ['Test Suite'], platformRequired: ['Web Tests (vitest)'], governanceRequired: [] }),
+    observe: async () => {
+      look += 1;
+      return [
+        { name: 'Test Suite', status: 'COMPLETED', conclusion: 'FAILURE' },
+        { name: 'Web Tests (vitest)', status: 'COMPLETED', conclusion: 'SUCCESS' },
+      ];
+    },
+  };
+  ctx.ciWaitMs = 60000;
+  ctx.sleep = async () => { throw new Error('must not sleep on a real failure'); };
+
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.equal(r.blockerCode, 'REQUIRED_CI_FAILED');
+  assert.match(r.detail, /Test Suite=FAILURE/);
+  assert.equal(look, 1, 'a completed failure is decided on the first look');
+});
+
+test('PILOT: CI that never settles times out, and says so without a new blocker code', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/citimeout/out.txt', 'x\n');
+  const ctx = ctxFor(repo, { specOver: { taskId: 'PILOT-CI-TIMEOUT', allowedRoots: ['fixture/citimeout/'] } });
+  ctx.ciProvider = {
+    requiredSources: async () => ({ taskSpecRequired: ['Test Suite'], platformRequired: ['Web Tests (vitest)'], governanceRequired: [] }),
+    observe: async () => ciPending(),
+  };
+  ctx.ciWaitMs = 0; // deadline already past on the first look
+  ctx.sleep = async () => { throw new Error('must not sleep past the deadline'); };
+
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'BLOCKED');
+  // result.schema.json pins blockerCode to a fixed enum and adding a value is
+  // an owner amendment, so the distinction rides in the detail and in ci.pending.
+  assert.equal(r.blockerCode, 'REQUIRED_CI_FAILED');
+  assert.match(r.detail, /^CI_STILL_PENDING_AT_DEADLINE: /);
+});

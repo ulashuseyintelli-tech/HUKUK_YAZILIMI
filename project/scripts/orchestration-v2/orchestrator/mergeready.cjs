@@ -78,13 +78,25 @@ function evaluateCi(opts) {
 
   const missing = [];
   const notSuccess = [];
+  // A check that has not finished is not a check that failed. Both keep `pass`
+  // false — nothing is merge-ready while CI is still deciding — but the caller
+  // has to tell them apart, because one is worth waiting for and the other
+  // never will be. Without the split the orchestrator observed CI once, seconds
+  // after opening the PR, and reported REQUIRED_CI_FAILED for checks that were
+  // still running.
+  const pending = [];
   for (const name of required) {
     const c = observed[name];
     if (!c) {
       missing.push(name);
       continue;
     }
-    if (c.status !== 'COMPLETED' || c.conclusion !== 'SUCCESS') {
+    if (c.status !== 'COMPLETED') {
+      pending.push(name + '=' + (c.status || 'PENDING'));
+      notSuccess.push(name + '=' + (c.conclusion || c.status));
+      continue;
+    }
+    if (c.conclusion !== 'SUCCESS') {
       notSuccess.push(name + '=' + (c.conclusion || c.status));
     }
   }
@@ -94,6 +106,13 @@ function evaluateCi(opts) {
     required,
     missing,
     notSuccess,
+    pending,
+    // Only a check that EXISTS and is running is worth waiting for. A required
+    // check absent from the observed set stays fail-closed exactly as before —
+    // that is a ratified property, and softening it into "maybe it will show
+    // up" would turn a missing required check into a twenty-minute wait.
+    settling: pending.length > 0,
+    failed: notSuccess.filter((n) => pending.indexOf(n) === -1),
     resultSetSha256: digest(
       required.map((n) => ({
         name: n,
