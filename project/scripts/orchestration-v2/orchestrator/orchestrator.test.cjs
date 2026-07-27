@@ -893,3 +893,38 @@ test('standing grant: the task-scoped grant model still works alongside it', () 
   assert.equal(typeof authorityMod.validateAgainstStandingGrant, 'function');
   assert.notEqual(authorityMod.validateAgainstGrant, authorityMod.validateAgainstStandingGrant);
 });
+
+test('orchestrator: a failed executor records what it actually said', () => {
+  // spawn.cjs captures stdout and stderr; summarize dropped both, so a failed
+  // lane recorded exactly "exit=1". That cost a full investigation to learn a
+  // codex lane was exiting in 139ms, because the record could not say why.
+  const run = {
+    exitCode: 1,
+    durationMs: 139,
+    termination: { reason: 'NORMAL_EXIT', orphanProcessDetected: false },
+    stdoutTruncated: false,
+    executorExitSuccess: false,
+    stdout: 'some ordinary chatter',
+    stderr: 'Not inside a trusted directory and --skip-git-repo-check was not specified.',
+  };
+
+  const quiet = orch.summarize(run);
+  assert.equal(quiet.stderrTail, undefined, 'a successful run does not carry its output');
+
+  const loud = orch.summarize(run, true);
+  assert.match(loud.stderrTail, /trusted directory/);
+  assert.equal(loud.stdoutTail, 'some ordinary chatter');
+  assert.equal(loud.exitCode, 1);
+});
+
+test('orchestrator: a runaway executor cannot fill the state log', () => {
+  // The tail, not the head: a tool that fails says why at the end.
+  const huge = 'x'.repeat(50000) + 'THE ACTUAL ERROR';
+  const s = orch.summarize(
+    { exitCode: 1, durationMs: 1, termination: { reason: 'NORMAL_EXIT', orphanProcessDetected: false }, stdout: '', stderr: huge, stdoutTruncated: false, executorExitSuccess: false },
+    true,
+  );
+  assert.ok(s.stderrTail.length < 2200, 'the tail is capped');
+  assert.match(s.stderrTail, /THE ACTUAL ERROR$/, 'and it keeps the end, where the reason is');
+  assert.match(s.stderrTail, /chars elided/, 'and says it elided something');
+});
