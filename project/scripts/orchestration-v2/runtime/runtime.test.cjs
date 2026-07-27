@@ -56,6 +56,46 @@ test('runner: performMerge is impossible, not merely unimplemented', async () =>
   await assert.rejects(() => ctx.performMerge({ result: {} }), (e) => e.code === 'MERGE_NOT_PERMITTED');
 });
 
+// -------------------------------------------------------------- BASE DRIFT
+
+// orchestrator.cjs §13 uses baseRef for exactly one thing under
+// STRICT_PINNED_BASE: `git rev-parse(baseRef) !== spec.baseSha` -> BLOCKED. The
+// worktree base is taken from spec.baseSha directly, not from baseRef.
+//
+// So handing baseRef the pinned sha made the gate compare the pinned base
+// against itself: rev-parse of a commit id is that commit id, the inequality
+// could never hold, and a plan pinned to a commit main had long moved past
+// would still execute — silently, with an attestation claiming §13 was
+// satisfied. Both T5 plans were in exactly that state when this was found.
+test('runner: baseRef is a branch ref, so the §13 drift gate can actually fire', () => {
+  const ctx = runner.buildContext({
+    repoCwd: tmp('gov-rt-'),
+    spec: SPEC,
+    grant: { grantId: 'G' },
+    store: { current: () => null, transition: () => {} },
+    prProvider: {},
+    ciProvider: {},
+    prepareEnvironment: () => ({ ok: true }),
+  });
+  assert.notEqual(ctx.baseRef, SPEC.baseSha, 'baseRef must not be the pinned sha');
+  assert.equal(ctx.baseRef, 'origin/main');
+});
+
+test('runner: baseRef follows targetBranch as a remote ref', () => {
+  const base = {
+    repoCwd: tmp('gov-rt-'),
+    spec: SPEC,
+    grant: { grantId: 'G' },
+    store: { current: () => null, transition: () => {} },
+    prProvider: {},
+    ciProvider: {},
+    prepareEnvironment: () => ({ ok: true }),
+  };
+  assert.equal(runner.buildContext({ ...base, targetBranch: 'release/v2' }).baseRef, 'origin/release/v2');
+  // An explicit baseRef still wins — the orchestrator's own tests inject one.
+  assert.equal(runner.buildContext({ ...base, baseRef: 'upstream/main' }).baseRef, 'upstream/main');
+});
+
 // -------------------------------------------------------------- ENV POLICY
 
 test('env policy: forbidden credentials cannot be allowlisted, even explicitly', () => {

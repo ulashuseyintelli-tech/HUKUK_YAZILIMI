@@ -133,7 +133,21 @@ function buildContext(opts) {
     // bookkeeping can never be flagged as an untracked file by its own gate.
     store: opts.store || stateMod.createStore(stateMod.defaultStateDir(repoCwd)),
     holder: lane,
-    baseRef: spec.baseSha || opts.targetBranch || 'main',
+    // The ref the §13 drift gate compares the pinned base against — and nothing
+    // else. Under STRICT_PINNED_BASE the orchestrator takes the worktree base
+    // from spec.baseSha directly (orchestrator.cjs:265), so baseRef's only job
+    // is to answer "has the target branch moved past what this plan was pinned
+    // to?".
+    //
+    // This used to be `spec.baseSha || ...`, which made the gate compare the
+    // pinned base against itself: rev-parse of a commit id returns that id, the
+    // inequality never held, and BLOCKED_BASE_SHA_DRIFT could not fire. A plan
+    // pinned to a commit main had long moved past would execute anyway and
+    // attest that §13 was satisfied.
+    //
+    // A remote ref, not a local branch name: a local `main` can lag origin or
+    // sit detached, which would compare against a stale tip.
+    baseRef: opts.baseRef || 'origin/' + (opts.targetBranch || 'main'),
     worktreeRoot: opts.worktreeRoot || path.join(path.dirname(repoCwd), 'HUKUK_orch_runs'),
 
     prepareEnvironment:
