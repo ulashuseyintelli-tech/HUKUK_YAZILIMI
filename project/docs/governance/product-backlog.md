@@ -2907,14 +2907,13 @@ owner-gated kalır. D02-F01 ve I04 otomatik başlamaz.
 ## RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION — Immutable projection-binding persistence
 
 ```text
-STATUS                             COMPLETE / CANONICAL UPON APPROVED MERGE
+STATUS                             COMPLETE / CANONICAL — PR #1630 / d7ef31f6
 BLOCKER CLOSED                     ADMISSION-TIME BINDING PERSISTENCE ABSENT
 SCHEMA                             ADDITIVE / TWO ENTITIES / SIX NULLABLE COLUMNS
-MIGRATION                          MERGED UPON APPROVED MERGE / NOT LIVE-APPLIED
+MIGRATION                          MERGED / NOT LIVE-APPLIED
 RUNTIME                            DORMANT / EXISTING FLOW UNCHANGED
 LEGACY                             UNBOUND / UNCHANGED / NO BACKFILL
-NEXT                               RCV-CLAIM-FORM-P02-S08-D02-PB01 —
-                                   PREDECESSOR COMPLETE / NOT STARTED
+CURRENT LOCATOR                    RCV-PHASE-1-AUTHORIZATION.md HEADER
 ```
 
 Intent ve snapshot exact contract-version/canonical-payload/checksum binding'ini ayrı immutable
@@ -2928,6 +2927,18 @@ Bu foundation PB01 decision-projection field list'ini ratify etmez. Live apply, 
 re-admission/backfill, production resolver, trust-root/key/signature, signed release, Shared
 Document V4, runtime activation, API/web ve containment change yoktur. `D02-KC01`, `D02-F01`,
 `S08-I04` ve `S08-I05` not eligible kalır.
+
+HCR-02 reconciliation sonrası foundation status'u PR #1630 / squash
+`d7ef31f608728b8f57a2c8625af6a989ce3a4569` ile `COMPLETE / CANONICAL`dır. Claim
+Formation living current-state ve next-task kaydı bu backlog'ta tekrar üretilmez; tek locator
+`RCV-PHASE-1-AUTHORIZATION.md` header'ıdır. PB01 semantic contract'ı ayrı, owner-gated ve
+not-started kalır.
+
+PR #1575 / squash `92a478692903e231785281daccbe871f991efca7` / required CI `4/4 PASS`,
+`RCV-CLAIM-FORM-P02-S08-D01B-CONTRACT-PARITY-I01` eligibility/parity technical implementation'ının
+historical closure kanıtıdır. Runtime dormant kalmış, schema/migration/activation üretilmemiştir;
+o tarihteki partial projection-binding persistence açığı PR #1630 ile sonradan kapanmıştır.
+Bu kayıt PR #1575'e retroactive execution authority vermez.
 
 ---
 

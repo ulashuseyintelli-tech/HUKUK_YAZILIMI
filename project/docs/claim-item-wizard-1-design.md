@@ -1,3 +1,19 @@
+# HISTORICAL / NON-AUTHORITATIVE
+
+This document is retained only as historical design evidence.
+
+```text
+SUPERSEDED BY:
+RCV-CLAIM-FORM-P01-R01
+
+DO NOT USE FOR:
+- current ClaimItem taxonomy
+- current Legal Basis authority
+- current subtype classification
+- runtime implementation authority
+- execution sequencing
+```
+
 # CLAIM-ITEM-WIZARD-1 — Çok-Kalemli Manuel Alacak Girişi (Karar Kaydı)
 
 > **Durum:** KARARLAR KİLİTLİ (Ulaş, 2026-06-21) · **Kod YOK · Şema YOK · Migration YOK**

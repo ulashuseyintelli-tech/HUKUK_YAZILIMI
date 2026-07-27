@@ -3362,9 +3362,9 @@ duplicate trigger, default, backfill, historical inference veya row rewrite yokt
 
 ```text
 TASK                               RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION
-STATUS                             COMPLETE / CANONICAL UPON APPROVED MERGE
+STATUS                             COMPLETE / CANONICAL — PR #1630 / d7ef31f6
 SCHEMA                             ADDITIVE / NULLABLE / DEFAULT-FREE
-MIGRATION                          MERGED UPON APPROVED MERGE
+MIGRATION                          MERGED
 LIVE APPLY                         NOT AUTHORIZED / NOT PERFORMED
 RUNTIME                            DORMANT / EXISTING PRODUCTION FLOW UNCHANGED
 LEGACY DATA                        UNBOUND / UNCHANGED
@@ -3377,6 +3377,20 @@ Bound row oluşmuşsa binding legal/audit evidence'dır; kolon veya constraint r
 Legacy unbound pending intent'e binding tahmin edilemez, current/latest/default fallback uygulanamaz
 ve otomatik backfill yapılamaz. PB01, D02-KC01, D02-F01, I04/I05, Shared Document V4, key ceremony,
 signed release ve runtime activation ayrı gate'lerde kalır.
+
+## 23.35. D01B eligibility/parity implementation historical closure
+
+`RCV-CLAIM-FORM-P02-S08-D01B-CONTRACT-PARITY-I01`, implementation PR #1575 / squash
+`92a478692903e231785281daccbe871f991efca7` ve required CI `4/4 PASS` ile merged/canonical
+teknik implementasyondur. Paket, Legal Basis lifecycle/temporal eligibility ile admission/finalizer
+parity kontrolünü ortak validator üzerinden fail-closed hizalamış; runtime'ı dormant bırakmış ve
+schema, migration veya production activation üretmemiştir.
+
+Bu kapanış tarihsel teknik gerçeği kaydeder; PR #1575 için geriye dönük execution authority
+üretmez. PR #1575 zamanında exact Legal Basis projection binding persistence'ı kısmiydi;
+`RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION` bu persistence açığını daha sonra
+PR #1630 / `d7ef31f608728b8f57a2c8625af6a989ce3a4569` ile kapatmıştır. PB01 semantic contract'ı
+ayrı ve owner-gated `RCV-CLAIM-FORM-P02-S08-D02-PB01` görevi olarak açıktır.
 
 ---
 
