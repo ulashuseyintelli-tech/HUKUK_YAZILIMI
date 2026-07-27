@@ -194,13 +194,26 @@ function inlineWorktree(repo) {
   return ({ pinnedBase }) => ({ path: repo, pinnedBaseSha: pinnedBase, branch: 'fixture' });
 }
 
-/** Commit a change inside the fixture so a real diff exists to validate. */
+/**
+ * Leave a change in the fixture worktree the way a real executor leaves one.
+ *
+ * This used to commit, and could not produce a diff that way: the orchestrator
+ * pins the base at worktree time, which is AFTER this runs, so base == HEAD and
+ * `extractChanges(base, head=null)` saw nothing. Every pilot test that believed
+ * it was validating a real diff was validating an empty one — which is how a
+ * missing "the executor produced nothing" gate went unnoticed until a live run
+ * pushed an empty branch.
+ *
+ * Committing was unfaithful on its own terms too: the executor is forbidden to
+ * commit, so in the real flow the change sits staged-but-uncommitted in the
+ * worktree. Staged rather than untracked, because an untracked file is itself a
+ * boundary violation (UNTRACKED_FILE_PRESENT).
+ */
 function seedChange(repo, rel, content) {
   const abs = path.join(repo, rel);
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, content || 'changed\n');
   git(['add', '-A'], repo);
-  git(['commit', '-q', '-m', 'work: ' + rel], repo);
   return git(['rev-parse', 'HEAD'], repo);
 }
 

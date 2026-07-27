@@ -485,6 +485,24 @@ async function runTask(ctx) {
     });
   }
 
+  // An executor that changed nothing did not do the task; it is not a clean
+  // run, it is an absent one. boundary.validate calls an empty diff within
+  // boundary — correctly, nothing escaped — so without this the attempt passes
+  // validation, pushes an empty branch to the remote, and fails three steps
+  // later at PR creation with "No commits between main and ...".
+  //
+  // Measured exactly that way: a lane with no write permission thought for four
+  // minutes, exited 0, reported success, and left a stray remote branch behind.
+  // Blocking here keeps the remote clean and names the real cause.
+  if (verdict.changeCount === 0) {
+    cleanupWorktree();
+    release('TERMINAL_BLOCKED_PUBLISHED');
+    return blocked(
+      'NO_CHANGES_PRODUCED',
+      'executor exited successfully but changed no files; nothing to publish',
+    );
+  }
+
   // --- required tests -----------------------------------------------------
   const testResults = [];
   for (const t of validated.spec.requiredTests) {

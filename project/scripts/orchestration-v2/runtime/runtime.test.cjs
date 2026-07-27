@@ -196,6 +196,29 @@ test('runner: baseRef follows targetBranch as a remote ref', () => {
   assert.equal(runner.buildContext({ ...base, baseRef: 'upstream/main' }).baseRef, 'upstream/main');
 });
 
+// ------------------------------------------------------- EXECUTOR WRITE ACCESS
+
+// Being able to answer and being able to write are different properties. The
+// first version of LANE_ARGV was "verified" by piping a sentinel prompt into
+// each CLI and getting it back with exit 0 — which proves the pipe, not the
+// permission. Measured afterwards on a real run: `codex exec -` with no sandbox
+// flag ran for 260s, exited 0, and changed nothing, because `codex exec`
+// defaults to a read-only sandbox.
+test('runner: each lane argv carries the flag that lets the executor write', () => {
+  assert.deepEqual(runner.LANE_ARGV.CODEX_LOCAL, ['exec', '--sandbox', 'workspace-write', '-']);
+  assert.deepEqual(runner.LANE_ARGV.CLAUDE_LOCAL, ['-p', '--permission-mode', 'acceptEdits']);
+});
+
+test('runner: no lane is given a bypass-everything permission', () => {
+  const forbidden = ['danger-full-access', 'bypassPermissions', '--dangerously-skip-permissions',
+    '--allow-dangerously-skip-permissions', '--dangerously-bypass-approvals-and-sandbox'];
+  for (const lane of Object.keys(runner.LANE_ARGV)) {
+    for (const arg of runner.LANE_ARGV[lane]) {
+      assert.ok(!forbidden.includes(arg), lane + ' must not carry ' + arg);
+    }
+  }
+});
+
 // -------------------------------------------------------------- ENV POLICY
 
 test('env policy: forbidden credentials cannot be allowlisted, even explicitly', () => {
@@ -608,8 +631,8 @@ test('context: each lane gets the headless argv its CLI actually needs', () => {
     // forms are the ones that read stdin. Verified against the real CLIs.
     assert.ok(!ctx.executorArgv.some((a) => a.length > 40), lane + ' argv must not carry the prompt');
   }
-  assert.deepEqual(runner.LANE_ARGV.CLAUDE_LOCAL, ['-p']);
-  assert.deepEqual(runner.LANE_ARGV.CODEX_LOCAL, ['exec', '-']);
+  assert.deepEqual(runner.LANE_ARGV.CLAUDE_LOCAL, ['-p', '--permission-mode', 'acceptEdits']);
+  assert.deepEqual(runner.LANE_ARGV.CODEX_LOCAL, ['exec', '--sandbox', 'workspace-write', '-']);
 });
 
 test('context: an unknown lane fails at build time, not after the lease is taken', () => {
