@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "standingGrantId": "STANDING-GRANT-MECHANICAL-GOVERNANCE-R01",
+  "profile": "MECHANICAL_GOVERNANCE",
+  "parentAuthorizationRef": {
+    "authorizationId": "OWNER-GRANT-ORCHESTRA-PRODUCTION-ACTIVATION-R01",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/PARENT-AUTHORIZATION-ENVELOPE.md",
+    "payloadSha256": "5b7c8f9523c8fed93b2b15c47b51a157ed366941f224742dd3dd2b4a26d0adab"
+  },
+  "program": null,
+  "level2Operations": [
+    "EXACT_APPEND_AT_DECLARED_ANCHOR",
+    "EXACT_LITERAL_REPLACEMENT",
+    "EXACT_REFERENCE_REWRITE",
+    "DETERMINISTIC_REGISTER_REGENERATION"
+  ],
+  "queueExceptions": [
+    "project/docs/governance/coordination-requests/<requestId>/request.md",
+    "project/docs/governance/coordination-results/<requestId>/result.md"
+  ],
+  "deniedCapabilities": [
+    "AUTO_MERGE",
+    "RECONCILIATION",
+    "POLICY_CHANGE",
+    "PROGRAM_SEQUENCE_CHANGE",
+    "PRODUCTION_SCHEMA_MIGRATION_RUNTIME",
+    "OWNER_WIP_MUTATION",
+    "FAILOVER_WITHOUT_OWNER_ACTIVATION",
+    "FREE_FORM_GOVERNANCE_EDIT"
+  ],
+  "allowedTaskClasses": [
+    "CANONICAL_STATUS_UPDATE",
+    "DECISION_LOG_APPEND",
+    "CLOSURE_EVIDENCE",
+    "GENERATED_MANIFEST_REFRESH",
+    "PROGRAM_POINTER_UPDATE",
+    "DOCUMENTATION_SYNCHRONIZATION",
+    "OPERATOR_RUNBOOK_UPDATE",
+    "AUDIT_RECORD_MATERIALIZATION"
+  ],
+  "allowedExecutorLanes": [
+    "CLAUDE_LOCAL",
+    "CODEX_LOCAL"
+  ],
+  "requiredIndependentReview": true,
+  "ciPolicy": {
+    "requireTerminalSuccess": true,
+    "allowSkipped": false,
+    "allowNeutral": true
+  },
+  "mergePolicy": {
+    "method": "SQUASH",
+    "autoMergeAuthorized": false,
+    "repositoryWideAutoMerge": false
+  },
+  "maxConcurrency": 1,
+  "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-MECHANICAL-GOVERNANCE",
+  "killSwitchPath": "project/docs/governance/coordination-v2/activation/KILL-SWITCH",
+  "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/mechanical-governance.jsonl",
+  "prohibitedPathRoots": [
+    "project/scripts/orchestration-v2/",
+    "project/docs/governance/coordination-v2/schemas/",
+    "project/docs/governance/coordination-v2/activation/",
+    "project/docs/governance/governance-writer-coordination-protected-paths.json",
+    ".github/"
+  ],
+  "prohibitions": {
+    "noPrivilegeDelegation": true,
+    "noSecretAccessExpansion": true,
+    "noProductionDataMutation": true,
+    "noCrossProgramMutation": true,
+    "noSelfAuthorizationChange": true
+  },
+  "notes": "Contract §1.2 bu profili ilan etmis ama ulasilabilir yuzeyini bos birakmisti. Bu grant yuzeyi V1 queueExceptions ile doldurur: kanonik governance belgeleri bu profilden ULASILAMAZ kalir, request/result artefakti uretilir ve V1 akisi uygular."
+}
