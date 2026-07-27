@@ -249,6 +249,48 @@ function validateAgainstGrant(opts) {
     grant.semanticAuthorityRef.recordId === grant.executionGrantRef.recordId;
   if (sameRef) fail('AUTHORITY_REFS_NOT_DISTINCT', grant.semanticAuthorityRef.recordId);
 
+  // §2: the owner's ratification must actually be present, not merely declared.
+  //
+  // grant.schema.json requires ownerRatificationEvidence with four fields, and
+  // until now nothing read it — the string "<OWNER-FILLS>" passed validation as
+  // readily as a real excerpt. That made the whole point of the field decorative:
+  // an unratified grant was accepted as long as its expiry parsed. Caught by
+  // filling a real expiry into an otherwise-placeholder grant and watching
+  // validateAgainstGrant return success.
+  //
+  // Shape only is enforced here. Whether the excerpt genuinely appears at that
+  // path and commit is a repository-state question, verified by
+  // verifyRatificationEvidence() below when a reader is supplied — the same
+  // separation V1 makes between a well-formed record and one that is actually
+  // in main.
+  const ev = grant.ownerRatificationEvidence;
+  if (!ev || typeof ev !== 'object') {
+    fail('OWNER_RATIFICATION_EVIDENCE_MISSING', 'grant carries no ownerRatificationEvidence');
+  }
+  for (const field of ['sourcePath', 'sourceCommitSha', 'exactExcerpt', 'excerptSha256']) {
+    const v = ev[field];
+    if (typeof v !== 'string' || v.length === 0) {
+      fail('OWNER_RATIFICATION_EVIDENCE_INCOMPLETE', field);
+    }
+    // A placeholder is not evidence. Fail closed on the shapes a half-filled
+    // template leaves behind rather than treating them as opaque strings.
+    if (/^<.*>$/.test(v) || /OWNER[-_ ]?FILL/i.test(v) || v === 'TBD' || v === 'TODO') {
+      fail('OWNER_RATIFICATION_EVIDENCE_PLACEHOLDER', field + '=' + v.slice(0, 40));
+    }
+  }
+  if (!/^[0-9a-f]{40}$/.test(ev.sourceCommitSha)) {
+    fail('OWNER_RATIFICATION_EVIDENCE_SHA_INVALID', ev.sourceCommitSha.slice(0, 40));
+  }
+  if (!/^[0-9a-f]{64}$/.test(ev.excerptSha256)) {
+    fail('OWNER_RATIFICATION_EVIDENCE_DIGEST_INVALID', ev.excerptSha256.slice(0, 40));
+  }
+  // The digest must be of the excerpt it travels with, otherwise the pair proves
+  // nothing: either half could be swapped without detection.
+  const excerptDigest = crypto.createHash('sha256').update(ev.exactExcerpt, 'utf8').digest('hex');
+  if (excerptDigest !== ev.excerptSha256) {
+    fail('OWNER_RATIFICATION_EXCERPT_DIGEST_MISMATCH', 'computed=' + excerptDigest);
+  }
+
   if (opts.revoked === true) fail('GRANT_REVOKED', grant.grantId);
   if (grant.expiresAt) {
     const exp = Date.parse(grant.expiresAt);
@@ -297,6 +339,57 @@ function validateAgainstGrant(opts) {
   };
 }
 
+/**
+ * Confirm the owner's ratification is actually in the repository, not merely
+ * well-formed inside the grant.
+ *
+ * validateAgainstGrant checks shape, because it must stay pure — it is called in
+ * tests against fixtures with no repository behind them. This is the second
+ * half, and the separation mirrors V1's: a record can be structurally valid and
+ * still not be in main.
+ *
+ * @param {object} opts
+ * @param {object} opts.grant
+ * @param {function} opts.readAtCommit  (sourcePath, sourceCommitSha) => string
+ *        Typically `git show <sha>:<path>`. Must throw or return null if the
+ *        path does not exist at that commit.
+ * @param {function} [opts.isAncestor]  (sha) => boolean, whether the commit is
+ *        reachable from the target branch. Omit to skip the reachability test.
+ * @returns {{ok: true}} or throws AuthorityError
+ */
+function verifyRatificationEvidence(opts) {
+  const grant = opts && opts.grant;
+  const ev = grant && grant.ownerRatificationEvidence;
+  if (!ev) fail('OWNER_RATIFICATION_EVIDENCE_MISSING', 'nothing to verify');
+  if (typeof opts.readAtCommit !== 'function') {
+    fail('EVIDENCE_READER_REQUIRED', 'readAtCommit is required to verify against the repository');
+  }
+
+  // A ratification that is not reachable from the branch the task targets is
+  // not in force, however genuine it looked when it was written.
+  if (typeof opts.isAncestor === 'function' && !opts.isAncestor(ev.sourceCommitSha)) {
+    fail('OWNER_RATIFICATION_NOT_IN_MAIN', ev.sourceCommitSha);
+  }
+
+  let content;
+  try {
+    content = opts.readAtCommit(ev.sourcePath, ev.sourceCommitSha);
+  } catch (e) {
+    fail('OWNER_RATIFICATION_SOURCE_UNREADABLE', ev.sourcePath + '@' + ev.sourceCommitSha);
+  }
+  if (typeof content !== 'string' || content.length === 0) {
+    fail('OWNER_RATIFICATION_SOURCE_EMPTY', ev.sourcePath + '@' + ev.sourceCommitSha);
+  }
+
+  // The excerpt must appear verbatim. Line numbers are deliberately not used:
+  // they go stale silently as a file grows, which is the failure mode the
+  // exactExcerpt + digest pair exists to replace.
+  if (content.indexOf(ev.exactExcerpt) === -1) {
+    fail('OWNER_RATIFICATION_EXCERPT_ABSENT', ev.sourcePath + '@' + ev.sourceCommitSha);
+  }
+  return { ok: true };
+}
+
 module.exports = {
   PROFILES,
   BASE_DRIFT_POLICIES,
@@ -310,4 +403,5 @@ module.exports = {
   normalizeTaskSpec,
   specDigests,
   validateAgainstGrant,
+  verifyRatificationEvidence,
 };

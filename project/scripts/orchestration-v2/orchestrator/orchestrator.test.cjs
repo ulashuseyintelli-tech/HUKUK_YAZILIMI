@@ -394,3 +394,145 @@ test('§1: every tracked schema/migration path is covered by IMMUTABLE_FORBIDDEN
     null,
   );
 });
+
+// ------------------------------------------- OWNER RATIFICATION EVIDENCE (§2)
+//
+// grant.schema.json has always required ownerRatificationEvidence, and nothing
+// read it: "<OWNER-FILLS>" validated as readily as a real excerpt, so a grant
+// nobody had ratified was accepted as long as its expiry parsed. Found by
+// filling a real expiry into an otherwise-placeholder grant and watching
+// validateAgainstGrant succeed.
+
+const authorityMod = require('./authority.cjs');
+const nodeCrypto = require('crypto');
+
+function evidenceFor(excerpt, sha) {
+  return {
+    sourcePath: 'project/docs/governance/decision-log.md',
+    sourceCommitSha: sha || 'a'.repeat(40),
+    exactExcerpt: excerpt,
+    excerptSha256: nodeCrypto.createHash('sha256').update(excerpt, 'utf8').digest('hex'),
+  };
+}
+
+function grantWith(evidence, spec) {
+  const d = authorityMod.specDigests(spec);
+  return {
+    schemaVersion: 1,
+    grantId: 'G-TEST',
+    workstream: 'WS',
+    manualMergeRequired: true,
+    semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'SEM', sourcePath: 'a/b.md' },
+    executionGrantRef: { kind: 'EXECUTION_GRANT', recordId: 'EXE', sourcePath: 'c/d.md' },
+    ownerRatificationEvidence: evidence,
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    revocationPath: 'x/REVOKED',
+    authorizedTasks: [
+      {
+        taskId: spec.taskId,
+        taskSpecVersion: spec.taskSpecVersion,
+        taskSpecSha256: d.taskSpecSha256,
+        declaredIntentSha256: d.declaredIntentSha256,
+        boundaryPolicySha256: d.boundaryPolicySha256,
+        requiredTestsSha256: d.requiredTestsSha256,
+      },
+    ],
+  };
+}
+
+const EV_SPEC = {
+  schemaVersion: 1,
+  taskId: 'EVIDENCE-TEST-01',
+  taskSpecVersion: 1,
+  profile: 'BOUNDED_CODE_TASK',
+  declaredIntent: 'Evidence-gate fixture spec; digested only, never executed.',
+  boundaryPolicy: { allowedRoots: ['project/apps/api/src/x/'] },
+  requiredTests: [{ argv: ['true'] }],
+  predecessorTaskIds: [],
+  baseDriftPolicy: 'STRICT_PINNED_BASE',
+  baseSha: 'b'.repeat(40),
+  successorDisposition: 'NO_SUCCESSOR',
+};
+
+test('§2: a placeholder ratification is not evidence', () => {
+  for (const bad of ['<OWNER-FILLS>', 'TBD', 'TODO', 'owner-fill']) {
+    const ev = evidenceFor('real excerpt');
+    ev.exactExcerpt = bad;
+    ev.excerptSha256 = nodeCrypto.createHash('sha256').update(bad, 'utf8').digest('hex');
+    assert.throws(
+      () => authorityMod.validateAgainstGrant({ grant: grantWith(ev, EV_SPEC), spec: EV_SPEC }),
+      (e) => e.code === 'OWNER_RATIFICATION_EVIDENCE_PLACEHOLDER',
+      bad,
+    );
+  }
+});
+
+test('§2: a missing or incomplete evidence block fails closed', () => {
+  const g1 = grantWith(evidenceFor('x'), EV_SPEC);
+  delete g1.ownerRatificationEvidence;
+  assert.throws(
+    () => authorityMod.validateAgainstGrant({ grant: g1, spec: EV_SPEC }),
+    (e) => e.code === 'OWNER_RATIFICATION_EVIDENCE_MISSING',
+  );
+  const g2 = grantWith(evidenceFor('x'), EV_SPEC);
+  g2.ownerRatificationEvidence.exactExcerpt = '';
+  assert.throws(
+    () => authorityMod.validateAgainstGrant({ grant: g2, spec: EV_SPEC }),
+    (e) => e.code === 'OWNER_RATIFICATION_EVIDENCE_INCOMPLETE',
+  );
+});
+
+test('§2: the digest must be of the excerpt it travels with', () => {
+  const ev = evidenceFor('the owner decided X');
+  ev.exactExcerpt = 'the owner decided Y';
+  assert.throws(
+    () => authorityMod.validateAgainstGrant({ grant: grantWith(ev, EV_SPEC), spec: EV_SPEC }),
+    (e) => e.code === 'OWNER_RATIFICATION_EXCERPT_DIGEST_MISMATCH',
+  );
+});
+
+test('§2: a well-formed evidence block still passes', () => {
+  const v = authorityMod.validateAgainstGrant({
+    grant: grantWith(evidenceFor('RC-COL / W2.2D-1A OWNER AUTHORIZATION'), EV_SPEC),
+    spec: EV_SPEC,
+  });
+  assert.equal(v.grantId, 'G-TEST');
+});
+
+test('§2: verification against the repository catches an excerpt that is not there', () => {
+  const grant = grantWith(evidenceFor('the owner decided X'), EV_SPEC);
+  assert.throws(
+    () =>
+      authorityMod.verifyRatificationEvidence({
+        grant,
+        readAtCommit: () => 'a file that says something else entirely',
+      }),
+    (e) => e.code === 'OWNER_RATIFICATION_EXCERPT_ABSENT',
+  );
+  // Present verbatim -> accepted.
+  const ok = authorityMod.verifyRatificationEvidence({
+    grant,
+    readAtCommit: () => 'preamble\nthe owner decided X\ntrailer',
+  });
+  assert.equal(ok.ok, true);
+});
+
+test('§2: a ratification commit outside the target branch is not in force', () => {
+  const grant = grantWith(evidenceFor('decided'), EV_SPEC);
+  assert.throws(
+    () =>
+      authorityMod.verifyRatificationEvidence({
+        grant,
+        isAncestor: () => false,
+        readAtCommit: () => 'decided',
+      }),
+    (e) => e.code === 'OWNER_RATIFICATION_NOT_IN_MAIN',
+  );
+});
+
+test('§2: verification refuses to run without a reader rather than passing', () => {
+  assert.throws(
+    () => authorityMod.verifyRatificationEvidence({ grant: grantWith(evidenceFor('x'), EV_SPEC) }),
+    (e) => e.code === 'EVIDENCE_READER_REQUIRED',
+  );
+});

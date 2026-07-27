@@ -17,6 +17,14 @@ const authority = require('./authority.cjs');
 
 const NODE = process.execPath;
 const FAKE = path.join(__dirname, '..', 'executors', 'fake-executor.cjs');
+
+// Derived, not hard-coded, so the fixture cannot drift out of agreement with
+// itself the way the previous 'b'.repeat(64) placeholder had.
+const RATIFICATION_EXCERPT = 'fixture owner ratification';
+const RATIFICATION_DIGEST = require('crypto')
+  .createHash('sha256')
+  .update(RATIFICATION_EXCERPT, 'utf8')
+  .digest('hex');
 const temps = [];
 
 function git(args, cwd) {
@@ -114,11 +122,16 @@ function specAndGrant(over) {
         recordId: 'PILOT-EXEC-01',
         sourcePath: 'project/docs/governance/coordination-execution-grants/PILOT.md',
       },
+      // The digest is the real SHA-256 of the excerpt above it, not a filler
+      // string. validateAgainstGrant now checks that the pair agrees, because a
+      // digest that does not match its excerpt proves nothing — either half
+      // could be swapped without detection. The old 'b'.repeat(64) was exactly
+      // the kind of plausible-looking placeholder the check exists to catch.
       ownerRatificationEvidence: {
         sourcePath: 'project/docs/governance/decision-log.md',
         sourceCommitSha: 'a'.repeat(40),
-        exactExcerpt: 'fixture owner ratification',
-        excerptSha256: 'b'.repeat(64),
+        exactExcerpt: RATIFICATION_EXCERPT,
+        excerptSha256: RATIFICATION_DIGEST,
       },
       expiresAt: new Date(Date.now() + 3600000).toISOString(),
       revocationPath: 'project/docs/governance/coordination-execution-grants/PILOT.md',
