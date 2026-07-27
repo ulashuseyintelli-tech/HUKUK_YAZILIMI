@@ -124,8 +124,23 @@ Aksi halde yalniz exact blocker icin durulur.
 
 `IF GO-COMPLETE` PASS kosullari: local validation ve required CI PASS; changed paths
 authorized exact scope; PR CLEAN/MERGEABLE; semantic/merge conflict ve active writer
-collision NONE. Task brief'te ex-ante `IF GO-COMPLETE` owner yetkisi varsa bu merge
-authority icin yeterlidir; CI sonrasinda ikinci owner mesaji istenmez.
+collision NONE.
+
+Merge authority (canonical home; baska bolumde tekrar edilmez) explicit ve task-bounded
+owner closeout authority'sidir. Gecerli authority yalniz sunlardan biridir:
+
+- Belirli task veya PR'a bagli `GO-COMPLETE` / `IF GO-COMPLETE`.
+- CI ve merge gate'leri gecince merge + main sync + cleanup zincirinin ikinci owner onayi
+  beklenmeden tamamlanacagini acikca soyleyen esdeger owner beyani.
+
+Authority task brief'inde ex-ante veya ayni task icinde sonradan verilebilir; verildikten
+sonra CI sonrasinda ikinci owner mesaji istenmez. Authority yalniz adi gecen task/PR
+icindir ve baska task'a tasinmaz.
+
+Tek basina merge authority DEGILDIR: "devam", "uygula", "basla", kapsam secimi, tasarim
+onayi, implementasyon izni, commit/push/PR izni, CI takip talimati. Ajan ortulu owner
+niyetinden merge authority turetemez; authority yoksa merge yapilmaz, durulur ve exact
+blocker raporlanir (§14).
 
 Owner karari gerektiren durumlar §14'te tanimlidir.
 
@@ -153,7 +168,8 @@ Implementation`. `BACKLOG → READY` ve roadmap tasimalari owner onayi olmadan u
 - `FAILURE`, `CANCELLED`, gercek platform timeout'u veya unresolved stall halinde exact
   blocker raporlanir.
 - Standing veya unattended GitHub auto-merge, scheduler ya da reusable merge grant
-  uretilmez.
+  uretilmez. Merge authority'nin nasil verildigi ve neyin authority sayilmadigi §4'te
+  tanimlidir; burada tekrar edilmez.
 
 ## 6. Worktree Izolasyonu (developer workstation policy)
 
