@@ -31,6 +31,7 @@ const authority = require('./authority.cjs');
 const stateMod = require('./state.cjs');
 const mergeready = require('./mergeready.cjs');
 const eligibleResume = require('./eligible-resume.cjs');
+const successorMod = require('./successor.cjs');
 
 /**
  * Immutable global forbidden set (§1). Never overridable by a task.
@@ -102,14 +103,19 @@ function evaluateEligibility(opts) {
   const validated = opts.validated;
   const reasons = [];
 
-  for (const pred of validated.predecessorTaskIds || []) {
-    const rec = store.current(pred);
-    if (!rec) {
-      reasons.push('PREDECESSOR_NOT_DECLARED:' + pred);
-      continue;
-    }
-    if (rec.state !== 'CLOSED') reasons.push('PREDECESSOR_NOT_CLOSED:' + pred + '=' + rec.state);
-  }
+  // The live predecessor gate. One rule, shared with successorDisposition and
+  // the queue's dependsOn check — three copies of it is three places for it to
+  // drift, and the drift releases a successor from whichever site was checked.
+  //
+  // Scoped by the SUCCESSOR's schema: a v2 task additionally requires each
+  // predecessor to carry merge-SHA-bound delivery evidence, while a v1 task
+  // keeps the rule it was authored under.
+  const successorGate = successorMod.evaluate({
+    predecessorTaskIds: validated.predecessorTaskIds || [],
+    currentOf: (id) => store.current(id),
+    successorSchema: validated.spec.schemaVersion,
+  });
+  for (const r of successorGate.reasons) reasons.push(r);
 
   const myRoots = validated.spec.boundaryPolicy.allowedRoots;
   for (const otherId of store.list()) {
@@ -995,19 +1001,30 @@ function successorDisposition(opts) {
   }
 
   const eligible = [];
+  const refused = [];
   for (const pinned of grant.authorizedTasks || []) {
     if (pinned.taskId === closedTaskId) continue;
     const preds = pinned.predecessorTaskIds || [];
     if (preds.indexOf(closedTaskId) === -1) continue;
-    const allClosed = preds.every((p) => {
-      const r = store.current(p);
-      return r && r.state === 'CLOSED';
+    // The same gate evaluateEligibility uses. This function used to carry its
+    // own `every(r => r.state === 'CLOSED')`, which is how the two could come to
+    // disagree about what "ready" means.
+    const gate = successorMod.evaluate({
+      predecessorTaskIds: preds,
+      currentOf: (id) => store.current(id),
+      // The grant records the schema it authorized. Absent, it is a v1 entry.
+      successorSchema: pinned.taskSchemaVersion === 2 ? 2 : 1,
     });
-    if (allClosed) eligible.push(pinned.taskId);
+    if (gate.eligible) eligible.push(pinned.taskId);
+    else refused.push({ taskId: pinned.taskId, reasons: gate.reasons });
   }
 
   return {
     eligible,
+    // Reported rather than dropped: "nothing became eligible" and "something
+    // was held back, for these reasons" are different facts, and only one of
+    // them tells an operator what to do next.
+    refused,
     discovered: discovered.map((d) => ({ description: d, disposition: 'DISCOVERED_FOLLOW_UP' })),
     note: 'DISCOVERED_FOLLOW_UP never becomes ELIGIBLE (§4)',
   };

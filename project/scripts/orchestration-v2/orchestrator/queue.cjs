@@ -260,10 +260,26 @@ function createQueue(dir) {
     head() {
       const all = [...fold().values()];
       if (all.some((e) => OCCUPIES_SLOT.includes(e.state))) return null;
-      const closed = new Set(all.filter((e) => e.state === 'CLOSED').map((e) => e.taskId));
+      // CLOSED alone releases a v1 dependent, exactly as before. A dependent
+      // that declares taskSchemaVersion 2 additionally requires its dependency
+      // to carry a delivery verdict of PASS — the same gate evaluateEligibility
+      // and successorDisposition apply, so the three cannot disagree about what
+      // "ready" means. Without this, a task whose code merged but whose
+      // capability was never delivered would release its successor here.
+      const byTask = new Map();
+      for (const e of all) if (e.state === 'CLOSED') byTask.set(e.taskId, e);
+      const releases = (dependencyTaskId, dependent) => {
+        const dep = byTask.get(dependencyTaskId);
+        if (!dep) return false;
+        if (dependent.taskSchemaVersion !== 2) return true;
+        const d = dep.delivery || null;
+        if (!d) return false;
+        if (d.verdict === 'PASS') return !!d.mergeSha && d.verifiedAtSha === d.mergeSha;
+        return d.verdict === 'NOT_APPLICABLE' && d.runtimeImpact === false;
+      };
       const ready = all
         .filter((e) => e.state === 'QUEUED')
-        .filter((e) => (e.dependsOn || []).every((d) => closed.has(d)));
+        .filter((e) => (e.dependsOn || []).every((d) => releases(d, e)));
       ready.sort((a, b) => a.priority - b.priority || a.enqueuedAtMs - b.enqueuedAtMs);
       return ready[0] || null;
     },

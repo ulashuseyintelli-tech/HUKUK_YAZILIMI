@@ -417,6 +417,105 @@ test('DV25  the panel prints every selected capability, green ones included', ()
   assert.match(text, /OVERALL: FAIL/);
 });
 
+// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV53)
+
+const successorMod = require('../orchestrator/successor.cjs');
+
+/** A CLOSED predecessor carrying the delivery record a finalizer would write. */
+function closedWith(delivery) {
+  return { state: 'CLOSED', payload: delivery === undefined ? {} : { delivery } };
+}
+const GOOD_DELIVERY = {
+  verdict: 'PASS',
+  mergeSha: 'f'.repeat(40),
+  verifiedAtSha: 'f'.repeat(40),
+  evidenceDigest: 'e'.repeat(64),
+  deliveryContractSha256: 'c'.repeat(64),
+  probeDefinitionSha256: 'p'.repeat(64),
+};
+
+test('DV50  a v1 successor keeps v1 rules — CLOSED is the whole rule', () => {
+  // Not a bypass. v1 tasks carry no delivery contract and never could have
+  // satisfied a delivery gate; applying the new rule backwards would make every
+  // historical chain permanently ineligible and force an exception, which is
+  // how a gate becomes decorative.
+  assert.equal(successorMod.predecessorSatisfied(closedWith(undefined), 1).ok, true);
+  assert.equal(successorMod.predecessorSatisfied({ state: 'MERGED' }, 1).ok, false);
+  assert.equal(successorMod.predecessorSatisfied(null, 1).reason, 'PREDECESSOR_NOT_DECLARED');
+});
+
+test('DV51  a v2 successor requires merge-SHA-bound delivery evidence', () => {
+  assert.equal(successorMod.predecessorSatisfied(closedWith(GOOD_DELIVERY), 2).ok, true);
+
+  const refused = (delivery, reason) => {
+    const v = successorMod.predecessorSatisfied(closedWith(delivery), 2);
+    assert.equal(v.ok, false, reason);
+    assert.equal(v.reason, reason, JSON.stringify(v));
+  };
+
+  // Closed under the old rules: the work may well be fine, but nothing here
+  // can say so, and saying so anyway is the thing this program is about.
+  refused(undefined, 'PREDECESSOR_DELIVERY_LEGACY_UNVERIFIED');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'FAIL' }), 'PREDECESSOR_DELIVERY_FAILED');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'STALE' }), 'PREDECESSOR_DELIVERY_STALE');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'NOT_RUN' }), 'PREDECESSOR_DELIVERY_NOT_RUN');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'UNWIRED' }), 'PREDECESSOR_DELIVERY_UNWIRED');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'LEGACY_UNVERIFIED' }), 'PREDECESSOR_DELIVERY_LEGACY_UNVERIFIED');
+
+  // A PASS is only a PASS at the commit that was merged. Branch-head evidence
+  // is a different claim wearing the same word.
+  refused(Object.assign({}, GOOD_DELIVERY, { verifiedAtSha: 'a'.repeat(40) }), 'PREDECESSOR_DELIVERY_STALE');
+  refused(Object.assign({}, GOOD_DELIVERY, { mergeSha: null }), 'PREDECESSOR_DELIVERY_STALE');
+  refused(Object.assign({}, GOOD_DELIVERY, { evidenceDigest: null }), 'PREDECESSOR_DELIVERY_EVIDENCE_INVALID');
+  refused(Object.assign({}, GOOD_DELIVERY, { probeDefinitionSha256: null }), 'PREDECESSOR_DELIVERY_EVIDENCE_INVALID');
+
+  // MERGED without CLOSED never releases anything.
+  assert.equal(successorMod.predecessorSatisfied({ state: 'MERGED', payload: { delivery: GOOD_DELIVERY } }, 2).reason, 'PREDECESSOR_NOT_CLOSED');
+});
+
+test('DV52  NOT_APPLICABLE needs the classifier\'s verdict, not the author\'s word', () => {
+  const asserted = { verdict: 'NOT_APPLICABLE' };
+  assert.equal(successorMod.predecessorSatisfied(closedWith(asserted), 2).reason, 'PREDECESSOR_NOT_APPLICABLE_UNPROVEN');
+
+  const proven = { verdict: 'NOT_APPLICABLE', runtimeImpact: false, classifiedPaths: ['project/docs/x.md'] };
+  assert.equal(successorMod.predecessorSatisfied(closedWith(proven), 2).ok, true);
+
+  // A classification that says the diff DID touch runtime cannot be
+  // NOT_APPLICABLE, whatever the record claims.
+  const contradicted = { verdict: 'NOT_APPLICABLE', runtimeImpact: true, classifiedPaths: ['project/apps/api/x.ts'] };
+  assert.equal(successorMod.predecessorSatisfied(closedWith(contradicted), 2).ok, false);
+});
+
+test('DV53  every production successor path uses the one gate', () => {
+  // The inventory this replaced found three independent rules. A grep is the
+  // honest test: if a fourth appears, or one of these grows its own copy again,
+  // this fails and names the file.
+  const root = path.join(REPO_ROOT, 'project', 'scripts', 'orchestration-v2');
+  const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
+
+  // Comment lines are stripped: this file's own prose explains the rule it
+  // replaced, and a grep that counted that would fail for the wrong reason.
+  const codeLines = (text) =>
+    text.split('\n').filter((l) => {
+      const t = l.trim();
+      return t && t.indexOf('//') !== 0 && t.indexOf('*') !== 0 && t.indexOf('/*') !== 0;
+    });
+
+  const orch = read('orchestrator/orchestrator.cjs');
+  assert.ok(orch.indexOf("require('./successor.cjs')") !== -1, 'orchestrator must use the shared gate');
+  assert.equal(
+    codeLines(orch).filter((l) => /state === 'CLOSED'/.test(l)).length,
+    0,
+    'orchestrator must not carry its own CLOSED-only successor rule',
+  );
+
+  const queue = read('orchestrator/queue.cjs');
+  assert.ok(queue.indexOf('taskSchemaVersion !== 2') !== -1, 'the queue dependsOn gate must be version-scoped');
+
+  // And the gate itself must still refuse the case that motivated it.
+  assert.equal(successorMod.predecessorSatisfied(closedWith(undefined), 2).ok, false);
+});
+
 // ───────────────────────────────────── SCHEMA V2 (DV40–DV45)
 
 const authority = require('../orchestrator/authority.cjs');
