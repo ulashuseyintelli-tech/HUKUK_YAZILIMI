@@ -138,7 +138,6 @@
 src/modules/icrabot/__tests__/icrabot-digital-twin-tenant-guard.spec.ts
 src/modules/icrabot/__tests__/icrabot-governance-guard.spec.ts
 src/modules/icrabot/__tests__/icrabot-queue-stats-tenant-scope.spec.ts
-src/modules/icrabot/domain-event-ingest/__tests__/domain-event-ingest.integration.spec.ts
 src/modules/icrabot/v28-engine/__tests__/action-handler-notification-truth.spec.ts
 src/modules/icrabot/v28-engine/__tests__/non-retryable-outbox.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-platform-cron.spec.ts
@@ -179,6 +178,13 @@ src/modules/uyap/official/__tests__/official-role-translator.spec.ts
 # DATABASE_URL yoksa describe.skip ile kendini atliyor, yani pure manifest'te
 # her zaman skip olurdu. Yeri db/core-lifecycle.txt (TEST_DATABASE_URL orada set).
 # GH-04: ayni spec iki manifest'te listeliydi -> cift calisma kaldirildi.
+#
+# NOT: domain-event-ingest.integration.spec.ts de BURADA DEGIL (PR #1590 sonrasi
+# GO-ANALYZE bulgusu, bu manifest'e tasima ile kapatildi). Ayni describeIf(DATABASE_URL)
+# deseni: bu step'te DATABASE_URL/TEST_DATABASE_URL set edilmedigi icin her zaman
+# describe.skip ile kendini atliyordu (33 test / 0 calisma, yine de yesil). Disposable
+# Postgres 16 ile dogrulandi: TEST_DATABASE_URL yokken skip, varken 10/10 PASS. Yeni yeri
+# db/core-lifecycle.txt (ayni event-ingest ailesinden uyap-event-ingest.boundary'nin yanina).
 
 # ── GH-08: gate/jest ayrimi ────────────────────────────────────────────────
 # Bu spec'ler daha once ci.yml icinde, kendi grep-gate step'lerinin sonundaki

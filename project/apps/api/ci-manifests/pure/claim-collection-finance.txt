@@ -47,7 +47,17 @@ src/modules/claim-item/__tests__/claim-item-formation-intent-admission.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-legal-basis-eligibility.spec.ts
 src/modules/collection/__tests__/collection-ledger-forward.spec.ts
-src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
+
+# NOT: collection-payment-received.integration.spec.ts BURADA DEGIL (PR #1590 sonrasi
+# GO-ANALYZE bulgusu, bu manifest'e tasima ile kapatildi). DATABASE_URL/TEST_DATABASE_URL
+# bu step'te set edilmedigi icin describeIf(DATABASE_URL) her zaman describe.skip ile
+# kendini atliyordu (23 test / 0 calisma, yine de yesil). Disposable Postgres 16 ile
+# dogrulandi: TEST_DATABASE_URL yokken skip, varken PASS (bu vesileyle acigcikan bir
+# stale assertion -- eksik idempotencyKey testi RCV-P2-WS03-P01/#1300 sonrasi jenerik
+# `code` alanini degil eski mesaj metnini bekliyordu -- ayni PR'da duzeltildi, production
+# davranisi degismedi). Yeni yeri db/domain-integration.txt (cok-servisli finansal
+# entegrasyon testleriyle ayni grup: CollectionService + DomainEventIngest + SummaryEngine
+# + AccountingJournalWriter gercek Postgres'e karsi).
 
 # ── GH-04 BATCH A — Priority 0 (guvenlik / tenant sinir / yetkilendirme) ──
 # Bu spec'ler daha once hicbir CI step'ine bagli degildi. Admission oncesi
