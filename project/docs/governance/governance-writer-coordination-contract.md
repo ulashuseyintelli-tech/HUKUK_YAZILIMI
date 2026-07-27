@@ -389,3 +389,41 @@ squash-merge ve branch silinmesinden sag cikar. GH-02'de silinebilir bir branch
 commit'ine konan pin main'i bes PR boyunca RED tutmustu.
 
 Kayit GH-03'e ozgudur: yeniden kullanilabilir veya genel amacli degildir.
+
+## GH-05 / GH-06 CI cutover binding
+
+Owner-ratified 2026-07-27. Adds a record; relaxes no existing control and
+leaves the GH-02 and GH-03 records untouched.
+
+```text
+Task ID   : GITHUB-PLATFORM-BASELINE-GH05-GH06-CI-CUTOVER-R01
+Mode      : GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01
+Base SHA  : 06be6be78f3530a940194d79b1fbf57015653655
+Head ref  : codex/gh05-gh06-ci-cutover-r01
+Target    : .github/workflows/ci.yml
+Content   : pinned by BLOB sha (53d5afd7d9317f96416bbe455d44b97d115d951c)
+```
+
+Bu binding `.github/workflows/ci.yml` uzerinde tek seferlik, exact-scope bir
+degisikligi yetkilendirir ve IKI ayri owner yetkisini tasir:
+
+1. **GH-05 — manifest cutover.** `test-suite` job'indaki 8 manifest step'i
+   spec listelerini artik inline tasimaz; `apps/api/ci-manifests/**` altindaki
+   dosyalari okuyan `run-ci-manifest.sh` cagrilir. Amac: yeni bir spec'i CI'a
+   baglamak icin control-plane dokunusu ve binding seremonisi gerekmemesi.
+   CI-8 invocation budget gate sayimi manifest dosyalarini da kapsayacak sekilde
+   guncellenir; aksi halde manifest ekleyerek butce sessizce asilabilirdi.
+   Owner yetkisi: binding-free spec wiring talimati (2026-07-27).
+
+2. **GH-06 — smoke kritik yol.** `client-workspace-live-smoke` job'inin
+   `needs` alanindan `test-suite` cikarilir; `web-tests` KORUNUR. Smoke
+   test-suite'ten hicbir artifact/output tuketmiyor (kendi checkout, install,
+   prisma generate/migrate, seed, build ve postgres service'i var), yani `needs`
+   saf siralamaydi ve kritik yola ~3.6 dk ekliyordu.
+   Owner yetkisi: GITHUB-PLATFORM-BASELINE-GH06-SMOKE-CRITICAL-PATH-R01
+   talimati (2026-07-27).
+
+Icerik pin'i BLOB sha'sidir, commit sha'si degildir; GH-03 kaydindaki gerekce
+aynen gecerlidir.
+
+Kayit bu cutover'a ozgudur: yeniden kullanilabilir veya genel amacli degildir.
