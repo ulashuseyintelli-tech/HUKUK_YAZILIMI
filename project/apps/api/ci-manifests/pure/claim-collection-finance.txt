@@ -48,6 +48,28 @@ src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spe
 src/modules/claim-item/__tests__/claim-item-formation-legal-basis-eligibility.spec.ts
 src/modules/collection/__tests__/collection-ledger-forward.spec.ts
 
+# RCV-CLAIM-FORM-HCR-03: previously unbound non-DB ClaimItem contract suites.
+# claim-item-required-ci-coverage.static.spec.ts keeps the recursive ClaimItem
+# inventory mapped exactly once across this manifest and db/core-lifecycle.
+src/modules/claim-item/__tests__/canonical-write-envelope.spec.ts
+src/modules/claim-item/__tests__/claim-item-amount-contract.spec.ts
+src/modules/claim-item/__tests__/claim-item-due-one-way-authority.static.spec.ts
+src/modules/claim-item/__tests__/claim-item-edit-guard.spec.ts
+src/modules/claim-item/__tests__/claim-item-interest-dto-admission.spec.ts
+src/modules/claim-item/__tests__/claim-item-lifecycle-contract.spec.ts
+src/modules/claim-item/__tests__/claim-item-required-ci-coverage.static.spec.ts
+src/modules/claim-item/__tests__/claim-item-rule-engine-formation-admission.spec.ts
+src/modules/claim-item/__tests__/claim-item-source-provenance.spec.ts
+src/modules/claim-item/__tests__/claim-item-user-mutation-approval.spec.ts
+src/modules/claim-item/__tests__/claim-item-write-gate.spec.ts
+src/modules/claim-item/__tests__/claim-item-writer-amount-contract.spec.ts
+src/modules/claim-item/__tests__/claim-item-writer-router.spec.ts
+src/modules/claim-item/__tests__/claim-item-writer-routing.static.spec.ts
+src/modules/claim-item/__tests__/fatura-kdv-metadata.spec.ts
+src/modules/claim-item/__tests__/interest-accrual-policy.spec.ts
+src/modules/claim-item/__tests__/interest-write-admission.spec.ts
+src/modules/claim-item/__tests__/invoice-tax-kdv-writer.static.spec.ts
+
 # NOT: collection-payment-received.integration.spec.ts BURADA DEGIL (PR #1590 sonrasi
 # GO-ANALYZE bulgusu, bu manifest'e tasima ile kapatildi). DATABASE_URL/TEST_DATABASE_URL
 # bu step'te set edilmedigi icin describeIf(DATABASE_URL) her zaman describe.skip ile
