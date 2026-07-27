@@ -1,0 +1,118 @@
+# CI manifest: db/domain-integration
+#
+# Bu dosya `.github/workflows/ci.yml` icinde DEGIL; buraya spec eklemek
+# governance binding gerektirmez. Yeni bir CI step'i ACMA — spec'ini
+# uygun manifest'in listesine ekle. Her ek Jest process'i ~13.6s sabit
+# ts-jest bootstrap maliyeti getirir.
+#
+# DB gerektirir : EVET (TEST_DATABASE_URL, --runInBand ZORUNLU)
+#
+# Birlestirilen step'lerin orijinal gerekceleri:
+# ── GH-03 CONSOLIDATED MANIFEST: db/domain-integration ─────────────────────────
+# Bu manifest asagidaki step'leri TEK jest process'inde birlestirir.
+# Spec kumesi degismedi (BEFORE/AFTER --listTests esitligi ile kanitlandi);
+# yalnizca process sayisi dustu. Orijinal step gerekceleri korunmustur:
+#
+#   W0.2 materializer disposable DB tests
+#
+#   MPB-028(a) PR-2 legal-deadline disposable-DB tests
+#     MPB-028(a) PR-2 (disposable-DB kısmı): tenant-scoped Tebligat lookup + idempotent/supersede
+#     snapshot zincirinin gerçek Postgres üzerinde doğru davrandığını doğrular. Mevcut job'ın
+#     Postgres service'i (yukarıdaki `services: postgres:`) reuse edilir — yeni container/job YOK.
+#
+#   MPB-028(a) PR-3C proceeding-type rule matrix disposable-DB tests
+#     MPB-028(a) PR-3C (disposable-DB kısmı): gerçek Postgres'te Case.proceedingType/
+#     rentalType/bankruptcyType/judgmentExecutionType sütunlarından doğru sınıflandırma +
+#     süre hesabı, tenant-isolation ve read-only (satır yazmama) davranışını doğrular.
+#
+#   OF01-HISTORY-P04-B occurrence deadline calculation disposable-DB tests
+#
+#   MPB-028(a) PR-3 legal-time-shadow disposable-DB tests
+#     MPB-028(a) PR-3 (disposable-DB kısmı): immutable diff kaydı + tenant isolation +
+#     feature-flag-kapalı no-op davranışının gerçek Postgres üzerinde doğru çalıştığını
+#     doğrular. Mevcut job'ın Postgres service'i reuse edilir — yeni container/job YOK.
+#     Evidence Activation turunda aynı dosyaya LegalTimeShadowController uçtan uca (gerçek
+#     servis + gerçek DB) testleri de eklendi — ayrı bir step gerekmez, mevcut dar pattern
+#     zaten dosya adına göre eşleşir.
+#
+#   CLIENT-P2-U01-R1 portal reset tenant-scope integration tests
+#     CLIENT-P2-U01-R1: credential-recovery.spec.ts (PR #1477) yalnız mocked-prisma unit
+#     seviyesindedir; forgot/reset-password akışının gerçek Postgres üzerinde tenant/client
+#     cross-account izolasyon kanıtı yoktu. Canonical PortalService davranışı DEĞİŞTİRİLMEDEN
+#     test edilir (gerçek Postgres, disposable service-container).
+#
+#   CLIENT-P2-U02 portal tokenVersion integration tests
+#     CLIENT-P2-U02 integration: reset/change/disable/reactivate sonrası eski portal JWT'nin
+#     gerçek Postgres üzerinde GERÇEKTEN reddedildiğini, ilgisiz hesap/tenant'ların
+#     etkilenmediğini, tenant/client claim-substitution'ın reddedildiğini, legacy (claim'siz)
+#     token cutover'ının ve eşzamanlı atomic increment'in kayıpsız olduğunu kanıtlar.
+#
+#   RCV-P2-WS04-P01 allocation drift disposable DB tests
+#     RCV-P2-WS04-P01 disposable-DB evidence: cent-exact LedgerAllocation/cache
+#     reconciliation plus injected-drift rollback. Skipped/zero-test is RED.
+#
+#   OF01-HISTORY-P04-A1 deadline-facts and snapshot-binding disposable-DB tests
+#     OF01-HISTORY-P04-A1: ServiceOccurrence.addressTypeAtOccurrence/serviceDateRole (immutable
+#     deadline-fact kolonları) + LegalDeadlineSnapshot.sourceServiceOccurrenceId (tenant-safe
+#     composite FK binding) doğrular. Yukarıdaki dar allowlist pattern'lerinin hiçbirine
+#     girmiyor (dosya adı hiçbirini eşlemiyor) → narrow named step olmadan CI'da hiç koşmaz.
+#
+#   OF01-HISTORY-P01 ServiceOccurrence schema disposable-DB tests
+#     OF01-HISTORY-P01 (PR #1503, retroactif eklendi — bkz. GATE-1/PR-2/PR-3/LRV-02/DBP-P2-SEC-P02
+#     emsali "CI-coverage silent-skip riski"): ServiceOccurrence Prisma modeli (Tebligat/
+#     LegalDeadlineSnapshot arasında immutable/supersedable "gözlemlenen hukuki olgu" katmanı) —
+#     composite tenant-scoped FK, 7 CHECK constraint, 2 immutability trigger. Yukarıdaki dar
+#     allowlist pattern'lerinin hiçbirine girmiyordu → CI'da hiç koşmuyordu (yalnız P01'in kendi
+#     GO-IMPLEMENT'inde local `npx jest` ile doğrulandı). Dosya-varlığı pre-check + passWithNoTests YOK.
+#
+#   OF01-HISTORY-P03 Tebligat/ServiceOccurrence atomic integration disposable-DB tests
+#     OF01-HISTORY-P03 (disposable-DB kısmı): gerçek Postgres'te Tebligat+CaseDebtor+
+#     ServiceOccurrence+outbox 4 yazımın tek transaction'da atomik olduğunu (occurrence veya
+#     outbox append başarısızsa TÜM yazımların rollback edildiğini) doğrular.
+#
+#   OF01-HISTORY-P04-C-I01 service-occurrence-recorded consumer disposable-DB tests
+#
+#   OF01-HISTORY-P04-A2 canonical event payload access disposable-DB tests
+#     OF01-HISTORY-P04-A2: canonical SERVICE_OCCURRENCE_RECORDED event payload access
+#     (ServiceOccurrenceRecordedEventAccessor + DomainEventIngestService.timelineEntryId stable
+#     reference). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyor (dosya adı
+#     hiçbirini eşlemiyor) → narrow named step olmadan CI'da hiç koşmaz.
+#
+#   OF01-HISTORY-P02 ServiceOccurrenceService disposable-DB tests
+#     OF01-HISTORY-P02 (disposable-DB kısmı): gerçek Postgres'te atomik create/supersede +
+#     concurrency race testleri (advisory-lock kanıtı dahil) doğrular.
+#
+#   OFFICE-AUTH-P01 change-password integration tests
+#     OFFICE-AUTH-P01 integration: tenant-scoped self-service parola değişimi, eski JWT
+#     (tokenVersion mismatch) reddi, yeni login PASS, cross-tenant DENIED, migration
+#     default/nullable doğrulaması (gerçek Postgres, disposable service-container).
+#
+#   SEC-XTEN-UYAP-STATS-01 disposable-DB tenant-scope tests
+#     SEC-XTEN-UYAP-STATS-01 disposable-DB kısmı: composite tenant-scoped where-clause'ın gerçek
+#     Postgres üzerinde doğru satırları eşleştirdiğini/reddettiğini ve legacy tenantId=NULL
+#     kayıtların dışlandığını kanıtlar. Mevcut job'ın Postgres service'i (yukarıdaki
+#     `services: postgres:`) reuse edilir — yeni container/job YOK.
+#
+#   Wave 0 tenant-boundary disposable-DB tests (WorkflowEngine/EnforcementAction)
+#     GATE-1 CI Tenant-Isolation Regression Coverage (disposable-DB kısmı): aynı Wave 0 ailesinin
+#     composite where-clause'ının gerçek Postgres üzerinde doğru davrandığını doğrulayan
+#     entegrasyon testleri de aynı nedenle CI'da hiç koşmuyordu. Mevcut job'ın Postgres service'i
+#     (yukarıdaki `services: postgres:`) reuse edilir — yeni container/job YOK.
+#
+src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
+src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
+src/modules/legal-deadline/__tests__/proceeding-classification.db-gated.integration.spec.ts
+src/modules/legal-deadline/__tests__/service-occurrence-deadline-calculation.db-gated.integration.spec.ts
+src/modules/legal-time-shadow/__tests__/legal-time-shadow.db-gated.integration.spec.ts
+src/modules/portal/__tests__/portal-reset-tenant-scope.db-gated.integration.spec.ts
+src/modules/portal/__tests__/portal-token-version-revocation.db-gated.integration.spec.ts
+src/modules/summary-engine/__tests__/allocation-drift-baseline.db-gated.integration.spec.ts
+src/modules/tebligat/__tests__/service-occurrence-deadline-facts.db-gated.integration.spec.ts
+src/modules/tebligat/__tests__/service-occurrence.db-gated.integration.spec.ts
+src/modules/tebligat/__tests__/tebligat-service-occurrence-write.db-gated.integration.spec.ts
+src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded-consumer.db-gated.integration.spec.ts
+src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded-event.accessor.db-gated.integration.spec.ts
+src/modules/tebligat/service-occurrence/__tests__/service-occurrence-write.db-gated.integration.spec.ts
+src/modules/user/__tests__/change-password.integration.spec.ts
+src/modules/uyap/__tests__/uyap-stats-tenant-scope.db-gated.integration.spec.ts
+src/scripts/__tests__/enforcement-action-backfill-profiler.db-gated.integration.spec.ts
