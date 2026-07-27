@@ -14,17 +14,24 @@ Supplement dosyasi yalniz kendi executor'una ozgu ve baseline'da bulunmayan delt
 davranislari tanimlayabilir.
 
 Non-authoritative ozet, mnemonic veya appendix; normatif kuralin ikinci kopyasina
-donusemez.
+donusemez. Duplicate normatif ifade `instruction-policy.cjs` tarafindan tespit edilir.
 
 ## INSTRUCTION SIZE POLICY
 
-- Olcum UTF-8 icerik CRLF -> LF normalize edildikten sonra yapilir.
-- `AGENTS.md` icin bakim hedefi: en fazla 17.000 normalize bayt.
-- `AGENTS.md` + `CLAUDE.md` birlesik hard ceiling: 20.000 normalize bayt.
-- Hard ceiling yalniz acik owner amendment ile asilabilir.
-- Okunabilirlik veya semantic kesinlik yalniz boyut hedefini tutturmak icin bozulamaz.
-- Bu dosyalardaki her degisiklikte once/sonra normalize bayt ve kelime olcumu,
-  eklenen/tasinan/kaldirilan kural izi raporlanir.
+Bu iki dosyanin boyutu `project/scripts/instruction-policy.cjs` tarafindan olculur ve
+zorlanir (normalize: CRLF -> LF). `AGENTS.md` bakim hedefi WARN, birlesik hard ceiling
+ERROR uretir; hard ceiling yalniz acik owner amendment ile degistirilir. Okunabilirlik
+veya semantic kesinlik boyut hedefi icin bozulamaz. Her degisiklikte once/sonra olcum ve
+eklenen/tasinan/kaldirilan kural izi raporlanir.
+
+Asagidaki kurallar da metin degil testtir, ayni guard icinde tanimlidir:
+repository-local referans gecerliligi, `§N` bolum referansi, duplicate normatif ifade,
+branch prefix `<ajan>/<konu>`, instruction ile control-plane degisikliginin ayni PR'da
+karismasi.
+
+Canonical root'ta edit yasagi, isolated worktree zorunlulugu ve canonical equality
+bilerek makineye TASINMADI: bunlar PR artifact'indan dogrulanamaz, developer workstation
+policy'sidir ve §6'da metin olarak kalir.
 
 ## 1. Otorite Zinciri
 
@@ -148,7 +155,9 @@ Implementation`. `BACKLOG → READY` ve roadmap tasimalari owner onayi olmadan u
 - Standing veya unattended GitHub auto-merge, scheduler ya da reusable merge grant
   uretilmez.
 
-## 6. Worktree Izolasyonu
+## 6. Worktree Izolasyonu (developer workstation policy)
+
+Bu bolum PR artifact'indan dogrulanamaz; makineye tasinamaz ve metin olarak baglayicidir.
 
 Canonical project root icinde implementasyon yapilmaz. Her `GO-IMPLEMENT`, `GO-HOTFIX`
 veya `GO-COMPLETE` dosya degisikliginden once current directory, branch ve worktree
@@ -165,20 +174,13 @@ Canonical working tree yalniz read-only dogrulama, `main` senkronu, register ver
 ve final dogrulama icindir; kirliyse kullanici WIP'i sayilir, dokunulmaz, yine yeni
 worktree acilir.
 
-Cleanup fiziksel recursive silme ile yapilmaz: `rm -rf`, `cmd rd /s /q`, PowerShell
-`Remove-Item -Recurse` veya `.NET Directory.Delete(path, true)` kullanilmaz. Isolated
-worktree yalniz PR merge veya final disposition sonrasi kaldirilir:
-
-```text
-node_modules junction/symlink audit
-git worktree remove --force <yol>
-git worktree prune
-git fetch --prune
-```
-
-"Directory not empty" kalirsa `ORPHANED_WORKTREE_DIR` olarak birakilir. Branch silmeden
-once PR merge durumu `gh` ile dogrulanir; squash merge icin git ancestry'ye guvenilmez.
-Cleanup sonrasi canonical integrity ve `.git/config` kontrol edilir.
+Cleanup fiziksel recursive silme ile YAPILMAZ (`rm -rf`, `cmd rd /s /q`,
+`Remove-Item -Recurse`, `Directory.Delete(path, true)`). Isolated worktree yalniz PR merge
+veya final disposition sonrasi kaldirilir; "Directory not empty" kalirsa
+`ORPHANED_WORKTREE_DIR` olarak raporlanir ve fiziksel silme yapilmaz. Branch silmeden once
+PR merge durumu `gh` ile dogrulanir; squash merge icin git ancestry'ye guvenilmez.
+Baglayici prosedur, junction/hardlink riski ve karar tablosu:
+`project/docs/runbooks/worktree-cleanup.md`.
 
 ## 7. Orkestrasyon ve Yurutucu Ayrimi
 
@@ -203,27 +205,21 @@ mevcut executor gorevi surduremeyecek durumda.
 
 ## 8. Governance Writer Coordination V1
 
-`project/docs/governance/governance-writer-coordination-contract.md` canonical operasyonel
-contract'tir. Bootstrap main'e merge edilmeden standing execution aktif sayilmaz.
+Bu bolum uygulanmadan once
+`project/docs/governance/governance-writer-coordination-contract.md` okunmasi
+zorunludur; contract'taki invariant ve hard-stop kurallari baglayicidir. Uygulama
+detayi, istisna, enum ve ornekler contract'tadir. Gorev sirasinda unutulmamasi gereken
+ozet yukumlulukler:
 
-- Protected governance yollarina modul calisma sayfalarindan dogrudan yazilmaz.
-- V1 primary executor yalniz `CODEX_LOCAL`dir; secondary executor disabled'dir. Bu ifade
-  yalniz protected-path WRITER capability'sini tanimlar; task ownership, program lock veya
-  orchestration authority tanimlamaz (bkz. §7).
-- Failover, lease ve scheduler yoktur; failover ancak ayri ve acik owner activation
-  kaydiyla kurulabilir.
-- Request yalniz request-only PR ile main'e tasinir; `request.md` immutable ve untrusted
-  data'dir, kendi basina semantic veya execution authority uretmez.
+- Protected governance yollarina modul calisma sayfalarindan dogrudan yazilmaz; request
+  yalniz request-only PR ile main'e tasinir.
+- `CODEX_LOCAL` yalniz protected-path WRITER capability'sidir; task ownership, program
+  lock veya orchestration authority tanimlamaz (bkz. §7).
 - Her execution icin `semanticAuthorityRef` ve `executionGrantRef` ayri ve zorunludur;
   ayni authority kaydi ikisini birden karsilayamaz.
-- Level 2 yalniz contract'taki deterministic mechanical operation enum'lariyla sinirlidir.
-  Reconciliation, policy/program-sequence degisikligi, production, schema, migration,
+- Reconciliation, policy/program-sequence degisikligi, production, schema, migration,
   runtime ve owner WIP mutation standing grant disidir.
-- Request, execution ve result PR'larinda §5 merge disiplini gecerlidir; owner authority
-  zorunludur.
-- Generated coordination register derived/non-authoritative'dir.
-- Grandfathered owner WIP stash, reset, clean, delete, reconcile, overwrite veya baska
-  sekilde mutate edilemez.
+- Grandfathered owner WIP mutate edilemez; merge disiplini §5'tedir.
 
 ## 9. Uygulama Kurallari
 
@@ -310,20 +306,22 @@ AGENTS.md
 
 ## 12. Domain On-Kurallari
 
-Asagidaki modullerle ilgili her analiz, tasarim, implementation, migration, review veya
-governance gorevinden once o modulun Domain Law belgesi okunur. Tum moduller icin ortak
-kural: belgenin invariant veya hard-stop kurallariyla celisen bir durum tespit edilirse
-durulur ve raporlanir; kanonik kurallar ratifiye edilmis governance karari olmadan
-override edilmez. Cross-domain gorevde ilgili tum sibling Domain Law'lar birlikte okunur.
-Belge hiyerarsisi ve okuma sirasi: `project/docs/governance/GOVERNANCE-INDEX.md`.
+Bir modulle ilgili her analiz, tasarim, implementation, migration, review veya governance
+gorevinden once o modulun Domain Law belgesi okunmasi zorunludur; belgenin invariant ve
+hard-stop kurallari baglayicidir ve ratifiye governance karari olmadan override edilmez.
+Cross-domain gorevde ilgili tum sibling Domain Law'lar birlikte okunur.
 
-| Modul | Domain Law (`project/docs/governance/`) | Modul-ozel ek sart |
-|---|---|---|
-| DEBTOR | `DEBTOR-GOVERNANCE.md` | Icindeki Mandatory Pre-Task Checklist doldurulur. |
-| RECEIVABLE | `RECEIVABLE-GOVERNANCE.md` | Authority matrisi, invariantlar ve goreve uygulanabilir checklist izlenir. Kapsam: ClaimItem, Due bridge, Collection etkisi, allocation, faiz authority, legal balance, reversal, receivable cutover. |
-| OFFICE | `OFFICE-GOVERNANCE.md` (Domain Law) | Kapsam: Person/UserAccount/OrganizationMembership/Employment/LawyerCredential, title/role/permission/assignment, authorization, approval actor, delegation, session/lifecycle, offboarding, audit attribution, personel read model. NON-NORMATIVE yardimci belgeler: `OFFICE-MASTER-SYNTHESIS.md` yalniz kanit/senaryo katmanidir ve Domain Law'a norm ekleyemez; `OFFICE-RISK-REGISTER.md` triage veya calisma durumu uretmez; `OFFICE-OWNER-DECISIONS.md` bir karari KAPATMAZ. |
-| CLIENT | `CLIENT-GOVERNANCE-CHARTER.md` | Charter bounded'dir, FULL DOMAIN LAW DEGILDIR; client ownership, invariants (CL-INV-001..008) ve cross-domain contract map'i konsolide eder, sibling Domain Law'larin otoritesini ustlenmez veya override etmez. Kapsam: client profile/relationship, representation/mandate, client instruction, client approval, client-facing visibility, fee/contract context, client-facing creditor identity. |
-| COLLECTION | `COLLECTION-GOVERNANCE.md` | COLLECTION gorevleri icin zorunlu domain on-okumasidir. |
+| Modul | Domain Law (`project/docs/governance/`) |
+|---|---|
+| DEBTOR | `DEBTOR-GOVERNANCE.md` (icindeki Mandatory Pre-Task Checklist doldurulur) |
+| RECEIVABLE | `RECEIVABLE-GOVERNANCE.md` |
+| OFFICE | `OFFICE-GOVERNANCE.md` |
+| CLIENT | `CLIENT-GOVERNANCE-CHARTER.md` (bounded charter; FULL DOMAIN LAW DEGILDIR) |
+| COLLECTION | `COLLECTION-GOVERNANCE.md` |
+
+Modul kapsamlari, hangi yardimci belgenin NON-NORMATIVE oldugu, charter sinirlari ve
+belge statuleri icin tek canonical kaynak `project/docs/governance/GOVERNANCE-INDEX.md`
+(§11 routing zincirinin ilk adimi).
 
 ## 13. Raporlama ve Kapanis
 

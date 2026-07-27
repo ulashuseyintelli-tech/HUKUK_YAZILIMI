@@ -146,6 +146,7 @@
 #     gate locks authority roles, the four comparison classes, same-input parity,
 #     legacy activation diagnostics and the runtime allocator no-write inventory.
 #
+src/common/__tests__/instruction-policy.spec.ts
 src/config/uyap-interest-crosswalk.spec.ts
 src/modules/address-discovery/confidence-score.tenant-boundary.spec.ts
 src/modules/address-discovery/uyap-query.service.spec.ts
