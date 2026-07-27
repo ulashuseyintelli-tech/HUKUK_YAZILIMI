@@ -366,3 +366,26 @@ içinde squash-merge, main sync ve cleanup yapabilir.
 Bu ayrım V1 standing grant'ini genişletmez: request kendi başına merge authority
 üretmez; GitHub auto-merge açılmaz; scheduler, lease, failover veya reusable
 merge grant'i oluşmaz.
+
+## GH-03 control-plane binding (CI Test Suite consolidation)
+
+Owner-ratified 2026-07-27. Adds a record; relaxes no existing control.
+
+```text
+Task ID   : GITHUB-PLATFORM-BASELINE-GH03-CONTROL-PLANE-BINDING-R01
+Mode      : GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01
+Base SHA  : 8a917fb3d3136ac48faf405f021d13ca54c6c254
+Head ref  : codex/gh03-control-plane-binding-r01
+Target    : .github/workflows/ci.yml
+Content   : pinned by BLOB sha (2d75a88c5ef9bc466c609029985ffa700982cbe1)
+```
+
+Bu binding `.github/workflows/ci.yml` uzerinde tek seferlik, exact-scope bir
+degisikligi yetkilendirir: `test-suite` job'indaki 112 ayri Jest cagrisinin 8
+manifest'te birlestirilmesi ve CI-8 invocation budget gate'inin baglanmasi.
+
+Icerik pin'i BLOB sha'sidir, commit sha'si degildir. Blob content-addressed'dir;
+squash-merge ve branch silinmesinden sag cikar. GH-02'de silinebilir bir branch
+commit'ine konan pin main'i bes PR boyunca RED tutmustu.
+
+Kayit GH-03'e ozgudur: yeniden kullanilabilir veya genel amacli degildir.
