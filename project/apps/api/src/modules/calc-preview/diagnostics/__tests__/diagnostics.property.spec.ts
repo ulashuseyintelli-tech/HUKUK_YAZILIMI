@@ -16,20 +16,45 @@ import { DiagnosticsRateLimitGuard } from '../guards/diagnostics-rate-limit.guar
 // ARBITRARIES
 // ============================================================================
 
-const tenantIdArb: fc.Arbitrary<string> = fc.string({ minLength: 3, maxLength: 32 })
-  .filter((s) => /^[a-z][a-z0-9_-]*$/.test(s));
+// Bu arbitrary'ler once `fc.string(...).filter(regex)` ile yaziliydi ve spec SONSUZA
+// KADAR ASILI KALIYORDU. Sebep: `fc.string()` yazdirilabilir ASCII'den (~95 karakter)
+// uretir; uzerine dar bir regex filtresi konunca kabul olasiligi yok denecek kadar
+// dusuyor (11 karakterin hepsinin rakam olmasi: (10/95)^11 ~ 1.5e-11). fast-check
+// gecerli bir ornek bulana kadar yeniden uretmeye devam ettigi icin `numRuns: 5`
+// bile testi kurtarmiyordu — jest timeout'u da devreye girmiyor, cunku uretim
+// asamasi test govdesine hic ulasmiyor.
+//
+// Cozum: filtrelemek yerine dogrudan kisitli karakter kumesinden uretmek. Uretilen
+// degerlerin sagladigi sozlesme (asagidaki regex'ler) birebir ayni; degisen yalnizca
+// uretim yontemi. Testlerin dogruladigi invariant'lar korunmustur.
+const DIGIT = fc.constantFrom('0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
+const LOWER = fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split(''));
+const TENANT_TAIL = fc.constantFrom(
+  ...'abcdefghijklmnopqrstuvwxyz0123456789_-'.split(''),
+);
+
+// /^[a-z][a-z0-9_-]*$/, toplam uzunluk 3..32
+const tenantIdArb: fc.Arbitrary<string> = fc
+  .tuple(LOWER, fc.string({ unit: TENANT_TAIL, minLength: 2, maxLength: 31 }))
+  .map(([head, tail]) => `${head}${tail}`);
 
 const traceIdArb: fc.Arbitrary<string> = fc.uuid();
 
-const tcknArb: fc.Arbitrary<string> = fc.string({ minLength: 11, maxLength: 11 })
-  .filter((s) => /^\d{11}$/.test(s));
+// /^\d{11}$/
+const tcknArb: fc.Arbitrary<string> = fc.string({
+  unit: DIGIT,
+  minLength: 11,
+  maxLength: 11,
+});
 
-const phoneArb: fc.Arbitrary<string> = fc.string({ minLength: 10, maxLength: 10 })
-  .filter((s) => /^\d{10}$/.test(s))
+// /^\+90\d{10}$/
+const phoneArb: fc.Arbitrary<string> = fc
+  .string({ unit: DIGIT, minLength: 10, maxLength: 10 })
   .map((num) => `+90${num}`);
 
+// /^[a-z]{3,10}@(gmail|hotmail|example)\.com$/
 const emailArb: fc.Arbitrary<string> = fc.tuple(
-  fc.string({ minLength: 3, maxLength: 10 }).filter((s) => /^[a-z]+$/.test(s)),
+  fc.string({ unit: LOWER, minLength: 3, maxLength: 10 }),
   fc.constantFrom('gmail.com', 'hotmail.com', 'example.com')
 ).map(([local, domain]) => `${local}@${domain}`);
 
@@ -166,20 +191,49 @@ describe('Diagnostics Property-Based Tests', () => {
    * Property 15: Rate Limiting
    */
   describe('Property 15: Rate Limiting', () => {
+    // Bu iki test eski bir guard API'sine yaziliydi (`burstBuckets`/`minuteBuckets`
+    // alanlari ve `checkBurstLimit(tenantId) => { allowed }`). Guard bugun tek bir
+    // `buckets: Map<string, CombinedBucket>` tutuyor ve
+    // `checkBurstLimit(burst: BurstBucket, now: number): boolean` imzasini kullaniyor.
+    // Testler CI'a hic bagli olmadigi icin bu drift yillarca fark edilmedi.
+    // Iddialar degismedi; yalnizca guard'in gercek imzasi kullaniliyor.
+    type BurstBucketShape = { requests: number[] };
+    type GuardInternals = {
+      checkBurstLimit(burst: BurstBucketShape, now: number): boolean;
+    };
+
+    /** Guard'in tenant basina ayri bucket tutmasini birebir yansitir. */
+    const makeBucketStore = () => {
+      const buckets = new Map<string, BurstBucketShape>();
+      return (tenantId: string): BurstBucketShape => {
+        let bucket = buckets.get(tenantId);
+        if (!bucket) {
+          bucket = { requests: [] };
+          buckets.set(tenantId, bucket);
+        }
+        return bucket;
+      };
+    };
+
+    // Sabit `now`: tum istekler ayni 1 saniyelik burst penceresine duser.
+    const NOW = 1_700_000_000_000;
+
     it('should allow requests within burst limit', () => {
       fc.assert(
         fc.property(
           tenantIdArb,
           fc.integer({ min: 1, max: 10 }),
           (tenantId, requestCount) => {
-            const guard = new DiagnosticsRateLimitGuard();
-            (guard as unknown as { burstBuckets: Map<string, unknown> }).burstBuckets = new Map();
-            (guard as unknown as { minuteBuckets: Map<string, unknown> }).minuteBuckets = new Map();
-            
+            const guard = new DiagnosticsRateLimitGuard() as unknown as GuardInternals;
+            const bucketFor = makeBucketStore();
+            const burst = bucketFor(tenantId);
+
             let allowedCount = 0;
             for (let i = 0; i < requestCount; i++) {
-              const result = (guard as unknown as { checkBurstLimit: (id: string) => { allowed: boolean } }).checkBurstLimit(tenantId);
-              if (result.allowed) allowedCount++;
+              if (guard.checkBurstLimit(burst, NOW)) {
+                allowedCount++;
+                burst.requests.push(NOW);
+              }
             }
             expect(allowedCount).toBe(requestCount);
           }
@@ -194,14 +248,17 @@ describe('Diagnostics Property-Based Tests', () => {
           tenantIdArb,
           fc.integer({ min: 11, max: 20 }),
           (tenantId, requestCount) => {
-            const guard = new DiagnosticsRateLimitGuard();
-            (guard as unknown as { burstBuckets: Map<string, unknown> }).burstBuckets = new Map();
-            (guard as unknown as { minuteBuckets: Map<string, unknown> }).minuteBuckets = new Map();
-            
+            const guard = new DiagnosticsRateLimitGuard() as unknown as GuardInternals;
+            const bucketFor = makeBucketStore();
+            const burst = bucketFor(tenantId);
+
             let blockedCount = 0;
             for (let i = 0; i < requestCount; i++) {
-              const result = (guard as unknown as { checkBurstLimit: (id: string) => { allowed: boolean } }).checkBurstLimit(tenantId);
-              if (!result.allowed) blockedCount++;
+              if (guard.checkBurstLimit(burst, NOW)) {
+                burst.requests.push(NOW);
+              } else {
+                blockedCount++;
+              }
             }
             expect(blockedCount).toBeGreaterThan(0);
           }

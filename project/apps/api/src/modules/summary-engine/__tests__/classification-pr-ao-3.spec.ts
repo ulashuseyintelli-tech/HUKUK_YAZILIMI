@@ -35,7 +35,14 @@ function build(claimItems: any[]) {
         return { id: 'le1', allocations: allocs };
       },
     },
-    claimItem: { update: async () => ({}) },
+    // allocation-drift-baseline.ts bu testler yazildiktan SONRA allocation yoluna
+    // eklendi ve `tx.ledgerAllocation.findMany` + `tx.claimItem.findMany` cagiriyor.
+    // Mock guncellenmedigi icin spec `Cannot read properties of undefined
+    // (reading 'findMany')` ile kiriliyordu; spec CI'a bagli olmadigi icin drift
+    // fark edilmedi. Ikisi de bos donuyor: canonical [] vs candidate [] karsilastirmasi
+    // drift uretmez, yani bu testlerin dogruladigi siniflandirma davranisini etkilemez.
+    ledgerAllocation: { findMany: async () => [] },
+    claimItem: { update: async () => ({}), findMany: async () => [] },
   };
   return { svc, tx, created, getDebt: () => capturedDebt };
 }
