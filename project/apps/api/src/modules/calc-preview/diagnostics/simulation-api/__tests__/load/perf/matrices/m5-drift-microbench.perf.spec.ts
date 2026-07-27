@@ -19,6 +19,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { PerfHarness } from '../perf-harness';
 import { mulberry32 } from '../helpers/dataset-generator';
@@ -211,6 +212,16 @@ GC available:           ${diagnostics.gcAvailable}
 // Test Suite
 // ============================================================================
 
+// PerfHarness'in `outputDir` varsayilani `<__dirname>/reports` — yani REPO ICI.
+// Bu spec kardeslerinin (m0..m4) aksine outputDir gecmiyordu ve her kosuda
+// `reports/m5-drift-microbench-seed42.json` dosyasinin (repo'daki TEK tracked
+// perf raporu) uzerine yaziyordu. Sonuc: testi kosmak calisma agacini kirletiyor,
+// CI'da ise beklenmedik diff uretirdi.
+//
+// Cozum: cikti OS temp dizinine yonlendirilir. Boylece test hicbir kosulda
+// repository icine yazmaz. Tracked baseline dosyasi referans olarak korunur.
+const m5OutputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hukuk-m5-perf-'));
+
 describe('M5 — Drift Calc Micro-Benchmark (Simulated Mode)', () => {
   let harness: PerfHarness;
   let report: MatrixReport;
@@ -218,7 +229,7 @@ describe('M5 — Drift Calc Micro-Benchmark (Simulated Mode)', () => {
   let m5Diagnostics: M5DiagnosticsData;
 
   beforeAll(async () => {
-    harness = new PerfHarness(undefined, { seed: M5_CONFIG.seed });
+    harness = new PerfHarness(undefined, { seed: M5_CONFIG.seed, outputDir: m5OutputDir });
     // ── 1. Tetikleme kararı ──
     // Simulated modda drift_calc_ms / request_duration_ms ≈ 0.003 → %1 altında
     // Force trigger: simulated modda her zaman çalıştır

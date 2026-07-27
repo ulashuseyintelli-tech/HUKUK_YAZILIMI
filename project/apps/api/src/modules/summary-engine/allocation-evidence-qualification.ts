@@ -289,6 +289,12 @@ export const COLLECTED_AMOUNT_REFERENCE_MANIFEST_V1: ReadonlyArray<{
     rationale: 'New ClaimItem zero-value cache initializer.',
   },
   {
+    path: 'src/modules/claim-item/formation-finalizer/transactional-claim-item-formation-finalizer.service.ts',
+    classification: 'RECONCILED_CACHE',
+    access: 'WRITE',
+    rationale: 'New ClaimItem zero-value cache initializer.',
+  },
+  {
     path: 'src/modules/summary-engine/allocation-drift-baseline.ts',
     classification: 'RECONCILED_CACHE',
     access: 'READ',
