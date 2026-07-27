@@ -307,3 +307,99 @@ Canonical verdict : FOUNDATION COMPLETE / RUNTIME OBJECTIVE NOT ACHIEVED
 Kanıt tabanı      : canonical main `b9b3d32e`; P05 squash SHA'ları ancestry PASS; CI 4/4 SUCCESS
 Historical kayıt  : silinmedi / yeniden yazılmadı (append-only + PREVIOUS RECORD yapısı)
 ```
+
+---
+
+## Ek — UYAP-CPE-POA I01/I02 HISTORICAL RECONCILIATION (2026-07-27)
+
+```text
+Kaynak : PROGRAM-WIDE-SPRING-CLEANING-OWNER-RESIDUALS-FULL-EXECUTION-R01 / ITEM-02
+Statü  : HISTORICAL TRUTH RECORD — append-only
+Rol    : Bu bölüm yalnız TARİHSEL GERÇEĞİ kaydeder. Hiçbir yetki üretmez,
+         hiçbir gate açmaz, hiçbir mevcut hüküm veya statüyü DEĞİŞTİRMEZ.
+```
+
+Bu belgenin yukarıdaki bölümlerinde geçen `NOT GRANTED / NOT STARTED` ifadeleri
+**yazıldıkları tarih itibarıyla doğruydu** ve tarihsel kayıt olarak korunur. Aşağıdaki tablo,
+o ifadelerden sonra repository'de gerçekleşmiş olayları ekler.
+
+| Eksen | Gerçek |
+| --- | --- |
+| **IMPLEMENTATION** | **MERGED / CANONICAL** — `UYAP-ACTING-LAWYER-RESOLVER-I01`: PR #1627, squash `dde01ca2` (2026-07-26). `UYAP-POA-TENANT-SAFETY` (§L'de `I02`): PR #1633, squash `e20b36ff` (2026-07-27); `schema.prisma` + `prisma/migrations/20260726210000_uyap_poa_tenant_safety_i01` içerir. |
+| **HISTORICAL AUTHORITY RECORD** | **NOT FOUND / INCOMPLETE** — `decision-log.md` ve governance korpusu taramasında bu iki paketi başlatan bir owner GO kaydı, grant veya `GO-MIGRATE` gate kaydı **bulunamamıştır**. `DECISION-1` (office-internal delegation) ve `DECISION-2` (POA lifecycle şema kapsamı) için de çözüm kaydı bulunamamıştır. |
+| **RETROACTIVE RATIFICATION** | **NONE** — bu kayıt geçmişte var olmayan bir yetkiyi var saymaz, `NOT GRANTED` ifadesini `GRANTED`'a çevirmez ve `GO-MIGRATE` gate'ini geriye dönük açmaz. |
+| **CURRENT OPERATIONAL STATUS** | **VERIFY SEPARATELY** — bkz. §Ek.2. Kod merge edilmiştir; migration **uygulanmamıştır**. |
+
+### Ek.1 — Task ID drift çözümü (mekanik, authority etkisi YOK)
+
+Aynı iş paketi iki farklı ID ile dolaşımdadır:
+
+```text
+canonical decomposition (§L, I02 satırı)
+    UYAP-POA-TENANT-SAFETY-I02
+    kapsam: "D-1/D-2 tenantId + composite FK + backfill + migration"   Schema: VAR   Bağımlılık: I01
+
+repository artefaktları (hepsi tutarlı biçimde "i01" eki taşır)
+    PR #1633 başlığı  : "UYAP-POA-TENANT-SAFETY-I01 — canonical tenantId + composite tenant-safe FK"
+    branch            : claude/uyap-poa-tenant-safety-i01
+    squash commit     : e20b36ff
+    migration dizini  : 20260726210000_uyap_poa_tenant_safety_i01
+```
+
+**Adjudication:** Kapsam tanımları birebir örtüşmektedir (`tenantId` + composite FK + migration).
+Bu **iki ayrı iş değildir**; tek paketin yanlış sonek ile adlandırılmasıdır. Canonical paket
+kimliği `§L`'nin verdiği **`UYAP-POA-TENANT-SAFETY-I02`**'dir; repository artefaktlarındaki
+`-I01` soneki bir **isimlendirme hatasıdır** ve ayrıca `UYAP-ACTING-LAWYER-RESOLVER-I01` ile
+sayısal olarak çakışmaktadır.
+
+**Uygulanan düzeltme — yalnız crosswalk:**
+
+```text
+UYAP-POA-TENANT-SAFETY-I02   (canonical paket kimliği)
+  ALIAS / REPOSITORY LABEL:  UYAP-POA-TENANT-SAFETY-I01
+  PR #1633 · e20b36ff · migration 20260726210000_uyap_poa_tenant_safety_i01
+```
+
+**Bilinçli olarak YAPILMAYAN:** migration dizini yeniden adlandırılmamıştır. Prisma migration
+adı `_prisma_migrations` tablosundaki checksum/kimlik kaydının parçasıdır; yeniden adlandırma
+bir schema/migration mutasyonudur ve bu görev tarafından yetkilendirilmemiştir. PR başlığı ve
+squash commit mesajı da tarihsel kayıttır ve değiştirilmez.
+
+### Ek.2 — Migration live-apply durumu (metadata-only ölçüm)
+
+2026-07-27'de `prisma migrate status` **salt-okuma metadata sorgusu** ile ölçülmüştür.
+Hiçbir `.env` değeri, connection string, credential veya veri içeriği okunmamış/raporlanmamıştır.
+Hiçbir migration uygulanmamıştır.
+
+```text
+ÖLÇÜM (local development database — .env'in çözdüğü hedef):
+  105 migration bulundu
+  UYGULANMAMIŞ 3 migration:
+    20260726120000_claim_formation_projection_binding_persistence   (PR #1630)
+    20260726190741_client_p2_u03_track_b_i01_financial_disclosure_foundation (PR #1629)
+    20260726210000_uyap_poa_tenant_safety_i01                        (PR #1633)
+
+UYAP-POA-TENANT-SAFETY LIVE APPLY STATUS:
+  NOT APPLIED  (local development database, 2026-07-27 ölçümü)
+
+PRODUCTION APPLY STATUS:
+  UNKNOWN — production veritabanına erişilmemiştir; bu ölçüm production hakkında
+  hiçbir iddia taşımaz.
+```
+
+**Sonuç:** Kod main'de canonical'dır fakat şema değişikliği **hiçbir çalışan veritabanında
+etkin değildir**. `I02` paketi bu nedenle `IMPLEMENTATION_COMPLETE / NOT APPLIED` durumundadır.
+
+### Ek.3 — Bu kaydın açmadıkları
+
+```text
+I03..I07                      : NOT GRANTED / NOT STARTED olarak KALIR
+DECISION-1 / DECISION-2       : AÇIK KALIR — default FAIL-CLOSED / NO IMPLEMENTATION
+GO-MIGRATE gate               : AÇILMADI
+migration apply yetkisi       : NONE
+UYAP CUTOVER HARD HOLD        : KORUNUR
+IMPLEMENTATION AUTHORITY      : NONE
+```
+
+Bu bölüm bir **uzlaştırma kaydıdır, ratifikasyon değildir.** Owner'ın I01/I02'nin yetkiyle mi
+yürütüldüğüne dair kararı hâlâ açıktır ve bu kayıt onu vermez.
