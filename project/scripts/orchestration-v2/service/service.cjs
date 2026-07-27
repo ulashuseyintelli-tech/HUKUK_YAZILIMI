@@ -30,6 +30,8 @@ const path = require('path');
 const queueMod = require('../orchestrator/queue.cjs');
 const recoveryMod = require('../orchestrator/recovery.cjs');
 const dispatchMod = require('../orchestrator/dispatch.cjs');
+const reconcileMod = require('../orchestrator/reconcile.cjs');
+const stateMod = require('../orchestrator/state.cjs');
 const admissionMod = require('../orchestrator/admission.cjs');
 const requestMod = require('./request.cjs');
 const adapterMod = require('./executor-adapter.cjs');
@@ -89,6 +91,28 @@ function createService(cfg) {
   // the moment it is dispatched — which is what the guard is for. A service
   // configured with an explicit guard (tests, or a caller with its own
   // resolution) keeps that one.
+  // The task store, alongside the queue. Two stores answer different questions
+  // and must not be allowed to disagree silently before an executor starts.
+  //
+  // Opened LAZILY and tolerantly: defaultStateDir shells out to git, so a
+  // service pointed at a scratch directory would otherwise fail at
+  // construction — which would make merely CONSTRUCTING a service require a
+  // repository, and a status read is not that.
+  let taskStoreMemo;
+  function getTaskStore() {
+    if (taskStoreMemo !== undefined) return taskStoreMemo;
+    if (cfg.store) {
+      taskStoreMemo = cfg.store;
+      return taskStoreMemo;
+    }
+    try {
+      taskStoreMemo = cfg.repoCwd ? stateMod.createStore(stateMod.defaultStateDir(cfg.repoCwd)) : null;
+    } catch (e) {
+      taskStoreMemo = null;
+    }
+    return taskStoreMemo;
+  }
+
   const dispatchGuard =
     cfg.dispatchGuard ||
     (cfg.repoCwd && cfg.allowUnguardedDispatch !== true
@@ -390,6 +414,30 @@ function createService(cfg) {
       if (!adm.admits) return { acted: 'IDLE', reason: adm.reason, entryId: null, reclaimed: reclaimed.length };
 
       const head = queue.head();
+
+      // Before anything else: finish any half-applied cross-store write, then
+      // require the two stores to agree. A crash between the queue write and
+      // the task write leaves an instruction on disk, and starting an executor
+      // on top of it is how one task acquires two attempts.
+      const taskStore = getTaskStore();
+      if (taskStore) {
+        const recovered = reconcileMod.recoverIntents({ queue, store: taskStore, dir: queue.dir });
+        if (recovered.length) audit('RECONCILE_INTENTS_COMPLETED', { count: recovered.length, applied: recovered });
+
+        const siblings = queue.list().filter((e) => e.taskId === head.taskId);
+        const eff = reconcileMod.effectiveState({
+          entry: head,
+          task: taskStore.current(head.taskId),
+          siblings,
+        });
+        if (!eff.runnable) {
+          audit('RECONCILE_REFUSED', { entryId: head.entryId, verdict: eff.verdict, reason: eff.reason });
+          // Not a queue mutation: the entry is already where it should be, and
+          // rewriting it would be this code inventing an opinion about a
+          // disagreement it was asked to REPORT.
+          return { acted: 'IDLE', reason: eff.verdict, entryId: head.entryId, reclaimed: reclaimed.length };
+        }
+      }
 
       // The gate runs a second time here, and not because the first run was
       // wrong. Admission proved this task was allowed to ENTER the queue; the

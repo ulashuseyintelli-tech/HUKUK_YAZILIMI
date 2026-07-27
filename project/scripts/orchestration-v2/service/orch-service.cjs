@@ -19,6 +19,8 @@
  *   orch-service queue               every entry and its state
  *   orch-service audit [--limit N]   who did what, when
  *   orch-service recover [--apply]   what a restart would reclaim
+ *   orch-service reconcile [--apply] what the two stores say, and whether they agree
+ *   orch-service resume --entry ID --reason ...   unblock BOTH stores, or neither
  *
  * `stop` and `start` are deliberately not symmetric with `pause`/`resume`.
  * Pausing is an operational choice; stopping is an incident. Starting again
@@ -31,6 +33,9 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const queueMod = require('../orchestrator/queue.cjs');
+const stateMod = require('../orchestrator/state.cjs');
+const reconcileMod = require('../orchestrator/reconcile.cjs');
+const requestMod = require('./request.cjs');
 const serviceMod = require('./service.cjs');
 
 function repoRoot(explicit) {
@@ -173,6 +178,79 @@ function main(argv) {
           return 0;
         }),
       );
+    }
+
+    case 'reconcile': {
+      const store = stateMod.createStore(stateMod.defaultStateDir(root));
+      const pending = reconcileMod.pendingIntents(queue.dir);
+      if (pending.length) {
+        const lines = ['YARIM KALMIS CAPRAZ YAZIM: ' + pending.length];
+        if (args.flags.apply) {
+          for (const d of reconcileMod.recoverIntents({ queue, store, dir: queue.dir })) {
+            lines.push('  tamamlandi ' + d.intentId.slice(0, 12) + '  queue=' + d.queue + ' task=' + d.task);
+          }
+        } else {
+          lines.push('  (--apply ile tamamlanir)');
+        }
+        process.stdout.write(lines.join('\n') + '\n\n');
+      }
+      const all = queue.list();
+      const rows = [pad('ENTRY', 14) + pad('QUEUE', 14) + pad('TASK', 16) + pad('VERDICT', 24) + 'REASON'];
+      for (const e of all) {
+        const v = reconcileMod.effectiveState({
+          entry: e,
+          task: store.current(e.taskId),
+          siblings: all.filter((x) => x.taskId === e.taskId),
+        });
+        rows.push(
+          pad(e.entryId.slice(0, 12), 14) + pad(v.queueState, 14) + pad(v.taskState || '-', 16) +
+          pad(v.verdict, 24) + (v.reason || ''),
+        );
+      }
+      process.stdout.write(rows.join('\n') + '\n');
+      return 0;
+    }
+
+    case 'resume': {
+      // Resuming is the one operation that turns a refusal back into
+      // permission, so it names the entry exactly and states why.
+      if (typeof args.flags.entry !== 'string' || !reason) {
+        process.stderr.write('resume requires --entry <id> and --reason "<why>"\n');
+        return 2;
+      }
+      const store = stateMod.createStore(stateMod.defaultStateDir(root));
+      const entry = queue.list().filter((e) => e.entryId.indexOf(args.flags.entry) === 0)[0];
+      if (!entry) {
+        process.stderr.write('no queue entry starting with ' + args.flags.entry + '\n');
+        return 3;
+      }
+      let grant = null;
+      try {
+        const resolved = requestMod.load({ repoCwd: root, requestPath: entry.requestPath });
+        grant = resolved.standingGrant;
+      } catch (e) {
+        process.stderr.write('cannot resolve the standing grant for this entry: ' + e.message + '\n');
+        return 3;
+      }
+      try {
+        const r = reconcileMod.resumeBoth({
+          queue,
+          store,
+          dir: queue.dir,
+          entry,
+          standingGrant: grant,
+          parentAuthorizationId: (grant.parentAuthorizationRef || {}).authorizationId,
+          taskSpecSha256: entry.taskSpecSha256,
+          killSwitchEngaged: service.killSwitchEngaged(),
+          reason,
+        });
+        service.audit('RESUME_AUTHORIZED', { entryId: entry.entryId, taskId: entry.taskId, reason, intentId: r.intentId });
+        process.stdout.write(['resumed BOTH stores', '  entry : ' + entry.entryId, '  intent: ' + r.intentId, ''].join('\n'));
+        return 0;
+      } catch (e) {
+        process.stderr.write('REFUSED  ' + (e.code || e.message) + '\n');
+        return 3;
+      }
     }
 
     case 'status':
