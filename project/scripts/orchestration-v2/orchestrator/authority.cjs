@@ -390,6 +390,74 @@ function verifyRatificationEvidence(opts) {
   return { ok: true };
 }
 
+/**
+ * Confirm both authority references resolve to records that actually exist.
+ *
+ * §15.5 forbids a planner from producing semanticAuthorityRef — it is an owner
+ * or domain decision — and nothing enforced it. validateAgainstGrant checks only
+ * that the two refs are distinct, so a fabricated recordId pointing at a real
+ * file passed every gate: the reference looked authoritative and referred to
+ * nothing.
+ *
+ * That is not hypothetical. A plan was authored in this repository citing
+ * semanticAuthorityRef recordId OFFICE-P2-CAP02-REPORTINGLINE-READ-CHARACTERIZATION
+ * against OFFICE-DELIVERY-MANIFEST.md; the string appeared nowhere in that file,
+ * or anywhere else except the grant that invented it. Only human review caught
+ * it. This is the code path that would have.
+ *
+ * An EXECUTION_GRANT record must additionally carry the authority marker V1
+ * established, because an execution grant is a stronger claim than a semantic
+ * reference and should be impossible to satisfy by coincidence — a recordId that
+ * merely appears somewhere in prose is not a grant.
+ *
+ * @param {object} opts
+ * @param {object} opts.grant
+ * @param {function} opts.readAtCommit (sourcePath, commitSha) => string
+ * @param {string} opts.atCommit        commit to read both records at
+ * @returns {{ok: true, checked: string[]}}
+ */
+function verifyAuthorityRefs(opts) {
+  const grant = opts && opts.grant;
+  if (!grant) fail('GRANT_INVALID', 'missing');
+  if (typeof opts.readAtCommit !== 'function') {
+    fail('EVIDENCE_READER_REQUIRED', 'readAtCommit is required to verify authority references');
+  }
+  const at = opts.atCommit;
+  if (!/^[0-9a-f]{40}$/.test(String(at || ''))) fail('EVIDENCE_COMMIT_INVALID', String(at));
+
+  const checked = [];
+  for (const field of ['semanticAuthorityRef', 'executionGrantRef']) {
+    const ref = grant[field];
+    if (!ref) fail('AUTHORITY_REF_MISSING', field);
+
+    let content;
+    try {
+      content = opts.readAtCommit(ref.sourcePath, at);
+    } catch (e) {
+      fail('AUTHORITY_RECORD_UNREADABLE', field + ' ' + ref.sourcePath + '@' + at);
+    }
+    if (typeof content !== 'string' || content.length === 0) {
+      fail('AUTHORITY_RECORD_EMPTY', field + ' ' + ref.sourcePath);
+    }
+    if (content.indexOf(ref.recordId) === -1) {
+      fail('AUTHORITY_RECORD_ID_ABSENT', field + ' ' + ref.recordId + ' not in ' + ref.sourcePath);
+    }
+    if (ref.kind === 'EXECUTION_GRANT') {
+      // The marker V1 uses, so a grant cannot be satisfied by an incidental
+      // mention of its own id in prose.
+      const marker = new RegExp(
+        'GOV-COORD-AUTHORITY[^\\n]*kind=EXECUTION_GRANT[^\\n]*recordId=' +
+          ref.recordId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+      );
+      if (!marker.test(content)) {
+        fail('AUTHORITY_RECORD_MARKER_MISSING', ref.recordId + ' in ' + ref.sourcePath);
+      }
+    }
+    checked.push(field);
+  }
+  return { ok: true, checked };
+}
+
 module.exports = {
   PROFILES,
   BASE_DRIFT_POLICIES,
@@ -404,4 +472,5 @@ module.exports = {
   specDigests,
   validateAgainstGrant,
   verifyRatificationEvidence,
+  verifyAuthorityRefs,
 };

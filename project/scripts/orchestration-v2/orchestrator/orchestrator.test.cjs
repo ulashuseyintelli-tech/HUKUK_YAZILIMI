@@ -536,3 +536,105 @@ test('§2: verification refuses to run without a reader rather than passing', ()
     (e) => e.code === 'EVIDENCE_READER_REQUIRED',
   );
 });
+
+// ------------------------------------------------- AUTHORITY REFS EXIST (§15.5)
+//
+// §15.5 forbids a planner from producing semanticAuthorityRef, and nothing
+// enforced it: validateAgainstGrant only checks the two refs are distinct, so a
+// fabricated recordId pointing at a real file passed every gate. It happened in
+// this repository — a plan cited OFFICE-P2-CAP02-REPORTINGLINE-READ-CHARACTERIZATION
+// against OFFICE-DELIVERY-MANIFEST.md, a string that existed nowhere but the
+// grant that invented it, and only human review caught it.
+
+const SHA40 = 'f'.repeat(40);
+
+function refGrant(over) {
+  return Object.assign(
+    {
+      semanticAuthorityRef: {
+        kind: 'SEMANTIC_AUTHORITY',
+        recordId: 'REAL-SEMANTIC-RECORD',
+        sourcePath: 'project/docs/governance/X.md',
+      },
+      executionGrantRef: {
+        kind: 'EXECUTION_GRANT',
+        recordId: 'REAL-EXEC-GRANT',
+        sourcePath: 'project/docs/governance/Y.md',
+      },
+    },
+    over || {},
+  );
+}
+
+const REAL_FILES = {
+  'project/docs/governance/X.md': 'prose mentioning REAL-SEMANTIC-RECORD in context',
+  'project/docs/governance/Y.md':
+    '<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=REAL-EXEC-GRANT -->\nbody',
+};
+const reader = (p) => {
+  if (!(p in REAL_FILES)) throw new Error('ENOENT ' + p);
+  return REAL_FILES[p];
+};
+
+test('§15.5: a fabricated semanticAuthorityRef recordId is rejected', () => {
+  const g = refGrant({
+    semanticAuthorityRef: {
+      kind: 'SEMANTIC_AUTHORITY',
+      recordId: 'OFFICE-P2-CAP02-REPORTINGLINE-READ-CHARACTERIZATION',
+      sourcePath: 'project/docs/governance/X.md',
+    },
+  });
+  assert.throws(
+    () => authorityMod.verifyAuthorityRefs({ grant: g, readAtCommit: reader, atCommit: SHA40 }),
+    (e) => e.code === 'AUTHORITY_RECORD_ID_ABSENT',
+  );
+});
+
+test('§15.5: a reference to a file that does not exist is rejected', () => {
+  const g = refGrant({
+    semanticAuthorityRef: {
+      kind: 'SEMANTIC_AUTHORITY',
+      recordId: 'REAL-SEMANTIC-RECORD',
+      sourcePath: 'project/docs/governance/DOES-NOT-EXIST.md',
+    },
+  });
+  assert.throws(
+    () => authorityMod.verifyAuthorityRefs({ grant: g, readAtCommit: reader, atCommit: SHA40 }),
+    (e) => e.code === 'AUTHORITY_RECORD_UNREADABLE',
+  );
+});
+
+test('§15.5: an execution grant needs its authority marker, not just its name', () => {
+  const files = Object.assign({}, REAL_FILES, {
+    'project/docs/governance/Y.md': 'this document merely mentions REAL-EXEC-GRANT in passing',
+  });
+  assert.throws(
+    () =>
+      authorityMod.verifyAuthorityRefs({
+        grant: refGrant(),
+        readAtCommit: (p) => files[p],
+        atCommit: SHA40,
+      }),
+    (e) => e.code === 'AUTHORITY_RECORD_MARKER_MISSING',
+  );
+});
+
+test('§15.5: both references resolving to real records passes', () => {
+  const r = authorityMod.verifyAuthorityRefs({
+    grant: refGrant(),
+    readAtCommit: reader,
+    atCommit: SHA40,
+  });
+  assert.deepEqual(r.checked, ['semanticAuthorityRef', 'executionGrantRef']);
+});
+
+test('§15.5: verification refuses to run without a reader or a pinned commit', () => {
+  assert.throws(
+    () => authorityMod.verifyAuthorityRefs({ grant: refGrant(), atCommit: SHA40 }),
+    (e) => e.code === 'EVIDENCE_READER_REQUIRED',
+  );
+  assert.throws(
+    () => authorityMod.verifyAuthorityRefs({ grant: refGrant(), readAtCommit: reader, atCommit: 'HEAD' }),
+    (e) => e.code === 'EVIDENCE_COMMIT_INVALID',
+  );
+});
