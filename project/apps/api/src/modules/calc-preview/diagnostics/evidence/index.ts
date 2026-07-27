@@ -28,7 +28,6 @@ export * from './evidence-aggregator.service';
 // ISnapshotStore is renamed to ILegacySnapshotStore - compile error if you try to import ISnapshotStore
 export * from './snapshot-store.types';
 export * from './snapshot-store.service';
-export * from './snapshot-cleanup.service';
 export * from './drift-utils';
 
 // Phase 9B.5 - Truth Layer (PREFERRED)
