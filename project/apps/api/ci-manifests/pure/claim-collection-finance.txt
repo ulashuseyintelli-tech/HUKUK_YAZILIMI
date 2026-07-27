@@ -48,3 +48,13 @@ src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spe
 src/modules/claim-item/__tests__/claim-item-formation-legal-basis-eligibility.spec.ts
 src/modules/collection/__tests__/collection-ledger-forward.spec.ts
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
+
+# ── GH-04 BATCH A — Priority 0 (guvenlik / tenant sinir / yetkilendirme) ──
+# Bu spec'ler daha once hicbir CI step'ine bagli degildi. Admission oncesi
+# 3 ardisik lokal kosu ile deterministik dogrulandi (425/425), tracked dosya
+# yazmadiklari ve askida kalmadiklari teyit edildi.
+src/modules/case/__tests__/case-create-fk-tenant.spec.ts
+src/modules/case/__tests__/case-update-fk-tenant.spec.ts
+src/modules/claim-item/__tests__/claim-item-source-integrity.guard.spec.ts
+src/modules/collection/__tests__/receipt-object-scope-authorization.service.spec.ts
+src/modules/collection/__tests__/receipt-public-entrypoints-authorization.contract.spec.ts

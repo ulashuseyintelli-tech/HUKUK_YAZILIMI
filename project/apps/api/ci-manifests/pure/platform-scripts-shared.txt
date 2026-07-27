@@ -216,3 +216,38 @@ src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts
 src/scripts/__tests__/enforcement-action-backfill-classifier.spec.ts
 src/scripts/__tests__/enforcement-action-backfill-profiler.report-hardening.spec.ts
 src/scripts/__tests__/enforcement-action-backfill-profiler.static-purity.spec.ts
+
+# ── GH-04 BATCH A — Priority 0 (guvenlik / tenant sinir / yetkilendirme) ──
+# Bu spec'ler daha once hicbir CI step'ine bagli degildi. Admission oncesi
+# 3 ardisik lokal kosu ile deterministik dogrulandi (425/425), tracked dosya
+# yazmadiklari ve askida kalmadiklari teyit edildi.
+src/modules/bank/__tests__/settlement-verifier-authorization.service.spec.ts
+src/modules/calc-preview/__tests__/calc-preview-trace-security.spec.ts
+src/modules/calc-preview/diagnostics/__tests__/diagnostics-rate-limit.guard.spec.ts
+src/modules/calc-preview/diagnostics/__tests__/diagnostics-rbac.guard.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/fault/chaos/c3-drift-boundary.chaos.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/sb-3-tenant-skew.load.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/sb-4-rate-limit-boundary.load.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/simulation-feature-flag.guard.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/simulation-rate-limit.guard.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/simulation-rbac.guard.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-tenant-isolation.property.spec.ts
+src/modules/calc-preview/tenant-context/__tests__/tenant-context.guard.spec.ts
+src/modules/calc-preview/tenant-context/__tests__/tenant-context.resolver.spec.ts
+src/modules/client-notification/client-notification-bulk-email-security.spec.ts
+src/modules/escalation/__tests__/tenant-notifier.service.spec.ts
+src/modules/interest-engine/__tests__/payment-boundary.characterization.spec.ts
+src/modules/interest-engine/legal-application-plan/__tests__/i05-unit-property-security.spec.ts
+src/modules/permission-diagnostics/__tests__/canonical-json.spec.ts
+src/modules/permission-diagnostics/__tests__/confirmation-token.service.spec.ts
+src/modules/permission-diagnostics/__tests__/guarded-edge-outcome.envelope.spec.ts
+src/modules/permission-diagnostics/__tests__/guided-open-observe.service.spec.ts
+src/modules/permission-diagnostics/__tests__/p2b2-controller-observe-hooks.spec.ts
+src/modules/permission-diagnostics/__tests__/permission-diagnostics.service.spec.ts
+src/modules/permission-diagnostics/__tests__/permission-hard-guard.service.spec.ts
+src/modules/permission-diagnostics/__tests__/warn-only-audit.service.spec.ts
+src/modules/permission-diagnostics/guided-edge/__tests__/guided-edge-gate.service.spec.ts
+src/modules/poa/__tests__/poa-add-lawyers-tenant-guard.spec.ts
+src/modules/policy-engine/__tests__/effective-permission-resolver.spec.ts
+src/modules/policy-engine/decorators/__tests__/cpe-required.guard.spec.ts
+src/scripts/__tests__/adr014-session-observation-facts.security.spec.ts
