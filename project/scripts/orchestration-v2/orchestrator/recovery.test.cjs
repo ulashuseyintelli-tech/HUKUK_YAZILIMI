@@ -188,3 +188,42 @@ test('recovery: every active queue state has a defined disposition', () => {
     assert.ok(Object.prototype.hasOwnProperty.call(R.REWIND, s), 'no disposition decided for ' + s);
   }
 });
+
+test('recovery: a live process that has gone silent is reported, never reclaimed', () => {
+  // The hard case. Fifteen minutes of silence looks like death, and leaving the
+  // entry holds the single slot — but a process that still exists can still be
+  // writing to its worktree and still about to open a PR. Reclaiming it is
+  // exactly how a second executor gets started.
+  const q = tmpQueue();
+  const e = q.enqueue(REQ);
+  drive(q, e.entryId, 'EXECUTING');
+  const now = Date.now();
+  R.takeOwnership(q, e.entryId, { pid: 4242, nowMs: now });
+
+  const late = now + R.DEFAULT_STALE_AFTER_MS + 60000;
+  const v = R.classify(q.get(e.entryId), Object.assign({ nowMs: late }, ALIVE));
+  assert.equal(v.verdict, 'OWNER_STALE');
+  assert.equal(v.rewindTo, null);
+  assert.match(v.reason, /kill the process/, 'the verdict says what a human should do');
+
+  R.reclaim(q, Object.assign({ nowMs: late }, ALIVE));
+  assert.equal(q.get(e.entryId).state, 'EXECUTING', 'a live process is never rewound');
+  assert.equal(q.get(e.entryId).owner.pid, 4242, 'and it keeps its owner');
+});
+
+test('recovery: killing the hung process is what makes it reclaimable', () => {
+  // The escalation path: the decision to end a running process stays with a
+  // human, and once made, recovery behaves normally.
+  const q = tmpQueue();
+  const e = q.enqueue(REQ);
+  drive(q, e.entryId, 'EXECUTING');
+  const now = Date.now();
+  R.takeOwnership(q, e.entryId, { pid: 4242, nowMs: now });
+  const late = now + R.DEFAULT_STALE_AFTER_MS + 60000;
+
+  R.reclaim(q, Object.assign({ nowMs: late }, ALIVE));
+  assert.equal(q.get(e.entryId).state, 'EXECUTING');
+
+  R.reclaim(q, Object.assign({ nowMs: late }, DEAD));
+  assert.equal(q.get(e.entryId).state, 'AUTHORIZED');
+});

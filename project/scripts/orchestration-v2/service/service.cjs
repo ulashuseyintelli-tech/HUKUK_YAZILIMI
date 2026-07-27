@@ -172,8 +172,16 @@ function createService(cfg) {
               owner: active.owner || null,
             }]
           : [],
+        // OWNER_STALE is in this list on purpose. Recovery will not touch it —
+        // the process is alive — so the only way it ever gets resolved is by an
+        // operator seeing it here.
         needsRecovery: verdicts
-          .filter((v) => v.verdict === 'RECLAIMABLE' || v.verdict === 'NEEDS_EVIDENCE')
+          .filter(
+            (v) =>
+              v.verdict === 'RECLAIMABLE' ||
+              v.verdict === 'NEEDS_EVIDENCE' ||
+              v.verdict === 'OWNER_STALE',
+          )
           .map((v) => ({ entryId: v.entryId, state: v.state, verdict: v.verdict, rewindTo: v.rewindTo })),
         blocked: entries
           .filter((e) => e.state === 'BLOCKED')

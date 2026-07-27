@@ -8,10 +8,21 @@
  * still sitting in an active queue state?
  *
  * The hard rule it exists to enforce: RECOVERY NEVER STARTS A SECOND EXECUTOR.
- * An entry whose worker may still be alive is left alone. Only an entry whose
- * worker is provably gone — its heartbeat stale past the grace, or its process
- * absent — may be reclaimed, and reclaiming rewinds it to a state from which a
- * fresh attempt is safe rather than resuming mid-flight.
+ *
+ * That rule decides the one genuinely hard case: a process that is still ALIVE
+ * but has stopped heartbeating. It is tempting to reclaim it — fifteen minutes
+ * of silence looks like death, and leaving it holds the single slot. But a
+ * process that still exists can still be writing to its worktree, still holding
+ * a lease, still about to open a PR. Rewinding its entry would put a second
+ * executor on the same work, which is the one outcome this module exists to
+ * prevent.
+ *
+ * So liveness WINS over staleness. Only an entry whose process is actually gone
+ * AND whose heartbeat is past the grace may be reclaimed. A live-but-silent
+ * worker is reported as OWNER_STALE — loudly, in status — and left alone. An
+ * operator who has decided it is hung kills the process; the next scan then
+ * sees no pid and reclaims it normally. That keeps the decision to end a
+ * running process with a human, where it belongs, and out of a timer.
  *
  * Deliberately single-host. The runtime is one machine with one queue on one
  * filesystem; a distributed lease protocol would add failure modes this system
@@ -88,6 +99,9 @@ function pidAlive(pid) {
  *   verdict is one of:
  *     HEALTHY          not occupying the slot, nothing to do
  *     OWNER_ALIVE      a worker still holds it; recovery must not touch it
+ *     OWNER_STALE      the process is alive but has not beaten in far too
+ *                      long; NOT reclaimed, because a live process can still
+ *                      be writing. Surfaced for an operator to judge.
  *     RECLAIMABLE      worker gone, and there is a safe state to rewind to
  *     NEEDS_EVIDENCE   worker gone, but the safe next step depends on the
  *                      remote (mid-merge); block rather than guess
@@ -105,12 +119,17 @@ function classify(entry, opts) {
   const beat = Number(owner.heartbeatAtMs || entry.updatedAtMs || 0);
   const age = now - beat;
 
-  if (isAlive(owner.pid) && age < staleAfter) {
+  if (isAlive(owner.pid)) {
+    // Liveness wins over staleness. A silent process is not a dead one, and
+    // reclaiming it is how a second executor gets started.
+    const stale = age >= staleAfter;
     return {
       entryId: entry.entryId,
       state: entry.state,
-      verdict: 'OWNER_ALIVE',
-      reason: 'pid ' + owner.pid + ' alive, last beat ' + Math.round(age / 1000) + 's ago',
+      verdict: stale ? 'OWNER_STALE' : 'OWNER_ALIVE',
+      reason:
+        'pid ' + owner.pid + ' alive, last beat ' + Math.round(age / 1000) + 's ago' +
+        (stale ? ' — past the grace; kill the process if it is hung, then recovery can reclaim it' : ''),
       rewindTo: null,
     };
   }
@@ -166,7 +185,13 @@ function reclaim(queue, opts) {
   const results = [];
 
   for (const verdict of scan(queue, o)) {
-    if (verdict.verdict === 'HEALTHY' || verdict.verdict === 'OWNER_ALIVE') {
+    // OWNER_STALE is skipped for the same reason OWNER_ALIVE is: the process
+    // still exists. It is escalated by an operator, not by a timer.
+    if (
+      verdict.verdict === 'HEALTHY' ||
+      verdict.verdict === 'OWNER_ALIVE' ||
+      verdict.verdict === 'OWNER_STALE'
+    ) {
       results.push(verdict);
       continue;
     }
