@@ -73,17 +73,22 @@ const QUEUE_TERMINAL = ['CLOSED', 'FAILED', 'CANCELLED'];
  * retrying a blocked entry is what the guard exists to prevent.
  */
 const QUEUE_ALLOWED = {
+  // The backward edges are RECOVERY edges, not shortcuts. A worker that dies
+  // mid-stage leaves its entry stranded in an active state, and recovery.cjs
+  // rewinds it to a point a fresh attempt can safely start from. They live in
+  // this table rather than bypassing it, so the table stays the single answer
+  // to what is legal.
   QUEUED: ['PLANNING', 'CANCELLED', 'BLOCKED'],
-  PLANNING: ['REVIEWING', 'BLOCKED', 'FAILED', 'CANCELLED'],
-  REVIEWING: ['AUTHORIZED', 'PLANNING', 'BLOCKED', 'FAILED', 'CANCELLED'],
-  AUTHORIZED: ['PREFLIGHT', 'BLOCKED', 'FAILED', 'CANCELLED'],
-  PREFLIGHT: ['EXECUTING', 'BLOCKED', 'FAILED', 'CANCELLED'],
-  EXECUTING: ['VALIDATING', 'BLOCKED', 'FAILED', 'CANCELLED'],
-  VALIDATING: ['PR_OPEN', 'REPAIRING', 'BLOCKED', 'FAILED', 'CANCELLED'],
+  PLANNING: ['REVIEWING', 'QUEUED', 'BLOCKED', 'FAILED', 'CANCELLED'],
+  REVIEWING: ['AUTHORIZED', 'PLANNING', 'QUEUED', 'BLOCKED', 'FAILED', 'CANCELLED'],
+  AUTHORIZED: ['PREFLIGHT', 'QUEUED', 'BLOCKED', 'FAILED', 'CANCELLED'],
+  PREFLIGHT: ['EXECUTING', 'AUTHORIZED', 'BLOCKED', 'FAILED', 'CANCELLED'],
+  EXECUTING: ['VALIDATING', 'AUTHORIZED', 'BLOCKED', 'FAILED', 'CANCELLED'],
+  VALIDATING: ['PR_OPEN', 'REPAIRING', 'AUTHORIZED', 'BLOCKED', 'FAILED', 'CANCELLED'],
   PR_OPEN: ['CI_WAITING', 'BLOCKED', 'FAILED', 'CANCELLED'],
   CI_WAITING: ['MERGE_READY', 'CI_FAILED', 'BLOCKED', 'FAILED', 'CANCELLED'],
   CI_FAILED: ['REPAIRING', 'BLOCKED', 'FAILED', 'CANCELLED'],
-  REPAIRING: ['EXECUTING', 'VALIDATING', 'BLOCKED', 'FAILED', 'CANCELLED'],
+  REPAIRING: ['EXECUTING', 'VALIDATING', 'AUTHORIZED', 'BLOCKED', 'FAILED', 'CANCELLED'],
   MERGE_READY: ['MERGING', 'BLOCKED', 'FAILED', 'CANCELLED'],
   MERGING: ['MERGED', 'BLOCKED', 'FAILED', 'CANCELLED'],
   MERGED: ['SYNCING', 'BLOCKED', 'FAILED'],
@@ -275,7 +280,11 @@ function createQueue(dir) {
         fail('QUEUE_CAS_MISMATCH', 'expected ' + String(opts.expectedPreviousState) + ' but holds ' + cur.state);
       }
       if (QUEUE_TERMINAL.indexOf(cur.state) !== -1) fail('QUEUE_STATE_TERMINAL', cur.state);
-      if ((QUEUE_ALLOWED[cur.state] || []).indexOf(to) === -1) {
+      // A move to the same state is a metadata touch, not a lifecycle step —
+      // how a worker stamps ownership or refreshes a heartbeat without
+      // pretending to advance. It still goes through the CAS and still lands in
+      // the append-only log, so the history shows who held what and when.
+      if (to !== cur.state && (QUEUE_ALLOWED[cur.state] || []).indexOf(to) === -1) {
         fail('QUEUE_TRANSITION_FORBIDDEN', cur.state + ' -> ' + to);
       }
       // Resuming a blocked entry is an explicit act, exactly as it is for a
