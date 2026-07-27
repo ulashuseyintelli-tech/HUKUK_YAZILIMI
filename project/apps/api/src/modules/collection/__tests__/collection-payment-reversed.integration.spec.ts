@@ -278,7 +278,7 @@ describe('S2 PAYMENT_REVERSED integration', () => {
     const h = buildHarness();
 
     const receivedAction = await h.publishPaymentReceived();
-    await expect(h.actionHandler.dispatch(receivedAction.id)).resolves.toMatchObject({ success: true });
+    await expect(h.actionHandler.dispatch(receivedAction.id, { kind: 'platform' } as const)).resolves.toMatchObject({ success: true });
 
     expect(h.disposition()).toMatchObject({ status: 'HELD_PENDING_DISTRIBUTION', collectionId: 'col1' });
     await h.collectionService.cancel('t1', 'col1', { cancelReason: 'iptal' } as any, 'user-1');
@@ -287,7 +287,7 @@ describe('S2 PAYMENT_REVERSED integration', () => {
     expect(reversedAction.payload).toMatchObject({ tenantId: 't1', caseId: 'case1', collectionId: 'col1' });
     expect(h.pendingActions()).toHaveLength(1);
 
-    await expect(h.actionHandler.dispatch(reversedAction.id)).resolves.toMatchObject({ success: true });
+    await expect(h.actionHandler.dispatch(reversedAction.id, { kind: 'platform' } as const)).resolves.toMatchObject({ success: true });
 
     expect(h.disposition()).toMatchObject({ status: 'REVERSED', collectionId: 'col1' });
     expect(reversedAction.status).toBe('DONE');
@@ -298,12 +298,12 @@ describe('S2 PAYMENT_REVERSED integration', () => {
     const h = buildHarness();
 
     const receivedAction = await h.publishPaymentReceived();
-    await h.actionHandler.dispatch(receivedAction.id);
+    await h.actionHandler.dispatch(receivedAction.id, { kind: 'platform' } as const);
     Object.assign(h.disposition(), { status: 'POSTED' });
 
     await h.collectionService.cancel('t1', 'col1', { cancelReason: 'posted iptal' } as any, 'user-1');
     const reversedAction = h.findAction('EVENT_PUBLISHED:PAYMENT_REVERSED');
-    await expect(h.actionHandler.dispatch(reversedAction.id)).resolves.toMatchObject({ success: true });
+    await expect(h.actionHandler.dispatch(reversedAction.id, { kind: 'platform' } as const)).resolves.toMatchObject({ success: true });
 
     expect(h.disposition().status).toBe('POSTED');
     expect(h.disposition().manualReversalRequiredAt).toBeInstanceOf(Date);

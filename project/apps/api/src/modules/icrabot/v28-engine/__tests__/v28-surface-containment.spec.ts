@@ -307,6 +307,7 @@ describe('V28 production containment runtime HTTP behavior', () => {
       'TEST',
       {},
       'case-1',
+      { kind: 'tenant', tenantId: expect.any(String) },
     );
   });
 

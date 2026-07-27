@@ -46,8 +46,8 @@ export class OutboxCronService {
     try {
       const recovered = await this.outboxService.recoverStaleProcessingActions();
       const limit = getIcrabotOutboxBatchSize();
-      const pending = await this.actionHandlerService.processPendingActions(limit);
-      const retryable = await this.actionHandlerService.processRetryableActions(limit);
+      const pending = await this.actionHandlerService.processPendingActions({ kind: 'platform' }, limit);
+      const retryable = await this.actionHandlerService.processRetryableActions({ kind: 'platform' }, limit);
 
       if (recovered.recoveredCount > 0 || pending.length > 0 || retryable.length > 0) {
         this.logger.log(

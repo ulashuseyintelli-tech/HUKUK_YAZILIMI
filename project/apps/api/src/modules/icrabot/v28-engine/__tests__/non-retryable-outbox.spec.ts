@@ -90,7 +90,7 @@ describe('DEBTOR-OF01-HISTORY-P04-C-I02 — NonRetryableOutboxError shared infra
     );
     svc.register('unit_test_action', handler);
 
-    const result = await svc.dispatch('a1');
+    const result = await svc.dispatch('a1', { kind: 'platform' } as const);
 
     expect(handler).toHaveBeenCalledTimes(1);
     expect(outbox.markDeadLetter).toHaveBeenCalledTimes(1);
@@ -111,8 +111,8 @@ describe('DEBTOR-OF01-HISTORY-P04-C-I02 — NonRetryableOutboxError shared infra
     );
     svc.register('unit_test_action', handler);
 
-    const first = await svc.dispatch('a1');
-    const second = await svc.dispatch('a1');
+    const first = await svc.dispatch('a1', { kind: 'platform' } as const);
+    const second = await svc.dispatch('a1', { kind: 'platform' } as const);
 
     expect(handler).toHaveBeenCalledTimes(1); // ikinci dispatch handler'ı TEKRAR ÇAĞIRMADI
     expect(first.deadLettered).toBe(true);
@@ -126,7 +126,7 @@ describe('DEBTOR-OF01-HISTORY-P04-C-I02 — NonRetryableOutboxError shared infra
     const handler = jest.fn().mockRejectedValue(new Error('transient db hiccup'));
     svc.register('unit_test_action', handler);
 
-    const result = await svc.dispatch('a1');
+    const result = await svc.dispatch('a1', { kind: 'platform' } as const);
 
     expect(outbox.markFailed).toHaveBeenCalledTimes(1);
     expect(outbox.markDeadLetter).not.toHaveBeenCalled();
@@ -139,7 +139,7 @@ describe('DEBTOR-OF01-HISTORY-P04-C-I02 — NonRetryableOutboxError shared infra
     const handler = jest.fn().mockRejectedValue(new Error('still failing'));
     svc.register('unit_test_action', handler);
 
-    const result = await svc.dispatch('a1');
+    const result = await svc.dispatch('a1', { kind: 'platform' } as const);
 
     expect(outbox.markFailed).toHaveBeenCalledTimes(1); // markDeadLetter DEĞİL — mevcut markFailed yolu
     expect(outbox.markDeadLetter).not.toHaveBeenCalled();
@@ -159,7 +159,7 @@ describe('DEBTOR-OF01-HISTORY-P04-C-I02 — NonRetryableOutboxError shared infra
     );
     svc.register('unit_test_action', handler);
 
-    const result = await svc.dispatch('a1');
+    const result = await svc.dispatch('a1', { kind: 'platform' } as const);
 
     const markDeadLetterErrorArg = outbox.markDeadLetter.mock.calls[0][1];
     expect(JSON.stringify(markDeadLetterErrorArg)).not.toContain('hunter2secret');
@@ -190,7 +190,7 @@ describe('DEBTOR-OF01-HISTORY-P04-C-I02 — NonRetryableOutboxError shared infra
     const handler = jest.fn();
     svc.register('unit_test_action', handler);
 
-    const result = await svc.dispatch('a2');
+    const result = await svc.dispatch('a2', { kind: 'platform' } as const);
 
     expect(handler).not.toHaveBeenCalled(); // tenantId eksikliği handler'a ULAŞMADAN tespit edilir
     expect(outbox.markDeadLetter).toHaveBeenCalledWith('a2', { error: 'MISSING_TENANT_ID' });

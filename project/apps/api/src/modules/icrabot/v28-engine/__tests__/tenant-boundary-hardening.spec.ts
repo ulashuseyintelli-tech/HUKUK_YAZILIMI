@@ -51,7 +51,7 @@ describe('Phase 2 PR1 — tenant boundary hardening', () => {
         { id: 'a1', caseId: 'c1', tenantId: 'row-tenant', actionType: 'e2e', payload: {}, runId: null, attemptCount: 0 },
         null,
       );
-      await svc.dispatch('a1');
+      await svc.dispatch('a1', { kind: 'platform' } as const);
       expect(prisma.case.findUnique).not.toHaveBeenCalled(); // satırda tenant var → resolve çağrılmaz
       for (const call of timeline.addEntry.mock.calls) expect(call[0].tenantId).toBe('row-tenant');
     });

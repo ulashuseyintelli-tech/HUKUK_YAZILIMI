@@ -186,7 +186,7 @@ describeWithDisposableDb("ServiceOccurrenceRecordedConsumerService — disposabl
     const handlerService = buildRealActionHandler();
     new ServiceOccurrenceRecordedRegistrar(handlerService, consumerService).onModuleInit();
 
-    const result = await handlerService.dispatch(outboxRow.id);
+    const result = await handlerService.dispatch(outboxRow.id, { kind: 'platform' } as const);
 
     expect(result.success).toBe(true);
     const snapshot = await prisma.legalDeadlineSnapshot.findFirst({
@@ -271,7 +271,7 @@ describeWithDisposableDb("ServiceOccurrenceRecordedConsumerService — disposabl
     const handlerService = buildRealActionHandler();
     new ServiceOccurrenceRecordedRegistrar(handlerService, consumerService).onModuleInit();
 
-    const result = await handlerService.dispatch(outboxRow.id);
+    const result = await handlerService.dispatch(outboxRow.id, { kind: 'platform' } as const);
 
     expect(result.success).toBe(false);
     expect(result.deadLettered).toBe(true);
@@ -304,7 +304,7 @@ describeWithDisposableDb("ServiceOccurrenceRecordedConsumerService — disposabl
     const consumerService = buildRealConsumer();
     const handlerService = buildRealActionHandler();
     new ServiceOccurrenceRecordedRegistrar(handlerService, consumerService).onModuleInit();
-    const result = await handlerService.dispatch(outboxRow.id);
+    const result = await handlerService.dispatch(outboxRow.id, { kind: 'platform' } as const);
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
