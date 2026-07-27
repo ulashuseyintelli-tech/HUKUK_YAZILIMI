@@ -3,9 +3,14 @@
  * GOV-COORD-V2 runtime gate — composition root and adapter tests.
  *
  * Everything here runs against fakes. No real gh call, no real PR, no real
- * install, no worktree in the production root. The one property these tests
- * exist to protect is that the runner cannot merge and cannot leak a
- * credential, and that the adapters fail closed rather than guessing.
+ * install, no worktree in the production root.
+ *
+ * These tests used to say the runner "cannot merge". Since WP05 that is no
+ * longer true, and leaving the claim would have been the more dangerous kind of
+ * stale comment — one that reads as a guarantee. What they protect now is the
+ * narrower and still load-bearing property: the runner cannot merge WITHOUT a
+ * standing grant that authorizes it AND an explicit flag on the run, cannot leak
+ * a credential, and its adapters fail closed rather than guessing.
  */
 
 const test = require('node:test');
@@ -43,17 +48,61 @@ const SPEC = {
 
 // ------------------------------------------------------------- MERGE REFUSAL
 
-test('runner: performMerge is impossible, not merely unimplemented', async () => {
-  const ctx = runner.buildContext({
-    repoCwd: tmp('gov-rt-'),
-    spec: SPEC,
-    grant: { grantId: 'G' },
-    store: { current: () => null, transition: () => {} },
-    prProvider: {},
-    ciProvider: {},
-    prepareEnvironment: () => ({ ok: true }),
-  });
+function mergeCtx(over) {
+  return runner.buildContext(
+    Object.assign(
+      {
+        repoCwd: tmp('gov-rt-'),
+        spec: SPEC,
+        grant: { grantId: 'G' },
+        store: { current: () => null, transition: () => {} },
+        prProvider: {},
+        ciProvider: {},
+        prepareEnvironment: () => ({ ok: true }),
+      },
+      over || {},
+    ),
+  );
+}
+
+test('runner: merge is refused by default, and the default is no configuration at all', async () => {
+  const ctx = mergeCtx();
   await assert.rejects(() => ctx.performMerge({ result: {} }), (e) => e.code === 'MERGE_NOT_PERMITTED');
+});
+
+test('runner: neither half of the merge key works alone', async () => {
+  // A grant sitting on disk must not quietly make every later run a merging
+  // run, and a flag must not manufacture authority no owner wrote down.
+  const grantOnly = mergeCtx({ standingGrant: { standingGrantId: 'SG' } });
+  await assert.rejects(() => grantOnly.performMerge({ result: {} }), (e) => e.code === 'MERGE_NOT_PERMITTED');
+
+  const flagOnly = mergeCtx({ autoMerge: true });
+  await assert.rejects(() => flagOnly.performMerge({ result: {} }), (e) => e.code === 'MERGE_NOT_PERMITTED');
+});
+
+test('runner: with both halves the refusal moves into the provider, it does not vanish', async () => {
+  // The grant below authorizes auto-merge but pins SQUASH; handing it a run
+  // whose policy says otherwise must still fail, and fail with the provider's
+  // code rather than the runner's.
+  const ctx = mergeCtx({
+    autoMerge: true,
+    standingGrant: {
+      standingGrantId: 'SG',
+      maxConcurrency: 1,
+      ciPolicy: { requireTerminalSuccess: true, allowSkipped: false, allowNeutral: true },
+      mergePolicy: { method: 'MERGE', autoMergeAuthorized: true, repositoryWideAutoMerge: false },
+    },
+  });
+  await assert.rejects(() => ctx.performMerge({ result: {} }), (e) => e.code === 'MERGE_METHOD_NOT_GRANTED');
+});
+
+test('runner: the merge step and the CI gate read the same required-check set', () => {
+  // Two independently built providers could disagree about what is required,
+  // and the merge side disagreeing downward is the dangerous direction.
+  const seen = [];
+  const ci = { requiredSources: async () => { seen.push('ci'); return {}; }, observe: async () => [] };
+  const ctx = mergeCtx({ ciProvider: ci, autoMerge: true, standingGrant: { standingGrantId: 'SG' } });
+  assert.equal(ctx.ciProvider, ci, 'the injected provider is the one the context carries');
 });
 
 // ------------------------------------------------------- AUTHORITY WIRING
@@ -866,4 +915,225 @@ test('authority: a revoked grant cannot authorize a task', () => {
     () => authorityMod.validateAgainstGrant({ grant, spec, revoked: true, nowMs: Date.now() }),
     (e) => e.code === 'GRANT_REVOKED',
   );
+});
+
+// ------------------------------------------------- BOUNDED AUTO-MERGE (WP05)
+
+// Auto-merge replaced a refusal that was correct. These tests exist to make
+// sure what replaced it is a NARROWER refusal and not an open door: every gate
+// below is a way the merge must still fail.
+
+const mergeMod = require('./gh-merge-provider.cjs');
+
+const MG_GRANT = {
+  standingGrantId: 'STANDING-GRANT-TEST-R01',
+  maxConcurrency: 1,
+  ciPolicy: { requireTerminalSuccess: true, allowSkipped: false, allowNeutral: true },
+  mergePolicy: { method: 'SQUASH', autoMergeAuthorized: true, repositoryWideAutoMerge: false },
+  killSwitchPath: 'activation/KILL-SWITCH',
+};
+
+const MG_PR = {
+  state: 'OPEN',
+  mergeable: 'MERGEABLE',
+  mergeStateStatus: 'CLEAN',
+  reviewDecision: null,
+  headRefName: 'claude/task-01',
+  headRefOid: 'a'.repeat(40),
+  mergeCommit: null,
+  baseRefName: 'main',
+};
+
+const MG_RESULT = {
+  pr: { number: 4242 },
+  attestation: { observed: { headSha: 'a'.repeat(40) } },
+};
+
+/** A gh stub whose PR view can change between the pre-merge and post-merge read. */
+function mgGh(views, log) {
+  let i = 0;
+  return (args) => {
+    log.push(args.join(' '));
+    if (args[0] === 'pr' && args[1] === 'view') {
+      const v = views[Math.min(i++, views.length - 1)];
+      return JSON.stringify(v);
+    }
+    return '';
+  };
+}
+
+function mgCi(rollup, required) {
+  return {
+    async requiredSources() {
+      return { platformRequired: required || ['Web Tests (vitest)'], governanceRequired: [], taskSpecRequired: [] };
+    },
+    async observe() {
+      return rollup || [{ name: 'Web Tests (vitest)', status: 'COMPLETED', conclusion: 'SUCCESS' }];
+    },
+  };
+}
+
+function mgProvider(over) {
+  const log = [];
+  const o = over || {};
+  const views = o.views || [MG_PR, Object.assign({}, MG_PR, { state: 'MERGED', mergeCommit: { oid: 'f'.repeat(40) } })];
+  const p = mergeMod.createGhMergeProvider(
+    Object.assign(
+      {
+        repoCwd: process.cwd(),
+        standingGrant: o.grant === undefined ? MG_GRANT : o.grant,
+        ciProvider: o.ci || mgCi(),
+        expectedHeadBranch: 'claude/task-01',
+        ghRunner: mgGh(views, log),
+        gitRunner: () => '',
+      },
+      o.extra || {},
+    ),
+  );
+  return { provider: p, log };
+}
+
+async function mgRejects(over, code, msg) {
+  const { provider } = mgProvider(over);
+  await assert.rejects(
+    () => provider.performMerge({ result: (over && over.result) || MG_RESULT }),
+    (e) => e.code === code,
+    msg || ('expected ' + code),
+  );
+}
+
+test('auto-merge: every gate green produces a squash merge and its sha', async () => {
+  const { provider, log } = mgProvider();
+  const r = await provider.performMerge({ result: MG_RESULT });
+  assert.equal(r.mergeSha, 'f'.repeat(40));
+  assert.equal(r.method, 'SQUASH');
+  assert.equal(r.idempotent, false);
+  assert.ok(log.some((l) => l === 'pr merge 4242 --squash --delete-branch'), 'squash, and the branch is not left behind');
+});
+
+test('auto-merge: a grant that does not authorize it is a refusal, not a default', async () => {
+  await mgRejects({ grant: null }, 'MERGE_NOT_AUTHORIZED');
+  await mgRejects(
+    { grant: Object.assign({}, MG_GRANT, { mergePolicy: Object.assign({}, MG_GRANT.mergePolicy, { autoMergeAuthorized: false }) }) },
+    'MERGE_NOT_AUTHORIZED',
+  );
+});
+
+test('auto-merge: repository-wide auto-merge is refused even when the grant asks for it', async () => {
+  await mgRejects(
+    { grant: Object.assign({}, MG_GRANT, { mergePolicy: Object.assign({}, MG_GRANT.mergePolicy, { repositoryWideAutoMerge: true }) }) },
+    'REPOSITORY_WIDE_AUTO_MERGE_FORBIDDEN',
+  );
+});
+
+test('auto-merge: only the granted method, and only serial execution', async () => {
+  await mgRejects(
+    { grant: Object.assign({}, MG_GRANT, { mergePolicy: Object.assign({}, MG_GRANT.mergePolicy, { method: 'MERGE' }) }) },
+    'MERGE_METHOD_NOT_GRANTED',
+  );
+  await mgRejects({ grant: Object.assign({}, MG_GRANT, { maxConcurrency: 2 }) }, 'STANDING_GRANT_CONCURRENCY_INVALID');
+});
+
+test('auto-merge: revocation and the kill switch are read at merge time, not plan time', async () => {
+  // A grant pulled while CI ran must stop the merge it was pulled to stop.
+  await mgRejects({ extra: { isRevoked: () => true } }, 'STANDING_GRANT_REVOKED');
+  await mgRejects({ extra: { isKillSwitchEngaged: () => true } }, 'KILL_SWITCH_ENGAGED');
+});
+
+test('auto-merge: a PR from another branch is not this run to merge', async () => {
+  await mgRejects({ views: [Object.assign({}, MG_PR, { headRefName: 'someone-else/branch' })] }, 'MERGE_PR_NOT_OWNED');
+});
+
+test('auto-merge: a push after the attestation invalidates the merge', async () => {
+  // The merged content would not be the content that passed the gates.
+  await mgRejects({ views: [Object.assign({}, MG_PR, { headRefOid: 'b'.repeat(40) })] }, 'MERGE_HEAD_DRIFTED');
+});
+
+test('auto-merge: the mergeability gates are re-read, not carried from the attestation', async () => {
+  await mgRejects({ views: [Object.assign({}, MG_PR, { mergeStateStatus: 'BEHIND' })] }, 'MERGE_STATE_NOT_CLEAN');
+  await mgRejects({ views: [Object.assign({}, MG_PR, { mergeable: 'CONFLICTING' })] }, 'MERGE_NOT_MERGEABLE');
+  await mgRejects({ views: [Object.assign({}, MG_PR, { reviewDecision: 'CHANGES_REQUESTED' })] }, 'MERGE_BLOCKING_REVIEW');
+  await mgRejects({ views: [Object.assign({}, MG_PR, { state: 'CLOSED' })] }, 'MERGE_PR_NOT_OPEN');
+});
+
+test('auto-merge: a required check that never reported is a failure, not an absence', async () => {
+  await mgRejects({ ci: mgCi([], ['Web Tests (vitest)']) }, 'MERGE_REQUIRED_CHECK_MISSING');
+});
+
+test('auto-merge: a required check still running does not merge', async () => {
+  await mgRejects(
+    { ci: mgCi([{ name: 'Web Tests (vitest)', status: 'PENDING', conclusion: null }]) },
+    'MERGE_REQUIRED_CHECK_NOT_SUCCESS',
+  );
+});
+
+test('auto-merge: SKIPPED and NEUTRAL are policy decisions, not defaults', async () => {
+  const skipped = [{ name: 'Web Tests (vitest)', status: 'COMPLETED', conclusion: 'SKIPPED' }];
+  // The shipped policy does not admit SKIPPED: a skipped check says nothing
+  // about the change, so treating it as green has to be stated out loud.
+  await mgRejects({ ci: mgCi(skipped) }, 'MERGE_REQUIRED_CHECK_NOT_SUCCESS');
+
+  const permissive = Object.assign({}, MG_GRANT, {
+    ciPolicy: { requireTerminalSuccess: true, allowSkipped: true, allowNeutral: true },
+  });
+  const { provider } = mgProvider({ grant: permissive, ci: mgCi(skipped) });
+  const r = await provider.performMerge({ result: MG_RESULT });
+  assert.equal(r.mergeSha, 'f'.repeat(40), 'and when the grant does say it, it holds');
+});
+
+test('auto-merge: a grant that waives terminal CI success cannot merge at all', async () => {
+  await mgRejects(
+    { grant: Object.assign({}, MG_GRANT, { ciPolicy: { requireTerminalSuccess: false, allowSkipped: true, allowNeutral: true } }) },
+    'CI_TERMINAL_SUCCESS_NOT_REQUIRED',
+  );
+});
+
+test('auto-merge: an already-merged PR returns its sha instead of failing', async () => {
+  // The crash-between-merge-and-state-write case. Failing here would strand a
+  // completed merge in a permanent error.
+  const merged = Object.assign({}, MG_PR, { state: 'MERGED', mergeCommit: { oid: 'c'.repeat(40) } });
+  const { provider, log } = mgProvider({ views: [merged] });
+  const r = await provider.performMerge({ result: MG_RESULT });
+  assert.equal(r.mergeSha, 'c'.repeat(40));
+  assert.equal(r.idempotent, true);
+  assert.ok(!log.some((l) => l.indexOf('pr merge') === 0), 'and it does not merge a second time');
+});
+
+test('auto-merge: a merge that reports success but shows no commit is not reported as done', async () => {
+  const { provider } = mgProvider({ views: [MG_PR, Object.assign({}, MG_PR, { state: 'MERGED', mergeCommit: null })] });
+  await assert.rejects(
+    () => provider.performMerge({ result: MG_RESULT }),
+    (e) => e.code === 'MERGE_SHA_UNRESOLVED',
+  );
+});
+
+test('sync: a canonical checkout that is not on the target branch is reported, not forced', async () => {
+  const p = mergeMod.createGhMergeProvider({
+    repoCwd: process.cwd(),
+    standingGrant: MG_GRANT,
+    ciProvider: mgCi(),
+    ghRunner: () => '',
+    gitRunner: (args) => (args[0] === 'branch' ? 'claude/some-branch' : ''),
+  });
+  const r = await p.syncTarget('main');
+  assert.equal(r.synced, false);
+  assert.equal(r.reason, 'CANONICAL_NOT_ON_TARGET_BRANCH');
+});
+
+test('sync: a divergent local main is reported rather than resolved', async () => {
+  // Owner WIP is never reset, rebased or force-moved by this code.
+  const p = mergeMod.createGhMergeProvider({
+    repoCwd: process.cwd(),
+    standingGrant: MG_GRANT,
+    ciProvider: mgCi(),
+    ghRunner: () => '',
+    gitRunner: (args) => {
+      if (args[0] === 'branch') return 'main';
+      if (args[0] === 'merge') throw new Error('fatal: Not possible to fast-forward, aborting.');
+      return '';
+    },
+  });
+  const r = await p.syncTarget('main');
+  assert.equal(r.synced, false);
+  assert.equal(r.reason, 'FAST_FORWARD_NOT_POSSIBLE');
 });

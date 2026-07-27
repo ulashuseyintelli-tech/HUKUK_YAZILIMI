@@ -9,9 +9,11 @@
  *
  * What it does NOT do, deliberately:
  *
- *   - It never merges. performMerge throws by construction. Auto-merge is OFF
- *     in both V1 and V2 and merge is owner authority; an orchestrator that can
- *     merge is a different system from the one that was ratified.
+ *   - It does not merge by default. performMerge throws unless a standing grant
+ *     is supplied AND --auto-merge is passed. Absent both, merge remains owner
+ *     authority exercised by hand, which is what V1 and the V2 pilot ratified.
+ *     Supplying them is not a switch that turns the gates off: gh-merge-provider
+ *     re-reads every gate at merge time and refuses on any of a dozen grounds.
  *   - It never authors authority. The plan and the grant are read from disk and
  *     validated against each other; if the grant's owner-ratification fields are
  *     unfilled, authority.validateAgainstGrant fails closed and the run stops.
@@ -22,6 +24,7 @@
  *   node run-task.cjs --plan <plan.v1.json> --grant <grant.json> --prompt <file>
  *                     [--lane CODEX_LOCAL] [--target-branch main] [--dry-run]
  *                     [--worktree-root <dir>] [--resume-blocked]
+ *                     [--standing-grant <grant.json> --auto-merge]
  */
 
 const fs = require('fs');
@@ -32,6 +35,7 @@ const orchestrator = require('../orchestrator/orchestrator.cjs');
 const stateMod = require('../orchestrator/state.cjs');
 const { createGhPrProvider } = require('./gh-pr-provider.cjs');
 const { createGhCiProvider } = require('./gh-ci-provider.cjs');
+const { createGhMergeProvider } = require('./gh-merge-provider.cjs');
 const { prepareEnvironment } = require('./prepare-environment.cjs');
 const envPolicy = require('./env-policy.cjs');
 
@@ -160,6 +164,9 @@ function parseArgs(argv) {
     // A task that reached BLOCKED does not retry on its own; state.cjs allows
     // BLOCKED -> ELIGIBLE only "by owner action", and this flag IS that action.
     else if (a === '--resume-blocked') out.resumeFromBlocked = true;
+    // Both halves of the merge key. Neither works alone; see buildMergeStep.
+    else if (a === '--standing-grant') out.standingGrantPath = take();
+    else if (a === '--auto-merge') out.autoMerge = true;
     else throw new RunnerError('ARG_UNKNOWN', a);
   }
   if (!out.plan) throw new RunnerError('ARG_REQUIRED', '--plan');
@@ -182,6 +189,44 @@ function readJson(p, label) {
 }
 
 /**
+ * The merge step, or the refusal that stands in its place.
+ *
+ * Two keys, both required. A standing grant alone does not make a run a merging
+ * run — a grant is a durable file, and a file on disk quietly changing the
+ * behaviour of every later invocation is how a bounded authority becomes a
+ * general one. The flag alone does not either, because a flag cannot grant what
+ * no owner wrote down.
+ *
+ * When both are present the refusal does not disappear; it moves into
+ * gh-merge-provider, which re-reads the grant, the PR, the review state and the
+ * live required checks at merge time and refuses on any of a dozen grounds.
+ *
+ * @returns {function} the performMerge callback runTask will invoke
+ */
+function buildMergeStep(opts, repoCwd, ciProvider) {
+  const grant = opts.standingGrant || null;
+  if (!opts.autoMerge || !grant) {
+    return async () => {
+      throw new RunnerError(
+        'MERGE_NOT_PERMITTED',
+        !grant
+          ? 'no standing grant supplied; owner merges manually, then completeAfterOwnerMerge runs'
+          : '--auto-merge was not passed; a grant on disk does not by itself authorize this run to merge',
+      );
+    };
+  }
+  const provider = createGhMergeProvider({
+    repoCwd,
+    standingGrant: grant,
+    ciProvider,
+    expectedHeadBranch: opts.expectedHeadBranch || null,
+    isRevoked: opts.isRevoked,
+    isKillSwitchEngaged: opts.isKillSwitchEngaged,
+  });
+  return (a) => provider.performMerge(a);
+}
+
+/**
  * Build the ctx runTask expects. Exported so tests can assemble the same
  * context with fakes rather than re-deriving it and drifting from the real one.
  */
@@ -199,6 +244,19 @@ function buildContext(opts) {
   if (!Array.isArray(executorArgv) || executorArgv.length === 0) {
     throw new RunnerError('EXECUTOR_ARGV_UNKNOWN_LANE', lane);
   }
+
+  // Hoisted out of the object literal because the merge step reads the same
+  // required-check set the CI gate does. Two independently built providers could
+  // disagree about what is required, and the merge side disagreeing downward is
+  // the dangerous direction.
+  const ciProvider =
+    opts.ciProvider ||
+    createGhCiProvider({
+      repoCwd,
+      targetBranch: opts.targetBranch || 'main',
+      governanceRequired: GOVERNANCE_REQUIRED_CHECKS,
+      taskSpecRequired: opts.taskSpecRequired || [],
+    });
 
   return {
     repoCwd,
@@ -236,25 +294,18 @@ function buildContext(opts) {
       opts.prProvider ||
       createGhPrProvider({ repoCwd, targetBranch: opts.targetBranch || 'main' }),
 
-    ciProvider:
-      opts.ciProvider ||
-      createGhCiProvider({
-        repoCwd,
-        targetBranch: opts.targetBranch || 'main',
-        governanceRequired: GOVERNANCE_REQUIRED_CHECKS,
-        taskSpecRequired: opts.taskSpecRequired || [],
-      }),
+    ciProvider,
 
-    // Merge stays impossible from here. This is not a stub awaiting completion:
-    // it is the enforcement point for "AUTO-MERGE: OFF · MANUAL OWNER MERGE
-    // REQUIRED". completeAfterOwnerMerge() is the supported path, invoked
-    // separately once a human has merged.
-    performMerge: async () => {
-      throw new RunnerError(
-        'MERGE_NOT_PERMITTED',
-        'auto-merge is OFF under GOV-COORD-V1 and V2; owner merges manually, then completeAfterOwnerMerge runs',
-      );
-    },
+    // Merge is refused unless BOTH halves are present: a standing grant that
+    // authorizes it, and an explicit --auto-merge on this run. Either alone
+    // still throws.
+    //
+    // The two-key shape is the point. A grant sitting on disk must not make
+    // every subsequent run a merging run, and a flag must not manufacture
+    // authority the grant never gave. The default — no grant, no flag — is the
+    // V1/V2 behaviour unchanged: manual owner merge, then
+    // completeAfterOwnerMerge().
+    performMerge: opts.performMerge || buildMergeStep(opts, repoCwd, ciProvider),
 
     prompt: opts.prompt,
     // 'STDIN_PAYLOAD', not 'STDIN'. spawn.cjs accepts exactly two values and
@@ -276,6 +327,9 @@ async function main(argv) {
   const spec = readJson(path.resolve(args.plan), 'plan');
   const grant = readJson(path.resolve(args.grant), 'grant');
   const prompt = args.prompt ? fs.readFileSync(path.resolve(args.prompt), 'utf8') : '';
+  const standingGrant = args.standingGrantPath
+    ? readJson(path.resolve(args.standingGrantPath), 'standing grant')
+    : null;
 
   const ctx = buildContext({
     repoCwd,
@@ -286,6 +340,17 @@ async function main(argv) {
     targetBranch: args.targetBranch,
     worktreeRoot: args.worktreeRoot,
     resumeFromBlocked: args.resumeFromBlocked,
+    standingGrant,
+    autoMerge: args.autoMerge === true,
+    // Both markers are read from the working tree at the moment of the merge,
+    // not captured now. A kill switch that only takes effect on the next run is
+    // not a kill switch.
+    isRevoked: standingGrant && standingGrant.revocationPath
+      ? () => fs.existsSync(path.join(repoCwd, standingGrant.revocationPath))
+      : undefined,
+    isKillSwitchEngaged: standingGrant && standingGrant.killSwitchPath
+      ? () => fs.existsSync(path.join(repoCwd, standingGrant.killSwitchPath))
+      : undefined,
   });
 
   const withheld = envPolicy.withheldFromParent(ctx.parentEnv);
@@ -300,7 +365,10 @@ async function main(argv) {
       '  executor lane       : ' + ctx.holder,
       '  credentialAllowlist : ' + ctx.credentialAllowlist.join(', '),
       '  withheld (present)  : ' + (withheld.length ? withheld.join(', ') : '(none)'),
-      '  merge               : NOT PERMITTED from this runner',
+      '  merge               : ' +
+        (args.autoMerge && standingGrant
+          ? 'BOUNDED AUTO-MERGE under ' + standingGrant.standingGrantId
+          : 'NOT PERMITTED from this runner'),
       ...(ctx.resumeFromBlocked ? ['  resume              : OWNER-AUTHORIZED resume of a BLOCKED task'] : []),
       '',
     ].join('\n'),
