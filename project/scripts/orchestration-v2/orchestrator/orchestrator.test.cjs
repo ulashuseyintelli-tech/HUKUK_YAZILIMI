@@ -104,12 +104,31 @@ test('authority: expired or revoked grant, and manual-merge flag, all fail close
     (e) => e.code === 'GRANT_REVOKED',
   );
 
+  // Manual merge stays the default. Turning it off is allowed only by NAMING
+  // the authorization that says otherwise — an unattributed `false` is
+  // indistinguishable from a typo, and this is the field whose typo would be a
+  // merge nobody authorized.
   const c = specAndGrant();
   c.grant.manualMergeRequired = false;
   assert.throws(
     () => authority.validateAgainstGrant({ grant: c.grant, spec: c.spec }),
-    (e) => e.code === 'GRANT_MANUAL_MERGE_REQUIRED',
+    (e) => e.code === 'GRANT_AUTO_MERGE_UNATTRIBUTED',
   );
+
+  const d = specAndGrant();
+  d.grant.manualMergeRequired = 'no';
+  assert.throws(
+    () => authority.validateAgainstGrant({ grant: d.grant, spec: d.spec }),
+    (e) => e.code === 'GRANT_MANUAL_MERGE_REQUIRED',
+    'anything that is not a boolean is malformed, not permissive',
+  );
+
+  // Attributed, and therefore admissible here. Being admissible here is not
+  // being allowed to merge: gh-merge-provider re-reads every gate at merge time.
+  const e2 = specAndGrant();
+  e2.grant.manualMergeRequired = false;
+  e2.grant.autoMergeAuthorizedBy = 'OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02';
+  assert.ok(authority.validateAgainstGrant({ grant: e2.grant, spec: e2.spec }));
 });
 
 test('authority: BOUNDED_CODE_TASK needs roots and tests; empty allowlist permits nothing', () => {

@@ -239,7 +239,25 @@ function validateAgainstGrant(opts) {
 
   if (!grant || typeof grant !== 'object') fail('GRANT_INVALID', 'missing');
   if (grant.schemaVersion !== 1) fail('GRANT_SCHEMA_VERSION', String(grant.schemaVersion));
-  if (grant.manualMergeRequired !== true) fail('GRANT_MANUAL_MERGE_REQUIRED', 'must be true');
+  // Manual merge is the default and stays the default.
+  //
+  // A grant may set it false ONLY by naming the parent authorization that says
+  // otherwise. That keeps the exception evidenced rather than merely available:
+  // an unnamed `false` is indistinguishable from a typo, and this is the field
+  // whose typo would be a merge nobody authorized.
+  //
+  // Naming an envelope is not the same as being allowed to merge — it gets the
+  // task past THIS check. gh-merge-provider then re-reads the standing grant,
+  // the PR, the review state and the live required checks at merge time and
+  // refuses on any of a dozen grounds.
+  if (grant.manualMergeRequired !== true) {
+    if (grant.manualMergeRequired !== false) {
+      fail('GRANT_MANUAL_MERGE_REQUIRED', 'must be true, or false with autoMergeAuthorizedBy');
+    }
+    if (typeof grant.autoMergeAuthorizedBy !== 'string' || !grant.autoMergeAuthorizedBy) {
+      fail('GRANT_AUTO_MERGE_UNATTRIBUTED', 'manualMergeRequired:false needs autoMergeAuthorizedBy');
+    }
+  }
   if (!grant.semanticAuthorityRef || !grant.executionGrantRef) {
     fail('AUTHORITY_REF_MISSING', 'both semanticAuthorityRef and executionGrantRef are required');
   }

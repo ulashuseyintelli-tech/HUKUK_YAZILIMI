@@ -325,6 +325,8 @@ function createService(cfg) {
           repoCwd,
           buildContext: o.buildContext || require('../runtime/run-task.cjs').buildContext,
           runTask: o.runTask || require('../orchestrator/orchestrator.cjs').runTask,
+          completeAfterOwnerMerge:
+            o.completeAfterOwnerMerge || require('../orchestrator/orchestrator.cjs').completeAfterOwnerMerge,
           prompt: o.prompt,
           audit,
           clock,
