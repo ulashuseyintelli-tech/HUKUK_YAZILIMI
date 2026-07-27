@@ -232,6 +232,11 @@ function createQueue(dir) {
         dependsOn: Array.isArray(req.dependsOn) ? req.dependsOn.slice() : [],
         attempts: 0,
         executorLane: req.executorLane || null,
+        // Where this entry's authority lives. The consumer re-reads the grant,
+        // plan and manifest through this path at dispatch — an entry that
+        // cannot find its own authority again cannot be re-validated, and
+        // re-validation is the whole point of the second gate.
+        requestPath: req.requestPath || null,
         worktreePath: null,
         branch: null,
         prNumber: null,

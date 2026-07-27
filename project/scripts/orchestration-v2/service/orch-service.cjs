@@ -8,6 +8,9 @@
  * `stop` is the one that must never fail — so it is the one command here that
  * needs neither the queue to be readable nor any task to be running.
  *
+ *   orch-service enqueue --request   admit work into the queue
+ *   orch-service run-once            take exactly one task and run it
+ *   orch-service run-until-idle      drain the queue, serially
  *   orch-service status              what is happening, and why it is not
  *   orch-service stop  --reason ...  admit nothing, merge nothing. Now.
  *   orch-service start --reason ...  release the stop
@@ -90,6 +93,24 @@ function renderStatus(st) {
   return lines.join('\n');
 }
 
+/**
+ * Two commands are genuinely asynchronous (they run an executor). Rather than
+ * making every command async — and every caller await a status read — the
+ * promise is drained here and its exit code set on the process.
+ */
+function runAsync(promise) {
+  promise.then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (e) => {
+      process.stderr.write((e && e.code ? e.code + ': ' : '') + (e && e.message) + '\n');
+      process.exitCode = 1;
+    },
+  );
+  return 0;
+}
+
 function main(argv) {
   const args = parseArgs(argv);
   const root = repoRoot(args.flags.repo);
@@ -98,6 +119,62 @@ function main(argv) {
   const reason = typeof args.flags.reason === 'string' ? args.flags.reason : null;
 
   switch (args.command) {
+    case 'enqueue': {
+      if (typeof args.flags.request !== 'string') {
+        process.stderr.write('enqueue requires --request <file>\n');
+        return 2;
+      }
+      const r = service.enqueue({ requestPath: args.flags.request, operation: args.flags.operation || null });
+      if (!r.admitted) {
+        // Nothing was written to the queue. That is the point: a refused
+        // request leaves no entry for anyone to wonder about later.
+        process.stderr.write('REFUSED  ' + r.refusal + (r.detail ? '\n  ' + r.detail : '') + '\n');
+        return 3;
+      }
+      process.stdout.write(
+        [
+          r.entry.deduplicated ? 'ALREADY QUEUED (same idempotency key)' : 'ADMITTED',
+          '  entry   : ' + r.entry.entryId,
+          '  program : ' + r.entry.programId,
+          '  task    : ' + r.entry.taskId,
+          '  state   : ' + r.entry.state,
+          '',
+        ].join('\n'),
+      );
+      return 0;
+    }
+
+    case 'run-once': {
+      return runAsync(
+        service.runOnce().then((r) => {
+          const lines = ['acted   : ' + r.acted];
+          if (r.reason) lines.push('  reason  : ' + r.reason);
+          if (r.entryId) lines.push('  entry   : ' + r.entryId);
+          if (r.outcome && r.outcome.queueState) lines.push('  state   : ' + r.outcome.queueState);
+          if (r.outcome && r.outcome.pr) lines.push('  PR      : #' + r.outcome.pr.number);
+          process.stdout.write(lines.join('\n') + '\n');
+          // IDLE is a legitimate outcome (nothing to do), not a failure.
+          return r.acted === 'RAN' || r.acted === 'IDLE' ? 0 : 1;
+        }),
+      );
+    }
+
+    case 'run-until-idle': {
+      return runAsync(
+        service.runUntilIdle({ maxTasks: args.flags.max ? Number(args.flags.max) : undefined }).then((r) => {
+          const lines = ['stopped : ' + r.stopped, '  ran     : ' + r.ran.length + ' task(s)'];
+          for (const one of r.ran) {
+            lines.push(
+              '    ' + pad(one.entryId || '-', 14) + pad(one.acted, 10) +
+              (one.outcome && one.outcome.queueState ? one.outcome.queueState : one.reason || ''),
+            );
+          }
+          process.stdout.write(lines.join('\n') + '\n');
+          return 0;
+        }),
+      );
+    }
+
     case 'status':
       process.stdout.write(renderStatus(service.status()) + '\n');
       return 0;

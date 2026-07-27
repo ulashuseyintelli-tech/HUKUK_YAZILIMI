@@ -18,7 +18,8 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "orch:run": "node scripts/orchestration-v2/runtime/run-task.cjs",
     "orch:verify-executors": "node scripts/orchestration-v2/executors/verify-executors.cjs",
-    "orch:service": "node scripts/orchestration-v2/service/orch-service.cjs"
+    "orch:service": "node scripts/orchestration-v2/service/orch-service.cjs",
+    "orch:enqueue": "node scripts/orchestration-v2/service/orch-service.cjs enqueue"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

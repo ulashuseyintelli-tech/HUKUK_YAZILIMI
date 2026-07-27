@@ -205,8 +205,8 @@ test('AC-13  admitting the same work twice yields one entry', () => {
 test('AC-14  a refused admission writes nothing', () => {
   const q = tmpQueue();
   assert.throws(
-    () => admission.admit(Object.assign(admitOpts(OFFICE(), { taskClass: 'DECISION_LOG_APPEND' }), { queue: q })),
-    (e) => e.code === 'TASK_CLASS_NOT_GRANTED',
+    () => admission.admit(Object.assign(admitOpts(OFFICE(), { taskClass: 'NOT_A_REAL_CLASS' }), { queue: q })),
+    (e) => e.code === 'TASK_CLASS_UNKNOWN',
   );
   assert.equal(q.list().length, 0);
 });

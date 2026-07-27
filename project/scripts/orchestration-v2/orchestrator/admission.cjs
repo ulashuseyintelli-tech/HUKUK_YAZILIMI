@@ -27,6 +27,7 @@
 
 const authorityMod = require('./authority.cjs');
 const eligibilityMod = require('./eligibility.cjs');
+const governanceMod = require('./governance-profile.cjs');
 
 class AdmissionError extends Error {
   constructor(code, detail) {
@@ -65,7 +66,11 @@ function evaluate(opts) {
   if (!grant || typeof grant !== 'object') {
     return { admissible: false, refusal: 'STANDING_GRANT_MISSING', detail: null, program: null };
   }
-  const programId = (grant.program && grant.program.programId) || null;
+  // A governance grant is a PROFILE, not a program: it deliberately carries no
+  // program of its own, and the program a governance task serves comes from the
+  // request. Demanding one from the grant made every governance task
+  // unadmittable — the profile was reachable in theory and refused in practice.
+  const programId = (grant.program && grant.program.programId) || o.programId || null;
   if (!programId) {
     return { admissible: false, refusal: 'STANDING_GRANT_PROGRAM_MISSING', detail: null, program: null };
   }
@@ -88,6 +93,34 @@ function evaluate(opts) {
   // A manifest that has not been derived cannot be trusted to answer this.
   if (!o.manifest.eligibilityDerivedFrom || !o.manifest.eligibilityDerivedFrom.authorizationId) {
     return { admissible: false, refusal: 'MANIFEST_NOT_DERIVED', detail: null, program: programId };
+  }
+
+  // A governance task is judged by the governance profile, not by the code
+  // path. Reaching this with a governance class and a code grant would admit a
+  // governance write with no profile check at all — the profile existed for
+  // exactly this and had no caller.
+  if (governanceMod.isGovernanceTaskClass(o.taskClass)) {
+    if (grant.profile !== 'MECHANICAL_GOVERNANCE') {
+      return { admissible: false, refusal: 'GOVERNANCE_PROFILE_MISMATCH', detail: String(grant.profile), program: programId };
+    }
+    try {
+      governanceMod.validateGovernanceTask({
+        standingGrant: grant,
+        spec: o.spec,
+        operation: o.operation,
+        targetPaths: o.targetPaths || (o.spec && o.spec.boundaryPolicy && o.spec.boundaryPolicy.allowedRoots),
+      });
+    } catch (e) {
+      return { admissible: false, refusal: e.code || 'GOVERNANCE_REFUSED', detail: e.detail || null, program: programId };
+    }
+    // A governance grant carries no allowedPathRoots — its surface IS the queue
+    // exception — so the code-shaped validator below would refuse it wrongly.
+    return { admissible: true, refusal: null, detail: null, program: programId };
+  }
+
+  // Conversely, a governance grant must not be used to run code.
+  if (grant.profile === 'MECHANICAL_GOVERNANCE') {
+    return { admissible: false, refusal: 'GOVERNANCE_GRANT_CANNOT_RUN_CODE', detail: String(o.taskClass), program: programId };
   }
 
   try {
@@ -128,6 +161,11 @@ function admit(opts) {
     standingGrantId: grant.standingGrantId,
     priority: opts.priority === undefined ? 100 : opts.priority,
     dependsOn: opts.dependsOn || [],
+    // The entry has to be able to find its own authority again at dispatch.
+    // Without this the consumer would have nothing to re-read, and re-reading
+    // is the whole point of the second gate.
+    requestPath: opts.requestPath || null,
+    executorLane: opts.executorLane || null,
     nowMs: opts.nowMs,
   });
 }

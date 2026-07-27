@@ -252,10 +252,11 @@ test('service: the audit log is append-only across service instances', () => {
 
 // ─────────────────────────────────────────────── DISPATCH GUARD (WP08)
 
-test('service: a service with no dispatch guard refuses to dispatch at all', async () => {
-  // Admission proved the task could ENTER the queue. Without a guard nothing
-  // re-checks that at the moment it leaves, and the queue is durable — so the
-  // safe default is to refuse rather than to run on a stale verdict.
+test('service: a service that cannot re-read its authority does not dispatch', async () => {
+  // Admission proved the task could ENTER the queue. Something must re-check
+  // that at the moment it leaves, and the queue is durable enough for the gap
+  // to be long. A service pointed at a tree with no governance files cannot do
+  // that re-read — so it refuses, rather than running on a stale verdict.
   const root = tmpdir();
   const queue = Q.createQueue(path.join(root, 'queue'));
   const service = S.createService({ repoCwd: root, queue });
@@ -265,10 +266,26 @@ test('service: a service with no dispatch guard refuses to dispatch at all', asy
   const r = await service.step(async () => {
     ran = true;
   });
-  assert.equal(r.acted, 'IDLE');
-  assert.equal(r.reason, S.DISPATCH_GUARD_ABSENT);
-  assert.equal(ran, false);
+  assert.equal(ran, false, 'the executor never started');
+  assert.equal(r.acted, 'BLOCKED');
+  assert.equal(r.reason, 'DISPATCH_AUTHORITY_UNREADABLE');
   assert.ok(service.auditTrail().some((t) => t.event === 'DISPATCH_REFUSED'), 'and it says so in the audit log');
+});
+
+test('service: a service with no repository at all cannot dispatch either', async () => {
+  // The narrow remaining case for DISPATCH_GUARD_ABSENT: no repoCwd, so not
+  // even a default guard can be built. Still a refusal, never a free pass.
+  const root = tmpdir();
+  const queue = Q.createQueue(path.join(root, 'queue'));
+  const service = S.createService({ queue, killSwitchPath: path.join(root, 'KS'), pausePath: path.join(root, 'P') });
+  queue.enqueue(REQ);
+
+  let ran = false;
+  const r = await service.step(async () => {
+    ran = true;
+  });
+  assert.equal(ran, false);
+  assert.equal(r.reason, S.DISPATCH_GUARD_ABSENT);
 });
 
 test('service: a grant revoked while the task sat in the queue stops it at dispatch', async () => {
@@ -306,9 +323,10 @@ test('service: a guard that passes lets the task through unchanged', async () =>
     dispatchGuard: { resolveGrant: () => ({}), resolveSpec: () => ({}), resolveManifest: () => ({}) },
   });
   queue.enqueue(REQ);
-  // The stub grant carries no programId, so the gate refuses on that rather
-  // than silently passing — which is the honest verdict for an empty grant.
+  // The stub grant names no program, so the program comes from the entry — and
+  // an empty manifest then has nothing to say about it. Refusing there is the
+  // honest verdict; silently passing would be the dangerous one.
   const r = await service.step(async () => ({ disposition: 'CLOSED' }));
   assert.equal(r.acted, 'BLOCKED');
-  assert.equal(r.reason, 'STANDING_GRANT_PROGRAM_MISSING');
+  assert.equal(r.reason, 'PROGRAM_NOT_IN_MANIFEST');
 });

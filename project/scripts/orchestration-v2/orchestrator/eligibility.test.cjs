@@ -314,7 +314,14 @@ test('admission: a grant refusal surfaces the grant\'s own code, not a generic o
   const g = admGrant('STANDING-GRANT-OFFICE-LIVE-R01.json');
   const outside = admSpec(g, { boundaryPolicy: { allowedRoots: ['project/apps/api/src/modules/debtor/'], maxChangedFiles: 1 } });
   assert.equal(A.evaluate(admOpts(g, { spec: outside })).refusal, 'BOUNDARY_EXCEEDS_STANDING_GRANT');
-  assert.equal(A.evaluate(admOpts(g, { taskClass: 'DECISION_LOG_APPEND' })).refusal, 'TASK_CLASS_NOT_GRANTED');
+  // A class the grant does not list. DECISION_LOG_APPEND is no longer usable
+  // here: it is a GOVERNANCE class, and admission now routes those to the
+  // governance validator, which is a different refusal for a different reason.
+  const narrowed = Object.assign({}, g, { allowedTaskClasses: ['TEST_ONLY_CHARACTERIZATION'] });
+  assert.equal(
+    A.evaluate(admOpts(narrowed, { standingGrant: narrowed, taskClass: 'BOUNDED_CODE_FIX' })).refusal,
+    'TASK_CLASS_NOT_GRANTED',
+  );
   assert.equal(A.evaluate(admOpts(g, { revoked: true })).refusal, 'STANDING_GRANT_REVOKED');
 });
 
@@ -323,8 +330,8 @@ test('admission: a refused task leaves nothing in the queue to clean up', () => 
   // would then have to reason about.
   const g = admGrant('STANDING-GRANT-OFFICE-LIVE-R01.json');
   const q = admQueue();
-  const bad = Object.assign(admOpts(g, { taskClass: 'DECISION_LOG_APPEND' }), { queue: q });
-  assert.throws(() => A.admit(bad), (e) => e.code === 'TASK_CLASS_NOT_GRANTED');
+  const bad = Object.assign(admOpts(g, { taskClass: 'NOT_A_REAL_CLASS' }), { queue: q });
+  assert.throws(() => A.admit(bad), (e) => e.code === 'TASK_CLASS_UNKNOWN');
   assert.equal(q.list().length, 0);
 });
 
