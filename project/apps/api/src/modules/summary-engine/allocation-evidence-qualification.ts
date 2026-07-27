@@ -182,6 +182,17 @@ export const COLLECTED_AMOUNT_REFERENCE_MANIFEST_V1: ReadonlyArray<{
     | 'READ'
     | 'WRITE'
     | 'READ_WRITE'
+    // DORMANT_WRITE: kodda collectedAmount'a yazan bir ifade VARDIR, ancak bilesen
+    // bugun production'da erisilemez durumdadir. Uc kosulun UCU birden saglanmalidir:
+    //   (a) production call-site yok,
+    //   (b) `enabled` varsayilani false,
+    //   (c) enabled degilken fail-closed.
+    // Bu ayrim gercek bir yetki sorusudur: dormant bir bileseni WRITE listesine
+    // koymak "su an yazabilenler" cevabini yanlislar; READ/NEGATIVE_REFERENCE yapmak
+    // ise ileride etkinlestirildiginde guard'in sessiz kalmasina yol acar.
+    // allocation-evidence-inventory.static-guard.spec.ts uc kosulu da statik olarak
+    // dogrular; biri bozulursa guard kirilir ve yetki incelemesi zorunlu olur.
+    | 'DORMANT_WRITE'
     | 'NEGATIVE_REFERENCE'
     | 'NON_CLAIM_ITEM';
   rationale: string;
@@ -291,8 +302,13 @@ export const COLLECTED_AMOUNT_REFERENCE_MANIFEST_V1: ReadonlyArray<{
   {
     path: 'src/modules/claim-item/formation-finalizer/transactional-claim-item-formation-finalizer.service.ts',
     classification: 'RECONCILED_CACHE',
-    access: 'WRITE',
-    rationale: 'New ClaimItem zero-value cache initializer.',
+    access: 'DORMANT_WRITE',
+    rationale:
+      'New ClaimItem zero-value cache initializer — DORMANT. Production call-site '
+      + 'yok (hicbir modul kaydetmiyor, inject etmiyor, cagirmiyor); `enabled` '
+      + 'varsayilani false; enabled degilken fail-closed (FINALIZER_DISABLED). '
+      + 'Bu ucu de guard tarafindan statik olarak dogrulanir; biri bozulursa guard '
+      + 'kirilir ve access degeri owner karariyla WRITE\'a tasinmalidir.',
   },
   {
     path: 'src/modules/summary-engine/allocation-drift-baseline.ts',
