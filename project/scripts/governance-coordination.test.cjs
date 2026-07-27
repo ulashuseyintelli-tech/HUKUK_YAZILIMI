@@ -1555,6 +1555,69 @@ test('GH-02 recovery requires exact base branch and three-file scope', () => {
   );
 });
 
+test('GH-08 separation requires exact base, head ref, and the declared modified path set', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01;
+  const changes = binding.changedPaths.map((repoPath) => ({ status: 'M', path: repoPath }));
+  const result = coordination.classifyPrChangeSet(changes, {
+    base: binding.baseSha,
+    headRef: binding.headRef,
+  });
+  assert.equal(result.mode, binding.mode);
+  assert.equal(result.taskId, binding.taskId);
+});
+
+test('GH-08 separation rejects the wrong base', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01;
+  const changes = binding.changedPaths.map((repoPath) => ({ status: 'M', path: repoPath }));
+  expectCode(
+    () => coordination.classifyPrChangeSet(changes, { base: '0'.repeat(40), headRef: binding.headRef }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-08 separation rejects the wrong head ref', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01;
+  const changes = binding.changedPaths.map((repoPath) => ({ status: 'M', path: repoPath }));
+  expectCode(
+    () => coordination.classifyPrChangeSet(changes, { base: binding.baseSha, headRef: 'codex/gh08-gate-jest-separation-r02' }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-08 separation rejects a missing path', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01;
+  const changes = binding.changedPaths.slice(1).map((repoPath) => ({ status: 'M', path: repoPath }));
+  expectCode(
+    () => coordination.classifyPrChangeSet(changes, { base: binding.baseSha, headRef: binding.headRef }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-08 separation rejects an added path (hasExactModifiedPathSet is M-only)', () => {
+  const binding = coordination.GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01;
+  const changes = binding.changedPaths.map((repoPath, index) => ({
+    status: index === 0 ? 'A' : 'M',
+    path: repoPath,
+  }));
+  expectCode(
+    () => coordination.classifyPrChangeSet(changes, { base: binding.baseSha, headRef: binding.headRef }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('GH-08 separation pins ci.yml by blob sha and leaves earlier records untouched', () => {
+  const gh08 = coordination.GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01;
+  const gh03 = coordination.GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01;
+  const cutover = coordination.GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01;
+  assert.equal(gh08.targetPath, '.github/workflows/ci.yml');
+  assert.match(gh08.expectedTargetBlobSha, /^[0-9a-f]{40}$/);
+  assert.equal(Object.prototype.hasOwnProperty.call(gh08, 'canonicalMergeSha'), false);
+  // A new binding never rewrites an older one.
+  assert.equal(gh03.expectedTargetBlobSha, '2d75a88c5ef9bc466c609029985ffa700982cbe1');
+  assert.notEqual(gh08.expectedTargetBlobSha, gh03.expectedTargetBlobSha);
+  assert.notEqual(gh08.expectedTargetBlobSha, cutover.expectedTargetBlobSha);
+});
+
 test('GH-05/GH-06 cutover requires exact base, head ref, and five modified paths', () => {
   const binding = coordination.GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01;
   const changes = binding.changedPaths.map((repoPath) => ({ status: 'M', path: repoPath }));

@@ -179,3 +179,42 @@ src/modules/uyap/official/__tests__/official-role-translator.spec.ts
 # DATABASE_URL yoksa describe.skip ile kendini atliyor, yani pure manifest'te
 # her zaman skip olurdu. Yeri db/core-lifecycle.txt (TEST_DATABASE_URL orada set).
 # GH-04: ayni spec iki manifest'te listeliydi -> cift calisma kaldirildi.
+
+# ── GH-08: gate/jest ayrimi ────────────────────────────────────────────────
+# Bu spec'ler daha once ci.yml icinde, kendi grep-gate step'lerinin sonundaki
+# AYRI bir jest cagrisiyla kosuyordu. Gate mantigi (grep FORBIDDEN kontrolleri +
+# denetlenen KAYNAK dosyalarin test -f guard'lari) step'te AYNEN KALDI; yalnizca
+# jest cagrisi kaldirilip spec listesi buraya tasindi. Kazanc: step basina ~13.6s
+# Jest bootstrap. Spec kumesi degismedi.
+#
+# Birlestirilen step'lerin orijinal gerekceleri:
+#
+#   UYAP-P05A-R1 operation/attempt schema static contract
+#       (ci.yml icinde ayri gerekce yorumu yoktu)
+#
+#   UYAP-P05B operation writer unit and dormancy guard
+#     UYAP-OPERATION-ATTEMPT-WRITER-P05B (F4-b/P-E5B): dormant internal writer foundation.
+#     STEP 1 unit + DORMANCY/BOUNDARY guard: UyapModule writer'i KAYDETMEZ, UyapService import ETMEZ,
+#     writer UyapRequestLog'a dokunmaz, state mutation (internalState/provider/legal-effect) YAPMAZ,
+#     controller/DTO/schema dosyasi yoktur; branded idempotency key client string'inden uretilemez.
+#     Dosya-varligi guard'ina EK olarak grep tabanli dormancy kontrolu: kayit/injection eklenirse RED.
+#     STEP 2 disposable PostgreSQL 16'da esszamanli advisory-lock serilestirmesi, gap-free attempt
+#     lineage'i ve optimistic compare-and-bump'i dogrular; skipped/zero-test RED.
+#
+#   UYAP-P05C-P03 link writer unit and dormancy guard
+#     UYAP-CPE-DECISION-LINK-WRITER-P05C-P03 (Karar C): DORMANT UyapAttemptCpeDecisionLink writer.
+#     Actor/lawyer/signer input ALMAZ; M5 composite FK + @@unique([cpeDecisionLogId]) authoritative;
+#     schema/migration EKLEMEZ. Duplicate semantics: exact replay=IDEMPOTENT, farkli iliski=CONFLICT,
+#     FK uyusmazligi=INTEGRITY error (fail-closed). STEP 1 unit + dormancy/boundary guard: module
+#     kaydi, actor input, controller/DTO gorulurse RED. STEP 2 disposable PostgreSQL 16'da idempotent
+#     replay, conflict reddi, esszamanli race, cross-tenant/case/attempt reddi, rollback dogrulanir.
+#
+#   UYAP-P05C-P04 evidence activation unit
+#       (ci.yml icinde ayri gerekce yorumu yoktu)
+#
+src/modules/uyap/__tests__/uyap-operation-attempt-schema.static.spec.ts
+src/modules/uyap/__tests__/uyap-operation-evidence-activation.spec.ts
+src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.service.spec.ts
+src/modules/uyap/operation-writer/uyap-operation-evidence.orchestrator.spec.ts
+src/modules/uyap/operation-writer/uyap-operation-idempotency-key.factory.spec.ts
+src/modules/uyap/operation-writer/uyap-operation-writer.service.spec.ts

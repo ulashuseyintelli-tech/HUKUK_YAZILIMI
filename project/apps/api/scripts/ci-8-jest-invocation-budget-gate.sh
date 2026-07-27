@@ -15,7 +15,7 @@ set -euo pipefail
 # saymak, launcher değiştirerek bütçeyi atlamayı mümkün kılardı — guard'ın
 # kendisi false-green üretemez.
 
-BUDGET=32
+BUDGET=18
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 WORKFLOW="${REPO_ROOT}/.github/workflows/ci.yml"

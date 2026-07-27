@@ -274,6 +274,27 @@ const GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01 = Object.freeze({
 const GITHUB_PLATFORM_GH05_GH06_CUTOVER_PATHS = new Set(
   GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01.changedPaths,
 );
+const GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01 = Object.freeze({
+  taskId: 'GITHUB-PLATFORM-BASELINE-GH08-GATE-JEST-SEPARATION-R01',
+  mode: 'GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01',
+  baseSha: '562c34d1abc955d3d70fb0b6f7e6e8851c62d0bb',
+  headRef: 'codex/gh08-gate-jest-separation-r01',
+  targetPath: '.github/workflows/ci.yml',
+  // Content pin is a BLOB sha, never a commit sha (see the GH-03 record).
+  expectedTargetBlobSha: 'b4543870e99d732a1b13c27cd657a189bc0f91b0',
+  changedPaths: Object.freeze([
+    '.github/workflows/ci.yml',
+    'project/apps/api/ci-manifests/pure/platform-scripts-shared.txt',
+    'project/apps/api/ci-manifests/pure/uyap-icrabot-tebligat.txt',
+    'project/apps/api/scripts/ci-8-jest-invocation-budget-gate.sh',
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    'project/scripts/governance-coordination.cjs',
+    'project/scripts/governance-coordination.test.cjs',
+  ]),
+});
+const GITHUB_PLATFORM_GH08_SEPARATION_PATHS = new Set(
+  GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01.changedPaths,
+);
 const REGISTER_REPO_PATH =
   'project/docs/governance/governance-writer-coordination-register.md';
 const REQUEST_ONLY_BRANCH_PATTERN =
@@ -1311,6 +1332,17 @@ function classifyPrChangeSet(changes, context = {}) {
     };
   }
 
+  if (
+    context.base === GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01.baseSha &&
+    context.headRef === GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01.headRef &&
+    hasExactModifiedPathSet(changes, GITHUB_PLATFORM_GH08_SEPARATION_PATHS)
+  ) {
+    return {
+      mode: GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01.mode,
+      taskId: GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01.taskId,
+    };
+  }
+
   const gh02Binding = GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
   if (
     context.base === gh02Binding.bindingPr.baseSha &&
@@ -1855,6 +1887,41 @@ function validateGithubPlatformGh02RecoveryScope(options) {
   return { mode: recovery.mode, taskId: recovery.taskId };
 }
 
+function validateGithubPlatformGh08SeparationScope(options) {
+  const { base, head, headRef, changes, cwd = REPO_ROOT } = options;
+  const binding = GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01;
+  if (
+    base !== binding.baseSha ||
+    headRef !== binding.headRef ||
+    !hasExactModifiedPathSet(changes, GITHUB_PLATFORM_GH08_SEPARATION_PATHS)
+  ) {
+    reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'GH-08 gate/jest separation binding mismatch');
+  }
+  const contract = gitShow(
+    head,
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    cwd,
+  );
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.mode,
+    binding.baseSha,
+    binding.headRef,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject('GH08_SEPARATION_CONTRACT_INVALID', `contract is missing exact GH-08 binding ${expectedLiteral}`);
+    }
+  }
+  const headBlob = gitBlobSha(head, binding.targetPath, 'GH08_WORKFLOW_CONTENT_DRIFT', cwd);
+  if (headBlob !== binding.expectedTargetBlobSha) {
+    reject(
+      'GH08_WORKFLOW_CONTENT_DRIFT',
+      `${binding.targetPath} differs from bound blob ${binding.expectedTargetBlobSha}`,
+    );
+  }
+  return { mode: binding.mode, taskId: binding.taskId };
+}
+
 function validateGithubPlatformGh0506CutoverScope(options) {
   const { base, head, headRef, changes, cwd = REPO_ROOT } = options;
   const binding = GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01;
@@ -2044,6 +2111,16 @@ function validatePrScope(options) {
 
   if (classification.mode === GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01.mode) {
     return validateGithubPlatformGh0506CutoverScope({
+      base,
+      head,
+      headRef,
+      changes,
+      cwd,
+    });
+  }
+
+  if (classification.mode === GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01.mode) {
+    return validateGithubPlatformGh08SeparationScope({
       base,
       head,
       headRef,
@@ -2385,6 +2462,7 @@ module.exports = {
   GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02,
   GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01,
   GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01,
+  GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01,
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
@@ -2417,6 +2495,7 @@ module.exports = {
   validateGithubPlatformGh02WorkflowScope,
   validateGithubPlatformGh03BindingScope,
   validateGithubPlatformGh0506CutoverScope,
+  validateGithubPlatformGh08SeparationScope,
   validatePrScope,
   validateRequestAgainstGit,
   assertRequestBaseAncestor,
