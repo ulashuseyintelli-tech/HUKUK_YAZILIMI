@@ -25,6 +25,10 @@
  *                     [--lane CODEX_LOCAL] [--target-branch main] [--dry-run]
  *                     [--worktree-root <dir>] [--resume-blocked]
  *                     [--standing-grant <grant.json> --auto-merge]
+ *
+ * NOT the production entry point. Running a task for real goes through:
+ *   pnpm orch:service enqueue --request <request.json>
+ *   pnpm orch:service run-until-idle
  */
 
 const fs = require('fs');
@@ -167,6 +171,9 @@ function parseArgs(argv) {
     // Both halves of the merge key. Neither works alone; see buildMergeStep.
     else if (a === '--standing-grant') out.standingGrantPath = take();
     else if (a === '--auto-merge') out.autoMerge = true;
+    // Development only. The canonical path is enqueue + run-until-idle; see
+    // the refusal in main() for why the direct path is not the default.
+    else if (a === '--dev-direct') out.devDirect = true;
     else throw new RunnerError('ARG_UNKNOWN', a);
   }
   if (!out.plan) throw new RunnerError('ARG_REQUIRED', '--plan');
@@ -324,6 +331,37 @@ function buildContext(opts) {
 async function main(argv) {
   const args = parseArgs(argv);
   const repoCwd = args.repoCwd || process.cwd();
+
+  // The direct executor path stops here unless it is explicitly opted into.
+  //
+  // This used to run. That made `orch:run` a second production path that
+  // reached an executor without passing admission, without entering the queue
+  // and without dispatch-time revalidation — every gate the service layer adds,
+  // bypassable by typing a different command. Two paths to the same executor
+  // means the weaker one is the real policy.
+  //
+  // The canonical path is enqueue + run. `--dev-direct` keeps the old behaviour
+  // available for development and debugging, loudly and by name, so nobody
+  // reaches it by accident or by habit.
+  if (!args.devDirect) {
+    process.stderr.write(
+      [
+        'ORCH_RUN_DIRECT_PATH_NOT_PERMITTED',
+        '',
+        'Bu yol admission, kuyruk ve dispatch revalidation adimlarini atlar.',
+        'Canonical yol:',
+        '',
+        '  pnpm orch:service enqueue --request <request.json>',
+        '  pnpm orch:service run-until-idle',
+        '',
+        'Sadece gelistirme/hata ayiklama icin dogrudan calistirmak gerekiyorsa',
+        '--dev-direct bayragini acikca ekleyin; bu production yolu DEGILDIR.',
+        '',
+      ].join('\n'),
+    );
+    return 2;
+  }
+
   const spec = readJson(path.resolve(args.plan), 'plan');
   const grant = readJson(path.resolve(args.grant), 'grant');
   const prompt = args.prompt ? fs.readFileSync(path.resolve(args.prompt), 'utf8') : '';
@@ -417,6 +455,9 @@ async function main(argv) {
     return 0;
   }
 
+  process.stderr.write(
+    'UYARI: --dev-direct — admission/queue/dispatch atlaniyor. Production yolu degildir.\n',
+  );
   const result = await orchestrator.runTask(ctx);
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   return result.disposition === 'BLOCKED' ? 1 : 0;

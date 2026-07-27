@@ -88,6 +88,29 @@ const ENVELOPE_PROHIBITED_SURFACES = [
   '.github/',
 ];
 
+/**
+ * Task classes that are governance writes rather than code changes.
+ *
+ * Named here rather than in admission so there is one answer to "is this a
+ * governance task?". Two lists would drift, and the drift would show up as a
+ * governance task admitted through the code path with no profile check at all.
+ */
+const GOVERNANCE_TASK_CLASSES = [
+  'CANONICAL_STATUS_UPDATE',
+  'DECISION_LOG_APPEND',
+  'CLOSURE_EVIDENCE',
+  'GENERATED_MANIFEST_REFRESH',
+  'PROGRAM_POINTER_UPDATE',
+  'DOCUMENTATION_SYNCHRONIZATION',
+  'OPERATOR_RUNBOOK_UPDATE',
+  'AUDIT_RECORD_MATERIALIZATION',
+];
+
+/** Is this task class a governance write? */
+function isGovernanceTaskClass(cls) {
+  return GOVERNANCE_TASK_CLASSES.indexOf(String(cls)) !== -1;
+}
+
 class GovernanceProfileError extends Error {
   constructor(code, detail) {
     super(code + (detail ? ': ' + detail : ''));
@@ -196,6 +219,8 @@ function validateGovernanceTask(opts) {
 }
 
 module.exports = {
+  GOVERNANCE_TASK_CLASSES,
+  isGovernanceTaskClass,
   LEVEL2_OPERATIONS,
   QUEUE_EXCEPTION_PATTERNS,
   DENIED_CAPABILITIES,

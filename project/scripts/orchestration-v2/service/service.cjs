@@ -30,6 +30,9 @@ const path = require('path');
 const queueMod = require('../orchestrator/queue.cjs');
 const recoveryMod = require('../orchestrator/recovery.cjs');
 const dispatchMod = require('../orchestrator/dispatch.cjs');
+const admissionMod = require('../orchestrator/admission.cjs');
+const requestMod = require('./request.cjs');
+const adapterMod = require('./executor-adapter.cjs');
 
 /**
  * Control files, relative to the repository root.
@@ -81,7 +84,24 @@ function createService(cfg) {
   const killSwitchPath = cfg.killSwitchPath || path.join(repoCwd, KILL_SWITCH);
   const pausePath = cfg.pausePath || path.join(repoCwd, PAUSE_MARKER);
   const exists = cfg.exists || ((p) => fs.existsSync(p));
-  const dispatchGuard = cfg.dispatchGuard || null;
+  // A repo-backed guard by default. Every entry carries the path to its own
+  // request, so the grant, plan and manifest can all be re-read per entry at
+  // the moment it is dispatched — which is what the guard is for. A service
+  // configured with an explicit guard (tests, or a caller with its own
+  // resolution) keeps that one.
+  const dispatchGuard =
+    cfg.dispatchGuard ||
+    (cfg.repoCwd && cfg.allowUnguardedDispatch !== true
+      ? {
+          resolveGrant: (e) => requestMod.load({ repoCwd: cfg.repoCwd, requestPath: e.requestPath }).standingGrant,
+          resolveSpec: (e) => requestMod.load({ repoCwd: cfg.repoCwd, requestPath: e.requestPath }).spec,
+          resolveManifest: () => JSON.parse(
+            fs.readFileSync(path.join(cfg.repoCwd, 'project/docs/governance/coordination-v2/programs.manifest.json'), 'utf8'),
+          ),
+          resolveSpecHash: (spec) => require('../orchestrator/authority.cjs').digest(spec),
+          isRevoked: cfg.isRevoked,
+        }
+      : null);
   const allowUnguarded = cfg.allowUnguardedDispatch === true;
 
   /**
@@ -235,6 +255,113 @@ function createService(cfg) {
     resume(reason) {
       if (exists(pausePath)) fs.unlinkSync(pausePath);
       return audit('RESUMED', { reason: reason || null });
+    },
+
+    /**
+     * Admit a request into the queue — the producer.
+     *
+     * Everything is judged BEFORE anything is written. A refused request leaves
+     * no queue entry and only a rejection audit record, so "nothing ran" and
+     * "something ran and failed" stay distinguishable in the log.
+     *
+     * @returns {{admitted: boolean, entry, refusal, detail}}
+     */
+    enqueue(opts) {
+      if (service.killSwitchEngaged()) {
+        audit('ENQUEUE_REFUSED', { requestPath: opts.requestPath, refusal: 'KILL_SWITCH_ENGAGED' });
+        return { admitted: false, entry: null, refusal: 'KILL_SWITCH_ENGAGED', detail: killSwitchPath };
+      }
+
+      let resolved;
+      try {
+        resolved = requestMod.load({ repoCwd, requestPath: opts.requestPath });
+      } catch (e) {
+        audit('ENQUEUE_REFUSED', { requestPath: opts.requestPath, refusal: e.code || 'REQUEST_INVALID', detail: e.detail || null });
+        return { admitted: false, entry: null, refusal: e.code || 'REQUEST_INVALID', detail: e.detail || String(e.message) };
+      }
+
+      const req = resolved.request;
+      try {
+        const entry = admissionMod.admit({
+          queue,
+          manifest: resolved.manifest,
+          standingGrant: resolved.standingGrant,
+          spec: resolved.spec,
+          programId: req.programId,
+          taskClass: req.taskClass,
+          executorLane: req.executorLane,
+          taskSpecSha256: resolved.taskSpecSha256,
+          priority: req.priority,
+          dependsOn: req.dependsOn,
+          requestPath: opts.requestPath,
+          operation: opts.operation || req.operation || null,
+          revoked: opts.isRevoked ? opts.isRevoked(resolved.standingGrant) === true : false,
+          killSwitchEngaged: false,
+          nowMs: clock(),
+        });
+        audit(entry.deduplicated ? 'ENQUEUE_DEDUPLICATED' : 'ENQUEUE_ADMITTED', {
+          entryId: entry.entryId, taskId: entry.taskId, programId: entry.programId, requestPath: opts.requestPath,
+        });
+        return { admitted: true, entry, refusal: null, detail: null };
+      } catch (e) {
+        audit('ENQUEUE_REFUSED', { requestPath: opts.requestPath, taskId: req.taskId, refusal: e.code || 'ADMISSION_REFUSED', detail: e.detail || null });
+        return { admitted: false, entry: null, refusal: e.code || 'ADMISSION_REFUSED', detail: e.detail || null };
+      }
+    },
+
+    /**
+     * Take exactly one task from the queue and run it — the consumer.
+     *
+     * `step()` is the general form and takes any runner; runOnce binds it to
+     * the REAL executor adapter, which is what makes this the production path
+     * rather than another thing tests can drive.
+     */
+    async runOnce(opts) {
+      const o = opts || {};
+      return service.step((entry) =>
+        adapterMod.runEntry({
+          queue,
+          entry,
+          repoCwd,
+          buildContext: o.buildContext || require('../runtime/run-task.cjs').buildContext,
+          runTask: o.runTask || require('../orchestrator/orchestrator.cjs').runTask,
+          prompt: o.prompt,
+          audit,
+          clock,
+          isKillSwitchEngaged: () => service.killSwitchEngaged(),
+          isRevoked: o.isRevoked,
+        }),
+      );
+    },
+
+    /**
+     * Drain the queue, one task at a time, until nothing is left to do.
+     *
+     * Serial by construction — it awaits each task before looking again — and
+     * it re-reads the kill switch and the pause marker on EVERY iteration, so
+     * an operator stopping the service mid-drain is obeyed at the next task
+     * rather than after the batch.
+     *
+     * Bounded by maxTasks so a queue that keeps re-blocking cannot spin
+     * forever, and it stops the moment admission reports anything other than a
+     * task to run — no polling, no busy loop.
+     */
+    async runUntilIdle(opts) {
+      const o = opts || {};
+      const max = Number.isFinite(o.maxTasks) ? o.maxTasks : 50;
+      const ran = [];
+      for (let i = 0; i < max; i++) {
+        if (service.killSwitchEngaged()) return { stopped: 'KILL_SWITCH_ENGAGED', ran };
+        if (service.paused()) return { stopped: 'PAUSED', ran };
+        const adm = service.admission();
+        if (!adm.admits) return { stopped: adm.reason, ran };
+        const r = await service.runOnce(o);
+        ran.push(r);
+        // A step that neither ran nor blocked would loop forever on the same
+        // head; treat it as a stop rather than spin.
+        if (r.acted === 'IDLE' || r.acted === 'HALTED') return { stopped: r.reason, ran };
+      }
+      return { stopped: 'MAX_TASKS_REACHED', ran };
     },
 
     /**

@@ -47,6 +47,7 @@ class DispatchError extends Error {
  * @param {function} opts.resolveSpec        (entry) => the child plan
  * @param {boolean} [opts.killSwitchEngaged]
  * @param {function} [opts.isRevoked]        (grant) => boolean, re-read now
+ * @param {function} [opts.resolveSpecHash]  (spec) => digest, re-computed now
  * @returns {{dispatchable: boolean, refusal: string|null, detail: string|null}}
  */
 function revalidate(opts) {
@@ -82,10 +83,26 @@ function revalidate(opts) {
     };
   }
 
+  // The plan must still be the plan that was admitted. An edit between enqueue
+  // and dispatch changes what runs without changing what was authorized — and
+  // this lives here, with the other dispatch-time re-reads, so there is exactly
+  // one place that answers "is this still the work we said yes to?".
+  if (entry.taskSpecHash || entry.taskSpecSha256) {
+    const pinned = entry.taskSpecSha256 || entry.taskSpecHash;
+    const now = o.resolveSpecHash ? o.resolveSpecHash(spec) : null;
+    if (now && now !== pinned) {
+      return { dispatchable: false, refusal: 'DISPATCH_PLAN_HASH_CHANGED', detail: pinned.slice(0, 12) + ' -> ' + now.slice(0, 12) };
+    }
+  }
+
   const verdict = admissionMod.evaluate({
     manifest,
     standingGrant: grant,
     spec,
+    // Carried from the entry so a governance task — whose grant names no
+    // program — resolves to the same program at dispatch as it did at
+    // admission, rather than becoming unresolvable on the second pass.
+    programId: entry.programId,
     taskClass: entry.taskClass,
     executorLane: entry.executorLane,
     revoked: o.isRevoked ? o.isRevoked(grant) === true : false,
