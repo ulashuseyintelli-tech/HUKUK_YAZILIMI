@@ -173,3 +173,24 @@ FEATURES ENABLED BY THIS PROGRAM                : 0
 RUNTIME BINDINGS REPAIRED BY THIS PROGRAM       : 0
 DEPLOYMENTS COMPLETED BY THIS PROGRAM           : 0
 ```
+
+---
+
+## UYGULAMA KAYDI (2026-07-27) — dört aktivasyon kararı ratifiye edildi ve uygulandı
+
+`PROGRAM-WIDE-SPRING-CLEANING-OWNER-RESIDUALS-FULL-EXECUTION-R01` ile owner dört kararı da
+peşinen vermiştir. Bu register artık **açık karar paketi değildir**.
+
+| Item | Ratifiye karar | Uygulama sonucu |
+| --- | --- | --- |
+| ITEM-A01 | **OPTION B — INTENTIONALLY DORMANT** | **RESOLVED** — PR #1678 / `cf9b3371`. Canonical kayıt yazıldı (8 endpoint, 2'si DLQ mutasyonu; guard'lar register, controller bağlı değil; gelecek activation için 7 şart). **Controller BAĞLANMADI, production kodu değişmedi.** |
+| ITEM-A02 | **OPTION A — GO-DOCS CANONICAL CLOSURE** | **RESOLVED** — PR #1678. `CODE DEFAULT: FALSE` / `LOCAL OWNER RUNTIME: ENABLED` / `E2E: OWNER-VERIFIED` / `DEPLOYMENT CLASS: LOCAL SINGLE-PC NON-PRODUCTION` / `PRODUCTION CLAIM: NONE`. Repository kanıtı ile owner tanıklığı ayrı sınıflarda tutuldu. **Secret yazılmadı, flag değeri değişmedi.** |
+| ITEM-A03 | **OPTION B — UNKNOWN KALSIN** | **RESOLVED** — PR #1678. `.env`/production config/secret store **okunmadı**. 18 tanımlayıcının tanım yeri, kod default'u, tüketicisi ve spec sayısı tamamlandı. **Önceki sayım düzeltildi:** "17 KAPALI / 1 AÇIK" → **14 KAPALI + 2 AÇIK + 2 test-only switch**. |
+| ITEM-A04 | **OPTION A — REMOVE** | **RESOLVED** — PR #1680 / `bd65a9c4`. Beş şart + üç ek güvenlik kontrolü fresh main'de doğrulandı; `snapshot-cleanup.service.ts` + spec + barrel export satırı kaldırıldı (**444 satır**, 0 ekleme). CI 9/9 PASS. |
+
+```text
+FEATURES ENABLED         : 0
+RUNTIME BINDINGS         : 0
+DEPLOYMENTS              : 0
+SECRETS READ/WRITTEN     : 0
+```

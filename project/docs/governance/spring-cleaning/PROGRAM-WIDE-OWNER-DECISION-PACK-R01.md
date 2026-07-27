@@ -210,3 +210,24 @@ ver05 orphan izleme satırı        → RECOVER_ON_FRESH_MAIN ile bu PR'da kapat
 2 merged migration görünürlüğü    → mekanik reconciliation ile bu PR'da kapatıldı
 8 ghost reference adayı           → 0 gerçek ghost; düzeltilecek hedef yok
 ```
+
+---
+
+## UYGULAMA KAYDI (2026-07-27) — beş kalemin tamamı owner tarafından ratifiye edildi ve uygulandı
+
+`PROGRAM-WIDE-SPRING-CLEANING-OWNER-RESIDUALS-FULL-EXECUTION-R01` ile owner beş kararı da
+peşinen vermiştir. Bu pack artık **açık karar paketi değildir**; aşağıdaki tablo uygulanma
+sonucunu taşır. Tam kanıt: `PROGRAM-WIDE-OWNER-RESIDUALS-CLOSURE-R01.md`.
+
+| Item | Ratifiye karar | Uygulama sonucu |
+| --- | --- | --- |
+| ITEM-01 | `PRESERVE_AND_AUDIT_FOR_RECOVERY` | **AUDIT COMPLETE.** 72 dosya sınıflandırıldı: 3 `ALREADY_CANONICAL`, **21 `STILL_VALID_RECOVERABLE`** (526 satır gerçek semantik değişiklik, whitespace değil), 34 `CONFLICTING`, 17 `NOT_IN_MAIN`. **RECOVERY BLOCKED — SEMANTIC AUTHORITY ABSENT** (ADR-014 PR-11..14 `NOT AUTHORIZED`). Branch/worktree korundu, merge edilmedi. |
+| ITEM-02 | `RECONCILE, DO NOT RATIFY` | **RESOLVED** — PR #1675 / `89f2649a`. Dört eksen ayrıştırıldı; ID drift crosswalk ile çözüldü; migration live-apply **ölçüldü** (local dev DB: NOT APPLIED). Retroaktif yetki üretilmedi. |
+| ITEM-03 | `PRESERVE + INVENTORY + RECOVER ONLY WHEN EXACT` | **INVENTORIED / PRESERVED.** 5 WIP: 2 `ACTIVE_OWNER_WIP`, 1 `SUPERSEDED_WIP`, 1 `UNKNOWN_OWNER_WIP`, 1 `RUNTIME_LOCAL_STATE`. **RECOVERED: 0** — hiçbirinde exact semantic authority yok. Hiçbir dosyaya dokunulmadı. |
+| ITEM-04 | `REMEDIATE SAFELY` | **RESOLVED.** 6 junction non-recursive primitive ile ayrıldı, canonical `.bin=12/30/27` **hiç değişmedi**, 2 worktree fiziksel olarak silindi, 2 branch temizlendi. **MR-058 CLOSED.** |
+| ITEM-05 | `SAFE_DISPOSITION_AND_DELETE_WHERE_PROVEN` | **KISMİ.** 147 dizin envanterlendi; register-kanıtlı 36 dizin silindi; 111 korundu (6 kayıtlı worktree, 9 canonical-junction, ~96 kanıtsız). **Yeni bulgu:** junction tehlikesi 2 değil **9 dizinde**. |
+
+```text
+YENİ OWNER KARARI GEREKTİREN: 1 → AGENTS.md §8 metin tansiyonu
+                                  (bkz. PROGRAM-WIDE-FILESYSTEM-SAFE-CLEANUP-REGISTER-R01 §0)
+```
