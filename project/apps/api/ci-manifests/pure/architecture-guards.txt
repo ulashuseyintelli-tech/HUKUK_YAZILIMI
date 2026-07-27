@@ -52,3 +52,9 @@ src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-ris
 src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-runtime-smoke-checklist.spec.ts
 src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-s1-live-sequence.spec.ts
 src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-s2-live-sequence.spec.ts
+
+# GH-04 / RCV-ALLOCATION-EVIDENCE-DORMANT-WRITE-I01: collectedAmount yazma yetki
+# manifestinin guard'i. DORMANT_WRITE kayitlarinin gercekten dormant kaldigini
+# (production call-site yok / enabled varsayilani false / fail-closed) statik olarak
+# dogrular. CI'a bagli degildi; bir bilesen sessizce etkinlestirilse uyari cikmazdi.
+src/modules/summary-engine/__tests__/allocation-evidence-inventory.static-guard.spec.ts

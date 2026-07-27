@@ -44,6 +44,78 @@ describe('WS04-P02 allocation evidence inventory guards', () => {
     ]);
   });
 
+  /**
+   * DORMANT_WRITE, "kodda yazma ifadesi var ama bilesen production'da erisilemez"
+   * durumunu isaretler. Bu iddia bir yorum olarak kalirsa degersizdir: birisi
+   * bileseni module kaydedip `enabled: true` verdiginde yetki manifesti hicbir
+   * uyari uretmez. Asagidaki guard iddiayi MEKANIK bir degismeze cevirir.
+   *
+   * Kayitlar manifestten TURETILIR ve sinif adlari dosyadan okunur; ileride
+   * eklenecek dormant kayitlar da otomatik olarak bu dogrulamaya girer.
+   */
+  it('DORMANT_WRITE kayitlari gercekten dormant kalir (call-site yok / default kapali / fail-closed)', () => {
+    const dormant = COLLECTED_AMOUNT_REFERENCE_MANIFEST_V1.filter(
+      (entry) => (entry.access as string) === 'DORMANT_WRITE',
+    );
+
+    // Vacuous pass koruması: sinif kullanimdan kalkarsa bu test bilincli olarak
+    // guncellenmelidir, sessizce yesil kalmamalidir.
+    expect(dormant.length).toBeGreaterThan(0);
+
+    const productionFiles = sourceFiles(path.join(apiRoot, 'src')).map((file) => ({
+      rel: normalizeRelative(file),
+      text: fs.readFileSync(file, 'utf8'),
+    }));
+
+    const violations: string[] = [];
+
+    for (const entry of dormant) {
+      const source = read(entry.path);
+
+      // Sinif adlari kaydin KENDI dosyasindan turetilir (sabit isim gomulmez).
+      const exportedClasses = [...source.matchAll(/export class (\w+)/g)].map((m) => m[1]);
+      if (exportedClasses.length === 0) {
+        violations.push(`${entry.path}: export edilen sinif bulunamadi; dormancy dogrulanamaz`);
+        continue;
+      }
+
+      // (a) production call-site YOK
+      for (const file of productionFiles) {
+        if (file.rel === entry.path) continue; // kendi tanim dosyasi
+        for (const cls of exportedClasses) {
+          if (new RegExp(`\\b${cls}\\b`).test(file.text)) {
+            violations.push(
+              `${entry.path}: '${cls}' artik ${file.rel} icinde referanslaniyor (production call-site)`,
+            );
+          }
+        }
+      }
+
+      // (b) varsayilan kapali
+      if (!/enabled\s*=\s*[^;]*\?\?\s*false/.test(source)) {
+        violations.push(`${entry.path}: 'enabled' varsayilani '?? false' degil`);
+      }
+
+      // (c) fail-closed
+      if (!/if\s*\(\s*!\s*this\.enabled\s*\)/.test(source)) {
+        violations.push(`${entry.path}: enabled degilken fail-closed guard bulunamadi`);
+      }
+    }
+
+    // Ihlal varsa: bilesen artik dormant degildir. Dogru cozum bu guard'i
+    // gevsetmek DEGIL, access degerini owner karariyla 'WRITE' yapmak ve yolu
+    // yukaridaki WRITE/READ_WRITE assertion listesine eklemektir.
+    expect(
+      violations.length === 0
+        ? []
+        : violations.concat(
+            "DORMANT_WRITE kaydi artik dormant degil. Bileşen etkinlestiriliyorsa "
+              + "access 'WRITE' olmali ve yolu WRITE/READ_WRITE assertion listesine "
+              + 'owner karariyla eklenmelidir. Bu guard gevsetilmemelidir.',
+          ),
+    ).toEqual([]);
+  });
+
   it('canonical module graph TBK100 allocator sağlar; legacy activation yüzeyi tek ve explicit kalır', () => {
     const summaryModule = read('src/modules/summary-engine/summary-engine.module.ts');
     const interestModule = read('src/modules/interest-engine/interest-engine.module.ts');
