@@ -134,21 +134,26 @@ bash scripts/run-ci-manifest.sh pure/platform-scripts-shared
 pnpm exec node -e "const fs=require('fs');const s=fs.readFileSync('src/modules/reporting-line/__tests__/reporting-line.service.spec.ts','utf8').replace(/\s+/g,'');for(const m of ['listActive','listEligible']){if(s.indexOf(m+'(')<0){console.error(m+' not referenced in spec');process.exit(1);}}"
 ```
 
-**İkinci komut hakkında.** Bu script bu makinede `CI-MANIFEST …: 70 spec`
-yazdırır ve **sıfır** spec koşarak `127` ile ölür: son satırı `exec npx jest`
-yapıyor, çıplak `bash` burada WSL'e çözülüyor ve WSL içinde `npx` yok. Bu bir
-stop condition **değildir** ve senin işinle ilgili bir sinyal taşımaz.
+**İkinci komut hakkında — bu bir kapı DEĞİL, yerel kolaylıktır.** Bu script bu
+makinede manifest sayısını yazdırır ve **sıfır** spec koşarak `127` ile ölür:
+son satırı `exec npx jest` yapıyor, çıplak `bash` burada WSL'e çözülüyor ve WSL
+içinde `npx` yok. Bu bir stop condition **değildir** ve senin işinle ilgili bir
+sinyal taşımaz.
 
-Orchestrator aynı 70 spec'lik **kümeyi** doğrudan `pnpm exec jest` ile koşar.
-Gerçek kapı odur; sen de o kümeyi görmek istersen jest'i kendin çağırabilirsin.
+Gerçek kapı, orchestrator'ın `requiredTests[3]`'ünde **dondurulmuş 70 spec'lik
+küme**yi doğrudan `pnpm exec jest` ile koşmasıdır. 69'u senin düzenleyemediğin
+dosyalardır — bağımsız koruyucu olması için böyle kuruldu; bir yeri kırarsan
+orada çıkar.
+
+O 70'lik küme planın `baseSha`'sında donduruldu. Canlı manifest o tarihten
+sonra büyümüş olabilir (ölçüm: 70 → 100); fark, senin dokunamadığın dosyalardan
+ibarettir ve CI'da ayrıca koşulur. Yani script'in yazdırdığı sayı ile
+orchestrator'ın koştuğu sayı **farklı olabilir**; şaşırma.
 
 Üçüncü komut orchestrator'ın `requiredTests[4]` argv'siyle **karakter karakter
 aynıdır** — `pnpm exec` ile başlar (çıplak `node` bu makinenin kalıcı PATH'inde
 bulunmuyor) ve kasten hiçbir string literali içinde backslash yoktur. Senin
 gördüğün yeşil ile orchestrator'ın gördüğü yeşil aynı olmak zorunda.
-
-İkinci komut **70 spec** koşar; 69'u senin düzenleyemediğin dosyalardır —
-bağımsız koruyucu olması için böyle kuruldu. Bir yeri kırarsan orada çıkar.
 
 Üçüncü komut bugün **başarısız** (`listActive not referenced in spec`). Senin
 işin onu yeşile çevirmek. Bu komut yalnız iki metodun **adının spec'te geçtiğini**

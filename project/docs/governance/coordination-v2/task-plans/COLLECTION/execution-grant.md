@@ -1,5 +1,14 @@
 # GOV-COORD-V2-RCV-COL-W2.2D-1A-R01 — Task-Scoped Execution Grant
 
+> **SUPERSEDED — ÇALIŞTIRILAMAZ.** Bu kayıt `taskSpecSha256 4a84fe4c…` hash'ini
+> pinler; o hash `T5-PLAN-BASE-POLICY-REFRESH-R01` ile
+> `SUPERSEDED_BY_BASE_REFRESH` işaretlenmiştir ve hiçbir grant'ta
+> kullanılamaz. Yerine geçen: `T5-COLLECTION-EXECUTION-GRANT-R02`.
+> Bkz. `../SUPERSEDED-PLAN-HASHES.md`.
+>
+> Belge tarihsel kanıt olarak korunur; silinmemiştir. Aşağıdaki `EXECUTION_GRANT`
+> marker'ı da tarihseldir — yeni grant kendi marker'ını taşır.
+
 <!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=GOV-COORD-V2-RCV-COL-W2.2D-1A-R01 -->
 
 ```text

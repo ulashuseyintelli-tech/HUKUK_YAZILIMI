@@ -56,6 +56,106 @@ test('runner: performMerge is impossible, not merely unimplemented', async () =>
   await assert.rejects(() => ctx.performMerge({ result: {} }), (e) => e.code === 'MERGE_NOT_PERMITTED');
 });
 
+// ------------------------------------------------------- AUTHORITY WIRING
+
+// authority.cjs has carried verifyAuthorityRefs and verifyRatificationEvidence
+// since #1644/#1645, and until now neither was reachable from orch:run — the
+// live path called only validateAgainstGrant, which reads the grant's shape and
+// never opens the files it names. A grant citing a recordId that exists nowhere
+// passed every live gate. That is not hypothetical: a plan in this repository
+// cited a fabricated semanticAuthorityRef and only human review caught it,
+// which is exactly what #1645 was written to prevent. These tests drive the
+// real composition-root function against a real throwaway git repository.
+
+function tinyRepo(files) {
+  const dir = tmp('gov-auth-');
+  const exec = require('child_process').execFileSync;
+  const run = (a) => exec('git', a, { cwd: dir, stdio: 'ignore' });
+  run(['init', '-q', '-b', 'main']);
+  run(['config', 'user.email', 't@t']);
+  run(['config', 'user.name', 't']);
+  for (const rel of Object.keys(files)) {
+    fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), files[rel]);
+  }
+  run(['add', '-A']);
+  run(['commit', '-qm', 'seed']);
+  return { dir, sha: exec('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim() };
+}
+
+const AUTH_DOC = 'docs/authority.md';
+const GRANT_DOC = 'docs/grant.md';
+const EXCERPT = 'Owner ratifies taskSpecSha256 abc123.';
+const sha256 = (s) => require('crypto').createHash('sha256').update(s, 'utf8').digest('hex');
+
+function evidence(sha, excerpt) {
+  return { sourcePath: AUTH_DOC, sourceCommitSha: sha, exactExcerpt: excerpt, excerptSha256: sha256(excerpt) };
+}
+
+function authGrant(repo, over) {
+  return Object.assign(
+    {
+      semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'SEM-REC-01', sourcePath: AUTH_DOC },
+      executionGrantRef: { kind: 'EXECUTION_GRANT', recordId: 'EXE-REC-01', sourcePath: GRANT_DOC },
+      ownerRatificationEvidence: evidence(repo.sha, EXCERPT),
+    },
+    over,
+  );
+}
+
+const seedRepo = () =>
+  tinyRepo({
+    [AUTH_DOC]: '# SEM-REC-01\n\n' + EXCERPT + '\n',
+    [GRANT_DOC]: '# grant\n\n<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=EXE-REC-01 -->\n',
+  });
+
+test('runner: authority references resolve against the repository, not just the grant', () => {
+  const repo = seedRepo();
+  const out = runner.verifyAuthorityAgainstRepo({ repoCwd: repo.dir, grant: authGrant(repo), baseRef: 'HEAD' });
+  assert.equal(out.atCommit, repo.sha);
+});
+
+test('runner: a fabricated semanticAuthorityRef recordId is rejected', () => {
+  const repo = seedRepo();
+  const grant = authGrant(repo, {
+    semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'NOT-A-REAL-RECORD', sourcePath: AUTH_DOC },
+  });
+  assert.throws(
+    () => runner.verifyAuthorityAgainstRepo({ repoCwd: repo.dir, grant, baseRef: 'HEAD' }),
+    (e) => e.code === 'AUTHORITY_RECORD_ID_ABSENT',
+  );
+});
+
+test('runner: an execution grant whose record carries no authority marker is rejected', () => {
+  const repo = tinyRepo({
+    [AUTH_DOC]: '# SEM-REC-01\n\n' + EXCERPT + '\n',
+    // recordId present in prose, but no GOV-COORD-AUTHORITY marker line.
+    [GRANT_DOC]: '# grant\n\nThis document mentions EXE-REC-01 in passing.\n',
+  });
+  assert.throws(
+    () => runner.verifyAuthorityAgainstRepo({ repoCwd: repo.dir, grant: authGrant(repo), baseRef: 'HEAD' }),
+    (e) => e.code === 'AUTHORITY_RECORD_MARKER_MISSING',
+  );
+});
+
+test('runner: a ratification excerpt absent from the cited file is rejected', () => {
+  const repo = seedRepo();
+  const grant = authGrant(repo, { ownerRatificationEvidence: evidence(repo.sha, 'Owner ratifies something else.') });
+  assert.throws(
+    () => runner.verifyAuthorityAgainstRepo({ repoCwd: repo.dir, grant, baseRef: 'HEAD' }),
+    (e) => e.code === 'OWNER_RATIFICATION_EXCERPT_ABSENT',
+  );
+});
+
+test('runner: a ratification commit unreachable from the target ref is rejected', () => {
+  const repo = seedRepo();
+  const grant = authGrant(repo, { ownerRatificationEvidence: evidence('f'.repeat(39) + '0', EXCERPT) });
+  assert.throws(
+    () => runner.verifyAuthorityAgainstRepo({ repoCwd: repo.dir, grant, baseRef: 'HEAD' }),
+    (e) => e.code === 'OWNER_RATIFICATION_NOT_IN_MAIN',
+  );
+});
+
 // -------------------------------------------------------------- BASE DRIFT
 
 // orchestrator.cjs §13 uses baseRef for exactly one thing under
