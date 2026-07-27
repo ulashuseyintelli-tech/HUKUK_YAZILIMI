@@ -97,13 +97,31 @@ const GOVERNANCE_REQUIRED_CHECKS = ['Test Suite', 'Architectural Guardrails'];
  * use stdin because a task prompt is long, multi-line, and has no business in a
  * process listing, so each lane's argv must be the form that reads stdin.
  *
- * Verified against the real CLIs on this machine rather than assumed: piping a
- * sentinel prompt into `claude -p` and into `codex exec -` returned the sentinel
- * and exit 0 for both.
+ * Each lane must also be able to WRITE. That is a separate property from being
+ * able to answer, and the earlier version of this table confused the two: it
+ * was "verified" by piping a sentinel prompt into `claude -p` and `codex exec -`
+ * and getting the sentinel back with exit 0. That proves the pipe works. It
+ * proves nothing about file permissions.
+ *
+ * Measured on a real run: `codex exec -` with no sandbox flag thought for 260
+ * seconds, exited 0, reported success — and changed zero files, because `codex
+ * exec` defaults to the read-only sandbox. The orchestrator then pushed an empty
+ * branch and failed at PR creation. `claude -p` has the same shape: without
+ * --permission-mode it has no standing permission to edit.
+ *
+ * So the flags below are load-bearing, not decoration:
+ *
+ *   codex   --sandbox workspace-write   writes inside its own worktree only
+ *   claude  --permission-mode acceptEdits   auto-accepts edits, nothing more
+ *
+ * Neither is the "bypass everything" setting (`danger-full-access`,
+ * `bypassPermissions`). The executor is meant to edit files in an isolated
+ * worktree and nothing else; what it actually touched is then judged by the
+ * boundary validator against the real diff, which is where the guarantee lives.
  */
 const LANE_ARGV = {
-  CLAUDE_LOCAL: ['-p'],
-  CODEX_LOCAL: ['exec', '-'],
+  CLAUDE_LOCAL: ['-p', '--permission-mode', 'acceptEdits'],
+  CODEX_LOCAL: ['exec', '--sandbox', 'workspace-write', '-'],
 };
 
 class RunnerError extends Error {

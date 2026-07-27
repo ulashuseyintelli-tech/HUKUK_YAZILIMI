@@ -692,3 +692,35 @@ test('PILOT: resume still re-validates the grant, it does not inherit the old on
   assert.equal(revoked.disposition, 'BLOCKED');
   assert.equal(revoked.blockerCode, 'GRANT_REVOKED');
 });
+
+// ------------------------------------------------ EXECUTOR PRODUCED NOTHING
+
+// boundary.validate calls an empty diff within boundary, correctly — nothing
+// escaped. But an executor that changed nothing did not do the task, and the
+// old flow let that sail through validation, push an empty branch to the
+// remote, and fail at PR creation with "No commits between main and ...".
+// Measured on a real run: a lane without write permission ran four minutes,
+// exited 0, and left a stray remote branch behind.
+test('PILOT: an executor that changes nothing is blocked before anything is pushed', async () => {
+  const repo = F.fixtureRepo();
+  let opened = 0;
+  const ctx = ctxFor(repo, {
+    specOver: { taskId: 'PILOT-NO-CHANGES', allowedRoots: ['fixture/none/'] },
+    // exit 0, touch nothing — exactly what a read-only sandbox produces.
+    executorArgv: [F.FAKE, '--mode', 'ok'],
+  });
+  ctx.prProvider = Object.assign({}, ctx.prProvider, {
+    open: async () => {
+      opened += 1;
+      throw new Error('prProvider.open must not be reached');
+    },
+  });
+
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.equal(r.blockerCode, 'NO_CHANGES_PRODUCED');
+  assert.match(r.detail, /changed no files/);
+  assert.equal(opened, 0, 'no branch may be published for an empty attempt');
+  assert.ok(r.trace.includes('VALIDATING'), JSON.stringify(r.trace));
+  assert.ok(!r.trace.includes('PR_OPEN'), 'PR must not be opened');
+});
