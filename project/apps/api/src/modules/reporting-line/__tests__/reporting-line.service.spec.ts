@@ -259,3 +259,357 @@ describe("ReportingLineService — reconciliation (disposition-tabanlı)", () =>
     expect(r.unclassifiableTaskAssignees).toBe(1); // c
   });
 });
+
+// ---------------------------------------------------------------------------
+// CHARACTERIZATION — listActive / listEligible (salt-okunur okuma yüzeyi).
+// Bu bloklar BUGÜNKÜ davranışı olduğu gibi çivilemek içindir; yeni davranış
+// üretmez, mevcut davranışı düzeltmez. İki katman birlikte assert edilir:
+//   (1) servisin Prisma'ya gönderdiği HAM argüman (where/select/orderBy) —
+//       fake'in sadakatinden bağımsız, sorgu kontratını doğrudan sabitler;
+//   (2) fake store üzerinden dönen sonuç — filtreleme/sıralama/map davranışı.
+// ---------------------------------------------------------------------------
+
+/**
+ * Prisma `select` projeksiyonunu yaklaşık uygular: yalnız `true` veya nested
+ * `select` ile istenen alanlar döner. "Projection sızdırmaz" iddiasının fake
+ * tarafındaki dayanağı budur; (1) katmanı bunu bağımsız olarak da doğrular.
+ * Nested relation `isActive` DEĞERİNE göre filtrelenmez — Prisma'da da öyle.
+ */
+const projectSelect = (row: any, select: any): any => {
+  const out: any = {};
+  for (const [key, spec] of Object.entries<any>(select ?? {})) {
+    if (spec === true) out[key] = row[key];
+    else if (spec && spec.select) {
+      out[key] = row[key] == null ? null : projectSelect(row[key], spec.select);
+    }
+  }
+  return out;
+};
+
+/** Tek alanlı `orderBy` (string/Date) uygular. */
+const applyOrderBy = (rows: any[], orderBy: any): any[] => {
+  if (!orderBy) return rows;
+  const key = Object.keys(orderBy)[0];
+  const dir = orderBy[key];
+  return [...rows].sort((x, y) => {
+    const a = x[key];
+    const b = y[key];
+    const cmp =
+      typeof a === "string" ? a.localeCompare(b) : a > b ? 1 : a < b ? -1 : 0;
+    return dir === "desc" ? -cmp : cmp;
+  });
+};
+
+describe("ReportingLineService — listActive (characterization)", () => {
+  // validUntil dolu = kapanmış ilişki. Farklı tenant + kapalı kayıt kasten var.
+  const REL_ROWS = [
+    {
+      id: "rl-managed",
+      tenantId: TENANT,
+      actorUserId: "a",
+      managerUserId: "b",
+      disposition: "MANAGED",
+      validFrom: new Date("2026-01-02T00:00:00.000Z"),
+      validUntil: null,
+    },
+    {
+      id: "rl-top",
+      tenantId: TENANT,
+      actorUserId: "b",
+      managerUserId: null,
+      disposition: "TOP_LEVEL",
+      validFrom: new Date("2026-01-03T00:00:00.000Z"),
+      validUntil: null,
+    },
+    {
+      id: "rl-closed",
+      tenantId: TENANT,
+      actorUserId: "c",
+      managerUserId: "b",
+      disposition: "MANAGED",
+      validFrom: new Date("2026-01-05T00:00:00.000Z"), // en yeni: sıralamada ilk OLMAMALI
+      validUntil: new Date("2026-02-01T00:00:00.000Z"),
+    },
+    {
+      id: "rl-other-tenant",
+      tenantId: OTHER,
+      actorUserId: "other",
+      managerUserId: null,
+      disposition: "TOP_LEVEL",
+      validFrom: new Date("2026-01-04T00:00:00.000Z"),
+      validUntil: null,
+    },
+  ];
+
+  const buildListPrisma = (rows: any[] = REL_ROWS) => {
+    const findMany = jest.fn(({ where, select, orderBy }: any) => {
+      const matched = rows.filter(
+        (r) =>
+          r.tenantId === where.tenantId &&
+          (where.validUntil === undefined || r.validUntil === where.validUntil),
+      );
+      return Promise.resolve(
+        applyOrderBy(matched, orderBy).map((r) => projectSelect(r, select)),
+      );
+    });
+    return { reportingLine: { findMany } } as any;
+  };
+
+  it("Prisma'ya tenant-scoped + validUntil:null sorgusu gönderir (sorgu kontratı)", async () => {
+    const prisma = buildListPrisma();
+    const svc = new ReportingLineService(prisma, buildAudit());
+    await svc.listActive(TENANT);
+    expect(prisma.reportingLine.findMany).toHaveBeenCalledWith({
+      where: { tenantId: TENANT, validUntil: null },
+      select: {
+        id: true,
+        actorUserId: true,
+        managerUserId: true,
+        disposition: true,
+        validFrom: true,
+      },
+      orderBy: { validFrom: "desc" },
+    });
+  });
+
+  it("tenant scope korunur: başka tenant'ın aktif kaydı dönmez", async () => {
+    const svc = new ReportingLineService(buildListPrisma(), buildAudit());
+    const { relationships } = await svc.listActive(TENANT);
+    expect(relationships.map((r: any) => r.id)).not.toContain("rl-other-tenant");
+    expect(relationships.map((r: any) => r.actorUserId)).not.toContain("other");
+  });
+
+  it("yalnız validUntil=null aktif sayılır; kapanmış ilişki listede görünmez", async () => {
+    const svc = new ReportingLineService(buildListPrisma(), buildAudit());
+    const { relationships } = await svc.listActive(TENANT);
+    expect(relationships.map((r: any) => r.id)).toEqual(["rl-top", "rl-managed"]);
+    expect(relationships.map((r: any) => r.id)).not.toContain("rl-closed");
+  });
+
+  it("validFrom desc sıralanır (en yeni aktif kayıt başta)", async () => {
+    const svc = new ReportingLineService(buildListPrisma(), buildAudit());
+    const { relationships } = await svc.listActive(TENANT);
+    expect(relationships[0].validFrom).toEqual(new Date("2026-01-03T00:00:00.000Z"));
+    expect(relationships[1].validFrom).toEqual(new Date("2026-01-02T00:00:00.000Z"));
+  });
+
+  it("projection dar: validUntil ve tenantId sızmaz, MANAGED/TOP_LEVEL alanları aynen döner", async () => {
+    const svc = new ReportingLineService(buildListPrisma(), buildAudit());
+    const { relationships } = await svc.listActive(TENANT);
+    for (const r of relationships) {
+      expect(Object.keys(r).sort()).toEqual([
+        "actorUserId",
+        "disposition",
+        "id",
+        "managerUserId",
+        "validFrom",
+      ]);
+      expect(r).not.toHaveProperty("validUntil");
+      expect(r).not.toHaveProperty("tenantId");
+    }
+    expect(relationships).toEqual([
+      {
+        id: "rl-top",
+        actorUserId: "b",
+        managerUserId: null, // TOP_LEVEL kökü: manager null olarak korunur
+        disposition: "TOP_LEVEL",
+        validFrom: new Date("2026-01-03T00:00:00.000Z"),
+      },
+      {
+        id: "rl-managed",
+        actorUserId: "a",
+        managerUserId: "b",
+        disposition: "MANAGED",
+        validFrom: new Date("2026-01-02T00:00:00.000Z"),
+      },
+    ]);
+  });
+
+  it("aktif kayıt yoksa boş relationships döner (hata atmaz)", async () => {
+    const svc = new ReportingLineService(buildListPrisma([]), buildAudit());
+    await expect(svc.listActive(TENANT)).resolves.toEqual({ relationships: [] });
+  });
+});
+
+describe("ReportingLineService — listEligible (characterization)", () => {
+  // NOT: "aktif StaffMember + PASİF Lawyer" fixture'ı KASTEN yoktur; o durum
+  // owner invariant'ı ile çelişen bilinen bir sapmadır ve rapor edilir,
+  // teste çivilenmez (yanlış yeşil üretmemek için).
+  const ELIGIBLE_USERS = [
+    {
+      id: "u-both",
+      tenantId: TENANT,
+      isActive: true,
+      name: "Ali Both",
+      email: "both@t1.test",
+      staffMember: { id: "s-both", isActive: true },
+      lawyer: { id: "l-both", isActive: true },
+    },
+    {
+      id: "u-lawyer",
+      tenantId: TENANT,
+      isActive: true,
+      name: "Berk Lawyer",
+      email: "lawyer@t1.test",
+      staffMember: null,
+      lawyer: { id: "l-1", isActive: true },
+    },
+    {
+      id: "u-staff",
+      tenantId: TENANT,
+      isActive: true,
+      name: "Cem Staff",
+      email: "staff@t1.test",
+      staffMember: { id: "s-1", isActive: true },
+      lawyer: null,
+    },
+    {
+      id: "u-passive",
+      tenantId: TENANT,
+      isActive: false, // pasif User
+      name: "Ayse Passive",
+      email: "passive@t1.test",
+      staffMember: { id: "s-2", isActive: true },
+      lawyer: null,
+    },
+    {
+      id: "u-no-profile",
+      tenantId: TENANT,
+      isActive: true,
+      name: "Ahmet NoProfile",
+      email: "noprofile@t1.test",
+      staffMember: null,
+      lawyer: null,
+    },
+    {
+      id: "u-passive-profile",
+      tenantId: TENANT,
+      isActive: true,
+      name: "Ayhan PassiveProfile",
+      email: "passiveprofile@t1.test",
+      staffMember: { id: "s-3", isActive: false }, // profil pasif → uygun değil
+      lawyer: null,
+    },
+    {
+      id: "u-other-tenant",
+      tenantId: OTHER,
+      isActive: true,
+      name: "Aaa OtherTenant",
+      email: "other@t2.test",
+      staffMember: { id: "s-4", isActive: true },
+      lawyer: null,
+    },
+  ];
+
+  const buildEligiblePrisma = (users: any[] = ELIGIBLE_USERS) => {
+    const matchesOr = (u: any, or: any[]) =>
+      or.some((cond) => {
+        const relation = Object.keys(cond)[0]; // "staffMember" | "lawyer"
+        const expected = cond[relation].is; // { isActive: true }
+        const profile = u[relation];
+        return profile != null && profile.isActive === expected.isActive;
+      });
+    const findMany = jest.fn(({ where, select, orderBy }: any) => {
+      const matched = users.filter(
+        (u) =>
+          u.tenantId === where.tenantId &&
+          u.isActive === where.isActive &&
+          matchesOr(u, where.OR),
+      );
+      return Promise.resolve(
+        applyOrderBy(matched, orderBy).map((u) => projectSelect(u, select)),
+      );
+    });
+    return { user: { findMany } } as any;
+  };
+
+  it("Prisma'ya tenant + isActive + aktif-profil OR sorgusu gönderir (sorgu kontratı)", async () => {
+    const prisma = buildEligiblePrisma();
+    const svc = new ReportingLineService(prisma, buildAudit());
+    await svc.listEligible(TENANT);
+    expect(prisma.user.findMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: TENANT,
+        isActive: true,
+        OR: [
+          { staffMember: { is: { isActive: true } } },
+          { lawyer: { is: { isActive: true } } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        staffMember: { select: { id: true } },
+        lawyer: { select: { id: true } },
+      },
+      orderBy: { name: "asc" },
+    });
+  });
+
+  it("tenant scope korunur: başka tenant'ın aktif personeli dönmez", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma(), buildAudit());
+    const { eligible } = await svc.listEligible(TENANT);
+    expect(eligible.map((e: any) => e.userId)).not.toContain("u-other-tenant");
+  });
+
+  it("pasif User dışlanır", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma(), buildAudit());
+    const { eligible } = await svc.listEligible(TENANT);
+    expect(eligible.map((e: any) => e.userId)).not.toContain("u-passive");
+  });
+
+  it("aktif StaffMember/Lawyer profili olmayan User dışlanır (profilsiz + profili pasif)", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma(), buildAudit());
+    const ids = (await svc.listEligible(TENANT)).eligible.map((e: any) => e.userId);
+    expect(ids).not.toContain("u-no-profile");
+    expect(ids).not.toContain("u-passive-profile");
+  });
+
+  it("yalnız uygun Users döner ve name asc sıralanır", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma(), buildAudit());
+    const { eligible } = await svc.listEligible(TENANT);
+    expect(eligible.map((e: any) => e.userId)).toEqual([
+      "u-both", // Ali Both
+      "u-lawyer", // Berk Lawyer
+      "u-staff", // Cem Staff
+    ]);
+  });
+
+  it("profileType deterministik: iki profili de AKTİF olan User'da lawyer > staffMember", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma(), buildAudit());
+    const { eligible } = await svc.listEligible(TENANT);
+    const byId = Object.fromEntries(eligible.map((e: any) => [e.userId, e]));
+    expect(byId["u-both"].profileType).toBe("LAWYER"); // lawyer önceliklidir
+    expect(byId["u-lawyer"].profileType).toBe("LAWYER");
+    expect(byId["u-staff"].profileType).toBe("STAFF");
+  });
+
+  it("projection dar: id/staffMember/lawyer ham alanları sızmaz, userId'ye map'lenir", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma(), buildAudit());
+    const { eligible } = await svc.listEligible(TENANT);
+    for (const e of eligible) {
+      expect(Object.keys(e).sort()).toEqual([
+        "email",
+        "name",
+        "profileType",
+        "userId",
+      ]);
+      expect(e).not.toHaveProperty("id");
+      expect(e).not.toHaveProperty("staffMember");
+      expect(e).not.toHaveProperty("lawyer");
+      expect(e).not.toHaveProperty("tenantId");
+    }
+    expect(eligible[2]).toEqual({
+      userId: "u-staff",
+      name: "Cem Staff",
+      email: "staff@t1.test",
+      profileType: "STAFF",
+    });
+  });
+
+  it("uygun User yoksa boş eligible döner (hata atmaz)", async () => {
+    const svc = new ReportingLineService(buildEligiblePrisma([]), buildAudit());
+    await expect(svc.listEligible(TENANT)).resolves.toEqual({ eligible: [] });
+  });
+});
