@@ -2136,3 +2136,106 @@ Track B Financial Disclosure implementasyonu **bu kayıtla YETKİLENDİRİLMEZ**
 ### 36.9 Closure Self-Check
 
 Bu bölüm: yeni yetenek EKLEMEZ; Track B'yi BAŞLATMAZ veya yetkilendirmez; §5/§6/§8.A/§8.B/§11–§35 substantive hükümlerini DEĞİŞTİRMEZ; geçmiş kanıtı yeniden yazmaz veya silmez (append-only); schema/migration OLUŞTURMAZ; backend endpoint contract'ı DEĞİŞTİRMEZ; auth/tenant mimarisini DEĞİŞTİRMEZ; `CLIENT-P2-U03` programını (§34/§35'te PARTIAL kalan) CLOSED İLAN ETMEZ — kapatılan yalnız **Spring Cleaning remediation programıdır**. **SPRING CLEANING CLOSED ≠ CLIENT-P2-U03 CLOSED · TRACK_B_READY ≠ TRACK B AUTHORIZED · RESIDUAL TRANSFERRED ≠ RESIDUAL FIXED.**
+
+## 37. CLIENT Phase 2 Track B I01 — Financial Disclosure Data Foundation Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, §35'te ratifiye edilen Track B Financial Disclosure mimarisinin **veri temeli** diliminin (`CLIENT-P2-U03-TRACK-B-I01`) teknik kapanış kaydıdır (`decision-log.md` CLIENT-P2-U03-TRACK-B-I01 kaydı). §5, §6, §8.A, §8.B, §11–§36 substantive hükümlerini DEĞİŞTİRMEZ. §35'in ve §36.8'in "`CLIENT-P2-U03-TRACK-B-I01`: owner-gated / NOT AUTHORIZED / NOT STARTED" ifadeleri bu kayıtla owner tarafından ayrıca yetkilendirilip **yalnız I01 dilimi için** kapatılmıştır — **§35'in ve §36'nın kendi metinleri DEĞİŞTİRİLMEMİŞTİR**. **TRACK B (genel) BU KAYITLA CLOSED İLAN EDİLMEZ — kapatılan yalnız veri temeli (I01) dilimidir; API/service/authorization projection/UI/dashboard/disclosure publication dilimleri OPEN ve NOT AUTHORIZED kalır.**
+
+### 37.1 Canonical Kimlik ve SHA
+
+```text
+TASK          : CLIENT-P2-U03-TRACK-B-I01
+TASK CLASS    : SCHEMA + DATABASE MIGRATION + MODEL-LEVEL CONSTRAINTS
+PR            : #1629
+SQUASH SHA    : 32a42ed4425083585dce06b447dc4a175deb2985
+MERGED        : 2026-07-27 (origin/main)
+DIFF          : 3 dosya, +777 / -5
+CANONICAL SRC : bu charter §35 (owner-ratified mimari, 21 karar alani + alti owner karari)
+```
+
+Kapsam: `project/apps/api/prisma/schema.prisma` · yeni migration `20260726190741_client_p2_u03_track_b_i01_financial_disclosure_foundation` · yeni db-gated model-invariant spec'i. **Yeni runtime service/controller/resolver/UI dosyasi YOK. Yeni dependency YOK.**
+
+### 37.2 Eklenen Model Yüzeyi
+
+§35.5'in birebir uygulanmasıdır: `ClientFinancialDisclosure` (kararlı aggregate kimliği; tenant/case/case-client sahipliği; `CollectionDisposition` idempotency anchor'ı; current-effective versiyon işaretçisi) → `ClientFinancialDisclosureVersion` (§35.4 kopyalanan kaynak değerleri, yaşam döngüsü, §35.8 ofis onayı bağlaması, §35.9 içerik onayı, §35.10/§35.11 gönderim ve yayınlama kanıtı, §35.13 supersession/reversal) → `ClientFinancialDisclosureLine` (normalize dağıtım satırları + kaynak-satır izlenebilirliği). Mevcut beş modele yalnız back-relation satırı eklendi (`Tenant`, `Case`, `CaseClient`, `CollectionDisposition`, `CollectionDispositionLine`); bu modellerin hiçbir mevcut alanı, ilişkisi veya semantiği DEĞİŞMEDİ.
+
+`ClientFinancialDisclosureStatus` enum'u §35.7'nin **açıkça saydığı on bir durumu** taşır: `DRAFT` · `OFFICE_APPROVAL_PENDING` · `OFFICE_APPROVED` · `CONTENT_APPROVAL_PENDING` · `CONTENT_APPROVED` · `SEND_PENDING` · `SEND_FAILED` · `PUBLISHED` · `CANCELLED` · `SUPERSEDED` · `REVERSED`. **Ayrı kalıcı `SENT` durumu OLUŞTURULMADI** — §35.7 + §35.11'in üçüncü owner kararı gereği gönderim kanıtı alan seviyesinde (`sendIdempotencyKey`/`providerMessageId`/`providerAcceptedAt`) tutulur, kalıcı client-visible durum yalnız `PUBLISHED`'dır. §35.3'ün `UNSUPPORTED_SCOPE` sonucu bir **durum değil bir sonuçtur**, bu nedenle enum'da temsil EDİLMEDİ. **Canonical kaynakta bulunmayan hiçbir lifecycle, enum, status veya authorization alani UYDURULMADI.**
+
+### 37.3 Tenant Sahipliği ve Referential Integrity
+
+Üç modelin hepsinde `tenantId` NOT NULL + `Tenant` FK `Restrict`; her modelde `@@unique([tenantId, id])` (bileşik tenant FK hedefi). `Case` bağlaması **tenant-scoped bileşik FK**'dir (`[tenantId, caseId]` → `Case[tenantId, id]`) — cross-tenant `caseId` ataması **veritabanı seviyesinde reddedilir**; bu, repository'de on yedi modelde kullanılan canonical desendir (`ClaimFormationSnapshot`, `PasswordResetToken`, `Collection` vb.). Versiyon→kök, versiyon supersession (self-relation) ve satır→versiyon bağları da bileşik tenant FK'dir. `CaseClient`'te `tenantId` kolonu **bulunmadığından** (tenant `Case` üzerinden türetilir) oraya plain FK + `Restrict` uygulanmıştır (`ClientPayoutAllocation` emsali); **bu bir tenant-güvenlik iddiası DEĞİLDİR** — `caseClientId`'nin tenant tutarlılığı servis katmanında doğrulanmalıdır. `officeApprovalRequestId` **scalar**'dır, FK kurulmaz (`CollectionDisposition`'ın cross-module FK kurmama konvansiyonu).
+
+**On bir FK'nin tamamı `onDelete: Restrict`'tir**; `onDelete: Cascade`/`SetNull`/`NoAction` sayısı sıfırdır. Finansal ve audit geçmişi cascade ile silinemez, orphan disclosure oluşamaz (§35.18). Migration'daki on bir `ON UPDATE CASCADE` Prisma'nın canonical referential-update default'udur (repository'de kırk beş migration dosyasında aynı); `ON DELETE CASCADE` sayısı **sıfırdır**.
+
+### 37.4 Constraint Yüzeyi
+
+§35.12'nin zorunlu kıldığı constraint'ler eksiksiz uygulanmıştır: `@@unique([tenantId, collectionDispositionId])` (dispozisyon başına tek disclosure — idempotency) · `@@unique([tenantId, disclosureId, version])` (versiyon numarası tekilliği) · `@@unique([tenantId, sendIdempotencyKey])` (çift gönderim engeli) · `@@unique([tenantId, supersedesVersionId])` (bir versiyon yalnız bir kez supersede edilir) · `@@unique([tenantId, officeApprovalRequestId])` (bir ofis onayı yalnız bir kez tüketilir) · `currentVersionId @unique` · `@@unique([tenantId, id])` ×3.
+
+**V1 kapsam enforcement'ı (§35.3, fail-closed):** `caseClientId` NOT NULL'dur. `CASE_CREDITOR_CLUSTER` dispozisyonlarının `caseClientId`'si null olduğundan cluster kapsamı için disclosure oluşturmak **yapısal olarak imkânsızdır**; bir client sahibi asla çıkarsanmaz. Bu, ikinci owner kararının model seviyesindeki desteğidir — `UNSUPPORTED_SCOPE` sonucunun servis katmanında üretilmesi gereği ORTADAN KALKMAZ.
+
+### 37.5 Para ve Para Birimi
+
+Beş para kolonu `Decimal @db.Decimal(15,2)` (veritabanında `numeric(15,2)` olarak doğrulandı) ve `currency @default("TRY")` üç modelde ayrı ayrı taşınır. `Float` sayısı **sıfırdır**; gizli global currency varsayımı YOKTUR. Mevcut `Collection`/`CollectionDisposition`/`CollectionDispositionLine`/`ClientPayout` hassasiyetiyle birebir aynıdır (§35.16).
+
+### 37.6 Yaşam Döngüsü ve Immutability — Dürüst Sınır
+
+`status @default(DRAFT)`: yeni kayıt **asla** published, client-görünür veya approved değildir — güvenli varsayılan model seviyesindedir.
+
+**Bu kayıt tam satır immutability'si İDDİA ETMEZ.** §35.6 gereği finansal snapshot alanları oluşturulduktan sonra değişmez; ancak yaşam döngüsü damgaları (`publishedAt`, `supersededAt`, `providerMessageId`, `sendFailureCode` vb.) **aynı satıra** yazıldığından satır veritabanı seviyesinde tamamen immutable **DEĞİLDİR**. `snapshotHash` · `sourceFingerprint` · `notificationContentHash` alanları hazırdır, fakat hash yeniden-doğrulaması, stale-onay reddi ve TOCTOU koruması **servis katmanı işidir ve bu kayıtla uygulanmamıştır**. **SCHEMA IMMUTABILITY FIELDS PRESENT ≠ IMMUTABILITY ENFORCED.**
+
+### 37.7 Kanıt ve CI Enforcement
+
+`track-b-i01-schema-foundation.db-gated.integration.spec.ts` — **18 model-seviyesi invariant testi**, gerçek PostgreSQL 16 üzerinde (disposable Docker, repo-pinned `postgres:16-alpine`; production veya local-development veritabanına dokunulmadı): geçerli minimum kayıt · güvenli `DRAFT` varsayılanı · required parent · invalid FK · cross-tenant case reddi · cross-tenant versiyon reddi · beş unique ihlali · `Decimal(15,2)` hassasiyeti · invalid line enum · invalid status enum · RESTRICT/cascade-yok/orphan-yok · §35.3 cluster yapısal imkânsızlığı · current-version işaretçisi. Migration rehearsal: temiz veritabanı (tüm canonical migration zinciri + I01) PASS ve mevcut şema + temsili yerel veri üzerinde PASS (satırlar korundu, tutarlar byte-exact). Migration statik profili: bir CreateEnum, üç CreateTable, yirmi CreateIndex, on bir AddForeignKey; `DROP TABLE`/`DROP COLUMN`/`RENAME`/`DELETE`/`TRUNCATE`/mevcut kolonda `SET NOT NULL` sayısı **sıfır**; historical migration DEĞİŞTİRİLMEDİ.
+
+**CI ENFORCEMENT — BU KAYITLA KAPATILAN RESIDUAL:** PR #1629 merge edildiğinde bu spec **hiçbir CI manifest'inde kayıtlı değildi**, dolayısıyla CI'da **hiç koşmuyordu**; CI'ın jest çağrılarının hiçbiri catch-all olmadığı için allowlist dışındaki spec sessizce çalışmaz. Sebep kaydedilmiştir: #1629 ilk halinde `.github/workflows/ci.yml`'e explicit step ekliyordu ve GOV-COORD-V1 guard'ı bunu `CONTROL_PLANE_SCOPE_FORBIDDEN: non-bootstrap control-plane diff` ile reddetti (ci.yml, PR #1591 ile `coordinationControlPlane` listesine alınmıştır); step o PR'dan çıkarıldı ve CI enforcement'ı açık residual olarak beyan edildi. Bu kayıtla spec, binding gerektirmeyen canonical yola bağlanmıştır: `project/apps/api/ci-manifests/db/domain-integration.txt`. **YENİ CI STEP AÇILMADI, ci.yml'e DOKUNULMADI, CI-8 jest-invocation bütçesi TÜKETİLMEDİ** (mevcut manifest'e spec satırı eklemek bütçe harcamaz).
+
+### 37.8 Migration Live-Apply Dispozisyonu
+
+`pending-migration-coordination-register.md` bu migration'ı cross-workstream görünürlük kaydı olarak taşır ve live-apply durumunu `UNKNOWN / OWNER VERIFICATION REQUIRED` olarak gösterir. **Bu kayıt o durumu DEĞİŞTİRMEZ**: gerçek veritabanına bağlanılmamış, hiçbir credential okunmamıştır. **MIGRATION MERGED ≠ MIGRATION APPLIED.** Live-apply doğrulaması owner/operasyon işidir.
+
+### 37.9 Statü Kesinliği
+
+```text
+CLIENT-P2-U03-TRACK-B-I01 : AUTHORIZED / IMPLEMENTED / VERIFIED / MERGED / CANONICAL
+PR #1629, squash 32a42ed4
+
+TRACK B ARCHITECTURE      : RATIFIED/CANONICAL (§35, degismedi)
+TRACK B DATA FOUNDATION   : CLOSED/CANONICAL (bu kayitla)
+TRACK B API / SERVICE     : NOT AUTHORIZED / NOT STARTED
+TRACK B AUTHORIZATION
+PROJECTION                : NOT AUTHORIZED / NOT STARTED
+TRACK B UI / DASHBOARD    : NOT AUTHORIZED / NOT STARTED
+TRACK B DISCLOSURE
+PUBLICATION RUNTIME       : NOT AUTHORIZED / NOT STARTED
+
+TRACK A                   : CLOSED/CANONICAL (§34, degismedi)
+CLIENT-P2-U03 (genel)     : PARTIAL — NOT READY FOR FINAL CLOSURE
+SPRING CLEANING (§36)     : CLOSED/CANONICAL/PASS (degismedi)
+
+RUNTIME                   : UNCHANGED
+CLIENT-VISIBLE FINANCIAL
+DATA                      : NONE
+MIGRATION LIVE-APPLY      : UNKNOWN / OWNER VERIFICATION REQUIRED
+IMPLEMENTATION AUTHORITY  : NONE (bu kayitla — sonraki dilimler icin)
+NEXT                      : OWNER-GATED / NOT AUTO-STARTED
+```
+
+Korunan invariant'lar:
+
+```text
+SCHEMA EXISTS       != DATA MAY BE DISCLOSED
+DATA EXISTS         != CLIENT IS AUTHORIZED TO VIEW IT
+I01 CLOSED          != TRACK B FULLY IMPLEMENTED
+I01 SCHEMA READY    != CLIENT DISCLOSURE AUTHORIZED
+TRACK_B_READY       != ALL TRACK B IMPLEMENTATION AUTHORIZED
+MIGRATION MERGED    != MIGRATION APPLIED
+NO CLIENT-VISIBLE FINANCIAL DATA YET
+```
+
+### 37.10 Register Düzeltmesi
+
+`spring-cleaning/PROGRAM-WIDE-MERGED-BUT-UNCLOSED-REGISTER-R01.md`, `CLIENT-P2-U03-TRACK-B-I01`'i "kapanışı DOĞRULANAN merged PR'lar" listesinde göstermiştir. Bu tespit yazıldığı anda **yanlıştı**: `decision-log.md`'de `recordId=CLIENT-P2-U03-TRACK-B-I01` taşıyan bir satır YOKTU, bu charter'da bir I01 teknik kapanış bölümü YOKTU, ve §35 hâlâ `TRACK B IMPLEMENTATION: NOT AUTHORIZED/NOT STARTED` + `SCHEMA/MIGRATION: NONE` diyordu. I01 kodda merged, governance'ta ise **açık** durumdaydı. Gerçek kapanış bu kayıtla yapılmıştır. İlgili register'a bu düzeltme **hiçbir statü alanı değiştirilmeden** dipnot olarak işlenmiştir. **MERGED ≠ CLOSED; REGISTER CLAIM ≠ VERIFIED FACT.**
+
+### 37.11 Closure Self-Check
+
+Bu bölüm: Track B'nin API/service/authorization projection/UI/dashboard/disclosure publication dilimlerini BAŞLATMAZ veya yetkilendirmez; `CLIENT-P2-U03`'ü (§34/§35'te PARTIAL kalan) CLOSED İLAN ETMEZ; §35'in veya §36'nın kendi metnini DEĞİŞTİRMEZ; yeni lifecycle/enum/status/authorization alanı ÜRETMEZ; canonical enum adı UYDURMAZ; Track A davranışını DEĞİŞTİRMEZ; Receivable/Collection/Claim/Due/Payment semantiğine DOKUNMAZ; migration live-apply durumunu `APPLIED` İLAN ETMEZ; `pending-migration-coordination-register.md`'nin live-apply alanlarını DEĞİŞTİRMEZ; POL-E/POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OD-08/STF-PRD statülerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; yeni dependency EKLEMEZ; `.github/workflows/ci.yml`'e DOKUNMAZ; yeni CI step AÇMAZ; schema veya migration DEĞİŞTİRMEZ (implementasyon zaten PR #1629 ile ayrı merge edildi — bu kayıt governance kapanışı + CI enforcement bağlamasıdır). **TECHNICAL DATA FOUNDATION CLOSED ≠ TRACK B CLOSED; IMPLEMENTATION AUTHORITY: NONE (sonraki dilimler için).**
