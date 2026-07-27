@@ -139,7 +139,12 @@ function buildContext(opts) {
     },
 
     prompt: opts.prompt,
-    promptTransport: opts.promptTransport || 'STDIN',
+    // 'STDIN_PAYLOAD', not 'STDIN'. spawn.cjs accepts exactly two values and
+    // fails PROMPT_TRANSPORT_INVALID on anything else, so the earlier spelling
+    // would have killed every run at the executor spawn — after the lease was
+    // taken and the worktree built. Stdin rather than an argument because a task
+    // prompt is long, multi-line, and must not appear in a process listing.
+    promptTransport: opts.promptTransport || 'STDIN_PAYLOAD',
     parentEnv: opts.parentEnv || process.env,
     credentialAllowlist,
     attestationTtlMs: opts.attestationTtlMs || 30 * 60 * 1000,

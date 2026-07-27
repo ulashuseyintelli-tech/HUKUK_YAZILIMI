@@ -20,6 +20,8 @@ const prep = require('./prepare-environment.cjs');
 const { createGhPrProvider } = require('./gh-pr-provider.cjs');
 const { createGhCiProvider } = require('./gh-ci-provider.cjs');
 const mergeready = require('../orchestrator/mergeready.cjs');
+const spawnMod = require('../executors/spawn.cjs');
+const stateMod = require('../orchestrator/state.cjs');
 
 function tmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -360,4 +362,90 @@ test('spawn mode: the real gh argv that broke the preflight now survives', () =>
   // The whole point: gh is a real image, so this argv is delivered intact.
   assert.equal(mode.shell, false, 'gh resolved to ' + mode.resolvedPath + ' and must not go through cmd.exe');
   assert.equal(spawnMode.quotingIsSafe(argv), false, 'the argv is genuinely shell-unsafe, which is why shell:false matters');
+});
+
+// ------------------------------------------------- CONTRACT WITH REAL MODULES
+//
+// buildContext hands values to modules whose accepted vocabulary it does not
+// share. A misspelling there is invisible until a live run reaches that stage —
+// promptTransport was set to 'STDIN' where spawn.cjs accepts only
+// 'SINGLE_ARGUMENT' and 'STDIN_PAYLOAD', which would have failed every run at
+// the executor spawn, after the lease was taken and the worktree built. These
+// tests assert the composition root's output against the real consumers rather
+// than against a restatement of them.
+
+test('context: promptTransport is a value spawn.cjs actually accepts', () => {
+  const ctx = runner.buildContext({
+    repoCwd: tmp('gov-rt-'),
+    spec: SPEC,
+    grant: {},
+    store: { current: () => null, transition: () => {} },
+    prProvider: {},
+    ciProvider: {},
+    prepareEnvironment: () => ({ ok: true }),
+  });
+  assert.ok(
+    spawnMod.PROMPT_TRANSPORTS
+      ? spawnMod.PROMPT_TRANSPORTS.includes(ctx.promptTransport)
+      : ['SINGLE_ARGUMENT', 'STDIN_PAYLOAD'].includes(ctx.promptTransport),
+    'promptTransport=' + ctx.promptTransport + ' is not accepted by spawn.cjs',
+  );
+});
+
+test('context: the real spawn rejects the old spelling, which is why the test above exists', async () => {
+  // runExecutor checks executor availability before transport, so the fixture
+  // has to be a manifest that passes the first gate — otherwise the test
+  // "passes" against EXECUTOR_UNAVAILABLE and proves nothing about transport.
+  const resolved = {
+    state: 'AVAILABLE',
+    executorLane: 'CODEX_LOCAL',
+    resolvedAbsolutePath: process.execPath,
+    launchPrefixArgv: [],
+  };
+  const base = {
+    resolved,
+    argv: ['-e', 'process.exit(0)'],
+    workingDirectory: tmp('gov-rt-'),
+    prompt: 'x',
+  };
+  let code = null;
+  try {
+    await spawnMod.runExecutor(Object.assign({}, base, { promptTransport: 'STDIN' }));
+  } catch (e) {
+    code = e.code;
+  }
+  assert.equal(code, 'PROMPT_TRANSPORT_INVALID', 'the old spelling must be rejected by the real module');
+
+  // And the value buildContext now produces gets past that gate.
+  let accepted = true;
+  try {
+    await spawnMod.runExecutor(Object.assign({}, base, { promptTransport: 'STDIN_PAYLOAD' }));
+  } catch (e) {
+    if (e.code === 'PROMPT_TRANSPORT_INVALID') accepted = false;
+  }
+  assert.equal(accepted, true, 'STDIN_PAYLOAD must be accepted');
+});
+
+test('context: the store lands outside the validated tree', () => {
+  const repo = tmp('gov-rt-');
+  // defaultStateDir resolves under the git common dir; without a repo it throws,
+  // which is itself the right behaviour — the runner must not invent a location.
+  assert.throws(() => stateMod.defaultStateDir(repo));
+});
+
+test('context: every collaborator runTask calls without a fallback is supplied', () => {
+  const ctx = runner.buildContext({
+    repoCwd: tmp('gov-rt-'),
+    spec: SPEC,
+    grant: {},
+    store: { current: () => null, transition: () => {} },
+    prepareEnvironment: () => ({ ok: true }),
+  });
+  // These three are invoked directly by runTask with no `ctx.x ? … : fallback`.
+  assert.equal(typeof ctx.prProvider.open, 'function');
+  assert.equal(typeof ctx.prProvider.state, 'function');
+  assert.equal(typeof ctx.ciProvider.requiredSources, 'function');
+  assert.equal(typeof ctx.ciProvider.observe, 'function');
+  assert.equal(typeof ctx.performMerge, 'function');
+  assert.equal(typeof ctx.store.transition, 'function');
 });
