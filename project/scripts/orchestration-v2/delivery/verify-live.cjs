@@ -59,6 +59,11 @@ function parseArgs(argv) {
     else if (a === '--capability') out.capability = take();
     else if (a === '--evidence-dir') out.evidenceDir = take();
     else if (a === '--repo') out.repo = take();
+    // Post-merge verification passes the sha the merge actually produced. The
+    // verdict then requires the evidence to have been taken AT that commit,
+    // which is the difference between "this worked somewhere" and "this works
+    // in what was merged".
+    else if (a === '--expected-merge-sha') out.expectedMergeSha = take();
     else if (a === '--json') out.json = true;
     else if (a === '--all') out.all = true;
     else if (a === '--help' || a === '-h') out.help = true;
@@ -154,6 +159,8 @@ async function verify(opts) {
         finishedAt,
         commandDigest: recorder.digest(),
         commandCount: recorder.count,
+        expectedMergeSha: opts.expectedMergeSha || null,
+        postMergeRun: !!opts.expectedMergeSha,
       }),
     );
   }
@@ -164,6 +171,7 @@ async function verify(opts) {
     verifiedAtSha: state.verifiedAtSha,
     sourceBranch: state.sourceBranch,
     dirtyTree: state.dirtyTree,
+    expectedMergeSha: opts.expectedMergeSha || null,
     selected: selected.map((c) => c.capabilityId),
   });
 }

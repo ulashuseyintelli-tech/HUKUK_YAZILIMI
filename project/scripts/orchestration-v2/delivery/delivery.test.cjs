@@ -165,6 +165,10 @@ test('DV12  an evidence record carries every field DONE will be judged on', () =
     repoState: { verifiedAtSha: 'a'.repeat(40), sourceBranch: 'main', dirtyTree: false },
     startedAt: '2026-07-28T00:00:00.000Z',
     finishedAt: '2026-07-28T00:00:10.000Z',
+    // A real run always has one, and the contract requires it: a capability
+    // proved by running something cannot be proved by running nothing.
+    commandDigest: 'f'.repeat(64),
+    commandCount: 3,
   });
   for (const field of [
     'capabilityId',
@@ -190,6 +194,49 @@ test('DV12  an evidence record carries every field DONE will be judged on', () =
   assert.equal(rec.verdict, 'PASS');
   assert.equal(rec.durationMs, 10000);
   assert.match(rec.evidenceDigest, /^[0-9a-f]{64}$/);
+  assert.equal(rec.schemaVersion, 2);
+
+  // A run that DECLARES itself post-merge and then verifies a different commit
+  // has not verified the merge — however green the probe was. This is the
+  // difference between "this worked somewhere" and "this works in what was
+  // merged", and it is the whole of the DONE formula's SHA clause.
+  const postMerge = (expected) =>
+    evidenceMod.build({
+      capability: cap,
+      probe,
+      result: { observedState: 'OPERABLE', failureCode: null, detail: null, steps: [] },
+      repoState: { verifiedAtSha: 'a'.repeat(40), sourceBranch: 'main', dirtyTree: false },
+      startedAt: '2026-07-28T00:00:00.000Z',
+      finishedAt: '2026-07-28T00:00:01.000Z',
+      commandDigest: 'f'.repeat(64),
+      postMergeRun: true,
+      expectedMergeSha: expected,
+    });
+  assert.equal(postMerge('a'.repeat(40)).verdict, 'PASS', 'verified AT the merge sha');
+  const wrong = postMerge('b'.repeat(40));
+  assert.equal(wrong.verdict, 'STALE');
+  assert.equal(wrong.failureCode, 'DELIVERY_SHA_MISMATCH');
+  const missing = postMerge(null);
+  assert.equal(missing.verdict, 'FAIL');
+  assert.equal(missing.failureCode, 'DELIVERY_EXPECTED_MERGE_SHA_MISSING');
+
+  // A branch-head run makes no post-merge claim, so it may be green — and its
+  // null expectedMergeSha is exactly what stops it satisfying DONE.
+  assert.equal(rec.expectedMergeSha, null);
+  assert.equal(rec.verdict, 'PASS');
+
+  // And a probe that executed nothing cannot prove a capability defined by
+  // running something.
+  const noCommands = evidenceMod.build({
+    capability: cap,
+    probe,
+    result: { observedState: 'OPERABLE', failureCode: null, detail: null, steps: [] },
+    repoState: { verifiedAtSha: 'a'.repeat(40), sourceBranch: 'main', dirtyTree: false },
+    startedAt: '2026-07-28T00:00:00.000Z',
+    finishedAt: '2026-07-28T00:00:01.000Z',
+  });
+  assert.equal(noCommands.verdict, 'FAIL');
+  assert.equal(noCommands.failureCode, 'DELIVERY_COMMAND_DIGEST_MISSING');
 });
 
 test('DV13  a dirty tree makes the record STALE regardless of what the probe saw', () => {
