@@ -124,19 +124,45 @@ function createGhPrProvider(cfg) {
     },
 
     /**
-     * Read the four drift-sensitive values at attestation time. The target
-     * branch tip is read from the remote, not from a local ref, because a local
-     * ref can be stale and would make a drifted attestation look clean.
+     * Read the drift-sensitive values at attestation time. The target branch tip
+     * is read from the remote, not from a local ref, because a local ref can be
+     * stale and would make a drifted attestation look clean.
+     *
+     * The keys and TYPES here are a contract with orchestrator.cjs, which builds
+     * the §5 conjunction from `prState.open === true` and
+     * `prState.mergeable === true`. This method used to return `prState: "OPEN"`
+     * and `mergeable: "MERGEABLE"` — strings, under one wrong key — so both
+     * terms were permanently false and MERGE_READY was unreachable in
+     * production. Every test passed because the pilot's fake provider returns
+     * booleans under the right names; only the fake was ever exercised.
+     *
+     * `blockingReview` comes from reviewDecision for the same reason: the
+     * orchestrator reads it as `!== true`, so omitting it silently asserted
+     * "no blocking review" without ever asking.
      */
     async state(args) {
       const n = String(args.pr.number);
-      const json = runGh(['pr', 'view', n, '--json', 'headRefOid,baseRefName,state,mergeStateStatus,mergeable'], repoCwd);
-      let parsed;
-      try {
-        parsed = JSON.parse(json);
-      } catch (e) {
-        throw new PrProviderError('PR_VIEW_UNPARSEABLE', json.slice(0, 200));
+      const fields = 'headRefOid,baseRefName,state,mergeStateStatus,mergeable,reviewDecision';
+
+      // GitHub computes mergeability asynchronously and answers UNKNOWN while it
+      // works — which is exactly the state moments after CI turns green, when
+      // this is called. Treating that as "not mergeable" fails a correct
+      // attempt; a couple of short re-reads is enough.
+      let parsed = null;
+      const tries = Number.isFinite(cfg.mergeableRetries) ? cfg.mergeableRetries : 3;
+      const waitMs = Number.isFinite(cfg.mergeableRetryMs) ? cfg.mergeableRetryMs : 5000;
+      const nap = cfg.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+      for (let i = 0; i < Math.max(1, tries); i += 1) {
+        const json = runGh(['pr', 'view', n, '--json', fields], repoCwd);
+        try {
+          parsed = JSON.parse(json);
+        } catch (e) {
+          throw new PrProviderError('PR_VIEW_UNPARSEABLE', json.slice(0, 200));
+        }
+        if (parsed.mergeable !== 'UNKNOWN') break;
+        if (i < Math.max(1, tries) - 1) await nap(waitMs);
       }
+
       const base = parsed.baseRefName || targetBranch;
       const remote = runGit(['ls-remote', 'origin', 'refs/heads/' + base], repoCwd).split(/\s+/)[0];
       if (!remote) throw new PrProviderError('TARGET_BRANCH_TIP_UNRESOLVED', base);
@@ -156,9 +182,15 @@ function createGhPrProvider(cfg) {
         targetBranch: base,
         targetBranchSha: remote,
         mergeBaseSha: mergeBase,
+        // What the conjunction actually reads.
+        open: parsed.state === 'OPEN',
+        mergeable: parsed.mergeable === 'MERGEABLE',
+        blockingReview: parsed.reviewDecision === 'CHANGES_REQUESTED',
+        // Kept for diagnostics and result payloads; not what the gate reads.
         prState: parsed.state,
         mergeStateStatus: parsed.mergeStateStatus,
-        mergeable: parsed.mergeable,
+        mergeableRaw: parsed.mergeable,
+        reviewDecision: parsed.reviewDecision || null,
       };
     },
   };
