@@ -465,7 +465,9 @@ async function runTask(ctx) {
   if (!run.executorExitSuccess) {
     cleanupWorktree();
     release('TERMINAL_BLOCKED_PUBLISHED');
-    return blocked('EXECUTOR_NONZERO_EXIT', 'exit=' + String(run.exitCode), { run: summarize(run) });
+    // withOutput: this is the one failure an operator cannot diagnose without
+    // seeing what the tool said.
+    return blocked('EXECUTOR_NONZERO_EXIT', 'exit=' + String(run.exitCode), { run: summarize(run, true) });
   }
 
   // --- actual diff boundary validation (§1, §8) ---------------------------
@@ -784,8 +786,41 @@ function worktreeDirName(taskId, attemptId) {
   return short + '-' + String(attemptId).slice(0, 8);
 }
 
-function summarize(run) {
-  return {
+/**
+ * How much of a failing executor's output to keep.
+ *
+ * Enough to see a stack trace or a refusal message, capped so a runaway process
+ * cannot fill the state log. The TAIL rather than the head: a tool that fails
+ * says why at the end.
+ */
+const OUTPUT_TAIL_CHARS = 2000;
+
+function tail(text) {
+  const s = String(text || '');
+  if (s.length <= OUTPUT_TAIL_CHARS) return s;
+  return '...(' + (s.length - OUTPUT_TAIL_CHARS) + ' chars elided)...' + s.slice(-OUTPUT_TAIL_CHARS);
+}
+
+/**
+ * @param {object} run
+ * @param {boolean} [withOutput] keep a tail of what the executor actually said
+ *
+ * spawn.cjs captures stdout and stderr, and this dropped both — so a failed lane
+ * recorded exactly `exit=1` and nothing else. That is not a diagnosable failure:
+ * it cost a full investigation to learn that a codex lane was exiting in 139ms,
+ * because the record could not say what it printed.
+ *
+ * Kept only on the failure path. A successful run's output is large, mostly
+ * uninteresting, and already summarised by the artefacts it produced.
+ *
+ * Not sanitised, deliberately. Inventing a redaction policy here would be
+ * guessing at what a secret looks like; the child environment is
+ * credential-allowlisted upstream, which is where that guarantee belongs. The
+ * tail lands in the state log under .git/ — local and uncommitted, the same
+ * trust level as the queue.
+ */
+function summarize(run, withOutput) {
+  const out = {
     exitCode: run.exitCode,
     durationMs: run.durationMs,
     termination: run.termination.reason,
@@ -793,6 +828,11 @@ function summarize(run) {
     stdoutTruncated: run.stdoutTruncated,
     executorExitSuccess: run.executorExitSuccess,
   };
+  if (withOutput) {
+    out.stderrTail = tail(run.stderr);
+    out.stdoutTail = tail(run.stdout);
+  }
+  return out;
 }
 
 /**
@@ -886,6 +926,7 @@ function successorDisposition(opts) {
 }
 
 module.exports = {
+  summarize,
   IMMUTABLE_FORBIDDEN,
   WORKTREE_DIR_TASK_CHARS,
   worktreeDirName,
