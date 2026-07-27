@@ -595,3 +595,100 @@ test('PILOT: without the hook the flow is unchanged', async () => {
   assert.equal(r.disposition, 'MERGE_READY', JSON.stringify(r.blockerCode || r.detail));
   assert.ok(!r.trace.includes('ENVIRONMENT_PREPARED'), 'no hook, no trace entry');
 });
+
+// ------------------------------------------------- RESUME FROM BLOCKED (§3)
+
+// state.cjs keeps BLOCKED out of TERMINAL and allows BLOCKED -> ELIGIBLE "only
+// by owner action", and nothing implemented that return. A task blocked by a
+// transient failure could never run again: its record exists so DECLARED is
+// skipped, then AUTHORIZED demands DECLARED and fails STATE_CAS_MISMATCH — a
+// ratified plan hash burned by an infrastructure hiccup. Found for real: both
+// T5 tasks blocked on WORKTREE_ADD_FAILED (Windows MAX_PATH) and could not be
+// retried after the path was shortened.
+test('PILOT: a BLOCKED task does not silently retry', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/resume/out.txt', 'x\n');
+  const spec = { taskId: 'PILOT-RESUME-GUARD', allowedRoots: ['fixture/resume/'] };
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+
+  const first = await orch.runTask(
+    ctxFor(repo, {
+      store,
+      specOver: spec,
+      ctxExtra: {
+        worktreeFactory: () => {
+          throw Object.assign(new Error('unable to create file: Filename too long'), {
+            code: 'WORKTREE_ADD_FAILED',
+          });
+        },
+      },
+    }),
+  );
+  assert.equal(first.disposition, 'BLOCKED');
+  assert.equal(store.current('PILOT-RESUME-GUARD').state, 'BLOCKED');
+
+  // Same invocation again, infrastructure now fine: still refused.
+  const second = await orch.runTask(ctxFor(repo, { store, specOver: spec }));
+  assert.equal(second.disposition, 'BLOCKED');
+  assert.equal(second.blockerCode, 'BLOCKED_RESUME_NOT_AUTHORIZED');
+  assert.match(second.detail, /owner-authorized resume is required/);
+});
+
+test('PILOT: an owner-authorized resume completes and leaves the blocker in the log', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/resume2/out.txt', 'x\n');
+  const spec = { taskId: 'PILOT-RESUME-OK', allowedRoots: ['fixture/resume2/'] };
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+
+  const first = await orch.runTask(
+    ctxFor(repo, {
+      store,
+      specOver: spec,
+      ctxExtra: {
+        worktreeFactory: () => {
+          throw Object.assign(new Error('Filename too long'), { code: 'WORKTREE_ADD_FAILED' });
+        },
+      },
+    }),
+  );
+  assert.equal(first.disposition, 'BLOCKED');
+
+  const resumed = await orch.runTask(
+    ctxFor(repo, { store, specOver: spec, ctxExtra: { resumeFromBlocked: true } }),
+  );
+  assert.equal(resumed.disposition, 'MERGE_READY', JSON.stringify(resumed.blockerCode || resumed.detail));
+
+  // BLOCKED -> ELIGIBLE, never BLOCKED -> AUTHORIZED, and the recovery is
+  // visible rather than erased.
+  assert.ok(resumed.trace.includes('ELIGIBLE(resumed)'), JSON.stringify(resumed.trace));
+  assert.ok(!resumed.trace.includes('AUTHORIZED'), 'BLOCKED -> AUTHORIZED is not a legal edge');
+  const rec = store.current('PILOT-RESUME-OK');
+  assert.equal(rec.state, 'MERGE_READY');
+});
+
+test('PILOT: resume still re-validates the grant, it does not inherit the old one', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/resume3/out.txt', 'x\n');
+  const spec = { taskId: 'PILOT-RESUME-AUTH', allowedRoots: ['fixture/resume3/'] };
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+
+  const first = await orch.runTask(
+    ctxFor(repo, {
+      store,
+      specOver: spec,
+      ctxExtra: {
+        worktreeFactory: () => {
+          throw Object.assign(new Error('Filename too long'), { code: 'WORKTREE_ADD_FAILED' });
+        },
+      },
+    }),
+  );
+  assert.equal(first.disposition, 'BLOCKED');
+
+  // Resume authorized, but the grant has since been revoked.
+  const revoked = await orch.runTask(
+    ctxFor(repo, { store, specOver: spec, grantRevoked: true, ctxExtra: { resumeFromBlocked: true } }),
+  );
+  assert.equal(revoked.disposition, 'BLOCKED');
+  assert.equal(revoked.blockerCode, 'GRANT_REVOKED');
+});

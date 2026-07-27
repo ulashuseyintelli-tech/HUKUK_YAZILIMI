@@ -21,6 +21,7 @@
  * usage:
  *   node run-task.cjs --plan <plan.v1.json> --grant <grant.json> --prompt <file>
  *                     [--lane CODEX_LOCAL] [--target-branch main] [--dry-run]
+ *                     [--worktree-root <dir>] [--resume-blocked]
  */
 
 const fs = require('fs');
@@ -130,6 +131,9 @@ function parseArgs(argv) {
     else if (a === '--repo') out.repoCwd = take();
     else if (a === '--worktree-root') out.worktreeRoot = take();
     else if (a === '--dry-run') out.dryRun = true;
+    // A task that reached BLOCKED does not retry on its own; state.cjs allows
+    // BLOCKED -> ELIGIBLE only "by owner action", and this flag IS that action.
+    else if (a === '--resume-blocked') out.resumeFromBlocked = true;
     else throw new RunnerError('ARG_UNKNOWN', a);
   }
   if (!out.plan) throw new RunnerError('ARG_REQUIRED', '--plan');
@@ -196,6 +200,7 @@ function buildContext(opts) {
     // sit detached, which would compare against a stale tip.
     baseRef: opts.baseRef || 'origin/' + (opts.targetBranch || 'main'),
     worktreeRoot: opts.worktreeRoot || path.join(path.dirname(repoCwd), 'HUKUK_orch_runs'),
+    resumeFromBlocked: opts.resumeFromBlocked === true,
 
     prepareEnvironment:
       opts.prepareEnvironment ||
@@ -254,6 +259,7 @@ async function main(argv) {
     lane: args.lane,
     targetBranch: args.targetBranch,
     worktreeRoot: args.worktreeRoot,
+    resumeFromBlocked: args.resumeFromBlocked,
   });
 
   const withheld = envPolicy.withheldFromParent(ctx.parentEnv);
@@ -269,6 +275,7 @@ async function main(argv) {
       '  credentialAllowlist : ' + ctx.credentialAllowlist.join(', '),
       '  withheld (present)  : ' + (withheld.length ? withheld.join(', ') : '(none)'),
       '  merge               : NOT PERMITTED from this runner',
+      ...(ctx.resumeFromBlocked ? ['  resume              : OWNER-AUTHORIZED resume of a BLOCKED task'] : []),
       '',
     ].join('\n'),
   );
