@@ -64,6 +64,22 @@ describe('payment-mapper (G4b-1)', () => {
     expect(res.payments.map((p) => p.id)).toEqual(['C3']);
   });
 
+  it('COLLECTION confirmation kararı yalnız status üzerinden verilir; confirmedAt karara girmez', () => {
+    const res = mapPayments([], [
+      { ...collection({ id: 'C1', status: 'PENDING' }), confirmedAt: '2025-03-11' },
+      { ...collection({ id: 'C2', status: 'CONFIRMED' }), confirmedAt: null },
+    ]);
+
+    expect(res.payments.map((p) => p.id)).toEqual(['C2']);
+  });
+
+  it('status=CONFIRMED ile confirmedAt=null birlikteyken COLLECTION payment üretilir', () => {
+    const res = mapPayments([], [{ ...collection({ id: 'C1', status: 'CONFIRMED' }), confirmedAt: null }]);
+
+    expect(res.source).toBe('COLLECTION');
+    expect(res.payments).toEqual([expect.objectContaining({ id: 'C1' })]);
+  });
+
   it('ikisi de boş → NONE', () => {
     const res = mapPayments([], []);
     expect(res).toEqual({ payments: [], source: 'NONE', diagnostics: [] });
@@ -84,19 +100,25 @@ describe('payment-mapper (G4b-1)', () => {
   });
 
   it('COLLECTION provenance tarihleri canonical effective-date authority olmaz', () => {
-    const row = {
+    const rowWithConfirmedAt = {
       ...collection({ id: 'C1', date: '2025-05-02' }),
       valueDate: '2025-05-10',
       confirmedAt: '2025-05-11',
       externalSettledAt: '2025-05-12',
     };
+    const rowWithoutConfirmedAt = {
+      ...collection({ id: 'C2', date: '2025-05-03' }),
+      confirmedAt: null,
+    };
 
-    const res = mapPayments([], [row]);
+    const res = mapPayments([], [rowWithConfirmedAt, rowWithoutConfirmedAt]);
 
     expect(res.payments[0].date).toBe('2025-05-02');
+    expect(res.payments[1].date).toBe('2025-05-03');
     expect(res.payments[0]).not.toHaveProperty('valueDate');
     expect(res.payments[0]).not.toHaveProperty('confirmedAt');
     expect(res.payments[0]).not.toHaveProperty('externalSettledAt');
+    expect(res.payments[1]).not.toHaveProperty('confirmedAt');
   });
 
   it.each([
