@@ -137,6 +137,20 @@ OFF-P2-CAP-09 (audit attribution)   REQUIRES  CAP-01 (acting Person/hesap ayrı�
                                     [CAP-09B alt-kapsamı için geçerli — CAP-09A bu REQUIRES'ı
                                     taşımaz; bkz. yukarıdaki OWNER RECONCILIATION, 2026-07-22]
 OFF-P2-CAP-02/03/04 enforcement     REQUIRES  CAP-09'un atıf standardı (kim/niye reddedildi izi)
+                                    [DARALTILDI 2026-07-28, owner
+                                    OFFICE-P2-CAP02-OWNER-DISPOSITIONS-CANONICALIZATION-R01:
+                                    yukarıdaki kenar TARİHSEL KAYIT olarak korunur fakat
+                                    current program yönü DEĞİLDİR. CAP-02 POPULATION, SHADOW ve
+                                    ENFORCEMENT IMPLEMENTATION aşamaları CAP-09/CAP-09A'ya
+                                    BAĞIMLI DEĞİLDİR ve CAP-09A SLICE 3 GEREKTİRMEZ. Yalnız
+                                    AUTHORIZATION ENFORCEMENT ACTIVATION, provider-neutral,
+                                    deterministik ve incelenebilir authorization-decision audit
+                                    evidence GEREKTİRİR; belirli bir audit implementasyonunu veya
+                                    CAP-09A-CONSUMER-01'i GEREKTİRMEZ. Mevcut audit altyapısı bu
+                                    gereksinimi karşılıyorsa yeniden implementation yapılmaz;
+                                    karşılamıyorsa ileride küçük ve bounded bir audit adapter
+                                    görevi açılabilir — CAP-09A workstream'i primary veya
+                                    blocking YAPILMAZ.]
 OFF-P2-CAP-07 export/detail         REQUIRES  CAP-03'ün field-level permission taşıyıcısı
 ```
 
