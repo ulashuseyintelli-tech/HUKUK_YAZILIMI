@@ -13,8 +13,9 @@
  * - Batch operations for performance
  * - Diff/compare utilities
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { OutboxScope } from './outbox-scope';
 
 export interface FactSnapshot {
   facts: Record<string, any>;
@@ -316,19 +317,79 @@ export class FactStoreService {
   }
 
   /**
-   * Deletes all facts and flags for a case (with audit)
+   * Hedef case'in cagiranin kapsaminda oldugunu dogrular; degilse fail-closed reddeder.
+   *
+   * NEDEN CASE UZERINDEN: `IcrabotCaseFact`/`IcrabotCaseFlag` satirlari `tenantId`
+   * TASIMAZ ve `Case`'e Prisma relation'i YOKTUR (schema.prisma). Bu yuzden silme
+   * sorgusu kendi basina bir tenant predicate'i tasiyamaz; tenant kapsami, hedef
+   * Case'in sahipligi DOGRUDAN dogrulanarak saglanir — `ActionHandlerService.
+   * executeDirectly` (OUTBOX-F1) ile ayni desen.
+   *
+   * Cagiran transaction client'i gecer: dogrulama ve silme AYNI transaction icinde
+   * olur, boylece check-then-delete (TOCTOU) penceresi yoktur.
+   *
+   * Bulunamayan ve baska tenant'a ait case AYNI genel hatayla reddedilir — varlik
+   * sizintisi (enumeration oracle) uretmez.
    */
-  async clearCase(caseId: string, meta: WriteMetadata): Promise<void> {
-    const snapshot = await this.getSnapshot(caseId);
+  private async assertCaseInScope(
+    tx: any,
+    caseId: string,
+    scope: OutboxScope,
+  ): Promise<void> {
+    if (scope.kind === 'platform') return;
 
+    const owned = await tx.case.findFirst({
+      where: { id: caseId, tenantId: scope.tenantId },
+      select: { id: true },
+    });
+
+    if (!owned) {
+      throw new NotFoundException(`Case not found: ${caseId}`);
+    }
+  }
+
+  /**
+   * Deletes all facts and flags for a case (with audit).
+   *
+   * V28-FACTSTORE-SECURITY-P0-I01: yikici yol artik tenant kapsami ZORUNLU. Kapsam
+   * dogrulamasi, audit yazimi ve silme tek transaction icinde atomiktir; kapsam disi
+   * case icin HICBIR audit satiri yazilmaz ve HICBIR silme yapilmaz.
+   *
+   * /// <remarks>
+   * /// Cagrildigi yerler:
+   * /// - FactStoreController.clearCase() -> DELETE /icrabot/v28/facts/:caseId
+   * /// - FactStoreController.clearCasePost() -> POST /icrabot/v28/facts/:caseId/clear
+   * /// - ScenarioHarnessService.clearTestData() -> senaryo oncesi temizlik (dev/test yuzeyi)
+   * /// </remarks>
+   */
+  async clearCase(
+    caseId: string,
+    meta: WriteMetadata,
+    scope: OutboxScope,
+  ): Promise<void> {
     await this.prisma.$transaction(async (tx: any) => {
+      // Kapsam kapisi: silmeden ONCE, ayni transaction icinde (TOCTOU'suz).
+      await this.assertCaseInScope(tx, caseId, scope);
+
+      // Snapshot da transaction icinde okunur: audit edilen deger ile silinen deger ayni.
+      const [facts, flags] = await Promise.all([
+        tx.icrabotCaseFact.findMany({
+          where: { caseId },
+          select: { key: true, value: true },
+        }),
+        tx.icrabotCaseFlag.findMany({
+          where: { caseId },
+          select: { key: true, value: true },
+        }),
+      ]);
+
       // Audit deletions
-      for (const [key, value] of Object.entries(snapshot.facts)) {
+      for (const { key, value } of facts as Array<{ key: string; value: any }>) {
         await tx.icrabotFactAudit.create({
           data: { caseId, key, oldValue: value, newValue: null, kind: 'fact', meta },
         });
       }
-      for (const [key, value] of Object.entries(snapshot.flags)) {
+      for (const { key, value } of flags as Array<{ key: string; value: any }>) {
         await tx.icrabotFactAudit.create({
           data: { caseId, key, oldValue: value, newValue: null, kind: 'flag', meta },
         });
