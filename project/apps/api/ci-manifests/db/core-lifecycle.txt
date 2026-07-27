@@ -30,3 +30,4 @@ src/modules/icrabot/domain-event-ingest/__tests__/domain-event-ingest.integratio
 src/modules/icrabot/v28-engine/__tests__/uyap-event-ingest.boundary.integration.spec.ts
 src/modules/interest-engine/__tests__/golden-fixture-matrix.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-diagnostic.db-gated.integration.spec.ts
+src/modules/poa/__tests__/poa-tenant-safety.db-gated.integration.spec.ts

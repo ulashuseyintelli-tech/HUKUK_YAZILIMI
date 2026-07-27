@@ -12,6 +12,9 @@ import { UyapController } from './uyap.controller';
 import { UyapOperationWriterService } from './operation-writer/uyap-operation-writer.service';
 import { UyapCpeDecisionLinkWriterService } from './operation-writer/uyap-cpe-decision-link-writer.service';
 import { UyapOperationEvidenceOrchestrator } from './operation-writer/uyap-operation-evidence.orchestrator';
+// UYAP-SEND-AUTHORITY-RESOLVER-I01: MODEL B yetki zinciri (acting-lawyer matched POA).
+// Henüz CPE akışına BAĞLI DEĞİL — bağlama UYAP-CPE-AUTHORITY-FACT-BRIDGE-I01'dedir.
+import { UyapSendAuthorityResolverService } from './authority/uyap-send-authority-resolver.service';
 
 // Re-export UYAP codes for external use
 export * from './uyap-codes';
@@ -31,7 +34,8 @@ export * from './uyap-codes';
     UyapOperationWriterService,
     UyapCpeDecisionLinkWriterService,
     UyapOperationEvidenceOrchestrator,
+    UyapSendAuthorityResolverService,
   ],
-  exports: [UyapService, UyapXmlService],
+  exports: [UyapService, UyapXmlService, UyapSendAuthorityResolverService],
 })
 export class UyapModule {}
