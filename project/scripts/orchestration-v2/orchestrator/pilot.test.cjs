@@ -915,3 +915,142 @@ test('PILOT: the worktree directory name stays inside the path budget', () => {
   assert.ok(name.startsWith('OFFICE-CAP-02'), name);
   assert.notEqual(orch.worktreeDirName(worstTask, 'aaaaaaaa11'), orch.worktreeDirName(worstTask, 'bbbbbbbb22'));
 });
+
+// ------------------------------------------------- SCENARIO: ELIGIBLE RESUME
+
+/**
+ * A task left at ELIGIBLE is the crash window nobody handled: everything was
+ * validated, the lease had not yet been taken, and the process died. These run
+ * the REAL runTask against a real store, because the defect was an interaction
+ * between the opening branch and the state CAS — not something a unit test on
+ * the guard could have caught.
+ */
+
+/** Drive a real task store to ELIGIBLE the way a dying run would leave it. */
+function leaveAtEligible(repo, store, sg) {
+  const base = { taskId: sg.spec.taskId, taskSpecVersion: 1 };
+  store.transition(Object.assign({ to: 'DECLARED', expectedPreviousState: null, writerIdentity: 'TASK_AUTHOR' }, base));
+  store.transition(Object.assign({ to: 'AUTHORIZED', expectedPreviousState: 'DECLARED', writerIdentity: 'OWNER' }, base));
+  store.transition(
+    Object.assign(
+      {
+        to: 'ELIGIBLE',
+        expectedPreviousState: 'AUTHORIZED',
+        writerIdentity: 'ORCHESTRATOR',
+        payload: { allowedRoots: sg.spec.boundaryPolicy.allowedRoots },
+      },
+      base,
+    ),
+  );
+}
+
+test('PILOT ER-1: a task left at ELIGIBLE is picked up, not permanently stuck', async () => {
+  // Before this, the opening branch handled only "no record" and BLOCKED, so a
+  // record at ELIGIBLE fell through to a write expecting AUTHORIZED and died
+  // with STATE_CAS_MISMATCH: expected DECLARED but store holds ELIGIBLE.
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/er1/out.txt', 'x\n');
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+  const sg = F.specAndGrant({ taskId: 'PILOT-ER-1', allowedRoots: ['fixture/er1/'] });
+
+  leaveAtEligible(repo, store, sg);
+  assert.equal(store.current('PILOT-ER-1').state, 'ELIGIBLE');
+
+  const r = await orch.runTask(ctxFor(repo, { store, sg }));
+  assert.equal(r.disposition, 'MERGE_READY', JSON.stringify(r.blockerCode || r.detail));
+  assert.ok(r.trace.indexOf('ELIGIBLE(resumed-in-place)') !== -1, 'the resume is visible in the trace');
+});
+
+test('PILOT ER-2: the resume records where it came from, and under a NEW attempt', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/er2/out.txt', 'x\n');
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+  const sg = F.specAndGrant({ taskId: 'PILOT-ER-2', allowedRoots: ['fixture/er2/'] });
+  leaveAtEligible(repo, store, sg);
+
+  await orch.runTask(ctxFor(repo, { store, sg }));
+
+  const claimed = store.history('PILOT-ER-2').filter((h) => h.state === 'CLAIMED').pop();
+  assert.ok(claimed, 'the task reached CLAIMED');
+  assert.equal(claimed.payload.resumedFromState, 'ELIGIBLE');
+  assert.ok(claimed.payload.attemptId, 'a new attempt id was recorded');
+  assert.notEqual(claimed.payload.attemptId, claimed.payload.previousAttemptId);
+  assert.ok(claimed.payload.revalidatedAtMs, 'and when it was re-validated');
+});
+
+test('PILOT ER-3: a revoked grant is refused at the ELIGIBLE resume, not run', async () => {
+  // Everything is re-verified on the way through: the resume skips the state
+  // WRITES, never the checks.
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/er3/out.txt', 'x\n');
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+  const sg = F.specAndGrant({ taskId: 'PILOT-ER-3', allowedRoots: ['fixture/er3/'] });
+  leaveAtEligible(repo, store, sg);
+
+  const r = await orch.runTask(ctxFor(repo, { store, sg, grantRevoked: true }));
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.equal(r.blockerCode, 'GRANT_REVOKED');
+});
+
+test('PILOT ER-4: a live lease stops the ELIGIBLE resume before an executor starts', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/er4/out.txt', 'x\n');
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+  const sg = F.specAndGrant({ taskId: 'PILOT-ER-4', allowedRoots: ['fixture/er4/'] });
+  leaveAtEligible(repo, store, sg);
+
+  // Somebody else is holding it.
+  lease.claim({
+    cwd: repo,
+    taskId: 'PILOT-ER-4',
+    holder: 'CODEX_LOCAL',
+    holderToken: 'f'.repeat(32),
+    taskAttemptId: 'e'.repeat(32),
+    ttlMs: 10 * 60 * 1000,
+  });
+
+  const r = await orch.runTask(ctxFor(repo, { store, sg }));
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.equal(r.blockerCode, 'ELIGIBLE_RESUME_REFUSED');
+  assert.match(r.detail, /LIVE_EXECUTOR_HOLDS_LEASE/);
+});
+
+test('PILOT ER-5: a live PID stops it even when the lease has lapsed', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/er5/out.txt', 'x\n');
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+  const sg = F.specAndGrant({ taskId: 'PILOT-ER-5', allowedRoots: ['fixture/er5/'] });
+  leaveAtEligible(repo, store, sg);
+
+  // No lease at all, but the queue says this process is still running it.
+  const r = await orch.runTask(
+    ctxFor(repo, {
+      store,
+      sg,
+      ctxExtra: { queueEntry: { entryId: 'e1', taskId: 'PILOT-ER-5', state: 'EXECUTING', owner: { pid: process.pid } } },
+    }),
+  );
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.match(r.detail, /LIVE_EXECUTOR_PROCESS/);
+});
+
+test('PILOT ER-6: resuming twice does not run twice', async () => {
+  // The first resume takes the lease and finishes at MERGE_READY; the second
+  // finds a state that is no longer ELIGIBLE and does not start again.
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/er6/out.txt', 'x\n');
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+  const sg = F.specAndGrant({ taskId: 'PILOT-ER-6', allowedRoots: ['fixture/er6/'] });
+  leaveAtEligible(repo, store, sg);
+
+  const first = await orch.runTask(ctxFor(repo, { store, sg }));
+  assert.equal(first.disposition, 'MERGE_READY', JSON.stringify(first.blockerCode));
+
+  const second = await orch.runTask(ctxFor(repo, { store, sg }));
+  assert.equal(second.disposition, 'BLOCKED', 'the second attempt does not re-run the executor');
+  // Refused BY NAME. Before this the caller got "STATE_CAS_MISMATCH: expected
+  // DECLARED but store holds MERGE_READY" — a message about an internal write,
+  // for a caller whose actual mistake was starting a finished task again.
+  assert.equal(second.blockerCode, 'TASK_NOT_REENTRANT');
+  assert.match(second.detail, /MERGE_READY/);
+});

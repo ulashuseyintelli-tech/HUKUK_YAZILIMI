@@ -30,6 +30,7 @@ const spawnMod = require('../executors/spawn.cjs');
 const authority = require('./authority.cjs');
 const stateMod = require('./state.cjs');
 const mergeready = require('./mergeready.cjs');
+const eligibleResume = require('./eligible-resume.cjs');
 
 /**
  * Immutable global forbidden set (§1). Never overridable by a task.
@@ -188,6 +189,38 @@ async function runTask(ctx) {
       taskId + ' is BLOCKED (' + (resumedFromBlocker || 'unknown') + '); an owner-authorized resume is required',
     );
   }
+  // A task left at ELIGIBLE is re-entered where it stopped, not rewound.
+  //
+  // ELIGIBLE means the grant, the four digests, the revocation marker and the
+  // eligibility checks all passed and the task was about to take its lease. A
+  // process that died in that window used to leave the task permanently
+  // unrunnable: nothing handled this opening, so the AUTHORIZED write below
+  // failed with STATE_CAS_MISMATCH: expected DECLARED but store holds ELIGIBLE.
+  //
+  // Rewinding to DECLARED would throw away a validation that really happened
+  // and re-derive it from a world that may since have moved. Instead the same
+  // checks run again below — they are not skipped — and the only thing this
+  // branch changes is that the three lifecycle writes are not repeated, because
+  // the states they would write are already recorded.
+  const resumingFromEligible = Boolean(opening) && opening.state === 'ELIGIBLE';
+  // AUTHORIZED is the same crash window one step earlier: validated, but the
+  // ELIGIBLE write had not landed. Re-entered the same way.
+  const resumingFromAuthorized = Boolean(opening) && opening.state === 'AUTHORIZED';
+
+  // Every other opening is refused BY NAME rather than by falling through to a
+  // write that expects DECLARED. ER-6 found this: a second run against a task
+  // already at MERGE_READY died with "STATE_CAS_MISMATCH: expected DECLARED but
+  // store holds MERGE_READY" — a CAS message describing an internal write, for
+  // a caller whose actual mistake was starting a finished task again.
+  const REENTRANT = ['DECLARED', 'AUTHORIZED', 'ELIGIBLE', 'BLOCKED'];
+  if (opening && REENTRANT.indexOf(opening.state) === -1) {
+    return blocked(
+      'TASK_NOT_REENTRANT',
+      taskId + ' is at ' + opening.state + '; only a task that has not yet been claimed can be started',
+      { openingState: opening.state },
+    );
+  }
+
   if (!opening) {
     store.transition({
       taskId,
@@ -216,7 +249,7 @@ async function runTask(ctx) {
   // ELIGIBLE. The authority check above still ran unconditionally, so the grant
   // and hashes are re-validated on every attempt including this one — what is
   // skipped is the state-log entry, not the verification.
-  if (!resumingFromBlocked) {
+  if (!resumingFromBlocked && !resumingFromEligible && !resumingFromAuthorized) {
     store.transition({
       taskId,
       to: 'AUTHORIZED',
@@ -233,7 +266,58 @@ async function runTask(ctx) {
   if (!elig.eligible) {
     return blocked('NOT_ELIGIBLE', elig.reasons.join('; '), { reasons: elig.reasons });
   }
-  store.transition({
+
+  // Re-entering at ELIGIBLE: every check above has just run again, so what is
+  // left to establish is that nobody else is running this task. Both signals
+  // are consulted — a live lease and a live process — because either alone can
+  // be stale in the direction that starts a second executor.
+  let eligibleResumeEvidence = null;
+  if (resumingFromEligible) {
+    let leaseRecord = null;
+    try {
+      // Positional, not an options object: lease.read is read(taskId, cwd).
+      // Passing an object made the guard silently see no lease, so a live
+      // lease was caught one step later by the claim CAS — safe, but with
+      // CLAIM_CONFLICT instead of the reason the caller needed.
+      leaseRecord = lease.read(taskId, repoCwd).record || null;
+    } catch (e) {
+      leaseRecord = null;
+    }
+    const verdict = eligibleResume.assessResume({
+      taskRecord: opening,
+      leaseRecord,
+      queueEntry: ctx.queueEntry || null,
+      killSwitchEngaged: ctx.isKillSwitchEngaged ? ctx.isKillSwitchEngaged() === true : false,
+      grantRevoked: ctx.grantRevoked === true,
+      programEligible: ctx.programEligible,
+      parentAuthorizationId: ctx.parentAuthorizationId,
+      expectedParentAuthorizationId: ctx.expectedParentAuthorizationId,
+      taskId,
+      expectedTaskSpecSha256: (opening.payload && opening.payload.taskSpecSha256) || null,
+      actualTaskSpecSha256: validated.digests.taskSpecSha256,
+      expectedLane: ctx.expectedLane,
+      actualLane: holder,
+      nowMs: nowMs(),
+    });
+    if (!verdict.resumable) {
+      return blocked('ELIGIBLE_RESUME_REFUSED', verdict.refusal + ': ' + verdict.reason, {
+        refusal: verdict.refusal,
+        from: verdict.from,
+      });
+    }
+    // A NEW attempt id, recorded. A resume that reuses the old one is
+    // indistinguishable in the log from the attempt that died.
+    eligibleResumeEvidence = eligibleResume.resumeEvidence({
+      attemptId,
+      previousAttemptId: verdict.previousAttemptId,
+      parentAuthorizationId: ctx.parentAuthorizationId,
+      reason: verdict.reason,
+      nowMs: nowMs(),
+    });
+    trace.push('ELIGIBLE(resumed-in-place)');
+  }
+
+  if (!resumingFromEligible) store.transition({
     taskId,
     to: 'ELIGIBLE',
     expectedPreviousState: resumingFromBlocked ? 'BLOCKED' : 'AUTHORIZED',
@@ -288,7 +372,7 @@ async function runTask(ctx) {
       nowMs: nowMs(),
     });
 
-  advance('CLAIMED', 'ELIGIBLE', { leaseId: claim.record.leaseId, epoch });
+  advance('CLAIMED', 'ELIGIBLE', Object.assign({ leaseId: claim.record.leaseId, epoch }, eligibleResumeEvidence || {}));
   trace.push('CLAIMED');
 
   const release = (reason) => {
