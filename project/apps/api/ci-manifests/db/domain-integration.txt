@@ -108,6 +108,14 @@
 #     akisini (idempotency, cent-remainder allocation, mid-tx rollback, advisory-lock
 #     concurrency) dogru davrandigini kanitlar. Disposable Postgres 16 ile dogrulandi.
 #
+#
+#   CLIENT-P2-U03-TRACK-B-I01 financial disclosure schema foundation
+#     Track B veri temelinin model-seviyesi invariant kaniti: tenant-scoped bilesik FK ile
+#     cross-tenant reddi, 11 FK RESTRICT (cascade/orphan yok), §35.12 unique kumesi,
+#     Decimal(15,2) hassasiyeti, guvenli DRAFT varsayilani ve §35.3 CASE_CREDITOR_CLUSTER
+#     yapisal imkansizligi. PR #1629 (squash 32a42ed4) merge edildiginde bu spec hicbir
+#     manifestte kayitli degildi ve CI da hic kosmuyordu; charter §37 ile baglandi.
+src/modules/client-financial-disclosure/__tests__/track-b-i01-schema-foundation.db-gated.integration.spec.ts
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
