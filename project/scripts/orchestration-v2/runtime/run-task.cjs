@@ -41,6 +41,23 @@ const envPolicy = require('./env-policy.cjs');
  */
 const GOVERNANCE_REQUIRED_CHECKS = ['Test Suite', 'Architectural Guardrails'];
 
+/**
+ * Headless invocation per lane, WITHOUT the prompt.
+ *
+ * spawn.cjs does not append the prompt to argv — SINGLE_ARGUMENT means "the
+ * caller already put it there", and only STDIN_PAYLOAD actually writes it. We
+ * use stdin because a task prompt is long, multi-line, and has no business in a
+ * process listing, so each lane's argv must be the form that reads stdin.
+ *
+ * Verified against the real CLIs on this machine rather than assumed: piping a
+ * sentinel prompt into `claude -p` and into `codex exec -` returned the sentinel
+ * and exit 0 for both.
+ */
+const LANE_ARGV = {
+  CLAUDE_LOCAL: ['-p'],
+  CODEX_LOCAL: ['exec', '-'],
+};
+
 class RunnerError extends Error {
   constructor(code, detail) {
     super(code + (detail ? ': ' + detail : ''));
@@ -97,16 +114,25 @@ function buildContext(opts) {
   const grant = opts.grant;
 
   const credentialAllowlist = envPolicy.resolveCredentialAllowlist(opts.extraCredentials);
+  const lane = opts.lane || 'CODEX_LOCAL';
+  const executorArgv = opts.executorArgv || LANE_ARGV[lane];
+  // runTask passes this straight to spawn.cjs, which fails ARGV_REQUIRED on an
+  // empty or absent vector — after the lease is taken and the worktree built.
+  // Catch an unknown lane here instead, where the message is useful.
+  if (!Array.isArray(executorArgv) || executorArgv.length === 0) {
+    throw new RunnerError('EXECUTOR_ARGV_UNKNOWN_LANE', lane);
+  }
 
   return {
     repoCwd,
     spec,
     grant,
+    executorArgv,
     // createStore takes a directory, and defaultStateDir puts it under the git
     // common dir — outside the validated tree, so the orchestrator's own
     // bookkeeping can never be flagged as an untracked file by its own gate.
     store: opts.store || stateMod.createStore(stateMod.defaultStateDir(repoCwd)),
-    holder: opts.lane || 'CODEX_LOCAL',
+    holder: lane,
     baseRef: spec.baseSha || opts.targetBranch || 'main',
     worktreeRoot: opts.worktreeRoot || path.join(path.dirname(repoCwd), 'HUKUK_orch_runs'),
 
@@ -220,4 +246,4 @@ if (require.main === module) {
   );
 }
 
-module.exports = { buildContext, parseArgs, GOVERNANCE_REQUIRED_CHECKS, RunnerError, main };
+module.exports = { buildContext, parseArgs, GOVERNANCE_REQUIRED_CHECKS, LANE_ARGV, RunnerError, main };

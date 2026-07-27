@@ -449,3 +449,42 @@ test('context: every collaborator runTask calls without a fallback is supplied',
   assert.equal(typeof ctx.performMerge, 'function');
   assert.equal(typeof ctx.store.transition, 'function');
 });
+
+test('context: each lane gets the headless argv its CLI actually needs', () => {
+  for (const lane of ['CLAUDE_LOCAL', 'CODEX_LOCAL']) {
+    const ctx = runner.buildContext({
+      repoCwd: tmp('gov-rt-'),
+      spec: SPEC,
+      grant: {},
+      lane,
+      store: { current: () => null, transition: () => {} },
+      prProvider: {},
+      ciProvider: {},
+      prepareEnvironment: () => ({ ok: true }),
+    });
+    assert.ok(Array.isArray(ctx.executorArgv) && ctx.executorArgv.length > 0, lane);
+    assert.equal(ctx.holder, lane);
+    // The prompt is NOT in argv: spawn.cjs writes it to stdin, and these argv
+    // forms are the ones that read stdin. Verified against the real CLIs.
+    assert.ok(!ctx.executorArgv.some((a) => a.length > 40), lane + ' argv must not carry the prompt');
+  }
+  assert.deepEqual(runner.LANE_ARGV.CLAUDE_LOCAL, ['-p']);
+  assert.deepEqual(runner.LANE_ARGV.CODEX_LOCAL, ['exec', '-']);
+});
+
+test('context: an unknown lane fails at build time, not after the lease is taken', () => {
+  assert.throws(
+    () =>
+      runner.buildContext({
+        repoCwd: tmp('gov-rt-'),
+        spec: SPEC,
+        grant: {},
+        lane: 'SOME_FUTURE_LANE',
+        store: { current: () => null, transition: () => {} },
+        prProvider: {},
+        ciProvider: {},
+        prepareEnvironment: () => ({ ok: true }),
+      }),
+    (e) => e.code === 'EXECUTOR_ARGV_UNKNOWN_LANE',
+  );
+});
