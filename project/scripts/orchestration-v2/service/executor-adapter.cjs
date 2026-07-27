@@ -117,6 +117,7 @@ function advance(queue, entryId, to, patch, nowMs) {
  * @param {function} o.buildContext runTask's composition root (injected so
  *                                  tests can drive the adapter without spawning)
  * @param {function} o.runTask
+ * @param {function} [o.completeAfterOwnerMerge] merge + sync + cleanup + close
  * @param {function} [o.audit]
  * @param {function} [o.isKillSwitchEngaged]
  * @param {function} [o.isRevoked]
@@ -157,7 +158,10 @@ async function runEntry(o) {
   });
 
   advance(queue, entry.entryId, 'EXECUTING', {}, clock());
-  audit('EXECUTOR_STARTED', { entryId: entry.entryId, taskId: entry.taskId, lane: ctx.holder });
+  // Not EXECUTOR_STARTED: runTask validates authority, base drift and the
+  // lease long before it spawns anything, and a log line claiming an executor
+  // started 9ms before a grant refusal is a lie the log tells about itself.
+  audit('TASK_DISPATCHED', { entryId: entry.entryId, taskId: entry.taskId, lane: ctx.holder });
 
   let result;
   try {
@@ -202,14 +206,83 @@ async function runEntry(o) {
     pr: (result.pr && result.pr.number) || null,
   });
 
-  return {
-    disposition: result.disposition,
+  // MERGE_READY was where the chain stopped. runTask reaches it and returns;
+  // completeAfterOwnerMerge exists to take it the rest of the way and had ZERO
+  // non-test callers, so every task ended parked with an open PR and a queue
+  // entry nobody would ever advance.
+  //
+  // Two keys, as everywhere else: the request asks for it AND the standing
+  // grant authorizes it. Absent either, the task stays at MERGE_READY for a
+  // human — which is the pilot's behaviour, unchanged.
+  const wantsMerge = resolved.request.autoMerge === true;
+  const grantAllows = !!(resolved.standingGrant && resolved.standingGrant.mergePolicy
+    && resolved.standingGrant.mergePolicy.autoMergeAuthorized === true);
+
+  if (result.disposition !== 'MERGE_READY' || !wantsMerge || !grantAllows) {
+    return {
+      disposition: result.disposition,
+      entryId: entry.entryId,
+      queueState: queue.get(entry.entryId).state,
+      blockerCode: null,
+      pr: result.pr || null,
+      result,
+    };
+  }
+
+  // The kill switch is read once more here. A merge is the least reversible
+  // thing this system does, so the last thing before it is a fresh look at the
+  // one control that means stop.
+  if (o.isKillSwitchEngaged && o.isKillSwitchEngaged() === true) {
+    audit('MERGE_REFUSED', { entryId: entry.entryId, refusal: 'KILL_SWITCH_ENGAGED' });
+    advance(queue, entry.entryId, 'BLOCKED', { blockerCode: 'KILL_SWITCH_ENGAGED', owner: null }, clock());
+    return { disposition: 'BLOCKED', entryId: entry.entryId, queueState: 'BLOCKED', blockerCode: 'KILL_SWITCH_ENGAGED', pr: result.pr || null, result };
+  }
+
+  advance(queue, entry.entryId, 'MERGING', {}, clock());
+  audit('MERGE_ATTEMPTED', { entryId: entry.entryId, pr: (result.pr && result.pr.number) || null });
+
+  let closure;
+  try {
+    closure = await o.completeAfterOwnerMerge(Object.assign({}, ctx, { result }));
+  } catch (e) {
+    audit('MERGE_THREW', { entryId: entry.entryId, code: e && e.code, message: String((e && e.message) || e).slice(0, 300) });
+    advance(queue, entry.entryId, 'BLOCKED', { blockerCode: (e && e.code) || 'MERGE_THREW', owner: null }, clock());
+    return { disposition: 'BLOCKED', entryId: entry.entryId, queueState: 'BLOCKED', blockerCode: (e && e.code) || 'MERGE_THREW', pr: result.pr || null, result };
+  }
+
+  if (closure.disposition !== 'CLOSED') {
+    // Its own blocker, not a generic one. ATTESTATION_INVALIDATED means the
+    // world moved between MERGE_READY and the merge, and an operator needs to
+    // read that rather than "merge failed".
+    audit('MERGE_BLOCKED', { entryId: entry.entryId, blockerCode: closure.blockerCode, reasons: closure.reasons || null });
+    advance(queue, entry.entryId, 'BLOCKED', { blockerCode: closure.blockerCode || 'MERGE_NOT_COMPLETED', owner: null }, clock());
+    return { disposition: 'BLOCKED', entryId: entry.entryId, queueState: 'BLOCKED', blockerCode: closure.blockerCode || 'MERGE_NOT_COMPLETED', pr: result.pr || null, result };
+  }
+
+  // MERGED -> SYNCING -> CLEANING -> CLOSED, each written as it happens. The
+  // merge sha lands with MERGED so it survives a crash during cleanup: a merge
+  // that happened and was forgotten is worse than one that never happened.
+  advance(queue, entry.entryId, 'MERGED', { mergeSha: closure.mergeSha }, clock());
+  advance(queue, entry.entryId, 'SYNCING', {}, clock());
+  advance(queue, entry.entryId, 'CLEANING', { cleanup: (closure.cleanup && closure.cleanup.disposition) || null }, clock());
+  advance(queue, entry.entryId, 'CLOSED', { owner: null }, clock());
+
+  audit('TASK_CLOSED', {
     entryId: entry.entryId,
-    queueState: queue.get(entry.entryId).state,
+    mergeSha: closure.mergeSha,
+    pr: (result.pr && result.pr.number) || null,
+    cleanup: (closure.cleanup && closure.cleanup.disposition) || null,
+  });
+
+  return {
+    disposition: 'CLOSED',
+    entryId: entry.entryId,
+    queueState: 'CLOSED',
     blockerCode: null,
     pr: result.pr || null,
+    mergeSha: closure.mergeSha,
     result,
   };
 }
 
-module.exports = { AdapterError, stagesFor, runEntry };
+module.exports = { AdapterError, stagesFor, routeBetween, runEntry };

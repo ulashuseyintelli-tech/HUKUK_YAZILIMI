@@ -503,3 +503,132 @@ test('the shipped request resolver agrees with the shipped grants', () => {
   assert.equal(resolved.standingGrant.program.programId, 'OFFICE');
   assert.equal(resolved.taskSpecSha256, authority.digest(resolved.spec));
 });
+
+// ───────────────────────────── MERGE_READY -> CLOSED (AC27, AC28, AC29)
+
+/** A runner that reaches MERGE_READY, plus a closure step that reports CLOSED. */
+function mergingRun(over) {
+  const o = over || {};
+  const calls = { ran: 0, merged: 0 };
+  return {
+    calls,
+    buildContext: (a) => Object.assign({ holder: 'CLAUDE_LOCAL' }, a),
+    runTask: async (ctx) => {
+      calls.ran++;
+      return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 777, headSha: 'c'.repeat(40) } };
+    },
+    completeAfterOwnerMerge: async () => {
+      calls.merged++;
+      return o.closure || { disposition: 'CLOSED', mergeSha: 'd'.repeat(40), cleanup: { disposition: 'REMOVED' } };
+    },
+  };
+}
+
+test('AC27  a merged task reaches CLOSED, with the merge sha in the queue', async () => {
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = officeRequest(root, { taskId: 'BP-MERGE-1' });
+  // autoMerge is a property of the request; without it the task parks at
+  // MERGE_READY, which is the pilot behaviour.
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.autoMerge = true;
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+
+  const e = service.enqueue({ requestPath });
+  const runner = mergingRun();
+  const r = await service.runOnce(runner);
+
+  assert.equal(runner.calls.merged, 1, 'the closure step ran');
+  assert.equal(r.outcome.disposition, 'CLOSED');
+  const entry = queue.get(e.entry.entryId);
+  assert.equal(entry.state, 'CLOSED');
+  assert.equal(entry.mergeSha, 'd'.repeat(40), 'the merge sha is durable');
+  assert.equal(entry.prNumber, 777);
+});
+
+test('AC28  the queue records every stage between MERGE_READY and CLOSED', async () => {
+  // A merge that happened and was forgotten is worse than one that never
+  // happened, so each stage is written as it occurs rather than collapsed.
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = officeRequest(root, { taskId: 'BP-MERGE-2' });
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.autoMerge = true;
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+  const e = service.enqueue({ requestPath });
+  await service.runOnce(mergingRun());
+
+  const history = fs.readFileSync(queue.logFile, 'utf8').split('\n').filter(Boolean).map(JSON.parse)
+    .filter((x) => x.entryId === e.entry.entryId).map((x) => x.state);
+  for (const stage of ['MERGE_READY', 'MERGING', 'MERGED', 'SYNCING', 'CLEANING', 'CLOSED']) {
+    assert.ok(history.indexOf(stage) !== -1, stage + ' missing from the history');
+  }
+  const trail = service.auditTrail().map((x) => x.event);
+  assert.ok(trail.indexOf('MERGE_ATTEMPTED') !== -1);
+  assert.ok(trail.indexOf('TASK_CLOSED') !== -1);
+});
+
+test('AC29  a CLOSED task frees the slot for the next one', async () => {
+  const root = scratchRepo();
+  const { service } = svc(root);
+  for (const id of ['BP-Q1', 'BP-Q2']) {
+    const { requestPath } = officeRequest(root, { taskId: id });
+    const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+    req.autoMerge = true;
+    fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+    service.enqueue({ requestPath });
+  }
+  const runner = mergingRun();
+  const r = await service.runUntilIdle(Object.assign({ maxTasks: 5 }, runner));
+  assert.equal(runner.calls.ran, 2, 'both tasks ran, one after the other');
+  assert.equal(r.stopped, 'QUEUE_EMPTY');
+});
+
+test('auto-merge needs BOTH the request and the grant — neither alone', async () => {
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  // Request does not ask for it; the grant does allow it.
+  const e = service.enqueue({ requestPath: officeRequest(root, { taskId: 'BP-NOMERGE' }).requestPath });
+  const runner = mergingRun();
+  await service.runOnce(runner);
+  assert.equal(runner.calls.merged, 0, 'no request, no merge');
+  assert.equal(queue.get(e.entry.entryId).state, 'MERGE_READY', 'it parks for a human');
+});
+
+test('the kill switch is read once more immediately before the merge', async () => {
+  // A merge is the least reversible thing this system does.
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = officeRequest(root, { taskId: 'BP-KILLMERGE' });
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.autoMerge = true;
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+  const e = service.enqueue({ requestPath });
+
+  const runner = mergingRun();
+  const armed = Object.assign({}, runner, {
+    runTask: async (ctx) => {
+      // Engage it DURING the run, after admission and dispatch have both passed.
+      service.engageKillSwitch('mid-run');
+      return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 778, headSha: 'e'.repeat(40) } };
+    },
+  });
+  await service.runOnce(armed);
+  assert.equal(runner.calls.merged, 0, 'nothing merged');
+  assert.equal(queue.get(e.entry.entryId).blockerCode, 'KILL_SWITCH_ENGAGED');
+});
+
+test('a closure that does not report CLOSED keeps its own blocker code', async () => {
+  // ATTESTATION_INVALIDATED means the world moved between MERGE_READY and the
+  // merge. An operator has to read that, not "merge failed".
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = officeRequest(root, { taskId: 'BP-STALE' });
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.autoMerge = true;
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+  const e = service.enqueue({ requestPath });
+
+  await service.runOnce(mergingRun({ closure: { disposition: 'BLOCKED', blockerCode: 'ATTESTATION_INVALIDATED' } }));
+  assert.equal(queue.get(e.entry.entryId).blockerCode, 'ATTESTATION_INVALIDATED');
+});
