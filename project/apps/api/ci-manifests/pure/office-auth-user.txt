@@ -1,0 +1,41 @@
+# CI manifest: pure/office-auth-user
+#
+# Bu dosya `.github/workflows/ci.yml` icinde DEGIL; buraya spec eklemek
+# governance binding gerektirmez. Yeni bir CI step'i ACMA — spec'ini
+# uygun manifest'in listesine ekle. Her ek Jest process'i ~13.6s sabit
+# ts-jest bootstrap maliyeti getirir.
+#
+# DB gerektirir : hayir
+#
+# Birlestirilen step'lerin orijinal gerekceleri:
+# ── GH-03 CONSOLIDATED MANIFEST: pure/office-auth-user ─────────────────────────
+# Bu manifest asagidaki step'leri TEK jest process'inde birlestirir.
+# Spec kumesi degismedi (BEFORE/AFTER --listTests esitligi ile kanitlandi);
+# yalnizca process sayisi dustu. Orijinal step gerekceleri korunmustur:
+#
+#   AUTH-01 tenant-aware authentication tests
+#     AUTH-01: tenant-aware authentication (tenantSlug ZORUNLU login, global findFirst(email)
+#     kaldırıldı, tenant-scoped invite email-uniqueness, enumeration-safe account-recovery).
+#     Dar allowlist'in dışında kalır → explicit step + test -f guard (ci-narrow-allowlist
+#     stale-test gap koruması — mevcut auth spec'leri de bu korumaya AYNI PR'da eklendi).
+#
+#   OFFICE-AUTH-P01 auth/user unit tests
+#
+#   CLIENT-P2-CREDENTIAL-RECOVERY-P01 portal reset-password tests
+#
+#   OFFICE-AUTH-P02 password-reset unit tests
+#     OFFICE-AUTH-P02: office/staff credential-recovery (şifremi unuttum) — tenant-scoped
+#     PasswordResetToken (hash-only, single-use), forgot/reset-password uçları, atomik
+#     tek-kullanımlık tüketim + tokenVersion session-invalidation + sibling-token revoke,
+#     e-posta-hatasında-token-kalmaz politikası, request/consume için ayrı rate-limit
+#     bucket'ları. Dar allowlist dışında kalır → explicit step + test -f guard
+#     (ci-narrow-allowlist stale-test gap koruması).
+#
+src/modules/auth/__tests__/auth-login-passwordhash-guard.spec.ts
+src/modules/auth/__tests__/auth-register-seed.spec.ts
+src/modules/auth/__tests__/auth-tenant-aware-login.spec.ts
+src/modules/auth/__tests__/auth-tokenversion-revocation.spec.ts
+src/modules/auth/guards/__tests__/credential-recovery-rate-limit.guard.spec.ts
+src/modules/auth/invite/__tests__/user-invite.service.spec.ts
+src/modules/auth/password-reset/__tests__/password-reset.service.spec.ts
+src/modules/user/__tests__/change-password.service.spec.ts

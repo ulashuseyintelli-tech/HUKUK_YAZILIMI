@@ -1,0 +1,26 @@
+# CI manifest: db/core-lifecycle
+#
+# Bu dosya `.github/workflows/ci.yml` icinde DEGIL; buraya spec eklemek
+# governance binding gerektirmez. Yeni bir CI step'i ACMA — spec'ini
+# uygun manifest'in listesine ekle. Her ek Jest process'i ~13.6s sabit
+# ts-jest bootstrap maliyeti getirir.
+#
+# DB gerektirir : EVET (TEST_DATABASE_URL, --runInBand ZORUNLU)
+#
+src/modules/auth/__tests__/auth-cross-tenant-email.integration.spec.ts
+src/modules/auth/password-reset/__tests__/password-reset.db-gated.integration.spec.ts
+src/modules/automation/__tests__/all-passive-case-automation-stop.db-gated.integration.spec.ts
+src/modules/automation/__tests__/automation-stats-tenant-scope.db-gated.integration.spec.ts
+src/modules/automation/__tests__/automation-toggle-tenant-scope.db-gated.integration.spec.ts
+src/modules/automation/__tests__/enforcement-action-guarded-write-path.db-gated.integration.spec.ts
+src/modules/automation/__tests__/enforcement-action-tenant-case-debtor-fk.db-gated.integration.spec.ts
+src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.db-gated.integration.spec.ts
+src/modules/automation/__tests__/workflow-engine-legal-time-cutover.db-gated.integration.spec.ts
+src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.db-gated.integration.spec.ts
+src/modules/case/__tests__/case-calculation-summary.compatibility.db-gated.integration.spec.ts
+src/modules/claim-item/__tests__/claim-item-formation-finalizer.db-gated.integration.spec.ts
+src/modules/claim-item/__tests__/claim-item-formation-intent.db-gated.integration.spec.ts
+src/modules/debtor/__tests__/debtor-finalization-cutover.db-gated.integration.spec.ts
+src/modules/icrabot/v28-engine/__tests__/uyap-event-ingest.boundary.integration.spec.ts
+src/modules/interest-engine/__tests__/golden-fixture-matrix.db-gated.integration.spec.ts
+src/modules/interest-engine/__tests__/scenario-diagnostic.db-gated.integration.spec.ts

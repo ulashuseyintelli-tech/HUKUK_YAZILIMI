@@ -1,0 +1,54 @@
+# CI manifest: pure/architecture-guards
+#
+# Bu dosya `.github/workflows/ci.yml` icinde DEGIL; buraya spec eklemek
+# governance binding gerektirmez. Yeni bir CI step'i ACMA — spec'ini
+# uygun manifest'in listesine ekle. Her ek Jest process'i ~13.6s sabit
+# ts-jest bootstrap maliyeti getirir.
+#
+# DB gerektirir : hayir
+#
+# Birlestirilen step'lerin orijinal gerekceleri:
+# ── GH-03 CONSOLIDATED MANIFEST: pure/architecture-guards ──────────────────────
+# Bu manifest asagidaki step'leri TEK jest process'inde birlestirir.
+# Spec kumesi degismedi (BEFORE/AFTER --listTests esitligi ile kanitlandi);
+# yalnizca process sayisi dustu. Orijinal step gerekceleri korunmustur:
+#
+#   Tests
+#
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/drift-guard-killswitch.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/drift-guard-wiring.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/drift-guard.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-2-control-contract.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-2-golden.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-2-precedence-chain.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-2-state-machine.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-2-transition-guards.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-25-adaptive-shadow-wiring.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-26-d1-prom-metrics.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-26-d2-tenant-gating.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-3-mapper-selection.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-3-provider-health-classifier.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-3-real-input-mapper.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/sd-3-telemetry.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-0-alert-inventory.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-0-dashboard-validity.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-0-evidence-pack.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-0-metrics-completeness.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-0-pilot-config.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-0-rollback-ordering.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-0-route-determinism.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-0-s1-evidence.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-0-s2-evidence.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-alert-noise-ratio.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-b1-ewma-golden.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-b2-window-validity.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-b3-sigma-zone.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-b4-compliance-criterion.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-b5-tenant-segmentation.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-drift-baseline.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-infra-prerequisites.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-provider-error-profile.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-risk-matrix.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-runtime-smoke-checklist.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-s1-live-sequence.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-s2-live-sequence.spec.ts

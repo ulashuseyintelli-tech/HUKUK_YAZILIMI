@@ -1,0 +1,176 @@
+# CI manifest: pure/uyap-icrabot-tebligat
+#
+# Bu dosya `.github/workflows/ci.yml` icinde DEGIL; buraya spec eklemek
+# governance binding gerektirmez. Yeni bir CI step'i ACMA — spec'ini
+# uygun manifest'in listesine ekle. Her ek Jest process'i ~13.6s sabit
+# ts-jest bootstrap maliyeti getirir.
+#
+# DB gerektirir : hayir
+#
+# Birlestirilen step'lerin orijinal gerekceleri:
+# ── GH-03 CONSOLIDATED MANIFEST: pure/uyap-icrabot-tebligat ────────────────────
+# Bu manifest asagidaki step'leri TEK jest process'inde birlestirir.
+# Spec kumesi degismedi (BEFORE/AFTER --listTests esitligi ile kanitlandi);
+# yalnizca process sayisi dustu. Orijinal step gerekceleri korunmustur:
+#
+#   Icrabot tenant isolation tests (SEC-TENANT-HARDEN-P01)
+#     SEC-TENANT-HARDEN-P01: icrabot-digital-twin-tenant-guard.spec.ts (mevcut DBND-B1/B1B/B1C
+#     emsali) de dahil hiçbir icrabot tenant-isolation spec'i CI'da koşmuyordu. getQueueStats
+#     (ICRABOT-TID-01) sertleştirmesiyle birlikte ikisi de wiring'e eklendi.
+#     Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
+#
+#   UYAP-ICRABOT-GOVERNANCE-GUARD-P03 acceptance tests
+#
+#   Integration Tests (legal-kernel, real Postgres)
+#
+#   Icrabot v28-engine unit tests (CI wiring gap)
+#     DEBTOR-OF01-HISTORY-P04-C-I02 CI step ekleme sırasında fark edildi: icrabot v28-engine
+#     modülündeki 5 unit spec (tenant boundary hardening, outbox-tenancy Phase 1, v28 platform
+#     outbox cron+retry, CAN-P0-001 notification truth, TimelineService aggregateVersion) hiçbir
+#     dar allowlist pattern'ine girmiyordu (v28-engine/__tests__/ hiçbir step'te referans
+#     edilmiyordu) → CI'da hiç koşmuyordu. Hepsi DB-free (mock prisma). Dosya-varlığı pre-check
+#     (rename/silme veya 0-eşleşme → CI RED) + passWithNoTests YOK.
+#
+#   OF01-HISTORY-P04-C-I02 NonRetryableOutboxError shared-infrastructure tests
+#
+#   MPB-028(a) PR-2 legal-deadline unit/static tests
+#     MPB-028(a) PR-2: LegalDeadlineService (rejim hesaplama, snapshot immutable/supersede,
+#     objectionPeriodDays validation) + TebligatService TK 21/2 correction / TK m.20 explicit-
+#     override unit-static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç
+#     koşmuyordu. Dosya-varlığı pre-check + passWithNoTests YOK (bkz. GATE-1 CI tenant-isolation
+#     regression coverage emsali).
+#
+#   OF01-HISTORY-P03 Tebligat/ServiceOccurrence atomic integration unit tests
+#
+#   OF01-HISTORY-P04-C-I01 service-occurrence-recorded consumer unit tests
+#
+#   OF01-HISTORY-P02 ServiceOccurrenceService unit tests
+#
+#   DBP-P2-SEC-P02 UYAP case-mapper DebtorRole mapping regression tests
+#     DBP-P2-SEC-P02: UyapCaseMapperService.mapDebtorRole (ikinci UYAP mapper) DebtorRole->rol
+#     behavior-lock regresyonu (PR #1327). Yukarıdaki dar allowlist pattern'lerinin hiçbirine
+#     girmiyordu → CI'da hiç koşmuyordu (yalnız o merge'in GO-IMPLEMENT'inde local `npx jest` ile
+#     doğrulandı). Ayrı/açık step; dosya-varlığı pre-check (rename/silme/0-eşleşme → CI RED) + passWithNoTests YOK.
+#
+#   UYAP-EVIDENCE-CI-P02A-R1 additional blocking trust-plane specs
+#     UYAP-EVIDENCE-CI-P02A-R1: P-E2B-R0 reconciliation sonrasi owner promote karari — alti mevcut
+#     trust-plane spec'ini blocking CI kapsamina alir (F4-a/R1 P-E2B adaylari; P2B-06
+#     interest-projection.mapping.spec.ts INVALID INVENTORY / NEVER EXISTED, dahil EDILMEDI). Gercek
+#     6. aday address-discovery/uyap-query.service.spec.ts. Testler DEGISMEZ; yalniz CI'da gercekten+
+#     surekli calismasi saglanir. 6x test -f false-green guard + exact --runTestsByPath (broad
+#     wildcard YOK, passWithNoTests YOK, scheduled workflow YOK). Olcum: 6 suite / 103 test, 3/3 PASS,
+#     batch max 17s (<180s).
+#
+#   UYAP-EVIDENCE-CI-P02A blocking trust-plane specs
+#     UYAP-EVIDENCE-CI-P02A: mevcut fakat explicit blocking step'i olmayan beş trust-plane spec'ini
+#     (F4-a/R1 DP-8 / P-E2A) blocking CI kapsamına alır. Testler DEĞİŞMEZ; yalnız CI'da gerçekten ve
+#     sürekli çalışması sağlanır. 5× test -f false-green guard + exact --runTestsByPath (broad
+#     wildcard YOK, passWithNoTests YOK). Ölçüm: 5 suite / 120 test, 3/3 PASS, batch ~17s (<180s).
+#
+#   CLIENT-SEC-H2B tenant-scope enforcement regression
+#     CLIENT-SEC-H2B: code-level tenant-scope enforcement regression (template update,
+#     UYAP case-status query, document/document-template fail-closed tenant guard).
+#
+#   UYAP-EVIDENCE-PII-PERSISTENCE-P01 debtor-assets durable PII tests
+#     UYAP-EVIDENCE-PII-PERSISTENCE-P01: CAP-11 queryDebtorAssets durable PII containment —
+#     ham debtorIdentityNo artık UyapRequestLog.requestData/responseData'ya YAZILMAZ (UYAP-CONST-007
+#     / UYAP-BC-DEBTOR-001). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyor → ayrı/açık
+#     step; dosya-varlığı pre-check (false-green guard) + passWithNoTests YOK.
+#
+#   CLIENT-SEC-H2A fail-closed containment regression
+#     CLIENT-SEC-H2A: EsignLog/UyapRequestLog fail-closed emergency containment regression.
+#     Şema-seviyesi tenantId yokluğu (H2C ile kalıcı çözülecek) — bu, o zamana kadarki containment kanıtı.
+#
+#   DBP-P2-UYAP-CONTRACT-A-P01 legacy truthfulness containment tests
+#     DBP-P2-UYAP-CONTRACT-A-P01: legacy Contract A yüzeyi TRUTHFULNESS CONTAINMENT (F1-F5) regresyonu.
+#     Preview envelope (legacy/noncompliant), validation semantics (local precheck), STUB submit
+#     (transmitted=false / evkNo=null), yorum/dead-code temizliği ve FE label doğrulukları.
+#     Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyor → ayrı/açık step; dosya-varlığı
+#     pre-check (rename/silme/0-eşleşme → CI RED) + passWithNoTests YOK.
+#
+#   CLIENT-SEC-H1 cross-tenant containment regression
+#     CLIENT-SEC-H1: cross-tenant/unauth Client PII containment (S1-S4) regression.
+#     Explicit test -f guard: bir spec silinir/yeniden adlandırılırsa step FAIL eder (allowlist stale-test gap koruması).
+#
+#   UYAP-RETRY-CONTAIN-01 retry-failed containment tests
+#
+#   SEC-XTEN-UYAP-STATS-01 tenant-scope tests
+#     SEC-XTEN-UYAP-STATS-01: GET /uyap/status ve GET /uyap/stats cross-tenant aggregate leak
+#     containment (TRANSPORT-RISK-02) — getStats(tenantId) artık fail-closed tenant-scoped.
+#     Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyor → ayrı/açık step; dosya-varlığı
+#     pre-check + passWithNoTests YOK.
+#
+#   CLIENT-SEC-H2C-P02 tenant write population regression
+#     CLIENT-SEC-H2C-P02: EsignLog/UyapRequestLog new-write tenant population regression.
+#     P02-R1: 5 UYAP write yolunun log ownership'i trusted execution tenant'tan (DTO'dan DEĞİL) alması.
+#
+#   DBP-P2-UYAP-CONNECTOR-TRANSPORT-CONTAIN-01 truthfulness containment tests
+#     DBP-P2-UYAP-CONNECTOR-TRANSPORT-CONTAIN-01: stub gönderim yollarının (sendPaymentOrder/
+#     pushHacizRequest/submitDocument/submitCriminalComplaint/submitCivilLawsuit) truthfulness
+#     containment'ı — REAL-TRANSPORT=0 iken hiçbiri provider kabulü/gerçek gönderim/hukuki sonuç
+#     iddia edemez; sendPaymentOrder CPE teknik-hatası action-matrix UYAP_SEND=failMode:'CLOSED'
+#     ile uzlaştırıldı (fail-open→fail-closed). Yukarıdaki dar allowlist pattern'lerinin hiçbirine
+#     girmiyor → ayrı/açık step; dosya-varlığı pre-check + passWithNoTests YOK.
+#
+#   LRV-02 UYAP XML DebtorRole mapping regression tests
+#     LRV-02 / DBP-P2-SEC-P01: UyapXmlService.mapDebtorRoleToUyapKod DebtorRole->UYAP rol-kodu
+#     mapping regresyonu (PR #1322). Yukarıdaki dar allowlist pattern'lerinin hiçbirine girmiyordu
+#     → CI'da hiç koşmuyordu (yalnız o merge'in GO-IMPLEMENT'inde local `npx jest` ile doğrulandı).
+#     Ayrı/açık step; dosya-varlığı pre-check (rename/silme/0-eşleşme → CI RED) + passWithNoTests YOK.
+#
+#   DBP-P2-UYAP-CONTRACT-A-P02A official role boundary + provenance tests
+#     DBP-P2-UYAP-CONTRACT-A-P02A — official builder BOUNDARY (provenance + role-translation skeleton).
+#     Runtime-dışı, değer içermeyen, yalnız test-reachable iskelet; legacy builder ve wiring'e dokunmaz.
+#     Dar allowlist pattern'lerine girmez → ayrı/açık step; dosya-varlığı pre-check + passWithNoTests YOK.
+#
+#   DBP-P2-UYAP-CONTRACT-A-P02B official serializer skeleton tests
+#     DBP-P2-UYAP-CONTRACT-A-P02B — official Contract A serializer SKELETON (contract-derived shape).
+#     Deterministik, SERIALIZED_DRAFT/REJECTED, unresolved-role rejection; runtime-dışı, değer içermez,
+#     legacy builder ve wiring'e dokunmaz. Ayrı/açık step; dosya-varlığı pre-check + passWithNoTests YOK.
+#
+#   DBP-P2-UYAP-CONTRACT-A-P04A-ENC official ISO-8859-9 byte encoder tests
+#     DBP-P2-UYAP-CONTRACT-A-P04A-ENC — resmî ISO-8859-9 (Latin-5) GERÇEK BYTE ENCODING foundation.
+#     iconv-lite arkasında FAIL-CLOSED: yalnız SERIALIZED_DRAFT girdisi; encode→decode round-trip
+#     KAYNAKLA birebir + code-point representability; ikame/kayıp → ENCODING_REJECTED. Runtime-dışı,
+#     in-memory-only (persist/transmit/wire/raw-log YOK), legacy/serializer/schema'ya dokunmaz. Dar
+#     allowlist pattern'lerine girmez → ayrı/açık step; dosya-varlığı pre-check + passWithNoTests YOK.
+#
+src/modules/icrabot/__tests__/icrabot-digital-twin-tenant-guard.spec.ts
+src/modules/icrabot/__tests__/icrabot-governance-guard.spec.ts
+src/modules/icrabot/__tests__/icrabot-queue-stats-tenant-scope.spec.ts
+src/modules/icrabot/domain-event-ingest/__tests__/domain-event-ingest.integration.spec.ts
+src/modules/icrabot/v28-engine/__tests__/action-handler-notification-truth.spec.ts
+src/modules/icrabot/v28-engine/__tests__/non-retryable-outbox.spec.ts
+src/modules/icrabot/v28-engine/__tests__/outbox-platform-cron.spec.ts
+src/modules/icrabot/v28-engine/__tests__/outbox-tenancy.spec.ts
+src/modules/icrabot/v28-engine/__tests__/tenant-boundary-hardening.spec.ts
+src/modules/icrabot/v28-engine/__tests__/timeline-aggregate-version.spec.ts
+src/modules/icrabot/v28-engine/__tests__/uyap-event-ingest.boundary.integration.spec.ts
+src/modules/tebligat/__tests__/tebligat-ptt-result-tk212-regression.spec.ts
+src/modules/tebligat/__tests__/tebligat-service-occurrence-integration.spec.ts
+src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.consumer.spec.ts
+src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.registrar.spec.ts
+src/modules/tebligat/service-occurrence/__tests__/service-occurrence.service.spec.ts
+src/modules/uyap-export/__tests__/uyap-case-mapper.debtor-role-mapping.spec.ts
+src/modules/uyap-export/__tests__/uyap-export-passive-policy.spec.ts
+src/modules/uyap-export/projection/__tests__/batch-faizt-readiness.contract.spec.ts
+src/modules/uyap-export/projection/__tests__/due-claimitem-relation.classifier.spec.ts
+src/modules/uyap-export/projection/__tests__/faizt-interest-projection.adapter.spec.ts
+src/modules/uyap/__tests__/haciz-decision-audit.spec.ts
+src/modules/uyap/__tests__/numeric-interest-projection.adapter.spec.ts
+src/modules/uyap/__tests__/uyap-case-status-tenant-scope.spec.ts
+src/modules/uyap/__tests__/uyap-debtor-assets-pii-persistence.spec.ts
+src/modules/uyap/__tests__/uyap-history-h2a-containment.spec.ts
+src/modules/uyap/__tests__/uyap-legacy-truthfulness.spec.ts
+src/modules/uyap/__tests__/uyap-poa-tenant-scope.spec.ts
+src/modules/uyap/__tests__/uyap-retry-containment.spec.ts
+src/modules/uyap/__tests__/uyap-stats-tenant-scope.spec.ts
+src/modules/uyap/__tests__/uyap-tenant-write-population.spec.ts
+src/modules/uyap/__tests__/uyap-transport-truthfulness-containment.spec.ts
+src/modules/uyap/__tests__/uyap-write-ownership-completion.spec.ts
+src/modules/uyap/__tests__/uyap-xml.debtor-role-mapping.spec.ts
+src/modules/uyap/__tests__/uyap-xml.numeric-interest-projection.spec.ts
+src/modules/uyap/official/__tests__/official-contract-provenance.spec.ts
+src/modules/uyap/official/__tests__/official-exchange-builder.spec.ts
+src/modules/uyap/official/__tests__/official-iso8859-9-encoder.spec.ts
+src/modules/uyap/official/__tests__/official-role-translator.spec.ts

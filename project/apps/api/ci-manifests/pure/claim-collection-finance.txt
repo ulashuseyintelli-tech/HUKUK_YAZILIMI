@@ -1,0 +1,50 @@
+# CI manifest: pure/claim-collection-finance
+#
+# Bu dosya `.github/workflows/ci.yml` icinde DEGIL; buraya spec eklemek
+# governance binding gerektirmez. Yeni bir CI step'i ACMA — spec'ini
+# uygun manifest'in listesine ekle. Her ek Jest process'i ~13.6s sabit
+# ts-jest bootstrap maliyeti getirir.
+#
+# DB gerektirir : hayir
+#
+# Birlestirilen step'lerin orijinal gerekceleri:
+# ── GH-03 CONSOLIDATED MANIFEST: pure/claim-collection-finance ─────────────────
+# Bu manifest asagidaki step'leri TEK jest process'inde birlestirir.
+# Spec kumesi degismedi (BEFORE/AFTER --listTests esitligi ile kanitlandi);
+# yalnizca process sayisi dustu. Orijinal step gerekceleri korunmustur:
+#
+#   ADR-014 PR-10 compatibility adapter and contract tests
+#
+#   UYAP-EVIDENCE-CI-P02A blocking trust-plane specs
+#     UYAP-EVIDENCE-CI-P02A: mevcut fakat explicit blocking step'i olmayan beş trust-plane spec'ini
+#     (F4-a/R1 DP-8 / P-E2A) blocking CI kapsamına alır. Testler DEĞİŞMEZ; yalnız CI'da gerçekten ve
+#     sürekli çalışması sağlanır. 5× test -f false-green guard + exact --runTestsByPath (broad
+#     wildcard YOK, passWithNoTests YOK). Ölçüm: 5 suite / 120 test, 3/3 PASS, batch ~17s (<180s).
+#
+#   RCV Claim Formation I02B typed admission and dormancy tests
+#     RCV-CLAIM-FORM-P02-S08-I02B: typed human-formation admission stays
+#     dormant/default-disabled; only intent + OfficeApproval + request audit
+#     may be created atomically. Exact resolver ports have no production adapter.
+#     D01B-CONTRACT-PARITY-I01: the shared Legal Basis eligibility validator
+#     (used by both admission and the dormant finalizer) is unit-tested here
+#     too — no DB dependency, same non-DB-gated group.
+#
+#   RCV Claim Formation I03 finalizer boundary tests
+#
+#   RCV-P2-WS04-P01 allocation drift baseline unit and static tests
+#     RCV-P2-WS04-P01: ratified drift-baseline-only slice. The explicit unit/static
+#     gate locks authority roles, the four comparison classes, same-input parity,
+#     legacy activation diagnostics and the runtime allocator no-write inventory.
+#
+#   Integration Tests (legal-kernel, real Postgres)
+#
+src/modules/case/__tests__/case-calculation-summary-shadow.spec.ts
+src/modules/case/__tests__/case-calculation-summary.compatibility.spec.ts
+src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.core.spec.ts
+src/modules/claim-item/__tests__/claim-formation-persistence-foundation.static.spec.ts
+src/modules/claim-item/__tests__/claim-item-formation-finalizer.static.spec.ts
+src/modules/claim-item/__tests__/claim-item-formation-intent-admission.spec.ts
+src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spec.ts
+src/modules/claim-item/__tests__/claim-item-formation-legal-basis-eligibility.spec.ts
+src/modules/collection/__tests__/collection-ledger-forward.spec.ts
+src/modules/collection/__tests__/collection-payment-received.integration.spec.ts

@@ -1,0 +1,91 @@
+# CI manifest: pure/client-portal
+#
+# Bu dosya `.github/workflows/ci.yml` icinde DEGIL; buraya spec eklemek
+# governance binding gerektirmez. Yeni bir CI step'i ACMA — spec'ini
+# uygun manifest'in listesine ekle. Her ek Jest process'i ~13.6s sabit
+# ts-jest bootstrap maliyeti getirir.
+#
+# DB gerektirir : hayir
+#
+# Birlestirilen step'lerin orijinal gerekceleri:
+# ── GH-03 CONSOLIDATED MANIFEST: pure/client-portal ────────────────────────────
+# Bu manifest asagidaki step'leri TEK jest process'inde birlestirir.
+# Spec kumesi degismedi (BEFORE/AFTER --listTests esitligi ile kanitlandi);
+# yalnizca process sayisi dustu. Orijinal step gerekceleri korunmustur:
+#
+#   Client module tests (client-lane false-green guard)
+#
+#   CLIENT-P2-U03-TRACK-A-I02 asset-query projection mapper tests
+#     CLIENT-P2-U03-TRACK-A-I02: toCuratedAssetQuery() pure mapper — raw CaseDebtor
+#     AssetQueryStatus (UNKNOWN/YES/NO/PENDING/ERROR) → curated client-facing 5-durum
+#     (NOT_QUERIED/FOUND/NOT_FOUND/RESULT_PENDING/RESULT_UNAVAILABLE) exhaustive dönüşüm
+#     + tanınmayan/gelecek değer için fail-safe RESULT_UNAVAILABLE regresyonu.
+#
+#   CLIENT-P2-U03-I01 case-detail projection tests
+#
+#   CLIENT-P2-U03-TRACK-B-U00B case-list projection tests
+#     CLIENT-P2-U03-TRACK-B-U00B: getClientCases() (case-liste endpoint) — §33.4 Financial
+#     Disclosure Gate ile çelişen ham `collections` (Collection.amount/date) select'ten ve
+#     response'tan tamamen kaldırıldı (U00'ın case-detail kapsamındaki aynı kaldırmasının
+#     case-list ikizi); principalAmount (Dosya Alacağı) bilerek korundu.
+#
+#   CLIENT-P2-CREDENTIAL-RECOVERY-P01 portal reset-password tests
+#
+#   CLIENT-P2-U02 portal tokenVersion unit tests
+#
+#   CLIENT-P2-U03-I02 portal-document projection tests
+#     CLIENT-P2-U03-I02: getDocuments()/uploadDocument() explicit select projeksiyonu (POL-D
+#     §21/BP-06 §23) — filePath (internal storage location), reviewedBy/reviewedAt/reviewNote
+#     (internal review workflow), clientId/tenantId (authorization context) ve updatedAt artık
+#     select'te hiç yok; exact select shape + bounded response shape + getDocument()/
+#     deleteDocument()/getPendingDocuments() (internal/admin, select'siz) regresyonu kanıtlanır.
+#
+#   CLIENT-P2-U03-I03 portal-message projection tests
+#     CLIENT-P2-U03-I03: getMessages()/sendMessageFromClient() explicit select projeksiyonu
+#     (POL-D §21/BP-06 §23) — senderId (internal technical actor identifier — OFFICE
+#     mesajlarında staff User.id), clientId/tenantId/caseId/readAt artık select'te hiç yok;
+#     exact select shape + bounded response shape + sendMessageFromOffice()/getClientMessages()/
+#     getUnreadMessageCount()/markMessagesAsRead() (internal/staff, select'siz) regresyonu
+#     kanıtlanır.
+#
+#   CLIENT-P2-U03-I05 portal-notification projection tests
+#     CLIENT-P2-U03-I05: getNotifications() explicit select projeksiyonu (POL-D §21/BP-06
+#     §23) — brief'in taslağı gerçek şema ve consumer'a (portal/layout.tsx'in kendi
+#     interface Notification'ı) birebir uyuyor, sapma YOK. clientId/caseId/readAt artık
+#     select'te hiç yok; exact select shape + bounded response shape + getUnreadCount()/
+#     markAsRead()/markAllAsRead()/createNotification() (select'siz) regresyonu kanıtlanır.
+#
+#   CLIENT-P2-U03-I04 portal-poa projection tests
+#     CLIENT-P2-U03-I04: getClientPoas() explicit select projeksiyonu (POL-D §21/BP-06 §23) —
+#     approved contract gerçek consumer'a (portal/poas/page.tsx) göre doğrulanmıştır; brief'in
+#     taslak varsayımından KASITLI sapar (isActive: unused + WHERE'de zaten sabit true; scope:
+#     deprecated). filePath/fileSize/mimeType/clientId/scopeType/scopeDescription/createdAt/
+#     updatedAt/poaDate + join-metadata artık select'te hiç yok; exact select shape + bounded
+#     response shape kanıtlanır. poa.service.ts (staff/admin) DEĞİŞMEDİ, dokunulmadı.
+#
+src/modules/client/__tests__/client-action-catalog.spec.ts
+src/modules/client/__tests__/client-address-route-collision.spec.ts
+src/modules/client/__tests__/client-address.service.spec.ts
+src/modules/client/__tests__/client-audit.spec.ts
+src/modules/client/__tests__/client-controller-validation.spec.ts
+src/modules/client/__tests__/client-core-p0.spec.ts
+src/modules/client/__tests__/client-create-checksum.spec.ts
+src/modules/client/__tests__/client-document-request-command.spec.ts
+src/modules/client/__tests__/client-operating-snapshot.spec.ts
+src/modules/client/__tests__/client-poa-reminder-command.spec.ts
+src/modules/client/__tests__/client-poa-upload-command.spec.ts
+src/modules/client/__tests__/client-reactivate.spec.ts
+src/modules/client/__tests__/client-template-notification-command.spec.ts
+src/modules/client/__tests__/client-timeline.spec.ts
+src/modules/client/__tests__/client-update-duplicate-guard.spec.ts
+src/modules/client/__tests__/contact-followup.spec.ts
+src/modules/portal/__tests__/asset-query-projection.spec.ts
+src/modules/portal/__tests__/case-detail-projection.spec.ts
+src/modules/portal/__tests__/case-list-projection.spec.ts
+src/modules/portal/__tests__/credential-recovery.spec.ts
+src/modules/portal/__tests__/portal-auth-guard-token-version.spec.ts
+src/modules/portal/__tests__/portal-document-projection.spec.ts
+src/modules/portal/__tests__/portal-message-projection.spec.ts
+src/modules/portal/__tests__/portal-notification-projection.spec.ts
+src/modules/portal/__tests__/portal-poa-projection.spec.ts
+src/modules/portal/__tests__/portal-token-version-revocation.spec.ts

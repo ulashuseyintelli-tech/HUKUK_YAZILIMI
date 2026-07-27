@@ -1,0 +1,218 @@
+# CI manifest: pure/platform-scripts-shared
+#
+# Bu dosya `.github/workflows/ci.yml` icinde DEGIL; buraya spec eklemek
+# governance binding gerektirmez. Yeni bir CI step'i ACMA — spec'ini
+# uygun manifest'in listesine ekle. Her ek Jest process'i ~13.6s sabit
+# ts-jest bootstrap maliyeti getirir.
+#
+# DB gerektirir : hayir
+#
+# Birlestirilen step'lerin orijinal gerekceleri:
+# ── GH-03 CONSOLIDATED MANIFEST: pure/platform-scripts-shared ──────────────────
+# Bu manifest asagidaki step'leri TEK jest process'inde birlestirir.
+# Spec kumesi degismedi (BEFORE/AFTER --listTests esitligi ile kanitlandi);
+# yalnizca process sayisi dustu. Orijinal step gerekceleri korunmustur:
+#
+#   UYAP-EVIDENCE-CI-P02A blocking trust-plane specs
+#     UYAP-EVIDENCE-CI-P02A: mevcut fakat explicit blocking step'i olmayan beş trust-plane spec'ini
+#     (F4-a/R1 DP-8 / P-E2A) blocking CI kapsamına alır. Testler DEĞİŞMEZ; yalnız CI'da gerçekten ve
+#     sürekli çalışması sağlanır. 5× test -f false-green guard + exact --runTestsByPath (broad
+#     wildcard YOK, passWithNoTests YOK). Ölçüm: 5 suite / 120 test, 3/3 PASS, batch ~17s (<180s).
+#
+#   Security boundary tests (Gate-1 tenant + Gate-2/3 passive-writer + Gate-4 identity)
+#
+#   UYAP-EVIDENCE-CI-P02A-R1 additional blocking trust-plane specs
+#     UYAP-EVIDENCE-CI-P02A-R1: P-E2B-R0 reconciliation sonrasi owner promote karari — alti mevcut
+#     trust-plane spec'ini blocking CI kapsamina alir (F4-a/R1 P-E2B adaylari; P2B-06
+#     interest-projection.mapping.spec.ts INVALID INVENTORY / NEVER EXISTED, dahil EDILMEDI). Gercek
+#     6. aday address-discovery/uyap-query.service.spec.ts. Testler DEGISMEZ; yalniz CI'da gercekten+
+#     surekli calismasi saglanir. 6x test -f false-green guard + exact --runTestsByPath (broad
+#     wildcard YOK, passWithNoTests YOK, scheduled workflow YOK). Olcum: 6 suite / 103 test, 3/3 PASS,
+#     batch max 17s (<180s).
+#
+#   Address-task tenant isolation tests (SEC-TENANT-HARDEN-P01)
+#     SEC-TENANT-HARDEN-P01: address-task.service.ts/controller.ts hiçbir CI step'inde
+#     koşmuyordu (ADDR-TID-03..08 fail-closed sertleştirmesi bu keşifle birlikte yapıldı).
+#     Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
+#
+#   Wave 0 tenant-boundary unit/static tests (Risk/AI/Notification/WorkflowEngine/EnforcementAction)
+#     GATE-1 CI Tenant-Isolation Regression Coverage: Borçlu Wave 0 (MPB-028/OD-3/PR-EA) tenant-
+#     boundary unit+static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç
+#     koşmuyordu (yalnız local `pnpm test` ile çalışırdı — GATE-1'in "cross-tenant testler yeşil"
+#     kriteri sürekli doğrulanamıyordu). Ayrı/açık step ile koşturulur. passWithNoTests YOK +
+#     önce dosya-varlığı pre-check: rename/silme veya 0-eşleşme → CI RED. Açık liste dizin-bazlı
+#     regex yerine bilinçli tercih edildi: enforcement-action-backfill-* dosyaları farklı bir
+#     dizinde (src/scripts/__tests__/), ve automation/__tests__/ altında tenant-ilgisiz dosyalar
+#     (rfa007-enforcement-guard, automation.service, poa-expiry-delivery) da var — dizin-geneli
+#     bir glob bunları yanlışlıkla dahil ederdi. Yeni Wave 0 tenant testi eklenirse bu listeye
+#     açıkça eklenmelidir (bkz. maintenance-register.md notu).
+#
+#   OFFICE-CAP09A-FOUNDATION-I01 audit attribution unit tests
+#     OFFICE-PHASE2-CAP09A-FOUNDATION-I01: AuditLog attribution kolonlarini (actorType/
+#     correlationId/decisionResult/policyRef/policyVersion/reasonCode/requestId) dogrulayan
+#     2 test dosyasi repository'de mevcuttu ama hicbir CI adimi bunlari toplamiyordu
+#     (CROSS-WORKSTREAM-LIVE-MIGRATION-TRAIN-R02 sirasinda tespit edilen narrow-allowlist
+#     gap). Bu adim yalniz mevcut testleri required execution path'e alir; migration/
+#     schema/runtime davranisi degismez.
+#
+#   DBP-P2-BP-01 all-passive case automation stop tests (WorkflowEngine.processCase)
+#     DBP-P2-BP-01 (LRV-03B, owner OPTION A): tüm CaseDebtor PASSIVE ise case-seviyesi otomasyon
+#     fail-closed durur (WorkflowEngine.processCase). Yeni dosya — yukarıdaki tenant/lifecycle
+#     allowlist'lerine dahil DEĞİL (ayrı invariant ekseni: case-level automation policy) —
+#     narrow-allowlist stale-test gap'i tekrarlamamak için ayrı, açık isimli step. db-gated satırı
+#     yukarıdaki "Wave 0 tenant-boundary disposable-DB tests" step'inin allowlist'ine eklendi.
+#
+#   LRV-03A CaseDebtor passivation guard tests (WorkflowEngine.createEnforcementAction)
+#
+#   MPB-028(a) PR-5 calculateNextActionTime cutover unit tests
+#
+#   CLIENT-P0-T04-C1 CaseBalance tenant containment regression
+#     CLIENT-P0-T04-C1: CaseBalance tenant fail-closed containment regression.
+#     getBalance/getLedger/credit/debit yollarının service-level ownership gate ile cross-tenant
+#     read/write reddi + zero side-effect (F-STOP-1 kod-yolu exposure containment kanıtı).
+#
+#   CLIENT-SEC-H2B tenant-scope enforcement regression
+#     CLIENT-SEC-H2B: code-level tenant-scope enforcement regression (template update,
+#     UYAP case-status query, document/document-template fail-closed tenant guard).
+#
+#   MPB-028(a) PR-4 finalizationDate cutover unit tests
+#
+#   Error-log security & observability tests (PR-1/2a/2b/3)
+#     PR-1 (güvenlik): RBAC + metadata redaction + source/tenant/level spoof engeli.
+#     PR-2a (observability): global ExceptionFilter + requestId + fingerprint + flood-guard
+#     + server-log builder (≥500 logging, 4xx noise exclusion, logging isolation).
+#     Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
+#
+#   CLIENT-SEC-H2A fail-closed containment regression
+#     CLIENT-SEC-H2A: EsignLog/UyapRequestLog fail-closed emergency containment regression.
+#     Şema-seviyesi tenantId yokluğu (H2C ile kalıcı çözülecek) — bu, o zamana kadarki containment kanıtı.
+#
+#   CLIENT-SEC-H2C-P02 tenant write population regression
+#     CLIENT-SEC-H2C-P02: EsignLog/UyapRequestLog new-write tenant population regression.
+#     P02-R1: 5 UYAP write yolunun log ownership'i trusted execution tenant'tan (DTO'dan DEĞİL) alması.
+#
+#   ADR-014 PR-9 golden fixture matrix unit tests
+#     ADR-014 PR-9: the Wave 0 ScenarioDefinition is the single fixture and
+#     expected contract for both the in-memory and disposable-Postgres twins.
+#
+#   W0.3 diagnostic static and evidence tests
+#
+#   W0.2 materializer static boundary tests
+#     ADR-014 W0.2: explicit selection prevents a green job from hiding an
+#     unexecuted static boundary or disposable-DB materializer suite.
+#
+#   ADR-014 PR-1B reversal-netting unit and orchestration tests
+#     ADR-014 PR-1B: retain the PR-1A CaseBalance selection and add the pure
+#     mapper regression explicitly; rename/removal/zero-match must fail closed.
+#
+#   MPB-028(a) PR-2 legal-deadline unit/static tests
+#     MPB-028(a) PR-2: LegalDeadlineService (rejim hesaplama, snapshot immutable/supersede,
+#     objectionPeriodDays validation) + TebligatService TK 21/2 correction / TK m.20 explicit-
+#     override unit-static spec'leri yukarıdaki dar pattern'lerin dışında kalıyordu → CI'da hiç
+#     koşmuyordu. Dosya-varlığı pre-check + passWithNoTests YOK (bkz. GATE-1 CI tenant-isolation
+#     regression coverage emsali).
+#
+#   MPB-028(a) PR-3C proceeding-type rule matrix unit/static tests
+#
+#   OF01-HISTORY-P04-B-R2-I01 LegalServiceDateRuleCore unit tests
+#
+#   OF01-HISTORY-P04-B occurrence deadline calculation unit tests
+#     OF01-HISTORY-P04-B: occurrence-driven idempotent legal deadline calculation
+#     (ServiceOccurrenceDeadlineCalculationService). Yukarıdaki dar allowlist pattern'lerinin
+#     hiçbirine girmiyor (dosya adı hiçbirini eşlemiyor) → narrow named step olmadan CI'da hiç koşmaz.
+#
+#   MPB-028(a) PR-3 Evidence Activation controller + DI-registration tests
+#     MPB-028(a) PR-3 Evidence Activation: LegalTimeShadowController (compute + evidence-report
+#     route/tenant-scoping) + app.module.ts DI-registration regresyon testi (PR-4 Readiness
+#     analizinde tespit edilen "modüller koda yazıldı ama DI container'a hiç kayıtlı değildi"
+#     bulgusunu kilitler). Aynı CI-coverage silent-skip riski (bkz. GATE-1/PR-2/PR-3 emsali)
+#     baştan önlenmek için bu dosyaların kendi ekleniş turunda ayrı/açık step ile koşturulur.
+#
+#   MPB-028(a) PR-3 legal-time-shadow unit/static tests
+#
+#   CLIENT-SEC-H1 cross-tenant containment regression
+#     CLIENT-SEC-H1: cross-tenant/unauth Client PII containment (S1-S4) regression.
+#     Explicit test -f guard: bir spec silinir/yeniden adlandırılırsa step FAIL eder (allowlist stale-test gap koruması).
+#
+#   ReportingLine Population Core tests (CAP-02 object-scope enablement)
+#     CAP-02 ReportingLine Population Core (OFFICE object-scope enablement): ADMIN-only
+#     hiyerarşi yönetimi + invariant'lar (self-manager/cross-tenant/aktiflik/direkt+dolaylı
+#     döngü) + transaction/concurrency (tekil-aktif-amir, Serializable) + tarihsel kapatma +
+#     reconciliation + audit. Dar allowlist'in dışında kalır → explicit step + test -f guard
+#     (ci-narrow-allowlist stale-test gap koruması).
+#
+#   RCV-P2-WS04-P01 allocation drift baseline unit and static tests
+#     RCV-P2-WS04-P01: ratified drift-baseline-only slice. The explicit unit/static
+#     gate locks authority roles, the four comparison classes, same-input parity,
+#     legacy activation diagnostics and the runtime allocator no-write inventory.
+#
+src/config/uyap-interest-crosswalk.spec.ts
+src/modules/address-discovery/confidence-score.tenant-boundary.spec.ts
+src/modules/address-discovery/uyap-query.service.spec.ts
+src/modules/address-task/address-task.controller.spec.ts
+src/modules/address-task/address-task.service.spec.ts
+src/modules/ai/ai.service.tenant-boundary.spec.ts
+src/modules/audit/__tests__/audit-metadata-builder.spec.ts
+src/modules/audit/__tests__/audit.service.attribution.spec.ts
+src/modules/automation/__tests__/all-passive-case-automation-stop.spec.ts
+src/modules/automation/__tests__/automation-tenant-guard-propagation.spec.ts
+src/modules/automation/__tests__/enforcement-action-guarded-write-path.spec.ts
+src/modules/automation/__tests__/enforcement-action-guarded-write-path.static-guard.spec.ts
+src/modules/automation/__tests__/enforcement-action-passivation-guard.spec.ts
+src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.spec.ts
+src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.static-guard.spec.ts
+src/modules/automation/__tests__/workflow-engine-legal-time-cutover.spec.ts
+src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.spec.ts
+src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.static-guard.spec.ts
+src/modules/case-balance/__tests__/case-balance-tenant-isolation.spec.ts
+src/modules/client-notification/__tests__/client-notification-template-tenant-scope.spec.ts
+src/modules/debtor/__tests__/debtor-finalization-cutover.spec.ts
+src/modules/debtor/debtor-identity-format.spec.ts
+src/modules/debtor/ihbarname-summary.tenant-boundary.spec.ts
+src/modules/debtor/quick-note-passive-writer.spec.ts
+src/modules/debtor/third-party-passive-writer.spec.ts
+src/modules/document/__tests__/document-fail-closed-tenant.spec.ts
+src/modules/error-log/__tests__/all-exceptions.filter.spec.ts
+src/modules/error-log/__tests__/error-dedupe-key.spec.ts
+src/modules/error-log/__tests__/error-fingerprint.spec.ts
+src/modules/error-log/__tests__/error-flood-guard.spec.ts
+src/modules/error-log/__tests__/error-log-retention.config.spec.ts
+src/modules/error-log/__tests__/error-log-retention.service.spec.ts
+src/modules/error-log/__tests__/error-log-tenant-scope.service.spec.ts
+src/modules/error-log/__tests__/error-log.controller.spec.ts
+src/modules/error-log/__tests__/error-log.dedupe.service.spec.ts
+src/modules/error-log/__tests__/error-log.sanitize.spec.ts
+src/modules/error-log/__tests__/error-reporter.spec.ts
+src/modules/error-log/__tests__/resolve-error-log.dto.spec.ts
+src/modules/error-log/__tests__/server-log.builder.spec.ts
+src/modules/esign/__tests__/esign-h2a-containment.spec.ts
+src/modules/esign/__tests__/esign-tenant-write-population.spec.ts
+src/modules/interest-engine/__tests__/golden-fixture-matrix.spec.ts
+src/modules/interest-engine/__tests__/scenario-diagnostic.static.spec.ts
+src/modules/interest-engine/__tests__/scenario-evidence.spec.ts
+src/modules/interest-engine/__tests__/scenario-materializer.static.spec.ts
+src/modules/interest-engine/calc-prep/__tests__/payment-mapper.spec.ts
+src/modules/interest-engine/orchestration/__tests__/case-balance.service.spec.ts
+src/modules/legal-deadline/__tests__/legal-deadline.service.spec.ts
+src/modules/legal-deadline/__tests__/legal-period-calculation.service.spec.ts
+src/modules/legal-deadline/__tests__/legal-period-rule-matrix.spec.ts
+src/modules/legal-deadline/__tests__/legal-service-date-rule-core.spec.ts
+src/modules/legal-deadline/__tests__/proceeding-classification.service.spec.ts
+src/modules/legal-deadline/__tests__/proceeding-classification.static-guard.spec.ts
+src/modules/legal-deadline/__tests__/service-occurrence-deadline-calculation.service.spec.ts
+src/modules/legal-time-shadow/__tests__/legal-time-shadow.app-module-registration.spec.ts
+src/modules/legal-time-shadow/__tests__/legal-time-shadow.controller.spec.ts
+src/modules/legal-time-shadow/__tests__/legal-time-shadow.service.spec.ts
+src/modules/notification/notification.service.tenant-boundary.spec.ts
+src/modules/pdf/__tests__/pdf-takip-talebi-authz.spec.ts
+src/modules/policy-engine/gate-checker/__tests__/uyap-temporary-outage.spec.ts
+src/modules/reporting-line/__tests__/reporting-line.service.spec.ts
+src/modules/risk/risk.service.tenant-boundary.spec.ts
+src/modules/summary-engine/__tests__/allocate-payment-ledger-in-tx.spec.ts
+src/modules/summary-engine/__tests__/allocation-authority.static-guard.spec.ts
+src/modules/summary-engine/__tests__/allocation-drift-baseline.spec.ts
+src/modules/template-engine/__tests__/template-artifact-tenant-scope.spec.ts
+src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts
+src/scripts/__tests__/enforcement-action-backfill-classifier.spec.ts
+src/scripts/__tests__/enforcement-action-backfill-profiler.report-hardening.spec.ts
+src/scripts/__tests__/enforcement-action-backfill-profiler.static-purity.spec.ts
