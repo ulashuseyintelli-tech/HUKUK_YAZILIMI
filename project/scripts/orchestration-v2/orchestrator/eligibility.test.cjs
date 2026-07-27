@@ -382,3 +382,152 @@ test('admission: two programs share ONE slot, and the second waits', () => {
   assert.equal(q.head(), null, 'while one occupies the slot, nothing else is head');
   assert.equal(q.active().entryId, a.entryId);
 });
+
+// ─────────────────────────────────── DISPATCH REVALIDATION + COLLECTION (WP08)
+
+// Admission proves a task was allowed to ENTER the queue. It proves nothing
+// about the moment it leaves. These tests are that gap, and the COLLECTION lane
+// end to end through it.
+
+const D = require('./dispatch.cjs');
+
+function dspGrant(file) {
+  return JSON.parse(admRepoRead(ADM_ACT + '/' + file));
+}
+
+function dspEntry(grant, over) {
+  return Object.assign(
+    {
+      entryId: 'e1',
+      programId: grant.program.programId,
+      taskId: 'DSP-01',
+      taskClass: 'TEST_ONLY_CHARACTERIZATION',
+      executorLane: 'CLAUDE_LOCAL',
+      standingGrantId: grant.standingGrantId,
+      state: 'QUEUED',
+    },
+    over || {},
+  );
+}
+
+function dspOpts(grant, over) {
+  return Object.assign(
+    {
+      entry: dspEntry(grant),
+      resolveGrant: () => grant,
+      resolveSpec: () => admSpec(grant),
+      resolveManifest: () => admManifest(),
+      nowMs: Date.now(),
+    },
+    over || {},
+  );
+}
+
+test('dispatch: a task still inside every limit dispatches', () => {
+  for (const file of ['STANDING-GRANT-OFFICE-LIVE-R01.json', 'STANDING-GRANT-COLLECTION-LIVE-R01.json']) {
+    const g = dspGrant(file);
+    assert.equal(D.revalidate(dspOpts(g)).dispatchable, true, file);
+  }
+});
+
+test('dispatch: a grant revoked AFTER admission stops the task', () => {
+  // This is the defect the module closes. Nothing between enqueue and executor
+  // spawn read the revocation marker, so revoking a grant had no effect on work
+  // already sitting QUEUED — which is the only work a revocation needs to stop.
+  const g = dspGrant('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  const v = D.revalidate(dspOpts(g, { isRevoked: () => true }));
+  assert.equal(v.dispatchable, false);
+  assert.equal(v.refusal, 'STANDING_GRANT_REVOKED');
+});
+
+test('dispatch: the kill switch stops a queued task on its way out', () => {
+  const g = dspGrant('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  assert.equal(D.revalidate(dspOpts(g, { killSwitchEngaged: true })).refusal, 'KILL_SWITCH_ENGAGED');
+});
+
+test('dispatch: a program made ineligible after admission stops the task', () => {
+  const g = dspGrant('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  const manifest = admManifest();
+  for (const p of manifest.programs) if (p.programId === 'COLLECTION') p.liveExecutionEligibility = 'DENIED';
+  const v = D.revalidate(dspOpts(g, { resolveManifest: () => manifest }));
+  assert.equal(v.refusal, 'PROGRAM_NOT_ELIGIBLE');
+});
+
+test('dispatch: a grant whose limits were edited under the same id is caught', () => {
+  // Re-reading is the point: holding the object from admission time would
+  // re-check the old grant and prove nothing.
+  const g = dspGrant('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  const narrowed = Object.assign({}, g, { allowedTaskClasses: ['BOUNDED_CODE_FIX'] });
+  const v = D.revalidate(dspOpts(g, { resolveGrant: () => narrowed }));
+  assert.equal(v.refusal, 'TASK_CLASS_NOT_GRANTED');
+});
+
+test('dispatch: a substituted grant is refused on identity, before its limits are read', () => {
+  const collection = dspGrant('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  const office = dspGrant('STANDING-GRANT-OFFICE-LIVE-R01.json');
+  const v = D.revalidate(dspOpts(collection, { resolveGrant: () => office }));
+  assert.equal(v.refusal, 'DISPATCH_GRANT_IDENTITY_CHANGED');
+});
+
+test('dispatch: an authority that no longer reads stops the work it authorized', () => {
+  // Deleting the grant file must stop the task, not be guessed around.
+  const g = dspGrant('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  const v = D.revalidate(
+    dspOpts(g, {
+      resolveGrant: () => {
+        throw new Error('ENOENT: no such file');
+      },
+    }),
+  );
+  assert.equal(v.refusal, 'DISPATCH_AUTHORITY_UNREADABLE');
+});
+
+test('dispatch: revalidation reaches the same verdict as admission when nothing changed', () => {
+  // The gate runs twice not because the first run was wrong, but because the
+  // world it described has had time to move. When it has not, the two agree.
+  for (const file of ['STANDING-GRANT-OFFICE-LIVE-R01.json', 'STANDING-GRANT-COLLECTION-LIVE-R01.json']) {
+    const g = dspGrant(file);
+    assert.equal(A.evaluate(admOpts(g)).admissible, D.revalidate(dspOpts(g)).dispatchable, file);
+  }
+});
+
+// ─────────────────────────────────────────── THE COLLECTION LANE, END TO END
+
+test('COLLECTION lane: eligible, admitted, queued, dispatchable', () => {
+  const g = dspGrant('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  const manifest = admManifest();
+
+  const entryInManifest = manifest.programs.filter((p) => p.programId === 'COLLECTION')[0];
+  assert.equal(entryInManifest.liveExecutionEligibility, 'ELIGIBLE');
+  assert.equal(entryInManifest.liveExecutionEligibilityDerivation.standingGrantRef, ADM_ACT + '/STANDING-GRANT-COLLECTION-LIVE-R01.json');
+
+  const q = admQueue();
+  const entry = A.admit(Object.assign(admOpts(g), { queue: q }));
+  assert.equal(entry.programId, 'COLLECTION');
+  assert.equal(q.head().entryId, entry.entryId);
+
+  const v = D.revalidate(dspOpts(g, { entry: q.get(entry.entryId) }));
+  assert.equal(v.dispatchable, true);
+});
+
+test('COLLECTION lane: its granted roots are its own and nothing shared', () => {
+  const g = dspGrant('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  for (const root of g.allowedPathRoots) {
+    assert.ok(root.indexOf('project/apps/api/src/modules/') === 0, 'unexpected root ' + root);
+    assert.ok(root.indexOf('office') === -1, 'COLLECTION reaches an OFFICE path');
+  }
+  for (const p of ['project/scripts/orchestration-v2/', '.github/', 'project/apps/api/prisma/']) {
+    assert.ok(g.prohibitedPathRoots.indexOf(p) !== -1, p + ' is not prohibited for COLLECTION');
+  }
+});
+
+test('COLLECTION lane: production behaviour is not what this grant opens', () => {
+  // The directive's prohibition, checked against the grant rather than asserted
+  // in prose: only characterization and bounded fixes, both independently
+  // reviewed, neither able to reach a migration.
+  const g = dspGrant('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  assert.deepEqual(g.allowedTaskClasses.slice().sort(), ['BOUNDED_CODE_FIX', 'TEST_ONLY_CHARACTERIZATION']);
+  assert.equal(g.requiredIndependentReview, true);
+  assert.equal(g.prohibitions.noProductionDataMutation, true);
+  assert.equal(g.prohibitions.noCrossProgramMutation, true);
+});
