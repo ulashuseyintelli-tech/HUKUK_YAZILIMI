@@ -168,6 +168,7 @@ src/modules/uyap/__tests__/uyap-history-h2a-containment.spec.ts
 src/modules/uyap/__tests__/uyap-legacy-truthfulness.spec.ts
 src/modules/uyap/__tests__/uyap-poa-tenant-scope.spec.ts
 src/modules/uyap/__tests__/uyap-retry-containment.spec.ts
+src/modules/uyap/__tests__/uyap-send-authority-resolver.spec.ts
 src/modules/uyap/__tests__/uyap-stats-tenant-scope.spec.ts
 src/modules/uyap/__tests__/uyap-tenant-write-population.spec.ts
 src/modules/uyap/__tests__/uyap-transport-truthfulness-containment.spec.ts

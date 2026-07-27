@@ -38,6 +38,7 @@ src/modules/auth/__tests__/auth-tokenversion-revocation.spec.ts
 src/modules/auth/guards/__tests__/credential-recovery-rate-limit.guard.spec.ts
 src/modules/auth/invite/__tests__/user-invite.service.spec.ts
 src/modules/auth/password-reset/__tests__/password-reset.service.spec.ts
+src/modules/lawyer/__tests__/acting-lawyer-resolver.spec.ts
 src/modules/user/__tests__/change-password.service.spec.ts
 
 # ── GH-04 BATCH A — Priority 0 (guvenlik / tenant sinir / yetkilendirme) ──
