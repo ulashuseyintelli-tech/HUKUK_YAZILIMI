@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "grantId": "T5-COLLECTION-EXECUTION-GRANT-R02",
+  "workstream": "RCV-COL-W2.2D-1A",
+  "semanticAuthorityRef": {
+    "kind": "SEMANTIC_AUTHORITY",
+    "recordId": "RCV-COL-W2.2D-1A-TEST-ONLY-CHARACTERIZATION-AUTHORITY",
+    "sourcePath": "project/docs/governance/decision-log.md"
+  },
+  "executionGrantRef": {
+    "kind": "EXECUTION_GRANT",
+    "recordId": "T5-COLLECTION-EXECUTION-GRANT-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/COLLECTION/execution-grant.R02.md"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/COLLECTION/plan-ratification.R02.md",
+    "sourceCommitSha": "49ddb7fdf42d75767d81030b830bd5ed630f296b",
+    "exactExcerpt": "taskId               RCV-COL-W2.2D-1A-CHARACTERIZATION-R01\ntaskSpecVersion      1\ntaskSpecSha256       f5c11d0b41be2d9895aa0d9769936950d0e8cbdcf2d5beed64f366293ece5318\ndeclaredIntentSha256 988a37755026d24c2e002236e9bb4532ab8c9ad95488e24d75eef93f33d99264\nboundaryPolicySha256 6e7cb3dca041716810ba8040286e1b9a18c218230100d3978e971bac7292ad85\nrequiredTestsSha256  c49f9dc21e8f38d4037a70ba4da7d6989c7d021c413221d5d2560c3ce15fdc5c\nbasePolicy           REFRESH_BEFORE_EXECUTION\nbaseSha              5e35db28903a538784d264a7919e32c0bd2b7c9f\nplanRef              project/docs/governance/coordination-v2/task-plans/COLLECTION/plan.v2.json\n",
+    "excerptSha256": "7538a8a13d1f28f11902a212013369a8cf34f1f2104850ef40bca7125bd700f2"
+  },
+  "authorizedTasks": [
+    {
+      "taskId": "RCV-COL-W2.2D-1A-CHARACTERIZATION-R01",
+      "taskSpecVersion": 1,
+      "taskSpecSha256": "f5c11d0b41be2d9895aa0d9769936950d0e8cbdcf2d5beed64f366293ece5318",
+      "declaredIntentSha256": "988a37755026d24c2e002236e9bb4532ab8c9ad95488e24d75eef93f33d99264",
+      "boundaryPolicySha256": "6e7cb3dca041716810ba8040286e1b9a18c218230100d3978e971bac7292ad85",
+      "requiredTestsSha256": "c49f9dc21e8f38d4037a70ba4da7d6989c7d021c413221d5d2560c3ce15fdc5c"
+    }
+  ],
+  "allowedModuleRoots": [
+    "project/apps/api/src/modules/interest-engine/calc-prep/__tests__/payment-mapper.spec.ts/"
+  ],
+  "expiresAt": "2026-07-28T07:56:54Z",
+  "revocationPath": "project/docs/governance/coordination-v2/task-plans/COLLECTION/REVOKED",
+  "manualMergeRequired": true
+}
