@@ -143,6 +143,7 @@ src/modules/icrabot/v28-engine/__tests__/factstore-clear-tenant-scope-security.s
 src/modules/icrabot/v28-engine/__tests__/factstore-tenant-isolation-security.spec.ts
 src/modules/icrabot/v28-engine/__tests__/non-retryable-outbox.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-platform-cron.spec.ts
+src/modules/icrabot/v28-engine/__tests__/outbox-residual-tenant-isolation.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-tenancy.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-tenant-scope-security.spec.ts
 src/modules/icrabot/v28-engine/__tests__/tenant-boundary-hardening.spec.ts

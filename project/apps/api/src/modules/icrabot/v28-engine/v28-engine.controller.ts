@@ -466,14 +466,15 @@ export class OutboxController {
     return { handlers: this.actionHandler.getRegisteredHandlers() };
   }
 
+  // V28-XTEN-I03: aggregate ve lock listesi tenant-scoped (caseId sizintisi yok).
   @Get('handler-stats')
-  async getHandlerStats() {
-    return this.actionHandler.getHandlerStats();
+  async getHandlerStats(@Req() req: any) {
+    return this.actionHandler.getHandlerStats(tenantScopeFromRequestUser(req.user));
   }
 
   @Get('locks')
-  async getActiveLocks() {
-    return { locks: this.actionHandler.getActiveLocks() };
+  async getActiveLocks(@Req() req: any) {
+    return { locks: this.actionHandler.getActiveLocks(tenantScopeFromRequestUser(req.user)) };
   }
 
   @Post('execute-direct')
