@@ -18,8 +18,11 @@ src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.db-g
 src/modules/automation/__tests__/workflow-engine-legal-time-cutover.db-gated.integration.spec.ts
 src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.db-gated.integration.spec.ts
 src/modules/case/__tests__/case-calculation-summary.compatibility.db-gated.integration.spec.ts
+src/modules/claim-item/__tests__/claim-formation-persistence-foundation.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-finalizer.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-intent.db-gated.integration.spec.ts
+src/modules/claim-item/__tests__/claim-item-lifecycle.db-gated.integration.spec.ts
+src/modules/claim-item/__tests__/claim-item-source-integrity.db-gated.integration.spec.ts
 src/modules/debtor/__tests__/debtor-finalization-cutover.db-gated.integration.spec.ts
 #
 # domain-event-ingest.integration.spec.ts: pure/uyap-icrabot-tebligat.txt'ten tasindi
