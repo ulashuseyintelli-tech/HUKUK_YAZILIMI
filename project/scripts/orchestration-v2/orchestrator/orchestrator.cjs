@@ -162,7 +162,32 @@ async function runTask(ctx) {
   };
 
   // --- DECLARED -----------------------------------------------------------
-  if (!store.current(taskId)) {
+  //
+  // state.cjs models BLOCKED as recoverable — it is not in TERMINAL, and
+  // ALLOWED.BLOCKED is ['ELIGIBLE', 'CANCELLED'] under the comment "BLOCKED
+  // returns only to ELIGIBLE, and only by owner action". Nothing implemented
+  // that return. A task blocked by a transient failure — a worktree that could
+  // not be created, an executor that was not installed — could never run again:
+  // the record exists so DECLARED is skipped, and AUTHORIZED then demands
+  // DECLARED and fails STATE_CAS_MISMATCH. Any infrastructure hiccup burned a
+  // ratified plan hash and forced a fresh ratification cycle.
+  //
+  // Resume is deliberately NOT automatic. Silently retrying a blocked task is
+  // what the CAS guard exists to prevent, so the caller must ask for it:
+  // ctx.resumeFromBlocked, surfaced as --resume-blocked. The blocker it resumed
+  // from is recorded in the ELIGIBLE payload, so the append-only log shows the
+  // recovery instead of hiding it.
+  const opening = store.current(taskId);
+  const resumingFromBlocked = Boolean(opening) && opening.state === 'BLOCKED';
+  const resumedFromBlocker =
+    resumingFromBlocked && opening.payload ? opening.payload.blockerCode || null : null;
+  if (resumingFromBlocked && ctx.resumeFromBlocked !== true) {
+    return blocked(
+      'BLOCKED_RESUME_NOT_AUTHORIZED',
+      taskId + ' is BLOCKED (' + (resumedFromBlocker || 'unknown') + '); an owner-authorized resume is required',
+    );
+  }
+  if (!opening) {
     store.transition({
       taskId,
       to: 'DECLARED',
@@ -186,15 +211,21 @@ async function runTask(ctx) {
   } catch (e) {
     return blocked(e.code || 'AUTHORITY_INVALID', e.detail || e.message);
   }
-  store.transition({
-    taskId,
-    to: 'AUTHORIZED',
-    expectedPreviousState: 'DECLARED',
-    writerIdentity: 'OWNER',
-    payload: { grantId: validated.grantId, taskSpecSha256: validated.digests.taskSpecSha256 },
-    nowMs: nowMs(),
-  });
-  trace.push('AUTHORIZED');
+  // BLOCKED -> AUTHORIZED is not a legal edge, so a resume goes straight to
+  // ELIGIBLE. The authority check above still ran unconditionally, so the grant
+  // and hashes are re-validated on every attempt including this one — what is
+  // skipped is the state-log entry, not the verification.
+  if (!resumingFromBlocked) {
+    store.transition({
+      taskId,
+      to: 'AUTHORIZED',
+      expectedPreviousState: 'DECLARED',
+      writerIdentity: 'OWNER',
+      payload: { grantId: validated.grantId, taskSpecSha256: validated.digests.taskSpecSha256 },
+      nowMs: nowMs(),
+    });
+    trace.push('AUTHORIZED');
+  }
 
   // --- ELIGIBLE -----------------------------------------------------------
   const elig = evaluateEligibility({ store, validated });
@@ -204,12 +235,24 @@ async function runTask(ctx) {
   store.transition({
     taskId,
     to: 'ELIGIBLE',
-    expectedPreviousState: 'AUTHORIZED',
+    expectedPreviousState: resumingFromBlocked ? 'BLOCKED' : 'AUTHORIZED',
+    // ELIGIBLE is authored by the ORCHESTRATOR in every case — WRITER pins it
+    // and enforces it. The owner's part is the decision to resume, not the
+    // write; it is recorded in the payload rather than by borrowing the owner's
+    // identity for a state the owner is not permitted to author.
     writerIdentity: 'ORCHESTRATOR',
-    payload: { allowedRoots: validated.spec.boundaryPolicy.allowedRoots },
+    payload: resumingFromBlocked
+      ? {
+          allowedRoots: validated.spec.boundaryPolicy.allowedRoots,
+          ownerAuthorizedResume: true,
+          resumedFromBlocker,
+          grantId: validated.grantId,
+          taskSpecSha256: validated.digests.taskSpecSha256,
+        }
+      : { allowedRoots: validated.spec.boundaryPolicy.allowedRoots },
     nowMs: nowMs(),
   });
-  trace.push('ELIGIBLE');
+  trace.push(resumingFromBlocked ? 'ELIGIBLE(resumed)' : 'ELIGIBLE');
 
   // --- CLAIMED : atomic lease CAS (§6) ------------------------------------
   let claim;
