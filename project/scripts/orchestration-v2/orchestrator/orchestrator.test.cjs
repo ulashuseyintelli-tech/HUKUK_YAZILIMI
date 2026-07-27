@@ -638,3 +638,239 @@ test('§15.5: verification refuses to run without a reader or a pinned commit', 
     (e) => e.code === 'EVIDENCE_COMMIT_INVALID',
   );
 });
+
+// ------------------------------------------------- STANDING GRANT (WP02)
+
+// A standing grant removes the per-task owner ratification round. What replaces
+// it is validateAgainstStandingGrant: every limit the grant states is enforced
+// mechanically, on the plan, before anything runs. These tests are that
+// promise's teeth.
+const SG_ACT = 'project/docs/governance/coordination-v2/activation';
+
+function standingGrant(over) {
+  return Object.assign(
+    {
+      schemaVersion: 1,
+      standingGrantId: 'STANDING-GRANT-TEST-R01',
+      parentAuthorizationRef: {
+        authorizationId: 'OWNER-GRANT-TEST-R01',
+        sourcePath: SG_ACT + '/PARENT-AUTHORIZATION-ENVELOPE.md',
+        payloadSha256: 'a'.repeat(64),
+      },
+      program: { programId: 'OFFICE', eligibilityAuthorityRef: SG_ACT + '/PROGRAM-ELIGIBILITY-AUTHORITY.md' },
+      allowedTaskClasses: ['TEST_ONLY_CHARACTERIZATION'],
+      allowedPathRoots: ['project/apps/api/src/modules/office/'],
+      prohibitedPathRoots: ['project/scripts/orchestration-v2/'],
+      allowedExecutorLanes: ['CLAUDE_LOCAL'],
+      requiredIndependentReview: true,
+      ciPolicy: { requireTerminalSuccess: true, allowSkipped: false, allowNeutral: true },
+      mergePolicy: { method: 'SQUASH', autoMergeAuthorized: true, repositoryWideAutoMerge: false },
+      maxConcurrency: 1,
+      revocationPath: SG_ACT + '/REVOKED-OFFICE',
+      killSwitchPath: SG_ACT + '/KILL-SWITCH',
+      ownerRatificationEvidence: {
+        sourcePath: SG_ACT + '/PARENT-AUTHORIZATION-ENVELOPE.md',
+        sourceCommitSha: 'b'.repeat(40),
+        exactExcerpt: 'OFFICE opened to controlled live execution',
+        excerptSha256: 'c'.repeat(64),
+      },
+      auditLogPath: SG_ACT + '/audit/office.jsonl',
+      childPlanDerivation: {
+        requirePlanHash: true,
+        requireParentRef: true,
+        requireBoundarySubset: true,
+        requireTaskClassMatch: true,
+      },
+      prohibitions: {
+        noPrivilegeDelegation: true,
+        noSecretAccessExpansion: true,
+        noProductionDataMutation: true,
+        noCrossProgramMutation: true,
+        noSelfAuthorizationChange: true,
+      },
+    },
+    over || {},
+  );
+}
+
+const sgSpec = (roots) => ({
+  taskId: 'SG-TEST-01',
+  boundaryPolicy: { allowedRoots: roots, maxChangedFiles: 1 },
+});
+
+function sgThrows(opts, code) {
+  assert.throws(
+    () => authorityMod.validateAgainstStandingGrant(opts),
+    (e) => e.code === code,
+    'expected ' + code,
+  );
+}
+
+function sgRead(file) {
+  const fs2 = require('fs');
+  const p2 = require('path');
+  const root = p2.join(__dirname, '..', '..', '..', '..');
+  return JSON.parse(fs2.readFileSync(p2.join(root, SG_ACT, file), 'utf8'));
+}
+
+test('standing grant: a plan inside every limit is admitted', () => {
+  const r = authorityMod.validateAgainstStandingGrant({
+    standingGrant: standingGrant(),
+    spec: sgSpec(['project/apps/api/src/modules/office/__tests__/']),
+    taskClass: 'TEST_ONLY_CHARACTERIZATION',
+    executorLane: 'CLAUDE_LOCAL',
+    nowMs: Date.now(),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.program, 'OFFICE');
+});
+
+test('standing grant: a path outside the granted roots is refused', () => {
+  sgThrows(
+    {
+      standingGrant: standingGrant(),
+      spec: sgSpec(['project/apps/api/src/modules/collection/']),
+      taskClass: 'TEST_ONLY_CHARACTERIZATION',
+    },
+    'BOUNDARY_EXCEEDS_STANDING_GRANT',
+  );
+});
+
+test('standing grant: a prohibited shared surface is refused even inside a granted root', () => {
+  sgThrows(
+    {
+      standingGrant: standingGrant({ allowedPathRoots: ['project/'] }),
+      spec: sgSpec(['project/scripts/orchestration-v2/orchestrator/']),
+      taskClass: 'TEST_ONLY_CHARACTERIZATION',
+    },
+    'BOUNDARY_TOUCHES_PROHIBITED_SURFACE',
+  );
+});
+
+test('standing grant: an ungranted task class is refused, known vocabulary or not', () => {
+  const spec = sgSpec(['project/apps/api/src/modules/office/']);
+  sgThrows({ standingGrant: standingGrant(), spec, taskClass: 'BOUNDED_CODE_FIX' }, 'TASK_CLASS_NOT_GRANTED');
+  sgThrows({ standingGrant: standingGrant(), spec, taskClass: 'DELETE_EVERYTHING' }, 'TASK_CLASS_UNKNOWN');
+});
+
+test('standing grant: an ungranted executor lane is refused', () => {
+  sgThrows(
+    {
+      standingGrant: standingGrant(),
+      spec: sgSpec(['project/apps/api/src/modules/office/']),
+      taskClass: 'TEST_ONLY_CHARACTERIZATION',
+      executorLane: 'CODEX_LOCAL',
+    },
+    'EXECUTOR_LANE_NOT_GRANTED',
+  );
+});
+
+test('standing grant: revocation and the kill switch each stop everything', () => {
+  const base = {
+    standingGrant: standingGrant(),
+    spec: sgSpec(['project/apps/api/src/modules/office/']),
+    taskClass: 'TEST_ONLY_CHARACTERIZATION',
+  };
+  sgThrows(Object.assign({}, base, { revoked: true }), 'STANDING_GRANT_REVOKED');
+  sgThrows(Object.assign({}, base, { killSwitchEngaged: true }), 'KILL_SWITCH_ENGAGED');
+});
+
+test('standing grant: a grant citing no parent authorization is self-authorizing and refused', () => {
+  sgThrows(
+    {
+      standingGrant: standingGrant({
+        parentAuthorizationRef: { authorizationId: 'X', sourcePath: 'a.md', payloadSha256: 'not-a-digest' },
+      }),
+      spec: sgSpec(['project/apps/api/src/modules/office/']),
+      taskClass: 'TEST_ONLY_CHARACTERIZATION',
+    },
+    'STANDING_GRANT_PARENT_REF_INVALID',
+  );
+});
+
+test('standing grant: serial execution, independent review and bounded merge cannot be softened', () => {
+  const spec = sgSpec(['project/apps/api/src/modules/office/']);
+  const cls = 'TEST_ONLY_CHARACTERIZATION';
+  sgThrows({ standingGrant: standingGrant({ maxConcurrency: 4 }), spec, taskClass: cls }, 'STANDING_GRANT_CONCURRENCY_INVALID');
+  sgThrows({ standingGrant: standingGrant({ requiredIndependentReview: false }), spec, taskClass: cls }, 'INDEPENDENT_REVIEW_NOT_REQUIRED');
+  sgThrows(
+    {
+      standingGrant: standingGrant({
+        mergePolicy: { method: 'SQUASH', autoMergeAuthorized: true, repositoryWideAutoMerge: true },
+      }),
+      spec,
+      taskClass: cls,
+    },
+    'REPOSITORY_WIDE_AUTO_MERGE_FORBIDDEN',
+  );
+  sgThrows(
+    {
+      standingGrant: standingGrant({
+        ciPolicy: { requireTerminalSuccess: false, allowSkipped: true, allowNeutral: true },
+      }),
+      spec,
+      taskClass: cls,
+    },
+    'CI_TERMINAL_SUCCESS_NOT_REQUIRED',
+  );
+});
+
+test('standing grant: a missing self-modification prohibition is malformed, not permissive', () => {
+  sgThrows(
+    {
+      standingGrant: standingGrant({
+        prohibitions: {
+          noPrivilegeDelegation: true,
+          noSecretAccessExpansion: true,
+          noProductionDataMutation: true,
+          noCrossProgramMutation: true,
+          noSelfAuthorizationChange: false,
+        },
+      }),
+      spec: sgSpec(['project/apps/api/src/modules/office/']),
+      taskClass: 'TEST_ONLY_CHARACTERIZATION',
+    },
+    'STANDING_GRANT_PROHIBITION_MISSING',
+  );
+});
+
+test('standing grant: the two shipped grants hold their own stated limits', () => {
+  for (const [file, program] of [
+    ['STANDING-GRANT-OFFICE-LIVE-R01.json', 'OFFICE'],
+    ['STANDING-GRANT-COLLECTION-LIVE-R01.json', 'COLLECTION'],
+  ]) {
+    const g = sgRead(file);
+    assert.equal(g.program.programId, program);
+    assert.equal(g.maxConcurrency, 1);
+    assert.equal(g.mergePolicy.repositoryWideAutoMerge, false);
+    assert.equal(g.requiredIndependentReview, true);
+    for (const k of Object.keys(g.prohibitions)) assert.equal(g.prohibitions[k], true, program + ' ' + k);
+    const r = authorityMod.validateAgainstStandingGrant({
+      standingGrant: g,
+      spec: sgSpec([g.allowedPathRoots[0] + '__tests__/']),
+      taskClass: 'TEST_ONLY_CHARACTERIZATION',
+      executorLane: 'CLAUDE_LOCAL',
+      nowMs: Date.now(),
+    });
+    assert.equal(r.program, program);
+  }
+});
+
+test('standing grant: neither shipped grant can reach the other program or the control plane', () => {
+  const office = sgRead('STANDING-GRANT-OFFICE-LIVE-R01.json');
+  const collection = sgRead('STANDING-GRANT-COLLECTION-LIVE-R01.json');
+  const cls = 'TEST_ONLY_CHARACTERIZATION';
+  sgThrows({ standingGrant: office, spec: sgSpec(collection.allowedPathRoots.slice(0, 1)), taskClass: cls }, 'BOUNDARY_EXCEEDS_STANDING_GRANT');
+  sgThrows({ standingGrant: collection, spec: sgSpec(office.allowedPathRoots.slice(0, 1)), taskClass: cls }, 'BOUNDARY_EXCEEDS_STANDING_GRANT');
+  for (const g of [office, collection]) {
+    sgThrows({ standingGrant: g, spec: sgSpec(['project/scripts/orchestration-v2/']), taskClass: cls }, 'BOUNDARY_EXCEEDS_STANDING_GRANT');
+  }
+});
+
+test('standing grant: the task-scoped grant model still works alongside it', () => {
+  // Backward compatibility is a stated requirement: standing grants stand
+  // beside grant.schema.json, they do not replace it.
+  assert.equal(typeof authorityMod.validateAgainstGrant, 'function');
+  assert.equal(typeof authorityMod.validateAgainstStandingGrant, 'function');
+  assert.notEqual(authorityMod.validateAgainstGrant, authorityMod.validateAgainstStandingGrant);
+});
