@@ -58,16 +58,34 @@ export async function assertCaseInScope(
   caseId: string,
   scope: OutboxScope,
 ): Promise<void> {
-  if (scope.kind === 'platform') return;
+  if (!(await isCaseInScope(client, caseId, scope))) {
+    throw new NotFoundException(`Case not found: ${caseId}`);
+  }
+}
+
+/**
+ * `assertCaseInScope`'un boolean varyanti.
+ *
+ * Cagiranin, kapsam disi kaydi "bulunamadi" gibi sunmasi gereken yerlerde
+ * kullanilir (orn. entryId/runId ile gelen tekil okuma): kapsam disi kayit ile
+ * hic olmayan kayit AYNI sonucu (`null`) uretir → varlik sizintisi olmaz.
+ *
+ * Bos/gecersiz caseId fail-closed olarak kapsam disi sayilir.
+ */
+export async function isCaseInScope(
+  client: CaseScopeReader,
+  caseId: string | null | undefined,
+  scope: OutboxScope,
+): Promise<boolean> {
+  if (scope.kind === 'platform') return true;
+  if (typeof caseId !== 'string' || caseId.length === 0) return false;
 
   const owned = await client.case.findFirst({
     where: { id: caseId, tenantId: scope.tenantId },
     select: { id: true },
   });
 
-  if (!owned) {
-    throw new NotFoundException(`Case not found: ${caseId}`);
-  }
+  return owned !== null && owned !== undefined;
 }
 
 /**

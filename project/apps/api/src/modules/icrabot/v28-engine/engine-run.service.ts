@@ -6,6 +6,8 @@
  */
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { OutboxScope } from './outbox-scope';
+import { assertCaseInScope, isCaseInScope } from './case-scope';
 
 export type EngineRunStatus = 'started' | 'succeeded' | 'failed';
 
@@ -88,12 +90,14 @@ export class EngineRunService {
    * Engine run detayını döner
    * OpenAPI spec: GET /engine/runs/{run_id}
    */
-  async getRun(runId: string): Promise<EngineRunResponse> {
+  async getRun(runId: string, scope: OutboxScope): Promise<EngineRunResponse> {
     const run = await (this.prisma as any).icrabotEngineRun.findUnique({
       where: { id: runId },
     });
 
-    if (!run) {
+    // V28-XTEN-I02: runId cagiran-kontrollu. Kapsam disi run ile VAR OLMAYAN run
+    // AYNI hatayi verir — cagiran run'in varligini yanittan cikaramaz.
+    if (!run || !(await isCaseInScope(this.prisma as any, run.caseId, scope))) {
       throw new NotFoundException(`Engine run not found: ${runId}`);
     }
 
@@ -105,12 +109,15 @@ export class EngineRunService {
    */
   async getRunsByCaseId(
     caseId: string,
+    scope: OutboxScope,
     options?: {
       status?: EngineRunStatus;
       ruleId?: string;
       limit?: number;
     },
   ): Promise<EngineRunResponse[]> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const where: any = { caseId };
     if (options?.status) where.status = options.status;
     if (options?.ruleId) where.ruleId = options.ruleId;
@@ -127,7 +134,7 @@ export class EngineRunService {
   /**
    * Son N gündeki run istatistikleri
    */
-  async getStats(days = 7): Promise<{
+  async getStats(scope: OutboxScope, days = 7): Promise<{
     total: number;
     succeeded: number;
     failed: number;
@@ -136,14 +143,22 @@ export class EngineRunService {
     const since = new Date();
     since.setDate(since.getDate() - days);
 
-    const runs = await (this.prisma as any).icrabotEngineRun.findMany({
-      where: { startedAt: { gte: since } },
-      select: {
-        status: true,
-        startedAt: true,
-        finishedAt: true,
-      },
-    });
+    // V28-XTEN-I02: onceki hali TUM tenant'lardaki run'lari sayan global aggregate'ti.
+    // `IcrabotEngineRun` tenantId TASIMAZ ve `Case`'e Prisma relation'i YOKTUR; bu
+    // yuzden kapsam, tek authoritative kaynak olan `Case.tenantId` ile parametreli
+    // bir JOIN uzerinden kurulur (tenant'in tum case kimliklerini belleğe cekmeden).
+    const runs: Array<{ status: string; startedAt: Date; finishedAt: Date | null }> =
+      scope.kind === 'platform'
+        ? await (this.prisma as any).icrabotEngineRun.findMany({
+            where: { startedAt: { gte: since } },
+            select: { status: true, startedAt: true, finishedAt: true },
+          })
+        : await (this.prisma as any).$queryRaw`
+            SELECT r."status", r."startedAt", r."finishedAt"
+            FROM "IcrabotEngineRun" r
+            JOIN "Case" c ON c."id" = r."caseId"
+            WHERE r."startedAt" >= ${since} AND c."tenantId" = ${scope.tenantId}
+          `;
 
     let succeeded = 0;
     let failed = 0;

@@ -16,6 +16,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AggregateVersionAllocator } from '../domain-event-ingest';
+import { OutboxScope } from './outbox-scope';
+import { assertCaseInScope, isCaseInScope } from './case-scope';
 
 export type TimelineEntryType = 
   | 'UYAP_EVENT' 
@@ -117,6 +119,7 @@ export class TimelineService {
    */
   async getTimelinePaged(
     caseId: string,
+    scope: OutboxScope,
     options?: {
       type?: TimelineEntryType;
       severity?: TimelineSeverity;
@@ -125,6 +128,11 @@ export class TimelineService {
       limit?: number;
     },
   ): Promise<TimelinePageResponse> {
+    // V28-XTEN-I02: kapsam kapisi. `IcrabotTimelineEntry.tenantId` NULLABLE ve
+    // forward-only (spec-15) oldugu icin kolon predicate'i tarihsel satirlari
+    // GORUNMEZ yapardi — kapsam bu yuzden Case sahipligi ile kurulur (veri kaybi yok).
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const limit = Math.min(options?.limit || 50, 200);
     const where: any = { caseId };
     
@@ -174,6 +182,7 @@ export class TimelineService {
    */
   async getTimeline(
     caseId: string,
+    scope: OutboxScope,
     options?: {
       type?: TimelineEntryType;
       severity?: TimelineSeverity;
@@ -182,6 +191,8 @@ export class TimelineService {
       offset?: number;
     },
   ): Promise<any[]> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const where: any = { caseId };
     if (options?.type) where.type = options.type;
     if (options?.severity) where.severity = options.severity;
@@ -207,11 +218,20 @@ export class TimelineService {
   /**
    * Tek bir timeline entry döner
    */
-  async getEntry(entryId: string): Promise<TimelineEntryResponse | null> {
+  async getEntry(entryId: string, scope: OutboxScope): Promise<TimelineEntryResponse | null> {
     const entry = await (this.prisma as any).icrabotTimelineEntry.findUnique({
       where: { id: entryId },
     });
-    return entry ? this.toApiFormat(entry) : null;
+    if (!entry) return null;
+
+    // V28-XTEN-I02: entryId cagiran-kontrollu; satirin sahibi case kapsamda mi?
+    // Kapsam disi entry, VAR OLMAYAN entry ile ayni sekilde `null` doner —
+    // cagiran entry'nin varligini bu yanittan cikaramaz.
+    if (!(await isCaseInScope(this.prisma as any, entry.caseId, scope))) {
+      return null;
+    }
+
+    return this.toApiFormat(entry);
   }
 
   /**
@@ -234,7 +254,16 @@ export class TimelineService {
   /**
    * Belirli bir run'a ait timeline entry'lerini döner
    */
-  async getTimelineByRun(runId: string): Promise<any[]> {
+  async getTimelineByRun(runId: string, scope: OutboxScope): Promise<any[]> {
+    // V28-XTEN-I02: runId cagiran-kontrollu. Run'in sahibi case kapsam disindaysa
+    // (veya run hic yoksa) AYNI sonuc doner: bos liste — varlik sizintisi yok.
+    const run = await (this.prisma as any).icrabotEngineRun.findUnique({
+      where: { id: runId },
+      select: { caseId: true },
+    });
+    if (!run) return [];
+    if (!(await isCaseInScope(this.prisma as any, run.caseId, scope))) return [];
+
     return (this.prisma as any).icrabotTimelineEntry.findMany({
       where: { runId },
       orderBy: { createdAt: 'asc' },
@@ -244,7 +273,9 @@ export class TimelineService {
   /**
    * Timeline istatistiklerini döner
    */
-  async getStats(caseId: string): Promise<Record<string, number>> {
+  async getStats(caseId: string, scope: OutboxScope): Promise<Record<string, number>> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const entries = await (this.prisma as any).icrabotTimelineEntry.groupBy({
       by: ['type'],
       where: { caseId },
@@ -261,6 +292,7 @@ export class TimelineService {
    */
   async getRecentSummary(
     caseId: string,
+    scope: OutboxScope,
     days = 7,
   ): Promise<{
     totalEntries: number;
@@ -268,6 +300,8 @@ export class TimelineService {
     bySeverity: Record<string, number>;
     lastActivity: Date | null;
   }> {
+    await assertCaseInScope(this.prisma as any, caseId, scope);
+
     const since = new Date();
     since.setDate(since.getDate() - days);
 

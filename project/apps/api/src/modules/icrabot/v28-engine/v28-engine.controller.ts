@@ -289,8 +289,10 @@ export class TimelineController {
   /**
    * OpenAPI spec: GET /cases/{case_id}/timeline (cursor-based pagination)
    */
+  // V28-XTEN-I02: tum timeline okuma yuzeyleri tenant-scoped.
   @Get(':caseId')
   async getTimeline(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
@@ -298,7 +300,7 @@ export class TimelineController {
     @Query('severity') severity?: string,
     @Query('source') source?: string,
   ) {
-    return this.timeline.getTimelinePaged(caseId, {
+    return this.timeline.getTimelinePaged(caseId, tenantScopeFromRequestUser(req.user), {
       cursor,
       limit: limit ? Math.min(parseInt(limit), 200) : 50,
       type: type as TimelineEntryType,
@@ -308,26 +310,31 @@ export class TimelineController {
   }
 
   @Get(':caseId/stats')
-  async getStats(@Param('caseId') caseId: string) {
-    return this.timeline.getStats(caseId);
+  async getStats(@Req() req: any, @Param('caseId') caseId: string) {
+    return this.timeline.getStats(caseId, tenantScopeFromRequestUser(req.user));
   }
 
   @Get(':caseId/summary')
   async getRecentSummary(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Query('days') days?: string,
   ) {
-    return this.timeline.getRecentSummary(caseId, days ? parseInt(days) : 7);
+    return this.timeline.getRecentSummary(
+      caseId,
+      tenantScopeFromRequestUser(req.user),
+      days ? parseInt(days) : 7,
+    );
   }
 
   @Get('run/:runId')
-  async getTimelineByRun(@Param('runId') runId: string) {
-    return this.timeline.getTimelineByRun(runId);
+  async getTimelineByRun(@Req() req: any, @Param('runId') runId: string) {
+    return this.timeline.getTimelineByRun(runId, tenantScopeFromRequestUser(req.user));
   }
 
   @Get('entry/:entryId')
-  async getEntry(@Param('entryId') entryId: string) {
-    const entry = await this.timeline.getEntry(entryId);
+  async getEntry(@Req() req: any, @Param('entryId') entryId: string) {
+    const entry = await this.timeline.getEntry(entryId, tenantScopeFromRequestUser(req.user));
     if (!entry) throw new NotFoundException(`Timeline entry not found: ${entryId}`);
     return entry;
   }
@@ -342,19 +349,21 @@ export class EngineRunController {
   /**
    * OpenAPI spec: GET /engine/runs/{run_id}
    */
+  // V28-XTEN-I02: run okuma yuzeyleri ve global stats tenant-scoped.
   @Get(':runId')
-  async getRun(@Param('runId') runId: string) {
-    return this.engineRun.getRun(runId);
+  async getRun(@Req() req: any, @Param('runId') runId: string) {
+    return this.engineRun.getRun(runId, tenantScopeFromRequestUser(req.user));
   }
 
   @Get('case/:caseId')
   async getRunsByCaseId(
+    @Req() req: any,
     @Param('caseId') caseId: string,
     @Query('status') status?: string,
     @Query('ruleId') ruleId?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.engineRun.getRunsByCaseId(caseId, {
+    return this.engineRun.getRunsByCaseId(caseId, tenantScopeFromRequestUser(req.user), {
       status: status as any,
       ruleId,
       limit: limit ? parseInt(limit) : 50,
@@ -362,8 +371,11 @@ export class EngineRunController {
   }
 
   @Get('stats')
-  async getStats(@Query('days') days?: string) {
-    return this.engineRun.getStats(days ? parseInt(days) : 7);
+  async getStats(@Req() req: any, @Query('days') days?: string) {
+    return this.engineRun.getStats(
+      tenantScopeFromRequestUser(req.user),
+      days ? parseInt(days) : 7,
+    );
   }
 }
 
