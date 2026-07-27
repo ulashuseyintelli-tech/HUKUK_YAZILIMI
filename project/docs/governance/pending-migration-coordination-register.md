@@ -1164,3 +1164,72 @@ NONE
 GO-MIGRATE GATE (uyap_poa_tenant_safety):
 OPEN / OWNER DECISION REQUIRED
 ```
+
+---
+
+## 20. SPRING-CLEANING OWNER RESIDUALS — migration live-apply ÖLÇÜMÜ (2026-07-27)
+
+Kaynak: `PROGRAM-WIDE-SPRING-CLEANING-OWNER-RESIDUALS-FULL-EXECUTION-R01` / ITEM-02 §5.
+
+§19 üç migration'ı `UNKNOWN / OWNER VERIFICATION REQUIRED` olarak kaydetmişti çünkü o turda
+veritabanına erişilmemişti. Bu bölüm o boşluğu **ölçümle** kapatır.
+
+### 20.1 Ölçüm yöntemi ve sınırı
+
+```text
+komut  : prisma migrate status --schema prisma/schema.prisma   (SALT OKUMA)
+hedef  : .env'in çözdüğü local development database
+tarih  : 2026-07-27
+
+OKUNMAYAN / RAPORLANMAYAN:
+  .env dosya içeriği · connection string · credential · şifre · veri içeriği
+UYGULANAN MIGRATION:
+  YOK — migrate status hiçbir migration uygulamaz
+```
+
+`prisma migrate status`, `.env`'i kendi içinde yükler; bu görev `.env` değerlerini **görmemiş
+ve aktarmamıştır**. Çıktının yalnız migration adı + uygulanma durumu kısmı kullanılmıştır.
+
+### 20.2 Ölçüm sonucu
+
+```text
+105 migration bulundu
+UYGULANMAMIŞ 3 migration:
+```
+
+| Migration | Task | PR | Squash | Local dev DB |
+| --- | --- | --- | --- | --- |
+| `20260726120000_claim_formation_projection_binding_persistence` | `RCV-CLAIM-FORM-P02-S08-D02-PB01` | #1630 | `d7ef31f6` | **NOT APPLIED** |
+| `20260726190741_client_p2_u03_track_b_i01_financial_disclosure_foundation` | `CLIENT-P2-U03-TRACK-B-I01` | #1629 | `32a42ed4` | **NOT APPLIED** |
+| `20260726210000_uyap_poa_tenant_safety_i01` | `UYAP-POA-TENANT-SAFETY-I02` (repo etiketi `-I01`) | #1633 | `e20b36ff` | **NOT APPLIED** |
+
+### 20.3 Statü düzeltmesi
+
+```text
+ÖNCE (§19)  : LIVE APPLY = UNKNOWN / OWNER VERIFICATION REQUIRED
+SONRA (§20) : LOCAL DEV DB = NOT APPLIED   (ölçülmüş, 2026-07-27)
+              PRODUCTION   = UNKNOWN       (production DB'ye erişilmedi)
+```
+
+Bu iki eksen **birbirinin yerine geçmez**. Local development veritabanında uygulanmamış olması
+production hakkında hiçbir şey söylemez; production hakkında da hiçbir iddia üretilmemiştir.
+
+### 20.4 Bu bölümün üretmedikleri
+
+```text
+MIGRATION APPLY YETKİSİ        : NONE — hiçbir migration uygulanmadı, uygulama yetkisi doğmadı
+GO-MIGRATE GATE                : AÇILMADI (UYAP §L'nin şart koştuğu gate hâlâ açık)
+RETROAKTİF RATİFİKASYON        : NONE
+YENİ MIGRATION                 : YOK
+```
+
+Üç migration da merge edilmiş fakat hiçbir çalışan veritabanında etkin değildir; ilgili
+şema sözleşmeleri bu nedenle `IMPLEMENTATION_COMPLETE / NOT APPLIED` durumundadır.
+
+```text
+SPRING-CLEANING OWNER RESIDUALS MIGRATION MEASUREMENT:
+RECORDED / MEASURED
+
+LIVE APPLY AUTHORITY:
+NONE
+```
