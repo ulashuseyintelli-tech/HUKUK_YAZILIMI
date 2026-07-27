@@ -427,3 +427,38 @@ Icerik pin'i BLOB sha'sidir, commit sha'si degildir; GH-03 kaydindaki gerekce
 aynen gecerlidir.
 
 Kayit bu cutover'a ozgudur: yeniden kullanilabilir veya genel amacli degildir.
+
+## GH-08 gate / jest separation binding
+
+Owner-ratified 2026-07-27. Adds a record; relaxes no existing control and leaves
+the GH-02, GH-03 and GH-05/GH-06 records untouched.
+
+```text
+Task ID   : GITHUB-PLATFORM-BASELINE-GH08-GATE-JEST-SEPARATION-R01
+Mode      : GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01
+Base SHA  : 562c34d1abc955d3d70fb0b6f7e6e8851c62d0bb
+Head ref  : codex/gh08-gate-jest-separation-r01
+Target    : .github/workflows/ci.yml
+Content   : pinned by BLOB sha (b4543870e99d732a1b13c27cd657a189bc0f91b0)
+```
+
+`test-suite` job'inda 14 step gate mantigini (grep FORBIDDEN kontrolleri +
+denetlenen kaynak dosyalarin `test -f` guard'lari) ve ayri bir Jest cagrisini
+AYNI step'te tasiyordu. Her Jest cagrisi ~13.6s sabit ts-jest bootstrap oduyor.
+
+Bu binding yalnizca o 14 cagrinin kaldirilmasini yetkilendirir. Gate mantigi
+step'te AYNEN KALIR; spec'ler `apps/api/ci-manifests/**` altindaki mevcut
+manifest'lere tasinir ve orijinal step gerekceleri manifest basligina gecirilir.
+
+Kapsam disi ve DOKUNULMAMISTIR: `Test Suites: N passed, N total` sayim
+assertion'i tasiyan 8 step. O assertion, spec'in gercekten kostugunun kanitidir;
+manifest'e katlanirsa yapisal olarak kaybolur.
+
+Jest yurutmesi 30 -> 16 (8 dogrudan + 8 manifest). CI-8 invocation budget ayni
+PR'da 32 -> 18 DUSURULUR; aksi halde 14 slot bos headroom kalir ve ratchet
+gevser.
+
+Icerik pin'i BLOB sha'sidir, commit sha'si degildir; GH-03 kaydindaki gerekce
+aynen gecerlidir.
+
+Kayit bu ayirmaya ozgudur: yeniden kullanilabilir veya genel amacli degildir.

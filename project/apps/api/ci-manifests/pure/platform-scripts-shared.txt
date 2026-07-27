@@ -251,3 +251,82 @@ src/modules/poa/__tests__/poa-add-lawyers-tenant-guard.spec.ts
 src/modules/policy-engine/__tests__/effective-permission-resolver.spec.ts
 src/modules/policy-engine/decorators/__tests__/cpe-required.guard.spec.ts
 src/scripts/__tests__/adr014-session-observation-facts.security.spec.ts
+
+# ── GH-08: gate/jest ayrimi ────────────────────────────────────────────────
+# Bu spec'ler daha once ci.yml icinde, kendi grep-gate step'lerinin sonundaki
+# AYRI bir jest cagrisiyla kosuyordu. Gate mantigi (grep FORBIDDEN kontrolleri +
+# denetlenen KAYNAK dosyalarin test -f guard'lari) step'te AYNEN KALDI; yalnizca
+# jest cagrisi kaldirilip spec listesi buraya tasindi. Kazanc: step basina ~13.6s
+# Jest bootstrap. Spec kumesi degismedi.
+#
+# Birlestirilen step'lerin orijinal gerekceleri:
+#
+#   ADR014-PE-06A disabled local evidence harness tests
+#       (ci.yml icinde ayri gerekce yorumu yoktu)
+#
+#   ADR014-PE-06C1 default-disabled observation contract tests
+#     ADR014-PE-06C1 remains preparation-only: v1 compatibility and the v2 mapper must stay
+#     default-disabled, pure and dependency-free while all direct specs execute explicitly.
+#
+#   ADR014-PE-06D local session orchestrator dry-validation tests
+#     ADR014-PE-06D composes PE-06A/B1/C1 only in a default-disabled, synthetic,
+#     test-only dry-validation shell. Runtime activation and external I/O remain forbidden.
+#
+#   ADR014-PE-06E local observability surface contract tests
+#     ADR014-PE-06E defines only pure, default-disabled local preparation contracts.
+#     Audit persistence, evidence acceptance, runtime telemetry, and alert delivery stay absent.
+#
+#   ADR014-REP-01A run-specific authorization package tests
+#     ADR014-REP-01A validates run-specific owner references only. It cannot access data,
+#     execute the runner, emit telemetry or promote evidence/PR-11/runtime authority.
+#
+#   ADR014-REP-01A-R2-I1 v2 pre-run package instance tests
+#     ADR014-REP-01A-R2-I1 materializes owner decisions only. Runtime facts, execution,
+#     data access and authority promotion remain forbidden.
+#
+#   ADR014-REP-01B local read-only representative runner tests
+#     ADR014-REP-01B is an exact local execution boundary, not an activated run.
+#     It must remain default-disabled, local-only, read-only and free of network clients.
+#
+#   ADR014-REP-02 local representative execution contract tests
+#     ADR014-REP-02 is an owner-authorized local-only execution call-site. CI exercises
+#     only mocks/static guards; it never reads local or representative data.
+#
+#   P05C-P01 CpeDecisionLog composite key static contract
+#     POLICY-CPE-DECISION-COMPOSITE-KEY-P05C-P01: CpeDecisionLog'u gelecekteki tenant-safe UYAP
+#     evidence linkage icin composite FK HEDEFI yapar. Kapsam BILINCLI olarak tek additive unique
+#     index: tenantId kolonu YOK, backfill YOK, link tablosu YOK, write-path DEGISMEZ.
+#     STEP 1 statik kontrat + migration guard: migration TEK statement olmali ve yalnizca
+#     CREATE UNIQUE INDEX icermeli; ALTER/DROP/CREATE TABLE veya DML gorulurse RED.
+#     STEP 2 disposable PostgreSQL 16'da index'in UNIQUE kuruldugunu, PK/FK'nin korundugunu ve
+#     migration'in HIC veri yazmadigini dogrular; skipped/zero-test RED.
+#
+#   P05C-P02 UyapAttemptCpeDecisionLink static contract
+#     UYAP-ATTEMPT-CPE-DECISION-LINK-P05C-P02: dormant link schema foundation + Policy Engine
+#     referential legal-hold. Kardinalite 1 attempt -> N karar; AYNI kararin baska attempt'e
+#     baglanmasi UYAP-CONST-002 geregi YASAK (@@unique([cpeDecisionLogId])). role/disposition
+#     kolonu YOK. Uc composite FK case-attribution zincirini kapatir; ucu de ON DELETE RESTRICT.
+#     STEP 1 statik kontrat + migration/dormancy guard: link'e YAZAN uretim kodu, controller/DTO,
+#     Cascade/SetNull, role/disposition veya CpeDecisionLog.tenantId gorulurse RED.
+#     STEP 2 disposable PostgreSQL 16: FK zinciri, cardinality reddi, fail-closed delete ve
+#     retention'in bagli kaydi SILMEMESI + bagli satir yuzunden HATA VERMEMESI dogrulanir.
+#
+src/modules/balance-display-shadow-diff/__tests__/balance-display-shadow-diff.events.spec.ts
+src/modules/policy-engine/decision-logger/__tests__/cpe-decision-composite-key.static.spec.ts
+src/modules/policy-engine/decision-logger/__tests__/uyap-attempt-cpe-decision-link.static.spec.ts
+src/scripts/__tests__/adr014-disabled-local-evidence-harness.security.spec.ts
+src/scripts/__tests__/adr014-disabled-local-evidence-harness.spec.ts
+src/scripts/__tests__/adr014-local-observability-surfaces.security.spec.ts
+src/scripts/__tests__/adr014-local-observability-surfaces.spec.ts
+src/scripts/__tests__/adr014-local-read-only-representative-runner.security.spec.ts
+src/scripts/__tests__/adr014-local-read-only-representative-runner.spec.ts
+src/scripts/__tests__/adr014-local-session-orchestrator-dry-validation.security.spec.ts
+src/scripts/__tests__/adr014-local-session-orchestrator-dry-validation.spec.ts
+src/scripts/__tests__/adr014-rep-02-local-execution.security.spec.ts
+src/scripts/__tests__/adr014-rep-02-local-execution.spec.ts
+src/scripts/__tests__/adr014-run-specific-authorization-package.security.spec.ts
+src/scripts/__tests__/adr014-run-specific-authorization-package.spec.ts
+src/scripts/__tests__/adr014-session-observation-producer.security.spec.ts
+src/scripts/__tests__/adr014-session-observation-producer.spec.ts
+src/scripts/__tests__/adr014-v2-pre-run-package-instance.security.spec.ts
+src/scripts/__tests__/adr014-v2-pre-run-package-instance.spec.ts
