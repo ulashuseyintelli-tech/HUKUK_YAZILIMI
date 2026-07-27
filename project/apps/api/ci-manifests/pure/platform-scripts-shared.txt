@@ -250,6 +250,7 @@ src/modules/permission-diagnostics/__tests__/warn-only-audit.service.spec.ts
 src/modules/permission-diagnostics/guided-edge/__tests__/guided-edge-gate.service.spec.ts
 src/modules/poa/__tests__/poa-add-lawyers-tenant-guard.spec.ts
 src/modules/policy-engine/__tests__/effective-permission-resolver.spec.ts
+src/modules/policy-engine/__tests__/cpe-tenant-scope-security.spec.ts
 src/modules/policy-engine/decorators/__tests__/cpe-required.guard.spec.ts
 src/scripts/__tests__/adr014-session-observation-facts.security.spec.ts
 

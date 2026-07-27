@@ -26,6 +26,12 @@ import { Scope } from '../types/scope.enum';
 // ============================================
 // Mock PrismaService for Integration Tests
 // ============================================
+/**
+ * DEBTOR-CPE-TENANT-HARDENING-P1-I01: CPE entrypoint'leri artik zorunlu tenantId alir.
+ * Bu spec'teki tum fixture case'leri bu tek tenant'a aittir.
+ */
+const TEST_TENANT_ID = 'test-tenant';
+
 const createIntegrationMockPrisma = () => ({
   icrabotCaseFact: {
     findMany: jest.fn().mockResolvedValue([]),
@@ -35,6 +41,8 @@ const createIntegrationMockPrisma = () => ({
     findMany: jest.fn().mockResolvedValue([]),
   },
   case: {
+    // DEBTOR-CPE-TENANT-HARDENING-P1-I01: sahiplik kapisi (tum fixture'lar TEST_TENANT_ID'ye ait)
+    findFirst: jest.fn(async (args: any) => ({ id: args?.where?.id ?? 'int-test-case' })),
     findUnique: jest.fn().mockResolvedValue({
       id: 'int-test-case',
       workflowStage: 'INITIAL',
@@ -144,7 +152,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
         { key: 'expense.opening.paid', value: true },
       ]);
 
-      const decision = await cpe.canPerformAction('uyap-flow-case', ActionCode.UYAP_SEND);
+      const decision = await cpe.canPerformAction(TEST_TENANT_ID, 'uyap-flow-case', ActionCode.UYAP_SEND);
 
       expect(decision.allowed).toBe(true);
       expect(decision.code).toBe('OK');
@@ -173,7 +181,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
         { key: 'case.has_unpaid_blocking_expense', value: true },
       ]);
 
-      const decision = await cpe.canPerformAction('uyap-blocked-case', ActionCode.UYAP_SEND);
+      const decision = await cpe.canPerformAction(TEST_TENANT_ID, 'uyap-blocked-case', ActionCode.UYAP_SEND);
 
       expect(decision.allowed).toBe(false);
       expect(decision.code).toBe('GATE_BLOCKED');
@@ -212,7 +220,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
         { key: 'debtor.d1.days_since_notification', value: 15 },
       ]);
 
-      const decision = await cpe.canPerformAction(
+      const decision = await cpe.canPerformAction(TEST_TENANT_ID, 
         'haciz-flow-case',
         ActionCode.TRIGGER_HACIZ,
         { debtorId: 'd1' }
@@ -245,7 +253,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
         { key: 'debtor.d1.days_since_notification', value: 3 }, // Only 3 days
       ]);
 
-      const decision = await cpe.canPerformAction(
+      const decision = await cpe.canPerformAction(TEST_TENANT_ID, 
         'haciz-early-case',
         ActionCode.TRIGGER_HACIZ,
         { debtorId: 'd1' }
@@ -290,7 +298,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
       ];
 
       for (const actionCode of actions) {
-        const decision = await cpe.canPerformAction('closed-case', actionCode);
+        const decision = await cpe.canPerformAction(TEST_TENANT_ID, 'closed-case', actionCode);
         expect(decision.allowed).toBe(false);
         // Can be GATE_BLOCKED or INVALID_TRANSITION depending on stage
         expect(['GATE_BLOCKED', 'INVALID_TRANSITION']).toContain(decision.code);
@@ -320,7 +328,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
         { key: 'case.is_closed', value: true },
       ]);
 
-      const decision = await cpe.canPerformAction('closed-reopen-case', ActionCode.REOPEN_CASE);
+      const decision = await cpe.canPerformAction(TEST_TENANT_ID, 'closed-reopen-case', ActionCode.REOPEN_CASE);
 
       // REOPEN_CASE should be allowed even on closed cases
       expect(decision.allowed).toBe(true);
@@ -355,7 +363,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
         { key: 'expense.opening.paid', value: true },
       ]);
 
-      const recommendations = await cpe.getNextActions('recommend-case');
+      const recommendations = await cpe.getNextActions(TEST_TENANT_ID, 'recommend-case');
 
       expect(recommendations.length).toBeGreaterThan(0);
       
@@ -396,7 +404,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
         status: 'SUCCESS',
       });
 
-      const result1 = await cpe.onActionExecuted(
+      const result1 = await cpe.onActionExecuted(TEST_TENANT_ID, 
         'idempotent-case',
         ActionCode.UYAP_SEND,
         {},
@@ -413,7 +421,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
         status: 'SUCCESS',
       });
 
-      const result2 = await cpe.onActionExecuted(
+      const result2 = await cpe.onActionExecuted(TEST_TENANT_ID, 
         'idempotent-case',
         ActionCode.UYAP_SEND,
         {},
@@ -451,7 +459,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
 
       mockPrisma.icrabotCaseFact.findMany.mockResolvedValue([]);
 
-      await cpe.canPerformAction('logging-case', ActionCode.UYAP_SEND);
+      await cpe.canPerformAction(TEST_TENANT_ID, 'logging-case', ActionCode.UYAP_SEND);
 
       // Decision should be logged
       expect(mockPrisma.cpeDecisionLog.create).toHaveBeenCalled();

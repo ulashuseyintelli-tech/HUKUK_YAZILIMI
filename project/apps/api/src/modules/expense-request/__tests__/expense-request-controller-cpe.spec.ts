@@ -12,6 +12,9 @@ import { CasePolicyEngine } from '../../policy-engine/case-policy-engine.service
 import { ActionCode } from '../../policy-engine/types/action-code.enum';
 import { PrismaService } from '../../../prisma/prisma.service';
 
+// DEBTOR-CPE-TENANT-HARDENING-P1-I01: mock JwtAuthGuard'in atadigi varsayilan principal tenant.
+const TEST_TENANT_ID = 'tenant-1';
+
 jest.mock('@nestjs/passport', () => ({
   AuthGuard: jest.fn(() => class MockJwtAuthGuard {
     canActivate(context: any) {
@@ -101,6 +104,7 @@ describe('ExpenseRequestController CPE runtime enforcement (MVR-006)', () => {
       .expect(403);
 
     expect(cpe.canPerformAction).toHaveBeenCalledWith(
+      TEST_TENANT_ID,
       'case-1',
       ActionCode.APPROVE_EXPENSE,
       { expenseId: 'exp-1' },
@@ -120,6 +124,7 @@ describe('ExpenseRequestController CPE runtime enforcement (MVR-006)', () => {
       .expect(201);
 
     expect(cpe.canPerformAction).toHaveBeenCalledWith(
+      TEST_TENANT_ID,
       'case-1',
       actionCode,
       { expenseId: 'exp-1' },

@@ -55,7 +55,9 @@ describe('CpeRequiredGuard - caseIdFromExpenseParam (P1b)', () => {
       select: { caseId: true },
     });
     // CPE çözülen caseId + expense context ile çağrıldı
+    // DEBTOR-CPE-TENANT-HARDENING-P1-I01: principal tenant ILK argüman olarak taşınır.
     expect(cpe.canPerformAction).toHaveBeenCalledWith(
+      't1',
       'case-1',
       ActionCode.APPROVE_EXPENSE,
       { expenseId: 'exp-1' },
@@ -104,6 +106,62 @@ describe('CpeRequiredGuard - caseIdFromExpenseParam (P1b)', () => {
 
     // expense lookup'a hiç gidilmez
     expect(prisma.expenseRequest.findFirst).not.toHaveBeenCalled();
-    expect(cpe.canPerformAction).toHaveBeenCalledWith('case-9', ActionCode.UYAP_SEND, undefined);
+    expect(cpe.canPerformAction).toHaveBeenCalledWith('t1', 'case-9', ActionCode.UYAP_SEND, undefined);
+  });
+});
+
+/**
+ * DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02)
+ *
+ * `caseIdFromExpenseParam` DIŞINDAKİ (varsayılan) dalda `caseId` doğrudan istemciden
+ * gelir (params/body/query). Önceden bu dalda hiçbir tenant doğrulaması yoktu; guard
+ * ham caseId'yi CPE'ye geçiriyordu. Artık tenant claim'i zorunludur ve CPE'ye ilk
+ * argüman olarak taşınır (case sahipliğini CPE doğrular).
+ */
+describe('CpeRequiredGuard - varsayılan dal tenant zorunluluğu (DEBTOR-IDOR-02)', () => {
+  const nonExpenseMeta = {
+    [CPE_ACTION_CODE_KEY]: ActionCode.UYAP_SEND,
+    [CPE_SCOPE_RESOLVER_KEY]: undefined,
+    [CPE_CASE_ID_RESOLVER_KEY]: defaultCaseIdResolver,
+    [CPE_CASE_ID_FROM_EXPENSE_PARAM_KEY]: false,
+  };
+
+  it('tenant claim yok → fail-closed 403, CPE ÇAĞRILMAZ (istemci caseId geçse bile)', async () => {
+    const cpe = { canPerformAction: jest.fn() };
+    const prisma = { expenseRequest: { findFirst: jest.fn() } };
+    const guard = new CpeRequiredGuard(makeReflector(nonExpenseMeta), cpe as any, prisma as any);
+
+    const req = { params: { caseId: 'baska-tenant-case' }, user: {} };
+    await expect(guard.canActivate(makeContext(req))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(cpe.canPerformAction).not.toHaveBeenCalled();
+  });
+
+  it('user hiç yok → fail-closed 403, CPE ÇAĞRILMAZ', async () => {
+    const cpe = { canPerformAction: jest.fn() };
+    const prisma = { expenseRequest: { findFirst: jest.fn() } };
+    const guard = new CpeRequiredGuard(makeReflector(nonExpenseMeta), cpe as any, prisma as any);
+
+    const req = { params: { caseId: 'case-9' } };
+    await expect(guard.canActivate(makeContext(req))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(cpe.canPerformAction).not.toHaveBeenCalled();
+  });
+
+  it('body içindeki tenantId AUTHORITY DEĞİL — yalnız principal claim kullanılır', async () => {
+    const cpe = { canPerformAction: jest.fn().mockResolvedValue({ allowed: true, code: 'OK' }) };
+    const prisma = { expenseRequest: { findFirst: jest.fn() } };
+    const guard = new CpeRequiredGuard(makeReflector(nonExpenseMeta), cpe as any, prisma as any);
+
+    const req = {
+      params: { caseId: 'case-9' },
+      body: { tenantId: 'saldirgan-tenant' },
+      user: { tenantId: 'gercek-tenant' },
+    };
+    await expect(guard.canActivate(makeContext(req))).resolves.toBe(true);
+    expect(cpe.canPerformAction).toHaveBeenCalledWith(
+      'gercek-tenant',
+      'case-9',
+      ActionCode.UYAP_SEND,
+      undefined,
+    );
   });
 });

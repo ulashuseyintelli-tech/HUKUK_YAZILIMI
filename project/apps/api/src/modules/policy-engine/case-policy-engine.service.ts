@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 import {
@@ -52,6 +52,35 @@ export class CasePolicyEngine {
   ) {}
 
   /**
+   * DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02) — tenant sinir kapisi.
+   *
+   * CPE'nin BUTUN operasyonlari `caseId` ile anahtarlanir (facts, flags, state,
+   * decision/execution kayitlari). `Case` modeli `tenantId` tasidigi icin, her
+   * public entrypoint'te case sahipligini BIR KEZ dogrulamak asagi akistaki tum
+   * okuma/yazmalari tenant-guvenli kilar: dogrulanmamis bir caseId ile hicbir
+   * fact okunamaz/yazilamaz, hicbir state degistirilemez, hicbir karar loglanmaz.
+   *
+   * Fail-closed: tenantId bos ise veya case o tenant'a ait degilse islem
+   * BASLAMADAN once atilir; bulunamayan ve baska tenant'a ait case AYNI hatayi
+   * verir (varlik sizintisi yok).
+   *
+   * Tenant authority YALNIZ cagiranin dogrulanmis kimliginden gelir; request
+   * body/query/header veya `ActionContext` icerigi authority olarak KULLANILMAZ.
+   */
+  private async assertCaseBelongsToTenant(tenantId: string, caseId: string): Promise<void> {
+    if (typeof tenantId !== 'string' || tenantId.length === 0) {
+      throw new ForbiddenException('cpe_tenant_required: tenantId cozumlenemedi');
+    }
+    const owned = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true },
+    });
+    if (!owned) {
+      throw new NotFoundException(`Dosya bulunamadi: ${caseId}`);
+    }
+  }
+
+  /**
    * Bir aksiyonun yapılıp yapılamayacağını kontrol eder.
    * 
    * Flow:
@@ -68,10 +97,13 @@ export class CasePolicyEngine {
    * @returns PolicyDecision
    */
   async canPerformAction(
+    tenantId: string,
     caseId: string,
     actionCode: ActionCode,
     context?: ActionContext,
   ): Promise<PolicyDecision> {
+    await this.assertCaseBelongsToTenant(tenantId, caseId);
+
     const traceId = randomUUID();
     const riskLevel = ACTION_RISK_LEVELS[actionCode];
     
@@ -271,10 +303,13 @@ export class CasePolicyEngine {
    * @returns RecommendedAction[]
    */
   async getNextActions(
+    tenantId: string,
     caseId: string,
     scope?: Scope,
     context?: ActionContext,
   ): Promise<RecommendedAction[]> {
+    await this.assertCaseBelongsToTenant(tenantId, caseId);
+
     this.logger.debug(`getNextActions for case ${caseId}, scope: ${scope}`);
 
     try {
@@ -362,17 +397,21 @@ export class CasePolicyEngine {
    * @returns ExecutionResponse
    */
   async onActionExecuted(
+    tenantId: string,
     caseId: string,
     actionCode: ActionCode,
     context: ActionContext | undefined,
     result: ActionResult,
     executionId: string,
   ): Promise<ExecutionResponse> {
+    await this.assertCaseBelongsToTenant(tenantId, caseId);
+
     const ruleVersion = this.stateMachine.getRuleVersion();
     this.logger.debug(`onActionExecuted: ${actionCode} for case ${caseId}, executionId: ${executionId}`);
 
     // Check for duplicate (idempotency)
     const { isNew, record } = await this.executionRecorder.startExecution(
+      tenantId,
       executionId,
       caseId,
       actionCode,

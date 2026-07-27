@@ -58,7 +58,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
     const res: any = await svc.createQuery('t1', 'u1', dto);
 
     expect(prisma.uyapQuery.create).toHaveBeenCalledTimes(1);
-    expect(cpe.canPerformAction).toHaveBeenCalledWith('case-1', ActionCode.UYAP_QUERY, {
+    expect(cpe.canPerformAction).toHaveBeenCalledWith('t1', 'case-1', ActionCode.UYAP_QUERY, {
       debtorId: 'deb-1',
       userId: 'u1',
     });

@@ -32,6 +32,17 @@ import {
   defaultCaseIdResolver,
 } from './cpe-required.decorator';
 
+/**
+ * DEBTOR-CPE-TENANT-HARDENING-P1-I01: guard'in okudugu request yuzeyi icin minimal ve
+ * tip-guvenli sozlesme. `any` KULLANILMAZ; tenant claim'i ve param erisimi bu tip
+ * uzerinden yapilir.
+ */
+interface CpeGuardRequest {
+  user?: { tenantId?: string };
+  params?: Record<string, string | undefined>;
+  policyDecision?: unknown;
+}
+
 @Injectable()
 export class CpeRequiredGuard implements CanActivate {
   private readonly logger = new Logger(CpeRequiredGuard.name);
@@ -69,7 +80,21 @@ export class CpeRequiredGuard implements CanActivate {
       context.getHandler(),
     );
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<CpeGuardRequest>();
+
+    // DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): tenant otoritesi YALNIZ
+    // dogrulanmis principal'dan (`request.user.tenantId`) gelir. Claim yoksa CPE hic
+    // cagrilmadan fail-closed reddedilir. `caseId` istemci kontrolunde oldugundan
+    // (params/body/query) tenant dogrulamasi olmadan asagi akisa GECILMEZ.
+    const principalTenantId = request.user?.tenantId;
+    if (typeof principalTenantId !== 'string' || principalTenantId.length === 0) {
+      this.logger.warn(`CpeRequired: tenant claim cozumlenemedi for ${actionCode}`);
+      throw new ForbiddenException({
+        code: 'RESOLVER_ERROR_BLOCKED',
+        reason: 'Tenant bilgisi çözümlenemedi - güvenlik nedeniyle işlem engellendi',
+        actionCode,
+      });
+    }
 
     let caseId: string;
     let actionContext: ActionContext | undefined;
@@ -79,11 +104,11 @@ export class CpeRequiredGuard implements CanActivate {
       // Cross-tenant sızıntıyı önlemek için lookup mutlaka req.user.tenantId ile sınırlıdır;
       // expense yoksa / tenant uyuşmuyorsa fail-closed (CPE çağrılmaz).
       const expenseId: string | undefined = request.params?.id;
-      const tenantId: string | undefined = request.user?.tenantId;
+      const tenantId: string = principalTenantId;
 
-      if (!expenseId || !tenantId) {
+      if (!expenseId) {
         this.logger.warn(
-          `CpeRequired: expense/tenant resolve edilemedi for ${actionCode} (expenseId=${expenseId}, tenant=${!!tenantId})`,
+          `CpeRequired: expense resolve edilemedi for ${actionCode} (expenseId=${expenseId})`,
         );
         throw new ForbiddenException({
           code: 'RESOLVER_ERROR_BLOCKED',
@@ -148,8 +173,9 @@ export class CpeRequiredGuard implements CanActivate {
       }
     }
 
-    // Call CPE
+    // Call CPE (tenant otoritesi principal'dan; caseId sahipligi CPE icinde dogrulanir)
     const decision = await this.cpe.canPerformAction(
+      principalTenantId,
       caseId,
       actionCode,
       actionContext,

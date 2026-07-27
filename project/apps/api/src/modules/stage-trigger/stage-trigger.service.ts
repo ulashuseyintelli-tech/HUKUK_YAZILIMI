@@ -107,7 +107,7 @@ export class StageTriggerService {
     // CasePolicyEngine varsa onu kullan
     if (this.casePolicyEngine) {
       try {
-        const recommendations = await this.casePolicyEngine.getNextActions(caseId);
+        const recommendations = await this.casePolicyEngine.getNextActions(tenantId, caseId);
         
         if (recommendations.length === 0) {
           return {
@@ -218,7 +218,7 @@ export class StageTriggerService {
     // CPE gate kontrolü (varsa)
     if (this.casePolicyEngine && actionCode) {
       try {
-        const decision = await this.casePolicyEngine.canPerformAction(caseId, actionCode, {
+        const decision = await this.casePolicyEngine.canPerformAction(tenantId, caseId, actionCode, {
           userId,
           debtorId: eventParams?.debtorCount ? undefined : caseData.debtors[0]?.id,
         });
