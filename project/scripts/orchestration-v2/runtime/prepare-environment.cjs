@@ -23,6 +23,7 @@
 
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { safeSpawn } = require('./spawn-mode.cjs');
 
 /** Commands, in order. cwd is relative to the worktree root. */
 const STEPS = [
@@ -50,13 +51,14 @@ function prepareEnvironment(opts) {
   const run =
     opts.runner ||
     ((argv, cwd, timeoutMs) =>
-      spawnSync(argv[0], argv.slice(1), {
+      // The shell decision belongs to the resolved file, not to the platform.
+      // Where pnpm is a .cmd shim it genuinely needs a shell (CVE-2024-27980
+      // makes Node refuse a .cmd with shell:false); where it is a .exe — as it
+      // is under Volta — a shell would hand cmd.exe an argv it re-splits.
+      safeSpawn(spawnSync, argv[0], argv.slice(1), {
         cwd,
         encoding: 'utf8',
         timeout: timeoutMs,
-        // Windows resolves pnpm through a .cmd shim, which cannot be spawned
-        // with shell:false (CVE-2024-27980 makes Node refuse it with EINVAL).
-        shell: process.platform === 'win32',
       }));
 
   const results = [];

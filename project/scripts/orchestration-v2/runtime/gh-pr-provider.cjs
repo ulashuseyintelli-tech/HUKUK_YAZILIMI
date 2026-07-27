@@ -17,6 +17,7 @@
  */
 
 const { execFileSync, spawnSync } = require('child_process');
+const { safeSpawn } = require('./spawn-mode.cjs');
 
 class PrProviderError extends Error {
   constructor(code, detail) {
@@ -27,7 +28,10 @@ class PrProviderError extends Error {
 }
 
 function gh(args, cwd) {
-  const r = spawnSync('gh', args, { cwd, encoding: 'utf8', shell: process.platform === 'win32' });
+  // Not shell:true — the PR title and body are single arguments containing
+  // spaces and newlines, which cmd.exe would re-split. See spawn-mode.cjs; the
+  // same defect silently emptied the ciProvider's platform-required set.
+  const r = safeSpawn(spawnSync, 'gh', args, { cwd, encoding: 'utf8' });
   if (r.status !== 0) {
     throw new PrProviderError('GH_COMMAND_FAILED', args.join(' ') + ' :: ' + ((r.stderr || r.stdout || '').trim().slice(-400)));
   }
