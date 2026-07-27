@@ -555,8 +555,14 @@ async function runTask(ctx) {
   // (ci.pending / ci.missing / ci.failed) rather than in a new code.
   const ciWaitMs = Number.isFinite(ctx.ciWaitMs) ? ctx.ciWaitMs : 20 * 60 * 1000;
   const ciPollMs = Number.isFinite(ctx.ciPollMs) ? ctx.ciPollMs : 60 * 1000;
+  // How long a required check may be entirely absent before that counts as
+  // "it is never coming". Short: GitHub registers a pushed branch's checks in
+  // seconds, so anything beyond this really is a missing required check.
+  const ciMissingGraceMs = Number.isFinite(ctx.ciMissingGraceMs) ? ctx.ciMissingGraceMs : 3 * 60 * 1000;
   const sleep = ctx.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
-  const ciDeadline = nowMs() + ciWaitMs;
+  const startedAt = nowMs();
+  const ciDeadline = startedAt + ciWaitMs;
+  const missingDeadline = startedAt + ciMissingGraceMs;
 
   let ci;
   for (;;) {
@@ -570,14 +576,20 @@ async function runTask(ctx) {
       release('TERMINAL_BLOCKED_PUBLISHED');
       return blocked('REQUIRED_CI_FAILED', ci.failed.join('; '), { ci });
     }
-    if (!ci.settling) {
-      // Not running and not passing: a required check is absent from the
-      // observed set. Fail-closed, unchanged from before the wait existed.
+    // Absent checks get the short grace; running checks get the long wait.
+    const waitingForMissing = !ci.settling && ci.settlingMissing;
+    if (waitingForMissing && nowMs() >= missingDeadline) {
       cleanupWorktree();
       release('TERMINAL_BLOCKED_PUBLISHED');
       return blocked('REQUIRED_CI_FAILED', ci.missing.concat(ci.notSuccess).join('; '), { ci });
     }
-    if (nowMs() >= ciDeadline) {
+    if (!ci.settling && !ci.settlingMissing) {
+      // Neither running nor absent, yet not passing: nothing left to wait for.
+      cleanupWorktree();
+      release('TERMINAL_BLOCKED_PUBLISHED');
+      return blocked('REQUIRED_CI_FAILED', ci.notSuccess.join('; '), { ci });
+    }
+    if (ci.settling && nowMs() >= ciDeadline) {
       cleanupWorktree();
       release('TERMINAL_BLOCKED_PUBLISHED');
       return blocked(

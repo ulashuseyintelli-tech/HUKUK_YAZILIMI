@@ -320,6 +320,10 @@ test('PILOT 10b: a required check absent from the observed set fails closed', as
     // The effective set gains a governance-required check that CI never reported.
     providerOver: { governanceRequired: ['Analyze (python)'] },
   });
+  // Absence now gets a short grace, because for the first seconds after a push
+  // every check is absent. Zero here keeps this test about the property it
+  // pins: a check that never appears fails closed.
+  c.ciMissingGraceMs = 0;
   const r = await orch.runTask(c);
   assert.equal(r.disposition, 'BLOCKED');
   assert.equal(r.blockerCode, 'REQUIRED_CI_FAILED');
@@ -798,4 +802,43 @@ test('PILOT: CI that never settles times out, and says so without a new blocker 
   // an owner amendment, so the distinction rides in the detail and in ci.pending.
   assert.equal(r.blockerCode, 'REQUIRED_CI_FAILED');
   assert.match(r.detail, /^CI_STILL_PENDING_AT_DEADLINE: /);
+});
+
+test('PILOT: checks not yet registered are waited out, then still fail closed', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/cimissing/out.txt', 'x\n');
+  let look = 0;
+  const slept = [];
+  const ctx = ctxFor(repo, { specOver: { taskId: 'PILOT-CI-NOTYET', allowedRoots: ['fixture/cimissing/'] } });
+  ctx.ciProvider = {
+    requiredSources: async () => ({ taskSpecRequired: ['Test Suite'], platformRequired: ['Web Tests (vitest)'], governanceRequired: [] }),
+    // Nothing registered on the first two looks — exactly what GitHub returns
+    // in the seconds after a push, and what blocked the OFFICE lane.
+    observe: async () => (++look < 3 ? [] : ciGreen()),
+  };
+  ctx.ciMissingGraceMs = 60000;
+  ctx.ciPollMs = 5;
+  ctx.sleep = async (ms) => { slept.push(ms); };
+
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'MERGE_READY', JSON.stringify(r.blockerCode || r.detail));
+  assert.equal(look, 3, 'must keep looking while checks are still being registered');
+  assert.deepEqual(slept, [5, 5]);
+});
+
+test('PILOT: a check that never registers fails closed once the grace is spent', async () => {
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/cinever/out.txt', 'x\n');
+  const ctx = ctxFor(repo, { specOver: { taskId: 'PILOT-CI-NEVER', allowedRoots: ['fixture/cinever/'] } });
+  ctx.ciProvider = {
+    requiredSources: async () => ({ taskSpecRequired: ['Test Suite'], platformRequired: ['Web Tests (vitest)'], governanceRequired: [] }),
+    observe: async () => [{ name: 'Test Suite', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+  };
+  ctx.ciMissingGraceMs = 0;
+  ctx.sleep = async () => { throw new Error('must not sleep past the grace'); };
+
+  const r = await orch.runTask(ctx);
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.equal(r.blockerCode, 'REQUIRED_CI_FAILED');
+  assert.match(r.detail, /Web Tests \(vitest\)/);
 });
