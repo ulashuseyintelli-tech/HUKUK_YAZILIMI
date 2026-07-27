@@ -1116,3 +1116,51 @@ MERGED UPON APPROVED MERGE / PENDING LIVE APPLY
 LIVE APPLY AUTHORITY:
 NONE
 ```
+
+---
+
+## 19. PROGRAM-WIDE SPRING CLEANING — merged migration visibility reconciliation (2026-07-27)
+
+Kaynak: `PROGRAM-WIDE-SPRING-CLEANING-FULL-AUTHORIZED-EXECUTION-R01`, Wave 3 mekanik
+reconciliation. Kanıt: `project/docs/governance/spring-cleaning/PROGRAM-WIDE-MERGED-BUT-UNCLOSED-REGISTER-R01.md` §1.
+
+Aşağıdaki iki migration canonical `main`'e merge edilmiş, fakat bu register'a **hiç
+kaydedilmemişti**. Bu bölüm yalnız **cross-workstream görünürlük** sağlar; register'ın kendi
+statüsü `LIVING / NON-NORMATIVE`'dir ve domain governance, live-apply veya implementation
+yetkisi **ÜRETMEZ**.
+
+| Migration | Task | PR | Squash | Live apply |
+| --- | --- | --- | --- | --- |
+| `20260726190741_client_p2_u03_track_b_i01_financial_disclosure_foundation` | `CLIENT-P2-U03-TRACK-B-I01` | #1629 | `32a42ed4` | **UNKNOWN / OWNER VERIFICATION REQUIRED** |
+| `20260726210000_uyap_poa_tenant_safety_i01` | `UYAP-POA-TENANT-SAFETY-I01` (canonical decomposition'da `…-I02`) | #1633 | `e20b36ff` | **UNKNOWN / OWNER VERIFICATION REQUIRED** |
+
+### 19.1 Live-apply durumu neden UNKNOWN
+
+Spring Cleaning programı gerçek `hukuk_db`'ye bağlanmamış, hiçbir `.env` veya production
+credential okumamıştır. Bu nedenle iki migration'ın canlı veritabanına uygulanıp uygulanmadığı
+**iddia edilmemektedir**. Önceki train'lerin (R01/R02) aksine burada `applied` veya
+`post-validated` kanıtı YOKTUR.
+
+### 19.2 `20260726210000_uyap_poa_tenant_safety_i01` — açık gate
+
+`project/docs/blueprint/UYAP-CPE-POA-ACTING-LAWYER-AUTHORITY-DESIGN-v1.0.md` §L şunu şart koşar:
+
+```text
+"I02 ayrıca pending-migration-coordination-register GO-MIGRATE gate'i gerektirir."
+```
+
+Bu gate kaydı, migration merge edildiği anda **bu register'da mevcut değildi**. Bu bölüm gate'i
+retroaktif olarak **AÇMAZ** ve migration'ı yetkilendirmez; yalnız boşluğu görünür kılar.
+Yetki sorusu owner kararına bırakılmıştır:
+`spring-cleaning/PROGRAM-WIDE-OWNER-DECISION-PACK-R01.md` ITEM-02.
+
+```text
+SPRING-CLEANING MIGRATION VISIBILITY RECONCILIATION:
+RECORDED / MECHANICAL
+
+LIVE APPLY AUTHORITY:
+NONE
+
+GO-MIGRATE GATE (uyap_poa_tenant_safety):
+OPEN / OWNER DECISION REQUIRED
+```
