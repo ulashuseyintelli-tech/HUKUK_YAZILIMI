@@ -26,10 +26,24 @@ if [ ! -f "$WORKFLOW" ]; then
   exit 1
 fi
 
-# Yorum satırları sayılmaz: bir açıklamada 'npx jest' geçmesi bütçe tüketmemeli.
-COUNT="$(grep -vE '^[[:space:]]*#' "$WORKFLOW" \
+# Bir Jest process'i iki yoldan dogabilir:
+#   1) ci.yml icindeki dogrudan `npx jest` / `pnpm exec jest` cagrisi
+#   2) bir manifest dosyasi — run-ci-manifest.sh her manifest icin TEK process acar
+# Ikisi de sayilir; aksi halde manifest ekleyerek butce sessizce asilabilirdi.
+# Yorum satirlari sayilmaz: bir aciklamada 'npx jest' gecmesi butce tuketmemeli.
+DIRECT="$(grep -vE '^[[:space:]]*#' "$WORKFLOW" \
   | grep -cE '(npx|pnpm([[:space:]]+exec)?)[[:space:]]+jest' || true)"
-COUNT="${COUNT:-0}"
+DIRECT="${DIRECT:-0}"
+
+MANIFEST_DIR="${REPO_ROOT}/project/apps/api/ci-manifests"
+if [ ! -d "$MANIFEST_DIR" ]; then
+  echo "CI-8 FAIL: manifest dizini bulunamadi: ${MANIFEST_DIR}"
+  exit 1
+fi
+MANIFESTS="$(find "$MANIFEST_DIR" -name '*.txt' -type f | wc -l | tr -d ' ')"
+MANIFESTS="${MANIFESTS:-0}"
+
+COUNT=$((DIRECT + MANIFESTS))
 
 if [ "$COUNT" -gt "$BUDGET" ]; then
   cat <<EOF
@@ -55,4 +69,4 @@ EOF
   exit 1
 fi
 
-echo "CI-8 OK: ${COUNT}/${BUDGET} jest invocation"
+echo "CI-8 OK: ${COUNT}/${BUDGET} jest invocation (ci.yml=${DIRECT}, manifest=${MANIFESTS})"
