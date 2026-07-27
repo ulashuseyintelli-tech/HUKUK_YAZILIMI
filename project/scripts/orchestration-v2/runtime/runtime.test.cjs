@@ -698,3 +698,98 @@ test('context: an unknown lane fails at build time, not after the lease is taken
     (e) => e.code === 'EXECUTOR_ARGV_UNKNOWN_LANE',
   );
 });
+
+// --------------------------------------------- PR STATE CONTRACT (§5)
+
+// orchestrator.cjs builds the merge-ready conjunction from
+//   prOpen:      prState.open === true
+//   prMergeable: prState.mergeable === true
+// and this provider used to return `prState: "OPEN"` / `mergeable: "MERGEABLE"`
+// — strings, one under the wrong key. Both terms were therefore permanently
+// false and MERGE_READY was unreachable in production. Every test passed
+// because the pilot's fake provider returns booleans under the right names;
+// only the fake was ever exercised. Measured on a live run:
+// MERGE_READY_CONJUNCTION_FAILED :: prOpen,prMergeable, on a PR that was OPEN,
+// MERGEABLE, CLEAN and 9/9 green.
+const PR_STATE_FIELDS_READ_BY_ORCHESTRATOR = [
+  'headSha', 'targetBranch', 'targetBranchSha', 'mergeBaseSha',
+  'open', 'mergeable', 'blockingReview', 'competingWriter', 'baseDriftSatisfied',
+];
+
+function prStateProvider(over) {
+  const view = Object.assign(
+    { headRefOid: 'a'.repeat(40), baseRefName: 'main', state: 'OPEN', mergeStateStatus: 'CLEAN', mergeable: 'MERGEABLE', reviewDecision: '' },
+    (over && over.view) || {},
+  );
+  const seen = [];
+  return {
+    seen,
+    p: createGhPrProvider(
+      Object.assign(
+        {
+          repoCwd: '/repo',
+          ghRunner: () => { seen.push('gh'); return JSON.stringify(view); },
+          gitRunner: (args) => (args[0] === 'ls-remote' ? 'b'.repeat(40) + '\trefs/heads/main' : 'c'.repeat(40)),
+          sleep: async () => {},
+        },
+        (over && over.cfg) || {},
+      ),
+    ),
+    setMergeable: (v) => { view.mergeable = v; },
+  };
+}
+
+test('pr provider: state returns the exact shape the conjunction reads', async () => {
+  const { p } = prStateProvider();
+  const st = await p.state({ pr: { number: 1 } });
+  assert.equal(st.open, true, 'open must be a boolean the conjunction can compare to true');
+  assert.equal(st.mergeable, true, 'mergeable must be a boolean, not "MERGEABLE"');
+  assert.equal(st.blockingReview, false);
+  // Nothing the orchestrator reads may be a string where a boolean is compared.
+  for (const k of ['open', 'mergeable', 'blockingReview']) {
+    assert.equal(typeof st[k], 'boolean', k + ' must be boolean, got ' + typeof st[k]);
+  }
+  // And every field the orchestrator touches must at least be answerable.
+  const missing = PR_STATE_FIELDS_READ_BY_ORCHESTRATOR.filter((k) => !(k in st));
+  assert.deepEqual(missing, ['competingWriter', 'baseDriftSatisfied'],
+    'only the two the provider genuinely cannot observe may be absent');
+});
+
+test('pr provider: a closed or conflicting PR is reported as such', async () => {
+  const closed = prStateProvider({ view: { state: 'CLOSED' } });
+  assert.equal((await closed.p.state({ pr: { number: 1 } })).open, false);
+
+  const conflicting = prStateProvider({ view: { mergeable: 'CONFLICTING' } });
+  assert.equal((await conflicting.p.state({ pr: { number: 1 } })).mergeable, false);
+
+  const changes = prStateProvider({ view: { reviewDecision: 'CHANGES_REQUESTED' } });
+  assert.equal((await changes.p.state({ pr: { number: 1 } })).blockingReview, true);
+});
+
+test('pr provider: UNKNOWN mergeability is re-read, not taken as a refusal', async () => {
+  // GitHub answers UNKNOWN while it computes, which is the state moments after
+  // CI turns green — exactly when the attestation is built.
+  const h = prStateProvider({ view: { mergeable: 'UNKNOWN' }, cfg: { mergeableRetries: 3, mergeableRetryMs: 1 } });
+  let calls = 0;
+  const p = createGhPrProvider({
+    repoCwd: '/repo',
+    mergeableRetries: 3,
+    mergeableRetryMs: 1,
+    sleep: async () => {},
+    ghRunner: () => {
+      calls += 1;
+      return JSON.stringify({
+        headRefOid: 'a'.repeat(40), baseRefName: 'main', state: 'OPEN', mergeStateStatus: 'CLEAN',
+        mergeable: calls < 3 ? 'UNKNOWN' : 'MERGEABLE', reviewDecision: '',
+      });
+    },
+    gitRunner: (args) => (args[0] === 'ls-remote' ? 'b'.repeat(40) + '\trefs/heads/main' : 'c'.repeat(40)),
+  });
+  const st = await p.state({ pr: { number: 1 } });
+  assert.equal(calls, 3, 'must re-read while GitHub is still computing');
+  assert.equal(st.mergeable, true);
+
+  // Still UNKNOWN when the retries run out stays false — fail-closed.
+  const stuck = await h.p.state({ pr: { number: 1 } });
+  assert.equal(stuck.mergeable, false);
+});
