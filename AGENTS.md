@@ -96,7 +96,7 @@ ve `WORKSPACE MODULE(S)` kanitla siniflandirilir. Canonical calisma modulleri `O
 ## 4. Calisma Modlari
 
 - `UNKNOWN / AMBIGUOUS`: read-only kalir; mutation yapilmaz.
-- `GO-ANALYZE`: explicit salt-okunur analiz. `ANALYZE → REPORT → STOP`; dosya
+- `GO-ANALYZE`: Explicit salt-okunur analizdir. `ANALYZE → REPORT → STOP`; dosya
   degisikligi, stage, commit, push, PR veya merge yoktur.
 - `GO-IMPLEMENT`: local patch + validation ile sinirli mod. Commit, push, PR veya merge
   yalniz task brief ayrica kapsiyorsa yapilir.
