@@ -25,7 +25,6 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import {
   ApprovalWorkflowController,
   AuditChainController,
-  JobLeasingController,
 } from '../enterprise.controller';
 import { ApprovalWorkflowService } from '../approval-workflow.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
@@ -77,12 +76,12 @@ describe('I01A · authentication ve guard kapsami', () => {
     expect(guards).toContain(JwtAuthGuard);
   });
 
-  it('guard F09B/F09C controller siniflarina SIZMAZ (kapsam disi yuzeyler degismedi)', () => {
-    // Approval guard'i yalniz kendi sinifina uygulanir. F09B (audit) ve F09C (leasing)
-    // AYRI siniflardir; davranislari bilerek DEGISTIRILMEMISTIR.
-    // F09D (PII) bu listede YOK cunku I02 ile HTTP yuzeyinden tamamen kaldirildi;
-    // asagidaki "I02 containment" blogu bunu ayrica ve daha guclu bicimde dogrular.
-    for (const cls of [AuditChainController, JobLeasingController]) {
+  it('guard F09B controller sinifina SIZMAZ (kapsam disi yuzey degismedi)', () => {
+    // Approval guard'i yalniz kendi sinifina uygulanir. F09B (audit) AYRI bir siniftir
+    // ve davranisi bilerek DEGISTIRILMEMISTIR.
+    // F09D (PII) I02 ile, F09C (leasing) I03 ile HTTP yuzeyinden tamamen kaldirildi;
+    // asagidaki containment bloklari bunu ayrica ve daha guclu bicimde dogrular.
+    for (const cls of [AuditChainController]) {
       const guards = Reflect.getMetadata('__guards__', cls) || [];
       expect(guards).toHaveLength(0);
     }
@@ -437,8 +436,104 @@ describe('I02 · PII teshis HTTP yuzeyi kaldirildi', () => {
     expect(PII_SERVICE_SRC).toMatch(/shouldMask\(/);
   });
 
-  it('F09B audit ve F09C leasing yuzeyleri HALA MEVCUT (kapsam disi, dokunulmadi)', () => {
+  it('F09B audit yuzeyi HALA MEVCUT (kapsam disi, dokunulmadi)', () => {
     expect(CONTROLLER_SRC).toMatch(/@Controller\('icrabot\/enterprise\/audit'\)/);
-    expect(CONTROLLER_SRC).toMatch(/@Controller\('icrabot\/enterprise\/leasing'\)/);
+  });
+
+  it('F09C leasing yuzeyi ARTIK MEVCUT DEGIL (I03 ile kaldirildi)', () => {
+    expect(CONTROLLER_SRC).not.toMatch(/@Controller\('icrabot\/enterprise\/leasing'\)/);
+  });
+});
+
+// ============================================================
+// R02-F09C · I03 — JOB LEASING HTTP YUZEYI CONTAINMENT
+//
+// Dort ucun HEPSI YAZMA idi ve hicbirinde guard yoktu; tenant ve worker kimligi
+// dogrudan govdeden/URL'den okunuyordu. Kimliksiz bir cagiran baska tenant'in
+// kuyrugundan is kapabiliyor, baskasinin isini DONE/FAILED isaretleyebiliyor,
+// lease uzatarak gercek worker'i ac birakabiliyor ve bir tenant'in lease'lerini
+// toplu temizleyebiliyordu.
+//
+// Uretim tuketicisi YOKTU (frontend 0, servis 0, scheduler/worker 0; Python
+// tarafindaki dosya calisan istemci degil, `# Pseudo-code (Django)` tasarim notu).
+//
+// Bu blogun iddialari KAYNAK METNINE DEGIL, gercek modul composition'ina ve
+// runtime controller metadata'sina dayanir.
+// ============================================================
+// R02-F15 (bu gorevde tespit edildi): `icrabot/admin/admin.service.ts:8` cozulemeyen
+// bir import tasiyor (`../../prisma/prisma.service` -> yok; dogrusu `../../../`).
+// O dizin tsconfig tarafindan exclude edildigi icin kirikli k hic yakalanmamis ve
+// `IcrabotModule` hicbir testte import EDILEMIYOR. Modul composition'ini GERCEK
+// runtime uzerinden dogrulayabilmek icin yalniz bu bozuk modulu mock'luyoruz;
+// baska hicbir davranis degistirilmiyor.
+jest.mock('../../admin/admin.service', () => ({ IcrabotAdminService: class {} }));
+jest.mock('../../admin/audit-report.service', () => ({ AuditReportService: class {} }));
+jest.mock('../../admin/job-monitor.service', () => ({ JobMonitorService: class {} }));
+jest.mock('../../evidence.service', () => ({ EvidenceService: class {} }));
+jest.mock('../../icrabot.service', () => ({ IcrabotService: class {} }));
+jest.mock('../../recipe.service', () => ({ RecipeService: class {} }));
+jest.mock('../../task-orchestrator.service', () => ({ TaskOrchestratorService: class {} }));
+
+describe('I03 · job leasing HTTP yuzeyi kaldirildi (composition tabanli)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { IcrabotModule } = require('../../icrabot.module');
+  const moduleControllers: any[] =
+    Reflect.getMetadata('controllers', IcrabotModule) || [];
+  const controllerPaths = moduleControllers.map(
+    (c) => Reflect.getMetadata('path', c) as string,
+  );
+
+  it('modul composition JobLeasingController ICERMIYOR', () => {
+    expect(moduleControllers.length).toBeGreaterThan(0);
+    expect(moduleControllers.map((c) => c.name)).not.toContain('JobLeasingController');
+  });
+
+  it('leasing route prefix runtime controller metadata da YOK', () => {
+    expect(controllerPaths).not.toContain('icrabot/enterprise/leasing');
+  });
+
+  it('public barrel uzerinden leasing controller ERISILEMIYOR', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const barrel = require('../index');
+    expect(Object.keys(barrel)).not.toContain('JobLeasingController');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ctrlModule = require('../enterprise.controller');
+    expect(Object.keys(ctrlModule)).not.toContain('JobLeasingController');
+  });
+
+  it('JobLeasingService KORUNDU ve instantiate edilebiliyor (dormant capability)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const barrel = require('../index');
+    expect(Object.keys(barrel)).toContain('JobLeasingService');
+    const { JobLeasingService } = barrel;
+    const instance = new JobLeasingService({} as any);
+    expect(instance).toBeInstanceOf(JobLeasingService);
+    expect(typeof instance.acquireLease).toBe('function');
+    expect(typeof instance.releaseLease).toBe('function');
+    expect(typeof instance.extendLease).toBe('function');
+    expect(typeof instance.cleanupExpiredLeases).toBe('function');
+  });
+
+  it('JobLeasingService modul provider listesinde KALIYOR', () => {
+    const providers: any[] = Reflect.getMetadata('providers', IcrabotModule) || [];
+    expect(providers.map((p) => p?.name ?? p)).toContain('JobLeasingService');
+  });
+
+  it('approval controller HALA kayitli ve JwtAuthGuard korunuyor', () => {
+    expect(moduleControllers).toContain(ApprovalWorkflowController);
+    const guards = Reflect.getMetadata('__guards__', ApprovalWorkflowController) || [];
+    expect(guards).toContain(JwtAuthGuard);
+  });
+
+  it('F09B audit controller HALA kayitli ve davranisi DEGISMEDI', () => {
+    expect(moduleControllers).toContain(AuditChainController);
+    expect(controllerPaths).toContain('icrabot/enterprise/audit');
+    const guards = Reflect.getMetadata('__guards__', AuditChainController) || [];
+    expect(guards).toHaveLength(0);
+  });
+
+  it('F09D PII controller HALA kayitli DEGIL (I02 geri alinmadi)', () => {
+    expect(moduleControllers.map((c) => c.name)).not.toContain('PiiMaskingController');
+    expect(controllerPaths).not.toContain('icrabot/enterprise/pii');
   });
 });

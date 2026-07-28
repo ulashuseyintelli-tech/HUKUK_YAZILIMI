@@ -36,11 +36,9 @@ v1-v38 blueprint'lerinden entegre edilmiştir.
     - Multi-worker ölçekleme için job leasing
     - SELECT FOR UPDATE SKIP LOCKED pattern
     - Lease timeout ve cleanup
-    - `JobLeasingService`: Job lease yönetimi
-    - `POST /icrabot/enterprise/leasing/acquire`
-    - `POST /icrabot/enterprise/leasing/release`
-    - `POST /icrabot/enterprise/leasing/extend`
-    - `POST /icrabot/enterprise/leasing/cleanup/:tenantId`
+    - `JobLeasingService`: Job lease yönetimi (yalnızca dahili servis)
+    - HTTP yüzeyi YOK — guard'sız leasing uçları R02-F09C / I03 ile kaldırıldı
+    - Gerçek bir worker gerektiğinde authenticated internal control-plane tasarlanmalıdır
 
 48. **Backpressure (v38)**
     - Rate limiting ve backpressure yönetimi
@@ -1248,39 +1246,16 @@ GET    /icrabot/enterprise/approval/pending/:tenantId # Bekleyen talepler
 }
 ```
 
-### Job Leasing API
+### Job Leasing API — KALDIRILDI
 
-```
-POST   /icrabot/enterprise/leasing/acquire           # Lease al
-POST   /icrabot/enterprise/leasing/release           # Lease bırak
-POST   /icrabot/enterprise/leasing/extend            # Lease uzat
-POST   /icrabot/enterprise/leasing/cleanup/:tenantId # Expired lease temizle
-```
+Leasing uçlarının dördü de **yazma** idi ve hiçbirinde kimlik doğrulaması yoktu;
+tenant ve worker kimliği doğrudan istek gövdesinden okunuyordu. Üretim tüketicisi
+bulunmadığı için DEBTOR-ENTERPRISE-LEASING-CONTAINMENT-P1-I03 (bulgu R02-F09C) ile
+public HTTP yüzeyi kaldırıldı.
 
-#### Acquire Lease Request
-```json
-{
-  "tenantId": "tenant_123",
-  "workerId": "worker_001",
-  "leaseTtlSeconds": 60
-}
-```
-
-#### Acquire Lease Response
-```json
-{
-  "ok": true,
-  "job": {
-    "id": "run_abc",
-    "jobId": "job_123",
-    "recipeId": "SyncSafahat",
-    "caseId": "case_xyz",
-    "priority": 100,
-    "leasedUntil": "2026-01-05T12:01:00Z",
-    "leasedBy": "worker_001"
-  }
-}
-```
+`JobLeasingService`, leasing veri modeli ve schema **korunmuştur** (dormant internal
+capability). Gerçek bir worker devreye alınacağı zaman, eski guard'sız uçları geri
+getirmek yerine **authenticated bir internal control-plane tasarlanmalıdır**.
 
 ### Backpressure API
 

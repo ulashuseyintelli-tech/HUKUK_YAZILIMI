@@ -67,7 +67,6 @@ import { PlanLimitsService } from './enterprise/plan-limits.service';
 import {
   AuditChainController,
   ApprovalWorkflowController,
-  JobLeasingController,
   BackpressureController,
   PlanLimitsController,
 } from './enterprise/enterprise.controller';
@@ -172,7 +171,8 @@ import {
     // PiiMaskingController: R02-F09D / I02 ile public HTTP yuzeyinden kaldirildi.
     AuditChainController,
     ApprovalWorkflowController,
-    JobLeasingController,
+    // JobLeasingController: R02-F09C / I03 ile public HTTP yuzeyinden kaldirildi.
+    // JobLeasingService provider olarak KORUNUR (dormant internal capability).
     BackpressureController,
     PlanLimitsController,
   ],
