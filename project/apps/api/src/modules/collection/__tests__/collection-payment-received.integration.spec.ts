@@ -211,6 +211,65 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
     } as CreateCollectionDto;
   }
 
+  async function createCurrencyBoundaryService(): Promise<CollectionService> {
+    const summaryEngine = new SummaryEngineService(
+      prisma as any,
+      new TBK100AllocatorService(),
+    );
+    await summaryEngine.onModuleInit();
+    return new CollectionService(
+      prisma as any,
+      new DomainEventIngestService(),
+      new CaseDebtorLifecycleGuardService(prisma as any),
+      summaryEngine,
+      new AccountingJournalWriterService(prisma as any),
+    );
+  }
+
+  async function readCurrencyBoundaryState(claimItemId: string) {
+    const [
+      collections,
+      journalEntries,
+      journalLines,
+      events,
+      ledgerEntries,
+      ledgerAllocations,
+      claimItem,
+      overpayments,
+      outbox,
+      compatAllocations,
+      auditLogs,
+    ] = await Promise.all([
+      prisma.collection.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+      prisma.accountingJournalEntry.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+      prisma.accountingJournalLine.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+      (prisma as any).icrabotTimelineEntry.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+      prisma.ledgerEntry.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+      prisma.ledgerAllocation.count({ where: { claimItemId } }),
+      prisma.claimItem.findUniqueOrThrow({ where: { id: claimItemId } }),
+      prisma.collectionOverpayment.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+      (prisma as any).icrabotOutboxAction.count({ where: { tenantId: testTenantId, caseId: testCaseId } }),
+      prisma.collectionAllocation.count({
+        where: { collection: { tenantId: testTenantId, caseId: testCaseId } },
+      }),
+      prisma.auditLog.count({ where: { tenantId: testTenantId } }),
+    ]);
+
+    return {
+      collections,
+      journalEntries,
+      journalLines,
+      events,
+      ledgerEntries,
+      ledgerAllocations,
+      collectedAmount: Number(claimItem.collectedAmount),
+      overpayments,
+      outbox,
+      compatAllocations,
+      auditLogs,
+    };
+  }
+
   async function createCaseDebtorFixture(tenantId: string, caseId: string) {
     const debtor = await prisma.debtor.create({
       data: {
@@ -548,6 +607,199 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       });
 
       expect(event.body.payload.currency).toBe('TRY');
+    });
+  });
+
+  describe('RCV-COL-CURRENCY-BOUNDARY-01: fail-closed currency integrity', () => {
+    async function createClaimItem(currency: string) {
+      return prisma.claimItem.create({
+        data: {
+          tenantId: testTenantId,
+          caseId: testCaseId,
+          itemType: 'PRINCIPAL',
+          originalAmount: 100,
+          demandedAmount: 100,
+          amount: 100,
+          currency,
+          liableDebtorIds: [],
+        },
+      });
+    }
+
+    const emptyState = {
+      collections: 0,
+      journalEntries: 0,
+      journalLines: 0,
+      events: 0,
+      ledgerEntries: 0,
+      ledgerAllocations: 0,
+      collectedAmount: 0,
+      overpayments: 0,
+      outbox: 0,
+      compatAllocations: 0,
+      auditLogs: 0,
+    };
+
+    it('aynı explicit currency ile admission/ledger zinciri çalışır ve replay yeni write üretmez', async () => {
+      await prisma.case.update({
+        where: { id: testCaseId },
+        data: { currency: 'USD' },
+      });
+      const claimItem = await createClaimItem('USD');
+      const currencyService = await createCurrencyBoundaryService();
+      const request = buildDto({
+        idempotencyKey: `currency-success-${randomUUID()}`,
+        amount: 50,
+        currency: 'USD',
+        sourceType: CollectionSource.MANUAL,
+        autoAllocate: false,
+      });
+
+      const first = await currencyService.create(testTenantId, request, 'test-user-1');
+      const replay = await currencyService.create(testTenantId, request, 'test-user-1');
+      const [collection, ledgerEntry, state] = await Promise.all([
+        prisma.collection.findUniqueOrThrow({ where: { id: first.id } }),
+        prisma.ledgerEntry.findFirstOrThrow({
+          where: { tenantId: testTenantId, caseId: testCaseId, collectionId: first.id },
+        }),
+        readCurrencyBoundaryState(claimItem.id),
+      ]);
+
+      expect(replay.id).toBe(first.id);
+      expect(collection.currency).toBe('USD');
+      expect(ledgerEntry.currency).toBe('USD');
+      expect(state).toMatchObject({
+        collections: 1,
+        journalEntries: 1,
+        journalLines: 2,
+        events: 1,
+        ledgerEntries: 1,
+        ledgerAllocations: 1,
+        collectedAmount: 50,
+        outbox: 1,
+        compatAllocations: 0,
+        auditLogs: 1,
+      });
+    });
+
+    it('Collection/Case mismatch bütün finansal zinciri ilk write öncesi reddeder', async () => {
+      const claimItem = await createClaimItem('TRY');
+      const currencyService = await createCurrencyBoundaryService();
+
+      await expect(currencyService.create(testTenantId, buildDto({
+        currency: 'USD',
+        sourceType: CollectionSource.MANUAL,
+      }), 'test-user-1')).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'COLLECTION_CURRENCY_MISMATCH',
+          collectionCurrency: 'USD',
+          caseCurrency: 'TRY',
+        }),
+      });
+
+      await expect(readCurrencyBoundaryState(claimItem.id)).resolves.toEqual(emptyState);
+    });
+
+    it('aktif ClaimItem currency mismatch ilk write öncesi fail-closed olur', async () => {
+      const claimItem = await createClaimItem('USD');
+      const currencyService = await createCurrencyBoundaryService();
+
+      await expect(currencyService.create(testTenantId, buildDto({
+        currency: 'TRY',
+        sourceType: CollectionSource.MANUAL,
+      }), 'test-user-1')).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'COLLECTION_CURRENCY_MISMATCH',
+          caseCurrency: 'TRY',
+          allocationCurrencies: ['USD'],
+        }),
+      });
+
+      await expect(readCurrencyBoundaryState(claimItem.id)).resolves.toEqual(emptyState);
+    });
+
+    it('allocator ledger currency drift üretirse transaction içindeki tüm önceki write\'ları rollback eder', async () => {
+      const claimItem = await createClaimItem('TRY');
+      const summaryEngine = new SummaryEngineService(
+        prisma as any,
+        new TBK100AllocatorService(),
+      );
+      await summaryEngine.onModuleInit();
+      const driftSummaryEngine = {
+        allocatePaymentToLedgerInTx: jest.fn(async (...args: any[]) => {
+          const result = await (summaryEngine.allocatePaymentToLedgerInTx as any)(...args);
+          return {
+            ...result,
+            ledgerEntry: result.ledgerEntry
+              ? { ...result.ledgerEntry, currency: 'USD' }
+              : result.ledgerEntry,
+          };
+        }),
+      };
+      const currencyService = new CollectionService(
+        prisma as any,
+        new DomainEventIngestService(),
+        new CaseDebtorLifecycleGuardService(prisma as any),
+        driftSummaryEngine as any,
+        new AccountingJournalWriterService(prisma as any),
+      );
+
+      await expect(currencyService.create(testTenantId, buildDto({
+        currency: 'TRY',
+        sourceType: CollectionSource.MANUAL,
+      }), 'test-user-1')).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'COLLECTION_CURRENCY_MISMATCH',
+          collectionCurrency: 'TRY',
+          caseCurrency: 'TRY',
+          ledgerCurrency: 'USD',
+        }),
+      });
+
+      expect(driftSummaryEngine.allocatePaymentToLedgerInTx).toHaveBeenCalledTimes(1);
+      await expect(readCurrencyBoundaryState(claimItem.id)).resolves.toEqual(emptyState);
+    });
+
+    it('başka tenant Case kimliği currency authority olarak kullanılamaz', async () => {
+      const claimItem = await createClaimItem('TRY');
+      const foreignCaseDebtor = await createForeignTenantCaseDebtorFixture();
+      const currencyService = await createCurrencyBoundaryService();
+
+      await expect(currencyService.create(testTenantId, buildDto({
+        caseId: foreignCaseDebtor.caseId,
+        currency: 'TRY',
+        sourceType: CollectionSource.MANUAL,
+      }), 'test-user-1')).rejects.toThrow(/Dosya bulunamadı/);
+
+      await expect(readCurrencyBoundaryState(claimItem.id)).resolves.toEqual(emptyState);
+      await expect(prisma.collection.count({
+        where: { caseId: foreignCaseDebtor.caseId },
+      })).resolves.toBe(0);
+    });
+
+    it('eşzamanlı aynı-key mismatch istekleri tek bir partial write bile bırakmaz', async () => {
+      const claimItem = await createClaimItem('TRY');
+      const currencyService = await createCurrencyBoundaryService();
+      const request = buildDto({
+        idempotencyKey: `currency-race-${randomUUID()}`,
+        currency: 'USD',
+        sourceType: CollectionSource.MANUAL,
+      });
+
+      const results = await Promise.allSettled([
+        currencyService.create(testTenantId, request, 'test-user-1'),
+        currencyService.create(testTenantId, request, 'test-user-2'),
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected']);
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          expect(result.reason).toMatchObject({
+            response: expect.objectContaining({ code: 'COLLECTION_CURRENCY_MISMATCH' }),
+          });
+        }
+      }
+      await expect(readCurrencyBoundaryState(claimItem.id)).resolves.toEqual(emptyState);
     });
   });
 

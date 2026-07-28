@@ -16,17 +16,20 @@ function setup(opts: { summaryEngine?: any; caseRecord?: any; lockedDup?: any; p
     case: {
       findFirst: jest.fn(async () => opts.caseRecord ?? ({ id: 'c1', caseStatus: 'DERDEST', currency: 'TRY' })),
     },
+    claimItem: {
+      findMany: jest.fn(async () => opts.caseRecord?.claimItems ?? []),
+    },
     // P0-1: idempotency race re-check (lock altında) → varsayılan null (mevcut kayıt yok).
     collection: {
-      create: jest.fn(async () => ({
+      create: jest.fn(async ({ data }: any) => ({
         id: 'col1',
-        tenantId: 't1',
-        caseId: 'c1',
-        caseDebtorId: null,
-        amount: 1000,
-        currency: 'TRY',
-        date: new Date('2026-01-01T00:00:00.000Z'),
-        valueDate: null,
+        tenantId: data.tenantId,
+        caseId: data.caseId,
+        caseDebtorId: data.caseDebtorId ?? null,
+        amount: data.amount,
+        currency: data.currency,
+        date: data.date,
+        valueDate: data.valueDate ?? null,
         status: 'CONFIRMED',
         createdAt: new Date('2026-01-01T00:00:01.000Z'),
       })),
@@ -415,34 +418,103 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('overpayment blocked'));
   });
 
-  it('currency mismatch varsa overpayment projection yazmaz', async () => {
+  it('Collection/Case currency mismatch ilk finansal write öncesi fail-closed olur', async () => {
+    const summaryEngine = { allocatePaymentToLedgerInTx: jest.fn() };
+    const { svc, tx, domainEvent, autoSpy, journalWriter } = setup({ summaryEngine });
+
+    await expect(
+      svc.create('t1', { ...dto, amount: 1200, currency: 'USD' }, 'u1'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'COLLECTION_CURRENCY_MISMATCH',
+        collectionCurrency: 'USD',
+        caseCurrency: 'TRY',
+      }),
+    });
+
+    expect(tx.collection.create).not.toHaveBeenCalled();
+    expect(journalWriter.write).not.toHaveBeenCalled();
+    expect(domainEvent.appendInTransaction).not.toHaveBeenCalled();
+    expect(summaryEngine.allocatePaymentToLedgerInTx).not.toHaveBeenCalled();
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
+    expect(tx.collectionAllocation.create).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+    expect(autoSpy).not.toHaveBeenCalled();
+  });
+
+  it('aktif ClaimItem currency Case currency ile uyuşmazsa ilk write öncesi reddeder', async () => {
+    const summaryEngine = { allocatePaymentToLedgerInTx: jest.fn() };
+    const { svc, tx, domainEvent } = setup({
+      summaryEngine,
+      caseRecord: {
+        id: 'c1',
+        caseStatus: 'DERDEST',
+        currency: 'TRY',
+        claimItems: [{ currency: 'USD' }],
+      },
+    });
+
+    await expect(
+      svc.create('t1', { ...dto, currency: 'TRY' }, 'u1'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'COLLECTION_CURRENCY_MISMATCH',
+        allocationCurrencies: ['USD'],
+      }),
+    });
+
+    expect(tx.collection.create).not.toHaveBeenCalled();
+    expect(domainEvent.appendInTransaction).not.toHaveBeenCalled();
+    expect(summaryEngine.allocatePaymentToLedgerInTx).not.toHaveBeenCalled();
+  });
+
+  it('aynı explicit non-TRY currency ile Collection admission devam eder', async () => {
+    const { svc, tx, journalWriter } = setup({
+      caseRecord: {
+        id: 'c1',
+        caseStatus: 'DERDEST',
+        currency: 'USD',
+        claimItems: [{ currency: 'USD' }],
+      },
+    });
+
+    await svc.create('t1', { ...dto, currency: 'USD' }, 'u1');
+
+    expect(tx.collection.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ currency: 'USD' }),
+    }));
+    expect(journalWriter.write).toHaveBeenCalledWith(
+      expect.objectContaining({ draft: expect.objectContaining({ currency: 'USD' }) }),
+      expect.any(Object),
+    );
+  });
+
+  it('allocator farklı ledger currency döndürürse transaction fail-closed olur', async () => {
     const summaryEngine = {
       allocatePaymentToLedgerInTx: jest.fn(async () => ({
         allocated: true,
-        ledgerEntry: { id: 'le-currency', tenantId: 't1', caseId: 'c1', currency: 'TRY' },
+        ledgerEntry: { id: 'le-currency', tenantId: 't1', caseId: 'c1', currency: 'USD' },
         allocations: [{ amount: 1000 }],
-        diagnostics: [],
-        excludedOutstanding: 0,
-        unsafeForOverpayment: false,
       })),
     };
-    const { svc, tx, domainEvent } = setup({ summaryEngine });
+    const { svc, tx, domainEvent, autoSpy } = setup({ summaryEngine });
 
-    await svc.create('t1', { ...dto, amount: 1200, currency: 'USD' }, 'u1');
-
-    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
-    const blockedEvent = domainEvent.appendInTransaction.mock.calls[1][1];
-    expect(blockedEvent.header.eventType).toBe('OVERPAYMENT_BLOCKED');
-    expect(blockedEvent.payload.blockedReasons).toEqual([
-      expect.objectContaining({
-        reason: 'CURRENCY_MISMATCH',
-        details: {
-          collectionCurrency: 'USD',
-          caseCurrency: 'TRY',
-          ledgerCurrency: 'TRY',
-        },
+    await expect(
+      svc.create('t1', { ...dto, currency: 'TRY' }, 'u1'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'COLLECTION_CURRENCY_MISMATCH',
+        collectionCurrency: 'TRY',
+        caseCurrency: 'TRY',
+        ledgerCurrency: 'USD',
       }),
-    ]);
+    });
+
+    expect(tx.collection.create).toHaveBeenCalledTimes(1);
+    expect(domainEvent.appendInTransaction).toHaveBeenCalledTimes(1);
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
+    expect(autoSpy).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
   });
 
   it('ledger tenant/case context mismatch varsa overpayment projection yazmaz', async () => {
