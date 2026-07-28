@@ -181,7 +181,11 @@ Destructive `reset`/`clean` ve fiziksel recursive silme kullanılmaz.
 - Runner **opt-in** bounded capability'dir; manuel owner-authorized kapanış geçerli
   kalır ve `AGENTS.md` runner'ı default execution path olarak tanımlamaz.
 - Ledger yalnız `--dry-run` için opsiyoneldir; live closeout onsuz çalışmaz.
-- Testler `Test Suite` job'ına bağlıdır; o job required check değildir.
+- Runner'ın **kritik merge-güvenliği invariant'ları** `Web Tests (vitest)` job'ında
+  (REQUIRED) koşar: `apps/web/src/__tests__/closeout-runner-invariants.test.ts`.
+  Tam davranış matrisi `Test Suite` job'ındadır (`pr-closeout.spec.ts`) ve o job
+  required değildir — bir davranış regresyonu PR'ı kırmızı yakar ama teknik merge
+  engeli üretmez.
 
 ## Referanslar
 

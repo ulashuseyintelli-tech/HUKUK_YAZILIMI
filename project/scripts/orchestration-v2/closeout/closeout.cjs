@@ -49,8 +49,11 @@ const STAGES = Object.freeze([
   'MERGE_GATE_VALIDATED',
   'MERGED',
   'MAIN_SYNCED',
-  'BRANCH_CLEANED',
+  // Worktree ONCE: bir worktree branch'i checkout tutarken `git branch -D`
+  // calismaz. Gercek akis R01 pilotunda duzeltilmisti ama bu sabit eski sirada
+  // kalmisti; required invariant testi tutarsizligi yakaladi.
   'WORKTREE_CLEANED',
+  'BRANCH_CLEANED',
   'CANONICAL_VERIFIED',
   'CLOSED',
 ]);
