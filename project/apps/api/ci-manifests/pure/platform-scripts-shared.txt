@@ -165,6 +165,7 @@ src/modules/automation/__tests__/enforcement-action-guarded-write-path.static-gu
 src/modules/automation/__tests__/enforcement-action-passivation-guard.spec.ts
 src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.spec.ts
 src/modules/automation/__tests__/workflow-engine-build-context-tenant-guard.static-guard.spec.ts
+src/modules/automation/__tests__/workflow-engine-collection-consumer.spec.ts
 src/modules/automation/__tests__/workflow-engine-legal-time-cutover.spec.ts
 src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.spec.ts
 src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.static-guard.spec.ts
