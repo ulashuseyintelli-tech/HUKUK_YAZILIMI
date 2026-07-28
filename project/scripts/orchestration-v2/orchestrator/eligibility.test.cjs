@@ -281,12 +281,12 @@ test('eligibility: the committed manifest is exactly what the deriver produces',
   assert.deepEqual(derived, committed, 'programs.manifest.json is not the derivation of its own authority');
 });
 
-test('eligibility: all six programs are eligible, each with a stated reason', () => {
+test('eligibility: all seven programs are eligible, each with a stated reason', () => {
   const committed = JSON.parse(readFromRepo('project/docs/governance/coordination-v2/programs.manifest.json'));
-  assert.equal(committed.programs.length, 6);
+  assert.equal(committed.programs.length, 7);
   assert.deepEqual(
     committed.programs.filter((p) => p.liveExecutionEligibility === 'ELIGIBLE').map((p) => p.programId).sort(),
-    ['CLIENT', 'COLLECTION', 'DEBTOR', 'OFFICE', 'RECEIVABLE', 'UYAP_CONNECTOR'],
+    ['CLIENT', 'COLLECTION', 'DEBTOR', 'DELIVERY_TRUTH', 'OFFICE', 'RECEIVABLE', 'UYAP_CONNECTOR'],
   );
 
   // Two got there through the plain conjunction and four through an evidenced
@@ -308,13 +308,54 @@ test('eligibility: every eligible program has its OWN grant — no shared blanke
   const record = JSON.parse(readFromRepo(ACT + '/program-eligibility-authority.json'));
   const refs = record.eligiblePrograms.map((p) => p.standingGrantRef);
   assert.equal(new Set(refs).size, refs.length, 'two programs share a standing grant');
-  assert.equal(refs.length, 6);
+  assert.equal(refs.length, 7);
   for (const p of record.eligiblePrograms) {
     const g = JSON.parse(readFromRepo(p.standingGrantRef));
     assert.equal(g.program.programId, p.programId);
     assert.equal(g.maxConcurrency, 1);
     assert.equal(g.mergePolicy.repositoryWideAutoMerge, false);
   }
+});
+
+test('eligibility: an eighth program nobody ratified is refused', () => {
+  // The seventh (DELIVERY_TRUTH) exists because an owner decision put it in the
+  // authority record. This proves the count is not the rule — ratification is.
+  // An entry the authority never names cannot become eligible by appearing in
+  // the manifest, and an entry the authority names that the manifest has never
+  // heard of is a typo rather than a permission.
+  const record = JSON.parse(readFromRepo(ACT + '/program-eligibility-authority.json'));
+  const committed = JSON.parse(readFromRepo('project/docs/governance/coordination-v2/programs.manifest.json'));
+
+  const smuggled = JSON.parse(JSON.stringify(committed));
+  smuggled.programs.push({
+    programId: 'UNRATIFIED_PROGRAM',
+    canonicalName: 'not in any authority record',
+    taxonomyLevel: 'UNKNOWN',
+    governanceSourceFiles: [],
+    activeStatus: 'NOT_ON_ACTIVE_ROADMAP',
+    authorizationState: 'NOT_AUTHORIZED',
+    liveExecutionEligibility: 'ELIGIBLE',
+  });
+  const derived = E.deriveManifest({
+    manifest: smuggled,
+    authority: record,
+    readFile: readFromRepo,
+    authorityPath: ACT + '/PROGRAM-ELIGIBILITY-AUTHORITY.md',
+  }).manifest;
+  const smuggledOut = derived.programs.filter((p) => p.programId === 'UNRATIFIED_PROGRAM')[0];
+  assert.notEqual(smuggledOut.liveExecutionEligibility, 'ELIGIBLE', 'the deriver honoured a hand-set ELIGIBLE');
+
+  // And the mirror case: an authority naming a program the manifest does not
+  // carry is refused outright rather than silently ineffective.
+  const phantom = JSON.parse(JSON.stringify(record));
+  phantom.eligiblePrograms.push({
+    programId: 'PHANTOM_PROGRAM',
+    standingGrantRef: ACT + '/STANDING-GRANT-OFFICE-LIVE-R01.json',
+  });
+  assert.throws(
+    () => E.deriveManifest({ manifest: committed, authority: phantom, readFile: readFromRepo, authorityPath: ACT + '/PROGRAM-ELIGIBILITY-AUTHORITY.md' }),
+    (e) => e.code === 'ELIGIBILITY_AUTHORITY_NAMES_UNKNOWN_PROGRAM',
+  );
 });
 
 test('eligibility: the UYAP grant does not authorize production external activation', () => {

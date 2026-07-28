@@ -106,12 +106,12 @@ test('AC-03  the manifest is exactly the derivation of its authority — no hand
   assert.deepEqual(derived, committed);
 });
 
-test('AC-04  all six programs are ELIGIBLE, and each says how it got there', () => {
+test('AC-04  all seven programs are ELIGIBLE, and each says how it got there', () => {
   const m = MANIFEST();
-  assert.equal(m.programs.length, 6);
+  assert.equal(m.programs.length, 7);
   assert.deepEqual(
     m.programs.filter((p) => p.liveExecutionEligibility === 'ELIGIBLE').map((p) => p.programId).sort(),
-    ['CLIENT', 'COLLECTION', 'DEBTOR', 'OFFICE', 'RECEIVABLE', 'UYAP_CONNECTOR'],
+    ['CLIENT', 'COLLECTION', 'DEBTOR', 'DELIVERY_TRUTH', 'OFFICE', 'RECEIVABLE', 'UYAP_CONNECTOR'],
   );
   for (const p of m.programs) {
     const d = p.liveExecutionEligibilityDerivation;
