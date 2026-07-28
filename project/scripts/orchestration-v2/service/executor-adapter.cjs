@@ -153,6 +153,67 @@ async function runEntry(o) {
 
   const resolved = resolveNow();
 
+  // The authority gate, on the path that actually runs.
+  //
+  // verifyAuthorityAgainstRepo has one job — read the grant's owner ratification
+  // and its authority records AGAINST THE REPOSITORY — and it was called from
+  // run-task's main() and from nowhere else. main() is the direct `orch:run`
+  // CLI, which #1687 closed. Every real task arrives HERE. So the only check
+  // that catches a fabricated recordId, or a ratification that never landed in
+  // main, never ran in production.
+  //
+  // It was not weak. It was unreachable, which is the same word this programme
+  // exists to stop being true of anything: unwired. The WP04 dogfood proved it
+  // with a live artefact — R02's grant cites a commit at which its own
+  // semantic-authority document does not exist, and it passed every gate and
+  // merged.
+  //
+  // Same function, same arguments, one more caller. Deliberately NOT a second
+  // implementation: two verifications of authority would be two things to keep
+  // in agreement, and the weaker one would quietly become the real rule.
+  //
+  // Placed here rather than in buildContext because buildContext is also the
+  // synthetic pilots' composition root, and they hold grants that were never
+  // meant to have a repository behind them. This is the production dispatch,
+  // where the grant is a committed artefact resolved from a committed request —
+  // the only place the check has something real to check.
+  //
+  // Fail-closed and BEFORE the lease: it throws, and runEntry has not yet
+  // claimed anything or built a worktree, so a task whose authority cannot be
+  // verified stops without having touched the repository at all.
+  // Scoped to the committed regime — the same condition resolveNow() already
+  // uses, and for the same reason. Verifying authority AGAINST THE REPOSITORY
+  // requires there to be a repository holding it: an entry admitted with
+  // artefactsCommitted false has papers that live only in a caller's working
+  // tree, and there is no committed record for this to read.
+  //
+  // Not a hole. artefact.cjs states the property directly — in this repository
+  // origin/main always resolves, so real work is always in the committed regime
+  // — and every entry on the shared queue carries the flag. What the scope
+  // actually excludes is probe and test worlds, which have no committed
+  // authority because they were never meant to have one.
+  let authorityAt = null;
+  try {
+    if (entry.artefactsCommitted === true) {
+      authorityAt = require('../runtime/run-task.cjs').verifyAuthorityAgainstRepo({
+        repoCwd,
+        grant: resolved.grant || resolved.standingGrant,
+        baseRef: 'origin/' + (resolved.request.targetBranch || 'main'),
+      });
+    }
+  } catch (e) {
+    audit('DISPATCH_AUTHORITY_UNVERIFIED', {
+      entryId: entry.entryId,
+      taskId: entry.taskId,
+      code: (e && e.code) || 'AUTHORITY_UNVERIFIED',
+      detail: String((e && e.detail) || (e && e.message) || e).slice(0, 240),
+    });
+    const blockerCode = (e && e.code) || 'AUTHORITY_UNVERIFIED';
+    const detail = String((e && e.detail) || (e && e.message) || e).slice(0, 240);
+    advance(queue, entry.entryId, 'BLOCKED', { blockerCode, owner: null }, clock());
+    return { disposition: 'BLOCKED', entryId: entry.entryId, queueState: 'BLOCKED', blockerCode, detail, pr: null, result: null };
+  }
+
   const ctx = o.buildContext({
     repoCwd,
     spec: resolved.spec,

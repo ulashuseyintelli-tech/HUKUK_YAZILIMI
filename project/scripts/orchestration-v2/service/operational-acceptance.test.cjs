@@ -395,3 +395,45 @@ test('AC-25  every control action leaves an audit record', () => {
     ['KILL_SWITCH_ENGAGED', 'KILL_SWITCH_RELEASED', 'PAUSED', 'RESUMED'],
   );
 });
+
+test('AC-26  production dispatch verifies grant authority against the repository', () => {
+  // The gate this asserts was written in #1644/#1645, tested in isolation ever
+  // since, and reachable from nowhere: verifyAuthorityAgainstRepo was called by
+  // run-task's main() — the direct `orch:run` CLI that #1687 closed — and by no
+  // other caller. Every real task arrives through the service adapter, which
+  // never called it. The WP04 dogfood proved the consequence on a live artefact:
+  // R02's grant cites a commit at which its own semantic-authority document does
+  // not exist, and it passed every gate and merged.
+  //
+  // Source-level, deliberately. The behaviour has its own tests in
+  // runtime.test.cjs; what could not be tested there is that PRODUCTION reaches
+  // them, and the same technique already carries that job for the successor gate
+  // in delivery.test.cjs. A behavioural dispatch test would need a synthetic
+  // world with committed authority behind it, which is the very thing the
+  // committed regime distinguishes from a test fixture.
+  const src = fs.readFileSync(
+    path.join(__dirname, 'executor-adapter.cjs'),
+    'utf8',
+  );
+  const code = src
+    .split('\n')
+    .filter((l) => {
+      const t = l.trim();
+      return t && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+    })
+    .join('\n');
+
+  assert.match(
+    code,
+    /verifyAuthorityAgainstRepo\(\{/,
+    'the dispatch path must call the canonical authority verification',
+  );
+  // The one shared implementation, not a second opinion built here.
+  assert.match(code, /require\('\.\.\/runtime\/run-task\.cjs'\)\.verifyAuthorityAgainstRepo/);
+  // Scoped to the committed regime, which is the only regime with a repository
+  // behind it — and the regime every entry on the shared queue is admitted under.
+  assert.match(code, /entry\.artefactsCommitted === true[\s\S]{0,200}verifyAuthorityAgainstRepo/);
+  // Fail-closed: a refusal blocks the entry rather than falling through.
+  assert.match(code, /DISPATCH_AUTHORITY_UNVERIFIED/);
+  assert.match(code, /catch \(e\)[\s\S]{0,400}'BLOCKED'[\s\S]{0,200}blockerCode/);
+});

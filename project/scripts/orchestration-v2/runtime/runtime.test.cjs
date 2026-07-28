@@ -199,6 +199,52 @@ test('runner: a ratification excerpt absent from the cited file is rejected', ()
   );
 });
 
+test('runner: a ratification commit at which the cited file does not exist is rejected', () => {
+  // The exact shape the WP04 dogfood found on a live artefact. R02's grant
+  // cited a real, merged, ancestor commit — and the semantic-authority document
+  // it names did not exist there at all. Every other check passes: the sha is
+  // well formed, it is reachable, it is not a placeholder. Only opening the file
+  // catches it, and nothing in production opened it.
+  const repo = seedRepo();
+  const empty = tinyRepo({ 'README.md': '# nothing else here\n' });
+  const grant = authGrant(repo, { ownerRatificationEvidence: evidence(repo.sha, EXCERPT) });
+  assert.throws(
+    // The commit exists and is reachable in `empty`, but carries no AUTH_DOC.
+    () => runner.verifyAuthorityAgainstRepo({ repoCwd: empty.dir, grant: authGrant(empty), baseRef: 'HEAD' }),
+    (e) => e.code === 'OWNER_RATIFICATION_SOURCE_UNREADABLE',
+  );
+  // And the same grant against the repository that DOES carry the document passes,
+  // so the refusal is about the file being absent and not about the shape.
+  assert.equal(runner.verifyAuthorityAgainstRepo({ repoCwd: repo.dir, grant, baseRef: 'HEAD' }).atCommit, repo.sha);
+});
+
+test('runner: authority that exists only in the working tree is not authority', () => {
+  // Uncommitted authority. The document is on disk and readable by any process
+  // that looks at the filesystem; it is not in the commit the grant cites, and
+  // a task in the committed regime is read by workers in other worktrees that
+  // will never see it.
+  const repo = seedRepo();
+  fs.writeFileSync(path.join(repo.dir, AUTH_DOC), '# SEM-REC-01\n\nOwner ratifies a completely different thing.\n');
+  // Reading the tree would now find the edited text; reading the commit does not.
+  assert.match(fs.readFileSync(path.join(repo.dir, AUTH_DOC), 'utf8'), /completely different/);
+  assert.equal(
+    runner.verifyAuthorityAgainstRepo({ repoCwd: repo.dir, grant: authGrant(repo), baseRef: 'HEAD' }).atCommit,
+    repo.sha,
+    'the committed excerpt is what counts, and it is still there',
+  );
+
+  // The reverse is the one that must fail closed: a ratification that exists
+  // ONLY as an uncommitted edit.
+  const fresh = tinyRepo({ 'README.md': '# no authority documents committed\n' });
+  fs.mkdirSync(path.join(fresh.dir, path.dirname(AUTH_DOC)), { recursive: true });
+  fs.writeFileSync(path.join(fresh.dir, AUTH_DOC), '# SEM-REC-01\n\n' + EXCERPT + '\n');
+  assert.throws(
+    () => runner.verifyAuthorityAgainstRepo({ repoCwd: fresh.dir, grant: authGrant(fresh), baseRef: 'HEAD' }),
+    (e) => e.code === 'OWNER_RATIFICATION_SOURCE_UNREADABLE',
+    'an uncommitted ratification is not in force, however real the file looks',
+  );
+});
+
 test('runner: a ratification commit unreachable from the target ref is rejected', () => {
   const repo = seedRepo();
   const grant = authGrant(repo, { ownerRatificationEvidence: evidence('f'.repeat(39) + '0', EXCERPT) });
