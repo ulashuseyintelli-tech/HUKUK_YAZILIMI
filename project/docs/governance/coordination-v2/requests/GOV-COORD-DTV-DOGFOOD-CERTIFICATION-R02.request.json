@@ -4,11 +4,12 @@
   "taskId": "GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R02",
   "taskClass": "BOUNDED_CODE_FIX",
   "planPath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R02/plan.v2.json",
+  "grantPath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R02/grant.v2.json",
   "standingGrantPath": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-DELIVERY-TRUTH-DOGFOOD-R01.json",
   "promptPath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R02/executor-prompt.md",
   "executorLane": "CODEX_LOCAL",
   "targetBranch": "main",
   "autoMerge": true,
-  "notes": "ORCHESTRA-DELIVERY-TRUTH-R01 WP04 dogfood certification. Task grant is documentation of the pinned digests, not a committed authority artefact: the service path validates against the standing grant, so binding a task grant here would add a ratification-SHA cycle no single PR can close.",
+  "notes": "ORCHESTRA-DELIVERY-TRUTH-R01 WP04 dogfood certification. grantPath is required: the dispatch path validates the task grant with validateAgainstGrant, and with no grantPath the adapter falls back to the standing grant, which has no manualMergeRequired field and is refused GRANT_MANUAL_MERGE_REQUIRED. Found by the dogfood run itself.",
   "requireCommittedArtefacts": true
 }
