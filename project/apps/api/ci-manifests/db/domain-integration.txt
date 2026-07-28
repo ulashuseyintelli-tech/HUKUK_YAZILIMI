@@ -124,6 +124,7 @@ src/modules/client-financial-disclosure/__tests__/track-b-i01-schema-foundation.
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-writer.db-gated.integration.spec.ts
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-approval.db-gated.integration.spec.ts
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-publication.db-gated.integration.spec.ts
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-projection.db-gated.integration.spec.ts
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
