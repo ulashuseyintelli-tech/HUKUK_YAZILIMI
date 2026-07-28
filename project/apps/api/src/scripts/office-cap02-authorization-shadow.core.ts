@@ -279,91 +279,119 @@ export function toShadowAuditEvent(
 }
 
 // ---------------------------------------------------------------------------
-// SELF-AUTHORITY GÖLGESİ — canlı approval seam'inin ihtiyaç duyduğu karşılaştırma
+// AUTHORITY ⟷ HİYERARŞİ TELEMETRİSİ — NÖTR ÖLÇÜM, KARAR DEĞİL
 // ---------------------------------------------------------------------------
 //
-// Yukarıdaki `compareShadowDecision` bir ÖZNE→HEDEF erişim sorusunu modeller
-// ("subject, target'ın amiri mi"). Canlı `OfficeApprovalShadowService` ise BAŞKA
-// bir soru sorar: "bu aktör kendi işlemi için onay gerektirir mi (self-authority)?"
-// Bugün bu soruyu yalnız `Lawyer.lawyerRank === 'PARTNER'` cevaplar; ReportingLine
-// grafiği HİÇ okunmaz.
+// OWNER KARARI (2026-07-28, OPTION A). `ReportingLine` YALNIZ organizasyonel
+// hiyerarşi gerçeğidir. Aşağıdaki eşleme authorization policy olarak KULLANILAMAZ
+// ve bu modülde ÜRETİLMEZ:
 //
-// Aşağıdaki karşılaştırma, ikisi de yürürlükte olan iki BAĞIMSIZ olguyu KIYASLAR:
-//   yürürlükteki rütbe kararı  ⟷  hiyerarşi konumu (TOP_LEVEL / MANAGED)
-// Hiçbir politika ÜRETMEZ, hiçbir kararı DEĞİŞTİRMEZ. "Hangisi doğru" sorusunun
-// cevabı owner'a aittir; bu katman yalnız uyuşmazlığı ÖLÇER.
+//     TOP_LEVEL → SELF_AUTHORITY
+//     MANAGED   → REQUIRES_APPROVAL
 //
-// Eşleme (population'da owner-onaylı disposition semantiği; yeni politika DEĞİL):
-//   TOP_LEVEL → aktörün üstünde amir YOK  → hiyerarşi "kendi yetkisi" derdi
-//   MANAGED   → aktörün üstünde amir VAR  → hiyerarşi "amir onayı" derdi
-//   aktif kayıt yok → UNCLASSIFIED        → karşılaştırma ANLAMSIZ (sessizce onay-gerekir DEĞİL)
+// Bu eşleme için kanonik authority BULUNMADIĞI tespit edilmiştir. Dolayısıyla bu
+// katman `allow` / `deny` / `requiresApproval` / `selfAuthority` KARARI ÜRETMEZ,
+// "hiyerarşi ne karar verirdi" SORUSUNU CEVAPLAMAZ.
+//
+// ÜRETTİĞİ TEK ŞEY: iki BAĞIMSIZ sınıflandırmanın aynı sınıfa düşüp düşmediği.
+//   incumbentVerdict        yürürlükteki (rütbe tabanlı) seam'in KENDİ kararının kaydı
+//   hierarchyDisposition    aktörün ReportingLine sınıfı
+//   comparison              SAME_CLASS | DIFFERENT_CLASS | UNCOMPARABLE
+//
+// `DIFFERENT_CLASS` "yanlış" demek DEĞİLDİR; yalnız iki sınıflandırmanın ayrıştığını
+// söyler. Hangisinin doğru olduğu — ve hiyerarşinin authorization'a girip girmeyeceği —
+// owner kararıdır ve bu modülün DIŞINDADIR.
 
-/** Yürürlükteki (rütbe tabanlı) approval seam'inin verdiği karar. */
+/**
+ * Yürürlükteki (rütbe tabanlı) approval seam'inin verdiği kararın KAYDI.
+ * Bu modül bu değeri ÜRETMEZ; çağıran, canlı seam'in çıktısını olduğu gibi geçirir.
+ */
 export type IncumbentAuthorityVerdict = 'SELF_AUTHORITY' | 'REQUIRES_APPROVAL';
 
-export interface SelfAuthorityShadowInput {
+/** Aktörün ReportingLine sınıfı. Aktif kayıt yoksa `MISSING_HIERARCHY`. */
+export type HierarchyDispositionClass = 'TOP_LEVEL' | 'MANAGED' | 'MISSING_HIERARCHY';
+
+/** Nötr karşılaştırma sonucu. Karar DEĞİL, sınıf denkliği. */
+export type TelemetryComparison = 'SAME_CLASS' | 'DIFFERENT_CLASS' | 'UNCOMPARABLE';
+
+/** Karşılaştırmanın neden yapılamadığı. Yokluk sessizce bir sınıfa SAYILMAZ. */
+export type UncomparableReason = 'MISSING_HIERARCHY' | 'ACTOR_INACTIVE' | 'CROSS_TENANT';
+
+export interface AuthorityHierarchyTelemetryInput {
   /** Opak korelasyon kimliği; kişisel veri taşımaz. */
   correlationId: string;
   tenantId: string;
-  /** İşlemi yapmak isteyen aktör (User id). */
   actorUserId: string;
-  /** Yürürlükteki karar — TEK GERÇEK KARAR; bu modül onu değiştirmez. */
+  /** Yürürlükteki kararın KAYDI — bu modül onu ne üretir ne değiştirir. */
   incumbentVerdict: IncumbentAuthorityVerdict;
   /** Yürürlükteki kararın gerekçe kodu (ör. PARTNER_SELF_AUTHORITY); serbest metin DEĞİL. */
   incumbentReasonCode: string;
-  /** Yürürlükteki kararın sıfat alanı (ör. PARTNER / SENIOR / UNKNOWN). */
+  /** Yürürlükteki kararın sıfat alanı (ör. PARTNER / SEKRETER / UNKNOWN). */
   incumbentCapacity: string;
+  /**
+   * Yalnız GÖZLEM BAĞLAMI (hangi işlem sırasında ölçüldü). Karşılaştırmaya GİRMEZ;
+   * bu modülde hiçbir dalın koşulu değildir.
+   */
+  observedActionCode?: string;
 }
 
 /** Aktörün ReportingLine tarafındaki gerçekleri (snapshot; bu modül DB'ye erişmez). */
 export interface ActorHierarchyFacts {
   actorIsActive: boolean;
   actorTenantId: string;
-  /** Aktörün AKTİF disposition'ı; aktif kaydı yoksa null (UNCLASSIFIED). */
+  /** Aktif disposition; aktif kayıt yoksa null. */
   disposition: 'MANAGED' | 'TOP_LEVEL' | null;
   /** MANAGED ise amir; TOP_LEVEL veya kayıtsız ise null. */
   managerUserId: string | null;
 }
 
-export type SelfAuthorityShadowOutcome =
-  /** İki taraf da aynı sonuca varıyor. */
-  | 'MATCH'
-  /** Hiyerarşi "kendi yetkisi" derdi, yürürlükteki karar onay istiyor. */
-  | 'HIERARCHY_WOULD_ALLOW'
-  /** Hiyerarşi "amir onayı" derdi, yürürlükteki karar kendi yetkisi diyor. */
-  | 'HIERARCHY_WOULD_REQUIRE_APPROVAL'
-  /** Aktif ReportingLine kaydı yok; karşılaştırma anlamlı değil. */
-  | 'MISSING_HIERARCHY'
-  /** Aktör pasif; hiyerarşi hiçbir yetki tanımaz. */
-  | 'ACTOR_INACTIVE'
-  /** Aktör başka tenant'ta; hiyerarşi hiçbir yetki tanımaz. */
-  | 'CROSS_TENANT';
-
-export interface SelfAuthorityShadowRecord {
+export interface AuthorityHierarchyTelemetryRecord {
   correlationId: string;
   tenantId: string;
   actorUserId: string;
   incumbentVerdict: IncumbentAuthorityVerdict;
   incumbentReasonCode: string;
   incumbentCapacity: string;
-  /** Hiyerarşi tek başına ne derdi; belirlenemiyorsa null. */
-  hierarchyVerdict: IncumbentAuthorityVerdict | null;
-  hierarchyDisposition: 'MANAGED' | 'TOP_LEVEL' | null;
-  outcome: SelfAuthorityShadowOutcome;
-  severity: ShadowSeverity;
-  reason: string;
-  /** Bu katmanın kararı değiştirmediğini kaydın kendisinde görünür kılar. */
+  hierarchyDisposition: HierarchyDispositionClass;
+  comparison: TelemetryComparison;
+  /** Yalnız `UNCOMPARABLE` iken dolu. */
+  uncomparableReason?: UncomparableReason;
+  /** Yalnız gözlem bağlamı; karşılaştırmaya girmedi. */
+  observedActionCode?: string;
+  /** Bu katmanın erişimi değiştirmediğini kaydın kendisinde görünür kılar. */
   accessAffected: false;
+  /** Bu katmanın hiçbir kararı etkilemediğini kaydın kendisinde görünür kılar. */
+  decisionAffected: false;
 }
 
 /**
- * Yürürlükteki self-authority kararı ile hiyerarşi konumunu KIYASLAR.
- * KARAR DÖNDÜRMEZ — yalnız kanıt kaydı; çağıran bunu karar olarak KULLANAMAZ.
+ * TELEMETRİ EŞLEŞME KONVANSİYONU — POLİTİKA DEĞİL.
+ *
+ * Bu fonksiyon "hiyerarşi ne karar verirdi" DEMEZ. Yalnız, iki bağımsız
+ * sınıflandırmanın hangi çiftinin "aynı sınıf" sayılacağını sabitler; çıktısı bir
+ * `boolean`'dır ve hiçbir authorization tipi taşımaz. Owner kararı gereği bu
+ * konvansiyondan bir yetki sonucu TÜRETİLEMEZ.
  */
-export function compareSelfAuthorityShadow(
-  input: SelfAuthorityShadowInput,
+function isSameClass(
+  disposition: 'TOP_LEVEL' | 'MANAGED',
+  incumbentVerdict: IncumbentAuthorityVerdict,
+): boolean {
+  return (
+    (disposition === 'TOP_LEVEL' && incumbentVerdict === 'SELF_AUTHORITY') ||
+    (disposition === 'MANAGED' && incumbentVerdict === 'REQUIRES_APPROVAL')
+  );
+}
+
+/**
+ * Yürürlükteki karar sınıfı ile hiyerarşi sınıfını KARŞILAŞTIRIR.
+ *
+ * KARAR DÖNDÜRMEZ. Çağıran bu sonucu authorization girdisi olarak KULLANAMAZ;
+ * kayıt bunu `accessAffected: false` + `decisionAffected: false` ile taşır.
+ */
+export function compareAuthorityWithHierarchyTelemetry(
+  input: AuthorityHierarchyTelemetryInput,
   facts: ActorHierarchyFacts,
-): SelfAuthorityShadowRecord {
+): AuthorityHierarchyTelemetryRecord {
   const base = {
     correlationId: input.correlationId,
     tenantId: input.tenantId,
@@ -371,118 +399,99 @@ export function compareSelfAuthorityShadow(
     incumbentVerdict: input.incumbentVerdict,
     incumbentReasonCode: input.incumbentReasonCode,
     incumbentCapacity: input.incumbentCapacity,
+    ...(input.observedActionCode !== undefined
+      ? { observedActionCode: input.observedActionCode }
+      : {}),
     accessAffected: false as const,
+    decisionAffected: false as const,
   };
+  const dispositionClass: HierarchyDispositionClass = facts.disposition ?? 'MISSING_HIERARCHY';
 
-  // 1) Tenant sınırı her şeyin önünde.
+  // 1) Tenant sınırı her şeyin önünde: başka tenant'taki bir aktörün hiyerarşi
+  //    sınıfı bu tenant'ın ölçümüyle karşılaştırılamaz.
   if (facts.actorTenantId !== input.tenantId) {
     return {
       ...base,
-      hierarchyVerdict: 'REQUIRES_APPROVAL',
-      hierarchyDisposition: facts.disposition,
-      outcome: 'CROSS_TENANT',
-      // Yürürlükteki karar başka tenant'taki bir aktöre self-authority verdiyse kritiktir.
-      severity: input.incumbentVerdict === 'SELF_AUTHORITY' ? 'CRITICAL' : 'NONE',
-      reason: 'aktor baska tenant; hiyerarsi hicbir yetki tanimaz',
+      hierarchyDisposition: dispositionClass,
+      comparison: 'UNCOMPARABLE',
+      uncomparableReason: 'CROSS_TENANT',
     };
   }
 
-  // 2) Pasif aktör.
+  // 2) Pasif aktör: sınıflandırma güncel değil, karşılaştırma anlamsız.
   if (!facts.actorIsActive) {
     return {
       ...base,
-      hierarchyVerdict: 'REQUIRES_APPROVAL',
-      hierarchyDisposition: facts.disposition,
-      outcome: 'ACTOR_INACTIVE',
-      severity: input.incumbentVerdict === 'SELF_AUTHORITY' ? 'CRITICAL' : 'NONE',
-      reason: 'aktor pasif; hiyerarsi hicbir yetki tanimaz',
+      hierarchyDisposition: dispositionClass,
+      comparison: 'UNCOMPARABLE',
+      uncomparableReason: 'ACTOR_INACTIVE',
     };
   }
 
-  // 3) Hiyerarşi eksik: SESSİZCE onay-gerekir SAYILMAZ, ayrı sınıf.
+  // 3) Aktif kayıt yok: SESSİZCE bir sınıfa SAYILMAZ, ayrı ve açık bir sonuç.
   if (facts.disposition === null) {
     return {
       ...base,
-      hierarchyVerdict: null,
-      hierarchyDisposition: null,
-      outcome: 'MISSING_HIERARCHY',
-      severity: 'INFO',
-      reason: 'aktif ReportingLine kaydi yok (UNCLASSIFIED); karsilastirma anlamli degil',
+      hierarchyDisposition: 'MISSING_HIERARCHY',
+      comparison: 'UNCOMPARABLE',
+      uncomparableReason: 'MISSING_HIERARCHY',
     };
   }
 
-  // 4) Asıl karşılaştırma.
-  const hierarchyVerdict: IncumbentAuthorityVerdict =
-    facts.disposition === 'TOP_LEVEL' ? 'SELF_AUTHORITY' : 'REQUIRES_APPROVAL';
-
-  if (hierarchyVerdict === input.incumbentVerdict) {
-    return {
-      ...base,
-      hierarchyVerdict,
-      hierarchyDisposition: facts.disposition,
-      outcome: 'MATCH',
-      severity: 'NONE',
-      reason: 'rutbe karari ile hiyerarsi konumu ayni sonuca variyor',
-    };
-  }
-  if (hierarchyVerdict === 'SELF_AUTHORITY') {
-    return {
-      ...base,
-      hierarchyVerdict,
-      hierarchyDisposition: facts.disposition,
-      outcome: 'HIERARCHY_WOULD_ALLOW',
-      severity: 'INFO',
-      reason: 'hiyerarside TOP_LEVEL fakat rutbe karari onay istiyor',
-    };
-  }
+  // 4) Sınıf denkliği. Burada üretilen tek şey SAME/DIFFERENT — yetki sonucu DEĞİL.
   return {
     ...base,
-    hierarchyVerdict,
     hierarchyDisposition: facts.disposition,
-    outcome: 'HIERARCHY_WOULD_REQUIRE_APPROVAL',
-    severity: 'INFO',
-    reason: 'hiyerarside amir var (MANAGED) fakat rutbe karari kendi yetkisi diyor',
+    comparison: isSameClass(facts.disposition, input.incumbentVerdict)
+      ? 'SAME_CLASS'
+      : 'DIFFERENT_CLASS',
   };
 }
 
-export interface SelfAuthorityShadowAuditEvent {
-  eventType: 'OFFICE_CAP02_SELF_AUTHORITY_SHADOW_COMPARISON';
+export interface AuthorityHierarchyTelemetryEvent {
+  eventType: 'OFFICE_CAP02_AUTHORITY_HIERARCHY_TELEMETRY';
   correlationId: string;
   tenantId: string;
   actorUserId: string;
   incumbentVerdict: IncumbentAuthorityVerdict;
   incumbentReasonCode: string;
   incumbentCapacity: string;
-  hierarchyVerdict: IncumbentAuthorityVerdict | null;
-  hierarchyDisposition: 'MANAGED' | 'TOP_LEVEL' | null;
-  outcome: SelfAuthorityShadowOutcome;
-  severity: ShadowSeverity;
+  hierarchyDisposition: HierarchyDispositionClass;
+  comparison: TelemetryComparison;
+  uncomparableReason?: UncomparableReason;
+  observedActionCode?: string;
   /** Çağıran verir; sistem saati bu modülde okunmaz. */
   observedAt: string;
   accessAffected: false;
+  decisionAffected: false;
 }
 
 /**
  * Kaydı, belirli bir audit implementasyonuna bağlı OLMAYAN düz bir olaya çevirir.
  * İsim/e-posta/serbest metin TAŞIMAZ — yalnız kimlikler ve kapalı-küme kodlar.
  */
-export function toSelfAuthorityShadowAuditEvent(
-  record: SelfAuthorityShadowRecord,
+export function toAuthorityHierarchyTelemetryEvent(
+  record: AuthorityHierarchyTelemetryRecord,
   observedAt: string,
-): SelfAuthorityShadowAuditEvent {
+): AuthorityHierarchyTelemetryEvent {
   return {
-    eventType: 'OFFICE_CAP02_SELF_AUTHORITY_SHADOW_COMPARISON',
+    eventType: 'OFFICE_CAP02_AUTHORITY_HIERARCHY_TELEMETRY',
     correlationId: record.correlationId,
     tenantId: record.tenantId,
     actorUserId: record.actorUserId,
     incumbentVerdict: record.incumbentVerdict,
     incumbentReasonCode: record.incumbentReasonCode,
     incumbentCapacity: record.incumbentCapacity,
-    hierarchyVerdict: record.hierarchyVerdict,
     hierarchyDisposition: record.hierarchyDisposition,
-    outcome: record.outcome,
-    severity: record.severity,
+    comparison: record.comparison,
+    ...(record.uncomparableReason !== undefined
+      ? { uncomparableReason: record.uncomparableReason }
+      : {}),
+    ...(record.observedActionCode !== undefined
+      ? { observedActionCode: record.observedActionCode }
+      : {}),
     observedAt,
     accessAffected: false,
+    decisionAffected: false,
   };
 }

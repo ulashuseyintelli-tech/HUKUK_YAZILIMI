@@ -310,20 +310,48 @@ describe('P04A-ENC — izolasyon: runtime-wiring / schema-migration / raw-log YO
     return out;
   }
 
-  it('(16) encoder HİÇBİR runtime dosyası tarafından import EDİLMEZ (yalnız test-reachable)', () => {
+  /**
+   * UYAP-OFFICIAL-SERIALIZER-ARCHITECTURE-I01A UYARLAMASI.
+   *
+   * P04A-ENC bu guard'ı "encoder canlı bir runtime yoluna bağlanmasın" niyetiyle yazdı ve
+   * bunu **hiçbir import olmasın** biçiminde ölçtü. I01A owner brief'i encoder'ı canonical
+   * serializer'a bağlamayı AÇIKÇA yetkilendirdi (tek encoding sınırı, SA-04).
+   *
+   * Guard'ın ASIL güvencesi KAYBOLMADI, daha kesin hâle geldi: encoder'ı YALNIZ canonical
+   * sahip import edebilir ve o sahip de canlı bir yola (module provider / controller)
+   * bağlı DEĞİLDİR. Canlı erişilemezlik ayrıca SA-06/SA-07 ile doğrulanır.
+   */
+  const CANONICAL_ENCODER_OWNER = 'official-canonical-serializer.ts';
+
+  it('(16) encoder YALNIZ canonical serializer tarafından import edilir (canlı yol YOK)', () => {
     const uyapDir = resolve(__dirname, '..', '..');
-    const runtimeFiles = collectRuntimeTsFiles(uyapDir).filter((f) => !f.endsWith('official-iso8859-9-encoder.ts'));
+    const runtimeFiles = collectRuntimeTsFiles(uyapDir).filter(
+      (f) => !f.endsWith('official-iso8859-9-encoder.ts'),
+    );
+
+    const importers: string[] = [];
     for (const f of runtimeFiles) {
       const src = readFileSync(f, 'utf8');
-      expect(src).not.toContain('official-iso8859-9-encoder');
-      expect(src).not.toContain('encodeOfficialExchangeToIso88599');
+      // Yalnız GERÇEK import satırları sayılır; yorumdaki dosya adı anması sayılmaz.
+      if (/^\s*import[\s\S]*?official-iso8859-9-encoder/m.test(src)) {
+        importers.push(f.split(/[\\/]/).pop() as string);
+      }
     }
-    // app.module.ts (varsa) da encoder'ı referanslamaz.
+
+    expect(importers).toEqual([CANONICAL_ENCODER_OWNER]);
+
+    // app.module.ts (varsa) encoder'ı HÂLÂ referanslamaz.
     const appModule = resolve(__dirname, '..', '..', '..', '..', 'app.module.ts');
     if (existsSync(appModule)) {
       const src = readFileSync(appModule, 'utf8');
       expect(src).not.toContain('official-iso8859-9-encoder');
     }
+
+    // UyapModule encoder'ı veya canonical sahibi provider olarak KAYDETMEZ.
+    const uyapModule = resolve(uyapDir, 'uyap.module.ts');
+    const moduleSrc = readFileSync(uyapModule, 'utf8');
+    expect(moduleSrc).not.toContain('official-iso8859-9-encoder');
+    expect(moduleSrc).not.toContain('serializeUyapExchangeCanonical');
   });
 
   it('(17) encoder Prisma/DB bağımlılığı içermez (schema/migration etkisi YOK)', () => {
