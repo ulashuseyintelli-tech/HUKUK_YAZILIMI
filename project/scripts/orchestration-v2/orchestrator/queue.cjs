@@ -52,6 +52,9 @@ const QUEUE_STATES = [
   'MERGED',
   'SYNCING',
   'CLEANING',
+  // Bookkeeping, not execution: the entry is being reconciled against a fact
+  // that already happened outside the queue. Nothing runs, nothing merges.
+  'RECONCILING',
   'CLOSED',
   'BLOCKED',
   'FAILED',
@@ -101,7 +104,18 @@ const QUEUE_ALLOWED = {
   // attestation — re-running the executor would discard fifteen minutes
   // of real work and open a duplicate PR to reach the state already
   // recorded. Guarded below by finalizeRetryAuthorized.
-  BLOCKED: ['QUEUED', 'MERGE_READY', 'CANCELLED'],
+  //
+  // RECONCILING is the third edge out, and it exists because the other two
+  // could not tell the truth about one situation: the PR is ALREADY MERGED on
+  // GitHub. QUEUED would fabricate a fresh execution lifecycle for work that is
+  // finished, MERGE_READY would retry a merge that already happened, and
+  // CANCELLED would deny a change that is in main. The queue could describe
+  // every outcome except the one that occurred.
+  BLOCKED: ['QUEUED', 'MERGE_READY', 'RECONCILING', 'CANCELLED'],
+  // Forward to CLOSED once the external facts are verified; back to BLOCKED if
+  // they are not. There is no third way out, and in particular no edge to
+  // MERGING: reconciliation observes a merge, it never performs one.
+  RECONCILING: ['CLOSED', 'BLOCKED'],
   FAILED: [],
   CANCELLED: [],
 };
@@ -340,6 +354,16 @@ function createQueue(dir) {
           fail('QUEUE_FINALIZE_RETRY_NO_HANDOFF', cur.entryId);
         }
       }
+      // The reconciliation edges are reserved for one caller: the canonical
+      // reconciliation function, which verifies the external facts first. The
+      // generic transition API is deliberately not a way to write them — a
+      // caller that can reach CLOSED from BLOCKED in two unguarded hops has
+      // exactly the power the queue exists to withhold.
+      if (to === 'RECONCILING' || (cur.state === 'RECONCILING' && to === 'CLOSED')) {
+        if (opts.reconciliationAuthorized !== true) {
+          fail('QUEUE_RECONCILIATION_NOT_AUTHORIZED', cur.state + ' -> ' + to);
+        }
+      }
 
       const now = opts.nowMs || Date.now();
       const next = Object.assign({}, cur, opts.patch || {}, {
@@ -347,6 +371,15 @@ function createQueue(dir) {
         updatedAtMs: now,
         attempts: to === 'EXECUTING' ? (cur.attempts || 0) + 1 : cur.attempts,
       });
+      // Closing a reconciliation means asserting a merge that this queue never
+      // performed. The assertion has to carry its evidence, or the terminal
+      // record would say MERGED with nothing behind the word.
+      if (cur.state === 'RECONCILING' && to === 'CLOSED') {
+        const r = next.reconciliation;
+        if (!r || !r.mergeSha || !r.prNumber || !r.deliveryState) {
+          fail('QUEUE_RECONCILIATION_EVIDENCE_MISSING', cur.entryId);
+        }
+      }
       if (to !== 'BLOCKED') next.blockerCode = null;
       return append(next);
     },

@@ -12,6 +12,7 @@
  *   orch-service run-once            take exactly one task and run it
  *   orch-service run-until-idle      drain the queue, serially
  *   orch-service finalize            finish a MERGE_READY entry (or list them)
+ *   orch-service reconcile-merged    close a BLOCKED entry whose PR already merged
  *   orch-service status              what is happening, and why it is not
  *   orch-service stop  --reason ...  admit nothing, merge nothing. Now.
  *   orch-service start --reason ...  release the stop
@@ -167,7 +168,15 @@ function main(argv) {
 
     case 'run-until-idle': {
       return runAsync(
-        service.runUntilIdle({ maxTasks: args.flags.max ? Number(args.flags.max) : undefined }).then((r) => {
+        service
+          .runUntilIdle({
+            maxTasks: args.flags.max ? Number(args.flags.max) : undefined,
+            // The real drain gets the real GitHub reader, so a blocked entry
+            // whose PR already merged is diverted to reconciliation instead of
+            // being retried into the same wall for the rest of the pass.
+            gh: require('../closeout/gh-adapter.cjs').createGhCloseoutAdapter({ repoCwd: root }),
+          })
+          .then((r) => {
           const lines = ['stopped : ' + r.stopped, '  ran     : ' + r.ran.length + ' task(s)'];
           for (const one of r.ran) {
             lines.push(
@@ -313,6 +322,53 @@ function main(argv) {
             ? 0
             : 1;
         }),
+      );
+    }
+
+    /**
+     * Terminal reconciliation for an entry whose PR is already merged.
+     *
+     * Kept apart from `reconcile`, which answers a different question — whether
+     * the queue and the task store agree with each OTHER. This one asks whether
+     * the queue agrees with GitHub, and the two have no gate, no evidence and
+     * no failure mode in common.
+     */
+    case 'reconcile-merged': {
+      if (!args.flags.entry) {
+        process.stdout.write(
+          'usage: orch-service reconcile-merged --entry <id> --authority <owner decision ref>\n\n' +
+          'For a BLOCKED entry whose pull request GitHub reports as MERGED.\n' +
+          'Verifies the external facts, then records CLOSED / MERGED / <delivery>.\n' +
+          'Nothing is merged and no attestation is minted.\n',
+        );
+        return 2;
+      }
+      if (!args.flags.authority) {
+        process.stdout.write('REFUSED\n  --authority <owner decision ref> is required\n');
+        return 2;
+      }
+      const { createGhCloseoutAdapter } = require('../closeout/gh-adapter.cjs');
+      return runAsync(
+        service
+          .reconcileMerged(args.flags.entry, {
+            gh: createGhCloseoutAdapter({ repoCwd: root }),
+            reconciliationAuthority: args.flags.authority,
+          })
+          .then((r) => {
+            const lines = [r.disposition, '  entry     : ' + (r.entryId || args.flags.entry)];
+            if (r.refusal) lines.push('  refusal   : ' + r.refusal);
+            if (r.detail) lines.push('  detail    : ' + r.detail);
+            if (r.reconciled) {
+              lines.push('  execution : ' + r.executionState);
+              lines.push('  change    : ' + r.changeState + ' @ ' + r.mergeSha);
+              lines.push('  delivery  : ' + r.deliveryState + (r.deliveryDetail ? ' — ' + r.deliveryDetail : ''));
+              if (r.overallState) lines.push('  overall   : ' + r.overallState);
+              lines.push('  evidence  : ' + r.evidenceSha256);
+            }
+            lines.push('  state     : ' + r.queueState);
+            process.stdout.write(lines.join('\n') + '\n');
+            return r.reconciled ? 0 : 1;
+          }),
       );
     }
 
