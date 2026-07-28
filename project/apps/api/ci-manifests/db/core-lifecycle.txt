@@ -34,3 +34,4 @@ src/modules/icrabot/v28-engine/__tests__/uyap-event-ingest.boundary.integration.
 src/modules/interest-engine/__tests__/golden-fixture-matrix.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-diagnostic.db-gated.integration.spec.ts
 src/modules/poa/__tests__/poa-tenant-safety.db-gated.integration.spec.ts
+src/modules/reporting-line/__tests__/reporting-line-user-fk.db-gated.integration.spec.ts
