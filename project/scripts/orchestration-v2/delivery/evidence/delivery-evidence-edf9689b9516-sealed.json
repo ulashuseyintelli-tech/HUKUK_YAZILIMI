@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "at": "2026-07-28T00:03:09.212Z",
+  "at": "2026-07-28T00:06:13.189Z",
   "mode": "sealed",
-  "verifiedAtSha": "ccfe3069d4f288b9a7da8ca204fb303916077f87",
+  "verifiedAtSha": "edf9689b9516433403f26fe548614b4307c6165d",
   "sourceBranch": "claude/gov-coord-dtv-wp02-finalize-cmd-r01",
-  "dirtyTree": false,
+  "dirtyTree": true,
   "expectedMergeSha": null,
   "selected": [
     "GOV_COORD_V2_RUNNER_AUTHORITY",
@@ -13,13 +13,13 @@
     "GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE"
   ],
   "counts": {
-    "PASS": 4,
+    "PASS": 0,
     "FAIL": 0,
-    "STALE": 0,
+    "STALE": 4,
     "LEGACY_UNVERIFIED": 0,
     "NOT_APPLICABLE": 0
   },
-  "overall": "PASS",
+  "overall": "FAIL",
   "capabilities": [
     {
       "schemaVersion": 2,
@@ -31,14 +31,14 @@
       "probeDefinitionSha256": "1f263939c0227af3bdca3aa567000c53c0ccbea0152c9de6e4c07481cee976c8",
       "targetState": "OPERABLE",
       "observedState": "OPERABLE",
-      "verdict": "PASS",
-      "verifiedAtSha": "ccfe3069d4f288b9a7da8ca204fb303916077f87",
+      "verdict": "STALE",
+      "verifiedAtSha": "edf9689b9516433403f26fe548614b4307c6165d",
       "expectedMergeSha": null,
       "sourceBranch": "claude/gov-coord-dtv-wp02-finalize-cmd-r01",
-      "dirtyTree": false,
-      "startedAt": "2026-07-28T00:03:09.213Z",
-      "finishedAt": "2026-07-28T00:03:13.614Z",
-      "durationMs": 4401,
+      "dirtyTree": true,
+      "startedAt": "2026-07-28T00:06:13.190Z",
+      "finishedAt": "2026-07-28T00:06:18.136Z",
+      "durationMs": 4946,
       "commandDigest": "4de4c0b3c8b60d3ea992e90996e13c72cd293838cadbb4997b0efdfbc9e95a10",
       "commandCount": 5,
       "failureCode": null,
@@ -52,7 +52,7 @@
         {
           "name": "positive dry run",
           "verdict": "PASS",
-          "detail": "resolved at 3042a1b630663e49d469870bb97e4139cff54230"
+          "detail": "resolved at 9b0177b87fd53803d5e738f6b44411c404ed92db"
         },
         {
           "name": "fabricated semantic recordId",
@@ -70,7 +70,7 @@
           "detail": "GRANT_REVOKED"
         }
       ],
-      "evidenceDigest": "899464442310e23a6185bffd1b3bdc8715a506640ea1c827c9cbd8ba992db6e8"
+      "evidenceDigest": "2f8eb7f2c55713578500d8e03d11e35e888d4362f96537dba82d33f6067816b2"
     },
     {
       "schemaVersion": 2,
@@ -82,14 +82,14 @@
       "probeDefinitionSha256": "a33cba165f9dd4d5c6d2b7d852b9d378575ff4a4f4e5164d5638e7328efe1ea6",
       "targetState": "OPERABLE",
       "observedState": "OPERABLE",
-      "verdict": "PASS",
-      "verifiedAtSha": "ccfe3069d4f288b9a7da8ca204fb303916077f87",
+      "verdict": "STALE",
+      "verifiedAtSha": "edf9689b9516433403f26fe548614b4307c6165d",
       "expectedMergeSha": null,
       "sourceBranch": "claude/gov-coord-dtv-wp02-finalize-cmd-r01",
-      "dirtyTree": false,
-      "startedAt": "2026-07-28T00:03:13.615Z",
-      "finishedAt": "2026-07-28T00:03:14.544Z",
-      "durationMs": 929,
+      "dirtyTree": true,
+      "startedAt": "2026-07-28T00:06:18.137Z",
+      "finishedAt": "2026-07-28T00:06:24.116Z",
+      "durationMs": 5979,
       "commandDigest": "25ac053f5aa6e67ca67676175e08d7b49b91e0873b50cafa4322baf8edd0f193",
       "commandCount": 4,
       "failureCode": null,
@@ -98,7 +98,7 @@
         {
           "name": "enqueue valid request",
           "verdict": "ADMITTED",
-          "detail": "e986fda55c3897985d5fb531"
+          "detail": "fbd0e232c19fcc42774fc615"
         },
         {
           "name": "queue listing",
@@ -121,7 +121,7 @@
           "detail": "queue reached EXECUTING"
         }
       ],
-      "evidenceDigest": "80add470be4bfe56839e6cf1ee0d98d3e64d46bad112dc043709851336fd9edc"
+      "evidenceDigest": "5ff16000743386e391df969d6a3b58d78a6efbf690505ea7adef31eaeb742c2d"
     },
     {
       "schemaVersion": 2,
@@ -133,14 +133,14 @@
       "probeDefinitionSha256": "6aa691f70069a7bf6d17b4c2b18960e480556e198a0da67a9233748b328192ee",
       "targetState": "ENFORCED",
       "observedState": "ENFORCED",
-      "verdict": "PASS",
-      "verifiedAtSha": "ccfe3069d4f288b9a7da8ca204fb303916077f87",
+      "verdict": "STALE",
+      "verifiedAtSha": "edf9689b9516433403f26fe548614b4307c6165d",
       "expectedMergeSha": null,
       "sourceBranch": "claude/gov-coord-dtv-wp02-finalize-cmd-r01",
-      "dirtyTree": false,
-      "startedAt": "2026-07-28T00:03:14.545Z",
-      "finishedAt": "2026-07-28T00:03:15.530Z",
-      "durationMs": 985,
+      "dirtyTree": true,
+      "startedAt": "2026-07-28T00:06:24.117Z",
+      "finishedAt": "2026-07-28T00:06:31.458Z",
+      "durationMs": 7341,
       "commandDigest": "0d09dd7892661dcf967198378d82d8b6ef581be2060e5b6c897bec84ec87ba3d",
       "commandCount": 6,
       "failureCode": null,
@@ -177,7 +177,7 @@
           "detail": "GOVERNANCE_GRANT_CANNOT_RUN_CODE"
         }
       ],
-      "evidenceDigest": "cf6c440e74b87997751f098c786ec3f16ab23a9794b60923cfc25776e6dae5f7"
+      "evidenceDigest": "6fb84768971e3f1584c54a633c3809eecd015c769ee416a4c8c2fa777a942122"
     },
     {
       "schemaVersion": 2,
@@ -189,14 +189,14 @@
       "probeDefinitionSha256": "d66351272f15c3bac3a025b63af6e0f5256ccdd1591ec2d001ee218eca4dac5c",
       "targetState": "ENFORCED",
       "observedState": "ENFORCED",
-      "verdict": "PASS",
-      "verifiedAtSha": "ccfe3069d4f288b9a7da8ca204fb303916077f87",
+      "verdict": "STALE",
+      "verifiedAtSha": "edf9689b9516433403f26fe548614b4307c6165d",
       "expectedMergeSha": null,
       "sourceBranch": "claude/gov-coord-dtv-wp02-finalize-cmd-r01",
-      "dirtyTree": false,
-      "startedAt": "2026-07-28T00:03:15.530Z",
-      "finishedAt": "2026-07-28T00:03:31.334Z",
-      "durationMs": 15804,
+      "dirtyTree": true,
+      "startedAt": "2026-07-28T00:06:31.458Z",
+      "finishedAt": "2026-07-28T00:06:56.296Z",
+      "durationMs": 24838,
       "commandDigest": "4c318e0f2117b6f04f232d65c27105c3351ad1aaa4d05bdcd11d3ba00e71f423",
       "commandCount": 9,
       "failureCode": null,
@@ -235,12 +235,12 @@
         {
           "name": "durable MERGE_READY handoff",
           "verdict": "PASS",
-          "detail": "c1da71fd1b7e"
+          "detail": "82becc761f2e"
         },
         {
           "name": "real merge",
           "verdict": "PASS",
-          "detail": "770a0fb1daae exists as a commit"
+          "detail": "d6faf6c66da8 exists as a commit"
         },
         {
           "name": "queue walk",
@@ -253,8 +253,8 @@
           "detail": "exit 0, one merge, same sha"
         }
       ],
-      "evidenceDigest": "36af13f7b26cf9229d931aa864e7e9046102de70ec3e083eb98de7d33eb55877"
+      "evidenceDigest": "c10958e7b675bab65f12f7e30d1cd45eae479320f5e1f66e11c6fcc88198699b"
     }
   ],
-  "evidenceDigest": "c63d1f4bbee6fef469389d73ee2aded3a9b4a12217a1e9cb0c05eadb581c7145"
+  "evidenceDigest": "1dce86438117ec7ee072bb18e82be4ae06c7b0bee4704c1193808cfd11f262a6"
 }
