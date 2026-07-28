@@ -15,6 +15,7 @@
  *   orch-service reconcile-merged    close a BLOCKED entry whose PR already merged
  *   orch-service repin-artefacts     re-pin an entry after an authorized artefact fix
  *   orch-service repin-plan          re-pin an entry after an authorized plan-digest fix
+ *   orch-service reconcile-task-store  close a task store the merge left behind
  *   orch-service status              what is happening, and why it is not
  *   orch-service blocker --entry ID  what the gate that refused actually saw
  *   orch-service stop  --reason ...  admit nothing, merge nothing. Now.
@@ -379,6 +380,38 @@ function main(argv) {
      * Re-pin an entry blocked by ARTEFACT_DIGEST_MISMATCH after its authority
      * artefacts were corrected under an owner decision.
      */
+    case 'reconcile-task-store': {
+      if (!args.flags.task || !args.flags.authority) {
+        process.stdout.write(
+          'usage: orch-service reconcile-task-store --task <taskId> --authority <owner decision ref>\n\n' +
+          'For a task whose QUEUE closed with a merge while the TASK STORE still says\n' +
+          'BLOCKED. Every external fact is checked first — the pull request is merged,\n' +
+          'the merge sha matches the queue, it is an ancestor of origin/main and has not\n' +
+          'been reverted — and the historical blocker is preserved.\n',
+        );
+        return 2;
+      }
+      const store = stateMod.createStore(stateMod.defaultStateDir(root));
+      const r = require('./task-store-reconcile.cjs').reconcileMergedTaskStore({
+        store,
+        queue,
+        taskId: args.flags.task,
+        repoCwd: root,
+        reconciliationAuthority: args.flags.authority,
+      });
+      const lines = [r.disposition];
+      if (r.refusal) lines.push('  refusal   : ' + r.refusal);
+      if (r.detail) lines.push('  detail    : ' + r.detail);
+      if (r.evidence) {
+        lines.push('  was       : ' + r.evidence.previousState + ' (' + r.evidence.previousBlockerCode + ')');
+        lines.push('  pr        : #' + r.evidence.prNumber);
+        lines.push('  mergeSha  : ' + r.evidence.mergeSha);
+        lines.push('  reason    : ' + r.evidence.reasonCode);
+      }
+      process.stdout.write(lines.join('\n') + '\n');
+      return r.reconciled || r.disposition === 'ALREADY_RECONCILED' ? 0 : 1;
+    }
+
     case 'repin-plan': {
       if (!args.flags.entry || !args.flags.authority) {
         process.stdout.write(
