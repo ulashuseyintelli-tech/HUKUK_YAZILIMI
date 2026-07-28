@@ -102,6 +102,21 @@ function buildHandoff(o) {
     attestation: att,
     createdAt: att.createdAt || null,
     expiresAt: att.expiresAt || null,
+    // ── delivery identity (schema v2) ────────────────────────────────────────
+    //
+    // Carried so a restarted process knows WHAT it must verify after the merge
+    // without re-deriving it from a plan it may no longer be able to read.
+    //
+    // Transport, never authority: finalization re-reads the task, the grants
+    // and the manifest from canonical sources and compares. A handoff copied
+    // from an older task version therefore fails closed rather than verifying
+    // the wrong claim — the handoff can say what to check, never whether the
+    // check is still the ratified one.
+    taskSchemaVersion: (resolved.spec && resolved.spec.schemaVersion) || 1,
+    deliveryContract: (resolved.spec && resolved.spec.deliveryContract) || null,
+    deliveryContractSha256: (resolved.spec && resolved.spec.deliveryContract)
+      ? require('../orchestrator/authority.cjs').deliveryContractDigest(resolved.spec.deliveryContract)
+      : null,
   };
 }
 
@@ -335,6 +350,7 @@ async function finalizeEntry(o) {
   }
   audit('FINALIZE_ATTEMPTED', { entryId: entry.entryId, pr: h.prNumber, fromState: entry.state });
 
+  let deliveryResult = null;
   let closure;
   try {
     closure = await o.completeAfterOwnerMerge(Object.assign({}, ctx, { result }));
@@ -383,21 +399,140 @@ async function finalizeEntry(o) {
   // Each step is skipped if the entry is already past it, which is what makes
   // resuming from a crash in SYNCING or CLEANING finish the tail rather than
   // re-run the merge.
-  const walk = ['MERGED', 'SYNCING', 'CLEANING', 'CLOSED'];
-  const patchFor = {
-    MERGED: { mergeSha: closure.mergeSha },
-    CLEANING: { cleanup: (closure.cleanup && closure.cleanup.disposition) || null },
-    CLOSED: { owner: null },
-  };
-  for (const to of walk) {
+  // MERGED and SYNCING first. The merge sha is durable before anything that can
+  // fail runs, because a merge that happened and was forgotten is worse than one
+  // that never happened.
+  for (const to of ['MERGED', 'SYNCING']) {
     const at = queue.get(entry.entryId).state;
-    if (walk.indexOf(at) >= walk.indexOf(to)) continue;
+    if (['MERGED', 'SYNCING', 'CLEANING', 'CLOSED'].indexOf(at) >= ['MERGED', 'SYNCING', 'CLEANING', 'CLOSED'].indexOf(to)) continue;
     queue.transition({
       entryId: entry.entryId,
       to,
       expectedPreviousState: at,
       nowMs: clock(),
-      patch: patchFor[to] || {},
+      patch: to === 'MERGED' ? { mergeSha: closure.mergeSha } : {},
+    });
+  }
+
+  // ── delivery verification, at the sha the merge actually produced ─────────
+  //
+  // Represented as a durable SUBSTATE of SYNCING rather than a new queue state.
+  // Adding DELIVERY_VERIFYING to the table would be a migration of every reader
+  // — recovery's rewind map, the slot calculation, the operator console — for a
+  // phase that lasts one call, and recovery already knows how to resume from
+  // SYNCING. What matters is that the durable log distinguishes the facts:
+  // merge completed, verification started, verification's verdict, cleanup,
+  // CLOSED. It does, by payload, at the same instant it would by state name.
+  // The contract is re-read from the task, not taken from the handoff. The
+  // handoff says which claim to verify; whether that claim is still the
+  // ratified one is a question only the canonical sources can answer, and a
+  // handoff written before the task was amended would otherwise verify a
+  // capability the grant no longer covers.
+  const liveSpec = resolved.spec || {};
+  const contract = liveSpec.deliveryContract || null;
+  if (h.deliveryContractSha256 || contract) {
+    const authorityMod = require('../orchestrator/authority.cjs');
+    if (!contract) {
+      return blockedFinalization(queue, entry, clock, audit, 'FINALIZATION_DELIVERY_CONTRACT_MISSING',
+        'the handoff declares a delivery contract the task no longer carries');
+    }
+    const liveDigest = authorityMod.deliveryContractDigest(contract);
+    if (h.deliveryContractSha256 && h.deliveryContractSha256 !== liveDigest) {
+      return blockedFinalization(queue, entry, clock, audit, 'FINALIZATION_DELIVERY_CONTRACT_CHANGED',
+        'handoff=' + h.deliveryContractSha256 + ' live=' + liveDigest);
+    }
+  }
+  if (contract && o.verifyDelivery) {
+    queue.transition({
+      entryId: entry.entryId,
+      to: 'SYNCING',
+      expectedPreviousState: 'SYNCING',
+      nowMs: clock(),
+      patch: { deliveryPhase: 'DELIVERY_VERIFYING', mergeSha: closure.mergeSha },
+    });
+    audit('DELIVERY_VERIFY_STARTED', { entryId: entry.entryId, mergeSha: closure.mergeSha, capabilityId: contract.capabilityId });
+
+    let delivery;
+    try {
+      delivery = await o.verifyDelivery({
+        repoCwd,
+        mergeSha: closure.mergeSha,
+        capabilityId: contract.capabilityId,
+        targetBranch: h.targetBranch,
+        timeoutMs: contract.timeoutMs,
+      });
+    } catch (e) {
+      delivery = {
+        verdict: 'FAIL',
+        failureCode: (e && e.code) || 'POST_MERGE_DELIVERY_FAILED',
+        detail: String((e && e.message) || e).slice(0, 300),
+        observedState: 'NOT_RUN',
+      };
+    }
+
+    if (delivery.verdict !== 'PASS' && delivery.verdict !== 'NOT_APPLICABLE') {
+      // The merge HAPPENED. Saying otherwise, retrying it, or opening a second
+      // PR would each be a lie about the repository's actual state — so the
+      // entry blocks with the merge sha intact and the delivery failure named,
+      // and a later authorized finalize resumes at verification rather than at
+      // the merge.
+      audit('DELIVERY_VERIFY_FAILED', {
+        entryId: entry.entryId,
+        mergeSha: closure.mergeSha,
+        verdict: delivery.verdict,
+        failureCode: delivery.failureCode || null,
+      });
+      queue.transition({
+        entryId: entry.entryId,
+        to: 'BLOCKED',
+        expectedPreviousState: queue.get(entry.entryId).state,
+        nowMs: clock(),
+        patch: {
+          blockerCode: delivery.failureCode || 'POST_MERGE_DELIVERY_FAILED',
+          mergeSha: closure.mergeSha,
+          deliveryPhase: 'DELIVERY_FAILED',
+          delivery: delivery.record || delivery,
+          owner: null,
+        },
+      });
+      return {
+        disposition: 'MERGED_UNVERIFIED',
+        entryId: entry.entryId,
+        queueState: 'BLOCKED',
+        // Reported, not hidden: the change IS merged, and the operator's next
+        // move depends on knowing that.
+        mergeSha: closure.mergeSha,
+        blockerCode: delivery.failureCode || 'POST_MERGE_DELIVERY_FAILED',
+        delivery,
+        detail: delivery.detail || 'delivery verification did not pass at the merge sha',
+      };
+    }
+
+    audit('DELIVERY_VERIFY_PASSED', {
+      entryId: entry.entryId,
+      mergeSha: closure.mergeSha,
+      capabilityId: contract.capabilityId,
+      evidenceDigest: (delivery.record && delivery.record.evidenceDigest) || null,
+    });
+    queue.transition({
+      entryId: entry.entryId,
+      to: 'SYNCING',
+      expectedPreviousState: 'SYNCING',
+      nowMs: clock(),
+      patch: { deliveryPhase: 'DELIVERY_VERIFIED', delivery: delivery.record || delivery },
+    });
+    deliveryResult = delivery;
+  }
+
+  for (const to of ['CLEANING', 'CLOSED']) {
+    const at = queue.get(entry.entryId).state;
+    if (['CLEANING', 'CLOSED'].indexOf(at) >= ['CLEANING', 'CLOSED'].indexOf(to)) continue;
+    queue.transition({
+      entryId: entry.entryId,
+      to,
+      expectedPreviousState: at,
+      nowMs: clock(),
+      patch: to === 'CLEANING' ? { cleanup: (closure.cleanup && closure.cleanup.disposition) || null } : { owner: null },
     });
   }
 
@@ -415,7 +550,34 @@ async function finalizeEntry(o) {
     mergeSha: closure.mergeSha,
     blockerCode: null,
     cleanup: closure.cleanup || null,
+    delivery: deliveryResult,
     detail: null,
+  };
+}
+
+/**
+ * Block an entry whose delivery identity no longer matches the ratified one.
+ *
+ * The merge has already happened by the time this can fire, so the entry keeps
+ * its merge sha and the operator is told exactly which digest moved. Retrying
+ * the merge, or closing anyway, would each be a lie about what was verified.
+ */
+function blockedFinalization(queue, entry, clock, audit, code, detail) {
+  audit('FINALIZE_BLOCKED', { entryId: entry.entryId, blockerCode: code, detail });
+  queue.transition({
+    entryId: entry.entryId,
+    to: 'BLOCKED',
+    expectedPreviousState: queue.get(entry.entryId).state,
+    nowMs: clock(),
+    patch: { blockerCode: code, deliveryPhase: 'DELIVERY_IDENTITY_CHANGED', owner: null },
+  });
+  return {
+    disposition: 'BLOCKED',
+    entryId: entry.entryId,
+    queueState: 'BLOCKED',
+    mergeSha: queue.get(entry.entryId).mergeSha || null,
+    blockerCode: code,
+    detail,
   };
 }
 
@@ -445,6 +607,7 @@ module.exports = {
   assertHandoff,
   rebuildResult,
   makeWorktreeCleanup,
+  blockedFinalization,
   finalizeEntry,
   finalizable,
 };

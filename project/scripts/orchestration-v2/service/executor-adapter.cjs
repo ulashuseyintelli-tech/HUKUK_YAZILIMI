@@ -265,6 +265,11 @@ async function runEntry(o) {
       completeAfterOwnerMerge: o.completeAfterOwnerMerge,
       isKillSwitchEngaged: o.isKillSwitchEngaged,
       isRevoked: o.isRevoked,
+      // Passed through so the in-line route verifies delivery exactly as the
+      // after-a-crash route does. Omitting it here would give the common path
+      // weaker rules than the recovery path — the asymmetry this module was
+      // rewritten to remove.
+      verifyDelivery: o.verifyDelivery,
       audit,
       clock,
     })

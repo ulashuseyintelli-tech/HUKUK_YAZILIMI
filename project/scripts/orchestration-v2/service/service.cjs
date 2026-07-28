@@ -356,6 +356,13 @@ function createService(cfg) {
           audit,
           clock,
           isKillSwitchEngaged: () => service.killSwitchEngaged(),
+        // Post-merge delivery verification, at the sha the merge produced.
+        // Injected rather than required inline so a caller with no delivery
+        // contract pays nothing, and so tests can exercise the failure path
+        // without a real merge.
+        verifyDelivery: o.verifyDelivery === undefined
+          ? (a) => require('../delivery/post-merge.cjs').verifyAtMergeSha(a)
+          : o.verifyDelivery,
           // Same repo-backed default as finalizeEntry, and for the same reason:
           // the CLI supplies no options, so an undefined here means the merge
           // gate never asks whether the grant was withdrawn.
