@@ -560,14 +560,14 @@ W2.2C-2          : CLOSED / CANONICAL — PR #1377 @ fcba6d98
 W2.2C-3          : CLOSED / CANONICAL — PR #1382 @ be1771d3
 W2.2C-4          : CLOSED / CANONICAL — PR #1391 @ facc7789
 W2.2C-5          : CLOSED / CANONICAL — PR #1401 @ 0452e836
-W2.2D-0          : CLOSED / CANONICAL UPON APPROVED RECONCILIATION MERGE — PR #1407 @ 1156e4de
-W2.2D-1          : PARTIALLY EXECUTED — schema foundation tescil edildi (PR #1415 @ 80a11c2a, bkz. §W2.2D-1R);
-                   kalan semantik kapsam OWNER GO REQUIRED / IMPLEMENTATION NOT AUTHORIZED
-W2.2D-1A         : OWNER-AUTHORIZED — CONFIRMED-AT CHARACTERIZATION, test-only successor (bkz. §W2.2D-1A)
-W2.2E            : NOT AUTHORIZED — W2.2D BOUNDARY PENDING
-W2.2             : ACTIVE — W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4/W2.2C-5 closed; W2.2D-0 closes upon approved reconciliation; W2.2D-1 owner-gated
+W2.2D-0          : CLOSED / CANONICAL — PR #1407 @ 1156e4de + reconciliation PR #1411 @ 1c73b7d9
+W2.2D-1          : SCHEMA FOUNDATION CLOSED / CANONICAL EVIDENCE — PR #1415 @ 80a11c2a; confirmedAt runtime writer ayrı Task 07 RC-COL-W2.2D-2 kapsamındadır ve henüz uygulanmamıştır
+W2.2D-1A         : CLOSED / CANONICAL EVIDENCE — test-only characterization PR #1660 @ 168daec7; runtime/schema etkisi yoktur
+W2.2E            : NOT AUTHORIZED — W2.2D CONFIRMATION / ATOMIC PROJECTION BOUNDARY PENDING
+W2.2             : ACTIVE — candidate/evidence/admission guard ile D-1 foundation ve D-1A evidence closed; confirmedAt writer, atomic projection, idempotency ve legal-application runtime zinciri açık
 W2.3             : BLOCKED — W2.2 BOUNDARY PENDING
-PHASE 2          : ACTIVE — W2.1/W2.2A/W2.2B/W2.2C-0/W2.2C-1/W2.2C-2/W2.2C-3/W2.2C-4/W2.2C-5 closed; W2.2D-0 closes upon approved reconciliation; W2.2D-1 owner-gated; W2.3 blocked; W2.4–W2.5 owner-gated
+FULL REMEDIATION : TASK 01 TPA-04C CLOSURE CLOSED; TASK 02 CURRENCY BOUNDARY CLOSED PR #1822 @ 43e3c1f9; TASK 03 AUTOMATION CONSUMER CLOSED PR #1828 @ 518d08a2; TASK 04 GOVERNANCE RECONCILIATION CLOSED UPON APPROVED MERGE; NEXT TASK 05 RC-COL-W2.2B-R01
+PHASE 2          : ACTIVE — TPA-04C CLOSED; TPA-04D AUTHORIZED / DEPENDENCY-GATED / NOT ACTIVE; runtime writer, representative evidence, cutover, legacy retirement ve ACT-28 / REC-AUTH-011/012 closure açık
 PHASE 3    <── COL/OD-02, -14, -15, -17, -19, -20
 PHASE 4    <── PHASE 1 tamamı + COL/OD-11, -12, -13, -16 + CAN-CUT-01/02
 PHASE 5    <── PHASE 4
