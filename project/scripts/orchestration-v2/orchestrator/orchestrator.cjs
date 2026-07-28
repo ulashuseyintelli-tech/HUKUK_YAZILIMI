@@ -633,11 +633,26 @@ async function runTask(ctx) {
   // minutes, exited 0, reported success, and left a stray remote branch behind.
   // Blocking here keeps the remote clean and names the real cause.
   if (verdict.changeCount === 0) {
+    // The executor's own output is kept HERE, and it is the only place it can
+    // be kept. This branch runs on a successful exit, and summarize() drops
+    // stdout and stderr unless it is told otherwise — so the one verdict that
+    // cannot be diagnosed without the executor's words was the one recording
+    // none of them. cleanupWorktree() then removes the tree the run happened
+    // in, and with it the last copy.
+    //
+    // Measured: a second canary attempt reached exactly this line, and all that
+    // survived was "executor exited successfully but changed no files". Whether
+    // the lane refused, misread its prompt, or wrote outside the boundary was
+    // unanswerable, and the run had to be repeated blind to find out.
+    //
+    // Read the output BEFORE the cleanup, for the obvious reason.
+    const silence = summarize(run, true);
     cleanupWorktree();
     release('TERMINAL_BLOCKED_PUBLISHED');
     return blocked(
       'NO_CHANGES_PRODUCED',
       'executor exited successfully but changed no files; nothing to publish',
+      { run: silence },
     );
   }
 

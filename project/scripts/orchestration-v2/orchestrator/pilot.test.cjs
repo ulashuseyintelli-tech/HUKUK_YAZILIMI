@@ -727,6 +727,22 @@ test('PILOT: an executor that changes nothing is blocked before anything is push
   assert.equal(opened, 0, 'no branch may be published for an empty attempt');
   assert.ok(r.trace.includes('VALIDATING'), JSON.stringify(r.trace));
   assert.ok(!r.trace.includes('PR_OPEN'), 'PR must not be opened');
+
+  // The executor's own words survive into the record.
+  //
+  // They did not. summarize() keeps stdout and stderr only when told to, this
+  // branch did not tell it to, and cleanupWorktree() then deleted the tree the
+  // run happened in — so the ONE verdict that cannot be diagnosed without the
+  // executor's output was the one keeping none of it. A real canary attempt
+  // ended here and left "changed no files" as the entire evidence: whether the
+  // lane refused, misread its prompt, or wrote outside the boundary was
+  // unanswerable, and the only way to ask was to run it again blind.
+  const rec = ctx.store.current('PILOT-NO-CHANGES');
+  assert.equal(rec.state, 'BLOCKED');
+  assert.ok(rec.payload.run, 'the run summary is recorded');
+  assert.equal(typeof rec.payload.run.stdoutTail, 'string', 'stdout is kept');
+  assert.equal(typeof rec.payload.run.stderrTail, 'string', 'stderr is kept');
+  assert.equal(rec.payload.run.exitCode, 0, 'and the exit code that made this confusing');
 });
 
 // ------------------------------------------------------------- CI WAITING
