@@ -55,7 +55,14 @@ değildir** (`AGENTS.md` §4).
 
 ### Authority ledger
 
-Ledger opsiyoneldir ama verildiğinde bağlayıcıdır. Kayıt `taskId` + `pr` ile bağlanır;
+**Live closeout için ledger ZORUNLUDUR.** Ledger yoksa tüketim kaydı tutulamaz, dolayısıyla
+reuse koruması da yoktur; runner `MERGE_AUTHORITY_LEDGER_REQUIRED` ile fail-closed olur.
+`--dry-run` ledger olmadan çalışabilir — hiçbir mutation yapmadığı için tüketilecek bir şey
+de yoktur.
+
+Zorunlu binding alanları: `authorityRef`, `taskId`, `pr`; live koşuda ayrıca `expectedHead`.
+Ledger'daki `expectedHead` komuta verilenle uyuşmazsa kapanış reddedilir. Kapanış başarılı
+olduğunda runner `consumed`, `consumedPr`, `consumedTaskId` ve `consumedMergeSha` yazar. Kayıt `taskId` + `pr` ile bağlanır;
 kapanış başarılı olduğunda runner `consumed` damgasını yazar:
 
 ```json
@@ -173,7 +180,7 @@ Destructive `reset`/`clean` ve fiziksel recursive silme kullanılmaz.
 
 - Runner **opt-in** bounded capability'dir; manuel owner-authorized kapanış geçerli
   kalır ve `AGENTS.md` runner'ı default execution path olarak tanımlamaz.
-- Ledger verilmezse reuse koruması kayıt tutmaz.
+- Ledger yalnız `--dry-run` için opsiyoneldir; live closeout onsuz çalışmaz.
 - Testler `Test Suite` job'ına bağlıdır; o job required check değildir.
 
 ## Referanslar
