@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "taskId": "CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04",
+  "taskSpecVersion": 1,
+  "profile": "BOUNDED_CODE_TASK",
+  "declaredIntent": "OPERATIONAL CANARY R04. Orkestranin kendisi hakkindaki tek kullanimlik operational evidence kaydini uretir; urun davranisi eklemez. Amaci terminal zinciri kanitlamaktir: service-owned squash merge, merge SHA persistence, queue CLOSED, task store CLOSED, cleanup.",
+  "declaredIntentSha256": "4fce5e6b071dcde226936e3cd39bb3dcf089a71ad4213a1808054d268189ce71",
+  "boundaryPolicy": {
+    "allowedRoots": [
+      "project/scripts/orchestration-v2/activation-evidence/CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04.md"
+    ],
+    "maxChangedFiles": 1
+  },
+  "boundaryPolicySha256": "be8ec488e68350427559419cc9ee5d71b3109db49bd8b1e4c73be639a80c7033",
+  "requiredTests": [
+    {
+      "argv": [
+        "pnpm",
+        "exec",
+        "node",
+        "--test",
+        "scripts/orchestration-v2/orchestrator/one-shot-grant.test.cjs"
+      ],
+      "cwd": "project",
+      "timeoutMs": 600000
+    }
+  ],
+  "requiredTestsSha256": "32eb7b23b811b04a8c5a4ac111ca094146a65fff61fb43b7e5046a464cb60caa",
+  "predecessorTaskIds": [],
+  "baseDriftPolicy": "REFRESH_BEFORE_EXECUTION",
+  "baseSha": "8f2fc5cd724115b5271cc5281e4cc1da61670976",
+  "successorDisposition": "OWNER_AUTHORIZATION_REQUIRED"
+}

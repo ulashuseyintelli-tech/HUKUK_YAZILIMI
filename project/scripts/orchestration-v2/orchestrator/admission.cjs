@@ -28,6 +28,7 @@
 const authorityMod = require('./authority.cjs');
 const eligibilityMod = require('./eligibility.cjs');
 const governanceMod = require('./governance-profile.cjs');
+const oneShotMod = require('./one-shot-grant.cjs');
 
 class AdmissionError extends Error {
   constructor(code, detail) {
@@ -135,6 +136,31 @@ function evaluate(opts) {
     });
   } catch (e) {
     return { admissible: false, refusal: e.code || 'STANDING_GRANT_REFUSED', detail: e.detail || null, program: programId };
+  }
+
+  // A one-shot grant answers a question the standing-grant validator cannot
+  // even ask: has this authorization already been spent? Checked here so a
+  // consumed grant is refused at the door rather than at the merge, after an
+  // executor has run and a pull request exists that may not be merged.
+  //
+  // Checked AGAIN before the merge, because this answer is minutes old by
+  // then and another process may have spent it in between.
+  if (oneShotMod.isOneShot(grant)) {
+    try {
+      oneShotMod.assertUsable({
+        grant,
+        dir: o.oneShotLedgerDir,
+        repoCwd: o.repoCwd,
+        taskId: o.spec && o.spec.taskId,
+        programId,
+        taskClass: o.taskClass,
+        executorLane: o.executorLane,
+        taskSpecSha256: o.taskSpecSha256,
+        specRoots: (o.spec && o.spec.boundaryPolicy && o.spec.boundaryPolicy.allowedRoots) || [],
+      });
+    } catch (e) {
+      return { admissible: false, refusal: e.code || 'TASK_GRANT_REFUSED', detail: e.detail || null, program: programId };
+    }
   }
 
   return { admissible: true, refusal: null, detail: null, program: programId };

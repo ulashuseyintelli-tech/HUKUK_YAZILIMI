@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "standingGrantId": "TASK-GRANT-CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04",
+  "grantKind": "TASK_SCOPED_ONE_SHOT",
+  "profile": "BOUNDED_CODE_TASK",
+  "parentAuthorizationRef": {
+    "authorizationId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+    "ownerDecisionPath": "project/docs/governance/coordination-v2/task-plans/CANARY-R04/semantic-authority.md"
+  },
+  "program": {
+    "programId": "ORCHESTRA_OPERATIONAL_CANARY",
+    "eligibilityAuthorityRef": "project/docs/governance/coordination-v2/activation/PROGRAM-ELIGIBILITY-AUTHORITY.md"
+  },
+  "taskId": "CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04",
+  "planSha256": "845b3d47b75c40628b08c12f9656d5adf8cae3015d02369d72212fbc1586dba6",
+  "capabilities": [
+    "CREATE_EXACT_OPERATIONAL_EVIDENCE",
+    "SERVICE_OWNED_SQUASH_MERGE"
+  ],
+  "allowedTaskClasses": [
+    "OPERATIONAL_CANARY_EVIDENCE"
+  ],
+  "allowedPathRoots": [
+    "project/scripts/orchestration-v2/activation-evidence/CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04.md"
+  ],
+  "targetPathSha256": "6b19b2a6eed16fd65fa3af8d89b71354a384cfb57ee4c4c3033e209733a9eedb",
+  "allowedExecutorLanes": [
+    "CODEX_LOCAL"
+  ],
+  "maxPRs": 1,
+  "maxSuccessfulMerges": 1,
+  "maxConcurrency": 1,
+  "requiredIndependentReview": true,
+  "ciPolicy": {
+    "requireTerminalSuccess": true,
+    "allowSkipped": false,
+    "allowNeutral": true
+  },
+  "mergePolicy": {
+    "method": "SQUASH",
+    "autoMergeAuthorized": true,
+    "repositoryWideAutoMerge": false
+  },
+  "autoMergeAuthorizedBy": "OWNER-DECISION-R04-ONE-SHOT-OPERATIONAL-EVIDENCE-GRANT",
+  "prohibitedPathRoots": [
+    "project/apps/",
+    "project/packages/",
+    "project/docs/governance/coordination-v2/activation/",
+    "project/docs/governance/coordination-v2/schemas/",
+    "project/scripts/orchestration-v2/delivery/",
+    ".github/"
+  ],
+  "prohibitions": {
+    "noPrivilegeDelegation": true,
+    "noSecretAccessExpansion": true,
+    "noProductionDataMutation": true,
+    "noCrossProgramMutation": true,
+    "noSelfAuthorizationChange": true,
+    "noSchemaMigration": true,
+    "noProductionActivation": true,
+    "noExternalNetworkExpansion": true,
+    "noAuthorizationMutation": true,
+    "noGrantMutation": true,
+    "noEligibilityMutation": true,
+    "noValidatorMutation": true,
+    "noBranchProtectionMutation": true
+  },
+  "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-CANARY-R04",
+  "killSwitchPath": "project/docs/governance/coordination-v2/activation/KILL-SWITCH",
+  "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/orchestra-operational-canary.jsonl",
+  "notes": "Tek kullanimlik task-scoped grant. Standing grant DEGILDIR: tek task id, tek plan hash, tek exact dosya, tek PR ve tek basarili merge. Basarili merge sonrasi otomatik CONSUMED olur ve ikinci kullanim reddedilir. Uygulayici: scripts/orchestration-v2/orchestrator/one-shot-grant.cjs"
+}

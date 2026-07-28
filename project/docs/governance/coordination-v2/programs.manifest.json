@@ -202,6 +202,27 @@
         "taxonomyUnresolved": true,
         "overrideReason": null
       }
+    },
+    {
+      "programId": "ORCHESTRA_OPERATIONAL_CANARY",
+      "canonicalName": "Orchestra Operational Canary",
+      "taxonomyLevel": "SHARED_CONTROL_PLANE",
+      "governanceSourceFiles": [
+        "project/docs/governance/coordination-v2/governance-orchestration-contract-v2.md",
+        "project/docs/governance/coordination-v2/task-plans/CANARY-R04/semantic-authority.md"
+      ],
+      "activeStatus": "ON_ACTIVE_ROADMAP",
+      "authorizationState": "AUTHORIZED",
+      "authorizationEvidence": "OWNER-DECISION-R04-ONE-SHOT-OPERATIONAL-EVIDENCE-GRANT",
+      "liveExecutionEligibility": "ELIGIBLE",
+      "notes": "Operational canary ailesi yalniz. Bu programin standing grant'i YOKTUR: her canary kendi tek kullanimlik task-scoped grant'i ile calisir ve grant basarili merge sonrasi CONSUMED olur. Domain implementasyonu, genel orchestration-v2 ozellik gelistirmesi ve ilgisiz governance mutasyonu kapsam disindadir. Executor CODEX_LOCAL, maxConcurrency 1, SQUASH.",
+      "liveExecutionEligibilityDerivation": {
+        "reason": "AUTHORITY_NAMES_PROGRAM_AND_GOVERNANCE_PERMITS",
+        "authorityRef": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+        "standingGrantRef": "project/docs/governance/coordination-v2/activation/TASK-GRANT-CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04.json",
+        "taxonomyUnresolved": true,
+        "overrideReason": null
+      }
     }
   ],
   "eligibilityDerivedFrom": {

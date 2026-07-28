@@ -32,6 +32,7 @@ const path = require('path');
 
 const queueMod = require('../orchestrator/queue.cjs');
 const requestMod = require('./request.cjs');
+const oneShotMod = require('../orchestrator/one-shot-grant.cjs');
 
 class FinalizeError extends Error {
   constructor(code, detail) {
@@ -421,6 +422,41 @@ async function finalizeEntry(o) {
     };
   }
 
+  // Asked again, immediately before the merge, and for the same reason the
+  // kill switch is: the admission answer is minutes or hours old by now, and a
+  // one-shot grant another process spent in between must not authorize a
+  // second merge. The pull request number is included so a grant that has
+  // already opened one cannot be used to merge a different one.
+  if (oneShotMod.isOneShot(standingGrant)) {
+    try {
+      oneShotMod.assertUsable({
+        grant: standingGrant,
+        dir: queue.dir,
+        repoCwd,
+        taskId: h.taskId,
+        prNumber: h.prNumber,
+      });
+      oneShotMod.recordPr({
+        grant: standingGrant,
+        dir: queue.dir,
+        taskId: h.taskId,
+        entryId: entry.entryId,
+        prNumber: h.prNumber,
+        nowMs: clock(),
+      });
+    } catch (e) {
+      audit('FINALIZE_REFUSED', { entryId: entry.entryId, refusal: e.code || 'TASK_GRANT_REFUSED' });
+      return {
+        disposition: 'BLOCKED',
+        entryId: entry.entryId,
+        queueState: entry.state,
+        mergeSha: null,
+        blockerCode: e.code || 'TASK_GRANT_REFUSED',
+        detail: String(e.message).slice(0, 300),
+      };
+    }
+  }
+
   const ctx = o.buildContext({
     repoCwd,
     spec: resolved.spec,
@@ -517,6 +553,28 @@ async function finalizeEntry(o) {
       expectedPreviousState: at,
       nowMs: clock(),
       patch: to === 'MERGED' ? { mergeSha: closure.mergeSha } : {},
+    });
+  }
+
+  // The grant is spent HERE — after the merge sha is durable, before anything
+  // that can fail. Consuming it earlier would leave real merged work holding an
+  // authorization that no longer exists; consuming it later means a crash in
+  // the tail leaves a spent grant looking unspent, and the next attempt merges
+  // a second time.
+  if (oneShotMod.isOneShot(standingGrant)) {
+    const spent = oneShotMod.consume({
+      grant: standingGrant,
+      dir: queue.dir,
+      taskId: h.taskId,
+      entryId: entry.entryId,
+      prNumber: h.prNumber,
+      mergeSha: closure.mergeSha,
+      nowMs: clock(),
+    });
+    audit('TASK_GRANT_CONSUMED', {
+      entryId: entry.entryId,
+      grantId: (spent && spent.grantId) || null,
+      mergeSha: closure.mergeSha,
     });
   }
 

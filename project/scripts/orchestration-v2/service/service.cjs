@@ -374,6 +374,13 @@ function createService(cfg) {
           priority: req.priority,
           dependsOn: req.dependsOn,
           requestPath: opts.requestPath,
+          // Where a one-shot grant's ledger lives, and where its revocation
+          // file would be. Beside the queue, in the git common dir, so every
+          // worktree and every session reads the same copy — a consumption
+          // record only one process can see authorizes the second merge it
+          // exists to prevent.
+          oneShotLedgerDir: queue.dir,
+          repoCwd,
           artefactSha256: resolved.artefacts && resolved.artefacts.digest,
           artefactsCommitted: Boolean(resolved.artefacts && resolved.artefacts.readFromRef),
           operation: opts.operation || req.operation || null,
