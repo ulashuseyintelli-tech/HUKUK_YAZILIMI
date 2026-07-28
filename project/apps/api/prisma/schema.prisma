@@ -366,6 +366,10 @@ model User {
   claimFormationSnapshotsRequested   ClaimFormationSnapshot[]   @relation("ClaimFormationSnapshotRequester")
   claimFormationSnapshotsApproved    ClaimFormationSnapshot[]   @relation("ClaimFormationSnapshotApprover")
 
+  // OFFICE CAP-02: ReportingLine authorization graph'inin iki ucu (tenant-safe composite FK).
+  reportingLinesAsActor   ReportingLine[] @relation("ReportingLineActor")
+  reportingLinesAsManager ReportingLine[] @relation("ReportingLineManager")
+
   @@unique([id, tenantId])
   @@unique([tenantId, email])
   @@unique([tenantId, id])
@@ -9649,6 +9653,16 @@ model ReportingLine {
 
   actorUserId   String // amiri bu satırla tanımlanan kişi
   managerUserId String? // amir/yönetici; TOP_LEVEL disposition'da null
+
+  // CAP-02 STEP 0 (FK-HARDENING-I01): tenant-safe composite FK. Referans anahtarı
+  // User(tenantId, id) — cross-tenant bir actor/manager DB seviyesinde IMKANSIZ olur;
+  // önceki halde bu kolonlar çıplak String'di ve koruma yalnız servis katmanındaydı.
+  // onDelete: Restrict — hiyerarşide referansı olan bir authorization principal'ı
+  // silinemez (sessiz yetki kaybı yerine açık hata). managerUserId nullable olduğu için
+  // (MATCH SIMPLE) TOP_LEVEL satırlarında FK denetlenmez; MANAGED/TOP_LEVEL ile manager
+  // tutarlılığı zaten reporting_line_disposition_manager_ck CHECK'i tarafından garantidir.
+  actor   User  @relation("ReportingLineActor", fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: Restrict)
+  manager User? @relation("ReportingLineManager", fields: [tenantId, managerUserId], references: [tenantId, id], onDelete: Restrict)
 
   disposition ReportingLineDisposition @default(MANAGED)
 
