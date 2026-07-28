@@ -77,11 +77,12 @@ Current program             : RCV-CLAIM-FORM-P02
 Current phase               : S08
 Current workstream          : D02
 Last completed foundation   : RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION
-Next eligible task          : RCV-CLAIM-FORM-P02-S08-D02-PB01
+Last completed task         : RCV-CLAIM-FORM-P02-S08-D02-PB01 — CLOSED / CANONICAL / PASS (implementation PR #1794 / a62e078a)
+Next eligible task          : RCV-CLAIM-FORM-P02-S08-D02-KC01
 Next task status            : OWNER GO REQUIRED / NOT STARTED
 Claim Formation runtime     : DORMANT
 PB01 live migration apply   : NOT PERFORMED
-PB01 start blockers         : NONE
+PB01 start blockers         : CLOSED / NOT APPLICABLE
 RCV-CLAIM-FORM-P01-R01      : CONTRACT RATIFIED / FORMALLY CLOSED / CANONICAL
 RCV-CLAIM-FORM-P02-S01      : FORMALLY CLOSED / CANONICAL
 RCV-CLAIM-FORM-P02-S02-I01  : FORMALLY CLOSED / CANONICAL
@@ -109,7 +110,8 @@ RCV-CLAIM-FORM-P02-S08-D02-CR01 : COMPONENT CATEGORY BINDING RATIFIED / CANONICA
 RCV-CLAIM-FORM-P02-S08-D02-F01-R03 : LEGAL BASIS RELEASE INPUTS RATIFIED / CANONICAL — SR01 + KEYS + CHECKSUM DECISIONS MISSING
 RCV-CLAIM-FORM-P02-S08-D02-SR01 : RATIFIED / CANONICAL — VERSIONED LEGAL SUBTYPE REGISTRY V1
 RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION : COMPLETE / CANONICAL (PR #1630 / d7ef31f6) — ADDITIVE / DORMANT / LIVE APPLY NONE
-RCV-CLAIM-FORM-P02-S08-D02-PB01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
+RCV-CLAIM-FORM-P02-S08-D02-PB01 : CLOSED / CANONICAL / PASS (implementation PR #1794 / a62e078a)
+RCV-CLAIM-FORM-P02-S08-D02-KC01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
@@ -117,7 +119,7 @@ I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 PB01 foundation migration  : MERGED / LIVE APPLY NOT AUTHORIZED / NOT PERFORMED
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / GIT CLEANUP COMPLETE / PHYSICAL ORPHAN NON-BLOCKING
-Claim Formation PB01 gate   : OWNER GO REQUIRED / NOT STARTED
+Claim Formation PB01 gate   : CONSUMED / COMPLETE
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -3864,3 +3866,54 @@ Claim Formation locator'ını ve S05'in güncel operasyonel durumunu ileriye dö
 S05 dizini Git registration, `.git` metadata, unique commit veya owner WIP taşımadığı için blocking
 değildir. PB01 semantic görevi bu kayıtla başlamaz; implementation authority ayrı owner GO ister.
 Kod, schema, migration, runtime activation, live database apply veya production mutation yoktur.
+
+## 13. Exact Legal Basis Projection Binding Contract Formal Closure — 2026-07-28
+
+```text
+TASK                               RCV-CLAIM-FORM-P02-S08-D02-PB01
+STATUS                             CLOSED / CANONICAL / PASS UPON APPROVED GOVERNANCE MERGE
+IMPLEMENTATION PR                  #1794
+IMPLEMENTATION SQUASH              a62e078a33803774ef5595343092ab2ad36d48a9
+IMPLEMENTATION CI                  4/4 PASS
+CONTRACT                           RCV-CLAIM-LEGAL-BASIS-PROJECTION-BINDING@1
+PROJECTION SCHEMA VERSION          1
+SERIALIZATION                      CANONICAL_JSON_UTF8_V1
+CHECKSUM                           SHA-256 / LOWERCASE HEX
+ADMISSION BINDING                  IMPLEMENTED / ATOMIC WITH INTENT + OFFICEAPPROVAL
+FINALIZATION REVALIDATION          IMPLEMENTED / EXACT-VERSION / BYTE-EXACT / FAIL-CLOSED
+LEGACY UNBOUND                     FORMATION_LEGAL_BASIS_BINDING_REQUIRED / NO INFERENCE
+SNAPSHOT                           EXACT INTENT BINDING COPY / IMMUTABLE
+RUNTIME                            DORMANT / NO PRODUCTION ACTIVATION
+SCHEMA / MIGRATION                 NONE IN PB01
+LIVE DATABASE APPLY                NONE
+HISTORICAL BACKFILL                NONE
+AUTHORITY BOOTSTRAP PR             #1797 / 0f5a02ff995f4c459748f3a3598a1d0aa0ca1a39
+CONTROL-PLANE BINDING PR           #1799 / c0348dd2b5df714742a6c99893c676a288b7a332
+NEXT ELIGIBLE TASK                 RCV-CLAIM-FORM-P02-S08-D02-KC01
+NEXT TASK STATUS                   OWNER GO REQUIRED / NOT STARTED
+```
+
+PB01, admission sırasında exact release, Legal Basis, SR01 registry ve subtype identity'sini;
+karar üreten projection alanlarını; authority temporal context'ini ve integrity metadata'yı tek
+closed canonical payload içinde bağlar. Payload Unicode NFC/LF normalization, recursive
+lexicographic object-key ordering ve preserved array order ile serialize edilir; lowercase SHA-256
+checksum immutable intent envelope'ına atomik kaydedilir ve intent checksum'una dahil edilir.
+
+Finalizer stored envelope'ın canonical şekil ve checksum bütünlüğünü herhangi bir resolver veya
+financial write öncesinde doğrular; yalnız pinned exact authority'yi fallback olmadan yeniden çözer,
+projection'ı yeniden üretir ve authority identity, canonical payload ile checksum'u byte-exact
+karşılaştırır. Mismatch, revoked/unresolvable authority veya legacy all-null binding ClaimItem,
+snapshot, audit, event ve outbox write'ından önce deterministic fail-closed sonuç üretir. Başarılı
+retry mevcut exact snapshot'ı uzlaştırır ve ikinci ClaimItem üretmez.
+
+Validation evidence: SR01 exact seven-entry registry/checksum PASS; focused PB01 `7 suite / 106
+test`, machine contract `31/31`, ClaimItem critical manifest `33 suite / 469 test`, disposable
+PostgreSQL `109 migration + 3 suite / 32 test` PASS; production TypeScript, Nest build, changed-file
+ESLint, canonicalization/determinism/mutation, no-fallback, idempotency, snapshot equality,
+schema/migration/runtime-activation/secret/scope guard'ları PASS. Public API, Web, Prisma schema,
+migration seti, live database, production data, key/signature, signed release ve historical rows
+değişmemiştir.
+
+Bu kapanış D02-KC01'i başlatmaz. D02-F01, D02-I01/I02/I03, I04, I05, production canary,
+containment retirement, production resolver ve runtime activation ayrı owner gate'lerinde ve
+eligible değildir.
