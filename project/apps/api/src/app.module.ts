@@ -39,6 +39,9 @@ import { EscalationModule } from "./modules/escalation/escalation.module";
 import { ExportImportModule } from "./modules/export-import/export-import.module";
 import { PoaModule } from "./modules/poa/poa.module";
 import { PortalModule } from "./modules/portal/portal.module";
+// CLIENT-FD-ACT-R01-I02: Track B domain servislerinin production composition binding'i.
+// Controller/route/cron TANIMLAMAZ; dispatcher fail-closed varsayilana baglidir.
+import { ClientFinancialDisclosureModule } from "./modules/client-financial-disclosure/client-financial-disclosure.module";
 import { CalendarModule } from "./modules/calendar/calendar.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { SeedModule } from "./modules/seed/seed.module";
@@ -187,6 +190,7 @@ function getConditionalImports(): Type<unknown>[] {
     ExportImportModule,
     PoaModule,
     PortalModule,
+    ClientFinancialDisclosureModule,
     CalendarModule,
     AuditModule,
     SeedModule,
