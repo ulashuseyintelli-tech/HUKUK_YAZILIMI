@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError } from "@/lib/case-due-payload";
 import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
 import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields } from "@/lib/poa-ux";
@@ -207,7 +207,7 @@ function claimItemKalemLabel(kalemTuru?: string): string {
     case 'CEZAI_SART': return 'Cezai Şart';
     case 'HARC': return 'Harç';
     case 'DIGER_FERI': return "Diğer Fer'i Alacak";
-    default: return 'Asıl Alacak';
+    default: return 'Alacak kalemi türü seçilmelidir.';
   }
 }
 
@@ -226,7 +226,7 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
 
   // 1. Ana Alacak Kalemi
   if (item.bakiyeTutar && item.bakiyeTutar > 0) {
-    // PR-i1: fer'i/masraf kalemTuru → doğru DueType (PRINCIPAL varsayılan).
+    // PR-i1: fer'i/masraf kalemTuru → doğru DueType; bilinmeyen/boş değer fail-closed.
     const anaDueType = mapClaimKalemTuruToDueType(kalemTuru);
     const interestIntent = anaDueType === 'INTEREST'
       ? null
@@ -297,6 +297,11 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
 // Flag ON: TAM kambiyo → instruments[] (source:MANUAL), dues'a DEĞİL (K1); eksik kambiyo → dues fallback.
 // Flag OFF: hepsi dues (PR-2a).
 function claimItemsToDues(items: ClaimDraftItem[], startDate: string, manualInstrumentsEnabled: boolean): DueItem[] {
+  // Batch preflight: legacy passthrough veya instrument routing dahil hiçbir dal invalid
+  // classification'ı mapper'dan kaçıramaz. Tek invalid item bütün submit'i durdurur.
+  for (const item of items) {
+    mapClaimKalemTuruToDueType(item.raw?.kalemTuru);
+  }
   const { remainingForDues } = routeClaimRawsForManualInstruments(items.map(ci => ci.raw), manualInstrumentsEnabled);
   return remainingForDues.flatMap(raw => buildDuesFromClaimItem(raw, startDate));
 }
@@ -1007,8 +1012,9 @@ export default function NewCasePage() {
   // claimDraftItems[] tek otorite; her mutasyonda dues[] buildDuesFromClaimItem köprüsüyle
   // yeniden türetilir (createCase yine dues[] gönderir). instruments[] DOKUNULMAZ.
   const applyClaimDraftItems = (next: ClaimDraftItem[]) => {
-    setClaimDraftItems(next);
     const allDues = claimItemsToDues(next, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
+    // Mapping tamamen başarılı olmadan state'i değiştirme; invalid batch UI'da da atomiktir.
+    setClaimDraftItems(next);
     setDues(allDues);
     const principalTotal = allDues
       .filter(d => d.type === 'PRINCIPAL')
@@ -1025,6 +1031,15 @@ export default function NewCasePage() {
       setError("Alacak kalemi eklemek için geçerli bir bakiye tutarı girin");
       return;
     }
+    try {
+      mapClaimKalemTuruToDueType(claimFormBuffer.kalemTuru);
+    } catch (classificationError) {
+      if (classificationError instanceof ClaimKalemTuruValidationError) {
+        setError(classificationError.message);
+        return;
+      }
+      throw classificationError;
+    }
     setError("");
     // PR-2a eski-draft guard: düzenlenen kalem artık birebir-legacy passthrough değildir;
     // __legacyDue'yu temizle ki edit, form değerlerinden yeniden türetilsin (sessiz no-op olmasın).
@@ -1034,12 +1049,20 @@ export default function NewCasePage() {
       id: editingItemIndex !== null ? claimDraftItems[editingItemIndex].id : genClaimDraftItemId(),
       raw: cleanRaw,
     };
-    if (editingItemIndex !== null) {
-      const updated = [...claimDraftItems];
-      updated[editingItemIndex] = entry;
-      applyClaimDraftItems(updated);
-    } else {
-      applyClaimDraftItems([...claimDraftItems, entry]);
+    try {
+      if (editingItemIndex !== null) {
+        const updated = [...claimDraftItems];
+        updated[editingItemIndex] = entry;
+        applyClaimDraftItems(updated);
+      } else {
+        applyClaimDraftItems([...claimDraftItems, entry]);
+      }
+    } catch (classificationError) {
+      if (classificationError instanceof ClaimKalemTuruValidationError) {
+        setError(classificationError.message);
+        return;
+      }
+      throw classificationError;
     }
     resetClaimEditor();
   };
@@ -1178,21 +1201,30 @@ export default function NewCasePage() {
     // kolaylığı için listeye dahil et. dues[] daima claimDraftItems[]'tan türetilir; createCase
     // sözleşmesi (dues[]) değişmez. Modal yolunda da listeye işlendiği için state taze kalır.
     let effClaimItems = claimDraftItems;
-    if (editingItemIndex === null && claimFormBuffer && Number(claimFormBuffer.bakiyeTutar) > 0) {
-      effClaimItems = [...claimDraftItems, { id: genClaimDraftItemId(), raw: claimFormBuffer }];
-      applyClaimDraftItems(effClaimItems);
-      resetClaimEditor();
+    let effDues: DueItem[];
+    let manualInstruments: CaseInstrumentPayload[];
+    try {
+      if (editingItemIndex === null && claimFormBuffer && Number(claimFormBuffer.bakiyeTutar) > 0) {
+        effClaimItems = [...claimDraftItems, { id: genClaimDraftItemId(), raw: claimFormBuffer }];
+        applyClaimDraftItems(effClaimItems);
+        resetClaimEditor();
+      }
+      effDues = claimItemsToDues(effClaimItems, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
+      // PR-2b-2: manuel kambiyo (CEK/SENET) → instruments[] (source:MANUAL). Flag ON'da dues'tan ÇIKARILDI (K1);
+      // OFF'ta boş (kambiyo dues'a gitti = PR-2a). createCase'e effDues ile birlikte taşınır.
+      manualInstruments = claimItemsToManualInstruments(effClaimItems, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
+    } catch (classificationError) {
+      if (classificationError instanceof ClaimKalemTuruValidationError) {
+        setError(classificationError.message);
+        return;
+      }
+      throw classificationError;
     }
-    let effDues = claimItemsToDues(effClaimItems, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
     // Eski-draft güvenliği: claimDraftItems boş ama dues doluysa (PR-2a öncesi draft / hydrate
     // edilmemiş durum) mevcut dues'u kullan — eski draft SESSİZCE boş gönderilmesin.
     if (effDues.length === 0 && dues.length > 0) {
       effDues = dues;
     }
-    // PR-2b-2: manuel kambiyo (CEK/SENET) → instruments[] (source:MANUAL). Flag ON'da dues'tan ÇIKARILDI (K1);
-    // OFF'ta boş (kambiyo dues'a gitti = PR-2a). createCase'e effDues ile birlikte taşınır.
-    const manualInstruments = claimItemsToManualInstruments(effClaimItems, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
-
     // Pre-submit validasyon
     const validation = validateCaseCreation({
       takipTuruId: caseData.takipTuruId,

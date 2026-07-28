@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws } from '../lib/case-due-payload';
+import { buildCreateCaseDuesPayload, CLAIM_KALEM_TURU_VALIDATION_MESSAGE, ClaimKalemTuruValidationError, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws } from '../lib/case-due-payload';
 
 describe('buildCreateCaseDuesPayload', () => {
   it('create-case payload alacak faiz alanlarini dusurmez', () => {
@@ -170,7 +170,7 @@ describe('buildCreateCaseDuesPayload — PR-2c-2 belge alanları passthrough', (
 
 describe("mapClaimKalemTuruToDueType (PR-i1 — genel fer'i/masraf foundation)", () => {
   it('ana/bilinen kalemTuru → PRINCIPAL (no-op-today)', () => {
-    for (const k of ['CEK', 'SENET', 'FATURA', 'KIRA', 'AIDAT', 'ASIL_ALACAK', 'KREDI', 'BANKA', 'IPOTEK', 'REHIN', 'ILAM', 'NAFAKA']) {
+    for (const k of ['CEK', 'SENET', 'FATURA', 'KIRA', 'AIDAT', 'ASIL_ALACAK', 'KREDI', 'BANKA', 'IPOTEK', 'REHIN', 'ILAM', 'NAFAKA', 'NAFAKA_BIRIKIMIS', 'NAFAKA_ISLEYECEK']) {
       expect(mapClaimKalemTuruToDueType(k)).toBe('PRINCIPAL');
     }
   });
@@ -191,10 +191,14 @@ describe("mapClaimKalemTuruToDueType (PR-i1 — genel fer'i/masraf foundation)",
     expect(mapClaimKalemTuruToDueType('ILAM_ISLEMIS_FAIZ')).toBe('INTEREST');
   });
 
-  it('bilinmeyen/boş/undefined → PRINCIPAL (güvenli default)', () => {
-    expect(mapClaimKalemTuruToDueType('___X___')).toBe('PRINCIPAL');
-    expect(mapClaimKalemTuruToDueType('')).toBe('PRINCIPAL');
-    expect(mapClaimKalemTuruToDueType(undefined)).toBe('PRINCIPAL');
+  it.each([undefined, null, '', '   ', '___X___', 'principal', ' Principal ', 'ILAM_BILINMEYEN'])('%p fail-closed reddedilir', (value) => {
+    expect(() => mapClaimKalemTuruToDueType(value)).toThrow(ClaimKalemTuruValidationError);
+    expect(() => mapClaimKalemTuruToDueType(value)).toThrow(CLAIM_KALEM_TURU_VALIDATION_MESSAGE);
+  });
+
+  it('PRINCIPAL yalnız explicit canonical seçimden üretilir', () => {
+    expect(mapClaimKalemTuruToDueType('ASIL_ALACAK')).toBe('PRINCIPAL');
+    expect(() => mapClaimKalemTuruToDueType('PRINCIPAL')).toThrow(ClaimKalemTuruValidationError);
   });
 });
 
