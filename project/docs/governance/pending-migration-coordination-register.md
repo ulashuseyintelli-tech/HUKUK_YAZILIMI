@@ -1233,3 +1233,121 @@ RECORDED / MEASURED
 LIVE APPLY AUTHORITY:
 NONE
 ```
+
+---
+
+## 21. CLIENT-P2-U03-TRACK-B-I01 — canlı migration durumu doğrulaması (2026-07-28, SALT-OKUMA)
+
+Kaynak: `CLIENT-P2-U03-TRACK-B-POST-SCHEMA-RATIFICATION-R01` Phase A (owner `GO-COMPLETE — ANALYZE-FIRST — OPERATIONAL READ-ONLY` yetkisi).
+
+§19 bu migration'ı `UNKNOWN / OWNER VERIFICATION REQUIRED`, §20 ise yalnız `prisma migrate status` çıktısıyla `NOT APPLIED` olarak kaydetmişti. Bu bölüm, statü-çıktısının ötesine geçip **veritabanı metadata'sı ile çapraz doğrulama** yapar ve iki satır arasındaki çelişkiyi kanıtla kapatır.
+
+### 21.1 Hedef ortam kimliği
+
+```text
+current_database              : hukuk_db
+server                        : PostgreSQL 16.14 (x86_64-pc-linux-musl)
+addr / port                   : 172.18.0.5 / 5432   (localhost:5432 uzerinden)
+current_user                  : postgres
+pg_is_in_recovery             : false   (primary, replica DEGIL)
+Tenant satir sayisi           : 3       (§2'nin 2026-07-21 tespitiyle tutarli)
+```
+
+Repoda **tek** `DATABASE_URL` adayı vardır (`project/apps/api/.env`); `.env.production`, `.env.staging`, secret manager, vault, terraform, helm veya k8s manifesti **yoktur**. Bu nedenle hedef ortam repository truth içinde tekil ve belirsizlik taşımaz; §2'nin canonical hedefiyle (`localhost:5432` / `hukuk_db`) birebir örtüşür.
+
+**Kapsam dürüstlüğü:** bu ölçüm yalnız bu tek hedef için geçerlidir. §20.3'ün "PRODUCTION = UNKNOWN" kaydı **korunur** — repository'de temsil edilmeyen bir ortam hakkında bu bölüm hiçbir iddia üretmez.
+
+### 21.2 Salt-okuma güvenlik kanıtı
+
+```text
+SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY   -> uygulandi
+default_transaction_read_only                          -> on (dogrulandi)
+calistirilan ifade turu                                -> yalniz SELECT
+DDL / DML / TRUNCATE / GRANT                           -> 0
+migrate deploy | dev | reset | db push | db seed        -> CALISTIRILMADI
+shadow database                                        -> OLUSTURULMADI
+credential exposure                                    -> NONE
+  (DATABASE_URL surec ici okundu; komut satirina, ciktiya, diske veya
+   commit'e HIC girmedi; kullanici adi ve parola okunmadi/yazdirilmadi)
+mutation performed                                     -> NONE
+```
+
+### 21.3 Kanıt
+
+```text
+_prisma_migrations tablosu       : VAR
+  toplam / basarili / rolled / yarim : 102 / 102 / 0 / 0
+  son uygulanan                      : 2026-07-23
+  ghost kayit (DB'de var, repoda yok): 0
+  checksum uyumu (102 kayit)         : 102/102 UYUMLU, 0 uyumsuz
+
+HEDEF migration kaydi            : YOK
+  20260726190741_client_p2_u03_track_b_i01_financial_disclosure_foundation
+  repo migration.sql sha256      : af3c84ac17e13e8d6fe46cbd2b263fda96c7854356a805183bb7fc4c02c87e6c
+
+I01 schema nesneleri
+  ClientFinancialDisclosure*     : 0/3 tablo
+  ClientFinancialDisclosureStatus: enum YOK
+  pg_class eslesmesi             : 0
+  pg_constraint eslesmesi        : 0
+  %disclosure% / ClientFinancial%: hicbir tablo YOK
+
+Kismi / manuel uygulama izi      : YOK
+  (I01'e ozgu kolon adlari taramasinda cikan 5 eslesme — ClaimFormationSnapshot,
+   IcrabotEngineRun, IcrabotEvidence, IcrabotJobStep, LegalApplicationBatch
+   uzerindeki `snapshotHash` — pre-existing, ILGISIZ modellere aittir;
+   I01 tablolarinda 0 eslesme)
+
+Pre-I01 canonical durum          : Tenant / Case / CaseClient /
+                                   CollectionDisposition / CollectionDispositionLine — hepsi VAR
+
+repo migration klasoru           : 106
+DB basarili kayit                : 102
+pending                          : 4
+```
+
+### 21.4 Drift analizi
+
+Salt-okuma `prisma migrate diff --from-schema-datasource → --to-schema-datamodel` (245 satır; shadow DB oluşturmaz) çıktısı sınıflandırıldı:
+
+| Diff içeriği | Ait olduğu pending migration |
+| --- | --- |
+| `ClientFinancialDisclosure` + `...Version` + `...Line` + `ClientFinancialDisclosureStatus` | `20260726190741_..._track_b_i01_...` (bu bölümün hedefi) |
+| `ClaimFormationSnapshot` / `ClaimItemFormationIntent` → `legalBasisProjectionBindingCanonicalPayload` | `20260726120000_claim_formation_projection_binding_persistence` |
+| `ClientPowerOfAttorney` / `PoaLawyer` → `tenantId` + index + FK yeniden bağlama | `20260726210000_uyap_poa_tenant_safety_i01` |
+| `CpeExecutionRecord` → `tenantId` + index | `20260728120000_debtor_cpe_tenant_hardening_p1_i01` |
+| `BankSettlementEvidence` / `BankTransaction` `RENAME CONSTRAINT` ×2 | **hiçbiri** — pre-existing adlandırma drift'i |
+
+**I01 bakımından beklenmeyen drift YOKTUR**: diff, I01 nesnelerini sıfırdan yaratır; hiçbir I01 nesnesi kısmen mevcut değildir, hiçbir mevcut nesne I01 nedeniyle düşürülmez veya değiştirilmez. Kalan 2 `RENAME CONSTRAINT`, PR #1629 sırasında tespit edilip kapsam dışı bırakılan pre-existing drift'tir ve **bu görev kapsamında düzeltilmemiştir**.
+
+### 21.5 Sınıflandırma
+
+```text
+LIVE MIGRATION STATUS:
+NOT_APPLIED
+
+verifiedAt            : 2026-07-28
+verified environment  : hukuk_db @ localhost:5432 (PostgreSQL 16.14, primary)
+verification method   : prisma migrate status (salt-okuma) + _prisma_migrations
+                        metadata + information_schema/pg_catalog nesne taramasi +
+                        checksum karsilastirmasi + read-only migrate diff
+migration name        : 20260726190741_client_p2_u03_track_b_i01_financial_disclosure_foundation
+repository SHA        : 32a42ed4 (PR #1629) · governance closure f16202a6 (PR #1705)
+credential exposure   : NONE
+mutation performed    : NONE
+```
+
+§19'un `UNKNOWN / OWNER VERIFICATION REQUIRED` satırı bu bölümle **kanıta bağlanmış** ve §20'nin `NOT APPLIED` ölçümü **daha güçlü kanıtla teyit edilmiştir**. §19 ve §20'nin kendi metinleri DEĞİŞTİRİLMEMİŞTİR (append-only).
+
+### 21.6 Bu bölümün üretmedikleri
+
+```text
+LIVE APPLY PRECONDITION        : NOT SATISFIED
+MIGRATION APPLY YETKISI        : NONE — hicbir migration uygulanmadi, yetki dogmadi
+GO-MIGRATE GATE                : ACILMADI
+DIGER 3 PENDING MIGRATION      : bu bolumun hedefi DEGIL; statuleri degistirilmedi
+PRE-EXISTING RENAME DRIFT      : duzeltilmedi, ayri backlog kalemi
+PRODUCTION IDDIASI             : YOK
+```
+
+**MIGRATION MERGED ≠ MIGRATION APPLIED · READ-ONLY VERIFIED ≠ APPLY AUTHORIZED.**

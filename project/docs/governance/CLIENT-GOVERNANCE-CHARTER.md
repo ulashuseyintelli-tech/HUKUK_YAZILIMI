@@ -2239,3 +2239,205 @@ NO CLIENT-VISIBLE FINANCIAL DATA YET
 ### 37.11 Closure Self-Check
 
 Bu bölüm: Track B'nin API/service/authorization projection/UI/dashboard/disclosure publication dilimlerini BAŞLATMAZ veya yetkilendirmez; `CLIENT-P2-U03`'ü (§34/§35'te PARTIAL kalan) CLOSED İLAN ETMEZ; §35'in veya §36'nın kendi metnini DEĞİŞTİRMEZ; yeni lifecycle/enum/status/authorization alanı ÜRETMEZ; canonical enum adı UYDURMAZ; Track A davranışını DEĞİŞTİRMEZ; Receivable/Collection/Claim/Due/Payment semantiğine DOKUNMAZ; migration live-apply durumunu `APPLIED` İLAN ETMEZ; `pending-migration-coordination-register.md`'nin live-apply alanlarını DEĞİŞTİRMEZ; POL-E/POL-J'yi yeniden AÇMAZ; OFFICE CAP-02/OD-08/STF-PRD statülerini DEĞİŞTİRMEZ; yeni risk kartı AÇMAZ; yeni dependency EKLEMEZ; `.github/workflows/ci.yml`'e DOKUNMAZ; yeni CI step AÇMAZ; schema veya migration DEĞİŞTİRMEZ (implementasyon zaten PR #1629 ile ayrı merge edildi — bu kayıt governance kapanışı + CI enforcement bağlamasıdır). **TECHNICAL DATA FOUNDATION CLOSED ≠ TRACK B CLOSED; IMPLEMENTATION AUTHORITY: NONE (sonraki dilimler için).**
+
+## 38. CLIENT Phase 2 Track B I02 — Disclosure Service Foundation and Invariant Enforcement (OWNER RATIFIED, RATIFICATION-ONLY)
+
+Bu bölüm, §35'te ratifiye edilen Track B mimarisinin **ilk post-schema implementasyon diliminin** canonical kimliğini ve bağlayıcı sözleşmesini ratifiye eder (`decision-log.md` `CLIENT-P2-U03-TRACK-B-I02` kaydı). §5, §6, §8.A, §8.B, §11–§37 substantive hükümlerini DEĞİŞTİRMEZ; §35'in, §36'nın ve §37'nin **kendi metinleri DEĞİŞTİRİLMEMİŞTİR**.
+
+**BU BÖLÜM RATIFICATION-ONLY'DİR.** Hiçbir kod, schema, migration, test veya CI değişikliği içermez ve I02 implementasyonunu BAŞLATMAZ.
+
+### 38.1 Task Kimliği
+
+```text
+TASK ID    : CLIENT-P2-U03-TRACK-B-I02
+TASK TITLE : DISCLOSURE SERVICE FOUNDATION AND INVARIANT ENFORCEMENT
+PROGRAM    : CLIENT / MUVEKKIL — TRACK B FINANCIAL DISCLOSURE
+ONCEKI     : CLIENT-P2-U03-TRACK-B-I01 (§37, CLOSED/CANONICAL)
+STATUS     : RATIFIED / CANONICAL
+EXECUTION  : OWNER-GATED / NOT STARTED
+```
+
+Bu kimlik tekildir. `I02A`, `S01`, `R01` gibi alternatif veya paralel bir kimlik ÜRETİLMEMİŞTİR ve üretilmeyecektir.
+
+### 38.2 Objective
+
+Track B disclosure şeması üzerinde çalışan, **henüz hiçbir API veya UI'a bağlanmamış** service-level domain temelini kurmak: aggregate/version/line oluşturma zinciri, tenant tutarlılığı, canonical snapshot ve içerik hash'i, idempotency ve eşzamanlılık koruması, transaction sınırı ve fail-closed lifecycle guard'ları.
+
+I02'nin varlık sebebi, §37.3 ve §37.6'nın **bilinçli olarak servis katmanına bıraktığı** iki invariant'ı kapatmaktır: `caseClientId` tenant tutarlılığı ve yayınlanmış/snapshot içeriğin immutability + hash yeniden-doğrulaması.
+
+### 38.3 In-Scope Contract
+
+1. Disclosure aggregate oluşturma service contract'ı.
+2. Disclosure version ve disclosure line oluşturma zinciri.
+3. Tenant consistency enforcement.
+4. `Case`, `CaseClient`, kaynak disposition ve tenant ilişki doğrulaması.
+5. Fail-closed ownership kontrolleri.
+6. Canonical snapshot üretimi.
+7. Deterministik canonical content serialization.
+8. Content hash üretimi ve persistence.
+9. Hash re-verification contract'ı.
+10. Version sequence / idempotency enforcement.
+11. Duplicate creation ve concurrent-version race prevention.
+12. Transaction boundary.
+13. Append / version / supersession invariant'ları.
+14. Lifecycle transition guard foundation.
+15. Published/approved içerik üzerinde yetkisiz mutation reddi.
+16. Model-seviyesi constraint hatalarının güvenli, tiplenmiş domain hatalarına çevrilmesi.
+17. Pozitif, negatif ve concurrency testleri.
+18. Audit / provenance kayıtlarının korunması.
+
+Kabul edilebilir dosya türleri: domain service · application service · repository interface · Prisma repository implementasyonu · transaction boundary · typed domain errors · hash/canonicalization helper · tenant invariant kontrolleri · idempotency enforcement · service-level unit/integration/concurrency testleri.
+
+### 38.4 Out-of-Scope Contract
+
+```text
+HTTP controller · REST endpoint · GraphQL resolver · client-facing API
+portal UI · dashboard · finansal kart · authorization projection
+office approval runtime · notification gonderimi · publication runtime
+e-posta · portal inbox teslimi · Track A degisikligi
+migration apply operasyonu · yeni schema · yeni migration · yeni dependency
+```
+
+```text
+I02 SERVICE EXISTS      != DISCLOSURE IS CLIENT-VISIBLE
+DISCLOSURE RECORD EXISTS != DISCLOSURE MAY BE PUBLISHED
+CONTENT HASH EXISTS     != CONTENT IS APPROVED
+I02 CLOSED              != TRACK B FULLY IMPLEMENTED
+```
+
+### 38.5 Tenant Consistency Contract
+
+I02 implementasyonu şunları zorunlu tutar:
+
+- `tenantId` ile `caseId` aynı tenant'a ait olmalıdır.
+- `caseClientId` seçilen case'e bağlı olmalıdır.
+- `CaseClient` üzerinden bağlanan `Client`, canonical disclosure owner'ı ile uyumlu olmalıdır.
+- Kaynak `CollectionDisposition` ve kaynak satırlar aynı tenant/case/client sınırında olmalıdır.
+- Cross-tenant ID kombinasyonları, transaction başlamadan veya herhangi bir write gerçekleşmeden **fail-closed** reddedilmelidir.
+- Kullanıcıdan gelen serbest `tenantId` / `caseId` / `caseClientId` kombinasyonuna güvenilmez.
+- Tenant ilişkileri repository sorgularıyla yeniden doğrulanır.
+- "ID mevcutsa kabul et" modeli (IDOR'a açık) KULLANILMAZ.
+
+Gerekçe: §37.3'te kayıtlı olduğu üzere `CaseClient` tablosunda `tenantId` kolonu **yoktur**; oradaki bağ plain FK + `Restrict`'tir ve **veritabanı seviyesinde bir tenant güvencesi sağlamaz**. Bu boşluğu kapatmak I02'nin birincil sorumluluğudur.
+
+### 38.6 Snapshot / Hash Contract
+
+- Disclosure version, kaynak finansal değerlerin **snapshot**'ıdır (§35.4).
+- Kaynak kayıtlar sonradan değişse bile eski version **sessizce değişmez**.
+- Content hash, canonical serialization üzerinden **deterministik** üretilir.
+- Aynı içerik aynı hash'i üretir; alan sırası, locale veya object key sırası hash'i değiştirmez.
+- Persist edilmiş hash, approval / send / publication öncesinde yeniden doğrulanabilecek biçimde saklanır.
+- Hash uyuşmazlığı **fail-closed** sonuç üretir.
+
+Şema tarafı hazırdır: `snapshotHash`, `sourceFingerprint`, `notificationContentHash` alanları I01 ile mevcuttur; **alanların varlığı enforcement DEĞİLDİR** (§37.6).
+
+### 38.7 Immutability Contract
+
+- Approved/published içerik **yerinde güncellenmez**; yeni version + supersession zinciri kullanılır.
+- Service-level mutation guard açıkça test edilir.
+- §35.13'ün supersession/reversal semantiği korunur; `@@unique([tenantId, supersedesVersionId])` ile bir versiyonun yalnız bir kez supersede edilebilmesi DB tarafından zaten garanti altındadır (§37.4).
+- Satırın DB seviyesinde tam immutable OLMADIĞI (yaşam döngüsü damgaları aynı satıra yazılır — §37.6) bilinerek, immutability servis katmanında enforce edilir.
+
+### 38.8 Concurrency / Idempotency Contract
+
+Kapsanması zorunlu yarış durumları:
+
+```text
+ayni source icin es zamanli iki aggregate create
+ayni disclosure icin es zamanli version create
+ayni version number uretimi
+ayni idempotency key kullanimi
+ayni source line'in duplicate eklenmesi
+ayni active/current version'in iki kez atanmasi
+```
+
+Enforcement **yalnız** `findFirst` + `create` gibi race'e açık application kontrolüne dayanamaz. DB unique constraint + transaction + hata eşlemesi **birlikte** kullanılır. I01'in sağladığı unique kümesi (§37.4) bu enforcement'ın temelidir. Repository'nin canonical transaction ve retry precedent'i izlenir.
+
+### 38.9 Transaction Contract
+
+Aggregate + version + line oluşturma **tek bir transaction** içinde tamamlanır; kısmi yazım bırakılmaz. Transaction sınırı service katmanında açıkça tanımlanır ve testle kanıtlanır. Constraint ihlalleri (P2002 vb.) transaction sınırında yakalanıp tiplenmiş domain hatalarına çevrilir; ham Prisma hatası çağırana sızmaz.
+
+### 38.10 Safe Lifecycle Boundary
+
+I02 **yapabilir**: DRAFT üretimi · version creation · validation · supersession hazırlığı · immutable snapshot enforcement.
+
+I02 **yapamaz**: office approval request gönderme · content approval tamamlama · send · publish · revoke notification · client portal disclosure.
+
+`ClientFinancialDisclosureStatus` enum'unda 11 durumun tanımlı olması, bu geçişlerin I02 içinde aktive edilebileceği anlamına **gelmez**. Her transition ayrı bounded task ile yetkilendirilir.
+
+### 38.11 Live Migration Execution Gate
+
+Phase A salt-okuma doğrulaması (`pending-migration-coordination-register.md` §21, 2026-07-28):
+
+```text
+LIVE MIGRATION STATUS:
+NOT_APPLIED
+
+LIVE APPLY PRECONDITION:
+NOT SATISFIED
+
+BLOCKER:
+I01_LIVE_MIGRATION_NOT_APPLIED
+
+IMPLEMENTATION / DEPLOYMENT:
+DO NOT START UNTIL SEPARATE MIGRATION APPLY AUTHORITY
+```
+
+I01 migration'ı canonical `main`'de mevcuttur fakat doğrulanan hedef veritabanında (`hukuk_db` @ `localhost:5432`) **uygulanmamıştır**: `_prisma_migrations` kaydı yok, 0/3 tablo, enum yok, kısmi uygulama izi yok, 102/102 checksum uyumlu, ghost kayıt yok. I02 kodu yazılabilir hale gelmeden önce migration'ın ayrı bir owner-gated operasyonla uygulanması gerekir.
+
+**Bu bölüm migration uygulama yetkisi ÜRETMEZ.**
+
+### 38.12 Acceptance Gates
+
+I02'nin implementasyona alınabilmesi için:
+
+1. I01 schema canonical `main`'de mevcut — **KARŞILANDI** (§37).
+2. I01 migration status kesin — **KARŞILANDI** (`NOT_APPLIED`, register §21).
+3. Live apply `APPLIED` **veya** implementation planında açık deployment gate — **§38.11 ile gate açıkça yazıldı**.
+4. Tenant consistency modeli exact — §38.5.
+5. `CaseClient` tenant sınırı service-level enforce edilecek — §38.5.
+6. Snapshot source chain exact — §38.6 + §35.4.
+7. Canonical serialization ve hash algoritması belirli — I02 planında belirlenecek, §38.6 sözleşmesine uyacak.
+8. Hash re-verification noktaları belirli — approval / send / publication öncesi (§38.6).
+9. Transaction sınırı belirli — §38.9.
+10. Idempotency key kapsamı belirli — `@@unique([tenantId, sendIdempotencyKey])` (§37.4) + §38.8.
+11. Version uniqueness ve race handling belirli — §38.8.
+12. Published/approved mutation politikası belirli — §38.7.
+13. UI / API / publication kapsam dışı — §38.4.
+14. Test ve güvenlik gereksinimleri belirli — §38.3/17 + §38.8.
+15. Implementation authority ayrıca verilmeden kod başlatılmayacak — §38.13.
+
+### 38.13 Implementation Authority
+
+```text
+IMPLEMENTATION AUTHORITY:
+NONE
+```
+
+Bu bölüm ile I02 branch'i açılmaz, worktree oluşturulmaz, service dosyası veya test scaffold'u yazılmaz, schema değiştirilmez, migration üretilmez, API/UI taslağı eklenmez. **RATIFICATION ≠ IMPLEMENTATION.**
+
+### 38.14 Stop Conditions
+
+I02 implementasyonu ileride yetkilendirildiğinde şu durumlarda durulur: I01 migration'ı hedef ortamda hâlâ uygulanmamışsa ve deployment gate açılmamışsa · tenant/snapshot/hash/immutability için owner kararı gerektiren birden fazla makul model çıkarsa · schema veya migration değişikliği zorunlu görünürse · API/UI/publication olmadan service güvenli tamamlanamıyorsa · genel authorization mimarisi değişikliği gerekirse · cross-domain Receivable/Collection refactor'u gerekirse · competing writer varsa · yeni dependency zorunlu olursa.
+
+### 38.15 Status ve Self-Check
+
+```text
+CLIENT-P2-U03-TRACK-B-I02 : RATIFIED / CANONICAL
+EXECUTION                 : OWNER-GATED / NOT STARTED
+IMPLEMENTATION AUTHORITY  : NONE
+LIVE MIGRATION PRECONDITION: NOT SATISFIED (I01_LIVE_MIGRATION_NOT_APPLIED)
+
+TRACK B ARCHITECTURE      : RATIFIED/CANONICAL (§35, degismedi)
+TRACK B DATA FOUNDATION   : CLOSED/CANONICAL (§37, degismedi)
+TRACK B SERVICE FOUNDATION: RATIFIED / NOT STARTED (bu kayitla)
+TRACK B API / UI / DASHBOARD / AUTHORIZATION PROJECTION /
+PUBLICATION RUNTIME       : NOT AUTHORIZED / NOT STARTED
+TRACK A (§34) · SPRING CLEANING (§36) : degismedi
+CLIENT-P2-U03 (genel)     : PARTIAL — NOT READY FOR FINAL CLOSURE
+RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
+```
+
+Bu bölüm: I02 implementasyonunu BAŞLATMAZ veya yetkilendirmez; migration uygulama yetkisi ÜRETMEZ; Track B'nin API/UI/publication dilimlerini AÇMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35/§36/§37'nin kendi metinlerini DEĞİŞTİRMEZ; I01 statüsünü DEĞİŞTİRMEZ; Spring Cleaning kayıtlarını DEĞİŞTİRMEZ; Track A sınırını DEĞİŞTİRMEZ; yeni lifecycle/enum/status alanı ÜRETMEZ; `pending-migration-coordination-register.md` §19/§20'nin metinlerini DEĞİŞTİRMEZ; başka programların (RCV / OFFICE / T5 / DX-006 / UYAP / DEBTOR) kayıtlarına DOKUNMAZ; kod, schema, migration, test veya CI DEĞİŞTİRMEZ.
+
+**SCHEMA EXISTS ≠ DATA MAY BE DISCLOSED · MIGRATION MERGED ≠ MIGRATION APPLIED · RATIFIED ≠ AUTHORIZED TO IMPLEMENT · NO CLIENT-VISIBLE FINANCIAL DATA YET.**
