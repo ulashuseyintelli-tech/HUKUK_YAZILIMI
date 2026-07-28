@@ -99,6 +99,10 @@ const SCENARIO_2_READY_FOR_UYAP = {
     'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
     'case.allow_uyap_actions': true,
+    // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: `case.is_closed` / `case.is_archived` /
+    // `case.allow_uyap_actions` artik POZITIF kanit ister. Bu uc fact DB fact'inden
+    // DEGIL, `addCaseLevelFacts` ile Case satirindan turetilir → kanit `buildCaseRow`
+    // icinde saglanir (gercek Prisma select'i bu kolonlari dondurur).
     // UYAP_SEND için vekaletname zorunlu (POWER_OF_ATTORNEY_MISSING gate'i)
     'case.has_power_of_attorney': true,
     // I04: POWER_OF_ATTORNEY_MISSING gate'i artik computed granular authority fact'lerini okur.
@@ -296,6 +300,12 @@ function buildCaseRow(opts: {
     workflowStage: (opts.workflowStage as string) ?? 'DRAFT',
     type,
     subType,
+    // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: gercek `addCaseLevelFacts` select'i bu iki
+    // kolonu da dondurur (`case.is_archived` / `case.allow_uyap_actions`). Mock eksik
+    // oldugu icin fact'ler undefined kaliyordu; pozitif-ispat gate'i icin tamamlandi.
+    // Senaryo semantigi degismedi: arsivde-olmayan, UYAP'a acik varsayilan dosya.
+    isArchived: false,
+    allowUyapActions: true,
     // State-machine version'u updatedAt.getTime()'ten türetiyor
     updatedAt: new Date(),
   };
@@ -309,6 +319,19 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
   let module: TestingModule;
   let cpe: CasePolicyEngine;
   let factStore: FactStoreService;
+  const originalUyapAvailable = process.env.UYAP_AVAILABLE;
+
+  beforeAll(() => {
+    // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: UYAP_SEND artik operasyonel erisilebilirlik
+    // sinyalinin ACIKCA yapilandirilmis olmasini ister ("yapilandirilmamis" != "available").
+    // Golden senaryolar "ops sinyali acik" ortamini temsil eder.
+    process.env.UYAP_AVAILABLE = 'true';
+  });
+
+  afterAll(() => {
+    if (originalUyapAvailable === undefined) delete process.env.UYAP_AVAILABLE;
+    else process.env.UYAP_AVAILABLE = originalUyapAvailable;
+  });
 
   beforeEach(async () => {
     module = await Test.createTestingModule({
@@ -325,6 +348,12 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
         { provide: PrismaService, useValue: mockPrismaService },
       ],
     }).compile();
+
+    // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: `.compile()` lifecycle hook'larini CALISTIRMAZ →
+    // `ComputedFactRegistry.onModuleInit()` hic kosmadigi icin built-in provider'lar
+    // (ornegin `system.uyap_available`) kayitli DEGILDI ve computed fact'ler hic uretilmiyordu.
+    // Pozitif-ispat gate'i bu bosluğu gorunur kildi; suite gercek runtime'a hizalandi.
+    await module.init();
 
     cpe = module.get<CasePolicyEngine>(CasePolicyEngine);
     factStore = module.get<FactStoreService>(FactStoreService);
