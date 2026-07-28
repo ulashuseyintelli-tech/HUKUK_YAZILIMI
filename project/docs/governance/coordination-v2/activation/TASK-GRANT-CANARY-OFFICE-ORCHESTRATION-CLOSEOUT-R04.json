@@ -70,5 +70,33 @@
   "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-CANARY-R04",
   "killSwitchPath": "project/docs/governance/coordination-v2/activation/KILL-SWITCH",
   "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/orchestra-operational-canary.jsonl",
-  "notes": "Tek kullanimlik task-scoped grant. Standing grant DEGILDIR: tek task id, tek plan hash, tek exact dosya, tek PR ve tek basarili merge. Basarili merge sonrasi otomatik CONSUMED olur ve ikinci kullanim reddedilir. Uygulayici: scripts/orchestration-v2/orchestrator/one-shot-grant.cjs"
+  "notes": "Tek kullanimlik task-scoped grant. Standing grant DEGILDIR: tek task id, tek plan hash, tek exact dosya, tek PR ve tek basarili merge. Basarili merge sonrasi otomatik CONSUMED olur ve ikinci kullanim reddedilir. Uygulayici: scripts/orchestration-v2/orchestrator/one-shot-grant.cjs",
+  "manualMergeRequired": false,
+  "grantId": "TASK-GRANT-CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04",
+  "semanticAuthorityRef": {
+    "recordId": "OWNER-DECISION-R04-ONE-SHOT-OPERATIONAL-EVIDENCE-GRANT",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/CANARY-R04/semantic-authority.md"
+  },
+  "executionGrantRef": {
+    "recordId": "RATIFICATION-CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/CANARY-R04/plan-ratification.md"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/CANARY-R04/semantic-authority.md",
+    "sourceCommitSha": "90172ef04589ecbd132d31f06c5a4f61409e37bb",
+    "exactExcerpt": "ORCHESTRA_OPERATIONAL_CANARY dogfood live execution is authorized to run",
+    "excerptSha256": "ef1819010004eb62f0e9fe1a56ccc4522ed756e224a77ebb4c966adce0bd020c"
+  },
+  "noExpiryPolicyRef": "OWNER-DECISION-R04-ONE-SHOT-OPERATIONAL-EVIDENCE-GRANT: maxSuccessfulMerges 1; grant CONSUMED olur, sure ile degil kullanim ile biter",
+  "authorizedTasks": [
+    {
+      "taskId": "CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04",
+      "taskSpecVersion": 1,
+      "taskSchemaVersion": 1,
+      "taskSpecSha256": "845b3d47b75c40628b08c12f9656d5adf8cae3015d02369d72212fbc1586dba6",
+      "declaredIntentSha256": "78808358eda40c56a280851a3c2b455e0ddfb17950c7947a5fda48e8c75b7fb8",
+      "boundaryPolicySha256": "cf65713e09b77cb7bd4c360197f6909e8c7e75413edeb934fdfd0482bdeaa5fc",
+      "requiredTestsSha256": "32eb7b23b811b04a8c5a4ac111ca094146a65fff61fb43b7e5046a464cb60caa"
+    }
+  ]
 }
