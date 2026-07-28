@@ -20,7 +20,7 @@ Consolidation               : COMPLETE (owner-supplied progression baseline)
 Target Architecture         : COMPLETE (owner-supplied progression baseline)
 Implementation Roadmap      : COMPLETE (owner-supplied progression baseline)
 Current phase               : RCV-P2 (planning label; no new Master Register identity)
-Current workstream          : WS04 — Allocation & Derived Payment State (OPEN; historical P01–P03-A closures preserved; allocation-authority amendment active)
+Historical WS04 pointer     : SUPERSEDED / NON-AUTHORITATIVE FOR CURRENT CLAIM FORMATION ROUTING (historical P01–P03-A closures and allocation-authority amendment preserved)
 WS01 status                 : CLOSED
 WS01 historical status      : TECHNICALLY COMPLETE
 WS01 roadmap                : COMPLETE (P01–P04)
@@ -116,7 +116,7 @@ I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SI
 I03 runtime                 : DEFAULT DISABLED / NO PRODUCTION CALL-SITE
 I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 PB01 foundation migration  : MERGED / LIVE APPLY NOT AUTHORIZED / NOT PERFORMED
-S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / CLEANUP PENDING SEPARATE OWNER GO
+S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / GIT CLEANUP COMPLETE / PHYSICAL ORPHAN NON-BLOCKING
 Claim Formation PB01 gate   : OWNER GO REQUIRED / NOT STARTED
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
@@ -3833,3 +3833,34 @@ Bu foundation PB01 semantic projection alanlarını ratify etmez; production res
 signed release, key/signature/trust-root, Shared Document V4, OfficeApproval/deferred-executor
 activation, API/web migration, live DB apply veya historical backfill authority üretmez.
 `D02-KC01`, `D02-F01`, `S08-I04` ve `S08-I05` eligible değildir.
+
+## 12. Claim Formation Historical Residual Final Closure — 2026-07-28
+
+```text
+TASK                               RCV-CLAIM-FORM-HCR-08-FINAL-CLOSURE-AUDIT-R01
+STATUS                             CLOSED / CANONICAL / PASS UPON APPROVED MERGE
+HCR-00–HCR-07                      COMPLETE / PRESERVED
+HISTORICAL RESIDUAL PROGRAM        CLOSED / CANONICAL / PASS
+BLOCKING HISTORICAL RESIDUAL       NONE
+HISTORICAL WS04 POINTER            SUPERSEDED / NON-AUTHORITATIVE
+CURRENT PROGRAM                    RCV-CLAIM-FORM-P02
+CURRENT PHASE                      S08
+CURRENT WORKSTREAM                 D02
+LAST COMPLETED FOUNDATION          RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION
+FOUNDATION EVIDENCE                PR #1630 / d7ef31f608728b8f57a2c8625af6a989ce3a4569
+FOUNDATION STATUS                  CLOSED / CANONICAL / PASS
+NEXT ELIGIBLE TASK                 RCV-CLAIM-FORM-P02-S08-D02-PB01
+NEXT TASK STATUS                   OWNER GO REQUIRED / NOT STARTED
+S05 GIT CLEANUP                    COMPLETE
+S05 PHYSICAL ORPHAN                ACCEPTED NON-BLOCKING OPERATIONAL RESIDUAL
+RUNTIME                            DORMANT
+LIVE DATABASE ACTION               NONE
+semanticAuthorityRef.evidenceSha   07a26f14224a41940e21ffe665dbd4b92615ad9f
+executionGrantRef.evidenceSha      07a26f14224a41940e21ffe665dbd4b92615ad9f
+```
+
+Bu kapanış, tarihsel WS04 ve önceki `CLEANUP PENDING` kayıtlarını silmez; yalnız living/current
+Claim Formation locator'ını ve S05'in güncel operasyonel durumunu ileriye dönük uzlaştırır. Fiziksel
+S05 dizini Git registration, `.git` metadata, unique commit veya owner WIP taşımadığı için blocking
+değildir. PB01 semantic görevi bu kayıtla başlamaz; implementation authority ayrı owner GO ister.
+Kod, schema, migration, runtime activation, live database apply veya production mutation yoktur.
