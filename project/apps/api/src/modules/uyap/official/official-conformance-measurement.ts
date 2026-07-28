@@ -47,8 +47,19 @@ export type ConformanceState =
   | 'CONFORMANT'
   /** Ölçüldü ve resmî sözleşmeden SAPIYOR. */
   | 'DIVERGENT'
-  /** Ölçülemiyor: gerekli resmî artefakt repository'de YOK. */
-  | 'UNMEASURABLE_ARTEFACT_ABSENT';
+  /**
+   * Ölçülemiyor: gerekli resmî artefakt HİÇBİR yüzeyde yok.
+   *
+   * UYAP-OFFICIAL-DTD-CONFORMANCE-RECORD-CORRECTION-R01: resmî DTD **bu durumda
+   * DEĞİLDİR** — canonical evidence bundle'da mevcuttur. Bu değer yalnız gerçekten
+   * hiçbir yüzeyde bulunmayan artefaktlar için ayrılmıştır.
+   */
+  | 'UNMEASURABLE_ARTEFACT_ABSENT'
+  /**
+   * Artefakt MEVCUT ve doğrulanmış; ölçüm resmî sözleşmenin KENDİ grameri nedeniyle
+   * yapılamıyor (D1 nondeterministic content model). Artefakt yokluğuyla KARIŞTIRILMAZ.
+   */
+  | 'BLOCKED_BY_CONTRACT_GRAMMAR';
 
 export interface ConformanceDimension {
   readonly dimension: string;
@@ -90,25 +101,110 @@ export function measureLocalDtdIdentity(apiRoot: string): ConformanceDimension {
   };
 }
 
+// ============================================================================
+// UYAP-OFFICIAL-DTD-CONFORMANCE-RECORD-CORRECTION-R01
+// Ölçüm semantiği ayrıştırması — "repository'de yok" ≠ "artefakt yok"
+// ============================================================================
+
+/**
+ * **DÜZELTME KAYDI.** I01 ilk ölçümü `dtdFilePresentInRepository === false` olgusunu
+ * doğru okudu ama SONUCUNU yanlış çerçeveledi: "resmî byte artefaktı YOK, owner
+ * sağlamalı". Gerçek şu ki artefakt **2026-07-18'de owner tarafından zaten teslim
+ * edilmişti** — repository'ye DEĞİL, **repo-dışı canonical evidence bundle**'a
+ * (Model B, MANIFEST'li, SHA-256 pinli).
+ *
+ * Hatanın kökü: *working-tree/repository sınırı* ile *canonical evidence sınırı*
+ * eşitlendi. Bu iki alan artık isim seviyesinde AYRIŞTIRILMIŞTIR.
+ *
+ * Kaynak: `decision-log.md` 2026-07-18 `DBP-P2-UYAP-PUBLIC-SOURCES-01-GOV` —
+ * *"Resmî paket repo-DIŞI READ-ONLY intake ...'a kaynak yapısı korunarak alındı
+ * + MANIFEST (URL/tarih/boyut/SHA-256/archive+extraction path)"*.
+ */
+export const OFFICIAL_ARTEFACT_PRESENT_IN_REPOSITORY = false;
+
+/**
+ * Resmî byte artefaktı **canonical evidence yüzeyinde MEVCUTTUR** (Model B).
+ *
+ * Bu bir dosya-sistemi okuması DEĞİLDİR: konum operatör iş istasyonundadır ve CI
+ * ondan erişemez. Değer, owner-ratified governance kaydından türetilen bir
+ * **olgu beyanıdır**; böylece ölçüm makineden bağımsız ve CI'da deterministiktir.
+ */
+export const OFFICIAL_ARTEFACT_PRESENT_IN_CANONICAL_EVIDENCE = true;
+
+/** Strict DTD doğrulamasının uygunluk durumu. */
+export type StrictValidationEligibility = 'ELIGIBLE' | 'BLOCKED';
+
+/**
+ * Strict doğrulamayı bloke eden GERÇEK neden.
+ *
+ * `ARTEFACT_ABSENT` **DEĞİLDİR** — artefakt mevcut ve hash'i eşleşiyor. Blocker,
+ * resmî DTD'nin **kendi grameridir**: 6 element bildirimi NONDETERMINISTIC CONTENT
+ * MODEL taşır (XML 1.0 §3.2.1) — `exchangeData`(kök), `taraf`, `kisiKurumBilgileri`,
+ * `kontratKefil`, `VekilKisi`, `ilam`. Kök ambiguity'si tek başına en minimal belgeyi
+ * bile reddeder; bu serializer kaynaklı DEĞİL, artefaktın özelliğidir.
+ *
+ * Kaynak: `decision-log.md` 2026-07-19 `DBP-P2-UYAP-CONTRACT-A-P04B-VAL-R1-GOV`
+ * owner kararı **D1** (validator: libxml2/xmllint 2.13.9).
+ */
+export const STRICT_VALIDATION_BLOCK_REASON = 'NONDETERMINISTIC_CONTENT_MODEL' as const;
+
+/** Strict doğrulama şu an uygun değildir — sebep artefakt yokluğu DEĞİLDİR. */
+export const STRICT_VALIDATION_ELIGIBILITY: StrictValidationEligibility = 'BLOCKED';
+
+/**
+ * Materialization için **yeni owner kararı GEREKMEZ**: artefakt Model B ile zaten
+ * teslim edilmiş ve P02A'nın "repository'ye eklenmez" kuralıyla ÇELİŞMEZ
+ * (repo'da yok, canonical evidence'ta pinli ve manifested).
+ */
+export const OWNER_DECISION_REQUIRED_FOR_MATERIALIZATION = false;
+
 /**
  * Strict DTD doğrulamasının ÇALIŞTIRILABİLİR olup olmadığını ölçer.
  *
- * Resmî DTD içeriği repository'de bulunmadığı sürece strict doğrulama yapılamaz;
- * bu, kod eksikliği değil **artefakt eksikliğidir**. Sessizce "doğrulandı" demek
- * yerine ölçüm bunu açıkça `UNMEASURABLE_ARTEFACT_ABSENT` olarak raporlar.
+ * **Geriye dönük uyumluluk:** dönen `state` DEĞİŞMEDİ — ölçüm hâlâ "strict doğrulama
+ * yapılamıyor" der. DEĞİŞEN, `evidence` içindeki GEREKÇEDİR: artık artefakt yokluğu
+ * değil, D1 nondeterministic grammar blocker'ı raporlanır.
  */
 export function measureStrictDtdValidationFeasibility(): ConformanceDimension {
   // `OFFICIAL_CONTRACT_PROVENANCE` `as const`'tur → alan tipi literal `false`. Ölçüm,
-  // artefakt ileride eklenirse KENDİLİĞİNDEN doğru sonucu vermelidir; bu yüzden değer
-  // boolean'a genişletilerek okunur (literal karşılaştırma derlenmez, TS2367).
-  const present: boolean = OFFICIAL_CONTRACT_PROVENANCE.dtdFilePresentInRepository;
+  // artefakt ileride repository'ye eklenirse KENDİLİĞİNDEN doğru sonucu vermelidir;
+  // bu yüzden değer boolean'a genişletilerek okunur (literal karşılaştırma derlenmez).
+  const inRepository: boolean = OFFICIAL_CONTRACT_PROVENANCE.dtdFilePresentInRepository;
   return {
     dimension: 'STRICT_DTD_VALIDATION_FEASIBILITY',
-    state: present ? 'CONFORMANT' : 'UNMEASURABLE_ARTEFACT_ABSENT',
-    evidence: `dtdFilePresentInRepository=${present}; ` +
+    state: STRICT_VALIDATION_ELIGIBILITY === 'ELIGIBLE' ? 'CONFORMANT' : 'BLOCKED_BY_CONTRACT_GRAMMAR',
+    evidence:
+      `officialArtefactPresentInRepository=${inRepository}; ` +
+      `officialArtefactPresentInCanonicalEvidence=${OFFICIAL_ARTEFACT_PRESENT_IN_CANONICAL_EVIDENCE}; ` +
+      `strictValidationEligibility=${STRICT_VALIDATION_ELIGIBILITY}; ` +
+      `strictValidationBlockReason=${STRICT_VALIDATION_BLOCK_REASON}; ` +
+      `ownerDecisionRequiredForMaterialization=${OWNER_DECISION_REQUIRED_FOR_MATERIALIZATION}; ` +
       `typeModelOfficiallyDtdValidated=${OFFICIAL_CONTRACT_PROVENANCE.typeModelOfficiallyDtdValidated}`,
   };
 }
+
+/**
+ * Repository içindeki YEREL `exchange.dtd`'nin bilinen sürüm geçmişi.
+ *
+ * `decision-log.md` 2026-07-18 kaydı `5a3ea03c…` hash'ini yazdı; bugün ölçülen değer
+ * `a7c2e267…`. Bu **yetkisiz bir kayma DEĞİLDİR**: aynı gün merge edilen PR #1385
+ * (`DBP-P2-UYAP-CONTRACT-A-P01`, F4) dosyanın YALNIZ başlık yorumunu değiştirdi
+ * (6 ekleme / 3 silme; hiçbir `<!ELEMENT`/`<!ATTLIST` bildirimi değişmedi) ve
+ * yanıltıcı *"UYAP e-Takip XML DTD / Versiyon: 2024.03"* etiketini
+ * *"LOCAL / LEGACY CONTRACT — NOT THE OFFICIAL"* uyarısıyla değiştirdi.
+ * Governance kaydı, containment merge edilmeden ÖNCEKİ değeri yakalamıştır.
+ */
+export const LOCAL_DTD_KNOWN_HASHES = Object.freeze({
+  /** 2026-01-02 `9d6e7cfb` — governance kaydında geçen değer. */
+  beforeTruthfulnessContainment:
+    '5a3ea03c4f92e92949408cb98532132436a8028836030b86a2de422529e55a5f',
+  /** 2026-07-18 `e3c881b3` (PR #1385, F4) — güncel değer. */
+  afterTruthfulnessContainment:
+    'a7c2e2672603dd3375c15fb572cde4fbe24a7505d9039feead86326ba5827ae1',
+});
+
+/** Yerel DTD kayma sınıflandırması. Kanıt yetersizse `UNKNOWN` kullanılır — tahmin YOK. */
+export const LOCAL_DTD_DRIFT_DISPOSITION = 'EXPECTED_LOCAL_DERIVATIVE' as const;
 
 /**
  * Runtime'da yayılan legacy `rolTur` kodlarının resmî `rolID` sözlüğüne ait olup
