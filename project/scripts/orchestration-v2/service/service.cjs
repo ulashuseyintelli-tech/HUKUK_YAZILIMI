@@ -30,6 +30,7 @@ const path = require('path');
 const queueMod = require('../orchestrator/queue.cjs');
 const recoveryMod = require('../orchestrator/recovery.cjs');
 const dispatchMod = require('../orchestrator/dispatch.cjs');
+const runtimeMod = require('../orchestrator/runtime-contract.cjs');
 const reconcileMod = require('../orchestrator/reconcile.cjs');
 const stateMod = require('../orchestrator/state.cjs');
 const admissionMod = require('../orchestrator/admission.cjs');
@@ -644,7 +645,13 @@ function createService(cfg) {
         ran.push(r);
         // A step that neither ran nor blocked would loop forever on the same
         // head; treat it as a stop rather than spin.
-        if (r.acted === 'IDLE' || r.acted === 'HALTED') return { stopped: r.reason, ran };
+        // RELINQUISHED belongs here for the same reason IDLE does: the head did
+        // not move and nothing changed, so looping would spin on it forever.
+        // It is a stop, not a failure — this worker is not the right one, and
+        // saying so is the correct outcome.
+        if (r.acted === 'IDLE' || r.acted === 'HALTED' || r.acted === 'RELINQUISHED') {
+          return { stopped: r.reason, ran };
+        }
       }
       return { stopped: 'MAX_TASKS_REACHED', ran };
     },
@@ -704,6 +711,45 @@ function createService(cfg) {
       // program made ineligible, or a grant file edited under the same id.
       // Trusting the admission verdict at dispatch is the same mistake WP05
       // removed from the merge gate.
+      // Before the dispatch guard, and that order is the whole point.
+      //
+      // The guard's refusals are TERMINAL — they move the entry to BLOCKED —
+      // and an out-of-date worker computes them with out-of-date semantics. So
+      // a stale checkout draining the shared queue could permanently kill work
+      // it was never entitled to judge. Measured: the R04 canary was pushed to
+      // DISPATCH_PLAN_HASH_CHANGED by a worker predating the fix that made the
+      // two notions of a plan's identity agree.
+      //
+      // A worker that does not qualify RELINQUISHES. It writes one audit line
+      // naming its own sha and worktree, and changes nothing: no BLOCKED, no
+      // task-store write, no retry spent, no ownership taken. The entry stays
+      // exactly as runnable as it was for a worker that does qualify.
+      // No repoCwd: the fence measures the worker's OWN checkout — the code
+      // that is about to run — not the repository the task targets. They are
+      // the same in production and deliberately different under test.
+      const worker = runtimeMod.measureWorker({});
+      const fence = runtimeMod.assess({ entry: head, worker });
+      if (!fence.compatible) {
+        audit('WORKER_VERSION_INCOMPATIBLE', {
+          entryId: head.entryId,
+          taskId: head.taskId,
+          refusal: fence.refusal,
+          detail: fence.detail,
+          workerCodeSha: worker.codeSha,
+          workerWorktree: worker.worktree,
+          workerRuntimeContractVersion: worker.runtimeContractVersion,
+          entryRuntimeContractVersion: head.runtimeContractVersion || null,
+          requiredFixAncestors: head.requiredFixAncestors || [],
+        });
+        return {
+          acted: 'RELINQUISHED',
+          reason: fence.refusal,
+          entryId: head.entryId,
+          detail: fence.detail,
+          reclaimed: reclaimed.length,
+        };
+      }
+
       if (dispatchGuard) {
         const verdict = dispatchMod.revalidate(
           Object.assign({}, dispatchGuard, {

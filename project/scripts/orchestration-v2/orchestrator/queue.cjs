@@ -265,6 +265,19 @@ function createQueue(dir) {
         // would be wrong: a digest is computed either way, so its presence
         // says nothing about whether the artefacts had to be committed.
         artefactsCommitted: req.artefactsCommitted === true,
+        // WHAT A WORKER MUST BE to process this entry.
+        //
+        // The queue lives in the git common dir, so every worktree of this
+        // repository drains the same entries — "whoever picks it up next" is
+        // not a safe assumption about what code will run. An out-of-date
+        // checkout answers dispatch questions with out-of-date semantics, and
+        // those answers are terminal. Pinned here, when the entry is created,
+        // because that is when the requirement is known.
+        runtimeContractVersion: req.runtimeContractVersion || null,
+        minimumCompatibleRuntimeVersion:
+          req.minimumCompatibleRuntimeVersion === undefined ? null : req.minimumCompatibleRuntimeVersion,
+        requiredFixAncestors: Array.isArray(req.requiredFixAncestors) ? req.requiredFixAncestors.slice() : [],
+        admissionCodeSha: req.admissionCodeSha || null,
         worktreePath: null,
         branch: null,
         prNumber: null,

@@ -1032,3 +1032,113 @@ test('a prompt file that declares a different task stops the run', async () => {
     'and the refusal names the conflict: ' + JSON.stringify(out),
   );
 });
+
+// ───────────────────────────────────────────── SHARED-QUEUE WORKER FENCE
+
+test('a stale worker relinquishes without touching the entry it cannot run', async () => {
+  // The measured incident. The queue lives in the git common dir, so every
+  // worktree of this repository drains the same entries — and a checkout from
+  // before the plan-identity fix computed the OLD digest, decided the plan had
+  // changed, and moved another session's entry to a TERMINAL blocker.
+  //
+  // The property here is not "the stale worker fails". It is that the stale
+  // worker changes NOTHING: no BLOCKED, no blocker code, no attempt spent, no
+  // ownership taken, and the entry as runnable afterwards as before.
+  const root = scratchRepo();
+  spawnSync('git', ['init', '-q'], { cwd: root });
+  const { requestPath } = officeRequest(root, { taskId: 'BP-FENCE-STALE' });
+  const { queue, service } = svc(root);
+  const e = service.enqueue({ requestPath });
+
+  const before = queue.get(e.entry.entryId);
+  assert.ok(before.requiredFixAncestors && before.requiredFixAncestors.length, 'admission pins what a worker must be');
+  assert.equal(typeof before.minimumCompatibleRuntimeVersion, 'number');
+
+  // Force the entry to demand a contract this worker does not implement.
+  const stale = S.createService({
+    repoCwd: root,
+    queue,
+    allowUnguardedDispatch: true,
+  });
+  queue.transition({
+    entryId: e.entry.entryId,
+    to: 'QUEUED',
+    expectedPreviousState: 'QUEUED',
+    patch: { minimumCompatibleRuntimeVersion: 999 },
+  });
+
+  let spawned = 0;
+  const r = await stale.step(async () => {
+    spawned += 1;
+    return { disposition: 'MERGE_READY' };
+  });
+
+  assert.equal(r.acted, 'RELINQUISHED', JSON.stringify(r));
+  assert.equal(r.reason, 'WORKER_VERSION_INCOMPATIBLE');
+  assert.equal(spawned, 0, 'no executor may start');
+
+  const after = queue.get(e.entry.entryId);
+  assert.equal(after.state, 'QUEUED', 'the entry stays runnable for a worker that qualifies');
+  assert.ok(!after.blockerCode, 'a stale worker may not write a blocker');
+  assert.equal(after.attempts || 0, before.attempts || 0, 'and may not spend a retry');
+  assert.ok(!after.owner, 'and may not take ownership');
+
+  // Legible afterwards: which worker, which worktree, which requirement.
+  const audits = stale.auditTrail().filter((x) => x.event === 'WORKER_VERSION_INCOMPATIBLE');
+  assert.equal(audits.length, 1);
+  assert.match(String(audits[0].detail.workerCodeSha || ''), /^[0-9a-f]{40}$/);
+  assert.ok(audits[0].detail.workerWorktree, 'the audit names the worktree');
+  assert.equal(audits[0].detail.refusal, 'WORKER_VERSION_INCOMPATIBLE');
+});
+
+test('the drain stops on a relinquish instead of spinning on it', async () => {
+  // RELINQUISHED leaves the head exactly where it was, so a loop that did not
+  // treat it as a stop would run forever on the same entry.
+  const root = scratchRepo();
+  spawnSync('git', ['init', '-q'], { cwd: root });
+  const { requestPath } = officeRequest(root, { taskId: 'BP-FENCE-DRAIN' });
+  const { queue, service } = svc(root, { allowUnguardedDispatch: true });
+  const e = service.enqueue({ requestPath });
+  queue.transition({
+    entryId: e.entry.entryId,
+    to: 'QUEUED',
+    expectedPreviousState: 'QUEUED',
+    patch: { minimumCompatibleRuntimeVersion: 999 },
+  });
+
+  const out = await service.runUntilIdle({ runTask: async () => ({ disposition: 'MERGE_READY' }) }, 5);
+  assert.equal(out.stopped, 'WORKER_VERSION_INCOMPATIBLE');
+  assert.equal(queue.get(e.entry.entryId).state, 'QUEUED');
+});
+
+test('a qualifying worker runs the same entry the stale one left alone', async () => {
+  // Relinquishing has to leave the work DOABLE, not merely undamaged.
+  const root = scratchRepo();
+  spawnSync('git', ['init', '-q'], { cwd: root });
+  const { requestPath } = officeRequest(root, { taskId: 'BP-FENCE-HANDOFF' });
+  const { queue, service } = svc(root, { allowUnguardedDispatch: true });
+  const e = service.enqueue({ requestPath });
+
+  queue.transition({
+    entryId: e.entry.entryId,
+    to: 'QUEUED',
+    expectedPreviousState: 'QUEUED',
+    patch: { minimumCompatibleRuntimeVersion: 999 },
+  });
+  const refused = await service.step(async () => ({ disposition: 'MERGE_READY' }));
+  assert.equal(refused.acted, 'RELINQUISHED');
+
+  // The fleet updates; the same entry is now within reach.
+  queue.transition({
+    entryId: e.entry.entryId,
+    to: 'QUEUED',
+    expectedPreviousState: 'QUEUED',
+    patch: { minimumCompatibleRuntimeVersion: 1 },
+  });
+  let spawned = 0;
+  const ok = await service.step(async (entry) => {
+    spawned += 1;
+    return { disposition: 'MERGE_READY', taskId: entry.taskId };
+  });
+  assert.equal(spawned, 1, JSON.stringify(ok));
+});
