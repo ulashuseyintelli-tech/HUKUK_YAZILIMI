@@ -78,7 +78,12 @@ export interface HacizRequest {
   lawyerId?: string; // Vekalet kontrolü için
   tenantId?: string; // Vekalet kontrolü için
   userId?: string; // PR-D4e-6: karar-anı audit aktörü (yoksa sistem/otomasyon)
-  skipPoaCheck?: boolean; // Test için vekalet kontrolünü atla
+  /**
+   * @deprecated DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02: bu bayrak ARTIK vekalet veya dosya
+   * sahipligi kontrolunu ATLATAMAZ. Yetki kapisi (`assertUyapLegalAuthority`) kosulsuzdur.
+   * Alan yalnizca geriye donuk cagri uyumlulugu icin korunur ve hicbir etkisi yoktur.
+   */
+  skipPoaCheck?: boolean;
 }
 
 export interface PoaValidationResult {
@@ -204,6 +209,90 @@ export class UyapService {
       daysRemaining: result.daysRemaining,
       poaId: result.poa?.id,
     };
+  }
+
+  /**
+   * DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 (bulgular: DEBTOR-IDOR-03, DEBTOR-IDOR-04)
+   *
+   * UYAP'a hukuki sonuc doguran gonderim yapan TUM operasyonlarin ONUNDEKI tek kapi.
+   *
+   * Kapattigi acik:
+   *  - DEBTOR-IDOR-03: `caseId` istemci govdesinden geliyordu ve dogrulanmis tenant'a
+   *    ait olup olmadigi HIC kontrol edilmiyordu. Ceza/hukuk davasi gonderimlerinde
+   *    hicbir sahiplik kontrolu yoktu.
+   *  - DEBTOR-IDOR-04: vekalet kontrolu `if (!skipPoaCheck && clientId && lawyerId &&
+   *    request.tenantId)` kosuluna baglanmisti — dort kosuldan biri bile dususe POA
+   *    HIC degerlendirilmiyordu (fail-open by omission). Ustelik authority olarak
+   *    ISTEMCI KONTROLUNDEKI `request.tenantId` (DTO alani) kullaniliyordu.
+   *
+   * Tasarim:
+   *  - Tenant otoritesi YALNIZ dogrulanmis principal'dan gelen `tenantId` parametresidir.
+   *    DTO/govde/query icindeki `tenantId` authority DEGILDIR; yalnizca consistency
+   *    assertion olarak kullanilir ve uyusmazlik fail-closed'dir.
+   *  - Case sahipligi ve vekalet TEK kanonik cozucuden gecer: `validateCasePoaForUyap`
+   *    case'i `where: { id, tenantId }` ile yukler (cross-tenant eslesmez) ve dosyadaki
+   *    her muvekkil-avukat kombinasyonu icin `PoaService.checkValidPoa` calistirir
+   *    (tenant binding + ACTIVE status + isActive + lawyer binding + sure gecerliligi).
+   *    IKINCI bir POA motoru KURULMAZ.
+   *  - Kosulsuzdur: `skipPoaCheck` bu kapiyi ATLAYAMAZ.
+   *  - Tek tip hata: cross-tenant, var-olmayan dosya ve vekalet eksikligi DISARIYA
+   *    AYNI yaniti verir — varlik sizintisi yoktur. Ayrim yalnizca sunucu logunda.
+   */
+  private async assertUyapLegalAuthority(params: {
+    tenantId: string;
+    caseId: string;
+    operation: string;
+    /** DTO/govde icindeki tenantId — AUTHORITY DEGIL, yalniz tutarlilik iddiasi. */
+    payloadTenantId?: string;
+  }): Promise<void> {
+    const { tenantId, caseId, operation, payloadTenantId } = params;
+
+    // (1) AUTHENTICATED TENANT — yoksa hicbir sey yapilmaz.
+    if (typeof tenantId !== 'string' || tenantId.length === 0) {
+      this.logger.error(`${operation}: dogrulanmis tenant cozumlenemedi (fail-closed)`);
+      throw new ForbiddenException({
+        code: 'UYAP_TENANT_REQUIRED',
+        message: `${operation} yapilamaz: yetki dogrulanamadi`,
+      });
+    }
+
+    // (2) PAYLOAD TENANT CONSISTENCY — mismatch fail-closed.
+    if (
+      typeof payloadTenantId === 'string' &&
+      payloadTenantId.length > 0 &&
+      payloadTenantId !== tenantId
+    ) {
+      this.logger.error(`${operation}: payload tenantId dogrulanmis tenant ile uyusmuyor (fail-closed)`);
+      throw new ForbiddenException({
+        code: 'UYAP_TENANT_MISMATCH',
+        message: `${operation} yapilamaz: yetki dogrulanamadi`,
+      });
+    }
+
+    // (3) CASE ID — bos/gecersiz ise asagi akisa gecilmez.
+    if (typeof caseId !== 'string' || caseId.length === 0) {
+      this.logger.error(`${operation}: caseId cozumlenemedi (fail-closed)`);
+      throw new BadRequestException({
+        code: 'UYAP_LEGAL_AUTHORITY_DENIED',
+        message: `${operation} yapilamaz: yetki dogrulanamadi`,
+        details: 'Dosya sahipligi veya gecerli vekalet dogrulanamadi',
+      });
+    }
+
+    // (4) CASE OWNERSHIP + POA — tek kanonik cozucu.
+    const authority = await this.validateCasePoaForUyap(caseId, tenantId);
+
+    if (!authority.isValid) {
+      // Ayrinti YALNIZ sunucu logunda; disariya tek tip yanit doner.
+      this.logger.error(
+        `${operation} engellendi (tenant=${tenantId}, case=${caseId}): ${authority.errors.join('; ')}`,
+      );
+      throw new BadRequestException({
+        code: 'UYAP_LEGAL_AUTHORITY_DENIED',
+        message: `${operation} yapilamaz: yetki dogrulanamadi`,
+        details: 'Dosya sahipligi veya gecerli vekalet dogrulanamadi',
+      });
+    }
   }
 
   /**
@@ -447,6 +536,16 @@ export class UyapService {
     let cpeDecisionId: string | undefined; // P05C-P04: link için CpeDecisionLog.id
     let cpeWarnings: any[] = []; // PR-D4e-6: CPE soft warnings audit metadata'sına eklenecek
 
+    // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02: tenant + dosya sahipligi + vekalet, HER
+    // YAN ETKIDEN ONCE ve KOSULSUZ. CPE'den de once calisir: yetkisiz bir istek artik
+    // CPE karar kaydi dahi uretmez.
+    await this.assertUyapLegalAuthority({
+      tenantId,
+      caseId: request.caseId,
+      operation: 'Haciz talebi',
+      payloadTenantId: request.tenantId,
+    });
+
     // CPE Gate kontrolü (HIGH risk aksiyon)
     if (this.casePolicyEngine) {
       try {
@@ -493,23 +592,12 @@ export class UyapService {
       }
     }
 
-    // Vekalet kontrolü
-    if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
-      const poaValidation = await this.validatePowerOfAttorney(
-        request.clientId,
-        request.lawyerId,
-        request.tenantId,
-      );
-
-      if (!poaValidation.isValid) {
-        this.logger.error(`UYAP Haciz işlemi engellendi - Vekalet hatası: ${poaValidation.message}`);
-        throw new BadRequestException({
-          code: 'POA_VALIDATION_FAILED',
-          message: `Haciz talebi yapılamaz: ${poaValidation.message}`,
-          details: 'Geçerli vekalet olmadan haciz talebi gönderilemez',
-        });
-      }
-    }
+    // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02: kosullu vekalet blogu KALDIRILDI.
+    // Onceki hali `if (!skipPoaCheck && clientId && lawyerId && request.tenantId)` idi;
+    // dort kosuldan biri bile dususe POA HIC calismiyordu (fail-open by omission) ve
+    // authority olarak istemci kontrolundeki `request.tenantId` kullaniliyordu.
+    // Vekalet artik yukaridaki `assertUyapLegalAuthority` icinde, dogrulanmis tenant ile
+    // ve KOSULSUZ degerlendirilir.
 
     // P05C-P04: CPE+POA geçti; dispatch/logRequest ÖNCESİNDE flag-gated evidence (fail-closed).
     await this.recordOperationEvidenceIfEnabled({
@@ -637,22 +725,17 @@ export class UyapService {
     tenantId?: string;
     skipPoaCheck?: boolean;
   }, tenantId: string): Promise<UyapResponse> {
-    // Vekalet kontrolü
-    if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
-      const poaValidation = await this.validatePowerOfAttorney(
-        request.clientId,
-        request.lawyerId,
-        request.tenantId,
-      );
-
-      if (!poaValidation.isValid) {
-        this.logger.error(`UYAP evrak gönderimi engellendi - Vekalet hatası: ${poaValidation.message}`);
-        throw new BadRequestException({
-          code: 'POA_VALIDATION_FAILED',
-          message: `Evrak gönderilemez: ${poaValidation.message}`,
-        });
-      }
-    }
+    // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 — SIBLING PATH, AYNI KOK NEDEN.
+    // `submitDocument` de UYAP'a hukuki sonuc doguran evrak (takip talebi, dilekce, itiraz,
+    // HACIZ_TALEBI) gonderir ve ayni fail-open desenini tasiyordu: dosya sahipligi HIC
+    // dogrulanmiyordu (DEBTOR-IDOR-03) ve vekalet kosullu/istemci-tenant'li idi
+    // (DEBTOR-IDOR-04). Uc hedef operasyonla ayni kapidan gecirilir.
+    await this.assertUyapLegalAuthority({
+      tenantId,
+      caseId: request.caseId,
+      operation: 'Evrak gonderimi',
+      payloadTenantId: request.tenantId,
+    });
 
     const requestId = await this.logRequest('submitDocument', {
       caseId: request.caseId,
@@ -1116,22 +1199,16 @@ export class UyapService {
     tenantId?: string;
     skipPoaCheck?: boolean;
   }, tenantId: string): Promise<UyapResponse> {
-    // Vekalet kontrolü
-    if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
-      const poaValidation = await this.validatePowerOfAttorney(
-        request.clientId,
-        request.lawyerId,
-        request.tenantId,
-      );
-
-      if (!poaValidation.isValid) {
-        this.logger.error(`UYAP ceza davası gönderimi engellendi - Vekalet hatası: ${poaValidation.message}`);
-        throw new BadRequestException({
-          code: 'POA_VALIDATION_FAILED',
-          message: `Şikayet dilekçesi gönderilemez: ${poaValidation.message}`,
-        });
-      }
-    }
+    // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 (DEBTOR-IDOR-03): bu yolda ONCEDEN HICBIR
+    // dosya sahipligi kontrolu YOKTU — `caseId` dogrudan istemci govdesinden geliyor ve
+    // dogrulanmadan ceza sikayeti gonderimine gidiyordu. Vekalet de kosullu/fail-open idi
+    // (DEBTOR-IDOR-04). Artik her yan etkiden ONCE, kosulsuz ve tek kapidan gecer.
+    await this.assertUyapLegalAuthority({
+      tenantId,
+      caseId: request.caseId,
+      operation: 'Sikayet dilekcesi gonderimi',
+      payloadTenantId: request.tenantId,
+    });
 
     // CLIENT-SEC-H2C-P02-R1: log ownership trusted `tenantId` param'ından (DTO'dan DEĞİL).
     const requestId = await this.logRequest('submitCriminalComplaint', {
@@ -1241,22 +1318,16 @@ export class UyapService {
     tenantId?: string;
     skipPoaCheck?: boolean;
   }, tenantId: string): Promise<UyapResponse> {
-    // Vekalet kontrolü
-    if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
-      const poaValidation = await this.validatePowerOfAttorney(
-        request.clientId,
-        request.lawyerId,
-        request.tenantId,
-      );
-
-      if (!poaValidation.isValid) {
-        this.logger.error(`UYAP hukuk davası gönderimi engellendi - Vekalet hatası: ${poaValidation.message}`);
-        throw new BadRequestException({
-          code: 'POA_VALIDATION_FAILED',
-          message: `Dava dilekçesi gönderilemez: ${poaValidation.message}`,
-        });
-      }
-    }
+    // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 (DEBTOR-IDOR-03): bu yolda ONCEDEN HICBIR
+    // dosya sahipligi kontrolu YOKTU — `caseId` dogrudan istemci govdesinden geliyor ve
+    // dogrulanmadan hukuk davasi gonderimine gidiyordu. Vekalet de kosullu/fail-open idi
+    // (DEBTOR-IDOR-04). Artik her yan etkiden ONCE, kosulsuz ve tek kapidan gecer.
+    await this.assertUyapLegalAuthority({
+      tenantId,
+      caseId: request.caseId,
+      operation: 'Dava dilekcesi gonderimi',
+      payloadTenantId: request.tenantId,
+    });
 
     // CLIENT-SEC-H2C-P02-R1: log ownership trusted `tenantId` param'ından (DTO'dan DEĞİL).
     const requestId = await this.logRequest('submitCivilLawsuit', {

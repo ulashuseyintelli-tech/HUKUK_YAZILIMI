@@ -4,6 +4,23 @@
  */
 
 import { UyapService } from "../uyap.service";
+// DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 FIXTURE YUKSELTMESI (assertion ZAYIFLATILMADI):
+// UYAP hukuki gonderim yollari artik KOSULSUZ olarak dosya sahipligi + gecerli vekalet
+// ister. Bu spec'lerin amaci yetki DEGIL (transport truthfulness / evidence / log ownership
+// / audit); dolayisiyla fixture yetkili bir baglam saglar. Yetki davranisinin KENDISI
+// uyap-legal-authority-tenant-guard.spec.ts icinde ayrica ve tam olarak test edilir.
+const AUTHORIZED_CASE = {
+  id: 'c1',
+  tenantId: 'tenant-A',
+  caseClients: [{ clientId: 'client-1', client: { id: 'client-1' } }],
+  lawyers: [{ lawyerId: 'lawyer-1', lawyer: { id: 'lawyer-1' } }],
+};
+const buildAuthorizedPoaService = () => ({
+  checkValidPoa: jest.fn().mockResolvedValue({ isValid: true, message: 'ok' }),
+});
+const buildAuthorizedCaseFindFirst = () =>
+  jest.fn(async (args: any) => ({ ...AUTHORIZED_CASE, id: args?.where?.id ?? 'c1' }));
+
 
 const buildRisk = () => ({
   caseId: "c1",
@@ -17,6 +34,7 @@ const buildRisk = () => ({
 
 const build = (riskImpl?: any) => {
   const prisma: any = {
+    case: { findFirst: buildAuthorizedCaseFindFirst() },
     uyapRequestLog: {
       create: jest.fn().mockResolvedValue({ id: "req1" }),
       update: jest.fn().mockResolvedValue({}),
@@ -26,7 +44,7 @@ const build = (riskImpl?: any) => {
   const validationGate: any = {
     checkPreHacizIntelligence: riskImpl || jest.fn().mockResolvedValue(buildRisk()),
   };
-  const svc = new UyapService(prisma, {} as any, validationGate); // casePolicyEngine yok → CPE atlanır
+  const svc = new UyapService(prisma, buildAuthorizedPoaService() as any, validationGate); // casePolicyEngine yok → CPE atlanır
   return { svc, prisma, validationGate };
 };
 

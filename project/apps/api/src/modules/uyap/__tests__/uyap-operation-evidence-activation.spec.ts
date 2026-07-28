@@ -1,5 +1,22 @@
 import { BadRequestException } from '@nestjs/common';
 import { UyapService } from '../uyap.service';
+// DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 FIXTURE YUKSELTMESI (assertion ZAYIFLATILMADI):
+// UYAP hukuki gonderim yollari artik KOSULSUZ olarak dosya sahipligi + gecerli vekalet
+// ister. Bu spec'lerin amaci yetki DEGIL (transport truthfulness / evidence / log ownership
+// / audit); dolayisiyla fixture yetkili bir baglam saglar. Yetki davranisinin KENDISI
+// uyap-legal-authority-tenant-guard.spec.ts icinde ayrica ve tam olarak test edilir.
+const AUTHORIZED_CASE = {
+  id: 'c1',
+  tenantId: 'tenant-A',
+  caseClients: [{ clientId: 'client-1', client: { id: 'client-1' } }],
+  lawyers: [{ lawyerId: 'lawyer-1', lawyer: { id: 'lawyer-1' } }],
+};
+const buildAuthorizedPoaService = () => ({
+  checkValidPoa: jest.fn().mockResolvedValue({ isValid: true, message: 'ok' }),
+});
+const buildAuthorizedCaseFindFirst = () =>
+  jest.fn(async (args: any) => ({ ...AUTHORIZED_CASE, id: args?.where?.id ?? 'c1' }));
+
 
 /**
  * P05C-P04 — UyapService activation davranışı (DB'siz): flag-OFF parity, fail-closed,
@@ -21,9 +38,10 @@ function makeService(opts: {
   orchestrator?: any;
 } = {}) {
   const prisma = {
+    case: { findFirst: buildAuthorizedCaseFindFirst() },
     uyapRequestLog: { create: jest.fn(async () => ({ id: 'req-1' })), update: jest.fn() },
   };
-  const poa = {};
+  const poa = buildAuthorizedPoaService();
   const validationGate = {};
   const errorReporter = { report: jest.fn() };
   const cpe = makeCpeAllowed();
