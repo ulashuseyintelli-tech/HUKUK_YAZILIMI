@@ -21,7 +21,14 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import {
+  CreateApprovalRequestDto,
+  SubmitApprovalDecisionDto,
+} from './dto/enterprise-approval.dto';
 import { PiiMaskingService, UserRole } from './pii-masking.service';
 import { AuditChainService } from './audit-chain.service';
 import { ApprovalWorkflowService, ApprovalDecision } from './approval-workflow.service';
@@ -107,8 +114,38 @@ export class AuditChainController {
 // APPROVAL WORKFLOW CONTROLLER
 // ============================================================
 @Controller('icrabot/enterprise/approval')
+/**
+ * DEBTOR-ENTERPRISE-APPROVAL-AUTHORIZATION-P0-I01 (R02-F09A) — I01A CONTAINMENT
+ *
+ * Bu sinif ONCEDEN TAMAMEN KIMLIKSIZDI: tenant, actor ve rol dogrudan govdeden/URL'den
+ * okunuyordu. Guard BILEREK sinif seviyesindedir ve YALNIZ bu sinifa uygulanir —
+ * ayni dosyadaki PII (F09D), audit (F09B) ve leasing (F09C) controller'lari AYRI
+ * siniflardir ve davranislari bu gorevde DEGISTIRILMEMISTIR.
+ */
+@UseGuards(JwtAuthGuard)
 export class ApprovalWorkflowController {
   constructor(private readonly approvalService: ApprovalWorkflowService) {}
+
+  /**
+   * Govdede/URL'de tasinabilen tenant degeri yalniz TUTARLILIK IDDIASIDIR.
+   * Kanonik authority principal'dir; uyusmazlik sessizce yok sayilmaz, FAIL-CLOSED.
+   */
+  private resolveTenantAuthority(principalTenantId: unknown, claimedTenantId?: string): string {
+    if (typeof principalTenantId !== 'string' || principalTenantId.length === 0) {
+      throw new ForbiddenException('enterprise_approval_tenant_required: principal tenant cozumlenemedi');
+    }
+    if (typeof claimedTenantId === 'string' && claimedTenantId !== principalTenantId) {
+      throw new ForbiddenException('enterprise_approval_tenant_mismatch: tenant iddiasi principal ile uyusmuyor');
+    }
+    return principalTenantId;
+  }
+
+  private resolveActorAuthority(principalUserId: unknown): string {
+    if (typeof principalUserId !== 'string' || principalUserId.length === 0) {
+      throw new ForbiddenException('enterprise_approval_actor_required: principal actor cozumlenemedi');
+    }
+    return principalUserId;
+  }
 
   /**
    * Check if approval is required
@@ -131,20 +168,18 @@ export class ApprovalWorkflowController {
   @Post('request')
   @HttpCode(HttpStatus.CREATED)
   async createRequest(
-    @Body() body: {
-      tenantId: string;
-      caseId: string;
-      requestedByUserId: string;
-      reason: string;
-      jobId?: string;
-      riskLevel?: string;
-      lockId?: string;
-    },
+    @Body() body: CreateApprovalRequestDto,
+    @CurrentUser('tenantId') principalTenantId: string,
+    @CurrentUser('id') principalUserId: string,
   ) {
+    // Tenant VE requester kimligi principal'dan turer; govde alanlari authority degildir.
+    const tenantId = this.resolveTenantAuthority(principalTenantId, body.tenantId);
+    const requestedByUserId = this.resolveActorAuthority(principalUserId);
+
     const request = await this.approvalService.createApprovalRequest(
-      body.tenantId,
+      tenantId,
       body.caseId,
-      body.requestedByUserId,
+      requestedByUserId,
       body.reason,
       {
         jobId: body.jobId,
@@ -161,21 +196,20 @@ export class ApprovalWorkflowController {
   @Post('decide')
   @HttpCode(HttpStatus.OK)
   async submitDecision(
-    @Body() body: {
-      tenantId: string;
-      approvalRequestId: string;
-      userId: string;
-      userRole: UserRole;
-      decision: ApprovalDecision;
-      note?: string;
-    },
+    @Body() body: SubmitApprovalDecisionDto,
+    @CurrentUser('tenantId') principalTenantId: string,
+    @CurrentUser('id') principalUserId: string,
   ) {
-    const result = await this.approvalService.submitDecision(
-      body.tenantId,
+    // Tenant ve actor principal'dan turer. `userRole` DTO'dan TAMAMEN CIKARILDI:
+    // cagiran kendi rolunu beyan edemez.
+    const tenantId = this.resolveTenantAuthority(principalTenantId, body.tenantId);
+    const actorUserId = this.resolveActorAuthority(principalUserId);
+
+    const result = await this.approvalService.submitDecisionAuthorized(
+      tenantId,
       body.approvalRequestId,
-      body.userId,
-      body.userRole,
-      body.decision,
+      actorUserId,
+      body.decision as ApprovalDecision,
       body.note,
     );
     return { ok: true, ...result };
@@ -184,8 +218,17 @@ export class ApprovalWorkflowController {
   /**
    * Get pending approval requests
    */
+  /**
+   * URL'deki tenant segmenti KORUNUR (route uyumlulugu) ama AUTHORITY DEGILDIR:
+   * yalnizca principal tenant'i ile karsilastirilir. Baska tenant'in id'si
+   * yazildiginda liste sessizce bos donmez — istek fail-closed reddedilir.
+   */
   @Get('pending/:tenantId')
-  async getPending(@Param('tenantId') tenantId: string) {
+  async getPending(
+    @Param('tenantId') pathTenantId: string,
+    @CurrentUser('tenantId') principalTenantId: string,
+  ) {
+    const tenantId = this.resolveTenantAuthority(principalTenantId, pathTenantId);
     const requests = await this.approvalService.getPendingRequests(tenantId);
     return { ok: true, requests };
   }
