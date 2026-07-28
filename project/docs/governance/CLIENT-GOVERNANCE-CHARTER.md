@@ -2441,3 +2441,90 @@ RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
 Bu bölüm: I02 implementasyonunu BAŞLATMAZ veya yetkilendirmez; migration uygulama yetkisi ÜRETMEZ; Track B'nin API/UI/publication dilimlerini AÇMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35/§36/§37'nin kendi metinlerini DEĞİŞTİRMEZ; I01 statüsünü DEĞİŞTİRMEZ; Spring Cleaning kayıtlarını DEĞİŞTİRMEZ; Track A sınırını DEĞİŞTİRMEZ; yeni lifecycle/enum/status alanı ÜRETMEZ; `pending-migration-coordination-register.md` §19/§20'nin metinlerini DEĞİŞTİRMEZ; başka programların (RCV / OFFICE / T5 / DX-006 / UYAP / DEBTOR) kayıtlarına DOKUNMAZ; kod, schema, migration, test veya CI DEĞİŞTİRMEZ.
 
 **SCHEMA EXISTS ≠ DATA MAY BE DISCLOSED · MIGRATION MERGED ≠ MIGRATION APPLIED · RATIFIED ≠ AUTHORIZED TO IMPLEMENT · NO CLIENT-VISIBLE FINANCIAL DATA YET.**
+
+## 39. CLIENT Phase 2 Track B — I01 Live-Apply Factual Reconciliation ve I02 Blocker Kaldırılması (OWNER RATIFIED, RECONCILIATION-ONLY)
+
+Bu bölüm, §37'de teknik olarak kapatılan `CLIENT-P2-U03-TRACK-B-I01` migration'ının **fiilen uygulanmış** olduğunu kayda geçirir ve §38.11'de yazılı `I01_LIVE_MIGRATION_NOT_APPLIED` blocker'ını kaldırır (`decision-log.md` `CLIENT-P2-U03-TRACK-B-I01-LIVE-APPLY` kaydı; `pending-migration-coordination-register.md` §22).
+
+§5, §6, §8.A, §8.B, §11–§38 substantive hükümlerini DEĞİŞTİRMEZ; **§37'nin ve §38'in kendi metinleri DEĞİŞTİRİLMEMİŞTİR.** **BU BÖLÜM RECONCILIATION-ONLY'DİR** — hiçbir kod, schema, migration, test veya CI değişikliği içermez ve I02 implementasyonunu BAŞLATMAZ.
+
+### 39.1 I01 Live Migration Dispozisyonu
+
+```text
+CLIENT-P2-U03-TRACK-B-I01
+
+SCHEMA / MIGRATION          : MERGED / CANONICAL   (§37, degismedi)
+LIVE MIGRATION              : APPLIED
+LIVE MIGRATION PRECONDITION : SATISFIED
+
+target                      : localhost:5432 / hukuk_db  (PostgreSQL 16.14, primary)
+migration                   : 20260726190741_client_p2_u03_track_b_i01_financial_disclosure_foundation
+checksum (ilk 16)           : af3c84ac17e13e8d
+finished_at                 : 2026-07-28 00:33:21.733 UTC
+repository SHA              : 32a42ed4 (PR #1629) · governance closure f16202a6 (PR #1705)
+
+APPLY ATTRIBUTION           : UNATTRIBUTED / NOT DETERMINED
+PRE-APPLY SAFETY EVIDENCE   : NOT AVAILABLE
+```
+
+Apply, `MIGRATION-TRAIN-20260728-PENDING-FOUR-LIVE-APPLY-R01` görevi devralmadan **önce**, kimliği belirlenemeyen tek bir `migrate deploy` koşusunda gerçekleşmiştir; o görev bu nedenle `BLOCKED / COMPETING_MIGRATION_OPERATION` ile durdurulmuş ve hedefe **hiçbir yazma yapmamıştır**. Ayrıntı ve incident kaydı: register §22.
+
+### 39.2 I01 Canlı Şema Doğrulaması
+
+Salt-okuma ile canlı hedefte doğrulandı — §37'nin canonical sözleşmesiyle **birebir**:
+
+```text
+tablolar                  : 3/3   ClientFinancialDisclosure · ...Version · ...Line
+ClientFinancialDisclosureStatus : 11/11 durum (§35.7'nin saydigi kume)
+FK delete_rule            : RESTRICT = 11/11   (ON DELETE CASCADE = 0)
+para kolonlari            : numeric(15,2) x5   (Float/double = 0)
+index                     : 13 unique / 23 toplam
+I01 bakimindan beklenmeyen drift : YOK
+```
+
+### 39.3 I02 Blocker Dispozisyonu
+
+```text
+CLIENT-P2-U03-TRACK-B-I02
+— DISCLOSURE SERVICE FOUNDATION AND INVARIANT ENFORCEMENT
+
+STATUS                      : RATIFIED / CANONICAL      (§38, degismedi)
+EXECUTION                   : OWNER-GATED / NOT STARTED
+LIVE MIGRATION PRECONDITION : SATISFIED
+BLOCKER                     : NONE
+IMPLEMENTATION AUTHORITY    : NONE
+```
+
+§38.11'in `BLOCKER: I01_LIVE_MIGRATION_NOT_APPLIED` hükmü bu kayıtla **karşılanmış ve kaldırılmıştır** — §38'in kendi metni değiştirilmemiş, blocker bu ayrı kayıtla kapatılmıştır (§28.7/§29/§37 emsali).
+
+**I02 implementasyonu bu kayıtla YETKİLENDİRİLMEZ.** §38.13'ün `IMPLEMENTATION AUTHORITY: NONE` hükmü aynen korunur; kod başlatılması için ayrı, task-bounded owner yetkisi gerekir.
+
+### 39.4 UYAP POA Drift'inin CLIENT Üzerindeki Etkisi
+
+Aynı apply koşusunda uygulanan `20260726210000_uyap_poa_tenant_safety_i01` migration'ı, `schema.prisma`'da tanımlı iki Tenant FK'sini (`ClientPowerOfAttorney_tenantId_fkey`, `PoaLawyer_tenantId_fkey`) üretmemiştir; bu drift **açıktır** ve `UYAP-POA-TENANT-FK-DRIFT-REMEDIATION-R01` ile ayrıca kapatılacaktır.
+
+```text
+UYAP POA DRIFT != CLIENT I01 LIVE MIGRATION NOT APPLIED
+CLIENT I02 IMPACT: NONE
+```
+
+Bu drift bir **UYAP tenant-integrity blocker'ıdır**; CLIENT I02'nin migration precondition'ını açık tutmaz.
+
+### 39.5 Statü ve Self-Check
+
+```text
+TRACK B ARCHITECTURE        : RATIFIED / CANONICAL       (§35, degismedi)
+TRACK B DATA FOUNDATION     : CLOSED / CANONICAL          (§37, degismedi)
+TRACK B I01 LIVE            : APPLIED                     (bu kayitla)
+TRACK B SERVICE FOUNDATION  : RATIFIED / NOT STARTED · BLOCKER NONE (bu kayitla)
+TRACK B API / UI / DASHBOARD / AUTHORIZATION PROJECTION /
+PUBLICATION RUNTIME         : NOT AUTHORIZED / NOT STARTED
+TRACK A (§34) · SPRING CLEANING (§36) : degismedi
+CLIENT-P2-U03 (genel)       : PARTIAL — NOT READY FOR FINAL CLOSURE
+RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
+IMPLEMENTATION AUTHORITY    : NONE
+```
+
+Bu bölüm: I02 implementasyonunu BAŞLATMAZ veya yetkilendirmez; migration uygulama yetkisi ÜRETMEZ; geçmişteki unattributed apply'ı **retroaktif olarak ratifiye ETMEZ** ve onun hakkında olmayan bir güvence üretmez; Track B'nin API/UI/publication dilimlerini AÇMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35/§36/§37/§38'in kendi metinlerini DEĞİŞTİRMEZ; UYAP POA drift'ini KAPATMAZ; diğer dört migration'ın program statülerini DEĞİŞTİRMEZ; Bank constraint-name drift'ini DÜZELTMEZ; kod, schema, migration, test veya CI DEĞİŞTİRMEZ.
+
+**I01 APPLIED ≠ CLIENT DATA MAY BE DISCLOSED · I02 RATIFIED ≠ I02 IMPLEMENTATION AUTHORIZED · APPLIED ≠ SAFELY APPLIED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**

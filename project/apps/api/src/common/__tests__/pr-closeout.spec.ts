@@ -122,8 +122,14 @@ describe('closeout — authority (owner 3.2)', () => {
     expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_PR_MISMATCH);
   });
 
-  it('7. reusing a consumed authority reference is forbidden', async () => {
-    const a = makeAdapter({ authorityLedgerEntry: async () => ({ taskId: 'GOV-EXAMPLE-R01', pr: 1234, consumed: true }) });
+  it('7. carrying a consumed authority reference to another PR is forbidden', async () => {
+    // Reuse yasagi PR eksenindedir: ayni ref BASKA bir PR'da kullanilamaz.
+    // Ayni PR icin recovery kosusu mesrudur ve test 36'da ayrica dogrulanir.
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({
+        taskId: 'GOV-EXAMPLE-R01', pr: 1234, consumed: true, consumedPr: 999,
+      }),
+    });
     const r = await closeout.closeoutPr(makeInput(), a);
     expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN);
     expect(a.calls.squashMerge).toBe(0);
@@ -380,6 +386,114 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
     expect(Object.keys(r)).not.toContain('reusableAuthority');
     expect(r.taskId).toBe('GOV-EXAMPLE-R01');
     expect(r.pr).toBe(1234);
+  });
+
+  it('31. a successful closeout consumes the authority reference', async () => {
+    const consumed: Json[] = [];
+    const a = makeAdapter({
+      consumeAuthority: async (ref: string, meta: Json) => {
+        consumed.push({ ref, meta });
+        return 'CONSUMED';
+      },
+    });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.status).toBe('CLOSED');
+    expect(r.authorityConsumed).toBe('CONSUMED');
+    expect(consumed).toHaveLength(1);
+    expect(consumed[0].ref).toBe('owner directive 2026-07-28 GO-COMPLETE #1234');
+    expect(consumed[0].meta.pr).toBe(1234);
+    expect(consumed[0].meta.mergeSha).toBe(MERGE_SHA);
+  });
+
+  it('32. a blocked run never consumes the authority reference', async () => {
+    const consumed: Json[] = [];
+    const a = makeAdapter({
+      getChecks: async () => [{ name: 'Architectural Guardrails', status: 'COMPLETED', conclusion: 'FAILURE' }],
+      consumeAuthority: async (ref: string) => {
+        consumed.push({ ref });
+        return 'CONSUMED';
+      },
+    });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.status).toBe('BLOCKED');
+    expect(consumed).toHaveLength(0);
+  });
+
+  it('33. an adapter without consumeAuthority still closes cleanly', async () => {
+    const r = await closeout.closeoutPr(makeInput(), makeAdapter());
+    expect(r.status).toBe('CLOSED');
+    expect(r.authorityConsumed).toBeNull();
+  });
+
+  it('34. the real gh/git adapter module loads and exposes the full surface', () => {
+    // Pilot bulgusu: gh-adapter.cjs'i hicbir test require etmiyordu, bu yuzden
+    // icindeki bir syntax hatasi butun CI yesilken main'e gidebiliyordu. Bu test
+    // adapter'i gercekten yukler; hata artik CI'da patlar.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('../../../../../scripts/orchestration-v2/closeout/gh-adapter.cjs');
+    const adapter = mod.createGhCloseoutAdapter({ repoCwd: process.cwd() });
+    for (const fn of [
+      'repositoryIdentity', 'authorityLedgerEntry', 'getPr', 'changedPaths', 'getChecks',
+      'platformRequiredChecks', 'remoteBranchHead', 'localHead', 'competingWriters',
+      'ownerWipCollision', 'squashMerge', 'syncMain', 'isAncestor', 'cleanupBranch',
+      'cleanupWorktree', 'consumeAuthority', 'verifyCanonical',
+    ]) {
+      expect(typeof adapter[fn]).toBe('function');
+    }
+  });
+
+  it('35. the CLI module loads', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const cli = require('../../../../../scripts/orchestration-v2/closeout/cli.cjs');
+    expect(typeof cli.main).toBe('function');
+    expect(cli.parseArgs(['--pr', '7', '--dry-run'])).toEqual({ pr: '7', 'dry-run': true });
+  });
+
+  it('36. a consumed reference still allows recovery for the SAME task and PR', async () => {
+    // Pilot bulgusu: consumed kontrolu PR ayrimi yapmiyordu, bu yuzden ayni PR
+    // icin ikinci kosu (recovery) REUSE_FORBIDDEN aliyordu.
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({
+        authorityRef: 'r', consumed: true, consumedTaskId: 'GOV-EXAMPLE-R01', consumedPr: 1234,
+      }),
+    });
+    a.state.pr = Object.assign({}, a.state.pr, { state: 'MERGED', mergeCommitOid: MERGE_SHA });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.status).toBe('CLOSED');
+    expect(a.calls.squashMerge).toBe(0);
+  });
+
+  it('37. a consumed reference is refused for a DIFFERENT PR', async () => {
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({
+        authorityRef: 'r', consumed: true, consumedTaskId: 'GOV-EXAMPLE-R01', consumedPr: 999,
+      }),
+    });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN);
+    expect(a.calls.squashMerge).toBe(0);
+  });
+
+  it('38. the worktree is removed before the branch is deleted', async () => {
+    // Pilot bulgusu: branch cleanup once kosuyordu; worktree branch'i checkout
+    // tuttugu icin `git branch -D` sessizce basarisiz oluyor, yine de DELETED
+    // raporlaniyordu.
+    const order: string[] = [];
+    const a = makeAdapter({
+      cleanupWorktree: async () => { order.push('worktree'); return 'REMOVED'; },
+      cleanupBranch: async () => { order.push('branch'); return 'DELETED'; },
+    });
+    const r = await closeout.closeoutPr(makeInput({ worktree: '/tmp/wt' }), a);
+    expect(r.status).toBe('CLOSED');
+    expect(order).toEqual(['worktree', 'branch']);
+  });
+
+  it('39. a branch that survives cleanup blocks closure', async () => {
+    const a = makeAdapter({ cleanupBranch: async () => 'LOCAL_BRANCH_REMAINS' });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.status).toBe('MERGED_CLEANUP_BLOCKED');
+    expect(r.blockerCode).toBe(closeout.BLOCKER.BRANCH_CLEANUP_FAILED);
+    expect(r.mergeSha).toBe(MERGE_SHA);
   });
 
   it('the state machine is single-directional and declared', () => {

@@ -1,5 +1,22 @@
 import { ForbiddenException } from '@nestjs/common';
 import { UyapService } from '../uyap.service';
+// DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 FIXTURE YUKSELTMESI (assertion ZAYIFLATILMADI):
+// UYAP hukuki gonderim yollari artik KOSULSUZ olarak dosya sahipligi + gecerli vekalet
+// ister. Bu spec'lerin amaci yetki DEGIL (transport truthfulness / evidence / log ownership
+// / audit); dolayisiyla fixture yetkili bir baglam saglar. Yetki davranisinin KENDISI
+// uyap-legal-authority-tenant-guard.spec.ts icinde ayrica ve tam olarak test edilir.
+const AUTHORIZED_CASE = {
+  id: 'c1',
+  tenantId: 'tenant-A',
+  caseClients: [{ clientId: 'client-1', client: { id: 'client-1' } }],
+  lawyers: [{ lawyerId: 'lawyer-1', lawyer: { id: 'lawyer-1' } }],
+};
+const buildAuthorizedPoaService = () => ({
+  checkValidPoa: jest.fn().mockResolvedValue({ isValid: true, message: 'ok' }),
+});
+const buildAuthorizedCaseFindFirst = () =>
+  jest.fn(async (args: any) => ({ ...AUTHORIZED_CASE, id: args?.where?.id ?? 'c1' }));
+
 
 /**
  * CLIENT-SEC-H2C-P02 — UyapRequestLog new-write tenant population.
@@ -23,10 +40,10 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
         update: jest.fn().mockResolvedValue({}),
         findMany: jest.fn().mockResolvedValue([]),
       },
-      case: { findFirst: jest.fn().mockResolvedValue(null) },
+      case: { findFirst: buildAuthorizedCaseFindFirst() },
       ...overrides,
     };
-    const poaService: any = {};
+    const poaService: any = buildAuthorizedPoaService();
     const validationGate: any = { checkPreHacizIntelligence: jest.fn().mockResolvedValue({ isValid: true, warnings: [], debtors: [] }) };
     const errorReporter: any = { report: jest.fn() };
     // TRANSPORT-CONTAIN-01: sendPaymentOrder artık CasePolicyEngine yokluğunda fail-closed'tır
@@ -122,22 +139,37 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
       );
     });
 
-    it('pushHacizRequest: DTO.tenantId trusted execution tenant\'ı OVERRIDE edemez', async () => {
+    // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 ILE GUCLENDIRILDI (ZAYIFLATILMADI):
+    // Bu testin korudugu invariant "DTO.tenantId log ownership'i belirleyemez" idi; eski
+    // davranista uyusmayan DTO tenant'i sessizce YOK SAYILIYOR ve islem SURUYORDU.
+    // Artik payload tenant'i yalniz tutarlilik iddiasidir ve uyusmazlik FAIL-CLOSED'dir:
+    // saldirgan degeri log'a yazilamamakla kalmaz, islem hic baslamaz.
+    it('pushHacizRequest: DTO.tenantId trusted execution tenant ile uyusmuyorsa FAIL-CLOSED (log YAZILMAZ)', async () => {
+      const { service, prisma } = buildService();
+      await expect(
+        service.pushHacizRequest({
+          caseId: 'case-1',
+          targetType: 'BANK',
+          targetDetails: {},
+          amount: 1000,
+          tenantId: 'body-attacker-tenant',
+          skipPoaCheck: true,
+        } as any, 'tenant-authenticated'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      // Saldirgan degeri log ownership'e ASLA yazilmaz — hicbir log satiri olusmaz.
+      expect(prisma.uyapRequestLog.create).not.toHaveBeenCalled();
+    });
+
+    it('pushHacizRequest: DTO.tenantId YOK iken log ownership trusted param uzerinden yazilir', async () => {
       const { service, prisma } = buildService();
       await service.pushHacizRequest({
         caseId: 'case-1',
         targetType: 'BANK',
         targetDetails: {},
         amount: 1000,
-        tenantId: 'body-attacker-tenant', // DTO alanı (POA amaçlı) — log ownership'i belirleyemez
-        skipPoaCheck: true,
-      }, 'tenant-authenticated');
+      } as any, 'tenant-authenticated');
       expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-authenticated' }) }),
-      );
-      // DTO'daki attacker değeri log ownership'e ASLA yazılmaz:
-      expect(prisma.uyapRequestLog.create).not.toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ tenantId: 'body-attacker-tenant' }) }),
       );
     });
 

@@ -1351,3 +1351,143 @@ PRODUCTION IDDIASI             : YOK
 ```
 
 **MIGRATION MERGED ≠ MIGRATION APPLIED · READ-ONLY VERIFIED ≠ APPLY AUTHORIZED.**
+
+---
+
+## 22. MIGRATION-TRAIN-POST-APPLY-FACTUAL-RECONCILIATION-R01 — beş migration'ın fiilî live-apply kaydı (2026-07-28)
+
+Kaynak: `MIGRATION-TRAIN-POST-APPLY-RECOVERY-P01` / TASK 02 (owner `GO-COMPLETE — ANALYZE-FIRST — FULL PROGRAM EXECUTION AUTHORITY`).
+
+§19 bu migration'ları `UNKNOWN`, §20 ve §21 `NOT APPLIED` olarak kaydetmişti. **Bu bölüm o kayıtları fiilî gerçekle hizalar.** §19/§20/§21'in kendi metinleri DEĞİŞTİRİLMEMİŞTİR (append-only).
+
+### 22.1 Hedef
+
+```text
+target        : localhost:5432 / hukuk_db
+engine        : PostgreSQL 16.14, primary (pg_is_in_recovery = false)
+PRODUCTION CLAIM: NONE — repository disinda temsil edilmeyen hicbir
+                  staging/production ortami hakkinda iddia URETILMEMISTIR
+```
+
+### 22.2 Fiilî apply kaydı
+
+```text
+APPLY STATUS   : APPLIED
+APPLIED AT     : 2026-07-28 00:33:21.611 – 00:33:21.823 UTC  (212 ms, sirali)
+APPLY ACTOR    : UNATTRIBUTED / NOT DETERMINED
+APPLY METHOD   : single prisma migrate deploy — migration timestamp'lerinden
+                 CIKARIM (inferred); dogrudan komut kanidi YOKTUR
+PRE-APPLY BACKUP: NONE VERIFIED
+AUTHORIZED TRAIN: dort migration
+ACTUAL TRAIN    : bes migration
+```
+
+| # | Migration | PR / SHA | checksum (ilk 16) | finished_at (UTC) | Yetki |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `20260726120000_claim_formation_projection_binding_persistence` | #1630 `d7ef31f6` | `09517a2e08d0ec4b` | `00:33:21.611` | yetkili |
+| 2 | `20260726190741_client_p2_u03_track_b_i01_financial_disclosure_foundation` | #1629 `32a42ed4` | `af3c84ac17e13e8d` | `00:33:21.733` | yetkili |
+| 3 | `20260726210000_uyap_poa_tenant_safety_i01` | #1633 `e20b36ff` | `7c8e1502a918dd17` | `00:33:21.777` | yetkili |
+| 4 | `20260728120000_debtor_cpe_tenant_hardening_p1_i01` | #1711 `a919fdc5` | `03aea6c7b9afd98b` | `00:33:21.806` | yetkili |
+| 5 | `20260728130000_office_p2_cap02_reportingline_user_fk_hardening_i01` | #1717 `002c2e0b` | `7e036d89923aaf60` | `00:33:21.823` | **YETKİSİZ** (train dışı) |
+
+Hepsi `applied_steps_count = 1`, `rolled_back_at = NULL`, `logs = NULL`, checksum repository ile uyumlu.
+
+### 22.3 Veritabanı sağlığı (salt-okuma doğrulaması)
+
+```text
+_prisma_migrations toplam / basarili / rolled-back / yarim : 107 / 107 / 0 / 0
+repo migration klasoru                                     : 107
+pending                                                    : 0
+ghost (DB'de var, repoda yok)                              : 0
+checksum uyumsuz                                           : 0
+```
+
+### 22.4 Apply incident kaydı
+
+```text
+INCIDENT: UNATTRIBUTED_PARALLEL_MIGRATION_APPLY
+
+IMPACT:
+  - bes migration uygulandi
+  - biri yetkilendirilmis dort uyeli train'in DISINDA
+  - dogrulanabilir pre-apply backup YOK
+  - sart kosulan backup -> restore rehearsal -> clone rehearsal protokolu ATLANDI
+  - islemi yapan aktor BELIRLENEMEDI
+
+CURRENT DATABASE HEALTH:
+  107/107 applied · checksum clean · failed/rolled-back/partial 0
+```
+
+Bu kayıt hiçbir kişiye veya ajana isnat içermez. `MIGRATION-TRAIN-20260728-PENDING-FOUR-LIVE-APPLY-R01` görevi bu nedenle `BLOCKED / COMPETING_MIGRATION_OPERATION` ile durdurulmuş ve hedefe **hiçbir yazma yapmamıştır**.
+
+### 22.5 Post-apply koruyucu yedek (TASK 01)
+
+```text
+MIGRATION-TRAIN-POST-APPLY-PROTECTIVE-BACKUP-R01 : CLOSED / PASS
+
+format          : pg_dump custom (-Fc)
+size            : 1.052.910 bytes
+sha256          : 69e55de4421f608d7fd0ade6e4f9b0e78ab3abec1dd579d1f6d5e4be51f0949a
+pg_dump exit    : 0
+pg_restore --list exit : 0   (TOC 2084 giris, okunabilir)
+restore rehearsal      : PASS — disposable clone, 12/12 tablo paritesi,
+                         107 basarili / 0 rolled-back / 0 yarim
+konum           : yalniz local makine; repository DISI, commit EDILMEDI
+```
+
+**POST-APPLY PROTECTIVE BACKUP ≠ PRE-APPLY BACKUP** — bu yedek geçmişteki kontrolsüz apply'ı geriye dönük güvenli hâle getirmez; yalnız bu noktadan itibaren bir koruma noktası sağlar.
+
+### 22.6 UYAP POA tenant FK drift'i
+
+```text
+UYAP POA TENANT FK DRIFT : OPEN / BLOCKING FOR UYAP TENANT-INTEGRITY CLOSURE
+
+EKSIK:
+  ClientPowerOfAttorney_tenantId_fkey
+  PoaLawyer_tenantId_fkey
+
+CLIENT I02 IMPACT: NONE
+```
+
+`schema.prisma` her iki modelde `tenant Tenant @relation(..., onDelete: Cascade)` tanımlar; `20260726210000_uyap_poa_tenant_safety_i01` migration'ı bu iki FK'yi **hiç üretmez** (SQL'de 0 kez geçer) ve canlı DB'de mevcut değildir. Bu, `UYAP-POA-TENANT-FK-DRIFT-REMEDIATION-R01` ile ayrı bir corrective migration olarak kapatılacaktır. **UYAP POA DRIFT ≠ CLIENT I01 LIVE MIGRATION NOT APPLIED.**
+
+### 22.7 Bu bölümün üretmedikleri
+
+```text
+OWNER-AUTHORIZED APPLY IDDIASI     : URETILMEDI — apply unattributed'dir
+CONTROLLED REHEARSAL IDDIASI       : URETILMEDI — prova yapilmadi
+RETROAKTIF RATIFIKASYON            : NONE
+MIGRATION APPLY YETKISI            : bu bolumle URETILMEZ
+DIGER PROGRAMLARIN KAPANIS STATUSU : DEGISTIRILMEDI
+Bank constraint-name drift'i       : DUZELTILMEDI (ACCEPTED_PRE_EXISTING)
+```
+
+**MIGRATION APPLIED ≠ PROGRAM CLOSED · APPLIED ≠ SAFELY APPLIED · UNATTRIBUTED ≠ UNAUTHORIZED-BY-A-NAMED-ACTOR.**
+
+---
+
+## 23. UYAP-POA-TENANT-FK-DRIFT-REMEDIATION-R01 — corrective migration (2026-07-28)
+
+Kaynak: `MIGRATION-TRAIN-POST-APPLY-RECOVERY-P01` / TASK 03.
+
+§22.6'da `OPEN` olarak kaydedilen UYAP POA tenant FK drift'ini kapatan **additive corrective migration** üretildi. Bu bölüm yalnız migration'ın varlığını ve live-apply beklediğini kaydeder; **live-apply gerçeği ayrı bir bölümle kaydedilecektir.**
+
+```text
+MIGRATION : 20260728140000_uyap_poa_tenant_fk_drift_remediation_r01
+KAPSAM    : yalniz iki eksik Tenant FK
+              ClientPowerOfAttorney_tenantId_fkey
+              PoaLawyer_tenantId_fkey
+            FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE   (canonical schema sozlesmesi)
+SCHEMA    : schema.prisma DEGISTIRILMEDI — iliskiler zaten dogru tanimliydi
+DESTRUCTIVE: yok (tablo/kolon silinmez, veri degistirilmez)
+HISTORICAL MIGRATION: DEGISTIRILMEDI
+
+VERI BUTUNLUGU KAPISI (salt-okuma, uygulama oncesi — hepsi 0):
+  tenantId NULL (POA / PoaLawyer)                  : 0 / 0
+  orphan tenantId (POA / PoaLawyer)                : 0 / 0
+  POA vs Client · PoaLawyer vs POA · vs Lawyer     : 0 / 0 / 0
+
+LIVE APPLY: MERGED UPON APPROVED MERGE / PENDING LIVE APPLY
+LIVE APPLY AUTHORITY: TASK 03 kapsaminda, implementation PR merge edildikten SONRA
+```

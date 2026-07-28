@@ -462,3 +462,48 @@ Icerik pin'i BLOB sha'sidir, commit sha'si degildir; GH-03 kaydindaki gerekce
 aynen gecerlidir.
 
 Kayit bu ayirmaya ozgudur: yeniden kullanilabilir veya genel amacli degildir.
+
+## RCV-COL FULL REMEDIATION BOOTSTRAP — exact control-plane authority binding
+
+Owner-ratified 2026-07-28. Bu kayıt mevcut hiçbir kontrolü gevşetmez ve yalnız
+PR #1721 için tek kullanımlık, task-specific bir control-plane binding oluşturur.
+
+### Binding PR kimliği
+
+```text
+Task ID  : GOV-COORD-RCV-COL-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : 7ba8d8e69fcd236bb1ca902eabc9cff0837fea04
+Head ref : codex/gov-coord-rcv-col-bootstrap-control-plane-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-COL-FULL-REMEDIATION-BOOTSTRAP-R01
+Target mode      : RCV_COL_FULL_REMEDIATION_BOOTSTRAP_R01
+Target PR        : #1721
+Original base SHA: 1018c6b521e9159b3b5e9e1b82ed307fec6ff79f
+Head ref         : codex/rcv-col-full-remediation-bootstrap-r01
+Scope            : M project/docs/governance/decision-log.md
+                   A project/docs/governance/coordination-execution-grants/RCV-COL-FULL-REMEDIATION-EXECUTION-GRANT-R01.md
+Semantic record  : RCV-COL-FULL-REMEDIATION-RATIFICATION-R01
+Execution record : RCV-COL-FULL-REMEDIATION-EXECUTION-GRANT-R01
+```
+
+Hedef PR yalnız exact path/status seti, her authority marker'ının exact tekil
+oluşu, execution grant'in yukarıdaki semantic authority'ye exact binding'i ve
+güncel target base'in bu binding'i canonical hale getiren commit'ten gelmesi
+birlikte doğrulandığında kabul edilir. Original base yalnız provenance olarak
+korunur; hedef head commit SHA'sı pinlenmez. Bu nedenle binding main'e girdikten
+sonraki fresh-main hizalaması, içerik kimliği değişmiyorsa geçerlidir.
+
+Binding yalnız yukarıdaki iki target path'e ve PR #1721'e uygulanır. Genel
+`decision-log.md` yazma, genel execution-grant oluşturma veya başka bir RCV,
+COLLECTION ya da RECEIVABLE task'ına aktarma yetkisi vermez. Request-only,
+execution ve result-only kurallarını değiştirmez; Constitution veya Domain Law
+yetkisi üretmez. PR #1721 merge veya close olduktan sonra yeniden kullanılamaz
+ve reusable authority oluşturmaz.

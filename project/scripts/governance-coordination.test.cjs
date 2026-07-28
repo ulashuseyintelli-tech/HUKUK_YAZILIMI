@@ -283,6 +283,111 @@ function classifyGh02Workflow(changes, overrides = {}) {
   });
 }
 
+function rcvColBindingChanges() {
+  return coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function rcvColTargetChanges() {
+  return coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function rcvColBindingContractContent() {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  return [
+    '# Contract fixture',
+    binding.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    binding.targetPr.taskId,
+    binding.targetPr.mode,
+    String(binding.targetPr.pullRequestNumber),
+    binding.targetPr.originalBaseSha,
+    binding.targetPr.headRef,
+    ...binding.targetPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.recordId,
+    '',
+  ].join('\n');
+}
+
+function createRcvColTargetGitFixture(t, options = {}) {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-rcv-col-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+
+  const contractPath = path.join(root, ...binding.contractPath.split('/'));
+  const decisionPath = path.join(root, ...target.semanticAuthority.path.split('/'));
+  fs.mkdirSync(path.dirname(contractPath), { recursive: true });
+  fs.writeFileSync(contractPath, rcvColBindingContractContent(), 'utf8');
+  fs.writeFileSync(decisionPath, '# Decision Log\n', 'utf8');
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'canonical RCV-COL binding'], root);
+
+  if (options.freshMain) {
+    const unrelated = path.join(root, 'unrelated.md');
+    fs.writeFileSync(unrelated, 'fresh main advance\n', 'utf8');
+    runFixtureGit(['add', '--all'], root);
+    runFixtureGit(['commit', '--quiet', '-m', 'advance canonical main'], root);
+  }
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  const semanticRecordId =
+    options.semanticRecordId || target.semanticAuthority.recordId;
+  const executionRecordId =
+    options.executionRecordId || target.executionGrant.recordId;
+  const semanticBindingRecordId =
+    options.semanticBindingRecordId || target.semanticAuthority.recordId;
+  const semanticMarker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${semanticRecordId} -->`;
+  const executionMarker = `<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=${executionRecordId} -->`;
+  fs.appendFileSync(
+    decisionPath,
+    `| 2026-07-28 | ${semanticMarker} **${semanticRecordId} — fixture** |\n${
+      options.duplicateSemanticMarker ? `${semanticMarker}\n` : ''
+    }`,
+    'utf8',
+  );
+
+  const grantPath = path.join(root, ...target.executionGrant.path.split('/'));
+  fs.mkdirSync(path.dirname(grantPath), { recursive: true });
+  fs.writeFileSync(
+    grantPath,
+    [
+      '# Grant fixture',
+      executionMarker,
+      options.duplicateExecutionMarker ? executionMarker : '',
+      '',
+      '```text',
+      `semanticAuthorityRef.kind     : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path     : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${semanticBindingRecordId}`,
+      '```',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'target RCV-COL bootstrap'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, base, head };
+}
+
 function createGh02SyncedGitFixture(t) {
   const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-gh02-'));
@@ -1370,6 +1475,209 @@ test('explicit GO-ANALYZE remains read-only after policy alignment', () => {
   assert.match(agents, /`GO-ANALYZE`: Explicit salt-okunur analizdir/);
   assert.match(processRules, /Explicit read-only moddur/);
   assert.match(processRules, /dosya değişikliği, commit, PR veya merge yoktur/i);
+});
+
+test('RCV-COL binding PR requires exact base branch scope and contract content', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(rcvColBindingChanges(), {
+    base: binding.bindingPr.baseSha,
+    headRef: binding.bindingPr.headRef,
+  });
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(),
+  );
+  const result = coordination.validateRcvColFullRemediationBindingScope({
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: rcvColBindingChanges(),
+    taskId: binding.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('RCV-COL binding PR rejects wrong branch base and extra path', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const context of [
+    { base: '0'.repeat(40), headRef: binding.bindingPr.headRef },
+    { base: binding.bindingPr.baseSha, headRef: `${binding.bindingPr.headRef}-copy` },
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(rcvColBindingChanges(), context),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  const changes = rcvColBindingChanges();
+  changes.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(changes, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('RCV-COL target recognizes only exact branch and M/A change set', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.classifyPrChangeSet(rcvColTargetChanges(), {
+    base: binding.targetPr.originalBaseSha,
+    headRef: binding.targetPr.headRef,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(rcvColTargetChanges(), {
+        base: binding.targetPr.originalBaseSha,
+        headRef: `${binding.targetPr.headRef}-copy`,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  const expanded = rcvColTargetChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/product-backlog.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('RCV-COL target rejects decision and grant status drift', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const status of ['A', 'D', 'R100']) {
+    const changes = rcvColTargetChanges();
+    changes[0] = {
+      status,
+      path: changes[0].path,
+      ...(status.startsWith('R') ? { oldPath: 'project/docs/governance/old.md' } : {}),
+    };
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(changes, {
+          base: binding.targetPr.originalBaseSha,
+          headRef: binding.targetPr.headRef,
+        }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  for (const status of ['M', 'D', 'R100']) {
+    const changes = rcvColTargetChanges();
+    changes[1] = {
+      status,
+      path: changes[1].path,
+      ...(status.startsWith('R') ? { oldPath: 'project/docs/governance/old-grant.md' } : {}),
+    };
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(changes, {
+          base: binding.targetPr.originalBaseSha,
+          headRef: binding.targetPr.headRef,
+        }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('RCV-COL target validates exact markers binding and fresh-main ancestry', (t) => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const freshMain of [false, true]) {
+    const fixture = createRcvColTargetGitFixture(t, { freshMain });
+    const result = coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    });
+    assert.equal(result.mode, binding.targetPr.mode);
+    assert.equal(result.taskId, binding.targetPr.taskId);
+  }
+});
+
+test('RCV-COL target rejects wrong or duplicate authority markers', (t) => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const options of [
+    { semanticRecordId: 'RCV-COL-WRONG-SEMANTIC-R01', code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH' },
+    { executionRecordId: 'RCV-COL-WRONG-GRANT-R01', code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH' },
+    { duplicateSemanticMarker: true, code: 'AUTHORITY_RECORD_AMBIGUOUS' },
+    { duplicateExecutionMarker: true, code: 'AUTHORITY_RECORD_AMBIGUOUS' },
+  ]) {
+    const fixture = createRcvColTargetGitFixture(t, options);
+    expectCode(
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      options.code,
+    );
+  }
+});
+
+test('RCV-COL target rejects a grant bound to another semantic authority', (t) => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, {
+    semanticBindingRecordId: 'ANOTHER-SEMANTIC-AUTHORITY-R01',
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('RCV-COL binding cannot be reused as generic bootstrap or with control-plane companions', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const unrelated = rcvColTargetChanges();
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(unrelated, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: 'codex/rcv-col-full-remediation-bootstrap-r02',
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  for (const companion of [
+    'project/docs/governance/coordination-requests/GOV-REQ-20260728-OTHER/request.md',
+    'project/docs/governance/coordination-results/GOV-REQ-20260728-OTHER/result.md',
+    coordination.REGISTER_REPO_PATH,
+  ]) {
+    const changes = rcvColTargetChanges();
+    changes.push({ status: companion.includes('/request') || companion.includes('/result') ? 'A' : 'M', path: companion });
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(changes, {
+          base: binding.targetPr.originalBaseSha,
+          headRef: binding.targetPr.headRef,
+        }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
 });
 
 test('GH-02 authority binding requires exact base branch and three-file scope', () => {

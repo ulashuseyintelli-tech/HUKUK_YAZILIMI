@@ -237,6 +237,14 @@ function createQueue(dir) {
         // cannot find its own authority again cannot be re-validated, and
         // re-validation is the whole point of the second gate.
         requestPath: req.requestPath || null,
+        // What the paper trail looked like when this was admitted. The worker
+        // recomputes it from the COMMITTED artefacts at dispatch, so a task
+        // cannot be edited after admission and run anyway.
+        artefactSha256: req.artefactSha256 || null,
+        // WHICH regime this was admitted under. Inferring it from the digest
+        // would be wrong: a digest is computed either way, so its presence
+        // says nothing about whether the artefacts had to be committed.
+        artefactsCommitted: req.artefactsCommitted === true,
         worktreePath: null,
         branch: null,
         prNumber: null,

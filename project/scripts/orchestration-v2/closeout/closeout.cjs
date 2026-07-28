@@ -166,8 +166,20 @@ function checkAuthorityBinding(input, ledgerEntry) {
   if (ledgerEntry.pr != null && ledgerEntry.pr !== input.pr) {
     return { ok: false, code: BLOCKER.MERGE_AUTHORITY_PR_MISMATCH, detail: 'ref bound to PR #' + ledgerEntry.pr };
   }
+  // Tuketilmis bir reference AYNI task/PR icin yeniden kullanilabilir: kapanis
+  // yarim kaldiysa recovery kosusu gerekir (owner 3.8). Yasak olan, reference'i
+  // BASKA bir PR veya task'a tasimaktir. Pilot bunu ortaya cikardi: consumed
+  // kontrolu PR ayrimi yapmadigi icin idempotent recovery imkansizdi.
   if (ledgerEntry.consumed === true) {
-    return { ok: false, code: BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN, detail: 'authority reference already consumed' };
+    const sameTask = !ledgerEntry.consumedTaskId || ledgerEntry.consumedTaskId === input.taskId;
+    const samePr = ledgerEntry.consumedPr == null || ledgerEntry.consumedPr === input.pr;
+    if (!sameTask || !samePr) {
+      return {
+        ok: false,
+        code: BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN,
+        detail: 'reference consumed by task ' + ledgerEntry.consumedTaskId + ' PR #' + ledgerEntry.consumedPr,
+      };
+    }
   }
   return { ok: true };
 }
@@ -218,6 +230,7 @@ function baseResult(input) {
     worktreeCleanup: null,
     canonicalVerification: null,
     blockerCode: null,
+    authorityConsumed: null,
     dryRun: input.dryRun === true,
   };
 }
@@ -353,18 +366,34 @@ async function recoverAfterMerge(out, input, adapter) {
     }
     out.stage = 'MAIN_SYNCED';
 
-    out.branchCleanup = await adapter.cleanupBranch(input.branch);
-    out.stage = 'BRANCH_CLEANED';
-
+    // Worktree ONCE kaldirilir: worktree bir branch'i checkout tutarken
+    // `git branch -D` calismaz. Pilot bunu ortaya cikardi — branch cleanup once
+    // kosuyor, sessizce basarisiz oluyor ve yine de DELETED raporluyordu.
     out.worktreeCleanup = input.worktree ? await adapter.cleanupWorktree(input.worktree) : 'NOT_APPLICABLE';
     if (out.worktreeCleanup === 'ORPHANED_WORKTREE_DIR') {
       return Object.assign(out, { status: 'MERGED_CLEANUP_BLOCKED', stage: 'WORKTREE_CLEANED', blockerCode: BLOCKER.WORKTREE_CLEANUP_FAILED });
     }
     out.stage = 'WORKTREE_CLEANED';
 
+    out.branchCleanup = await adapter.cleanupBranch(input.branch);
+    if (out.branchCleanup !== 'DELETED' && out.branchCleanup !== 'NOT_APPLICABLE') {
+      return Object.assign(out, { status: 'MERGED_CLEANUP_BLOCKED', stage: 'BRANCH_CLEANED', blockerCode: BLOCKER.BRANCH_CLEANUP_FAILED });
+    }
+    out.stage = 'BRANCH_CLEANED';
+
     out.canonicalVerification = await adapter.verifyCanonical();
     if (out.canonicalVerification !== 'OK') {
       return Object.assign(out, { status: 'MERGED_CLEANUP_BLOCKED', stage: 'CANONICAL_VERIFIED', blockerCode: BLOCKER.CANONICAL_VERIFICATION_FAILED });
+    }
+    // Owner 3.2: ayni authority reference ikinci bir PR'da kullanilamaz. Kapanis
+    // basarili oldugunda reference tuketilmis olarak kaydedilir; ledger yoksa
+    // adapter no-op doner ve kapanis yine de gecerlidir.
+    if (typeof adapter.consumeAuthority === 'function') {
+      out.authorityConsumed = await adapter.consumeAuthority(input.authorityRef, {
+        taskId: input.taskId,
+        pr: input.pr,
+        mergeSha: out.mergeSha,
+      });
     }
     out.stage = 'CLOSED';
     return Object.assign(out, { status: 'CLOSED', blockerCode: null });

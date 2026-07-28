@@ -19,6 +19,12 @@ import { UyapSendAuthorityResolverService } from './authority/uyap-send-authorit
 import { UyapAuthorityFactProvider } from './authority/uyap-authority-fact.provider';
 import { ComputedFactRegistry } from '../policy-engine/fact-store/computed-fact-registry';
 import { LawyerModule } from '../lawyer/lawyer.module';
+// UYAP-EXPENSE-BLOCKING-FACT-BRIDGE-I01: EXPENSE_BLOCKING gate'inin canonical kaynagi.
+// ExpenseBlockReasonModule YALNIZ PrismaModule'e baglidir -> CPE/UYAP cycle'i YOKTUR.
+// `ExpenseGateService` BILEREK kullanilmaz: o servis canPerformAction cagirir ve
+// `CPE UYAP_SEND -> provider -> ExpenseGateService -> CPE UYAP_SEND` cycle'i olusur.
+import { UyapExpenseBlockingFactProvider } from './authority/uyap-expense-blocking-fact.provider';
+import { ExpenseBlockReasonModule } from '../expense-block-reason/expense-block-reason.module';
 
 // Re-export UYAP codes for external use
 export * from './uyap-codes';
@@ -33,6 +39,8 @@ export * from './uyap-codes';
     // I04: canonical acting-lawyer cozumlemesi Lawyer domain'inden tuketilir
     // (UYAP-BC-OFFICE-001 — connector authority truth URETMEZ).
     forwardRef(() => LawyerModule),
+    // I04B: masraf blok siniflandirmasi salt-okuma tuketilir (cycle YOK).
+    ExpenseBlockReasonModule,
   ],
   controllers: [UyapController],
   providers: [
@@ -43,6 +51,7 @@ export * from './uyap-codes';
     UyapOperationEvidenceOrchestrator,
     UyapSendAuthorityResolverService,
     UyapAuthorityFactProvider,
+    UyapExpenseBlockingFactProvider,
   ],
   exports: [UyapService, UyapXmlService, UyapSendAuthorityResolverService],
 })
@@ -50,13 +59,16 @@ export class UyapModule implements OnModuleInit {
   constructor(
     private readonly factRegistry: ComputedFactRegistry,
     private readonly authorityFactProvider: UyapAuthorityFactProvider,
+    private readonly expenseBlockingFactProvider: UyapExpenseBlockingFactProvider,
   ) {}
 
   /**
-   * I04: authority fact provider'i CPE registry'sine kendi bounded context'imizden kaydeder.
-   * Boylece PolicyEngineModule UyapModule'u import etmek zorunda kalmaz (ters bagimlilik yok).
+   * I04/I04B: authority ve masraf-blok fact provider'lari CPE registry'sine kendi bounded
+   * context'imizden kaydedilir. Boylece PolicyEngineModule UyapModule'u import etmek
+   * zorunda kalmaz (ters bagimlilik yok). Kayit sirasi onemsizdir; iki fact bagimsizdir.
    */
   onModuleInit(): void {
     this.factRegistry.register(this.authorityFactProvider);
+    this.factRegistry.register(this.expenseBlockingFactProvider);
   }
 }

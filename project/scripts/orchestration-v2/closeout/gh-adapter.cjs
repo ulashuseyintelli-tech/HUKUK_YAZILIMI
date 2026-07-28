@@ -176,8 +176,13 @@ function createGhCloseoutAdapter(o) {
       const remote = tryRun('git', ['ls-remote', '--heads', 'origin', branch], cwd);
       if (remote) tryRun('git', ['push', 'origin', '--delete', branch], cwd);
       tryRun('git', ['branch', '-D', branch], cwd);
-      const still = tryRun('git', ['ls-remote', '--heads', 'origin', branch], cwd);
-      return still ? 'REMOTE_BRANCH_REMAINS' : 'DELETED';
+      // Her iki tarafi da DOGRULA. Yalniz remote'a bakmak, worktree checkout
+      // tuttugu icin silinemeyen bir local branch'i DELETED gostermisti.
+      const remoteLeft = tryRun('git', ['ls-remote', '--heads', 'origin', branch], cwd);
+      const localLeft = tryRun('git', ['branch', '--list', branch], cwd);
+      if (remoteLeft) return 'REMOTE_BRANCH_REMAINS';
+      if (localLeft) return 'LOCAL_BRANCH_REMAINS';
+      return 'DELETED';
     },
 
     /** AGENTS.md §6: yalniz remove --force + prune; fiziksel silme yok. */
@@ -190,6 +195,36 @@ function createGhCloseoutAdapter(o) {
       run('git', ['worktree', 'prune'], cwd);
       if (fs.existsSync(path)) return 'ORPHANED_WORKTREE_DIR';
       return 'REMOVED';
+    },
+
+    /**
+     * Owner 3.2: authority reference tuketildi olarak isaretlenir; ayni ref
+     * baska bir PR'da kullanilamaz. Ledger yoksa NO_LEDGER doner — kapanis
+     * gecerlidir, yalniz reuse korumasi kayit tutmaz.
+     */
+    async consumeAuthority(ref, meta) {
+      const p = o.ledgerPath;
+      if (!p) return 'NO_LEDGER';
+      let ledger = { entries: [] };
+      if (fs.existsSync(p)) {
+        try {
+          ledger = JSON.parse(fs.readFileSync(p, 'utf8'));
+        } catch (e) {
+          return 'LEDGER_UNREADABLE';
+        }
+      }
+      if (!Array.isArray(ledger.entries)) ledger.entries = [];
+      const existing = ledger.entries.find((e) => e.authorityRef === ref);
+      const stamp = {
+        consumed: true,
+        consumedPr: meta ? meta.pr : null,
+        consumedTaskId: meta ? meta.taskId : null,
+        consumedMergeSha: meta ? meta.mergeSha : null,
+      };
+      if (existing) Object.assign(existing, stamp);
+      else ledger.entries.push(Object.assign({ authorityRef: ref }, stamp));
+      fs.writeFileSync(p, JSON.stringify(ledger, null, 2) + String.fromCharCode(10), 'utf8');
+      return 'CONSUMED';
     },
 
     async verifyCanonical() {
