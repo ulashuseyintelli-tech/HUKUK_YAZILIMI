@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "programId": "OFFICE",
+  "taskId": "CANARY-OFFICE-ENCRYPTION-CHARACTERIZATION-R03",
+  "taskClass": "TEST_ONLY_CHARACTERIZATION",
+  "planPath": "project/docs/governance/coordination-v2/task-plans/CANARY/plan.v3.json",
+  "standingGrantPath": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-OFFICE-LIVE-R01.json",
+  "grantPath": "project/docs/governance/coordination-v2/task-plans/CANARY/grant.v3.json",
+  "promptPath": "project/docs/governance/coordination-v2/task-plans/CANARY/executor-prompt.md",
+  "executorLane": "CODEX_LOCAL",
+  "targetBranch": "main",
+  "autoMerge": true,
+  "priority": 10,
+  "dependsOn": [],
+  "requireCommittedArtefacts": true,
+  "notes": "OPERATIONAL CANARY R03 — CODEX_LOCAL lane, ucdan uca zincir kaniti."
+}
