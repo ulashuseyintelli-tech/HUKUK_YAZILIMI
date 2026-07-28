@@ -209,63 +209,7 @@ export class ClientFinancialDisclosureWriterService {
     readonly tenantId: string;
     readonly versionId: string;
   }): Promise<VerifyDisclosureSnapshotResult> {
-    const version = await this.prisma.clientFinancialDisclosureVersion.findFirst({
-      where: { id: input.versionId, tenantId: input.tenantId },
-      select: {
-        id: true,
-        version: true,
-        currency: true,
-        snapshotHash: true,
-        sourceCollectionId: true,
-        sourceCollectionAmount: true,
-        sourceCollectionDate: true,
-        dispositionTotalAmount: true,
-        dispositionPostedAt: true,
-        totalCollected: true,
-        clientNetAmount: true,
-        disclosure: {
-          select: {
-            caseId: true,
-            caseClientId: true,
-            collectionDispositionId: true,
-            caseClient: { select: { clientId: true } },
-          },
-        },
-        lines: {
-          select: { type: true, amount: true, sourceDispositionLineId: true },
-        },
-      },
-    });
-    if (!version) {
-      throw new ClientFinancialDisclosureError('DISCLOSURE_SOURCE_NOT_FOUND');
-    }
-
-    const recomputed = disclosureSnapshotHash(
-      buildDisclosureSnapshotPayload({
-        tenantId: input.tenantId,
-        caseId: version.disclosure.caseId,
-        caseClientId: version.disclosure.caseClientId,
-        clientId: version.disclosure.caseClient.clientId,
-        collectionDispositionId: version.disclosure.collectionDispositionId,
-        version: version.version,
-        currency: version.currency,
-        sourceCollectionId: version.sourceCollectionId,
-        sourceCollectionAmount: version.sourceCollectionAmount,
-        sourceCollectionDate: version.sourceCollectionDate,
-        dispositionTotalAmount: version.dispositionTotalAmount,
-        dispositionPostedAt: version.dispositionPostedAt,
-        totalCollected: version.totalCollected,
-        clientNetAmount: version.clientNetAmount,
-        lines: canonicalDisclosureLines(version.lines),
-      }),
-    );
-
-    return {
-      verdict: recomputed === version.snapshotHash ? 'MATCH' : 'MISMATCH',
-      versionId: version.id,
-      expectedSnapshotHash: version.snapshotHash,
-      recomputedSnapshotHash: recomputed,
-    };
+    return verifyPersistedDisclosureSnapshot(this.prisma, input);
   }
 
   /**
@@ -495,4 +439,82 @@ export class ClientFinancialDisclosureWriterService {
 
     return error;
   }
+}
+
+/**
+ * `verifyPersistedSnapshot`ın transaction-yetenekli SERBEST biçimi (I03'te ayrıştırıldı).
+ *
+ * Gövde `ClientFinancialDisclosureWriterService.verifyPersistedSnapshot`ten TAŞINDI; algoritma,
+ * select kümesi ve verdict semantiği DEĞİŞMEDİ — metot artık buraya delege eder, dolayısıyla
+ * I02 davranışı ve hash'leri byte düzeyinde AYNIDIR. Ayrıştırmanın tek nedeni: I03 onay
+ * geçişleri bütünlük kapısını AÇIK TRANSACTION İÇİNDE (`tx`) çalıştırmak zorundadır (§41.4);
+ * `PrismaClient` dışında bir istemciyle çağrılabilmesi için imza en dar okuma yüzeyine daraltıldı.
+ * İkinci bir doğrulama kopyası ÜRETİLMEDİ → drift YOK.
+ */
+export type DisclosureSnapshotReadClient = Pick<
+  PrismaClient,
+  'clientFinancialDisclosureVersion'
+>;
+
+export async function verifyPersistedDisclosureSnapshot(
+  client: DisclosureSnapshotReadClient,
+  input: { readonly tenantId: string; readonly versionId: string },
+): Promise<VerifyDisclosureSnapshotResult> {
+  const version = await client.clientFinancialDisclosureVersion.findFirst({
+    where: { id: input.versionId, tenantId: input.tenantId },
+    select: {
+      id: true,
+      version: true,
+      currency: true,
+      snapshotHash: true,
+      sourceCollectionId: true,
+      sourceCollectionAmount: true,
+      sourceCollectionDate: true,
+      dispositionTotalAmount: true,
+      dispositionPostedAt: true,
+      totalCollected: true,
+      clientNetAmount: true,
+      disclosure: {
+        select: {
+          caseId: true,
+          caseClientId: true,
+          collectionDispositionId: true,
+          caseClient: { select: { clientId: true } },
+        },
+      },
+      lines: {
+        select: { type: true, amount: true, sourceDispositionLineId: true },
+      },
+    },
+  });
+  if (!version) {
+    throw new ClientFinancialDisclosureError('DISCLOSURE_SOURCE_NOT_FOUND');
+  }
+
+  const recomputed = disclosureSnapshotHash(
+    buildDisclosureSnapshotPayload({
+      tenantId: input.tenantId,
+      caseId: version.disclosure.caseId,
+      caseClientId: version.disclosure.caseClientId,
+      clientId: version.disclosure.caseClient.clientId,
+      collectionDispositionId: version.disclosure.collectionDispositionId,
+      version: version.version,
+      currency: version.currency,
+      sourceCollectionId: version.sourceCollectionId,
+      sourceCollectionAmount: version.sourceCollectionAmount,
+      sourceCollectionDate: version.sourceCollectionDate,
+      dispositionTotalAmount: version.dispositionTotalAmount,
+      dispositionPostedAt: version.dispositionPostedAt,
+      totalCollected: version.totalCollected,
+      clientNetAmount: version.clientNetAmount,
+      lines: canonicalDisclosureLines(version.lines),
+    }),
+  );
+
+  return {
+    verdict: recomputed === version.snapshotHash ? 'MATCH' : 'MISMATCH',
+    versionId: version.id,
+    expectedSnapshotHash: version.snapshotHash,
+    recomputedSnapshotHash: recomputed,
+  };
 }

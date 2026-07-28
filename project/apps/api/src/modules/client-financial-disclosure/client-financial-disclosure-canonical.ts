@@ -80,8 +80,12 @@ export function canonicalDisclosureLines(
 /**
  * Domain-separated sha256: `sha256(contractVersion || 0x00 || canonicalJson)`.
  * `ClaimFormationSnapshot` emsaliyle aynı desen — algoritma değiştirilmemiştir.
+ *
+ * I03 (CLIENT-P2-U03-TRACK-B-I03): `export` EKLENDİ — §35.9 bildirim içeriği hash'i AYNI
+ * domain-separated deseni kullansın, ikinci bir hash yardımcısı türetilmesin diye. Gövde ve
+ * davranış DEĞİŞMEDİ; I02 hash'leri byte düzeyinde AYNI kalır.
  */
-function domainSeparatedHash(contractVersion: string, payload: unknown): string {
+export function domainSeparatedHash(contractVersion: string, payload: unknown): string {
   return createHash('sha256')
     .update(contractVersion, 'utf8')
     .update('\0', 'utf8')
