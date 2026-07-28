@@ -293,6 +293,58 @@ test('PILOT 9: a failing required test prevents PR and MERGE_READY', async () =>
   assert.equal(c.store.current('PILOT-TESTFAIL').state, 'BLOCKED');
 });
 
+test('PILOT 9b: the failing gate records what it SAW, not only that it failed', async () => {
+  // The dogfood run blocked on REQUIRED_TEST_FAILED, recorded `exit=1`, and
+  // deleted the worktree the failure happened in. Nothing anywhere said what
+  // the test printed, so the refusal was undiagnosable — and runCapture had the
+  // output in hand the whole time.
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/lane-a/out.txt', 'work\n');
+  const c = ctxFor(repo, {
+    specOver: {
+      taskId: 'PILOT-TESTFAIL-EVIDENCE',
+      requiredTests: [
+        { argv: [F.NODE, '-e', 'console.log("ran 3 of 4"); console.error("AssertionError: expected 1 to equal 2"); process.exit(1)'] },
+      ],
+    },
+  });
+  const r = await orch.runTask(c);
+  assert.equal(r.blockerCode, 'REQUIRED_TEST_FAILED');
+
+  const failed = c.store.current('PILOT-TESTFAIL-EVIDENCE').payload.testResults.filter((t) => t.failure);
+  assert.equal(failed.length, 1, 'exactly the gate that refused carries the evidence');
+  assert.match(failed[0].failure.stdout, /ran 3 of 4/);
+  assert.match(failed[0].failure.stderr, /expected 1 to equal 2/, 'the assertion is the diagnosis');
+  assert.equal(failed[0].failure.timedOut, false);
+});
+
+test('PILOT 9c: the captured output is bounded, and passing gates carry none', async () => {
+  // This lands in an append-only store that is read on every fold. A failing
+  // suite can emit megabytes, so the tail is kept and the rest is dropped —
+  // and dropping is stated in the text rather than left to look like the whole
+  // log happened to be short.
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/lane-a/out.txt', 'work\n');
+  const c = ctxFor(repo, {
+    specOver: {
+      taskId: 'PILOT-TESTFAIL-BOUNDED',
+      requiredTests: [
+        { argv: [F.NODE, '-e', 'process.exit(0)'] },
+        { argv: [F.NODE, '-e', 'console.log("x".repeat(40000) + "\\nLAST LINE"); process.exit(1)'] },
+      ],
+    },
+  });
+  await orch.runTask(c);
+
+  const results = c.store.current('PILOT-TESTFAIL-BOUNDED').payload.testResults;
+  assert.equal(results.length, 2);
+  assert.equal(results[0].failure, undefined, 'a gate that passed has nothing to explain');
+  const out = results[1].failure.stdout;
+  assert.ok(out.length < 9000, 'bounded, not the whole log: ' + out.length);
+  assert.match(out, /truncated/, 'and it says so');
+  assert.match(out, /LAST LINE$/m, 'the end is kept — that is where the failure is');
+});
+
 test('PILOT 10: CI failure blocks MERGE_READY even though the PR opened', async () => {
   const repo = F.fixtureRepo();
   F.seedChange(repo, 'fixture/lane-a/out.txt', 'work\n');

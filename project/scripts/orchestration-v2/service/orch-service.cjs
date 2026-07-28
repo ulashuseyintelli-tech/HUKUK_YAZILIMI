@@ -15,6 +15,7 @@
  *   orch-service reconcile-merged    close a BLOCKED entry whose PR already merged
  *   orch-service repin-artefacts     re-pin an entry after an authorized artefact fix
  *   orch-service status              what is happening, and why it is not
+ *   orch-service blocker --entry ID  what the gate that refused actually saw
  *   orch-service stop  --reason ...  admit nothing, merge nothing. Now.
  *   orch-service start --reason ...  release the stop
  *   orch-service pause --reason ...  finish the current task, take no more
@@ -400,6 +401,49 @@ function main(argv) {
       lines.push('  state     : ' + r.queueState);
       process.stdout.write(lines.join('\n') + '\n');
       return r.repinned || r.disposition === 'ALREADY_PINNED' ? 0 : 1;
+    }
+
+    /**
+     * Why is this entry blocked?
+     *
+     * status() names the blocker code, which answers "what refused" and never
+     * "what did it see". For a failed required test that difference is the
+     * whole diagnosis, and the worktree the failure happened in is gone by the
+     * time anyone asks — so this reads the durable record instead.
+     */
+    case 'blocker': {
+      if (!args.flags.entry) {
+        process.stdout.write('usage: orch-service blocker --entry <id>\n');
+        return 2;
+      }
+      const entry = queue.get(args.flags.entry);
+      if (!entry) {
+        process.stdout.write('QUEUE_ENTRY_UNKNOWN  ' + args.flags.entry + '\n');
+        return 1;
+      }
+      const out = [
+        entry.state + (entry.blockerCode ? '  ' + entry.blockerCode : ''),
+        '  entry : ' + entry.entryId,
+        '  task  : ' + entry.taskId,
+      ];
+      const store = stateMod.createStore(stateMod.defaultStateDir(root));
+      const cur = store.current(entry.taskId);
+      const payload = (cur && cur.payload) || {};
+      if (payload.detail) out.push('  detail: ' + payload.detail);
+      for (const t of payload.testResults || []) {
+        if (!t.failure) continue;
+        out.push('', '  FAILED GATE  ' + (t.argv || []).join(' ') + '   exit=' + t.status);
+        if (t.timedOut) out.push('  (timed out after ' + t.timeoutMs + 'ms)');
+        if (t.signal) out.push('  signal: ' + t.signal);
+        if (t.error) out.push('  error : ' + t.error);
+        for (const [label, text] of [['stdout', t.failure.stdout], ['stderr', t.failure.stderr]]) {
+          if (!text) continue;
+          out.push('', '  --- ' + label + ' ---');
+          for (const line of String(text).split('\n')) out.push('  ' + line);
+        }
+      }
+      process.stdout.write(out.join('\n') + '\n');
+      return 0;
     }
 
     case 'status':
