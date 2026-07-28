@@ -484,6 +484,26 @@ confirmedAt effective-date authority DEĞİLDİR
 geçmez. W2.2D-1 gate'i açık kalır; W2.2E ve W2.3 statüleri bu kayıtla
 değişmez.
 
+## RCV-COL CROSS-DOMAIN — TPA-04C PROGRAM CLOSURE
+
+```text
+TPA-04C I01-I06 : CLOSED / CANONICAL EVIDENCE
+TPA-04C I07     : SUPERSEDED / NOT REQUIRED IN TPA-04C
+TPA-04C         : CLOSED / CANONICAL
+INTEGRATION SEAM: TPA-04D
+TPA-04D         : AUTHORIZED / DEPENDENCY-GATED / NOT YET ACTIVE
+RUNTIME WRITER  : NOT IMPLEMENTED / NOT ACTIVATED
+ACT-28          : OPEN
+REC-AUTH-011/012: OPEN
+NEXT PROGRAM TASK: RCV-COL-CURRENCY-BOUNDARY-01
+```
+
+Bu kayıt `RCV-COL-FULL-REMEDIATION-RATIFICATION-R01` owner authority’sini ve
+`TPA-04C-I01..I06` canonical evidence zincirini reconcile eder. I07 yeni bir
+implementation slice değildir; integration/persistence seam sorumluluğu TPA-04D’ye
+taşınmıştır. Bu kapanış `LegalApplicationWriter` implementasyonu, runtime aktivasyonu,
+consumer cutover, legacy retirement veya ACT-28 / REC-AUTH-011/012 closure üretmez.
+
 ## PHASE 3 — DOMAIN COMPLETENESS (tamamı owner-gated)
 
 | Wave | Workstream | Gate |
