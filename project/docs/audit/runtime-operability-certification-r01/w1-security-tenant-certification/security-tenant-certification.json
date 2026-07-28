@@ -1,0 +1,1177 @@
+{
+  "schemaVersion": 1,
+  "program": "RUNTIME-OPERABILITY-CERTIFICATION-R01",
+  "task": "W1-SECURITY-TENANT-CERTIFICATION",
+  "ownerDecision": "RATIFIED",
+  "executionGrant": "GO-COMPLETE",
+  "programLock": "SECURITY_TENANT_CERTIFICATION_FIRST",
+  "metadata": {
+    "auditBaseSha": "422af3e63975ce9200bfc6fe234b89ccfc1c0e88",
+    "sourceInventoryProgram": "REPOSITORY-WIDE RUNTIME BINDING, ACTIVATION AND OPERABILITY RECONCILIATION PROGRAM — R01",
+    "sourceInventoryGenerator": "project/scripts/runtime-binding-reconciliation-r01.cjs",
+    "sourceCapabilityCount": 1510,
+    "selectedCapabilityCount": 33,
+    "selectionRule": "capability.module === \"AUTH / TENANT / SECURITY\"",
+    "evidenceBoundary": "STATIC_ROOT_BINDING_PLUS_CONTROLLED_LOCAL_NEST_RUNTIME_AND_FOCUSED_TESTS",
+    "certificationAdmissionRule": "NAMED_LOCAL_PROBES_AND_REQUIRED_PR_CI_MUST_PASS_BEFORE_MERGE",
+    "w0ArtifactBlobs": {
+      "project/docs/audit/runtime-operability-certification-r01/methodology.md": "c6d46f2f17a5722fa5b28908ba219114bd0d59d9",
+      "project/docs/audit/runtime-operability-certification-r01/methodology-validation-report.md": "04928b8cedc0448ad479af79e3d098e4605dba88",
+      "project/docs/audit/runtime-operability-certification-r01/historical-closure-certification.json": "3b142342e991155ad493bf9b642521aead26cdc0",
+      "project/docs/audit/runtime-operability-certification-r01/historical-closure-certification.md": "159877b9f45d7afc3a624652a5ae7f743806feae",
+      "project/docs/audit/runtime-operability-certification-r01/decision-log.md": "df33e313af7621bbe0a5c08a57a2ff98a1924a78"
+    },
+    "sealedPr1795ArtifactTreeSha": "4076efa368db9a72673364ced5526ad0ce86400f"
+  },
+  "prohibitedActions": {
+    "productionActivationPerformed": false,
+    "dormantEndpointActivated": false,
+    "breakGlassEnabled": false,
+    "crossTenantEnablementPerformed": false,
+    "newLegalPolicyIntroduced": false,
+    "newAuthorizationPolicyIntroduced": false,
+    "schemaOrMigrationChanged": false
+  },
+  "overallDisposition": {
+    "taskStatus": "CLOSED",
+    "securityTenantSlice": "PARTIAL / DEPLOYED RUNTIME UNCERTIFIED",
+    "repositoryWide": "PARTIAL / OPERATIONALLY UNCERTIFIED",
+    "nextWorkstreamsOpened": false
+  },
+  "metrics": {
+    "selectedCapabilityCount": 33,
+    "controlledRuntimeCertifiedCount": 20,
+    "dormantPreservedCount": 10,
+    "inertConfigGatedCount": 2,
+    "noRuntimeConsumerCount": 1,
+    "deployedRuntimeCertifiedCount": 0,
+    "productionRuntimeCertifiedCount": 0,
+    "provenBindingDefectCount": 0,
+    "remediationAppliedCount": 0
+  },
+  "baselineStatusCounts": {
+    "UNKNOWN_REQUIRES_EVIDENCE": 15,
+    "OPERABLE_UNVERIFIED": 14,
+    "BOUND_DORMANT": 3,
+    "ACTIVE_UNREACHABLE": 1
+  },
+  "certificationCounts": {
+    "DORMANT_PRESERVED_NOT_ACTIVATED": 10,
+    "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED": 20,
+    "INERT_CONFIG_GATED_PRESERVED": 2,
+    "NO_RUNTIME_CONSUMER_UNCERTIFIED": 1
+  },
+  "remediation": {
+    "applied": [],
+    "provenBindingDefects": [],
+    "reviewedNoRemediation": [
+      {
+        "capabilityId": "INT-AFF68453E6CC",
+        "finding": "ROOT_BOUND_NO_RUNTIME_CONSUMER",
+        "disposition": "NOT_PROVEN_DEFECT_NO_REMEDIATION",
+        "reason": "No required consumer or intended public entrypoint is established by current authority."
+      }
+    ]
+  },
+  "evidenceProfiles": [
+    {
+      "profileId": "W1-PROBE-ROOT-BINDING",
+      "evidenceType": "STATIC_ROOT_COMPOSITION",
+      "scope": "All 33 selected capabilities",
+      "evidenceRefs": [
+        "project/apps/api/src/app.module.ts",
+        "project/apps/api/src/main.ts",
+        "project/scripts/runtime-binding-reconciliation-r01.cjs"
+      ],
+      "admission": "Inventory regenerated with full audit base 422af3e63975ce9200bfc6fe234b89ccfc1c0e88."
+    },
+    {
+      "profileId": "W1-PROBE-HTTP-DISPATCH",
+      "evidenceType": "CONTROLLED_LOCAL_NEST_HTTP",
+      "scope": "All 16 selected HTTP capabilities plus actual JWT/admin/rate-limit guards",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/auth/__tests__/security-tenant-runtime-certification.spec.ts",
+        "project/apps/api/ci-manifests/pure/office-auth-user.txt"
+      ],
+      "admission": "Focused Nest HTTP probe must pass locally and in required PR CI."
+    },
+    {
+      "profileId": "W1-PROBE-AUTH-BEHAVIOR",
+      "evidenceType": "FOCUSED_SERVICE_AND_TENANT_TESTS",
+      "scope": "Auth, invite, password-reset, token-version and guard behavior",
+      "evidenceRefs": [
+        "project/apps/api/ci-manifests/pure/office-auth-user.txt"
+      ],
+      "admission": "The exact CI manifest must execute without skip/zero-test success."
+    },
+    {
+      "profileId": "W1-PROBE-AUDIT-BEHAVIOR",
+      "evidenceType": "FOCUSED_SAFE_PROJECTION_AND_ATTRIBUTION_TESTS",
+      "scope": "Audit controller dispatch, tenant propagation and safe projection behavior",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/auth/__tests__/security-tenant-runtime-certification.spec.ts",
+        "project/apps/api/ci-manifests/pure/platform-scripts-shared.txt",
+        "project/apps/api/src/modules/audit/__tests__/audit-safe-projection.spec.ts",
+        "project/apps/api/src/modules/audit/__tests__/audit.service.safe-projection.spec.ts"
+      ],
+      "admission": "Focused audit tests must pass; no deployed database claim is inferred."
+    },
+    {
+      "profileId": "W1-PROBE-PERMISSION-BEHAVIOR",
+      "evidenceType": "FOCUSED_PERMISSION_DIAGNOSTICS_TESTS",
+      "scope": "Diagnostics, observe, confirmation-token, guided-edge and hard-guard behavior",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/auth/__tests__/security-tenant-runtime-certification.spec.ts",
+        "project/apps/api/ci-manifests/pure/platform-scripts-shared.txt"
+      ],
+      "admission": "Required permission-diagnostics tests must pass with default-off behavior preserved."
+    },
+    {
+      "profileId": "W1-PROBE-SAFE-DEFAULT",
+      "evidenceType": "DEFAULT_OFF_AND_NO_SIDE_EFFECT_TESTS",
+      "scope": "Invite, password recovery, guided observe and guided confirmation gates",
+      "evidenceRefs": [
+        "project/apps/api/ci-manifests/pure/office-auth-user.txt",
+        "project/apps/api/ci-manifests/pure/platform-scripts-shared.txt"
+      ],
+      "admission": "Tests may exercise controlled fixtures but do not change repository or deployed activation."
+    },
+    {
+      "profileId": "W1-PROBE-NO-CONSUMER",
+      "evidenceType": "STATIC_CONSUMER_INVENTORY",
+      "scope": "TenantService only",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/tenant/tenant.module.ts",
+        "project/apps/api/src/modules/tenant/tenant.service.ts"
+      ],
+      "admission": "No consumer plus no required-consumer authority cannot be promoted to a defect."
+    }
+  ],
+  "generatorAssertions": [
+    {
+      "name": "SCHEMA_VERSION_1",
+      "status": "PASS"
+    },
+    {
+      "name": "PROGRAM_TASK_IDENTITY",
+      "status": "PASS"
+    },
+    {
+      "name": "EXACT_W0_SECURITY_TENANT_MODULE_SELECTION",
+      "status": "PASS"
+    },
+    {
+      "name": "THIRTY_THREE_CAPABILITIES_EXACT",
+      "status": "PASS"
+    },
+    {
+      "name": "UNIQUE_CAPABILITY_CERTIFICATIONS",
+      "status": "PASS"
+    },
+    {
+      "name": "ALL_SELECTED_CAPABILITIES_ROOT_BOUND",
+      "status": "PASS"
+    },
+    {
+      "name": "CONTROLLED_RUNTIME_DOES_NOT_IMPLY_DEPLOYED_RUNTIME",
+      "status": "PASS"
+    },
+    {
+      "name": "DORMANT_CAPABILITIES_NOT_ACTIVATED",
+      "status": "PASS"
+    },
+    {
+      "name": "NO_CONSUMER_NOT_PROMOTED_TO_DEFECT",
+      "status": "PASS"
+    },
+    {
+      "name": "NO_PRODUCTION_ACTIVATION_OR_POLICY_CHANGE",
+      "status": "PASS"
+    },
+    {
+      "name": "ZERO_BOUNDED_REMEDIATIONS",
+      "status": "PASS"
+    },
+    {
+      "name": "REPOSITORY_WIDE_PARTIAL_DISPOSITION_PRESERVED",
+      "status": "PASS"
+    },
+    {
+      "name": "W0_ARTIFACT_BLOBS_PINNED",
+      "status": "PASS"
+    },
+    {
+      "name": "PR_1795_SEALED_TREE_PINNED",
+      "status": "PASS"
+    }
+  ],
+  "certifications": [
+    {
+      "capabilityId": "HTTP-05F8C50909FF",
+      "capabilityName": "PasswordResetController.resetPassword — POST /api/auth/reset-password",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/password-reset/password-reset.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "HTTP-17D207E658DF",
+      "capabilityName": "AuthController.register — POST /api/auth/register",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/auth.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "CONFIG_PREREQUISITE_SATISFIED_IN_CONTROLLED_TEST_ONLY",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "HTTP-219C869CA1AE",
+      "capabilityName": "AuditController.getEntityHistory — GET /api/audit/entity-history",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/audit/audit.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/audit/audit.module.ts:AuditModule.controllers"
+      ],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUDIT-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "HTTP-383426A6F34E",
+      "capabilityName": "UserInviteController.create — POST /api/auth/invites",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/invite/user-invite.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "HTTP-40C4C4BA41AF",
+      "capabilityName": "PermissionDiagnosticsController.getDiagnostics — GET /api/permission-diagnostics",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-diagnostics.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-diagnostics.module.ts:PermissionDiagnosticsModule.controllers"
+      ],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-PERMISSION-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "HTTP-4AE8AC125150",
+      "capabilityName": "AuditController.getLogs — GET /api/audit/logs",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/audit/audit.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/audit/audit.module.ts:AuditModule.controllers"
+      ],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUDIT-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "HTTP-552EE45CA34B",
+      "capabilityName": "UserInviteController.list — GET /api/auth/invites",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/invite/user-invite.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "HTTP-83A1F8D90D4D",
+      "capabilityName": "UserInviteController.accept — POST /api/auth/accept-invite",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/invite/user-invite.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "HTTP-846DCDA0777A",
+      "capabilityName": "AuthController.login — POST /api/auth/login",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/auth.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "CONFIG_PREREQUISITE_SATISFIED_IN_CONTROLLED_TEST_ONLY",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "HTTP-95895125DDA0",
+      "capabilityName": "UserInviteController.revoke — POST /api/auth/invites/:id/revoke",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/invite/user-invite.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "HTTP-B95CBBE4A134",
+      "capabilityName": "AuthController.capabilities — GET /api/auth/capabilities",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/auth.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "CONFIG_PREREQUISITE_SATISFIED_IN_CONTROLLED_TEST_ONLY",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "HTTP-BBE8DBA62DAE",
+      "capabilityName": "UserInviteController.resend — POST /api/auth/invites/:id/resend",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/invite/user-invite.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "HTTP-D75B97F87DB7",
+      "capabilityName": "AuthController.findTenantsForEmail — POST /api/auth/account-recovery/find-tenants",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/auth.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "CONFIG_PREREQUISITE_SATISFIED_IN_CONTROLLED_TEST_ONLY",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "HTTP-E64CE497189C",
+      "capabilityName": "AuthController.me — GET /api/auth/me",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/auth.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "CONFIG_PREREQUISITE_SATISFIED_IN_CONTROLLED_TEST_ONLY",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "HTTP-F302045D4FF6",
+      "capabilityName": "PasswordResetController.forgotPassword — POST /api/auth/forgot-password",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/password-reset/password-reset.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.controllers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "HTTP-F5C4AF494F50",
+      "capabilityName": "AuditController.getUserActivity — GET /api/audit/user-activity",
+      "entryPointType": "HTTP",
+      "implementationFiles": [
+        "project/apps/api/src/modules/audit/audit.controller.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/audit/audit.module.ts:AuditModule.controllers"
+      ],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUDIT-BEHAVIOR",
+        "W1-PROBE-HTTP-DISPATCH",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-3088A4E19930",
+      "capabilityName": "UserInviteService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/invite/user-invite.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.providers"
+      ],
+      "baselineFinalStatus": "BOUND_DORMANT",
+      "baselineActivationConditions": [
+        "APP_BASE_URL",
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET",
+        "LOGIN_INVITE_PROVISIONING_ENABLED",
+        "LOGIN_INVITE_TTL_HOURS",
+        "WEB_BASE_URL"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "INT-35037419618D",
+      "capabilityName": "AuditService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/audit/audit.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/audit/audit.module.ts:AuditModule.providers"
+      ],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 46,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUDIT-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-40B8F95D06C2",
+      "capabilityName": "PermissionHardGuardService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-hard-guard.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-diagnostics.module.ts:PermissionDiagnosticsModule.providers"
+      ],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 2,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-PERMISSION-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-616A965CA527",
+      "capabilityName": "OfficeResetPasswordRateLimitGuard",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/guards/office-reset-password-rate-limit.guard.ts"
+      ],
+      "registrationSites": [],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 2,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-69D79CCD7656",
+      "capabilityName": "CredentialRecoveryRateLimitGuard",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/guards/credential-recovery-rate-limit.guard.ts"
+      ],
+      "registrationSites": [],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 2,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-716659BC6388",
+      "capabilityName": "ConfirmationTokenService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/permission-diagnostics/guided-edge/confirmation-token.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-diagnostics.module.ts:PermissionDiagnosticsModule.providers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "GUIDED_OPEN_CONFIRM_TOKEN_SECRET",
+        "GUIDED_OPEN_CONFIRM_TOKEN_TTL_SECONDS",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 3,
+      "bindingStatus": "ROOT_BOUND_INERT_CONFIG_GATED",
+      "activationDisposition": "SAFE_DEFAULT_PRESERVED",
+      "controlledRuntimeStatus": "SAFE_DEFAULT_VERIFIED",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "INERT_CONFIG_GATED_PRESERVED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-PERMISSION-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The active/enforcing configuration was not enabled or deployed by W1.",
+      "rationale": "The active/enforcing configuration was not enabled or deployed by W1."
+    },
+    {
+      "capabilityId": "INT-7E315D9738C9",
+      "capabilityName": "LoginRateLimitGuard",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/guards/login-rate-limit.guard.ts"
+      ],
+      "registrationSites": [],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 5,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-8B00BA01C6F3",
+      "capabilityName": "GuidedEdgeGateService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/permission-diagnostics/guided-edge/guided-edge-gate.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-diagnostics.module.ts:PermissionDiagnosticsModule.providers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "GUIDED_OPEN_CONFIRM_GATE"
+      ],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_INERT_CONFIG_GATED",
+      "activationDisposition": "SAFE_DEFAULT_PRESERVED",
+      "controlledRuntimeStatus": "SAFE_DEFAULT_VERIFIED",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "INERT_CONFIG_GATED_PRESERVED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-PERMISSION-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The active/enforcing configuration was not enabled or deployed by W1.",
+      "rationale": "The active/enforcing configuration was not enabled or deployed by W1."
+    },
+    {
+      "capabilityId": "INT-912CE5A70308",
+      "capabilityName": "GuidedOpenObserveService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/permission-diagnostics/guided-open-observe.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-diagnostics.module.ts:PermissionDiagnosticsModule.providers"
+      ],
+      "baselineFinalStatus": "BOUND_DORMANT",
+      "baselineActivationConditions": [
+        "GUIDED_OPEN_AUTHZ_MODE"
+      ],
+      "baselineConsumerCount": 7,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-PERMISSION-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "INT-91E90C02AEB8",
+      "capabilityName": "AuthService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/auth.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.providers"
+      ],
+      "baselineFinalStatus": "UNKNOWN_REQUIRES_EVIDENCE",
+      "baselineActivationConditions": [
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET"
+      ],
+      "baselineConsumerCount": 5,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "CONFIG_PREREQUISITE_SATISFIED_IN_CONTROLLED_TEST_ONLY",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-987A5A5E33C8",
+      "capabilityName": "PasswordResetService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/password-reset/password-reset.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/auth/auth.module.ts:AuthModule.providers"
+      ],
+      "baselineFinalStatus": "BOUND_DORMANT",
+      "baselineActivationConditions": [
+        "APP_BASE_URL",
+        "JWT_EXPIRES_IN",
+        "JWT_SECRET",
+        "OFFICE_PASSWORD_RECOVERY_ENABLED",
+        "WEB_BASE_URL"
+      ],
+      "baselineConsumerCount": 2,
+      "bindingStatus": "ROOT_BOUND_ROUTE_OR_PROVIDER_DORMANT",
+      "activationDisposition": "DEFAULT_OFF_PRESERVED",
+      "controlledRuntimeStatus": "NOT_ACTIVATED_BY_POLICY",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "DORMANT_PRESERVED_NOT_ACTIVATED",
+      "remediationStatus": "NONE_AUTHORIZED_OR_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING",
+        "W1-PROBE-SAFE-DEFAULT"
+      ],
+      "gap": "The capability remains default-off; W1 does not activate dormant behavior.",
+      "rationale": "The capability remains default-off; W1 does not activate dormant behavior."
+    },
+    {
+      "capabilityId": "INT-A1C02BBE50C1",
+      "capabilityName": "AdminGuard",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/guards/admin.guard.ts"
+      ],
+      "registrationSites": [],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 11,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-AFF68453E6CC",
+      "capabilityName": "TenantService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/tenant/tenant.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/tenant/tenant.module.ts:TenantModule.providers"
+      ],
+      "baselineFinalStatus": "ACTIVE_UNREACHABLE",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 0,
+      "bindingStatus": "ROOT_BOUND_NO_RUNTIME_CONSUMER",
+      "activationDisposition": "NO_ACTIVATION_ATTEMPTED",
+      "controlledRuntimeStatus": "NO_CONSUMER",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "NO_RUNTIME_CONSUMER_UNCERTIFIED",
+      "remediationStatus": "NOT_PROVEN_DEFECT_NO_REMEDIATION",
+      "probeProfiles": [
+        "W1-PROBE-NO-CONSUMER",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No production DI/constructor consumer exists and no required consumer contract was found.",
+      "rationale": "No production DI/constructor consumer exists and no required consumer contract was found."
+    },
+    {
+      "capabilityId": "INT-AFF9A2789C94",
+      "capabilityName": "JwtAuthGuard",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/guards/jwt-auth.guard.ts"
+      ],
+      "registrationSites": [],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 98,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-C9FD18D2EE1E",
+      "capabilityName": "PermissionDiagnosticsService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-diagnostics.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-diagnostics.module.ts:PermissionDiagnosticsModule.providers"
+      ],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 1,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-PERMISSION-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-E0EC2A161C83",
+      "capabilityName": "WarnOnlyAuditService",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/permission-diagnostics/warn-only-audit.service.ts"
+      ],
+      "registrationSites": [
+        "project/apps/api/src/modules/permission-diagnostics/permission-diagnostics.module.ts:PermissionDiagnosticsModule.providers"
+      ],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 2,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-PERMISSION-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    },
+    {
+      "capabilityId": "INT-E57636360EE0",
+      "capabilityName": "OfficeForgotPasswordRateLimitGuard",
+      "entryPointType": "INTERNAL",
+      "implementationFiles": [
+        "project/apps/api/src/modules/auth/guards/office-forgot-password-rate-limit.guard.ts"
+      ],
+      "registrationSites": [],
+      "baselineFinalStatus": "OPERABLE_UNVERIFIED",
+      "baselineActivationConditions": [],
+      "baselineConsumerCount": 2,
+      "bindingStatus": "ROOT_BOUND_REACHABLE",
+      "activationDisposition": "NO_FEATURE_ACTIVATION_REQUIRED",
+      "controlledRuntimeStatus": "PASS",
+      "deployedRuntimeStatus": "UNVERIFIED",
+      "productionRuntimeStatus": "NOT_CERTIFIED",
+      "certificationStatus": "CONTROLLED_RUNTIME_CERTIFIED_DEPLOYED_UNVERIFIED",
+      "remediationStatus": "NONE_REQUIRED",
+      "probeProfiles": [
+        "W1-PROBE-AUTH-BEHAVIOR",
+        "W1-PROBE-ROOT-BINDING"
+      ],
+      "gap": "No SHA-bound deployed or production runtime observation exists.",
+      "rationale": "Root binding and controlled local runtime behavior are covered; deployed runtime is a separate unverified axis."
+    }
+  ]
+}
