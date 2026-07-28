@@ -1008,7 +1008,81 @@ test('auto-merge: every gate green produces a squash merge and its sha', async (
   assert.equal(r.mergeSha, 'f'.repeat(40));
   assert.equal(r.method, 'SQUASH');
   assert.equal(r.idempotent, false);
-  assert.ok(log.some((l) => l === 'pr merge 4242 --squash --delete-branch'), 'squash, and the branch is not left behind');
+  // No --delete-branch. It deletes the LOCAL branch too, and the branch is
+  // checked out in the run's own worktree at merge time — git refuses, gh exits
+  // non-zero, and it does so after the merge has already landed. Branch tidying
+  // belongs to CLEANING, once the worktree is gone.
+  assert.ok(log.some((l) => l === 'pr merge 4242 --squash'), 'squash');
+  assert.ok(
+    !log.some((l) => l.indexOf('--delete-branch') !== -1),
+    'the merge command must not also try to delete a branch its own worktree is holding',
+  );
+});
+
+test('auto-merge: a command failure after the merge landed does not lose the merge', async () => {
+  // The worst state this system can produce is reality and the record
+  // disagreeing about whether a merge happened — and it produced exactly that.
+  // `gh pr merge --delete-branch` merged PR #1750, then failed deleting the
+  // local branch ("cannot delete branch ... used by worktree at ..."), gh
+  // exited non-zero, and the entry was written BLOCKED / GH_COMMAND_FAILED with
+  // a null merge sha while GitHub showed it MERGED.
+  //
+  // A merge is not retryable, so a non-zero exit is INCONCLUSIVE, not negative.
+  // The remote is the only authority on whether it landed, so the remote is
+  // asked.
+  const log = [];
+  const views = [MG_PR, Object.assign({}, MG_PR, { state: 'MERGED', mergeCommit: { oid: 'f'.repeat(40) } })];
+  let i = 0;
+  const provider = mergeMod.createGhMergeProvider({
+    repoCwd: process.cwd(),
+    standingGrant: MG_GRANT,
+    ciProvider: mgCi(),
+    expectedHeadBranch: 'claude/task-01',
+    ghRunner: (args) => {
+      log.push(args.join(' '));
+      if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify(views[Math.min(i++, views.length - 1)]);
+      if (args[0] === 'pr' && args[1] === 'merge') {
+        const e = new Error('failed to delete local branch: used by worktree');
+        e.code = 'GH_COMMAND_FAILED';
+        throw e;
+      }
+      return '';
+    },
+    gitRunner: () => '',
+  });
+
+  const r = await provider.performMerge({ result: MG_RESULT });
+  assert.equal(r.mergeSha, 'f'.repeat(40), 'the merge that landed is the merge that is reported');
+  assert.equal(r.method, 'SQUASH');
+  // The failure is carried, not swallowed: the merge is real and so is whatever
+  // went wrong around it.
+  assert.match(r.commandFailedAfterMerge, /used by worktree/);
+});
+
+test('auto-merge: a command failure with no merge on the remote still fails', async () => {
+  // The other half of the same rule. Asking the remote must be able to answer
+  // "no" — otherwise the re-read is a way to launder a failed merge into a
+  // successful one.
+  const provider = mergeMod.createGhMergeProvider({
+    repoCwd: process.cwd(),
+    standingGrant: MG_GRANT,
+    ciProvider: mgCi(),
+    expectedHeadBranch: 'claude/task-01',
+    ghRunner: (args) => {
+      if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify(MG_PR);
+      if (args[0] === 'pr' && args[1] === 'merge') {
+        const e = new Error('base branch was modified');
+        e.code = 'GH_COMMAND_FAILED';
+        throw e;
+      }
+      return '';
+    },
+    gitRunner: () => '',
+  });
+  await assert.rejects(
+    () => provider.performMerge({ result: MG_RESULT }),
+    (e) => /base branch was modified/.test(String(e.message)),
+  );
 });
 
 test('auto-merge: a grant that does not authorize it is a refusal, not a default', async () => {

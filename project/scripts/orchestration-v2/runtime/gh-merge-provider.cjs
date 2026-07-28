@@ -183,7 +183,48 @@ function createGhMergeProvider(cfg) {
         }
       }
 
-      runGh(['pr', 'merge', String(pr.number), '--squash', '--delete-branch'], repoCwd);
+      // No --delete-branch, and the omission is the fix rather than a
+      // simplification.
+      //
+      // `gh pr merge --delete-branch` deletes the LOCAL branch as well, and the
+      // branch this run created is checked out in the run's own worktree, which
+      // is still standing at merge time — cleanup is two states later. So git
+      // refuses ("cannot delete branch ... used by worktree at ..."), gh exits
+      // non-zero, and it does so AFTER the merge has landed on the remote.
+      //
+      // The merge succeeded and the system recorded GH_COMMAND_FAILED, with
+      // mergeSha null and the entry BLOCKED. That is the worst state this
+      // program can produce: reality and the record disagree about whether a
+      // merge happened. Measured on the R03 canary, PR #1750 — and it would
+      // have happened on every orchestrated auto-merge, because the orchestrator
+      // always merges a branch its own worktree is holding.
+      //
+      // Branch deletion belongs to CLEANING, after the worktree is gone. Merging
+      // and tidying are different operations with different consequences, and
+      // coupling them made a tidying failure indistinguishable from a merge one.
+      //
+      // The re-read is the second half. A merge is not a retryable operation, so
+      // a non-zero exit is INCONCLUSIVE, not negative: the only authority on
+      // whether it landed is the remote. Asking is what makes the difference
+      // between a recoverable hiccup and a permanent contradiction.
+      try {
+        runGh(['pr', 'merge', String(pr.number), '--squash'], repoCwd);
+      } catch (e) {
+        const recheck = readPr(pr.number);
+        if (recheck.state !== 'MERGED') throw e;
+        const landed = recheck.mergeCommit && recheck.mergeCommit.oid;
+        if (!landed) fail('MERGE_SHA_UNRESOLVED', 'PR reports MERGED with no merge commit');
+        return {
+          mergeSha: landed,
+          idempotent: false,
+          method: 'SQUASH',
+          // Kept, not swallowed: the merge is real, and so is whatever failed
+          // around it. An operator reading a clean closure should still see that
+          // the command reported an error.
+          commandFailedAfterMerge: String((e && e.message) || e).slice(0, 300),
+          verifiedAt: { requiredChecks: required.length, mergeStateStatus: observed.mergeStateStatus },
+        };
+      }
 
       const after = readPr(pr.number);
       const sha = after.mergeCommit && after.mergeCommit.oid;
