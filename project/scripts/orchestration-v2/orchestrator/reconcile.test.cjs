@@ -308,3 +308,22 @@ test('resume: a queue entry blocked with no task-store record needs no resume fl
   assert.equal(queue.get(e.entryId).state, 'QUEUED');
   assert.equal(queue.get(e.entryId).resumeFromBlocked, false);
 });
+
+test('reconcile: an AUTHORIZED resume makes a BLOCKED task store expected, not alarming', () => {
+  // The two halves of one mechanism were refusing each other: resumeBoth
+  // deliberately leaves the task-store edge to runTask (the single writer) and
+  // marks the entry, and effectiveState then rejected the run it had just
+  // authorized.
+  const marked = entry({ state: 'QUEUED', resumeFromBlocked: true });
+  const v = R.effectiveState({ entry: marked, task: task('BLOCKED', 'EXECUTOR_NONZERO_EXIT') });
+  assert.equal(v.verdict, 'RUNNABLE');
+  assert.match(v.reason, /runTask owns that transition/);
+});
+
+test('reconcile: the mark is not a bypass — without it, BLOCKED still stops the run', () => {
+  const unmarked = entry({ state: 'QUEUED' });
+  assert.equal(R.effectiveState({ entry: unmarked, task: task('BLOCKED', 'X') }).verdict, 'TASK_BLOCKED');
+  // And an explicit false is the same as absent.
+  const denied = entry({ state: 'QUEUED', resumeFromBlocked: false });
+  assert.equal(R.effectiveState({ entry: denied, task: task('BLOCKED', 'X') }).verdict, 'TASK_BLOCKED');
+});

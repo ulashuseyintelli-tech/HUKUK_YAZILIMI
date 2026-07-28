@@ -116,6 +116,18 @@ function effectiveState(o) {
   // override a BLOCKED task: they are answers to different questions, and the
   // blocked attempt is the one that matters before an executor starts.
   if (taskState === 'BLOCKED') {
+    // An AUTHORIZED resume is the one case where a BLOCKED task store is
+    // expected rather than alarming. resumeBoth deliberately leaves that edge
+    // to runTask — it is the single writer — and marks the entry instead. Not
+    // honouring the mark here made the two halves of the same mechanism refuse
+    // each other: the resume authorized a run that the guard then rejected.
+    //
+    // The mark is not a bypass. It is only ever written by an authorized
+    // resume, and runTask still refuses with BLOCKED_RESUME_NOT_AUTHORIZED if
+    // it arrives without one.
+    if (entry.resumeFromBlocked === true) {
+      return say('RUNNABLE', 'task store is BLOCKED and an authorized resume is recorded on the entry; runTask owns that transition');
+    }
     return say('TASK_BLOCKED', 'task store is BLOCKED (' + ((task.payload && task.payload.blockerCode) || 'unknown') + '); resuming the queue entry does not clear it');
   }
   if (queueState === 'BLOCKED') {
