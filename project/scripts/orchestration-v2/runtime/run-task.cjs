@@ -38,7 +38,7 @@ const { execFileSync } = require('child_process');
 const orchestrator = require('../orchestrator/orchestrator.cjs');
 const stateMod = require('../orchestrator/state.cjs');
 const mergeready = require('../orchestrator/mergeready.cjs');
-const { digest: authorityDigest } = require('../orchestrator/authority.cjs');
+const { specDigests: authoritySpecDigests } = require('../orchestrator/authority.cjs');
 const { createGhPrProvider } = require('./gh-pr-provider.cjs');
 const { createGhCiProvider } = require('./gh-ci-provider.cjs');
 const { createGhMergeProvider } = require('./gh-merge-provider.cjs');
@@ -373,7 +373,30 @@ function buildContext(opts) {
           // Recomputed from the spec rather than echoed from the attestation.
           // Echoing it would compare a value with itself and always agree,
           // which is worse than not checking it — it would look checked.
-          taskSpecSha256: spec ? authorityDigest(spec) : undefined,
+          //
+          // specDigests, NOT digest(spec). They are different numbers: one
+          // normalizes the spec first and the other hashes it as written, and
+          // the attestation, the grant and validateAgainstGrant all pin the
+          // normalized one. Using the other here compared a plan against itself
+          // measured two ways, so every attestation failed revalidation with
+          // TASK_SPEC_HASH_DRIFT — including one whose PR was already open with
+          // nine green checks.
+          taskSpecSha256: (() => {
+            // specDigests VALIDATES, and a caller driving this with something
+            // that is not a full plan has no attestation hash either — so
+            // there is nothing to compare and the field is left absent.
+            //
+            // Absent, NOT computed the other way. Falling back to digest(spec)
+            // would put the second notion straight back and the drift with it;
+            // mergeready skips an undefined field, which is the honest reading
+            // of "this cannot be checked here".
+            if (!spec) return undefined;
+            try {
+              return authoritySpecDigests(spec).taskSpecSha256;
+            } catch (e) {
+              return undefined;
+            }
+          })(),
           // leaseEpoch and holderToken are deliberately absent. On this path the
           // lease is held by THIS process, so re-reading it here would compare
           // the holder against itself. The durable finalizer, which runs in a

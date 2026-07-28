@@ -1137,3 +1137,69 @@ test('sync: a divergent local main is reported rather than resolved', async () =
   assert.equal(r.synced, false);
   assert.equal(r.reason, 'FAST_FORWARD_NOT_POSSIBLE');
 });
+
+test('observeFresh recomputes the plan hash the way the attestation pinned it', async () => {
+  // The drift that stopped a canary with a green PR and nine passing checks
+  // already waiting to merge:
+  //
+  //   attestation  60241f3a...   specDigests(spec).taskSpecSha256
+  //   observed     2b52842e...   digest(spec)
+  //   -> TASK_SPEC_HASH_DRIFT
+  //
+  // Two ways to measure one plan. revalidate compared it against itself and
+  // correctly reported that they disagreed.
+  const authority = require('../orchestrator/authority.cjs');
+  // specDigests VALIDATES the spec, so this must be a complete plan — which is
+  // also why the two notions coexisted: digest() works on anything.
+  const FULL = {
+    schemaVersion: 1,
+    taskId: 'OBSERVE-FRESH-01',
+    taskSpecVersion: 1,
+    profile: 'BOUNDED_CODE_TASK',
+    declaredIntent: 'Characterize the existing behaviour without changing it.',
+    boundaryPolicy: { allowedRoots: ['project/apps/api/src/modules/office/__tests__/'], maxChangedFiles: 1 },
+    requiredTests: [{ argv: ['pnpm', 'install', '--frozen-lockfile'], cwd: 'project', timeoutMs: 60000 }],
+    predecessorTaskIds: [],
+    baseDriftPolicy: 'REFRESH_BEFORE_EXECUTION',
+    baseSha: 'd'.repeat(40),
+    successorDisposition: 'OWNER_AUTHORIZATION_REQUIRED',
+  };
+  // A committed plan carries its own derived digests. normalizeTaskSpec strips
+  // them before hashing; digest() does not — which is exactly where the two
+  // measurements diverge, and why a bare fixture would not reproduce it.
+  const d0 = authority.specDigests(FULL);
+  FULL.declaredIntentSha256 = d0.declaredIntentSha256;
+  FULL.boundaryPolicySha256 = d0.boundaryPolicySha256;
+  FULL.requiredTestsSha256 = d0.requiredTestsSha256;
+
+  const canonical = authority.specDigests(FULL).taskSpecSha256;
+  assert.notEqual(
+    canonical,
+    authority.digest(FULL),
+    'a plan carrying its own derived digests measures differently the two ways',
+  );
+
+  const ctx = runner.buildContext({
+    repoCwd: tmp('gov-of-'),
+    spec: FULL,
+    grant: { grantId: 'G' },
+    store: { current: () => null, transition: () => {} },
+    prProvider: {
+      state: async () => ({ headSha: 'a'.repeat(40), targetBranchSha: 'b'.repeat(40), mergeBaseSha: 'c'.repeat(40), open: true, mergeable: true }),
+    },
+    ciProvider: { requiredSources: async () => ({ platformRequired: [] }), observe: async () => [] },
+    prepareEnvironment: () => ({ ok: true }),
+  });
+
+  const observed = await ctx.observeFresh({ result: { pr: { number: 1 } } });
+  assert.equal(observed.taskSpecSha256, canonical, 'observed must use the notion the attestation pins');
+
+  // And the whole point: revalidate now agrees with an attestation built the
+  // canonical way.
+  const fresh = mergeready.revalidate({
+    attestation: { taskSpecSha256: canonical, expiresAt: new Date(Date.now() + 60000).toISOString(), prHeadSha: 'a'.repeat(40), targetBranchObservedSha: 'b'.repeat(40), mergeBaseSha: 'c'.repeat(40), requiredCiResultSetSha256: observed.requiredCiResultSetSha256 },
+    observed,
+    nowMs: Date.now(),
+  });
+  assert.ok(!(fresh.reasons || []).includes('TASK_SPEC_HASH_DRIFT'), JSON.stringify(fresh.reasons));
+});

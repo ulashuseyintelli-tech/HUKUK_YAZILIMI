@@ -89,8 +89,14 @@ describe('CasePolicyEngine - Integration Tests', () => {
   let app: INestApplication;
   let cpe: CasePolicyEngine;
   let mockPrisma: ReturnType<typeof createIntegrationMockPrisma>;
+  const originalUyapAvailable = process.env.UYAP_AVAILABLE;
 
   beforeAll(async () => {
+    // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: UYAP_SEND artik operasyonel erisilebilirlik
+    // sinyalinin ACIKCA yapilandirilmis olmasini ister (yapilandirilmamis != available).
+    // Entegrasyon senaryolari "ops sinyali acik" ortamini temsil eder.
+    process.env.UYAP_AVAILABLE = 'true';
+
     mockPrisma = createIntegrationMockPrisma();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -117,6 +123,8 @@ describe('CasePolicyEngine - Integration Tests', () => {
 
   afterAll(async () => {
     await app.close();
+    if (originalUyapAvailable === undefined) delete process.env.UYAP_AVAILABLE;
+    else process.env.UYAP_AVAILABLE = originalUyapAvailable;
   });
 
   beforeEach(() => {
@@ -139,6 +147,9 @@ describe('CasePolicyEngine - Integration Tests', () => {
         allowUyapActions: true,
         hasArticle4Request: true,
         isMtsCase: false,
+        // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: `case.is_archived` fact'i artik POZITIF
+        // kanit ister; gercek Prisma select'i bu alani dondurur, mock da dondurmeli.
+        isArchived: false,
         currency: 'TRY',
         principalAmount: 10000,
         createdAt: new Date(),
@@ -156,6 +167,10 @@ describe('CasePolicyEngine - Integration Tests', () => {
         { key: 'poa.covers_requested_operation', value: true },
         { key: 'authority.is_unambiguous', value: true },
         { key: 'expense.opening.paid', value: true },
+        // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: masraf engelinin YOKLUGU da POZITIF
+        // kanit ister. Production'da bu fact `UyapExpenseBlockingFactProvider`
+        // tarafindan hesaplanir (UyapModule); bu suite UyapModule'u yuklemez.
+        { key: 'case.has_unpaid_blocking_expense', value: false },
       ]);
 
       const decision = await cpe.canPerformAction(TEST_TENANT_ID, 'uyap-flow-case', ActionCode.UYAP_SEND);

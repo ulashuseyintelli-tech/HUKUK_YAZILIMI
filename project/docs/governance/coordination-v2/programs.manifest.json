@@ -182,6 +182,26 @@
         "taxonomyUnresolved": true,
         "overrideReason": "R02 owner karari: program kontrollu canli calistirmaya acildi. Serit acilir; programin kendi governance kaydinda reddedilmis birimler bu grant disinda kalir."
       }
+    },
+    {
+      "programId": "DELIVERY_TRUTH",
+      "canonicalName": "Delivery Truth (orchestration self-certification)",
+      "taxonomyLevel": "SHARED_CONTROL_PLANE",
+      "governanceSourceFiles": [
+        "project/docs/governance/coordination-v2/governance-orchestration-contract-v2.md"
+      ],
+      "activeStatus": "ON_ACTIVE_ROADMAP",
+      "authorizationState": "AUTHORIZED",
+      "authorizationEvidence": "OWNER-DECISION-GOV-COORD-DELIVERY-TRUTH-R01",
+      "liveExecutionEligibility": "ELIGIBLE",
+      "notes": "WP04 dogfood certification and its exact bounded remediation only. Not general orchestration-v2 feature development, not domain implementation, not unrelated governance mutation. Executor CODEX_LOCAL, maxConcurrency 1, SQUASH, task-bounded auto-merge.",
+      "liveExecutionEligibilityDerivation": {
+        "reason": "AUTHORITY_NAMES_PROGRAM_AND_GOVERNANCE_PERMITS",
+        "authorityRef": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+        "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-DELIVERY-TRUTH-DOGFOOD-R01.json",
+        "taxonomyUnresolved": true,
+        "overrideReason": null
+      }
     }
   ],
   "eligibilityDerivedFrom": {

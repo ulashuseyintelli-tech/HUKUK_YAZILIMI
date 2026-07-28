@@ -45,7 +45,8 @@ export class SchedulerService {
   private isRunning_checkPaymentOrderDeadlines = false;
   private isRunning_processNafakaPeriods = false;
   private isRunning_checkMtsReturns = false;
-  private isRunning_retryFailedUyapRequests = false;
+  // isRunning_retryFailedUyapRequests kaldırıldı — retryFailedUyapRequests
+  // UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 ile devre dışı (ölü yol, cron yok).
   private isRunning_checkIhbarnameDeadlines = false;
   private isRunning_checkExternalCaseFollowups = false;
   private isRunning_checkTebligatStatus = false;
@@ -322,49 +323,54 @@ export class SchedulerService {
 
 
   /**
-   * Her 6 saatte bir çalışır
-   * Başarısız UYAP isteklerini yeniden dener
+   * UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 — DEVRE DIŞI (retry ownership containment).
+   *
+   * ## Bulgu
+   *
+   * Bu cron `@Cron(EVERY_6_HOURS)` ile CANLIYDI ve şunu yapıyordu: `UyapRequestLog`
+   * satırlarını **tenant sınırı olmadan, tüm tenant'lar arasında** tarayıp
+   * `status: FAILED → RETRY` + `retryCount++` yazıyordu.
+   *
+   * Üç ayrı sorun:
+   *
+   * 1. **DUPLICATE RETRY STATE OWNERSHIP.** `UyapRequestLog.retryCount`/`status`,
+   *    `UyapAttempt` lineage'ından (`providerState`/`legalEffectState`, gap-free
+   *    `attemptNumber`) tamamen bağımsız İKİNCİ bir retry state machine'iydi. Owner
+   *    kuralı (§7): *"UyapAttempt tek retry owner olmalıdır"* ve *"Aynı retry state
+   *    UyapOperation, CpeExecutionRecord veya request log'da bağımsız
+   *    source-of-truth OLMAMALIDIR."*
+   *
+   * 2. **DISPATCHER'I OLMAYAN STATE MACHINE.** Gerçek re-dispatch
+   *    `UyapService.retryFailedRequests()` içindeydi ve o metot
+   *    UYAP-RETRY-CONTAIN-01 ile HARD DISABLE edilmişti (controller fail-closed,
+   *    başka çağıran yok). Yani bu cron satırları `RETRY` durumuna alıyor, hiçbir
+   *    şey onları dispatch etmiyor ve satır oradan bir daha ÇIKMIYORDU:
+   *    `FAILED → RETRY` tek yönlü, tüketicisiz bir yol. Yan etki olarak
+   *    `getStats()` sayımları da bozuluyordu (RETRY ne pending ne failed).
+   *
+   * 3. **TERMINAL-STATE KORUMASI YOK.** Karar yalnız `UyapRequestLog.status`'a
+   *    bakılarak veriliyor, `UyapAttempt`'in terminal provider/legal-effect
+   *    durumu HİÇ sorulmuyordu (owner §7: *"terminal success tekrar dispatch
+   *    edilemez"*).
+   *
+   * ## Karar (bounded containment)
+   *
+   * Cron devre dışı bırakıldı; retry state'i artık HİÇBİR yerden yazılmıyor.
+   * Canonical retry sahipliği `UyapAttempt`'tedir. Gerçek retry sözleşmesi
+   * (attempt lineage üzerinden eligibility + POA/CPE yeniden değerlendirme +
+   * tenant-scoped dispatch) ayrı bir retry-contract birimine aittir ve ayrı owner
+   * kararı gerektirir — burada İCAT EDİLMEZ.
+   *
+   * Sessiz no-op değildir: elle/`runAllChecks` ile çağrılırsa açık uyarı loglar.
    */
-  @Cron(CronExpression.EVERY_6_HOURS)
   async retryFailedUyapRequests() {
-    if (this.isRunning_retryFailedUyapRequests) {
-      this.logger.warn('[scheduler] retryFailedUyapRequests already running, skipping');
-      return;
-    }
-    this.isRunning_retryFailedUyapRequests = true;
-
-    this.logger.log('⏰ UYAP retry kontrolü başladı...');
-
-    try {
-      const result = await runBatched(
-        (args) =>
-          this.db.uyapRequestLog.findMany({
-            where: {
-              status: 'FAILED',
-              retryCount: { lt: 3 },
-            },
-            ...args,
-          }),
-        async (request) => {
-          await this.db.uyapRequestLog.update({
-            where: { id: request.id },
-            data: {
-              status: 'RETRY',
-              retryCount: { increment: 1 },
-            },
-          });
-          this.logger.log(`🔄 Retry kuyruğuna eklendi: ${request.id}`);
-        },
-      );
-
-      this.schedulerMetrics.record('retryFailedUyapRequests', result);
-      this.logger.log(`📋 ${result.processed} başarısız istek retry'a alındı (truncated: ${result.truncated})`);
-    } catch (error) {
-      this.logger.error('UYAP retry hatası:', error);
-      this.reportCronError('retryFailedUyapRequests', error);
-    } finally {
-      this.isRunning_retryFailedUyapRequests = false;
-    }
+    this.logger.warn(
+      '[scheduler] retryFailedUyapRequests DEVRE DIŞI (UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02): ' +
+        'UyapRequestLog ikinci bir retry state machine idi ve dispatcher\'ı ' +
+        'UYAP-RETRY-CONTAIN-01 ile kapatılmıştı. Canonical retry sahibi UyapAttempt\'tir; ' +
+        'retry sözleşmesi ayrı owner kararına bağlıdır.',
+    );
+    return { disabled: true as const, processed: 0 };
   }
 
   /**

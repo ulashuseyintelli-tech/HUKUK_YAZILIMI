@@ -8687,8 +8687,16 @@ model CpeDecisionLog {
 
 // CPE Execution Record - Aksiyon yürütme kaydı (idempotency için)
 model CpeExecutionRecord {
-  id          String @id @default(cuid())
-  executionId String @unique // UUID - idempotency key
+  id String @id @default(cuid())
+  /// Idempotency key — ISTEMCI GOVDESINDEN gelir (`ActionExecutedDto.executionId`).
+  ///
+  /// UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02: bu alan onceden GLOBAL `@unique` idi. Istemci
+  /// kontrolundeki bir degerin tenant'lar arasi tek namespace paylasmasi, bir tenant'in
+  /// baska bir tenant'in execution kaydini `findUnique` ile okumasina ve kendi state
+  /// transition'inin sessizce "duplicate" sayilarak ATLANMASINA yol aciyordu. Namespace
+  /// artik `@@unique([tenantId, executionId])` ile tenant basinadir (emsal:
+  /// `UyapOperation.@@unique([tenantId, idempotencyKey])`).
+  executionId String
   // DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): execution kaydinin acik tenant
   // baglami. Onceden tenant YALNIZ `caseId` uzerinden dolayli turetilebiliyordu; bu alan
   // retention/incident/raporlama sorgularinin dogrudan ve dogrulanabilir sekilde tenant
@@ -8716,6 +8724,9 @@ model CpeExecutionRecord {
   case   Case   @relation("CpeExecutionRecords", fields: [caseId], references: [id], onDelete: Cascade)
   tenant Tenant @relation("CpeExecutionRecordTenant", fields: [tenantId], references: [id], onDelete: Cascade)
 
+  /// UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02: idempotency namespace'i TENANT BASINADIR.
+  /// Ayni `executionId` farkli tenant'larda bagimsizdir; ayni tenant icinde tektir.
+  @@unique([tenantId, executionId])
   @@index([caseId])
   @@index([executionId])
   @@index([actionCode])

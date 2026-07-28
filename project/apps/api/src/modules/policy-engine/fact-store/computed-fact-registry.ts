@@ -277,7 +277,26 @@ class SystemUyapAvailableProvider implements ComputedFactProvider {
 
   constructor(private readonly uyapAvailability: UyapAvailabilityService) {}
 
-  async compute(): Promise<boolean> {
-    return this.uyapAvailability.isUyapAvailable() === true;
+  async compute(
+    caseId: string,
+    context?: ActionContext,
+    facts?: FactMap,
+  ): Promise<boolean> {
+    // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: `isUyapAvailable()` env tanimsizken true doner
+    // (fail-safe: available) — bu UYAP_SEND icin FAIL-OPEN'dir (owner: "missing
+    // configuration -> block"). Ayrim kaybolmasin diye sinyalin ACIKCA yapilandirilmis
+    // olup olmadigi AYRI bir fact olarak yazilir; `system.uyap_available` semantigi
+    // DEGISMEZ (diger action'larda regresyon yok).
+    try {
+      facts?.set(
+        'system.uyap_availability_explicit',
+        this.uyapAvailability.isAvailabilityExplicitlyConfigured() === true,
+      );
+      return this.uyapAvailability.isUyapAvailable() === true;
+    } catch {
+      // Provider hatasi izin uretemez: her iki fact de fail-closed.
+      facts?.set('system.uyap_availability_explicit', false);
+      return false;
+    }
   }
 }

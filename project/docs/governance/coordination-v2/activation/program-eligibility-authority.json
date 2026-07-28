@@ -63,6 +63,18 @@
           "excerptSha256": "96405f142819b9369fd9f7b0bf871377fc259b151a8726531f13f34c6f52984d"
         }
       }
+    },
+    {
+      "programId": "DELIVERY_TRUTH",
+      "standingGrantRef": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-DELIVERY-TRUTH-DOGFOOD-R01.json",
+      "governanceOverride": {
+        "reason": "OWNER-DECISION-GOV-COORD-DELIVERY-TRUTH-R01: kontrol-duzlemi self-certification programi. Task-bounded; yalniz WP04 dogfood ailesi ve onun exact bounded remediation i.",
+        "evidence": {
+          "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R02/semantic-authority.md",
+          "exactExcerpt": "OWNER-DECISION-GOV-COORD-DELIVERY-TRUTH-R01 dogfood certification is authorized to run",
+          "excerptSha256": "352bcd8052008b9efe9b14b8d0dfb90e4b4ba20e5db2b0091f4bc1ba37e33a94"
+        }
+      }
     }
   ]
 }
