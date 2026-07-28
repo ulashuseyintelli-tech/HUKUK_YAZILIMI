@@ -9,7 +9,7 @@ FINAL STATUS:
 PARTIAL
 
 AUDIT BASE:
-01240549d451b452d89091ffe822ecf5bdaac1ec
+87090cdd45b6a17bc98f359d6b2a951f7130d4bd
 
 FINAL MAIN:
 PENDING AUDIT PR CLOSEOUT
@@ -24,7 +24,7 @@ Audit PR’ının merge edilmesi bu operational boşlukları kapatmaz.
 ## Sonuç
 
 ```text
-HISTORICAL WORK ITEMS:          1978
+HISTORICAL WORK ITEMS:          1989
 CAPABILITIES:                   1512
 
 CODE PRESENT:                   1512 / 100.00% of discovered capabilities
@@ -51,13 +51,13 @@ UNKNOWN:                        100
 
 `IMPLEMENTATION_RATE=100%`, scanner’ın mevcut source tree’de keşfettiği 1.512 capability
 için code-present oranıdır; geçmişte planlanmış bütün product gereksinimlerinin %100
-uygulandığı iddiası değildir. Git history denominator’ı ayrı olarak 1.978 commit’tir.
+uygulandığı iddiası değildir. Git history denominator’ı ayrı olarak 1.989 commit’tir.
 Operability ve verified-delivery oranları bu nedenle özellikle düşük ve dürüst
 bırakılmıştır.
 
 ## Scope ve yöntem
 
-- Audit base’in bütün 1.978 commit’i tekil historical record olarak alındı.
+- Audit base’in bütün 1.989 commit’i tekil historical record olarak alındı.
 - 124 controller, production module graph, provider/guard/interceptor/middleware
   registration, 47 scheduler decorator’ı, 53 Next route, package CLI yüzeyi, Prisma
   migration chain ve orchestration entrypoint’leri tarandı.
@@ -104,13 +104,13 @@ semantics-free patch koşulunu bozar.
 | DEBTOR / BORÇLU | 78 | 148 | 148 | 148 | 146 | 146 | 0 | 0 | 0 | 2 | 0 | 0.00 | P2 |
 | FRONTEND / UI ACTIVATION | 186 | 61 | 61 | 60 | 56 | 54 | 0 | 0 | 0 | 0 | 0 | 0.00 | P1 |
 | GOVERNANCE / ORCHESTRATION | 8 | 10 | 10 | 10 | 10 | 10 | 4 | 4 | 0 | 0 | 0 | 40.00 | NONE |
-| OFFICE / AVUKAT-PERSONEL | 60 | 60 | 60 | 60 | 59 | 59 | 0 | 0 | 0 | 1 | 0 | 0.00 | P2 |
+| OFFICE / AVUKAT-PERSONEL | 61 | 60 | 60 | 60 | 59 | 59 | 0 | 0 | 0 | 1 | 0 | 0.00 | P2 |
 | RECEIVABLE / ALACAK | 86 | 98 | 98 | 96 | 58 | 58 | 0 | 0 | 0 | 0 | 0 | 0.00 | P3 |
 | SHARED PLATFORM / INFRASTRUCTURE | 402 | 713 | 713 | 635 | 607 | 604 | 0 | 0 | 72 | 13 | 0 | 0.00 | P1 |
 | UYAP CONNECTOR | 91 | 211 | 211 | 210 | 209 | 202 | 0 | 0 | 1 | 4 | 0 | 0.00 | P2 |
 
 Module historical counts yalnız o module’ün mevcut capability’leriyle ilişkilendirilen
-commit’lerdir; cross-module/docs-only history nedeniyle 1.978 repository history
+commit’lerdir; cross-module/docs-only history nedeniyle 1.989 repository history
 denominator’ına toplanmaz.
 
 ## Historical closure errors
@@ -164,8 +164,7 @@ kanıtı sayılmadı.
 - 100 `UNKNOWN_REQUIRES_EVIDENCE`: deployed flag/config/credential/seed/migration/tenant
   capability değerleri okunmadı.
 - Production external integration credentials istenmedi veya kullanılmadı.
-- Audit-base CI run `30382292047`, daha yeni main push’u nedeniyle cancelled; Client
-  Workspace Live Smoke başlamadı.
+- Main/PR CI, capability-level independent state verification yerine geçirilmedi.
 - Bu kalemlerde başarı varsayılmadı; representative/local L6 kapsamı dışında kalanlar
   `BLOCKED_EXTERNAL_VERIFICATION` adaylarıdır.
 
@@ -179,8 +178,8 @@ kanıtı sayılmadı.
 - Manual high-impact graph inspection — break-glass, playbook, manifest-admin,
   middleware, test/dev-only surfaces
 
-Full repository CI audit PR üzerinde zorunludur. Audit-base CI’nin cancelled sonucu PASS
-olarak raporlanmamıştır.
+Full repository CI audit PR üzerinde zorunludur; yalnız terminalde gözlenen sonuçlar
+raporlanır.
 
 ## Next eligible task
 

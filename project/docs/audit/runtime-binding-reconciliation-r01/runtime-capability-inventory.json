@@ -2,20 +2,19 @@
   "schemaVersion": 1,
   "program": "REPOSITORY-WIDE RUNTIME BINDING, ACTIVATION AND OPERABILITY RECONCILIATION PROGRAM — R01",
   "metadata": {
-    "auditBaseSha": "9ceaf4103bc5959263378990d7b8ac5a64d213e6",
-    "analysisHeadSha": "4806076440010890941511b84230696c83d19742",
+    "auditBaseSha": "87090cdd45b6a17bc98f359d6b2a951f7130d4bd",
     "auditStartedAt": "2026-07-28T17:15:10.732Z",
     "branch": "codex/runtime-binding-reconciliation-r01",
     "gitCommonDirectory": "C:/Development/HUKUK_YAZILIMI/project/.git",
     "scanner": "project/scripts/runtime-binding-reconciliation-r01.cjs",
-    "scannerSha256": "44e838c525c033dfb8c4ed6ab9e9fbfbbf3dd03c0ed3fd629f12c812db77a10a",
-    "sourceFileCount": 2928,
+    "scannerSha256": "49e9417a36b00f9381887bae954265660636bd02e51236565b7ef2d70b5e4821",
+    "sourceFileCount": 2930,
     "productionModuleCount": 104,
     "productionReachableModuleCount": 98,
     "evidenceBoundary": "REPOSITORY_STATIC_PLUS_EXPLICIT_SHA_BOUND_DYNAMIC_EVIDENCE"
   },
   "counts": {
-    "totalHistoricalWorkItems": 1988,
+    "totalHistoricalWorkItems": 1989,
     "totalCapabilities": 1512,
     "codePresent": 1512,
     "runtimeBound": 1426,
@@ -47270,6 +47269,32 @@
       "module": "GOVERNANCE / ORCHESTRATION"
     },
     {
+      "historicalWorkId": "HIST-87090CDD45B6",
+      "title": "feat(orchestration-v2): revision'i structured event yap, state listesini buyutme (#1793)",
+      "sourceRefs": [
+        "git:87090cdd45b6a17bc98f359d6b2a951f7130d4bd"
+      ],
+      "prNumbers": [
+        1793
+      ],
+      "mergeShas": [
+        "87090cdd45b6a17bc98f359d6b2a951f7130d4bd"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:52:44+03:00",
+      "changedFiles": [
+        "project/apps/web/src/__tests__/task-disposition-invariants.test.ts",
+        "project/scripts/orchestration-v2/orchestrator/revision.cjs",
+        "project/scripts/orchestration-v2/orchestrator/revision.test.cjs",
+        "project/scripts/orchestration-v2/orchestrator/state.cjs"
+      ],
+      "module": "CROSS_MODULE / SHARED"
+    },
+    {
       "historicalWorkId": "HIST-872E0F8EAC55",
       "title": "feat(scoring): add canonical scoring input adapters (#1065)",
       "sourceRefs": [
@@ -91276,7 +91301,7 @@
       "severity": "NONE",
       "breakpoint": "",
       "evidenceRefs": [
-        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-9ceaf4103bc5-sealed.json",
+        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-87090cdd45b6-sealed.json",
         "project/scripts/orchestration-v2/delivery/manifest.cjs:CAPABILITIES",
         "project/scripts/orchestration-v2/delivery/probes.cjs"
       ],
@@ -91338,7 +91363,7 @@
       "severity": "NONE",
       "breakpoint": "",
       "evidenceRefs": [
-        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-9ceaf4103bc5-sealed.json",
+        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-87090cdd45b6-sealed.json",
         "project/scripts/orchestration-v2/delivery/manifest.cjs:CAPABILITIES",
         "project/scripts/orchestration-v2/delivery/probes.cjs"
       ],
@@ -91400,7 +91425,7 @@
       "severity": "NONE",
       "breakpoint": "",
       "evidenceRefs": [
-        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-9ceaf4103bc5-sealed.json",
+        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-87090cdd45b6-sealed.json",
         "project/scripts/orchestration-v2/delivery/manifest.cjs:CAPABILITIES",
         "project/scripts/orchestration-v2/delivery/probes.cjs"
       ],
@@ -91462,7 +91487,7 @@
       "severity": "NONE",
       "breakpoint": "",
       "evidenceRefs": [
-        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-9ceaf4103bc5-sealed.json",
+        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-87090cdd45b6-sealed.json",
         "project/scripts/orchestration-v2/delivery/manifest.cjs:CAPABILITIES",
         "project/scripts/orchestration-v2/delivery/probes.cjs"
       ],

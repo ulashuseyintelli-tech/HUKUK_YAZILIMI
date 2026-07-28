@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "at": "2026-07-28T17:47:21.153Z",
+  "at": "2026-07-28T17:49:46.687Z",
   "mode": "sealed",
-  "verifiedAtSha": "9ceaf4103bc5959263378990d7b8ac5a64d213e6",
+  "verifiedAtSha": "87090cdd45b6a17bc98f359d6b2a951f7130d4bd",
   "sourceBranch": "HEAD",
   "dirtyTree": false,
   "expectedMergeSha": null,
@@ -32,13 +32,13 @@
       "targetState": "OPERABLE",
       "observedState": "OPERABLE",
       "verdict": "PASS",
-      "verifiedAtSha": "9ceaf4103bc5959263378990d7b8ac5a64d213e6",
+      "verifiedAtSha": "87090cdd45b6a17bc98f359d6b2a951f7130d4bd",
       "expectedMergeSha": null,
       "sourceBranch": "HEAD",
       "dirtyTree": false,
-      "startedAt": "2026-07-28T17:47:21.154Z",
-      "finishedAt": "2026-07-28T17:47:24.679Z",
-      "durationMs": 3525,
+      "startedAt": "2026-07-28T17:49:46.688Z",
+      "finishedAt": "2026-07-28T17:49:50.166Z",
+      "durationMs": 3478,
       "commandDigest": "4de4c0b3c8b60d3ea992e90996e13c72cd293838cadbb4997b0efdfbc9e95a10",
       "commandCount": 5,
       "failureCode": null,
@@ -52,7 +52,7 @@
         {
           "name": "positive dry run",
           "verdict": "PASS",
-          "detail": "resolved at f760750f140e48fede6b3f70a46db8014295453c"
+          "detail": "resolved at 0fbee128fe7441750dfb074242a8c514e5295ee1"
         },
         {
           "name": "fabricated semantic recordId",
@@ -70,7 +70,7 @@
           "detail": "GRANT_REVOKED"
         }
       ],
-      "evidenceDigest": "ef6b9eb76972c1cf053a0cb7252396cb7d33ee1a757143b00c48cf63bd4782b5"
+      "evidenceDigest": "bc6cc84d00bc475935edc97b3c20e2260522c854bd47486e4afbc2e0048d0bda"
     },
     {
       "schemaVersion": 2,
@@ -83,13 +83,13 @@
       "targetState": "OPERABLE",
       "observedState": "OPERABLE",
       "verdict": "PASS",
-      "verifiedAtSha": "9ceaf4103bc5959263378990d7b8ac5a64d213e6",
+      "verifiedAtSha": "87090cdd45b6a17bc98f359d6b2a951f7130d4bd",
       "expectedMergeSha": null,
       "sourceBranch": "HEAD",
       "dirtyTree": false,
-      "startedAt": "2026-07-28T17:47:24.681Z",
-      "finishedAt": "2026-07-28T17:47:25.831Z",
-      "durationMs": 1150,
+      "startedAt": "2026-07-28T17:49:50.167Z",
+      "finishedAt": "2026-07-28T17:49:51.230Z",
+      "durationMs": 1063,
       "commandDigest": "25ac053f5aa6e67ca67676175e08d7b49b91e0873b50cafa4322baf8edd0f193",
       "commandCount": 4,
       "failureCode": null,
@@ -98,7 +98,7 @@
         {
           "name": "enqueue valid request",
           "verdict": "ADMITTED",
-          "detail": "f1e13492c8a810069b70f596"
+          "detail": "7ec2c4eeda8a22dae7634bb3"
         },
         {
           "name": "queue listing",
@@ -121,7 +121,7 @@
           "detail": "queue reached EXECUTING"
         }
       ],
-      "evidenceDigest": "dcfdd822ff0d95186964c5eddedefcc5483741ee8cbb258d02de02b246c4e370"
+      "evidenceDigest": "9fcf9e25941834a51a85a5b43ca91630149164120f17fa00f501c8b090fa988b"
     },
     {
       "schemaVersion": 2,
@@ -134,13 +134,13 @@
       "targetState": "ENFORCED",
       "observedState": "ENFORCED",
       "verdict": "PASS",
-      "verifiedAtSha": "9ceaf4103bc5959263378990d7b8ac5a64d213e6",
+      "verifiedAtSha": "87090cdd45b6a17bc98f359d6b2a951f7130d4bd",
       "expectedMergeSha": null,
       "sourceBranch": "HEAD",
       "dirtyTree": false,
-      "startedAt": "2026-07-28T17:47:25.832Z",
-      "finishedAt": "2026-07-28T17:47:26.948Z",
-      "durationMs": 1116,
+      "startedAt": "2026-07-28T17:49:51.230Z",
+      "finishedAt": "2026-07-28T17:49:52.414Z",
+      "durationMs": 1184,
       "commandDigest": "0d09dd7892661dcf967198378d82d8b6ef581be2060e5b6c897bec84ec87ba3d",
       "commandCount": 6,
       "failureCode": null,
@@ -177,7 +177,7 @@
           "detail": "GOVERNANCE_GRANT_CANNOT_RUN_CODE"
         }
       ],
-      "evidenceDigest": "f331b911721bf1e437a7d786c1698835977756c9706b563ae56b756cf8fded2f"
+      "evidenceDigest": "2390663928ad8942d50271dd1dae35c82543bbf4b178532ccbed9a8aa28de3a5"
     },
     {
       "schemaVersion": 2,
@@ -190,13 +190,13 @@
       "targetState": "ENFORCED",
       "observedState": "ENFORCED",
       "verdict": "PASS",
-      "verifiedAtSha": "9ceaf4103bc5959263378990d7b8ac5a64d213e6",
+      "verifiedAtSha": "87090cdd45b6a17bc98f359d6b2a951f7130d4bd",
       "expectedMergeSha": null,
       "sourceBranch": "HEAD",
       "dirtyTree": false,
-      "startedAt": "2026-07-28T17:47:26.948Z",
-      "finishedAt": "2026-07-28T17:47:40.538Z",
-      "durationMs": 13590,
+      "startedAt": "2026-07-28T17:49:52.415Z",
+      "finishedAt": "2026-07-28T17:50:05.936Z",
+      "durationMs": 13521,
       "commandDigest": "4c318e0f2117b6f04f232d65c27105c3351ad1aaa4d05bdcd11d3ba00e71f423",
       "commandCount": 9,
       "failureCode": null,
@@ -235,12 +235,12 @@
         {
           "name": "durable MERGE_READY handoff",
           "verdict": "PASS",
-          "detail": "bb898855284f"
+          "detail": "439ade4b3c27"
         },
         {
           "name": "real merge",
           "verdict": "PASS",
-          "detail": "91602ed5284d exists as a commit"
+          "detail": "e71059df3e5e exists as a commit"
         },
         {
           "name": "queue walk",
@@ -253,8 +253,8 @@
           "detail": "exit 0, one merge, same sha"
         }
       ],
-      "evidenceDigest": "0efb4cba39b6c2055fea1a91529fe48b26a8e374d8e973abd49c4baea7c74473"
+      "evidenceDigest": "242dd4d28841aa9b72cbe9e55c0625377b4146734c12c303adf849723cbc3854"
     }
   ],
-  "evidenceDigest": "40993d2dfee5ed9c26b5a38475917135da8fa9dd16654b3cf2f95cf00f4698c6"
+  "evidenceDigest": "6668d2457eec5bbd7918507590e4961077115a8d8311fdc6929318dfeae70f25"
 }

@@ -1,6 +1,6 @@
 # Remediation Roadmap — R01
 
-Audit base: `01240549d451b452d89091ffe822ecf5bdaac1ec`
+Audit base: `87090cdd45b6a17bc98f359d6b2a951f7130d4bd`
 
 Bu roadmap execution authority üretmez. `OWNER_DECISION_REQUIRED`, migration,
 production activation ve external credential gerektiren işler ayrı owner kararı

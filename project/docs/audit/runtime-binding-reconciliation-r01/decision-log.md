@@ -3,9 +3,10 @@
 Bu log audit-local sınıflandırma/disposition kaydıdır; canonical governance veya owner
 semantic authority değildir.
 
-## RBR-D01 — Audit base pinning
+## RBR-D01 — Audit base pinning — SUPERSEDED BY RBR-D13
 
-- Karar: Analiz `01240549d451b452d89091ffe822ecf5bdaac1ec` SHA’sına pinlendi.
+- Karar: Analiz ilk olarak `01240549d451b452d89091ffe822ecf5bdaac1ec`
+  SHA’sına pinlendi.
 - Gerekçe: Aynı repository’de eşzamanlı main ilerlemesi ölçümleri sessizce
   değiştirmemelidir.
 - Etki: Daha yeni main/PR durumu phase freshness olarak ayrıca raporlanır; audit-base
@@ -20,7 +21,7 @@ semantic authority değildir.
 
 ## RBR-D03 — Repository-wide history denominator
 
-- Karar: Yalnız dosyaya en son dokunan commit değil, audit base’in 1.978 commit’inin
+- Karar: Yalnız dosyaya en son dokunan commit değil, final audit base’in 1.989 commit’inin
   tamamı `historicalWorkId` ile kaydedildi.
 - Gerekçe: Son-commit yaklaşımı tarihsel PR/workstream zincirlerini kaybediyordu.
 - Etki: Capability’ler implementation dosyasına dokunan bütün geçmiş commit’lerle
@@ -63,7 +64,7 @@ semantic authority değildir.
 - Sonuç: Dört orchestration capability `VERIFIED_OPERATIONAL`; diğerleri kanıt
   seviyelerine göre lower state’te kaldı.
 
-## RBR-D09 — Audit-base CI cancellation
+## RBR-D09 — Initial-base CI cancellation — SUPERSEDED BY RBR-D13
 
 - Karar: Daha yeni main push’u nedeniyle concurrency ile iptal edilen CI run başarı
   sayılmadı.
@@ -95,3 +96,18 @@ semantic authority değildir.
   `UNKNOWN_REQUIRES_EVIDENCE` ve owner-gated P1 binding kararları vardır.
 - Terminal yorum: Merge, audit artefaktının teslimidir; repository-wide operational
   closure değildir.
+
+## RBR-D13 — Base revision reconciliation
+
+- Revision zinciri:
+  `01240549d451b452d89091ffe822ecf5bdaac1ec`
+  → `9ceaf4103bc5959263378990d7b8ac5a64d213e6`
+  → `87090cdd45b6a17bc98f359d6b2a951f7130d4bd`.
+- `supersededLayer`: `BASE_REVISION`.
+- Task identity, semantic outcome, allowed audit paths ve primary executor değişmedi.
+- Exact-path conflict: yok; iki rebase conflict-free tamamlandı.
+- Her revision’da inventory yeniden üretildi ve temiz detached worktree sealed verifier
+  4/4 PASS verdi.
+- Final audit base: `87090cdd45b6a17bc98f359d6b2a951f7130d4bd`.
+- Initial-base CI cancellation artık final audit-base CI sonucu değildir; yalnız önceki
+  revision’ın gözlemidir ve L6 promotion üretmez.

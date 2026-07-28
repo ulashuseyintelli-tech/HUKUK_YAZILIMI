@@ -1,6 +1,6 @@
 # Runtime Binding Graph — R01
 
-Audit base: `01240549d451b452d89091ffe822ecf5bdaac1ec`
+Audit base: `87090cdd45b6a17bc98f359d6b2a951f7130d4bd`
 
 ## Kanıt modeli
 
@@ -99,7 +99,7 @@ project/package.json script
 `MECHANICAL_GOVERNANCE_GATE` ve
 `GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE` capability’leri temiz detached worktree’de
 L6 PASS aldı. Kanıt:
-`evidence/delivery-evidence-01240549d451-sealed.json`.
+`evidence/delivery-evidence-87090cdd45b6-sealed.json`.
 
 ### UI
 
@@ -167,8 +167,7 @@ için iki capability `ACTIVE_UNREACHABLE` sınıfındadır.
 
 ## Dinamik kanıt sınırı
 
-Audit-base CI çalışması daha yeni `main` push’u nedeniyle concurrency cancellation ile
-sonlandı; `Client Workspace Live Smoke` başlamadan iptal edildi. Başarılı web build,
-vitest, architectural guard ve kısmi API suite L6 capability kanıtı olarak yükseltilmedi.
-Bu audit base için bağımsız dinamik kanıt yalnız dört sealed orchestration capability’sini
-kapsar.
+Main-push veya PR CI sonucu tek başına capability-level L6 sayılmaz. Build, unit/integration
+test ve live-smoke sonuçları validation kanıtı olarak ayrıca izlenir; fakat entrypoint’ten
+side effect’e bağımsız state doğrulaması olmayan capability otomatik yükseltilmez. Bu
+audit base için bağımsız dinamik kanıt dört sealed orchestration capability’sini kapsar.

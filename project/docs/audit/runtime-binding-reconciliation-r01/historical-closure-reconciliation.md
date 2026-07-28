@@ -1,7 +1,7 @@
 # Historical Closure Reconciliation — R01
 
-Audit base: `9ceaf4103bc5959263378990d7b8ac5a64d213e6`  
-Tarihsel commit: 1988  
+Audit base: `87090cdd45b6a17bc98f359d6b2a951f7130d4bd`
+Tarihsel commit: 1989
 Closure/closeout/standalone CLOSED iddiasıyla ilişkili capability: 27
 
 ## Yöntem ve kanıt sınırı
@@ -20,7 +20,7 @@ Closure/closeout/standalone CLOSED iddiasıyla ilişkili capability: 27
 | CANONICAL | 139 |
 | CLOSED | 132 |
 | IMPLEMENTED | 523 |
-| MERGED | 1194 |
+| MERGED | 1195 |
 
 ## Original status → güncel capability çapraz tablosu
 
@@ -84,8 +84,8 @@ Bu tablo non-exclusive’dir: bir capability birden fazla tarihsel commit statü
 | UI-EAD407FC7C58 — Next.js route /portal/profile | HIST-A154EC6D29E0 CLOSED: docs(client): CLIENT-REMEDIATION-CLOSEOUT-R01 — Spring Cleaning final reconciliation and closure (#1625) | OPERABLE_UNVERIFIED | CLOSED_BUT_UNVERIFIED | project/apps/web/src/app/(dashboard)/settings/security/page.tsx:navigation-reference<br>project/apps/web/src/app/portal/layout.tsx:navigation-reference<br>project/apps/web/src/app/portal/profile/page.tsx:1 |
 | UI-F559139C175A — Next.js route /portal/reset-password | HIST-A154EC6D29E0 CLOSED: docs(client): CLIENT-REMEDIATION-CLOSEOUT-R01 — Spring Cleaning final reconciliation and closure (#1625) | OPERABLE_UNVERIFIED | CLOSED_BUT_UNVERIFIED | project/apps/web/src/app/portal/__tests__/portal-layout-route-boundary.spec.tsx:navigation-reference<br>project/apps/web/src/app/portal/layout.tsx:navigation-reference<br>project/apps/web/src/app/portal/reset-password/__tests__/reset-password-page.spec.tsx:navigation-reference |
 
-INCORRECTLY_CLOSED_COUNT: 0  
-HISTORICALLY_CLOSED_COUNT: 27  
+INCORRECTLY_CLOSED_COUNT: 0
+HISTORICALLY_CLOSED_COUNT: 27
 FALSE_CLOSURE_RATE: 0%
 
 Not: `CLOSED_BUT_UNVERIFIED`, geçmişteki kapanışın otomatik olarak yanlış olduğu anlamına gelmez;
