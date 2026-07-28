@@ -98,6 +98,71 @@ describe('task disposition guard — valid terminal dispositions', () => {
   });
 });
 
+describe('task disposition guard — BLOCKED_* birincil kapanış ayrımı', () => {
+  it('rapor içinde anılan sınıf adı blocker şeması istemez', () => {
+    // Bu, kuralın kendi kapanış raporunda yakalanan gerçek vakasıdır: program
+    // CLOSED ile kapanıyordu, BLOCKED_EXTERNAL yalnız kanıt tablosunda geçiyordu.
+    const r = guard.validateFinalMessage(
+      [
+        'PROGRAM STATUS: CLOSED / MERGED / CANONICAL',
+        '',
+        '| Vaka | Sonuç |',
+        '| eksiksiz BLOCKED_EXTERNAL | kabul |',
+        '| eksik blocker alanı | reddedildi |',
+      ].join('\n'),
+    );
+    expect(r.valid).toBe(true);
+    expect(r.blockedIsPrimary).toBe(false);
+  });
+
+  it('sınıflandırma listesi kapanış iddiası sayılmaz', () => {
+    const r = guard.validateFinalMessage(
+      'STATUS: COMPLETED\nGeçerli sınıflar: BLOCKED_EXTERNAL, BLOCKED_SECURITY_RISK, BLOCKED_DATA_LOSS_RISK',
+    );
+    expect(r.valid).toBe(true);
+    expect(r.blockedIsPrimary).toBe(false);
+  });
+
+  it('ZAYIFLATMA YOK: yalnız BLOCKED_* varsa altı alan şartı aynen geçerlidir', () => {
+    const r = guard.validateFinalMessage('STATUS: BLOCKED_EXTERNAL — servis yok');
+    expect(r.valid).toBe(false);
+    expect(r.blockedIsPrimary).toBe(true);
+    expect(r.violations.some((v: Json) => v.code === guard.VIOLATION.BLOCKED_MISSING_FIELDS)).toBe(true);
+  });
+
+  it('ZAYIFLATMA YOK: birden çok BLOCKED_* hâlâ birincildir', () => {
+    const r = guard.validateFinalMessage('STATUS: BLOCKED_EXTERNAL ve BLOCKED_AUTHORITY_MISSING');
+    expect(r.blockedIsPrimary).toBe(true);
+    expect(r.valid).toBe(false);
+  });
+
+  it('ZAYIFLATMA YOK: geçersiz token tek başına hâlâ reddedilir', () => {
+    for (const token of guard.INVALID_TERMINAL) {
+      const r = guard.validateFinalMessage(`STATUS: ${token} — devrediliyor`);
+      expect(r.valid).toBe(false);
+      expect(r.violations[0].code).toBe(guard.VIOLATION.INVALID_TERMINAL_DISPOSITION);
+    }
+  });
+
+  it('ZAYIFLATMA YOK: geçersiz token BLOCKED_* eşliğinde de alan şartını korur', () => {
+    // HANDOFF_REQUIRED + eksik alanlı BLOCKED_OWNER_DECISION: blocked birincildir.
+    const r = guard.validateFinalMessage('HANDOFF_REQUIRED\nSTATUS: BLOCKED_OWNER_DECISION');
+    expect(r.blockedIsPrimary).toBe(true);
+    expect(r.valid).toBe(false);
+    expect(r.violations.some((v: Json) => v.code === guard.VIOLATION.BLOCKED_MISSING_FIELDS)).toBe(true);
+  });
+
+  it('gerçek blocked kapanış tam alanlarla hâlâ geçerlidir', () => {
+    const r = guard.validateFinalMessage(blockedMessage('BLOCKED_EXTERNAL'));
+    expect(r.valid).toBe(true);
+    expect(r.blockedIsPrimary).toBe(true);
+  });
+
+  it('hiç disposition yoksa blockedIsPrimary false kalır', () => {
+    expect(guard.validateFinalMessage('sadece bir açıklama').blockedIsPrimary).toBe(false);
+  });
+});
+
 describe('task disposition guard — owner handoff ve next-action', () => {
   it('owner kararı gerektiren handoff BLOCKED_OWNER_DECISION ile geçerlidir', () => {
     const r = guard.validateFinalMessage(

@@ -100,6 +100,10 @@ function foundTokens(text, list) {
  * terminal disposition da varsa, gecersiz ifade next-action / revision nedeni
  * olarak okunur ve kabul edilir.
  *
+ * `BLOCKED_*` alan sarti icin ayni ayrim gecerlidir: sart yalniz BLOCKED_*
+ * BIRINCIL kapanis oldugunda — yani baska gecerli terminal disposition
+ * yokken — aranir.
+ *
  * @param {string} message final mesaj metni
  * @param {{requireTerminal?: boolean}} [opts] requireTerminal: hic terminal
  *        disposition yoksa da ihlal say (varsayilan false — her mesaj bir task
@@ -133,15 +137,29 @@ function validateFinalMessage(message, opts) {
     });
   }
 
+  // Alan sarti yalniz BLOCKED_* BIRINCIL kapanis oldugunda aranir.
+  //
+  // Ilk surum her `BLOCKED_*` gecisini kapanis iddiasi sayiyordu. Sonucu ilk
+  // gercek kapanis raporunda gorundu: `CLOSED` ile kapanan bir program raporu,
+  // kanit tablosunda sinif adini ANDIGI icin blocker schema'si istendi. Bir
+  // raporun sinif adini anmasi o sinifla kapandigi anlamina gelmez.
+  //
+  // Gevsetme DEGILDIR: gercek bir blocked kapanista — yani baska gecerli
+  // terminal disposition yokken — alti alan sarti aynen yururluktedir.
   const blocked = valid.filter((v) => v.startsWith('BLOCKED_'));
-  for (const b of blocked) {
-    const missing = BLOCKED_REQUIRED_FIELDS.filter((f) => !f.pattern.test(text)).map((f) => f.key);
-    if (missing.length > 0) {
-      violations.push({
-        code: VIOLATION.BLOCKED_MISSING_FIELDS,
-        tokens: [b],
-        detail: b + ' kapanisi su alanlari tasimiyor: ' + missing.join(', '),
-      });
+  const blockedIsPrimary =
+    blocked.length > 0 && valid.length > 0 && valid.every((value) => value.startsWith('BLOCKED_'));
+
+  if (blockedIsPrimary) {
+    for (const b of blocked) {
+      const missing = BLOCKED_REQUIRED_FIELDS.filter((f) => !f.pattern.test(text)).map((f) => f.key);
+      if (missing.length > 0) {
+        violations.push({
+          code: VIOLATION.BLOCKED_MISSING_FIELDS,
+          tokens: [b],
+          detail: b + ' kapanisi su alanlari tasimiyor: ' + missing.join(', '),
+        });
+      }
     }
   }
 
@@ -150,6 +168,7 @@ function validateFinalMessage(message, opts) {
     violations,
     terminalFound: valid,
     invalidFound: invalid,
+    blockedIsPrimary,
   };
 }
 
