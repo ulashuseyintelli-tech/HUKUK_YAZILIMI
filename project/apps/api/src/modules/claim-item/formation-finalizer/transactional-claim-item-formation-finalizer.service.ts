@@ -49,6 +49,11 @@ import {
   validateLegalBasisProjectionBindingPersistenceEnvelope,
   type LegalBasisProjectionBindingPersistenceEnvelopeV1,
 } from '../formation-intent/legal-basis-projection-binding-persistence';
+import {
+  assertLegalBasisProjectionBindingMatches,
+  parseLegalBasisProjectionBindingV1,
+  LegalBasisProjectionBindingContractError,
+} from '../formation-intent/legal-basis-projection-binding.contract';
 import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE } from '../claim-item-approval.constants';
 import {
   ClaimItemFormationFinalizationError,
@@ -114,7 +119,7 @@ export class TransactionalClaimItemFormationFinalizerService {
         });
         if (!approval) this.fail('FORMATION_APPROVAL_MISMATCH');
 
-        this.assertIntentIntegrity(intent);
+        const projectionBinding = this.assertIntentIntegrity(intent);
         this.assertApprovalBinding(intent, approval);
 
         if (intent.formationSnapshot) {
@@ -124,7 +129,11 @@ export class TransactionalClaimItemFormationFinalizerService {
         const now = this.clock();
         this.assertActive(intent, approval, now);
         const source = await this.revalidateDocument(intent);
-        const legalBasis = await this.revalidateLegalBasis(intent, source);
+        const legalBasis = await this.revalidateLegalBasis(
+          intent,
+          source,
+          projectionBinding,
+        );
         const evidenceRefs = this.readEvidenceRefs(intent);
         const formationAt = new Date(approval.decidedAt as Date);
         const executionIdentity = domainSeparatedFormationHash(
@@ -347,6 +356,12 @@ export class TransactionalClaimItemFormationFinalizerService {
       snapshot.intentChecksum !== intent.intentChecksum ||
       snapshot.approvalReferenceHash !== intent.approvalReferenceHash ||
       snapshot.formationIntentId !== intent.id ||
+      snapshot.legalBasisProjectionBindingContractVersion !==
+        intent.legalBasisProjectionBindingContractVersion ||
+      snapshot.legalBasisProjectionBindingCanonicalPayload !==
+        intent.legalBasisProjectionBindingCanonicalPayload ||
+      snapshot.legalBasisProjectionBindingChecksum !==
+        intent.legalBasisProjectionBindingChecksum ||
       snapshot.snapshotVersion !== SNAPSHOT_VERSION ||
       snapshot.snapshotContractVersion !== SNAPSHOT_CONTRACT_VERSION ||
       !this.snapshotPayloadMatches(
@@ -354,6 +369,17 @@ export class TransactionalClaimItemFormationFinalizerService {
         snapshot.snapshotHash,
       )
     ) {
+      this.fail('FORMATION_EXECUTION_CONFLICT');
+    }
+    try {
+      parseLegalBasisProjectionBindingV1({
+        contractVersion:
+          snapshot.legalBasisProjectionBindingContractVersion as '1',
+        canonicalPayload:
+          snapshot.legalBasisProjectionBindingCanonicalPayload as string,
+        checksum: snapshot.legalBasisProjectionBindingChecksum as string,
+      });
+    } catch {
       this.fail('FORMATION_EXECUTION_CONFLICT');
     }
     const claimItem = await tx.claimItem.findFirst({
@@ -374,12 +400,16 @@ export class TransactionalClaimItemFormationFinalizerService {
     });
   }
 
-  private assertIntentIntegrity(intent: ClaimItemFormationIntent): void {
+  private assertIntentIntegrity(
+    intent: ClaimItemFormationIntent,
+  ): LegalBasisProjectionBindingPersistenceEnvelopeV1 {
+    let projectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1 | undefined;
     try {
-      this.readProjectionBinding(intent);
+      projectionBinding = this.readProjectionBinding(intent);
     } catch {
       this.fail('FORMATION_INTENT_INTEGRITY_MISMATCH');
     }
+    if (!projectionBinding) this.fail('FORMATION_LEGAL_BASIS_BINDING_REQUIRED');
     const checksum = buildClaimItemFormationIntentChecksum(intent.contractVersion, intent);
     if (
       intent.contractVersion !== CLAIM_ITEM_FORMATION_INTENT_CONTRACT_VERSION ||
@@ -401,6 +431,7 @@ export class TransactionalClaimItemFormationFinalizerService {
     ) {
       this.fail('FORMATION_INTENT_INTEGRITY_MISMATCH');
     }
+    return projectionBinding;
   }
 
   private readProjectionBinding(
@@ -507,6 +538,7 @@ export class TransactionalClaimItemFormationFinalizerService {
   private async revalidateLegalBasis(
     intent: ClaimItemFormationIntent,
     source: ExactCaseDocumentSourceV1,
+    storedProjectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1,
   ): Promise<ExactLegalBasisBindingV1> {
     const liabilityContext = JSON.parse(intent.liabilityContextCanonicalPayload) as ClaimFormationJsonValue;
     const resolution = await this.legalBasisResolver.resolveExactVersion({
@@ -560,6 +592,16 @@ export class TransactionalClaimItemFormationFinalizerService {
           ? 'FORMATION_PROJECTION_INVALID'
           : 'FORMATION_LEGAL_BASIS_MISMATCH',
       );
+    }
+    try {
+      assertLegalBasisProjectionBindingMatches(
+        storedProjectionBinding,
+        eligibility.legalBasis,
+        intent.createdAt.toISOString(),
+      );
+    } catch (error) {
+      if (!(error instanceof LegalBasisProjectionBindingContractError)) throw error;
+      this.fail('FORMATION_LEGAL_BASIS_MISMATCH');
     }
     return eligibility.legalBasis;
   }
@@ -679,6 +721,11 @@ export class TransactionalClaimItemFormationFinalizerService {
       legalBasisCode: intent.legalBasisCode,
       legalBasisVersion: intent.legalBasisVersion,
       legalBasisResolutionHash: intent.legalBasisResolutionHash,
+      legalBasisProjectionBinding: {
+        contractVersion: intent.legalBasisProjectionBindingContractVersion as string,
+        canonicalPayload: intent.legalBasisProjectionBindingCanonicalPayload as string,
+        checksum: intent.legalBasisProjectionBindingChecksum as string,
+      },
       claimItemProjection: this.jsonSafe(legalBasis.claimItemProjection) as ClaimFormationJsonValue,
       originalAmountMinor: intent.originalAmountMinor.toString(),
       demandedAmountMinor: intent.demandedAmountMinor.toString(),

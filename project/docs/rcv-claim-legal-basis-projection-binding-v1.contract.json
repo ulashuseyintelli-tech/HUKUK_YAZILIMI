@@ -1,0 +1,144 @@
+{
+  "contractId": "RCV-CLAIM-LEGAL-BASIS-PROJECTION-BINDING",
+  "contractStatus": "RATIFIED",
+  "contractVersion": 1,
+  "runtimeStatus": "DORMANT",
+  "projectionSchemaVersion": 1,
+  "persistenceEnvelope": {
+    "contractVersion": "1",
+    "fields": [
+      "legalBasisProjectionBindingContractVersion",
+      "legalBasisProjectionBindingCanonicalPayload",
+      "legalBasisProjectionBindingChecksum"
+    ],
+    "immutability": "INSERT_ONLY",
+    "snapshotEquality": "BYTE_EXACT"
+  },
+  "authorityIdentity": {
+    "requiredFields": [
+      "releaseId",
+      "releaseVersion",
+      "releaseChecksum",
+      "legalBasisCode",
+      "legalBasisVersion",
+      "legalBasisChecksum",
+      "registryId",
+      "registryVersion",
+      "registryChecksum",
+      "subtypeCode",
+      "subtypeVersion",
+      "subtypeChecksum"
+    ],
+    "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+    "registryVersion": 1,
+    "registryChecksum": "320f671ed2262314a560703bc8f15f9cd8b5e0743d8dfa4e5ce49b1e62c26e64",
+    "resolutionPolicy": "EXACT_VERSION_ONLY",
+    "fallbacks": "PROHIBITED"
+  },
+  "decisionProjection": {
+    "requiredFields": [
+      "canonicalComponentCategory",
+      "legalCharacter",
+      "legalBasisBinding",
+      "requiredSourceTypes",
+      "requiredEvidenceTypes",
+      "liabilityCompatibility",
+      "interestEligibility",
+      "amountSemantics",
+      "currencySemantics",
+      "calculationSemantics",
+      "allowedFormationPaths",
+      "forbiddenFormationPaths",
+      "admissionRequirements",
+      "finalizationRequirements",
+      "snapshotRequirements",
+      "claimItemProjection"
+    ],
+    "claimItemProjectionFields": [
+      "itemType",
+      "interestAccrualStatus",
+      "interestType",
+      "interestRate",
+      "interestStartDate",
+      "interestStartDateProvenance",
+      "isAllDebtorsLiable",
+      "liableDebtorIds"
+    ],
+    "unknownFields": "REJECT"
+  },
+  "temporalPolicy": {
+    "admittedAt": "IMMUTABLE_INTENT_METADATA_CHECKSUM_EXCLUDED",
+    "authorityEffectiveAt": "CHECKSUM_INCLUDED",
+    "authorityEffectiveUntil": "CHECKSUM_INCLUDED_WHEN_PRESENT",
+    "supersededPendingIntent": "ALLOW_IF_EXACT_RESOLVABLE_INTEGRITY_VALID_NOT_REVOKED_AND_VALID_AT_ADMISSION",
+    "expiredAfterAdmission": "ALLOW_IF_EXACT_RESOLVABLE_INTEGRITY_VALID_NOT_REVOKED_AND_VALID_AT_ADMISSION"
+  },
+  "integrity": {
+    "serializationAlgorithm": "CANONICAL_JSON_UTF8_V1",
+    "checksumAlgorithm": "SHA-256",
+    "checksumExpression": "SHA256(UTF8(canonicalPayload))",
+    "textNormalization": ["UNICODE_NFC", "CRLF_TO_LF"],
+    "objectKeyOrder": "LEXICOGRAPHIC_RECURSIVE",
+    "arrayOrder": "PRESERVED"
+  },
+  "checksumBoundary": {
+    "included": [
+      "authorityIdentity",
+      "decisionProjection",
+      "temporalContext.authorityEffectiveAt",
+      "temporalContext.authorityEffectiveUntil",
+      "integrityMetadata"
+    ],
+    "excluded": [
+      "admittedAt",
+      "databaseRowId",
+      "createdAt",
+      "updatedAt",
+      "traceId",
+      "requestId",
+      "localPath",
+      "logMetadata",
+      "projectionChecksum"
+    ]
+  },
+  "admission": {
+    "bindingCreation": "BEFORE_ATOMIC_INTENT_INSERT",
+    "persistence": "ATOMIC_WITH_INTENT_AND_OFFICE_APPROVAL",
+    "idempotency": "SAME_KEY_REQUIRES_SAME_INTENT_AND_PROJECTION_CHECKSUM",
+    "failure": "FAIL_CLOSED_NO_PARTIAL_WRITE"
+  },
+  "finalization": {
+    "storedEnvelopeValidation": "REQUIRED_BEFORE_RESOLVER_OR_WRITE",
+    "exactAuthorityReresolution": "REQUIRED",
+    "projectionRecomputation": "REQUIRED",
+    "identityComparison": "BYTE_EXACT",
+    "checksumComparison": "BYTE_EXACT",
+    "claimItemGate": "ALL_CHECKS_PASS",
+    "snapshotGate": "COPY_EXACT_INTENT_BINDING",
+    "failure": "NO_CLAIM_ITEM_NO_SNAPSHOT_NO_EVENT_NO_OUTBOX"
+  },
+  "lifecycle": {
+    "ACTIVE": "ALLOW_IF_EXACT_MATCH",
+    "SUPERSEDED": "ALLOW_PENDING_INTENT_IF_EXACT_MATCH_AND_NOT_REVOKED",
+    "REVOKED": "DENY",
+    "NOT_YET_EFFECTIVE": "DENY_ADMISSION",
+    "EXPIRED": "ADMISSION_TIME_VALIDITY_PINNED",
+    "UNRESOLVABLE": "DENY_NO_FALLBACK"
+  },
+  "legacy": {
+    "allNullBinding": "LEGACY_UNBOUND",
+    "finalization": "FORMATION_LEGAL_BASIS_BINDING_REQUIRED",
+    "inference": "PROHIBITED",
+    "automaticUpgrade": "PROHIBITED",
+    "backfill": "NONE",
+    "reAdmission": "SEPARATE_TASK"
+  },
+  "publicCompatibility": {
+    "api": "UNCHANGED",
+    "web": "UNCHANGED",
+    "databaseSchema": "UNCHANGED_IN_PB01",
+    "historicalRows": "UNCHANGED",
+    "productionActivation": "NONE"
+  },
+  "nextEligibleTask": "RCV-CLAIM-FORM-P02-S08-D02-KC01"
+}

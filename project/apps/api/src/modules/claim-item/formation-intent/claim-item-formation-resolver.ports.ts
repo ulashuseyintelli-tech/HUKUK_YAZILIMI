@@ -10,6 +10,56 @@ import {
   type ClaimItemFormationComponentCategory,
 } from './claim-item-formation-intent.contract';
 
+export interface LegalBasisProjectionAuthoritySourceV1 {
+  readonly releaseVersion: string;
+  readonly registryId: 'RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY';
+  readonly registryVersion: string;
+  readonly registryChecksum: string;
+}
+
+export interface LegalBasisDecisionProjectionSourceV1 {
+  readonly legalCharacter: string;
+  readonly legalBasisBinding: Readonly<{
+    readonly allowedLegalBasisCodes: readonly string[];
+    readonly bindingMode: 'EXACTLY_ONE' | 'EXACTLY_ONE_OF';
+    readonly requiredLegalBasisCodes: readonly string[];
+  }>;
+  readonly requiredSourceTypes: readonly string[];
+  readonly requiredEvidenceTypes: readonly string[];
+  readonly liabilityCompatibility: Readonly<{
+    readonly allowedLiabilityTypes: readonly string[];
+    readonly crossLiabilityUse: 'PROHIBITED';
+    readonly scope: 'EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP';
+  }>;
+  readonly interestEligibility: Readonly<{
+    readonly componentAccruesFurtherInterest: false;
+    readonly eligibilityRule: string;
+    readonly requiresExactInterestPolicy: boolean;
+    readonly requiresExactRateAuthority: boolean;
+  }>;
+  readonly amountSemantics: Readonly<{
+    readonly fixedAtFormation: boolean;
+    readonly minorUnitRepresentation: 'POSITIVE_INTEGER_STRING';
+    readonly roundingFallback: 'PROHIBITED';
+    readonly semanticAuthority: string;
+  }>;
+  readonly currencySemantics: Readonly<{
+    readonly conversion: 'PROHIBITED';
+    readonly currencyAuthority: string;
+    readonly minorUnitAuthority: 'ISO_CURRENCY_MINOR_UNIT';
+  }>;
+  readonly calculationSemantics: Readonly<{
+    readonly futureAccrual: 'INTEREST_POLICY_ONLY' | 'PROHIBITED';
+    readonly rule: string;
+    readonly sourceAmountDerivation: string;
+  }>;
+  readonly allowedFormationPaths: readonly string[];
+  readonly forbiddenFormationPaths: readonly string[];
+  readonly admissionRequirements: readonly string[];
+  readonly finalizationRequirements: readonly string[];
+  readonly snapshotRequirements: readonly string[];
+}
+
 export interface HumanClaimItemFormationAuthorizationInput {
   readonly tenantId: string;
   readonly caseId: string;
@@ -117,6 +167,10 @@ export interface ExactLegalBasisBindingV1 {
   readonly legalReviewRequired: boolean;
   readonly resolutionContractVersion: string;
   readonly resolutionHash: string;
+  /** Exact Legal Basis release and Subtype Registry identities used by PB01. */
+  readonly projectionAuthority: LegalBasisProjectionAuthoritySourceV1;
+  /** Decision-driving SR01 semantics; display-only labels are excluded. */
+  readonly decisionProjection: LegalBasisDecisionProjectionSourceV1;
   /**
    * Exact, version-bound projection into the existing ClaimItem persistence
    * vocabulary. The dormant finalizer must never infer these legal semantics
