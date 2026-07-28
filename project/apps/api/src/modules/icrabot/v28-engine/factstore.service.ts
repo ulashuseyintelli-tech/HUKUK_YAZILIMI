@@ -17,6 +17,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboxScope } from './outbox-scope';
 import { assertCaseInScope, filterCaseIdsInScope } from './case-scope';
+// UYAP-LEGACY-POA-FLAG-DEPRECATION-I01: computed fact'ler ELLE yazılamaz (fail-closed).
+// Bu depo serbest anahtarlıdır ve `POST /v28-engine/:caseId/flag/:key` ile İSTEMCİ
+// TARAFINDAN erişilebilirdi → `case.has_power_of_attorney = true` gibi sahte bir yetki
+// kaydı üretilebiliyordu. Sahiplik kaydı policy-engine'de TEK yerde tutulur.
+import { assertManuallyWritableFactKeys } from '../../policy-engine/fact-store/computed-fact-ownership';
 
 export interface FactSnapshot {
   facts: Record<string, any>;
@@ -92,6 +97,11 @@ export class FactStoreService {
     meta: WriteMetadata,
     scope: OutboxScope,
   ): Promise<void> {
+    // I06: computed-owned anahtar varsa transaction HİÇ açılmaz (tümü ya da hiçbiri).
+    assertManuallyWritableFactKeys([
+      ...Object.keys(facts || {}),
+      ...Object.keys(flags || {}),
+    ]);
     await this.prisma.$transaction(async (tx: any) => {
       // Kapsam kapisi mutation ile AYNI transaction icinde (TOCTOU yok).
       await assertCaseInScope(tx, caseId, scope);
@@ -233,6 +243,12 @@ export class FactStoreService {
     meta: WriteMetadata,
     scope: OutboxScope,
   ): Promise<BatchWriteResult> {
+    // I06: computed-owned anahtar varsa hiçbir yazım yapılmaz (setFacts/setFlags ve
+    // `POST /v28-engine/:caseId/{fact,flag}/:key` bu yoldan geçer).
+    assertManuallyWritableFactKeys([
+      ...Object.keys(facts || {}),
+      ...Object.keys(flags || {}),
+    ]);
     const result: BatchWriteResult = {
       factsWritten: 0,
       flagsWritten: 0,

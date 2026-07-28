@@ -62,7 +62,9 @@ export interface PaymentOrderRequest {
   currency: string;
   interestType?: string;
   interestStartDate?: Date;
-  skipPoaCheck?: boolean; // Test için vekalet kontrolünü atla
+  // UYAP-LEGACY-POA-FLAG-DEPRECATION-I01: `skipPoaCheck` KALDIRILDI. Hiçbir kod yolu
+  // tarafından okunmuyordu (ölü alan) ama adı "vekalet kontrolü atlanabilir" izlenimi
+  // veriyordu. Canonical kural: UYAP_SEND için POA/acting-lawyer authority bypass'ı YOKTUR.
 }
 
 export interface TebligatStatus {
@@ -81,12 +83,9 @@ export interface HacizRequest {
   lawyerId?: string; // Vekalet kontrolü için
   tenantId?: string; // Vekalet kontrolü için
   userId?: string; // PR-D4e-6: karar-anı audit aktörü (yoksa sistem/otomasyon)
-  /**
-   * @deprecated DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02: bu bayrak ARTIK vekalet veya dosya
-   * sahipligi kontrolunu ATLATAMAZ. Yetki kapisi (`assertUyapLegalAuthority`) kosulsuzdur.
-   * Alan yalnizca geriye donuk cagri uyumlulugu icin korunur ve hicbir etkisi yoktur.
-   */
-  skipPoaCheck?: boolean;
+  // UYAP-LEGACY-POA-FLAG-DEPRECATION-I01: `skipPoaCheck` KALDIRILDI. DEBTOR-IDOR-04'ten
+  // beri hiçbir etkisi yoktu (yetki kapısı koşulsuz); alan yalnız yanıltıcı bir bypass
+  // sözleşmesi görüntüsü üretiyordu. UYAP_SEND için authority bypass'ı YOKTUR.
 }
 
 export interface PoaValidationResult {
@@ -779,7 +778,7 @@ export class UyapService {
     clientId?: string;
     lawyerId?: string;
     tenantId?: string;
-    skipPoaCheck?: boolean;
+    // I06: `skipPoaCheck` KALDIRILDI — okunmuyordu; bypass sözleşmesi YOKTUR.
   }, tenantId: string): Promise<UyapResponse> {
     // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 — SIBLING PATH, AYNI KOK NEDEN.
     // `submitDocument` de UYAP'a hukuki sonuc doguran evrak (takip talebi, dilekce, itiraz,
@@ -1229,7 +1228,7 @@ export class UyapService {
     clientId?: string;
     lawyerId?: string;
     tenantId?: string;
-    skipPoaCheck?: boolean;
+    // I06: `skipPoaCheck` KALDIRILDI — okunmuyordu; bypass sözleşmesi YOKTUR.
   }, tenantId: string): Promise<UyapResponse> {
     // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 (DEBTOR-IDOR-03): bu yolda ONCEDEN HICBIR
     // dosya sahipligi kontrolu YOKTU — `caseId` dogrudan istemci govdesinden geliyor ve
@@ -1348,7 +1347,7 @@ export class UyapService {
     clientId?: string;
     lawyerId?: string;
     tenantId?: string;
-    skipPoaCheck?: boolean;
+    // I06: `skipPoaCheck` KALDIRILDI — okunmuyordu; bypass sözleşmesi YOKTUR.
   }, tenantId: string): Promise<UyapResponse> {
     // DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 (DEBTOR-IDOR-03): bu yolda ONCEDEN HICBIR
     // dosya sahipligi kontrolu YOKTU — `caseId` dogrudan istemci govdesinden geliyor ve

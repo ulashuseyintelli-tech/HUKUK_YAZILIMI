@@ -9,6 +9,11 @@ import {
   buildFactKey,
 } from './fact-store.types';
 import { sumConfirmedCollections } from '../../../common/collection-confirmed.util';
+// UYAP-LEGACY-POA-FLAG-DEPRECATION-I01: computed fact'ler ELLE yazılamaz (fail-closed).
+import {
+  assertManuallyWritableFactKey,
+  assertManuallyWritableFactKeys,
+} from './computed-fact-ownership';
 
 // ComputedMetrics type for backward compatibility
 interface ComputedMetrics {
@@ -101,6 +106,9 @@ export class FactStoreService {
     value: FactValue,
     metadata?: FactWriteMetadata,
   ): Promise<void> {
+    // UYAP-LEGACY-POA-FLAG-DEPRECATION-I01: sahibi computed provider olan bir anahtar
+    // elle yazılamaz. Prisma'ya HİÇ ulaşılmaz.
+    assertManuallyWritableFactKey(factKey);
     await this.writeFactToDb(caseId, factKey, value, metadata);
     
     // Invalidate cache (write-through)
@@ -117,6 +125,11 @@ export class FactStoreService {
     facts: Record<string, FactValue>,
     metadata?: FactWriteMetadata,
   ): Promise<void> {
+    // UYAP-LEGACY-POA-FLAG-DEPRECATION-I01: TÜMÜ YA DA HİÇBİRİ — bir anahtar bile
+    // computed-owned ise transaction HİÇ açılmaz (kısmi yazım sessiz bypass olurdu).
+    // Bu yol `POST /policy-engine/cases/:caseId/action-executed` gövdesindeki
+    // `result.newFacts` ile İSTEMCİ TARAFINDAN erişilebilirdi.
+    assertManuallyWritableFactKeys(Object.keys(facts ?? {}));
     await this.prisma.$transaction(async (tx) => {
       for (const [key, value] of Object.entries(facts)) {
         await this.writeFactToDbTx(tx, caseId, key, value, metadata);
