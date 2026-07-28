@@ -286,6 +286,7 @@ export class UyapService {
 
     try {
       const decision = await this.casePolicyEngine.canPerformAction(
+        tenantId,
         request.caseId,
         ActionCode.UYAP_SEND,
         {
@@ -451,6 +452,7 @@ export class UyapService {
     if (this.casePolicyEngine) {
       try {
         const decision = await this.casePolicyEngine.canPerformAction(
+          tenantId,
           request.caseId,
           ActionCode.TRIGGER_HACIZ,
           {

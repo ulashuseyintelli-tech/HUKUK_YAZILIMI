@@ -35,13 +35,14 @@ export class UyapQueryService {
    * - UyapQueryService.createQuery() → POST /address-discovery/uyap-query
    */
   private async getUyapQueryWarnings(
+    tenantId: string,
     caseId: string,
     debtorId: string,
     userId: string,
   ): Promise<GateWarning[]> {
     if (!this.cpe) return [];
     try {
-      const decision = await this.cpe.canPerformAction(caseId, ActionCode.UYAP_QUERY, {
+      const decision = await this.cpe.canPerformAction(tenantId, caseId, ActionCode.UYAP_QUERY, {
         debtorId,
         userId,
       });
@@ -116,6 +117,7 @@ export class UyapQueryService {
     // ASSIGN: UYAP_QUERY policy gate'i ADVISORY → UYAP kesintisinde SOFT uyarı (asla
     // bloklamaz; query yukarıda zaten oluştu). Frontend `warnings`'i opsiyonel okur.
     const warnings = await this.getUyapQueryWarnings(
+      tenantId,
       caseDebtor.caseId,
       caseDebtor.debtor.id,
       userId,

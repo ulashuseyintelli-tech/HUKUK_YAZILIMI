@@ -114,6 +114,7 @@ export class PolicyEngineController {
     this.logger.log(`canPerformAction: ${dto.actionCode} for case ${caseId}`);
 
     const decision = await this.cpe.canPerformAction(
+      tenantId,
       caseId,
       dto.actionCode,
       dto.context,
@@ -155,6 +156,7 @@ export class PolicyEngineController {
         : undefined;
 
     const recommendations = await this.cpe.getNextActions(
+      tenantId,
       caseId,
       query.scope,
       context,
@@ -192,6 +194,7 @@ export class PolicyEngineController {
     this.logger.log(`onActionExecuted: ${dto.actionCode} for case ${caseId}`);
 
     const response = await this.cpe.onActionExecuted(
+      tenantId,
       caseId,
       dto.actionCode,
       dto.context,

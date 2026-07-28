@@ -40,11 +40,17 @@ describe('P05C-P01 — CpeDecisionLog composite reference key (schema)', () => {
     }
   });
 
-  it('CpeExecutionRecord DEGISMEDI (kapsam disi — @@unique eklenmedi)', () => {
+  // DEBTOR-CPE-TENANT-HARDENING-P1-I01 UYARLAMASI: `tenantId yok` assertion'i P05C-P01'in
+  // kapsam guard'iydi ("bu fazda CpeExecutionRecord'a DOKUNULMADI"). Owner, DEBTOR-IDOR-02
+  // remediation'i kapsaminda CpeExecutionRecord tenant binding'ini acikca yetkilendirdi;
+  // guard amacina ulastigi icin emekliye ayrilir. P05C-P01'in KENDI katkisi degismeden
+  // korunur: CpeExecutionRecord'a @@unique EKLENMEMISTIR.
+  it('CpeExecutionRecord: P05C-P01 kapsami degismedi (@@unique EKLENMEDI)', () => {
     const block = modelBlock('CpeExecutionRecord')!;
     expect(block).not.toBeNull();
     expect(block).not.toContain('@@unique');
-    expect(block).not.toMatch(/\n\s+tenantId\s+String/);
+    // Tenant binding artik BEKLENEN durumdur (DEBTOR-CPE-TENANT-HARDENING-P1-I01).
+    expect(block).toMatch(/\n\s+tenantId\s+String/);
   });
 
   // P05C-P02 UYARLAMASI: bu assertion P05C-P01'in kapsam guard'iydi ("link tablosu bu fazda
@@ -93,8 +99,12 @@ describe('P05C-P01 — write-path DOKUNULMADI', () => {
     expect(loggerSrc).not.toContain('tenantId');
   });
 
-  it('CasePolicyEngine tenant-blind KALDI (tenantId yok)', () => {
-    expect(cpeSrc).not.toContain('tenantId');
+  // DEBTOR-CPE-TENANT-HARDENING-P1-I01 UYARLAMASI: bu assertion P05C-P01'in kapsam guard'iydi
+  // ("write-path'e DOKUNULMADI"). DEBTOR-IDOR-02 remediation'i ile CasePolicyEngine artik
+  // tenant-aware'dir; guard emekliye ayrilir ve yerine kalici sozlesme konur.
+  it('CasePolicyEngine artik tenant-aware (DEBTOR-IDOR-02 kapatildi)', () => {
+    expect(cpeSrc).toContain('assertCaseBelongsToTenant');
+    expect(cpeSrc).toMatch(/async canPerformAction\(\s*\n\s*tenantId: string,/);
   });
 
   it('tek create yolu korundu: cpeDecisionLog.create', () => {

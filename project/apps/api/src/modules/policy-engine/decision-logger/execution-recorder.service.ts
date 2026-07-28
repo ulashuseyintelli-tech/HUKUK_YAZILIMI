@@ -32,13 +32,24 @@ export class ExecutionRecorderService {
    * 
    * @returns null if duplicate, otherwise the record
    */
+  /**
+   * DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): `tenantId` zorunludur ve
+   * CasePolicyEngine'in dogruladigi Case sahipliginden tasinir. Execution kaydi artik
+   * kendi tenant baglamini acikca tasir; `caseId` uzerinden dolayli turetime bagimli
+   * degildir (retention/incident/raporlama sorgulari dogrudan filtreleyebilir).
+   */
   async startExecution(
+    tenantId: string,
     executionId: string,
     caseId: string,
     actionCode: ActionCode,
     context?: ActionContext,
     ruleVersion?: string,
   ): Promise<{ isNew: boolean; record: any }> {
+    if (typeof tenantId !== 'string' || tenantId.length === 0) {
+      throw new Error('cpe_execution_tenant_required: tenantId cozumlenemedi');
+    }
+
     // Check for duplicate
     const existing = await this.db.cpeExecutionRecord.findUnique({
       where: { executionId },
@@ -52,6 +63,7 @@ export class ExecutionRecorderService {
     // Create new record
     const record = await this.db.cpeExecutionRecord.create({
       data: {
+        tenantId,
         executionId,
         caseId,
         actionCode,

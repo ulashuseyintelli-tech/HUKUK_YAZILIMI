@@ -206,7 +206,11 @@ export class WorkflowEngine {
     
     if (this.casePolicyEngine && cpeActionCode) {
       try {
+        // DEBTOR-CPE-TENANT-HARDENING-P1-I01: `context.tenantId`, buildContext() icindeki
+        // tenant-scoped Case sorgusundan (`where: { id: caseId, tenantId }`) turer —
+        // istemci kontrolunde DEGILDIR, canonical tenant otoritesidir.
         const decision = await this.casePolicyEngine.canPerformAction(
+          context.tenantId,
           caseId,
           cpeActionCode,
           { source: 'AUTOMATION' },

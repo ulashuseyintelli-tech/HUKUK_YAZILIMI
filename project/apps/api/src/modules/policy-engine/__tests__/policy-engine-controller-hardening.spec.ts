@@ -56,7 +56,7 @@ describe("B1 — PolicyEngineController tenant-ownership (case-scoped endpoints)
     const { controller, cpe, prisma } = mk({ id: "c1" });
     const res = await controller.canPerformAction("t1", "c1", { actionCode: ActionCode.UYAP_SEND } as never);
     expect((prisma as any).case.findFirst).toHaveBeenCalledWith({ where: { id: "c1", tenantId: "t1" }, select: { id: true } });
-    expect(cpe.canPerformAction).toHaveBeenCalledWith("c1", ActionCode.UYAP_SEND, undefined);
+    expect(cpe.canPerformAction).toHaveBeenCalledWith("t1", "c1", ActionCode.UYAP_SEND, undefined);
     expect(res).toEqual({ success: true, data: { allowed: true, code: "OK" } });
   });
 
@@ -82,7 +82,7 @@ describe("B1 — PolicyEngineController tenant-ownership (case-scoped endpoints)
     const { controller, cpe } = mk({ id: "c1" });
     const dto = { actionCode: ActionCode.UYAP_SEND, result: { success: true }, executionId: "exec-1" } as never;
     const res = await controller.onActionExecuted("t1", "c1", dto);
-    expect(cpe.onActionExecuted).toHaveBeenCalledWith("c1", ActionCode.UYAP_SEND, undefined, { success: true }, "exec-1");
+    expect(cpe.onActionExecuted).toHaveBeenCalledWith("t1", "c1", ActionCode.UYAP_SEND, undefined, { success: true }, "exec-1");
     expect(res).toEqual({ success: true, data: { success: true, stateVersion: 2 } });
   });
 
@@ -190,7 +190,8 @@ describe("B1 — action-executed HTTP binding (decorator/guard runtime)", () => 
       .expect(200);
     // tenantId↔caseId decorator swap olsaydı bu lookup ("c1","tenant-1") bozulurdu
     expect(prisma.case.findFirst).toHaveBeenCalledWith({ where: { id: "c1", tenantId: "tenant-1" }, select: { id: true } });
-    expect(cpe.onActionExecuted).toHaveBeenCalledWith("c1", ActionCode.UYAP_SEND, undefined, { success: true }, "exec-1");
+    // DEBTOR-CPE-TENANT-HARDENING-P1-I01: ayni principal tenant CPE'ye ILK argüman olarak taşınır.
+    expect(cpe.onActionExecuted).toHaveBeenCalledWith("tenant-1", "c1", ActionCode.UYAP_SEND, undefined, { success: true }, "exec-1");
     expect(res.body).toEqual({ success: true, data: { success: true, stateVersion: 2 } });
   });
 });

@@ -22,6 +22,12 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { ActionCode } from '../types/action-code.enum';
 import { Scope } from '../types/scope.enum';
 
+/**
+ * DEBTOR-CPE-TENANT-HARDENING-P1-I01: CPE entrypoint'leri artik zorunlu tenantId alir.
+ * Bu spec'teki tum fixture case'leri bu tek tenant'a aittir.
+ */
+const TEST_TENANT_ID = 'test-tenant';
+
 // ============================================
 // Mock PrismaService
 // ============================================
@@ -35,6 +41,8 @@ const mockPrismaService = {
   },
   case: {
     findUnique: jest.fn(),
+    // DEBTOR-CPE-TENANT-HARDENING-P1-I01: sahiplik kapisi (tum fixture'lar TEST_TENANT_ID'ye ait)
+    findFirst: jest.fn(async (args: any) => ({ id: args?.where?.id ?? 'case-x' })),
     update: jest.fn(),
   },
   expenseRequest: {
@@ -354,7 +362,7 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
         );
 
         // Act
-        const decision = await cpe.canPerformAction(
+        const decision = await cpe.canPerformAction(TEST_TENANT_ID, 
           scenario.caseId,
           scenario.actionCode,
           (scenario as any).context
@@ -403,9 +411,9 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
       );
 
       // Call multiple times
-      const decision1 = await cpe.canPerformAction(scenario.caseId, scenario.actionCode);
-      const decision2 = await cpe.canPerformAction(scenario.caseId, scenario.actionCode);
-      const decision3 = await cpe.canPerformAction(scenario.caseId, scenario.actionCode);
+      const decision1 = await cpe.canPerformAction(TEST_TENANT_ID, scenario.caseId, scenario.actionCode);
+      const decision2 = await cpe.canPerformAction(TEST_TENANT_ID, scenario.caseId, scenario.actionCode);
+      const decision3 = await cpe.canPerformAction(TEST_TENANT_ID, scenario.caseId, scenario.actionCode);
 
       // All should be identical
       expect(decision1.allowed).toBe(decision2.allowed);
@@ -436,7 +444,7 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
       mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue([]);
       mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
 
-      const result1 = await cpe.onActionExecuted(caseId, actionCode, {}, { success: true }, executionId);
+      const result1 = await cpe.onActionExecuted(TEST_TENANT_ID, caseId, actionCode, {}, { success: true }, executionId);
 
       // Second call - execution exists (duplicate). NOOP = canonical duplicate marker (markAsNoop)
       mockPrismaService.cpeExecutionRecord.findUnique.mockResolvedValueOnce({
@@ -446,7 +454,7 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
         status: 'NOOP',
       });
 
-      const result2 = await cpe.onActionExecuted(caseId, actionCode, {}, { success: true }, executionId);
+      const result2 = await cpe.onActionExecuted(TEST_TENANT_ID, caseId, actionCode, {}, { success: true }, executionId);
 
       // Servis sözleşmesi: duplicate dönüşü { success, code } (isDuplicate alanı yok).
       // NOOP kayıt -> success:false, code:'DUPLICATE'
@@ -476,7 +484,7 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
         buildCaseRow({ caseId: 'case-x', status: 'HITAM', workflowStage: 'CLOSED_PAID' })
       );
 
-      const decision = await cpe.canPerformAction('case-x', ActionCode.UYAP_SEND);
+      const decision = await cpe.canPerformAction(TEST_TENANT_ID, 'case-x', ActionCode.UYAP_SEND);
 
       expect(decision.allowed).toBe(false);
       expect(decision.blockedBy?.gateCode).toBe('CASE_CLOSED');
@@ -529,7 +537,7 @@ describe('CasePolicyEngine - Performance', () => {
 
     for (let i = 0; i < iterations; i++) {
       const start = performance.now();
-      await cpe.canPerformAction('case-perf', ActionCode.UYAP_QUERY);
+      await cpe.canPerformAction(TEST_TENANT_ID, 'case-perf', ActionCode.UYAP_QUERY);
       const end = performance.now();
       times.push(end - start);
     }
@@ -565,6 +573,9 @@ describe('CasePolicyEngine - P3 UYAP geçici arıza (outage)', () => {
     icrabotCaseFact: { findMany: jest.fn().mockResolvedValue([]) },
     icrabotCaseFlag: { findMany: jest.fn().mockResolvedValue([]) },
     case: {
+    // DEBTOR-CPE-TENANT-HARDENING-P1-I01: sahiplik kapisi (fixture TEST_TENANT_ID'ye ait)
+    findFirst: jest.fn(async (args: any) => ({ id: args?.where?.id ?? 'case-outage' })),
+
       findUnique: jest.fn().mockResolvedValue({
         id: 'case-outage',
         caseStatus: 'ACTIVE',
@@ -626,7 +637,7 @@ describe('CasePolicyEngine - P3 UYAP geçici arıza (outage)', () => {
   });
 
   it('UYAP_QUERY → allowed:true + outage warning (code/message birebir)', async () => {
-    const decision = await cpe.canPerformAction('case-outage', ActionCode.UYAP_QUERY);
+    const decision = await cpe.canPerformAction(TEST_TENANT_ID, 'case-outage', ActionCode.UYAP_QUERY);
 
     expect(decision.allowed).toBe(true);
     expect(decision.warnings).toBeDefined();
@@ -636,7 +647,7 @@ describe('CasePolicyEngine - P3 UYAP geçici arıza (outage)', () => {
   });
 
   it('UYAP_SEND → allowed:false + HARD blok (code/reason birebir)', async () => {
-    const decision = await cpe.canPerformAction('case-outage', ActionCode.UYAP_SEND);
+    const decision = await cpe.canPerformAction(TEST_TENANT_ID, 'case-outage', ActionCode.UYAP_SEND);
 
     expect(decision.allowed).toBe(false);
     expect(decision.code).toBe('GATE_BLOCKED');

@@ -276,6 +276,10 @@ model Tenant {
   clientPowerOfAttorneys ClientPowerOfAttorney[] @relation("ClientPoaTenant")
   poaLawyers             PoaLawyer[]             @relation("PoaLawyerTenant")
 
+  // DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): CPE execution kayitlarinin
+  // canonical tenant karsi iliskisi.
+  cpeExecutionRecords CpeExecutionRecord[] @relation("CpeExecutionRecordTenant")
+
   @@index([slug])
   @@index([accountType])
 }
@@ -8681,6 +8685,11 @@ model CpeDecisionLog {
 model CpeExecutionRecord {
   id          String @id @default(cuid())
   executionId String @unique // UUID - idempotency key
+  // DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): execution kaydinin acik tenant
+  // baglami. Onceden tenant YALNIZ `caseId` uzerinden dolayli turetilebiliyordu; bu alan
+  // retention/incident/raporlama sorgularinin dogrudan ve dogrulanabilir sekilde tenant
+  // filtrelemesini saglar. Yazan tek yol ExecutionRecorderService.startExecution().
+  tenantId    String
   caseId      String
   actionCode  String
   contextJson Json?
@@ -8700,13 +8709,18 @@ model CpeExecutionRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  case Case @relation("CpeExecutionRecords", fields: [caseId], references: [id], onDelete: Cascade)
+  case   Case   @relation("CpeExecutionRecords", fields: [caseId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation("CpeExecutionRecordTenant", fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([caseId])
   @@index([executionId])
   @@index([actionCode])
   @@index([status])
   @@index([createdAt])
+  // DEBTOR-CPE-TENANT-HARDENING-P1-I01: tenant-aware erisim desenleri.
+  @@index([tenantId])
+  @@index([tenantId, caseId])
+  @@index([tenantId, status, createdAt])
 }
 
 enum CpeExecutionStatus {
