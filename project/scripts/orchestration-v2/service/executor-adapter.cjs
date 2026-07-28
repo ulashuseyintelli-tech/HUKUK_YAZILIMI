@@ -170,6 +170,14 @@ async function runEntry(o) {
     // driving the adapter directly can supply one, but the request's own
     // prompt is no longer silently dropped.
     prompt: o.prompt || resolved.prompt || '',
+    // The queue counts attempts; the executor is told which one it is on.
+    //
+    // +1 because this runs BEFORE the EXECUTING transition below, and that
+    // transition is what increments the counter — so `attempts` here is how
+    // many times this entry has ALREADY been executed, and the run being
+    // prepared is the next one. A fourth attempt told it is the third would be
+    // worse than one told nothing.
+    attempt: (entry.attempts || 0) + 1,
     expectedHeadBranch: o.expectedHeadBranch || null,
     isRevoked: o.isRevoked ? () => o.isRevoked(resolved.standingGrant) === true : undefined,
     isKillSwitchEngaged: o.isKillSwitchEngaged,
