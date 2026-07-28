@@ -494,8 +494,67 @@ async function finalizeEntry(o) {
 
   let deliveryResult = null;
   let closure;
+
+  /**
+   * The delivery record, in the shape the successor gate reads.
+   *
+   * Built through deliveryRecordFrom — the helper that exists so the finalizer
+   * and the gate cannot disagree about field names — layered over the verifier's
+   * own panel record so operators keep the steps and detail. Persisting the
+   * panel record alone is what dropped mergeSha: the gate requires it, the panel
+   * calls it expectedMergeSha, and the record read as STALE.
+   */
+  const stampDelivery = (delivery, mergeSha) => {
+    // WHOSE delivery this is. The successor gate refuses evidence naming another
+    // task, and a gate can only refuse what the producer states.
+    const deliveryRecord = Object.assign({}, delivery.record || delivery, { taskId: entry.taskId });
+    // And the fields the gate actually reads, from the helper written so the
+    // finalizer and the gate cannot disagree about their names. Persisting the
+    // panel record alone is what dropped mergeSha: the gate requires it, the
+    // panel calls the same commit expectedMergeSha, and the evidence read STALE.
+    return Object.assign(
+      deliveryRecord,
+      require('../delivery/post-merge.cjs').deliveryRecordFrom(delivery, mergeSha, entry.taskId),
+    );
+  };
+
+  const runDeliveryVerification = async (mergeSha) => {
+    try {
+      return await o.verifyDelivery({
+        repoCwd,
+        mergeSha,
+        capabilityId: preContract.capabilityId,
+        targetBranch: h.targetBranch,
+        timeoutMs: preContract.timeoutMs,
+      });
+    } catch (e) {
+      return {
+        verdict: 'FAIL',
+        failureCode: (e && e.code) || 'POST_MERGE_DELIVERY_FAILED',
+        detail: String((e && e.message) || e).slice(0, 300),
+        observedState: 'NOT_RUN',
+      };
+    }
+  };
+
+  // Verified BEFORE the task store closes, because CLOSED is terminal there and
+  // there is no second write. The dogfood run proved why it matters: delivery
+  // passed, was recorded on the queue entry, and the successor gate — which
+  // reads the task store — saw nothing and held the successor at
+  // LEGACY_UNVERIFIED. Both halves were correct and the wire between them had
+  // never been run.
+  const preContract = (resolved.spec && resolved.spec.deliveryContract) || null;
+  let captured = null;
+  const verifyDeliveryAtMerge =
+    preContract && o.verifyDelivery
+      ? async (mergeSha) => {
+          captured = { delivery: await runDeliveryVerification(mergeSha), mergeSha };
+          return stampDelivery(captured.delivery, mergeSha);
+        }
+      : null;
+
   try {
-    closure = await o.completeAfterOwnerMerge(Object.assign({}, ctx, { result }));
+    closure = await o.completeAfterOwnerMerge(Object.assign({}, ctx, { result, verifyDeliveryAtMerge }));
   } catch (e) {
     audit('FINALIZE_THREW', { entryId: entry.entryId, code: e && e.code, message: String((e && e.message) || e).slice(0, 300) });
     queue.transition({
@@ -616,31 +675,16 @@ async function finalizeEntry(o) {
     });
     audit('DELIVERY_VERIFY_STARTED', { entryId: entry.entryId, mergeSha: closure.mergeSha, capabilityId: contract.capabilityId });
 
-    let delivery;
-    try {
-      delivery = await o.verifyDelivery({
-        repoCwd,
-        mergeSha: closure.mergeSha,
-        capabilityId: contract.capabilityId,
-        targetBranch: h.targetBranch,
-        timeoutMs: contract.timeoutMs,
-      });
-    } catch (e) {
-      delivery = {
-        verdict: 'FAIL',
-        failureCode: (e && e.code) || 'POST_MERGE_DELIVERY_FAILED',
-        detail: String((e && e.message) || e).slice(0, 300),
-        observedState: 'NOT_RUN',
-      };
-    }
+    // Reuses what the closure hook already verified rather than probing twice.
+    // The fallback is for callers whose completeAfterOwnerMerge is a stub and
+    // never calls the hook — every test that injects one, and any consumer
+    // written before the hook existed.
+    const delivery =
+      captured && captured.mergeSha === closure.mergeSha
+        ? captured.delivery
+        : await runDeliveryVerification(closure.mergeSha);
 
-    // WHOSE delivery this is, stamped onto what gets persisted.
-    //
-    // The successor gate refuses evidence naming another task, and a gate can
-    // only refuse what the producer states. Without this the rule would hold in
-    // prose and never fire — the field would simply be absent on every record
-    // it was meant to check.
-    const deliveryRecord = Object.assign({}, delivery.record || delivery, { taskId: entry.taskId });
+    const deliveryRecord = stampDelivery(delivery, closure.mergeSha);
 
     if (delivery.verdict !== 'PASS' && delivery.verdict !== 'NOT_APPLICABLE') {
       // The merge HAPPENED. Saying otherwise, retrying it, or opening a second

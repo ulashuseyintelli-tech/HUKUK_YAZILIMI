@@ -178,14 +178,31 @@ export interface IdentityBindingAuditEvent {
   failures: BindingFailureCode[];
   /** Çağıran verir; bu modül sistem saatini okumaz. */
   occurredAt: string;
-  /** Yalnız APPLY sonucunda gerçek bir satır değişti. */
+  /**
+   * FİİLEN COMMIT EDİLMİŞ satır sayısı. Çağıran verir; karar türünden TÜRETİLMEZ.
+   * dry-run, rollback ve yazımsız yollar 0 verir.
+   */
+  committedMutationCount: number;
+  /**
+   * `committedMutationCount > 0`. Karar `APPLY` olsa bile yazım gerçekleşmediyse
+   * (dry-run veya rollback) FALSE'tur — kanıt, niyeti değil OLAN'ı bildirir.
+   */
   mutated: boolean;
 }
 
+/**
+ * OFFICE-P2-CAP02-IDENTITY-BINDING-DRY-RUN-AUDIT-REPAIR-I01.
+ *
+ * `committedMutationCount` ZORUNLUDUR ve çağıranın transaction'dan aldığı GERÇEK
+ * satır sayısıdır. Önceden `mutated` karar türünden (`kind === 'APPLY'`) türetiliyordu;
+ * bu, hiçbir şey yazılmayan dry-run çalıştırmalarında audit'in "mutasyon oldu" demesine
+ * yol açıyordu. Kanıt, niyeti değil OLAN'ı bildirmelidir.
+ */
 export function toIdentityBindingAuditEvent(
   input: BindingOperationInput,
   decision: BindingDecision,
   occurredAt: string,
+  committedMutationCount: number,
 ): IdentityBindingAuditEvent {
   return {
     eventType: 'OFFICE_CAP02_PERSONNEL_IDENTITY_BINDING',
@@ -197,7 +214,8 @@ export function toIdentityBindingAuditEvent(
     decision: decision.kind,
     failures: decision.failures,
     occurredAt,
-    mutated: decision.kind === 'APPLY',
+    committedMutationCount,
+    mutated: committedMutationCount > 0,
   };
 }
 

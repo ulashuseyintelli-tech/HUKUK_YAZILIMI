@@ -5,7 +5,13 @@
  * Risk level veya lock bazlı zorunlu onay.
  */
 
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -139,6 +145,66 @@ export class ApprovalWorkflowService {
   /**
    * Submit a decision on an approval request
    */
+  /**
+   * DEBTOR-ENTERPRISE-APPROVAL-AUTHORIZATION-P0-I01 (R02-F09A) — I01B DECISION AUTHORITY
+   *
+   * HTTP yuzeyinin kullandigi TEK yetkili giris noktasi. `tenantId` ve `actorUserId`
+   * cagiran tarafindan DEGIL, authenticated principal'dan turetilerek gecilir.
+   *
+   * CAPABILITY DURUMU: UNRESOLVED.
+   * Semantic compatibility gate sonucu: bu aggregate'in onayladigi sey icrabot is
+   * yurutme riskidir (riskLevel / lockId); repository'deki kanonik onay yetkisi ise
+   * office capacity modeline (Lawyer.lawyerRank XOR StaffMember.staffType) dayanir.
+   * Bu iki eksen arasinda KANONIK bir esleme yoktur; `OfficeApprovalService` bu
+   * aggregate tarafindan hic kullanilmamistir ve repository'de paylasilan
+   * `isApproverEligible`'in KASITLI olarak yeniden kullanilmadigi bir emsal vardir.
+   * Yerel `UserRole` tipi ('OPS' | 'LAWYER') kanonik Prisma enum'unda KARSILIGI
+   * OLMAYAN degerler tasir, dolayisiyla rol tablosu da kanonik kabul edilemez.
+   *
+   * Bu nedenle approver capability ICAT EDILMEZ ve karar mutasyonu GUVENLI VARSAYILAN
+   * olarak fail-closed kapatilir. Okuma, talep olusturma ve trust-boundary korumasi
+   * (I01A) tam calisir. Disposition: PARTIAL / OWNER SEMANTIC DECISION REQUIRED.
+   */
+  async submitDecisionAuthorized(
+    tenantId: string,
+    approvalRequestId: string,
+    actorUserId: string,
+    _decision: ApprovalDecision,
+    _note?: string,
+  ): Promise<{ approved: boolean; request: ApprovalRequest }> {
+    if (typeof tenantId !== 'string' || tenantId.length === 0) {
+      throw new ForbiddenException('enterprise_approval_tenant_required');
+    }
+    if (typeof actorUserId !== 'string' || actorUserId.length === 0) {
+      throw new ForbiddenException('enterprise_approval_actor_required');
+    }
+
+    const prismaAny = this.prisma as any;
+
+    // Sahiplik tenant-scoped cozulur. Cross-tenant ve var-olmayan kayit AYNI dis
+    // hatayi uretir: varlik sizintisi olmaz.
+    let request: ApprovalRequest | null = null;
+    try {
+      request = await prismaAny.icrabotApprovalRequest?.findFirst({
+        where: { id: approvalRequestId, tenantId },
+      });
+    } catch (e) {
+      throw new NotFoundException('Approval request not found');
+    }
+    if (!request) {
+      throw new NotFoundException('Approval request not found');
+    }
+    if (request.status !== 'PENDING') {
+      throw new BadRequestException('Approval request is not pending');
+    }
+
+    // CAPABILITY UNRESOLVED -> fail-closed. Hicbir mutasyon, audit veya yan etki olusmaz.
+    throw new ForbiddenException(
+      'enterprise_approval_capability_unresolved: bu aggregate icin kanonik approver ' +
+        'politikasi tanimli degil; karar mutasyonu guvenli varsayilan olarak kapalidir',
+    );
+  }
+
   async submitDecision(
     tenantId: string,
     approvalRequestId: string,
@@ -175,9 +241,41 @@ export class ApprovalWorkflowService {
       );
     }
 
-    // Record the decision
-    try {
-      await prismaAny.icrabotApprovalDecision?.create({
+    // DEBTOR-ENTERPRISE-APPROVAL-AUTHORIZATION-P0-I01 (R02-F09A) — I01B STATE + AUDIT
+    //
+    // ONCEKI DAVRANIS: karar kaydi ONCE yaziliyor, ardindan `update({ where: { id } })`
+    // ile — tenant yuklemi OLMADAN — durum degistiriliyordu; her iki yazma da
+    // `catch -> logger.warn` ile YUTULUYOR ve cagirana yine "approved" donuluyordu.
+    // Yani hicbir sey yazilmasa bile yanit basarili gorunuyordu.
+    //
+    // YENI DAVRANIS:
+    //  - gecis ATOMIK bir predicate ile yapilir (id + tenantId + status=PENDING),
+    //    boylece replay ve es zamanli ikinci karar tek kazanana indirgenir;
+    //  - durum gecisi ile audit kaydi AYNI transaction icindedir: audit yazilamazsa
+    //    gecis geri alinir ve basari yaniti URETILMEZ;
+    //  - hicbir hata yutulmaz.
+    if (!prismaAny.icrabotApprovalRequest || !prismaAny.icrabotApprovalDecision) {
+      // Model yoksa sessizce "basarili" donmek yerine fail-closed.
+      throw new ForbiddenException(
+        'enterprise_approval_store_unavailable: approval kayit modeli cozumlenemedi',
+      );
+    }
+
+    // Update request status
+    const newStatus: ApprovalStatus = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+    
+    await this.prisma.$transaction(async (tx: any) => {
+      const transitioned = await tx.icrabotApprovalRequest.updateMany({
+        where: { id: approvalRequestId, tenantId, status: 'PENDING' },
+        data: { status: newStatus },
+      });
+
+      if (transitioned.count !== 1) {
+        // Baska bir karar yarisi kazandi, kayit baska tenant'a ait veya artik PENDING degil.
+        throw new BadRequestException('Approval request is not pending');
+      }
+
+      await tx.icrabotApprovalDecision.create({
         data: {
           approvalRequestId,
           userId,
@@ -185,21 +283,7 @@ export class ApprovalWorkflowService {
           note: note || null,
         },
       });
-    } catch (e) {
-      this.logger.warn('Could not record approval decision');
-    }
-
-    // Update request status
-    const newStatus: ApprovalStatus = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
-    
-    try {
-      await prismaAny.icrabotApprovalRequest?.update({
-        where: { id: approvalRequestId },
-        data: { status: newStatus },
-      });
-    } catch (e) {
-      this.logger.warn('Could not update approval request status');
-    }
+    });
 
     this.logger.log(`Approval ${approvalRequestId} ${newStatus} by ${userId}`);
 

@@ -14,6 +14,7 @@ import { CaseFeeAgreementService } from '../case-fee-agreement.service';
 import { ClientSettlementReadService } from '../client-settlement-read.service';
 import { DispositionController } from '../disposition.controller';
 import { DispositionPostingService } from '../disposition-posting.service';
+import { ClientFinancialDisclosureCommandService } from '../client-financial-disclosure-command.service';
 import { DistributionRecommendationService } from '../distribution-recommendation.service';
 
 jest.mock('../../auth/auth.service', () => ({
@@ -166,6 +167,12 @@ describe('DistributionRecommendationController HTTP smoke', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: ClientOffsetService, useValue: offset },
         { provide: DispositionPostingService, useValue: posting },
+        // CLIENT-FD-ACT-R01-I03: controller artik disclosure command servisini de alir.
+        // Bu suite yalniz advisory rotasini test eder; command servisi CAGRILMAZ.
+        {
+          provide: ClientFinancialDisclosureCommandService,
+          useValue: { createFromDisposition: jest.fn() },
+        },
         { provide: ClientSettlementReadService, useValue: { getOutstanding: jest.fn() } },
         { provide: CaseFeeAgreementService, useValue: feeAgreements },
       ],

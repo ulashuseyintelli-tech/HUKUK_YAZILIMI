@@ -632,3 +632,57 @@ Binding yalnız yukarıdaki PR #1797 ve iki target path için geçerlidir. Genel
 mutation'ı, request/execution/result, production, schema, migration, runtime
 veya owner WIP yetkisi üretmez. Wildcard, prefix authority ve reusable authority
 yoktur. PR #1797 merge veya close olduğunda binding yeniden kullanılamaz.
+
+## PB01 FORMAL CLOSURE — exact control-plane authority binding
+
+Owner-ratified 2026-07-28. Bu kayıt yalnız PR #1807 için tek kullanımlık,
+task-specific bir control-plane binding oluşturur; mevcut hiçbir kontrolü
+gevşetmez.
+
+### Binding PR kimliği
+
+```text
+Task ID  : RCV-CLAIM-FORM-P02-S08-D02-PB01-FORMAL-CLOSURE-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01
+Base SHA : 0335c4cff8879a3246bddd33ad439c7567be7bf9
+Head ref : codex/rcv-claim-form-pb01-formal-closure-control-plane-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-CLAIM-FORM-P02-S08-D02-PB01-FORMAL-CLOSURE-R01
+Target mode      : RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_R01
+Target PR        : #1807
+Original base SHA: 11010e1d771929eec13e76d080c4243fc31db6c2
+Head ref         : codex/rcv-claim-form-p02-s08-d02-pb01-formal-closure-r01
+Scope            : M project/docs/governance/GOVERNANCE-INDEX.md
+                   M project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md
+                   M project/docs/governance/canonicalization-register.md
+                   M project/docs/governance/product-backlog.md
+Semantic record  : RCV-CLAIM-FORM-P02-S08-D02-PB01-CLOSURE-R01
+Execution record : RCV-CLAIM-FORM-P02-S08-D02-PB01-CLOSURE-R01-GRANT
+Implementation   : PR #1794 / a62e078a33803774ef5595343092ab2ad36d48a9
+Contract         : RCV-CLAIM-LEGAL-BASIS-PROJECTION-BINDING@1
+Next task        : RCV-CLAIM-FORM-P02-S08-D02-KC01 / OWNER GO REQUIRED
+```
+
+Hedef PR yalnız exact branch ve `M/M/M/M` dört-file seti; main'de canonical
+semantic authority ile execution grant marker'larının exact tekil oluşu;
+grant'in semantic authority ve aynı dört path'e exact binding'i; implementation
+squash ancestry'si; target content'in PB01 closure, contract identity ve yalnız
+KC01 owner gate'ini taşıması; güncel target base'in bu binding'i canonical yapan
+commit'in descendant'ı olması birlikte doğrulandığında kabul edilir. Original
+base provenance'dır; target head SHA pinlenmez ve fresh-main normal merge ile
+uzlaştırma korunur.
+
+Binding yalnız yukarıdaki PR #1807 ve dört target path için geçerlidir. Genel
+governance yazma, authority/grant üretme, request/execution/result, production,
+schema, migration, live database, runtime, key/signature/signed release veya
+owner WIP yetkisi üretmez. D02-KC01'i başlatmaz; D02-F01, D02-I01/I02/I03,
+I04/I05, canary ve containment retirement'a authority vermez. Wildcard, prefix
+authority ve reusable authority yoktur. PR #1807 merge veya close olduğunda
+binding yeniden kullanılamaz.

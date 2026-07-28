@@ -174,23 +174,54 @@ describe('otorite', () => {
 });
 
 describe('audit kanıtı', () => {
-  it('APPLY mutated=true, diğerleri false', () => {
-    const at = '2026-07-28T15:47:46.965Z';
-    expect(toIdentityBindingAuditEvent(input(), decide(), at).mutated).toBe(true);
-    expect(
-      toIdentityBindingAuditEvent(
-        input(),
-        decide({}, { profile: profileRow({ userId: TARGET_USER }) }),
-        at,
-      ).mutated,
-    ).toBe(false);
-    expect(
-      toIdentityBindingAuditEvent(input(), decide({}, { profile: null }), at).mutated,
-    ).toBe(false);
+  // OFFICE-P2-CAP02-IDENTITY-BINDING-DRY-RUN-AUDIT-REPAIR-I01
+  // `mutated` KARAR TURUNDEN degil, FIILEN COMMIT EDILMIS satir sayisindan turer.
+  const at = '2026-07-28T15:47:46.965Z';
+  const applyDecision = () => decide();
+  const alreadyApplied = () => decide({}, { profile: profileRow({ userId: TARGET_USER }) });
+  const failClosed = () => decide({}, { profile: null });
+
+  it('dry-run: karar APPLY ama hicbir satir commit edilmedi -> mutated false', () => {
+    const ev = toIdentityBindingAuditEvent(input(), applyDecision(), at, 0);
+    expect(ev.decision).toBe('APPLY');
+    expect(ev.committedMutationCount).toBe(0);
+    expect(ev.mutated).toBe(false);
+  });
+
+  it('gercek apply: 1 satir commit edildi -> mutated true', () => {
+    const ev = toIdentityBindingAuditEvent(input(), applyDecision(), at, 1);
+    expect(ev.committedMutationCount).toBe(1);
+    expect(ev.mutated).toBe(true);
+  });
+
+  it('ALREADY_APPLIED -> mutated false', () => {
+    const ev = toIdentityBindingAuditEvent(input(), alreadyApplied(), at, 0);
+    expect(ev.decision).toBe('ALREADY_APPLIED');
+    expect(ev.mutated).toBe(false);
+  });
+
+  it('FAIL_CLOSED -> mutated false', () => {
+    const ev = toIdentityBindingAuditEvent(input(), failClosed(), at, 0);
+    expect(ev.decision).toBe('FAIL_CLOSED');
+    expect(ev.mutated).toBe(false);
+  });
+
+  it('rollback: APPLY kararindan sonra transaction geri alindi -> mutated false', () => {
+    // Runner rollback'te audit'e 0 gecirir; karar APPLY kalsa da mutasyon YOKTUR.
+    const ev = toIdentityBindingAuditEvent(input(), applyDecision(), at, 0);
+    expect(ev.mutated).toBe(false);
+    expect(ev.committedMutationCount).toBe(0);
+  });
+
+  it('mutated karar turune DEGIL, sayaca baglidir', () => {
+    for (const d of [applyDecision(), alreadyApplied(), failClosed()]) {
+      expect(toIdentityBindingAuditEvent(input(), d, at, 0).mutated).toBe(false);
+      expect(toIdentityBindingAuditEvent(input(), d, at, 1).mutated).toBe(true);
+    }
   });
 
   it('occurredAt dışarıdan verilir; modül sistem saatini okumaz', () => {
-    const ev = toIdentityBindingAuditEvent(input(), decide(), '2026-01-01T00:00:00.000Z');
+    const ev = toIdentityBindingAuditEvent(input(), decide(), '2026-01-01T00:00:00.000Z', 1);
     expect(ev.occurredAt).toBe('2026-01-01T00:00:00.000Z');
     expect(ev.eventType).toBe('OFFICE_CAP02_PERSONNEL_IDENTITY_BINDING');
     expect(ev.authorityRef).toContain('OWNER-R01');
