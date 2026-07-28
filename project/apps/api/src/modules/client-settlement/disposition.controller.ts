@@ -2,6 +2,7 @@ import { Controller, Get, Post, Param, Query, Body, Request, UseGuards, Header }
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DispositionPostingService } from './disposition-posting.service';
+import { ClientFinancialDisclosureCommandService } from './client-financial-disclosure-command.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { DistributionRecommendationService } from './distribution-recommendation.service';
 import { PostDispositionDto } from './dto/post-disposition.dto';
@@ -23,6 +24,8 @@ export class DispositionController {
     private readonly prisma: PrismaService,
     private readonly readService: ClientSettlementReadService,
     private readonly distribution: DistributionRecommendationService,
+    // CLIENT-FD-ACT-R01-I03: yetkili disclosure yazma entrypoint'i (aktivasyon kapisi servis icinde).
+    private readonly disclosureCommand: ClientFinancialDisclosureCommandService,
   ) {}
 
   /**
@@ -39,6 +42,22 @@ export class DispositionController {
   ) {
     await this.posting.assertCanPrepareDisposition(req.user.id, req.user.tenantId);
     const data = await this.distribution.generate(req.user.tenantId, id, body ?? {}, { userId: req.user.id });
+    return { data };
+  }
+
+  /**
+   * CLIENT-FD-ACT-R01-I03 — POSTED dağıtım kararından müvekkil finansal bildirimi (DRAFT) üretir.
+   * POST /collection-dispositions/:id/financial-disclosure
+   *
+   * Gövde ALINMAZ: `caseId`, `caseClientId` ve idempotency anahtarı dispozisyon kaydından
+   * SERVER TARAFINDA türetilir — istemcinin uydurabileceği bir scope alanı YOKTUR.
+   * Aktivasyon kapısı (varsayılan KAPALI) ve yetki kontrolü servis içindedir.
+   */
+  @Post(':id/financial-disclosure')
+  async createFinancialDisclosure(@Request() req: AuthRequest, @Param('id') id: string) {
+    const data = await this.disclosureCommand.createFromDisposition(req.user.tenantId, id, {
+      userId: req.user.id,
+    });
     return { data };
   }
 
