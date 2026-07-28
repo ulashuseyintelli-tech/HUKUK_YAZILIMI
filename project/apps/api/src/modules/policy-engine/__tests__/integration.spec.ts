@@ -148,7 +148,13 @@ describe('CasePolicyEngine - Integration Tests', () => {
       });
 
       mockPrisma.icrabotCaseFact.findMany.mockResolvedValue([
+        // I04: POWER_OF_ATTORNEY_MISSING gate'i artik computed granular authority fact'lerini okur.
         { key: 'case.has_power_of_attorney', value: true },
+        { key: 'actor.is_canonical_lawyer', value: true },
+        { key: 'actor.has_matching_power_of_attorney', value: true },
+        { key: 'poa.is_effective_at_evaluation_time', value: true },
+        { key: 'poa.covers_requested_operation', value: true },
+        { key: 'authority.is_unambiguous', value: true },
         { key: 'expense.opening.paid', value: true },
       ]);
 
@@ -359,7 +365,13 @@ describe('CasePolicyEngine - Integration Tests', () => {
       });
 
       mockPrisma.icrabotCaseFact.findMany.mockResolvedValue([
+        // I04: POWER_OF_ATTORNEY_MISSING gate'i artik computed granular authority fact'lerini okur.
         { key: 'case.has_power_of_attorney', value: true },
+        { key: 'actor.is_canonical_lawyer', value: true },
+        { key: 'actor.has_matching_power_of_attorney', value: true },
+        { key: 'poa.is_effective_at_evaluation_time', value: true },
+        { key: 'poa.covers_requested_operation', value: true },
+        { key: 'authority.is_unambiguous', value: true },
         { key: 'expense.opening.paid', value: true },
       ]);
 
