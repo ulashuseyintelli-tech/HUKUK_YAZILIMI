@@ -262,7 +262,14 @@ const standing = {
     sourcePath: PLANS + '/execution-grant.md',
     payloadSha256: require('crypto').createHash('sha256').update(EXEC_RECORD, 'utf8').digest('hex'),
   },
-  requiredIndependentReview: false,
+  // TRUE, and the generator is the place it has to be true.
+  //
+  // This shipped false in #1744 because the earlier fix was applied to the
+  // GENERATED json and not to the source that regenerates it — so the next
+  // regeneration silently reverted it and admission refused R02 with
+  // INDEPENDENT_REVIEW_NOT_REQUIRED. Correcting output while leaving its
+  // generator wrong is a fix with a timer on it.
+  requiredIndependentReview: true,
   ciPolicy: { requireTerminalSuccess: true, allowSkipped: false, allowNeutral: true },
   // Task-bounded, and every narrowing the merge provider re-reads at merge time.
   mergePolicy: { method: 'SQUASH', autoMergeAuthorized: true, repositoryWideAutoMerge: false },
