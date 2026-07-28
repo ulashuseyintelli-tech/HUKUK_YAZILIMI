@@ -7,44 +7,55 @@ project/scripts/orchestration-v2/delivery/delivery.test.cjs
 ```
 
 Baska hicbir dosyaya dokunma. AGENTS.md, governance agaci, grant/evidence
-kayitlari ve `orchestrator/` altindaki runtime bu task'in disindadir; boundary
-validator gercek diff'i bu sinira gore yargilar.
+kayitlari ve `orchestrator/` ile `service/` altindaki runtime bu task'in
+disindadir; boundary validator gercek diff'i bu sinira gore yargilar.
+
+## Bu gorevin durumu
+
+Gorevin ilk yarisi tamamlandi. `DV55` artik mevcut ve yesil: **baska bir
+predecessor task kimligine ait** delivery kaniti successor'u serbest
+birakmiyor, `PREDECESSOR_DELIVERY_TASK_ID_MISMATCH` ile reddediliyor.
+
+Bu prompt ayni declared intent'in kalan yarisini kapatir. Bir kapi, uzerinde
+karar verdigi alan gercekten YAZILIYORSA calisir, ve su anda bunu dogrulayan
+hicbir test yok.
+
+## Kapatilacak bosluk
+
+`DV55` kaydi kendisi kuruyor. Yani uretici tarafi `taskId` damgalamayi
+tamamen birakirsa `DV55` yine yesil kalir — alan her production kaydinda
+sessizce yok olur ve kapi hicbir zaman ateslemez. Kural metinde dogru,
+pratikte atil olur.
+
+Olcum: `deliveryRecordFrom` su anda **hicbir test tarafindan cagrilmiyor**.
+
+```text
+grep -rn "deliveryRecordFrom" --include=*.test.cjs .   ->   sonuc yok
+```
+
+Bu tam olarak bu programin durdurmak icin var oldugu hata bicimidir: bir
+JSDoc iddiasi runtime'da hicbir seyi zorlamaz.
 
 ## Yapilacak is
 
-`successorMod.predecessorSatisfied` icin YENI bir acceptance assertion ekle:
-**baska bir predecessor task kimligine ait** delivery kaniti successor'u serbest
-birakmamalidir.
+`DV56` ekle: **uretici, kapinin okudugu kimligi gercekten yaziyor.**
 
-Zaten var olanlari tekrar etme:
+Iki yarisi da gerekli, cunku tek basina her biri yaniltir:
 
-```text
-DV51  verifiedAtSha !== mergeSha            (kendi icinde tutarsiz)
-DV54  evidence mergeSha !== kaydin mergeSha (baska bir merge'e ait)
-```
+1. **Uretici sozlesmesi.** `delivery/post-merge.cjs` icindeki
+   `deliveryRecordFrom` ciktisini kur ve iddia et:
+   - tasidigi `taskId` kendisine verilen gorev kimligidir;
+   - urettigi kayit, `orchestrator/successor.cjs` icindeki
+     `predecessorSatisfied(record, 2)` tarafindan kabul edilir — yani uretici
+     ile kapi alan adlari konusunda anlasiyor;
+   - kimlik baska bir goreve degistirildiginde ayni kayit reddedilir.
 
-Kapatilacak bosluk farkli: kayit hem kendi icinde tutarli olabilir
-(`verifiedAtSha === mergeSha`) hem de predecessor'in gercek merge SHA'siyla
-uyusabilir, ama tasidigi **task/capability kimligi** baska bir gorevin
-kimligi olabilir. Boyle bir kanit her SHA kontrolunu gecer.
-
-Yeni test `DV55` olarak eklenmelidir:
-
-1. `state: 'CLOSED'` bir predecessor kaydi kur; `payload.taskId` bu gorevin
-   kimligi olsun ve `payload.mergeSha` gercek merge SHA'si olsun.
-2. `payload.delivery` icine, SHA'lari tamamen dogru olan gecerli bir PASS kaydi
-   koy — fakat kaydin tasidigi `taskId` (veya esdeger kimlik alani) baska bir
-   gorevi gostersin.
-3. `successorMod.predecessorSatisfied(record, 2)` cagir.
-4. `ok === false` bekle.
-5. Reddin sebebi acikca kanitin baska bir goreve ait olmasi olsun.
-
-Ayrica pozitif kontrolu de koru: kimlikler uyustugunda ayni kayit `ok === true`
-vermelidir. Tek tarafli bir test, her seyi reddeden bir kapiyi da gecerdi.
-
-Eger mevcut kod bu durumu reddetmiyorsa test KIRMIZI olur. Bu beklenen ve
-dogru sonuctur: testi zayiflatma, hard-coded PASS yazma, assertion'i kaldirma.
-Kirmizi kalirsa oldugu gibi birak ve raporunda ac.
+2. **Canli yolun damgaladigi.** Kaydi kalicilastiran production yolu
+   `service/finalize.cjs`. Onun persist ettigi delivery kaydinin `taskId`
+   tasidigini dogrula. Dosyaya DOKUNMA — sinirin disinda. `DV53`'un successor
+   kapisi icin kullandigi teknik burada da gecerlidir: kaynagi okuyup davranisi
+   iddia etmek, bir gate'in gercekten bagli oldugunu kanitlamanin bu dosyada
+   zaten kabul edilmis yoludur.
 
 ## Kabul
 
@@ -52,12 +63,19 @@ Kirmizi kalirsa oldugu gibi birak ve raporunda ac.
 node --test scripts/orchestration-v2/delivery/delivery.test.cjs
 ```
 
-`project` dizininden calisir ve yesil olmalidir (yukaridaki tek istisna ile).
+`project` dizininden calisir ve **yesil** olmalidir.
+
+Bu gorev kirmizi bir test beklemiyor: `#1792` hem kapiyi hem damgayi indirdi,
+dolayisiyla dogru yazilmis bir `DV56` gecmelidir. Gecmiyorsa gercek bir defect
+buldun demektir — testi zayiflatma, oldugu gibi birak ve raporunda ac.
 
 ## Yasaklar
 
 - Yorum-only, docs-only veya bos degisiklik YOK.
 - Hard-coded `assert.ok(true)` YOK.
-- Mevcut bir testin kopyasi YOK.
-- `orchestrator/successor.cjs` dosyasina dokunma — sinirin disinda.
+- `DV55`'in veya baska bir testin kopyasi YOK — bu test URETICIYI olcer,
+  kapiyi degil.
+- `orchestrator/successor.cjs`, `service/finalize.cjs`, `delivery/post-merge.cjs`
+  dosyalarina DOKUNMA; hepsi sinirin disinda. Yalnizca require edip davranisi
+  iddia et.
 - Commit mesajinda merge/close iddiasi YOK; merge'u finalizer yapar.
