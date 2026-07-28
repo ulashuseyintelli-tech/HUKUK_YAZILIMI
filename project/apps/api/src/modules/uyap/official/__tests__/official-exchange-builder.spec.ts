@@ -44,7 +44,11 @@ function resolvedTaraf(over: Partial<OfficialTaraf> = {}): OfficialTaraf {
 
 function baseInput(taraflar: OfficialTaraf[]): OfficialExchangeInput {
   return {
-    dosya: { dosyaTipi: '1', takipTuru: '1', mahiyetKodu: '1007' },
+    dosya: {
+      dosyaTipi: '1',
+      takipTuruResolution: { kind: 'RESOLVED', code: '1' },
+      mahiyetResolution: { kind: 'RESOLVED', code: '1007' },
+    },
     taraflar,
   };
 }
@@ -300,7 +304,14 @@ describe('P02B-R2 — CLAIM-WRAPPER AUTHORITY GUARD (fail-closed, owner-ratified
     expect(r.status).toBe('REJECTED');
     if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
     expect(r.claimShapeViolations).toEqual([
-      { code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT', path: 'dosya/alacakKalemi', count: 1 },
+      {
+        code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT',
+        path: 'dosya/alacakKalemi',
+        count: 1,
+        // P02B-R2 (yapısal tur): yetkili ebeveynler artık resmî DTD'den ölçülmüş
+        // sabit olarak raporlanır. Guard hiçbirini SEÇMEZ — yalnız bildirir.
+        authorizedParents: ['cek', 'digerAlacak', 'ilam', 'kontrat', 'police', 'senet'],
+      },
     ]);
   });
 
@@ -316,7 +327,10 @@ describe('P02B-R2 — CLAIM-WRAPPER AUTHORITY GUARD (fail-closed, owner-ratified
 
   it('otomatik <digerAlacak> üretilmez', () => {
     const r = serializeOfficialExchange(inputWithClaim());
-    expect(JSON.stringify(r)).not.toContain('digerAlacak');
+    // `<digerAlacak` ELEMENT'i aranır (kardeş `<ilam` testiyle aynı biçim). Çıplak
+    // kelime aranamaz: `authorizedParents` raporu yetkili ADAY adlarını taşır —
+    // bunlar bildirimdir, emisyon DEĞİL.
+    expect(JSON.stringify(r)).not.toContain('<digerAlacak');
   });
 
   it('otomatik <ilam> üretilmez', () => {
@@ -396,7 +410,12 @@ describe('P02B-R2 — CLAIM-WRAPPER AUTHORITY GUARD (fail-closed, owner-ratified
     expect(r.status).toBe('REJECTED');
     if (r.status !== 'REJECTED') throw new Error('beklenen REJECTED');
     expect(r.claimShapeViolations).toEqual([
-      { code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT', path: 'dosya/alacakKalemi', count: 2 },
+      {
+        code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT',
+        path: 'dosya/alacakKalemi',
+        count: 2,
+        authorizedParents: ['cek', 'digerAlacak', 'ilam', 'kontrat', 'police', 'senet'],
+      },
     ]);
   });
 

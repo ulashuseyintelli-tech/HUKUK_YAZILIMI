@@ -1,3 +1,4 @@
+import type { OfficialCodeResolution } from './official-codelist-registry';
 import type { OfficialRoleResolution } from './official-role-translation.types';
 
 /**
@@ -89,13 +90,31 @@ export interface OfficialAlacakKalemi {
   faiz?: OfficialFaiz;
 }
 
-/** Resmî `dosya` attribute alt kümesi (ATTLIST dosya). */
+/**
+ * Resmî `dosya` attribute alt kümesi (ATTLIST dosya).
+ *
+ * **P02B-R2 / XA-04:** hukuki anlam taşıyan kodlu alanlar (`takipTuru`, `mahiyetKodu`)
+ * artık ÇAĞIRANDAN HAM STRING olarak alınmaz. Legacy sözlük aynı sayısal kodları farklı
+ * hukuki anlamlarla kullandığı için "geçerli kod" tek başına doğru anlam kanıtı değildir;
+ * bu yüzden alanlar `OfficialCodeResolution` ile çözülmüş olarak verilir.
+ */
 export interface OfficialDosya {
   dosyaTipi: string;
-  takipTuru?: string;
+
+  /**
+   * `takipTuru` anlam çözümü. **ZORUNLU** — çünkü resmî DTD bu attribute'u
+   * `(0 | 1) "1"` ile VARSAYILANLI bildirir: attribute yoksa ayrıştırıcı `1`
+   * (İlamsız) uygular. Sessiz ihmal örtük hukuki iddiadır; `NOT_ASSERTED` ile
+   * AÇIKÇA beyan edilmelidir.
+   */
+  takipTuruResolution: OfficialCodeResolution;
+
+  /** `mahiyetKodu` anlam çözümü. Attribute gerçekten `#IMPLIED` olduğu için opsiyonel. */
+  mahiyetResolution?: OfficialCodeResolution;
+
+  /** Kodlu-anlam kapsamı dışı (P02B-R2'de eşleme yapılmadı; olduğu gibi taşınır). */
   takipYolu?: string;
   takipSekli?: string;
-  mahiyetKodu?: string;
 }
 
 /** Serializer girdisi: önceden-resolved resmî exchange modeli. */
@@ -146,5 +165,7 @@ export type OfficialSerializationResult =
         code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT';
         path: 'dosya/alacakKalemi';
         count: number;
+        /** Resmî DTD'den ölçülmüş yetkili ebeveyn listesi (bkz. `OFFICIAL_ALACAK_KALEMI_PARENTS`). */
+        authorizedParents: readonly string[];
       }>;
     };
