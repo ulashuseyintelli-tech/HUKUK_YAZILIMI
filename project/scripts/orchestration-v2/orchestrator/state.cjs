@@ -9,12 +9,20 @@
  * expected previous state, and every transition from CLAIMED onward re-verifies
  * leaseEpoch and holderToken before it is allowed to write — a stale holder can
  * observe state but can never advance it.
+ *
+ * Task revision is deliberately NOT a state here (contract §2.1, §3). A design
+ * being superseded is not a lifecycle position, and adding HANDOFF_REQUIRED or
+ * SUPERSEDED to the list above would break every consumer of it while still
+ * failing to say what should happen next. Revision lives in revision.cjs as a
+ * structured internal event and rides along on `opts.revision`, which is
+ * optional: a caller that passes nothing behaves exactly as before.
  */
 
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { digest } = require('./authority.cjs');
+const revision = require('./revision.cjs');
 
 /**
  * Where orchestrator state belongs: under the Git common directory, never
@@ -201,6 +209,22 @@ function createStore(dir) {
       }
     }
 
+    // Revision enforcement. Opsiyoneldir: `opts.revision` yoksa hicbir sey
+    // degismez ve mevcut kayitlar aynen calisir (contract §2.1 backward-
+    // compatible reader).
+    if (opts.revision) {
+      const view = revision.readRevisionView(prev ? prev.payload : null);
+      const verdict = revision.validateRevision(opts.revision, view, opts.revisionOptions || {});
+      if (!verdict.valid) {
+        fail('REVISION_INVALID', verdict.violations.map((v) => v.code).join(','));
+      }
+      // Revision-eligible bir degisiklik gorevi terminal ETMEZ.
+      if (to === 'CANCELLED') {
+        const t = revision.assertTerminationAllowed(opts.revision);
+        if (!t.allowed) fail(t.violations[0].code, t.violations[0].detail);
+      }
+    }
+
     const expectedWriter = WRITER[to];
     if (opts.writerIdentity && expectedWriter && expectedWriter !== 'OWNER_OR_ORCHESTRATOR') {
       if (opts.writerIdentity !== expectedWriter) {
@@ -208,7 +232,9 @@ function createStore(dir) {
       }
     }
 
-    const payload = opts.payload || {};
+    const payload = opts.revision
+      ? Object.assign({}, opts.payload || {}, { taskRevision: opts.revision })
+      : opts.payload || {};
     const record = {
       schemaVersion: 1,
       taskId: taskId,

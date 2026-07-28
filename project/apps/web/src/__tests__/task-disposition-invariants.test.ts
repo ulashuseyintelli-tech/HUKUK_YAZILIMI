@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const guard = require('../../../../scripts/governance/task-disposition-guard.cjs');
+const revision = require('../../../../scripts/orchestration-v2/orchestrator/revision.cjs');
 
 // cwd'den yukari yurunur: vitest'in nereden cagrildigina (repo koku, apps/web,
 // pnpm --filter) bagimli olmadan repository kokunu bulur.
@@ -172,5 +173,84 @@ describe('task revision protokolü — belge bağları', () => {
     const rules = read('project/docs/governance/process-rules.md');
     for (const token of guard.VALID_TERMINAL) expect(rules).toContain(token);
     for (const token of guard.INVALID_TERMINAL) expect(rules).toContain(token);
+  });
+});
+
+describe('revision state enforcement — required-path invariants', () => {
+  const propose = (o: Record<string, unknown> = {}) => ({
+    revisionId: 2,
+    revisionOf: 1,
+    supersededRevision: 1,
+    revisionState: 'REVISION_PROPOSED',
+    wipDisposition: 'PRESERVE',
+    revisionReason: 'tasarim degisti',
+    nextRequiredAction: 'diff yeniden değerlendirilecek',
+    driftReconciliation: 'NOT_REQUIRED',
+    ...o,
+  });
+
+  it('revision-eligible değişiklik task’ı terminal etmez', () => {
+    for (const layer of [
+      'IMPLEMENTATION_DESIGN',
+      'TEST_DESIGN',
+      'VALIDATION_APPROACH',
+      'ALLOWLIST_NARROWED',
+      'BASE_REVISION',
+      'CONTRACT_VERSION',
+    ]) {
+      const r = revision.assertTerminationAllowed({ supersededLayer: layer });
+      expect(r.allowed).toBe(false);
+      expect(r.violations[0].code).toBe(
+        revision.VIOLATION.TERMINATION_FORBIDDEN_REVISION_ELIGIBLE,
+      );
+    }
+  });
+
+  it('gerçek termination sebepleri engellenmez', () => {
+    expect(revision.assertTerminationAllowed({ supersededLayer: 'SEMANTIC_OUTCOME' }).allowed).toBe(true);
+    expect(revision.assertTerminationAllowed({ supersededLayer: 'PRIMARY_OWNERSHIP' }).allowed).toBe(true);
+    expect(revision.assertTerminationAllowed(null).allowed).toBe(true);
+  });
+
+  it('primary handoff explicit grant olmadan reddedilir', () => {
+    const without = revision.validateRevision(propose({ supersededLayer: 'PRIMARY_OWNERSHIP' }));
+    expect(without.valid).toBe(false);
+    const withGrant = revision.validateRevision(
+      propose({ supersededLayer: 'PRIMARY_OWNERSHIP' }),
+      null,
+      { handoffGrantRef: 'OWNER-H-R01' },
+    );
+    expect(withGrant.valid).toBe(true);
+  });
+
+  it('allowlist genişlemesi owner authority olmadan reddedilir', () => {
+    expect(revision.validateRevision(propose({ supersededLayer: 'ALLOWLIST_WIDENED' })).valid).toBe(false);
+  });
+
+  it('WIP disposition yalnız PRESERVE veya REEVALUATE olabilir', () => {
+    expect(revision.WIP_DISPOSITIONS).toEqual(['PRESERVE', 'REEVALUATE']);
+    expect(
+      revision.validateRevision(propose({ supersededLayer: 'TEST_DESIGN', wipDisposition: 'DISCARD' })).valid,
+    ).toBe(false);
+  });
+
+  it('revision iç event modeli dış lifecycle state’lerini çoğaltmaz', () => {
+    expect(revision.REVISION_STATES).toEqual([
+      'CURRENT_REVISION',
+      'REVISION_PROPOSED',
+      'REVISION_VALIDATED',
+      'REVISION_ACTIVE',
+    ]);
+    // HANDOFF_REQUIRED ve SUPERSEDED bir state değildir; disposition guard da
+    // onları serbest metin kapanışı olarak zaten reddediyor.
+    expect(guard.INVALID_TERMINAL).toContain('HANDOFF_REQUIRED');
+    expect(guard.INVALID_TERMINAL).toContain('SUPERSEDED');
+  });
+
+  it('alan taşımayan mevcut kayıtlar geçerli kalır', () => {
+    const legacy = revision.readRevisionView(null);
+    expect(legacy.revisionId).toBe(1);
+    expect(legacy.legacy).toBe(true);
+    expect(legacy.wipDisposition).toBe('PRESERVE');
   });
 });
