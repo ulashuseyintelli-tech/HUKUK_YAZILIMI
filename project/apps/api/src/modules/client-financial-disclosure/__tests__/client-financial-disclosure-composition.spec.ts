@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { EmailProviderService } from '../../notification/email-provider.service';
 import { ClientFinancialDisclosureApprovalService } from '../client-financial-disclosure-approval.service';
 import { ClientFinancialDisclosurePublicationService } from '../client-financial-disclosure-publication.service';
 import { ClientFinancialDisclosureWriterService } from '../client-financial-disclosure-writer.service';
@@ -23,10 +24,19 @@ import { UnconfiguredDisclosureNotificationDispatcher } from '../unconfigured-di
 const MODULE_DIR = join(__dirname, '..');
 const prismaStub = { $transaction: jest.fn(), $executeRaw: jest.fn() } as unknown as PrismaService;
 
+/**
+ * CLIENT-FD-ACT-R01-I04: modul artik canonical `EmailProviderService`'i de saglar (dispatcher
+ * secimi icin). Testte ConfigService bagimliligina girmemek adina override edilir; varsayilan
+ * `mock` provider ile fail-closed dal aktif kalir.
+ */
+const emailStub = { providerName: 'mock', send: jest.fn() } as unknown as EmailProviderService;
+
 const compile = () =>
   Test.createTestingModule({ imports: [ClientFinancialDisclosureModule] })
     .overrideProvider(PrismaService)
     .useValue(prismaStub)
+    .overrideProvider(EmailProviderService)
+    .useValue(emailStub)
     .compile();
 
 describe('CLIENT-FD-ACT-R01-I02 — production composition binding', () => {
@@ -126,12 +136,7 @@ describe('CLIENT-FD-ACT-R01-I02 — production composition binding', () => {
 
   it('[8] provider’lar tembel kurulur — modül derlenirken yan etki YOKTUR', async () => {
     const spy = jest.spyOn(prismaStub, '$transaction' as never);
-    const moduleRef = await Test.createTestingModule({
-      imports: [ClientFinancialDisclosureModule],
-    })
-      .overrideProvider(PrismaService)
-      .useValue(prismaStub)
-      .compile();
+    const moduleRef = await compile();
     expect(spy).not.toHaveBeenCalled();
     await moduleRef.close();
     spy.mockRestore();

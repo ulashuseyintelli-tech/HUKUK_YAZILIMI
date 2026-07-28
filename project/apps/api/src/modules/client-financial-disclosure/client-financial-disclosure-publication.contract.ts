@@ -99,6 +99,14 @@ export interface DisclosureDispatchResult {
   readonly errorCode?: string;
   readonly errorMessage?: string;
   readonly provider: string;
+  /**
+   * CLIENT-FD-ACT-R01-I04 — OPSIYONEL basarisizlik siniflandirmasi (geriye donuk uyumlu).
+   * `true`  : gecici hata, ayni versiyon icin `retrySend()` anlamlidir.
+   * `false` : kalici hata, yeniden deneme AYNI sonucu verir (alici gecersiz, kimlik reddi vb.).
+   * `undefined`: siniflandirma yok (eski adaptorler). Publication state machine bu alani
+   * TUKETMEZ — kalici durum yine `SEND_FAILED`'dir; alan operatore ve teleme tri icindir.
+   */
+  readonly retryable?: boolean;
 }
 
 /**
