@@ -2853,3 +2853,87 @@ RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
 Bu bölüm: Track B'nin send/publication/reversal, authorization projection, read API ve portal dilimlerini BAŞLATMAZ veya yetkilendirmez; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35/§37/§38/§39/§40/§41'in kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; yeni role enum'u veya paralel yetki modeli ÜRETMEZ; paylaşılan `isApproverEligible()`'ı DEĞİŞTİRMEZ; başka actionCode'ların yeterlilik kuralını DEĞİŞTİRMEZ; approval servisini production akışına BAĞLAMAZ; client-görünür hiçbir finansal veri AÇMAZ; UYAP/OFFICE/RCV/DEBTOR statülerini DEĞİŞTİRMEZ; yeni dependency EKLEMEZ.
 
 **APPROVAL RUNTIME EXISTS ≠ DISCLOSURE MAY BE SENT · APPROVED ≠ PUBLISHED · APPROVAL ELIGIBLE ≠ APPROVAL GRANTED · I03 CLOSED ≠ TRACK B FULLY IMPLEMENTED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
+
+## 43. CLIENT Phase 2 Track B I04 — Send, Publication and Reversal Runtime Closure (OWNER RATIFIED)
+
+Bu bölüm, `CLIENT-P2-U03-TRACK-B-I04 — SEND, PUBLICATION AND REVERSAL RUNTIME` görevinin **teknik kapanış** kaydıdır (`decision-log.md` `CLIENT-P2-U03-TRACK-B-I04-CLOSURE` kaydı). §5, §6, §8.A, §8.B, §11–§42 substantive hükümlerini DEĞİŞTİRMEZ; §35'in, §37'nin, §38'in, §39'un, §40'ın, §41'in ve §42'nin **kendi metinleri DEĞİŞTİRİLMEMİŞTİR**.
+
+### 43.1 Canonical Kimlik ve SHA
+
+```text
+TASK   : CLIENT-P2-U03-TRACK-B-I04
+TITLE  : SEND, PUBLICATION AND REVERSAL RUNTIME
+PR     : #1770
+SQUASH : 438db3c832635deb4d6a2a71fe7504f3c0279316
+DIFF   : 4 dosya, +1463 / -0
+```
+
+**SCHEMA/MIGRATION: NONE** · **CONTROLLER/ROUTE/RESOLVER/UI: NONE** · **YENİ DEPENDENCY: NONE** · **`ci.yml`: DOKUNULMADI**.
+
+### 43.2 §35.11 Zorunlu Sırasının Birebir Uygulanması
+
+```text
+(1) SEND_PENDING kalici commit edilir              -> beginSend()
+(2) provider cagrisi DB TRANSACTION'I DISINDA      -> dispatchAndPublish() 2. adim
+(3) gercek-provider kabulu + KALICI message ID     -> eksikse SEND_FAILED (§35.10)
+(4) snapshot / icerik hash / alici baglamasi gonderimden ONCE VE SONRA dogrulanir
+(5) PUBLISHED'e TEK idempotent guarded gecis       -> publishedAt + providerMessageId NULL guard'li
+(6) provider-kabul (SENT) ve yayinlama olaylari AYRI AYRI AuditLog'a yazilir
+```
+
+### 43.3 §35.10 Mock Provider Yasağı
+
+Yayınlama yalnız onaylı gerçek provider'larla (`smtp` / `sendgrid` / `ses`) mümkündür. `mock`, boş değer veya listede olmayan herhangi bir ad **fail-closed** reddedilir ve guard provider'a **tek byte gitmeden önce** çalışır. Sessiz mock fallback'i Financial Disclosure gate'ini tatmin **edemez**.
+
+### 43.4 Çift Gönderim ve Çift Yayınlama
+
+Çift gönderim `sendRequestedAt` üzerinden **koşullu sahiplenme (claim)** ile engellenir: yalnız `NULL`dan bugüne çevirebilen çağıran provider'a gider. Sahiplenme yalnızca ayrı, guarded bir `retrySend()` operatör eylemiyle serbest bırakılır — dispatch kendi kendine sıfırlayamaz. Çift yayınlama erken already-published kontrolü, guarded geçiş ve audit tekilliği ile engellenir.
+
+### 43.5 §35.13 Reversal / Supersession
+
+`PUBLISHED → REVERSED` ve `PUBLISHED → SUPERSEDED`. **Geçmiş ASLA silinmez** — `providerMessageId` ve `publishedAt` korunur. Supersession yalnız aynı disclosure kökü içinde, daha yüksek versiyonlu ve **kendi ofis + içerik onayı tamamlanmış** bir versiyonla kurulur; `@@unique([tenantId, supersedesVersionId])` bir versiyonun en fazla **bir kez** supersede edilmesini DB seviyesinde garanti eder. Kısayol YOKTUR.
+
+### 43.6 Sızıntı Sınırı ve Mimari
+
+Provider hata **detayı** yalnız internal `sendFailureDetail` kolonunda kalır; audit metadata'sına finansal tutar, alıcı e-postası, bildirim içeriği veya hash **yazılmaz**. Ham Prisma hatası, SQLSTATE ve stack trace sızdırılmaz (403 authz / 409 invariant). Gönderim bir **port** (`DisclosureNotificationDispatcher`) üzerinden yapılır; dormant servis Nest'in `EmailProviderService`'ine doğrudan bağlanmaz. Yeterlilik I03'ün **aynı saf predikatını** kullanır; ikinci bir yetki kuralı üretilmemiştir.
+
+### 43.7 Test Kanıtı ve Diş Doğrulaması
+
+```text
+publication integration      : 24/24 PASS  (gercek PostgreSQL 16)
+client-financial-disclosure  : 119/119 PASS (I01+I02+I03 regresyonu dahil)
+CI manifest (gercek run-ci-manifest.sh): db/domain-integration 23 suite / 267 test PASS
+yeni manifest ACILMADI, CI-8 butcesi ARTMADI · API build PASS · eslint 0 · I04 tsc hatasi 0
+GERCEK E-POSTA GONDERILMEDI — port sahte adaptorle saglandi.
+
+DIS (TEETH) — 6/6 KORUMA DIS TASIYOR:
+  [A] mock provider guard'i             -> test [1]  FAIL
+  [B] gonderim sahiplenme kontrolu      -> test [22] FAIL
+  [C] message ID kanit kapisi           -> test [5]  FAIL
+  [D] gonderim sonrasi alici dogrulamasi-> test [12] FAIL
+  [E] gonderim oncesi yayinlanabilirlik -> test [9]  FAIL
+  [F] cift yayinlama on-kontrolu        -> test [8]  FAIL
+  geri yukleme                          -> 119/119 PASS
+```
+
+### 43.8 Statü
+
+```text
+CLIENT-P2-U03-TRACK-B-I04 : AUTHORIZED / IMPLEMENTED / VERIFIED / MERGED / CANONICAL
+
+TRACK B ARCHITECTURE / DATA FOUNDATION / I01 LIVE / SERVICE FOUNDATION /
+APPROVAL POLICY / APPROVAL RUNTIME (§35/§37/§39/§40/§41/§42) : degismedi
+TRACK B SEND-PUBLICATION-REVERSAL RUNTIME : CLOSED/CANONICAL  (bu kayitla)
+
+TRACK B AUTHORIZATION PROJECTION / READ API (I05) : NOT STARTED
+TRACK B PORTAL PRESENTATION                 (I06) : NOT STARTED
+TRACK B ACCEPTANCE / PROGRAM CLOSURE        (I07) : NOT STARTED
+CLIENT-P2-U03 (genel) : PARTIAL — NOT READY FOR FINAL CLOSURE
+RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
+```
+
+### 43.9 Closure Self-Check
+
+Bu bölüm: authorization projection, read API ve portal dilimlerini BAŞLATMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35–§42'nin kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; publication servisini production akışına BAĞLAMAZ; client-görünür hiçbir finansal veri AÇMAZ; gerçek e-posta GÖNDERMEZ; yeni dependency EKLEMEZ.
+
+**PROVIDER ACCEPTED ≠ DELIVERED TO INBOX · SENT ≠ PUBLISHED · PUBLISHED ≠ EVERY CLIENT MAY VIEW · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
