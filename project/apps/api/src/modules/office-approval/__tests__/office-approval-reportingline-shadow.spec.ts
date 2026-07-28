@@ -3,14 +3,16 @@ import 'reflect-metadata';
 import { OfficeApprovalShadowService } from '../office-approval-shadow.service';
 
 /**
- * OFFICE-P2-CAP02-AUTHORIZATION-SHADOW-CONSUMER-I01 — ReportingLine gözlem katmanı.
+ * OFFICE-P2-CAP02-SHADOW-NEUTRAL-TELEMETRY-REPAIR-I01 — ReportingLine telemetri katmanı.
+ *
+ * OWNER KARARI (2026-07-28, OPTION A): `ReportingLine` yalnız organizasyonel hiyerarşi
+ * gerçeğidir; ondan allow / deny / requiresApproval / selfAuthority KARARI ÜRETİLEMEZ.
+ * Bu katman NÖTR bir sınıf karşılaştırması yapar ve hiçbir kararı etkilemez.
  *
  * Kanıtlanan sözleşme:
- *  1. Flag kapalı (unset / 'off' / bilinmeyen) → TAM DORMANT: ReportingLine okunmaz,
- *     audit yazılmaz, dönen sonuç birebir aynıdır.
- *  2. Flag 'observe' → karşılaştırma audit'e yazılır; dönen sonuç yine DEĞİŞMEZ.
- *  3. Gözlem katmanı approval gate'ten BAĞIMSIZDIR: gate 'off' iken bile ölçer.
- *  4. Gözlem HER TÜRLÜ hatada sessizdir; `enforce` fail-closed davranışını bozmaz.
+ *  1. Flag kapalı → DB sorgusu 0, telemetri 0, authorization DEĞİŞMEZ.
+ *  2. Flag açık → SAME_CLASS / DIFFERENT_CLASS / UNCOMPARABLE kaydedilir; karar DEĞİŞMEZ.
+ *  3. Telemetri hatası request'i etkilemez; `enforce` davranışı AYNEN kalır.
  */
 
 const baseInput = {
@@ -25,7 +27,9 @@ const baseInput = {
 const u = (over: Record<string, unknown> = {}) => ({
   id: 'u1', isActive: true, tenantId: 't1', lawyer: null, staffMember: null, ...over,
 });
+/** yürürlükteki karar → SELF_AUTHORITY */
 const partner = () => u({ lawyer: { lawyerRank: 'PARTNER', canApproveOfficeActions: false } });
+/** yürürlükteki karar → REQUIRES_APPROVAL */
 const staff = () => u({ staffMember: { staffType: 'SEKRETER' } });
 
 const make = (opts: {
@@ -65,102 +69,144 @@ const make = (opts: {
   return { svc, prisma, audit, officeApproval };
 };
 
-/** Gözlem audit'ini (varsa) döndürür; approval gate'in kendi audit'inden ayırır. */
-const shadowCall = (audit: { log: jest.Mock }) =>
+/** Telemetri audit'ini döndürür; approval gate'in kendi audit'inden ayırır. */
+const telemetry = (audit: { log: jest.Mock }) =>
   audit.log.mock.calls.find(
-    (c) => c[0]?.action === 'OFFICE_CAP02_SELF_AUTHORITY_SHADOW_COMPARISON',
+    (c) => c[0]?.action === 'OFFICE_CAP02_AUTHORITY_HIERARCHY_TELEMETRY',
   )?.[0];
 
-describe('ReportingLine gözlem katmanı — dormant davranışı', () => {
-  it.each([undefined, '', 'off', 'on', 'ENFORCE', 'gibberish'])(
-    'flag=%p → ReportingLine OKUNMAZ ve gözlem audit YAZILMAZ',
+const observe = (user: unknown, line: unknown) => make({ shadowFlag: 'observe', user, line });
+
+// ---------------------------------------------------------------------------
+// flag OFF
+// ---------------------------------------------------------------------------
+describe('flag OFF', () => {
+  it.each([undefined, '', 'off', 'on', 'OBSERVE_LATER', 'gibberish'])(
+    'flag=%p → DB query 0, telemetry emit 0, authorization unchanged',
     async (shadowFlag) => {
       const { svc, prisma, audit } = make({ shadowFlag, user: partner() });
       const out = await svc.evaluate(baseInput);
-      expect(prisma.reportingLine.findFirst).not.toHaveBeenCalled();
-      expect(shadowCall(audit)).toBeUndefined();
+      expect(prisma.reportingLine.findFirst).toHaveBeenCalledTimes(0);
+      expect(telemetry(audit)).toBeUndefined();
       expect(out).toEqual({ flagMode: 'off', evaluated: false });
     },
   );
 
-  it("flag 'observe' olsa bile dönen sonuç DEĞİŞMEZ (gate off)", async () => {
-    const { svc } = make({ shadowFlag: 'observe', user: partner(), line: { disposition: 'TOP_LEVEL', managerUserId: null } });
+  it('enforce gate + telemetri kapalı → karar ve response AYNEN', async () => {
+    const { svc, officeApproval } = make({ gate: 'enforce', user: staff() });
     const out = await svc.evaluate(baseInput);
-    expect(out).toEqual({ flagMode: 'off', evaluated: false });
+    expect(out.block).toBe(true);
+    expect(out.requestId).toBe('req-1');
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('ReportingLine gözlem katmanı — karşılaştırma sonuçları', () => {
-  const observe = (user: unknown, line: unknown) =>
-    make({ shadowFlag: 'observe', user, line });
-
-  it('PARTNER + TOP_LEVEL → MATCH', async () => {
+// ---------------------------------------------------------------------------
+// flag ON — owner'in tam karsilastirma matrisi
+// ---------------------------------------------------------------------------
+describe('flag ON — sinif karsilastirmasi', () => {
+  it('TOP_LEVEL + incumbent SELF_AUTHORITY → SAME_CLASS', async () => {
     const { svc, audit } = observe(partner(), { disposition: 'TOP_LEVEL', managerUserId: null });
     await svc.evaluate(baseInput);
-    const call = shadowCall(audit);
-    expect(call.metadata.outcome).toBe('MATCH');
-    expect(call.metadata.incumbentVerdict).toBe('SELF_AUTHORITY');
-    expect(call.metadata.hierarchyVerdict).toBe('SELF_AUTHORITY');
-    expect(call.metadata.severity).toBe('NONE');
+    const m = telemetry(audit).metadata;
+    expect(m.comparison).toBe('SAME_CLASS');
+    expect(m.incumbentVerdict).toBe('SELF_AUTHORITY');
+    expect(m.hierarchyDisposition).toBe('TOP_LEVEL');
+    expect(m.uncomparableReason).toBeUndefined();
   });
 
-  it('PARTNER + MANAGED → HIERARCHY_WOULD_REQUIRE_APPROVAL', async () => {
-    const { svc, audit } = observe(partner(), { disposition: 'MANAGED', managerUserId: 'm1' });
-    await svc.evaluate(baseInput);
-    const call = shadowCall(audit);
-    expect(call.metadata.outcome).toBe('HIERARCHY_WOULD_REQUIRE_APPROVAL');
-    expect(call.metadata.incumbentReasonCode).toBe('PARTNER_SELF_AUTHORITY');
-    expect(call.metadata.hierarchyDisposition).toBe('MANAGED');
-  });
-
-  it('personel + TOP_LEVEL → HIERARCHY_WOULD_ALLOW', async () => {
+  it('TOP_LEVEL + incumbent REQUIRES_APPROVAL → DIFFERENT_CLASS', async () => {
     const { svc, audit } = observe(staff(), { disposition: 'TOP_LEVEL', managerUserId: null });
     await svc.evaluate(baseInput);
-    const call = shadowCall(audit);
-    expect(call.metadata.outcome).toBe('HIERARCHY_WOULD_ALLOW');
-    expect(call.metadata.incumbentVerdict).toBe('REQUIRES_APPROVAL');
-    expect(call.metadata.incumbentCapacity).toBe('SEKRETER');
+    const m = telemetry(audit).metadata;
+    expect(m.comparison).toBe('DIFFERENT_CLASS');
+    expect(m.incumbentVerdict).toBe('REQUIRES_APPROVAL');
+    expect(m.incumbentCapacity).toBe('SEKRETER');
   });
 
-  it('aktif kayıt yok → MISSING_HIERARCHY (sessizce onay-gerekir SAYILMAZ)', async () => {
+  it('MANAGED + incumbent REQUIRES_APPROVAL → SAME_CLASS', async () => {
+    const { svc, audit } = observe(staff(), { disposition: 'MANAGED', managerUserId: 'm1' });
+    await svc.evaluate(baseInput);
+    expect(telemetry(audit).metadata.comparison).toBe('SAME_CLASS');
+  });
+
+  it('MANAGED + incumbent SELF_AUTHORITY → DIFFERENT_CLASS', async () => {
+    const { svc, audit } = observe(partner(), { disposition: 'MANAGED', managerUserId: 'm1' });
+    await svc.evaluate(baseInput);
+    const m = telemetry(audit).metadata;
+    expect(m.comparison).toBe('DIFFERENT_CLASS');
+    expect(m.incumbentReasonCode).toBe('PARTNER_SELF_AUTHORITY');
+    expect(m.hierarchyDisposition).toBe('MANAGED');
+  });
+
+  it('missing hierarchy → UNCOMPARABLE', async () => {
     const { svc, audit } = observe(partner(), null);
     await svc.evaluate(baseInput);
-    const call = shadowCall(audit);
-    expect(call.metadata.outcome).toBe('MISSING_HIERARCHY');
-    expect(call.metadata.hierarchyVerdict).toBeNull();
-    expect(call.metadata.severity).toBe('INFO');
+    const m = telemetry(audit).metadata;
+    expect(m.comparison).toBe('UNCOMPARABLE');
+    expect(m.uncomparableReason).toBe('MISSING_HIERARCHY');
+    expect(m.hierarchyDisposition).toBe('MISSING_HIERARCHY');
   });
 
-  it('bilinmeyen disposition değeri → MISSING_HIERARCHY (yanlış sınıflanmaz)', async () => {
+  it('bilinmeyen disposition degeri → UNCOMPARABLE (sessizce siniflanmaz)', async () => {
     const { svc, audit } = observe(partner(), { disposition: 'FUTURE_VALUE', managerUserId: null });
     await svc.evaluate(baseInput);
-    expect(shadowCall(audit).metadata.outcome).toBe('MISSING_HIERARCHY');
+    expect(telemetry(audit).metadata.uncomparableReason).toBe('MISSING_HIERARCHY');
   });
 
-  it('pasif aktör → ACTOR_INACTIVE', async () => {
+  it('inactive actor → UNCOMPARABLE', async () => {
     const { svc, audit } = observe(u({ isActive: false }), { disposition: 'TOP_LEVEL', managerUserId: null });
     await svc.evaluate(baseInput);
-    const call = shadowCall(audit);
-    expect(call.metadata.outcome).toBe('ACTOR_INACTIVE');
-    // Yürürlükteki karar da onay istiyor → kritik değil.
-    expect(call.metadata.severity).toBe('NONE');
+    const m = telemetry(audit).metadata;
+    expect(m.comparison).toBe('UNCOMPARABLE');
+    expect(m.uncomparableReason).toBe('ACTOR_INACTIVE');
   });
 
-  it('başka tenant aktör → CROSS_TENANT', async () => {
+  it('cross-tenant → UNCOMPARABLE', async () => {
     const { svc, audit } = observe(u({ tenantId: 't2' }), { disposition: 'TOP_LEVEL', managerUserId: null });
     await svc.evaluate(baseInput);
-    expect(shadowCall(audit).metadata.outcome).toBe('CROSS_TENANT');
+    const m = telemetry(audit).metadata;
+    expect(m.comparison).toBe('UNCOMPARABLE');
+    expect(m.uncomparableReason).toBe('CROSS_TENANT');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// kayit icerigi — politika cagrisimi TASIMAZ
+// ---------------------------------------------------------------------------
+describe('telemetri kaydi bir authorization karari TASIMAZ', () => {
+  it('yasakli alan/deger adlari kayitta YOK', async () => {
+    const { svc, audit } = observe(partner(), { disposition: 'MANAGED', managerUserId: 'm1' });
+    await svc.evaluate(baseInput);
+    const serialized = JSON.stringify(telemetry(audit));
+    for (const banned of [
+      'hierarchyVerdict',
+      'HIERARCHY_WOULD_ALLOW',
+      'HIERARCHY_WOULD_REQUIRE_APPROVAL',
+      'hierarchyDecision',
+      'FALSE_ALLOW',
+      'FALSE_DENY',
+    ]) {
+      expect(serialized).not.toContain(banned);
+    }
   });
 
-  it('gözlem kaydı erişimi etkilemediğini kendi içinde taşır ve ham payload SIZDIRMAZ', async () => {
+  it('erisim ve karar etkilenmedigini kendi icinde tasir; ham payload SIZDIRMAZ', async () => {
     const { svc, audit } = observe(partner(), { disposition: 'TOP_LEVEL', managerUserId: null });
     await svc.evaluate(baseInput);
-    const call = shadowCall(audit);
+    const call = telemetry(audit);
     expect(call.metadata.accessAffected).toBe(false);
+    expect(call.metadata.decisionAffected).toBe(false);
     expect(JSON.stringify(call)).not.toContain('ACIZ');
   });
 
-  it('ReportingLine tenant-scoped ve yalnız AKTİF kayıt için sorgulanır', async () => {
+  it('actionCode yalniz gozlem baglami olarak tasinir', async () => {
+    const { svc, audit } = observe(partner(), { disposition: 'TOP_LEVEL', managerUserId: null });
+    await svc.evaluate(baseInput);
+    expect(telemetry(audit).metadata.observedActionCode).toBe('CHANGE_STATUS');
+  });
+
+  it('ReportingLine tenant-scoped ve yalniz AKTIF kayit icin sorgulanir', async () => {
     const { svc, prisma } = observe(partner(), { disposition: 'TOP_LEVEL', managerUserId: null });
     await svc.evaluate(baseInput);
     expect(prisma.reportingLine.findFirst).toHaveBeenCalledWith({
@@ -170,21 +216,26 @@ describe('ReportingLine gözlem katmanı — karşılaştırma sonuçları', () 
   });
 });
 
-describe('ReportingLine gözlem katmanı — hata izolasyonu', () => {
-  it('ReportingLine sorgusu patlarsa akış BOZULMAZ', async () => {
+// ---------------------------------------------------------------------------
+// hata izolasyonu
+// ---------------------------------------------------------------------------
+describe('telemetry failure → request unaffected', () => {
+  it('ReportingLine sorgusu patlarsa akis BOZULMAZ', async () => {
     const { svc } = make({ shadowFlag: 'observe', user: partner(), lineThrows: true });
     await expect(svc.evaluate(baseInput)).resolves.toEqual({ flagMode: 'off', evaluated: false });
   });
 
-  it('gözlem audit yazımı patlarsa akış BOZULMAZ', async () => {
+  it('telemetri yazimi patlarsa akis BOZULMAZ', async () => {
     const { svc } = make({
       shadowFlag: 'observe', user: partner(), auditThrows: true,
       line: { disposition: 'TOP_LEVEL', managerUserId: null },
     });
     await expect(svc.evaluate(baseInput)).resolves.toEqual({ flagMode: 'off', evaluated: false });
   });
+});
 
-  it("enforce fail-closed davranışı gözlem hatasından ETKİLENMEZ", async () => {
+describe('enforce mode behavior unchanged', () => {
+  it('telemetri hatasi enforce fail-closed davranisini ETKILEMEZ', async () => {
     const { svc, officeApproval } = make({
       gate: 'enforce', shadowFlag: 'observe', user: staff(), lineThrows: true,
     });
@@ -194,15 +245,27 @@ describe('ReportingLine gözlem katmanı — hata izolasyonu', () => {
     expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
   });
 
-  it("enforce + PARTNER: gözlem açıkken de ALLOW (request YOK)", async () => {
-    const { svc, officeApproval } = make({
+  it('DIFFERENT_CLASS olcusu enforce kararini DEGISTIRMEZ', async () => {
+    const { svc, audit, officeApproval } = make({
       gate: 'enforce', shadowFlag: 'observe', user: partner(),
       line: { disposition: 'MANAGED', managerUserId: 'm1' },
     });
     const out = await svc.evaluate(baseInput);
-    // Gözlem "hiyerarşi onay isterdi" dese bile YÜRÜRLÜKTEKİ karar değişmez.
+    // Telemetri "ayrisiyor" der; yururlukteki karar yine ALLOW kalir.
+    expect(telemetry(audit).metadata.comparison).toBe('DIFFERENT_CLASS');
     expect(out.decision).toBe('ALLOW');
     expect(out.block).toBeUndefined();
     expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('SAME_CLASS olcusu de enforce blogunu DEGISTIRMEZ', async () => {
+    const { svc, audit, officeApproval } = make({
+      gate: 'enforce', shadowFlag: 'observe', user: staff(),
+      line: { disposition: 'MANAGED', managerUserId: 'm1' },
+    });
+    const out = await svc.evaluate(baseInput);
+    expect(telemetry(audit).metadata.comparison).toBe('SAME_CLASS');
+    expect(out.block).toBe(true);
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
   });
 });
