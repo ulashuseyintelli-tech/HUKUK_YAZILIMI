@@ -220,8 +220,67 @@ async function finalizeEntry(o) {
   const clock = o.clock || (() => Date.now());
   const audit = o.audit || (() => {});
 
-  const entry = queue.get(o.entryId);
+  let entry = queue.get(o.entryId);
   if (!entry) throw new FinalizeError('QUEUE_ENTRY_UNKNOWN', String(o.entryId));
+
+  // A finalize that failed on a gate left the entry BLOCKED. Everything the
+  // merge was earned with still exists — the PR is open, CI is green, the
+  // handoff holds the attestation — so the only thing standing between the
+  // entry and the merge is the state it was parked in.
+  //
+  // Restoring it here, rather than in a separate `retry` verb, is the same
+  // reasoning the two-key check below is built on: `finalize --entry` and the
+  // run-until-idle drain both arrive at this function, and a retry that only
+  // one of them could perform would be the weaker path's policy rather than a
+  // rule. Every gate downstream still runs; the entry is put back where they
+  // can run, not waved past them.
+  //
+  // The alternative is re-running the executor for work it already did, which
+  // discards the run and opens a second pull request for the first one's
+  // change.
+  const killSwitchRefusal = () => {
+    if (!(o.isKillSwitchEngaged && o.isKillSwitchEngaged() === true)) return null;
+    audit('FINALIZE_REFUSED', { entryId: entry.entryId, refusal: 'KILL_SWITCH_ENGAGED' });
+    return {
+      disposition: 'BLOCKED',
+      entryId: entry.entryId,
+      queueState: entry.state,
+      mergeSha: null,
+      blockerCode: 'KILL_SWITCH_ENGAGED',
+      detail: 'the kill switch is engaged; nothing merges while that file exists',
+    };
+  };
+
+  let retriedFromBlocked = false;
+  if (entry.state === 'BLOCKED' && entry.handoff && entry.handoff.attestation) {
+    // Consulted before the restore, not only after it: a refusal that leaves
+    // the entry somewhere other than where it found it is a state change
+    // dressed as a no-op.
+    const halted = killSwitchRefusal();
+    if (halted) return halted;
+    const priorBlocker = entry.blockerCode || null;
+    try {
+      queue.transition({
+        entryId: entry.entryId,
+        to: 'MERGE_READY',
+        expectedPreviousState: 'BLOCKED',
+        finalizeRetryAuthorized: true,
+        retryOfBlocker: priorBlocker,
+      });
+    } catch (e) {
+      return {
+        disposition: 'NOT_FINALIZABLE',
+        entryId: entry.entryId,
+        queueState: entry.state,
+        mergeSha: null,
+        blockerCode: e.code || 'QUEUE_FINALIZE_RETRY_REFUSED',
+        detail: 'the blocked entry could not be restored for retry: ' + String(e.message).slice(0, 200),
+      };
+    }
+    retriedFromBlocked = true;
+    audit('FINALIZE_RETRY_FROM_BLOCKED', { entryId: entry.entryId, priorBlocker });
+    entry = queue.get(entry.entryId);
+  }
 
   const finalizable = FINALIZABLE.indexOf(entry.state) !== -1;
   const resumable = RESUMABLE_AFTER_MERGE.indexOf(entry.state) !== -1;
@@ -252,17 +311,8 @@ async function finalizeEntry(o) {
   // minutes therefore sets up a SECOND pull request for work whose first one is
   // already open. Leaving it in MERGE_READY keeps it finalizable, and the
   // refusal is in the audit log where an operator reads it.
-  if (o.isKillSwitchEngaged && o.isKillSwitchEngaged() === true) {
-    audit('FINALIZE_REFUSED', { entryId: entry.entryId, refusal: 'KILL_SWITCH_ENGAGED' });
-    return {
-      disposition: 'BLOCKED',
-      entryId: entry.entryId,
-      queueState: entry.state,
-      mergeSha: null,
-      blockerCode: 'KILL_SWITCH_ENGAGED',
-      detail: 'the kill switch is engaged; nothing merges while that file exists',
-    };
-  }
+  const halted = killSwitchRefusal();
+  if (halted) return halted;
 
   // Authority is re-resolved from disk, not read from the handoff. A grant
   // revoked, expired or edited while the entry sat in the queue must be seen
@@ -585,7 +635,15 @@ function blockedFinalization(queue, entry, clock, audit, code, detail) {
 function finalizable(queue) {
   return queue
     .list()
-    .filter((e) => FINALIZABLE.indexOf(e.state) !== -1 || RESUMABLE_AFTER_MERGE.indexOf(e.state) !== -1)
+    .filter(
+      (e) =>
+        FINALIZABLE.indexOf(e.state) !== -1 ||
+        RESUMABLE_AFTER_MERGE.indexOf(e.state) !== -1 ||
+        // A finalize that failed on a gate leaves the entry BLOCKED while its
+        // PR stays open and its handoff intact. Hiding it would mean the only
+        // way back is re-running the executor for work it already did.
+        (e.state === 'BLOCKED' && !!(e.handoff && e.handoff.attestation)),
+    )
     .map((e) => ({
       entryId: e.entryId,
       taskId: e.taskId,
@@ -595,6 +653,10 @@ function finalizable(queue) {
       // Reported rather than hidden: it needs an operator, and saying so is the
       // difference between a known gap and a silent one.
       hasHandoff: !!(e.handoff && e.handoff.attestation),
+      // Why it is listed: a retry of a failed finalize reads differently from
+      // an entry that simply never got one.
+      retryOfFailedFinalize: e.state === 'BLOCKED',
+      blockerCode: e.blockerCode || null,
     }));
 }
 
