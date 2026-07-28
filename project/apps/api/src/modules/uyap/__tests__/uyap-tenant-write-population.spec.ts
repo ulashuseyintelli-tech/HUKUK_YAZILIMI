@@ -240,8 +240,13 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
     });
   });
 
-  describe('System-scoped retry — ownership değişmez', () => {
-    it('retryFailedRequests: raw update tenantId alanına HİÇ dokunmaz', async () => {
+  // UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 UYARLAMASI (owner §7 "retry owner: SINGLE"):
+  // bu blok "system-scoped retry update'i tenantId'ye dokunmaz" güvencesini koruyordu.
+  // Retry yolu tamamen kaldırıldı (UyapRequestLog ikinci bir retry state machine idi ve
+  // dispatcher'ı UYAP-RETRY-CONTAIN-01 ile zaten kapalıydı). Güvence kaybolmadı, daha
+  // güçlü hâle geldi: retry HİÇBİR yazma yapmıyor.
+  describe('System-scoped retry — KALDIRILDI (ownership yazımı imkânsız)', () => {
+    it('retryFailedRequests: fail-closed atar ve HİÇBİR yazma yapmaz', async () => {
       const { service, prisma } = buildService({
         uyapRequestLog: {
           create: jest.fn().mockResolvedValue({ id: 'log-1' }),
@@ -252,14 +257,13 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
         },
       });
 
-      await service.retryFailedRequests();
+      await expect(service.retryFailedRequests()).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'UYAP_RETRY_CONTRACT_MISSING' }),
+      });
 
-      expect(prisma.uyapRequestLog.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'failed-1' },
-          data: expect.not.objectContaining({ tenantId: expect.anything() }),
-        }),
-      );
+      expect(prisma.uyapRequestLog.update).not.toHaveBeenCalled();
+      expect(prisma.uyapRequestLog.create).not.toHaveBeenCalled();
+      expect(prisma.uyapRequestLog.findMany).not.toHaveBeenCalled();
     });
   });
 
