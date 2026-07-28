@@ -1,5 +1,10 @@
 /**
- * DBP-P2-UYAP-CONTRACT-A-P02B-R2 — yapısal yerleşim + kodlu-alan ANLAM eşlemesi
+ * UYAP-P02B-R2-FOLLOWUP-CANONICALIZATION-R01 — yapısal yerleşim + kodlu-alan ANLAM eşlemesi
+ *
+ * ⚠ **Kapanış kimliği.** `DBP-P2-UYAP-CONTRACT-A-P02B-R2` **CLOSED / CANONICAL / DO NOT
+ * REOPEN**'dur (PR #1436, `0b09ebbd` — claim-wrapper authority guard, owner Option 1).
+ * Bu dosya o kapanışın **ardıl teknik remediation**'ıdır (PR #1825, `a0b45f0b`);
+ * P02B-R2'nin ikinci kapanışı DEĞİLDİR ve onu yeniden açmaz.
  *
  * ## Ölçülen gerçek (uydurulmadı)
  *
