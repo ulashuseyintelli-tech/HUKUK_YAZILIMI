@@ -50,3 +50,12 @@ src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts
 src/scripts/__tests__/office-cap02-reportingline-population.core.spec.ts
 src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts
 src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts
+src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts
+
+# ── OFFICE-P2-CAP02-AUTHORIZATION-SHADOW-CONSUMER-I01 ──────────────────────────
+# SHADOW cekirdeginin CANLI tuketicisi: OfficeApprovalShadowService icindeki
+# ReportingLine gozlem katmani. Mevcut office-approval-shadow.service.spec.ts
+# HICBIR manifest'te degildi (ci-narrow-allowlist stale-test gap) — tuketici
+# testiyle birlikte ikisi de buraya baglanir, boylece CI'da GERCEKTEN kosarlar.
+src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts
+src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts
