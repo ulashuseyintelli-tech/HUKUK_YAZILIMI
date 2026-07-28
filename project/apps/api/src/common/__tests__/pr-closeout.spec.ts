@@ -443,6 +443,53 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
     expect(cli.parseArgs(['--pr', '7', '--dry-run'])).toEqual({ pr: '7', 'dry-run': true });
   });
 
+  it('36. a consumed reference still allows recovery for the SAME task and PR', async () => {
+    // Pilot bulgusu: consumed kontrolu PR ayrimi yapmiyordu, bu yuzden ayni PR
+    // icin ikinci kosu (recovery) REUSE_FORBIDDEN aliyordu.
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({
+        authorityRef: 'r', consumed: true, consumedTaskId: 'GOV-EXAMPLE-R01', consumedPr: 1234,
+      }),
+    });
+    a.state.pr = Object.assign({}, a.state.pr, { state: 'MERGED', mergeCommitOid: MERGE_SHA });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.status).toBe('CLOSED');
+    expect(a.calls.squashMerge).toBe(0);
+  });
+
+  it('37. a consumed reference is refused for a DIFFERENT PR', async () => {
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({
+        authorityRef: 'r', consumed: true, consumedTaskId: 'GOV-EXAMPLE-R01', consumedPr: 999,
+      }),
+    });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN);
+    expect(a.calls.squashMerge).toBe(0);
+  });
+
+  it('38. the worktree is removed before the branch is deleted', async () => {
+    // Pilot bulgusu: branch cleanup once kosuyordu; worktree branch'i checkout
+    // tuttugu icin `git branch -D` sessizce basarisiz oluyor, yine de DELETED
+    // raporlaniyordu.
+    const order: string[] = [];
+    const a = makeAdapter({
+      cleanupWorktree: async () => { order.push('worktree'); return 'REMOVED'; },
+      cleanupBranch: async () => { order.push('branch'); return 'DELETED'; },
+    });
+    const r = await closeout.closeoutPr(makeInput({ worktree: '/tmp/wt' }), a);
+    expect(r.status).toBe('CLOSED');
+    expect(order).toEqual(['worktree', 'branch']);
+  });
+
+  it('39. a branch that survives cleanup blocks closure', async () => {
+    const a = makeAdapter({ cleanupBranch: async () => 'LOCAL_BRANCH_REMAINS' });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.status).toBe('MERGED_CLEANUP_BLOCKED');
+    expect(r.blockerCode).toBe(closeout.BLOCKER.BRANCH_CLEANUP_FAILED);
+    expect(r.mergeSha).toBe(MERGE_SHA);
+  });
+
   it('the state machine is single-directional and declared', () => {
     expect(closeout.STAGES[0]).toBe('PREFLIGHT');
     expect(closeout.STAGES[closeout.STAGES.length - 1]).toBe('CLOSED');

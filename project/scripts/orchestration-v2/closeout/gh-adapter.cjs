@@ -176,8 +176,13 @@ function createGhCloseoutAdapter(o) {
       const remote = tryRun('git', ['ls-remote', '--heads', 'origin', branch], cwd);
       if (remote) tryRun('git', ['push', 'origin', '--delete', branch], cwd);
       tryRun('git', ['branch', '-D', branch], cwd);
-      const still = tryRun('git', ['ls-remote', '--heads', 'origin', branch], cwd);
-      return still ? 'REMOTE_BRANCH_REMAINS' : 'DELETED';
+      // Her iki tarafi da DOGRULA. Yalniz remote'a bakmak, worktree checkout
+      // tuttugu icin silinemeyen bir local branch'i DELETED gostermisti.
+      const remoteLeft = tryRun('git', ['ls-remote', '--heads', 'origin', branch], cwd);
+      const localLeft = tryRun('git', ['branch', '--list', branch], cwd);
+      if (remoteLeft) return 'REMOTE_BRANCH_REMAINS';
+      if (localLeft) return 'LOCAL_BRANCH_REMAINS';
+      return 'DELETED';
     },
 
     /** AGENTS.md §6: yalniz remove --force + prune; fiziksel silme yok. */
