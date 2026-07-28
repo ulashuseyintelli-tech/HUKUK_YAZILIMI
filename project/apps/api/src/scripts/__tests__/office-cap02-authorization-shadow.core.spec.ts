@@ -1,13 +1,13 @@
 import {
   compareShadowDecision,
-  compareSelfAuthorityShadow,
+  compareAuthorityWithHierarchyTelemetry,
   summarizeShadowEvidence,
   toShadowAuditEvent,
-  toSelfAuthorityShadowAuditEvent,
+  toAuthorityHierarchyTelemetryEvent,
   SHADOW_NEVER_CHANGES_ACCESS,
   type ActorHierarchyFacts,
+  type AuthorityHierarchyTelemetryInput,
   type HierarchyFacts,
-  type SelfAuthorityShadowInput,
   type ShadowEvaluationInput,
 } from '../office-cap02-authorization-shadow.core';
 
@@ -244,109 +244,145 @@ describe('provider-neutral audit olayı', () => {
   });
 });
 
-describe('compareSelfAuthorityShadow — self-authority gölgesi', () => {
-  const input = (over: Partial<SelfAuthorityShadowInput> = {}): SelfAuthorityShadowInput => ({
+
+describe('compareAuthorityWithHierarchyTelemetry — nötr ölçüm, karar değil', () => {
+  const input = (
+    o: Partial<AuthorityHierarchyTelemetryInput> = {},
+  ): AuthorityHierarchyTelemetryInput => ({
     correlationId: 'CHANGE_STATUS|LegalCase|c1',
-    tenantId: 't1',
+    tenantId: T1,
     actorUserId: 'u1',
     incumbentVerdict: 'SELF_AUTHORITY',
     incumbentReasonCode: 'PARTNER_SELF_AUTHORITY',
     incumbentCapacity: 'PARTNER',
-    ...over,
+    ...o,
   });
-  const facts = (over: Partial<ActorHierarchyFacts> = {}): ActorHierarchyFacts => ({
+  const hf = (o: Partial<ActorHierarchyFacts> = {}): ActorHierarchyFacts => ({
     actorIsActive: true,
-    actorTenantId: 't1',
+    actorTenantId: T1,
     disposition: 'TOP_LEVEL',
     managerUserId: null,
-    ...over,
+    ...o,
   });
 
-  it('TOP_LEVEL + yürürlükte self-authority → MATCH', () => {
-    const r = compareSelfAuthorityShadow(input(), facts());
-    expect(r.outcome).toBe('MATCH');
-    expect(r.hierarchyVerdict).toBe('SELF_AUTHORITY');
-    expect(r.severity).toBe('NONE');
+  it('TOP_LEVEL + SELF_AUTHORITY -> SAME_CLASS', () => {
+    const r = compareAuthorityWithHierarchyTelemetry(input(), hf());
+    expect(r.comparison).toBe('SAME_CLASS');
+    expect(r.hierarchyDisposition).toBe('TOP_LEVEL');
+    expect(r.uncomparableReason).toBeUndefined();
   });
 
-  it('MANAGED + yürürlükte onay-gerekir → MATCH', () => {
-    const r = compareSelfAuthorityShadow(
-      input({ incumbentVerdict: 'REQUIRES_APPROVAL', incumbentReasonCode: 'STAFF_NOT_APPROVER', incumbentCapacity: 'SEKRETER' }),
-      facts({ disposition: 'MANAGED', managerUserId: 'm1' }),
+  it('TOP_LEVEL + REQUIRES_APPROVAL -> DIFFERENT_CLASS', () => {
+    const r = compareAuthorityWithHierarchyTelemetry(
+      input({ incumbentVerdict: 'REQUIRES_APPROVAL' }), hf(),
     );
-    expect(r.outcome).toBe('MATCH');
+    expect(r.comparison).toBe('DIFFERENT_CLASS');
   });
 
-  it('TOP_LEVEL fakat yürürlükte onay-gerekir → HIERARCHY_WOULD_ALLOW', () => {
-    const r = compareSelfAuthorityShadow(input({ incumbentVerdict: 'REQUIRES_APPROVAL' }), facts());
-    expect(r.outcome).toBe('HIERARCHY_WOULD_ALLOW');
-    expect(r.hierarchyVerdict).toBe('SELF_AUTHORITY');
-    expect(r.severity).toBe('INFO');
-  });
-
-  it('MANAGED fakat yürürlükte self-authority → HIERARCHY_WOULD_REQUIRE_APPROVAL', () => {
-    const r = compareSelfAuthorityShadow(input(), facts({ disposition: 'MANAGED', managerUserId: 'm1' }));
-    expect(r.outcome).toBe('HIERARCHY_WOULD_REQUIRE_APPROVAL');
-    expect(r.hierarchyVerdict).toBe('REQUIRES_APPROVAL');
-  });
-
-  it('aktif kayıt yok → MISSING_HIERARCHY; sessizce onay-gerekir SAYILMAZ', () => {
-    const r = compareSelfAuthorityShadow(input(), facts({ disposition: null }));
-    expect(r.outcome).toBe('MISSING_HIERARCHY');
-    expect(r.hierarchyVerdict).toBeNull();
-    expect(r.hierarchyDisposition).toBeNull();
-  });
-
-  it('pasif aktör + yürürlükte self-authority → ACTOR_INACTIVE ve KRİTİK', () => {
-    const r = compareSelfAuthorityShadow(input(), facts({ actorIsActive: false }));
-    expect(r.outcome).toBe('ACTOR_INACTIVE');
-    expect(r.severity).toBe('CRITICAL');
-  });
-
-  it('pasif aktör + yürürlükte onay-gerekir → kritik DEĞİL', () => {
-    const r = compareSelfAuthorityShadow(
+  it('MANAGED + REQUIRES_APPROVAL -> SAME_CLASS', () => {
+    const r = compareAuthorityWithHierarchyTelemetry(
       input({ incumbentVerdict: 'REQUIRES_APPROVAL' }),
-      facts({ actorIsActive: false }),
+      hf({ disposition: 'MANAGED', managerUserId: 'm1' }),
     );
-    expect(r.outcome).toBe('ACTOR_INACTIVE');
-    expect(r.severity).toBe('NONE');
+    expect(r.comparison).toBe('SAME_CLASS');
   });
 
-  it('tenant sınırı pasiflikten ÖNCE gelir', () => {
-    const r = compareSelfAuthorityShadow(input(), facts({ actorTenantId: 't2', actorIsActive: false }));
-    expect(r.outcome).toBe('CROSS_TENANT');
-    expect(r.severity).toBe('CRITICAL');
+  it('MANAGED + SELF_AUTHORITY -> DIFFERENT_CLASS', () => {
+    const r = compareAuthorityWithHierarchyTelemetry(
+      input(), hf({ disposition: 'MANAGED', managerUserId: 'm1' }),
+    );
+    expect(r.comparison).toBe('DIFFERENT_CLASS');
+    expect(r.hierarchyDisposition).toBe('MANAGED');
   });
 
-  it('hicbir cikti erisimi etkilemedigini kendi icinde tasir', () => {
-    const cases: Array<Partial<ActorHierarchyFacts>> = [
-      {}, { disposition: 'MANAGED', managerUserId: 'm1' }, { disposition: null },
-      { actorIsActive: false }, { actorTenantId: 't2' },
+  it('aktif kayit yok -> UNCOMPARABLE / MISSING_HIERARCHY', () => {
+    const r = compareAuthorityWithHierarchyTelemetry(input(), hf({ disposition: null }));
+    expect(r.comparison).toBe('UNCOMPARABLE');
+    expect(r.uncomparableReason).toBe('MISSING_HIERARCHY');
+    expect(r.hierarchyDisposition).toBe('MISSING_HIERARCHY');
+  });
+
+  it('pasif aktor -> UNCOMPARABLE / ACTOR_INACTIVE', () => {
+    const r = compareAuthorityWithHierarchyTelemetry(input(), hf({ actorIsActive: false }));
+    expect(r.comparison).toBe('UNCOMPARABLE');
+    expect(r.uncomparableReason).toBe('ACTOR_INACTIVE');
+  });
+
+  it('baska tenant -> UNCOMPARABLE / CROSS_TENANT (pasiflikten ONCE)', () => {
+    const r = compareAuthorityWithHierarchyTelemetry(
+      input(), hf({ actorTenantId: T2, actorIsActive: false }),
+    );
+    expect(r.comparison).toBe('UNCOMPARABLE');
+    expect(r.uncomparableReason).toBe('CROSS_TENANT');
+  });
+
+  it('hicbir cikti bir authorization karari TASIMAZ', () => {
+    const cases: Array<[Partial<AuthorityHierarchyTelemetryInput>, Partial<ActorHierarchyFacts>]> = [
+      [{}, {}],
+      [{ incumbentVerdict: 'REQUIRES_APPROVAL' }, {}],
+      [{}, { disposition: 'MANAGED', managerUserId: 'm1' }],
+      [{}, { disposition: null }],
+      [{}, { actorIsActive: false }],
+      [{}, { actorTenantId: T2 }],
     ];
-    for (const c of cases) {
-      expect(compareSelfAuthorityShadow(input(), facts(c)).accessAffected).toBe(false);
+    for (const [i, f] of cases) {
+      const r = compareAuthorityWithHierarchyTelemetry(input(i), hf(f));
+      const keys = Object.keys(r);
+      expect(keys).not.toContain('hierarchyVerdict');
+      expect(keys).not.toContain('hierarchyDecision');
+      expect(keys).not.toContain('decision');
+      expect(keys).not.toContain('severity');
+      expect(r.accessAffected).toBe(false);
+      expect(r.decisionAffected).toBe(false);
+      expect(['SAME_CLASS', 'DIFFERENT_CLASS', 'UNCOMPARABLE']).toContain(r.comparison);
     }
+  });
+
+  it('observedActionCode karsilastirmaya GIRMEZ (sonuc actionCode ile degismez)', () => {
+    const a = compareAuthorityWithHierarchyTelemetry(
+      input({ observedActionCode: 'CHANGE_STATUS' }), hf(),
+    );
+    const b = compareAuthorityWithHierarchyTelemetry(
+      input({ observedActionCode: 'CLIENT_PAYOUT' }), hf(),
+    );
+    const c = compareAuthorityWithHierarchyTelemetry(input(), hf());
+    expect(a.comparison).toBe(c.comparison);
+    expect(b.comparison).toBe(c.comparison);
+    expect(a.observedActionCode).toBe('CHANGE_STATUS');
+    expect(c.observedActionCode).toBeUndefined();
   });
 });
 
-describe('toSelfAuthorityShadowAuditEvent', () => {
-  it('kapali-kume kodlar disinda serbest metin TASIMAZ ve saati cagiran verir', () => {
-    const record = compareSelfAuthorityShadow(
+describe('toAuthorityHierarchyTelemetryEvent', () => {
+  const rec = (o: Partial<ActorHierarchyFacts> = {}) =>
+    compareAuthorityWithHierarchyTelemetry(
       {
         correlationId: 'CHANGE_STATUS|LegalCase|c1',
-        tenantId: 't1',
+        tenantId: T1,
         actorUserId: 'u1',
         incumbentVerdict: 'SELF_AUTHORITY',
         incumbentReasonCode: 'PARTNER_SELF_AUTHORITY',
         incumbentCapacity: 'PARTNER',
+        observedActionCode: 'CHANGE_STATUS',
       },
-      { actorIsActive: true, actorTenantId: 't1', disposition: 'MANAGED', managerUserId: 'm1' },
+      { actorIsActive: true, actorTenantId: T1, disposition: 'MANAGED', managerUserId: 'm1', ...o },
     );
-    const e = toSelfAuthorityShadowAuditEvent(record, '2026-07-28T20:00:00.000Z');
-    expect(e.eventType).toBe('OFFICE_CAP02_SELF_AUTHORITY_SHADOW_COMPARISON');
+
+  it('kapali-kume kodlar tasir, saati cagiran verir, karar alani YOK', () => {
+    const e = toAuthorityHierarchyTelemetryEvent(rec(), '2026-07-28T20:00:00.000Z');
+    expect(e.eventType).toBe('OFFICE_CAP02_AUTHORITY_HIERARCHY_TELEMETRY');
     expect(e.observedAt).toBe('2026-07-28T20:00:00.000Z');
+    expect(e.comparison).toBe('DIFFERENT_CLASS');
     expect(e.accessAffected).toBe(false);
-    // `reason` (insan-okur metin) olaya GIRMEZ.
-    expect(Object.keys(e)).not.toContain('reason');
+    expect(e.decisionAffected).toBe(false);
+    expect(Object.keys(e)).not.toContain('hierarchyVerdict');
+    expect(Object.keys(e)).not.toContain('severity');
+  });
+
+  it('uncomparableReason yalniz UNCOMPARABLE iken tasinir', () => {
+    const withReason = toAuthorityHierarchyTelemetryEvent(rec({ disposition: null }), AT);
+    expect(withReason.uncomparableReason).toBe('MISSING_HIERARCHY');
+    const without = toAuthorityHierarchyTelemetryEvent(rec(), AT);
+    expect(Object.keys(without)).not.toContain('uncomparableReason');
   });
 });
