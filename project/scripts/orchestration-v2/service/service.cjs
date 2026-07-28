@@ -167,7 +167,18 @@ function createService(cfg) {
           resolveManifest: () => JSON.parse(
             fs.readFileSync(path.join(cfg.repoCwd, 'project/docs/governance/coordination-v2/programs.manifest.json'), 'utf8'),
           ),
-          resolveSpecHash: (spec) => require('../orchestrator/authority.cjs').digest(spec),
+          // specDigests(), not digest() — the third and last place the two
+          // notions of a plan's identity disagreed.
+          //
+          // The entry pins what request.load() resolved, and that normalizes;
+          // this compared against the RAW hash of the same plan. So every pin
+          // looked changed and every dispatch refused with
+          // DISPATCH_PLAN_HASH_CHANGED — a plan that had not moved, failing the
+          // guard that exists to catch plans that did.
+          //
+          // Measured on the R04 canary: the entry pinned 845b3d47, a fresh
+          // resolution produced 845b3d47, and this line answered 1031c02b.
+          resolveSpecHash: (spec) => require('../orchestrator/authority.cjs').specDigests(spec).taskSpecSha256,
           isRevoked: cfg.isRevoked,
         }
       : null);
