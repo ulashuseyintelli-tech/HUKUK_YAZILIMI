@@ -137,6 +137,10 @@
 #
 src/modules/icrabot/__tests__/icrabot-digital-twin-tenant-guard.spec.ts
 src/modules/icrabot/__tests__/icrabot-governance-guard.spec.ts
+# DEBTOR-ENTERPRISE-APPROVAL-AUTHORIZATION-P0-I01 (R02-F09A): enterprise approval HTTP
+# yuzeyinin trust boundary'si. Bu modulde daha once HIC spec yoktu ve manifestlerde hic
+# enterprise girdisi yoktu -> yuzey CI'da tamamen olculmuyordu.
+src/modules/icrabot/enterprise/__tests__/enterprise-approval-authorization.spec.ts
 src/modules/icrabot/__tests__/icrabot-queue-stats-tenant-scope.spec.ts
 src/modules/icrabot/v28-engine/__tests__/action-handler-notification-truth.spec.ts
 src/modules/icrabot/v28-engine/__tests__/factstore-clear-tenant-scope-security.spec.ts
