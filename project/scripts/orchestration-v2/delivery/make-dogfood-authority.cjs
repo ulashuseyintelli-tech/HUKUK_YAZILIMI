@@ -15,12 +15,37 @@
  *
  * Run from the repository root:
  *   node project/scripts/orchestration-v2/delivery/make-dogfood-authority.cjs
+ *   node .../make-dogfood-authority.cjs --out-root <dir>
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+/**
+ * Where the chain is written: the repository, unless --out-root names somewhere
+ * else.
+ *
+ * The override is not a convenience. This generator TRUNCATES files that other
+ * suites read as evidence — task-plans/DOGFOOD-R02/semantic-authority.md is what
+ * the DELIVERY_TRUTH override inside program-eligibility-authority.json cites as
+ * the owner decision — so regenerating into the shared working tree while
+ * anything else is running leaves that evidence briefly unreadable, and a
+ * concurrent verifier fails with ELIGIBILITY_EXCERPT_NOT_FOUND. Restoring the
+ * files afterwards does not close that window: the window IS the run.
+ *
+ * Nothing is ever READ from this root — every input is a module require or a
+ * literal below — so the chain produced is identical wherever it lands. That is
+ * what lets the test compare a redirected run byte-for-byte against the
+ * committed file instead of writing over it.
+ */
+const OUT_ROOT_FLAG = process.argv.indexOf('--out-root');
+if (OUT_ROOT_FLAG !== -1 && !process.argv[OUT_ROOT_FLAG + 1]) {
+  throw new Error('OUT_ROOT_MISSING: --out-root needs a directory');
+}
+const ROOT =
+  OUT_ROOT_FLAG === -1
+    ? path.resolve(__dirname, '..', '..', '..', '..')
+    : path.resolve(process.argv[OUT_ROOT_FLAG + 1]);
 const authority = require('../orchestrator/authority.cjs');
 const manifestMod = require('./manifest.cjs');
 const probesMod = require('./probes.cjs');
@@ -48,10 +73,63 @@ const RATIFICATION_EXCERPT =
   'OWNER-DECISION-GOV-COORD-DELIVERY-TRUTH-R01 dogfood certification is authorized to run ' +
   'through the canonical service path with task-bounded auto-merge.';
 
+/** Per-process counter, so two writes can never pick the same temp name. */
+let tmpSeq = 0;
+
+/**
+ * Write an artefact so that no reader ever observes it truncated.
+ *
+ * fs.writeFileSync opens with O_TRUNC: between the truncate and the last byte
+ * the file EXISTS and is empty or partial. For most generated output that is
+ * harmless. For these artefacts it is not — semantic-authority.md is the
+ * owner-decision evidence that program-eligibility-authority.json cites, so a
+ * reader landing inside that window concludes the owner's approval is ABSENT
+ * and refuses with ELIGIBILITY_EXCERPT_NOT_FOUND. Writing beside the target and
+ * renaming over it makes the swap atomic: a concurrent reader sees the previous
+ * file or the new one, and there is no third thing to see.
+ *
+ * The temp file sits in the TARGET directory, not in os.tmpdir(). rename is
+ * only atomic within one filesystem; across volumes Node degrades to
+ * copy-then-delete, which is the very window being removed here.
+ *
+ * While it exists the temp file is untracked, and safety/boundary.cjs reports
+ * any untracked path as UNTRACKED_FILE_PRESENT. That is deliberately NOT
+ * papered over with an ignore rule or a validator exception — weakening the
+ * validator to accommodate a writer would be the worse trade. Instead the
+ * window is two syscalls wide, and the name states what the file is and which
+ * process owns it, so anything surviving a crash is identifiable rather than
+ * mysterious.
+ */
 const write = (rel, body) => {
   const p = path.join(ROOT, rel);
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, body, 'utf8');
+
+  // Replacing a file must not silently change its mode: git tracks the
+  // executable bit, and boundary.cjs refuses a MODE_CHANGE outright. Read
+  // before the temp file exists so this costs the window nothing.
+  let mode;
+  try {
+    const st = fs.statSync(p);
+    if (st.isFile()) mode = st.mode & 0o777;
+  } catch (e) {
+    /* first write of this artefact — the platform default is the right mode */
+  }
+
+  const tmp = p + '.' + process.pid + '.' + ++tmpSeq + '.tmp';
+  try {
+    fs.writeFileSync(tmp, body, mode === undefined ? 'utf8' : { encoding: 'utf8', mode: mode });
+    fs.renameSync(tmp, p);
+  } catch (e) {
+    // A failed write leaves the canonical file untouched AND leaves nothing
+    // behind: a stray .tmp in a governance directory is exactly the untracked
+    // file the boundary validator would refuse later, far from its cause.
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch (cleanupError) {
+      /* best effort — the original failure below is the real result */
+    }
+    throw e;
+  }
   return rel;
 };
 const writeJson = (rel, obj) => write(rel, JSON.stringify(obj, null, 2) + '\n');
