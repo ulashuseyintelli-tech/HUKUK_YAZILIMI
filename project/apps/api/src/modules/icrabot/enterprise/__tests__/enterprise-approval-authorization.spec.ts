@@ -466,6 +466,13 @@ describe('I02 · PII teshis HTTP yuzeyi kaldirildi', () => {
 // `IcrabotModule` hicbir testte import EDILEMIYOR. Modul composition'ini GERCEK
 // runtime uzerinden dogrulayabilmek icin yalniz bu bozuk modulu mock'luyoruz;
 // baska hicbir davranis degistirilmiyor.
+// pdf-poppler Linux CI'''de poppler binary'''leri bulunamayinca process.exit(1) cagirir
+// ve TUM jest worker'''ini (bu manifestteki 64 spec'''i) oldurur — bu, IcrabotModule'''un
+// case.module.ts -> case.controller.ts -> ocr.service.ts uzerinden pdf-poppler'''i
+// transitive olarak cektigi icin sadece bu composition testinde tetiklenir.
+// Windows'''ta gorunmez. pdf-poppler burada hic cagirilmiyor, yalniz require ediliyor;
+// mock'''lamak davranis degistirmez.
+jest.mock('pdf-poppler', () => ({}));
 jest.mock('../../admin/admin.service', () => ({ IcrabotAdminService: class {} }));
 jest.mock('../../admin/audit-report.service', () => ({ AuditReportService: class {} }));
 jest.mock('../../admin/job-monitor.service', () => ({ JobMonitorService: class {} }));
