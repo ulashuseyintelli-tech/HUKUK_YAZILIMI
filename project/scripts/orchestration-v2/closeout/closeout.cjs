@@ -160,26 +160,31 @@ function validateInput(input) {
  */
 function checkAuthorityBinding(input, ledgerEntry) {
   if (!ledgerEntry) return { ok: true };
+  // Tuketilmis bir reference once REUSE ekseninde degerlendirilir. Aksi halde
+  // binding kontrolu (PR_MISMATCH) once tetikleniyor ve operatore yanlis sinyal
+  // gidiyordu: "yanlis PR" diyordu, oysa gercek sebep reference'in zaten
+  // tuketilmis olmasi ve baska bir PR'a tasinmaya calisilmasidir. R02 pilotu
+  // bunu ortaya cikardi.
+  if (ledgerEntry.consumed === true) {
+    const consumedTask = ledgerEntry.consumedTaskId || ledgerEntry.taskId || null;
+    const consumedPr = ledgerEntry.consumedPr != null ? ledgerEntry.consumedPr : ledgerEntry.pr;
+    const sameTask = !consumedTask || consumedTask === input.taskId;
+    const samePr = consumedPr == null || consumedPr === input.pr;
+    if (!sameTask || !samePr) {
+      return {
+        ok: false,
+        code: BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN,
+        detail: 'reference consumed by task ' + consumedTask + ' PR #' + consumedPr,
+      };
+    }
+    // Ayni task + ayni PR: recovery kosusu mesrudur (owner 3.8).
+    return { ok: true };
+  }
   if (ledgerEntry.taskId && ledgerEntry.taskId !== input.taskId) {
     return { ok: false, code: BLOCKER.MERGE_AUTHORITY_TASK_MISMATCH, detail: 'ref bound to task ' + ledgerEntry.taskId };
   }
   if (ledgerEntry.pr != null && ledgerEntry.pr !== input.pr) {
     return { ok: false, code: BLOCKER.MERGE_AUTHORITY_PR_MISMATCH, detail: 'ref bound to PR #' + ledgerEntry.pr };
-  }
-  // Tuketilmis bir reference AYNI task/PR icin yeniden kullanilabilir: kapanis
-  // yarim kaldiysa recovery kosusu gerekir (owner 3.8). Yasak olan, reference'i
-  // BASKA bir PR veya task'a tasimaktir. Pilot bunu ortaya cikardi: consumed
-  // kontrolu PR ayrimi yapmadigi icin idempotent recovery imkansizdi.
-  if (ledgerEntry.consumed === true) {
-    const sameTask = !ledgerEntry.consumedTaskId || ledgerEntry.consumedTaskId === input.taskId;
-    const samePr = ledgerEntry.consumedPr == null || ledgerEntry.consumedPr === input.pr;
-    if (!sameTask || !samePr) {
-      return {
-        ok: false,
-        code: BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN,
-        detail: 'reference consumed by task ' + ledgerEntry.consumedTaskId + ' PR #' + ledgerEntry.consumedPr,
-      };
-    }
   }
   return { ok: true };
 }
