@@ -1,4 +1,9 @@
-GOREV: CANARY-OFFICE-ENCRYPTION-CHARACTERIZATION-R01
+Gorev kimligi bu dosyada YAZILI DEGILDIR ve yazilmamalidir. Calisma aninda
+plan, grant ve kuyruk kaydindan turetilip prompt'un basina eklenir.
+
+Bu dosya uc revizyon boyunca "GOREV: ...-R01" diye acildi; plan R03 diyordu.
+Executor ikisini de okudu, hangisinin yetkili oldugunu bilemedi ve isi
+reddetti. Hakliydi.
 
 Tek bir dosya OLUSTUR:
 

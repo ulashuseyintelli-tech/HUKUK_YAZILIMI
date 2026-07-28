@@ -926,3 +926,70 @@ test('the adapter hands the resolved prompt to the executor', () => {
     assert.match(String(seen), /PROMPT-THREE/, 'the executor context carried the prompt');
   });
 });
+
+test('the prompt the executor actually receives carries a derived identity', async () => {
+  // The test above injects a fake buildContext, so it sees the prompt BEFORE
+  // composition — which is exactly how a prompt could carry the wrong task id
+  // for three revisions with a green suite. This one runs the REAL buildContext
+  // the service uses by default, and reads what the executor would be handed.
+  const root = scratchRepo();
+  // The real buildContext resolves the shared queue through the git common
+  // dir, so this scratch tree has to be one. Every other test here injects a
+  // fake buildContext and never finds out.
+  spawnSync('git', ['init', '-q'], { cwd: root });
+  const { requestPath } = officeRequest(root, { taskId: 'BP-PROMPT-ID' });
+  fs.mkdirSync(path.join(root, 'prompts'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'prompts/p4.md'), 'DO THE BOUNDED THING\n', 'utf8');
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.promptPath = 'prompts/p4.md';
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+
+  const { service } = svc(root);
+  service.enqueue({ requestPath });
+
+  let delivered = null;
+  await service.runOnce({
+    // No buildContext override: the real one from run-task.cjs is used.
+    runTask: async (ctx) => {
+      delivered = ctx.prompt;
+      return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 1, headSha: 'a'.repeat(40) } };
+    },
+  });
+
+  assert.match(String(delivered), /DO THE BOUNDED THING/, 'the body survives');
+  assert.match(String(delivered), /TASK ID +: BP-PROMPT-ID/, 'and it is told which task it is');
+  assert.match(String(delivered), /EXECUTOR LANE +:/);
+  assert.match(String(delivered), /ATTEMPT +: 1/, 'the queue counts the attempt, not the prose');
+  assert.ok(
+    String(delivered).indexOf('TASK ID') < String(delivered).indexOf('DO THE BOUNDED THING'),
+    'identity is stated before the instructions it governs',
+  );
+});
+
+test('a prompt file that declares a different task stops the run', async () => {
+  // Refused rather than overridden. The alternative — deliver the body with a
+  // contradicting header stapled on — leaves the executor adjudicating which
+  // of two sources speaks for the owner, which is the situation that produced
+  // a fifteen-minute run and no diff.
+  const root = scratchRepo();
+  spawnSync('git', ['init', '-q'], { cwd: root });
+  const { requestPath } = officeRequest(root, { taskId: 'BP-PROMPT-STALE' });
+  fs.mkdirSync(path.join(root, 'prompts'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'prompts/p5.md'), 'GOREV: SOME-OTHER-PROGRAM-R01\n\nwork\n', 'utf8');
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.promptPath = 'prompts/p5.md';
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+
+  const { queue, service } = svc(root);
+  const e = service.enqueue({ requestPath });
+  let ran = 0;
+  const out = await service.runOnce({ runTask: async () => { ran += 1; return {}; } });
+  assert.equal(ran, 0, 'no executor is spawned for a prompt that contradicts its own task');
+  const entry = queue.get(e.entry.entryId);
+  assert.notEqual(entry.state, 'CLOSED');
+  assert.match(
+    JSON.stringify(out) + String(entry.blockerCode || ''),
+    /PROMPT_TASK_IDENTITY_CONFLICT/,
+    'and the refusal names the conflict: ' + JSON.stringify(out),
+  );
+});

@@ -44,6 +44,7 @@ const { createGhCiProvider } = require('./gh-ci-provider.cjs');
 const { createGhMergeProvider } = require('./gh-merge-provider.cjs');
 const { prepareEnvironment } = require('./prepare-environment.cjs');
 const envPolicy = require('./env-policy.cjs');
+const promptIdentity = require('./prompt-identity.cjs');
 
 /**
  * Resolve the grant's authority references and owner ratification against the
@@ -404,7 +405,33 @@ function buildContext(opts) {
         };
       }),
 
-    prompt: opts.prompt,
+    // The prompt the executor actually receives, not the file as written.
+    //
+    // A prompt file is a shared artefact that outlives the revision it was
+    // written for. The canary's still opened with "GOREV: ...-R01" three
+    // revisions later, and the executor — reading the plan as R03 and the prose
+    // as R01 — refused the work rather than guess which one had authority. It
+    // was right to refuse. The identity is therefore composed here, from the
+    // records that ARE authoritative, and a body that declares an identity of
+    // its own is refused instead of silently overridden.
+    prompt:
+      opts.prompt == null
+        ? opts.prompt
+        : promptIdentity.composePrompt({
+            body: opts.prompt,
+            taskId: spec.taskId,
+            programId: spec.programId,
+            attempt: opts.attempt,
+            lane,
+            taskSpecSha256: (() => {
+              try {
+                return authoritySpecDigests(spec).taskSpecSha256;
+              } catch (e) {
+                return undefined;
+              }
+            })(),
+            targetPaths: (spec.boundaryPolicy && spec.boundaryPolicy.allowedRoots) || [],
+          }),
     // 'STDIN_PAYLOAD', not 'STDIN'. spawn.cjs accepts exactly two values and
     // fails PROMPT_TRANSPORT_INVALID on anything else, so the earlier spelling
     // would have killed every run at the executor spawn — after the lease was
