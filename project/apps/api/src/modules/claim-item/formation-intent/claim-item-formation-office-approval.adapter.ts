@@ -60,7 +60,7 @@ export interface PersistClaimItemFormationIntentInput {
   readonly legalBasisRegistryReleaseChecksum: string;
   readonly legalBasisResolutionContractVersion: string;
   readonly legalBasisResolutionHash: string;
-  readonly legalBasisProjectionBinding?: LegalBasisProjectionBindingPersistenceEnvelopeV1;
+  readonly legalBasisProjectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1;
   readonly originalAmountMinor: bigint;
   readonly demandedAmountMinor: bigint;
   readonly currency: string;
@@ -108,6 +108,9 @@ export class ClaimItemFormationOfficeApprovalAdapter {
     const projectionBinding = validateLegalBasisProjectionBindingPersistenceEnvelope(
       input.legalBasisProjectionBinding,
     );
+    if (!projectionBinding) {
+      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
+    }
     try {
       return await this.prisma.$transaction(async (tx) =>
         this.createInTransaction(tx, input, projectionBinding),
@@ -123,7 +126,7 @@ export class ClaimItemFormationOfficeApprovalAdapter {
   private async createInTransaction(
     tx: Prisma.TransactionClient,
     input: PersistClaimItemFormationIntentInput,
-    projectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1 | undefined,
+    projectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1,
   ): Promise<ClaimItemFormationAdmissionResult> {
     const existing = await tx.claimItemFormationIntent.findUnique({
       where: {
@@ -218,10 +221,10 @@ export class ClaimItemFormationOfficeApprovalAdapter {
         legalBasisResolutionContractVersion: input.legalBasisResolutionContractVersion,
         legalBasisResolutionHash: input.legalBasisResolutionHash,
         legalBasisProjectionBindingContractVersion:
-          projectionBinding?.contractVersion ?? null,
+          projectionBinding.contractVersion,
         legalBasisProjectionBindingCanonicalPayload:
-          projectionBinding?.canonicalPayload ?? null,
-        legalBasisProjectionBindingChecksum: projectionBinding?.checksum ?? null,
+          projectionBinding.canonicalPayload,
+        legalBasisProjectionBindingChecksum: projectionBinding.checksum,
         originalAmountMinor: input.originalAmountMinor,
         demandedAmountMinor: input.demandedAmountMinor,
         currency: input.currency,
@@ -285,16 +288,16 @@ export class ClaimItemFormationOfficeApprovalAdapter {
       approval: OfficeApprovalRequest | null;
     },
     requestedIntentChecksum: string,
-    requestedProjectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1 | undefined,
+    requestedProjectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1,
   ): ClaimItemFormationAdmissionResult {
     if (
       existing.intent.intentChecksum !== requestedIntentChecksum ||
       existing.intent.legalBasisProjectionBindingContractVersion !==
-        (requestedProjectionBinding?.contractVersion ?? null) ||
+        requestedProjectionBinding.contractVersion ||
       existing.intent.legalBasisProjectionBindingCanonicalPayload !==
-        (requestedProjectionBinding?.canonicalPayload ?? null) ||
+        requestedProjectionBinding.canonicalPayload ||
       existing.intent.legalBasisProjectionBindingChecksum !==
-        (requestedProjectionBinding?.checksum ?? null) ||
+        requestedProjectionBinding.checksum ||
       !existing.approval ||
       existing.approval.targetType !== CLAIM_ITEM_FORMATION_APPROVAL_TARGET_TYPE ||
       existing.approval.targetRef !== existing.intent.id ||

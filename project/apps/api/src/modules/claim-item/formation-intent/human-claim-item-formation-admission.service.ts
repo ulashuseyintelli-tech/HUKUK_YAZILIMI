@@ -34,6 +34,11 @@ import {
   type LegalBasisEligibilityFailureCode,
 } from './claim-item-formation-legal-basis-eligibility';
 import {
+  createLegalBasisProjectionBindingV1,
+  LegalBasisProjectionBindingContractError,
+  type ParsedLegalBasisProjectionBindingV1,
+} from './legal-basis-projection-binding.contract';
+import {
   ClaimItemFormationOfficeApprovalAdapter,
   type ClaimItemFormationAdmissionResult,
   type PersistClaimItemFormationIntentInput,
@@ -109,6 +114,16 @@ export class HumanClaimItemFormationAdmissionService {
 
     const createdAt = this.clock();
     if (!Number.isFinite(createdAt.getTime())) {
+      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
+    }
+    let projectionBinding: ParsedLegalBasisProjectionBindingV1;
+    try {
+      projectionBinding = createLegalBasisProjectionBindingV1({
+        legalBasis,
+        admittedAt: createdAt.toISOString(),
+      });
+    } catch (error) {
+      if (!(error instanceof LegalBasisProjectionBindingContractError)) throw error;
       throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
     }
     const expiresAt = new Date(createdAt.getTime() + CLAIM_ITEM_FORMATION_EXPIRY_MS);
@@ -187,6 +202,7 @@ export class HumanClaimItemFormationAdmissionService {
         legalBasisVersion: legalBasis.legalBasisVersion,
         legalBasisChecksum: legalBasis.legalBasisChecksum,
         legalBasisResolutionHash: legalBasis.resolutionHash,
+        legalBasisProjectionBindingChecksum: projectionBinding.envelope.checksum,
         originalAmountMinor: command.money.originalAmountMinor,
         demandedAmountMinor: command.money.demandedAmountMinor,
         currency: command.money.currency,
@@ -235,6 +251,7 @@ export class HumanClaimItemFormationAdmissionService {
       legalBasisRegistryReleaseChecksum: legalBasis.registryReleaseChecksum,
       legalBasisResolutionContractVersion: legalBasis.resolutionContractVersion,
       legalBasisResolutionHash: legalBasis.resolutionHash,
+      legalBasisProjectionBinding: projectionBinding.envelope,
       originalAmountMinor: command.money.originalAmountMinor,
       demandedAmountMinor: command.money.demandedAmountMinor,
       currency: command.money.currency,

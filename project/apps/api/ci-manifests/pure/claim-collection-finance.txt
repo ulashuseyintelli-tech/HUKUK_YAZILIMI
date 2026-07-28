@@ -46,6 +46,7 @@ src/modules/claim-item/__tests__/claim-item-formation-finalizer.static.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-intent-admission.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-legal-basis-eligibility.spec.ts
+src/modules/claim-item/__tests__/legal-basis-projection-binding.contract.spec.ts
 src/modules/collection/__tests__/collection-ledger-forward.spec.ts
 
 # RCV-CLAIM-FORM-HCR-03: previously unbound non-DB ClaimItem contract suites.

@@ -12,9 +12,9 @@ import {
   type ExactLegalBasisBindingV1,
 } from '../formation-intent/claim-item-formation-resolver.ports';
 import { HumanClaimItemFormationAdmissionService } from '../formation-intent/human-claim-item-formation-admission.service';
+import { syntheticProjectionBindingSource } from './claim-item-formation-projection-binding.fixture';
 import {
   buildLegalBasisProjectionBindingPersistenceEnvelope,
-  type LegalBasisProjectionBindingPersistenceEnvelopeV1,
 } from '../formation-intent/legal-basis-projection-binding-persistence';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 
@@ -109,7 +109,7 @@ describeWithDisposableDb(
         effectiveTo: null,
         subtypeRecognized: true,
         componentCategory: 'PRINCIPAL',
-        componentSubtypeCode: 'CONTRACT_PRINCIPAL',
+        componentSubtypeCode: 'DEFAULT_INTEREST',
         componentSubtypeVersion: '1',
         componentSubtypeChecksum: HASH('subtype'),
         allowedDocumentTypes: ['CONTRACT'],
@@ -123,6 +123,10 @@ describeWithDisposableDb(
         legalReviewRequired: false,
         resolutionContractVersion: 'LegalBasisResolutionV1',
         resolutionHash: HASH('basis-resolution'),
+        ...syntheticProjectionBindingSource({
+          legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
+          componentCategory: 'PRINCIPAL',
+        }),
         claimItemProjection: {
           itemType: 'PRINCIPAL',
           interestAccrualStatus: 'NO_INTEREST',
@@ -147,7 +151,7 @@ describeWithDisposableDb(
         },
         component: {
           category: 'PRINCIPAL',
-          subtypeCode: 'CONTRACT_PRINCIPAL',
+          subtypeCode: 'DEFAULT_INTEREST',
         },
         legalBasis: {
           code: 'CONTRACTUAL_RECEIVABLE',
@@ -177,7 +181,7 @@ describeWithDisposableDb(
     function service(options: {
       source?: ExactCaseDocumentSourceV1 | null;
       audit?: AuditService;
-      projectionBinding?: LegalBasisProjectionBindingPersistenceEnvelopeV1;
+      legalBasis?: ExactLegalBasisBindingV1;
     } = {}) {
       const authorization = {
         assertAuthorized: jest.fn().mockResolvedValue(undefined),
@@ -188,26 +192,20 @@ describeWithDisposableDb(
         ),
       } as unknown as CaseDocumentExactVersionResolverPort;
       const basisResolver = {
-        resolveExactVersion: jest.fn().mockResolvedValue({ ok: true, value: legalBasis() }),
+        resolveExactVersion: jest.fn().mockResolvedValue({
+          ok: true,
+          value: options.legalBasis ?? legalBasis(),
+        }),
       } as unknown as LegalBasisExactVersionResolverPort;
       const adapter = new ClaimItemFormationOfficeApprovalAdapter(
         prisma,
         options.audit ?? new AuditService(prisma),
       );
-      const writer = options.projectionBinding
-        ? ({
-            createAtomic: (input: Parameters<typeof adapter.createAtomic>[0]) =>
-              adapter.createAtomic({
-                ...input,
-                legalBasisProjectionBinding: options.projectionBinding,
-              }),
-          } as ClaimItemFormationOfficeApprovalAdapter)
-        : adapter;
       return new HumanClaimItemFormationAdmissionService(
         authorization,
         documentResolver,
         basisResolver,
-        writer,
+        adapter,
         { enabled: true, clock: () => new Date('2026-07-23T12:00:00.000Z') },
       );
     }
@@ -279,24 +277,28 @@ describeWithDisposableDb(
       expect(await counts(idempotencyKey)).toEqual(before);
     });
 
-    it('atomically persists a valid binding envelope and rejects binding drift on replay', async () => {
+    it('atomically persists the exact typed binding and rejects projection drift on replay', async () => {
       const idempotencyKey = `pb01-binding-${randomUUID()}`;
-      const projectionBinding = buildLegalBasisProjectionBindingPersistenceEnvelope({
-        legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
-        legalBasisVersion: '1',
-        projection: { itemType: 'PRINCIPAL' },
-      });
-      const admission = service({ projectionBinding });
+      const admission = service();
       const first = await admission.admit(context(), command(idempotencyKey));
 
       expect(first.intent).toMatchObject({
-        legalBasisProjectionBindingContractVersion: projectionBinding.contractVersion,
-        legalBasisProjectionBindingCanonicalPayload: projectionBinding.canonicalPayload,
-        legalBasisProjectionBindingChecksum: projectionBinding.checksum,
+        legalBasisProjectionBindingContractVersion: '1',
+        legalBasisProjectionBindingCanonicalPayload: expect.stringContaining(
+          'RCV-CLAIM-LEGAL-BASIS-PROJECTION-BINDING',
+        ),
+        legalBasisProjectionBindingChecksum: expect.stringMatching(/^[0-9a-f]{64}$/),
       });
       expect((await admission.admit(context(), command(idempotencyKey))).replayed).toBe(true);
       await expect(
-        service().admit(context(), command(idempotencyKey)),
+        service({
+          legalBasis: legalBasis({
+            claimItemProjection: {
+              ...legalBasis().claimItemProjection,
+              itemType: 'EXPENSE',
+            },
+          }),
+        }).admit(context(), command(idempotencyKey)),
       ).rejects.toMatchObject({ code: 'DUPLICATE_FORMATION_CONFLICT' });
 
       await expect(
@@ -306,18 +308,20 @@ describeWithDisposableDb(
       ).rejects.toThrow(/immutable_violation/);
     });
 
-    it('rejects invalid envelopes before every database write', async () => {
-      const idempotencyKey = `pb01-invalid-envelope-${randomUUID()}`;
-      const invalid = {
-        contractVersion: '1',
-        canonicalPayload: '{"legalBasisCode":"CONTRACTUAL_RECEIVABLE"}',
-        checksum: '0'.repeat(64),
-      } as LegalBasisProjectionBindingPersistenceEnvelopeV1;
+    it('rejects invalid projection authority before every database write', async () => {
+      const idempotencyKey = `pb01-invalid-authority-${randomUUID()}`;
       const before = await counts(idempotencyKey);
 
       await expect(
-        service({ projectionBinding: invalid }).admit(context(), command(idempotencyKey)),
-      ).rejects.toMatchObject({ code: 'PROJECTION_BINDING_CHECKSUM_MISMATCH' });
+        service({
+          legalBasis: legalBasis({
+            projectionAuthority: {
+              ...legalBasis().projectionAuthority,
+              releaseVersion: '0',
+            },
+          }),
+        }).admit(context(), command(idempotencyKey)),
+      ).rejects.toMatchObject({ code: 'INVALID_FORMATION_CONTEXT' });
       expect(await counts(idempotencyKey)).toEqual(before);
     });
 

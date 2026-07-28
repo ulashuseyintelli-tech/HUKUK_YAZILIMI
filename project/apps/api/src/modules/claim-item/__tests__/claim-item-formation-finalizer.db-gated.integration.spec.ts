@@ -8,6 +8,7 @@ import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { AuditService } from '../../audit/audit.service';
 import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
+import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE } from '../claim-item-approval.constants';
 import {
   ClaimItemFormationOfficeApprovalAdapter,
 } from '../formation-intent/claim-item-formation-office-approval.adapter';
@@ -20,12 +21,20 @@ import {
   type ResolveExactLegalBasisFailureCode,
 } from '../formation-intent/claim-item-formation-resolver.ports';
 import { HumanClaimItemFormationAdmissionService } from '../formation-intent/human-claim-item-formation-admission.service';
-import { domainSeparatedFormationHash } from '../formation-intent/claim-item-formation-canonical';
 import {
-  buildLegalBasisProjectionBindingPersistenceEnvelope,
+  buildClaimItemFormationIntentChecksum,
+  domainSeparatedFormationHash,
+} from '../formation-intent/claim-item-formation-canonical';
+import {
+  CLAIM_ITEM_FORMATION_APPROVAL_REF_VERSION,
+  CLAIM_ITEM_FORMATION_APPROVAL_TARGET_TYPE,
+} from '../formation-intent/claim-item-formation-intent.contract';
+import {
   type LegalBasisProjectionBindingPersistenceEnvelopeV1,
 } from '../formation-intent/legal-basis-projection-binding-persistence';
+import { createLegalBasisProjectionBindingV1 } from '../formation-intent/legal-basis-projection-binding.contract';
 import { TransactionalClaimItemFormationFinalizerService } from '../formation-finalizer/transactional-claim-item-formation-finalizer.service';
+import { syntheticProjectionBindingSource } from './claim-item-formation-projection-binding.fixture';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -98,7 +107,7 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
       effectiveTo: null,
       subtypeRecognized: true,
       componentCategory: 'PRINCIPAL',
-      componentSubtypeCode: 'CONTRACT_PRINCIPAL',
+      componentSubtypeCode: 'DEFAULT_INTEREST',
       componentSubtypeVersion: '1',
       componentSubtypeChecksum: hash('subtype'),
       allowedDocumentTypes: ['CONTRACT'],
@@ -112,6 +121,10 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
       legalReviewRequired: false,
       resolutionContractVersion: 'LegalBasisResolutionV1',
       resolutionHash: hash('legal-basis-resolution'),
+      ...syntheticProjectionBindingSource({
+        legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
+        componentCategory: 'PRINCIPAL',
+      }),
       claimItemProjection: {
         itemType: 'PRINCIPAL',
         interestAccrualStatus: 'NO_INTEREST',
@@ -202,7 +215,7 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
           documentId: sourceBinding.documentId,
           requestedVersionId: sourceBinding.versionId,
         },
-        component: { category: 'PRINCIPAL', subtypeCode: 'CONTRACT_PRINCIPAL' },
+        component: { category: 'PRINCIPAL', subtypeCode: 'DEFAULT_INTEREST' },
         legalBasis: { code: 'CONTRACTUAL_RECEIVABLE', requestedVersion: '1' },
         money: {
           originalAmountMinor: '10000',
@@ -247,6 +260,13 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
       } as unknown as LegalBasisExactVersionResolverPort,
       { enabled: true, clock: () => new Date(EXECUTION_AT) },
     );
+  }
+
+  function exactProjectionBinding(): LegalBasisProjectionBindingPersistenceEnvelopeV1 {
+    return createLegalBasisProjectionBindingV1({
+      legalBasis: basisBinding,
+      admittedAt: CREATED_AT.toISOString(),
+    }).envelope;
   }
 
   function executionRefs(intent: { id: string; intentChecksum: string }) {
@@ -308,9 +328,11 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
       claimItemId: result.claimItemId,
       intentChecksum: intent.intentChecksum,
       snapshotVersion: 1,
-      legalBasisProjectionBindingContractVersion: null,
-      legalBasisProjectionBindingCanonicalPayload: null,
-      legalBasisProjectionBindingChecksum: null,
+      legalBasisProjectionBindingContractVersion: '1',
+      legalBasisProjectionBindingCanonicalPayload: expect.stringContaining(
+        'RCV-CLAIM-LEGAL-BASIS-PROJECTION-BINDING',
+      ),
+      legalBasisProjectionBindingChecksum: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
     expect(approval?.executionStatus).toBe(OfficeApprovalExecutionStatus.SUCCEEDED);
     expect(auditCount).toBe(2);
@@ -319,11 +341,7 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
   });
 
   it('persists an exact bound snapshot and rejects every intent/snapshot binding mismatch', async () => {
-    const binding = buildLegalBasisProjectionBindingPersistenceEnvelope({
-      legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
-      legalBasisVersion: '1',
-      projection: { itemType: 'PRINCIPAL' },
-    });
+    const binding = exactProjectionBinding();
     const { intent, source } = await approvedIntent('projection-binding', binding);
     const result = await finalizer(source).finalize({
       tenantId,
@@ -575,6 +593,96 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
     expect(
       await prisma.claimFormationSnapshot.count({
         where: { tenantId, formationIntentId: { in: [documentIntent.id, basisIntent.id] } },
+      }),
+    ).toBe(0);
+  });
+
+  it('rejects a legacy unbound intent before resolver or financial writes', async () => {
+    const { intent: boundIntent, source } = await approvedIntent('legacy-unbound-source');
+    const suffix = randomUUID();
+    const legacyIntentId = `legacy-unbound-intent-${suffix}`;
+    const legacyApprovalId = `legacy-unbound-approval-${suffix}`;
+    const legacyIdempotencyKey = `legacy-unbound-idempotency-${suffix}`;
+    const legacyIntent = {
+      ...boundIntent,
+      id: legacyIntentId,
+      idempotencyKey: legacyIdempotencyKey,
+      approvalRequestId: legacyApprovalId,
+      correlationId: `legacy-unbound-correlation-${suffix}`,
+      causationId: `legacy-unbound-causation-${suffix}`,
+      legalBasisProjectionBindingContractVersion: null,
+      legalBasisProjectionBindingCanonicalPayload: null,
+      legalBasisProjectionBindingChecksum: null,
+    };
+    const intentChecksum = buildClaimItemFormationIntentChecksum(
+      legacyIntent.contractVersion,
+      legacyIntent,
+    );
+    const savedIntent = {
+      version: CLAIM_ITEM_FORMATION_APPROVAL_REF_VERSION,
+      tenantId,
+      caseId,
+      formationIntentId: legacyIntentId,
+      intentChecksum,
+      sourceIdentityHash: legacyIntent.sourceIdentityHash,
+    };
+    const approvalReferenceHash = stableJsonHash(savedIntent);
+
+    await prisma.officeApprovalRequest.create({
+      data: {
+        id: legacyApprovalId,
+        tenantId,
+        actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+        targetType: CLAIM_ITEM_FORMATION_APPROVAL_TARGET_TYPE,
+        targetRef: legacyIntentId,
+        requesterUserId,
+        approverUserId,
+        status: OfficeApprovalStatus.APPROVED,
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+        savedIntent,
+        payloadHash: approvalReferenceHash,
+        idempotencyKey: `claim-item-formation:${legacyIdempotencyKey}`,
+        createdAt: CREATED_AT,
+        decidedAt: DECIDED_AT,
+        expiresAt: legacyIntent.expiresAt,
+      },
+    });
+    await prisma.claimItemFormationIntent.create({
+      data: {
+        ...legacyIntent,
+        intentChecksum,
+        approvalReferenceHash,
+      } as any,
+    });
+
+    const documentResolver = {
+      resolveExactVersion: jest.fn(async () => source),
+    } as unknown as CaseDocumentExactVersionResolverPort;
+    const legalBasisResolver = {
+      resolveExactVersion: jest.fn(async () => ({ ok: true, value: basisBinding })),
+    } as unknown as LegalBasisExactVersionResolverPort;
+    const service = new TransactionalClaimItemFormationFinalizerService(
+      prisma as any,
+      audit,
+      new DomainEventIngestService(),
+      documentResolver,
+      legalBasisResolver,
+      { enabled: true, clock: () => new Date(EXECUTION_AT) },
+    );
+
+    await expect(
+      service.finalize({ tenantId, formationIntentId: legacyIntentId }),
+    ).rejects.toMatchObject({ code: 'FORMATION_LEGAL_BASIS_BINDING_REQUIRED' });
+    expect(documentResolver.resolveExactVersion).not.toHaveBeenCalled();
+    expect(legalBasisResolver.resolveExactVersion).not.toHaveBeenCalled();
+    expect(
+      await prisma.claimFormationSnapshot.count({
+        where: { tenantId, formationIntentId: legacyIntentId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.claimItem.count({
+        where: { id: executionRefs({ id: legacyIntentId, intentChecksum }).claimItemId },
       }),
     ).toBe(0);
   });

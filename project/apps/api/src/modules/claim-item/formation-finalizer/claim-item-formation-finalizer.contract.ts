@@ -8,6 +8,7 @@ export const CLAIM_ITEM_FORMATION_FINALIZATION_ERROR_CODES = [
   'FORMATION_APPROVAL_MISMATCH',
   'FORMATION_SOURCE_MISMATCH',
   'FORMATION_LEGAL_BASIS_MISMATCH',
+  'FORMATION_LEGAL_BASIS_BINDING_REQUIRED',
   'FORMATION_PROJECTION_INVALID',
   'FORMATION_EXECUTION_CONFLICT',
 ] as const;
@@ -49,6 +50,8 @@ function finalizationMessage(code: ClaimItemFormationFinalizationErrorCode): str
     FORMATION_APPROVAL_MISMATCH: 'Office approval does not exactly bind the formation intent.',
     FORMATION_SOURCE_MISMATCH: 'Exact document source revalidation failed.',
     FORMATION_LEGAL_BASIS_MISMATCH: 'Exact legal basis revalidation failed.',
+    FORMATION_LEGAL_BASIS_BINDING_REQUIRED:
+      'An exact legal basis projection binding is required for finalization.',
     FORMATION_PROJECTION_INVALID: 'Exact ClaimItem persistence projection is invalid.',
     FORMATION_EXECUTION_CONFLICT: 'Claim formation execution state is inconsistent.',
   };

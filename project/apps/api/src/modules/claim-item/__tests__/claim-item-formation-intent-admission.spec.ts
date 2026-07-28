@@ -15,6 +15,7 @@ import {
 } from '../formation-intent/claim-item-formation-resolver.ports';
 import { ClaimItemFormationOfficeApprovalAdapter } from '../formation-intent/claim-item-formation-office-approval.adapter';
 import { HumanClaimItemFormationAdmissionService } from '../formation-intent/human-claim-item-formation-admission.service';
+import { syntheticProjectionBindingSource } from './claim-item-formation-projection-binding.fixture';
 
 const NOW = new Date('2026-07-23T12:00:00.000Z');
 const TENANT = 'tenant-formation';
@@ -32,7 +33,7 @@ function command(overrides: Record<string, unknown> = {}) {
     },
     component: {
       category: 'PRINCIPAL',
-      subtypeCode: 'CONTRACT_PRINCIPAL',
+      subtypeCode: 'DEFAULT_INTEREST',
     },
     legalBasis: {
       code: 'CONTRACTUAL_RECEIVABLE',
@@ -95,7 +96,7 @@ function legalBasis(
     effectiveTo: null,
     subtypeRecognized: true,
     componentCategory: 'PRINCIPAL',
-    componentSubtypeCode: 'CONTRACT_PRINCIPAL',
+    componentSubtypeCode: 'DEFAULT_INTEREST',
     componentSubtypeVersion: '1',
     componentSubtypeChecksum: HASH('subtype'),
     allowedDocumentTypes: ['CONTRACT'],
@@ -109,6 +110,10 @@ function legalBasis(
     legalReviewRequired: false,
     resolutionContractVersion: 'LegalBasisResolutionV1',
     resolutionHash: HASH('legal-basis-resolution'),
+    ...syntheticProjectionBindingSource({
+      legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
+      componentCategory: 'PRINCIPAL',
+    }),
     claimItemProjection: {
       itemType: 'PRINCIPAL',
       interestAccrualStatus: 'NO_INTEREST',
@@ -217,7 +222,7 @@ describe('RCV-CLAIM-FORM-P02-S08-I02B typed formation intent admission', () => {
       sourceId: 'document-1',
       sourceVersionId: 'document-version-1',
       componentCategory: 'PRINCIPAL',
-      componentSubtypeCode: 'CONTRACT_PRINCIPAL',
+      componentSubtypeCode: 'DEFAULT_INTEREST',
       legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
       legalBasisVersion: '1',
       originalAmountMinor: 10_000n,
@@ -248,7 +253,7 @@ describe('RCV-CLAIM-FORM-P02-S08-I02B typed formation intent admission', () => {
   ])('rejects unsupported category %s before any resolver or write', async (category, code) => {
     const harness = buildHarness();
     const invalid = command({
-      component: { category, subtypeCode: 'CONTRACT_PRINCIPAL' },
+      component: { category, subtypeCode: 'DEFAULT_INTEREST' },
     });
 
     await expect(

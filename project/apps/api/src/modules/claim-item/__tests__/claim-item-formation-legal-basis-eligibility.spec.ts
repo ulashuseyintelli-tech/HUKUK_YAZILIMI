@@ -8,6 +8,7 @@ import {
   EXACT_LEGAL_BASIS_RESOLUTION_FAILURE_CODES,
   type ExactLegalBasisBindingV1,
 } from '../formation-intent/claim-item-formation-resolver.ports';
+import { syntheticProjectionBindingSource } from './claim-item-formation-projection-binding.fixture';
 
 const HASH = (value: string) => stableJsonHash({ value });
 
@@ -23,7 +24,7 @@ function legalBasis(overrides: Partial<ExactLegalBasisBindingV1> = {}): ExactLeg
     effectiveTo: null,
     subtypeRecognized: true,
     componentCategory: 'PRINCIPAL',
-    componentSubtypeCode: 'CONTRACT_PRINCIPAL',
+    componentSubtypeCode: 'DEFAULT_INTEREST',
     componentSubtypeVersion: '1',
     componentSubtypeChecksum: HASH('subtype'),
     allowedDocumentTypes: ['CONTRACT'],
@@ -37,6 +38,10 @@ function legalBasis(overrides: Partial<ExactLegalBasisBindingV1> = {}): ExactLeg
     legalReviewRequired: false,
     resolutionContractVersion: 'LegalBasisResolutionV1',
     resolutionHash: HASH('resolution'),
+    ...syntheticProjectionBindingSource({
+      legalBasisCode: 'CONTRACTUAL_RECEIVABLE',
+      componentCategory: 'PRINCIPAL',
+    }),
     claimItemProjection: {
       itemType: 'PRINCIPAL',
       interestAccrualStatus: 'NO_INTEREST',
@@ -77,7 +82,7 @@ function baseInput(
     mode: 'ADMISSION',
     legalBasis: legalBasis(),
     requestedIdentity: { legalBasisCode: 'CONTRACTUAL_RECEIVABLE', legalBasisVersion: '1' },
-    requestedComponent: { category: 'PRINCIPAL', subtypeCode: 'CONTRACT_PRINCIPAL' },
+    requestedComponent: { category: 'PRINCIPAL', subtypeCode: 'DEFAULT_INTEREST' },
     documentType: 'CONTRACT',
     evidenceClasses: ['SIGNED_CONTRACT'],
     effectiveAt: '2026-07-22T00:00:00.000Z',

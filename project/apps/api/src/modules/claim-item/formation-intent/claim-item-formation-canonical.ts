@@ -66,6 +66,7 @@ export interface ClaimItemFormationIntentChecksumInput {
   readonly legalBasisVersion: string;
   readonly legalBasisChecksum: string;
   readonly legalBasisResolutionHash: string;
+  readonly legalBasisProjectionBindingChecksum?: string | null;
   readonly originalAmountMinor: bigint;
   readonly demandedAmountMinor: bigint;
   readonly currency: string;
@@ -94,6 +95,12 @@ export function buildClaimItemFormationIntentChecksum(
     legalBasisVersion: input.legalBasisVersion,
     legalBasisChecksum: input.legalBasisChecksum,
     legalBasisResolutionHash: input.legalBasisResolutionHash,
+    ...(input.legalBasisProjectionBindingChecksum
+      ? {
+          legalBasisProjectionBindingChecksum:
+            input.legalBasisProjectionBindingChecksum,
+        }
+      : {}),
     originalAmountMinor: input.originalAmountMinor.toString(),
     demandedAmountMinor: input.demandedAmountMinor.toString(),
     currency: input.currency,
