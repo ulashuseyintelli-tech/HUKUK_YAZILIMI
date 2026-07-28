@@ -166,10 +166,19 @@ Collision: `COMPETING_WRITER_FOUND` · `OWNER_WIP_COLLISION`
 CI/merge: `CI_NOT_TERMINAL` · `CI_FAILED` · `CI_STALLED` · `PR_NOT_MERGEABLE` ·
 `PR_NOT_CLEAN` · `MERGE_FAILED` · `MERGE_STATE_UNVERIFIED`
 
+Beklenmedik yanıt: `UNEXPECTED_GITHUB_RESPONSE` — GitHub'dan gelen PR payload'ı şekil
+doğrulamasından geçmezse (eksik `state`, sha olmayan `headRefOid`, bozuk `mergeCommitOid`)
+kapanış fail-closed olur. Eksik bir alan sessizce "gate PASS" gibi değerlendirilmez.
+
 Post-merge: `MAIN_SYNC_FAILED` · `BRANCH_CLEANUP_FAILED` · `WORKTREE_CLEANUP_FAILED` ·
 `CANONICAL_VERIFICATION_FAILED`
 
 ## Güvenlik
+
+Geçici ağ/servis hataları (`dial tcp`, `ETIMEDOUT`, `ECONNRESET`, `502/503/504`,
+rate-limit) **yalnız read-only** komutlarda sınırlı ve üstel gecikmeli olarak yeniden
+denenir. **Mutation komutları (`gh pr merge`) asla yeniden denenmez** — çift merge riski
+üretir; hata çağırana gider ve kapanış `MERGE_FAILED` ile durur.
 
 Komutlar `execFileSync` ile argv dizisi olarak çalıştırılır — shell yok, string
 concatenation yok. Branch adı, worktree yolu ve SHA girdileri şekil doğrulamasından

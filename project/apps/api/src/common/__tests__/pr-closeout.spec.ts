@@ -583,6 +583,45 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
     expect(a.calls.squashMerge).toBe(0);
   });
 
+  it('48. an unexpected GitHub PR payload fails closed', async () => {
+    const cases: Json[] = [
+      null,
+      {},
+      { state: 'OPEN' },
+      { state: 'OPEN', headRefOid: 'not-a-sha', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' },
+      { state: 'OPEN', headRefOid: HEAD, mergeStateStatus: 'CLEAN' },
+      { state: 'MERGED', mergeCommitOid: 'nope' },
+    ];
+    for (const payload of cases) {
+      const a = makeAdapter({ getPr: async () => payload });
+      const r = await closeout.closeoutPr(makeInput(), a);
+      expect(r.blockerCode).toBe(closeout.BLOCKER.UNEXPECTED_GITHUB_RESPONSE);
+      expect(a.calls.squashMerge).toBe(0);
+    }
+  });
+
+  it('49. validatePrShape accepts a well-formed payload', () => {
+    expect(closeout.validatePrShape({
+      state: 'OPEN', headRefOid: HEAD, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN',
+    })).toBeNull();
+    expect(closeout.validatePrShape({ state: 'MERGED', mergeCommitOid: MERGE_SHA })).toBeNull();
+  });
+
+  it('50. a malformed payload after the merge call is reported, not silently closed', async () => {
+    let seen = 0;
+    const a = makeAdapter({
+      getPr: async () => {
+        seen += 1;
+        // ilk iki cagri saglikli (gate + TOCTOU), merge sonrasi bozuk yanit
+        if (seen <= 2) return { state: 'OPEN', headRefOid: HEAD, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' };
+        return { state: 'MERGED', mergeCommitOid: 'garbage' };
+      },
+    });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.blockerCode).toBe(closeout.BLOCKER.UNEXPECTED_GITHUB_RESPONSE);
+    expect(r.stage).toBe('MERGED');
+  });
+
   it('the state machine is single-directional and declared', () => {
     expect(closeout.STAGES[0]).toBe('PREFLIGHT');
     expect(closeout.STAGES[closeout.STAGES.length - 1]).toBe('CLOSED');
