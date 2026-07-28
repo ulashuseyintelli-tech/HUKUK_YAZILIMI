@@ -3423,3 +3423,37 @@ Depends On: OFFICE-AUTH-P02 (PR #1481, BASELINE IMPLEMENTED / CANONICAL).
 Related Modules: `apps/api/prisma/schema.prisma`, `apps/api/src/modules/auth/password-reset/`, `apps/api/src/modules/auth/guards/office-*-rate-limit.guard.ts`, `apps/web/src/app/auth/reset-password/page.tsx` — hepsi mevcut, hardening bu dosyaları GENİŞLETECEK, yeniden yazmayacak.
 
 **NEXT ELIGIBLE ACTION: OFFICE-AUTH-P02-HARDENING-R01 — ayrı, açık bir owner GO-IMPLEMENT kararı gerektirir (isolated worktree, origin/main bazlı).**
+
+---
+
+## RCV-CLAIM-FORM-P02-S08-D02-PB01 — Exact Legal Basis Projection Binding Contract
+
+```text
+STATUS                             CLOSED / CANONICAL / PASS UPON APPROVED GOVERNANCE MERGE
+IMPLEMENTATION                     PR #1794 / a62e078a33803774ef5595343092ab2ad36d48a9
+CI                                 4/4 PASS
+CONTRACT                           RCV-CLAIM-LEGAL-BASIS-PROJECTION-BINDING@1
+ADMISSION                          EXACT AUTHORITY + PROJECTION IMMUTABLY BOUND
+FINALIZATION                       EXACT RE-RESOLUTION + BYTE-EXACT DRIFT GUARD
+LEGACY UNBOUND                     FAIL-CLOSED / NO INFERENCE / NO BACKFILL
+SNAPSHOT                           EXACT-COPY / IMMUTABLE
+RUNTIME                            DORMANT
+SCHEMA / MIGRATION                 NONE IN PB01
+LIVE DATABASE / HISTORICAL DATA    NONE
+NEXT ELIGIBLE TASK                 RCV-CLAIM-FORM-P02-S08-D02-KC01
+NEXT TASK AUTHORITY                OWNER GO REQUIRED / NOT STARTED
+```
+
+PB01, persistence foundation'ın mevcut immutable binding triple'ını kullanır ve yeni schema veya
+migration üretmez. Admission; exact release, Legal Basis, registry/subtype identity ve bütün
+decision-driving projection alanlarını canonical payload + SHA-256 checksum olarak intent'e atomik
+yazar. Finalizer, stored binding bütünlüğü ve immutable intent checksum'undan sonra exact authority'yi
+fallback olmadan re-resolve eder; recomputed projection ile byte-exact eşitlik sağlanmadan ClaimItem,
+snapshot, audit, event veya outbox oluşturmaz. Lifecycle, retry, duplicate prevention ve legacy
+unbound davranışları machine contract/schema/crosswalk/disposition artefaktlarıyla kapatılmıştır.
+
+Authority bootstrap PR #1797 / squash `0f5a02ff995f4c459748f3a3598a1d0aa0ca1a39` ve exact
+control-plane binding PR #1799 / squash `c0348dd2b5df714742a6c99893c676a288b7a332` canonicaldır.
+KC01 bu kayıtla başlamaz. Production public-key/trust-root onboarding, signed release, production
+resolver, D02-F01, D02-I01/I02/I03, I04, I05, canary ve containment retirement ayrı owner gate'leri
+tamamlanmadan eligible değildir.
