@@ -26,6 +26,7 @@ const resolveMod = require('../executors/resolve.cjs');
 const stateMod = require('./state.cjs');
 const mergeready = require('./mergeready.cjs');
 const orch = require('./orchestrator.cjs');
+const successorMod = require('./successor.cjs');
 const F = require('./pilot-fixtures.cjs');
 
 const RACE_WORKER = path.join(__dirname, '..', 'safety', 'race-worker.cjs');
@@ -291,6 +292,68 @@ test('PILOT 9: a failing required test prevents PR and MERGE_READY', async () =>
   assert.equal(r.blockerCode, 'REQUIRED_TEST_FAILED');
   assert.equal(c._providers.openedPrs.length, 0);
   assert.equal(c.store.current('PILOT-TESTFAIL').state, 'BLOCKED');
+});
+
+test('PILOT 8c: delivery evidence reaches the store the successor gate reads', async () => {
+  // The last gap the WP04 dogfood found, at the last gate it had left.
+  //
+  // Delivery was verified at the real merge SHA and recorded PASS — onto the
+  // QUEUE entry. successorMod reads record.payload.delivery from the TASK
+  // STORE. So a task with genuine, merge-SHA-bound, passing evidence reported
+  // to its successor as "no delivery evidence recorded" and sat at
+  // LEGACY_UNVERIFIED forever. Both halves were right; the wire was never run.
+  const repo = F.fixtureRepo();
+  F.seedChange(repo, 'fixture/lane-a/out.txt', 'work\n');
+  const c = ctxFor(repo, { specOver: { taskId: 'PILOT-DELIVERY-WIRE' } });
+  const r = await orch.runTask(c);
+  assert.equal(r.disposition, 'MERGE_READY');
+
+  const mergeSha = '5'.repeat(40);
+  const done = await orch.completeAfterOwnerMerge({
+    store: c.store,
+    result: r,
+    observeFresh: async () => ({}),
+    performMerge: async () => ({ mergeSha }),
+    // Exactly the shape finalize supplies, and the reason it is a callback:
+    // CLOSED is terminal in this store, so evidence that arrives after closure
+    // can never be written at all.
+    verifyDeliveryAtMerge: async (sha) => ({
+      verdict: 'PASS',
+      taskId: 'PILOT-DELIVERY-WIRE',
+      mergeSha: sha,
+      verifiedAtSha: sha,
+      evidenceDigest: 'e'.repeat(64),
+      deliveryContractSha256: 'c'.repeat(64),
+      probeDefinitionSha256: 'p'.repeat(64),
+    }),
+  });
+  assert.equal(done.disposition, 'CLOSED');
+
+  const closed = c.store.current('PILOT-DELIVERY-WIRE');
+  assert.ok(closed.payload.delivery, 'the store record must carry the evidence the gate reads');
+  assert.equal(closed.payload.delivery.mergeSha, mergeSha);
+
+  // And the gate — the real one — now sees it.
+  const gate = successorMod.evaluate({
+    predecessorTaskIds: ['PILOT-DELIVERY-WIRE'],
+    currentOf: (id) => c.store.current(id),
+    successorSchema: 2,
+  });
+  assert.equal(gate.eligible, true, gate.reasons.join(','));
+
+  // A v1 task supplies no hook and closes exactly as it always did.
+  const repo2 = F.fixtureRepo();
+  F.seedChange(repo2, 'fixture/lane-a/out.txt', 'work\n');
+  const c2 = ctxFor(repo2, { specOver: { taskId: 'PILOT-DELIVERY-NONE' } });
+  const r2 = await orch.runTask(c2);
+  const done2 = await orch.completeAfterOwnerMerge({
+    store: c2.store,
+    result: r2,
+    observeFresh: async () => ({}),
+    performMerge: async () => ({ mergeSha }),
+  });
+  assert.equal(done2.disposition, 'CLOSED');
+  assert.equal(c2.store.current('PILOT-DELIVERY-NONE').payload.delivery, undefined);
 });
 
 test('PILOT 9b: the failing gate records what it SAW, not only that it failed', async () => {

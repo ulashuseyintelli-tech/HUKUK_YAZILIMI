@@ -1042,6 +1042,24 @@ async function completeAfterOwnerMerge(ctx) {
     nowMs,
   });
 
+  // Delivery is proved HERE, between MERGED and CLOSED, because CLOSED is
+  // terminal in this store and there is no second write.
+  //
+  // Found by the WP04 dogfood run at the last gate it had left. The finalizer
+  // verified delivery correctly, at the real merge SHA, and recorded PASS — onto
+  // the QUEUE entry. The successor gate reads record.payload.delivery from THIS
+  // store. So a task with genuine, merge-SHA-bound, passing evidence reported to
+  // its successor as "no delivery evidence recorded" and stayed LEGACY_UNVERIFIED
+  // forever. Both halves worked; the wire between them was never run, which is
+  // the exact word this programme exists to stop being true of anything.
+  //
+  // Optional: a caller with no delivery contract passes nothing and the payload
+  // is unchanged, so v1 tasks close exactly as they always did.
+  let delivery = null;
+  if (ctx.verifyDeliveryAtMerge) {
+    delivery = await ctx.verifyDeliveryAtMerge(merge.mergeSha);
+  }
+
   const cleanup = ctx.result.cleanupWorktree ? ctx.result.cleanupWorktree() : null;
   store.transition({
     taskId,
@@ -1051,7 +1069,10 @@ async function completeAfterOwnerMerge(ctx) {
     leaseEpoch: ctx.result.leaseEpoch,
     holderToken: ctx.result.holderToken,
     writerIdentity: 'ORCHESTRATOR',
-    payload: { mergeSha: merge.mergeSha, cleanup: cleanup ? cleanup.disposition : null },
+    payload: Object.assign(
+      { mergeSha: merge.mergeSha, cleanup: cleanup ? cleanup.disposition : null },
+      delivery ? { delivery } : {},
+    ),
     nowMs,
   });
   if (ctx.result.release) ctx.result.release('CLOSED');
