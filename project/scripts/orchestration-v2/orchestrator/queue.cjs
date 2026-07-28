@@ -375,8 +375,23 @@ function createQueue(dir) {
       // a side effect of some other transition.
       const patchedDigest = opts.patch && opts.patch.artefactSha256;
       if (patchedDigest !== undefined && patchedDigest !== cur.artefactSha256) {
-        if (opts.artefactRepinAuthorized !== true) {
+        if (opts.artefactRepinAuthorized !== true && opts.planRepinAuthorized !== true) {
           fail('QUEUE_ARTEFACT_REPIN_NOT_AUTHORIZED', String(cur.artefactSha256).slice(0, 12) + ' -> ' + String(patchedDigest).slice(0, 12));
+        }
+      }
+      // The plan digest is the same kind of promise, and until now nothing
+      // guarded it — a patch could move the identity of the WORK silently,
+      // which is strictly worse than moving the artefacts around it.
+      //
+      // It moves for exactly one legitimate reason: the machinery that computes
+      // it was fixed, so the number changed and the work did not. repinPlan
+      // re-runs admission against the new plan before asking for this, so an
+      // unauthorized edit is refused by the gates that admitted the entry
+      // rather than by a rule invented here.
+      const patchedSpec = opts.patch && opts.patch.taskSpecSha256;
+      if (patchedSpec !== undefined && patchedSpec !== cur.taskSpecSha256) {
+        if (opts.planRepinAuthorized !== true) {
+          fail('QUEUE_PLAN_REPIN_NOT_AUTHORIZED', String(cur.taskSpecSha256).slice(0, 12) + ' -> ' + String(patchedSpec).slice(0, 12));
         }
       }
 

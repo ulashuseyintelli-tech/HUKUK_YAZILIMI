@@ -14,6 +14,7 @@
  *   orch-service finalize            finish a MERGE_READY entry (or list them)
  *   orch-service reconcile-merged    close a BLOCKED entry whose PR already merged
  *   orch-service repin-artefacts     re-pin an entry after an authorized artefact fix
+ *   orch-service repin-plan          re-pin an entry after an authorized plan-digest fix
  *   orch-service status              what is happening, and why it is not
  *   orch-service stop  --reason ...  admit nothing, merge nothing. Now.
  *   orch-service start --reason ...  release the stop
@@ -377,6 +378,29 @@ function main(argv) {
      * Re-pin an entry blocked by ARTEFACT_DIGEST_MISMATCH after its authority
      * artefacts were corrected under an owner decision.
      */
+    case 'repin-plan': {
+      if (!args.flags.entry || !args.flags.authority) {
+        process.stdout.write(
+          'usage: orch-service repin-plan --entry <id> --authority <owner decision ref>\n\n' +
+          'For an entry BLOCKED with DISPATCH_PLAN_HASH_CHANGED whose plan digest moved\n' +
+          'because the machinery computing it was fixed. The new plan must pass admission\n' +
+          'again; the entry stays BLOCKED and resuming it remains a separate authorized act.\n',
+        );
+        return 2;
+      }
+      const r = service.repinPlan(args.flags.entry, { repinAuthority: args.flags.authority });
+      const lines = [r.disposition, '  entry     : ' + (r.entryId || args.flags.entry)];
+      if (r.refusal) lines.push('  refusal   : ' + r.refusal);
+      if (r.detail) lines.push('  detail    : ' + r.detail);
+      if (r.repinned) {
+        lines.push('  was       : ' + String(r.previousTaskSpecSha256).slice(0, 16));
+        lines.push('  now       : ' + String(r.taskSpecSha256).slice(0, 16));
+      }
+      lines.push('  state     : ' + r.queueState);
+      process.stdout.write(lines.join('\n') + '\n');
+      return r.repinned || r.disposition === 'ALREADY_PINNED' ? 0 : 1;
+    }
+
     case 'repin-artefacts': {
       if (!args.flags.entry || !args.flags.authority) {
         process.stdout.write(

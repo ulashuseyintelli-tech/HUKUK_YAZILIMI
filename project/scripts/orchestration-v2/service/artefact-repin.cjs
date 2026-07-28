@@ -37,6 +37,7 @@ const REFUSALS = [
   'REPIN_ENTRY_UNKNOWN',
   'REPIN_STATE_NOT_BLOCKED',
   'REPIN_WRONG_BLOCKER',
+  'REPIN_PLAN_NOT_ADMISSIBLE',
   'REPIN_NO_REQUEST_PATH',
   'REPIN_ARTEFACTS_UNREADABLE',
   'REPIN_TASK_SPEC_CHANGED',
@@ -193,4 +194,128 @@ function repinArtefacts(o) {
   };
 }
 
-module.exports = { REFUSALS, repinArtefacts };
+/**
+ * Re-pin an entry whose PLAN identity changed for an authorized reason.
+ *
+ * The sibling above refuses exactly this case, and rightly: for an artefact
+ * correction a moved plan digest means different work wearing the same entry
+ * id. But a plan digest also moves when the machinery that COMPUTES it is
+ * fixed, and then the work is identical and only the number changed.
+ *
+ * That happened. A plan had two hashes — digest() hashed the object as
+ * written, specDigests() normalized first — and the resolver used the raw one
+ * while the attestation and the merge gate used the normalized one. Fixing the
+ * resolver moved every pinned entry's plan digest by one commit, and the queue
+ * had no way back: DISPATCH_PLAN_HASH_CHANGED is terminal, the idempotency key
+ * does not include the digest so re-enqueueing deduplicates onto the blocked
+ * entry, and there was no verb to update the pin. The R01 canary has sat
+ * blocked on precisely this since it was first admitted.
+ *
+ * What keeps this from being a way around the guard: the freshly resolved plan
+ * must PASS ADMISSION AGAIN — program eligibility, the standing or task grant,
+ * the boundary, the task class, the lane, and for a one-shot grant its pinned
+ * planSha256. An unauthorized plan edit therefore still cannot run, because the
+ * gates that admitted the entry refuse the new plan. Re-pinning records what
+ * the entry is pinned to; it does not decide that the work may run, and
+ * resuming stays the separate authorized act it always was.
+ */
+function repinPlan(o) {
+  const queue = o.queue;
+  const audit = o.audit || (() => {});
+  const nowMs = o.nowMs || Date.now();
+  const authorityRef = o.repinAuthority;
+  const resolve = o.resolve || requestMod.load;
+  const evaluate = o.evaluate || require('../orchestrator/admission.cjs').evaluate;
+
+  if (typeof authorityRef !== 'string' || authorityRef.trim() === '') {
+    return refusal(null, 'REPIN_AUTHORITY_MISSING', 'an owner authority reference is required');
+  }
+  const entry = queue.get(o.entryId);
+  if (!entry) return refusal(null, 'REPIN_ENTRY_UNKNOWN', String(o.entryId));
+  if (entry.state !== 'BLOCKED') {
+    return refusal(entry, 'REPIN_STATE_NOT_BLOCKED', 'entry holds ' + entry.state);
+  }
+  if (entry.blockerCode !== 'DISPATCH_PLAN_HASH_CHANGED') {
+    return refusal(entry, 'REPIN_WRONG_BLOCKER', 'blocker is ' + String(entry.blockerCode));
+  }
+  if (!entry.requestPath) {
+    return refusal(entry, 'REPIN_NO_REQUEST_PATH', 'the entry cannot find its own authority to re-read');
+  }
+
+  let resolved;
+  try {
+    resolved = resolve({
+      repoCwd: o.repoCwd,
+      requestPath: entry.requestPath,
+      requireCommitted: entry.artefactsCommitted === true,
+    });
+  } catch (e) {
+    return refusal(entry, 'REPIN_ARTEFACTS_UNREADABLE', (e.code || '') + ' ' + String(e.message).slice(0, 160));
+  }
+
+  const observed = resolved.taskSpecSha256;
+  if (!observed) return refusal(entry, 'REPIN_ARTEFACTS_UNREADABLE', 'no plan digest was produced');
+  if (observed === entry.taskSpecSha256) {
+    return { disposition: 'ALREADY_PINNED', entryId: entry.entryId, queueState: entry.state, repinned: false, taskSpecSha256: observed };
+  }
+
+  // The gate. Everything that decided this entry could exist is asked again,
+  // about the plan as it stands now.
+  const verdict = evaluate({
+    manifest: resolved.manifest,
+    standingGrant: resolved.standingGrant,
+    spec: resolved.spec,
+    programId: resolved.request.programId,
+    taskClass: resolved.request.taskClass,
+    executorLane: entry.executorLane || resolved.request.executorLane,
+    taskSpecSha256: observed,
+    oneShotLedgerDir: queue.dir,
+    repoCwd: o.repoCwd,
+    killSwitchEngaged: false,
+    nowMs,
+  });
+  if (!verdict.admissible) {
+    return refusal(entry, 'REPIN_PLAN_NOT_ADMISSIBLE', verdict.refusal + ' ' + (verdict.detail || ''));
+  }
+
+  audit('PLAN_REPIN_STARTED', {
+    entryId: entry.entryId,
+    taskId: entry.taskId,
+    previousTaskSpecSha256: entry.taskSpecSha256,
+    taskSpecSha256: observed,
+    authorityRef,
+  });
+
+  const written = queue.transition({
+    entryId: entry.entryId,
+    to: 'BLOCKED',
+    expectedPreviousState: 'BLOCKED',
+    planRepinAuthorized: true,
+    nowMs,
+    patch: {
+      taskSpecSha256: observed,
+      artefactSha256: (resolved.artefacts && resolved.artefacts.digest) || entry.artefactSha256,
+      blockerCode: entry.blockerCode,
+      planRepin: {
+        previousTaskSpecSha256: entry.taskSpecSha256 || null,
+        taskSpecSha256: observed,
+        requestPath: entry.requestPath,
+        authorityRef,
+        repinnedAtMs: nowMs,
+      },
+    },
+  });
+
+  audit('PLAN_REPIN_COMPLETED', { entryId: entry.entryId, taskSpecSha256: observed, authorityRef });
+
+  return {
+    disposition: 'REPINNED',
+    entryId: entry.entryId,
+    queueState: written.state,
+    repinned: true,
+    previousTaskSpecSha256: entry.taskSpecSha256 || null,
+    taskSpecSha256: written.taskSpecSha256,
+  };
+}
+
+module.exports = { REFUSALS, repinArtefacts, repinPlan };
