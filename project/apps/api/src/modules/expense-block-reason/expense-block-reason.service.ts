@@ -16,6 +16,15 @@ import { CreateExpenseBlockReasonDto } from './dto/expense-block-reason.dto';
  * - Yanlış kayıt cancel edilir, SİLİNMEZ (status=CANCELLED).
  * - Multitenant: tüm okuma/yazma tenantId ile filtrelenir; FK hedefleri aynı tenant'a ait mi doğrulanır.
  */
+/**
+ * UYAP-AUTHORITY-FRESHNESS-TX-I01: `findOpenBlocksForAction` için MİNİMUM okuma yüzeyi.
+ * Hem `PrismaService` hem `Prisma.TransactionClient` bu şekle uyar → aynı okuma TX-1
+ * revalidation'da kopyalanmadan çalıştırılabilir.
+ */
+export type ExpenseBlockReadClient = {
+  expenseBlockReason: { findMany: PrismaService['expenseBlockReason']['findMany'] };
+};
+
 @Injectable()
 export class ExpenseBlockReasonService {
   constructor(private prisma: PrismaService) {}
@@ -158,8 +167,14 @@ export class ExpenseBlockReasonService {
     caseId: string,
     blockedActionCode: string,
     evaluatedAt: Date,
+    /**
+     * UYAP-AUTHORITY-FRESHNESS-TX-I01 — opsiyonel transaction client. Verilirse okuma
+     * ÇAĞIRANIN transaction'ı içinde yapılır (TX-1 revalidation). Verilmezse davranış
+     * ve sorgu şekli BİREBİR aynıdır. Bu metot yine hiçbir mutation yapmaz.
+     */
+    client: ExpenseBlockReadClient = this.prisma,
   ) {
-    return this.prisma.expenseBlockReason.findMany({
+    return client.expenseBlockReason.findMany({
       where: {
         tenantId,
         caseId,

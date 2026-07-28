@@ -35,14 +35,31 @@ import {
  * - LawyerModule.exports üzerinden tüketiciler (UYAP authority resolver) enjekte eder.
  * </remarks>
  */
+/**
+ * UYAP-AUTHORITY-FRESHNESS-TX-I01: bu resolver'ın ihtiyaç duyduğu MİNİMUM okuma yüzeyi.
+ * Hem `PrismaService` hem `Prisma.TransactionClient` bu şekle uyar; böylece aynı çözümleme
+ * mantığı transaction içinde de çalıştırılabilir (kopyalama YOK).
+ */
+export type ActingLawyerReadClient = {
+  lawyer: { findMany: PrismaService["lawyer"]["findMany"] };
+};
+
 @Injectable()
 export class ActingLawyerResolverService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Fail-closed çözümleme. Exception fırlatmaz; CPE fact üretimi bu sonucu tüketir.
+   *
+   * @param client UYAP-AUTHORITY-FRESHNESS-TX-I01 — opsiyonel transaction client.
+   *   Verilirse okuma ÇAĞIRANIN transaction'ı içinde yapılır; TX-1 revalidation aynı
+   *   çözümleme mantığını kopyalamadan yeniden kullanabilsin diye. Verilmezse davranış
+   *   ve sorgu şekli BİREBİR aynıdır.
    */
-  async tryResolve(context: ActingLawyerContext): Promise<ActingLawyerResolution> {
+  async tryResolve(
+    context: ActingLawyerContext,
+    client: ActingLawyerReadClient = this.prisma,
+  ): Promise<ActingLawyerResolution> {
     // Eksik/boş server-side context → authority üretilemez (fail-closed).
     if (!context?.userId || !context?.tenantId) {
       return { resolved: false, failureCode: "ACTING_LAWYER_NOT_RESOLVED" };
@@ -50,7 +67,7 @@ export class ActingLawyerResolverService {
 
     // `userId` ile sorgula (Lawyer.userId @unique). Tenant eşitliği AŞAĞIDA kendi kolonundan
     // doğrulanır; tenant'ı sorguya koyup cross-tenant bağı "bulunamadı"ya çevirmeyiz.
-    const matches = await this.prisma.lawyer.findMany({
+    const matches = await client.lawyer.findMany({
       where: { userId: context.userId },
       select: { id: true, tenantId: true, isActive: true },
       take: 2, // ambiguity tespiti için 2 yeterli; tüm tabloyu çekme
@@ -89,8 +106,11 @@ export class ActingLawyerResolverService {
    * Dış mesaj GENERIC'tir (authority ilişkilerinin enumeration'ını önler); ayrıntı
    * yalnız `code` alanında taşınır ve decision-log/evidence tarafında kullanılır.
    */
-  async resolveOrThrow(context: ActingLawyerContext): Promise<ResolvedActingLawyer> {
-    const resolution = await this.tryResolve(context);
+  async resolveOrThrow(
+    context: ActingLawyerContext,
+    client: ActingLawyerReadClient = this.prisma,
+  ): Promise<ResolvedActingLawyer> {
+    const resolution = await this.tryResolve(context, client);
     if (resolution.resolved) {
       return resolution.actingLawyer;
     }

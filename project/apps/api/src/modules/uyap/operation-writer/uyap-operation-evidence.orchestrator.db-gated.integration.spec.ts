@@ -14,11 +14,20 @@ const maybe = TEST_DB_URL ? describe : describe.skip;
 
 maybe('P05C-P04 orchestrator — disposable DB', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
+  // UYAP-AUTHORITY-FRESHNESS-TX-I01: TX-1 artık ilk adımda authority revalidation yapar.
+  // Bu dosyanın konusu KOMPOZİSYON/İDEMPOTENCY'dir (replay reuse, conflict, concurrency,
+  // rollback); tazelik davranışı gerçek DB üzerinde AYRI spec'te kanıtlanır
+  // (`uyap-authority-freshness.db-gated.integration.spec.ts`). Bu yüzden burada
+  // "her zaman taze" bir snapshot servisi stub'ı verilir; senaryoların anlamı DEĞİŞMEDİ.
+  const alwaysFreshSnapshots = {
+    revalidate: async () => ({ fresh: true as const, snapshot: {} as any }),
+  };
   const orch = new UyapOperationEvidenceOrchestrator(
     prisma as any,
     { get: () => undefined } as any, // flag config bu testte kullanılmaz (recordEvidence doğrudan çağrılır)
     new UyapOperationWriterService(prisma as any),
     new UyapCpeDecisionLinkWriterService(prisma as any),
+    alwaysFreshSnapshots as any,
   );
 
   let tenantA: string;
@@ -65,6 +74,9 @@ maybe('P05C-P04 orchestrator — disposable DB', () => {
     action: 'UYAP_SEND' as const,
     idempotencyToken: 'stable-retry-token-abc',
     cpeDecisionLogId: 'dec-1',
+    // UYAP-AUTHORITY-FRESHNESS-TX-I01: TX-1 Phase 1 snapshot'ı ister; bu dosyada
+    // revalidation stub'lanmış olduğu için içeriği anlamlı DEĞİLDİR.
+    authoritySnapshot: {} as any,
     ...over,
   });
 
@@ -116,6 +128,7 @@ maybe('P05C-P04 orchestrator — disposable DB', () => {
     const r = await orch.recordEvidence({
       tenantId: tenantB, caseId: caseB, actorUserId: userB, action: 'UYAP_SEND',
       idempotencyToken: 'stable-retry-token-abc', cpeDecisionLogId: 'dec-tb',
+      authoritySnapshot: {} as any,
     });
     // aynı token ama tenantB → ayrı key → ayrı operation (tenantA'nınkinden bağımsız)
     expect(r.operationReused).toBe(false);

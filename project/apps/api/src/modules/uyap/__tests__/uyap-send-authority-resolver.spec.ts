@@ -305,13 +305,43 @@ describe("UyapSendAuthorityResolverService", () => {
       expect(a.authorityEvidence).toEqual(b.authorityEvidence);
     });
 
+    // UYAP-AUTHORITY-FRESHNESS-TX-I01: evidence'a DÖRT yürürlük alanı eklendi
+    // (`poaIsActive`, `poaIsLimited`, `poaDateIssued`, `poaValidUntil`). TX-1 revalidation
+    // `updatedAt` DIŞINDA semantik karşılaştırma yapmak zorundadır (aynı ms içinde değişim,
+    // saat kayması, updatedAt tetiklemeyen raw yazma). Bu alanlar PII veya serbest metin
+    // DEĞİLDİR; testin asıl güvencesi aşağıda hem tam anahtar kümesi hem de açık
+    // yasak-alan listesiyle KORUNUR (daha güçlü hâle geldi).
     it("evidence POA belge içeriği/serbest metin TAŞIMAZ", async () => {
       const { svc } = build({});
       const d = await svc.resolve(ctx);
       const keys = Object.keys(d.authorityEvidence[0]).sort();
       expect(keys).toEqual(
-        ["clientId", "poaId", "poaLawyerId", "poaScopeType", "poaStatus", "poaUpdatedAt", "tenantId"].sort(),
+        [
+          "clientId",
+          "poaDateIssued",
+          "poaId",
+          "poaIsActive",
+          "poaIsLimited",
+          "poaLawyerId",
+          "poaScopeType",
+          "poaStatus",
+          "poaUpdatedAt",
+          "poaValidUntil",
+          "tenantId",
+        ].sort(),
       );
+      // Serbest metin / belge / kimlik alanları HİÇBİR koşulda evidence'a girmez.
+      for (const forbidden of [
+        "scopeDescription",
+        "note",
+        "notes",
+        "documentUrl",
+        "notaryName",
+        "fileNumber",
+        "identityNo",
+      ]) {
+        expect(keys).not.toContain(forbidden);
+      }
     });
   });
 });

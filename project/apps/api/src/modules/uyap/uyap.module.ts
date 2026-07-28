@@ -25,6 +25,10 @@ import { LawyerModule } from '../lawyer/lawyer.module';
 // `CPE UYAP_SEND -> provider -> ExpenseGateService -> CPE UYAP_SEND` cycle'i olusur.
 import { UyapExpenseBlockingFactProvider } from './authority/uyap-expense-blocking-fact.provider';
 import { ExpenseBlockReasonModule } from '../expense-block-reason/expense-block-reason.module';
+// UYAP-AUTHORITY-FRESHNESS-TX-I01: Phase 1 snapshot + TX-1 revalidation.
+// NOT: `UYAP_AUTHORITY_COORDINATION_HOOK` token'i BILEREK KAYDEDILMEZ — test barrier'i
+// production DI grafiginde cozulmez ve butun cagrilar no-op olur.
+import { UyapAuthoritySnapshotService } from './authority/uyap-authority-snapshot.service';
 
 // Re-export UYAP codes for external use
 export * from './uyap-codes';
@@ -52,8 +56,14 @@ export * from './uyap-codes';
     UyapSendAuthorityResolverService,
     UyapAuthorityFactProvider,
     UyapExpenseBlockingFactProvider,
+    UyapAuthoritySnapshotService,
   ],
-  exports: [UyapService, UyapXmlService, UyapSendAuthorityResolverService],
+  exports: [
+    UyapService,
+    UyapXmlService,
+    UyapSendAuthorityResolverService,
+    UyapAuthoritySnapshotService,
+  ],
 })
 export class UyapModule implements OnModuleInit {
   constructor(

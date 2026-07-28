@@ -58,6 +58,16 @@ export interface AuthorityEvidenceRef {
   readonly poaUpdatedAt: Date;
   readonly poaStatus: string;
   readonly poaScopeType: string;
+  /**
+   * UYAP-AUTHORITY-FRESHNESS-TX-I01 (additive): TX-1 revalidation'ın `updatedAt` DIŞINDA
+   * SEMANTİK alan karşılaştırması yapabilmesi için yürürlük alanları. `updatedAt` tek
+   * başına yeterli değildir (aynı milisaniye içinde değişim, saat kayması, `updatedAt`
+   * tetiklemeyen raw yazma yolları). PII taşımaz — belge metni/açıklama KOPYALANMAZ.
+   */
+  readonly poaIsActive: boolean;
+  readonly poaIsLimited: boolean;
+  readonly poaDateIssued: Date | null;
+  readonly poaValidUntil: Date | null;
 }
 
 /** Boolean yerine yapısal karar — denied kararlar da evidence zincirine bağlanabilsin diye. */
