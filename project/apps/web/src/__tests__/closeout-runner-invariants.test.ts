@@ -19,7 +19,6 @@
 
 import { describe, expect, it } from 'vitest';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const closeout = require('../../../../scripts/orchestration-v2/closeout/closeout.cjs');
 
 const HEAD = 'a'.repeat(40);
@@ -187,8 +186,7 @@ describe('closeout runner — required-path invariants', () => {
   it('loads the real gh/git adapter module', () => {
     // R01 pilot bulgusu: gercek adapter'i hicbir test require etmiyordu ve
     // icindeki syntax hatasi butun CI yesilken main'e gidebiliyordu.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('../../../../scripts/orchestration-v2/closeout/gh-adapter.cjs');
+        const mod = require('../../../../scripts/orchestration-v2/closeout/gh-adapter.cjs');
     const adapter = mod.createGhCloseoutAdapter({ repoCwd: process.cwd() });
     for (const fn of ['getPr', 'squashMerge', 'syncMain', 'cleanupWorktree', 'cleanupBranch', 'consumeAuthority', 'verifyCanonical']) {
       expect(typeof adapter[fn]).toBe('function');
