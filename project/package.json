@@ -20,7 +20,8 @@
     "orch:verify-executors": "node scripts/orchestration-v2/executors/verify-executors.cjs",
     "orch:service": "node scripts/orchestration-v2/service/orch-service.cjs",
     "orch:enqueue": "node scripts/orchestration-v2/service/orch-service.cjs enqueue",
-    "verify:live": "node scripts/orchestration-v2/delivery/verify-live.cjs"
+    "verify:live": "node scripts/orchestration-v2/delivery/verify-live.cjs",
+    "orch:closeout": "node scripts/orchestration-v2/closeout/cli.cjs"
   },
   "devDependencies": {
     "turbo": "^2.3.0",
