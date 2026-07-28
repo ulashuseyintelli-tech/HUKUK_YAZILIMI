@@ -489,6 +489,21 @@ function createService(cfg) {
      * decides only what the work is pinned to. Keeping them apart means a
      * re-pin can never be the thing that quietly restarts a task.
      */
+    /** Re-pin a plan digest moved by an authorized fix. See artefact-repin.cjs. */
+    repinPlan(entryId, opts) {
+      const o = opts || {};
+      return require('./artefact-repin.cjs').repinPlan({
+        queue,
+        entryId,
+        repoCwd,
+        repinAuthority: o.repinAuthority,
+        resolve: o.resolve,
+        evaluate: o.evaluate,
+        audit,
+        nowMs: clock(),
+      });
+    },
+
     repinArtefacts(entryId, opts) {
       const o = opts || {};
       return require('./artefact-repin.cjs').repinArtefacts({
