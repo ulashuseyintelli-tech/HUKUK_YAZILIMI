@@ -215,7 +215,22 @@ function resolve(opts) {
     prompt,
     artefacts,
     // The identity the queue deduplicates on and the merge gate later pins.
-    taskSpecSha256: authority.digest(spec),
+    //
+    // specDigests(), not digest(). They are different numbers for the same
+    // plan: digest() hashes the object as written, while specDigests()
+    // normalizes first — dropping the derived *Sha256 fields the plan carries
+    // about its own parts. A plan therefore has two hashes, and which one a
+    // component uses has been the root cause of three separate failures:
+    // TASK_SPEC_HASH_MISMATCH twice on the R03 canary, then
+    // ATTESTATION_INVALIDATED after a fifteen-minute run and a green pull
+    // request that could no longer be merged.
+    //
+    // The attestation, the merge gate and the task grant all pin the
+    // normalized one. This was the last caller of the raw one, which meant a
+    // grant could pin the hash the machinery checks and still be refused by
+    // the resolver that admits it. One notion of a plan's identity, or the
+    // parts do not agree about which plan they are running.
+    taskSpecSha256: authority.specDigests(spec).taskSpecSha256,
   };
 }
 

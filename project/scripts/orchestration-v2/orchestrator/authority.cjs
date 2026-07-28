@@ -616,6 +616,15 @@ const TASK_CLASSES = [
   'DOCUMENTATION_SYNCHRONIZATION',
   'OPERATOR_RUNBOOK_UPDATE',
   'AUDIT_RECORD_MATERIALIZATION',
+  // The orchestrator writing evidence about its own run.
+  //
+  // Deliberately NOT one of the governance classes above. Those are reachable
+  // only under the MECHANICAL_GOVERNANCE profile, which denies AUTO_MERGE by
+  // design, and the entire point of this class is a merge the service performs
+  // itself. Reachable only from a one-shot task grant naming a single exact
+  // file (orchestrator/one-shot-grant.cjs), so admitting the vocabulary here
+  // widens no standing grant: no standing grant names it.
+  'OPERATIONAL_CANARY_EVIDENCE',
 ];
 
 /** A path sits under a root when the root is a directory prefix, or names it. */

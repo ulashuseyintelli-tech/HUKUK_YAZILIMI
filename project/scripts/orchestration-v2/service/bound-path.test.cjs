@@ -97,17 +97,59 @@ function writeRequest(root, req) {
   return rel;
 }
 
+/**
+ * A COMPLETE governance plan.
+ *
+ * Same reason officeRequest carries every field: resolution normalizes the
+ * plan now, and a fixture that omits half of it proves only that the omitted
+ * half is never read.
+ */
+function govSpec(taskId, allowedRoots) {
+  return {
+    schemaVersion: 1,
+    taskId,
+    taskSpecVersion: 1,
+    profile: 'MECHANICAL_GOVERNANCE',
+    declaredIntent: 'bound-path fixture: an exact mechanical governance write',
+    boundaryPolicy: { allowedRoots, maxChangedFiles: 1 },
+    mechanicalOperation: {
+      operationType: 'EXACT_APPEND_AT_DECLARED_ANCHOR',
+      expectedResultSha256: 'a'.repeat(64),
+    },
+    predecessorTaskIds: [],
+    baseDriftPolicy: 'REFRESH_BEFORE_EXECUTION',
+    successorDisposition: 'OWNER_AUTHORIZATION_REQUIRED',
+  };
+}
+
 /** A valid OFFICE request plus its plan, ready to enqueue. */
 function officeRequest(root, over) {
   const o = over || {};
   const g = readGrant(OFFICE_GRANT);
+  // A COMPLETE plan, not the two fields resolution happened to look at.
+  //
+  // These fixtures used to carry taskId and boundaryPolicy alone, which was
+  // enough for the raw digest() the resolver called and not enough to
+  // normalize. That gap is why a plan could have two different hashes — one
+  // from digest(), one from specDigests() — and why a task grant could pin the
+  // hash the merge gate checks and still be refused by the resolver that
+  // admits it. A fixture thinner than the real artefact hides exactly the
+  // class of defect these tests exist to catch.
   const spec = Object.assign(
     {
+      schemaVersion: 1,
       taskId: o.taskId || 'BP-OFFICE-01',
+      taskSpecVersion: 1,
+      profile: 'BOUNDED_CODE_TASK',
+      declaredIntent: 'bound-path fixture: a bounded, test-only change inside the granted roots',
       boundaryPolicy: {
         allowedRoots: o.allowedRoots || [g.allowedPathRoots[0] + '__tests__/'],
         maxChangedFiles: 2,
       },
+      requiredTests: [{ argv: ['pnpm', 'exec', 'jest', '--version'], cwd: 'project', timeoutMs: 60000 }],
+      predecessorTaskIds: [],
+      baseDriftPolicy: 'REFRESH_BEFORE_EXECUTION',
+      successorDisposition: 'OWNER_AUTHORIZATION_REQUIRED',
     },
     o.spec || {},
   );
@@ -204,10 +246,7 @@ test('AC08  a task class the grant does not allow is refused', () => {
 test('AC09  the governance profile admits a request/result write', () => {
   const root = scratchRepo();
   const { service } = svc(root);
-  const spec = {
-    taskId: 'BP-GOV-01',
-    boundaryPolicy: { allowedRoots: ['project/docs/governance/coordination-requests/REQ-1/request.md'], maxChangedFiles: 1 },
-  };
+  const spec = govSpec('BP-GOV-01', ['project/docs/governance/coordination-requests/REQ-1/request.md']);
   const planPath = writePlan(root, spec);
   const requestPath = writeRequest(root, {
     programId: 'OFFICE',
@@ -228,7 +267,7 @@ test('AC10  the governance profile refuses canonical governance and control-plan
     'project/scripts/orchestration-v2/orchestrator/authority.cjs',
     ACT + '/program-eligibility-authority.json',
   ]) {
-    const spec = { taskId: 'BP-GOV-BAD-' + target.length, boundaryPolicy: { allowedRoots: [target], maxChangedFiles: 1 } };
+    const spec = govSpec('BP-GOV-BAD-' + target.length, [target]);
     const requestPath = writeRequest(root, {
       programId: 'OFFICE',
       taskId: spec.taskId,
@@ -253,7 +292,7 @@ test('AC10b a governance grant cannot be used to run code, and vice versa', () =
   const asCode = service.enqueue({ requestPath: officeRequest(root, { taskId: 'BP-X1', standingGrantPath: GOV_GRANT }).requestPath });
   assert.equal(asCode.refusal, 'GOVERNANCE_GRANT_CANNOT_RUN_CODE');
 
-  const spec = { taskId: 'BP-X2', boundaryPolicy: { allowedRoots: ['project/docs/governance/coordination-requests/R/request.md'], maxChangedFiles: 1 } };
+  const spec = govSpec('BP-X2', ['project/docs/governance/coordination-requests/R/request.md']);
   const requestPath = writeRequest(root, {
     programId: 'OFFICE', taskId: spec.taskId, taskClass: 'CLOSURE_EVIDENCE',
     planPath: writePlan(root, spec), standingGrantPath: OFFICE_GRANT,

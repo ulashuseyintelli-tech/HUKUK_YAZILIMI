@@ -6,6 +6,7 @@
   "parentAuthorizationRef": {
     "authorizationId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
     "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+    "payloadSha256": "06da65660dad523c18ee3bafce130996e849462cf3275a953d84b6866ae4e240",
     "ownerDecisionPath": "project/docs/governance/coordination-v2/task-plans/CANARY-R04/semantic-authority.md"
   },
   "program": {
