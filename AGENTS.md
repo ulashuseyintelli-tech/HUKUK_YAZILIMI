@@ -252,15 +252,8 @@ ozet yukumlulukler:
 - Owner/user WIP'i owner acikca yetki vermedikce revert, stash, tasima, clean, delete veya
   baska sekilde modify etme; ilgiliyse uyumlu calis, ilgisizse yok say.
 - Yeni servis metodu veya controller action yazarken cagrilma listesini yorumda tut;
-  mevcut metodu degistirirken listeyi kontrol edip guncelle:
-
-```ts
-/**
- * Cagrildigi yerler:
- * - {Controller/Servis}.{Metod}() -> {HTTP METHOD} {endpoint} ({aciklama})
- * - {Servis}.{Metod}() -> {aciklama}
- */
-```
+  mevcut metodu degistirirken listeyi kontrol edip guncelle. Bicim sablonu:
+  `project/docs/governance/process-rules.md`.
 
 ## 10. Validation
 
@@ -275,14 +268,8 @@ ozet yukumlulukler:
 - Riskli UI/API dogrulamasindan once localhost servisinin hangi worktree'den calistigi
   kontrol edilir.
 - DB-gated integration testlerde production veya local development veritabanina karsi test
-  kosulmaz:
-
-```text
-disposable Docker PostgreSQL container ayaga kaldir
-migration bu container uzerinde calistir
-integration test bu container uzerinde kos
-PASS olmadan PR acma
-```
+  kosulmaz; disposable container prosedduru
+  `project/docs/governance/process-rules.md`'dedir.
 
 ## 11. Canonical Constitution Compliance (Mandatory)
 
