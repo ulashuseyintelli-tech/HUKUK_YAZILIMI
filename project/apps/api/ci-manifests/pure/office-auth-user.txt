@@ -31,6 +31,12 @@
 #     bucket'ları. Dar allowlist dışında kalır → explicit step + test -f guard
 #     (ci-narrow-allowlist stale-test gap koruması).
 #
+#   RUNTIME-OPERABILITY-CERTIFICATION-R01-W1 controlled security/tenant runtime probe
+#     W0 AUTH / TENANT / SECURITY slice'indaki 16 HTTP capability'nin gerçek Nest route
+#     dispatch'ini; gerçek JWT/Admin/rate-limit guard zincirini; trusted tenant/actor
+#     propagation'ını ve W1 artifact overclaim guard'larını tek kontrollü test app'inde
+#     doğrular. Production activation/deployment yapmaz; dormant flag'leri açmaz.
+#
 src/modules/auth/__tests__/auth-login-passwordhash-guard.spec.ts
 src/modules/auth/__tests__/auth-register-seed.spec.ts
 src/modules/auth/__tests__/auth-tenant-aware-login.spec.ts
@@ -38,6 +44,7 @@ src/modules/auth/__tests__/auth-tokenversion-revocation.spec.ts
 src/modules/auth/guards/__tests__/credential-recovery-rate-limit.guard.spec.ts
 src/modules/auth/invite/__tests__/user-invite.service.spec.ts
 src/modules/auth/password-reset/__tests__/password-reset.service.spec.ts
+src/modules/auth/__tests__/security-tenant-runtime-certification.spec.ts
 src/modules/lawyer/__tests__/acting-lawyer-resolver.spec.ts
 src/modules/user/__tests__/change-password.service.spec.ts
 
