@@ -3103,3 +3103,116 @@ RUNTIME: PORTAL READ PATH LIVE · CLIENT-VISIBLE FINANCIAL DATA: SERVER-AUTHORIZ
 Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35–§44'ün kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; yazma/onay/gönderim/yayınlama akışlarına HİÇBİR production call-site AÇMAZ (bunlar dormant kalır); projeksiyon dışında hiçbir finansal alan AÇMAZ; yeni dependency EKLEMEZ.
 
 **PUBLISHED ≠ EVERY CLIENT MAY VIEW · SENT ≠ PUBLISHED · CLIENT-VISIBLE DATA = ONLY SERVER-AUTHORIZED PROJECTION.**
+
+## 46. CLIENT Phase 2 Track B I07 — Production Readiness, Acceptance and Program Closure (OWNER RATIFIED)
+
+Bu bölüm, `CLIENT-P2-U03-TRACK-B-COMPLETION-PROGRAM-R01` programının **kabul ve kapanış** kaydıdır (`decision-log.md` `CLIENT-P2-U03-TRACK-B-I07-PROGRAM-CLOSURE` kaydı). §5, §6, §8.A, §8.B, §11–§45 substantive hükümlerini DEĞİŞTİRMEZ; §35'in ve §37–§45'in **kendi metinleri DEĞİŞTİRİLMEMİŞTİR**.
+
+### 46.1 Program Zinciri ve SHA Kütüğü
+
+```text
+I01 DATA FOUNDATION           #1740 / #1743  32a42ed4 · f16202a6   CLOSED / APPLIED
+I02 SERVICE FOUNDATION        #1745 / #1748  bf5e668b · a24faeaf   CLOSED / CANONICAL
+I03 APPROVAL POLICY (gov)     #1761          dcee49ce              CLOSED / CANONICAL
+I03 APPROVAL RUNTIME          #1766 / #1769  691ef164 · 8f2fc5cd   CLOSED / CANONICAL
+I04 SEND-PUBLICATION-REVERSAL #1770 / #1774  438db3c8 · bcfc93cd   CLOSED / CANONICAL
+I05 AUTHORIZATION PROJECTION  #1777 / #1779  185be942 · ecfff5aa   CLOSED / CANONICAL
+I06 PORTAL PRESENTATION       #1782 / <gov>  1b7692aaf99831076a995591110f0b35e9f5716d            CLOSED / CANONICAL
+I06-R01 NAV REMEDIATION       #1790          0c0e463087422236a8dbf6972565f931fe6878f6              CLOSED / CANONICAL
+```
+
+Her kalem hem implementasyon hem governance kapanışı ile merge edilmiştir; hiçbiri "rapor yazıldı" ile kapatılmamıştır.
+
+### 46.2 Kümülatif Kanıt
+
+```text
+client-financial-disclosure API suite : I01+I02+I03+I04+I05 zinciri regresyonsuz
+portal API suite                      : 193/193 PASS (17 suite)
+web vitest TAM SUITE                  : 1381/1381 PASS (145 dosya)
+CI manifest (gercek run-ci-manifest.sh): db/domain-integration ve pure/client-portal PASS
+API build PASS · WEB next build PASS · eslint 0 error
+DIS (TEETH) toplami                   : I03 6/6 · I04 6/6 · I05 6/6 · I06 4/4  = 22 mutasyon
+yeni manifest ACILMADI · CI-8 butcesi ARTMADI · ci.yml HIC DEGISMEDI
+SCHEMA/MIGRATION: yalniz I01 (additive); I02-I06'da NONE
+```
+
+Tüm DB testleri disposable PostgreSQL 16 üzerinde koştu; canlı `hukuk_db`'ye **dokunulmadı** ve **gerçek e-posta gönderilmedi**.
+
+### 46.3 Runtime Gerçeği — DÜRÜST BEYAN
+
+Bu program **kod olarak tamamdır**, fakat runtime yüzeyi **kısmidir** ve bu bilerek böyledir:
+
+```text
+OKUMA YOLU  (projeksiyon -> portal)  : LIVE       (I05 + I06)
+YAZMA YOLU  (disclosure uretimi)     : DORMANT    (I02, production call-site YOK)
+ONAY YOLU   (ofis + icerik onayi)    : DORMANT    (I03, production call-site YOK)
+GONDERIM/YAYINLAMA YOLU              : DORMANT    (I04, production call-site YOK)
+```
+
+Repository doğrulaması: `ClientFinancialDisclosureWriterService`, `ClientFinancialDisclosureApprovalService` ve `ClientFinancialDisclosurePublicationService` için test dışı **sıfır** call-site vardır ve hiçbiri Nest provider **değildir**. Ayrıca `DisclosureNotificationDispatcher` portunun **hiçbir production adaptörü yoktur** — port ve onu tüketen servis dışında implementasyon **bulunmamaktadır**.
+
+**Sonuç:** bugün bir disclosure **üretilemez, onaylanamaz ve yayınlanamaz**; portal yüzeyi yayınlanmış kayıt olmadığı sürece **boş** döner. Bu bir kusur değil, §38.4/§42.2/§43.9'de kayıtlı **kasıtlı dormant sınırdır**; kaldırılması **ayrıca yetkilendirilmiş** bir aktivasyon görevi gerektirir.
+
+### 46.4 Production Activation — NOT VERIFIABLE
+
+```text
+PRODUCTION TARGET     : repository disinda dogrulanamaz
+EMAIL_PROVIDER runtime: UNKNOWN (secret/.env OKUNMADI — Phase 0 no-secrets kurali)
+ACTIVATION VERDICT    : NOT VERIFIABLE FROM REPOSITORY
+```
+
+Owner talimatı §15 gereği bu belirsizlik **yalnız aktivasyon bölümünü** durdurur; I03–I06 kod ve governance kapanışlarını **durdurmaz**. §35.10'un "mock provider production yayınlamayı ASLA yetkilendiremez" invariant'ı kodda uygulanmıştır (onaylı provider allowlist'i, guard provider'a tek byte gitmeden önce çalışır), fakat çalışma zamanı değerinin doğrulanması repository dışı bir işlemdir ve **yapılmamıştır**.
+
+### 46.5 Açık Kalan Owner-Gated Kalemler
+
+```text
+A. AKTIVASYON ADAPTORU  : dormant yazma/onay/yayinlama servislerini production akisina
+                          baglayacak, owner-gated bir adaptor + call-site. NOT AUTHORIZED.
+B. PROVIDER ADAPTORU    : DisclosureNotificationDispatcher'in gercek implementasyonu
+                          (EmailProviderService koprusu). NOT AUTHORIZED.
+C. PRODUCTION DOGRULAMA : EMAIL_PROVIDER ve hedef ortamin owner tarafindan dogrulanmasi.
+                          REPOSITORY DISI.
+```
+
+Bunların hiçbiri bu programın kapsamında **değildi** ve hiçbiri bu kayıtla **yetkilendirilmemektedir**.
+
+### 46.6 Program Statüsü
+
+```text
+CLIENT-P2-U03 TRACK B FINANCIAL DISCLOSURE
+
+I01 CLOSED / APPLIED
+I02 CLOSED / CANONICAL
+I03 CLOSED / CANONICAL
+I04 CLOSED / CANONICAL
+I05 CLOSED / CANONICAL
+I06 CLOSED / CANONICAL
+I07 CLOSED / CANONICAL   (bu kayitla)
+
+PROGRAM : CLOSED / CANONICAL / PASS
+KAPSAM  : kod + governance TAM; runtime aktivasyonu KAPSAM DISI ve NOT AUTHORIZED
+
+RUNTIME: PORTAL READ PATH LIVE · WRITE/APPROVAL/PUBLICATION PATH DORMANT
+CLIENT-VISIBLE FINANCIAL DATA: SERVER-AUTHORIZED PROJECTION ONLY
+LIVE CRITICAL BLOCKER: NONE
+```
+
+### 46.8 Kapanış Sonrası Bulunan ve Kapatılan Eksik (I06-R01)
+
+I06 kapanışından (§45) **sonra** yapılan bir tamlık kontrolünde, portal finansal bildirim sayfasının portal navigasyonunda **bağlantısının bulunmadığı** tespit edildi: sayfa yalnız URL elle yazılarak ulaşılabiliyordu. Bu, sunum diliminin gerçek bir eksiğiydi ve **raporlanıp bırakılmak yerine kapatıldı**.
+
+```text
+PR #1790 · 0c0e463087422236a8dbf6972565f931fe6878f6
+  layout.tsx : /portal/financial-disclosures baglantisi (Finansal Bildirimler sekmesi)
+  spec       : [7] navigasyon regresyon testi (layout kaynagini okur)
+  DIS        : nav href'i bozuldu -> [7] FAIL; geri yuklemede 7/7 PASS
+  web vitest TAM SUITE 1382/1382 PASS · next build PASS · eslint 0 error
+```
+
+**Yalnız gezinme:** yetki zinciri, alan sınırı ve projeksiyon **değişmedi**; API, servis, schema, migration ve `ci.yml` **dokunulmadı**. Client-görünür veri kümesi aynen kalır.
+
+### 46.7 Program Closure Self-Check
+
+Bu bölüm: aktivasyon adaptörünü, provider adaptörünü veya herhangi bir production call-site'ı YETKİLENDİRMEZ; `CLIENT-P2-U03`'ün Track A veya diğer dilimleri hakkında HÜKÜM VERMEZ; §35–§45'in kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; production ortamı hakkında DOĞRULANMAMIŞ hiçbir iddia TAŞIMAZ; UYAP/OFFICE/RCV/DEBTOR statülerini DEĞİŞTİRMEZ.
+
+**PROGRAM CLOSED ≠ FEATURE ACTIVATED · CODE COMPLETE ≠ RUNTIME LIVE · SENT ≠ PUBLISHED · PUBLISHED ≠ EVERY CLIENT MAY VIEW.**
