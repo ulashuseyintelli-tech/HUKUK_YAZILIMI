@@ -2528,3 +2528,92 @@ IMPLEMENTATION AUTHORITY    : NONE
 Bu bölüm: I02 implementasyonunu BAŞLATMAZ veya yetkilendirmez; migration uygulama yetkisi ÜRETMEZ; geçmişteki unattributed apply'ı **retroaktif olarak ratifiye ETMEZ** ve onun hakkında olmayan bir güvence üretmez; Track B'nin API/UI/publication dilimlerini AÇMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35/§36/§37/§38'in kendi metinlerini DEĞİŞTİRMEZ; UYAP POA drift'ini KAPATMAZ; diğer dört migration'ın program statülerini DEĞİŞTİRMEZ; Bank constraint-name drift'ini DÜZELTMEZ; kod, schema, migration, test veya CI DEĞİŞTİRMEZ.
 
 **I01 APPLIED ≠ CLIENT DATA MAY BE DISCLOSED · I02 RATIFIED ≠ I02 IMPLEMENTATION AUTHORIZED · APPLIED ≠ SAFELY APPLIED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
+
+## 40. CLIENT Phase 2 Track B I02 — Disclosure Service Foundation Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, §38'de ratifiye edilen `CLIENT-P2-U03-TRACK-B-I02` sözleşmesinin **teknik kapanış** kaydıdır (`decision-log.md` `CLIENT-P2-U03-TRACK-B-I02-CLOSURE` kaydı). §5, §6, §8.A, §8.B, §11–§39 substantive hükümlerini DEĞİŞTİRMEZ; §35'in, §37'nin, §38'in ve §39'un **kendi metinleri DEĞİŞTİRİLMEMİŞTİR**. §38.13'ün `IMPLEMENTATION AUTHORITY: NONE` hükmü owner tarafından **yalnız bu task için** kaldırılmış, implementasyon yürütülmüş ve bu kayıtla **tüketilmiş** sayılmaktadır — sonraki Track B dilimlerine **devredilmez**.
+
+### 40.1 Canonical Kimlik ve SHA
+
+```text
+TASK   : CLIENT-P2-U03-TRACK-B-I02
+TITLE  : DISCLOSURE SERVICE FOUNDATION AND INVARIANT ENFORCEMENT
+PR     : #1745
+SQUASH : bf5e668bcf07d572cdad11a76232381f7d52701f
+DIFF   : 7 dosya, +1338 / -0
+```
+
+**SCHEMA/MIGRATION: NONE** — I01 şeması I02 için yeterli çıktı (§26 doğrulandı). **API/UI/CONTROLLER: NONE.** **YENİ DEPENDENCY: NONE.**
+
+### 40.2 Dormant Servis Sınırı
+
+`ClientFinancialDisclosureWriterService` **bilerek Nest provider DEĞİLDİR** ve production call-site'ı **yoktur** (`TransactionalClaimItemFormationFinalizerService` emsali). Yalnız `DRAFT` versiyon üretir; ofis onayı, içerik onayı, gönderim, yayınlama ve reversal runtime'ları **kapsam dışıdır** (§38.10).
+
+### 40.3 Yeniden Kullanılan Canonical Emsaller
+
+Hiçbir algoritma veya generic kütüphane **uydurulmadı**: `canonicalJsonStringify` + `stableJsonHash` (`permission-diagnostics/guided-edge/canonical-json`) · domain-separated `sha256(contractVersion ‖ 0x00 ‖ canonicalJson)` (`claim-item-formation-canonical`) · `pg_advisory_xact_lock(hashtextextended(...))` (ClaimItem transactional finalizer) · tiplenmiş `ConflictException` + donmuş kod listesi (`claim-item-formation-finalizer.contract`). Repo lint kuralı gereği para biçimlendirmede `toFixed()` **kullanılmadı**.
+
+### 40.4 Tenant Consistency Enforcement
+
+Tüm ownership doğrulamaları write'tan **önce** ve **aynı transaction** içinde yapılır: `Case` tenant-scoped · `CaseClient` case-scoped · **`CaseClient`'in `Client`'ının tenant'ı input tenant'ı ile karşılaştırılır** (§37.3: `CaseClient`'te `tenantId` kolonu YOKTUR, oradaki bağ tenant güvencesi VERMEZ) · disposition tenant+case scoped · dispozisyonun `caseClientId`'si input ile eşleşmeli · `Collection` tenant+case scoped ve `CONFIRMED` · para birimi tutarlılığı. **"`findUnique(id)` → kayıt varsa kabul et" modeli KULLANILMADI.**
+
+### 40.5 Snapshot / Hash Sözleşmesi
+
+§35.4 gereği `Collection`(amount/currency/date), `CollectionDisposition`(totalAmount/currency/postedAt) ve satır(type+amount) **kopyalanır**, referans tutulmaz. Satır sırası `sourceDispositionLineId` üzerinden deterministik sıralanır ve `sortOrder` **türetilir** → kaynak okuma sırası hash'i değiştiremez. `Decimal(15,2)` canonical string locale-bağımsızdır ve **2'den fazla ondalık sessizce yuvarlanmaz, REDDEDİLİR** (§35.16 "yuvarlama artıkları sessizce atanamaz"). Hash payload'ı yaşam döngüsü / gönderim / içerik-onayı / `id` / timestamp alanı **taşımaz**.
+
+§35.16 zorunlu kesin reconciliation, **TOLERANS YOK**: `Σ satırlar = totalCollected` · `CLIENT_PAYABLE satırı = clientNetAmount`. `HELD_PENDING_DISTRIBUTION` satırı asla kabul edilmez (§35.5); `CASE_CREDITOR_CLUSTER` kapsamı fail-closed reddedilir (§35.3).
+
+### 40.6 Transaction / Idempotency / Concurrency
+
+aggregate + version + lines + current-version işaretçisi **tek transaction**'da. `sendIdempotencyKey` tenant-scoped; aynı anahtar + aynı kaynak parmak izi → **replay** (duplicate YOK), aynı anahtar + farklı kaynak durumu → `DISCLOSURE_IDEMPOTENCY_CONFLICT`. Caller versiyon numarası **veremez**. `P2002`/`P2003`/`P2025`/`P2034` tiplenmiş domain hatasına çevrilir; ham Prisma hatası, SQLSTATE veya stack trace **sızdırılmaz**, finansal payload log'a **yazılmaz**.
+
+### 40.7 Test Kanıtı
+
+```text
+unit (SAF, DB-siz)      : 15/15 PASS   (brief §30'un 12 maddesi)
+integration (PostgreSQL 16): 21/21 PASS   (brief §31 + §32'nin 4 yaris senaryosu,
+                            GERCEK ayri PrismaClient baglantilari)
+toplam                  : 36/36 PASS · API build PASS · I02 tsc hatasi 0 · eslint 0
+CI manifest binding (yeni manifest ACILMADI, CI-8 butcesi ARTMADI: 16/18):
+  pure/client-portal      324 -> 339  (+15)
+  db/domain-integration   184 -> 205  (+21)
+```
+
+Testler yalnız disposable PostgreSQL üzerinde koştu; canlı `hukuk_db`'ye **dokunulmadı** (test-infra fail-closed guard'ı korundu).
+
+### 40.8 Diş (Teeth) Doğrulaması — Dürüst Sonuç
+
+```text
+[A] client-tenant kontrolu kaldirildi     -> 1 test FAIL   (dis VAR)
+[C] reconciliation toplam kontrolu kald.  -> 1 unit FAIL   (dis VAR)
+[B] advisory lock kaldirildi              -> 21/21 GECTI   (dis YOK)
+[D] TOCTOU fingerprint re-check kaldirildi-> 21/21 GECTI   (dis YOK)
+geri yukleme                              -> 36/36 PASS
+```
+
+**B ve D için açık beyan:** bunlar **defense-in-depth**tir, yük taşıyan değil. Duplicate önlemenin gerçek enforcer'ı `@@unique([tenantId, collectionDispositionId])` DB constraint'idir; advisory lock çatışma gürültüsünü azaltır ve versiyon-sequence hesabını serileştirir. TOCTOU re-check'ini izole eden bir test **kurulamıyor**, çünkü advisory lock testi tetikleyecek araya-girmeyi zaten engelliyor. Bu sınır kod yorumlarında da yazılıdır ve koruma yük taşıyor gibi **sunulmamaktadır**.
+
+İlk teeth turu metodolojik olarak hatalıydı (yanlış spec, tutmayan regex ve gerçek bir kapsam boşluğu); `[2b]` izole cross-tenant testi bu turda **eklendi** ve A'nın dişi kanıtlandı.
+
+### 40.9 Statü
+
+```text
+CLIENT-P2-U03-TRACK-B-I02 : AUTHORIZED / IMPLEMENTED / VERIFIED / MERGED / CANONICAL
+I02 IMPLEMENTATION AUTHORITY : CONSUMED / CLOSED  (sonraki dilimlere DEVREDILMEZ)
+
+TRACK B ARCHITECTURE      : RATIFIED/CANONICAL     (§35, degismedi)
+TRACK B DATA FOUNDATION   : CLOSED/CANONICAL       (§37, degismedi)
+TRACK B I01 LIVE          : APPLIED                (§39, degismedi)
+TRACK B SERVICE FOUNDATION: CLOSED/CANONICAL       (bu kayitla)
+TRACK B API / UI / DASHBOARD / AUTHORIZATION PROJECTION /
+APPROVAL / PUBLICATION RUNTIME : NOT AUTHORIZED / NOT STARTED
+TRACK A (§34) · SPRING CLEANING (§36) : degismedi
+CLIENT-P2-U03 (genel)     : PARTIAL — NOT READY FOR FINAL CLOSURE
+RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
+```
+
+### 40.10 Closure Self-Check
+
+Bu bölüm: Track B'nin API/UI/dashboard/authorization projection/approval/publication dilimlerini BAŞLATMAZ veya yetkilendirmez; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35/§37/§38/§39'un kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; Track A davranışını DEĞİŞTİRMEZ; client-görünür hiçbir finansal veri AÇMAZ; disclosure servisini production akışına BAĞLAMAZ; UYAP/OFFICE/RCV/DEBTOR statülerini DEĞİŞTİRMEZ; yeni dependency EKLEMEZ.
+
+**I02 SERVICE EXISTS ≠ DISCLOSURE IS CLIENT-VISIBLE · DISCLOSURE RECORD EXISTS ≠ DISCLOSURE MAY BE PUBLISHED · CONTENT HASH EXISTS ≠ CONTENT IS APPROVED · I02 CLOSED ≠ TRACK B FULLY IMPLEMENTED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
