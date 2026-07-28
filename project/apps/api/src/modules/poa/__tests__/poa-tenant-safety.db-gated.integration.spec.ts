@@ -135,6 +135,69 @@ maybe('UYAP-POA-TENANT-SAFETY-I01 — DB-level tenant constraints', () => {
     });
   });
 
+  // ── UYAP-POA-TENANT-FK-DRIFT-REMEDIATION-R01 ────────────────────────────────
+  // `schema.prisma` her iki modelde `tenant Tenant @relation(..., onDelete: Cascade)`
+  // tanımlar; ancak `20260726210000_uyap_poa_tenant_safety_i01` bu iki FK'yi HİÇ üretmedi
+  // (SQL'de 0 kez) ve canlı DB'de yoklardı → `tenantId` kolonları `Tenant`'a referential
+  // integrity taşımıyordu. Aşağıdaki testler o drift'in kapandığını kanıtlar.
+  //
+  // NOT (dürüst sınır): bu iki FK **defense-in-depth**tir. Her iki tabloda `tenantId`'yi
+  // içeren bir composite FK de bulunduğundan (POA→Client, PoaLawyer→POA/Lawyer) ve o
+  // hedeflerin kendileri de `Tenant`'a bağlı olduğundan, YALNIZ bu FK'nin reddedeceği bir
+  // INSERT kombinasyonu kurulamaz. Bu nedenle davranışsal negatif test yerine constraint'in
+  // varlığı, tam tanımı ve VALIDATED durumu doğrulanır — eksik olan tam olarak buydu.
+  describe('UYAP-POA-TENANT-FK-DRIFT-REMEDIATION-R01 — Tenant FK drift kapanışı', () => {
+    it('her iki tenant FK de mevcut ve VALIDATED', async () => {
+      const rows = await prisma.$queryRawUnsafe<Array<{ conname: string; validated: boolean }>>(
+        `SELECT conname, convalidated AS validated FROM pg_constraint
+         WHERE conname IN ('ClientPowerOfAttorney_tenantId_fkey','PoaLawyer_tenantId_fkey')
+           AND contype = 'f'
+         ORDER BY conname`,
+      );
+      expect(rows.map((r) => r.conname)).toEqual([
+        'ClientPowerOfAttorney_tenantId_fkey',
+        'PoaLawyer_tenantId_fkey',
+      ]);
+      expect(rows.every((r) => r.validated === true)).toBe(true);
+    });
+
+    it('FK tanımları canonical sözleşmeyle birebir (Tenant.id, CASCADE/CASCADE)', async () => {
+      const rows = await prisma.$queryRawUnsafe<Array<{ conname: string; def: string }>>(
+        `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+         WHERE conname IN ('ClientPowerOfAttorney_tenantId_fkey','PoaLawyer_tenantId_fkey')
+         ORDER BY conname`,
+      );
+      expect(rows).toHaveLength(2);
+      for (const r of rows) {
+        expect(r.def).toMatch(/FOREIGN KEY \("tenantId"\) REFERENCES "Tenant"\(id\)/);
+        expect(r.def).toMatch(/ON UPDATE CASCADE/);
+        expect(r.def).toMatch(/ON DELETE CASCADE/);
+      }
+    });
+
+    it('geçerli tenant ile POA ve PoaLawyer hâlâ oluşturulabilir (regresyon yok)', async () => {
+      const poaR = `poa-fkr-${S}`;
+      await expect(insertPoa(poaR, tenantB, clientB)).resolves.toBeDefined();
+      await expect(insertPoaLawyer(`pl-fkr-${S}`, tenantB, poaR, lawyerB)).resolves.toBeDefined();
+    });
+
+    it('var olmayan tenantId ile POA yazılamaz (tenant referential integrity)', async () => {
+      await expect(
+        sql(`INSERT INTO "ClientPowerOfAttorney"("id","tenantId","clientId","createdAt","updatedAt")
+             VALUES ('poa-ghost-${S}','ghost-tenant-${S}','${clientA}',now(),now())`),
+      ).rejects.toThrow(/fkey|foreign key/i);
+    });
+
+    // (poaA, lawyerA) cifti pozitif testte kullanildi; @@unique([poaId, lawyerId]) FK'den
+    // once tetiklenmesin diye burada serbest olan (poaA, lawyerB) cifti kullanilir.
+    it('var olmayan tenantId ile PoaLawyer yazılamaz (tenant referential integrity)', async () => {
+      await expect(
+        sql(`INSERT INTO "PoaLawyer"("id","tenantId","poaId","lawyerId")
+             VALUES ('pl-ghost-${S}','ghost-tenant-${S}','${poaA}','${lawyerB}')`),
+      ).rejects.toThrow(/fkey|foreign key/i);
+    });
+  });
+
   describe('tenant query isolation', () => {
     it('tenant-scoped sorgu diğer tenant satırlarını görmez', async () => {
       const poaB = `poa-pB-${S}`;

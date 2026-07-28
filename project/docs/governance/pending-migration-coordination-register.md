@@ -1463,3 +1463,31 @@ Bank constraint-name drift'i       : DUZELTILMEDI (ACCEPTED_PRE_EXISTING)
 ```
 
 **MIGRATION APPLIED ≠ PROGRAM CLOSED · APPLIED ≠ SAFELY APPLIED · UNATTRIBUTED ≠ UNAUTHORIZED-BY-A-NAMED-ACTOR.**
+
+---
+
+## 23. UYAP-POA-TENANT-FK-DRIFT-REMEDIATION-R01 — corrective migration (2026-07-28)
+
+Kaynak: `MIGRATION-TRAIN-POST-APPLY-RECOVERY-P01` / TASK 03.
+
+§22.6'da `OPEN` olarak kaydedilen UYAP POA tenant FK drift'ini kapatan **additive corrective migration** üretildi. Bu bölüm yalnız migration'ın varlığını ve live-apply beklediğini kaydeder; **live-apply gerçeği ayrı bir bölümle kaydedilecektir.**
+
+```text
+MIGRATION : 20260728140000_uyap_poa_tenant_fk_drift_remediation_r01
+KAPSAM    : yalniz iki eksik Tenant FK
+              ClientPowerOfAttorney_tenantId_fkey
+              PoaLawyer_tenantId_fkey
+            FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE   (canonical schema sozlesmesi)
+SCHEMA    : schema.prisma DEGISTIRILMEDI — iliskiler zaten dogru tanimliydi
+DESTRUCTIVE: yok (tablo/kolon silinmez, veri degistirilmez)
+HISTORICAL MIGRATION: DEGISTIRILMEDI
+
+VERI BUTUNLUGU KAPISI (salt-okuma, uygulama oncesi — hepsi 0):
+  tenantId NULL (POA / PoaLawyer)                  : 0 / 0
+  orphan tenantId (POA / PoaLawyer)                : 0 / 0
+  POA vs Client · PoaLawyer vs POA · vs Lawyer     : 0 / 0 / 0
+
+LIVE APPLY: MERGED UPON APPROVED MERGE / PENDING LIVE APPLY
+LIVE APPLY AUTHORITY: TASK 03 kapsaminda, implementation PR merge edildikten SONRA
+```
