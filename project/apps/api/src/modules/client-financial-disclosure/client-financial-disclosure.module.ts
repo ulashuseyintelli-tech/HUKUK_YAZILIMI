@@ -10,6 +10,7 @@ import { UnconfiguredDisclosureNotificationDispatcher } from './unconfigured-dis
 import { EmailProviderService } from '../notification/email-provider.service';
 import { ClientFinancialDisclosureEmailDispatcher } from './client-financial-disclosure-email-dispatcher';
 import { CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS } from './client-financial-disclosure-publication.contract';
+import { isDisclosurePublicationEnabled } from './client-financial-disclosure-activation';
 
 /**
  * CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01 / I02 — PRODUCTION COMPOSITION BINDING
@@ -58,10 +59,15 @@ import { CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS } from './client-financi
         real: ClientFinancialDisclosureEmailDispatcher,
         fallback: UnconfiguredDisclosureNotificationDispatcher,
       ) => {
+        // I05 §7.3 CANONICAL ENFORCEMENT NOKTASI: yayınlama kapısı burada, composition
+        // seviyesinde uygulanır. Controller veya application katmanı BYPASS EDİLSE BİLE
+        // dispatcher'ın kendisi fail-closed olduğu için dış gönderim GERÇEKLEŞEMEZ.
+        if (!isDisclosurePublicationEnabled()) return fallback;
         const configured = (real.providerName ?? '').trim().toLowerCase();
         const approved = (CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS as readonly string[]).includes(
           configured,
         );
+        // Yayınlama AÇIK fakat onaylı adapter YOKSA no-op "başarı" ÜRETİLMEZ — fail-closed.
         return approved ? real : fallback;
       },
     },
