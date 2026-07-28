@@ -167,6 +167,10 @@ Implementation`. `BACKLOG → READY` ve roadmap tasimalari owner onayi olmadan u
   merge yapilmaz.
 - `FAILURE`, `CANCELLED`, gercek platform timeout'u veya unresolved stall halinde exact
   blocker raporlanir.
+- Merge authority PASS ise kapanis VARSAYILAN olarak deterministic closeout runner ile
+  yurutulur (`pnpm orch:closeout`). Manuel kapanis fallback'tir: runner kullanilamiyor,
+  senaryoyu desteklemiyor veya exact blocker uretiyorsa uygulanir ve gerekcesi raporlanir.
+  Prosedur: `project/docs/runbooks/pr-closeout.md`.
 - Standing veya unattended GitHub auto-merge, scheduler ya da reusable merge grant
   uretilmez. Merge authority'nin nasil verildigi ve neyin authority sayilmadigi §4'te
   tanimlidir; burada tekrar edilmez.
