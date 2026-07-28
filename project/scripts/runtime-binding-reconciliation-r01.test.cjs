@@ -6,6 +6,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const { spawnSync } = require('node:child_process');
+const {
+  classifyClosureCapabilityMapping,
+  closureCertificationStatus,
+  isReliableClosureClaim,
+  legacyHistoricalStatusForTitle,
+  parseHistoricalClosureClaim,
+} = require('./runtime-binding-reconciliation-r01.cjs');
 
 const projectRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(projectRoot, '..');
@@ -17,6 +24,16 @@ const auditDirectory = path.join(
 );
 const inventoryPath = path.join(auditDirectory, 'runtime-capability-inventory.json');
 const matrixPath = path.join(auditDirectory, 'runtime-binding-matrix.csv');
+const successorDirectory = path.join(
+  projectRoot,
+  'docs',
+  'audit',
+  'runtime-operability-certification-r01',
+);
+const successorPath = path.join(
+  successorDirectory,
+  'historical-closure-certification.json',
+);
 
 function readInventory() {
   return JSON.parse(fs.readFileSync(inventoryPath, 'utf8'));
@@ -115,4 +132,158 @@ test('only SHA-bound L6 evidence is classified verified operational', () => {
     capability.verificationLevel === 'L6' &&
     capability.independentlyVerified === true &&
     capability.evidenceRefs.some((ref) => ref.includes('delivery-evidence-'))));
+});
+
+test('contextual closure parser excludes the four known fail-closed false positives', () => {
+  const titles = [
+    'fix(interest): fail closed on NO_BUCKETS (ADR-014 PR-2) (#1104)',
+    'fix(receivable): fail closed unsupported rule components (RCV-CLAIM-FORM-P02-S01) (#1439)',
+    'fix(tariff): fail closed on missing required tariff sections (#997)',
+    'fix(uyap): fail closed on unsupported legacy instrument export',
+  ];
+
+  for (const [index, title] of titles.entries()) {
+    assert.equal(legacyHistoricalStatusForTitle(title, true), 'CLOSED');
+    const claim = parseHistoricalClosureClaim(`fixture:fail-closed:${index}`, title);
+    assert.equal(claim.claimType, 'FALSE_POSITIVE_FAIL_CLOSED');
+    assert.equal(claim.disposition, 'FALSE_POSITIVE');
+    assert.equal(claim.confidence, 'LOW');
+    assert.equal(isReliableClosureClaim(claim), false);
+  }
+});
+
+test('explicit terminal status is accepted while feature-name closeout is excluded', () => {
+  const explicit = parseHistoricalClosureClaim(
+    'fixture:explicit',
+    'FINAL STATUS: CLOSED',
+  );
+  const feature = parseHistoricalClosureClaim(
+    'fixture:feature',
+    'feat(governance): GOV-DETERMINISTIC-PR-CLOSEOUT-AUTOMATION-R01 (#1716)',
+  );
+  const technical = parseHistoricalClosureClaim(
+    'fixture:technical',
+    'docs: review closure methodology',
+  );
+
+  assert.equal(isReliableClosureClaim(explicit), true);
+  assert.equal(explicit.confidence, 'HIGH');
+  assert.equal(legacyHistoricalStatusForTitle(feature.normalizedTitle, true), 'CLOSED');
+  assert.equal(feature.claimType, 'FALSE_POSITIVE_CLOSEOUT_NAME');
+  assert.equal(isReliableClosureClaim(feature), false);
+  assert.equal(technical.claimType, 'FALSE_POSITIVE_TECHNICAL_CLOSURE');
+  assert.equal(isReliableClosureClaim(technical), false);
+});
+
+test('package-file history is contained to the exact changed script key', () => {
+  const claimItem = {
+    historicalWorkId: 'HIST-PACKAGE',
+    sourceRefs: ['git:package'],
+    changedFiles: ['project/package.json'],
+    closureClaim: {
+      sourceRef: 'git:package',
+      normalizedTitle: 'FINAL STATUS: CLOSED',
+    },
+  };
+  const capability = (id, scriptName) => ({
+    capabilityId: id,
+    implementationFiles: ['project/package.json'],
+    registrationSites: [`project/package.json:scripts.${scriptName}`],
+  });
+  const changedScripts = new Map([
+    ['project/package.json', new Set(['orch:closeout'])],
+  ]);
+
+  const exact = classifyClosureCapabilityMapping(
+    claimItem,
+    capability('CLI-EXACT', 'orch:closeout'),
+    changedScripts,
+  );
+  const unrelated = classifyClosureCapabilityMapping(
+    claimItem,
+    capability('CLI-UNRELATED', 'build'),
+    changedScripts,
+  );
+
+  assert.equal(exact.evidenceLevel, 'EXACT_PACKAGE_SCRIPT_KEY');
+  assert.equal(unrelated.evidenceLevel, 'UNMAPPED');
+});
+
+test('direct implementation mapping never promotes unverified runtime to operational closure', () => {
+  const claimItem = {
+    historicalWorkId: 'HIST-PORTAL',
+    sourceRefs: ['git:portal'],
+    changedFiles: ['project/apps/web/src/app/portal/page.tsx'],
+    closureClaim: {
+      sourceRef: 'git:portal',
+      normalizedTitle: 'FINAL STATUS: CLOSED',
+    },
+  };
+  const mapping = classifyClosureCapabilityMapping(claimItem, {
+    capabilityId: 'UI-PORTAL',
+    implementationFiles: ['project/apps/web/src/app/portal/page.tsx'],
+    registrationSites: [],
+  });
+
+  assert.equal(mapping.evidenceLevel, 'DIRECT_IMPLEMENTATION_FILE');
+  assert.equal(
+    closureCertificationStatus('OPERABLE_UNVERIFIED', true),
+    'CLOSED_EVIDENCE_INSUFFICIENT',
+  );
+  assert.equal(
+    closureCertificationStatus('VERIFIED_OPERATIONAL', true),
+    'CLOSED_OPERATIONAL_CONFIRMED',
+  );
+});
+
+test('successor artifact has closed shape, metrics, and one certification per capability', () => {
+  const successor = JSON.parse(fs.readFileSync(successorPath, 'utf8'));
+  const allowedMappingLevels = new Set([
+    'EXACT_CAPABILITY_REF',
+    'EXACT_PACKAGE_SCRIPT_KEY',
+    'DIRECT_IMPLEMENTATION_FILE',
+    'BROAD_FILE_TOUCH',
+    'UNMAPPED',
+  ]);
+
+  assert.equal(successor.schemaVersion, 1);
+  assert.equal(successor.ownerDecision, 'RATIFIED');
+  assert.equal(successor.executionGrant, 'GO-COMPLETE');
+  assert.equal(successor.certifications.length, successor.metadata.capabilityCount);
+  assert.equal(
+    new Set(successor.certifications.map((item) => item.capabilityId)).size,
+    successor.metadata.capabilityCount,
+  );
+  assert.ok(successor.mappings.every((item) =>
+    allowedMappingLevels.has(item.evidenceLevel)));
+  assert.equal(
+    successor.metrics.provenClosureDefectCount,
+    successor.certifications.filter((item) => [
+      'CLOSED_BINDING_DEFECT',
+      'CLOSED_ACTIVATION_DEFECT',
+      'CLOSED_REACHABILITY_DEFECT',
+      'CLOSED_OPERABILITY_DEFECT',
+    ].includes(item.closureCertificationStatus)).length,
+  );
+  assert.equal(
+    successor.metrics.closureUncertifiedCount,
+    successor.certifications.filter((item) => [
+      'CLOSED_STATICALLY_BOUND_UNVERIFIED',
+      'CLOSED_EVIDENCE_INSUFFICIENT',
+    ].includes(item.closureCertificationStatus)).length,
+  );
+});
+
+test('PR #1795 sealed artifact tree is unchanged from the frozen audit base', () => {
+  const successor = JSON.parse(fs.readFileSync(successorPath, 'utf8'));
+  const sealedPath = 'project/docs/audit/runtime-binding-reconciliation-r01';
+  const baseTree = git(
+    'rev-parse',
+    `${successor.metadata.auditBaseSha}:${sealedPath}`,
+  );
+  const headTree = git('rev-parse', `HEAD:${sealedPath}`);
+
+  assert.equal(baseTree, successor.metadata.sealedPr1795ArtifactTreeSha);
+  assert.equal(headTree, baseTree);
+  assert.equal(git('status', '--porcelain=v1', '--', sealedPath), '');
 });
