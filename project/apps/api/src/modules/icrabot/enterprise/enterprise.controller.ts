@@ -31,7 +31,6 @@ import {
 } from './dto/enterprise-approval.dto';
 import { AuditChainService } from './audit-chain.service';
 import { ApprovalWorkflowService, ApprovalDecision } from './approval-workflow.service';
-import { JobLeasingService } from './job-leasing.service';
 import { BackpressureService } from './backpressure.service';
 import { PlanLimitsService, PlanType } from './plan-limits.service';
 
@@ -225,86 +224,33 @@ export class ApprovalWorkflowController {
 }
 
 // ============================================================
-// JOB LEASING CONTROLLER
+// JOB LEASING CONTROLLER — KALDIRILDI
+//
+// DEBTOR-ENTERPRISE-LEASING-CONTAINMENT-P1-I03 (bulgu R02-F09C)
+//
+// Dort ucun HEPSI YAZMA idi ve HICBIRINDE guard yoktu; tenant ve worker kimligi
+// dogrudan istek govdesinden/URL'den okunuyordu:
+//   POST /icrabot/enterprise/leasing/acquire          (body: tenantId, workerId)
+//   POST /icrabot/enterprise/leasing/release          (body: jobId, workerId, status)
+//   POST /icrabot/enterprise/leasing/extend           (body: jobId, workerId)
+//   POST /icrabot/enterprise/leasing/cleanup/:tenantId (URL: tenantId)
+//
+// Kimliksiz bir cagiran boylece baska tenant'in kuyrugundan is kapabiliyor,
+// baskasinin isini DONE/FAILED isaretleyebiliyor, lease uzatarak gercek worker'i
+// ac birakabiliyor ve bir tenant'in lease'lerini toplu temizleyebiliyordu.
+//
+// Iki bagimsiz repo taramasi uretim tuketicisi bulamadi: frontend 0, servis 0,
+// scheduler/worker 0, Python katmanindaki `job_leasing_pseudo.py` bastan sona
+// `# Pseudo-code (Django)` tasarim notu — calisan bir HTTP istemcisi DEGIL.
+// Route yalniz kendi tanimi, iki audit dokumani ve README'de geciyordu.
+//
+// Bu nedenle yetki modeli ICAT EDILMEDI; public HTTP yuzeyi kaldirildi.
+//
+// `JobLeasingService`, veri modeli ve schema KORUNDU (PRESERVED / DORMANT
+// INTERNAL CAPABILITY). Ileride gercek bir worker gerektiginde bu yetenek
+// yerinde durur; ancak o noktada AUTHENTICATED bir internal control-plane
+// TASARLANARAK eklenmelidir — bu dosyadaki eski guard'siz uclar geri getirilmez.
 // ============================================================
-@Controller('icrabot/enterprise/leasing')
-export class JobLeasingController {
-  constructor(private readonly leasingService: JobLeasingService) {}
-
-  /**
-   * Acquire a job lease (for workers)
-   */
-  @Post('acquire')
-  @HttpCode(HttpStatus.OK)
-  async acquireLease(
-    @Body() body: {
-      tenantId: string;
-      workerId: string;
-      leaseTtlSeconds?: number;
-    },
-  ) {
-    const job = await this.leasingService.acquireLease(
-      body.tenantId,
-      body.workerId,
-      body.leaseTtlSeconds,
-    );
-    return { ok: !!job, job };
-  }
-
-  /**
-   * Release a job lease
-   */
-  @Post('release')
-  @HttpCode(HttpStatus.OK)
-  async releaseLease(
-    @Body() body: {
-      jobId: string;
-      workerId: string;
-      status: 'DONE' | 'FAILED';
-      errorCode?: string;
-      errorMessage?: string;
-    },
-  ) {
-    const success = await this.leasingService.releaseLease(
-      body.jobId,
-      body.workerId,
-      body.status,
-      body.errorCode,
-      body.errorMessage,
-    );
-    return { ok: success };
-  }
-
-  /**
-   * Extend a job lease
-   */
-  @Post('extend')
-  @HttpCode(HttpStatus.OK)
-  async extendLease(
-    @Body() body: {
-      jobId: string;
-      workerId: string;
-      extensionSeconds?: number;
-    },
-  ) {
-    const success = await this.leasingService.extendLease(
-      body.jobId,
-      body.workerId,
-      body.extensionSeconds,
-    );
-    return { ok: success };
-  }
-
-  /**
-   * Cleanup expired leases
-   */
-  @Post('cleanup/:tenantId')
-  @HttpCode(HttpStatus.OK)
-  async cleanupExpired(@Param('tenantId') tenantId: string) {
-    const count = await this.leasingService.cleanupExpiredLeases(tenantId);
-    return { ok: true, cleanedUp: count };
-  }
-}
 
 // ============================================================
 // BACKPRESSURE CONTROLLER

@@ -16,7 +16,6 @@ export { PlanLimitsService, PlanType, PlanLimits, UsageStats, LimitCheckResult }
 export {
   AuditChainController,
   ApprovalWorkflowController,
-  JobLeasingController,
   BackpressureController,
   PlanLimitsController,
 } from './enterprise.controller';
