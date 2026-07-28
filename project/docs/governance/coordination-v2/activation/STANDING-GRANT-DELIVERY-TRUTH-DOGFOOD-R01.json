@@ -10,7 +10,7 @@
     "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R02/execution-grant.md",
     "payloadSha256": "e4b024e6a5c62bbf31d44f42207b82a7381d77e099b86c0516418a1c84ceca7f"
   },
-  "requiredIndependentReview": false,
+  "requiredIndependentReview": true,
   "ciPolicy": {
     "requireTerminalSuccess": true,
     "allowSkipped": false,

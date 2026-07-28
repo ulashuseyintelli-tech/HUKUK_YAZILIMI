@@ -26,6 +26,20 @@ YAPMAZ  : owner authority uretmez
 Belirsizlikte **fail-closed** davranır: herhangi bir gate PASS değilse hiçbir mutation
 yapılmaz.
 
+## Varsayilan yol ve fallback
+
+`AGENTS.md` §5 uyarınca merge authority PASS olan bir kapanışta **varsayılan yol bu
+runner'dır**. Manuel kapanış fallback'tir ve yalnız şu durumlarda kullanılır:
+
+| Fallback sebebi | Örnek |
+|---|---|
+| Runner kullanılamıyor | komut/ortam erişilemez, modül yüklenmiyor |
+| Senaryo desteklenmiyor | ledger'a bağlanamayan owner beyanı; squash dışı merge method |
+| Runner exact blocker üretiyor | gate'ler PASS ama runner tarafında çözülemeyen teknik hata |
+
+Fallback kullanıldığında **gerekçesi kapanış raporunda yazılır**. Fallback gate atlamak
+için kullanılamaz: manuel kapanışta da aynı gate'ler elle doğrulanır.
+
 ## Authority
 
 Yalnız üç task-bound tip kabul edilir:

@@ -9,5 +9,6 @@
   "executorLane": "CODEX_LOCAL",
   "targetBranch": "main",
   "autoMerge": true,
-  "notes": "ORCHESTRA-DELIVERY-TRUTH-R01 WP04 dogfood certification. Task grant is documentation of the pinned digests, not a committed authority artefact: the service path validates against the standing grant, so binding a task grant here would add a ratification-SHA cycle no single PR can close."
+  "notes": "ORCHESTRA-DELIVERY-TRUTH-R01 WP04 dogfood certification. Task grant is documentation of the pinned digests, not a committed authority artefact: the service path validates against the standing grant, so binding a task grant here would add a ratification-SHA cycle no single PR can close.",
+  "requireCommittedArtefacts": true
 }
