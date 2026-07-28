@@ -78,6 +78,7 @@ src/modules/client/__tests__/client-operating-snapshot.spec.ts
 #     sha256, §35.16 sifir-toleransli reconciliation ve tiplenmis hata govdesinde finansal
 #     payload/hash sizmadiginin kaniti. Servis katmani testleri db/domain-integration.txt'de.
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-canonical.spec.ts
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-approval-policy.spec.ts
 src/modules/client/__tests__/client-poa-reminder-command.spec.ts
 src/modules/client/__tests__/client-poa-upload-command.spec.ts
 src/modules/client/__tests__/client-reactivate.spec.ts

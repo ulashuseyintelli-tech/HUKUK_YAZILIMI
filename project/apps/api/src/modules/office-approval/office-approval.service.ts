@@ -40,6 +40,7 @@ import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.service';
 import { PayoutApprovalPolicy } from './client-payout-approval.policy';
+import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disclosure-approval.policy';
 import { isValidTckn } from '../../common/identity-validation.util';
 
 export interface CreatePendingRequestInput {
@@ -63,6 +64,9 @@ export class OfficeApprovalService {
     // PAYOUT-APPROVAL-2: mevcut 2/3-argümanlı çağıranlar (testler dahil) etkilenmez — prisma'dan
     // kendi kendine kurulur (ClientPayoutService.journalWriter ile AYNI desen).
     private readonly payoutApprovalPolicy: PayoutApprovalPolicy = new PayoutApprovalPolicy(prisma),
+    private readonly clientFinancialDisclosureApprovalPolicy: ClientFinancialDisclosureApprovalPolicy = new ClientFinancialDisclosureApprovalPolicy(
+      prisma,
+    ),
   ) {}
 
   /**
@@ -461,6 +465,12 @@ export class OfficeApprovalService {
   private async resolveApproverEligible(req: OfficeApprovalRequest, approverUserId: string): Promise<boolean> {
     if (req.actionCode === ActionCode.CLIENT_PAYOUT_POST) {
       return this.payoutApprovalPolicy.isEligible(approverUserId, req.tenantId);
+    }
+    // CLIENT-P2-U03-TRACK-B-I03 (charter §41, owner kararı PR #1761) — ÜÇÜNCÜ dal. Aynı izolasyon
+    // deseni: yalnız bu actionCode disclosure politikasına gider (MANAGER dahil), diğer hiçbir
+    // actionCode etkilenmez ve paylaşılan isApproverEligible() DEĞİŞTİRİLMEZ.
+    if (req.actionCode === ActionCode.CLIENT_FINANCIAL_DISCLOSURE_APPROVE) {
+      return this.clientFinancialDisclosureApprovalPolicy.isEligible(approverUserId, req.tenantId);
     }
     return this.isApproverEligible(approverUserId, req.tenantId);
   }

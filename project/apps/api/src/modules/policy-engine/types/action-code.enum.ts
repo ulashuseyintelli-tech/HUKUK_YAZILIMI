@@ -245,6 +245,16 @@ export enum ActionCode {
   CLIENT_PAYOUT_POST = 'CLIENT_PAYOUT_POST',
 
   /**
+   * CLIENT-P2-U03-TRACK-B-I03 (charter §41, owner karari PR #1761) — muvekkil finansal
+   * bildirim (disclosure) VERSIYONUNUN ofis onayi. Hedef aggregate degil VERSIYONDUR ve onay
+   * tam olarak o versiyonun `snapshotHash`ine baglanir (§35.8). Yeterlilik izole
+   * ClientFinancialDisclosureApprovalPolicy'dedir (MANAGER dahil); genisleme baska hicbir
+   * actionCode'a sizmaz. DBIND §5 self-approval istisnasi bu actionCode'a UYGULANMAZ —
+   * requester hicbir asamayi onaylayamaz (§41.2 KARAR 2/4).
+   */
+  CLIENT_FINANCIAL_DISCLOSURE_APPROVE = 'CLIENT_FINANCIAL_DISCLOSURE_APPROVE',
+
+  /**
    * OWN-29-D — ClaimItem / receivable high-impact mutation approval.
    * Payout degildir; DBIND §5 self-approval exception bu actionCode'a uygulanmaz.
    */
@@ -341,6 +351,9 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
 
   // PAYOUT-APPROVAL-2 - Müvekkile ödeme talebini kesinleştir (ClientPayout finalize)
   [ActionCode.CLIENT_PAYOUT_POST]: RiskLevel.HIGH,
+
+  // CLIENT-P2-U03-TRACK-B-I03 - Muvekkil finansal bildirim versiyonu ofis onayi
+  [ActionCode.CLIENT_FINANCIAL_DISCLOSURE_APPROVE]: RiskLevel.HIGH,
 
   // OWN-29-D - Alacak kalemi yüksek etkili mutasyon onayı
   [ActionCode.CLAIM_ITEM_HIGH_IMPACT_CHANGE]: RiskLevel.HIGH,

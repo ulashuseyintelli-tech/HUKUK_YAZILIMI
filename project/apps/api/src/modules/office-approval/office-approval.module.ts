@@ -8,6 +8,7 @@ import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.s
 import { OfficeApprovalShadowService } from './office-approval-shadow.service';
 import { OfficeApprovalController } from './office-approval.controller';
 import { PayoutApprovalPolicy } from './client-payout-approval.policy';
+import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disclosure-approval.policy';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { DomainEventIngestModule } from '../icrabot/domain-event-ingest';
 import { AccountingJournalWriterService } from '../accounting-journal';
@@ -22,10 +23,12 @@ import { AuditModule } from '../audit/audit.module';
     OfficeApprovalShadowService,
     OfficeApprovalDomainSyncService,
     PayoutApprovalPolicy,
+    // CLIENT-P2-U03-TRACK-B-I03 — CLIENT_FINANCIAL_DISCLOSURE_APPROVE izole yeterlilik politikası.
+    ClientFinancialDisclosureApprovalPolicy,
     AccountingJournalWriterService,
   ],
   // PAYOUT-APPROVAL-2: PayoutApprovalPolicy export → ClientSettlementModule (zaten bu modülü import ediyor)
   // ClientPayoutService.finalize()'da izole re-check için kullanır.
-  exports: [OfficeApprovalService, OfficeApprovalShadowService, OfficeApprovalDomainSyncService, PayoutApprovalPolicy],
+  exports: [OfficeApprovalService, OfficeApprovalShadowService, OfficeApprovalDomainSyncService, PayoutApprovalPolicy, ClientFinancialDisclosureApprovalPolicy],
 })
 export class OfficeApprovalModule {}
