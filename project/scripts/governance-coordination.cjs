@@ -23,6 +23,10 @@ const REQUESTS_ROOT = path.join(GOVERNANCE_ROOT, 'coordination-requests');
 const RESULTS_ROOT = path.join(GOVERNANCE_ROOT, 'coordination-results');
 const GRANT_REPO_PATH =
   'project/docs/governance/coordination-execution-grants/GOV-COORD-V1-CODEX-LOCAL.md';
+const GIT_DEFAULT_PROCESS_MAX_BUFFER_BYTES = 2 * 1024 * 1024;
+const GIT_CANONICAL_TEXT_BLOB_LIMIT_BYTES = 8 * 1024 * 1024;
+const GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+const GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS = 4096;
 
 const REQUEST_KEYS = [
   'schemaVersion',
@@ -270,6 +274,25 @@ const RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01 = Object.free
       recordId: 'RCV-COL-FULL-REMEDIATION-EXECUTION-GRANT-R01',
     }),
   }),
+});
+const RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01 = Object.freeze({
+  taskId: 'GOV-COORD-RCV-COL-LARGE-AUTHORITY-READ-REPAIR-R01',
+  mode: 'GOV_COORD_RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01',
+  baseSha: 'd4ffd3ef277554d3c45e6471bf96f14af4b3fcd1',
+  headRef: 'codex/gov-coord-rcv-col-large-authority-read-repair-r01',
+  contractPath:
+    'project/docs/governance/governance-writer-coordination-contract.md',
+  changedPaths: Object.freeze([
+    Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.cjs' }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/scripts/governance-coordination.test.cjs',
+    }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/docs/governance/governance-writer-coordination-contract.md',
+    }),
+  ]),
 });
 const GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02 = Object.freeze({
   taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-RECOVERY-R02',
@@ -834,16 +857,75 @@ function assertNoSymlinkPath(repoRoot, repoPath) {
   }
 }
 
+function boundedGitDiagnostic(
+  value,
+  maxChars = GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS,
+) {
+  const text = String(value || '').trim();
+  if (text.length <= maxChars) return text;
+  const suffix = '...[diagnostic truncated]';
+  return `${text.slice(0, Math.max(0, maxChars - suffix.length))}${suffix}`;
+}
+
+function gitOutputMetrics(value) {
+  const text = Buffer.isBuffer(value) ? value.toString('utf8') : String(value || '');
+  return {
+    bytes: Buffer.byteLength(text, 'utf8'),
+    characters: text.length,
+  };
+}
+
+function sanitizeGitSubcommand(args) {
+  return String(args[0] || 'command')
+    .replace(/[^A-Za-z0-9-]/g, '?')
+    .slice(0, 64);
+}
+
 function runGit(args, cwd = REPO_ROOT, options = {}) {
+  const maxBufferBytes =
+    options.maxBufferBytes ?? GIT_DEFAULT_PROCESS_MAX_BUFFER_BYTES;
+  if (
+    !Number.isSafeInteger(maxBufferBytes) ||
+    maxBufferBytes <= 0 ||
+    maxBufferBytes > GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES
+  ) {
+    reject(
+      'GIT_CAPTURE_LIMIT_INVALID',
+      `git maxBufferBytes must be a positive safe integer not greater than ${GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES}`,
+    );
+  }
   const result = spawnSync('git', args, {
     cwd,
     encoding: 'utf8',
     stdio: options.stdio || 'pipe',
+    maxBuffer: maxBufferBytes,
+    windowsHide: true,
   });
-  if (result.status !== 0 && !options.allowFailure) {
+
+  if (result.error?.code === 'ENOBUFS') {
+    const stdout = gitOutputMetrics(result.stdout);
+    const stderr = gitOutputMetrics(result.stderr);
+    reject(
+      'GIT_OUTPUT_LIMIT_EXCEEDED',
+      `git ${sanitizeGitSubcommand(args)} output exceeded bounded limit ${maxBufferBytes} bytes (stdoutBytes=${stdout.bytes}, stdoutCharacters=${stdout.characters}, stderrBytes=${stderr.bytes}, stderrCharacters=${stderr.characters})`,
+    );
+  }
+  if (result.error) {
+    const errorCode = boundedGitDiagnostic(result.error.code || 'UNKNOWN', 64);
+    reject('GIT_VALIDATION_FAILED', `git process failed (${errorCode})`);
+  }
+  if (result.signal) {
+    const signal = boundedGitDiagnostic(result.signal, 64);
     reject(
       'GIT_VALIDATION_FAILED',
-      `git ${args.join(' ')} failed: ${(result.stderr || result.stdout).trim()}`,
+      `git ${sanitizeGitSubcommand(args)} terminated by signal ${signal}`,
+    );
+  }
+  if (result.status !== 0 && !options.allowFailure) {
+    const diagnostic = boundedGitDiagnostic(result.stderr || result.stdout);
+    reject(
+      'GIT_VALIDATION_FAILED',
+      `git ${args[0] || 'command'} failed${diagnostic ? `: ${diagnostic}` : ''}`,
     );
   }
   return result;
@@ -858,8 +940,42 @@ function gitIsAncestor(ancestor, descendant, cwd = REPO_ROOT) {
   reject('GIT_VALIDATION_FAILED', `cannot determine ancestry ${ancestor} -> ${descendant}`);
 }
 
+function parseGitBlobSize(value) {
+  const text = String(value || '').trim();
+  if (!/^(?:0|[1-9][0-9]*)$/.test(text)) {
+    reject('GIT_BLOB_SIZE_INVALID', 'git blob size must be a base-10 integer');
+  }
+  const size = Number(text);
+  if (!Number.isSafeInteger(size) || size < 0) {
+    reject('GIT_BLOB_SIZE_INVALID', 'git blob size must be a non-negative safe integer');
+  }
+  return size;
+}
+
+function assertCanonicalGitBlobSize(size, blobSpec) {
+  if (size > GIT_CANONICAL_TEXT_BLOB_LIMIT_BYTES) {
+    reject(
+      'GIT_BLOB_SIZE_LIMIT_EXCEEDED',
+      `${blobSpec} is ${size} bytes; maximum canonical text blob size is ${GIT_CANONICAL_TEXT_BLOB_LIMIT_BYTES} bytes`,
+    );
+  }
+}
+
 function gitShow(ref, repoPath, cwd = REPO_ROOT) {
-  return runGit(['show', `${ref}:${repoPath}`], cwd).stdout;
+  const blobSpec = `${ref}:${repoPath}`;
+  const size = parseGitBlobSize(runGit(['cat-file', '-s', blobSpec], cwd).stdout);
+  assertCanonicalGitBlobSize(size, blobSpec);
+  const stdout = runGit(['show', blobSpec], cwd, {
+    maxBufferBytes: GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES,
+  }).stdout;
+  const observedBytes = Buffer.byteLength(stdout, 'utf8');
+  if (observedBytes !== size) {
+    reject(
+      'GIT_BLOB_READ_SIZE_MISMATCH',
+      `${blobSpec} expected ${size} bytes but read ${observedBytes} bytes`,
+    );
+  }
+  return stdout;
 }
 
 function requireGitCommit(ref, code, cwd = REPO_ROOT) {
@@ -1393,6 +1509,17 @@ function classifyPrChangeSet(changes, context = {}) {
     };
   }
 
+  if (
+    context.base === RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.baseSha &&
+    context.headRef === RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.headRef &&
+    hasExactChangeSet(changes, RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.changedPaths)
+  ) {
+    return {
+      mode: RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.mode,
+      taskId: RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.taskId,
+    };
+  }
+
   const gh02Binding = GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
   const rcvColBinding =
     RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
@@ -1454,6 +1581,7 @@ function classifyPrChangeSet(changes, context = {}) {
       gh02Binding.workflowPr.headRef,
       rcvColBinding.bindingPr.headRef,
       rcvColBinding.targetPr.headRef,
+      RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.headRef,
     ].includes(context.headRef) ||
     /^codex\/gov-coord-(?:v1-)?(?:authority-locator|register-test-fixture|execution-base-ancestry|noncoord-classifier)-repair-/.test(
       context.headRef || '',
@@ -1461,6 +1589,9 @@ function classifyPrChangeSet(changes, context = {}) {
     /^codex\/dx-006-analyze-first-conditional-execution-/.test(context.headRef || '') ||
     /^codex\/github-platform-gh02-/.test(context.headRef || '') ||
     /^codex\/(?:gov-coord-)?rcv-col-(?:full-remediation-)?bootstrap-/.test(
+      context.headRef || '',
+    ) ||
+    /^codex\/gov-coord-rcv-col-large-authority-read-repair-/.test(
       context.headRef || '',
     )
   ) {
@@ -2184,6 +2315,40 @@ function validateRcvColFullRemediationBindingScope(options) {
   return { mode: binding.bindingPr.mode, taskId: binding.taskId };
 }
 
+function validateRcvColLargeAuthorityReadRepairScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const repair = RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01;
+  if (
+    taskId !== repair.taskId ||
+    base !== repair.baseSha ||
+    headRef !== repair.headRef ||
+    !hasExactChangeSet(changes, repair.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'RCV-COL large-authority read repair binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, repair.contractPath, cwd);
+  for (const expectedLiteral of [
+    repair.taskId,
+    repair.mode,
+    repair.baseSha,
+    repair.headRef,
+    ...repair.changedPaths.map(({ path: repoPath }) => repoPath),
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact large-authority repair binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: repair.mode, taskId: repair.taskId };
+}
+
 function assertExactAuthorityMarker(content, authorityRef) {
   const marker = buildAuthorityMarker(authorityRef);
   const count = countOccurrences(content, marker);
@@ -2338,6 +2503,17 @@ function validatePrScope(options) {
     RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.mode
   ) {
     return validateRcvColFullRemediationBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (classification.mode === RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.mode) {
+    return validateRcvColLargeAuthorityReadRepairScope({
       base,
       head,
       headRef,
@@ -2745,7 +2921,12 @@ module.exports = {
   GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01,
   GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01,
   GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01,
+  GIT_DEFAULT_PROCESS_MAX_BUFFER_BYTES,
+  GIT_CANONICAL_TEXT_BLOB_LIMIT_BYTES,
+  GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES,
+  GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS,
   RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
+  RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01,
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
@@ -2769,6 +2950,11 @@ module.exports = {
   parseRequestMarkdown,
   parseResultFile,
   parseResultMarkdown,
+  assertCanonicalGitBlobSize,
+  boundedGitDiagnostic,
+  parseGitBlobSize,
+  runGit,
+  gitShow,
   runSelfTest,
   sha256,
   validateRequestObject,
@@ -2781,6 +2967,7 @@ module.exports = {
   validateGithubPlatformGh08SeparationScope,
   validateRcvColFullRemediationBindingScope,
   validateRcvColFullRemediationBootstrapScope,
+  validateRcvColLargeAuthorityReadRepairScope,
   validatePrScope,
   validateRequestAgainstGit,
   assertRequestBaseAncestor,

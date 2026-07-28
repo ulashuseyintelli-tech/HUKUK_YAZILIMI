@@ -507,3 +507,40 @@ COLLECTION ya da RECEIVABLE task'ına aktarma yetkisi vermez. Request-only,
 execution ve result-only kurallarını değiştirmez; Constitution veya Domain Law
 yetkisi üretmez. PR #1721 merge veya close olduktan sonra yeniden kullanılamaz
 ve reusable authority oluşturmaz.
+
+## GOV-COORD-RCV-COL-LARGE-AUTHORITY-READ-REPAIR-R01 — one-time large authority read repair
+
+Owner-ratified 2026-07-28. Bu kayıt yalnız büyük canonical governance authority
+dosyalarının Git üzerinden eksiksiz ve bounded okunmasını sağlayan control-plane
+onarımını yetkilendirir.
+
+```text
+Task ID  : GOV-COORD-RCV-COL-LARGE-AUTHORITY-READ-REPAIR-R01
+Mode     : GOV_COORD_RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01
+Base SHA : d4ffd3ef277554d3c45e6471bf96f14af4b3fcd1
+Head ref : codex/gov-coord-rcv-col-large-authority-read-repair-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Kök neden, `spawnSync('git', ...)` çağrısının Node varsayılan output buffer'ı
+nedeniyle büyük `decision-log.md` içeriğini `ENOBUFS` ile yarıda kesmesidir.
+Generic Git process capture limiti 2 MiB; canonical text blob logical limiti
+8 MiB; canonical blob subprocess limiti 16 MiB; hata diagnostic limiti 4.096
+karakterdir. `gitShow`, içeriği okumadan önce `git cat-file -s` ile byte size
+preflight yapar; 8 MiB üstünü `GIT_BLOB_SIZE_LIMIT_EXCEEDED` ile reddeder ve
+başarılı okumada UTF-8 byte uzunluğunun bildirilen blob size ile exact eşitliğini
+zorunlu kılar. `ENOBUFS`, partial output kullanmadan
+`GIT_OUTPUT_LIMIT_EXCEEDED` üretir. Unbounded veya environment-controlled
+capture, partial/truncated authority kabulü ve asynchronous streaming refactor
+yasaktır. 8 MiB üstündeki governance blob ayrı archive/split ya da storage-model
+owner task'ı gerektirir.
+
+Bu self-binding yalnız exact base, exact head ref ve exact `M/M/M` path seti
+birlikte eşleştiğinde geçerlidir. Buffer onarımı authority marker, checksum,
+exact-literal veya domain semantiğini değiştirmez. PR #1721'in semantic
+authority'sini veya exact iki dosyalık kapsamını değiştirmez ve genişletmez;
+başka protected governance write, request/execution/result, production, schema,
+migration veya runtime yetkisi üretmez. Repair PR merge edildikten sonra pinned
+base nedeniyle yeniden kullanılamaz. Reusable authority yoktur.
