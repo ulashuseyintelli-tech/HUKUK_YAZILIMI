@@ -353,10 +353,32 @@ function main(argv) {
         process.stdout.write('(queue empty)\n');
         return 0;
       }
-      process.stdout.write(pad('ENTRY', 14) + pad('PROGRAM', 12) + pad('TASK', 34) + pad('STATE', 14) + 'BLOCKER\n');
+      // Execution, change and delivery are three separate facts and the queue
+      // shows all three. Collapsing them into one word is how "CLOSED" came to
+      // be read as "delivered": an entry can be CLOSED with its code merged and
+      // its capability never verified, and an operator looking at a single
+      // column would have no way to see it.
+      process.stdout.write(
+        pad('ENTRY', 14) + pad('TASK', 30) + pad('EXECUTION', 12) + pad('CHANGE', 12) +
+        pad('DELIVERY', 20) + pad('OVERALL', 10) + 'BLOCKER\n',
+      );
       for (const e of all) {
+        const merged = e.mergeSha ? 'MERGED' : 'NOT_MERGED';
+        const d = e.delivery || null;
+        const deliveryVerdict = d
+          ? d.verdict
+          : e.deliveryPhase || (e.state === 'CLOSED' ? 'LEGACY_UNVERIFIED' : '—');
+        // DONE is the conjunction, computed here rather than stored, so it
+        // cannot drift from the facts beside it.
+        const done =
+          e.state === 'CLOSED' &&
+          !!e.mergeSha &&
+          !!d &&
+          (d.verdict === 'PASS' || d.verdict === 'NOT_APPLICABLE') &&
+          d.verifiedAtSha === e.mergeSha;
         process.stdout.write(
-          pad(e.entryId.slice(0, 12), 14) + pad(e.programId, 12) + pad(e.taskId, 34) + pad(e.state, 14) +
+          pad(e.entryId.slice(0, 12), 14) + pad(e.taskId, 30) + pad(e.state, 12) + pad(merged, 12) +
+          pad(deliveryVerdict, 20) + pad(done ? 'DONE' : 'NOT_DONE', 10) +
           (e.blockerCode || '') + '\n',
         );
       }
