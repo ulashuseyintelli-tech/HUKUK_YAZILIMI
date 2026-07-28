@@ -31,9 +31,18 @@ export const COMPILED_RULES: CompiledRule[] = [
     ruleId: 'RULE_UYAP_SEND_INITIAL',
     name: 'UYAP Gönderim - Yeni Dosya',
     description: 'Yeni açılan dosyalar için UYAP gönderimi öner',
+    // UYAP-LEGACY-POA-FLAG-DEPRECATION-I01: kural ARTIK legacy adlı bileşik alias'ı
+    // (`case.has_power_of_attorney`) OKUMAZ; gate ile AYNI granular authority fact'lerine
+    // bakar (I04). Alias hâlâ computed'dır ve değeri eşittir — davranış değişmez — ancak
+    // öneri yüzeyinin de canonical zincire bağlanmasıyla alias'ın tek "sahibi" ve tek
+    // yazıcısı provider'ın kendisi kalır. Eksik/undefined fact ⇒ öneri ÜRETİLMEZ.
     when: (facts: FactMap, state: StateInfo) => {
       return state.currentState === 'INITIAL' &&
-             facts.get('case.has_power_of_attorney') === true &&
+             facts.get('actor.is_canonical_lawyer') === true &&
+             facts.get('actor.has_matching_power_of_attorney') === true &&
+             facts.get('poa.is_effective_at_evaluation_time') === true &&
+             facts.get('poa.covers_requested_operation') === true &&
+             facts.get('authority.is_unambiguous') === true &&
              facts.get('expense.opening.paid') === true;
     },
     then: {
