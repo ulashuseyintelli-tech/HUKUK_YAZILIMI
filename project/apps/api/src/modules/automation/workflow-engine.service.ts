@@ -13,6 +13,7 @@ import { ExpenseRequestService } from "../expense-request/expense-request.servic
 import { CasePolicyEngine } from "../policy-engine/case-policy-engine.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 import { LegalPeriodCalculationService } from "../legal-deadline/legal-period-calculation.service";
+import { sumConfirmedCollections } from "../../common/collection-confirmed.util";
 
 // Workflow stage to expense stage code mapping
 const STAGE_TO_EXPENSE_CODE: Partial<Record<WorkflowStage, string>> = {
@@ -106,10 +107,11 @@ export class WorkflowEngine {
       : 0;
 
     const totalDebt = Number(caseData.principalAmount || 0);
-    const collectedAmount = caseData.collections.reduce(
-      (sum, c) => sum + Number(c.amount),
-      0
-    );
+    // RCV-COL-CONSUMER-AUTO-01: receipt lifecycle fact'i ile legal balance authority
+    // ayridir. Yalniz CONFIRMED Collection "payment exists" kanitidir; gross receipt
+    // toplami FULL_PAYMENT/CLOSE_CASE otoritesi olamaz. Official Receivable legal
+    // balance runtime'a baglanana kadar payment-derived rule'lar fail-closed no-op olur.
+    const collectedAmount = sumConfirmedCollections(caseData.collections);
 
     const debtorAssets = caseData.debtors.flatMap((cd) => cd.debtor.assets);
 
@@ -127,6 +129,7 @@ export class WorkflowEngine {
       hasObjection,
       totalDebt,
       collectedAmount,
+      officialLegalBalanceState: "UNAVAILABLE",
       debtorAssets,
     };
   }

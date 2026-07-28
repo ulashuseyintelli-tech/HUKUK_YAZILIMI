@@ -23,6 +23,12 @@ export interface RuleContext {
   hasObjection: boolean;
   totalDebt: number;
   collectedAmount: number;
+  /**
+   * Official Receivable legal-balance authority sonucu. Gross Collection toplamindan
+   * turetilmez. Runtime official authority baglamadigi surece UNAVAILABLE kalir ve
+   * payment-derived stage/closure kararlari fail-closed no-op olur.
+   */
+  officialLegalBalanceState: "UNAVAILABLE" | "OUTSTANDING" | "ZERO";
   debtorAssets: any[];
 }
 
@@ -105,7 +111,7 @@ export class RuleEngine {
     // Kural 4: Kısmi ödeme geldi → Kalan borç için devam
     if (
       context.hasPayment &&
-      context.collectedAmount < context.totalDebt &&
+      context.officialLegalBalanceState === "OUTSTANDING" &&
       context.currentStage !== WorkflowStage.PARTIAL_PAYMENT
     ) {
       results.push({
@@ -118,7 +124,10 @@ export class RuleEngine {
     }
 
     // Kural 5: Tam ödeme → Dosya kapanışı
-    if (context.hasPayment && context.collectedAmount >= context.totalDebt) {
+    if (
+      context.hasPayment &&
+      context.officialLegalBalanceState === "ZERO"
+    ) {
       results.push({
         shouldTrigger: true,
         action: "CLOSE_CASE",
