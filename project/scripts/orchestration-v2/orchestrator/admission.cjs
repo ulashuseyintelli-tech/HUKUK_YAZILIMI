@@ -159,7 +159,17 @@ function evaluate(opts) {
         specRoots: (o.spec && o.spec.boundaryPolicy && o.spec.boundaryPolicy.allowedRoots) || [],
       });
     } catch (e) {
-      return { admissible: false, refusal: e.code || 'TASK_GRANT_REFUSED', detail: e.detail || null, program: programId };
+      // A refusal must be a rule this system defines, never whatever code a
+      // thrown object happened to carry. ERR_INVALID_ARG_TYPE reached an
+      // operator as a governance verdict once; a wiring mistake must not be
+      // able to impersonate a decision.
+      const known = oneShotMod.REFUSALS.indexOf(e.code) !== -1;
+      return {
+        admissible: false,
+        refusal: known ? e.code : 'TASK_GRANT_REFUSED',
+        detail: known ? e.detail || null : (e.code || e.name) + ': ' + String(e.message).slice(0, 160),
+        program: programId,
+      };
     }
   }
 

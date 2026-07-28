@@ -179,6 +179,10 @@ function createService(cfg) {
           // Measured on the R04 canary: the entry pinned 845b3d47, a fresh
           // resolution produced 845b3d47, and this line answered 1031c02b.
           resolveSpecHash: (spec) => require('../orchestrator/authority.cjs').specDigests(spec).taskSpecSha256,
+          // The same two the enqueue path passes. Dispatch re-asks admission's
+          // questions, so it has to be able to ask all of them.
+          oneShotLedgerDir: queue.dir,
+          repoCwd: cfg.repoCwd,
           isRevoked: cfg.isRevoked,
         }
       : null);

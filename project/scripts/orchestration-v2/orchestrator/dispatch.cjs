@@ -105,6 +105,16 @@ function revalidate(opts) {
     programId: entry.programId,
     taskClass: entry.taskClass,
     executorLane: entry.executorLane,
+    // The one-shot ledger and the repo root, carried here for the same reason
+    // everything else on this call is: dispatch re-asks admission's questions,
+    // and a question it cannot ask is one it silently stops asking.
+    //
+    // They were wired into enqueue and not into this path, so a one-shot grant
+    // was re-checked at dispatch with no ledger to check against — one call
+    // short, which is how a consumed grant would have reached an executor.
+    oneShotLedgerDir: o.oneShotLedgerDir,
+    repoCwd: o.repoCwd,
+    taskSpecSha256: entry.taskSpecSha256,
     revoked: o.isRevoked ? o.isRevoked(grant) === true : false,
     killSwitchEngaged: false,
     nowMs: o.nowMs,

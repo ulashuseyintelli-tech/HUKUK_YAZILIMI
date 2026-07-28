@@ -42,6 +42,7 @@ const REFUSALS = [
   'TASK_GRANT_PLAN_HASH_MISMATCH',
   'TASK_GRANT_PR_BUDGET_EXHAUSTED',
   'TASK_GRANT_MERGE_BUDGET_EXHAUSTED',
+  'TASK_GRANT_LEDGER_DIR_MISSING',
 ];
 
 class OneShotGrantError extends Error {
@@ -55,6 +56,26 @@ class OneShotGrantError extends Error {
 
 function fail(code, detail) {
   throw new OneShotGrantError(code, detail);
+}
+
+/**
+ * The ledger directory, checked before any path is built from it.
+ *
+ * Without this, a caller that forgot to pass it reached path.join(undefined)
+ * and produced ERR_INVALID_ARG_TYPE — a raw Node TypeError, which admission
+ * then reported as `refusal: ERR_INVALID_ARG_TYPE` with no detail. A wiring
+ * mistake wore the costume of a governance decision, and the entry was blocked
+ * by a code no rule in this system defines.
+ *
+ * Measured: dispatch re-checked a one-shot grant with no ledger to check
+ * against, because the field was wired into enqueue and not into the dispatch
+ * path. One call short.
+ */
+function requireLedgerDir(dir, who) {
+  if (typeof dir !== 'string' || dir === '') {
+    fail('TASK_GRANT_LEDGER_DIR_MISSING', who + ' was given no one-shot ledger directory');
+  }
+  return dir;
 }
 
 /** Is this grant one-shot? Declared, never inferred. */
@@ -133,7 +154,7 @@ function exactTarget(grant) {
 function assertUsable(o) {
   const grant = o.grant;
   if (!isOneShot(grant)) return;
-  const dir = o.dir;
+  const dir = requireLedgerDir(o.dir, 'assertUsable');
   const grantId = grant.standingGrantId || grant.grantId;
 
   if (grant.revocationPath && o.repoCwd && fs.existsSync(path.join(o.repoCwd, grant.revocationPath))) {
@@ -194,12 +215,13 @@ function assertUsable(o) {
 function recordPr(o) {
   const grant = o.grant;
   if (!isOneShot(grant)) return null;
+  const dir = requireLedgerDir(o.dir, 'recordPr');
   const grantId = grant.standingGrantId || grant.grantId;
-  const prs = pullRequestsOf(o.dir, grantId);
+  const prs = pullRequestsOf(dir, grantId);
   if (prs.indexOf(o.prNumber) !== -1) return null;
   const max = grant.maxPRs === undefined ? 1 : grant.maxPRs;
   if (prs.length >= max) fail('TASK_GRANT_PR_BUDGET_EXHAUSTED', 'already opened ' + JSON.stringify(prs));
-  return append(o.dir, {
+  return append(dir, {
     event: 'PR_OPENED',
     grantId,
     taskId: o.taskId || null,
@@ -221,13 +243,14 @@ function consume(o) {
   const grant = o.grant;
   if (!isOneShot(grant)) return null;
   if (!o.mergeSha) fail('TASK_GRANT_MERGE_BUDGET_EXHAUSTED', 'refusing to consume without a merge sha');
+  const dir = requireLedgerDir(o.dir, 'consume');
   const grantId = grant.standingGrantId || grant.grantId;
-  const already = consumptionOf(o.dir, grantId);
+  const already = consumptionOf(dir, grantId);
   if (already) {
     if (already.mergeSha === o.mergeSha) return already;
     fail('TASK_GRANT_CONSUMED', 'already consumed by ' + already.mergeSha);
   }
-  return append(o.dir, {
+  return append(dir, {
     event: 'CONSUMED',
     grantId,
     taskId: o.taskId || null,
