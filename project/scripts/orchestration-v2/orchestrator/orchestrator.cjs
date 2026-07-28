@@ -561,6 +561,39 @@ async function runTask(ctx) {
   }
 
   // --- actual diff boundary validation (§1, §8) ---------------------------
+  //
+  // A file the executor CREATED is untracked, and the validator treats every
+  // untracked path as an escape — correctly, because an untracked file is not
+  // part of a diff it can judge. But "add a characterization test" is the
+  // canonical task class here, so as written no task could ever create a file:
+  // the canary produced exactly the file its plan authorized, at exactly the
+  // authorized path, and was refused for being new.
+  //
+  // Rather than weaken the validator, the created files inside the authorized
+  // roots are staged with --intent-to-add. They then appear in the diff as
+  // additions and are judged by the SAME rules as every other change —
+  // forbidden paths, allowedRoots, maxChangedFiles, structural classes.
+  //
+  // Anything created OUTSIDE the roots is deliberately NOT staged: it stays
+  // untracked and still trips UNTRACKED_FILE_PRESENT. The escape path is
+  // unchanged; what changed is that an authorized creation is now visible to
+  // the rules instead of being refused before they run.
+  try {
+    const roots = validated.spec.boundaryPolicy.allowedRoots.map((r) => boundary.normalizeRoot(r));
+    const created = git(['ls-files', '--others', '--exclude-standard', '-z'], wt.path)
+      .split(' ')
+      .filter(Boolean)
+      .filter((p) => boundary.underAnyRoot(p, roots));
+    if (created.length) {
+      execFileSync('git', ['add', '--intent-to-add', '--'].concat(created), { cwd: wt.path });
+      trace.push('STAGED_CREATED:' + created.length);
+    }
+  } catch (e) {
+    // Staging is a convenience for the validator, not a gate. If it fails the
+    // files stay untracked and the validator refuses them — the safe direction.
+    trace.push('STAGE_CREATED_FAILED:' + (e.code || e.message));
+  }
+
   let verdict;
   try {
     const changes = boundary.extractChanges({

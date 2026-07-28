@@ -1054,3 +1054,44 @@ test('PILOT ER-6: resuming twice does not run twice', async () => {
   assert.equal(second.blockerCode, 'TASK_NOT_REENTRANT');
   assert.match(second.detail, /MERGE_READY/);
 });
+
+test('PILOT CR-1: a task may CREATE a file inside its authorized root', async () => {
+  // It could not. Every untracked path is an escape to the validator — right,
+  // since an untracked file is not part of a diff it can judge — so no task
+  // could ever add a file, while "add a characterization test" is the canonical
+  // task class here. Created files inside the roots are now staged with
+  // --intent-to-add and judged by the same rules as any other change.
+  const repo = F.fixtureRepo();
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+  const sg = F.specAndGrant({ taskId: 'PILOT-CR-1', allowedRoots: ['fixture/created/'] });
+
+  // The fake executor writes a NEW file inside the authorized root.
+  const r = await orch.runTask(
+    ctxFor(repo, {
+      store,
+      sg,
+      executorArgv: [F.FAKE, '--mode', 'ok', '--create', 'fixture/created/new.txt'],
+    }),
+  );
+  assert.equal(r.disposition, 'MERGE_READY', JSON.stringify(r.blockerCode || r.detail));
+  assert.ok(r.trace.some((x) => x.indexOf('STAGED_CREATED:') === 0), 'the creation was staged for the validator');
+});
+
+test('PILOT CR-2: a file created OUTSIDE the authorized root is still an escape', async () => {
+  // The escape path is unchanged: anything outside is not staged, stays
+  // untracked, and still trips UNTRACKED_FILE_PRESENT.
+  const repo = F.fixtureRepo();
+  const store = stateMod.createStore(stateMod.defaultStateDir(repo));
+  const sg = F.specAndGrant({ taskId: 'PILOT-CR-2', allowedRoots: ['fixture/allowed/'] });
+
+  const r = await orch.runTask(
+    ctxFor(repo, {
+      store,
+      sg,
+      executorArgv: [F.FAKE, '--mode', 'ok', '--create', 'fixture/elsewhere/sneaky.txt'],
+    }),
+  );
+  assert.equal(r.disposition, 'BLOCKED');
+  assert.equal(r.blockerCode, 'BOUNDARY_ESCAPE');
+  assert.match(r.detail, /UNTRACKED_FILE_PRESENT/);
+});
