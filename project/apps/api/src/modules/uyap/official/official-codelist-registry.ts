@@ -123,9 +123,15 @@ export const OFFICIAL_CODELIST_MAHIYET_KODU_SET: ReadonlySet<string> = new Set([
  * Resmî `exchange.dtd` (`124a9a96…`, 9273 B) `ATTLIST dosya` içindeki `mahiyetKodu`
  * enumerasyonu — **17 kod**.
  *
- * ⚠ P02B-R2 ölçümü: iki resmî artefakt AYNI FİKİRDE DEĞİL. Codelist `5045`
+ * ⚠ Ölçüm: iki resmî artefakt AYNI FİKİRDE DEĞİL. Codelist `5045`
  * (`Arabulucuk - Örnek 4-5`) taşır; DTD enumerasyonu **taşımaz**. `5045` emit edilirse
  * strict DTD doğrulamasında attribute-değer ihlali olur.
+ *
+ * **`5045` DİSPOZİSYONU: EXTERNAL TECHNICAL AUTHORITY REQUIRED.** Hangi artefaktın bu
+ * alan için authority olduğu bir **owner hukuki kararı değildir** — UYAP/BİGM veya
+ * yetkili entegratöre sorulacak teknik sorudur (`P04B-EXT-01` sınıfı). Cevap gelene
+ * kadar kesişim uygulanır ve `5045` fail-closed kalır.
+ * (`UYAP-P02B-R2-FOLLOWUP-CANONICALIZATION-R01`)
  */
 export const OFFICIAL_DTD_MAHIYET_KODU_SET: ReadonlySet<string> = new Set([
   '1007', '1107', '1207', '1307', '1407',

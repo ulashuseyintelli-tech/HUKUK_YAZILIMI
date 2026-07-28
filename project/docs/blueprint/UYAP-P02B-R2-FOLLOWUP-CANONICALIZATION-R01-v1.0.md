@@ -1,12 +1,34 @@
-# DBP-P2-UYAP-CONTRACT-A-P02B-R2 — yapısal yerleşim + kodlu alan anlam eşlemesi — v1.0
+# UYAP-P02B-R2-FOLLOWUP-CANONICALIZATION-R01 — ardıl teknik remediation kaydı — v1.0
 
 | Alan | Değer |
 | --- | --- |
-| Canonical task | `DBP-P2-UYAP-CONTRACT-A-P02B-R2` (repo'dan bulundu; yeni ID icat edilmedi) |
+| Canonical task | `UYAP-P02B-R2-FOLLOWUP-CANONICALIZATION-R01` |
 | Program | `UYAP-MODULE-FULL-GAP-CLOSURE-R02` |
+| Bu kaydın konusu | **PR #1825**, merge `a0b45f0b218f5e731c0d27f007b24a83da6340f4` |
+| Owner disposition | **ACCEPTED AS FOLLOW-UP TECHNICAL REMEDIATION / MERGED / VALIDATED** |
+| Öncül (dokunulmadı) | `DBP-P2-UYAP-CONTRACT-A-P02B-R2` — **CLOSED / CANONICAL / DO NOT REOPEN**, PR #1436 `0b09ebbd` |
 | Öncül | `UYAP-OFFICIAL-CODELIST-EMISSION-I01B-1` — CLOSED/CANONICAL, PR #1810, `55b30f2f` |
-| Önceki P02B-R2 turu | claim-wrapper authority guard — IMPLEMENTED/CANONICAL, PR #1436 `0b09ebbd` |
 | Tarih | 2026-07-28 |
+
+## 0.0 Kapanış kimliği — düzeltme
+
+Bu belgenin önceki sürümü kendisini `DBP-P2-UYAP-CONTRACT-A-P02B-R2` başlığı altında
+kaydediyordu. **Bu yanlıştı ve owner tarafından düzeltilmiştir.**
+
+```text
+DBP-P2-UYAP-CONTRACT-A-P02B-R2 : CLOSED / CANONICAL / DO NOT REOPEN
+                                 PR #1436 · 0b09ebbd
+                                 claim-wrapper authority guard (owner Option 1)
+
+PR #1825                       : FOLLOW-UP TECHNICAL REMEDIATION
+                                 merge a0b45f0b
+                                 P02B-R2'nin İKİNCİ KAPANIŞI DEĞİLDİR
+```
+
+PR #1825, kapanmış P02B-R2 kararının **üstüne** gelen ardıl teknik iyileştirmedir:
+guard'ın dayandığı resmî içerik modelini ölçülmüş sabite bağlar, kodlu alan anlam
+sınırını sıkılaştırır. P02B-R2'nin kapsamını, kararını veya statüsünü **değiştirmez**
+ve yeniden **açmaz**.
 
 ## 0. Kapsam sınırı
 
@@ -155,22 +177,50 @@ zorunlu/varsayılanlı alanlarıdır.
 ## 6. Final hüküm
 
 ```text
-STRUCTURAL OFFICIAL XML SUBSET:      CLOSED / CANONICAL (taraf-only; alacakKalemi fail-closed)
-CANARY-REQUIRED CODELIST SUBSET:     EXACT BLOCKER — domain → mahiyetKodu ve
-                                     domain → takipTuru anlam eşlemesi RATIFIYE DEĞIL
+DBP-P2-UYAP-CONTRACT-A-P02B-R2:      CLOSED / CANONICAL / DO NOT REOPEN
+                                     PR #1436 · 0b09ebbd — bu kayıt değiştirmez
+
+PR #1825 (bu kayıt):                 FOLLOW-UP TECHNICAL REMEDIATION
+                                     MERGED / VALIDATED · a0b45f0b
+
+STRUCTURAL CONTAINMENT:              CLOSED
+                                     alacakKalemi fail-closed; yetkili ebeveynler
+                                     resmî DTD'den ölçülmüş sabit; sarmalayıcı SEÇİLMEZ
+
+LEGAL SEMANTIC MAPPINGS:             OPEN
+                                     domain → mahiyetKodu · domain → takipTuru ·
+                                     domain → alacakKalemi wrapper
+
+5045 DISPOSITION:                    EXTERNAL TECHNICAL AUTHORITY REQUIRED
+                                     owner kararı DEĞİL
+
 STRICT DTD VALIDATION:               OPEN / BLOCKED BY D1
 LIVE LEGACY CUTOVER:                 NOT PERFORMED
-CANARY R02:                          NOT ELIGIBLE — 3 iç residual + D1
+CANARY R02:                          NOT ELIGIBLE
+FINAL CI:                            NOT YET ELIGIBLE
 ```
 
-## 7. Owner kararı gereken (exact)
+## 7. Açık kalemlerin yönlendirmesi
 
-1. **`mahiyetKodu` eşlemesi** — her iç claim/receivable türü için resmî kod. Repository
-   kanıtıyla türetilemez (17/17 çakışma).
-2. **`takipTuru` eşlemesi** — hangi domain durumu İlamlı (`0`) / İlamsız (`1`).
-3. **`alacakKalemi` sarmalayıcı sınıflandırması** — bir alacak kaleminin `cek` /
-   `senet` / `police` / `kontrat` / `digerAlacak` / `ilam` altından hangisine ait olduğu.
-4. **`5045` dispozisyonu** — codelist tanıyor, DTD tanımıyor; hangisi authority.
+### 7.1 Owner authority — `UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-AUTHORITY-R01`
 
-Bunlar tayin edilene kadar ilgili yüzeyler fail-closed kalır; hiçbir varsayılan,
-"en yakın kod" veya legacy passthrough uygulanmaz.
+| # | Matris | Neden repository'den türetilemez |
+| --- | --- | --- |
+| 1 | iç claim türü → resmî `mahiyetKodu` | paylaşılan 17 kodun 17'si legacy'de farklı hukuki anlam taşıyor (legacy `FATURA=1045`, resmî `1045=Nafaka`) |
+| 2 | canonical takip prosedürü → `takipTuru` `0`/`1` | resmî `(0\|1)` ile legacy `'1'..'6'` ayrı kod sistemleri; İlamlı resmî `0`, legacy `2` |
+| 3 | canonical hukuki belge türü → `alacakKalemi` sarmalayıcı | `cek`/`senet`/`police`/`kontrat`/`digerAlacak`/`ilam` seçimi hukuki nitelemedir, belge adı sezgisi değildir |
+
+### 7.2 Dış teknik authority — `5045`
+
+```text
+5045 : KodluBilgilerData.xml         → VAR  (Arabulucuk - Örnek 4-5)
+       exchange.dtd ATTLIST dosya    → YOK
+```
+
+İki resmî artefakt çelişiyor. Bu bir **owner hukuki kararı değildir**; hangi artefaktın
+o alan için authority olduğu **UYAP/BİGM veya yetkili entegratöre sorulacak teknik
+sorudur** — `P04B-EXT-01` hattıyla aynı sınıf. Bu kayıtla çözülmüş sayılmaz; kod
+tarafında `OFFICIAL_MAHIYET_DTD_UNREPRESENTABLE` ile fail-closed kalır.
+
+Bu kalemler tayin edilene kadar ilgili yüzeyler fail-closed kalır; hiçbir varsayılan,
+"en yakın kod", etiket tahmini, belge-adı sezgisi veya legacy passthrough uygulanmaz.
