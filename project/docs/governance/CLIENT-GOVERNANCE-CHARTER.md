@@ -2731,3 +2731,125 @@ RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
 Bu bölüm: I03 implementasyonunu BAŞLATMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ; yeni role enum'u, yeni capability veya paralel yetki modeli ÜRETMEZ; `SUPER_ADMIN` için karşılık UYDURMAZ; paylaşılan `isApproverEligible()`'ı DEĞİŞTİRMEZ; başka actionCode'ların yeterlilik kuralını DEĞİŞTİRMEZ; §35.8'in metnini yeniden YAZMAZ; Track B'nin send/publish/API/UI dilimlerini AÇMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ.
 
 **POLICY RATIFIED ≠ POLICY IMPLEMENTED · APPROVAL ELIGIBLE ≠ APPROVAL GRANTED · APPROVED ≠ PUBLISHED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
+
+## 42. CLIENT Phase 2 Track B I03 — Approval Workflow Technical Closure (OWNER RATIFIED)
+
+Bu bölüm, §41'de ratifiye edilen `CLIENT-P2-U03-TRACK-B-I03 — APPROVAL WORKFLOW AND INTEGRITY GATES` görevinin **teknik kapanış** kaydıdır (`decision-log.md` `CLIENT-P2-U03-TRACK-B-I03-CLOSURE` kaydı). §5, §6, §8.A, §8.B, §11–§41 substantive hükümlerini DEĞİŞTİRMEZ; §35'in, §37'nin, §38'in, §39'un, §40'ın ve §41'in **kendi metinleri DEĞİŞTİRİLMEMİŞTİR**. §41.8'in `I03 IMPLEMENTATION: AUTHORIZED / NOT STARTED` hükmü bu kayıtla **tüketilmiş** sayılır — sonraki Track B dilimlerine (I04–I07) **devredilmez**.
+
+### 42.1 Canonical Kimlik ve SHA
+
+```text
+TASK   : CLIENT-P2-U03-TRACK-B-I03
+TITLE  : APPROVAL WORKFLOW AND INTEGRITY GATES
+POLICY : PR #1761 · dcee49ce39c528db2c1afcef9cd743991f34419a  (§41, owner kararlari)
+IMPL   : PR #1766 · 691ef164a6f511b1084d4a092208b7d4a2ac3ba1
+DIFF   : 13 dosya, +1831 / -59
+```
+
+**SCHEMA/MIGRATION: NONE** — §41.7 dispozisyonu doğrulandı; I01 alanları yeterli çıktı. **CONTROLLER/ROUTE/RESOLVER/UI: NONE.** **SEND/PUBLISH/NOTIFICATION DISPATCH: NONE** (I04). **YENİ DEPENDENCY: NONE.** **`ci.yml`: DOKUNULMADI** (manifest-tabanlı bağlama).
+
+Eksi 59 satırın tamamı I02'nin `verifyPersistedSnapshot` gövdesinin **taşınmasıdır** (aşağıda §42.4); silinen davranış YOKTUR.
+
+### 42.2 Dormant Servis Sınırı
+
+`ClientFinancialDisclosureApprovalService` **bilerek Nest provider DEĞİLDİR** ve production call-site'ı **yoktur** (I02'nin `ClientFinancialDisclosureWriterService` emsali). Nest'e kayıtlı olan **yalnız** izole yeterlilik politikasıdır (`ClientFinancialDisclosureApprovalPolicy`), çünkü dispatcher onu çağırır.
+
+```text
+APPROVAL SERVICE EXISTS != DISCLOSURE MAY BE SENT
+APPROVED                != PUBLISHED
+APPROVAL ELIGIBLE       != APPROVAL GRANTED
+```
+
+### 42.3 Yeterlilik İzolasyonu (§41.3 uygulaması)
+
+Paylaşılan `OfficeApprovalService.isApproverEligible()` **DEĞİŞTİRİLMEDİ**. `resolveApproverEligible()` dispatcher'ına `CLIENT_FINANCIAL_DISCLOSURE_APPROVE` için **üçüncü bir dal** eklendi — `PayoutApprovalPolicy` (PAYOUT-APPROVAL-2) ile birebir aynı izolasyon deseni. Genişleme başka hiçbir actionCode'a **sızmaz**; `office-approval` (250), `client-payout` (72), `disposition-posting` (41) ve `policy-engine` (404) suite'leri değişiklik olmadan PASS.
+
+Predikat tek bir saf fonksiyondadır (`isDisclosureApproverEligible`) ve hem Nest policy'si hem dormant servis onu çağırır → **kopya YOK, drift YOK**.
+
+**`SUPER_ADMIN` için karşılık ÜRETİLMEDİ** (§41.3 bulgusu). Predikat `UserRole`'ü **hiç okumaz**; bu, `DISCLOSURE_APPROVER_CANDIDATE_SELECT` üzerinde ayrı bir testle (`[P8]`) kanıtlanmıştır. Linkli `Lawyer` kaydı olmayan kullanıcı (staff) **dışlanır**.
+
+### 42.4 Bütünlük Kapısının Transaction İçine Alınması
+
+§41.4 "her iki onaydan **hemen önce** `verifyPersistedSnapshot()`" hükmü, kapının **açık transaction içinde** çalışmasını gerektirir. I02'nin metodu `PrismaClient`e bağlıydı. Çözüm: gövde davranışı, select kümesi ve verdict semantiği **değişmeden** transaction-yetenekli serbest bir fonksiyona (`verifyPersistedDisclosureSnapshot`) ayrıştırıldı; I02 metodu ona delege eder. **İkinci bir doğrulama kopyası ÜRETİLMEDİ**; I02 hash'leri byte düzeyinde aynıdır ve I02 suite'i (36/36) değişmeden PASS eder.
+
+### 42.5 Uygulanan Kapılar
+
+```text
+YASAM DONGUSU (§41.5) — dort gecis, atlamalar reddedilir:
+  DRAFT -> OFFICE_APPROVAL_PENDING -> OFFICE_APPROVED
+        -> CONTENT_APPROVAL_PENDING -> CONTENT_APPROVED
+
+FOUR-EYES (§41.2 KARAR 2/4), ucu de ayri testle kanitli:
+  requesterId != officeApprovedById
+  requesterId != contentApprovedById
+  officeApprovedById != contentApprovedById
+
+STALE-ONAY (§41.4) — hepsi fail-closed:
+  snapshot hash degisimi · finansal satir degisimi · yeni versiyon ·
+  baska versiyona ait talep · superseded / cancelled / reversed ·
+  tuketilmis talep · ilerlemis status · bildirim icerigi/alici degisimi
+```
+
+Onay talebi `disclosureVersionId` **ve** `snapshotHash`'e tam bağlanır; `savedIntent` ayrıca `payloadHash` ile doğrulanır (talep gövdesi sonradan oynanmış olamaz). İçerik onayı ikinci bir `OfficeApprovalRequest` **değildir** (§41.2 KARAR 5); versiyon üzerinde ayrı denetlenebilir bir transition'dır ve `notificationContentHash` ile mühürlenir.
+
+### 42.6 Transaction / Eşzamanlılık
+
+Her geçiş tek transaction içinde ve **üç katman birlikte**: `pg_advisory_xact_lock` · application pre-check · **koşullu `updateMany`** (beklenen statü + boş approver alanı `where`de; `count !== 1` → reddedilir). Uygulama pre-check'ine **tek başına güvenilmez**. `P2002`/`P2025` tiplenmiş hataya çevrilir; ham Prisma hatası, SQLSTATE, stack trace, finansal payload ve alıcı e-postası **sızdırılmaz** — yetkilendirme reddi **403**, invariant ihlali **409** olarak iki ayrı hata sınıfıyla ayrılmıştır.
+
+### 42.7 Test Kanıtı
+
+```text
+saf unit (DB-siz)              : 12/12 PASS
+approval integration (PG 16)   : 29/29 PASS  (brief §9'un 22 maddesi + 7 ek senaryo,
+                                 GERCEK ayri PrismaClient baglantilariyla 3 yaris testi)
+client-financial-disclosure    : 95/95 PASS  (I01 + I02 regresyonu dahil)
+office-approval 250 · client-payout 72 · disposition-posting 41 · policy-engine 404 PASS
+CI manifest (gercek run-ci-manifest.sh):
+  pure/client-portal      +1 spec -> 28 suite / 351 test PASS
+  db/domain-integration   +1 spec -> 22 suite / 243 test PASS
+yeni manifest ACILMADI, CI-8 butcesi ARTMADI · API build PASS · eslint 0 · I03 tsc hatasi 0
+```
+
+Testler yalnız disposable PostgreSQL 16 üzerinde koştu; canlı `hukuk_db`'ye **dokunulmadı**.
+
+### 42.8 Diş (Teeth) Doğrulaması — 6/6 KORUMA DİŞ TAŞIYOR
+
+```text
+[A] requester != office approver kaldirildi  -> test [8]  FAIL
+[B] four-eyes kaldirildi                     -> test [10] FAIL
+[C] approver yeterliligi kaldirildi          -> test [4]  FAIL
+[D] snapshot hash dogrulamasi kaldirildi     -> test [12] FAIL
+[E] status gecis guard'i kaldirildi          -> test [19] FAIL
+[F] icerik hash dogrulamasi kaldirildi       -> test [13] FAIL
+geri yukleme                                 -> 95/95 PASS
+```
+
+Her mutasyonun production kodundan gerçekten kaldırıldığı **statik olarak** doğrulandı (eşleşme sayısı + marker kontrolü); tutmayan regex veya yanlış suite kullanılmadı. I02'nin `[B]`/`[D]` dişsiz sonucunun aksine burada **altı korumanın altısı da yük taşımaktadır**.
+
+### 42.9 Statü
+
+```text
+CLIENT-P2-U03-TRACK-B-I03 : AUTHORIZED / IMPLEMENTED / VERIFIED / MERGED / CANONICAL
+I03 IMPLEMENTATION AUTHORITY : CONSUMED / CLOSED  (I04-I07'ye DEVREDILMEZ)
+
+TRACK B ARCHITECTURE      : RATIFIED/CANONICAL     (§35, degismedi)
+TRACK B DATA FOUNDATION   : CLOSED/CANONICAL       (§37, degismedi)
+TRACK B I01 LIVE          : APPLIED                (§39, degismedi)
+TRACK B SERVICE FOUNDATION: CLOSED/CANONICAL       (§40, degismedi)
+TRACK B APPROVAL POLICY   : CLOSED/CANONICAL       (§41, degismedi)
+TRACK B APPROVAL RUNTIME  : CLOSED/CANONICAL       (bu kayitla)
+
+TRACK B SEND / PUBLICATION / REVERSAL RUNTIME (I04) : NOT STARTED
+TRACK B AUTHORIZATION PROJECTION / READ API   (I05) : NOT STARTED
+TRACK B PORTAL PRESENTATION                   (I06) : NOT STARTED
+TRACK B ACCEPTANCE / PROGRAM CLOSURE          (I07) : NOT STARTED
+TRACK A (§34) · SPRING CLEANING (§36) : degismedi
+CLIENT-P2-U03 (genel)     : PARTIAL — NOT READY FOR FINAL CLOSURE
+RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
+```
+
+### 42.10 Closure Self-Check
+
+Bu bölüm: Track B'nin send/publication/reversal, authorization projection, read API ve portal dilimlerini BAŞLATMAZ veya yetkilendirmez; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35/§37/§38/§39/§40/§41'in kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; yeni role enum'u veya paralel yetki modeli ÜRETMEZ; paylaşılan `isApproverEligible()`'ı DEĞİŞTİRMEZ; başka actionCode'ların yeterlilik kuralını DEĞİŞTİRMEZ; approval servisini production akışına BAĞLAMAZ; client-görünür hiçbir finansal veri AÇMAZ; UYAP/OFFICE/RCV/DEBTOR statülerini DEĞİŞTİRMEZ; yeni dependency EKLEMEZ.
+
+**APPROVAL RUNTIME EXISTS ≠ DISCLOSURE MAY BE SENT · APPROVED ≠ PUBLISHED · APPROVAL ELIGIBLE ≠ APPROVAL GRANTED · I03 CLOSED ≠ TRACK B FULLY IMPLEMENTED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
