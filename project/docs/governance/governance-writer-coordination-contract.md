@@ -600,7 +600,7 @@ gevşetmez.
 ```text
 Task ID  : RCV-CLAIM-FORM-P02-S08-D02-PB01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
 Mode     : RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
-Base SHA : a62e078a33803774ef5595343092ab2ad36d48a9
+Base SHA : 1801748aab2f2197ffc5882b46d182613b1e92b1
 Head ref : codex/rcv-claim-form-pb01-authority-bootstrap-control-plane-binding-r01
 Scope    : M project/scripts/governance-coordination.cjs
            M project/scripts/governance-coordination.test.cjs
