@@ -29,6 +29,7 @@ const authorityMod = require('./authority.cjs');
 const eligibilityMod = require('./eligibility.cjs');
 const governanceMod = require('./governance-profile.cjs');
 const oneShotMod = require('./one-shot-grant.cjs');
+const runtimeMod = require('./runtime-contract.cjs');
 
 class AdmissionError extends Error {
   constructor(code, detail) {
@@ -188,7 +189,14 @@ function admit(opts) {
   if (!verdict.admissible) throw new AdmissionError(verdict.refusal, verdict.detail);
 
   const grant = opts.standingGrant;
-  return opts.queue.enqueue({
+  return opts.queue.enqueue(Object.assign(
+    // What a worker must BE to process this entry, pinned where the entry is
+    // created. The queue is shared across every worktree of this repository, so
+    // "whoever drains it next" is not a safe assumption about what code will
+    // run — an out-of-date checkout answers dispatch questions with out-of-date
+    // semantics and can push an entry to a terminal blocker it never earned.
+    runtimeMod.pinForAdmission({ admissionCodeSha: opts.admissionCodeSha }),
+    {
     programId: verdict.program,
     taskId: opts.spec.taskId,
     taskClass: opts.taskClass,
@@ -205,7 +213,8 @@ function admit(opts) {
     artefactsCommitted: opts.artefactsCommitted === true,
     executorLane: opts.executorLane || null,
     nowMs: opts.nowMs,
-  });
+    },
+  ));
 }
 
 module.exports = { AdmissionError, evaluate, admit, eligibilityMod };
