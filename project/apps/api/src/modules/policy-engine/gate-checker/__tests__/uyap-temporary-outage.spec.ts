@@ -69,6 +69,14 @@ describe('P3 — UYAP geçici arıza gate\'leri (gate-checker)', () => {
       // Diğer SEND HARD gate'lerini geçir: vekaletname var, masraf/closed/archived yok.
       const facts = factMap({
         'system.uyap_available': true,
+        // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: UYAP_SEND artik her onkosulun POZITIF
+        // kanitini ister (UYAP_SEND_PRECONDITIONS_UNPROVEN). Fixture'a eksik olan
+        // kanitlar eklendi; bu test'in konusu (outage bloğu YOK) degismedi.
+        'system.uyap_availability_explicit': true,
+        'case.is_closed': false,
+        'case.is_archived': false,
+        'case.allow_uyap_actions': true,
+        'case.has_unpaid_blocking_expense': false,
         'case.has_power_of_attorney': true,
         // I04: POWER_OF_ATTORNEY_MISSING gate'i artik computed granular authority fact'lerini okur.
         'actor.is_canonical_lawyer': true,

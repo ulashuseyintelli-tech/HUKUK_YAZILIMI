@@ -92,6 +92,32 @@ export const COMPILED_GATES: CompiledGate[] = [
   },
 
   {
+    gateCode: 'UYAP_SEND_PRECONDITIONS_UNPROVEN',
+    name: 'UYAP Gönderim Önkoşulları Kanıtlanamadı',
+    description:
+      'UYAP-SEND-HARD-GATE-PREFLIGHT-R02: UYAP_SEND yalniz her onkosul POZITIF olarak ' +
+      'kanitlandiginda gecer. Eksik/undefined/null fact, kayip case, kayip tenant, ' +
+      'provider hatasi veya yapilandirilmamis operasyonel sinyal IZIN URETEMEZ. ' +
+      'Diger gate\'ler (CASE_CLOSED, CASE_ARCHIVED, UYAP_DISABLED, EXPENSE_BLOCKING) ' +
+      'yalniz POZITIF kotu-durum sinyalinde bloklar (`=== true` / `=== false`); bu ' +
+      'gate onlarin fact-yoklugu (fail-open) bosuklugunu UYAP_SEND icin kapatir. ' +
+      'Kapsam bilerek yalniz UYAP_SEND\'dir: diger action\'larin davranisi DEGISMEZ.',
+    actionCodes: [ActionCode.UYAP_SEND],
+    condition: (facts: FactMap) =>
+      // Her kosul POZITIF ispat ister; eksik fact => sol taraf undefined => blok.
+      facts.get('case.is_closed') !== false ||
+      facts.get('case.is_archived') !== false ||
+      facts.get('case.allow_uyap_actions') !== true ||
+      facts.get('case.has_unpaid_blocking_expense') !== false ||
+      facts.get('system.uyap_available') !== true ||
+      facts.get('system.uyap_availability_explicit') !== true,
+    severity: 'HARD',
+    reason:
+      'UYAP gönderim önkoşulları kanıtlanamadı. İşlem güvenli tarafta bloklandı.',
+    priority: 13,
+  },
+
+  {
     gateCode: 'ARTICLE_4_REQUIRED',
     name: '4. Madde Talebi Gerekli',
     description: 'Ödeme emri için 4. madde talebi zorunlu',

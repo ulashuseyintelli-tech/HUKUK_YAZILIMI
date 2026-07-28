@@ -46,6 +46,16 @@ export interface IUyapAvailabilityService {
    * Env yok veya boş ise true (fail-safe: available).
    */
   isUyapAvailable(): boolean;
+
+  /**
+   * UYAP-SEND-HARD-GATE-PREFLIGHT-R02: operasyonel sinyal AÇIKÇA yapılandırılmış mı?
+   *
+   * `isUyapAvailable()` geriye dönük uyumluluk için env tanımsızken `true` döner
+   * (fail-safe: available). Bu davranış `UYAP_SEND` için **fail-open**'dır: owner kuralı
+   * "missing configuration → block". Bu metot ayrımı açığa çıkarır; `isUyapAvailable()`
+   * semantiği DEĞİŞMEZ (diğer action'larda regresyon yok).
+   */
+  isAvailabilityExplicitlyConfigured(): boolean;
 }
 
 // ============================================================================
@@ -71,6 +81,17 @@ export class UyapAvailabilityService implements IUyapAvailabilityService {
     const normalized = raw.trim().toLowerCase();
     return !OUTAGE_VALUES.includes(normalized); // boş string dahil → available
   }
+
+  /**
+   * UYAP-SEND-HARD-GATE-PREFLIGHT-R02: sinyal AÇIKÇA yapılandırılmış mı?
+   * Env tanımsız veya boş string ise `false` → `UYAP_SEND` fail-closed olur.
+   * `isUyapAvailable()` davranışı DEĞİŞMEZ.
+   */
+  isAvailabilityExplicitlyConfigured(): boolean {
+    const raw = process.env[UYAP_AVAILABILITY_ENV.UYAP_AVAILABLE];
+    if (raw == null) return false;
+    return raw.trim().length > 0;
+  }
 }
 
 // ============================================================================
@@ -79,13 +100,24 @@ export class UyapAvailabilityService implements IUyapAvailabilityService {
 
 export class MockUyapAvailabilityService implements IUyapAvailabilityService {
   private available = true;
+  private explicit = true;
 
   isUyapAvailable(): boolean {
     return this.available;
   }
 
+  /** UYAP-SEND-HARD-GATE-PREFLIGHT-R02: testlerde varsayılan olarak AÇIKÇA yapılandırılmış sayılır. */
+  isAvailabilityExplicitlyConfigured(): boolean {
+    return this.explicit;
+  }
+
   /** Test yardımcı: outage'ı aç/kapat. */
   setAvailable(available: boolean): void {
     this.available = available;
+  }
+
+  /** Test yardımcı: "yapılandırma yok" senaryosunu kur. */
+  setExplicitlyConfigured(explicit: boolean): void {
+    this.explicit = explicit;
   }
 }
