@@ -2937,3 +2937,86 @@ RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
 Bu bölüm: authorization projection, read API ve portal dilimlerini BAŞLATMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35–§42'nin kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; publication servisini production akışına BAĞLAMAZ; client-görünür hiçbir finansal veri AÇMAZ; gerçek e-posta GÖNDERMEZ; yeni dependency EKLEMEZ.
 
 **PROVIDER ACCEPTED ≠ DELIVERED TO INBOX · SENT ≠ PUBLISHED · PUBLISHED ≠ EVERY CLIENT MAY VIEW · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
+
+## 44. CLIENT Phase 2 Track B I05 — Client Authorization Projection and Read API Closure (OWNER RATIFIED)
+
+Bu bölüm, `CLIENT-P2-U03-TRACK-B-I05 — CLIENT AUTHORIZATION PROJECTION AND READ API` görevinin **teknik kapanış** kaydıdır (`decision-log.md` `CLIENT-P2-U03-TRACK-B-I05-CLOSURE` kaydı). §5, §6, §8.A, §8.B, §11–§43 substantive hükümlerini DEĞİŞTİRMEZ; §35'in ve §37–§43'ün **kendi metinleri DEĞİŞTİRİLMEMİŞTİR**.
+
+### 44.1 Canonical Kimlik ve SHA
+
+```text
+TASK   : CLIENT-P2-U03-TRACK-B-I05
+TITLE  : CLIENT AUTHORIZATION PROJECTION AND READ API
+PR     : #1777
+SQUASH : 185be942c73b6dec95c408aede1f7aca8026c80a
+DIFF   : 4 dosya, +729 / -0
+```
+
+**SCHEMA/MIGRATION: NONE** · **CONTROLLER/ROUTE/RESOLVER/UI: NONE** · **YENİ DEPENDENCY: NONE** · **`ci.yml`: DOKUNULMADI**.
+
+### 44.2 Yetki Zinciri
+
+Her okuma server tarafında baştan çözülür; client girdisi **asla güvenilmez**:
+
+```text
+portalUserId -> ClientPortalUser (isActive)
+             -> clientId
+             -> Client (tenantId ESLESMELI)
+             -> CaseClient (muvekkilin gercekten bagli oldugu dosyalar)
+             -> ClientFinancialDisclosure (tenant scope)
+             -> ClientFinancialDisclosureVersion (YALNIZ client-gorunur statuler)
+```
+
+`CaseClient`'te `tenantId` kolonu **yoktur** (§37.3); tenant güvencesi kökün kendi `tenantId`'sinden ve client eşleşmesinden **birlikte** gelir. "`caseClientId` verildi, kabul et" modeli **kullanılmamıştır**. `caseId` filtresi kapsamı yalnız **daraltır**, genişletmez.
+
+### 44.3 §35.7 Görünürlük Sınırı
+
+Yalnız `PUBLISHED` / `SUPERSEDED` / `REVERSED` client-görünürdür. `DRAFT`, `OFFICE_APPROVAL_PENDING`, `OFFICE_APPROVED`, `CONTENT_APPROVAL_PENDING`, `CONTENT_APPROVED`, `SEND_PENDING`, `SEND_FAILED` ve `CANCELLED` durumundaki hiçbir versiyon client'a **ulaşmaz** — sekiz durumun her biri ayrı ayrı test edilmiştir.
+
+### 44.4 §35.14 İki Ayrı Yüzey (OWNER KARARI)
+
+Varsayılan yüzey **yalnız current-effective** disclosure'ları taşır; düzeltme ve reversal geçmişi **ayrı** "Bildirim Geçmişi" yüzeyindedir. İki yüzey **kesişmez** ve tek birleşik liste **üretilmez**; ayrım tip düzeyinde de zorlanır (`CURRENT` / `HISTORY`).
+
+### 44.5 §35.14 Alan Sınırı
+
+Çıktı `CLIENT_DISCLOSURE_ALLOWED_FIELDS` beyaz listesiyle **birebir** kurulur ve `assertProjectionShape()` ile fail-closed doğrulanır — fazladan **veya** eksik anahtar hatadır, dolayısıyla ileride eklenecek bir alan **sessizce sızamaz**. Internal approver kimliği, onay yorumu, provider hata detayı, provider message ID, idempotency anahtarı, hash, ham ledger kimliği, bildirim metni, alıcı e-postası ve taslak workflow durumu projeksiyona **girmez**. Tutarlar canonical `Decimal` string'dir (locale-bağımsız); `toFixed()` **kullanılmamıştır**.
+
+Kapsam dışı, yayınlanmamış ve var olmayan kayıt **aynı 404 gövdesini** üretir — bir kaydın **varlığı** bile sızdırılmaz.
+
+### 44.6 Test Kanıtı ve Diş Doğrulaması
+
+```text
+projection integration       : 11/11 PASS  (gercek PostgreSQL 16)
+client-financial-disclosure  : 106/106 PASS (I01+I02+I03 regresyonu dahil)
+CI manifest (gercek run-ci-manifest.sh): db/domain-integration 24 suite / 278 test PASS
+yeni manifest ACILMADI, CI-8 butcesi ARTMADI · API build PASS · eslint 0 · I05 tsc hatasi 0
+
+DIS (TEETH) — 6/6 KORUMA DIS TASIYOR:
+  [A] portal kullanicisi aktiflik kontrolu -> test [4] FAIL
+  [B] tenant eslesme kontrolu              -> test [5] FAIL
+  [C] client scope filtresi                -> test [6] FAIL
+  [D] client-gorunur statu filtresi        -> test [1] FAIL
+  [E] current/history ayrimi               -> test [2] FAIL
+  [F] canonical para bicimi                -> test [9] FAIL
+  geri yukleme                             -> 106/106 PASS
+```
+
+### 44.7 Statü
+
+```text
+CLIENT-P2-U03-TRACK-B-I05 : AUTHORIZED / IMPLEMENTED / VERIFIED / MERGED / CANONICAL
+
+TRACK B §35/§37/§39/§40/§41/§42/§43 : degismedi
+TRACK B AUTHORIZATION PROJECTION / READ API : CLOSED/CANONICAL  (bu kayitla)
+
+TRACK B PORTAL PRESENTATION          (I06) : NOT STARTED
+TRACK B ACCEPTANCE / PROGRAM CLOSURE (I07) : NOT STARTED
+CLIENT-P2-U03 (genel) : PARTIAL — NOT READY FOR FINAL CLOSURE
+RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE (projeksiyon HENUZ ROUTE EDILMEDI)
+```
+
+### 44.8 Closure Self-Check
+
+Bu bölüm: portal sunum dilimini BAŞLATMAZ; hiçbir HTTP rotası AÇMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35–§43'ün kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; projeksiyonu production akışına BAĞLAMAZ; client-görünür hiçbir finansal veri AÇMAZ; yeni dependency EKLEMEZ.
+
+**PUBLISHED ≠ EVERY CLIENT MAY VIEW · CLIENT-VISIBLE DATA = ONLY SERVER-AUTHORIZED PROJECTION · PROJECTION EXISTS ≠ PROJECTION IS ROUTED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
