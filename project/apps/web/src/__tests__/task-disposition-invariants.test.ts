@@ -134,6 +134,32 @@ describe('task revision protokolü — belge bağları', () => {
     expect(rules).toMatch(/### Gerçek executor handoff istisnaları/);
   });
 
+  it('AGENTS.md çekirdeği altı kısa hükmü de taşır', () => {
+    const agents = read('AGENTS.md');
+    expect(agents).toMatch(/Revision authority\s+genisletmez/i);
+    expect(agents).toMatch(/terminal disposition degildir/i);
+    expect(agents).toMatch(/allowlist genislemesi revision degildir/i);
+    expect(agents).toMatch(/semantic outcome degisikligi yeni task veya owner karari/i);
+    expect(agents).toMatch(/primary executor degisikligi\s+explicit handoff ister/i);
+    expect(agents).toMatch(/Bounded capability degisikligi handoff degildir/i);
+  });
+
+  it('detay katmanı karar ağacını ve supersededLayer tablosunu taşır', () => {
+    const rules = read('project/docs/governance/process-rules.md');
+    expect(rules).toMatch(/### Karar ağacı/);
+    expect(rules).toMatch(/### supersededLayer/);
+    expect(rules).toMatch(/### Base drift reconciliation/);
+    expect(rules).toMatch(/### Executor değişikliği ayrımı/);
+  });
+
+  it('çekirdek cümle iki belgede birden tekrar edilmez', () => {
+    // TEK CANONICAL HOME: normatif hüküm yalnız AGENTS.md'de.
+    expect(read('AGENTS.md')).toMatch(/yeni immutable revision ile devam eder/i);
+    expect(read('project/docs/governance/process-rules.md')).not.toMatch(
+      /yeni immutable revision ile devam eder/i,
+    );
+  });
+
   it('handoff istisna listesi AGENTS.md’de tekrar edilmez', () => {
     // TEK CANONICAL HOME: dört istisnanın sayıldığı yer process-rules.md'dir.
     expect(read('AGENTS.md')).not.toMatch(/primary executor gerekli araci teknik olarak/i);

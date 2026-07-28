@@ -210,19 +210,18 @@ Bir gorevi alan ajan o gorevin PRIMARY EXECUTOR / TASK OWNER / ORCHESTRATOR'udur
 uctan uca sahiplenir. Baska bir ajan veya arac yalniz BOUNDED CAPABILITY EXECUTOR olarak
 cagrilir.
 
-- Protected-path writer capability (`CODEX_LOCAL`) bir executor ROLU degil, primary
-  orchestrator tarafindan belirli bir islem icin cagrilan bounded capability'dir.
-- Bounded capability executor kullanmak task ownership'i, program lock'u, current active
-  unit'i ve final accountability'yi DEGISTIRMEZ.
-- Primary orchestrator alt gorevi hazirlar, cagirir, sonucu toplar, dogrular, gerekiyorsa
-  duzeltir, ana zincire entegre eder ve gorevi terminal sonuca ulastirir.
+- Protected-path writer capability (`CODEX_LOCAL`) executor ROLU degil bounded
+  capability'dir; task ownership'i, program lock'u, current active unit'i ve final
+  accountability'yi DEGISTIRMEZ. Bounded capability degisikligi handoff degildir.
 - Kullanici ajanlar arasinda gorev tasiyan dispatcher DEGILDIR.
 
 `TASK REVISION ≠ TASK TERMINATION ≠ EXECUTOR HANDOFF.` Task identity, semantic outcome ve
 primary ownership degismediyse is durmaz; WIP korunur, mevcut diff yeniden degerlendirilir
-ve yurutme ayni task altinda yeni immutable revision ile devam eder. Handoff istisnalari,
-revision tetikleyicileri ve terminal disposition sinifları:
-`project/docs/governance/process-rules.md`.
+ve yurutme ayni task altinda yeni immutable revision ile devam eder. Revision authority
+genisletmez ve terminal disposition degildir; allowlist genislemesi revision degildir;
+semantic outcome degisikligi yeni task veya owner karari, primary executor degisikligi
+explicit handoff ister. Handoff istisnalari, revision tetikleyicileri, supersededLayer ve
+terminal disposition sinifları: `project/docs/governance/process-rules.md`.
 
 ## 8. Governance Writer Coordination V1
 

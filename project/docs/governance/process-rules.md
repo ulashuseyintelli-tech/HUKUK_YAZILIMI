@@ -111,6 +111,41 @@ EXECUTOR HANDOFF        = primary ownership başka bir yürütücüye geçer
 OWNER DECISION REQUIRED = owner semantic kararı olmadan ilerlenemez
 ```
 
+### Karar ağacı
+
+```text
+Task identity (taskId) değişti mi?
+├── EVET → yeni task. Owner kararı gerekir.
+└── HAYIR
+    └── Semantic outcome değişti mi?
+        ├── EVET → yeni task veya owner kararı. Revision DEĞİL.
+        └── HAYIR
+            └── Primary ownership değişiyor mu?
+                ├── EVET → EXECUTOR HANDOFF (owner-gated, dört istisna)
+                └── HAYIR
+                    └── Değişiklik authority genişletiyor mu?
+                        │   (allowlist genişlemesi, production/schema/
+                        │    migration/backfill/live DB/cutover eklenmesi)
+                        ├── EVET → yeni authority gerekir. Revision DEĞİL.
+                        └── HAYIR → TASK REVISION. Yürütme devam eder.
+```
+
+### supersededLayer
+
+Neyin superseded olduğu kaydedilir; karar bu katmana göre verilir.
+
+| `supersededLayer` | Örnek | Sonuç |
+|---|---|---|
+| `IMPLEMENTATION_DESIGN` | seçilen yaklaşım değişti | revision |
+| `TEST_DESIGN` | test stratejisi/fixture değişti | revision |
+| `VALIDATION_APPROACH` | doğrulama yöntemi değişti | revision |
+| `ALLOWLIST_NARROWED` | `changedPathAllowlist` daraldı | revision |
+| `BASE_REVISION` | conflict içermeyen base drift | revision (drift reconciliation PASS şartıyla) |
+| `CONTRACT_VERSION` | daha yeni spec/şablon yayımlandı | revision |
+| `ALLOWLIST_WIDENED` | scope dışına çıkıldı | yeni authority |
+| `SEMANTIC_OUTCOME` | task'ın ürettiği anlam değişti | yeni task / owner kararı |
+| `PRIMARY_OWNERSHIP` | primary executor değişiyor | explicit handoff |
+
 ### Revision tetikleyicileri — yürütme durmaz
 
 Aşağıdakiler tek başına ne termination ne de handoff nedenidir. Task identity, semantic
@@ -179,8 +214,62 @@ Handoff yalnız şu dört durumda yapılır ve her biri raporlanır:
 4. Mevcut executor görevi sürdüremeyecek durumda.
 
 Handoff bir disposition değil, ayrı ve owner-gated bir taleptir: `BLOCKED_OWNER_DECISION`
-ile ve yukarıdaki alanlarla raporlanır. Bounded capability executor çağırmak handoff
-değildir; task ownership değişmez (`AGENTS.md` §7).
+ile ve yukarıdaki alanlarla raporlanır.
+
+### Executor değişikliği ayrımı
+
+Primary orchestrator alt görevi hazırlar, çağırır, sonucu toplar, doğrular, gerekiyorsa
+düzeltir, ana zincire entegre eder ve görevi terminal sonuca ulaştırır. Bu akış içinde
+bounded capability executor çağırmak (ör. protected-path writer) **handoff değildir**:
+task ownership, program lock, current active unit ve final accountability değişmez.
+
+| Değişiklik | Sınıf | Gereken |
+|---|---|---|
+| bounded capability executor değişti | revision değil, handoff değil | — |
+| primary executor değişecek | `EXECUTOR HANDOFF` | explicit owner grant |
+| aynı executor, yeni tasarım | `TASK REVISION` | yeni immutable revision |
+
+### Base drift reconciliation
+
+Conflict içermeyen base drift revision'dır, termination değildir. Sıra:
+
+1. Yeni base'e rebase edilir; conflict yoksa mevcut diff korunur.
+2. Drift reconciliation çalıştırılır: yeni base'in task boundary'sine dokunup dokunmadığı,
+   allowlist'in hâlâ yeterli olduğu ve required test'lerin hâlâ geçtiği doğrulanır.
+3. Reconciliation PASS olmadan yeni revision `ELIGIBLE` sayılmaz.
+4. Conflict varsa bu artık "conflict içermeyen base revision" değildir; owner turuna gider.
+
+Base SHA değişimi yeni immutable revision gerektirir; semantic outcome değişmediği sürece
+yeni `taskId` gerektirmez.
+
+### Test migration
+
+Test design superseded olduğunda testler silinip sıfırdan yazılmaz:
+
+1. Hangi assertion'ın hangi nedenle geçersizleştiği yazılır.
+2. Hâlâ geçerli assertion'lar korunur; yalnız geçersizleşen kısım taşınır.
+3. Yeni test yeni revision'ın required test listesine bağlanır.
+4. Eski test kaydı immutable'dır; `SUPERSEDED BY <yeni revision>` işaretlenir.
+
+### Örnekler
+
+```text
+Contract v2 yayımlandı, task v1 şablonuyla yazılmıştı
+  → supersededLayer: CONTRACT_VERSION
+  → identity aynı, semantic outcome aynı → REVISION, yürütme devam eder
+
+Owner "şu üç dosyaya da dokun" dedi
+  → supersededLayer: ALLOWLIST_WIDENED
+  → yeni authority gerekir; revision tek başına yetmez
+
+main ilerledi, çakışma yok
+  → supersededLayer: BASE_REVISION
+  → drift reconciliation PASS → REVISION
+
+Task'ın üreteceği hukuki sonuç değişti
+  → supersededLayer: SEMANTIC_OUTCOME
+  → yeni task / owner kararı; BLOCKED_OWNER_DECISION ile raporlanır
+```
 
 ## Waiting & Progress Policy
 
