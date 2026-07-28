@@ -364,6 +364,21 @@ function createQueue(dir) {
           fail('QUEUE_RECONCILIATION_NOT_AUTHORIZED', cur.state + ' -> ' + to);
         }
       }
+      // The artefact digest is a PROMISE: what runs is what was admitted. A
+      // patch that quietly rewrites it would break the promise rather than
+      // re-make it, and every gate downstream would still report green because
+      // the pin it compares against had been moved to match.
+      //
+      // So rewriting it is its own authorized act. Re-pinning is legitimate —
+      // an owner may correct a defective authority artefact, and then the
+      // promise has to be made again about the corrected one — but it is never
+      // a side effect of some other transition.
+      const patchedDigest = opts.patch && opts.patch.artefactSha256;
+      if (patchedDigest !== undefined && patchedDigest !== cur.artefactSha256) {
+        if (opts.artefactRepinAuthorized !== true) {
+          fail('QUEUE_ARTEFACT_REPIN_NOT_AUTHORIZED', String(cur.artefactSha256).slice(0, 12) + ' -> ' + String(patchedDigest).slice(0, 12));
+        }
+      }
 
       const now = opts.nowMs || Date.now();
       const next = Object.assign({}, cur, opts.patch || {}, {
