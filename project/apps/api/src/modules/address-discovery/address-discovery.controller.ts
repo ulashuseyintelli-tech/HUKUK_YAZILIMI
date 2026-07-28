@@ -186,7 +186,7 @@ export class AddressDiscoveryController {
   ) {
     // Tenant boundary: ham addressId başka tenant'ın adresine erişemesin (cross-tenant okuma+yazma engeli).
     await this.confidenceScoreService.assertAddressBelongsToTenant(req.user.tenantId, addressId);
-    const score = await this.confidenceScoreService.computeAddressScore(addressId);
+    const score = await this.confidenceScoreService.computeAddressScore(req.user.tenantId, addressId);
     return { score };
   }
 
@@ -237,7 +237,7 @@ export class AddressDiscoveryController {
   ) {
     // Tenant boundary: ham debtorId başka tenant'ın borçlusuna erişemesin (cross-tenant yazma engeli).
     await this.confidenceScoreService.assertDebtorBelongsToTenant(req.user.tenantId, debtorId);
-    await this.confidenceScoreService.updateAllScoresForDebtor(debtorId);
+    await this.confidenceScoreService.updateAllScoresForDebtor(req.user.tenantId, debtorId);
     return { success: true };
   }
 

@@ -120,7 +120,7 @@ describe('ConfidenceScoreService — tenant boundary (Gate-1)', () => {
       ).resolves.toEqual({ score: 87 });
 
       expect(confidence.assertAddressBelongsToTenant).toHaveBeenCalledWith('tenant-A', 'addr-A');
-      expect(confidence.computeAddressScore).toHaveBeenCalledWith('addr-A');
+      expect(confidence.computeAddressScore).toHaveBeenCalledWith('tenant-A', 'addr-A');
     });
 
     it('ACT-10: GET /confidence/:addressId artık updateAddressScore (yazan) ÇAĞIRMAZ — GET-içi-yazma anti-pattern kapandı', async () => {
@@ -177,7 +177,7 @@ describe('ConfidenceScoreService — tenant boundary (Gate-1)', () => {
         ctrl.updateAllScoresForDebtor({ user: { tenantId: 'tenant-A' } }, 'debtor-A'),
       ).resolves.toEqual({ success: true });
 
-      expect(confidence.updateAllScoresForDebtor).toHaveBeenCalledWith('debtor-A');
+      expect(confidence.updateAllScoresForDebtor).toHaveBeenCalledWith('tenant-A', 'debtor-A');
     });
   });
 });

@@ -446,7 +446,7 @@ describeDb('AddressDiscoveryModule Integration Tests', () => {
         },
       });
 
-      const score = await confidenceScoreService.updateAddressScore(address.id);
+      const score = await confidenceScoreService.updateAddressScore(tenantId, address.id);
 
       expect(score).toBeGreaterThan(0);
 
@@ -470,7 +470,7 @@ describeDb('AddressDiscoveryModule Integration Tests', () => {
         },
       });
 
-      const computed = await confidenceScoreService.computeAddressScore(address.id);
+      const computed = await confidenceScoreService.computeAddressScore(tenantId, address.id);
       expect(computed).toBeGreaterThan(0);
 
       // Veritabanında HİÇBİR şey değişmemeli (confidenceScore hâlâ null)
@@ -489,7 +489,7 @@ describeDb('AddressDiscoveryModule Integration Tests', () => {
         ],
       });
 
-      await confidenceScoreService.updateAllScoresForDebtor(testDebtor.id);
+      await confidenceScoreService.updateAllScoresForDebtor(tenantId, testDebtor.id);
 
       const addresses = await prisma.debtorAddress.findMany({
         where: { debtorId: testDebtor.id },
