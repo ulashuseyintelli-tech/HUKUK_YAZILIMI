@@ -193,15 +193,30 @@ export function buildClaimDocumentFields(item: {
  * (EXPENSE→EXPENSE · VEKALET_UCRETI→ATTORNEY_FEE · INTEREST→INTEREST · CEZAI_SART→CONTRACTUAL_PENALTY
  * · HARC→FEE · OTHER→OTHER).
  *
- * NOT — PR-i1 BUGÜN NO-OP: fer'i kalemTuru'lar henüz ana dropdown'da YOK (PR-i2 açacak); bugün
- * "Ana Alacak" dalına yalnız ana-dropdown değerleri ulaşır → hepsi PRINCIPAL döner = davranış AYNEN.
- * Bilinmeyen/boş kalemTuru → PRINCIPAL (güvenli varsayılan).
+ * Yalnız aşağıdaki explicit canonical/compatibility değerleri kabul edilir. Blank veya
+ * bilinmeyen bir değerin PRINCIPAL'a dönüştürülmesi hukuki sınıflandırma üretir; bu nedenle
+ * mapper deterministik validation error ile fail-closed davranır.
  */
 export type ClaimDueType =
   | 'PRINCIPAL' | 'INTEREST' | 'EXPENSE' | 'VEKALET_UCRETI' | 'HARC' | 'TAZMINAT'
   | 'CEZAI_SART' | 'NAFAKA' | 'KIRA' | 'AIDAT' | 'KOMISYON' | 'PRIM' | 'OTHER';
 
 const CLAIM_KALEM_DUE_TYPE: Record<string, ClaimDueType> = {
+  // Canonical ana alacak kalemleri. PRINCIPAL yalnız bu explicit değerlerle üretilir.
+  CEK: 'PRINCIPAL',
+  SENET: 'PRINCIPAL',
+  FATURA: 'PRINCIPAL',
+  KIRA: 'PRINCIPAL',
+  AIDAT: 'PRINCIPAL',
+  ASIL_ALACAK: 'PRINCIPAL',
+  KREDI: 'PRINCIPAL',
+  BANKA: 'PRINCIPAL',
+  IPOTEK: 'PRINCIPAL',
+  REHIN: 'PRINCIPAL',
+  ILAM: 'PRINCIPAL',
+  NAFAKA: 'PRINCIPAL',
+  NAFAKA_BIRIKIMIS: 'PRINCIPAL',
+  NAFAKA_ISLEYECEK: 'PRINCIPAL',
   // Genel fer'i/masraf (prefixsiz jenerik; PR-i2 dropdown'u bunları açacak)
   MASRAF: 'EXPENSE',
   YARGILAMA_GIDERI: 'EXPENSE',
@@ -216,9 +231,26 @@ const CLAIM_KALEM_DUE_TYPE: Record<string, ClaimDueType> = {
   ILAM_ISLEMIS_FAIZ: 'INTEREST',
 };
 
-export function mapClaimKalemTuruToDueType(kalemTuru?: string): ClaimDueType {
-  if (!kalemTuru) return 'PRINCIPAL';
-  return CLAIM_KALEM_DUE_TYPE[kalemTuru] ?? 'PRINCIPAL';
+export const CLAIM_KALEM_TURU_VALIDATION_MESSAGE = 'Alacak kalemi türü seçilmelidir.';
+
+export class ClaimKalemTuruValidationError extends Error {
+  readonly code = 'CLAIM_KALEM_TURU_INVALID';
+
+  constructor() {
+    super(CLAIM_KALEM_TURU_VALIDATION_MESSAGE);
+    this.name = 'ClaimKalemTuruValidationError';
+  }
+}
+
+export function mapClaimKalemTuruToDueType(kalemTuru?: unknown): ClaimDueType {
+  if (typeof kalemTuru !== 'string' || kalemTuru.trim().length === 0) {
+    throw new ClaimKalemTuruValidationError();
+  }
+  const mapped = CLAIM_KALEM_DUE_TYPE[kalemTuru];
+  if (!mapped) {
+    throw new ClaimKalemTuruValidationError();
+  }
+  return mapped;
 }
 
 /**
