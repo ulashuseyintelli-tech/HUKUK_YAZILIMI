@@ -544,3 +544,47 @@ authority'sini veya exact iki dosyalık kapsamını değiştirmez ve genişletme
 başka protected governance write, request/execution/result, production, schema,
 migration veya runtime yetkisi üretmez. Repair PR merge edildikten sonra pinned
 base nedeniyle yeniden kullanılamaz. Reusable authority yoktur.
+
+## HCR-08 AUTHORITY BOOTSTRAP — exact control-plane authority binding
+
+Owner-ratified 2026-07-28. Bu kayıt yalnız PR #1728 için tek kullanımlık,
+task-specific bir control-plane binding oluşturur; mevcut hiçbir kontrolü
+gevşetmez.
+
+### Binding PR kimliği
+
+```text
+Task ID  : RCV-CLAIM-FORM-HCR-08-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : 7854504b25ef1c988606b1885d1562ef44ce54aa
+Head ref : codex/rcv-claim-form-hcr-08-authority-bootstrap-control-plane-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-CLAIM-FORM-HCR-08-AUTHORITY-BOOTSTRAP-R01
+Target mode      : RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_R01
+Target PR        : #1728
+Original base SHA: 14d0f2931ac464321278e05f81ffc5053a8a7719
+Head ref         : codex/rcv-claim-form-hcr-08-authority-bootstrap-r01
+Scope            : M project/docs/governance/decision-log.md
+                   A project/docs/governance/coordination-execution-grants/RCV-CLAIM-FORM-HCR-08-FINAL-CLOSURE-AUDIT-R01.md
+Semantic record  : RCV-CLAIM-FORM-HCR-08-FINAL-CLOSURE-AUDIT-R01
+Execution record : RCV-CLAIM-FORM-HCR-08-FINAL-CLOSURE-AUDIT-R01-GRANT
+```
+
+Hedef PR yalnız exact branch ve `M/A` iki-file seti, iki marker'ın exact tekil
+oluşu, execution grant'in semantic authority'ye exact binding'i ve güncel target
+base'in bu binding'i canonical yapan commit'in descendant'ı olması birlikte
+doğrulandığında kabul edilir. Original base provenance'dır; target head SHA
+pinlenmez ve fresh-main normal merge ile uzlaştırma korunur.
+
+Binding yalnız yukarıdaki PR #1728 ve iki target path için geçerlidir. Genel
+`decision-log.md` yazma, başka execution grant, request/execution/result,
+production, schema, migration, runtime veya owner WIP yetkisi üretmez. Wildcard,
+prefix authority ve reusable authority yoktur. PR #1728 merge veya close
+olduğunda binding yeniden kullanılamaz.
