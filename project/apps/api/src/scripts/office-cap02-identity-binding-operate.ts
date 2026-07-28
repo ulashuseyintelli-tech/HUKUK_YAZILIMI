@@ -151,7 +151,13 @@ async function main(): Promise<void> {
     });
 
     const occurredAt = new Date().toISOString();
-    const audit = toIdentityBindingAuditEvent(input, outcome.decision, occurredAt);
+    const audit = toIdentityBindingAuditEvent(
+      input,
+      outcome.decision,
+      occurredAt,
+      // Transaction'dan donen GERCEK satir sayisi. Dry-run ve yazimsiz yollar 0.
+      outcome.mutatedRows,
+    );
     console.log('AUDIT', JSON.stringify(audit));
     console.log('DECISION', outcome.decision.kind, '-', outcome.decision.reason);
     console.log('MUTATED_ROWS', outcome.mutatedRows);
