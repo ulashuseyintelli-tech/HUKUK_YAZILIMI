@@ -75,6 +75,18 @@
           "excerptSha256": "352bcd8052008b9efe9b14b8d0dfb90e4b4ba20e5db2b0091f4bc1ba37e33a94"
         }
       }
+    },
+    {
+      "programId": "ORCHESTRA_OPERATIONAL_CANARY",
+      "standingGrantRef": "project/docs/governance/coordination-v2/activation/TASK-GRANT-CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04.json",
+      "governanceOverride": {
+        "reason": "OWNER-DECISION-R04-ONE-SHOT-OPERATIONAL-EVIDENCE-GRANT: orkestranin kendi terminal zincirini kanitlayan canary ailesi. Yetki tek kullanimlik task-scoped grant ile verilir; hicbir standing grant genisletilmez.",
+        "evidence": {
+          "sourcePath": "project/docs/governance/coordination-v2/task-plans/CANARY-R04/semantic-authority.md",
+          "exactExcerpt": "ORCHESTRA_OPERATIONAL_CANARY dogfood live execution is authorized to run",
+          "excerptSha256": "ef1819010004eb62f0e9fe1a56ccc4522ed756e224a77ebb4c966adce0bd020c"
+        }
+      }
     }
   ]
 }

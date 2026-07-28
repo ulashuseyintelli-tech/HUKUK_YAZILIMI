@@ -281,12 +281,21 @@ test('eligibility: the committed manifest is exactly what the deriver produces',
   assert.deepEqual(derived, committed, 'programs.manifest.json is not the derivation of its own authority');
 });
 
-test('eligibility: all seven programs are eligible, each with a stated reason', () => {
+test('eligibility: every program is eligible, each with a stated reason', () => {
   const committed = JSON.parse(readFromRepo('project/docs/governance/coordination-v2/programs.manifest.json'));
-  assert.equal(committed.programs.length, 7);
+  assert.equal(committed.programs.length, 8);
   assert.deepEqual(
     committed.programs.filter((p) => p.liveExecutionEligibility === 'ELIGIBLE').map((p) => p.programId).sort(),
-    ['CLIENT', 'COLLECTION', 'DEBTOR', 'DELIVERY_TRUTH', 'OFFICE', 'RECEIVABLE', 'UYAP_CONNECTOR'],
+    [
+      'CLIENT',
+      'COLLECTION',
+      'DEBTOR',
+      'DELIVERY_TRUTH',
+      'OFFICE',
+      'ORCHESTRA_OPERATIONAL_CANARY',
+      'RECEIVABLE',
+      'UYAP_CONNECTOR',
+    ],
   );
 
   // Two got there through the plain conjunction and four through an evidenced
@@ -308,7 +317,7 @@ test('eligibility: every eligible program has its OWN grant — no shared blanke
   const record = JSON.parse(readFromRepo(ACT + '/program-eligibility-authority.json'));
   const refs = record.eligiblePrograms.map((p) => p.standingGrantRef);
   assert.equal(new Set(refs).size, refs.length, 'two programs share a standing grant');
-  assert.equal(refs.length, 7);
+  assert.equal(refs.length, 8);
   for (const p of record.eligiblePrograms) {
     const g = JSON.parse(readFromRepo(p.standingGrantRef));
     assert.equal(g.program.programId, p.programId);

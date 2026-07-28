@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "programId": "ORCHESTRA_OPERATIONAL_CANARY",
+  "taskId": "CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04",
+  "taskClass": "OPERATIONAL_CANARY_EVIDENCE",
+  "planPath": "project/docs/governance/coordination-v2/task-plans/CANARY-R04/plan.json",
+  "standingGrantPath": "project/docs/governance/coordination-v2/activation/TASK-GRANT-CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04.json",
+  "promptPath": "project/docs/governance/coordination-v2/task-plans/CANARY-R04/executor-prompt.md",
+  "executorLane": "CODEX_LOCAL",
+  "targetBranch": "main",
+  "autoMerge": true,
+  "priority": 10,
+  "dependsOn": [],
+  "requireCommittedArtefacts": true,
+  "notes": "OPERATIONAL CANARY R04 — tek kullanimlik grant, terminal zincir kaniti."
+}
