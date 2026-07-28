@@ -31,6 +31,12 @@ import {
 } from '../permission-diagnostics/guided-edge/guarded-edge-outcome.envelope';
 import { GuidedOpenDecision } from '../policy-engine/types/effective-permission.types';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
+import {
+  compareSelfAuthorityShadow,
+  toSelfAuthorityShadowAuditEvent,
+  type ActorHierarchyFacts,
+  type IncumbentAuthorityVerdict,
+} from '../../scripts/office-cap02-authorization-shadow.core';
 import { OfficeApprovalService } from './office-approval.service';
 
 export type OfficeApprovalShadowDecision = 'ALLOW' | 'WOULD_REQUIRE_APPROVAL';
@@ -89,6 +95,13 @@ export class OfficeApprovalShadowService {
   /// </remarks>
   async evaluate(input: OfficeApprovalShadowInput): Promise<OfficeApprovalShadowResult> {
     const flagMode = this.flagMode();
+
+    // OFFICE-P2-CAP02-AUTHORIZATION-SHADOW-CONSUMER-I01 — ReportingLine gözlem katmanı.
+    // KENDİ flag'i vardır (OFFICE_CAP02_REPORTINGLINE_SHADOW) ve approval gate'ten BAĞIMSIZDIR:
+    // gate 'off' iken bile ölçüm alınabilsin diye erken-dönüşten ÖNCE çağrılır.
+    // Dönüş değeri YOK, throw ETMEZ, `flagMode`/karar/response'a HİÇBİR etkisi yoktur.
+    await this.recordReportingLineShadow(input);
+
     if (flagMode === 'off') return { flagMode: 'off', evaluated: false }; // no-op: hesap/audit/DB YOK
 
     if (flagMode === 'observe') {
@@ -229,5 +242,89 @@ export class OfficeApprovalShadowService {
       return { decision: 'WOULD_REQUIRE_APPROVAL', reasonCode: 'STAFF_NOT_APPROVER', capacity: user.staffMember.staffType };
     }
     return { decision: 'WOULD_REQUIRE_APPROVAL', reasonCode: 'UNLINKED', capacity: 'UNKNOWN' };
+  }
+
+  /**
+   * ReportingLine gözlem katmanı — CAP-02 SHADOW çekirdeğinin CANLI tüketicisi.
+   *
+   * NE YAPAR: yürürlükteki rütbe tabanlı self-authority kararını hesaplar, aktörün
+   * AKTİF ReportingLine disposition'ını okur, ikisini `compareSelfAuthorityShadow` ile
+   * KIYASLAR ve sonucu audit'e yazar. Böylece "enforcement açılsaydı ne değişirdi"
+   * sorusunun cevabı, hiçbir şey değiştirmeden ÖLÇÜLMÜŞ olur.
+   *
+   * NE YAPMAZ: hiçbir kararı/erişimi/response'u değiştirmez, OfficeApprovalRequest
+   * oluşturmaz, hiçbir hata çağırana sızmaz. `enforce` modundaki fail-closed
+   * davranışını da etkilemez — bu metot dönüşsüzdür ve enforce dalından ÖNCE çalışır.
+   *
+   * FLAG: `OFFICE_CAP02_REPORTINGLINE_SHADOW === 'observe'` → ölç. Diğer her şey
+   * (unset / 'off' / 'on' / bilinmeyen) → tamamen dormant: TEK bir DB sorgusu bile
+   * yapılmaz. Varsayılan davranış DEĞİŞMEZ.
+   */
+  private async recordReportingLineShadow(input: OfficeApprovalShadowInput): Promise<void> {
+    const mode = String(this.config.get('OFFICE_CAP02_REPORTINGLINE_SHADOW') ?? '')
+      .trim()
+      .toLowerCase();
+    if (mode !== 'observe') return; // fail-safe dormant
+
+    try {
+      const incumbent = await this.computeDecision(input.actorUserId, input.tenantId);
+      const [actor, line] = await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: input.actorUserId },
+          select: { isActive: true, tenantId: true },
+        }),
+        // Tenant-scoped: aktörün AKTİF disposition'ı (validUntil null). Tekil-aktif
+        // invariant'ı DB partial unique index ile garanti; findFirst yeterli.
+        this.prisma.reportingLine.findFirst({
+          where: { tenantId: input.tenantId, actorUserId: input.actorUserId, validUntil: null },
+          select: { disposition: true, managerUserId: true },
+        }),
+      ]);
+      // Aktör çözülemedi: yürürlükteki karar zaten ACTOR_NOT_RESOLVABLE der; ölçüm anlamsız.
+      if (!actor) return;
+
+      // Bilinmeyen bir disposition değeri sessizce yanlış sınıflanmasın: eşleşmeyen
+      // her şey null → MISSING_HIERARCHY (karşılaştırma yapılmaz).
+      const disposition: ActorHierarchyFacts['disposition'] =
+        line?.disposition === 'TOP_LEVEL'
+          ? 'TOP_LEVEL'
+          : line?.disposition === 'MANAGED'
+            ? 'MANAGED'
+            : null;
+
+      const facts: ActorHierarchyFacts = {
+        actorIsActive: actor.isActive,
+        actorTenantId: actor.tenantId,
+        disposition,
+        managerUserId: line?.managerUserId ?? null,
+      };
+      const incumbentVerdict: IncumbentAuthorityVerdict =
+        incumbent.decision === 'ALLOW' ? 'SELF_AUTHORITY' : 'REQUIRES_APPROVAL';
+
+      const record = compareSelfAuthorityShadow(
+        {
+          // Korelasyon: kişisel veri TAŞIMAZ; aynı işlemin kayıtlarını birbirine bağlar.
+          correlationId: `${input.actionCode}|${input.targetType}|${input.targetRef}`,
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          incumbentVerdict,
+          incumbentReasonCode: incumbent.reasonCode,
+          incumbentCapacity: incumbent.capacity,
+        },
+        facts,
+      );
+      const event = toSelfAuthorityShadowAuditEvent(record, new Date().toISOString());
+
+      await this.audit.log({
+        tenantId: input.tenantId,
+        action: 'OFFICE_CAP02_SELF_AUTHORITY_SHADOW_COMPARISON',
+        entityType: 'OFFICE_CAP02_REPORTINGLINE_SHADOW',
+        entityId: input.targetRef,
+        userId: input.actorUserId,
+        metadata: { ...event, reason: record.reason },
+      });
+    } catch {
+      // GÖZLEM ASLA AKIŞI BOZMAZ: ölçüm hatası mevcut davranışı değiştiremez.
+    }
   }
 }
