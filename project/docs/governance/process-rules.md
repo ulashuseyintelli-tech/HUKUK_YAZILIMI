@@ -98,6 +98,179 @@ Implementation Owner    : <ajan>
 
 Kaynak: COL/OD-18A (`decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18A`).
 
+## Task Revision Protokolü
+
+Normatif çekirdek `AGENTS.md` §7'dedir; bu bölüm uygulama detayıdır ve yeni hüküm kurmaz.
+
+Dört kavram ayrıdır ve hiçbiri diğerinin yerine geçmez:
+
+```text
+TASK REVISION           = aynı task, yeni immutable revision — yürütme devam eder
+TASK TERMINATION        = task terminal bir disposition ile kapanır
+EXECUTOR HANDOFF        = primary ownership başka bir yürütücüye geçer
+OWNER DECISION REQUIRED = owner semantic kararı olmadan ilerlenemez
+```
+
+### Karar ağacı
+
+```text
+Task identity (taskId) değişti mi?
+├── EVET → yeni task. Owner kararı gerekir.
+└── HAYIR
+    └── Semantic outcome değişti mi?
+        ├── EVET → yeni task veya owner kararı. Revision DEĞİL.
+        └── HAYIR
+            └── Primary ownership değişiyor mu?
+                ├── EVET → EXECUTOR HANDOFF (owner-gated, dört istisna)
+                └── HAYIR
+                    └── Değişiklik authority genişletiyor mu?
+                        │   (allowlist genişlemesi, production/schema/
+                        │    migration/backfill/live DB/cutover eklenmesi)
+                        ├── EVET → yeni authority gerekir. Revision DEĞİL.
+                        └── HAYIR → TASK REVISION. Yürütme devam eder.
+```
+
+### supersededLayer
+
+Neyin superseded olduğu kaydedilir; karar bu katmana göre verilir.
+
+| `supersededLayer` | Örnek | Sonuç |
+|---|---|---|
+| `IMPLEMENTATION_DESIGN` | seçilen yaklaşım değişti | revision |
+| `TEST_DESIGN` | test stratejisi/fixture değişti | revision |
+| `VALIDATION_APPROACH` | doğrulama yöntemi değişti | revision |
+| `ALLOWLIST_NARROWED` | `changedPathAllowlist` daraldı | revision |
+| `BASE_REVISION` | conflict içermeyen base drift | revision (drift reconciliation PASS şartıyla) |
+| `CONTRACT_VERSION` | daha yeni spec/şablon yayımlandı | revision |
+| `ALLOWLIST_WIDENED` | scope dışına çıkıldı | yeni authority |
+| `SEMANTIC_OUTCOME` | task'ın ürettiği anlam değişti | yeni task / owner kararı |
+| `PRIMARY_OWNERSHIP` | primary executor değişiyor | explicit handoff |
+
+### Revision tetikleyicileri — yürütme durmaz
+
+Aşağıdakiler tek başına ne termination ne de handoff nedenidir. Task identity, semantic
+outcome ve primary ownership değişmediği sürece aynı task altında yeni revision açılır:
+
+- implementation design superseded
+- test design veya validation yaklaşımı superseded
+- allowlist / scope daralması (task hedefi aynı kaldığı sürece)
+- conflict içermeyen base revision: rebase, base drift, ilerlemiş main
+- daha yeni bir contract, spec veya şablonun yayımlanmış olması
+- CI'nin sürüyor olması, PR'ın açık olması, sonraki task'ın beklemesi
+
+Revision'da yapılacak iş:
+
+1. WIP korunur: worktree, branch ve mevcut diff silinmez, stash'lenmez, revert edilmez.
+2. Mevcut diff yeni tasarıma göre yeniden değerlendirilir; hâlâ geçerli olan kısım kalır,
+   yalnız gerçekten geçersizleşen kısım yeniden yazılır.
+3. Yeni revision immutable kaydedilir; önceki revision düzeltilmez,
+   `SUPERSEDED BY <yeni revision>` işaretlenir.
+4. Task identity (`taskId`), semantic outcome ve primary ownership aynı kalır.
+5. Değişen tasarım ve gerekçesi raporlanır; sessiz tasarım değişikliği yapılmaz.
+
+### Terminal disposition sınıfları
+
+Bir task yalnız şu sınıflardan biriyle kapanabilir:
+
+```text
+COMPLETED                  CLOSED                      CANCELLED_BY_OWNER
+BLOCKED_EXTERNAL           BLOCKED_OWNER_DECISION      BLOCKED_CANONICAL_CONFLICT
+BLOCKED_SECURITY_RISK      BLOCKED_DATA_LOSS_RISK      BLOCKED_AUTHORITY_MISSING
+BLOCKED_UNRESOLVED_TECHNICAL_RISK
+```
+
+Şunlar terminal disposition DEĞİLDİR ve tek başlarına kapanış olarak kullanılamaz:
+
+```text
+HANDOFF_REQUIRED       SUPERSEDED             DESIGN_CHANGED        IMPLEMENTATION_CHANGED
+TEST_DESIGN_CHANGED    NEWER_CONTRACT_EXISTS  NEEDS_REEVALUATION    BASE_DRIFT
+CI_RUNNING             PR_OPEN                NEXT_TASK_PENDING     REVISION_REQUIRED
+```
+
+Bu ifadeler geçerli bir kapanışın yanında next-action veya revision gerekçesi olarak
+geçebilir; tek başına kapanış olarak geçemez. Makine kontrolü:
+`project/scripts/governance/task-disposition-guard.cjs`.
+
+### BLOCKED_* kapanışının zorunlu alanları
+
+```text
+blockerCode    : tam blocker
+blockingLayer  : hangi katman (EXTERNAL_DEPENDENCY / GOVERNANCE / SEMANTIC / ...)
+evidence       : gözlenen kanıt
+whyNotRevision : neden revision ile çözülemiyor
+requiredAction : owner veya dış taraf için gereken eylem
+preservedWip   : korunan worktree / branch / diff
+```
+
+Alanları eksik bir `BLOCKED_*` kapanışı, kapanış sayılmaz.
+
+### Gerçek executor handoff istisnaları
+
+Handoff yalnız şu dört durumda yapılır ve her biri raporlanır:
+
+1. Primary executor gerekli aracı teknik olarak çağıramıyor.
+2. Güvenlik veya platform sınırı bağımsız oturum gerektiriyor.
+3. Owner açıkça executor değişikliği istiyor.
+4. Mevcut executor görevi sürdüremeyecek durumda.
+
+Handoff bir disposition değil, ayrı ve owner-gated bir taleptir: `BLOCKED_OWNER_DECISION`
+ile ve yukarıdaki alanlarla raporlanır.
+
+### Executor değişikliği ayrımı
+
+Primary orchestrator alt görevi hazırlar, çağırır, sonucu toplar, doğrular, gerekiyorsa
+düzeltir, ana zincire entegre eder ve görevi terminal sonuca ulaştırır. Bu akış içinde
+bounded capability executor çağırmak (ör. protected-path writer) **handoff değildir**:
+task ownership, program lock, current active unit ve final accountability değişmez.
+
+| Değişiklik | Sınıf | Gereken |
+|---|---|---|
+| bounded capability executor değişti | revision değil, handoff değil | — |
+| primary executor değişecek | `EXECUTOR HANDOFF` | explicit owner grant |
+| aynı executor, yeni tasarım | `TASK REVISION` | yeni immutable revision |
+
+### Base drift reconciliation
+
+Conflict içermeyen base drift revision'dır, termination değildir. Sıra:
+
+1. Yeni base'e rebase edilir; conflict yoksa mevcut diff korunur.
+2. Drift reconciliation çalıştırılır: yeni base'in task boundary'sine dokunup dokunmadığı,
+   allowlist'in hâlâ yeterli olduğu ve required test'lerin hâlâ geçtiği doğrulanır.
+3. Reconciliation PASS olmadan yeni revision `ELIGIBLE` sayılmaz.
+4. Conflict varsa bu artık "conflict içermeyen base revision" değildir; owner turuna gider.
+
+Base SHA değişimi yeni immutable revision gerektirir; semantic outcome değişmediği sürece
+yeni `taskId` gerektirmez.
+
+### Test migration
+
+Test design superseded olduğunda testler silinip sıfırdan yazılmaz:
+
+1. Hangi assertion'ın hangi nedenle geçersizleştiği yazılır.
+2. Hâlâ geçerli assertion'lar korunur; yalnız geçersizleşen kısım taşınır.
+3. Yeni test yeni revision'ın required test listesine bağlanır.
+4. Eski test kaydı immutable'dır; `SUPERSEDED BY <yeni revision>` işaretlenir.
+
+### Örnekler
+
+```text
+Contract v2 yayımlandı, task v1 şablonuyla yazılmıştı
+  → supersededLayer: CONTRACT_VERSION
+  → identity aynı, semantic outcome aynı → REVISION, yürütme devam eder
+
+Owner "şu üç dosyaya da dokun" dedi
+  → supersededLayer: ALLOWLIST_WIDENED
+  → yeni authority gerekir; revision tek başına yetmez
+
+main ilerledi, çakışma yok
+  → supersededLayer: BASE_REVISION
+  → drift reconciliation PASS → REVISION
+
+Task'ın üreteceği hukuki sonuç değişti
+  → supersededLayer: SEMANTIC_OUTCOME
+  → yeni task / owner kararı; BLOCKED_OWNER_DECISION ile raporlanır
+```
+
 ## Waiting & Progress Policy
 
 Bir görev dışsal bir bağımlılıkla (CI, başka worktree'nin WIP'i, PR review, owner

@@ -10,9 +10,25 @@
  * - pnpm --filter @hukuk/web test  (CI: Web Tests (vitest), REQUIRED)
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 const guard = require('../../../../scripts/governance/task-disposition-guard.cjs');
+
+// cwd'den yukari yurunur: vitest'in nereden cagrildigina (repo koku, apps/web,
+// pnpm --filter) bagimli olmadan repository kokunu bulur.
+function repoRoot(): string {
+  let dir = process.cwd();
+  for (let i = 0; i < 8; i += 1) {
+    if (existsSync(join(dir, 'AGENTS.md'))) return dir;
+    dir = dirname(dir);
+  }
+  throw new Error('AGENTS.md bulunamadi; repository koku cozulemedi');
+}
+
+const read = (repoPath: string) => readFileSync(join(repoRoot(), repoPath), 'utf8');
 
 describe('task disposition — required-path invariants', () => {
   it('revision sinyalleri tek başına terminal kapanış olamaz', () => {
@@ -93,5 +109,68 @@ describe('task disposition — required-path invariants', () => {
     expect(typeof guard.validateFinalMessage).toBe('function');
     expect(typeof guard.main).toBe('function');
     expect(guard.INVALID_TERMINAL).toHaveLength(12);
+  });
+});
+
+describe('task revision protokolü — belge bağları', () => {
+  it('AGENTS.md ratifiye edilmiş ayrım cümlesini taşır', () => {
+    expect(read('AGENTS.md')).toMatch(
+      /`TASK REVISION ≠ TASK TERMINATION ≠ EXECUTOR HANDOFF\.`/,
+    );
+  });
+
+  it('AGENTS.md çekirdeği revision sürekliliğini normatif olarak kurar', () => {
+    const agents = read('AGENTS.md');
+    // Kod yerine metni bağlıyoruz cünkü ajan bu cümleyi okuyup davranıyor.
+    expect(agents).toMatch(/task identity, semantic outcome ve\s+primary ownership/i);
+    expect(agents).toMatch(/yeni immutable revision ile devam eder/i);
+  });
+
+  it('detay katmanı process-rules.md tarafında durur', () => {
+    const rules = read('project/docs/governance/process-rules.md');
+    expect(rules).toMatch(/## Task Revision Protokolü/);
+    expect(rules).toMatch(/### Revision tetikleyicileri/);
+    expect(rules).toMatch(/### Terminal disposition sınıfları/);
+    expect(rules).toMatch(/### Gerçek executor handoff istisnaları/);
+  });
+
+  it('AGENTS.md çekirdeği altı kısa hükmü de taşır', () => {
+    const agents = read('AGENTS.md');
+    expect(agents).toMatch(/Revision authority\s+genisletmez/i);
+    expect(agents).toMatch(/terminal disposition degildir/i);
+    expect(agents).toMatch(/allowlist genislemesi revision degildir/i);
+    expect(agents).toMatch(/semantic outcome degisikligi yeni task veya owner karari/i);
+    expect(agents).toMatch(/primary executor degisikligi\s+explicit handoff ister/i);
+    expect(agents).toMatch(/Bounded capability degisikligi handoff degildir/i);
+  });
+
+  it('detay katmanı karar ağacını ve supersededLayer tablosunu taşır', () => {
+    const rules = read('project/docs/governance/process-rules.md');
+    expect(rules).toMatch(/### Karar ağacı/);
+    expect(rules).toMatch(/### supersededLayer/);
+    expect(rules).toMatch(/### Base drift reconciliation/);
+    expect(rules).toMatch(/### Executor değişikliği ayrımı/);
+  });
+
+  it('çekirdek cümle iki belgede birden tekrar edilmez', () => {
+    // TEK CANONICAL HOME: normatif hüküm yalnız AGENTS.md'de.
+    expect(read('AGENTS.md')).toMatch(/yeni immutable revision ile devam eder/i);
+    expect(read('project/docs/governance/process-rules.md')).not.toMatch(
+      /yeni immutable revision ile devam eder/i,
+    );
+  });
+
+  it('handoff istisna listesi AGENTS.md’de tekrar edilmez', () => {
+    // TEK CANONICAL HOME: dört istisnanın sayıldığı yer process-rules.md'dir.
+    expect(read('AGENTS.md')).not.toMatch(/primary executor gerekli araci teknik olarak/i);
+    expect(read('project/docs/governance/process-rules.md')).toMatch(
+      /Primary executor gerekli aracı teknik olarak çağıramıyor/,
+    );
+  });
+
+  it('process-rules.md geçerli terminal sınıflarını guard ile aynı listede tutar', () => {
+    const rules = read('project/docs/governance/process-rules.md');
+    for (const token of guard.VALID_TERMINAL) expect(rules).toContain(token);
+    for (const token of guard.INVALID_TERMINAL) expect(rules).toContain(token);
   });
 });
