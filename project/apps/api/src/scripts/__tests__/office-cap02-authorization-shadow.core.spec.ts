@@ -1,9 +1,13 @@
 import {
   compareShadowDecision,
+  compareSelfAuthorityShadow,
   summarizeShadowEvidence,
   toShadowAuditEvent,
+  toSelfAuthorityShadowAuditEvent,
   SHADOW_NEVER_CHANGES_ACCESS,
+  type ActorHierarchyFacts,
   type HierarchyFacts,
+  type SelfAuthorityShadowInput,
   type ShadowEvaluationInput,
 } from '../office-cap02-authorization-shadow.core';
 
@@ -237,5 +241,112 @@ describe('provider-neutral audit olayı', () => {
   it('eventType sabit ve provider bağımsızdır', () => {
     const ev = toShadowAuditEvent(compareShadowDecision(input(), facts()), AT);
     expect(ev.eventType).toBe('OFFICE_CAP02_AUTHORIZATION_SHADOW_COMPARISON');
+  });
+});
+
+describe('compareSelfAuthorityShadow — self-authority gölgesi', () => {
+  const input = (over: Partial<SelfAuthorityShadowInput> = {}): SelfAuthorityShadowInput => ({
+    correlationId: 'CHANGE_STATUS|LegalCase|c1',
+    tenantId: 't1',
+    actorUserId: 'u1',
+    incumbentVerdict: 'SELF_AUTHORITY',
+    incumbentReasonCode: 'PARTNER_SELF_AUTHORITY',
+    incumbentCapacity: 'PARTNER',
+    ...over,
+  });
+  const facts = (over: Partial<ActorHierarchyFacts> = {}): ActorHierarchyFacts => ({
+    actorIsActive: true,
+    actorTenantId: 't1',
+    disposition: 'TOP_LEVEL',
+    managerUserId: null,
+    ...over,
+  });
+
+  it('TOP_LEVEL + yürürlükte self-authority → MATCH', () => {
+    const r = compareSelfAuthorityShadow(input(), facts());
+    expect(r.outcome).toBe('MATCH');
+    expect(r.hierarchyVerdict).toBe('SELF_AUTHORITY');
+    expect(r.severity).toBe('NONE');
+  });
+
+  it('MANAGED + yürürlükte onay-gerekir → MATCH', () => {
+    const r = compareSelfAuthorityShadow(
+      input({ incumbentVerdict: 'REQUIRES_APPROVAL', incumbentReasonCode: 'STAFF_NOT_APPROVER', incumbentCapacity: 'SEKRETER' }),
+      facts({ disposition: 'MANAGED', managerUserId: 'm1' }),
+    );
+    expect(r.outcome).toBe('MATCH');
+  });
+
+  it('TOP_LEVEL fakat yürürlükte onay-gerekir → HIERARCHY_WOULD_ALLOW', () => {
+    const r = compareSelfAuthorityShadow(input({ incumbentVerdict: 'REQUIRES_APPROVAL' }), facts());
+    expect(r.outcome).toBe('HIERARCHY_WOULD_ALLOW');
+    expect(r.hierarchyVerdict).toBe('SELF_AUTHORITY');
+    expect(r.severity).toBe('INFO');
+  });
+
+  it('MANAGED fakat yürürlükte self-authority → HIERARCHY_WOULD_REQUIRE_APPROVAL', () => {
+    const r = compareSelfAuthorityShadow(input(), facts({ disposition: 'MANAGED', managerUserId: 'm1' }));
+    expect(r.outcome).toBe('HIERARCHY_WOULD_REQUIRE_APPROVAL');
+    expect(r.hierarchyVerdict).toBe('REQUIRES_APPROVAL');
+  });
+
+  it('aktif kayıt yok → MISSING_HIERARCHY; sessizce onay-gerekir SAYILMAZ', () => {
+    const r = compareSelfAuthorityShadow(input(), facts({ disposition: null }));
+    expect(r.outcome).toBe('MISSING_HIERARCHY');
+    expect(r.hierarchyVerdict).toBeNull();
+    expect(r.hierarchyDisposition).toBeNull();
+  });
+
+  it('pasif aktör + yürürlükte self-authority → ACTOR_INACTIVE ve KRİTİK', () => {
+    const r = compareSelfAuthorityShadow(input(), facts({ actorIsActive: false }));
+    expect(r.outcome).toBe('ACTOR_INACTIVE');
+    expect(r.severity).toBe('CRITICAL');
+  });
+
+  it('pasif aktör + yürürlükte onay-gerekir → kritik DEĞİL', () => {
+    const r = compareSelfAuthorityShadow(
+      input({ incumbentVerdict: 'REQUIRES_APPROVAL' }),
+      facts({ actorIsActive: false }),
+    );
+    expect(r.outcome).toBe('ACTOR_INACTIVE');
+    expect(r.severity).toBe('NONE');
+  });
+
+  it('tenant sınırı pasiflikten ÖNCE gelir', () => {
+    const r = compareSelfAuthorityShadow(input(), facts({ actorTenantId: 't2', actorIsActive: false }));
+    expect(r.outcome).toBe('CROSS_TENANT');
+    expect(r.severity).toBe('CRITICAL');
+  });
+
+  it('hicbir cikti erisimi etkilemedigini kendi icinde tasir', () => {
+    const cases: Array<Partial<ActorHierarchyFacts>> = [
+      {}, { disposition: 'MANAGED', managerUserId: 'm1' }, { disposition: null },
+      { actorIsActive: false }, { actorTenantId: 't2' },
+    ];
+    for (const c of cases) {
+      expect(compareSelfAuthorityShadow(input(), facts(c)).accessAffected).toBe(false);
+    }
+  });
+});
+
+describe('toSelfAuthorityShadowAuditEvent', () => {
+  it('kapali-kume kodlar disinda serbest metin TASIMAZ ve saati cagiran verir', () => {
+    const record = compareSelfAuthorityShadow(
+      {
+        correlationId: 'CHANGE_STATUS|LegalCase|c1',
+        tenantId: 't1',
+        actorUserId: 'u1',
+        incumbentVerdict: 'SELF_AUTHORITY',
+        incumbentReasonCode: 'PARTNER_SELF_AUTHORITY',
+        incumbentCapacity: 'PARTNER',
+      },
+      { actorIsActive: true, actorTenantId: 't1', disposition: 'MANAGED', managerUserId: 'm1' },
+    );
+    const e = toSelfAuthorityShadowAuditEvent(record, '2026-07-28T20:00:00.000Z');
+    expect(e.eventType).toBe('OFFICE_CAP02_SELF_AUTHORITY_SHADOW_COMPARISON');
+    expect(e.observedAt).toBe('2026-07-28T20:00:00.000Z');
+    expect(e.accessAffected).toBe(false);
+    // `reason` (insan-okur metin) olaya GIRMEZ.
+    expect(Object.keys(e)).not.toContain('reason');
   });
 });
