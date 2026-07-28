@@ -180,11 +180,34 @@ function createStore(dir) {
     } else {
       if (TERMINAL.indexOf(from) !== -1) fail('STATE_TERMINAL', from);
       if ((ALLOWED[from] || []).indexOf(to) === -1) {
-        fail('STATE_TRANSITION_FORBIDDEN', from + ' -> ' + to);
+        // One exception, and it is not an execution step.
+        //
+        // A task can be BLOCKED here while its change is demonstrably in main:
+        // the queue closed, the pull request merged, the sha is an ancestor of
+        // origin/main. The table has no edge for that because no EXECUTION
+        // produces it — the record is simply stale about something that already
+        // happened outside this machine.
+        //
+        // Reconciling it is therefore not a transition the orchestrator may
+        // take on its own. It requires externally verified truth, which the
+        // caller must have checked item by item before asking, and it is
+        // flagged explicitly so it can never be a side effect of an ordinary
+        // write. The historical blocker is preserved in the record.
+        // Only this one edge: MERGED -> CLOSED is already in the table, so
+        // reconciliation needs to open exactly BLOCKED -> MERGED and nothing
+        // else.
+        if (!(opts.externalTruthReconciliation === true && from === 'BLOCKED' && to === 'MERGED')) {
+          fail('STATE_TRANSITION_FORBIDDEN', from + ' -> ' + to);
+        }
       }
     }
 
-    if (requiresLease(to)) {
+    // A reconciliation holds no lease, and demanding one would be incoherent:
+    // the lease exists to prove an executor is alive and owns the attempt, and
+    // the entire premise here is that nothing is executing — the work finished
+    // outside this machine and only the record is behind. Requiring a lease
+    // would mean minting a fake one, which is worse than not having it.
+    if (requiresLease(to) && opts.externalTruthReconciliation !== true) {
       if (!Number.isInteger(opts.leaseEpoch) || opts.leaseEpoch < 1) {
         fail('LEASE_EPOCH_REQUIRED', to);
       }
@@ -225,7 +248,13 @@ function createStore(dir) {
       }
     }
 
-    const expectedWriter = WRITER[to];
+    // The writer table says WHO performs an execution step — MERGED is OWNER
+    // because a human merges. A reconciliation performs no step: it records
+    // that the merge already happened, and the honest attribution is the owner
+    // DECISION it cites, carried in the payload, not an identity borrowed to
+    // satisfy a check. Claiming to be the owner would be the misrepresentation
+    // this table exists to prevent.
+    const expectedWriter = opts.externalTruthReconciliation === true ? null : WRITER[to];
     if (opts.writerIdentity && expectedWriter && expectedWriter !== 'OWNER_OR_ORCHESTRATOR') {
       if (opts.writerIdentity !== expectedWriter) {
         fail('WRITER_IDENTITY_FORBIDDEN', opts.writerIdentity + ' may not author ' + to);
