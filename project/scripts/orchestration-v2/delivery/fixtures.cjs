@@ -410,11 +410,26 @@ function prependPath(dir) {
  */
 function pathWithout(dir, name) {
   const sep = os.platform() === 'win32' ? ';' : ':';
-  const exts = os.platform() === 'win32' ? ['.exe', '.cmd', '.bat', '.com'] : [''];
-  const current = (process.env.PATH || process.env.Path || '').split(sep);
+  const current = (process.env.PATH || process.env.Path || '').split(sep).filter(Boolean);
+
+  // POSIX: prepending is enough and removing anything is actively harmful.
+  //
+  // spawn-mode only consults scanPath on win32; everywhere else it returns
+  // shell:false immediately and Node resolves PATH in order, so the first match
+  // wins and the fake is found. Dropping directories here would be blunt in a
+  // way that CI proved: on the GitHub runner `gh` lives in /usr/bin, and
+  // removing that directory to hide one binary removed `git` with it — every
+  // sealed probe then failed with `spawnSync git ENOENT`, which reads like a
+  // delivery failure and is a fixture bug.
+  if (os.platform() !== 'win32') return [dir].concat(current).join(sep);
+
+  // Windows: prepending genuinely is not enough. spawn-mode prefers a directly
+  // spawnable image found ANYWHERE on PATH over a shim found first, and a fake
+  // can only be a .cmd — so the real gh.exe wins however early the fake sits.
+  // Only directories holding a directly spawnable `name` are dropped, and only
+  // those: a .cmd of the same name is a shim and loses to our own anyway.
   const kept = current.filter((entry) => {
-    if (!entry) return false;
-    return !exts.some((e) => {
+    return !['.exe', '.com'].some((e) => {
       try {
         return fs.existsSync(path.join(entry, name + e));
       } catch (err) {
