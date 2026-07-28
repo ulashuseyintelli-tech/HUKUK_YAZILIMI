@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { Scale, FileText, FileCheck, LogOut, User, Home, Bell, Check, FolderOpen, MessageCircle } from "lucide-react";
+import { Scale, FileText, FileCheck, LogOut, User, Home, Bell, Check, FolderOpen, MessageCircle, Receipt } from "lucide-react";
 // CLIENT-CONFIG-P01: bildirim çağrıları `NEXT_PUBLIC_API_URL`'i hiç okumayan sabit
 // `http://localhost:8080` adresine gidiyordu — web ile API farklı origin'deyse (staging/
 // production) bildirim zili sessizce çalışmıyordu (catch blokları hatayı yutuyor).
@@ -221,6 +221,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             </Link>
             <Link href="/portal/documents" className={`py-3 px-1 text-sm border-b-2 ${pathname === "/portal/documents" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-gray-900"}`}>
               <FolderOpen className="h-4 w-4 inline mr-1" /> Belgelerim
+            </Link>
+            {/* CLIENT-P2-U03-TRACK-B-I06-R01: yayinlanmis finansal bildirim yuzeyi (charter §45).
+                Sayfa I06'da eklenmisti ama navigasyonda linki YOKTU — muvekkil URL'yi elle
+                yazmadan ulasamiyordu. Yalniz gezinme baglantisi; yetki ve alan siniri
+                degismedi (server-authorized projeksiyon). */}
+            <Link href="/portal/financial-disclosures" className={`py-3 px-1 text-sm border-b-2 ${pathname.startsWith("/portal/financial-disclosures") ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-gray-900"}`}>
+              <Receipt className="h-4 w-4 inline mr-1" /> Finansal Bildirimler
             </Link>
             <Link href="/portal/messages" className={`py-3 px-1 text-sm border-b-2 ${pathname === "/portal/messages" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-gray-900"}`}>
               <MessageCircle className="h-4 w-4 inline mr-1" /> Mesajlar

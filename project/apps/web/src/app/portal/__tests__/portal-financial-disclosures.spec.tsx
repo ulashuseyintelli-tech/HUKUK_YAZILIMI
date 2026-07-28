@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import PortalFinancialDisclosuresPage from "@/app/portal/financial-disclosures/page";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * CLIENT-P2-U03-TRACK-B-I06 — Portal finansal bildirim sunumu.
@@ -172,6 +174,17 @@ describe("PortalFinancialDisclosuresPage — CLIENT-P2-U03-TRACK-B-I06", () => {
     ]) {
       expect(text).not.toContain(secret);
     }
+  });
+
+  it("[7] portal navigasyonunda Finansal Bildirimler bağlantısı VARDIR (I06-R01)", () => {
+    // I06'da sayfa eklendi fakat layout'ta link YOKTU — muvekkil URL'yi elle yazmadan
+    // ulasamiyordu. Bu test o regresyonu kalici olarak kapatir.
+    const layout = readFileSync(
+      join(process.cwd(), "src/app/portal/layout.tsx"),
+      "utf8",
+    );
+    expect(layout).toContain('href="/portal/financial-disclosures"');
+    expect(layout).toContain("Finansal Bildirimler");
   });
 
   it("[6] boş yüzeyler ayrı ayrı boş-durum gösterir", async () => {
