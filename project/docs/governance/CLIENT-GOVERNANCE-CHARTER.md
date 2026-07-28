@@ -2617,3 +2617,117 @@ RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
 Bu bölüm: Track B'nin API/UI/dashboard/authorization projection/approval/publication dilimlerini BAŞLATMAZ veya yetkilendirmez; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35/§37/§38/§39'un kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; Track A davranışını DEĞİŞTİRMEZ; client-görünür hiçbir finansal veri AÇMAZ; disclosure servisini production akışına BAĞLAMAZ; UYAP/OFFICE/RCV/DEBTOR statülerini DEĞİŞTİRMEZ; yeni dependency EKLEMEZ.
 
 **I02 SERVICE EXISTS ≠ DISCLOSURE IS CLIENT-VISIBLE · DISCLOSURE RECORD EXISTS ≠ DISCLOSURE MAY BE PUBLISHED · CONTENT HASH EXISTS ≠ CONTENT IS APPROVED · I02 CLOSED ≠ TRACK B FULLY IMPLEMENTED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
+
+## 41. CLIENT Phase 2 Track B I03 — Approval Policy Owner Kararları ve Canonical Rol Eşlemesi (OWNER RATIFIED, POLICY-ONLY)
+
+Bu bölüm, `CLIENT-P2-U03-TRACK-B-I03 — APPROVAL WORKFLOW AND INTEGRITY GATES` görevinin `APPROVAL_POLICY_UNDERDETERMINED` blocker'ını kapatan **owner kararlarını** ve bu kararların **repository'deki canonical karşılıklarını** kayda geçirir (`decision-log.md` `CLIENT-P2-U03-TRACK-B-I03-APPROVAL-POLICY` kaydı).
+
+§5, §6, §8.A, §8.B, §11–§40 substantive hükümlerini DEĞİŞTİRMEZ; §35'in, §37'nin, §38'in, §39'un ve §40'ın **kendi metinleri DEĞİŞTİRİLMEMİŞTİR**. §35.8'in *"daha geniş rol kümesi … implementasyon aşamasında (I01/I03) doğrulanacak/genişletilecek bir kapsam olarak kaydedilir — bugün var olduğu iddia edilmez"* hükmü bu bölümle **karara bağlanmıştır**; §35.8'in metni yeniden yazılmamıştır.
+
+**BU BÖLÜM POLICY-ONLY'DİR** — hiçbir kod, schema, migration, test veya CI değişikliği içermez ve I03 implementasyonunu BAŞLATMAZ.
+
+### 41.1 Blocker Dispozisyonu
+
+```text
+BLOCKER  : APPROVAL_POLICY_UNDERDETERMINED
+DURUM    : CLOSED (owner karari ile)
+KAPSAM   : yalniz CLIENT-P2-U03-TRACK-B-I03
+```
+
+Belirsiz olan iki nokta owner tarafından karara bağlandı: **(a)** office approver rol kümesi (§35.8 bunu açıkça I03'e bırakmıştı) ve **(b)** içerik onaylayıcısının yeterliliği ile office approver'dan ayrımı (charter sessizdi).
+
+### 41.2 Owner Kararları
+
+```text
+KARAR 1 — Office approver eligibility
+  active user AND same tenant AND office approval capability
+  AND final financial approval authority
+
+KARAR 2 — Requester ayrimi
+  requesterId != officeApprovedById            (self-approval FORBIDDEN)
+
+KARAR 3 — Content approver eligibility
+  office approver ile AYNI yeterlilik kumesi
+  ayri/daha gevsek staff kumesi OLUSTURULMAZ
+
+KARAR 4 — Four-eyes
+  requesterId        != officeApprovedById
+  requesterId        != contentApprovedById
+  officeApprovedById != contentApprovedById
+  -> en az iki ayri final approver; requester hicbir asamayi onaylayamaz
+
+KARAR 5 — Approval ownership
+  office approval  : OfficeApprovalRequest, actionCode = CLIENT_FINANCIAL_DISCLOSURE_APPROVE
+  content approval : ayri ikinci OfficeApprovalRequest DEGILDIR;
+                     disclosure version uzerinde ayri, denetlenebilir lifecycle transition
+```
+
+### 41.3 Canonical Rol Eşlemesi (repository truth)
+
+Owner'ın adlandırdığı küme repository'nin **mevcut** yetkinlik modeline eşlenmiştir. **Yeni role enum'u veya paralel yetki modeli ÜRETİLMEMİŞTİR.**
+
+| Owner ifadesi | Canonical karşılık | Kaynak |
+| --- | --- | --- |
+| `PARTNER` | `Lawyer.lawyerRank = PARTNER` | `enum LawyerRank` |
+| `MANAGER` | `Lawyer.lawyerRank = MANAGER` | `enum LawyerRank` |
+| explicitly authorized lawyer | `Lawyer.canApproveOfficeActions = true` | `isApproverEligible()` / `PayoutApprovalPolicy` emsalinin "yetkilendirilmiş avukat" tanımı |
+| `SUPER_ADMIN` | **CANONICAL KARŞILIĞI YOK** | aşağıya bakınız |
+| active user | `User.isActive = true` | `User` |
+| same tenant | `User.tenantId = <tenant>` | `User` |
+| office approval capability + lawyer binding | `User.lawyer` linki **zorunlu** | `isApproverEligible()` |
+
+**`SUPER_ADMIN` bulgusu:** repository'de `SUPER_ADMIN` adlı bir rol/enum/capability **hiç yoktur** (`schema.prisma` ve `apps/api/src` taramasında 0 eşleşme). `enum UserRole` yalnız `ADMIN | USER | VIEWER` taşır ve **finansal onay yetkisi `UserRole` üzerinde tutulmaz** — mevcut canonical model onay yetkisini `Lawyer.lawyerRank` + `Lawyer.canApproveOfficeActions` üzerinden çözer ve **linkli `Lawyer` kaydı olmayan kullanıcıyı (staff) dışlar**. `UserRole.ADMIN`'i finansal onaylayıcı saymak, owner'ın *"sıradan staff final approver olamaz"* kuralını ve mevcut lawyer-binding invariant'ını ihlal ederdi. Owner'ın *"exact adlar farklıysa mevcut canonical karşılıkları kullanılacaktır; yeni role enum'u uydurulmayacaktır"* talimatı gereği `SUPER_ADMIN` için **karşılık üretilmemiştir**; küme üç canonical yeterlilikle uygulanır.
+
+**Sonuç — I03 eligibility predikatı:**
+
+```text
+aktif  AND  ayni tenant  AND  linkli Lawyer
+AND ( lawyerRank IN (PARTNER, MANAGER)  OR  canApproveOfficeActions = true )
+```
+
+Bu, `PayoutApprovalPolicy`'nin (PAYOUT-APPROVAL-2, 2026-07-04 owner kararı) kuralıyla **birebir aynıdır**; o karar da MANAGER'ı yalnız kendi actionCode'u için yetkili sayan **izole** bir politikadır. I03 aynı deseni izler: paylaşılan `isApproverEligible()` **DEĞİŞTİRİLMEZ**, `resolveApproverEligible()` dispatcher'ına `CLIENT_FINANCIAL_DISCLOSURE_APPROVE` için **üçüncü bir dal** eklenir — bu, `office-approval.service.ts`'in kendi yorumunun öngördüğü genişleme yoludur (*"Üçüncü bir action-özel policy gerekirse buraya yeni bir dal eklenir"*). Genişleme başka hiçbir actionCode'a **sızmaz**.
+
+### 41.4 Bütünlük ve Stale-Onay Kuralı
+
+Her iki onay aşamasından **hemen önce** `verifyPersistedSnapshot()` çağrılır (§40.6'da I02 ile sağlanan contract). `MISMATCH` halinde: status geçişi YOK · onay tamamlanması YOK · yayınlama uygunluğu YOK · tiplenmiş integrity error ZORUNLU. Onay talebi `disclosureVersionId` **ve** `snapshotHash`'e tam bağlanır. Şunlar stale sayılır ve reddedilir: yeni versiyon oluşturulması · snapshot hash değişimi · finansal satır değişimi · alıcı bağlaması değişimi · versiyonun superseded/cancelled/reversed olması · onay talebinin başka versiyona ait olması. Finansal içerik değişirse eski onay **yeniden kullanılamaz**: yeni versiyon + yeni ofis onayı + yeni içerik onayı + yeni bildirim/yayınlama zinciri zorunludur (§35.6/§35.13 ile tutarlı).
+
+### 41.5 Transition Sözleşmesi
+
+```text
+DRAFT -> OFFICE_APPROVAL_PENDING -> OFFICE_APPROVED
+      -> CONTENT_APPROVAL_PENDING -> CONTENT_APPROVED
+```
+
+Geçersiz atlamalar reddedilir: `DRAFT→OFFICE_APPROVED` · `DRAFT→CONTENT_APPROVED` · `OFFICE_APPROVAL_PENDING→CONTENT_APPROVAL_PENDING` · `OFFICE_APPROVED→CONTENT_APPROVED`. Geçişler servis üzerinden ve transaction içinde yapılır.
+
+### 41.6 Rejection Sınırı
+
+Canonical enum rejection için kalıcı bir durum vermiyorsa **yeni enum/status üretilmez**. Minimum fail-closed davranış: geçiş tamamlanmaz · disclosure published olmaz · audit kanıtı korunur · yeni deneme mevcut canonical `DRAFT`/versiyon modelinden başlatılır. Rejection için schema/migration gerekirse bu bir **STOP koşuludur** ve raporlanır.
+
+### 41.7 Schema Dispozisyonu
+
+```text
+schema change : NONE
+new migration : NONE
+```
+
+I01 alanları (`officeApprovalRequestId`, `officeApprovedAt/ById`, `notificationContent(+Hash)`, `contentApprovedAt/ById`, `approvedRecipientEmail/PortalUserId`) §35.9'un şart koştuğu kanıt kümesini karşılar. `OfficeApprovalRequest.actionCode` **string**tir (substrate tek modüle bağımlı değil), bu nedenle `CLIENT_FINANCIAL_DISCLOSURE_APPROVE` yeni migration gerektirmez; yalnız TS `ActionCode` enum üyesi eklenir (kod, schema değil). `requesterUserId`/`approverUserId` alanları KARAR 2/4'ün gerektirdiği ayrımı taşımaya yeterlidir.
+
+### 41.8 Statü
+
+```text
+I03 APPROVAL POLICY BLOCKER : CLOSED
+I03 IMPLEMENTATION          : AUTHORIZED / NOT STARTED
+I04 / I05 / I06 / I07       : NOT STARTED (sirali entry gate)
+
+TRACK B ARCHITECTURE (§35) · DATA FOUNDATION (§37) · I01 LIVE (§39) ·
+SERVICE FOUNDATION (§40) · TRACK A (§34) · SPRING CLEANING (§36) : degismedi
+CLIENT-P2-U03 (genel)       : PARTIAL
+RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE
+```
+
+### 41.9 Self-Check
+
+Bu bölüm: I03 implementasyonunu BAŞLATMAZ; kod/schema/migration/test/CI DEĞİŞTİRMEZ; yeni role enum'u, yeni capability veya paralel yetki modeli ÜRETMEZ; `SUPER_ADMIN` için karşılık UYDURMAZ; paylaşılan `isApproverEligible()`'ı DEĞİŞTİRMEZ; başka actionCode'ların yeterlilik kuralını DEĞİŞTİRMEZ; §35.8'in metnini yeniden YAZMAZ; Track B'nin send/publish/API/UI dilimlerini AÇMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ.
+
+**POLICY RATIFIED ≠ POLICY IMPLEMENTED · APPROVAL ELIGIBLE ≠ APPROVAL GRANTED · APPROVED ≠ PUBLISHED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
