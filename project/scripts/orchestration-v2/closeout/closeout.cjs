@@ -84,6 +84,7 @@ const BLOCKER = Object.freeze({
   WORKTREE_CLEANUP_FAILED: 'WORKTREE_CLEANUP_FAILED',
   CANONICAL_VERIFICATION_FAILED: 'CANONICAL_VERIFICATION_FAILED',
   MERGE_AUTHORITY_LEDGER_REQUIRED: 'MERGE_AUTHORITY_LEDGER_REQUIRED',
+  UNEXPECTED_GITHUB_RESPONSE: 'UNEXPECTED_GITHUB_RESPONSE',
   TARGET_BRANCH_UNEXPECTED: 'TARGET_BRANCH_UNEXPECTED',
   REPOSITORY_IDENTITY_MISMATCH: 'REPOSITORY_IDENTITY_MISMATCH',
 });
@@ -256,6 +257,25 @@ function checkMergeState(pr) {
   return { ok: true };
 }
 
+/**
+ * GitHub yanitinin sekil dogrulamasi. Eksik veya beklenmedik bir yanit sessizce
+ * "gate PASS" gibi degerlendirilmemelidir: `pr.state` undefined ise
+ * `state !== 'OPEN'` dogru olur ve dogru sebebi gizler.
+ */
+function validatePrShape(pr) {
+  if (!pr || typeof pr !== 'object') return 'pr payload is not an object';
+  if (typeof pr.state !== 'string' || pr.state.length === 0) return 'pr.state missing';
+  if (pr.state === 'OPEN') {
+    if (typeof pr.headRefOid !== 'string' || !SHA40.test(pr.headRefOid)) return 'pr.headRefOid is not a sha';
+    if (typeof pr.mergeable !== 'string') return 'pr.mergeable missing';
+    if (typeof pr.mergeStateStatus !== 'string') return 'pr.mergeStateStatus missing';
+  }
+  if (pr.state === 'MERGED' && pr.mergeCommitOid != null && !SHA40.test(String(pr.mergeCommitOid))) {
+    return 'pr.mergeCommitOid is not a sha';
+  }
+  return null;
+}
+
 function baseResult(input) {
   return {
     taskId: input.taskId,
@@ -304,6 +324,8 @@ async function closeoutPr(input, adapter) {
   out.stage = 'AUTHORITY_VALIDATED';
 
   const pr = await adapter.getPr(input.pr);
+  const shape = validatePrShape(pr);
+  if (shape) return Object.assign(out, blocked('AUTHORITY_VALIDATED', BLOCKER.UNEXPECTED_GITHUB_RESPONSE, shape));
   out.observedHead = pr.headRefOid || null;
 
   // --- idempotency: zaten merge edilmis (owner 3.8/B,C)
@@ -375,6 +397,10 @@ async function closeoutPr(input, adapter) {
 
   // --- merge (owner 3.6): TOCTOU icin identity ve head son anda tekrar dogrulanir
   const fresh = await adapter.getPr(input.pr);
+  const freshShape = validatePrShape(fresh);
+  if (freshShape) {
+    return Object.assign(out, blocked('MERGE_GATE_VALIDATED', BLOCKER.UNEXPECTED_GITHUB_RESPONSE, freshShape));
+  }
   if (fresh.state !== 'OPEN') return Object.assign(out, blocked('MERGE_GATE_VALIDATED', BLOCKER.PR_NOT_OPEN, fresh.state));
   if (fresh.headRefOid !== input.expectedHead) {
     return Object.assign(out, blocked('MERGE_GATE_VALIDATED', BLOCKER.PR_HEAD_MISMATCH, fresh.headRefOid));
@@ -386,6 +412,10 @@ async function closeoutPr(input, adapter) {
     return Object.assign(out, blocked('MERGE_GATE_VALIDATED', BLOCKER.MERGE_FAILED, e && e.message));
   }
   const after = await adapter.getPr(input.pr);
+  const afterShape = validatePrShape(after);
+  if (afterShape) {
+    return Object.assign(out, blocked('MERGED', BLOCKER.UNEXPECTED_GITHUB_RESPONSE, afterShape));
+  }
   if (after.state !== 'MERGED' || !after.mergeCommitOid) {
     return Object.assign(out, blocked('MERGED', BLOCKER.MERGE_STATE_UNVERIFIED, String(after.state)));
   }
@@ -484,4 +514,5 @@ module.exports = {
   recoverAfterMerge,
   redact,
   validateInput,
+  validatePrShape,
 };

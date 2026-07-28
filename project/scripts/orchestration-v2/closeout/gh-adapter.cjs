@@ -18,13 +18,54 @@
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 
-function run(cmd, args, cwd) {
+/** Gecici ag/servis hatasi mi? Yalniz bunlar yeniden denenir. */
+const TRANSIENT = /(dial tcp|ETIMEDOUT|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|502 Bad Gateway|503|504|rate limit|secondary rate|timeout awaiting)/i;
+
+function execOnce(cmd, args, cwd) {
   return execFileSync(cmd, args, {
     cwd,
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
+}
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * READ-ONLY komutlar icin sinirli retry.
+ *
+ * Yalniz gecici ag/servis hatalarinda yeniden denenir; is mantigi hatasi
+ * (ornegin "PR not found") ilk denemede yukselir. MUTATION komutlari bu yoldan
+ * GECMEZ — `gh pr merge` retry edilirse cift merge riski dogar; oradaki hata
+ * cagirana aynen gider ve closeout MERGE_FAILED ile fail-closed olur.
+ *
+ * Bu oturumda gercekten yasandi: `Post https://api.github.com/graphql: dial tcp
+ * ... baglanti kurulamadi`. Tek seferlik bir ag hatasi, gate'leri gecmis bir
+ * kapanisi gereksiz yere BLOCKED yapmamalidir.
+ */
+function run(cmd, args, cwd, opts) {
+  const attempts = opts && opts.attempts != null ? opts.attempts : 3;
+  const baseDelayMs = opts && opts.baseDelayMs != null ? opts.baseDelayMs : 800;
+  let lastErr = null;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return execOnce(cmd, args, cwd);
+    } catch (e) {
+      lastErr = e;
+      const text = String((e && e.stderr) || (e && e.message) || '');
+      if (i === attempts - 1 || !TRANSIENT.test(text)) throw e;
+      sleepSync(baseDelayMs * Math.pow(2, i));
+    }
+  }
+  throw lastErr;
+}
+
+/** Mutation komutlari: retry YOK. */
+function runOnce(cmd, args, cwd) {
+  return execOnce(cmd, args, cwd);
 }
 
 function tryRun(cmd, args, cwd) {
@@ -148,7 +189,8 @@ function createGhCloseoutAdapter(o) {
     async squashMerge(pr) {
       // --delete-branch KULLANILMAZ: worktree cekiliyken local branch silinemez
       // ve komut hata verir. Branch temizligi ayri asamada yapilir (owner 3.6/4).
-      run('gh', ['pr', 'merge', String(pr), '--squash'], cwd);
+      // Mutation: retry YOK (cift merge riski).
+      runOnce('gh', ['pr', 'merge', String(pr), '--squash'], cwd);
       return true;
     },
 
