@@ -3216,3 +3216,170 @@ PR #1790 · 0c0e463087422236a8dbf6972565f931fe6878f6
 Bu bölüm: aktivasyon adaptörünü, provider adaptörünü veya herhangi bir production call-site'ı YETKİLENDİRMEZ; `CLIENT-P2-U03`'ün Track A veya diğer dilimleri hakkında HÜKÜM VERMEZ; §35–§45'in kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; production ortamı hakkında DOĞRULANMAMIŞ hiçbir iddia TAŞIMAZ; UYAP/OFFICE/RCV/DEBTOR statülerini DEĞİŞTİRMEZ.
 
 **PROGRAM CLOSED ≠ FEATURE ACTIVATED · CODE COMPLETE ≠ RUNTIME LIVE · SENT ≠ PUBLISHED · PUBLISHED ≠ EVERY CLIENT MAY VIEW.**
+
+## 47. CLIENT Financial Disclosure Production Activation — Runtime Binding Program Closure (OWNER RATIFIED)
+
+Bu bölüm, `CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01` programının **kabul ve kapanış** kaydıdır (`decision-log.md` `CLIENT-FD-ACT-R01-I07-PROGRAM-CLOSURE` kaydı). §46'nın ve önceki tüm bölümlerin **kendi metinleri DEĞİŞTİRİLMEMİŞTİR**. Bu program, §46'da `CLOSED / CANONICAL / PASS` ilan edilen `CLIENT-P2-U03-TRACK-B-COMPLETION-PROGRAM-R01`'in **runtime binding devamıdır** — I01–I07 (Track B) yeniden AÇILMAMIŞ, yalnız Track B'nin dormant servisleri gerçek çalışma zamanına BAĞLANMIŞTIR.
+
+### 47.1 Program Zinciri ve SHA Kütüğü
+
+```text
+I01 RUNTIME BINDING RECONCILIATION   (read-only)                          CLOSED
+I02 PRODUCTION COMPOSITION BINDING   #1808                0335c4cf        CLOSED / CANONICAL
+I03 AUTHORIZED WRITE ENTRYPOINT      #1814                7d64263a        CLOSED / CANONICAL
+I04 DISPATCHER ADAPTER               #1819                cf82ea70d37a16287674e82d0bee99d540277b88        CLOSED / CANONICAL
+I05 ACTIVATION GATES + TELEMETRY     #1827                9cd51295db434b437bf240a26a4421c6c8e7a211        CLOSED / CANONICAL
+I06 E2E / RESTART / CONCURRENCY      #1840                ee195d8e7f1067c159415e5c6ad069e26d1ac9d4        CLOSED / CANONICAL
+I07 GOVERNANCE CLOSEOUT              (bu kayıt)                          CLOSED / CANONICAL
+```
+
+Her implementasyon kalemi tam CI kapısından (9/9 required+non-required check) geçerek merge edilmiştir. Tek istisna: I05'in ilk hazırlanışında `Orchestration Tests` `origin/main`'de PR-dışı bir nedenle (başka oturumun PR #1824'ü) kırıktı; owner bu somut duruma **sınırlı bir override** verdi, fakat merge öncesi son kapıda `origin/main` zaten yeşile dönmüş olduğu için **override fiilen kullanılmadan**, I05 rebase edilip **tam 9/9 CI ile** merge edilmiştir. Ayrıntı §47.9'dadır.
+
+### 47.2 Runtime Call-Site Envanteri — ÖNCESİ / SONRASI
+
+```text
+                                ONCESI (I01 olcumu)        SONRASI (I06 sonrasi)
+Writer          call-site       0 (test-disi)               2 (composition + I03 entrypoint)
+Approval        call-site       0 (test-disi)               1 (composition)
+Publication     call-site       0 (test-disi)               2 (composition + dispatcher secimi)
+Dispatcher      production      YOK                          ClientFinancialDisclosureEmailDispatcher
+                adapter                                      (EmailProviderService koprusu)
+Portal read     call-site       1 (LIVE, degismedi)          1 (degismedi)
+```
+
+### 47.3 Provider Adaptör Kimliği ve Mekanizması
+
+`ClientFinancialDisclosureEmailDispatcher implements DisclosureNotificationDispatcher`, canonical `EmailProviderService` üzerinden gönderir. Provider adı **uydurulmadı**: `EmailProviderService`'e eklenen `get providerName()` public getter'ı okur (additive, davranış değişmedi). Retryable/terminal sınıflandırması adapter'da yapılır (`classifyDispatchFailure`) çünkü `EmailProviderService` bu ayrımı hiç taşımıyordu. İki katmanlı fail-closed: dispatcher seçimi composition'da (`ClientFinancialDisclosureModule`), yayınlama kapısı da aynı seçim noktasında (§47.4) — biri atlansa diğeri korur. Yapılandırılmamış/onaysız provider `UnconfiguredDisclosureNotificationDispatcher`'a düşer; bu sınıf başarı taklit etmez, mesaj ID'siz döner.
+
+### 47.4 Aktivasyon Bayrakları ve Varsayılan Durum
+
+```text
+CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED         varsayilan KAPALI, YALNIZ birebir 'true'
+CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED   varsayilan KAPALI, YALNIZ birebir 'true'
+```
+
+Katı-literal parser I05'te bilinçli bir **daraltmadır**: I03'ün ilk `trim().toLowerCase()` deseni `'TRUE'`/`'True'`/`' true '` değerlerini de açıyordu; bu artık kapalıdır. İki bayrak birbirinden bağımsız okunur (LEVEL 0/1/2); yazma açık/yayınlama kapalı geçerli ve kasıtlı bir kuruluştur. Canonical enforcement noktası composition'daki dispatcher seçimidir — controller bypass edilse bile dış gönderim gerçekleşemez.
+
+### 47.5 Telemetri Sözleşmesi
+
+12 canonical event adı (`disclosure_create_requested` … `publication_reversed`) sabit tanımlıdır; bu PR zincirinde yalnız ilk ikisi (`disclosure_create_requested`, `disclosure_created`) gerçekten emit edilmektedir — approval ve publication servisleri kasıtlı olarak Nest-bağımsız kaldığı için (§38.4/§42.2/§43.9) onlara logger enjekte edilmemiştir; kalan 10 event'in emisyonu bu programın kapsamı DIŞINDADIR ve NOT AUTHORIZED'dır. 18 yasak alan (`amount`, `snapshotHash`, `recipientEmail`, `secret`, `providerMessageId` vb.) `buildDisclosureTelemetry()` tarafından fail-closed atılır.
+
+### 47.6 Happy-Path, Security, Integrity, Failure Kanıtı
+
+I06'nın gerçek Nest composition suite'i: oluştur → office onay → content onay → yayınla → portal görünürlüğü zincirinin **her adımı DB'den doğrulandı** (yalnız dönüş değeriyle değil). Security/integrity matrisinin tekil maddeleri (tenant, self-approval, four-eyes, hash, stale onay, cross-tenant okuma, published-only/reversal filtresi) I02–I05'te ayrı ayrı merge edilmiş suite'lerde **zaten** yük taşımaktadır; I06 bunları tekrar iddia etmek yerine happy-path + restart + concurrency + provider-failure kanıtına odaklandı. Dört senaryolu provider hata matrisi (timeout/retryable/terminal/mesaj-ID-siz) hiçbirinin `PUBLISHED` üretmediğini ve yayınlanmamış kaydın portalda görünmediğini DB + projeksiyon üzerinden kanıtladı.
+
+### 47.7 Restart Proof
+
+İKİ AYRI `TestingModule` + İKİ AYRI `PrismaClient` (aynı service instance'ında ikinci çağrı DEĞİL): Instance A kalıcı niyeti (`SEND_PENDING`) yazıp tamamen kapanır (DI grafiği + bağlantı yok edilir); Instance B yepyeni DI grafiğiyle devralır; provider tam bir kez çağrılır, tek message ID, deterministik `PUBLISHED`. İkinci senaryoda A gönderim sırasında düşer (sahiplenme kalıcı işaretli kalır); B'nin kör dispatch denemesi reddedilir; kurtarma yalnız explicit `retrySend()` ile, canonical yoldan.
+
+### 47.8 Concurrency Proof
+
+İki AYRI instance aynı versiyonu eşzamanlı yayınlar: tek kazanan, tek provider çağrısı, tek `PUBLISHED` geçişi, deterministik kaybeden (last-write-wins yok), tek `PUBLISHED` audit kaydı.
+
+### 47.9 Diş (Teeth) Defteri — Metodolojik Dürüstlük Kaydı
+
+```text
+I02  5/5   app.module kaydi · fail-closed provider adi · dispatcher basari-taklidi ·
+           clean-arch siniri · controller yasagi
+I03  5/5   aktivasyon kapisi · yetki · tenant scope · POSTED durum kapisi ·
+           deterministik idempotency
+I04  6/6   fail-closed fallback · message ID zorunlulugu · retryable/terminal ayrimi ·
+           alici guard'i · basari-taklidi · provider call-count korumasi
+I05  4/4   yayinlama kapisi · kati-literal parser · onaysiz adapter engeli ·
+           hassas alan filtresi
+I06  3/5   restart tek-kazanan (YENI) · yayinlama kapisi gercek graph (YENI) ·
+           message ID zorunlulugu gercek graph (YENI)
+     2 madde CIKARILDI: ilk mutasyon turunda "published-only filtre" ve "duplicate
+     publication guard" icin denenen mutasyonlar ilgili testleri KIRMADI — gercek
+     enforcer ayni WHERE kosulundaki BASKA bir alandi (publishedAt/providerMessageId
+     NULL kontrolu), statu kismi bu implementasyonda REDUNDANT'tir. Bu iki koruma
+     zaten I04 (test [F]) ve I05'te (test [D]) AYRI enforcer yollarindan dis tasidigi
+     KANITLANMISTI; I06'da yanlis bir "yeni dis" iddia etmek yerine capraz referans
+     verildi ve iki hatali mutasyon SILINDI.
+TOPLAM DOGRULANMIS MUTASYON: 23  (5+5+6+4+3)
+```
+
+I02'nin `[D]`/`[E]` testinde de benzer bir metodolojik düzeltme yaşanmıştı (ekleme-mutasyon ilk turda yanlış alarm verdi, doğrulayıcı düzeltilip yeniden koşuldu). Bu program boyunca **hiçbir diş iddiası doğrulanmadan bırakılmamıştır**.
+
+### 47.10 CI İstisna Defteri
+
+```text
+PR #1827 (I05) ilk hazirlanis: Orchestration Tests origin/main'de FAILURE
+  KAYNAK        : origin/main, PR #1824 (baska oturum), commit 70337658
+  KANIT         : basarisiz test seti (DV20/382/AC05/AC14/AC15/AC18/AC19/AC20) origin/main
+                  ile BIREBIR ayniydi; PR diff'i 0 orchestration dosyasina dokunuyordu;
+                  required check'ler (Web Tests, Architectural Guardrails) SUCCESS'ti
+  OWNER KARARI  : bu somut durum icin sinirli merge istisnasi (BAGLAYICI OWNER KARARI)
+  SONUC         : merge oncesi son kapida origin/main baska bir oturum tarafindan
+                  yesile DONDURULMUSTU (commit e7455888); PR #1827 REBASE edildi ve
+                  ISTISNA KULLANILMADAN tam 9/9 CI ile merge edildi
+  ISTISNA KAPSAMI: yalniz bu PR + yalniz bu failure seti + yalniz bu kaynak;
+                  standing exception DEGILDIR, baska PR'a TASINAMAZ (fiilen de tasinmadi)
+PR #1840 (I06)   : 9/9 CI (Orchestration Tests dahil) — istisna GEREKMEDI
+```
+
+### 47.11 Rollback
+
+```text
+CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED=false
+CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED=false
+```
+
+Bugünkü fiili durum zaten budur (her iki bayrak hiçbir ortamda `'true'`ya ayarlanmamıştır — repository dışı doğrulama, §47.12). Yeni yazma durur, yeni dış yayınlama durur; portal read yolu etkilenmez; mevcut yayınlanmış kayıtlar okunabilir kalır (I06 test [1]/[5] ile kanıtlı).
+
+### 47.12 Production Verification Sınırı
+
+```text
+REAL PRODUCTION VERIFICATION : NOT PERFORMED / OWNER-GATED
+```
+
+Gerçek e-posta gönderilmedi, canlı `hukuk_db`'ye dokunulmadı, production secret okunmadı, production flag hiçbir ortamda açılmadı. Bunun için gerçek deployment, gerçek production flag'ler, gerçek provider credential'ı, owner-onaylı gerçek alıcı, delivery kanıtı ve runtime logları gerekir — hiçbiri bu programın kapsamında değildi.
+
+### 47.13 Final Capability Matrix
+
+```text
+Capability     Code   Binding  Call-site  Adapter  Tests  Teeth  Runtime
+Writer         PASS   PASS     PASS       N/A      PASS   PASS   FAKE/SANDBOX VERIFIED
+Approval       PASS   PASS     PASS       N/A      PASS   PASS   FAKE/SANDBOX VERIFIED
+Publication    PASS   PASS     PASS       PASS     PASS   PASS   FAKE/SANDBOX VERIFIED
+Notification   PASS   PASS     PASS       PASS     PASS   PASS   FAKE/SANDBOX VERIFIED
+Portal read    PASS   PASS     PASS       N/A      PASS   PASS   VERIFIED
+Reversal       PASS   PASS     PASS       N/A      PASS   PASS   FAKE/SANDBOX VERIFIED
+```
+
+`FAKE/SANDBOX VERIFIED` = gerçek Nest composition + gerçek PostgreSQL + gerçek servis zinciri, sahte olan yalnız provider'ın ağ çağrısı. `REAL PROVIDER NOT VERIFIED`.
+
+### 47.14 Final Verdict
+
+```text
+CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01
+
+CLOSED / CANONICAL / ACTIVATION READY
+REAL PRODUCTION VERIFICATION: OWNER-GATED / NOT PERFORMED
+
+RUNTIME: WRITE + APPROVAL + PUBLICATION PATH BOUND AND REACHABLE (flags default OFF)
+         PORTAL READ PATH LIVE (degismedi)
+CLIENT-VISIBLE FINANCIAL DATA: SERVER-AUTHORIZED PROJECTION ONLY
+LIVE CRITICAL BLOCKER: NONE
+```
+
+### 47.15 Residuals ve Owner-Gated Kalemler
+
+```text
+A. GERCEK PRODUCTION SAGLAYICI  : EMAIL_PROVIDER'in gercek smtp/sendgrid/ses degerine
+                                   ayarlanmasi ve gercek credential. REPOSITORY DISI.
+B. IKI BAYRAGIN PRODUCTION'DA   : CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED ve
+   ACILMASI                       ...PUBLICATION_ENABLED'in gercek ortamda 'true'
+                                   yapilmasi. REPOSITORY DISI, OWNER KARARI GEREKIR.
+C. KALAN 10 TELEMETRI EVENT'I   : office/content approval ve publication event'lerinin
+                                   emisyonu icin domain servislerine logger-port
+                                   enjeksiyonu. AYRI BIR DILIM, BU PROGRAMDA YAPILMADI.
+D. GERCEK PRODUCTION DOGRULAMA  : gercek alici, gercek deployment, runtime log kaniti.
+                                   REPOSITORY DISI.
+```
+
+### 47.16 Program Closure Self-Check
+
+Bu bölüm: production flag'lerini AÇMAZ; gerçek e-posta göndermez; production secret okumaz; live database mutasyonu yapmaz; `PRODUCTION VERIFIED` iddia ETMEZ; §35–§46'nın kendi metinlerini DEĞİŞTİRMEZ; Track A veya diğer CLIENT dilimleri hakkında hüküm VERMEZ; UYAP/OFFICE/RCV/DEBTOR statülerini DEĞİŞTİRMEZ.
+
+**ACTIVATION READY ≠ PRODUCTION VERIFIED · CODE BOUND ≠ FLAG ON · FLAG DEFAULT OFF ≠ FEATURE DISABLED FOREVER.**
