@@ -181,20 +181,6 @@ function checkAuthorityBinding(input, ledgerEntry) {
       };
     }
   }
-  if (input && input.dryRun !== true && ledgerEntry.expectedHead == null) {
-    return {
-      ok: false,
-      code: BLOCKER.MERGE_AUTHORITY_LEDGER_REQUIRED,
-      detail: 'ledger entry is missing required binding field: expectedHead',
-    };
-  }
-  if (ledgerEntry.expectedHead != null && input && ledgerEntry.expectedHead !== input.expectedHead) {
-    return {
-      ok: false,
-      code: BLOCKER.MERGE_AUTHORITY_PR_MISMATCH,
-      detail: 'ledger expectedHead ' + ledgerEntry.expectedHead + ' does not match',
-    };
-  }
   // Tuketilmis bir reference once REUSE ekseninde degerlendirilir. Aksi halde
   // binding kontrolu (PR_MISMATCH) once tetikleniyor ve operatore yanlis sinyal
   // gidiyordu: "yanlis PR" diyordu, oysa gercek sebep reference'in zaten
@@ -220,6 +206,22 @@ function checkAuthorityBinding(input, ledgerEntry) {
   }
   if (ledgerEntry.pr != null && ledgerEntry.pr !== input.pr) {
     return { ok: false, code: BLOCKER.MERGE_AUTHORITY_PR_MISMATCH, detail: 'ref bound to PR #' + ledgerEntry.pr };
+  }
+  // expectedHead EN SON degerlendirilir: yanlis task/PR ya da tuketilmis bir
+  // reference icin operatore o spesifik kod gitmeli, "ledger eksik" degil.
+  if (input && input.dryRun !== true && ledgerEntry.expectedHead == null) {
+    return {
+      ok: false,
+      code: BLOCKER.MERGE_AUTHORITY_LEDGER_REQUIRED,
+      detail: 'ledger entry is missing required binding field: expectedHead',
+    };
+  }
+  if (ledgerEntry.expectedHead != null && input && ledgerEntry.expectedHead !== input.expectedHead) {
+    return {
+      ok: false,
+      code: BLOCKER.MERGE_AUTHORITY_PR_MISMATCH,
+      detail: 'ledger expectedHead ' + ledgerEntry.expectedHead + ' does not match',
+    };
   }
   return { ok: true };
 }
