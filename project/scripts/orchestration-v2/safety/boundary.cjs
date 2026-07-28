@@ -308,6 +308,11 @@ function validate(opts) {
 }
 
 module.exports = {
+  // Exported so callers can ask the SAME question the validator asks. A second
+  // implementation of "is this path inside an authorized root" would drift, and
+  // the drift would be invisible until something outside a root was staged.
+  normalizeRoot,
+  underAnyRoot,
   CHANGE_CLASSES,
   BoundaryError,
   normalizeRepoPath,

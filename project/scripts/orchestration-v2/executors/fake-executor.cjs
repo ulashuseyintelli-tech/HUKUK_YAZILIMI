@@ -31,10 +31,22 @@ switch (mode) {
     process.exit(0);
     break;
 
-  case 'ok':
+  case 'ok': {
+    // A CREATED file is a real case this fake could not produce, so the
+    // creation path went untested until a live canary hit it — and "add a
+    // characterization test" is the canonical task class in this system.
+    const create = arg('create', null);
+    if (create) {
+      const fs = require('fs');
+      const path = require('path');
+      const target = path.join(process.cwd(), create);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, 'created by the fake executor\n', 'utf8');
+    }
     process.stdout.write('done\n');
     process.exit(0);
     break;
+  }
 
   case 'fail':
     process.stderr.write('deliberate failure\n');
