@@ -74,7 +74,16 @@ describe('task disposition — required-path invariants', () => {
   it('alanları eksik bir BLOCKED kapanışı reddedilir', () => {
     const r = guard.validateFinalMessage('STATUS: BLOCKED_EXTERNAL — servis yok');
     expect(r.valid).toBe(false);
+    expect(r.blockedIsPrimary).toBe(true);
     expect(r.violations.some((v: { code: string }) => v.code === guard.VIOLATION.BLOCKED_MISSING_FIELDS)).toBe(true);
+  });
+
+  it('anılan sınıf adı kapanış iddiası değildir; blocker şeması istenmez', () => {
+    const r = guard.validateFinalMessage(
+      'PROGRAM STATUS: CLOSED / MERGED / CANONICAL\n| eksiksiz BLOCKED_EXTERNAL | kabul |',
+    );
+    expect(r.valid).toBe(true);
+    expect(r.blockedIsPrimary).toBe(false);
   });
 
   it('gerçek owner handoff kararı engellenmez', () => {
