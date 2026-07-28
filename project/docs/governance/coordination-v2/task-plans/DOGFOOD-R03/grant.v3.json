@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "grantId": "GOV-COORD-DTV-DOGFOOD-GRANT-R03",
+  "workstream": "ORCHESTRA-DELIVERY-TRUTH-R01",
+  "semanticAuthorityRef": {
+    "kind": "SEMANTIC_AUTHORITY",
+    "recordId": "GOV-COORD-DTV-DOGFOOD-SEMANTIC-R03",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/semantic-authority.md"
+  },
+  "executionGrantRef": {
+    "kind": "EXECUTION_GRANT",
+    "recordId": "GOV-COORD-DTV-DOGFOOD-EXEC-GRANT-R03",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/execution-grant.md"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/semantic-authority.md",
+    "sourceCommitSha": "0ab90c94448adfb5ea5d6d6869027418d10c582d",
+    "exactExcerpt": "OWNER-DECISION-GOV-COORD-DELIVERY-TRUTH-R01 dogfood certification R03 is authorized to run through the canonical service path with task-bounded auto-merge.",
+    "excerptSha256": "e20fabca278801c3e6221d73facf0e4e4d8f4c8aea9db3c17952b46fd43de181"
+  },
+  "expiresAt": "2026-08-27T00:00:00.000Z",
+  "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-DELIVERY-TRUTH-DOGFOOD",
+  "manualMergeRequired": true,
+  "allowedModuleRoots": [
+    "project/scripts/orchestration-v2/delivery/"
+  ],
+  "authorizedTasks": [
+    {
+      "taskId": "GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R03",
+      "taskSpecVersion": 1,
+      "taskSchemaVersion": 2,
+      "taskSpecSha256": "aa5911fa1d53d1220ea911fecd4355eba7bdab672b26f55b15620d643e496a54",
+      "declaredIntentSha256": "40266617a647b43b4cd419e287b2bfc5bc170bb034a4c409c6b68fbdc02b3890",
+      "boundaryPolicySha256": "737dc6a9fe402153da40d0fb3d26231c8925b36066fae294f242593b0ce1c142",
+      "requiredTestsSha256": "1197e821eb7f8c6b7f996c7ca1f1c813a3b82634a68a3462599b9ffecfc1effc",
+      "deliveryContractSha256": "327d6eb5da97099959c2832350be4a6c527a635f6750c7a913c1e3dda32ca809",
+      "predecessorTaskIds": []
+    }
+  ]
+}

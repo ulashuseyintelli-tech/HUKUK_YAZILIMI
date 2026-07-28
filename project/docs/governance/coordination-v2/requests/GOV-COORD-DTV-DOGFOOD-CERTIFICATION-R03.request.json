@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "programId": "DELIVERY_TRUTH",
+  "taskId": "GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R03",
+  "taskClass": "BOUNDED_CODE_FIX",
+  "planPath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/plan.v3.json",
+  "grantPath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/grant.v3.json",
+  "standingGrantPath": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-DELIVERY-TRUTH-DOGFOOD-R01.json",
+  "promptPath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/executor-prompt.md",
+  "executorLane": "CODEX_LOCAL",
+  "targetBranch": "main",
+  "autoMerge": true,
+  "requireCommittedArtefacts": true,
+  "notes": "ORCHESTRA-DELIVERY-TRUTH-R01 WP04 dogfood certification R03. grantPath is required: dispatch validates the task grant with validateAgainstGrant, and with no grantPath the adapter falls back to the standing grant, which has no manualMergeRequired field and is refused GRANT_MANUAL_MERGE_REQUIRED — found by the R02 run itself."
+}
