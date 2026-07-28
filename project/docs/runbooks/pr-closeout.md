@@ -198,5 +198,6 @@ Destructive `reset`/`clean` ve fiziksel recursive silme kullanılmaz.
 
 ## Referanslar
 
-`AGENTS.md` §4 §5 §6 §14 · `project/docs/runbooks/worktree-cleanup.md` ·
+`AGENTS.md` §4 §5 §6 §14 · `project/docs/governance/closeout-production-certification.md` ·
+`project/docs/runbooks/worktree-cleanup.md` ·
 `project/scripts/orchestration-v2/closeout/closeout.cjs`
