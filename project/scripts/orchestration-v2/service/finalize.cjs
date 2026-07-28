@@ -170,15 +170,41 @@ function rebuildResult(h, deps) {
  * A residual is reported, never thrown: a directory that will not delete does
  * not undo a merge that happened.
  */
-function makeWorktreeCleanup(repoCwd, worktreePath) {
+function makeWorktreeCleanup(repoCwd, worktreePath, branch) {
   if (!worktreePath) return null;
   return () => {
     const { execFileSync } = require('child_process');
     const git = (args) => execFileSync('git', args, { cwd: repoCwd, encoding: 'utf8' }).trim();
+    // Branch deletion lives here rather than in `gh pr merge --delete-branch`,
+    // and the ORDER is the reason: the worktree holds the branch, so git
+    // refuses to delete it while the worktree stands. Coupled to the merge
+    // command, that refusal arrived AFTER the merge had landed and turned a
+    // completed merge into GH_COMMAND_FAILED with a null merge sha.
+    //
+    // Best-effort, like the worktree removal above and for the same reason: by
+    // the time this runs the merge has happened, and a branch that outlives it
+    // is untidy and nothing more. Reported, never thrown.
+    const tidyBranch = () => {
+      if (!branch) return null;
+      const out = { branch, local: null, remote: null };
+      try {
+        git(['branch', '-D', branch]);
+        out.local = 'DELETED';
+      } catch (e) {
+        out.local = 'KEPT: ' + String((e && e.message) || e).slice(-120);
+      }
+      try {
+        git(['push', 'origin', '--delete', branch]);
+        out.remote = 'DELETED';
+      } catch (e) {
+        out.remote = 'KEPT: ' + String((e && e.message) || e).slice(-120);
+      }
+      return out;
+    };
     try {
       git(['worktree', 'remove', '--force', worktreePath]);
       git(['worktree', 'prune']);
-      return { disposition: 'REMOVED', path: worktreePath };
+      return { disposition: 'REMOVED', path: worktreePath, branchCleanup: tidyBranch() };
     } catch (e) {
       try {
         git(['worktree', 'prune']);
@@ -382,7 +408,7 @@ async function finalizeEntry(o) {
   });
 
   const result = rebuildResult(h, {
-    cleanupWorktree: makeWorktreeCleanup(repoCwd, h.worktreePath),
+    cleanupWorktree: makeWorktreeCleanup(repoCwd, h.worktreePath, h.branch),
     release: o.release || null,
   });
 
