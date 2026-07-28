@@ -87,6 +87,11 @@ import { DeprecatedUsageTrackerService } from './deprecated-usage-tracker.servic
     // bounded context'lerinden (UyapModule) register edilir. Registry export'u ters bagimlilik
     // OLUSTURMAZ — PolicyEngineModule UyapModule'u import etmez.
     ComputedFactRegistry,
+    // UYAP-AUTHORITY-FRESHNESS-TX-I01: TX-1 revalidation, operasyonel erisilebilirlik
+    // sinyalini Phase 1 ile AYNI kaynaktan okumak zorundadir; ikinci bir okuyucu
+    // uretilirse iki farkli "available" tanimi olusur. Salt-okuma servisi; ters
+    // bagimlilik OLUSTURMAZ (PolicyEngineModule UyapModule'u import ETMEZ).
+    UyapAvailabilityService,
   ],
 })
 export class PolicyEngineModule {}

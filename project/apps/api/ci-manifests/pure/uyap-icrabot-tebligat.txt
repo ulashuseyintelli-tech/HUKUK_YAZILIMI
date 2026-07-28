@@ -169,6 +169,7 @@ src/modules/uyap/__tests__/uyap-debtor-assets-pii-persistence.spec.ts
 src/modules/uyap/__tests__/uyap-history-h2a-containment.spec.ts
 src/modules/uyap/__tests__/uyap-legacy-truthfulness.spec.ts
 src/modules/uyap/__tests__/uyap-legal-authority-tenant-guard.spec.ts
+src/modules/uyap/__tests__/uyap-authority-freshness-tx.spec.ts
 src/modules/uyap/__tests__/uyap-poa-tenant-scope.spec.ts
 src/modules/uyap/__tests__/uyap-retry-containment.spec.ts
 src/modules/uyap/__tests__/uyap-retry-ownership.spec.ts

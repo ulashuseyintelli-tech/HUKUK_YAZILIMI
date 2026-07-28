@@ -34,8 +34,25 @@ function makeCpeAllowed() {
   };
 }
 
+/**
+ * UYAP-AUTHORITY-FRESHNESS-TX-I01: evidence flag ON iken `UyapService` artık Phase 1
+ * authority snapshot'ı ÜRETMEK ZORUNDADIR (CPE "allowed" sonucu TX-1 authority'si değildir).
+ * Bu dosyanın konusu AKTİVASYON/SIRALAMA olduğu için buraya "her zaman başarılı" bir
+ * snapshot servisi stub'ı verilir; tazelik davranışı kendi spec'inde test edilir
+ * (`uyap-authority-freshness-tx.spec.ts`).
+ */
+function makeSnapshotService() {
+  return {
+    build: jest.fn(async () => ({
+      ok: true,
+      snapshot: { snapshotVersion: 'UYAP-AUTHORITY-SNAPSHOT/v1', authorityDigest: 'f'.repeat(64) },
+    })),
+  };
+}
+
 function makeService(opts: {
   orchestrator?: any;
+  snapshots?: any;
 } = {}) {
   const prisma = {
     case: { findFirst: buildAuthorizedCaseFindFirst() },
@@ -45,6 +62,7 @@ function makeService(opts: {
   const validationGate = {};
   const errorReporter = { report: jest.fn() };
   const cpe = makeCpeAllowed();
+  const snapshots = opts.snapshots ?? makeSnapshotService();
   const svc = new UyapService(
     prisma as any,
     poa as any,
@@ -52,13 +70,14 @@ function makeService(opts: {
     errorReporter as any,
     cpe as any,
     opts.orchestrator,
+    snapshots as any,
   );
   // logRequest/logResponse/auditHacizDecision özel metotlarını no-op'la (transport stub).
   jest.spyOn(svc as any, 'logRequest').mockResolvedValue('req-1');
   jest.spyOn(svc as any, 'logResponse').mockResolvedValue(undefined);
   jest.spyOn(svc as any, 'auditHacizDecision').mockResolvedValue(undefined);
   jest.spyOn(svc as any, 'validatePowerOfAttorney').mockResolvedValue({ isValid: true });
-  return { svc, cpe, logRequestSpy: (svc as any).logRequest as jest.Mock };
+  return { svc, cpe, snapshots, logRequestSpy: (svc as any).logRequest as jest.Mock };
 }
 
 const PAYMENT = { caseId: 'c1', creditor: {}, debtor: {}, amount: 100, tenantId: 't1' } as any;

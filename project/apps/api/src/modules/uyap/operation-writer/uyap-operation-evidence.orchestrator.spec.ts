@@ -1,11 +1,48 @@
 import { UyapOperationEvidenceOrchestrator } from './uyap-operation-evidence.orchestrator';
+import { UyapAuthoritySnapshot } from '../authority/uyap-authority-snapshot.types';
 
 /**
  * P05C-P04 — orchestrator flag-gating + TX-1 kompozisyon (DB'siz unit).
+ *
+ * UYAP-AUTHORITY-FRESHNESS-TX-I01 UYARLAMASI: TX-1 artık ilk adım olarak authority
+ * revalidation çalıştırır. Bu dosyanın konusu KOMPOZİSYONDUR (lock order, envelope,
+ * idempotency key formu, link girdileri) — tazelik davranışı kendi spec'inde
+ * (`uyap-authority-freshness-tx.spec.ts`) test edilir. Bu yüzden buraya "her zaman
+ * taze" bir snapshot servisi stub'ı verilir; senaryoların anlamı DEĞİŞMEDİ.
  */
 function makeConfig(map: Record<string, string>) {
   return { get: (k: string) => map[k] };
 }
+
+/** Yapısal olarak geçerli, içeriği bu dosyanın konusu olmayan snapshot. */
+const FIXTURE_SNAPSHOT = {
+  snapshotVersion: 'UYAP-AUTHORITY-SNAPSHOT/v1',
+  evaluatedAt: new Date('2026-06-01T00:00:00.000Z'),
+  tenantId: 'tenant-1',
+  authenticatedUserId: 'user-1',
+  actionCode: 'UYAP_SEND',
+  actingLawyer: {
+    actingLawyerId: 'lawyer-1',
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    isActive: true,
+    lawyerUpdatedAt: new Date('2026-06-01T00:00:00.000Z'),
+  },
+  caseState: {
+    caseId: 'case-1',
+    tenantId: 'tenant-1',
+    caseStatus: 'DERDEST',
+    isArchived: false,
+    allowUyapActions: true,
+    caseUpdatedAt: new Date('2026-06-01T00:00:00.000Z'),
+  },
+  clientIds: ['client-1'],
+  authorityEvidence: [],
+  expenseBlocks: [],
+  systemAvailability: { explicitlyConfigured: true, available: true },
+  authorityVersion: 'UYAP-SEND-AUTHORITY/v1',
+  authorityDigest: 'f'.repeat(64),
+} as unknown as UyapAuthoritySnapshot;
 
 function makeOrchestrator(cfg: Record<string, string>) {
   const tx = {} as any;
@@ -20,13 +57,17 @@ function makeOrchestrator(cfg: Record<string, string>) {
   const linkWriter = {
     linkWithinTransaction: jest.fn(async () => ({ link: { id: 'l-1' }, created: true })),
   };
+  const authoritySnapshots = {
+    revalidate: jest.fn(async () => ({ fresh: true, snapshot: FIXTURE_SNAPSHOT })),
+  };
   const orch = new UyapOperationEvidenceOrchestrator(
     prisma as any,
     makeConfig(cfg) as any,
     operationWriter as any,
     linkWriter as any,
+    authoritySnapshots as any,
   );
-  return { orch, prisma, operationWriter, linkWriter, tx };
+  return { orch, prisma, operationWriter, linkWriter, authoritySnapshots, tx };
 }
 
 const T = 'tenant-1';
@@ -87,7 +128,19 @@ describe('P05C-P04 orchestrator — recordEvidence (TX-1 kompozisyon)', () => {
     action: 'UYAP_SEND' as const,
     idempotencyToken: 'stable-token-123',
     cpeDecisionLogId: 'dec-1',
+    // UYAP-AUTHORITY-FRESHNESS-TX-I01: TX-1 artık Phase 1 snapshot'ı ister.
+    authoritySnapshot: FIXTURE_SNAPSHOT,
   };
+
+  it('revalidation operation/link YAZIMINDAN ÖNCE çalışır (TX-1 aşama sırası)', async () => {
+    const { orch, authoritySnapshots, operationWriter } = makeOrchestrator({});
+    await orch.recordEvidence(cmd);
+
+    const revalOrder = authoritySnapshots.revalidate.mock.invocationCallOrder[0];
+    const opOrder =
+      operationWriter.createOperationWithFirstAttemptWithinTransaction.mock.invocationCallOrder[0];
+    expect(revalOrder).toBeLessThan(opOrder);
+  });
 
   it('tek $transaction içinde operation → link sırasıyla çağırır (lock order)', async () => {
     const { orch, prisma, operationWriter, linkWriter } = makeOrchestrator({});

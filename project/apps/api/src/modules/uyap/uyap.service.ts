@@ -11,6 +11,9 @@ import {
   UyapEvidenceAction,
   UyapOperationEvidenceOrchestrator,
 } from './operation-writer/uyap-operation-evidence.orchestrator';
+// UYAP-AUTHORITY-FRESHNESS-TX-I01: Phase 1 authority snapshot + TX-1 tazelik ihlali tipi.
+import { UyapAuthoritySnapshotService } from './authority/uyap-authority-snapshot.service';
+import { UyapAuthorityStaleError } from './authority/uyap-authority-stale.error';
 
 /**
  * UYAP Entegrasyon Servisi
@@ -120,6 +123,9 @@ export class UyapService {
     private casePolicyEngine?: CasePolicyEngine,
     // P05C-P04: opsiyonel — yoksa/flag OFF ise mevcut legacy davranış BİREBİR korunur.
     @Optional() private readonly evidenceOrchestrator?: UyapOperationEvidenceOrchestrator,
+    // UYAP-AUTHORITY-FRESHNESS-TX-I01: Phase 1 snapshot üreticisi. Evidence flag ON iken
+    // ZORUNLUDUR; yokluğunda fail-closed (aşağıda kontrol edilir).
+    @Optional() private readonly authoritySnapshots?: UyapAuthoritySnapshotService,
   ) {}
 
   /**
@@ -160,6 +166,40 @@ export class UyapService {
         details: 'actorUserId (authenticated) ve CPE decision bağlamı zorunludur',
       });
     }
+
+    // UYAP-AUTHORITY-FRESHNESS-TX-I01 — PHASE 1 SNAPSHOT.
+    //
+    // CPE "allowed" dedi; ancak bu sonuç TX-1 commit authority'si DEĞİLDİR (FR-01).
+    // Bütün mutable authority kaynakları burada SERVER-SIDE fotoğraflanır; TX-1 içinde
+    // aynı kaynaklar yeniden okunup karşılaştırılır. Snapshot istemciden ALINMAZ (FR-05/06).
+    if (!this.authoritySnapshots) {
+      throw new BadRequestException({
+        code: 'UYAP_EVIDENCE_CONTEXT_MISSING',
+        message: 'UYAP işlemi yapılamaz: evidence bağlamı eksik',
+        details: 'Authority snapshot servisi kullanılamıyor; güvenlik nedeniyle işlem engellendi',
+      });
+    }
+
+    const snapshotResult = await this.authoritySnapshots.build({
+      tenantId,
+      authenticatedUserId: actorUserId,
+      caseId,
+      actionCode: action,
+      evaluatedAt: new Date(),
+    });
+
+    if (!snapshotResult.ok) {
+      // Phase 1 ile CPE arasında dahi değişmiş olabilir → fail-closed, dispatch başlamaz.
+      this.logger.error(
+        `UYAP authority snapshot üretilemedi (${action}): ${snapshotResult.failureCode}`,
+      );
+      throw new BadRequestException({
+        code: 'UYAP_AUTHORITY_SNAPSHOT_FAILED',
+        message: 'UYAP işlemi yapılamaz: yetki doğrulanamadı',
+        details: 'İşlem yetkisi güvenli biçimde fotoğraflanamadı',
+      });
+    }
+
     try {
       await this.evidenceOrchestrator.recordEvidence({
         action,
@@ -168,9 +208,25 @@ export class UyapService {
         actorUserId,
         idempotencyToken,
         cpeDecisionLogId: cpeDecisionId,
+        authoritySnapshot: snapshotResult.snapshot,
       });
     } catch (error: any) {
-      // TX-1 failure → dispatch/logRequest başlamaz (fail-closed). RAW token loglanmaz.
+      // TX-1 tazelik ihlali: yetki Phase 1'den sonra değişti → operation/attempt/link 0 satır.
+      // Dış mesaj GENERIC'tir; changedSources yalnız internal log'da kalır (enumeration önlenir).
+      if (error instanceof UyapAuthorityStaleError) {
+        this.logger.warn(
+          `UYAP yetki tazeliği ihlali (${action}): ${error.failureCode} ` +
+            `[${error.changedSources.join(',')}]${
+              error.revalidationFailureCode ? ` (${error.revalidationFailureCode})` : ''
+            }`,
+        );
+        throw new BadRequestException({
+          code: error.failureCode,
+          message: 'UYAP işlemi yapılamaz: işlem yetkisi bu sırada değişti',
+          details: 'Yetki bağlamı güncel değil; işlem güvenli tarafta durduruldu',
+        });
+      }
+      // Diğer TX-1 hataları → dispatch/logRequest başlamaz (fail-closed). RAW token loglanmaz.
       this.logger.error(`UYAP evidence kaydı başarısız (${action}), işlem engellendi: ${error?.name ?? 'error'}`);
       throw new BadRequestException({
         code: 'UYAP_EVIDENCE_WRITE_FAILED',
