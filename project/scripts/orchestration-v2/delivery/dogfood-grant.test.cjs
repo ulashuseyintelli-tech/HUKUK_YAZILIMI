@@ -121,3 +121,29 @@ test('DG04  the committed R02 request is admissible against the corrected grant'
   assert.equal(verdict.admissible, true, verdict.refusal + ' ' + (verdict.detail || ''));
   assert.equal(verdict.program, 'DELIVERY_TRUTH');
 });
+
+test('DG05  the request names a task grant, and dispatch validates against it', () => {
+  // Admission passing is not dispatch passing, and this is the gap that let the
+  // defect through. The committed request had no grantPath, so the executor
+  // adapter fell back to `resolved.grant || resolved.standingGrant` and handed
+  // a STANDING grant to validateAgainstGrant — a function that checks TASK
+  // grant fields. Standing grants have no manualMergeRequired, so R02 was
+  // refused GRANT_MANUAL_MERGE_REQUIRED the instant it was dispatched.
+  //
+  // DG04 could not see it: admission reads the standing grant by design and was
+  // right to pass. So this asserts the NEXT gate, against the files as
+  // committed, and it asserts the fallback is not what answers.
+  const requestMod = require('../service/request.cjs');
+  const authority = require('../orchestrator/authority.cjs');
+
+  const resolved = requestMod.load({ repoCwd: REPO_ROOT, requestPath: REQUEST_REL, verifyArtefacts: false });
+  assert.ok(resolved.grant, 'the request must name a task grant; without one dispatch validates the wrong object');
+
+  // The exact expression executor-adapter.cjs uses to choose what to validate.
+  const handed = resolved.grant || resolved.standingGrant;
+  assert.notEqual(handed, resolved.standingGrant, 'the standing grant must not be what dispatch validates');
+  authority.validateAgainstGrant({ grant: handed, spec: resolved.spec, revoked: false, nowMs: Date.now() });
+
+  // And the field whose absence produced the refusal, stated rather than implied.
+  assert.equal(typeof handed.manualMergeRequired, 'boolean');
+});
