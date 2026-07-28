@@ -45,6 +45,30 @@ belgeleri profilden hala ULAŞILAMAZ; yazımı yürürlükteki **V1 akışı** y
 otoritatif ratifikasyon girdisi agent tarafından yazılamaz; owner tarafından
 ayrıca kaydedilmesi gerekir.
 
+### 0.1 AMENDMENT — immutability revision eksenine bağlandı
+
+`OWNER-PROGRAM-GOV-TASK-REVISION-CONTINUITY-ENFORCEMENT-R01`
+
+Ratifikasyondaki immutable authorization modeli doğruydu ve **korunmuştur**, ama
+tek bir eksende yazılmıştı: pinlenen spec `taskId`'ye aitti. Sonucu, belgenin
+amaçlamadığı bir okumaydı — bir task'ın implementation veya test tasarımı
+superseded olduğunda, ya da base ilerlediğinde, "yeni spec gerekiyor" cümlesi
+"bu task bitti" gibi okunuyordu. §13'ün `STRICT_PINNED_BASE` satırı aynı şeyi
+base ekseninde tekrarlıyordu.
+
+Bu okuma sahada karşılığını buldu: görevler teknik tasarım değiştiğinde serbest
+metin `BLOCKED — HANDOFF REQUIRED` ile bırakıldı. Kayıp, tamamlanmamış işin
+kendisi değil, korunabilecek WIP'ti.
+
+Amendment yeni bir istisna sınıfı **eklemez** ve hiçbir `DENIED` satırını
+gevşetmez. Yalnız immutability'nin birimini adlandırır: task değil, **revision**
+(§2.1). `taskId` kimliktir; `revisionId` pinlenen kümedir. Böylece §2'nin
+"yeniden tanımlanan spec authorize edilmez" hükmü tam gücüyle yürürlükte kalır —
+artık `(taskId, revisionId)` çifti üzerinde — ve superseded tasarım task'ı değil
+yalnız kendi revision'ını kapatır.
+
+Üst norm: `AGENTS.md` §7 (`TASK REVISION ≠ TASK TERMINATION ≠ EXECUTOR HANDOFF`).
+
 ## 0. V1 ile ilişki
 
 `governance-writer-coordination-contract.md` (GOV-COORD-V1) yürürlüktedir ve bu
@@ -231,11 +255,64 @@ grantId · workstream · expiresAt · revocationPath
 ```
 
 - Hash mismatch = fail-closed.
-- Grant sonradan değiştirilen veya aynı `taskId` ile yeniden tanımlanan spec'i
-  **authorize ETMEZ**.
+- Grant sonradan değiştirilen veya aynı `(taskId, revisionId)` çifti ile yeniden
+  tanımlanan spec'i **authorize ETMEZ** (§2.1). Yeni bir revision kendi spec
+  hash'ini ve kendi grant bağını taşır; eski revision'ı geçersiz kılmaz.
 - Orchestrator grant veya authorization **ÜRETEMEZ**; yalnız canonical evidence
   ve hash eşleşmesini doğrular.
 - `semanticAuthorityRef` ≠ `executionGrantRef` (V1 §2; `SYS-DEC-003`).
+
+### 2.1 Task identity · revision · grant · handoff · termination
+
+Immutability'nin birimi task DEĞİL **revision**'dır. Beş kavram ayrıdır ve
+hiçbiri diğerinin yerine geçmez:
+
+```text
+TASK IDENTITY   : taskId — semantic outcome ve primary ownership ile birlikte
+                  task'ın ne olduğunu tanımlar; revision boyunca DEĞİŞMEZ
+TASK REVISION   : revisionId — pinlenen spec/hash kümesinin sahibi; immutable
+EXECUTION GRANT : grantId — belirli bir revision'ı authorize eder
+HANDOFF         : primary ownership'in başka bir yürütücüye geçmesi; owner-gated
+TERMINATION     : task'ın terminal disposition ile kapanması
+```
+
+Bu ayrım `AGENTS.md` §7'de ratifiye edilmiştir; bu bölüm onu orchestration
+seviyesinde uygular ve yeni bir authority modeli üretmez. Uygulama detayı ve
+karar ağacı: `project/docs/governance/process-rules.md`.
+
+Revision kimliği:
+
+```text
+revisionId · revisionOf · supersededRevision · supersededLayer · revisionReason
+· driftReconciliation
+```
+
+Bu alanların bulunmadığı bir kayıt `revisionId = 1` ve `supersededRevision =
+null` olarak okunur; mevcut task ve grant kayıtları geçerliliğini korur.
+
+### 2.2 Revision kuralları
+
+| # | Kural |
+|---|---|
+| 1 | `TaskRevision` immutable'dır. |
+| 2 | Yayımlanmış revision overwrite EDİLMEZ; düzeltme yeni revision açar ve eski kayıt `SUPERSEDED BY <revisionId>` işaretlenir. |
+| 3 | `baseSha` değişirse yeni immutable revision GEREKİR. |
+| 4 | Semantic outcome değişmiyorsa base drift yeni `taskId` GEREKTİRMEZ. |
+| 5 | Drift reconciliation PASS olmadan yeni revision `ELIGIBLE` OLMAZ. |
+| 6 | `changedPathAllowlist` daralması revision OLABİLİR. |
+| 7 | Authorized scope dışına çıkan allowlist genişlemesi YENİ AUTHORITY gerektirir. |
+| 8 | Implementation veya test design değişikliği revision OLABİLİR. |
+| 9 | Production · schema · migration · backfill · live DB · cutover EKLENMESİ revision DEĞİLDİR; §1 forbidden yüzeyi ve owner authority devreye girer. |
+| 10 | Primary executor değişikliği explicit handoff transition GEREKTİRİR. |
+| 11 | Bounded capability executor değişikliği task handoff DEĞİLDİR. |
+| 12 | Revision mevcut merge authority'yi başka bir PR'a TAŞIMAZ. |
+| 13 | Revision, açık owner authority olmadan yeni execution authority ÜRETMEZ. |
+
+Mevcut immutable-authority güvenliği **zayıflatılmamıştır**: hash mismatch hâlâ
+fail-closed'dır, bir grant hâlâ tek bir pinlenmiş spec'i authorize eder ve
+orchestrator hâlâ grant üretemez. Değişen tek şey, immutability'nin `taskId`
+eksenine değil `revisionId` eksenine bağlanmasıdır — yani bir tasarımın
+superseded olması task'ı değil yalnız o revision'ı kapatır.
 
 ## 3. Task lifecycle
 
@@ -259,6 +336,11 @@ grantId · workstream · expiresAt · revocationPath
 `E` = yeni `taskAttemptId` ile tekrarlanabilir. `PR_OPEN` ve sonrası otomatik
 retry **EDİLMEZ**. `BLOCKED` terminal değildir; owner aksiyonuyla `ELIGIBLE`'a
 döner.
+
+Revision-eligible bir supersession (§2.2) task'ı terminal **ETMEZ**: aynı
+`taskId` altında yeni revision açılır, WIP korunur ve akış `ELIGIBLE`'dan devam
+eder. `HANDOFF_REQUIRED` ve `SUPERSEDED` lifecycle state **DEĞİLDİR** ve bu
+tabloya eklenmez; handoff ayrı ve owner-gated bir transition'dır (§2.2/10).
 
 ### 3.1 Lease doğrulama zamanlaması
 
@@ -591,7 +673,7 @@ Task spec zorunlu olarak birini taşır:
 
 | Policy | Davranış |
 |---|---|
-| `STRICT_PINNED_BASE` **(varsayılan)** | Executor yalnız grant'te pinlenen `baseSha` üzerinde çalışır. `origin/main` ilerlerse → `BLOCKED_BASE_SHA_DRIFT`. Yeni base için **yeni** immutable task spec/grant gerekir. |
+| `STRICT_PINNED_BASE` **(varsayılan)** | Executor yalnız grant'te pinlenen `baseSha` üzerinde çalışır. `origin/main` ilerlerse → `BLOCKED_BASE_SHA_DRIFT`. Yeni base **yeni immutable revision** gerektirir (§2.2/3); semantic outcome değişmediği sürece yeni `taskId` gerektirmez (§2.2/4). Yeni revision drift reconciliation PASS olmadan `ELIGIBLE` olmaz (§2.2/5). |
 | `REBASE_AND_REVALIDATE` | Rebase yalnız task spec açıkça izin veriyorsa. Rebase sonrası actual diff yeniden çıkarılır; boundary + invariant + test tamamen yeniden koşar; PR head SHA ve attestation **yeniden üretilir**. |
 | `REFRESH_BEFORE_EXECUTION` | Claim öncesi `origin/main` fresh SHA attempt base'i olarak pinlenir. Executor başladıktan **sonra** base kendiliğinden değiştirilemez. |
 
