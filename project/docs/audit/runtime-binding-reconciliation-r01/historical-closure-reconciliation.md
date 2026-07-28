@@ -1,7 +1,7 @@
 # Historical Closure Reconciliation — R01
 
-Audit base: `01240549d451b452d89091ffe822ecf5bdaac1ec`  
-Tarihsel commit: 1978  
+Audit base: `9ceaf4103bc5959263378990d7b8ac5a64d213e6`  
+Tarihsel commit: 1988  
 Closure/closeout/standalone CLOSED iddiasıyla ilişkili capability: 27
 
 ## Yöntem ve kanıt sınırı
@@ -20,7 +20,7 @@ Closure/closeout/standalone CLOSED iddiasıyla ilişkili capability: 27
 | CANONICAL | 139 |
 | CLOSED | 132 |
 | IMPLEMENTED | 523 |
-| MERGED | 1184 |
+| MERGED | 1194 |
 
 ## Original status → güncel capability çapraz tablosu
 
@@ -44,7 +44,7 @@ Bu tablo non-exclusive’dir: bir capability birden fazla tarihsel commit statü
 | IMPLEMENTED | SUPERSEDED | 75 |
 | IMPLEMENTED | UNKNOWN_REQUIRES_EVIDENCE | 298 |
 | MERGED | ACTIVE_UNREACHABLE | 10 |
-| MERGED | BOUND_DORMANT | 215 |
+| MERGED | BOUND_DORMANT | 216 |
 | MERGED | CODE_PRESENT_UNBOUND | 23 |
 | MERGED | INTENTIONALLY_DORMANT | 3 |
 | MERGED | OPERABLE_UNVERIFIED | 3523 |

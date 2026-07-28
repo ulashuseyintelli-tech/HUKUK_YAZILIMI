@@ -61,12 +61,14 @@ function parseArgs(argv) {
     outDir: null,
     auditStartedAt: null,
     dynamicEvidence: null,
+    auditBaseSha: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--out-dir') out.outDir = argv[++index];
     else if (arg === '--audit-started-at') out.auditStartedAt = argv[++index];
     else if (arg === '--dynamic-evidence') out.dynamicEvidence = argv[++index];
+    else if (arg === '--audit-base-sha') out.auditBaseSha = argv[++index];
     else if (arg === '--help') {
       process.stdout.write(
         [
@@ -74,6 +76,7 @@ function parseArgs(argv) {
           '  node scripts/runtime-binding-reconciliation-r01.cjs',
           '    --out-dir <repo-relative-directory>',
           '    --audit-started-at <ISO-8601>',
+          '    [--audit-base-sha <commit>]',
           '    [--dynamic-evidence <repo-relative-json>]',
           '',
         ].join('\n'),
@@ -342,9 +345,10 @@ function finalStatusFor(input) {
   return 'OPERABLE_UNVERIFIED';
 }
 
-function history(repoRoot, scopes) {
+function history(repoRoot, scopes, ref = 'HEAD') {
   const args = [
     'log',
+    ref,
     '--format=@@COMMIT%x1f%H%x1f%aI%x1f%s',
     '--name-only',
   ];
@@ -477,10 +481,38 @@ function main() {
   const outputDirectory = path.resolve(repoRoot, args.outDir);
   if (!outputDirectory.startsWith(`${repoRoot}${path.sep}`)) throw new Error('OUT_DIR_OUTSIDE_REPOSITORY');
 
-  const auditBaseSha = git(repoRoot, 'rev-parse', 'HEAD');
+  const headSha = git(repoRoot, 'rev-parse', 'HEAD');
+  const auditBaseSha = args.auditBaseSha
+    ? git(repoRoot, 'rev-parse', `${args.auditBaseSha}^{commit}`)
+    : headSha;
   const commonDirectory = git(repoRoot, 'rev-parse', '--git-common-dir');
   const branch = git(repoRoot, 'branch', '--show-current');
-  const treeStatus = git(repoRoot, 'status', '--porcelain');
+  if (auditBaseSha !== headSha) {
+    run('git', ['merge-base', '--is-ancestor', auditBaseSha, headSha], {
+      cwd: repoRoot,
+      maxBuffer: 1024 * 1024,
+    });
+    const committedAuditPaths = git(repoRoot, 'diff', '--name-only', `${auditBaseSha}..${headSha}`)
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map(normalize);
+    const allowedCommittedPaths = [
+      'project/scripts/runtime-binding-reconciliation-r01.cjs',
+      'project/scripts/runtime-binding-reconciliation-r01.test.cjs',
+    ];
+    const outputPrefix = `${normalize(args.outDir).replace(/\/+$/, '')}/`;
+    const unexpectedCommittedPaths = committedAuditPaths.filter((file) =>
+      !allowedCommittedPaths.includes(file) && !file.startsWith(outputPrefix));
+    if (unexpectedCommittedPaths.length > 0) {
+      throw new Error(
+        `AUDIT_BASE_TREE_DIVERGES_OUTSIDE_AUDIT_SCOPE: ${unexpectedCommittedPaths.join(', ')}`,
+      );
+    }
+  }
+  const treeStatus = run('git', ['status', '--porcelain=v1'], {
+    cwd: repoRoot,
+    maxBuffer: 1024 * 1024,
+  }).stdout.trimEnd();
   if (treeStatus) {
     const scannerPath = relative(repoRoot, __filename);
     const scannerTestPath = relative(
@@ -582,7 +614,7 @@ function main() {
     }
   }
 
-  const historyData = history(repoRoot, []);
+  const historyData = history(repoRoot, [], auditBaseSha);
   const historicalItems = new Map(
     historyData.commits
       .map(historicalClaim)
@@ -1198,6 +1230,7 @@ function main() {
     program: 'REPOSITORY-WIDE RUNTIME BINDING, ACTIVATION AND OPERABILITY RECONCILIATION PROGRAM — R01',
     metadata: {
       auditBaseSha,
+      analysisHeadSha: headSha,
       auditStartedAt: new Date(args.auditStartedAt).toISOString(),
       branch,
       gitCommonDirectory: normalize(commonDirectory),

@@ -2,19 +2,20 @@
   "schemaVersion": 1,
   "program": "REPOSITORY-WIDE RUNTIME BINDING, ACTIVATION AND OPERABILITY RECONCILIATION PROGRAM — R01",
   "metadata": {
-    "auditBaseSha": "01240549d451b452d89091ffe822ecf5bdaac1ec",
+    "auditBaseSha": "9ceaf4103bc5959263378990d7b8ac5a64d213e6",
+    "analysisHeadSha": "4806076440010890941511b84230696c83d19742",
     "auditStartedAt": "2026-07-28T17:15:10.732Z",
     "branch": "codex/runtime-binding-reconciliation-r01",
     "gitCommonDirectory": "C:/Development/HUKUK_YAZILIMI/project/.git",
     "scanner": "project/scripts/runtime-binding-reconciliation-r01.cjs",
-    "scannerSha256": "3179b654cf7fc14d44366864f3a7312ce3db1b1477a2250e2161629f09b1d68d",
-    "sourceFileCount": 2923,
+    "scannerSha256": "44e838c525c033dfb8c4ed6ab9e9fbfbbf3dd03c0ed3fd629f12c812db77a10a",
+    "sourceFileCount": 2928,
     "productionModuleCount": 104,
     "productionReachableModuleCount": 98,
     "evidenceBoundary": "REPOSITORY_STATIC_PLUS_EXPLICIT_SHA_BOUND_DYNAMIC_EVIDENCE"
   },
   "counts": {
-    "totalHistoricalWorkItems": 1978,
+    "totalHistoricalWorkItems": 1988,
     "totalCapabilities": 1512,
     "codePresent": 1512,
     "runtimeBound": 1426,
@@ -140,7 +141,7 @@
     },
     {
       "module": "OFFICE / AVUKAT-PERSONEL",
-      "historicalItems": 60,
+      "historicalItems": 61,
       "capabilities": 60,
       "codePresent": 60,
       "bound": 60,
@@ -3721,6 +3722,30 @@
       "module": "CROSS_MODULE / SHARED"
     },
     {
+      "historicalWorkId": "HIST-0C0E46308742",
+      "title": "fix(client): CLIENT-P2-U03-TRACK-B-I06-R01 — finansal bildirim yuzeyi portal navigasyonuna eklendi (#1790)",
+      "sourceRefs": [
+        "git:0c0e463087422236a8dbf6972565f931fe6878f6"
+      ],
+      "prNumbers": [
+        1790
+      ],
+      "mergeShas": [
+        "0c0e463087422236a8dbf6972565f931fe6878f6"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:39:52+03:00",
+      "changedFiles": [
+        "project/apps/web/src/app/portal/__tests__/portal-financial-disclosures.spec.tsx",
+        "project/apps/web/src/app/portal/layout.tsx"
+      ],
+      "module": "FRONTEND / UI ACTIVATION"
+    },
+    {
       "historicalWorkId": "HIST-0C10C392892A",
       "title": "docs(office): OFFICE-AUTH-P02 governance closure — implementation merged (PR #1481) (#1484)",
       "sourceRefs": [
@@ -3997,10 +4022,12 @@
       ],
       "expectedConsumers": [
         "Nest HTTP router",
-        "project/apps/api/src/modules/case-status/case-status.controller.ts"
+        "project/apps/api/src/modules/case-status/case-status.controller.ts",
+        "project/apps/api/src/scripts/office-cap02-authorization-shadow.core.ts"
       ],
       "expectedActivationConditions": [
-        "OFFICE_APPROVAL_CHANGE_STATUS_GATE"
+        "OFFICE_APPROVAL_CHANGE_STATUS_GATE",
+        "OFFICE_CAP02_REPORTINGLINE_SHADOW"
       ],
       "claimedCapabilities": [
         "HTTP-04F1623D555C",
@@ -8112,7 +8139,8 @@
       "expectedConsumers": [
         "Nest HTTP router",
         "project/apps/api/src/modules/portal/portal.controller.ts",
-        "project/apps/web/src/app/portal/__tests__/portal-financial-disclosures.spec.tsx"
+        "project/apps/web/src/app/portal/__tests__/portal-financial-disclosures.spec.tsx",
+        "project/apps/web/src/app/portal/layout.tsx"
       ],
       "expectedActivationConditions": [
         "JWT_SECRET"
@@ -11811,6 +11839,32 @@
       "module": "GOVERNANCE / ORCHESTRATION"
     },
     {
+      "historicalWorkId": "HIST-26CB4DAC4E8C",
+      "title": "docs(client): CLIENT-P2-U03-TRACK-B-I06 — portal sunum kapanisi (#1783)",
+      "sourceRefs": [
+        "git:26cb4dac4e8c39f9ea02883c9ae671141a9f3be6"
+      ],
+      "prNumbers": [
+        1783
+      ],
+      "mergeShas": [
+        "26cb4dac4e8c39f9ea02883c9ae671141a9f3be6"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:22:15+03:00",
+      "changedFiles": [
+        "project/docs/governance/CLIENT-GOVERNANCE-CHARTER.md",
+        "project/docs/governance/OFFICE-MASTER-SYNTHESIS.md",
+        "project/docs/governance/OFFICE-RISK-REGISTER.md",
+        "project/docs/governance/decision-log.md"
+      ],
+      "module": "GOVERNANCE / ORCHESTRATION"
+    },
+    {
       "historicalWorkId": "HIST-26D7816ED33E",
       "title": "docs(dx): add repository agent instructions",
       "sourceRefs": [
@@ -13317,6 +13371,32 @@
         "project/docs/blueprint/UYAP-SEND-HARD-GATE-PREFLIGHT-R02-v1.0.md"
       ],
       "module": "SHARED PLATFORM / INFRASTRUCTURE"
+    },
+    {
+      "historicalWorkId": "HIST-2C67C851C4CE",
+      "title": "docs(client): CLIENT-P2-U03-TRACK-B — I07 production readiness, kabul ve PROGRAM KAPANISI (#1788)",
+      "sourceRefs": [
+        "git:2c67c851c4ceba0f18ff60ad0ea04083eb51d796"
+      ],
+      "prNumbers": [
+        1788
+      ],
+      "mergeShas": [
+        "2c67c851c4ceba0f18ff60ad0ea04083eb51d796"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:48:52+03:00",
+      "changedFiles": [
+        "project/docs/governance/CLIENT-GOVERNANCE-CHARTER.md",
+        "project/docs/governance/OFFICE-MASTER-SYNTHESIS.md",
+        "project/docs/governance/OFFICE-RISK-REGISTER.md",
+        "project/docs/governance/decision-log.md"
+      ],
+      "module": "GOVERNANCE / ORCHESTRATION"
     },
     {
       "historicalWorkId": "HIST-2C85DCA6F73B",
@@ -28360,6 +28440,30 @@
       "module": "GOVERNANCE / ORCHESTRATION"
     },
     {
+      "historicalWorkId": "HIST-516BAC054804",
+      "title": "fix(orchestration-v2): dispatch, kaydin civiledigi hash'i kontrol etsin (#1787)",
+      "sourceRefs": [
+        "git:516bac054804d0969db9ee875e06eed2ee7a6467"
+      ],
+      "prNumbers": [
+        1787
+      ],
+      "mergeShas": [
+        "516bac054804d0969db9ee875e06eed2ee7a6467"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:28:17+03:00",
+      "changedFiles": [
+        "project/scripts/orchestration-v2/delivery/fixtures.cjs",
+        "project/scripts/orchestration-v2/service/service.cjs"
+      ],
+      "module": "GOVERNANCE / ORCHESTRATION"
+    },
+    {
       "historicalWorkId": "HIST-51B84DD5B496",
       "title": "docs(receivable): prepare D02-F01 initial release input pack (#1578)",
       "sourceRefs": [
@@ -33952,10 +34056,12 @@
       ],
       "expectedConsumers": [
         "Nest HTTP router",
-        "project/apps/api/src/modules/case-status/case-status.controller.ts"
+        "project/apps/api/src/modules/case-status/case-status.controller.ts",
+        "project/apps/api/src/scripts/office-cap02-authorization-shadow.core.ts"
       ],
       "expectedActivationConditions": [
-        "OFFICE_APPROVAL_CHANGE_STATUS_GATE"
+        "OFFICE_APPROVAL_CHANGE_STATUS_GATE",
+        "OFFICE_CAP02_REPORTINGLINE_SHADOW"
       ],
       "claimedCapabilities": [
         "HTTP-04F1623D555C",
@@ -44975,6 +45081,33 @@
       "module": "FRONTEND / UI ACTIVATION"
     },
     {
+      "historicalWorkId": "HIST-7C5D143481CF",
+      "title": "docs(uyap): resmi DTD artefakt-yokluk hukmu geri cekildi — gercek blocker D1 nondeterministic grammar (#1789)",
+      "sourceRefs": [
+        "git:7c5d143481cf11acb5cd165443caac746e86a45a"
+      ],
+      "prNumbers": [
+        1789
+      ],
+      "mergeShas": [
+        "7c5d143481cf11acb5cd165443caac746e86a45a"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:37:36+03:00",
+      "changedFiles": [
+        "project/apps/api/ci-manifests/pure/uyap-icrabot-tebligat.txt",
+        "project/apps/api/src/modules/uyap/official/__tests__/official-dtd-codelist-conformance.spec.ts",
+        "project/apps/api/src/modules/uyap/official/__tests__/official-dtd-record-correction.spec.ts",
+        "project/apps/api/src/modules/uyap/official/official-conformance-measurement.ts",
+        "project/docs/blueprint/UYAP-OFFICIAL-DTD-AND-CODELIST-CONFORMANCE-I01-v1.0.md"
+      ],
+      "module": "CROSS_MODULE / SHARED"
+    },
+    {
       "historicalWorkId": "HIST-7C69D476F282",
       "title": "feat(client-settlement): add Staff prepare permission for CollectionDisposition (#876)",
       "sourceRefs": [
@@ -45454,10 +45587,12 @@
       ],
       "expectedConsumers": [
         "Nest HTTP router",
-        "project/apps/api/src/modules/case-status/case-status.controller.ts"
+        "project/apps/api/src/modules/case-status/case-status.controller.ts",
+        "project/apps/api/src/scripts/office-cap02-authorization-shadow.core.ts"
       ],
       "expectedActivationConditions": [
-        "OFFICE_APPROVAL_CHANGE_STATUS_GATE"
+        "OFFICE_APPROVAL_CHANGE_STATUS_GATE",
+        "OFFICE_CAP02_REPORTINGLINE_SHADOW"
       ],
       "claimedCapabilities": [
         "HTTP-04F1623D555C",
@@ -49328,6 +49463,30 @@
         "project/apps/api/src/modules/case/case.service.ts"
       ],
       "module": "SHARED PLATFORM / INFRASTRUCTURE"
+    },
+    {
+      "historicalWorkId": "HIST-8D95D2768963",
+      "title": "docs(governance): contract'ta immutability birimi task degil revision olsun (#1791)",
+      "sourceRefs": [
+        "git:8d95d2768963f18e76e8b48965cb8a4524e89d0c"
+      ],
+      "prNumbers": [
+        1791
+      ],
+      "mergeShas": [
+        "8d95d2768963f18e76e8b48965cb8a4524e89d0c"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:46:46+03:00",
+      "changedFiles": [
+        "project/docs/governance/coordination-v2/governance-orchestration-contract-v2.md",
+        "project/scripts/orchestration-v2/orchestrator/revision-contract.test.cjs"
+      ],
+      "module": "GOVERNANCE / ORCHESTRATION"
     },
     {
       "historicalWorkId": "HIST-8DC36ABA6A61",
@@ -53905,6 +54064,32 @@
         "project/docs/governance/coordination-v2/requests/GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R02.request.json",
         "project/scripts/orchestration-v2/delivery/dogfood-grant.test.cjs",
         "project/scripts/orchestration-v2/delivery/make-dogfood-authority.cjs"
+      ],
+      "module": "GOVERNANCE / ORCHESTRATION"
+    },
+    {
+      "historicalWorkId": "HIST-9CEAF4103BC5",
+      "title": "fix(orchestration-v2): delivery evidence naming another task must not release a successor (#1792)",
+      "sourceRefs": [
+        "git:9ceaf4103bc5959263378990d7b8ac5a64d213e6"
+      ],
+      "prNumbers": [
+        1792
+      ],
+      "mergeShas": [
+        "9ceaf4103bc5959263378990d7b8ac5a64d213e6"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:50:00+03:00",
+      "changedFiles": [
+        "project/scripts/orchestration-v2/delivery/delivery.test.cjs",
+        "project/scripts/orchestration-v2/delivery/post-merge.cjs",
+        "project/scripts/orchestration-v2/orchestrator/successor.cjs",
+        "project/scripts/orchestration-v2/service/finalize.cjs"
       ],
       "module": "GOVERNANCE / ORCHESTRATION"
     },
@@ -64368,6 +64553,31 @@
       "module": "SHARED PLATFORM / INFRASTRUCTURE"
     },
     {
+      "historicalWorkId": "HIST-B378D19FBC5E",
+      "title": "fix(orchestration-v2): keep what a failing required test saw (#1786)",
+      "sourceRefs": [
+        "git:b378d19fbc5efc04eee1c4665594a59e5fc1c3a5"
+      ],
+      "prNumbers": [
+        1786
+      ],
+      "mergeShas": [
+        "b378d19fbc5efc04eee1c4665594a59e5fc1c3a5"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:24:12+03:00",
+      "changedFiles": [
+        "project/scripts/orchestration-v2/orchestrator/orchestrator.cjs",
+        "project/scripts/orchestration-v2/orchestrator/pilot.test.cjs",
+        "project/scripts/orchestration-v2/service/orch-service.cjs"
+      ],
+      "module": "GOVERNANCE / ORCHESTRATION"
+    },
+    {
       "historicalWorkId": "HIST-B3B0FA5B8183",
       "title": "feat(rcv-col): assemble deterministic legal application plans",
       "sourceRefs": [
@@ -69243,6 +69453,31 @@
         "AGENTS.md"
       ],
       "module": "SHARED PLATFORM / INFRASTRUCTURE"
+    },
+    {
+      "historicalWorkId": "HIST-C10DC92CE98E",
+      "title": "docs(governance): TASK REVISION ≠ TASK TERMINATION ≠ EXECUTOR HANDOFF — revision protokolu (#1784)",
+      "sourceRefs": [
+        "git:c10dc92ce98e40e77235131faa1c8537fc25f61e"
+      ],
+      "prNumbers": [
+        1784
+      ],
+      "mergeShas": [
+        "c10dc92ce98e40e77235131faa1c8537fc25f61e"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [],
+      "expectedActivationConditions": [],
+      "claimedCapabilities": [],
+      "authoredAt": "2026-07-28T20:30:51+03:00",
+      "changedFiles": [
+        "AGENTS.md",
+        "project/apps/web/src/__tests__/task-disposition-invariants.test.ts",
+        "project/docs/governance/process-rules.md"
+      ],
+      "module": "CROSS_MODULE / SHARED"
     },
     {
       "historicalWorkId": "HIST-C11043BE7057",
@@ -75694,6 +75929,41 @@
         "project/apps/web/src/app/(dashboard)/settings/clients/page.tsx"
       ],
       "module": "CROSS_MODULE / SHARED"
+    },
+    {
+      "historicalWorkId": "HIST-D4F0E5BE3C8E",
+      "title": "feat(office): give the ReportingLine graph its first production reader (#1738)",
+      "sourceRefs": [
+        "git:d4f0e5be3c8e8ab18b18fe35ed6290cad39d7e80"
+      ],
+      "prNumbers": [
+        1738
+      ],
+      "mergeShas": [
+        "d4f0e5be3c8e8ab18b18fe35ed6290cad39d7e80"
+      ],
+      "originalStatus": "MERGED",
+      "expectedEntryPoints": [],
+      "expectedConsumers": [
+        "project/apps/api/src/modules/case-status/case-status.controller.ts",
+        "project/apps/api/src/scripts/office-cap02-authorization-shadow.core.ts"
+      ],
+      "expectedActivationConditions": [
+        "OFFICE_APPROVAL_CHANGE_STATUS_GATE",
+        "OFFICE_CAP02_REPORTINGLINE_SHADOW"
+      ],
+      "claimedCapabilities": [
+        "INT-9E51734AAFEF"
+      ],
+      "authoredAt": "2026-07-28T20:31:44+03:00",
+      "changedFiles": [
+        "project/apps/api/ci-manifests/pure/office-auth-user.txt",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
+        "project/apps/api/src/modules/office-approval/office-approval-shadow.service.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
+        "project/apps/api/src/scripts/office-cap02-authorization-shadow.core.ts"
+      ],
+      "module": "OFFICE / AVUKAT-PERSONEL"
     },
     {
       "historicalWorkId": "HIST-D4FFD3EF2775",
@@ -91006,7 +91276,7 @@
       "severity": "NONE",
       "breakpoint": "",
       "evidenceRefs": [
-        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-01240549d451-sealed.json",
+        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-9ceaf4103bc5-sealed.json",
         "project/scripts/orchestration-v2/delivery/manifest.cjs:CAPABILITIES",
         "project/scripts/orchestration-v2/delivery/probes.cjs"
       ],
@@ -91068,7 +91338,7 @@
       "severity": "NONE",
       "breakpoint": "",
       "evidenceRefs": [
-        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-01240549d451-sealed.json",
+        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-9ceaf4103bc5-sealed.json",
         "project/scripts/orchestration-v2/delivery/manifest.cjs:CAPABILITIES",
         "project/scripts/orchestration-v2/delivery/probes.cjs"
       ],
@@ -91130,7 +91400,7 @@
       "severity": "NONE",
       "breakpoint": "",
       "evidenceRefs": [
-        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-01240549d451-sealed.json",
+        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-9ceaf4103bc5-sealed.json",
         "project/scripts/orchestration-v2/delivery/manifest.cjs:CAPABILITIES",
         "project/scripts/orchestration-v2/delivery/probes.cjs"
       ],
@@ -91192,7 +91462,7 @@
       "severity": "NONE",
       "breakpoint": "",
       "evidenceRefs": [
-        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-01240549d451-sealed.json",
+        "project/docs/audit/runtime-binding-reconciliation-r01/evidence/delivery-evidence-9ceaf4103bc5-sealed.json",
         "project/scripts/orchestration-v2/delivery/manifest.cjs:CAPABILITIES",
         "project/scripts/orchestration-v2/delivery/probes.cjs"
       ],
@@ -91223,6 +91493,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -96269,6 +96540,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -96712,6 +96984,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -97443,6 +97716,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -97450,6 +97724,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -98265,6 +98540,7 @@
         "project/apps/api/src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.security.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/web/src/lib/__tests__/auth-context-portal-delegation.spec.tsx",
         "project/apps/web/src/lib/__tests__/auth-context-redirect.spec.tsx"
       ],
@@ -98475,6 +98751,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -99593,6 +99870,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -99806,6 +100084,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -100222,6 +100501,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -100229,6 +100509,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -106084,6 +106365,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -106091,6 +106373,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -107632,6 +107915,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -107639,6 +107923,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -108447,6 +108732,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -108454,6 +108740,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -108886,6 +109173,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -109359,6 +109647,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -109366,6 +109655,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -112106,6 +112396,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -112113,6 +112404,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -115486,6 +115778,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -115493,6 +115786,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -118588,6 +118882,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -118595,6 +118890,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -118801,6 +119097,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -119127,6 +119424,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -119134,6 +119432,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -120258,6 +120557,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -121595,6 +121895,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -121602,6 +121903,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -121749,6 +122051,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -122466,6 +122769,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -123016,6 +123320,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -124808,6 +125113,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -124815,6 +125121,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -126518,6 +126825,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -126525,6 +126833,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -127678,6 +127987,7 @@
         "project/apps/api/src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.security.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/web/src/lib/__tests__/auth-context-portal-delegation.spec.tsx",
         "project/apps/web/src/lib/__tests__/auth-context-redirect.spec.tsx"
       ],
@@ -128771,6 +129081,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -128778,6 +129089,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -129272,6 +129584,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -135242,6 +135555,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -140033,6 +140347,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -140040,6 +140355,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -141597,6 +141913,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -141604,6 +141921,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -145062,6 +145380,7 @@
         "project/apps/api/src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.security.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/web/src/lib/__tests__/auth-context-portal-delegation.spec.tsx",
         "project/apps/web/src/lib/__tests__/auth-context-redirect.spec.tsx"
       ],
@@ -145596,6 +145915,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -150942,6 +151262,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -151026,6 +151347,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -151592,6 +151914,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -153432,6 +153755,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -154411,6 +154735,7 @@
         "project/apps/api/src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.security.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/web/src/lib/__tests__/auth-context-portal-delegation.spec.tsx",
         "project/apps/web/src/lib/__tests__/auth-context-redirect.spec.tsx"
       ],
@@ -155736,6 +156061,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -158774,6 +159100,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -159294,6 +159621,7 @@
         "project/apps/api/src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.security.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/web/src/lib/__tests__/auth-context-portal-delegation.spec.tsx",
         "project/apps/web/src/lib/__tests__/auth-context-redirect.spec.tsx"
       ],
@@ -160976,6 +161304,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -160983,6 +161312,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -162168,6 +162498,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -167156,6 +167487,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -169569,6 +169901,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -171205,6 +171538,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -171212,6 +171546,7 @@
         "project/apps/api/src/modules/office/__tests__/office-credential-encryption.util.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-credential-settings-guard.spec.ts",
         "project/apps/api/src/modules/office/__tests__/office-settings-security.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts",
         "project/apps/api/src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts",
@@ -181777,6 +182112,7 @@
         "project/apps/api/src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.security.spec.ts",
         "project/apps/api/src/scripts/__tests__/adr014-run-specific-authorization-package.spec.ts",
+        "project/apps/api/src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts",
         "project/apps/web/src/lib/__tests__/auth-context-portal-delegation.spec.tsx",
         "project/apps/web/src/lib/__tests__/auth-context-redirect.spec.tsx"
       ],
@@ -183053,7 +183389,8 @@
       "historicalWorkRefs": [
         "HIST-0CC0A02859C6",
         "HIST-60A5D2E85921",
-        "HIST-7DFE8C69B6FB"
+        "HIST-7DFE8C69B6FB",
+        "HIST-D4F0E5BE3C8E"
       ],
       "implementationFiles": [
         "project/apps/api/src/modules/office-approval/office-approval-shadow.service.ts"
@@ -183068,14 +183405,16 @@
         "OfficeApprovalShadowService"
       ],
       "consumers": [
-        "project/apps/api/src/modules/case-status/case-status.controller.ts"
+        "project/apps/api/src/modules/case-status/case-status.controller.ts",
+        "project/apps/api/src/scripts/office-cap02-authorization-shadow.core.ts"
       ],
       "producers": [],
       "registrationSites": [
         "project/apps/api/src/modules/office-approval/office-approval.module.ts:OfficeApprovalModule.providers"
       ],
       "activationConditions": [
-        "OFFICE_APPROVAL_CHANGE_STATUS_GATE"
+        "OFFICE_APPROVAL_CHANGE_STATUS_GATE",
+        "OFFICE_CAP02_REPORTINGLINE_SHADOW"
       ],
       "activationEvidence": {
         "conditionDefined": true,
@@ -183087,7 +183426,7 @@
       "runtimeBound": true,
       "active": null,
       "reachable": true,
-      "consumerCount": 1,
+      "consumerCount": 2,
       "operable": null,
       "independentlyVerified": false,
       "verificationLevel": "L2",
@@ -183098,8 +183437,9 @@
       "breakpoint": "",
       "evidenceRefs": [
         "project/apps/api/src/modules/case-status/case-status.controller.ts:consumer-reference",
-        "project/apps/api/src/modules/office-approval/office-approval-shadow.service.ts:63",
-        "project/apps/api/src/modules/office-approval/office-approval.module.ts:OfficeApprovalModule.providers"
+        "project/apps/api/src/modules/office-approval/office-approval-shadow.service.ts:69",
+        "project/apps/api/src/modules/office-approval/office-approval.module.ts:OfficeApprovalModule.providers",
+        "project/apps/api/src/scripts/office-cap02-authorization-shadow.core.ts:consumer-reference"
       ],
       "blockers": [
         "DEPLOYED_ACTIVATION_VALUE_UNVERIFIED"
@@ -183990,6 +184330,7 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/report-merger.ts",
         "project/apps/api/src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts",
         "project/apps/api/src/modules/error-log/__tests__/error-reporter.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-passive-policy.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-person-filter-g5a.spec.ts",
         "project/apps/api/src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts",
@@ -185691,6 +186032,7 @@
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-read.service.spec.ts",
+        "project/apps/api/src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.controller.spec.ts",
         "project/apps/api/src/modules/office-approval/__tests__/office-approval.service.spec.ts",
@@ -197149,7 +197491,8 @@
         "financial-disclosures"
       ],
       "consumers": [
-        "project/apps/web/src/app/portal/__tests__/portal-financial-disclosures.spec.tsx"
+        "project/apps/web/src/app/portal/__tests__/portal-financial-disclosures.spec.tsx",
+        "project/apps/web/src/app/portal/layout.tsx"
       ],
       "producers": [
         "Browser navigation"
@@ -197168,7 +197511,7 @@
       "runtimeBound": true,
       "active": true,
       "reachable": true,
-      "consumerCount": 1,
+      "consumerCount": 2,
       "operable": null,
       "independentlyVerified": false,
       "verificationLevel": "L3",
@@ -197179,7 +197522,8 @@
       "breakpoint": "",
       "evidenceRefs": [
         "project/apps/web/src/app/portal/__tests__/portal-financial-disclosures.spec.tsx:navigation-reference",
-        "project/apps/web/src/app/portal/financial-disclosures/page.tsx:1"
+        "project/apps/web/src/app/portal/financial-disclosures/page.tsx:1",
+        "project/apps/web/src/app/portal/layout.tsx:navigation-reference"
       ],
       "blockers": [
         "UI_RUNTIME_NOT_INDEPENDENTLY_VERIFIED"
