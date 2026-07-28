@@ -204,7 +204,19 @@ export class ConfidenceScoreService {
    * - AddressDiscoveryController.getConfidenceScore() -> GET confidence/:addressId (yalnız oku, persist etmez)
    * - ConfidenceScoreService.updateAddressScore() -> hesapla+persist eden asıl metot
    */
-  async computeAddressScore(addressId: string): Promise<number> {
+  /**
+   * DEBTOR-ADDRESS-OWNERSHIP-GUARD-P1-I03: `tenantId` ZORUNLU ilk parametredir.
+   *
+   * Onceden bu metot tenant baglami tasimiyordu; zorlama tamamen cagiranin
+   * `assertAddressBelongsToTenant`'i ONCE cagirmasina bagliydi. Bugunku uretim
+   * cagiranlarinin hepsi cagiriyordu — yani CANLI bir acik DEGILDI — ama sozlesme
+   * bunu garanti etmiyordu: guard'i atlayan tek bir yeni cagiran sessizce
+   * cross-tenant okuma/yazma acardi. Artik tenant baglami derleme zamaninda
+   * zorunludur ve sahiplik bu metodun ILK islemidir.
+   */
+  async computeAddressScore(tenantId: string, addressId: string): Promise<number> {
+    await this.assertAddressBelongsToTenant(tenantId, addressId);
+
     const address = await this.prisma.debtorAddress.findUnique({
       where: { id: addressId },
       include: {
@@ -241,14 +253,21 @@ export class ConfidenceScoreService {
    * - ConfidenceScoreService.updateAllScoresForDebtor() -> her adres için tek tek çağırır (persist gerekir)
    * - AddressDiscoveryController.updateAllScoresForDebtor() -> POST confidence/debtor/:debtorId/update-all
    */
-  async updateAddressScore(addressId: string): Promise<number> {
-    const score = await this.computeAddressScore(addressId);
+  async updateAddressScore(tenantId: string, addressId: string): Promise<number> {
+    // computeAddressScore sahipligi kendi basina dogrular (fail-closed).
+    const score = await this.computeAddressScore(tenantId, addressId);
 
-    // Skoru güncelle
-    await this.prisma.debtorAddress.update({
-      where: { id: addressId },
+    // DEBTOR-ADDRESS-OWNERSHIP-GUARD-P1-I03: yazma da tenant-scoped. `updateMany`
+    // kullanilir cunku `update` iliskisel filtre kabul etmez; etkilenen satir 0 ise
+    // (yaris/silinme) sessizce basarili sayilmaz.
+    const result = await this.prisma.debtorAddress.updateMany({
+      where: { id: addressId, debtor: { tenantId } },
       data: { confidenceScore: score },
     });
+
+    if (result.count !== 1) {
+      throw new NotFoundException('Adres bulunamadı');
+    }
 
     return score;
   }
@@ -256,15 +275,20 @@ export class ConfidenceScoreService {
   /**
    * Borçlunun tüm adreslerinin skorlarını güncelle
    */
-  async updateAllScoresForDebtor(debtorId: string): Promise<void> {
+  async updateAllScoresForDebtor(tenantId: string, debtorId: string): Promise<void> {
+    // DEBTOR-ADDRESS-OWNERSHIP-GUARD-P1-I03: borclu sahipligi ILK islem (fail-closed).
+    await this.assertDebtorBelongsToTenant(tenantId, debtorId);
+
+    // Adres listesi de tenant-scoped cekilir: borclu dogrulanmis olsa bile sorgu
+    // kendi basina tenant siniri tasir (defense-in-depth).
     const addresses = await this.prisma.debtorAddress.findMany({
-      where: { debtorId },
+      where: { debtorId, debtor: { tenantId } },
       select: { id: true },
     });
 
     for (const address of addresses) {
       try {
-        await this.updateAddressScore(address.id);
+        await this.updateAddressScore(tenantId, address.id);
       } catch (error) {
         this.logger.error(`Skor güncellenemedi: ${address.id}`, error);
       }
@@ -274,14 +298,21 @@ export class ConfidenceScoreService {
   /**
    * CaseDebtor'un tüm adreslerinin skorlarını güncelle
    */
-  async updateAllScoresForCaseDebtor(caseDebtorId: string): Promise<void> {
-    const caseDebtor = await this.prisma.caseDebtor.findUnique({
-      where: { id: caseDebtorId },
+  async updateAllScoresForCaseDebtor(tenantId: string, caseDebtorId: string): Promise<void> {
+    if (typeof tenantId !== 'string' || tenantId.length === 0) {
+      throw new NotFoundException('Borçlu bulunamadı');
+    }
+
+    // DEBTOR-ADDRESS-OWNERSHIP-GUARD-P1-I03: caseDebtor cozumu tenant-scoped
+    // (`findUnique` iliskisel filtre kabul etmedigi icin `findFirst`). Cross-tenant
+    // caseDebtorId eslesmez → sessiz no-op degil, downstream'e hic gecilmez.
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: caseDebtorId, case: { tenantId } },
       select: { debtorId: true },
     });
 
     if (caseDebtor) {
-      await this.updateAllScoresForDebtor(caseDebtor.debtorId);
+      await this.updateAllScoresForDebtor(tenantId, caseDebtor.debtorId);
     }
   }
 

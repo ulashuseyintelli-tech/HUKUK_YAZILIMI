@@ -150,6 +150,7 @@ src/common/__tests__/pr-closeout.spec.ts
 src/common/__tests__/instruction-policy.spec.ts
 src/config/uyap-interest-crosswalk.spec.ts
 src/modules/address-discovery/confidence-score.tenant-boundary.spec.ts
+src/modules/address-discovery/confidence-score.ownership-contract.spec.ts
 src/modules/address-discovery/uyap-query.service.spec.ts
 src/modules/address-task/address-task.controller.spec.ts
 src/modules/address-task/address-task.service.spec.ts
