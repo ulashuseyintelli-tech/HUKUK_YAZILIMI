@@ -70,6 +70,12 @@ describe('P3 — UYAP geçici arıza gate\'leri (gate-checker)', () => {
       const facts = factMap({
         'system.uyap_available': true,
         'case.has_power_of_attorney': true,
+        // I04: POWER_OF_ATTORNEY_MISSING gate'i artik computed granular authority fact'lerini okur.
+        'actor.is_canonical_lawyer': true,
+        'actor.has_matching_power_of_attorney': true,
+        'poa.is_effective_at_evaluation_time': true,
+        'poa.covers_requested_operation': true,
+        'authority.is_unambiguous': true,
       });
 
       const result = await gateChecker.checkGates('case-x', ActionCode.UYAP_SEND, facts);

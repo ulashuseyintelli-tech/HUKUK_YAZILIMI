@@ -83,6 +83,10 @@ import { DeprecatedUsageTrackerService } from './deprecated-usage-tracker.servic
     DecisionLogRetentionService,
     CpeRequiredGuard,
     DeprecatedUsageTrackerService,
+    // UYAP-CPE-AUTHORITY-FACT-BRIDGE-I01: authority-aware computed fact provider'lar kendi
+    // bounded context'lerinden (UyapModule) register edilir. Registry export'u ters bagimlilik
+    // OLUSTURMAZ — PolicyEngineModule UyapModule'u import etmez.
+    ComputedFactRegistry,
   ],
 })
 export class PolicyEngineModule {}

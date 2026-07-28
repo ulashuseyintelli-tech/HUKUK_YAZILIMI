@@ -38,7 +38,8 @@ import {
  * uzerinden yapilir.
  */
 interface CpeGuardRequest {
-  user?: { tenantId?: string };
+  /** I04: `id` authority-aware fact provider'lar icin gereklidir (authenticated principal). */
+  user?: { tenantId?: string; id?: string };
   params?: Record<string, string | undefined>;
   policyDecision?: unknown;
 }
@@ -172,6 +173,19 @@ export class CpeRequiredGuard implements CanActivate {
         actionContext = undefined;
       }
     }
+
+    // UYAP-CPE-AUTHORITY-FACT-BRIDGE-I01: authority-aware fact provider'lar icin
+    // SERVER-AUTHORITATIVE aktor baglami eklenir. Degerler YALNIZ dogrulanmis
+    // principal'dan (`request.user`) gelir; scopeResolver'in (request body/param'dan
+    // turetilen) ciktisi bu alanlari EZEMEZ — spread SONRASI yazilir.
+    // DEBTOR-CPE-TENANT-HARDENING-P1-I01 ile uyumlu: `principalTenantId` zaten yukarida
+    // fail-closed dogrulandi ve CPE'ye ILK argüman olarak ayrica tasinir.
+    actionContext = {
+      ...(actionContext ?? {}),
+      tenantId: principalTenantId,
+      authenticatedUserId: request.user?.id,
+      evaluatedAt: new Date(),
+    };
 
     // Call CPE (tenant otoritesi principal'dan; caseId sahipligi CPE icinde dogrulanir)
     const decision = await this.cpe.canPerformAction(

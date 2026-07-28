@@ -103,11 +103,13 @@ describe('ExpenseRequestController CPE runtime enforcement (MVR-006)', () => {
       .send({ channel: 'EMAIL' })
       .expect(403);
 
+    // I04: CpeRequiredGuard context'e SERVER-AUTHORITATIVE aktör bağlamı ekler
+    // (tenantId/authenticatedUserId/evaluatedAt); scopeResolver çıktısı korunur.
     expect(cpe.canPerformAction).toHaveBeenCalledWith(
       TEST_TENANT_ID,
       'case-1',
       ActionCode.APPROVE_EXPENSE,
-      { expenseId: 'exp-1' },
+      expect.objectContaining({ expenseId: 'exp-1' }),
     );
     expect(service.finalizeAndSend).not.toHaveBeenCalled();
   });
@@ -123,11 +125,12 @@ describe('ExpenseRequestController CPE runtime enforcement (MVR-006)', () => {
       .send(body)
       .expect(201);
 
+    // I04: guard aktör bağlamını ekler (bkz. yukarıdaki not).
     expect(cpe.canPerformAction).toHaveBeenCalledWith(
       TEST_TENANT_ID,
       'case-1',
       actionCode,
-      { expenseId: 'exp-1' },
+      expect.objectContaining({ expenseId: 'exp-1' }),
     );
     expect(service[serviceMethod]).toHaveBeenCalledTimes(1);
   });

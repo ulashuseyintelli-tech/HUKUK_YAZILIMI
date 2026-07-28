@@ -176,7 +176,16 @@ export const COMPILED_GATES: CompiledGate[] = [
     name: 'Vekaletname Eksik',
     description: 'UYAP işlemleri için vekaletname gerekli',
     actionCodes: [ActionCode.UYAP_SEND],
-    condition: (facts: FactMap) => facts.get('case.has_power_of_attorney') !== true,
+    // UYAP-CPE-AUTHORITY-FACT-BRIDGE-I01: gate artik MANUEL/PERSISTED bir flag'e degil,
+    // canonical authority zincirinden HESAPLANAN granular fact'lere bakar (MODEL B).
+    // Fact'lerden biri bile true degilse (eksik/undefined dahil) UYAP_SEND bloklanir.
+    // `case.has_power_of_attorney` yalniz computed compatibility alias olarak kalir.
+    condition: (facts: FactMap) =>
+      facts.get('actor.is_canonical_lawyer') !== true ||
+      facts.get('actor.has_matching_power_of_attorney') !== true ||
+      facts.get('poa.is_effective_at_evaluation_time') !== true ||
+      facts.get('poa.covers_requested_operation') !== true ||
+      facts.get('authority.is_unambiguous') !== true,
     severity: 'HARD',
     reason: 'UYAP işlemi için vekaletname gerekli.',
     priority: 25,

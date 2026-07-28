@@ -285,13 +285,18 @@ export class UyapService {
     }
 
     try {
+      // UYAP-CPE-AUTHORITY-FACT-BRIDGE-I01: CPE'ye SERVER-AUTHORITATIVE aktör bağlamı geçilir.
+      // `request.lawyerId` (client-controlled) ARTIK authority girdisi DEĞİLDİR — actingLawyerId
+      // fact provider tarafından `authenticatedUserId + tenantId` üzerinden server-side çözülür.
       const decision = await this.casePolicyEngine.canPerformAction(
         tenantId,
         request.caseId,
         ActionCode.UYAP_SEND,
         {
           debtorId: request.debtor.identityNo,
-          userId: request.lawyerId,
+          tenantId,
+          authenticatedUserId: actorUserId,
+          evaluatedAt: new Date(),
         },
       );
 
@@ -326,23 +331,17 @@ export class UyapService {
       });
     }
 
-    // Vekalet kontrolü
-    if (!request.skipPoaCheck && request.creditor.id && request.lawyerId && request.tenantId) {
-      const poaValidation = await this.validatePowerOfAttorney(
-        request.creditor.id,
-        request.lawyerId,
-        request.tenantId,
-      );
-
-      if (!poaValidation.isValid) {
-        this.logger.error(`UYAP işlemi engellendi - Vekalet hatası: ${poaValidation.message}`);
-        throw new BadRequestException({
-          code: 'POA_VALIDATION_FAILED',
-          message: `UYAP işlemi yapılamaz: ${poaValidation.message}`,
-          details: 'Geçerli vekalet olmadan UYAP\'a gönderim yapılamaz',
-        });
-      }
-    }
+    // UYAP-CPE-AUTHORITY-FACT-BRIDGE-I01: ESKI KOSULLU VEKALET BLOGU KALDIRILDI.
+    //
+    // Onceki hali `if (!skipPoaCheck && creditor.id && lawyerId && tenantId)` idi; dort kosuldan
+    // biri bile dusunce POA dogrulamasi HIC calismiyordu (fail-open by omission) — ve
+    // `test/payment-order` yolu `lawyerId`'yi hic set etmedigi icin blok FIILEN OLU idi.
+    // Ayrica client-controlled `request.lawyerId` authority girdisi olarak kullaniliyordu.
+    //
+    // Vekalet artik TEK ve KOSULSUZ noktada, yukaridaki CPE gate'i icinde degerlendirilir:
+    // `POWER_OF_ATTORNEY_MISSING` gate'i -> UyapAuthorityFactProvider -> ActingLawyerResolver +
+    // UyapSendAuthorityResolver (MODEL B: acting-lawyer matched POA, tenant-safe, fail-closed).
+    // `skipPoaCheck` artik vekalet degerlendirmesini ATLAYAMAZ.
 
     // P05C-P04: CPE+POA geçti; dispatch/logRequest ÖNCESİNDE flag-gated evidence (fail-closed).
     await this.recordOperationEvidenceIfEnabled({

@@ -101,6 +101,12 @@ const SCENARIO_2_READY_FOR_UYAP = {
     'case.allow_uyap_actions': true,
     // UYAP_SEND için vekaletname zorunlu (POWER_OF_ATTORNEY_MISSING gate'i)
     'case.has_power_of_attorney': true,
+    // I04: POWER_OF_ATTORNEY_MISSING gate'i artik computed granular authority fact'lerini okur.
+    'actor.is_canonical_lawyer': true,
+    'actor.has_matching_power_of_attorney': true,
+    'poa.is_effective_at_evaluation_time': true,
+    'poa.covers_requested_operation': true,
+    'authority.is_unambiguous': true,
   } as Record<string, unknown>,
   actionCode: ActionCode.UYAP_SEND,
   expectedAllowed: true,

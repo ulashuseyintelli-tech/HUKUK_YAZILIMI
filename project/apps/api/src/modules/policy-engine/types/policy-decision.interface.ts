@@ -108,9 +108,27 @@ export interface ActionContext {
   
   /** Ek metadata */
   metadata?: Record<string, unknown>;
-  
+
   /** Beklenen state version (CAS için) */
   expectedStateVersion?: number;
+
+  // ── UYAP-CPE-AUTHORITY-FACT-BRIDGE-I01 ───────────────────────────────────
+  // Authority-aware fact provider'lar için server-authoritative aktör bağlamı.
+  // Bu alanlar YALNIZ authenticated principal'dan doldurulur; request body,
+  // query veya custom header'dan ASLA (UYAP-CONST-002). Backward-compatible:
+  // hepsi opsiyoneldir; ancak authority-gated action'larda eksiklik fail-closed'dır.
+
+  /** Authenticated tenant (server-authoritative). */
+  tenantId?: string;
+
+  /** Authenticated principal (`req.user.id`). `userId` audit alanıdır; bu authority bağlamıdır. */
+  authenticatedUserId?: string;
+
+  /** I01 `ActingLawyerResolverService` ile SERVER-SIDE çözülmüş canonical lawyer. */
+  actingLawyerId?: string;
+
+  /** Değerlendirme anı (temporal kurallar için). Verilmezse provider `now()` kullanır. */
+  evaluatedAt?: Date;
 }
 
 /**

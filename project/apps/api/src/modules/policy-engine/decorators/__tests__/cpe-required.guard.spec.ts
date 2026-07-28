@@ -54,13 +54,15 @@ describe('CpeRequiredGuard - caseIdFromExpenseParam (P1b)', () => {
       where: { id: 'exp-1', tenantId: 't1' },
       select: { caseId: true },
     });
-    // CPE çözülen caseId + expense context ile çağrıldı
+    // CPE çözülen caseId + expense context ile çağrıldı.
     // DEBTOR-CPE-TENANT-HARDENING-P1-I01: principal tenant ILK argüman olarak taşınır.
+    // I04: context ayrıca SERVER-AUTHORITATIVE aktör bağlamı taşır (tenantId /
+    // authenticatedUserId / evaluatedAt); scopeResolver çıktısı bu alanları EZEMEZ.
     expect(cpe.canPerformAction).toHaveBeenCalledWith(
       't1',
       'case-1',
       ActionCode.APPROVE_EXPENSE,
-      { expenseId: 'exp-1' },
+      expect.objectContaining({ expenseId: 'exp-1', tenantId: 't1' }),
     );
   });
 
@@ -106,7 +108,13 @@ describe('CpeRequiredGuard - caseIdFromExpenseParam (P1b)', () => {
 
     // expense lookup'a hiç gidilmez
     expect(prisma.expenseRequest.findFirst).not.toHaveBeenCalled();
-    expect(cpe.canPerformAction).toHaveBeenCalledWith('t1', 'case-9', ActionCode.UYAP_SEND, undefined);
+    // I04: scopeResolver yokken bile authenticated principal'dan aktör bağlamı eklenir.
+    expect(cpe.canPerformAction).toHaveBeenCalledWith(
+      't1',
+      'case-9',
+      ActionCode.UYAP_SEND,
+      expect.objectContaining({ tenantId: 't1' }),
+    );
   });
 });
 
@@ -157,11 +165,12 @@ describe('CpeRequiredGuard - varsayılan dal tenant zorunluluğu (DEBTOR-IDOR-02
       user: { tenantId: 'gercek-tenant' },
     };
     await expect(guard.canActivate(makeContext(req))).resolves.toBe(true);
+    // I04: aktör bağlamı da principal'dan gelir — body.tenantId ASLA authority değildir.
     expect(cpe.canPerformAction).toHaveBeenCalledWith(
       'gercek-tenant',
       'case-9',
       ActionCode.UYAP_SEND,
-      undefined,
+      expect.objectContaining({ tenantId: 'gercek-tenant' }),
     );
   });
 });
