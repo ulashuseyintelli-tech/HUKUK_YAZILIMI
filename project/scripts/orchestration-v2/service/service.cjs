@@ -38,6 +38,12 @@ const requestMod = require('./request.cjs');
 const adapterMod = require('./executor-adapter.cjs');
 const finalizeMod = require('./finalize.cjs');
 
+// The code loaded by this process cannot change without a restart. Measure it
+// once so admission and dispatch speak about the same worker identity; reading
+// HEAD again after a checkout moves could otherwise label already-loaded code
+// with a commit it never loaded.
+const PROCESS_WORKER = runtimeMod.measureWorker({});
+
 /**
  * Control files, relative to the repository root.
  *
@@ -84,6 +90,7 @@ function createService(cfg) {
   const repoCwd = cfg.repoCwd;
   const queue = cfg.queue;
   const clock = cfg.clock || (() => Date.now());
+  const workerIdentity = cfg.workerIdentity || PROCESS_WORKER;
   const auditPath = cfg.auditPath || path.join(queue.dir, 'audit.jsonl');
   const killSwitchPath = cfg.killSwitchPath || path.join(repoCwd, KILL_SWITCH);
   const pausePath = cfg.pausePath || path.join(repoCwd, PAUSE_MARKER);
@@ -399,6 +406,7 @@ function createService(cfg) {
           repoCwd,
           artefactSha256: resolved.artefacts && resolved.artefacts.digest,
           artefactsCommitted: Boolean(resolved.artefacts && resolved.artefacts.readFromRef),
+          admissionCodeSha: workerIdentity.codeSha,
           operation: opts.operation || req.operation || null,
           revoked: opts.isRevoked ? opts.isRevoked(resolved.standingGrant) === true : false,
           killSwitchEngaged: false,
@@ -727,7 +735,7 @@ function createService(cfg) {
       // No repoCwd: the fence measures the worker's OWN checkout — the code
       // that is about to run — not the repository the task targets. They are
       // the same in production and deliberately different under test.
-      const worker = runtimeMod.measureWorker({});
+      const worker = workerIdentity;
       const fence = runtimeMod.assess({ entry: head, worker });
       if (!fence.compatible) {
         audit('WORKER_VERSION_INCOMPATIBLE', {

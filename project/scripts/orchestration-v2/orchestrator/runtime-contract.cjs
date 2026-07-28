@@ -226,21 +226,36 @@ function assess(o) {
   const missing = required.filter((sha) => !ancestorOf(codeCwd, sha));
   if (missing.length) {
     // "Not an ancestor" and "not in this clone" arrive here as the same false.
-    // Only the first means the worker is old; the second means the question was
-    // never answerable, and refusing on an unanswerable question is not a
-    // safety property, it is an outage. A shallow checkout runs the tree it
-    // checked out — the fix is in the code even when the commit that introduced
-    // it is not in the history.
+    // Only the first proves the worker is old; the second means the question was
+    // never answerable. A truncated history therefore needs a second, positive
+    // identity fact before it can proceed: the worker must be the exact commit
+    // that admitted the entry.
     //
     // The case the fence exists for is untouched: a full clone whose HEAD
     // genuinely predates a required fix still answers false, is still not
-    // shallow, and is still refused.
+    // shallow, and is still refused. A shallow checkout at a different (or
+    // unpinned) commit is also refused rather than assumed safe.
     const shallow = (o.isShallow || isShallow)(codeCwd);
-    if (!shallow) {
+    const exactAdmissionCode =
+      typeof entry.admissionCodeSha === 'string' &&
+      entry.admissionCodeSha.length === 40 &&
+      worker.codeSha === entry.admissionCodeSha;
+    if (!shallow || !exactAdmissionCode) {
+      const identityDetail = shallow
+        ? '; shallow history and worker ' +
+          String(worker.codeSha).slice(0, 12) +
+          ' does not match admission ' +
+          String(entry.admissionCodeSha || '(unrecorded)').slice(0, 12)
+        : '';
       return {
         compatible: false,
         refusal: 'WORKER_CODE_STALE',
-        detail: 'missing required fix ' + missing.map((s) => s.slice(0, 12)).join(', ') + ' in ' + (worker.worktree || '(unknown worktree)'),
+        detail:
+          'missing required fix ' +
+          missing.map((s) => s.slice(0, 12)).join(', ') +
+          ' in ' +
+          (worker.worktree || '(unknown worktree)') +
+          identityDetail,
         worker,
       };
     }
@@ -251,7 +266,9 @@ function assess(o) {
       // that the fence was asked and could not answer, rather than believe it
       // answered yes.
       detail:
-        'ancestry unverifiable in a shallow checkout; ' +
+        'ancestry unverifiable in a shallow checkout; exact admission commit ' +
+        worker.codeSha.slice(0, 12) +
+        ' matched; ' +
         missing.map((s) => s.slice(0, 12)).join(', ') +
         ' could not be located in a truncated history',
       unverifiable: 'SHALLOW_HISTORY',

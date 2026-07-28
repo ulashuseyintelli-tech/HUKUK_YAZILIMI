@@ -1053,6 +1053,7 @@ test('a stale worker relinquishes without touching the entry it cannot run', asy
   const before = queue.get(e.entry.entryId);
   assert.ok(before.requiredFixAncestors && before.requiredFixAncestors.length, 'admission pins what a worker must be');
   assert.equal(typeof before.minimumCompatibleRuntimeVersion, 'number');
+  assert.match(before.admissionCodeSha, /^[0-9a-f]{40}$/, 'admission pins the exact worker commit');
 
   // Force the entry to demand a contract this worker does not implement.
   const stale = S.createService({
