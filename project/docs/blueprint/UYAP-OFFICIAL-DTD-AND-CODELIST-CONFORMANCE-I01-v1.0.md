@@ -4,7 +4,8 @@
 Task              : UYAP-OFFICIAL-DTD-AND-CODELIST-CONFORMANCE-I01
 Parent program    : UYAP-MODULE-FULL-GAP-CLOSURE-R02
 Tür               : CONFORMANCE MEASUREMENT / CONTRACT BOUNDARY
-Durum             : PARTIAL — ölçüm CLOSED, strict DTD validation BLOCKED (artefakt yok)
+Durum             : PARTIAL — ölçüm CLOSED, strict DTD validation BLOCKED (D1 grammar)
+                    ⚠ §3 DÜZELTİLDİ — bkz. §0 (RECORD-CORRECTION-R01, 2026-07-28)
 Tarih             : 2026-07-28
 Kanıt tabanı      : canonical main `8f2fc5cd` (base `1119cbfa` ancestor)
 Yetki             : Owner `GO-COMPLETE / ALREADY GRANTED`
@@ -14,6 +15,92 @@ REAL TRANSPORT       : NOT AUTHORIZED
 PRODUCTION ADAPTER   : NOT AUTHORIZED
 PRODUCTION CUTOVER   : HARD HOLD
 ```
+
+---
+
+## 0. RECORD CORRECTION (UYAP-OFFICIAL-DTD-CONFORMANCE-RECORD-CORRECTION-R01, 2026-07-28)
+
+> Bu bölüm sonradan eklenmiştir. **Aşağıdaki §3 metni SİLİNMEDİ** — tarihsel kayıt
+> korunur; bu bölüm onu güncel repository/evidence gerçeğiyle uzlaştırır.
+
+### 0.1 Maddi yanlış
+
+§3, strict DTD doğrulamasının blocker'ını **`OFFICIAL_DTD_ARTEFACT_ABSENT`** olarak
+kaydetti ve *"resmî `exchange.dtd` owner tarafından repository'ye pinlenmiş artefakt
+olarak sağlanmalı — OWNER KARARI GEREKİR: EVET"* dedi.
+
+**Bu yanlıştı.** Resmî byte artefaktı **2026-07-18'de owner tarafından zaten teslim
+edilmişti**; yeni bir artefakt bu görevle **üretilmedi/indirilmedi**. Teslim yeri
+repository DEĞİL, **repo-dışı canonical evidence bundle**'dır (Model B):
+
+```text
+PATH        : UYAP_OFFICIAL_PACKAGE_REVIEW\01_dtd_xsd\exchange.dtd
+SHA-256     : 124a9a96848299d8abf216111572d7c8286777819422a5e29089b956f56a8fe6   (MATCH)
+BYTE LENGTH : 9273
+MANIFEST    : UYAP_OFFICIAL_PACKAGE_REVIEW\MANIFEST.md   (URL/tarih/boyut/SHA-256/extraction path)
+CODELIST    : UYAP_OFFICIAL_PACKAGE_REVIEW\02_role_code_lists\KodluBilgilerData.xml
+KAYNAK KAYIT: decision-log.md 2026-07-18 — DBP-P2-UYAP-PUBLIC-SOURCES-01-GOV
+```
+
+**Hatanın kökü:** *working-tree/repository sınırı* ile *canonical evidence sınırı*
+eşitlendi. Ölçüm yalnız `git grep` ve `dtdFilePresentInRepository` alanına baktı;
+`decision-log.md` ve repo-dışı evidence yüzeyi taranmadı.
+
+### 0.2 Strict validation'ın GERÇEK blocker'ı
+
+`decision-log.md` 2026-07-19 · `DBP-P2-UYAP-CONTRACT-A-P04B-VAL-R1-GOV` · owner kararı **D1**:
+
+Resmî `exchange.dtd`'nin **6 element bildirimi NONDETERMINISTIC CONTENT MODEL** taşır
+(XML 1.0 §3.2.1): `exchangeData` (kök), `taraf`, `kisiKurumBilgileri`, `kontratKefil`,
+`VekilKisi`, `ilam`. `exchangeData`'nın kök ambiguity'si **tek başına** en minimal belgeyi
+bile reddetmeye yeter — bu **artefaktın kendi özelliğidir**, serializer/harness kaynaklı
+değildir. Gözlemlenen validator: libxml2/xmllint 2.13.9.
+
+**D2** gereği tolerant validator · DTD onarımı/normalizasyonu · derived DTD commit
+**NOT AUTHORIZED**. **D7**: UYAP/BİGM teknik yetki talebi = REQUIRED / NOT YET OBTAINED.
+
+### 0.3 P02A uyumu
+
+Model B, P02A'nın *"resmî `exchange.dtd` DOSYASI repository'ye EKLENMEZ; yalnız hash ile
+köken beyanı"* kuralıyla **ÇELİŞMEZ**: dosya repository'de yok, canonical evidence'ta
+pinli ve manifested. P02A'nın "eklenmez" kuralının **gerekçesi** hiçbir kayıtta yazılı
+değildir → **UNSPECIFIED** (telif/redistribution/boyut/freshness/supply-chain hiçbiri
+belgelenmemiş; tahmin edilmez).
+
+### 0.4 Disposition
+
+```text
+PR #1775 ORIGINAL FINDING     : SUPERSEDED — EVIDENCE SCOPE INCOMPLETE
+REPOSITORY CHANGE             : MERGED / TECHNICALLY VALIDATED
+ARTEFACT-ABSENCE DISPOSITION  : RETRACTED
+STRICT-CONFORMANCE DISPOSITION: OPEN / BLOCKED BY D1
+MATERIALIZATION MODE          : B — ZATEN YÜRÜRLÜKTE (2026-07-18)
+EXISTING AUTHORITY            : SUFFICIENT — NO NEW OWNER DECISION
+```
+
+PR #1775'in **teknik** katkısı (ölçüm modülü + 14 test + CI wiring) geçerlidir ve
+geri alınmaz; geri çekilen yalnız **artefakt-yokluğu hükmü** ve ona bağlı owner-karar
+talebidir.
+
+### 0.5 Yerel `exchange.dtd` hash kayması
+
+```text
+PREVIOUS RECORDED : 5a3ea03c4f92e92949408cb98532132436a8028836030b86a2de422529e55a5f
+CURRENT           : a7c2e2672603dd3375c15fb572cde4fbe24a7505d9039feead86326ba5827ae1
+DISPOSITION       : EXPECTED_LOCAL_DERIVATIVE
+```
+
+`decision-log.md` 2026-07-18 kaydı `5a3ea03c…` yazdı. Aynı gün merge edilen **PR #1385**
+(`DBP-P2-UYAP-CONTRACT-A-P01`, F4 — commit `e3c881b3`) dosyanın **yalnız başlık yorumunu**
+değiştirdi: **6 ekleme / 3 silme**, hiçbir `<!ELEMENT`/`<!ATTLIST` bildirimi değişmedi.
+Yanıltıcı *"UYAP e-Takip XML DTD / Kaynak: uyap.gov.tr / Versiyon: 2024.03"* etiketi
+*"LOCAL / LEGACY CONTRACT — NOT THE OFFICIAL ... NOT PROVEN CONTRACT-COMPLIANT"*
+uyarısıyla değiştirildi.
+
+Yani kayma **intentional ve belgelidir**; governance kaydı containment merge edilmeden
+**önceki** değeri yakalamıştır. Yetkisiz drift DEĞİLDİR. Dosya hiçbir runtime parser
+tarafından okunmaz; `official-exchange-builder.ts` yalnız doctype `sysID` string'i olarak
+adını taşır. Bu görevde repo dosyası resmî artefaktla **değiştirilmedi**.
 
 ---
 
@@ -57,6 +144,11 @@ eşleme kararı owner authority'sidir (P03A/P03B) ve burada **verilmemiştir**.
 ---
 
 ## 3. EXACT BLOCKER — strict DTD validation
+
+> ⚠ **SUPERSEDED — EVIDENCE SCOPE INCOMPLETE.** Bu bölümün blocker teşhisi
+> (`OFFICIAL_DTD_ARTEFACT_ABSENT`) ve owner-karar talebi **§0.4 ile GERİ ÇEKİLMİŞTİR**.
+> Artefakt 2026-07-18'de zaten teslim edilmişti; gerçek blocker **D1 nondeterministic
+> content model**'dir. Metin tarihsel kayıt olarak SİLİNMEDEN korunur.
 
 Owner addendum iki şey söylüyor:
 
@@ -153,13 +245,21 @@ Owner addendum: *"Canary XML üretiyorsa bu task canary'den ÖNCE tamamlanacakt�
 
 ```text
 CONFORMANCE MEASUREMENT : CLOSED (matris sabitlendi, CI'da koşuyor)
-STRICT DTD VALIDATION   : BLOCKED — OFFICIAL_DTD_ARTEFACT_ABSENT
+STRICT DTD VALIDATION   : BLOCKED — OFFICIAL_DTD_ARTEFACT_ABSENT      ← SUPERSEDED (§0.4)
 CODELIST CONFORMANCE    : ÖLÇÜLDÜ / DIVERGENT (legacy ∩ resmî = ∅)
 CANARY XML EMISSION     : HAZIR DEĞİL
 ```
 
-Canary'nin resmî-şekilli XML üretmesi için hem DTD artefaktı hem de `rolTur` eşleme
-kararı (P03B + legacy→resmî geçiş) gerekir. İkisi de **owner kararına bağlıdır**.
+> ⚠ **DÜZELTİLMİŞ SONUÇ (§0):**
+> ```text
+> STRICT DTD VALIDATION : BLOCKED — NONDETERMINISTIC_CONTENT_MODEL (owner D1)
+> OFFICIAL BYTE ARTEFACT: FOUND / VERIFIED (Model B, 2026-07-18)
+> OWNER DECISION        : NONE (materialization için)
+> ```
+
+Canary'nin resmî-şekilli XML üretmesi için `rolTur` eşleme kararı (P03B + legacy→resmî
+geçiş) ve strict conformance verdict'i gerekir. Artefakt teslimi **gerekli değildir** —
+zaten mevcuttur; strict verdict **D7 dış teknik yetki cevabına** bağlıdır.
 
 ---
 
@@ -167,7 +267,7 @@ kararı (P03B + legacy→resmî geçiş) gerekir. İkisi de **owner kararına ba
 
 | # | Bulgu | Devir |
 |---|---|---|
-| D-1 | Resmî DTD artefaktı yok → strict validation yapılamıyor | **OWNER KARARI** (bu belgenin §3'ü) |
+| D-1 | ~~Resmî DTD artefaktı yok → strict validation yapılamıyor~~ **SUPERSEDED (§0.4)** — artefakt MEVCUT; strict validation D1 nondeterministic content model ile bloklu | **P04B-EXT-01** (D7 dış teknik yetki talebi) — owner kararı GEREKMEZ |
 | D-2 | Legacy `rolTur` 1-10 ↔ resmî 21-71 eşlemesi | **P03B / OWNER AUTHORITY** |
 | D-3 | LDO_OWNER 3 rolü (miras/tasfiye/iflas) hedef değeri | **P03B** |
 | D-4 | Kambiyo 5 sıfatı resmî `rolTur` sözlüğünde yok — enstrüman modeli | **P02B/P04** |

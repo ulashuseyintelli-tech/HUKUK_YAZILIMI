@@ -183,6 +183,7 @@ src/modules/uyap/__tests__/uyap-xml.debtor-role-mapping.spec.ts
 src/modules/uyap/__tests__/uyap-xml.numeric-interest-projection.spec.ts
 src/modules/uyap/official/__tests__/official-contract-provenance.spec.ts
 src/modules/uyap/official/__tests__/official-dtd-codelist-conformance.spec.ts
+src/modules/uyap/official/__tests__/official-dtd-record-correction.spec.ts
 src/modules/uyap/official/__tests__/official-exchange-builder.spec.ts
 src/modules/uyap/official/__tests__/official-iso8859-9-encoder.spec.ts
 src/modules/uyap/official/__tests__/official-role-translator.spec.ts

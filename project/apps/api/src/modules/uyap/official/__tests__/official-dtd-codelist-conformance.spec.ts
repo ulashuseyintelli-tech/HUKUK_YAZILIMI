@@ -78,14 +78,23 @@ describe('I07 — DTD kimliği', () => {
 });
 
 // ============================================================================
-// 2) STRICT DTD DOĞRULAMASI — artefakt yokluğu ÖRTÜLMEZ
+// 2) STRICT DTD DOĞRULAMASI — blocker sebebi ÖRTÜLMEZ
 // ============================================================================
 
 describe('I07 — strict DTD doğrulaması yapılabilirliği', () => {
-  it('resmî DTD artefaktı repository de YOK → ölçülemez olarak raporlanır', () => {
+  // UYAP-OFFICIAL-DTD-CONFORMANCE-RECORD-CORRECTION-R01 UYARLAMASI:
+  // Bu testin KONUSU değişmedi — strict doğrulama hâlâ çalıştırılamıyor. DEĞİŞEN,
+  // GEREKÇEDİR. Orijinal assertion `UNMEASURABLE_ARTEFACT_ABSENT` bekliyordu; artefaktın
+  // 2026-07-18'de canonical evidence bundle'a teslim edildiği tespit edilince bu teşhis
+  // geri çekildi. Gerçek blocker owner kararı D1: resmî DTD'nin 6 element bildirimi
+  // NONDETERMINISTIC CONTENT MODEL taşıyor. Assertion o gerçeğe hizalandı.
+  it('strict doğrulama BLOKLU — sebep artefakt yokluğu DEĞİL, resmî DTD grameri', () => {
     const result = measureStrictDtdValidationFeasibility();
 
-    expect(result.state).toBe('UNMEASURABLE_ARTEFACT_ABSENT');
+    expect(result.state).toBe('BLOCKED_BY_CONTRACT_GRAMMAR');
+    expect(result.state).not.toBe('UNMEASURABLE_ARTEFACT_ABSENT');
+    expect(result.evidence).toContain('strictValidationBlockReason=NONDETERMINISTIC_CONTENT_MODEL');
+    // P02A olgusu KORUNUR: dosya repository'de gerçekten yok.
     expect(OFFICIAL_CONTRACT_PROVENANCE.dtdFilePresentInRepository).toBe(false);
     expect(OFFICIAL_CONTRACT_PROVENANCE.typeModelOfficiallyDtdValidated).toBe(false);
   });
