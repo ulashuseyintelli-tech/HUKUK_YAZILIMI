@@ -311,7 +311,10 @@ describe('I01A — hüküm sınırı', () => {
     const r = canonical();
 
     expect(r.evidence.officialDtdValidated).toBe(false);
-    expect(r.evidence.officialCodelistConformance).toBe('NOT_CLOSED');
+    // UYAP-OFFICIAL-CODELIST-EMISSION-I01B-1: codelist alanı `NOT_CLOSED` →
+    // `REGISTRY_VALIDATED` oldu (kodlu alanlar canonical registry'ye karşı doğrulanıyor).
+    // Bu testin KONUSU değişmedi: strict **DTD** uyum hükmü hâlâ ÜRETİLMEZ.
+    expect(r.evidence.officialCodelistConformance).toBe('REGISTRY_VALIDATED');
     expect(r.serializerVersion).toBe(UYAP_CANONICAL_SERIALIZER_VERSION);
 
     // Yasaklı statü adları HİÇBİR yerde geçmez.

@@ -44,6 +44,12 @@ import {
   encodeOfficialExchangeToIso88599,
 } from './official-iso8859-9-encoder';
 import { serializeOfficialExchange } from './official-exchange-builder';
+import {
+  OfficialCodelistFailureCode,
+  checkOfficialRolePair,
+  validateOfficialMahiyetKodu,
+  validateOfficialTakipTuru,
+} from './official-codelist-registry';
 import type {
   OfficialExchangeInput,
   OfficialSerializationResult,
@@ -78,9 +84,22 @@ export type UyapCanonicalSerializationResult =
         readonly encodedBytesSha256: string;
         /** DTD doğrulaması YAPILMADI — D1 ile bloklu. */
         readonly officialDtdValidated: false;
-        /** Resmî codelist emisyonu bu aşamada KAPALI (I01B-1). */
-        readonly officialCodelistConformance: 'NOT_CLOSED';
+        /**
+         * I01B-1: emit edilen bütün kodlu alanlar canonical registry'ye karşı
+         * doğrulandı (rolTur / mahiyetKodu / takipTuru). Bu, DTD uyumu İDDİA ETMEZ.
+         */
+        readonly officialCodelistConformance: 'REGISTRY_VALIDATED';
       };
+    }
+  | {
+      /**
+       * I01B-1: kodlu alan resmî sözlüğe uymuyor veya etiketi owner-ratified değil.
+       * Şekil kurulmaz, byte üretilmez (fail-closed).
+       */
+      readonly status: 'CODELIST_REJECTED';
+      readonly serializerVersion: typeof UYAP_CANONICAL_SERIALIZER_VERSION;
+      readonly failureCode: OfficialCodelistFailureCode;
+      readonly detail: string;
     }
   | {
       /** Şekil üretilemedi (çözülemeyen rol, id ihlali, yetkisiz alacakKalemi ebeveyni, ...). */
@@ -115,6 +134,12 @@ export type UyapCanonicalSerializationResult =
 export function serializeUyapExchangeCanonical(
   input: OfficialExchangeInput,
 ): UyapCanonicalSerializationResult {
+  // 0) CODELIST KAPISI (I01B-1) — ŞEKİLDEN ÖNCE. Kodlu alanlar canonical registry'ye
+  //    karşı doğrulanır; sessiz varsayılan/fallback YOKTUR. Reddedilirse XML hiç
+  //    kurulmaz, kısmi byte üretilmez.
+  const codelist = checkCodelist(input);
+  if (codelist) return codelist;
+
   // 1) ŞEKİL — canonical XML modeli. Çözülemeyen rol/id/claim ihlali burada reddedilir.
   const shape = serializeOfficialExchange(input);
   if (shape.status === 'REJECTED') {
@@ -153,7 +178,45 @@ export function serializeUyapExchangeCanonical(
       byteLength: encoded.evidence.byteLength,
       encodedBytesSha256: encoded.evidence.encodedBytesSha256,
       officialDtdValidated: false,
-      officialCodelistConformance: 'NOT_CLOSED',
+      officialCodelistConformance: 'REGISTRY_VALIDATED',
     },
   };
+}
+
+/**
+ * I01B-1 codelist kapısı. İhlal varsa `CODELIST_REJECTED` döner, yoksa `undefined`.
+ *
+ * Etiket ÇAĞIRANDAN kabul edilmez: `RESOLVED` resolution'ın taşıdığı `rol` etiketi
+ * registry'nin canonical etiketiyle karşılaştırılır; çelişki veya owner-ratified
+ * olmayan etiket fail-closed'dır.
+ */
+function checkCodelist(
+  input: OfficialExchangeInput,
+): Extract<UyapCanonicalSerializationResult, { status: 'CODELIST_REJECTED' }> | undefined {
+  const reject = (
+    failureCode: OfficialCodelistFailureCode,
+    detail: string,
+  ): Extract<UyapCanonicalSerializationResult, { status: 'CODELIST_REJECTED' }> => ({
+    status: 'CODELIST_REJECTED',
+    serializerVersion: UYAP_CANONICAL_SERIALIZER_VERSION,
+    failureCode,
+    detail,
+  });
+
+  const mahiyet = validateOfficialMahiyetKodu(input?.dosya?.mahiyetKodu);
+  if (!mahiyet.ok) return reject(mahiyet.failureCode, mahiyet.detail);
+
+  const takip = validateOfficialTakipTuru(input?.dosya?.takipTuru);
+  if (!takip.ok) return reject(takip.failureCode, takip.detail);
+
+  for (const taraf of input?.taraflar ?? []) {
+    const r = taraf?.roleResolution;
+    // Yalnız RESOLVED emit edilebilir; diğerleri builder tarafından zaten reddedilir.
+    // Burada RESOLVED'ın kodlu içeriği registry'ye karşı doğrulanır.
+    if (!r || r.kind !== 'RESOLVED') continue;
+    const check = checkOfficialRolePair(r.rolID, r.rol);
+    if (!check.ok) return reject(check.failureCode, check.detail);
+  }
+
+  return undefined;
 }

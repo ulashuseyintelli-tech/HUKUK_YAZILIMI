@@ -135,6 +135,13 @@
 #     in-memory-only (persist/transmit/wire/raw-log YOK), legacy/serializer/schema'ya dokunmaz. Dar
 #     allowlist pattern'lerine girmez → ayrı/açık step; dosya-varlığı pre-check + passWithNoTests YOK.
 #
+#   UYAP-OFFICIAL-CODELIST-EMISSION-I01B-1 official codelist registry + emission tests
+#     Canonical codelist registry (rolTur 17 / mahiyetKodu 18 / takipTuru 2) ve fail-closed emisyon.
+#     CL-01..CL-25 + CA-01..CA-10: resmî etiket TEK SAHİPLİ (registry), owner-ratified olmayan etiket
+#     emit EDİLMEZ, geçersiz mahiyetKodu/takipTuru reddedilir, kısmi XML/byte üretilmez, byte
+#     determinizmi ve ISO-8859-9 sınırı korunur. Runtime bundle okuma / ağ çağrısı YOK; strict DTD
+#     uyum hükmü ÜRETİLMEZ (D1 bloklu). Saf/deterministik → pure manifest.
+#
 src/modules/icrabot/__tests__/icrabot-digital-twin-tenant-guard.spec.ts
 src/modules/icrabot/__tests__/icrabot-governance-guard.spec.ts
 # DEBTOR-ENTERPRISE-APPROVAL-AUTHORIZATION-P0-I01 (R02-F09A): enterprise approval HTTP
@@ -193,6 +200,7 @@ src/modules/uyap/official/__tests__/official-serializer-architecture-guard.spec.
 src/modules/uyap/official/__tests__/official-exchange-builder.spec.ts
 src/modules/uyap/official/__tests__/official-iso8859-9-encoder.spec.ts
 src/modules/uyap/official/__tests__/official-role-translator.spec.ts
+src/modules/uyap/official/__tests__/official-codelist-emission.spec.ts
 # NOT: uyap-event-ingest.boundary.integration.spec.ts BURADA DEGIL.
 # DATABASE_URL yoksa describe.skip ile kendini atliyor, yani pure manifest'te
 # her zaman skip olurdu. Yeri db/core-lifecycle.txt (TEST_DATABASE_URL orada set).

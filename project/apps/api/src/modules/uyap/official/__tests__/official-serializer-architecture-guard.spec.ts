@@ -213,9 +213,15 @@ describe('SA-08 — I01A resmî uyum hükmü ÜRETEMEZ', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('canonical sahip officialDtdValidated=false ve codelist NOT_CLOSED taşır', () => {
+  it('canonical sahip officialDtdValidated=false taşır ve strict DTD hükmü ÜRETMEZ', () => {
     const c = code(path.join(OFFICIAL_DIR, 'official-canonical-serializer.ts'));
     expect(c).toMatch(/officialDtdValidated:\s*false/);
-    expect(c).toContain("officialCodelistConformance: 'NOT_CLOSED'");
+    // I01B-1: codelist alanı `NOT_CLOSED` → `REGISTRY_VALIDATED` oldu (kodlu alanlar artık
+    // canonical registry'ye karşı doğrulanıyor). Bu guard'ın KONUSU değişmedi: strict
+    // **DTD** uyum hükmü hâlâ üretilmez ve yasak statü adları geçmez.
+    expect(c).toContain("officialCodelistConformance: 'REGISTRY_VALIDATED'");
+    for (const forbidden of ['UYAP_READY', 'SUBMITTABLE', 'OFFICIAL_ACCEPTED', 'VALIDATED_BYTES']) {
+      expect(c).not.toContain(forbidden);
+    }
   });
 });
