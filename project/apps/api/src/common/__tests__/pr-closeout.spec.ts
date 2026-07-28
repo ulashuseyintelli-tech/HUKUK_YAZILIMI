@@ -122,8 +122,14 @@ describe('closeout — authority (owner 3.2)', () => {
     expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_PR_MISMATCH);
   });
 
-  it('7. reusing a consumed authority reference is forbidden', async () => {
-    const a = makeAdapter({ authorityLedgerEntry: async () => ({ taskId: 'GOV-EXAMPLE-R01', pr: 1234, consumed: true }) });
+  it('7. carrying a consumed authority reference to another PR is forbidden', async () => {
+    // Reuse yasagi PR eksenindedir: ayni ref BASKA bir PR'da kullanilamaz.
+    // Ayni PR icin recovery kosusu mesrudur ve test 36'da ayrica dogrulanir.
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({
+        taskId: 'GOV-EXAMPLE-R01', pr: 1234, consumed: true, consumedPr: 999,
+      }),
+    });
     const r = await closeout.closeoutPr(makeInput(), a);
     expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN);
     expect(a.calls.squashMerge).toBe(0);
