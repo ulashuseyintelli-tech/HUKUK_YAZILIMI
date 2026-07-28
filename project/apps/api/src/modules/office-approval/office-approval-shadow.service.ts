@@ -32,8 +32,8 @@ import {
 import { GuidedOpenDecision } from '../policy-engine/types/effective-permission.types';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import {
-  compareSelfAuthorityShadow,
-  toSelfAuthorityShadowAuditEvent,
+  compareAuthorityWithHierarchyTelemetry,
+  toAuthorityHierarchyTelemetryEvent,
   type ActorHierarchyFacts,
   type IncumbentAuthorityVerdict,
 } from '../../scripts/office-cap02-authorization-shadow.core';
@@ -245,12 +245,15 @@ export class OfficeApprovalShadowService {
   }
 
   /**
-   * ReportingLine gözlem katmanı — CAP-02 SHADOW çekirdeğinin CANLI tüketicisi.
+   * ReportingLine TELEMETRİ katmanı — CAP-02 çekirdeğinin CANLI tüketicisi.
    *
-   * NE YAPAR: yürürlükteki rütbe tabanlı self-authority kararını hesaplar, aktörün
-   * AKTİF ReportingLine disposition'ını okur, ikisini `compareSelfAuthorityShadow` ile
-   * KIYASLAR ve sonucu audit'e yazar. Böylece "enforcement açılsaydı ne değişirdi"
-   * sorusunun cevabı, hiçbir şey değiştirmeden ÖLÇÜLMÜŞ olur.
+   * OWNER KARARI (2026-07-28, OPTION A): `ReportingLine` yalnız organizasyonel
+   * hiyerarşi gerçeğidir; ondan `allow` / `deny` / `requiresApproval` / `selfAuthority`
+   * KARARI ÜRETİLEMEZ. Bu metot bir yetki sonucu HESAPLAMAZ.
+   *
+   * NE YAPAR: yürürlükteki (rütbe tabanlı) kararın SINIFINI ve aktörün ReportingLine
+   * SINIFINI okur, ikisinin aynı sınıfa düşüp düşmediğini kaydeder
+   * (`SAME_CLASS` / `DIFFERENT_CLASS` / `UNCOMPARABLE`).
    *
    * NE YAPMAZ: hiçbir kararı/erişimi/response'u değiştirmez, OfficeApprovalRequest
    * oluşturmaz, hiçbir hata çağırana sızmaz. `enforce` modundaki fail-closed
@@ -298,10 +301,12 @@ export class OfficeApprovalShadowService {
         disposition,
         managerUserId: line?.managerUserId ?? null,
       };
+      // Yürürlükteki kararın SINIFI — bu satır bir karar ÜRETMEZ, mevcut kararı
+      // telemetri sözlüğüne çevirir. Kaynak yalnız `computeDecision()`'ın çıktısıdır.
       const incumbentVerdict: IncumbentAuthorityVerdict =
         incumbent.decision === 'ALLOW' ? 'SELF_AUTHORITY' : 'REQUIRES_APPROVAL';
 
-      const record = compareSelfAuthorityShadow(
+      const record = compareAuthorityWithHierarchyTelemetry(
         {
           // Korelasyon: kişisel veri TAŞIMAZ; aynı işlemin kayıtlarını birbirine bağlar.
           correlationId: `${input.actionCode}|${input.targetType}|${input.targetRef}`,
@@ -310,21 +315,24 @@ export class OfficeApprovalShadowService {
           incumbentVerdict,
           incumbentReasonCode: incumbent.reasonCode,
           incumbentCapacity: incumbent.capacity,
+          // YALNIZ gözlem bağlamı: hangi işlem sırasında ölçüldüğünü kaydeder.
+          // Karşılaştırmaya GİRMEZ ve ReportingLine'dan politika üretmek için KULLANILMAZ.
+          observedActionCode: input.actionCode,
         },
         facts,
       );
-      const event = toSelfAuthorityShadowAuditEvent(record, new Date().toISOString());
+      const event = toAuthorityHierarchyTelemetryEvent(record, new Date().toISOString());
 
       await this.audit.log({
         tenantId: input.tenantId,
-        action: 'OFFICE_CAP02_SELF_AUTHORITY_SHADOW_COMPARISON',
-        entityType: 'OFFICE_CAP02_REPORTINGLINE_SHADOW',
+        action: 'OFFICE_CAP02_AUTHORITY_HIERARCHY_TELEMETRY',
+        entityType: 'OFFICE_CAP02_REPORTINGLINE_TELEMETRY',
         entityId: input.targetRef,
         userId: input.actorUserId,
-        metadata: { ...event, reason: record.reason },
+        metadata: { ...event },
       });
     } catch {
-      // GÖZLEM ASLA AKIŞI BOZMAZ: ölçüm hatası mevcut davranışı değiştiremez.
+      // TELEMETRİ ASLA AKIŞI BOZMAZ: ölçüm hatası mevcut davranışı değiştiremez.
     }
   }
 }
