@@ -11,9 +11,8 @@ v1-v38 blueprint'lerinden entegre edilmiştir.
     - Kişisel verilerin rol bazlı maskelenmesi
     - TCKN, telefon, email, adres maskeleme
     - KVKK uyumluluğu
-    - `PiiMaskingService`: PII maskeleme
-    - `POST /icrabot/enterprise/pii/test-mask`
-    - `GET /icrabot/enterprise/pii/should-mask`
+    - `PiiMaskingService`: PII maskeleme (yalnizca dahili servis)
+    - HTTP yuzeyi YOK — teshis endpoint'leri R02-F09D / I02 ile kaldirildi
 
 45. **Audit Chain (v38)**
     - Immutable audit log with SHA-256 hash chain
@@ -1180,37 +1179,15 @@ v37 ile MVP tamamlanmış sayılır:
 
 ## Enterprise API (v38)
 
-### PII Masking API
+### PII Masking API — KALDIRILDI
 
-```
-POST   /icrabot/enterprise/pii/test-mask     # PII maskeleme testi
-GET    /icrabot/enterprise/pii/should-mask   # Alan maskelenmeli mi?
-```
+`POST /icrabot/enterprise/pii/test-mask` ve `GET /icrabot/enterprise/pii/should-mask`
+kimlik dogrulamasiz yayindaydi ve uretim tuketicisi yoktu; bu nedenle
+DEBTOR-ENTERPRISE-PII-DIAGNOSTIC-CONTAINMENT-P1-I02 (bulgu R02-F09D) ile public
+HTTP yuzeyinden kaldirildi.
 
-#### Test Mask Request
-```json
-{
-  "data": {
-    "tckn": "12345678901",
-    "phone": "05551234567",
-    "email": "test@example.com",
-    "address": "Atatürk Cad. No:123 Kadıköy/İstanbul"
-  },
-  "role": "VIEWER"
-}
-```
-
-#### Test Mask Response
-```json
-{
-  "masked": {
-    "tckn": "******8901",
-    "phone": "***67",
-    "email": "t***@***",
-    "address": "Atatü...anbul"
-  }
-}
-```
+`PiiMaskingService` dahili servis olarak yerinde durur; maskeleme politikasi ve
+maskeleme ciktilarinin ornekleri artik public dokumantasyonda tasinmaz.
 
 ### Audit Chain API
 

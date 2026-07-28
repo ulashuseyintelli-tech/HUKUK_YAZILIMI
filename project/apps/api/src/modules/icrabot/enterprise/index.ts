@@ -14,7 +14,6 @@ export { PlanLimitsService, PlanType, PlanLimits, UsageStats, LimitCheckResult }
 
 // Controllers
 export {
-  PiiMaskingController,
   AuditChainController,
   ApprovalWorkflowController,
   JobLeasingController,
