@@ -536,9 +536,10 @@ test('DV63  the unknown case and the empty case both fail towards runtime', () =
   assert.ok(impactMod.assertNotApplicableAllowed(['project/docs/governance/decision-log.md']));
 });
 
-// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV54)
+// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV56)
 
 const successorMod = require('../orchestrator/successor.cjs');
+const postMergeMod = require('./post-merge.cjs');
 
 /** A CLOSED predecessor carrying the delivery record a finalizer would write. */
 function closedWith(delivery) {
@@ -692,6 +693,62 @@ test('DV55  delivery evidence for another task does not release a v2 successor',
   const v = successorMod.predecessorSatisfied(record, 2);
   assert.equal(v.ok, false, JSON.stringify(v));
   assert.equal(v.reason, 'PREDECESSOR_DELIVERY_TASK_ID_MISMATCH', JSON.stringify(v));
+});
+
+test('DV56  production writes the task identity consumed by the successor gate', () => {
+  const taskId = 'GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R02';
+  const mergeSha = 'a'.repeat(40);
+  const result = {
+    verdict: 'PASS',
+    observedState: 'ENFORCED',
+    targetState: 'ENFORCED',
+    record: {
+      capabilityId: 'GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE',
+      taskId: 'STALE-VERIFICATION-TASK',
+      verifiedAtSha: mergeSha,
+      expectedMergeSha: mergeSha,
+      deliveryContractSha256: 'c'.repeat(64),
+      probeDefinitionSha256: 'd'.repeat(64),
+      commandDigest: 'b'.repeat(64),
+      evidenceDigest: 'e'.repeat(64),
+    },
+  };
+
+  const delivery = postMergeMod.deliveryRecordFrom(result, mergeSha, taskId);
+  assert.equal(delivery.taskId, taskId, 'the producer must stamp the task identity it was given');
+
+  const record = { state: 'CLOSED', payload: { taskId, mergeSha, delivery } };
+  const accepted = successorMod.predecessorSatisfied(record, 2);
+  assert.equal(accepted.ok, true, JSON.stringify(accepted));
+
+  record.payload.delivery = Object.assign({}, delivery, { taskId: 'OTHER-PREDECESSOR-TASK' });
+  const refused = successorMod.predecessorSatisfied(record, 2);
+  assert.equal(refused.ok, false, JSON.stringify(refused));
+  assert.equal(refused.reason, 'PREDECESSOR_DELIVERY_TASK_ID_MISMATCH', JSON.stringify(refused));
+
+  const finalizeSource = fs.readFileSync(
+    path.join(REPO_ROOT, 'project', 'scripts', 'orchestration-v2', 'service', 'finalize.cjs'),
+    'utf8',
+  );
+  const finalizeCode = finalizeSource.split('\n').filter((line) => {
+    const trimmed = line.trim();
+    return trimmed && !trimmed.startsWith('//') && !trimmed.startsWith('*') && !trimmed.startsWith('/*');
+  }).join('\n');
+  assert.match(
+    finalizeCode,
+    /const deliveryRecord\s*=\s*Object\.assign\(\s*\{\}\s*,\s*delivery\.record\s*\|\|\s*delivery\s*,\s*\{\s*taskId:\s*entry\.taskId\s*\}\s*\)/,
+    'finalize must stamp the active task identity onto the delivery record',
+  );
+  assert.match(
+    finalizeCode,
+    /deliveryPhase:\s*'DELIVERY_FAILED'[\s\S]{0,160}\bdelivery:\s*deliveryRecord/,
+    'the failed-verification path must persist the stamped delivery record',
+  );
+  assert.match(
+    finalizeCode,
+    /deliveryPhase:\s*'DELIVERY_VERIFIED'\s*,\s*delivery:\s*deliveryRecord/,
+    'the verified path must persist the stamped delivery record',
+  );
 });
 
 // ───────────────────────────────────── SCHEMA V2 (DV40–DV45)
