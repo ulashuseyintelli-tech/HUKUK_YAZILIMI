@@ -613,7 +613,7 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
       getPr: async () => {
         seen += 1;
         // ilk iki cagri saglikli (gate + TOCTOU), merge sonrasi bozuk yanit
-        if (seen <= 2) return { state: 'OPEN', headRefOid: HEAD, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' };
+        if (seen <= 2) return { state: 'OPEN', headRefOid: HEAD, headRefName: 'claude/x-r01', baseRefName: 'main', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' };
         return { state: 'MERGED', mergeCommitOid: 'garbage' };
       },
     });
