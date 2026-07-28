@@ -192,6 +192,37 @@ function createGhCloseoutAdapter(o) {
       return 'REMOVED';
     },
 
+    /**
+     * Owner 3.2: authority reference tuketildi olarak isaretlenir; ayni ref
+     * baska bir PR'da kullanilamaz. Ledger yoksa NO_LEDGER doner — kapanis
+     * gecerlidir, yalniz reuse korumasi kayit tutmaz.
+     */
+    async consumeAuthority(ref, meta) {
+      const p = o.ledgerPath;
+      if (!p) return 'NO_LEDGER';
+      let ledger = { entries: [] };
+      if (fs.existsSync(p)) {
+        try {
+          ledger = JSON.parse(fs.readFileSync(p, 'utf8'));
+        } catch (e) {
+          return 'LEDGER_UNREADABLE';
+        }
+      }
+      if (!Array.isArray(ledger.entries)) ledger.entries = [];
+      const existing = ledger.entries.find((e) => e.authorityRef === ref);
+      const stamp = {
+        consumed: true,
+        consumedPr: meta ? meta.pr : null,
+        consumedTaskId: meta ? meta.taskId : null,
+        consumedMergeSha: meta ? meta.mergeSha : null,
+      };
+      if (existing) Object.assign(existing, stamp);
+      else ledger.entries.push(Object.assign({ authorityRef: ref }, stamp));
+      fs.writeFileSync(p, JSON.stringify(ledger, null, 2) + '
+', 'utf8');
+      return 'CONSUMED';
+    },
+
     async verifyCanonical() {
       const status = tryRun('git', ['status', '--porcelain', '--untracked-files=no'], cwd);
       if (status === null) return 'GIT_STATUS_FAILED';

@@ -218,6 +218,7 @@ function baseResult(input) {
     worktreeCleanup: null,
     canonicalVerification: null,
     blockerCode: null,
+    authorityConsumed: null,
     dryRun: input.dryRun === true,
   };
 }
@@ -365,6 +366,16 @@ async function recoverAfterMerge(out, input, adapter) {
     out.canonicalVerification = await adapter.verifyCanonical();
     if (out.canonicalVerification !== 'OK') {
       return Object.assign(out, { status: 'MERGED_CLEANUP_BLOCKED', stage: 'CANONICAL_VERIFIED', blockerCode: BLOCKER.CANONICAL_VERIFICATION_FAILED });
+    }
+    // Owner 3.2: ayni authority reference ikinci bir PR'da kullanilamaz. Kapanis
+    // basarili oldugunda reference tuketilmis olarak kaydedilir; ledger yoksa
+    // adapter no-op doner ve kapanis yine de gecerlidir.
+    if (typeof adapter.consumeAuthority === 'function') {
+      out.authorityConsumed = await adapter.consumeAuthority(input.authorityRef, {
+        taskId: input.taskId,
+        pr: input.pr,
+        mergeSha: out.mergeSha,
+      });
     }
     out.stage = 'CLOSED';
     return Object.assign(out, { status: 'CLOSED', blockerCode: null });

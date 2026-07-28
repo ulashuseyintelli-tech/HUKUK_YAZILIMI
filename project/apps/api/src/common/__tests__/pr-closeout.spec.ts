@@ -382,6 +382,43 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
     expect(r.pr).toBe(1234);
   });
 
+  it('31. a successful closeout consumes the authority reference', async () => {
+    const consumed: Json[] = [];
+    const a = makeAdapter({
+      consumeAuthority: async (ref: string, meta: Json) => {
+        consumed.push({ ref, meta });
+        return 'CONSUMED';
+      },
+    });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.status).toBe('CLOSED');
+    expect(r.authorityConsumed).toBe('CONSUMED');
+    expect(consumed).toHaveLength(1);
+    expect(consumed[0].ref).toBe('owner directive 2026-07-28 GO-COMPLETE #1234');
+    expect(consumed[0].meta.pr).toBe(1234);
+    expect(consumed[0].meta.mergeSha).toBe(MERGE_SHA);
+  });
+
+  it('32. a blocked run never consumes the authority reference', async () => {
+    const consumed: Json[] = [];
+    const a = makeAdapter({
+      getChecks: async () => [{ name: 'Architectural Guardrails', status: 'COMPLETED', conclusion: 'FAILURE' }],
+      consumeAuthority: async (ref: string) => {
+        consumed.push({ ref });
+        return 'CONSUMED';
+      },
+    });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.status).toBe('BLOCKED');
+    expect(consumed).toHaveLength(0);
+  });
+
+  it('33. an adapter without consumeAuthority still closes cleanly', async () => {
+    const r = await closeout.closeoutPr(makeInput(), makeAdapter());
+    expect(r.status).toBe('CLOSED');
+    expect(r.authorityConsumed).toBeNull();
+  });
+
   it('the state machine is single-directional and declared', () => {
     expect(closeout.STAGES[0]).toBe('PREFLIGHT');
     expect(closeout.STAGES[closeout.STAGES.length - 1]).toBe('CLOSED');
