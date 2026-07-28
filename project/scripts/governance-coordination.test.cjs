@@ -319,6 +319,18 @@ function pb01TargetChanges() {
   );
 }
 
+function pb01ClosureBindingChanges() {
+  return coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function pb01ClosureTargetChanges() {
+  return coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function rcvColLargeAuthorityReadRepairChanges() {
   return coordination.RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -395,6 +407,13 @@ function rcvColBindingContractContent(
     ...binding.targetPr.changedPaths.map(({ path: repoPath }) => repoPath),
     binding.targetPr.semanticAuthority.recordId,
     binding.targetPr.executionGrant.recordId,
+    ...(binding.targetPr.implementation
+      ? [
+          binding.targetPr.implementation.squashSha,
+          binding.targetPr.implementation.contractId,
+          binding.targetPr.implementation.nextTaskId,
+        ]
+      : []),
     '',
   ].join('\n');
 }
@@ -475,6 +494,127 @@ function createRcvColTargetGitFixture(t, options = {}) {
   );
   runFixtureGit(['add', '--all'], root);
   runFixtureGit(['commit', '--quiet', '-m', 'target RCV-COL bootstrap'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, base, head };
+}
+
+function createPb01ClosureTargetGitFixture(t, options = {}) {
+  const binding =
+    coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-pb01-closure-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+  runFixtureGit(
+    ['fetch', '--quiet', '--no-tags', REPO_ROOT, target.implementation.squashSha],
+    root,
+  );
+  runFixtureGit(
+    ['checkout', '--quiet', '-b', 'pb01-closure-base', target.implementation.squashSha],
+    root,
+  );
+
+  const contractPath = fixturePath(root, binding.contractPath);
+  fs.appendFileSync(contractPath, rcvColBindingContractContent(binding), 'utf8');
+  const semanticRecordId =
+    options.semanticRecordId || target.semanticAuthority.recordId;
+  const executionRecordId =
+    options.executionRecordId || target.executionGrant.recordId;
+  const semanticBindingRecordId =
+    options.semanticBindingRecordId || target.semanticAuthority.recordId;
+  const semanticMarker =
+    '<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=' +
+    semanticRecordId +
+    ' -->';
+  const decisionPath = fixturePath(root, target.semanticAuthority.path);
+  fs.appendFileSync(
+    decisionPath,
+    '\n| 2026-07-28 | ' +
+      semanticMarker +
+      ' **' +
+      semanticRecordId +
+      ' — fixture** |\n' +
+      (options.duplicateSemanticMarker ? semanticMarker + '\n' : ''),
+    'utf8',
+  );
+  const executionMarker =
+    '<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=' +
+    executionRecordId +
+    ' -->';
+  const grantPath = fixturePath(root, target.executionGrant.path);
+  fs.mkdirSync(path.dirname(grantPath), { recursive: true });
+  fs.writeFileSync(
+    grantPath,
+    [
+      '# PB01 closure grant',
+      executionMarker,
+      options.duplicateExecutionMarker ? executionMarker : '',
+      '',
+      '```text',
+      'semanticAuthorityRef.kind     : ' + target.semanticAuthority.kind,
+      'semanticAuthorityRef.path     : ' + target.semanticAuthority.path,
+      'semanticAuthorityRef.recordId : ' + semanticBindingRecordId,
+      '```',
+      '',
+      ...target.changedPaths.map(({ path: repoPath }) => '- `' + repoPath + '`'),
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'canonical PB01 closure binding'], root);
+
+  if (options.freshMain) {
+    writeFixtureRepoFile(root, 'unrelated.md', 'fresh main advance\n');
+    runFixtureGit(['add', '--all'], root);
+    runFixtureGit(['commit', '--quiet', '-m', 'advance canonical main'], root);
+  }
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  const closureContent = {
+    'project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md': [
+      'RCV-CLAIM-FORM-P02-S08-D02-PB01 : CLOSED / CANONICAL / PASS',
+      target.implementation.squashSha,
+      target.implementation.contractId,
+      'Next eligible task          : ' + target.implementation.nextTaskId,
+      'Claim Formation PB01 gate   : CONSUMED / COMPLETE',
+    ].join('\n'),
+    'project/docs/governance/canonicalization-register.md': [
+      'RCV-CLAIM-FORM-P02-S08-D02-PB01 — exact Legal Basis projection binding formal closure',
+      target.implementation.squashSha,
+      target.implementation.contractId,
+      target.implementation.nextTaskId + ' — OWNER GO REQUIRED / NOT STARTED',
+    ].join('\n'),
+    'project/docs/governance/product-backlog.md': [
+      'RCV-CLAIM-FORM-P02-S08-D02-PB01 — Exact Legal Basis Projection Binding Contract',
+      target.implementation.squashSha,
+      target.implementation.contractId,
+      target.implementation.nextTaskId,
+    ].join('\n'),
+    'project/docs/governance/GOVERNANCE-INDEX.md': [
+      'project/docs/rcv-claim-legal-basis-projection-binding-v1.md',
+      target.implementation.squashSha.slice(0, 8),
+      target.implementation.contractId,
+      'next D02-KC01 owner-gated',
+    ].join('\n'),
+  };
+  if (options.omitNextTask) {
+    closureContent['project/docs/governance/product-backlog.md'] =
+      'PB01 closure without next-task authority\n';
+  }
+  for (const [repoPath, content] of Object.entries(closureContent)) {
+    writeFixtureRepoFile(root, repoPath, content + '\n');
+  }
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'target PB01 formal closure'], root);
   const head = runFixtureGit(['rev-parse', 'HEAD'], root);
   return { root, base, head };
 }
@@ -2257,6 +2397,127 @@ test('PB01 target rejects wrong authority markers and semantic binding', (t) => 
           cwd: fixture.root,
         }),
       options.code,
+    );
+  }
+});
+
+test('PB01 formal-closure binding requires exact base branch scope and contract content', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(
+    pb01ClosureBindingChanges(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result = coordination.validatePb01FormalClosureBindingScope({
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: pb01ClosureBindingChanges(),
+    taskId: binding.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('PB01 formal-closure binding rejects wrong base and expanded scope', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  for (const context of [
+    { base: '0'.repeat(40), headRef: binding.bindingPr.headRef },
+    { base: binding.bindingPr.baseSha, headRef: binding.bindingPr.headRef + '-copy' },
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(pb01ClosureBindingChanges(), context),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  const expanded = pb01ClosureBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('PB01 formal-closure target recognizes only exact branch and four-file scope', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.classifyPrChangeSet(pb01ClosureTargetChanges(), {
+    base: binding.targetPr.originalBaseSha,
+    headRef: binding.targetPr.headRef,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(pb01ClosureTargetChanges(), {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef + '-copy',
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  const expanded = pb01ClosureTargetChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('PB01 formal-closure target validates canonical base authority and fresh-main ancestry', (t) => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  for (const freshMain of [false, true]) {
+    const fixture = createPb01ClosureTargetGitFixture(t, { freshMain });
+    const result = coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    });
+    assert.equal(result.mode, binding.targetPr.mode);
+    assert.equal(result.taskId, binding.targetPr.taskId);
+  }
+});
+
+test('PB01 formal-closure target rejects wrong base authority and incomplete content', (t) => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  for (const options of [
+    { semanticRecordId: 'RCV-CLAIM-FORM-PB01-WRONG' },
+    { executionRecordId: 'RCV-CLAIM-FORM-PB01-WRONG-GRANT' },
+    { semanticBindingRecordId: 'ANOTHER-PB01-AUTHORITY' },
+    { omitNextTask: true },
+  ]) {
+    const fixture = createPb01ClosureTargetGitFixture(t, options);
+    expectCode(
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
     );
   }
 });

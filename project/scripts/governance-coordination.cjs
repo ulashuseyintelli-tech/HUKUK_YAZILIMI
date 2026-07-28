@@ -391,6 +391,78 @@ const RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01 =
       }),
     }),
   });
+const RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01 =
+  Object.freeze({
+    taskId:
+      'RCV-CLAIM-FORM-P02-S08-D02-PB01-FORMAL-CLOSURE-CONTROL-PLANE-BINDING-R01',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    bindingPr: Object.freeze({
+      mode: 'RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01',
+      baseSha: '0335c4cff8879a3246bddd33ad439c7567be7bf9',
+      headRef:
+        'codex/rcv-claim-form-pb01-formal-closure-control-plane-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    targetPr: Object.freeze({
+      taskId: 'RCV-CLAIM-FORM-P02-S08-D02-PB01-FORMAL-CLOSURE-R01',
+      mode: 'RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_R01',
+      pullRequestNumber: 1807,
+      originalBaseSha: '11010e1d771929eec13e76d080c4243fc31db6c2',
+      headRef:
+        'codex/rcv-claim-form-p02-s08-d02-pb01-formal-closure-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/GOVERNANCE-INDEX.md',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/canonicalization-register.md',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/product-backlog.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'RCV-CLAIM-FORM-P02-S08-D02-PB01-CLOSURE-R01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/RCV-CLAIM-FORM-P02-S08-D02-PB01-CLOSURE-R01.md',
+        recordId:
+          'RCV-CLAIM-FORM-P02-S08-D02-PB01-CLOSURE-R01-GRANT',
+      }),
+      implementation: Object.freeze({
+        pullRequestNumber: 1794,
+        squashSha: 'a62e078a33803774ef5595343092ab2ad36d48a9',
+        contractId: 'RCV-CLAIM-LEGAL-BASIS-PROJECTION-BINDING@1',
+        nextTaskId: 'RCV-CLAIM-FORM-P02-S08-D02-KC01',
+      }),
+    }),
+  });
 const RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01 = Object.freeze({
   taskId: 'GOV-COORD-RCV-COL-LARGE-AUTHORITY-READ-REPAIR-R01',
   mode: 'GOV_COORD_RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01',
@@ -1643,6 +1715,8 @@ function classifyPrChangeSet(changes, context = {}) {
     RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
   const pb01Binding =
     RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const pb01ClosureBinding =
+    RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
   if (
     context.base === rcvColBinding.bindingPr.baseSha &&
     context.headRef === rcvColBinding.bindingPr.headRef &&
@@ -1704,6 +1778,41 @@ function classifyPrChangeSet(changes, context = {}) {
       mode: pb01Binding.targetPr.mode,
       taskId: pb01Binding.targetPr.taskId,
     };
+  }
+
+  if (
+    context.base === pb01ClosureBinding.bindingPr.baseSha &&
+    context.headRef === pb01ClosureBinding.bindingPr.headRef &&
+    hasExactChangeSet(changes, pb01ClosureBinding.bindingPr.changedPaths)
+  ) {
+    return {
+      mode: pb01ClosureBinding.bindingPr.mode,
+      taskId: pb01ClosureBinding.taskId,
+    };
+  }
+
+  if (
+    context.headRef === pb01ClosureBinding.targetPr.headRef &&
+    hasExactChangeSet(changes, pb01ClosureBinding.targetPr.changedPaths)
+  ) {
+    return {
+      mode: pb01ClosureBinding.targetPr.mode,
+      taskId: pb01ClosureBinding.targetPr.taskId,
+    };
+  }
+
+  if (context.headRef === pb01ClosureBinding.targetPr.headRef) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'PB01 formal-closure target branch requires the exact four-file scope',
+    );
+  }
+
+  if (hasExactChangeSet(changes, pb01ClosureBinding.targetPr.changedPaths)) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'PB01 formal-closure paths require the exact target branch binding',
+    );
   }
 
   if (
@@ -2561,6 +2670,51 @@ function validatePb01AuthorityBootstrapBindingScope(options) {
   return { mode: binding.bindingPr.mode, taskId: binding.taskId };
 }
 
+function validatePb01FormalClosureBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  if (
+    taskId !== binding.taskId ||
+    base !== binding.bindingPr.baseSha ||
+    headRef !== binding.bindingPr.headRef ||
+    !hasExactChangeSet(changes, binding.bindingPr.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'PB01 formal-closure control-plane binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    binding.targetPr.taskId,
+    binding.targetPr.mode,
+    String(binding.targetPr.pullRequestNumber),
+    binding.targetPr.originalBaseSha,
+    binding.targetPr.headRef,
+    ...binding.targetPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.recordId,
+    binding.targetPr.implementation.squashSha,
+    binding.targetPr.implementation.contractId,
+    binding.targetPr.implementation.nextTaskId,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact PB01 formal-closure binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: binding.bindingPr.mode, taskId: binding.taskId };
+}
+
 function validateRcvColLargeAuthorityReadRepairScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const repair = RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01;
@@ -2717,6 +2871,33 @@ function findCanonicalPb01BindingCommit(base, cwd = REPO_ROOT) {
     reject(
       'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
       'current target base does not descend from the canonical PB01 binding',
+    );
+  }
+  return candidate;
+}
+
+function findCanonicalPb01FormalClosureBindingCommit(base, cwd = REPO_ROOT) {
+  const binding =
+    RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  const result = runGit(
+    [
+      'log',
+      '--reverse',
+      '--format=%H',
+      '-S',
+      binding.taskId,
+      base,
+      '--',
+      binding.contractPath,
+    ],
+    cwd,
+    { allowFailure: true },
+  );
+  const candidate = result.status === 0 ? result.stdout.trim().split(/\r?\n/)[0] : '';
+  if (!candidate || !gitIsAncestor(candidate, base, cwd)) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'current target base does not descend from the canonical PB01 formal-closure binding',
     );
   }
   return candidate;
@@ -2905,6 +3086,152 @@ function validatePb01AuthorityBootstrapScope(options) {
   return { mode: target.mode, taskId: target.taskId };
 }
 
+function validatePb01FormalClosureScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  if (
+    taskId !== target.taskId ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'PB01 formal-closure target binding mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.bindingPr.mode,
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+    String(target.pullRequestNumber),
+  ]) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical PB01 formal-closure binding ${expectedLiteral}`,
+      );
+    }
+  }
+  findCanonicalPb01FormalClosureBindingCommit(base, cwd);
+  if (!gitIsAncestor(target.implementation.squashSha, base, cwd)) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'PB01 implementation squash is not an ancestor of the target base',
+    );
+  }
+
+  const decisionLog = gitShow(base, target.semanticAuthority.path, cwd);
+  const semanticMarker = assertExactAuthorityMarker(
+    decisionLog,
+    target.semanticAuthority,
+  );
+  const semanticRows = decisionLog
+    .split(/\r?\n/)
+    .filter((line) =>
+      authorityMarkerLocatesSemanticRow(
+        line,
+        semanticMarker,
+        target.semanticAuthority.recordId,
+      ),
+    );
+  if (semanticRows.length !== 1) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'PB01 formal-closure semantic marker must identify its exact decision-log row',
+    );
+  }
+
+  const grant = gitShow(base, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  for (const { path: repoPath } of target.changedPaths) {
+    if (countOccurrences(grant, `\`${repoPath}\``) !== 1) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `PB01 execution grant must allow target path exactly once: ${repoPath}`,
+      );
+    }
+  }
+
+  const authorization = gitShow(
+    head,
+    'project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md',
+    cwd,
+  );
+  const canonicalization = gitShow(
+    head,
+    'project/docs/governance/canonicalization-register.md',
+    cwd,
+  );
+  const backlog = gitShow(
+    head,
+    'project/docs/governance/product-backlog.md',
+    cwd,
+  );
+  const index = gitShow(
+    head,
+    'project/docs/governance/GOVERNANCE-INDEX.md',
+    cwd,
+  );
+  const requiredByDocument = [
+    [
+      authorization,
+      [
+        'RCV-CLAIM-FORM-P02-S08-D02-PB01 : CLOSED / CANONICAL / PASS',
+        target.implementation.squashSha,
+        target.implementation.contractId,
+        `Next eligible task          : ${target.implementation.nextTaskId}`,
+        'Claim Formation PB01 gate   : CONSUMED / COMPLETE',
+      ],
+    ],
+    [
+      canonicalization,
+      [
+        'RCV-CLAIM-FORM-P02-S08-D02-PB01 — exact Legal Basis projection binding formal closure',
+        target.implementation.squashSha,
+        target.implementation.contractId,
+        `${target.implementation.nextTaskId} — OWNER GO REQUIRED / NOT STARTED`,
+      ],
+    ],
+    [
+      backlog,
+      [
+        'RCV-CLAIM-FORM-P02-S08-D02-PB01 — Exact Legal Basis Projection Binding Contract',
+        target.implementation.squashSha,
+        target.implementation.contractId,
+        target.implementation.nextTaskId,
+      ],
+    ],
+    [
+      index,
+      [
+        'project/docs/rcv-claim-legal-basis-projection-binding-v1.md',
+        target.implementation.squashSha.slice(0, 8),
+        target.implementation.contractId,
+        'next D02-KC01 owner-gated',
+      ],
+    ],
+  ];
+  for (const [document, requiredLiterals] of requiredByDocument) {
+    for (const requiredLiteral of requiredLiterals) {
+      if (!document.includes(requiredLiteral)) {
+        reject(
+          'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+          `PB01 formal closure is missing required content: ${requiredLiteral}`,
+        );
+      }
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
 function repoPathToAbsolute(repoPath, repoRoot = REPO_ROOT) {
   return path.join(repoRoot, ...normalizeRepoPath(repoPath).split('/'));
 }
@@ -2964,6 +3291,20 @@ function validatePrScope(options) {
     });
   }
 
+  if (
+    classification.mode ===
+    RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01.bindingPr.mode
+  ) {
+    return validatePb01FormalClosureBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
   if (classification.mode === RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.mode) {
     return validateRcvColLargeAuthorityReadRepairScope({
       base,
@@ -3011,6 +3352,20 @@ function validatePrScope(options) {
       .mode
   ) {
     return validatePb01AuthorityBootstrapScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01.targetPr.mode
+  ) {
+    return validatePb01FormalClosureScope({
       base,
       head,
       headRef,
@@ -3410,6 +3765,7 @@ module.exports = {
   GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS,
   RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
+  RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,
   RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01,
   GRANT_REPO_PATH,
@@ -3454,6 +3810,8 @@ module.exports = {
   validateHcr08AuthorityBootstrapScope,
   validatePb01AuthorityBootstrapBindingScope,
   validatePb01AuthorityBootstrapScope,
+  validatePb01FormalClosureBindingScope,
+  validatePb01FormalClosureScope,
   validateRcvColFullRemediationBindingScope,
   validateRcvColFullRemediationBootstrapScope,
   validateRcvColLargeAuthorityReadRepairScope,
