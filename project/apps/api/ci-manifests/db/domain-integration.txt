@@ -127,6 +127,7 @@ src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-pu
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-projection.db-gated.integration.spec.ts
 src/modules/portal/__tests__/client-financial-disclosure-portal.db-gated.integration.spec.ts
 src/modules/client-settlement/__tests__/client-financial-disclosure-command.db-gated.integration.spec.ts
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-dispatcher.db-gated.integration.spec.ts
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts

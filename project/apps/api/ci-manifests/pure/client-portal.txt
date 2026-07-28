@@ -80,6 +80,7 @@ src/modules/client/__tests__/client-operating-snapshot.spec.ts
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-canonical.spec.ts
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-approval-policy.spec.ts
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-composition.spec.ts
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-dispatcher.spec.ts
 src/modules/client/__tests__/client-poa-reminder-command.spec.ts
 src/modules/client/__tests__/client-poa-upload-command.spec.ts
 src/modules/client/__tests__/client-reactivate.spec.ts

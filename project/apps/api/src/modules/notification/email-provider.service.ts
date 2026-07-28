@@ -67,6 +67,17 @@ export class EmailProviderService {
   }
 
   /**
+   * CLIENT-FD-ACT-R01-I04: yapilandirilmis provider adinin PUBLIC, SENKRON okunmasi.
+   * Eklendi cunku financial disclosure yayinlama guard'i (charter §35.10) provider'a tek byte
+   * gitmeden ONCE onayli-provider allowlist kontrolu yapmak zorundadir; `checkStatus()` async
+   * oldugu icin bu amaca uygun degildir. Salt okuma — davranis DEGISMEDI, private alan
+   * erisimi veya cast KULLANILMADI.
+   */
+  get providerName(): string {
+    return this.provider;
+  }
+
+  /**
    * E-posta gönder
    */
   async send(options: EmailOptions): Promise<EmailResult> {

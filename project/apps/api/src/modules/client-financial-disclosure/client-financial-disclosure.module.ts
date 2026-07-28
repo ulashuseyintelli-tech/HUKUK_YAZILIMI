@@ -7,6 +7,9 @@ import type { DisclosureNotificationDispatcher } from './client-financial-disclo
 import { ClientFinancialDisclosureWriterService } from './client-financial-disclosure-writer.service';
 import { DISCLOSURE_NOTIFICATION_DISPATCHER } from './client-financial-disclosure.tokens';
 import { UnconfiguredDisclosureNotificationDispatcher } from './unconfigured-disclosure-dispatcher';
+import { EmailProviderService } from '../notification/email-provider.service';
+import { ClientFinancialDisclosureEmailDispatcher } from './client-financial-disclosure-email-dispatcher';
+import { CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS } from './client-financial-disclosure-publication.contract';
 
 /**
  * CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01 / I02 — PRODUCTION COMPOSITION BINDING
@@ -31,10 +34,36 @@ import { UnconfiguredDisclosureNotificationDispatcher } from './unconfigured-dis
 @Module({
   imports: [PrismaModule],
   providers: [
+    // CLIENT-FD-ACT-R01-I04: NotificationModule'un TAMAMI import EDILMEZ — o graf
+    // NotificationService uzerinden agir bir bagimlilik zinciri (audit, permission
+    // diagnostics) getirir ve bu modulu gereksiz yere ona baglardi. Ihtiyac duyulan tek
+    // sey config okuyan yapraktir; ayni canonical sinif dogrudan saglanir.
+    EmailProviderService,
     UnconfiguredDisclosureNotificationDispatcher,
+    ClientFinancialDisclosureEmailDispatcher,
     {
+      /**
+       * CLIENT-FD-ACT-R01-I04 — dispatcher SECIMI, canonical config'e gore yapilir.
+       *
+       * Gercek adapter YALNIZ yapilandirilmis provider §35.10 onayli allowlist'te ise baglanir.
+       * Aksi halde (mock, tanimsiz, listede olmayan ad) fail-closed varsayilan KORUNUR.
+       * Iki katman birlikte calisir: secim burada, guard ise publication servisinde —
+       * biri atlansa bile digeri yayinlamayi engeller.
+       *
+       * Provider unavailable BOOT'U COKERTMEZ; yalnizca yayinlama girisimi fail-closed olur.
+       */
       provide: DISCLOSURE_NOTIFICATION_DISPATCHER,
-      useExisting: UnconfiguredDisclosureNotificationDispatcher,
+      inject: [ClientFinancialDisclosureEmailDispatcher, UnconfiguredDisclosureNotificationDispatcher],
+      useFactory: (
+        real: ClientFinancialDisclosureEmailDispatcher,
+        fallback: UnconfiguredDisclosureNotificationDispatcher,
+      ) => {
+        const configured = (real.providerName ?? '').trim().toLowerCase();
+        const approved = (CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS as readonly string[]).includes(
+          configured,
+        );
+        return approved ? real : fallback;
+      },
     },
     {
       provide: ClientFinancialDisclosureWriterService,
