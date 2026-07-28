@@ -76,10 +76,21 @@ describe('P05C-P02 — parent semalar', () => {
     expect(cpe).not.toMatch(/\n\s+tenantId\s+String/);
   });
 
-  it('CpeExecutionRecord DEGISMEDI (kapsam disi)', () => {
+  // UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 (owner GO-COMPLETE §15 — "idempotency collision" ve
+  // "cross-tenant direct-ID path" bounded fix yetkisi): P05C-P02'nin "CpeExecutionRecord'a
+  // DOKUNMA" scope-guard'i bilincli olarak DARALTILDI. Model, P05C-P02'nin KENDI konusu
+  // (link tablosu baglantisi) bakimindan hala DEGISMEZDIR; degisen yalniz idempotency
+  // namespace'inin tenant basina cekilmesidir.
+  it('CpeExecutionRecord link tablosuna BAGLANMADI (P05C-P02 kapsami korunur)', () => {
     const rec = modelBlock('CpeExecutionRecord')!;
-    expect(rec).not.toContain('@@unique');
     expect(rec).not.toContain('UyapAttemptCpeDecisionLink');
+  });
+
+  it('CpeExecutionRecord idempotency namespace i TENANT BASINADIR (R02)', () => {
+    const rec = modelBlock('CpeExecutionRecord')!;
+    expect(rec).toContain('@@unique([tenantId, executionId])');
+    // Istemci kontrollu GLOBAL tekil anahtar KALDIRILDI (capraz tenant okuma/DoS yolu).
+    expect(rec).not.toMatch(/executionId\s+String\s+@unique/);
   });
 });
 
@@ -106,11 +117,23 @@ describe('P05C-P02 — migration additive-only', () => {
 });
 
 describe('P05C-P02 — retention referential legal hold', () => {
-  it('secim VE silme ayni legal-hold filtresini kullanir (atomik guvence)', () => {
+  // UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02: bu kilit "silme filtresi dogru mu?" diye soruyordu.
+  // Bulgu: servis "arsivler" diyip YALNIZCA `deleteMany` cagiriyordu; `CpeDecisionLogArchive`
+  // ne semada ne migration'da vardi -> canli cron her gece CPE karar delilini KALICI olarak
+  // imha ediyordu. Owner §12 containment geregi yikici yol KALDIRILDI; kilit artik "silme
+  // filtresinin dogrulugunu" degil, "hicbir silme yolunun kalmadigini" dogrular.
+  it('retention servisinde SILME YOLU YOKTUR (yikici path kapatildi)', () => {
+    expect(RETENTION_SRC).not.toMatch(/deleteMany\s*\(/);
+    expect(RETENTION_SRC).not.toMatch(/\bdelete\s*\(/);
+    expect(RETENTION_SRC).toContain('CPE_DECISION_LOG_DESTRUCTIVE_RETENTION_DISABLED');
+  });
+
+  it('legal-hold filtresi ADAY SAYIMINDA korunur (bagli karar aday degil)', () => {
     expect(RETENTION_SRC).toContain('uyapAttemptLinks: { none: {} }');
-    expect(RETENTION_SRC).toContain('const retentionEligibleWhere');
-    // deleteMany filtreyi TEKRARLAR — yalniz id listesi ile silmez
-    expect(RETENTION_SRC).toMatch(/deleteMany\(\{\s*\n?\s*where: \{ id: \{ in: ids \}, \.\.\.retentionEligibleWhere \}/);
+  });
+
+  it('manualArchive sessiz no-op DEGIL — acik hata atar', () => {
+    expect(RETENTION_SRC).toContain('CPE_DECISION_LOG_RETENTION_DISABLED');
   });
 
   it('genel retention suresi DEGISMEDI (90 gun)', () => {
