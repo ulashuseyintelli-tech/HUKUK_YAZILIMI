@@ -462,7 +462,8 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
     // icin ikinci kosu (recovery) REUSE_FORBIDDEN aliyordu.
     const a = makeAdapter({
       authorityLedgerEntry: async () => ({
-        authorityRef: 'r', consumed: true, consumedTaskId: 'GOV-EXAMPLE-R01', consumedPr: 1234,
+        authorityRef: 'r', taskId: 'GOV-EXAMPLE-R01', pr: 1234, expectedHead: HEAD,
+        consumed: true, consumedTaskId: 'GOV-EXAMPLE-R01', consumedPr: 1234,
       }),
     });
     a.state.pr = Object.assign({}, a.state.pr, { state: 'MERGED', mergeCommitOid: MERGE_SHA });
@@ -474,7 +475,8 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
   it('37. a consumed reference is refused for a DIFFERENT PR', async () => {
     const a = makeAdapter({
       authorityLedgerEntry: async () => ({
-        authorityRef: 'r', consumed: true, consumedTaskId: 'GOV-EXAMPLE-R01', consumedPr: 999,
+        authorityRef: 'r', taskId: 'GOV-EXAMPLE-R01', pr: 1234, expectedHead: HEAD,
+        consumed: true, consumedTaskId: 'GOV-EXAMPLE-R01', consumedPr: 999,
       }),
     });
     const r = await closeout.closeoutPr(makeInput(), a);
