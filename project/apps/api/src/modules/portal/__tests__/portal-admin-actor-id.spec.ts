@@ -22,7 +22,14 @@ function setup() {
     reviewDocument: jest.fn().mockResolvedValue({ success: true }),
     sendMessageFromOffice: jest.fn().mockResolvedValue({ success: true }),
   };
-  const controller = new PortalController(portalService);
+  // CLIENT-P2-U03-TRACK-B-I06: controller artik disclosure projeksiyon adaptorunu de alir.
+  // Bu suite yalniz admin uclarini test eder; adaptor cagrilmaz, bos stub yeterlidir.
+  const disclosurePortalService: any = {
+    getCurrent: jest.fn(),
+    getHistory: jest.fn(),
+    getOne: jest.fn(),
+  };
+  const controller = new PortalController(portalService, disclosurePortalService);
   return { controller, portalService };
 }
 

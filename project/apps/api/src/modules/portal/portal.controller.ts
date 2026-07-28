@@ -5,6 +5,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   UseInterceptors,
@@ -18,6 +19,7 @@ import { diskStorage } from "multer";
 import { extname, join } from "path";
 import { existsSync, unlinkSync, mkdirSync } from "fs";
 import { PortalService } from "./portal.service";
+import { ClientFinancialDisclosurePortalService } from "./client-financial-disclosure-portal.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { LoginRateLimitGuard } from "../auth/guards/login-rate-limit.guard";
@@ -42,7 +44,12 @@ const portalDocStorage = diskStorage({
 
 @Controller("portal")
 export class PortalController {
-  constructor(private readonly portalService: PortalService) {}
+  constructor(
+    private readonly portalService: PortalService,
+    // CLIENT-P2-U03-TRACK-B-I06: yalniz I05 projeksiyonunun adaptoru; portal katmani
+    // kendi sorgusunu/alan secimini/yetki kararini URETMEZ.
+    private readonly disclosurePortalService: ClientFinancialDisclosurePortalService,
+  ) {}
 
   /**
    * Portal girişi
@@ -94,6 +101,54 @@ export class PortalController {
   @UseGuards(PortalAuthGuard)
   async getCaseDetail(@Param("id") id: string, @Request() req: any) {
     return this.portalService.getCaseDetail(id, req.portalUser.clientId, req.portalUser.tenantId);
+  }
+
+  /**
+   * CLIENT-P2-U03-TRACK-B-I06 — Müvekkil finansal bildirimleri, VARSAYILAN yüzey.
+   * GET /api/portal/financial-disclosures
+   *
+   * §35.14 OWNER KARARI: bu yüzey YALNIZ current-effective disclosure'ları taşır. Düzeltme
+   * ve reversal geçmişi AYRI `/history` yüzeyindedir — tek birleşik liste ÜRETİLMEZ.
+   * §35.7: yalnız `PUBLISHED` client-görünürdür.
+   *
+   * Kapsam `req.portalUser.sub` (portal kullanıcı kimliği) üzerinden SERVER TARAFINDA
+   * yeniden çözülür; token'daki `clientId` KULLANILMAZ.
+   */
+  @Get("financial-disclosures")
+  @UseGuards(PortalAuthGuard)
+  async getFinancialDisclosures(@Request() req: any, @Query("caseId") caseId?: string) {
+    return this.disclosurePortalService.getCurrent(
+      req.portalUser.sub,
+      req.portalUser.tenantId,
+      caseId,
+    );
+  }
+
+  /**
+   * CLIENT-P2-U03-TRACK-B-I06 — AYRI "Bildirim Geçmişi" yüzeyi (§35.14).
+   * GET /api/portal/financial-disclosures/history
+   */
+  @Get("financial-disclosures/history")
+  @UseGuards(PortalAuthGuard)
+  async getFinancialDisclosureHistory(@Request() req: any, @Query("caseId") caseId?: string) {
+    return this.disclosurePortalService.getHistory(
+      req.portalUser.sub,
+      req.portalUser.tenantId,
+      caseId,
+    );
+  }
+
+  /**
+   * CLIENT-P2-U03-TRACK-B-I06 — Tek bildirim.
+   * GET /api/portal/financial-disclosures/:id
+   *
+   * Kapsam dışı, yayınlanmamış ve var olmayan kayıt AYNI 404 gövdesini üretir —
+   * bir kaydın VARLIĞI bile sızdırılmaz.
+   */
+  @Get("financial-disclosures/:id")
+  @UseGuards(PortalAuthGuard)
+  async getFinancialDisclosure(@Param("id") id: string, @Request() req: any) {
+    return this.disclosurePortalService.getOne(req.portalUser.sub, req.portalUser.tenantId, id);
   }
 
   /**
