@@ -556,7 +556,7 @@ gevşetmez.
 ```text
 Task ID  : RCV-CLAIM-FORM-HCR-08-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
 Mode     : RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
-Base SHA : 2c217f498f113abb12ae13a25a069a451084d104
+Base SHA : 7854504b25ef1c988606b1885d1562ef44ce54aa
 Head ref : codex/rcv-claim-form-hcr-08-authority-bootstrap-control-plane-binding-r01
 Scope    : M project/scripts/governance-coordination.cjs
            M project/scripts/governance-coordination.test.cjs

@@ -283,7 +283,7 @@ const RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01 =
       'project/docs/governance/governance-writer-coordination-contract.md',
     bindingPr: Object.freeze({
       mode: 'RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01',
-      baseSha: '2c217f498f113abb12ae13a25a069a451084d104',
+      baseSha: '7854504b25ef1c988606b1885d1562ef44ce54aa',
       headRef:
         'codex/rcv-claim-form-hcr-08-authority-bootstrap-control-plane-binding-r01',
       changedPaths: Object.freeze([
