@@ -119,13 +119,18 @@ describeDb('CLIENT-FD-ACT-R01-I03 — disclosure command entrypoint (gerçek Pos
 
   it('[2] geçersiz/yanıltıcı flag değerleri AÇMAZ (fail-closed)', async () => {
     const dispId = await seedDisposition({ key: `g2-${S}`, tenantId: tA, caseId: caseA, caseClientId: ccA });
-    for (const value of ['', '1', 'yes', 'TRUE ', 'on', 'enabled', 'false', 'null']) {
+    // I05 KATI-LITERAL DARALTMASI: canonical parser artik YALNIZ birebir 'true' kabul eder.
+    // 'TRUE', 'True' ve ' true ' ARTIK ACMAZ — gercek finansal yazmayi acan bir bayrakta
+    // "yaklasik dogru" deger kabul edilmez (charter-disi, program §7.1 owner kurali).
+    for (const value of ['', ' ', '1', 'yes', 'on', 'enabled', 'false', 'null',
+                         'TRUE', 'True', 'tRue', ' true', 'true ', ' true ']) {
       process.env.CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED = value;
-      const expected = value.trim().toLowerCase() === 'true' ? 'NO_ERROR' : 'DISCLOSURE_WRITE_NOT_ENABLED';
-      // 'TRUE ' trim+lowercase ile 'true' olur → ACAR; digerleri ACMAZ.
-      expect(await code(svc.createFromDisposition(tA, dispId, { userId: uOk }))).toBe(expected);
-      if (expected === 'NO_ERROR') break;
+      expect(await code(svc.createFromDisposition(tA, dispId, { userId: uOk })))
+        .toBe('DISCLOSURE_WRITE_NOT_ENABLED');
     }
+    // Yalniz birebir 'true' acar.
+    process.env.CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED = 'true';
+    expect(await code(svc.createFromDisposition(tA, dispId, { userId: uOk }))).toBe('NO_ERROR');
     OFF();
   });
 

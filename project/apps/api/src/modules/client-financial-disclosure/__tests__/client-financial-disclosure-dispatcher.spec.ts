@@ -49,7 +49,10 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
   });
 
   // ── composition secimi ──────────────────────────────────────────────────────
-  it('[2] onaylı provider yapılandırıldığında GERÇEK adapter bağlanır', async () => {
+  it('[2] onaylı provider + yayınlama AÇIK iken GERÇEK adapter bağlanır', async () => {
+    // I05: dispatcher secimi artik yayinlama bayragina da tabidir; bu test adapter'in
+    // KENDISINI izole eder, bayrak kapisi ayri activation suite'inde ([5]-[8]) kanitlanir.
+    process.env.CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED = 'true';
     for (const name of CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS) {
       const moduleRef = await compileWith(name);
       const d = moduleRef.get<DisclosureNotificationDispatcher>(DISCLOSURE_NOTIFICATION_DISPATCHER);
@@ -57,9 +60,11 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
       expect(d.providerName).toBe(name);
       await moduleRef.close();
     }
+    delete process.env.CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED;
   });
 
   it('[3] onaysız/mock provider’da FAIL-CLOSED varsayılan KORUNUR', async () => {
+    process.env.CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED = 'true';
     for (const name of ['mock', '', 'console', 'fake-smtp']) {
       const moduleRef = await compileWith(name);
       const d = moduleRef.get<DisclosureNotificationDispatcher>(DISCLOSURE_NOTIFICATION_DISPATCHER);
@@ -67,6 +72,7 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
       expect([...CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS]).not.toContain(d.providerName);
       await moduleRef.close();
     }
+    delete process.env.CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED;
   });
 
   it('[4] provider yapılandırılmamış olsa bile BOOT ÇÖKMEZ', async () => {

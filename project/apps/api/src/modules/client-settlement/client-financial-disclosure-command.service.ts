@@ -8,6 +8,12 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientFinancialDisclosureWriterService } from '../client-financial-disclosure/client-financial-disclosure-writer.service';
 import { DispositionPostingService } from './disposition-posting.service';
+import {
+  buildDisclosureTelemetry,
+  DISCLOSURE_TELEMETRY_EVENTS,
+  isDisclosureWriteEnabled,
+  resolveDisclosureActivationLevel,
+} from '../client-financial-disclosure/client-financial-disclosure-activation';
 
 /**
  * CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01 / I03 — AUTHORIZED WRITE ENTRYPOINT
@@ -38,11 +44,16 @@ export class ClientFinancialDisclosureCommandService {
   ) {}
 
   /**
-   * §11 AKTİVASYON KAPISI — varsayılan KAPALI, eksik/geçersiz config'de FAIL-CLOSED.
-   * Yalnız tam olarak `'true'` (case-insensitive, trim'lenmiş) açar; başka hiçbir değer açmaz.
+   * AKTİVASYON KAPISI — varsayılan KAPALI, fail-closed.
+   *
+   * I05: canonical `isDisclosureWriteEnabled()` parser'ına geçirildi. I03'te kullanılan
+   * `trim().toLowerCase()` biçimi `'TRUE'`, `'True'` ve `' true '` değerlerini de KABUL
+   * EDİYORDU; canonical kural artık KATI-LİTERAL `'true'`dur (§7.1). Bu bilinçli bir
+   * DARALTMADIR — gerçek finansal yazmayı açan bir bayrakta "yaklaşık doğru" değer kabul
+   * edilmez. Daha önce `TRUE` ile açılmış bir kurulum bu değişiklikten sonra KAPANIR.
    */
   static isWriteEnabled(): boolean {
-    return (process.env.CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED ?? '').trim().toLowerCase() === 'true';
+    return isDisclosureWriteEnabled();
   }
 
   /**
@@ -79,6 +90,15 @@ export class ClientFinancialDisclosureCommandService {
       );
     }
 
+    this.logger.log(
+      buildDisclosureTelemetry(DISCLOSURE_TELEMETRY_EVENTS.CREATE_REQUESTED, {
+        tenantId,
+        dispositionId,
+        actorId: actor.userId,
+        activationLevel: resolveDisclosureActivationLevel(),
+      }),
+    );
+
     // Kaynak dispozisyon TENANT-SCOPED okunur; `caseId`/`caseClientId` BURADAN türetilir.
     const disposition = await this.prisma.collectionDisposition.findFirst({
       where: { id: dispositionId, tenantId },
@@ -108,11 +128,20 @@ export class ClientFinancialDisclosureCommandService {
       sendIdempotencyKey: `client-financial-disclosure:${disposition.id}`,
     });
 
-    // §12 gözlemlenebilirlik: finansal tutar, alıcı, hash ve snapshot içeriği LOG'A YAZILMAZ.
+    // §7.4 gözlemlenebilirlik: yasak alanlar telemetri yardımcısı tarafından fail-closed
+    // ATILIR — finansal tutar, alıcı, hash ve snapshot içeriği satıra ASLA girmez.
     this.logger.log(
-      `disclosure_created tenantId=${tenantId} disclosureId=${result.disclosureId} ` +
-        `versionId=${result.versionId} version=${result.version} actorId=${actor.userId} ` +
-        `dispositionId=${disposition.id} replayed=${result.replayed}`,
+      buildDisclosureTelemetry(DISCLOSURE_TELEMETRY_EVENTS.CREATED, {
+        tenantId,
+        disclosureId: result.disclosureId,
+        versionId: result.versionId,
+        version: result.version,
+        actorId: actor.userId,
+        dispositionId: disposition.id,
+        fromStatus: 'NONE',
+        toStatus: 'DRAFT',
+        replayed: result.replayed,
+      }),
     );
 
     return {
