@@ -27,7 +27,15 @@ function makeAdapter(over: Json = {}): Json {
     calls,
     state,
     repositoryIdentity: async () => 'ulashuseyintelli-tech/HUKUK_YAZILIMI',
-    authorityLedgerEntry: async () => null,
+    // Live closeout artik ledger zorunlu kiliyor; varsayilan fixture gecerli bir
+    // binding tasir. Ledger'siz senaryolar testlerde acikca override eder.
+    authorityLedgerEntry: async () => ({
+      authorityRef: 'owner directive 2026-07-28 GO-COMPLETE #1234',
+      taskId: 'GOV-EXAMPLE-R01',
+      pr: 1234,
+      expectedHead: HEAD,
+      consumed: false,
+    }),
     getPr: async () => Object.assign({}, state.pr),
     changedPaths: async () => ['AGENTS.md'],
     getChecks: async () => [
@@ -526,6 +534,51 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
     });
     const r = await closeout.closeoutPr(makeInput({ pr: 4321 }), a);
     expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN);
+  });
+
+  it('43. live closeout without an authority ledger fails closed', async () => {
+    const a = makeAdapter({ authorityLedgerEntry: async () => null });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_LEDGER_REQUIRED);
+    expect(a.calls.squashMerge).toBe(0);
+  });
+
+  it('44. dry-run without a ledger is still allowed', async () => {
+    const a = makeAdapter({ authorityLedgerEntry: async () => null });
+    const r = await closeout.closeoutPr(makeInput({ dryRun: true }), a);
+    expect(r.status).toBe('DRY_RUN_ELIGIBLE');
+    expect(a.calls.squashMerge).toBe(0);
+  });
+
+  it('45. a ledger entry missing a binding field fails closed', async () => {
+    for (const missing of ['taskId', 'pr']) {
+      const entry: Json = { authorityRef: 'r', taskId: 'GOV-EXAMPLE-R01', pr: 1234, expectedHead: HEAD };
+      delete entry[missing];
+      const a = makeAdapter({ authorityLedgerEntry: async () => entry });
+      const r = await closeout.closeoutPr(makeInput(), a);
+      expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_LEDGER_REQUIRED);
+      expect(a.calls.squashMerge).toBe(0);
+    }
+  });
+
+  it('46. live closeout requires expectedHead in the ledger', async () => {
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({ authorityRef: 'r', taskId: 'GOV-EXAMPLE-R01', pr: 1234 }),
+    });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_LEDGER_REQUIRED);
+    expect(a.calls.squashMerge).toBe(0);
+  });
+
+  it('47. a ledger expectedHead that disagrees with the input is rejected', async () => {
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({
+        authorityRef: 'r', taskId: 'GOV-EXAMPLE-R01', pr: 1234, expectedHead: OTHER,
+      }),
+    });
+    const r = await closeout.closeoutPr(makeInput(), a);
+    expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_PR_MISMATCH);
+    expect(a.calls.squashMerge).toBe(0);
   });
 
   it('the state machine is single-directional and declared', () => {

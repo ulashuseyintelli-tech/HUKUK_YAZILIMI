@@ -80,6 +80,7 @@ const BLOCKER = Object.freeze({
   BRANCH_CLEANUP_FAILED: 'BRANCH_CLEANUP_FAILED',
   WORKTREE_CLEANUP_FAILED: 'WORKTREE_CLEANUP_FAILED',
   CANONICAL_VERIFICATION_FAILED: 'CANONICAL_VERIFICATION_FAILED',
+  MERGE_AUTHORITY_LEDGER_REQUIRED: 'MERGE_AUTHORITY_LEDGER_REQUIRED',
   TARGET_BRANCH_UNEXPECTED: 'TARGET_BRANCH_UNEXPECTED',
   REPOSITORY_IDENTITY_MISMATCH: 'REPOSITORY_IDENTITY_MISMATCH',
 });
@@ -159,7 +160,41 @@ function validateInput(input) {
  * davranilir DEGIL — ledger opsiyoneldir, ancak varsa baglayicidir.
  */
 function checkAuthorityBinding(input, ledgerEntry) {
-  if (!ledgerEntry) return { ok: true };
+  // Live merge authority ledger OLMADAN calismaz: tuketim kaydi tutulamazsa
+  // reuse korumasi da yoktur. Dry-run ledger'siz calisabilir — hicbir mutation
+  // yapmadigi icin tuketilecek bir sey de yoktur.
+  if (!ledgerEntry) {
+    if (input && input.dryRun === true) return { ok: true };
+    return {
+      ok: false,
+      code: BLOCKER.MERGE_AUTHORITY_LEDGER_REQUIRED,
+      detail: 'live closeout requires an authority ledger entry for ' + (input && input.authorityRef),
+    };
+  }
+  // Ledger kaydinin baglayici alanlari eksikse binding dogrulanamaz.
+  for (const field of ['taskId', 'pr']) {
+    if (ledgerEntry[field] == null) {
+      return {
+        ok: false,
+        code: BLOCKER.MERGE_AUTHORITY_LEDGER_REQUIRED,
+        detail: 'ledger entry is missing required binding field: ' + field,
+      };
+    }
+  }
+  if (input && input.dryRun !== true && ledgerEntry.expectedHead == null) {
+    return {
+      ok: false,
+      code: BLOCKER.MERGE_AUTHORITY_LEDGER_REQUIRED,
+      detail: 'ledger entry is missing required binding field: expectedHead',
+    };
+  }
+  if (ledgerEntry.expectedHead != null && input && ledgerEntry.expectedHead !== input.expectedHead) {
+    return {
+      ok: false,
+      code: BLOCKER.MERGE_AUTHORITY_PR_MISMATCH,
+      detail: 'ledger expectedHead ' + ledgerEntry.expectedHead + ' does not match',
+    };
+  }
   // Tuketilmis bir reference once REUSE ekseninde degerlendirilir. Aksi halde
   // binding kontrolu (PR_MISMATCH) once tetikleniyor ve operatore yanlis sinyal
   // gidiyordu: "yanlis PR" diyordu, oysa gercek sebep reference'in zaten
