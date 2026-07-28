@@ -3020,3 +3020,86 @@ RUNTIME: UNCHANGED · CLIENT-VISIBLE FINANCIAL DATA: NONE (projeksiyon HENUZ ROU
 Bu bölüm: portal sunum dilimini BAŞLATMAZ; hiçbir HTTP rotası AÇMAZ; `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35–§43'ün kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; projeksiyonu production akışına BAĞLAMAZ; client-görünür hiçbir finansal veri AÇMAZ; yeni dependency EKLEMEZ.
 
 **PUBLISHED ≠ EVERY CLIENT MAY VIEW · CLIENT-VISIBLE DATA = ONLY SERVER-AUTHORIZED PROJECTION · PROJECTION EXISTS ≠ PROJECTION IS ROUTED · CLIENT-VISIBLE FINANCIAL DATA: NONE.**
+
+## 45. CLIENT Phase 2 Track B I06 — Portal Financial Disclosure Presentation Closure (OWNER RATIFIED)
+
+Bu bölüm, `CLIENT-P2-U03-TRACK-B-I06 — PORTAL FINANCIAL DISCLOSURE PRESENTATION` görevinin **teknik kapanış** kaydıdır (`decision-log.md` `CLIENT-P2-U03-TRACK-B-I06-CLOSURE` kaydı). §5, §6, §8.A, §8.B, §11–§44 substantive hükümlerini DEĞİŞTİRMEZ; §35'in ve §37–§44'ün **kendi metinleri DEĞİŞTİRİLMEMİŞTİR**.
+
+### 45.1 Canonical Kimlik ve SHA
+
+```text
+TASK   : CLIENT-P2-U03-TRACK-B-I06
+TITLE  : PORTAL FINANCIAL DISCLOSURE PRESENTATION
+PR     : #1782
+SQUASH : 1b7692aaf99831076a995591110f0b35e9f5716d
+DIFF   : 8 dosya, +670 / -3
+```
+
+**SCHEMA/MIGRATION: NONE** · **YENİ DEPENDENCY: NONE** · **`ci.yml`: DOKUNULMADI**.
+
+### 45.2 Client-Görünürlük Eşiği
+
+Bu dilim, Track B'nin **client-visible financial data**'yı ilk kez açan dilimidir — ve yalnız **server-authorized projeksiyon** üzerinden açar:
+
+```text
+CLIENT-VISIBLE DATA = ONLY SERVER-AUTHORIZED PROJECTION
+```
+
+Üç rota da `PortalAuthGuard` arkasındadır:
+
+```text
+GET /api/portal/financial-disclosures          -> VARSAYILAN yuzey (yalniz current-effective)
+GET /api/portal/financial-disclosures/history  -> AYRI "Bildirim Gecmisi" yuzeyi
+GET /api/portal/financial-disclosures/:id      -> tek kayit
+```
+
+Kapsam `req.portalUser.sub` (portal kullanıcı kimliği) üzerinden **server tarafında yeniden çözülür**; token'daki `clientId` **kullanılmaz** — token alanı manipüle edilse bile kapsam genişlemez.
+
+### 45.3 Adaptör Sınırı
+
+`ClientFinancialDisclosurePortalService`'in **tek işi** I05 projeksiyonuna delege etmektir. Kendi sorgusunu **yazmaz**, kendi alan seçimini **yapmaz**, kendi yetki kararını **vermez**. Böylece §35.14 alan sınırı ve yetki zinciri **tek kaynakta** kalır; portal katmanında paralel bir projeksiyon **doğamaz**.
+
+### 45.4 Sunum Sınırı
+
+İki yüzey **ayrı uçlardan** çekilir ve istemcide **birleştirilmez** (§35.14 owner kararı: tek birleşik liste üretilmez). Sayfa hiçbir finansal **değer türetmez** — toplam, oran, bakiye veya fark **hesaplamaz**; server-authorized projeksiyonda ne geldiyse yalnız onu gösterir. Bu, §22.10/§22.11 aggregate yasağının portal tarafındaki karşılığıdır.
+
+### 45.5 Test Kanıtı ve Diş Doğrulaması
+
+```text
+portal adaptor integration : 6/6 PASS      (gercek PostgreSQL 16)
+portal (tum API suite)     : 193/193 PASS  (17 suite)
+web vitest (TAM SUITE)     : 1381/1381 PASS (145 dosya)
+API build PASS · WEB next build PASS · eslint 0 error · I06 tsc hatasi 0
+CI manifest: db/domain-integration +1 spec; yeni manifest ACILMADI, CI-8 butcesi ARTMADI.
+Web spec'leri `pnpm --filter @hukuk/web test` ile tamami kosuldugundan binding GEREKMEZ.
+
+DIS (TEETH) — 4/4:
+  [A] current/history ayrimi kaldirildi (tek birlesik liste) -> web [1]+[2] FAIL
+  [B] ayri gecmis ucu kaldirildi                             -> web [2]+[3] FAIL
+  [C] yasak alanlar sayfaya sizdirildi                       -> web [5]  FAIL
+  [D] I05 projeksiyonuna delegasyon kaldirildi               -> API [1][4][5] FAIL
+  geri yukleme -> API 6/6 + web 6/6 PASS
+```
+
+`[C]` bir koruma-kaldırma değil, kasıtlı bir **sızıntı enjeksiyonudur**; sızıntı testinin diş taşıdığını kanıtlamak için bu biçimde kurulmuştur ve öyle raporlanmaktadır.
+
+**YAN DÜZELTME:** `portal-admin-actor-id.spec.ts`'in `PortalController` kurucu çağrısı iki argümana güncellendi (davranış testi **değişmedi**, yalnız boş stub eklendi).
+
+### 45.6 Statü
+
+```text
+CLIENT-P2-U03-TRACK-B-I06 : AUTHORIZED / IMPLEMENTED / VERIFIED / MERGED / CANONICAL
+
+TRACK B §35/§37/§39/§40/§41/§42/§43/§44 : degismedi
+TRACK B PORTAL PRESENTATION : CLOSED/CANONICAL  (bu kayitla)
+
+TRACK B ACCEPTANCE / PROGRAM CLOSURE (I07) : NOT STARTED
+CLIENT-P2-U03 (genel) : PARTIAL — I07 bekliyor
+RUNTIME: PORTAL READ PATH LIVE · CLIENT-VISIBLE FINANCIAL DATA: SERVER-AUTHORIZED PROJECTION ONLY
+```
+
+### 45.7 Closure Self-Check
+
+Bu bölüm: `CLIENT-P2-U03`'ü CLOSED İLAN ETMEZ; §35–§44'ün kendi metinlerini DEĞİŞTİRMEZ; schema/migration ÜRETMEZ; yazma/onay/gönderim/yayınlama akışlarına HİÇBİR production call-site AÇMAZ (bunlar dormant kalır); projeksiyon dışında hiçbir finansal alan AÇMAZ; yeni dependency EKLEMEZ.
+
+**PUBLISHED ≠ EVERY CLIENT MAY VIEW · SENT ≠ PUBLISHED · CLIENT-VISIBLE DATA = ONLY SERVER-AUTHORIZED PROJECTION.**
