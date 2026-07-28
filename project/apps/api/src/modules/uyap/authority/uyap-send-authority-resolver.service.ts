@@ -52,11 +52,31 @@ interface PoaCandidate {
  * Bu servis **side-effect üretmez** (yalnız okuma) ve exception fırlatmaz; CPE fact üretimi
  * (I04) yapısal kararı tüketir.
  */
+/**
+ * UYAP-AUTHORITY-FRESHNESS-TX-I01: bu resolver'ın ihtiyaç duyduğu MİNİMUM okuma yüzeyi.
+ * Hem `PrismaService` hem `Prisma.TransactionClient` bu şekle uyar → aynı yetki mantığı
+ * TX-1 revalidation'da KOPYALANMADAN yeniden çalıştırılabilir.
+ */
+export type UyapSendAuthorityReadClient = {
+  case: { findFirst: PrismaService["case"]["findFirst"]; count: PrismaService["case"]["count"] };
+  clientPowerOfAttorney: {
+    findMany: PrismaService["clientPowerOfAttorney"]["findMany"];
+  };
+};
+
 @Injectable()
 export class UyapSendAuthorityResolverService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async resolve(context: UyapSendAuthorityContext): Promise<UyapAuthorityDecision> {
+  /**
+   * @param client UYAP-AUTHORITY-FRESHNESS-TX-I01 — opsiyonel transaction client.
+   *   Verilirse TÜM okumalar çağıranın transaction'ı içinde yapılır. Verilmezse
+   *   davranış ve sorgu şekli BİREBİR aynıdır.
+   */
+  async resolve(
+    context: UyapSendAuthorityContext,
+    client: UyapSendAuthorityReadClient = this.prisma,
+  ): Promise<UyapAuthorityDecision> {
     const base = {
       tenantId: context?.tenantId,
       userId: context?.authenticatedUserId,
@@ -90,7 +110,7 @@ export class UyapSendAuthorityResolverService {
 
     // 1) Case tenant-scoped okunur. Cross-tenant caseId "bulunamadı"ya çevrilmez; varlık
     //    yalnız COUNT ile yoklanır (yabancı tenant satırından hiçbir alan okunmaz).
-    const caseRow = await this.prisma.case.findFirst({
+    const caseRow = await client.case.findFirst({
       where: { id: context.caseId, tenantId: context.tenantId },
       select: {
         id: true,
@@ -100,7 +120,7 @@ export class UyapSendAuthorityResolverService {
     });
 
     if (!caseRow) {
-      const existsElsewhere = await this.prisma.case.count({ where: { id: context.caseId } });
+      const existsElsewhere = await client.case.count({ where: { id: context.caseId } });
       return deny(existsElsewhere > 0 ? "CASE_TENANT_MISMATCH" : "CASE_NOT_FOUND");
     }
 
@@ -120,7 +140,7 @@ export class UyapSendAuthorityResolverService {
     const singleClientId = clientIds.length === 1 ? clientIds[0] : undefined;
 
     // 3) Acting lawyer'a EŞLEŞEN POA'lar (tenant her katmanda doğrulanır).
-    const poaRows = await this.prisma.clientPowerOfAttorney.findMany({
+    const poaRows = await client.clientPowerOfAttorney.findMany({
       where: {
         tenantId: context.tenantId,
         clientId: { in: clientIds },
@@ -196,6 +216,11 @@ export class UyapSendAuthorityResolverService {
           poaUpdatedAt: v.updatedAt,
           poaStatus: v.status,
           poaScopeType: v.scopeType,
+          // I05: semantik yürürlük alanları (updatedAt tek başına yeterli değil).
+          poaIsActive: v.isActive,
+          poaIsLimited: v.isLimited,
+          poaDateIssued: v.dateIssued,
+          poaValidUntil: v.validUntil,
         });
       }
     }

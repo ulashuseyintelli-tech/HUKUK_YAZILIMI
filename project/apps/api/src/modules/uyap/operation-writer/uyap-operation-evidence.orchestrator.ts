@@ -1,10 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UyapAttempt, UyapAttemptCpeDecisionLink, UyapOperation } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UyapOperationWriterService } from './uyap-operation-writer.service';
 import { UyapCpeDecisionLinkWriterService } from './uyap-cpe-decision-link-writer.service';
 import { deriveUyapOperationIdempotencyKeyFromHttpToken } from './uyap-operation-writer.types';
+import {
+  UyapAuthoritySnapshotReadClient,
+  UyapAuthoritySnapshotService,
+} from '../authority/uyap-authority-snapshot.service';
+import { UyapAuthoritySnapshot } from '../authority/uyap-authority-snapshot.types';
+import { UyapAuthorityStaleError } from '../authority/uyap-authority-stale.error';
+import {
+  UYAP_AUTHORITY_COORDINATION_HOOK,
+  UyapAuthorityCoordinationHook,
+} from '../authority/uyap-authority-coordination.hook';
 
 /** P05C-P04 eligible action kümesi (yalnız bu ikisi runtime evidence üretir). */
 export const UYAP_EVIDENCE_ELIGIBLE_ACTIONS = ['UYAP_SEND', 'TRIGGER_HACIZ'] as const;
@@ -20,6 +30,13 @@ export interface RecordEvidenceCommand {
   idempotencyToken: string;
   /** CPE decision.decisionId (CpeDecisionLog.id). */
   cpeDecisionLogId: string;
+  /**
+   * UYAP-AUTHORITY-FRESHNESS-TX-I01 — Phase 1'de SERVER-SIDE üretilmiş authority snapshot.
+   * TX-1 içinde aynı kaynaklar yeniden okunur ve bu snapshot ile karşılaştırılır.
+   * İstemciden gelen bir snapshot/digest ASLA kabul edilmez (FR-05/FR-06); bu alan
+   * hiçbir DTO'dan doldurulmaz.
+   */
+  authoritySnapshot: UyapAuthoritySnapshot;
 }
 
 export interface RecordEvidenceResult {
@@ -48,6 +65,14 @@ export class UyapOperationEvidenceOrchestrator {
     private readonly config: ConfigService,
     private readonly operationWriter: UyapOperationWriterService,
     private readonly linkWriter: UyapCpeDecisionLinkWriterService,
+    private readonly authoritySnapshots: UyapAuthoritySnapshotService,
+    /**
+     * UYAP-AUTHORITY-FRESHNESS-TX-I01 test barrier'ı. `UyapModule` bu token'ı KAYDETMEZ →
+     * production'da `undefined` gelir ve bütün çağrılar no-op'tur.
+     */
+    @Optional()
+    @Inject(UYAP_AUTHORITY_COORDINATION_HOOK)
+    private readonly coordination?: UyapAuthorityCoordinationHook,
   ) {}
 
   /**
@@ -85,6 +110,37 @@ export class UyapOperationEvidenceOrchestrator {
     );
 
     return this.prisma.$transaction(async (tx) => {
+      // ── TX-1 AŞAMA 0: AUTHORITY REVALIDATION (UYAP-AUTHORITY-FRESHNESS-TX-I01) ──
+      //
+      // Phase 1'in "allowed" sonucu TX-1 authority'si DEĞİLDİR (FR-01). Bütün mutable
+      // authority kaynakları BU transaction içinde yeniden okunur; yetki artık geçerli
+      // değilse veya snapshot ile kaynak değişmişse HİÇBİR YAZMA YAPILMADAN atılır →
+      // operation/attempt/link için 0 satır, orphan 0 (FR-03/FR-10).
+      //
+      // Okuma sırası snapshot servisinde TEK yerde kodludur; Phase 1 ile Phase 2 aynı
+      // fonksiyonu çağırdığı için lock/ordering farkı OLUŞAMAZ (owner §7).
+      await this.coordination?.wait('beforeTxRevalidation');
+
+      const revalidation = await this.authoritySnapshots.revalidate(
+        command.authoritySnapshot,
+        tx as unknown as UyapAuthoritySnapshotReadClient,
+        // Commit anı — snapshot'ın evaluatedAt'i DEĞİL. Phase 1'den sonra açılan masraf
+        // bloğu ve araya giren süre dolumu ancak böyle görülebilir.
+        new Date(),
+      );
+
+      await this.coordination?.wait('afterTxRevalidation');
+
+      if (!revalidation.fresh) {
+        throw new UyapAuthorityStaleError({
+          failureCode: revalidation.failureCode,
+          changedSources: revalidation.changedSources,
+          revalidationFailureCode: revalidation.revalidationFailureCode,
+        });
+      }
+
+      await this.coordination?.wait('beforeOperationCreate');
+
       // Lock ordering: operation-create (P-E5B advisory lock) → decision-link (P05C-P03 advisory lock).
       const op = await this.operationWriter.createOperationWithFirstAttemptWithinTransaction(tx, {
         idempotencyKey,
