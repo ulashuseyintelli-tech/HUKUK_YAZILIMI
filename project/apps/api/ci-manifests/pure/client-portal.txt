@@ -72,6 +72,12 @@ src/modules/client/__tests__/client-core-p0.spec.ts
 src/modules/client/__tests__/client-create-checksum.spec.ts
 src/modules/client/__tests__/client-document-request-command.spec.ts
 src/modules/client/__tests__/client-operating-snapshot.spec.ts
+#
+#   CLIENT-P2-U03-TRACK-B-I02 disclosure canonical serialization + hash (SAF, DB-siz)
+#     Deterministik key/array sirasi, Decimal(15,2) locale-bagimsizligi, domain-separated
+#     sha256, §35.16 sifir-toleransli reconciliation ve tiplenmis hata govdesinde finansal
+#     payload/hash sizmadiginin kaniti. Servis katmani testleri db/domain-integration.txt'de.
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-canonical.spec.ts
 src/modules/client/__tests__/client-poa-reminder-command.spec.ts
 src/modules/client/__tests__/client-poa-upload-command.spec.ts
 src/modules/client/__tests__/client-reactivate.spec.ts

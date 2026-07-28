@@ -536,7 +536,7 @@ test('DV63  the unknown case and the empty case both fail towards runtime', () =
   assert.ok(impactMod.assertNotApplicableAllowed(['project/docs/governance/decision-log.md']));
 });
 
-// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV53)
+// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV54)
 
 const successorMod = require('../orchestrator/successor.cjs');
 
@@ -633,6 +633,31 @@ test('DV53  every production successor path uses the one gate', () => {
 
   // And the gate itself must still refuse the case that motivated it.
   assert.equal(successorMod.predecessorSatisfied(closedWith(undefined), 2).ok, false);
+});
+
+test('DV54  delivery evidence for another merge does not release a v2 successor', () => {
+  const predecessorMergeSha = 'a'.repeat(40);
+  const evidenceMergeSha = 'b'.repeat(40);
+  const record = {
+    state: 'CLOSED',
+    payload: {
+      mergeSha: predecessorMergeSha,
+      delivery: Object.assign({}, GOOD_DELIVERY, {
+        mergeSha: evidenceMergeSha,
+        verifiedAtSha: evidenceMergeSha,
+        probeDefinitionSha256: 'd'.repeat(64),
+      }),
+    },
+  };
+
+  // The evidence is internally consistent and passes every existing shape
+  // check, but it proves a different merge than the predecessor produced.
+  assert.equal(record.payload.delivery.verifiedAtSha, record.payload.delivery.mergeSha);
+  assert.notEqual(record.payload.delivery.mergeSha, record.payload.mergeSha);
+
+  const v = successorMod.predecessorSatisfied(record, 2);
+  assert.equal(v.ok, false, JSON.stringify(v));
+  assert.equal(v.reason, 'PREDECESSOR_DELIVERY_MERGE_SHA_MISMATCH', JSON.stringify(v));
 });
 
 // ───────────────────────────────────── SCHEMA V2 (DV40–DV45)

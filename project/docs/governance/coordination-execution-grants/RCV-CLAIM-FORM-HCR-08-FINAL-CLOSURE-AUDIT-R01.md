@@ -15,6 +15,10 @@ Ulaş Hüseyin Telli
 TASK:
 RCV-CLAIM-FORM-HCR-08-FINAL-CLOSURE-AUDIT-R01
 
+semanticAuthorityRef.kind     : SEMANTIC_AUTHORITY
+semanticAuthorityRef.path     : project/docs/governance/decision-log.md
+semanticAuthorityRef.recordId : RCV-CLAIM-FORM-HCR-08-FINAL-CLOSURE-AUDIT-R01
+
 EXECUTOR CAPABILITY:
 CODEX_LOCAL — BOUNDED PROTECTED-PATH WRITER
 

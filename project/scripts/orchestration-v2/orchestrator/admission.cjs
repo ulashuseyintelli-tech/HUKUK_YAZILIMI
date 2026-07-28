@@ -165,6 +165,8 @@ function admit(opts) {
     // Without this the consumer would have nothing to re-read, and re-reading
     // is the whole point of the second gate.
     requestPath: opts.requestPath || null,
+    artefactSha256: opts.artefactSha256 || null,
+    artefactsCommitted: opts.artefactsCommitted === true,
     executorLane: opts.executorLane || null,
     nowMs: opts.nowMs,
   });

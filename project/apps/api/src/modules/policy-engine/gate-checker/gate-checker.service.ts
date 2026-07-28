@@ -257,6 +257,10 @@ export class GateCheckerService {
       'case.total_debt_amount',
       'case.debtor_count',
       'case.has_pending_expense_request',
+      // UYAP-SEND-HARD-GATE-PREFLIGHT-R02: UYAP_SEND pozitif-ispat gate'inin okudugu
+      // operasyonel sinyaller de kanit (factsUsed) olarak kaydedilir.
+      'system.uyap_available',
+      'system.uyap_availability_explicit',
     ];
 
     // Context-specific keys

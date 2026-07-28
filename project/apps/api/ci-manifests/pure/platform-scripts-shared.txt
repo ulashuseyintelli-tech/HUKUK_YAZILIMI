@@ -207,6 +207,9 @@ src/modules/legal-time-shadow/__tests__/legal-time-shadow.controller.spec.ts
 src/modules/legal-time-shadow/__tests__/legal-time-shadow.service.spec.ts
 src/modules/notification/notification.service.tenant-boundary.spec.ts
 src/modules/pdf/__tests__/pdf-takip-talebi-authz.spec.ts
+src/modules/policy-engine/__tests__/case-policy-engine.spec.ts
+src/modules/policy-engine/__tests__/integration.spec.ts
+src/modules/policy-engine/gate-checker/__tests__/uyap-send-hard-gate-preflight.spec.ts
 src/modules/policy-engine/gate-checker/__tests__/uyap-temporary-outage.spec.ts
 src/modules/reporting-line/__tests__/reporting-line.service.spec.ts
 src/modules/risk/risk.service.tenant-boundary.spec.ts
@@ -316,6 +319,7 @@ src/scripts/__tests__/adr014-session-observation-facts.security.spec.ts
 #
 src/modules/balance-display-shadow-diff/__tests__/balance-display-shadow-diff.events.spec.ts
 src/modules/policy-engine/decision-logger/__tests__/cpe-decision-composite-key.static.spec.ts
+src/modules/policy-engine/decision-logger/__tests__/cpe-evidence-runtime-integrity.spec.ts
 src/modules/policy-engine/decision-logger/__tests__/uyap-attempt-cpe-decision-link.static.spec.ts
 src/scripts/__tests__/adr014-disabled-local-evidence-harness.security.spec.ts
 src/scripts/__tests__/adr014-disabled-local-evidence-harness.spec.ts

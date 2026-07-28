@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "standingGrantId": "STANDING-GRANT-DELIVERY-TRUTH-DOGFOOD-R01",
+  "program": {
+    "programId": "DELIVERY_TRUTH",
+    "eligibilityAuthorityRef": "project/docs/governance/coordination-v2/activation/PROGRAM-ELIGIBILITY-AUTHORITY.md"
+  },
+  "parentAuthorizationRef": {
+    "authorizationId": "OWNER-DECISION-GOV-COORD-DELIVERY-TRUTH-R01",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R02/execution-grant.md",
+    "payloadSha256": "e4b024e6a5c62bbf31d44f42207b82a7381d77e099b86c0516418a1c84ceca7f"
+  },
+  "requiredIndependentReview": false,
+  "ciPolicy": {
+    "requireTerminalSuccess": true,
+    "allowSkipped": false,
+    "allowNeutral": true
+  },
+  "mergePolicy": {
+    "method": "SQUASH",
+    "autoMergeAuthorized": true,
+    "repositoryWideAutoMerge": false
+  },
+  "maxConcurrency": 1,
+  "childPlanDerivation": "OWNER_RATIFIED_PLAN_ONLY",
+  "prohibitions": {
+    "noPrivilegeDelegation": true,
+    "noSecretAccessExpansion": true,
+    "noProductionDataMutation": true,
+    "noCrossProgramMutation": true,
+    "noSelfAuthorizationChange": true
+  },
+  "allowedTaskClasses": [
+    "TEST_ONLY_CHARACTERIZATION",
+    "BOUNDED_CODE_FIX"
+  ],
+  "allowedPathRoots": [
+    "project/scripts/orchestration-v2/delivery/"
+  ],
+  "prohibitedPathRoots": [
+    "project/docs/governance/",
+    "project/apps/",
+    "project/packages/",
+    ".github/"
+  ],
+  "allowedExecutorLanes": [
+    "CODEX_LOCAL"
+  ],
+  "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-DELIVERY-TRUTH-DOGFOOD",
+  "killSwitchPath": "project/docs/governance/coordination-v2/activation/KILL-SWITCH",
+  "auditLogPath": "project/docs/governance/coordination-v2/activation/delivery-truth-dogfood-audit.jsonl",
+  "notes": "Task-bounded dogfood grant. Yalniz GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R02 ve GOV-COORD-DTV-DOGFOOD-SUCCESSOR-R02 icin gecerlidir; repository-wide auto-merge kapalidir."
+}

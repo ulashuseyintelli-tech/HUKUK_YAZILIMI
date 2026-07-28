@@ -462,3 +462,129 @@ Icerik pin'i BLOB sha'sidir, commit sha'si degildir; GH-03 kaydindaki gerekce
 aynen gecerlidir.
 
 Kayit bu ayirmaya ozgudur: yeniden kullanilabilir veya genel amacli degildir.
+
+## RCV-COL FULL REMEDIATION BOOTSTRAP — exact control-plane authority binding
+
+Owner-ratified 2026-07-28. Bu kayıt mevcut hiçbir kontrolü gevşetmez ve yalnız
+PR #1721 için tek kullanımlık, task-specific bir control-plane binding oluşturur.
+
+### Binding PR kimliği
+
+```text
+Task ID  : GOV-COORD-RCV-COL-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : 7ba8d8e69fcd236bb1ca902eabc9cff0837fea04
+Head ref : codex/gov-coord-rcv-col-bootstrap-control-plane-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-COL-FULL-REMEDIATION-BOOTSTRAP-R01
+Target mode      : RCV_COL_FULL_REMEDIATION_BOOTSTRAP_R01
+Target PR        : #1721
+Original base SHA: 1018c6b521e9159b3b5e9e1b82ed307fec6ff79f
+Head ref         : codex/rcv-col-full-remediation-bootstrap-r01
+Scope            : M project/docs/governance/decision-log.md
+                   A project/docs/governance/coordination-execution-grants/RCV-COL-FULL-REMEDIATION-EXECUTION-GRANT-R01.md
+Semantic record  : RCV-COL-FULL-REMEDIATION-RATIFICATION-R01
+Execution record : RCV-COL-FULL-REMEDIATION-EXECUTION-GRANT-R01
+```
+
+Hedef PR yalnız exact path/status seti, her authority marker'ının exact tekil
+oluşu, execution grant'in yukarıdaki semantic authority'ye exact binding'i ve
+güncel target base'in bu binding'i canonical hale getiren commit'ten gelmesi
+birlikte doğrulandığında kabul edilir. Original base yalnız provenance olarak
+korunur; hedef head commit SHA'sı pinlenmez. Bu nedenle binding main'e girdikten
+sonraki fresh-main hizalaması, içerik kimliği değişmiyorsa geçerlidir.
+
+Binding yalnız yukarıdaki iki target path'e ve PR #1721'e uygulanır. Genel
+`decision-log.md` yazma, genel execution-grant oluşturma veya başka bir RCV,
+COLLECTION ya da RECEIVABLE task'ına aktarma yetkisi vermez. Request-only,
+execution ve result-only kurallarını değiştirmez; Constitution veya Domain Law
+yetkisi üretmez. PR #1721 merge veya close olduktan sonra yeniden kullanılamaz
+ve reusable authority oluşturmaz.
+
+## GOV-COORD-RCV-COL-LARGE-AUTHORITY-READ-REPAIR-R01 — one-time large authority read repair
+
+Owner-ratified 2026-07-28. Bu kayıt yalnız büyük canonical governance authority
+dosyalarının Git üzerinden eksiksiz ve bounded okunmasını sağlayan control-plane
+onarımını yetkilendirir.
+
+```text
+Task ID  : GOV-COORD-RCV-COL-LARGE-AUTHORITY-READ-REPAIR-R01
+Mode     : GOV_COORD_RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01
+Base SHA : d4ffd3ef277554d3c45e6471bf96f14af4b3fcd1
+Head ref : codex/gov-coord-rcv-col-large-authority-read-repair-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Kök neden, `spawnSync('git', ...)` çağrısının Node varsayılan output buffer'ı
+nedeniyle büyük `decision-log.md` içeriğini `ENOBUFS` ile yarıda kesmesidir.
+Generic Git process capture limiti 2 MiB; canonical text blob logical limiti
+8 MiB; canonical blob subprocess limiti 16 MiB; hata diagnostic limiti 4.096
+karakterdir. `gitShow`, içeriği okumadan önce `git cat-file -s` ile byte size
+preflight yapar; 8 MiB üstünü `GIT_BLOB_SIZE_LIMIT_EXCEEDED` ile reddeder ve
+başarılı okumada UTF-8 byte uzunluğunun bildirilen blob size ile exact eşitliğini
+zorunlu kılar. `ENOBUFS`, partial output kullanmadan
+`GIT_OUTPUT_LIMIT_EXCEEDED` üretir. Unbounded veya environment-controlled
+capture, partial/truncated authority kabulü ve asynchronous streaming refactor
+yasaktır. 8 MiB üstündeki governance blob ayrı archive/split ya da storage-model
+owner task'ı gerektirir.
+
+Bu self-binding yalnız exact base, exact head ref ve exact `M/M/M` path seti
+birlikte eşleştiğinde geçerlidir. Buffer onarımı authority marker, checksum,
+exact-literal veya domain semantiğini değiştirmez. PR #1721'in semantic
+authority'sini veya exact iki dosyalık kapsamını değiştirmez ve genişletmez;
+başka protected governance write, request/execution/result, production, schema,
+migration veya runtime yetkisi üretmez. Repair PR merge edildikten sonra pinned
+base nedeniyle yeniden kullanılamaz. Reusable authority yoktur.
+
+## HCR-08 AUTHORITY BOOTSTRAP — exact control-plane authority binding
+
+Owner-ratified 2026-07-28. Bu kayıt yalnız PR #1728 için tek kullanımlık,
+task-specific bir control-plane binding oluşturur; mevcut hiçbir kontrolü
+gevşetmez.
+
+### Binding PR kimliği
+
+```text
+Task ID  : RCV-CLAIM-FORM-HCR-08-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : 7854504b25ef1c988606b1885d1562ef44ce54aa
+Head ref : codex/rcv-claim-form-hcr-08-authority-bootstrap-control-plane-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-CLAIM-FORM-HCR-08-AUTHORITY-BOOTSTRAP-R01
+Target mode      : RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_R01
+Target PR        : #1728
+Original base SHA: 14d0f2931ac464321278e05f81ffc5053a8a7719
+Head ref         : codex/rcv-claim-form-hcr-08-authority-bootstrap-r01
+Scope            : M project/docs/governance/decision-log.md
+                   A project/docs/governance/coordination-execution-grants/RCV-CLAIM-FORM-HCR-08-FINAL-CLOSURE-AUDIT-R01.md
+Semantic record  : RCV-CLAIM-FORM-HCR-08-FINAL-CLOSURE-AUDIT-R01
+Execution record : RCV-CLAIM-FORM-HCR-08-FINAL-CLOSURE-AUDIT-R01-GRANT
+```
+
+Hedef PR yalnız exact branch ve `M/A` iki-file seti, iki marker'ın exact tekil
+oluşu, execution grant'in semantic authority'ye exact binding'i ve güncel target
+base'in bu binding'i canonical yapan commit'in descendant'ı olması birlikte
+doğrulandığında kabul edilir. Original base provenance'dır; target head SHA
+pinlenmez ve fresh-main normal merge ile uzlaştırma korunur.
+
+Binding yalnız yukarıdaki PR #1728 ve iki target path için geçerlidir. Genel
+`decision-log.md` yazma, başka execution grant, request/execution/result,
+production, schema, migration, runtime veya owner WIP yetkisi üretmez. Wildcard,
+prefix authority ve reusable authority yoktur. PR #1728 merge veya close
+olduğunda binding yeniden kullanılamaz.

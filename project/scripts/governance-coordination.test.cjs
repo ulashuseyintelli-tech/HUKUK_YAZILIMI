@@ -283,6 +283,190 @@ function classifyGh02Workflow(changes, overrides = {}) {
   });
 }
 
+function rcvColBindingChanges() {
+  return coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function rcvColTargetChanges() {
+  return coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function hcr08BindingChanges() {
+  return coordination.RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function hcr08TargetChanges() {
+  return coordination.RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function rcvColLargeAuthorityReadRepairChanges() {
+  return coordination.RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function classifyRcvColLargeAuthorityReadRepair(changes, overrides = {}) {
+  const repair = coordination.RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01;
+  return coordination.classifyPrChangeSet(changes, {
+    base: repair.baseSha,
+    headRef: repair.headRef,
+    ...overrides,
+  });
+}
+
+function rcvColLargeAuthorityReadRepairContractContent() {
+  const repair = coordination.RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01;
+  return [
+    '# Contract fixture',
+    repair.taskId,
+    repair.mode,
+    repair.baseSha,
+    repair.headRef,
+    ...repair.changedPaths.map(({ path: repoPath }) => repoPath),
+    '',
+  ].join('\n');
+}
+
+function createLargeGitBlobFixture(t, exactBytes = 1_100_000) {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-large-git-blob-'));
+  const root = path.join(parent, 'repo');
+  const repoPath = 'project/docs/governance/large-authority.md';
+  const sentinel = '\nLARGE_AUTHORITY_FINAL_SENTINEL\n';
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  const basePath = path.join(root, 'base.txt');
+  fs.writeFileSync(basePath, 'base\n', 'utf8');
+  runFixtureGit(['add', '--', 'base.txt'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'large authority base'], root);
+  const filePath = path.join(root, ...repoPath.split('/'));
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  assert.ok(exactBytes >= Buffer.byteLength(sentinel, 'utf8'));
+  const content = `${'A'.repeat(
+    exactBytes - Buffer.byteLength(sentinel, 'utf8'),
+  )}${sentinel}`;
+  assert.equal(Buffer.byteLength(content, 'utf8'), exactBytes);
+  fs.writeFileSync(filePath, content, 'utf8');
+  runFixtureGit(['add', '--', repoPath], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'large authority fixture'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, repoPath, content, sentinel, head };
+}
+
+function rcvColBindingContractContent(
+  binding = coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
+) {
+  return [
+    '# Contract fixture',
+    binding.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    binding.targetPr.taskId,
+    binding.targetPr.mode,
+    String(binding.targetPr.pullRequestNumber),
+    binding.targetPr.originalBaseSha,
+    binding.targetPr.headRef,
+    ...binding.targetPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.recordId,
+    '',
+  ].join('\n');
+}
+
+function createRcvColTargetGitFixture(t, options = {}) {
+  const binding =
+    options.binding ||
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-rcv-col-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+
+  const contractPath = path.join(root, ...binding.contractPath.split('/'));
+  const decisionPath = path.join(root, ...target.semanticAuthority.path.split('/'));
+  fs.mkdirSync(path.dirname(contractPath), { recursive: true });
+  fs.writeFileSync(contractPath, rcvColBindingContractContent(binding), 'utf8');
+  const decisionHeader = '# Decision Log\n';
+  const decisionBaseBytes = options.largeDecisionLogBytes || 0;
+  const decisionBase = decisionBaseBytes
+    ? `${decisionHeader}${'P'.repeat(
+        decisionBaseBytes - Buffer.byteLength(decisionHeader, 'utf8'),
+      )}\n`
+    : decisionHeader;
+  fs.writeFileSync(decisionPath, decisionBase, 'utf8');
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'canonical RCV-COL binding'], root);
+
+  if (options.freshMain) {
+    const unrelated = path.join(root, 'unrelated.md');
+    fs.writeFileSync(unrelated, 'fresh main advance\n', 'utf8');
+    runFixtureGit(['add', '--all'], root);
+    runFixtureGit(['commit', '--quiet', '-m', 'advance canonical main'], root);
+  }
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  const semanticRecordId =
+    options.semanticRecordId || target.semanticAuthority.recordId;
+  const executionRecordId =
+    options.executionRecordId || target.executionGrant.recordId;
+  const semanticBindingRecordId =
+    options.semanticBindingRecordId || target.semanticAuthority.recordId;
+  const semanticMarker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${semanticRecordId} -->`;
+  const executionMarker = `<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=${executionRecordId} -->`;
+  fs.appendFileSync(
+    decisionPath,
+    `| 2026-07-28 | ${semanticMarker} **${semanticRecordId} — fixture** |\n${
+      options.duplicateSemanticMarker ? `${semanticMarker}\n` : ''
+    }`,
+    'utf8',
+  );
+
+  const grantPath = path.join(root, ...target.executionGrant.path.split('/'));
+  fs.mkdirSync(path.dirname(grantPath), { recursive: true });
+  fs.writeFileSync(
+    grantPath,
+    [
+      '# Grant fixture',
+      executionMarker,
+      options.duplicateExecutionMarker ? executionMarker : '',
+      '',
+      '```text',
+      `semanticAuthorityRef.kind     : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path     : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${semanticBindingRecordId}`,
+      '```',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'target RCV-COL bootstrap'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, base, head };
+}
+
 function createGh02SyncedGitFixture(t) {
   const binding = coordination.GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-gh02-'));
@@ -1370,6 +1554,573 @@ test('explicit GO-ANALYZE remains read-only after policy alignment', () => {
   assert.match(agents, /`GO-ANALYZE`: Explicit salt-okunur analizdir/);
   assert.match(processRules, /Explicit read-only moddur/);
   assert.match(processRules, /dosya değişikliği, commit, PR veya merge yoktur/i);
+});
+
+test('gitShow returns a complete canonical blob larger than the Node default buffer', (t) => {
+  const fixture = createLargeGitBlobFixture(t);
+  const actual = coordination.gitShow(fixture.head, fixture.repoPath, fixture.root);
+  assert.equal(Buffer.byteLength(fixture.content, 'utf8'), 1_100_000);
+  assert.equal(actual.length, fixture.content.length);
+  assert.equal(actual, fixture.content);
+  assert.equal(actual.endsWith(fixture.sentinel), true);
+});
+
+test('runGit fails closed without exposing partial output when capture exceeds its override', (t) => {
+  const fixture = createLargeGitBlobFixture(t);
+  assert.throws(
+    () =>
+      coordination.runGit(
+        ['show', `${fixture.head}:${fixture.repoPath}`],
+        fixture.root,
+        { maxBufferBytes: 1024, allowFailure: true },
+      ),
+    (error) => {
+      assert.ok(error instanceof coordination.CoordinationError);
+      assert.equal(error.code, 'GIT_OUTPUT_LIMIT_EXCEEDED');
+      assert.match(error.message, /bounded limit 1024 bytes/);
+      assert.match(error.message, /stdoutBytes=/);
+      assert.match(error.message, /stderrCharacters=/);
+      assert.doesNotMatch(error.message, /LARGE_AUTHORITY_FINAL_SENTINEL/);
+      assert.ok(error.message.length < 1024);
+      return true;
+    },
+  );
+});
+
+test('runGit rejects invalid bounded capture limits', () => {
+  for (const maxBufferBytes of [
+    0,
+    -1,
+    1.5,
+    coordination.GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES + 1,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    expectCode(
+      () => coordination.runGit(['status'], REPO_ROOT, { maxBufferBytes }),
+      'GIT_CAPTURE_LIMIT_INVALID',
+    );
+  }
+});
+
+test('large-authority constants preserve the ratified bounded hierarchy', () => {
+  assert.equal(coordination.GIT_DEFAULT_PROCESS_MAX_BUFFER_BYTES, 2 * 1024 * 1024);
+  assert.equal(coordination.GIT_CANONICAL_TEXT_BLOB_LIMIT_BYTES, 8 * 1024 * 1024);
+  assert.equal(
+    coordination.GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES,
+    16 * 1024 * 1024,
+  );
+  assert.equal(coordination.GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS, 4096);
+});
+
+test('canonical blob size parsing and logical limit fail closed at exact boundaries', () => {
+  const limit = coordination.GIT_CANONICAL_TEXT_BLOB_LIMIT_BYTES;
+  assert.equal(coordination.parseGitBlobSize(String(limit)), limit);
+  assert.doesNotThrow(() => coordination.assertCanonicalGitBlobSize(limit, 'HEAD:file'));
+  expectCode(
+    () => coordination.assertCanonicalGitBlobSize(limit + 1, 'HEAD:file'),
+    'GIT_BLOB_SIZE_LIMIT_EXCEEDED',
+  );
+  for (const value of ['', '-1', '1.5', '1e3', 'not-a-size']) {
+    expectCode(
+      () => coordination.parseGitBlobSize(value),
+      'GIT_BLOB_SIZE_INVALID',
+    );
+  }
+});
+
+test('gitShow rejects an oversized canonical blob before reading its content', (t) => {
+  const fixture = createLargeGitBlobFixture(
+    t,
+    coordination.GIT_CANONICAL_TEXT_BLOB_LIMIT_BYTES + 1,
+  );
+  assert.throws(
+    () => coordination.gitShow(fixture.head, fixture.repoPath, fixture.root),
+    (error) => {
+      assert.ok(error instanceof coordination.CoordinationError);
+      assert.equal(error.code, 'GIT_BLOB_SIZE_LIMIT_EXCEEDED');
+      assert.match(error.message, /8388609 bytes/);
+      assert.doesNotMatch(error.message, /LARGE_AUTHORITY_FINAL_SENTINEL/);
+      return true;
+    },
+  );
+});
+
+test('bounded Git diagnostics never exceed the ratified character limit', () => {
+  const source = `prefix-${'X'.repeat(10_000)}-secret-tail`;
+  const diagnostic = coordination.boundedGitDiagnostic(source);
+  assert.equal(diagnostic.length, coordination.GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS);
+  assert.match(diagnostic, /\.\.\.\[diagnostic truncated\]$/);
+  assert.doesNotMatch(diagnostic, /secret-tail/);
+});
+
+test('runGit preserves normal git failure and allowFailure behavior', (t) => {
+  const fixture = createLargeGitBlobFixture(t, 128);
+  expectCode(
+    () => coordination.runGit(['show', 'missing-ref:missing-path'], fixture.root),
+    'GIT_VALIDATION_FAILED',
+  );
+  const parent = coordination.runGit(
+    ['rev-parse', `${fixture.head}^`],
+    fixture.root,
+  ).stdout.trim();
+  const result = coordination.runGit(
+    ['merge-base', '--is-ancestor', fixture.head, parent],
+    fixture.root,
+    { allowFailure: true },
+  );
+  assert.equal(result.status, 1);
+  assert.equal(result.error, undefined);
+});
+
+test('large-authority read repair requires exact self-binding and contract content', () => {
+  const repair = coordination.RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01;
+  const changes = rcvColLargeAuthorityReadRepairChanges();
+  const classification = classifyRcvColLargeAuthorityReadRepair(changes);
+  assert.equal(classification.mode, repair.mode);
+  assert.equal(classification.taskId, repair.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    repair.contractPath,
+    rcvColLargeAuthorityReadRepairContractContent(),
+  );
+  const validated = coordination.validateRcvColLargeAuthorityReadRepairScope({
+    base: repair.baseSha,
+    head: fixture.head,
+    headRef: repair.headRef,
+    changes,
+    taskId: repair.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(validated.mode, repair.mode);
+  assert.equal(validated.taskId, repair.taskId);
+});
+
+test('large-authority read repair classifier rejects near matches and protected companions', () => {
+  const repair = coordination.RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01;
+  const exact = rcvColLargeAuthorityReadRepairChanges();
+  const cases = [
+    { changes: exact, overrides: { base: '0'.repeat(40) } },
+    { changes: exact, overrides: { headRef: `${repair.headRef}-copy` } },
+    { changes: exact.slice(1) },
+    {
+      changes: [
+        ...exact,
+        { status: 'M', path: 'project/docs/governance/decision-log.md' },
+      ],
+    },
+    {
+      changes: exact.map((change, index) =>
+        index === 0 ? { ...change, status: 'A' } : change,
+      ),
+    },
+    {
+      changes: exact.map((change, index) =>
+        index === 0 ? { ...change, status: 'D' } : change,
+      ),
+    },
+    {
+      changes: exact.map((change, index) =>
+        index === 0
+          ? { ...change, status: 'R100', oldPath: 'project/scripts/old.cjs' }
+          : change,
+      ),
+    },
+    {
+      changes: [
+        ...exact,
+        {
+          status: 'A',
+          path: 'project/docs/governance/coordination-requests/OTHER/request.md',
+        },
+      ],
+    },
+    {
+      changes: [
+        ...exact,
+        {
+          status: 'A',
+          path: 'project/docs/governance/coordination-results/OTHER/result.md',
+        },
+      ],
+    },
+    {
+      changes: [
+        ...exact,
+        { status: 'M', path: coordination.REGISTER_REPO_PATH },
+      ],
+    },
+  ];
+  for (const entry of cases) {
+    expectCode(
+      () =>
+        classifyRcvColLargeAuthorityReadRepair(
+          entry.changes,
+          entry.overrides || {},
+        ),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('RCV-COL binding PR requires exact base branch scope and contract content', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(rcvColBindingChanges(), {
+    base: binding.bindingPr.baseSha,
+    headRef: binding.bindingPr.headRef,
+  });
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(),
+  );
+  const result = coordination.validateRcvColFullRemediationBindingScope({
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: rcvColBindingChanges(),
+    taskId: binding.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('RCV-COL binding PR rejects wrong branch base and extra path', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const context of [
+    { base: '0'.repeat(40), headRef: binding.bindingPr.headRef },
+    { base: binding.bindingPr.baseSha, headRef: `${binding.bindingPr.headRef}-copy` },
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(rcvColBindingChanges(), context),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  const changes = rcvColBindingChanges();
+  changes.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(changes, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('RCV-COL target recognizes only exact branch and M/A change set', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.classifyPrChangeSet(rcvColTargetChanges(), {
+    base: binding.targetPr.originalBaseSha,
+    headRef: binding.targetPr.headRef,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(rcvColTargetChanges(), {
+        base: binding.targetPr.originalBaseSha,
+        headRef: `${binding.targetPr.headRef}-copy`,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  const expanded = rcvColTargetChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/product-backlog.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('RCV-COL target rejects decision and grant status drift', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const status of ['A', 'D', 'R100']) {
+    const changes = rcvColTargetChanges();
+    changes[0] = {
+      status,
+      path: changes[0].path,
+      ...(status.startsWith('R') ? { oldPath: 'project/docs/governance/old.md' } : {}),
+    };
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(changes, {
+          base: binding.targetPr.originalBaseSha,
+          headRef: binding.targetPr.headRef,
+        }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  for (const status of ['M', 'D', 'R100']) {
+    const changes = rcvColTargetChanges();
+    changes[1] = {
+      status,
+      path: changes[1].path,
+      ...(status.startsWith('R') ? { oldPath: 'project/docs/governance/old-grant.md' } : {}),
+    };
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(changes, {
+          base: binding.targetPr.originalBaseSha,
+          headRef: binding.targetPr.headRef,
+        }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('RCV-COL target validates exact markers binding and fresh-main ancestry', (t) => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const freshMain of [false, true]) {
+    const fixture = createRcvColTargetGitFixture(t, { freshMain });
+    const result = coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    });
+    assert.equal(result.mode, binding.targetPr.mode);
+    assert.equal(result.taskId, binding.targetPr.taskId);
+  }
+});
+
+test('RCV-COL public validator fully reads a production-sized authority blob', (t) => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, {
+    freshMain: true,
+    largeDecisionLogBytes: 1_100_000,
+  });
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: binding.targetPr.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+});
+
+test('RCV-COL target rejects wrong or duplicate authority markers', (t) => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const options of [
+    { semanticRecordId: 'RCV-COL-WRONG-SEMANTIC-R01', code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH' },
+    { executionRecordId: 'RCV-COL-WRONG-GRANT-R01', code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH' },
+    { duplicateSemanticMarker: true, code: 'AUTHORITY_RECORD_AMBIGUOUS' },
+    { duplicateExecutionMarker: true, code: 'AUTHORITY_RECORD_AMBIGUOUS' },
+  ]) {
+    const fixture = createRcvColTargetGitFixture(t, options);
+    expectCode(
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      options.code,
+    );
+  }
+});
+
+test('RCV-COL target rejects a grant bound to another semantic authority', (t) => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, {
+    semanticBindingRecordId: 'ANOTHER-SEMANTIC-AUTHORITY-R01',
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('RCV-COL binding cannot be reused as generic bootstrap or with control-plane companions', () => {
+  const binding =
+    coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const unrelated = rcvColTargetChanges();
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(unrelated, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: 'codex/rcv-col-full-remediation-bootstrap-r02',
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  for (const companion of [
+    'project/docs/governance/coordination-requests/GOV-REQ-20260728-OTHER/request.md',
+    'project/docs/governance/coordination-results/GOV-REQ-20260728-OTHER/result.md',
+    coordination.REGISTER_REPO_PATH,
+  ]) {
+    const changes = rcvColTargetChanges();
+    changes.push({ status: companion.includes('/request') || companion.includes('/result') ? 'A' : 'M', path: companion });
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(changes, {
+          base: binding.targetPr.originalBaseSha,
+          headRef: binding.targetPr.headRef,
+        }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('HCR-08 binding PR requires exact base branch scope and contract content', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(hcr08BindingChanges(), {
+    base: binding.bindingPr.baseSha,
+    headRef: binding.bindingPr.headRef,
+  });
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result = coordination.validateHcr08AuthorityBootstrapBindingScope({
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: hcr08BindingChanges(),
+    taskId: binding.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('HCR-08 binding rejects wrong base branch and expanded control-plane scope', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const context of [
+    { base: '0'.repeat(40), headRef: binding.bindingPr.headRef },
+    { base: binding.bindingPr.baseSha, headRef: `${binding.bindingPr.headRef}-copy` },
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(hcr08BindingChanges(), context),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  const expanded = hcr08BindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('HCR-08 target recognizes only its exact branch and M/A change set', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.classifyPrChangeSet(hcr08TargetChanges(), {
+    base: binding.targetPr.originalBaseSha,
+    headRef: binding.targetPr.headRef,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(hcr08TargetChanges(), {
+        base: binding.targetPr.originalBaseSha,
+        headRef: `${binding.targetPr.headRef}-copy`,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  const expanded = hcr08TargetChanges();
+  expanded.push({ status: 'M', path: coordination.REGISTER_REPO_PATH });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('HCR-08 target validates exact authority markers binding and fresh-main ancestry', (t) => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const freshMain of [false, true]) {
+    const fixture = createRcvColTargetGitFixture(t, { binding, freshMain });
+    const result = coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    });
+    assert.equal(result.mode, binding.targetPr.mode);
+    assert.equal(result.taskId, binding.targetPr.taskId);
+  }
+});
+
+test('HCR-08 target rejects wrong markers semantic binding and reusable companions', (t) => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const options of [
+    {
+      semanticRecordId: 'RCV-CLAIM-FORM-HCR-08-WRONG',
+      code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    },
+    {
+      executionRecordId: 'RCV-CLAIM-FORM-HCR-08-WRONG-GRANT',
+      code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    },
+    {
+      semanticBindingRecordId: 'ANOTHER-HCR-08-AUTHORITY',
+      code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    },
+  ]) {
+    const fixture = createRcvColTargetGitFixture(t, { binding, ...options });
+    expectCode(
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      options.code,
+    );
+  }
+
+  const expanded = hcr08TargetChanges();
+  expanded.push({
+    status: 'A',
+    path:
+      'project/docs/governance/coordination-requests/GOV-REQ-20260728-HCR08/request.md',
+  });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
 });
 
 test('GH-02 authority binding requires exact base branch and three-file scope', () => {

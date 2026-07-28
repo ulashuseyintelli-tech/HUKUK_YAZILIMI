@@ -160,14 +160,31 @@ function validateInput(input) {
  */
 function checkAuthorityBinding(input, ledgerEntry) {
   if (!ledgerEntry) return { ok: true };
+  // Tuketilmis bir reference once REUSE ekseninde degerlendirilir. Aksi halde
+  // binding kontrolu (PR_MISMATCH) once tetikleniyor ve operatore yanlis sinyal
+  // gidiyordu: "yanlis PR" diyordu, oysa gercek sebep reference'in zaten
+  // tuketilmis olmasi ve baska bir PR'a tasinmaya calisilmasidir. R02 pilotu
+  // bunu ortaya cikardi.
+  if (ledgerEntry.consumed === true) {
+    const consumedTask = ledgerEntry.consumedTaskId || ledgerEntry.taskId || null;
+    const consumedPr = ledgerEntry.consumedPr != null ? ledgerEntry.consumedPr : ledgerEntry.pr;
+    const sameTask = !consumedTask || consumedTask === input.taskId;
+    const samePr = consumedPr == null || consumedPr === input.pr;
+    if (!sameTask || !samePr) {
+      return {
+        ok: false,
+        code: BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN,
+        detail: 'reference consumed by task ' + consumedTask + ' PR #' + consumedPr,
+      };
+    }
+    // Ayni task + ayni PR: recovery kosusu mesrudur (owner 3.8).
+    return { ok: true };
+  }
   if (ledgerEntry.taskId && ledgerEntry.taskId !== input.taskId) {
     return { ok: false, code: BLOCKER.MERGE_AUTHORITY_TASK_MISMATCH, detail: 'ref bound to task ' + ledgerEntry.taskId };
   }
   if (ledgerEntry.pr != null && ledgerEntry.pr !== input.pr) {
     return { ok: false, code: BLOCKER.MERGE_AUTHORITY_PR_MISMATCH, detail: 'ref bound to PR #' + ledgerEntry.pr };
-  }
-  if (ledgerEntry.consumed === true) {
-    return { ok: false, code: BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN, detail: 'authority reference already consumed' };
   }
   return { ok: true };
 }
@@ -354,14 +371,20 @@ async function recoverAfterMerge(out, input, adapter) {
     }
     out.stage = 'MAIN_SYNCED';
 
-    out.branchCleanup = await adapter.cleanupBranch(input.branch);
-    out.stage = 'BRANCH_CLEANED';
-
+    // Worktree ONCE kaldirilir: worktree bir branch'i checkout tutarken
+    // `git branch -D` calismaz. Pilot bunu ortaya cikardi — branch cleanup once
+    // kosuyor, sessizce basarisiz oluyor ve yine de DELETED raporluyordu.
     out.worktreeCleanup = input.worktree ? await adapter.cleanupWorktree(input.worktree) : 'NOT_APPLICABLE';
     if (out.worktreeCleanup === 'ORPHANED_WORKTREE_DIR') {
       return Object.assign(out, { status: 'MERGED_CLEANUP_BLOCKED', stage: 'WORKTREE_CLEANED', blockerCode: BLOCKER.WORKTREE_CLEANUP_FAILED });
     }
     out.stage = 'WORKTREE_CLEANED';
+
+    out.branchCleanup = await adapter.cleanupBranch(input.branch);
+    if (out.branchCleanup !== 'DELETED' && out.branchCleanup !== 'NOT_APPLICABLE') {
+      return Object.assign(out, { status: 'MERGED_CLEANUP_BLOCKED', stage: 'BRANCH_CLEANED', blockerCode: BLOCKER.BRANCH_CLEANUP_FAILED });
+    }
+    out.stage = 'BRANCH_CLEANED';
 
     out.canonicalVerification = await adapter.verifyCanonical();
     if (out.canonicalVerification !== 'OK') {

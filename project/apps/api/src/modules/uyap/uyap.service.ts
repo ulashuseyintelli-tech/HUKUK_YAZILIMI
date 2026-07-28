@@ -1069,62 +1069,38 @@ export class UyapService {
   }
 
   /**
-   * Başarısız istekleri yeniden dene
+   * Başarısız istekleri yeniden dene — KALDIRILDI.
+   *
+   * UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 (owner §7 "retry owner: SINGLE"):
+   *
+   * Bu metot UYAP-RETRY-CONTAIN-01 ile zaten erişilemez hâldeydi (controller
+   * fail-closed, başka çağıran yok). Gövdesi ise şunları yapıyordu ve yeniden
+   * açılması hâlinde bunlar geri gelirdi:
+   *
+   *  - `UyapRequestLog.status/retryCount` üzerinde `UyapAttempt` lineage'ından
+   *    BAĞIMSIZ ikinci bir retry state machine yürütmek (duplicate retry ownership),
+   *  - `UyapAttempt.providerState`/`legalEffectState` terminal durumlarını HİÇ
+   *    sormadan re-dispatch etmek (terminal success/failure koruması yok),
+   *  - `actorUserId` ve `Idempotency-Key` OLMADAN `sendPaymentOrder`/
+   *    `pushHacizRequest` çağırmak — bu, evidence yazımı için zorunlu bağlamın
+   *    yokluğu demektir; ayrıca `authenticatedUserId` boş geçtiği için MODEL B
+   *    authority zinciri (I01→I04) zaten fail-closed reddedecekti,
+   *  - state'i `RETRY`'a alıp dispatch başarısız olduğunda satırı GERİ ALMAMAK
+   *    (tüketicisi olmayan tek yönlü durum).
+   *
+   * Canonical retry sahibi `UyapAttempt`'tir. Gerçek retry sözleşmesi (attempt
+   * lineage üzerinden eligibility + POA/CPE yeniden değerlendirme + tenant-scoped
+   * dispatch + idempotency) ayrı bir retry-contract birimine aittir ve ayrı owner
+   * kararı gerektirir. Ölü ama tehlikeli gövde repository'de bırakılmaz.
    */
-  async retryFailedRequests(): Promise<number> {
-    const failedRequests = await this.prisma.uyapRequestLog.findMany({
-      where: {
-        status: 'FAILED',
-        retryCount: { lt: 3 }, // Max 3 deneme
-      },
-      orderBy: { createdAt: 'asc' },
-      take: 10,
+  async retryFailedRequests(): Promise<never> {
+    throw new BadRequestException({
+      code: 'UYAP_RETRY_CONTRACT_MISSING',
+      message: 'UYAP yeniden deneme işlemi kullanılamıyor.',
+      details:
+        'Retry sahipliği UyapAttempt lineage\'ındadır; UyapRequestLog üzerinden ' +
+        'bağımsız retry state yürütülmez (UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02).',
     });
-
-    let retryCount = 0;
-
-    for (const request of failedRequests) {
-      this.logger.log(`Retrying request: ${request.id} - ${request.requestType}`);
-
-      await this.prisma.uyapRequestLog.update({
-        where: { id: request.id },
-        data: {
-          status: 'RETRY',
-          retryCount: { increment: 1 },
-        },
-      });
-
-      // İstek tipine göre yeniden dene
-      // CLIENT-SEC-H2C-P02-R1: re-dispatch'te trusted tenant LOG SATIRININ KENDİ `tenantId`'sinden
-      // alınır (requestData'dan DEĞİL). Legacy `tenantId=NULL` satırlar için sahte tenant ÜRETİLMEZ;
-      // re-dispatch atlanır (yeni NULL-owned log oluşmaz). Bu, legacy-null satırların re-dispatch
-      // davranışında bilinçli bir daralmadır (status/retryCount güncellemesi değişmez); scope
-      // genişletilmeden burada raporlanır (bkz. PR açıklaması).
-      try {
-        switch (request.requestType) {
-          case 'sendPaymentOrder':
-            if (request.tenantId) {
-              await this.sendPaymentOrder(request.requestData as unknown as PaymentOrderRequest, request.tenantId);
-            } else {
-              this.logger.warn(`CLIENT-SEC-H2C-P02-R1: legacy tenant-less kayıt re-dispatch atlandı (sahte tenant üretilmez): ${request.id}`);
-            }
-            break;
-          case 'pushHacizRequest':
-            if (request.tenantId) {
-              await this.pushHacizRequest(request.requestData as unknown as HacizRequest, request.tenantId);
-            } else {
-              this.logger.warn(`CLIENT-SEC-H2C-P02-R1: legacy tenant-less kayıt re-dispatch atlandı (sahte tenant üretilmez): ${request.id}`);
-            }
-            break;
-          // Diğer tipler...
-        }
-        retryCount++;
-      } catch (error) {
-        this.logger.error(`Retry failed for ${request.id}: ${error}`);
-      }
-    }
-
-    return retryCount;
   }
 
   /**

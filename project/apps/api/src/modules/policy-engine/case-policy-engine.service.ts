@@ -429,7 +429,7 @@ export class CasePolicyEngine {
     }
 
     if (!result.success) {
-      await this.executionRecorder.completeExecution(executionId, result);
+      await this.executionRecorder.completeExecution(tenantId, executionId, result);
       return { success: false, code: result.errorCode };
     }
 
@@ -444,14 +444,14 @@ export class CasePolicyEngine {
       
       if (!transitionResult.success) {
         if (transitionResult.code === 'VERSION_MISMATCH') {
-          await this.executionRecorder.completeExecution(executionId, {
+          await this.executionRecorder.completeExecution(tenantId, executionId, {
             success: false,
             errorCode: 'CONCURRENT_MODIFICATION',
           });
           return { success: false, code: 'CONCURRENT_MODIFICATION', shouldRetry: true };
         }
         
-        await this.executionRecorder.completeExecution(executionId, {
+        await this.executionRecorder.completeExecution(tenantId, executionId, {
           success: false,
           errorCode: transitionResult.code,
           errorMessage: transitionResult.errorMessage,
@@ -469,7 +469,7 @@ export class CasePolicyEngine {
       }
 
       // Complete execution
-      await this.executionRecorder.completeExecution(executionId, result);
+      await this.executionRecorder.completeExecution(tenantId, executionId, result);
 
       return { 
         success: true,
@@ -478,7 +478,7 @@ export class CasePolicyEngine {
 
     } catch (error) {
       this.logger.error(`Error in onActionExecuted: ${executionId}`, error);
-      await this.executionRecorder.completeExecution(executionId, {
+      await this.executionRecorder.completeExecution(tenantId, executionId, {
         success: false,
         errorCode: 'INTERNAL_ERROR',
         errorMessage: (error as Error).message,

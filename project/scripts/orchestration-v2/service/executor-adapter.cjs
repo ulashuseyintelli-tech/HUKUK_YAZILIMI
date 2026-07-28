@@ -140,7 +140,16 @@ async function runEntry(o) {
   // is invoked by the service's dispatch guard immediately before this runs.
   // Two revalidation points would drift, and a drifting gate is worse than one
   // gate — so the answer to "is this still allowed?" has exactly one owner.
-  const resolveNow = () => requestMod.load({ repoCwd, requestPath: entry.requestPath });
+  const resolveNow = () =>
+    requestMod.load({
+      repoCwd,
+      requestPath: entry.requestPath,
+      // Same pin AND the same regime the dispatch guard used. Resolving
+      // differently here would mean the executor runs on artefacts the guard
+      // never saw.
+      requireCommitted: entry.artefactsCommitted === true,
+      expectedArtefactDigest: entry.artefactSha256 || undefined,
+    });
 
   const resolved = resolveNow();
 

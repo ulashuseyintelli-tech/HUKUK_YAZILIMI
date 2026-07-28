@@ -116,6 +116,12 @@
 #     yapisal imkansizligi. PR #1629 (squash 32a42ed4) merge edildiginde bu spec hicbir
 #     manifestte kayitli degildi ve CI da hic kosmuyordu; charter §37 ile baglandi.
 src/modules/client-financial-disclosure/__tests__/track-b-i01-schema-foundation.db-gated.integration.spec.ts
+#
+#   CLIENT-P2-U03-TRACK-B-I02 disclosure writer service (gercek PostgreSQL)
+#     Tenant/case-client/source-scope fail-closed enforcement, atomik aggregate+version+line
+#     yazimi, idempotency replay/conflict, hash re-verification MATCH/MISMATCH, immutability
+#     guard ve GERCEK ayri baglantilarla eszamanlilik/TOCTOU testleri.
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-writer.db-gated.integration.spec.ts
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts

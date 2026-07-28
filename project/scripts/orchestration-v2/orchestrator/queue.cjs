@@ -95,7 +95,13 @@ const QUEUE_ALLOWED = {
   SYNCING: ['CLEANING', 'BLOCKED', 'FAILED'],
   CLEANING: ['CLOSED', 'BLOCKED', 'FAILED'],
   CLOSED: [],
-  BLOCKED: ['QUEUED', 'CANCELLED'],
+  // MERGE_READY is reachable from BLOCKED for one case only: a finalize
+  // that failed on a gate which has since been fixed. The work is done,
+  // the PR is open and green, and the durable handoff still holds the
+  // attestation — re-running the executor would discard fifteen minutes
+  // of real work and open a duplicate PR to reach the state already
+  // recorded. Guarded below by finalizeRetryAuthorized.
+  BLOCKED: ['QUEUED', 'MERGE_READY', 'CANCELLED'],
   FAILED: [],
   CANCELLED: [],
 };
@@ -237,6 +243,14 @@ function createQueue(dir) {
         // cannot find its own authority again cannot be re-validated, and
         // re-validation is the whole point of the second gate.
         requestPath: req.requestPath || null,
+        // What the paper trail looked like when this was admitted. The worker
+        // recomputes it from the COMMITTED artefacts at dispatch, so a task
+        // cannot be edited after admission and run anyway.
+        artefactSha256: req.artefactSha256 || null,
+        // WHICH regime this was admitted under. Inferring it from the digest
+        // would be wrong: a digest is computed either way, so its presence
+        // says nothing about whether the artefacts had to be committed.
+        artefactsCommitted: req.artefactsCommitted === true,
         worktreePath: null,
         branch: null,
         prNumber: null,
@@ -312,6 +326,19 @@ function createQueue(dir) {
       // blocked task: a queue that quietly retries defeats its own guard.
       if (cur.state === 'BLOCKED' && to === 'QUEUED' && opts.resumeAuthorized !== true) {
         fail('QUEUE_RESUME_NOT_AUTHORIZED', cur.blockerCode || 'blocked');
+      }
+      // Same rule, same reason: putting an entry back where a merge can happen
+      // is an explicit act, and it needs the evidence that the merge was
+      // already earned — an attestation and a pull request in the durable
+      // handoff. Without them there is nothing to merge into, and this edge
+      // would be inventing a merge point rather than returning to one.
+      if (cur.state === 'BLOCKED' && to === 'MERGE_READY') {
+        if (opts.finalizeRetryAuthorized !== true) {
+          fail('QUEUE_FINALIZE_RETRY_NOT_AUTHORIZED', cur.blockerCode || 'blocked');
+        }
+        if (!(cur.handoff && cur.handoff.attestation && (cur.handoff.prNumber || cur.prNumber))) {
+          fail('QUEUE_FINALIZE_RETRY_NO_HANDOFF', cur.entryId);
+        }
       }
 
       const now = opts.nowMs || Date.now();

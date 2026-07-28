@@ -80,20 +80,35 @@ describe('CLIENT-SEC-H2C-P02-R1 — UYAP write-ownership completion', () => {
     });
   });
 
-  describe('Service retry — ownership log satırının kendi tenantId\'sinden taşınır', () => {
-    const buildService = (findManyRows: any[]) => {
+  /**
+   * UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 UYARLAMASI (owner §7 "retry owner: SINGLE").
+   *
+   * Bu blok önceden retry RE-DISPATCH'inin tenant-ownership propagation'ını test
+   * ediyordu: "retry sırasında üretilen YENİ log satırı, kaynak satırın kendi
+   * tenantId'sini taşır; requestData'daki stale tenant kullanılmaz".
+   *
+   * O yol ARTIK YOK. `UyapRequestLog.status`/`retryCount`, `UyapAttempt` lineage'ından
+   * bağımsız İKİNCİ bir retry state machine'iydi (duplicate retry ownership) ve
+   * dispatcher'ı UYAP-RETRY-CONTAIN-01 ile zaten kapalıydı; ölü ama tehlikeli gövde
+   * kaldırıldı.
+   *
+   * CLIENT-SEC-H2C-P02-R1'in koruduğu güvenlik güvencesi ("retry asla sahte/stale
+   * tenant ile log üretmez") KAYBOLMADI — daha güçlü biçimde sağlanıyor: retry hiç
+   * log üretmiyor. Testler bu daha güçlü invariant'ı doğrulayacak şekilde yeniden
+   * yazıldı.
+   */
+  describe('Service retry — KALDIRILDI (retry ownership: UyapAttempt)', () => {
+    const buildService = () => {
       const prisma: any = {
         uyapRequestLog: {
           create: jest.fn().mockResolvedValue({ id: 'new-log' }),
           update: jest.fn().mockResolvedValue({}),
-          findMany: jest.fn().mockResolvedValue(findManyRows),
+          findMany: jest.fn().mockResolvedValue([]),
         },
         case: { findFirst: jest.fn().mockResolvedValue(null) },
         auditLog: { create: jest.fn().mockResolvedValue({}) },
       };
       const validationGate: any = { checkPreHacizIntelligence: jest.fn().mockResolvedValue({ isValid: true, warnings: [], debtors: [] }) };
-      // TRANSPORT-CONTAIN-01: sendPaymentOrder artık CasePolicyEngine yokluğunda fail-closed'tır;
-      // bu blok retry'in tenant-ownership propagation'ını test ettiğinden CPE-allow sağlanır.
       const casePolicyEngine: any = {
         canPerformAction: jest.fn().mockResolvedValue({ allowed: true, traceId: 'trace-allow' }),
       };
@@ -101,57 +116,24 @@ describe('CLIENT-SEC-H2C-P02-R1 — UYAP write-ownership completion', () => {
       return { service, prisma };
     };
 
-    it('tenant-owned failed sendPaymentOrder retry edilince YENİ log AYNI tenantId ile oluşur (requestData\'dan DEĞİL)', async () => {
-      const { service, prisma } = buildService([
-        {
-          id: 'failed-1',
-          requestType: 'sendPaymentOrder',
-          // requestData içindeki tenantId KASITLI olarak farklı — güvenilmemeli; creditor/debtor
-          // gerçek bir sendPaymentOrder çağrısının logRequest'e yazdığı şekli yansıtır (CPE context
-          // bu alanları okur — TRANSPORT-CONTAIN-01 ile CPE artık koşulsuz devrede).
-          requestData: {
-            caseId: 'c1',
-            skipPoaCheck: true,
-            tenantId: 'STALE-BODY-TENANT',
-            creditor: { name: 'Alacaklı' },
-            debtor: { name: 'Borçlu' },
-          },
-          tenantId: 'tenant-owner', // log satırının KENDİ ownership'i
-          retryCount: 0,
-        },
-      ]);
+    it('retryFailedRequests fail-closed atar — sessiz no-op DEĞİL', async () => {
+      const { service } = buildService();
 
-      await service.retryFailedRequests();
-
-      // Retry'in ürettiği YENİ log satırı, kaynak log satırının tenantId'sini taşır:
-      expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-owner' }) }),
-      );
-      // requestData'daki stale tenant ASLA kullanılmaz:
-      expect(prisma.uyapRequestLog.create).not.toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ tenantId: 'STALE-BODY-TENANT' }) }),
-      );
+      await expect(service.retryFailedRequests()).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'UYAP_RETRY_CONTRACT_MISSING' }),
+      });
     });
 
-    it('legacy tenantId=NULL failed satır re-dispatch EDİLMEZ (sahte tenant yok, yeni NULL log yok)', async () => {
-      const { service, prisma } = buildService([
-        {
-          id: 'legacy-1',
-          requestType: 'sendPaymentOrder',
-          requestData: { caseId: 'c1', skipPoaCheck: true },
-          tenantId: null, // legacy pre-P02 satır
-          retryCount: 0,
-        },
-      ]);
+    it('retry yolu HİÇBİR log satırı okumaz/yazmaz (stale tenant riski yapısal olarak yok)', async () => {
+      const { service, prisma } = buildService();
 
-      await service.retryFailedRequests();
+      await expect(service.retryFailedRequests()).rejects.toThrow();
 
-      // Re-dispatch atlandı → yeni log create HİÇ çağrılmadı (yeni NULL-owned log oluşmaz):
+      // Kaynak satır bile okunmaz → sahte/stale tenant ile YENİ log üretimi İMKANSIZ.
+      expect(prisma.uyapRequestLog.findMany).not.toHaveBeenCalled();
       expect(prisma.uyapRequestLog.create).not.toHaveBeenCalled();
-      // Status/retryCount update'i yine de yapıldı (mevcut retry-yönetimi davranışı korunur):
-      expect(prisma.uyapRequestLog.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'legacy-1' }, data: expect.objectContaining({ status: 'RETRY' }) }),
-      );
+      // Bağımsız retry state (status/retryCount) da yazılmaz.
+      expect(prisma.uyapRequestLog.update).not.toHaveBeenCalled();
     });
   });
 });

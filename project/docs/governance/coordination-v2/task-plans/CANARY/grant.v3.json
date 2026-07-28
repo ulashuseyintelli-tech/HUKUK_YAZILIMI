@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "grantId": "CANARY-OFFICE-EXECUTION-GRANT-R03",
+  "workstream": "ORCHESTRA-E2E-CANARY-R03",
+  "semanticAuthorityRef": {
+    "kind": "SEMANTIC_AUTHORITY",
+    "recordId": "CANARY-OFFICE-ENCRYPTION-CHARACTERIZATION-R03-AUTHORITY",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/CANARY/semantic-authority.v3.md"
+  },
+  "executionGrantRef": {
+    "kind": "EXECUTION_GRANT",
+    "recordId": "CANARY-OFFICE-EXECUTION-GRANT-R03",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/CANARY/execution-grant.v3.md"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/CANARY/plan-ratification.v3.md",
+    "sourceCommitSha": "5008cc6b88c232700e8855230fc1034b83cc4bbb",
+    "exactExcerpt": "taskId               CANARY-OFFICE-ENCRYPTION-CHARACTERIZATION-R03\ntaskSpecVersion      1\ntaskSpecSha256       60241f3a6708b58082d4c223d900e690fc823c53bb29c6c764fa15d5ce3c8c5b\ndeclaredIntentSha256 017f91faf889b9df701d0d2840fb1f8fcbcc93d40040d47712dc7df263cf11fc\nboundaryPolicySha256 c9ac5282b1051c18de48b9d43c72c0ce957447fc8652257c1e6abb1738d75b02\nrequiredTestsSha256  d7f6c55b8753b47e6b82c0b8fc7ee33ba9b4d96058915de3501153fe56b8530e\nbasePolicy           REFRESH_BEFORE_EXECUTION\nbaseSha              20b3dfde05070c9aa5c31d7bebaa61d5e9877341\nplanRef              project/docs/governance/coordination-v2/task-plans/CANARY/plan.v3.json\n",
+    "excerptSha256": "91332fa69a88970d32e36feb0b91c70859f102dcdbb7a9cfa0038c65aa46fb99"
+  },
+  "authorizedTasks": [
+    {
+      "taskId": "CANARY-OFFICE-ENCRYPTION-CHARACTERIZATION-R03",
+      "taskSpecVersion": 1,
+      "taskSpecSha256": "60241f3a6708b58082d4c223d900e690fc823c53bb29c6c764fa15d5ce3c8c5b",
+      "declaredIntentSha256": "017f91faf889b9df701d0d2840fb1f8fcbcc93d40040d47712dc7df263cf11fc",
+      "boundaryPolicySha256": "c9ac5282b1051c18de48b9d43c72c0ce957447fc8652257c1e6abb1738d75b02",
+      "requiredTestsSha256": "d7f6c55b8753b47e6b82c0b8fc7ee33ba9b4d96058915de3501153fe56b8530e"
+    }
+  ],
+  "allowedModuleRoots": [
+    "project/apps/api/src/modules/office/__tests__/office-credential-encryption.characterization.spec.ts/"
+  ],
+  "expiresAt": "2026-07-29T01:53:54Z",
+  "revocationPath": "project/docs/governance/coordination-v2/task-plans/CANARY/REVOKED",
+  "manualMergeRequired": false,
+  "autoMergeAuthorizedBy": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02"
+}

@@ -45,12 +45,20 @@ describe('P05C-P01 — CpeDecisionLog composite reference key (schema)', () => {
   // remediation'i kapsaminda CpeExecutionRecord tenant binding'ini acikca yetkilendirdi;
   // guard amacina ulastigi icin emekliye ayrilir. P05C-P01'in KENDI katkisi degismeden
   // korunur: CpeExecutionRecord'a @@unique EKLENMEMISTIR.
-  it('CpeExecutionRecord: P05C-P01 kapsami degismedi (@@unique EKLENMEDI)', () => {
+  //
+  // UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 UYARLAMASI: `@@unique yok` assertion'i da ayni
+  // sinifta bir kapsam guard'iydi. Owner GO-COMPLETE §15 ("idempotency collision" +
+  // "cross-tenant direct-ID path") bu degisikligi acikca yetkilendirdi; guard amacina
+  // ulastigi icin emekliye ayrilir. P05C-P01'in KENDI katkisi (CpeDecisionLog composite
+  // key) degismeden korunur ve asagida ayrica dogrulanir.
+  it('CpeExecutionRecord: tenant binding + tenant-scoped idempotency namespace', () => {
     const block = modelBlock('CpeExecutionRecord')!;
     expect(block).not.toBeNull();
-    expect(block).not.toContain('@@unique');
-    // Tenant binding artik BEKLENEN durumdur (DEBTOR-CPE-TENANT-HARDENING-P1-I01).
+    // Tenant binding BEKLENEN durumdur (DEBTOR-CPE-TENANT-HARDENING-P1-I01).
     expect(block).toMatch(/\n\s+tenantId\s+String/);
+    // Idempotency namespace'i tenant basinadir (UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02).
+    expect(block).toContain('@@unique([tenantId, executionId])');
+    expect(block).not.toMatch(/executionId\s+String\s+@unique/);
   });
 
   // P05C-P02 UYARLAMASI: bu assertion P05C-P01'in kapsam guard'iydi ("link tablosu bu fazda

@@ -702,6 +702,159 @@ test('a closure that does not report CLOSED keeps its own blocker code', async (
   assert.equal(queue.get(e.entry.entryId).blockerCode, 'ATTESTATION_INVALIDATED');
 });
 
+// ───────────────────────────────────────────── FINALIZE RETRY AFTER A BLOCKER
+
+test('a finalize blocked by a fixed gate is retried against the SAME pull request', async () => {
+  // Observed, not imagined. The R03 canary ran a real executor for fifteen
+  // minutes, produced the authorized diff, opened a green PR — and finalize
+  // blocked on ATTESTATION_INVALIDATED because two functions disagreed about
+  // which digest a plan has. That defect was fixed. The entry could not be
+  // retried: finalizable() lists MERGE_READY only, and the queue table let
+  // BLOCKED go to QUEUED, which re-runs the executor and opens a SECOND pull
+  // request for the change the first one already contains.
+  //
+  // So the cost of any fixable finalize gate was the whole run. That is the
+  // property under test: the fix is enough, the run survives.
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = officeRequest(root, { taskId: 'BP-RETRY-1' });
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.autoMerge = true;
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+  const e = service.enqueue({ requestPath });
+
+  await service.runOnce(mergingRun({ closure: { disposition: 'BLOCKED', blockerCode: 'ATTESTATION_INVALIDATED' } }));
+  const blocked = queue.get(e.entry.entryId);
+  assert.equal(blocked.state, 'BLOCKED');
+  const prBefore = (blocked.handoff && blocked.handoff.prNumber) || blocked.prNumber;
+  assert.ok(prBefore, 'the handoff still holds the pull request the run earned');
+
+  // Visible to an operator, and visible as a retry rather than as a fresh one.
+  const listed = service.finalizable().filter((f) => f.entryId === e.entry.entryId);
+  assert.equal(listed.length, 1, 'a blocked entry holding a handoff is finalizable');
+  assert.equal(listed[0].retryOfFailedFinalize, true);
+  assert.equal(listed[0].blockerCode, 'ATTESTATION_INVALIDATED');
+
+  // The gate is fixed; nothing else changes.
+  const runner = mergingRun();
+  const again = await service.finalizeEntry(e.entry.entryId, runner);
+  assert.equal(again.disposition, 'CLOSED', again.blockerCode || again.detail);
+  assert.equal(queue.get(e.entry.entryId).state, 'CLOSED');
+
+  // The same pull request, and exactly one merge. A retry that opened a second
+  // PR would satisfy every assertion above and still be the bug.
+  assert.equal(runner.calls.merged, 1, 'one merge, not two');
+  assert.equal((queue.get(e.entry.entryId).handoff || {}).prNumber, prBefore);
+
+  const trail = service.auditTrail().filter((x) => x.event === 'FINALIZE_RETRY_FROM_BLOCKED');
+  assert.equal(trail.length, 1, 'the retry is recorded, not silent');
+  assert.equal(trail[0].detail.priorBlocker, 'ATTESTATION_INVALIDATED');
+});
+
+test('a retried finalize re-resolves authority from disk instead of trusting the handoff', async () => {
+  // The danger of a retry path is that it becomes a way around the checks the
+  // first attempt failed. It restores the entry to where the gates run; it
+  // does not decide their answer, and it does not let the handoff speak for
+  // authority that has since changed on disk.
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = officeRequest(root, { taskId: 'BP-RETRY-2' });
+  const abs = path.join(root, requestPath);
+  const req = JSON.parse(fs.readFileSync(abs, 'utf8'));
+  req.autoMerge = true;
+  fs.writeFileSync(abs, JSON.stringify(req, null, 2), 'utf8');
+  const e = service.enqueue({ requestPath });
+
+  await service.runOnce(mergingRun({ closure: { disposition: 'BLOCKED', blockerCode: 'ATTESTATION_INVALIDATED' } }));
+  assert.equal(queue.get(e.entry.entryId).state, 'BLOCKED');
+
+  // The request withdraws its auto-merge consent while the entry sits blocked.
+  req.autoMerge = false;
+  fs.writeFileSync(abs, JSON.stringify(req, null, 2), 'utf8');
+
+  const runner = mergingRun();
+  const out = await service.finalizeEntry(e.entry.entryId, runner);
+  assert.equal(out.disposition, 'MERGE_NOT_AUTHORIZED', out.blockerCode || out.detail);
+  assert.equal(runner.calls.merged, 0, 'nothing merged');
+  assert.equal(queue.get(e.entry.entryId).state, 'MERGE_READY', 'parked for a human, exactly as a first attempt would be');
+});
+
+test('a retry attempted while the kill switch is engaged moves nothing', async () => {
+  // A refusal that leaves the entry somewhere other than where it found it is
+  // a state change dressed as a no-op.
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = officeRequest(root, { taskId: 'BP-RETRY-5' });
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.autoMerge = true;
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+  const e = service.enqueue({ requestPath });
+  await service.runOnce(mergingRun({ closure: { disposition: 'BLOCKED', blockerCode: 'ATTESTATION_INVALIDATED' } }));
+
+  service.engageKillSwitch('incident');
+  const runner = mergingRun();
+  const out = await service.finalizeEntry(e.entry.entryId, runner);
+  assert.equal(out.blockerCode, 'KILL_SWITCH_ENGAGED');
+  assert.equal(runner.calls.merged, 0);
+  const still = queue.get(e.entry.entryId);
+  assert.equal(still.state, 'BLOCKED', 'the entry did not move');
+  assert.equal(still.blockerCode, 'ATTESTATION_INVALIDATED', 'and kept the blocker an operator has to read');
+  service.releaseKillSwitch('test over');
+});
+
+test('a blocked entry with no handoff is never restored for a merge', async () => {
+  // The handoff is what proves the merge was earned: an attestation and a pull
+  // request. Without it there is nothing to merge INTO, and restoring the
+  // entry to MERGE_READY would invent a merge point. The queue refuses it
+  // below the service, so no caller can arrange otherwise.
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = officeRequest(root, { taskId: 'BP-RETRY-3' });
+  const e = service.enqueue({ requestPath });
+  queue.transition({
+    entryId: e.entry.entryId,
+    to: 'BLOCKED',
+    expectedPreviousState: 'QUEUED',
+    blockerCode: 'EXECUTOR_NONZERO_EXIT',
+  });
+
+  assert.equal(
+    service.finalizable().filter((f) => f.entryId === e.entry.entryId).length,
+    0,
+    'not listed: there is no pull request to finalize',
+  );
+  assert.throws(
+    () =>
+      queue.transition({
+        entryId: e.entry.entryId,
+        to: 'MERGE_READY',
+        expectedPreviousState: 'BLOCKED',
+        finalizeRetryAuthorized: true,
+      }),
+    (err) => err.code === 'QUEUE_FINALIZE_RETRY_NO_HANDOFF',
+  );
+});
+
+test('restoring a blocked entry for a merge is an authorized act, not a transition', async () => {
+  // Same rule as the resume edge: BLOCKED → MERGE_READY exists so a fixed gate
+  // can be retried, and for nothing else. An unflagged caller reaching for it
+  // is refused by name.
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = officeRequest(root, { taskId: 'BP-RETRY-4' });
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.autoMerge = true;
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+  const e = service.enqueue({ requestPath });
+  await service.runOnce(mergingRun({ closure: { disposition: 'BLOCKED', blockerCode: 'ATTESTATION_INVALIDATED' } }));
+
+  assert.throws(
+    () => queue.transition({ entryId: e.entry.entryId, to: 'MERGE_READY', expectedPreviousState: 'BLOCKED' }),
+    (err) => err.code === 'QUEUE_FINALIZE_RETRY_NOT_AUTHORIZED',
+  );
+  assert.equal(queue.get(e.entry.entryId).state, 'BLOCKED', 'the refusal left the entry where it was');
+});
+
 // ─────────────────────────────────────────────────── PROMPT DELIVERY
 
 test('the prompt named by a request is actually read and delivered', () => {
