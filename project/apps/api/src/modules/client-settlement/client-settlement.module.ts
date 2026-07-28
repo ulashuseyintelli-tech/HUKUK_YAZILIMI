@@ -10,6 +10,8 @@ import { PaymentReceivedRegistrar } from './payment-received.registrar';
 import { CollectionReversalService } from './collection-reversal.service';
 import { PaymentReversedRegistrar } from './payment-reversed.registrar';
 import { DispositionPostingService } from './disposition-posting.service';
+import { ClientFinancialDisclosureCommandService } from './client-financial-disclosure-command.service';
+import { ClientFinancialDisclosureModule } from '../client-financial-disclosure/client-financial-disclosure.module';
 import { DistributionRecommendationService } from './distribution-recommendation.service';
 import { DispositionController } from './disposition.controller';
 import { ClientPayoutService } from './client-payout.service';
@@ -41,7 +43,7 @@ import { CaseFeeAgreementController } from './case-fee-agreement.controller';
  *      manuel-reversal-required olarak consume eder (ayri exact key; M1 handler'ina dokunmaz).
  */
 @Module({
-  imports: [PrismaModule, V28EngineModule, OfficeApprovalModule, AuditModule, AccountingJournalTrialBalanceModule],
+  imports: [PrismaModule, V28EngineModule, OfficeApprovalModule, AuditModule, AccountingJournalTrialBalanceModule, ClientFinancialDisclosureModule],
   controllers: [
     DispositionController,
     ClientPayoutController,
@@ -56,6 +58,7 @@ import { CaseFeeAgreementController } from './case-fee-agreement.controller';
     CollectionReversalService,
     PaymentReversedRegistrar,
     DispositionPostingService,
+    ClientFinancialDisclosureCommandService,
     DistributionRecommendationService,
     FinanceRiskEngine,
     FinanceApprovalIntentBuilder,
