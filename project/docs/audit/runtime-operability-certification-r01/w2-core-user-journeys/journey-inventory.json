@@ -1,0 +1,350 @@
+{
+  "schemaVersion": 1,
+  "program": "RUNTIME-OPERABILITY-CERTIFICATION-R01",
+  "task": "W2-CORE-USER-JOURNEYS",
+  "ownerDecision": "RATIFIED",
+  "executionGrant": "GO-COMPLETE",
+  "metadata": {
+    "auditBaseSha": "9cd51295db434b437bf240a26a4421c6c8e7a211",
+    "generatedFrom": "project/scripts/runtime-core-user-journeys-certification-r01.cjs",
+    "runtimeSpec": "project/apps/api/src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.integration.spec.ts",
+    "requiredManifest": "project/apps/api/ci-manifests/db/domain-integration.txt",
+    "evidenceBoundary": "CONTROLLED_LOCAL_NEST_HTTP_PLUS_DISPOSABLE_POSTGRESQL",
+    "admissionRule": "FOCUSED_RUNTIME_TEST_AND_REQUIRED_PR_CI_MUST_PASS_BEFORE_MERGE",
+    "w0ArtifactBlobs": {
+      "project/docs/audit/runtime-operability-certification-r01/methodology.md": "c6d46f2f17a5722fa5b28908ba219114bd0d59d9",
+      "project/docs/audit/runtime-operability-certification-r01/methodology-validation-report.md": "04928b8cedc0448ad479af79e3d098e4605dba88",
+      "project/docs/audit/runtime-operability-certification-r01/historical-closure-certification.json": "3b142342e991155ad493bf9b642521aead26cdc0",
+      "project/docs/audit/runtime-operability-certification-r01/historical-closure-certification.md": "159877b9f45d7afc3a624652a5ae7f743806feae",
+      "project/docs/audit/runtime-operability-certification-r01/decision-log.md": "df33e313af7621bbe0a5c08a57a2ff98a1924a78"
+    },
+    "w1ArtifactTreeSha": "73c59392b418f238b588d55dfb82473bf5ab1c30"
+  },
+  "statusAxes": {
+    "canonicalRepositoryStatus": "CERTIFICATION CANDIDATE — GO-COMPLETE MERGE REQUIRED",
+    "codeDeploymentStatus": "NOT PERFORMED",
+    "controlledLocalRuntimeStatus": "CONTROLLED_LOCAL_CERTIFIED",
+    "deployedEnvironmentRuntimeStatus": "NOT ASSESSED",
+    "userValueStatus": "CONTROLLED-LOCAL VERIFIED / DEPLOYED USER VALUE NOT ASSESSED"
+  },
+  "repositoryWideDisposition": "PARTIAL / OPERATIONALLY UNCERTIFIED",
+  "prohibitedActions": {
+    "productionDeploymentPerformed": false,
+    "productionDatabaseMutationPerformed": false,
+    "schemaOrMigrationChanged": false,
+    "dormantCapabilityActivated": false,
+    "breakGlassEnabled": false,
+    "crossTenantEnablementPerformed": false,
+    "playbookOrManifestAdminActivated": false,
+    "newLegalOrAuthorizationPolicyIntroduced": false
+  },
+  "metrics": {
+    "totalJourneysSelected": 5,
+    "controlledLocalCertified": 5,
+    "partial": 0,
+    "defectConfirmed": 0,
+    "safeRemediationsCompleted": 0,
+    "ownerDecisionRequired": 0,
+    "noEligibleJourney": 0,
+    "negativeTenantBoundaryPass": 5,
+    "negativeAuthorizationBoundaryPass": 5,
+    "independentReadBackPass": 5
+  },
+  "moduleScorecard": [
+    {
+      "module": "CLIENT",
+      "journeysSelected": 1,
+      "certified": 1,
+      "partial": 0,
+      "blocked": 0,
+      "defects": 0,
+      "remediations": 0,
+      "userValueStatus": "CONTROLLED-LOCAL VERIFIED / DEPLOYED NOT ASSESSED"
+    },
+    {
+      "module": "DEBTOR",
+      "journeysSelected": 1,
+      "certified": 1,
+      "partial": 0,
+      "blocked": 0,
+      "defects": 0,
+      "remediations": 0,
+      "userValueStatus": "CONTROLLED-LOCAL VERIFIED / DEPLOYED NOT ASSESSED"
+    },
+    {
+      "module": "RECEIVABLE",
+      "journeysSelected": 1,
+      "certified": 1,
+      "partial": 0,
+      "blocked": 0,
+      "defects": 0,
+      "remediations": 0,
+      "userValueStatus": "CONTROLLED-LOCAL VERIFIED / DEPLOYED NOT ASSESSED"
+    },
+    {
+      "module": "COLLECTION",
+      "journeysSelected": 1,
+      "certified": 1,
+      "partial": 0,
+      "blocked": 0,
+      "defects": 0,
+      "remediations": 0,
+      "userValueStatus": "CONTROLLED-LOCAL VERIFIED / DEPLOYED NOT ASSESSED"
+    },
+    {
+      "module": "OFFICE",
+      "journeysSelected": 1,
+      "certified": 1,
+      "partial": 0,
+      "blocked": 0,
+      "defects": 0,
+      "remediations": 0,
+      "userValueStatus": "CONTROLLED-LOCAL VERIFIED / DEPLOYED NOT ASSESSED"
+    }
+  ],
+  "closeoutResidual": {
+    "residualId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01",
+    "observationStatus": "PENDING_GO_COMPLETE_CLOSEOUT",
+    "remediationAuthorized": false
+  },
+  "journeys": [
+    {
+      "journeyId": "W2-CLIENT-01",
+      "module": "CLIENT",
+      "name": "Create and retrieve a tenant-scoped client",
+      "entryPoint": "POST /api/clients -> GET /api/clients/:id",
+      "authorizationPath": [
+        "JwtAuthGuard",
+        "JwtStrategy",
+        "repository-backed controlled identity validator"
+      ],
+      "tenantBoundaryPath": [
+        "trusted req.user.tenantId",
+        "ClientService.create(tenantId)",
+        "ClientService.findOne(id, tenantId)"
+      ],
+      "consumerPath": [
+        "ClientController.create/findOne",
+        "ClientService.create/findOne"
+      ],
+      "persistencePath": [
+        "Client",
+        "AuditLog CLIENT_CREATE",
+        "client and audit in one Prisma transaction"
+      ],
+      "independentReadBack": [
+        "PrismaClient.client.findFirst(id + tenantId)",
+        "PrismaClient.auditLog.findFirst(CLIENT_CREATE)"
+      ],
+      "certificationLevels": {
+        "J0": "PASS",
+        "J1": "PASS",
+        "J2": "PASS",
+        "J3": "PASS",
+        "J4": "PASS",
+        "J5": "PASS",
+        "J6": "PASS",
+        "J7": "PASS"
+      },
+      "finalStatus": "CONTROLLED_LOCAL_CERTIFIED",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.integration.spec.ts#CLIENT",
+        "project/apps/api/src/modules/client/client.controller.ts",
+        "project/apps/api/src/modules/client/client.service.ts",
+        "project/apps/api/src/modules/client/client.module.ts"
+      ],
+      "defects": []
+    },
+    {
+      "journeyId": "W2-DEBTOR-01",
+      "module": "DEBTOR",
+      "name": "Create and retrieve a tenant-isolated debtor",
+      "entryPoint": "POST /api/debtors -> GET /api/debtors/:id",
+      "authorizationPath": [
+        "JwtAuthGuard",
+        "JwtStrategy",
+        "repository-backed controlled identity validator"
+      ],
+      "tenantBoundaryPath": [
+        "CurrentUser tenantId/id",
+        "DebtorService.create(tenantId)",
+        "DebtorService.findOne(tenantId, id)"
+      ],
+      "consumerPath": [
+        "DebtorController.create/findOne",
+        "DebtorService.create/findOne"
+      ],
+      "persistencePath": [
+        "Debtor",
+        "AuditLog DEBTOR_CREATE"
+      ],
+      "independentReadBack": [
+        "PrismaClient.debtor.findFirst(id + tenantId)",
+        "PrismaClient.auditLog.findFirst(DEBTOR_CREATE)"
+      ],
+      "certificationLevels": {
+        "J0": "PASS",
+        "J1": "PASS",
+        "J2": "PASS",
+        "J3": "PASS",
+        "J4": "PASS",
+        "J5": "PASS",
+        "J6": "PASS",
+        "J7": "PASS"
+      },
+      "finalStatus": "CONTROLLED_LOCAL_CERTIFIED",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.integration.spec.ts#DEBTOR",
+        "project/apps/api/src/modules/debtor/debtor.controller.ts",
+        "project/apps/api/src/modules/debtor/debtor.service.ts",
+        "project/apps/api/src/modules/debtor/debtor.module.ts"
+      ],
+      "defects": []
+    },
+    {
+      "journeyId": "W2-RECEIVABLE-01",
+      "module": "RECEIVABLE",
+      "name": "Read active claim items while human formation remains fail-closed",
+      "entryPoint": "GET /api/claim-items/case/:caseId -> GET /api/claim-items/:id",
+      "authorizationPath": [
+        "JwtAuthGuard",
+        "JwtStrategy",
+        "ClaimItemWriteGateService for rejected human create"
+      ],
+      "tenantBoundaryPath": [
+        "CurrentUser tenantId",
+        "ClaimItemService.findByCaseId(tenantId, caseId)",
+        "ClaimItemService.findOne(tenantId, id)"
+      ],
+      "consumerPath": [
+        "ClaimItemController.findByCaseId/findOne/create",
+        "ClaimItemService",
+        "ClaimItemWriterRouterService"
+      ],
+      "persistencePath": [
+        "Existing canonical ClaimItem read",
+        "FORMATION_CONTEXT_REQUIRED create leaves ClaimItem count unchanged"
+      ],
+      "independentReadBack": [
+        "PrismaClient.claimItem.findFirst(id + tenantId + caseId)",
+        "before/after ClaimItem count"
+      ],
+      "certificationLevels": {
+        "J0": "PASS",
+        "J1": "PASS",
+        "J2": "PASS",
+        "J3": "PASS",
+        "J4": "PASS",
+        "J5": "PASS",
+        "J6": "PASS",
+        "J7": "PASS"
+      },
+      "finalStatus": "CONTROLLED_LOCAL_CERTIFIED",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.integration.spec.ts#RECEIVABLE",
+        "project/apps/api/src/modules/claim-item/claim-item.controller.ts",
+        "project/apps/api/src/modules/claim-item/claim-item.service.ts",
+        "project/apps/api/src/modules/claim-item/claim-item.module.ts"
+      ],
+      "defects": []
+    },
+    {
+      "journeyId": "W2-COLLECTION-01",
+      "module": "COLLECTION",
+      "name": "Record and independently verify a tenant-scoped collection receipt",
+      "entryPoint": "POST /api/collections -> GET /api/collections/:id",
+      "authorizationPath": [
+        "JwtAuthGuard",
+        "JwtStrategy",
+        "ReceiptObjectScopeAuthorizationService L2 case membership"
+      ],
+      "tenantBoundaryPath": [
+        "CurrentUser tenantId/id",
+        "tenant-scoped Case and CaseDebtor guards",
+        "CollectionService.findById(tenantId, id)"
+      ],
+      "consumerPath": [
+        "CollectionController.create/findById",
+        "CollectionService.create/findById",
+        "DomainEventIngestService",
+        "AccountingJournalWriterService"
+      ],
+      "persistencePath": [
+        "Collection",
+        "LedgerEntry",
+        "AccountingJournalEntry",
+        "AuditLog",
+        "IcrabotTimelineEntry",
+        "IcrabotOutboxAction"
+      ],
+      "independentReadBack": [
+        "Direct Prisma reads for every canonical receipt side effect",
+        "idempotent replay returns the original Collection"
+      ],
+      "certificationLevels": {
+        "J0": "PASS",
+        "J1": "PASS",
+        "J2": "PASS",
+        "J3": "PASS",
+        "J4": "PASS",
+        "J5": "PASS",
+        "J6": "PASS",
+        "J7": "PASS"
+      },
+      "finalStatus": "CONTROLLED_LOCAL_CERTIFIED",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.integration.spec.ts#COLLECTION",
+        "project/apps/api/src/modules/collection/collection.controller.ts",
+        "project/apps/api/src/modules/collection/collection.service.ts",
+        "project/apps/api/src/modules/collection/collection.module.ts"
+      ],
+      "defects": []
+    },
+    {
+      "journeyId": "W2-OFFICE-01",
+      "module": "OFFICE",
+      "name": "Update and retrieve non-secret office profile settings",
+      "entryPoint": "PUT /api/office -> GET /api/office",
+      "authorizationPath": [
+        "JwtAuthGuard",
+        "JwtStrategy",
+        "repository-backed controlled identity validator"
+      ],
+      "tenantBoundaryPath": [
+        "CurrentUser tenantId/id",
+        "OfficeService.getOrCreate(tenantId)",
+        "Office.tenantId unique boundary"
+      ],
+      "consumerPath": [
+        "OfficeController.updateOffice/getOffice",
+        "OfficeService.update/getPublicOffice"
+      ],
+      "persistencePath": [
+        "Office non-secret fields",
+        "AuditLog OFFICE_SETTINGS UPDATE"
+      ],
+      "independentReadBack": [
+        "PrismaClient.office.findUnique(tenantId)",
+        "PrismaClient.auditLog.findFirst(OFFICE_SETTINGS)"
+      ],
+      "certificationLevels": {
+        "J0": "PASS",
+        "J1": "PASS",
+        "J2": "PASS",
+        "J3": "PASS",
+        "J4": "PASS",
+        "J5": "PASS",
+        "J6": "PASS",
+        "J7": "PASS"
+      },
+      "finalStatus": "CONTROLLED_LOCAL_CERTIFIED",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.integration.spec.ts#OFFICE",
+        "project/apps/api/src/modules/office/office.controller.ts",
+        "project/apps/api/src/modules/office/office.service.ts",
+        "project/apps/api/src/modules/office/office.module.ts"
+      ],
+      "defects": []
+    }
+  ]
+}
