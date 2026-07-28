@@ -660,6 +660,40 @@ test('DV54  delivery evidence for another merge does not release a v2 successor'
   assert.equal(v.reason, 'PREDECESSOR_DELIVERY_MERGE_SHA_MISMATCH', JSON.stringify(v));
 });
 
+test('DV55  delivery evidence for another task does not release a v2 successor', () => {
+  const predecessorTaskId = 'GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R02';
+  const mergeSha = 'a'.repeat(40);
+  const record = {
+    state: 'CLOSED',
+    payload: {
+      taskId: predecessorTaskId,
+      mergeSha,
+      delivery: Object.assign({}, GOOD_DELIVERY, {
+        taskId: predecessorTaskId,
+        mergeSha,
+        verifiedAtSha: mergeSha,
+        probeDefinitionSha256: 'd'.repeat(64),
+      }),
+    },
+  };
+
+  // The identity check must discriminate rather than reject every otherwise
+  // valid record.
+  const matching = successorMod.predecessorSatisfied(record, 2);
+  assert.equal(matching.ok, true, JSON.stringify(matching));
+
+  // Every SHA remains bound to this predecessor, but the evidence now claims
+  // that it belongs to a different task.
+  record.payload.delivery.taskId = 'OTHER-PREDECESSOR-TASK';
+  assert.equal(record.payload.delivery.verifiedAtSha, record.payload.delivery.mergeSha);
+  assert.equal(record.payload.delivery.mergeSha, record.payload.mergeSha);
+  assert.notEqual(record.payload.delivery.taskId, record.payload.taskId);
+
+  const v = successorMod.predecessorSatisfied(record, 2);
+  assert.equal(v.ok, false, JSON.stringify(v));
+  assert.equal(v.reason, 'PREDECESSOR_DELIVERY_TASK_ID_MISMATCH', JSON.stringify(v));
+});
+
 // ───────────────────────────────────── SCHEMA V2 (DV40–DV45)
 
 const authority = require('../orchestrator/authority.cjs');

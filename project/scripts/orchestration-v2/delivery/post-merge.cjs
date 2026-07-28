@@ -217,13 +217,18 @@ async function verifyAtMergeSha(o) {
  * reads. Built here so the finalizer and the gate cannot disagree about field
  * names — the kind of drift that produces a gate which never fires.
  */
-function deliveryRecordFrom(result, mergeSha) {
+function deliveryRecordFrom(result, mergeSha, taskId) {
   const rec = result.record || {};
   return {
     verdict: result.verdict,
     observedState: result.observedState,
     targetState: result.targetState,
     capabilityId: rec.capabilityId || null,
+    // WHOSE delivery this is. The successor gate refuses evidence that names
+    // another task, and a gate can only refuse what the producer states —
+    // leaving this unwritten would have made that rule true in prose and inert
+    // in practice, which is the exact failure this programme exists to stop.
+    taskId: taskId || rec.taskId || null,
     mergeSha: mergeSha,
     verifiedAtSha: rec.verifiedAtSha || null,
     expectedMergeSha: rec.expectedMergeSha || mergeSha,
