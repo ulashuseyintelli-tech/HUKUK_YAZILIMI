@@ -419,6 +419,30 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
     expect(r.authorityConsumed).toBeNull();
   });
 
+  it('34. the real gh/git adapter module loads and exposes the full surface', () => {
+    // Pilot bulgusu: gh-adapter.cjs'i hicbir test require etmiyordu, bu yuzden
+    // icindeki bir syntax hatasi butun CI yesilken main'e gidebiliyordu. Bu test
+    // adapter'i gercekten yukler; hata artik CI'da patlar.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('../../../../../scripts/orchestration-v2/closeout/gh-adapter.cjs');
+    const adapter = mod.createGhCloseoutAdapter({ repoCwd: process.cwd() });
+    for (const fn of [
+      'repositoryIdentity', 'authorityLedgerEntry', 'getPr', 'changedPaths', 'getChecks',
+      'platformRequiredChecks', 'remoteBranchHead', 'localHead', 'competingWriters',
+      'ownerWipCollision', 'squashMerge', 'syncMain', 'isAncestor', 'cleanupBranch',
+      'cleanupWorktree', 'consumeAuthority', 'verifyCanonical',
+    ]) {
+      expect(typeof adapter[fn]).toBe('function');
+    }
+  });
+
+  it('35. the CLI module loads', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const cli = require('../../../../../scripts/orchestration-v2/closeout/cli.cjs');
+    expect(typeof cli.main).toBe('function');
+    expect(cli.parseArgs(['--pr', '7', '--dry-run'])).toEqual({ pr: '7', 'dry-run': true });
+  });
+
   it('the state machine is single-directional and declared', () => {
     expect(closeout.STAGES[0]).toBe('PREFLIGHT');
     expect(closeout.STAGES[closeout.STAGES.length - 1]).toBe('CLOSED');

@@ -218,8 +218,7 @@ function createGhCloseoutAdapter(o) {
       };
       if (existing) Object.assign(existing, stamp);
       else ledger.entries.push(Object.assign({ authorityRef: ref }, stamp));
-      fs.writeFileSync(p, JSON.stringify(ledger, null, 2) + '
-', 'utf8');
+      fs.writeFileSync(p, JSON.stringify(ledger, null, 2) + String.fromCharCode(10), 'utf8');
       return 'CONSUMED';
     },
 
