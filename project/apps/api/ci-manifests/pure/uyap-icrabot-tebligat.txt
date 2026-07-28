@@ -162,6 +162,7 @@ src/modules/uyap-export/projection/__tests__/due-claimitem-relation.classifier.s
 src/modules/uyap-export/projection/__tests__/faizt-interest-projection.adapter.spec.ts
 src/modules/uyap/__tests__/haciz-decision-audit.spec.ts
 src/modules/uyap/__tests__/uyap-authority-fact-bridge.spec.ts
+src/modules/uyap/__tests__/uyap-expense-blocking-fact-bridge.spec.ts
 src/modules/uyap/__tests__/numeric-interest-projection.adapter.spec.ts
 src/modules/uyap/__tests__/uyap-case-status-tenant-scope.spec.ts
 src/modules/uyap/__tests__/uyap-debtor-assets-pii-persistence.spec.ts

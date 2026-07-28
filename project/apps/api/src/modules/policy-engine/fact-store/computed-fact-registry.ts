@@ -167,8 +167,12 @@ export class ComputedFactRegistry implements OnModuleInit {
     // Has valid address
     this.register(new HasValidAddressProvider());
     
-    // Has unpaid blocking expense
-    this.register(new HasUnpaidBlockingExpenseProvider());
+    // UYAP-EXPENSE-BLOCKING-FACT-BRIDGE-I01: `case.has_unpaid_blocking_expense` icin
+    // built-in provider KALDIRILDI. Eski provider degeri `case.expense_gate_blocked`
+    // fact'inden okuyordu; o fact'in repository'de HICBIR production writer'i yoktu →
+    // EXPENSE_BLOCKING gate'i yapisal olarak OLUYDU (her zaman fail-open).
+    // Canonical kaynak artik `UyapExpenseBlockingFactProvider`'dir (ExpenseBlockReason
+    // kayitlarindan hesaplar) ve UyapModule.onModuleInit ile register edilir.
 
     // İtiraz süresi (gün) - icra türüne göre (kambiyo 5 / ilamsız 7)
     this.register(new CaseObjectionPeriodDaysProvider());
@@ -230,23 +234,9 @@ class HasValidAddressProvider implements ComputedFactProvider {
   }
 }
 
-/**
- * Ödenmemiş blocking masraf var mı
- */
-class HasUnpaidBlockingExpenseProvider implements ComputedFactProvider {
-  readonly factKey = 'case.has_unpaid_blocking_expense';
-  readonly dependsOn: string[] = [];
+// UYAP-EXPENSE-BLOCKING-FACT-BRIDGE-I01: `HasUnpaidBlockingExpenseProvider` KALDIRILDI
+// (hayalet `case.expense_gate_blocked` fact'ine dayaniyordu). Bkz. UyapExpenseBlockingFactProvider.
 
-  async compute(
-    caseId: string,
-    context?: ActionContext,
-    facts?: FactMap,
-  ): Promise<boolean> {
-    // This will be computed from ExpenseRequest table
-    // For now, check if there's a flag
-    return facts?.get('case.expense_gate_blocked') === true;
-  }
-}
 
 /**
  * İtiraz süresi (gün) - icra/takip türüne göre.
