@@ -127,6 +127,15 @@ function readJson(repoCwd, rel, label) {
  *
  * @returns {{request, spec, standingGrant, grant, manifest, taskSpecSha256}}
  */
+function readText(repoCwd, rel, label) {
+  const p = path.isAbsolute(rel) ? rel : path.join(repoCwd, rel);
+  try {
+    return fs.readFileSync(p, 'utf8');
+  } catch (e) {
+    fail('REQUEST_' + label + '_UNREADABLE', rel);
+  }
+}
+
 function resolve(opts) {
   const repoCwd = opts.repoCwd;
   const request = opts.request;
@@ -146,12 +155,27 @@ function resolve(opts) {
     fail('REQUEST_PROGRAM_MISMATCH', request.programId + ' != grant ' + grantProgram);
   }
 
+  // The prompt is READ here, not merely named.
+  //
+  // The request carried promptPath and nothing ever opened it, so the executor
+  // was spawned with an empty stdin and codex answered, correctly:
+  //
+  //   No prompt provided via stdin.
+  //
+  // A field that names a file nobody reads is worse than no field: it looks
+  // like the prompt is wired.
+  const prompt = request.promptPath ? readText(repoCwd, request.promptPath, 'PROMPT') : '';
+  if (request.promptPath && !prompt.trim()) {
+    fail('REQUEST_PROMPT_EMPTY', request.promptPath);
+  }
+
   return {
     request,
     spec,
     standingGrant,
     grant,
     manifest,
+    prompt,
     // The identity the queue deduplicates on and the merge gate later pins.
     taskSpecSha256: authority.digest(spec),
   };

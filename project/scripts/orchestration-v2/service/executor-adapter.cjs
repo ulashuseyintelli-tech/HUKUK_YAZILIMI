@@ -156,7 +156,10 @@ async function runEntry(o) {
     // that tells it the resume was authorized, and without it a resumed entry
     // is refused with BLOCKED_RESUME_NOT_AUTHORIZED — correctly.
     resumeFromBlocked: entry.resumeFromBlocked === true,
-    prompt: o.prompt || '',
+    // From the resolved request. An injected prompt still wins, so a caller
+    // driving the adapter directly can supply one, but the request's own
+    // prompt is no longer silently dropped.
+    prompt: o.prompt || resolved.prompt || '',
     expectedHeadBranch: o.expectedHeadBranch || null,
     isRevoked: o.isRevoked ? () => o.isRevoked(resolved.standingGrant) === true : undefined,
     isKillSwitchEngaged: o.isKillSwitchEngaged,

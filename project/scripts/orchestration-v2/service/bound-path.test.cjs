@@ -632,3 +632,75 @@ test('a closure that does not report CLOSED keeps its own blocker code', async (
   await service.runOnce(mergingRun({ closure: { disposition: 'BLOCKED', blockerCode: 'ATTESTATION_INVALIDATED' } }));
   assert.equal(queue.get(e.entry.entryId).blockerCode, 'ATTESTATION_INVALIDATED');
 });
+
+// ─────────────────────────────────────────────────── PROMPT DELIVERY
+
+test('the prompt named by a request is actually read and delivered', () => {
+  // It was not. promptPath was carried and never opened, so the executor was
+  // spawned with empty stdin and codex answered "No prompt provided via
+  // stdin." — after a full worktree checkout, every time.
+  const root = scratchRepo();
+  const { requestPath } = officeRequest(root, { taskId: 'BP-PROMPT-1' });
+  const promptRel = 'prompts/p.md';
+  fs.mkdirSync(path.join(root, 'prompts'), { recursive: true });
+  fs.writeFileSync(path.join(root, promptRel), 'DO THE BOUNDED THING\n', 'utf8');
+
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.promptPath = promptRel;
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+
+  const resolved = requestMod.load({ repoCwd: root, requestPath });
+  assert.match(resolved.prompt, /DO THE BOUNDED THING/);
+});
+
+test('a request naming a prompt file that is missing or empty is refused', () => {
+  // A field that names a file nobody reads is worse than no field: it looks
+  // like the prompt is wired. Both failures are named rather than silently
+  // producing an empty stdin.
+  const root = scratchRepo();
+  const { requestPath } = officeRequest(root, { taskId: 'BP-PROMPT-2' });
+  const setPrompt = (rel) => {
+    const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+    req.promptPath = rel;
+    fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+  };
+
+  setPrompt('prompts/missing.md');
+  assert.throws(
+    () => requestMod.load({ repoCwd: root, requestPath }),
+    (e) => e.code === 'REQUEST_PROMPT_UNREADABLE',
+  );
+
+  fs.mkdirSync(path.join(root, 'prompts'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'prompts/blank.md'), '   \n\n', 'utf8');
+  setPrompt('prompts/blank.md');
+  assert.throws(
+    () => requestMod.load({ repoCwd: root, requestPath }),
+    (e) => e.code === 'REQUEST_PROMPT_EMPTY',
+  );
+});
+
+test('the adapter hands the resolved prompt to the executor', () => {
+  const root = scratchRepo();
+  const { requestPath } = officeRequest(root, { taskId: 'BP-PROMPT-3' });
+  fs.mkdirSync(path.join(root, 'prompts'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'prompts/p3.md'), 'PROMPT-THREE\n', 'utf8');
+  const req = JSON.parse(fs.readFileSync(path.join(root, requestPath), 'utf8'));
+  req.promptPath = 'prompts/p3.md';
+  fs.writeFileSync(path.join(root, requestPath), JSON.stringify(req, null, 2), 'utf8');
+
+  const { service } = svc(root);
+  service.enqueue({ requestPath });
+
+  let seen = null;
+  const runner = {
+    buildContext: (o) => {
+      seen = o.prompt;
+      return Object.assign({ holder: 'CLAUDE_LOCAL' }, o);
+    },
+    runTask: async (ctx) => ({ disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 1, headSha: 'a'.repeat(40) } }),
+  };
+  return service.runOnce(runner).then(() => {
+    assert.match(String(seen), /PROMPT-THREE/, 'the executor context carried the prompt');
+  });
+});
