@@ -49,3 +49,4 @@ src/modules/office/__tests__/office-settings-security.spec.ts
 src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts
 src/scripts/__tests__/office-cap02-reportingline-population.core.spec.ts
 src/scripts/__tests__/office-cap02-identity-binding-operate.core.spec.ts
+src/scripts/__tests__/office-cap02-reportingline-initial-population.plan.spec.ts
