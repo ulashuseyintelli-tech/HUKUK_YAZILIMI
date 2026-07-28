@@ -189,8 +189,11 @@ describe('P02A-5 — bağımlılık ve runtime izolasyonu (kaynak-grep)', () => 
     const types = readOfficial('official-role-translation.types.ts');
     // types dosyası hâlâ rolID ATAMASI (literal) içermez (yalnız `rolID: string` tip anotasyonu).
     expect(types).not.toMatch(/rolID:\s*['"`]\d/);
-    // translator'daki rolID literal atamaları YALNIZ '22' ve '33' (owner-ratified P03A) olmalı.
-    const rolIdLiterals = [...translator.matchAll(/rolID:\s*'(\d+)'/g)].map((m) => m[1]);
+    // translator'daki sayısal literal'ler YALNIZ '22' ve '33' (owner-ratified P03A) olmalı.
+    // I01B-1: hedef tablosu artık `{ rolID, rol }` nesnesi değil, doğrudan rolID string'i
+    // (etiket sahipliği canonical codelist registry'ye devredildi). Bu yüzden desen
+    // `rolID:` anahtarına değil, DOSYADAKİ TÜM sayısal literal'lere bakar — daha geniş kapsar.
+    const rolIdLiterals = [...translator.matchAll(/'(\d+)'/g)].map((m) => m[1]);
     expect(rolIdLiterals.length).toBeGreaterThan(0);
     expect([...new Set(rolIdLiterals)].sort()).toEqual(['22', '33']);
     // LDO/kambiyo hedef değeri (ör. 21/23/34/41/43/44/47) SIZMAMALI.

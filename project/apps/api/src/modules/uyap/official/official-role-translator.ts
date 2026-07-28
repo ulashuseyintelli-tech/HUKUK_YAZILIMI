@@ -1,4 +1,5 @@
 import { DebtorRole } from '@prisma/client';
+import { emittableLabel } from './official-codelist-registry';
 import type { OfficialRoleResolution } from './official-role-translation.types';
 
 /**
@@ -40,19 +41,22 @@ const AUTHORITY_REQUIRED_REASON =
   'kararini bekler. Bu birim (P03A) bu roller icin hedef deger uretmez.';
 
 /**
- * P03A owner-ratified (2026-07-18) owner-safe teknik taraf-rolü hedefleri. TEK immutable authority
- * tablosu — `rolID`/`Rol` değerleri switch dallarında TEKRARLANMAZ. Değerler resmî KodluBilgilerData
- * (Contract A) birebir karşılıklarıdır: BORÇLU/MÜFLİS=22, KEFİL=33. Bu tablo yalnız Contract A rolTur
- * çıktısıdır; hukuki sorumluluk sonucu DEĞİLDİR ve domain rolünü birleştirmez/değiştirmez. Reverse
- * mapping YOKTUR.
+ * P03A owner-ratified (2026-07-18) owner-safe teknik taraf-rolü hedefleri.
+ *
+ * Bu tablo **yalnız domain → resmî `rolID` SEÇİMİDİR** (owner kararı). Resmî **etiket**
+ * (`Rol`) buraya YAZILMAZ: etiket sahipliği tek başına canonical codelist registry'dedir
+ * (I01B-1, CA-01/CA-03). Böylece aynı resmî etiket iki yerde tanımlanamaz ve
+ * sürüklenemez.
+ *
+ * Değerler resmî KodluBilgilerData (Contract A) karşılıklarıdır: BORÇLU/MÜFLİS=22,
+ * KEFİL=33. Bu tablo yalnız Contract A rolTur çıktısıdır; hukuki sorumluluk sonucu
+ * DEĞİLDİR ve domain rolünü birleştirmez/değiştirmez. Reverse mapping YOKTUR.
  */
-const OWNER_SAFE_ROLE_TARGETS: Readonly<
-  Partial<Record<DebtorRole, { readonly rolID: string; readonly rol: string }>>
-> = Object.freeze({
-  [DebtorRole.ASIL_BORCLU]: { rolID: '22', rol: 'BORÇLU/MÜFLİS' },
-  [DebtorRole.MUSETEREK_BORCLU]: { rolID: '22', rol: 'BORÇLU/MÜFLİS' },
-  [DebtorRole.ADI_KEFIL]: { rolID: '33', rol: 'KEFİL' },
-  [DebtorRole.MUTESELSIL_KEFIL]: { rolID: '33', rol: 'KEFİL' },
+const OWNER_SAFE_ROLE_TARGETS: Readonly<Partial<Record<DebtorRole, string>>> = Object.freeze({
+  [DebtorRole.ASIL_BORCLU]: '22',
+  [DebtorRole.MUSETEREK_BORCLU]: '22',
+  [DebtorRole.ADI_KEFIL]: '33',
+  [DebtorRole.MUTESELSIL_KEFIL]: '33',
 });
 
 /**
@@ -93,15 +97,24 @@ export function resolveOfficialRole(debtorRole: DebtorRole): OfficialRoleResolut
     case DebtorRole.MUSETEREK_BORCLU:
     case DebtorRole.ADI_KEFIL:
     case DebtorRole.MUTESELSIL_KEFIL: {
-      const target = OWNER_SAFE_ROLE_TARGETS[debtorRole];
-      if (!target) {
+      const rolID = OWNER_SAFE_ROLE_TARGETS[debtorRole];
+      if (!rolID) {
         // Ulaşılamaz: yukarıdaki 4 case tabloyla birebir eşleşir. Savunma amaçlı INVALID_INPUT.
         return {
           kind: 'INVALID_INPUT',
           detail: `Owner-safe rol icin hedef bulunamadi: ${String(debtorRole)}`,
         };
       }
-      return { kind: 'RESOLVED', rolID: target.rolID, rol: target.rol };
+      // Etiket REGISTRY'den alınır (tek sahiplik). Registry o rolID için owner-ratified
+      // etiket taşımıyorsa emisyon YAPILMAZ — burada etiket UYDURULMAZ (fail-closed).
+      const rol = emittableLabel(rolID);
+      if (!rol) {
+        return {
+          kind: 'INVALID_INPUT',
+          detail: `Resmi rolID icin owner-ratified etiket yok: ${rolID}`,
+        };
+      }
+      return { kind: 'RESOLVED', rolID, rol };
     }
 
     // Hedef değeri LDO + OWNER kararı bekleyen roller (miras/tasfiye/iflas).
