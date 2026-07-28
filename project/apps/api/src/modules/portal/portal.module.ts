@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { JwtModule, JwtModuleOptions } from "@nestjs/jwt";
 import { PortalController } from "./portal.controller";
 import { PortalService } from "./portal.service";
+import { ClientFinancialDisclosurePortalService } from "./client-financial-disclosure-portal.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { AuditModule } from "../audit/audit.module";
@@ -39,7 +40,7 @@ export function portalJwtModuleOptions(): JwtModuleOptions {
     }),
   ],
   controllers: [PortalController],
-  providers: [PortalService, PortalAuthGuard],
+  providers: [PortalService, PortalAuthGuard, ClientFinancialDisclosurePortalService],
   exports: [PortalService],
 })
 export class PortalModule {}
