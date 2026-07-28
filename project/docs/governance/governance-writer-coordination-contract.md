@@ -588,3 +588,47 @@ Binding yalnız yukarıdaki PR #1728 ve iki target path için geçerlidir. Genel
 production, schema, migration, runtime veya owner WIP yetkisi üretmez. Wildcard,
 prefix authority ve reusable authority yoktur. PR #1728 merge veya close
 olduğunda binding yeniden kullanılamaz.
+
+## PB01 AUTHORITY BOOTSTRAP — exact control-plane authority binding
+
+Owner-ratified 2026-07-28. Bu kayıt yalnız PR #1797 için tek kullanımlık,
+task-specific bir control-plane binding oluşturur; mevcut hiçbir kontrolü
+gevşetmez.
+
+### Binding PR kimliği
+
+```text
+Task ID  : RCV-CLAIM-FORM-P02-S08-D02-PB01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : a62e078a33803774ef5595343092ab2ad36d48a9
+Head ref : codex/rcv-claim-form-pb01-authority-bootstrap-control-plane-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-CLAIM-FORM-P02-S08-D02-PB01-AUTHORITY-BOOTSTRAP-R01
+Target mode      : RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_R01
+Target PR        : #1797
+Original base SHA: a62e078a33803774ef5595343092ab2ad36d48a9
+Head ref         : codex/rcv-claim-form-p02-s08-d02-pb01-authority-bootstrap-r01
+Scope            : M project/docs/governance/decision-log.md
+                   A project/docs/governance/coordination-execution-grants/RCV-CLAIM-FORM-P02-S08-D02-PB01-CLOSURE-R01.md
+Semantic record  : RCV-CLAIM-FORM-P02-S08-D02-PB01-CLOSURE-R01
+Execution record : RCV-CLAIM-FORM-P02-S08-D02-PB01-CLOSURE-R01-GRANT
+```
+
+Hedef PR yalnız exact branch ve `M/A` iki-file seti, iki marker'ın exact tekil
+oluşu, execution grant'in semantic authority'ye exact binding'i ve güncel target
+base'in bu binding'i canonical yapan commit'in descendant'ı olması birlikte
+doğrulandığında kabul edilir. Original base provenance'dır; target head SHA
+pinlenmez ve fresh-main normal merge ile uzlaştırma korunur.
+
+Binding yalnız yukarıdaki PR #1797 ve iki target path için geçerlidir. Genel
+`decision-log.md` yazma, başka execution grant, PB01 formal-closure target
+mutation'ı, request/execution/result, production, schema, migration, runtime
+veya owner WIP yetkisi üretmez. Wildcard, prefix authority ve reusable authority
+yoktur. PR #1797 merge veya close olduğunda binding yeniden kullanılamaz.
