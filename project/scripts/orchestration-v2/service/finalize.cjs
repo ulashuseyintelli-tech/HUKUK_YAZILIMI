@@ -634,6 +634,14 @@ async function finalizeEntry(o) {
       };
     }
 
+    // WHOSE delivery this is, stamped onto what gets persisted.
+    //
+    // The successor gate refuses evidence naming another task, and a gate can
+    // only refuse what the producer states. Without this the rule would hold in
+    // prose and never fire — the field would simply be absent on every record
+    // it was meant to check.
+    const deliveryRecord = Object.assign({}, delivery.record || delivery, { taskId: entry.taskId });
+
     if (delivery.verdict !== 'PASS' && delivery.verdict !== 'NOT_APPLICABLE') {
       // The merge HAPPENED. Saying otherwise, retrying it, or opening a second
       // PR would each be a lie about the repository's actual state — so the
@@ -655,7 +663,7 @@ async function finalizeEntry(o) {
           blockerCode: delivery.failureCode || 'POST_MERGE_DELIVERY_FAILED',
           mergeSha: closure.mergeSha,
           deliveryPhase: 'DELIVERY_FAILED',
-          delivery: delivery.record || delivery,
+          delivery: deliveryRecord,
           owner: null,
         },
       });
@@ -683,7 +691,7 @@ async function finalizeEntry(o) {
       to: 'SYNCING',
       expectedPreviousState: 'SYNCING',
       nowMs: clock(),
-      patch: { deliveryPhase: 'DELIVERY_VERIFIED', delivery: delivery.record || delivery },
+      patch: { deliveryPhase: 'DELIVERY_VERIFIED', delivery: deliveryRecord },
     });
     deliveryResult = delivery;
   }

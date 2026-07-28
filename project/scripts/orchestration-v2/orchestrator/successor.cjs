@@ -38,6 +38,7 @@ const REASONS = [
   'PREDECESSOR_DELIVERY_FAILED',
   'PREDECESSOR_DELIVERY_STALE',
   'PREDECESSOR_DELIVERY_MERGE_SHA_MISMATCH',
+  'PREDECESSOR_DELIVERY_TASK_ID_MISMATCH',
   'PREDECESSOR_DELIVERY_UNWIRED',
   'PREDECESSOR_DELIVERY_EVIDENCE_INVALID',
   'PREDECESSOR_NOT_APPLICABLE_UNPROVEN',
@@ -106,6 +107,25 @@ function predecessorSatisfied(record, successorSchema) {
         ok: false,
         reason: 'PREDECESSOR_DELIVERY_MERGE_SHA_MISMATCH',
         detail: 'evidence mergeSha=' + String(d.mergeSha) + ' but the task merged ' + ownMergeSha,
+      };
+    }
+    // The same substitution, one axis over. Binding the evidence to a merge sha
+    // catches the copy that came from another COMMIT; it does not catch the one
+    // that came from another TASK, because two tasks can name the same merge —
+    // a squash that carried both, a stale record from a sibling attempt, or an
+    // evidence object simply written under the wrong key.
+    //
+    // So when the evidence names a task, it must name THIS one. Silence is not
+    // treated as a mismatch: evidence written before the field existed says
+    // nothing about which task it belongs to, and refusing every such record
+    // would fail closed on records that predate the question rather than on
+    // records that answer it wrongly.
+    const ownTaskId = (record.payload && record.payload.taskId) || null;
+    if (ownTaskId && d.taskId && d.taskId !== ownTaskId) {
+      return {
+        ok: false,
+        reason: 'PREDECESSOR_DELIVERY_TASK_ID_MISMATCH',
+        detail: 'evidence taskId=' + String(d.taskId) + ' but this predecessor is ' + ownTaskId,
       };
     }
     // A PASS is only a PASS at the commit that was merged. Evidence from the
