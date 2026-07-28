@@ -230,3 +230,47 @@ test('the ledger is shared, so a second process sees the first one spend it', ()
   const Fresh = require('./one-shot-grant.cjs');
   assert.equal(Fresh.statusOf(dir, grant()).state, 'CONSUMED');
 });
+
+test('a caller that forgot the ledger directory is refused by name', () => {
+  // Not path.join(undefined). That produced ERR_INVALID_ARG_TYPE, admission
+  // reported it as `refusal: ERR_INVALID_ARG_TYPE` with no detail, and the
+  // entry was blocked by a code no rule in this system defines. A wiring
+  // mistake must not be able to wear the costume of a governance decision.
+  for (const call of [
+    () => G.assertUsable({ grant: grant(), taskId: TASK }),
+    () => G.recordPr({ grant: grant(), prNumber: 1 }),
+    () => G.consume({ grant: grant(), mergeSha: 'a'.repeat(40) }),
+  ]) {
+    assert.throws(call, (e) => e.code === 'TASK_GRANT_LEDGER_DIR_MISSING');
+  }
+});
+
+test('a wiring mistake is never reported as a governance verdict', () => {
+  // The real R04 grant and plan, which pass every earlier gate, evaluated with
+  // the one field the dispatch path used to forget. Before this, admission
+  // answered `refusal: ERR_INVALID_ARG_TYPE` with no detail — an operator was
+  // told a rule had refused the work when in fact a call was one argument
+  // short.
+  const admission = require('./admission.cjs');
+  const fsx = require('fs');
+  const px = require('path');
+  const gov = px.join(__dirname, '..', '..', '..', 'docs', 'governance', 'coordination-v2');
+  const read = (rel) => JSON.parse(fsx.readFileSync(px.join(gov, rel), 'utf8'));
+
+  const v = admission.evaluate({
+    manifest: read('programs.manifest.json'),
+    standingGrant: read('activation/TASK-GRANT-CANARY-OFFICE-ORCHESTRATION-CLOSEOUT-R04.json'),
+    spec: read('task-plans/CANARY-R04/plan.json'),
+    programId: 'ORCHESTRA_OPERATIONAL_CANARY',
+    taskClass: 'OPERATIONAL_CANARY_EVIDENCE',
+    executorLane: 'CODEX_LOCAL',
+    // oneShotLedgerDir deliberately absent: exactly the wiring mistake.
+    killSwitchEngaged: false,
+    nowMs: Date.now(),
+  });
+
+  assert.equal(v.admissible, false);
+  assert.equal(v.refusal, 'TASK_GRANT_LEDGER_DIR_MISSING', 'refused by a rule this system defines');
+  assert.doesNotMatch(String(v.refusal), /^ERR_/, 'a Node error code is not a governance verdict');
+  assert.ok(v.detail, 'and it says what actually happened');
+});
