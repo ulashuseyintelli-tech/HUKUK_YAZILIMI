@@ -99,6 +99,27 @@ function createService(cfg) {
   // service pointed at a scratch directory would otherwise fail at
   // construction — which would make merely CONSTRUCTING a service require a
   // repository, and a status read is not that.
+  // Is this the SHARED queue — the one under the git common directory that
+  // every worktree of this repository sees?
+  //
+  // That is what makes committed artefacts necessary: another worktree has to
+  // be able to read a task's papers. A caller that supplied its own queue
+  // directory has exactly one consumer, so there is nothing to be portable
+  // across and demanding a commit would only stop probe worlds from being
+  // built. Real work always uses the shared queue, so real work is always in
+  // the committed regime.
+  let sharedQueueMemo;
+  function isSharedQueue() {
+    if (sharedQueueMemo !== undefined) return sharedQueueMemo;
+    try {
+      const norm = (x) => String(x).split(path.sep).join('/').replace(/\/+$/, '').toLowerCase();
+      sharedQueueMemo = cfg.repoCwd ? norm(queue.dir) === norm(queueMod.defaultQueueDir(cfg.repoCwd)) : false;
+    } catch (e) {
+      sharedQueueMemo = false;
+    }
+    return sharedQueueMemo;
+  }
+
   let taskStoreMemo;
   function getTaskStore() {
     if (taskStoreMemo !== undefined) return taskStoreMemo;
@@ -118,8 +139,31 @@ function createService(cfg) {
     cfg.dispatchGuard ||
     (cfg.repoCwd && cfg.allowUnguardedDispatch !== true
       ? {
-          resolveGrant: (e) => requestMod.load({ repoCwd: cfg.repoCwd, requestPath: e.requestPath }).standingGrant,
-          resolveSpec: (e) => requestMod.load({ repoCwd: cfg.repoCwd, requestPath: e.requestPath }).spec,
+          // Loaded with the entry's PINNED artefact digest, so an artefact
+          // edited between admission and dispatch fails here rather than
+          // running. This is also where a worker in a different worktree
+          // discovers the artefacts were never committed at all.
+          // The SAME regime the entry was admitted under.
+          //
+          // The digest is deliberately NOT verified here. It would fire before
+          // the guard's own checks and mask them: "the paper trail changed" is
+          // true but useless next to "the plan hash changed" or "the grant was
+          // substituted". The digest is checked in the adapter, immediately
+          // before the executor, where it is the last thing between an edited
+          // artefact and a run — and by then the specific reasons have already
+          // had their say.
+          resolveGrant: (e) =>
+            requestMod.load({
+              repoCwd: cfg.repoCwd,
+              requestPath: e.requestPath,
+              requireCommitted: e.artefactsCommitted === true,
+            }).standingGrant,
+          resolveSpec: (e) =>
+            requestMod.load({
+              repoCwd: cfg.repoCwd,
+              requestPath: e.requestPath,
+              requireCommitted: e.artefactsCommitted === true,
+            }).spec,
           resolveManifest: () => JSON.parse(
             fs.readFileSync(path.join(cfg.repoCwd, 'project/docs/governance/coordination-v2/programs.manifest.json'), 'utf8'),
           ),
@@ -299,7 +343,18 @@ function createService(cfg) {
 
       let resolved;
       try {
-        resolved = requestMod.load({ repoCwd, requestPath: opts.requestPath });
+        // The regime the REQUEST declares, and only on the shared queue —
+        // where the papers actually have to travel to another worktree.
+        const shared = isSharedQueue();
+        const peek = requestMod.parse(fs.readFileSync(path.join(repoCwd, opts.requestPath), 'utf8'), opts.requestPath);
+        const strict = shared && peek.requireCommittedArtefacts === true;
+        resolved = requestMod.load({
+          repoCwd,
+          requestPath: opts.requestPath,
+          requireCommitted: strict,
+          requireCanonicalRoot: strict,
+          artefactRef: cfg.artefactRef,
+        });
       } catch (e) {
         audit('ENQUEUE_REFUSED', { requestPath: opts.requestPath, refusal: e.code || 'REQUEST_INVALID', detail: e.detail || null });
         return { admitted: false, entry: null, refusal: e.code || 'REQUEST_INVALID', detail: e.detail || String(e.message) };
@@ -319,6 +374,8 @@ function createService(cfg) {
           priority: req.priority,
           dependsOn: req.dependsOn,
           requestPath: opts.requestPath,
+          artefactSha256: resolved.artefacts && resolved.artefacts.digest,
+          artefactsCommitted: Boolean(resolved.artefacts && resolved.artefacts.readFromRef),
           operation: opts.operation || req.operation || null,
           revoked: opts.isRevoked ? opts.isRevoked(resolved.standingGrant) === true : false,
           killSwitchEngaged: false,

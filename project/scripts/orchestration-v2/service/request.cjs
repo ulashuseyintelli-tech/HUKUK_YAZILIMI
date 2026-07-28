@@ -25,6 +25,7 @@ const fs = require('fs');
 const path = require('path');
 
 const authority = require('../orchestrator/authority.cjs');
+const artefactMod = require('./artefact.cjs');
 
 /** Fields every request must carry. Anything absent is a refusal, not a default. */
 const REQUIRED = ['programId', 'taskId', 'taskClass', 'planPath', 'standingGrantPath'];
@@ -78,6 +79,13 @@ function parse(text, sourcePath) {
   }
   scanForSecrets(req, '');
 
+  // Refused at parse time, before any file is opened: a request whose paths
+  // only resolve on the machine that wrote it is not a request the shared
+  // queue can carry.
+  for (const f of ['planPath', 'standingGrantPath', 'grantPath', 'promptPath']) {
+    if (req[f]) artefactMod.assertCanonicalRef(req[f], f);
+  }
+
   if (req.dependsOn !== undefined && !Array.isArray(req.dependsOn)) fail('REQUEST_DEPENDS_ON_INVALID', 'must be an array');
   if (req.priority !== undefined && !Number.isFinite(req.priority)) fail('REQUEST_PRIORITY_INVALID', String(req.priority));
 
@@ -97,13 +105,26 @@ function parse(text, sourcePath) {
     dependsOn: (req.dependsOn || []).slice(),
     targetBranch: req.targetBranch || 'main',
     autoMerge: req.autoMerge === true,
+    // Does this task's paper trail have to survive the trip to another
+    // worktree? Declared BY THE REQUEST, because the request is the artefact a
+    // reviewer reads — a regime chosen by an environment variable or a caller
+    // flag would be invisible in the thing being reviewed.
+    //
+    // Default false only because the delivery verifier's merged probe builds
+    // throwaway worlds with uncommitted artefacts. Real work sets it true, and
+    // the canary does.
+    requireCommittedArtefacts: req.requireCommittedArtefacts === true,
     notes: req.notes || null,
     sourcePath: sourcePath || null,
   };
 }
 
 function readJson(repoCwd, rel, label) {
-  const p = path.isAbsolute(rel) ? rel : path.join(repoCwd, rel);
+  // Canonical, repository-relative, always. An absolute path is a path into
+  // one machine's one worktree and cannot mean the same thing to the next
+  // worker that pulls this task off the shared queue.
+  artefactMod.assertCanonicalRef(rel, label);
+  const p = path.join(repoCwd, rel);
   let text;
   try {
     text = fs.readFileSync(p, 'utf8');
@@ -128,7 +149,8 @@ function readJson(repoCwd, rel, label) {
  * @returns {{request, spec, standingGrant, grant, manifest, taskSpecSha256}}
  */
 function readText(repoCwd, rel, label) {
-  const p = path.isAbsolute(rel) ? rel : path.join(repoCwd, rel);
+  artefactMod.assertCanonicalRef(rel, label);
+  const p = path.join(repoCwd, rel);
   try {
     return fs.readFileSync(p, 'utf8');
   } catch (e) {
@@ -169,6 +191,21 @@ function resolve(opts) {
     fail('REQUEST_PROMPT_EMPTY', request.promptPath);
   }
 
+  // The paper trail this task depends on, pinned by content. The digest goes
+  // on the queue entry and is recomputed at dispatch, so an artefact edited
+  // between the two stops the run rather than quietly changing it.
+  const artefactRefs = artefactMod.refsFor(request);
+  const artefacts = opts.verifyArtefacts === false
+    ? { digest: null, refs: artefactRefs, readFromRef: null }
+    : artefactMod.verifyArtefacts({
+        repoCwd,
+        refs: artefactRefs,
+        ref: opts.artefactRef,
+        expectedDigest: opts.expectedArtefactDigest,
+        requireCommitted: opts.requireCommitted,
+        requireCanonicalRoot: opts.requireCanonicalRoot === true,
+      });
+
   return {
     request,
     spec,
@@ -176,6 +213,7 @@ function resolve(opts) {
     grant,
     manifest,
     prompt,
+    artefacts,
     // The identity the queue deduplicates on and the merge gate later pins.
     taskSpecSha256: authority.digest(spec),
   };
@@ -183,14 +221,26 @@ function resolve(opts) {
 
 function load(opts) {
   const repoCwd = opts.repoCwd;
-  const p = path.isAbsolute(opts.requestPath) ? opts.requestPath : path.join(repoCwd, opts.requestPath);
+  artefactMod.assertCanonicalRef(opts.requestPath, 'REQUEST');
+  const p = path.join(repoCwd, opts.requestPath);
   let text;
   try {
     text = fs.readFileSync(p, 'utf8');
   } catch (e) {
     fail('REQUEST_UNREADABLE', opts.requestPath);
   }
-  return resolve({ repoCwd, request: parse(text, opts.requestPath) });
+  // Forward the artefact options. Dropping them here made every caller's choice
+  // of regime silently ineffective — the flag was read, passed, and thrown away
+  // one call short of the code that uses it.
+  return resolve({
+    repoCwd,
+    request: parse(text, opts.requestPath),
+    verifyArtefacts: opts.verifyArtefacts,
+    requireCommitted: opts.requireCommitted,
+    requireCanonicalRoot: opts.requireCanonicalRoot,
+    artefactRef: opts.artefactRef,
+    expectedArtefactDigest: opts.expectedArtefactDigest,
+  });
 }
 
 module.exports = { REQUIRED, FORBIDDEN_KEYS, RequestError, parse, resolve, load };
