@@ -47,3 +47,4 @@ src/modules/user/__tests__/change-password.service.spec.ts
 # yazmadiklari ve askida kalmadiklari teyit edildi.
 src/modules/office/__tests__/office-settings-security.spec.ts
 src/scripts/__tests__/office-cap02-identity-binding-dry-run.core.spec.ts
+src/scripts/__tests__/office-cap02-reportingline-population.core.spec.ts
