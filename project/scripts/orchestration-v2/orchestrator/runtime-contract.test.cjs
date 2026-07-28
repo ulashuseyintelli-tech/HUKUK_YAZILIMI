@@ -148,7 +148,38 @@ test('measuring a real repository reports a sha and a worktree', () => {
 test('this checkout satisfies its own required fixes', () => {
   // If it did not, this worker could not run its own queue — and the fence
   // would be refusing everybody.
+  //
+  // Skipped on a truncated history rather than asserted against it. A CI runner
+  // checks out at depth 1, so no required-fix commit is IN the clone and every
+  // ancestry question answers false — which says nothing about whether this
+  // code contains the fix, and is exactly the confusion that turned main red.
+  if (RC.isShallow(__dirname)) {
+    assert.equal(RC.measureWorker({ repoCwd: __dirname }).shallow, true, 'a shallow checkout must report itself as one');
+    return;
+  }
   for (const f of RC.REQUIRED_FIX_ANCESTORS) {
     assert.equal(RC.hasAncestor(__dirname, f.sha), true, 'missing ' + f.sha.slice(0, 12) + ': ' + f.why);
   }
+});
+
+test('a shallow checkout is unverifiable, not stale', () => {
+  // The distinction the repair turns on. Same missing ancestor, two verdicts:
+  // a complete history that genuinely lacks the fix is refused, and a truncated
+  // one that cannot be asked is permitted and says so.
+  const entry = {
+    minimumCompatibleRuntimeVersion: RC.RUNTIME_CONTRACT_VERSION,
+    requiredFixAncestors: ['a'.repeat(40)],
+  };
+  const worker = { runtimeContractVersion: RC.RUNTIME_CONTRACT_VERSION, codeSha: 'b'.repeat(40), worktree: '/w' };
+  const never = () => false;
+
+  const complete = RC.assess({ entry, worker, hasAncestor: never, isShallow: () => false });
+  assert.equal(complete.compatible, false, 'the case the fence exists for is untouched');
+  assert.equal(complete.refusal, 'WORKER_CODE_STALE');
+
+  const truncated = RC.assess({ entry, worker, hasAncestor: never, isShallow: () => true });
+  assert.equal(truncated.compatible, true);
+  assert.equal(truncated.refusal, null);
+  assert.equal(truncated.unverifiable, 'SHALLOW_HISTORY', 'permitted, but never silently');
+  assert.match(truncated.detail, /unverifiable in a shallow checkout/);
 });
