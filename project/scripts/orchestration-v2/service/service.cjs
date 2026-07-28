@@ -483,6 +483,26 @@ function createService(cfg) {
     },
 
     /**
+     * Re-pin an entry's artefact digest after an authorized artefact correction.
+     *
+     * Not part of resume: resuming decides that work may run again, and this
+     * decides only what the work is pinned to. Keeping them apart means a
+     * re-pin can never be the thing that quietly restarts a task.
+     */
+    repinArtefacts(entryId, opts) {
+      const o = opts || {};
+      return require('./artefact-repin.cjs').repinArtefacts({
+        queue,
+        entryId,
+        repoCwd,
+        repinAuthority: o.repinAuthority,
+        resolve: o.resolve,
+        audit,
+        nowMs: clock(),
+      });
+    },
+
+    /**
      * Reconcile a BLOCKED entry whose pull request is already merged.
      *
      * Separate verb from finalizeEntry on purpose. Finalizing asks the remote
