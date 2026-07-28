@@ -140,6 +140,59 @@ export class ExpenseBlockReasonService {
   }
 
   /**
+   * UYAP-EXPENSE-BLOCKING-FACT-BRIDGE-I01 — CPE fact üretimi için SIDE-EFFECT-FREE,
+   * tenant-scoped okuma.
+   *
+   * **Bu metot CPE veya UYAP servislerini ÇAĞIRMAZ ve hiçbir mutation yapmaz.**
+   * Fact provider'ın `ExpenseGateService` üzerinden dolaşması YASAKTIR: o servis
+   * `canPerformAction` çağırır → `CPE → provider → ExpenseGateService → CPE` dependency
+   * cycle'ı oluşur (owner addendum).
+   *
+   * Yalnız verilen action için AÇIK (`OPEN`) blok gerekçelerini döndürür; şema tanımı
+   * gereği `OPEN` = "işlem hâlâ bloklu (sebep devam ediyor)". `RESOLVED`/`CANCELLED`
+   * kayıtlar HİÇ dönmez. Bağlı masraf talebinin ödeme durumu ham veri olarak verilir;
+   * karar mantığı fact provider'dadır.
+   */
+  async findOpenBlocksForAction(
+    tenantId: string,
+    caseId: string,
+    blockedActionCode: string,
+    evaluatedAt: Date,
+  ) {
+    return this.prisma.expenseBlockReason.findMany({
+      where: {
+        tenantId,
+        caseId,
+        blockedActionCode,
+        status: ExpenseBlockStatus.OPEN,
+        // Değerlendirme anında yürürlükte olmayan (ileri tarihli) kayıt authority üretmez.
+        createdAt: { lte: evaluatedAt },
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        caseId: true,
+        blockedActionCode: true,
+        reasonCode: true,
+        status: true,
+        createdAt: true,
+        expenseRequestId: true,
+        expenseRequest: {
+          select: {
+            id: true,
+            tenantId: true,
+            caseId: true,
+            status: true,
+            totalAmount: true,
+            paidTotal: true,
+          },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+  }
+
+  /**
    * Tenant-sahipli tek kayıt getir (iç yardımcı). Başka tenant'ın kaydını GÖRMEZ.
    */
   private async findOwned(tenantId: string, id: string) {
