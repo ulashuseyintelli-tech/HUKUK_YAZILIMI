@@ -465,8 +465,36 @@ function createService(cfg) {
         // A grant that cannot be withdrawn is worse than no grant at all, so the
         // default reads the file and only an explicit override replaces it.
         isRevoked: o.isRevoked || service.grantRevoked,
+        // Optional, and deliberately not defaulted to a live adapter: supplying
+        // one turns on the already-merged divert, which costs a GitHub read per
+        // blocked entry. The CLI supplies the real one; callers that inject a
+        // fake supply that.
+        gh: o.gh || null,
         audit,
         clock,
+      });
+    },
+
+    /**
+     * Reconcile a BLOCKED entry whose pull request is already merged.
+     *
+     * Separate verb from finalizeEntry on purpose. Finalizing asks the remote
+     * to do something; this asks it what already happened and writes that down.
+     * Conflating them is what produced the deadlock — the retry path kept
+     * offering to merge a change that was already in main.
+     */
+    async reconcileMerged(entryId, opts) {
+      const o = opts || {};
+      return require('./merged-reconcile.cjs').reconcileMergedEntry({
+        queue,
+        entryId,
+        repoCwd,
+        gh: o.gh,
+        reconciliationAuthority: o.reconciliationAuthority,
+        verifyDelivery: o.verifyDelivery,
+        isReachable: o.isReachable,
+        audit,
+        nowMs: clock(),
       });
     },
 
@@ -503,6 +531,10 @@ function createService(cfg) {
       const o = opts || {};
       const max = Number.isFinite(o.maxTasks) ? o.maxTasks : 50;
       const ran = [];
+      // Entries diverted to reconciliation during THIS pass. Not durable state:
+      // the durable answer is the reconciliation record itself, and until an
+      // operator writes one the entry legitimately still needs attention.
+      const needsReconciliation = new Set();
       for (let i = 0; i < max; i++) {
         if (service.killSwitchEngaged()) return { stopped: 'KILL_SWITCH_ENGAGED', ran };
         if (service.paused()) return { stopped: 'PAUSED', ran };
@@ -515,9 +547,22 @@ function createService(cfg) {
         // Only entries carrying a durable handoff are touched. One without is
         // pre-WP02 and needs an operator; silently skipping it is right, and
         // status() reports it so the skip is not silent.
-        const pending = finalizeMod.finalizable(queue).filter((f) => f.hasHandoff);
+        const pending = finalizeMod
+          .finalizable(queue)
+          .filter((f) => f.hasHandoff && !needsReconciliation.has(f.entryId));
         if (pending.length) {
           const fin = await service.finalizeEntry(pending[0].entryId, o);
+          // An entry whose PR is already merged has nothing a drain may do with
+          // it: reconciliation is an authorized operator act, not something a
+          // background loop performs on a foreign entry. It is recorded, set
+          // aside for this pass so the next iteration does not re-read GitHub
+          // for the same answer, and the drain moves on to work it CAN do —
+          // which is the whole point, because this entry was stopping all of it.
+          if (fin.disposition === 'NEEDS_RECONCILIATION') {
+            needsReconciliation.add(pending[0].entryId);
+            ran.push({ acted: 'NEEDS_RECONCILIATION', entryId: pending[0].entryId, outcome: fin });
+            continue;
+          }
           // MERGE_NOT_AUTHORIZED is not a stop reason and not an action. The
           // entry is parked for a human by design, so the drain has nothing it
           // MAY do with it — and reporting "MERGE_NOT_AUTHORIZED" as why the

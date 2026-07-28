@@ -284,6 +284,36 @@ async function finalizeEntry(o) {
     // dressed as a no-op.
     const halted = killSwitchRefusal();
     if (halted) return halted;
+    // Retrying a finalize presumes there is still a merge to perform. When the
+    // pull request is ALREADY MERGED that presumption is false, and retrying
+    // produces the loop this reads as: restore to MERGE_READY, refuse at a gate
+    // whose fact has already passed, re-block, repeat. The entry is diverted to
+    // reconciliation instead, and left exactly where it was found so the
+    // divert is a report rather than a half-transition.
+    //
+    // The GitHub read lives HERE rather than in finalizable(): this function is
+    // already the one that talks to the remote, so listing the queue stays a
+    // local operation and no unrelated entry pays for a network call.
+    if (o.gh) {
+      const mergedReconcile = require('./merged-reconcile.cjs');
+      if (await mergedReconcile.needsReconciliation({ entry, gh: o.gh })) {
+        audit('FINALIZE_DIVERTED_TO_RECONCILIATION', {
+          entryId: entry.entryId,
+          prNumber: (entry.handoff && entry.handoff.prNumber) || entry.prNumber || null,
+          blockerCode: entry.blockerCode || null,
+        });
+        return {
+          disposition: 'NEEDS_RECONCILIATION',
+          entryId: entry.entryId,
+          queueState: entry.state,
+          mergeSha: entry.mergeSha || null,
+          blockerCode: entry.blockerCode || null,
+          detail:
+            'the pull request is already merged; this entry needs reconciliation, not a merge retry ' +
+            '(orch:service reconcile-merged --entry ' + String(entry.entryId).slice(0, 12) + ')',
+        };
+      }
+    }
     const priorBlocker = entry.blockerCode || null;
     try {
       queue.transition({
@@ -663,12 +693,16 @@ function finalizable(queue) {
     .list()
     .filter(
       (e) =>
-        FINALIZABLE.indexOf(e.state) !== -1 ||
-        RESUMABLE_AFTER_MERGE.indexOf(e.state) !== -1 ||
-        // A finalize that failed on a gate leaves the entry BLOCKED while its
-        // PR stays open and its handoff intact. Hiding it would mean the only
-        // way back is re-running the executor for work it already did.
-        (e.state === 'BLOCKED' && !!(e.handoff && e.handoff.attestation)),
+        // A reconciled entry is done with this queue. Its change is in main and
+        // its record is terminal; listing it as finalizable would offer a merge
+        // for something already merged.
+        !e.reconciliation &&
+        (FINALIZABLE.indexOf(e.state) !== -1 ||
+          RESUMABLE_AFTER_MERGE.indexOf(e.state) !== -1 ||
+          // A finalize that failed on a gate leaves the entry BLOCKED while its
+          // PR stays open and its handoff intact. Hiding it would mean the only
+          // way back is re-running the executor for work it already did.
+          (e.state === 'BLOCKED' && !!(e.handoff && e.handoff.attestation))),
     )
     .map((e) => ({
       entryId: e.entryId,
