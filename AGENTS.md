@@ -218,10 +218,11 @@ cagrilir.
   duzeltir, ana zincire entegre eder ve gorevi terminal sonuca ulastirir.
 - Kullanici ajanlar arasinda gorev tasiyan dispatcher DEGILDIR.
 
-Gercek executor handoff yalniz su dort istisnada yapilir ve her biri raporlanir: (1)
-primary executor gerekli araci teknik olarak cagiramiyor; (2) guvenlik veya platform
-siniri bagimsiz oturum gerektiriyor; (3) owner acikca executor degisikligi istiyor; (4)
-mevcut executor gorevi surduremeyecek durumda.
+`TASK REVISION ≠ TASK TERMINATION ≠ EXECUTOR HANDOFF.` Task identity, semantic outcome ve
+primary ownership degismediyse is durmaz; WIP korunur, mevcut diff yeniden degerlendirilir
+ve yurutme ayni task altinda yeni immutable revision ile devam eder. Handoff istisnalari,
+revision tetikleyicileri ve terminal disposition sinifları:
+`project/docs/governance/process-rules.md`.
 
 ## 8. Governance Writer Coordination V1
 

@@ -98,6 +98,90 @@ Implementation Owner    : <ajan>
 
 Kaynak: COL/OD-18A (`decision-log.md` § `2026-07-15 — RC-COL / COL/OD-18A`).
 
+## Task Revision Protokolü
+
+Normatif çekirdek `AGENTS.md` §7'dedir; bu bölüm uygulama detayıdır ve yeni hüküm kurmaz.
+
+Dört kavram ayrıdır ve hiçbiri diğerinin yerine geçmez:
+
+```text
+TASK REVISION           = aynı task, yeni immutable revision — yürütme devam eder
+TASK TERMINATION        = task terminal bir disposition ile kapanır
+EXECUTOR HANDOFF        = primary ownership başka bir yürütücüye geçer
+OWNER DECISION REQUIRED = owner semantic kararı olmadan ilerlenemez
+```
+
+### Revision tetikleyicileri — yürütme durmaz
+
+Aşağıdakiler tek başına ne termination ne de handoff nedenidir. Task identity, semantic
+outcome ve primary ownership değişmediği sürece aynı task altında yeni revision açılır:
+
+- implementation design superseded
+- test design veya validation yaklaşımı superseded
+- allowlist / scope daralması (task hedefi aynı kaldığı sürece)
+- conflict içermeyen base revision: rebase, base drift, ilerlemiş main
+- daha yeni bir contract, spec veya şablonun yayımlanmış olması
+- CI'nin sürüyor olması, PR'ın açık olması, sonraki task'ın beklemesi
+
+Revision'da yapılacak iş:
+
+1. WIP korunur: worktree, branch ve mevcut diff silinmez, stash'lenmez, revert edilmez.
+2. Mevcut diff yeni tasarıma göre yeniden değerlendirilir; hâlâ geçerli olan kısım kalır,
+   yalnız gerçekten geçersizleşen kısım yeniden yazılır.
+3. Yeni revision immutable kaydedilir; önceki revision düzeltilmez,
+   `SUPERSEDED BY <yeni revision>` işaretlenir.
+4. Task identity (`taskId`), semantic outcome ve primary ownership aynı kalır.
+5. Değişen tasarım ve gerekçesi raporlanır; sessiz tasarım değişikliği yapılmaz.
+
+### Terminal disposition sınıfları
+
+Bir task yalnız şu sınıflardan biriyle kapanabilir:
+
+```text
+COMPLETED                  CLOSED                      CANCELLED_BY_OWNER
+BLOCKED_EXTERNAL           BLOCKED_OWNER_DECISION      BLOCKED_CANONICAL_CONFLICT
+BLOCKED_SECURITY_RISK      BLOCKED_DATA_LOSS_RISK      BLOCKED_AUTHORITY_MISSING
+BLOCKED_UNRESOLVED_TECHNICAL_RISK
+```
+
+Şunlar terminal disposition DEĞİLDİR ve tek başlarına kapanış olarak kullanılamaz:
+
+```text
+HANDOFF_REQUIRED       SUPERSEDED             DESIGN_CHANGED        IMPLEMENTATION_CHANGED
+TEST_DESIGN_CHANGED    NEWER_CONTRACT_EXISTS  NEEDS_REEVALUATION    BASE_DRIFT
+CI_RUNNING             PR_OPEN                NEXT_TASK_PENDING     REVISION_REQUIRED
+```
+
+Bu ifadeler geçerli bir kapanışın yanında next-action veya revision gerekçesi olarak
+geçebilir; tek başına kapanış olarak geçemez. Makine kontrolü:
+`project/scripts/governance/task-disposition-guard.cjs`.
+
+### BLOCKED_* kapanışının zorunlu alanları
+
+```text
+blockerCode    : tam blocker
+blockingLayer  : hangi katman (EXTERNAL_DEPENDENCY / GOVERNANCE / SEMANTIC / ...)
+evidence       : gözlenen kanıt
+whyNotRevision : neden revision ile çözülemiyor
+requiredAction : owner veya dış taraf için gereken eylem
+preservedWip   : korunan worktree / branch / diff
+```
+
+Alanları eksik bir `BLOCKED_*` kapanışı, kapanış sayılmaz.
+
+### Gerçek executor handoff istisnaları
+
+Handoff yalnız şu dört durumda yapılır ve her biri raporlanır:
+
+1. Primary executor gerekli aracı teknik olarak çağıramıyor.
+2. Güvenlik veya platform sınırı bağımsız oturum gerektiriyor.
+3. Owner açıkça executor değişikliği istiyor.
+4. Mevcut executor görevi sürdüremeyecek durumda.
+
+Handoff bir disposition değil, ayrı ve owner-gated bir taleptir: `BLOCKED_OWNER_DECISION`
+ile ve yukarıdaki alanlarla raporlanır. Bounded capability executor çağırmak handoff
+değildir; task ownership değişmez (`AGENTS.md` §7).
+
 ## Waiting & Progress Policy
 
 Bir görev dışsal bir bağımlılıkla (CI, başka worktree'nin WIP'i, PR review, owner
