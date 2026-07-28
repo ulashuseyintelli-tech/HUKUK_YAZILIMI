@@ -670,6 +670,32 @@ async function runTask(ctx) {
     // is only possible if cwd and timeoutMs are recorded alongside.
     testResults.push({ cwd: t.cwd, argv: t.argv, timeoutMs: t.timeoutMs, status: r.status });
     if (r.status !== 0) {
+      // Keep WHY, not just THAT.
+      //
+      // This recorded `exit=1` and nothing else, and then cleanupWorktree()
+      // deleted the tree the failure happened in. The evidence was destroyed
+      // twice: once by discarding the output runCapture had already captured,
+      // and once by removing the only place it could be reproduced from. An
+      // operator holding a blocked entry could see that a gate refused and had
+      // no way at all to learn what it refused — which, in a system whose whole
+      // subject is delivery truth, is the wrong thing to be silent about.
+      //
+      // The tail rather than the whole log: this lands in an append-only
+      // durable store that is read on every fold, and a failing suite can emit
+      // megabytes. The end is also where assertion failures and stack traces
+      // are, so a bounded tail is not a lossy compromise here — it is the part
+      // worth keeping.
+      const tail = (s) => {
+        const text = String(s || '');
+        return text.length > 8000 ? '…(truncated)…\n' + text.slice(-8000) : text;
+      };
+      testResults[testResults.length - 1].failure = {
+        stdout: tail(r.stdout),
+        stderr: tail(r.stderr),
+        signal: r.signal || null,
+        timedOut: r.timedOut === true,
+        error: r.error || null,
+      };
       cleanupWorktree();
       release('TERMINAL_BLOCKED_PUBLISHED');
       return blocked('REQUIRED_TEST_FAILED', t.argv.join(' ') + ' exit=' + String(r.status), {
