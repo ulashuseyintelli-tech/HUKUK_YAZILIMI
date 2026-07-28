@@ -55,6 +55,40 @@ const HISTORICAL_CLOSED = new Set([
   'CLOSED',
   'PASS',
 ]);
+const CLOSURE_MAPPING_EVIDENCE_LEVELS = new Set([
+  'EXACT_CAPABILITY_REF',
+  'EXACT_PACKAGE_SCRIPT_KEY',
+  'DIRECT_IMPLEMENTATION_FILE',
+  'BROAD_FILE_TOUCH',
+  'UNMAPPED',
+]);
+const CLOSURE_CERTIFICATION_STATUSES = new Set([
+  'CLOSED_OPERATIONAL_CONFIRMED',
+  'CLOSED_STATICALLY_BOUND_UNVERIFIED',
+  'CLOSED_BINDING_DEFECT',
+  'CLOSED_ACTIVATION_DEFECT',
+  'CLOSED_REACHABILITY_DEFECT',
+  'CLOSED_OPERABILITY_DEFECT',
+  'CLOSED_EVIDENCE_INSUFFICIENT',
+  'CLOSED_SUPERSEDED',
+  'NOT_HISTORICALLY_CLOSED',
+]);
+const RELIABLE_CLOSURE_CONFIDENCE = new Set(['HIGH', 'MEDIUM']);
+const SUFFICIENT_CLOSURE_MAPPING = new Set([
+  'EXACT_CAPABILITY_REF',
+  'EXACT_PACKAGE_SCRIPT_KEY',
+  'DIRECT_IMPLEMENTATION_FILE',
+]);
+const SEALED_R01_AUDIT_DIRECTORY = 'project/docs/audit/runtime-binding-reconciliation-r01';
+const SUCCESSOR_PROGRAM = 'RUNTIME-OPERABILITY-CERTIFICATION-R01';
+const SUCCESSOR_TASK = 'W0-METHODOLOGY';
+const SNAPSHOT_BOUNDARY = [
+  'This successor methodology does not mutate or retroactively rewrite',
+  'PR #1795 sealed audit artifacts.',
+  '',
+  'It re-evaluates closure certification using the current canonical',
+  'repository snapshot and the corrected methodology.',
+].join('\n');
 
 function parseArgs(argv) {
   const out = {
@@ -62,6 +96,7 @@ function parseArgs(argv) {
     auditStartedAt: null,
     dynamicEvidence: null,
     auditBaseSha: null,
+    successorOnly: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -69,6 +104,7 @@ function parseArgs(argv) {
     else if (arg === '--audit-started-at') out.auditStartedAt = argv[++index];
     else if (arg === '--dynamic-evidence') out.dynamicEvidence = argv[++index];
     else if (arg === '--audit-base-sha') out.auditBaseSha = argv[++index];
+    else if (arg === '--successor-only') out.successorOnly = true;
     else if (arg === '--help') {
       process.stdout.write(
         [
@@ -78,6 +114,7 @@ function parseArgs(argv) {
           '    --audit-started-at <ISO-8601>',
           '    [--audit-base-sha <commit>]',
           '    [--dynamic-evidence <repo-relative-json>]',
+          '    [--successor-only]',
           '',
         ].join('\n'),
       );
@@ -375,20 +412,183 @@ function history(repoRoot, scopes, ref = 'HEAD') {
   return { commits, commitsByFile };
 }
 
+function legacyHistoricalStatusForTitle(title, hasPullRequestReference = false) {
+  if (/(?:\bclosure\b|\bcloseout\b|(?<![-\w])closed(?![-\w]))/i.test(title)) {
+    return 'CLOSED';
+  }
+  if (/\bcanonical(?:ize|ization|ized)?\b/i.test(title)) return 'CANONICAL';
+  return hasPullRequestReference ? 'MERGED' : 'IMPLEMENTED';
+}
+
+function closureCandidate(sourceRef, normalizedTitle, input) {
+  return {
+    sourceRef,
+    normalizedTitle,
+    claimType: input.claimType,
+    matchedText: input.matchedText,
+    parserRule: input.parserRule,
+    confidence: input.confidence,
+    disposition: input.disposition,
+  };
+}
+
+function firstMatch(title, pattern) {
+  const match = pattern.exec(title);
+  return match ? match[0] : null;
+}
+
+function parseHistoricalClosureClaim(sourceRef, title) {
+  const normalizedTitle = String(title || '').trim().replace(/\s+/g, ' ');
+  if (!normalizedTitle) return null;
+
+  const excludedRules = [
+    {
+      pattern: /\bfails?[- ]closed\b/i,
+      claimType: 'FALSE_POSITIVE_FAIL_CLOSED',
+      parserRule: 'EXCLUDE_BEHAVIORAL_FAIL_CLOSED',
+    },
+    {
+      pattern: /\b(?:closed\s+by\s+default|default\s+closed)\b/i,
+      claimType: 'FALSE_POSITIVE_DEFAULT_CLOSED',
+      parserRule: 'EXCLUDE_DEFAULT_STATE_CLOSED',
+    },
+  ];
+  for (const rule of excludedRules) {
+    const matchedText = firstMatch(normalizedTitle, rule.pattern);
+    if (matchedText) {
+      return closureCandidate(sourceRef, normalizedTitle, {
+        ...rule,
+        matchedText,
+        confidence: 'LOW',
+        disposition: 'FALSE_POSITIVE',
+      });
+    }
+  }
+
+  const reliableRules = [
+    {
+      pattern: /\bFINAL\s+STATUS\s*:\s*CLOSED\b/i,
+      claimType: 'FINAL_STATUS',
+      parserRule: 'EXPLICIT_FINAL_STATUS_CLOSED',
+      confidence: 'HIGH',
+    },
+    {
+      pattern: /\bSTATUS\s*:\s*CLOSED\b/i,
+      claimType: 'STATUS',
+      parserRule: 'EXPLICIT_STATUS_CLOSED',
+      confidence: 'HIGH',
+    },
+    {
+      pattern: /\bCLOSED\s*\/\s*CANONICAL\s*\/\s*PASS\b/i,
+      claimType: 'TERMINAL_STATUS_TRIPLE',
+      parserRule: 'EXPLICIT_CLOSED_CANONICAL_PASS',
+      confidence: 'HIGH',
+    },
+    {
+      pattern: /\b(?:PROGRAM|TASK|WORKSTREAM|WAVE|PHASE|CHAIN)(?:\s+[A-Z0-9_.#/-]+){0,8}\s+CLOSED\b/i,
+      claimType: 'SCOPED_TERMINAL_STATUS',
+      parserRule: 'EXPLICIT_SCOPED_CLOSED',
+      confidence: 'HIGH',
+    },
+    {
+      pattern: /\b(?:CLOSEOUT\s+COMPLETED|FINAL\s+CLOSEOUT)\b/i,
+      claimType: 'TERMINAL_CLOSEOUT',
+      parserRule: 'EXPLICIT_TERMINAL_CLOSEOUT',
+      confidence: 'HIGH',
+    },
+    {
+      pattern: /\bFINAL\s+(?:(?:OWNER|PROGRAM|TASK|WORKSTREAM|TECHNICAL|GOVERNANCE)\s+)?CLOSURE\b/i,
+      claimType: 'FINAL_CLOSURE',
+      parserRule: 'EXPLICIT_FINAL_CLOSURE',
+      confidence: 'HIGH',
+    },
+    {
+      pattern: /\bFINAL\s+RECONCILIATION\s+AND\s+CLOSURE\b/i,
+      claimType: 'FINAL_RECONCILIATION_CLOSURE',
+      parserRule: 'EXPLICIT_FINAL_RECONCILIATION_CLOSURE',
+      confidence: 'HIGH',
+    },
+    {
+      pattern: /\b(?:record|reconcile|canonicalize|finalize|resolve|correct|move)\w*\b[^:]{0,120}\bclosure(?:\s+(?:evidence|result|status|record))?\b/i,
+      claimType: 'CONTEXTUAL_CLOSURE_RECORD',
+      parserRule: 'CONTEXTUAL_TERMINAL_RECORD',
+      confidence: 'MEDIUM',
+    },
+    {
+      pattern: /\b(?:governance|technical|implementation|program|phase)\s+closure\b/i,
+      claimType: 'SCOPED_CLOSURE_RECORD',
+      parserRule: 'SCOPED_CLOSURE_CONTEXT',
+      confidence: 'MEDIUM',
+    },
+  ];
+  for (const rule of reliableRules) {
+    const matchedText = firstMatch(normalizedTitle, rule.pattern);
+    if (matchedText) {
+      if (
+        /\b(?:request|authorize|authority|ready\s+for)\b[^:]{0,120}\bclosure\b/i.test(normalizedTitle) ||
+        /\bclosure\s+(?:authority|gate|model|methodology|parser|semantics?|certification|concept|note|review)\b/i.test(normalizedTitle)
+      ) {
+        break;
+      }
+      return closureCandidate(sourceRef, normalizedTitle, {
+        ...rule,
+        matchedText,
+        disposition: 'RELIABLE',
+      });
+    }
+  }
+
+  const namedCloseout = firstMatch(normalizedTitle, /\bcloseout\b/i);
+  if (namedCloseout) {
+    return closureCandidate(sourceRef, normalizedTitle, {
+      claimType: 'FALSE_POSITIVE_CLOSEOUT_NAME',
+      matchedText: namedCloseout,
+      parserRule: 'EXCLUDE_UNSCOPED_CLOSEOUT_NAME',
+      confidence: 'LOW',
+      disposition: 'FALSE_POSITIVE',
+    });
+  }
+
+  const technicalClosure = firstMatch(
+    normalizedTitle,
+    /\bclosure\s+(?:authority|gate|model|methodology|parser|semantics?|certification|concept|note|review)\b/i,
+  );
+  if (technicalClosure) {
+    return closureCandidate(sourceRef, normalizedTitle, {
+      claimType: 'FALSE_POSITIVE_TECHNICAL_CLOSURE',
+      matchedText: technicalClosure,
+      parserRule: 'EXCLUDE_TECHNICAL_CLOSURE_CONCEPT',
+      confidence: 'LOW',
+      disposition: 'FALSE_POSITIVE',
+    });
+  }
+
+  const lowSignal = firstMatch(normalizedTitle, /(?:\bclosure\b|(?<![-\w])closed(?![-\w]))/i);
+  if (lowSignal) {
+    return closureCandidate(sourceRef, normalizedTitle, {
+      claimType: 'LOW_CONTEXT_CLOSURE_TERM',
+      matchedText: lowSignal,
+      parserRule: 'LOW_CONTEXT_NOT_AUTO_CERTIFIABLE',
+      confidence: 'LOW',
+      disposition: 'LOW_CONFIDENCE_EXCLUDED',
+    });
+  }
+
+  return null;
+}
+
 function historicalClaim(commit) {
   if (!commit) return null;
   const prMatch = /\(#(\d+)\)\s*$/.exec(commit.subject);
+  const sourceRef = `git:${commit.sha}`;
   return {
     historicalWorkId: `HIST-${commit.sha.slice(0, 12).toUpperCase()}`,
     title: commit.subject,
-    sourceRefs: [`git:${commit.sha}`],
+    sourceRefs: [sourceRef],
     prNumbers: prMatch ? [Number(prMatch[1])] : [],
     mergeShas: [commit.sha],
-    originalStatus: /(?:\bclosure\b|\bcloseout\b|(?<![-\w])closed(?![-\w]))/i.test(commit.subject)
-      ? 'CLOSED'
-      : /\bcanonical(?:ize|ization|ized)?\b/i.test(commit.subject)
-        ? 'CANONICAL'
-        : prMatch ? 'MERGED' : 'IMPLEMENTED',
+    originalStatus: legacyHistoricalStatusForTitle(commit.subject, Boolean(prMatch)),
+    closureClaim: parseHistoricalClosureClaim(sourceRef, commit.subject),
     expectedEntryPoints: [],
     expectedConsumers: [],
     expectedActivationConditions: [],
@@ -471,6 +671,769 @@ function closureReconciliationStatus(finalStatus) {
 function percent(numerator, denominator) {
   if (!denominator) return null;
   return Math.round((numerator / denominator) * 10000) / 100;
+}
+
+function isReliableClosureClaim(claim) {
+  return Boolean(
+    claim &&
+    claim.disposition === 'RELIABLE' &&
+    RELIABLE_CLOSURE_CONFIDENCE.has(claim.confidence),
+  );
+}
+
+function isBroadMappingFile(file) {
+  const basename = path.posix.basename(file);
+  return (
+    basename === 'package.json' ||
+    basename === 'index.ts' ||
+    basename === 'index.tsx' ||
+    basename === 'tsconfig.json' ||
+    basename.endsWith('.module.ts') ||
+    /(?:^|[-_.])(?:manifest|barrel)(?:[-_.]|$)/i.test(basename)
+  );
+}
+
+function packageScriptsAt(repoRoot, ref, file) {
+  const result = run('git', ['show', `${ref}:${file}`], {
+    cwd: repoRoot,
+    allowFailure: true,
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.status !== 0) return {};
+  try {
+    return JSON.parse(result.stdout).scripts || {};
+  } catch {
+    throw new Error(`PACKAGE_SCRIPT_HISTORY_PARSE_FAILED: ${ref}:${file}`);
+  }
+}
+
+function changedPackageScriptKeys(repoRoot, commitSha, file) {
+  const before = packageScriptsAt(repoRoot, `${commitSha}^`, file);
+  const after = packageScriptsAt(repoRoot, commitSha, file);
+  return new Set(
+    unique([...Object.keys(before), ...Object.keys(after)])
+      .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key])),
+  );
+}
+
+function packageScriptKeyFor(capability, file) {
+  const prefix = `${file}:scripts.`;
+  const site = capability.registrationSites.find((item) => item.startsWith(prefix));
+  return site ? site.slice(prefix.length) : null;
+}
+
+function classifyClosureCapabilityMapping(claimItem, capability, changedScriptsByFile = new Map()) {
+  const claimRef = claimItem.historicalWorkId;
+  const claimSource = claimItem.sourceRefs[0] || claimItem.closureClaim.sourceRef;
+  const changedFiles = new Set(claimItem.changedFiles);
+  const implementationIntersection = capability.implementationFiles
+    .filter((file) => changedFiles.has(file));
+  const title = claimItem.closureClaim.normalizedTitle.toUpperCase();
+
+  if (title.includes(capability.capabilityId.toUpperCase())) {
+    return {
+      claimRef,
+      capabilityId: capability.capabilityId,
+      evidenceLevel: 'EXACT_CAPABILITY_REF',
+      evidenceRefs: [claimSource],
+      rationale: 'The historical claim contains the exact capability identifier.',
+    };
+  }
+
+  const packageIntersections = implementationIntersection.filter((file) =>
+    path.posix.basename(file) === 'package.json');
+  if (packageIntersections.length > 0) {
+    for (const file of packageIntersections) {
+      const scriptKey = packageScriptKeyFor(capability, file);
+      if (scriptKey && changedScriptsByFile.get(file)?.has(scriptKey)) {
+        return {
+          claimRef,
+          capabilityId: capability.capabilityId,
+          evidenceLevel: 'EXACT_PACKAGE_SCRIPT_KEY',
+          evidenceRefs: [claimSource, `${file}:scripts.${scriptKey}`],
+          rationale: `The commit changed only the exact package script key ${scriptKey} for this capability.`,
+        };
+      }
+    }
+    return {
+      claimRef,
+      capabilityId: capability.capabilityId,
+      evidenceLevel: 'UNMAPPED',
+      evidenceRefs: [claimSource, ...packageIntersections],
+      rationale: 'The package file changed, but this capability script key did not change.',
+    };
+  }
+
+  const directFiles = implementationIntersection.filter((file) => !isBroadMappingFile(file));
+  if (directFiles.length > 0) {
+    return {
+      claimRef,
+      capabilityId: capability.capabilityId,
+      evidenceLevel: 'DIRECT_IMPLEMENTATION_FILE',
+      evidenceRefs: [claimSource, ...directFiles],
+      rationale: 'The historical change directly touched the capability implementation file.',
+    };
+  }
+
+  if (implementationIntersection.length > 0) {
+    return {
+      claimRef,
+      capabilityId: capability.capabilityId,
+      evidenceLevel: 'BROAD_FILE_TOUCH',
+      evidenceRefs: [claimSource, ...implementationIntersection],
+      rationale: 'Only a shared registration, module, manifest, barrel, or package file was touched.',
+    };
+  }
+
+  return {
+    claimRef,
+    capabilityId: capability.capabilityId,
+    evidenceLevel: 'UNMAPPED',
+    evidenceRefs: [claimSource],
+    rationale: 'No defensible capability-specific file or identifier mapping was found.',
+  };
+}
+
+function buildClosureCapabilityMappings(repoRoot, historicalItems, capabilities) {
+  const mappings = [];
+  for (const claimItem of [...historicalItems.values()]
+    .filter((item) => item.closureClaim)
+    .sort((a, b) => a.historicalWorkId.localeCompare(b.historicalWorkId))) {
+    const changedScriptsByFile = new Map();
+    for (const file of claimItem.changedFiles.filter((item) => path.posix.basename(item) === 'package.json')) {
+      changedScriptsByFile.set(
+        file,
+        changedPackageScriptKeys(repoRoot, claimItem.mergeShas[0], file),
+      );
+    }
+
+    const associatedCapabilities = capabilities.filter((capability) =>
+      capability.historicalWorkRefs.includes(claimItem.historicalWorkId) ||
+      claimItem.closureClaim.normalizedTitle.toUpperCase().includes(capability.capabilityId.toUpperCase()));
+    if (associatedCapabilities.length === 0) {
+      mappings.push({
+        claimRef: claimItem.historicalWorkId,
+        capabilityId: null,
+        evidenceLevel: 'UNMAPPED',
+        evidenceRefs: [claimItem.sourceRefs[0]],
+        rationale: 'The closure candidate has no capability association in this repository snapshot.',
+      });
+      continue;
+    }
+    for (const capability of associatedCapabilities) {
+      mappings.push(classifyClosureCapabilityMapping(
+        claimItem,
+        capability,
+        changedScriptsByFile,
+      ));
+    }
+  }
+  return mappings.sort((a, b) =>
+    a.claimRef.localeCompare(b.claimRef) ||
+    String(a.capabilityId).localeCompare(String(b.capabilityId)) ||
+    a.evidenceLevel.localeCompare(b.evidenceLevel));
+}
+
+function closureCertificationStatus(runtimeStatus, hasSufficientMapping) {
+  if (!hasSufficientMapping) return 'CLOSED_EVIDENCE_INSUFFICIENT';
+  if (runtimeStatus === 'VERIFIED_OPERATIONAL') return 'CLOSED_OPERATIONAL_CONFIRMED';
+  if (runtimeStatus === 'CODE_PRESENT_UNBOUND') return 'CLOSED_BINDING_DEFECT';
+  if (runtimeStatus === 'BOUND_DORMANT') return 'CLOSED_ACTIVATION_DEFECT';
+  if (runtimeStatus === 'ACTIVE_UNREACHABLE') return 'CLOSED_REACHABILITY_DEFECT';
+  if (runtimeStatus === 'REACHABLE_NON_OPERABLE') return 'CLOSED_OPERABILITY_DEFECT';
+  if (runtimeStatus === 'SUPERSEDED') return 'CLOSED_SUPERSEDED';
+  if (runtimeStatus === 'PARTIAL_IMPLEMENTATION') return 'CLOSED_STATICALLY_BOUND_UNVERIFIED';
+  return 'CLOSED_EVIDENCE_INSUFFICIENT';
+}
+
+function buildClosureCertifications(historicalItems, mappings, capabilities) {
+  const itemById = historicalItems;
+  const mappingsByCapability = new Map();
+  for (const mapping of mappings.filter((item) => item.capabilityId)) {
+    if (!mappingsByCapability.has(mapping.capabilityId)) {
+      mappingsByCapability.set(mapping.capabilityId, []);
+    }
+    mappingsByCapability.get(mapping.capabilityId).push(mapping);
+  }
+
+  return capabilities.map((capability) => {
+    const candidateMappings = mappingsByCapability.get(capability.capabilityId) || [];
+    const reliableMappings = candidateMappings.filter((mapping) =>
+      isReliableClosureClaim(itemById.get(mapping.claimRef)?.closureClaim));
+    const sufficientMappings = reliableMappings.filter((mapping) =>
+      SUFFICIENT_CLOSURE_MAPPING.has(mapping.evidenceLevel));
+    const excludedCandidateRefs = unique(candidateMappings
+      .filter((mapping) => !isReliableClosureClaim(itemById.get(mapping.claimRef)?.closureClaim))
+      .map((mapping) => mapping.claimRef));
+
+    if (reliableMappings.length === 0) {
+      return {
+        capabilityId: capability.capabilityId,
+        capabilityName: capability.name,
+        runtimeStatus: capability.finalStatus,
+        closureCertificationStatus: 'NOT_HISTORICALLY_CLOSED',
+        reliableClaimRefs: [],
+        mappingEvidenceLevels: [],
+        evidenceRefs: [],
+        excludedCandidateRefs,
+        rationale: 'No reliable historical closure claim is mapped to this capability.',
+      };
+    }
+
+    const status = closureCertificationStatus(
+      capability.finalStatus,
+      sufficientMappings.length > 0,
+    );
+    return {
+      capabilityId: capability.capabilityId,
+      capabilityName: capability.name,
+      runtimeStatus: capability.finalStatus,
+      closureCertificationStatus: status,
+      reliableClaimRefs: unique(reliableMappings.map((mapping) => mapping.claimRef)),
+      mappingEvidenceLevels: unique(reliableMappings.map((mapping) => mapping.evidenceLevel)),
+      evidenceRefs: unique(reliableMappings.flatMap((mapping) => mapping.evidenceRefs)),
+      excludedCandidateRefs,
+      rationale: sufficientMappings.length > 0
+        ? `Reliable closure claim and sufficient mapping evaluated against runtime status ${capability.finalStatus}.`
+        : 'A reliable closure claim exists, but capability mapping evidence is broad or absent.',
+    };
+  }).sort((a, b) => a.capabilityId.localeCompare(b.capabilityId));
+}
+
+function countBy(values, keyFor) {
+  return Object.fromEntries(
+    [...values.reduce((counts, item) => {
+      const key = keyFor(item);
+      counts.set(key, (counts.get(key) || 0) + 1);
+      return counts;
+    }, new Map())].sort((a, b) => a[0].localeCompare(b[0])),
+  );
+}
+
+function buildPrior27Reconciliation(historicalItems, mappings, certifications) {
+  const failClosedRefs = [
+    'HIST-11023234457E',
+    'HIST-5CAB26213FAC',
+    'HIST-D21135EA08C0',
+    'HIST-FBEF69159FC6',
+  ];
+  const packageRef = 'HIST-D004068C3FFF';
+  const portalRef = 'HIST-A154EC6D29E0';
+  const groupMappings = (refs) => mappings.filter((item) =>
+    refs.includes(item.claimRef) && item.capabilityId);
+  const certifiedForRefs = (refs) => certifications.filter((item) =>
+    item.reliableClaimRefs.some((ref) => refs.includes(ref)));
+  const packageMappings = groupMappings([packageRef]);
+  const portalMappings = groupMappings([portalRef]);
+  const failClosedMappings = groupMappings(failClosedRefs);
+  const foundFailClosedClaims = failClosedRefs.filter((ref) =>
+    historicalItems.get(ref)?.closureClaim?.disposition === 'FALSE_POSITIVE');
+
+  return {
+    beforeMappingCount: 27,
+    groups: [
+      {
+        group: 'FOUR_FAIL_CLOSED_COMMITS',
+        beforeMappings: 4,
+        successorCandidateMappings: failClosedMappings.length,
+        successorReliableMappings: 0,
+        successorCertificationCount: 0,
+        disposition: 'FALSE_POSITIVE_CLOSURE_CLAIMS_REMOVED',
+        evidence: `${foundFailClosedClaims.length}/4 known fail-closed claims excluded`,
+      },
+      {
+        group: 'PACKAGE_JSON_DERIVED_MAPPINGS',
+        beforeMappings: 13,
+        successorCandidateMappings: packageMappings.length,
+        successorReliableMappings: 0,
+        successorCertificationCount: 0,
+        disposition: 'FEATURE_NAME_CLAIM_EXCLUDED_MAPPING_CONTAINED',
+        evidence: `${packageMappings.filter((item) => item.evidenceLevel === 'EXACT_PACKAGE_SCRIPT_KEY').length} exact package-script; ${packageMappings.filter((item) => item.evidenceLevel === 'UNMAPPED').length} unmapped`,
+      },
+      {
+        group: 'CLIENT_PORTAL_DIRECT_FILE_CANDIDATES',
+        beforeMappings: 10,
+        successorCandidateMappings: portalMappings.length,
+        successorReliableMappings: portalMappings.filter((item) =>
+          item.evidenceLevel === 'DIRECT_IMPLEMENTATION_FILE').length,
+        successorCertificationCount: certifiedForRefs([portalRef]).length,
+        disposition: 'DIRECT_MAPPING_RETAINED_RUNTIME_CLOSURE_NOT_CONFIRMED',
+        evidence: `${certifiedForRefs([portalRef]).filter((item) => item.closureCertificationStatus === 'CLOSED_OPERATIONAL_CONFIRMED').length} operationally confirmed`,
+      },
+    ],
+    successorReliableCapabilityMappings: groupMappings([portalRef])
+      .filter((item) => item.evidenceLevel === 'DIRECT_IMPLEMENTATION_FILE').length,
+  };
+}
+
+function buildSuccessorModel(repoRoot, args, auditBaseSha, inventory, historicalItems, capabilities) {
+  const claims = [...historicalItems.values()]
+    .filter((item) => item.closureClaim)
+    .map((item) => ({
+      historicalWorkId: item.historicalWorkId,
+      ...item.closureClaim,
+      prNumbers: item.prNumbers,
+      mergeShas: item.mergeShas,
+      changedFiles: item.changedFiles,
+    }))
+    .sort((a, b) => a.historicalWorkId.localeCompare(b.historicalWorkId));
+  const mappings = buildClosureCapabilityMappings(repoRoot, historicalItems, capabilities);
+  const certifications = buildClosureCertifications(historicalItems, mappings, capabilities);
+  const reliableClaimRefs = new Set(claims
+    .filter(isReliableClosureClaim)
+    .map((item) => item.historicalWorkId));
+  const reliableMappings = mappings.filter((item) => reliableClaimRefs.has(item.claimRef));
+  const reliableMappingsByClaim = new Map();
+  for (const mapping of reliableMappings) {
+    if (!reliableMappingsByClaim.has(mapping.claimRef)) reliableMappingsByClaim.set(mapping.claimRef, []);
+    reliableMappingsByClaim.get(mapping.claimRef).push(mapping);
+  }
+  const mappedReliableClaims = [...reliableMappingsByClaim]
+    .filter(([, values]) => values.some((item) => SUFFICIENT_CLOSURE_MAPPING.has(item.evidenceLevel)))
+    .map(([claimRef]) => claimRef);
+  const broadOrUnmappedReliableClaims = [...reliableClaimRefs]
+    .filter((claimRef) => !mappedReliableClaims.includes(claimRef));
+  const certificationCounts = countBy(certifications, (item) => item.closureCertificationStatus);
+  const metrics = {
+    historicallyClosedClaimCount: claims.length,
+    reliableClosureClaimCount: claims.filter(isReliableClosureClaim).length,
+    falsePositiveClosureClaimCount: claims.filter((item) => item.disposition === 'FALSE_POSITIVE').length,
+    lowConfidenceExcludedClaimCount: claims.filter((item) => item.disposition === 'LOW_CONFIDENCE_EXCLUDED').length,
+    mappedClosureClaimCount: mappedReliableClaims.length,
+    broadOrUnmappedClosureClaimCount: broadOrUnmappedReliableClaims.length,
+    provenClosureDefectCount: certifications.filter((item) => [
+      'CLOSED_BINDING_DEFECT',
+      'CLOSED_ACTIVATION_DEFECT',
+      'CLOSED_REACHABILITY_DEFECT',
+      'CLOSED_OPERABILITY_DEFECT',
+    ].includes(item.closureCertificationStatus)).length,
+    closureUncertifiedCount: certifications.filter((item) => [
+      'CLOSED_STATICALLY_BOUND_UNVERIFIED',
+      'CLOSED_EVIDENCE_INSUFFICIENT',
+    ].includes(item.closureCertificationStatus)).length,
+    closureOperationalConfirmedCount: certifications.filter((item) =>
+      item.closureCertificationStatus === 'CLOSED_OPERATIONAL_CONFIRMED').length,
+    exactCapabilityMappings: reliableMappings.filter((item) =>
+      item.evidenceLevel === 'EXACT_CAPABILITY_REF').length,
+    exactPackageScriptMappings: reliableMappings.filter((item) =>
+      item.evidenceLevel === 'EXACT_PACKAGE_SCRIPT_KEY').length,
+    directImplementationFileMappings: reliableMappings.filter((item) =>
+      item.evidenceLevel === 'DIRECT_IMPLEMENTATION_FILE').length,
+    broadFileTouchMappings: reliableMappings.filter((item) =>
+      item.evidenceLevel === 'BROAD_FILE_TOUCH').length,
+    unmappedMappings: reliableMappings.filter((item) =>
+      item.evidenceLevel === 'UNMAPPED').length,
+  };
+
+  return {
+    schemaVersion: 1,
+    program: SUCCESSOR_PROGRAM,
+    task: SUCCESSOR_TASK,
+    ownerDecision: 'RATIFIED',
+    executionGrant: 'GO-COMPLETE',
+    metadata: {
+      auditBaseSha,
+      snapshotAt: new Date(args.auditStartedAt).toISOString(),
+      scanner: relative(repoRoot, __filename),
+      scannerSha256: sha256(fs.readFileSync(__filename)),
+      capabilityCount: capabilities.length,
+      sealedPr1795ArtifactTreeSha: git(repoRoot, 'rev-parse', `${auditBaseSha}:${SEALED_R01_AUDIT_DIRECTORY}`),
+      evidenceBoundary: 'STATIC_REPOSITORY_SNAPSHOT_PLUS_SHA_BOUND_L6_EVIDENCE_FROM_R01',
+      snapshotBoundary: SNAPSHOT_BOUNDARY,
+    },
+    legacyMetric: {
+      incorrectlyClosed: inventory.counts.incorrectlyClosed,
+      label: 'LEGACY / NOT SUFFICIENT FOR CLOSURE CERTIFICATION',
+    },
+    metrics,
+    mappingCounts: countBy(reliableMappings, (item) => item.evidenceLevel),
+    candidateMappingCounts: countBy(mappings, (item) => item.evidenceLevel),
+    certificationCounts,
+    claims,
+    mappings,
+    certifications,
+    prior27Reconciliation: buildPrior27Reconciliation(
+      historicalItems,
+      mappings,
+      certifications,
+    ),
+  };
+}
+
+function requireSuccessor(condition, code) {
+  if (!condition) throw new Error(`SUCCESSOR_METHODOLOGY_VALIDATION_FAILED: ${code}`);
+}
+
+function validateSuccessorModel(model, inventory) {
+  const assertions = [];
+  const pass = (condition, code) => {
+    requireSuccessor(condition, code);
+    assertions.push(code);
+  };
+
+  pass(model.schemaVersion === 1, 'SCHEMA_VERSION_1');
+  pass(model.program === SUCCESSOR_PROGRAM && model.task === SUCCESSOR_TASK, 'PROGRAM_TASK_IDENTITY');
+  pass(
+    model.certifications.length === inventory.capabilities.length,
+    'ONE_CERTIFICATION_PER_CAPABILITY',
+  );
+  pass(
+    new Set(model.certifications.map((item) => item.capabilityId)).size === model.certifications.length,
+    'UNIQUE_CAPABILITY_CERTIFICATIONS',
+  );
+  pass(
+    model.claims.every((claim) =>
+      claim.sourceRef &&
+      claim.normalizedTitle &&
+      claim.claimType &&
+      claim.matchedText &&
+      claim.parserRule &&
+      ['HIGH', 'MEDIUM', 'LOW'].includes(claim.confidence)),
+    'HISTORICAL_CLOSURE_CLAIM_SHAPE',
+  );
+  pass(
+    model.mappings.every((mapping) =>
+      mapping.claimRef &&
+      CLOSURE_MAPPING_EVIDENCE_LEVELS.has(mapping.evidenceLevel) &&
+      Array.isArray(mapping.evidenceRefs) &&
+      typeof mapping.rationale === 'string'),
+    'CLOSURE_CAPABILITY_MAPPING_SHAPE',
+  );
+  pass(
+    model.certifications.every((item) =>
+      CLOSURE_CERTIFICATION_STATUSES.has(item.closureCertificationStatus)),
+    'CLOSURE_CERTIFICATION_ENUM_CLOSED',
+  );
+
+  const claimById = new Map(model.claims.map((claim) => [claim.historicalWorkId, claim]));
+  pass(
+    model.certifications.every((item) => item.reliableClaimRefs.every((ref) =>
+      isReliableClosureClaim(claimById.get(ref)))),
+    'ONLY_RELIABLE_CLAIMS_CERTIFY',
+  );
+  pass(
+    model.certifications
+      .filter((item) => item.closureCertificationStatus === 'CLOSED_OPERATIONAL_CONFIRMED')
+      .every((item) => item.runtimeStatus === 'VERIFIED_OPERATIONAL'),
+    'OPERATIONAL_CONFIRMATION_REQUIRES_L6_STATUS',
+  );
+
+  const failClosedRefs = new Set([
+    'HIST-11023234457E',
+    'HIST-5CAB26213FAC',
+    'HIST-D21135EA08C0',
+    'HIST-FBEF69159FC6',
+  ]);
+  const failClosedClaims = model.claims.filter((claim) => failClosedRefs.has(claim.historicalWorkId));
+  pass(
+    failClosedClaims.length === 4 && failClosedClaims.every((claim) =>
+      claim.claimType === 'FALSE_POSITIVE_FAIL_CLOSED' &&
+      claim.disposition === 'FALSE_POSITIVE' &&
+      !isReliableClosureClaim(claim)),
+    'FOUR_FAIL_CLOSED_FALSE_POSITIVES_EXCLUDED',
+  );
+
+  const packageClaim = claimById.get('HIST-D004068C3FFF');
+  const packageMappings = model.mappings.filter((mapping) =>
+    mapping.claimRef === 'HIST-D004068C3FFF' && mapping.capabilityId);
+  pass(
+    packageClaim?.claimType === 'FALSE_POSITIVE_CLOSEOUT_NAME' &&
+    packageClaim.disposition === 'FALSE_POSITIVE',
+    'FEATURE_NAME_CLOSEOUT_NOT_A_CLOSURE_CLAIM',
+  );
+  pass(
+    packageMappings.filter((mapping) =>
+      mapping.evidenceLevel === 'EXACT_PACKAGE_SCRIPT_KEY').length === 1 &&
+    packageMappings.filter((mapping) =>
+      mapping.evidenceLevel === 'EXACT_PACKAGE_SCRIPT_KEY')[0]?.evidenceRefs
+      .some((ref) => ref.endsWith('scripts.orch:closeout')) &&
+    packageMappings.every((mapping) =>
+      mapping.evidenceLevel === 'EXACT_PACKAGE_SCRIPT_KEY' || mapping.evidenceLevel === 'UNMAPPED'),
+    'PACKAGE_SCRIPT_MAPPING_CONTAINED_TO_EXACT_KEY',
+  );
+
+  const portalClaim = claimById.get('HIST-A154EC6D29E0');
+  const portalMappings = model.mappings.filter((mapping) =>
+    mapping.claimRef === 'HIST-A154EC6D29E0' && mapping.capabilityId);
+  const portalCapabilityIds = new Set(portalMappings.map((mapping) => mapping.capabilityId));
+  pass(
+    isReliableClosureClaim(portalClaim) &&
+    portalMappings.length === 10 &&
+    portalMappings.every((mapping) => mapping.evidenceLevel === 'DIRECT_IMPLEMENTATION_FILE'),
+    'CLIENT_PORTAL_DIRECT_FILE_MAPPINGS',
+  );
+  pass(
+    model.certifications
+      .filter((item) => portalCapabilityIds.has(item.capabilityId))
+      .every((item) => item.closureCertificationStatus !== 'CLOSED_OPERATIONAL_CONFIRMED'),
+    'CLIENT_PORTAL_NOT_OPERATIONALLY_OVERCLAIMED',
+  );
+
+  const explicit = parseHistoricalClosureClaim('fixture:explicit', 'FINAL STATUS: CLOSED');
+  const feature = parseHistoricalClosureClaim(
+    'fixture:feature',
+    'feat: add closeout CLI command',
+  );
+  pass(isReliableClosureClaim(explicit), 'EXPLICIT_FINAL_STATUS_ACCEPTED');
+  pass(
+    feature?.disposition === 'FALSE_POSITIVE' && !isReliableClosureClaim(feature),
+    'FEATURE_CLOSEOUT_FIXTURE_EXCLUDED',
+  );
+
+  return assertions;
+}
+
+function successorMethodologyLines(model) {
+  return [
+    '# Runtime Operability Certification R01 — Closure Methodology',
+    '',
+    `Audit base: \`${model.metadata.auditBaseSha}\``,
+    '',
+    '## Snapshot boundary',
+    '',
+    '```text',
+    SNAPSHOT_BOUNDARY,
+    '```',
+    '',
+    '## Independent axes',
+    '',
+    'Runtime status and historical closure certification are independent. A merge, source-file',
+    'presence, static registration, or passing test does not independently certify operational closure.',
+    '',
+    '```text',
+    'MERGED',
+    'CODE_PRESENT',
+    'RUNTIME_BOUND',
+    'ACTIVE',
+    'REACHABLE',
+    'CONSUMED',
+    'OPERABLE',
+    'INDEPENDENTLY_VERIFIED',
+    'CLOSURE_CERTIFIED',
+    '```',
+    '',
+    'Operational confirmation requires:',
+    '',
+    '```text',
+    'RUNTIME BINDING',
+    '→ ACTIVATION',
+    '→ REACHABILITY',
+    '→ REAL CONSUMER',
+    '→ EXPECTED SIDE EFFECT',
+    '→ INDEPENDENT VERIFICATION',
+    '```',
+    '',
+    '## HistoricalClosureClaim',
+    '',
+    'A contextual parser emits `sourceRef`, `normalizedTitle`, `claimType`, `matchedText`,',
+    '`parserRule`, and `confidence`. `LOW` confidence and false-positive candidates never enter',
+    'the closure-certification denominator. Behavioural fail-closed language, default-closed state,',
+    'feature/CLI/package names containing closeout, and technical closure concepts are excluded.',
+    '',
+    '## ClosureCapabilityMapping',
+    '',
+    '| Evidence level | Certification use | Meaning |',
+    '|---|---|---|',
+    '| EXACT_CAPABILITY_REF | Sufficient | Exact capability identifier in the claim |',
+    '| EXACT_PACKAGE_SCRIPT_KEY | Sufficient | Exact changed package script key only |',
+    '| DIRECT_IMPLEMENTATION_FILE | Sufficient for association only | Direct implementation/registration file changed |',
+    '| BROAD_FILE_TOUCH | Insufficient | Shared module/manifest/barrel/package touch |',
+    '| UNMAPPED | Insufficient | No defensible capability-specific relation |',
+    '',
+    '`DIRECT_IMPLEMENTATION_FILE` associates the claim with a capability but never proves runtime',
+    'operation. Package-file touch is contained to the exact changed script key.',
+    '',
+    '## Closure certification statuses',
+    '',
+    ...[...CLOSURE_CERTIFICATION_STATUSES].map((status) => `- \`${status}\``),
+    '',
+    'A capability without a reliable closure claim is `NOT_HISTORICALLY_CLOSED`. A reliable claim',
+    'with broad/unmapped evidence is `CLOSED_EVIDENCE_INSUFFICIENT`. Runtime defect statuses are',
+    'assigned only after sufficient claim-to-capability mapping. `CLOSED_OPERATIONAL_CONFIRMED`',
+    'requires `VERIFIED_OPERATIONAL` runtime status.',
+    '',
+    '## Legacy metric',
+    '',
+    `\`incorrectlyClosed = ${model.legacyMetric.incorrectlyClosed}\` is retained only for backward`,
+    `compatibility and is labelled **${model.legacyMetric.label}**. It is not synonymous with`,
+    '`provenClosureDefectCount` or `closureUncertifiedCount`.',
+    '',
+  ];
+}
+
+function successorCertificationLines(model) {
+  const metricRows = [
+    ['Historical closure claims detected', model.metrics.historicallyClosedClaimCount],
+    ['Reliable closure claims', model.metrics.reliableClosureClaimCount],
+    ['False-positive closure claims removed', model.metrics.falsePositiveClosureClaimCount],
+    ['Exact capability mappings', model.metrics.exactCapabilityMappings],
+    ['Exact package-script mappings', model.metrics.exactPackageScriptMappings],
+    ['Direct implementation-file mappings', model.metrics.directImplementationFileMappings],
+    ['Broad file-touch mappings', model.metrics.broadFileTouchMappings],
+    ['Unmapped claims/mappings', model.metrics.unmappedMappings],
+    ['Operationally confirmed closures', model.metrics.closureOperationalConfirmedCount],
+    ['Proven closure defects', model.metrics.provenClosureDefectCount],
+    ['Closure uncertified', model.metrics.closureUncertifiedCount],
+    ['Superseded closures', model.certificationCounts.CLOSED_SUPERSEDED || 0],
+  ];
+  const lines = [
+    '# Historical Closure Certification — R01',
+    '',
+    `Audit base: \`${model.metadata.auditBaseSha}\``,
+    '',
+    '```text',
+    SNAPSHOT_BOUNDARY,
+    '```',
+    '',
+    '## Required scorecard',
+    '',
+    '| Measure | Count |',
+    '|---|---:|',
+    ...metricRows.map(([label, value]) => `| ${label} | ${value} |`),
+    '',
+    `Legacy \`incorrectlyClosed\`: **${model.legacyMetric.incorrectlyClosed}** — ` +
+      `**${model.legacyMetric.label}**.`,
+    '',
+    '## Before/after reconciliation of the prior 27 relationships',
+    '',
+    '| Group | Before | Successor candidate mappings | Reliable mappings | Certifications | Disposition | Evidence |',
+    '|---|---:|---:|---:|---:|---|---|',
+    ...model.prior27Reconciliation.groups.map((group) =>
+      `| ${group.group} | ${group.beforeMappings} | ${group.successorCandidateMappings} | ` +
+      `${group.successorReliableMappings} | ${group.successorCertificationCount} | ` +
+      `${group.disposition} | ${group.evidence} |`),
+    '',
+    'Interpretation:',
+    '',
+    '- The four `fail closed` commits are behavioral fixes, not historical closure claims.',
+    '- The PR #1716 feature-name `closeout` candidate is not a closure claim. Its mapping is still',
+    '  regression-audited: only `orch:closeout` is exact; other package scripts are unmapped.',
+    '- The ten CLIENT portal candidates remain direct-file associations, but none is operationally',
+    '  confirmed without independent runtime evidence.',
+    '',
+    '## Closure certification distribution',
+    '',
+    '| Certification status | Count |',
+    '|---|---:|',
+    ...Object.entries(model.certificationCounts).map(([status, count]) => `| ${status} | ${count} |`),
+    '',
+    '## Reliable claim-to-capability mappings',
+    '',
+    '| Claim | Capability | Evidence level | Runtime status | Closure certification |',
+    '|---|---|---|---|---|',
+  ];
+  const certificationByCapability = new Map(
+    model.certifications.map((item) => [item.capabilityId, item]),
+  );
+  const reliableClaimRefs = new Set(model.claims.filter(isReliableClosureClaim)
+    .map((item) => item.historicalWorkId));
+  for (const mapping of model.mappings.filter((item) =>
+    item.capabilityId && reliableClaimRefs.has(item.claimRef))) {
+    const certification = certificationByCapability.get(mapping.capabilityId);
+    lines.push(
+      `| ${mapping.claimRef} | ${mapping.capabilityId} | ${mapping.evidenceLevel} | ` +
+      `${certification.runtimeStatus} | ${certification.closureCertificationStatus} |`,
+    );
+  }
+  lines.push('');
+  return lines;
+}
+
+function methodologyValidationLines(model, assertions) {
+  const packageGroup = model.prior27Reconciliation.groups.find((item) =>
+    item.group === 'PACKAGE_JSON_DERIVED_MAPPINGS');
+  const portalGroup = model.prior27Reconciliation.groups.find((item) =>
+    item.group === 'CLIENT_PORTAL_DIRECT_FILE_CANDIDATES');
+  return [
+    '# Methodology Validation Report — R01',
+    '',
+    `Audit base: \`${model.metadata.auditBaseSha}\``,
+    '',
+    '## Generator-enforced assertions',
+    '',
+    ...assertions.map((assertion) => `- PASS — \`${assertion}\``),
+    '',
+    '## Regression teeth',
+    '',
+    '- The legacy word matcher classifies each of the four `fail closed` titles as `CLOSED`; the',
+    '  contextual parser classifies all four as false positives and excludes them from certification.',
+    `- Package containment records ${packageGroup.evidence}; the legacy file-touch model associated`,
+    '  every eligible script in the same package file.',
+    `- CLIENT portal containment retains ${portalGroup.successorReliableMappings} direct-file mappings`,
+    '  while producing zero operational confirmations without L6 evidence.',
+    '- `FINAL STATUS: CLOSED` is accepted as a high-confidence claim.',
+    '- A feature or CLI name containing `closeout` is excluded unless terminal claim context exists.',
+    '',
+    'Focused/existing test execution, `node --check`, deterministic double-run, frozen-input equality,',
+    'allowlist validation, and sealed-tree verification are recorded as PR/CI execution evidence;',
+    'this deterministic artifact does not fabricate environment-dependent command outcomes.',
+    '',
+  ];
+}
+
+function successorDecisionLogLines(model) {
+  return [
+    '# Runtime Operability Certification R01 — Decision Log',
+    '',
+    `Audit base: \`${model.metadata.auditBaseSha}\``,
+    '',
+    '## ROC-W0-DEC-001 — Two independent axes',
+    '',
+    'Runtime status and historical closure certification are independent. Neither merge nor static',
+    'binding is operational closure evidence.',
+    '',
+    '## ROC-W0-DEC-002 — Contextual closure claims',
+    '',
+    'Closure claims require contextual terminal-delivery language. Behavioral fail-closed terms,',
+    'default-closed states, feature/command names, and technical closure concepts are excluded.',
+    '',
+    '## ROC-W0-DEC-003 — Evidence-level mapping',
+    '',
+    'Only exact capability references, exact changed package-script keys, and direct implementation',
+    'files can associate a reliable closure claim with a capability. Broad or absent mappings cannot',
+    'support defect or operational-confirmation certification.',
+    '',
+    '## ROC-W0-DEC-004 — Legacy metric containment',
+    '',
+    '`incorrectlyClosed` remains backward-compatible and explicitly non-authoritative for closure',
+    'certification. New defect, uncertified, and confirmed counts are computed from the two-axis model.',
+    '',
+    '## ROC-W0-DEC-005 — Sealed audit preservation',
+    '',
+    SNAPSHOT_BOUNDARY,
+    '',
+  ];
+}
+
+function writeSuccessorArtifacts(outputDirectory, model, inventory) {
+  const assertions = validateSuccessorModel(model, inventory);
+  fs.mkdirSync(outputDirectory, { recursive: true });
+  fs.writeFileSync(
+    path.join(outputDirectory, 'methodology.md'),
+    `${successorMethodologyLines(model).join('\n')}\n`,
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(outputDirectory, 'historical-closure-certification.json'),
+    `${JSON.stringify(model, null, 2)}\n`,
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(outputDirectory, 'historical-closure-certification.md'),
+    `${successorCertificationLines(model).join('\n')}\n`,
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(outputDirectory, 'methodology-validation-report.md'),
+    `${methodologyValidationLines(model, assertions).join('\n')}\n`,
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(outputDirectory, 'decision-log.md'),
+    `${successorDecisionLogLines(model).join('\n')}\n`,
+    'utf8',
+  );
+  return assertions;
 }
 
 function main() {
@@ -1249,7 +2212,9 @@ function main() {
 
   fs.mkdirSync(outputDirectory, { recursive: true });
   const jsonPath = path.join(outputDirectory, 'runtime-capability-inventory.json');
-  fs.writeFileSync(jsonPath, `${JSON.stringify(inventory, null, 2)}\n`, 'utf8');
+  if (!args.successorOnly) {
+    fs.writeFileSync(jsonPath, `${JSON.stringify(inventory, null, 2)}\n`, 'utf8');
+  }
 
   const columns = [
     'capabilityId',
@@ -1293,7 +2258,9 @@ function main() {
       record.recommendedAction,
     ].map(csvCell).join(','));
   }
-  fs.writeFileSync(path.join(outputDirectory, 'runtime-binding-matrix.csv'), `${csvRows.join('\n')}\n`, 'utf8');
+  if (!args.successorOnly) {
+    fs.writeFileSync(path.join(outputDirectory, 'runtime-binding-matrix.csv'), `${csvRows.join('\n')}\n`, 'utf8');
+  }
 
   const openStatuses = new Set([
     'CODE_PRESENT_UNBOUND',
@@ -1365,11 +2332,13 @@ function main() {
     '- `RequestIdMiddleware` ve `HttpMetricsMiddleware`, `AppModule.configure()` içindeki `MiddlewareConsumer.apply()` kaydı üzerinden bağlı ve erişilebilir olarak doğrulandı.',
     '',
   );
-  fs.writeFileSync(
-    path.join(outputDirectory, 'unbound-and-dormant-register.md'),
-    `${openRegisterLines.join('\n')}\n`,
-    'utf8',
-  );
+  if (!args.successorOnly) {
+    fs.writeFileSync(
+      path.join(outputDirectory, 'unbound-and-dormant-register.md'),
+      `${openRegisterLines.join('\n')}\n`,
+      'utf8',
+    );
+  }
 
   const historicalStatusCounts = new Map();
   for (const item of historicalItems.values()) {
@@ -1454,19 +2423,49 @@ function main() {
     'yalnız bu audit’in L6 bağımsız runtime teslim kanıtı üretmediğini gösterir.',
     '',
   );
-  fs.writeFileSync(
-    path.join(outputDirectory, 'historical-closure-reconciliation.md'),
-    `${closureLines.join('\n')}\n`,
-    'utf8',
-  );
+  if (!args.successorOnly) {
+    fs.writeFileSync(
+      path.join(outputDirectory, 'historical-closure-reconciliation.md'),
+      `${closureLines.join('\n')}\n`,
+      'utf8',
+    );
+  }
+
+  let successor = null;
+  let successorAssertions = [];
+  if (args.successorOnly) {
+    successor = buildSuccessorModel(
+      repoRoot,
+      args,
+      auditBaseSha,
+      inventory,
+      historicalItems,
+      capabilities,
+    );
+    successorAssertions = writeSuccessorArtifacts(outputDirectory, successor, inventory);
+  }
 
   process.stdout.write(`${JSON.stringify({
-    status: 'RUNTIME_BINDING_RECONCILIATION_INVENTORY_GENERATED',
+    status: args.successorOnly
+      ? 'RUNTIME_OPERABILITY_CERTIFICATION_SUCCESSOR_GENERATED'
+      : 'RUNTIME_BINDING_RECONCILIATION_INVENTORY_GENERATED',
     auditBaseSha,
     outputDirectory: relative(repoRoot, outputDirectory),
     counts,
     scorecards,
+    successorMetrics: successor?.metrics || null,
+    successorAssertions,
   }, null, 2)}\n`);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = {
+  buildClosureCapabilityMappings,
+  buildClosureCertifications,
+  classifyClosureCapabilityMapping,
+  closureCertificationStatus,
+  isReliableClosureClaim,
+  legacyHistoricalStatusForTitle,
+  parseHistoricalClosureClaim,
+};
