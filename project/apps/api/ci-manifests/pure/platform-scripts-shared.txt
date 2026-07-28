@@ -319,6 +319,7 @@ src/scripts/__tests__/adr014-session-observation-facts.security.spec.ts
 #
 src/modules/balance-display-shadow-diff/__tests__/balance-display-shadow-diff.events.spec.ts
 src/modules/policy-engine/decision-logger/__tests__/cpe-decision-composite-key.static.spec.ts
+src/modules/policy-engine/decision-logger/__tests__/cpe-evidence-runtime-integrity.spec.ts
 src/modules/policy-engine/decision-logger/__tests__/uyap-attempt-cpe-decision-link.static.spec.ts
 src/scripts/__tests__/adr014-disabled-local-evidence-harness.security.spec.ts
 src/scripts/__tests__/adr014-disabled-local-evidence-harness.spec.ts

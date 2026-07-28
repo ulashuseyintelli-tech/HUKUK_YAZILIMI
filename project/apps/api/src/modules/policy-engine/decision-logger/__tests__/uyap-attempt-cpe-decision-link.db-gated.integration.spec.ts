@@ -152,7 +152,12 @@ maybe('P05C-P02 — link + legal hold (DB)', () => {
   describe('referential legal hold — retention', () => {
     const service = () => new DecisionLogRetentionService(prisma as any);
 
-    it('ESKI + BAGLI karar silinmez; ESKI + BAGSIZ karar silinir; cron HATA VERMEZ', async () => {
+    // UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02: retention cron'u ARTIK HICBIR KAYDI SILMEZ.
+    // Onceki hal "arsivler" diyip `deleteMany` cagiriyordu; `CpeDecisionLogArchive`
+    // modeli sema/migration'da HIC YOKTU -> 90 gunden eski her CPE karar delili her
+    // gece KALICI olarak imha ediliyordu. Yikici yol kapatildi (owner §12 containment);
+    // gercek arsiv sozlesmesi ARCH-4'e aittir.
+    it('ESKI + BAGLI karar silinmez; ESKI + BAGSIZ karar da SILINMEZ; cron HATA VERMEZ', async () => {
       await mkDecision('d-old-linked', caseA, OLD);
       await mkDecision('d-old-unlinked', caseA, OLD);
       await mkLink('l-hold', tenantA, caseA, 'op-1', 'att-2', 'd-old-linked');
@@ -160,15 +165,28 @@ maybe('P05C-P02 — link + legal hold (DB)', () => {
       await expect(service().archiveOldRecords()).resolves.toBeUndefined();
 
       expect(await prisma.cpeDecisionLog.findUnique({ where: { id: 'd-old-linked' } })).not.toBeNull();
-      expect(await prisma.cpeDecisionLog.findUnique({ where: { id: 'd-old-unlinked' } })).toBeNull();
+      expect(await prisma.cpeDecisionLog.findUnique({ where: { id: 'd-old-unlinked' } })).not.toBeNull();
     });
 
-    it('link kalkinca kayit NORMAL rejime doner (sınırsız saklama DEGIL)', async () => {
+    it('legal-hold ADAY SAYIMI: bagli karar aday DEGIL, bagsiz karar adaydir', async () => {
+      const withHold = await service().sweep();
+      expect(withHold.deleted).toBe(0);
+      expect(withHold.destructiveDisabled).toBe(true);
+      // `d-old-unlinked` aday; `d-old-linked` legal-hold nedeniyle aday degil.
+      expect(withHold.eligibleCandidates).toBeGreaterThanOrEqual(1);
+
       await prisma.$executeRawUnsafe(`DELETE FROM "UyapAttemptCpeDecisionLink" WHERE id = 'l-hold'`);
 
-      await expect(service().archiveOldRecords()).resolves.toBeUndefined();
+      const withoutHold = await service().sweep();
+      // Link kalkinca kayit NORMAL rejime doner (aday sayisi artar) — ama yine SILINMEZ.
+      expect(withoutHold.eligibleCandidates).toBeGreaterThan(withHold.eligibleCandidates);
+      expect(await prisma.cpeDecisionLog.findUnique({ where: { id: 'd-old-linked' } })).not.toBeNull();
+    });
 
-      expect(await prisma.cpeDecisionLog.findUnique({ where: { id: 'd-old-linked' } })).toBeNull();
+    it('manualArchive CAGRILAMAZ — sessiz no-op degil, acik hata', async () => {
+      await expect(service().manualArchive(1)).rejects.toThrow(
+        /CPE_DECISION_LOG_RETENTION_DISABLED/,
+      );
     });
 
     it('legal-hold filtresi deleteMany seviyesinde de uygulanir (atomik)', async () => {
