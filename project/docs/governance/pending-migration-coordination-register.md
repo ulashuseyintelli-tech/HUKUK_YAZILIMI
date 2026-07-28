@@ -1491,3 +1491,102 @@ VERI BUTUNLUGU KAPISI (salt-okuma, uygulama oncesi — hepsi 0):
 LIVE APPLY: MERGED UPON APPROVED MERGE / PENDING LIVE APPLY
 LIVE APPLY AUTHORITY: TASK 03 kapsaminda, implementation PR merge edildikten SONRA
 ```
+
+---
+
+## 24. UYAP-POA-TENANT-FK-DRIFT-REMEDIATION-R01 — live apply (2026-07-28)
+
+Kaynak: `MIGRATION-TRAIN-POST-APPLY-RECOVERY-P01` / TASK 03, live-apply closeout (PR B).
+
+§23'te `PENDING LIVE APPLY` olarak kaydedilen corrective migration **uygulanmıştır**. Bu, bu programda hedefe **yetkiyle ve protokole uygun yapılan tek yazma işlemidir**.
+
+### 24.1 Uygulama kaydı
+
+```text
+MIGRATION      : 20260728140000_uyap_poa_tenant_fk_drift_remediation_r01
+TARGET         : localhost:5432 / hukuk_db  (PostgreSQL 16.14, primary)
+KOMUT          : prisma migrate deploy   (tek sefer, paralel process yok)
+FINISHED AT    : 2026-07-28 01:44:58.964
+ROLLED BACK AT : NULL
+APPLIED STEPS  : 1
+CHECKSUM       : bb6f24f32103ce03…   (repo migration.sql sha256 ile UYUMLU)
+REPOSITORY SHA : 6bee8d3d (PR #1731)
+APPLY ACTOR    : MIGRATION-TRAIN-POST-APPLY-RECOVERY-P01 / TASK 03  (yetkili, attributed)
+PRODUCTION CLAIM: NONE
+```
+
+### 24.2 Uygulama öncesi güvenlik
+
+```text
+pre-remediation backup : pg_dump -Fc, 1.052.910 bytes
+  sha256               : ef49d5f6b4ea2f1692613db06a6e77759219a7722ec6b2d97b9893080300fad0
+  pg_restore --list    : exit 0
+hedef, TASK 01 yedeginden bu yana DEGISMEMISTI (107 migration, ayni satir sayimlari)
+program lock           : competing writer YOK
+pending set            : YALNIZ corrective migration (1)
+veri butunlugu kapisi  : 7 olcumun tamami 0 (NULL / orphan / cross-tenant uyumsuzluk)
+temiz DB provasi       : PASS (bos -> 108 migration)
+restore clone provasi  : PASS (107 -> 108, veri korundu, drift kapandi)
+testler (clone)        : poa-tenant-safety 14/14 · db/core-lifecycle 23 suite / 164 test
+dis (teeth) dogrulamasi: FK'ler dusuruldugunde 2 test FAIL, geri konuldugunda 14/14 PASS
+```
+
+### 24.3 Uygulama sonrası doğrulama
+
+```text
+prisma migrate status : "Database schema is up to date!"
+_prisma_migrations    : 108 toplam / 108 basarili / 0 rolled-back / 0 yarim
+pending               : 0
+checksum uyumsuz      : 0
+
+ClientPowerOfAttorney_tenantId_fkey :
+  FOREIGN KEY ("tenantId") REFERENCES "Tenant"(id) ON UPDATE CASCADE ON DELETE CASCADE
+  validated = true
+PoaLawyer_tenantId_fkey :
+  FOREIGN KEY ("tenantId") REFERENCES "Tenant"(id) ON UPDATE CASCADE ON DELETE CASCADE
+  validated = true
+
+FK sayisi   : ClientPowerOfAttorney 1 -> 2 · PoaLawyer 2 -> 3
+orphan tenantId : POA 0 · PoaLawyer 0
+veri korunumu   : POA=4 PoaLawyer=2 Tenant=3 Client=15 Case=9   (uygulama oncesiyle AYNI)
+```
+
+### 24.4 Post-apply drift
+
+```text
+toplam drift ifadesi : 2
+  BankSettlementEvidence RENAME CONSTRAINT  -> ACCEPTED_PRE_EXISTING_NON_BLOCKING_DRIFT
+  BankTransaction        RENAME CONSTRAINT  -> ACCEPTED_PRE_EXISTING_NON_BLOCKING_DRIFT
+
+POA-ozgu drift ifadesi : 0
+  ClientPowerOfAttorney  : drift'te 0 kez
+  PoaLawyer              : drift'te 0 kez
+```
+
+**Yeni veya genişlemiş drift YOKTUR.**
+
+### 24.5 Statü
+
+```text
+UYAP-POA-TENANT-FK-DRIFT-REMEDIATION-R01
+IMPLEMENTED / VERIFIED / MERGED / APPLIED / CANONICAL
+
+ClientPowerOfAttorney_tenantId_fkey : PRESENT
+PoaLawyer_tenantId_fkey             : PRESENT
+UYAP POA TENANT FK DRIFT            : CLOSED
+```
+
+§22.6'nın `OPEN / BLOCKING FOR UYAP TENANT-INTEGRITY CLOSURE` kaydı bu bölümle kapatılmıştır; §22'nin kendi metni DEĞİŞTİRİLMEMİŞTİR.
+
+### 24.6 Bu bölümün üretmedikleri
+
+```text
+BASKA UYAP TASK'I CLOSED ILANI : NONE  (I03..I07 NOT GRANTED / NOT STARTED)
+UYAP CUTOVER                   : HARD HOLD korunur
+GO-MIGRATE GATE (UYAP §L)      : bu bolumle ACILMAZ
+DECISION-1 / DECISION-2        : cozulmedi, FAIL-CLOSED default korunur
+Bank constraint-name drift'i   : DUZELTILMEDI
+CLIENT I01/I02 statusu         : DEGISTIRILMEDI (charter §39)
+```
+
+**MIGRATION APPLIED ≠ UYAP PROGRAM CLOSED · FK PRESENT ≠ TENANT AUTHORIZATION MODEL COMPLETE.**
