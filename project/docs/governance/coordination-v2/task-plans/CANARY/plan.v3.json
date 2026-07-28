@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "taskId": "CANARY-OFFICE-ENCRYPTION-CHARACTERIZATION-R03",
+  "taskSpecVersion": 1,
+  "profile": "BOUNDED_CODE_TASK",
+  "declaredIntent": "OPERATIONAL CANARY R03. Mevcut office-credential-encryption.util davranisini, yeni production semantigi uretmeden, characterization testiyle sabitle. Yalniz test dosyasi eklenir; util dosyasina dokunulmaz. Amaci orkestrasyon zincirinin CODEX_LOCAL lane uzerinden ucdan uca calistigini kanitlamaktir.",
+  "declaredIntentSha256": "017f91faf889b9df701d0d2840fb1f8fcbcc93d40040d47712dc7df263cf11fc",
+  "boundaryPolicy": {
+    "allowedRoots": [
+      "project/apps/api/src/modules/office/__tests__/office-credential-encryption.characterization.spec.ts/"
+    ],
+    "maxChangedFiles": 1
+  },
+  "boundaryPolicySha256": "c9ac5282b1051c18de48b9d43c72c0ce957447fc8652257c1e6abb1738d75b02",
+  "requiredTests": [
+    {
+      "argv": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "cwd": "project",
+      "timeoutMs": 1800000
+    },
+    {
+      "argv": [
+        "pnpm",
+        "--filter",
+        "@hukuk/api",
+        "exec",
+        "prisma",
+        "generate"
+      ],
+      "cwd": "project",
+      "timeoutMs": 1800000
+    },
+    {
+      "argv": [
+        "pnpm",
+        "exec",
+        "jest",
+        "--ci",
+        "--forceExit",
+        "--runInBand",
+        "--runTestsByPath",
+        "src/modules/office/__tests__/office-credential-encryption.characterization.spec.ts"
+      ],
+      "cwd": "project/apps/api",
+      "timeoutMs": 1800000
+    }
+  ],
+  "requiredTestsSha256": "d7f6c55b8753b47e6b82c0b8fc7ee33ba9b4d96058915de3501153fe56b8530e",
+  "predecessorTaskIds": [],
+  "baseDriftPolicy": "REFRESH_BEFORE_EXECUTION",
+  "baseSha": "20b3dfde05070c9aa5c31d7bebaa61d5e9877341",
+  "successorDisposition": "OWNER_AUTHORIZATION_REQUIRED"
+}
