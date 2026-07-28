@@ -496,6 +496,38 @@ describe('closeout — contract (owner 3.9, 3.15, 3.16)', () => {
     expect(r.mergeSha).toBe(MERGE_SHA);
   });
 
+  it('40. a consumed reference carried to another PR reports REUSE, not PR_MISMATCH', async () => {
+    // R02 pilot bulgusu: binding kontrolu (PR_MISMATCH) consumed kontrolunden
+    // once tetikleniyordu. Davranis guvenliydi ama sinyal yanlisti — operatore
+    // "yanlis PR" diyordu, gercek sebep reference'in tuketilmis olmasiydi.
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({
+        taskId: 'GOV-EXAMPLE-R01', pr: 1234, consumed: true,
+        consumedTaskId: 'GOV-EXAMPLE-R01', consumedPr: 1234,
+      }),
+    });
+    const r = await closeout.closeoutPr(makeInput({ pr: 4321 }), a);
+    expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN);
+    expect(a.calls.squashMerge).toBe(0);
+  });
+
+  it('41. an UNCONSUMED reference bound to another PR still reports PR_MISMATCH', async () => {
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({ taskId: 'GOV-EXAMPLE-R01', pr: 1234, consumed: false }),
+    });
+    const r = await closeout.closeoutPr(makeInput({ pr: 4321 }), a);
+    expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_PR_MISMATCH);
+    expect(a.calls.squashMerge).toBe(0);
+  });
+
+  it('42. a consumed reference without consumedPr falls back to the binding PR', async () => {
+    const a = makeAdapter({
+      authorityLedgerEntry: async () => ({ taskId: 'GOV-EXAMPLE-R01', pr: 1234, consumed: true }),
+    });
+    const r = await closeout.closeoutPr(makeInput({ pr: 4321 }), a);
+    expect(r.blockerCode).toBe(closeout.BLOCKER.MERGE_AUTHORITY_REUSE_FORBIDDEN);
+  });
+
   it('the state machine is single-directional and declared', () => {
     expect(closeout.STAGES[0]).toBe('PREFLIGHT');
     expect(closeout.STAGES[closeout.STAGES.length - 1]).toBe('CLOSED');
