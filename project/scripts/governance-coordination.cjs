@@ -221,6 +221,56 @@ const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
 const GITHUB_PLATFORM_GH02_BINDING_PATHS = new Set(
   GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths,
 );
+const RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01 = Object.freeze({
+  taskId: 'GOV-COORD-RCV-COL-BOOTSTRAP-CONTROL-PLANE-BINDING-R01',
+  contractPath:
+    'project/docs/governance/governance-writer-coordination-contract.md',
+  bindingPr: Object.freeze({
+    mode: 'RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01',
+    baseSha: '7ba8d8e69fcd236bb1ca902eabc9cff0837fea04',
+    headRef: 'codex/gov-coord-rcv-col-bootstrap-control-plane-binding-r01',
+    changedPaths: Object.freeze([
+      Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.cjs' }),
+      Object.freeze({
+        status: 'M',
+        path: 'project/scripts/governance-coordination.test.cjs',
+      }),
+      Object.freeze({
+        status: 'M',
+        path: 'project/docs/governance/governance-writer-coordination-contract.md',
+      }),
+    ]),
+  }),
+  targetPr: Object.freeze({
+    taskId: 'RCV-COL-FULL-REMEDIATION-BOOTSTRAP-R01',
+    mode: 'RCV_COL_FULL_REMEDIATION_BOOTSTRAP_R01',
+    pullRequestNumber: 1721,
+    originalBaseSha: '1018c6b521e9159b3b5e9e1b82ed307fec6ff79f',
+    headRef: 'codex/rcv-col-full-remediation-bootstrap-r01',
+    changedPaths: Object.freeze([
+      Object.freeze({
+        status: 'M',
+        path: 'project/docs/governance/decision-log.md',
+      }),
+      Object.freeze({
+        status: 'A',
+        path:
+          'project/docs/governance/coordination-execution-grants/RCV-COL-FULL-REMEDIATION-EXECUTION-GRANT-R01.md',
+      }),
+    ]),
+    semanticAuthority: Object.freeze({
+      kind: 'SEMANTIC_AUTHORITY',
+      path: 'project/docs/governance/decision-log.md',
+      recordId: 'RCV-COL-FULL-REMEDIATION-RATIFICATION-R01',
+    }),
+    executionGrant: Object.freeze({
+      kind: 'EXECUTION_GRANT',
+      path:
+        'project/docs/governance/coordination-execution-grants/RCV-COL-FULL-REMEDIATION-EXECUTION-GRANT-R01.md',
+      recordId: 'RCV-COL-FULL-REMEDIATION-EXECUTION-GRANT-R01',
+    }),
+  }),
+});
 const GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02 = Object.freeze({
   taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-RECOVERY-R02',
   mode: 'GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02',
@@ -1344,6 +1394,29 @@ function classifyPrChangeSet(changes, context = {}) {
   }
 
   const gh02Binding = GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
+  const rcvColBinding =
+    RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  if (
+    context.base === rcvColBinding.bindingPr.baseSha &&
+    context.headRef === rcvColBinding.bindingPr.headRef &&
+    hasExactChangeSet(changes, rcvColBinding.bindingPr.changedPaths)
+  ) {
+    return {
+      mode: rcvColBinding.bindingPr.mode,
+      taskId: rcvColBinding.taskId,
+    };
+  }
+
+  if (
+    context.headRef === rcvColBinding.targetPr.headRef &&
+    hasExactChangeSet(changes, rcvColBinding.targetPr.changedPaths)
+  ) {
+    return {
+      mode: rcvColBinding.targetPr.mode,
+      taskId: rcvColBinding.targetPr.taskId,
+    };
+  }
+
   if (
     context.base === gh02Binding.bindingPr.baseSha &&
     context.headRef === gh02Binding.bindingPr.headRef &&
@@ -1379,12 +1452,17 @@ function classifyPrChangeSet(changes, context = {}) {
       ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef,
       gh02Binding.bindingPr.headRef,
       gh02Binding.workflowPr.headRef,
+      rcvColBinding.bindingPr.headRef,
+      rcvColBinding.targetPr.headRef,
     ].includes(context.headRef) ||
     /^codex\/gov-coord-(?:v1-)?(?:authority-locator|register-test-fixture|execution-base-ancestry|noncoord-classifier)-repair-/.test(
       context.headRef || '',
     ) ||
     /^codex\/dx-006-analyze-first-conditional-execution-/.test(context.headRef || '') ||
-    /^codex\/github-platform-gh02-/.test(context.headRef || '')
+    /^codex\/github-platform-gh02-/.test(context.headRef || '') ||
+    /^codex\/(?:gov-coord-)?rcv-col-(?:full-remediation-)?bootstrap-/.test(
+      context.headRef || '',
+    )
   ) {
     reject('CONTROL_PLANE_SCOPE_FORBIDDEN', 'control-plane repair binding mismatch');
   }
@@ -2064,6 +2142,182 @@ function validateGithubPlatformGh02WorkflowScope(options) {
   return { mode: workflow.mode, taskId: binding.taskId };
 }
 
+function validateRcvColFullRemediationBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  if (
+    taskId !== binding.taskId ||
+    base !== binding.bindingPr.baseSha ||
+    headRef !== binding.bindingPr.headRef ||
+    !hasExactChangeSet(changes, binding.bindingPr.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'RCV-COL full-remediation control-plane binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    binding.targetPr.taskId,
+    binding.targetPr.mode,
+    String(binding.targetPr.pullRequestNumber),
+    binding.targetPr.originalBaseSha,
+    binding.targetPr.headRef,
+    ...binding.targetPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.recordId,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact RCV-COL binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: binding.bindingPr.mode, taskId: binding.taskId };
+}
+
+function assertExactAuthorityMarker(content, authorityRef) {
+  const marker = buildAuthorityMarker(authorityRef);
+  const count = countOccurrences(content, marker);
+  if (count > 1) {
+    reject(
+      'AUTHORITY_RECORD_AMBIGUOUS',
+      `authority marker ${authorityRef.recordId} occurs ${count} times`,
+    );
+  }
+  if (count !== 1) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      `authority marker ${authorityRef.recordId} must occur exactly once`,
+    );
+  }
+  return marker;
+}
+
+function assertExactSemanticBinding(grant, semanticAuthority) {
+  const expected = [
+    ['kind', semanticAuthority.kind],
+    ['path', semanticAuthority.path],
+    ['recordId', semanticAuthority.recordId],
+  ];
+  for (const [field, value] of expected) {
+    const pattern = new RegExp(
+      `^semanticAuthorityRef\\.${field}[\\t ]*:[\\t ]*${escapeRegExp(value)}[\\t ]*$`,
+      'gm',
+    );
+    const count = [...grant.matchAll(pattern)].length;
+    if (count !== 1) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `semanticAuthorityRef.${field} must bind exactly once to ${value}`,
+      );
+    }
+  }
+  const declaredFields = [...grant.matchAll(/^semanticAuthorityRef\.[A-Za-z]+[\t ]*:/gm)];
+  if (declaredFields.length !== expected.length) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'grant contains an unexpected semantic authority binding field',
+    );
+  }
+}
+
+function findCanonicalRcvColBindingCommit(base, cwd = REPO_ROOT) {
+  const binding =
+    RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const result = runGit(
+    [
+      'log',
+      '--reverse',
+      '--format=%H',
+      '-S',
+      binding.taskId,
+      base,
+      '--',
+      binding.contractPath,
+    ],
+    cwd,
+    { allowFailure: true },
+  );
+  const candidate = result.status === 0 ? result.stdout.trim().split(/\r?\n/)[0] : '';
+  if (!candidate || !gitIsAncestor(candidate, base, cwd)) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'current target base does not descend from the canonical RCV-COL binding',
+    );
+  }
+  return candidate;
+}
+
+function validateRcvColFullRemediationBootstrapScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  if (
+    taskId !== target.taskId ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'RCV-COL full-remediation bootstrap binding mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.bindingPr.mode,
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+  ]) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical RCV-COL binding ${expectedLiteral}`,
+      );
+    }
+  }
+  findCanonicalRcvColBindingCommit(base, cwd);
+
+  const decisionLog = gitShow(head, target.semanticAuthority.path, cwd);
+  const semanticMarker = assertExactAuthorityMarker(
+    decisionLog,
+    target.semanticAuthority,
+  );
+  const semanticRows = decisionLog
+    .split(/\r?\n/)
+    .filter((line) =>
+      authorityMarkerLocatesSemanticRow(
+        line,
+        semanticMarker,
+        target.semanticAuthority.recordId,
+      ),
+    );
+  if (semanticRows.length !== 1) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'semantic authority marker must identify its exact decision-log row',
+    );
+  }
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
 function repoPathToAbsolute(repoPath, repoRoot = REPO_ROOT) {
   return path.join(repoRoot, ...normalizeRepoPath(repoPath).split('/'));
 }
@@ -2077,6 +2331,34 @@ function validatePrScope(options) {
 
   if (classification.mode === 'NON_COORDINATION_PR') {
     return classification;
+  }
+
+  if (
+    classification.mode ===
+    RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.mode
+  ) {
+    return validateRcvColFullRemediationBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.targetPr.mode
+  ) {
+    return validateRcvColFullRemediationBootstrapScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
   }
 
   if (classification.mode === ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.mode) {
@@ -2463,6 +2745,7 @@ module.exports = {
   GITHUB_PLATFORM_GH03_CONTROL_PLANE_BINDING_R01,
   GITHUB_PLATFORM_GH05_GH06_CI_CUTOVER_R01,
   GITHUB_PLATFORM_GH08_GATE_JEST_SEPARATION_R01,
+  RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
@@ -2496,6 +2779,8 @@ module.exports = {
   validateGithubPlatformGh03BindingScope,
   validateGithubPlatformGh0506CutoverScope,
   validateGithubPlatformGh08SeparationScope,
+  validateRcvColFullRemediationBindingScope,
+  validateRcvColFullRemediationBootstrapScope,
   validatePrScope,
   validateRequestAgainstGit,
   assertRequestBaseAncestor,
