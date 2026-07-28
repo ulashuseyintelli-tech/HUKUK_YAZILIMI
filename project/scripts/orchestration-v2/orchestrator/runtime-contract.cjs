@@ -104,12 +104,16 @@ function measureWorker(o) {
     mainSha: null,
     ahead: null,
     behind: null,
+    // Visible in status output: a truncated history is why the fence may be
+    // unable to answer, and an operator should not have to infer that.
+    shallow: null,
     pid: o.pid === undefined ? process.pid : o.pid,
   };
   try {
     out.codeSha = git(repoCwd, ['rev-parse', 'HEAD']);
     out.worktree = git(repoCwd, ['rev-parse', '--show-toplevel']);
     out.repositoryRoot = git(repoCwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+    out.shallow = isShallow(repoCwd);
   } catch (e) {
     return out;
   }
@@ -125,6 +129,37 @@ function measureWorker(o) {
     /* a repository with no origin/main still has a measurable HEAD */
   }
   return out;
+}
+
+/**
+ * Is this checkout's history truncated?
+ *
+ * The fence asks "does the code I am running contain the fix?" and answers it
+ * with git ancestry. In a shallow clone that instrument cannot answer at all:
+ * the commit is not absent from the LINEAGE, it is absent from the CLONE, and
+ * hasAncestor reports both as false.
+ *
+ * The two are not the same fact and must not produce the same verdict. A CI
+ * runner checks out with actions/checkout's default depth of 1, so every
+ * required fix looks missing, every worker judges itself stale, and every
+ * dispatch relinquishes — which is exactly what turned main red while the fix
+ * was sitting in the working tree the whole time.
+ */
+function isShallow(repoCwd) {
+  try {
+    return (
+      execFileSync('git', ['rev-parse', '--is-shallow-repository'], {
+        cwd: repoCwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim() === 'true'
+    );
+  } catch (e) {
+    // Unknown depth is treated as complete: this only ever RELAXES a refusal,
+    // and a repository that cannot answer rev-parse has already failed the
+    // measurement above with codeSha null.
+    return false;
+  }
 }
 
 /** Is `sha` an ancestor of the worker's HEAD? Unknown counts as no. */
@@ -190,10 +225,36 @@ function assess(o) {
   const codeCwd = o.repoCwd || __dirname;
   const missing = required.filter((sha) => !ancestorOf(codeCwd, sha));
   if (missing.length) {
+    // "Not an ancestor" and "not in this clone" arrive here as the same false.
+    // Only the first means the worker is old; the second means the question was
+    // never answerable, and refusing on an unanswerable question is not a
+    // safety property, it is an outage. A shallow checkout runs the tree it
+    // checked out — the fix is in the code even when the commit that introduced
+    // it is not in the history.
+    //
+    // The case the fence exists for is untouched: a full clone whose HEAD
+    // genuinely predates a required fix still answers false, is still not
+    // shallow, and is still refused.
+    const shallow = (o.isShallow || isShallow)(codeCwd);
+    if (!shallow) {
+      return {
+        compatible: false,
+        refusal: 'WORKER_CODE_STALE',
+        detail: 'missing required fix ' + missing.map((s) => s.slice(0, 12)).join(', ') + ' in ' + (worker.worktree || '(unknown worktree)'),
+        worker,
+      };
+    }
     return {
-      compatible: false,
-      refusal: 'WORKER_CODE_STALE',
-      detail: 'missing required fix ' + missing.map((s) => s.slice(0, 12)).join(', ') + ' in ' + (worker.worktree || '(unknown worktree)'),
+      compatible: true,
+      refusal: null,
+      // Reported, never silent: an operator reading this must be able to see
+      // that the fence was asked and could not answer, rather than believe it
+      // answered yes.
+      detail:
+        'ancestry unverifiable in a shallow checkout; ' +
+        missing.map((s) => s.slice(0, 12)).join(', ') +
+        ' could not be located in a truncated history',
+      unverifiable: 'SHALLOW_HISTORY',
       worker,
     };
   }
@@ -207,6 +268,7 @@ module.exports = {
   WorkerFenceError,
   measureWorker,
   hasAncestor,
+  isShallow,
   pinForAdmission,
   assess,
 };
