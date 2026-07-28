@@ -105,6 +105,14 @@ async function main(): Promise<void> {
       console.log('RESULT DRY_RUN_ONLY — --apply verilmedi, hicbir sey yazilmadi');
       return;
     }
+    // IDEMPOTENCY: her kayit zaten birebir istenen halde ise servis CAGRILMAZ.
+    // ReportingLineService yeniden cagrildiginda mevcut satiri validUntil ile kapatip
+    // ayni icerikte yenisini acar; bu, hicbir sey degismedigi halde gecmise anlamsiz
+    // kapanmis satirlar ekler. Tekrar calistirma no-op olmalidir.
+    if (dryRun.noOp === dryRun.total && dryRun.total > 0) {
+      console.log('RESULT ALREADY_APPLIED — tum kayitlar mevcut haliyle ayni, yazim yapilmadi');
+      return;
+    }
 
     // --- Apply: kanonik servis yolu -----------------------------------------
     const prismaService = prisma as unknown as PrismaService;

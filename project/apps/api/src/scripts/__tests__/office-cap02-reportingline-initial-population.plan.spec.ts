@@ -165,3 +165,50 @@ describe('plan -> dry-run zinciri', () => {
     expect(managed?.failures).toContain('EXISTING_ACTIVE_LINE_CONFLICT');
   });
 });
+
+describe('idempotency kapisi — runner davranis sozlesmesi', () => {
+  it('tum kayitlar NO_OP ise servis cagrilmamalidir', () => {
+    // Runner'in kapisi: dryRun.noOp === dryRun.total && total > 0 -> ALREADY_APPLIED.
+    // Bu kosul saglandiginda ReportingLineService CAGRILMAZ; aksi halde servis mevcut
+    // satiri kapatip ayni icerikte yenisini acar ve gecmise anlamsiz kayit eklenir.
+    const plan = buildInitialPopulationPlan(config());
+    const out = dryRunPopulation(plan.records, {
+      tenantIdBySlug: { 't-telli': TENANT },
+      users: [
+        { userId: PARTNER, tenantId: TENANT, isActive: true },
+        { userId: EGE, tenantId: TENANT, isActive: true },
+      ],
+      activeLines: [
+        { tenantId: TENANT, actorUserId: PARTNER, managerUserId: null, disposition: 'TOP_LEVEL' },
+        { tenantId: TENANT, actorUserId: EGE, managerUserId: PARTNER, disposition: 'MANAGED' },
+      ],
+    });
+    const shouldSkipWrites = out.noOp === out.total && out.total > 0;
+    expect(shouldSkipWrites).toBe(true);
+  });
+
+  it('tek bir kayit bile PASS ise servis cagrilmalidir', () => {
+    const plan = buildInitialPopulationPlan(config());
+    const out = dryRunPopulation(plan.records, {
+      tenantIdBySlug: { 't-telli': TENANT },
+      users: [
+        { userId: PARTNER, tenantId: TENANT, isActive: true },
+        { userId: EGE, tenantId: TENANT, isActive: true },
+      ],
+      activeLines: [
+        { tenantId: TENANT, actorUserId: PARTNER, managerUserId: null, disposition: 'TOP_LEVEL' },
+      ],
+    });
+    expect(out.noOp).toBe(1);
+    expect(out.pass).toBe(1);
+    expect(out.noOp === out.total && out.total > 0).toBe(false);
+  });
+
+  it('bos paket yazim tetiklemez', () => {
+    const out = dryRunPopulation([], {
+      tenantIdBySlug: { 't-telli': TENANT }, users: [], activeLines: [],
+    });
+    expect(out.noOp === out.total && out.total > 0).toBe(false);
+    expect(out.total).toBe(0);
+  });
+});
