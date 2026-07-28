@@ -66,3 +66,11 @@ src/scripts/__tests__/office-cap02-authorization-shadow.core.spec.ts
 # testiyle birlikte ikisi de buraya baglanir, boylece CI'da GERCEKTEN kosarlar.
 src/modules/office-approval/__tests__/office-approval-shadow.service.spec.ts
 src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.ts
+
+# ── OFFICE-P2-CAP02-CANARY-PRINCIPAL-AND-CASE-PROVISION-I01 ────────────────────
+# Default-OFF production smoke gercek bir kimlik dogrulanmis principal ister; kanonik
+# main'de uretim-guvenli provisioning yolu YOKTU (tm47d-happy-path-seed.ts kendi
+# tenant'ini silip yeniden yaratir, passwordHash: null yazar — login edilemez). Bu
+# saf cekirdek, tek bir canary-safe tenant'a (local-development-office) civilenmis,
+# fail-closed bir provisioning karari saglar. Yazim yolu (.ts runner) CI'da kosmaz.
+src/scripts/__tests__/office-cap02-canary-provision.core.spec.ts
