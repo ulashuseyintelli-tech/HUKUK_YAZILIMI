@@ -24,7 +24,6 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 
 import {
   ApprovalWorkflowController,
-  PiiMaskingController,
   AuditChainController,
   JobLeasingController,
 } from '../enterprise.controller';
@@ -41,6 +40,15 @@ const CONTROLLER_SRC = fs.readFileSync(
 );
 const SERVICE_SRC = fs.readFileSync(
   path.join(__dirname, '..', 'approval-workflow.service.ts'),
+  'utf8',
+);
+const BARREL_SRC = fs.readFileSync(path.join(__dirname, '..', 'index.ts'), 'utf8');
+const MODULE_SRC = fs.readFileSync(
+  path.join(__dirname, '..', '..', 'icrabot.module.ts'),
+  'utf8',
+);
+const PII_SERVICE_SRC = fs.readFileSync(
+  path.join(__dirname, '..', 'pii-masking.service.ts'),
   'utf8',
 );
 
@@ -69,10 +77,12 @@ describe('I01A · authentication ve guard kapsami', () => {
     expect(guards).toContain(JwtAuthGuard);
   });
 
-  it('guard F09B/F09C/F09D controller siniflarina SIZMAZ (kapsam disi yuzeyler degismedi)', () => {
-    // Bu gorev yalniz approval yuzeyini kapsiyor. Ayni dosyadaki diger controller'lar
+  it('guard F09B/F09C controller siniflarina SIZMAZ (kapsam disi yuzeyler degismedi)', () => {
+    // Approval guard'i yalniz kendi sinifina uygulanir. F09B (audit) ve F09C (leasing)
     // AYRI siniflardir; davranislari bilerek DEGISTIRILMEMISTIR.
-    for (const cls of [PiiMaskingController, AuditChainController, JobLeasingController]) {
+    // F09D (PII) bu listede YOK cunku I02 ile HTTP yuzeyinden tamamen kaldirildi;
+    // asagidaki "I02 containment" blogu bunu ayrica ve daha guclu bicimde dogrular.
+    for (const cls of [AuditChainController, JobLeasingController]) {
       const guards = Reflect.getMetadata('__guards__', cls) || [];
       expect(guards).toHaveLength(0);
     }
@@ -384,5 +394,51 @@ describe('mutation control · guvenlik yuklemleri kaynakta gercekten var', () =>
     expect(CONTROLLER_SRC).not.toMatch(/body\.tenantId,\s*\n\s*body\.caseId/);
     expect(CONTROLLER_SRC).not.toMatch(/body\.userRole/);
     expect(CONTROLLER_SRC).not.toMatch(/body\.requestedByUserId/);
+  });
+});
+
+// ============================================================
+// R02-F09D · I02 — PII TESHIS YUZEYI CONTAINMENT
+//
+// `POST /icrabot/enterprise/pii/test-mask` ve `GET /icrabot/enterprise/pii/should-mask`
+// KIMLIK DOGRULAMASIZ yayindaydi. Endpoint'ler depolanmis PII okumuyordu
+// (PiiMaskingService saf/IO-suz) fakat kimliksiz olarak maskeleme POLITIKASINI ve
+// maskeleme fonksiyonlarinin ne kadarini acikta biraktigini olculebilir kiliyordu.
+//
+// Iki bagimsiz repo taramasi uretim tuketicisi bulamadi (frontend 0, servis 0,
+// script 0, Python katmaninda HTTP cagrisi 0). Yetki modeli ICAT EDILMEDI —
+// yuzey tamamen kaldirildi.
+// ============================================================
+describe('I02 · PII teshis HTTP yuzeyi kaldirildi', () => {
+  it('controller dosyasi artik pii route prefixini TANIMLAMAZ', () => {
+    expect(CONTROLLER_SRC).not.toMatch(/@Controller\('icrabot\/enterprise\/pii'\)/);
+    expect(CONTROLLER_SRC).not.toMatch(/@Post\('test-mask'\)/);
+    expect(CONTROLLER_SRC).not.toMatch(/@Get\('should-mask'\)/);
+  });
+
+  it('PiiMaskingController hicbir yerden export/register EDILMEZ', () => {
+    expect(CONTROLLER_SRC).not.toMatch(/export class PiiMaskingController/);
+    expect(BARREL_SRC).not.toMatch(/\bPiiMaskingController\b/);
+    // Modulde yalniz aciklama satiri kalir; gercek kayit satiri kalmaz.
+    expect(MODULE_SRC).not.toMatch(/^\s*PiiMaskingController,\s*$/m);
+  });
+
+  it('runtime export yuzeyinde PiiMaskingController YOK', () => {
+    // Kaynak metni degil, gercek modul export'lari uzerinden dogrulama.
+    const exported = require('../enterprise.controller');
+    expect(Object.keys(exported)).not.toContain('PiiMaskingController');
+    expect(Object.keys(exported)).toContain('ApprovalWorkflowController');
+  });
+
+  it('PiiMaskingService KASITLI OLARAK DEGISTIRILMEDI (owner talimati)', () => {
+    expect(PII_SERVICE_SRC).toMatch(/export class PiiMaskingService/);
+    expect(PII_SERVICE_SRC).toMatch(/applyMask</);
+    expect(PII_SERVICE_SRC).toMatch(/applyMaskToArray</);
+    expect(PII_SERVICE_SRC).toMatch(/shouldMask\(/);
+  });
+
+  it('F09B audit ve F09C leasing yuzeyleri HALA MEVCUT (kapsam disi, dokunulmadi)', () => {
+    expect(CONTROLLER_SRC).toMatch(/@Controller\('icrabot\/enterprise\/audit'\)/);
+    expect(CONTROLLER_SRC).toMatch(/@Controller\('icrabot\/enterprise\/leasing'\)/);
   });
 });

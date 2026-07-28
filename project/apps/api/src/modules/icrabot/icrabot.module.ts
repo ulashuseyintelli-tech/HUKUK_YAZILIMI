@@ -65,7 +65,6 @@ import { JobLeasingService } from './enterprise/job-leasing.service';
 import { BackpressureService } from './enterprise/backpressure.service';
 import { PlanLimitsService } from './enterprise/plan-limits.service';
 import {
-  PiiMaskingController,
   AuditChainController,
   ApprovalWorkflowController,
   JobLeasingController,
@@ -170,7 +169,7 @@ import {
     RiskReportController,
     WeeklyExportController,
     // v38: Enterprise Layer
-    PiiMaskingController,
+    // PiiMaskingController: R02-F09D / I02 ile public HTTP yuzeyinden kaldirildi.
     AuditChainController,
     ApprovalWorkflowController,
     JobLeasingController,

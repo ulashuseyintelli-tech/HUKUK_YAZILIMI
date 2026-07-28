@@ -29,7 +29,6 @@ import {
   CreateApprovalRequestDto,
   SubmitApprovalDecisionDto,
 } from './dto/enterprise-approval.dto';
-import { PiiMaskingService, UserRole } from './pii-masking.service';
 import { AuditChainService } from './audit-chain.service';
 import { ApprovalWorkflowService, ApprovalDecision } from './approval-workflow.service';
 import { JobLeasingService } from './job-leasing.service';
@@ -37,35 +36,26 @@ import { BackpressureService } from './backpressure.service';
 import { PlanLimitsService, PlanType } from './plan-limits.service';
 
 // ============================================================
-// PII MASKING CONTROLLER
+// PII MASKING CONTROLLER — KALDIRILDI
+//
+// DEBTOR-ENTERPRISE-PII-DIAGNOSTIC-CONTAINMENT-P1-I02 (bulgu R02-F09D)
+//
+// `POST /icrabot/enterprise/pii/test-mask` ve `GET /icrabot/enterprise/pii/should-mask`
+// KIMLIK DOGRULAMASIZ yayindaydi. Endpoint'ler depolanmis PII okumuyordu
+// (PiiMaskingService saf/IO-suz), fakat kimliksiz olarak:
+//   - hangi alanin hangi rol icin maskelendigini (KVKK maskeleme politikasi) ve
+//   - maskeleme fonksiyonlarinin ne kadarini acikta biraktigini
+// olculebilir kiliyordu.
+//
+// Repo genelinde iki bagimsiz tarama uretim tuketicisi bulamadi (frontend 0,
+// servis 0, script 0, Python katmaninda HTTP cagrisi 0); route yalniz kendi
+// tanimi, iki audit dokumani ve README'de geciyordu. Bu nedenle yetki modeli
+// ICAT EDILMEDI — HTTP yuzeyi tamamen kaldirildi.
+//
+// `PiiMaskingService` KASITLI OLARAK DEGISTIRILMEDI ve provider olarak kayitli
+// kalir: ileride gercek bir uretim tuketicisi cikarsa servis yerinde durur,
+// ancak public HTTP yuzeyi olmadan.
 // ============================================================
-@Controller('icrabot/enterprise/pii')
-export class PiiMaskingController {
-  constructor(private readonly piiService: PiiMaskingService) {}
-
-  /**
-   * Test PII masking on sample data
-   */
-  @Post('test-mask')
-  @HttpCode(HttpStatus.OK)
-  testMask(
-    @Body() body: { data: Record<string, any>; role: UserRole },
-  ): { masked: Record<string, any> } {
-    const masked = this.piiService.applyMask(body.data, body.role);
-    return { masked };
-  }
-
-  /**
-   * Check if a field should be masked for a role
-   */
-  @Get('should-mask')
-  shouldMask(
-    @Query('field') field: string,
-    @Query('role') role: UserRole,
-  ): { shouldMask: boolean } {
-    return { shouldMask: this.piiService.shouldMask(field, role) };
-  }
-}
 
 // ============================================================
 // AUDIT CHAIN CONTROLLER
