@@ -228,7 +228,11 @@ describe('P04A-ENC — determinizm + kanıt', () => {
 describe('P04A-ENC — end-to-end (gerçek serializer + P03A translator)', () => {
   it('(12) owner-safe RESOLVED taraf → SERIALIZED_DRAFT → BYTE_ENCODED', () => {
     const input: OfficialExchangeInput = {
-      dosya: { dosyaTipi: '1', takipTuru: '1', mahiyetKodu: '1007' },
+      dosya: {
+      dosyaTipi: '1',
+      takipTuruResolution: { kind: 'RESOLVED', code: '1' },
+      mahiyetResolution: { kind: 'RESOLVED', code: '1007' },
+    },
       taraflar: [
         {
           id: 'T1',

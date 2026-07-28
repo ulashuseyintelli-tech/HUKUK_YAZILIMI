@@ -1,5 +1,7 @@
 import { create } from 'xmlbuilder2';
 
+import { OFFICIAL_ALACAK_KALEMI_PARENTS } from './official-codelist-registry';
+import type { OfficialCodeResolution } from './official-codelist-registry';
 import type {
   OfficialExchangeInput,
   OfficialSerializationResult,
@@ -96,6 +98,11 @@ export function serializeOfficialExchange(
           code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT',
           path: 'dosya/alacakKalemi',
           count: input.alacakKalemleri.length,
+          // P02B-R2 (bu tur): ebeveyn listesi artik dusuncede degil, resmi DTD'den
+          // olculmus sabit olarak tasinir. Hangi sarmalayicinin dogru oldugu HUKUKI
+          // bir siniflandirmadir (bu cek alacagi mi, senet mi, diger alacak mi) ve
+          // owner/LDO karari bekler; guard hicbirini otomatik SECMEZ.
+          authorizedParents: OFFICIAL_ALACAK_KALEMI_PARENTS,
         },
       ],
     };
@@ -114,10 +121,14 @@ export function serializeOfficialExchange(
     'dosya',
     pruneUndefined({
       dosyaTipi: input.dosya.dosyaTipi,
-      takipTuru: input.dosya.takipTuru,
+      // Kodlu-anlam alanları: YALNIZ `RESOLVED` çözümler attribute üretir.
+      // `AUTHORITY_REQUIRED` canonical serializer kapısında zaten reddedilir;
+      // `NOT_ASSERTED` bilinçli olarak attribute ÜRETMEZ (DTD varsayılanı devreye girer,
+      // bu durum evidence'ta `takipTuruDtdDefaultApplies` ile taşınır).
+      takipTuru: emittableCode(input.dosya.takipTuruResolution),
       takipYolu: input.dosya.takipYolu,
       takipSekli: input.dosya.takipSekli,
-      mahiyetKodu: input.dosya.mahiyetKodu,
+      mahiyetKodu: emittableCode(input.dosya.mahiyetResolution),
     }),
   );
 
@@ -243,6 +254,19 @@ function collectIdViolations(
   }
 
   return violations;
+}
+
+/**
+ * Bir kodlu-anlam çözümünden emit edilecek değeri türetir.
+ *
+ * Yalnız `RESOLVED` değer üretir. `NOT_ASSERTED` ve `AUTHORITY_REQUIRED` için
+ * `undefined` döner — attribute hiç yazılmaz, "en yakın" veya varsayılan kod
+ * SEÇİLMEZ. (`AUTHORITY_REQUIRED` canonical serializer kapısında zaten reddedilir;
+ * burada dönmesi savunma amaçlıdır.)
+ */
+function emittableCode(resolution: OfficialCodeResolution | undefined): string | undefined {
+  if (resolution?.kind === 'RESOLVED') return resolution.code;
+  return undefined;
 }
 
 /** `undefined` attribute'ları eler — deterministik ve temiz XML. */

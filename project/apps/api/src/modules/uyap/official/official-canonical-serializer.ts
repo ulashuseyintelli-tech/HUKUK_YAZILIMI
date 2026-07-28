@@ -45,6 +45,7 @@ import {
 } from './official-iso8859-9-encoder';
 import { serializeOfficialExchange } from './official-exchange-builder';
 import {
+  OfficialCodeResolution,
   OfficialCodelistFailureCode,
   checkOfficialRolePair,
   validateOfficialMahiyetKodu,
@@ -89,6 +90,18 @@ export type UyapCanonicalSerializationResult =
          * doğrulandı (rolTur / mahiyetKodu / takipTuru). Bu, DTD uyumu İDDİA ETMEZ.
          */
         readonly officialCodelistConformance: 'REGISTRY_VALIDATED';
+        /**
+         * P02B-R2: `takipTuru` attribute'u emit EDİLMEDİ ve resmî DTD onu
+         * `(0 | 1) "1"` ile varsayılanlı bildiriyor → ayrıştırıcı `1` (İlamsız)
+         * uygulayacaktır. Bu örtük hukuki iddia sessiz bırakılmaz.
+         */
+        readonly takipTuruDtdDefaultApplies: boolean;
+        /**
+         * P02B-R2: domain → resmî kod ANLAM eşlemesi hâlâ owner kararı bekliyor.
+         * `REGISTRY_VALIDATED` yalnız sözdizimini kapsar; bu bayrak, çıktının bir
+         * Canary corpus'u için hukuken hazır OLMADIĞINI taşır.
+         */
+        readonly officialCodeSemanticMapping: 'AUTHORITY_REQUIRED';
       };
     }
   | {
@@ -179,6 +192,8 @@ export function serializeUyapExchangeCanonical(
       encodedBytesSha256: encoded.evidence.encodedBytesSha256,
       officialDtdValidated: false,
       officialCodelistConformance: 'REGISTRY_VALIDATED',
+      takipTuruDtdDefaultApplies: input.dosya.takipTuruResolution.kind !== 'RESOLVED',
+      officialCodeSemanticMapping: 'AUTHORITY_REQUIRED',
     },
   };
 }
@@ -190,6 +205,44 @@ export function serializeUyapExchangeCanonical(
  * registry'nin canonical etiketiyle karşılaştırılır; çelişki veya owner-ratified
  * olmayan etiket fail-closed'dır.
  */
+/**
+ * Bir kodlu-anlam çözümünü değerlendirir. İhlal varsa `{failureCode, detail}`, yoksa
+ * `undefined` döner.
+ *
+ * İki bağımsız eksen ayrı ayrı kontrol edilir:
+ * 1. **ANLAM YETKİSİ** — `AUTHORITY_REQUIRED` ise emisyon yasaktır (owner kararı yok).
+ * 2. **SÖZDİZİM** — `RESOLVED` değer her iki resmî artefaktta da tanınıyor mu.
+ *
+ * `NOT_ASSERTED` geçerlidir: attribute emit edilmez. Bu ihmal DTD varsayılanını
+ * devreye sokabilir, o yüzden evidence'ta açıkça taşınır.
+ */
+function checkCodeResolution(
+  resolution: OfficialCodeResolution | undefined,
+  authorityFailureCode: OfficialCodelistFailureCode,
+  validateValue: (value: string | undefined) => { ok: boolean } & Partial<{
+    failureCode: OfficialCodelistFailureCode;
+    detail: string;
+  }>,
+): { failureCode: OfficialCodelistFailureCode; detail: string } | undefined {
+  if (resolution === undefined || resolution.kind === 'NOT_ASSERTED') return undefined;
+
+  if (resolution.kind === 'AUTHORITY_REQUIRED') {
+    return {
+      failureCode: authorityFailureCode,
+      detail: `${resolution.domainType}: ${resolution.reason}`,
+    };
+  }
+
+  const syntax = validateValue(resolution.code);
+  if (!syntax.ok) {
+    return {
+      failureCode: syntax.failureCode as OfficialCodelistFailureCode,
+      detail: syntax.detail as string,
+    };
+  }
+  return undefined;
+}
+
 function checkCodelist(
   input: OfficialExchangeInput,
 ): Extract<UyapCanonicalSerializationResult, { status: 'CODELIST_REJECTED' }> | undefined {
@@ -203,11 +256,21 @@ function checkCodelist(
     detail,
   });
 
-  const mahiyet = validateOfficialMahiyetKodu(input?.dosya?.mahiyetKodu);
-  if (!mahiyet.ok) return reject(mahiyet.failureCode, mahiyet.detail);
+  // P02B-R2: kodlu-anlam alanları ÇÖZÜLMÜŞ gelir. Önce ANLAM yetkisi (resolution kind),
+  // sonra SÖZDİZİM (değer her iki resmî artefaktta var mı) doğrulanır. Ham kod kabul edilmez.
+  const mahiyet = checkCodeResolution(
+    input?.dosya?.mahiyetResolution,
+    'OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED',
+    validateOfficialMahiyetKodu,
+  );
+  if (mahiyet) return reject(mahiyet.failureCode, mahiyet.detail);
 
-  const takip = validateOfficialTakipTuru(input?.dosya?.takipTuru);
-  if (!takip.ok) return reject(takip.failureCode, takip.detail);
+  const takip = checkCodeResolution(
+    input?.dosya?.takipTuruResolution,
+    'OFFICIAL_TAKIP_MAPPING_AUTHORITY_REQUIRED',
+    validateOfficialTakipTuru,
+  );
+  if (takip) return reject(takip.failureCode, takip.detail);
 
   for (const taraf of input?.taraflar ?? []) {
     const r = taraf?.roleResolution;

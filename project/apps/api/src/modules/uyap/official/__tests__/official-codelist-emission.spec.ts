@@ -18,7 +18,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DebtorRole } from '@prisma/client';
 import {
+  OFFICIAL_ALACAK_KALEMI_PARENTS,
+  OFFICIAL_CODELIST_MAHIYET_KODU_SET,
   OFFICIAL_CODELIST_PROVENANCE,
+  OFFICIAL_DTD_MAHIYET_KODU_SET,
   OFFICIAL_MAHIYET_KODU_SET,
   OFFICIAL_ROLE_REGISTRY,
   OFFICIAL_TAKIP_TURU_SET,
@@ -26,9 +29,12 @@ import {
   checkOfficialRolePair,
   emittableLabel,
   isOfficialRoleId,
+  resolveOfficialMahiyetKodu,
+  resolveOfficialTakipTuru,
   validateOfficialMahiyetKodu,
   validateOfficialTakipTuru,
 } from '../official-codelist-registry';
+import type { OfficialCodeResolution } from '../official-codelist-registry';
 import { serializeUyapExchangeCanonical } from '../official-canonical-serializer';
 import { prepareUyapDormantDispatch } from '../official-dormant-dispatch';
 import { resolveOfficialRole } from '../official-role-translator';
@@ -62,11 +68,19 @@ const taraf = (over: Partial<OfficialTaraf> = {}): OfficialTaraf => ({
   ...over,
 });
 
+/**
+ * P02B-R2: kodlu-anlam alanları artık ham string DEĞİL, `OfficialCodeResolution`.
+ * Testler ratifiye-mapping varmış gibi doğrudan `RESOLVED` kurar — böylece SÖZDİZİM
+ * katmanı sınanabilir; ANLAM katmanı `resolveOfficial*` üzerinden ayrıca sınanır.
+ */
+const resolved = (code: string): OfficialCodeResolution => ({ kind: 'RESOLVED', code });
+const notAsserted: OfficialCodeResolution = { kind: 'NOT_ASSERTED' };
+
 const input = (
   taraflar: OfficialTaraf[] = [taraf()],
   dosya: Partial<OfficialExchangeInput['dosya']> = {},
 ): OfficialExchangeInput => ({
-  dosya: { dosyaTipi: '1', takipTuru: '1', ...dosya },
+  dosya: { dosyaTipi: '1', takipTuruResolution: resolved('1'), ...dosya },
   taraflar,
 });
 
@@ -93,8 +107,18 @@ describe('CL-01 — official bundle provenance', () => {
     expect(new Set(ids).size).toBe(17);
   });
 
-  it('mahiyetKodu 18 kod, takipTuru 2 kod', () => {
-    expect(OFFICIAL_MAHIYET_KODU_SET.size).toBe(18);
+  it('mahiyetKodu: codelist 18, DTD 17, emit edilebilir KESİŞİM 17', () => {
+    // P02B-R2 ölçümü: iki resmî artefakt aynı fikirde DEĞİL. `5045` codelist'te var,
+    // DTD `ATTLIST dosya` enumerasyonunda yok → fail-closed olarak kesişim alınır.
+    expect(OFFICIAL_CODELIST_MAHIYET_KODU_SET.size).toBe(18);
+    expect(OFFICIAL_DTD_MAHIYET_KODU_SET.size).toBe(17);
+    expect(OFFICIAL_MAHIYET_KODU_SET.size).toBe(17);
+    expect(OFFICIAL_CODELIST_MAHIYET_KODU_SET.has('5045')).toBe(true);
+    expect(OFFICIAL_DTD_MAHIYET_KODU_SET.has('5045')).toBe(false);
+    expect(OFFICIAL_MAHIYET_KODU_SET.has('5045')).toBe(false);
+  });
+
+  it('takipTuru 2 kod', () => {
     expect([...OFFICIAL_TAKIP_TURU_SET].sort()).toEqual(['0', '1']);
   });
 });
@@ -216,12 +240,16 @@ describe('CL-05/06/07/08 — unresolved roller fail-closed', () => {
 describe('CL-12/13/14/15/16 — kodlu alan doğrulaması', () => {
   it('CL-12: geçerli mahiyetKodu kabul edilir', () => {
     expect(validateOfficialMahiyetKodu('4045').ok).toBe(true);
-    const r = serializeUyapExchangeCanonical(input([taraf()], { mahiyetKodu: '4045' }));
+    const r = serializeUyapExchangeCanonical(
+      input([taraf()], { mahiyetResolution: resolved('4045') }),
+    );
     expect(r.status).toBe('CANONICAL_BYTES');
   });
 
   it('CL-13: geçersiz mahiyetKodu REDDEDİLİR', () => {
-    const r = serializeUyapExchangeCanonical(input([taraf()], { mahiyetKodu: '9999' }));
+    const r = serializeUyapExchangeCanonical(
+      input([taraf()], { mahiyetResolution: resolved('9999') }),
+    );
     expect(r.status).toBe('CODELIST_REJECTED');
     if (r.status === 'CODELIST_REJECTED') {
       expect(r.failureCode).toBe('INVALID_OFFICIAL_MAHIYET_KODU');
@@ -230,16 +258,19 @@ describe('CL-12/13/14/15/16 — kodlu alan doğrulaması', () => {
 
   it('CL-14: geçerli takipTuru kabul edilir (0=İlamlı, 1=İlamsız)', () => {
     for (const v of ['0', '1']) {
-      expect(serializeUyapExchangeCanonical(input([taraf()], { takipTuru: v })).status).toBe(
-        'CANONICAL_BYTES',
-      );
+      expect(
+        serializeUyapExchangeCanonical(input([taraf()], { takipTuruResolution: resolved(v) }))
+          .status,
+      ).toBe('CANONICAL_BYTES');
     }
   });
 
   it('CL-15: resmî sözlükte OLMAYAN takipTuru REDDEDİLİR (legacy 2 dahil)', () => {
     // Legacy tip '1'..'6' idi ve 2=İlamlı diyordu; resmî sözlükte 2 YOKTUR.
     for (const v of ['2', '3', '6']) {
-      const r = serializeUyapExchangeCanonical(input([taraf()], { takipTuru: v }));
+      const r = serializeUyapExchangeCanonical(
+        input([taraf()], { takipTuruResolution: resolved(v) }),
+      );
       expect(r.status).toBe('CODELIST_REJECTED');
       if (r.status === 'CODELIST_REJECTED') {
         expect(r.failureCode).toBe('INVALID_OFFICIAL_TAKIP_TURU');
@@ -262,7 +293,9 @@ describe('CL-12/13/14/15/16 — kodlu alan doğrulaması', () => {
 
 describe('CL-17/18/19/20/21/25 — emisyon bütünlüğü', () => {
   it('CL-17: mapping hatasında kısmi XML/byte YOK', () => {
-    const r = serializeUyapExchangeCanonical(input([taraf()], { mahiyetKodu: 'XXX' }));
+    const r = serializeUyapExchangeCanonical(
+      input([taraf()], { mahiyetResolution: resolved('XXX') }),
+    );
     expect(r.status).toBe('CODELIST_REJECTED');
     expect(r as any).not.toHaveProperty('bytes');
     expect(r as any).not.toHaveProperty('xml');
@@ -296,7 +329,9 @@ describe('CL-17/18/19/20/21/25 — emisyon bütünlüğü', () => {
       expect(ok.evidence.featureFlagEnabled).toBe(false);
     }
 
-    const bad = prepareUyapDormantDispatch(input([taraf()], { takipTuru: '2' }));
+    const bad = prepareUyapDormantDispatch(
+      input([taraf()], { takipTuruResolution: resolved('2') }),
+    );
     expect(bad.status).toBe('NOT_PREPARED');
     expect(bad as any).not.toHaveProperty('bytes');
   });

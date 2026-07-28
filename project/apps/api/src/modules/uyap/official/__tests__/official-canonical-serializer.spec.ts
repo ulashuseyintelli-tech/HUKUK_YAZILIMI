@@ -47,7 +47,12 @@ const taraf = (over: Partial<OfficialTaraf> = {}): OfficialTaraf => ({
 });
 
 const input = (taraflar: OfficialTaraf[] = [taraf()]): OfficialExchangeInput => ({
-  dosya: { dosyaTipi: '1', takipTuru: '1', takipYolu: '1', takipSekli: '1' },
+  dosya: {
+    dosyaTipi: '1',
+    takipTuruResolution: { kind: 'RESOLVED', code: '1' },
+    takipYolu: '1',
+    takipSekli: '1',
+  },
   taraflar,
 });
 

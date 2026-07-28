@@ -108,13 +108,42 @@ export const OFFICIAL_ROLE_REGISTRY: readonly OfficialRoleEntry[] = Object.freez
   { rolID: '71', label: 'ARACI KİŞİ/KURUM', labelProvenance: 'MANIFEST_TRANSCRIBED' },
 ]);
 
-/** Resmî `mahiyetKodu` sözlüğü — **18 kod** (artefakt ASCII iskeleti; etiketler lossy). */
-export const OFFICIAL_MAHIYET_KODU_SET: ReadonlySet<string> = new Set([
+/**
+ * Resmî `mahiyetKodu` codelist sözlüğü — **18 kod** (`KodluBilgilerData.xml` ASCII
+ * iskeleti; etiketler lossy).
+ */
+export const OFFICIAL_CODELIST_MAHIYET_KODU_SET: ReadonlySet<string> = new Set([
   '1007', '1107', '1207', '1307', '1407',
   '2007', '3007', '4007', '5007', '6007', '7007',
   '8008', '9009',
   '1045', '2045', '3045', '4045', '5045',
 ]);
+
+/**
+ * Resmî `exchange.dtd` (`124a9a96…`, 9273 B) `ATTLIST dosya` içindeki `mahiyetKodu`
+ * enumerasyonu — **17 kod**.
+ *
+ * ⚠ P02B-R2 ölçümü: iki resmî artefakt AYNI FİKİRDE DEĞİL. Codelist `5045`
+ * (`Arabulucuk - Örnek 4-5`) taşır; DTD enumerasyonu **taşımaz**. `5045` emit edilirse
+ * strict DTD doğrulamasında attribute-değer ihlali olur.
+ */
+export const OFFICIAL_DTD_MAHIYET_KODU_SET: ReadonlySet<string> = new Set([
+  '1007', '1107', '1207', '1307', '1407',
+  '2007', '3007', '4007', '5007', '6007', '7007',
+  '8008', '9009',
+  '1045', '2045', '3045', '4045',
+]);
+
+/**
+ * Emit edilebilir `mahiyetKodu` kümesi = **iki resmî artefaktın KESİŞİMİ** (17 kod).
+ *
+ * Fail-closed ilkesi: bir kod ancak HER İKİ resmî artefakt da onu tanıyorsa emit
+ * edilebilir. Tek artefaktta bulunan kod (`5045`) reddedilir —
+ * `OFFICIAL_MAHIYET_DTD_UNREPRESENTABLE`.
+ */
+export const OFFICIAL_MAHIYET_KODU_SET: ReadonlySet<string> = new Set(
+  [...OFFICIAL_CODELIST_MAHIYET_KODU_SET].filter((k) => OFFICIAL_DTD_MAHIYET_KODU_SET.has(k)),
+);
 
 /**
  * Resmî `takipTuru` sözlüğü — **2 kod**: `0` = İlamlı, `1` = İlamsız.
@@ -124,6 +153,39 @@ export const OFFICIAL_MAHIYET_KODU_SET: ReadonlySet<string> = new Set([
  * DEĞİŞTİRİLMEZ (canlı legacy cutover yasak); resmî hat yalnız bu iki kodu kabul eder.
  */
 export const OFFICIAL_TAKIP_TURU_SET: ReadonlySet<string> = new Set(['0', '1']);
+
+/**
+ * Resmî `exchange.dtd`'de `alacakKalemi`'yi içerik modelinde listeleyen **yetkili
+ * ebeveynler** (ölçüm, tahmin değil):
+ *
+ * ```text
+ * <!ELEMENT cek          (alacakKalemi | taraf | ref)*>
+ * <!ELEMENT senet        (alacakKalemi | taraf | ref)*>
+ * <!ELEMENT police       (alacakKalemi | taraf | ref)*>
+ * <!ELEMENT kontrat      (alacakKalemi | taraf | ref)*>
+ * <!ELEMENT digerAlacak  (alacakKalemi | taraf | ref)*>
+ * <!ELEMENT ilam         ((paraylaOlculemeyenAlacak | alacakKalemi)*, teminat?, ...)>
+ * ```
+ *
+ * `dosya` içerik modeli `alacakKalemi` **içermez**:
+ * `(cek | senet | taraf | VekilKisi | police | kontratKefil | digerAlacak | evrak | ref | ilam)*`
+ *
+ * ⚠ **REPOSITORY LOCAL DTD DERIVATIVE bunun TERSİNİ söyler** — orada `dosya` içerik
+ * modeli `… , alacakKalemi+` ile biter, yani `alacakKalemi` doğrudan çocuk VE zorunludur.
+ * Legacy `uyap-xml.service.ts` bu yerel türeve göre yazılmıştır. Resmî artefakt
+ * (`124a9a96…`) authority'dir; yerel türev değildir.
+ *
+ * ⚠ `ilam` içerik modeli aynı zamanda D1 nondeterministic-content-model örneklerinden
+ * biridir; bu liste strict DTD doğrulamasını mümkün KILMAZ.
+ */
+export const OFFICIAL_ALACAK_KALEMI_PARENTS: readonly string[] = Object.freeze([
+  'cek',
+  'digerAlacak',
+  'ilam',
+  'kontrat',
+  'police',
+  'senet',
+]);
 
 // ============================================================================
 // Fail-closed reason kodları
@@ -135,7 +197,18 @@ export type OfficialCodelistFailureCode =
   | 'OFFICIAL_ROLE_UNRESOLVED'
   | 'INVALID_OFFICIAL_MAHIYET_KODU'
   | 'INVALID_OFFICIAL_TAKIP_TURU'
-  | 'OFFICIAL_CODELIST_LABEL_MISMATCH';
+  | 'OFFICIAL_CODELIST_LABEL_MISMATCH'
+  /** Kod codelist'te var ama resmî DTD `ATTLIST dosya` enumerasyonunda YOK (ör. `5045`). */
+  | 'OFFICIAL_MAHIYET_DTD_UNREPRESENTABLE'
+  /**
+   * Kod resmî sözlükte geçerli, ancak **hangi iç domain türünün bu koda karşılık
+   * geldiği** owner tarafından tayin edilmemiştir. Ham kodun çağırandan kabulü
+   * yasaktır (P02B-R2 §4): legacy sözlük aynı kodları FARKLI hukuki anlamlarla
+   * kullanır, bu yüzden "geçerli kod" tek başına doğru anlam kanıtı değildir.
+   */
+  | 'OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED'
+  /** `takipTuru` için domain → resmî kod eşlemesi owner tarafından tayin edilmemiştir. */
+  | 'OFFICIAL_TAKIP_MAPPING_AUTHORITY_REQUIRED';
 
 export type OfficialCodelistCheck =
   | { readonly ok: true }
@@ -193,20 +266,38 @@ export function checkOfficialRolePair(rolID: string, callerLabel: string): Offic
   return { ok: true };
 }
 
-/** `mahiyetKodu` doğrulaması. Sessiz varsayılan/fallback YOKTUR. */
+/**
+ * `mahiyetKodu` **sözdizimsel** doğrulaması: değer her iki resmî artefaktta da var mı?
+ *
+ * ⚠ Bu fonksiyon **anlam** doğrulaması YAPMAZ. Ham kodun doğru hukuki mahiyeti
+ * gösterdiğini kanıtlamaz — bkz. `resolveOfficialMahiyetKodu`. Sessiz varsayılan yoktur.
+ */
 export function validateOfficialMahiyetKodu(value: string | undefined): OfficialCodelistCheck {
   if (value === undefined) return { ok: true }; // opsiyonel alan — ATANMAZ, uydurulmaz
-  if (!OFFICIAL_MAHIYET_KODU_SET.has(value)) {
+  if (OFFICIAL_MAHIYET_KODU_SET.has(value)) return { ok: true };
+
+  // Codelist tanıyor ama DTD enumerasyonu tanımıyor → ayrı, daha kesin reason.
+  if (OFFICIAL_CODELIST_MAHIYET_KODU_SET.has(value)) {
     return {
       ok: false,
-      failureCode: 'INVALID_OFFICIAL_MAHIYET_KODU',
-      detail: `mahiyetKodu resmi sozlukte yok: ${JSON.stringify(value)}`,
+      failureCode: 'OFFICIAL_MAHIYET_DTD_UNREPRESENTABLE',
+      detail:
+        `mahiyetKodu ${value} codelist'te var ancak resmi DTD ATTLIST dosya ` +
+        `enumerasyonunda YOK; emit edilirse attribute-deger ihlali olur`,
     };
   }
-  return { ok: true };
+  return {
+    ok: false,
+    failureCode: 'INVALID_OFFICIAL_MAHIYET_KODU',
+    detail: `mahiyetKodu resmi sozlukte yok: ${JSON.stringify(value)}`,
+  };
 }
 
-/** `takipTuru` doğrulaması. Sessiz varsayılan/fallback YOKTUR. */
+/**
+ * `takipTuru` **sözdizimsel** doğrulaması.
+ *
+ * ⚠ Anlam doğrulaması DEĞİLDİR — bkz. `resolveOfficialTakipTuru`. Sessiz varsayılan yoktur.
+ */
 export function validateOfficialTakipTuru(value: string | undefined): OfficialCodelistCheck {
   if (value === undefined) return { ok: true }; // opsiyonel alan
   if (!OFFICIAL_TAKIP_TURU_SET.has(value)) {
@@ -217,4 +308,90 @@ export function validateOfficialTakipTuru(value: string | undefined): OfficialCo
     };
   }
   return { ok: true };
+}
+
+// ============================================================================
+// DOMAIN → RESMÎ KOD ANLAM ESLEMESI (P02B-R2)
+// ============================================================================
+
+/**
+ * Bir kodlu alanın **anlam** çözümü. Rol modelindeki `OfficialRoleResolution` ile aynı
+ * fail-closed deseni izler: emisyon için `RESOLVED` şarttır.
+ */
+export type OfficialCodeResolution =
+  | { readonly kind: 'RESOLVED'; readonly code: string }
+  | {
+      readonly kind: 'AUTHORITY_REQUIRED';
+      readonly domainType: string;
+      readonly reason: string;
+    }
+  /**
+   * Çağıran bu alan için **hiçbir hukuki iddiada bulunmuyor**. Attribute emit edilmez.
+   *
+   * Bu, "değer yok" ile aynı şey DEĞİLDİR ve sessiz de değildir: resmî DTD
+   * `takipTuru`'nu `(0 | 1) "1"` ile **varsayılanlı** bildirir; attribute yoksa
+   * ayrıştırıcı `1` (İlamsız) uygular. Bu yüzden ihmal, örtük bir hukuki iddiadır ve
+   * AÇIKÇA beyan edilmek zorundadır — evidence'ta `dtdDefaultApplies` ile taşınır.
+   */
+  | { readonly kind: 'NOT_ASSERTED' };
+
+/**
+ * Owner tarafından ratifiye edilmiş **domain türü → resmî `mahiyetKodu`** eşlemeleri.
+ *
+ * **ŞU AN BOŞ.** Bu bir eksiklik değil, ölçülmüş bir gerçektir:
+ *
+ * ```text
+ * resmi 1007 = Telefon (Sabit) - Ornek 7      legacy 1007 = Genel Haciz Yoluyla Takip
+ * resmi 3007 = Internet/Tv - Ornek 7          legacy 3007 = Nafaka Alacagi Takibi
+ * resmi 1045 = Nafaka - Ornek 4-5             legacy 1045 = Fatura Alacagi
+ * ```
+ *
+ * Paylaşılan **17 kodun 17'si de** legacy sözlükte FARKLI hukuki anlam taşıyor. Yani
+ * mevcut hiçbir iç domain türünün resmî karşılığı repository kanıtıyla türetilemez;
+ * türetmeye çalışmak hukuki anlam İCADI olur (ör. fatura alacağını nafaka olarak emit
+ * etmek). Eşleme owner/LDO kararı bekler.
+ */
+const RATIFIED_MAHIYET_BY_DOMAIN: Readonly<Record<string, string>> = Object.freeze({});
+
+/** Owner tarafından ratifiye edilmiş **domain türü → resmî `takipTuru`** eşlemeleri. **ŞU AN BOŞ.** */
+const RATIFIED_TAKIP_TURU_BY_DOMAIN: Readonly<Record<string, string>> = Object.freeze({});
+
+/**
+ * Domain türünden resmî `mahiyetKodu`'na **anlam** çözümü.
+ *
+ * Ham kod kabul EDİLMEZ; yalnız ratifiye edilmiş domain eşlemesi `RESOLVED` üretir.
+ * Ratifiye eşleme yoksa fail-closed `AUTHORITY_REQUIRED` döner — varsayılan kod,
+ * "en yakın" kod veya legacy kodun geçirilmesi YOKTUR.
+ */
+export function resolveOfficialMahiyetKodu(domainType: string): OfficialCodeResolution {
+  const code = RATIFIED_MAHIYET_BY_DOMAIN[domainType];
+  if (code !== undefined) return { kind: 'RESOLVED', code };
+  return {
+    kind: 'AUTHORITY_REQUIRED',
+    domainType,
+    reason:
+      'Domain -> resmi mahiyetKodu eslemesi owner tarafindan tayin edilmemistir. ' +
+      'Legacy sozluk ayni kodlari FARKLI hukuki anlamlarla kullanir; ham kod gecirmek ' +
+      'hukuken yanlis ama teknik olarak gecerli XML uretir.',
+  };
+}
+
+/**
+ * Domain türünden resmî `takipTuru`'na **anlam** çözümü.
+ *
+ * Resmî kod uzayı (`0`=İlamlı, `1`=İlamsız) ile legacy kod uzayı (`'1'..'6'`,
+ * `2`=İlamlı) AYRI SİSTEMLERDİR. Sayısal eşitlik anlam eşitliği DEĞİLDİR: legacy `1`
+ * ile resmî `1` tesadüfen aynı anlama gelir, legacy `2` ile resmî `1` gelmez.
+ */
+export function resolveOfficialTakipTuru(domainType: string): OfficialCodeResolution {
+  const code = RATIFIED_TAKIP_TURU_BY_DOMAIN[domainType];
+  if (code !== undefined) return { kind: 'RESOLVED', code };
+  return {
+    kind: 'AUTHORITY_REQUIRED',
+    domainType,
+    reason:
+      'Domain -> resmi takipTuru eslemesi owner tarafindan tayin edilmemistir. ' +
+      'Resmi (0|1) ve legacy (1..6) AYRI kod sistemleridir; sayisal esitlik anlam ' +
+      'esitligi degildir.',
+  };
 }
