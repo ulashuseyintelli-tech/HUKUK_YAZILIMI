@@ -142,7 +142,17 @@ function canonicalRequiredTests(tests) {
 /** Structural validation of a task spec. Produces the canonical form. */
 function normalizeTaskSpec(spec) {
   if (!spec || typeof spec !== 'object') fail('TASK_SPEC_INVALID', 'not an object');
-  if (spec.schemaVersion !== 1) fail('TASK_SPEC_SCHEMA_VERSION', String(spec.schemaVersion));
+  // Version dispatch, not a widened check. v1 keeps its exact meaning and its
+  // exact canonical shape — every historical digest must still reproduce — and
+  // v2 adds the delivery contract. A record that is neither fails closed.
+  const schemaVersion = spec.schemaVersion;
+  if (schemaVersion !== 1 && schemaVersion !== 2) fail('TASK_SPEC_SCHEMA_VERSION', String(schemaVersion));
+  if (schemaVersion === 1 && spec.deliveryContract !== undefined) {
+    // A v1 spec carrying a delivery contract is a mixed-version object: the
+    // contract would not be in the canonical form, so it would not be in the
+    // digest, so a grant could pin the spec while the contract said anything.
+    fail('TASK_SPEC_MIXED_VERSION', 'a schemaVersion 1 task may not carry a deliveryContract');
+  }
   if (!/^[A-Z0-9][A-Z0-9._-]{2,63}$/.test(String(spec.taskId))) {
     fail('TASK_ID_INVALID', String(spec.taskId));
   }
@@ -190,7 +200,7 @@ function normalizeTaskSpec(spec) {
   }
 
   const canonical = {
-    schemaVersion: 1,
+    schemaVersion: schemaVersion,
     taskId: spec.taskId,
     taskSpecVersion: spec.taskSpecVersion,
     profile: spec.profile,
@@ -209,19 +219,54 @@ function normalizeTaskSpec(spec) {
   if (spec.baseSha !== undefined) canonical.baseSha = spec.baseSha;
   if (spec.mechanicalOperation !== undefined) canonical.mechanicalOperation = spec.mechanicalOperation;
 
+  if (schemaVersion === 2) {
+    // A v2 task without a delivery contract is a task that can never be shown
+    // to have delivered anything, which is the whole point of the version.
+    if (spec.deliveryContract === undefined) {
+      fail('TASK_SPEC_DELIVERY_CONTRACT_REQUIRED', spec.taskId);
+    }
+    // NORMALIZED into the canonical spec, so the contract is inside
+    // taskSpecSha256. A contract hashed separately and referenced by digest
+    // could drift from the spec the grant pinned; inside, it cannot.
+    canonical.deliveryContract = normalizeDeliveryContract(spec.deliveryContract);
+
+    // A self-declared digest is a claim, not evidence. It is recomputed and
+    // compared rather than trusted — the #1696 defect in one line.
+    if (spec.deliveryContractSha256 !== undefined) {
+      const actual = digest(canonical.deliveryContract);
+      if (spec.deliveryContractSha256 !== actual) {
+        fail('DELIVERY_CONTRACT_HASH_MISMATCH', 'declared=' + String(spec.deliveryContractSha256) + ' actual=' + actual);
+      }
+    }
+  }
+
   return canonical;
 }
 
-/** The four digests a grant pins a task by (§2). */
+/**
+ * The digests a grant pins a task by (§2).
+ *
+ * v1 returns four. v2 returns five — the delivery contract is pinned like every
+ * other semantic field, so changing the capability, its target state or its
+ * probe invalidates the grant exactly as changing the boundary policy does.
+ *
+ * Every value derives from the NORMALIZED spec. Nothing here hashes a raw input
+ * field: that divergence — generator over raw text, validator over canonical
+ * JSON — is what #1696 was.
+ */
 function specDigests(spec) {
   const canonical = normalizeTaskSpec(spec);
-  return {
+  const out = {
     canonical: canonical,
     taskSpecSha256: digest(canonical),
     declaredIntentSha256: digest(canonical.declaredIntent),
     boundaryPolicySha256: digest(canonical.boundaryPolicy),
     requiredTestsSha256: digest(canonical.requiredTests),
   };
+  if (canonical.schemaVersion === 2) {
+    out.deliveryContractSha256 = digest(canonical.deliveryContract);
+  }
+  return out;
 }
 
 /**
@@ -325,6 +370,40 @@ function validateAgainstGrant(opts) {
   if (pinned.taskSpecVersion !== d.canonical.taskSpecVersion) {
     fail('TASK_SPEC_VERSION_MISMATCH', pinned.taskSpecVersion + ' != ' + d.canonical.taskSpecVersion);
   }
+  // Schema agreement between the task and the entry that authorizes it.
+  //
+  // A v1 grant entry cannot authorize a v2 task: it has no delivery digest to
+  // pin, so it would be authorizing a delivery claim it never saw. The converse
+  // is equally refused — a v2 entry pinning a v1 task pins a digest that does
+  // not exist.
+  const pinnedVersion = pinned.taskSchemaVersion === undefined ? 1 : pinned.taskSchemaVersion;
+  if (pinnedVersion !== d.canonical.schemaVersion) {
+    fail(
+      'GRANT_TASK_SCHEMA_VERSION_MISMATCH',
+      'grant pins schema ' + pinnedVersion + ', task is schema ' + d.canonical.schemaVersion,
+    );
+  }
+  if (d.canonical.schemaVersion === 2) {
+    if (typeof pinned.deliveryContractSha256 !== 'string' || !pinned.deliveryContractSha256) {
+      fail('GRANT_DELIVERY_CONTRACT_DIGEST_MISSING', d.canonical.taskId);
+    }
+    if (pinned.deliveryContractSha256 !== d.deliveryContractSha256) {
+      // The grant ratified one delivery claim and the task now makes another.
+      // Changing the capability, its target state or its probe lands here;
+      // editing a title or a rationale does not, because neither is hashed.
+      fail(
+        'DELIVERY_CONTRACT_HASH_MISMATCH',
+        'pinned=' + pinned.deliveryContractSha256 + ' actual=' + d.deliveryContractSha256,
+      );
+    }
+  }
+
+  // The four (v1) or five (v2) pinned digests, checked AFTER the delivery
+  // comparison above. Order matters for diagnosis rather than for safety: the
+  // contract lives inside the canonical spec, so changing a capability's target
+  // state moves taskSpecSha256 too, and reporting that first would tell an
+  // operator "the spec changed" when the useful answer is "the delivery claim
+  // changed". Both refuse; only one names the cause.
   for (const field of [
     'taskSpecSha256',
     'declaredIntentSha256',
@@ -652,15 +731,271 @@ function validateAgainstStandingGrant(opts) {
   return { ok: true, program: g.program.programId, taskClass: cls };
 }
 
+/**
+ * The delivery contract, canonicalized — the identity of a delivery CLAIM.
+ *
+ * This lives here, beside specDigests, rather than in the delivery package, and
+ * that placement is the point. manifest.cjs shipped its own canonicalJson and
+ * its own sha256, so the repository had two independent answers to "what is the
+ * canonical form of this object?" — and #1696 is the record of what that costs:
+ * a generator hashed raw text while a validator hashed canonical JSON, and the
+ * two disagreed silently until a human noticed. One canonicalization, one
+ * digest function, every caller.
+ *
+ * What is IN the digest is a semantic decision, not a convenience:
+ *
+ *   capabilityId            which claim this is
+ *   targetState             what "delivered" means for it
+ *   probeId, probeClass     what will be asked
+ *   probeDefinitionSha256   what the probe actually checks
+ *   publicEntrypoint        the door the probe must use
+ *   the policy flags        whether it may be proved internally, whether it
+ *                           must be re-proved after merge, its time bound
+ *
+ * Change any of those and the claim has changed, so the digest must change. A
+ * grant that pinned the old digest must stop matching — that is the whole
+ * mechanism.
+ *
+ * What is OUT: title and rationale. They are for the reader of the panel. If
+ * editing a sentence invalidated a ratified grant, nobody would ever improve
+ * one.
+ *
+ * @param {object} input
+ * @returns {object} the canonical contract, key order irrelevant to the digest
+ */
+const DELIVERY_CONTRACT_FIELDS = [
+  'schemaVersion',
+  'capabilityId',
+  'deliveryClass',
+  'targetState',
+  'probeId',
+  'probeClass',
+  'probeDefinitionSha256',
+  'publicEntrypoint',
+  'publicEntrypointOnly',
+  'nonDestructivePulse',
+  'postMergeRequired',
+  'timeoutMs',
+  'evidencePolicy',
+];
+
+/** Fields a contract may carry for humans, which never reach the digest. */
+const DELIVERY_CONTRACT_PRESENTATION_FIELDS = ['title', 'rationale'];
+
+const DELIVERY_TARGET_STATES = ['OPERABLE', 'ENFORCED', 'ROUTABLE', 'WIRED_DISABLED', 'NOT_APPLICABLE'];
+const DELIVERY_PROBE_CLASSES = ['PROBE_DRY', 'PROBE_SEALED', 'PROBE_CERTIFY'];
+
+/**
+ * What a piece of evidence must satisfy before it may say PASS.
+ *
+ * Six booleans rather than a policy NAME, because a name is a promise nobody
+ * can check. "MERGE_SHA_BOUND" reads like a guarantee and enforces nothing; the
+ * verdict function has to be able to ask "is a merge SHA required here?" and
+ * get an answer from the contract itself. Written into the contract — and
+ * therefore into its digest — so relaxing any of them changes the claim and
+ * breaks the grant that pinned it.
+ *
+ * Presets exist for ergonomics only. They expand to exactly these fields, and
+ * the expanded form is what is hashed.
+ */
+const DELIVERY_EVIDENCE_POLICY_FIELDS = [
+  'mergeShaRequired',
+  'cleanTreeRequired',
+  'probeDigestRequired',
+  'commandDigestRequired',
+  'contractDigestRequired',
+  'publicEntrypointRequired',
+];
+
+const DELIVERY_EVIDENCE_POLICY_PRESETS = {
+  // The default for anything with a runtime effect: evidence means nothing
+  // unless it is bound to the commit that was actually merged.
+  MERGE_SHA_BOUND: {
+    mergeShaRequired: true,
+    cleanTreeRequired: true,
+    probeDigestRequired: true,
+    commandDigestRequired: true,
+    contractDigestRequired: true,
+    publicEntrypointRequired: true,
+  },
+  // Pre-merge verification on a branch. Everything else still holds; only the
+  // merge-SHA binding is deferred, and a capability that stops here can never
+  // satisfy DONE.
+  BRANCH_HEAD_ONLY: {
+    mergeShaRequired: false,
+    cleanTreeRequired: true,
+    probeDigestRequired: true,
+    commandDigestRequired: true,
+    contractDigestRequired: true,
+    publicEntrypointRequired: true,
+  },
+  // Genuinely non-runtime work. Nothing is probed, so nothing is required —
+  // and §13's diff classifier, not the author, decides whether this is allowed.
+  NOT_APPLICABLE: {
+    mergeShaRequired: false,
+    cleanTreeRequired: false,
+    probeDigestRequired: false,
+    commandDigestRequired: false,
+    contractDigestRequired: false,
+    publicEntrypointRequired: false,
+  },
+};
+
+const DELIVERY_EVIDENCE_POLICIES = Object.keys(DELIVERY_EVIDENCE_POLICY_PRESETS);
+
+/**
+ * Expand a policy to its canonical field form.
+ *
+ * Accepts a preset name for readability or an explicit object for a capability
+ * whose requirements are genuinely its own. Either way the canonical result is
+ * the object, so two contracts requiring the same things hash the same however
+ * they were written.
+ */
+function normalizeEvidencePolicy(input, targetState) {
+  let src = input;
+  if (src === undefined) src = targetState === 'NOT_APPLICABLE' ? 'NOT_APPLICABLE' : 'MERGE_SHA_BOUND';
+  if (typeof src === 'string') {
+    const preset = DELIVERY_EVIDENCE_POLICY_PRESETS[src];
+    if (!preset) fail('DELIVERY_CONTRACT_EVIDENCE_POLICY_INVALID', src);
+    src = preset;
+  }
+  if (!src || typeof src !== 'object' || Array.isArray(src)) {
+    fail('DELIVERY_CONTRACT_EVIDENCE_POLICY_INVALID', String(input));
+  }
+  for (const k of Object.keys(src)) {
+    if (DELIVERY_EVIDENCE_POLICY_FIELDS.indexOf(k) === -1) {
+      fail('DELIVERY_CONTRACT_EVIDENCE_POLICY_FIELD_UNKNOWN', k);
+    }
+  }
+  const out = {};
+  for (const k of DELIVERY_EVIDENCE_POLICY_FIELDS) {
+    if (typeof src[k] !== 'boolean') fail('DELIVERY_CONTRACT_EVIDENCE_POLICY_INVALID', k);
+    out[k] = src[k];
+  }
+  // A capability that is probed at all must be probed through its public
+  // entrypoint. Allowing otherwise would reintroduce, as a per-capability
+  // option, exactly the internal-call proof this package exists to outlaw.
+  if (out.probeDigestRequired && !out.publicEntrypointRequired) {
+    fail('DELIVERY_CONTRACT_EVIDENCE_POLICY_INVALID', 'a probed capability must require its public entrypoint');
+  }
+  return out;
+}
+
+function normalizeDeliveryContract(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    fail('DELIVERY_CONTRACT_INVALID', 'not an object');
+  }
+  // Unknown fields are refused rather than dropped. Dropping them would let a
+  // contract carry a term the digest does not cover, which is the same failure
+  // as not hashing it at all — except quieter.
+  for (const k of Object.keys(input)) {
+    if (DELIVERY_CONTRACT_FIELDS.indexOf(k) === -1 && DELIVERY_CONTRACT_PRESENTATION_FIELDS.indexOf(k) === -1) {
+      fail('DELIVERY_CONTRACT_FIELD_UNKNOWN', k);
+    }
+  }
+
+  const out = {
+    // Defaulted deterministically: an absent version is v2, never "whatever the
+    // reader assumes". A v1 contract does not exist — v1 tasks carry no
+    // contract at all, which is what LEGACY_UNVERIFIED means.
+    schemaVersion: input.schemaVersion === undefined ? 2 : input.schemaVersion,
+    capabilityId: input.capabilityId,
+    deliveryClass: input.deliveryClass,
+    targetState: input.targetState,
+    probeId: input.probeId,
+    probeClass: input.probeClass,
+    probeDefinitionSha256: input.probeDefinitionSha256,
+    publicEntrypoint: input.publicEntrypoint,
+    publicEntrypointOnly: input.publicEntrypointOnly === undefined ? true : input.publicEntrypointOnly,
+    nonDestructivePulse: input.nonDestructivePulse === undefined ? false : input.nonDestructivePulse,
+    postMergeRequired: input.postMergeRequired === undefined ? true : input.postMergeRequired,
+    timeoutMs: input.timeoutMs,
+    // Expanded to its six fields here, not kept as a name: a policy name is a
+    // promise nobody can check, and the verdict function must be able to ask
+    // what is required rather than infer it from a label.
+    evidencePolicy: normalizeEvidencePolicy(input.evidencePolicy, input.targetState),
+  };
+
+  if (out.schemaVersion !== 2) fail('DELIVERY_CONTRACT_SCHEMA_VERSION', String(out.schemaVersion));
+  if (typeof out.capabilityId !== 'string' || !/^[A-Z][A-Z0-9_]{2,63}$/.test(out.capabilityId)) {
+    fail('DELIVERY_CONTRACT_CAPABILITY_ID_INVALID', String(out.capabilityId));
+  }
+  if (typeof out.deliveryClass !== 'string' || !out.deliveryClass) {
+    fail('DELIVERY_CONTRACT_DELIVERY_CLASS_INVALID', String(out.deliveryClass));
+  }
+  if (DELIVERY_TARGET_STATES.indexOf(out.targetState) === -1) {
+    fail('DELIVERY_CONTRACT_TARGET_STATE_INVALID', String(out.targetState));
+  }
+  if (typeof out.probeId !== 'string' || !out.probeId) {
+    fail('DELIVERY_CONTRACT_PROBE_ID_INVALID', String(out.probeId));
+  }
+  if (DELIVERY_PROBE_CLASSES.indexOf(out.probeClass) === -1) {
+    fail('DELIVERY_CONTRACT_PROBE_CLASS_INVALID', String(out.probeClass));
+  }
+  // The probe's own identity is part of the contract's identity. Without it a
+  // contract could keep its digest while the check behind it was rewritten,
+  // and "the verifier was not weakened between the red run and the green one"
+  // would stop being provable.
+  if (!/^[0-9a-f]{64}$/.test(String(out.probeDefinitionSha256))) {
+    fail('DELIVERY_CONTRACT_PROBE_DIGEST_INVALID', String(out.probeDefinitionSha256));
+  }
+  if (typeof out.publicEntrypoint !== 'string' || !out.publicEntrypoint) {
+    fail('DELIVERY_CONTRACT_PUBLIC_ENTRYPOINT_MISSING', String(out.capabilityId));
+  }
+  for (const flag of ['publicEntrypointOnly', 'nonDestructivePulse', 'postMergeRequired']) {
+    if (typeof out[flag] !== 'boolean') fail('DELIVERY_CONTRACT_FLAG_INVALID', flag);
+  }
+  // A contract that permits proof by internal call is not a delivery contract.
+  // It is a field rather than an assumption so that relaxing it has to be
+  // written down and reviewed.
+  if (out.publicEntrypointOnly !== true) {
+    fail('DELIVERY_CONTRACT_PUBLIC_ENTRYPOINT_ONLY_REQUIRED', out.capabilityId);
+  }
+  if (!Number.isInteger(out.timeoutMs) || out.timeoutMs < 1000 || out.timeoutMs > 900000) {
+    fail('DELIVERY_CONTRACT_TIMEOUT_INVALID', String(out.timeoutMs));
+  }
+  // A NOT_APPLICABLE capability probes nothing, so requiring probe evidence
+  // from it would be unsatisfiable by construction — and a contract that cannot
+  // be satisfied is a contract nobody will honour.
+  if (out.targetState === 'NOT_APPLICABLE' && out.evidencePolicy.probeDigestRequired) {
+    fail('DELIVERY_CONTRACT_NOT_APPLICABLE_POLICY_MISMATCH', out.capabilityId);
+  }
+  if (out.targetState !== 'NOT_APPLICABLE' && !out.evidencePolicy.probeDigestRequired) {
+    fail('DELIVERY_CONTRACT_EVIDENCE_POLICY_INVALID', out.capabilityId + ' must require probe evidence');
+  }
+  if (out.postMergeRequired && !out.evidencePolicy.mergeShaRequired) {
+    // postMergeRequired without mergeShaRequired says "verify after merge" and
+    // then accepts evidence not bound to the merge — the two halves of the same
+    // claim, disagreeing.
+    fail('DELIVERY_CONTRACT_EVIDENCE_POLICY_INVALID', out.capabilityId + ' requires post-merge proof but not a merge sha');
+  }
+  return out;
+}
+
+/** SHA-256 of the canonical delivery contract. One implementation, everywhere. */
+function deliveryContractDigest(input) {
+  return digest(normalizeDeliveryContract(input));
+}
+
 module.exports = {
   PROFILES,
   BASE_DRIFT_POLICIES,
   SUCCESSOR_DISPOSITIONS,
   MECHANICAL_OPERATIONS,
   TASK_CLASSES,
+  DELIVERY_CONTRACT_FIELDS,
+  DELIVERY_CONTRACT_PRESENTATION_FIELDS,
+  DELIVERY_TARGET_STATES,
+  DELIVERY_PROBE_CLASSES,
+  DELIVERY_EVIDENCE_POLICIES,
+  DELIVERY_EVIDENCE_POLICY_FIELDS,
+  DELIVERY_EVIDENCE_POLICY_PRESETS,
+  normalizeEvidencePolicy,
   AuthorityError,
   canonicalize,
   digest,
+  normalizeDeliveryContract,
+  deliveryContractDigest,
   canonicalPathList,
   canonicalRequiredTests,
   normalizeTaskSpec,

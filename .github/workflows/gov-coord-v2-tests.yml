@@ -61,3 +61,28 @@ jobs:
           echo "node $(node --version) running ${#files[@]} orchestration-v2 test file(s):"
           printf '  %s\n' "${files[@]}"
           node --test "${files[@]}"
+
+      - name: Delivery verification (sealed)
+        # The verifier, run the way an operator runs it, on every PR.
+        #
+        # The unit tests prove the verifier is correct; this proves the SYSTEM
+        # still satisfies its declared capabilities. They are different
+        # questions, and the second is the one the program exists to keep
+        # answerable — a capability can stop being delivered without a single
+        # test changing.
+        #
+        # Sealed, so every probe builds its own disposable git repository, queue
+        # and PATH: no network, no real pull request, no production mutation.
+        # PROBE_CERTIFY does touch the real chain and is excluded from every
+        # mode this CLI can select, so it cannot run here by accident.
+        #
+        # No continue-on-error and no skip: a delivery failure is a red PR,
+        # which is the entire point of binding it.
+        #
+        # Here rather than in ci.yml deliberately — `.github/workflows/ci.yml`
+        # is the first entry in coordinationControlPlane and hosts the V1
+        # coordination guard. This workflow already owns the orchestration
+        # suites, so the concern stays where it belongs.
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          node scripts/orchestration-v2/delivery/verify-live.cjs --all --mode sealed

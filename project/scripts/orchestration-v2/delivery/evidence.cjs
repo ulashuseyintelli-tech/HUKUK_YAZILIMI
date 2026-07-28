@@ -75,12 +75,81 @@ function repoState(repoCwd) {
  * the definition can drift, and the definition drifting is how UNWIRED came to
  * be reported as OFF in the first place.
  */
-function verdictFor(targetState, observedState, evidenceIsCurrent) {
+function verdictFor(targetState, observedState, evidenceIsCurrent, integrity) {
   if (targetState === 'NOT_APPLICABLE' && observedState === 'NOT_APPLICABLE') return 'NOT_APPLICABLE';
   if (observedState === 'NOT_RUN') return 'FAIL';
   if (evidenceIsCurrent === false) return 'STALE';
   if (observedState === 'STALE') return 'STALE';
-  return targetState === observedState ? 'PASS' : 'FAIL';
+  if (targetState !== observedState) return 'FAIL';
+
+  // The states agree. Whether that AGREEMENT is evidence is a second question,
+  // and it is the one the whole program turns on: a probe that passed proves
+  // something about the tree it ran in, and only the identity checks below say
+  // which tree that was.
+  if (integrity) {
+    if (integrity.expectedMergeShaMissing) return 'FAIL';
+    if (integrity.shaMismatch) return 'STALE';
+    if (integrity.identityIncomplete) return 'FAIL';
+  }
+  return 'PASS';
+}
+
+/**
+ * Can this record say PASS, given what its contract requires of it?
+ *
+ * Separated from verdictFor so the REASON survives into the record. "STALE" on
+ * its own sends an operator looking for a stale cache; DELIVERY_SHA_MISMATCH
+ * with two SHAs beside it does not.
+ */
+function integrityOf(o) {
+  const policy = (o.contract && o.contract.evidencePolicy) || {};
+  const out = { expectedMergeShaMissing: false, shaMismatch: false, identityIncomplete: false, failureCode: null };
+
+  // Two different runs, and conflating them would break one of them.
+  //
+  // A BRANCH-HEAD run makes no post-merge claim. It is honest and useful — it
+  // is how a PR shows its capabilities work before anyone merges — and it
+  // cannot satisfy DONE, because its record carries no expectedMergeSha and the
+  // successor gate requires verifiedAtSha === mergeSha. Refusing it a PASS here
+  // would only mean the panel could never be green until after a merge, so
+  // nobody would consult it before one.
+  //
+  // A POST-MERGE run declares its intent by supplying the sha the merge
+  // produced. From then on the binding is mandatory: that is the run whose
+  // green is allowed to unlock a successor.
+  const postMergeRun = o.postMergeRun === true;
+  if (policy.mergeShaRequired && postMergeRun) {
+    if (!o.expectedMergeSha) {
+      // A run that declared itself post-merge and then produced no sha has not
+      // verified the merge — however green the probe was.
+      out.expectedMergeShaMissing = true;
+      out.failureCode = 'DELIVERY_EXPECTED_MERGE_SHA_MISSING';
+      return out;
+    }
+    if (o.verifiedAtSha !== o.expectedMergeSha) {
+      out.shaMismatch = true;
+      out.failureCode = 'DELIVERY_SHA_MISMATCH';
+      return out;
+    }
+  }
+  if (policy.contractDigestRequired && !o.deliveryContractSha256) {
+    out.identityIncomplete = true;
+    out.failureCode = 'DELIVERY_CONTRACT_MISSING';
+    return out;
+  }
+  if (policy.probeDigestRequired && !o.probeDefinitionSha256) {
+    out.identityIncomplete = true;
+    out.failureCode = 'DELIVERY_PROBE_MISSING';
+    return out;
+  }
+  if (policy.commandDigestRequired && !o.commandDigest) {
+    // Null means the probe executed nothing. A capability whose contract says
+    // it is proved by running something cannot be proved by running nothing.
+    out.identityIncomplete = true;
+    out.failureCode = 'DELIVERY_COMMAND_DIGEST_MISSING';
+    return out;
+  }
+  return out;
 }
 
 /**
@@ -109,18 +178,37 @@ function build(o) {
   // A dirty tree does not merely annotate the record, it decides the verdict:
   // whatever the probe saw, it did not see the code at that SHA.
   const current = state.dirtyTree !== true;
-  const verdict = verdictFor(cap.targetState, result.observedState, current);
+  const contract = manifestMod.contractFor(cap, probe);
+  const integrity = integrityOf({
+    contract,
+    expectedMergeSha: o.expectedMergeSha || null,
+    postMergeRun: o.postMergeRun === true,
+    verifiedAtSha: state.verifiedAtSha,
+    deliveryContractSha256: manifestMod.digest(contract),
+    probeDefinitionSha256: manifestMod.digest(probe.definition),
+    commandDigest: o.commandDigest || null,
+  });
+  const verdict = verdictFor(cap.targetState, result.observedState, current, integrity);
 
   const record = {
-    schemaVersion: 1,
+    // v2: the record now carries the merge binding and the command identity the
+    // verdict is computed from, so a reader can recheck the conclusion rather
+    // than take it.
+    schemaVersion: 2,
     capabilityId: cap.capabilityId,
     deliveryClass: cap.deliveryClass,
     probeId: probe.probeId,
     probeClass: probe.probeClass,
-    // In WP03 this becomes the digest of the task's hash-pinned deliveryContract.
-    // Today it is the digest of the manifest's declaration of the same thing, so
-    // the field is populated by the same rule from the first record onward.
-    deliveryContractSha256: manifestMod.digest(cap.contract),
+    // The digest of the FULL canonical contract — capability identity, target
+    // state, probe identity, probe definition digest and public entrypoint —
+    // not just the policy flags.
+    //
+    // It used to hash `cap.contract` alone, which meant three of the four
+    // shipped capabilities produced the SAME digest: their flag blocks were
+    // identical, so the value a grant would have pinned did not identify which
+    // claim it was pinning. Changing the target state from OPERABLE to
+    // WIRED_DISABLED left the digest untouched.
+    deliveryContractSha256: manifestMod.contractDigest(cap, probe),
     probeDefinitionSha256: manifestMod.digest(probe.definition),
     targetState: cap.targetState,
     observedState: result.observedState,
@@ -134,8 +222,14 @@ function build(o) {
     startedAt: o.startedAt,
     finishedAt: o.finishedAt,
     durationMs: o.finishedAt && o.startedAt ? Date.parse(o.finishedAt) - Date.parse(o.startedAt) : null,
+    // What was actually executed, canonicalized. Null only when the probe ran
+    // nothing at all — an infrastructure error before the first command — and
+    // that null is a fact worth keeping distinguishable from "it ran".
     commandDigest: o.commandDigest || null,
-    failureCode: result.failureCode || null,
+    commandCount: Number.isInteger(o.commandCount) ? o.commandCount : null,
+    // The probe's own failure code when it found one; otherwise the integrity
+    // check's, so a record that says FAIL always names why.
+    failureCode: result.failureCode || integrity.failureCode || null,
     detail: result.detail ? String(result.detail).slice(0, 600) : null,
     steps: (result.steps || []).map((s) => ({ name: s.name, verdict: s.verdict, detail: s.detail })),
   };
@@ -219,6 +313,7 @@ module.exports = {
   EvidenceError,
   repoState,
   verdictFor,
+  integrityOf,
   build,
   summarize,
   write,

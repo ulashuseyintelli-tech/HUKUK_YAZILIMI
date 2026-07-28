@@ -27,6 +27,7 @@
 const path = require('path');
 
 const manifestMod = require('./manifest.cjs');
+const commandMod = require('./command.cjs');
 const evidenceMod = require('./evidence.cjs');
 const renderMod = require('./render.cjs');
 const probesMod = require('./probes.cjs');
@@ -58,6 +59,11 @@ function parseArgs(argv) {
     else if (a === '--capability') out.capability = take();
     else if (a === '--evidence-dir') out.evidenceDir = take();
     else if (a === '--repo') out.repo = take();
+    // Post-merge verification passes the sha the merge actually produced. The
+    // verdict then requires the evidence to have been taken AT that commit,
+    // which is the difference between "this worked somewhere" and "this works
+    // in what was merged".
+    else if (a === '--expected-merge-sha') out.expectedMergeSha = take();
     else if (a === '--json') out.json = true;
     else if (a === '--all') out.all = true;
     else if (a === '--help' || a === '-h') out.help = true;
@@ -123,9 +129,14 @@ async function verify(opts) {
     manifestMod.validateProbeDefinition(cap, probe);
 
     const startedAt = new Date().toISOString();
+    // One recorder per capability. It collects what the probe actually
+    // executed, so the evidence record's commandDigest describes the run rather
+    // than the manifest's description of it — including the case where a probe
+    // returned early and ran only two of its seven commands.
+    const recorder = commandMod.createRecorder(probe.probeId, opts.mode, { repoRoot: repoCwd });
     let result;
     try {
-      result = await probe.run({ timeoutMs: cap.contract.timeoutMs, repoCwd });
+      result = await probe.run({ timeoutMs: cap.contract.timeoutMs, repoCwd, recorder });
     } catch (e) {
       // An exception from the harness is not a verdict about the system. It is
       // reported as a failed capability with an infrastructure code so the
@@ -146,6 +157,10 @@ async function verify(opts) {
         repoState: state,
         startedAt,
         finishedAt,
+        commandDigest: recorder.digest(),
+        commandCount: recorder.count,
+        expectedMergeSha: opts.expectedMergeSha || null,
+        postMergeRun: !!opts.expectedMergeSha,
       }),
     );
   }
@@ -156,6 +171,7 @@ async function verify(opts) {
     verifiedAtSha: state.verifiedAtSha,
     sourceBranch: state.sourceBranch,
     dirtyTree: state.dirtyTree,
+    expectedMergeSha: opts.expectedMergeSha || null,
     selected: selected.map((c) => c.capabilityId),
   });
 }

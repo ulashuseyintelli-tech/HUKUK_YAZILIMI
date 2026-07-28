@@ -11,6 +11,7 @@
  *   orch-service enqueue --request   admit work into the queue
  *   orch-service run-once            take exactly one task and run it
  *   orch-service run-until-idle      drain the queue, serially
+ *   orch-service finalize            finish a MERGE_READY entry (or list them)
  *   orch-service status              what is happening, and why it is not
  *   orch-service stop  --reason ...  admit nothing, merge nothing. Now.
  *   orch-service start --reason ...  release the stop
@@ -212,10 +213,27 @@ function main(argv) {
     }
 
     case 'resume': {
-      // Resuming is the one operation that turns a refusal back into
-      // permission, so it names the entry exactly and states why.
-      if (typeof args.flags.entry !== 'string' || !reason) {
-        process.stderr.write('resume requires --entry <id> and --reason "<why>"\n');
+      // Two resumes, one word, and a switch takes the FIRST matching case.
+      //
+      // `resume` already existed as the counterpart to `pause` — it deletes the
+      // PAUSED marker. #1699 added a second `case 'resume'` for unblocking both
+      // state stores, and a duplicate case in a switch is unreachable code for
+      // whichever comes second: on main, `orch-service resume --reason "..."`
+      // now answers "resume requires --entry", so releasing a pause is broken.
+      //
+      // Merged rather than renamed, because both meanings of the word are the
+      // right one for their own situation and an operator should not have to
+      // know which subsystem refused them. --entry selects the entry-scoped
+      // two-store resume; without it, the pause marker is released.
+      if (typeof args.flags.entry !== 'string') {
+        service.resume(reason);
+        process.stdout.write('resumed\n');
+        return 0;
+      }
+      // Resuming a blocked entry turns a refusal back into permission, so it
+      // names the entry exactly and states why.
+      if (!reason) {
+        process.stderr.write('resume --entry requires --reason "<why>"\n');
         return 2;
       }
       const store = stateMod.createStore(stateMod.defaultStateDir(root));
@@ -253,6 +271,51 @@ function main(argv) {
       }
     }
 
+    case 'finalize': {
+      // The command an operator reaches for after a crash: an entry sits in
+      // MERGE_READY with a real open PR and nothing advances it. With no
+      // --entry it lists what a pass would act on, because a command whose
+      // read-only form is the one you have to ask for is a command that will
+      // eventually be run by accident.
+      const pending = service.finalizable();
+      if (typeof args.flags.entry !== 'string') {
+        if (!pending.length) {
+          process.stdout.write('nothing to finalize\n');
+          return 0;
+        }
+        process.stdout.write(pad('ENTRY', 14) + pad('TASK', 34) + pad('STATE', 14) + pad('PR', 8) + 'HANDOFF\n');
+        for (const f of pending) {
+          process.stdout.write(
+            pad(f.entryId.slice(0, 12), 14) + pad(f.taskId, 34) + pad(f.state, 14) +
+            pad(f.prNumber ? '#' + f.prNumber : '—', 8) +
+            (f.hasHandoff ? 'yes' : 'NO — pre-WP02 entry, needs an operator') + '\n',
+          );
+        }
+        process.stdout.write('\n(pass --entry <id> to finalize one)\n');
+        return 0;
+      }
+      return runAsync(
+        service.finalizeEntry(args.flags.entry).then((r) => {
+          const lines = [
+            r.disposition,
+            '  entry   : ' + r.entryId,
+            '  state   : ' + r.queueState,
+          ];
+          if (r.mergeSha) lines.push('  merge   : ' + r.mergeSha);
+          if (r.blockerCode) lines.push('  blocker : ' + r.blockerCode);
+          if (r.detail) lines.push('  detail  : ' + r.detail);
+          if (r.cleanup) lines.push('  cleanup : ' + r.cleanup.disposition + (r.cleanup.path ? ' ' + r.cleanup.path : ''));
+          process.stdout.write(lines.join('\n') + '\n');
+          // MERGE_NOT_AUTHORIZED is not a failure: it is the pilot's default,
+          // where a human merges. Exit 0 so an operator script does not treat
+          // "waiting for you" as "broken".
+          return r.disposition === 'CLOSED' || r.disposition === 'MERGE_NOT_AUTHORIZED' || r.disposition === 'NOT_FINALIZABLE'
+            ? 0
+            : 1;
+        }),
+      );
+    }
+
     case 'status':
       process.stdout.write(renderStatus(service.status()) + '\n');
       return 0;
@@ -280,10 +343,9 @@ function main(argv) {
       process.stdout.write('paused — the current task finishes, no new task is admitted\n');
       return 0;
 
-    case 'resume':
-      service.resume(reason);
-      process.stdout.write('resumed\n');
-      return 0;
+    // `resume` is handled above, where the pause release and the entry-scoped
+    // two-store resume share one command. A second case here would be
+    // unreachable, which is how the two got out of step in the first place.
 
     case 'queue': {
       const all = queue.list();
@@ -291,10 +353,32 @@ function main(argv) {
         process.stdout.write('(queue empty)\n');
         return 0;
       }
-      process.stdout.write(pad('ENTRY', 14) + pad('PROGRAM', 12) + pad('TASK', 34) + pad('STATE', 14) + 'BLOCKER\n');
+      // Execution, change and delivery are three separate facts and the queue
+      // shows all three. Collapsing them into one word is how "CLOSED" came to
+      // be read as "delivered": an entry can be CLOSED with its code merged and
+      // its capability never verified, and an operator looking at a single
+      // column would have no way to see it.
+      process.stdout.write(
+        pad('ENTRY', 14) + pad('TASK', 30) + pad('EXECUTION', 12) + pad('CHANGE', 12) +
+        pad('DELIVERY', 20) + pad('OVERALL', 10) + 'BLOCKER\n',
+      );
       for (const e of all) {
+        const merged = e.mergeSha ? 'MERGED' : 'NOT_MERGED';
+        const d = e.delivery || null;
+        const deliveryVerdict = d
+          ? d.verdict
+          : e.deliveryPhase || (e.state === 'CLOSED' ? 'LEGACY_UNVERIFIED' : '—');
+        // DONE is the conjunction, computed here rather than stored, so it
+        // cannot drift from the facts beside it.
+        const done =
+          e.state === 'CLOSED' &&
+          !!e.mergeSha &&
+          !!d &&
+          (d.verdict === 'PASS' || d.verdict === 'NOT_APPLICABLE') &&
+          d.verifiedAtSha === e.mergeSha;
         process.stdout.write(
-          pad(e.entryId.slice(0, 12), 14) + pad(e.programId, 12) + pad(e.taskId, 34) + pad(e.state, 14) +
+          pad(e.entryId.slice(0, 12), 14) + pad(e.taskId, 30) + pad(e.state, 12) + pad(merged, 12) +
+          pad(deliveryVerdict, 20) + pad(done ? 'DONE' : 'NOT_DONE', 10) +
           (e.blockerCode || '') + '\n',
         );
       }

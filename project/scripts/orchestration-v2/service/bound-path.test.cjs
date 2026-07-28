@@ -282,6 +282,33 @@ test('a request carrying a credential field is refused before anything is read',
 
 // ─────────────────────────────────────────────────── DISPATCH (AC05, AC12–AC21)
 
+/**
+ * The attestation a real MERGE_READY result always carries.
+ *
+ * These fakes used to omit it, and nothing noticed while MERGE_READY was where
+ * the chain stopped. Once the handoff became durable it mattered: finalization
+ * reads the attestation from the queue and refuses without one, so a fake that
+ * reports MERGE_READY with no attestation is claiming a state the orchestrator
+ * cannot actually produce.
+ */
+function fakeAttestation(over) {
+  return Object.assign(
+    {
+      schemaVersion: 1,
+      prNumber: 4242,
+      prHeadSha: 'a'.repeat(40),
+      targetBranch: 'main',
+      targetBranchObservedSha: 'd'.repeat(40),
+      mergeBaseSha: 'e'.repeat(40),
+      requiredCiResultSetSha256: '0'.repeat(64),
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 900000).toISOString(),
+      conjunction: { executorExitSuccess: true },
+    },
+    over || {},
+  );
+}
+
 /** A fake runner that records it was called and reports a PR. */
 function fakeRun(over) {
   const calls = [];
@@ -291,7 +318,13 @@ function fakeRun(over) {
     runTask: async (ctx) => {
       calls.push(ctx.spec.taskId);
       return Object.assign(
-        { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 4242, headSha: 'a'.repeat(40), branch: 'claude/bp' }, worktreePath: null },
+        {
+          disposition: 'MERGE_READY',
+          taskId: ctx.spec.taskId,
+          pr: { number: 4242, headSha: 'a'.repeat(40), branch: 'claude/bp' },
+          worktreePath: null,
+          attestation: fakeAttestation(),
+        },
         over || {},
       );
     },
@@ -364,7 +397,7 @@ test('AC15  run-until-idle processes tasks serially and stops when empty', async
     buildContext: (o) => Object.assign({ holder: 'CLAUDE_LOCAL' }, o),
     runTask: async (ctx) => {
       order.push(ctx.spec.taskId);
-      return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 1, headSha: 'b'.repeat(40) } };
+      return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 1, headSha: 'b'.repeat(40) }, attestation: fakeAttestation({ prNumber: 1, prHeadSha: 'b'.repeat(40) }) };
     },
   };
   // MERGE_READY is not terminal, so the slot stays occupied; the drain reports
@@ -515,7 +548,7 @@ function mergingRun(over) {
     buildContext: (a) => Object.assign({ holder: 'CLAUDE_LOCAL' }, a),
     runTask: async (ctx) => {
       calls.ran++;
-      return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 777, headSha: 'c'.repeat(40) } };
+      return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 777, headSha: 'c'.repeat(40) }, attestation: fakeAttestation({ prNumber: 777, prHeadSha: 'c'.repeat(40) }) };
     },
     completeAfterOwnerMerge: async () => {
       calls.merged++;
@@ -563,9 +596,21 @@ test('AC28  the queue records every stage between MERGE_READY and CLOSED', async
   for (const stage of ['MERGE_READY', 'MERGING', 'MERGED', 'SYNCING', 'CLEANING', 'CLOSED']) {
     assert.ok(history.indexOf(stage) !== -1, stage + ' missing from the history');
   }
+  // The audit vocabulary is the finalizer's now, not the adapter's. #1694 wrote
+  // MERGE_ATTEMPTED/TASK_CLOSED from forty inline lines that WP02 deleted: the
+  // in-line route and the after-a-crash route are one implementation, so they
+  // emit one set of events. Asserting the old labels would be asserting that the
+  // second closure path still exists.
   const trail = service.auditTrail().map((x) => x.event);
-  assert.ok(trail.indexOf('MERGE_ATTEMPTED') !== -1);
-  assert.ok(trail.indexOf('TASK_CLOSED') !== -1);
+  assert.ok(trail.indexOf('FINALIZE_ATTEMPTED') !== -1, 'the finalizer records the attempt');
+  assert.ok(trail.indexOf('FINALIZE_CLOSED') !== -1, 'the finalizer records the closure');
+
+  // And the merge sha is in the audit record, not only in the queue: the two are
+  // read by different people at different times, and a merge that happened is
+  // the one fact neither may be missing.
+  const closed = service.auditTrail().filter((x) => x.event === 'FINALIZE_CLOSED')[0];
+  assert.equal(closed.detail.mergeSha, 'd'.repeat(40));
+  assert.equal(closed.detail.entryId, e.entry.entryId);
 });
 
 test('AC29  a CLOSED task frees the slot for the next one', async () => {
@@ -610,12 +655,36 @@ test('the kill switch is read once more immediately before the merge', async () 
     runTask: async (ctx) => {
       // Engage it DURING the run, after admission and dispatch have both passed.
       service.engageKillSwitch('mid-run');
-      return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 778, headSha: 'e'.repeat(40) } };
+      return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 778, headSha: 'e'.repeat(40) }, attestation: fakeAttestation({ prNumber: 778, prHeadSha: 'e'.repeat(40) }) };
     },
   });
   await service.runOnce(armed);
   assert.equal(runner.calls.merged, 0, 'nothing merged');
-  assert.equal(queue.get(e.entry.entryId).blockerCode, 'KILL_SWITCH_ENGAGED');
+
+  // The entry stays in MERGE_READY rather than moving to BLOCKED, and that is
+  // the stronger behaviour, not the weaker one. A kill switch is transient; the
+  // queue table lets BLOCKED go only to QUEUED, and QUEUED re-runs the executor.
+  // Blocking here would mean that releasing a switch ten minutes later opens a
+  // SECOND pull request for work whose first one is already open.
+  const entry = queue.get(e.entry.entryId);
+  assert.equal(entry.state, 'MERGE_READY', 'a transient refusal must not strand the entry');
+  assert.ok(!entry.blockerCode, 'not a blocker: nothing failed, a switch was on');
+
+  // It must still be finalizable, so releasing the switch is the whole recovery.
+  assert.equal(service.finalizable().filter((f) => f.entryId === e.entry.entryId).length, 1);
+
+  // And the refusal has to be legible afterwards, or an operator sees an entry
+  // that simply did not move.
+  const refusals = service.auditTrail().filter((x) => x.event === 'FINALIZE_REFUSED');
+  assert.equal(refusals.length, 1);
+  assert.equal(refusals[0].detail.refusal, 'KILL_SWITCH_ENGAGED');
+
+  // Releasing it lets the same entry finish — proving the refusal cost nothing
+  // but the attempt.
+  service.releaseKillSwitch('test: incident over');
+  const again = await service.finalizeEntry(e.entry.entryId, runner);
+  assert.equal(again.disposition, 'CLOSED', again.blockerCode || again.detail);
+  assert.equal(queue.get(e.entry.entryId).state, 'CLOSED');
 });
 
 test('a closure that does not report CLOSED keeps its own blocker code', async () => {

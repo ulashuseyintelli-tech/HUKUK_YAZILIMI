@@ -24,6 +24,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const manifestMod = require('./manifest.cjs');
+const commandMod = require('./command.cjs');
 const evidenceMod = require('./evidence.cjs');
 const execMod = require('./exec.cjs');
 const probesMod = require('./probes.cjs');
@@ -164,6 +165,10 @@ test('DV12  an evidence record carries every field DONE will be judged on', () =
     repoState: { verifiedAtSha: 'a'.repeat(40), sourceBranch: 'main', dirtyTree: false },
     startedAt: '2026-07-28T00:00:00.000Z',
     finishedAt: '2026-07-28T00:00:10.000Z',
+    // A real run always has one, and the contract requires it: a capability
+    // proved by running something cannot be proved by running nothing.
+    commandDigest: 'f'.repeat(64),
+    commandCount: 3,
   });
   for (const field of [
     'capabilityId',
@@ -189,6 +194,49 @@ test('DV12  an evidence record carries every field DONE will be judged on', () =
   assert.equal(rec.verdict, 'PASS');
   assert.equal(rec.durationMs, 10000);
   assert.match(rec.evidenceDigest, /^[0-9a-f]{64}$/);
+  assert.equal(rec.schemaVersion, 2);
+
+  // A run that DECLARES itself post-merge and then verifies a different commit
+  // has not verified the merge — however green the probe was. This is the
+  // difference between "this worked somewhere" and "this works in what was
+  // merged", and it is the whole of the DONE formula's SHA clause.
+  const postMerge = (expected) =>
+    evidenceMod.build({
+      capability: cap,
+      probe,
+      result: { observedState: 'OPERABLE', failureCode: null, detail: null, steps: [] },
+      repoState: { verifiedAtSha: 'a'.repeat(40), sourceBranch: 'main', dirtyTree: false },
+      startedAt: '2026-07-28T00:00:00.000Z',
+      finishedAt: '2026-07-28T00:00:01.000Z',
+      commandDigest: 'f'.repeat(64),
+      postMergeRun: true,
+      expectedMergeSha: expected,
+    });
+  assert.equal(postMerge('a'.repeat(40)).verdict, 'PASS', 'verified AT the merge sha');
+  const wrong = postMerge('b'.repeat(40));
+  assert.equal(wrong.verdict, 'STALE');
+  assert.equal(wrong.failureCode, 'DELIVERY_SHA_MISMATCH');
+  const missing = postMerge(null);
+  assert.equal(missing.verdict, 'FAIL');
+  assert.equal(missing.failureCode, 'DELIVERY_EXPECTED_MERGE_SHA_MISSING');
+
+  // A branch-head run makes no post-merge claim, so it may be green — and its
+  // null expectedMergeSha is exactly what stops it satisfying DONE.
+  assert.equal(rec.expectedMergeSha, null);
+  assert.equal(rec.verdict, 'PASS');
+
+  // And a probe that executed nothing cannot prove a capability defined by
+  // running something.
+  const noCommands = evidenceMod.build({
+    capability: cap,
+    probe,
+    result: { observedState: 'OPERABLE', failureCode: null, detail: null, steps: [] },
+    repoState: { verifiedAtSha: 'a'.repeat(40), sourceBranch: 'main', dirtyTree: false },
+    startedAt: '2026-07-28T00:00:00.000Z',
+    finishedAt: '2026-07-28T00:00:01.000Z',
+  });
+  assert.equal(noCommands.verdict, 'FAIL');
+  assert.equal(noCommands.failureCode, 'DELIVERY_COMMAND_DIGEST_MISSING');
 });
 
 test('DV13  a dirty tree makes the record STALE regardless of what the probe saw', () => {
@@ -297,15 +345,22 @@ test('DV20  the real probes tell a wired capability from an unwired one', { time
   assert.equal(by.GOV_COORD_V2_REQUEST_EXECUTOR_PATH.observedState, 'OPERABLE', by.GOV_COORD_V2_REQUEST_EXECUTOR_PATH.detail);
   assert.equal(by.MECHANICAL_GOVERNANCE_GATE.observedState, 'ENFORCED', by.MECHANICAL_GOVERNANCE_GATE.detail);
 
-  // The red. WP02 replaces this assertion with ENFORCED; until it does, a green
-  // panel here would mean the probe stopped asking the question.
+  // The capability that was RED at WP01 and is repaired here.
+  //
+  // The assertion moved from UNWIRED to ENFORCED because the SYSTEM changed, not
+  // the probe's standard: the probe now performs a real merge against a local
+  // remote and refuses in six ways before it will do so, which is a strictly
+  // harder question than "does a finalize command exist?". WP01's RED evidence
+  // is preserved unchanged as the record of what was true before.
   const closure = by.GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE;
-  assert.equal(closure.observedState, 'UNWIRED', closure.detail);
-  assert.equal(closure.failureCode, 'DELIVERY_PROBE_MISSING');
-  assert.equal(closure.verdict === 'PASS', false, 'an unwired capability must never report PASS');
+  assert.equal(closure.observedState, 'ENFORCED', closure.detail);
+  assert.equal(closure.failureCode, null);
 
-  // And the panel as a whole must refuse to call this delivered.
-  assert.equal(panel.overall, 'FAIL');
+  // Every capability must match its declared target. Asserted per-capability
+  // rather than only on the summary so a regression names itself.
+  for (const r of panel.capabilities) {
+    assert.equal(r.observedState, r.targetState, r.capabilityId + ': ' + (r.detail || ''));
+  }
 });
 
 // ───────────────────────────────────────────────────────── THE CLI (DV21–DV25)
@@ -340,21 +395,44 @@ test('DV22  a sealed capability cannot be smuggled into pulse mode', () => {
   assert.match(r.stderr, /CAPABILITY_NOT_IN_MODE/);
 });
 
+// DV23/DV24 use the DRY capability deliberately.
+//
+// Their subject is the panel's SHAPE and its persistence, not any particular
+// capability. Pointing them at the closure probe made each one build seven
+// disposable git repositories with bare remotes, and under the parallel load of
+// the full suite that was slow enough to flake — a test that fails for load
+// reasons teaches nobody anything and eventually gets ignored. DV20 remains the
+// one that exercises all four probes for real.
 test('DV23  --json emits the panel as data with the fields a machine needs', { timeout: 600000 }, () => {
-  const r = cli(['--capability', 'GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE', '--mode', 'sealed', '--json']);
+  const r = cli(['--capability', 'GOV_COORD_V2_RUNNER_AUTHORITY', '--mode', 'pulse', '--json']);
   const panel = JSON.parse(r.stdout);
   assert.equal(panel.capabilities.length, 1);
-  assert.equal(panel.capabilities[0].observedState, 'UNWIRED');
-  assert.equal(panel.overall, 'FAIL');
+  const rec = panel.capabilities[0];
+  assert.equal(rec.observedState, 'OPERABLE', rec.detail);
   assert.match(panel.evidenceDigest, /^[0-9a-f]{64}$/);
-  // Exit 1 = not delivered. Not 0, and not 2.
-  assert.equal(r.status, verifyMod.EXIT_NOT_DELIVERED);
+  assert.match(rec.probeDefinitionSha256, /^[0-9a-f]{64}$/);
+  assert.match(rec.deliveryContractSha256, /^[0-9a-f]{64}$/);
+
+  // The exit code is the contract, and it follows the verdict rather than the
+  // observation: on a clean tree this is PASS and exit 0; run from a working
+  // tree with edits in it the verdict is STALE and exit 1, because evidence
+  // taken with uncommitted changes is not evidence for this SHA.
+  const expected = rec.verdict === 'PASS' ? verifyMod.EXIT_OK : verifyMod.EXIT_NOT_DELIVERED;
+  assert.equal(r.status, expected, 'verdict ' + rec.verdict + ' must map to exit ' + expected);
+  assert.equal(panel.overall, rec.verdict === 'PASS' ? 'PASS' : 'FAIL');
 });
 
 test('DV24  --evidence-dir persists a panel bound to the SHA it was taken at', { timeout: 600000 }, () => {
   const dir = tmpdir();
-  const r = cli(['--capability', 'GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE', '--mode', 'sealed', '--evidence-dir', dir]);
-  assert.equal(r.status, verifyMod.EXIT_NOT_DELIVERED);
+  const r = cli(['--capability', 'GOV_COORD_V2_RUNNER_AUTHORITY', '--mode', 'pulse', '--evidence-dir', dir]);
+  // Either exit is legitimate and which one is not this test's subject: on a
+  // clean tree the capability passes (0), and from a working tree with edits in
+  // it the verdict is STALE (1). What IS the subject is that a record was
+  // written and that it names the commit it was taken at.
+  assert.ok(
+    r.status === verifyMod.EXIT_OK || r.status === verifyMod.EXIT_NOT_DELIVERED,
+    'a verifier error (2) means no evidence was produced: ' + r.stderr.slice(0, 200),
+  );
   const files = fs.readdirSync(dir);
   assert.equal(files.length, 1);
   const panel = JSON.parse(fs.readFileSync(path.join(dir, files[0]), 'utf8'));
@@ -384,6 +462,446 @@ test('DV25  the panel prints every selected capability, green ones included', ()
   assert.match(text, /NOT DELIVERED/);
   assert.match(text, /DELIVERY_PROBE_MISSING/);
   assert.match(text, /OVERALL: FAIL/);
+});
+
+// ───────────────────────────────────── RUNTIME IMPACT (DV60–DV63)
+
+const impactMod = require('./runtime-impact.cjs');
+
+test('DV60  a diff that touches anything executable is runtime-impacting', () => {
+  const runtime = [
+    'project/apps/api/src/modules/office/x.ts',
+    'project/packages/shared/y.ts',
+    'project/scripts/orchestration-v2/service/finalize.cjs',
+    'project/prisma/schema.prisma',
+    '.github/workflows/ci.yml',
+    'project/package.json',
+    'AGENTS.md',
+    'some/other/place/tool.sh',
+  ];
+  for (const p of runtime) {
+    assert.equal(impactMod.classifyPath(p).runtime, true, p);
+    assert.equal(impactMod.classify([p]).runtimeImpact, true, p);
+  }
+});
+
+test('DV61  documentation is not automatically non-runtime', () => {
+  // Each of these is a text file that decides what the system does. A CI
+  // manifest chooses which specs execute; a coordination-v2 record decides what
+  // may run at all. Calling them "docs" is how a runtime change gets a
+  // NOT_APPLICABLE.
+  const deceptive = [
+    'project/apps/api/ci-manifests/pure/platform-scripts-shared.txt',
+    'project/docs/governance/coordination-v2/programs.manifest.json',
+    'project/docs/governance/coordination-v2/activation/STANDING-GRANT-OFFICE-LIVE-R01.json',
+    'project/docs/governance/coordination-v2/task-plans/CANARY/plan.v2.json',
+    'project/docs/governance/governance-writer-coordination-protected-paths.json',
+  ];
+  for (const p of deceptive) assert.equal(impactMod.classifyPath(p).runtime, true, p);
+});
+
+test('DV62  genuinely inert files classify as non-runtime', () => {
+  const inert = [
+    'project/docs/governance/decision-log.md',
+    'project/docs/adr/ADR-014.md',
+    'README.md',
+    'project/docs/design/diagram.png',
+  ];
+  for (const p of inert) assert.equal(impactMod.classifyPath(p).runtime, false, p);
+  const v = impactMod.classify(inert);
+  assert.equal(v.runtimeImpact, false);
+  assert.equal(v.classifiedPaths.length, inert.length);
+
+  // A markdown file beside the code it documents is still documentation.
+  assert.equal(impactMod.classifyPath('project/scripts/orchestration-v2/delivery/evidence/README.md').runtime, false);
+});
+
+test('DV63  the unknown case and the empty case both fail towards runtime', () => {
+  // A classifier whose unknown case is "harmless" will one day be handed
+  // something that is not. Being wrong in this direction costs a probe that ran
+  // unnecessarily.
+  assert.equal(impactMod.classifyPath('weird/thing.unknownext').runtime, true);
+  assert.equal(impactMod.classifyPath('no-extension-file').runtime, true);
+
+  // A task that changed nothing did not deliver anything either; calling that
+  // NOT_APPLICABLE would let a no-op close a chain.
+  const empty = impactMod.classify([]);
+  assert.equal(empty.runtimeImpact, true);
+  assert.deepEqual(empty.reasons, ['EMPTY_DIFF_IS_NOT_PROOF']);
+
+  assert.throws(
+    () => impactMod.assertNotApplicableAllowed(['project/apps/api/src/x.ts']),
+    (e) => e.code === 'DELIVERY_NOT_APPLICABLE_FOR_RUNTIME_DIFF',
+  );
+  assert.ok(impactMod.assertNotApplicableAllowed(['project/docs/governance/decision-log.md']));
+});
+
+// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV53)
+
+const successorMod = require('../orchestrator/successor.cjs');
+
+/** A CLOSED predecessor carrying the delivery record a finalizer would write. */
+function closedWith(delivery) {
+  return { state: 'CLOSED', payload: delivery === undefined ? {} : { delivery } };
+}
+const GOOD_DELIVERY = {
+  verdict: 'PASS',
+  mergeSha: 'f'.repeat(40),
+  verifiedAtSha: 'f'.repeat(40),
+  evidenceDigest: 'e'.repeat(64),
+  deliveryContractSha256: 'c'.repeat(64),
+  probeDefinitionSha256: 'p'.repeat(64),
+};
+
+test('DV50  a v1 successor keeps v1 rules — CLOSED is the whole rule', () => {
+  // Not a bypass. v1 tasks carry no delivery contract and never could have
+  // satisfied a delivery gate; applying the new rule backwards would make every
+  // historical chain permanently ineligible and force an exception, which is
+  // how a gate becomes decorative.
+  assert.equal(successorMod.predecessorSatisfied(closedWith(undefined), 1).ok, true);
+  assert.equal(successorMod.predecessorSatisfied({ state: 'MERGED' }, 1).ok, false);
+  assert.equal(successorMod.predecessorSatisfied(null, 1).reason, 'PREDECESSOR_NOT_DECLARED');
+});
+
+test('DV51  a v2 successor requires merge-SHA-bound delivery evidence', () => {
+  assert.equal(successorMod.predecessorSatisfied(closedWith(GOOD_DELIVERY), 2).ok, true);
+
+  const refused = (delivery, reason) => {
+    const v = successorMod.predecessorSatisfied(closedWith(delivery), 2);
+    assert.equal(v.ok, false, reason);
+    assert.equal(v.reason, reason, JSON.stringify(v));
+  };
+
+  // Closed under the old rules: the work may well be fine, but nothing here
+  // can say so, and saying so anyway is the thing this program is about.
+  refused(undefined, 'PREDECESSOR_DELIVERY_LEGACY_UNVERIFIED');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'FAIL' }), 'PREDECESSOR_DELIVERY_FAILED');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'STALE' }), 'PREDECESSOR_DELIVERY_STALE');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'NOT_RUN' }), 'PREDECESSOR_DELIVERY_NOT_RUN');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'UNWIRED' }), 'PREDECESSOR_DELIVERY_UNWIRED');
+  refused(Object.assign({}, GOOD_DELIVERY, { verdict: 'LEGACY_UNVERIFIED' }), 'PREDECESSOR_DELIVERY_LEGACY_UNVERIFIED');
+
+  // A PASS is only a PASS at the commit that was merged. Branch-head evidence
+  // is a different claim wearing the same word.
+  refused(Object.assign({}, GOOD_DELIVERY, { verifiedAtSha: 'a'.repeat(40) }), 'PREDECESSOR_DELIVERY_STALE');
+  refused(Object.assign({}, GOOD_DELIVERY, { mergeSha: null }), 'PREDECESSOR_DELIVERY_STALE');
+  refused(Object.assign({}, GOOD_DELIVERY, { evidenceDigest: null }), 'PREDECESSOR_DELIVERY_EVIDENCE_INVALID');
+  refused(Object.assign({}, GOOD_DELIVERY, { probeDefinitionSha256: null }), 'PREDECESSOR_DELIVERY_EVIDENCE_INVALID');
+
+  // MERGED without CLOSED never releases anything.
+  assert.equal(successorMod.predecessorSatisfied({ state: 'MERGED', payload: { delivery: GOOD_DELIVERY } }, 2).reason, 'PREDECESSOR_NOT_CLOSED');
+});
+
+test('DV52  NOT_APPLICABLE needs the classifier\'s verdict, not the author\'s word', () => {
+  const asserted = { verdict: 'NOT_APPLICABLE' };
+  assert.equal(successorMod.predecessorSatisfied(closedWith(asserted), 2).reason, 'PREDECESSOR_NOT_APPLICABLE_UNPROVEN');
+
+  const proven = { verdict: 'NOT_APPLICABLE', runtimeImpact: false, classifiedPaths: ['project/docs/x.md'] };
+  assert.equal(successorMod.predecessorSatisfied(closedWith(proven), 2).ok, true);
+
+  // A classification that says the diff DID touch runtime cannot be
+  // NOT_APPLICABLE, whatever the record claims.
+  const contradicted = { verdict: 'NOT_APPLICABLE', runtimeImpact: true, classifiedPaths: ['project/apps/api/x.ts'] };
+  assert.equal(successorMod.predecessorSatisfied(closedWith(contradicted), 2).ok, false);
+});
+
+test('DV53  every production successor path uses the one gate', () => {
+  // The inventory this replaced found three independent rules. A grep is the
+  // honest test: if a fourth appears, or one of these grows its own copy again,
+  // this fails and names the file.
+  const root = path.join(REPO_ROOT, 'project', 'scripts', 'orchestration-v2');
+  const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
+
+  // Comment lines are stripped: this file's own prose explains the rule it
+  // replaced, and a grep that counted that would fail for the wrong reason.
+  const codeLines = (text) =>
+    text.split('\n').filter((l) => {
+      const t = l.trim();
+      return t && t.indexOf('//') !== 0 && t.indexOf('*') !== 0 && t.indexOf('/*') !== 0;
+    });
+
+  const orch = read('orchestrator/orchestrator.cjs');
+  assert.ok(orch.indexOf("require('./successor.cjs')") !== -1, 'orchestrator must use the shared gate');
+  assert.equal(
+    codeLines(orch).filter((l) => /state === 'CLOSED'/.test(l)).length,
+    0,
+    'orchestrator must not carry its own CLOSED-only successor rule',
+  );
+
+  const queue = read('orchestrator/queue.cjs');
+  assert.ok(queue.indexOf('taskSchemaVersion !== 2') !== -1, 'the queue dependsOn gate must be version-scoped');
+
+  // And the gate itself must still refuse the case that motivated it.
+  assert.equal(successorMod.predecessorSatisfied(closedWith(undefined), 2).ok, false);
+});
+
+// ───────────────────────────────────── SCHEMA V2 (DV40–DV45)
+
+const authority = require('../orchestrator/authority.cjs');
+
+const V2_CONTRACT = {
+  capabilityId: 'TEST_CAPABILITY',
+  deliveryClass: 'OPERATOR_CLI',
+  targetState: 'OPERABLE',
+  probeId: 'PROBE_X',
+  probeClass: 'PROBE_DRY',
+  probeDefinitionSha256: 'a'.repeat(64),
+  publicEntrypoint: 'node x.cjs',
+  timeoutMs: 60000,
+};
+const SPEC_V1 = {
+  schemaVersion: 1,
+  taskId: 'T-1',
+  taskSpecVersion: 1,
+  profile: 'BOUNDED_CODE_TASK',
+  declaredIntent: 'A schema v1 task, unchanged in meaning.',
+  boundaryPolicy: { allowedRoots: ['fixture/a/'] },
+  requiredTests: [{ argv: ['node', '-e', '0'] }],
+  predecessorTaskIds: [],
+  baseDriftPolicy: 'REFRESH_BEFORE_EXECUTION',
+  successorDisposition: 'NO_SUCCESSOR',
+};
+const SPEC_V2 = Object.assign({}, SPEC_V1, { schemaVersion: 2, deliveryContract: V2_CONTRACT });
+
+function pinFor(spec, over) {
+  const d = authority.specDigests(spec);
+  return Object.assign(
+    {
+      taskId: spec.taskId,
+      taskSpecVersion: spec.taskSpecVersion,
+      taskSpecSha256: d.taskSpecSha256,
+      declaredIntentSha256: d.declaredIntentSha256,
+      boundaryPolicySha256: d.boundaryPolicySha256,
+      requiredTestsSha256: d.requiredTestsSha256,
+      predecessorTaskIds: [],
+    },
+    spec.schemaVersion === 2 ? { taskSchemaVersion: 2, deliveryContractSha256: d.deliveryContractSha256 } : {},
+    over || {},
+  );
+}
+function grantFor(spec, over) {
+  const excerpt = 'owner ratification';
+  return {
+    schemaVersion: 1,
+    grantId: 'G-1',
+    semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'S1', sourcePath: 'a.md' },
+    executionGrantRef: { kind: 'EXECUTION_GRANT', recordId: 'E1', sourcePath: 'b.md' },
+    ownerRatificationEvidence: {
+      sourcePath: 'a.md',
+      sourceCommitSha: 'c'.repeat(40),
+      exactExcerpt: excerpt,
+      excerptSha256: require('crypto').createHash('sha256').update(excerpt, 'utf8').digest('hex'),
+    },
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    revocationPath: 'r.md',
+    manualMergeRequired: true,
+    allowedModuleRoots: ['fixture/'],
+    authorizedTasks: [pinFor(spec, over)],
+  };
+}
+
+test('DV40  schema v1 keeps its exact meaning and its exact digests', () => {
+  const d = authority.specDigests(SPEC_V1);
+  assert.equal(d.canonical.schemaVersion, 1);
+  // A v1 task has no delivery digest at all — not a null, not an empty string.
+  // Every historical grant pins four values and must keep matching.
+  assert.equal(d.deliveryContractSha256, undefined);
+  assert.equal(d.canonical.deliveryContract, undefined);
+  assert.ok(authority.validateAgainstGrant({ grant: grantFor(SPEC_V1), spec: SPEC_V1 }).grantId);
+});
+
+test('DV41  a schema v2 task carries its delivery contract inside the canonical spec', () => {
+  const d = authority.specDigests(SPEC_V2);
+  assert.equal(d.canonical.schemaVersion, 2);
+  assert.match(d.deliveryContractSha256, /^[0-9a-f]{64}$/);
+  // Inside, not referenced. A contract hashed separately could drift from the
+  // spec the grant pinned; inside taskSpecSha256, it cannot.
+  assert.ok(d.canonical.deliveryContract);
+  assert.notEqual(d.taskSpecSha256, authority.specDigests(SPEC_V1).taskSpecSha256);
+
+  // The evidence policy is expanded to its fields, never left as a name: a
+  // policy name is a promise nobody can check.
+  for (const f of authority.DELIVERY_EVIDENCE_POLICY_FIELDS) {
+    assert.equal(typeof d.canonical.deliveryContract.evidencePolicy[f], 'boolean', f);
+  }
+});
+
+test('DV42  digests are settled — materializing them does not move them', () => {
+  const d = authority.specDigests(SPEC_V2);
+  const materialized = Object.assign({}, SPEC_V2, { deliveryContractSha256: d.deliveryContractSha256 });
+  const again = authority.specDigests(materialized);
+  assert.equal(again.taskSpecSha256, d.taskSpecSha256);
+  assert.equal(again.deliveryContractSha256, d.deliveryContractSha256);
+});
+
+test('DV43  a mixed-version or self-contradicting task fails closed', () => {
+  const bad = (spec, code) => assert.throws(() => authority.specDigests(spec), (e) => e.code === code, code);
+  bad(Object.assign({}, SPEC_V2, { deliveryContract: undefined }), 'TASK_SPEC_DELIVERY_CONTRACT_REQUIRED');
+  bad(Object.assign({}, SPEC_V1, { deliveryContract: V2_CONTRACT }), 'TASK_SPEC_MIXED_VERSION');
+  bad(Object.assign({}, SPEC_V1, { schemaVersion: 3 }), 'TASK_SPEC_SCHEMA_VERSION');
+  // A self-declared digest is a claim, not evidence: it is recomputed. This is
+  // the #1696 defect in one assertion.
+  bad(Object.assign({}, SPEC_V2, { deliveryContractSha256: 'b'.repeat(64) }), 'DELIVERY_CONTRACT_HASH_MISMATCH');
+});
+
+test('DV44  a grant must pin the delivery claim it ratified', () => {
+  assert.ok(authority.validateAgainstGrant({ grant: grantFor(SPEC_V2), spec: SPEC_V2 }).grantId);
+
+  const reject = (grant, spec, code) =>
+    assert.throws(() => authority.validateAgainstGrant({ grant, spec }), (e) => e.code === code, code);
+
+  // A v1 entry has no delivery digest, so authorizing a v2 task would be
+  // authorizing a delivery claim it never saw.
+  reject(grantFor(SPEC_V2, { taskSchemaVersion: undefined, deliveryContractSha256: undefined }), SPEC_V2, 'GRANT_TASK_SCHEMA_VERSION_MISMATCH');
+  reject(grantFor(SPEC_V2, { deliveryContractSha256: undefined }), SPEC_V2, 'GRANT_DELIVERY_CONTRACT_DIGEST_MISSING');
+  reject(grantFor(SPEC_V2, { deliveryContractSha256: 'd'.repeat(64) }), SPEC_V2, 'DELIVERY_CONTRACT_HASH_MISMATCH');
+});
+
+test('DV45  changing the claim breaks the grant; changing the prose does not', () => {
+  const g = grantFor(SPEC_V2);
+
+  const retargeted = Object.assign({}, SPEC_V2, {
+    deliveryContract: Object.assign({}, V2_CONTRACT, { targetState: 'WIRED_DISABLED' }),
+  });
+  assert.throws(
+    () => authority.validateAgainstGrant({ grant: g, spec: retargeted }),
+    (e) => e.code === 'DELIVERY_CONTRACT_HASH_MISMATCH',
+    'a changed target state must be reported as a changed delivery claim, not a generic spec drift',
+  );
+
+  // If editing a sentence invalidated a ratified grant, nobody would ever
+  // improve one.
+  const retitled = Object.assign({}, SPEC_V2, {
+    deliveryContract: Object.assign({}, V2_CONTRACT, { title: 'nicer words', rationale: 'because' }),
+  });
+  assert.ok(authority.validateAgainstGrant({ grant: g, spec: retitled }).grantId);
+});
+
+// ───────────────────────────────────── COMMAND DIGEST (DV30–DV34)
+
+const CMD_CTX = { repoRoot: 'C:/repo', fixtureRoot: 'C:/tmp/fx-123' };
+function cmdDef(over) {
+  return Object.assign(
+    {
+      probeId: 'P1',
+      mode: 'sealed',
+      commands: [
+        { argv: [process.execPath, 'C:/repo/a.cjs', '--x', 'C:/tmp/fx-123/plan.json'], cwd: 'C:/tmp/fx-123', timeoutMs: 60000 },
+        { argv: [process.execPath, 'C:/repo/b.cjs'], cwd: 'C:/tmp/fx-123', timeoutMs: 60000 },
+      ],
+    },
+    over || {},
+  );
+}
+const cmdDigest = (d) => commandMod.commandDigest(d, CMD_CTX);
+
+test('DV30  every part of an invocation that changes its meaning changes the digest', () => {
+  const base = cmdDigest(cmdDef());
+  const clone = () => JSON.parse(JSON.stringify(cmdDef()));
+
+  const argvOrder = clone();
+  argvOrder.commands[0].argv = [process.execPath, 'C:/repo/a.cjs', 'C:/tmp/fx-123/plan.json', '--x'];
+  assert.notEqual(cmdDigest(argvOrder), base, 'argument order');
+
+  const cmdOrder = clone();
+  cmdOrder.commands.reverse();
+  assert.notEqual(cmdDigest(cmdOrder), base, 'command order');
+
+  const cwd = clone();
+  cwd.commands[0].cwd = 'C:/repo';
+  assert.notEqual(cmdDigest(cwd), base, 'cwd');
+
+  const timeout = clone();
+  timeout.commands[0].timeoutMs = 61000;
+  assert.notEqual(cmdDigest(timeout), base, 'timeout');
+
+  assert.notEqual(cmdDigest(cmdDef({ mode: 'pulse' })), base, 'probe mode');
+  assert.notEqual(cmdDigest(cmdDef({ probeId: 'P2' })), base, 'probe id');
+
+  // A run that could reach the network is making a weaker claim with the same
+  // argv, and the digest has to notice.
+  const policy = clone();
+  policy.commands[0].executionPolicy = { networkExpected: true };
+  assert.notEqual(cmdDigest(policy), base, 'execution policy');
+});
+
+test('DV31  the digest is stable across platforms and across fixtures', () => {
+  const base = cmdDigest(cmdDef());
+
+  // The same invocation expressed with POSIX paths must produce the same
+  // digest, or the field could never be compared between a developer's machine
+  // and CI.
+  const posix = {
+    probeId: 'P1',
+    mode: 'sealed',
+    commands: [
+      { argv: [process.execPath, '/repo/a.cjs', '--x', '/tmp/fx-123/plan.json'], cwd: '/tmp/fx-123', timeoutMs: 60000 },
+      { argv: [process.execPath, '/repo/b.cjs'], cwd: '/tmp/fx-123', timeoutMs: 60000 },
+    ],
+  };
+  assert.equal(commandMod.commandDigest(posix, { repoRoot: '/repo', fixtureRoot: '/tmp/fx-123' }), base);
+
+  // Every sealed probe runs in a fresh mkdtemp directory. If that path reached
+  // the digest, the field would differ on every run and prove nothing.
+  const other = JSON.parse(JSON.stringify(cmdDef()));
+  other.commands[0].argv[3] = 'C:/tmp/fx-999/plan.json';
+  other.commands[0].cwd = 'C:/tmp/fx-999';
+  other.commands[1].cwd = 'C:/tmp/fx-999';
+  assert.equal(commandMod.commandDigest(other, { repoRoot: 'C:/repo', fixtureRoot: 'C:/tmp/fx-999' }), base);
+});
+
+test('DV32  a command definition that cannot be trusted fails closed', () => {
+  const bad = (cmd, code) =>
+    assert.throws(() => commandMod.normalizeCommand(cmd, CMD_CTX), (e) => e.code === code, code);
+
+  // The single most dangerous shape here: a shell string is not a command
+  // definition, it is an invitation to re-split on whitespace.
+  bad({ argv: 'echo hi', timeoutMs: 5000 }, 'COMMAND_ARGV_INVALID');
+  bad({ argv: [], timeoutMs: 5000 }, 'COMMAND_ARGV_INVALID');
+  bad({ argv: [process.execPath, 42], timeoutMs: 5000 }, 'COMMAND_ARGV_INVALID');
+  bad({ argv: ['x'], timeoutMs: 10 }, 'COMMAND_TIMEOUT_INVALID');
+  bad({ argv: ['x'] }, 'COMMAND_TIMEOUT_INVALID');
+  bad({ argv: ['x'], timeoutMs: 5000, cwd: 7 }, 'COMMAND_CWD_INVALID');
+  bad({ argv: ['x'], timeoutMs: 5000, executionPolicy: { shell: true } }, 'COMMAND_DEFINITION_INVALID');
+  assert.throws(
+    () => commandMod.normalizeCommandDefinition({ probeId: 'p', mode: 'm', commands: [] }, CMD_CTX),
+    (e) => e.code === 'COMMAND_DEFINITION_INVALID',
+  );
+});
+
+test('DV33  a recorder digests what ran, not what was declared', () => {
+  const rec = commandMod.createRecorder('P1', 'sealed', CMD_CTX);
+  // A probe that ran nothing has no invocation to digest, and a digest of an
+  // empty list would make "it ran" and "it did not" agree.
+  assert.equal(rec.digest(), null);
+  assert.equal(rec.count, 0);
+
+  rec.record([process.execPath, 'C:/repo/a.cjs'], 'C:/tmp/fx-123', 60000);
+  const one = rec.digest();
+  assert.match(one, /^[0-9a-f]{64}$/);
+  assert.equal(rec.count, 1);
+
+  rec.record([process.execPath, 'C:/repo/b.cjs'], 'C:/tmp/fx-123', 60000);
+  assert.notEqual(rec.digest(), one, 'a second command must change the digest');
+  assert.equal(rec.count, 2);
+});
+
+test('DV34  real probes record a real invocation, and no secret enters it', { timeout: 600000 }, async () => {
+  const panel = await verifyMod.verify({ mode: 'pulse', repo: REPO_ROOT });
+  const rec = panel.capabilities[0];
+  assert.match(rec.commandDigest, /^[0-9a-f]{64}$/, 'a probe that ran must carry a command digest');
+  assert.ok(rec.commandCount >= 1);
+
+  // The canonical form must contain no machine-specific absolute path and no
+  // environment value. Asserted on the normalized shape rather than trusting
+  // the redactor, because the redactor is the second line of defence.
+  const def = commandMod.normalizeCommandDefinition(
+    { probeId: 'P', mode: 'pulse', commands: [{ argv: [process.execPath, 'C:/Users/someone/secret-token-dir/x.cjs'], cwd: 'C:/Users/someone', timeoutMs: 5000 }] },
+    { repoRoot: REPO_ROOT },
+  );
+  assert.equal(def.commands[0].argv[0], '<node>');
+  assert.equal(def.commands[0].argv[1], commandMod.VARIABLE, 'an unrecognised absolute path must not enter the digest');
+  assert.equal(def.commands[0].cwd, commandMod.VARIABLE);
 });
 
 // ─────────────────────────────────────────── PUBLIC ENTRYPOINT BINDING (DV26)

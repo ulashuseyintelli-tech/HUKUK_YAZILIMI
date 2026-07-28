@@ -23,6 +23,7 @@
 
 const queueMod = require('../orchestrator/queue.cjs');
 const requestMod = require('./request.cjs');
+const finalizeMod = require('./finalize.cjs');
 
 class AdapterError extends Error {
   constructor(code, detail) {
@@ -199,7 +200,17 @@ async function runEntry(o) {
         worktreePath: result.worktreePath || null,
       };
     }
-    if (state === 'MERGE_READY') return { attestationAt: (result.attestation && result.attestation.builtAt) || null };
+    if (state === 'MERGE_READY') {
+      // The handoff, not just a timestamp. Until now MERGE_READY recorded WHEN
+      // an attestation existed and nothing about WHAT it said, so a process that
+      // died here left an entry with a real open PR and no way for any other
+      // process to finish it. Everything the second half needs is written now,
+      // as plain JSON, while the process that knows it is still alive.
+      return {
+        attestationAt: (result.attestation && result.attestation.builtAt) || null,
+        handoff: finalizeMod.buildHandoff({ entry, resolved, result }),
+      };
+    }
     return {};
   };
   for (const state of stagesFor(result)) {
@@ -219,14 +230,13 @@ async function runEntry(o) {
   // non-test callers, so every task ended parked with an open PR and a queue
   // entry nobody would ever advance.
   //
-  // Two keys, as everywhere else: the request asks for it AND the standing
-  // grant authorizes it. Absent either, the task stays at MERGE_READY for a
-  // human — which is the pilot's behaviour, unchanged.
-  const wantsMerge = resolved.request.autoMerge === true;
-  const grantAllows = !!(resolved.standingGrant && resolved.standingGrant.mergePolicy
-    && resolved.standingGrant.mergePolicy.autoMergeAuthorized === true);
-
-  if (result.disposition !== 'MERGE_READY' || !wantsMerge || !grantAllows) {
+  // The two-key rule — the request asks AND the standing grant authorizes — is
+  // NOT re-implemented here. finalizeEntry owns it, because it is also reached
+  // by `orch:service finalize --entry` and by the run-until-idle drain, and a
+  // rule enforced on one of three paths to the same merge is the weakest path's
+  // policy. This returns early only for a run that never reached MERGE_READY;
+  // authorization is answered once, downstream, and reported back.
+  if (result.disposition !== 'MERGE_READY') {
     return {
       disposition: result.disposition,
       entryId: entry.entryId,
@@ -237,60 +247,49 @@ async function runEntry(o) {
     };
   }
 
-  // The kill switch is read once more here. A merge is the least reversible
-  // thing this system does, so the last thing before it is a fresh look at the
-  // one control that means stop.
-  if (o.isKillSwitchEngaged && o.isKillSwitchEngaged() === true) {
-    audit('MERGE_REFUSED', { entryId: entry.entryId, refusal: 'KILL_SWITCH_ENGAGED' });
-    advance(queue, entry.entryId, 'BLOCKED', { blockerCode: 'KILL_SWITCH_ENGAGED', owner: null }, clock());
-    return { disposition: 'BLOCKED', entryId: entry.entryId, queueState: 'BLOCKED', blockerCode: 'KILL_SWITCH_ENGAGED', pr: result.pr || null, result };
-  }
-
-  advance(queue, entry.entryId, 'MERGING', {}, clock());
-  audit('MERGE_ATTEMPTED', { entryId: entry.entryId, pr: (result.pr && result.pr.number) || null });
-
-  let closure;
-  try {
-    closure = await o.completeAfterOwnerMerge(Object.assign({}, ctx, { result }));
-  } catch (e) {
-    audit('MERGE_THREW', { entryId: entry.entryId, code: e && e.code, message: String((e && e.message) || e).slice(0, 300) });
-    advance(queue, entry.entryId, 'BLOCKED', { blockerCode: (e && e.code) || 'MERGE_THREW', owner: null }, clock());
-    return { disposition: 'BLOCKED', entryId: entry.entryId, queueState: 'BLOCKED', blockerCode: (e && e.code) || 'MERGE_THREW', pr: result.pr || null, result };
-  }
-
-  if (closure.disposition !== 'CLOSED') {
-    // Its own blocker, not a generic one. ATTESTATION_INVALIDATED means the
-    // world moved between MERGE_READY and the merge, and an operator needs to
-    // read that rather than "merge failed".
-    audit('MERGE_BLOCKED', { entryId: entry.entryId, blockerCode: closure.blockerCode, reasons: closure.reasons || null });
-    advance(queue, entry.entryId, 'BLOCKED', { blockerCode: closure.blockerCode || 'MERGE_NOT_COMPLETED', owner: null }, clock());
-    return { disposition: 'BLOCKED', entryId: entry.entryId, queueState: 'BLOCKED', blockerCode: closure.blockerCode || 'MERGE_NOT_COMPLETED', pr: result.pr || null, result };
-  }
-
-  // MERGED -> SYNCING -> CLEANING -> CLOSED, each written as it happens. The
-  // merge sha lands with MERGED so it survives a crash during cleanup: a merge
-  // that happened and was forgotten is worse than one that never happened.
-  advance(queue, entry.entryId, 'MERGED', { mergeSha: closure.mergeSha }, clock());
-  advance(queue, entry.entryId, 'SYNCING', {}, clock());
-  advance(queue, entry.entryId, 'CLEANING', { cleanup: (closure.cleanup && closure.cleanup.disposition) || null }, clock());
-  advance(queue, entry.entryId, 'CLOSED', { owner: null }, clock());
-
-  audit('TASK_CLOSED', {
-    entryId: entry.entryId,
-    mergeSha: closure.mergeSha,
-    pr: (result.pr && result.pr.number) || null,
-    cleanup: (closure.cleanup && closure.cleanup.disposition) || null,
-  });
-
-  return {
-    disposition: 'CLOSED',
-    entryId: entry.entryId,
-    queueState: 'CLOSED',
-    blockerCode: null,
-    pr: result.pr || null,
-    mergeSha: closure.mergeSha,
-    result,
-  };
+  // From here the durable finalizer owns it.
+  //
+  // This used to be forty lines of its own: kill switch, MERGING, the closure
+  // call, the blocker paths and the MERGED -> CLOSED walk, all inline. Every one
+  // of them had to be written a second time for the recovery path, and two
+  // closure paths that must agree forever is the shape that let "merged" and
+  // "closed" come apart to begin with.
+  //
+  // So there is one. finalizeEntry reads the handoff that was just written to
+  // the queue and finishes from THAT, which means the in-line route and the
+  // after-a-crash route are the same code exercising the same durable record —
+  // and the in-line route now proves the durable one works every time it runs.
+  return finalizeMod
+    .finalizeEntry({
+      queue,
+      entryId: entry.entryId,
+      repoCwd,
+      buildContext: o.buildContext,
+      completeAfterOwnerMerge: o.completeAfterOwnerMerge,
+      isKillSwitchEngaged: o.isKillSwitchEngaged,
+      isRevoked: o.isRevoked,
+      // Passed through so the in-line route verifies delivery exactly as the
+      // after-a-crash route does. Omitting it here would give the common path
+      // weaker rules than the recovery path — the asymmetry this module was
+      // rewritten to remove.
+      verifyDelivery: o.verifyDelivery,
+      audit,
+      clock,
+    })
+    .then((fin) => ({
+      // MERGE_NOT_AUTHORIZED is reported as the run's own disposition, not as a
+      // separate outcome: from the RUN's point of view the task reached
+      // MERGE_READY and parked for a human, which is what it did. The refusal
+      // belongs to the finalizer's vocabulary, not to the executor's.
+      disposition: fin.disposition === 'MERGE_NOT_AUTHORIZED' ? result.disposition : fin.disposition,
+      entryId: entry.entryId,
+      queueState: fin.queueState,
+      blockerCode: fin.blockerCode,
+      pr: result.pr || null,
+      mergeSha: fin.mergeSha || null,
+      mergeAuthorization: fin.disposition === 'MERGE_NOT_AUTHORIZED' ? fin.detail : null,
+      result,
+    }));
 }
 
 module.exports = { AdapterError, stagesFor, routeBetween, runEntry };
