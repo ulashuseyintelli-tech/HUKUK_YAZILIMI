@@ -37,6 +37,7 @@ const REASONS = [
   'PREDECESSOR_DELIVERY_NOT_RUN',
   'PREDECESSOR_DELIVERY_FAILED',
   'PREDECESSOR_DELIVERY_STALE',
+  'PREDECESSOR_DELIVERY_MERGE_SHA_MISMATCH',
   'PREDECESSOR_DELIVERY_UNWIRED',
   'PREDECESSOR_DELIVERY_EVIDENCE_INVALID',
   'PREDECESSOR_NOT_APPLICABLE_UNPROVEN',
@@ -88,6 +89,25 @@ function predecessorSatisfied(record, successorSchema) {
   }
 
   if (d.verdict === 'PASS') {
+    // Internally consistent is not the same as being about THIS task.
+    //
+    // Found by the WP04 dogfood run, which is the point of having one: an
+    // evidence record can satisfy every shape check — PASS, complete identity,
+    // verifiedAtSha === mergeSha — and still describe a different merge than
+    // the predecessor actually produced. Copied from another task, or left
+    // behind by an earlier attempt, it would have released the successor.
+    //
+    // So when the record knows its own merge sha, the evidence must agree with
+    // it. Checked before the internal-consistency test because "this evidence
+    // is about another commit" is the more specific answer.
+    const ownMergeSha = (record.payload && record.payload.mergeSha) || null;
+    if (ownMergeSha && d.mergeSha !== ownMergeSha) {
+      return {
+        ok: false,
+        reason: 'PREDECESSOR_DELIVERY_MERGE_SHA_MISMATCH',
+        detail: 'evidence mergeSha=' + String(d.mergeSha) + ' but the task merged ' + ownMergeSha,
+      };
+    }
     // A PASS is only a PASS at the commit that was merged. Evidence from the
     // branch head, or from a probe that has since changed, is a different
     // claim wearing the same word.
