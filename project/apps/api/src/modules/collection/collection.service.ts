@@ -567,6 +567,21 @@ export class CollectionService {
         );
       }
 
+      // ── RCV-COL-CURRENCY-BOUNDARY-01: ilk finansal write öncesi fail-closed ──
+      // Ratifiye bir FX/conversion contract'ı yokken Collection, Case ve allocation
+      // girdileri tek currency taşır. Omitted Collection currency mevcut backward-
+      // compatible TRY semantiğini korur; non-TRY Case için explicit eşleşme gerekir.
+      const currency = String(dto.currency || 'TRY');
+      const caseCurrency = String(caseData.currency || 'TRY');
+      if (currency !== caseCurrency) {
+        throw new BadRequestException({
+          code: 'COLLECTION_CURRENCY_MISMATCH',
+          message: 'Collection and case currencies must match.',
+          collectionCurrency: currency,
+          caseCurrency,
+        });
+      }
+
       // ── COL-LOCK-001: canonical allocation concurrency authority ─────────
       // Tenant-scoped Case doğrulamasından sonra, ilk allocation-sensitive ClaimItem
       // okumasından önce aynı case'i serialize et. Lock transaction commit/rollback'una
@@ -575,6 +590,22 @@ export class CollectionService {
         /* COL-LOCK-001: canonical allocation lock */
         SELECT pg_advisory_xact_lock(hashtextextended(${dto.caseId}, 0))
       `;
+
+      const allocationCurrencies = Array.from(
+        new Set((await tx.claimItem.findMany({
+          where: { tenantId, caseId: dto.caseId, status: 'ACTIVE' },
+          select: { currency: true },
+        })).map((claimItem) => String(claimItem.currency || 'TRY'))),
+      ).sort();
+      if (allocationCurrencies.some((claimCurrency) => claimCurrency !== caseCurrency)) {
+        throw new BadRequestException({
+          code: 'COLLECTION_CURRENCY_MISMATCH',
+          message: 'Active allocation-input currencies must match the case currency.',
+          collectionCurrency: currency,
+          caseCurrency,
+          allocationCurrencies,
+        });
+      }
 
       // ── 2. Duplicate pre-check (external source) ────────────────────────
       await this.validateCaseDebtorForCollectionInTx(tx, tenantId, dto.caseId, dto.caseDebtorId);
@@ -596,8 +627,6 @@ export class CollectionService {
       }
 
       // ── 3. Collection row create ────────────────────────────────────────
-      const currency = dto.currency || 'TRY'; // normalize for event payload
-
       const collection = await (tx as any).collection.create({
         data: {
           tenantId,
@@ -694,6 +723,16 @@ export class CollectionService {
           },
         );
         if (ledger.allocated && ledger.ledgerEntry) {
+          const ledgerCurrency = String(ledger.ledgerEntry.currency || caseCurrency);
+          if (ledgerCurrency !== caseCurrency || ledgerCurrency !== currency) {
+            throw new BadRequestException({
+              code: 'COLLECTION_CURRENCY_MISMATCH',
+              message: 'Persisted ledger currency must match the collection and case currencies.',
+              collectionCurrency: currency,
+              caseCurrency,
+              ledgerCurrency,
+            });
+          }
           ledgerEntryIds.push(ledger.ledgerEntry.id);
           ledgerAllocationCount = ledger.allocations?.length ?? 0;
           const allocatedAmount = sumAmounts(ledger.allocations || []);
@@ -710,16 +749,6 @@ export class CollectionService {
                   excludedOutstanding,
                   diagnostics: (ledger as any).diagnostics || [],
                 },
-              });
-            }
-
-            const caseCurrency = String(caseData.currency || 'TRY');
-            const ledgerCurrency = ledger.ledgerEntry.currency ? String(ledger.ledgerEntry.currency) : currency;
-            if (currency !== caseCurrency || ledgerCurrency !== caseCurrency || ledgerCurrency !== currency) {
-              blocks.push({
-                reason: 'CURRENCY_MISMATCH',
-                message: 'Collection, case, and ledger currencies are not aligned.',
-                details: { collectionCurrency: currency, caseCurrency, ledgerCurrency },
               });
             }
 
