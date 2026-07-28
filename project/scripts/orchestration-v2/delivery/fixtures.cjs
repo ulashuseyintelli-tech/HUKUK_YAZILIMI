@@ -310,11 +310,19 @@ function officeRequest(root, over) {
   const o = over || {};
   const g = readRepoGrant(OFFICE_GRANT);
   const spec = {
+    schemaVersion: 1,
     taskId: o.taskId || 'PROBE-OFFICE-PATH-01',
+    taskSpecVersion: 1,
+    profile: 'BOUNDED_CODE_TASK',
+    declaredIntent: 'delivery probe fixture: a bounded, test-only change inside the granted roots',
     boundaryPolicy: {
       allowedRoots: o.allowedRoots || [g.allowedPathRoots[0] + '__tests__/'],
       maxChangedFiles: 2,
     },
+    requiredTests: [{ argv: ['pnpm', 'exec', 'jest', '--version'], cwd: 'project', timeoutMs: 60000 }],
+    predecessorTaskIds: [],
+    baseDriftPolicy: 'REFRESH_BEFORE_EXECUTION',
+    successorDisposition: 'OWNER_AUTHORIZATION_REQUIRED',
   };
   const planPath = writePlan(root, spec);
   return {
@@ -334,11 +342,22 @@ function officeRequest(root, over) {
 function governanceRequest(root, over) {
   const o = over || {};
   const spec = {
+    schemaVersion: 1,
     taskId: o.taskId || 'PROBE-GOV-01',
+    taskSpecVersion: 1,
+    profile: 'MECHANICAL_GOVERNANCE',
+    declaredIntent: 'delivery probe fixture: an exact mechanical governance write',
     boundaryPolicy: {
       allowedRoots: o.allowedRoots || ['project/docs/governance/coordination-requests/PROBE-REQ-1/request.md'],
       maxChangedFiles: 1,
     },
+    mechanicalOperation: {
+      operationType: 'EXACT_APPEND_AT_DECLARED_ANCHOR',
+      expectedResultSha256: 'a'.repeat(64),
+    },
+    predecessorTaskIds: [],
+    baseDriftPolicy: 'REFRESH_BEFORE_EXECUTION',
+    successorDisposition: 'OWNER_AUTHORIZATION_REQUIRED',
   };
   const planPath = writePlan(root, spec);
   return {
@@ -649,9 +668,21 @@ function mergeWorld(over) {
 
   const g = readRepoGrant(OFFICE_GRANT);
   const taskId = o.taskId || 'PROBE-FINALIZE-01';
+  // A COMPLETE plan. Resolution normalizes the spec now — one notion of a
+  // plan's identity, shared with the attestation and the merge gate — so a
+  // fixture carrying only the two fields the old raw digest happened to read
+  // is refused at enqueue, correctly.
   const spec = {
+    schemaVersion: 1,
     taskId,
+    taskSpecVersion: 1,
+    profile: 'BOUNDED_CODE_TASK',
+    declaredIntent: 'delivery probe fixture: a bounded, test-only change inside the granted roots',
     boundaryPolicy: { allowedRoots: [g.allowedPathRoots[0] + '__tests__/'], maxChangedFiles: 2 },
+    requiredTests: [{ argv: ['pnpm', 'exec', 'jest', '--version'], cwd: 'project', timeoutMs: 60000 }],
+    predecessorTaskIds: [],
+    baseDriftPolicy: 'REFRESH_BEFORE_EXECUTION',
+    successorDisposition: 'OWNER_AUTHORIZATION_REQUIRED',
   };
   const planPath = writePlan(root, spec);
   const requestPath = writeRequest(root, {
