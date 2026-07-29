@@ -6681,6 +6681,7 @@ model BankTransaction {
   settlementEvidence BankSettlementEvidence? @relation(fields: [tenantId, settlementEvidenceId], references: [tenantId, id], onDelete: Restrict)
 
   @@unique([tenantId, settlementEvidenceId])
+  @@unique([tenantId, bankAccountId, bankReferenceId], map: "uq_bank_transaction_tenant_account_reference")
   @@index([tenantId])
   @@index([bankAccountId])
   @@index([transactionDate])

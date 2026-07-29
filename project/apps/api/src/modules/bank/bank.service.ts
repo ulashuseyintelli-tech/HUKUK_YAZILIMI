@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { maskIban } from '../../common/pii-mask.util';
 import { CollectionService } from '../collection/collection.service';
@@ -79,13 +80,20 @@ export interface SyncResult {
   transactionCount: number;
   newTransactions: number;
   matchedTransactions: number;
+  errorCode?: string;
   errorMessage?: string;
 }
+
+export const BANK_REFERENCE_ALREADY_EXISTS = 'BANK_REFERENCE_ALREADY_EXISTS';
 
 const BANK_CANDIDATE_PENDING = 'PENDING' as const;
 const BANK_CANDIDATE_SETTLED = 'SETTLED' as const;
 const BANK_SETTLEMENT_EVIDENCE_SOURCE = 'SETTLEMENT_VERIFIER' as const;
 const BANK_SETTLEMENT_EVIDENCE_OUTCOME = 'SETTLED' as const;
+
+type NormalizedBankTransactionData = Omit<BankTransactionData, 'bankReferenceId'> & {
+  bankReferenceId: string | null;
+};
 
 @Injectable()
 export class BankService {
@@ -239,46 +247,27 @@ export class BankService {
       let newCount = 0;
       let matchedCount = 0;
 
-      for (const tx of transactions) {
-        // Aynı işlem var mı kontrol et
-        const existing = await this.db.bankTransaction.findFirst({
-          where: {
-            tenantId,
-            bankAccountId: accountId,
-            bankReferenceId: tx.bankReferenceId,
-          },
-        });
+      for (const providerTransaction of transactions) {
+        const tx = this.normalizeBankTransaction(providerTransaction);
+        const persisted = await this.persistOrReplayBankTransaction(
+          account.tenantId,
+          accountId,
+          tx,
+        );
 
-        if (!existing) {
-          // Yeni işlem ekle
-          const created = await this.db.bankTransaction.create({
-            data: {
-              tenantId: account.tenantId,
-              bankAccountId: accountId,
-              transactionDate: tx.transactionDate,
-              valueDate: tx.valueDate,
-              amount: tx.amount,
-              currency: tx.currency,
-              transactionType: tx.transactionType,
-              counterpartyName: tx.counterpartyName,
-              counterpartyIban: tx.counterpartyIban,
-              counterpartyBank: tx.counterpartyBank,
-              description: tx.description,
-              referenceNo: tx.referenceNo,
-              bankReferenceId: tx.bankReferenceId,
-              ...(tx.transactionType === 'INCOMING'
-                ? { candidateStatus: BANK_CANDIDATE_PENDING }
-                : {}),
-            },
-          });
+        if (!persisted.created) {
+          continue;
+        }
 
-          newCount++;
+        newCount++;
 
-          // Otomatik eşleştirme dene
-          if (tx.transactionType === 'INCOMING') {
-            const matched = await this.tryAutoMatch(created.id, account.tenantId);
-            if (matched) matchedCount++;
-          }
+        // Otomatik eşleştirme yalnız gerçekten yeni kayıtta denenir.
+        if (tx.transactionType === 'INCOMING') {
+          const matched = await this.tryAutoMatch(
+            persisted.transaction.id,
+            account.tenantId,
+          );
+          if (matched) matchedCount++;
         }
       }
 
@@ -305,12 +294,17 @@ export class BankService {
         matchedTransactions: matchedCount,
       };
     } catch (error: any) {
+      const errorCode = this.readDomainErrorCode(error);
+      const errorMessage = errorCode
+        ? 'Aynı banka referansı farklı işlem semantiğiyle zaten mevcut'
+        : error.message;
+
       // Log güncelle
       await this.db.bankIntegrationLog.update({
         where: { id: log.id },
         data: {
           status: 'FAILED',
-          errorMessage: error.message,
+          errorMessage,
           completedAt: new Date(),
         },
       });
@@ -320,9 +314,144 @@ export class BankService {
         transactionCount: 0,
         newTransactions: 0,
         matchedTransactions: 0,
-        errorMessage: error.message,
+        errorCode,
+        errorMessage,
       };
     }
+  }
+
+  /**
+   * BankController.syncTransactions() içindeki provider hareketini normalize eder.
+   * Referans için yalnız semantik-korumalı trim ve empty-to-null uygulanır.
+   */
+  private normalizeBankTransaction(
+    transaction: BankTransactionData,
+  ): NormalizedBankTransactionData {
+    const bankReferenceId = transaction.bankReferenceId?.trim() || null;
+    return { ...transaction, bankReferenceId };
+  }
+
+  /**
+   * BankService.syncTransactions() tarafından çağrılır. DB unique constraint son
+   * authority'dir; pre-check yalnız hızlı replay/conflict ayrımı sağlar.
+   */
+  private async persistOrReplayBankTransaction(
+    tenantId: string,
+    bankAccountId: string,
+    transaction: NormalizedBankTransactionData,
+  ): Promise<{ transaction: any; created: boolean }> {
+    const existing = await this.findByBankReference(
+      tenantId,
+      bankAccountId,
+      transaction.bankReferenceId,
+    );
+    if (existing) {
+      return this.resolveBankReferenceReplay(existing, transaction);
+    }
+
+    try {
+      const created = await this.db.bankTransaction.create({
+        data: {
+          tenantId,
+          bankAccountId,
+          transactionDate: transaction.transactionDate,
+          valueDate: transaction.valueDate,
+          amount: transaction.amount,
+          currency: transaction.currency,
+          transactionType: transaction.transactionType,
+          counterpartyName: transaction.counterpartyName,
+          counterpartyIban: transaction.counterpartyIban,
+          counterpartyBank: transaction.counterpartyBank,
+          description: transaction.description,
+          referenceNo: transaction.referenceNo,
+          bankReferenceId: transaction.bankReferenceId,
+          ...(transaction.transactionType === 'INCOMING'
+            ? { candidateStatus: BANK_CANDIDATE_PENDING }
+            : {}),
+        },
+      });
+      return { transaction: created, created: true };
+    } catch (error: any) {
+      if (error?.code !== 'P2002' || transaction.bankReferenceId === null) {
+        throw error;
+      }
+
+      const concurrent = await this.findByBankReference(
+        tenantId,
+        bankAccountId,
+        transaction.bankReferenceId,
+      );
+      if (!concurrent) {
+        throw error;
+      }
+      return this.resolveBankReferenceReplay(concurrent, transaction);
+    }
+  }
+
+  private async findByBankReference(
+    tenantId: string,
+    bankAccountId: string,
+    bankReferenceId: string | null,
+  ): Promise<any | null> {
+    if (bankReferenceId === null) {
+      return null;
+    }
+    return this.db.bankTransaction.findFirst({
+      where: { tenantId, bankAccountId, bankReferenceId },
+    });
+  }
+
+  private resolveBankReferenceReplay(
+    existing: any,
+    incoming: NormalizedBankTransactionData,
+  ): { transaction: any; created: false } {
+    if (!this.hasSameBankTransactionSemantics(existing, incoming)) {
+      throw new ConflictException({
+        code: BANK_REFERENCE_ALREADY_EXISTS,
+        message: 'Aynı banka referansı farklı işlem semantiğiyle zaten mevcut',
+      });
+    }
+    return { transaction: existing, created: false };
+  }
+
+  private hasSameBankTransactionSemantics(
+    existing: any,
+    incoming: NormalizedBankTransactionData,
+  ): boolean {
+    let sameAmount = false;
+    try {
+      sameAmount = new Prisma.Decimal(existing.amount).equals(
+        new Prisma.Decimal(incoming.amount),
+      );
+    } catch {
+      return false;
+    }
+
+    return (
+      sameAmount &&
+      existing.currency === incoming.currency &&
+      existing.transactionType === incoming.transactionType &&
+      this.sameInstant(existing.transactionDate, incoming.transactionDate) &&
+      this.sameInstant(existing.valueDate, incoming.valueDate)
+    );
+  }
+
+  private sameInstant(left: Date | string | null | undefined, right: Date | null | undefined): boolean {
+    if (left == null || right == null) {
+      return left == null && right == null;
+    }
+    return new Date(left).getTime() === new Date(right).getTime();
+  }
+
+  private readDomainErrorCode(error: unknown): string | undefined {
+    if (!(error instanceof ConflictException)) {
+      return undefined;
+    }
+    const response = error.getResponse();
+    if (typeof response !== 'object' || response === null || !('code' in response)) {
+      return undefined;
+    }
+    return String((response as { code: unknown }).code);
   }
 
   /**
