@@ -5,7 +5,7 @@
  */
 
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import {
   RecipeRegistryEntry,
   ParamsRegistryEntry,
