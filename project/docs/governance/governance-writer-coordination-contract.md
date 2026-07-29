@@ -824,3 +824,128 @@ başlatmaz; D02-F01, resolver/provider wiring, I04/I05, canary ve containment
 retirement'a authority vermez. AWS account ID, key/IAM ARN, credential, token,
 public/private key material, wildcard, prefix authority veya reusable authority
 taşımaz. PR #1867 merge veya close olduğunda binding yeniden kullanılamaz.
+
+## GOVERNANCE CLOSEOUT LIVE LEDGER GAP — root-authority bootstrap binding
+
+Owner-ratified 2026-07-29. Bu kayıt yalnız aşağıdaki iki aşamalı, task-specific
+bootstrap protokolünü tanır. Stage 1 control-plane binding'i oluşturur; canonical
+authority kaydı yazmaz. Stage 2 ayrı ve fresh owner grant olmadan yetkili değildir.
+
+```text
+Protocol mode ID : GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01
+Program ID       : GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01
+Target task      : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01
+Workspace module : SHARED_CONTROL_PLANE
+Owner name       : Av. Ulaş Hüseyin Telli
+Owner role       : Repository Owner / Semantic Authority
+Issued at        : 2026-07-29
+```
+
+### Stage 1 — exact control-plane binding
+
+```text
+Task ID  : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : 35e215cde413dd3de42093f967c01b4929f37fed
+publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT
+Head ref : codex/governance-closeout-live-ledger-gap-r01-authority-bootstrap-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Stage 1 yalnız exact task, mode, branch ve complete `M/M/M` status/path setiyle
+kabul edilir. `Base SHA` owner-pinned execution-start base'idir. Publication
+base yalnız bu SHA veya onun Git-backed descendant'ı olabilir; descendant kabulü
+üç Stage 1 binding blob'unun owner-pinned base ile birebir aynı kalmasını
+gerektirir. Eski/unrelated base, binding-blob drift, ek/eksik path veya status
+drift fail-closed reddedilir. Bu aşama Decision Log, execution grant,
+design/audit artifact, closeout runner, ledger veya ürün yüzeyi yazamaz.
+
+### Stage 2 — prospective exact authority materialization binding
+
+```text
+Task ID           : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-AUTHORITY-MATERIALIZATION-R01
+Mode              : GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_AUTHORITY_MATERIALIZATION_R01
+Head ref          : codex/governance-closeout-live-ledger-gap-r01-authority-bootstrap
+Scope             : M project/docs/governance/decision-log.md
+                    A project/docs/governance/coordination-execution-grants/GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01.md
+stage2Predecessor : OWNER_GRANT_2_REQUIRED
+stage2Base : OWNER_GRANT_2_REQUIRED
+STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED
+```
+
+Stage 2 owner grant'i canonical Stage 1 squash SHA'sını predecessor, fresh
+`origin/main` SHA'sını exact base olarak ayrıca pinler. Predecessor burada
+tahmin edilmez. Stage 2 ancak base bu unique predecessor'ın descendant'ıysa ve
+Stage 1'deki script, test ve contract blob'ları değişmemişse kabul edilir.
+
+Stage 2'nin iki distinct canonical kaydı ve exact content şeması:
+
+```text
+recordType : SEMANTIC_AUTHORITY
+recordId : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01
+path : project/docs/governance/decision-log.md
+programId : GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01
+taskId : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+decision : RATIFIED
+issuedAt : 2026-07-29
+status : ACTIVE_AFTER_APPROVED_MERGE
+exactTaskBinding : REQUIRED
+exactPrBinding : REQUIRED
+exactHeadBinding : REQUIRED
+exactScopeBinding : REQUIRED
+requiredChecksBinding : REQUIRED
+singleUseConsumption : REQUIRED
+staleReuse : PROHIBITED
+manualFallback : EMERGENCY_ONLY
+productionActivation : NOT_AUTHORIZED
+standingAuthority : PROHIBITED
+```
+
+Semantic marker Decision Log'da exact bir kez bulunur ve aynı satırdaki exact
+record kimliğini işaret eder:
+
+```html
+<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01 -->
+```
+
+```text
+recordType : EXECUTION_GRANT
+recordId : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01
+path : project/docs/governance/coordination-execution-grants/GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01.md
+programId : GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01
+taskId : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+executionMode : GO-COMPLETE
+workspaceModule : SHARED_CONTROL_PLANE
+issuedAt : 2026-07-29
+status : ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK
+stage1PredecessorSha : <OWNER_GRANT_2_EXACT_SHA>
+stage2BaseSha : <OWNER_GRANT_2_EXACT_SHA>
+productionActivation : NOT_AUTHORIZED
+ciBypass : PROHIBITED
+ledgerBypass : PROHIBITED
+standingAuthority : PROHIBITED
+reusableAuthority : PROHIBITED
+semanticAuthorityRef.kind : SEMANTIC_AUTHORITY
+semanticAuthorityRef.path : project/docs/governance/decision-log.md
+semanticAuthorityRef.recordId : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01
+```
+
+Execution marker execution-grant dosyasında exact bir kez bulunur:
+
+```html
+<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01 -->
+```
+
+`globalAuthority : PROHIBITED`, `reusableAuthority : PROHIBITED` ve
+`auditAsAuthority : PROHIBITED` bağlayıcıdır. İki kayıt kind, path ve record ID
+bakımından distinct kalır. Stage 2 base'inde bu kayıt veya marker'lardan biri
+zaten varsa mode consumed sayılır ve reuse reddedilir. Bu binding global owner
+authority, wildcard/prefix authority, standing scheduler/auto-merge, ledger/CI
+bypass, production activation, closeout implementasyonu veya başka task için
+yetki üretmez.

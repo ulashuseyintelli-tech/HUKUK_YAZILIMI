@@ -120,6 +120,14 @@ function expectCode(fn, code) {
   });
 }
 
+function expectFixtureCodeUnchanged(fixture, fn, code) {
+  const beforeTree = runFixtureGit(['rev-parse', 'HEAD^{tree}'], fixture.root);
+  const beforeStatus = runFixtureGit(['status', '--porcelain'], fixture.root);
+  expectCode(fn, code);
+  assert.equal(runFixtureGit(['rev-parse', 'HEAD^{tree}'], fixture.root), beforeTree);
+  assert.equal(runFixtureGit(['status', '--porcelain'], fixture.root), beforeStatus);
+}
+
 function validRequest() {
   return clone(coordination.makeSelfTestRequest().request);
 }
@@ -380,6 +388,194 @@ function kc01AuthorityTargetChanges() {
   return coordination.RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
   );
+}
+
+function rootAuthorityStage1Changes() {
+  return coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function rootAuthorityStage2Changes() {
+  return coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function rootAuthorityContractContent() {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  return [
+    '# Root authority binding fixture',
+    binding.protocolModeId,
+    binding.programId,
+    binding.targetTaskId,
+    binding.workspaceModule,
+    binding.ownerName,
+    binding.ownerRole,
+    binding.issuedAt,
+    binding.bindingPr.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    ...binding.bindingPr.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    binding.targetPr.taskId,
+    binding.targetPr.mode,
+    binding.targetPr.headRef,
+    ...binding.targetPr.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    binding.targetPr.semanticAuthority.kind,
+    binding.targetPr.semanticAuthority.path,
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.kind,
+    binding.targetPr.executionGrant.path,
+    binding.targetPr.executionGrant.recordId,
+    'stage2Predecessor : OWNER_GRANT_2_REQUIRED',
+    'stage2Base : OWNER_GRANT_2_REQUIRED',
+    'publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT',
+    'globalAuthority : PROHIBITED',
+    'reusableAuthority : PROHIBITED',
+    'auditAsAuthority : PROHIBITED',
+    'STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED',
+    '',
+  ].join('\n');
+}
+
+function createRootAuthorityStage2GitFixture(t, options = {}) {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const target = binding.targetPr;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-root-auth-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+
+  for (const { path: repoPath } of binding.bindingPr.changedPaths) {
+    const filePath = path.join(root, ...repoPath.split('/'));
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(
+      filePath,
+      repoPath === binding.contractPath
+        ? options.missingPredecessor
+          ? rootAuthorityContractContent().replace(binding.bindingPr.taskId, 'MISSING-STAGE1')
+          : rootAuthorityContractContent()
+        : `${repoPath}\n`,
+      'utf8',
+    );
+  }
+  const decisionPath = path.join(
+    root,
+    ...target.semanticAuthority.path.split('/'),
+  );
+  fs.mkdirSync(path.dirname(decisionPath), { recursive: true });
+  fs.writeFileSync(
+    decisionPath,
+    options.consumedAtBase
+      ? `# Decision Log\n${target.semanticAuthority.recordId}\n`
+      : '# Decision Log\n',
+    'utf8',
+  );
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'canonical Stage 1 binding'], root);
+  const predecessor = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  if (options.freshMain || options.driftPath) {
+    const driftPath = options.driftPath || 'unrelated.md';
+    const filePath = path.join(root, ...driftPath.split('/'));
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.appendFileSync(filePath, 'fresh main advance\n', 'utf8');
+    runFixtureGit(['add', '--all'], root);
+    runFixtureGit(['commit', '--quiet', '-m', 'advance Stage 2 base'], root);
+  }
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  const semanticRecordId =
+    options.semanticRecordId || target.semanticAuthority.recordId;
+  const executionRecordId =
+    options.executionRecordId || target.executionGrant.recordId;
+  const ownerName = options.ownerName || binding.ownerName;
+  const ownerRole = options.ownerRole || binding.ownerRole;
+  const programId = options.programId || binding.programId;
+  const targetTaskId = options.targetTaskId || binding.targetTaskId;
+  const semanticMarker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${semanticRecordId} -->`;
+  fs.appendFileSync(
+    decisionPath,
+    [
+      `| 2026-07-29 | ${semanticMarker} **${semanticRecordId} — root authority** |`,
+      options.duplicateSemanticMarker ? semanticMarker : '',
+      'recordType : SEMANTIC_AUTHORITY',
+      `recordId : ${semanticRecordId}`,
+      `programId : ${programId}`,
+      `taskId : ${targetTaskId}`,
+      `ownerName : ${ownerName}`,
+      `ownerRole : ${ownerRole}`,
+      'decision : RATIFIED',
+      `issuedAt : ${binding.issuedAt}`,
+      'status : ACTIVE_AFTER_APPROVED_MERGE',
+      'exactTaskBinding : REQUIRED',
+      'exactPrBinding : REQUIRED',
+      'exactHeadBinding : REQUIRED',
+      'exactScopeBinding : REQUIRED',
+      'requiredChecksBinding : REQUIRED',
+      'singleUseConsumption : REQUIRED',
+      'staleReuse : PROHIBITED',
+      'manualFallback : EMERGENCY_ONLY',
+      'productionActivation : NOT_AUTHORIZED',
+      'standingAuthority : PROHIBITED',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const grantPath = path.join(root, ...target.executionGrant.path.split('/'));
+  fs.mkdirSync(path.dirname(grantPath), { recursive: true });
+  const executionMarker = `<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=${executionRecordId} -->`;
+  fs.writeFileSync(
+    grantPath,
+    [
+      '# Execution Grant',
+      executionMarker,
+      options.duplicateExecutionMarker ? executionMarker : '',
+      'recordType : EXECUTION_GRANT',
+      `recordId : ${executionRecordId}`,
+      `programId : ${programId}`,
+      `taskId : ${targetTaskId}`,
+      `ownerName : ${ownerName}`,
+      `ownerRole : ${ownerRole}`,
+      'executionMode : GO-COMPLETE',
+      `workspaceModule : ${binding.workspaceModule}`,
+      `issuedAt : ${binding.issuedAt}`,
+      'status : ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK',
+      `stage1PredecessorSha : ${options.stage1PredecessorSha || predecessor}`,
+      `stage2BaseSha : ${options.stage2BaseSha || base}`,
+      'productionActivation : NOT_AUTHORIZED',
+      'ciBypass : PROHIBITED',
+      'ledgerBypass : PROHIBITED',
+      'standingAuthority : PROHIBITED',
+      'reusableAuthority : PROHIBITED',
+      `semanticAuthorityRef.kind : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${
+        options.semanticBindingRecordId || target.semanticAuthority.recordId
+      }`,
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'prospective Stage 2 materialization'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, predecessor, base, head };
 }
 
 function pb01ClosureBindingChanges() {
@@ -4128,4 +4324,397 @@ test('current repository register matches deterministic generated output', () =>
 
 test('CLI self-test core passes', () => {
   assert.equal(coordination.runSelfTest(), true);
+});
+
+test('root-authority Stage 1 accepts only the revised pinned base and exact binding', () => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const classification = coordination.classifyPrChangeSet(
+    rootAuthorityStage1Changes(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.deepEqual(classification, {
+    mode: binding.bindingPr.mode,
+    taskId: binding.bindingPr.taskId,
+  });
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(rootAuthorityStage1Changes(), {
+      base: 'f307990c3f6552e16df57626e6ceb2fd4ca4b433',
+      headRef: binding.bindingPr.headRef,
+      cwd: REPO_ROOT,
+    }),
+    classification,
+  );
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rootAuthorityContractContent(),
+  );
+  const result = coordination.validateRootAuthorityBootstrapBindingScope({
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: rootAuthorityStage1Changes(),
+    taskId: binding.bindingPr.taskId,
+    mode: binding.bindingPr.mode,
+    cwd: fixture.root,
+  });
+  assert.deepEqual(result, classification);
+});
+
+test('root-authority Stage 1 rejects the superseded and any other base', () => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  for (const base of [
+    '8738bfcde7d962dda7729fc92ff1dfb929881f33',
+    '9c0781fd5aaea3939af75d1189c6134c366f9f0a',
+    'd'.repeat(40),
+  ]) {
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(rootAuthorityStage1Changes(), {
+          base,
+          headRef: binding.bindingPr.headRef,
+        }),
+      'ROOT_BOOTSTRAP_STAGE1_BASE_MISMATCH',
+    );
+  }
+});
+
+test('root-authority Stage 1 rejects branch, every path omission, status drift and expansion', () => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(rootAuthorityStage1Changes(), {
+        base: binding.bindingPr.baseSha,
+        headRef: `${binding.bindingPr.headRef}-copy`,
+      }),
+    'ROOT_BOOTSTRAP_STAGE1_BRANCH_MISMATCH',
+  );
+
+  const valid = rootAuthorityStage1Changes();
+  for (let index = 0; index < valid.length; index += 1) {
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(
+          valid.filter((_, candidate) => candidate !== index),
+          {
+            base: binding.bindingPr.baseSha,
+            headRef: binding.bindingPr.headRef,
+          },
+        ),
+      'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+    );
+    const wrongStatus = rootAuthorityStage1Changes();
+    wrongStatus[index] = { ...wrongStatus[index], status: 'A' };
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(wrongStatus, {
+          base: binding.bindingPr.baseSha,
+          headRef: binding.bindingPr.headRef,
+        }),
+      'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+    );
+  }
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        [
+          ...valid,
+          { status: 'M', path: 'project/docs/governance/decision-log.md' },
+        ],
+        {
+          base: binding.bindingPr.baseSha,
+          headRef: binding.bindingPr.headRef,
+        },
+      ),
+    'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+  );
+});
+
+test('root-authority Stage 1 rejects wrong identities and inactive or duplicate mode state', () => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rootAuthorityContractContent(),
+  );
+  const valid = {
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: rootAuthorityStage1Changes(),
+    taskId: binding.bindingPr.taskId,
+    mode: binding.bindingPr.mode,
+    cwd: fixture.root,
+  };
+  for (const [override, code] of [
+    [{ protocolModeId: 'WRONG_MODE' }, 'ROOT_BOOTSTRAP_STAGE1_TASK_MISMATCH'],
+    [{ programId: 'WRONG_PROGRAM' }, 'ROOT_BOOTSTRAP_TARGET_MISMATCH'],
+    [{ targetTaskId: 'WRONG_TARGET' }, 'ROOT_BOOTSTRAP_TARGET_MISMATCH'],
+    [{ taskId: 'WRONG_STAGE1_TASK' }, 'ROOT_BOOTSTRAP_STAGE1_TASK_MISMATCH'],
+    [{ mode: 'WRONG_STAGE1_MODE' }, 'ROOT_BOOTSTRAP_STAGE1_TASK_MISMATCH'],
+    [{ activeModeCount: 2 }, 'ROOT_BOOTSTRAP_DUPLICATE_ACTIVE_MODE'],
+    [{ bootstrapState: 'CONSUMED' }, 'ROOT_BOOTSTRAP_MODE_CONSUMED'],
+    [{ bootstrapState: 'REVOKED' }, 'ROOT_BOOTSTRAP_GRANT_INACTIVE'],
+    [{ bootstrapState: 'EXPIRED' }, 'ROOT_BOOTSTRAP_GRANT_INACTIVE'],
+  ]) {
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validateRootAuthorityBootstrapBindingScope({
+          ...valid,
+          ...override,
+        }),
+      code,
+    );
+  }
+});
+
+test('root-authority Stage 1 contract rejects global reusable or audit authority drift', () => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  for (const forbiddenControl of [
+    'globalAuthority : PROHIBITED',
+    'reusableAuthority : PROHIBITED',
+    'auditAsAuthority : PROHIBITED',
+  ]) {
+    const fixture = createAuthorityGitFixture(
+      binding.contractPath,
+      rootAuthorityContractContent().replace(forbiddenControl, ''),
+    );
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validateRootAuthorityBootstrapBindingScope({
+          base: binding.bindingPr.baseSha,
+          head: fixture.head,
+          headRef: binding.bindingPr.headRef,
+          changes: rootAuthorityStage1Changes(),
+          taskId: binding.bindingPr.taskId,
+          mode: binding.bindingPr.mode,
+          cwd: fixture.root,
+        }),
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    );
+  }
+});
+
+test('root-authority Stage 2 prospective tuple is exact and authority references are distinct', () => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const classification = coordination.classifyPrChangeSet(
+    rootAuthorityStage2Changes(),
+    { headRef: binding.targetPr.headRef },
+  );
+  assert.deepEqual(classification, {
+    mode: binding.targetPr.mode,
+    taskId: binding.targetPr.taskId,
+  });
+  coordination.validateRootAuthorityReferencePair(
+    binding.targetPr.semanticAuthority,
+    binding.targetPr.executionGrant,
+  );
+  assert.notEqual(
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.recordId,
+  );
+
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(rootAuthorityStage2Changes(), {
+        headRef: `${binding.targetPr.headRef}-copy`,
+      }),
+    'ROOT_BOOTSTRAP_STAGE2_BRANCH_MISMATCH',
+  );
+  for (let index = 0; index < rootAuthorityStage2Changes().length; index += 1) {
+    const wrongStatus = rootAuthorityStage2Changes();
+    wrongStatus[index] = {
+      ...wrongStatus[index],
+      status: wrongStatus[index].status === 'M' ? 'A' : 'M',
+    };
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(wrongStatus, {
+          headRef: binding.targetPr.headRef,
+        }),
+      'ROOT_BOOTSTRAP_STAGE2_SCOPE_MISMATCH',
+    );
+  }
+
+  expectCode(
+    () =>
+      coordination.validateRootAuthorityReferencePair(
+        binding.targetPr.semanticAuthority,
+        {
+          ...binding.targetPr.executionGrant,
+          recordId: binding.targetPr.semanticAuthority.recordId,
+        },
+      ),
+    'AUTHORITY_REFERENCE_COLLISION',
+  );
+  expectCode(
+    () =>
+      coordination.validateRootAuthorityReferencePair(
+        {
+          ...binding.targetPr.semanticAuthority,
+          path: 'project/docs/governance/root-authority-bootstrap-design-r01/decision-log.md',
+        },
+        binding.targetPr.executionGrant,
+      ),
+    'ROOT_BOOTSTRAP_AUTHORITY_PATH_INVALID',
+  );
+});
+
+test('root-authority Stage 2 prospective validator resolves canonical predecessor and exact records', (t) => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  for (const freshMain of [false, true]) {
+    const fixture = createRootAuthorityStage2GitFixture(t, { freshMain });
+    const result = coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    });
+    assert.deepEqual(result, {
+      mode: binding.targetPr.mode,
+      taskId: binding.targetPr.taskId,
+    });
+  }
+});
+
+test('root-authority Stage 2 rejects wrong task mode record identity owner target and binding', (t) => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const contentCases = [
+    [{ semanticRecordId: 'WRONG-SA' }, 'ROOT_BOOTSTRAP_SA_RECORD_INVALID'],
+    [{ executionRecordId: 'WRONG-EG' }, 'ROOT_BOOTSTRAP_EG_RECORD_INVALID'],
+    [{ duplicateSemanticMarker: true }, 'ROOT_BOOTSTRAP_SA_RECORD_INVALID'],
+    [{ duplicateExecutionMarker: true }, 'ROOT_BOOTSTRAP_EG_RECORD_INVALID'],
+    [{ ownerName: 'Wrong Owner' }, 'ROOT_BOOTSTRAP_OWNER_IDENTITY_MISMATCH'],
+    [{ ownerRole: 'Wrong Role' }, 'ROOT_BOOTSTRAP_OWNER_IDENTITY_MISMATCH'],
+    [{ programId: 'WRONG-PROGRAM' }, 'ROOT_BOOTSTRAP_TARGET_MISMATCH'],
+    [{ targetTaskId: 'WRONG-TARGET' }, 'ROOT_BOOTSTRAP_TARGET_MISMATCH'],
+    [
+      { semanticBindingRecordId: 'ANOTHER-SA' },
+      'ROOT_BOOTSTRAP_EG_RECORD_INVALID',
+    ],
+  ];
+  for (const [fixtureOptions, code] of contentCases) {
+    const fixture = createRootAuthorityStage2GitFixture(t, fixtureOptions);
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      code,
+    );
+  }
+
+  const fixture = createRootAuthorityStage2GitFixture(t);
+  for (const override of [{ taskId: 'WRONG-TASK' }, { mode: 'WRONG-MODE' }]) {
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validateRootAuthorityBootstrapMaterializationScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          changes: rootAuthorityStage2Changes(),
+          taskId: binding.targetPr.taskId,
+          mode: binding.targetPr.mode,
+          cwd: fixture.root,
+          ...override,
+        }),
+      'ROOT_BOOTSTRAP_TARGET_MISMATCH',
+    );
+  }
+});
+
+test('root-authority Stage 2 rejects missing or changed predecessor, wrong base pin and consumed reuse', (t) => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  for (const [fixtureOptions, code] of [
+    [{ missingPredecessor: true }, 'ROOT_BOOTSTRAP_PREDECESSOR_MISSING'],
+    [
+      { driftPath: 'project/scripts/governance-coordination.cjs' },
+      'ROOT_BOOTSTRAP_STAGE2_BASE_INVALIDATED',
+    ],
+    [{ stage1PredecessorSha: 'a'.repeat(40) }, 'ROOT_BOOTSTRAP_PREDECESSOR_MISMATCH'],
+    [{ stage2BaseSha: 'b'.repeat(40) }, 'ROOT_BOOTSTRAP_STAGE2_BASE_INVALIDATED'],
+    [{ consumedAtBase: true }, 'ROOT_BOOTSTRAP_MODE_CONSUMED'],
+  ]) {
+    const fixture = createRootAuthorityStage2GitFixture(t, fixtureOptions);
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      code,
+    );
+  }
+});
+
+test('root-authority classifier is deterministic and existing bootstrap modes remain unchanged', () => {
+  const root =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const first = coordination.classifyPrChangeSet(rootAuthorityStage1Changes(), {
+    base: root.bindingPr.baseSha,
+    headRef: root.bindingPr.headRef,
+  });
+  const second = coordination.classifyPrChangeSet(rootAuthorityStage1Changes(), {
+    base: root.bindingPr.baseSha,
+    headRef: root.bindingPr.headRef,
+  });
+  assert.deepEqual(first, second);
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(
+      [{ status: 'M', path: 'project/apps/api/src/app.module.ts' }],
+      {
+        base: root.bindingPr.baseSha,
+        headRef: 'codex/unrelated-production-change',
+      },
+    ),
+    { mode: 'NON_COORDINATION_PR' },
+  );
+
+  for (const [binding, changes] of [
+    [
+      coordination.RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
+      rcvColBindingChanges(),
+    ],
+    [
+      coordination.RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
+      hcr08BindingChanges(),
+    ],
+    [
+      coordination.RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
+      pb01BindingChanges(),
+    ],
+    [
+      coordination.RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
+      kc01AuthorityBindingChanges(),
+    ],
+  ]) {
+    assert.deepEqual(
+      coordination.classifyPrChangeSet(changes, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+      { mode: binding.bindingPr.mode, taskId: binding.taskId },
+    );
+  }
 });
