@@ -97,3 +97,11 @@ src/scripts/__tests__/office-cap02-canary-reactivation.core.spec.ts
 # yapisal olarak kullanilamaz; bu cekirdek daha dar bir sozlesmeyle (beklenen fixture +
 # BEYAN EDILEN pasif legacy satirlar; disinda her sey FAIL_CLOSED) o bosluğu doldurur.
 src/scripts/__tests__/office-cap02-divergence-fixture.core.spec.ts
+
+# ── OFFICE-P2-CAP02-NEUTRAL-TELEMETRY-PERFORMANCE-HARNESS-I01 ─────────────────
+# Notr telemetry yolunun sentetik yuk altindaki maliyeti + olay butunlugu + request
+# izolasyonu icin saf DEGERLENDIRME cekirdegi. Yuzdelik yontemi nearest-rank (enterpolasyon
+# YOK); basarisiz request'ler gecikme istatistigine GIRMEZ, ayri sayilir. Hukum yalniz
+# PASS_FOR_BOUNDED_CANARY | FAIL | UNPROVEN uretir — production-wide SLA onayi DEGIL.
+# Spec ayrica telemetri failure-isolation'i YAPISAL olarak (kaynak uzerinden) sabitler.
+src/scripts/__tests__/office-cap02-telemetry-perf.core.spec.ts
