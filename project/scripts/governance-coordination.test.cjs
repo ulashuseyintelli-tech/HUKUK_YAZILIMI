@@ -402,6 +402,18 @@ function tr01AuthorityTargetChanges() {
   );
 }
 
+function kc01Tr01OwnershipAuthorityBindingChanges() {
+  return coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function kc01Tr01OwnershipAuthorityTargetChanges() {
+  return coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function rootAuthorityStage1Changes() {
   return coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01.bindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -3260,6 +3272,77 @@ test('TR01 authority target rejects wrong markers and semantic binding', (t) => 
   }
 });
 
+test('KC01/TR01 ownership authority binding requires exact base branch scope and contract content', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(
+    kc01Tr01OwnershipAuthorityBindingChanges(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result =
+    coordination.validateKc01Tr01OwnershipAuthorityBootstrapBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      changes: kc01Tr01OwnershipAuthorityBindingChanges(),
+      taskId: binding.taskId,
+      cwd: fixture.root,
+    });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('KC01/TR01 ownership authority binding rejects wrong branch and expanded scope', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        kc01Tr01OwnershipAuthorityBindingChanges(),
+        {
+          base: binding.bindingPr.baseSha,
+          headRef: `${binding.bindingPr.headRef}-copy`,
+        },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  const expanded = kc01Tr01OwnershipAuthorityBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('KC01/TR01 ownership authority target validates exact markers and fresh-main ancestry', (t) => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const freshMain of [false, true]) {
+    const fixture = createRcvColTargetGitFixture(t, { binding, freshMain });
+    const result = coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    });
+    assert.equal(result.mode, binding.targetPr.mode);
+    assert.equal(result.taskId, binding.targetPr.taskId);
+  }
+});
+
 test('PB01 formal-closure binding requires exact base branch scope and contract content', () => {
   const binding =
     coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
@@ -4852,6 +4935,10 @@ test('root-authority classifier is deterministic and existing bootstrap modes re
     [
       coordination.RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
       tr01AuthorityBindingChanges(),
+    ],
+    [
+      coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
+      kc01Tr01OwnershipAuthorityBindingChanges(),
     ],
   ]) {
     assert.deepEqual(
