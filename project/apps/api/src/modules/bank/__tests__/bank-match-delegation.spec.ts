@@ -1,5 +1,8 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { BankService } from '../bank.service';
+import {
+  BANK_REFERENCE_ALREADY_EXISTS,
+  BankService,
+} from '../bank.service';
 
 /**
  * G3d + tenant guard - BankService banka hareketi/hesap erişimi.
@@ -420,6 +423,13 @@ describe('BankService.syncTransactions candidate ingress (W2.2B)', () => {
     referenceNo: 'REF-IN-1',
     bankReferenceId: 'BANK-IN-1',
   };
+  const persistedIncoming = {
+    id: 'tx-existing',
+    tenantId: 't1',
+    bankAccountId: 'acc1',
+    ...incoming,
+    candidateStatus: null,
+  };
 
   it('yeni incoming hareketi PENDING candidate olarak yazar ve finansal etki üretmez', async () => {
     const { svc, prisma, coll, update, financialWrites } = buildService(undefined, {
@@ -484,16 +494,8 @@ describe('BankService.syncTransactions candidate ingress (W2.2B)', () => {
   });
 
   it('duplicate sync mevcut legacy-unknown row için ikinci row, backfill veya finansal etki üretmez', async () => {
-    const existing = {
-      id: 'tx-existing',
-      tenantId: 't1',
-      bankAccountId: 'acc1',
-      bankReferenceId: 'BANK-IN-1',
-      transactionType: 'INCOMING',
-      candidateStatus: null,
-    };
     const { svc, prisma, coll, update, financialWrites } = buildService(undefined, {
-      bankTransaction: { findFirst: jest.fn(async () => existing) },
+      bankTransaction: { findFirst: jest.fn(async () => persistedIncoming) },
     });
     jest.spyOn(svc as any, 'fetchTransactions').mockResolvedValue([incoming]);
     const tryAutoMatch = jest.spyOn(svc as any, 'tryAutoMatch').mockResolvedValue(false);
@@ -520,6 +522,114 @@ describe('BankService.syncTransactions candidate ingress (W2.2B)', () => {
       expect(write).not.toHaveBeenCalled();
     }
   });
+
+  it.each([
+    ['amount', { amount: 1251 }],
+    ['currency', { currency: 'EUR' }],
+    ['transactionDate', { transactionDate: new Date('2026-07-18T09:00:00.000Z') }],
+    ['valueDate', { valueDate: new Date('2026-07-18T09:00:00.000Z') }],
+  ])('aynı reference + farklı %s için deterministic conflict döner', async (_field, patch) => {
+    const { svc, prisma, coll, financialWrites } = buildService(undefined, {
+      bankTransaction: {
+        findFirst: jest.fn(async () => ({ ...persistedIncoming, ...patch })),
+      },
+    });
+    jest.spyOn(svc as any, 'fetchTransactions').mockResolvedValue([incoming]);
+    const tryAutoMatch = jest.spyOn(svc as any, 'tryAutoMatch').mockResolvedValue(false);
+
+    await expect(svc.syncTransactions('acc1', 't1')).resolves.toMatchObject({
+      success: false,
+      errorCode: BANK_REFERENCE_ALREADY_EXISTS,
+      newTransactions: 0,
+      matchedTransactions: 0,
+    });
+
+    expect(prisma.bankTransaction.create).not.toHaveBeenCalled();
+    expect(tryAutoMatch).not.toHaveBeenCalled();
+    expect(coll.create).not.toHaveBeenCalled();
+    for (const write of Object.values(financialWrites)) {
+      expect(write).not.toHaveBeenCalled();
+    }
+  });
+
+  it('P2002 race aynı semantic payload ise mevcut satırı replay eder', async () => {
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(persistedIncoming);
+    const { svc, prisma } = buildService(undefined, {
+      bankTransaction: {
+        findFirst,
+        create: jest.fn(async () => {
+          throw Object.assign(new Error('unique violation'), { code: 'P2002' });
+        }),
+      },
+    });
+    jest.spyOn(svc as any, 'fetchTransactions').mockResolvedValue([incoming]);
+    const tryAutoMatch = jest.spyOn(svc as any, 'tryAutoMatch').mockResolvedValue(false);
+
+    await expect(svc.syncTransactions('acc1', 't1')).resolves.toMatchObject({
+      success: true,
+      newTransactions: 0,
+      matchedTransactions: 0,
+    });
+    expect(prisma.bankTransaction.create).toHaveBeenCalledTimes(1);
+    expect(findFirst).toHaveBeenCalledTimes(2);
+    expect(tryAutoMatch).not.toHaveBeenCalled();
+  });
+
+  it('P2002 race farklı semantic payload ise stable domain conflict döner', async () => {
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...persistedIncoming, amount: 999 });
+    const { svc, prisma, coll, financialWrites } = buildService(undefined, {
+      bankTransaction: {
+        findFirst,
+        create: jest.fn(async () => {
+          throw Object.assign(new Error('unique violation'), { code: 'P2002' });
+        }),
+      },
+    });
+    jest.spyOn(svc as any, 'fetchTransactions').mockResolvedValue([incoming]);
+    const tryAutoMatch = jest.spyOn(svc as any, 'tryAutoMatch').mockResolvedValue(false);
+
+    await expect(svc.syncTransactions('acc1', 't1')).resolves.toMatchObject({
+      success: false,
+      errorCode: BANK_REFERENCE_ALREADY_EXISTS,
+      newTransactions: 0,
+      matchedTransactions: 0,
+    });
+    expect(prisma.bankTransaction.create).toHaveBeenCalledTimes(1);
+    expect(tryAutoMatch).not.toHaveBeenCalled();
+    expect(coll.create).not.toHaveBeenCalled();
+    for (const write of Object.values(financialWrites)) {
+      expect(write).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([undefined, '', '   '])(
+    'null/empty reference %p için duplicate lookup yapmadan null persist eder',
+    async bankReferenceId => {
+      const findFirst = jest.fn();
+      const { svc, prisma } = buildService(undefined, {
+        bankTransaction: { findFirst },
+      });
+      jest.spyOn(svc as any, 'fetchTransactions').mockResolvedValue([
+        { ...incoming, bankReferenceId },
+      ]);
+      jest.spyOn(svc as any, 'tryAutoMatch').mockResolvedValue(false);
+
+      await expect(svc.syncTransactions('acc1', 't1')).resolves.toMatchObject({
+        success: true,
+        newTransactions: 1,
+      });
+      expect(findFirst).not.toHaveBeenCalled();
+      expect(prisma.bankTransaction.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ bankReferenceId: null }),
+      });
+    },
+  );
 });
 
 describe('BankService tenant guard', () => {
