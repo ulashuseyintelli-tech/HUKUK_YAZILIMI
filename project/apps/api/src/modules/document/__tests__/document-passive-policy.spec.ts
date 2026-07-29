@@ -17,7 +17,9 @@ const makeCase = (debtors: any[]) => ({
   interestRate: 0,
   createdAt: new Date("2026-01-01"),
   startDate: new Date("2026-01-01"),
-  client: { name: "Alacakli", identityNo: "22222222222", address: { text: "Adres" } },
+  // CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01: ŞEMA-DOĞRU şekil (`Client.address` = `String?`).
+  // Eski `{ text: "Adres" }` objesi Prisma'nın asla üretmediği bir şekildi ve defekti maskeliyordu.
+  client: { name: "Alacakli", identityNo: "22222222222", address: "Adres" },
   debtors,
   lawyers: [],
   formType: null,

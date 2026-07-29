@@ -99,7 +99,16 @@ export class DocumentService {
       creditor: {
         name: caseData.client?.name || "Alacaklı",
         identityNo: caseData.client?.identityNo || undefined,
-        address: (caseData.client?.address as any)?.text,
+        // CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01: `Client.address` şemada `String?`dir
+        // (schema.prisma, Client modeli). Eski ifade `(caseData.client?.address as any)?.text`
+        // idi — düz string üzerinde `.text` HER ZAMAN undefined döner, yani alacaklı adresi
+        // UYAP XML'ine ve icra belgelerine SESSİZCE BOŞ gidiyordu; `as any` cast'i de tip
+        // sisteminin bunu yakalamasını engelliyordu. Kontrat `address?: string`
+        // (template.service.ts DocumentData) ve tüketiciler `|| "-"` uygular → yok/boş
+        // durumda `undefined` sözleşmeye uygun davranıştır.
+        // KAPSAM SINIRI: yalnız legacy flat kolon okunur. `ClientAddress` (çok-adres)
+        // çözümü ARC-07'nin ayrı, henüz owner-kararı verilmemiş dilimidir; BURADA YAPILMAZ.
+        address: caseData.client?.address?.trim() || undefined,
       },
       debtor: {
         name: debtor?.name || "Borçlu",

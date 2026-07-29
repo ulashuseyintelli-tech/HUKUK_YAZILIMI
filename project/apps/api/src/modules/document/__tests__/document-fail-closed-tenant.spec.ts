@@ -20,7 +20,11 @@ describe('CLIENT-SEC-H2B — document services fail-closed tenant', () => {
     interestRate: 0,
     createdAt: new Date('2026-01-01'),
     startDate: new Date('2026-01-01'),
-    client: { name: 'Alacakli', identityNo: '1', address: { text: 'Adres' } },
+    // CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01: `client.address` ŞEMA-DOĞRU şekle düzeltildi.
+    // Eskiden `{ text: 'Adres' }` (obje) idi; şemada `Client.address` `String?`tir, Prisma bu
+    // şekli ASLA üretmez. Fixture hatalı `?.text` ifadesinin şeklini kodlayarak defekti
+    // MASKELİYORDU. `debtor.addresses` DEĞİŞMEDİ — o alan şemada gerçekten `Json?`.
+    client: { name: 'Alacakli', identityNo: '1', address: 'Adres' },
     debtors: [{ debtor: { name: 'Borclu', identityNo: '2', addresses: { primary: 'Adres' } } }],
     lawyers: [],
     formType: null,
