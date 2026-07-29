@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "taskId": "RECEIVABLE-LEGAL-BASIS-RESOLVER-CONTROLLED-DEFAULT-OFF-R01",
+  "taskSpecVersion": 1,
+  "profile": "BOUNDED_CODE_TASK",
+  "declaredIntent": "RECEIVABLE-A onayi: LegalBasisExactVersionResolverPort icin CONTROLLED DEFAULT-OFF somut implementasyon. Registry okunur, port sekline projekte edilir; module.ta baglanmaz, dormancy testine dokunulmaz, yeni hukuk kurali icat edilmez.",
+  "declaredIntentSha256": "91a24255ddbe80f76c9ca2237d54eccda27a04f135532e698d047548c5b92807",
+  "boundaryPolicy": {
+    "allowedRoots": [
+      "project/apps/api/src/modules/claim-item/formation-intent/legal-basis-registry-resolver.service.ts",
+      "project/apps/api/src/modules/claim-item/formation-intent/legal-basis-resolver-activation.ts",
+      "project/apps/api/src/modules/claim-item/__tests__/legal-basis-registry-resolver.spec.ts"
+    ],
+    "maxChangedFiles": 3
+  },
+  "boundaryPolicySha256": "eae61c29a691506b35444997d6c1307e17b747d6e4d456071479dacfae0af977",
+  "requiredTests": [
+    {
+      "argv": [
+        "pnpm",
+        "exec",
+        "jest",
+        "--ci",
+        "--forceExit",
+        "--runInBand",
+        "--runTestsByPath",
+        "src/modules/claim-item/__tests__/legal-basis-registry-resolver.spec.ts"
+      ],
+      "cwd": "project/apps/api",
+      "timeoutMs": 1800000
+    },
+    {
+      "argv": [
+        "pnpm",
+        "exec",
+        "jest",
+        "--ci",
+        "--forceExit",
+        "--runInBand",
+        "--runTestsByPath",
+        "src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spec.ts"
+      ],
+      "cwd": "project/apps/api",
+      "timeoutMs": 1800000
+    }
+  ],
+  "requiredTestsSha256": "cd1c766822cc031ea3d83372b9891a9f315d6fe68ed3895640624d9f2465b935",
+  "predecessorTaskIds": [],
+  "baseDriftPolicy": "REFRESH_BEFORE_EXECUTION",
+  "baseSha": "9c0781fd5aaea3939af75d1189c6134c366f9f0a",
+  "successorDisposition": "OWNER_AUTHORIZATION_REQUIRED"
+}

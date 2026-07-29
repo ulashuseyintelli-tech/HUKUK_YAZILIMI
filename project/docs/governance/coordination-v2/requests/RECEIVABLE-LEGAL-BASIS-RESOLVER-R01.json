@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "programId": "RECEIVABLE",
+  "taskId": "RECEIVABLE-LEGAL-BASIS-RESOLVER-CONTROLLED-DEFAULT-OFF-R01",
+  "taskClass": "BOUNDED_CODE_FIX",
+  "planPath": "project/docs/governance/coordination-v2/task-plans/RECEIVABLE-LEGAL-BASIS-RESOLVER-R01/plan.json",
+  "standingGrantPath": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-RECEIVABLE-LIVE-R01.json",
+  "promptPath": "project/docs/governance/coordination-v2/task-plans/RECEIVABLE-LEGAL-BASIS-RESOLVER-R01/executor-prompt.md",
+  "executorLane": "CODEX_LOCAL",
+  "targetBranch": "main",
+  "autoMerge": true,
+  "priority": 10,
+  "dependsOn": [],
+  "requireCommittedArtefacts": true,
+  "notes": "RECEIVABLE-A owner karari: registry/resolver controlled default-off binding."
+}
