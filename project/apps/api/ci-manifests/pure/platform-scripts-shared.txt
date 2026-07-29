@@ -177,6 +177,7 @@ src/modules/debtor/debtor-identity-format.spec.ts
 src/modules/debtor/ihbarname-summary.tenant-boundary.spec.ts
 src/modules/debtor/quick-note-passive-writer.spec.ts
 src/modules/debtor/third-party-passive-writer.spec.ts
+src/modules/document/__tests__/document-creditor-address.spec.ts
 src/modules/document/__tests__/document-fail-closed-tenant.spec.ts
 src/modules/error-log/__tests__/all-exceptions.filter.spec.ts
 src/modules/error-log/__tests__/error-dedupe-key.spec.ts
