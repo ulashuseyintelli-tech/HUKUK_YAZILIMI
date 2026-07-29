@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "recordType": "ROOT_BOOTSTRAP_STAGE2_BASE_RECONCILIATION",
+  "recordId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE2-BASE-RECONCILIATION-R01",
+  "documentRole": "CANONICAL_TASK_BOUND_RECONCILIATION_AUTHORITY",
+  "materializationTaskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE2-VALIDATOR-BASE-BINDING-RECONCILIATION-R01",
+  "programId": "GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01",
+  "targetTaskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01",
+  "bootstrapModeId": "GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01",
+  "stage1MergeSha": "790d2a956dad05e39c8fde71cc3e19e1f2425cf3",
+  "driftClassification": "EXTENDED_BACKWARD_COMPATIBLY",
+  "securityInvariants": "PRESERVED",
+  "targetProgramTaskBinding": "PASS",
+  "stage2Binding": {
+    "status": "PASS",
+    "taskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-AUTHORITY-MATERIALIZATION-R01",
+    "headRef": "codex/governance-closeout-live-ledger-gap-r01-authority-bootstrap",
+    "changedPaths": [
+      {
+        "status": "M",
+        "path": "project/docs/governance/decision-log.md"
+      },
+      {
+        "status": "A",
+        "path": "project/docs/governance/coordination-execution-grants/GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01.md"
+      }
+    ]
+  },
+  "contractCodeTestConsistency": "PASS",
+  "authorityRecordConflict": "NONE",
+  "resolverAmbiguity": "NONE",
+  "writerGateRequirement": "PASS_AT_CURRENT_EXECUTION_PREFLIGHT",
+  "readiness": "ELIGIBLE_IF_CURRENT_EXECUTION_PREFLIGHT_PASSES",
+  "sourceReconciliation": {
+    "pullRequest": 1915,
+    "mergeSha": "0f78a5ea49b0c3be91172de4939ae8bd95a25f17",
+    "path": "project/docs/governance/governance-closeout-live-ledger-gap-r01-stage1-drift-reconciliation/reconciliation-result.json",
+    "blobSha": "3dd425493777b47f939a83eb9a8776004aa1b35c"
+  },
+  "protectedBlobShas": {
+    "project/scripts/governance-coordination.cjs": "1c2c257deaee1d4569f5191b0f9a79d9d1eddbf1",
+    "project/scripts/governance-coordination.test.cjs": "decac5b9d0da6da98697ba4d8e5fdd24cac458c4",
+    "project/docs/governance/governance-writer-coordination-contract.md": "56449d09faa50e84304afa14f88e5e092e660524"
+  },
+  "allowedDriftClassifications": [
+    "PRESERVED_EXACTLY",
+    "PRESERVED_SEMANTICALLY_EQUIVALENT",
+    "EXTENDED_BACKWARD_COMPATIBLY",
+    "SUPERSEDED_BY_CANONICAL_SUCCESSOR"
+  ]
+}
