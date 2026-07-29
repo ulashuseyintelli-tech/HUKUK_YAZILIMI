@@ -81,3 +81,10 @@ src/scripts/__tests__/office-cap02-canary-provision.core.spec.ts
 # cekirdek master flag + tam-kimlik tenant/actor allowlist'ini TEK karara indirger;
 # bos/malformed allowlist fail-closed'dir. Tuketici testi de guncellendi.
 src/scripts/__tests__/office-cap02-telemetry-canary-scope.core.spec.ts
+
+# ── OFFICE-P2-CAP02-CANARY-FIXTURE-REACTIVATION-I01 ────────────────────────────
+# R01-G canary fixture'i kanit zinciri korunarak soft-delete edildi; R01-H ayni
+# principal'i yeniden gerektiriyor. Owner karari (OPTION A): satir silme ve ad hoc
+# isActive=true YOK — yalniz TAM kimligi dogrulanmis mevcut fixture'i reaktive eden
+# bounded/idempotent/fail-closed cekirdek. Mutasyon kapsami yapisal olarak User+Lawyer.
+src/scripts/__tests__/office-cap02-canary-reactivation.core.spec.ts
