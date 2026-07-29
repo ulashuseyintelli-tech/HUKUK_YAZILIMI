@@ -1,6 +1,24 @@
 {
   "schemaVersion": 1,
   "standingGrantId": "STANDING-GRANT-DELIVERY-TRUTH-DOGFOOD-R01",
+  "grantKind": "PROGRAM_STANDING",
+  "manualMergeRequired": false,
+  "autoMergeAuthorizedBy": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+  "semanticAuthorityRef": {
+    "recordId": "OWNER-DECISION-DELIVERY_TRUTH-STANDING-GRANT",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R02/semantic-authority.md"
+  },
+  "executionGrantRef": {
+    "recordId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/program-eligibility-authority.json"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R02/semantic-authority.md",
+    "sourceCommitSha": "39ae992f6d013bfb6459a34f172a94ab673e4f83",
+    "exactExcerpt": "OWNER-DECISION-GOV-COORD-DELIVERY-TRUTH-R01 dogfood certification is authorized to run",
+    "excerptSha256": "352bcd8052008b9efe9b14b8d0dfb90e4b4ba20e5db2b0091f4bc1ba37e33a94"
+  },
+  "noExpiryPolicyRef": "STANDING grant kavraminin kendisi: program acik oldugu surece gecerlidir, tarih ile degil revocationPath'teki dosyanin varligi ile sona erer.",
   "program": {
     "programId": "DELIVERY_TRUTH",
     "eligibilityAuthorityRef": "project/docs/governance/coordination-v2/activation/PROGRAM-ELIGIBILITY-AUTHORITY.md"

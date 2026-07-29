@@ -246,6 +246,11 @@ async function runTask(ctx) {
       grant: ctx.grant,
       spec: ctx.spec,
       revoked: ctx.grantRevoked === true,
+      // Read only by the PROGRAM_STANDING branch — a task-scoped grant pins its
+      // task by exact digest and never asks what class or lane is running it.
+      taskClass: ctx.taskClass,
+      executorLane: ctx.holder,
+      killSwitchEngaged: ctx.killSwitchEngaged === true,
       nowMs: nowMs(),
     });
   } catch (e) {

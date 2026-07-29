@@ -206,6 +206,7 @@ function authorityWorld(over) {
   const grant = {
     schemaVersion: 1,
     grantId: 'PROBE-GRANT-01',
+    grantKind: 'TASK_SCOPED_ONE_SHOT',
     workstream: 'DELIVERY-PROBE',
     semanticAuthorityRef: {
       kind: 'SEMANTIC_AUTHORITY',

@@ -968,6 +968,7 @@ function grantFor(spec, over) {
   return {
     schemaVersion: 1,
     grantId: 'G-1',
+    grantKind: 'TASK_SCOPED_ONE_SHOT',
     semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'S1', sourcePath: 'a.md' },
     executionGrantRef: { kind: 'EXECUTION_GRANT', recordId: 'E1', sourcePath: 'b.md' },
     ownerRatificationEvidence: {

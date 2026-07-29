@@ -220,6 +220,11 @@ async function runEntry(o) {
     grant: resolved.grant || resolved.standingGrant,
     standingGrant: resolved.standingGrant,
     autoMerge: resolved.request.autoMerge === true,
+    // Read by the AUTHORIZED stage when the grant handed above is
+    // PROGRAM_STANDING — a standing grant admits by task class, and that class
+    // has to travel with the task to be checked again where the grant is
+    // actually consumed, not only at admission.
+    taskClass: entry.taskClass || resolved.request.taskClass,
     lane: entry.executorLane || resolved.request.executorLane,
     targetBranch: resolved.request.targetBranch,
     // Carried from the queue entry, where an authorized resume recorded it.

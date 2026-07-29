@@ -62,5 +62,23 @@
   ],
   "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-CLIENT",
   "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/client.jsonl",
-  "notes": "Tenant isolation, authorization ve runtime binding yuzeyi. CLIENT charter EXTERNAL-TRACK IMPLEMENTATION: NOT AUTHORIZED der; o yuzden intake-public ve intake-link bu grant disindadir. Platform-admin veya cross-tenant genisleme YOK. client-financial-disclosure/ ve client-settlement/ owner karariyla eklendi (FOUR-PROGRAM-ACTIVATION-DECISION-PACK-R01.md, CLIENT-A: ONAYLANDI) — FD-ACT-R01 serisi (#1808/#1814/#1819/#1827) bu yollara zaten fiilen yazmisti; bu reconciliation grant'i gerceklige uydurur, yeni bir yetki genisletmesi degildir."
+  "notes": "Tenant isolation, authorization ve runtime binding yuzeyi. CLIENT charter EXTERNAL-TRACK IMPLEMENTATION: NOT AUTHORIZED der; o yuzden intake-public ve intake-link bu grant disindadir. Platform-admin veya cross-tenant genisleme YOK. client-financial-disclosure/ ve client-settlement/ owner karariyla eklendi (FOUR-PROGRAM-ACTIVATION-DECISION-PACK-R01.md, CLIENT-A: ONAYLANDI) — FD-ACT-R01 serisi (#1808/#1814/#1819/#1827) bu yollara zaten fiilen yazmisti; bu reconciliation grant'i gerceklige uydurur, yeni bir yetki genisletmesi degildir.",
+  "grantKind": "PROGRAM_STANDING",
+  "manualMergeRequired": false,
+  "autoMergeAuthorizedBy": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+  "semanticAuthorityRef": {
+    "recordId": "OWNER-DECISION-CLIENT-STANDING-GRANT",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md"
+  },
+  "executionGrantRef": {
+    "recordId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/program-eligibility-authority.json"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+    "sourceCommitSha": "8d4bc9dea45da7a88b1b4fae5f9f30ad7761c0f6",
+    "exactExcerpt": "CLIENT      kontrollu canli calistirmaya acilir",
+    "excerptSha256": "eaa9c4667f46110ad78a7d6faf17aa26b86e757da341b26e050458ec0a84fad0"
+  },
+  "noExpiryPolicyRef": "STANDING grant kavraminin kendisi: program acik oldugu surece gecerlidir, tarih ile degil revocationPath'teki dosyanin varligi ile sona erer."
 }

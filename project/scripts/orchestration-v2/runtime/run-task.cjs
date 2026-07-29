@@ -275,6 +275,13 @@ function buildContext(opts) {
     repoCwd,
     spec,
     grant,
+    // Carried through so the AUTHORIZED stage can tell a PROGRAM_STANDING grant
+    // what task class and lane it is being asked to admit — the same two facts
+    // validateAgainstStandingGrant already checks at admission, now checked
+    // again where the grant is actually consumed. Absent for a task-scoped
+    // grant's own callers (validateAgainstGrant does not read them on that
+    // path), so nothing here changes for them.
+    taskClass: opts.taskClass,
     executorArgv,
     // createStore takes a directory, and defaultStateDir puts it under the git
     // common dir — outside the validated tree, so the orchestrator's own

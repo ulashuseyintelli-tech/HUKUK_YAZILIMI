@@ -58,5 +58,23 @@
   ],
   "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-DEBTOR",
   "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/debtor.jsonl",
-  "notes": "Tenant isolation, kimlik/iliski modeli ve API authorization yuzeyi. PR-6 backfill ayri owner onayi ister ve bu grant altinda YOKTUR. Global debtor identity veya tenantlar arasi eslestirme politikasi icat edilmez."
+  "notes": "Tenant isolation, kimlik/iliski modeli ve API authorization yuzeyi. PR-6 backfill ayri owner onayi ister ve bu grant altinda YOKTUR. Global debtor identity veya tenantlar arasi eslestirme politikasi icat edilmez.",
+  "grantKind": "PROGRAM_STANDING",
+  "manualMergeRequired": false,
+  "autoMergeAuthorizedBy": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+  "semanticAuthorityRef": {
+    "recordId": "OWNER-DECISION-DEBTOR-STANDING-GRANT",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md"
+  },
+  "executionGrantRef": {
+    "recordId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/program-eligibility-authority.json"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+    "sourceCommitSha": "8d4bc9dea45da7a88b1b4fae5f9f30ad7761c0f6",
+    "exactExcerpt": "DEBTOR      kontrollu canli calistirmaya acilir",
+    "excerptSha256": "70c0f7132e6f002ea4248a757f94795539f83d400ee96ee578597c9eea7e13dd"
+  },
+  "noExpiryPolicyRef": "STANDING grant kavraminin kendisi: program acik oldugu surece gecerlidir, tarih ile degil revocationPath'teki dosyanin varligi ile sona erer."
 }

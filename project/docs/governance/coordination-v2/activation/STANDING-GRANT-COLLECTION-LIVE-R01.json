@@ -57,5 +57,23 @@
   "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-COLLECTION",
   "killSwitchPath": "project/docs/governance/coordination-v2/activation/KILL-SWITCH",
   "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/collection.jsonl",
-  "notes": "Collection confirmation ve interest-engine yuzeyi. Lifecycle semantigi degisikligi bu grant altinda YOK."
+  "notes": "Collection confirmation ve interest-engine yuzeyi. Lifecycle semantigi degisikligi bu grant altinda YOK.",
+  "grantKind": "PROGRAM_STANDING",
+  "manualMergeRequired": false,
+  "autoMergeAuthorizedBy": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+  "semanticAuthorityRef": {
+    "recordId": "OWNER-DECISION-COLLECTION-STANDING-GRANT",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/PARENT-AUTHORIZATION-ENVELOPE.md"
+  },
+  "executionGrantRef": {
+    "recordId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/program-eligibility-authority.json"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/activation/PARENT-AUTHORIZATION-ENVELOPE.md",
+    "sourceCommitSha": "4063ab294dc5f3e55336a71e374aed6259f89471",
+    "exactExcerpt": "COLLECTION  kontrollu canli calistirmaya acilir",
+    "excerptSha256": "e022aa27fde32c022afe45d3023e3430d8ecfc9653c4e57398d91b92716176bb"
+  },
+  "noExpiryPolicyRef": "STANDING grant kavraminin kendisi: program acik oldugu surece gecerlidir, tarih ile degil revocationPath'teki dosyanin varligi ile sona erer."
 }
