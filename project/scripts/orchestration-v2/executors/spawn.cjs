@@ -65,7 +65,7 @@ const TERMINATION_REASONS = [
 ];
 
 const DEFAULTS = {
-  timeoutMs: 15 * 60 * 1000,
+  timeoutMs: 30 * 60 * 1000,
   gracePeriodMs: 5000,
   maxStdoutBytes: 4 * 1024 * 1024,
   maxStderrBytes: 1 * 1024 * 1024,

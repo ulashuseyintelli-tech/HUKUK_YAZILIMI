@@ -533,6 +533,10 @@ test('spawn: structured result must validate before success is granted', async (
   assert.equal(broken.executorExitSuccess, false);
 });
 
+test('spawn: production executor timeout defaults to 30 minutes', () => {
+  assert.equal(spawnMod.DEFAULTS.timeoutMs, 30 * 60 * 1000);
+});
+
 test('spawn: TIMEOUT cancels gracefully then forcibly, and is not publishable', async () => {
   const r = await run(['--mode', 'hang'], {
     limits: { timeoutMs: 1200, gracePeriodMs: 400 },
