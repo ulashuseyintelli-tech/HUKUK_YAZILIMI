@@ -3495,3 +3495,42 @@ signer binding ve release signing bu kapanışla aktive edilmez.
 TR01 ayrı owner gate'idir. TR01 tamamlanmadan D02-F01, production resolver/provider wiring,
 Legal Basis signed release, runtime activation, I04/I05, canary veya containment retirement
 eligible değildir.
+
+---
+
+## RCV-CLAIM-FORM-P02-S08-D02-TR01 — Production Public-Key Trust-Root Onboarding
+
+```text
+STATUS                             CLOSED / CANONICAL / PASS
+IMPLEMENTATION                     PR #1901 / 3472052b2efb08d5e3fbcda7ce0654b012225689
+CI                                 9/9 PASS
+TRUST ROOT                         RCV-CLAIM-LEGAL-PUBLIC-KEY-TRUST-ROOT@1
+TRUST-ROOT CHECKSUM                062056266b90107780f2f749eba3b55a994738503f354c273ac83e25fdddd247
+AWS PARITY CHECKSUM                cc10ada801c174442158d0b746b018347d615609b823141ac928b9c44badef13
+SIGNER SET                         EXACTLY 3 ROLE-SEPARATED ED25519 PUBLIC KEYS
+VERIFICATION AUTHORITY             ACTIVE
+RUNTIME                            DORMANT
+SIGNING AUTHORITY                  NOT_ACTIVE
+PRODUCTION SIGNATURE               NONE
+AWS POLICY RESTORE                 VERIFIED / ORIGINAL HASHES RESTORED
+DATABASE                           UNCHANGED
+SCHEMA / MIGRATION                 NONE
+NEXT ELIGIBLE TASK                 RCV-CLAIM-FORM-P02-S08-D02-LB01
+NEXT TASK AUTHORITY                OWNER GO REQUIRED / NOT STARTED
+```
+
+TR01 immutable trust-root artefaktı ve deterministic validator'ı, KC01 signer manifest'indeki üç
+role-separated public key'i exact signer purpose ve checksum üzerinden production verification
+authority'sine bağlar. Signature-envelope verification contract'ı unknown signer, role mismatch,
+version/checksum mismatch, revoked/superseded/integrity mismatch ve fallback denemelerinde
+fail-closed davranır. Production Nest call-site yoktur ve runtime dormant kalır.
+
+AWS evidence yalnız redacted public metadata ve checksum taşır. Owner-authorized geçici
+`kms:GetPublicKey` / `kms:ListResourceTags` policy erişimi evidence sonrasında kaldırılmış; üç
+policy'nin önceki hash'i read-back ile exact doğrulanmıştır. `kms:Sign`, production signing, signed
+release, private material, account/key/IAM ARN, credential veya unredacted CloudTrail event
+repository/governance'e yazılmamıştır.
+
+LB01 ayrı owner gate'idir ve bu kayıtla başlamaz. D02-F01, D02-I01/I02/I03, runtime
+resolver/provider wiring, production signing, signed release, I04/I05 ve containment retirement
+not eligible / not authorized kalır.
