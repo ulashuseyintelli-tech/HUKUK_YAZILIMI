@@ -3495,3 +3495,39 @@ signer binding ve release signing bu kapanışla aktive edilmez.
 TR01 ayrı owner gate'idir. TR01 tamamlanmadan D02-F01, production resolver/provider wiring,
 Legal Basis signed release, runtime activation, I04/I05, canary veya containment retirement
 eligible değildir.
+
+---
+
+## KC01 / TR01 Ownership Reconciliation — 2026-07-30
+
+```text
+TASK                               RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-RECONCILIATION-R01
+KC01                               CLOSED / CANONICAL / OWNERSHIP AMENDED
+KC01 TECHNICAL EVIDENCE RETAINED   PR #1856 / 74d1950deb632380a7ca6574a009e85c206c7f14
+TR01                               CLOSED / CANONICAL / OWNERSHIP AMENDED
+TR01 TECHNICAL EVIDENCE RETAINED   PR #1901 / 3472052b2efb08d5e3fbcda7ce0654b012225689 / CI 9/9 PASS
+TR01 CLOSURE AUTHORITY             PR #1903 / 109814c1da99d6abeb6a251089ee7c787379e70f
+SEQUENCE AUTHORITY                 PR #1907 / 76fb4c3440586453f2380a866aeda58322c778bf
+TRUST-ROOT LIFECYCLE OWNER         CROSS_MODULE / SHARED_CONTROL_PLANE
+SIGNER ELIGIBILITY OWNER           OFFICE
+LEGAL BASIS SIGNATURE POLICY OWNER RECEIVABLE
+RUNTIME                            DORMANT
+SIGNING                            NOT ACTIVE
+PRODUCTION SIGNATURE               NONE
+SIGNED LEGAL BASIS RELEASE         NONE
+NEXT ELIGIBLE TASK                 RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01
+NEXT TASK STATUS                   OWNER GO REQUIRED / NOT STARTED
+D02-LB01                           NOT CURRENT NEXT / NOT ELIGIBLE
+```
+
+KC01/TR01 artefact ve technical evidence'ı geçerli kalır; yalnız original RECEIVABLE routing ile
+effective ownership ayrıştırılmıştır. AWS/IAM/KMS ve global trust-root lifecycle ortak control-plane
+capability'sidir; gerçek kişi/tenant/hukuki rol uygunluğu Office'e; Legal Basis içeriği, signature
+policy ve Claim Formation sonucu Receivable'a aittir. `CROSS_MODULE / SHARED_CONTROL_PLANE` altıncı
+bir hukuk modülü değildir. Office signer-eligibility dependency'si bu kayıtla implement veya
+runtime-active olmaz.
+
+PR #1907'nin canonical sequence'i korunur. UYAP bu authority'nin consumer'ıdır ve Receivable Legal
+Basis registry content/release ile required resolver execution kapanana kadar blocked kalır. Bu
+kayıt code, AWS, schema, migration, runtime, actual signature, signed release veya production
+activation authority üretmez.

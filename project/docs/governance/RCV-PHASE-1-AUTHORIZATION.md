@@ -77,8 +77,8 @@ Current program             : RCV-CLAIM-FORM-P02
 Current phase               : S08
 Current workstream          : D02
 Last completed foundation   : RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION
-Last completed task         : RCV-CLAIM-FORM-P02-S08-D02-KC01 — CLOSED / CANONICAL / PASS (implementation PR #1856 / 74d1950d)
-Next eligible task          : RCV-CLAIM-FORM-P02-S08-D02-TR01
+Last completed task         : RCV-CLAIM-FORM-P02-S08-D02-TR01 — CLOSED / CANONICAL / OWNERSHIP AMENDED (implementation PR #1901 / 3472052b)
+Next eligible task          : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01
 Next task status            : OWNER GO REQUIRED / NOT STARTED
 Claim Formation runtime     : DORMANT
 PB01 live migration apply   : NOT PERFORMED
@@ -111,8 +111,10 @@ RCV-CLAIM-FORM-P02-S08-D02-F01-R03 : LEGAL BASIS RELEASE INPUTS RATIFIED / CANON
 RCV-CLAIM-FORM-P02-S08-D02-SR01 : RATIFIED / CANONICAL — VERSIONED LEGAL SUBTYPE REGISTRY V1
 RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION : COMPLETE / CANONICAL (PR #1630 / d7ef31f6) — ADDITIVE / DORMANT / LIVE APPLY NONE
 RCV-CLAIM-FORM-P02-S08-D02-PB01 : CLOSED / CANONICAL / PASS (implementation PR #1794 / a62e078a)
-RCV-CLAIM-FORM-P02-S08-D02-KC01 : CLOSED / CANONICAL / PASS (implementation PR #1856 / 74d1950d)
-RCV-CLAIM-FORM-P02-S08-D02-TR01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
+RCV-CLAIM-FORM-P02-S08-D02-KC01 : CLOSED / CANONICAL / OWNERSHIP AMENDED (implementation PR #1856 / 74d1950d)
+RCV-CLAIM-FORM-P02-S08-D02-TR01 : CLOSED / CANONICAL / OWNERSHIP AMENDED (implementation PR #1901 / 3472052b)
+RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
+RCV-CLAIM-FORM-P02-S08-D02-LB01 : NOT CURRENT NEXT / NOT ELIGIBLE / PENDING CONTENT RATIFICATION AND CANONICAL SEQUENCE
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
@@ -121,8 +123,11 @@ I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 PB01 foundation migration  : MERGED / LIVE APPLY NOT AUTHORIZED / NOT PERFORMED
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / GIT CLEANUP COMPLETE / PHYSICAL ORPHAN NON-BLOCKING
 Claim Formation PB01 gate   : CONSUMED / COMPLETE
-KC01 trust-root onboarding  : PENDING / NOT ACTIVE
+KC01/TR01 verification      : COMPLETE / VERIFICATION ACTIVE
 KC01 production signing     : NOT ACTIVE / PRODUCTION SIGNATURE NONE
+Trust-root lifecycle owner  : CROSS_MODULE / SHARED_CONTROL_PLANE
+Signer eligibility owner    : OFFICE — SEPARATE DEPENDENCY / NOT IMPLEMENTED BY THIS TASK / RUNTIME NOT ACTIVATED
+Signature policy owner      : RECEIVABLE — LEGAL BASIS REQUIREMENTS AND FORMATION CONSEQUENCES
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -3965,3 +3970,60 @@ Bu kapanış production trust-root onboarding, signer binding, Legal Basis relea
 runtime activation yetkisi üretmez. `RCV-CLAIM-FORM-P02-S08-D02-TR01` yalnız ayrı owner GO ile
 başlayabilir. D02-F01, D02-I01/I02/I03, I04, I05, canary ve containment retirement eligible
 değildir; production signature yoktur ve Claim Formation runtime dormant kalır.
+
+## 15. KC01 / TR01 Ownership Reconciliation and Trust-Root Closure — 2026-07-30
+
+```text
+TASK                               RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-RECONCILIATION-R01
+KC01                               CLOSED / CANONICAL / OWNERSHIP AMENDED
+KC01 IMPLEMENTATION                PR #1856 / 74d1950deb632380a7ca6574a009e85c206c7f14
+KC01 TECHNICAL EVIDENCE RETAINED   YES
+TR01                               CLOSED / CANONICAL / OWNERSHIP AMENDED
+TR01 IMPLEMENTATION                PR #1901 / 3472052b2efb08d5e3fbcda7ce0654b012225689
+TR01 IMPLEMENTATION CI             9/9 PASS
+TR01 TECHNICAL EVIDENCE RETAINED   YES
+TR01 CLOSURE AUTHORITY             PR #1903 / 109814c1da99d6abeb6a251089ee7c787379e70f
+SEQUENCE AUTHORITY                 PR #1907 / 76fb4c3440586453f2380a866aeda58322c778bf
+TRUST ROOT                         RCV-CLAIM-LEGAL-PUBLIC-KEY-TRUST-ROOT@1
+TRUST-ROOT CHECKSUM                062056266b90107780f2f749eba3b55a994738503f354c273ac83e25fdddd247
+AWS PARITY CHECKSUM                cc10ada801c174442158d0b746b018347d615609b823141ac928b9c44badef13
+VERIFICATION AUTHORITY             ACTIVE
+RUNTIME                            DORMANT
+SIGNING AUTHORITY                  NOT ACTIVE
+PRODUCTION SIGNATURE               NONE
+SIGNED LEGAL BASIS RELEASE         NONE
+TRUST-ROOT LIFECYCLE OWNER         CROSS_MODULE / SHARED_CONTROL_PLANE
+SIGNER ELIGIBILITY OWNER           OFFICE
+LEGAL BASIS SIGNATURE POLICY OWNER RECEIVABLE
+OFFICE DEPENDENCY                  SEPARATE / NOT IMPLEMENTED / RUNTIME NOT ACTIVATED
+WORKSPACE MODULE ADDITION          NONE
+NEXT ELIGIBLE TASK                 RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01
+NEXT TASK STATUS                   OWNER GO REQUIRED / NOT STARTED
+D02-LB01                           NOT CURRENT NEXT / NOT ELIGIBLE
+```
+
+KC01'in original RECEIVABLE task route'u ve `RCV-CLAIM-LEGAL-*` artefact adları tarihsel
+provenance ve compatibility için korunur. Teknik sonuç, üç non-exportable AWS KMS anahtarı,
+public-key/fingerprint/checksum kanıtları ve CloudTrail evidence geçerlidir; re-execution gerekmez.
+TR01'in immutable trust-root artefaktı, closed schema, deterministic validator, exact-version
+dormant resolver, signature-envelope verification contract'ı ve redacted AWS parity evidence'ı
+geçerlidir. Evidence capture sırasında owner-authorized geçici read-only izinler kaldırılmış ve
+üç exact KMS policy önceki hash'lerine restore edilmiştir; `kms:Sign` veya kalıcı key/alias/tag
+mutation'ı oluşmamıştır.
+
+Bu kayıt bir authority transferiyle yeni hukuk modülü yaratmaz. Effective current ownership:
+
+- AWS/IAM/KMS, private-key custody, public-key extraction, global signer-key registry,
+  trust-root lifecycle/versioning, crypto primitives, rotation/revocation/compromise, CloudTrail,
+  budget/monitoring ve provider parity: `CROSS_MODULE / SHARED_CONTROL_PLANE`.
+- İmzalayan gerçek kişi kimliği, User/Lawyer/tenant ilişkisi, aktiflik ve reviewer/final-ratifier
+  rol uygunluğu ile yetki tarihleri/geri alma: `OFFICE`.
+- Legal Basis registry içeriği/code/version/semantics, subtype/component-category, source/evidence,
+  liability/interest eligibility, payload/checksum, gerekli imza rolleri/sırası/purpose ve
+  Claim Formation fail-closed sonucu/provenance: `RECEIVABLE`.
+
+PR #1907'nin canonical sırası korunur. `RCV-CLAIM-FORM-P02-S08-D02-LB01` current next değildir;
+content ratification ve canonical sequence tamamlanmadan eligible olamaz. UYAP consumer-only'dir
+ve `BLOCKED_BY_RECEIVABLE_LEGAL_BASIS_AUTHORITY` kalır. Bu reconciliation actual signature,
+approval, ratification, signed release, production activation, code, AWS, schema, migration veya
+runtime mutation üretmez.
