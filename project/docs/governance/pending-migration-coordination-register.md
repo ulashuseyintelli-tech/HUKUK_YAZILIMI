@@ -1590,3 +1590,163 @@ CLIENT I01/I02 statusu         : DEGISTIRILMEDI (charter §39)
 ```
 
 **MIGRATION APPLIED ≠ UYAP PROGRAM CLOSED · FK PRESENT ≠ TENANT AUTHORIZATION MODEL COMPLETE.**
+
+---
+
+## 25. UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 — CPE evidence bütünlüğü migration'ı: register görünürlük + fiilî live-apply kaydı (2026-07-29)
+
+Bu bölüm, `project/apps/api/prisma/migrations/20260728160000_cpe_execution_tenant_scoped_idempotency_r02`
+migration'ını bu register'a **ilk kez** kaydeder. Migration PR #1742 ile 2026-07-28'de merge
+edilmiş, fakat bu register'a (ne pending ne applied olarak) hiç işlenmemişti. Bu bölüm dış bir
+görevden gelen "register'da yok" tespitini kapatır. Bu kayıt yalnız **cross-workstream görünürlük
++ fiilî DB durumu**dur; hiçbir yeni migration, GO-MIGRATE yetkisi veya retroaktif ratifikasyon
+ÜRETMEZ.
+
+### 25.1 Migration kimliği ve durum
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260728160000_cpe_execution_tenant_scoped_idempotency_r02` |
+| Domain | **POLICY ENGINE** (`CpeExecutionRecord` sahibi — model + tüm caller'lar `project/apps/api/src/modules/policy-engine/**` altında; §11'deki `CpeDecisionLog` emsaliyle aynı sınıflandırma) |
+| Task / program | `UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02` ("PR A"), parent program `UYAP-MODULE-FULL-GAP-CLOSURE-R02` (bkz. `project/docs/blueprint/UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02-v1.0.md`) |
+| Authority basis | PR #1742, merge SHA `6e2b114bf8477d450c8122744e05a3ae89100975`, merged 2026-07-28T07:48:34Z |
+| İçerik | `CpeExecutionRecord.executionId`: GLOBAL `@unique` → `@@unique([tenantId, executionId])`. Sıra: önce yeni tenant-scoped kısıt eklenir (fail-closed duplicate-guard `DO $$` bloğu önce çakışan `(tenantId, executionId)` çiftini kontrol eder), sonra eski global `..._executionId_key` constraint/index düşürülür, ardından arama için plain `executionId` index'i yeniden yaratılır. Kısıtsız pencere yok. |
+| Bulgu | Çapraz tenant idempotency çarpışması (P0): global unique + istemci-kontrollü `executionId`, bir tenant'ın başka bir tenant'ın execution kaydını `findUnique` ile okumasına ve kendi state transition'ının sessizce "duplicate" sayılıp atlanmasına (çapraz tenant DoS) yol açıyordu. Aynı PR ayrıca `DecisionLogRetentionService`'in "arşivliyorum" dediği halde fiilen `deleteMany` ile kalıcı sildiği ayrı bir P0 bulgusunu kapatır (migration'a konu değil, yalnız kod-seviyesi değişiklik). |
+| Komşu migration | `20260728120000_debtor_cpe_tenant_hardening_p1_i01` aynı tabloya (`CpeExecutionRecord`) hemen önce dokunmuştur (DEBTOR-IDOR-02 bulgusu, `tenantId` kolonunu ekledi) — bu, "policy-engine DEBTOR/COLLECTION'a komşu" gözleminin kaynağıdır. Komşuluk gerçektir (aynı tablo, ardışık migration, farklı bulgu sahibi) ama **model/tablo sahipliği POLICY ENGINE'de kalır**; DEBTOR ve UYAP bu tablo üzerinde bulgu üreten/tüketen taraflardır, sahibi değildir. |
+| Doğrulama (PR gövdesi) | disposable `postgres:16-alpine`: fresh chain + existing-data simülasyonu EXIT 0; fail-closed guard gerçek çakışan çiftle tetiklenip migration'ı durdurdu (exit 3, beklenen mesaj); `cpe-evidence-runtime-integrity.spec.ts` 26/26; `policy-engine` modülü 360/360; `uyap` modülü 598/598; `tsc -p tsconfig.prod.json` + `pnpm build` EXIT 0 |
+
+### 25.2 Live-apply durumu — VERIFIED APPLIED (bugün, salt-okuma doğrulaması)
+
+Bu bölümde de register'ın kendi disiplini izlenmiştir: yalnız `SELECT` ve `SET SESSION
+CHARACTERISTICS AS TRANSACTION READ ONLY` çalıştırıldı, hiçbir DDL/DML/`migrate deploy/dev/reset`
+kullanılmadı, `.env` içeriği okunmadı/aktarılmadı — yalnız çalışan `hukuk-postgres` container'ına
+doğrudan `docker exec psql` ile bağlanıldı (bu worktree'de kurulu `node_modules` veya `.env`
+olmadığı için `prisma migrate status` CLI yolu bu oturumda kullanılamadı — bkz. not aşağıda).
+
+```text
+verifiedAt     : 2026-07-29
+target         : hukuk_db @ localhost:5432 (container hukuk-postgres, postgres:16-alpine, "Up 4 days")
+identity check : current_database()=hukuk_db, pg_is_in_recovery()=false,
+                 Tenant satır sayısı=3 (§2 / §21.1 ile tutarlı — aynı canonical DB)
+```
+
+| Kontrol | Sonuç |
+|---|---|
+| `_prisma_migrations` toplam / başarılı / rolled-back / yarım | 109 / 109 / 0 / 0 |
+| Repo migration klasörü sayısı | 109 (bu migration en yenisi — hem klasör hem DB'de) |
+| Pending | **0** — kuyruk şu anda tamamen boş |
+| Hedef satır (`20260728160000_...`) | `started_at`=2026-07-28 19:51:43.922 UTC · `finished_at`=2026-07-28 19:51:43.943 UTC · `applied_steps_count`=1 · `rolled_back_at`=NULL |
+| Şema parmak izi — yeni kısıt | `CpeExecutionRecord_tenantId_executionId_key` UNIQUE INDEX `("tenantId","executionId")` **VAR** |
+| Şema parmak izi — eski kısıt | `CpeExecutionRecord_executionId_key` (eski global unique) `pg_constraint`'te **YOK** (yalnız `_pkey`, `_caseId_fkey`, `_tenantId_fkey` kalıyor) |
+| Şema parmak izi — arama index'i | `CpeExecutionRecord_executionId_idx` (plain, non-unique) **VAR** |
+
+**Sonuç: migration canlı `hukuk_db`'ye tam ve temiz uygulanmıştır** — kısmi/başarısız/geri alınmış
+apply yok, checksum/adım sayısı tutarlı, migration.sql'in hedeflediği nihai şema durumu birebir
+doğrulandı.
+
+**Kanıt sınırı (statement-bazlı, snapshot değil):** yukarıdaki kontroller `SET SESSION
+CHARACTERISTICS AS TRANSACTION READ ONLY` sonrası ayrı ayrı çalıştırılan 7 `SELECT`
+statement'ıdır — tek bir `BEGIN ... SET TRANSACTION READ ONLY ... ROLLBACK` bloğu içinde, tek bir
+transaction/snapshot altında yürütülmemiştir. Bu nedenle sorgular arasında (pratikte olası
+görünmese de) concurrent bir değişiklik teorik olarak dışlanamaz; sonuçlar statement-bazlı
+salt-okuma kanıtıdır, atomik/zaman-tutarlı tekil bir snapshot iddiası DEĞİLDİR.
+
+**Araç notu:** bu oturumda önce bağlı `Prisma-Local` MCP aracıyla `migrate status` denendi;
+global npx önbelleğinden Prisma **7.9.1** çalıştığı ve bu repo'nun `schema.prisma`'sı eski-stil
+`datasource.url = env(...)` kullandığı için `P1012` şema doğrulama hatasıyla düştü. Bu bir
+DB-durumu bulgusu DEĞİLDİR, yalnızca ortam/versiyon uyuşmazlığıdır; bu worktree'de `node_modules`
+kurulu olmadığından (ve kurulum bu görevin kapsamı dışında olduğundan) yerel CLI ile
+tekrarlanmadı. Gerçek DB durumu bunun yerine doğrudan `docker exec hukuk-postgres psql` ile
+(yukarıdaki tablo) bağımsız olarak doğrulandı.
+
+Ham kanıt (tool-call çıktısından birebir aktarılmıştır):
+
+```text
+Prisma schema loaded from prisma\schema.prisma.
+Error: Prisma schema validation - (get-config wasm)
+Error code: P1012
+error: The datasource property `url` is no longer supported in schema files. Move connection
+URLs for Migrate to `prisma.config.ts` and pass either `adapter` for a direct database
+connection or `accelerateUrl` for Accelerate to the `PrismaClient` constructor.
+  -->  prisma\schema.prisma:7
+ 6 |   provider = "postgresql"
+ 7 |   url      = env("DATABASE_URL")
+Validation Error Count: 1
+Prisma CLI Version : 7.9.1
+```
+
+Repo manifestosu (`project/apps/api/package.json`, `devDependencies`) `"prisma": "^5.8.0"` ister —
+bu bir caret range'dir, uyumlu her 5.x sürümüne izin verir ve tek başına kesin kurulu/resolved
+sürümü KANITLAMAZ. Kesin çözümlenmiş sürüm ayrıca `pnpm-lock.yaml`'da doğrulanmıştır:
+`/prisma@5.22.0:` (satır 11083) ve `/@prisma/client@5.22.0(prisma@5.22.0):` (satır 3712) — yani bu
+repo'da fiilen resolve edilen sürüm **5.22.0**'dır, `5.8.0` değil (bu, register'ın başka
+bölümlerinde — örn. §7.8 — bağımsız olarak anılan "gerçek stack: 5.22.0" ile de tutarlıdır).
+Çalıştırılan CLI (7.9.1) ile bu resolved sürüm (5.22.0) arasındaki **iki majör sürüm** farkı ve
+Prisma 7'de `datasource.url` alanının kaldırılmış olması, `P1012` hatasının doğrudan nedenidir. Bu
+artık üç bağımsız kaynaktan (hata çıktısı + `package.json` caret range + `pnpm-lock.yaml` resolved
+sürüm) doğrulanabilir bir olgudur, yorum değil.
+
+### 25.3 Yetkilendirme izi bulunamadı (owner dikkatine)
+
+Apply zamanı (2026-07-28 19:51:43 UTC), bu register'ın son kaydedilmiş live-apply
+checkpoint'inden (§24, 2026-07-28 01:44:58 UTC, 108/108) **~18 saat sonra** ve PR #1742'nin
+merge anından (07:48:34 UTC) **~12 saat sonradır**. Bu migration için:
+
+- Bu register'da (bu bölümden önce) hiçbir `GATE ... — OWNER GO-MIGRATE` şablonu
+  doldurulmuş/onaylanmış DEĞİLDİR.
+- `decision-log.md`, `master-triage-register.md` ve `project/docs/governance/` altındaki hiçbir
+  dosyada (tüm alt dizinler dahil, spring-cleaning kayıtları dahil) bu migration'a, PR #1742'ye
+  veya `UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02` görev adına atıf YOKTUR (tam metin arama ile
+  doğrulandı).
+- Ayrı bir denetim dosyası (`project/docs/audit/runtime-binding-reconciliation-r01/runtime-capability-inventory.json`)
+  bu migration'ı kod/PR seviyesinde kataloglar (aynı gün, `authoredAt` PR'ın merge zamanıyla
+  birebir örtüşür) ama kendisi migration entry point'i için `"blockers":
+  ["DEPLOYED_MIGRATION_STATE_NOT_READ"]` ve `"finalStatus": "UNKNOWN_REQUIRES_EVIDENCE"` diyerek
+  DB-apply durumunu hiç okumadığını açıkça beyan eder — bu dosya da bir apply-yetki kanıtı
+  DEĞİLDİR.
+- Apply eden aktör/süreç bu repository kanıtından **belirlenemez** (`APPLY ACTOR: UNATTRIBUTED`).
+
+**Sınıflandırma:**
+
+```text
+APPLIED / ATTRIBUTION_UNRESOLVED   (register terminolojisiyle: UNATTRIBUTED_MIGRATION_APPLY)
+```
+
+Migration'ın uygulandığı kanıtlanmıştır (§25.2); apply işlemini gerçekleştiren actor veya
+execution path ise mevcut repository governance kayıtlarından belirlenememektedir. Bunun
+ötesinde hiçbir nitelik ne iddia edilir ne de kanıtlanmıştır: apply'ın başka bir migration ile
+aynı pencerede/toplu yapılıp yapılmadığı, yetkisiz bir aktör tarafından yapılıp yapılmadığı veya
+bir owner tarafından fiilen onaylanıp yalnız kayda geçirilmediği — bu olasılıkların hiçbiri bu
+bölümün kanıtlarıyla ne doğrulanmış ne de elenmiştir. Apply; başka bir session, CI, deploy
+script, bootstrap, manuel migrate veya otomasyon ile yapılmış olabilir — hangisi olduğu bu
+repository kanıtından belirlenemez. Bu bölüm herhangi bir kişiye/ajana isnat içermez ve
+retroaktif ratifikasyon ÜRETMEZ — yetkilendirme sorusu owner kararına bırakılmıştır.
+
+Ayrıca not: migration'ın kendi blueprint'i (`UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02-v1.0.md`, satır
+14-15) `REAL TRANSPORT: NOT AUTHORIZED` ve `PRODUCTION CUTOVER: HARD HOLD` der — şemanın canlıya
+uygulanmış olması bu HOLD'ları hiçbir şekilde değiştirmez.
+
+### 25.4 Bu bölümün ürettiği/üretmediği
+
+```text
+ÜRETTİ : bu migration'ın register görünürlüğü (ilk kayıt) + bugünkü fiilî live-apply
+         kanıtı (salt-okuma) + yetkilendirme-izi-yok bulgusu
+ÜRETMEDİ:
+  RETROAKTİF GO-MIGRATE RATİFİKASYONU     : NONE
+  YENİ MIGRATION / SCHEMA DEĞİŞİKLİĞİ     : YOK (bu görev migration'ı UYGULAMADI, yalnız
+                                            zaten uygulanmış olanı KAYDETTİ)
+  ACTOR ISNADI                            : NONE
+  UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02'NİN
+    KENDİ PROGRAM KAPANIŞ STATÜSÜ          : DEĞİŞTİRİLMEDİ (bu register domain governance
+                                            üretmez — bkz. belge başlığı)
+  DİĞER PENDING MIGRATION                 : şu anda YOK (109/109, kuyruk boş)
+```
+
+```text
+MIGRATION 20260728160000_cpe_execution_tenant_scoped_idempotency_r02:
+CLASSIFICATION = APPLIED / ATTRIBUTION_UNRESOLVED  (UNATTRIBUTED_MIGRATION_APPLY)
+REGISTERED (İLK KEZ) / LIVE DB APPLY = APPLIED (VERIFIED 2026-07-29) /
+GO-MIGRATE GATE = HİÇ AÇILMAMIŞ (RETROAKTİF KAPATILAMAZ) / OWNER ATTRIBUTION = UNATTRIBUTED
+
+IMPLEMENTATION AUTHORITY: NONE — bu kayıt hiçbir yeni yetki üretmez.
+```
