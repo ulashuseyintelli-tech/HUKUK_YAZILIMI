@@ -995,3 +995,47 @@ schema, migration, runtime veya owner WIP yetkisi üretmez. AWS account ID,
 key/IAM ARN, credential, token, private material veya unredacted CloudTrail
 evidence taşımaz. PR #1903 merge veya close olduğunda binding yeniden
 kullanılamaz.
+
+## KC01/TR01 OWNERSHIP RECONCILIATION AUTHORITY BOOTSTRAP — exact control-plane binding
+
+Owner-ratified 2026-07-30. Bu kayıt yalnız PR #1914 için tek kullanımlık,
+task-specific authority-bootstrap binding oluşturur; mevcut hiçbir kontrolü
+gevşetmez ve altıncı bir hukuk modülü üretmez.
+
+### Binding PR kimliği
+
+```text
+Task ID  : RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : ebb82762a6ecf24c214b6b6a5d2fede8caa4c206
+Head ref : codex/rcv-claim-form-kc01-tr01-ownership-authority-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-AUTHORITY-BOOTSTRAP-R01
+Target mode      : RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_AUTHORITY_BOOTSTRAP_R01
+Target PR        : #1914
+Original base SHA: abd06a6b221faba42671104df0302114d4ec9ba5
+Head ref         : codex/rcv-claim-form-kc01-tr01-ownership-authority-bootstrap-r01
+Scope            : M project/docs/governance/decision-log.md
+                   A project/docs/governance/coordination-execution-grants/RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-RECONCILIATION-R01.md
+Semantic record  : RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-RECONCILIATION-R01
+Execution record : RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-RECONCILIATION-R01-GRANT
+```
+
+Hedef PR yalnız exact branch ve `M/A` iki-file seti, iki marker'ın exact tekil
+oluşu, execution grant'in semantic authority'ye exact binding'i ve güncel target
+base'in bu binding'i canonical yapan commit'in descendant'ı olması birlikte
+doğrulandığında kabul edilir. Original base provenance'dır; target head SHA
+pinlenmez ve fresh-main normal merge ile uzlaştırma korunur.
+
+Binding yalnız PR #1914 ve iki target path için geçerlidir. Genel protected-doc
+yazma, final reconciliation target mutation'ı, AWS/IAM/KMS işlemi, Office runtime,
+Legal Basis content ratification, schema, migration, production activation,
+signing, signed release veya owner WIP yetkisi üretmez. PR #1914 merge veya close
+olduğunda binding yeniden kullanılamaz; reusable authority `NONE` kalır.
