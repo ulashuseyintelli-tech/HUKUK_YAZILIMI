@@ -1039,3 +1039,55 @@ yazma, final reconciliation target mutation'ı, AWS/IAM/KMS işlemi, Office runt
 Legal Basis content ratification, schema, migration, production activation,
 signing, signed release veya owner WIP yetkisi üretmez. PR #1914 merge veya close
 olduğunda binding yeniden kullanılamaz; reusable authority `NONE` kalır.
+
+## KC01/TR01 OWNERSHIP RECONCILIATION — exact control-plane binding
+
+Owner-ratified 2026-07-30. Bu kayıt yalnız PR #1925 için tek kullanımlık,
+task-specific governance reconciliation binding oluşturur. PR #1914 ile canonical
+hale gelen semantic authority ve execution grant birbirinden ayrı kalır; bu binding
+yeni semantik veya execution grant üretmez.
+
+### Binding PR kimliği
+
+```text
+Task ID  : RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_RECONCILIATION_CONTROL_PLANE_BINDING_R01
+Base SHA : 68badf34cdf63dbfe3f860efb97f61fbe05a6f71
+Head ref : codex/rcv-claim-form-kc01-tr01-ownership-control-plane-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-RECONCILIATION-R01
+Target mode      : RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_RECONCILIATION_R01
+Target PR        : #1925
+Original base SHA: 11f0657af70d4b292ebd609f45398574cd99ec8f
+Head ref         : codex/rcv-claim-form-kc01-tr01-ownership-reconciliation-r01
+Scope            : M project/docs/governance/GOVERNANCE-INDEX.md
+                   M project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md
+                   M project/docs/governance/canonicalization-register.md
+                   M project/docs/governance/product-backlog.md
+Semantic record  : RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-RECONCILIATION-R01
+Execution record : RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-RECONCILIATION-R01-GRANT
+KC01 evidence SHA: 74d1950deb632380a7ca6574a009e85c206c7f14
+TR01 evidence SHA: 3472052b2efb08d5e3fbcda7ce0654b012225689
+Sequence SHA     : 76fb4c3440586453f2380a866aeda58322c778bf
+Next task        : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01
+```
+
+Hedef PR yalnız exact branch ve `M/M/M/M` dört-file seti, canonical binding
+ancestry'si, exact semantic/execution authority marker'ları, grant içindeki exact
+path allowlist'i, KC01/TR01/sequence evidence ancestry'si ve üçlü ownership
+literal'leri birlikte doğrulandığında kabul edilir. Fresh-main advance, binding
+commit'inin ve evidence SHA'larının descendant'ı olduğu sürece normal reconciliation
+ile desteklenir.
+
+Binding yalnız PR #1925 ve dört target path için geçerlidir. AWS/IAM/KMS mutation,
+Office runtime, Legal Basis content ratification, code, test, schema, migration,
+production activation, signing, signed release, D02-LB01 authority veya owner WIP
+yetkisi üretmez. PR #1925 merge veya close olduğunda binding yeniden kullanılamaz;
+global/reusable authority `NONE` kalır.

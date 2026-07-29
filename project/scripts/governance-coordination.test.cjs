@@ -414,6 +414,18 @@ function kc01Tr01OwnershipAuthorityTargetChanges() {
   );
 }
 
+function kc01Tr01OwnershipReconciliationBindingChanges() {
+  return coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_RECONCILIATION_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function kc01Tr01OwnershipReconciliationTargetChanges() {
+  return coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_RECONCILIATION_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function rootAuthorityStage1Changes() {
   return coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01.bindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -709,6 +721,7 @@ function rcvColBindingContractContent(
     binding.bindingPr.mode,
     binding.bindingPr.baseSha,
     binding.bindingPr.headRef,
+    ...binding.bindingPr.changedPaths.map(({ path: repoPath }) => repoPath),
     binding.targetPr.taskId,
     binding.targetPr.mode,
     String(binding.targetPr.pullRequestNumber),
@@ -718,13 +731,9 @@ function rcvColBindingContractContent(
     binding.targetPr.semanticAuthority.recordId,
     binding.targetPr.executionGrant.recordId,
     ...(binding.targetPr.implementation
-      ? [
-          binding.targetPr.implementation.squashSha,
-          binding.targetPr.implementation.contractId,
-          binding.targetPr.implementation.provider,
-          binding.targetPr.implementation.publicManifestChecksum,
-          binding.targetPr.implementation.nextTaskId,
-        ].filter(Boolean)
+      ? Object.values(binding.targetPr.implementation).filter(
+          (value) => typeof value === 'string' || typeof value === 'number',
+        )
       : []),
     '',
   ].join('\n');
@@ -1048,6 +1057,142 @@ function createKc01ClosureTargetGitFixture(t, options = {}) {
   }
   runFixtureGit(['add', '--all'], root);
   runFixtureGit(['commit', '--quiet', '-m', 'target KC01 formal closure'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, base, head };
+}
+
+function createKc01Tr01OwnershipReconciliationTargetGitFixture(t, options = {}) {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_RECONCILIATION_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-kc01-tr01-owner-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+  runFixtureGit(
+    ['fetch', '--quiet', '--no-tags', REPO_ROOT, target.implementation.sequenceAuthoritySha],
+    root,
+  );
+  runFixtureGit(
+    [
+      'checkout',
+      '--quiet',
+      '-b',
+      'kc01-tr01-ownership-base',
+      target.implementation.sequenceAuthoritySha,
+    ],
+    root,
+  );
+
+  const contractPath = fixturePath(root, binding.contractPath);
+  fs.appendFileSync(contractPath, rcvColBindingContractContent(binding), 'utf8');
+  const semanticRecordId =
+    options.semanticRecordId || target.semanticAuthority.recordId;
+  const executionRecordId =
+    options.executionRecordId || target.executionGrant.recordId;
+  const semanticBindingRecordId =
+    options.semanticBindingRecordId || target.semanticAuthority.recordId;
+  const semanticMarker =
+    '<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=' +
+    semanticRecordId +
+    ' -->';
+  const decisionPath = fixturePath(root, target.semanticAuthority.path);
+  fs.appendFileSync(
+    decisionPath,
+    '\n| 2026-07-30 | ' +
+      semanticMarker +
+      ' **' +
+      semanticRecordId +
+      ' — fixture** |\n',
+    'utf8',
+  );
+  const executionMarker =
+    '<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=' +
+    executionRecordId +
+    ' -->';
+  const grantPath = fixturePath(root, target.executionGrant.path);
+  fs.mkdirSync(path.dirname(grantPath), { recursive: true });
+  fs.writeFileSync(
+    grantPath,
+    [
+      '# KC01/TR01 ownership reconciliation grant',
+      executionMarker,
+      '',
+      '```text',
+      'semanticAuthorityRef.kind     : ' + target.semanticAuthority.kind,
+      'semanticAuthorityRef.path     : ' + target.semanticAuthority.path,
+      'semanticAuthorityRef.recordId : ' + semanticBindingRecordId,
+      '```',
+      '',
+      ...target.changedPaths.map(({ path: repoPath }) => '- `' + repoPath + '`'),
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'canonical ownership reconciliation binding'], root);
+
+  if (options.freshMain) {
+    writeFixtureRepoFile(root, 'unrelated.md', 'fresh main advance\n');
+    runFixtureGit(['add', '--all'], root);
+    runFixtureGit(['commit', '--quiet', '-m', 'advance canonical main'], root);
+  }
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  const shared = [
+    target.taskId,
+    target.implementation.kc01SquashSha,
+    target.implementation.tr01SquashSha,
+    target.implementation.nextTaskId,
+    'CROSS_MODULE / SHARED_CONTROL_PLANE',
+    'OFFICE',
+    'RECEIVABLE',
+  ];
+  const closureContent = {
+    'project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md': [
+      ...shared,
+      target.implementation.sequenceAuthoritySha,
+      'RUNTIME                            DORMANT',
+      'SIGNING AUTHORITY                  NOT ACTIVE',
+      'D02-LB01                           NOT CURRENT NEXT / NOT ELIGIBLE',
+    ].join('\n'),
+    'project/docs/governance/canonicalization-register.md': [
+      ...shared,
+      'verification `ACTIVE`, runtime `DORMANT`, signing `NOT ACTIVE`',
+      '`RCV-CLAIM-FORM-P02-S08-D02-LB01` `NOT CURRENT NEXT / NOT ELIGIBLE`',
+    ].join('\n'),
+    'project/docs/governance/product-backlog.md': [
+      ...shared,
+      target.implementation.sequenceAuthoritySha,
+      'SIGNING                            NOT ACTIVE',
+      'D02-LB01                           NOT CURRENT NEXT / NOT ELIGIBLE',
+    ].join('\n'),
+    'project/docs/governance/GOVERNANCE-INDEX.md': [
+      'project/docs/rcv-claim-legal-signer-*',
+      'project/docs/rcv-claim-legal-public-key-trust-root-*',
+      target.implementation.kc01SquashSha.slice(0, 8),
+      target.implementation.tr01SquashSha.slice(0, 8),
+      'CROSS_MODULE / SHARED_CONTROL_PLANE',
+      'OFFICE',
+      'RECEIVABLE',
+    ].join('\n'),
+  };
+  if (options.omitNextTask) {
+    closureContent['project/docs/governance/product-backlog.md'] =
+      'ownership reconciliation without next task\n';
+  }
+  for (const [repoPath, content] of Object.entries(closureContent)) {
+    writeFixtureRepoFile(root, repoPath, content + '\n');
+  }
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'target ownership reconciliation'], root);
   const head = runFixtureGit(['rev-parse', 'HEAD'], root);
   return { root, base, head };
 }
@@ -3340,6 +3485,102 @@ test('KC01/TR01 ownership authority target validates exact markers and fresh-mai
     });
     assert.equal(result.mode, binding.targetPr.mode);
     assert.equal(result.taskId, binding.targetPr.taskId);
+  }
+});
+
+test('KC01/TR01 ownership reconciliation binding requires exact base branch scope and contract content', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_RECONCILIATION_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(
+    kc01Tr01OwnershipReconciliationBindingChanges(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result =
+    coordination.validateKc01Tr01OwnershipReconciliationBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      changes: kc01Tr01OwnershipReconciliationBindingChanges(),
+      taskId: binding.taskId,
+      cwd: fixture.root,
+    });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('KC01/TR01 ownership reconciliation binding rejects wrong branch and expanded scope', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_RECONCILIATION_CONTROL_PLANE_BINDING_R01;
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        kc01Tr01OwnershipReconciliationBindingChanges(),
+        {
+          base: binding.bindingPr.baseSha,
+          headRef: `${binding.bindingPr.headRef}-copy`,
+        },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  const expanded = kc01Tr01OwnershipReconciliationBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('KC01/TR01 ownership reconciliation target validates exact markers and fresh-main ancestry', (t) => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_RECONCILIATION_CONTROL_PLANE_BINDING_R01;
+  for (const freshMain of [false, true]) {
+    const fixture = createKc01Tr01OwnershipReconciliationTargetGitFixture(t, {
+      freshMain,
+    });
+    const result = coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    });
+    assert.equal(result.mode, binding.targetPr.mode);
+    assert.equal(result.taskId, binding.targetPr.taskId);
+  }
+});
+
+test('KC01/TR01 ownership reconciliation target rejects incomplete authority or content', (t) => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_RECONCILIATION_CONTROL_PLANE_BINDING_R01;
+  for (const options of [
+    { semanticRecordId: 'RCV-CLAIM-FORM-KC01-TR01-WRONG' },
+    { executionRecordId: 'RCV-CLAIM-FORM-KC01-TR01-WRONG-GRANT' },
+    { semanticBindingRecordId: 'ANOTHER-KC01-TR01-AUTHORITY' },
+    { omitNextTask: true },
+  ]) {
+    const fixture = createKc01Tr01OwnershipReconciliationTargetGitFixture(t, options);
+    expectCode(
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    );
   }
 });
 
