@@ -1,3 +1,9 @@
+import type {
+  DocumentSourceType,
+  InstrumentType,
+  ProceedingType,
+} from '@prisma/client';
+
 /**
  * UYAP-OFFICIAL-CODELIST-EMISSION-I01B-1 — CANONICAL RESMÎ CODELIST REGISTRY.
  *
@@ -214,7 +220,19 @@ export type OfficialCodelistFailureCode =
    */
   | 'OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED'
   /** `takipTuru` için domain → resmî kod eşlemesi owner tarafından tayin edilmemiştir. */
-  | 'OFFICIAL_TAKIP_MAPPING_AUTHORITY_REQUIRED';
+  | 'OFFICIAL_TAKIP_MAPPING_AUTHORITY_REQUIRED'
+  /**
+   * UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-IMPLEMENTATION-I01: owner satırı APPROVE etti
+   * (M-01, 9009) ancak owner'ın bağlayıcı koşulunu ("CaseSubCategory adı dışında nafaka
+   * semantiğini doğrulayan canonical legal basis") karşılayan tekil, belirsizliksiz bir
+   * domain discriminator repository'de bulunamadı. Tahmin/schema değişikliği YAPILMADI —
+   * owner'ın kendi talimatı gereği (§ implementation sınırı) satır MODEL_RESIDUAL kaldı.
+   */
+  | 'OFFICIAL_MAHIYET_MODEL_RESIDUAL'
+  /** `alacakKalemi` wrapper: hem enstrüman hem ilam sinyali aynı anda mevcut — çelişkili. */
+  | 'OFFICIAL_WRAPPER_AMBIGUOUS'
+  /** `alacakKalemi` wrapper: domain → wrapper eşlemesi owner tarafından tayin edilmemiştir. */
+  | 'OFFICIAL_WRAPPER_AUTHORITY_REQUIRED';
 
 export type OfficialCodelistCheck =
   | { readonly ok: true }
@@ -339,65 +357,320 @@ export type OfficialCodeResolution =
    * ayrıştırıcı `1` (İlamsız) uygular. Bu yüzden ihmal, örtük bir hukuki iddiadır ve
    * AÇIKÇA beyan edilmek zorundadır — evidence'ta `dtdDefaultApplies` ile taşınır.
    */
-  | { readonly kind: 'NOT_ASSERTED' };
+  | { readonly kind: 'NOT_ASSERTED' }
+  /**
+   * Owner satırı APPROVE etti, ancak owner'ın bağlayıcı koşulunu karşılayan tekil ve
+   * belirsizliksiz bir canonical domain discriminator repository'de YOK. Tahmin/schema
+   * değişikliği YASAK; satır bu haliyle emit edilemez kalır
+   * (`UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-IMPLEMENTATION-I01`).
+   */
+  | { readonly kind: 'MODEL_RESIDUAL'; readonly domainType: string; readonly reason: string };
+
+// ============================================================================
+// OWNER RATIFICATION — UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-OWNER-RATIFICATION-R01
+// ============================================================================
+//
+// Owner disposition (2026-07-29): 11 aday satırdan T-01..T-04, W-01, W-03..W-05
+// KOŞULSUZ APPROVE; W-02 ve M-01/M-02 APPROVE WITH EXACT SEMANTIC CONSTRAINT.
+// Kısıtlar implementasyonun PARÇASIDIR — tavsiye değildir. Kısıtı karşılamayan
+// veri `AUTHORITY_REQUIRED` / `MODEL_RESIDUAL` kalır; hiçbir varsayılan/tahmin
+// uygulanmaz. `5045` bu ratifikasyona DAHİL DEĞİLDİR (EXTERNAL_TECHNICAL_AUTHORITY_REQUIRED).
 
 /**
- * Owner tarafından ratifiye edilmiş **domain türü → resmî `mahiyetKodu`** eşlemeleri.
+ * `takipTuru` anlam çözümü girdisi.
  *
- * **ŞU AN BOŞ.** Bu bir eksiklik değil, ölçülmüş bir gerçektir:
- *
- * ```text
- * resmi 1007 = Telefon (Sabit) - Ornek 7      legacy 1007 = Genel Haciz Yoluyla Takip
- * resmi 3007 = Internet/Tv - Ornek 7          legacy 3007 = Nafaka Alacagi Takibi
- * resmi 1045 = Nafaka - Ornek 4-5             legacy 1045 = Fatura Alacagi
- * ```
- *
- * Paylaşılan **17 kodun 17'si de** legacy sözlükte FARKLI hukuki anlam taşıyor. Yani
- * mevcut hiçbir iç domain türünün resmî karşılığı repository kanıtıyla türetilemez;
- * türetmeye çalışmak hukuki anlam İCADI olur (ör. fatura alacağını nafaka olarak emit
- * etmek). Eşleme owner/LDO kararı bekler.
+ * `proceedingType` — `Case.proceedingType`, `ProceedingClassificationService`'in
+ * ürettiği CANONICAL sınıflandırma alanıdır (owner Decision, MPB-028(a) PR-3C).
+ * Bilinçli seçim: girdi `proceedingType`'dır, "bir mahkeme belgesi var mı" gibi bir
+ * bayrak DEĞİLDİR — T-04'ün owner koşulu ("yalnız bir mahkeme belgesinin bulunması
+ * yeterli değildir") tam olarak bunu yasaklar. `ProceedingClassificationService`
+ * `CaseType`/`subCategory`/`executionPath`'ten GİZLİ FALLBACK KURMAZ (owner Decision);
+ * bu yüzden `proceedingType` tek başına yeterli ve doğru girdidir.
  */
-const RATIFIED_MAHIYET_BY_DOMAIN: Readonly<Record<string, string>> = Object.freeze({});
-
-/** Owner tarafından ratifiye edilmiş **domain türü → resmî `takipTuru`** eşlemeleri. **ŞU AN BOŞ.** */
-const RATIFIED_TAKIP_TURU_BY_DOMAIN: Readonly<Record<string, string>> = Object.freeze({});
+export interface TakipTuruResolutionInput {
+  readonly proceedingType: ProceedingType | null;
+}
 
 /**
- * Domain türünden resmî `mahiyetKodu`'na **anlam** çözümü.
+ * Domain'den resmî `takipTuru`'na **anlam** çözümü (T-01…T-11).
  *
- * Ham kod kabul EDİLMEZ; yalnız ratifiye edilmiş domain eşlemesi `RESOLVED` üretir.
- * Ratifiye eşleme yoksa fail-closed `AUTHORITY_REQUIRED` döner — varsayılan kod,
- * "en yakın" kod veya legacy kodun geçirilmesi YOKTUR.
+ * Owner-approved (koşulsuz): `GENERAL_EXECUTION`/`CAMBIO`/`RENT` → `1` İlamsız,
+ * `JUDGMENT_ENFORCEMENT` → `0` İlamlı.
+ *
+ * `RENT`/`JUDGMENT_ENFORCEMENT` T-03/T-04'ün "yalnız X anlamına geldiğinde" koşulu
+ * **yapı gereği** sağlanır: `Case.proceedingType` TEKİL nullable alandır — bir Case
+ * aynı anda hem `RENT` hem `JUDGMENT_ENFORCEMENT` olamaz (owner Decision ile
+ * kurulmuş tek-değerli exhaustive sınıflandırma). Mahkeme ilamına dayanan
+ * tahliye/kira zaten `JUDGMENT_ENFORCEMENT` olarak sınıflandırılır, `RENT` değil.
+ *
+ * `PLEDGE`/`MORTGAGE`/bağımsız `EVICTION`/`BANKRUPTCY`/`PUBLIC_RECEIVABLE` T-05…T-10:
+ * owner onay tablosuna hiç girmedi — `AUTHORITY_REQUIRED` kalır.
+ *
+ * Exhaustive switch + assertUnreachable: `ProceedingType`'a yeni değer eklenip
+ * ele alınmazsa DERLEME HATASI verir.
  */
-export function resolveOfficialMahiyetKodu(domainType: string): OfficialCodeResolution {
-  const code = RATIFIED_MAHIYET_BY_DOMAIN[domainType];
-  if (code !== undefined) return { kind: 'RESOLVED', code };
+export function resolveOfficialTakipTuru(
+  input: TakipTuruResolutionInput,
+): OfficialCodeResolution {
+  const { proceedingType } = input;
+
+  if (proceedingType === null) {
+    // T-11: sınıflandırılmamış — ProceedingClassificationService tahmin ETMEZ.
+    return {
+      kind: 'AUTHORITY_REQUIRED',
+      domainType: 'proceedingType:UNRESOLVED',
+      reason:
+        'Case henuz siniflandirilmamis (proceedingType null); ' +
+        'ProceedingClassificationService tahmin etmez, sessiz varsayilan uygulanamaz.',
+    };
+  }
+
+  switch (proceedingType) {
+    // T-01, T-02, T-03 — owner APPROVE, koşulsuz.
+    case 'GENERAL_EXECUTION':
+    case 'CAMBIO':
+    case 'RENT':
+      return { kind: 'RESOLVED', code: '1' };
+
+    // T-04 — owner APPROVE, koşulsuz (koşul proceedingType'ın kendisiyle sağlanır).
+    case 'JUDGMENT_ENFORCEMENT':
+      return { kind: 'RESOLVED', code: '0' };
+
+    // T-05..T-10 — owner onay tablosuna hiç girmedi.
+    case 'PLEDGE':
+    case 'MORTGAGE':
+    case 'EVICTION':
+    case 'BANKRUPTCY':
+    case 'PUBLIC_RECEIVABLE':
+      return {
+        kind: 'AUTHORITY_REQUIRED',
+        domainType: `proceedingType:${proceedingType}`,
+        reason:
+          'Bu proceedingType degeri owner ratifikasyon paketine hic sunulmadi ' +
+          '(UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-OWNER-RATIFICATION-R01).',
+      };
+
+    default:
+      return assertUnreachableProceedingType(proceedingType);
+  }
+}
+
+function assertUnreachableProceedingType(value: never): OfficialCodeResolution {
   return {
     kind: 'AUTHORITY_REQUIRED',
-    domainType,
-    reason:
-      'Domain -> resmi mahiyetKodu eslemesi owner tarafindan tayin edilmemistir. ' +
-      'Legacy sozluk ayni kodlari FARKLI hukuki anlamlarla kullanir; ham kod gecirmek ' +
-      'hukuken yanlis ama teknik olarak gecerli XML uretir.',
+    domainType: `proceedingType:UNKNOWN(${String(value)})`,
+    reason: 'Siniflandirilamayan/bilinmeyen ProceedingType degeri.',
   };
 }
 
 /**
- * Domain türünden resmî `takipTuru`'na **anlam** çözümü.
- *
- * Resmî kod uzayı (`0`=İlamlı, `1`=İlamsız) ile legacy kod uzayı (`'1'..'6'`,
- * `2`=İlamlı) AYRI SİSTEMLERDİR. Sayısal eşitlik anlam eşitliği DEĞİLDİR: legacy `1`
- * ile resmî `1` tesadüfen aynı anlama gelir, legacy `2` ile resmî `1` gelmez.
+ * `mahiyetKodu` anlam çözümü girdisi — yalnız `CaseSubCategory.NAFAKA` (M-01/M-02)
+ * için tanımlıdır; başka bir `subCategory` bu fonksiyona verilirse `AUTHORITY_REQUIRED`
+ * döner (owner onay tablosuna hiç girmedi).
  */
-export function resolveOfficialTakipTuru(domainType: string): OfficialCodeResolution {
-  const code = RATIFIED_TAKIP_TURU_BY_DOMAIN[domainType];
-  if (code !== undefined) return { kind: 'RESOLVED', code };
+export interface MahiyetResolutionInput {
+  readonly caseSubCategory: string;
+  /** Case için önceden çözülmüş takipTuru anlamı (T-01…T-04'ten). */
+  readonly takipTuru: TakipTuruResolutionInput;
+  /**
+   * `CaseJudgment.nafakaType` — case için EN AZ BİR `CaseJudgment` kaydı NAFAKA türünde
+   * mi? M-02'nin owner koşulu 3/4: "geçerli ilam canonical modelde bulunmalı" ve
+   * "nafaka alacağı bu ilamla açık biçimde ilişkilendirilmelidir". `CaseJudgment` bu
+   * ilişkiyi `nafakaType` alanıyla taşır — genel bir "belge var" bayrağı DEĞİLDİR.
+   */
+  readonly caseJudgmentNafakaType: 'ISTIRAK' | 'YOKSULLUK' | 'TEDBIR' | 'YARDIM' | null;
+}
+
+/**
+ * Domain'den resmî `mahiyetKodu`'na **anlam** çözümü (M-01…M-08).
+ *
+ * ## M-02 (1045, Nafaka — Örnek 4-5) — IMPLEMENTED
+ *
+ * Owner koşulları: (1) alacak gerçekten nafaka olmalı, (2) canonical procedure
+ * ilamlı olmalı, (3) geçerli ilam canonical modelde bulunmalı, (4) nafaka bu ilamla
+ * açıkça ilişkilendirilmeli, (5) legacy `FATURA=1045` authority DEĞİL.
+ *
+ * Koşul (1)+(3)+(4) TEK bir alanla birlikte sağlanır: `caseJudgmentNafakaType`
+ * non-null — bu, `CaseJudgment.nafakaType` alanının (Case.subCategory'den TAMAMEN
+ * BAĞIMSIZ, ayrı bir model, ayrı bir enum) doldurulmuş olduğu, yani canonical bir
+ * ilam kaydının GERÇEKTEN nafaka hükmü taşıdığı anlamına gelir — "CaseSubCategory
+ * adı dışında canonical legal basis" şartı budur. Koşul (2) `takipTuru` girdisinden
+ * `RESOLVED('0')` şartıyla sağlanır. Koşul (5): legacy kod hiçbir dalda okunmaz.
+ *
+ * ## M-01 (9009, Nafaka — Örnek 7) — MODEL_RESIDUAL, IMPLEMENTE EDİLMEDİ
+ *
+ * Owner koşulu (3): "CaseSubCategory adı dışında nafaka semantiğini doğrulayan
+ * canonical legal basis bulunmalıdır." İlamsız (takipTuru=1) kolda `CaseJudgment`
+ * YOKTUR (ilam yok = ilamsız). Aday ikinci bir alan (`Due.type = NAFAKA`, ayrı bir
+ * legacy paralel model) bulundu, ANCAK bu alanın `ClaimItem` karşısında canonical
+ * authority statüsünü belirleyen bir governance kaydı YOK — iki model arasında
+ * hangisinin "CaseSubCategory dışında" ek kanıt sayılacağı BELİRSİZ. Owner'ın kendi
+ * talimatı gereği ("gerekli discriminator bulunamazsa tahmin/schema değişikliği
+ * yapılmayacak; satır MODEL_RESIDUAL/NOT IMPLEMENTED döner") bu satır tahmin
+ * EDİLMEDİ.
+ *
+ * ## M-03…M-08 ve diğer subCategory değerleri
+ *
+ * Owner onay tablosuna hiç girmedi → `AUTHORITY_REQUIRED`.
+ */
+export function resolveOfficialMahiyetKodu(
+  input: MahiyetResolutionInput,
+): OfficialCodeResolution {
+  if (input.caseSubCategory !== 'NAFAKA') {
+    return {
+      kind: 'AUTHORITY_REQUIRED',
+      domainType: `caseSubCategory:${input.caseSubCategory}`,
+      reason:
+        'Bu CaseSubCategory degeri owner ratifikasyon paketine hic sunulmadi ' +
+        '(UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-OWNER-RATIFICATION-R01).',
+    };
+  }
+
+  const takip = resolveOfficialTakipTuru(input.takipTuru);
+
+  if (takip.kind === 'RESOLVED' && takip.code === '0') {
+    // İlamlı kol — M-02 adayı.
+    if (input.caseJudgmentNafakaType !== null) {
+      return { kind: 'RESOLVED', code: '1045' };
+    }
+    return {
+      kind: 'AUTHORITY_REQUIRED',
+      domainType: 'caseSubCategory:NAFAKA+ilamli',
+      reason:
+        'M-02 owner kosulu 3/4 karsilanmadi: CaseJudgment.nafakaType dolu degil ' +
+        '(gecerli ilam canonical modelde yok veya nafaka bu ilamla iliskilendirilmemis).',
+    };
+  }
+
+  if (takip.kind === 'RESOLVED' && takip.code === '1') {
+    // İlamsız kol — M-01 adayı: owner APPROVE etti ama discriminator YOK.
+    return {
+      kind: 'MODEL_RESIDUAL',
+      domainType: 'caseSubCategory:NAFAKA+ilamsiz',
+      reason:
+        'M-01 owner APPROVE etti (9009) ancak owner kosulu 3 ("CaseSubCategory ' +
+        'adi disinda canonical legal basis") karsilanamadi: ilamsiz kolda CaseJudgment ' +
+        'yok; Due.type=NAFAKA adayi bulundu ama ClaimItem karsisinda canonical ' +
+        'authority statusu governance kaydiyla belirlenmemis. Tahmin YAPILMADI.',
+    };
+  }
+
+  // takipTuru henüz çözülmemiş/owner-onaysız — mahiyet de çözülemez.
   return {
     kind: 'AUTHORITY_REQUIRED',
-    domainType,
+    domainType: 'caseSubCategory:NAFAKA+takipTuruUnresolved',
+    reason: 'takipTuru once cozulmeli; mahiyet takipTuru kolundan bagimsiz degildir.',
+  };
+}
+
+// ============================================================================
+// alacakKalemi WRAPPER — DOMAIN → RESMÎ SARMALAYICI ANLAM ÇÖZÜMÜ
+// ============================================================================
+
+export type OfficialWrapperResolution =
+  | { readonly kind: 'RESOLVED'; readonly wrapper: string }
+  | { readonly kind: 'AUTHORITY_REQUIRED'; readonly reason: string }
+  /** Hem enstrüman hem ilam sinyali aynı anda mevcut — çelişkili, sarmalayıcı SEÇİLMEZ. */
+  | { readonly kind: 'AMBIGUOUS'; readonly reason: string };
+
+/**
+ * Bir `ClaimItem` seviyesinde wrapper çözümü girdisi. `alacakKalemi` DTD'de her
+ * kalem kendi sarmalayıcısını taşır (dosya seviyesi değil) — bu yüzden girdi
+ * Case değil ClaimItem seviyesindedir.
+ */
+export interface AlacakKalemiWrapperResolutionInput {
+  /** `ClaimItem.instrument?.instrumentType` — kambiyo evrakı varsa. */
+  readonly instrumentType: InstrumentType | null;
+  /** `Case.proceedingType`. */
+  readonly proceedingType: ProceedingType | null;
+  /** `ClaimItem.sourceDocumentType`. */
+  readonly sourceDocumentType: DocumentSourceType | null;
+  /** Case için en az bir `CaseJudgment` kaydı var mı (genel varlık, nafaka'ya özgü değil). */
+  readonly caseHasJudgmentRecord: boolean;
+}
+
+/**
+ * Domain'den resmî `alacakKalemi` wrapper adına **anlam** çözümü (W-01…W-07).
+ *
+ * ⚠ **Kapsam sınırı:** bu fonksiyon yalnız wrapper ADINI çözer. `alacakKalemi`
+ * ELEMENT EMİSYONU bu görevin kapsamı DIŞINDADIR — `official-exchange-builder.ts`
+ * P02B-R2'deki fail-closed reddini (`UNAUTHORIZED_ALACAK_KALEMI_PARENT`) AYNEN korur.
+ * Bu, yeni bir serializer/XML yapısı İCAT ETMEMEK için bilinçli bir sınırdır.
+ *
+ * W-01 (`cek`), W-03 (`senet`←BONO), W-04 (`police`) koşulsuz APPROVE — enstrüman
+ * türünden doğrudan ve tekil türetilir.
+ *
+ * W-02 (`senet`←SENET) owner koşulu: "yalnız bono/emre muharrer senet anlamında
+ * kullanılıyorsa". `InstrumentType.SENET` şeması **zaten** yalnız bu anlamı taşır
+ * (bkz. schema.prisma yorum "Senet/Bono"; enum'da genel "yazılı borç ikrarı" değeri
+ * YOK) — semantic invariant `CA — official-legal-semantic-mapping-implementation`
+ * guard testinde şema yorumu üzerinden KİLİTLENİR.
+ *
+ * W-05 (`ilam`) owner koşulu: "ilam nesnesi canonical modelde mevcut olmalı VE
+ * ilgili alacak kalemleri bu ilamla açık biçimde ilişkilendirilmelidir. Yalnız
+ * proceedingType'tan sentetik ilam üretilemez." Bu üç ayrı sinyal ile sağlanır:
+ * `proceedingType=JUDGMENT_ENFORCEMENT` (yapısal), `caseHasJudgmentRecord=true`
+ * (nesne canonical modelde var), `sourceDocumentType='ILAM'` (KALEM SEVİYESİNDE
+ * açık ilişkilendirme — Case seviyesinde judgment olması TEK BAŞINA yetmez).
+ *
+ * Çelişki (§3.1): bir kalemde hem `instrumentType` hem `sourceDocumentType='ILAM'`
+ * varsa → `AMBIGUOUS`, sarmalayıcı SEÇİLMEZ.
+ *
+ * W-06 (`kontrat`) ve W-07 (`digerAlacak`) owner onay tablosuna hiç girmedi.
+ */
+export function resolveOfficialAlacakKalemiWrapper(
+  input: AlacakKalemiWrapperResolutionInput,
+): OfficialWrapperResolution {
+  const hasInstrumentSignal = input.instrumentType !== null;
+  const hasIlamSignal = input.sourceDocumentType === 'ILAM';
+
+  if (hasInstrumentSignal && hasIlamSignal) {
+    return {
+      kind: 'AMBIGUOUS',
+      reason:
+        'ClaimItem hem enstruman (instrumentType) hem ilam (sourceDocumentType=ILAM) ' +
+        'sinyali tasiyor; hangi sarmalayicinin dogru oldugu hukuki siniflandirmadir, ' +
+        'otomatik secilemez.',
+    };
+  }
+
+  if (hasInstrumentSignal) {
+    switch (input.instrumentType) {
+      case 'CEK':
+        return { kind: 'RESOLVED', wrapper: 'cek' };
+      case 'SENET':
+      case 'BONO':
+        return { kind: 'RESOLVED', wrapper: 'senet' };
+      case 'POLICE':
+        return { kind: 'RESOLVED', wrapper: 'police' };
+      default:
+        return assertUnreachableInstrumentType(input.instrumentType);
+    }
+  }
+
+  if (input.proceedingType === 'JUDGMENT_ENFORCEMENT') {
+    if (hasIlamSignal && input.caseHasJudgmentRecord) {
+      return { kind: 'RESOLVED', wrapper: 'ilam' };
+    }
+    return {
+      kind: 'AUTHORITY_REQUIRED',
+      reason:
+        'proceedingType=JUDGMENT_ENFORCEMENT yapisal sinyali var ancak W-05 kosulu ' +
+        'karsilanmadi: CaseJudgment kaydi yok VE/VEYA ClaimItem.sourceDocumentType ' +
+        "ILAM degil (acik iliskilendirme yok); sentetik/bos ilam nesnesi uretilmez.",
+    };
+  }
+
+  return {
+    kind: 'AUTHORITY_REQUIRED',
     reason:
-      'Domain -> resmi takipTuru eslemesi owner tarafindan tayin edilmemistir. ' +
-      'Resmi (0|1) ve legacy (1..6) AYRI kod sistemleridir; sayisal esitlik anlam ' +
-      'esitligi degildir.',
+      'kontrat (W-06) ve digerAlacak (W-07) owner ratifikasyon paketine hic sunulmadi.',
+  };
+}
+
+function assertUnreachableInstrumentType(value: never): OfficialWrapperResolution {
+  return {
+    kind: 'AUTHORITY_REQUIRED',
+    reason: `Siniflandirilamayan/bilinmeyen InstrumentType degeri: ${String(value)}`,
   };
 }

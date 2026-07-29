@@ -97,11 +97,27 @@ export type UyapCanonicalSerializationResult =
          */
         readonly takipTuruDtdDefaultApplies: boolean;
         /**
-         * P02B-R2: domain → resmî kod ANLAM eşlemesi hâlâ owner kararı bekliyor.
-         * `REGISTRY_VALIDATED` yalnız sözdizimini kapsar; bu bayrak, çıktının bir
-         * Canary corpus'u için hukuken hazır OLMADIĞINI taşır.
+         * `AUTHORITY_REQUIRED`: emit edilen kodlu alanların hiçbiri owner-ratified
+         * bir eşlemeden gelmedi (yalnız `NOT_ASSERTED` veya girdi yok).
+         *
+         * `PARTIALLY_RATIFIED`
+         * (`UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-IMPLEMENTATION-I01`): en az bir
+         * kodlu alan (`takipTuru` ve/veya `mahiyetKodu`) owner-ratified 11 satırdan
+         * `RESOLVED` geldi. **Bu, strict DTD uyumu VEYA "tüm alanlar ratifiye"
+         * İDDİA ETMEZ** — yalnız EMİT EDİLEN alanlardan en az birinin owner
+         * onayından geçtiğini taşır. `REGISTRY_VALIDATED` hâlâ yalnız sözdizimini
+         * kapsar.
+         *
+         * ⚠ **Bilinen sınır (NEW FINDING, bu görevde çözülmedi):** serializer,
+         * kendisine verilen `RESOLVED` girdisinin gerçekten `resolveOfficialTakipTuru`/
+         * `resolveOfficialMahiyetKodu` üzerinden mi geldiğini yoksa çağıran tarafından
+         * elle mi kurulduğunu AYIRT EDEMEZ (P02B-R2'den miras kalan sözleşme: girdi
+         * "önceden-resolved"tir). Sözdizim doğrulaması (`validateOfficial*`) geçersiz
+         * kodu engeller ama semantik-bypass'i engellemez. Bu sınır resolver-çağrısı
+         * ZORUNLU kılan ayrı bir sertleştirme görevi gerektirir; bu görevin kapsamı
+         * DIŞINDADIR.
          */
-        readonly officialCodeSemanticMapping: 'AUTHORITY_REQUIRED';
+        readonly officialCodeSemanticMapping: 'AUTHORITY_REQUIRED' | 'PARTIALLY_RATIFIED';
       };
     }
   | {
@@ -193,7 +209,11 @@ export function serializeUyapExchangeCanonical(
       officialDtdValidated: false,
       officialCodelistConformance: 'REGISTRY_VALIDATED',
       takipTuruDtdDefaultApplies: input.dosya.takipTuruResolution.kind !== 'RESOLVED',
-      officialCodeSemanticMapping: 'AUTHORITY_REQUIRED',
+      officialCodeSemanticMapping:
+        input.dosya.takipTuruResolution.kind === 'RESOLVED' ||
+        input.dosya.mahiyetResolution?.kind === 'RESOLVED'
+          ? 'PARTIALLY_RATIFIED'
+          : 'AUTHORITY_REQUIRED',
     },
   };
 }
@@ -209,9 +229,11 @@ export function serializeUyapExchangeCanonical(
  * Bir kodlu-anlam çözümünü değerlendirir. İhlal varsa `{failureCode, detail}`, yoksa
  * `undefined` döner.
  *
- * İki bağımsız eksen ayrı ayrı kontrol edilir:
+ * Üç bağımsız eksen ayrı ayrı kontrol edilir:
  * 1. **ANLAM YETKİSİ** — `AUTHORITY_REQUIRED` ise emisyon yasaktır (owner kararı yok).
- * 2. **SÖZDİZİM** — `RESOLVED` değer her iki resmî artefaktta da tanınıyor mu.
+ * 2. **MODEL RESIDUAL** — owner APPROVE etti ama koşulu karşılayan discriminator yok
+ *    (`UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-IMPLEMENTATION-I01`) — emisyon yasaktır.
+ * 3. **SÖZDİZİM** — `RESOLVED` değer her iki resmî artefaktta da tanınıyor mu.
  *
  * `NOT_ASSERTED` geçerlidir: attribute emit edilmez. Bu ihmal DTD varsayılanını
  * devreye sokabilir, o yüzden evidence'ta açıkça taşınır.
@@ -229,6 +251,13 @@ function checkCodeResolution(
   if (resolution.kind === 'AUTHORITY_REQUIRED') {
     return {
       failureCode: authorityFailureCode,
+      detail: `${resolution.domainType}: ${resolution.reason}`,
+    };
+  }
+
+  if (resolution.kind === 'MODEL_RESIDUAL') {
+    return {
+      failureCode: 'OFFICIAL_MAHIYET_MODEL_RESIDUAL',
       detail: `${resolution.domainType}: ${resolution.reason}`,
     };
   }

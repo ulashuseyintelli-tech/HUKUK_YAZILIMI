@@ -29,8 +29,6 @@ import {
   checkOfficialRolePair,
   emittableLabel,
   isOfficialRoleId,
-  resolveOfficialMahiyetKodu,
-  resolveOfficialTakipTuru,
   validateOfficialMahiyetKodu,
   validateOfficialTakipTuru,
 } from '../official-codelist-registry';

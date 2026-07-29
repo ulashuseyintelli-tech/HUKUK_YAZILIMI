@@ -203,6 +203,7 @@ src/modules/uyap/official/__tests__/official-role-translator.spec.ts
 src/modules/uyap/official/__tests__/official-codelist-emission.spec.ts
 src/modules/uyap/official/__tests__/official-structural-semantic-p02b-r2.spec.ts
 src/modules/uyap/official/__tests__/official-legal-semantic-mapping-authority.spec.ts
+src/modules/uyap/official/__tests__/official-legal-semantic-mapping-implementation.spec.ts
 # NOT: uyap-event-ingest.boundary.integration.spec.ts BURADA DEGIL.
 # DATABASE_URL yoksa describe.skip ile kendini atliyor, yani pure manifest'te
 # her zaman skip olurdu. Yeri db/core-lifecycle.txt (TEST_DATABASE_URL orada set).

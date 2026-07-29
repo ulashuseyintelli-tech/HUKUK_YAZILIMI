@@ -150,29 +150,48 @@ describe('XS — alacakKalemi yapısal yerleşimi', () => {
 // ============================================================================
 
 describe('MS — mahiyetKodu anlam eşlemesi', () => {
-  it('MS-01: ratifiye eşleme YOK → hiçbir domain türü RESOLVED üretmez', () => {
-    for (const domainType of ['FATURA', 'NAFAKA', 'KIRA', 'KAMBIYO_CEK', 'KREDI']) {
-      const r = resolveOfficialMahiyetKodu(domainType);
+  it('MS-01: NAFAKA dışındaki hiçbir CaseSubCategory RESOLVED üretmez', () => {
+    // UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-IMPLEMENTATION-I01 ile bu iddia
+    // NAFAKA için artık DOĞRU DEĞİL (owner M-01/M-02'yi APPROVE etti — bkz.
+    // official-legal-semantic-mapping-implementation.spec.ts IG-*). Bu test
+    // konusu (owner-onaysız hiçbir tür RESOLVED üretmez) NAFAKA HARİÇ diğer
+    // gerçek `CaseSubCategory` değerleri için geçerliliğini KORUYOR.
+    for (const caseSubCategory of ['GENEL', 'DOVIZ', 'KIRA', 'CEZA']) {
+      const r = resolveOfficialMahiyetKodu({
+        caseSubCategory,
+        takipTuru: { proceedingType: null },
+        caseJudgmentNafakaType: null,
+      });
       expect(r.kind).toBe('AUTHORITY_REQUIRED');
     }
   });
 
-  it('MS-02: aynı kod / farklı hukuki anlam — legacy değeri geçirmek REDDEDİLİR', () => {
-    // Legacy FATURA = '1045'. Resmî 1045 = **Nafaka**. Legacy kodu domain anlamı
-    // sanıp geçirmek, fatura alacağını nafaka olarak emit etmek demektir.
-    const legacyFaturaCode = '1045';
-    const viaAuthority = resolveOfficialMahiyetKodu('FATURA');
-    expect(viaAuthority.kind).toBe('AUTHORITY_REQUIRED');
+  it('MS-02: legacy kod DEĞERİ hiçbir dalda kanıt olarak okunmaz', () => {
+    // Legacy FATURA = '1045'. Resmî 1045 = **Nafaka**. Eski tasarımda risk "legacy
+    // domain-type string'ini anahtarlamak"tı; yeni tipli imza bunu DERLEME ZAMANINDA
+    // imkânsız kılar (caseSubCategory yalnız gerçek CaseSubCategory değeri alır,
+    // 'FATURA' hiç yazılamaz). Kalan risk: resolver kaynağının legacy kod/etiketi
+    // OKUMAMASI — kaynak metninde legacy literal aranarak doğrulanır.
+    const src = code(path.join(OFFICIAL_DIR, 'official-codelist-registry.ts'));
+    expect(src).not.toContain('UYAP_MAHIYET_KODLARI');
+    expect(src).not.toContain("'FATURA'");
+    expect(src).not.toMatch(/legacyFaturaCode|LEGACY_FATURA/);
 
-    const r = serializeUyapExchangeCanonical(
-      input({ mahiyetResolution: viaAuthority }),
-    );
-    expect(r.status).toBe('CODELIST_REJECTED');
-    if (r.status === 'CODELIST_REJECTED') {
-      expect(r.failureCode).toBe('OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED');
+    // Owner-onaysız gerçek bir CaseSubCategory (CEZA) hâlâ AUTHORITY_REQUIRED.
+    const r = resolveOfficialMahiyetKodu({
+      caseSubCategory: 'CEZA',
+      takipTuru: { proceedingType: null },
+      caseJudgmentNafakaType: null,
+    });
+    expect(r.kind).toBe('AUTHORITY_REQUIRED');
+
+    const s = serializeUyapExchangeCanonical(input({ mahiyetResolution: r }));
+    expect(s.status).toBe('CODELIST_REJECTED');
+    if (s.status === 'CODELIST_REJECTED') {
+      expect(s.failureCode).toBe('OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED');
     }
     // Kod SÖZDİZİMSEL olarak geçerli — tehlike tam da burada.
-    expect(OFFICIAL_MAHIYET_KODU_SET.has(legacyFaturaCode)).toBe(true);
+    expect(OFFICIAL_MAHIYET_KODU_SET.has('1045')).toBe(true);
   });
 
   it('MS-03: bilinmeyen mahiyetKodu fail-closed', () => {
@@ -243,8 +262,12 @@ describe('TS — takipTuru anlam eşlemesi', () => {
     }
   });
 
-  it('TS-04b: ratifiye eşleme YOK → domain çözümü AUTHORITY_REQUIRED ve emisyon durur', () => {
-    const r = resolveOfficialTakipTuru('ILAMLI');
+  it('TS-04b: owner onayı OLMAYAN ProceedingType → AUTHORITY_REQUIRED ve emisyon durur', () => {
+    // T-01..T-04 (GENERAL_EXECUTION/CAMBIO/RENT/JUDGMENT_ENFORCEMENT) owner APPROVE
+    // etti (bkz. official-legal-semantic-mapping-implementation.spec.ts IG-*). Bu
+    // testin konusu KORUNUYOR: onay tablosuna hiç girmeyen bir tür (PLEDGE, T-07)
+    // hâlâ AUTHORITY_REQUIRED.
+    const r = resolveOfficialTakipTuru({ proceedingType: 'PLEDGE' });
     expect(r.kind).toBe('AUTHORITY_REQUIRED');
 
     const s = serializeUyapExchangeCanonical(input({ takipTuruResolution: r }));
@@ -275,6 +298,11 @@ describe('TS — takipTuru anlam eşlemesi', () => {
 // ============================================================================
 
 describe('CE — Canary-required subset', () => {
+  // NOT: aşağıdaki sabit `subset` bu görevin (P02B-R2 follow-up) KAPANIŞ ANINDAKİ
+  // durumunu belgeler (tarihsel snapshot). Güncel Canary-required subset ve
+  // readiness dağılımı `UYAP-OPERATION-EVIDENCE-CANARY-R02-SCENARIO-CONTRACT-v1.0.md`
+  // ve owner-ratified 11 satırın implementasyon durumu
+  // `official-legal-semantic-mapping-implementation.spec.ts`'tedir.
   it('CE-01: gerekli alanlar sayılıdır ve her biri disposition taşır', () => {
     const subset = {
       rolTur: 'READY',
@@ -295,8 +323,15 @@ describe('CE — Canary-required subset', () => {
   });
 
   it('CE-02: çözülmemiş zorunlu alan byte emisyonunu ENGELLER', () => {
+    // KIRA gerçek bir CaseSubCategory'dir ama owner onay tablosuna hiç girmedi.
     const r = serializeUyapExchangeCanonical(
-      input({ mahiyetResolution: resolveOfficialMahiyetKodu('KIRA') }),
+      input({
+        mahiyetResolution: resolveOfficialMahiyetKodu({
+          caseSubCategory: 'KIRA',
+          takipTuru: { proceedingType: null },
+          caseJudgmentNafakaType: null,
+        }),
+      }),
     );
     expect(r.status).toBe('CODELIST_REJECTED');
     expect(r as any).not.toHaveProperty('bytes');
@@ -321,20 +356,36 @@ describe('CE — Canary-required subset', () => {
 
   it('CE-06: mapping hatasında hazırlanmış gönderim kanıtı ÜRETİLMEZ', () => {
     const d = prepareUyapDormantDispatch(
-      input({ mahiyetResolution: resolveOfficialMahiyetKodu('FATURA') }),
+      input({
+        mahiyetResolution: resolveOfficialMahiyetKodu({
+          caseSubCategory: 'CEZA',
+          takipTuru: { proceedingType: null },
+          caseJudgmentNafakaType: null,
+        }),
+      }),
     );
     expect(d.status).toBe('NOT_PREPARED');
     expect(d as any).not.toHaveProperty('bytes');
     expect(d as any).not.toHaveProperty('evidence');
   });
 
-  it('CE-07: strict DTD durumu D1 ile bloklu kalır ve anlam eşlemesi açık raporlanır', () => {
+  it('CE-07: strict DTD durumu D1 ile bloklu kalır ve anlam eşlemesi durumu açık raporlanır', () => {
+    // NOT_ASSERTED girdi → hiçbir alan owner-ratified değil.
+    const authorityRequired = serializeUyapExchangeCanonical(
+      input({ takipTuruResolution: NOT_ASSERTED }),
+    );
+    if (authorityRequired.status === 'CANONICAL_BYTES') {
+      expect(authorityRequired.evidence.officialCodeSemanticMapping).toBe('AUTHORITY_REQUIRED');
+    }
+
+    // RESOLVED girdi (owner-ratified T-01 üzerinden) → PARTIALLY_RATIFIED
+    // (UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-IMPLEMENTATION-I01). Strict DTD hükmü
+    // hâlâ ÜRETİLMEZ — bu iki alan BAĞIMSIZDIR.
     const r = serializeUyapExchangeCanonical(input());
     if (r.status === 'CANONICAL_BYTES') {
       expect(r.evidence.officialDtdValidated).toBe(false);
       expect(r.evidence.officialCodelistConformance).toBe('REGISTRY_VALIDATED');
-      // Sözdizim geçse bile ANLAM eşlemesi hâlâ owner kararı bekliyor.
-      expect(r.evidence.officialCodeSemanticMapping).toBe('AUTHORITY_REQUIRED');
+      expect(r.evidence.officialCodeSemanticMapping).toBe('PARTIALLY_RATIFIED');
     }
   });
 });
