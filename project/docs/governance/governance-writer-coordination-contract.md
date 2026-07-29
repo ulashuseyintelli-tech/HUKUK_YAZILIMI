@@ -767,3 +767,60 @@ schema, migration, runtime veya owner WIP yetkisi üretmez. AWS account ID,
 key/IAM ARN, credential, token, public/private key material veya reusable
 authority taşımaz. PR #1859 merge veya close olduğunda binding yeniden
 kullanılamaz.
+
+## KC01 FORMAL CLOSURE — exact control-plane authority binding
+
+Owner-ratified 2026-07-29. Bu kayıt yalnız PR #1867 için tek kullanımlık,
+task-specific bir control-plane binding oluşturur; mevcut hiçbir kontrolü
+gevşetmez.
+
+### Binding PR kimliği
+
+```text
+Task ID  : RCV-CLAIM-FORM-P02-S08-D02-KC01-FORMAL-CLOSURE-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01
+Base SHA : 42fb9dcd0d8d33a4992973d091c77e5798d5cab7
+Head ref : codex/rcv-claim-form-d02-kc01-formal-closure-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-CLAIM-FORM-P02-S08-D02-KC01-FORMAL-CLOSURE-R01
+Target mode      : RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_R01
+Target PR        : #1867
+Original base SHA: a43918b6d58417a951337328d4fc4b0b72675746
+Head ref         : codex/rcv-claim-form-d02-kc01-formal-closure-r01
+Scope            : M project/docs/governance/GOVERNANCE-INDEX.md
+                   M project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md
+                   M project/docs/governance/canonicalization-register.md
+                   M project/docs/governance/product-backlog.md
+Semantic record  : RCV-CLAIM-FORM-P02-S08-D02-KC01-CLOSURE-R01
+Execution record : RCV-CLAIM-FORM-P02-S08-D02-KC01-CLOSURE-R01-GRANT
+Implementation   : PR #1856 / 74d1950deb632380a7ca6574a009e85c206c7f14
+Provider         : AWS_KMS
+Manifest checksum: 1e80168ebc52e6601f9231834ddde81a339e69a2337a0630bd9daa993f0519ec
+Next task        : RCV-CLAIM-FORM-P02-S08-D02-TR01 / OWNER GO REQUIRED
+```
+
+Hedef PR yalnız exact branch ve `M/M/M/M` dört-file seti; main'de canonical
+semantic authority ile execution grant marker'larının exact tekil oluşu;
+grant'in semantic authority ve aynı dört path'e exact binding'i; implementation
+squash ancestry'si; target content'in KC01 closure, AWS KMS provider, public
+manifest checksum, `PENDING_ONBOARDING`/`NOT_ACTIVE` sınırları ve yalnız TR01
+owner gate'ini taşıması; güncel target base'in bu binding'i canonical yapan
+commit'in descendant'ı olması birlikte doğrulandığında kabul edilir. Original
+base provenance'dır; target head SHA pinlenmez ve fresh-main normal merge ile
+uzlaştırma korunur.
+
+Binding yalnız yukarıdaki PR #1867 ve dört target path için geçerlidir. Genel
+governance yazma, authority/grant üretme, request/execution/result, AWS provider
+mutation, trust-root activation, signing, signed release, production, schema,
+migration, live database, runtime veya owner WIP yetkisi üretmez. D02-TR01'i
+başlatmaz; D02-F01, resolver/provider wiring, I04/I05, canary ve containment
+retirement'a authority vermez. AWS account ID, key/IAM ARN, credential, token,
+public/private key material, wildcard, prefix authority veya reusable authority
+taşımaz. PR #1867 merge veya close olduğunda binding yeniden kullanılamaz.
