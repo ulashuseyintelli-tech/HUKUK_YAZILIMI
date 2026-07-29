@@ -3455,3 +3455,184 @@ LIVE CRITICAL BLOCKER: NONE
 `prod-verification-run.cjs` ve `PRODVERIFY-RUNBOOK.md`, doğrulama tamamlandıktan sonra `HY_WT/RUNTIME`'dan silindi — tek seferlikti, kalıcı değildi, git'e hiç commit edilmedi. Kalan iş: **NONE**. Owner'ın kendi notu gereği, mimari veya provider değişikliği olmadıkça yeni bir verification programı gerekmez.
 
 **PRODUCTION VERIFIED, BİR KEZ KANITLANMIŞTIR — KALICI AKTİVASYON DEĞİLDİR. İKİ BAYRAK YARIN DA VARSAYILAN KAPALI KALIR.**
+
+## §49 ClientAddress Yaşam Döngüsü, Arşiv, Primary ve Uyumluluk Sözleşmesi (ARC-07)
+
+Bu bölüm additive'dir. §1–§48'in hiçbir metni DEĞİŞTİRİLMEDİ, SİLİNMEDİ veya yeniden yazılmadı. **GOVERNANCE-ONLY: bu bölüm hiçbir runtime davranışı, schema, migration veya veri mutasyonu YETKİLENDİRMEZ.** `IMPLEMENTATION AUTHORITY: NONE` — her uygulama dilimi ayrı owner GO gerektirir.
+
+### 49.1 Kapsam ve Amaç
+
+`ARC-07` (master-triage-register §D) owner tarafından bilinçli olarak kapsam-dışı bırakılmış bir kalemdi: `ClientAddress` backfill (flat→tablo) + `isCurrent` arşiv UI + dedicated GET endpoint. `VER-02` (§ilgili kayıt: `decision-log.md` `CLIENT-VER-02-ADDRESS-PERSIST-R01`) kapanırken bu üç kalem açıkça ERTELENDİ. Bu bölüm, owner'ın `CLIENT-ARC-07-ADDRESS-CURRENT-ARCHIVE-OWNER-DECISION-R01` ve `CLIENT-ARC-07-D07-PRODUCTION-ADDRESS-EVIDENCE-R01` analizleri sonrasında verdiği **D01–D07 kararlarını kanonikleştirir** — herhangi bir arşiv/restore implementasyonu, production kanıt toplama, backfill veya kaynak-otorite göçü BAŞLAMADAN ÖNCE.
+
+### 49.2 ARC-07-D01 — `isCurrent` Anlamı (OWNER RATIFIED)
+
+```text
+isCurrent = ACTIVE / NOT ARCHIVED
+```
+
+`isCurrent` ŞU ANLAMLARA GELMEZ: birincil adres · seçili yazışma adresi · en son kullanılan adres · portal-görünür adres · hukuken otoriter adres.
+
+**Birden çok `isCurrent=true` satır İZİNLİDİR** — farklı tipteki (MERNIS/TICARI/TEBLIGAT/FATURA/BEYAN) adreslerin eşzamanlı aktif olması normal ve kasıtlı durumdur.
+
+### 49.3 ARC-07-D02 — `isPrimary` ile İlişki (OWNER RATIFIED)
+
+```text
+isPrimary=true            -> isCurrent=true ZORUNLU
+isCurrent=false           -> isPrimary=false ZORUNLU
+en az bir current varsa   -> current'lar arasında TAM BİR primary
+sıfır primary             -> YALNIZ sıfır current varken izinli
+çok current               -> İZİNLİ
+çok primary               -> YASAK
+```
+
+`OBJECT SELECTION (isPrimary) ≠ LIFECYCLE STATE (isCurrent)` — iki eksen bağımsızdır ve birbirinin yerine kullanılamaz.
+
+### 49.4 ARC-07-D03 — Arşiv Yaşam Döngüsü (İLKESEL OLARAK ONAYLANDI)
+
+```text
+archive        : EXPLICIT lifecycle action
+restore        : EXPLICIT lifecycle action
+audit          : archive + restore icin ZORUNLU
+primary arsiv  : deterministik yeniden-atama OLMADAN YAPILAMAZ
+fiziksel silme : FAIL-CLOSED
+fiziksel silme, arsivin YERINE KULLANILAMAZ
+hard delete    : POL-E on kosullari acikca karsilanana kadar YETKISIZ
+```
+
+**Bu governance görevi hiçbir runtime implementasyonu YETKİLENDİRMEZ** — arşiv/restore servisi, endpoint ve audit kodu `I02` dilimine aittir.
+
+### 49.5 ARC-07-D04 — Backfill Governance (İLKESEL OLARAK ONAYLANDI)
+
+Zorunlu sıra ve koşullar: dry-run apply'dan ÖNCE · production sayımları mutasyondan ÖNCE · owner-gated apply · idempotent eligibility · açık duplike ele alma · açık conflict kovaları · **açık run provenance** · açık post-apply doğrulama · rollback sınırları apply'dan ÖNCE belgelenir.
+
+**PROVENANCE MEKANİZMASI ZORUNLU DEĞİL, SEÇİLECEK:** Prisma şemasına run-tag kolonu eklenmesi **ZORUNLU DEĞİLDİR**. İzin verilen mekanizmalar arasında şunlar bulunabilir: immutable evidence ledger · migration execution record · run manifest · deterministik inserted-record listesi · bounded audit metadata. **Implementasyon görevi, repository gerçeğinin desteklediği EN DAR mekanizmayı seçer.**
+
+### 49.6 ARC-07-D05 — Kaynak-Otorite Geçişi (AŞAMALI STRATEJİ ONAYLANDI)
+
+```text
+STAGE 1  Gecici tek-yon uyumluluk yazimi KALIR.
+STAGE 2  Legal/UYAP/dokuman/validation tuketicileri acik bir ClientAddress
+         resolver/adapter'a RETARGET edilir.
+STAGE 3  YALNIZ tuketici hazirligi KANITLANDIKTAN SONRA legacy flat yazimlar
+         azaltilabilir veya durdurulabilir.
+```
+
+Sözleşme hükümleri: `ClientAddress` **hedeflenen gelecek yapısal kaynaktır**. Legacy `Client` flat alanları **bugün aktif uyumluluk yüzeyleridir**. Resmî tüketiciler ve validation gate'leri flat-bağımlı kaldığı sürece **flat yazımlar DURDURULAMAZ**. Çift-kaynak belirsizliği **ölçülmeli ve açıkça çözülmelidir**. **Sessiz kaynak-otorite değişimi YASAKTIR.**
+
+### 49.7 ARC-07-D06 — Read/History Sözleşmesi (OWNER RATIFIED)
+
+Gerekli: aktif-adres read sözleşmesi · arşiv/history read sözleşmesi · **staff-only** · tenant/client scoped · audit-görünür. **Client portal expozürü YOK** — portal expozürü ayrı bir CLIENT visibility policy kararı gerektirir (POL-D/POL-F/BP-06 sınırları içinde).
+
+### 49.8 ARC-07-D07 — Production Kanıtı (OWNER RATIFIED)
+
+```text
+production kanit          : production backfill APPLY oncesi ZORUNLU
+sorgulanan hukuk_db Docker: DEVELOPMENT/INTEGRATION kaniti olarak SINIFLANDIRILDI
+                            production olarak KABUL EDILMEDI
+local/integration sayimlar: production sayimi olarak ATIF EDILEMEZ
+production mutasyonu      : AYRICA owner-authorized
+lifecycle contract + test : production verisi OLMADAN ilerleyebilir
+production backfill design: temsili kanit olmadan KAPANAMAZ
+```
+
+### 49.9 POL-E Hizalaması
+
+`ClientAddress`, POL-E'nin (§24) 18 bağımsız retention/deletion sınıfından biri olan **"client address"** ailesine aittir ve **korunan bir iş kaydı ailesidir**.
+
+- Mevcut runtime hard-delete davranışı bir **implementasyon residual'ıdır**.
+- **Bu governance kaydı tarihsel silmeleri geriye dönük SINIFLANDIRMAZ.**
+- Gelecekteki destructive lifecycle aksiyonları **FAIL-CLOSED**'dır.
+- Arşiv/restore implementasyonu **audit evidence GETİRMEK ZORUNDADIR**.
+- Fiziksel silmeye izin verilmeden önce POL-E'nin sekiz koşulu çözülmelidir: record-family owner · terminal event · retention basis · evidence dependency · cross-domain dependency · hold status · reference integrity · authorized deletion method.
+
+**POL-E implementasyonunun genel olarak tamamlandığı İDDİA EDİLMEZ.**
+
+### 49.10 AS-IS Durum (ÖLÇÜLMÜŞ, hedef DEĞİL)
+
+```text
+isCurrent varsayilan       : true
+isCurrent=false YAZAN kod  : YOK (repo-genelinde sifir production yolu)
+archive endpoint           : YOK
+restore endpoint           : YOK
+hard delete                : VAR
+hard delete guard          : YALNIZ primary silmeyi engeller
+ClientAddressService audit : YOK (adres yasam dongusu audit'i sifir)
+dedicated GET/history      : YOK
+ClientAddress'e inbound FK : YOK
+legacy flat Client alanlari: GENIS OLCUDE TUKETILIYOR
+legal/UYAP/dokuman/validation tuketicileri: FLAT-BAGIMLI
+production ClientAddress dagilimi: BILINMIYOR
+```
+
+`isCurrent` şu an **fiilen inert'tir**: `client.service.ts` içindeki `where: { isCurrent: true }` filtresi hiçbir satırı diskalifiye etmediği için pratikte pass-through'dur.
+
+### 49.11 TARGET Sözleşme (HENÜZ UYGULANMADI)
+
+D01–D07 hükümleri hedef sözleşmedir. **Hiçbiri şu an implementasyonda mevcut DEĞİLDİR.** `AS-IS ≠ TARGET` — bu bölüm hedef davranışı halihazırda uygulanmış gibi SUNMAZ.
+
+### 49.12 Bounded Context Sınırı
+
+**CLIENT SAHİBİDİR:** `ClientAddress` yaşam döngüsü · active/archive semantiği · `ClientAddress` primary invariant'ı · staff-side Client adres geçmişi · `ClientAddress` uyumluluk geçişi.
+
+**CLIENT SAHİBİ DEĞİLDİR:** `DebtorAddress` yaşam döngüsü · ACT-23 · debtor service-attempt adres seçimi · UYAP domain law · document domain law · OFFICE access-scope enforcement.
+
+Dış tüketiciler ileride kanonik `ClientAddress` resolver'ını tüketebilir; fakat **CLIENT onların domain mantığını YENİDEN UYGULAMAZ.**
+
+**ACT-23 İLİŞKİSİ: SHARED VOCABULARY ONLY.** Paylaşılan schema, servis, migration veya writer bağımlılığı **YOKTUR** — `ClientAddress` ile `DebtorAddress` sıfır kod/şema paylaşır ve `ClientAddress`'e hiçbir inbound FK bulunmaz (`CaseDebtor.selectedAddressId` yalnız `DebtorAddress`'e bağlıdır). Benzer terminoloji teknik bağımlılık DEĞİLDİR.
+
+### 49.13 Implementation Train (KANONİK SIRA)
+
+```text
+I01  CLIENT-ARC-07-LIFECYCLE-INVARIANT-I01
+     saf lifecycle resolver/invariant sozlesmesi · service-level validation ·
+     odakli testler · production veri mutasyonu YOK · repository gercegi
+     kacinilmaz kilmadikca schema migration YOK
+I02  CLIENT-ARC-07-ARCHIVE-RESTORE-AUDIT-I02
+     explicit archive · explicit restore · primary yeniden-atama kurali ·
+     hard-delete fail-closed · adres yasam dongusu audit'i
+I03  CLIENT-ARC-07-STAFF-HISTORY-I03
+     staff-only active/history GET · UI archive/restore/history ·
+     tenant/client scope · portal expozuru YOK
+I04  CLIENT-ARC-07-PRODUCTION-EVIDENCE-I04
+     gercek production count-only kanit · mutasyon YOK
+I05  CLIENT-ARC-07-BACKFILL-DRY-RUN-I05
+     dry-run · eligibility/conflict kovalari · provenance tasarimi · apply YOK
+I06  CLIENT-ARC-07-BACKFILL-APPLY-I06
+     ayrica owner-authorized production mutasyonu · yalniz production kaniti
+     ve dry-run onayindan SONRA
+I07  CLIENT-ARC-07-OFFICIAL-CONSUMER-ADAPTER-I07
+     UYAP · dokuman/sablonlar · validation gate'leri · ilgili web akislari ·
+     acik adres resolver
+I08  CLIENT-ARC-07-LEGACY-FLAT-REDUCTION-I08
+     kaynak-otorite gocu · uyumluluk-yazimi azaltimi · yalniz resmi tuketici
+     hazirligindan SONRA
+```
+
+### 49.14 Canonical NEXT
+
+```text
+NEXT ELIGIBLE IMPLEMENTATION TASK:
+CLIENT-ARC-07-LIFECYCLE-INVARIANT-I01
+
+STATUS: OWNER GO REQUIRED / NOT STARTED
+```
+
+Bu bölüm `I01`'i **başlatmaz**; yalnız sıradaki uygun görev olarak tanımlar. `I02`–`I08` otomatik olarak YETKİLENDİRİLMEZ.
+
+### 49.15 Statü Kesinliği
+
+```text
+ARC-07                     : OWNER DECISIONS RATIFIED / IMPLEMENTATION NOT STARTED
+VER-02                     : CLOSED / VERIFIED (degismedi)
+CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01 : CLOSED / VERIFIED (degismedi)
+ACT-23                     : UNAFFECTED
+PRODUCTION DATA            : NOT VERIFIED
+RUNTIME / SCHEMA / MIGRATION: DEGISMEDI
+IMPLEMENTATION AUTHORITY   : NONE
+```
+
+### 49.16 Bölüm Self-Check
+
+Bu bölüm: arşiv/restore İMPLEMENTE ETMEZ · `isCurrent` runtime davranışını DEĞİŞTİRMEZ · audit kodu EKLEMEZ · GET/history endpoint AÇMAZ · Prisma şemasını DEĞİŞTİRMEZ · migration ÜRETMEZ · backfill ÇALIŞTIRMAZ · production verisine ERİŞMEZ · `ClientAddress` satırlarını DEĞİŞTİRMEZ · legacy flat yazımları DEĞİŞTİRMEZ · UYAP/doküman tüketicilerini RETARGET ETMEZ · `DebtorAddress`'e DOKUNMAZ · ACT-23'ü DEĞİŞTİRMEZ · VER-02'yi YENİDEN AÇMAZ · Financial Disclosure'ı DEĞİŞTİRMEZ · §1–§48 metinlerini DEĞİŞTİRMEZ · POL-E implementasyonunun tamamlandığını İDDİA ETMEZ.
+
+**OWNER DECISION RATIFIED ≠ IMPLEMENTED · CONTRACT CANONICAL ≠ BEHAVIOR CHANGED · AS-IS ≠ TARGET · DEV DATASET ≠ PRODUCTION EVIDENCE.**
