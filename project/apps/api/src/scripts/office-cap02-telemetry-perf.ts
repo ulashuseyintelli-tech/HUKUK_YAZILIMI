@@ -31,6 +31,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 
+import { fetchWithTimeout } from '../common/fetch-with-timeout.util';
 import { CANARY_SAFE_TENANT_SLUGS } from './office-cap02-canary-provision.core';
 import {
   assessEventIntegrity,
@@ -87,12 +88,19 @@ function parseActors(raw: string, runId: string): Actor[] {
     });
 }
 
+/** Kanonik `fetchWithTimeout` (PF-004): bare fetch CI-1 guardrail'i ile yasak. */
+const HTTP_TIMEOUT_MS = 15_000;
+
 async function login(email: string, password: string): Promise<string> {
-  const r = await fetch(`${BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, tenantSlug: TENANT_SLUG }),
-  });
+  const r = await fetchWithTimeout(
+    `${BASE}/auth/login`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, tenantSlug: TENANT_SLUG }),
+    },
+    HTTP_TIMEOUT_MS,
+  );
   const b = (await r.json().catch(() => null)) as { token?: string; data?: { token?: string } } | null;
   const token = b?.token ?? b?.data?.token ?? '';
   if (token.length < 50) throw new Error(`PERF_LOGIN_FAILED status=${r.status}`);
@@ -120,11 +128,15 @@ async function changeStatus(
   let status = 0;
   let responseKeys: string[] = [];
   try {
-    const r = await fetch(`${BASE}/case-status/${actor.caseId}/change`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ status: nextStatus, reason: `PERF ${tag}` }),
-    });
+    const r = await fetchWithTimeout(
+      `${BASE}/case-status/${actor.caseId}/change`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: nextStatus, reason: `PERF ${tag}` }),
+      },
+      HTTP_TIMEOUT_MS,
+    );
     status = r.status;
     const b = (await r.json().catch(() => null)) as Record<string, unknown> | null;
     if (b) responseKeys = Object.keys(b).sort();
