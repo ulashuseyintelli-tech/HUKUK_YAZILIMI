@@ -721,3 +721,49 @@ This binding cannot modify the protected domain documents, unlock or clean any
 source, remove a branch/worktree, weaken owner-WIP failures, create a reusable
 authority, or authorize Task 04 semantic changes. Exact base, branch and five
 modified paths are mandatory; after merge the binding cannot be reused.
+
+## KC01 AWS KMS AUTHORITY BOOTSTRAP — exact control-plane authority binding
+
+Owner-ratified 2026-07-29. Bu kayıt yalnız PR #1859 için tek kullanımlık,
+task-specific bir control-plane binding oluşturur; mevcut hiçbir kontrolü
+gevşetmez.
+
+### Binding PR kimliği
+
+```text
+Task ID  : RCV-CLAIM-FORM-D02-KC01-AWS-KMS-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : a23e074589236bd451e797fd0f6a2b7e24c66fb9
+Head ref : codex/rcv-claim-form-d02-kc01-aws-kms-authority-bootstrap-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+### Hedef PR kimliği
+
+```text
+Target task      : RCV-CLAIM-FORM-D02-KC01-AWS-KMS-AUTHORITY-BOOTSTRAP-R01
+Target mode      : RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_R01
+Target PR        : #1859
+Original base SHA: 74d1950deb632380a7ca6574a009e85c206c7f14
+Head ref         : codex/rcv-claim-form-d02-kc01-aws-kms-authority-bootstrap-r01
+Scope            : M project/docs/governance/decision-log.md
+                   A project/docs/governance/coordination-execution-grants/RCV-CLAIM-FORM-P02-S08-D02-KC01-CLOSURE-R01.md
+Semantic record  : RCV-CLAIM-FORM-P02-S08-D02-KC01-CLOSURE-R01
+Execution record : RCV-CLAIM-FORM-P02-S08-D02-KC01-CLOSURE-R01-GRANT
+```
+
+Hedef PR yalnız exact branch ve `M/A` iki-file seti, iki marker'ın exact tekil
+oluşu, execution grant'in semantic authority'ye exact binding'i ve güncel target
+base'in bu binding'i canonical yapan commit'in descendant'ı olması birlikte
+doğrulandığında kabul edilir. Original base provenance'dır; target head SHA
+pinlenmez ve fresh-main normal merge ile uzlaştırma korunur.
+
+Binding yalnız yukarıdaki PR #1859 ve iki target path için geçerlidir. Genel
+`decision-log.md` yazma, başka execution grant, KC01 formal-closure target
+mutation'ı, request/execution/result, AWS provider mutation, production,
+schema, migration, runtime veya owner WIP yetkisi üretmez. AWS account ID,
+key/IAM ARN, credential, token, public/private key material veya reusable
+authority taşımaz. PR #1859 merge veya close olduğunda binding yeniden
+kullanılamaz.
