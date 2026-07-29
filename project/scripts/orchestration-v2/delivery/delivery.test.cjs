@@ -536,7 +536,7 @@ test('DV63  the unknown case and the empty case both fail towards runtime', () =
   assert.ok(impactMod.assertNotApplicableAllowed(['project/docs/governance/decision-log.md']));
 });
 
-// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV56)
+// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV57)
 
 const successorMod = require('../orchestrator/successor.cjs');
 const postMergeMod = require('./post-merge.cjs');
@@ -749,6 +749,71 @@ test('DV56  production writes the task identity consumed by the successor gate',
     /deliveryPhase:\s*'DELIVERY_VERIFIED'\s*,\s*delivery:\s*deliveryRecord/,
     'the verified path must persist the stamped delivery record',
   );
+});
+
+test('DV57  real producer output survives production stamping and satisfies the successor gate', () => {
+  const capability = manifestMod.CAPABILITIES[0];
+  const probe = probesMod.PROBES[capability.probeId];
+  const mergeSha = 'a'.repeat(40);
+  const taskId = 'GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R03';
+  const producerRecord = evidenceMod.build({
+    capability,
+    probe,
+    result: { observedState: capability.targetState, failureCode: null, detail: 'ok', steps: [] },
+    repoState: { verifiedAtSha: mergeSha, sourceBranch: 'main', dirtyTree: false },
+    startedAt: '2026-07-28T00:00:00.000Z',
+    finishedAt: '2026-07-28T00:00:01.000Z',
+    commandDigest: 'b'.repeat(64),
+    commandCount: 1,
+    postMergeRun: true,
+    expectedMergeSha: mergeSha,
+  });
+  assert.equal(producerRecord.verdict, 'PASS');
+
+  // Feed the actual evidence.build output through the same adapter production
+  // uses. No gate-facing field below is invented by this test.
+  const delivery = postMergeMod.deliveryRecordFrom(
+    Object.assign({}, producerRecord, { record: producerRecord }),
+    mergeSha,
+    taskId,
+  );
+  const predecessor = { state: 'CLOSED', payload: { taskId, mergeSha, delivery } };
+
+  const producedGateFields = {
+    verdict: 'PASS',
+    taskId,
+    mergeSha,
+    verifiedAtSha: mergeSha,
+    evidenceDigest: producerRecord.evidenceDigest,
+    deliveryContractSha256: producerRecord.deliveryContractSha256,
+    probeDefinitionSha256: producerRecord.probeDefinitionSha256,
+  };
+  for (const [field, expected] of Object.entries(producedGateFields)) {
+    assert.equal(delivery[field], expected, 'production did not produce successor field ' + field);
+  }
+
+  const accepted = successorMod.predecessorSatisfied(predecessor, 2);
+  assert.equal(accepted.ok, true, JSON.stringify(accepted));
+
+  // A positive assertion alone would also pass through a gate that accepted
+  // everything. Remove each field that is mandatory on the PASS path and prove
+  // the same predecessor is refused.
+  for (const field of [
+    'verdict',
+    'mergeSha',
+    'verifiedAtSha',
+    'evidenceDigest',
+    'deliveryContractSha256',
+    'probeDefinitionSha256',
+  ]) {
+    const incomplete = Object.assign({}, delivery);
+    delete incomplete[field];
+    const refused = successorMod.predecessorSatisfied(
+      { state: 'CLOSED', payload: { taskId, mergeSha, delivery: incomplete } },
+      2,
+    );
+    assert.equal(refused.ok, false, 'successor accepted delivery without ' + field);
+  }
 });
 
 // ───────────────────────────────────── SCHEMA V2 (DV40–DV45)

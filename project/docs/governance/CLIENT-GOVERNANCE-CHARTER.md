@@ -3383,3 +3383,75 @@ D. GERCEK PRODUCTION DOGRULAMA  : gercek alici, gercek deployment, runtime log k
 Bu bölüm: production flag'lerini AÇMAZ; gerçek e-posta göndermez; production secret okumaz; live database mutasyonu yapmaz; `PRODUCTION VERIFIED` iddia ETMEZ; §35–§46'nın kendi metinlerini DEĞİŞTİRMEZ; Track A veya diğer CLIENT dilimleri hakkında hüküm VERMEZ; UYAP/OFFICE/RCV/DEBTOR statülerini DEĞİŞTİRMEZ.
 
 **ACTIVATION READY ≠ PRODUCTION VERIFIED · CODE BOUND ≠ FLAG ON · FLAG DEFAULT OFF ≠ FEATURE DISABLED FOREVER.**
+
+## §48 Production Verification Kapanışı (CLIENT-FD-VERIFICATION-R01)
+
+Bu bölüm additive'dir. §1–§47'nin hiçbir metni bu bölümle DEĞİŞTİRİLMEDİ, SİLİNMEDİ veya yeniden yazılmadı — §47.12/§47.14'teki "NOT PERFORMED" ifadeleri yalnız §48.6'daki POINTER ile güncel-dışı işaretlenir, kendi metinleri byte-unchanged kalır.
+
+### 48.1 Program Özeti
+
+§47.12'nin "NOT PERFORMED / OWNER-GATED" bıraktığı REAL PRODUCTION VERIFICATION kalemini kapatan ayrı, takip programı. Bu program §47'nin zaten canonicalize ettiği runtime binding'in GERÇEK provider ile çalıştığını ampirik olarak KANITLAMAYA yöneliktir; yeni bir capability, mimari veya kalıcı aktivasyon eklemedi.
+
+### 48.2 Yürütme Modeli — Owner Kabulü
+
+```text
+Agent production secret okumadi.
+Agent production credential kullanarak gercek dis gonderim tetiklemedi.
+Agent canli runtime feature flag'lerini degistirmedi.
+Agent gercek e-posta gondermedi.
+```
+
+Bu dört sınır owner'ın "SAFE PRODUCTION VERIFICATION HANDOFF" mesajının "SINIR KABULÜ" bölümünde birebir kabul ettiği, ajanın kendisinin iki pushback turunda savunduğu sınırdır. Yürütme ikiye bölündü: **AGENT-EXECUTED** runtime hazırlığı (`HY_WT/RUNTIME` git sync, build, restart, boot doğrulama, secret-safe presence-only kontrol, owner-çalıştırılabilir runbook hazırlığı) ve **OWNER-EXECUTED** gerçek aktivasyon + gönderim (flag'leri yalnız kendi terminal oturumuna yükleme, `fixture`→`write`→`publish`→`cleanup` aşamalarını bizzat çalıştırma).
+
+### 48.3 Runbook Güvenlik Tasarımı
+
+`prod-verification-run.cjs`: alıcı (`info@tellihukuk.com`) sabit, script argümanından değiştirilemez. `assertWriteEnabled()`/`assertPublicationEnabled(providerName)`, canonical `isDisclosureWriteEnabled()`/`isDisclosurePublicationEnabled()`/`CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS` mantığını script içinde bağımsızca tekrarlar — script gerçek Nest DI'ı hiç boot etmediği için (`dotenv` script dizininden resolve olmuyor, `ConfigModule.forRoot()` çalışmıyor) bu tekrar ZORUNLUYDU; aksi halde script canonical composition'daki flag kapılarını SESSİZCE atlar ve flag KAPALI olsa bile gerçek gönderim yapabilirdi (bu boşluk ajan tarafından teslimden ÖNCE bulundu ve kapatıldı). Owner'a teslim edilen mekanizma `.env` dosyasını DEĞİŞTİRMEK değil, yalnız owner'ın kendi terminal oturumunun ortam değişkenlerini kullanmaktı — canlı sunucu process'ine hiç dokunulmadı, hiçbir şey diske kalıcı yazılmadı, terminal kapatılınca her şey otomatik silindi.
+
+### 48.4 Kanıt Kompozisyonu
+
+| Kalem | Kaynak | Etiket |
+|---|---|---|
+| `write` çıktısı: `CONTENT_APPROVED`, `providerCallCount=0` | Owner stdout raporu | OWNER-ATTESTED |
+| `publish` çıktısı: `status=PUBLISHED`, `providerMessageId`, `approvedRecipientEmail=info@tellihukuk.com`, `publishedAt` | Owner stdout raporu | OWNER-ATTESTED |
+| `info@tellihukuk.com` gelen kutusunda gerçek e-posta | Owner Outlook ekran görüntüsü | OWNER-ATTESTED (yapısal olarak ajanın erişemeyeceği tek kanıt) |
+| Cleanup sonrası `PRODVERIFY-` satır sayısı (12 tablo) | Ajanın bu turdaki Prisma count sorgusu (satır içeriği okunmadı) | AGENT-VERIFIED — hepsi 0 |
+| Runtime sağlığı (port 8080, 401 guard) | Ajanın bu turdaki `curl` doğrulaması | AGENT-VERIFIED |
+| Deployed SHA'nin Program B işini içerdiği | Ajanın bu turdaki `git merge-base --is-ancestor eb4aab69 HEAD` doğrulaması | AGENT-VERIFIED |
+
+Owner-attested kalemler ASSUMED/INFERRED değil, owner'ın kendi ortamında yalnız owner'ın üretebileceği birincil kanıt olarak kabul edilmiştir — dört sınır gereği bunlar zaten ajan tarafından GÖRÜLEMEZ, tasarım gereği.
+
+### 48.5 Beklenmeyen Bulgu — SHA Mutabakatı
+
+Ajan bu turda runtime process'in kendi görünür eylemleri DIŞINDA bir noktada yeniden başlatıldığını tespit etti (PID 35384→59604; worktree HEAD `36208cdbab07a712a79756151b065270b88c64ae`→`3c73708da29bceb71421edb6d00a6d8713f196a0`). Araya giren commit'ler:
+
+```text
+3c73708d feat(office): scope ReportingLine telemetry to a canary tenant/actor cohort (#1849)
+0970fc31 docs(governance): dort program aktivasyon karar paketi (#1851)
+d0cd266c fix(governance): attribute overlapping owner-WIP path protections (#1850)
+```
+
+`git diff --stat` ile üçünün de yalnız OFFICE telemetry-scope ve governance-coordination dosyalarına dokunduğu, `client-financial-disclosure/` veya `notification/email-provider.service.ts` yüzeyine SIFIR dokunuş olduğu doğrulandı. Kim/ne zaman/neden yeniden başlattığı ajan tarafından BİLİNMİYOR, tahmin EDİLMEDİ — bu bulgu doğrulamanın geçerliliğini ETKİLEMEZ, yalnız kayıt hassasiyeti için saklanır.
+
+### 48.6 Final Verdict
+
+```text
+CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-VERIFICATION-R01
+
+CLOSED / CANONICAL / PRODUCTION VERIFIED
+KANIT KOMPOZISYONU: OWNER-ATTESTED (gonderim + teslim) + AGENT-VERIFIED (DB + runtime + SHA)
+
+§47 GUNCELLEME (POINTER, MUTASYON DEGIL):
+  §47.12 "REAL PRODUCTION VERIFICATION: NOT PERFORMED / OWNER-GATED" -> bu bolum (§48) ile
+    SUPERSEDE edildi; §47'nin kendi metni DEGISMEDI, byte-unchanged kaldi.
+  §47.14 Final Verdict -> CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01 artik
+    ACTIVATION READY + PRODUCTION VERIFIED.
+
+IKI BAYRAK: hala varsayilan KAPALI (bu bir dogrulama kosuydu, kalici aktivasyon DEGIL)
+LIVE CRITICAL BLOCKER: NONE
+```
+
+### 48.7 Temizlik ve Kalan İş
+
+`prod-verification-run.cjs` ve `PRODVERIFY-RUNBOOK.md`, doğrulama tamamlandıktan sonra `HY_WT/RUNTIME`'dan silindi — tek seferlikti, kalıcı değildi, git'e hiç commit edilmedi. Kalan iş: **NONE**. Owner'ın kendi notu gereği, mimari veya provider değişikliği olmadıkça yeni bir verification programı gerekmez.
+
+**PRODUCTION VERIFIED, BİR KEZ KANITLANMIŞTIR — KALICI AKTİVASYON DEĞİLDİR. İKİ BAYRAK YARIN DA VARSAYILAN KAPALI KALIR.**
