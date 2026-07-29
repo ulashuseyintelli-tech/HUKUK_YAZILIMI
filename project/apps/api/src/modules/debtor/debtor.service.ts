@@ -2762,6 +2762,24 @@ export class DebtorService {
 
     // Update with history
     await this.prisma.$transaction(async (tx) => {
+      // DEBTOR-IDOR-01 (I06): FK yalnız adresin VARLIĞINI garanti eder; sahiplik
+      // burada, herhangi bir yazımdan ÖNCE ve aynı transaction içinde fail-closed
+      // doğrulanır. Cross-tenant adres / aynı tenant'ta başka borçlunun adresi /
+      // var olmayan id dışarıya AYNI hatayı üretir (varlık sızıntısı yok).
+      if (newAddressId) {
+        const ownedAddress = await tx.debtorAddress.findFirst({
+          where: {
+            id: newAddressId,
+            debtorId: caseDebtor.debtorId,
+            debtor: { tenantId },
+          },
+          select: { id: true },
+        });
+        if (!ownedAddress) {
+          throw new NotFoundException("Adres bulunamadı veya bu borçluya ait değil");
+        }
+      }
+
       // Create history record
       await tx.serviceHistory.create({
         data: {

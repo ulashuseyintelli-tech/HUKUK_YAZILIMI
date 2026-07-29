@@ -172,6 +172,7 @@ src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.sta
 src/modules/case-balance/__tests__/case-balance-tenant-isolation.spec.ts
 src/modules/client-notification/__tests__/client-notification-template-tenant-scope.spec.ts
 src/modules/debtor/__tests__/debtor-finalization-cutover.spec.ts
+src/modules/debtor/__tests__/debtor-service-attempt-address-ownership.spec.ts
 src/modules/debtor/debtor-identity-format.spec.ts
 src/modules/debtor/ihbarname-summary.tenant-boundary.spec.ts
 src/modules/debtor/quick-note-passive-writer.spec.ts
