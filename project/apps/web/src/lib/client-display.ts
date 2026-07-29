@@ -2,11 +2,16 @@
  * Müvekkil görünüm yardımcıları (Task 4A) — SAF, yan-etkisiz.
  *
  * Tek-kaynak: /clients listesi ve /clients/:id detayı (client-profile) AYNI türetmeleri kullanır
- * (kod tekrarından kaçın). Kanonik tip: `@/lib/api/client.types` (Client). Backend GET /clients/:id
- * düz adres kolonları (address/city/district/region) + ClientContact kanal satırları döndürür;
- * ClientAddress alt-sistemi v1'de YOK → adres düz okunur.
+ * (kod tekrarından kaçın). Kanonik tip: `@/lib/api/client.types` (Client).
+ *
+ * ADRES (VER-02 düzeltmesi): `ClientAddress` alt-sistemi ARTIK VAR. GET /clients/:id hem düz
+ * kolonları (address/city/district/region — legacy, korunur) hem `addresses[]` satırlarını
+ * (yalnız isCurrent:true, isPrimary desc) döner. Görünen adres `clientResolvedAddress()` ile
+ * TEK yerden çözülür; header ve Adres sekmesi bunu paylaşır (eskiden header düz kolonları,
+ * sekme yapısal satırları okuyordu → aynı ekranda iki farklı adres görünebiliyordu).
+ * `clientPrimaryAddress()` artık YALNIZ açık legacy-fallback adımıdır, doğrudan kullanılmaz.
  */
-import type { Client, ClientContact, ClientType } from './api/client.types';
+import type { Client, ClientAddress, ClientContact, ClientType } from './api/client.types';
 
 export type ClientTypeKind = 'PERSON' | 'COMPANY' | 'PUBLIC';
 
@@ -68,7 +73,12 @@ export function clientPrimaryEmail(client: Pick<Client, 'contacts' | 'email'>): 
   return pickChannel(client.contacts, isEmailChannel) ?? client.email ?? null;
 }
 
-/** Düz adres birleşimi (ClientAddress alt-sistemi v1'de YOK; yalnız düz kolonlar). */
+/**
+ * LEGACY düz adres birleşimi (yalnız `Client.address/city/district/region/postalCode`).
+ *
+ * VER-02: bu artık `clientResolvedAddress()`'in SON adımıdır (açık legacy fallback), tek başına
+ * "müvekkilin adresi" olarak KULLANILMAZ — yapısal `ClientAddress` satırı varsa o kazanır.
+ */
 export function clientPrimaryAddress(
   client: Pick<Client, 'address' | 'district' | 'city' | 'region' | 'postalCode'>,
 ): string | null {
@@ -77,6 +87,53 @@ export function clientPrimaryAddress(
     (p) => p && String(p).trim(),
   );
   return parts.length ? parts.join(', ') : null;
+}
+
+/** Tek bir `ClientAddress` satırının görünen metni. Adres bölümü ve header AYNI formatı kullanır. */
+export function clientAddressLine(
+  a: Pick<ClientAddress, 'street' | 'district' | 'city' | 'region' | 'postalCode'>,
+): string {
+  const locality = [a.district, a.city].filter((p) => p && String(p).trim()).join('/');
+  const parts = [a.street, locality, a.region, a.postalCode].filter((p) => p && String(p).trim());
+  return parts.length ? parts.join(', ') : '—';
+}
+
+export type ClientAddressSource = 'structured' | 'legacy' | 'none';
+
+export interface ResolvedClientAddress {
+  /** Görünen metin; `source === 'none'` ise null. */
+  text: string | null;
+  source: ClientAddressSource;
+  /** Yapısal (ClientAddress) satır var mı — legacy formların yanıltıcı başarı vermemesi için. */
+  hasStructured: boolean;
+}
+
+/**
+ * VER-02 KANONİK ADRES ÇÖZÜMÜ — header ve Adres sekmesi bunu PAYLAŞIR (çoğaltma YOK).
+ *
+ * Deterministik sıra:
+ *   1. aktif `isPrimary=true` ClientAddress
+ *   2. mevcut kararlı sıradaki ilk aktif ClientAddress (backend: isPrimary desc, createdAt asc)
+ *   3. açık legacy düz alan fallback'i
+ *   4. adres yok
+ *
+ * Yapısal satır ile düz alanlar ÇELİŞİRSE yapısal KAZANIR. `isCurrent` semantiği burada
+ * YORUMLANMAZ: backend `findOne()` zaten yalnız `isCurrent:true` satırları döner (arşivleme
+ * ARC-07 kapsamındadır, bu fonksiyon onu ne uygular ne varsayar).
+ */
+export function clientResolvedAddress(
+  client: Pick<Client, 'address' | 'district' | 'city' | 'region' | 'postalCode' | 'addresses'>,
+): ResolvedClientAddress {
+  const rows = Array.isArray(client.addresses) ? client.addresses : [];
+  const hasStructured = rows.length > 0;
+  const picked = rows.find((a) => a.isPrimary) ?? rows[0];
+  if (picked) {
+    return { text: clientAddressLine(picked), source: 'structured', hasStructured };
+  }
+  const legacy = clientPrimaryAddress(client);
+  return legacy
+    ? { text: legacy, source: 'legacy', hasStructured }
+    : { text: null, source: 'none', hasStructured };
 }
 
 /** Görünen ad zinciri: displayName → companyName → ad soyad → @deprecated name → varsayılan. */

@@ -20,6 +20,7 @@ import {
   buildEditClientPayload,
   clientFormValuesFromClient,
   currentAddressSummary,
+  hasStructuredAddresses,
   type ClientFormValues,
 } from '@/lib/client-write';
 import { clientPrimaryEmail, clientPrimaryPhone } from '@/lib/client-display';
@@ -55,11 +56,15 @@ export default function EditClientPage() {
     };
   }, [clientId]);
 
+  // VER-02: bu sayfa GET /clients/:id (findOne) kullanır → `addresses[]` ELİNDE. Bu yüzden
+  // yapısal adres varlığını submit'ten ÖNCE bilir ve formu otoriter göstermez.
+  const addressManagedExternally = client ? hasStructuredAddresses(client) : false;
+
   const handleSubmit = async (values: ClientFormValues) => {
     setSaving(true);
     setSubmitError(null);
     try {
-      const payload = buildEditClientPayload(values);
+      const payload = buildEditClientPayload(values, { addressManagedExternally });
       await api.put(`/clients/${clientId}`, payload);
       router.push(`/clients/${clientId}`);
     } catch (e: any) {
@@ -100,6 +105,8 @@ export default function EditClientPage() {
             email: clientPrimaryEmail(client),
             address: currentAddressSummary(client),
           }}
+          addressManagedExternally={addressManagedExternally}
+          addressManagerHref={`/clients/${clientId}`}
           saving={saving}
           submitError={submitError}
           onSubmit={handleSubmit}

@@ -13,9 +13,9 @@
  */
 import type { Client } from './api/client.types';
 import {
-  clientPrimaryAddress,
   clientPrimaryEmail,
   clientPrimaryPhone,
+  clientResolvedAddress,
 } from './client-display';
 
 export type ClientFormType = 'PERSON' | 'COMPANY' | 'PUBLIC';
@@ -161,7 +161,10 @@ export function buildCreateClientPayload(form: ClientFormValues): Record<string,
  * detsisNo/mersisNo/ticaretSicilNo/companyType/nationality/isForeigner/postalCode/identityNo/
  * isActive de v1'de düzenlenemez → hiçbiri buradan gönderilmez (owner'ın genelleştirdiği kural).
  */
-export function buildEditClientPayload(form: ClientFormValues): Record<string, unknown> {
+export function buildEditClientPayload(
+  form: ClientFormValues,
+  opts: { addressManagedExternally?: boolean } = {},
+): Record<string, unknown> {
   return {
     type: form.type,
     firstName: form.type === 'PERSON' ? form.firstName.trim() : undefined,
@@ -170,7 +173,10 @@ export function buildEditClientPayload(form: ClientFormValues): Record<string, u
     tckn: form.type === 'PERSON' ? form.tckn.trim() : undefined,
     vkn: form.type !== 'PERSON' ? form.vkn.trim() : undefined,
     taxOffice: form.taxOffice.trim() || undefined,
-    addresses: addressEntries(form),
+    // VER-02: yapısal ClientAddress satırı varsa adres HİÇ gönderilmez — backend onu zaten
+    // uygulamazdı, ama göndermemek düz kolonların da sessizce değişmesini engeller (yapısal
+    // adresle çelişen bir legacy değer oluşmaz).
+    addresses: opts.addressManagedExternally ? undefined : addressEntries(form),
     canCollect: form.canCollect,
     canWaive: form.canWaive,
     canSettle: form.canSettle,
@@ -179,7 +185,18 @@ export function buildEditClientPayload(form: ClientFormValues): Record<string, u
   };
 }
 
-/** Edit formunda salt-okuma gösterilecek mevcut adres özeti (client-display reuse). */
+/**
+ * Edit formunda salt-okuma gösterilecek mevcut adres özeti.
+ *
+ * VER-02: artık `clientResolvedAddress()` kullanır — yapısal `ClientAddress` satırı varsa O
+ * gösterilir, yoksa açık legacy düz alan fallback'i. Eskiden yalnız düz kolonları okuyordu, bu
+ * yüzden Workspace'te yönetilen gerçek adresle çelişebiliyordu.
+ */
 export function currentAddressSummary(client: Client): string | null {
-  return clientPrimaryAddress(client);
+  return clientResolvedAddress(client).text;
+}
+
+/** VER-02: müvekkilin yapısal ClientAddress satırı var mı (legacy formun otoriter olmadığı durum). */
+export function hasStructuredAddresses(client: Client): boolean {
+  return clientResolvedAddress(client).hasStructured;
 }

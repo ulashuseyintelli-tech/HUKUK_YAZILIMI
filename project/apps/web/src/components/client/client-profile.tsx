@@ -48,6 +48,7 @@ import {
   clientPrimaryAddress,
   clientPrimaryEmail,
   clientPrimaryPhone,
+  clientResolvedAddress,
   clientTypeKind,
   clientTypeLabel,
 } from '@/lib/client-display';
@@ -200,7 +201,13 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
   const ident = clientIdentity(client);
   const phone = clientPrimaryPhone(client);
   const email = clientPrimaryEmail(client);
-  const address = clientPrimaryAddress(client);
+  // VER-02: header ve Adres sekmesi AYNI kaynaktan çözer (eskiden header düz kolonları,
+  // sekme yapısal satırları okuyordu → aynı ekranda iki farklı adres görünebiliyordu).
+  const resolvedAddress = clientResolvedAddress(client);
+  const address = resolvedAddress.text;
+  // Adres sekmesinin `addresses=[]` durumunda göstereceği AÇIK legacy fallback'i (yapısal satır
+  // varsa sekme kendi satırlarını listeler, bu değer kullanılmaz).
+  const legacyFallbackAddress = clientPrimaryAddress(client);
   const poas = (Array.isArray(client.powerOfAttorneys)
     ? client.powerOfAttorneys
     : []) as unknown as ClientPoaRow[];
@@ -337,7 +344,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
                 <ClientAddressSection
                   clientId={clientId}
                   addresses={client.addresses ?? []}
-                  fallbackAddress={address}
+                  fallbackAddress={legacyFallbackAddress}
                   onChanged={refreshClient}
                 />
               </Section>

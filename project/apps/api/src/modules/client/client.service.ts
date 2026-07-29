@@ -1354,6 +1354,26 @@ export class ClientService {
       });
     }
 
+    // VER-02: data.addresses[] artık ClientAddress'e de yazılır (contacts ile aynı desen) —
+    // önceden yalnız yukarıdaki flat address/city/district/region'a sıkışıp diğer girdiler
+    // sessizce düşüyordu. Flat kolonlar DEĞİŞMEDEN korunur (geriye uyumluluk, UYAP/döküman
+    // üretimi vb. hâlâ onları okur).
+    const validAddressEntries = (data.addresses || []).filter((a: any) => a.street?.trim() || a.city?.trim());
+    if (validAddressEntries.length > 0) {
+      await tx.clientAddress.createMany({
+        data: validAddressEntries.map((a: any, idx: number) => ({
+          clientId: createdClient.id,
+          type: a.type,
+          street: a.street,
+          city: a.city,
+          district: a.district,
+          region: a.region,
+          postalCode: a.postalCode,
+          isPrimary: a.isPrimary || idx === 0,
+        })),
+      });
+    }
+
       await this.audit.logInTransaction(tx, {
         tenantId,
         action: 'CLIENT_CREATE',
@@ -1433,6 +1453,10 @@ export class ClientService {
     const addressStr = primaryAddress 
       ? [primaryAddress.street, primaryAddress.district, primaryAddress.city].filter(Boolean).join(', ')
       : [data.address, data.district, data.city].filter(Boolean).join(', ') || undefined;
+
+    // VER-02: yapısal ClientAddress satırı olduğu için gönderilen adreslerin UYGULANMADIĞINI
+    // çağırana bildiren transient sinyal (create()'teki _existingReturned/_reactivated deseni).
+    let addressesSkipped = false;
 
     // C0-a: client + contact yazımı + audit AYNI transaction.
     await this.prisma.$transaction(async (tx) => {
@@ -1517,6 +1541,36 @@ export class ClientService {
       }
     }
 
+    // VER-02: data.addresses[] yalnız bu müvekkilin HENÜZ hiç ClientAddress satırı yoksa
+    // (Workspace'te henüz yönetilmiyorsa) gerçek tabloya yazılır. Mevcut satır varsa (Workspace
+    // yönetimli) dokunulmaz — bu legacy form onların varlığından habersiz, contacts'taki
+    // "sil ve yeniden oluştur" deseni burada UYGULANMAZ (Workspace verisini sessizce silerdi).
+    if (data.addresses) {
+      const existingAddressCount = await tx.clientAddress.count({ where: { clientId: id } });
+      const submittedAddressEntries = data.addresses.filter((a: any) => a.street?.trim() || a.city?.trim());
+      if (existingAddressCount === 0) {
+        if (submittedAddressEntries.length > 0) {
+          await tx.clientAddress.createMany({
+            data: submittedAddressEntries.map((a: any, idx: number) => ({
+              clientId: id,
+              type: a.type,
+              street: a.street,
+              city: a.city,
+              district: a.district,
+              region: a.region,
+              postalCode: a.postalCode,
+              isPrimary: a.isPrimary || idx === 0,
+            })),
+          });
+        }
+      } else if (submittedAddressEntries.length > 0) {
+        // VER-02: yapısal satır VAR → legacy payload UYGULANMADI (yukarıdaki gerekçe). Bu SESSİZ
+        // kalmamalı: çağıran (legacy form) yanıltıcı "kaydedildi" göstermesin. Düz kolonlar bu
+        // update'te DEĞİŞMİŞ olabilir, yapısal adres ise DEĞİŞMEDİ — iki farklı gerçek.
+        addressesSkipped = true;
+      }
+    }
+
       await this.audit.logInTransaction(tx, {
         tenantId,
         action: 'CLIENT_UPDATE',
@@ -1541,7 +1595,10 @@ export class ClientService {
     });
 
     // includeInactive: update isActive:false yapmış olabilir (arşivleme); güncellenen kaydı yine döndür.
-    return this.findOne(id, tenantId, { includeInactive: true });
+    const result = await this.findOne(id, tenantId, { includeInactive: true });
+    // VER-02: transient alan (persist EDİLMEZ, kontrat bozulmaz) — yalnız yapısal adres
+    // uygulanmadığında eklenir; normal update yanıtı DEĞİŞMEZ.
+    return addressesSkipped ? { ...(result as any), _addressesSkipped: true } : result;
   }
 
   /**

@@ -128,8 +128,13 @@ describe('ClientAddressSection — çok-adres listesi', () => {
   it('addresses doluyken liste satırları gösterilir (flat fallback DEĞİL)', async () => {
     await openIdentityTab();
 
-    await waitFor(() => expect(screen.getByText(/Cadde 1/)).toBeTruthy());
-    expect(screen.getByText(/Cadde 2/)).toBeTruthy();
+    // VER-02 DAVRANIŞ DEĞİŞİKLİĞİ (kasıtlı): primary yapısal adres ARTIK header'da DA görünür
+    // (eskiden header düz kolonları okuyordu → aynı ekranda iki farklı adres). Bu yüzden
+    // "Cadde 1" iki yerde eşleşir: header özeti + Adres sekmesi satırı. Assertion GEVŞETİLMEDİ,
+    // tam tersine tek-kaynak beklentisi olarak GÜÇLENDİRİLDİ.
+    await waitFor(() => expect(screen.getAllByText(/Cadde 1/).length).toBeGreaterThanOrEqual(2));
+    // Primary OLMAYAN adres yalnız sekmede görünür — header birincili seçer, ikinciyi göstermez.
+    expect(screen.getAllByText(/Cadde 2/)).toHaveLength(1);
     // Yalnız primary olmayan satırda "Birincil Yap" görünür.
     expect(screen.getAllByText('Birincil Yap')).toHaveLength(1);
   });
@@ -154,7 +159,8 @@ describe('ClientAddressSection — çok-adres listesi', () => {
     );
     await openIdentityTab();
 
-    await waitFor(() => expect(screen.getByText(/Cadde 1/)).toBeTruthy());
+    // VER-02: "Cadde 1" header + sekme olmak üzere 2 yerde (bkz. yukarıdaki davranış notu).
+    await waitFor(() => expect(screen.getAllByText(/Cadde 1/).length).toBeGreaterThanOrEqual(2));
     const silButtons = screen.getAllByText('Sil');
     fireEvent.click(silButtons[0]); // addr-1 = primary satır
 

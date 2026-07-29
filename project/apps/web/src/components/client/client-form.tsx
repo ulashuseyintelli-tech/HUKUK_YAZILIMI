@@ -36,6 +36,15 @@ export interface ClientFormProps {
   initialValues?: ClientFormValues;
   /** Yalnız edit modunda: mevcut telefon/e-posta/adres salt-okuma özeti. */
   readOnlyContact?: ClientFormReadOnlyContact;
+  /**
+   * VER-02: müvekkilin yapısal `ClientAddress` satırı VAR mı. true ise bu formun düz adres
+   * alanları OTORİTER DEĞİLDİR — backend onları uygulamaz (Workspace-yönetimli satırlar korunur).
+   * Bu durumda alanlar salt-okuma gösterilir ve kullanıcı yetkili editöre yönlendirilir;
+   * yanıltıcı "kaydedildi" izlenimi verilmez.
+   */
+  addressManagedExternally?: boolean;
+  /** Yetkili adres editörünün adresi (Workspace "Adres" bölümü). */
+  addressManagerHref?: string;
   saving: boolean;
   submitError?: string | null;
   onSubmit: (values: ClientFormValues) => void;
@@ -46,6 +55,8 @@ export function ClientForm({
   mode,
   initialValues,
   readOnlyContact,
+  addressManagedExternally = false,
+  addressManagerHref,
   saving,
   submitError,
   onSubmit,
@@ -200,33 +211,59 @@ export function ClientForm({
       {/* Adres */}
       <div className="bg-white rounded-xl border p-6 space-y-3">
         <h3 className="text-sm font-semibold text-gray-700">Adres</h3>
-        <textarea
-          value={form.address}
-          onChange={(e) => set('address', e.target.value)}
-          placeholder="Adres"
-          rows={2}
-          className="w-full border rounded px-2 py-1.5 text-sm"
-        />
-        <div className="grid grid-cols-3 gap-2">
-          <input
-            value={form.city}
-            onChange={(e) => set('city', e.target.value)}
-            placeholder="İl"
-            className="border rounded px-2 py-1.5 text-sm"
-          />
-          <input
-            value={form.district}
-            onChange={(e) => set('district', e.target.value)}
-            placeholder="İlçe"
-            className="border rounded px-2 py-1.5 text-sm"
-          />
-          <input
-            value={form.region}
-            onChange={(e) => set('region', e.target.value)}
-            placeholder="İcra Bölgesi"
-            className="border rounded px-2 py-1.5 text-sm"
-          />
-        </div>
+        {addressManagedExternally ? (
+          // VER-02: yapısal ClientAddress satırı var → bu form adresi DEĞİŞTİREMEZ (backend
+          // Workspace-yönetimli satırları korur). Düzenlenebilir alan göstermek yanıltıcı
+          // "kaydedildi" izlenimi yaratırdı; onun yerine mevcut adres + yetkili editör linki.
+          <div
+            data-testid="client-form-address-managed"
+            className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 space-y-1"
+          >
+            <p>Bu müvekkilin adresleri adres kayıtları üzerinden yönetiliyor.</p>
+            <p className="text-amber-800">Mevcut adres: {readOnlyContact?.address || '—'}</p>
+            <p className="text-xs">
+              Adres eklemek, düzenlemek veya birincil adresi değiştirmek için{' '}
+              {addressManagerHref ? (
+                <a href={addressManagerHref} className="underline font-medium">
+                  müvekkil detayındaki Adres bölümünü
+                </a>
+              ) : (
+                'müvekkil detayındaki Adres bölümünü'
+              )}{' '}
+              kullanın. Buradan yapılan adres değişiklikleri UYGULANMAZ.
+            </p>
+          </div>
+        ) : (
+          <>
+            <textarea
+              value={form.address}
+              onChange={(e) => set('address', e.target.value)}
+              placeholder="Adres"
+              rows={2}
+              className="w-full border rounded px-2 py-1.5 text-sm"
+            />
+            <div className="grid grid-cols-3 gap-2">
+              <input
+                value={form.city}
+                onChange={(e) => set('city', e.target.value)}
+                placeholder="İl"
+                className="border rounded px-2 py-1.5 text-sm"
+              />
+              <input
+                value={form.district}
+                onChange={(e) => set('district', e.target.value)}
+                placeholder="İlçe"
+                className="border rounded px-2 py-1.5 text-sm"
+              />
+              <input
+                value={form.region}
+                onChange={(e) => set('region', e.target.value)}
+                placeholder="İcra Bölgesi"
+                className="border rounded px-2 py-1.5 text-sm"
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Yetkiler */}
