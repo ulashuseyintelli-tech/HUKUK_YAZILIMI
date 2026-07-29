@@ -61,6 +61,9 @@ function makeDebtorService(
   const tx = {
     serviceHistory: { create: jest.fn().mockResolvedValue({}) },
     caseDebtor: { update: jest.fn().mockResolvedValue({}) },
+    // I06: startNewServiceAttempt artık adres sahipliğini tx içinde doğruluyor;
+    // bu spec'in konusu lifecycle guard olduğundan sahipli adres döndürülür.
+    debtorAddress: { findFirst: jest.fn().mockResolvedValue({ id: addressId }) },
   };
 
   const prisma = {
