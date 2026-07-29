@@ -6,6 +6,7 @@ import { maskTckn, maskIban } from "@/common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import type { AuditActor } from "@/modules/client/client.service";
+import { toPublicLawyer, toPublicLawyers } from "./lawyer-public-projection";
 
 // K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
 // H2: aynı actor, yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/
@@ -119,7 +120,8 @@ export class LawyerService {
     });
 
     // Her avukata displayName ekle (Av. Ad Soyad)
-    return withDisplayNames(lawyers.map((l) => this.maskListRow(l)));
+    // P01: credential alanlari (uyapToken/eSignatureSerial) public yanittan CIKARILIR.
+    return toPublicLawyers(withDisplayNames(lawyers.map((l) => this.maskListRow(l))));
   }
 
   // Varsayılan avukatları getir (yeni takiplerde otomatik seçilecekler)
@@ -133,7 +135,8 @@ export class LawyerService {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
 
-    return withDisplayNames(lawyers.map((l) => this.maskListRow(l)));
+    // P01: credential alanlari (uyapToken/eSignatureSerial) public yanittan CIKARILIR.
+    return toPublicLawyers(withDisplayNames(lawyers.map((l) => this.maskListRow(l))));
   }
 
   // Tek avukat getir
@@ -146,7 +149,8 @@ export class LawyerService {
       throw new NotFoundException("Avukat bulunamadı");
     }
 
-    return withDisplayName(lawyer);
+    // P01: credential alanlari public yanittan CIKARILIR.
+    return toPublicLawyer(withDisplayName(lawyer));
   }
 
   // Avukat oluştur
@@ -203,7 +207,8 @@ export class LawyerService {
       if (wasReactivated) {
         await this.prisma.lawyer.update({ where: { id: dup.id }, data: { isActive: true } });
       }
-      return { ...(dup as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated };
+      // P01: duplicate/reactivate dali da ayni response boundary'den gecer.
+      return toPublicLawyer({ ...(dup as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated });
     }
 
     // Office'i al veya oluştur
@@ -238,7 +243,8 @@ export class LawyerService {
       },
     });
 
-    return withDisplayName(lawyer);
+    // P01: credential alanlari public yanittan CIKARILIR.
+    return toPublicLawyer(withDisplayName(lawyer));
   }
 
   // Avukat güncelle
@@ -414,7 +420,8 @@ export class LawyerService {
       });
     }
 
-    return withDisplayName(lawyer);
+    // P01: credential alanlari public yanittan CIKARILIR.
+    return toPublicLawyer(withDisplayName(lawyer));
   }
 
   /**
@@ -662,7 +669,8 @@ export class LawyerService {
         },
       });
 
-      return { ...existing, isActive: false };
+      // P01: lifecycle yaniti da tum persistence satirini DEGIL, public projeksiyonu dondurur.
+      return toPublicLawyer({ ...existing, isActive: false });
     });
   }
 

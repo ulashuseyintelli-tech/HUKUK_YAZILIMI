@@ -105,3 +105,11 @@ src/scripts/__tests__/office-cap02-divergence-fixture.core.spec.ts
 # PASS_FOR_BOUNDED_CANARY | FAIL | UNPROVEN uretir — production-wide SLA onayi DEGIL.
 # Spec ayrica telemetri failure-isolation'i YAPISAL olarak (kaynak uzerinden) sabitler.
 src/scripts/__tests__/office-cap02-telemetry-perf.core.spec.ts
+
+# ── OFFICE-CREDENTIAL-FIELD-RESPONSE-CONTAINMENT-P01 ───────────────────────────
+# Dogrulanmis P1: Lawyer credential alanlari (uyapToken/eSignatureSerial) public API
+# yanitlarina cikiyordu — Lawyer modulunun TUM yuzeyleri + GET/PUT /office nested.
+# Kok neden yetki degil ORTUK DTO: Prisma satiri select'siz okunup dondurulmus, global
+# serializer/@Exclude yok. Cozum: merkezi public projection (anahtar TAMAMEN silinir,
+# null'a cekilmez; donus tipi Omit<> oldugu icin derleyici de reddeder).
+src/modules/lawyer/__tests__/lawyer-credential-response-containment.spec.ts
