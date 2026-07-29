@@ -13,7 +13,7 @@ authority üretmez.
   "status": "SUCCEEDED",
   "executionPrNumber": 1882,
   "executionMergeSha": "0120599e5673ea5342786f9a070b5d9f99d27ebd",
-  "effectiveMainSha": "0120599e5673ea5342786f9a070b5d9f99d27ebd",
+  "effectiveMainSha": "d86aaca62dbcb65d0d942a9914c0d25b41aae690",
   "completedAt": "2026-07-29T11:18:28Z",
   "validationEvidence": [
     {
