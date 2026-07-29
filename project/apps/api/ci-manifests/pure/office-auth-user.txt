@@ -88,3 +88,12 @@ src/scripts/__tests__/office-cap02-telemetry-canary-scope.core.spec.ts
 # isActive=true YOK — yalniz TAM kimligi dogrulanmis mevcut fixture'i reaktive eden
 # bounded/idempotent/fail-closed cekirdek. Mutasyon kapsami yapisal olarak User+Lawyer.
 src/scripts/__tests__/office-cap02-canary-reactivation.core.spec.ts
+
+# ── OFFICE-P2-CAP02-HIERARCHY-DIVERGENCE-EVIDENCE-R02 ──────────────────────────
+# R01-H yalniz MISSING_HIERARCHY/UNCOMPARABLE kovasini kanitladi. DIFFERENT_CLASS
+# ureten iki kombinasyon canli veride HIC yok (TELLI HUKUK'ta yalniz iki SAME_CLASS
+# kombinasyonu var). Owner karari 1A: dort aktorlu SENTETIK graph. Mevcut provisioning
+# cekirdegi tenant'in TAMAMEN bos olmasini sart kostugu ve TEK aktor urettigi icin
+# yapisal olarak kullanilamaz; bu cekirdek daha dar bir sozlesmeyle (beklenen fixture +
+# BEYAN EDILEN pasif legacy satirlar; disinda her sey FAIL_CLOSED) o bosluğu doldurur.
+src/scripts/__tests__/office-cap02-divergence-fixture.core.spec.ts
