@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ServiceUnavailableException } from "@nes
 import { PrismaService } from "@/prisma/prisma.service";
 import { StaffType } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
+import { withPublicLawyers } from "../lawyer/lawyer-public-projection";
 import {
   encryptCredential,
   decryptCredential,
@@ -116,7 +117,8 @@ export class OfficeService {
       });
     }
 
-    return office;
+    // P01: nested `lawyers` credential alanlari public yanittan CIKARILIR.
+    return withPublicLawyers(office);
   }
 
   // Büro bilgilerini güncelle
@@ -157,7 +159,8 @@ export class OfficeService {
       },
     });
     await this.logSettingsChange(tenantId, userId, "OFFICE", office, data);
-    return updated;
+    // P01: nested `lawyers` credential alanlari public yanittan CIKARILIR.
+    return withPublicLawyers(updated);
   }
 
   // Banka hesabı ekle
