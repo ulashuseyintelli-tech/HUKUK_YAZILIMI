@@ -3382,6 +3382,8 @@ REQUIRED.** I07 `NOT STARTED / NOT AUTHORIZED`; exact seam ownership, TPA-04C/TP
 yerleşimi, snapshot producer, writer dependency, synthetic-corpus disposition ve runtime
 activation yasağı owner gate'i olmadan değişmez.
 
+**RCV-COL-P2-GOV-R01 Formal Closure Reconciliation (2026-07-29; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Task04 governance closure, owner-WIP path ownership reconciliation PR #1850 / `d0cd266c`, TPA-04C closure execution PR #1815 / `4bf75df8` ve result PR #1816 / `2c6fa957`, Decomposition execution PR #1841 / `e7423f73`, Risk Register execution PR #1858 / `ca52d5f0`, Collection Governance execution PR #1864 / `76458d96`, ADR-014 execution PR #1868 / `42fb9dcd`, Architecture Index execution PR #1872 / `cdfd6310` ve Master Register execution PR #1877 / `7ff409b8` kanıtlarıyla `CLOSED / CANONICAL`dır. TPA-04C `CLOSED`; I01-I06 `COMPLETE`; I07 `SUPERSEDED / NOT REQUIRED IN TPA-04C`. Integration seam owner'ı TPA-04D'dir; `AUTHORIZED / DEPENDENCY-GATED / NOT ACTIVE` kalır. `LegalApplicationWriter` ve runtime writer `NOT IMPLEMENTED / NOT ACTIVATED`; Balance Engine `SHADOW_ONLY`. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus writer/evidence/cutover için blocking kalır. Bu governance closure production/runtime/test/Prisma/schema/migration/live DB davranışını değiştirmez. **NEXT ELIGIBLE TASK: `RC-COL-W2.2B-R01` — PROGRAM SEQUENCE TASK05 / NOT STARTED IN THIS RECONCILIATION.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)
