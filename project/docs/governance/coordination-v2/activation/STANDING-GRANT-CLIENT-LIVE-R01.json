@@ -67,7 +67,7 @@
   "manualMergeRequired": false,
   "autoMergeAuthorizedBy": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
   "semanticAuthorityRef": {
-    "recordId": "OWNER-DECISION-CLIENT-STANDING-GRANT",
+    "recordId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
     "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md"
   },
   "executionGrantRef": {

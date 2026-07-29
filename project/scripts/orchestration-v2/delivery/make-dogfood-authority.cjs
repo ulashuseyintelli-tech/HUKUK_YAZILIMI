@@ -346,7 +346,7 @@ const standing = {
   manualMergeRequired: false,
   autoMergeAuthorizedBy: 'OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02',
   semanticAuthorityRef: {
-    recordId: 'OWNER-DECISION-DELIVERY_TRUTH-STANDING-GRANT',
+    recordId: 'OWNER-DECISION-GOV-COORD-DELIVERY-TRUTH-R01',
     sourcePath: STANDING_RATIFICATION_PATH,
   },
   executionGrantRef: {
