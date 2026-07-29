@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "documentRole": "DESIGN_ONLY_NON_AUTHORITY",
+  "status": "OWNER_RATIFICATION_READY_UPON_APPROVED_MERGE",
+  "programId": "GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01",
+  "designTaskId": "ROOT-AUTHORITY-BOOTSTRAP-DESIGN-R01",
+  "targetTaskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01",
+  "workspaceModule": "SHARED_CONTROL_PLANE",
+  "auditBaseSha": "6daac3c6e8763f84fe6c21f47b689e0a10918b0d",
+  "protocolModeId": "GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01",
+  "selectedBaseModel": "OWNER_PINNED_EXACT_STAGE1_PLUS_EXACT_STAGE2_DESCENDANT_OF_DISCOVERED_STAGE1_MERGE",
+  "stage1": {
+    "taskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01",
+    "mode": "GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01",
+    "branch": "codex/governance-closeout-live-ledger-gap-r01-authority-bootstrap-binding-r01",
+    "baseBinding": {
+      "policy": "EXACT_SHA_FROM_OWNER_GRANT_1",
+      "value": null
+    },
+    "changedPaths": [
+      {
+        "status": "M",
+        "path": "project/scripts/governance-coordination.cjs"
+      },
+      {
+        "status": "M",
+        "path": "project/scripts/governance-coordination.test.cjs"
+      },
+      {
+        "status": "M",
+        "path": "project/docs/governance/governance-writer-coordination-contract.md"
+      }
+    ],
+    "authorityMaterializationAllowed": false
+  },
+  "stage2": {
+    "taskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-AUTHORITY-MATERIALIZATION-R01",
+    "mode": "GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_AUTHORITY_MATERIALIZATION_R01",
+    "branch": "codex/governance-closeout-live-ledger-gap-r01-authority-bootstrap",
+    "requiredPredecessor": {
+      "policy": "UNIQUE_CANONICAL_STAGE1_SQUASH_SHA_PINNED_IN_OWNER_GRANT_2",
+      "value": null
+    },
+    "baseBinding": {
+      "policy": "EXACT_SHA_FROM_OWNER_GRANT_2_AND_DESCENDANT_OF_STAGE1",
+      "value": null
+    },
+    "changedPaths": [
+      {
+        "status": "M",
+        "path": "project/docs/governance/decision-log.md"
+      },
+      {
+        "status": "A",
+        "path": "project/docs/governance/coordination-execution-grants/GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01.md"
+      }
+    ],
+    "controlPlaneImplementationAllowed": false
+  },
+  "semanticAuthority": {
+    "recordType": "SEMANTIC_AUTHORITY",
+    "recordId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01",
+    "path": "project/docs/governance/decision-log.md",
+    "programId": "GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01",
+    "taskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01",
+    "ownerName": "Av. Ulaş Hüseyin Telli",
+    "ownerRole": "Repository Owner / Semantic Authority",
+    "decision": "RATIFIED",
+    "issuedAt": "2026-07-29",
+    "status": "ACTIVE_AFTER_APPROVED_MERGE",
+    "marker": "<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01 -->"
+  },
+  "executionGrant": {
+    "recordType": "EXECUTION_GRANT",
+    "recordId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01",
+    "path": "project/docs/governance/coordination-execution-grants/GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01.md",
+    "programId": "GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01",
+    "taskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01",
+    "ownerName": "Av. Ulaş Hüseyin Telli",
+    "ownerRole": "Repository Owner / Semantic Authority",
+    "executionMode": "GO-COMPLETE",
+    "workspaceModule": "SHARED_CONTROL_PLANE",
+    "issuedAt": "2026-07-29",
+    "status": "ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK",
+    "marker": "<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01 -->",
+    "semanticAuthorityBinding": {
+      "kind": "SEMANTIC_AUTHORITY",
+      "path": "project/docs/governance/decision-log.md",
+      "recordId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01"
+    }
+  },
+  "locatorModel": {
+    "format": "GOV_COORD_AUTHORITY_REF_OBJECT",
+    "requiredFields": [
+      "kind",
+      "path",
+      "recordId",
+      "evidenceSha"
+    ],
+    "evidenceShaPolicy": "STAGE2_SQUASH_MERGE_SHA_OR_CANONICAL_DESCENDANT_CONTAINING_IT",
+    "uriLocatorAllowed": false
+  },
+  "states": [
+    "DESIGN_DEFINED",
+    "ISSUED",
+    "STAGE1_MERGED",
+    "STAGE2_ELIGIBLE",
+    "CONSUMED",
+    "REVOKED",
+    "EXPIRED",
+    "INVALIDATED"
+  ],
+  "consumption": {
+    "model": "DERIVED_FROM_ATOMIC_STAGE2_CANONICAL_MERGE_AND_DUAL_RESOLUTION",
+    "separatePostMergeWrite": false,
+    "reuseAllowed": false
+  },
+  "negativeSecurityCases": [
+    "STAGE1_BRANCH_MISMATCH",
+    "STAGE1_BASE_MISMATCH",
+    "STAGE1_PATH_DRIFT",
+    "STAGE1_TASK_MISMATCH",
+    "STAGE2_BEFORE_STAGE1_MERGE",
+    "STAGE2_PREDECESSOR_MISMATCH",
+    "STAGE2_BRANCH_MISMATCH",
+    "STAGE2_PATH_DRIFT",
+    "WRONG_SA_RECORD_ID",
+    "WRONG_EG_RECORD_ID",
+    "SAME_REF_FOR_SA_AND_EG",
+    "MISSING_OWNER_IDENTITY",
+    "DUPLICATE_ACTIVE_MODE",
+    "CONSUMED_MODE_REUSE",
+    "REVOKED_OR_EXPIRED_MODE",
+    "TARGET_TASK_MISMATCH",
+    "UNRELATED_GOVERNANCE_MUTATION",
+    "AUDIT_FILE_AS_AUTHORITY",
+    "MAIN_OR_BINDING_BLOB_DRIFT",
+    "PARTIAL_WRITE_OR_CRASH"
+  ],
+  "ownerGrantsRequired": [
+    "STAGE1_GO_COMPLETE_EXACT_BASE",
+    "STAGE2_GO_COMPLETE_EXACT_PREDECESSOR_AND_BASE"
+  ],
+  "nonGoals": [
+    "BOOTSTRAP_IMPLEMENTATION_IN_DESIGN_TASK",
+    "AUTHORITY_MATERIALIZATION_IN_DESIGN_TASK",
+    "CLOSEOUT_LEDGER_IMPLEMENTATION",
+    "PRODUCT_MODULE_MUTATION",
+    "PRODUCTION_ACTIVATION",
+    "W3_CERTIFICATION",
+    "WINDOWS_ORPHAN_CLEANUP",
+    "TYPESCRIPT_BASELINE_REMEDIATION",
+    "STANDING_OR_REUSABLE_AUTHORITY"
+  ]
+}
