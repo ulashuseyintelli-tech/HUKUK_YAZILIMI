@@ -37,6 +37,7 @@ import {
   type ActorHierarchyFacts,
   type IncumbentAuthorityVerdict,
 } from '../../scripts/office-cap02-authorization-shadow.core';
+import { decideTelemetryActivation } from '../../scripts/office-cap02-telemetry-canary-scope.core';
 import { OfficeApprovalService } from './office-approval.service';
 
 export type OfficeApprovalShadowDecision = 'ALLOW' | 'WOULD_REQUIRE_APPROVAL';
@@ -259,15 +260,27 @@ export class OfficeApprovalShadowService {
    * oluşturmaz, hiçbir hata çağırana sızmaz. `enforce` modundaki fail-closed
    * davranışını da etkilemez — bu metot dönüşsüzdür ve enforce dalından ÖNCE çalışır.
    *
-   * FLAG: `OFFICE_CAP02_REPORTINGLINE_SHADOW === 'observe'` → ölç. Diğer her şey
-   * (unset / 'off' / 'on' / bilinmeyen) → tamamen dormant: TEK bir DB sorgusu bile
-   * yapılmaz. Varsayılan davranış DEĞİŞMEZ.
+   * FLAG (OFFICE-P2-CAP02-TELEMETRY-CANARY-SCOPE-I01): master flag TEK BAŞINA
+   * yetmez. H0 taraması şunu ölçtü: eski sözleşmede master='observe' AÇILSAYDI
+   * TÜM tenant'lar (TELLİ HUKUK dahil) gözlem kapsamına girerdi — bu "controlled
+   * canary" DEĞİLDİR. Şimdi ÜÇ sinyal birlikte gerekir:
+   *   OFFICE_CAP02_REPORTINGLINE_SHADOW                  = 'observe'
+   *   OFFICE_CAP02_REPORTINGLINE_SHADOW_TENANT_ALLOWLIST  = tam tenantId listesi (ZORUNLU)
+   *   OFFICE_CAP02_REPORTINGLINE_SHADOW_ACTOR_ALLOWLIST   = tam userId listesi (opsiyonel)
+   * Karar mantığı `decideTelemetryActivation` saf çekirdeğindedir: boş allowlist
+   * "tüm tenant'lar" SAYILMAZ, malformed liste fail-closed'dır. Diğer her durum
+   * (master kapalı / tenant allowlist boş veya eşleşmiyor) → tamamen dormant:
+   * TEK bir DB sorgusu bile yapılmaz. Varsayılan davranış DEĞİŞMEZ.
    */
   private async recordReportingLineShadow(input: OfficeApprovalShadowInput): Promise<void> {
-    const mode = String(this.config.get('OFFICE_CAP02_REPORTINGLINE_SHADOW') ?? '')
-      .trim()
-      .toLowerCase();
-    if (mode !== 'observe') return; // fail-safe dormant
+    const activation = decideTelemetryActivation({
+      masterFlagRaw: this.config.get('OFFICE_CAP02_REPORTINGLINE_SHADOW'),
+      tenantAllowlistRaw: this.config.get('OFFICE_CAP02_REPORTINGLINE_SHADOW_TENANT_ALLOWLIST'),
+      actorAllowlistRaw: this.config.get('OFFICE_CAP02_REPORTINGLINE_SHADOW_ACTOR_ALLOWLIST'),
+      tenantId: input.tenantId,
+      actorUserId: input.actorUserId,
+    });
+    if (!activation.active) return; // fail-safe dormant (bkz. TelemetryActivationReason)
 
     try {
       const incumbent = await this.computeDecision(input.actorUserId, input.tenantId);
