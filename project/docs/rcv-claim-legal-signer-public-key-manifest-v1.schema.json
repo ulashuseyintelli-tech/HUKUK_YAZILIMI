@@ -1,0 +1,197 @@
+{
+  "$id": "https://telli-hukuk.example/schemas/rcv-claim-legal-signer-public-key-manifest-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/entry"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "keyCount": {
+      "const": 3
+    },
+    "manifestId": {
+      "const": "RCV-CLAIM-LEGAL-SIGNER-PUBLIC-KEY-MANIFEST"
+    },
+    "manifestVersion": {
+      "const": 1
+    },
+    "privateEvidence": {
+      "$ref": "#/$defs/privateEvidence"
+    },
+    "productionSignatureStatus": {
+      "const": "NONE"
+    },
+    "provider": {
+      "const": "AWS_KMS"
+    },
+    "region": {
+      "const": "eu-central-1"
+    },
+    "serializationAlgorithm": {
+      "const": "RCV-CLAIM-LEGAL-SIGNER-PUBLIC-KEY-MANIFEST-CANONICAL-JSON-V1"
+    },
+    "signingAuthorityStatus": {
+      "const": "NOT_ACTIVE"
+    },
+    "status": {
+      "const": "RATIFIED"
+    },
+    "trustRootStatus": {
+      "const": "PENDING_ONBOARDING"
+    }
+  },
+  "required": [
+    "entries",
+    "keyCount",
+    "manifestId",
+    "manifestVersion",
+    "privateEvidence",
+    "productionSignatureStatus",
+    "provider",
+    "region",
+    "serializationAlgorithm",
+    "signingAuthorityStatus",
+    "status",
+    "trustRootStatus"
+  ],
+  "type": "object",
+  "$defs": {
+    "entry": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "Ed25519"
+        },
+        "alias": {
+          "enum": [
+            "alias/telli-legal-reviewer-01",
+            "alias/telli-final-legal-ratifier-01",
+            "alias/telli-prod-legal-01"
+          ]
+        },
+        "createdAt": {
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "type": "string"
+        },
+        "displayName": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "fingerprintAlgorithm": {
+          "const": "SHA-256"
+        },
+        "keyUsage": {
+          "const": "SIGN_VERIFY"
+        },
+        "provider": {
+          "const": "AWS_KMS"
+        },
+        "publicKey": {
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "type": "string"
+        },
+        "publicKeyEncoding": {
+          "const": "BASE64"
+        },
+        "publicKeyFormat": {
+          "const": "SPKI_DER"
+        },
+        "region": {
+          "const": "eu-central-1"
+        },
+        "revocationPolicyId": {
+          "const": "RCV-CLAIM-LEGAL-SIGNER-REVOCATION-POLICY@1"
+        },
+        "role": {
+          "enum": [
+            "LEGAL_REVIEWER",
+            "FINAL_LEGAL_RATIFIER",
+            "PRODUCTION_RELEASE_SIGNER"
+          ]
+        },
+        "rotationPolicyId": {
+          "const": "RCV-CLAIM-LEGAL-SIGNER-ROTATION-POLICY@1"
+        },
+        "signerId": {
+          "enum": [
+            "TELLI-LEGAL-REVIEWER-01",
+            "TELLI-FINAL-LEGAL-RATIFIER-01",
+            "TELLI-PROD-LEGAL-01"
+          ]
+        },
+        "signingAlgorithm": {
+          "const": "ED25519_SHA_512"
+        },
+        "signingAuthorityStatus": {
+          "const": "NOT_ACTIVE"
+        },
+        "status": {
+          "const": "ENABLED"
+        },
+        "subjectType": {
+          "enum": [
+            "HUMAN",
+            "SERVICE"
+          ]
+        },
+        "trustRootStatus": {
+          "const": "PENDING_ONBOARDING"
+        }
+      },
+      "required": [
+        "algorithm",
+        "alias",
+        "createdAt",
+        "displayName",
+        "fingerprint",
+        "fingerprintAlgorithm",
+        "keyUsage",
+        "provider",
+        "publicKey",
+        "publicKeyEncoding",
+        "publicKeyFormat",
+        "region",
+        "revocationPolicyId",
+        "role",
+        "rotationPolicyId",
+        "signerId",
+        "signingAlgorithm",
+        "signingAuthorityStatus",
+        "status",
+        "subjectType",
+        "trustRootStatus"
+      ],
+      "type": "object"
+    },
+    "privateEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "checksumAlgorithm": {
+          "const": "SHA-256"
+        },
+        "evidenceSetChecksum": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "recordId": {
+          "const": "KC01-AWS-PRIVATE-OPERATIONAL-EVIDENCE"
+        }
+      },
+      "required": [
+        "checksumAlgorithm",
+        "evidenceSetChecksum",
+        "recordId"
+      ],
+      "type": "object"
+    }
+  }
+}

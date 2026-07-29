@@ -1,0 +1,363 @@
+{
+  "auditTrailStatus": "ACTIVE_DURABLE_S3_LOG_VALIDATION_ENABLED",
+  "eventCounts": {
+    "CreateAlias": 3,
+    "CreateKey": 3,
+    "GetPublicKey": 4,
+    "PutKeyPolicy": 15,
+    "Sign": 6,
+    "TagResource": 4,
+    "Verify": 3
+  },
+  "events": [
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "c2ace9c5514d3a31a77059734665cff931496650a2af2ad8e810785b3f0647eb",
+      "eventName": "CreateAlias",
+      "eventTime": "2026-07-29T06:50:51Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "134d24836a19a68ac263015cdc98c29780b4c1096d381cf1d03741befbe9f393",
+      "eventName": "CreateKey",
+      "eventTime": "2026-07-29T06:50:51Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "a44c33c4da08270693ebf2a2f2b8bfd21254fc42a4a4e39e8c64e6f945c71a5a",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T06:50:52Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "fd504281310998af607cb61b226f18b77ffe0795b9e1f365c34487acff404563",
+      "eventName": "GetPublicKey",
+      "eventTime": "2026-07-29T06:50:53Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "2d4578f84c4feaf3ff1facf71548b61e7eb5b70179888d9e3287bec06166fbc5",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T06:52:37Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "3ae979b249a1ad3a8f5ecbbdbd2f068582f9f7d26f3775281e34191a1433c12e",
+      "eventName": "GetPublicKey",
+      "eventTime": "2026-07-29T06:52:38Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "b527cee0779bed6500ae82fb84ee2f3407dcc883205d6b77cb1acc199b40570e",
+      "eventName": "CreateKey",
+      "eventTime": "2026-07-29T06:52:41Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "0b91a77cc5a8bfe5923d37ed0b36c6310888f9e1747a84372bdab309ee5cb630",
+      "eventName": "CreateAlias",
+      "eventTime": "2026-07-29T06:52:42Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "f8cd954f3715570bc64bbe16a02dc142f6f92e84682f527c3a9460c9e6dd213f",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T06:52:42Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "cfc1d7b1505812f7e144aaad1654376eef16b80e0e49861fa2f7f6a47a860f64",
+      "eventName": "GetPublicKey",
+      "eventTime": "2026-07-29T06:52:43Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "475fff890e0fd1e2daacd22068037913d0a61c0f84afeb0cc5c030a3c3455d9a",
+      "eventName": "CreateAlias",
+      "eventTime": "2026-07-29T06:52:46Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "aaeae3af9648071c394e0c1cce3828bf6009168ca26fea62798540433e23e60f",
+      "eventName": "CreateKey",
+      "eventTime": "2026-07-29T06:52:46Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "5493a1e7df3e55bb41f271651e337cb065bb4d5fa609f6348b66e97afc729095",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T06:52:47Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "369bbfa3fbfa56c869fec4d39ac2386992e8b321c424de76641b69413340173b",
+      "eventName": "GetPublicKey",
+      "eventTime": "2026-07-29T06:52:48Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "dec73ea41a59954980e8e9dc2ddf46a7281404368c6d31208cec74bc0e605533",
+      "eventName": "Sign",
+      "eventTime": "2026-07-29T06:55:44Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "efd06938a705e343c29aaa7eb30127e814866f1a33d238267d15fbae6a8a5a37",
+      "eventName": "Verify",
+      "eventTime": "2026-07-29T06:55:45Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "820b1d080a7955096e4a88310854ad07da8684ebd7188c13cc8bb1e259b60b59",
+      "eventName": "Sign",
+      "eventTime": "2026-07-29T06:55:46Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "3557853d3bc53e1b284f76c832a7fc6566515949d8a3253225499a8d4f6f6068",
+      "eventName": "Verify",
+      "eventTime": "2026-07-29T06:55:46Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "bad04bbdb63fa1ccec0aec56d2a3d887539711503ff5ca3ca2590b3f8734e7a9",
+      "eventName": "Sign",
+      "eventTime": "2026-07-29T06:55:47Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "240db48660d8d30d1c82ebb399881bb3e326794d06f14769b23e46a32296f489",
+      "eventName": "Verify",
+      "eventTime": "2026-07-29T06:55:47Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "078ba5e115d8ccf05b757dce5f7a71150f92ab39d1d85aa36b410f6f60b1b78e",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T06:55:49Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "AccessDenied",
+      "eventHash": "26fc8de26ef8ad56cb8b5bd982ed3c1b818c831f8e7c33da389960206622cc9b",
+      "eventName": "Sign",
+      "eventTime": "2026-07-29T06:55:50Z",
+      "keyAlias": "REDACTED_AT_AUTHORIZATION_BOUNDARY",
+      "redactedKeyReference": "b2acf7a6e256fc2feeae7374895beec0d23995b8766b6b203413c281e72a20bb",
+      "role": "UNATTRIBUTED_AUTHORIZATION_DENIAL"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "900444ca25910c5d90f91cff1d31d1c83f4f72f0d3f4244019f0e842c6941754",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T06:55:51Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "AccessDenied",
+      "eventHash": "8944acdb3ae53e0b2fb1cf27d968442135d4a4649b2c67ddf8b931aab2bb6297",
+      "eventName": "Sign",
+      "eventTime": "2026-07-29T06:55:52Z",
+      "keyAlias": "REDACTED_AT_AUTHORIZATION_BOUNDARY",
+      "redactedKeyReference": "b2acf7a6e256fc2feeae7374895beec0d23995b8766b6b203413c281e72a20bb",
+      "role": "UNATTRIBUTED_AUTHORIZATION_DENIAL"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "cfb5528dd734aab9993faee38f0fc2052c8291879b99d7ea468b9fdd86cbea5b",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T06:55:53Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    },
+    {
+      "disposition": "AccessDenied",
+      "eventHash": "023c612fd0ea736d70e3efe84164ff25e08464f26fff5a2a8a6f68687b5edf82",
+      "eventName": "Sign",
+      "eventTime": "2026-07-29T06:55:54Z",
+      "keyAlias": "REDACTED_AT_AUTHORIZATION_BOUNDARY",
+      "redactedKeyReference": "b2acf7a6e256fc2feeae7374895beec0d23995b8766b6b203413c281e72a20bb",
+      "role": "UNATTRIBUTED_AUTHORIZATION_DENIAL"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "4bf904a15703747e32673f411997299d3300f8a1b35dbaae7cec920146d371e9",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T07:21:08Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "ca717db47d551522fa76bf8bbdc2345a84a505e4228a66b4f43ae9652a4f669c",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T07:21:09Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "2a49adfcdd2ed5e5ef44e67106215eb1e15cfd820ac93c80d1bbcd50adf6bfc9",
+      "eventName": "TagResource",
+      "eventTime": "2026-07-29T07:21:09Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "386b52684bd2b6860f5d9c8c684101e3a914eec060fa21cf2757a037b005cfc7",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T07:21:46Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "d7948f9133d434c7a0ac03213fea421fcaf7238d78c589ef45e829c98e0c3d39",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T07:21:47Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "3956b6a70226879fa7b9b5cf639fd57c8e2d6feb4ab2343d570199fc0f9bdc18",
+      "eventName": "TagResource",
+      "eventTime": "2026-07-29T07:21:47Z",
+      "keyAlias": "alias/telli-legal-reviewer-01",
+      "redactedKeyReference": "ccf3ea82504be83521c2335e053350c7205e533af2f8d5f93ab9dd24db05c051",
+      "role": "LEGAL_REVIEWER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "073ccb8bf9b4b4f2a6ae8a83019a49a56ceb81f80e0b5cb1dcdef27e8efb144f",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T07:21:50Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "7fe54d76da0d486436559c583474d43c77e3ecb2dbac83c75eec2315ee4a68a4",
+      "eventName": "TagResource",
+      "eventTime": "2026-07-29T07:21:51Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "af35c3e36ef1c3b8bd95b14e03895d51306dc8bb0d12d05a5e7f3281bdc7e4fa",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T07:21:52Z",
+      "keyAlias": "alias/telli-final-legal-ratifier-01",
+      "redactedKeyReference": "07b2e5cacd9f0a7d44b2a3a4e07c155cb780cac0397cb4dce0ecd2e75be112de",
+      "role": "FINAL_LEGAL_RATIFIER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "64140e1f467e72a579b6afea583a42682eca10cc881f40e0bffc76772a235fff",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T07:21:54Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "144bfaa51678d0cbfcd2b5fd18fb4fbd90118033afa1915535110b7eb9a4d917",
+      "eventName": "TagResource",
+      "eventTime": "2026-07-29T07:21:55Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    },
+    {
+      "disposition": "SUCCESS",
+      "eventHash": "45b4f3ca9a1c6a2542962c51e635657b3aea9e0e9b13a64600846ab08a2a8142",
+      "eventName": "PutKeyPolicy",
+      "eventTime": "2026-07-29T07:21:56Z",
+      "keyAlias": "alias/telli-prod-legal-01",
+      "redactedKeyReference": "f6a789f1ab842cb8daa23241a8b010e32760928f2920af7aa47baed6a11e5348",
+      "role": "PRODUCTION_RELEASE_SIGNER"
+    }
+  ],
+  "managementEvents": "ALL",
+  "recordId": "RCV-CLAIM-LEGAL-SIGNER-CLOUDTRAIL-EVIDENCE@1",
+  "region": "eu-central-1",
+  "requiredEventGate": "PASS",
+  "signAccessDeniedCount": 3,
+  "signSuccessCount": 3,
+  "verifySuccessCount": 3
+}

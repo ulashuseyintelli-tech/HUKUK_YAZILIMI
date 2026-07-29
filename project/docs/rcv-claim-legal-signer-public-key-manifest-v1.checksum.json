@@ -1,0 +1,7 @@
+{
+  "checksumAlgorithm": "SHA-256",
+  "manifestChecksum": "1e80168ebc52e6601f9231834ddde81a339e69a2337a0630bd9daa993f0519ec",
+  "manifestId": "RCV-CLAIM-LEGAL-SIGNER-PUBLIC-KEY-MANIFEST",
+  "manifestVersion": 1,
+  "serializationAlgorithm": "RCV-CLAIM-LEGAL-SIGNER-PUBLIC-KEY-MANIFEST-CANONICAL-JSON-V1"
+}

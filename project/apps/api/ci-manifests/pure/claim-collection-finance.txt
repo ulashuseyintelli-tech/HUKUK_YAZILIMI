@@ -57,6 +57,7 @@ src/modules/claim-item/__tests__/claim-item-amount-contract.spec.ts
 src/modules/claim-item/__tests__/claim-item-due-one-way-authority.static.spec.ts
 src/modules/claim-item/__tests__/claim-item-edit-guard.spec.ts
 src/modules/claim-item/__tests__/claim-item-interest-dto-admission.spec.ts
+src/modules/claim-item/__tests__/claim-item-legal-signer-manifest.static.spec.ts
 src/modules/claim-item/__tests__/claim-item-lifecycle-contract.spec.ts
 src/modules/claim-item/__tests__/claim-item-required-ci-coverage.static.spec.ts
 src/modules/claim-item/__tests__/claim-item-rule-engine-formation-admission.spec.ts
