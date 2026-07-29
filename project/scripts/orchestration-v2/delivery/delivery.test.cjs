@@ -536,9 +536,10 @@ test('DV63  the unknown case and the empty case both fail towards runtime', () =
   assert.ok(impactMod.assertNotApplicableAllowed(['project/docs/governance/decision-log.md']));
 });
 
-// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV57)
+// ───────────────────────────────────── SUCCESSOR GATE (DV50–DV58)
 
 const successorMod = require('../orchestrator/successor.cjs');
+const authority = require('../orchestrator/authority.cjs');
 const postMergeMod = require('./post-merge.cjs');
 
 /** A CLOSED predecessor carrying the delivery record a finalizer would write. */
@@ -816,9 +817,111 @@ test('DV57  real producer output survives production stamping and satisfies the 
   }
 });
 
-// ───────────────────────────────────── SCHEMA V2 (DV40–DV45)
+test('DV58  committed R03 successor authority is digest-pinned to the production successor gate', () => {
+  const predecessorTaskId = 'GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R03';
+  const successorTaskId = 'GOV-COORD-DTV-DOGFOOD-SUCCESSOR-R03';
+  const artefactRoot = path.join(
+    REPO_ROOT,
+    'project',
+    'docs',
+    'governance',
+    'coordination-v2',
+    'task-plans',
+    'DOGFOOD-R03',
+  );
+  const readJson = (name) => JSON.parse(fs.readFileSync(path.join(artefactRoot, name), 'utf8'));
+  const predecessorPlan = readJson('plan.v4.json');
+  const successorPlan = readJson('successor.plan.v4.json');
+  const grant = readJson('grant.v4.json');
+  const semanticAuthority = fs.readFileSync(path.join(artefactRoot, 'semantic-authority.R02.md'), 'utf8');
+  const digestFields = [
+    'taskSpecSha256',
+    'declaredIntentSha256',
+    'boundaryPolicySha256',
+    'requiredTestsSha256',
+    'deliveryContractSha256',
+  ];
 
-const authority = require('../orchestrator/authority.cjs');
+  const assertFourSurfaceParity = (candidateGrant) => {
+    assert.equal(predecessorPlan.taskId, predecessorTaskId);
+    assert.equal(predecessorPlan.successorDisposition, 'DECLARED_SUCCESSOR');
+    assert.equal(successorPlan.taskId, successorTaskId);
+    assert.deepEqual(successorPlan.predecessorTaskIds, [predecessorTaskId]);
+
+    const authoritySuccessors = semanticAuthority
+      .split(/\r?\n/)
+      .map((line) => /^Successor\s*:\s*(\S+)\s*$/.exec(line))
+      .filter(Boolean)
+      .map((match) => match[1]);
+    assert.deepEqual(authoritySuccessors, [successorTaskId]);
+
+    // Use the production grant validator before comparing the full digest
+    // surface. A renamed pin must fail closed instead of being found through a
+    // fixture-specific lookup or accepted by the successor gate alone.
+    const admission = authority.validateAgainstGrant({
+      grant: candidateGrant,
+      spec: successorPlan,
+      nowMs: Date.parse('2026-07-29T00:00:00.000Z'),
+    });
+    const expectedDigests = authority.specDigests(successorPlan);
+    assert.equal(admission.pinned.taskId, successorTaskId);
+    assert.deepEqual(admission.predecessorTaskIds, successorPlan.predecessorTaskIds);
+    assert.deepEqual(
+      Object.fromEntries(digestFields.map((field) => [field, admission.pinned[field]])),
+      Object.fromEntries(digestFields.map((field) => [field, expectedDigests[field]])),
+    );
+    return expectedDigests;
+  };
+
+  const successorDigests = assertFourSurfaceParity(grant);
+  const capability = manifestMod.capability(successorPlan.deliveryContract.capabilityId);
+  const probe = probesMod.PROBES[capability.probeId];
+  const mergeSha = 'a'.repeat(40);
+  const producerRecord = evidenceMod.build({
+    capability,
+    probe,
+    result: { observedState: capability.targetState, failureCode: null, detail: 'ok', steps: [] },
+    repoState: { verifiedAtSha: mergeSha, sourceBranch: 'main', dirtyTree: false },
+    startedAt: '2026-07-29T00:00:00.000Z',
+    finishedAt: '2026-07-29T00:00:01.000Z',
+    commandDigest: 'b'.repeat(64),
+    commandCount: 1,
+    postMergeRun: true,
+    expectedMergeSha: mergeSha,
+  });
+  assert.equal(producerRecord.verdict, 'PASS');
+  assert.equal(producerRecord.deliveryContractSha256, successorDigests.deliveryContractSha256);
+
+  const delivery = postMergeMod.deliveryRecordFrom(
+    Object.assign({}, producerRecord, { record: producerRecord }),
+    mergeSha,
+    predecessorTaskId,
+  );
+  assert.equal(delivery.taskId, predecessorTaskId);
+  assert.equal(delivery.deliveryContractSha256, successorDigests.deliveryContractSha256);
+  assert.equal(delivery.evidenceDigest, producerRecord.evidenceDigest);
+  const predecessor = {
+    state: 'CLOSED',
+    payload: { taskId: predecessorTaskId, mergeSha, delivery },
+  };
+  const evaluated = successorMod.evaluate({
+    predecessorTaskIds: successorPlan.predecessorTaskIds,
+    successorSchema: successorPlan.schemaVersion,
+    currentOf: (taskId) => (taskId === predecessorTaskId ? predecessor : null),
+  });
+  assert.deepEqual(evaluated, { eligible: true, reasons: [] });
+
+  const renamedGrant = JSON.parse(JSON.stringify(grant));
+  const renamedPin = renamedGrant.authorizedTasks.find((entry) => entry.taskId === successorTaskId);
+  assert.ok(renamedPin, 'the committed grant must carry the R03 successor pin');
+  renamedPin.taskId = 'GOV-COORD-DTV-DOGFOOD-OTHER-SUCCESSOR-R03';
+  assert.throws(
+    () => assertFourSurfaceParity(renamedGrant),
+    (error) => error && error.code === 'TASK_NOT_IN_GRANT',
+  );
+});
+
+// ───────────────────────────────────── SCHEMA V2 (DV40–DV45)
 
 const V2_CONTRACT = {
   capabilityId: 'TEST_CAPABILITY',
