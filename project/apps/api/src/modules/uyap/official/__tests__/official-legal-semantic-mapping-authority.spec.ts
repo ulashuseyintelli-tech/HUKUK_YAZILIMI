@@ -242,9 +242,22 @@ describe('GA — governance artefakt değişmezleri', () => {
   it('GA-06: çözülmemiş eşlemeler emit edilebilir DEĞİL', () => {
     expect(doc).toContain('UNRATIFIED MAPPINGS:             NOT EMITTABLE');
     expect(doc).toContain('ABSENT OR AMBIGUOUS SEMANTICS:   FAIL-CLOSED');
-    // Runtime hâlâ fail-closed: ratifikasyon belgede yaşıyor, koda bağlanmadı.
-    expect(resolveOfficialMahiyetKodu('NAFAKA').kind).toBe('AUTHORITY_REQUIRED');
-    expect(resolveOfficialTakipTuru('JUDGMENT_ENFORCEMENT').kind).toBe('AUTHORITY_REQUIRED');
+    // ⚠ SUPERSEDED (UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-IMPLEMENTATION-I01): owner
+    // NAFAKA (M-02) ve JUDGMENT_ENFORCEMENT (T-04) satırlarını APPROVE etti — bu iki
+    // spesifik değer artık koşullu/koşulsuz RESOLVED üretebilir (bkz.
+    // official-legal-semantic-mapping-implementation.spec.ts IG-*). GA-06'nın konusu
+    // (owner onayı OLMAYAN eşlemeler hâlâ fail-closed) owner tablosuna hiç girmeyen
+    // gerçek değerlerle (CEZA, PLEDGE) doğrulanmaya devam eder.
+    expect(
+      resolveOfficialMahiyetKodu({
+        caseSubCategory: 'CEZA',
+        takipTuru: { proceedingType: null },
+        caseJudgmentNafakaType: null,
+      }).kind,
+    ).toBe('AUTHORITY_REQUIRED');
+    expect(resolveOfficialTakipTuru({ proceedingType: 'PLEDGE' }).kind).toBe(
+      'AUTHORITY_REQUIRED',
+    );
   });
 
   it('GA-07: Canary-required subset eksiksiz ve senaryo boşluğu açıkça kayıtlı', () => {
@@ -273,19 +286,27 @@ describe('GA — governance artefakt değişmezleri', () => {
     expect(doc).toContain('a0b45f0b');
   });
 
-  it('GA-10: runtime implementasyon değişikliği yok', () => {
+  it('GA-10: bu görevin KAPANIŞ ANINDA runtime implementasyon değişikliği yoktu', () => {
+    // Bu artefakt (`UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-AUTHORITY-R01`) tarihsel bir
+    // kapanış kaydıdır ve DEĞİŞTİRİLMEZ; "RUNTIME IMPLEMENTATION: NONE" ifadesi O
+    // GÖREVİN kapanış anı için doğruydu ve doğru kalır.
     expect(doc).toContain('RUNTIME IMPLEMENTATION:          NONE');
-    // `RATIFIED_*` tabloları hâlâ boş — hiçbir eşleme koda bağlanmadı.
+
+    // ⚠ SUPERSEDED (`UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-IMPLEMENTATION-I01`, owner
+    // GO-COMPLETE, 2026-07-29): owner 11 aday satırdan T-01..T-04/W-01..W-05/M-02'yi
+    // (M-01 hariç, MODEL_RESIDUAL) ratifiye etti; `RATIFIED_MAHIYET_BY_DOMAIN`/
+    // `RATIFIED_TAKIP_TURU_BY_DOMAIN` sabit-tablo tasarımı, owner koşullarını (ör.
+    // CaseJudgment.nafakaType bağımlılığı) ifade edemediği için tipli exhaustive-switch
+    // çözümleyicilerle DEĞİŞTİRİLDİ — artık bu isimler registry'de YOKTUR. Güncel
+    // implementasyon durumu ve GA-benzeri değişmezler
+    // `official-legal-semantic-mapping-implementation.spec.ts` (IG-*) içindedir.
     const registry = fs.readFileSync(
       path.join(API_ROOT, 'src/modules/uyap/official/official-codelist-registry.ts'),
       'utf8',
     );
-    expect(registry).toMatch(
-      /RATIFIED_MAHIYET_BY_DOMAIN[^=]*=\s*Object\.freeze\(\{\s*\}\)/,
-    );
-    expect(registry).toMatch(
-      /RATIFIED_TAKIP_TURU_BY_DOMAIN[^=]*=\s*Object\.freeze\(\{\s*\}\)/,
-    );
+    expect(registry).not.toContain('RATIFIED_MAHIYET_BY_DOMAIN');
+    expect(registry).not.toContain('RATIFIED_TAKIP_TURU_BY_DOMAIN');
+    expect(registry).toContain('resolveOfficialAlacakKalemiWrapper');
   });
 
   it('GA-11: model residual ları numaralı ve etkili', () => {
