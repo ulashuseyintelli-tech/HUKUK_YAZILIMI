@@ -686,3 +686,38 @@ owner WIP yetkisi üretmez. D02-KC01'i başlatmaz; D02-F01, D02-I01/I02/I03,
 I04/I05, canary ve containment retirement'a authority vermez. Wildcard, prefix
 authority ve reusable authority yoktur. PR #1807 merge veya close olduğunda
 binding yeniden kullanılamaz.
+
+## OWNER-WIP MULTI-SOURCE PATH OWNERSHIP — exact reconciliation binding
+
+Owner-ratified 2026-07-29. This one-time binding permits only the lossless
+source-attribution reconciliation of grandfathered owner WIP. It does not grant
+domain-document mutation, source cleanup or owner-content mutation authority.
+
+```text
+Task ID  : OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01
+Mode     : OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01
+Base SHA : 36208cdbab07a712a79756151b065270b88c64ae
+Head ref : codex/owner-wip-path-ownership-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+           M project/docs/governance/governance-writer-coordination-protected-paths.json
+           M project/docs/governance/governance-writer-coordination-cutover-record.md
+```
+
+The protected-path registry may carry a backward-compatible
+`grandfatheredOwnerWipSources` attribution layer. Each source records identity,
+location, base, owner, semantic purpose, disposition, archive reference and
+sorted exact-path records with SHA-256 content identity and active-protection
+state. The legacy flat exact-path list remains required and must equal the
+deterministic sorted union of all active source paths. Any active source keeps a
+path forbidden; all attributed sources must be inactive before that path is
+released. Prefix protection is unchanged.
+
+The evidence archive is external to the repository and is pinned by
+`sha256-manifest.txt` digest
+`777108ef35abb88eb7d4277561e7033b28b6c4b2fa82312cee3a4407409d982b`.
+This binding cannot modify the protected domain documents, unlock or clean any
+source, remove a branch/worktree, weaken owner-WIP failures, create a reusable
+authority, or authorize Task 04 semantic changes. Exact base, branch and five
+modified paths are mandatory; after merge the binding cannot be reused.

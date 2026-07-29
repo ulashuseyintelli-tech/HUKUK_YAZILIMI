@@ -482,6 +482,35 @@ const RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01 = Object.freeze({
     }),
   ]),
 });
+const OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01 = Object.freeze({
+  taskId: 'OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01',
+  mode: 'OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01',
+  baseSha: '36208cdbab07a712a79756151b065270b88c64ae',
+  headRef: 'codex/owner-wip-path-ownership-r01',
+  contractPath:
+    'project/docs/governance/governance-writer-coordination-contract.md',
+  changedPaths: Object.freeze([
+    Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.cjs' }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/scripts/governance-coordination.test.cjs',
+    }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/docs/governance/governance-writer-coordination-contract.md',
+    }),
+    Object.freeze({
+      status: 'M',
+      path:
+        'project/docs/governance/governance-writer-coordination-protected-paths.json',
+    }),
+    Object.freeze({
+      status: 'M',
+      path:
+        'project/docs/governance/governance-writer-coordination-cutover-record.md',
+    }),
+  ]),
+});
 const GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02 = Object.freeze({
   taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-RECOVERY-R02',
   mode: 'GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02',
@@ -705,7 +734,141 @@ function loadPolicy(policyPath = POLICY_PATH) {
   if (parsed.effectiveFromMainSha !== EFFECTIVE_FROM_MAIN_SHA) {
     reject('POLICY_BASELINE_INVALID', 'protected-path policy effectiveFromMainSha mismatch');
   }
+  deriveActiveOwnerWipExactPaths(parsed);
   return parsed;
+}
+
+function deriveActiveOwnerWipExactPaths(policy) {
+  const flatPaths = policy.grandfatheredOwnerWipExactPaths;
+  if (!Array.isArray(flatPaths)) {
+    reject(
+      'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+      'grandfatheredOwnerWipExactPaths must be an array',
+    );
+  }
+
+  const normalizedFlatPaths = flatPaths.map((repoPath) =>
+    normalizeRepoPath(repoPath, 'grandfatheredOwnerWipExactPaths'),
+  );
+  const sortedFlatPaths = [...new Set(normalizedFlatPaths)].sort();
+  if (
+    sortedFlatPaths.length !== normalizedFlatPaths.length ||
+    sortedFlatPaths.some((repoPath, index) => repoPath !== normalizedFlatPaths[index])
+  ) {
+    reject(
+      'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+      'grandfatheredOwnerWipExactPaths must be unique and sorted',
+    );
+  }
+
+  if (policy.grandfatheredOwnerWipSources === undefined) {
+    return sortedFlatPaths;
+  }
+  if (!Array.isArray(policy.grandfatheredOwnerWipSources)) {
+    reject(
+      'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+      'grandfatheredOwnerWipSources must be an array',
+    );
+  }
+
+  const sourceIds = new Set();
+  const activePaths = new Set();
+  for (const source of policy.grandfatheredOwnerWipSources) {
+    for (const key of [
+      'sourceId',
+      'sourceType',
+      'sourceLocation',
+      'baseSha',
+      'owner',
+      'semanticPurpose',
+      'disposition',
+      'archiveReference',
+    ]) {
+      if (typeof source[key] !== 'string' || source[key].trim() === '') {
+        reject('OWNER_WIP_SOURCE_REGISTRY_INVALID', `${key} must be nonblank`);
+      }
+    }
+    if (sourceIds.has(source.sourceId)) {
+      reject(
+        'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+        `duplicate sourceId ${source.sourceId}`,
+      );
+    }
+    sourceIds.add(source.sourceId);
+    if (typeof source.activeProtection !== 'boolean' || !Array.isArray(source.exactPaths)) {
+      reject(
+        'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+        `${source.sourceId} requires activeProtection and exactPaths`,
+      );
+    }
+
+    const sourcePaths = new Set();
+    let previousPath = '';
+    let hasActivePath = false;
+    for (const entry of source.exactPaths) {
+      for (const key of [
+        'exactPath',
+        'blobSha256',
+        'workingTreeState',
+        'ownership',
+        'semanticPurpose',
+        'disposition',
+      ]) {
+        if (typeof entry[key] !== 'string' || entry[key].trim() === '') {
+          reject(
+            'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+            `${source.sourceId}.${key} must be nonblank`,
+          );
+        }
+      }
+      const exactPath = normalizeRepoPath(
+        entry.exactPath,
+        `${source.sourceId}.exactPath`,
+      );
+      if (!/^[0-9a-f]{64}$/.test(entry.blobSha256)) {
+        reject(
+          'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+          `${source.sourceId}.${exactPath} blobSha256 must be lowercase SHA-256`,
+        );
+      }
+      if (typeof entry.activeProtection !== 'boolean') {
+        reject(
+          'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+          `${source.sourceId}.${exactPath} activeProtection must be boolean`,
+        );
+      }
+      if (sourcePaths.has(exactPath) || (previousPath && previousPath > exactPath)) {
+        reject(
+          'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+          `${source.sourceId}.exactPaths must be unique and sorted`,
+        );
+      }
+      sourcePaths.add(exactPath);
+      previousPath = exactPath;
+      if (entry.activeProtection) {
+        hasActivePath = true;
+        activePaths.add(exactPath);
+      }
+    }
+    if (source.activeProtection !== hasActivePath) {
+      reject(
+        'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+        `${source.sourceId}.activeProtection must equal any active exact path`,
+      );
+    }
+  }
+
+  const derivedActivePaths = [...activePaths].sort();
+  if (
+    derivedActivePaths.length !== sortedFlatPaths.length ||
+    derivedActivePaths.some((repoPath, index) => repoPath !== sortedFlatPaths[index])
+  ) {
+    reject(
+      'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+      'flat exact paths must equal the deterministic union of active source paths',
+    );
+  }
+  return derivedActivePaths;
 }
 
 function isRequestInstancePath(repoPath) {
@@ -726,12 +889,13 @@ function isCoordinationControlPlane(repoPath, policy) {
 
 function validateTargetPolicy(targetFile, operationType, policy = loadPolicy()) {
   const normalized = normalizeRepoPath(targetFile, 'operation.targetFile');
+  const activeOwnerWipExactPaths = deriveActiveOwnerWipExactPaths(policy);
 
   if (policy.deniedTargetPrefixes.some((prefix) => normalized.startsWith(prefix))) {
     reject('PRODUCTION_TARGET_FORBIDDEN', `${normalized} is outside governance scope`);
   }
   if (
-    policy.grandfatheredOwnerWipExactPaths.includes(normalized) ||
+    activeOwnerWipExactPaths.includes(normalized) ||
     policy.grandfatheredOwnerWipPrefixes.some((prefix) => normalized.startsWith(prefix))
   ) {
     reject('OWNER_WIP_TARGET_FORBIDDEN', `${normalized} overlaps grandfathered owner WIP`);
@@ -1708,6 +1872,17 @@ function classifyPrChangeSet(changes, context = {}) {
     };
   }
 
+  if (
+    context.base === OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01.baseSha &&
+    context.headRef === OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01.headRef &&
+    hasExactChangeSet(changes, OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01.changedPaths)
+  ) {
+    return {
+      mode: OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01.mode,
+      taskId: OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01.taskId,
+    };
+  }
+
   const gh02Binding = GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01;
   const rcvColBinding =
     RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
@@ -1853,6 +2028,7 @@ function classifyPrChangeSet(changes, context = {}) {
       rcvColBinding.bindingPr.headRef,
       rcvColBinding.targetPr.headRef,
       RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.headRef,
+      OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01.headRef,
     ].includes(context.headRef) ||
     /^codex\/gov-coord-(?:v1-)?(?:authority-locator|register-test-fixture|execution-base-ancestry|noncoord-classifier)-repair-/.test(
       context.headRef || '',
@@ -1863,6 +2039,9 @@ function classifyPrChangeSet(changes, context = {}) {
       context.headRef || '',
     ) ||
     /^codex\/gov-coord-rcv-col-large-authority-read-repair-/.test(
+      context.headRef || '',
+    ) ||
+    /^codex\/owner-wip-path-ownership-/.test(
       context.headRef || '',
     )
   ) {
@@ -2749,6 +2928,48 @@ function validateRcvColLargeAuthorityReadRepairScope(options) {
   return { mode: repair.mode, taskId: repair.taskId };
 }
 
+function validateOwnerWipMultiSourcePathOwnershipScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding = OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01;
+  if (
+    taskId !== binding.taskId ||
+    base !== binding.baseSha ||
+    headRef !== binding.headRef ||
+    !hasExactChangeSet(changes, binding.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'owner-WIP source-attribution binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.mode,
+    binding.baseSha,
+    binding.headRef,
+    ...binding.changedPaths.map(({ path: repoPath }) => repoPath),
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact owner-WIP binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  const policyPath = path.join(
+    cwd,
+    'project',
+    'docs',
+    'governance',
+    'governance-writer-coordination-protected-paths.json',
+  );
+  deriveActiveOwnerWipExactPaths(JSON.parse(fs.readFileSync(policyPath, 'utf8')));
+  return { mode: binding.mode, taskId: binding.taskId };
+}
+
 function assertExactAuthorityMarker(content, authorityRef) {
   const marker = buildAuthorityMarker(authorityRef);
   const count = countOccurrences(content, marker);
@@ -3316,6 +3537,17 @@ function validatePrScope(options) {
     });
   }
 
+  if (classification.mode === OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01.mode) {
+    return validateOwnerWipMultiSourcePathOwnershipScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
   if (
     classification.mode ===
     RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.targetPr.mode
@@ -3771,6 +4003,7 @@ module.exports = {
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
+  OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01,
   REGISTER_REPO_PATH,
   REGISTER_TEST_FIXTURE_REPAIR_I01,
   applyMechanicalOperation,
@@ -3781,6 +4014,7 @@ module.exports = {
   classifyPrChangeSet,
   computeRequestFingerprint,
   countOccurrences,
+  deriveActiveOwnerWipExactPaths,
   extractStructuredJson,
   generateRegisterContent,
   loadRepositoryInstances,
@@ -3815,6 +4049,7 @@ module.exports = {
   validateRcvColFullRemediationBindingScope,
   validateRcvColFullRemediationBootstrapScope,
   validateRcvColLargeAuthorityReadRepairScope,
+  validateOwnerWipMultiSourcePathOwnershipScope,
   validatePrScope,
   validateRequestAgainstGit,
   assertRequestBaseAncestor,
