@@ -3457,3 +3457,37 @@ control-plane binding PR #1799 / squash `c0348dd2b5df714742a6c99893c676a288b7a33
 KC01 bu kayıtla başlamaz. Production public-key/trust-root onboarding, signed release, production
 resolver, D02-F01, D02-I01/I02/I03, I04, I05, canary ve containment retirement ayrı owner gate'leri
 tamamlanmadan eligible değildir.
+
+---
+
+## RCV-CLAIM-FORM-P02-S08-D02-KC01 — AWS KMS Legal Signer Key Ceremony
+
+```text
+STATUS                             CLOSED / CANONICAL / PASS UPON APPROVED GOVERNANCE MERGE
+IMPLEMENTATION                     PR #1856 / 74d1950deb632380a7ca6574a009e85c206c7f14
+CI                                 4/4 PASS
+PROVIDER                           AWS_KMS
+KEY SET                            3 ROLE-SEPARATED ED25519 SIGN_VERIFY KEYS
+PRIVATE CUSTODY                    NON-EXPORTABLE
+PUBLIC MANIFEST CHECKSUM           1e80168ebc52e6601f9231834ddde81a339e69a2337a0630bd9daa993f0519ec
+POSSESSION / OFFLINE VERIFY        3/3 PASS / 3/3 PASS
+CROSS-ROLE NEGATIVES               6/6 PASS
+TEMPORARY SIGNING AUTHORITY        REMOVED / DENIAL 3/3 PASS
+TRUST ROOT                         PENDING_ONBOARDING
+SIGNING                            NOT_ACTIVE
+PRODUCTION SIGNATURE               NONE
+RUNTIME                            DORMANT
+DATABASE                           UNCHANGED
+SCHEMA / MIGRATION                 NONE
+NEXT ELIGIBLE TASK                 RCV-CLAIM-FORM-P02-S08-D02-TR01
+NEXT TASK AUTHORITY                OWNER GO REQUIRED / NOT STARTED
+```
+
+KC01 public evidence pack'i AWS account/key ARN veya private material taşımadan üç hukuki rolün
+key identity, public-key checksum, custody, possession, rotation/revocation ve audit kanıtlarını
+bir arada doğrular. Temporary ceremony signing authority kaldırılmıştır; production trust root,
+signer binding ve release signing bu kapanışla aktive edilmez.
+
+TR01 ayrı owner gate'idir. TR01 tamamlanmadan D02-F01, production resolver/provider wiring,
+Legal Basis signed release, runtime activation, I04/I05, canary veya containment retirement
+eligible değildir.
