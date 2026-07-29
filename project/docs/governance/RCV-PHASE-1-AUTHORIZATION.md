@@ -77,8 +77,8 @@ Current program             : RCV-CLAIM-FORM-P02
 Current phase               : S08
 Current workstream          : D02
 Last completed foundation   : RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION
-Last completed task         : RCV-CLAIM-FORM-P02-S08-D02-PB01 — CLOSED / CANONICAL / PASS (implementation PR #1794 / a62e078a)
-Next eligible task          : RCV-CLAIM-FORM-P02-S08-D02-KC01
+Last completed task         : RCV-CLAIM-FORM-P02-S08-D02-KC01 — CLOSED / CANONICAL / PASS (implementation PR #1856 / 74d1950d)
+Next eligible task          : RCV-CLAIM-FORM-P02-S08-D02-TR01
 Next task status            : OWNER GO REQUIRED / NOT STARTED
 Claim Formation runtime     : DORMANT
 PB01 live migration apply   : NOT PERFORMED
@@ -111,7 +111,8 @@ RCV-CLAIM-FORM-P02-S08-D02-F01-R03 : LEGAL BASIS RELEASE INPUTS RATIFIED / CANON
 RCV-CLAIM-FORM-P02-S08-D02-SR01 : RATIFIED / CANONICAL — VERSIONED LEGAL SUBTYPE REGISTRY V1
 RCV-CLAIM-FORM-P02-S08-D02-PB01-PERSISTENCE-FOUNDATION : COMPLETE / CANONICAL (PR #1630 / d7ef31f6) — ADDITIVE / DORMANT / LIVE APPLY NONE
 RCV-CLAIM-FORM-P02-S08-D02-PB01 : CLOSED / CANONICAL / PASS (implementation PR #1794 / a62e078a)
-RCV-CLAIM-FORM-P02-S08-D02-KC01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
+RCV-CLAIM-FORM-P02-S08-D02-KC01 : CLOSED / CANONICAL / PASS (implementation PR #1856 / 74d1950d)
+RCV-CLAIM-FORM-P02-S08-D02-TR01 : NEXT ELIGIBLE / OWNER GO REQUIRED / NOT STARTED
 RCV-CLAIM-FORM-P02-S08-I04  : BLOCKED BY D02 PREREQUISITES / NOT STARTED / NOT AUTHORIZED
 Claim Formation runtime     : PARTIAL — S01 + S02-I01 + S03-I01 + S04-I01 + S05-I01 + S06-I01 + S07-I01 + S08-I01 ONLY
 I02B runtime                : DORMANT / DEFAULT DISABLED / NO PRODUCTION CALL-SITE
@@ -120,6 +121,8 @@ I02A live migration         : APPLIED — TRAIN-R02 / RUNTIME AUTHORITY NONE
 PB01 foundation migration  : MERGED / LIVE APPLY NOT AUTHORIZED / NOT PERFORMED
 S05-I01 frozen patch        : SUPERSEDED BY MERGED IMPLEMENTATION / GIT CLEANUP COMPLETE / PHYSICAL ORPHAN NON-BLOCKING
 Claim Formation PB01 gate   : CONSUMED / COMPLETE
+KC01 trust-root onboarding  : PENDING / NOT ACTIVE
+KC01 production signing     : NOT ACTIVE / PRODUCTION SIGNATURE NONE
 Claim Formation boundary    : TPA-04B/RCV-COL → COLLECTION; LEGALAPPLICATION PERSISTENCE → SHARED BOUNDARY; BALANCE/TBK100 → RECEIVABLE CALCULATION
 TPA-04C-I01                : CLOSED / CANONICAL EVIDENCE — PR #1517 / 568f76e1847d5ee0060e81d76996f8e2177bada1
 TPA-04C-I02                : CLOSED / CANONICAL EVIDENCE — PR #1520 / d46df4cec753b03bebcaefd07e5540dcb2b97709 / CI 4/4 PASS
@@ -3917,3 +3920,48 @@ değişmemiştir.
 Bu kapanış D02-KC01'i başlatmaz. D02-F01, D02-I01/I02/I03, I04, I05, production canary,
 containment retirement, production resolver ve runtime activation ayrı owner gate'lerinde ve
 eligible değildir.
+
+## 14. AWS KMS Legal Signer Key Ceremony Formal Closure — 2026-07-29
+
+```text
+TASK                               RCV-CLAIM-FORM-P02-S08-D02-KC01
+STATUS                             CLOSED / CANONICAL / PASS UPON APPROVED GOVERNANCE MERGE
+IMPLEMENTATION PR                  #1856
+IMPLEMENTATION SQUASH              74d1950deb632380a7ca6574a009e85c206c7f14
+IMPLEMENTATION CI                  4/4 PASS
+PROVIDER                           AWS_KMS
+KEY SET                            3 ROLE-SEPARATED ED25519 SIGN_VERIFY KEYS
+PRIVATE KEY CUSTODY                NON-EXPORTABLE / AWS KMS
+PUBLIC MANIFEST CHECKSUM           1e80168ebc52e6601f9231834ddde81a339e69a2337a0630bd9daa993f0519ec
+KEY-POSSESSION EVIDENCE            VERIFIED / 3 OF 3
+OFFLINE SIGNATURE VERIFICATION     VERIFIED / 3 OF 3
+CROSS-ROLE NEGATIVE CONTROLS       VERIFIED / 6 OF 6
+TEMPORARY SIGNING AUTHORITY        REMOVED / POST-REMOVAL DENIAL 3 OF 3
+AUDIT EVIDENCE                     CLOUDTRAIL CAPTURED / REDACTED PUBLIC EVIDENCE
+TRUST ROOT                         PENDING_ONBOARDING / NOT ACTIVE
+PRODUCTION SIGNING                 NOT_ACTIVE
+PRODUCTION SIGNATURE               NONE
+RUNTIME                            DORMANT / NO PRODUCTION ACTIVATION
+DATABASE                           UNCHANGED
+SCHEMA / MIGRATION                 NONE
+AUTHORITY BOOTSTRAP PR             #1859 / a43918b6d58417a951337328d4fc4b0b72675746
+NEXT ELIGIBLE TASK                 RCV-CLAIM-FORM-P02-S08-D02-TR01
+NEXT TASK STATUS                   OWNER GO REQUIRED / NOT STARTED
+```
+
+KC01, hukuki reviewer, final legal ratifier ve production release signer rolleri için üç ayrı
+AWS KMS Ed25519 anahtarını oluşturmuş; public-key manifest, deterministic checksum, role/custody
+crosswalk, key-possession challenge, rotation/revocation/compromise prosedürleri ve redacted
+CloudTrail evidence pack'ini repository'de doğrulanabilir hale getirmiştir. Private key material
+KMS dışına çıkmaz; repository, database, log veya evidence artefaktında private material yoktur.
+
+Validation evidence: manifest validator PASS; static signer manifest `5/5`; Claim Formation
+critical manifest `34 suite / 477 test`; KMS sign/verify `3/3`, offline SPKI verify `3/3`, cross-role
+negative controls `6/6` ve temporary signing authority kaldırıldıktan sonra denial `3/3` PASS;
+production TypeScript, Nest build, ESLint, instruction policy ve exact scope/security kontrolleri
+PASS; required CI `4/4 PASS`tır.
+
+Bu kapanış production trust-root onboarding, signer binding, Legal Basis release imzalama veya
+runtime activation yetkisi üretmez. `RCV-CLAIM-FORM-P02-S08-D02-TR01` yalnız ayrı owner GO ile
+başlayabilir. D02-F01, D02-I01/I02/I03, I04, I05, canary ve containment retirement eligible
+değildir; production signature yoktur ve Claim Formation runtime dormant kalır.
