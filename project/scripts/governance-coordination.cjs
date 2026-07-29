@@ -451,6 +451,73 @@ const RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_
       }),
     }),
   });
+const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01 =
+  Object.freeze({
+    protocolModeId:
+      'GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01',
+    programId: 'GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01',
+    targetTaskId: 'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01',
+    workspaceModule: 'SHARED_CONTROL_PLANE',
+    ownerName: 'Av. Ulaş Hüseyin Telli',
+    ownerRole: 'Repository Owner / Semantic Authority',
+    issuedAt: '2026-07-29',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    bindingPr: Object.freeze({
+      taskId:
+        'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01',
+      mode:
+        'GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01',
+      baseSha: '35e215cde413dd3de42093f967c01b4929f37fed',
+      headRef:
+        'codex/governance-closeout-live-ledger-gap-r01-authority-bootstrap-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    targetPr: Object.freeze({
+      taskId:
+        'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-AUTHORITY-MATERIALIZATION-R01',
+      mode:
+        'GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_AUTHORITY_MATERIALIZATION_R01',
+      headRef:
+        'codex/governance-closeout-live-ledger-gap-r01-authority-bootstrap',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/decision-log.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/coordination-execution-grants/GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01.md',
+        recordId: 'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01',
+      }),
+    }),
+  });
 const RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01 =
   Object.freeze({
     taskId:
@@ -2031,6 +2098,56 @@ function classifyPrChangeSet(changes, context = {}) {
     RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
   const kc01ClosureBinding =
     RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
+  const rootAuthorityBootstrap =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const rootStage1 = rootAuthorityBootstrap.bindingPr;
+  const rootStage2 = rootAuthorityBootstrap.targetPr;
+
+  if (
+    context.headRef === rootStage1.headRef ||
+    (rootStage1PublicationBaseIsValid(context.base, context.cwd) &&
+      hasExactChangeSet(changes, rootStage1.changedPaths))
+  ) {
+    if (context.headRef !== rootStage1.headRef) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE1_BRANCH_MISMATCH',
+        'root-authority bootstrap Stage 1 requires its exact branch',
+      );
+    }
+    if (!rootStage1PublicationBaseIsValid(context.base, context.cwd)) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE1_BASE_MISMATCH',
+        'root-authority bootstrap Stage 1 requires its owner-pinned base',
+      );
+    }
+    if (!hasExactChangeSet(changes, rootStage1.changedPaths)) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+        'root-authority bootstrap Stage 1 requires the exact M/M/M scope',
+      );
+    }
+    return { mode: rootStage1.mode, taskId: rootStage1.taskId };
+  }
+
+  if (
+    context.headRef === rootStage2.headRef ||
+    hasExactChangeSet(changes, rootStage2.changedPaths)
+  ) {
+    if (context.headRef !== rootStage2.headRef) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE2_BRANCH_MISMATCH',
+        'root-authority bootstrap Stage 2 requires its exact branch',
+      );
+    }
+    if (!hasExactChangeSet(changes, rootStage2.changedPaths)) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE2_SCOPE_MISMATCH',
+        'root-authority bootstrap Stage 2 requires the exact M/A scope',
+      );
+    }
+    return { mode: rootStage2.mode, taskId: rootStage2.taskId };
+  }
+
   if (
     context.base === rcvColBinding.bindingPr.baseSha &&
     context.headRef === rcvColBinding.bindingPr.headRef &&
@@ -3089,6 +3206,136 @@ function validateKc01AuthorityBootstrapBindingScope(options) {
   return { mode: binding.bindingPr.mode, taskId: binding.taskId };
 }
 
+function rootAuthorityBootstrapContractLiterals(binding) {
+  return [
+    binding.protocolModeId,
+    binding.programId,
+    binding.targetTaskId,
+    binding.workspaceModule,
+    binding.ownerName,
+    binding.ownerRole,
+    binding.issuedAt,
+    binding.bindingPr.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    ...binding.bindingPr.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    binding.targetPr.taskId,
+    binding.targetPr.mode,
+    binding.targetPr.headRef,
+    ...binding.targetPr.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    binding.targetPr.semanticAuthority.kind,
+    binding.targetPr.semanticAuthority.path,
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.kind,
+    binding.targetPr.executionGrant.path,
+    binding.targetPr.executionGrant.recordId,
+    'stage2Predecessor : OWNER_GRANT_2_REQUIRED',
+    'stage2Base : OWNER_GRANT_2_REQUIRED',
+    'publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT',
+    'globalAuthority : PROHIBITED',
+    'reusableAuthority : PROHIBITED',
+    'auditAsAuthority : PROHIBITED',
+    'STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED',
+  ];
+}
+
+function validateRootBootstrapControlState(options) {
+  const binding =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const protocolModeId = options.protocolModeId || binding.protocolModeId;
+  const programId = options.programId || binding.programId;
+  const targetTaskId = options.targetTaskId || binding.targetTaskId;
+  const bootstrapState = options.bootstrapState || 'ISSUED';
+  const activeModeCount = options.activeModeCount ?? 1;
+
+  if (protocolModeId !== binding.protocolModeId) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE1_TASK_MISMATCH',
+      'root-authority bootstrap protocol mode ID mismatch',
+    );
+  }
+  if (programId !== binding.programId || targetTaskId !== binding.targetTaskId) {
+    reject(
+      'ROOT_BOOTSTRAP_TARGET_MISMATCH',
+      'root-authority bootstrap target program/task mismatch',
+    );
+  }
+  if (activeModeCount !== 1) {
+    reject(
+      'ROOT_BOOTSTRAP_DUPLICATE_ACTIVE_MODE',
+      'exactly one active root-authority bootstrap attempt is required',
+    );
+  }
+  if (bootstrapState === 'CONSUMED') {
+    reject(
+      'ROOT_BOOTSTRAP_MODE_CONSUMED',
+      'the root-authority bootstrap mode has already been consumed',
+    );
+  }
+  if (bootstrapState === 'REVOKED' || bootstrapState === 'EXPIRED') {
+    reject(
+      'ROOT_BOOTSTRAP_GRANT_INACTIVE',
+      `the root-authority bootstrap grant is ${bootstrapState.toLowerCase()}`,
+    );
+  }
+  if (bootstrapState !== 'ISSUED' && bootstrapState !== 'STAGE1_MERGED') {
+    reject(
+      'ROOT_BOOTSTRAP_GRANT_INACTIVE',
+      `unsupported root-authority bootstrap state ${bootstrapState}`,
+    );
+  }
+}
+
+function validateRootAuthorityBootstrapBindingScope(options) {
+  const { base, head, headRef, changes, taskId, mode, cwd = REPO_ROOT } = options;
+  const binding =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const stage1 = binding.bindingPr;
+
+  validateRootBootstrapControlState(options);
+  if (headRef !== stage1.headRef) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE1_BRANCH_MISMATCH',
+      'root-authority bootstrap Stage 1 branch mismatch',
+    );
+  }
+  if (!rootStage1PublicationBaseIsValid(base, cwd)) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE1_BASE_MISMATCH',
+      'root-authority bootstrap Stage 1 base mismatch',
+    );
+  }
+  if (!hasExactChangeSet(changes, stage1.changedPaths)) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+      'root-authority bootstrap Stage 1 path/status mismatch',
+    );
+  }
+  if (taskId !== stage1.taskId || (mode && mode !== stage1.mode)) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE1_TASK_MISMATCH',
+      'root-authority bootstrap Stage 1 task/mode mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of rootAuthorityBootstrapContractLiterals(binding)) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact root-authority binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: stage1.mode, taskId: stage1.taskId };
+}
+
 function validatePb01FormalClosureBindingScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding =
@@ -3462,6 +3709,315 @@ function findCanonicalKc01FormalClosureBindingCommit(base, cwd = REPO_ROOT) {
     );
   }
   return candidate;
+}
+
+function findCanonicalRootAuthorityBootstrapBindingCommit(base, cwd = REPO_ROOT) {
+  const binding =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const result = runGit(
+    [
+      'log',
+      '--reverse',
+      '--format=%H',
+      '-S',
+      binding.bindingPr.taskId,
+      base,
+      '--',
+      binding.contractPath,
+    ],
+    cwd,
+    { allowFailure: true },
+  );
+  const candidates =
+    result.status === 0
+      ? result.stdout
+          .trim()
+          .split(/\r?\n/)
+          .filter(Boolean)
+      : [];
+  if (candidates.length === 0) {
+    reject(
+      'ROOT_BOOTSTRAP_PREDECESSOR_MISSING',
+      'canonical Stage 1 binding commit is not present at the Stage 2 base',
+    );
+  }
+  if (candidates.length !== 1) {
+    reject(
+      'ROOT_BOOTSTRAP_DUPLICATE_ACTIVE_MODE',
+      'the Stage 1 binding identity has more than one canonical introduction',
+    );
+  }
+  const candidate = candidates[0];
+  if (!gitIsAncestor(candidate, base, cwd)) {
+    reject(
+      'ROOT_BOOTSTRAP_PREDECESSOR_MISMATCH',
+      'the discovered Stage 1 binding is not an ancestor of the Stage 2 base',
+    );
+  }
+  return candidate;
+}
+
+function rootBootstrapGitBlobSha(ref, repoPath, cwd = REPO_ROOT) {
+  const result = runGit(['rev-parse', `${ref}:${repoPath}`], cwd, {
+    allowFailure: true,
+  });
+  return result.status === 0 ? result.stdout.trim() : '';
+}
+
+function rootStage1PublicationBaseIsValid(base, cwd) {
+  const binding =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const stage1 = binding.bindingPr;
+  if (base === stage1.baseSha) return true;
+  if (!cwd || !/^[0-9a-f]{40}$/.test(String(base || ''))) return false;
+  const ancestry = runGit(
+    ['merge-base', '--is-ancestor', stage1.baseSha, base],
+    cwd,
+    { allowFailure: true },
+  );
+  if (ancestry.status !== 0) return false;
+  return stage1.changedPaths.every(({ path: repoPath }) => {
+    const pinnedBlob = rootBootstrapGitBlobSha(stage1.baseSha, repoPath, cwd);
+    const publicationBlob = rootBootstrapGitBlobSha(base, repoPath, cwd);
+    return Boolean(pinnedBlob) && pinnedBlob === publicationBlob;
+  });
+}
+
+function assertExactRootRecordField(content, field, value, code) {
+  const pattern = new RegExp(
+    `^${escapeRegExp(field)}[\\t ]*:[\\t ]*${escapeRegExp(value)}[\\t ]*$`,
+    'gm',
+  );
+  if ([...content.matchAll(pattern)].length !== 1) {
+    reject(code, `${field} must occur exactly once with value ${value}`);
+  }
+}
+
+function assertExactRootMarker(content, authorityRef, code) {
+  const marker = buildAuthorityMarker(authorityRef);
+  if (countOccurrences(content, marker) !== 1) {
+    reject(code, `${authorityRef.recordId} marker must occur exactly once`);
+  }
+  return marker;
+}
+
+function validateRootAuthorityReferencePair(semantic, execution) {
+  if (
+    semantic.kind === execution.kind ||
+    semantic.path === execution.path ||
+    semantic.recordId === execution.recordId
+  ) {
+    reject(
+      'AUTHORITY_REFERENCE_COLLISION',
+      'semantic authority and execution grant references must be distinct',
+    );
+  }
+  if (
+    semantic.kind !== 'SEMANTIC_AUTHORITY' ||
+    execution.kind !== 'EXECUTION_GRANT' ||
+    semantic.path !== 'project/docs/governance/decision-log.md' ||
+    execution.path !==
+      'project/docs/governance/coordination-execution-grants/GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01.md'
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_AUTHORITY_PATH_INVALID',
+      'root-authority records must use their two exact canonical references',
+    );
+  }
+}
+
+function validateRootAuthorityMaterializationContent(
+  decisionLog,
+  grant,
+  base,
+  predecessor,
+) {
+  const binding =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const target = binding.targetPr;
+  const semantic = target.semanticAuthority;
+  const execution = target.executionGrant;
+
+  validateRootAuthorityReferencePair(semantic, execution);
+
+  const semanticMarker = assertExactRootMarker(
+    decisionLog,
+    semantic,
+    'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
+  );
+  const semanticRows = decisionLog
+    .split(/\r?\n/)
+    .filter((line) =>
+      authorityMarkerLocatesSemanticRow(line, semanticMarker, semantic.recordId),
+    );
+  if (semanticRows.length !== 1) {
+    reject(
+      'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
+      'semantic marker must identify exactly one decision-log row',
+    );
+  }
+  for (const [field, value] of [
+    ['recordType', 'SEMANTIC_AUTHORITY'],
+    ['recordId', semantic.recordId],
+    ['programId', binding.programId],
+    ['taskId', binding.targetTaskId],
+    ['ownerName', binding.ownerName],
+    ['ownerRole', binding.ownerRole],
+    ['decision', 'RATIFIED'],
+    ['issuedAt', binding.issuedAt],
+    ['status', 'ACTIVE_AFTER_APPROVED_MERGE'],
+    ['exactTaskBinding', 'REQUIRED'],
+    ['exactPrBinding', 'REQUIRED'],
+    ['exactHeadBinding', 'REQUIRED'],
+    ['exactScopeBinding', 'REQUIRED'],
+    ['requiredChecksBinding', 'REQUIRED'],
+    ['singleUseConsumption', 'REQUIRED'],
+    ['staleReuse', 'PROHIBITED'],
+    ['manualFallback', 'EMERGENCY_ONLY'],
+    ['productionActivation', 'NOT_AUTHORIZED'],
+    ['standingAuthority', 'PROHIBITED'],
+  ]) {
+    assertExactRootRecordField(
+      decisionLog,
+      field,
+      value,
+      field === 'ownerName' || field === 'ownerRole'
+        ? 'ROOT_BOOTSTRAP_OWNER_IDENTITY_MISMATCH'
+        : field === 'programId' || field === 'taskId'
+          ? 'ROOT_BOOTSTRAP_TARGET_MISMATCH'
+          : 'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
+    );
+  }
+
+  assertExactRootMarker(grant, execution, 'ROOT_BOOTSTRAP_EG_RECORD_INVALID');
+  for (const [field, value] of [
+    ['recordType', 'EXECUTION_GRANT'],
+    ['recordId', execution.recordId],
+    ['programId', binding.programId],
+    ['taskId', binding.targetTaskId],
+    ['ownerName', binding.ownerName],
+    ['ownerRole', binding.ownerRole],
+    ['executionMode', 'GO-COMPLETE'],
+    ['workspaceModule', binding.workspaceModule],
+    ['issuedAt', binding.issuedAt],
+    ['status', 'ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK'],
+    ['stage1PredecessorSha', predecessor],
+    ['stage2BaseSha', base],
+    ['productionActivation', 'NOT_AUTHORIZED'],
+    ['ciBypass', 'PROHIBITED'],
+    ['ledgerBypass', 'PROHIBITED'],
+    ['standingAuthority', 'PROHIBITED'],
+    ['reusableAuthority', 'PROHIBITED'],
+  ]) {
+    assertExactRootRecordField(
+      grant,
+      field,
+      value,
+      field === 'ownerName' || field === 'ownerRole'
+        ? 'ROOT_BOOTSTRAP_OWNER_IDENTITY_MISMATCH'
+        : field === 'programId' || field === 'taskId'
+          ? 'ROOT_BOOTSTRAP_TARGET_MISMATCH'
+          : field === 'stage1PredecessorSha'
+            ? 'ROOT_BOOTSTRAP_PREDECESSOR_MISMATCH'
+            : field === 'stage2BaseSha'
+              ? 'ROOT_BOOTSTRAP_STAGE2_BASE_INVALIDATED'
+              : 'ROOT_BOOTSTRAP_EG_RECORD_INVALID',
+    );
+  }
+
+  for (const [field, value] of [
+    ['semanticAuthorityRef.kind', semantic.kind],
+    ['semanticAuthorityRef.path', semantic.path],
+    ['semanticAuthorityRef.recordId', semantic.recordId],
+  ]) {
+    assertExactRootRecordField(
+      grant,
+      field,
+      value,
+      'ROOT_BOOTSTRAP_EG_RECORD_INVALID',
+    );
+  }
+  if (
+    [...grant.matchAll(/^semanticAuthorityRef\.[A-Za-z]+[\t ]*:/gm)].length !== 3
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_EG_RECORD_INVALID',
+      'execution grant contains an unexpected semantic authority binding field',
+    );
+  }
+}
+
+function validateRootAuthorityBootstrapMaterializationScope(options) {
+  const { base, head, headRef, changes, taskId, mode, cwd = REPO_ROOT } = options;
+  const binding =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const target = binding.targetPr;
+
+  validateRootBootstrapControlState({
+    ...options,
+    bootstrapState: options.bootstrapState || 'STAGE1_MERGED',
+  });
+  if (headRef !== target.headRef) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_BRANCH_MISMATCH',
+      'root-authority bootstrap Stage 2 branch mismatch',
+    );
+  }
+  if (!hasExactChangeSet(changes, target.changedPaths)) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_SCOPE_MISMATCH',
+      'root-authority bootstrap Stage 2 path/status mismatch',
+    );
+  }
+  if (taskId !== target.taskId || (mode && mode !== target.mode)) {
+    reject(
+      'ROOT_BOOTSTRAP_TARGET_MISMATCH',
+      'root-authority bootstrap Stage 2 task/mode mismatch',
+    );
+  }
+
+  const predecessor = findCanonicalRootAuthorityBootstrapBindingCommit(base, cwd);
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of rootAuthorityBootstrapContractLiterals(binding)) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'ROOT_BOOTSTRAP_PREDECESSOR_MISMATCH',
+        `Stage 2 base is missing Stage 1 binding ${expectedLiteral}`,
+      );
+    }
+  }
+  for (const { path: repoPath } of binding.bindingPr.changedPaths) {
+    const predecessorBlob = rootBootstrapGitBlobSha(predecessor, repoPath, cwd);
+    const baseBlob = rootBootstrapGitBlobSha(base, repoPath, cwd);
+    if (!predecessorBlob || predecessorBlob !== baseBlob) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE2_BASE_INVALIDATED',
+        `Stage 1 binding blob drifted before Stage 2: ${repoPath}`,
+      );
+    }
+  }
+
+  const baseDecisionLog = gitShow(base, target.semanticAuthority.path, cwd);
+  if (
+    baseDecisionLog.includes(target.semanticAuthority.recordId) ||
+    rootBootstrapGitBlobSha(base, target.executionGrant.path, cwd)
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_MODE_CONSUMED',
+      'root-authority records already exist at the Stage 2 base',
+    );
+  }
+
+  const decisionLog = gitShow(head, target.semanticAuthority.path, cwd);
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  validateRootAuthorityMaterializationContent(
+    decisionLog,
+    grant,
+    base,
+    predecessor,
+  );
+
+  return { mode: target.mode, taskId: target.taskId };
 }
 
 function validateRcvColFullRemediationBootstrapScope(options) {
@@ -4009,7 +4565,7 @@ function validatePrScope(options) {
   assertSha(base, 'base');
   assertSha(head, 'head');
   const changes = parseGitChanges(base, head, cwd);
-  const classification = classifyPrChangeSet(changes, { base, headRef });
+  const classification = classifyPrChangeSet(changes, { base, headRef, cwd });
 
   if (classification.mode === 'NON_COORDINATION_PR') {
     return classification;
@@ -4099,6 +4655,22 @@ function validatePrScope(options) {
       headRef,
       changes,
       taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01.bindingPr
+      .mode
+  ) {
+    return validateRootAuthorityBootstrapBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
       cwd,
     });
   }
@@ -4211,6 +4783,22 @@ function validatePrScope(options) {
       headRef,
       changes,
       taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01.targetPr
+      .mode
+  ) {
+    return validateRootAuthorityBootstrapMaterializationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
       cwd,
     });
   }
@@ -4603,6 +5191,7 @@ module.exports = {
   GIT_CANONICAL_TEXT_BLOB_LIMIT_BYTES,
   GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES,
   GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS,
+  GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01,
   RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,
@@ -4660,6 +5249,9 @@ module.exports = {
   validatePb01AuthorityBootstrapScope,
   validatePb01FormalClosureBindingScope,
   validatePb01FormalClosureScope,
+  validateRootAuthorityBootstrapBindingScope,
+  validateRootAuthorityBootstrapMaterializationScope,
+  validateRootAuthorityReferencePair,
   validateRcvColFullRemediationBindingScope,
   validateRcvColFullRemediationBootstrapScope,
   validateRcvColLargeAuthorityReadRepairScope,
