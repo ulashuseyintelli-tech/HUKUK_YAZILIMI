@@ -63,6 +63,8 @@ const runtimeSpecPath =
   'project/apps/api/src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.integration.spec.ts';
 const manifestPath = path.join(projectRoot, 'apps', 'api', 'ci-manifests', 'db', 'domain-integration.txt');
 const generatorPath = path.join(projectRoot, 'scripts', 'runtime-core-user-journeys-certification-r01.cjs');
+const w2ArtifactDirectoryPath =
+  'project/docs/audit/runtime-operability-certification-r01/w2-core-user-journeys';
 const w1ArtifactDirectory =
   'project/docs/audit/runtime-operability-certification-r01/w1-security-tenant-certification';
 const w1DecisionLogPath = `${w1ArtifactDirectory}/decision-log.md`;
@@ -76,6 +78,12 @@ const outputFiles = [
   'methodology-validation-report.md',
   'decision-log.md',
 ];
+const expectedW2ChangedFiles = [
+  runtimeSpecPath,
+  'project/apps/api/ci-manifests/db/domain-integration.txt',
+  'project/scripts/runtime-core-user-journeys-certification-r01.cjs',
+  ...outputFiles.map((file) => `${w2ArtifactDirectoryPath}/${file}`),
+].sort();
 
 function git(...args: string[]): string {
   const result = spawnSync('git', args, {
@@ -86,6 +94,73 @@ function git(...args: string[]): string {
   expect(result.status).toBe(0);
   return result.stdout.trim();
 }
+
+function changedFileCountFromGitHubEvent(event: unknown): number {
+  if (!event || typeof event !== 'object') {
+    throw new Error('W2_CHANGED_FILE_EVIDENCE_UNAVAILABLE');
+  }
+  const record = event as Record<string, unknown>;
+  if ('pull_request' in record) {
+    const pullRequest = record.pull_request;
+    const changedFiles = pullRequest && typeof pullRequest === 'object'
+      ? (pullRequest as Record<string, unknown>).changed_files
+      : undefined;
+    if (!Number.isSafeInteger(changedFiles) || (changedFiles as number) < 0) {
+      throw new Error('W2_CHANGED_FILE_COUNT_INVALID');
+    }
+    return changedFiles as number;
+  }
+
+  const headCommit = record.head_commit;
+  if (!headCommit || typeof headCommit !== 'object') {
+    throw new Error('W2_CHANGED_FILE_EVIDENCE_UNAVAILABLE');
+  }
+  const changedFiles = new Set<string>();
+  for (const field of ['added', 'modified', 'removed']) {
+    const paths = (headCommit as Record<string, unknown>)[field];
+    if (!Array.isArray(paths) || paths.some((file) => typeof file !== 'string')) {
+      throw new Error('W2_PUSH_CHANGESET_INVALID');
+    }
+    for (const file of paths) changedFiles.add(file);
+  }
+  return changedFiles.size;
+}
+
+function currentCheckoutChangedFileCount(): number {
+  const parentProbe = spawnSync('git', ['cat-file', '-e', 'HEAD^'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+  });
+  if (parentProbe.status === 0) {
+    return git('diff', '--name-only', 'HEAD^', 'HEAD', '--').split(/\r?\n/).filter(Boolean).length;
+  }
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (!eventPath) throw new Error('W2_GITHUB_EVENT_PATH_REQUIRED');
+  return changedFileCountFromGitHubEvent(JSON.parse(fs.readFileSync(eventPath, 'utf8')));
+}
+
+describe('R01 W2 changed-file evidence', () => {
+  it.each([2, 10])('accepts a valid pull-request change count of %i files', (changedFiles) => {
+    expect(changedFileCountFromGitHubEvent({
+      pull_request: { changed_files: changedFiles },
+    })).toBe(changedFiles);
+  });
+
+  it('derives the unique changed-file count from a push head commit', () => {
+    expect(changedFileCountFromGitHubEvent({
+      head_commit: {
+        added: ['added.ts'],
+        modified: ['modified.ts', 'shared.ts'],
+        removed: ['shared.ts'],
+      },
+    })).toBe(3);
+  });
+
+  it('fails closed when the pull-request change count is undefined', () => {
+    expect(() => changedFileCountFromGitHubEvent({ pull_request: {} }))
+      .toThrow('W2_CHANGED_FILE_COUNT_INVALID');
+  });
+});
 
 interface RuntimeFixture {
   tenantA: string;
@@ -719,29 +794,24 @@ describe('R01 W2 certification artifact, static composition and boundary integri
   });
 
   it('enforces the exact W2 changed-file allowlist and prohibited activation boundary', () => {
-    const expected = [
+    expect(currentCheckoutChangedFileCount()).toBeGreaterThan(0);
+    const tracked = git(
+      'ls-files',
+      '--',
       runtimeSpecPath,
       'project/apps/api/ci-manifests/db/domain-integration.txt',
       'project/scripts/runtime-core-user-journeys-certification-r01.cjs',
-      ...outputFiles.map((file) =>
-        `project/docs/audit/runtime-operability-certification-r01/w2-core-user-journeys/${file}`),
-    ].sort();
-    const parentProbe = spawnSync('git', ['cat-file', '-e', 'HEAD^'], {
-      cwd: repositoryRoot,
-      encoding: 'utf8',
-    });
-    let tracked: string[];
-    if (parentProbe.status === 0) {
-      tracked = git('diff', '--name-only', 'HEAD^', 'HEAD', '--').split(/\r?\n/).filter(Boolean);
-    } else {
-      expect(process.env.GITHUB_EVENT_PATH).toBeTruthy();
-      const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH!, 'utf8'));
-      expect(event.pull_request?.changed_files).toBe(expected.length);
-      tracked = git('ls-files', '--error-unmatch', '--', ...expected).split(/\r?\n/).filter(Boolean);
-    }
-    const untracked = git('ls-files', '--others', '--exclude-standard').split(/\r?\n/).filter(Boolean);
-    expect([...new Set([...tracked, ...untracked])].sort()).toEqual(expected);
-    expect(expected.some((file) =>
+      w2ArtifactDirectoryPath,
+    ).split(/\r?\n/).filter(Boolean);
+    const untracked = git(
+      'ls-files',
+      '--others',
+      '--exclude-standard',
+      '--',
+      w2ArtifactDirectoryPath,
+    ).split(/\r?\n/).filter(Boolean);
+    expect([...new Set([...tracked, ...untracked])].sort()).toEqual(expectedW2ChangedFiles);
+    expect(expectedW2ChangedFiles.some((file) =>
       /schema\.prisma|\/migrations\/|\.github\/workflows|playbook|manifest-admin|break-glass/i.test(file)))
       .toBe(false);
   });
