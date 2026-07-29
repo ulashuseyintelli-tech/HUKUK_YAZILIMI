@@ -4,13 +4,17 @@
  * ClientAddressSection — Client Workspace "Adres" bölümü (ClientAddress-4).
  *
  * "İletişim Kanalları" satır deseni mirror edilir (tip + ★ primary + değer + aksiyonlar).
- * addresses.length===0 → flat clientPrimaryAddress() fallback'i (backfill YOK, eski kayıt olduğu gibi
+ * addresses.length===0 → AÇIK legacy düz alan fallback'i (backfill YOK, eski kayıt olduğu gibi
  * gösterilir). isCurrent/arşiv UI'a açılmaz; DebtorAddress'in hukuki/tebligat/risk alanları buraya
  * taşınmaz — yalnız dedicated endpoint'lerle (POST /clients/:clientId/addresses,
  * PUT/DELETE /clients/:clientId/addresses/:addressId) id-bazlı CRUD.
+ *
+ * VER-02: satır metni `clientAddressLine()` (client-display) ile üretilir — profil header'ı da
+ * AYNI formatter'ı kullanır, seçim/format mantığı burada ÇOĞALTILMAZ.
  */
 import { useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
+import { clientAddressLine } from '@/lib/client-display';
 import type { ClientAddress, ClientAddressType, ClientAddressWritePayload } from '@/lib/api/client.types';
 
 const ADDRESS_TYPE_LABELS: Record<ClientAddressType, string> = {
@@ -20,12 +24,6 @@ const ADDRESS_TYPE_LABELS: Record<ClientAddressType, string> = {
   FATURA: 'Fatura',
   BEYAN: 'Beyan',
 };
-
-function addressLine(a: Pick<ClientAddress, 'street' | 'district' | 'city' | 'region' | 'postalCode'>): string {
-  const locality = [a.district, a.city].filter((p) => p && String(p).trim()).join('/');
-  const parts = [a.street, locality, a.region, a.postalCode].filter((p) => p && String(p).trim());
-  return parts.length ? parts.join(', ') : '—';
-}
 
 function addressErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -100,7 +98,7 @@ export function ClientAddressSection({ clientId, addresses, fallbackAddress, onC
                 {ADDRESS_TYPE_LABELS[addr.type] || addr.type}
                 {addr.isPrimary ? ' ★' : ''}
               </span>
-              <span className="flex-1 text-gray-700">{addressLine(addr)}</span>
+              <span className="flex-1 text-gray-700">{clientAddressLine(addr)}</span>
               <div className="flex items-center gap-2 shrink-0 text-xs">
                 {!addr.isPrimary && (
                   <button

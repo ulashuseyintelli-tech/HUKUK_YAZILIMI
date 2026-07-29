@@ -179,3 +179,50 @@ describe("ClientService.update — VER-02 ClientAddress persist (Workspace korum
     expect(clientData.city).toBe("Adana");
   });
 });
+
+/**
+ * VER-02 — YANILTICI BAŞARI ÖNLEME. Legacy form (settings/clients) /clients LİSTESİNDEN beslenir
+ * ve liste projeksiyonu `addresses` İÇERMEZ → yapısal adresin varlığını submit'ten önce bilemez.
+ * Bu yüzden gerçeği backend bildirir; sessiz kalması kullanıcının adresi kaydettiğini sanmasına
+ * yol açardı.
+ */
+describe("ClientService.update — VER-02 _addressesSkipped sinyali", () => {
+  it("[10] yapısal satır VAR + adres gönderildi → yanıtta _addressesSkipped:true", async () => {
+    const { svc } = buildHarness({ addressCount: 2 });
+    const res: any = await svc.update(
+      "c1",
+      "t1",
+      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Legacy Cad", city: "X", isPrimary: true }] },
+      { userId: "u1" },
+    );
+    expect(res._addressesSkipped).toBe(true);
+  });
+
+  it("[11] yapısal satır YOK (adres gerçekten yazıldı) → _addressesSkipped YOK", async () => {
+    const { svc } = buildHarness({ addressCount: 0 });
+    const res: any = await svc.update(
+      "c1",
+      "t1",
+      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Yeni Cad", city: "Bursa", isPrimary: true }] },
+      { userId: "u1" },
+    );
+    expect(res._addressesSkipped).toBeUndefined();
+  });
+
+  it("[12] adres HİÇ gönderilmedi (yapısal satır olsa bile) → _addressesSkipped YOK (yanlış alarm yok)", async () => {
+    const { svc } = buildHarness({ addressCount: 3 });
+    const res: any = await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1" });
+    expect(res._addressesSkipped).toBeUndefined();
+  });
+
+  it("[13] yapısal satır VAR fakat gönderilen adresler BOŞ (whitespace) → _addressesSkipped YOK", async () => {
+    const { svc } = buildHarness({ addressCount: 2 });
+    const res: any = await svc.update(
+      "c1",
+      "t1",
+      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "  ", city: "  ", isPrimary: true }] },
+      { userId: "u1" },
+    );
+    expect(res._addressesSkipped).toBeUndefined();
+  });
+});

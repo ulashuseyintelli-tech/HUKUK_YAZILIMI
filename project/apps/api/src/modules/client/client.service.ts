@@ -1454,6 +1454,10 @@ export class ClientService {
       ? [primaryAddress.street, primaryAddress.district, primaryAddress.city].filter(Boolean).join(', ')
       : [data.address, data.district, data.city].filter(Boolean).join(', ') || undefined;
 
+    // VER-02: yapısal ClientAddress satırı olduğu için gönderilen adreslerin UYGULANMADIĞINI
+    // çağırana bildiren transient sinyal (create()'teki _existingReturned/_reactivated deseni).
+    let addressesSkipped = false;
+
     // C0-a: client + contact yazımı + audit AYNI transaction.
     await this.prisma.$transaction(async (tx) => {
       // P0.5: tenant-scoped write — update() whereUnique tenantId taşıyamaz; updateMany {id,tenantId} guard.
@@ -1543,11 +1547,11 @@ export class ClientService {
     // "sil ve yeniden oluştur" deseni burada UYGULANMAZ (Workspace verisini sessizce silerdi).
     if (data.addresses) {
       const existingAddressCount = await tx.clientAddress.count({ where: { clientId: id } });
+      const submittedAddressEntries = data.addresses.filter((a: any) => a.street?.trim() || a.city?.trim());
       if (existingAddressCount === 0) {
-        const validAddressEntries = data.addresses.filter((a: any) => a.street?.trim() || a.city?.trim());
-        if (validAddressEntries.length > 0) {
+        if (submittedAddressEntries.length > 0) {
           await tx.clientAddress.createMany({
-            data: validAddressEntries.map((a: any, idx: number) => ({
+            data: submittedAddressEntries.map((a: any, idx: number) => ({
               clientId: id,
               type: a.type,
               street: a.street,
@@ -1559,6 +1563,11 @@ export class ClientService {
             })),
           });
         }
+      } else if (submittedAddressEntries.length > 0) {
+        // VER-02: yapısal satır VAR → legacy payload UYGULANMADI (yukarıdaki gerekçe). Bu SESSİZ
+        // kalmamalı: çağıran (legacy form) yanıltıcı "kaydedildi" göstermesin. Düz kolonlar bu
+        // update'te DEĞİŞMİŞ olabilir, yapısal adres ise DEĞİŞMEDİ — iki farklı gerçek.
+        addressesSkipped = true;
       }
     }
 
@@ -1586,7 +1595,10 @@ export class ClientService {
     });
 
     // includeInactive: update isActive:false yapmış olabilir (arşivleme); güncellenen kaydı yine döndür.
-    return this.findOne(id, tenantId, { includeInactive: true });
+    const result = await this.findOne(id, tenantId, { includeInactive: true });
+    // VER-02: transient alan (persist EDİLMEZ, kontrat bozulmaz) — yalnız yapısal adres
+    // uygulanmadığında eklenir; normal update yanıtı DEĞİŞMEZ.
+    return addressesSkipped ? { ...(result as any), _addressesSkipped: true } : result;
   }
 
   /**
