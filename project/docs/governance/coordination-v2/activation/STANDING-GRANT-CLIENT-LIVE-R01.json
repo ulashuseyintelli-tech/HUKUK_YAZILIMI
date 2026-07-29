@@ -47,7 +47,9 @@
   "allowedPathRoots": [
     "project/apps/api/src/modules/client/",
     "project/apps/api/src/modules/client-statement/",
-    "project/apps/api/src/modules/client-notification/"
+    "project/apps/api/src/modules/client-notification/",
+    "project/apps/api/src/modules/client-financial-disclosure/",
+    "project/apps/api/src/modules/client-settlement/"
   ],
   "prohibitedPathRoots": [
     "project/docs/governance/coordination-v2/schemas/",
@@ -60,5 +62,5 @@
   ],
   "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-CLIENT",
   "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/client.jsonl",
-  "notes": "Tenant isolation, authorization ve runtime binding yuzeyi. CLIENT charter EXTERNAL-TRACK IMPLEMENTATION: NOT AUTHORIZED der; o yuzden intake-public ve intake-link bu grant disindadir. Platform-admin veya cross-tenant genisleme YOK."
+  "notes": "Tenant isolation, authorization ve runtime binding yuzeyi. CLIENT charter EXTERNAL-TRACK IMPLEMENTATION: NOT AUTHORIZED der; o yuzden intake-public ve intake-link bu grant disindadir. Platform-admin veya cross-tenant genisleme YOK. client-financial-disclosure/ ve client-settlement/ owner karariyla eklendi (FOUR-PROGRAM-ACTIVATION-DECISION-PACK-R01.md, CLIENT-A: ONAYLANDI) — FD-ACT-R01 serisi (#1808/#1814/#1819/#1827) bu yollara zaten fiilen yazmisti; bu reconciliation grant'i gerceklige uydurur, yeni bir yetki genisletmesi degildir."
 }
