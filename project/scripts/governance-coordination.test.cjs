@@ -390,6 +390,18 @@ function kc01AuthorityTargetChanges() {
   );
 }
 
+function tr01AuthorityBindingChanges() {
+  return coordination.RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function tr01AuthorityTargetChanges() {
+  return coordination.RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function rootAuthorityStage1Changes() {
   return coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01.bindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -3119,6 +3131,135 @@ test('KC01 authority target rejects wrong markers and semantic binding', (t) => 
   }
 });
 
+test('TR01 authority binding requires exact base branch scope and contract content', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(
+    tr01AuthorityBindingChanges(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result = coordination.validateTr01AuthorityBootstrapBindingScope({
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: tr01AuthorityBindingChanges(),
+    taskId: binding.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('TR01 authority binding rejects wrong base branch and expanded scope', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const context of [
+    { base: '0'.repeat(40), headRef: binding.bindingPr.headRef },
+    { base: binding.bindingPr.baseSha, headRef: `${binding.bindingPr.headRef}-copy` },
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(tr01AuthorityBindingChanges(), context),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  const expanded = tr01AuthorityBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('TR01 authority target recognizes only exact branch and M/A change set', () => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.classifyPrChangeSet(tr01AuthorityTargetChanges(), {
+    base: binding.targetPr.originalBaseSha,
+    headRef: binding.targetPr.headRef,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(tr01AuthorityTargetChanges(), {
+        base: binding.targetPr.originalBaseSha,
+        headRef: `${binding.targetPr.headRef}-copy`,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  const expanded = tr01AuthorityTargetChanges();
+  expanded.push({ status: 'M', path: coordination.REGISTER_REPO_PATH });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('TR01 authority target validates exact markers and fresh-main ancestry', (t) => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const freshMain of [false, true]) {
+    const fixture = createRcvColTargetGitFixture(t, { binding, freshMain });
+    const result = coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    });
+    assert.equal(result.mode, binding.targetPr.mode);
+    assert.equal(result.taskId, binding.targetPr.taskId);
+  }
+});
+
+test('TR01 authority target rejects wrong markers and semantic binding', (t) => {
+  const binding =
+    coordination.RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  for (const options of [
+    {
+      semanticRecordId: 'RCV-CLAIM-FORM-P02-S08-D02-TR01-WRONG',
+      code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    },
+    {
+      executionRecordId: 'RCV-CLAIM-FORM-P02-S08-D02-TR01-WRONG-GRANT',
+      code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    },
+    {
+      semanticBindingRecordId: 'ANOTHER-TR01-AUTHORITY',
+      code: 'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    },
+  ]) {
+    const fixture = createRcvColTargetGitFixture(t, { binding, ...options });
+    expectCode(
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      options.code,
+    );
+  }
+});
+
 test('PB01 formal-closure binding requires exact base branch scope and contract content', () => {
   const binding =
     coordination.RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
@@ -4707,6 +4848,10 @@ test('root-authority classifier is deterministic and existing bootstrap modes re
     [
       coordination.RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
       kc01AuthorityBindingChanges(),
+    ],
+    [
+      coordination.RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
+      tr01AuthorityBindingChanges(),
     ],
   ]) {
     assert.deepEqual(

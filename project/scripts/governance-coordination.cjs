@@ -451,6 +451,66 @@ const RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_
       }),
     }),
   });
+const RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01 =
+  Object.freeze({
+    taskId:
+      'RCV-CLAIM-FORM-D02-TR01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    bindingPr: Object.freeze({
+      mode:
+        'RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01',
+      baseSha: '75790c059acb69a558ba2f835179dcedbbef2a45',
+      headRef:
+        'codex/rcv-claim-form-d02-tr01-authority-bootstrap-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    targetPr: Object.freeze({
+      taskId: 'RCV-CLAIM-FORM-D02-TR01-AUTHORITY-BOOTSTRAP-R01',
+      mode: 'RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_R01',
+      pullRequestNumber: 1903,
+      originalBaseSha: 'd284befcc37dc3ba499440b71dfb506589916503',
+      headRef:
+        'codex/rcv-claim-form-d02-tr01-authority-bootstrap-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/decision-log.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/coordination-execution-grants/RCV-CLAIM-FORM-P02-S08-D02-TR01-CLOSURE-R01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'RCV-CLAIM-FORM-P02-S08-D02-TR01-CLOSURE-R01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/RCV-CLAIM-FORM-P02-S08-D02-TR01-CLOSURE-R01.md',
+        recordId:
+          'RCV-CLAIM-FORM-P02-S08-D02-TR01-CLOSURE-R01-GRANT',
+      }),
+    }),
+  });
 const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01 =
   Object.freeze({
     protocolModeId:
@@ -2096,6 +2156,8 @@ function classifyPrChangeSet(changes, context = {}) {
     RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
   const kc01AuthorityBinding =
     RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const tr01AuthorityBinding =
+    RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
   const kc01ClosureBinding =
     RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
   const rootAuthorityBootstrap =
@@ -2229,6 +2291,27 @@ function classifyPrChangeSet(changes, context = {}) {
     return {
       mode: kc01AuthorityBinding.targetPr.mode,
       taskId: kc01AuthorityBinding.targetPr.taskId,
+    };
+  }
+
+  if (
+    context.base === tr01AuthorityBinding.bindingPr.baseSha &&
+    context.headRef === tr01AuthorityBinding.bindingPr.headRef &&
+    hasExactChangeSet(changes, tr01AuthorityBinding.bindingPr.changedPaths)
+  ) {
+    return {
+      mode: tr01AuthorityBinding.bindingPr.mode,
+      taskId: tr01AuthorityBinding.taskId,
+    };
+  }
+
+  if (
+    context.headRef === tr01AuthorityBinding.targetPr.headRef &&
+    hasExactChangeSet(changes, tr01AuthorityBinding.targetPr.changedPaths)
+  ) {
+    return {
+      mode: tr01AuthorityBinding.targetPr.mode,
+      taskId: tr01AuthorityBinding.targetPr.taskId,
     };
   }
 
@@ -3206,6 +3289,48 @@ function validateKc01AuthorityBootstrapBindingScope(options) {
   return { mode: binding.bindingPr.mode, taskId: binding.taskId };
 }
 
+function validateTr01AuthorityBootstrapBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  if (
+    taskId !== binding.taskId ||
+    base !== binding.bindingPr.baseSha ||
+    headRef !== binding.bindingPr.headRef ||
+    !hasExactChangeSet(changes, binding.bindingPr.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'TR01 authority-bootstrap control-plane binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    binding.targetPr.taskId,
+    binding.targetPr.mode,
+    String(binding.targetPr.pullRequestNumber),
+    binding.targetPr.originalBaseSha,
+    binding.targetPr.headRef,
+    ...binding.targetPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.recordId,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact TR01 binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: binding.bindingPr.mode, taskId: binding.taskId };
+}
+
 function rootAuthorityBootstrapContractLiterals(binding) {
   return [
     binding.protocolModeId,
@@ -3652,6 +3777,33 @@ function findCanonicalKc01AuthorityBindingCommit(base, cwd = REPO_ROOT) {
     reject(
       'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
       'current target base does not descend from the canonical KC01 authority binding',
+    );
+  }
+  return candidate;
+}
+
+function findCanonicalTr01AuthorityBindingCommit(base, cwd = REPO_ROOT) {
+  const binding =
+    RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const result = runGit(
+    [
+      'log',
+      '--reverse',
+      '--format=%H',
+      '-S',
+      binding.taskId,
+      base,
+      '--',
+      binding.contractPath,
+    ],
+    cwd,
+    { allowFailure: true },
+  );
+  const candidate = result.status === 0 ? result.stdout.trim().split(/\r?\n/)[0] : '';
+  if (!candidate || !gitIsAncestor(candidate, base, cwd)) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'current target base does not descend from the canonical TR01 authority binding',
     );
   }
   return candidate;
@@ -4264,6 +4416,67 @@ function validateKc01AuthorityBootstrapScope(options) {
   return { mode: target.mode, taskId: target.taskId };
 }
 
+function validateTr01AuthorityBootstrapScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  if (
+    taskId !== target.taskId ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'TR01 authority-bootstrap target binding mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.bindingPr.mode,
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+  ]) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical TR01 binding ${expectedLiteral}`,
+      );
+    }
+  }
+  findCanonicalTr01AuthorityBindingCommit(base, cwd);
+
+  const decisionLog = gitShow(head, target.semanticAuthority.path, cwd);
+  const semanticMarker = assertExactAuthorityMarker(
+    decisionLog,
+    target.semanticAuthority,
+  );
+  const semanticRows = decisionLog
+    .split(/\r?\n/)
+    .filter((line) =>
+      authorityMarkerLocatesSemanticRow(
+        line,
+        semanticMarker,
+        target.semanticAuthority.recordId,
+      ),
+    );
+  if (semanticRows.length !== 1) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'TR01 semantic authority marker must identify its exact decision-log row',
+    );
+  }
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
 function validatePb01FormalClosureScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding =
@@ -4646,6 +4859,21 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr
+      .mode
+  ) {
+    return validateTr01AuthorityBootstrapBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01.bindingPr
       .mode
   ) {
@@ -4762,6 +4990,21 @@ function validatePrScope(options) {
       .targetPr.mode
   ) {
     return validateKc01AuthorityBootstrapScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.targetPr
+      .mode
+  ) {
+    return validateTr01AuthorityBootstrapScope({
       base,
       head,
       headRef,
@@ -5195,6 +5438,7 @@ module.exports = {
   RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,
+  RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,
   RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
@@ -5245,6 +5489,8 @@ module.exports = {
   validateKc01AuthorityBootstrapScope,
   validateKc01FormalClosureBindingScope,
   validateKc01FormalClosureScope,
+  validateTr01AuthorityBootstrapBindingScope,
+  validateTr01AuthorityBootstrapScope,
   validatePb01AuthorityBootstrapBindingScope,
   validatePb01AuthorityBootstrapScope,
   validatePb01FormalClosureBindingScope,
