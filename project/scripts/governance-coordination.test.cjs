@@ -61,6 +61,57 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function attributedOwnerWipSource(sourceId, exactPaths, options = {}) {
+  const entries = [...exactPaths]
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .map(({ path: exactPath, activeProtection }) => ({
+      exactPath,
+      blobSha256: 'a'.repeat(64),
+      workingTreeState: options.workingTreeState || 'TEST_FIXTURE',
+      ownership: options.ownership || 'TEST_OWNER_WIP',
+      semanticPurpose: options.semanticPurpose || 'test fixture',
+      disposition:
+        options.disposition ||
+        (activeProtection ? 'ACTIVE_UNSHIPPED_OWNER_INTENT' : 'ARCHIVED'),
+      activeProtection,
+    }));
+  return {
+    sourceId,
+    sourceType: options.sourceType || 'TEST_SOURCE',
+    sourceLocation: options.sourceLocation || `C:/test/${sourceId}`,
+    baseSha: options.baseSha || 'b'.repeat(40),
+    owner: 'OWNER',
+    semanticPurpose: options.semanticPurpose || 'test fixture',
+    disposition: options.disposition || 'TEST_DISPOSITION',
+    activeProtection: entries.some((entry) => entry.activeProtection),
+    archiveReference: 'test-archive#sha256=' + 'c'.repeat(64),
+    exactPaths: entries,
+  };
+}
+
+function attributedOwnerWipPolicy(sources) {
+  const activePaths = [
+    ...new Set(
+      sources.flatMap((source) =>
+        source.exactPaths
+          .filter((entry) => entry.activeProtection)
+          .map((entry) => entry.exactPath),
+      ),
+    ),
+  ].sort();
+  return {
+    canonicalSemanticGovernance: [
+      'project/docs/governance/**',
+      'project/docs/adr/**',
+    ],
+    coordinationControlPlane: [],
+    deniedTargetPrefixes: [],
+    grandfatheredOwnerWipExactPaths: activePaths,
+    grandfatheredOwnerWipSources: sources,
+    grandfatheredOwnerWipPrefixes: [],
+  };
+}
+
 function expectCode(fn, code) {
   assert.throws(fn, (error) => {
     assert.ok(error instanceof coordination.CoordinationError);
@@ -342,6 +393,21 @@ function classifyRcvColLargeAuthorityReadRepair(changes, overrides = {}) {
   return coordination.classifyPrChangeSet(changes, {
     base: repair.baseSha,
     headRef: repair.headRef,
+    ...overrides,
+  });
+}
+
+function ownerWipPathOwnershipChanges() {
+  return coordination.OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function classifyOwnerWipPathOwnership(changes, overrides = {}) {
+  const binding = coordination.OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01;
+  return coordination.classifyPrChangeSet(changes, {
+    base: binding.baseSha,
+    headRef: binding.headRef,
     ...overrides,
   });
 }
@@ -1228,13 +1294,163 @@ test('unsafe authority recordId characters are rejected fail-closed', () => {
 
 test('owner WIP target is rejected', () => {
   const request = validRequest();
-  request.operation.targetFile = 'project/docs/governance/decision-log.md';
+  request.operation.targetFile = 'project/docs/governance/maintenance-register.md';
   request.declaredTargetAllowlist = [request.operation.targetFile];
   refingerprint(request);
   expectCode(
     () => coordination.validateRequestObject(request),
     'OWNER_WIP_TARGET_FORBIDDEN',
   );
+});
+
+test('one inactive and one active source on the same path remains forbidden', () => {
+  const target = 'project/docs/governance/COLLECTION-GOVERNANCE.md';
+  const policy = attributedOwnerWipPolicy([
+    attributedOwnerWipSource('G-WIP-01', [
+      { path: target, activeProtection: false },
+    ]),
+    attributedOwnerWipSource('ACTIVE-WIP-01', [
+      { path: target, activeProtection: true },
+    ]),
+  ]);
+  assert.deepEqual(coordination.deriveActiveOwnerWipExactPaths(policy), [target]);
+  expectCode(
+    () =>
+      coordination.validateTargetPolicy(
+        target,
+        'EXACT_LITERAL_REPLACEMENT',
+        policy,
+      ),
+    'OWNER_WIP_TARGET_FORBIDDEN',
+  );
+});
+
+test('all inactive sources release the path deterministically', () => {
+  const target = 'project/docs/governance/COLLECTION-RISK-REGISTER.md';
+  const policy = attributedOwnerWipPolicy([
+    attributedOwnerWipSource('SNAP-01', [
+      { path: target, activeProtection: false },
+    ]),
+    attributedOwnerWipSource('SNAP-02', [
+      { path: target, activeProtection: false },
+    ]),
+  ]);
+  assert.deepEqual(coordination.deriveActiveOwnerWipExactPaths(policy), []);
+  assert.equal(
+    coordination.validateTargetPolicy(target, 'EXACT_LITERAL_REPLACEMENT', policy),
+    target,
+  );
+});
+
+test('absent G-WIP ownership does not release unrelated active owner WIP', () => {
+  const staleTarget = 'project/docs/governance/COLLECTION-GOVERNANCE.md';
+  const activeTarget = 'project/docs/governance/maintenance-register.md';
+  const policy = attributedOwnerWipPolicy([
+    attributedOwnerWipSource('G-WIP-01', [
+      { path: staleTarget, activeProtection: false },
+    ]),
+    attributedOwnerWipSource('BR-WIP-02', [
+      { path: activeTarget, activeProtection: true },
+    ]),
+  ]);
+  assert.equal(
+    coordination.validateTargetPolicy(
+      staleTarget,
+      'EXACT_LITERAL_REPLACEMENT',
+      policy,
+    ),
+    staleTarget,
+  );
+  expectCode(
+    () =>
+      coordination.validateTargetPolicy(
+        activeTarget,
+        'EXACT_LITERAL_REPLACEMENT',
+        policy,
+      ),
+    'OWNER_WIP_TARGET_FORBIDDEN',
+  );
+});
+
+test('active branch and locked unknown exact paths remain forbidden', () => {
+  const branchTarget = 'project/docs/governance/architecture-index.md';
+  const lockedTarget = 'project/docs/governance/product-backlog.md';
+  const policy = attributedOwnerWipPolicy([
+    attributedOwnerWipSource(
+      'BR-WIP-01',
+      [{ path: branchTarget, activeProtection: true }],
+      { sourceType: 'GIT_BRANCH_WORKTREE' },
+    ),
+    attributedOwnerWipSource(
+      'LOCKED-WIP-01',
+      [{ path: lockedTarget, activeProtection: true }],
+      { sourceType: 'LOCKED_INITIALIZING_GIT_WORKTREE' },
+    ),
+  ]);
+  for (const target of [branchTarget, lockedTarget]) {
+    expectCode(
+      () =>
+        coordination.validateTargetPolicy(
+          target,
+          'EXACT_LITERAL_REPLACEMENT',
+          policy,
+        ),
+      'OWNER_WIP_TARGET_FORBIDDEN',
+    );
+  }
+});
+
+test('source attribution must match the deterministic flat active set', () => {
+  const target = 'project/docs/governance/maintenance-register.md';
+  const policy = attributedOwnerWipPolicy([
+    attributedOwnerWipSource('BR-WIP-02', [
+      { path: target, activeProtection: true },
+    ]),
+  ]);
+  policy.grandfatheredOwnerWipExactPaths = [];
+  expectCode(
+    () => coordination.deriveActiveOwnerWipExactPaths(policy),
+    'OWNER_WIP_SOURCE_REGISTRY_INVALID',
+  );
+});
+
+test('canonical source registry releases all six Task 04 targets only', () => {
+  const policy = JSON.parse(
+    fs.readFileSync(
+      path.join(
+        PROJECT_ROOT,
+        'docs',
+        'governance',
+        'governance-writer-coordination-protected-paths.json',
+      ),
+      'utf8',
+    ),
+  );
+  const task04Targets = [
+    'project/docs/governance/COLLECTION-RISK-REGISTER.md',
+    'project/docs/governance/COLLECTION-GOVERNANCE.md',
+    'project/docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md',
+    'project/docs/governance/architecture-index.md',
+    'project/docs/governance/master-triage-register.md',
+    'project/docs/governance/product-backlog.md',
+  ];
+  for (const target of task04Targets) {
+    assert.equal(
+      coordination.validateTargetPolicy(target, 'EXACT_LITERAL_REPLACEMENT', policy),
+      target,
+    );
+  }
+  for (const target of policy.grandfatheredOwnerWipExactPaths) {
+    expectCode(
+      () =>
+        coordination.validateTargetPolicy(
+          target,
+          'EXACT_LITERAL_REPLACEMENT',
+          policy,
+        ),
+      'OWNER_WIP_TARGET_FORBIDDEN',
+    );
+  }
 });
 
 test('production, schema, migration and runtime prefixes are rejected', () => {
@@ -1909,6 +2125,36 @@ test('large-authority read repair classifier rejects near matches and protected 
           entry.changes,
           entry.overrides || {},
         ),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('owner-WIP source attribution requires the exact five-file self-binding', () => {
+  const binding = coordination.OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01;
+  const classification = classifyOwnerWipPathOwnership(
+    ownerWipPathOwnershipChanges(),
+  );
+  assert.equal(classification.mode, binding.mode);
+  assert.equal(classification.taskId, binding.taskId);
+});
+
+test('owner-WIP source attribution rejects branch base and scope drift', () => {
+  const binding = coordination.OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01;
+  const exact = ownerWipPathOwnershipChanges();
+  for (const entry of [
+    { changes: exact, overrides: { base: '0'.repeat(40) } },
+    { changes: exact, overrides: { headRef: `${binding.headRef}-copy` } },
+    { changes: exact.slice(1) },
+    {
+      changes: [
+        ...exact,
+        { status: 'M', path: 'project/docs/governance/decision-log.md' },
+      ],
+    },
+  ]) {
+    expectCode(
+      () => classifyOwnerWipPathOwnership(entry.changes, entry.overrides || {}),
       'CONTROL_PLANE_SCOPE_FORBIDDEN',
     );
   }

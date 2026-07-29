@@ -57,18 +57,433 @@
     ".codex/hooks.json",
     ".codex/hooks/notify-stop.ps1",
     "CLAUDE.md",
-    "project/docs/adr/ADR-012-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md",
-    "project/docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md",
-    "project/docs/governance/COLLECTION-GOVERNANCE.md",
-    "project/docs/governance/COLLECTION-RISK-REGISTER.md",
-    "project/docs/governance/RECEIVABLE-GOVERNANCE.md",
-    "project/docs/governance/SYSTEM-CONSTITUTION.md",
-    "project/docs/governance/architecture-index.md",
-    "project/docs/governance/canonicalization-register.md",
-    "project/docs/governance/decision-log.md",
-    "project/docs/governance/maintenance-register.md",
-    "project/docs/governance/master-triage-register.md",
-    "project/docs/governance/product-backlog.md"
+    "project/docs/governance/maintenance-register.md"
+  ],
+  "grandfatheredOwnerWipSources": [
+    {
+      "sourceId": "BR-WIP-01",
+      "sourceType": "GIT_BRANCH_WORKTREE",
+      "sourceLocation": "C:\\Development\\HUKUK_YAZILIMI\\HUKUK_ccb-001-r",
+      "baseSha": "7b222c509b0b70d13a76d92eb327994bf877bca1",
+      "owner": "OWNER",
+      "semanticPurpose": "CCB-001 rescue branch and executor-local configuration",
+      "disposition": "MIXED",
+      "activeProtection": true,
+      "archiveReference": "OWNER_WIP_EVIDENCE/OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01/20260729T063432Z/sha256-manifest.txt#sha256=777108ef35abb88eb7d4277561e7033b28b6c4b2fa82312cee3a4407409d982b",
+      "exactPaths": [
+        {
+          "exactPath": ".claude/settings.json",
+          "blobSha256": "cacf5f9f259098712b2b2ae7423f2b8f102c6f73493bd56178d9180e2d5c0dfe",
+          "workingTreeState": "CLEAN_COMMITTED_BRANCH_DELTA",
+          "ownership": "ACTIVE_OWNER_WIP",
+          "semanticPurpose": "executor-local configuration",
+          "disposition": "ACTIVE_UNSHIPPED_OWNER_INTENT",
+          "activeProtection": true
+        },
+        {
+          "exactPath": "CLAUDE.md",
+          "blobSha256": "195727430fbaf3daa7bf6da718732fe4e868f105c33055f012c83a5ad0336224",
+          "workingTreeState": "CLEAN_COMMITTED_BRANCH_DELTA",
+          "ownership": "ACTIVE_OWNER_WIP",
+          "semanticPurpose": "executor-local instructions",
+          "disposition": "ACTIVE_UNSHIPPED_OWNER_INTENT",
+          "activeProtection": true
+        },
+        {
+          "exactPath": "project/docs/adr/ADR-012-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md",
+          "blobSha256": "e67a3b7c2eae2226d2800522add8a44f7863f07908748209ce8ef8ea388e057c",
+          "workingTreeState": "CLEAN_COMMITTED_BRANCH_DELTA",
+          "ownership": "HISTORICAL_BRANCH_COPY",
+          "semanticPurpose": "former CCB-001 authority draft",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/architecture-index.md",
+          "blobSha256": "03c21cd0ff378b43671d65143c79c77152b70db6fcc8560e38db790ff867169a",
+          "workingTreeState": "CLEAN_COMMITTED_BRANCH_DELTA",
+          "ownership": "HISTORICAL_BRANCH_COPY",
+          "semanticPurpose": "former ClaimItem-target architecture index",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/decision-log.md",
+          "blobSha256": "ee39cdf1ba41a734aa1f81f6c73c9930101b8680e0970a3b9f30607a4cb7ef1b",
+          "workingTreeState": "CLEAN_COMMITTED_BRANCH_DELTA",
+          "ownership": "HISTORICAL_BRANCH_COPY",
+          "semanticPurpose": "former CCB-001 decision history",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/product-backlog.md",
+          "blobSha256": "d327e5454b5c8bbcb60af2de63a5f522e231555e37d5b895394f715051cb36fd",
+          "workingTreeState": "CLEAN_COMMITTED_BRANCH_DELTA",
+          "ownership": "HISTORICAL_BRANCH_COPY",
+          "semanticPurpose": "former CCB-001 backlog state",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        }
+      ]
+    },
+    {
+      "sourceId": "BR-WIP-02",
+      "sourceType": "GIT_BRANCH_WORKTREE",
+      "sourceLocation": "C:\\Development\\HUKUK_YAZILIMI\\HUKUK_ver05_inventory_maintenance",
+      "baseSha": "a52ad9b3e05355fda82cee606507fd0c12ba4c81",
+      "owner": "OWNER",
+      "semanticPurpose": "maintenance inventory record",
+      "disposition": "ACTIVE_UNSHIPPED_OWNER_INTENT",
+      "activeProtection": true,
+      "archiveReference": "OWNER_WIP_EVIDENCE/OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01/20260729T063432Z/sha256-manifest.txt#sha256=777108ef35abb88eb7d4277561e7033b28b6c4b2fa82312cee3a4407409d982b",
+      "exactPaths": [
+        {
+          "exactPath": "project/docs/governance/maintenance-register.md",
+          "blobSha256": "ed94f2b011189ebc9a9b7dfc2df854558aa4c84cd7e659ab2d98fbed6ded2367",
+          "workingTreeState": "CLEAN_COMMITTED_BRANCH_DELTA",
+          "ownership": "ACTIVE_OWNER_WIP",
+          "semanticPurpose": "MR-023 maintenance inventory",
+          "disposition": "ACTIVE_UNSHIPPED_OWNER_INTENT",
+          "activeProtection": true
+        }
+      ]
+    },
+    {
+      "sourceId": "G-WIP-01",
+      "sourceType": "STALE_GIT_WORKTREE_RECORD",
+      "sourceLocation": "C:\\Development\\HUKUK_YAZILIMI\\HUKUK_rcv_col_tpa_04c_closure_final",
+      "baseSha": "4c5ed903882be359a161e9487ea749f2dc141035",
+      "owner": "OWNER",
+      "semanticPurpose": "TPA-04C historical closure source",
+      "disposition": "CLOSED_OWN_SOURCE_ABSENT_STALE",
+      "activeProtection": false,
+      "archiveReference": "OWNER_WIP_EVIDENCE/OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01/20260729T063432Z/sha256-manifest.txt#sha256=777108ef35abb88eb7d4277561e7033b28b6c4b2fa82312cee3a4407409d982b",
+      "exactPaths": [
+        {
+          "exactPath": "project/docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md",
+          "blobSha256": "0c9066ba3e9b37b5ee5cae4022767bad0bb38f515c770bcb565faa7a1df7c533",
+          "workingTreeState": "HISTORICAL_COMMIT_SOURCE_ABSENT",
+          "ownership": "STALE_SOURCE_RECORD",
+          "semanticPurpose": "TPA-04C historical closure",
+          "disposition": "ALREADY_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/COLLECTION-GOVERNANCE.md",
+          "blobSha256": "51d0d8788511a4282e2353a2863f3f88bcb6548f378ac8ba0e442dc907121f24",
+          "workingTreeState": "HISTORICAL_COMMIT_SOURCE_ABSENT",
+          "ownership": "STALE_SOURCE_RECORD",
+          "semanticPurpose": "TPA-04C historical closure",
+          "disposition": "ALREADY_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/COLLECTION-RISK-REGISTER.md",
+          "blobSha256": "d30b020ddf59cf04bfbcb1d41670144ccfd91b50767c4b12fa7536369af16d58",
+          "workingTreeState": "HISTORICAL_COMMIT_SOURCE_ABSENT",
+          "ownership": "STALE_SOURCE_RECORD",
+          "semanticPurpose": "TPA-04C historical closure",
+          "disposition": "ALREADY_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/RECEIVABLE-GOVERNANCE.md",
+          "blobSha256": "a43b3f0ef911387f03d344ceb77fbd25737424dfae708d1962cec73816db6121",
+          "workingTreeState": "HISTORICAL_COMMIT_SOURCE_ABSENT",
+          "ownership": "STALE_SOURCE_RECORD",
+          "semanticPurpose": "TPA-04C historical closure",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/SYSTEM-CONSTITUTION.md",
+          "blobSha256": "0bb0101204314a290266bbf94c53bfe6c899f105d0d27628feb17c6e10a9dcd4",
+          "workingTreeState": "HISTORICAL_COMMIT_SOURCE_ABSENT",
+          "ownership": "STALE_SOURCE_RECORD",
+          "semanticPurpose": "TPA-04C historical closure",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/canonicalization-register.md",
+          "blobSha256": "eef2017a8380e3ff4b16ab18b5c8efc74352f72161cbe65014aab72e1d30573b",
+          "workingTreeState": "HISTORICAL_COMMIT_SOURCE_ABSENT",
+          "ownership": "STALE_SOURCE_RECORD",
+          "semanticPurpose": "TPA-04C historical closure",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/decision-log.md",
+          "blobSha256": "0897a6587ca63dbe79a9c181c436d26f3cc6c0734b227c836b9a1ad0a1bdefe0",
+          "workingTreeState": "HISTORICAL_COMMIT_SOURCE_ABSENT",
+          "ownership": "STALE_SOURCE_RECORD",
+          "semanticPurpose": "TPA-04C historical closure",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/master-triage-register.md",
+          "blobSha256": "bdec6ccf50239a6a23832a180918bf9ea1634730aaf8927fc6359b45568ec8cc",
+          "workingTreeState": "HISTORICAL_COMMIT_SOURCE_ABSENT",
+          "ownership": "STALE_SOURCE_RECORD",
+          "semanticPurpose": "TPA-04C historical closure",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/product-backlog.md",
+          "blobSha256": "46a0e0d5e6bcb1d33a34d8ab1bf5dd90596f65f244a81cc7b694b4d84c0cd9f9",
+          "workingTreeState": "HISTORICAL_COMMIT_SOURCE_ABSENT",
+          "ownership": "STALE_SOURCE_RECORD",
+          "semanticPurpose": "TPA-04C historical closure",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        }
+      ]
+    },
+    {
+      "sourceId": "HUKUK_ent_approval",
+      "sourceType": "LOCKED_INITIALIZING_GIT_WORKTREE",
+      "sourceLocation": "C:\\Development\\HUKUK_YAZILIMI\\HUKUK_ent_approval",
+      "baseSha": "d4f0e5be3c8e8ab18b18fe35ed6290cad39d7e80",
+      "owner": "OWNER",
+      "semanticPurpose": "enterprise approval failed initializing checkout",
+      "disposition": "PRESERVED_CLASSIFIED_BASELINE",
+      "activeProtection": false,
+      "archiveReference": "OWNER_WIP_EVIDENCE/OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01/20260729T063432Z/sha256-manifest.txt#sha256=777108ef35abb88eb7d4277561e7033b28b6c4b2fa82312cee3a4407409d982b",
+      "exactPaths": [
+        {
+          "exactPath": "project/docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md",
+          "blobSha256": "0c9066ba3e9b37b5ee5cae4022767bad0bb38f515c770bcb565faa7a1df7c533",
+          "workingTreeState": "STAGED_DELETE_AND_UNTRACKED_WORKING_COPY",
+          "ownership": "FAILED_CHECKOUT_BASELINE",
+          "semanticPurpose": "enterprise approval baseline copy",
+          "disposition": "ALREADY_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/COLLECTION-GOVERNANCE.md",
+          "blobSha256": "51d0d8788511a4282e2353a2863f3f88bcb6548f378ac8ba0e442dc907121f24",
+          "workingTreeState": "STAGED_DELETE_AND_UNTRACKED_WORKING_COPY",
+          "ownership": "FAILED_CHECKOUT_BASELINE",
+          "semanticPurpose": "enterprise approval baseline copy",
+          "disposition": "ALREADY_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/COLLECTION-RISK-REGISTER.md",
+          "blobSha256": "d30b020ddf59cf04bfbcb1d41670144ccfd91b50767c4b12fa7536369af16d58",
+          "workingTreeState": "STAGED_DELETE_AND_UNTRACKED_WORKING_COPY",
+          "ownership": "FAILED_CHECKOUT_BASELINE",
+          "semanticPurpose": "enterprise approval baseline copy",
+          "disposition": "ALREADY_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/architecture-index.md",
+          "blobSha256": "4b4fb2dc20be384f4680ddc8b594990ce6586b464aa2c9af3ce8a40a02741124",
+          "workingTreeState": "STAGED_DELETE_AND_UNTRACKED_WORKING_COPY",
+          "ownership": "FAILED_CHECKOUT_BASELINE",
+          "semanticPurpose": "enterprise approval baseline copy",
+          "disposition": "ALREADY_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/master-triage-register.md",
+          "blobSha256": "fd89cd1f06318606ef88f76b25340f17d37cdfa7f0fc2f9a4bdf46f0ecc7222f",
+          "workingTreeState": "STAGED_DELETE_AND_UNTRACKED_WORKING_COPY",
+          "ownership": "FAILED_CHECKOUT_BASELINE",
+          "semanticPurpose": "enterprise approval baseline copy",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/product-backlog.md",
+          "blobSha256": "aa932053ec180423b7ba06d828159770aec792b18dec77d5280d7c8b35c33469",
+          "workingTreeState": "STAGED_DELETE_AND_UNTRACKED_WORKING_COPY",
+          "ownership": "FAILED_CHECKOUT_BASELINE",
+          "semanticPurpose": "enterprise approval baseline copy",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        }
+      ]
+    },
+    {
+      "sourceId": "O-WIP-01",
+      "sourceType": "CANONICAL_ROOT_UNTRACKED_OWNER_WIP",
+      "sourceLocation": "C:\\Development\\HUKUK_YAZILIMI\\project",
+      "baseSha": "09711b503b9de34b65fc520595a7ac87955ecab5",
+      "owner": "OWNER",
+      "semanticPurpose": "owner-local control-plane configuration",
+      "disposition": "ACTIVE_UNSHIPPED_OWNER_INTENT",
+      "activeProtection": true,
+      "archiveReference": "OWNER_WIP_EVIDENCE/OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01/20260729T063432Z/sha256-manifest.txt#sha256=777108ef35abb88eb7d4277561e7033b28b6c4b2fa82312cee3a4407409d982b",
+      "exactPaths": [
+        {
+          "exactPath": ".claude/launch.json",
+          "blobSha256": "39844f4c7edb76edba64a47eb3fe24fee05b2efc36358e23a2595f36b359107c",
+          "workingTreeState": "UNTRACKED",
+          "ownership": "ACTIVE_OWNER_WIP",
+          "semanticPurpose": "owner-local launcher configuration",
+          "disposition": "ACTIVE_UNSHIPPED_OWNER_INTENT",
+          "activeProtection": true
+        },
+        {
+          "exactPath": ".codex/hooks.json",
+          "blobSha256": "d963152bbaddaf8ef6de288338905ce59a4a7836d03f913a7583d12653b0a634",
+          "workingTreeState": "UNTRACKED",
+          "ownership": "ACTIVE_OWNER_WIP",
+          "semanticPurpose": "owner-local Codex hooks configuration",
+          "disposition": "ACTIVE_UNSHIPPED_OWNER_INTENT",
+          "activeProtection": true
+        },
+        {
+          "exactPath": ".codex/hooks/notify-stop.ps1",
+          "blobSha256": "b500bdf1e528472898bc3b103a267ff55ae4418a1b73637ffbb00473628951cc",
+          "workingTreeState": "UNTRACKED",
+          "ownership": "ACTIVE_OWNER_WIP",
+          "semanticPurpose": "owner-local Codex stop notification hook",
+          "disposition": "ACTIVE_UNSHIPPED_OWNER_INTENT",
+          "activeProtection": true
+        }
+      ]
+    },
+    {
+      "sourceId": "SNAP-01",
+      "sourceType": "FILESYSTEM_SNAPSHOT",
+      "sourceLocation": "C:\\Development\\HUKUK_YAZILIMI\\project\\.worktrees\\adr014-pr1b-reversal-netting",
+      "baseSha": "UNATTRIBUTABLE",
+      "owner": "OWNER",
+      "semanticPurpose": "historical ADR-014 governance snapshot",
+      "disposition": "ARCHIVED_SUPERSEDED_BY_NEWER_CANONICAL",
+      "activeProtection": false,
+      "archiveReference": "OWNER_WIP_EVIDENCE/OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01/20260729T063432Z/sha256-manifest.txt#sha256=777108ef35abb88eb7d4277561e7033b28b6c4b2fa82312cee3a4407409d982b",
+      "exactPaths": [
+        {
+          "exactPath": "project/docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md",
+          "blobSha256": "42f0ff28638cf28a93a2e8a1dca6a98b7b3d72991f72179c27928284e3bdf460",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical ADR-014 snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/architecture-index.md",
+          "blobSha256": "a524530d0e351e46633e925f8454f1bfb2ab15499071487145bf14b26799fb23",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical architecture index snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/canonicalization-register.md",
+          "blobSha256": "fef6459910fd117d3938416c20a87536b8abf4c19f887a5725cbc79e9ae09ae4",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical canonicalization register snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/decision-log.md",
+          "blobSha256": "a10d499f10bcff3ad6efabf53663bd8f593777b0e41415bedf9a52243fdd7ebb",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical decision log snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/master-triage-register.md",
+          "blobSha256": "efb61735e22360fbe38ddad617bf47b6d7c4643013f5b73f49f59d3a952865b7",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical master register snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/product-backlog.md",
+          "blobSha256": "73e4f2f161120c92f22413621479b3383dcb6c91c300eb5f75ad337e80a177c2",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical product backlog snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        }
+      ]
+    },
+    {
+      "sourceId": "SNAP-02",
+      "sourceType": "FILESYSTEM_SNAPSHOT",
+      "sourceLocation": "C:\\Development\\HUKUK_YAZILIMI\\project\\.worktrees\\adr014-w03-ratification-hardening",
+      "baseSha": "UNATTRIBUTABLE",
+      "owner": "OWNER",
+      "semanticPurpose": "historical ADR-014 ratification snapshot",
+      "disposition": "ARCHIVED_SUPERSEDED_BY_NEWER_CANONICAL",
+      "activeProtection": false,
+      "archiveReference": "OWNER_WIP_EVIDENCE/OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01/20260729T063432Z/sha256-manifest.txt#sha256=777108ef35abb88eb7d4277561e7033b28b6c4b2fa82312cee3a4407409d982b",
+      "exactPaths": [
+        {
+          "exactPath": "project/docs/adr/ADR-014-CCB-001-CANONICAL-LEGAL-CALCULATION-CORE.md",
+          "blobSha256": "42f0ff28638cf28a93a2e8a1dca6a98b7b3d72991f72179c27928284e3bdf460",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical ADR-014 snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/architecture-index.md",
+          "blobSha256": "a524530d0e351e46633e925f8454f1bfb2ab15499071487145bf14b26799fb23",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical architecture index snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/canonicalization-register.md",
+          "blobSha256": "d3bf5f8739a9994bfde49fb2acd427253b1b82e42857484da116ba349c16182d",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical canonicalization register snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/decision-log.md",
+          "blobSha256": "6965595e23ca857a7a5459cf79fd91de45207b6ee65a22f0b1cdaf027ebaed13",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical decision log snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/master-triage-register.md",
+          "blobSha256": "ac0e8cee056623d1046077352f74f48bd7e8d9c87e374c960a77fb31bd8e395f",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical master register snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        },
+        {
+          "exactPath": "project/docs/governance/product-backlog.md",
+          "blobSha256": "8180046fb2ac021b6d54180b72d1faec7b06f8c11e577201550dbe6d810ae242",
+          "workingTreeState": "UNTRACKED_FILESYSTEM_SNAPSHOT",
+          "ownership": "ARCHIVED_SNAPSHOT_COPY",
+          "semanticPurpose": "historical product backlog snapshot",
+          "disposition": "SUPERSEDED_BY_NEWER_CANONICAL",
+          "activeProtection": false
+        }
+      ]
+    }
   ],
   "grandfatheredOwnerWipPrefixes": [
     ".worktrees/",

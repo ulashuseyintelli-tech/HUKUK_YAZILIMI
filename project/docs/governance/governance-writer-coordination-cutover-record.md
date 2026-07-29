@@ -152,3 +152,56 @@ Byte-for-byte preservation required
 
 Hiçbir kayıt abandoned, removable, safe-to-delete, mergeable veya conclusively
 stale sayılmaz.
+
+## 2026-07-29 source-attribution reconciliation
+
+Owner-authorized
+`OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01` forensic
+reconciliation replaced the anonymous exact-path reservation with
+source-specific ownership. No source content was deleted, reset, unlocked,
+cleaned, overwritten or merged.
+
+```text
+Evidence archive : OWNER_WIP_EVIDENCE/OWNER-WIP-MULTI-SOURCE-DISPOSITION-AND-PATH-OWNERSHIP-R01/20260729T063432Z
+Manifest         : sha256-manifest.txt
+Manifest SHA-256 : 777108ef35abb88eb7d4277561e7033b28b6c4b2fa82312cee3a4407409d982b
+Captured files   : 114
+Canonical base   : 09711b503b9de34b65fc520595a7ac87955ecab5
+```
+
+Source dispositions:
+
+- `G-WIP-01`: `CLOSED / OWN SOURCE ABSENT / STALE`. The physical source and
+  branch refs are absent; its historical head is already in canonical ancestry.
+  Only this source's protection is inactive.
+- `SNAP-01` and `SNAP-02`: `ARCHIVED / NON-ACTIVE / PRESERVED`. They are
+  filesystem snapshots without a Git/task identity; their overlapping
+  governance blobs are older canonical copies superseded by current main.
+- `BR-WIP-01`: `MIXED / PRESERVED`. The ADR-012/CCB governance model is
+  superseded by canonical ADR-014 and cross-domain LegalApplication authority;
+  `.claude/settings.json` and `CLAUDE.md` remain active owner WIP. The branch and
+  worktree remain untouched.
+- `HUKUK_ent_approval`: `PRESERVED / CLASSIFIED BASELINE`. HEAD, index,
+  working-copy, lock metadata and raw bytes were captured separately. The six
+  reviewed target paths are either byte-identical to current main or older
+  baseline copies superseded by current main; none carries unique owner intent.
+  The locked worktree remains untouched and was not repaired.
+- `O-WIP-01` and `BR-WIP-02`: active source-specific protection remains.
+
+The effective exact-path set is the deterministic union of entries whose
+`activeProtection` is true:
+
+```text
+.claude/launch.json
+.claude/settings.json
+.codex/hooks.json
+.codex/hooks/notify-stop.ps1
+CLAUDE.md
+project/docs/governance/maintenance-register.md
+```
+
+The universal invariant is fail-closed: any active attributed source keeps an
+exact path forbidden. A path is releasable only when every attributed source is
+inactive. Prefix protections for `.worktrees/`, `.claude/` and `.codex/` are
+unchanged. This reconciliation does not grant cleanup authority for any physical
+source.
