@@ -77,6 +77,30 @@ export class LegalDeadlineService {
    * (owner Decision 5 — mevcut satırın hesaplanan alanları asla update edilmez;
    * yalnız yaşam-döngüsü meta verisi olan `status` alanı supersede işleminin
    * bir parçası olarak güncellenir, bu "silent update" değildir).
+   *
+   * @deprecated LEGACY SNAPSHOT WRITER — YENİ ÜRETİM ÇAĞIRANI EKLENMEZ.
+   *
+   * DEBTOR-LEGAL-DEADLINE-LEGACY-PATH-DISPOSITION-P1-I07 (eski roadmap TASK 06):
+   * Bu yol Tebligat'ın DEĞİŞEBİLİR alanlarını (tk21Type/muhtarlikDate/ilanDate/
+   * deliveredAt) okur ve advisory lock ALMAZ. Kanonik yazıcı, DEBTOR-OF01-HISTORY-P04-B
+   * ile gelen occurrence tabanlı yoldur:
+   *
+   *   CANONICAL SUCCESSOR:
+   *     ServiceOccurrenceDeadlineCalculationService.calculateForOccurrence()
+   *     (değişmez ServiceOccurrence fact'lerini okur, pg_advisory_xact_lock altında
+   *      yürür, idempotency çakışmasını fail-closed reddeder)
+   *   ÜRETİM BAĞLANTISI:
+   *     ServiceOccurrenceRecordedConsumerService.handle() (P04-C-I01, event-driven)
+   *
+   * Bu metodun ÜRETİM çağıranı YOKTUR (yalnız kendi davranış spec'leri çağırır) ve
+   * bu durum `__tests__/legal-deadline-legacy-path-containment.static-guard.spec.ts`
+   * ile caller envanteri üzerinden kilitlenmiştir: üretim kaynağına yeni bir
+   * `calculateDeadline(` çağrısı eklenirse required CI KIRMIZI olur.
+   *
+   * Davranış/formül bu görevde DEĞİŞTİRİLMEDİ; her iki yol da hukuki tarih kararını
+   * aynı çekirdeğe (`legal-service-date-rule-core.resolveLegalServiceDate`) delege eder.
+   * Yeni bir tüketici gerekiyorsa canonical successor kullanılır; bu metot geri
+   * aktive EDİLMEZ.
    */
   async calculateDeadline(input: CalculateDeadlineInput) {
     this.assertValidObjectionPeriodDays(input.objectionPeriodDays);

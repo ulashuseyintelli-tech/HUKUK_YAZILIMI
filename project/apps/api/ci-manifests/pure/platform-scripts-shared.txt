@@ -199,6 +199,7 @@ src/modules/interest-engine/__tests__/scenario-evidence.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.static.spec.ts
 src/modules/interest-engine/calc-prep/__tests__/payment-mapper.spec.ts
 src/modules/interest-engine/orchestration/__tests__/case-balance.service.spec.ts
+src/modules/legal-deadline/__tests__/legal-deadline-legacy-path-containment.static-guard.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.service.spec.ts
 src/modules/legal-deadline/__tests__/legal-period-calculation.service.spec.ts
 src/modules/legal-deadline/__tests__/legal-period-rule-matrix.spec.ts
