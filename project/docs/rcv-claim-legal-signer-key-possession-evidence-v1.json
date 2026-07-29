@@ -1,0 +1,51 @@
+{
+  "challenge": {
+    "challengeType": "KEY_POSSESSION",
+    "environment": "CEREMONY",
+    "manifestId": "RCV-CLAIM-LEGAL-SIGNER-PUBLIC-KEY-MANIFEST",
+    "manifestVersion": 1,
+    "productionAuthority": false,
+    "taskId": "RCV-CLAIM-FORM-P02-S08-D02-KC01"
+  },
+  "challengeChecksum": "611a9f72af628e3dfa4bc239de74eec5c2f52ef9b1fb57c0f271d5dfd3095617",
+  "challengeSignatures": [
+    {
+      "kmsVerify": true,
+      "offlineVerify": true,
+      "role": "LEGAL_REVIEWER",
+      "signature": "HKmoRce3UDKcQyJxCbALl7rptcPN55rFcbqwy37fmhkjyrsAkEaodYD1yRnUU5yRGz+ajIfwv+cTX9QBAdNOAQ==",
+      "signatureChecksum": "79c0c83ec765c273d9855fdd0f2a8950f563135a0025c8028724451a319c5177",
+      "signatureEncoding": "BASE64",
+      "signerId": "TELLI-LEGAL-REVIEWER-01"
+    },
+    {
+      "kmsVerify": true,
+      "offlineVerify": true,
+      "role": "FINAL_LEGAL_RATIFIER",
+      "signature": "Cpcl/ZqLVgUAq+xbtzuTin8gSdRZ30o8LGo4+qhTcjhLVmvowZeRF52EgpHkKVvoH8oVgzzWUe7+zkkXetlZDw==",
+      "signatureChecksum": "7d0bfa7737f3c782d5daf2b84acd1e9b3d3ec5a0e3d410fec8e70d2077560d1b",
+      "signatureEncoding": "BASE64",
+      "signerId": "TELLI-FINAL-LEGAL-RATIFIER-01"
+    },
+    {
+      "kmsVerify": true,
+      "offlineVerify": true,
+      "role": "PRODUCTION_RELEASE_SIGNER",
+      "signature": "X3HcmDhwwoNDLFoDdg5AlUv0A6nNeymmo6ef1QPLE32ADsW1IvL6H/Of71m6kP68OwsJx4/3EqnSOKYzpEBmBA==",
+      "signatureChecksum": "0127a867c33145306c6d4c18af930c7965511d227af4a8f0562351a8ebe48785",
+      "signatureEncoding": "BASE64",
+      "signerId": "TELLI-PROD-LEGAL-01"
+    }
+  ],
+  "crossRoleNegativeCount": 6,
+  "crossRoleNegativeStatus": "PASS",
+  "messageType": "RAW",
+  "observedAt": "2026-07-29T06:55:54Z",
+  "postRemovalSign": "ACCESS_DENIED",
+  "productionAuthority": false,
+  "provider": "AWS_KMS",
+  "recordId": "RCV-CLAIM-LEGAL-SIGNER-KEY-POSSESSION-EVIDENCE@1",
+  "signingAlgorithm": "ED25519_SHA_512",
+  "temporarySignAuthorityRemoved": true,
+  "trustRootStatus": "PENDING_ONBOARDING"
+}
