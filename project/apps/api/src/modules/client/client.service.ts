@@ -1354,6 +1354,26 @@ export class ClientService {
       });
     }
 
+    // VER-02: data.addresses[] artık ClientAddress'e de yazılır (contacts ile aynı desen) —
+    // önceden yalnız yukarıdaki flat address/city/district/region'a sıkışıp diğer girdiler
+    // sessizce düşüyordu. Flat kolonlar DEĞİŞMEDEN korunur (geriye uyumluluk, UYAP/döküman
+    // üretimi vb. hâlâ onları okur).
+    const validAddressEntries = (data.addresses || []).filter((a: any) => a.street?.trim() || a.city?.trim());
+    if (validAddressEntries.length > 0) {
+      await tx.clientAddress.createMany({
+        data: validAddressEntries.map((a: any, idx: number) => ({
+          clientId: createdClient.id,
+          type: a.type,
+          street: a.street,
+          city: a.city,
+          district: a.district,
+          region: a.region,
+          postalCode: a.postalCode,
+          isPrimary: a.isPrimary || idx === 0,
+        })),
+      });
+    }
+
       await this.audit.logInTransaction(tx, {
         tenantId,
         action: 'CLIENT_CREATE',
@@ -1514,6 +1534,31 @@ export class ClientService {
       }
       if (contacts.length > 0) {
         await tx.clientContact.createMany({ data: contacts });
+      }
+    }
+
+    // VER-02: data.addresses[] yalnız bu müvekkilin HENÜZ hiç ClientAddress satırı yoksa
+    // (Workspace'te henüz yönetilmiyorsa) gerçek tabloya yazılır. Mevcut satır varsa (Workspace
+    // yönetimli) dokunulmaz — bu legacy form onların varlığından habersiz, contacts'taki
+    // "sil ve yeniden oluştur" deseni burada UYGULANMAZ (Workspace verisini sessizce silerdi).
+    if (data.addresses) {
+      const existingAddressCount = await tx.clientAddress.count({ where: { clientId: id } });
+      if (existingAddressCount === 0) {
+        const validAddressEntries = data.addresses.filter((a: any) => a.street?.trim() || a.city?.trim());
+        if (validAddressEntries.length > 0) {
+          await tx.clientAddress.createMany({
+            data: validAddressEntries.map((a: any, idx: number) => ({
+              clientId: id,
+              type: a.type,
+              street: a.street,
+              city: a.city,
+              district: a.district,
+              region: a.region,
+              postalCode: a.postalCode,
+              isPrimary: a.isPrimary || idx === 0,
+            })),
+          });
+        }
       }
     }
 
