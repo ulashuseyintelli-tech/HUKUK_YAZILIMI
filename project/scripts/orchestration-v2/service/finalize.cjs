@@ -422,6 +422,36 @@ async function finalizeEntry(o) {
     };
   }
 
+  // Delivery identity is a merge gate, not a post-merge observation. Re-read
+  // it from the canonical task and compare it with the durable handoff before
+  // consuming a one-shot grant or asking the provider to merge. A retry must
+  // not turn a missing verifier into an implicit schema-v1 finalization.
+  const liveSpec = resolved.spec || {};
+  const contract = liveSpec.deliveryContract || null;
+  if (h.deliveryContractSha256 || contract) {
+    const authorityMod = require('../orchestrator/authority.cjs');
+    if (!contract) {
+      return blockedFinalization(queue, entry, clock, audit, 'FINALIZATION_DELIVERY_CONTRACT_MISSING',
+        'the handoff declares a delivery contract the task no longer carries');
+    }
+    const liveDigest = authorityMod.deliveryContractDigest(contract);
+    if (h.deliveryContractSha256 && h.deliveryContractSha256 !== liveDigest) {
+      return blockedFinalization(queue, entry, clock, audit, 'FINALIZATION_DELIVERY_CONTRACT_CHANGED',
+        'handoff=' + h.deliveryContractSha256 + ' live=' + liveDigest);
+    }
+  }
+  if (contract && typeof o.verifyDelivery !== 'function') {
+    return blockedFinalization(
+      queue,
+      entry,
+      clock,
+      audit,
+      'FINALIZATION_DELIVERY_VERIFIER_MISSING',
+      'schema-v2 finalization requires the canonical delivery verifier',
+      'DELIVERY_NOT_RUN',
+    );
+  }
+
   // Asked again, immediately before the merge, and for the same reason the
   // kill switch is: the admission answer is minutes or hours old by now, and a
   // one-shot grant another process spent in between must not authorize a
@@ -543,10 +573,10 @@ async function finalizeEntry(o) {
   // reads the task store — saw nothing and held the successor at
   // LEGACY_UNVERIFIED. Both halves were correct and the wire between them had
   // never been run.
-  const preContract = (resolved.spec && resolved.spec.deliveryContract) || null;
+  const preContract = contract;
   let captured = null;
   const verifyDeliveryAtMerge =
-    preContract && o.verifyDelivery
+    preContract
       ? async (mergeSha) => {
           captured = { delivery: await runDeliveryVerification(mergeSha), mergeSha };
           return stampDelivery(captured.delivery, mergeSha);
@@ -646,26 +676,7 @@ async function finalizeEntry(o) {
   // SYNCING. What matters is that the durable log distinguishes the facts:
   // merge completed, verification started, verification's verdict, cleanup,
   // CLOSED. It does, by payload, at the same instant it would by state name.
-  // The contract is re-read from the task, not taken from the handoff. The
-  // handoff says which claim to verify; whether that claim is still the
-  // ratified one is a question only the canonical sources can answer, and a
-  // handoff written before the task was amended would otherwise verify a
-  // capability the grant no longer covers.
-  const liveSpec = resolved.spec || {};
-  const contract = liveSpec.deliveryContract || null;
-  if (h.deliveryContractSha256 || contract) {
-    const authorityMod = require('../orchestrator/authority.cjs');
-    if (!contract) {
-      return blockedFinalization(queue, entry, clock, audit, 'FINALIZATION_DELIVERY_CONTRACT_MISSING',
-        'the handoff declares a delivery contract the task no longer carries');
-    }
-    const liveDigest = authorityMod.deliveryContractDigest(contract);
-    if (h.deliveryContractSha256 && h.deliveryContractSha256 !== liveDigest) {
-      return blockedFinalization(queue, entry, clock, audit, 'FINALIZATION_DELIVERY_CONTRACT_CHANGED',
-        'handoff=' + h.deliveryContractSha256 + ' live=' + liveDigest);
-    }
-  }
-  if (contract && o.verifyDelivery) {
+  if (contract) {
     queue.transition({
       entryId: entry.entryId,
       to: 'SYNCING',
@@ -774,18 +785,18 @@ async function finalizeEntry(o) {
 /**
  * Block an entry whose delivery identity no longer matches the ratified one.
  *
- * The merge has already happened by the time this can fire, so the entry keeps
- * its merge sha and the operator is told exactly which digest moved. Retrying
- * the merge, or closing anyway, would each be a lie about what was verified.
+ * Before merge this protects the identity/verifier gate; after merge it keeps
+ * the durable merge sha while naming the exact identity failure. Retrying a
+ * merge that happened, or closing without the verifier, would each be a lie.
  */
-function blockedFinalization(queue, entry, clock, audit, code, detail) {
+function blockedFinalization(queue, entry, clock, audit, code, detail, deliveryPhase) {
   audit('FINALIZE_BLOCKED', { entryId: entry.entryId, blockerCode: code, detail });
   queue.transition({
     entryId: entry.entryId,
     to: 'BLOCKED',
     expectedPreviousState: queue.get(entry.entryId).state,
     nowMs: clock(),
-    patch: { blockerCode: code, deliveryPhase: 'DELIVERY_IDENTITY_CHANGED', owner: null },
+    patch: { blockerCode: code, deliveryPhase: deliveryPhase || 'DELIVERY_IDENTITY_CHANGED', owner: null },
   });
   return {
     disposition: 'BLOCKED',
