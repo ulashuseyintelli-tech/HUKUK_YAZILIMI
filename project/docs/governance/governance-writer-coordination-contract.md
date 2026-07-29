@@ -733,7 +733,7 @@ gevşetmez.
 ```text
 Task ID  : RCV-CLAIM-FORM-D02-KC01-AWS-KMS-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
 Mode     : RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
-Base SHA : edcb2f704f4474f366bb29fa173b6e2cd19a5489
+Base SHA : a23e074589236bd451e797fd0f6a2b7e24c66fb9
 Head ref : codex/rcv-claim-form-d02-kc01-aws-kms-authority-bootstrap-binding-r01
 Scope    : M project/scripts/governance-coordination.cjs
            M project/scripts/governance-coordination.test.cjs

@@ -400,7 +400,7 @@ const RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_
     bindingPr: Object.freeze({
       mode:
         'RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01',
-      baseSha: 'edcb2f704f4474f366bb29fa173b6e2cd19a5489',
+      baseSha: 'a23e074589236bd451e797fd0f6a2b7e24c66fb9',
       headRef:
         'codex/rcv-claim-form-d02-kc01-aws-kms-authority-bootstrap-binding-r01',
       changedPaths: Object.freeze([
