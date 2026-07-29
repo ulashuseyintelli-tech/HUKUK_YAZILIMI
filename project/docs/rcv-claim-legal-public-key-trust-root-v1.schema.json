@@ -1,0 +1,201 @@
+{
+  "$id": "https://telli-hukuk.example/schemas/rcv-claim-legal-public-key-trust-root-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activatedAt": { "$ref": "#/$defs/timestamp" },
+    "awsParityRecordChecksum": { "$ref": "#/$defs/sha256" },
+    "awsParityRecordId": { "const": "RCV-CLAIM-LEGAL-PUBLIC-KEY-TRUST-ROOT-AWS-PARITY@1" },
+    "checksumAlgorithm": { "const": "SHA-256" },
+    "createdAt": { "$ref": "#/$defs/timestamp" },
+    "entries": {
+      "items": { "$ref": "#/$defs/entry" },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "environment": { "const": "production" },
+    "kc01ManifestChecksum": { "const": "1e80168ebc52e6601f9231834ddde81a339e69a2337a0630bd9daa993f0519ec" },
+    "kc01ManifestId": { "const": "RCV-CLAIM-LEGAL-SIGNER-PUBLIC-KEY-MANIFEST" },
+    "kc01ManifestVersion": { "const": 1 },
+    "productionSignatureStatus": { "const": "NONE" },
+    "provider": { "const": "AWS_KMS" },
+    "runtimeStatus": { "const": "DORMANT" },
+    "serializationAlgorithm": { "const": "CANONICAL_JSON_UTF8_V1" },
+    "signingAuthorityStatus": { "const": "NOT_ACTIVE" },
+    "status": { "const": "ACTIVE" },
+    "trustRootChecksum": { "$ref": "#/$defs/sha256" },
+    "trustRootId": { "const": "RCV-CLAIM-LEGAL-PUBLIC-KEY-TRUST-ROOT" },
+    "trustRootVersion": { "const": 1 }
+  },
+  "required": [
+    "activatedAt",
+    "awsParityRecordChecksum",
+    "awsParityRecordId",
+    "checksumAlgorithm",
+    "createdAt",
+    "entries",
+    "environment",
+    "kc01ManifestChecksum",
+    "kc01ManifestId",
+    "kc01ManifestVersion",
+    "productionSignatureStatus",
+    "provider",
+    "runtimeStatus",
+    "serializationAlgorithm",
+    "signingAuthorityStatus",
+    "status",
+    "trustRootChecksum",
+    "trustRootId",
+    "trustRootVersion"
+  ],
+  "type": "object",
+  "$defs": {
+    "entry": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": { "const": "Ed25519" },
+        "allowedDocumentTypes": {
+          "items": { "const": "LEGAL_BASIS_RELEASE" },
+          "maxItems": 1,
+          "minItems": 1,
+          "type": "array"
+        },
+        "allowedSignaturePurposes": {
+          "items": {
+            "enum": [
+              "LEGAL_REVIEW_APPROVAL",
+              "FINAL_LEGAL_RATIFICATION",
+              "PRODUCTION_RELEASE"
+            ]
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "type": "array"
+        },
+        "authorityEvidenceRef": { "minLength": 1, "type": "string" },
+        "awsEvidenceHash": { "$ref": "#/$defs/sha256" },
+        "compromisePolicyId": { "const": "RCV-CLAIM-LEGAL-SIGNER-COMPROMISE-RESPONSE@1" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "custodyOwner": { "minLength": 1, "type": "string" },
+        "displayName": { "minLength": 1, "type": "string" },
+        "fingerprint": { "$ref": "#/$defs/sha256" },
+        "fingerprintAlgorithm": { "const": "SHA-256" },
+        "forbiddenSignaturePurposes": {
+          "items": {
+            "enum": [
+              "LEGAL_REVIEW_APPROVAL",
+              "FINAL_LEGAL_RATIFICATION",
+              "PRODUCTION_RELEASE"
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "keyId": { "pattern": "^rcv-lb-ed25519-[0-9a-f]{64}$", "type": "string" },
+        "keyUsage": { "const": "SIGN_VERIFY" },
+        "kc01ManifestChecksum": { "const": "1e80168ebc52e6601f9231834ddde81a339e69a2337a0630bd9daa993f0519ec" },
+        "kc01ManifestVersion": { "const": 1 },
+        "provider": { "const": "AWS_KMS" },
+        "providerAlias": {
+          "enum": [
+            "alias/telli-legal-reviewer-01",
+            "alias/telli-final-legal-ratifier-01",
+            "alias/telli-prod-legal-01"
+          ]
+        },
+        "providerPublicKey": { "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$", "type": "string" },
+        "providerPublicKeyEncoding": { "const": "BASE64" },
+        "providerPublicKeyFingerprint": { "$ref": "#/$defs/sha256" },
+        "providerPublicKeyFingerprintAlgorithm": { "const": "SHA-256" },
+        "providerPublicKeyFormat": { "const": "SPKI_DER" },
+        "publicKey": { "pattern": "^[A-Za-z0-9_-]{43}$", "type": "string" },
+        "publicKeyEncoding": { "const": "BASE64URL_UNPADDED" },
+        "publicKeyFormat": { "const": "RAW_32" },
+        "region": { "const": "eu-central-1" },
+        "revocationPolicyId": { "const": "RCV-CLAIM-LEGAL-SIGNER-REVOCATION-POLICY@1" },
+        "revocationReason": { "type": ["string", "null"] },
+        "revokedAt": { "anyOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+        "role": {
+          "enum": [
+            "LEGAL_REVIEWER",
+            "FINAL_LEGAL_RATIFIER",
+            "PRODUCTION_RELEASE_SIGNER"
+          ]
+        },
+        "rotationPolicyId": { "const": "RCV-CLAIM-LEGAL-SIGNER-ROTATION-POLICY@1" },
+        "signerId": {
+          "enum": [
+            "TELLI-LEGAL-REVIEWER-01",
+            "TELLI-FINAL-LEGAL-RATIFIER-01",
+            "TELLI-PROD-LEGAL-01"
+          ]
+        },
+        "signingAlgorithm": { "const": "ED25519_SHA_512" },
+        "signingAuthorityStatus": { "const": "NOT_ACTIVE" },
+        "status": {
+          "enum": [
+            "PENDING",
+            "ACTIVE_FOR_VERIFICATION",
+            "SUPERSEDED",
+            "REVOKED",
+            "RETIRED"
+          ]
+        },
+        "subjectType": { "enum": ["HUMAN", "SERVICE"] },
+        "supersedesSignerKey": { "type": ["string", "null"] },
+        "validFrom": { "$ref": "#/$defs/timestamp" },
+        "validUntil": { "anyOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] }
+      },
+      "required": [
+        "algorithm",
+        "allowedDocumentTypes",
+        "allowedSignaturePurposes",
+        "authorityEvidenceRef",
+        "awsEvidenceHash",
+        "compromisePolicyId",
+        "createdAt",
+        "custodyOwner",
+        "displayName",
+        "fingerprint",
+        "fingerprintAlgorithm",
+        "forbiddenSignaturePurposes",
+        "keyId",
+        "keyUsage",
+        "kc01ManifestChecksum",
+        "kc01ManifestVersion",
+        "provider",
+        "providerAlias",
+        "providerPublicKey",
+        "providerPublicKeyEncoding",
+        "providerPublicKeyFingerprint",
+        "providerPublicKeyFingerprintAlgorithm",
+        "providerPublicKeyFormat",
+        "publicKey",
+        "publicKeyEncoding",
+        "publicKeyFormat",
+        "region",
+        "revocationPolicyId",
+        "revocationReason",
+        "revokedAt",
+        "role",
+        "rotationPolicyId",
+        "signerId",
+        "signingAlgorithm",
+        "signingAuthorityStatus",
+        "status",
+        "subjectType",
+        "supersedesSignerKey",
+        "validFrom",
+        "validUntil"
+      ],
+      "type": "object"
+    },
+    "sha256": { "pattern": "^[0-9a-f]{64}$", "type": "string" },
+    "timestamp": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "type": "string"
+    }
+  }
+}

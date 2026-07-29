@@ -1,0 +1,8 @@
+{
+  "trustRootId": "RCV-CLAIM-LEGAL-PUBLIC-KEY-TRUST-ROOT",
+  "trustRootVersion": 1,
+  "algorithm": "SHA-256",
+  "canonicalization": "CANONICAL_JSON_UTF8_V1 / EXCLUDES trustRootChecksum",
+  "trustRootChecksum": "062056266b90107780f2f749eba3b55a994738503f354c273ac83e25fdddd247",
+  "awsParityRecordChecksum": "cc10ada801c174442158d0b746b018347d615609b823141ac928b9c44badef13"
+}
