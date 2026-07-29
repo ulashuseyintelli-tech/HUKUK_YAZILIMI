@@ -136,10 +136,13 @@ describe('W2.2C-5 BankCandidateSettlementTransitionService', () => {
       },
     });
 
-    expect(authorization.assertAuthorized).toHaveBeenCalledWith({
-      trustedTenantId: 'tenant-1',
-      actorUserId: 'actor-1',
-    });
+    expect(authorization.assertAuthorized).toHaveBeenCalledWith(
+      {
+        trustedTenantId: 'tenant-1',
+        actorUserId: 'actor-1',
+      },
+      tx,
+    );
     expect(tx.bankSettlementEvidence.findUnique).toHaveBeenCalledWith({
       where: {
         tenantId_id: {
@@ -315,7 +318,7 @@ describe('W2.2C-5 BankCandidateSettlementTransitionService', () => {
   });
 
   it('fails closed when the verifier authorization boundary rejects the actor', async () => {
-    const { service, prisma, authorization, audit } = build();
+    const { service, prisma, authorization, audit, tx } = build();
     authorization.assertAuthorized.mockRejectedValueOnce(
       new ForbiddenException({ code: 'SETTLEMENT_VERIFIER_PERMISSION_REQUIRED' }),
     );
@@ -323,7 +326,8 @@ describe('W2.2C-5 BankCandidateSettlementTransitionService', () => {
     await expect(service.transition(input())).rejects.toBeInstanceOf(
       ForbiddenException,
     );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.bankSettlementEvidence.findUnique).not.toHaveBeenCalled();
     expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 

@@ -8,12 +8,13 @@ import { PermissionDiagnosticsModule } from '../permission-diagnostics/permissio
 import { SettlementVerifierAuthorizationService } from './settlement-verifier-authorization.service';
 import { BankSettlementEvidenceWriterService } from './bank-settlement-evidence-writer.service';
 import { BankCandidateSettlementTransitionService } from './bank-candidate-settlement-transition.service';
+import { BankLifecycleController } from './bank-lifecycle.controller';
 
 @Module({
   // G3d: banka eşleşmesi tahsilatı kanonik CollectionService'ten üretir.
   // P2b-2: BANK_TRANSFER observe hook için GuidedOpenObserveService (observe-only; finans mantığı değişmez).
   imports: [PrismaModule, ConfigModule, CollectionModule, PermissionDiagnosticsModule],
-  controllers: [BankController],
+  controllers: [BankController, BankLifecycleController],
   providers: [
     BankService,
     SettlementVerifierAuthorizationService,
