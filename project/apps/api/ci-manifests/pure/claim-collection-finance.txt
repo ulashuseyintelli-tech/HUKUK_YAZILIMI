@@ -49,6 +49,9 @@ src/modules/claim-item/__tests__/claim-item-formation-legal-basis-eligibility.sp
 src/modules/claim-item/__tests__/legal-basis-projection-binding.contract.spec.ts
 src/modules/collection/__tests__/collection-ledger-forward.spec.ts
 src/modules/bank/__tests__/bank-match-delegation.spec.ts
+src/modules/bank/__tests__/bank-lifecycle.controller.spec.ts
+src/modules/bank/__tests__/bank-settlement-evidence-writer.service.spec.ts
+src/modules/bank/__tests__/bank-candidate-settlement-transition.service.spec.ts
 
 # RCV-CLAIM-FORM-HCR-03: previously unbound non-DB ClaimItem contract suites.
 # claim-item-required-ci-coverage.static.spec.ts keeps the recursive ClaimItem

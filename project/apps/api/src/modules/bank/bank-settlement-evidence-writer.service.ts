@@ -48,7 +48,8 @@ interface NormalizedHumanSettlementEvidence {
  *
  * Evidence append is deliberately separate from BankTransaction finality
  * projection and candidate transition. This writer creates only one immutable
- * evidence row plus its transaction-bound audit record.
+ * evidence row plus its transaction-bound authorization decision and audit
+ * record. BankLifecycleController is its production caller.
  */
 @Injectable()
 export class BankSettlementEvidenceWriterService {
@@ -63,18 +64,28 @@ export class BankSettlementEvidenceWriterService {
   ): Promise<AppendHumanSettlementEvidenceResult> {
     const normalized = normalizeHumanEvidence(input);
 
-    await this.authorization.assertAuthorized({
-      trustedTenantId: normalized.tenantId,
-      actorUserId: normalized.actorUserId,
-    });
-
-    const existing = await this.findReplay(normalized.tenantId, normalized.idempotencyKey);
-    if (existing) {
-      return replayOrConflict(existing, normalized);
-    }
-
     try {
-      const evidence = await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.authorization.assertAuthorized(
+          {
+            trustedTenantId: normalized.tenantId,
+            actorUserId: normalized.actorUserId,
+          },
+          tx,
+        );
+
+        const existing = await tx.bankSettlementEvidence.findUnique({
+          where: {
+            tenantId_idempotencyKey: {
+              tenantId: normalized.tenantId,
+              idempotencyKey: normalized.idempotencyKey,
+            },
+          },
+        });
+        if (existing) {
+          return replayOrConflict(existing, normalized);
+        }
+
         const created = await tx.bankSettlementEvidence.create({
           data: {
             tenantId: normalized.tenantId,
@@ -106,28 +117,31 @@ export class BankSettlementEvidenceWriterService {
           },
         });
 
-        return created;
+        return { status: 'CREATED' as const, evidence: created };
       });
-
-      return { status: 'CREATED', evidence };
     } catch (error) {
       if (!isIdempotencyRace(error)) throw error;
 
-      const raced = await this.findReplay(normalized.tenantId, normalized.idempotencyKey);
-      if (!raced) throw error;
-      return replayOrConflict(raced, normalized);
+      return this.prisma.$transaction(async (tx) => {
+        await this.authorization.assertAuthorized(
+          {
+            trustedTenantId: normalized.tenantId,
+            actorUserId: normalized.actorUserId,
+          },
+          tx,
+        );
+        const raced = await tx.bankSettlementEvidence.findUnique({
+          where: {
+            tenantId_idempotencyKey: {
+              tenantId: normalized.tenantId,
+              idempotencyKey: normalized.idempotencyKey,
+            },
+          },
+        });
+        if (!raced) throw error;
+        return replayOrConflict(raced, normalized);
+      });
     }
-  }
-
-  private findReplay(tenantId: string, idempotencyKey: string) {
-    return this.prisma.bankSettlementEvidence.findUnique({
-      where: {
-        tenantId_idempotencyKey: {
-          tenantId,
-          idempotencyKey,
-        },
-      },
-    });
   }
 }
 

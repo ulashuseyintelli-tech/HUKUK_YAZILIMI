@@ -61,7 +61,8 @@ interface TransitionTarget {
  *
  * This service consumes one immutable, tenant-scoped human settlement evidence
  * record and performs only the BankTransaction PENDING -> terminal CAS plus its
- * transaction-bound audit. It deliberately creates no Collection or financial
+ * transaction-bound authorization decision and audit. BankLifecycleController
+ * is its production caller. It deliberately creates no Collection or financial
  * record.
  */
 @Injectable()
@@ -77,13 +78,16 @@ export class BankCandidateSettlementTransitionService {
   ): Promise<TransitionBankCandidateSettlementResult> {
     const normalized = normalizeTransitionInput(input);
 
-    await this.authorization.assertAuthorized({
-      trustedTenantId: normalized.tenantId,
-      actorUserId: normalized.actorUserId,
-    });
-
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.authorization.assertAuthorized(
+          {
+            trustedTenantId: normalized.tenantId,
+            actorUserId: normalized.actorUserId,
+          },
+          tx,
+        );
+
         const evidence = await tx.bankSettlementEvidence.findUnique({
           where: {
             tenantId_id: {
@@ -180,32 +184,41 @@ export class BankCandidateSettlementTransitionService {
     } catch (error) {
       if (!isUniqueRace(error)) throw error;
 
-      const consumed = await this.prisma.bankTransaction.findFirst({
-        where: {
-          tenantId: normalized.tenantId,
-          settlementEvidenceId: normalized.settlementEvidenceId,
-        },
-      });
-      if (!consumed) throw error;
-      if (consumed?.id === normalized.transactionId) {
-        const evidence = await this.prisma.bankSettlementEvidence.findUnique({
+      return this.prisma.$transaction(async (tx) => {
+        await this.authorization.assertAuthorized(
+          {
+            trustedTenantId: normalized.tenantId,
+            actorUserId: normalized.actorUserId,
+          },
+          tx,
+        );
+        const consumed = await tx.bankTransaction.findFirst({
           where: {
-            tenantId_id: {
-              tenantId: normalized.tenantId,
-              id: normalized.settlementEvidenceId,
-            },
+            tenantId: normalized.tenantId,
+            settlementEvidenceId: normalized.settlementEvidenceId,
           },
         });
-        if (evidence) {
-          const target = transitionTarget(evidence);
-          const replay = replayProjection(consumed, evidence, target);
-          if (replay) {
-            return { status: 'REPLAYED', candidate: replay };
+        if (!consumed) throw error;
+        if (consumed.id === normalized.transactionId) {
+          const evidence = await tx.bankSettlementEvidence.findUnique({
+            where: {
+              tenantId_id: {
+                tenantId: normalized.tenantId,
+                id: normalized.settlementEvidenceId,
+              },
+            },
+          });
+          if (evidence) {
+            const target = transitionTarget(evidence);
+            const replay = replayProjection(consumed, evidence, target);
+            if (replay) {
+              return { status: 'REPLAYED' as const, candidate: replay };
+            }
           }
         }
-      }
-      throw new ConflictException({
-        code: 'BANK_SETTLEMENT_EVIDENCE_ALREADY_CONSUMED',
+        throw new ConflictException({
+          code: 'BANK_SETTLEMENT_EVIDENCE_ALREADY_CONSUMED',
+        });
       });
     }
   }

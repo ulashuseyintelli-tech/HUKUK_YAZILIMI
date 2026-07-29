@@ -212,6 +212,36 @@ describeWithDisposableDb(
       expect(await financialSnapshot(fixture.tenantId)).toEqual(financialBefore);
     });
 
+    it('keeps persisted evidence immutable against UPDATE and DELETE', async () => {
+      const fixture = await createFixture('immutable');
+      const created = await fixture.service.appendHumanEvidence(
+        appendInput(fixture, `immutable-${randomUUID()}`),
+      );
+
+      await expect(
+        prisma.$executeRawUnsafe(
+          'UPDATE "BankSettlementEvidence" SET "evidenceHash" = $1 WHERE "id" = $2',
+          'mutated-hash',
+          created.evidence.id,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        prisma.$executeRawUnsafe(
+          'DELETE FROM "BankSettlementEvidence" WHERE "id" = $1',
+          created.evidence.id,
+        ),
+      ).rejects.toThrow();
+
+      await expect(
+        prisma.bankSettlementEvidence.findUniqueOrThrow({
+          where: { id: created.evidence.id },
+        }),
+      ).resolves.toMatchObject({
+        id: created.evidence.id,
+        evidenceHash: created.evidence.evidenceHash,
+      });
+    });
+
     it('serializes concurrent same-key replay to one evidence and one audit', async () => {
       const fixture = await createFixture('concurrent');
       const input = appendInput(fixture, `concurrent-${randomUUID()}`);

@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { PermissionGrantEffect, PermissionGrantScope } from '@prisma/client';
+import { PermissionGrantEffect, PermissionGrantScope, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export const SETTLEMENT_VERIFY_PERMISSION_KEY = 'bank.settlement.verify' as const;
@@ -13,25 +13,33 @@ export interface SettlementVerifierAuthorizationInput {
  * W2.2C-3 dedicated settlement-verifier permission boundary.
  *
  * This service is intentionally read-only. It does not append settlement
- * evidence, transition a bank candidate, or create a Collection. A future
- * canonical writer must invoke this boundary from its own transaction-aware
- * mutation flow.
+ * evidence, transition a bank candidate, or create a Collection. Canonical
+ * lifecycle writers invoke it with their existing transaction client.
  */
 @Injectable()
 export class SettlementVerifierAuthorizationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async assertAuthorized(input: SettlementVerifierAuthorizationInput): Promise<void> {
+  /// <remarks>
+  /// Called by BankSettlementEvidenceWriterService.appendHumanEvidence() and
+  /// BankCandidateSettlementTransitionService.transition(). Mutation callers
+  /// pass their existing transaction client so authorization and writes share
+  /// one database transaction.
+  /// </remarks>
+  async assertAuthorized(
+    input: SettlementVerifierAuthorizationInput,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<void> {
     const trustedTenantId = input.trustedTenantId?.trim();
     const actorUserId = input.actorUserId?.trim();
     if (!trustedTenantId || !actorUserId) {
       throw new ForbiddenException({ code: 'SETTLEMENT_VERIFIER_IDENTITY_REQUIRED' });
     }
 
-    await this.assertActiveTenantActor(trustedTenantId, actorUserId);
+    await this.assertActiveTenantActor(trustedTenantId, actorUserId, client);
 
     const now = new Date();
-    const grants = await this.prisma.permissionGrant.findMany({
+    const grants = await client.permissionGrant.findMany({
       where: {
         tenantId: trustedTenantId,
         subjectUserId: actorUserId,
@@ -72,8 +80,9 @@ export class SettlementVerifierAuthorizationService {
   private async assertActiveTenantActor(
     trustedTenantId: string,
     actorUserId: string,
+    client: Prisma.TransactionClient | PrismaService,
   ): Promise<void> {
-    const user = await this.prisma.user.findUnique({
+    const user = await client.user.findUnique({
       where: { id: actorUserId },
       select: {
         tenantId: true,

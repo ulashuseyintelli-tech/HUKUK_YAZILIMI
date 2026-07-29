@@ -47,6 +47,7 @@ function build(existing: unknown = null) {
   const created = evidence();
   const tx = {
     bankSettlementEvidence: {
+      findUnique: jest.fn().mockResolvedValue(existing),
       create: jest.fn().mockResolvedValue(created),
     },
     bankTransaction: { update: jest.fn() },
@@ -60,9 +61,6 @@ function build(existing: unknown = null) {
     icrabotOutboxAction: { create: jest.fn() },
   };
   const prisma = {
-    bankSettlementEvidence: {
-      findUnique: jest.fn().mockResolvedValue(existing),
-    },
     $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) =>
       callback(tx),
     ),
@@ -91,10 +89,13 @@ describe('W2.2C-4 BankSettlementEvidenceWriterService', () => {
       evidence: created,
     });
 
-    expect(authorization.assertAuthorized).toHaveBeenCalledWith({
-      trustedTenantId: 'tenant-1',
-      actorUserId: 'actor-1',
-    });
+    expect(authorization.assertAuthorized).toHaveBeenCalledWith(
+      {
+        trustedTenantId: 'tenant-1',
+        actorUserId: 'actor-1',
+      },
+      tx,
+    );
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.bankSettlementEvidence.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -147,7 +148,7 @@ describe('W2.2C-4 BankSettlementEvidenceWriterService', () => {
       evidence: existing,
     });
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.bankSettlementEvidence.create).not.toHaveBeenCalled();
     expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
@@ -161,17 +162,15 @@ describe('W2.2C-4 BankSettlementEvidenceWriterService', () => {
       response: { code: 'BANK_SETTLEMENT_EVIDENCE_IDEMPOTENCY_CONFLICT' },
     });
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.bankSettlementEvidence.create).not.toHaveBeenCalled();
     expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
   it('resolves a concurrent unique race as a side-effect-free replay', async () => {
     const raced = evidence();
-    const { service, prisma, audit } = build();
-    prisma.bankSettlementEvidence.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(raced);
+    const { service, prisma, audit, tx } = build();
+    tx.bankSettlementEvidence.findUnique.mockResolvedValue(raced);
     prisma.$transaction.mockRejectedValueOnce(
       new Prisma.PrismaClientKnownRequestError('unique race', {
         code: 'P2002',
@@ -187,7 +186,7 @@ describe('W2.2C-4 BankSettlementEvidenceWriterService', () => {
   });
 
   it('fails closed when the authorization boundary rejects the actor', async () => {
-    const { service, prisma, authorization, audit } = build();
+    const { service, prisma, authorization, audit, tx } = build();
     authorization.assertAuthorized.mockRejectedValueOnce(
       new ForbiddenException({ code: 'SETTLEMENT_VERIFIER_PERMISSION_REQUIRED' }),
     );
@@ -195,8 +194,8 @@ describe('W2.2C-4 BankSettlementEvidenceWriterService', () => {
     await expect(service.appendHumanEvidence(input())).rejects.toBeInstanceOf(
       ForbiddenException,
     );
-    expect(prisma.bankSettlementEvidence.findUnique).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.bankSettlementEvidence.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
