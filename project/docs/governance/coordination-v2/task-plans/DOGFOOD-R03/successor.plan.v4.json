@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 2,
+  "taskId": "GOV-COORD-DTV-DOGFOOD-SUCCESSOR-R03",
+  "taskSpecVersion": 1,
+  "profile": "BOUNDED_CODE_TASK",
+  "declaredIntent": "Delivery-truth dogfood R03 successor: yalniz fresh revision 2 predecessor'inin canonical delivery evidence'i ile eligibility gecisi kanitlanir; successor calistirilmaz.",
+  "boundaryPolicy": {
+    "allowedRoots": [
+      "project/scripts/orchestration-v2/delivery/"
+    ],
+    "maxChangedFiles": 1
+  },
+  "requiredTests": [
+    {
+      "argv": [
+        "node",
+        "--test",
+        "scripts/orchestration-v2/delivery/delivery.test.cjs"
+      ],
+      "cwd": "project",
+      "timeoutMs": 900000
+    }
+  ],
+  "predecessorTaskIds": [
+    "GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R03"
+  ],
+  "baseDriftPolicy": "REFRESH_BEFORE_EXECUTION",
+  "successorDisposition": "NO_SUCCESSOR",
+  "deliveryContract": {
+    "schemaVersion": 2,
+    "capabilityId": "GOV_COORD_V2_POST_MERGE_DELIVERY_CLOSURE",
+    "deliveryClass": "SERVICE_FINALIZATION",
+    "targetState": "ENFORCED",
+    "probeId": "PROBE_POST_MERGE_CLOSURE_SEALED",
+    "probeClass": "PROBE_SEALED",
+    "probeDefinitionSha256": "d66351272f15c3bac3a025b63af6e0f5256ccdd1591ec2d001ee218eca4dac5c",
+    "publicEntrypoint": "node scripts/orchestration-v2/service/orch-service.cjs finalize",
+    "publicEntrypointOnly": true,
+    "nonDestructivePulse": false,
+    "postMergeRequired": true,
+    "timeoutMs": 180000,
+    "evidencePolicy": {
+      "mergeShaRequired": true,
+      "cleanTreeRequired": true,
+      "probeDigestRequired": true,
+      "commandDigestRequired": true,
+      "contractDigestRequired": true,
+      "publicEntrypointRequired": true
+    }
+  },
+  "deliveryContractSha256": "327d6eb5da97099959c2832350be4a6c527a635f6750c7a913c1e3dda32ca809"
+}

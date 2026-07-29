@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "programId": "DELIVERY_TRUTH",
+  "taskId": "GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R03",
+  "taskClass": "BOUNDED_CODE_FIX",
+  "planPath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/plan.v4.json",
+  "grantPath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/grant.v4.json",
+  "standingGrantPath": "project/docs/governance/coordination-v2/activation/STANDING-GRANT-DELIVERY-TRUTH-DOGFOOD-R01.json",
+  "promptPath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/executor-prompt.R02.md",
+  "executorLane": "CODEX_LOCAL",
+  "targetBranch": "main",
+  "autoMerge": true,
+  "requireCommittedArtefacts": true,
+  "notes": "ORCHESTRA-DELIVERY-TRUTH-R01 R03 immutable task revision 2. taskId remains stable; taskSpecVersion 2 is grant-pinned and maps to revisionId 2 under semantic-authority.R02.md. The prior terminal record is not resumed, reopened, reconciled or used as delivery evidence; execution must use a fresh queue and task store."
+}

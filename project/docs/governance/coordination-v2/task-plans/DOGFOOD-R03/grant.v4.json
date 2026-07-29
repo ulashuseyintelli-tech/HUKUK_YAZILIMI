@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "grantId": "GOV-COORD-DTV-DOGFOOD-GRANT-R03-REVISION-R02",
+  "workstream": "ORCHESTRA-DELIVERY-TRUTH-R01",
+  "semanticAuthorityRef": {
+    "kind": "SEMANTIC_AUTHORITY",
+    "recordId": "GOV-COORD-DTV-DOGFOOD-SEMANTIC-R03-REVISION-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/semantic-authority.R02.md"
+  },
+  "executionGrantRef": {
+    "kind": "EXECUTION_GRANT",
+    "recordId": "GOV-COORD-DTV-DOGFOOD-EXEC-GRANT-R03-REVISION-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/execution-grant.R02.md"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/DOGFOOD-R03/semantic-authority.R02.md",
+    "sourceCommitSha": "6daac3c6e8763f84fe6c21f47b689e0a10918b0d",
+    "exactExcerpt": "R03’ün declared successor’ı açıkça tanımlanacak, owner-ratified authority artefaktına eklenecek ve grant içinde kimlik/digest ile pinlenecek.",
+    "excerptSha256": "547adb8217b69fa1e75eb52d5b09bc5099c2cbba4d636e3f1a264cb066ed5f52"
+  },
+  "expiresAt": "2026-08-28T00:00:00.000Z",
+  "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-DELIVERY-TRUTH-DOGFOOD",
+  "manualMergeRequired": true,
+  "allowedModuleRoots": [
+    "project/scripts/orchestration-v2/delivery/"
+  ],
+  "authorizedTasks": [
+    {
+      "taskId": "GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R03",
+      "taskSpecVersion": 2,
+      "taskSchemaVersion": 2,
+      "taskSpecSha256": "2087832b2d33ec7589073391d1e82ca88811c2ca4471f80b91bbf44b6ae29d51",
+      "declaredIntentSha256": "7b45dfa3183da81990ff2895edc5b05223401490640633b5bf216816b59b6e9e",
+      "boundaryPolicySha256": "737dc6a9fe402153da40d0fb3d26231c8925b36066fae294f242593b0ce1c142",
+      "requiredTestsSha256": "1197e821eb7f8c6b7f996c7ca1f1c813a3b82634a68a3462599b9ffecfc1effc",
+      "deliveryContractSha256": "327d6eb5da97099959c2832350be4a6c527a635f6750c7a913c1e3dda32ca809",
+      "predecessorTaskIds": []
+    },
+    {
+      "taskId": "GOV-COORD-DTV-DOGFOOD-SUCCESSOR-R03",
+      "taskSpecVersion": 1,
+      "taskSchemaVersion": 2,
+      "taskSpecSha256": "5f5e20643ed12d619a3702cb1bae611c93513824fa354ec10aaa61e978bb771d",
+      "declaredIntentSha256": "46d635e1d50e8dd28ff5b52a5d9f36589012a02443bb274f37387054bf213efc",
+      "boundaryPolicySha256": "737dc6a9fe402153da40d0fb3d26231c8925b36066fae294f242593b0ce1c142",
+      "requiredTestsSha256": "1197e821eb7f8c6b7f996c7ca1f1c813a3b82634a68a3462599b9ffecfc1effc",
+      "deliveryContractSha256": "327d6eb5da97099959c2832350be4a6c527a635f6750c7a913c1e3dda32ca809",
+      "predecessorTaskIds": [
+        "GOV-COORD-DTV-DOGFOOD-CERTIFICATION-R03"
+      ]
+    }
+  ]
+}
