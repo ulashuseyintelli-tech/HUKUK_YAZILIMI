@@ -45,6 +45,19 @@ const finalizeMod = require('./finalize.cjs');
 const PROCESS_WORKER = runtimeMod.measureWorker({});
 
 /**
+ * The canonical delivery verifier used by every finalization route.
+ *
+ * `undefined` means the caller wants the production verifier. An explicit
+ * non-function value is preserved so the finalizer can fail closed and tests
+ * can prove that a schema-v2 task never merges without a verifier.
+ */
+function resolveDeliveryVerifier(override) {
+  return override === undefined
+    ? (args) => require('../delivery/post-merge.cjs').verifyAtMergeSha(args)
+    : override;
+}
+
+/**
  * Control files, relative to the repository root.
  *
  * Under the activation directory rather than somewhere neutral because that
@@ -444,13 +457,11 @@ function createService(cfg) {
           audit,
           clock,
           isKillSwitchEngaged: () => service.killSwitchEngaged(),
-        // Post-merge delivery verification, at the sha the merge produced.
-        // Injected rather than required inline so a caller with no delivery
-        // contract pays nothing, and so tests can exercise the failure path
-        // without a real merge.
-        verifyDelivery: o.verifyDelivery === undefined
-          ? (a) => require('../delivery/post-merge.cjs').verifyAtMergeSha(a)
-          : o.verifyDelivery,
+          // Post-merge delivery verification, at the sha the merge produced.
+          // Injected rather than required inline so a caller with no delivery
+          // contract pays nothing, and so tests can exercise the failure path
+          // without a real merge.
+          verifyDelivery: resolveDeliveryVerifier(o.verifyDelivery),
           // Same repo-backed default as finalizeEntry, and for the same reason:
           // the CLI supplies no options, so an undefined here means the merge
           // gate never asks whether the grant was withdrawn.
@@ -482,6 +493,10 @@ function createService(cfg) {
         buildContext: o.buildContext || require('../runtime/run-task.cjs').buildContext,
         completeAfterOwnerMerge:
           o.completeAfterOwnerMerge || require('../orchestrator/orchestrator.cjs').completeAfterOwnerMerge,
+        // Retry and first-pass finalization must use the same verifier. Leaving
+        // this undefined used to let the retry path close a schema-v2 task as
+        // if it had no delivery contract at all.
+        verifyDelivery: resolveDeliveryVerifier(o.verifyDelivery),
         isKillSwitchEngaged: () => service.killSwitchEngaged(),
         // A repo-backed default, not an undefined the caller may forget to fill.
         //

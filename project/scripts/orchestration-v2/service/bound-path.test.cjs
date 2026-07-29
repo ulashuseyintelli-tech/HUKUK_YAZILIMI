@@ -27,10 +27,22 @@ const Q = require('../orchestrator/queue.cjs');
 const S = require('./service.cjs');
 const requestMod = require('./request.cjs');
 const authority = require('../orchestrator/authority.cjs');
+const postMerge = require('../delivery/post-merge.cjs');
 
 const ROOT = path.join(__dirname, '..', '..', '..', '..');
 const ACT = 'project/docs/governance/coordination-v2/activation';
 const CLI = path.join(__dirname, 'orch-service.cjs');
+
+const DELIVERY_CONTRACT = {
+  capabilityId: 'TEST_FINALIZER_DELIVERY',
+  deliveryClass: 'OPERATOR_CLI',
+  targetState: 'OPERABLE',
+  probeId: 'PROBE_FINALIZER_DELIVERY',
+  probeClass: 'PROBE_DRY',
+  probeDefinitionSha256: 'a'.repeat(64),
+  publicEntrypoint: 'node finalizer-delivery-probe.cjs',
+  timeoutMs: 60000,
+};
 
 const dirs = [];
 function tmpdir() {
@@ -165,6 +177,43 @@ function officeRequest(root, over) {
       executorLane: o.executorLane || 'CLAUDE_LOCAL',
     }),
   };
+}
+
+/** A schema-v2 OFFICE request carrying the delivery claim under test. */
+function deliveryRequest(root, taskId) {
+  return officeRequest(root, {
+    taskId,
+    spec: { schemaVersion: 2, deliveryContract: DELIVERY_CONTRACT },
+  });
+}
+
+function deliveryResult(mergeSha, over) {
+  const o = over || {};
+  const base = {
+    verdict: 'PASS',
+    failureCode: null,
+    detail: null,
+    observedState: DELIVERY_CONTRACT.targetState,
+    targetState: DELIVERY_CONTRACT.targetState,
+    record: {
+      capabilityId: DELIVERY_CONTRACT.capabilityId,
+      verifiedAtSha: mergeSha,
+      expectedMergeSha: mergeSha,
+      dirtyTree: false,
+      deliveryContractSha256: authority.deliveryContractDigest(DELIVERY_CONTRACT),
+      probeDefinitionSha256: DELIVERY_CONTRACT.probeDefinitionSha256,
+      commandDigest: 'c'.repeat(64),
+      evidenceDigest: 'e'.repeat(64),
+    },
+  };
+  return Object.assign({}, base, o, { record: Object.assign({}, base.record, o.record || {}) });
+}
+
+function authorizeAutoMerge(root, requestPath) {
+  const abs = path.join(root, requestPath);
+  const req = JSON.parse(fs.readFileSync(abs, 'utf8'));
+  req.autoMerge = true;
+  fs.writeFileSync(abs, JSON.stringify(req, null, 2), 'utf8');
 }
 
 function svc(root, over) {
@@ -581,7 +630,7 @@ test('the shipped request resolver agrees with the shipped grants', () => {
 /** A runner that reaches MERGE_READY, plus a closure step that reports CLOSED. */
 function mergingRun(over) {
   const o = over || {};
-  const calls = { ran: 0, merged: 0 };
+  const calls = { ran: 0, merged: 0, taskStoreDelivery: null };
   return {
     calls,
     buildContext: (a) => Object.assign({ holder: 'CLAUDE_LOCAL' }, a),
@@ -589,9 +638,13 @@ function mergingRun(over) {
       calls.ran++;
       return { disposition: 'MERGE_READY', taskId: ctx.spec.taskId, pr: { number: 777, headSha: 'c'.repeat(40) }, attestation: fakeAttestation({ prNumber: 777, prHeadSha: 'c'.repeat(40) }) };
     },
-    completeAfterOwnerMerge: async () => {
+    completeAfterOwnerMerge: async (ctx) => {
       calls.merged++;
-      return o.closure || { disposition: 'CLOSED', mergeSha: 'd'.repeat(40), cleanup: { disposition: 'REMOVED' } };
+      const closure = o.closure || { disposition: 'CLOSED', mergeSha: 'd'.repeat(40), cleanup: { disposition: 'REMOVED' } };
+      if (o.captureDelivery && closure.disposition === 'CLOSED' && ctx.verifyDeliveryAtMerge) {
+        calls.taskStoreDelivery = await ctx.verifyDeliveryAtMerge(closure.mergeSha);
+      }
+      return closure;
     },
   };
 }
@@ -788,6 +841,164 @@ test('a finalize blocked by a fixed gate is retried against the SAME pull reques
   const trail = service.auditTrail().filter((x) => x.event === 'FINALIZE_RETRY_FROM_BLOCKED');
   assert.equal(trail.length, 1, 'the retry is recorded, not silent');
   assert.equal(trail[0].detail.priorBlocker, 'ATTESTATION_INVALIDATED');
+});
+
+test('a schema-v2 UNSTABLE finalize retry uses the canonical verifier and reaches DELIVERY.PASS', async () => {
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = deliveryRequest(root, 'BP-DELIVERY-RETRY-PASS');
+  authorizeAutoMerge(root, requestPath);
+  const e = service.enqueue({ requestPath });
+
+  await service.runOnce(mergingRun({
+    closure: { disposition: 'BLOCKED', blockerCode: 'MERGE_STATE_NOT_CLEAN', reasons: ['UNSTABLE'] },
+  }));
+  assert.equal(queue.get(e.entry.entryId).state, 'BLOCKED');
+
+  const original = postMerge.verifyAtMergeSha;
+  const verified = [];
+  try {
+    postMerge.verifyAtMergeSha = async (args) => {
+      verified.push(args);
+      return deliveryResult(args.mergeSha);
+    };
+    const runner = mergingRun({ captureDelivery: true });
+    const out = await service.finalizeEntry(e.entry.entryId, runner);
+
+    assert.equal(out.disposition, 'CLOSED', out.blockerCode || out.detail);
+    assert.equal(verified.length, 1, 'retry must call the production verifier default once');
+    assert.equal(verified[0].mergeSha, 'd'.repeat(40));
+    assert.equal(verified[0].capabilityId, DELIVERY_CONTRACT.capabilityId);
+    assert.equal(verified[0].timeoutMs, DELIVERY_CONTRACT.timeoutMs);
+    assert.equal(verified[0].targetBranch, 'main');
+    assert.equal(runner.calls.taskStoreDelivery.verdict, 'PASS');
+    assert.equal(runner.calls.taskStoreDelivery.taskId, 'BP-DELIVERY-RETRY-PASS');
+    assert.equal(runner.calls.taskStoreDelivery.verifiedAtSha, 'd'.repeat(40));
+    assert.equal(runner.calls.taskStoreDelivery.mergeSha, 'd'.repeat(40));
+    assert.equal(
+      runner.calls.taskStoreDelivery.deliveryContractSha256,
+      authority.deliveryContractDigest(DELIVERY_CONTRACT),
+    );
+
+    const closed = queue.get(e.entry.entryId);
+    assert.equal(closed.state, 'CLOSED');
+    assert.equal(closed.deliveryPhase, 'DELIVERY_VERIFIED');
+    assert.equal(closed.delivery.verdict, 'PASS');
+    assert.equal(closed.delivery.verifiedAtSha, closed.mergeSha);
+  } finally {
+    postMerge.verifyAtMergeSha = original;
+  }
+});
+
+test('a schema-v2 retry with no delivery verifier fails closed before merge', async () => {
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = deliveryRequest(root, 'BP-DELIVERY-RETRY-NOVERIFIER');
+  authorizeAutoMerge(root, requestPath);
+  const e = service.enqueue({ requestPath });
+  await service.runOnce(mergingRun({
+    closure: { disposition: 'BLOCKED', blockerCode: 'MERGE_STATE_NOT_CLEAN', reasons: ['UNSTABLE'] },
+  }));
+
+  const runner = mergingRun({ captureDelivery: true });
+  const out = await service.finalizeEntry(e.entry.entryId, Object.assign({}, runner, { verifyDelivery: null }));
+  const blocked = queue.get(e.entry.entryId);
+
+  assert.equal(out.disposition, 'BLOCKED');
+  assert.equal(out.blockerCode, 'FINALIZATION_DELIVERY_VERIFIER_MISSING');
+  assert.equal(runner.calls.merged, 0, 'a missing verifier is refused before merge');
+  assert.equal(runner.calls.taskStoreDelivery, null, 'no terminal task-store payload is produced');
+  assert.equal(blocked.state, 'BLOCKED');
+  assert.equal(blocked.deliveryPhase, 'DELIVERY_NOT_RUN');
+  assert.equal(blocked.mergeSha, null);
+});
+
+test('a delivery result verified at the wrong sha is rejected and remains non-terminal in the queue', async () => {
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = deliveryRequest(root, 'BP-DELIVERY-WRONG-SHA');
+  authorizeAutoMerge(root, requestPath);
+  const e = service.enqueue({ requestPath });
+  await service.runOnce(mergingRun({
+    closure: { disposition: 'BLOCKED', blockerCode: 'MERGE_STATE_NOT_CLEAN', reasons: ['UNSTABLE'] },
+  }));
+
+  const runner = mergingRun({ captureDelivery: true });
+  const out = await service.finalizeEntry(e.entry.entryId, Object.assign({}, runner, {
+    verifyDelivery: async ({ mergeSha }) => deliveryResult(mergeSha, {
+      verdict: 'STALE',
+      failureCode: 'DELIVERY_SHA_MISMATCH',
+      detail: 'verified at another commit',
+      record: { verifiedAtSha: 'f'.repeat(40) },
+    }),
+  }));
+  const blocked = queue.get(e.entry.entryId);
+
+  assert.equal(out.disposition, 'MERGED_UNVERIFIED');
+  assert.equal(out.blockerCode, 'DELIVERY_SHA_MISMATCH');
+  assert.equal(blocked.state, 'BLOCKED');
+  assert.equal(blocked.deliveryPhase, 'DELIVERY_FAILED');
+  assert.equal(blocked.delivery.verdict, 'STALE');
+  assert.notEqual(blocked.delivery.verifiedAtSha, blocked.mergeSha);
+  assert.equal(runner.calls.taskStoreDelivery.failureCode, 'DELIVERY_SHA_MISMATCH');
+});
+
+test('dirty-tree delivery evidence is rejected and remains non-terminal in the queue', async () => {
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = deliveryRequest(root, 'BP-DELIVERY-DIRTY');
+  authorizeAutoMerge(root, requestPath);
+  const e = service.enqueue({ requestPath });
+  await service.runOnce(mergingRun({
+    closure: { disposition: 'BLOCKED', blockerCode: 'MERGE_STATE_NOT_CLEAN', reasons: ['UNSTABLE'] },
+  }));
+
+  const runner = mergingRun({ captureDelivery: true });
+  const out = await service.finalizeEntry(e.entry.entryId, Object.assign({}, runner, {
+    verifyDelivery: async ({ mergeSha }) => deliveryResult(mergeSha, {
+      verdict: 'STALE',
+      failureCode: 'DELIVERY_EVIDENCE_DIRTY_TREE',
+      detail: 'verification worktree is dirty',
+      record: { dirtyTree: true },
+    }),
+  }));
+  const blocked = queue.get(e.entry.entryId);
+
+  assert.equal(out.disposition, 'MERGED_UNVERIFIED');
+  assert.equal(out.blockerCode, 'DELIVERY_EVIDENCE_DIRTY_TREE');
+  assert.equal(blocked.state, 'BLOCKED');
+  assert.equal(blocked.deliveryPhase, 'DELIVERY_FAILED');
+  assert.equal(blocked.delivery.dirtyTree, true);
+  assert.equal(runner.calls.taskStoreDelivery.dirtyTree, true);
+});
+
+test('a terminal delivery record refuses later finalization without appending history', async () => {
+  const root = scratchRepo();
+  const { queue, service } = svc(root);
+  const { requestPath } = deliveryRequest(root, 'BP-DELIVERY-TERMINAL');
+  authorizeAutoMerge(root, requestPath);
+  const e = service.enqueue({ requestPath });
+  const runner = mergingRun({ captureDelivery: true });
+
+  await service.runOnce(Object.assign({}, runner, {
+    verifyDelivery: async ({ mergeSha }) => deliveryResult(mergeSha),
+  }));
+  const beforeEntry = queue.get(e.entry.entryId);
+  const beforeLog = fs.readFileSync(queue.logFile, 'utf8');
+  let lateVerifierCalls = 0;
+
+  const late = await service.finalizeEntry(e.entry.entryId, Object.assign({}, mergingRun(), {
+    verifyDelivery: async () => {
+      lateVerifierCalls++;
+      return deliveryResult('9'.repeat(40));
+    },
+  }));
+
+  assert.equal(late.disposition, 'NOT_FINALIZABLE');
+  assert.equal(late.detail, 'already closed');
+  assert.equal(lateVerifierCalls, 0, 'terminal history cannot invoke a late verifier');
+  assert.equal(fs.readFileSync(queue.logFile, 'utf8'), beforeLog, 'terminal history is append-immutable');
+  assert.deepEqual(queue.get(e.entry.entryId), beforeEntry, 'terminal delivery payload is unchanged');
 });
 
 test('a retried finalize re-resolves authority from disk instead of trusting the handoff', async () => {
