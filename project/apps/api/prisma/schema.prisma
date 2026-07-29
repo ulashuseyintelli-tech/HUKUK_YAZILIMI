@@ -3249,6 +3249,13 @@ model LegalDeadlineSnapshot {
 
   createdAt DateTime @default(now())
 
+  // DEBTOR-SERVICE-OCCURRENCE-SNAPSHOT-INVARIANT-P1-I08: DB-seviyesinde "her
+  // (tenantId, sourceTebligatId) icin en fazla bir ACTIVE satir" invariant'i,
+  // LegalDeadlineSnapshot_one_active_per_tebligat partial unique index'i ile
+  // uygulanir (20260730120000_debtor_service_occurrence_snapshot_invariant_i08).
+  // Prisma schema.prisma DSL'i partial/filtered unique index ifade edemedigi icin
+  // migration.sql'de elle eklenmistir (PasswordResetToken_one_unresolved_per_user
+  // emsali, 20260721010000_office_auth_p02_hardening_r01_composite_fk).
   @@index([tenantId])
   @@index([caseId])
   @@index([sourceTebligatId])

@@ -259,8 +259,13 @@ describeWithDisposableDb("ServiceOccurrence deadline-facts + LegalDeadlineSnapsh
       baseCommand(fx, { serviceDateRole: ServiceOccurrenceServiceDateRole.DIRECT_DELIVERY, serviceRegimeCode: ServiceOccurrenceRegimeCode.IMMEDIATE_SERVICE }) as any,
     );
 
+    // DEBTOR-SERVICE-OCCURRENCE-SNAPSHOT-INVARIANT-P1-I08: bu testin iddiası 1:MANY
+    // FK binding kapasitesidir (bir occurrence, calculationVersion değiştikçe birden
+    // fazla snapshot'a kaynaklık edebilir) — İKİ satırın da AYNI ANDA ACTIVE olması
+    // DEĞİL. Gerçek supersede zincirinde v1 SUPERSEDED, v2 ACTIVE olur; bu fixture
+    // artık LegalDeadlineSnapshot_one_active_per_tebligat invariant'ıyla tutarlı.
     const snap1 = await prisma.legalDeadlineSnapshot.create({
-      data: baseSnapshotData(fx, { sourceServiceOccurrenceId: occ.occurrence.id, calculationVersion: "v1" }),
+      data: baseSnapshotData(fx, { sourceServiceOccurrenceId: occ.occurrence.id, calculationVersion: "v1", status: "SUPERSEDED" }),
     });
     const snap2 = await prisma.legalDeadlineSnapshot.create({
       data: baseSnapshotData(fx, { sourceServiceOccurrenceId: occ.occurrence.id, calculationVersion: "v2" }),
