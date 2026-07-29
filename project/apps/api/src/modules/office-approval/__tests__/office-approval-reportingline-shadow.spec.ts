@@ -4,20 +4,29 @@ import { OfficeApprovalShadowService } from '../office-approval-shadow.service';
 
 /**
  * OFFICE-P2-CAP02-SHADOW-NEUTRAL-TELEMETRY-REPAIR-I01 — ReportingLine telemetri katmanı.
+ * OFFICE-P2-CAP02-TELEMETRY-CANARY-SCOPE-I01 — canary-scoped aktivasyon (bu dosya).
  *
  * OWNER KARARI (2026-07-28, OPTION A): `ReportingLine` yalnız organizasyonel hiyerarşi
  * gerçeğidir; ondan allow / deny / requiresApproval / selfAuthority KARARI ÜRETİLEMEZ.
  * Bu katman NÖTR bir sınıf karşılaştırması yapar ve hiçbir kararı etkilemez.
  *
  * Kanıtlanan sözleşme:
- *  1. Flag kapalı → DB sorgusu 0, telemetri 0, authorization DEĞİŞMEZ.
- *  2. Flag açık → SAME_CLASS / DIFFERENT_CLASS / UNCOMPARABLE kaydedilir; karar DEĞİŞMEZ.
- *  3. Telemetri hatası request'i etkilemez; `enforce` davranışı AYNEN kalır.
+ *  1. Master flag kapalı → DB sorgusu 0, telemetri 0, authorization DEĞİŞMEZ.
+ *  2. Master flag açık + tenant allowlist BOŞ/YANLIŞ → YİNE dormant (H1 sıkılaştırması).
+ *  3. Master + tenant + (varsa) actor allowlist eşleşirse → SAME_CLASS / DIFFERENT_CLASS /
+ *     UNCOMPARABLE kaydedilir; karar DEĞİŞMEZ.
+ *  4. Telemetri hatası request'i etkilemez; `enforce` davranışı AYNEN kalır.
  */
 
+// Aktivasyon çekirdeği tenantId/userId'nin cuid ŞEKLİNDE olmasını zorunlu kılar
+// (malformed-config korumasının parçası) — bu yüzden test kimlikleri de o şekle uyar.
+const T1 = 'ctenant1'.padEnd(24, '0'); // allowlisted tenant
+const T2 = 'ctenant2'.padEnd(24, '0'); // allowlist DIŞINDA tenant
+const U1 = 'cuser0001'.padEnd(24, '0');
+
 const baseInput = {
-  actorUserId: 'u1',
-  tenantId: 't1',
+  actorUserId: U1,
+  tenantId: T1,
   actionCode: 'CHANGE_STATUS',
   targetType: 'LegalCase',
   targetRef: 'c1',
@@ -25,7 +34,7 @@ const baseInput = {
 };
 
 const u = (over: Record<string, unknown> = {}) => ({
-  id: 'u1', isActive: true, tenantId: 't1', lawyer: null, staffMember: null, ...over,
+  id: U1, isActive: true, tenantId: T1, lawyer: null, staffMember: null, ...over,
 });
 /** yürürlükteki karar → SELF_AUTHORITY */
 const partner = () => u({ lawyer: { lawyerRank: 'PARTNER', canApproveOfficeActions: false } });
@@ -35,6 +44,8 @@ const staff = () => u({ staffMember: { staffType: 'SEKRETER' } });
 const make = (opts: {
   gate?: string;
   shadowFlag?: string;
+  tenantAllowlist?: string;
+  actorAllowlist?: string;
   user?: unknown;
   line?: unknown;
   lineThrows?: boolean;
@@ -44,6 +55,8 @@ const make = (opts: {
     get: jest.fn((k: string) => {
       if (k === 'OFFICE_APPROVAL_CHANGE_STATUS_GATE') return opts.gate;
       if (k === 'OFFICE_CAP02_REPORTINGLINE_SHADOW') return opts.shadowFlag;
+      if (k === 'OFFICE_CAP02_REPORTINGLINE_SHADOW_TENANT_ALLOWLIST') return opts.tenantAllowlist;
+      if (k === 'OFFICE_CAP02_REPORTINGLINE_SHADOW_ACTOR_ALLOWLIST') return opts.actorAllowlist;
       return undefined;
     }),
   };
@@ -75,7 +88,9 @@ const telemetry = (audit: { log: jest.Mock }) =>
     (c) => c[0]?.action === 'OFFICE_CAP02_AUTHORITY_HIERARCHY_TELEMETRY',
   )?.[0];
 
-const observe = (user: unknown, line: unknown) => make({ shadowFlag: 'observe', user, line });
+/** Master açık + T1 allowlisted (owner'ın PHASE H1 canary tenant'ı budur). */
+const observe = (user: unknown, line: unknown) =>
+  make({ shadowFlag: 'observe', tenantAllowlist: T1, user, line });
 
 // ---------------------------------------------------------------------------
 // flag OFF
@@ -163,7 +178,7 @@ describe('flag ON — sinif karsilastirmasi', () => {
   });
 
   it('cross-tenant → UNCOMPARABLE', async () => {
-    const { svc, audit } = observe(u({ tenantId: 't2' }), { disposition: 'TOP_LEVEL', managerUserId: null });
+    const { svc, audit } = observe(u({ tenantId: T2 }), { disposition: 'TOP_LEVEL', managerUserId: null });
     await svc.evaluate(baseInput);
     const m = telemetry(audit).metadata;
     expect(m.comparison).toBe('UNCOMPARABLE');
@@ -210,9 +225,87 @@ describe('telemetri kaydi bir authorization karari TASIMAZ', () => {
     const { svc, prisma } = observe(partner(), { disposition: 'TOP_LEVEL', managerUserId: null });
     await svc.evaluate(baseInput);
     expect(prisma.reportingLine.findFirst).toHaveBeenCalledWith({
-      where: { tenantId: 't1', actorUserId: 'u1', validUntil: null },
+      where: { tenantId: T1, actorUserId: U1, validUntil: null },
       select: { disposition: true, managerUserId: true },
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OFFICE-P2-CAP02-TELEMETRY-CANARY-SCOPE-I01 — aktivasyon matrisi
+// ---------------------------------------------------------------------------
+describe('canary-scoped aktivasyon — master flag TEK BASINA yetmez', () => {
+  it('master ON + tenant allowlist YOK -> dormant (H1 sikilastirmasi)', async () => {
+    const { svc, prisma, audit } = make({ shadowFlag: 'observe', user: partner() });
+    await svc.evaluate(baseInput);
+    expect(prisma.reportingLine.findFirst).toHaveBeenCalledTimes(0);
+    expect(telemetry(audit)).toBeUndefined();
+  });
+
+  it('master ON + tenant allowlist BOS string -> dormant', async () => {
+    const { svc, prisma, audit } = make({ shadowFlag: 'observe', tenantAllowlist: '  ', user: partner() });
+    await svc.evaluate(baseInput);
+    expect(prisma.reportingLine.findFirst).toHaveBeenCalledTimes(0);
+    expect(telemetry(audit)).toBeUndefined();
+  });
+
+  it('master ON + YANLIS tenant allowlist -> dormant', async () => {
+    const { svc, prisma, audit } = make({ shadowFlag: 'observe', tenantAllowlist: T2, user: partner() });
+    await svc.evaluate(baseInput);
+    expect(prisma.reportingLine.findFirst).toHaveBeenCalledTimes(0);
+    expect(telemetry(audit)).toBeUndefined();
+  });
+
+  it('master ON + DOGRU tenant allowlist -> tam olarak 1 evaluation / 1 event', async () => {
+    const { svc, prisma, audit } = make({ shadowFlag: 'observe', tenantAllowlist: T1, user: partner() });
+    await svc.evaluate(baseInput);
+    expect(prisma.reportingLine.findFirst).toHaveBeenCalledTimes(1);
+    expect(audit.log).toHaveBeenCalledTimes(1);
+    expect(telemetry(audit)).toBeDefined();
+  });
+
+  it('malformed tenant allowlist (slug) -> dormant, tenant "eslesse" bile', async () => {
+    const { svc, prisma, audit } = make({
+      shadowFlag: 'observe', tenantAllowlist: 'local-development-office', user: partner(),
+    });
+    await svc.evaluate(baseInput);
+    expect(prisma.reportingLine.findFirst).toHaveBeenCalledTimes(0);
+    expect(telemetry(audit)).toBeUndefined();
+  });
+
+  it('actor allowlist MISMATCH -> dormant (tenant dogru olsa bile)', async () => {
+    const { svc, prisma, audit } = make({
+      shadowFlag: 'observe', tenantAllowlist: T1, actorAllowlist: 'cotheractor'.padEnd(24, '0'),
+      user: partner(),
+    });
+    await svc.evaluate(baseInput);
+    expect(prisma.reportingLine.findFirst).toHaveBeenCalledTimes(0);
+    expect(telemetry(audit)).toBeUndefined();
+  });
+
+  it('actor allowlist MATCH -> 1 event', async () => {
+    const { svc, audit } = make({
+      shadowFlag: 'observe', tenantAllowlist: T1, actorAllowlist: U1, user: partner(),
+    });
+    await svc.evaluate(baseInput);
+    expect(telemetry(audit)).toBeDefined();
+  });
+
+  it('malformed actor allowlist -> dormant, tenant dogru olsa bile', async () => {
+    const { svc, prisma, audit } = make({
+      shadowFlag: 'observe', tenantAllowlist: T1, actorAllowlist: 'not-an-id', user: partner(),
+    });
+    await svc.evaluate(baseInput);
+    expect(prisma.reportingLine.findFirst).toHaveBeenCalledTimes(0);
+    expect(telemetry(audit)).toBeUndefined();
+  });
+
+  it('TELLI-HUKUK-benzeri baska tenant, allowlist T1 iken HICBIR sorgu/olay ALMAZ', async () => {
+    const otherTenantInput = { ...baseInput, tenantId: T2 };
+    const { svc, prisma, audit } = make({ shadowFlag: 'observe', tenantAllowlist: T1, user: partner() });
+    await svc.evaluate(otherTenantInput);
+    expect(prisma.reportingLine.findFirst).toHaveBeenCalledTimes(0);
+    expect(telemetry(audit)).toBeUndefined();
   });
 });
 
@@ -247,7 +340,7 @@ describe('enforce mode behavior unchanged', () => {
 
   it('DIFFERENT_CLASS olcusu enforce kararini DEGISTIRMEZ', async () => {
     const { svc, audit, officeApproval } = make({
-      gate: 'enforce', shadowFlag: 'observe', user: partner(),
+      gate: 'enforce', shadowFlag: 'observe', tenantAllowlist: T1, user: partner(),
       line: { disposition: 'MANAGED', managerUserId: 'm1' },
     });
     const out = await svc.evaluate(baseInput);
@@ -260,7 +353,7 @@ describe('enforce mode behavior unchanged', () => {
 
   it('SAME_CLASS olcusu de enforce blogunu DEGISTIRMEZ', async () => {
     const { svc, audit, officeApproval } = make({
-      gate: 'enforce', shadowFlag: 'observe', user: staff(),
+      gate: 'enforce', shadowFlag: 'observe', tenantAllowlist: T1, user: staff(),
       line: { disposition: 'MANAGED', managerUserId: 'm1' },
     });
     const out = await svc.evaluate(baseInput);

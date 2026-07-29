@@ -74,3 +74,10 @@ src/modules/office-approval/__tests__/office-approval-reportingline-shadow.spec.
 # saf cekirdek, tek bir canary-safe tenant'a (local-development-office) civilenmis,
 # fail-closed bir provisioning karari saglar. Yazim yolu (.ts runner) CI'da kosmaz.
 src/scripts/__tests__/office-cap02-canary-provision.core.spec.ts
+
+# ── OFFICE-P2-CAP02-TELEMETRY-CANARY-SCOPE-I01 ─────────────────────────────────
+# ReportingLine telemetrisinin TEK aktivasyon mekanizmasi global bir booleandi;
+# acilsaydi TUM tenant'lar (TELLI HUKUK dahil) gozlem kapsamina girerdi. Bu saf
+# cekirdek master flag + tam-kimlik tenant/actor allowlist'ini TEK karara indirger;
+# bos/malformed allowlist fail-closed'dir. Tuketici testi de guncellendi.
+src/scripts/__tests__/office-cap02-telemetry-canary-scope.core.spec.ts
