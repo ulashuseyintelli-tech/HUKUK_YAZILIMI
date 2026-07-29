@@ -142,6 +142,7 @@ src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-e2
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
+src/modules/legal-deadline/__tests__/legal-deadline-snapshot-invariant.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/proceeding-classification.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/service-occurrence-deadline-calculation.db-gated.integration.spec.ts
 src/modules/legal-time-shadow/__tests__/legal-time-shadow.db-gated.integration.spec.ts
