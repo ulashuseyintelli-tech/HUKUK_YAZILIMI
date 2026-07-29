@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "grantId": "GOV-COORD-DTV-DOGFOOD-GRANT-R02",
+  "grantKind": "TASK_SCOPED_ONE_SHOT",
   "workstream": "ORCHESTRA-DELIVERY-TRUTH-R01",
   "semanticAuthorityRef": {
     "kind": "SEMANTIC_AUTHORITY",

@@ -939,7 +939,7 @@ test('authority: a revoked grant cannot authorize a task', () => {
   };
   const d = authorityMod.specDigests(spec);
   const grant = {
-    schemaVersion: 1, grantId: 'G-REV-01', workstream: 'W',
+    schemaVersion: 1, grantId: 'G-REV-01', grantKind: 'TASK_SCOPED_ONE_SHOT', workstream: 'W',
     semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'S', sourcePath: 'a.md' },
     executionGrantRef: { kind: 'EXECUTION_GRANT', recordId: 'E', sourcePath: 'b.md' },
     ownerRatificationEvidence: {

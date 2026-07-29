@@ -439,6 +439,7 @@ function grantWith(evidence, spec) {
   return {
     schemaVersion: 1,
     grantId: 'G-TEST',
+    grantKind: 'TASK_SCOPED_ONE_SHOT',
     workstream: 'WS',
     manualMergeRequired: true,
     semanticAuthorityRef: { kind: 'SEMANTIC_AUTHORITY', recordId: 'SEM', sourcePath: 'a/b.md' },

@@ -15,6 +15,33 @@
 const crypto = require('crypto');
 
 const PROFILES = ['MECHANICAL_GOVERNANCE', 'BOUNDED_CODE_TASK'];
+
+/**
+ * The two shapes a grant can be, and the one thing they must never be: implicit.
+ *
+ * validateAgainstGrant() used to run ONE contract against every grant handed to
+ * it — a contract that pins an exact `authorizedTasks` entry per task, hash for
+ * hash. That is correct for a grant scoped to one task, because a one-shot
+ * grant is created to authorize that specific plan and nothing pins it in
+ * advance for a task that does not exist yet.
+ *
+ * It is wrong for the other eight grants in this repository, which authorize a
+ * PROGRAM — any task admitted within their program, task-class, path-root and
+ * boundary limits, none of them known when the grant was written. Every one of
+ * them lacks `authorizedTasks`, because a standing grant that tried to carry it
+ * would have to enumerate tasks from the future. Run through the unconditional
+ * lookup, they all fail TASK_NOT_IN_GRANT on the very first task — measured on
+ * RECEIVABLE, the first standing grant ever driven through runTask() rather
+ * than a synthetic pilot or a one-shot grant of its own.
+ *
+ * The fix is not "skip the lookup when the field is absent". An absent field is
+ * not proof of intent — it is as easily a task-scoped grant somebody forgot to
+ * fill in, and treating that silence as standing authority would let a
+ * malformed grant escalate into one that runs anything in its path roots. So
+ * the kind is declared, checked against exactly these two values, and a third
+ * value — including no value at all — is refused by name rather than guessed.
+ */
+const GRANT_KINDS = ['TASK_SCOPED_ONE_SHOT', 'PROGRAM_STANDING'];
 const BASE_DRIFT_POLICIES = [
   'STRICT_PINNED_BASE',
   'REBASE_AND_REVALIDATE',
@@ -283,6 +310,15 @@ function validateAgainstGrant(opts) {
   const nowMs = opts.nowMs != null ? opts.nowMs : Date.now();
 
   if (!grant || typeof grant !== 'object') fail('GRANT_INVALID', 'missing');
+
+  // Declared, not inferred. A grant silent about its own kind is refused here,
+  // before any other field is trusted — the alternative is guessing from the
+  // shape of what IS present, and a guess is exactly what a forged or merely
+  // half-written grant can pass.
+  if (GRANT_KINDS.indexOf(grant.grantKind) === -1) {
+    fail('GRANT_KIND_MISSING_OR_UNKNOWN', String(grant.grantKind));
+  }
+  const isStanding = grant.grantKind === 'PROGRAM_STANDING';
   if (grant.schemaVersion !== 1) fail('GRANT_SCHEMA_VERSION', String(grant.schemaVersion));
   // Manual merge is the default and stays the default.
   //
@@ -364,58 +400,88 @@ function validateAgainstGrant(opts) {
   }
 
   const d = specDigests(spec);
-  const pinned = (grant.authorizedTasks || []).find((t) => t.taskId === d.canonical.taskId);
-  if (!pinned) fail('TASK_NOT_IN_GRANT', d.canonical.taskId);
 
-  if (pinned.taskSpecVersion !== d.canonical.taskSpecVersion) {
-    fail('TASK_SPEC_VERSION_MISMATCH', pinned.taskSpecVersion + ' != ' + d.canonical.taskSpecVersion);
-  }
-  // Schema agreement between the task and the entry that authorizes it.
-  //
-  // A v1 grant entry cannot authorize a v2 task: it has no delivery digest to
-  // pin, so it would be authorizing a delivery claim it never saw. The converse
-  // is equally refused — a v2 entry pinning a v1 task pins a digest that does
-  // not exist.
-  const pinnedVersion = pinned.taskSchemaVersion === undefined ? 1 : pinned.taskSchemaVersion;
-  if (pinnedVersion !== d.canonical.schemaVersion) {
-    fail(
-      'GRANT_TASK_SCHEMA_VERSION_MISMATCH',
-      'grant pins schema ' + pinnedVersion + ', task is schema ' + d.canonical.schemaVersion,
-    );
-  }
-  if (d.canonical.schemaVersion === 2) {
-    if (typeof pinned.deliveryContractSha256 !== 'string' || !pinned.deliveryContractSha256) {
-      fail('GRANT_DELIVERY_CONTRACT_DIGEST_MISSING', d.canonical.taskId);
+  // TASK_SCOPED: an exact plan is pinned by hash, because the grant was written
+  // FOR this one task and nothing else. PROGRAM_STANDING: there is no task to
+  // pin — the grant authorizes a program, and validateAgainstStandingGrant (the
+  // same function admission.cjs already calls) checks the things that ARE
+  // knowable in advance: program identity, task class, executor lane, path
+  // roots, kill switch, concurrency, review and merge policy, the
+  // self-modification prohibitions. Called here rather than re-implemented, so
+  // the two callers of "is this program's grant good for this task" can never
+  // quietly drift apart.
+  let pinned = null;
+  if (isStanding) {
+    validateAgainstStandingGrant({
+      standingGrant: grant,
+      spec,
+      taskClass: opts.taskClass,
+      executorLane: opts.executorLane,
+      revoked: opts.revoked === true,
+      killSwitchEngaged: opts.killSwitchEngaged === true,
+      nowMs,
+    });
+  } else {
+    pinned = (grant.authorizedTasks || []).find((t) => t.taskId === d.canonical.taskId);
+    if (!pinned) fail('TASK_NOT_IN_GRANT', d.canonical.taskId);
+
+    if (pinned.taskSpecVersion !== d.canonical.taskSpecVersion) {
+      fail('TASK_SPEC_VERSION_MISMATCH', pinned.taskSpecVersion + ' != ' + d.canonical.taskSpecVersion);
     }
-    if (pinned.deliveryContractSha256 !== d.deliveryContractSha256) {
-      // The grant ratified one delivery claim and the task now makes another.
-      // Changing the capability, its target state or its probe lands here;
-      // editing a title or a rationale does not, because neither is hashed.
+    // Schema agreement between the task and the entry that authorizes it.
+    //
+    // A v1 grant entry cannot authorize a v2 task: it has no delivery digest to
+    // pin, so it would be authorizing a delivery claim it never saw. The converse
+    // is equally refused — a v2 entry pinning a v1 task pins a digest that does
+    // not exist.
+    const pinnedVersion = pinned.taskSchemaVersion === undefined ? 1 : pinned.taskSchemaVersion;
+    if (pinnedVersion !== d.canonical.schemaVersion) {
       fail(
-        'DELIVERY_CONTRACT_HASH_MISMATCH',
-        'pinned=' + pinned.deliveryContractSha256 + ' actual=' + d.deliveryContractSha256,
+        'GRANT_TASK_SCHEMA_VERSION_MISMATCH',
+        'grant pins schema ' + pinnedVersion + ', task is schema ' + d.canonical.schemaVersion,
       );
+    }
+    if (d.canonical.schemaVersion === 2) {
+      if (typeof pinned.deliveryContractSha256 !== 'string' || !pinned.deliveryContractSha256) {
+        fail('GRANT_DELIVERY_CONTRACT_DIGEST_MISSING', d.canonical.taskId);
+      }
+      if (pinned.deliveryContractSha256 !== d.deliveryContractSha256) {
+        // The grant ratified one delivery claim and the task now makes another.
+        // Changing the capability, its target state or its probe lands here;
+        // editing a title or a rationale does not, because neither is hashed.
+        fail(
+          'DELIVERY_CONTRACT_HASH_MISMATCH',
+          'pinned=' + pinned.deliveryContractSha256 + ' actual=' + d.deliveryContractSha256,
+        );
+      }
     }
   }
 
   // The four (v1) or five (v2) pinned digests, checked AFTER the delivery
-  // comparison above. Order matters for diagnosis rather than for safety: the
+  // comparison above (TASK_SCOPED only — a standing grant pins no digest to
+  // compare, by design). Order matters for diagnosis rather than for safety: the
   // contract lives inside the canonical spec, so changing a capability's target
   // state moves taskSpecSha256 too, and reporting that first would tell an
   // operator "the spec changed" when the useful answer is "the delivery claim
   // changed". Both refuse; only one names the cause.
-  for (const field of [
-    'taskSpecSha256',
-    'declaredIntentSha256',
-    'boundaryPolicySha256',
-    'requiredTestsSha256',
-  ]) {
-    if (pinned[field] !== d[field]) {
-      fail('TASK_SPEC_HASH_MISMATCH', field + ' pinned=' + pinned[field] + ' actual=' + d[field]);
+  if (!isStanding) {
+    for (const field of [
+      'taskSpecSha256',
+      'declaredIntentSha256',
+      'boundaryPolicySha256',
+      'requiredTestsSha256',
+    ]) {
+      if (pinned[field] !== d[field]) {
+        fail('TASK_SPEC_HASH_MISMATCH', field + ' pinned=' + pinned[field] + ' actual=' + d[field]);
+      }
     }
   }
 
-  // A task boundary can never exceed the grant's own allowed roots.
+  // A task boundary can never exceed the grant's own allowed roots. Standing
+  // grants express this through allowedPathRoots, already checked above by
+  // validateAgainstStandingGrant; allowedModuleRoots is the task-scoped grant's
+  // own (optional) narrower vocabulary, so it is skipped by absence for a
+  // standing grant rather than by branching on isStanding.
   if (Array.isArray(grant.allowedModuleRoots) && grant.allowedModuleRoots.length) {
     const grantRoots = canonicalPathList(grant.allowedModuleRoots, 'grant.allowedModuleRoots').map(
       (r) => (r.endsWith('/') ? r : r + '/'),
@@ -432,7 +498,7 @@ function validateAgainstGrant(opts) {
     grantId: grant.grantId,
     grantSha256: digest(grant),
     pinned: pinned,
-    predecessorTaskIds: pinned.predecessorTaskIds || d.canonical.predecessorTaskIds || [],
+    predecessorTaskIds: (pinned && pinned.predecessorTaskIds) || d.canonical.predecessorTaskIds || [],
   };
 }
 

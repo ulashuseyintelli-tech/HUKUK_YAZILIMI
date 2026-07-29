@@ -111,6 +111,7 @@ function specAndGrant(over) {
     {
       schemaVersion: 1,
       grantId: 'PILOT-GRANT-01',
+      grantKind: 'TASK_SCOPED_ONE_SHOT',
       workstream: 'PILOT-WS',
       semanticAuthorityRef: {
         kind: 'SEMANTIC_AUTHORITY',

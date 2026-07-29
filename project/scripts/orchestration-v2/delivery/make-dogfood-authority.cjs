@@ -299,6 +299,7 @@ out.files.push(
 const grant = {
   schemaVersion: 1,
   grantId: GRANT_ID,
+  grantKind: 'TASK_SCOPED_ONE_SHOT',
   workstream: 'ORCHESTRA-DELIVERY-TRUTH-R01',
   semanticAuthorityRef: {
     kind: 'SEMANTIC_AUTHORITY',
@@ -328,9 +329,39 @@ const grant = {
 out.files.push(writeJson(PLANS + '/grant.v2.json', grant));
 
 // ── the standing grant: the narrowest one that admits this task ─────────────
+// ORCHESTRA-GRANT-KIND-AUTHORIZATION-RECONCILIATION-R01: the discriminator
+// validateAgainstGrant now requires of every grant it is handed. Values match
+// the committed grant exactly — the same excerpt, at the same ratification
+// commit, verified present there before this generator ever writes it — so
+// regenerating remains the no-op DG02 checks for.
+const STANDING_RATIFICATION_EXCERPT =
+  'OWNER-DECISION-GOV-COORD-DELIVERY-TRUTH-R01 dogfood certification is authorized to run';
+const STANDING_RATIFICATION_COMMIT = '39ae992f6d013bfb6459a34f172a94ab673e4f83';
+const STANDING_RATIFICATION_PATH = PLANS + '/semantic-authority.md';
+
 const standing = {
   schemaVersion: 1,
   standingGrantId: STANDING_GRANT_ID,
+  grantKind: 'PROGRAM_STANDING',
+  manualMergeRequired: false,
+  autoMergeAuthorizedBy: 'OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02',
+  semanticAuthorityRef: {
+    recordId: 'OWNER-DECISION-DELIVERY_TRUTH-STANDING-GRANT',
+    sourcePath: STANDING_RATIFICATION_PATH,
+  },
+  executionGrantRef: {
+    recordId: 'OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02',
+    sourcePath: ACT + '/program-eligibility-authority.json',
+  },
+  ownerRatificationEvidence: {
+    sourcePath: STANDING_RATIFICATION_PATH,
+    sourceCommitSha: STANDING_RATIFICATION_COMMIT,
+    exactExcerpt: STANDING_RATIFICATION_EXCERPT,
+    excerptSha256: require('crypto').createHash('sha256').update(STANDING_RATIFICATION_EXCERPT, 'utf8').digest('hex'),
+  },
+  noExpiryPolicyRef:
+    "STANDING grant kavraminin kendisi: program acik oldugu surece gecerlidir, tarih ile degil " +
+    "revocationPath'teki dosyanin varligi ile sona erer.",
   program: {
     programId: PROGRAM_ID,
     eligibilityAuthorityRef: ACT + '/PROGRAM-ELIGIBILITY-AUTHORITY.md',

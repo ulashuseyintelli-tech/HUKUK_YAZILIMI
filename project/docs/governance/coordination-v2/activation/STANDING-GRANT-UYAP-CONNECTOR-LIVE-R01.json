@@ -62,5 +62,23 @@
     "permitted": false,
     "requiresSeparateOwnerDecision": true,
     "note": "Eligibility teknik calistirma iznidir; production UYAP baglanti izni degildir."
-  }
+  },
+  "grantKind": "PROGRAM_STANDING",
+  "manualMergeRequired": false,
+  "autoMergeAuthorizedBy": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+  "semanticAuthorityRef": {
+    "recordId": "OWNER-DECISION-UYAP_CONNECTOR-STANDING-GRANT",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md"
+  },
+  "executionGrantRef": {
+    "recordId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/program-eligibility-authority.json"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+    "sourceCommitSha": "8d4bc9dea45da7a88b1b4fae5f9f30ad7761c0f6",
+    "exactExcerpt": "UYAP_CONNECTOR  yalniz TEKNIK is icin canli calistirmaya acilir",
+    "excerptSha256": "96405f142819b9369fd9f7b0bf871377fc259b151a8726531f13f34c6f52984d"
+  },
+  "noExpiryPolicyRef": "STANDING grant kavraminin kendisi: program acik oldugu surece gecerlidir, tarih ile degil revocationPath'teki dosyanin varligi ile sona erer."
 }

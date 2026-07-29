@@ -60,5 +60,23 @@
   ],
   "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-RECEIVABLE",
   "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/receivable.jsonl",
-  "notes": "Claim formation, resolver binding ve calculation yuzeyi. WS04-P03 data access NOT AUTHORIZED olarak kalir. Yeni hukuk kurali ratifiye edilmez; private key istenmez veya saklanmaz; eksik resolver baglantilari owner kararina birakilir."
+  "notes": "Claim formation, resolver binding ve calculation yuzeyi. WS04-P03 data access NOT AUTHORIZED olarak kalir. Yeni hukuk kurali ratifiye edilmez; private key istenmez veya saklanmaz; eksik resolver baglantilari owner kararina birakilir.",
+  "grantKind": "PROGRAM_STANDING",
+  "manualMergeRequired": false,
+  "autoMergeAuthorizedBy": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+  "semanticAuthorityRef": {
+    "recordId": "OWNER-DECISION-RECEIVABLE-STANDING-GRANT",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md"
+  },
+  "executionGrantRef": {
+    "recordId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/program-eligibility-authority.json"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+    "sourceCommitSha": "8d4bc9dea45da7a88b1b4fae5f9f30ad7761c0f6",
+    "exactExcerpt": "RECEIVABLE  kontrollu canli calistirmaya acilir",
+    "excerptSha256": "4e1b837600fd352a18ebe3a6b0c97cf0a119be6c2a3fbb09690b0343a2e830d1"
+  },
+  "noExpiryPolicyRef": "STANDING grant kavraminin kendisi: program acik oldugu surece gecerlidir, tarih ile degil revocationPath'teki dosyanin varligi ile sona erer."
 }

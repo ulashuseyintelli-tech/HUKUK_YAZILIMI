@@ -57,5 +57,23 @@
   "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-OFFICE",
   "killSwitchPath": "project/docs/governance/coordination-v2/activation/KILL-SWITCH",
   "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/office.jsonl",
-  "notes": "Test-only characterization ve bounded code fix. Production davranis degisikligi bu grant altinda YOK; her plan yine bagimsiz review ve tam CI gorur."
+  "notes": "Test-only characterization ve bounded code fix. Production davranis degisikligi bu grant altinda YOK; her plan yine bagimsiz review ve tam CI gorur.",
+  "grantKind": "PROGRAM_STANDING",
+  "manualMergeRequired": false,
+  "autoMergeAuthorizedBy": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+  "semanticAuthorityRef": {
+    "recordId": "OWNER-DECISION-OFFICE-STANDING-GRANT",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/PARENT-AUTHORIZATION-ENVELOPE.md"
+  },
+  "executionGrantRef": {
+    "recordId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/program-eligibility-authority.json"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/activation/PARENT-AUTHORIZATION-ENVELOPE.md",
+    "sourceCommitSha": "4063ab294dc5f3e55336a71e374aed6259f89471",
+    "exactExcerpt": "OFFICE      kontrollu canli calistirmaya acilir",
+    "excerptSha256": "12b8c13cc1780ad197e8b0df0aa0eb3f40873c5a8b69f758b95c54ab84360e27"
+  },
+  "noExpiryPolicyRef": "STANDING grant kavraminin kendisi: program acik oldugu surece gecerlidir, tarih ile degil revocationPath'teki dosyanin varligi ile sona erer."
 }
