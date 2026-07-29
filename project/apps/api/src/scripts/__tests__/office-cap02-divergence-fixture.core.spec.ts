@@ -106,7 +106,32 @@ describe('sentetik kimlik', () => {
   it('aktorler arasi kimlik cakismasi yok', () => {
     const ids = buildDivergenceIdentities(RUN);
     expect(new Set(ids.map((i) => i.email)).size).toBe(4);
+    expect(new Set(ids.map((i) => i.lawyerName)).size).toBe(4);
     expect(new Set(ids.map((i) => i.caseReference)).size).toBe(4);
+  });
+
+  it('UC alanin TAMAMI runId tasir (koslar arasi cakismayi onler)', () => {
+    for (const id of buildDivergenceIdentities(RUN)) {
+      expect(id.email).toContain(RUN);
+      expect(id.lawyerName).toContain(RUN.toUpperCase());
+      expect(id.caseReference).toContain(RUN.toUpperCase());
+    }
+  });
+
+  it('IKI FARKLI runId tamamen ayrik kimlik uretir (R01 4/12 regresyonu)', () => {
+    const a = buildDivergenceIdentities('divr02a');
+    const b = buildDivergenceIdentities('divr02b');
+    const fields = (set: typeof a) => [
+      ...set.map((i) => i.email),
+      ...set.map((i) => i.lawyerName),
+      ...set.map((i) => i.caseReference),
+    ];
+    const fa = fields(a);
+    const fb = fields(b);
+    expect(fa).toHaveLength(12);
+    expect(fb).toHaveLength(12);
+    // Tek bir alan bile ortak OLAMAZ.
+    expect(fa.filter((v) => fb.includes(v))).toEqual([]);
   });
 });
 

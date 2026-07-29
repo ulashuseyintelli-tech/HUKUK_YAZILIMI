@@ -106,17 +106,28 @@ export interface DivergenceIdentity {
   caseReference: string;
 }
 
-/** Sentetik kimlikleri ÜRETİR. Rastgelelik yok: her şey `runId`+`key`'den türer. */
+/**
+ * Sentetik kimlikleri ÜRETİR. Rastgelelik yok: her şey `runId`+`key`'den türer.
+ *
+ * ÜÇ ALANIN TAMAMI `runId` TAŞIR. Bu zorunludur: `decideDivergenceFixture` "bu
+ * koşuya ait parça" sayımını kimlik alanlarıyla yapar (`email IN`, `name IN`,
+ * `fileNumber IN`). Bir alan `runId` taşımazsa BAŞKA bir koşunun kaydı bu koşunun
+ * parçası sayılır ve fail-closed kapısı yanlış tarafa düşer — R01 ölçümünde
+ * `lawyerName` bu yüzden `divr02a`'nın avukatlarını `divr02b`'nin parçası saydı
+ * ve `4/12` kısmi-fixture reddi üretti (doğru red, yanlış gerekçe). Kimlik
+ * ayrışıklığı testle sabitlenir.
+ */
 export function buildDivergenceIdentity(
   runId: string,
   key: DivergenceActorKey,
 ): DivergenceIdentity {
   const lower = key.toLowerCase();
+  const upperRun = runId.toUpperCase();
   return {
     key,
     email: `office-cap02-divergence-${lower}-${runId}@${DIVERGENCE_EMAIL_DOMAIN}`,
-    lawyerName: `CANARY OFFICE CAP02 DIVERGENCE ${key}`,
-    caseReference: `CANARY-OFFICE-CAP02-DIVERGENCE-${key}-${runId.toUpperCase()}`,
+    lawyerName: `CANARY OFFICE CAP02 DIVERGENCE ${key} ${upperRun}`,
+    caseReference: `CANARY-OFFICE-CAP02-DIVERGENCE-${key}-${upperRun}`,
   };
 }
 
