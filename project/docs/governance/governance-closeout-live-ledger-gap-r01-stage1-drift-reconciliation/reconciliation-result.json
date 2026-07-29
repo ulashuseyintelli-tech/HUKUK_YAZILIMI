@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "documentRole": "RECONCILIATION_EVIDENCE_NON_AUTHORITY",
+  "programId": "GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01",
+  "taskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE1-DRIFT-AND-WRITER-RECONCILIATION-R01",
+  "auditBaseSha": "ebb82762a6ecf24c214b6b6a5d2fede8caa4c206",
+  "priorPreflightMainSha": "76fb4c3440586453f2380a866aeda58322c778bf",
+  "stage1PredecessorSha": "790d2a956dad05e39c8fde71cc3e19e1f2425cf3",
+  "driftSource": {
+    "pullRequest": 1906,
+    "squashCommit": "14a4c18b1ef41f0738013605a20abcd64c5e6263",
+    "taskId": "RCV-CLAIM-FORM-D02-TR01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01",
+    "insertions": 437,
+    "deletions": 0,
+    "requiredChecks": {
+      "passed": 9,
+      "total": 9
+    }
+  },
+  "stage1DriftClassification": "EXTENDED_BACKWARD_COMPATIBLY",
+  "currentModeDiscovery": "PASS",
+  "targetProgramTaskBinding": "PASS",
+  "stage2Binding": "PASS",
+  "securityInvariants": "PRESERVED",
+  "contractCodeTestConsistency": "PASS",
+  "authorityRecordConflict": "NONE",
+  "resolverAmbiguity": "NONE",
+  "controlPlaneChecks": {
+    "passed": 24,
+    "total": 24
+  },
+  "openDecisionLogWriters": [
+    {
+      "pullRequest": 1914,
+      "headRef": "codex/rcv-claim-form-kc01-tr01-ownership-authority-bootstrap-r01",
+      "headSha": "df17d686381f21eeccad0cf6bbf376ff88e253a2",
+      "baseSha": "abd06a6b221faba42671104df0302114d4ec9ba5",
+      "state": "OPEN",
+      "mergeability": "CONFLICTING",
+      "disposition": "ACTIVE_COMPETING_WRITER"
+    }
+  ],
+  "foreignWriters": [
+    {
+      "worktree": "HUKUK_ent_approval",
+      "branch": "claude/debtor-enterprise-approval-authorization-p0-i01",
+      "headSha": "d4f0e5be3c8e8ab18b18fe35ed6290cad39d7e80",
+      "baseSha": "d4f0e5be3c8e8ab18b18fe35ed6290cad39d7e80",
+      "associatedPullRequest": null,
+      "decisionLogState": "STAGED_DELETE_AND_UNTRACKED_WORKTREE_FILE",
+      "disposition": "ACTIVE_COMPETING_WRITER"
+    },
+    {
+      "worktree": "HUKUK_ccb-001-r",
+      "branch": "codex/ccb-001-pr1-pr6-rescue",
+      "headSha": "961bbaf38d3ab1a7c7a691fbd56880ca3f6ffcc8",
+      "baseSha": "7b222c509b0b70d13a76d92eb327994bf877bca1",
+      "associatedPullRequest": null,
+      "decisionLogState": "UNMERGED_COMMITTED_DIVERGENCE",
+      "disposition": "ACTIVE_COMPETING_WRITER"
+    }
+  ],
+  "writerGate": "FAIL",
+  "stage2Readiness": "BLOCKED",
+  "nextEligibleTask": "FOREIGN_WRITER_TERMINAL_DISPOSITION_REQUIRED",
+  "validation": {
+    "focusedRootAuthorityTests": "10/10 PASS",
+    "fullGovernanceCoordinationSuite": "208/208 PASS",
+    "selfTest": "PASS",
+    "validateRepository": "PASS",
+    "instructionPolicy": "PASS",
+    "exactAllowlist": "PASS"
+  },
+  "foreignWorktreesMutated": false,
+  "authorityMaterialized": false,
+  "productionActivated": false
+}
