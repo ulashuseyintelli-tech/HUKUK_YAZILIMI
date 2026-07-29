@@ -460,12 +460,15 @@ describe('I02 · PII teshis HTTP yuzeyi kaldirildi', () => {
 // Bu blogun iddialari KAYNAK METNINE DEGIL, gercek modul composition'ina ve
 // runtime controller metadata'sina dayanir.
 // ============================================================
-// R02-F15 (bu gorevde tespit edildi): `icrabot/admin/admin.service.ts:8` cozulemeyen
-// bir import tasiyor (`../../prisma/prisma.service` -> yok; dogrusu `../../../`).
-// O dizin tsconfig tarafindan exclude edildigi icin kirikli k hic yakalanmamis ve
-// `IcrabotModule` hicbir testte import EDILEMIYOR. Modul composition'ini GERCEK
-// runtime uzerinden dogrulayabilmek icin yalniz bu bozuk modulu mock'luyoruz;
-// baska hicbir davranis degistirilmiyor.
+// R02-F15 (I03'te tespit, I04'te dogrulama, I05 ile ONARILDI): admin/ dizinindeki
+// uc servis (`admin.service`, `audit-report.service`, `job-monitor.service`)
+// `../../prisma/prisma.service` importu tasiyordu — admin/ derinliginden bu yol
+// COZULMEZ (dogrusu `../../../`). Uc satir I05 ile onarildigi icin eski uc admin
+// mock'u KALDIRILDI; composition artik GERCEK admin siniflariyla yuklenir ve
+// dosya sonundaki I05 blogu resolution'i dogrudan dogrular.
+// Kalan dort servis mock'u (evidence/icrabot/recipe/task-orchestrator) kirik import
+// nedeniyle degil, I03'te agir legacy zincirleri izole etmek icin eklendi;
+// kaldirilmalari ayri bir maintainability residual'dir (owner: I05 kapsami disi).
 // pdf-poppler Linux CI'''de poppler binary'''leri bulunamayinca process.exit(1) cagirir
 // ve TUM jest worker'''ini (bu manifestteki 64 spec'''i) oldurur — bu, IcrabotModule'''un
 // case.module.ts -> case.controller.ts -> ocr.service.ts uzerinden pdf-poppler'''i
@@ -473,9 +476,6 @@ describe('I02 · PII teshis HTTP yuzeyi kaldirildi', () => {
 // Windows'''ta gorunmez. pdf-poppler burada hic cagirilmiyor, yalniz require ediliyor;
 // mock'''lamak davranis degistirmez.
 jest.mock('pdf-poppler', () => ({}));
-jest.mock('../../admin/admin.service', () => ({ IcrabotAdminService: class {} }));
-jest.mock('../../admin/audit-report.service', () => ({ AuditReportService: class {} }));
-jest.mock('../../admin/job-monitor.service', () => ({ JobMonitorService: class {} }));
 jest.mock('../../evidence.service', () => ({ EvidenceService: class {} }));
 jest.mock('../../icrabot.service', () => ({ IcrabotService: class {} }));
 jest.mock('../../recipe.service', () => ({ RecipeService: class {} }));
@@ -542,5 +542,98 @@ describe('I03 · job leasing HTTP yuzeyi kaldirildi (composition tabanli)', () =
   it('F09D PII controller HALA kayitli DEGIL (I02 geri alinmadi)', () => {
     expect(moduleControllers.map((c) => c.name)).not.toContain('PiiMaskingController');
     expect(controllerPaths).not.toContain('icrabot/enterprise/pii');
+  });
+});
+
+// ============================================================
+// R02-F15 · I05 — ADMIN KIRIK PRISMA IMPORTLARININ ONARIMI
+//
+// DEBTOR-ICRABOT-ADMIN-BROKEN-IMPORT-REPAIR-P1-I05
+//
+// admin/ derinligindeki uc servis `../../prisma/prisma.service` importu tasiyordu;
+// bu yol admin/ dizininden `src/modules/prisma/prisma.service`'e cozulur ve o dosya
+// YOKTUR (dogrusu `../../../` -> `src/prisma/prisma.service`). Dizin canonical
+// typecheck'ten exclude edildigi icin (R02-F14) kirik hic yakalanmamisti.
+//
+// I05 YALNIZ uc import satirini onarir: davranis degisikligi yok; IcrabotModule
+// app.module.ts'te DEVRE DISI kalir (reactivation AYRICA YETKILENDIRILMEDI).
+//
+// Bu blok kaynak metnine ek olarak gercek require/composition'a dayanir; herhangi
+// bir satir eski haline dondurulurse (negative control) blok KIRMIZIYA doner.
+// ============================================================
+describe('I05 · admin kirik prisma importlari onarildi (R02-F15)', () => {
+  const ADMIN_DIR = path.join(__dirname, '..', '..', 'admin');
+  const ADMIN_FILES = ['admin.service.ts', 'audit-report.service.ts', 'job-monitor.service.ts'];
+
+  it('uc admin dosyasi dogru specifier tasiyor; eski kirik specifier hicbirinde yok', () => {
+    for (const f of ADMIN_FILES) {
+      const src = fs.readFileSync(path.join(ADMIN_DIR, f), 'utf8');
+      expect(src).toContain("from '../../../prisma/prisma.service'");
+      expect(src).not.toMatch(/from '\.\.\/\.\.\/prisma\/prisma\.service'/);
+    }
+  });
+
+  it('specifier admin/ dizininden GERCEK dosyaya cozuluyor; eski yolun hedefi hala yok', () => {
+    const target = path.resolve(ADMIN_DIR, '../../../prisma/prisma.service.ts');
+    expect(fs.existsSync(target)).toBe(true);
+    // eski specifier'in isaret ettigi konum (src/modules/prisma) mevcut degil:
+    expect(fs.existsSync(path.resolve(ADMIN_DIR, '../../prisma/prisma.service.ts'))).toBe(false);
+  });
+
+  it('uc admin servisi mock OLMADAN gercek modul olarak require edilebiliyor', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { AdminService } = require('../../admin/admin.service');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { AuditReportService } = require('../../admin/audit-report.service');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { JobMonitorService } = require('../../admin/job-monitor.service');
+    expect(typeof AdminService).toBe('function');
+    expect(typeof AuditReportService).toBe('function');
+    expect(typeof JobMonitorService).toBe('function');
+    // Constructor DB baglantisi acmaz; dormant capability instantiate edilebilir.
+    const svc = new JobMonitorService({} as any);
+    expect(svc).toBeInstanceOf(JobMonitorService);
+  });
+
+  it('modul composition uc admin servisini GERCEK sinif kimligiyle iceriyor (mock/undefined degil)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { IcrabotModule } = require('../../icrabot.module');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { AdminService } = require('../../admin/admin.service');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { AuditReportService } = require('../../admin/audit-report.service');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { JobMonitorService } = require('../../admin/job-monitor.service');
+    const providers: any[] = Reflect.getMetadata('providers', IcrabotModule) || [];
+    expect(providers).toContain(AdminService);
+    expect(providers).toContain(AuditReportService);
+    expect(providers).toContain(JobMonitorService);
+    // Eski yanlis-isimli mock (`IcrabotAdminService`) doneminde AdminService pozisyonu
+    // undefined kaliyordu; artik provider listesinde undefined bulunmamali.
+    expect(providers.filter((p) => p === undefined)).toHaveLength(0);
+  });
+
+  it('AdminController kayitli ve JwtAuthGuard tasiyor (I05 davranis degistirmedi)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { IcrabotModule } = require('../../icrabot.module');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { AdminController } = require('../../admin/admin.controller');
+    const controllers: any[] = Reflect.getMetadata('controllers', IcrabotModule) || [];
+    expect(controllers).toContain(AdminController);
+    const guards = Reflect.getMetadata('__guards__', AdminController) || [];
+    expect(guards).toContain(JwtAuthGuard);
+  });
+
+  it('I01/I02/I03 sozlesmeleri I05 sonrasinda da gecerli', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { IcrabotModule } = require('../../icrabot.module');
+    const controllers: any[] = Reflect.getMetadata('controllers', IcrabotModule) || [];
+    const names = controllers.map((c) => c.name);
+    const routePaths = controllers.map((c) => Reflect.getMetadata('path', c) as string);
+    expect(controllers).toContain(ApprovalWorkflowController); // I01: guard'li yuzey kayitli
+    expect(names).not.toContain('PiiMaskingController'); // I02 geri gelmedi
+    expect(routePaths).not.toContain('icrabot/enterprise/pii');
+    expect(names).not.toContain('JobLeasingController'); // I03 geri gelmedi
+    expect(routePaths).not.toContain('icrabot/enterprise/leasing');
   });
 });
