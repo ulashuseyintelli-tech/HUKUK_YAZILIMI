@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException,
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import {
   ClientIntakeSubmissionStatus,
   ClientIntakeFieldReviewStatus,
@@ -75,6 +76,7 @@ export class ClientIntakePromotionService {
     private prisma: PrismaService,
     private audit: AuditService,
     private officeApproval: OfficeApprovalService,
+    private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
   ) {}
 
   /**
@@ -123,6 +125,13 @@ export class ClientIntakePromotionService {
     if (!debtor) throw new BadRequestException('Borçlu bulunamadı (tenant)');
     const link = await this.prisma.caseDebtor.findFirst({ where: { caseId: sub.caseId, debtorId }, select: { id: true } });
     if (!link) throw new BadRequestException('Borçlu bu takibe ait değil');
+
+    // I09: passive CaseDebtor artık yeni promote hedefi olamaz (mevcut assertActiveByCaseDebtorId
+    // deseni — diğer tüm CaseDebtor "yeni operasyon" yazıcılarıyla aynı). Late-result DEĞİL:
+    // promote onaylı beyanı İLK KEZ kanoniğe yazan aktif bir karar eylemidir.
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, link.id, {
+      expectedCaseId: sub.caseId,
+    });
 
     // İdempotent aday: APPROVED & henüz promote edilmemiş.
     const fields = await this.prisma.clientIntakeField.findMany({
@@ -246,6 +255,11 @@ export class ClientIntakePromotionService {
     const cd = await this.prisma.caseDebtor.findFirst({ where: { caseId: field.submission.caseId, debtorId: dto.debtorId }, select: { id: true } });
     if (!cd) throw new BadRequestException('Borçlu bu takibe ait değil');
 
+    // I09: passive CaseDebtor artık yeni promote hedefi olamaz (bkz. promote() üstündeki not).
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, cd.id, {
+      expectedCaseId: field.submission.caseId,
+    });
+
     const data = {
       debtorId: dto.debtorId,
       street: dto.street,
@@ -338,6 +352,11 @@ export class ClientIntakePromotionService {
     if (!debtor) throw new BadRequestException('Borçlu bulunamadı (tenant)');
     const cd = await this.prisma.caseDebtor.findFirst({ where: { caseId: field.submission.caseId, debtorId }, select: { id: true } });
     if (!cd) throw new BadRequestException('Borçlu bu takibe ait değil');
+
+    // I09: passive CaseDebtor artık yeni promote hedefi olamaz (bkz. promote() üstündeki not).
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, cd.id, {
+      expectedCaseId: field.submission.caseId,
+    });
 
     // Atomik: kanonik create + promotedRef damgası TEK transaction (orphan/çift-yazım yok).
     const cis = await this.prisma.$transaction(async (tx) => {
