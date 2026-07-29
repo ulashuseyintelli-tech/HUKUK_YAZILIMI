@@ -543,15 +543,36 @@ export function resolveOfficialMahiyetKodu(
   }
 
   if (takip.kind === 'RESOLVED' && takip.code === '1') {
-    // İlamsız kol — M-01 adayı: owner APPROVE etti ama discriminator YOK.
+    // İlamsız kol — M-01: owner APPROVE etti ama discriminator YOK.
+    //
+    // UYAP-OFFICIAL-NAFAKA-LEGAL-BASIS-DISCRIMINATOR-I01 bunu EXACT residual'a
+    // dönüştürdü (belirsizlik değil, ölçülmüş üç yapısal gerçek):
+    //
+    // 1. Kanonik alacak modeli ClaimItem'dır (legal-kernel B, 2026-06-13) ve nafaka
+    //    BİLİNÇLİ OLARAK dışındadır: `ClaimItemType`'ta NAFAKA yok;
+    //    tbk100-legal-decisions-ledger R1/R2 gereği `DueType.NAFAKA → null`
+    //    ("alacak muhasebesi otoritesi değil, yalnız Due taksit takvimi").
+    //    → M-01'in bağlanabileceği claim-level nafaka varlığı YOKTUR.
+    // 2. `Due.type=NAFAKA` yazarları ya caller-supplied DTO'dur ya da scheduler'ın
+    //    `subCategory='NAFAKA'` filtresinden TÜRETİLMİŞTİR (dairesel — owner'ın
+    //    dışladığı kategori adına geri döner) ve serbest-metin description
+    //    eşleşmesi kullanır. → bağımsız hukuki-dayanak kanıtı DEĞİLDİR.
+    // 3. `CaseJudgment` şemada "İlamlı takipler için" deklare edilmiştir; ilamsız
+    //    kolda kullanmak modelin kendi beyan edilmiş kapsamını aşar.
+    //
+    // Bunları aşmak schema/policy değişikliği ister — bu görevde YASAK. Tahmin
+    // YAPILMADI; satır fail-closed kalır.
     return {
       kind: 'MODEL_RESIDUAL',
       domainType: 'caseSubCategory:NAFAKA+ilamsiz',
       reason:
-        'M-01 owner APPROVE etti (9009) ancak owner kosulu 3 ("CaseSubCategory ' +
-        'adi disinda canonical legal basis") karsilanamadi: ilamsiz kolda CaseJudgment ' +
-        'yok; Due.type=NAFAKA adayi bulundu ama ClaimItem karsisinda canonical ' +
-        'authority statusu governance kaydiyla belirlenmemis. Tahmin YAPILMADI.',
+        'M-01 (9009) owner-approved ancak canonical discriminator YOK: kanonik alacak ' +
+        'modeli ClaimItem nafakayi BILINCLI olarak dislar (tbk100 ledger R1/R2, ' +
+        'DueType.NAFAKA -> null; ClaimItemType.NAFAKA yok); Due.type=NAFAKA ya ' +
+        'caller-supplied ya subCategory-turevi (dairesel); CaseJudgment ilamli icin ' +
+        'deklare. Ilamsiz nafaka icin claim-level hukuki-dayanak modeli mevcut degil. ' +
+        'Tahmin/schema degisikligi YAPILMADI (UYAP-OFFICIAL-NAFAKA-LEGAL-BASIS-' +
+        'DISCRIMINATOR-I01).',
     };
   }
 
