@@ -3612,28 +3612,31 @@ I08  CLIENT-ARC-07-LEGACY-FLAT-REDUCTION-I08
 
 ```text
 NEXT ELIGIBLE IMPLEMENTATION TASK:
-CLIENT-ARC-07-STAFF-HISTORY-I03
+CLIENT-ARC-07-PRODUCTION-EVIDENCE-I04
 
 STATUS: OWNER GO REQUIRED / NOT STARTED
 
 TAMAMLANAN DILIMLER:
 I01 CLIENT-ARC-07-LIFECYCLE-INVARIANT-I01    CLOSED / VERIFIED   PR #1943
 I02 CLIENT-ARC-07-ARCHIVE-RESTORE-AUDIT-I02  CLOSED / VERIFIED   PR #1958
+I03 CLIENT-ARC-07-STAFF-HISTORY-I03          CLOSED / VERIFIED   PR #1961
 ```
 
-Bu bölüm `I03`'ü **başlatmaz**; yalnız sıradaki uygun görev olarak tanımlar. `I03`–`I08` otomatik olarak YETKİLENDİRİLMEZ.
+Bu bölüm `I04`'ü **başlatmaz**; yalnız sıradaki uygun görev olarak tanımlar. `I04`–`I08` otomatik olarak YETKİLENDİRİLMEZ.
 
 ### 49.15 Statü Kesinliği
 
 ```text
-ARC-07                     : IN PROGRESS / I01 CLOSED / I02 CLOSED / I03 NOT STARTED
+ARC-07                     : IN PROGRESS / I01 + I02 + I03 CLOSED / I04 NOT STARTED
 VER-02                     : CLOSED / VERIFIED (degismedi)
 CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01 : CLOSED / VERIFIED (degismedi)
 ACT-23                     : UNAFFECTED
 PRODUCTION DATA            : NOT VERIFIED
 RUNTIME                    : I01 + I02 ile DEGISTI (invariant guard, arsiv/restore, audit)
 SCHEMA / MIGRATION         : DEGISMEDI (I01 ve I02 diff 0)
-STAFF HISTORY API / UI     : NOT IMPLEMENTED (I03)
+STAFF HISTORY API / UI     : IMPLEMENTED (I03); PORTAL EXPOZURU YOK
+ADRES AUDIT GORUNURLUGU    : DEFERRED (yeniden kullanilabilir audit-history UI konvansiyonu yok)
+CREATE/UPDATE AUDIT        : OPEN / OWNER-GATED RESIDUAL (I02 kapsamadi, I03 uygulamadi)
 FIZIKSEL SILME             : FAIL-CLOSED (I02); POL-E on kosullari TEMSIL EDILMIYOR
 BACKFILL                   : NOT STARTED (I05/I06)
 IMPLEMENTATION AUTHORITY   : NONE (I03+ icin owner GO gerekir)
