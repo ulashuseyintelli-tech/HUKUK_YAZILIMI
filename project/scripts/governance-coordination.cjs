@@ -157,6 +157,27 @@ const NONCOORD_PR_CLASSIFIER_REPAIR_R01 = Object.freeze({
 const NONCOORD_PR_CLASSIFIER_REPAIR_R01_PATHS = new Set(
   NONCOORD_PR_CLASSIFIER_REPAIR_R01.changedPaths,
 );
+const GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01 = Object.freeze({
+  taskId: 'GOVERNANCE-COORDINATION-ROOT-SA-RECORD-SCOPING-REPAIR-R01',
+  mode: 'GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01',
+  baseSha: '3f3d672197722f8f7d9ebdebdf979d715cfb601d',
+  headRef: 'codex/governance-coordination-root-sa-record-scoping-repair-r02',
+  changedPaths: Object.freeze([
+    Object.freeze({
+      status: 'M',
+      path: 'project/scripts/governance-coordination.cjs',
+    }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/scripts/governance-coordination.test.cjs',
+    }),
+    Object.freeze({
+      status: 'M',
+      path:
+        'project/docs/governance/governance-writer-coordination-contract.md',
+    }),
+  ]),
+});
 const ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02 = Object.freeze({
   mode: 'ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02',
   baseSha: '344259a80ce790c9c09455b978ff124ced54bf63',
@@ -2366,6 +2387,29 @@ function classifyPrChangeSet(changes, context = {}) {
     return { mode: NONCOORD_PR_CLASSIFIER_REPAIR_R01.mode };
   }
 
+  const rootSaRecordScopingRepair =
+    GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01;
+  if (
+    context.headRef === rootSaRecordScopingRepair.headRef ||
+    (context.base === rootSaRecordScopingRepair.baseSha &&
+      hasExactChangeSet(changes, rootSaRecordScopingRepair.changedPaths))
+  ) {
+    if (
+      context.base !== rootSaRecordScopingRepair.baseSha ||
+      context.headRef !== rootSaRecordScopingRepair.headRef ||
+      !hasExactChangeSet(changes, rootSaRecordScopingRepair.changedPaths)
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'root SA record-scoping repair requires its exact base, branch and M/M/M scope',
+      );
+    }
+    return {
+      mode: rootSaRecordScopingRepair.mode,
+      taskId: rootSaRecordScopingRepair.taskId,
+    };
+  }
+
   if (
     context.base === ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.baseSha &&
     context.headRef === ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef &&
@@ -2854,6 +2898,7 @@ function classifyPrChangeSet(changes, context = {}) {
       AUTHORITY_LOCATOR_REPAIR_I01.headRef,
       EXECUTION_BASE_ANCESTRY_REPAIR_I01.headRef,
       NONCOORD_PR_CLASSIFIER_REPAIR_R01.headRef,
+      GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01.headRef,
       ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.headRef,
       gh02Binding.bindingPr.headRef,
       gh02Binding.workflowPr.headRef,
@@ -3308,6 +3353,22 @@ function validateNoncoordPrClassifierRepairScope(options) {
     );
   }
   return { mode: NONCOORD_PR_CLASSIFIER_REPAIR_R01.mode };
+}
+
+function validateRootSaRecordScopingRepairScope(options) {
+  const { base, headRef, changes } = options;
+  const repair = GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01;
+  if (
+    base !== repair.baseSha ||
+    headRef !== repair.headRef ||
+    !hasExactChangeSet(changes, repair.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'root SA record-scoping repair binding mismatch',
+    );
+  }
+  return { mode: repair.mode, taskId: repair.taskId };
 }
 
 function validateGithubPlatformGh02BindingScope(options) {
@@ -6434,6 +6495,19 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01.mode
+  ) {
+    return validateRootSaRecordScopingRepairScope({
+      base,
+      head,
+      headRef,
+      changes,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01.bindingPr.mode
   ) {
     return validateGithubPlatformGh02BindingScope({
@@ -6740,6 +6814,7 @@ module.exports = {
   GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS,
   GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01,
   GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01,
+  GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01,
   RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,

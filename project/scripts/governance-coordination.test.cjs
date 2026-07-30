@@ -299,6 +299,22 @@ function classifyNoncoordPrClassifierRepair(changes, overrides = {}) {
   });
 }
 
+function rootSaRecordScopingRepairChanges() {
+  return coordination.GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function classifyRootSaRecordScopingRepair(changes, overrides = {}) {
+  const repair =
+    coordination.GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01;
+  return coordination.classifyPrChangeSet(changes, {
+    base: repair.baseSha,
+    headRef: repair.headRef,
+    ...overrides,
+  });
+}
+
 function analyzeFirstConditionalExecutionR02Changes() {
   return coordination.ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -2597,6 +2613,45 @@ test('non-coordination classifier repair rejects a scope mismatch', () => {
       ]),
     'CONTROL_PLANE_SCOPE_FORBIDDEN',
   );
+});
+
+test('root SA record-scoping repair requires the exact base branch and M/M/M scope', () => {
+  const repair =
+    coordination.GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01;
+  assert.deepEqual(
+    classifyRootSaRecordScopingRepair(rootSaRecordScopingRepairChanges()),
+    { mode: repair.mode, taskId: repair.taskId },
+  );
+});
+
+test('root SA record-scoping repair rejects base branch scope and status drift', () => {
+  const repair =
+    coordination.GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01;
+  const changes = rootSaRecordScopingRepairChanges();
+  const driftCases = [
+    { changes, overrides: { base: '0'.repeat(40) } },
+    { changes, overrides: { headRef: `${repair.headRef}-copy` } },
+    { changes: changes.slice(1), overrides: {} },
+    {
+      changes: changes.map((change, index) =>
+        index === 0 ? { ...change, status: 'A' } : change,
+      ),
+      overrides: {},
+    },
+    {
+      changes: [
+        ...changes,
+        { status: 'M', path: 'project/docs/governance/decision-log.md' },
+      ],
+      overrides: {},
+    },
+  ];
+  for (const fixture of driftCases) {
+    expectCode(
+      () => classifyRootSaRecordScopingRepair(fixture.changes, fixture.overrides),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
 });
 
 test('analyze-first R02 requires exact base branch and A/M change set', () => {
