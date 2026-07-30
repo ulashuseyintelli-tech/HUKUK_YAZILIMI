@@ -6,10 +6,58 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ClientAddressService } from '../client-address.service';
 
-function buildHarness(opts: { client?: any; address?: any; addressCount?: number } = {}) {
+const DEFAULT_ADDRESS = {
+  id: 'addr-1',
+  clientId: 'client-1',
+  type: 'BEYAN',
+  street: 'Eski Sokak',
+  city: 'İstanbul',
+  district: 'Kadıköy',
+  region: null,
+  postalCode: null,
+  isPrimary: false,
+  isCurrent: true,
+};
+
+/**
+ * CLIENT-ARC-07-LIFECYCLE-INVARIANT-I01 HARNESS GÜNCELLEMESİ:
+ * servis artık kardeş durumunu `tx.clientAddress.count()` YERİNE minimum projeksiyonlu
+ * `tx.clientAddress.findMany()` ile okur (invariant değerlendirmesi §49 için gerekli).
+ * `count` mock'u ARTIK KULLANILMIYOR ve kaldırıldı. Assertion'lar DEĞİŞTİRİLMEDİ —
+ * yalnız harness servisin yeni okuma şekline hizalandı ve §49-GEÇERLİ kardeş kümesi üretir
+ * (aksi halde yeni invariant guard'ı testin kurmak istediği durumu haklı olarak reddederdi).
+ */
+function defaultSiblings(opts: { address?: any; addressCount?: number }, addressFixture: any) {
+  if (opts.addressCount !== undefined) {
+    // addressCount kadar mevcut satır; İLKİ primary (gerçekçi: ilk adres otomatik primary olur).
+    return Array.from({ length: opts.addressCount }, (_, i) => ({
+      id: `addr-existing-${i + 1}`,
+      clientId: 'client-1',
+      isPrimary: i === 0,
+      isCurrent: true,
+    }));
+  }
+  if (!addressFixture) return [];
+  const target = {
+    id: addressFixture.id,
+    clientId: addressFixture.clientId,
+    isPrimary: addressFixture.isPrimary,
+    isCurrent: addressFixture.isCurrent,
+  };
+  // Hedef satır primary değilse kümede AYRI bir primary bulunmalı (§49 INV-03).
+  return target.isPrimary
+    ? [target]
+    : [target, { id: 'addr-primary', clientId: 'client-1', isPrimary: true, isCurrent: true }];
+}
+
+function buildHarness(
+  opts: { client?: any; address?: any; addressCount?: number; siblings?: any[] } = {},
+) {
+  const addressFixture = 'address' in opts ? opts.address : DEFAULT_ADDRESS;
+  const siblings = opts.siblings ?? defaultSiblings(opts, addressFixture);
   const tx = {
     clientAddress: {
-      count: jest.fn().mockResolvedValue(opts.addressCount ?? 0),
+      findMany: jest.fn().mockResolvedValue(siblings),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       create: jest.fn().mockImplementation(async ({ data }: any) => ({ id: 'addr-new', ...data })),
       update: jest.fn().mockImplementation(async ({ data }: any) => ({ id: 'addr-1', clientId: 'client-1', ...data })),
@@ -25,22 +73,7 @@ function buildHarness(opts: { client?: any; address?: any; addressCount?: number
       findFirst: jest.fn().mockResolvedValue('client' in opts ? opts.client : { id: 'client-1' }),
     },
     clientAddress: {
-      findFirst: jest.fn().mockResolvedValue(
-        'address' in opts
-          ? opts.address
-          : {
-              id: 'addr-1',
-              clientId: 'client-1',
-              type: 'BEYAN',
-              street: 'Eski Sokak',
-              city: 'İstanbul',
-              district: 'Kadıköy',
-              region: null,
-              postalCode: null,
-              isPrimary: false,
-              isCurrent: true,
-            },
-      ),
+      findFirst: jest.fn().mockResolvedValue(addressFixture),
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
@@ -150,14 +183,17 @@ describe('ClientAddressService', () => {
   });
 
   it('primary olmayan adres silinebilir', async () => {
-    const { svc, prisma } = buildHarness({
+    const { svc, tx } = buildHarness({
       address: { id: 'addr-1', clientId: 'client-1', isPrimary: false, isCurrent: true, type: 'BEYAN', street: null, city: null, district: null, region: null, postalCode: null },
     });
-    prisma.clientAddress.delete = jest.fn().mockResolvedValue({ id: 'addr-1' });
 
     await svc.remove('tenant-1', 'client-1', 'addr-1');
 
-    expect(prisma.clientAddress.delete).toHaveBeenCalledWith({ where: { id: 'addr-1' } });
+    // I01 DAVRANIŞ DEĞİŞİKLİĞİ (kasıtlı, §5): silme ARTIK transaction İÇİNDE yapılır —
+    // invariant okuması ile yazma aynı transaction'da olmak zorunda (TOCTOU yarışı yok).
+    // Eskiden `prisma.clientAddress.delete` (transaction DIŞI) çağrılıyordu. Silme davranışı
+    // ve reddi DEĞİŞMEDİ; yalnız transaction sınırı düzeltildi.
+    expect(tx.clientAddress.delete).toHaveBeenCalledWith({ where: { id: 'addr-1' } });
   });
 
   it('create/update/remove hiçbir zaman Client (flat adres kolonları) tablosuna yazmaz', async () => {
