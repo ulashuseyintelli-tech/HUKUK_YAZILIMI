@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeeEngineService } from '../fee-engine/fee-engine.service';
+import { resolveClientAddress } from '../client/client-address-resolver';
 import type { TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx';
 
@@ -333,10 +334,23 @@ export class TemplateEngineService {
     const where = { id: caseId, tenantId };
     const caseRecord = await (this.prisma as any).case.findFirst({
       where,
-      include: { 
-        executionOffice: true, 
-        caseClients: { include: { client: true } }, 
-        lawyers: { include: { lawyer: true } }, 
+      include: {
+        executionOffice: true,
+        // I07: resmi şablon çıktısı yapısal ClientAddress'i (varsa) OKUR. I01/I03 ile AYNI
+        // sözleşme: yalnız isCurrent=true, isPrimary desc sıralı.
+        caseClients: {
+          include: {
+            client: {
+              include: {
+                addresses: {
+                  where: { isCurrent: true },
+                  orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+                },
+              },
+            },
+          },
+        },
+        lawyers: { include: { lawyer: true } },
         debtors: { 
           where: { lifecycleStatus: 'ACTIVE' },
           include: { 
@@ -474,15 +488,27 @@ export class TemplateEngineService {
       filingDate: caseRecord.startDate?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
       executionNumber: caseRecord.executionNumber,
       executionOffice: { name: caseRecord.executionOffice?.name || '', city: caseRecord.executionOffice?.city || '', uyapCode: caseRecord.executionOffice?.uyapCode },
-      creditors: (caseRecord.caseClients || []).map((c: any) => ({ 
-        type: c.client?.type || 'INDIVIDUAL', 
-        name: c.client?.displayName || c.client?.name || '', 
-        identityNo: c.client?.tckn, 
-        taxNo: c.client?.vkn, 
-        address: c.client?.address,
-        city: c.client?.city,
-        district: c.client?.district,
-      })),
+      creditors: (caseRecord.caseClients || []).map((c: any) => {
+        // I07: yapısal ClientAddress (varsa) resmi çıktının tek kaynağıdır; yoksa legacy
+        // flat kolona AÇIKÇA düşer (resolveClientAddress, §49.6 D05 Stage 1 ile uyumlu).
+        const resolved = resolveClientAddress({
+          address: c.client?.address,
+          city: c.client?.city,
+          district: c.client?.district,
+          region: c.client?.region,
+          postalCode: c.client?.postalCode,
+          addresses: c.client?.addresses,
+        });
+        return {
+          type: c.client?.type || 'INDIVIDUAL',
+          name: c.client?.displayName || c.client?.name || '',
+          identityNo: c.client?.tckn,
+          taxNo: c.client?.vkn,
+          address: resolved.line || undefined,
+          city: resolved.city || undefined,
+          district: resolved.district || undefined,
+        };
+      }),
       lawyers: (caseRecord.lawyers || []).map((l: any) => ({ 
         name: `Av.${l.lawyer?.name || ''} ${l.lawyer?.surname || ''}`.trim(), 
         barNumber: l.lawyer?.barNumber || '', 

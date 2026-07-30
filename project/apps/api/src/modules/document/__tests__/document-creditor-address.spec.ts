@@ -112,21 +112,61 @@ describe('CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01 — alacaklı adresi hukuki 
     expect(data.debtor.address).toBe('Borçlu Adresi');
   });
 
-  it('[8] ClientAddress (çok-adres) HİÇ sorgulanmaz — ARC-07 davranışı değişmedi', async () => {
-    const prisma: any = {
-      case: { findFirst: jest.fn().mockResolvedValue(makeCase(CREDITOR_ADDRESS)) },
-      clientAddress: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
-    };
+  it('[8] I07 KASITLI GÜNCELLEME: ClientAddress artık OKUNUR — I01/I03 ile AYNI sözleşmeyle', async () => {
+    // CLIENT-ARC-07-OFFICIAL-CONSUMER-ADAPTER-I07 (owner GO-IMPLEMENT) bu satırın "ClientAddress
+    // HİÇ sorgulanmaz" iddiasını KASITLI olarak geçersiz kıldı: resmi çıktı artık yapısal
+    // ClientAddress'i (varsa) OKUR — DOĞRUDAN Prisma çağrısıyla DEĞİL, `case.findFirst`'ün
+    // `client.addresses` include'u üzerinden (I01/I03'ün kanonik sözleşmesiyle AYNI: yalnız
+    // isCurrent=true, isPrimary desc/createdAt asc sıralı). Test GEVŞETİLMEDİ — sınır
+    // İLERLETİLDİ: artık HANGİ sözleşmeyle okunduğu pinlenir.
+    const prisma: any = { case: { findFirst: jest.fn().mockResolvedValue(makeCase(CREDITOR_ADDRESS)) } };
     const svc = new DocumentService(prisma, new TemplateService());
     await svc.prepareDocumentData('case-1', 'tenant-A');
 
-    expect(prisma.clientAddress.findMany).not.toHaveBeenCalled();
-    expect(prisma.clientAddress.findFirst).not.toHaveBeenCalled();
-    expect(prisma.clientAddress.count).not.toHaveBeenCalled();
-    // Sorgunun include'unda `addresses` relation'ı İSTENMEZ (flat kolon yeterli).
     const include = prisma.case.findFirst.mock.calls[0][0].include;
-    expect(include.client).toBe(true);
-    expect(include.client).not.toEqual(expect.objectContaining({ include: expect.anything() }));
+    expect(include.client).toEqual({
+      include: {
+        addresses: {
+          where: { isCurrent: true },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        },
+      },
+    });
+  });
+
+  it('[8b] fixture\'da addresses YOKSA (I01 öncesi şekil) legacy flat kolona AÇIKÇA düşer', async () => {
+    // makeCase() fixture'ı `client.addresses` alanı İÇERMEZ (yapısal satır YOK senaryosu).
+    // Resolver bunu "yapısal satır yok" olarak yorumlar ve legacy flat kolona düşer — davranış
+    // testin ana amacıyla (adres hukuki çıktıya ulaşır) AYNI kalır.
+    const svc = build(CREDITOR_ADDRESS);
+    const data = await svc.prepareDocumentData('case-1', 'tenant-A');
+    expect(data.creditor.address).toBe(CREDITOR_ADDRESS);
+  });
+
+  it('[8c] yapısal BİRİNCİL ClientAddress VARSA legacy flat kolonu GÖRMEZDEN GELİR', async () => {
+    // Bu test resolver'ın GERÇEKTEN çağrıldığını kanıtlar: yapısal satır legacy'den FARKLI
+    // bir değer taşıyor. Resolver bypass edilip ham `client.address` okunsaydı bu test
+    // legacy değeri görür ve YANLIŞLIKLA geçerdi — [8]/[8c] birlikte bunu kapatır.
+    const prisma: any = {
+      case: {
+        findFirst: jest.fn().mockResolvedValue({
+          ...makeCase('Legacy Cadde'),
+          client: {
+            name: 'Alacaklı A.Ş.',
+            identityNo: '1234567890',
+            address: 'Legacy Cadde',
+            city: 'LegacyŞehir',
+            addresses: [
+              { street: 'Yapısal Cadde', city: 'İstanbul', district: 'Kadıköy', isPrimary: true },
+            ],
+          },
+        }),
+      },
+    };
+    const svc = new DocumentService(prisma, new TemplateService());
+    const data = await svc.prepareDocumentData('case-1', 'tenant-A');
+    expect(data.creditor.address).toBe('Yapısal Cadde, Kadıköy/İstanbul');
+    expect(data.creditor.address).not.toContain('Legacy Cadde');
   });
 
   it('[9] tenant fail-closed korunur — adres onarımı guard\'ı zayıflatmadı', async () => {

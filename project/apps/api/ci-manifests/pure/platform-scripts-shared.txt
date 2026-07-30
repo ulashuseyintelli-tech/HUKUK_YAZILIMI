@@ -237,6 +237,7 @@ src/modules/debtor/third-party-passive-writer.spec.ts
 src/modules/debtor/__tests__/rfa008-thirdparty-guard.spec.ts
 src/modules/document/__tests__/document-creditor-address.spec.ts
 src/modules/document/__tests__/document-fail-closed-tenant.spec.ts
+src/modules/template-engine/__tests__/template-engine-creditor-address.spec.ts
 src/modules/error-log/__tests__/all-exceptions.filter.spec.ts
 src/modules/error-log/__tests__/error-dedupe-key.spec.ts
 src/modules/error-log/__tests__/error-fingerprint.spec.ts

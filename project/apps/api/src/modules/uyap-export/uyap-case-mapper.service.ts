@@ -18,6 +18,7 @@ import {
 } from './uyap-xml.types';
 import {
   Client,
+  ClientAddress,
   Debtor,
   Due,
   CaseType,
@@ -26,6 +27,7 @@ import {
   DueType,
   Lawyer,
 } from '@prisma/client';
+import { resolveClientAddress } from '../client/client-address-resolver';
 
 // ClaimItem tipi (schema'da varsa)
 interface ClaimItemWithInstrument {
@@ -61,7 +63,20 @@ export class UyapCaseMapperService {
     const caseData = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
       include: {
-        caseClients: { include: { client: true } },
+        // I07: resmi UYAP çıktısı yapısal ClientAddress'i (varsa) OKUR. I01/I03 ile AYNI
+        // sözleşme: yalnız isCurrent=true, isPrimary desc sıralı.
+        caseClients: {
+          include: {
+            client: {
+              include: {
+                addresses: {
+                  where: { isCurrent: true },
+                  orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+                },
+              },
+            },
+          },
+        },
         debtors: {
           where: { lifecycleStatus: 'ACTIVE' },
           include: { debtor: true },
@@ -191,7 +206,10 @@ export class UyapCaseMapperService {
   /**
    * Client'ı UYAP Taraf formatına dönüştür
    */
-  private mapClientToTaraf(client: Client, rol: UyapTarafRolu): UyapTaraf {
+  private mapClientToTaraf(
+    client: Client & { addresses?: ClientAddress[] },
+    rol: UyapTarafRolu,
+  ): UyapTaraf {
     const kisi: UyapKisi = {
       kimlikNo: client.tckn || client.vkn || '',
       kisiTipi: client.type === 'INDIVIDUAL' ? 'GERCEK_KISI' : 'TUZEL_KISI',
@@ -204,12 +222,21 @@ export class UyapCaseMapperService {
       kisi.unvan = client.companyName || client.displayName || '';
     }
 
-    // Adres
-    if (client.address) {
+    // Adres — I07: yapısal ClientAddress (varsa) resmi çıktının tek kaynağıdır; yoksa
+    // legacy flat kolona AÇIKÇA düşer (resolveClientAddress, §49.6 D05 Stage 1 ile uyumlu).
+    const resolved = resolveClientAddress({
+      address: client.address,
+      city: client.city,
+      district: client.district,
+      region: client.region,
+      postalCode: client.postalCode,
+      addresses: client.addresses,
+    });
+    if (resolved.line) {
       kisi.adres = {
-        il: client.city || '',
-        ilce: client.district || '',
-        tamAdres: client.address,
+        il: resolved.city || '',
+        ilce: resolved.district || '',
+        tamAdres: resolved.line,
       };
     }
 

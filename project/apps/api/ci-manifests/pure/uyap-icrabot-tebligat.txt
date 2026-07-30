@@ -177,6 +177,7 @@ src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.co
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.registrar.spec.ts
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence.service.spec.ts
 src/modules/uyap-export/__tests__/uyap-case-mapper.debtor-role-mapping.spec.ts
+src/modules/uyap-export/__tests__/uyap-case-mapper-creditor-address.spec.ts
 src/modules/uyap-export/__tests__/uyap-export-passive-policy.spec.ts
 src/modules/uyap-export/projection/__tests__/batch-faizt-readiness.contract.spec.ts
 src/modules/uyap-export/projection/__tests__/due-claimitem-relation.classifier.spec.ts
