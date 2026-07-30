@@ -1,6 +1,6 @@
 # Runbook: Deterministic PR Closeout
 
-**Status:** Active · **Owner:** Platform · **Son güncelleme:** 2026-07-28
+**Status:** Active · **Owner:** Platform · **Son güncelleme:** 2026-07-30
 
 Bu runbook, owner tarafından bir task/PR'a açıkça bağlanmış merge authority mevcutken
 mekanik PR kapanışını yürüten `orch:closeout` komutunun operasyon prosedürüdür.
@@ -12,9 +12,9 @@ yalnız komutun nasıl çalıştırılacağını ve çıktısının nasıl okuna
 ## Ne yapar, ne yapmaz
 
 ```text
-YAPAR   : owner authority + 20 deterministik gate PASS ise
-          squash-merge → main sync → worktree cleanup → branch cleanup
-          → canonical verification → authority consumption
+YAPAR   : owner authority + deterministik gate'ler PASS ise
+          squash-merge → main sync → authority consumption → worktree cleanup
+          → branch cleanup → canonical verification
 
 YAPMAZ  : owner authority uretmez
           serbest metin owner mesajini yorumlamaz
@@ -57,13 +57,28 @@ değildir** (`AGENTS.md` §4).
 
 **Live closeout için ledger ZORUNLUDUR.** Ledger yoksa tüketim kaydı tutulamaz, dolayısıyla
 reuse koruması da yoktur; runner `MERGE_AUTHORITY_LEDGER_REQUIRED` ile fail-closed olur.
-`--dry-run` ledger olmadan çalışabilir — hiçbir mutation yapmadığı için tüketilecek bir şey
-de yoktur.
+`--dry-run` ledger olmadan yapısal gate'leri değerlendirebilir; machine-readable sonuç ayrıca
+`LIVE_AUTHORITY_MISSING` taşır.
 
-Zorunlu binding alanları: `authorityRef`, `taskId`, `pr`; live koşuda ayrıca `expectedHead`.
-Ledger'daki `expectedHead` komuta verilenle uyuşmazsa kapanış reddedilir. Kapanış başarılı
-olduğunda runner `consumed`, `consumedPr`, `consumedTaskId` ve `consumedMergeSha` yazar. Kayıt `taskId` + `pr` ile bağlanır;
-kapanış başarılı olduğunda runner `consumed` damgasını yazar:
+Schema v2 canonical SA/EG kayıtlarından PR açıldıktan ve required CI başarılı olduktan sonra
+explicit üretilir. Program/task, distinct SA/EG, repository, PR, current base SHA, head SHA,
+task/base branch, `git diff --name-status` scope'u, required check seti/checked SHA ve `SQUASH`
+merge methoduna exact bağlıdır. Entry ve bütün ledger deterministic digest taşır.
+
+```text
+ISSUED → VALIDATED → CONSUMED
+          ├────────→ REVOKED
+          ├────────→ EXPIRED
+          └────────→ INVALIDATED
+```
+
+Yalnız `VALIDATED` live koşuya uygundur. Başarılı merge ancestry doğrulamasından sonra ledger
+cleanup'tan önce atomik `CONSUMED` yapılır. Consumed v2 ledger aynı task/PR için dahi ikinci
+kez kullanılamaz. Conflict, digest tamper, partial write, head/base/scope/check drift ve
+canonical authority çözümleme hatası fail-closed reddedilir.
+
+Schema v1 yalnız unrelated historical recovery için okunabilir; yeni materializer v1 yazmaz.
+Eski minimum örnek:
 
 ```json
 {
@@ -80,24 +95,67 @@ kapanış başarılı olduğunda runner `consumed` damgasını yazar:
 }
 ```
 
-Tüketilmiş bir referans **aynı task + aynı PR** için yeniden kullanılabilir (recovery
-koşusu meşrudur); **başka bir PR** için `MERGE_AUTHORITY_REUSE_FORBIDDEN` üretir.
+Schema-v1 tüketilmiş bir referans aynı task + aynı PR historical recovery davranışını korur;
+başka PR için `MERGE_AUTHORITY_REUSE_FORBIDDEN` üretir. Bu compatibility v2 single-use
+semantiğini gevşetmez.
 
 ## Kullanım
 
+Önce PR current base/head/scope/check setine v2 ledger materialize edilir:
+
 ```text
 pnpm orch:closeout \
+  --materialize-ledger \
+  --program-id <PROGRAM-ID> \
+  --task-id <TASK-ID> \
+  --pr <NUMBER> \
+  --expected-base <40-hex-sha> \
+  --expected-head <40-hex-sha> \
+  --branch <ajan>/<konu> \
+  --worktree <worktree-yolu> \
+  --target-branch main \
+  --repository <owner/repo> \
+  --semantic-authority-kind SEMANTIC_AUTHORITY \
+  --semantic-authority-path <repo-path> \
+  --semantic-authority-record-id <record-id> \
+  --semantic-authority-evidence-sha <40-hex-sha> \
+  --execution-grant-kind EXECUTION_GRANT \
+  --execution-grant-path <repo-path> \
+  --execution-grant-record-id <record-id> \
+  --execution-grant-evidence-sha <40-hex-sha> \
+  --allowed-paths "path/a,path/b" \
+  --required-checks "Check A,Check B" \
+  --merge-method SQUASH \
+  --issued-by "<canonical owner name>" \
+  --ledger <task-local-ledger.json> \
+  --result-file <materialization-result.json>
+```
+
+Sonra aynı exact binding ile dry-run ve live koşulur:
+
+```text
+pnpm orch:closeout \
+  --program-id <PROGRAM-ID> \
   --task-id <TASK-ID> \
   --pr <NUMBER> \
   --expected-head <40-hex-sha> \
   --authority-type EX_ANTE_GO_COMPLETE \
-  --authority-ref "<owner beyani referansi>" \
+  --authority-ref <execution-grant-record-id> \
+  --semantic-authority-kind SEMANTIC_AUTHORITY \
+  --semantic-authority-path <repo-path> \
+  --semantic-authority-record-id <record-id> \
+  --semantic-authority-evidence-sha <40-hex-sha> \
+  --execution-grant-kind EXECUTION_GRANT \
+  --execution-grant-path <repo-path> \
+  --execution-grant-record-id <record-id> \
+  --execution-grant-evidence-sha <40-hex-sha> \
   --allowed-paths "path/a,path/b" \
+  --required-checks "Check A,Check B" \
   --branch <ajan>/<konu> \
   --worktree <worktree-yolu> \
-  --ledger <ledger.json> \
-  [--target-branch main] [--required-checks "A,B"] \
-  [--dry-run] [--json]
+  --ledger <task-local-ledger.json> \
+  [--result-file <task-local-live-result.json>] \
+  [--target-branch main] [--dry-run] [--json]
 ```
 
 Önce **daima `--dry-run`** çalıştırılır. Beklenen çıktı:
@@ -105,9 +163,13 @@ pnpm orch:closeout \
 ```text
 STATUS  DRY_RUN_ELIGIBLE
 STAGE   MERGE_GATE_VALIDATED
+STRUCTURAL  DRY_RUN_STRUCTURALLY_ELIGIBLE
+LIVE AUTH   LIVE_AUTHORITY_READY | LIVE_AUTHORITY_MISSING
 ```
 
 Dry-run hiçbir mutation yapmaz. Ancak bundan sonra live koşu yapılır.
+Bu nedenle `--result-file` dry-run ile birlikte kabul edilmez; yalnız materialization veya
+live terminal sonucu için kullanılır.
 
 Çıkış kodu: `0` = `CLOSED` veya `DRY_RUN_ELIGIBLE`, `1` = `BLOCKED` veya
 `MERGED_CLEANUP_BLOCKED`.
@@ -116,8 +178,8 @@ Dry-run hiçbir mutation yapmaz. Ancak bundan sonra live koşu yapılır.
 
 ```text
 PREFLIGHT → AUTHORITY_VALIDATED → PR_IDENTITY_VALIDATED → SCOPE_VALIDATED
-→ CI_TERMINAL → MERGE_GATE_VALIDATED → MERGED → MAIN_SYNCED → WORKTREE_CLEANED
-→ BRANCH_CLEANED → CANONICAL_VERIFIED → CLOSED
+→ CI_TERMINAL → MERGE_GATE_VALIDATED → MERGED → MAIN_SYNCED → LEDGER_CONSUMED
+→ WORKTREE_CLEANED → BRANCH_CLEANED → CANONICAL_VERIFIED → CLOSED
 ```
 
 Tek yönlüdür; bir aşama başarısızsa sonraki aşamaya geçilmez ve `stage` alanı nerede
@@ -155,23 +217,27 @@ Komut aynı context ile yeniden çalıştırılabilir:
 ## Blocker kodları
 
 Authority: `MERGE_AUTHORITY_MISSING` · `_INVALID` · `_TASK_MISMATCH` · `_PR_MISMATCH` ·
-`_REUSE_FORBIDDEN`
+`_REUSE_FORBIDDEN` · `AUTHORITY_RESOLUTION_FAILED` · `AUTHORITY_REFS_NOT_DISTINCT` ·
+`MERGE_AUTHORITY_LEDGER_MALFORMED` · `_DIGEST_MISMATCH` · `_CONSUMED` · `_REVOKED` ·
+`_EXPIRED` · `_INVALIDATED` · `CONFLICTING_MERGE_AUTHORITY_LEDGERS`
 
 Identity/scope: `PR_NOT_OPEN` · `PR_HEAD_MISMATCH` · `REMOTE_HEAD_MISMATCH` ·
 `LOCAL_HEAD_MISMATCH` · `CHANGED_PATH_SCOPE_FORBIDDEN` · `TARGET_BRANCH_UNEXPECTED` ·
-`REPOSITORY_IDENTITY_MISMATCH`
+`REPOSITORY_IDENTITY_MISMATCH` · `AUTHORIZED_BASE_MISMATCH` ·
+`AUTHORIZED_HEAD_MISMATCH` · `AUTHORIZED_SCOPE_MISMATCH`
 
 Collision: `COMPETING_WRITER_FOUND` · `OWNER_WIP_COLLISION`
 
 CI/merge: `CI_NOT_TERMINAL` · `CI_FAILED` · `CI_STALLED` · `PR_NOT_MERGEABLE` ·
-`PR_NOT_CLEAN` · `MERGE_FAILED` · `MERGE_STATE_UNVERIFIED`
+`PR_NOT_CLEAN` · `REQUIRED_CHECKS_BINDING_MISMATCH` · `MERGE_FAILED` ·
+`MERGE_STATE_UNVERIFIED`
 
 Beklenmedik yanıt: `UNEXPECTED_GITHUB_RESPONSE` — GitHub'dan gelen PR payload'ı şekil
 doğrulamasından geçmezse (eksik `state`, sha olmayan `headRefOid`, bozuk `mergeCommitOid`)
 kapanış fail-closed olur. Eksik bir alan sessizce "gate PASS" gibi değerlendirilmez.
 
-Post-merge: `MAIN_SYNC_FAILED` · `BRANCH_CLEANUP_FAILED` · `WORKTREE_CLEANUP_FAILED` ·
-`CANONICAL_VERIFICATION_FAILED`
+Post-merge: `MAIN_SYNC_FAILED` · `MERGE_SUCCEEDED_LEDGER_CONSUMPTION_FAILED` ·
+`BRANCH_CLEANUP_FAILED` · `WORKTREE_CLEANUP_FAILED` · `CANONICAL_VERIFICATION_FAILED`
 
 ## Güvenlik
 

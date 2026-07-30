@@ -1,6 +1,6 @@
 # Deterministic PR Closeout — Production Certification
 
-**Status:** CERTIFIED · **Tarih:** 2026-07-28 · **Program:** `GOV-DETERMINISTIC-CLOSEOUT-PRODUCTION-R01`
+**Status:** V1 CERTIFIED / V2 EXTENSION SELF-HOSTED-CLOSEOUT GATED · **Tarih:** 2026-07-30 · **Program:** `GOV-DETERMINISTIC-CLOSEOUT-PRODUCTION-R01`
 
 Bu belge closeout runner'ın production readiness kaydıdır. Normatif kural üretmez;
 bağlayıcı hükümler `AGENTS.md` §4 (merge authority), §5 (CI ve merge disiplini) ve §14
@@ -24,12 +24,15 @@ Manuel kapanış yalnız runner kullanılamaz, senaryoyu desteklemez veya exact 
 ## 2. Architecture
 
 ```text
-cli.cjs          CLI yuzeyi (pnpm orch:closeout), arg parse, exit code
+cli.cjs          CLI, explicit materialization, atomic task-local result output
    |
-closeout.cjs     saf karar katmani: 12 asamali state machine, 27 blocker kodu
+merge-authority-ledger.cjs
+   |             canonical SA/EG resolve, exact candidate, digest, atomic lifecycle
+   |
+closeout.cjs     saf karar katmani: fail-closed state machine
    |             tum I/O adapter uzerinden; hicbir dogrudan gh/git cagrisi yok
    |
-gh-adapter.cjs   gercek gh/git yuzeyi (17 fonksiyon), execFileSync argv dizisi
+gh-adapter.cjs   gercek gh/git ve task-local ledger yuzeyi, execFileSync argv dizisi
 ```
 
 Karar katmanı saf ve deterministiktir; testler fake adapter ile davranışı doğrular,
@@ -42,8 +45,8 @@ CI değerlendirmesi sıfırdan yazılmadı: required-check seti ve pending/faile
 
 ```text
 PREFLIGHT → AUTHORITY_VALIDATED → PR_IDENTITY_VALIDATED → SCOPE_VALIDATED
-→ CI_TERMINAL → MERGE_GATE_VALIDATED → MERGED → MAIN_SYNCED → WORKTREE_CLEANED
-→ BRANCH_CLEANED → CANONICAL_VERIFIED → CLOSED
+→ CI_TERMINAL → MERGE_GATE_VALIDATED → MERGED → MAIN_SYNCED → LEDGER_CONSUMED
+→ WORKTREE_CLEANED → BRANCH_CLEANED → CANONICAL_VERIFIED → CLOSED
 ```
 
 Tek yönlüdür. Worktree cleanup branch cleanup'tan **önce** gelir: bir worktree branch'i
@@ -65,13 +68,16 @@ commit/push/PR izni ve CI takip talimatı **authority değildir** (`AGENTS.md` �
 ### Ledger
 
 Live merge için **zorunludur**. Ledger yoksa tüketim kaydı tutulamaz, dolayısıyla reuse
-koruması da yoktur → `MERGE_AUTHORITY_LEDGER_REQUIRED`. `--dry-run` ledger'sız çalışır.
+koruması da yoktur → `MERGE_AUTHORITY_LEDGER_REQUIRED`. Dry-run yapısal uygunluğu ve live
+readiness'i ayrı raporlar.
 
-Binding: `authorityRef` + `taskId` + `pr` (+ live koşuda `expectedHead`). Kapanışta
-runner `consumed`, `consumedPr`, `consumedTaskId`, `consumedMergeSha` yazar.
+Schema v2 canonical distinct SA/EG kayıtlarını exact program/task/owner/mode ile çözer ve
+repository/PR/current-base/head/branch/status-qualified scope/required-check SHA/squash methoduna
+bağlar. Entry ve bütün ledger digest'lidir; temp write + validate + atomic rename kullanır.
+Lifecycle `ISSUED → VALIDATED → CONSUMED`; terminal `REVOKED/EXPIRED/INVALIDATED` fail-closed.
+Consumed v2 ledger aynı task/PR için dahi yeniden kullanılamaz.
 
-Tüketilmiş referans **aynı task + aynı PR** için recovery'ye izin verir; **başka PR veya
-task** için `MERGE_AUTHORITY_REUSE_FORBIDDEN`.
+Schema-v1 same-task/same-PR recovery yalnız unrelated historical compatibility olarak korunur.
 
 ## 4. Threat model
 
@@ -79,11 +85,15 @@ task** için `MERGE_AUTHORITY_REUSE_FORBIDDEN`.
 |---|---|
 | Yetkisiz merge | authority zorunlu; örtülü ifadeden türetilemez; ledger binding |
 | Authority'nin başka PR'a taşınması | `consumed` damgası + PR ekseninde reuse reddi |
+| Sahte veya stale canonical kayıt | canonical resolver + evidence ancestry + exact SA/EG structured field validation |
+| Ledger tamper/partial write | entry+ledger digest, exclusive lock, validated temporary file, atomic rename |
 | Yanlış PR'ın merge edilmesi | repository identity + PR/remote/local head üçlü doğrulama |
+| Base veya branch drift | current base SHA + base/head branch exact binding |
 | TOCTOU (gate ile merge arası drift) | merge çağrısından hemen önce identity + head yeniden doğrulanır |
-| Scope dışı değişikliğin sızması | `allowedPaths` exact eşleşme; control-plane yolu asla scope'a giremez |
+| Scope dışı değişikliğin sızması | `git diff --name-status` exact set + digest + CLI exact allowlist |
 | Başka oturumun işinin bozulması | competing writer + owner WIP collision gate'leri |
 | Yarım CI'da merge | required set runtime'da hesaplanır; pending ≠ failed; ikisi de merge'i durdurur |
+| Check-set drift | branch protection yeniden keşfedilir ve ledger seti/checked SHA ile exact karşılaştırılır |
 | Command injection | `execFileSync` argv dizisi, shell yok; branch/path/sha şekil doğrulaması |
 | Path traversal | worktree yolunda `../` reddi |
 | Secret sızması | çıktıda token/secret deseni redakte edilir |
@@ -96,13 +106,13 @@ task** için `MERGE_AUTHORITY_REUSE_FORBIDDEN`.
 
 | Aşama | Blocker | Mutation |
 |---|---|---|
-| PREFLIGHT | `MERGE_AUTHORITY_MISSING` · `_INVALID` · `_LEDGER_REQUIRED` · `_TASK_MISMATCH` · `_PR_MISMATCH` · `_REUSE_FORBIDDEN` · `REPOSITORY_IDENTITY_MISMATCH` | yok |
+| PREFLIGHT | authority missing/invalid/resolution/ref-distinct/ledger missing-malformed-tampered-terminal-conflict/reuse/repository blockers | yok |
 | AUTHORITY_VALIDATED | `UNEXPECTED_GITHUB_RESPONSE` | yok |
-| PR_IDENTITY_VALIDATED | `PR_NOT_OPEN` · `PR_HEAD_MISMATCH` · `REMOTE_HEAD_MISMATCH` · `LOCAL_HEAD_MISMATCH` · `TARGET_BRANCH_UNEXPECTED` | yok |
-| SCOPE_VALIDATED | `CHANGED_PATH_SCOPE_FORBIDDEN` · `COMPETING_WRITER_FOUND` · `OWNER_WIP_COLLISION` | yok |
-| CI_TERMINAL | `CI_NOT_TERMINAL` · `CI_FAILED` · `CI_STALLED` | yok |
+| PR_IDENTITY_VALIDATED | PR/head/remote/local/base/branch exact-binding blockers | yok |
+| SCOPE_VALIDATED | path/status/digest scope drift · competing writer · owner WIP | yok |
+| CI_TERMINAL | pending/failed/stalled · required-set/checked-SHA drift | yok |
 | MERGE_GATE_VALIDATED | `PR_NOT_MERGEABLE` · `PR_NOT_CLEAN` · `MERGE_FAILED` | yok |
-| MERGED sonrası | `MERGE_STATE_UNVERIFIED` · `MAIN_SYNC_FAILED` · `WORKTREE_CLEANUP_FAILED` · `BRANCH_CLEANUP_FAILED` · `CANONICAL_VERIFICATION_FAILED` | **merge yapıldı** |
+| MERGED sonrası | merge/main verification · atomic consumption · worktree/branch cleanup · canonical verification | **merge yapıldı** |
 
 Merge öncesi her blocker **sıfır mutation** üretir. Merge sonrası bir adım takılırsa
 `MERGED_CLEANUP_BLOCKED` raporlanır ve **merge geri alınmaya çalışılmaz**.
@@ -116,15 +126,18 @@ Merge öncesi her blocker **sıfır mutation** üretir. Merge sonrası bir adım
 | PR başka bir SHA ile merged | `MERGE_STATE_UNVERIFIED`, fail-closed |
 | Branch zaten silinmiş | başarı sayılır |
 | Worktree zaten kaldırılmış | `ALREADY_ABSENT`, başarı sayılır |
-| Aynı authorityRef, aynı task+PR | recovery'ye izin verilir |
+| Schema-v1 aynı authorityRef, aynı task+PR | historical recovery'ye izin verilir |
+| Schema-v2 `CONSUMED` | aynı task/PR dahil reuse reddedilir |
 | Aynı authorityRef, farklı PR/task | `REUSE_FORBIDDEN`, sıfır mutation |
 
 ## 7. Test matrix
 
 | Katman | Konum | Test | CI job | Required |
 |---|---|---|---|---|
-| Merge-güvenliği invariant'ları | `apps/web/src/__tests__/closeout-runner-invariants.test.ts` | 13 | `Web Tests (vitest)` | **evet** |
+| Merge-güvenliği invariant'ları | `apps/web/src/__tests__/closeout-runner-invariants.test.ts` | 17 | `Web Tests (vitest)` | **evet** |
 | Tam davranış matrisi | `apps/api/src/common/__tests__/pr-closeout.spec.ts` | 59 | `Test Suite` | hayır |
+| V2 materializer/security/lifecycle | `scripts/orchestration-v2/closeout/merge-authority-ledger.test.cjs` | 61 | `GOV-COORD-V2 Orchestration Tests` | hayır |
+| Representative real bare-Git closeout | `scripts/orchestration-v2/closeout/representative-live-closeout.test.cjs` | 1 | `GOV-COORD-V2 Orchestration Tests` | hayır |
 
 Required katman dar tutulur: yalnız "bunlar bozulursa yetkisiz merge mümkün olur" sınırı.
 Davranış matrisi orada tekrar edilmez.
@@ -159,6 +172,8 @@ ve gate'in eksenini* doğrular. Bunlar birbirinin yerine geçmez.
 - Tam davranış matrisi (`Test Suite`) required check değildir; bir davranış regresyonu
   PR'ı kırmızı yakar ve `CLEAN`'i düşürür ama teknik merge engeli üretmez.
 - `--dry-run` ledger'sız çalışır; bu bilinçli bir gevşemedir (mutation yok).
+- Ledger/task result repository dışındaki task-specific non-secret path'te tutulur; aynı PR'a
+  commit edilmesi exact-head binding'i bozacağı için yasaktır.
 - Merge yalnız `squash` metodunu destekler.
 - Adapter senkron `execFileSync` kullanır; paralel closeout tasarlanmamıştır.
 
@@ -166,9 +181,9 @@ ve gate'in eksenini* doğrular. Bunlar birbirinin yerine geçmez.
 
 1. **Required katman dar.** Davranış regresyonları required altında değil. Genişletmek
    ci.yml (control-plane) veya branch protection değişikliği ister — ayrı owner kararı.
-2. **Ledger dosya tabanlı.** Eşzamanlı iki closeout aynı ledger'a yazarsa son yazan
-   kazanır. Bugün program lock (tek aktif PR) bunu pratikte engelliyor.
-3. **`consumedPr` alanı olmayan eski kayıtlar** binding `pr` alanına düşer; kayıt
+2. **Ledger dosya tabanlı ve host-local.** Exclusive lock aynı hosttaki concurrent write'ı
+   fail-closed engeller; distributed multi-host closeout tasarlanmamıştır.
+3. **`consumedPr` alanı olmayan schema-v1 kayıtlar** binding `pr` alanına düşer; kayıt
    şeması genişlerse bu fallback gözden geçirilmeli.
 4. **Retry yalnız desen tabanlı.** Tanınmayan bir geçici hata retry edilmez ve kapanış
    gereksiz yere durur — güvenli taraf, ama operatör müdahalesi gerektirir.

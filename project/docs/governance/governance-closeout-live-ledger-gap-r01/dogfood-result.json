@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "programId": "GOVERNANCE-CLOSEOUT-OPERABILITY-REMEDIATION-R01",
+  "taskId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01",
+  "artifactRole": "SELF_HOSTED_DOGFOOD_RESULT_CONTRACT_AND_LOCATOR",
+  "prePublicationStatus": "PENDING_SELF_HOSTED_DOGFOOD",
+  "authority": {
+    "semanticRecordId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01",
+    "executionGrantRecordId": "GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01"
+  },
+  "requiredTerminalAssertions": [
+    "DRY_RUN_STRUCTURALLY_ELIGIBLE",
+    "LIVE_AUTHORITY_READY",
+    "LIVE_RUNNER_SQUASH_MERGE",
+    "LEDGER_CONSUMED",
+    "SECOND_USE_REJECTED",
+    "MANUAL_FALLBACK_NOT_USED",
+    "CANONICAL_EQUALITY_PASS"
+  ],
+  "terminalResultLocator": "TASK_LOCAL_LEDGER_SIBLING/dogfood-result.final.json",
+  "terminalLedgerLocator": "TASK_LOCAL_LEDGER_SIBLING/merge-authority-ledger.json",
+  "note": "Terminal PR/head/merge values are produced after CI and cannot be committed into the exact-head PR without invalidating its authority binding."
+}
