@@ -238,6 +238,15 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
         icrabotOutboxAction: {
           findUnique: jest.fn().mockResolvedValue(actionRow),
         },
+        // W3-F02: dispatch handler'dan once Case sahipligini dogrular. Bu harness'in
+        // senaryolari (retry/parallel-claim/claim-basarisiz) ownership uyumsuzlugunu
+        // DEGIL, claim/retry semantigini test eder — bu yuzden actionRow'un KENDI
+        // caseId/tenantId cifti eslesen bir Case olarak yansitilir.
+        case: {
+          findUnique: jest.fn().mockResolvedValue(
+            actionRow?.tenantId ? { id: actionRow.caseId, tenantId: actionRow.tenantId } : null,
+          ),
+        },
       };
       const outbox = {
         getPendingActions: jest.fn(),

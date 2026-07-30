@@ -153,6 +153,9 @@ src/modules/icrabot/v28-engine/__tests__/action-handler-notification-truth.spec.
 src/modules/icrabot/v28-engine/__tests__/factstore-clear-tenant-scope-security.spec.ts
 src/modules/icrabot/v28-engine/__tests__/factstore-tenant-isolation-security.spec.ts
 src/modules/icrabot/v28-engine/__tests__/non-retryable-outbox.spec.ts
+# W3-F02-OUTBOX-CONSUMER-TENANT-OWNERSHIP-R01: outbox consumer'in caseId->tenant
+# sahipligini merkezi dispatch() gate'inde dogruladigini kanitlar (resolveOutboxActionOwnership).
+src/modules/icrabot/v28-engine/__tests__/outbox-consumer-tenant-ownership.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-platform-cron.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-residual-tenant-isolation.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-tenancy.spec.ts
