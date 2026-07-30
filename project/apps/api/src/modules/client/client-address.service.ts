@@ -40,6 +40,32 @@ const LIFECYCLE_SIBLING_SELECT = {
   isCurrent: true,
 } as const;
 
+/**
+ * CLIENT-ARC-07-STAFF-HISTORY-I03 — STAFF okuma projeksiyonu (charter §49.7 / ARC-07-D06).
+ *
+ * YALNIZ personel adres yönetimi için gereken alanlar. Bilerek DIŞARIDA: `client` ilişkisi ve
+ * diğer müvekkil verisi · audit iç yapıları · actor kimlikleri · ham request metadata'sı ·
+ * tenant-içi teşhis alanları. Yeni bir audit veri deposu OLUŞTURULMAZ.
+ */
+const STAFF_READ_SELECT = {
+  id: true,
+  clientId: true,
+  type: true,
+  street: true,
+  city: true,
+  district: true,
+  region: true,
+  postalCode: true,
+  isPrimary: true,
+  isCurrent: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+/** I03 okuma filtresi. Bilinmeyen değer SESSİZCE 'active'e düşmez — fail-closed reddedilir. */
+export const CLIENT_ADDRESS_LIST_STATUSES = ['active', 'archived', 'all'] as const;
+export type ClientAddressListStatus = (typeof CLIENT_ADDRESS_LIST_STATUSES)[number];
+
 @Injectable()
 export class ClientAddressService {
   constructor(
@@ -63,6 +89,57 @@ export class ClientAddressService {
       violation: result.code,
       invariant: result.invariant,
       message: result.detail ?? 'Adres yaşam döngüsü kuralı ihlal edildi.',
+    });
+  }
+
+  /**
+   * I03 — STAFF-ONLY adres okuma sözleşmesi (charter §49.7 / ARC-07-D06).
+   *
+   *   status='active'   → YALNIZ `isCurrent=true`
+   *   status='archived' → YALNIZ `isCurrent=false`
+   *   status='all'      → ikisi birden
+   *
+   * KAPSAM (fail-closed): müvekkil ÖNCE tenant sınırında çözülür (yoksa/başka tenant'ta ise 404,
+   * boş liste DEĞİL — varlık sızdırmamak için tenant dışı ile "hiç adresi yok" AYIRT EDİLEMEZ).
+   * Adres sorgusu AYRICA `client: { tenantId }` ile kapsanır: derinlemesine savunma, tek bir
+   * predicate'in kaybı okumayı kapsam dışına AÇMASIN diye bilerek yedeklidir.
+   *
+   * PORTAL EXPOZÜRÜ YOK: bu metot yalnız JWT staff controller'ından çağrılır (§49.7).
+   * Yeni audit veri deposu OLUŞTURULMAZ; arşiv/aktif ayrımı `isCurrent` durumundan türer.
+   *
+   * Cagrildigi yerler:
+   * - ClientAddressController.list() -> GET /clients/:clientId/addresses?status=... (JWT-only)
+   */
+  async findForClient(
+    tenantId: string,
+    clientId: string,
+    status: ClientAddressListStatus = 'active',
+  ): Promise<Array<ClientAddressRow & { createdAt: Date; updatedAt: Date }>> {
+    if (!CLIENT_ADDRESS_LIST_STATUSES.includes(status)) {
+      throw new BadRequestException({
+        code: 'CLIENT_ADDRESS_INVALID_STATUS_FILTER',
+        message: 'Geçersiz adres durumu filtresi.',
+      });
+    }
+
+    const client = await this.prisma.client.findFirst({
+      where: { id: clientId, tenantId },
+      select: { id: true },
+    });
+    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
+
+    return this.prisma.clientAddress.findMany({
+      where: {
+        clientId,
+        client: { tenantId },
+        ...(status === 'all' ? {} : { isCurrent: status === 'active' }),
+      },
+      select: STAFF_READ_SELECT,
+      // Aktif listede birincil önce (mevcut `client.service.ts` findOne sırasıyla AYNI);
+      // arşivde en YENİ arşivlenen önce mantıklı olurdu fakat `archivedAt` kolonu YOK
+      // (§13 gereği eklenmedi) — bu yüzden deterministik ve mevcut konvansiyonla tutarlı
+      // olan createdAt sıralaması korunur.
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
     });
   }
 

@@ -328,7 +328,7 @@ describe('ARC-07 I02 — servis: remove() (fiziksel silme FAIL-CLOSED)', () => {
     expect(tx.clientAddress.delete).not.toHaveBeenCalled();
   });
 
-  it('[19] I02 sınırı: archive/restore VAR, GET/history YOK (I03 sınırı korunur)', () => {
+  it('[19] I03 sınırı: create/update/remove + archive/restore + tek scope\'lu okuma; I04+ yüzeyi YOK', () => {
     const proto = Object.getOwnPropertyNames(ClientAddressService.prototype);
     expect(proto).toContain('create');
     expect(proto).toContain('update');
@@ -336,7 +336,14 @@ describe('ARC-07 I02 — servis: remove() (fiziksel silme FAIL-CLOSED)', () => {
     // I02 EKLEDİ:
     expect(proto).toContain('archive');
     expect(proto).toContain('restore');
-    // I03'e AİT ve HÂLÂ YOK:
+    // I03 EKLEDİ (KASITLI GÜNCELLEME — bu blok I02'de "okuma yüzeyi YOK" diyordu):
+    expect(proto).toContain('findForClient');
+    // Okuma metodu tenant kapsamını KAYBETMEZ (scope predicate kaynakta kanıtlanır).
+    expect(SERVICE_SOURCE).toMatch(/client: \{ tenantId \}/);
+    // I04+ (production kanıtı / backfill) HÂLÂ YOK:
+    expect(proto).not.toContain('backfill');
+    expect(proto).not.toContain('countProduction');
+    // Eski I03-sınırı isimleri de hâlâ yok (tekil/kapsamsız okuma açılmadı):
     expect(proto).not.toContain('findHistory');
     expect(proto).not.toContain('findAll');
     // isCurrent mutasyonu ARTIK VAR ve YALNIZ açık arşiv/restore yolundadır.

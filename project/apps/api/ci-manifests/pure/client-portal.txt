@@ -68,6 +68,7 @@ src/modules/client/__tests__/client-address-archive-restore-audit-i02.spec.ts
 src/modules/client/__tests__/client-address-lifecycle-invariant.spec.ts
 src/modules/client/__tests__/client-address-persist-ver02.spec.ts
 src/modules/client/__tests__/client-address-route-collision.spec.ts
+src/modules/client/__tests__/client-address-staff-history-i03.spec.ts
 src/modules/client/__tests__/client-address.service.spec.ts
 src/modules/client/__tests__/client-audit.spec.ts
 src/modules/client/__tests__/client-controller-validation.spec.ts
