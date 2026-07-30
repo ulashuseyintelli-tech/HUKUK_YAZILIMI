@@ -116,6 +116,10 @@ function createGhCloseoutAdapter(o) {
       return j ? j.nameWithOwner : null;
     },
 
+    async resolveAuthority(ref, atRef) {
+      return resolveCanonicalAuthority(ref, atRef, cwd);
+    },
+
     /**
      * Dry-run ledger olmadan yapisal gate'leri gosterebilir. Live kosuda core
      * null'u MERGE_AUTHORITY_LEDGER_REQUIRED olarak reddeder. Schema-v2 JSON,

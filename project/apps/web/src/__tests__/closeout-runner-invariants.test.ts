@@ -230,7 +230,7 @@ describe('closeout runner — required-path invariants', () => {
     // icindeki syntax hatasi butun CI yesilken main'e gidebiliyordu.
         const mod = require('../../../../scripts/orchestration-v2/closeout/gh-adapter.cjs');
     const adapter = mod.createGhCloseoutAdapter({ repoCwd: process.cwd() });
-    for (const fn of ['getPr', 'squashMerge', 'syncMain', 'cleanupWorktree', 'cleanupBranch', 'consumeAuthority', 'verifyCanonical']) {
+    for (const fn of ['resolveAuthority', 'getPr', 'squashMerge', 'syncMain', 'cleanupWorktree', 'cleanupBranch', 'consumeAuthority', 'verifyCanonical']) {
       expect(typeof adapter[fn]).toBe('function');
     }
   });
