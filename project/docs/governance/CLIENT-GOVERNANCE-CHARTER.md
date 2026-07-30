@@ -2092,6 +2092,18 @@ R4 Üç orphaned fiziksel worktree dizini
    (HUKUK_client_sec_p01, HUKUK_client_pol_f_r01, HUKUK_client_config_p01)
    git registry temiz; fiziksel silme "Filename too long" ile başarısız
    → ACCEPTED_NON_BLOCKING_RESIDUAL (local hygiene; CLIENT/repository blocker DEĞİL)
+   → FRESH DISPOSITION (CLIENT-LEGACY-ORPHAN-WORKTREE-DISPOSITION-R01):
+     üçü de fresh envanterle SAFE_TO_DELETE bulundu — worktree kaydı yok,
+     live process yok, ilgili PR'lar terminal/MERGED (#1613/#1614/#1617,
+     origin/main atası doğrulandı), `apps/api/src/` zaten silinmişti (owner
+     WIP yok), 14376 reparse point'in tamamı kendi `node_modules\.pnpm\...`
+     içine işaret ediyordu (0 external, 0 canonical hedef). Junction-guard
+     tekniğiyle (önce reparse point'leri hedefe girmeden link olarak
+     kaldır, sonra kalan ağacı sil) güvenle temizlendi; canonical
+     node_modules/apps-api-node_modules/package.json/pnpm-lock.yaml
+     bütünlüğü her adımda korundu.
+     → CLOSED_BY_PHYSICAL_CLEANUP. Ayrıntı:
+       `project/docs/governance/coordination-v2/activation/CLIENT-LEGACY-ORPHAN-WORKTREE-DISPOSITION-R01.md`.
 
 R5a 515 pre-existing apps/api tsc --noEmit hatası
    (uyap/** + scripts/** test dosyaları; fresh main'de birebir aynı,
