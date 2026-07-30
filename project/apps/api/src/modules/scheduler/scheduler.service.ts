@@ -6,6 +6,7 @@ import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { TebligatService } from '../tebligat/tebligat.service'; // PR-S2: tebligat sonuç senkronu ortak kapı
 import { DueType } from '@prisma/client';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter'; // PR-3
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service'; // P1-I13 (R02-B): NO-NEW-WORK-FOR-PASSIVE
 
 /**
  * Zamanlayıcı Servisi
@@ -34,6 +35,7 @@ export class SchedulerService {
     private readonly schedulerMetrics: SchedulerMetricsService,
     private readonly tebligatService: TebligatService, // PR-S2: cron tebligat sonuçları ortak sync yoluna bağlandı
     private readonly errorReporter: IntegrationErrorReporter, // PR-3: cron hataları → ErrorLog (source=CRON)
+    private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService, // P1-I13 (R02-B)
   ) {}
 
   /** PR-3: cron hatasını ErrorLog'a düşür (source=CRON). fire-and-forget + swallow → davranış DEĞİŞMEZ. */
@@ -535,6 +537,20 @@ export class SchedulerService {
     const caseData = thirdParty.caseDebtor?.case;
     if (!caseData) return;
 
+    // P1-I13 (R02-B, owner "NO-NEW-WORK-FOR-PASSIVE"): passive CaseDebtor için yeni
+    // hatırlatma task'ı üretilmez — canlı guard kontrolü (ACT-08 boolean, throw etmeyen;
+    // AddressTaskSchedulerService'in zaten kullandığı desenle birebir), diğer kayıtların
+    // işlenmesini durdurmadan sessizce atlar. Mevcut task'lara veya geçmiş kayıtlara dokunmaz.
+    const isPassive = await this.caseDebtorLifecycleGuard.isPassiveByCaseAndDebtor(
+      caseData.tenantId,
+      caseData.id,
+      thirdParty.caseDebtor.debtorId,
+    );
+    if (isPassive) {
+      this.logger.log(`Skipping ihbarname reminder for passive case debtor: ${caseData.fileNumber}`);
+      return;
+    }
+
     // Aynı task zaten var mı kontrol et
     const existingTask = await this.db.task.findFirst({
       where: {
@@ -616,6 +632,18 @@ export class SchedulerService {
   private async createExternalCaseFollowupTask(externalCase: any) {
     const caseData = externalCase.caseDebtor?.case;
     if (!caseData) return;
+
+    // P1-I13 (R02-B, owner "NO-NEW-WORK-FOR-PASSIVE"): bkz. createIhbarnameReminderTask
+    // üzerindeki aynı yorum — passive CaseDebtor için yeni takip task'ı üretilmez.
+    const isPassive = await this.caseDebtorLifecycleGuard.isPassiveByCaseAndDebtor(
+      caseData.tenantId,
+      caseData.id,
+      externalCase.caseDebtor.debtorId,
+    );
+    if (isPassive) {
+      this.logger.log(`Skipping external case followup for passive case debtor: ${caseData.fileNumber}`);
+      return;
+    }
 
     // Aynı task zaten var mı kontrol et
     const existingTask = await this.db.task.findFirst({

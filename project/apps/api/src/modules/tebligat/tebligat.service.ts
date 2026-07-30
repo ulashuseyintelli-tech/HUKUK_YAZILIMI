@@ -349,9 +349,26 @@ export class TebligatService {
 
   /**
    * Tebligat güncelle
+   *
+   * P1-I13 (R02-A, owner "NO-NEW-WORK-FOR-PASSIVE" kararının ikizi: burada
+   * "GENERIC-UPDATE-DENIED-FOR-PASSIVE"): bu metod caller'ın status dahil
+   * HERHANGİ bir alanı serbestçe yazdığı genel/geniş bir düzeltme yüzeyidir —
+   * markAsSent/recordPttResult/recordElectronicResult gibi dar, tek yönlü
+   * bir "harici sonucu kaydet" operasyonu DEĞİLDİR. PASSIVE CaseDebtor'a bağlı
+   * bir tebligatı bu genel yüzeyden değiştirmek reddedilir; geç gelen dış
+   * sonuçlar zaten markAsSent/recordPttResult/recordElectronicResult üzerinden
+   * (guard'sız, ratified late-result kanalları) kaydedilebilir.
    */
   async update(tenantId: string, id: string, dto: UpdateTebligatDto) {
     const tebligat = await this.findById(tenantId, id);
+
+    if (tebligat.caseDebtorId) {
+      await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(
+        tenantId,
+        tebligat.caseDebtorId,
+        { expectedCaseId: tebligat.caseId }
+      );
+    }
 
     return (this.prisma as any).tebligat.update({
       where: { id },
@@ -367,6 +384,12 @@ export class TebligatService {
 
   /**
    * Tebligatı gönderildi olarak işaretle
+   *
+   * P1-I13 (R02-A "ACCEPT-AS-HISTORICAL-EVIDENCE"): bilinçli olarak guard'sız
+   * bırakılır — update()'in aksine caller keyfi bir status değeri VEREMEZ;
+   * bu metod her zaman yalnız status=GONDERILDI (hardcoded) + sentAt + barcodeNo
+   * yazar. Yapısal olarak dar/tek yönlü bir "gönderildi bilgisini kaydet"
+   * işlemidir — recordPttResult/recordElectronicResult ile aynı sınıfta.
    */
   async markAsSent(tenantId: string, id: string, barcodeNo?: string) {
     await this.findById(tenantId, id);

@@ -32,7 +32,8 @@ describe("SchedulerService — cron tebligat synced-path (P0: PTT mock kapatıld
       recordElectronicResult: jest.fn().mockResolvedValue({ synced: true }),
     };
     const errorReporter: any = { reportCronError: jest.fn() };
-    const svc = new SchedulerService(prisma, metrics, tebligatService, errorReporter);
+    const caseDebtorLifecycleGuard: any = { isPassiveByCaseAndDebtor: jest.fn().mockResolvedValue(false) };
+    const svc = new SchedulerService(prisma, metrics, tebligatService, errorReporter, caseDebtorLifecycleGuard);
     return { svc, prisma, tebligatService };
   };
 

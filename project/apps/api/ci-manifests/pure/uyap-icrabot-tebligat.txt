@@ -168,6 +168,9 @@ src/modules/icrabot/v28-engine/__tests__/v28-surface-containment.spec.ts
 # behavior; both unchanged and green (verified fresh against origin/main).
 src/modules/tebligat/__tests__/tebligat-create-validation.spec.ts
 src/modules/tebligat/__tests__/tebligat-electronic-result.spec.ts
+# P1-I13 (R02-A, LEGACY TASK 08): update() PASSIVE CaseDebtor için genel guard'a bağlanır;
+# markAsSent() ratified late-result kanalı olarak guard'sız kalır (bkz. dosya başlığı).
+src/modules/tebligat/__tests__/tebligat-late-result-and-update-guard.spec.ts
 src/modules/tebligat/__tests__/tebligat-ptt-result-tk212-regression.spec.ts
 src/modules/tebligat/__tests__/tebligat-service-occurrence-integration.spec.ts
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.consumer.spec.ts

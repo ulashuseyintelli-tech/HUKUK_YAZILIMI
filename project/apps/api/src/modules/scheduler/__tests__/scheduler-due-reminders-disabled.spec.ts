@@ -13,12 +13,12 @@ describe('F2 SchedulerService.sendDueReminders — DEVRE DIŞI (ölü yol kaldı
   const stub = {} as any;
 
   it('çağrılınca THROW ETMEZ (eski this.db.notification ölü yolu kalktı) ve döner', async () => {
-    const service = new SchedulerService(stub, stub, stub);
+    const service = new SchedulerService(stub, stub, stub, stub, stub);
     await expect(service.sendDueReminders()).resolves.toBeUndefined();
   });
 
   it('açıkça "DEVRE DIŞI (F2)" warn loglar (sessiz no-op değil → ölü yol görünür)', async () => {
-    const service = new SchedulerService(stub, stub, stub);
+    const service = new SchedulerService(stub, stub, stub, stub, stub);
     const warn = jest
       .spyOn((service as any).logger, 'warn')
       .mockImplementation(() => undefined);
