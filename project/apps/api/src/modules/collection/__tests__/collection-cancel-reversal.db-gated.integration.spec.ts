@@ -303,12 +303,14 @@ describeWithDisposableDb('ADR-014 PR-1B CollectionService cancellation reversal 
       status: 'CONFIRMED',
       amount: '2000',
       currency: 'TRY',
+      confirmedAt: collection.confirmedAt?.toISOString(),
     });
     expect(Object.keys(createMetadata).sort()).toEqual([
       'actorType',
       'amount',
       'caseId',
       'commandId',
+      'confirmedAt',
       'correlationId',
       'currency',
       'eventId',
@@ -436,6 +438,8 @@ describeWithDisposableDb('ADR-014 PR-1B CollectionService cancellation reversal 
 
     const collection = await createPayment(fixture);
     expect(collection.status).toBe('CONFIRMED');
+    expect(collection.confirmedAt).toBeInstanceOf(Date);
+    const originalConfirmedAt = collection.confirmedAt;
     const paymentEvent = await prisma.icrabotTimelineEntry.findFirst({
       where: { tenantId: fixture.tenantId, caseId: fixture.caseId, type: 'PAYMENT_RECEIVED' },
     });
@@ -465,6 +469,7 @@ describeWithDisposableDb('ADR-014 PR-1B CollectionService cancellation reversal 
 
     const cancelledCollection = await prisma.collection.findUniqueOrThrow({ where: { id: collection.id } });
     expect(cancelledCollection.status).toBe('CANCELLED');
+    expect(cancelledCollection.confirmedAt).toEqual(originalConfirmedAt);
     const reversals = await prisma.ledgerEntry.findMany({
       where: { tenantId: fixture.tenantId, caseId: fixture.caseId, collectionId: collection.id, entryType: 'REVERSAL' },
       include: { allocations: true },

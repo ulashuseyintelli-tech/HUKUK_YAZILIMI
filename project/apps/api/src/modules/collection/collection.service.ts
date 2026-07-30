@@ -21,10 +21,12 @@ import {
   CollectionSummary,
 } from "./dto/collection.dto";
 import {
+  assertCollectionConfirmedAtInvariant,
   assertCollectionPublicUpdateAllowed,
   COLLECTION_METADATA_UPDATE_FIELDS,
   COLLECTION_STATUS_PENDING,
   pickDefinedCollectionUpdateData,
+  resolveCollectionConfirmedAt,
 } from "./collection-safety.helper";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { OccurredAtConfidence } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
@@ -627,6 +629,11 @@ export class CollectionService {
       }
 
       // ── 3. Collection row create ────────────────────────────────────────
+      const confirmedAt = resolveCollectionConfirmedAt({
+        currentConfirmedAt: null,
+        nextStatus: CollectionStatus.CONFIRMED,
+        serverNow: new Date(),
+      });
       const collection = await (tx as any).collection.create({
         data: {
           tenantId,
@@ -646,10 +653,18 @@ export class CollectionService {
           accountNo: dto.accountNo,
           notes: dto.notes,
           status: CollectionStatus.CONFIRMED,
+          confirmedAt,
           idempotencyKey: dto.idempotencyKey,
           createdById: userId,
         },
       });
+      const persistedConfirmedAt = assertCollectionConfirmedAtInvariant(
+        String(collection.status),
+        collection.confirmedAt,
+      );
+      if (!persistedConfirmedAt || !confirmedAt || persistedConfirmedAt.getTime() !== confirmedAt.getTime()) {
+        throw new Error("COLLECTION_CONFIRMED_AT_PERSISTENCE_MISMATCH");
+      }
 
       const recordedJournalEntryId = await this.writeCollectionRecordedJournal(
         tx,
@@ -909,6 +924,7 @@ export class CollectionService {
           amount: collection.amount?.toString?.() ?? String(collection.amount),
           currency,
           occurredAt: coerceDate(collection.createdAt, collection.date).toISOString(),
+          confirmedAt: persistedConfirmedAt.toISOString(),
           journalEntryIds: [recordedJournalEntryId],
           ledgerEntryIds,
           ledgerAllocationCount,

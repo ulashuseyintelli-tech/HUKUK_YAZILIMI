@@ -9,10 +9,53 @@ export const COLLECTION_REQUIRES_REVERSAL_UPDATE_MESSAGE =
 export const COLLECTION_DELETE_DISABLED_MESSAGE =
   "Collection hard delete is disabled. Use explicit void/discard flow.";
 export const COLLECTION_STATUS_PENDING = "PENDING";
+export const COLLECTION_STATUS_CONFIRMED = "CONFIRMED";
 export const COLLECTION_STATUS_CANCELLED = "CANCELLED";
 export const COLLECTION_METADATA_UPDATE_FIELDS = ["description", "receiptNo", "notes"] as const;
 
 const COLLECTION_METADATA_UPDATE_ALLOWLIST = new Set<string>(COLLECTION_METADATA_UPDATE_FIELDS);
+
+export function assertCollectionConfirmedAtInvariant(
+  status: string,
+  confirmedAt: Date | null | undefined,
+): Date | null {
+  if (!confirmedAt) {
+    if (status === COLLECTION_STATUS_CONFIRMED) {
+      throw new Error("COLLECTION_CONFIRMED_AT_REQUIRED");
+    }
+    return null;
+  }
+
+  const persisted = new Date(confirmedAt.getTime());
+  if (!Number.isFinite(persisted.getTime())) {
+    throw new Error("COLLECTION_CONFIRMED_AT_INVALID");
+  }
+  return persisted;
+}
+
+export function resolveCollectionConfirmedAt(input: {
+  currentConfirmedAt?: Date | null;
+  nextStatus: string;
+  serverNow: Date;
+}): Date | null {
+  if (input.currentConfirmedAt) {
+    const current = new Date(input.currentConfirmedAt.getTime());
+    if (!Number.isFinite(current.getTime())) {
+      throw new Error("COLLECTION_CONFIRMED_AT_INVALID");
+    }
+    return current;
+  }
+
+  if (input.nextStatus !== COLLECTION_STATUS_CONFIRMED) {
+    return null;
+  }
+
+  const serverNow = new Date(input.serverNow.getTime());
+  if (!Number.isFinite(serverNow.getTime())) {
+    throw new Error("COLLECTION_CONFIRMATION_TIME_INVALID");
+  }
+  return serverNow;
+}
 
 export function providedCollectionUpdateFields(data: Record<string, unknown>) {
   return Object.keys(data).filter((field) => data[field] !== undefined);

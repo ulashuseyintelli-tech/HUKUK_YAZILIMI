@@ -1,5 +1,7 @@
 ﻿import { Prisma, PrismaClient } from '@prisma/client';
 
+import { resolveCollectionConfirmedAt } from '../modules/collection/collection-safety.helper';
+
 const DEFAULT_SEED_KEY = 'tm47d-happy-path-v1';
 const CURRENCY = 'TRY';
 
@@ -260,6 +262,11 @@ export async function seedTm47dHappyPathFixture(
       sourceType: 'MANUAL',
       date: collectionDate,
       status: 'CONFIRMED',
+      confirmedAt: resolveCollectionConfirmedAt({
+        currentConfirmedAt: null,
+        nextStatus: 'CONFIRMED',
+        serverNow: new Date(),
+      }),
       description: 'TM47D happy path payable seed',
       createdById: ids.actorUserId,
     },

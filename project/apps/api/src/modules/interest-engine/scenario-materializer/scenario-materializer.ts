@@ -230,6 +230,7 @@ async function materializeInTransaction(
   const collectionIds: string[] = [];
   const paymentLedgerEntryIds: string[] = [];
   for (const [index, payment] of def.domainInput.payments.entries()) {
+    const confirmedAt = new Date();
     const collection = await tx.collection.create({
       data: {
         id: entityId(def, 'collection', index),
@@ -240,6 +241,8 @@ async function materializeInTransaction(
         currency: payment.currency,
         type: 'BANK_TRANSFER',
         date: new Date(payment.date),
+        status: 'CONFIRMED',
+        confirmedAt,
         idempotencyKey: entityId(def, 'payment', index),
       },
     });
