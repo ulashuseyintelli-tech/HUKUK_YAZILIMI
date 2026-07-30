@@ -185,10 +185,24 @@ src/modules/address-task/address-task-scheduler.service.spec.ts
 # P1-I13 (R02-B, LEGACY TASK 08): direct contract test of the shared guard's
 # isPassiveByCaseAndDebtor exercised from SchedulerService (checkIhbarnameDeadlines/
 # checkExternalCaseFollowups) — same placement rationale as address-task-scheduler.service.spec.ts
-# above (primary domain is the CaseDebtor/lifecycle-guard family, not Scheduler). This is the
-# FIRST scheduler/__tests__/*.spec.ts file wired into any CI manifest — the other 5 pre-existing
-# scheduler spec files remain unwired (separate, out-of-scope finding; see spawned follow-up task).
+# above (primary domain is the CaseDebtor/lifecycle-guard family, not Scheduler). At the time this
+# was wired, 5 other pre-existing scheduler spec files were still unwired — resolved below by I14.
 src/modules/scheduler/__tests__/scheduler-passive-case-debtor-guard.spec.ts
+# DEBTOR-SCHEDULER-REQUIRED-CI-COVERAGE-P1-I14 (I13-SCHEDULER-CI-GAP, independent of LEGACY TASK 08):
+# fresh repo-wide sweep found these 5 pre-existing SchedulerService contract spec files (own business
+# logic — nafaka period generation, tebligat-sync cron paths, disabled due-reminders dead-path guard,
+# batch-pagination helper invariants, Prometheus metrics counters) never wired into any required CI
+# manifest. Placed here (not a Tebligat/Collection manifest) because their primary domain is Scheduler
+# itself, matching this manifest's existing role as the Scheduler/platform-shared bucket (see
+# scheduler-passive-case-debtor-guard.spec.ts above). No new test behavior; all 5 unchanged and green
+# (verified fresh against origin/main). See scheduler-required-ci-coverage.static.spec.ts for the
+# forward-looking coverage guard (dynamic directory scan + exact target-manifest lock).
+src/modules/scheduler/__tests__/scheduler-batch.helper.spec.ts
+src/modules/scheduler/__tests__/scheduler-due-reminders-disabled.spec.ts
+src/modules/scheduler/__tests__/scheduler-metrics.service.spec.ts
+src/modules/scheduler/__tests__/scheduler-nafaka-periods.spec.ts
+src/modules/scheduler/__tests__/scheduler-required-ci-coverage.static.spec.ts
+src/modules/scheduler/__tests__/scheduler-tebligat-synced-path.spec.ts
 src/modules/address-task/address-task.controller.spec.ts
 src/modules/address-task/address-task.service.spec.ts
 src/modules/ai/ai.service.tenant-boundary.spec.ts
