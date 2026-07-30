@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import * as request from 'supertest';
 
@@ -126,17 +127,191 @@ function changedFileCountFromGitHubEvent(event: unknown): number {
   return changedFiles.size;
 }
 
-function currentCheckoutChangedFileCount(): number {
-  const parentProbe = spawnSync('git', ['cat-file', '-e', 'HEAD^'], {
-    cwd: repositoryRoot,
+/**
+ * RUNTIME-OPERABILITY-CERTIFICATION-R01-W2-MAIN-PUSH-CHANGESET-GUARD-RECONCILIATION-R01
+ *
+ * Root cause (fresh CI evidence, run 30568183053): main-push'ta `head_commit` GitHub
+ * Actions'in event context'inde `added`/`modified`/`removed` alanlarini TASIMAZ — bu
+ * alanlar API ile olusturulan (squash-merge) commit'ler icin garanti degildir. Onceki
+ * kod yalniz bu alanlara bakiyordu ve HICBIR fallback denemeden `W2_PUSH_CHANGESET_INVALID`
+ * firlatiyordu. Oysa push event payload'i her zaman guvenilir bir `before`/`after` SHA
+ * cifti tasir (GitHub'in push webhook semasinin sabit parcasi, diff hesaplamasi
+ * gerektirmez) ve bu repo PUBLIC oldugu icin token gerektirmeyen bounded
+ * `git fetch --depth=1 origin <sha>` ile o SHA'yi shallow checkout'ta bile lokal hale
+ * getirebiliriz (empirik dogrulandi: shallow clone + tek SHA fetch -> PASS).
+ *
+ * Bu nedenle `ci.yml` DEGISTIRILMEDI — repo public oldugu icin fetch-depth degisikligi
+ * gerekmiyor; duzeltme tamamen bu dosyada, mevcut `git()`/spawnSync deseniyle.
+ */
+type ChangedFileEvidenceSource = 'GIT_RANGE' | 'PR_PAYLOAD' | 'PUSH_PAYLOAD' | 'LOCAL_PARENT';
+
+interface ChangedFileEvidence {
+  source: ChangedFileEvidenceSource;
+  /** GIT_RANGE / LOCAL_PARENT icin gercek dosya yollari. Yalniz sayi bilinen kaynaklarda bos dizi. */
+  files: string[];
+  /** Her kaynakta guvenilir sekilde bilinen degisen dosya sayisi. */
+  fileCount: number;
+  complete: boolean;
+}
+
+const ZERO_SHA = '0000000000000000000000000000000000000000';
+const FULL_SHA_RE = /^[0-9a-f]{40}$/;
+
+function commitExistsLocally(sha: string, cwd: string): boolean {
+  if (!FULL_SHA_RE.test(sha)) return false;
+  return spawnSync('git', ['cat-file', '-e', sha], { cwd, encoding: 'utf8' }).status === 0;
+}
+
+function hasResolvableLocalParent(cwd: string): boolean {
+  return spawnSync('git', ['cat-file', '-e', 'HEAD^'], { cwd, encoding: 'utf8' }).status === 0;
+}
+
+/**
+ * Verilen SHA lokalde yoksa, `origin`'den EXACT o commit'i bounded (`--depth=1`)
+ * fetch eder. Sha, checkout'un mevcut shallow tarihinden ne kadar uzakta olursa
+ * olsun calisir (`git diff A B` iki agac karsilastirir; ortak ata gerektirmez) —
+ * bu, tek-commit'lik push'larla sinirli olan `HEAD^` yaklasimindan farkli olarak
+ * coklu-commit push'larda da doğru kalir.
+ */
+function tryMakeCommitAvailable(sha: string, cwd: string): boolean {
+  if (!FULL_SHA_RE.test(sha)) return false;
+  if (commitExistsLocally(sha, cwd)) return true;
+  const fetch = spawnSync('git', ['fetch', '--depth=1', '--no-tags', 'origin', sha], {
+    cwd,
     encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
   });
-  if (parentProbe.status === 0) {
-    return git('diff', '--name-only', 'HEAD^', 'HEAD', '--').split(/\r?\n/).filter(Boolean).length;
+  return fetch.status === 0 && commitExistsLocally(sha, cwd);
+}
+
+function gitDiffNameOnlyAt(cwd: string, a: string, b: string): string[] {
+  // `--no-renames` acikca verilir: rename-tespiti git surumune/global diff.renames
+  // ayarina gore degisebilir (bu ortamda git 2.55 varsayilani rename'i tek path'e
+  // katliyor). Guard'in davranisi calistigi makinenin git config'inden BAGIMSIZ ve
+  // deterministik olmali; bu yuzden hem eski hem yeni path ayri ayri raporlanir.
+  const result = spawnSync('git', ['diff', '--no-renames', '--name-only', a, b, '--'], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    throw new Error(`W2_GIT_DIFF_FAILED: ${(result.stderr || '').trim().slice(0, 200)}`);
   }
-  const eventPath = process.env.GITHUB_EVENT_PATH;
-  if (!eventPath) throw new Error('W2_GITHUB_EVENT_PATH_REQUIRED');
-  return changedFileCountFromGitHubEvent(JSON.parse(fs.readFileSync(eventPath, 'utf8')));
+  // git her zaman '/' ayiricili path raporlar (Windows dahil) — ayrica normalize
+  // etmeye gerek yok; bu davranis asagida bir testle dogrulanir.
+  return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+interface ResolveChangedFileEvidenceOptions {
+  cwd?: string;
+  eventName?: string;
+  eventPath?: string;
+  /** Local/dev override: acik base/head (brief §6 "explicit base/head"). */
+  baseShaOverride?: string;
+  headShaOverride?: string;
+}
+
+/**
+ * Event-aware degisen-dosya kaniti cozucusu. Yalniz `complete: true` sonuc W2
+ * sertifikasyon hukmu icin kullanilabilir (brief §7).
+ *
+ * Oncelik sirasi:
+ *   pull_request : GIT_RANGE (base..head, bounded fetch) -> PR_PAYLOAD (changed_files sayisi)
+ *   push         : GIT_RANGE (before..after, bounded fetch; zero-SHA/eksik before atlanir) ->
+ *                  LOCAL_PARENT (HEAD^) -> PUSH_PAYLOAD (head_commit dizileri) -> fail-closed
+ *                  (BEFORE_SHA_MISSING / RANGE_UNFETCHABLE / PAYLOAD_INCOMPLETE)
+ *   local/no-event: explicit override -> LOCAL_PARENT (HEAD^) -> UNSUPPORTED_EVENT / fail-closed
+ */
+function resolveChangedFileEvidence(options: ResolveChangedFileEvidenceOptions = {}): ChangedFileEvidence {
+  const cwd = options.cwd ?? repositoryRoot;
+  const eventName = options.eventName ?? process.env.GITHUB_EVENT_NAME;
+  const eventPath = options.eventPath ?? process.env.GITHUB_EVENT_PATH;
+
+  if (options.baseShaOverride && options.headShaOverride) {
+    if (!tryMakeCommitAvailable(options.baseShaOverride, cwd) || !tryMakeCommitAvailable(options.headShaOverride, cwd)) {
+      throw new Error('W2_CHANGED_FILE_EVIDENCE_UNAVAILABLE:RANGE_UNFETCHABLE');
+    }
+    const files = gitDiffNameOnlyAt(cwd, options.baseShaOverride, options.headShaOverride);
+    return { source: 'GIT_RANGE', files, fileCount: files.length, complete: true };
+  }
+
+  let event: Record<string, unknown> | null = null;
+  if (eventPath && fs.existsSync(eventPath)) {
+    event = JSON.parse(fs.readFileSync(eventPath, 'utf8')) as Record<string, unknown>;
+  }
+
+  const isPullRequest = eventName === 'pull_request' || (!!event && 'pull_request' in event);
+  if (isPullRequest) {
+    const pr = (event?.pull_request ?? {}) as Record<string, unknown>;
+    const base = (pr.base as Record<string, unknown> | undefined)?.sha;
+    const head = (pr.head as Record<string, unknown> | undefined)?.sha;
+    if (typeof base === 'string' && typeof head === 'string'
+      && tryMakeCommitAvailable(base, cwd) && tryMakeCommitAvailable(head, cwd)) {
+      const files = gitDiffNameOnlyAt(cwd, base, head);
+      return { source: 'GIT_RANGE', files, fileCount: files.length, complete: true };
+    }
+    // PR_PAYLOAD: yalniz sayi guvenilir (GitHub API tarafindan hesaplanir); dosya adi YOK.
+    const count = changedFileCountFromGitHubEvent(event); // W2_CHANGED_FILE_COUNT_INVALID zaten fail-closed
+    return { source: 'PR_PAYLOAD', files: [], fileCount: count, complete: true };
+  }
+
+  const isPush = eventName === 'push' || (!!event && 'head_commit' in event);
+  if (isPush) {
+    const before = event?.before;
+    const after = (event?.after as string | undefined) ?? (event?.head_commit as Record<string, unknown> | undefined)?.id;
+    // "usable shape" = yapisal olarak kullanilabilir bir SHA (dolu string, zero-SHA degil).
+    // Zero-SHA (yeni branch/ilk push, brief §8 ozel durum) BEFORE_SHA_MISSING ile ayni
+    // aile: her ikisi de "karsilastirilacak onceki commit YOK" anlamina gelir.
+    const beforeUsable = typeof before === 'string' && before !== ZERO_SHA;
+    const afterUsable = typeof after === 'string';
+
+    if (beforeUsable && afterUsable
+      && tryMakeCommitAvailable(before as string, cwd) && tryMakeCommitAvailable(after as string, cwd)) {
+      const files = gitDiffNameOnlyAt(cwd, before as string, after as string);
+      return { source: 'GIT_RANGE', files, fileCount: files.length, complete: true };
+    }
+    if (hasResolvableLocalParent(cwd)) {
+      const files = gitDiffNameOnlyAt(cwd, 'HEAD^', 'HEAD');
+      return { source: 'LOCAL_PARENT', files, fileCount: files.length, complete: true };
+    }
+    // Son care: push payload'inin head_commit dizileri (yalniz gercekten string[] ise).
+    // Bu, coklu-commit push'larda tek bir commit'in diff-stat'ini yansitir ve GIT_RANGE
+    // kadar guvenilir DEGILDIR — bu yuzden GIT_RANGE/LOCAL_PARENT'tan SONRA denenir.
+    try {
+      const count = changedFileCountFromGitHubEvent(event);
+      return { source: 'PUSH_PAYLOAD', files: [], fileCount: count, complete: true };
+    } catch (payloadError) {
+      // Reason secimi (en spesifik/eylemsel gerekce once):
+      //   1) head_commit VARDI ama dizi sekli bozuktu -> PAYLOAD_INCOMPLETE
+      //   2) before hic yoktu/zero-SHA'ydi -> BEFORE_SHA_MISSING
+      //   3) before/after yapisal olarak gecerliydi ama fetch/diff basarisiz oldu -> RANGE_UNFETCHABLE
+      const payloadWasMalformed = payloadError instanceof Error
+        && payloadError.message === 'W2_PUSH_CHANGESET_INVALID';
+      if (payloadWasMalformed) throw new Error('W2_PUSH_CHANGESET_INVALID:PAYLOAD_INCOMPLETE');
+      if (!beforeUsable) throw new Error('W2_PUSH_CHANGESET_INVALID:BEFORE_SHA_MISSING');
+      throw new Error('W2_PUSH_CHANGESET_INVALID:RANGE_UNFETCHABLE');
+    }
+  }
+
+  // Local/no-event execution (brief §6): HEAD^ varsa kullan, yoksa sessizce 0 uretme —
+  // fail-closed. Yeni bir "local skip" semantigi icat EDILMEZ. Event adi bilinen ama
+  // desteklenmeyen bir CI tetikleyicisiyse (ornek: workflow_dispatch) ayri tanilanir.
+  if (hasResolvableLocalParent(cwd)) {
+    const files = gitDiffNameOnlyAt(cwd, 'HEAD^', 'HEAD');
+    return { source: 'LOCAL_PARENT', files, fileCount: files.length, complete: true };
+  }
+  if (eventName && eventName !== 'pull_request' && eventName !== 'push') {
+    throw new Error('W2_PUSH_CHANGESET_INVALID:UNSUPPORTED_EVENT');
+  }
+  throw new Error('W2_GITHUB_EVENT_PATH_REQUIRED');
+}
+
+function currentCheckoutChangedFileCount(
+  resolver: () => ChangedFileEvidence = resolveChangedFileEvidence,
+): number {
+  const evidence = resolver();
+  if (!evidence.complete) throw new Error('W2_CHANGED_FILE_EVIDENCE_UNAVAILABLE:INCOMPLETE');
+  return evidence.fileCount;
 }
 
 describe('R01 W2 changed-file evidence', () => {
@@ -159,6 +334,386 @@ describe('R01 W2 changed-file evidence', () => {
   it('fails closed when the pull-request change count is undefined', () => {
     expect(() => changedFileCountFromGitHubEvent({ pull_request: {} }))
       .toThrow('W2_CHANGED_FILE_COUNT_INVALID');
+  });
+
+  it('fails closed when a push event carries no head_commit at all', () => {
+    expect(() => changedFileCountFromGitHubEvent({ before: 'a'.repeat(40), after: 'b'.repeat(40) }))
+      .toThrow('W2_CHANGED_FILE_EVIDENCE_UNAVAILABLE');
+  });
+
+  it('fails closed when a push head commit array field is partially malformed', () => {
+    expect(() => changedFileCountFromGitHubEvent({
+      head_commit: { added: 'not-an-array', modified: [], removed: [] },
+    })).toThrow('W2_PUSH_CHANGESET_INVALID');
+  });
+});
+
+/**
+ * R01 W2 event-aware changed-file evidence resolver — RECONCILIATION-R01 test matrix.
+ * Her senaryo `resolveChangedFileEvidence()`'i kendi izole gecici git deposunda
+ * calistirir; hicbir test bu spec dosyasinin kendi checkout'una veya CI ortamina
+ * baglidir degildir (fail-closed davranisi ortamdan bagimsiz kanitlanir).
+ */
+function runFixtureGit(cwd: string, args: string[]): string {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+  if (result.status !== 0) {
+    throw new Error(`W2_FIXTURE_GIT_FAILED: git ${args.join(' ')} :: ${(result.stderr || result.stdout || '').trim().slice(0, 300)}`);
+  }
+  return result.stdout.trim();
+}
+
+function withTempGitFixture<T>(prefix: string, fn: (dir: string) => T): T {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  try {
+    return fn(dir);
+  } finally {
+    const resolved = path.resolve(dir);
+    expect(resolved.startsWith(path.resolve(os.tmpdir()))).toBe(true);
+    fs.rmSync(resolved, { recursive: true, force: true });
+  }
+}
+
+function configFixtureIdentity(dir: string): void {
+  runFixtureGit(dir, ['config', 'user.email', 'w2-fixture@example.invalid']);
+  runFixtureGit(dir, ['config', 'user.name', 'W2 Fixture']);
+}
+
+function initFixtureRepo(dir: string): void {
+  runFixtureGit(dir, ['init', '--quiet']);
+  configFixtureIdentity(dir);
+}
+
+function commitFixtureFile(dir: string, fileName: string, content: string, message: string): string {
+  const filePath = path.join(dir, fileName);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+  runFixtureGit(dir, ['add', '-A']);
+  runFixtureGit(dir, ['commit', '--quiet', '-m', message]);
+  return runFixtureGit(dir, ['rev-parse', 'HEAD']);
+}
+
+function removeFixtureFile(dir: string, fileName: string, message: string): string {
+  fs.rmSync(path.join(dir, fileName));
+  runFixtureGit(dir, ['add', '-A']);
+  runFixtureGit(dir, ['commit', '--quiet', '-m', message]);
+  return runFixtureGit(dir, ['rev-parse', 'HEAD']);
+}
+
+function writeFixtureEvent(dir: string, event: unknown): string {
+  const eventPath = path.join(dir, 'event.json');
+  fs.writeFileSync(eventPath, JSON.stringify(event));
+  return eventPath;
+}
+
+/**
+ * Bu spec dosyasi BIZZAT bir CI job'i icinde calisirken gercek
+ * GITHUB_EVENT_NAME/GITHUB_EVENT_PATH ortam degiskenleri her zaman mevcuttur
+ * (ornegin bu PR'in kendi pull_request event'i). "Yerel calisma / event yok"
+ * senaryolarini simule eden testler bu ambient degerleri ACIKCA gecersiz
+ * kilmalidir — aksi halde yerel makinede (ambient event YOK) PASS olup gercek
+ * CI'da (ambient pull_request event VAR) ambient event'e yanlislikla
+ * yakalanip FAIL olurlar. `eventPath` var olmayan bir dosyaya isaret eder ki
+ * `fs.existsSync` false donsun ve ambient event hic okunmasin.
+ */
+function noAmbientCiEvent(dir: string): { eventPath: string } {
+  return { eventPath: path.join(dir, '__no_ambient_ci_event_marker__.json') };
+}
+
+describe('R01 W2 event-aware changed-file evidence resolver', () => {
+  describe('pull_request event', () => {
+    it('resolves via GIT_RANGE when base/head commits are locally available (parent available)', () => {
+      withTempGitFixture('roc-w2-pr-parent-', (dir) => {
+        initFixtureRepo(dir);
+        const base = commitFixtureFile(dir, 'base.txt', 'base', 'base commit');
+        commitFixtureFile(dir, 'middle.txt', 'middle', 'middle commit');
+        const head = commitFixtureFile(dir, 'head.txt', 'head', 'head commit');
+        const eventPath = writeFixtureEvent(dir, {
+          pull_request: { base: { sha: base }, head: { sha: head }, changed_files: 999 },
+        });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'pull_request', eventPath });
+        expect(evidence.source).toBe('GIT_RANGE');
+        expect(evidence.complete).toBe(true);
+        expect(evidence.files.slice().sort()).toEqual(['head.txt', 'middle.txt']);
+        expect(evidence.fileCount).toBe(2);
+      });
+    });
+
+    it('falls back to PR_PAYLOAD when base/head commits are not fetchable (shallow)', () => {
+      withTempGitFixture('roc-w2-pr-shallow-', (dir) => {
+        initFixtureRepo(dir);
+        commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        const eventPath = writeFixtureEvent(dir, {
+          pull_request: {
+            base: { sha: 'a'.repeat(40) },
+            head: { sha: 'b'.repeat(40) },
+            changed_files: 4,
+          },
+        });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'pull_request', eventPath });
+        expect(evidence).toEqual({ source: 'PR_PAYLOAD', files: [], fileCount: 4, complete: true });
+      });
+    });
+
+    it('uses the payload changed_files count when no base/head SHAs are present at all', () => {
+      withTempGitFixture('roc-w2-pr-payload-', (dir) => {
+        initFixtureRepo(dir);
+        commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        const eventPath = writeFixtureEvent(dir, { pull_request: { changed_files: 7 } });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'pull_request', eventPath });
+        expect(evidence).toEqual({ source: 'PR_PAYLOAD', files: [], fileCount: 7, complete: true });
+      });
+    });
+
+    it('resolves an explicit local base/head override via GIT_RANGE regardless of CI event context', () => {
+      withTempGitFixture('roc-w2-explicit-', (dir) => {
+        initFixtureRepo(dir);
+        const base = commitFixtureFile(dir, 'base.txt', 'base', 'base');
+        const head = commitFixtureFile(dir, 'changed.txt', 'changed', 'head');
+        const evidence = resolveChangedFileEvidence({ cwd: dir, baseShaOverride: base, headShaOverride: head });
+        expect(evidence).toEqual({ source: 'GIT_RANGE', files: ['changed.txt'], fileCount: 1, complete: true });
+      });
+    });
+  });
+
+  describe('push event', () => {
+    it('resolves a single-commit push via GIT_RANGE using top-level before/after SHAs', () => {
+      withTempGitFixture('roc-w2-push-single-', (dir) => {
+        initFixtureRepo(dir);
+        const before = commitFixtureFile(dir, 'a.txt', 'a', 'before');
+        const after = commitFixtureFile(dir, 'b.txt', 'b', 'after');
+        const eventPath = writeFixtureEvent(dir, { before, after, head_commit: { id: after } });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath });
+        expect(evidence).toEqual({ source: 'GIT_RANGE', files: ['b.txt'], fileCount: 1, complete: true });
+      });
+    });
+
+    it('aggregates every intermediate commit of a multi-commit push via GIT_RANGE', () => {
+      withTempGitFixture('roc-w2-push-multi-', (dir) => {
+        initFixtureRepo(dir);
+        const before = commitFixtureFile(dir, 'a.txt', 'a', 'before');
+        commitFixtureFile(dir, 'b.txt', 'b', 'middle 1');
+        commitFixtureFile(dir, 'c.txt', 'c', 'middle 2');
+        const after = commitFixtureFile(dir, 'd.txt', 'd', 'after');
+        const eventPath = writeFixtureEvent(dir, { before, after });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath });
+        expect(evidence.source).toBe('GIT_RANGE');
+        expect(evidence.complete).toBe(true);
+        expect(evidence.files.slice().sort()).toEqual(['b.txt', 'c.txt', 'd.txt']);
+      });
+    });
+
+    it('resolves a squash-style push via GIT_RANGE without relying on head_commit arrays', () => {
+      withTempGitFixture('roc-w2-push-squash-', (dir) => {
+        initFixtureRepo(dir);
+        const before = commitFixtureFile(dir, 'a.txt', 'a', 'before');
+        fs.writeFileSync(path.join(dir, 'x.txt'), 'x');
+        fs.writeFileSync(path.join(dir, 'y.txt'), 'y');
+        runFixtureGit(dir, ['add', '-A']);
+        runFixtureGit(dir, ['commit', '--quiet', '-m', 'squash-merge PR #123']);
+        const after = runFixtureGit(dir, ['rev-parse', 'HEAD']);
+        // Kasitli: head_commit'te added/modified/removed YOK — API ile olusturulan
+        // squash-merge commit'lerin gercek sekli (root cause).
+        const eventPath = writeFixtureEvent(dir, { before, after, head_commit: { id: after } });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath });
+        expect(evidence.source).toBe('GIT_RANGE');
+        expect(evidence.files.slice().sort()).toEqual(['x.txt', 'y.txt']);
+      });
+    });
+
+    it('CRITICAL: resolves a shallow-checkout push via bounded SHA fetch when before/after are not locally available', () => {
+      withTempGitFixture('roc-w2-push-shallow-', (dir) => {
+        runFixtureGit(dir, ['init', '--quiet', '--bare', 'origin.git']);
+        const originUrl = pathToFileURL(path.join(dir, 'origin.git')).href;
+
+        runFixtureGit(dir, ['clone', '--quiet', originUrl, 'work']);
+        const workDir = path.join(dir, 'work');
+        configFixtureIdentity(workDir);
+        const before = commitFixtureFile(workDir, 'a.txt', 'a', 'c1');
+        commitFixtureFile(workDir, 'b.txt', 'b', 'c2');
+        const after = commitFixtureFile(workDir, 'c.txt', 'c', 'c3 (after, simulated squash-merge)');
+        runFixtureGit(workDir, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
+
+        // `--no-local`: bazi git surumleri/platformlari `file://` kaynaklarda bile
+        // hardlink-tabanli "local clone" optimizasyonuna dusup `--depth`'i sessizce
+        // yok sayabiliyor (CI Linux runner'inda gozlemlendi: `.git/shallow` hic
+        // olusmadi). `--no-local` gercek pack-negotiation yolunu zorlar; boylece
+        // depth-limiting git surumunden/platformdan bagimsiz calisir.
+        runFixtureGit(dir, ['clone', '--quiet', '--no-local', '--depth', '1', originUrl, 'shallow']);
+        const shallowDir = path.join(dir, 'shallow');
+
+        // On-kosul (tek basina anlamli olan gercek degisken): 'before' shallow
+        // clone'da lokalde YOK. `.git/shallow` dosyasinin varligi implementasyon
+        // detayidir (git surumune/platforma gore degisebilir) — kontrol edilen asil
+        // sey budur, cunku test bunun uzerine kuruludur.
+        expect(commitExistsLocally(before, shallowDir)).toBe(false);
+
+        const eventPath = writeFixtureEvent(shallowDir, { before, after });
+        const evidence = resolveChangedFileEvidence({ cwd: shallowDir, eventName: 'push', eventPath });
+        expect(evidence.source).toBe('GIT_RANGE');
+        expect(evidence.complete).toBe(true);
+        expect(evidence.files.slice().sort()).toEqual(['b.txt', 'c.txt']);
+
+        // Negatif kanit: fetch GERCEKTEN calisti, sadece tesadufen zaten mevcut degildi.
+        expect(commitExistsLocally(before, shallowDir)).toBe(true);
+      });
+    });
+
+    it('fails closed with BEFORE_SHA_MISSING when before is entirely absent and no fallback resolves', () => {
+      withTempGitFixture('roc-w2-push-nobefore-', (dir) => {
+        initFixtureRepo(dir);
+        const after = commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        const eventPath = writeFixtureEvent(dir, { after });
+        expect(() => resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath }))
+          .toThrow('W2_PUSH_CHANGESET_INVALID:BEFORE_SHA_MISSING');
+      });
+    });
+
+    it('fails closed with BEFORE_SHA_MISSING when before is the zero-SHA (new branch) and no fallback resolves', () => {
+      withTempGitFixture('roc-w2-push-zerobefore-', (dir) => {
+        initFixtureRepo(dir);
+        const after = commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        const eventPath = writeFixtureEvent(dir, { before: '0'.repeat(40), after });
+        expect(() => resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath }))
+          .toThrow('W2_PUSH_CHANGESET_INVALID:BEFORE_SHA_MISSING');
+      });
+    });
+
+    it('falls back to PUSH_PAYLOAD when the range is unfetchable but head_commit arrays are valid', () => {
+      withTempGitFixture('roc-w2-push-payload-fallback-', (dir) => {
+        initFixtureRepo(dir);
+        commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        const eventPath = writeFixtureEvent(dir, {
+          before: 'a'.repeat(40),
+          after: 'b'.repeat(40),
+          head_commit: { added: ['added.ts'], modified: [], removed: [] },
+        });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath });
+        expect(evidence).toEqual({ source: 'PUSH_PAYLOAD', files: [], fileCount: 1, complete: true });
+      });
+    });
+
+    it('fails closed with RANGE_UNFETCHABLE when before/after look valid but no fallback resolves', () => {
+      withTempGitFixture('roc-w2-push-unfetchable-', (dir) => {
+        initFixtureRepo(dir);
+        commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        const eventPath = writeFixtureEvent(dir, { before: 'a'.repeat(40), after: 'b'.repeat(40) });
+        expect(() => resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath }))
+          .toThrow('W2_PUSH_CHANGESET_INVALID:RANGE_UNFETCHABLE');
+      });
+    });
+
+    it('fails closed with PAYLOAD_INCOMPLETE when head_commit is present but its arrays are malformed', () => {
+      withTempGitFixture('roc-w2-push-malformed-', (dir) => {
+        initFixtureRepo(dir);
+        commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        const eventPath = writeFixtureEvent(dir, {
+          head_commit: { added: 'not-an-array', modified: [], removed: [] },
+        });
+        expect(() => resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath }))
+          .toThrow('W2_PUSH_CHANGESET_INVALID:PAYLOAD_INCOMPLETE');
+      });
+    });
+  });
+
+  describe('local execution and unsupported events', () => {
+    it('resolves via LOCAL_PARENT when HEAD^ is available and there is no CI event', () => {
+      withTempGitFixture('roc-w2-local-parent-', (dir) => {
+        initFixtureRepo(dir);
+        commitFixtureFile(dir, 'a.txt', 'a', 'c1');
+        commitFixtureFile(dir, 'b.txt', 'b', 'c2');
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: '', ...noAmbientCiEvent(dir) });
+        expect(evidence).toEqual({ source: 'LOCAL_PARENT', files: ['b.txt'], fileCount: 1, complete: true });
+      });
+    });
+
+    it('fails closed with UNSUPPORTED_EVENT for a named non-push/pull_request CI trigger with no local parent', () => {
+      withTempGitFixture('roc-w2-unsupported-', (dir) => {
+        initFixtureRepo(dir);
+        commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        expect(() => resolveChangedFileEvidence({ cwd: dir, eventName: 'workflow_dispatch', ...noAmbientCiEvent(dir) }))
+          .toThrow('W2_PUSH_CHANGESET_INVALID:UNSUPPORTED_EVENT');
+      });
+    });
+
+    it('fails closed with W2_GITHUB_EVENT_PATH_REQUIRED when there is no event and no local parent at all', () => {
+      withTempGitFixture('roc-w2-no-evidence-', (dir) => {
+        initFixtureRepo(dir);
+        commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        expect(() => resolveChangedFileEvidence({ cwd: dir, eventName: '', ...noAmbientCiEvent(dir) }))
+          .toThrow('W2_GITHUB_EVENT_PATH_REQUIRED');
+      });
+    });
+  });
+
+  describe('integrity of the resolved changeset', () => {
+    it('deduplicates a path that is added, removed, and re-added across intermediate commits', () => {
+      withTempGitFixture('roc-w2-dedup-', (dir) => {
+        initFixtureRepo(dir);
+        const before = commitFixtureFile(dir, 'root.txt', 'root', 'root');
+        commitFixtureFile(dir, 'foo.txt', 'v1', 'add foo');
+        removeFixtureFile(dir, 'foo.txt', 'remove foo');
+        const after = commitFixtureFile(dir, 'foo.txt', 'v2', 're-add foo');
+        const eventPath = writeFixtureEvent(dir, { before, after });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath });
+        expect(evidence.files.filter((file) => file === 'foo.txt')).toHaveLength(1);
+        expect(evidence.fileCount).toBe(1);
+      });
+    });
+
+    it('reports both the old and new path of a rename deterministically regardless of git rename heuristics', () => {
+      withTempGitFixture('roc-w2-rename-', (dir) => {
+        initFixtureRepo(dir);
+        const before = commitFixtureFile(dir, 'old-name.txt', 'a reasonably long body so similarity heuristics could apply', 'add');
+        runFixtureGit(dir, ['mv', 'old-name.txt', 'new-name.txt']);
+        runFixtureGit(dir, ['commit', '--quiet', '-am', 'rename']);
+        const after = runFixtureGit(dir, ['rev-parse', 'HEAD']);
+        const eventPath = writeFixtureEvent(dir, { before, after });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath });
+        expect(evidence.files.slice().sort()).toEqual(['new-name.txt', 'old-name.txt']);
+      });
+    });
+
+    it('reports a deleted file as part of the changeset', () => {
+      withTempGitFixture('roc-w2-deleted-', (dir) => {
+        initFixtureRepo(dir);
+        const before = commitFixtureFile(dir, 'gone.txt', 'x', 'add');
+        const after = removeFixtureFile(dir, 'gone.txt', 'remove');
+        const eventPath = writeFixtureEvent(dir, { before, after });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath });
+        expect(evidence.files).toEqual(['gone.txt']);
+      });
+    });
+
+    it('reports nested paths with forward-slash separators regardless of host OS', () => {
+      withTempGitFixture('roc-w2-pathsep-', (dir) => {
+        initFixtureRepo(dir);
+        const before = commitFixtureFile(dir, 'root.txt', 'root', 'root');
+        const after = commitFixtureFile(dir, 'nested/dir/file.ts', 'x', 'nested');
+        const eventPath = writeFixtureEvent(dir, { before, after });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath });
+        expect(evidence.files).toEqual(['nested/dir/file.ts']);
+        expect(evidence.files.every((file) => !file.includes('\\'))).toBe(true);
+      });
+    });
+
+    it('reports a valid empty changeset (before === after) as complete with zero files, not a silent skip', () => {
+      withTempGitFixture('roc-w2-empty-', (dir) => {
+        initFixtureRepo(dir);
+        const sha = commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
+        const eventPath = writeFixtureEvent(dir, { before: sha, after: sha });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: 'push', eventPath });
+        expect(evidence).toEqual({ source: 'GIT_RANGE', files: [], fileCount: 0, complete: true });
+      });
+    });
+
+    it('rejects incomplete evidence at the currentCheckoutChangedFileCount guard boundary', () => {
+      expect(() => currentCheckoutChangedFileCount(() => ({
+        source: 'PUSH_PAYLOAD',
+        files: [],
+        fileCount: 3,
+        complete: false,
+      }))).toThrow('W2_CHANGED_FILE_EVIDENCE_UNAVAILABLE:INCOMPLETE');
+    });
   });
 });
 
