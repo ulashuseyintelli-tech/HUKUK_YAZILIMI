@@ -26,6 +26,14 @@ Her residual icin **tekil** successor. "Async eksikleri duzelt" gibi toplu task 
 - **prerequisite:** owner karari — dogrulama hangi katmanda zorunlu (dispatch mi handler mi)
 - **bagimlilik:** **MIGRATION** (tenantId kolonlari + backfill)
 
+**SONUC (R01, [PR #1990](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/1990), merge `cfccfb6c`):**
+CLOSED. Yukaridaki `bagimlilik: MIGRATION` varsayimi, uygulama incelemesinde
+GEREKSIZ oldugu kanitlandi — invariant, 7 handalin ONCESINDE (asil listelenen
+6 + `update_case_status`) merkezi `dispatch()` gate'inde, salt `Case.tenantId`
+(halihazirda NOT NULL/otoriter) uzerinden, sema degisikligi OLMADAN kapatildi.
+Dogrulama katmani: dispatch (handler-basina degil). Detay: `defect-register.md`
+→ Cozum Kaydi → W3-D02.
+
 ---
 ## W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01
 - **capability:** tum `@nestjs/schedule` yuzeyi
