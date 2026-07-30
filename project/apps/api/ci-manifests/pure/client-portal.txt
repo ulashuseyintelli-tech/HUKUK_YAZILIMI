@@ -64,6 +64,7 @@
 #     response shape kanıtlanır. poa.service.ts (staff/admin) DEĞİŞMEDİ, dokunulmadı.
 #
 src/modules/client/__tests__/client-action-catalog.spec.ts
+src/modules/client/__tests__/client-address-lifecycle-invariant.spec.ts
 src/modules/client/__tests__/client-address-persist-ver02.spec.ts
 src/modules/client/__tests__/client-address-route-collision.spec.ts
 src/modules/client/__tests__/client-address.service.spec.ts
