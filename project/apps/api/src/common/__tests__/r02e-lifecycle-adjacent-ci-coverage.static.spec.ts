@@ -8,14 +8,16 @@ const MANIFEST_RUNNER = path.join(API_ROOT, 'scripts/run-ci-manifest.sh');
 // DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E):
 // I10's fresh sweep found 11 spec files that reference CaseDebtorLifecycleGuardService
 // only as one dependency among several (not their test subject) and were never wired
-// into any required-CI manifest. Per-file reconciliation in I11 found:
-//  - 10 are unchanged-and-green and safely mappable to their PRIMARY domain manifest
-//    (this list — MAP_NOW).
-//  - 1 (collection-idempotency.spec.ts) is currently RED on fresh main (4/8 tests fail:
-//    tx.claimItem.findMany mock missing after a later CollectionService.create() change)
-//    and is intentionally NOT mapped here — see the I11 PR body / final disposition
-//    for the REPAIR_REQUIRED finding. Wiring a red spec into required CI would turn a
-//    latent gap into an immediate false block, which is worse than leaving it unwired.
+// into any required-CI manifest. Per-file reconciliation in I11 found 10 unchanged-and-
+// green files safely mappable to their PRIMARY domain manifest (this list — MAP_NOW).
+//
+// The 11th, collection-idempotency.spec.ts, was found RED against fresh main at analysis
+// time (4/8 tests failed: tx.claimItem.findMany mock missing after a CollectionService.
+// create() change) and was deliberately left unmapped as REPAIR_REQUIRED. PR #1944
+// ("fix(collection): persist confirmation timestamps") landed concurrently, fixed the
+// same CollectionService.create() surface, and wired collection-idempotency.spec.ts into
+// this same manifest itself — resolving the finding before this PR merged. That file's
+// CI-coverage is therefore #1944's own scope, not asserted here.
 const R02E_MAPPED_SPECS = [
   {
     spec: 'src/modules/debtor/__tests__/third-party-collection-delegation.spec.ts',
@@ -58,11 +60,6 @@ const R02E_MAPPED_SPECS = [
     manifest: 'db/domain-integration.txt',
   },
 ];
-
-// I11 explicitly excludes this file from R02E_MAPPED_SPECS (REPAIR_REQUIRED, not MAP_NOW).
-// This guard also locks that it never silently reappears in a manifest without a
-// deliberate, reviewed decision to do so.
-const R02E_REPAIR_REQUIRED_SPEC = 'src/modules/collection/__tests__/collection-idempotency.spec.ts';
 
 function normalize(relativePath: string): string {
   return relativePath.split(path.sep).join('/');
@@ -116,12 +113,6 @@ describe('DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 required C
     for (const { spec } of R02E_MAPPED_SPECS) {
       expect(fs.existsSync(path.join(API_ROOT, normalize(spec)))).toBe(true);
     }
-  });
-
-  it('keeps the REPAIR_REQUIRED spec out of every manifest until it is fixed', () => {
-    const totalCount = allRequiredEntries.filter((entry) => entry === R02E_REPAIR_REQUIRED_SPEC).length;
-    expect(totalCount).toBe(0);
-    expect(fs.existsSync(path.join(API_ROOT, normalize(R02E_REPAIR_REQUIRED_SPEC)))).toBe(true);
   });
 
   it('keeps the shared runner fail-closed for missing or zero-match manifests', () => {
