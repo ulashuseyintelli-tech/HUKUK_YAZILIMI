@@ -161,6 +161,13 @@ src/modules/icrabot/v28-engine/__tests__/tenant-boundary-hardening.spec.ts
 src/modules/icrabot/v28-engine/__tests__/timeline-aggregate-version.spec.ts
 src/modules/icrabot/v28-engine/__tests__/timeline-enginerun-tenant-isolation.spec.ts
 src/modules/icrabot/v28-engine/__tests__/v28-surface-containment.spec.ts
+# DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW):
+# both files reference CaseDebtorLifecycleGuardService only incidentally (a mocked
+# dependency of TebligatService, not their test subject); primary domain is
+# Tebligat creation-validation / PTT electronic-result handling. No new test
+# behavior; both unchanged and green (verified fresh against origin/main).
+src/modules/tebligat/__tests__/tebligat-create-validation.spec.ts
+src/modules/tebligat/__tests__/tebligat-electronic-result.spec.ts
 src/modules/tebligat/__tests__/tebligat-ptt-result-tk212-regression.spec.ts
 src/modules/tebligat/__tests__/tebligat-service-occurrence-integration.spec.ts
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded.consumer.spec.ts

@@ -117,6 +117,21 @@
 #     manifestte kayitli degildi ve CI da hic kosmuyordu; charter §37 ile baglandi.
 src/modules/client-financial-disclosure/__tests__/track-b-i01-schema-foundation.db-gated.integration.spec.ts
 #
+#   DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW)
+#     Four describeDb()-wrapped disposable-DB spec files (no .db-gated.integration
+#     suffix — same non-suffix convention already established by
+#     collection-payment-received.integration.spec.ts and change-password.integration.spec.ts
+#     above, so no naming-repair needed). Each references CaseDebtorLifecycleGuardService
+#     only as an incidental real-instance dependency; primary domain is
+#     AddressDiscovery/AddressService/CaseDebtorService against a real Postgres.
+#     No new test behavior; all four unchanged and green (70/70 tests total across
+#     this group, verified fresh on disposable Postgres 16 against origin/main
+#     before wiring).
+src/modules/address-discovery/address-discovery.spec.ts
+src/modules/debtor/address.service.spec.ts
+src/modules/debtor/case-debtor.collection-guard.spec.ts
+src/modules/debtor/case-debtor.remove-orphan-tasks.spec.ts
+#
 #   RUNTIME-OPERABILITY-CERTIFICATION-R01-W2 core user journeys
 #     CLIENT, DEBTOR, RECEIVABLE, COLLECTION ve OFFICE icin gercek Nest HTTP dispatch,
 #     JwtAuthGuard/JwtStrategy, application service, disposable PostgreSQL persistence,
@@ -140,6 +155,15 @@ src/modules/client-settlement/__tests__/client-financial-disclosure-command.db-g
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-dispatcher.db-gated.integration.spec.ts
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-e2e.db-gated.integration.spec.ts
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
+#
+#   DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW)
+#     collection-cancel-reversal.db-gated.integration.spec.ts: already follows the
+#     .db-gated.integration.spec.ts suffix convention (describeWithDisposableDb),
+#     references CaseDebtorLifecycleGuardService only as an incidental real-instance
+#     dependency of CollectionService.cancel/reverse against a real Postgres. No new
+#     test behavior; unchanged and green (7 suites/tests, verified fresh on disposable
+#     Postgres 16 against origin/main before wiring).
+src/modules/collection/__tests__/collection-cancel-reversal.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline-snapshot-invariant.db-gated.integration.spec.ts

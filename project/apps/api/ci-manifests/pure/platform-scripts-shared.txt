@@ -155,17 +155,33 @@
 #     dependency. A broader sweep during I10 also found 11 additional specs that
 #     reference the guard incidentally (as one dependency among several, across
 #     collection/tebligat/address-discovery/scheduler domains) and are ALSO unwired
-#     — those are a separate, out-of-scope finding (not "lifecycle-guard" specs in
-#     the narrow sense) and are intentionally NOT added here; see PR body for R02-E.
+#     — those were left as a separate, out-of-scope finding; see R02-E below for
+#     the reconciliation and per-file disposition (I10 PR body).
+#
+#   DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW subset)
+#     Per-file reconciliation of I10's 11-file sweep found two of them are NOT
+#     incidental — they are direct contract tests of the shared guard service's own
+#     methods, just exercised from a consumer module: address-task-scheduler.service.spec.ts
+#     (entire file, ACT-08 — AddressTaskSchedulerService's isPassiveByCaseAndDebtor
+#     defense-in-depth) and case-debtor.service.spec.ts (its updateCaseDebtor describe
+#     block locks the DBND-D2 assertActiveByCaseDebtorId call). Both placed here
+#     (not a Collection/Tebligat manifest) because their PRIMARY domain is the same
+#     CaseDebtor/lifecycle-guard family already resident in this manifest. The other
+#     9 R02-E files route to their own primary-domain manifest (Collection/Tebligat/
+#     DB-gated CaseDebtor+AddressDiscovery) — see claim-collection-finance.txt,
+#     uyap-icrabot-tebligat.txt and db/domain-integration.txt. No new test behavior;
+#     both files unchanged and green (verified fresh against origin/main).
 #
 src/common/__tests__/task-disposition-guard.spec.ts
 src/common/__tests__/pr-closeout.spec.ts
 src/common/__tests__/instruction-policy.spec.ts
+src/common/__tests__/r02e-lifecycle-adjacent-ci-coverage.static.spec.ts
 src/config/uyap-interest-crosswalk.spec.ts
 src/modules/address-discovery/confidence-score.tenant-boundary.spec.ts
 src/modules/address-discovery/confidence-score.ownership-contract.spec.ts
 src/modules/address-discovery/address-discovery-lifecycle-guard.spec.ts
 src/modules/address-discovery/uyap-query.service.spec.ts
+src/modules/address-task/address-task-scheduler.service.spec.ts
 src/modules/address-task/address-task.controller.spec.ts
 src/modules/address-task/address-task.service.spec.ts
 src/modules/ai/ai.service.tenant-boundary.spec.ts
@@ -192,6 +208,7 @@ src/modules/client-notification/__tests__/client-notification-template-tenant-sc
 src/modules/debtor/__tests__/debtor-finalization-cutover.spec.ts
 src/modules/debtor/__tests__/debtor-service-attempt-address-ownership.spec.ts
 src/modules/debtor/case-debtor-ownership.spec.ts
+src/modules/debtor/case-debtor.service.spec.ts
 src/modules/debtor/debtor-identity-format.spec.ts
 src/modules/debtor/ihbarname-summary.tenant-boundary.spec.ts
 src/modules/debtor/quick-note-passive-writer.spec.ts
