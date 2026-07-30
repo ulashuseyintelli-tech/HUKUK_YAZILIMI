@@ -58,8 +58,9 @@ export class ClientAddressController {
   /// - ClientAddressController.create() -> POST /clients/:clientId/addresses (id-bazlı create; deleteMany+recreate YOK)
   /// </remarks>
   @Post('clients/:clientId/addresses')
-  create(@Request() req: any, @Param('clientId') clientId: string, @Body() dto: CreateClientAddressDto) {
-    return this.clientAddressService.create(req.user.tenantId, clientId, dto);
+  create(@Request() req: AuthRequest, @Param('clientId') clientId: string, @Body() dto: CreateClientAddressDto) {
+    // I04A / C0-a: audit actor YALNIZ req.user.id (auth context); body'den userId ASLA okunmaz.
+    return this.clientAddressService.create(req.user.tenantId, clientId, dto, { userId: req.user.id });
   }
 
   /// <remarks>
@@ -73,12 +74,15 @@ export class ClientAddressController {
   /// </remarks>
   @Put('clients/:clientId/addresses/:addressId')
   update(
-    @Request() req: any,
+    @Request() req: AuthRequest,
     @Param('clientId') clientId: string,
     @Param('addressId') addressId: string,
     @Body() dto: UpdateClientAddressDto,
   ) {
-    return this.clientAddressService.update(req.user.tenantId, clientId, addressId, dto);
+    // I04A / C0-a: audit actor YALNIZ req.user.id (auth context); body'den userId ASLA okunmaz.
+    return this.clientAddressService.update(req.user.tenantId, clientId, addressId, dto, {
+      userId: req.user.id,
+    });
   }
 
   /// <remarks>

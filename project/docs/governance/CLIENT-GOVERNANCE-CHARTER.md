@@ -3624,22 +3624,28 @@ I08  CLIENT-ARC-07-LEGACY-FLAT-REDUCTION-I08
 
 ```text
 NEXT ELIGIBLE IMPLEMENTATION TASK:
-CLIENT-ARC-07-PRODUCTION-EVIDENCE-I04
+CLIENT-ARC-07-OFFICIAL-CONSUMER-ADAPTER-I07
 
 STATUS: OWNER GO REQUIRED / NOT STARTED
 
 TAMAMLANAN DILIMLER:
-I01 CLIENT-ARC-07-LIFECYCLE-INVARIANT-I01    CLOSED / VERIFIED   PR #1943
-I02 CLIENT-ARC-07-ARCHIVE-RESTORE-AUDIT-I02  CLOSED / VERIFIED   PR #1958
-I03 CLIENT-ARC-07-STAFF-HISTORY-I03          CLOSED / VERIFIED   PR #1961
+I01  CLIENT-ARC-07-LIFECYCLE-INVARIANT-I01     CLOSED / VERIFIED   PR #1943
+I02  CLIENT-ARC-07-ARCHIVE-RESTORE-AUDIT-I02   CLOSED / VERIFIED   PR #1958
+I03  CLIENT-ARC-07-STAFF-HISTORY-I03           CLOSED / VERIFIED   PR #1961
+I04A CLIENT-ARC-07-CREATE-UPDATE-AUDIT-I04A    CLOSED / VERIFIED   PR #1970
+
+ERTELENEN / BLOKLU DILIMLER (owner karari, 2026-07-30):
+I04  CLIENT-ARC-07-PRODUCTION-EVIDENCE-I04     DEFERRED — production ortami yok
+I05  CLIENT-ARC-07-BACKFILL-DRY-RUN-I05         BLOCKED — I04 gercek production kanitini bekler
+I06  CLIENT-ARC-07-BACKFILL-APPLY-I06            BLOCKED — I04/I05'i bekler
 ```
 
-Bu bölüm `I04`'ü **başlatmaz**; yalnız sıradaki uygun görev olarak tanımlar. `I04`–`I08` otomatik olarak YETKİLENDİRİLMEZ.
+Bu bölüm `I07`'yi **başlatmaz**; yalnız owner sıralamasında (2026-07-30) sıradaki uygun dilim olarak tanımlar — I05/I06 gerçek production ortamı var olana kadar bloklu kalır. `I07`/`I08` otomatik olarak YETKİLENDİRİLMEZ.
 
 ### 49.15 Statü Kesinliği
 
 ```text
-ARC-07                     : IN PROGRESS / I01 + I02 + I03 CLOSED / I04 NOT STARTED
+ARC-07                     : IN PROGRESS / I01-I03 + I04A CLOSED / I04 DEFERRED (NO PRODUCTION)
 VER-02                     : CLOSED / VERIFIED (degismedi)
 CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01 : CLOSED / VERIFIED (degismedi)
 ACT-23                     : UNAFFECTED
@@ -3648,7 +3654,9 @@ RUNTIME                    : I01 + I02 ile DEGISTI (invariant guard, arsiv/resto
 SCHEMA / MIGRATION         : DEGISMEDI (I01 ve I02 diff 0)
 STAFF HISTORY API / UI     : IMPLEMENTED (I03); PORTAL EXPOZURU YOK
 ADRES AUDIT GORUNURLUGU    : DEFERRED (yeniden kullanilabilir audit-history UI konvansiyonu yok)
-CREATE/UPDATE AUDIT        : OPEN / OWNER-GATED RESIDUAL (I02 kapsamadi, I03 uygulamadi)
+CREATE/UPDATE AUDIT        : CLOSED / VERIFIED (I04A, PR #1970)
+PRODUCTION EVIDENCE (I04)  : DEFERRED — owner beyani: production ortami yok/deploy edilmemis
+BACKFILL (I05/I06)         : BLOCKED — gercek production ortami var olana kadar
 FIZIKSEL SILME             : FAIL-CLOSED (I02); POL-E on kosullari TEMSIL EDILMIYOR
 BACKFILL                   : NOT STARTED (I05/I06)
 IMPLEMENTATION AUTHORITY   : NONE (I03+ icin owner GO gerekir)

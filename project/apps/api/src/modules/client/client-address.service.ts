@@ -66,6 +66,28 @@ const STAFF_READ_SELECT = {
 export const CLIENT_ADDRESS_LIST_STATUSES = ['active', 'archived', 'all'] as const;
 export type ClientAddressListStatus = (typeof CLIENT_ADDRESS_LIST_STATUSES)[number];
 
+/**
+ * CLIENT-ARC-07-CREATE-UPDATE-AUDIT-I04A — audit'e girmesine izin verilen DEĞİŞİKLİK
+ * KATEGORİLERİ. Buraya YALNIZ ALAN ADI yazılır, ASLA ALAN DEĞERİ.
+ *
+ * `street`/`city`/`district`/`region`/`postalCode` müvekkilin kişisel adres içeriğidir;
+ * audit gövdesine DEĞER olarak konması POL-D/POL-E hijyenini bozar. Hangi alanın
+ * değiştiğini bilmek denetim için yeterlidir; ne olduğu adres kaydının kendisindedir.
+ */
+const AUDITED_ADDRESS_FIELDS = ['type', 'street', 'city', 'district', 'region', 'postalCode'] as const;
+
+/**
+ * Payload'da GERÇEKTEN değişen alanların ADLARINI döner. `undefined` alanlar Prisma'da
+ * no-op olduğu için sayılmaz; aynı değerin yeniden gönderilmesi de değişiklik SAYILMAZ.
+ */
+function changedAddressFields(before: ClientAddressRow, dto: UpdateClientAddressDto): string[] {
+  return AUDITED_ADDRESS_FIELDS.filter((field) => {
+    const next = (dto as Record<string, unknown>)[field];
+    if (next === undefined) return false;
+    return next !== (before as unknown as Record<string, unknown>)[field];
+  });
+}
+
 @Injectable()
 export class ClientAddressService {
   constructor(
@@ -147,7 +169,16 @@ export class ClientAddressService {
   /// Cagrildigi yerler:
   /// - ClientAddressController.create() -> POST /clients/:clientId/addresses (JWT-only, tenant-scoped)
   /// </remarks>
-  async create(tenantId: string, clientId: string, dto: CreateClientAddressDto): Promise<ClientAddressRow> {
+  ///
+  /// I04A: adres oluşturma ARTIK transaction-bağlı audit yazar (§49.4'ün audit zorunluluğunun
+  /// create/update yolundaki kalıntısı kapatıldı). Audit `logInTransaction` ile AYNI
+  /// transaction'da yazılır ve hata YUTULMAZ → audit yazılamazsa oluşturma ROLLBACK olur.
+  async create(
+    tenantId: string,
+    clientId: string,
+    dto: CreateClientAddressDto,
+    actor?: AuditActor,
+  ): Promise<ClientAddressRow> {
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, tenantId },
       select: { id: true },
@@ -183,7 +214,7 @@ export class ClientAddressService {
         });
       }
 
-      return tx.clientAddress.create({
+      const created = await tx.clientAddress.create({
         data: {
           clientId,
           type: dto.type,
@@ -196,6 +227,47 @@ export class ClientAddressService {
           // isCurrent payload'dan alınmaz — yeni adres her zaman güncel.
         },
       });
+
+      // Birincilik gerçekten DEVREDİLDİYSE ayrı yeniden-atama kanıtı yazılır. Terfi eden
+      // kardeş YOKSA (ilk adres, ya da zaten birincilsiz küme) yeniden-atama UYDURULMAZ.
+      const displacedPrimary = isPrimary
+        ? siblings.find((s) => s.isCurrent && s.isPrimary)
+        : undefined;
+      if (displacedPrimary) {
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: 'CLIENT_ADDRESS_PRIMARY_REASSIGN',
+          entityType: 'CLIENT_ADDRESS',
+          // I02 ile AYNI kural: entityId = BİRİNCİL OLAN satır; kaybeden metadata'da.
+          entityId: created.id,
+          userId: actor?.userId,
+          oldValues: { isPrimary: false, isCurrent: true },
+          newValues: { isPrimary: true, isCurrent: true },
+          metadata: {
+            clientId,
+            previousPrimaryAddressId: displacedPrimary.id,
+            reason: 'PRIMARY_CREATED',
+          },
+        });
+      }
+
+      // Audit gövdesi YALNIZ kimlik + durum bayrağı + adres TİPİ taşır. Ham adres içeriği
+      // (street/city/district/region/postalCode) KASITLI olarak YAZILMAZ.
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_ADDRESS_CREATE',
+        entityType: 'CLIENT_ADDRESS',
+        entityId: created.id,
+        userId: actor?.userId,
+        newValues: { isPrimary: created.isPrimary, isCurrent: created.isCurrent },
+        metadata: {
+          clientId,
+          type: created.type,
+          siblingPrimaryUnset: Boolean(displacedPrimary),
+        },
+      });
+
+      return created;
     });
   }
 
@@ -203,7 +275,17 @@ export class ClientAddressService {
   /// Cagrildigi yerler:
   /// - ClientAddressController.update() -> PUT /clients/:clientId/addresses/:addressId (JWT-only, tenant+client-scoped)
   /// </remarks>
-  async update(tenantId: string, clientId: string, addressId: string, dto: UpdateClientAddressDto): Promise<ClientAddressRow> {
+  ///
+  /// I04A: adres güncelleme ARTIK transaction-bağlı audit yazar. Audit gövdesine DEĞİŞEN ALAN
+  /// ADLARI girer, DEĞERLERİ GİRMEZ. Hiçbir şey gerçekten değişmediyse (payload aynı değerleri
+  /// taşıyor ya da boş) BAŞARI AUDIT'İ YAZILMAZ — "hiçbir şey olmadı" kaydı hukuki geçmişi kirletir.
+  async update(
+    tenantId: string,
+    clientId: string,
+    addressId: string,
+    dto: UpdateClientAddressDto,
+    actor?: AuditActor,
+  ): Promise<ClientAddressRow> {
     const address = await this.findAddressInClient(tenantId, clientId, addressId);
 
     return this.prisma.$transaction(async (tx) => {
@@ -231,7 +313,7 @@ export class ClientAddressService {
         });
       }
 
-      return tx.clientAddress.update({
+      const updated = await tx.clientAddress.update({
         where: { id: addressId },
         data: {
           type: dto.type,
@@ -243,6 +325,51 @@ export class ClientAddressService {
           isPrimary: dto.isPrimary === true ? true : undefined,
         },
       });
+
+      const changedFields = changedAddressFields(address, dto);
+      const primaryPromoted = promoting && !address.isPrimary;
+      const displacedPrimary = primaryPromoted
+        ? siblings.find((s) => s.isCurrent && s.isPrimary && s.id !== addressId)
+        : undefined;
+
+      if (displacedPrimary) {
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: 'CLIENT_ADDRESS_PRIMARY_REASSIGN',
+          entityType: 'CLIENT_ADDRESS',
+          entityId: addressId,
+          userId: actor?.userId,
+          oldValues: { isPrimary: false, isCurrent: address.isCurrent },
+          newValues: { isPrimary: true, isCurrent: address.isCurrent },
+          metadata: {
+            clientId: address.clientId,
+            previousPrimaryAddressId: displacedPrimary.id,
+            reason: 'PRIMARY_PROMOTED_BY_UPDATE',
+          },
+        });
+      }
+
+      // GERÇEK değişiklik yoksa başarı audit'i YAZILMAZ (no-op kaydı üretilmez).
+      if (changedFields.length > 0 || primaryPromoted) {
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: 'CLIENT_ADDRESS_UPDATE',
+          entityType: 'CLIENT_ADDRESS',
+          entityId: addressId,
+          userId: actor?.userId,
+          oldValues: { isPrimary: address.isPrimary, isCurrent: address.isCurrent },
+          newValues: { isPrimary: updated.isPrimary, isCurrent: updated.isCurrent },
+          metadata: {
+            clientId: address.clientId,
+            // YALNIZ ALAN ADLARI — değerler ASLA yazılmaz.
+            changedFields,
+            primaryPromoted,
+            previousPrimaryAddressId: displacedPrimary?.id ?? null,
+          },
+        });
+      }
+
+      return updated;
     });
   }
 
