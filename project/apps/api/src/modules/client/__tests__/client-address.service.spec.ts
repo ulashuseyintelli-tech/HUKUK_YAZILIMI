@@ -77,7 +77,12 @@ function buildHarness(
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
-  return { svc: new ClientAddressService(prisma), prisma, tx };
+  // CLIENT-ARC-07-ARCHIVE-RESTORE-AUDIT-I02 HARNESS GÜNCELLEMESİ: servise AuditService enjekte
+  // edildi (archive/restore transaction-içi audit yazar). Bu spec'teki create/update/remove
+  // yolları audit YAZMAZ — mock yalnız constructor'ı karşılamak için var; assertion'lar
+  // DEĞİŞTİRİLMEDİ.
+  const audit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
+  return { svc: new ClientAddressService(prisma, audit), prisma, tx, audit };
 }
 
 const CREATE_INPUT = { street: 'Yeni Sokak', city: 'İstanbul', district: 'Beşiktaş' };
@@ -182,27 +187,29 @@ describe('ClientAddressService', () => {
     expect(prisma.clientAddress.delete).toBeUndefined();
   });
 
-  it('primary olmayan adres silinebilir', async () => {
+  it('I02: primary OLMAYAN adres de fiziksel olarak silinemez (fail-closed)', async () => {
     const { svc, tx } = buildHarness({
       address: { id: 'addr-1', clientId: 'client-1', isPrimary: false, isCurrent: true, type: 'BEYAN', street: null, city: null, district: null, region: null, postalCode: null },
     });
 
-    await svc.remove('tenant-1', 'client-1', 'addr-1');
-
-    // I01 DAVRANIŞ DEĞİŞİKLİĞİ (kasıtlı, §5): silme ARTIK transaction İÇİNDE yapılır —
-    // invariant okuması ile yazma aynı transaction'da olmak zorunda (TOCTOU yarışı yok).
-    // Eskiden `prisma.clientAddress.delete` (transaction DIŞI) çağrılıyordu. Silme davranışı
-    // ve reddi DEĞİŞMEDİ; yalnız transaction sınırı düzeltildi.
-    expect(tx.clientAddress.delete).toHaveBeenCalledWith({ where: { id: 'addr-1' } });
+    // I02 KASITLI DAVRANIŞ DEĞİŞİKLİĞİ (owner §7 + charter §49.4/§49.9):
+    // Eskiden bu test non-primary silmenin İZİNLİ olduğunu kanıtlıyordu. Artık fiziksel silme
+    // KOŞULSUZ fail-closed'dır — POL-E'nin sekiz ön koşulu runtime'da temsil edilmediği için
+    // hiçbir silme "yetkili" sayılamaz. Test GEVŞETİLMEDİ; beklenti TERS ÇEVRİLDİ ve silmenin
+    // GERÇEKTEN çağrılmadığı ayrıca kanıtlanıyor.
+    await expect(svc.remove('tenant-1', 'client-1', 'addr-1')).rejects.toMatchObject({
+      response: { code: 'CLIENT_ADDRESS_PHYSICAL_DELETE_NOT_AUTHORIZED' },
+    });
+    expect(tx.clientAddress.delete).not.toHaveBeenCalled();
   });
 
-  it('create/update/remove hiçbir zaman Client (flat adres kolonları) tablosuna yazmaz', async () => {
-    const { svc, tx, prisma } = buildHarness();
-    prisma.clientAddress.delete = jest.fn().mockResolvedValue({});
+  it('create/update hiçbir zaman Client (flat adres kolonları) tablosuna yazmaz; remove hiç yazmaz', async () => {
+    const { svc, tx } = buildHarness();
 
     await svc.create('tenant-1', 'client-1', CREATE_INPUT);
     await svc.update('tenant-1', 'client-1', 'addr-1', { city: 'Antalya' });
-    await svc.remove('tenant-1', 'client-1', 'addr-1');
+    // remove artık her zaman reddeder (I02 fail-closed) → hiçbir yazma yapmaz.
+    await expect(svc.remove('tenant-1', 'client-1', 'addr-1')).rejects.toBeInstanceOf(BadRequestException);
 
     expect(tx.client.update).not.toHaveBeenCalled();
     expect(tx.client.updateMany).not.toHaveBeenCalled();
