@@ -1,0 +1,1192 @@
+{
+ "task": "RUNTIME-OPERABILITY-CERTIFICATION-R01-W3-ASYNC-EVENT-QUEUE-SCHEDULER-CERTIFICATION",
+ "auditBase": "c537cb3a61f988347fafabb419d4eccaa6e1461e",
+ "derivation": "fresh — AppModule import kapanisi + @Cron/@Interval/setInterval/lifecycle taramasi + referans-turu analizi",
+ "technologiesPresent": [
+  "@nestjs/schedule (cron)",
+  "PostgreSQL outbox tablosu",
+  "in-process handler registry (Map)",
+  "setInterval polling loop",
+  "ioredis (yalniz simulation-api rate-limit store)"
+ ],
+ "technologiesAbsent": [
+  "BullMQ/Bull",
+  "RabbitMQ",
+  "Kafka",
+  "@nestjs/event-emitter",
+  "node-cron",
+  "GitHub Actions schedule (cron)",
+  "OS/external scheduler",
+  "gercek HTTP webhook cagrisi"
+ ],
+ "totals": {
+  "cronDeclarationsInSource": 35,
+  "cronDeclarationsBound": 33,
+  "cronJobsRegisteredAtRuntime": 33,
+  "outboxHandlersRegisteredAtRuntime": 16,
+  "capabilities": 24
+ },
+ "capabilities": [
+  {
+   "capabilityId": "W3-CAP-001",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "AddressTaskSchedulerService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/address-task/address-task-scheduler.service.ts#checkOverdueTasks @Cron(CronExpression.EVERY_HOUR)",
+    "project/apps/api/src/modules/address-task/address-task-scheduler.service.ts#checkAnnualRefreshTasks @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)",
+    "project/apps/api/src/modules/address-task/address-task-scheduler.service.ts#publishOutboxEvents @Cron(CronExpression.EVERY_5_MINUTES)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/address-task/address-task-scheduler.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "AddressTaskModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "PARTIAL",
+   "cronDeclarations": [
+    {
+     "method": "checkOverdueTasks",
+     "expr": "CronExpression.EVERY_HOUR",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "checkAnnualRefreshTasks",
+     "expr": "CronExpression.EVERY_DAY_AT_MIDNIGHT",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "publishOutboxEvents",
+     "expr": "CronExpression.EVERY_5_MINUTES",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-002",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "AutomationService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/automation/automation.service.ts#processPendingCases @Cron(CronExpression.EVERY_5_MINUTES)",
+    "project/apps/api/src/modules/automation/automation.service.ts#updateDaysLeft @Cron(CronExpression.EVERY_DAY_AT_1AM)",
+    "project/apps/api/src/modules/automation/automation.service.ts#checkNotificationExpiries @Cron(CronExpression.EVERY_HOUR)",
+    "project/apps/api/src/modules/automation/automation.service.ts#expireCrossCaseNotifications @Cron(CronExpression.EVERY_HOUR)",
+    "project/apps/api/src/modules/automation/automation.service.ts#expireInactiveRecipientCrossCaseNotifications @Cron(CronExpression.EVERY_HOUR)",
+    "project/apps/api/src/modules/automation/automation.service.ts#updateExpiredPoas @Cron(CronExpression.EVERY_DAY_AT_2AM)",
+    "project/apps/api/src/modules/automation/automation.service.ts#sendExpiringPoaNotifications @Cron(CronExpression.EVERY_DAY_AT_9AM)",
+    "project/apps/api/src/modules/automation/automation.service.ts#updateRiskScores @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/automation/automation.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "AutomationModule",
+   "activationMechanism": "ENV_CONFIG",
+   "runtimeBinding": "BOUND",
+   "activation": "CONFIG_GATED",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "ABSENT",
+   "cronDeclarations": [
+    {
+     "method": "processPendingCases",
+     "expr": "CronExpression.EVERY_5_MINUTES",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "updateDaysLeft",
+     "expr": "CronExpression.EVERY_DAY_AT_1AM",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    },
+    {
+     "method": "checkNotificationExpiries",
+     "expr": "CronExpression.EVERY_HOUR",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    },
+    {
+     "method": "expireCrossCaseNotifications",
+     "expr": "CronExpression.EVERY_HOUR",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    },
+    {
+     "method": "expireInactiveRecipientCrossCaseNotifications",
+     "expr": "CronExpression.EVERY_HOUR",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    },
+    {
+     "method": "updateExpiredPoas",
+     "expr": "CronExpression.EVERY_DAY_AT_2AM",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    },
+    {
+     "method": "sendExpiringPoaNotifications",
+     "expr": "CronExpression.EVERY_DAY_AT_9AM",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": "isPoaExpiryNotificationEnabled",
+     "tryCatch": "NO"
+    },
+    {
+     "method": "updateRiskScores",
+     "expr": "CronExpression.EVERY_DAY_AT_MIDNIGHT",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-003",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "ErrorLogRetentionService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/error-log/retention/error-log-retention.service.ts#handleCron @Cron('30 3 * * *')"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/error-log/retention/error-log-retention.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "ErrorLogModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "ABSENT",
+   "cronDeclarations": [
+    {
+     "method": "handleCron",
+     "expr": "'30 3 * * *'",
+     "timeZone": "Europe/Istanbul",
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-004",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "CaseTaskEscalationService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/escalation/case-task-escalation.service.ts#scheduledRun @Cron(CronExpression.EVERY_HOUR)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/escalation/case-task-escalation.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "EscalationModule",
+   "activationMechanism": "ENV_CONFIG",
+   "runtimeBinding": "BOUND",
+   "activation": "CONFIG_GATED",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "ABSENT",
+   "cronDeclarations": [
+    {
+     "method": "scheduledRun",
+     "expr": "CronExpression.EVERY_HOUR",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": "this.isEnabled",
+     "tryCatch": "NO"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-005",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "OperationalEscalationService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/escalation/operational-escalation.service.ts#scheduledRun @Cron(CronExpression.EVERY_HOUR)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/escalation/operational-escalation.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "EscalationModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "ABSENT",
+   "cronDeclarations": [
+    {
+     "method": "scheduledRun",
+     "expr": "CronExpression.EVERY_HOUR",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-006",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "ExchangeRateService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/exchange-rate/exchange-rate.service.ts#scheduledRateUpdate @Cron('30 15 * * 1-5')"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/exchange-rate/exchange-rate.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "ExchangeRateModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "ABSENT",
+   "cronDeclarations": [
+    {
+     "method": "scheduledRateUpdate",
+     "expr": "'30 15 * * 1-5'",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-007",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "GreetingService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/greeting/greeting.service.ts#greetingSchedulerTick @Cron(CronExpression.EVERY_MINUTE)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/greeting/greeting.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "GreetingModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "PARTIAL",
+   "cronDeclarations": [
+    {
+     "method": "greetingSchedulerTick",
+     "expr": "CronExpression.EVERY_MINUTE",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-008",
+   "module": "UYAP",
+   "capabilityType": "SCHEDULER",
+   "name": "OutboxCronService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/icrabot/v28-engine/outbox-cron.service.ts#processOutboxActions @Cron(CronExpression.EVERY_MINUTE)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/icrabot/v28-engine/outbox-cron.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "V28EngineModule",
+   "activationMechanism": "ENV_CONFIG",
+   "runtimeBinding": "BOUND",
+   "activation": "CONFIG_GATED",
+   "reachability": "REACHABLE",
+   "operability": "CERTIFIED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "PASS",
+   "retryPath": "VERIFIED",
+   "failureVisibility": "PARTIAL",
+   "cronDeclarations": [
+    {
+     "method": "processOutboxActions",
+     "expr": "CronExpression.EVERY_MINUTE",
+     "timeZone": null,
+     "overlapGuard": "YES",
+     "activationGate": "isIcrabotOutboxCronEnabled",
+     "tryCatch": "YES"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-009",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "RateSyncService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/interest-engine/rate-sync.service.ts#syncTcmbRates @Cron('30 9 * * *')",
+    "project/apps/api/src/modules/interest-engine/rate-sync.service.ts#syncMonthlyMevduatRates @Cron('0 10 2 * *')"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/interest-engine/rate-sync.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "InterestEngineModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "PARTIAL",
+   "cronDeclarations": [
+    {
+     "method": "syncTcmbRates",
+     "expr": "'30 9 * * *'",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "syncMonthlyMevduatRates",
+     "expr": "'0 10 2 * *'",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-010",
+   "module": "OFFICE",
+   "capabilityType": "SCHEDULER",
+   "name": "OfficeApprovalExecutorCronService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/office-approval/office-approval-executor-cron.service.ts#handleCron @Cron(CronExpression.EVERY_30_MINUTES)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/office-approval/office-approval-executor-cron.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "OfficeApprovalExecutorModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "ABSENT",
+   "cronDeclarations": [
+    {
+     "method": "handleCron",
+     "expr": "CronExpression.EVERY_30_MINUTES",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-011",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "DecisionLogRetentionService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/policy-engine/decision-logger/decision-log-retention.service.ts#archiveOldRecords @Cron(CronExpression.EVERY_DAY_AT_3AM)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/policy-engine/decision-logger/decision-log-retention.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "PolicyEngineModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "PARTIAL",
+   "cronDeclarations": [
+    {
+     "method": "archiveOldRecords",
+     "expr": "CronExpression.EVERY_DAY_AT_3AM",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-012",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "DeprecatedUsageTrackerService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/policy-engine/deprecated-usage-tracker.service.ts#generateDailyReport @Cron('5 0 * * *')",
+    "project/apps/api/src/modules/policy-engine/deprecated-usage-tracker.service.ts#flushBuffer @Cron(CronExpression.EVERY_HOUR)",
+    "project/apps/api/src/modules/policy-engine/deprecated-usage-tracker.service.ts#cleanupOldRecords @Cron('0 3 * * *')"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/policy-engine/deprecated-usage-tracker.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "PolicyEngineModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "ABSENT",
+   "cronDeclarations": [
+    {
+     "method": "generateDailyReport",
+     "expr": "'5 0 * * *'",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    },
+    {
+     "method": "flushBuffer",
+     "expr": "CronExpression.EVERY_HOUR",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "cleanupOldRecords",
+     "expr": "'0 3 * * *'",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "NO"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-013",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "SchedulerService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/scheduler/scheduler.service.ts#checkPaymentOrderDeadlines @Cron(CronExpression.EVERY_DAY_AT_9AM)",
+    "project/apps/api/src/modules/scheduler/scheduler.service.ts#processNafakaPeriods @Cron('0 8 1 * *')",
+    "project/apps/api/src/modules/scheduler/scheduler.service.ts#checkMtsReturns @Cron(CronExpression.EVERY_DAY_AT_10AM)",
+    "project/apps/api/src/modules/scheduler/scheduler.service.ts#calculateDailyStats @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)",
+    "project/apps/api/src/modules/scheduler/scheduler.service.ts#checkUpcomingTasks @Cron(CronExpression.EVERY_HOUR)",
+    "project/apps/api/src/modules/scheduler/scheduler.service.ts#checkIhbarnameDeadlines @Cron(CronExpression.EVERY_DAY_AT_10AM)",
+    "project/apps/api/src/modules/scheduler/scheduler.service.ts#checkExternalCaseFollowups @Cron(CronExpression.EVERY_DAY_AT_11AM)",
+    "project/apps/api/src/modules/scheduler/scheduler.service.ts#checkTebligatStatus @Cron('0 */4 * * *')"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/scheduler/scheduler.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "SchedulerModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "PARTIAL",
+   "cronDeclarations": [
+    {
+     "method": "checkPaymentOrderDeadlines",
+     "expr": "CronExpression.EVERY_DAY_AT_9AM",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "processNafakaPeriods",
+     "expr": "'0 8 1 * *'",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "checkMtsReturns",
+     "expr": "CronExpression.EVERY_DAY_AT_10AM",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "calculateDailyStats",
+     "expr": "CronExpression.EVERY_DAY_AT_MIDNIGHT",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "checkUpcomingTasks",
+     "expr": "CronExpression.EVERY_HOUR",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "checkIhbarnameDeadlines",
+     "expr": "CronExpression.EVERY_DAY_AT_10AM",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "checkExternalCaseFollowups",
+     "expr": "CronExpression.EVERY_DAY_AT_11AM",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    },
+    {
+     "method": "checkTebligatStatus",
+     "expr": "'0 */4 * * *'",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-014",
+   "module": "SHARED",
+   "capabilityType": "SCHEDULER",
+   "name": "GazetteWatcherService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/tariff/gazette-watcher.service.ts#checkGazette @Cron('0 9 * * *')"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/tariff/gazette-watcher.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "TariffModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "PARTIAL",
+   "cronDeclarations": [
+    {
+     "method": "checkGazette",
+     "expr": "'0 9 * * *'",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    }
+   ],
+   "independentEvidence": [
+    "runtime SchedulerRegistry.getCronJobs() -> 33 kayitli job (w3-runtime.json phase5)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-015",
+   "module": "UYAP",
+   "capabilityType": "SCHEDULER",
+   "name": "SchedulerService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/icrabot/scheduler/scheduler.service.ts#tick @Cron(CronExpression.EVERY_10_MINUTES)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/icrabot/scheduler/scheduler.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "IcrabotModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "UNBOUND",
+   "activation": "NOT_STARTED",
+   "reachability": "UNREACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "PARTIAL",
+   "cronDeclarations": [
+    {
+     "method": "tick",
+     "expr": "CronExpression.EVERY_10_MINUTES",
+     "timeZone": null,
+     "overlapGuard": "YES",
+     "activationGate": null,
+     "tryCatch": "YES"
+    }
+   ],
+   "independentEvidence": [
+    "AppModule import kapanisi disinda (IcrabotModule import edilmemis)"
+   ],
+   "blockers": [
+    "IcrabotModule app.module.ts icinde bilincli olarak yorumlanmis"
+   ]
+  },
+  {
+   "capabilityId": "W3-CAP-016",
+   "module": "UYAP",
+   "capabilityType": "SCHEDULER",
+   "name": "TaskOrchestratorService",
+   "producerPaths": [
+    "@nestjs/schedule ScheduleModule.forRoot() (app.module.ts)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/icrabot/task-orchestrator.service.ts#processQueue @Cron(CronExpression.EVERY_MINUTE)"
+   ],
+   "transportPaths": [
+    "in-process NestJS SchedulerOrchestrator"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/icrabot/task-orchestrator.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": "project/apps/api/src/main.ts -> NestFactory.create(AppModule)",
+   "registrationEntrypoint": "IcrabotModule",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "UNBOUND",
+   "activation": "NOT_STARTED",
+   "reachability": "UNREACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "PARTIAL",
+   "cronDeclarations": [
+    {
+     "method": "processQueue",
+     "expr": "CronExpression.EVERY_MINUTE",
+     "timeZone": null,
+     "overlapGuard": "NO",
+     "activationGate": null,
+     "tryCatch": "YES"
+    }
+   ],
+   "independentEvidence": [
+    "AppModule import kapanisi disinda (IcrabotModule import edilmemis)"
+   ],
+   "blockers": [
+    "IcrabotModule app.module.ts icinde bilincli olarak yorumlanmis"
+   ]
+  },
+  {
+   "capabilityId": "W3-CAP-017",
+   "module": "UYAP",
+   "capabilityType": "OUTBOX",
+   "name": "IcrabotOutboxAction queue (v28)",
+   "producerPaths": [
+    "project/apps/api/src/modules/icrabot/domain-event-ingest/domain-event-ingest.service.ts:141 (tx icinde dogrudan insert)",
+    "project/apps/api/src/modules/icrabot/v28-engine/engine-runner.service.ts:228 (rule action dispatch)",
+    "project/apps/api/src/modules/icrabot/v28-engine/seed.service.ts:110 (seed/demo)"
+   ],
+   "dispatchPaths": [
+    "project/apps/api/src/modules/icrabot/v28-engine/outbox-cron.service.ts#processOutboxActions @Cron(EVERY_MINUTE)"
+   ],
+   "transportPaths": [
+    "PostgreSQL tablosu IcrabotOutboxAction (idempotencyKey UNIQUE, tenantId NOT NULL)"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/icrabot/v28-engine/action-handler.service.ts#dispatch"
+   ],
+   "effectPaths": [
+    "IcrabotNotification",
+    "IcrabotSmsLog",
+    "IcrabotEmailLog",
+    "IcrabotTask",
+    "IcrabotUyapSubmission",
+    "IcrabotCaseFact",
+    "IcrabotCaseFlag",
+    "IcrabotTimelineEntry",
+    "Case",
+    "CaseLifecycle"
+   ],
+   "startupEntrypoint": "project/apps/api/src/main.ts",
+   "registrationEntrypoint": "V28EngineModule (AppModule kapanisinda)",
+   "activationMechanism": "ENV_CONFIG",
+   "runtimeBinding": "BOUND",
+   "activation": "CONFIG_GATED",
+   "reachability": "CONDITIONALLY_REACHABLE",
+   "operability": "CERTIFIED",
+   "tenantBoundary": "PASS",
+   "idempotency": "PASS",
+   "retryPath": "VERIFIED",
+   "failureVisibility": "VERIFIED",
+   "activationFlag": "ICRABOT_OUTBOX_CRON_ENABLED (varsayilan false; RUNTIME .env icinde ABSENT)",
+   "independentEvidence": [
+    "controlled-local runtime matrix A/B/C/D/E/F/G/H/I/J (w3-runtime.json)",
+    "cron tetiklemesi zaman damgali: created 13:44:58 -> updated 13:45:00 (manuel dispatch YOK)"
+   ],
+   "blockers": []
+  },
+  {
+   "capabilityId": "W3-CAP-018",
+   "module": "SHARED",
+   "capabilityType": "EVENT",
+   "name": "Outbox domain handler registrars (OnModuleInit)",
+   "producerPaths": [
+    "ClientSettlementModule",
+    "TebligatModule"
+   ],
+   "dispatchPaths": [
+    "ActionHandlerService.register(actionType, handler)"
+   ],
+   "transportPaths": [
+    "in-process Map<string, ActionHandler>"
+   ],
+   "consumerPaths": [
+    "project/apps/api/src/modules/client-settlement/payment-received.registrar.ts",
+    "project/apps/api/src/modules/client-settlement/payment-reversed.registrar.ts",
+    "project/apps/api/src/modules/tebligat/service-occurrence/service-occurrence-recorded.registrar.ts"
+   ],
+   "effectPaths": [
+    "ilgili consumer service’leri"
+   ],
+   "startupEntrypoint": "project/apps/api/src/main.ts",
+   "registrationEntrypoint": "OnModuleInit",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "PARTIAL",
+   "tenantBoundary": "PASS",
+   "idempotency": "PASS",
+   "retryPath": "VERIFIED",
+   "failureVisibility": "VERIFIED",
+   "independentEvidence": [
+    "runtime: ActionHandlerService kayitli 16 action type — 3 domain EVENT_PUBLISHED:* handler dahil"
+   ],
+   "blockers": [
+    "EVENT_PUBLISHED:* handler’larinin domain etkisi bu turda ayrica olculmedi (NOT_TESTED)"
+   ]
+  },
+  {
+   "capabilityId": "W3-CAP-019",
+   "module": "SHARED",
+   "capabilityType": "WORKER",
+   "name": "ManifestRetryWorkerService (+Safety, +AdminAudit, +TakeoverLimiter)",
+   "producerPaths": [],
+   "dispatchPaths": [],
+   "transportPaths": [],
+   "consumerPaths": [
+    "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-retry-worker.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": null,
+   "registrationEntrypoint": null,
+   "activationMechanism": "UNKNOWN",
+   "runtimeBinding": "UNBOUND",
+   "activation": "NOT_STARTED",
+   "reachability": "UNREACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "UNKNOWN",
+   "independentEvidence": [
+    "referans taramasi: production’da guclu baglanma kalibi (provider/@UseGuards/new/forRoot) YOK"
+   ],
+   "blockers": [
+    "production referansi YOK; ObjectStore/ManifestRetry modulu AppModule kapanisinda degil"
+   ]
+  },
+  {
+   "capabilityId": "W3-CAP-020",
+   "module": "SHARED",
+   "capabilityType": "BACKGROUND_JOB",
+   "name": "PlaybookModule alt agaci (ActionLeaseManager, EscalationService, NotificationService)",
+   "producerPaths": [],
+   "dispatchPaths": [],
+   "transportPaths": [],
+   "consumerPaths": [
+    "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": null,
+   "registrationEntrypoint": null,
+   "activationMechanism": "UNKNOWN",
+   "runtimeBinding": "UNBOUND",
+   "activation": "NOT_STARTED",
+   "reachability": "UNREACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "UNKNOWN",
+   "independentEvidence": [
+    "referans taramasi: production’da guclu baglanma kalibi (provider/@UseGuards/new/forRoot) YOK"
+   ],
+   "blockers": [
+    "PlaybookModule hicbir production modul tarafindan import edilmiyor"
+   ]
+  },
+  {
+   "capabilityId": "W3-CAP-021",
+   "module": "SHARED",
+   "capabilityType": "POLLING_LOOP",
+   "name": "TraceRetentionService",
+   "producerPaths": [],
+   "dispatchPaths": [],
+   "transportPaths": [],
+   "consumerPaths": [
+    "project/apps/api/src/modules/calc-preview/trace/trace-retention.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": null,
+   "registrationEntrypoint": null,
+   "activationMechanism": "UNKNOWN",
+   "runtimeBinding": "UNBOUND",
+   "activation": "NOT_STARTED",
+   "reachability": "UNREACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "UNKNOWN",
+   "independentEvidence": [
+    "referans taramasi: production’da guclu baglanma kalibi (provider/@UseGuards/new/forRoot) YOK"
+   ],
+   "blockers": [
+    "hicbir modulde provider degil; guclu production referansi yok"
+   ]
+  },
+  {
+   "capabilityId": "W3-CAP-022",
+   "module": "SHARED",
+   "capabilityType": "POLLING_LOOP",
+   "name": "RealSimulationScheduler / ManualSimulationScheduler",
+   "producerPaths": [],
+   "dispatchPaths": [],
+   "transportPaths": [],
+   "consumerPaths": [
+    "project/apps/api/src/modules/calc-preview/diagnostics/simulation/simulation-scheduler.service.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": null,
+   "registrationEntrypoint": null,
+   "activationMechanism": "UNKNOWN",
+   "runtimeBinding": "UNBOUND",
+   "activation": "NOT_STARTED",
+   "reachability": "UNREACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "UNKNOWN",
+   "independentEvidence": [
+    "referans taramasi: production’da guclu baglanma kalibi (provider/@UseGuards/new/forRoot) YOK"
+   ],
+   "blockers": [
+    "provider kaydi yok"
+   ]
+  },
+  {
+   "capabilityId": "W3-CAP-023",
+   "module": "SHARED",
+   "capabilityType": "WORKER",
+   "name": "EvidenceBundleModule (NullObjectStoreClient)",
+   "producerPaths": [],
+   "dispatchPaths": [],
+   "transportPaths": [],
+   "consumerPaths": [
+    "project/apps/api/src/modules/calc-preview/diagnostics/object-store/evidence-bundle.module.ts"
+   ],
+   "effectPaths": [],
+   "startupEntrypoint": null,
+   "registrationEntrypoint": null,
+   "activationMechanism": "UNKNOWN",
+   "runtimeBinding": "UNBOUND",
+   "activation": "NOT_STARTED",
+   "reachability": "UNREACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "UNKNOWN",
+   "idempotency": "UNKNOWN",
+   "retryPath": "UNKNOWN",
+   "failureVisibility": "UNKNOWN",
+   "independentEvidence": [
+    "referans taramasi: production’da guclu baglanma kalibi (provider/@UseGuards/new/forRoot) YOK"
+   ],
+   "blockers": [
+    "DynamicModule; AppModule kapanisinda degil"
+   ]
+  },
+  {
+   "capabilityId": "W3-CAP-024",
+   "module": "AUTH",
+   "capabilityType": "POLLING_LOOP",
+   "name": "Rate-limit guard sweeper’lari (setInterval, @UseGuards ile baglanir)",
+   "producerPaths": [
+    "HTTP istekleri"
+   ],
+   "dispatchPaths": [
+    "@UseGuards(...)"
+   ],
+   "transportPaths": [
+    "in-process Map + setInterval"
+   ],
+   "consumerPaths": [
+    "auth/guards/login-rate-limit.guard.ts",
+    "auth/guards/office-forgot-password-rate-limit.guard.ts",
+    "auth/guards/office-reset-password-rate-limit.guard.ts",
+    "auth/guards/credential-recovery-rate-limit.guard.ts",
+    "calc-preview/diagnostics/guards/diagnostics-rate-limit.guard.ts"
+   ],
+   "effectPaths": [
+    "in-memory sayaclar"
+   ],
+   "startupEntrypoint": "project/apps/api/src/main.ts",
+   "registrationEntrypoint": "@UseGuards enhancer",
+   "activationMechanism": "DEFAULT_ON",
+   "runtimeBinding": "BOUND",
+   "activation": "ACTIVE",
+   "reachability": "REACHABLE",
+   "operability": "NOT_TESTED",
+   "tenantBoundary": "NOT_APPLICABLE",
+   "idempotency": "NOT_APPLICABLE",
+   "retryPath": "NOT_APPLICABLE",
+   "failureVisibility": "UNKNOWN",
+   "independentEvidence": [
+    "@UseGuards referanslari: auth.controller.ts, user-invite.controller.ts, portal.controller.ts, password-reset.controller.ts"
+   ],
+   "blockers": [
+    "provider dizisinde degil — Nest enhancer mekanizmasiyla baglanir; “unbound” DEGILDIR"
+   ]
+  }
+ ]
+}

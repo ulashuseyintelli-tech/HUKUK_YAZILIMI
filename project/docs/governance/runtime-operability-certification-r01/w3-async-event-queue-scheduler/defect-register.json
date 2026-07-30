@@ -1,0 +1,156 @@
+{
+ "task": "RUNTIME-OPERABILITY-CERTIFICATION-R01-W3-ASYNC-EVENT-QUEUE-SCHEDULER-CERTIFICATION",
+ "auditBase": "c537cb3a61f988347fafabb419d4eccaa6e1461e",
+ "evidenceKind": "CONTROLLED_LOCAL / DISPOSABLE DB / SENTETIK TENANT",
+ "productionActivationPerformed": false,
+ "schemaOrMigrationPerformed": false,
+ "defects": [
+  {
+   "id": "W3-D02",
+   "class": "W3-B07 TENANT_BOUNDARY_UNSAFE",
+   "priority": "P1",
+   "capability": "IcrabotOutboxAction queue — consumer handler katmani",
+   "paths": [
+    "project/apps/api/src/modules/icrabot/v28-engine/action-handler.service.ts (send_notification/send_sms/send_email/create_task/uyap_submit/update_case_status handler'lari)",
+    "project/apps/api/prisma/schema.prisma (IcrabotNotification, IcrabotSmsLog, IcrabotEmailLog, IcrabotTask, IcrabotUyapSubmission)"
+   ],
+   "runtimeConsequence": "dispatch, outbox satirinin tenantId'sini fail-closed cozer ve kapsam disi satiri reddeder; ANCAK handler'lar caseId'nin o tenant'a ait oldugunu YENIDEN dogrulamaz. update_case_status handler'i `prisma.case.update({ where: { id: caseId } })` cagirir — where'de tenantId YOKTUR. Ayrica 5 etki tablosu tenantId kolonu tasimadigi icin uretilen yan etki tenant'a atfedilemez (adli denetim izi tenant-kirilimli degildir).",
+   "evidence": [
+    "runtime matrix M: outbox tenantId=w3-tenant-alpha + caseId=w3-case-beta -> dispatchSuccess=true, etki satiri YAZILDI",
+    "information_schema: IcrabotNotification/IcrabotTask/IcrabotSmsLog/IcrabotEmailLog/IcrabotUyapSubmission tablolarinda tenantId kolonu YOK",
+    "karsit kanit: matrix G — kapsam disi dispatch reddedilir, hicbir state mutation olusmaz (satir-seviyesi kapsam kontrolu CALISIYOR)"
+   ],
+   "exploitCalibration": "OBSERVED_GAP — tutarsiz (tenantId, caseId) cifti yazan bir uretici BULUNAMADI. Kanitlanmis exploit DEGILDIR; savunma derinligi eksigidir.",
+   "recommendedDisposition": "DEFERRED",
+   "implementationEligibility": "NOT_ELIGIBLE — BLOCKED_SCHEMA_OR_MIGRATION_REQUIRED (tenantId kolonlari) + BLOCKED_OWNER_POLICY_DECISION_REQUIRED (case->tenant dogrulamasinin hangi katmanda zorunlu olacagi)",
+   "successorTask": "W3-F02-OUTBOX-CONSUMER-TENANT-OWNERSHIP-R01"
+  },
+  {
+   "id": "W3-D01",
+   "class": "W3-B11 PAYLOAD_CONTRACT_MISMATCH",
+   "priority": "P2",
+   "capability": "IcrabotOutboxAction queue — 'webhook' action handler",
+   "paths": [
+    "project/apps/api/src/modules/icrabot/v28-engine/action-handler.service.ts:747-766",
+    "project/apps/api/prisma/schema.prisma (IcrabotWebhookLog modeli MEVCUT DEGIL)"
+   ],
+   "runtimeConsequence": "'webhook' handler'i `(this.prisma as any).icrabotWebhookLog.create(...)` cagirir. Model semada yoktur; `as any` cast'i derleme kontrolunu kaldirdigi icin hata yalniz dispatch aninda `TypeError: Cannot read properties of undefined (reading 'create')` olarak ortaya cikar. Action markFailed ile 8 denemeye kadar exponential backoff'la (taban 60s, 2^n) yeniden denenir ve sonra dead-letter'a duser. Webhook etkisi HICBIR ZAMAN kaydedilmez.",
+   "evidence": [
+    "runtime matrix L: prismaModelVar=false, status=failed, attempt=1, err='Cannot read properties of undefined (reading create)'",
+    "sema taramasi: tum src agacinda semada karsiligi olmayan TEK `(prisma as any).<model>` referansi budur"
+   ],
+   "producerReachability": "EngineRunnerService actionType'i rule-pack satirindan alir (`action.action`), yani VERI kaynaklidir. Repoda `actionType='webhook'` ureten sabit bir uretici YOKTUR; bir rule-pack `action: webhook` tanimlarsa yol tetiklenir.",
+   "recommendedDisposition": "DEFERRED + REGRESSION GUARD EKLENDI",
+   "implementationEligibility": "NOT_ELIGIBLE — BLOCKED_SCHEMA_OR_MIGRATION_REQUIRED (model ekleme) veya BLOCKED_OWNER_POLICY_DECISION_REQUIRED (handler'i kaldirma / non-retryable yapma bir urun karari)",
+   "guardApplied": "src/common/__tests__/w3-prisma-model-reference.static-guard.spec.ts (KNOWN_GAPS: icrabotWebhookLog)",
+   "successorTask": "W3-F01-OUTBOX-WEBHOOK-HANDLER-MODEL-CONTRACT-R01"
+  },
+  {
+   "id": "W3-D09",
+   "class": "W3-B10 TERMINAL_FAILURE_INVISIBLE",
+   "priority": "P2",
+   "capability": "IcrabotOutboxAction queue — handler'i olmayan action tipi",
+   "paths": ["project/apps/api/src/modules/icrabot/v28-engine/action-handler.service.ts#dispatch (handler yoksa erken donus)"],
+   "runtimeConsequence": "Kayitli handler'i olmayan bir actionType icin dispatch, satiri CLAIM ETMEDEN doner: status 'pending' kalir, attemptCount artmaz. Cron her dakika ayni satiri yeniden dener; terminal durum ASLA olusmaz, dead-letter'a DUSMEZ. Yanlis yazilmis tek bir action tipi kalici log gurultusu + hic bitmeyen yeniden deneme uretir.",
+   "evidence": ["runtime matrix B: success=false, status=pending, attempt=0; ERROR log: 'No handler for action type: W3_NO_SUCH_HANDLER'"],
+   "note": "Bu davranis bilincli olabilir (henuz merge edilmemis bir registrar'i bekleyen action'lar kaybolmasin diye — service-occurrence-recorded.registrar.ts yorumunda aciklanmis). Poison-message disposition'i bir OWNER kararidir.",
+   "recommendedDisposition": "DEFERRED",
+   "implementationEligibility": "NOT_ELIGIBLE — BLOCKED_OWNER_POLICY_DECISION_REQUIRED",
+   "successorTask": "W3-F05-OUTBOX-NO-HANDLER-POISON-DISPOSITION-R01"
+  },
+  {
+   "id": "W3-D04",
+   "class": "W3-B06 CONFIG_GATED_UNASSESSED / SCHEDULER_TIMEZONE_UNKNOWN",
+   "priority": "P2",
+   "capability": "Tum @nestjs/schedule cron yuzeyi",
+   "paths": ["project/apps/api/src (35 @Cron bildirimi; yalniz error-log-retention.service.ts:25 timeZone bildirir)"],
+   "runtimeConsequence": "Kayitli 33 cron job'un 32'sinin timezone'u KODDA bildirilmemistir ve process ortamindan turer. Hukuki sure hesaplayan job'lar (checkPaymentOrderDeadlines, checkIhbarnameDeadlines, processNafakaPeriods, checkTebligatStatus, checkMtsReturns) dagitim ortaminin TZ'si degisirse sessizce baska bir saatte calisir.",
+   "evidence": [
+    "diferansiyel test (ayni build, TEK degisken TZ): TZ=UTC -> {UTC:32, Europe/Istanbul:1}; kodda timeZone bildiren tek job (errorLogRetention) Europe/Istanbul kalir"
+   ],
+   "recommendedDisposition": "DEFERRED",
+   "implementationEligibility": "NOT_ELIGIBLE — BLOCKED_OWNER_POLICY_DECISION_REQUIRED (§11: yeni scheduler politikasi tasarlanmayacaktir; hedef timezone bir owner kararidir)",
+   "successorTask": "W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01"
+  },
+  {
+   "id": "W3-D05",
+   "class": "W3-B10 TERMINAL_FAILURE_INVISIBLE",
+   "priority": "P2",
+   "capability": "Cron failure gorunurlugu",
+   "paths": ["project/apps/api/src (35 @Cron metodunun 14'unde try/catch YOK; yalniz OutboxCronService IntegrationErrorReporter(source:'CRON') kullanir)"],
+   "runtimeConsequence": "try/catch tasimayan bir cron metodunda olusan hata ErrorLog'a DUSMEZ; yalniz Nest'in kendi logger'inda gorunur. Kalici hata durumu operasyonel olarak izlenemez.",
+   "evidence": ["cron census: tryCatch=NO -> 14/35", "IntegrationErrorReporter kullanimi: yalniz outbox-cron.service.ts:60"],
+   "recommendedDisposition": "DEFERRED",
+   "implementationEligibility": "NOT_ELIGIBLE — BLOCKED_SCOPE_TOO_BROAD (8 serviste 14 metot) + yeni ErrorLog yazimlari davranis degisikligidir",
+   "successorTask": "W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01"
+  },
+  {
+   "id": "W3-D03",
+   "class": "W3-B04 WORKER_NOT_STARTED / W3-B05 SCHEDULER_NOT_REGISTERED",
+   "priority": "P3",
+   "capability": "Dormant async alt agaclari",
+   "paths": [
+    "project/apps/api/src/modules/icrabot/icrabot.module.ts (AppModule'de yorumlanmis; 2 @Cron)",
+    "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/* (retry worker + circuit breaker + idempotency limiter)",
+    "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts (ActionLeaseManager/EscalationService/NotificationService)",
+    "project/apps/api/src/modules/calc-preview/diagnostics/object-store/evidence-bundle.module.ts",
+    "project/apps/api/src/modules/calc-preview/trace/trace-retention.service.ts",
+    "project/apps/api/src/modules/calc-preview/diagnostics/simulation/simulation-scheduler.service.ts"
+   ],
+   "runtimeConsequence": "Kod, retry/DLQ/lease mantigi ve testleri mevcut; production runtime'da HICBIRI BASLAMAZ. Bunlara guvenen bir operasyonel beklenti karsilanmaz.",
+   "evidence": [
+    "AppModule import kapanisi (103 modul) disinda",
+    "referans taramasi: production'da provider/@UseGuards/new/forRoot kalibiyla guclu baglanma YOK",
+    "runtime SchedulerRegistry: 33 job — icrabot'un 2 cron'u KAYITLI DEGIL"
+   ],
+   "recommendedDisposition": "DEFERRED — DORMANT olarak kayit altina alindi",
+   "implementationEligibility": "NOT_ELIGIBLE — bunlari bootstrap'a baglamak PRODUCTION ACTIVATION'dir; §4.12 ile yetki VERILMEMISTIR",
+   "guardApplied": "src/common/__tests__/w3-async-runtime-binding.static-guard.spec.ts [4] — dormant durum sessizce degistirilemez",
+   "successorTask": "W3-F06-DORMANT-ASYNC-SUBTREE-DISPOSITION-R01"
+  },
+  {
+   "id": "W3-D06",
+   "class": "W3-B14 SHUTDOWN_UNSAFE (bitisik: overlap policy)",
+   "priority": "P3",
+   "capability": "Cron overlap ve coklu-instance davranisi",
+   "paths": ["project/apps/api/src (35 @Cron metodunun 33'unde overlap guard YOK)"],
+   "runtimeConsequence": "Onceki calismasi bitmemis bir cron ayni metoda yeniden girebilir. Yalniz OutboxCronService ve (dormant) icrabot SchedulerService `running` bayragi tasir. Ayrica hicbir cron dagitik kilit kullanmaz — coklu API instance'inda ayni job her instance'ta calisir.",
+   "evidence": ["cron census: overlapGuard=YES -> 2/35", "kod taramasi: SchedulerRegistry/dagitik kilit kullanimi YOK"],
+   "recommendedDisposition": "DEFERRED",
+   "implementationEligibility": "NOT_ELIGIBLE — BLOCKED_OWNER_POLICY_DECISION_REQUIRED (overlap/multi-instance politikasi)",
+   "successorTask": "W3-F07-CRON-OVERLAP-AND-JOB-IDENTITY-R01"
+  },
+  {
+   "id": "W3-D07",
+   "class": "W3-B15 UNKNOWN_RUNTIME_OWNER (gozlemlenebilirlik)",
+   "priority": "P4",
+   "capability": "Cron job kimligi",
+   "paths": ["project/apps/api/src (35 @Cron bildiriminin yalniz 2'sinde `name` var)"],
+   "runtimeConsequence": "SchedulerRegistry'de 33 job'un 31'i UUID adiyla kayitlidir. Operasyonel olarak belirli bir job ad ile bulunamaz, durdurulamaz, incelenemez.",
+   "evidence": ["runtime SchedulerRegistry.getCronJobs(): 31 UUID + 'errorLogRetention' + 'officeApprovalExecutor'"],
+   "recommendedDisposition": "DEFERRED",
+   "implementationEligibility": "NOT_ELIGIBLE bu task'ta — W3-F07 ile birlestirilecek",
+   "successorTask": "W3-F07-CRON-OVERLAP-AND-JOB-IDENTITY-R01"
+  },
+  {
+   "id": "W3-D08",
+   "class": "dokumantasyon-seviyesi gozlem",
+   "priority": "P4",
+   "capability": "OutboxService.recoverStaleProcessingActions",
+   "paths": ["project/apps/api/src/modules/icrabot/v28-engine/outbox.service.ts:200-243"],
+   "runtimeConsequence": "Stale claim recovery `updateMany` cagrisi TENANT KAPSAMI TASIMAZ — platform genelinde tum 'sent' satirlarini tarar. Bu, platform cron'u icin bilincli tasarimdir (OutboxScope 'platform' yalniz dahili sureclere aittir) ve satirlarin tenantId'sine DOKUNMAZ; runtime matrix H bunu dogrulamistir. Veri sizintisi degildir; yalniz kapsam davranisinin belgelenmesi gerekir.",
+   "evidence": ["runtime matrix H: tenantKorundu=true, status sent->failed, lastError=STALE_OUTBOX_CLAIM_RECOVERED"],
+   "recommendedDisposition": "DOKUMANTE EDILDI — defect olarak acilmadi",
+   "implementationEligibility": "N/A",
+   "successorTask": null
+  }
+ ],
+ "summary": {
+  "total": 9,
+  "P0": 0, "P1": 1, "P2": 4, "P3": 2, "P4": 2,
+  "boundedImplemented": 0,
+  "regressionGuardsAdded": 2,
+  "deferred": 8,
+  "documentedOnly": 1
+ }
+}
