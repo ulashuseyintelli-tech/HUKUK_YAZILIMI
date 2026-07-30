@@ -48,7 +48,8 @@ describe('SchedulerService nafaka dönem üretimi', () => {
     };
     const metrics: any = { record: jest.fn() };
     const tebligatService: any = {};
-    const service = new SchedulerService(prisma, metrics, tebligatService);
+    const caseDebtorLifecycleGuard: any = { isPassiveByCaseAndDebtor: jest.fn().mockResolvedValue(false) };
+    const service = new SchedulerService(prisma, metrics, tebligatService, undefined, caseDebtorLifecycleGuard);
 
     jest.spyOn((service as any).logger, 'log').mockImplementation(() => undefined);
     jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);

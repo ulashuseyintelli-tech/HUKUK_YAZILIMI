@@ -182,6 +182,13 @@ src/modules/address-discovery/confidence-score.ownership-contract.spec.ts
 src/modules/address-discovery/address-discovery-lifecycle-guard.spec.ts
 src/modules/address-discovery/uyap-query.service.spec.ts
 src/modules/address-task/address-task-scheduler.service.spec.ts
+# P1-I13 (R02-B, LEGACY TASK 08): direct contract test of the shared guard's
+# isPassiveByCaseAndDebtor exercised from SchedulerService (checkIhbarnameDeadlines/
+# checkExternalCaseFollowups) — same placement rationale as address-task-scheduler.service.spec.ts
+# above (primary domain is the CaseDebtor/lifecycle-guard family, not Scheduler). This is the
+# FIRST scheduler/__tests__/*.spec.ts file wired into any CI manifest — the other 5 pre-existing
+# scheduler spec files remain unwired (separate, out-of-scope finding; see spawned follow-up task).
+src/modules/scheduler/__tests__/scheduler-passive-case-debtor-guard.spec.ts
 src/modules/address-task/address-task.controller.spec.ts
 src/modules/address-task/address-task.service.spec.ts
 src/modules/ai/ai.service.tenant-boundary.spec.ts
